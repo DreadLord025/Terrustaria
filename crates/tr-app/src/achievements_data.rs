@@ -9,9 +9,13 @@
 //! CompareTo` sorts the menu list by it, while the icon index has its own
 //! order (e.g. `BENCHED` is constructed second but carries icon 88).
 //!
-//! One row (`GAIN_TORCH_GODS_FAVOR`) has no category: the initializer never
-//! passes it to `RegisterAchievementCategory`, so it stays
-//! `AchievementCategory.None` (`AchievementCategory.cs`: `None = -1`).
+//! One row (`GAIN_TORCH_GODS_FAVOR`) is never passed to
+//! `RegisterAchievementCategory` (`:360-362` constructs it; `:582-721`
+//! skips it). `Achievement._category` is an unset enum FIELD, so its CLR
+//! default is `(AchievementCategory)0 = Slayer` — NOT `None = -1`
+//! (`Achievement.cs:25`, `AchievementCategory.cs:5-6`). Vanilla filters
+//! and icons it as Slayer; the port's row carries `Category::Slayer`
+//! (W4-g53 census correction — the old `None` pin was the deviation).
 
 use crate::achievements::Category;
 
@@ -1002,8 +1006,10 @@ pub const ROWS: &[Row] = &[
 	},
 	Row {
 		name: "GAIN_TORCH_GODS_FAVOR",
-		// `AchievementInitializer.cs:360-362`
-		category: Category::None,
+		// `AchievementInitializer.cs:360-362` — no RegisterAchievementCategory
+		// call, so `_category` keeps the CLR enum default 0 = Slayer
+		// (`Achievement.cs:25`, `AchievementCategory.cs:5-6`).
+		category: Category::Slayer,
 		icon: 109,
 		conditions: &[Cond::Flag("Use")],
 		tracker: None,

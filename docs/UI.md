@@ -612,7 +612,9 @@ caller) — the full list is in `docs/ANALYSIS.md` →
   Achievements row opens the `UIAchievementsMenu` overlay (M6-ACH-2: the 137-row
   registry, the category filters, `TR_ACHIEVEMENTS`/`TR_ACHIEVEMENTS_CATS`;
   W4-g53: the real scrollbar drag/wheel, the category tooltips, the centre-out
-  progress bars). — window resolution / borderless / fullscreen (menuMode 111), language
+  progress bars; round 2: the ReLogic-wrapped descriptions on d121's
+  `text_wrap`, the scrollbar handle's hover sound/tint, and the torch row
+  filtering as Slayer -- the C# enum-field default, not `None`). — window resolution / borderless / fullscreen (menuMode 111), language
   switching (1213/1212), and the menuMode-888 `ManageControlsMenu` UIState (the
   1127 "Keybindings" row). The P5 sub-screens themselves are ported (see
   "Menu sub-screens (P5)"); their remaining gaps are collected in

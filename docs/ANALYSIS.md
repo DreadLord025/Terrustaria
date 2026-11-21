@@ -14522,13 +14522,20 @@ powers/research вЂ” each needs its own scope.
   `every_rows_conditions_match_the_initializer_verbatim` compares against
   `ROWS` entry by entry, so the lossy-`CreateMany` class of bug fails the
   test pass instead of silently shipping.
-- **The category filter cannot name the `None` row.** Vanilla's `FilterList`
-  indexes `_categoryButtons[(int)achievement.Category]`, and
-  `GAIN_TORCH_GODS_FAVOR` is the one row `RegisterAchievementCategory` never
-  touches (`AchievementCategory.None = -1`) вЂ” the C# would throw an
-  `ArgumentOutOfRangeException` on a filter click. The port keeps the secret row
-  visible in every filtered view instead of crashing (documented deviation).
-- **Save path and persistence (S1-E-18).** The port still uses its own
+- **The category filter never sees a `None` row (W4-g53 census correction).**
+  Vanilla's `FilterList` indexes `_categoryButtons[(int)achievement.Category]`,
+  and `GAIN_TORCH_GODS_FAVOR` is the one row `RegisterAchievementCategory` never
+  touches (`AchievementInitializer.cs:360-362` constructs it; `:582-721` skips
+  it). `Achievement._category` is an unset enum FIELD (`Achievement.cs:25`), so
+  its CLR default is `(AchievementCategory)0 = Slayer` -- NOT `None = -1`
+  (`AchievementCategory.cs:5-6`). The C# therefore never indexes -1 and never
+  throws; the torch row filters and icons as Slayer. The port's registry row
+  now carries `Category::Slayer` (the old `None` pin and the keep-visible
+  filter arm were the deviation); `filter_visible`'s -1 arm hides
+  defensively. The completed-first sort (`sorted_indices` =
+  `UIAchievementListItem.CompareTo` `:259-274`) and the popup's
+  `GotoAchievement` scroll were already ported -- no search box exists in the
+  C# state, so none is owed.- **Save path and persistence (S1-E-18).** The port still uses its own
   `achievements.trdat` text format (not the vanilla Rijndael-CBC+BSON
   `"RELOGIC-TERRARIA"` blob) вЂ” writing the vanilla format would touch a real
   install's `achievements.dat`. The path is bound at bootstrap / world swap
@@ -14588,15 +14595,35 @@ powers/research вЂ” each needs its own scope.
   alpha-127 blip, the black remainder, the readout in the name colour;
   the category tooltip draws (`Draw` `:108-135`, the `screenW-460`
   overflow literal included) and the Back hover sounds 12 once per edge.
-- **Deviations (remaining):** no word wrap (`CreateWrappedText`) — the row's
-  description shrinks to fit the text width instead of growing to a second
-  line (d81's `description_scale_y` pins the C#'s vertical clamp for when
-  wrap lands); the gamepad link points (`SetupGamepadPoints`, ids 3000+)
-  are out of scope; the scrollbar handle's own hover sound/tint
-  (`UIScrollbar.cs:116-122`) is not modelled (the shared
-  `panel::draw_scrollbar` draws the 0.85 handle); the `None`-category row
-  stays visible in every filtered view (the C# would throw, above).
-
+- **W4-g53 round 2 (2026-11-21) closed the remaining deviations:**
+  (1) the description wraps through d121's ReLogic port
+  (`ui/text_wrap.rs`, `WrappedTextBuilder` at 6b0c15f4, reused byte-exact):
+  `description_layout` wraps at `(num2 - 20) * (1/0.92)`
+  (`UIAchievementListItem.cs:102`), measures the wrapped box and clamps Y
+  at the 38+20 cap (`:103-112`, d81's `description_scale_y` now wired),
+  and `draw_description` draws the '\n'-separated rows at X 0.92 / Y the
+  clamp through the new non-uniform `text::push_font_text_xy` with the
+  four +/-2 px black shadow passes (`ChatManager.ShadowDirections`,
+  `ChatManager.cs:376-382`); the horizontal shrink-to-fit stand-in is gone
+  (the name row keeps its clamp -- registry names never wrap).
+  (2) The scrollbar handle's hover is modelled: `panel::scrollbar_hover_tick`
+  (`UIScrollbar.cs:113-120` -- truncated-pointer `Rectangle.Contains`,
+  sound 12 on the false-to-true edge) ticks in `App::achievements_hover_tick`
+  beside the Back latch, and the draw's handle tint is the live
+  `dragging || hovering ? White : White*0.85` pair (`:122`,
+  `panel::scrollbar_handle_tint`, 216 = (byte)(255*0.85)); the other
+  screens keep the idle-0.85 `panel::draw_scrollbar`.
+  (3) The `None`-row filter deviation is RETIRED by the census correction
+  above (the row is Slayer in the C# too).
+  **Remaining:** the gamepad link points (`SetupGamepadPoints`, ids 3000+,
+  `UILinkPointNavigator.Shortcuts.BackButtonCommand = 3`,
+  `UIAchievementsMenu.cs:197-222` + `OnActivate`'s `ChangePoint(3002)`)
+  stay unported -- the census finds no `UILinkPointNavigator` /
+  `PlayerInput.UsingGamepadUI` machinery anywhere in `crates/` (the one
+  housing.rs mention is a comment), so the whole gamepad-UI layer is a
+  global gap, not this screen's. The wrapped measure's per-line height
+  floor keeps d121's recorded `Padding.Height`-to-drawn-height
+  approximation; the bitmap-fallback wrap measures 8 px/char rows.
 ## The achievement unlock popup (S1-E-26 wave A)
 
 The completion в†’ toast chain is ported: `AchievementManager.AchievementCompleted`

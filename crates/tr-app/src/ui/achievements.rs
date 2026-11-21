@@ -399,12 +399,18 @@ pub fn scrollbar_drag(panel: &[f32; 4], rows: usize, drag_offset: f32, mouse_y: 
 }
 
 /// `FilterList` (`UIAchievementsMenu.cs:163-175`): a row shows when its
-/// category's toggle is on. The secret `None` row has no toggle — vanilla's
-/// `_categoryButtons[-1]` would throw, so the port keeps it visible in every
-/// view (documented deviation).
+/// category's toggle is on. Every registry row carries one of the four
+/// toggle categories — `GAIN_TORCH_GODS_FAVOR`, the one row the
+/// initializer's category pass never registers, keeps the CLR enum-field
+/// default `(AchievementCategory)0 = Slayer`, NOT `None = -1`
+/// (`Achievement.cs:25`'s unset `_category` + `AchievementCategory.cs:5-6`),
+/// so vanilla's `_categoryButtons[(int)Category]` never indexes -1 and
+/// never throws (W4-g53 census correction).
 pub fn filter_visible(categories: &[bool; 4], category: Category) -> bool {
     match category.index() {
-        -1 => true,
+        // No registry row is None; the defensive arm mirrors the C#'s
+        // out-of-range throw by hiding the row rather than crashing.
+        -1 => false,
         i => categories[i as usize],
     }
 }
@@ -1338,9 +1344,10 @@ mod tests {
         let only_slayer = [true, false, false, false];
         assert!(filter_visible(&only_slayer, Category::Slayer));
         assert!(!filter_visible(&only_slayer, Category::Explorer));
-        // The secret row has no toggle (`AchievementCategory.None`) and the
-        // port keeps it visible rather than indexing -1.
-        assert!(filter_visible(&none, Category::None));
+        // No registry row is None (the CLR enum-field default is Slayer,
+        // `Achievement.cs:25`); the defensive arm hides rather than throws
+        // (W4-g53 census correction — vanilla never indexes -1).
+        assert!(!filter_visible(&all, Category::None));
     }
 
     #[test]
@@ -1447,14 +1454,14 @@ mod tests {
         // registration order, so EYE_ON_YOU leads the list.
         assert_eq!(m.list[rows[0]].name, "EYE_ON_YOU");
         assert_eq!(m.list[rows[1]].name, "TIMBER");
-        // One category only: exactly the Slayer rows, and the None row is
-        // kept (deviation, documented).
+        // One category only: exactly the Slayer rows — 31 registered +
+        // GAIN_TORCH_GODS_FAVOR, whose unset `_category` defaults to
+        // Slayer in the C# too (W4-g53 census correction).
         let slayers = visible_rows(&m, &[true, false, false, false]);
         assert_eq!(slayers.len(), 32);
         assert!(slayers
             .iter()
-            .all(|&i| m.list[i].category == Category::Slayer
-                || m.list[i].category == Category::None));
+            .all(|&i| m.list[i].category == Category::Slayer));
     }
 
     #[test]
