@@ -211,6 +211,7 @@
 //! | 982-983 | `:87433-87434` | the 115/116 TheHungry death (2 gores 132/133) |
 //! | 984-986 | `:87450` | the 117-119 Leech death (1 gore each, 134+(type-117)) |
 //! | 987-991 | `:87468-87478` | the 217/218/219 beetle death (per-type gores, type-18 alpha dust) |
+//! | 992-997 | `:87495-87500` | the 222 QueenBee death (6 gores 303-308 at spread Y anchors) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -5659,6 +5660,43 @@ fn beetle_death(
     }
 }
 
+/// The 222 QueenBee death (`NPC.cs:87491-87500`, sites 992-997): the
+/// 50-dust type-18 burst (SpeedX `hitDirection`, SpeedY -2, alpha/color/
+/// scale from the NPC), then the 6 gores 303/304/305/306/307/308 at the
+/// spread Y anchors -35/-45/0/+20/+10/-10, all at `this.scale`.
+///
+/// `this.color` stand-in: the QueenBee sets NO color in `SetDefaults`, so
+/// the dust color is `Color::default()`; alpha rides `npc.alpha`.
+fn queen_bee_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    let alpha = npc.alpha as i32;
+    // `:87491-87494` — the 50-dust type-18 burst.
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 18, hit_direction, -2.0, alpha,
+            Color::default(), npc.scale,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    // `:87495-87500` — the 6 gores at the spread Y anchors.
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y - 35.0), vel, 303, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y - 45.0), vel, 304, s);
+    gore.new_gore(rng, world, pos, vel, 305, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 306, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 10.0), vel, 307, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y - 10.0), vel, 308, s);
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -6346,6 +6384,10 @@ pub fn hit_effect_c(
     // `:87452-87480` — the 217/218/219 beetle arm (sites 987-991).
     if (npc_type == 217 || npc_type == 218 || npc_type == 219) && npc.hp <= 0 {
         beetle_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87481-87501` — the 222 QueenBee arm (sites 992-997).
+    if npc_type == 222 && npc.hp <= 0 {
+        queen_bee_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -10061,6 +10103,26 @@ mod tests {
             let types: Vec<i32> = gore.slots()[..gores.len()].iter().map(|g| g.gore_type).collect();
             assert_eq!(types, gores, "beetle {ty}");
         }
+    }
+
+    /// `NPC.cs:87495-87500` — the QueenBee death: the 6 gores 303-308 at
+    /// the spread Y anchors -35/-45/0/+20/+10/-10.
+    #[test]
+    fn w4_f10_the_queen_bee_death_spawns_the_spread_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 50.0, 50.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(947);
+        queen_bee_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![303, 304, 305, 306, 307, 308]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 65.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 55.0));
+        assert_eq!(gore.slot(2).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 120.0));
+        assert_eq!(gore.slot(4).position, Vec2::new(100.0, 110.0));
+        assert_eq!(gore.slot(5).position, Vec2::new(100.0, 90.0));
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
