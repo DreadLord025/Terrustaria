@@ -579,3 +579,36 @@ f25's quickSettle arms + keep its gen module → re-derive f25 gen-hash pins +
 the re-pinned nudge witnesses → run the full union (no lane ran any of them).
 The e11 `tileobject::check_water_death/check_lava_death` seam is a merge-order
 dependency for A1's death check (e11 not in main yet).
+
+### A7. g46d RE-FOLD RECEIPT (W4-g45 LIQUID FINAL, 2026-11-21) — the guards are STILL missing; A6 is SUPERSEDED by research/70 §8
+
+Re-read of `origin/task/W4-g46-liquid-evaporation` at the LIQUID-FINAL phase:
+the tip is STILL **`f57d7bacd`** (no commit since the graft-prep UNION; g46d
+has not landed). Every A1-A3 flag re-verified against the union blob, line
+numbers fresh:
+
+| Flag | Union evidence (`f57d7bacd:crates/tr-core/src/liquid.rs`) | Status |
+| --- | --- | --- |
+| A1 border/grate/death guards | `add_water` :381-409 is the `&World` queue-only form — bounds `x<0/y<0/x>=width/y>=height` only, `tile_is_solid(t)` with NO `kind != 546` carve-out, returns right after the queue (no `check_water_death`/`check_lava_death`, no `kill_tile`) | **RE-FLAGGED — still missing** |
+| A1 `&mut World` ripple | `add_water(&World)` :381, `wake_around(&World)` :413 | **RE-FLAGGED** |
+| A2 widened fixtures | `basin` :1859 = `World::new(width, wall_y+3)`, scene at x=0, no containment walls; `floor_world` :3321 un-widened | **RE-FLAGGED** |
+| A3 down-arm stale read | `let down = …copied()` :1131 BEFORE `kill_tile` :1139; the gate :1143 reads the pre-kill copy | **RE-FLAGGED** |
+| A4 fall-arm `own_now` | :832 `let own_now = world.tiles[i].liquid` after the evap block | present (keep) |
+| A4 bucket module / shimmer-flow / fall-arm witnesses | `editing/` tree has doors/sentry/wiring only (no `buckets.rs`); zero hits for `shimmer_falls_every_visit_like_water` / `the_fall_arm_moves_the_post_evaporation_level` / `liquid_downarm_live` / `liquid_addwater_guards` | **RE-FLAGGED — all four g45 carries absent** |
+
+**The graft base moved.** g47 advanced past `dd66fa3a` to **`5c09a68b8`**
+(R-12-5 closeout 1-4: `e420e351e` §8 re-fold obligation, `4c81731bc` the
+full-fn census + the per-liquid settle trio, `5c09a68b8` §9-12 the FINAL
+merger checklist). **research/70 §8 now owns the re-fold shape**: g46d must
+RE-BASE onto the g47 tip (not arm-merge the union), re-apply only the g46
+evap/nudge + g45 extra-wake deltas + the witness union, and rename
+`retire_kills` → `edit_kills`. A6's graft order above is superseded where
+they disagree — the A1/A2/A3 g45 carries ride research/70's step 5 (guards,
+with the `edit_kills` loot upgrade) and the §11 re-pin table; the bucket
+module + the three g45 witness modules (A4) are NOT in research/70's tables
+(they postdate its census scope) and travel per THIS addendum. The g47 tip
+itself still carries BOTH stale reads (down-arm pre-kill copy at
+`5c09a68b8:liquid.rs:1274`, fall-arm `amount > start.liquid` at :1015) — the
+g45 fixes (`c8908a55d` re-read, `8d581953b` `own_now`) are graft obligations
+on the NEW base too, not just on the union. The per-fn owner table of record
+is research/104 §5-final.
