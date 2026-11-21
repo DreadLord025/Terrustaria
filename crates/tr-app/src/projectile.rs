@@ -16617,6 +16617,18 @@ impl ProjectilePool {
         if GEM_BOLTS.contains(&kind) {
             self.slots[slot].gem_staves_finalize();
         }
+        // W4-d12 F1 — `FinalizeProjectile`'s aiStyle-113 arm
+        // (`Projectile.cs:22049-22056`): the spawn-time rotation latch
+        // `velocity.ToRotation() + π/2` (the card cancels the +π/2). The
+        // 614 chase branch never rewrites rotation in flight, so this is
+        // the only heading it carries until the stick.
+        if data.ai_style == 113 {
+            let p = &mut self.slots[slot];
+            p.rot = p.vel.y.atan2(p.vel.x) + std::f32::consts::FRAC_PI_2;
+            if kind == DEAD_CELLS_KILLING_DECK_CARD {
+                p.rot -= std::f32::consts::FRAC_PI_2;
+            }
+        }
         // `NewProjectile`'s channel tracking (`Projectile.cs:11097-11100`):
         // `if (Owner == Main.myPlayer) Main.player[Owner].TryUpdateChannel
         // (projectile)` — the LAST local spawn of the cancel key's expected

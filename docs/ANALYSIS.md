@@ -37845,6 +37845,31 @@ covers the beenade 183 and the greek fires 400-402 via the default arm
   (60·15), the kill on expiry / dead target. The stick pin itself
   (`:13210-13217`), the Daybroken debuff and the 6-javelin cap ride the
   pool's on-hit seam.
+  **W4-d12 census F1 — the WHOLE style is now ported.** The exact
+  SetDefaults census is SIX kinds: 598/614/636/971/975/1024
+  (`Projectile.cs:6474`/`:6615`/`:6842`/`:9201`/`:9291`/`:9697`). The
+  shadowflame family is NOT on the style (495 is aiStyle 1 `:5681`, 496 is
+  91 `:5692` — d10's decade, 659 is 129 `:7083`). The five missing rows
+  landed verbatim; `target_sticker_step` serves all six: the 614 chase
+  lerp (14-speed /5) + 63-fade, the 636's 0.995/0.15 fall + 10 s stick, the
+  971/975's 9 s sticks + pulse draw censuses + rotation latches, the 1024
+  card's three-state machine (4-tick frames, the 60-tick sine flutter, the
+  4×4 tile-stick probe `:18287-18302`, the `ai[0]=2` return at 16 with the
+  inline `ResetLocalNPCHitImmunity`+`Damage` `:40783-40784`, the +6 hitbox
+  `:14988` and the ×1.5 return multiplier `:14553`). The pool generalizes
+  the pin/caps (6/8/10, `_javelinsMax6/8/10` `:79773-79775`)/debuffs
+  (189/300, 337/540, 344/540, 183/900 `:11339-11378`) and adds the
+  `Damage_CanDealDamage` stuck gate (`:12448`) + the 614/636 Colliding 1/8
+  shrink (`:15738`/`:15782`). Kill paths: the 636 spawns the 953 explosion
+  (`:72126-72145`), the 1024 plays Item8 + the 12-dust ring (`:74817-74829`),
+  the 614/971 puffs draw zero. The 612/953 Daybroken grants (`:11355-11366`)
+  ride both damage walks. Deliberate skips: the dust/gore bodies (explicit
+  argument draws kept — the census standard), the 614/636 light casts
+  (`:40890-40897`), `AI_113_UpdateDrawLayer` (draw-only), the card's
+  `Shimmer()` bounce (`:22424`, the shimmer layer), the 975 `hide` (draw).
+  The 978 Volcano flag58 term stays verbatim — its row is aiStyle 189
+  (`:9253-9268`), d19's decade (181-190); d19/d20 carried no pushed commits
+  at the census, so the row is NOT claimed here.
 - **aiStyle 36 (bees 181/566)** `:27292-27471`: the alpha fade-in + the
   `extraUpdates` collapse, the 3-frame flutter, the 30-tick then 800-Manhattan
   homing scan, the per-axis accel steering (the giant bee 6.8/0.14 vs the bee

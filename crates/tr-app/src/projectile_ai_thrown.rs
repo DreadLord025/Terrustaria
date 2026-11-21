@@ -1573,6 +1573,26 @@ mod tests {
         }
     }
 
+    /// W4-d12 F1 — the spawn-time rotation latch (`FinalizeProjectile`
+    /// `:22049-22056`): a fresh sticker reads velocity-heading + π/2 (the
+    /// card cancels it); the 614 chase keeps it for its whole flight.
+    #[test]
+    fn w4_d12_f1_spawn_rotation_latch() {
+        use crate::projectile::ProjectilePool;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(crate::projectile::DAYBREAK, 0, 400.0, 300.0, 4.0, 0.0, 10, 2.0, 0.0, 0.0)
+            .unwrap();
+        assert!(
+            (pool.slots()[slot].rot - std::f32::consts::FRAC_PI_2).abs() < 1e-5,
+            "the +X heading latches +π/2"
+        );
+        let card = pool
+            .spawn_with_data_ai_owned(crate::projectile::DEAD_CELLS_KILLING_DECK_CARD, 0, 400.0, 300.0, 4.0, 0.0, 10, 2.0, 0.0, 0.0)
+            .unwrap();
+        assert!(pool.slots()[card].rot.abs() < 1e-5, "the card cancels the +π/2");
+    }
+
     /// The dispatch serves the WHOLE census: a pool-spawned 636 runs the
     /// arm through `match data.ai_style` 113 (the age counter advances),
     /// and the rowless-decline is gone for every census kind.
