@@ -39460,6 +39460,19 @@ Deliberate folds/deviations:
   roars 2, the sundial 3, the mimic smoke 4, the moondial 6) stay no-ops
   (their systems unported). Witnesses: the msg-51 pair + the bitsByte16
   trio round-trips (`net.rs`).
+- **The sidecar version-7 collision (merge coordination)**: W4-g90's pushed
+  branch (`1f1b88f0`) ALSO writes a version-7 `.trplayer` line — the
+  artisan-bread flag (ONE token). f33's v7 line is the biome-torch PAIR
+  (TWO tokens). The two branches diverge from the same v6 base, so the
+  merge keeper must reconcile: the recommended resolution is a version-8
+  line carrying BOTH (the bread flag + the torch pair, in the g90-then-f33
+  order), with the v7 reader accepting either shape (a 1-token v7 line is
+  g90's bread — the torch pair loads false; a 2-token v7 line is f33's pair
+  — the bread loads false). f33's reader is already token-count tolerant
+  (`parts.next().is_some_and` — a missing second token reads false), so a
+  g90 v7 file loads without error (the unlock stays false, the correct
+  default for a character that never used the favor). The `SavedPlayer`
+  struct keeps both fields; the g90 merge adds `ate_artisan_bread`.
 
 The `happyFunTorchTime` consumers (the event flag now exists,
 `torch_god.happy_fun_torch_time`):

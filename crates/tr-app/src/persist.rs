@@ -271,6 +271,33 @@ mod tests {
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
+    /// W4-f33 — the g90 v7 collision tolerance: W4-g90's pushed branch writes
+    /// a v7 line with ONE token (the artisan-bread flag). f33's reader is
+    /// token-count tolerant — a 1-token v7 line loads the torch pair false
+    /// (the correct default for a character that never used the favor), no
+    /// error. The merge keeper reconciles the two v7 shapes into a v8 line
+    /// (ANALYSIS "The sidecar version-7 collision").
+    #[test]
+    fn w4_f33_a_one_token_v7_line_loads_the_torch_pair_false() {
+        let dir = crate::test_world_helpers::test_scratch("persist-v7-g90");
+        let path = dir.join("tr-persist-v7-g90.trwld");
+        let mut line = String::from("7\n1.0 2.0 100\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n89 80 76\n1 (BlueSlime 7) \n");
+        for _ in 0..10 {
+            line.push_str("0 ");
+        }
+        // The g90 bread flag (one token), NOT the torch pair.
+        line.push_str("\n1\n");
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("the g90 v7 sidecar loads");
+        assert!(!s.unlocked_biome_torches, "no torch unlock in a bread-only file");
+        assert!(!s.using_biome_torches);
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
     #[test]
     fn version_3_loads_with_empty_armor() {
         let dir = crate::test_world_helpers::test_scratch("persist-v3");
