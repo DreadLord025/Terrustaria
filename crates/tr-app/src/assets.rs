@@ -1332,6 +1332,16 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
         }
     }
 
+    // W4-d122: the coin spin sheets (`TextureAssets.Coin[0..3]`,
+    // `Images/Coin_0..3`, `AssetInitializer.cs:369`) — the savings draw's
+    // `CoinSlot.DrawItemCoin` source (`CoinSlot.cs:242`), one 8-frame
+    // vertical strip per denomination. A missing file falls back to the
+    // static `Item_71..74` icon (`coin_anim_uv`).
+    for i in 0..4 {
+        if let Ok(img) = load_png(dir, &format!("Coin_{i}"), SheetLayout::Raw) {
+            images.push(img);
+        }
+    }
     // The buff icons (`TextureAssets.Buff[type]`, `Images/Buff_<id>`): the
     // `Main.DrawBuffIcon` source (`Main.cs:43310`). Enumerated like the
     // items — a missing file just leaves that id's icon unpicked.
@@ -1952,6 +1962,11 @@ pub struct Lookups {
     pub gore_sheets: std::collections::HashMap<u16, tr_render::SheetRect>,
     /// `Item_71..74`: copper/silver/gold/platinum coin sprites.
     pub coins: [Option<tr_render::SheetRect>; 4],
+    /// W4-d122: `TextureAssets.Coin[0..3]` (`Images/Coin_0..3`,
+    /// `AssetInitializer.cs:369`) — the 8-frame vertical spin strips
+    /// `CoinSlot.DrawItemCoin` reads (`CoinSlot.cs:242-243`'s
+    /// `Frame(1, 8, 0, coinFrame)`); the savings draw's coin icons.
+    pub coin_anim: [Option<tr_render::SheetRect>; 4],
     /// Vanilla HUD textures (`Images/Inventory_Back`, `Heart`, ...).
     pub ui_back: Option<tr_render::SheetRect>,
     /// `Inventory_Back14`: the yellow frame of the selected hotbar slot.
@@ -2354,6 +2369,7 @@ impl Lookups {
                 })
                 .collect(),
             coins: [71, 72, 73, 74].map(|i| atlas.sheet(&format!("Item_{i}")).copied()),
+            coin_anim: [0, 1, 2, 3].map(|i| atlas.sheet(&format!("Coin_{i}")).copied()),
             ui_back: atlas.sheet("Inventory_Back").copied(),
             ui_back_sel: atlas.sheet("Inventory_Back14").copied(),
             ui_back_hotbar: atlas.sheet("Inventory_Back9").copied(),
@@ -2955,6 +2971,31 @@ impl Lookups {
             0,
             rect.width,
             rect.height,
+        ))
+    }
+
+    /// W4-d122: one spin frame of a coin strip — `CoinSlot.DrawItemCoin`'s
+    /// `TextureAssets.Coin[coinType - 71].Value.Frame(1, 8, 0, coinFrame)`
+    /// (`CoinSlot.cs:242-243`). Returns the UV + the frame's pixel size;
+    /// the static `Item_71..74` icon stands in when the strip is absent
+    /// (frame 0's whole sheet — the no-animation fallback).
+    pub fn coin_anim_uv(&self, kind: usize, frame: i32) -> Option<([f32; 4], f32, f32)> {
+        if let Some(rect) = self.coin_anim.get(kind).and_then(|s| s.as_ref()) {
+            let fh = rect.height / 8;
+            if fh == 0 || frame < 0 || frame >= 8 {
+                return None;
+            }
+            return Some((
+                uv_rect(rect, self.atlas_size, 0, frame * fh as i32, rect.width, fh),
+                rect.width as f32,
+                fh as f32,
+            ));
+        }
+        let rect = self.coins.get(kind)?.as_ref()?;
+        Some((
+            uv_rect(rect, self.atlas_size, 0, 0, rect.width, rect.height),
+            rect.width as f32,
+            rect.height as f32,
         ))
     }
 

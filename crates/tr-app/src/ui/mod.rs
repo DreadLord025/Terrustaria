@@ -27,6 +27,7 @@ pub(crate) mod npc_chat;
 pub mod panel;
 pub mod pointer;
 pub mod resources;
+pub(crate) mod savings;
 pub mod save_list;
 pub mod sliders;
 pub mod select_hit;
@@ -687,6 +688,9 @@ pub fn draw_hud(
     shop: Option<(&[crate::shop::ShopEntry], f32, bool)>,
     chest_panel: chest::PanelState<'_>,
     reforge: Option<(&crate::item::ItemSlot, u64, i32)>,
+    // W4-d122: the coin cells' animation machine (`CoinSlot.Savings[4]`)
+    // the reforge savings draw feeds (`ItemSlot.DrawMoney`'s fromSavings).
+    coin_slot: &mut coin_slot::CoinSlotState,
     bank: Option<(&[ItemSlot], i32)>,
     // `Main.DrawPVPIcons`'s inputs (`Main.cs:42654`): the net mode / seed gates,
     // the local player's `hostile` + `team` and the `teamCooldown` timer.
@@ -932,6 +936,24 @@ pub fn draw_hud(
         // align with the click hit boxes (`ui::inventory::reforge_*_hit`).
         if let Some((slot, cost, cooldown)) = reforge {
             text::hud_text(r, lookups, 50.0, 250.0, 0.85, [1.0; 4], "Reforge");
+            // W4-d122: `Main.cs:41637` — `ItemSlot.DrawSavings(spriteBatch,
+            // num51 + 130, invBottom, horizontal: true)` inside the
+            // `reforgeItem.type > 0` block (`:41584`): (50 + 130, 258) =
+            // (180, 258), the four banks' coin pile + the "Savings" row.
+            if slot.kind > 0 {
+                if let Some(p) = player {
+                    savings::draw_savings(
+                        r,
+                        lookups,
+                        coin_slot,
+                        &[&p.banks[0], &p.banks[1], &p.banks[2], &p.banks[3]],
+                        180.0,
+                        258.0,
+                        true,
+                        pulse.text,
+                    );
+                }
+            }
             if slot.count > 0 {
                 let def = &crate::itemdata::ITEMS[slot.kind as usize];
                 text::hud_text(

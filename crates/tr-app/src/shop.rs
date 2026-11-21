@@ -832,8 +832,8 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
         // The Stylist's shop (index 18, `Chest.cs:2698-2790`): the
         // hair-dye family — the two always-on rows, the life/mana/money
         // gates, the moon-phase parity, the hardmode + Party Girl +
-        // mech/martian rows; the multiplayer team dye (1982) and the
-        // graveyard mirror (5577) sit constants-off.
+        // mech/martian rows; the multiplayer team dye (1982) sits
+        // constants-off (`team != 0 && netMode == 1`, `:2752`).
         18 => vec![
             row(1990, StockWhen::Always),
             row(1979, StockWhen::Always),
@@ -848,6 +848,11 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(2863, StockWhen::DownedMartians),
             row(3259, StockWhen::DownedMartians),
             row(5104, StockWhen::Always),
+            // W4-d122 fifth round: `:2785-2788` — `ZoneGraveyard` — the
+            // Pretty Mirror 5577, the case's LAST row after the always-on
+            // 5104 (was constants-off; the zone flag is live at the open
+            // seam since shop 11).
+            row(5577, StockWhen::ZoneGraveyard),
         ],
         // The Wizard's shop (index 7, `Chest.cs:2004-2032`, the registry
         // `NPCInteractions.Shop(108, 7)`, `NPCInteractions.cs:494` —
@@ -4074,6 +4079,64 @@ mod town5_tests {
                 4392, 2862, 3109, 3664, 5928
             ],
             "the exact num order (`:2361-2441`; the halloween trio stays off)"
+        );
+    }
+
+    /// W4-d122 fifth round — the Stylist (case 18, `Chest.cs:2698-2790`):
+    /// the Coins gate's row + the graveyard tail. The Money Hair Dye 1980
+    /// rides `num2 >= 1000000` (`:2743`, the 54-slot copper scan's total),
+    /// and the Pretty Mirror 5577 is the case's LAST row under
+    /// `ZoneGraveyard` (`:2785-2788`), after the always-on 5104. Written,
+    /// not run (code-only).
+    #[test]
+    fn the_stylist_coins_row_and_graveyard_tail() {
+        // Classic day phase 0: the two heads + the parity row + 5104.
+        let base = resolve_stock_moon(18, &ShopFlags::default(), &[], 0);
+        assert_eq!(base, vec![1990, 1979, 1981, 5104]);
+        assert!(!base.contains(&1980), "no Money Hair Dye below 1g");
+        assert!(!base.contains(&5577), "no Pretty Mirror outside the graveyard");
+        // The Coins gate opens the 1980 row BETWEEN the mana row and the
+        // parity row (`:2743-2746`'s num slot).
+        let rich = ShopFlags {
+            coins_over_gold: true,
+            life_max_400: true,
+            mana_max_200: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_stock_moon(18, &rich, &[], 0),
+            vec![1990, 1979, 1977, 1978, 1980, 1981, 5104]
+        );
+        // The graveyard tail: 5577 lands AFTER the always-on 5104.
+        let grave = ShopFlags {
+            zone_graveyard: true,
+            ..Default::default()
+        };
+        let g = resolve_stock_moon(18, &grave, &[], 0);
+        assert_eq!(g, vec![1990, 1979, 1981, 5104, 5577]);
+        assert_eq!(g.last(), Some(&5577), "the mirror is the case's last row");
+        // The full pin: every gate on, day phase 0 (the parity row stays).
+        let full = ShopFlags {
+            life_max_400: true,
+            mana_max_200: true,
+            coins_over_gold: true,
+            party_girl_present: true,
+            hard_mode: true,
+            downed_mech_1: true,
+            downed_mech_2: true,
+            downed_mech_3: true,
+            downed_mech_any: true,
+            downed_martians: true,
+            zone_graveyard: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_stock_moon(18, &full, &[], 0),
+            vec![
+                1990, 1979, 1977, 1978, 1980, 1981, 1983, 1984, 1985, 1986, 2863, 3259, 5104,
+                5577
+            ],
+            "the exact num order (`:2700-2788`; the team dye 1982 stays off)"
         );
     }
 }

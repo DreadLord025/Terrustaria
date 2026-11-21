@@ -7221,6 +7221,17 @@ currency — `CustomCurrencySingleCoin` OVERRIDES it (`:26-74`).
   arithmetic. The medal DROP side's gravity draws (3 per stack,
   `Item.cs:49749-49750`) are W4-f36's landed slice (`fac5f222`,
   ANALYSIS "The OOA medal drop side").
+* **f36 cross-check (fifth round):** the drop side's item id is **3817**,
+  NOT 3822 — `DD2Event.DropMedals` (`DD2Event.cs:802-813`) calls
+  `Item.NewItem(..., 3817, numberOfMedals, noBroadcast: true)` at `:809`.
+  W4-f36 (`fac5f222`) ports it through `tr_core::dd2::MEDAL_ITEM = 3817`
+  (the same constant this branch's win/wave lanes use); the 3822 Eternia
+  Crystal appears only in f36's per-kill `ShouldDropCrystals` lane and the
+  wipe's `TurnToAir` — both correct. No f36 edit needed; this branch pins
+  the RAW kind on the dropped stacks
+  (`world_sim/npcs.rs::the_f36_medal_drop_item_id_is_3817_not_the_crystal`,
+  the `medal_stacks` helper filters by the constant so a wrong constant
+  would hide there).
 
 Deviations: the savings-draw/price-text chrome (`CustomCurrencyManager.
 DrawSavings` `:28-62`, `CustomCurrencySingleCoin.DrawSavingsMoney`/
@@ -7234,6 +7245,90 @@ capped-wallet buy) + 4 shop-side (the classic 8-row list, the tier
 conjuncts + 40-row write order, the mug ladder, the raw pricing) + 3
 App-side (wallet-not-purse + no memo, inventory-then-bank, the
 short-wallet/funded-purse/no-player refusals).
+
+## The shop restock + savings draw (W4-d122, fifth round)
+
+Three slices: the f36 medal-id cross-check (above), the reforge savings
+draw (`Main.cs:41637`), and the Stylist Coins gate + the restock-timer
+census.
+
+**The savings draw (`crates/tr-app/src/ui/savings.rs`).** `ItemSlot.
+DrawSavings` (`ItemSlot.cs:3704-3741`) + `DrawMoney` (`:3652-3702`) port
+1:1: the four banks' `Utils.CoinsCount` (`Utils.cs:1019-1046`, the
+71/72/73/74 ×1/×100/×10000/×1000000 walk), `CoinsCombineStacks`'
+9,999,999,999 running clamp (`:1062-1076`), the `> 0` gate, the
+bank-furniture pile (Void Vault 4076 / Defenders Forge 3813 / Safe 346 /
+Piggy Bank 87, one icon per funded bank at the C#'s (+70,+45)/(+92,+45)/
+(+80,+50)/(+70,+60) centres, `Utils.CenteredRectangle`'s `(int)`
+truncations, `frame.Size() * 0.65`), then `DrawMoney`'s "Savings" label
+(`Lang.inter[66]`, `DrawBorderStringFourWay`'s four ±2 px passes) + the
+four-denomination row (`CoinsSplit` `:1048-1060`, platinum first, the
+display count clamped at 999, the `fromSavings` animation state). The
+`CoinSlot.Savings[4]` machine lands in `ui/coin_slot.rs` (`UpdateSavings`
+`:225-228`, the `71 + slot` type, `SavingsCoinJumpScale = 10`); the coin
+icons ride the `Coin_0..3` spin strips (`AssetInitializer.cs:369`,
+`CoinSlot.DrawItemCoin`'s `Frame(1, 8, 0, coinFrame)`, `CoinSlot.cs:242-
+254`'s longer-side `sizeLimit` clamp), the static `Item_71..74` icon the
+fallback. The reforge call site (`Main.cs:41637`, `num51 + 130,
+invBottom` = (180, 258), horizontal) draws inside the `reforgeItem.type
+> 0` block (`:41584`); `draw_hud` takes the `CoinSlotState` and the
+player's four banks.
+
+Deviations: the `_customCurrencyForSavings` hover latch (`ItemSlot.cs:
+3177`'s `MouseHover` write, `:3707-3711`'s branch → `CustomCurrencyManager.
+DrawSavings`) has no port consumer — the Tavernkeep medal-savings arm
+stays the chrome follow-up, so the port always draws the coin arm. The
+shop-panel call (`Main.cs:41791`, (504, invBottom), vertical) and its
+"Shop" label / happiness icon stay with the shop-chrome pass (the
+`draw_savings` helper is vertical-ready). The `GetPriceText` tooltip arm
+stays unported.
+
+**The Stylist Coins gate (`Chest.cs:2714-2746`).** The C# scans
+`Player.inventory[0..54]` — the 50-slot grid AND the four coin rows
+(50..53); the ammo rows and the banks are NOT scanned. The port's
+`coin_total` read `purse + grid stacks`, but the pickup lane credits the
+`App.coins` mirror with the copper value of what the inventory stacks
+take (`world_sim/items.rs`'s `into_inventory` arm) — so a pickup-fed
+stack was counted TWICE (a 500k-copper pickup opened the 1g Money Hair
+Dye gate at 1,000,000), and the coin rows were missed entirely. FIX:
+`coin_total(inventory, coin_rows, purse) = max(purse, grid + coin rows)`
+— the purse covers the pickup/sell lanes, the stack scan covers
+sidecar-restored grid coins the mirror never saw, and a mirror-counted
+stack is never added twice; the mid-walk 9,999,999,999 clamp stands.
+The graveyard tail row Pretty Mirror 5577 (`:2785-2788`, `ZoneGraveyard`,
+the case's LAST row after the always-on 5104) lands too — it was
+constants-off though `zone_graveyard` has been live at the open seam
+since shop 11. The multiplayer team dye 1982 (`:2752`, `team != 0 &&
+netMode == 1`) stays constants-off.
+
+**The restock-timer census.** The town shops have NO restock timer:
+`Main.OpenShop` (`Main.cs:40459-40467`) re-runs `SetupShop` on EVERY open
+from the live world state (the port's `try_open_town_shop_at_cursor`
+matches — `resolve_stock_entries_moon` at the open seam), and
+`Main.Initialize` (`:6650-6656`) builds all 99 shops once at load. The
+only RNG-driven stock regeneration is the Travelling Merchant's:
+`WorldGen.SpawnTravelNPC` (`WorldGen.cs:5251-5407`) calls `Chest.
+SetupTravelShop` (`:5264`) on each arrival, gated by the morning roll
+`Main.rand.Next((int)(27000/dayRate) * 4) == 0` (`Main.cs:65017-65039`,
+`dayTime && time < 27000 && !IsFastForwardingTime`, ≥2 resident town
+NPCs excluding the Old Man 37 / Skeleton Merchant 453) and the spawn's
+own `Main.eclipse || !Main.dayTime || (invasionType > 0 && invasionDelay
+== 0 && invasionSize > 0)` refusal (`:5253`). The port's
+`travel_visit_roll` + `spawn_travel_npc` (`world_sim/weather.rs`) match
+the roll + the invasion gate; FIX: the eclipse disjunct was a
+constants-off gap — `World.eclipse` IS ported (the Steampunker/Cyborg
+shop gates read it), so `spawn_travel_npc` now refuses under it. The
+departure (`Main.cs:65012`, `!dayTime || time > 48600` →
+`UnspawnTravelNPC`) and the per-open sellback-memo clear
+(`Main.UpdateOldNPCShop`, `:18204-18211`) were already ported.
+
+Witnesses written, not run (code-only): the f36 raw-id pin
+(`world_sim/npcs.rs`), the Stylist Coins-row + graveyard-tail order
+(`shop.rs`), the `coin_total` no-double-count + coin-row + clamp arms
+(`world_sim/npcs.rs`), the eclipse refusal (`world_sim/weather.rs`), and
+4 savings-side (`ui/savings.rs`: the Utils arithmetic, the pile order +
+per-bank gates, the two-arm positions + the >99 platinum nudge, the
+savings machine's clamped-count pulse).
 
 ## Dye Trader/Party Girl (M4-TOWN-20)
 

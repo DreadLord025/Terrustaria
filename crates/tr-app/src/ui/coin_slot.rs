@@ -197,33 +197,50 @@ impl CoinEntry {
 }
 
 /// The machine's state — the vanilla's static arrays (`CoinSlot.cs:340-344`)
-/// owned by the App. `UpdateSavings`/`UpdateCustom` have no port consumers
-/// (the piggy-bank HUD and the custom-currency displays are unported), so the
-/// `Savings`/`Custom` arrays stay out.
+/// owned by the App. W4-d122: the `Savings[4]` array lands with the shop
+/// savings draw (`ItemSlot.DrawMoney`'s `fromSavings` arm); `UpdateCustom`
+/// has no port consumer yet (the Tavernkeep medal-savings display is the
+/// remaining chrome follow-up), so the `Custom` dictionary stays out.
 #[derive(Clone, Debug, Default)]
 pub struct CoinSlotState {
     chest_entries: Vec<CoinEntry>,
     inventory_entries: Vec<CoinEntry>,
+    savings_entries: Vec<CoinEntry>,
 }
 
 impl CoinSlotState {
-    /// The static constructor's array sizes (`CoinSlot.cs:342-343`).
+    /// The static constructor's array sizes (`CoinSlot.cs:341-343`).
     pub fn new() -> Self {
         Self {
             chest_entries: vec![CoinEntry::default(); 200],
             inventory_entries: vec![CoinEntry::default(); 59],
+            savings_entries: vec![CoinEntry::default(); 4],
         }
     }
 
-    /// `CoinSlot.UpdateSlotAnims` (`CoinSlot.cs:358-372`) — the vanilla runs
-    /// it per frame after the interface layers draw (`Main.cs:44936`).
+    /// `CoinSlot.UpdateSlotAnims` (`CoinSlot.cs:256-274`) — the vanilla runs
+    /// it per frame after the interface layers draw (`Main.cs:44936`); the
+    /// savings array steps FIRST (`:258-261`).
     pub fn update_slot_anims(&mut self) {
+        for e in &mut self.savings_entries {
+            e.update_anim();
+        }
         for e in &mut self.chest_entries {
             e.update_anim();
         }
         for e in &mut self.inventory_entries {
             e.update_anim();
         }
+    }
+
+    /// `CoinSlot.UpdateSavings` (`CoinSlot.cs:225-228`): the savings cell's
+    /// draw parameters — the entry's type is `71 + slot` (copper..platinum),
+    /// the jump scale is `SavingsCoinJumpScale` (10).
+    pub fn update_savings(&mut self, slot: usize, count: u32) -> CoinDrawState {
+        if let Some(e) = self.savings_entries.get_mut(slot) {
+            return e.update_state(71 + slot as u16, count, SAVINGS_COIN_JUMP_SCALE);
+        }
+        neutral()
     }
 
     /// `CoinSlot.ForceSlotState` (`CoinSlot.cs:374-390`): the rank reset the
