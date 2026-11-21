@@ -843,6 +843,14 @@ pub(crate) struct App {
     /// crystal-wall flicker (`DoUpdate_AnimateCursorColors` in Main.cs).
     pub(crate) mouse_text_color: u8,
     pub(crate) mouse_text_color_dir: i8,
+    /// `Main.eclipseLight` (`Main.cs:1211`): the eclipse darkening rides the
+    /// day clock and decays 0.01 per `SetBackColor` call (`:63845-63860`);
+    /// the draw pass steps it (W4-g70 lane 8).
+    pub(crate) eclipse_light: f32,
+    /// `Main.SmoothedMushroomLightInfluence` (`Main.cs:1283`): the ±0.01/
+    /// −0.02 walk toward `MushroomTileCount / 160` (`:61945-61970`), stepped
+    /// once per draw before `SetBackColor`.
+    pub(crate) mushroom_light_influence: f32,
     /// `Main.demonTorch` / `Main.demonTorchDir` (`DoUpdate_AnimateTileGlows`).
     pub(crate) demon_torch: f32,
     pub(crate) demon_torch_dir: f32,
@@ -4015,6 +4023,10 @@ impl App {
             // `Main.mouseTextColor` starts at 225 and drifts toward 255.
             mouse_text_color: 225,
             mouse_text_color_dir: 1,
+            // `Main.eclipseLight`/`SmoothedMushroomLightInfluence` start 0
+            // (the statics' defaults, `Main.cs:1211`/`:1283`).
+            eclipse_light: 0.0,
+            mushroom_light_influence: 0.0,
             // `Main.demonTorch = 1f; Main.demonTorchDir = 1` (Main.Initialize).
             demon_torch: 1.0,
             demon_torch_dir: 1.0,

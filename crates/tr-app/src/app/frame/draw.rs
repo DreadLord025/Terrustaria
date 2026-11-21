@@ -27,7 +27,7 @@ use crate::render::debug::{
     DebugWindowInput,
 };
 use crate::render::entities::draw_player_map_icon;
-use crate::render::sky::{color_of_the_skies, draw_sky, tile_color};
+use crate::render::sky::draw_sky;
 use crate::render::tiles::draw_tiles;
 use crate::render::tiles::TileDrawStats;
 use crate::ui;
@@ -299,34 +299,83 @@ impl App {
                     // smoothly on the draw pass, but the light map and world range can
                     // be reused for a second.
                     let quantised = (natural_time / 60.0).floor() * 60.0;
-                    let sky_tint = color_of_the_skies(quantised, is_day, world.moon_phase);
                     let clock_time = natural_time;
-                    // `SetBackColor`: rain multiplies the sky (and therefore the surface
-                    // sunlight) by `1 - cloudAlpha * 0.9`.
-                    let rain_alpha = rain.visual_alpha();
-                    let rain_dim = (1.0 - rain_alpha * 0.9).max(0.1);
-                    let mut sky_tint = [
-                        sky_tint[0] * rain_dim,
-                        sky_tint[1] * rain_dim,
-                        sky_tint[2] * rain_dim,
-                    ];
-                    // `Main.instance.HorizonRenderer.ModifyHorizonLight`
-                    // (`Main.cs:63921`): the sunrise/sunset gradient entries blend
-                    // into the sky colour before it becomes the tile light.
+                    // `Main.UpdateAtmosphereTransparencyToSkyColor`'s input
+                    // (`Main.cs:61983`): the view centre in world pixels. The
+                    // atmo feeds SetBackColor's rain dim BEFORE the tile colour
+                    // is taken (`Main.cs:61971-61983` order).
                     let atmo = crate::render::sky::atmosphere_factor(
                         camera.y,
                         world.world_surface,
                         world.width,
                     );
-                    crate::render::sky::modify_horizon_light(
-                        &mut sky_tint,
-                        world.moon_phase,
-                        is_day,
-                        quantised,
-                        atmo,
-                        rain_alpha,
+                    // W4-g70 lane 8: the whole `SetBackColor` chain
+                    // (`Main.cs:63452-63924`) in byte space — the blood-moon
+                    // night, the eclipse tint, the biome/graveyard dims, the
+                    // lightning flash and the remix override all ride it.
+                    let rain_alpha = rain.visual_alpha();
+                    // `Main.SmoothedMushroomLightInfluence`'s per-draw walk
+                    // (`Main.cs:61945-61970`), ahead of SetBackColor.
+                    self.mushroom_light_influence = tr_core::sky_color::smooth_mushroom_influence(
+                        self.mushroom_light_influence,
+                        self.scene_metrics.mushroom_tile_count,
                     );
-                    let sky_light = tile_color(sky_tint);
+                    // `Lighting.NotRetro` (`Lighting.cs:63-73`): the port's
+                    // internal mode order is Color 0 / White 1 / Retro 2 /
+                    // Trippy 3 (`lighting/params.rs`).
+                    let not_retro = !matches!(
+                        *light_mode,
+                        tr_core::lighting::LightMode::Retro | tr_core::lighting::LightMode::Trippy
+                    );
+                    let back = tr_core::sky_color::set_back_color(
+                        &tr_core::sky_color::inputs_from(
+                            world,
+                            &self.scene_metrics,
+                            scene_state.graveyard_visual_intensity,
+                            self.mushroom_light_influence,
+                            self.eclipse_light,
+                            rain_alpha,
+                            atmo,
+                            rain.flash(),
+                            quantised,
+                            is_day,
+                            not_retro,
+                        ),
+                    );
+                    self.eclipse_light = back.eclipse_light;
+                    // `Main.instance.HorizonRenderer.ModifyHorizonLight`
+                    // (`Main.cs:63921`, the LAST step of SetBackColor): the
+                    // sunrise/sunset gradient entries blend into the sky colour
+                    // before it becomes the tile light. The
+                    // `ShouldDrawSurfaceBackground` gate
+                    // (`NextHorizonRenderer.cs:156`, `Main.cs:59630-59642`) —
+                    // false on a remix world in-game (the map-fullscreen case
+                    // has no sky pass in the port). NOTE: the gate does NOT
+                    // read `BackgroundEnabled` — the tint survives the
+                    // backgrounds-off toggle in vanilla.
+                    let mut sky_bytes = back.bg;
+                    if !world.seeds.contains(tr_core::seeds::SeedFlags::REMIX) {
+                        crate::render::sky::modify_horizon_light(
+                            &mut sky_bytes,
+                            world.moon_phase,
+                            is_day,
+                            quantised,
+                            atmo,
+                            rain_alpha,
+                            self.mushroom_light_influence,
+                            world.eclipse,
+                        );
+                    }
+                    // `Main.ApplyColorOfTheSkiesToTiles` (`Main.cs:61982`) — the
+                    // integer 7/10 blend BEFORE the atmo dim (`:61983`).
+                    let tile_bytes = tr_core::sky_color::apply_sky_to_tiles(sky_bytes);
+                    let sky_light = tile_bytes.map(|c| c as f32 / 255.0);
+                    // `UpdateAtmosphereTransparencyToSkyColor`'s colour half
+                    // (`Main.cs:63201-63209`): the SKY colour fades with depth
+                    // (black at atmo <= 0.01) while the tile light keeps the
+                    // undimmed bytes.
+                    let sky_dim = tr_core::sky_color::atmo_dim_sky(sky_bytes, atmo);
+                    let sky_tint = sky_dim.map(|c| c as f32 / 255.0);
                     // `Main.DoUpdate_AnimateCursorColors`: mouseTextColor oscillates
                     // 190..=255, changing by 1 per frame, driving light flicker.
                     self.mouse_text_color = (self.mouse_text_color as i32

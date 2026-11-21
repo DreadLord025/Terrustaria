@@ -14,15 +14,6 @@ use tr_core::lighting::LightMap;
 use tr_core::{TILE_PX, World};
 use tr_render::{Atlas, SpriteRenderer};
 
-fn lerp3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 4] {
-    [
-        a[0] + (b[0] - a[0]) * t,
-        a[1] + (b[1] - a[1]) * t,
-        a[2] + (b[2] - a[2]) * t,
-        1.0,
-    ]
-}
-
 /// The debug font is ASCII-only; transliterate Cyrillic names so they stay readable.
 pub(crate) fn display_name(name: &str) -> String {
     const CYRILLIC: &str = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя";
@@ -45,73 +36,10 @@ pub(crate) fn display_name(name: &str) -> String {
     out
 }
 
-/// `Main.SetBackColor`: the colour the sky and surface background are tinted with
-/// (`Main.ColorOfTheSkies`), as a function of world time.
-///
-/// Day runs `0..54000` (0 = sunrise, 27000 = noon), night runs `0..32400`
-/// (16200 = midnight). Between 13500 and 37800 the colour is pure white, which is why
-/// vanilla daytime tiles are lit at 100 %.
-pub(crate) fn color_of_the_skies(time: f64, day: bool, moon_phase: u8) -> [f32; 3] {
-    let byte = |v: f64| (v.clamp(0.0, 255.0) / 255.0) as f32;
-    if day {
-        if time < 13500.0 {
-            let t = time / 13500.0;
-            [
-                byte(t * 230.0 + 25.0),
-                byte(t * 220.0 + 35.0),
-                byte(t * 220.0 + 35.0),
-            ]
-        } else if time > 45900.0 {
-            let t = (1.0 - (time / 54000.0 - 0.85) * 6.666_666_666_666_667).clamp(0.0, 1.0);
-            [
-                byte(t * 200.0 + 35.0),
-                byte(t * 85.0 + 35.0),
-                byte(t * 135.0 + 35.0),
-            ]
-        } else if time > 37800.0 {
-            let t = (1.0 - (time / 54000.0 - 0.7) * 6.666_666_666_666_667).clamp(0.0, 1.0);
-            [
-                byte(t * 20.0 + 235.0),
-                byte(t * 135.0 + 120.0),
-                byte(t * 85.0 + 170.0),
-            ]
-        } else {
-            [1.0, 1.0, 1.0]
-        }
-    } else {
-        // `Main.cs:63493-63540`: the two night ramps, then the moon-phase light
-        // floor — `Main.cs:63792-63813` grades `minimalLight` 11 (new moon) up
-        // to 19 (full moon), applied per channel at `:63818-63829`. The
-        // blood-moon floor of 25 (`:63830-63844`) lands with the blood-moon
-        // system (M4 events); its night ramp is not ported either.
-        let (r, g, b) = if time < 16200.0 {
-            let t = 1.0 - time / 16200.0;
-            (t * 30.0 + 5.0, t * 30.0 + 5.0, t * 30.0 + 5.0)
-        } else {
-            let t = (time / 32400.0 - 0.5) * 2.0;
-            (t * 20.0 + 5.0, t * 30.0 + 5.0, t * 30.0 + 5.0)
-        };
-        // `Enums/MoonPhase.cs`: Full=0, Empty=4, the right-half mirror behind.
-        const FLOORS: [f64; 8] = [19.0, 17.0, 15.0, 13.0, 11.0, 13.0, 15.0, 17.0];
-        let floor = (FLOORS[(moon_phase & 7) as usize] / 255.0) as f32;
-        [
-            byte(r).max(floor),
-            byte(g).max(floor),
-            byte(b).max(floor),
-        ]
-    }
-}
-
-/// `Main.ApplyColorOfTheSkiesToTiles`: surface sunlight is the sky colour pulled
-/// 70 % towards its own channel.
-pub(crate) fn tile_color(sky: [f32; 3]) -> [f32; 3] {
-    let sum = sky[0] + sky[1] + sky[2];
-    [
-        (sum + 7.0 * sky[0]) / 10.0,
-        (sum + 7.0 * sky[1]) / 10.0,
-        (sum + 7.0 * sky[2]) / 10.0,
-    ]
-}
+/// `Main.ApplyColorOfTheSkiesToTiles` / the sky ramps moved to
+/// [`tr_core::sky_color`] (W4-g70 DOC-SWEEP lane 8): the full `SetBackColor`
+/// chain now runs in XNA byte space there; this module keeps the draw-side
+/// horizon blend and the celestial/parallax passes.
 
 /// `SunGradients` (`GameContent/Drawing/SunGradients.cs:37-197`): the 15-entry
 /// gradient tables are hardcoded colours; only the middle entry
@@ -160,31 +88,43 @@ pub(crate) fn atmosphere_factor(y: f32, world_surface: f64, max_tiles_x: i32) ->
     atmo.clamp(0.0, 1.0)
 }
 
-/// `Utils.Remap`: the clamped from→to lerp the visibility chain uses.
-fn remap(value: f64, from_min: f64, from_max: f64, to_min: f64, to_max: f64) -> f64 {
-    let t = ((value - from_min) / (from_max - from_min)).clamp(0.0, 1.0);
-    to_min + (to_max - to_min) * t
-}
-
 /// `NextHorizonRenderer.GetVisibilities` (`NextHorizonRenderer.cs:196-234`):
-/// the sunrise/sunset light-tint strengths. `mushroom_influence` is
-/// `Main.SmoothedMushroomLightInfluence` (0 until the mushroom biome lands)
-/// and `eclipse` is false until M4 events — both terms omitted here.
-pub(crate) fn horizon_visibilities(time: f64, day: bool, atmo: f32, cloud_alpha: f32) -> (f64, f64) {
-    let mut sunrise = 1.0f64;
-    let mut sunset = 1.0f64;
-    let num = 1.0 * atmo as f64;
-    let num2 = 1.0 - cloud_alpha as f64;
-    let num = num * num2 * num2;
+/// the sunrise/sunset light-tint strengths, verbatim in f32 (the C# floats).
+/// The mushroom factor (`:203`) and the eclipse kill (`:219-223`) are live
+/// inputs now (W4-g70 lane 8). The `gameMenu && drunkWorldGen` pair
+/// (`:230-233`) only fires while generating — the port's menus draw their own
+/// backdrop, so it stays out.
+pub(crate) fn horizon_visibilities(
+    time: f64,
+    day: bool,
+    atmo: f32,
+    cloud_alpha: f32,
+    mushroom: f32,
+    eclipse: bool,
+) -> (f32, f32) {
+    let mut sunrise = 1.0f32;
+    let mut sunset = 1.0f32;
+    // `:201-203`: `num = 1f * atmo; num2 = 1f - cloudAlpha;
+    // num = num * (num2 * num2) * (1f - mushroom)`.
+    let num2 = 1.0 - cloud_alpha;
+    let num = atmo * (num2 * num2) * (1.0 - mushroom);
     sunrise *= num;
     sunset *= num;
+    let remap32 = |v: f32, lo: f32, hi: f32, a: f32, z: f32| {
+        a + (z - a) * ((v - lo) / (hi - lo)).clamp(0.0, 1.0)
+    };
+    let t = time as f32;
     if day {
         // Dawn ramp in, morning ramp out; the sunset mirrors it around the
-        // afternoon (all windows in game ticks).
-        sunrise *= remap(time, 0.0, 2700.0, 0.0, 1.0) * remap(time, 3600.0, 10800.0, 1.0, 0.0);
-        let s = remap(time, 43200.0, 50400.0, 0.0, 1.0);
-        let e = remap(time, 50400.0, 54000.0, 1.0, 0.0);
+        // afternoon (all windows in game ticks, `:215-218`).
+        sunrise *= remap32(t, 0.0, 2700.0, 0.0, 1.0) * remap32(t, 3600.0, 10800.0, 1.0, 0.0);
+        let s = remap32(t, 43200.0, 50400.0, 0.0, 1.0);
+        let e = remap32(t, 50400.0, 54000.0, 1.0, 0.0);
         sunset *= s * e * e;
+        if eclipse {
+            sunset = 0.0;
+            sunrise = 0.0;
+        }
     } else {
         sunrise = 0.0;
         sunset = 0.0;
@@ -194,28 +134,35 @@ pub(crate) fn horizon_visibilities(time: f64, day: bool, atmo: f32, cloud_alpha:
 
 /// `NextHorizonRenderer.BlendColor` (`NextHorizonRenderer.cs:183-194`) +
 /// `Main.instance.HorizonRenderer.ModifyHorizonLight` (`Main.cs:63921`): the
-/// mid gradient entries blend into the sky/tile colour at the visibility
-/// strengths — the "HorizonClouds tint".
+/// mid gradient entries blend into the sky colour at the visibility strengths
+/// — the "HorizonClouds tint". Byte space: `Color.Lerp` truncates each channel
+/// (`(byte)(a + (b - a) * amount)`), and the max-lift target is per channel.
+/// The `ShouldDrawSurfaceBackground` gate (`NextHorizonRenderer.cs:156`) is
+/// the caller's `background_enabled && !remix` (the map-fullscreen case has
+/// no sky pass in the port).
 pub(crate) fn modify_horizon_light(
-    color: &mut [f32; 3],
+    color: &mut [u8; 3],
     moon_phase: u8,
     day: bool,
     time: f64,
     atmo: f32,
     cloud_alpha: f32,
+    mushroom: f32,
+    eclipse: bool,
 ) {
-    let (sunset, sunrise) = horizon_visibilities(time, day, atmo, cloud_alpha);
+    let (sunset, sunrise) = horizon_visibilities(time, day, atmo, cloud_alpha, mushroom, eclipse);
     let idx = horizon_phase(moon_phase, day, time) % 4;
-    for (channel, gradient) in color.iter_mut().zip(sun_gradients::SUNSETS[idx]) {
-        let grad = gradient / 255.0;
-        let target = (*channel).max(grad);
-        *channel += (target - *channel) * sunset as f32;
-    }
-    for (channel, gradient) in color.iter_mut().zip(sun_gradients::SUNRISES[idx]) {
-        let grad = gradient / 255.0;
-        let target = (*channel).max(grad);
-        *channel += (target - *channel) * sunrise as f32;
-    }
+    let blend = |c: &mut [u8; 3], grad: [f32; 3], amount: f32| {
+        if amount <= 0.0 {
+            return;
+        }
+        for (ch, g) in c.iter_mut().zip(grad) {
+            let target = (*ch as f32).max(g);
+            *ch = (*ch as f32 + (target - *ch as f32) * amount) as u8;
+        }
+    };
+    blend(color, sun_gradients::SUNSETS[idx], sunset);
+    blend(color, sun_gradients::SUNRISES[idx], sunrise);
 }
 
 /// `[lo, hi)` draw from the splitmix stream — the shape of `Random.Next(lo, hi)`.
@@ -1694,20 +1641,38 @@ mod cloud_star_tests {
 
     #[test]
     fn night_light_floor_follows_the_moon_phase() {
-        // `Main.cs:63792-63829`: midnight (t = 16200) with the ramp floor of 5
-        // lifted to the phase minimum — 19 at the full moon, 11 at the new one.
-        let full = color_of_the_skies(16200.0, false, 0);
-        let empty = color_of_the_skies(16200.0, false, 4);
-        let full_byte = full[0] * 255.0;
-        let empty_byte = empty[0] * 255.0;
-        assert!((full_byte - 19.0).abs() < 1e-4, "full moon {full:?}");
-        assert!((empty_byte - 11.0).abs() < 1e-4, "new moon {empty:?}");
+        // `Main.cs:63792-63829` via the byte-space chain (`tr_core::sky_color`):
+        // midnight (t = 16200) with the ramp floor of 5 lifted to the phase
+        // minimum — 19 at the full moon, 11 at the new one.
+        let mut i = tr_core::sky_color::BackColorInputs {
+            time: 16200.0,
+            day: false,
+            moon_phase: 0,
+            blood_moon: false,
+            eclipse: false,
+            eclipse_light: 0.0,
+            cloud_alpha: 0.0,
+            atmo: 1.0,
+            graveyard: 0.0,
+            corruption: 0.0,
+            crimson: 0.0,
+            jungle: 0.0,
+            mushroom: 0.0,
+            lightning: 0.0,
+            remix: false,
+            dont_starve: false,
+            not_retro: true,
+        };
+        assert_eq!(tr_core::sky_color::set_back_color(&i).bg, [19, 19, 19]);
+        i.moon_phase = 4;
+        assert_eq!(tr_core::sky_color::set_back_color(&i).bg, [11, 11, 11]);
         // The right-half mirror: phase 5 quarter floors at 13.
-        let quarter = color_of_the_skies(16200.0, false, 5)[0] * 255.0;
-        assert!((quarter - 13.0).abs() < 1e-4, "quarter {quarter}");
+        i.moon_phase = 5;
+        assert_eq!(tr_core::sky_color::set_back_color(&i).bg, [13, 13, 13]);
         // Daylight ignores the floor.
-        let day = color_of_the_skies(13500.0, true, 4);
-        assert!(day[0] > 0.09, "dawn stays dawn: {day:?}");
+        i.day = true;
+        i.time = 13500.0;
+        assert!(tr_core::sky_color::set_back_color(&i).bg[0] > 23);
     }
 
     #[test]
@@ -1722,42 +1687,48 @@ mod cloud_star_tests {
 
     #[test]
     fn horizon_visibilities_follow_the_day_windows() {
-        // Night: both closed (`NextHorizonRenderer.cs:231-233`).
-        let (sunset, sunrise) = horizon_visibilities(10000.0, false, 1.0, 0.0);
+        // Night: both closed (`NextHorizonRenderer.cs:225-229`).
+        let (sunset, sunrise) = horizon_visibilities(10000.0, false, 1.0, 0.0, 0.0, false);
         assert_eq!((sunset, sunrise), (0.0, 0.0));
         // Noon: the dawn window (0..10800) has closed, the dusk one (43200+)
         // has not opened.
-        let (sunset, sunrise) = horizon_visibilities(27000.0, true, 1.0, 0.0);
+        let (sunset, sunrise) = horizon_visibilities(27000.0, true, 1.0, 0.0, 0.0, false);
         assert_eq!((sunset, sunrise), (0.0, 0.0));
         // Dawn peak (t=1350): the sunrise at half strength, the sunset closed.
-        let (sunset, sunrise) = horizon_visibilities(1350.0, true, 1.0, 0.0);
+        let (sunset, sunrise) = horizon_visibilities(1350.0, true, 1.0, 0.0, 0.0, false);
         assert!(sunset < 1e-6, "sunset={sunset}");
         assert!((sunrise - 0.5).abs() < 1e-6, "sunrise={sunrise}");
         // Dusk peak (t=50400): the sunset at full strength.
-        let (sunset, sunrise) = horizon_visibilities(50400.0, true, 1.0, 0.0);
+        let (sunset, sunrise) = horizon_visibilities(50400.0, true, 1.0, 0.0, 0.0, false);
         assert!((sunset - 1.0).abs() < 1e-6, "sunset={sunset}");
         assert!(sunrise < 1e-6, "sunrise={sunrise}");
         // Cloud cover squares into the factor.
-        let (sunset_clear, _) = horizon_visibilities(50400.0, true, 1.0, 0.0);
-        let (sunset_cloudy, _) = horizon_visibilities(50400.0, true, 1.0, 0.5);
+        let (sunset_clear, _) = horizon_visibilities(50400.0, true, 1.0, 0.0, 0.0, false);
+        let (sunset_cloudy, _) = horizon_visibilities(50400.0, true, 1.0, 0.5, 0.0, false);
         assert!((sunset_cloudy - sunset_clear * 0.25).abs() < 1e-6);
+        // The mushroom factor (`:203`) scales linearly; the eclipse
+        // (`:219-223`) kills both.
+        let (sunset_shroom, _) = horizon_visibilities(50400.0, true, 1.0, 0.0, 0.5, false);
+        assert!((sunset_shroom - sunset_clear * 0.5).abs() < 1e-6);
+        assert_eq!(
+            horizon_visibilities(50400.0, true, 1.0, 0.0, 0.0, true),
+            (0.0, 0.0)
+        );
     }
 
     #[test]
     fn modify_horizon_light_lifts_dark_dawn_toward_the_gradient() {
-        // A dawn-dark sky (25,35,35)/255 with the sunrise at half strength
-        // lifts toward Sunrise_Blue[7] (68,144,149)/255 — the max-channel
-        // blend (`NextHorizonRenderer.cs:183-194`).
-        let mut c = [25.0 / 255.0, 35.0 / 255.0, 35.0 / 255.0];
-        modify_horizon_light(&mut c, 1, true, 1350.0, 1.0, 0.0);
-        let grad = [68.0 / 255.0, 144.0 / 255.0, 149.0 / 255.0];
-        for (got, want) in c.iter().zip(grad) {
-            assert!(*got > 0.09 && *got <= want + 1e-6, "got {got}, want ≤ {want}");
-        }
+        // A dawn-dark sky (25,35,35) with the sunrise at half strength lifts
+        // toward Sunrise_Blue[7] (68,144,149) — the max-channel byte blend
+        // (`NextHorizonRenderer.cs:183-194`): R = 25 + (68-25)*0.5 = 46.5 → 46,
+        // G = 35 + 54.5 = 89.5 → 89, B = 35 + 57 = 92.
+        let mut c = [25u8, 35, 35];
+        modify_horizon_light(&mut c, 1, true, 1350.0, 1.0, 0.0, 0.0, false);
+        assert_eq!(c, [46, 89, 92]);
         // The white noon colour cannot rise (the max blend + zero visibility).
-        let mut noon = [1.0, 1.0, 1.0];
-        modify_horizon_light(&mut noon, 1, true, 27000.0, 1.0, 0.0);
-        assert_eq!(noon, [1.0, 1.0, 1.0]);
+        let mut noon = [255u8, 255, 255];
+        modify_horizon_light(&mut noon, 1, true, 27000.0, 1.0, 0.0, 0.0, false);
+        assert_eq!(noon, [255, 255, 255]);
     }
 
     #[test]

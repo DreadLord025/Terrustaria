@@ -607,25 +607,45 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         }
     }
     // `Main.tileColor` = the sky tint applied to tiles
-    // (`Main.SetBackColor` + `ApplyColorOfTheSkiesToTiles`), with the rain dim
-    // the frame applies (`frame.rs`'s `rain_dim`). Only the Noir formula
-    // reads it (no M1 activation path).
+    // (`Main.SetBackColor` + `ApplyColorOfTheSkiesToTiles`). W4-g70 lane 8:
+    // the same byte-space chain the draw pass runs — the scene inputs come
+    // from the stored (last-scan) metrics, exactly like `Main.Draw` reads
+    // `Main.SceneMetrics` before the next scan.
     let quantised = (world.time / 60.0).floor() * 60.0;
-    let c = crate::render::sky::color_of_the_skies(quantised, world.day_time, world.moon_phase);
-    let rain_dim = (1.0 - rain.visual_alpha() * 0.9).max(0.1);
-    let mut c = [c[0] * rain_dim, c[1] * rain_dim, c[2] * rain_dim];
+    let atmo = crate::render::sky::atmosphere_factor(camera.y, world.world_surface, world.width);
+    let back = tr_core::sky_color::set_back_color(&tr_core::sky_color::inputs_from(
+        world,
+        &app.scene_metrics,
+        scene_state.graveyard_visual_intensity,
+        app.mushroom_light_influence,
+        app.eclipse_light,
+        rain.visual_alpha(),
+        atmo,
+        rain.flash(),
+        quantised,
+        world.day_time,
+        !matches!(
+            app.light_mode,
+            tr_core::lighting::LightMode::Retro | tr_core::lighting::LightMode::Trippy
+        ),
+    ));
+    let mut c = back.bg;
     // `ModifyHorizonLight` (`Main.cs:63921`) — the same blend the frame's
     // light-map sky colour takes, so the filters see the tinted tileColor.
-    let atmo = crate::render::sky::atmosphere_factor(camera.y, world.world_surface, world.width);
-    crate::render::sky::modify_horizon_light(
-        &mut c,
-        world.moon_phase,
-        world.day_time,
-        (world.time / 60.0).floor() * 60.0,
-        atmo,
-        rain.visual_alpha(),
-    );
-    let tile_color = crate::render::sky::tile_color(c);
+    // The `ShouldDrawSurfaceBackground` gate reads remix only (see draw.rs).
+    if !world.seeds.contains(tr_core::seeds::SeedFlags::REMIX) {
+        crate::render::sky::modify_horizon_light(
+            &mut c,
+            world.moon_phase,
+            world.day_time,
+            quantised,
+            atmo,
+            rain.visual_alpha(),
+            app.mushroom_light_influence,
+            world.eclipse,
+        );
+    }
+    let tile_color = tr_core::sky_color::apply_sky_to_tiles(c).map(|b| b as f32 / 255.0);
     let inputs = crate::app::filters::SceneVisualInputs {
         storm: &*sandstorm,
         wind_speed_current: wind.speed_current,
