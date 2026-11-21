@@ -1119,31 +1119,6 @@ pub enum NpcKind {
     /// value 40, npcSlots 0.4). The 582 lerp arm (`NPC.cs:58144-58150`:
     /// the 2.25/7 pair, the >2.5 sprint to 3) is ported.
     LarvaeAntlion,
-    /// `NPCID.FairyCritterPink` (583) — the pink fairy (`NPC.cs:
-    /// 16583-16607`, the 583/584/585 group: 18×20, aiStyle 112, dmg 0,
-    /// def 0, 5 HP, noGravity, rarity 2, catchItem 4068; no kb row —
-    /// the class default 1f `:8533`). The aiStyle-112 flutter is
-    /// UNWIRED. `DebuffImmunitySets` 583: ImmuneToAllBuffsThatAreNotWhips
-    /// + ImmuneToWhips (the `whip_immune` seam).
-    FairyCritterPink,
-    /// `NPCID.FairyCritterGreen` (584) — the green fairy (the 583 group
-    /// row, catchItem 4069, `NPC.cs:16598-16600`).
-    FairyCritterGreen,
-    /// `NPCID.FairyCritterBlue` (585) — the blue fairy (the 583 group
-    /// row, catchItem 4070, `NPC.cs:16601-16603`).
-    FairyCritterBlue,
-    /// `NPCID.ZombieMerman` (586) — the blood-moon merman (`NPC.cs:
-    /// 16608-16622`: 18×40, aiStyle 3, dmg 40, def 20, 400 HP, kb 0,
-    /// value 1000, alpha 255, rarity 1). The walk rides `AI_003`'s 586
-    /// life-scaled cap (`NPC.cs:57689-57692`: 1.5 + (1−life/lifeMax)·3.5,
-    /// ported) + the wet swim (`FindFrame` case 586, `:75411`).
-    ZombieMerman,
-    /// `NPCID.EyeballFlyingFish` (587) — the blood-moon eye fish
-    /// (`NPC.cs:16623-16637`: 32×18, aiStyle 44, dmg 35, def 18, 300 HP,
-    /// kb 0, value 1000, alpha 255, rarity 1). The aiStyle-44 machine's
-    /// 587 materialize/flee branches are ported (`npc_ai_style44.rs`)
-    /// but UNWIRED (the FlyingAntlion note).
-    EyeballFlyingFish,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3103,6 +3078,8 @@ impl Npc {
             immortal: false,
             friendly: kind.is_town_resident()
                 || kind == NpcKind::SleepingAngler
+                // W4-d42 - the explicit friendly rows (the bound stand / the maggot).
+                || kind == NpcKind::BartenderUnconscious
                 // `NPC.SetDefaults`' catchable arm (`NPC.cs:17851-17855`):
                 // every `Main.npcCatchable` kind spawns friendly with the
                 // 90-tick window (S1-P-i36).
@@ -3587,6 +3564,12 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            // W4-d42 - the NPCID 578-582 SetDefaults rows.
+            NpcKind::DD2LightningBug => 0.8,
+            NpcKind::BartenderUnconscious => 0.5,
+            NpcKind::WalkingAntlion => 0.5,
+            NpcKind::FlyingAntlion => 0.5,
+            NpcKind::LarvaeAntlion => 0.75,
             _ => 0.4,
         }
     }
@@ -3967,6 +3950,12 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            // W4-d42 - the NPCID 578-582 SetDefaults rows.
+            NpcKind::DD2LightningBug => 36,
+            NpcKind::BartenderUnconscious => 15,
+            NpcKind::WalkingAntlion => 10,
+            NpcKind::FlyingAntlion => 8,
+            NpcKind::LarvaeAntlion => 2,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4339,6 +4328,12 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            // W4-d42 - the NPCID 578-582 SetDefaults rows.
+            NpcKind::DD2LightningBug => 0.0,
+            NpcKind::BartenderUnconscious => 0.0,
+            NpcKind::WalkingAntlion => 80.0,
+            NpcKind::FlyingAntlion => 90.0,
+            NpcKind::LarvaeAntlion => 40.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6345,6 +6340,29 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // ---- W4-d42 batch 1: the NPCID 578-582 roster
+            // (data-only join). Unwired styles idle in place (the
+            // wyvern precedent); walkers ride the aiStyle-3 family,
+            // swimmers the aiStyle-16 family.
+            // `NPC.cs:16536-16553` - aiStyle 111 is UNWIRED (the
+            // wyvern precedent); the noGravity/noTileCollide raw
+            // integration tail (`NPC.cs:90494-90498`) runs so the
+            // spawn velocity carries (the style-56 arm's shape).
+            NpcKind::DD2LightningBug => {
+                self.integrate_no_tile_collide();
+            }
+            // `NPC.cs:16554-16568` - aiStyle 0 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::BartenderUnconscious => {}
+            // `NPC.cs:14854-14867` - the aiStyle-3 walk rides the C#
+            // ladder's own per-type arm (`npc_ai3_speeds.rs`).
+            NpcKind::WalkingAntlion => self.update_zombie(world, player, dt),
+            // `NPC.cs:14868-14881` - aiStyle 44 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::FlyingAntlion => {}
+            // `NPC.cs:16569-16582` - the aiStyle-3 walk rides the C#
+            // ladder's own per-type arm (`npc_ai3_speeds.rs`).
+            NpcKind::LarvaeAntlion => self.update_zombie(world, player, dt),
         }
     }
 
@@ -9095,6 +9113,69 @@ impl Npc {
                         if self.ai[2] > 130.0 && self.ai[2] < 155.0 {
                             self.frame = 7;
                         }
+                    }
+                }
+            }
+            // W4-d42 - 578 `NPC.cs:16536-16553` (`FindFrame` `NPC.cs:67875` / the fairies `:69835`): the 4-tick counter over
+            // the 4-frame strip.
+            NpcKind::DD2LightningBug => {
+                self.rotation = self.vx * 0.1;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 4.0 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                    if self.frame >= 4 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d42 - no per-kind animation: 579 `NPC.cs:16554-16568` - row 0 holds
+            // (the ForceBubble/wyvern-segment precedent).
+            NpcKind::BartenderUnconscious => {
+                self.frame = 0;
+            }
+            // W4-d42 - `FindFrame` case 580/582 (`NPC.cs:70069-70103`):
+            // air row 1, stand row 0, the walk steps rows 2..5 on the
+            // `1 + |vx|/2` accumulator (>6), wrapping to row 2.
+            NpcKind::WalkingAntlion | NpcKind::LarvaeAntlion => {
+                if self.vy != 0.0 {
+                    self.frame = 1;
+                } else if self.vx == 0.0 {
+                    self.frame = 0;
+                } else {
+                    if self.facing < 0 && self.vx < 0.0 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.facing > 0 && self.vx > 0.0 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.frame < 2 {
+                        self.frame = 2;
+                    }
+                    self.frame_counter += 1.0 + self.vx.abs() / 2.0;
+                    if self.frame_counter > 6.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    let rows = crate::render::entities::npc_rows(self.kind.cs_id());
+                    if self.frame >= rows {
+                        self.frame = 2;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 509/581 (`NPC.cs:70104-70119`):
+            // the direction-matched sprite flip + the 3-tick counter
+            // over the 9-frame strip.
+            NpcKind::FlyingAntlion => {
+                if (self.vx > 0.0 && self.facing > 0) || (self.vx < 0.0 && self.facing < 0) {
+                    self.sprite_dir = self.facing;
+                }
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 3.0 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                    if self.frame >= 9 {
+                        self.frame = 0;
                     }
                 }
             }
@@ -18659,6 +18740,12 @@ impl Npc {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-d42 - the vanilla ids 578-582 are free render keys.
+            NpcKind::DD2LightningBug => 578,
+            NpcKind::BartenderUnconscious => 579,
+            NpcKind::WalkingAntlion => 580,
+            NpcKind::FlyingAntlion => 581,
+            NpcKind::LarvaeAntlion => 582,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23727,7 +23814,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 270] = [
+    pub(super) const ALL_KINDS: [NpcKind; 275] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24006,6 +24093,12 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-d42 - the NPCID 578-582 roster.
+        NpcKind::DD2LightningBug,
+        NpcKind::BartenderUnconscious,
+        NpcKind::WalkingAntlion,
+        NpcKind::FlyingAntlion,
+        NpcKind::LarvaeAntlion,
     ];
 
     #[test]
@@ -24100,6 +24193,42 @@ mod tests {
         for (kind, _, _, _, _, _, _, _, _, _) in rows {
             assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
         }
+    }
+
+    /// W4-d42 batch 1 - the NPCID 578-582 `SetDefaults` rows pin
+    /// against the C# (NPC.cs:16536-16553, NPC.cs:16554-16568, NPC.cs:14854-14867, NPC.cs:14868-14881, NPC.cs:16569-16582), through the port's
+    /// tables - the smallkinds witness shape. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d42_b1_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::DD2LightningBug, 578u16, 111u8, 30.0, 24.0, 80, 36, 500, 0.8f32, 0.0f32),
+            (NpcKind::BartenderUnconscious, 579u16, 0u8, 34.0, 8.0, 10, 15, 250, 0.5f32, 0.0f32),
+            (NpcKind::WalkingAntlion, 580u16, 3u8, 26.0, 26.0, 25, 10, 80, 0.5f32, 80.0f32),
+            (NpcKind::FlyingAntlion, 581u16, 44u8, 30.0, 22.0, 29, 8, 60, 0.5f32, 90.0f32),
+            (NpcKind::LarvaeAntlion, 582u16, 3u8, 18.0, 18.0, 10, 2, 30, 0.75f32, 40.0f32),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The port-local wire band (the vanilla types ride cs_id/net_id).
+        assert_eq!(NpcKind::DD2LightningBug.to_u16(), 354u16);
+        assert_eq!(NpcKind::BartenderUnconscious.to_u16(), 355u16);
+        assert_eq!(NpcKind::WalkingAntlion.to_u16(), 356u16);
+        assert_eq!(NpcKind::FlyingAntlion.to_u16(), 357u16);
+        assert_eq!(NpcKind::LarvaeAntlion.to_u16(), 358u16);
+        assert_eq!(ALL_KINDS.len(), 275);
     }
 
     /// The small-kinds wiring wave: the style axis claims 21/49/56/72, so
@@ -27617,7 +27746,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            270,
+            275,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(

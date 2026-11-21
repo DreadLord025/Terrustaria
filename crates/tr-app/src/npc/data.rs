@@ -596,11 +596,6 @@ impl NpcKind {
             NpcKind::WalkingAntlion => 356,
             NpcKind::FlyingAntlion => 357,
             NpcKind::LarvaeAntlion => 358,
-            NpcKind::FairyCritterPink => 359,
-            NpcKind::FairyCritterGreen => 360,
-            NpcKind::FairyCritterBlue => 361,
-            NpcKind::ZombieMerman => 362,
-            NpcKind::EyeballFlyingFish => 363,
         }
     }
 
@@ -938,11 +933,6 @@ impl NpcKind {
             356 => NpcKind::WalkingAntlion,
             357 => NpcKind::FlyingAntlion,
             358 => NpcKind::LarvaeAntlion,
-            359 => NpcKind::FairyCritterPink,
-            360 => NpcKind::FairyCritterGreen,
-            361 => NpcKind::FairyCritterBlue,
-            362 => NpcKind::ZombieMerman,
-            363 => NpcKind::EyeballFlyingFish,
             _ => return None,
         })
     }
@@ -1823,6 +1813,12 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            // W4-d42 - the roster's HitSound rows.
+            NpcKind::DD2LightningBug => "dd2_lightning_bug_hurt_0",
+            NpcKind::BartenderUnconscious => "NPC_Hit_1",
+            NpcKind::WalkingAntlion => "NPC_Hit_31",
+            NpcKind::FlyingAntlion => "NPC_Hit_32",
+            NpcKind::LarvaeAntlion => "NPC_Hit_31",
             _ => return None,
         })
     }
@@ -2127,6 +2123,13 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            // W4-d42 - the roster's DeathSound rows (614's null row
+            // rides the None fall-through).
+            NpcKind::DD2LightningBug => "dd2_lightning_bug_death_0",
+            NpcKind::BartenderUnconscious => "NPC_Killed_6",
+            NpcKind::WalkingAntlion => "NPC_Killed_34",
+            NpcKind::FlyingAntlion => "NPC_Killed_35",
+            NpcKind::LarvaeAntlion => "NPC_Killed_34",
             _ => return None,
         })
     }
@@ -2226,6 +2229,9 @@ impl NpcKind {
             // The Angry Nimbus (250) — `SetDefaults` writes no flag, but the
             // aiStyle-49 AI head sets `noGravity = true` every tick
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
+            // W4-d42 - the noGravity rows.
+            NpcKind::DD2LightningBug
+            => true,
             NpcKind::AngryNimbus => true,
             _ => false,
         }
@@ -2478,6 +2484,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // W4-d42 - the NPCID 578-582 SetDefaults rows.
+            NpcKind::DD2LightningBug => 111,
+            NpcKind::BartenderUnconscious => 0,
+            NpcKind::WalkingAntlion => 3,
+            NpcKind::FlyingAntlion => 44,
+            NpcKind::LarvaeAntlion => 3,
         }
     }
 
@@ -2586,6 +2598,10 @@ impl NpcKind {
             NpcKind::Nutcracker | NpcKind::Krampus => 2.0,
             NpcKind::NutcrackerSpinning => 6.0,
             NpcKind::ElfArcher => 1.0,
+            // W4-d42 - the ladder's per-type caps (`npc_ai3_speeds.rs`;
+            // 586's row is the full-life base of the life-scaled cap).
+            NpcKind::WalkingAntlion => 2.5,
+            NpcKind::LarvaeAntlion => 2.25,
             _ => return None,
         })
     }
@@ -3008,6 +3024,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-d42 - the NPCID 578-582 SetDefaults rows.
+            NpcKind::DD2LightningBug => (30.0, 24.0),
+            NpcKind::BartenderUnconscious => (34.0, 8.0),
+            NpcKind::WalkingAntlion => (26.0, 26.0),
+            NpcKind::FlyingAntlion => (30.0, 22.0),
+            NpcKind::LarvaeAntlion => (18.0, 18.0),
         }
     }
 
@@ -3110,6 +3132,14 @@ impl NpcKind {
             // not cs_id; the render sheets keep 371/373 via render_key.
             NpcKind::DukeFishron => 370,
             NpcKind::Sharkron => 372,
+            // W4-d42 - the roster's TRUE vanilla types (the folded kinds
+            // keep their own - the AI arms read cs_id; the bestiary
+            // folds in entry_for_npc only).
+            NpcKind::DD2LightningBug => 578,
+            NpcKind::BartenderUnconscious => 579,
+            NpcKind::WalkingAntlion => 580,
+            NpcKind::FlyingAntlion => 581,
+            NpcKind::LarvaeAntlion => 582,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -3649,6 +3679,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-d42 - the NPCID 578-582 SetDefaults rows.
+            NpcKind::DD2LightningBug => 500,
+            NpcKind::BartenderUnconscious => 250,
+            NpcKind::WalkingAntlion => 80,
+            NpcKind::FlyingAntlion => 60,
+            NpcKind::LarvaeAntlion => 30,
         }
     }
 
@@ -4013,6 +4049,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-d42 - the NPCID 578-582 SetDefaults rows.
+            NpcKind::DD2LightningBug => 80,
+            NpcKind::BartenderUnconscious => 10,
+            NpcKind::WalkingAntlion => 25,
+            NpcKind::FlyingAntlion => 29,
+            NpcKind::LarvaeAntlion => 10,
         }
     }
 }

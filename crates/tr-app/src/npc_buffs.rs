@@ -484,6 +484,15 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+        // W4-d42 - the NPCID 578-582 immunity rows (`NPCID.cs:9395+`).
+        // The null rows + the fairies' ImmuneToAllBuffsThatAreNotWhips
+        // (the mask loop is unmodelled - the documented gap; the
+        // fairies' ImmuneToWhips rides `whip_immune`).
+        NpcKind::WalkingAntlion
+        | NpcKind::FlyingAntlion
+        | NpcKind::LarvaeAntlion => &[],
+        NpcKind::DD2LightningBug
+        | NpcKind::BartenderUnconscious => &[31],
     }
 }
 

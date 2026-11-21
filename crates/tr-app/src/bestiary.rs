@@ -2171,6 +2171,40 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Force Bubble",
     },
+    // W4-d42 - the NPCID 578-582 roster's own credits (the
+    // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
+    BestiaryEntryDef {
+        credit_id: "DD2LightningBugT3",
+        net_id: 578,
+        kind: NpcKind::DD2LightningBug,
+        variant: None,
+        quick_unlock: false,
+        name: "Etherian Lightning Bug",
+    },
+    BestiaryEntryDef {
+        credit_id: "WalkingAntlion",
+        net_id: 580,
+        kind: NpcKind::WalkingAntlion,
+        variant: None,
+        quick_unlock: false,
+        name: "Antlion Charger",
+    },
+    BestiaryEntryDef {
+        credit_id: "FlyingAntlion",
+        net_id: 581,
+        kind: NpcKind::FlyingAntlion,
+        variant: None,
+        quick_unlock: false,
+        name: "Antlion Swarmer",
+    },
+    BestiaryEntryDef {
+        credit_id: "LarvaeAntlion",
+        net_id: 582,
+        kind: NpcKind::LarvaeAntlion,
+        variant: None,
+        quick_unlock: false,
+        name: "Antlion Larva",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -2363,6 +2397,9 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // it never has an entry of its own (the Sleeping Angler precedent;
         // the banner fold agrees — `BannerSystem.cs:777-779` shares 141).
         NpcKind::ForceBubble => NpcKind::MartianOfficer,
+        // W4-d42 - the Hide=true folds (`NPCID.cs`'s draw modifiers):
+        // one credit per family (the SleepingGolfer precedent).
+        NpcKind::BartenderUnconscious => NpcKind::DD2Bartender,
         other => other,
     };
     ENTRIES

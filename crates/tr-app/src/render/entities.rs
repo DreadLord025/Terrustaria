@@ -869,6 +869,8 @@ fn npc_add_height(n: &Npc) -> f32 {
         // `:22169` 269/270/271/274/277 — the Painted/vanity town ids' -2.
         // `:22174` the `townNPC && ai[0] == 5` sitting row: -4 as a flat
         // shift, -6 for the Mechanic's 124 and -14 for the town slimes.
+        // `Main.cs:22153` - the 579 row.
+        BartenderUnconscious => -2.0,
         _ => 0.0,
     };
     // `:22174`: the `townNPC && ai[0] == 5` sitting row — a `num -= 4`
@@ -1113,6 +1115,10 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // (the officer's shield overlay, `Main.cs:25773-25777`) — the
         // fishron-hazard precedent. The turret has its own entry (387).
         NpcKind::ForceBubble => 384,
+        // W4-d42 - the folded kinds keep their OWN draw sheets (the
+        // ForceBubble precedent - the bestiary credit folds, the
+        // sheet does not).
+        NpcKind::BartenderUnconscious => 579,
         _ => kind.net_id() as u16,
     }
 }
@@ -3169,6 +3175,25 @@ pub(crate) fn draw_npcs(
             }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
+            }
+            // W4-d42 - the roster's draw arms ride the generic anchor over
+            // their own NPC_<id> sheets. The sheets are NOT packed yet
+            // (the atlas headroom - the wyvern deferral precedent), so
+            // `npc_sheet` returns None and the arm no-draws.
+            NpcKind::DD2LightningBug => {
+                generic_anchor(assets.npc_sheet(578), npc_rows(578), n, w, h)
+            }
+            NpcKind::BartenderUnconscious => {
+                generic_anchor(assets.npc_sheet(579), npc_rows(579), n, w, h)
+            }
+            NpcKind::WalkingAntlion => {
+                generic_anchor(assets.npc_sheet(580), npc_rows(580), n, w, h)
+            }
+            NpcKind::FlyingAntlion => {
+                generic_anchor(assets.npc_sheet(581), npc_rows(581), n, w, h)
+            }
+            NpcKind::LarvaeAntlion => {
+                generic_anchor(assets.npc_sheet(582), npc_rows(582), n, w, h)
             }
         };
         let Some(tex) = tex else {
