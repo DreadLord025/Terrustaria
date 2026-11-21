@@ -484,6 +484,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_49",
         "Extra_98",
         "FlameRing",
+        // W4-d13: the 650 Suspicious Looking Tentacle's spelunker-pointer
+        // sprite (`TextureAssets.Extra[66]`, `Main.cs:34025`) — the draw
+        // arm behind the pet's generic sprite (`:34026`).
+        "Extra_66",
         // S1-G-1 wave D: the pylon crystal (`TextureAssets.Extra[181]`,
         // `TileDrawing.cs:8656`), the master-trophy relic (`Extra[198]`,
         // `:8612`) and the void lens's selection mask (`Extra[93]`,
@@ -1985,6 +1989,9 @@ pub struct Lookups {
     /// (`Main.cs:57248`) — loaded for S1-E-16, the draw is gated on
     /// `Player.hasPaladinShield` (unported).
     pub extra_98: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Extra[66]`: the 650 tentacle pet's spelunker-pointer
+    /// sprite (`Main.cs:34025`) — W4-d13's draw arm consumes it.
+    pub extra_66: Option<tr_render::SheetRect>,
     /// `TextureAssets.FlameRing`: the inferno halo (`Main.cs:64321`), 400×1200
     /// (3 rings of 400×400) — the draw is gated on `Player.inferno`.
     pub flame_ring: Option<tr_render::SheetRect>,
@@ -2403,6 +2410,7 @@ impl Lookups {
             extra_305: atlas.sheet("Extra_305").copied(),
             extra_49: atlas.sheet("Extra_49").copied(),
             extra_98: atlas.sheet("Extra_98").copied(),
+            extra_66: atlas.sheet("Extra_66").copied(),
             flame_ring: atlas.sheet("FlameRing").copied(),
             moon_explosion: MOON_EXPLOSION_SHEETS.map(|name| atlas.sheet(name).copied()),
             ui_heart: atlas.sheet("Heart").copied(),

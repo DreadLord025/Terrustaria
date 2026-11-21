@@ -111,11 +111,10 @@ fn idle_rotation(rot: f32) -> f32 {
 /// player-velocity state 1 reaches 7 px, every other state 5), the
 /// fractional angle + the IEEERemainder extension place the Extra[66]
 /// pointer sprite at `pos + unit(f) * ext * reach * scale`, drawn at scale
-/// `1 + floor(localAI[1]) * 0.02`. PORTED-UNWIRED: the render lane's
-/// projectile pass consumes it when the Extra-66 atlas slot lands (the
-/// g78 sight-sweep coordination — this is the spelunker-pointer consumer,
-/// NOT the echo-sight chain g78 owns).
-#[allow(dead_code)] // PORTED-UNWIRED: the render lane consumes it (the doc)
+/// `1 + floor(localAI[1]) * 0.02`. WIRED (W4-d13 activation wave):
+/// `Projectile::draw_with_hand`'s 650 arm consumes it through
+/// `tentacle_pointer_quad` behind the generic sprite push — the spelunker-
+/// pointer consumer, NOT the echo-sight chain g78 owns.
 pub(crate) fn tentacle_pointer_pose(
     local_ai0: f32,
     local_ai1: f32,

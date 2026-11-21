@@ -39321,13 +39321,38 @@ no port fields - the standing hazard-lane deviation.
 ports `DrawProjectile`'s 650 arm (`Main.cs:34007-34027`): the state tag
 `(int)(localAI[0]/2pi)` picks the reach (state 1 -> 7 px, else 5), the
 fractional angle + IEEERemainder extension place the Extra[66] sprite,
-`1 + floor(localAI[1])*0.02` scales it. PORTED-UNWIRED - the render
-lane's projectile pass consumes it when the Extra-66 atlas slot lands.
+`1 + floor(localAI[1])*0.02` scales it. PORTED-UNWIRED at the residual
+wave - WIRED by the activation wave below (the Extra-66 atlas slot landed).
 g78 owns the ECHO-sight chain (`ShouldShowInvisibleBlocksAndWalls`), not
 the spelunker pointer; no g78b branch exists. The 650 scan's
 `IsTileSpelunkable` table was re-censused against `Main.cs:9420-9467`
 + `:9651` + `:21783-21798` - all 49 ids + the two frame-window arms
 match the port verbatim.
+
+### The activation wave (W4-d13, 2026-11-21, code-only mode)
+
+**(1) The 650 pointer WIRED into the proj-draw pass.** The draw-side census:
+`Main.cs:33674`'s common `EntitySpriteDraw` push draws the pet's generic
+sprite for EVERY kind in the `:33172` list (the 650 included), THEN the
+`:34007-34027` else-if chain adds the Extra[66] pointer BEHIND it — own
+sheet (`sourceRectangle: null`), own origin (`texture.Size()/2`), own scale
+(`num438 = 1 + floor(localAI[1])*0.02` — `proj.scale` multiplies the OFFSET
+only, `:34024`), `SpriteEffects.None` (no facing flip), tint `color80 =
+proj.GetAlpha(projectileColor)` (`:33227`), anchor `vector98 + vector111`
+where `vector98` carries `gfxOffY` (`:33174`). The port wires it at
+`Projectile::draw_with_hand`'s tail behind the generic push (the
+`draw_lights_bane` per-type-arm seam pattern): `tentacle_pointer_quad`
+(the pure `frame_quad` shape — the ui batch's screen-px anchor + the
+`origin − R·origin` pivot shift) consumes `tentacle_pointer_pose`; the
+`#[allow(dead_code)]` PORTED-UNWIRED marker is REMOVED. `Extra_66` joins
+the static-sheet load list + `Lookups.extra_66` (the `extra_49` pattern);
+the sheet missing → the pointer arm skips (the generic sprite keeps
+drawing — the shuriken-fallback precedent). The pets' generic-sprite
+`origin32.Y -= 4` tweak (`:33629-33632`) stays the generic arm's unported
+origin ladder — cited at the wire site, not this arm's (the pointer's
+origin is the Extra sheet's own half). 1 witness
+(`w4_d13_the_pointer_quad_places_the_pivot_on_the_pose_anchor`) WRITTEN
+NOT RUN.
 
 ### Verification
 

@@ -10421,6 +10421,28 @@ impl Projectile {
             [c[0], c[1], c[2], 1.0],
             self.rot,
         );
+        // W4-d13 — `Main.cs:34007-34027`: the 650's spelunker pointer draws
+        // AFTER the generic sprite (`:33674`'s common push), on the
+        // `TextureAssets.Extra[66]` sheet with its OWN origin
+        // (`texture.Size()/2`) and scale (`1 + floor(localAI[1])·0.02`, NOT
+        // `proj.scale` — that rides the offset only), `SpriteEffects.None`.
+        // The pose decode is `tentacle_pointer_pose` (the steering tail's
+        // `:35694-35695` re-encode inverse). The pets' generic-sprite
+        // `origin32.Y -= 4` tweak (`:33629-33632`) is the generic arm's own
+        // unported origin ladder — cited, not this arm's.
+        if self.kind == SUSPICIOUS_TENTACLE {
+            if let Some(sheet) = lookups.extra_66 {
+                let q = self.tentacle_pointer_quad(
+                    &sheet,
+                    lookups.atlas_size,
+                    light,
+                    camera,
+                    zoom,
+                    screen,
+                );
+                r.push_ui_sprite_rot(q.tl, q.size, q.uv, q.tint, self.rot);
+            }
+        }
     }
 
     /// `Main.DrawProj_LightsBane` (`Main.cs:27455-27495`) — the Light's Bane
@@ -10526,6 +10548,62 @@ impl Projectile {
             size,
             uv,
             tint: [c[0] * fade, c[1] * fade, c[2] * fade, fade],
+        }
+    }
+
+    /// `Main.cs:34007-34027` — the 650 spelunker-pointer quad, computed pure
+    /// so the unit tests pin it without a GPU (the [`Self::frame_quad`]
+    /// pattern). The anchor is `vector98 + vector111`: the box centre +
+    /// `gfxOffY` (`:33174`) plus [`crate::projectile_ai_pets124::tentacle_pointer_pose`]'s
+    /// offset; the sheet is `Extra_66` whole (`sourceRectangle: null`,
+    /// `:34026`), the origin its own `Size()/2`, the scale the pose's
+    /// `1 + floor(localAI[1])·0.02` — the `origin − R·origin` top-left shift
+    /// keeps the C# pivot pinned like `frame_quad`. The tint is `color80 =
+    /// proj.GetAlpha(projectileColor)` (`:33227`) — the same light × fade
+    /// the generic arm reads at the box centre (the port's `GetAlpha`
+    /// convention, `frame_quad`'s tint doc).
+    fn tentacle_pointer_quad(
+        &self,
+        sheet: &tr_render::SheetRect,
+        atlas_size: (u32, u32),
+        light: &LightMap,
+        camera: Vec2,
+        zoom: f32,
+        screen: Vec2,
+    ) -> FrameQuad {
+        let (off, pose_scale) = crate::projectile_ai_pets124::tentacle_pointer_pose(
+            self.local_ai[0],
+            self.local_ai[1],
+            self.scale,
+        );
+        let size = [
+            sheet.width as f32 * pose_scale * zoom,
+            sheet.height as f32 * pose_scale * zoom,
+        ];
+        // `:34024`'s `vector98 + vector111` — the ui batch's screen-px
+        // conversion (the `frame_quad` anchor).
+        let anchor = [
+            (self.pos.x + self.w * 0.5 + off.x - camera.x) * zoom + screen.x * 0.5,
+            (self.pos.y + self.h * 0.5 + self.gfx_off_y + off.y - camera.y) * zoom
+                + screen.y * 0.5,
+        ];
+        // `:34026`'s `origin = texture2D4.Size() / 2f`, scaled.
+        let origin = [size[0] * 0.5, size[1] * 0.5];
+        let (s, c) = self.rot.sin_cos();
+        let tl = [
+            anchor[0] - (origin[0] * c - origin[1] * s),
+            anchor[1] - (origin[0] * s + origin[1] * c),
+        ];
+        let lc = crate::rain::light_at(
+            light,
+            Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5),
+        );
+        let fade = (1.0 - self.alpha as f32 / 255.0).clamp(0.0, 1.0);
+        FrameQuad {
+            tl,
+            size,
+            uv: assets::uv_rect(sheet, atlas_size, 0, 0, sheet.width, sheet.height),
+            tint: [lc[0] * fade, lc[1] * fade, lc[2] * fade, fade],
         }
     }
 
@@ -31423,6 +31501,75 @@ mod ritual_projectile_tests {
             p.ai_vortex_ritual((300.0, 300.0), &mut rng);
         }
         assert!(!p.active, "the marker dies");
+    }
+
+    /// W4-d13 activation — `Main.cs:34007-34027`'s pointer quad: the pivot
+    /// lands on `centre + gfxOffY + pose offset` (the `vector98 + vector111`
+    /// anchor), the size rides the POSE scale (`1 + floor(localAI[1])·0.02`)
+    /// — not `proj.scale`, which multiplies the offset only — and the uv
+    /// covers the whole Extra_66 sheet (`sourceRectangle: null`). The
+    /// `origin − R·origin` shift keeps the rotated pivot pinned (the
+    /// `the_quads_place_the_origin_texel_on_the_anchor` precedent).
+    #[test]
+    fn w4_d13_the_pointer_quad_places_the_pivot_on_the_pose_anchor() {
+        use std::f32::consts::PI;
+        let sheet = tr_render::SheetRect {
+            x: 8,
+            y: 16,
+            width: 14,
+            height: 10,
+            plain_frame: (0, 0),
+        };
+        let atlas = (512u32, 512u32);
+        let light = LightMap::default(); // w/h 0 → the bright [1;3] read
+        let mut p = rspawn(SUSPICIOUS_TENTACLE, 200.0, 200.0);
+        p.w = 20.0;
+        p.h = 20.0;
+        p.gfx_off_y = 3.0;
+        p.scale = 2.0;
+        // The idle rest pose: localAI[0] = π (angle 0, state 0), ext 0.05
+        // → off = (0.05·5·2, 0) = (0.5, 0), pose scale 1.
+        p.local_ai[0] = PI;
+        p.local_ai[1] = 0.05;
+        let cam = Vec2::new(150.0, 150.0);
+        let screen = Vec2::new(800.0, 600.0);
+        let q = p.tentacle_pointer_quad(&sheet, atlas, &light, cam, 1.0, screen);
+        // Anchor: centre (210, 210) + gfxOffY (0, 3) + off (0.5, 0), then
+        // the screen conversion (−cam)·1 + screen/2.
+        let anchor = [210.5 - 150.0 + 400.0, 213.0 - 150.0 + 300.0];
+        let near = |a: [f32; 2], b: [f32; 2]| {
+            assert!((a[0] - b[0]).abs() < 1e-4 && (a[1] - b[1]).abs() < 1e-4, "{a:?} vs {b:?}");
+        };
+        near([q.tl[0] + q.size[0] * 0.5, q.tl[1] + q.size[1] * 0.5], anchor);
+        near(q.size, [14.0, 10.0]); // pose scale 1 — NOT proj.scale 2
+        assert_eq!(
+            q.uv,
+            assets::uv_rect(&sheet, atlas, 0, 0, 14, 10),
+            "the whole sheet"
+        );
+        assert_eq!(q.tint, [1.0; 4], "alpha 0, bright light");
+        // The floor ladder: localAI[1] = 10.75 → pose scale 1.2, ext 0.75
+        // (the IEEERemainder fraction), state 0 → off (0.75·5·2, 0).
+        p.local_ai[1] = 10.75;
+        let q = p.tentacle_pointer_quad(&sheet, atlas, &light, cam, 1.0, screen);
+        near(q.size, [14.0 * 1.2, 10.0 * 1.2]);
+        let anchor = [210.0 + 7.5 - 150.0 + 400.0, 213.0 - 150.0 + 300.0];
+        near([q.tl[0] + q.size[0] * 0.5, q.tl[1] + q.size[1] * 0.5], anchor);
+        // Rotated: the pivot still lands on the anchor (the R·origin shift).
+        p.rot = 0.7;
+        let q = p.tentacle_pointer_quad(&sheet, atlas, &light, cam, 1.0, screen);
+        let (s, c) = 0.7f32.sin_cos();
+        let o = [q.size[0] * 0.5, q.size[1] * 0.5];
+        near(
+            [q.tl[0] + o[0] * c - o[1] * s, q.tl[1] + o[0] * s + o[1] * c],
+            anchor,
+        );
+        // Zoom 2 scales the size AND the anchor conversion.
+        p.rot = 0.0;
+        let q = p.tentacle_pointer_quad(&sheet, atlas, &light, cam, 2.0, screen);
+        near(q.size, [14.0 * 1.2 * 2.0, 10.0 * 1.2 * 2.0]);
+        let anchor = [(217.5 - 150.0) * 2.0 + 400.0, (213.0 - 150.0) * 2.0 + 300.0];
+        near([q.tl[0] + q.size[0] * 0.5, q.tl[1] + q.size[1] * 0.5], anchor);
     }
 
     /// W4-d13 — the 813 row (`Projectile.cs:6282-6293`, the shared block):
