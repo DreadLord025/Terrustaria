@@ -3320,6 +3320,21 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // dispatch (the W4-f25 C3/C4 wiring) converts 146 → type 2 and
             // 1015/1016/1017 → types 5/6/7; 147/148/149 stay no-ops until
             // d1's type-1/4 / g42's type-3 cells land.
+            //
+            // W4-f25e CONVERT-RETIRE verdict (keep-d18c, 12g "the dup
+            // verdicts"): d18's 78ffe8e11 rowed the SAME seven kinds with
+            // the FULL state group — alpha 255 + ignoreWater true
+            // (`:2356`/`:2360`/`:2368`/`:2372`/`:2380`/`:2384`/`:2392`/
+            // `:2396`, `DefaultToSpray` `:10697`/`:10701`) — the verbatim
+            // superset of this RESET_STATE copy (which inherits the 145
+            // row's dropped-alpha/ignoreWater M3-ITEM-6 deviation). The
+            // merger KEEPS d18's row + ignoreWater overlay and DROPS this
+            // block; f25's row/dispatch/ammo witnesses all pass on d18's
+            // rows (they assert no alpha), d18's row witness (alpha 255 /
+            // ignoreWater) FAILS on this copy — keep-one is forced. The
+            // rows STAY on this branch until the merge: the armed
+            // ai_spray dispatch + its witnesses need rowed kinds (the
+            // d18-978 merge-order precedent, f53de9c71).
             146..=149 | 1015..=1017 => {
                 (6.0, 6.0, 31, -1, TIME_LEFT_DEFAULT, 2, false, false, false, RESET_STATE)
             }

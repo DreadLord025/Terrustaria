@@ -800,6 +800,11 @@ mod tests {
     /// `DefaultToSpray` (`:9633-9636` → `:10691-10702`): 6x6, aiStyle 31,
     /// pen -1, extraUpdates 2, tileCollide false, the stock 3600 life, no
     /// class flag / immunity pair. WRITTEN NOT RUN (code-only round).
+    /// W4-f25e keep-one verdict: keep-d18c (78ffe8e11) — this sweep passes
+    /// on BOTH copies (it asserts no alpha/ignoreWater); d18's own row
+    /// witness additionally pins alpha 255 / ignoreWater true and only
+    /// passes on its superset rows, so the merger drops THIS branch's
+    /// RESET_STATE block (the row-site note carries the drop-hunk).
     #[test]
     fn w4_f25_closeout_the_solution_sprays_carry_the_145_row() {
         for kind in (146..=149u16).chain(1015..=1017) {

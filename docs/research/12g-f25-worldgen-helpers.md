@@ -390,3 +390,73 @@ hand-derived from the cited C# windows (read in <=100-line slices).
   stay unwired (zero C# call sites).
 - The seven solution-spray rows (5e83d3ecb) complete the ai_spray
   dispatch; 147/148/149 stay no-ops until d1/g42 merge.
+
+## f25e CONVERT-RETIRE (2026-11-21) — the dup verdicts + the closeout re-verify
+
+The dispatched-earlier retire round, verified/executed against the pushed
+tips (d18 tip 6e8083751, d1 tip 212516a82, g42 tip 910cc9747, g46 tip
+9bc722e5f — all fetched). Code-only; witnesses written not run.
+
+### 1. The seven-spray-rows DUP — keep-d18c (78ffe8e11)
+
+Both lanes rowed 146-149/1015-1017: f25 5e83d3ecb (09:22, the solutions
+census) and d18 78ffe8e11 (09:41, "rows UNCLAIMED on every pushed tip" —
+written against f25's pre-closeout tip b004f4f1b). Per-field compare
+against the C# re-read (`Projectile.cs:2350-2397` the four line-identical
+blocks, `:10691-10702` `DefaultToSpray`):
+
+| field | C# | f25 row (RESET_STATE) | d18c row |
+| --- | --- | --- | --- |
+| 6x6 / aiStyle 31 / pen −1 / extraUpdates 2 / tileCollide false / stock 3600 | yes | yes | yes |
+| alpha 255 (`:2356`/`:10697`) | yes | **0 (dropped)** | **255** |
+| ignoreWater true (`:2360`/`:10701`) | yes | **false (dropped)** | **true (overlay)** |
+| class flag / immunity pair | none | none | none |
+
+f25's copy inherits the 145 row's M3-ITEM-6 dropped-alpha/ignoreWater
+devolution; d18c is the VERBATIM superset. **KEEP d18c.** The verdict is
+forced by the witnesses: f25's row sweep
+(`w4_f25_closeout_the_solution_sprays_carry_the_145_row`) asserts no
+alpha/ignoreWater and passes on BOTH copies; d18's
+`w4_d18_the_solution_spray_rows_are_the_145_shape` pins alpha 255 +
+ignoreWater and FAILS on the f25 copy. The dispatch witness
+(`w4_f25_the_spray_dispatch_converts_each_solution_type`) and the ammo
+resolution witness (`w4_f25_closeout_all_eight_solutions_resolve_on_both_
+clentaminators`) pass on d18's rows unchanged (same box/style/life).
+
+**THE DROP-HUNK (for the merger — drop from the f25 side):**
+1. `projectile/data.rs` — the `146..=149 | 1015..=1017 => { RESET_STATE }`
+   block + its comment (the row-site carries the keep-d18c note); keep
+   d18's `(6.0, 6.0, 31, -1, TIME_LEFT_DEFAULT, 2, …, (false, -2, false,
+   -1, 255, 1.0))` row.
+2. `projectile/data.rs` — nothing else: d18's ignoreWater overlay arm
+   (`|| matches!(kind, 146..=149 | 1015..=1017)`) is d18-side only; f25
+   never added one.
+3. The f25 witnesses STAY (they pass on d18's rows); d18's census-flags
+   extension + row witness STAY. No f25 ai_spray/ammo hunk drops.
+
+The rows STAY on this branch until the merge (the armed ai_spray dispatch
++ the `proj(kind)` witnesses need rowed kinds — the d18-978 merge-order
+precedent f53de9c71, "merge-order not coverage").
+
+### 2. The powder items — VERIFIED, d1 owns the machine (no port here)
+
+Re-verified at d1 tip 212516a82: `660e111fc` (projectile_ai_powder::step),
+`7e70c3c91` (the five SetDefaults rows), `78dc52720` (convert_sized types
+11/1/4) are all ancestors of the tip (`merge-base --is-ancestor` = 0).
+`ItemID.cs:2071/:2073` re-read: 194 = MushroomGrassSeeds, 195 =
+JungleGrassSeeds — grass SEEDS, not powders (the prompt's ids corrected,
+the closeout-3 census stands). The real powders 66/67/2886 (shoot
+10/11/463) are registry-rowed here and ride the generic throw path; the
+aiStyle-6 machine calls Convert types 11/1/4 ONLY — f25's C3/C4/C5 cells
+(2/5/6/7/8/9/10) are disjoint. Nothing owed on this branch; the merge
+lands d1's machine whole (the CONV_THORN dedupe note stands).
+
+### 3. Convert 15/16/18/19 — VERIFIED zero C# call sites, unwired stands
+
+Whole-decompile re-grep: no `Convert(…, 15|16|18|19[,)]` call and no
+`conversionType = 15|16|18|19` assignment anywhere (the assignment census
+hits are 1/2/4 only — `:2045-2059`, `:18379-18382`, `:26437-26440`,
+`:75009-75016`). The four arms stay dead-code ports (`convert_biome_cell`
++ `convert_sized_biome`, 9fc704a15), UNWIRED; c32's BiomeDungeonRoom
+bodies use `DungeonUtils.ChangeTileType`, not Convert. Both pins
+unchanged.
