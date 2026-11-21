@@ -351,6 +351,14 @@ impl DustPool {
                     dust.active = false;
                 }
             }
+            // `:473-476` — the lava-bubble budget: every live type-35 slot
+            // increments the static BEFORE the move (the C# order). The
+            // head reset (`:427`) above zeroes it each pass; the draw-path
+            // `Dust.lavaBubbles < 200` gate (`Main.cs:57785`, the retro
+            // lava-bubble pair, W4-g13) reads the running total. No RNG draw.
+            if dust.dust_type == 35 {
+                self.lava_bubbles += 1;
+            }
             // `:477` — the move.
             dust.position += dust.velocity;
             // `:467-2334` — the per-type chain + its standalone arms: S1-E-2
@@ -2090,6 +2098,41 @@ mod tests {
         tick(&mut pool, &mut rng, &t);
         assert_eq!(pool.lava_bubbles, 0);
         assert_eq!(pool.sand_storm_count, 0);
+    }
+
+    /// W4-g13 — `Dust.lavaBubbles` maintenance (`Dust.cs:427` reset + `:475`
+    /// increment): every live type-35 slot bumps the static once per pass,
+    /// before the move; non-35 slots do not; the head reset zeroes it each
+    /// pass so the count is the live population, not an accumulator. The
+    /// draw-path `< 200` gate (`Main.cs:57785`) reads this. No RNG draws.
+    #[test]
+    fn w4_g13_lava_bubbles_counts_the_live_type35_population() {
+        let mut pool = new_pool();
+        let mut rng = UnifiedRandom::new(42);
+        let w = world();
+        let sc = ctx(6000);
+        let a = spawn(&mut pool, &mut rng, &w, &sc, 35);
+        let b = spawn(&mut pool, &mut rng, &w, &sc, 35);
+        let c = spawn(&mut pool, &mut rng, &w, &sc, 35);
+        let other = spawn(&mut pool, &mut rng, &w, &sc, 60);
+        // Keep them alive across passes (the scale floor would otherwise kill).
+        for &i in &[a, b, c, other] {
+            pool.slot_mut(i).scale = 1.0;
+        }
+        let t = uctx(6000);
+        let before = rng.clone();
+        tick(&mut pool, &mut rng, &t);
+        assert_eq!(pool.lava_bubbles, 3, "three live type-35 slots");
+        assert_eq!(rng, before, "the increment draws nothing");
+        // A second pass resets then re-counts (not 6).
+        tick(&mut pool, &mut rng, &t);
+        assert_eq!(pool.lava_bubbles, 3, "the head reset keeps it a population");
+        // Killing one type-35 drops the count.
+        pool.slot_mut(b).active = false;
+        tick(&mut pool, &mut rng, &t);
+        assert_eq!(pool.lava_bubbles, 2);
+        // The non-35 slot never contributed.
+        assert!(pool.slot(other).active);
     }
 
     /// DW-1.2 — the loop's `else` arm kills the past-budget slots, active or
