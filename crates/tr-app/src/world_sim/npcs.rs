@@ -7258,6 +7258,25 @@ fn spawn_heals(app: &mut App, npc: &Npc) {
         crate::npc_death_heals::drop_boss_potions_and_hearts(net_id, &mut latches, rng, &mut out);
         app.world.eoc_killed_today = latches.eoc_killed_today;
         app.world.wof_killed_today = latches.wof_killed_today;
+        // `DoDeathEvents_CelebrateBossDeath` (`NPC.cs:79018-79034`, the
+        // `:79508` call right after the potion tail): the boss-defeated
+        // announcement in the BossOrEvent color. The Twins share the
+        // plural "TheTwins" name, the Moon Lord core the "MoonLord" name,
+        // every other boss its own `GetTypeNetName` (`NPCName.<const>`).
+        // `NPCDamageTracker.BossKilled` (`:79020`) is the damage-summary
+        // tracker — unported (the combat-text lane), no RNG.
+        let name = match net_id {
+            125 | 126 => crate::lang::text("Enemies.TheTwins"),
+            398 => crate::lang::text("Enemies.MoonLord"),
+            _ => crate::lang::npc_name(net_id),
+        };
+        let key = if net_id == 125 || net_id == 126 {
+            "Announcement.HasBeenDefeated_Plural"
+        } else {
+            "Announcement.HasBeenDefeated_Single"
+        };
+        let msg = crate::lang::text_args(key, &[name]);
+        crate::chat::broadcast_death_text(&mut app.chat, &msg, crate::chat::COLOR_BOSS_OR_EVENT);
     }
     // `Main.expertMode` — the port models the classic world (the e25
     // seam, the boss_bags constants-off note).
@@ -17699,6 +17718,43 @@ mod dw3_tests {
         assert!(
             spawn_loot(&mut a, &caster).is_none(),
             "the red-hat caster drops nothing"
+        );
+    }
+
+    /// W4-f35 LOOT FINAL: `DoDeathEvents_CelebrateBossDeath`
+    /// (`NPC.cs:79018-79034`, the `:79508` call after the boss potion tail)
+    /// — the boss-defeated announcement in the BossOrEvent color: the Twins
+    /// share the plural "TheTwins" name, the Moon Lord core "MoonLord",
+    /// every other boss its own NPCName. A non-boss death announces nothing.
+    #[test]
+    fn w4_f35_boss_death_announcement_rides_the_heal_feed() {
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut a = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        a.world = crate::test_world_helpers::ground();
+        a.world.compute_column_surface();
+        a.player = Some(crate::player::Player::spawn(&a.world));
+        // A boss death (the Eye of Cthulhu, net 4) announces.
+        let mut eoc = Npc::new(NpcKind::EyeOfCthulhu, 30.0 * 16.0, 4.0 * 16.0, 1, 0.0);
+        eoc.hp = 0;
+        a.chat.messages.clear();
+        spawn_heals(&mut a, &eoc);
+        assert!(
+            a.chat
+                .messages
+                .iter()
+                .any(|m| m.color == crate::chat::COLOR_BOSS_OR_EVENT),
+            "the boss death broadcast in the BossOrEvent color"
+        );
+        // A non-boss death (a blue slime) announces nothing.
+        a.chat.messages.clear();
+        let slime = Npc::spawn_slime_variant(&a.world, 30, SlimeVariant::Blue).unwrap();
+        spawn_heals(&mut a, &slime);
+        assert!(
+            !a.chat
+                .messages
+                .iter()
+                .any(|m| m.color == crate::chat::COLOR_BOSS_OR_EVENT),
+            "a non-boss death announces nothing"
         );
     }
 
