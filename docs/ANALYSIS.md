@@ -39321,9 +39321,10 @@ Deliberate folds/deviations:
 - **XNA float forms**: the launch aim + the budget drain use the
   f32-sum/f64-sqrt `Length` and the reciprocal-multiply `Normalize`
   (NaN on zero, no guard — the `npc_ai_style64` precedent).
-- The favor USE (a6) and the `TorchGodsFlavor` buff-376 cosmetic
-  (`Player.cs:40185-40234`, the 1084 helper) are NOT this task's scope;
-  `unlocked_biome_torches` stays the shared flag both read.
+- The `TorchGodsFlavor` buff-376 cosmetic (`Player.cs:40185-40234`, the
+  1084 helper) is NOT this task's scope; `unlocked_biome_torches` stays the
+  shared flag both read. The favor USE arm landed here too (a6's claim died
+  at census) — see "The Torch God's Favor use arm + consumers" below.
 
 Verification: code-only — **no cargo/rustc/tests/graphify invoked**. 24
 witness tests WRITTEN NOT RUN (`torch_god.rs` 14: the curve, the cadence,
@@ -39353,3 +39354,87 @@ the 160-draw death burst, `:70976-70995`); its hitbox reads the constant
 asserts `tileCollide` on the drain tick itself, contradicting the C#
 if/else (`333479e0` fixed the f33 witness for exactly this). The row
 tuples are identical — one row survives with both comment halves.
+
+## The Torch God's Favor use arm + consumers (W4-f33, task/W4-f33-torch-god-favor, 2026-11-21, code-only mode)
+
+The 5043 USE arm (`Player.ItemCheck_UseTorchGodsFavor`,
+`Player.cs:45226-45243`, called at the `ItemCheck_OwnerOnlyCode`
+permanent-item seam `:43600`) lands in `torch_god_favor_use.rs` — a6's
+claim died at census (no 5043 use arm on any sibling branch), so the
+task's explicit "favor item 5043 permanent buff" scope is fulfilled here.
+The mid-swing `ItemTimeIsZero && itemAnimation > 0 &&
+!unlockedBiomeTorches` machine is the recall/boss-spawner shape
+(`recall_teleport::recall_item_check`): the use START
+(`ItemCheck_StartActualUse` → `ApplyItemAnimation`, `:51680`) runs on the
+press tick, the grant fires on the first action tick (the start leaves
+`itemTime` at 0 while the animation is full, `:4066`), `ApplyItemTime`
+(`:4416-4419`) re-arms the 30-tick cadence (`Item.cs:40443` useTime 30).
+
+Ported verbatim: the gate (`:45228`), `ApplyItemTime` (`:45230`),
+`unlockedBiomeTorches = true` (`:45231`), `UsingBiomeTorches = true`
+(`:45232` → the `builderAccStatus[11] = 0` setter, `:3960-3963` — the port's
+`Player::set_using_biome_torches`), `HandleSpecialEvent(24)` (`:45233` →
+`GAIN_TORCH_GODS_FAVOR` "Use", `AchievementsHelper.cs:367-369`), the
+`netMode == 0` bestiary kill credit (`:45234-45239` — a `SetDefaults(664)`
+NPC's "TorchGod" row, `NPCID.cs:12005`, `NPC.cs:17398-17402` lifeMax 20
+boss), and the generic consumable tail (`:43280-43326` — the stack pays
+one, the 0-stack re-arms `itemTime = itemAnimation` `:43323` then airs
+out). The `SendData(4)`/`SendData(51, …, 5f)` tails (`:45240-45241`) are
+net-only.
+
+Deliberate folds/deviations:
+- **The named-condition dispatcher**: `HandleSpecialEvent(24)` rides
+  `AchievementManager::handle_special_event` → `complete_condition`, the
+  NAMED `GetCondition("GAIN_TORCH_GODS_FAVOR", "Use").Complete()` — NOT the
+  broadcast `notify_custom("Use")`, which would complete all nine "Use"
+  rows (STAR_POWER, GET_A_LIFE, …). The potions.rs drowning arm's broadcast
+  predates this seam (its over-completion is the recorded deviation to fix
+  when the dispatcher absorbs it).
+- **The bestiary credit** is the free-form `"TorchGod"` string
+  (`NPCID.Search.GetName(664)`); the `KillTracker` map carries it without a
+  catalog row (664 is not a spawnable `NpcKind`). The new-key
+  `TryGrantingBestiary100PercentAchievement` hook (`NPCKillsTracker.cs:46-49`)
+  runs through the App's net-aware `try_grant_bestiary_100_net`.
+- **The builder toggle** (`builderAccStatus[11]`) folds to 0/on in play —
+  the toggle UI (`Main.cs:42532-42585`) is unported; the use arm still
+  writes the slot verbatim, and `using_biome_torches()` reads
+  `unlocked && slot == 0` (the C# getter).
+- **The permanence**: the `.plr` pair (`:54777-54778` write /
+  `:55241-55242` read, the 229+ unlock block's first two bools) round-trips
+  through `player_file.rs`; the `.trplayer` sidecar carries it on a new
+  version-7 line (the in-play restore, `app/mod.rs::enter_loaded_world`).
+  The golden-fixture sample stays false/false (byte parity unaffected).
+- **The use-start cue** (Item4, `Item.cs:40444`) plays through
+  `start_swing_extras` (`:51681-51698`); its case-2 pitch draw rides the
+  `UpdatePlayers` stream. The grant itself draws NOTHING (witnessed: every
+  RngKey pristine with the audio muted).
+
+The `happyFunTorchTime` consumers (the event flag now exists,
+`torch_god.happy_fun_torch_time`):
+- **The torch-hold body row** (`Player.cs:36455` — `!happyFunTorchTime ||
+  createTile != 4`): `world_sim/player.rs` fills `torch_hold_ok` from the
+  event flag + the registry's `tile` field (was pinned true).
+- **The held-light gate** (`Player.cs:49817` — `!happyFunTorchTime`):
+  `player_lights.rs::held_item_lights` gates the whole torch family (plain
+  + water) on the flag (was folded false).
+- **The draw-hide** (`PlayerDrawLayers.cs:3089` — `happyFunTorchTime &&
+  createTile == 4 && itemAnimation == 0`): `render/player_layers.rs::
+  held_item_layers` hides the resting torch sprite; the composite state
+  carries `happy_fun_torch_time` + `held_create_tile` (filled in
+  `render/entities.rs`).
+- **The music** (`SceneMetrics.cs:770-773` InTorchGodMinigame →
+  `Main.cs:12542` track 101): `tr-core/scene.rs` carries the field,
+  `world_sim/scene_scan.rs` fills it from the player flag, `audio.rs`'s
+  `MusicEnv` + ladder arm pick 101 ABOVE the boss-flag ladder (the C#
+  order: credits-roll 89, then this, then the bosses; the TOW ladder's
+  track-87 arm `:11863` is the unported getGoodWorld/swapMusic path).
+
+Verification: code-only — **no cargo/rustc/tests/graphify invoked**. 13
+witness tests WRITTEN NOT RUN (`torch_god_favor_use.rs` 6: the unlock +
+cadence + consume, the achievement + bestiary credit + the named-row
+isolation, the once-ever refusal, the press-edge/stack gates, the RNG
+silence, the dead/CCed gate; `player_file.rs` 1: the .plr pair round-trip;
+`persist.rs` 2: the v7 sidecar round-trip + the v6 back-compat;
+`player_lights.rs` 1: the event kills the held-torch light;
+`render/player_layers.rs` 1: the draw-hide; `audio.rs` 1: the track-101
+ladder order; `player.rs` 1: the torch-hold body-row drop).
