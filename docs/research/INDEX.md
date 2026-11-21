@@ -77,6 +77,7 @@ per `docs/superpowers` agreements).
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 91-D22 | The 123 unrowed C# aiStyle-3 types — the d34-d43 roster-gap table (W4-d22 retire R2, the d37d-E6 input): per-type SetDefaults cite + corridor lane + pushed-tip claim status (75 ROWED / 48 open) + the AI_003 extras each faithful port must carry; the fighter_walker_kind extension list; the 590/591 + 368 census corrections | `91-d22-roster-gap-table.md` | ✅ |
 | 91-G4 | G4 DEPRECATED — the fighter-family canonical record (d22) + the final KEEP/DROP symbol table (W4-d22 retire R3): every g4 commit f384797c4..a9369ec38 adjudicated with d22 landing sites; the P6 generic-walker flips verified landed; the merger instruction (merge d22, never g4-after) | `91-g4-deprecated-keep-drop.md` | ✅ |
+| 91-FR | The d22r keep-both fold-list FINAL RECEIPT (W4-d22 retire R4): the g4 addendum §7 checklist all 9 boxes CLOSED with evidence, the retire deltas (R1 moan-position closure / R2 roster table / R3 deprecation), the fighter-family merger instruction, the branch hash receipt | `91-addendum-final-receipt.md` | ✅ |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
