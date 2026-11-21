@@ -5,15 +5,16 @@
 > the retire pass adds §3a (the f33/93a §2 drop-hunks re-verified at
 > `6b56e27c` — ONE +1 shift, pin I), §6a (the 978 keep-d12c receipt at
 > the LATEST d18 tip `8248a54be` + the exact d18 drop-hunks V1–V5),
-> §7a (the d20c-T5 monitor — T5 NOT landed at d20 `243f81672`, the
-> slashes-ONLY-d19 rows-GATE re-confirmed, no row duplication) and §8
+> §7a (the d20c-T5 monitor — correct at `243f81672`, **SUPERSEDED by
+> §9.7: T5 LANDED at d20 `77334040b`**, keep-d19 drop-d20 four hunks) and §8
 > (THE SWORD-FAMILY merger-bible, one paragraph, five ordered steps).
 > No further d19 rounds are owed. The merger consumes §4 (d10 D1–D13,
 > **re-pinned to `e1519df75` by §9 — d10's tip MOVED**) + §3a/93a §2
 > (f33 A–L) + §6a (d18 V1–V5, **EXECUTED on d18 by `f53de9c71`, §9**)
 > + §7/§7a (T5's gate) in §8's order — and nothing else.
-> **SEAL-VERIFY (§9, this pass):** SEALED `61f7638a5` confirmed on
-> origin; d20 still `243f81672` (T5 NOT landed); f33 A–H/K/L EXACT +
+> **SEAL-VERIFY (§9):** SEALED `61f7638a5` confirmed on
+> origin; d20 now **`77334040b` — T5 LANDED (§9.7; the §9.2 NOT-landed
+> read at `243f81672` is STALE)**; f33 A–H/K/L EXACT +
 > pin I +1 (`17399–17411`) re-confirmed at f33 `bffee350f`; the d18
 > 978 drop verified executed at `6e8083751`; the §8 bible re-confirmed
 > with the two tip updates.
@@ -381,9 +382,9 @@ merge-order, not coverage:
 2. **184** keeps the d19 arm until the f33 merge retires it (§3) — no
    coverage hole either way (both machines are faithful; f33's is the
    fuller census).
-3. **190 is AI-complete but use-path-inert** until T5 lands (§7) — the
-   rows + arm are correct; the missing piece is the item-use spawner,
-   a different lane.
+3. **190 is AI-complete; use-path T5 LANDED** on d20 `77334040b`
+   (§7/§9.7) — the rows + arm are correct; the item-use spawner is
+   ported on d20, inert only until the merge composes.
 
 ### §6a — RETIRE receipt: the 978 keep-d12c verdict re-read at the LATEST tips
 
@@ -453,10 +454,13 @@ envelope (`num3 = ai[1]+50`, `fromValue = localAI[0]/ai[1]`,
 (`projectile.rs:16010`) + `set_ai2` (`:15401`) — ai2 rides the third
 slot. **The rows are the gate:** the seam declines rowless kinds
 (`proj_data(kind)?`, `:15981`), so T5's paired slash spawns (972/982/
-983/984) REQUIRE d19's rows — they exist ONLY on d19 (`data.rs:3700–
-3736`), NOT on d20. T5 (the d20c item-use lane) ports the four arms into
-`editing.rs::fire_non_ammo_shot` ahead of the generic tail; it must NOT
-duplicate the rows. The generic tail today spawns ONE projectile with
+983/984) REQUIRE d19's rows — they existed ONLY on d19 (`data.rs:3700–
+3736`) at this round's read; d20 now carries value-identical copies
+(`7b4173846` — a pre-merge testability deviation, ADJUDICATED
+keep-d19 drop-d20 at four exact hunks, §9.7). T5 (the d20c item-use
+lane) ports the four arms into
+`editing.rs::fire_non_ammo_shot` ahead of the generic tail — LANDED
+`23199067d` (§9.7). The generic tail today spawns ONE projectile with
 `ai0=ai1=0` → the envelope collapses (the 190 `num>=1` kill fires
 immediately on ∞, the 191 remaps read NaN) and the paired slash never
 spawns — r109 item 5's finding, re-confirmed.
@@ -480,10 +484,21 @@ The 984/982/983 rows are pinned by the existing rows witness
 (`w4_d19_the_rows_carry_their_styles_and_slices`, `:1289`).
 
 **Verdict: the 190 arm + rows are COMPLETE and FAITHFUL; the terra-chain
-is AI-complete, use-path-inert until d20c-T5 lands the four spawner arms
-against these rows. No d19 change needed — the contract holds.**
+is AI-complete. Use-path: T5 LANDED on d20 `77334040b` (`23199067d`, the
+four spawner arms; §9.7 receipt) — the chain is inert only until the
+merge composes d19's rows/AI with d20's arms. No d19 change needed —
+the contract holds, and §9.7 verifies d20 feeds it exactly.**
 
 ### §7a — RETIRE monitor: d20c-T5 at origin's LATEST d20 tip (this pass)
+
+> **SUPERSEDED (§9.7).** This monitor was correct at `243f81672`; d20
+> has since pushed `77334040b` (T5 LANDED: `7b4173846` rows +
+> `23199067d` arms + `23c075d7a` ai2 drain + `9bc29bc7f` T4b). The
+> slashes-ONLY-d19 HARD gate below is **amended**: d20's value-identical
+> row copies are ADJUDICATED (row-gated spawn needs them pre-merge) —
+> the merger keeps d19's set and drops d20's copies at four exact
+> hunks (§9.7). Read the monitor as history; the merger instruction
+> is §9.7 + §8.
 
 Re-fetched (`git ls-remote` + `fetch --prune`): the ONLY d20 branch on
 origin is `task/W4-d20-proj-ai-191-200` at **`243f81672`** (the doc-sweep
@@ -529,11 +544,13 @@ The sword family — d19's 181–190 band (all TEN ARMED+ROWED, §6: the
 182/183/184/185/186/190 arms + 13 rows in `projectile_ai_sword_styles.rs`,
 the 181/187/188/189 arms on main, the 964 row on d18 `8248a54be`, the
 978 row keep-d12c `9e668d0f0` on d12d `4ba56e660` with the d18 copy
-dropping per §6a V1–V5) plus d20's 191–200 band (`243f81672`: the
+dropping per §6a V1–V5) plus d20's 191–200 band (`77334040b`, §9.7;
+the band arms landed at `243f81672`: the
 191/192/195/196/198/199/200 arms + rows — the sword-relevant set
 973/985 (191) and 1040/1041/1043 (198); the 200-droppings keep-c10)
 plus the terra-chain T5 use-path lane (the
-four `Player.cs:48870–48937` spawner arms, seeded NOT landed, §7/§7a)
+four `Player.cs:48870–48937` spawner arms, **LANDED** on d20 `77334040b`
+`23199067d` — §7/§7a/§9.7)
 plus f33's 949 torch-god machine (`83387628b`, keep-f33 per §3 with the
 exact d19 drop-hunks §3a/93a §2) — merges as ONE family in this order:
 (1) d19 lands its band + the cloud keep-one (§4's D1–D13 drop the d10
@@ -542,17 +559,23 @@ collision probe survive); (2) f33 lands the 949 event + machine, d19's
 184 slice drops per §3a (A–L, pin I at :17399–17411), the dodge
 contract + the 949 row survive as ONE copy; (3) d18/d12c land their
 rows, the d18 978 copy drops per §6a, d12c's frames superset is the
-survivor; (4) d20 lands its band, the 1043 row dedupes to ONE copy
-(values identical, §7a), the 190 dispatch (d19) × the 198 spawner
-(d20) compose — the flint slash is the family's merge canary; (5) T5
-lands LAST against the merged rows: the four use-path arms spawn the
+survivor; (4) d20 lands its band (`77334040b`), the slash-set dedupe
+runs **keep-d19 drop-d20**: the 1043 row to ONE copy (values identical,
+§7a) AND d20's four `7b4173846` slash-row copy hunks dropped at
+`data.rs` consts 4615–4636 / rows 3652–3682 / ignoreWater 4321–4325 /
+melee 4366–4371 (§9.7 — d19's overlays are supersets), the 190 dispatch
+(d19) × the 198 spawner
+(d20) compose — the flint slash is the family's merge canary (d20's
+ai2 drain fix `23c075d7a` REQUIRED, §9.7); (5) T5 — **LANDED, feeds the
+merged rows**: the four use-path arms spawn the
 paired slash+beam with `ai0=dir·gravDir, ai1=itemAnimMax|30|32|18,
-ai2=GetAdjustedItemScale` through the row-gated seam, NEVER
-duplicating the 972/982/983/984 rows (slashes-ONLY-d19), and the §7
+ai2=GetAdjustedItemScale` through the row-gated seam (§9.7 verified
+the gate fed exactly); after the step-4 dedupe the slash rows are
+d19's ONE set, and the §7
 envelope witness
 (`w4_d19_the_terra_chain_payload_feeds_the_190_envelope`) must pass
-against the merged pool — until then the chain is AI-complete but
-use-path-inert, the ONE documented residual. No other branch owns a
+against the merged pool, together with d20's seven `w4_d20_t5_*`
+witnesses — the ONE documented residual until the merge composes. No other branch owns a
 sword-family arm, row or spawner; every dup is adjudicated in this
 note (§1–§4 clouds/d10, §3/§3a 949/f33, §5 1129/d21, §6/§6a 978/d12c,
 §7/§7a terra-chain/d20-T5) — the merger executes those instructions
@@ -574,7 +597,11 @@ Drift census `git diff 6b56e27c..61f7638a5` = docs ONLY (ANALYSIS +26,
 this note +167, INDEX +1) — every §3a d19-side code pin is frozen at
 the SEALED tree.
 
-### 9.2 The d20c-T5 monitor — T5 STILL NOT landed (unchanged)
+### 9.2 The d20c-T5 monitor — read at `243f81672` (STALE — T5 LANDED, §9.7)
+
+> **Superseded:** d20 pushed `77334040b` after this read; T5 IS landed.
+> The monitor below was correct at `243f81672` — kept as history. The
+> live receipt + merger instruction is §9.7.
 
 `ls-remote`: the ONLY d20 branch is `task/W4-d20-proj-ai-191-200` at
 **`243f81672`** (byte-identical to §7a's tip — no d20c branch exists).
@@ -713,15 +740,77 @@ instructions: (1) d19 band + cloud keep-one — D1–D13 now at
 **`bffee350f`** + the d19 A–L drops (I at :17399–17411) — §9.3;
 (3) d18/d12c rows — **the d18 V1–V5 half is EXECUTED** (`f53de9c71`,
 verified §9.4), d12c's superset rides **`c98bd8937`** with the spawn
-proc landed; (4) d20 band at `243f81672` + the 1043 keep-one — the
-190-dispatch × 198-spawner flint canary unchanged; (5) T5 LAST
-against the merged rows — the four `Player.cs:48870–48937` spawner
-arms, slashes-ONLY-d19 NEVER duplicated, the §7 envelope witness
-(`w4_d19_the_terra_chain_payload_feeds_the_190_envelope`) must pass.
+proc landed; (4) d20 band at **`77334040b`** (tip MOVED from
+`243f81672`, §9.7) + the slash-set keep-d19 drop-d20 dedupe (1043
+keep-one + the four `7b4173846` copy hunks, §9.7) — the
+190-dispatch × 198-spawner flint canary unchanged, the ai2 drain fix
+`23c075d7a` REQUIRED; (5) T5 — **LANDED** (`23199067d`, §9.7): the four
+`Player.cs:48870–48937` spawner arms feed the §7 contract exactly,
+the §7 envelope witness
+(`w4_d19_the_terra_chain_payload_feeds_the_190_envelope`) plus d20's
+seven `w4_d20_t5_*` witnesses must pass against the merged pool.
 Every dup adjudicated in-note (§1–§4 d10, §3/§3a f33, §5 d21 —
 tip `9fa9e9ba0` UNCHANGED, zero drift; §6/§6a d12c, §7/§7a d20-T5).
 **The merger executes those instructions and nothing else. This
 receipt is the FINAL d19 word — no further rounds owed.**
+
+### 9.7 T5-LANDED receipt — d20 `77334040b` (supersedes §7a/§9.2)
+
+Re-fetched: `task/W4-d20-proj-ai-191-200` tip MOVED `243f81672` →
+**`77334040b`** (the registry-109 SEAL). `git log 243f81672..77334040b`
+= 4 commits, all ancestry-verified (`merge-base --is-ancestor` exit 0
+each): **`7b4173846`** T5 slash-row copies, **`23199067d`** T5
+terra-use-arms LANDED, **`23c075d7a`** ai2 dart-drain fix,
+**`9bc29bc7f`** T4b pet persistence. §7a/§9.2's "T5 NOT landed" is
+STALE; this is the receipt they asked for. d20's research/109 S2
+(at `77334040b`) re-read WHOLE and every claim re-verified against
+code at both tips:
+
+- **The four use-path arms ARE ported** (`world_sim/editing.rs` @
+  `77334040b`): gate `matches!(held.kind, 273 | 675 | 674 | 757)`
+  `:4093` → per-arm table `:4150` → `spawn_sword` closure `:4191–4213`
+  → paired spawns `:4216–4230`. **The §7 envelope gate is fed
+  EXACTLY:** the closure calls the row-gated
+  `spawn_with_data_ai(kind, …, ai0, ai1)` (`proj_data(kind)?` :4197)
+  then `pool.set_ai2(slot, scale)` `:4211` — `ai0 = dir·gravDir`,
+  `ai1 = itemAnimMax | 30 | 32 | 18` per the §7 table, ai2 = scale in
+  the third slot, the same seam d19's witness
+  (`w4_d19_the_terra_chain_payload_feeds_the_190_envelope`, intact at
+  `projectile_ai_sword_styles.rs:1625` @ `3b47d40a5`) drives.
+- **slashes-ONLY-d19 HARD gate — deviation ADJUDICATED (109 S2):**
+  `7b4173846` copies d19's slash rows onto d20 because the row IS the
+  spawn gate (rowless kinds decline) — without them T5 is untestable
+  pre-merge. The copies are **value-identical** (re-read whole: d20
+  `data.rs:3660–3682` vs d19 `:3700–3723` — 972 pen2 / 982|997 pen3 /
+  983 pen6 / 984 pen3, all `16x16, 190, TIME_LEFT_DEFAULT, tileCollide
+  false, LOCAL −1, alpha 0`). **Merger step 4 amendment — keep-d19,
+  drop-d20 at FOUR exact hunks** (d20 `data.rs` @ `77334040b`,
+  boundaries re-read against the `7b4173846` diff): consts
+  **4615–4636** (the five const defs 4620–4636 + their copy comments
+  4615–4619), row block **3652–3682**, ignoreWater arm **4321–4325**,
+  melee arm **4366–4371**. d19's overlays are SUPERSETS already
+  carrying every kind (ignoreWater `:4387–4388` / melee `:4428–4429`
+  include all five + 1043 + 1126) — dropping d20's arms loses
+  nothing. The 1043 keep-one re-confirmed: d20 `:3651` = d19
+  `:3725–3728`, tuple identical.
+- **The ai2 drain fix is REQUIRED at merge** (`23c075d7a`):
+  `wants_dart_spawns` now carries ai2 as the 11th tuple slot
+  (`projectile.rs:749`), the drain writes `ai[2]` when non-zero
+  (`:20272–20282`); the 1043 release push passes ai2=1
+  (`:17489–17493`). Without it the 190 arm's `scale *= ai[2]`
+  (`Projectile.cs:42222`) collapses to 0 — the flint canary
+  (`w4_d20_t5_the_flint_slash_canary_spawns_with_the_scale`,
+  `projectile_ai_misc.rs:2967`) pins it.
+- **7 T5 witnesses located** (WRITTEN NOT RUN, `editing.rs` @
+  `77334040b`): copied-rows `:18890`, NightsEdge pair `:18930`,
+  TrueNightsEdge dmg/2 `:18958`, TrueExcalibur ghost-0 `:18980`,
+  TerraBlade ×5 `:19002`, zero-draw `:19025`, + the misc canary
+  `:2967`. The merger runs these PLUS the d19 envelope witness
+  against the merged pool as the step-5 gate.
+
+**Verdict: T5 LANDED and contract-faithful; §8 steps 4/5 amended
+above (five-kind dedupe keep-d19 drop-d20; step 5 executable now).
+No d19 code change — docs-only receipt.**
 
 ## Witnesses — the FINAL round (WRITTEN NOT RUN — code-only)
 
