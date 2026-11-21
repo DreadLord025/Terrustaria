@@ -2947,33 +2947,60 @@ mod tests {
         drop(i);
         assert!(rng.ranges.is_empty(), "the gate draws nothing");
 
-        // Each refusal term kills BOTH soul conditions on its own.
-        type Mut = fn(&mut LootFlags, &mut LootNpc);
-        let refusals: &[Mut] = &[
-            |_, n| n.is_boss = true,                    // :1581
-            |_, n| n.dont_drop_keys = true,             // :1585 (type 23)
-            |_, n| n.kind = 1,                          // :1591 the slime
-            |_, n| n.kind = 13,                         // the EoW head
-            |_, n| n.kind = 121,                        // the Slimer
-            |_, n| n.kind = 535,                        // the Spiked Slime
-            |f, _| f.hard_mode = false,                 // :1601/:1606
-            |_, n| n.life_max = 1,                      // lifeMax <= 1
-            |_, n| n.friendly = true,                   // friendly
-            |_, n| n.value = 0.5,                       // value < 1
-            |f, _| f.soul_depth_ok = false,             // above rockLayer
-        ];
-        for (idx, mutate) in refusals.iter().enumerate() {
-            let mut f = soul_flags;
-            let mut n = soul_npc;
-            mutate(&mut f, &mut n);
+        // Each refusal term kills BOTH soul conditions on its own. A helper
+        // builds the info from a (flags, npc) pair so every case is explicit
+        // (no fn-pointer table over the lifetime-parameterized LootNpc).
+        fn both_refuse(f: LootFlags, n: LootNpc<'static>, label: &str) {
             let mut rng = ScriptRng::new(&[], &[]);
             let mut i = DropAttemptInfo {
                 flags: f,
                 ..info_npc(&mut rng, n)
             };
-            assert!(!Cond::SoulOfLight.can_drop(&mut i), "refusal {idx}");
-            assert!(!Cond::SoulOfNight.can_drop(&mut i), "refusal {idx}");
+            assert!(!Cond::SoulOfLight.can_drop(&mut i), "{label}");
+            assert!(!Cond::SoulOfNight.can_drop(&mut i), "{label}");
         }
+        both_refuse(
+            soul_flags,
+            LootNpc { is_boss: true, ..soul_npc },
+            "boss (:1581)",
+        );
+        both_refuse(
+            soul_flags,
+            LootNpc { dont_drop_keys: true, ..soul_npc },
+            "DontDropDungeonKeysOrSouls (:1585)",
+        );
+        for kind in [1, 13, 14, 15, 121, 535] {
+            both_refuse(
+                soul_flags,
+                LootNpc { kind, ..soul_npc },
+                "the exempt type (:1589-1597)",
+            );
+        }
+        both_refuse(
+            LootFlags { hard_mode: false, ..soul_flags },
+            soul_npc,
+            "pre-hardmode (:1601/:1606)",
+        );
+        both_refuse(
+            soul_flags,
+            LootNpc { life_max: 1, ..soul_npc },
+            "lifeMax <= 1",
+        );
+        both_refuse(
+            soul_flags,
+            LootNpc { friendly: true, ..soul_npc },
+            "friendly",
+        );
+        both_refuse(
+            soul_flags,
+            LootNpc { value: 0.5, ..soul_npc },
+            "value < 1",
+        );
+        both_refuse(
+            LootFlags { soul_depth_ok: false, ..soul_flags },
+            soul_npc,
+            "above rockLayer (classic depth)",
+        );
 
         // The remix world drops the DEPTH term only (`:1599-1605`): the
         // surface kill (depth false) passes; a pre-hardmode remix kill
