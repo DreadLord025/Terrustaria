@@ -2892,6 +2892,64 @@ fn death_bursts(
         506 => trail_walk_burst(s, dust, rng, ctx, world, 30),
         // `:74679-74733` — the 171: the trail walk at dust 129.
         171 => trail_walk_burst(s, dust, rng, ctx, world, 129),
+        // `:74734-74751` — the 117: 10× dust-26 defaults. The owner-gated
+        // 2-shard spawn burst (`:74741-74750`) stays the spawn lane's.
+        117 => {
+            for _ in 0..10 {
+                dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 26, 0.0, 0.0, 0, Color::default(), 1.0);
+            }
+        }
+        // `:74760-74769` — the 166: 10× dust-76 defaults noGravity,
+        // vel −= oldVel×0.25.
+        166 => {
+            for _ in 0..10 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 76, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity -= s.old_vel * 0.25;
+            }
+        }
+        // `:74841-74949` — the 99-family default arm (99/1013/727/1014/
+        // 1021/1048): the dust type is the kind switch (1013→243, 727→40,
+        // 1014→12, 1021→323, 1048→322, else 1); 30× that dust, a Next(2)
+        // gate → scale×1.4. The per-dust `base.velocity *= 1.9` is a dead-
+        // corpse mutation (the dust spawns at speed 0, so it feeds nothing
+        // observable — recorded). The 1014/1057 item drops + the 1048
+        // dirt delegate draw nothing here (the delegate is unported state).
+        99 | 1013 | 727 | 1014 | 1021 | 1048 => {
+            let dust_type = match s.kind {
+                1013 => 243,
+                727 => 40,
+                1014 => 12,
+                1021 => 323,
+                1048 => 322,
+                _ => 1,
+            };
+            for _ in 0..30 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, dust_type, 0.0, 0.0, 0, Color::default(), 1.0);
+                if rng.next_max(2) == 0 {
+                    dust.slot_mut(idx).scale *= 1.4;
+                }
+            }
+        }
+        // `:74921-74927` — the 1054: 20× dust-30 speed (0,−1) defaults.
+        1054 => {
+            for _ in 0..20 {
+                dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 30, 0.0, -1.0, 0, Color::default(), 1.0);
+            }
+        }
+        // `:74928-74937` — the 1055: 50× dust-192 at pos+(4,4) box (w−8)×
+        // (h−8) speed vel×0.5 alpha 100 (100,100,100,100), scale×1.5
+        // vel×2 noGravity.
+        1055 => {
+            for _ in 0..50 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos + Vec2::splat(4.0), s.w - 8, s.h - 8, 192, s.vel.x * 0.5, s.vel.y * 0.5, 100, Color::new(100, 100, 100, 100), 1.0);
+                let d = dust.slot_mut(idx);
+                d.scale *= 1.5;
+                d.velocity *= 2.0;
+                d.no_gravity = true;
+            }
+        }
         _ => {}
     }
 }
@@ -5124,5 +5182,55 @@ mod tests {
             drain(&[s], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
             assert!(dust.slots().iter().all(|d| !d.active), "kind {kind} gated");
         }
+    }
+
+    /// The 117/166: 10 dust-26 defaults / 10 dust-76 noGravity.
+    #[test]
+    fn w4_g65_the_117_166_bursts() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(117)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 10);
+        assert!(active.iter().all(|d| d.dust_type == 26));
+        let mut dust = DustPool::new();
+        drain(&[snap(166)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 10);
+        assert!(active.iter().all(|d| d.dust_type == 76 && d.no_gravity));
+    }
+
+    /// The 99-family default arm: 30 dust of the kind-switch type; the
+    /// Next(2) gate scales some ×1.4.
+    #[test]
+    fn w4_g65_the_99_family_default() {
+        let w = world();
+        for (kind, dust_type) in [(99u16, 1), (1013, 243), (727, 40), (1014, 12), (1021, 323), (1048, 322)] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), 30, "kind {kind}");
+            assert!(active.iter().all(|d| d.dust_type == dust_type), "kind {kind}");
+            // The spawn's default scale is (1+Next(-20,21)*0.01); the gate
+            // multiplies some by 1.4 — so the range is [0.8, 1.68].
+            assert!(active.iter().all(|d| d.scale >= 0.79 && d.scale <= 1.69), "kind {kind}");
+        }
+    }
+
+    /// The 1054/1055: 20 dust-30 / 50 dust-192 (noGravity, the grey
+    /// colour, scale 1.5).
+    #[test]
+    fn w4_g65_the_1054_1055_bursts() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(1054)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 20);
+        assert!(active.iter().all(|d| d.dust_type == 30));
+        let mut dust = DustPool::new();
+        drain(&[snap(1055)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 50);
+        assert!(active.iter().all(|d| d.dust_type == 192 && d.no_gravity && d.color == Color::new(100, 100, 100, 100)));
     }
 }

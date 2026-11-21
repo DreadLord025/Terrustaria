@@ -39725,6 +39725,26 @@ helper). Witnesses: the 1097/229 counts, the 270/837 pair splits, the
 178/289 confetti counts + determinism (gore census included), the trail
 walks' 116-count + ai1>=10 gate — WRITTEN NOT RUN.
 
+### Batch 20 (10 kinds, the 99-family default + small bursts `:74734-74937`)
+
+117 (10× dust-26; the owner-gated 2-shard spawn burst stays the spawn
+lane's), 166 (10× dust-76 noGravity vel −= oldVel×0.25), 99/1013/727/
+1014/1021/1048 (the 99-family DEFAULT arm: the dust type is the kind
+switch 1013→243/727→40/1014→12/1021→323/1048→322/else 1; 30× that dust,
+a Next(2) gate → scale×1.4; the per-dust `base.velocity *= 1.9` is a
+dead-corpse mutation feeding nothing observable — the dust spawns at
+speed 0 — recorded; the 1014 item drop + the 1048 dirt delegate draw
+nothing here, the delegate is unported state), 1054 (20× dust-30 speed
+(0,−1)), 1055 (50× dust-192 at pos+(4,4) box (w−8) speed vel×0.5 alpha
+100 (100,100,100,100) scale×1.5 vel×2 noGravity). The 1053 lava-boulder
+arm stays DEFERRED to a later batch (its 64-resize burst + 4-gore census
++ the 31-resize; `LavaBoulderExplosion` draws nothing — PlaceLiquid only,
+`Projectile.cs:70538-70552`). The 1124 was found ALREADY landed (the
+plain_burst row) — the duplicate arm was removed before commit.
+Witnesses: the 117/166 counts, the 99-family type switch + scale range
+(the spawn's default scale is randomized, so a range not an equality),
+the 1054/1055 counts/colour — WRITTEN NOT RUN.
+
 ### The re-census (all Kill dust arms vs the 104 + d12 + i17/i18 + g16)
 
 A full re-grep of `Projectile.cs:70642-77262` for `Dust.NewDust*` sites,
