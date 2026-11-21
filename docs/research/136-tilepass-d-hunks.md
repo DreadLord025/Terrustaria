@@ -480,3 +480,39 @@ that branch (full record: UNION-CONTRACT §9, commits `d3b5d5fd9` /
   on the g31 branch (nothing to strip); the two on-branch
   `solid_tile` twins are identical-body (keep-one stays a merge
   obligation). C1/C3/C4/C7 are off-branch pairs — unchanged.
+
+---
+
+## 8. RETIRE-phase addendum: the g84 multitile-mapping answer
+
+Requested: g84's grass/vines inline-arms vs this branch's
+DrainPass-buckets seam-mapping. **Full per-kind mapping table +
+the five divergences (D1-D5) + the helper keep-one list:
+UNION-CONTRACT §8.6** (published there because it is a merger
+instruction, not a d-hunk note). Summary of the verdict:
+
+* g84 latest tip `8717e9384` (roster `05de8eb59` + vines bucket
+  `b072ddeb7` + docs) ports the SAME `:8738-9032` / `:8829-9603`
+  bodies as INLINE fused-walk arms with per-cell frame-grid top-left
+  reconstruction — the pre-union stand-in, g28-registry class.
+* EVERY g84 inline arm (grass roster incl. the pre-g84 sunflower,
+  the 16-kind vine bucket, the `draw_tile_flames` bucket-gate) DROPS
+  at the pixel merge; the g30 classify → bucket 2/3 → g31
+  `drain_one_pass` path owns them. The g84 arms omit the per-cell
+  `_rand.Next(4)` rolls (`:8974`/`:9485`) by design — keeping them
+  alive beside the drains double-draws or drops rolls (§8.3 step 4).
+* Divergences where the drain is the faithful copy: D1 (530/705
+  single-tile halves — g84 sways them, C# `break`s), D2 (519
+  per-cell `.max(1)` climb), D5 (jar flame seed — g84 forces a
+  non-zero `frame_seed_for` latch; C# jar arms return seed 0).
+  D3 is the reverse: g84's `registry::rare` lid feed is closer to
+  C# than the drain's `(0, false)` deferral — adopt as the stand-in
+  until d57's TeItem store binds. D4: the drain's 698 `num9` should
+  read the dd-corrected frameX at the bind (equal today).
+* KEEP from g84: the `Extra_260`/`Glow_294` asset loads (the drain
+  plans need them), the sim/data co-hunks, the roster census. The
+  two g84 render modules DROP wholesale; their 19 witnesses re-pin
+  onto the drain bodies (§8.6 helper keep-one list — the six
+  body-identical helper twins keep-one onto `tile_drains.rs`).
+* The d56/d57/d60 lanes g84's module docs defer to are exactly the
+  §1 hunk tables above — no new seam obligations surfaced.

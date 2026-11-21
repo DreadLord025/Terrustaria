@@ -782,6 +782,130 @@ row-major over out-of-order inserts
 tables + the 717 glowmask bind-contract (f15 co-lane):
 `docs/research/136-tilepass-d-hunks.md`.
 
+### 8.6 The g84 multitile-mapping answer (RETIRE phase, requested)
+
+**g84 latest tip read: `8717e9384`** (`task/W4-g84-plantera-bulb-draw`,
+three follow-up commits past the bulb slice: the full MultiTileGrass
+roster `05de8eb59`, the MultiTileVines bucket `b072ddeb7`, docs
+`8717e9384`). g84 ports the SAME two C# bodies the g31 drains own —
+`DrawMultiTileGrass(InWind)` (`:8738-9032`) and
+`DrawMultiTileVines(InWind)` (`:8829-9603`) — but as INLINE per-cell
+arms in the fused `tiles.rs` walk (the sunflower z-order
+approximation), with the object top-left RECONSTRUCTED from the frame
+grid per cell (`grass_sway_*` / `vine_top_left` + `vine_sway`), NOT
+from registered special points. The union's seam-mapping request
+("which DrainPass bucket owns which kind") is answered per-kind below.
+**The mapping verdict: every g84 inline arm DROPS at the pixel merge —
+the g30 classify → g31 drain path owns all of them.** This extends
+§8.3 step 3's "the inline grass/vine/sunflower arms DROP" to g84's two
+new roster arms (`tiles.rs` the `matches!(tile.kind, 236 | 238 | …)`
+arm and the `is_multi_tile_vine(tile.kind)` arm) and to the
+`draw_tile_flames` bucket-gate g84 added (`if !is_multi_tile_vine(…)`
+— unnecessary once the cells classify `Deferred` and never reach the
+DrawSingleTile flames tail; the drain's `DrainFlame` tail owns them).
+
+**Per-kind mapping table** (g30 `classify_tile` → bucket →
+`drain_pass_bucket`/`DrainPass` → the g84 inline arm that drops):
+
+| Kind(s) | g30 class → bucket | DrainPass / g31 body | g84 inline arm (DROP) |
+|---|---|---|---|
+| 27 sunflower | `Deferred(MultiTileGrass)` fx%36==0 ∧ fy==0 → 2 | `MultiTileGrass` / `multi_tile_grass_in_wind` 27 arm (flag2, num2=74 glow) | pre-g84 `sunflower_sway` inline + the +74 glow rect |
+| 236/238/702 bulb+LifeFruit | same anchor gate → 2 (off-anchor `Skip`) | 2×2 default arm, num=0.15 | `grass_sway_2x2` |
+| 485/490/652 | fx%36==0 (652 no row gate; 485/490 fy==0) → 2 | 2×2 default arm | `grass_sway_2x2` |
+| 521-527 dragonfly jars | fy==0 ∧ fx%36==0 → 2 | freeze arm (num=0, flag=false) | `grass_sway_2x2(freeze=true)` |
+| 530/651/705 oasis/echo | 3×2 anchors; **530 fx≥270 and 705 fx%486≥270 → `SingleTile`** (the C# `break`) | 3×2 arm | `grass_sway_3x2` — **g84 sways ALL cells incl. the single-tile halves (divergence D1)** |
+| 489 pinwheel | fy==0 ∧ fx%36==0 → 2 | 2×3 arm | `grass_sway_2x3` |
+| 493 golf flag | fy==0 ∧ fx%18==0 → 2 | 1×2 arm + wind-sign flip ±6 px | `golf_flag_sway` |
+| 233 detritus | TWO anchors: fy==0 ∧ fx%54==0 (3-wide), fy==36 ∧ fx%36==0 (2-wide) → 2 | split-size arm (`multi_tile_grass_size` reads the ANCHOR's frameY — C# `:8766` exact) | `detritus_sway` (row = fy/18%2 reconstruction) |
+| 519 cattail | every cell fx/18≤4 registers → 2 (multi-anchor down the stem) | `climb_cat_tail` height + anchor shift, TOP-ROW-ONLY wind gate | `cattail_sway` per-cell (**D2: `.max(1)` guard + per-cell climb ≠ the C# per-anchor walk**) |
+| 34/126 chandeliers/lanterns | fx%54==0 ∧ fy%54==0 → 3 | `MultiTileVines` / `multi_tile_vines_in_wind` + `planter_style` | `vine_sway` 34/126 arm |
+| 42 bottles | fx%18==0 ∧ fy%36==0 → 3 | `bottle_style` (the :9404 dead-write kept) | `vine_sway` 42 arm |
+| 95/270/271/444/454/572/581/660 | per-kind anchor gates → 3 | num3=1/num5=0 family; 660 bottom-row `Extra_260` pair (`DrainFairyJar`); 270/271/581 jar flame sheets | `vine_sway` + `draw_vine_cell` |
+| 91 banners | fx%18==0 ∧ fy%54==0 → 3 | 1×3 | `vine_sway` |
+| 465/591/592 | fx%36==0 ∧ fy%54==0 → 3 | 2×3 BOTH-column platform lift; 592 `Glow_294` (`DrainGlow` white-A0) | `vine_sway` + the 592 glow push |
+| 698 dead-cells jar | fx%18==0 ∧ fy==0 → 3 | 1×1, wind-cancel + −10 px, lid rows + `DrainJarItem` icon (**D3 rarity feed, D4 num9 source**) | `draw_dead_cells_jar` |
+| 549 seaweed | `ReverseVineCrawl` → 7 | `ReverseVines` / `rising_vine_strip` | NOT g84's bucket (its doc confirms) — untouched |
+| 52/62/115/205/382/528/636/638 | `VineCrawl` → 4 | `Vines` / on-main `vines.rs` strip | NOT g84's bucket — untouched |
+
+**Why the drains win (not a z-order preference):** g84's inline arms
+deliberately OMIT the per-cell `_rand.Next(4)` rolls (`:8974` grass /
+`:9485` vines — its module docs: "adding the roll here would change
+the `_rand` stream order") and the d56 vision chain. The g31 drain
+bodies CONSUME those rolls on the ONE shared stream in pass order and
+bind `DrainCellLight` (d56). Keeping any g84 inline arm alive at the
+pixel merge would either double-draw the object or drop its rolls —
+both break §8.3 step 4. The inline arms are the pre-union stand-in,
+exactly like g28's registry (§1.1).
+
+**Divergences found in the g84 read (recorded for the merger; the
+drain side is the faithful one unless noted):**
+
+* **D1 — 530/705 single-tile halves.** g84's `matches!` arm sways
+  every 530/705 cell; C# `break`s the fx≥270 / fx%486≥270 halves to
+  `DrawSingleTile` (static). g30's classify has the frame-cut arms
+  (`530 => SingleTile`, `705 => SingleTile`) — the union path is
+  correct; the g84 arm must not survive.
+* **D2 — 519 per-cell climb.** g84 `cattail_sway` climbs from EACH
+  cell (`.max(1)` guard the C# lacks) — a flame-top cell draws as its
+  own 1-tall object. C# registers columns 0-4 and climbs per ANCHOR;
+  the drain (`drain_multi_tile_grass` 519 arm) is exact.
+* **D3 — 698 rarity feed (the one place g84 is CLOSER to C#).** C#
+  reads `item.rare`/`item.expert` from the TE item. The g31 drain
+  feeds `(0, false)` for a filled jar (the d57 TeItem-runtime
+  deferral — rare 0 ⇒ WHITE lid, a visible colour deviation); g84
+  feeds `registry::rare(it.kind)` (the static rarity, expert still
+  false). **At the merge, bind the drain's `DrainJarItem`/lid colour
+  to d57's TeItem store; until then `registry::rare` is the better
+  stand-in — adopt it into the drain's deferral comment.** g84 also
+  feeds `master_color = 1.0` (the drain takes the real param).
+* **D4 — 698 num9 source.** C# `num9 = tileFrameX / 38` reads the
+  POST-`GetTileDrawData` ref frameX. g84 uses the dd-remapped
+  `frame_x_override` (correct); the g31 drain uses the raw
+  `tile.frame_x` (equal today — 698 has no frame remap — but the
+  drain should read the dd-corrected value at the bind).
+* **D5 — jar flame seeds.** For 270/271/581 the C#
+  `GetTileFlameData` returns WITHOUT a flameSeed (0); the `num6`
+  latch stays 0 and the jar flames roll from seed 0. The g31 drain
+  matches (its `tile_flame_data` jar arms return seed 0, the latch
+  stays 0). g84 derives `shared_seed = frame_seed_for(seed, tlx,
+  tly)` unconditionally — NON-zero for jars, so its jar flame
+  offsets diverge from C#. One more reason the inline arm drops.
+  (Minor structural note: C# latches `num6` per cell even at
+  flameCount 0; the drain latches only inside `count > 0` — equal
+  for every roster kind, whose per-kind counts are uniform.)
+
+**KEEP from g84 at the merge (not dropped):**
+
+* `assets.rs`: `Extra_260` (STATIC_SHEET_NAMES) + `Glow_294`
+  (GLOW_SHEET_NAMES) — the drain plans' 660 pair / 592 glow NEED
+  these sheets; g84 fulfilled the load obligation the UNWIRED drain
+  lane could not. (The 717 `Glow_362` obligation, §9.3, is separate
+  and still open.)
+* The sim/data-side co-hunks (`drawdata.rs` +20, `drawdata_anim.rs`
+  +22 the 238 animator, `map/colors.rs` +21, `tile_light/scanner.rs`
+  +24) — orthogonal to the draw seam, keep verbatim.
+* The roster CENSUS itself (its ANALYSIS section): 236=LifeFruit /
+  702=LifeFruitReplica are NOT bulb variants; the full `:600-687` +
+  `:549-599` registration lists match g30's classify arm-for-arm
+  (verified by read).
+
+**Helper keep-one (C6-class, fold-time):** g84's
+`multi_tile_vine_size`, `planter_style`, `bottle_style`,
+`jar_rarity_color`, `is_below_a_non_hammered_platform`,
+`climb_cat_tail` are body-identical twins of the g31 `tile_drains.rs`
+copies (verified by read; g84's `rgb_to_hsl` rides
+`ui::color::rgb_to_hsl`, the drain has a private twin). **Canonical:
+the `tile_drains.rs` copies** (witness-covered, in the drain crate
+module); the g84 modules (`multi_tile_grass.rs`,
+`multi_tile_vines.rs`) DROP WHOLESALE with their inline arms — their
+19 witnesses fold into the drain witnesses (the sway-maths
+assertions re-pin onto `multi_tile_grass_in_wind` /
+`multi_tile_vines_in_wind` outputs; the size/style-table witnesses
+are already covered by `w4_g31_multi_tile_vine_size_table`,
+`w4_g31_multi_tile_grass_size_table`, `w4_g31_planter_style_table`,
+`w4_g31_bottle_style_table_and_dead_write`,
+`w4_g31_climb_cat_tail_*`).
+
 ---
 
 ## 9. FINAL-PHASE EXECUTION RECORD (this branch, code-only)
