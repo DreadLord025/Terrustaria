@@ -504,3 +504,70 @@ resolved in 88; confirmed here against the tips):
 reconcile-phase assist: the arm-level evidence under 88's keep-one decisions,
 the executed-step union, and the two refinements (B7 PlaceTile route, B9
 ore-tier params) the Lead should weigh at the gate.
+
+## 8. Addendum (post-reconcile continuation, 2026-11-21)
+
+### 8.1 B9 SavedOreTiers — confirmed d104-side (one-paragraph note for d104)
+
+Re-read from `origin/task/W4-d104-worldgen-passes-4` @ `8a229c3e`: the ore-tier
+parameters are **already fully d104-side** — `surface.rs::ore_patch` (`:522`)
+takes `copper: u16, iron: u16` and rolls `if rng.range(0,3)==0 { iron } else
+{ copper }` (the C# `SavedOreTiers.Copper/Iron` read, `WorldGen.cs:10581-10585`);
+`step_surface_ore_and_stone` (`pipeline.rs:2780-2781`) feeds them from
+`world.ore_tiers.copper/iron`, the Shinies-rolled `SavedOreTiers`
+(`caves.rs:97-203`, `ores.rs:118-160`, the app round-trip `saveglue.rs:106-229`
++ the `dw_2_6` witness). Nothing for d104 to add — g37 B9's hardcoded 6/7
+(`passes_b.rs:2361`) is the DROP side (§2.9); on a tin/lead world
+(`ore_tiers.copper == 166 / iron == 167`) d104 writes the alternate metals and
+g37 would not. The only g37-side B9 artefacts worth carrying are the
+`[i32;50]` fixed-array shape argument (88 §3.4 keeps d104's Vec — no action)
+and the sub-vanilla width guard evidence (both keep the 512 pin).
+
+### 8.2 c33 water-chests 3-way conflict — keep-one cross-ref
+
+§2.3's verdict stands: **KEEP d103 `9a935127`, DROP g37 B3 + c33
+`pass_underwater_chests`** (88 §2.9 agrees). Probe of the c33 side: no
+`c33b` branch is pushed and **no `docs/research/120` exists on any ref**
+(`git log --all -- docs/research/120*` empty; c33's tip is `fd7fae0e`, its
+lane doc is `12i-c33-underwater-chests-oasis.md`) — the c33b building
+research/120 keep-one note the dispatch referenced is NOT pushed, so there
+is nothing to cross-ref beyond 88 §2.9 + §2.3 here. When c33b pushes 120,
+the keep-one it records must match: d103's body + g37's inner 10000-cap
+guard grafted (88 §6.3) + c33's stocking-hook pair (flag5 4425/4460,
+style-17 main) riding the kept core's `chest_stock` seam. c33's Pyramids
+(`524d94a7`) + lily/cattail/bamboo (`fd7fae0e`) are unaffected — no g37
+overlap. The chest-family slot grouping (g37 `809a61a8`, §4) applies to the
+kept d103 body too: `chests → surface chests → water chests → spider caves`.
+
+### 8.3 matrix-88 refinements — acknowledged by g36c? NO (tip probe)
+
+g36's LATEST tip is `6d46f6a5` (2026-11-21 04:00, the matrix doc itself) —
+**no g36c follow-up commit exists** on `origin/task/W4-g36-worldgen-missing-a`,
+and 88's text predates this doc (g37 `53a5b5b5`, 04:32): its §2.13 keeps d104
+Hellforge on the witness tie with no mention of the PlaceTile-route gap, and
+its §2.15 keeps d104 Surface Ore on "decor + type-param" with no tier-roll
+evidence. **The two refinements (§2.7, §2.9) are NOT acknowledged by g36c** —
+they stand as this doc's recommendations for the Lead/gate. The B7 refinement
+is now actionable: `docs/research/124-hellforge-graft-patch.md` (this branch,
+`bcf6127d`) publishes the exact graft patch for d104b — the full `place_tile`
+slice, the `structures.rs:722` attach point, the witness re-pins and the
+entry-gate/Clear-arm C# citations.
+
+### 8.4 Final Cleanup — gap CLOSED on this branch (cross-note)
+
+88 row 109 flags Final Cleanup "GAP — unlanded (d106 R6 pending, no other
+owner)". Re-probe at this continuation: g36 tip `6d46f6a5` claims nothing
+past the matrix; d106 tip `e2c2609c` still has `12f` R6 unchecked. UNCLAIMED →
+**g37 fills the gap**: `final_cleanup.rs::pass_final_cleanup`
+(`WorldGen.cs:22141-22490`, commit `4ced188f`) — the wall-hole fill + the
+whole-map sweep + the 668 dirt-throw scatter, own `pass_rng("Final Cleanup")`
+stream, step after `water plants` before `world tail`, count 75→76, both pins
+stale-by-design, 5 module witnesses + the positional witness written not run
+(landing notes: `12h` §FINAL CLEANUP). If a g36c/d106 R6 Final Cleanup lands
+later, the merger keeps ONE — the two bodies are independent ports of the
+same C# region; this one defers the seed tails / ShimmerCleanUp /
+LiquidCheck-merge / town-NPC / angler arms (cited in the module doc), so a
+d106 R6 with the liquid-core seam wired may be the stronger keep — the
+Lead's call at the gate. The §4 union table's row 119 (`seed finish`) gains
+`final cleanup` before `world tail` (row 118) → **120 steps** when this
+branch's gap-fill is folded in.
