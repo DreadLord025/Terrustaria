@@ -29,7 +29,7 @@
 //! layer, the 870 `FloodFillTile` deferral precedent; the colours/widths
 //! are censused in ANALYSIS "The activation wave" (4) for that layer's
 //! row); the 882/888/898/957 cast nothing — dark in the C# too. The
-//! RETIRE declaration (research/243 §4): the family is CLOSED for the
+//! RETIRE declaration (research/304 §4): the family is CLOSED for the
 //! light lanes — c19's landed register (`a160ad9ff`) confirms the zero
 //! from its side, the item-use 3600 grants are complete (the classic
 //! arms included, `PET_ITEM_BUFF_GRANTS`), and the PlotTileLine rows

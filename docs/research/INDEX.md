@@ -75,7 +75,8 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
-| 243 | W4-d13 PET-LIGHT RETIRE FINAL (the c19 zero-site compose + the f11 retire-235 drain seal + the g10/d43 no-consume census + the classic pet single-item 3600 gap FIXED + the pet-light-family declaration; number per registry-150's free block; code-only) | `243-d13-pet-light-retire-final.md` | ✅ |
+| 304 | W4-d13 PET-LIGHT RETIRE FINAL (the c19 zero-site compose + the f11 retire-235 drain seal + the g10/d43 no-consume census + the classic pet single-item 3600 gap FIXED + the pet-light-family declaration; renumbered 243→304 per registry-150 round 3 — g58 owns 243, 304+ free; code-only) | `304-d13-pet-light-retire-final.md` | ✅ |
+| 305 | W4-d13 band-121-130 BIBLE FINAL (the ten-arm band table: 121-123/129/130 pre-existing + 124-128 this lane, the satellite lanes 813/geyser-proxy/pointer/grant-gap, the SEAL receipts g10/d43 + c19 + f11-235 + g64-dup, the witness ledger; code-only) | `305-projectile-ai-121-130-band-final.md` | ✅ |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

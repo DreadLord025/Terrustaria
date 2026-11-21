@@ -39531,7 +39531,7 @@ witnesses (the 5089 use → 3600 → 18000 + the 957 spawn, the 3577 use →
 the eviction + 3600 → 18000 + the 650 flag, the grant-row/registry
 agreement incl. the 5117 exclusion) WRITTEN NOT RUN.
 
-**(6) PET-LIGHT RETIRE (research/243, the FINAL census).** The three
+**(6) PET-LIGHT RETIRE (research/304, the FINAL census; renumbered 243→304 per registry-150 round 3 — g58 owns 243).** The three
 activation cross-notes composed against the consumed lanes' landed
 tips: **(a)** c19 (`a160ad9ff`, research/65→189 per registry-150)
 CONFIRMS the zero-pet-site claim from its own register — no pet kind in
@@ -39561,7 +39561,7 @@ exclusions: 603 (the `:53093` `runningCollectorsEdition` gate — no CE
 flag in the port) and 425 (d2's `Next(3)` fairy arm, not a plain
 grant). The equip-arm `UpdatePet`/`UpdatePetLight` (`:17298-17340`)
 deferral is UNCHANGED (the i53 note's seam). The pet-light-family
-declaration (research/243 §4): the seven kinds contribute ZERO
+declaration (research/304 §4): the seven kinds contribute ZERO
 AddLight sites + ZERO `this.light`; the 650/895/896 PlotTileLine rows
 (colours/retro gate/widths/anchors) are censused for the standing
 light-map-write layer; 882/888/898/957 are dark in C# too. 2 new

@@ -1,13 +1,18 @@
-# 243 — W4-d13 PET-LIGHT RETIRE: the FINAL activation census + the pet-light-family declaration
+# 304 — W4-d13 PET-LIGHT RETIRE: the FINAL activation census + the pet-light-family declaration
 
 > W4-d13 · 2026-11-21 · code-only (no cargo/tests/rustfmt/graphify run) ·
 > branch `task/W4-d13-proj-ai-121-130`, base tip `462c86097` (activation
 > 5/5, the pet item-use 3600 grant gap FOUND + FIXED).
-> Number **243**: registry-150 (`origin/task/W4-d54-dust-sites-world`,
-> the collision registry) consumed the free block 151–236; 237/238/239
-> are multiply-claimed at the tips, 240/241/242 taken (happiness-final /
-> f37-latch-repoint / chat-portrait-seal, verified by per-tip `ls-tree`
-> + full-history `--diff-filter=A` scan). 243 is the first free number.
+> Renumbered **243 → 304** (2026-11-21, the SEAL round): the doc was
+> first pushed as 243 (`1e915e254`, 15:20:29) — g58's
+> `243-seal-verification.md` first-add `c9af393dd` (14:08:18) PREDATES
+> it, and registry-150 round 3 (`51a28d09e`) confirms **243 = g58
+> winner** (the g58 240–243 block), 246–303 are the round-2/3 assignment
+> blocks, **304+ FREE** ("Do NOT pick max-on-origin+1; check this
+> registry AND a fresh all-tip sweep first"). Fresh sweep executed:
+> per-tip `git ls-tree docs/research/` over ALL origin + local refs AND
+> the full-history `git log --all --name-only` scan — zero 304+ docs
+> anywhere; 304 is the first free number per the registry's rule.
 >
 > This is the lane's FINAL research note: it composes the three
 > activation cross-notes (3/5 wire-kite `ed631370d`, 4/5 PET-light
@@ -23,6 +28,16 @@ Consumed tip: `origin/task/W4-c19-addlight-projectiles` `a160ad9ff`
 Their doc is `65-addlight-proj-a.md` — registry-150's key-65 row assigns
 it **189** on c19's OWN branch (rename not yet executed at the consumed
 tip; cite as research/65→189).
+
+**SEAL-round refresh (c19 round 3, tip `472ef867e`, read):** the four
+rand-gated sites ARMED IN THE SIM (`pending_ai_lights` + the pass-tail
+`drain_ai_lights`, the `item_lights.rs` named-stream precedent) — the
+final accounting **58 ported sites (54 feed + 4 sim) / 64 contributions,
+2 audit-landed, 7 absent** (502/1092/465/466/731/the phaseblade pair/
+756). The zero-pet-site claim is UNCHANGED at the final tip: none of the
+four sim-armed kinds (409/590/849/912) is a pet, the d9/d10/d11
+activation list carries no pet kind, and the absent-7 carries none.
+The compose below holds verbatim against BOTH tips.
 
 The d13 4/5 claim ("the seven aiStyle-124 pets contribute ZERO sites to
 the Projectile.cs AddLight family") is CONFIRMED against c19's landed
@@ -238,11 +253,63 @@ CLOSED for the light lanes, with the one standing deferral named:
   `a160ad9ff`, e6 `c8b072b69`, f11 `14ca0a8d5`, g10 `5dee28650`, d43
   `0253bde90`, d54's registry-150); every C# anchor re-read in this
   worktree's `decompiled/Terraria/` at the cited lines.
-* Number-243 freeness: per-tip `git ls-tree docs/research/` over all
-  `refs/remotes/origin/task/*` + `refs/heads/task/*` + the full-history
-  `git log --all --diff-filter=A` scan — no 243 anywhere.
+* Number freeness (the SEAL round re-scan): 243 LOST to g58
+  (`c9af393dd` 14:08:18 < this lane's `1e915e254` 15:20:29; registry-150
+  round 3 `51a28d09e` confirms 243 = g58 winner, 304+ FREE). Fresh
+  per-tip `git ls-tree docs/research/` over ALL `refs/remotes/origin/*`
+  + `refs/heads/*` AND the full-history `git log --all --name-only`
+  scan — zero 304/305 docs anywhere; the rename 243→304 + the band
+  bible's 305 execute on THIS branch only.
 * This commit's code changes: the drain-contract doc trio (projectiles
   pass tail, app field, kite module), the kite witness's stream pin,
   `PET_ITEM_BUFF_GRANTS` + the grant-site comment, 2 new witnesses.
   Witnesses WRITTEN NOT RUN (code-only mandate; no cargo/tests/
   rustfmt/graphify invoked).
+
+## 6. The SEAL round (this rename commit) — the remaining receipts
+
+**(a) The g64 895/898/957 DUP — keep-d13-superset CONFIRMED at the
+current tips.** g64's FINAL 1 (`c82a17e19`) adjudicated the three row
+tuples BYTE-EQUAL against d13 `b56db900`/`0f3cb141`; re-verified here
+against d13 `1e915e254` × g64 `3cdc64236`:
+
+* the row tuple: d13 `data.rs:3572-3575` (the seven-kind match arm) vs
+  g64 `data.rs:3584-3586` (the three-kind arm) — both
+  `(20.0, 20.0, 124, -1, 18000, 0, false, false, false, RESET_STATE)`,
+  byte-equal;
+* the flag lists: d13's `STYLE124_PETS.contains` (`:4226`/`:4269`,
+  netImportant + ignoreWater) ⊇ g64's
+  `matches!(kind, FAIRY_QUEEN_PET | ICE_QUEEN_PET | GLOMMER_PET)`
+  (`:4216`/`:4262`) — value-identical on the three shared kinds;
+* the frame counts: d13 `:4745-4747` (895→6, 898→16 via the
+  PUMPKING_PET-shared arm, 957→12) = g64 `:4721-4723` verbatim;
+* `LIGHT_PET_PROJ` byte-equal (both `[18, 500, 72, 87, 86, 211, 492,
+  650, 702, 891, 896, 895]`).
+
+The machine differs by DESIGN: g64's `ai_pets_style124` takes
+`(…, dust, dust_ctx)` (the trail-dust emitters wired), d13's takes the
+5-arg census shape. **Merge keep-one: d13's seven-kind arm + rows +
+flag lists (the superset); g64's dust-wired machine body folds INTO it**
+(the g64 FINAL union-table's own ruling — `813/895/898/957/650 → the
+g64 dust-wired ai_vortex_ritual/ai_pets_style124` — reads d13's rows,
+g64's emitters). No d13 change owed; the dup is merge-side only.
+
+**(b) The f11 235 §2 seal re-target ACKNOWLEDGED.** f11's SEAL banner
+(research/235 header, tip `14ca0a8d5`) re-targets the union to c42
+`15810df4a`: the moved `mass_wire_operation` sits at
+`world_sim/wiring.rs:1089` (still 4-arg, the hard-coded
+`RngKey::UpdatePlayers` at `:1143` — re-read at the c42 tip `2910a7209`,
+unchanged); the `drop_rng` param diff + the direct-drain replacement
+(the buffer field DROPS) are research/133 §8.4(a)/(b). d13's seam
+comment keeps the five-param CONTRACT shape (the post-param-diff
+signature); the merger executes 133 §8.4 against the moved fn — the
+call path becomes `crate::world_sim::wiring::mass_wire_operation`, NOT
+`wiring_devices::` (f11's module drops per 133 §4a). Nothing on this
+branch calls either; the one-drain-shape rule stands.
+
+**(c) The registry renumber EXECUTED** (243→304, this commit): the doc
+file + header, `anchors.txt` (2 rows), ANALYSIS (2 refs), PORT_MAP
+(2 refs), `data.rs`/`projectile_ai_pets124.rs`/`editing.rs` doc comments
+(5 refs), the INDEX row. The band bible takes **305**
+(`305-projectile-ai-121-130-band-final.md`, the next free number, the
+same fresh-sweep receipt).

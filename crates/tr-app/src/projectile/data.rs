@@ -4619,7 +4619,7 @@ pub const MINION_STAFF_PET_BUFF_ITEMS: &[u16] = &[
 /// (Twins), 4811 (Fairy Queen), 4812 (Pumpking), 4814 (Ice Queen), 5089
 /// (Glommer — `Item.cs:40791-40795` `DefaultToVanitypet(957, 328)`; NOT
 /// 5117, the Xenopopper gun `:40997-41013`).
-/// RETIRE census (research/243 §3): the function's remaining single-item
+/// RETIRE census (research/304 §3): the function's remaining single-item
 /// arms — the CLASSIC pets/light pets (`:53097-53116`, `:53146-53189`,
 /// `:53198-53233`, `:53242-53249`) — carry the SAME buffTime=0 ghost and
 /// their keep-alives are ALL ported (`buff_effects_misc.rs`'s pet table +
