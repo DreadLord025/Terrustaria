@@ -17,6 +17,7 @@ use crate::net;
 use crate::registry;
 use crate::ui;
 use glam::Vec2;
+use tr_core::TILE_PX;
 
 /// `AlternateClickAction.TransferFromChest`'s cursor id (`ItemSlot.cs:216`) —
 /// the shift-click arrow on a hovered chest slot.
@@ -858,6 +859,144 @@ impl App {
         }
         self.last_ping_time = now;
         self.last_ping_pos = self.mouse_pos;
+    }
+
+    /// The fullscreen pylon marker click (`TeleportPylonsMapLayer.cs:90-109`):
+    /// an onscreen marker closes the map and runs the teleport gate ladder
+    /// (`TeleportPylonsSystem.HandleTeleportRequest`, `:100-205`) + sound 11;
+    /// an offscreen one pans the map to it (`Main.PanTargetMapFullscreen`).
+    /// Both consume the press (`Main.mouseLeftRelease = false`, `:95`/`:103`).
+    pub(crate) fn handle_pylon_map_click(&mut self, click: crate::map_layers::PylonClick) {
+        use crate::map_layers::PylonClick;
+        let info = match click {
+            PylonClick::Teleport(i) | PylonClick::PanTo(i) => i,
+        };
+        // `:95`/`:103`: the click is consumed either way.
+        self.ui_left_press = false;
+        match click {
+            PylonClick::PanTo(_) => {
+                // `:103-107`: pan to the offscreen pylon's tile.
+                if let Some(m) = self.map.as_mut() {
+                    m.pan_target = true;
+                    m.pan_target_end = [info.x as f32, info.y as f32];
+                }
+            }
+            PylonClick::Teleport(_) => {
+                // `:95-99`: close the map, request the teleport, sound 11.
+                if let Some(m) = self.map.as_mut() {
+                    m.set_open(false);
+                }
+                self.audio.play("Menu_Close"); // `SoundEngine.PlaySound(11)`
+                self.request_pylon_teleport(info);
+            }
+        }
+    }
+
+    /// `TeleportPylonsSystem.HandleTeleportRequest` (`:100-205`) — the gate
+    /// ladder over `tr_core::pylons::handle_teleport_request`, then the
+    /// teleport (`Player.Teleport(newPos, 9, pylonType)` + `velocity = 0`,
+    /// `:189-194`) or the refusal chat line (`:203`). The destination metrics
+    /// scan is `SceneMetrics.Scan(BiomeScanCenterPositionInWorld = pylon)`
+    /// (`:134-137`/`:165-168`); the port's `scan_scene_at` is that scan.
+    fn request_pylon_teleport(&mut self, info: tr_core::pylons::PylonInfo) {
+        let Some(player) = self.player.as_ref() else {
+            return;
+        };
+        let (cx, cy) = player.center();
+        let player_tile = ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32);
+        let near = tr_core::pylons::is_player_near_a_pylon(&self.world, player_tile);
+        // `DoesPositionHaveEnoughNPCs`'s homes (`:221-238`): the
+        // `isLikeATownNPC && !homeless` NPCs' (homeTile, Center/16) pairs.
+        let homes: Vec<((i32, i32), (f32, f32))> = self
+            .npcs
+            .iter()
+            .filter(|n| n.hp > 0 && n.kind.is_town_npc_like() && n.home.is_some())
+            .map(|n| {
+                let (hx, hy) = n.home.unwrap();
+                let (ncx, ncy) = n.center();
+                ((hx, hy), (ncx / TILE_PX, ncy / TILE_PX))
+            })
+            .collect();
+        let pylons = tr_core::pylons::scan_pylons(&self.world);
+        let raining = self.rain.is_raining();
+        let sandstorm = self.sandstorm.happening;
+        let dest_center = [
+            info.x as f32 * TILE_PX + 8.0,
+            info.y as f32 * TILE_PX + 8.0,
+        ];
+        let metrics = crate::world_sim::scene_scan::scan_scene_at(
+            &self.world,
+            dest_center,
+            raining,
+            sandstorm,
+            false,
+        );
+        let outcome = tr_core::pylons::handle_teleport_request(
+            &self.world,
+            &pylons,
+            info,
+            near,
+            player_tile,
+            &homes,
+            self.world.downed_plant_boss,
+            &metrics,
+            |(x, y)| {
+                crate::world_sim::scene_scan::scan_scene_at(
+                    &self.world,
+                    [x as f32 * TILE_PX + 8.0, y as f32 * TILE_PX + 8.0],
+                    raining,
+                    sandstorm,
+                    false,
+                )
+            },
+        );
+        use tr_core::pylons::TeleportOutcome;
+        if outcome == TeleportOutcome::Teleported {
+            // `:189-194`: `newPos = PositionInTiles.ToWorldCoordinates() -
+            // (0, HeightOffsetBoost)`; `Teleport(newPos, 9, typeOfPylon)`;
+            // `velocity = Vector2.Zero`.
+            let boost = player
+                .mount
+                .data()
+                .filter(|_| player.mount.is_active())
+                .map(|d| d.height_boost)
+                .unwrap_or(0);
+            let new_x = info.x as f32 * TILE_PX + 8.0;
+            let new_y = info.y as f32 * TILE_PX + 8.0 - boost as f32;
+            if let Some(p) = self.player.as_mut() {
+                p.teleport_style(new_x, new_y, 9);
+                p.vx = 0.0;
+                p.vy = 0.0;
+            }
+        } else {
+            // `:203`: the refusal chat line (`ChatColors.ServerMessage`).
+            let key = match outcome {
+                TeleportOutcome::NotNear => {
+                    "Net.CannotTeleportToPylonBecausePlayerIsNotNearAPylon"
+                }
+                TeleportOutcome::NotEnoughNPCs => {
+                    "Net.CannotTeleportToPylonBecauseNotEnoughNPCs"
+                }
+                TeleportOutcome::Temple => {
+                    "Net.CannotTeleportToPylonBecauseAccessingLihzahrdTempleEarly"
+                }
+                TeleportOutcome::Biome => {
+                    "Net.CannotTeleportToPylonBecauseNotMeetingBiomeRequirements"
+                }
+                TeleportOutcome::NoUsablePylon(1) => {
+                    "Net.CannotTeleportToPylonBecauseNotEnoughNPCsAtCurrentPylon"
+                }
+                TeleportOutcome::NoUsablePylon(2) => {
+                    "Net.CannotTeleportToPylonBecauseNotMeetingBiomeRequirements"
+                }
+                TeleportOutcome::NoUsablePylon(_) => {
+                    "Net.CannotTeleportToPylonBecausePlayerIsNotNearAPylon"
+                }
+                TeleportOutcome::Teleported => unreachable!(),
+            };
+            self.chat
+                .new_text(crate::lang::text(key), crate::chat::COLOR_SERVER_MESSAGE);
+        }
     }
 
     /// `ItemSlot.Handle` (context 0) subset: left click takes, places or swaps a whole

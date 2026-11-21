@@ -2937,14 +2937,6 @@ impl MountState {
         -self.player_offset() + self.data().map_or(0, |d| d.height_boost)
     }
 
-    /// `Mount.HeightBoost` (`Mount.cs`'s `_data.HeightBoost`): the active
-    /// mount's height boost, 0 when unmounted. `Player.HeightOffsetBoost`
-    /// (`Player.cs:3281-3295`) reads it (the portable-stool arm is unported).
-    /// W4-f29 — the pylon teleport's `newPos` offset.
-    pub(crate) fn height_boost(&self) -> i32 {
-        self.data().map_or(0, |d| d.height_boost)
-    }
-
     /// `Mount.IsAtIdle` (:594-608): the idle band active — Rudolph's draw
     /// uses it to hide the front strip (`Mount.cs:5520-5523`).
     pub(crate) fn is_at_idle(&self) -> bool {

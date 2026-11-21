@@ -1281,19 +1281,16 @@ pub struct Player {
     /// Bottom the 4870 use records (`:37506`), the return-gate hitbox centre
     /// (`PotionOfReturnHelper.TryGetGateHitbox`).
     pub potion_of_return_home_position: Option<(f32, f32)>,
-    /// `Player.lastDeathPostion` (`Player.cs:846`, the source's spelling):
-    /// the `Center` at the death moment (`KillMe`, `:38846`), the map death
-    /// marker's anchor (`Main.DrawPlayerDeathMarker`, `Main.cs:56446`).
-    /// W4-f29.
+    /// `Player.lastDeathPostion` (`Player.cs:846`): the `Center` at the
+    /// death (`KillMe`, `:38846`) — the map's death marker anchor
+    /// (`Main.DrawPlayerDeathMarker`, `Main.cs:56446-56464`).
     pub last_death_position: Option<(f32, f32)>,
-    /// `Player.lastDeathTime` (`Player.cs:848`): the wall-clock death stamp
-    /// (`DateTime.Now`, `KillMe` `:38847`), seconds since the Unix epoch —
-    /// the hover line's `Lang.LocalizedDuration(DateTime.Now - lastDeathTime)`
-    /// (`Main.cs:55986`). W4-f29.
-    pub last_death_time: f64,
-    /// `Player.showLastDeath` (`Player.cs:850`): set by `KillMe` (`:38848`),
-    /// never cleared in the source — the marker persists until the next
-    /// death overwrites it. W4-f29.
+    /// `Player.lastDeathTime` (`Player.cs:848`): the death wall-clock stamp
+    /// (`:38847`); the map hover's `Game.PlayerDeathTime` duration reads
+    /// `DateTime.Now - lastDeathTime` (`Main.cs:55986`).
+    pub last_death_time: Option<std::time::SystemTime>,
+    /// `Player.showLastDeath` (`Player.cs:850`): set at the death (`:38848`),
+    /// gates the map's death marker (`Main.cs:55979`).
     pub show_last_death: bool,
     pub hp: i32,
     pub max_hp: i32,
@@ -2731,7 +2728,7 @@ impl Player {
             potion_of_return_original_use_position: None,
             potion_of_return_home_position: None,
             last_death_position: None,
-            last_death_time: 0.0,
+            last_death_time: None,
             show_last_death: false,
             hp: 100,
             max_hp: 100,
@@ -3700,15 +3697,12 @@ impl Player {
         // flag splits the two counters; the port has no PVP, so every
         // death is PVE.
         self.deaths_pve = self.deaths_pve.saturating_add(1);
-        // `Player.KillMe` (`Player.cs:38846-38848`): the death marker's
-        // anchor + wall-clock stamp + the show flag (W4-f29). The C#
-        // `DateTime.Now` becomes seconds since the Unix epoch.
-        let (cx, cy) = self.center();
-        self.last_death_position = Some((cx, cy));
-        self.last_death_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs_f64())
-            .unwrap_or(0.0);
+        // `Player.KillMe`'s death-marker stamp (`Player.cs:38846-38848`):
+        // `lastDeathPostion = Center`, `lastDeathTime = DateTime.Now`,
+        // `showLastDeath = true` — the map's death marker reads all three
+        // (`Main.DrawPlayerDeathMarker`, `Main.cs:56446-56464`).
+        self.last_death_position = Some(self.center());
+        self.last_death_time = Some(std::time::SystemTime::now());
         self.show_last_death = true;
         self.dead = true;
         self.dead_time = 0;

@@ -126,60 +126,6 @@ fn spawn_golem_on_altar(app: &mut App) -> bool {
     true
 }
 
-/// W4-f29 — `Player.cs:32180-32212`'s pylon right-click: open the fullscreen
-/// map (`TryOpeningFullscreenMap`, `:29103-29119` — the scale reset + the
-/// `MapPylonTile` clear + the recentre arm), then select THIS pylon's anchor
-/// and recentre on the reveal-inclusive inflated rect of the whole network,
-/// fitting the scale to `(screen - 40) / rect.Size`. The C# clears
-/// `PanTargetMapFullscreen` and `resetMapFull` (`:32199-32200`) so the
-/// recentre is the rect centre, not the view centre.
-fn use_pylon(app: &mut App, tx: i32, ty: i32) {
-    // `:32183`: TryOpeningFullscreenMap — the port's `set_open(true)` resets
-    // the scale to 2.5, arms the recentre and clears MapPylonTile.
-    if !app.settings.map_enabled {
-        return;
-    }
-    app.inventory_open = false;
-    if let Some(m) = app.map.as_mut() {
-        m.set_open(true);
-    }
-    // `:32186-32187`: the anchor decode.
-    let frame_x = app.world.tile_frame_x(tx, ty);
-    let frame_y = app.world.tile_frame_y(tx, ty);
-    let anchor = (tx - frame_x / 18 % 3, ty - frame_y / 18 % 4);
-    // `:32189-32212`: the reveal-inclusive rect recentre + scale fit.
-    let pylons = tr_core::pylons::scan_pylons(&app.world);
-    let team_based_spawns = app
-        .world
-        .micro_seeds
-        .contains(tr_core::seeds::MicroSeedFlags::TEAM_BASED_SPAWNS);
-    let (sw, sh) = app.screen_size();
-    let current_scale = app.map.as_ref().map(|m| m.scale).unwrap_or(2.5);
-    let revealed = |p: &tr_core::pylons::PylonInfo| -> bool {
-        if !team_based_spawns {
-            return true;
-        }
-        app.map
-            .as_ref()
-            .is_some_and(|m| m.tile_revealed(&app.world, p.x as i32, p.y as i32))
-    };
-    let (center, scale) = crate::map_pylons::pylon_right_click_view(
-        anchor,
-        &pylons,
-        revealed,
-        [sw, sh],
-        current_scale,
-    );
-    if let Some(m) = app.map.as_mut() {
-        m.map_pylon_tile = anchor;
-        // `:32199-32200`: the pan + recentre arms clear.
-        m.pan_target = None;
-        m.clear_reset_pos();
-        m.pos = center;
-        m.scale = scale;
-    }
-}
-
 pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
     // S1-P-i55 — the golf tee's right-click arm (`TileInteractionsUse`'s
     // `type == 494` branch, `Player.cs:32342-32354`): EVERY owned golf ball
@@ -239,17 +185,64 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
     {
         return use_golem_altar(app);
     }
-    // W4-f29 — the pylon right-click arm (`TileInteractionsUse`'s
-    // `type == 597` branch, `Player.cs:32180-32212`): open the fullscreen
-    // map, select the pylon anchor (`x - frameX/18%3, y - frameY/18%4`),
-    // recentre on the reveal-inclusive inflated pylon rect and fit the
-    // scale. The arm consumes the click (`flag2 = true`).
+    // The pylon arm (`TileInteractionsUse`'s `type == 597` branch,
+    // `Player.cs:32180-32212`): the right-click opens the fullscreen map
+    // centred on the pylon network and selects the clicked pylon for the
+    // network-line draw (`Main.MapPylonTile`). The anchor decodes the 3x4
+    // body (`x - frameX/18%3, y - frameY/18%4`); the view fits every
+    // revealed pylon (`pylon_view_fit`). The arm runs before the furniture
+    // dispatch — the pylon has no `interact_at` interaction of its own.
     if app
         .world
         .tile(tx, ty)
         .is_some_and(|t| t.active() && t.kind == 597)
     {
-        use_pylon(app, tx, ty);
+        if app.settings.map_enabled {
+            let tile = app.world.tile(tx, ty).copied().unwrap_or_default();
+            let anchor = (
+                tx - (tile.frame_x as i32 / 18 % 3),
+                ty - (tile.frame_y as i32 / 18 % 4),
+            );
+            // `TryOpeningFullscreenMap` (`Player.cs:29103-29118`): the
+            // inventory/sign/talk clears + sound 10 + the 2.5 scale + the
+            // recentre; `set_open(true)` already does the scale/recentre/
+            // pylon-tile clear. `SetTalkNPC(-1)` + `npcChatCornerItem = 0`
+            // close the chatter; `CloseSign(quiet)` has no port counterpart
+            // (the sign editor is unported).
+            app.inventory_open = false;
+            app.talk_npc = None;
+            app.npc_chat_text = String::new();
+            app.close_shop();
+            app.audio.play("Menu_Open"); // `SoundEngine.PlaySound(10)`
+            let team_seed = app
+                .world
+                .micro_seeds
+                .contains(tr_core::seeds::MicroSeedFlags::TEAM_BASED_SPAWNS);
+            let pylons = tr_core::pylons::scan_pylons(&app.world);
+            let revealed: Vec<(i32, i32)> = pylons
+                .iter()
+                .filter(|p| {
+                    !team_seed
+                        || app
+                            .map
+                            .as_ref()
+                            .is_some_and(|m| m.tile_revealed(&app.world, p.x as i32, p.y as i32))
+                })
+                .map(|p| (p.x as i32, p.y as i32))
+                .collect();
+            let (sw, sh) = app.screen_size();
+            let screen = glam::Vec2::new(sw, sh);
+            if let Some(m) = app.map.as_mut() {
+                m.set_open(true);
+                m.pylon_tile = anchor;
+                let (pos, scale) =
+                    crate::map::pylon_view_fit(anchor, &revealed, screen, m.scale);
+                m.pos = pos;
+                m.scale = scale;
+                m.pan_target = false;
+                m.reset_pos = false;
+            }
+        }
         return true;
     }
     let direction = app.player.as_ref().map(|p| p.facing).unwrap_or(1);

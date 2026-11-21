@@ -366,20 +366,42 @@ pub fn buff_slot_pos(num3: usize) -> [f32; 2] {
 /// wins and the running remainder ceilings into it (`time > 1 day` →
 /// `days + 1`). The `Misc.Short*` keys ride the localized json.
 pub(crate) fn localized_duration(seconds: i32) -> String {
+    localized_duration_full(seconds, true)
+}
+
+/// `Lang.LocalizedDuration` (`Lang.cs:1158-1207`) with
+/// `showAllAvailableUnits: false` and the culture-driven abbreviation
+/// (`:1161`: `abbreviated |= !English.IsActive`) — the map's death-marker
+/// hover calls it `(abbreviated: false, showAllAvailableUnits: false)`
+/// (`Main.cs:55986`), so English reads "2 days" and every other culture
+/// the `Misc.Short*` keys. The ceil-into-the-biggest-unit rule is shared
+/// with [`localized_duration`].
+pub(crate) fn localized_duration_full(seconds: i32, abbreviated: bool) -> String {
+    let abbreviated =
+        abbreviated || crate::lang::active_culture() != tr_core::localization::GameCulture::English;
+    let unit = |n: i64, short: &str, one: &str, many: &str| {
+        if abbreviated {
+            format!("{n} {}", crate::lang::text(short))
+        } else if n == 1 {
+            format!("{n} {one}")
+        } else {
+            format!("{n} {many}")
+        }
+    };
     let t = seconds as i64;
     if t / 86400 > 0 {
         let n = if t > 86400 { t / 86400 + 1 } else { t / 86400 };
-        return format!("{n} {}", crate::lang::text("Misc.ShortDays"));
+        return unit(n, "Misc.ShortDays", "day", "days");
     }
     if t / 3600 > 0 {
         let n = if t > 3600 { t / 3600 + 1 } else { t / 3600 };
-        return format!("{n} {}", crate::lang::text("Misc.ShortHours"));
+        return unit(n, "Misc.ShortHours", "hour", "hours");
     }
     if t / 60 > 0 {
         let n = if t > 60 { t / 60 + 1 } else { t / 60 };
-        return format!("{n} {}", crate::lang::text("Misc.ShortMinutes"));
+        return unit(n, "Misc.ShortMinutes", "minute", "minutes");
     }
-    format!("{t} {}", crate::lang::text("Misc.ShortSeconds"))
+    unit(t, "Misc.ShortSeconds", "second", "seconds")
 }
 
 /// `Main.TryGetBuffTime` (`Main.cs:43290-43305`): the duration-text gate —

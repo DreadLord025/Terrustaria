@@ -618,6 +618,12 @@ pub(crate) struct App {
     pub(crate) mouse_npc_type: i32,
     pub(crate) ui_left_press: bool,
     pub(crate) ui_right_press: bool,
+    /// The frame's left-press edge snapshotted BEFORE the click cluster
+    /// consumes `ui_left_press` (`handle_inventory_clicks` clears it every
+    /// frame). The fullscreen map's pylon marker click reads it in the draw
+    /// (`TeleportPylonsMapLayer.cs:83`/`:90` — `Main.mouseLeft &&
+    /// Main.mouseLeftRelease`), which runs after the cluster.
+    pub(crate) map_left_press: bool,
     /// `Main.mouseRightRelease` (`Main.cs:67166`'s analog — the right
     /// button's release edge, consumed per frame).
     pub(crate) ui_right_release: bool,
@@ -1439,158 +1445,8 @@ impl App {
         } else {
             self.map_grab = None;
         }
-        // `Main.cs:55361-55385`: the pan-target step (an offscreen pylon
-        // marker click arms it, `TeleportPylonsMapLayer.cs:105-107`). A left
-        // press cancels; else the position lerps toward the target. W4-f29.
-        if let Some(target) = m.pan_target {
-            let (new_pos, done) =
-                crate::map_pylons::pan_target_step(m.pos, target, self.ui_left_press);
-            m.pos = new_pos;
-            if done {
-                m.pan_target = None;
-            }
-        }
         m.scale = map::map_scale_clamp(sw, self.world.width, m.scale);
         m.pos = map::map_clamp_pos(m.pos, &self.world);
-    }
-
-    /// W4-f29 — `TeleportPylonsMapLayer.cs:90-109`: the pylon marker click.
-    /// An on-screen marker closes the map and requests the teleport (the
-    /// `HandleTeleportRequest` gate ladder, `TeleportPylonsSystem.cs:100-205`,
-    /// then the style-9 `Player.Teleport`); an offscreen one arms the pan
-    /// target. `Main.mouseLeftRelease = false` (`:95`/`:103`) consumes the
-    /// press; `SoundEngine.PlaySound(11)` (`:99`) is the Menu_Close cue.
-    pub(crate) fn apply_pylon_click(&mut self, click: crate::map_layers::PylonClick) {
-        match click {
-            crate::map_layers::PylonClick::Pan(target) => {
-                // `:101-108`: the pan target.
-                self.ui_left_press = false;
-                if let Some(m) = self.map.as_mut() {
-                    m.pan_target = Some(target);
-                }
-            }
-            crate::map_layers::PylonClick::Teleport(info) => {
-                // `:93-99`: close the map, consume the press, request.
-                self.ui_left_press = false;
-                if let Some(m) = self.map.as_mut() {
-                    m.set_open(false);
-                }
-                self.audio.play("Menu_Close"); // `SoundEngine.PlaySound(11)`
-                self.request_pylon_teleport(info);
-            }
-        }
-    }
-
-    /// `TeleportPylonsSystem.HandleTeleportRequest` (`TeleportPylonsSystem.cs:
-    /// 100-205`) minus the net sides: the gate ladder via
-    /// `tr_core::pylons::handle_teleport_request`, then the style-9 teleport
-    /// (`:187-194`) or the failure chat message (`:201-204`). The destination
-    /// metrics scan at the pylon's world coordinates (`:134-137`); the
-    /// usable-pylon callback scans each candidate (`:165-168`).
-    fn request_pylon_teleport(&mut self, info: tr_core::pylons::PylonInfo) {
-        let Some(player) = self.player.as_ref() else {
-            return;
-        };
-        let (pcx, pcy) = player.center();
-        let player_tile = ((pcx / TILE_PX) as i32, (pcy / TILE_PX) as i32);
-        let near = tr_core::pylons::is_player_near_a_pylon(&self.world, player_tile);
-        let pylons = tr_core::pylons::scan_pylons(&self.world);
-        // `DoesPositionHaveEnoughNPCs` (`:221-238`): the town NPCs' homes +
-        // current centres (`isLikeATownNPC && !homeless`).
-        let homes: Vec<((i32, i32), (f32, f32))> = self
-            .npcs
-            .iter()
-            .filter(|n| n.hp > 0 && n.kind.is_town_npc_like() && n.home.is_some())
-            .map(|n| {
-                let (hx, hy) = n.home.unwrap();
-                let (cx, cy) = n.center();
-                ((hx, hy), (cx / TILE_PX, cy / TILE_PX))
-            })
-            .collect();
-        // The destination metrics (`:134-137`): the pylon's world coords.
-        let dest_center = [
-            info.x as f32 * TILE_PX + 8.0,
-            info.y as f32 * TILE_PX + 8.0,
-        ];
-        let raining = self.rain.is_raining();
-        let storm = self.sandstorm.happening;
-        let metrics = crate::world_sim::scene_scan::scan_scene_at(
-            &self.world,
-            dest_center,
-            raining,
-            storm,
-            false,
-        );
-        let world = &self.world;
-        let outcome = tr_core::pylons::handle_teleport_request(
-            world,
-            &pylons,
-            info,
-            near,
-            player_tile,
-            &homes,
-            world.downed_plant_boss,
-            &metrics,
-            |candidate| {
-                let center = [
-                    candidate.0 as f32 * TILE_PX + 8.0,
-                    candidate.1 as f32 * TILE_PX + 8.0,
-                ];
-                crate::world_sim::scene_scan::scan_scene_at(
-                    world, center, raining, storm, false,
-                )
-            },
-        );
-        use tr_core::pylons::TeleportOutcome;
-        match outcome {
-            TeleportOutcome::Teleported => {
-                // `:187-194`: `newPos = PositionInTiles.ToWorldCoordinates() -
-                // (0, HeightOffsetBoost)`, `Teleport(newPos, 9, type)`,
-                // `velocity = Zero`. The port's height boost is the mount's
-                // (the portable stool is unported).
-                let boost = self
-                    .player
-                    .as_ref()
-                    .map(|p| p.mount.height_boost())
-                    .unwrap_or(0);
-                let new_x = info.x as f32 * TILE_PX + 8.0;
-                let new_y = info.y as f32 * TILE_PX + 8.0 - boost as f32;
-                if let Some(p) = self.player.as_mut() {
-                    p.teleport_style(new_x, new_y, 9);
-                    p.vx = 0.0;
-                    p.vy = 0.0;
-                }
-            }
-            _ => {
-                // `:201-204`: the failure message.
-                let key = match outcome {
-                    TeleportOutcome::NotNear => {
-                        "Net.CannotTeleportToPylonBecausePlayerIsNotNearAPylon"
-                    }
-                    TeleportOutcome::NotEnoughNPCs => {
-                        "Net.CannotTeleportToPylonBecauseNotEnoughNPCs"
-                    }
-                    TeleportOutcome::Temple => {
-                        "Net.CannotTeleportToPylonBecauseAccessingLihzahrdTempleEarly"
-                    }
-                    TeleportOutcome::Biome => {
-                        "Net.CannotTeleportToPylonBecauseNotMeetingBiomeRequirements"
-                    }
-                    TeleportOutcome::NoUsablePylon(1) => {
-                        "Net.CannotTeleportToPylonBecauseNotEnoughNPCsAtCurrentPylon"
-                    }
-                    TeleportOutcome::NoUsablePylon(2) => {
-                        "Net.CannotTeleportToPylonBecauseNotMeetingBiomeRequirements"
-                    }
-                    TeleportOutcome::NoUsablePylon(_) => {
-                        "Net.CannotTeleportToPylonBecausePlayerIsNotNearAPylon"
-                    }
-                    TeleportOutcome::Teleported => unreachable!(),
-                };
-                self.chat
-                    .new_text(&crate::lang::text(key), crate::chat::COLOR_SERVER_MESSAGE);
-            }
-        }
     }
 
     /// `Main.UpdateViewZoomKeys` (`Main.cs:16801-16815`): ViewZoomIn/Out adjust
@@ -4030,6 +3886,7 @@ impl App {
             mouse_npc_type: -1,
             ui_left_press: false,
             ui_right_press: false,
+            map_left_press: false,
             ui_right_release: false,
             control_throw: false,
             drop_right_edge: false,
