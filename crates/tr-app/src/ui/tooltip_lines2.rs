@@ -1298,6 +1298,17 @@ mod w4_f28_tests {
         let mut fish = *def(261);
         fish.consumable = false;
         assert!(place_row_active(&fish, 261));
+        // The e16 `wall > 0` rider (research/128 §2 row 16 / §6, retire
+        // receipts research/130 §1-S12): `createWall > 0` (`Main.cs:20919`)
+        // — the generator's option mapping admits Some(0), which the C#
+        // refuses; Some(1) admits the place gate. The Acorn's own tile
+        // stays out of the fixture so ONLY the wall arm is exercised.
+        let mut wall_zero = *def(27);
+        wall_zero.tile = None;
+        wall_zero.wall = Some(0);
+        assert!(!place_row_active(&wall_zero, 27), "Some(0) is not createWall > 0");
+        wall_zero.wall = Some(1);
+        assert!(place_row_active(&wall_zero, 27), "Some(1) places");
     }
 
     /// W4-f28 — the damage gate's coin-gun arm (`Main.cs:20669`): the
@@ -1386,6 +1397,36 @@ mod w4_f28_tests {
         let ctx = TooltipContext { prefix: 63, ..Default::default() };
         let rows = item_tooltip_lines(4924, def(4924), ctx);
         assert!(!texts(&rows).contains(&"Master"), "the prefix shifted rare off −13");
+        // The e16 keep-both matrix (research/128 §6, retire receipts
+        // research/130 §1-S12): the Broken 10 prefix (dmg ×0.85) prints
+        // the negative damage delta in RED (`:21051`); the mana row's
+        // colour test INVERTS (`:21093` — a cost increase is the worse
+        // arm). Broken: round(12×0.85)=10 → (10−12)/12×100 → −17.
+        let ctx = TooltipContext { prefix: 10, ..Default::default() };
+        let rows = item_tooltip_lines(4, def(4), ctx);
+        let bad = rows
+            .iter()
+            .find(|(t, _)| *t == format!("-17{}", crate::lang::tip(39)))
+            .expect("the negative damage delta");
+        assert_eq!(bad.1, PREFIX_NEGATIVE);
+        // Adept 26 on the Space Gun 127 (mana 6, mcst 0.85): round(5.1)=5
+        // → −17% and GREEN (a decrease is good).
+        let ctx = TooltipContext { prefix: 26, ..Default::default() };
+        let rows = item_tooltip_lines(127, def(127), ctx);
+        let mana = rows
+            .iter()
+            .find(|(t, _)| t.ends_with(&crate::lang::tip(42)))
+            .expect("the mana delta");
+        assert_eq!(mana.1, PREFIX_POSITIVE, "{mana:?}");
+        // Mystical 35 (mcst 1.2): round(7.2)=7 → +17% — RED through the
+        // inverted test.
+        let ctx = TooltipContext { prefix: 35, ..Default::default() };
+        let rows = item_tooltip_lines(127, def(127), ctx);
+        let mana = rows
+            .iter()
+            .find(|(t, _)| *t == format!("+17{}", crate::lang::tip(42)))
+            .expect("the positive mana delta");
+        assert_eq!(mana.1, PREFIX_NEGATIVE);
     }
 
     /// W4-f28 — the rapid-attack damage scale (`Main.cs:20673-20676`,
