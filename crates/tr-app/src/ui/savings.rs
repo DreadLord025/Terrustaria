@@ -10,15 +10,16 @@
 //! bank-furniture pile (one icon per bank that holds coins) + the "Savings"
 //! label + the four-denomination coin row (`CoinsSplit`, `:1048-1060`).
 //!
-//! Deviations (recorded, ANALYSIS "the savings draw"): the
-//! `_customCurrencyForSavings` hover latch (`ItemSlot.cs:3177`'s
-//! `MouseHover` write, `:3707-3711`'s branch) has no port consumer — the
-//! Tavernkeep medal-savings arm (`CustomCurrencyManager.DrawSavings`,
-//! `:28-62`) stays the chrome follow-up, so this port always draws the
-//! coin arm. The reforge call site draws only while the reforge slot holds
-//! an item (the C#'s `reforgeItem.type > 0` block, `Main.cs:41584`); the
-//! shop-panel call (`:41791`) and its "Shop" label / happiness icon stay
-//! with the shop-chrome pass.
+//! Deviations (recorded, ANALYSIS "the savings draw" +
+//! research/142-savings-keep-one.md): the reforge call site draws only
+//! while the reforge slot holds an item (the C#'s `reforgeItem.type > 0`
+//! block, `Main.cs:41584`); the shop-panel call (`:41791`) rides
+//! `ui::shop_happiness::draw`. The third C# caller — `DrawHairWindow`
+//! (`Main.cs:43862`, horizontal, price-gated) — has no port consumer (the
+//! in-game hair window is unported). The `_customCurrencyForSavings`
+//! latch (`ItemSlot.cs:308/:363/:520/:3177`) is threaded in as `currency`
+//! and dispatches to the medal arm (`CustomCurrencyManager.DrawSavings`
+//! `:28-62` + `CustomCurrencySingleCoin.DrawSavingsMoney` `:76-101`).
 
 use tr_render::SpriteRenderer;
 
@@ -269,7 +270,11 @@ fn draw_money(
 /// `ItemSlot.DrawSavings` (`ItemSlot.cs:3704-3741`): the bank-furniture
 /// pile + the money row, only when the combined bank total is positive
 /// (`:3717`). `text_alpha` is `Main.mouseTextColor / 255` (the label's
-/// `Color.White *` multiplier, `:3654`).
+/// `Color.White *` multiplier, `:3654`). `currency` is
+/// `ItemSlot._customCurrencyForSavings` — `!= -1` routes to
+/// `CustomCurrencyManager.DrawSavings` and RETURNS (`:3707-3711`); the
+/// only registered currency is the Defender Medals (index 0,
+/// `CustomCurrencyManager.cs:17`).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_savings(
     r: &mut SpriteRenderer,
@@ -280,7 +285,15 @@ pub(crate) fn draw_savings(
     shopy: f32,
     horizontal: bool,
     text_alpha: f32,
+    currency: i32,
 ) {
+    // `:3707-3711` — the custom-currency branch runs INSTEAD of the coin
+    // arm. The single registration means any non-(-1) latch is the medal
+    // wallet (`CustomCurrencyID.DefenderMedals = 0`).
+    if currency != crate::custom_currency::CURRENCY_NONE {
+        draw_savings_medals(r, lookups, coin_slot, banks, shopx, shopy, horizontal, text_alpha);
+        return;
+    }
     let (counts, total) = savings_counts(banks);
     if total <= 0 {
         return; // `:3717`'s gate — an empty savings draws nothing
@@ -309,6 +322,148 @@ pub(crate) fn draw_savings(
         &coins_split(total),
         horizontal,
         text_alpha,
+    );
+}
+
+/// `CustomCurrencyManager.DrawSavings`' bank-icon pile
+/// (`CustomCurrencyManager.cs:43-58`): the SAME four bank items but
+/// DIFFERENT centres from the coin arm — the Void Vault 4076 (bank4) at
+/// (+96, +50), the Defenders Forge 3813 (bank3) at (+80, +50), the Safe
+/// 346 (bank2) ALSO at (+80, +50) (the C# draws the two overlapped,
+/// `:49/:53` — kept as-is), the Piggy Bank 87 (bank) at (+70, +60).
+pub(crate) fn medal_pile_icons(
+    counts: &[i64; 4],
+    shopx: f32,
+    shopy: f32,
+) -> Vec<(u16, f32, f32)> {
+    let mut out = Vec::new();
+    if counts[3] > 0 {
+        out.push((4076, shopx + 96.0, shopy + 50.0));
+    }
+    if counts[2] > 0 {
+        out.push((3813, shopx + 80.0, shopy + 50.0));
+    }
+    if counts[1] > 0 {
+        out.push((346, shopx + 80.0, shopy + 50.0));
+    }
+    if counts[0] > 0 {
+        out.push((87, shopx + 70.0, shopy + 60.0));
+    }
+    out
+}
+
+/// `CustomCurrencySingleCoin.DrawSavingsMoney`'s icon centre + count-text
+/// net top-left (`CustomCurrencySingleCoin.cs:88-100`). The icon is the
+/// STATIC `Item_3817` at `CurrencyDrawScale = 0.8` (`:14`), centred; the
+/// horizontal centre is `(shopx + labelWidth + 45, shopy + 50 - jump)`
+/// (`:91`) and its text `(pos.X - 11, pos.Y)` (`:93`) — the text RIDES
+/// THE JUMP in this arm; the vertical centre is `(shopx + 11,
+/// shopy + 75 - jump)` (`:98`) with the text at `(shopx + num2,
+/// shopy + 75)` (`:99`, NO jump), `num2 = -6` iff `total > 99` (`:97`).
+/// Both texts draw with origin `(0.3, 0.3)` scaled by `0.75 *
+/// stackTextScale` (`DrawString` scales the origin,
+/// `DynamicSpriteFont.cs:194`) → net `pos - 0.3*scale` per axis.
+/// Returns `(icon_center, text_top_left)`.
+pub(crate) fn medal_money_positions(
+    horizontal: bool,
+    total: i64,
+    shopx: f32,
+    shopy: f32,
+    text_w: f32,
+    jump: f32,
+    scale: f32,
+) -> ((f32, f32), (f32, f32)) {
+    if horizontal {
+        let pos = (shopx + text_w + 45.0, shopy + 50.0 - jump);
+        (pos, (pos.0 - 11.0 - 0.3 * scale, pos.1 - 0.3 * scale))
+    } else {
+        let num2 = if total > 99 { -6.0 } else { 0.0 };
+        let center = (shopx + 11.0, shopy + 75.0 - jump);
+        let text = (shopx + num2, shopy + 75.0);
+        (center, (text.0 - 0.3 * scale, text.1 - 0.3 * scale))
+    }
+}
+
+/// `CustomCurrencyManager.DrawSavings` (`CustomCurrencyManager.cs:28-62`)
+/// + `CustomCurrencySingleCoin.DrawSavingsMoney` (`:76-101`): the medal
+/// savings display — the four banks' 3817 counts (each capped 999, the
+/// combine capped 999, `count_savings`), the `> 0` gate (`:37`), the
+/// medal pile (`:43-58`), the SAME Savings label (`:59`), then ONE static
+/// medal icon + the total's count text driven by `CoinSlot.UpdateCustom`
+/// (`:87` — no 999 display clamp; the wallet caps at 999 anyway).
+#[allow(clippy::too_many_arguments)]
+fn draw_savings_medals(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    coin_slot: &mut CoinSlotState,
+    banks: &[&[ItemSlot]; 4],
+    shopx: f32,
+    shopy: f32,
+    horizontal: bool,
+    text_alpha: f32,
+) {
+    let (counts, total) =
+        crate::custom_currency::count_savings([banks[0], banks[1], banks[2], banks[3]]);
+    if total <= 0 {
+        return; // `:37`'s gate
+    }
+    // `:43-58` — the pile, the same CenteredRectangle 0.65 truncations.
+    for (id, cx, cy) in medal_pile_icons(&counts, shopx, shopy) {
+        if let Some((uv, w, h)) = lookups.item_icon(id) {
+            let (sw, sh) = (w * 0.65, h * 0.65);
+            let x = (cx - sw * 0.5) as i32 as f32;
+            let y = (cy - sh * 0.5) as i32 as f32;
+            r.push_ui_sprite([x, y], [sw as i32 as f32, sh as i32 as f32], uv, [1.0; 4]);
+        }
+    }
+    // `:59` — the Savings label, identical to the coin arm's `:3654`.
+    let label = crate::lang::inter(66);
+    draw_border_string(
+        r,
+        lookups,
+        BorderFont::Ui,
+        shopx,
+        shopy + 40.0,
+        1.0,
+        &[[-2.0, 0.0], [2.0, 0.0], [0.0, -2.0], [0.0, 2.0]],
+        [text_alpha; 4],
+        &label,
+    );
+    let text_w = hud_text_width(r, lookups, &label, 1.0);
+    // `DrawSavingsMoney:87` — UpdateCustom(3817, (int)total).
+    let d = coin_slot.update_custom(crate::custom_currency::DEFENDER_MEDAL_ITEM, total as u32);
+    let scale = 0.75 * d.stack_text_scale;
+    let (center, text_pos) = medal_money_positions(
+        horizontal,
+        total,
+        shopx,
+        shopy,
+        text_w,
+        d.coin_y_offset,
+        scale,
+    );
+    // `:92`/`:98` — the STATIC Item_3817 texture, centred origin, scale
+    // `CurrencyDrawScale = 0.8`, Color.White, NO size clamp.
+    if let Some((uv, w, h)) = lookups.item_icon(crate::custom_currency::DEFENDER_MEDAL_ITEM) {
+        let (dw, dh) = (w * 0.8, h * 0.8);
+        r.push_ui_sprite(
+            [center.0 - dw * 0.5, center.1 - dh * 0.5],
+            [dw, dh],
+            uv,
+            [1.0; 4],
+        );
+    }
+    // `:93`/`:99` — the total's count text, ItemStack, four-way border.
+    draw_border_string(
+        r,
+        lookups,
+        BorderFont::Item,
+        text_pos.0,
+        text_pos.1,
+        scale,
+        &[[-2.0, 0.0], [2.0, 0.0], [0.0, -2.0], [0.0, 2.0]],
+        [1.0; 4],
+        &total.to_string(),
     );
 }
 
@@ -425,6 +580,56 @@ mod tests {
             money_text_pos(false, 0, 100, 504.0, 258.0, 515.0, 333.0, 20.0, 0.9375),
             (498.0, 329.25)
         );
+    }
+
+    /// `CustomCurrencyManager.DrawSavings`' pile (`:43-58`): the medal
+    /// centres DIFFER from the coin arm — the vault moves to (+96,+50),
+    /// the forge to (+80,+50), and the Safe SHARES the forge's centre
+    /// (the C# overlap, kept 1:1); the piggy stays (+70,+60).
+    #[test]
+    fn the_medal_pile_centres_differ_and_the_safe_overlaps_the_forge() {
+        let all = [1i64, 1, 1, 1];
+        let icons = medal_pile_icons(&all, 504.0, 258.0);
+        assert_eq!(
+            icons,
+            vec![
+                (4076, 600.0, 308.0),
+                (3813, 584.0, 308.0),
+                (346, 584.0, 308.0), // the overlap — C# :49/:53 as-is
+                (87, 574.0, 318.0),
+            ]
+        );
+        // The per-bank gates match the coin arm's shape.
+        assert_eq!(medal_pile_icons(&[5, 0, 0, 0], 0.0, 0.0), vec![(87, 70.0, 60.0)]);
+        assert_eq!(medal_pile_icons(&[0, 0, 0, 9], 0.0, 0.0), vec![(4076, 96.0, 50.0)]);
+        assert!(medal_pile_icons(&[0, 0, 0, 0], 0.0, 0.0).is_empty());
+    }
+
+    /// `DrawSavingsMoney`'s positions (`CustomCurrencySingleCoin.cs:88-100`):
+    /// the horizontal text RIDES the jump (the C# passes `position.Y`), the
+    /// vertical text does NOT; the (0.3, 0.3) origin scales with the draw;
+    /// the >99 nudge reads the TOTAL (not a split cell).
+    #[test]
+    fn the_medal_money_positions_match_the_two_arms() {
+        // Horizontal at rest: icon centre (shopx + labelW + 45, shopy+50),
+        // text net (centre.X - 11 - 0.3*scale, centre.Y - 0.3*scale).
+        let (c, t) = medal_money_positions(true, 50, 180.0, 258.0, 60.0, 0.0, 0.75);
+        assert_eq!(c, (285.0, 308.0));
+        assert_eq!(t, (285.0 - 11.0 - 0.3 * 0.75, 308.0 - 0.3 * 0.75));
+        // The jump lifts BOTH the icon and the horizontal text.
+        let (c, t) = medal_money_positions(true, 50, 180.0, 258.0, 60.0, 10.0, 0.75);
+        assert_eq!(c, (285.0, 298.0));
+        assert_eq!(t, (285.0 - 11.0 - 0.3 * 0.75, 298.0 - 0.3 * 0.75));
+        // Vertical at rest: icon (shopx+11, shopy+75-jump); the text stays
+        // at shopy+75 even mid-jump; the >99 nudge is -6 on the total.
+        let (c, t) = medal_money_positions(false, 100, 504.0, 258.0, 0.0, 10.0, 0.75);
+        assert_eq!(c, (515.0, 323.0));
+        assert_eq!(t, (504.0 - 6.0 - 0.3 * 0.75, 333.0 - 0.3 * 0.75));
+        let (_, t) = medal_money_positions(false, 99, 504.0, 258.0, 0.0, 0.0, 0.75);
+        assert_eq!(t, (504.0 - 0.3 * 0.75, 333.0 - 0.3 * 0.75), "99 does not nudge");
+        // The pulse scale grows the origin offset (0.3 * scale).
+        let (_, t) = medal_money_positions(false, 99, 504.0, 258.0, 0.0, 0.0, 0.9375);
+        assert_eq!(t, (504.0 - 0.3 * 0.9375, 333.0 - 0.3 * 0.9375));
     }
 
     /// The savings machine feeds the draw: a stack change arms the text

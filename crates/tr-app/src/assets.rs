@@ -875,6 +875,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // `NPCChatPanel.cs:71-72`; `AssetInitializer.cs:563-565`).
         "Chat",
         "Chat_Back",
+        // The shop happiness icon strip (`TextureAssets.NPCHappiness`,
+        // `Main.cs:41792-41796` — `Images/UI/NPCHappiness`, 4 horizontal
+        // frames; W4-g58's slice, ported via research/142).
+        "UI/NPCHappiness",
         "Extra_48",
         // The emote wheel's per-cell border (`EmoteButton._textureBorder`,
         // `EmoteButton.cs:25`: `Images/UI/EmoteBubbleBorder`, 36x30) — the
@@ -2165,6 +2169,11 @@ pub struct Lookups {
     /// `AssetInitializer.cs:565`): the dialogue panel's top/bottom
     /// splices (`NPCChatPanel.cs:71-72`).
     pub ui_chat_back: Option<tr_render::SheetRect>,
+    /// `Images/UI/NPCHappiness` (`TextureAssets.NPCHappiness`,
+    /// `Main.cs:41792`): the shop happiness icon strip — 4 horizontal
+    /// frames, the band rides `currentShoppingSettings.PriceAdjustment`
+    /// (`:41794`).
+    pub ui_npc_happiness: Option<tr_render::SheetRect>,
     /// `Images/Extra_48`: the emote sheet (`EmoteBubble.Draw`, `:209`).
     pub ui_emote_sheet: Option<tr_render::SheetRect>,
     /// `Images/UI/EmoteBubbleBorder`: the emote wheel cell's 36x30 border
@@ -2686,6 +2695,7 @@ impl Lookups {
             ui_text_back: atlas.sheet("Text_Back").copied(),
             ui_chat_bubble: atlas.sheet("Chat").copied(),
             ui_chat_back: atlas.sheet("Chat_Back").copied(),
+            ui_npc_happiness: atlas.sheet("UI/NPCHappiness").copied(),
             ui_emote_sheet: atlas.sheet("Extra_48").copied(),
             ui_emote_border: atlas.sheet("UI/EmoteBubbleBorder").copied(),
             ui_hue: atlas.sheet("Hue").copied(),
@@ -3703,6 +3713,40 @@ mod tests {
         // their sheets now arrive through the enumeration instead of the list.
         assert!(lookups.coin_uv(0).is_some());
         assert!(lookups.shuriken_uv().is_some());
+    }
+
+    /// The coin SPIN strips (`TextureAssets.Coin[0..3]`,
+    /// `AssetInitializer.cs:367-370`) pack and slice into 8 vertical frames
+    /// (`CoinSlot.DrawItemCoin`, `CoinSlot.cs:242-243`: `Frame(1, 8, 0,
+    /// coinFrame)`). The savings draws read these.
+    #[test]
+    fn the_coin_spin_strips_pack_and_slice_eight_frames() {
+        let (_, lookups) = content_lookups();
+        for kind in 0..4usize {
+            let rect = lookups.coin_anim[kind].expect("Coin_{kind} packs");
+            // Each frame is width × height/8; frame 0 and frame 7 stay
+            // inside the sheet and differ in V.
+            let (uv0, w0, h0) = lookups.coin_anim_uv(kind, 0).expect("frame 0");
+            let (uv7, w7, h7) = lookups.coin_anim_uv(kind, 7).expect("frame 7");
+            assert_eq!(w0, rect.width as f32);
+            assert_eq!(h0, (rect.height / 8) as f32);
+            assert_eq!((w0, h0), (w7, h7));
+            assert!(uv7[1] > uv0[1], "frame 7 sits below frame 0");
+            assert!(uv7[3] <= (rect.y + rect.height) as f32 / lookups.atlas_size.1 as f32 + 1e-6);
+        }
+    }
+
+    /// The shop happiness icon (`TextureAssets.NPCHappiness`,
+    /// `Main.cs:41792-41794`) packs as a horizontal 4-frame strip —
+    /// `value5.Frame(4, 1, band)` quarters the width.
+    #[test]
+    fn the_npc_happiness_sheet_packs_as_a_four_frame_strip() {
+        let (_, lookups) = content_lookups();
+        let sheet = lookups
+            .ui_npc_happiness
+            .expect("UI/NPCHappiness must pack for the shop chrome");
+        assert!(sheet.width > 0 && sheet.height > 0);
+        assert_eq!(sheet.width % 4, 0, "Frame(4, 1, …) quarters the width");
     }
 
     #[test]

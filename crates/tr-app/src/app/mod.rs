@@ -381,6 +381,13 @@ pub(crate) struct App {
     /// The coin cells' display-state machine (`CoinSlot.cs`, S1-H-9): the
     /// entry arrays the vanilla carries as statics, owned by the App.
     pub(crate) coin_slot: crate::ui::coin_slot::CoinSlotState,
+    /// `ItemSlot._customCurrencyForSavings` (`ItemSlot.cs:308`, init −1
+    /// `:363`): the savings display's currency latch. `UpdateInterface`
+    /// (`:516-521`) resets it when the inventory closes or the talk ends;
+    /// `MouseHover` (`:3177`) stamps the hovered item's
+    /// `shopSpecialCurrency` — a shop medal row latches 0, every plain
+    /// item −1 (`draw_hud`'s hover stamps).
+    pub(crate) custom_currency_for_savings: i32,
     /// `NPC.RevengeManager._markers` (`NPC.cs:6437`, `CoinLossRevengeSystem
     /// .cs:315`): the cached coin carriers. Session-only — cleared on the
     /// world unload (the vanilla never saves them).
@@ -1660,6 +1667,15 @@ impl App {
     pub(crate) fn update_shop_close(&mut self) {
         if self.shop_npc.is_some() && !self.inventory_open {
             self.close_shop();
+        }
+        // `ItemSlot.UpdateInterface` (`ItemSlot.cs:516-521`, per-update at
+        // `Main.cs:17046`): the savings currency latch resets when the
+        // inventory closes or the talk ends. The port's shop opens
+        // collapse the talk onto `shop_npc` (the same stand-in the close
+        // rule above records); the reforge menu also holds a talk.
+        let talking = self.shop_npc.is_some() || self.talk_npc.is_some();
+        if !self.inventory_open || !talking {
+            self.custom_currency_for_savings = crate::custom_currency::CURRENCY_NONE;
         }
     }
 
@@ -3837,6 +3853,7 @@ impl App {
             // wiring RNG (S1-L-6c).
             craft_rng: tr_core::unified_random::UnifiedRandom::new(world_seed as i32 | 1),
             coin_slot: crate::ui::coin_slot::CoinSlotState::new(),
+        custom_currency_for_savings: crate::custom_currency::CURRENCY_NONE,
             revenge_markers: Vec::new(),
             revenge_tick: 0,
             menu: menu_state,

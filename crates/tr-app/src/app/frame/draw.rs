@@ -1750,9 +1750,12 @@ impl App {
                                     .unwrap_or(0);
                                 (&self.reforge_slot, cost, self.reforge_cooldown)
                             }),
-                            // W4-d122: the savings draw's coin machine
-                            // (`CoinSlot.Savings[4]`, the reforge arm).
+                            // W4-d122: the savings draws' coin machine
+                            // (`CoinSlot.Savings[4]` + the Custom dict).
                             &mut self.coin_slot,
+                            // `ItemSlot._customCurrencyForSavings` — the
+                            // medal-savings latch (`ItemSlot.cs:308`).
+                            &mut self.custom_currency_for_savings,
                             player.as_ref().and_then(|p| {
                                 crate::bank::bank_for_chest(p.chest)
                                     .map(|bi| (&p.banks[bi][..], p.chest))

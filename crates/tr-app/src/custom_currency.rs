@@ -119,6 +119,16 @@ pub(crate) fn count_wallet(inventories: [&[ItemSlot]; 5]) -> i64 {
     combine_stacks(&counts).0
 }
 
+/// `CustomCurrencyManager.DrawSavings`' count half (`:32-36`): the FOUR
+/// BANKS ONLY (no inventory, no ignore slots — the savings display shows
+/// the stored medals), each `CountCurrency` capped at 999 mid-walk then
+/// `CombineStacks` capped on the running total. Returns
+/// `(per_bank, combined)` for the pile's per-bank gates.
+pub(crate) fn count_savings(banks: [&[ItemSlot]; 4]) -> ([i64; 4], i64) {
+    let counts = banks.map(|b| count_currency(b, &[]).0);
+    (counts, combine_stacks(&counts).0)
+}
+
 /// `CustomCurrencySingleCoin.TryPurchasing` (`CustomCurrencySingleCoin.cs:
 /// 26-74`): snapshot EVERY slot of every container (`ItemCacheCreate`,
 /// `CustomCurrencySystem.cs:244-255`), then walk the accepted slots in
@@ -266,6 +276,34 @@ mod tests {
         // Each container caps at 999 before the combine.
         w[1][0] = medal(1500);
         assert_eq!(count_wallet(views(&w)), 999, "the combine clamps too");
+    }
+
+    /// `CustomCurrencyManager.DrawSavings`' count half (`:32-36`): the
+    /// FOUR BANKS ONLY — the inventory's medals never show in the savings
+    /// display — each bank capped 999 then the combine capped 999.
+    #[test]
+    fn the_savings_count_reads_the_banks_only() {
+        let mut w = empty_wallet();
+        w[0][0] = medal(999); // the inventory — NOT counted
+        w[1][0] = medal(15);
+        w[2][39] = medal(60);
+        w[3][7] = medal(50);
+        w[4][12] = medal(1);
+        let banks = [&w[1][..], &w[2][..], &w[3][..], &w[4][..]];
+        let (counts, total) = count_savings(banks);
+        assert_eq!(counts, [15, 60, 50, 1]);
+        assert_eq!(total, 126);
+        // The per-bank cap clamps mid-walk; the combine clamps at 999.
+        w[1][0] = medal(1500);
+        w[2][39] = medal(500);
+        let banks = [&w[1][..], &w[2][..], &w[3][..], &w[4][..]];
+        let (counts, total) = count_savings(banks);
+        assert_eq!(counts, [999, 500, 50, 1]);
+        assert_eq!(total, 999);
+        // An empty bank set draws nothing (`:37`'s `> 0` gate reads this).
+        let empty = empty_wallet();
+        let banks = [&empty[1][..], &empty[2][..], &empty[3][..], &empty[4][..]];
+        assert_eq!(count_savings(banks), ([0, 0, 0, 0], 0));
     }
 
     /// The spend walks inventory→bank→bank2→bank3→bank4 in slot order and

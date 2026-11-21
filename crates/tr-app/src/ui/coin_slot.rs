@@ -198,14 +198,18 @@ impl CoinEntry {
 
 /// The machine's state — the vanilla's static arrays (`CoinSlot.cs:340-344`)
 /// owned by the App. W4-d122: the `Savings[4]` array lands with the shop
-/// savings draw (`ItemSlot.DrawMoney`'s `fromSavings` arm); `UpdateCustom`
-/// has no port consumer yet (the Tavernkeep medal-savings display is the
-/// remaining chrome follow-up), so the `Custom` dictionary stays out.
+/// savings draw (`ItemSlot.DrawMoney`'s `fromSavings` arm); the `Custom`
+/// dictionary (`:344`) lands with the medal-savings arm
+/// (`CustomCurrencySingleCoin.DrawSavingsMoney` → `CoinSlot.UpdateCustom`,
+/// `CoinSlot.cs:230-238` — keyed by the currency's ITEM id, 3817).
 #[derive(Clone, Debug, Default)]
 pub struct CoinSlotState {
     chest_entries: Vec<CoinEntry>,
     inventory_entries: Vec<CoinEntry>,
     savings_entries: Vec<CoinEntry>,
+    /// `CoinSlot.Custom` (`CoinSlot.cs:344`, `Dictionary<int, CoinEntryRef>`):
+    /// one entry per custom-currency item id, created on first draw.
+    custom_entries: std::collections::HashMap<u16, CoinEntry>,
 }
 
 impl CoinSlotState {
@@ -215,12 +219,14 @@ impl CoinSlotState {
             chest_entries: vec![CoinEntry::default(); 200],
             inventory_entries: vec![CoinEntry::default(); 59],
             savings_entries: vec![CoinEntry::default(); 4],
+            custom_entries: std::collections::HashMap::new(),
         }
     }
 
     /// `CoinSlot.UpdateSlotAnims` (`CoinSlot.cs:256-274`) — the vanilla runs
     /// it per frame after the interface layers draw (`Main.cs:44936`); the
-    /// savings array steps FIRST (`:258-261`).
+    /// savings array steps FIRST (`:258-261`), the Custom dictionary LAST
+    /// (`:270-273`).
     pub fn update_slot_anims(&mut self) {
         for e in &mut self.savings_entries {
             e.update_anim();
@@ -229,6 +235,9 @@ impl CoinSlotState {
             e.update_anim();
         }
         for e in &mut self.inventory_entries {
+            e.update_anim();
+        }
+        for e in self.custom_entries.values_mut() {
             e.update_anim();
         }
     }
@@ -241,6 +250,19 @@ impl CoinSlotState {
             return e.update_state(71 + slot as u16, count, SAVINGS_COIN_JUMP_SCALE);
         }
         neutral()
+    }
+
+    /// `CoinSlot.UpdateCustom` (`CoinSlot.cs:230-238`): the custom-currency
+    /// cell's draw parameters — the dictionary is keyed by the currency's
+    /// ITEM id (`DrawSavingsMoney` passes `_valuePerUnit.Keys.ElementAt(0)`
+    /// = 3817), a missing key inserts a fresh `CoinEntryRef`, and the
+    /// entry's type IS that id (the 3817 pulse arm, `CoinEntry.UpdateState`
+    /// `CoinSlot.cs:75`); the jump scale is `SavingsCoinJumpScale` (10).
+    pub fn update_custom(&mut self, currency_item: u16, count: u32) -> CoinDrawState {
+        self.custom_entries
+            .entry(currency_item)
+            .or_default()
+            .update_state(currency_item, count, SAVINGS_COIN_JUMP_SCALE)
     }
 
     /// `CoinSlot.ForceSlotState` (`CoinSlot.cs:374-390`): the rank reset the
@@ -391,6 +413,30 @@ mod tests {
         // `UpdateAnim` drained the draw-active latch (2 → 1) before the
         // second draw re-armed it.
         assert_eq!(e.draw_active, 2, "the draw re-arms per frame");
+    }
+
+    #[test]
+    fn the_custom_cell_pulses_on_3817_and_keeps_its_own_rank() {
+        // `CoinSlot.UpdateCustom` (`CoinSlot.cs:230-238`): the dictionary is
+        // keyed by the ITEM id (3817), the entry's type IS that id so the
+        // `Type == 3817` pulse arm (`:75`) fires; the Savings array is a
+        // separate rank space.
+        let mut st = CoinSlotState::new();
+        // A fresh cell absorbs its stack (DrawActive == 0) — no pulse.
+        let d = st.update_custom(3817, 5);
+        assert_eq!(d.stack_text_scale, 1.0);
+        assert_eq!(d.coin_anim_frame, 0);
+        // A count change arms the text pulse at the tail key; it grows as
+        // UpdateSlotAnims drains the frame (the Custom dictionary steps
+        // LAST, `:270-273`).
+        let d = st.update_custom(3817, 6);
+        assert_eq!(d.stack_text_scale, 1.0, "the pulse starts at the tail key");
+        st.update_slot_anims();
+        let d2 = st.update_custom(3817, 6);
+        assert!(d2.stack_text_scale > 1.0, "the 3817 pulse grows after the step");
+        // The savings cells never saw the medal count.
+        let s = st.update_savings(0, 5);
+        assert_eq!(s.stack_text_scale, 1.0, "the Savings rank is untouched");
     }
 
     #[test]
