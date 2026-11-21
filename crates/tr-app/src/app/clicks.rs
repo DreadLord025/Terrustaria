@@ -1362,6 +1362,184 @@ impl App {
         }
     }
 
+    /// `ItemSlot.TryOpenContainer` (`UI/ItemSlot.cs:1786-1804`) over a boss
+    /// bag (W4-f35): `TryOpenContainer_GrantItems` → `Player.OpenBossBag`
+    /// (`Player.cs:7202-7883`, the [`crate::boss_bags`] grant trees), then
+    /// the bag stack decrements (`:1795-1799`), sound 7 (`:1800`),
+    /// `stackSplit = 30` (`:1801`) and `mouseRightRelease = false` (`:1802`).
+    ///
+    /// Every grant rides `QuickSpawnItem` → `GetOrDropItem`
+    /// (`Player.cs:7170-7199`): the `Player.GetItem` fill (the ammo pre-pass,
+    /// the occupied merge, the hotbar-first + reverse empty walks, the coin
+    /// rows for coins) with the void vault as the last resort
+    /// (`PickupItemFromWorld`'s `CanGoIntoVoidVault`, `GetItemSettings.cs:57`);
+    /// the overflow spawns a world drop at the player's centre
+    /// (`Item.RequestNewItem`, `:7198`). The whole open is a UI click OUTSIDE
+    /// every `SwapRandom` block, so the bag rolls AND the fill chimes ride
+    /// the bare-`Main.rand` stand-in (`NamedRngs::global`, the
+    /// `quick_transfer_from_slot` precedent).
+    fn open_boss_bag_click(&mut self, slot: usize) {
+        let bag = self.inventory[slot];
+        if bag.kind == 0 || bag.count == 0 {
+            return;
+        }
+        // The `BagEnv` scalars: the player's Demon-Heart slot + the Portal
+        // Gun duplicate gate (`HasItem(3384)`, `Player.cs:55894-55904` — the
+        // 0..58 scan covers the grid + coin + ammo rows), the world's
+        // difficulty/evil/seed flags. `master_mode`/`value_multiplier` stay
+        // classic (the World carries no game mode — the e25 seam, the
+        // recurring constants-off note); the bag money reads the unscaled
+        // `SetDefaults` value exactly like the C# classic path.
+        let has_portal_gun = self
+            .inventory
+            .iter()
+            .chain(self.equip.coins.iter())
+            .chain(self.equip.ammo.iter())
+            .any(|s| s.count > 0 && s.kind == 3384);
+        let env = crate::boss_bags::BagEnv {
+            master_mode: false,
+            crimson: false, // the port persists no world-evil type (shop.rs)
+            remix: self.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+            tenth_anniversary: self
+                .world
+                .seeds
+                .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),
+            extra_accessory: self.player.as_ref().is_some_and(|p| p.extra_accessory),
+            has_portal_gun,
+            value_multiplier: 1.0,
+        };
+        // The bag rolls draw the bare-`Main.rand` stand-in; snapshot it
+        // across the field borrows below (the transfer precedent).
+        let mut rng = std::mem::replace(self.rngs.global(), tr_core::UnifiedRandom::default());
+        let mut grants = Vec::new();
+        crate::boss_bags::open_boss_bag(bag.kind, &env, &mut rng, &mut grants);
+        // The fill: the favourite guard + the per-fill chime ride the same
+        // stream. The vault is the per-item last resort when enabled.
+        let favs = self.favorite_slots.clone();
+        let fav = move |i: usize| favs.contains(&i);
+        let App {
+            inventory,
+            equip,
+            audio,
+            items,
+            player,
+            ..
+        } = self;
+        let vault_enabled = player.as_ref().is_some_and(|p| p.void_vault_enabled);
+        let center = player.as_ref().map(|p| p.center()).unwrap_or((0.0, 0.0));
+        for g in grants {
+            let is_coin = registry::is_coin(g.item);
+            let mut left = g.stack;
+            if is_coin {
+                // The coin arm (`Player.GetItem`'s `num2 = -4`,
+                // `Player.cs:39340-39364`): the coin rows 50-53 then the
+                // grid, occupied first (ascending) then empty (descending),
+                // `DoCoins` immediately per fill (S1-P-i50).
+                let mut slots = crate::item::carry_slots_mut(inventory, &mut equip.coins, None);
+                let n = slots.len();
+                for i in (crate::item::INV..n).chain(0..crate::item::INV) {
+                    if left == 0 {
+                        break;
+                    }
+                    let s = &mut *slots[i];
+                    let max = registry::max_stack(g.item);
+                    if s.count > 0 && s.count < max && s.kind == g.item && s.prefix == g.prefix {
+                        audio.play_pickup_sound(true, &mut rng);
+                        let moved = left.min(max - s.count);
+                        s.count += moved;
+                        left -= moved;
+                        crate::item::do_coins(&mut slots[..], i);
+                        if left == 0 {
+                            break;
+                        }
+                    }
+                }
+                if left > 0 {
+                    for i in (0..n).rev() {
+                        if slots[i].count == 0 {
+                            audio.play_pickup_sound(true, &mut rng);
+                            *slots[i] = ItemSlot {
+                                kind: g.item,
+                                name: registry::name(g.item),
+                                count: left,
+                                prefix: g.prefix,
+                            };
+                            left = 0;
+                            crate::item::do_coins(&mut slots[..], i);
+                            break;
+                        }
+                    }
+                }
+            } else {
+                // The non-coin deposit walk (`deposit_pickup`, S1-P-i47):
+                // the ammo pre-pass + the occupied/hotbar/reverse-empty
+                // grid fills, one chime per accepted slot.
+                left = crate::item::deposit_pickup(
+                    inventory,
+                    &mut equip.ammo,
+                    g.item,
+                    g.prefix,
+                    left,
+                    &fav,
+                    &mut |moved| {
+                        if moved > 0 {
+                            audio.play_pickup_sound(false, &mut rng);
+                        }
+                    },
+                );
+            }
+            // The void vault last resort (`Player.cs:39395-39398`).
+            if left > 0 && vault_enabled {
+                if let Some(p) = player.as_mut() {
+                    if crate::bank::can_void_vault_accept(g.item) {
+                        let taken = crate::bank::void_vault_take(
+                            &mut p.banks[3],
+                            g.item,
+                            g.prefix,
+                            left,
+                            registry::max_stack(g.item),
+                            is_coin,
+                            audio,
+                            &mut rng,
+                        );
+                        left -= taken;
+                    }
+                }
+            }
+            // The overflow spawns a world drop at the player's centre
+            // (`Item.RequestNewItem`, `Player.cs:7198`) — the port's pinned
+            // velocity/phase triplet + the preserved prefix (no fresh roll).
+            if left > 0 {
+                let vx = (rng.next_float() * 2.0 - 1.0) * 1.2;
+                let vy = -1.5 - rng.next_float();
+                let phase = rng.next_float() * std::f32::consts::TAU;
+                items.push(crate::item::ItemDrop::new(
+                    g.item,
+                    left,
+                    g.prefix,
+                    center.0,
+                    center.1,
+                    vx,
+                    vy,
+                    phase,
+                ));
+            }
+        }
+        // The bag stack decrements AFTER the grants (`ItemSlot.cs:1795-1799`);
+        // at 0 it turns to air (`SetDefaults(0)`).
+        let bag_slot = &mut inventory[slot];
+        bag_slot.count -= 1;
+        if bag_slot.count == 0 {
+            *bag_slot = EMPTY_SLOT;
+        }
+        let (kind, count) = (inventory[slot].kind, inventory[slot].count);
+        *self.rngs.global() = rng;
+        self.audio.play("Grab"); // `SoundEngine.PlaySound(7)` (`:1800`)
+        self.stack_split = 30; // `:1801`
+        self.ui_right_press = false; // `:1802` — `Main.mouseRightRelease = false`
+        self.coin_slot.force_slot_state(slot as i32, 0, kind, count);
+    }
+
     pub(crate) fn handle_inventory_clicks(&mut self) {
         let left = self.ui_left_press;
         let right_edge = self.ui_right_press;
@@ -1893,6 +2071,24 @@ impl App {
         // cursor room. This decides pickup vs the port's press-edge carry.
         let can_stack = crate::bank::can_stack(&held, &target);
         let can_take = held.count == 0 || (can_stack && held.count < registry::max_stack(target.kind));
+        // `RightClick`'s `OpenableBag` arm (`ItemSlot.cs:1660-1667`, W4-f35):
+        // an air cursor or one that cannot stack with the cell opens the
+        // boss bag on the press edge (`Main.mouseRightRelease`) — BEFORE
+        // the `HasItemSwap` cycle (`:1668`). The arm RETURNS on every held
+        // frame too (no split pickup while a bag sits under the pointer).
+        // The C# set is `ItemID.Sets.OpenableBag` (`ItemID.cs:1384`); only
+        // the `BossBag` subset has a ported opener (`Player.OpenBossBag`) —
+        // the crates/presents/herb bags stay unported (they fall through
+        // to the swap/split arms below, the recorded gap).
+        if !left
+            && (held.count == 0 || !can_stack)
+            && crate::boss_bags::is_boss_bag(target.kind)
+        {
+            if right_edge {
+                self.open_boss_bag_click(slot);
+            }
+            return;
+        }
         // `RightClick`'s `HasItemSwap` arm (`ItemSlot.cs:1668-1675`,
         // S1-P-i48): a single variant-swap kind (`ItemID.cs:1385`) cycles
         // in place on the press edge — BEFORE the `SwapEquip` ladder
@@ -5982,5 +6178,216 @@ mod s1_p_i44_shop_click_tests {
         assert_eq!(app.shop_stock[0].stack, 2);
         // The buy price of a buyOnce torch row: 50/5 = 10 per unit.
         assert_eq!(app.coins, 1_000_000 - 100);
+    }
+}
+
+#[cfg(test)]
+mod w4_f35_boss_bag_open_tests {
+    //! W4-f35 — the inventory right-click boss-bag open arm
+    //! (`ItemSlot.cs:1660-1667` → `TryOpenContainer` `:1786-1804` →
+    //! `Player.OpenBossBag`). The grant trees themselves are pinned in
+    //! `boss_bags.rs`; these witnesses pin the WIRING: the arm fires on the
+    //! press edge with an air cursor, the grants fill the inventory, the
+    //! bag stack decrements AFTER the grants, the overflow spawns a world
+    //! drop, and the whole open rides the bare-`Main.rand` stand-in.
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    /// Grid slot 5's centre — the 56·0.85 px pitch from (20, 20)
+    /// (`App::slot_at_mouse`): (20 + 5·47.6 + 23.8, 20 + 23.8) ≈ (282, 44).
+    const BAG_CELL: Vec2 = Vec2::new(280.0, 40.0);
+
+    fn bag_app(bag: u16, count: u32) -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.inventory_open = true;
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.inventory[5] = ItemSlot {
+            kind: bag,
+            name: registry::name(bag),
+            count,
+            prefix: 0,
+        };
+        app.mouse_pos = BAG_CELL;
+        app
+    }
+
+    /// The total copper value of the coins in the inventory + coin rows
+    /// (the bag money tail's grants).
+    fn coin_copper(app: &App) -> u64 {
+        app.inventory
+            .iter()
+            .chain(app.equip.coins.iter())
+            .filter(|s| registry::is_coin(s.kind))
+            .map(|s| registry::coin_value(s.kind) * s.count as u64)
+            .sum()
+    }
+
+    #[test]
+    fn w4_f35_right_click_opens_the_king_slime_bag_and_decrements_it() {
+        // The press edge with an air cursor opens the bag: the grants
+        // fill the inventory, the bag stack drops by one, the split
+        // cooldown arms 30 and the right-release latch clears.
+        let mut app = bag_app(3318, 3);
+        app.ui_right_press = true;
+        app.place_down = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.inventory[5].kind, 3318);
+        assert_eq!(app.inventory[5].count, 2, "the bag stack decremented");
+        assert_eq!(app.stack_split, 30, "`:1801`");
+        assert!(!app.ui_right_press, "`:1802` mouseRightRelease = false");
+        // The Solidifier 998 and the Royal Gel 3090 always grant — they
+        // landed somewhere in the inventory.
+        let kinds: Vec<u16> = app.inventory.iter().map(|s| s.kind).collect();
+        assert!(kinds.contains(&998), "the Solidifier granted: {kinds:?}");
+        assert!(kinds.contains(&3090), "the Royal Gel granted: {kinds:?}");
+        // The money tail minted coins (the King Slime's 10000f base).
+        assert!(coin_copper(&app) > 0, "the bag money minted coins");
+        // The cursor stayed air (the grants go to the inventory, not the
+        // cursor — `QuickSpawnItem` → `GetOrDropItem`).
+        assert_eq!(app.mouse_item.count, 0);
+    }
+
+    #[test]
+    fn w4_f35_the_last_bag_turns_to_air() {
+        // A stack of 1: the decrement empties the slot (`SetDefaults(0)`).
+        let mut app = bag_app(3319, 1);
+        app.ui_right_press = true;
+        app.place_down = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.inventory[5], EMPTY_SLOT, "the last bag turned to air");
+        // The EoC bag's Shield of Cthulhu 3097 always grants.
+        let kinds: Vec<u16> = app.inventory.iter().map(|s| s.kind).collect();
+        assert!(kinds.contains(&3097), "the Shield of Cthulhu: {kinds:?}");
+    }
+
+    #[test]
+    fn w4_f35_a_held_right_button_does_not_reopen_the_bag() {
+        // The open fires on the PRESS EDGE only (`Main.mouseRightRelease`);
+        // a held frame with the latch already cleared opens nothing.
+        let mut app = bag_app(3318, 3);
+        app.ui_right_press = true;
+        app.place_down = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.inventory[5].count, 2);
+        // The held frame: ui_right_press is false (the open cleared it),
+        // place_down still true — the arm returns without opening.
+        app.handle_inventory_clicks();
+        assert_eq!(app.inventory[5].count, 2, "no reopen on the held frame");
+    }
+
+    #[test]
+    fn w4_f35_a_non_air_cursor_that_cannot_stack_still_opens() {
+        // `:1658` — the arm needs an air cursor OR one that cannot stack
+        // with the bag. A held wood stack cannot stack with the bag, so
+        // the open still fires (and the cursor keeps the wood).
+        let mut app = bag_app(3318, 2);
+        app.mouse_item = ItemSlot {
+            kind: 9,
+            name: registry::name(9),
+            count: 5,
+            prefix: 0,
+        };
+        app.ui_right_press = true;
+        app.place_down = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.inventory[5].count, 1, "the bag opened");
+        assert_eq!(app.mouse_item.kind, 9, "the cursor kept the wood");
+        assert_eq!(app.mouse_item.count, 5);
+    }
+
+    #[test]
+    fn w4_f35_a_stackable_cursor_blocks_the_open() {
+        // A cursor holding the SAME bag kind can stack — the `:1658` gate
+        // refuses, so the open arm never runs (the split pickup would).
+        let mut app = bag_app(3318, 2);
+        app.mouse_item = ItemSlot {
+            kind: 3318,
+            name: registry::name(3318),
+            count: 1,
+            prefix: 0,
+        };
+        app.ui_right_press = true;
+        app.place_down = true;
+        app.handle_inventory_clicks();
+        // The bag stack is untouched by an open (the split may move one
+        // onto the cursor, but no grants land).
+        let kinds: Vec<u16> = app.inventory.iter().map(|s| s.kind).collect();
+        assert!(!kinds.contains(&998), "no Solidifier — the open refused");
+        assert!(!kinds.contains(&3090), "no Royal Gel — the open refused");
+    }
+
+    #[test]
+    fn w4_f35_the_open_rides_the_global_stream_and_spares_the_named_streams() {
+        // The whole open is a UI click outside every SwapRandom block:
+        // the bag rolls + the fill chimes draw `NamedRngs::global`, and
+        // every named stage stream stays pristine.
+        let mut app = bag_app(3318, 1);
+        let pristine: Vec<_> = crate::app::RngKey::ALL
+            .iter()
+            .map(|k| app.rngs.stream(*k).clone())
+            .collect();
+        let global_before = app.rngs.global().clone();
+        app.ui_right_press = true;
+        app.place_down = true;
+        app.handle_inventory_clicks();
+        assert_ne!(
+            *app.rngs.global(),
+            global_before,
+            "the open drew the global stream"
+        );
+        for (k, want) in crate::app::RngKey::ALL.iter().zip(pristine) {
+            assert_eq!(*app.rngs.stream(*k), want, "{} stayed pristine", k.name());
+        }
+    }
+
+    #[test]
+    fn w4_f35_the_overflow_spawns_a_world_drop_at_the_player_centre() {
+        // A full inventory: the grants that cannot fit spawn world drops
+        // (`Item.RequestNewItem`, `Player.cs:7198`) at the player's centre
+        // with the prefix preserved. Fill every grid + coin + ammo slot
+        // with an alien full stack so nothing merges.
+        let mut app = bag_app(3324, 1); // the WoF bag — several grants
+        for s in app.inventory.iter_mut() {
+            *s = ItemSlot { kind: 3, name: registry::name(3), count: 9999, prefix: 0 };
+        }
+        for s in app.equip.coins.iter_mut() {
+            *s = ItemSlot { kind: 3, name: registry::name(3), count: 9999, prefix: 0 };
+        }
+        for s in app.equip.ammo.iter_mut() {
+            *s = ItemSlot { kind: 3, name: registry::name(3), count: 9999, prefix: 0 };
+        }
+        // The bag itself sits at slot 5 — restore it over the stone.
+        app.inventory[5] = ItemSlot { kind: 3324, name: registry::name(3324), count: 1, prefix: 0 };
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        app.ui_right_press = true;
+        app.place_down = true;
+        app.handle_inventory_clicks();
+        assert!(!app.items.is_empty(), "the overflow spawned world drops");
+        for d in &app.items {
+            assert!((d.pos.x - cx).abs() < 1.0, "the drop spawns at the centre");
+            assert!((d.pos.y - cy).abs() < 1.0);
+        }
+        // The Pwnhammer 367 always grants — it is among the overflow.
+        assert!(app.items.iter().any(|d| d.kind == 367), "the Pwnhammer overflowed");
+    }
+
+    #[test]
+    fn w4_f35_the_grantless_ooa_bag_opens_and_mints_nothing() {
+        // 3861 (Ogre) has no grant case — the open runs only the money
+        // tail (value 0f, no coins), the bag still decrements.
+        let mut app = bag_app(3861, 2);
+        app.ui_right_press = true;
+        app.place_down = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.inventory[5].count, 1, "the bag decremented");
+        assert_eq!(coin_copper(&app), 0, "the Ogre bag mints nothing");
+        // No grant items landed (only the bag itself remains).
+        let non_bag: Vec<u16> = app
+            .inventory
+            .iter()
+            .filter(|s| s.kind != 0 && s.kind != 3861)
+            .map(|s| s.kind)
+            .collect();
+        assert!(non_bag.is_empty(), "no grants: {non_bag:?}");
     }
 }
