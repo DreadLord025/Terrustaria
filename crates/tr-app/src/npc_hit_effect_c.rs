@@ -186,6 +186,7 @@
 //! | 817-821 | `:86801-86805` | the 195/196 LostGirl/Nymph death (5 gores 254/255/255/256/256) |
 //! | 822-826 | `:86842-86846` | the 206 IcyMerman death (5 gores 273/274/274/275/275, type-137 dust) |
 //! | 827-832 | `:86821-86826` | the 198/199 Lihzahrd death (6 gores, all tails at +20 Y) |
+//! | 833-837 | `:86862-86866` | the 342 GingerbreadMan death (5 gores 500/501/501/502/502, type-0 dust) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -4992,6 +4993,21 @@ fn lihzahrd_death(
     gore.new_gore(rng, world, tail, vel, 261, s); // :86826
 }
 
+/// The 342 GingerbreadMan death (`NPC.cs:86858-86866`, sites 833-837): the
+/// 50-dust type-0 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 5-gore ladder (500,501,502).
+fn gingerbread_man_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    five_gore_ladder(npc, dust, dust_ctx, gore, rng, world, hit_direction, 0, 50, 2.5, -2.5, 500, 501, 502);
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -5609,6 +5625,10 @@ pub fn hit_effect_c(
     // `:86807-86827` — the 198/199 Lihzahrd arm (sites 827-832).
     if (npc_type == 198 || npc_type == 199) && npc.hp <= 0 {
         lihzahrd_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86848-86867` — the 342 GingerbreadMan arm (sites 833-837).
+    if npc_type == 342 && npc.hp <= 0 {
+        gingerbread_man_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -8826,6 +8846,20 @@ mod tests {
         for i in 1..6 {
             assert_eq!(gore.slot(i).position, Vec2::new(100.0, 120.0));
         }
+    }
+
+    /// `NPC.cs:86862-86866` — the GingerbreadMan death: the 5-gore ladder
+    /// 500/501/502 after the 50-dust type-0 SpeedX-2.5 burst.
+    #[test]
+    fn w4_f10_the_gingerbread_man_death_spawns_the_ladder() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(773);
+        gingerbread_man_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![500, 501, 501, 502, 502]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
