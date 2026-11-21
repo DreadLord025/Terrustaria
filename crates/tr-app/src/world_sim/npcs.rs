@@ -17604,7 +17604,10 @@ mod dw3_tests {
         player.y = 110.0 * TILE_PX;
         app.player = Some(player);
         // The zombie in the pool (the 18x40 box overlaps rows 118-119).
+        // The body is HP-boosted so the 47-damage strike does not kill it
+        // (the stock 45-HP zombie would ride the death retain).
         let mut z = Npc::new(NpcKind::Zombie, 95.0 * TILE_PX, 117.5 * TILE_PX, 1, 0.0);
+        z.max_hp = 500;
         z.hp = z.max_hp;
         let hp0 = z.hp;
         app.npcs.push(z);
