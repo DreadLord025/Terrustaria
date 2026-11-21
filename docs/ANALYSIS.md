@@ -18496,6 +18496,59 @@ Documented gaps, all deliberate:
   (vanilla); the Paladin MP-only `dodgeable: false` site (`:38361`) is
   unreachable in the port.
 
+### W4-d115 addendum — the send seams + HolyProtection (2026-11-21)
+
+**Code-only mode**: no cargo/rustc/tests were run on this branch — the 9
+witness tests are WRITTEN, NOT RUN. The branch is stacked on W4-c27 batch 4
+(`412b6bc0`, the `62 SyncDodge` reader/relay + `Player.apply_net_dodge`);
+the handlers are REUSED, not re-ported.
+
+1. **The `SendData(62)` send census is complete** (kinds 1/2/4/5). Each
+   handler's C# tail (`NinjaDodge` `:38161-38164` kind 1, `ShadowDodge`
+   `:38038` kind 2, `BrainOfConfusionDodge` `:38050-38054` kind 4,
+   `DoMysticSashDodge` `:38113-38116` kind 5) queues its kind byte on
+   `Player.pending_dodge_sends` **at the `hurt_inner` roll arm**, NOT inside
+   the shared handler — c27's `apply_net_dodge` reader calls the same
+   handlers and the C# reader never re-sends (`MessageBuffer.cs:2887-2902`).
+   `net_tick` drains the queue EVERY tick ahead of the 10 Hz state batch
+   (the C# send is inline in `Hurt`; the `take_hurt_sound` convention):
+   host → `S2c::SyncDodge` broadcast, client → `C2s::SyncDodge` (the host
+   forces the id to the sender, `:2885`); `NetRole::Off` takes-and-drops
+   (`NetMessage.SendData`'s netMode gate, `NetMessage.cs:83-86`). The
+   respawn pending-strip clears the queue. One dodge per commit:
+   `ebb149c3` (ninja), `9cc68501` (brain), `26f81b71` (shadow),
+   `7141a837` (sash).
+2. **HolyProtection = the Hallowed `onHitDodge` grant chain** (`947e0b44`).
+   Buff 59's display name IS "Holy Protection" (`BuffName.ShadowDodge`,
+   en-US Game.json:700) — there is no separate Holy-dodge handler in 1.4.5.8
+   (the retired kind-3 wire arm has no C# body). Landed: `Player.on_hit_dodge`
+   (`Player.cs:1170`) + the `ResetEffects` clear (`:18443`);
+   `SetFlag::OnHitDodge` + the 24 `Hallowed` (`ArmorSetBonuses.cs:473`,
+   heads {558,553,559,4898,4897,4896} × bodies {551,4900} × legs {552,4901})
+   and 8 `HallowedSummoner` (`:472`, heads {4873,4899}) cartesian rows in the
+   app-side flag table (the head ids are disjoint across the two sets, so
+   the plain `complete_set` scan stays correct despite the shared body/leg
+   ids; the `maxMinions += 2` stat half stays tr-core's, S1-P-i25);
+   `Player.on_hit_dodge_grant` = `OnHit`'s arm verbatim (`:6938-6941`:
+   `onHitDodge && shadowDodgeTimer == 0 → AddBuff(59, 1800)`, RNG-free);
+   the `:25705-25708` `shadowDodge && !onHitDodge → ClearBuff(59)` right
+   after `UpdateArmorSets`; the two `OnHit` call seams — melee
+   `ProcessHitAgainstNPC` (`:44392-44395`, `life > 5` gate, after
+   StatusToNPC before the nano-flask boost) and projectile
+   `TryDoingOnHitEffects` (`Projectile.cs:13585-13588` → `:15128-15141`,
+   the 221/227/614/729/908/977 refuse list verbatim).
+3. **Deviations, all deliberate**: the `OnHit` arms other than `onHitDodge`
+   (titanium storm `:6928-6937`, regen `:6942-6945`, stardust `:6946-6963`,
+   petal `:6964-6982`, crystal leaf `:6983+`) are unported families — their
+   slots stay open at the same seams; the statue/Mimic `flag` (`:6919-6923`)
+   only gates the titanium arm, so its absence does not touch this grant.
+   The melee seam runs inside the `enchant_flags` `if let` (the port always
+   has a player there — the `Some(flags)` fold); the dash/`CollideWithNPCs`
+   `OnHit` callers (`:20443`/`:21093`) ride the port's stand-in dash arm
+   (no `ApplyDamageToNPC` seam yet). The send queue's drain latency is one
+   fixed step at most (the `net_tick` runs in the same step's net phase);
+   the remote-copy apply stays parked with c27 (no peer hurt lane).
+
 ## The magic cuffs (S1-C-7 wave A, 2026-11-18)
 
 `Player.Hurt`'s `magicCuffs` arm (`Player.cs:38291-38303`) lands in
