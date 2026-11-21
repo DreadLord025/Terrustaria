@@ -470,6 +470,9 @@ pub(crate) struct DeathSnapshot {
     /// `base.ai[2]` — the 590 shadow-flame death's gore/dust variant gate
     /// (`ai[2] == 1f` → dust 31 + gore 61, `:72618`).
     pub ai2: f32,
+    /// `base.wet` — the 1037/1049 death's `!wet` dust gate (`:73901`). The
+    /// pool's centre-cell liquid probe stand-in (the S1-P-i35 field doc).
+    pub wet: bool,
 }
 
 impl DeathSnapshot {
@@ -494,6 +497,7 @@ impl DeathSnapshot {
             apprentice_t3: false,
             max_updates: (p.extra_updates + 1) as f32,
             ai2: p.ai[2],
+            wet: p.wet,
         }
     }
 }
@@ -2740,6 +2744,103 @@ fn death_bursts(
                 d.scale += rng.next_float();
             }
         }
+        // `:73862-73920` — the 1037/1049 cursed-flame death: the double
+        // resize (192×scale then 64/112), 6 dust-31 + 3 circular-scatter
+        // gores + the !wet-gated 24 pairs + 4 SelectRandom fan (see
+        // `cursed_flame_death`).
+        1037 | 1049 => cursed_flame_death(s, dust, rng, ctx, world),
+        // `:73921-73941` — the 399: 5× dust-12 Red at Center−(10,10) box
+        // 20×20 defaults; 10× dust-31 alpha 100 scale 1.5 vel×1.4; 20
+        // PAIRS dust-6 alpha 100 (scale 2.5 noGravity vel×5, then scale
+        // 1.5 vel×3 GRAVITY ON). The owner-gated 6-shard spawn burst
+        // (`:73942-73950`) stays the spawn lane's draws.
+        399 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let pos = center - Vec2::splat(10.0);
+            for _ in 0..5 {
+                dust.new_dust(rng, ctx, world, pos, 20, 20, 12, 0.0, 0.0, 0, Color::new(255, 0, 0, 255), 1.0);
+            }
+            for _ in 0..10 {
+                let idx = dust.new_dust(rng, ctx, world, pos, 20, 20, 31, 0.0, 0.0, 100, Color::default(), 1.5);
+                dust.slot_mut(idx).velocity *= 1.4;
+            }
+            for _ in 0..20 {
+                let idx = dust.new_dust(rng, ctx, world, pos, 20, 20, 6, 0.0, 0.0, 100, Color::default(), 2.5);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 5.0;
+                let idx = dust.new_dust(rng, ctx, world, pos, 20, 20, 6, 0.0, 0.0, 100, Color::default(), 1.5);
+                dust.slot_mut(idx).velocity *= 3.0;
+            }
+        }
+        // `:74029-74062` — the 358: the smoke puff, 50× dust-211 alpha 75
+        // scale 1.2, small 0.6, vel += newVel.
+        358 => smoke_puff(s, dust, rng, ctx, world, 50, 211, 75, Color::default(), 1.2, 0.6, 1.0, false),
+        // `:74063-74098` — the 406: the smoke puff, 40× dust-4 alpha 175
+        // (0,80,255,100) scale 1.6, small 0.6.
+        406 => smoke_puff(s, dust, rng, ctx, world, 40, 4, 175, Color::new(0, 80, 255, 100), 1.6, 0.6, 1.0, false),
+        // `:74099-74147` — the 1042: the smoke puff, 50× dust-324 alpha 75
+        // scale 1.25, small 0.8, vel += newVel×0.8, + the Next(6) colour.
+        1042 => smoke_puff(s, dust, rng, ctx, world, 50, 324, 75, Color::default(), 1.25, 0.8, 0.8, true),
+        // `:74182-74203` — the 323: 20× dust-7 defaults; Next(2) gate 0 →
+        // noGravity scale 1.3 vel×1.5 −= oldVel×0.5 vel×1.5; else vel×0.75
+        // −= oldVel×0.25 scale 0.8 (gravity ON).
+        323 => {
+            for _ in 0..20 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 7, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                if rng.next_max(2) == 0 {
+                    d.no_gravity = true;
+                    d.scale = 1.3;
+                    d.velocity *= 1.5;
+                    d.velocity -= s.old_vel * 0.5;
+                    d.velocity *= 1.5;
+                } else {
+                    d.velocity *= 0.75;
+                    d.velocity -= s.old_vel * 0.25;
+                    d.scale = 0.8;
+                }
+            }
+        }
+        // `:74204-74235` — the 589: colour Red / ai1==1 Green / ==2 Purple
+        // / ==3 Gold / ==4 White, A=100; 30× dust-11 colour defaults vel×=
+        // 1+NextFloat; the first 10 noGravity vel×0.5.
+        589 => {
+            // The C# compares ai[1] == 1f etc. EXACTLY (float equality).
+            let mut color = if s.ai1 == 1.0 {
+                Color::new(0, 255, 0, 255)
+            } else if s.ai1 == 2.0 {
+                Color::new(128, 0, 128, 255)
+            } else if s.ai1 == 3.0 {
+                Color::new(255, 215, 0, 255)
+            } else if s.ai1 == 4.0 {
+                Color::WHITE
+            } else {
+                Color::new(255, 0, 0, 255)
+            };
+            color.a = 100;
+            for i in 0..30 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 11, 0.0, 0.0, 0, color, 1.0);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 1.0 + rng.next_float();
+                if i < 10 {
+                    d.no_gravity = true;
+                    d.velocity *= 0.5;
+                }
+            }
+        }
+        // `:74283-74302` — the 311/316: 5× dust-189/195 defaults scale
+        // 0.85 noGravity vel += baseVel×0.5.
+        311 | 316 => {
+            let dust_type = if s.kind == 311 { 189 } else { 195 };
+            for _ in 0..5 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, dust_type, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.scale = 0.85;
+                d.no_gravity = true;
+                d.velocity += s.vel * 0.5;
+            }
+        }
         _ => {}
     }
 }
@@ -3123,6 +3224,112 @@ fn chlorophyte_ring(
     }
 }
 
+/// `Kill()`'s 358/406/1042 smoke puff (`:74029-74147`): the corpse velocity
+/// is REWRITTEN to oldVelocity×0.2 first; `count` dust at pos alpha
+/// `alpha` scale `scale`; THREE Next(2) alpha+25 gates, then a Next(2)
+/// scale=`small_scale` ELSE noGravity gate; vel×0.3 += newVel×`vel_add`,
+/// ×= 1+Next(−100,101)×0.01, X/Y += Next(−50,51)×0.015 each; position =
+/// Center. The 1042 adds a trailing Next(6) colour pick.
+fn smoke_puff(
+    s: &DeathSnapshot,
+    dust: &mut DustPool,
+    rng: &mut UnifiedRandom,
+    ctx: &SpawnCtx,
+    world: &World,
+    count: i32,
+    dust_type: i32,
+    alpha: i32,
+    color: Color,
+    scale: f32,
+    small_scale: f32,
+    vel_add: f32,
+    color_pick: bool,
+) {
+    let new_vel = s.old_vel * 0.2;
+    let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+    for _ in 0..count {
+        let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, dust_type, 0.0, 0.0, alpha, color, scale);
+        let d = dust.slot_mut(idx);
+        for _ in 0..3 {
+            if rng.next_max(2) == 0 {
+                d.alpha += 25;
+            }
+        }
+        if rng.next_max(2) == 0 {
+            d.scale = small_scale;
+        } else {
+            d.no_gravity = true;
+        }
+        d.velocity *= 0.3;
+        d.velocity += new_vel * vel_add;
+        d.velocity *= 1.0 + rng.next_range(-100, 101) as f32 * 0.01;
+        d.velocity.x += rng.next_range(-50, 51) as f32 * 0.015;
+        d.velocity.y += rng.next_range(-50, 51) as f32 * 0.015;
+        d.position = center;
+        if color_pick {
+            d.color = match rng.next_max(6) {
+                0 => Color::new(255, 255, 220, 255),
+                1 => Color::new(230, 255, 255, 255),
+                2 => Color::new(255, 210, 255, 255),
+                _ => Color::new(225, 210, 255, 255),
+            };
+        }
+    }
+}
+
+/// `Kill()`'s 1037/1049 death (`:73862-73920`): the box first inflates to
+/// (int)(192×scale) centred, then Resize(64/112) recentres AGAIN — the
+/// final box is 64 (1037) / 112 (1049) at the old centre. 6× dust-31
+/// alpha 100 scale 1.5 (gravity ON); 3 gores with the NextVector2Circular
+/// (25,25) scatter (TWO NextFloat — unit then radius — AFTER the kicks);
+/// then `!wet` gates 24 pairs dust-6 alpha 100 + 4 SelectRandom(6,259,158)
+/// alpha 200 vel×2.4 scale+=NextFloat. The owner-gated localAI[1]=−1 +
+/// Damage are unported state (no draws).
+fn cursed_flame_death(
+    s: &DeathSnapshot,
+    dust: &mut DustPool,
+    rng: &mut UnifiedRandom,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let size = if s.kind == 1049 { 112 } else { 64 };
+    let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+    let pos = center - Vec2::splat(size as f32 * 0.5);
+    for _ in 0..6 {
+        dust.new_dust(rng, ctx, world, pos, size, size, 31, 0.0, 0.0, 100, Color::default(), 1.5);
+    }
+    for _ in 0..3 {
+        let _ = rng.next_max(100);
+        let _ = rng.next_max(100);
+        let _ = rng.next_range(61, 64);
+        let _ = rng.next_range(10, 31);
+        let _ = rng.next_range(-20, 21);
+        let _ = next_vector2_circular(rng, 25.0, 25.0); // the gore scatter
+        let _ = rng.next_range(-10, 11);
+        let _ = rng.next_range(-10, 11);
+    }
+    if !s.wet {
+        for _ in 0..24 {
+            let idx = dust.new_dust(rng, ctx, world, pos, size, size, 6, 0.0, 0.0, 100, Color::default(), 2.5);
+            let d = dust.slot_mut(idx);
+            d.no_gravity = true;
+            d.velocity *= 3.0;
+            let idx = dust.new_dust(rng, ctx, world, pos, size, size, 6, 0.0, 0.0, 100, Color::default(), 1.5);
+            let d = dust.slot_mut(idx);
+            d.velocity *= 2.0;
+            d.no_gravity = true;
+        }
+        for _ in 0..4 {
+            let dust_type = rng.next_from_slice(&[6, 259, 158]);
+            let idx = dust.new_dust(rng, ctx, world, pos, size, size, dust_type, 2.5 * s.direction as f32, -2.5, 0, Color::default(), 1.0);
+            let d = dust.slot_mut(idx);
+            d.alpha = 200;
+            d.velocity *= 2.4;
+            d.scale += rng.next_float();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3146,6 +3353,7 @@ mod tests {
             apprentice_t3: false,
             max_updates: 1.0,
             ai2: 0.0,
+            wet: false,
         }
     }
 
@@ -4586,6 +4794,117 @@ mod tests {
             assert!(active[..8].iter().all(|d| d.dust_type == 31 && !d.no_gravity));
             assert!(active[8..72].iter().all(|d| d.dust_type == 6 && d.no_gravity));
             assert!(active[72..].iter().all(|d| matches!(d.dust_type, 6 | 259 | 158) && d.alpha == 200 && !d.no_gravity));
+        }
+    }
+
+    /// The 1037/1049: dry → 6 + 48 + 4 = 58 dust; wet → only the 6 dust-31
+    /// (the gore census draws ride either way — determinism pins them).
+    #[test]
+    fn w4_g65_the_1037_1049_cursed_flame() {
+        let w = world();
+        for kind in [1037u16, 1049] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), 58, "kind {kind} dry");
+            assert!(active[..6].iter().all(|d| d.dust_type == 31 && !d.no_gravity));
+            assert!(active[6..54].iter().all(|d| d.dust_type == 6 && d.no_gravity));
+            let mut s = snap(kind);
+            s.wet = true;
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(7);
+            drain(&[s], &mut dust, &mut rng, &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), 6, "kind {kind} wet");
+            let mut dust2 = DustPool::new();
+            let mut rng2 = UnifiedRandom::new(7);
+            drain(&[s], &mut dust2, &mut rng2, &ctx(), &w);
+            assert_eq!(dust.slots(), dust2.slots());
+            assert_eq!(rng, rng2);
+        }
+    }
+
+    /// The 399: 5 dust-12 Red + 10 dust-31 + 40 dust-6 = 55 dust; the
+    /// pair-seconds keep gravity.
+    #[test]
+    fn w4_g65_the_399_burst() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(399)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 55);
+        assert!(active[..5].iter().all(|d| d.dust_type == 12 && d.color == Color::new(255, 0, 0, 255)));
+        assert_eq!(active.iter().filter(|d| d.dust_type == 31).count(), 10);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 6).count(), 40);
+        assert_eq!(active[15..].iter().filter(|d| d.no_gravity).count(), 20);
+    }
+
+    /// The 358/406/1042 smoke puffs: 50/40/50 dust at the corpse centre,
+    /// alpha 75/175/75 (+0/25/50/75 from the three gates), the scale-or-
+    /// noGravity split; the 1042's colours are the 4-way pick.
+    #[test]
+    fn w4_g65_the_smoke_puffs() {
+        let w = world();
+        let center = Vec2::new(105.0, 105.0);
+        for (kind, count, dust_type, alpha) in [(358u16, 50, 211, 75), (406, 40, 4, 175), (1042, 50, 324, 75)] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), count, "kind {kind}");
+            assert!(active.iter().all(|d| d.dust_type == dust_type && d.position == center), "kind {kind}");
+            assert!(active.iter().all(|d| d.alpha >= alpha && d.alpha <= alpha + 75 && (d.alpha - alpha) % 25 == 0), "kind {kind}");
+            // Each dust is EITHER small-scale with gravity OR noGravity.
+            let small = if kind == 1042 { 0.8 } else { 0.6 };
+            assert!(active.iter().all(|d| (d.scale == small && !d.no_gravity) || d.no_gravity), "kind {kind}");
+        }
+    }
+
+    /// The 323: 20 dust-7; the noGravity ones scale 1.3, the gravity ones
+    /// 0.8.
+    #[test]
+    fn w4_g65_the_323_burst() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(323)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 20);
+        assert!(active.iter().all(|d| d.dust_type == 7));
+        assert!(active.iter().all(|d| (d.no_gravity && d.scale == 1.3) || (!d.no_gravity && d.scale == 0.8)));
+    }
+
+    /// The 589: 30 dust-11, A=100, the ai1 colour ladder; the first 10
+    /// noGravity.
+    #[test]
+    fn w4_g65_the_589_burst() {
+        let w = world();
+        let mut s = snap(589);
+        s.ai1 = 3.0;
+        let mut dust = DustPool::new();
+        drain(&[s], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 30);
+        assert!(active.iter().all(|d| d.dust_type == 11 && d.color == Color::new(255, 215, 0, 100)));
+        assert!(active[..10].iter().all(|d| d.no_gravity));
+        assert!(active[10..].iter().all(|d| !d.no_gravity));
+        // The exact-equality gate: ai1 = 1.5 keeps Red.
+        let mut s = snap(589);
+        s.ai1 = 1.5;
+        let mut dust = DustPool::new();
+        drain(&[s], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert!(active.iter().all(|d| d.color == Color::new(255, 0, 0, 100)));
+    }
+
+    /// The 311/316: 5 dust-189/195, scale 0.85 noGravity.
+    #[test]
+    fn w4_g65_the_311_316_bursts() {
+        let w = world();
+        for (kind, dust_type) in [(311u16, 189), (316, 195)] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), 5);
+            assert!(active.iter().all(|d| d.dust_type == dust_type && d.scale == 0.85 && d.no_gravity));
         }
     }
 }

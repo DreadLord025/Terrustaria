@@ -39677,6 +39677,33 @@ Witnesses: the 682 gravity-on 22-count, the 449 Next(3,7) count, the
 448/616 84-counts + the 616 alpha-200 pairs, the 836/1092 colours, the
 424-family 77-count/segment split — WRITTEN NOT RUN.
 
+### Batch 18 (10 kinds, the smoke/cursed-flame/gem-adjacent bursts `:73862-74302`)
+
+1037/1049 (the cursed-flame death: the box inflates to (int)(192×scale)
+centred then Resize(64/112) recentres AGAIN — the final box 64/112 at the
+old centre; 6× dust-31 gravity + 3 gores with the NextVector2Circular
+(25,25) scatter (two NextFloat AFTER the kicks) + the `!wet`-gated 24
+pairs dust-6 + 4 SelectRandom(6,259,158) alpha 200 fan; shared
+`cursed_flame_death` helper; the owner-gated localAI[1]=−1 + Damage
+unported state), 399 (5× dust-12 Red + 10× dust-31 vel×1.4 + 20 pairs
+dust-6 (vel×5 noGravity / vel×3 GRAVITY) at Center−(10,10) box 20×20;
+the owner-gated 6-shard spawn burst stays the spawn lane's), 358/406/
+1042 (the smoke puff: velocity REWRITTEN to oldVel×0.2 first; 50/40/50×
+dust-211/4/324 alpha 75/175/75 scale 1.2/1.6/1.25; THREE Next(2) alpha+25
+gates + a Next(2) scale-0.6/0.6/0.8 ELSE noGravity gate; vel×0.3 +=
+newVel×1/1/0.8, ×=1+Next(−100,101)×0.01, X/Y += Next(−50,51)×0.015;
+position=Center; the 1042 adds the trailing Next(6) 4-way colour pick;
+shared `smoke_puff` helper), 323 (20× dust-7, Next(2) gate → noGravity
+scale 1.3 vel×1.5−=oldVel×0.5×1.5 else vel×0.75−=oldVel×0.25 scale 0.8),
+589 (the ai1 EXACT-equality colour ladder Red/Green/Purple/Gold/White
+A=100; 30× dust-11 vel×=1+NextFloat, first 10 noGravity vel×0.5), 311/
+316 (5× dust-189/195 scale 0.85 noGravity vel+=baseVel×0.5). The
+`DeathSnapshot` gains `wet` (the pool's centre-cell probe stand-in).
+Witnesses: the 1037/1049 dry 58/wet 6 + determinism, the 399 55-count,
+the smoke-puff centre/alpha-ladder/scale-or-gravity invariants, the 323
+gate split, the 589 colour ladder + exact-equality edge, the 311/316
+5-counts — WRITTEN NOT RUN.
+
 ### The re-census (all Kill dust arms vs the 104 + d12 + i17/i18 + g16)
 
 A full re-grep of `Projectile.cs:70642-77262` for `Dust.NewDust*` sites,
