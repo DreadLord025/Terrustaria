@@ -2068,9 +2068,10 @@ fn moss_zombie_death(
 /// 286-290), 632 Maggot Zombie → 1214/1215x2/1216x2 + the Next(2)+2
 /// maggot-spawn seam (`:86991-87006`, sites 291-295), 331 Xmas Zombie →
 /// 488/489x2/490x2 (`:87011-87015`, sites 296-300), 332 Sweater Zombie →
-/// 491/492x2/493x2 (`:87020-87024`, sites 301-305); the 109/161/...
-/// tails land in later batches. The hit-half
-/// 186/632 Next(5) gore gates (`:86945-86952`) are g62's lane.
+/// 491/492x2/493x2 (`:87020-87024`, sites 301-305), 109 Clown →
+/// 121/122x2/123x2 + the extra 120 at +46 Y (`:87029-87034`, sites
+/// 306-311); the 161/162/... tails land in later batches. The
+/// hit-half 186/632 Next(5) gore gates (`:86945-86952`) are g62's lane.
 fn zombie_arm_death(
     npc: &Npc,
     npc_type: i32,
@@ -2161,6 +2162,17 @@ fn zombie_arm_death(
         gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 492, s); // :87022
         gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 493, s); // :87023
         gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 493, s); // :87024
+        return;
+    }
+    if npc_type == 109 {
+        // `:87027-87036` — the Clown SIX: the ladder + the extra 120 at
+        // +46 Y (the balloon hand), then return.
+        gore.new_gore(rng, world, pos, vel, 121, s); // :87029
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 122, s); // :87030
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 122, s); // :87031
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 123, s); // :87032
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 123, s); // :87033
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 46.0), vel, 120, s); // :87034
         return;
     }
 }
@@ -2411,8 +2423,8 @@ pub fn hit_effect_d(
     }
     // `:86937-...` — the giant zombie arm (430-436/590/591/3/52/53/536/
     // 104/109/331/332/132/161/162/186-189/200/223/251/319-321/632); the
-    // 104/632/331/332 branches are live (sites 286-305), the rest land
-    // later.
+    // 104/632/331/332/109 branches are live (sites 286-311), the rest
+    // land later.
     else if matches!(npc_type, 430..=436 | 590 | 591 | 3 | 52 | 53 | 536 | 104 | 109 | 331 | 332 | 132 | 161 | 162 | 186 | 187 | 188 | 189 | 200 | 223 | 251 | 319 | 320 | 321 | 632)
     {
         zombie_arm_death(
@@ -4274,5 +4286,30 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the sweater zombie mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87029-87034` — the Clown SIX: 121/122x2/123x2 + the extra
+    /// 120 at +46 Y (the balloon hand row).
+    #[test]
+    fn w4_f5d_the_clown_six_includes_the_balloon_hand() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(313);
+        let _ = hit_effect_d(&n, 109, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![121, 122, 122, 123, 123, 120]);
+        assert_eq!(gore.slot(5).position, Vec2::new(100.0, 146.0));
+        assert!(!gore.slot(6).active, "exactly six gores");
+        let mut twin = UnifiedRandom::new(313);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..6 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the clown mirrors the C# draws");
     }
 }
