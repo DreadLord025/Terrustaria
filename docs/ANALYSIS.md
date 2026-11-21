@@ -19379,6 +19379,20 @@ asset witness merges into e17's pack test (coin rows + town-head asserts).
 ~14 f29 witnesses drop as duplicates (research/140 §5). All witnesses
 WRITTEN NOT RUN (code-only mode).
 
+**Seal (research/140 §11, 2026-11-21):** the map-overlay family is
+SEALED — compose order f46-union-FIRST → f29-TIP-SECOND with the e18
+D18 style-2 draw re-folded onto the f46 union ahead of both (e18
+`099beeba5`, 16-hunk recipe agreed hunk-by-hunk, 140 §11.1); e17 drops
+without a landing, e18 retires after the f46 merge. The witness union
+is 34 (f29) + 56 (f46) + 2 (D18 fold) = 92, zero shared names; the
+merge-tree dry-run pins 6 conflict files / 9 hunks (tree `feddf3178`).
+Atlas: all 109 overlay sheet names are inside d35's 562-sheet union
+(research/113); the composed pack measures 8131 px / 9606 sheets with
+f46's `Cursor_11` (margin 61 under 8192 — `tools/atlas_e17_check.js`
+now measures the composition permanently); d42's 8382-px overflow is
+the NPC-kind lazy-load demand, disjoint from these eager named rows.
+Nothing owed on this branch; the catalog run + compose are merger-side.
+
 ## Dust & gore (module 15) (S1-E-1, 2026-11-14; S1-E-3, 2026-11-17)
 
 `crates/tr-core/src/particles.rs` is the `Main.dust` analog: the C# keeps the pool as the static `Main.dust[6001]` array plus the three static pressure counters (`Dust.dCount`, `lavaBubbles`, `SandStormCount`, `Dust.cs:12-16`), and the port carries the same global-pool semantics вЂ” one pool the App owns, spawns addressed by slot, slot 6000 the refuse sentinel `NewDust` returns and never scans (`Main.cs:66985`, `Dust.cs:79`/`:103`). The spawn path is a 1:1 transcription of `Dust.cs:10-407`: the guard chain (`:77-101`), the off-screen cull with the `400*(1-dCount)` margin (`:89-97`), the first-inactive-slot scan and the five pressure bands (`:103-152`), the default block with the per-100 frame shift (`:153-193`), the `ChildSafety` re-type arm (`:194-213`, `ChildSafety.cs:33`) and the per-type tweak chain (`:214-252`). The pool draws from the caller-passed stream (the `DustRng` seam, the C# `Next`/`NextFloat` conversions `UnifiedRandom.cs:120-141`), so per-consumer streams are preserved: the pool's band rolls are the only added draws on the clients' streams. The sand spawn site additionally regained the C# `NewDust` velocity/scale rolls the stand-in had skipped (`Sandstorm.cs:226`; the final 0.9 scale pin unchanged), and `Settings::blood` arms `pool.child_safety` at spawn вЂ” blood on is the vanilla default (the gate skipped), blood off sets `ChildSafety.Disabled` false and the re-type fires.

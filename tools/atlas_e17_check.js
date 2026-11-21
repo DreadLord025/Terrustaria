@@ -52,3 +52,15 @@ const addH = measure('branch + e17 map-icon sheets', withAdds);
 console.log(`delta: +${addH - baseH} px (bound 8192)`);
 const dims = extra.map(n => [n, sim.sheetDims(n)]).filter(([, d]) => d);
 console.log('added sheet dims:', dims.map(([n, d]) => `${n}=${d.w}x${d.h}`).join(' '));
+
+// Seal phase (research/140 §8.4/§11): the f46 union adds UI/Cursor_11 (18x18,
+// the thick fullscreen cursor) to the same atlas — measure the composed set
+// through the same packer so the merge-time bound is reproducible from this
+// tree (d35 research/113's union row: owners e18/f46, padded 400 px²).
+const d11 = sim.sheetDims('UI/Cursor_11');
+if (!d11) {
+  console.log('  missing file: UI/Cursor_11');
+} else {
+  withAdds.push({ name: 'UI/Cursor_11', w: d11.w, h: d11.h });
+  measure('branch + e17 sheets + f46 Cursor_11', withAdds);
+}

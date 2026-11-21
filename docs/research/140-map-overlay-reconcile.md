@@ -1,9 +1,12 @@
 # 140 — Map-overlay 2-way reconcile (W4-f29 × W4-e17)
 
-**Phase:** ~~reconcile, docs-only~~ → **EXECUTED (2026-11-21, code-only,
-`task/W4-f29-map-overlay-2`)**. The adjudication below stands as the record;
-the execution log is §7. No cargo/tests were run (code-only mode) — the
-witnesses are WRITTEN NOT RUN.
+**Phase:** ~~reconcile, docs-only~~ → ~~EXECUTED~~ → **SEALED
+(2026-11-21, seal phase, code-only, `task/W4-f29-map-overlay-2`)**. The
+adjudication stands as the record; the execution log is §7; the
+map-family unified merger instruction is §8; the cross-lane seal
+receipts (e18g mutual-receipt, f46g compose, d35/d42 atlas) are §11.
+No cargo/tests were run (code-only mode) — the witnesses are WRITTEN
+NOT RUN. The atlas measurement DID run (§8.4, re-run at seal).
 
 > **MERGER INSTRUCTION — MAP-FAMILY UNIFIED, keep BOTH branch tips (§8).**
 > This branch was rebuilt onto the e17 skeleton (`8500c3e5d`) and carries
@@ -562,6 +565,223 @@ re-fold lands on the f46 union — the draw arm is e18-unique content
 until then. The witness re-derivation `4cc600a97` mirrors the union's
 `447494570` (identical bodies at merge, nothing to fold). Retire e18
 after the f46 merge per 84 §10.2/§10.3 + §8.5 here.
+
+## 11. MAP-OVERLAY SEAL (2026-11-21, seal phase) — the four cross-lane receipts
+
+**STATUS: SEALED — no further f29 work of any kind.** Everything below
+was re-verified at the fetched seal-phase tips: e18 `5509cb87a` (§10.10
+SEAL), f46 `6fb5e01e8` (FINAL-FINAL, unmoved), d35 `1afd327b9` (ATLAS
+RETIRE phase 4), d42 `bac408be0` (FINAL doc), this branch `3abf3bf43`
++ this seal commit. Code-only: no cargo/tests/rustfmt/graphify; the
+atlas measurement DID run (§11.3). All witnesses remain WRITTEN NOT
+RUN — the catalog run at merge is their first execution.
+
+### 11.1 e18g mutual-receipt — §8.5 D18-keep-one vs e18 §10.10's 16-hunk recipe: AGREE
+
+The e18 lane sealed at `5509cb87a` (research/84 §10.10 SEAL +
+research/14 census FINAL/SEALED + the MAP SEAL receipt). Their exact
+`099beeba5` re-fold recipe (16 hunks) was read hunk-by-hunk against
+this file's §8.5 keep-one table. **Verdict: full agreement — same
+destination (the f46 union, NOT f29), same TAKE/SKIP/DROP dispositions,
+same 2 folding witnesses.** Their table is the more precise instrument
+and is hereby ADOPTED as the operative recipe; §8.5's summary recipe
+stands as the ruling record. Concordance:
+
+| Piece | §8.5 (this file) | e18 §10.10 SEAL (16 hunks) | Agree? |
+| --- | --- | --- | --- |
+| 3 helpers `map_key_alpha`/`map_alpha_clamp`/`overlay_scale_clamp` | SKIP — union's `a352b16e` copies stay, ONE copy | SKIP (`map.rs @@ -53`), brace-matched byte-identical `True` ×3 | ✓ |
+| `overlay_scale`/`overlay_alpha` field decls + seeds 2.5/0.35 | SKIP — union's stay | SKIP decls (`@@ -425`) + seeds (`@@ -517`); **TAKE the comment refresh** — the union's "D18 out of scope" doc wording is stale post-fold (their precision fix: decls+seeds identical, comments differ) | ✓ — §8.5's "SKIP the field hunks" is refined by their split: decls/seeds skip, comments take |
+| `map_overlay_quad` / `clamp_overlay_axes` / `draw_overlay` | TAKE — e18f's, re-folded onto the union | TAKE wholesale (`@@ -121`/`@@ -558`/`@@ -1033`), union grep 0 hits | ✓ |
+| style-2 key rows ×1.05/×0.95 ±0.015 | DROP with e18's `update_minimap_keys` variant (union's `update_minimap_zoom_keys` carries them) | DROP (`app/mod.rs @@ -1515` + the `@@ -1474` doc hunk); the folded draw-side `clamp_overlay_axes` is a benign double projection — KEEP for draw-side fidelity | ✓ |
+| keys witness `w4_e18_the_style_two_keys_step_the_overlay_axes` | DROP — union's `w4_f46_style_two_keys_step_the_overlay_scale_and_alpha` covers | DROP (`@@ -6106`) **incl. the whole `w4_e18_minimap_key_tests` mod + the `minimap_app` fixture** (union has `w4_f46_minimap_zoom_key_tests`) | ✓ — their fixture/mod drop is the same keep-one, stated wholesale |
+| 2 draw-arm witnesses (quad + clamps-method) | FOLD with the draw arm; clamps witness's trailing key-helper asserts dedupe | TAKE (`map.rs @@ -2169`) into the union's tests mod | ✓ |
+| draw.rs call site + num37 walk + MouseText tail + pylon-gate widening + clamp call | TAKE | TAKE (`@@ -164` gate, `@@ -1467` comment, `@@ -1574` branch, `@@ -1928` clamp call) | ✓ |
+| anchor row `map.rs\|pub fn draw_overlay` | TAKE | TAKE (`anchors.txt @@ -909`) — never delete rows | ✓ |
+| docs (ANALYSIS/PORT_MAP/research/14) | fold | APPEND per keep-both, union-named sections win conflicts (their §10.2 rule) | ✓ |
+
+**The shared ruling, restated as the mutual receipt:** the D18 draw
+(`Main.cs:55548-55625` half) RE-FOLDS INTO THE F46 UNION, NOT f29 —
+the style-2 keys/alpha state/clamps already live on the union
+(`a352b16e`), so the draw joins them on ONE branch BEFORE f46 lands;
+f29's second landing only extends the shared `MapIconInputs` struct at
+the third call site. Both lanes publish the same order and the same
+"never twice" icon-block rule.
+
+**The third `MapIconInputs` call site — f29's 4 fields (re-verified
+live on this tip at seal).** The f29 tip has exactly TWO
+`map_layers_draw` call sites (`app/frame/draw.rs:1489` minimap,
+`:2284` fullscreen), both already constructing the extended struct
+(`map_layers.rs:462/465/468/471`: `map_fullscreen`, `pylon_tile`,
+`screen`, `left_press`). The D18 re-fold's num37 layer walk is the
+THIRD site and arrives WITHOUT the 4 fields (e18f predates the
+extension); at the f29 second landing it gains, per §8.5:
+`map_fullscreen: false`, `pylon_tile: (-1, -1)`
+(`TeleportPylonsMapLayer.cs:45`'s fullscreen gate — the style-2 arm
+draws no network lines), `screen`, `left_press: false` (the marker
+click is fullscreen-only, `:83`/`:90`). The walk's `PylonClick`/
+`cancel_wormhole` return halves are inert at `map_fullscreen: false` —
+drop them at the call, keep the hover string for the `:56046`
+MouseText tail. **The two stale f29-tip markers e18's seal names were
+re-read from this tree and CONFIRMED present:** `draw.rs:1432-1434`
+still says style-2 "draws nothing (out of P4 scope …)" and
+`map_npc_icons.rs:647-650`'s `draw_npc_map_icons_overlay` is still
+`#[allow(dead_code)]` UNWIRED. Compose consequence (both lanes agree):
+the re-folded style-2 branch OVERWRITES the stale comment (never
+kept), and the f29 overlay pick wires `draw_npc_map_icons_overlay` +
+inserts the `:55626-55694` icon block INTO that branch exactly as it
+inserts into the fullscreen/minimap arms — never a second copy of the
+tile pass, the num37 walk or the hover tail. Order is load-bearing:
+re-fold BEFORE the f29 landing or the icon block has no seam.
+
+**Containment cross-check (our own re-run):** `git grep -c "fn w4_e18"`
+gives 43 on the e18 seal tip vs 36 on the f46 union tip — the same
+43-vs-36 their SEALED census table pins (7 e18-only fns: 4 keep-one
+drops + 1 keys-witness drop + 2 draw-arm folds). e18 is fully absorbed
+in the union MODULO the one owed `099beeba5` re-fold; their seal
+receipt and this file's §10 qualification say the same thing.
+
+### 11.2 f46g compose receipt — the final compose-order (f46 §10.3 read at seal)
+
+The f46 tip `6fb5e01e8`'s §10.3 was re-read at seal: **same ruling from
+the reveal side** — f46 does NOT absorb the overlay (~4 500 ln, its
+own EXECUTED keep-one on the f29 tip with 34 witnesses), the compose
+is TWO landings, f46 first, f29 TIP second, e17 drops without a
+landing. Our §8 ruling and their §10.3 are the same instruction
+published from both sides. Re-verified at seal:
+
+- **Witness union:** `git grep -ohE "fn w4_"` sorted-unique on both
+  tips: **34 on this tip, 56 on the f46 tip, ZERO shared names** —
+  + the 2 D18 draw-arm witnesses §11.1 folds = **92** at the merged
+  state (§8.0 step 4's ~92 made exact).
+- **Merge-tree dry-run re-ran at seal:** `git merge-tree --write-tree
+  --merge-base a725acb04 809d08238 6fb5e01e8` → tree
+  **`feddf31781cdbb7246e60a78c9176a6b1838c051`** — the SAME tree as
+  §8.1/§8.2 record; the 9 conflict hunks re-counted from the tree's
+  blobs: `map.rs` ×3, `frame/draw.rs` ×2, `clicks.rs` ×1, `main.rs`
+  ×1, `anchors.txt` ×1, `research/14` ×1 = **6 files / 9 hunks**, the
+  §8.2 table unchanged. (At the pre-seal tip `3abf3bf43` the tree is
+  `10223ccfd…` — same 6 files / 9 hunks; the delta vs `809d08238` is
+  research/140 text only. The §8.2 line ranges are the `feddf3178`
+  pins and stay the merger's reference.)
+- **Their stale D18 row:** the f46 §10.3 family table at `6fb5e01e8`
+  still reads "`mapStyle == 2` overlay DRAW … UNPORTED — D18 draw
+  half (keys landed)". e18's §10.10 SEAL (a) publishes the UPDATE
+  instruction (ported `099beeba5`, re-fold owed, style-0 retro is a
+  phantom); **the f46 lane owns that edit — this branch never touches
+  their file.** Recorded here so the merger sees the row is stale
+  even if the f46 lane seals without rewriting it.
+- **Their hot-file list = our §8.2/§8.3:** pan Option unification,
+  prepare pan block ahead of the clamps, `set_open` pylon-clear join,
+  doors-597 routed through `try_open_fullscreen_map` (+ the one
+  `close_shop()` line folded into the shared helper), the C#-order
+  draw wiring with the 255-loop REPLACING the union's single-head
+  remnant, live-alpha args replacing the tip's hardcoded 1.0s (D17),
+  `MapIconInputs` 4 fields at the union call sites (all THREE after
+  §11.1), one `Coin_0..3` block + one `npc_boss_heads` field +
+  `Cursor_11`, research/14 keep-both (their checklist item 6 = our
+  hunk 9). No disagreement anywhere.
+
+**FINAL COMPOSE-ORDER (the map family, published jointly by 140 §8/§11
+and 84 §10.3/§10.10):**
+
+0. **D18 re-fold onto the f46 union** — cherry-pick `099beeba5` onto
+   `6fb5e01e8` per e18 §10.10 SEAL's 16-hunk table (§11.1 concordance;
+   TAKE 3 fns + 2 witnesses + draw branch + gate widening + clamp call
+   + anchor row + comment refreshes; SKIP helpers/decls/seeds; DROP
+   key rows + keys witness + fixture/mod). Lands on the f46 branch.
+1. **f46 tip → main FIRST** (MAIN-RULES ref-update merge; the whole
+   reveal/input family + the re-folded style-2 draw).
+2. **f29 TIP → main SECOND** (`809d08238` + `3abf3bf43` + this seal
+   commit), synced onto post-f46 main; resolve the §8.2 nine hunks +
+   the §8.3 semantic folds + §11.1's third-call-site 4 fields + the
+   stale-comment overwrite + the `draw_npc_map_icons_overlay` wiring.
+   Never the pre-rebuild commits (§9); never a separate e17 landing.
+3. **Verify on the merged state:** the catalog command (judge by
+   `test result: ok`), canary `main_anchors`, atlas re-measure
+   (§11.3's tool now measures the composed set), ancestor + symbol
+   checks. First execution of the 92-witness union.
+4. **Retire:** e17 (contained, §10), e18 (absorbed modulo step 0,
+   §10/§11.1), f29 + f46 after their merges; g53's map hunks were
+   keep-oned (84 §10.1) — g53 retires with its own scope.
+
+### 11.3 atlas-8131 × d35-compose receipt — the overlay sheets ARE in the 562-union
+
+**d35 `1afd327b9` (ATLAS RETIRE phase 4, research/113 §§13-16):** the
+562-name union (`tools/_d35_union_list.json` on that tip) was read and
+set-compared against this tip's asset additions at seal:
+
+- **Every overlay sheet this branch adds is in the d35 union.** The
+  `a725acb04..HEAD` assets.rs diff adds exactly **109 sheet names**
+  (60 `NPC_Head_*` town/critter heads + 40 `NPC_Head_Boss_*` rows
+  + `MapDeath` + `Extra_173/175/176` + `Coin_0..3` +
+  `UI/UI_quickicon1`; `NPC_Head_Boss_7` is a relocation of a base row
+  — the measure tool skips it, net-new 108, the union credits all
+  109 names to this family); the union's
+  rows owned `W4-e17-map-overlay-layers`/`W4-f29-map-overlay-2` number
+  exactly **109** and the two sets are EQUAL both ways (0 missing,
+  0 extra — checked by name). The `Coin_0..3` rows carry the shared
+  owner `W4-g12-dust-main-sites-2` (one copy in the union — the F4
+  dedupe holds at the atlas level too).
+- **`UI/Cursor_11` is in the union** with owners
+  `W4-e18-minimap-reveal-queue`/`W4-f46-minimap-reveal-2`, 18×18,
+  padded 400 px² — the f46 landing brings it, not f29; the composed
+  atlas is the §8.4 measurement below.
+- **No double-count with d35's budgets:** research/113's eager numbers
+  (merged-504 skyline 9757 → pages 8190/1602; worst 9922 → 8160/1754;
+  lazy union 7140, worst 7305, +Glow_362 → 7313) ALREADY INCLUDE the
+  map-icon rows — their census table marks `NpcHead/NpcHeadBoss 81/40`
+  as "EAGER named rows ✓ (e17/f29 append)". Our sheets are eager
+  named UI/head rows, NOT NPC-kind sheets, so the lazy-load amendment
+  (NPC rows leave `STATIC_SHEET_NAMES` for the per-world page) does
+  not move them. The 8131 figure below is THIS branch's baseline
+  pack, not an additional demand on top of d35's union numbers.
+- **d42 `bac408be0` (research/238) NO-pack verdict confirmed, no
+  conflict:** their full runtime set (HEAD static + gore + roster-43)
+  overflows the landed skyline packer at **8382 px (+190 OVER 8192**,
+  scenarios D/E; the delta-39 variant F is worse at 8418 — sheet
+  removal is not monotone); the static-only pack fits (8021) but pins
+  171 px headroom and eats the shared budget. Verdict: the 43 NPC-kind
+  sheets are NOT packed on d42 — they ride d35's lazy-load wave
+  (roster-43 solo page **1768 px**, §10.6 amendment). That overflow is
+  the NPC-KIND demand; the map-overlay icon demand (+8 px eager,
+  below) is disjoint and already inside d35's eager union. Nothing
+  for f29 to pack, drop or re-measure on d42's account.
+
+**Seal-phase re-measure (RAN, this pass):** `node
+tools/atlas_e17_check.js` — baseline **8123 px** (9558 sheets) →
+**8131 px** (9605 sheets, +8) → with f46's `UI/Cursor_11`: **8131 px,
+9606 sheets — still OK**, margin **61 px** under the 8192 bound. The
+tool now measures the Cursor_11 composition PERMANENTLY (the seal
+commit extends `tools/atlas_e17_check.js` with the third measurement
+— the earlier §8.4 "+Cursor_11" number was an ad-hoc variant; it is
+now reproducible from the committed tree). Re-run at merge per 84
+§10.3; the merger's bound check is d35's union-wide pack, not this
+branch-local one.
+
+### 11.4 The map-overlay-family bible — every piece, its home, its landing
+
+| Piece | C# anchor | Home branch | Landing vehicle | Status at seal |
+| --- | --- | --- | --- | --- |
+| Reveal queue base (`MapUpdateQueue`) | `MapUpdateQueue.cs:21-108` | c35 → base `a725acb04` | already in main-line base | landed |
+| `WorldSections` grid + spiral + driver, section paint, `/map` flag, statics, close button + thick cursor, minimap/overlay keys + Tab + alpha, pan state + cancels, open/close arms + cues, Load catch, mapDelay, draw-head close, draw-tail chat | 84 §10.3 family table rows 2-10 | **f46 union `6fb5e01e8`** (e18/f46/g53 folded, keep-ones executed) | compose step 1 | EXECUTED, merge pending |
+| **D18 style-2 overlay DRAW** (`draw_overlay`/`clamp_overlay_axes`/`map_overlay_quad` + call site + num37 walk + hover tail + gate widening) | `Main.cs:55548-55625`, `:62231-62235` | e18 `099beeba5` → **re-fold onto f46** | compose step 0 (16-hunk recipe, §11.1) | ported, RE-FOLD OWED |
+| Nine overlay draws (boss/town heads, pins/death/misc/revenge, hover names, pylon lines/click/pan) + F1-F6 + the `:55626-55694` icon block | `Main.cs:55922-56292`, `:56446-56539`, `MapOverlayDrawContext.cs`, `TeleportPylonsMapLayer.cs` | **f29 TIP** (e17 skeleton + cited fixes, 34 witnesses) | compose step 2 (§8.2/§8.3 + §11.1 third call site) | EXECUTED, merge pending |
+| e17 lane | — | contained in the f29 tip's tree (12-file diff) | **DROPS — never lands** (§10) | deprecated |
+| e18 lane | — | absorbed in the f46 union modulo step 0 | retires after step 1 (§10/§11.1) | SEALED (`5509cb87a`) |
+| g53 map-key hunks | `Player.cs:24909-24965` | keep-oned into the union (84 §10.1) | ride step 1 | folded |
+| Pan inertia / legend / grid lines / arrow rotation / zoom indicator / style-0 retro | — | PHANTOMS (three censuses + e18 seal agree) | nothing to port | closed |
+| Unity-potion teleport hover/click | `Main.cs:55960-55975`, `:55998-56010` | UNPORTED seed — MP-client-only | netcode ladder, recorded | open (out of family scope) |
+| Content-lost refresh | `MapRenderer.cs:363-377` | UNPORTED — D22 (no GPU-reset path) | recorded | open (out of family scope) |
+| Atlas: 109 overlay sheets + `Cursor_11` | `AssetInitializer.cs:369`, `Main.cs:66551` | f29 tip + f46 union, ALL in d35's 562-union (§11.3) | eager named rows; 8131/9606 measured, margin 61 | verified |
+| Witness union | — | 34 (f29) + 56 (f46) + 2 (D18 fold) = **92**, zero shared names | first run at compose step 3 | WRITTEN NOT RUN |
+
+**Seal verdict:** the map-overlay family is fully adjudicated,
+executed and cross-receipted — f46-union-FIRST → f29-TIP-SECOND with
+the D18 re-fold ahead of both, e17/e18 drop/retire, the atlas demand
+inside d35's union with 61 px margin, d42's lazy-load verdict
+orthogonal. Nothing is owed on THIS branch; every remaining action
+is merger-side (compose steps 0-4). The §9 warning list and the §10
+retire instructions stand unchanged.
 
 ---
 

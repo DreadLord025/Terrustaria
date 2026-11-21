@@ -396,6 +396,14 @@ fullscreen map and the minimap, against the port at main `a725acb0`. The e17 sib
 > `Contains` hovers, `Utils.Floor` truncation, the `Coin_0..3` strips, the
 > fullscreen death box without the −4 shift, the pure pan step). The census
 > below is kept as the historical record of what the f29 lane ported.
+>
+> **SEALED (research/140 §11, seal phase 2026-11-21):** the map-overlay
+> family is sealed — f46-union-FIRST → f29-TIP-SECOND with the e18 D18
+> draw re-fold ahead of both (140 §11.1/§11.2, e18 84 §10.10 SEAL
+> `5509cb87a`); the atlas demand is inside d35's 562-union (8131 px /
+> 9606 sheets with `Cursor_11`, margin 61 — 140 §11.3); the compose
+> hunks are merge-tree `feddf3178`'s 6 files / 9 hunks. Nothing owed
+> on this branch; every remaining action is merger-side.
 
 All nine pieces below landed on `task/W4-f29-map-overlay-2` (base main `a725acb0`).
 The new module `crates/tr-app/src/map_overlay.rs` carries the head/death/revenge/misc/
