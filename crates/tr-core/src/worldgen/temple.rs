@@ -1974,11 +1974,18 @@ fn near_other_chests(world: &World, x: i32, y: i32) -> bool {
     false
 }
 
-/// `WorldGen.PlaceChest(x, y, 21, notNearOtherChests, 16)`
+/// `WorldGen.PlaceChest(x, y, 21, notNearOtherChests, style)`
 /// (`WorldGen.cs:57813-57841`): the `TileObject.CanPlace`/`Place` route for
-/// the 2×2 chest — the style-16 frames come from the same registry def the
-/// player-facing placement uses.
-fn place_buried_chest(world: &mut World, x: i32, y: i32, not_near: bool, style: i32) -> bool {
+/// the 2×2 chest — the frames come from the same registry def the
+/// player-facing placement uses. Shared with the `AddBuriedChest`
+/// placement half (`structures.rs`, W4-c33).
+pub(crate) fn place_buried_chest(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    not_near: bool,
+    style: i32,
+) -> bool {
     let Some(def) = crate::tileobject::def_for_tile(21) else {
         return false;
     };
@@ -2007,13 +2014,12 @@ fn place_buried_chest(world: &mut World, x: i32, y: i32, not_near: bool, style: 
     crate::tileobject::place(world, &instance)
 }
 
-/// `WorldGen.AddBuriedChest`'s placement half (`WorldGen.cs:35871-36210`)
-/// for the temple call (`mainItem 1293, style 16, trySlope false,
-/// chestTileType 21`): the downward scan for the floor, the rejections
-/// (larva 231 below, an altar 26 / altar 237 within ± 2), the 2×2 write one
-/// row above the floor. The loot tables (the item fills and the style/item
-/// rolls) are M5-CHEST-gen's — the placement draws no rng on the classic
-/// path, so the pass stream stays aligned with the C# until the loot lands.
+/// `WorldGen.AddBuriedChest`'s placement half for the temple call
+/// (`mainItem 1293, style 16, trySlope false, chestTileType 21`) — now a
+/// thin wrapper over the shared port (`structures.rs`, W4-c33): the
+/// temple-part-2 window keeps 162 non-solid (`ice_solid = false`) and the
+/// caller's spike bit rides through. The placement draws no rng on the
+/// classic path; the temple's stocking stays with M5-CHEST-gen (no hook).
 fn add_buried_chest(
     world: &mut World,
     x: i32,
@@ -2022,27 +2028,22 @@ fn add_buried_chest(
     chest_style: i32,
     spike_solid: bool,
 ) -> bool {
-    for k in y..(world.height - 10) {
-        if world.tile(x, k).is_some_and(|t| t.active() && t.kind == 231) {
-            return false;
-        }
-        for n in (x - 2)..=(x + 2) {
-            for m in (k - 2)..=(k + 2) {
-                if in_world(world, n, m, 100)
-                    && world
-                        .tile(n, m)
-                        .is_some_and(|t| t.active() && (t.kind == 26 || t.kind == 237))
-                {
-                    return false;
-                }
-            }
-        }
-        if !solid_p2(world, x, k, spike_solid) {
-            continue;
-        }
-        return place_buried_chest(world, x - 1, k - 1, not_near, chest_style);
-    }
-    false
+    // The wrapper draws nothing — a scratch stream keeps the signature
+    // (the shared half only draws through the stocking hook, absent here).
+    let mut rng = super::Rng(0);
+    super::structures::add_buried_chest(
+        world,
+        x,
+        y,
+        1293,
+        not_near,
+        chest_style,
+        false,
+        false,
+        spike_solid,
+        None,
+        &mut rng,
+    )
 }
 
 /// `WorldGen.mayanTrap` (`WorldGen.cs:8349-8895`) — the temple's dart-trap

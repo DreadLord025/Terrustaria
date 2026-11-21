@@ -1287,6 +1287,13 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
         step_gravitating_sand
     ),
     step!("ocean caves", "Create Ocean Caves", step_ocean_caves),
+    // The vanilla Pyramids slot (`WorldGen.cs:15360`): after Create Ocean
+    // Caves (`:15167`) / Shimmer (`:15195`, unported) / Clean Up Dirt
+    // (`:15246`, unported) and before Dirt Rock Wall Runner (`:15461`,
+    // unported) — the W4-c33 move (was after `wet jungle`). The pass reads
+    // only the published pyr anchors + the sand columns, so the move is
+    // world-safe; its own stream keeps every other step's ledger intact.
+    step!("pyramids", "Pyramids", step_pyramids),
     step!("fragile ice", "Ice", step_fragile_ice),
     step!(
         "underground jungle trees",
@@ -1309,7 +1316,6 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // (`:15750`), before the temple (`:15834`) — the M5-BIOME phase-5
     // insertion.
     step!("wet jungle", "Wet Jungle", step_wet_jungle),
-    step!("pyramids", "Pyramids", step_pyramids),
     step!("pots", "Pots", step_pots),
     step!("beehives", "Hives", step_beehives),
     step!("hell forts", "", step_hell_forts),
@@ -2099,21 +2105,31 @@ fn step_altars(
     structures::pass_altars(world, opts.crimson, &mut streams.srng);
 }
 
+/// `Pyramids` (`WorldGen.cs:15360-15460`) — the faithful anchor-loop port
+/// (W4-c33): consumes `GenVars.PyrX/PyrY/numPyr` (the Dunes + Ocean Sand
+/// producers publish them), on its own `pass_rng("Pyramids")` stream (was
+/// the shared `srng` — the later `srng` consumers shift, the accepted world
+/// change). The step moves to the vanilla slot after `ocean caves`
+/// (Shimmer/Clean Up Dirt are unported; `:15360` sits between them and
+/// `DirtRockWallRunner` `:15461`).
 fn step_pyramids(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    _opts: &GenOptions,
+    opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    let map = gv.map();
+    let dungeon_x = gv.spans().dungeon_x;
+    let drunk = opts.flags.contains(crate::seeds::SeedFlags::DRUNK);
     structures::pass_pyramids(
         world,
-        map.desert_start,
-        map.desert_end,
-        &map.heights,
-        &mut streams.srng,
+        &gv.pyr_x,
+        &gv.pyr_y,
+        gv.num_pyr,
+        dungeon_x,
+        drunk,
+        &mut streams.pass_rng("Pyramids"),
         streams.chest_stock.as_deref_mut(),
     );
 }
@@ -3198,6 +3214,10 @@ mod tests {
                 "beaches",
                 "gravitating sand",
                 "ocean caves",
+                // W4-c33: the faithful Pyramids anchor loop takes its
+                // vanilla slot (`WorldGen.cs:15360`, after Create Ocean
+                // Caves/Shimmer/Clean Up Dirt).
+                "pyramids",
                 "fragile ice",
                 "underground jungle trees",
                 "exposed gems",
@@ -3208,7 +3228,6 @@ mod tests {
                 "moss",
                 "altars",
                 "wet jungle",
-                "pyramids",
                 "pots",
                 "beehives",
                 "hell forts",

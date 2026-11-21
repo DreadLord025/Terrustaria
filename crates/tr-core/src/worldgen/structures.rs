@@ -9,16 +9,21 @@
 //! Tiles (`TileID.cs`): the rich mahogany brick 119 (the shrine shell — the
 //! C#'s `GenVars.jungleHut` pick `:11319`), the torch 4 (the style 3), the
 //! chest 21 (2×2 frame-important), the demon altar 26 (3×2, the style by
-//! the evil flavour), the pot 28, the sandstone brick 480 (the pyramid
-//! hull). Walls (`WallID.cs`): the shrine interiors 24/42/45/10, the
-//! sandstone 187.
+//! the evil flavour), the pot 28, the sandstone brick 151 (the pyramid
+//! hull — `TileID.SandstoneBrick`, `TileID.cs:931`). Walls (`WallID.cs`):
+//! the shrine interiors 24/42/45/10, the sandstone 187, the pyramid's
+//! sandstone-brick wall 34.
 //!
 //! Deviations (ANALYSIS "Structures (M1.4-WGEN-2)"): the chest inventories
 //! ride the storage task (the chests place as tiles only — the C#
 //! `Chest.CreateChest` book is the M7-TE follow-up); the shrine/altar
-//! layouts are shape-level (the C#'s exact brick patterns are not 1:1); the
-//! pyramid corridors are one floor (the C#'s multi-chamber crawl is the
-//! follow-up); the boulder piles and the graveyards are out of scope.
+//! layouts are shape-level (the C#'s exact brick patterns are not 1:1);
+//! the boulder piles and the graveyards are out of scope. The pyramid is
+//! the faithful `Pyramid` port (W4-c33 — the 151 hull, the wall-34 sweep,
+//! the entrance shaft, the zig-zag tunnel with the chamber and the
+//! post-chamber surface tunnel); its secret-seed arms
+//! (tenthAnniversary/dualDungeons/surfaceIsDesert/errorWorld) stay with
+//! the seed lanes (d107).
 
 use super::{TILE_DIRT, TILE_STONE, WALL_DIRT};
 use super::biomes::{TILE_JUNGLE_GRASS, TILE_MUD};
@@ -30,7 +35,15 @@ pub(crate) const TILE_TORCH: u16 = 4;
 pub(crate) const TILE_CHEST: u16 = 21;
 pub(crate) const TILE_ALTAR: u16 = 26;
 pub(crate) const TILE_POT: u16 = 28;
-pub(crate) const TILE_PYRAMID_BRICK: u16 = 480;
+/// `TileID.SandstoneBrick` (`TileID.cs:931`) — the faithful `Pyramid` hull
+/// (`WorldGen.cs:27671`: `ushort num = 151`). The shape-level port's 480
+/// (BloodMoonMonolith) retired with W4-c33.
+pub(crate) const TILE_PYRAMID_BRICK: u16 = 151;
+/// `WallID.SandstoneBrick` = 34 — the pyramid's interior wall
+/// (`WorldGen.cs:27672`).
+pub(crate) const WALL_PYRAMID_BRICK: u16 = 34;
+pub(crate) const TILE_SMALL_PILES: u16 = 185;
+pub(crate) const TILE_BANNER: u16 = 91;
 
 pub(crate) const WALL_SHRINE: u16 = 24;
 
@@ -356,96 +369,553 @@ pub(crate) fn pass_altars(world: &mut World, crimson: bool, rng: &mut super::Rng
     placed
 }
 
-/// The pyramid (`DunesAndPyramidLocations` `:15367+`): 1-2 stepped hulls in
-/// the desert — the sandstone-brick shell with the carved chambers, the
-/// shrine walls and a chest in the base room.
+/// `Pyramids` (`WorldGen.cs:15360-15460`): the `numPyr` loop over the
+/// Dunes (`:11564-11579`) / Ocean Sand (`:11659-11664`) published anchors —
+/// the >300/<width-300 gate, the dungeon-side 15 % exclusion (the port's
+/// dungeon side is fixed Right, so only the second clause bites:
+/// `num <= dungeonX - width·0.15`), the sand-column descent, the
+/// nearest-slot 220 spacing (the drunk seed halves it — the port carries
+/// that flag) and the `j--` before the `Pyramid` call. The
+/// tenthAnniversary/dualDungeons/surfaceIsDesert/errorWorld arms stay with
+/// the seed lanes (d107); the Skyblock gate rides `opts`.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn pass_pyramids(
     world: &mut World,
-    desert_start: i32,
-    desert_end: i32,
-    surface: &[i32],
+    pyr_x: &[i32],
+    pyr_y: &[i32],
+    num_pyr: i32,
+    dungeon_x: i32,
+    drunk: bool,
     rng: &mut super::Rng,
-    mut stock: Option<&mut super::chest_stock::ChestStockHook<'_>>,
+    stock: Option<&mut super::chest_stock::ChestStockHook<'_>>,
 ) -> u32 {
-    if desert_end - desert_start < 120 {
-        return 0;
-    }
+    let mut stock = stock;
     let mut placed = 0u32;
-    let count = 1 + rng.range(0, 2) as i32;
-    for _ in 0..count {
-        let x0 = rng.range(desert_start + 60, desert_end - 60);
-        let base = surface[x0 as usize];
-        let height = rng.range(16, 26);
-        let half = height;
-        // The stepped hull (`Pyramid`'s triangle shape).
-        for step in 0..height {
-            let y = base - height + step;
-            let w = half - step;
-            for x in (x0 - w)..=(x0 + w) {
-                if x < 2 || y < 2 || x >= world.width - 2 {
-                    continue;
-                }
-                let i = world.index(x, y);
-                let t = &mut world.tiles[i];
+    // `:15369-15420`: the anchor loop.
+    for i in 0..num_pyr as usize {
+        let num = pyr_x[i];
+        let mut j = pyr_y[i];
+        let pyramid_min_depth = 75;
+        let num2 = 125;
+        // `:15380`: the margin + dungeon-side gate. `dungeonSide` is fixed
+        // Right in the port (M5-BIOME), so `dungeonSide > Left` is always
+        // true and `dungeonSide < Right` always false — the second clause
+        // reduces to `!(num > dungeonX - maxTilesX·0.15)`.
+        if !(num > 300
+            && num < world.width - 300
+            && !((num as f64) > (dungeon_x as f64) - (world.width as f64) * 0.15))
+        {
+            continue;
+        }
+        // `:15382-15384`: the sand-column descent.
+        while !world.tile(num, j).is_some_and(|t| t.active()) && (j as f64) < world.world_surface {
+            j += 1;
+        }
+        // `:15385`: the surface-line + sand gate.
+        if (j as f64) >= world.world_surface
+            || !world
+                .tile(num, j)
+                .is_some_and(|t| t.kind == super::TILE_SAND)
+        {
+            continue;
+        }
+        // `:15387-15401`: the nearest earlier slot, the 220 spacing.
+        let mut num3 = world.width;
+        for k in 0..i {
+            let num4 = (num - pyr_x[k]).abs();
+            if num4 < num3 {
+                num3 = num4;
+            }
+        }
+        let mut num5 = 220;
+        if drunk {
+            num5 /= 2;
+        }
+        if num3 >= num5 {
+            // `:15403`: the one-row lift before the call.
+            j -= 1;
+            if pyramid(
+                world,
+                num,
+                j,
+                pyramid_min_depth,
+                num2,
+                rng,
+                stock.as_deref_mut(),
+            ) {
+                placed += 1;
+            }
+        }
+    }
+    placed
+}
+
+/// `WorldGen.Pyramid` (`WorldGen.cs:27669-27971`): the faithful structure —
+/// the 151 sandstone-brick hull, the wall-34 3×3 interior sweep, the
+/// entrance shaft, the zig-zag tunnel with the single chamber (the Pharaoh
+/// double-roll chest style 1, the 185 small piles, the four 91 banners, the
+/// 28 pot row) and the post-chamber surface tunnel. `noTunnel` is only set
+/// by the dualDungeons seed (d107) — the classic path always digs the
+/// surface tunnel. The `SquareWallFrame`/`SquareTileFrame` calls ride the
+/// port's framing convention (worldgen writes walls/tiles only — the
+/// `desert_entrances.rs` precedent). Out-of-world cells skip (the C# would
+/// throw; the pass's 300-tile margins keep x inside, the deep surface
+/// tunnel can outrun a small world's height).
+fn pyramid(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    pyramid_min_depth: i32,
+    pyramid_max_depth: i32,
+    rng: &mut super::Rng,
+    stock: Option<&mut super::chest_stock::ChestStockHook<'_>>,
+) -> bool {
+    let mut stock = stock;
+    // `:27673-27676`: the already-a-pyramid guard (the wall-151 disjunct is
+    // the C#'s own — verbatim).
+    if world
+        .tile(i, j)
+        .is_some_and(|t| t.active() && (t.kind == TILE_PYRAMID_BRICK || t.wall == 151))
+    {
+        return false;
+    }
+    // `:27711-27714`: the apex jitter, the shaft offset, the depth roll.
+    let num2 = j - rng.range(0, 7);
+    let num3 = rng.range(9, 13);
+    let mut num4 = 1;
+    let num5 = j + rng.range(pyramid_min_depth, pyramid_max_depth);
+    // `:27715-27725`: the stepped hull.
+    for k in num2..num5 {
+        for l in (i - num4)..(i + num4 - 1) {
+            if let Some(t) = world.tile_mut(l, k) {
                 t.kind = TILE_PYRAMID_BRICK;
                 t.flags |= FLAG_ACTIVE;
-                t.liquid = 0;
+                t.flags &= !crate::tile::FLAG_HALF_BRICK;
                 t.set_slope(0);
-                t.wall = super::WALL_SANDSTONE;
             }
         }
-        // The base chamber: carved inside the hull's bottom.
-        for x in (x0 - half / 2)..=(x0 + half / 2) {
-            for y in (base - 4)..=base {
-                let i = world.index(x, y);
-                if x <= x0 - half / 2 + 1 || x >= x0 + half / 2 - 1 {
-                    continue;
-                }
-                world.tiles[i] = Tile::default();
-                world.tiles[i].wall = super::WALL_SANDSTONE;
-            }
-        }
-        // The entrance tunnel from the desert surface into the chamber.
-        let ex = x0 + half / 2;
-        for y in (base - 3)..=base {
-            for dx in 0..(half / 2 + 2) {
-                let i = world.index(ex + dx, y);
-                if ex + dx < world.width - 2 {
-                    world.tiles[i] = Tile::default();
-                    world.tiles[i].wall = super::WALL_SANDSTONE;
+        num4 += 1;
+    }
+    // `:27726-27747`: the wall-34 sweep — a cell takes the wall only when
+    // its whole 3×3 neighbourhood is active hull brick.
+    for m in (i - num4 - 5)..=(i + num4 + 5) {
+        for n in (j - 1)..=(num5 + 1) {
+            let mut full = true;
+            for n6 in (m - 1)..=(m + 1) {
+                for n7 in (n - 1)..=(n + 1) {
+                    if !world
+                        .tile(n6, n7)
+                        .is_some_and(|t| t.active() && t.kind == TILE_PYRAMID_BRICK)
+                    {
+                        full = false;
+                    }
                 }
             }
+            if full {
+                if let Some(t) = world.tile_mut(m, n) {
+                    t.wall = WALL_PYRAMID_BRICK;
+                }
+            }
         }
-        // The pyramid's own chest (`WorldGen.cs:27853-27873`): the main
-        // item's double roll — `Next(3)`, a `0` re-rolls `Next(3)`, the
-        // tenth-anniversary `0 → 1` (M5-SEED-1 keeps it out) — then the
-        // style-1 place and the inline stock (S1-A-4).
-        let mut roll = rng.range(0, 3);
-        if roll == 0 {
-            roll = rng.range(0, 3);
+    }
+    // `:27748-27757`: the entrance shaft's side, offset, height, budget.
+    let mut num8 = 1;
+    if rng.range(0, 2) == 0 {
+        num8 = -1;
+    }
+    let mut num9 = i - num3 * num8;
+    let mut num10 = j + num3;
+    let num11 = rng.range(5, 8);
+    let mut num12 = rng.range(20, 30);
+    // `:27758-27785`: the shaft carve — dig down through the hull while the
+    // column still bites brick, sand trailing above the dig.
+    let mut digging = true;
+    while digging {
+        digging = false;
+        let mut sand_above = false;
+        for num13 in num10..=(num10 + num11) {
+            let num14 = num9;
+            if world
+                .tile(num14, num13 - 1)
+                .is_some_and(|t| t.active() && t.kind == super::TILE_SAND)
+            {
+                sand_above = true;
+            }
+            if world
+                .tile(num14, num13)
+                .is_some_and(|t| t.active() && t.kind == TILE_PYRAMID_BRICK)
+            {
+                if let Some(t) = world.tile_mut(num14, num13 + 1) {
+                    t.wall = WALL_PYRAMID_BRICK;
+                }
+                if let Some(t) = world.tile_mut(num14 + num8, num13) {
+                    t.wall = WALL_PYRAMID_BRICK;
+                }
+                if let Some(t) = world.tile_mut(num14, num13) {
+                    t.flags &= !FLAG_ACTIVE;
+                }
+                digging = true;
+            }
+            if sand_above {
+                if let Some(t) = world.tile_mut(num14, num13) {
+                    t.kind = super::TILE_SAND;
+                    t.flags |= FLAG_ACTIVE;
+                    t.flags &= !crate::tile::FLAG_HALF_BRICK;
+                    t.set_slope(0);
+                }
+            }
         }
-        let main = match roll {
-            0 => 848, // `Pharaoh'sMask`
-            1 => 857, // `SandstorminaBottle`
-            _ => 934, // `FlyingCarpet`
-        };
-        let style = resolved_chest_style(1, main, base - 2, world.world_surface);
-        if place_chest(world, x0 - 2, base - 2, style) {
+        num9 -= num8;
+    }
+    // `:27786-27908`: the zig-zag tunnel with the chamber.
+    num9 = i - num3 * num8;
+    let mut first_turn = true;
+    let mut chamber_done = false;
+    let mut tunnelling = true;
+    while tunnelling {
+        for num15 in num10..=(num10 + num11) {
+            if let Some(t) = world.tile_mut(num9, num15) {
+                t.flags &= !FLAG_ACTIVE;
+            }
+        }
+        num9 += num8;
+        num10 += 1;
+        num12 -= 1;
+        if num10 >= num5 - num11 * 2 {
+            num12 = 10;
+        }
+        if num12 <= 0 {
+            let mut chamber_this_turn = false;
+            if !first_turn && !chamber_done {
+                // `:27808-27813`: the noTunnel seed arm ends the walk here
+                // (d107); the classic path always builds the chamber.
+                chamber_done = true;
+                chamber_this_turn = true;
+                // `:27814-27843`: the chamber carve — the tapered ends.
+                let num16 = rng.range(7, 13);
+                let mut num17 = rng.range(23, 28);
+                let num18 = num17;
+                let num19 = num9;
+                while num17 > 0 {
+                    for num20 in (num10 - num16 + num11)..=(num10 + num11) {
+                        let carve = if num17 == num18 || num17 == 1 {
+                            num20 >= num10 - num16 + num11 + 2
+                        } else if num17 == num18 - 1
+                            || num17 == 2
+                            || num17 == num18 - 2
+                            || num17 == 3
+                        {
+                            num20 >= num10 - num16 + num11 + 1
+                        } else {
+                            true
+                        };
+                        if carve {
+                            if let Some(t) = world.tile_mut(num9, num20) {
+                                t.flags &= !FLAG_ACTIVE;
+                            }
+                        }
+                    }
+                    num17 -= 1;
+                    num9 += num8;
+                }
+                // `:27844-27851`: the chamber's span.
+                let num21 = num9 - num8;
+                let (num22, num23) = if num21 > num19 {
+                    (num19, num21)
+                } else {
+                    (num21, num19)
+                };
+                // `:27852-27872`: the Pharaoh double-roll (the
+                // tenthAnniversary 0→1 arm stays with d107).
+                let mut roll = rng.range(0, 3);
+                if roll == 0 {
+                    roll = rng.range(0, 3);
+                }
+                let main = match roll {
+                    0 => 848, // `Pharaoh'sMask`
+                    1 => 857, // `SandstorminaBottle`
+                    _ => 934, // `FlyingCarpet`
+                };
+                // `:27873`: `AddBuriedChest(…, notNearOtherChests: false,
+                // 1, trySlope: false, 0)` — the shared placement half.
+                add_buried_chest(
+                    world,
+                    (num22 + num23) / 2,
+                    num10,
+                    main,
+                    false,
+                    1,
+                    false,
+                    true,
+                    true,
+                    stock.as_deref_mut(),
+                    rng,
+                );
+                // `:27874-27878`: the small piles (the x draw first, then
+                // the style — the C# argument order).
+                let num25 = rng.range(1, 10);
+                for _ in 0..num25 {
+                    let px = rng.range(num22, num23);
+                    let style = rng.range(16, 19);
+                    super::spider_gem_moss::place_small_pile(world, px, num10 + num11, style, 1);
+                }
+                // `:27879-27882`: the four banners — each `Next(4, 7)`
+                // style draws at the call site even when the hang fails.
+                for (bx, by) in [
+                    (num22 + 2, num10 - num16 + num11 + 1),
+                    (num22 + 3, num10 - num16 + num11),
+                    (num23 - 2, num10 - num16 + num11 + 1),
+                    (num23 - 3, num10 - num16 + num11),
+                ] {
+                    let style = rng.range(4, 7);
+                    super::dungeon_features::place_banner(world, bx, by, TILE_BANNER, style);
+                }
+                // `:27883-27886`: the pot row.
+                for num27 in num22..=num23 {
+                    let style = rng.range(25, 28);
+                    super::spider_gem_moss::place_pot(world, rng, num27, num10 + num11, style);
+                }
+            }
+            // `:27888-27902`: the turn budgets.
+            if first_turn {
+                first_turn = false;
+                num8 *= -1;
+                num12 = rng.range(15, 20);
+            } else if chamber_this_turn {
+                num12 = rng.range(10, 15);
+            } else {
+                num8 *= -1;
+                num12 = rng.range(20, 40);
+            }
+        }
+        if num10 >= num5 - num11 {
+            tunnelling = false;
+        }
+    }
+    // `:27913-27969`: the post-chamber surface tunnel — the brick-lined
+    // crawl with the dungeon-wall veto, the two per-row jitter draws and
+    // the air-break / hard-cap exits.
+    let mut num28 = rng.range(100, 200);
+    let mut num29 = rng.range(500, 800);
+    let mut crawling = true;
+    let num30 = num11;
+    num12 = rng.range(10, 50);
+    if num8 == 1 {
+        num9 -= num30;
+    }
+    let num31 = rng.range(5, 10);
+    while crawling {
+        num28 -= 1;
+        num29 -= 1;
+        num12 -= 1;
+        // `:27928`: the C# for-condition re-draws `Next(0, 2)` EVERY
+        // iteration (the upper jitter is not a constant) — the while form
+        // keeps that draw order exactly, including the final failing test.
+        let mut num32 = num9 - num31 - rng.range(0, 2);
+        while num32 <= num9 + num30 + num31 + rng.range(0, 2) {
+            let num33 = num10;
+            let dungeon_wall = world
+                .tile(num32, num33)
+                .is_some_and(|t| crate::scene::is_dungeon_wall(t.wall));
+            if num32 >= num9 && num32 <= num9 + num30 {
+                if let Some(t) = world.tile_mut(num32, num33) {
+                    t.flags &= !FLAG_ACTIVE;
+                }
+            } else if !dungeon_wall {
+                if let Some(t) = world.tile_mut(num32, num33) {
+                    t.kind = TILE_PYRAMID_BRICK;
+                    t.flags |= FLAG_ACTIVE;
+                    t.flags &= !crate::tile::FLAG_HALF_BRICK;
+                    t.set_slope(0);
+                }
+            }
+            if num32 >= num9 - 1 && num32 <= num9 + 1 + num30 && !dungeon_wall {
+                if let Some(t) = world.tile_mut(num32, num33) {
+                    t.wall = WALL_PYRAMID_BRICK;
+                }
+            }
+            num32 += 1;
+        }
+        num10 += 1;
+        num9 += num8;
+        // `:27949-27959`: the air-break — the crawl stops once a whole row
+        // under the mouth is open.
+        if num28 <= 0 {
+            crawling = false;
+            for num34 in (num9 + 1)..=(num9 + num30 - 1) {
+                if world.tile(num34, num10).is_some_and(|t| t.active()) {
+                    crawling = true;
+                }
+            }
+        }
+        if num12 < 0 {
+            num12 = rng.range(10, 50);
+            num8 *= -1;
+        }
+        if num29 <= 0 {
+            crawling = false;
+        }
+    }
+    true
+}
+
+/// `WorldGen.AddBuriedChest`'s placement half (`WorldGen.cs:35877-36210` +
+/// the slope-restore tail `:37554-37565`), generalised from the temple's
+/// private port (W4-c33): the downward floor scan with the shimmer/larva
+/// rejections, the `trySlope` top-slope flatten (the style-17 ±30 chest
+/// exclusion box) and the ±2 boulder/altar veto, then the 2×2 place one
+/// row above the floor and the S1-A-4 stocking hook. The placement itself
+/// draws no rng on the classic path — the loot rolls ride the hook on the
+/// pass's stream. The early rejections return WITHOUT restoring the
+/// flattened slopes (the C#'s own quirk — the restore only runs after a
+/// failed `PlaceChest`). `ice_solid`/`spike_solid` carry the pass's
+/// `Main.tileSolid[162]`/`[232]` window (the Pyramids slot: both solid;
+/// the Water Chests slot: 162 non-solid after `Ice` `:16694`, 232 solid
+/// until the temple `:17708`).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn add_buried_chest(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    main_item: u16,
+    not_near: bool,
+    chest_style: i32,
+    try_slope: bool,
+    ice_solid: bool,
+    spike_solid: bool,
+    mut stock: Option<&mut super::chest_stock::ChestStockHook<'_>>,
+    rng: &mut super::Rng,
+) -> bool {
+    for k in y..(world.height - 10) {
+        // `:35904-35905`: the saved slopes reset every row (the C# declares
+        // them inside the loop).
+        let mut saved_left: i32 = -1;
+        let mut saved_here: i32 = -1;
+        // `:35906-35913`: the shimmer / larva rejections.
+        if world
+            .tile(x, k)
+            .is_some_and(|t| t.liquid > 0 && t.liquid_kind() == crate::tile::LiquidKind::Shimmer)
+        {
+            return false;
+        }
+        if world
+            .tile(x, k)
+            .is_some_and(|t| t.active() && t.kind == 231)
+        {
+            return false;
+        }
+        // `:35914-35944`: the trySlope flatten + the style-17 exclusion.
+        // The gate reads the live `tileSolid` table — the caller's window
+        // bits ride it (the Water Chests slot has 162 non-solid).
+        if try_slope
+            && world.tile(x, k).is_some_and(|t| {
+                t.active()
+                    && crate::tiledata::TILE_SOLID.has(t.kind)
+                    && (t.kind != 162 || ice_solid)
+                    && (t.kind != 232 || spike_solid)
+                    && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
+            })
+        {
+            if chest_style == 17 {
+                for l in (x - 30)..=(x + 30) {
+                    for m in (k - 30)..=(k + 30) {
+                        if !super::temple::in_world(world, l, m, 5) {
+                            return false;
+                        }
+                        if world
+                            .tile(l, m)
+                            .is_some_and(|t| t.active() && (t.kind == 21 || t.kind == 467))
+                        {
+                            return false;
+                        }
+                    }
+                }
+            }
+            if world.tile(x - 1, k).is_some_and(|t| t.top_slope()) {
+                saved_left = world.tile(x - 1, k).unwrap().slope() as i32;
+                world.tile_mut(x - 1, k).unwrap().set_slope(0);
+            }
+            if world.tile(x, k).is_some_and(|t| t.top_slope()) {
+                saved_here = world.tile(x, k).unwrap().slope() as i32;
+                world.tile_mut(x, k).unwrap().set_slope(0);
+            }
+        }
+        // `:35949-35959`: the ±2 boulder/altar veto.
+        for n in (x - 2)..=(x + 2) {
+            for m in (k - 2)..=(k + 2) {
+                if super::temple::in_world(world, n, m, 100)
+                    && world.tile(n, m).is_some_and(|t| {
+                        t.active()
+                            && (crate::tiledata::SET_BOULDERS.has(t.kind)
+                                || t.kind == 26
+                                || t.kind == 237)
+                    })
+                {
+                    return false;
+                }
+            }
+        }
+        // `:35960-35963`: the floor scan.
+        if !solid_tile_window(world, x, k, ice_solid, spike_solid) {
+            continue;
+        }
+        // `:35964-35988`: the resolved style (the family arms that retype
+        // the chest are loot-side — the classic callers here pre-set the
+        // main item, so `num9` is the caller's style or the flag15 default).
+        let style = resolved_chest_style(chest_style, main_item, k, world.world_surface);
+        // `:36206-36209`: the place one row above the floor.
+        if super::temple::place_buried_chest(world, x - 1, k - 1, not_near, style) {
             super::chest_stock::stock_placed_chest(
                 world,
                 stock.as_deref_mut(),
                 rng,
-                x0 - 2,
-                base - 2,
+                x - 1,
+                k - 1,
                 style,
                 TILE_CHEST,
-                main,
-                false,
+                main_item,
+                not_near,
             );
-            placed += 1;
+            return true;
         }
+        // `:37554-37565`: the slope restore after a failed place.
+        if try_slope {
+            if saved_left > -1 {
+                if let Some(t) = world.tile_mut(x - 1, k) {
+                    t.set_slope(saved_left as u8);
+                }
+            }
+            if saved_here > -1 {
+                if let Some(t) = world.tile_mut(x, k) {
+                    t.set_slope(saved_here as u8);
+                }
+            }
+        }
+        return false;
     }
-    placed
+    false
+}
+
+/// `WorldGen.SolidTile` (`WorldGen.cs:70111-70133`) under the caller's
+/// `tileSolid[162]`/`[232]` window — the shared `add_buried_chest`'s floor
+/// test (the temple's `solid_p2` generalised with the ice bit).
+fn solid_tile_window(world: &World, x: i32, y: i32, ice_solid: bool, spike_solid: bool) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        // The C#'s null tile reads solid (`:70116`).
+        return true;
+    };
+    if t.kind == 162 && !ice_solid {
+        return false;
+    }
+    if t.kind == 232 && !spike_solid {
+        return false;
+    }
+    t.active()
+        && crate::tiledata::TILE_SOLID.has(t.kind)
+        && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
+        && !t.half_brick()
+        && t.slope() == 0
+        && (t.flags & crate::tile::FLAG_INACTIVE) == 0
 }
 
 /// The pots arm of `PotsGraveyardsAndBoulderPiles` (`WorldGen.cs:17996+`):
@@ -686,4 +1156,129 @@ pub(crate) fn pass_hell_forts(
         }
     }
     placed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A sand world: air above row 100, solid sand below, the surface line
+    /// at 100 — the pyramid's sand-column gate and hull have ground to bite.
+    fn sand_world(w: i32, h: i32) -> World {
+        let mut world = World::new("pyr".into(), w, h);
+        world.world_surface = 100.0;
+        world.rock_layer = 300.0;
+        for x in 0..w {
+            for y in 100..h {
+                let i = world.index(x, y);
+                world.tiles[i].kind = super::super::TILE_SAND;
+                world.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        world
+    }
+
+    /// W4-c33: the anchor loop's gates — a slot inside the 300 margins on
+    /// sand builds the 151 hull (never the retired 480); a slot in the
+    /// dungeon's 15 % band builds nothing.
+    #[test]
+    fn the_pyramid_anchor_loop_gates_and_builds_the_151_hull() {
+        let mut world = sand_world(1200, 600);
+        // The dungeon sits right (x 900): its 15 % exclusion band is
+        // x > 900 - 180 = 720. The anchor at 500 passes; 800 fails.
+        let mut rng = super::super::Rng(0x9E37);
+        let placed = pass_pyramids(
+            &mut world,
+            &[500, 800],
+            &[100, 100],
+            2,
+            900,
+            false,
+            &mut rng,
+            None,
+        );
+        assert_eq!(placed, 1, "only the clear anchor builds");
+        let brick = world
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == TILE_PYRAMID_BRICK)
+            .count();
+        assert!(brick > 500, "the 151 hull ({brick})");
+        assert!(
+            !world.tiles.iter().any(|t| t.active() && t.kind == 480),
+            "the retired 480 hull never appears"
+        );
+        // The wall-34 sweep ran inside the hull.
+        let walls = world
+            .tiles
+            .iter()
+            .filter(|t| t.wall == WALL_PYRAMID_BRICK)
+            .count();
+        assert!(walls > 100, "the wall-34 interiors ({walls})");
+    }
+
+    /// W4-c33: the 220 spacing — two anchors closer than 220 build one
+    /// pyramid; the drunk seed's 110 spacing admits the pair at 150 apart.
+    #[test]
+    fn the_pyramid_spacing_gate_halves_under_drunk() {
+        let mut world = sand_world(1200, 600);
+        let mut rng = super::super::Rng(7);
+        let placed = pass_pyramids(
+            &mut world,
+            &[400, 550],
+            &[100, 100],
+            2,
+            1100,
+            false,
+            &mut rng,
+            None,
+        );
+        assert_eq!(placed, 1, "150 < 220 — the second slot skips");
+        let mut world = sand_world(1200, 600);
+        let mut rng = super::super::Rng(7);
+        let placed = pass_pyramids(
+            &mut world,
+            &[400, 550],
+            &[100, 100],
+            2,
+            1100,
+            true,
+            &mut rng,
+            None,
+        );
+        assert_eq!(placed, 2, "drunk: 150 >= 110 — both slots build");
+    }
+
+    /// W4-c33: the chamber furniture — the style-1 chest (the Pharaoh
+    /// family), the 185 piles, the 91 banners and the 28 pots all land
+    /// inside a built pyramid.
+    #[test]
+    fn the_pyramid_chamber_carries_its_furniture() {
+        let mut world = sand_world(1200, 600);
+        let mut rng = super::super::Rng(0xC33);
+        let placed = pass_pyramids(&mut world, &[500], &[100], 1, 1100, false, &mut rng, None);
+        assert_eq!(placed, 1);
+        let count = |kind: u16| {
+            world
+                .tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == kind)
+                .count()
+        };
+        assert!(
+            count(TILE_CHEST) >= 4,
+            "the chamber chest ({})",
+            count(TILE_CHEST)
+        );
+        assert!(count(TILE_SMALL_PILES) > 0, "the small piles");
+        assert!(count(TILE_BANNER) > 0, "the banners");
+        assert!(count(TILE_POT) > 0, "the pot row");
+        // The chest's style is 1 (the gold frame base column 18).
+        let chest = world
+            .tiles
+            .iter()
+            .find(|t| t.active() && t.kind == TILE_CHEST && t.frame_y == 0)
+            .unwrap();
+        assert_eq!(chest.frame_x % 36, 18, "the style-1 frame column");
+    }
 }

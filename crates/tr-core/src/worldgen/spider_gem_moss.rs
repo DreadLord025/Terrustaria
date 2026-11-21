@@ -503,8 +503,9 @@ fn write_stalactite(world: &mut World, x: i32, y: i32, frame_x: i32, frame_y: i3
 }
 
 /// `WorldGen.PlacePot` (`WorldGen.cs:54066-54114`) — the 2x2 seat validation
-/// plus the style frame pair.
-fn place_pot(world: &mut World, rng: &mut Rng, x: i32, y: i32, style: i32) -> bool {
+/// plus the style frame pair. Shared with the pyramid chamber's pot row
+/// (W4-c33).
+pub(crate) fn place_pot(world: &mut World, rng: &mut Rng, x: i32, y: i32, style: i32) -> bool {
     let mut ok = true;
     for i in x..x + 2 {
         for j in (y - 1)..(y + 1) {
@@ -537,8 +538,15 @@ fn place_pot(world: &mut World, rng: &mut Rng, x: i32, y: i32, style: i32) -> bo
     true
 }
 
-/// `WorldGen.PlaceSmallPile` (`WorldGen.cs:46815-46873`).
-fn place_small_pile(world: &mut World, x: i32, y: i32, pile_style: i32, pile_size: i32) -> bool {
+/// `WorldGen.PlaceSmallPile` (`WorldGen.cs:46815-46873`). Shared with the
+/// pyramid chamber's pile scatter (W4-c33).
+pub(crate) fn place_small_pile(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    pile_style: i32,
+    pile_size: i32,
+) -> bool {
     let frame_y = (pile_size * 18) as i16;
     let frame_x = (pile_style * 18) as i16;
     if world.tile(x, y).is_some_and(|t| t.liquid_kind() == crate::tile::LiquidKind::Lava) {

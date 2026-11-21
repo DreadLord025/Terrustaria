@@ -238,6 +238,12 @@ mod tests {
     // S1-P-i33 (code-only): the wall-framing mask fix (see DEFAULT_WORLD
     // below) moves this pin too — glass & co. beside a wall change the
     // generated `wall_frame`. Stale-by-design; the gate re-pins it.
+    // W4-c33 pass 2 (code-only): the faithful `Pyramids` rewrite moves this
+    // pin too — the pass now consumes the published pyr anchors on its own
+    // `pass_rng("Pyramids")` stream (was `srng`: the later srng consumers —
+    // pots, beehives, cave houses — shift), and the 151 hull replaces the
+    // shape-level 480 wherever an anchor passes the sand-column gate.
+    // Stale-by-design; the gate re-pins it (a == b stays).
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -281,6 +287,19 @@ mod tests {
     // move BY DESIGN; the re-pin is DEFERRED to the merge gate (no compiler
     // on this branch). The `a == b` determinism assertion stays green — the
     // mask is a pure function of the tile/wall state, no RNG draw added.
+    // W4-c33 pass 2 (2026-11-20, code-only): the faithful `Pyramids`
+    // rewrite (`WorldGen.cs:15360-15460` + `Pyramid` `:27669-27971`) —
+    // the anchor loop over `GenVars.PyrX/PyrY/numPyr` (the Dunes/Ocean
+    // Sand producers), the 151 sandstone-brick hull with the wall-34
+    // sweep, the entrance shaft, the zig-zag tunnel with the chamber
+    // (the Pharaoh chest via the shared `AddBuriedChest` half, the 185
+    // piles, the four 91 banners, the 28 pot row) and the post-chamber
+    // surface tunnel — on its own `pass_rng("Pyramids")` stream, moved
+    // to the vanilla slot after `ocean caves`. The pyramid tiles/walls
+    // move directly, the srng tail shifts, and the downstream
+    // tile-dependent passes re-roll around the new hulls. Stale-by-
+    // design; the re-pin is DEFERRED to the merge gate (no compiler on
+    // this branch). The a == b determinism halves stay untouched.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

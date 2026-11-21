@@ -1183,8 +1183,9 @@ mod tests {
     #[test]
     fn the_structure_passes_place_the_contents() {
         // The 4200-world carries the shrine brick huts (119) with the torches,
-        // the chests (21), the demon altars (26), the pyramid brick (480) and
-        // the pots (28).
+        // the chests (21), the demon altars (26), the pyramid brick (151 —
+        // the faithful `Pyramid` hull, W4-c33; the shape-level 480 retired)
+        // and the pots (28).
         let w = generate(&GenOptions {
             seed: 91,
             ..Default::default()
@@ -1201,7 +1202,7 @@ mod tests {
         assert!(count(4) > 3, "the shrine torches ({})", count(4));
         assert!(count(21) >= 4, "the chests ({})", count(21) / 4);
         assert!(count(26) > 30, "the demon altars ({})", count(26) / 6);
-        assert!(count(480) > 300, "the pyramid brick ({})", count(480));
+        assert!(count(151) > 300, "the pyramid brick ({})", count(151));
         assert!(count(28) > 50, "the pots ({})", count(28));
         // The chest tiles come in intact 2x2 quads — every chest anchor
         // (frame_y 0, the style's base column `frame_x = 18 * style`) has
