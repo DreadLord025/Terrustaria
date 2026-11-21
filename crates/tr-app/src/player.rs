@@ -1109,6 +1109,12 @@ pub struct Player {
     /// (`Recipe.cs:353-356`). The unlock itself (the Torch God's dialogue)
     /// is unported, so the flag stays false in play.
     pub unlocked_biome_torches: bool,
+    /// `Player.hbLocked` (`Player.cs:1436`): the hotbar-lock toggle. The
+    /// `DrawHotbarLockIcon` click flips it (`Main.cs:42507`, sound 22 at
+    /// `:42506`); the closed-hotbar hover/click gates read it
+    /// (`GUIHotbarDrawInner`, `Main.cs:43616`/`:43620`) — a locked hotbar
+    /// refuses the pointer selection. W4-g21 batch 5, host 71.
+    pub hb_locked: bool,
     /// The `TR_JUMPS`/`TR_BOOTS`/`TR_WINGS` pins: the debug stand-ins for the
     /// granting equipment, re-applied by the accessory pass every tick (the
     /// vanilla `ResetEffects` clears the flags and the grants re-set them).
@@ -2699,6 +2705,7 @@ impl Player {
             void_vault_enabled: false,
             ate_artisan_bread: false,
             unlocked_biome_torches: false,
+            hb_locked: false,
             pinned_jumps: [false; 9],
             pinned_balloon: false,
             pinned_rocket_boots: 0,
@@ -4674,6 +4681,30 @@ impl Player {
     /// the same cap-and-invert (`Player.cs:25918-25922`).
     pub fn wall_speed_multiplier(&self) -> f32 {
         1.0 / (1.0 + self.wall_speed_bonus).min(3.0)
+    }
+
+    /// `Player.TileReplacementEnabled` (`Player.cs:3373`): the
+    /// block-replacement toggle is `builderAccStatus[10] == 0` (0 = on).
+    /// The `DrawBlockReplacementIcon` click flips it (`Main.cs:42545`,
+    /// sound 22 at `:42544`). W4-g21 batch 5, host 72.
+    pub fn tile_replacement_enabled(&self) -> bool {
+        self.builder_acc_status[10] == 0
+    }
+
+    /// `Player.UsingBiomeTorches` (`Player.cs:3950-3964`): the getter gates
+    /// on `unlockedBiomeTorches` AND `builderAccStatus[11] == 0`; the setter
+    /// writes ONLY `builderAccStatus[11]` (`!value ? 1 : 0`). The
+    /// `DrawTorchBiomeSwapIcon` click flips the raw toggle (`Main.cs:42585`,
+    /// sound 22 at `:42584`); the icon draws only while unlocked
+    /// (`Main.cs:47580`). W4-g21 batch 5, host 73.
+    pub fn using_biome_torches(&self) -> bool {
+        self.unlocked_biome_torches && self.builder_acc_status[11] == 0
+    }
+
+    /// The `UsingBiomeTorches` setter (`Player.cs:3960-3963`): writes
+    /// `builderAccStatus[11]` only — the unlock gate is the getter's.
+    pub fn set_using_biome_torches(&mut self, value: bool) {
+        self.builder_acc_status[11] = if value { 0 } else { 1 };
     }
 
     /// Resync keep-one: main's i12 `melee_speed(held_kind)` /

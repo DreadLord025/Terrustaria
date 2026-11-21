@@ -5364,11 +5364,17 @@ pub(crate) fn place_wall_route(app: &mut App, tx: i32, ty: i32) -> bool {
     }
     // `PlaceThing_TryReplacingWalls` (`Player.cs:39816-39829`): the
     // `PlaceThing_ValidWallForReplacement` gate (`:39831-39839`: wall > 0 and
-    // not 350) + `NearFriendlyWall` + `WorldGen.ReplaceWall`. The port's
-    // replacement toggle (`builderAccStatus[10]`) defaults ON like vanilla's
-    // and has no UI yet (ANALYSIS, S1-P-i33).
+    // not 350) + `NearFriendlyWall` + `WorldGen.ReplaceWall`. The replacement
+    // toggle (`TileReplacementEnabled` = `builderAccStatus[10] == 0`,
+    // `Player.cs:3373`) defaults ON like vanilla's; the `DrawBlockReplacementIcon`
+    // click flips it (W4-g21 batch 5 host 72, `Main.cs:42545`).
     let cell_wall = app.world.tile(tx, ty).map_or(0, |t| t.wall);
-    if cell_wall > 0
+    let replacement_enabled = app
+        .player
+        .as_ref()
+        .is_some_and(|p| p.tile_replacement_enabled());
+    if replacement_enabled
+        && cell_wall > 0
         && cell_wall != edit::WALL_UNBREAKABLE
         && edit::near_friendly_wall(&app.world, tx, ty)
     {
@@ -7509,17 +7515,20 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
         app.player.as_ref().map(|p| p.facing),
     );
     // S1-P-i42 — `PlaceThing_Tiles_PlaceIt`'s biome-torch conversion
-    // (`Player.cs:40129-40132`): with the Torch God's favour unlocked
-    // (`UsingBiomeTorches`) and a PLAIN torch (style 0), the placed style
-    // becomes the biome's (`BiomeTorchPlaceStyle`, `:40236-40289`). The
-    // hold-light family already reads the same unlock (`player_lights.rs`);
-    // this is the placement half. The ZoneShimmer / ZoneUndergroundDesert
-    // arms read fields the port's `Zones` does not carry — skipped in place,
-    // the remaining arms (incl. temple + remix) keep their C# order (the
-    // player_lights `biome_torch_hold_style` precedent).
+    // (`Player.cs:40129-40132`): with the Torch God's favour unlocked AND the
+    // biome-swap toggle ON (`UsingBiomeTorches` = `unlockedBiomeTorches &&
+    // builderAccStatus[11] == 0`, `Player.cs:3950-3958`) and a PLAIN torch
+    // (style 0), the placed style becomes the biome's (`BiomeTorchPlaceStyle`,
+    // `:40236-40289`). The `DrawTorchBiomeSwapIcon` click flips the toggle
+    // (W4-g21 batch 5 host 73, `Main.cs:42585`). The hold-light family already
+    // reads the same unlock (`player_lights.rs`); this is the placement half.
+    // The ZoneShimmer / ZoneUndergroundDesert arms read fields the port's
+    // `Zones` does not carry — skipped in place, the remaining arms (incl.
+    // temple + remix) keep their C# order (the player_lights
+    // `biome_torch_hold_style` precedent).
     if kind == 4 && style == 0 {
         if let Some(p) = app.player.as_ref() {
-            if p.unlocked_biome_torches {
+            if p.using_biome_torches() {
                 style = biome_torch_place_style(p, &app.world);
             }
         }

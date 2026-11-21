@@ -674,19 +674,167 @@ fn hotbar_lock_y(push_side_tools_up: bool) -> f32 {
     }
 }
 
-/// `Main.DrawHotbarLockIcon(0, 0, pushSideToolsUp)` (`Main.cs:42479`).
+/// `Main.DrawHotbarLockIcon(0, 0, pushSideToolsUp)` (`Main.cs:42479-42516`).
 ///
-/// **Documented no-op.** The original draws `TextureAssets.HbLock[hbLocked ? 0 : 1]`
-/// = `Images/Lock_0` / `Images/Lock_1` (`AssetInitializer.cs:475-476`), which are
-/// present on disk but are not in `assets::Lookups` (Task 1's whitelist), so there is
-/// no sheet to draw here. Adding one is outside this task's single-file scope. The
-/// geometry (`(0, hotbar_lock_y)`, scale 0.9) is kept and tested for the caller.
+/// W4-g21 batch 5 host 71: the icon now draws. `TextureAssets.HbLock[hbLocked
+/// ? 0 : 1]` = `Images/Lock_0`/`Lock_1` (`AssetInitializer.cs:475-476`), sliced
+/// `Frame(2)` (two horizontal frames, the idle column 0); the hover overlay is
+/// `Frame(2, 1, 1)` (column 1) in `Main.OurFavoriteColor` (`:42513`). Scale 0.9
+/// (`:42487`). The hover-edge tick (`DoStatefulTickSound(ref hotbarLockMouseOver,
+/// flag)`, `:42515`) is returned for the caller to play (the audio borrow stays
+/// with the chest panel during the draw). `hb_locked` is `Player.hbLocked`.
 pub fn draw_hotbar_lock(
-    _r: &mut SpriteRenderer,
-    _lookups: &assets::Lookups,
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
     push_side_tools_up: bool,
-) {
-    let _ = hotbar_lock_y(push_side_tools_up);
+    hb_locked: bool,
+    mouse: Vec2,
+    hover: &mut bool,
+) -> bool {
+    let y = hotbar_lock_y(push_side_tools_up);
+    // `value.Frame(2)` (`:42489`): the sheet halved into two columns; the idle
+    // draw uses column 0, the hover overlay column 1 (`:42513`).
+    let Some(rect) = lookups.hb_lock[if hb_locked { 0 } else { 1 }] else {
+        return false;
+    };
+    let f = frame(&rect, lookups.atlas_size, 2, 1, 0, 0);
+    // `:42491`: the hover box is the FRAME size × 0.9, strict on all edges.
+    let hovered = mouse.x > 0.0
+        && mouse.x < f.w * 0.9
+        && mouse.y > y
+        && mouse.y < y + f.h * 0.9;
+    r.push_ui_sprite([0.0, y], [f.w * 0.9, f.h * 0.9], f.uv, WHITE);
+    if hovered {
+        let hl = frame(&rect, lookups.atlas_size, 2, 1, 1, 0);
+        r.push_ui_sprite([0.0, y], [hl.w * 0.9, hl.h * 0.9], hl.uv, FAVORITE);
+    }
+    // `DoStatefulTickSound(ref hotbarLockMouseOver, flag)` (`:42515` → `:3244`).
+    let tick = *hover != hovered && hovered;
+    *hover = hovered;
+    tick
+}
+
+/// `Main.DrawBlockReplacementIcon(0, 0, pushSideToolsUp, 0)`
+/// (`Main.cs:42518-42556`). W4-g21 batch 5 host 72.
+///
+/// `TextureAssets.blockReplaceIcon[0]` (`Images/UI/BlockReplace_0`) sliced
+/// `Frame(3, 1, enabled ? 0 : 1)` — column 0 when replacement is ON
+/// (`builderAccStatus[10] == 0`), column 1 when OFF; the hover overlay is
+/// column 2 in `OurFavoriteColor` (`:42552`). `y = 44` (or `23` pushed up),
+/// scale 0.9. Returns whether hovered (the caller feeds the shared
+/// `toggleAccMouseOver` latch, `:47575-47578`).
+pub fn draw_block_replace_icon(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    push_side_tools_up: bool,
+    enabled: bool,
+    mouse: Vec2,
+) -> bool {
+    let y = if push_side_tools_up { 23.0 } else { 44.0 };
+    let Some(rect) = lookups.block_replace else {
+        return false;
+    };
+    let col = if enabled { 0 } else { 1 };
+    let f = frame(&rect, lookups.atlas_size, 3, 1, col, 0);
+    let hovered = mouse.x > 0.0
+        && mouse.x < f.w * 0.9
+        && mouse.y > y
+        && mouse.y < y + f.h * 0.9;
+    r.push_ui_sprite([0.0, y], [f.w * 0.9, f.h * 0.9], f.uv, WHITE);
+    if hovered {
+        let hl = frame(&rect, lookups.atlas_size, 3, 1, 2, 0);
+        r.push_ui_sprite([0.0, y], [hl.w * 0.9, hl.h * 0.9], hl.uv, FAVORITE);
+    }
+    hovered
+}
+
+/// `Main.DrawTorchBiomeSwapIcon(0, 0, pushSideToolsUp, 1)`
+/// (`Main.cs:42558-42596`). W4-g21 batch 5 host 73.
+///
+/// `TextureAssets.Extra[211]` sliced `Frame(4, 1, enabled ? 1 : 0)` — column 1
+/// when the biome swap is ON (`builderAccStatus[11] == 0`), column 0 when OFF;
+/// the hover overlay is `Frame(4, 1, enabled ? 3 : 2)` (`:42592`). `y = 68`
+/// (or `47` pushed up), scale 0.9. The icon draws only while
+/// `unlockedBiomeTorches` (`Main.cs:47580`). Returns whether hovered.
+pub fn draw_torch_biome_icon(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    push_side_tools_up: bool,
+    enabled: bool,
+    mouse: Vec2,
+) -> bool {
+    let y = if push_side_tools_up { 47.0 } else { 68.0 };
+    let Some(rect) = lookups.torch_biome else {
+        return false;
+    };
+    let col = if enabled { 1 } else { 0 };
+    let f = frame(&rect, lookups.atlas_size, 4, 1, col, 0);
+    let hovered = mouse.x > 0.0
+        && mouse.x < f.w * 0.9
+        && mouse.y > y
+        && mouse.y < y + f.h * 0.9;
+    r.push_ui_sprite([0.0, y], [f.w * 0.9, f.h * 0.9], f.uv, WHITE);
+    if hovered {
+        let hl = frame(&rect, lookups.atlas_size, 4, 1, if enabled { 3 } else { 2 }, 0);
+        r.push_ui_sprite([0.0, y], [hl.w * 0.9, hl.h * 0.9], hl.uv, FAVORITE);
+    }
+    hovered
+}
+
+/// `Main.GetBuilderAccsCountToShow` (`Main.cs:47592-47597`): the total icon
+/// count the `pushSideToolsUp` gate reads (`totalDrawnIcons >= 10`,
+/// `:41043`/`:47370`). The port models the block-replacement icon (always 1)
+/// and the torch-biome icon (1 while unlocked); the ruler-line/grid and
+/// auto-paint flags are unported (false), the wire icons ride
+/// `info_acc_mech_show_wires` (6) and the actuator icon `auto_actuator` (1).
+pub fn builder_accs_count_to_show(
+    info_acc_mech_show_wires: bool,
+    auto_actuator: bool,
+    unlocked_biome_torches: bool,
+) -> i32 {
+    let block_replace_icons = 1;
+    let torch_god_icons = if unlocked_biome_torches { 1 } else { 0 };
+    (if info_acc_mech_show_wires { 6 } else { 0 })
+        + (if auto_actuator { 1 } else { 0 })
+        + block_replace_icons
+        + torch_god_icons
+}
+
+/// The hotbar-lock icon's hover box (`Main.cs:42491`): the `Frame(2)` cell
+/// size × 0.9 at `(0, hotbar_lock_y)`, strict on all edges. The click handler
+/// shares the draw's geometry. W4-g21 batch 5 host 71.
+pub fn hotbar_lock_hit(lookups: &assets::Lookups, push_side_tools_up: bool, mouse: Vec2) -> bool {
+    let Some(rect) = lookups.hb_lock[0].or(lookups.hb_lock[1]) else {
+        return false;
+    };
+    let w = (rect.width / 2) as f32;
+    let h = rect.height as f32;
+    let y = hotbar_lock_y(push_side_tools_up);
+    mouse.x > 0.0 && mouse.x < w * 0.9 && mouse.y > y && mouse.y < y + h * 0.9
+}
+
+/// The block-replacement icon's hover box (`Main.cs:42536`): the `Frame(3,1)`
+/// cell size × 0.9 at `(0, 44|23)`, strict on all edges. W4-g21 batch 5 host 72.
+pub fn block_replace_hit(lookups: &assets::Lookups, push_side_tools_up: bool, mouse: Vec2) -> bool {
+    let Some(rect) = lookups.block_replace else {
+        return false;
+    };
+    let w = (rect.width / 3) as f32;
+    let h = rect.height as f32;
+    let y = if push_side_tools_up { 23.0 } else { 44.0 };
+    mouse.x > 0.0 && mouse.x < w * 0.9 && mouse.y > y && mouse.y < y + h * 0.9
+}
+
+/// The torch-biome-swap icon's hover box (`Main.cs:42576`): the `Frame(4,1)`
+/// cell size × 0.9 at `(0, 68|47)`, strict on all edges. W4-g21 batch 5 host 73.
+pub fn torch_biome_hit(lookups: &assets::Lookups, push_side_tools_up: bool, mouse: Vec2) -> bool {
+    let Some(rect) = lookups.torch_biome else {
+        return false;
+    };
+    let w = (rect.width / 4) as f32;
+    let h = rect.height as f32;
+    let y = if push_side_tools_up { 47.0 } else { 68.0 };
+    mouse.x > 0.0 && mouse.x < w * 0.9 && mouse.y > y && mouse.y < y + h * 0.9
 }
 
 // ---------------------------------------------------------------------------

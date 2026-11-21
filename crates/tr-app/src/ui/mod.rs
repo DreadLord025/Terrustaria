@@ -703,6 +703,16 @@ pub fn draw_hud(
     stack_to_chests_mode: u8,
     all_chest_stack_hover: &mut bool,
     inventory_sort_hover: &mut bool,
+    // The hotbar-lock + builder-accessory icons (`Main.cs:42479-42596`,
+    // `:47575-47588`, W4-g21 batch 5 hosts 71/72/73).
+    hb_locked: bool,
+    unlocked_biome_torches: bool,
+    using_biome_torches: bool,
+    tile_replacement_enabled: bool,
+    info_acc_mech_show_wires: bool,
+    auto_actuator: bool,
+    hotbar_lock_hover: &mut bool,
+    toggle_acc_hover: &mut i32,
     // The buff bar (`Main.DrawInterface_Resources_Buffs`, `Main.cs:43203`):
     // the per-slot alpha (`Main.buffAlpha`), the cancel gate
     // (`Main.mouseRight && Main.mouseRightRelease`, `:43333`) and the
@@ -994,7 +1004,44 @@ pub fn draw_hud(
         if !hide_pvp_icons {
             chrome::draw_pvp_icons(r, lookups, screen, equip_page, m_h, pvp, mouse_pos);
         }
-        chrome::draw_hotbar_lock(r, lookups, false);
+        // `Main.DrawHotbarLockIcon(num, num2, pushSideToolsUp)` (`Main.cs:41046`):
+        // `num = num2 = 0` in `DrawInventory` (`:41004-41005`), the push-up gate
+        // `totalDrawnIcons >= 10` (`:41042-41043`). W4-g21 batch 5 host 71.
+        let push_side_tools_up = chrome::builder_accs_count_to_show(
+            info_acc_mech_show_wires,
+            auto_actuator,
+            unlocked_biome_torches,
+        ) >= 10;
+        if chrome::draw_hotbar_lock(
+            r, lookups, push_side_tools_up, hb_locked, mouse_pos, hotbar_lock_hover,
+        ) {
+            chest_panel.audio.play("Menu_Tick"); // `:42515` → `:3244`
+        }
+        // `Main.DrawBuilderAccToggles`' block-replacement + torch-biome icons
+        // (`Main.cs:47575-47588`): the shared `toggleAccMouseOver` int latch
+        // (`DoStatefulTickSound(ref int, state)`, `:3249-3259`) — the block icon
+        // is state `num`, the torch icon `num + 1` (the wire/ruler/actuator
+        // icons before them are unported, so `num` starts at 0). W4-g21 batch 5
+        // hosts 72/73.
+        let mut acc_state = -1i32;
+        if chrome::draw_block_replace_icon(
+            r, lookups, push_side_tools_up, tile_replacement_enabled, mouse_pos,
+        ) {
+            acc_state = 0;
+        }
+        if unlocked_biome_torches
+            && chrome::draw_torch_biome_icon(
+                r, lookups, push_side_tools_up, using_biome_torches, mouse_pos,
+            )
+        {
+            acc_state = 1;
+        }
+        if *toggle_acc_hover != acc_state {
+            *toggle_acc_hover = acc_state;
+            if acc_state != -1 {
+                chest_panel.audio.play("Menu_Tick"); // `:47588` → `:3256`
+            }
+        }
         // `Main.DrawInventory`'s map-style icon row (`Main.cs:41055-41126`),
         // after `DrawHotbarLockIcon` (`:41046`) and before the crafting panel
         // (`:41706`).

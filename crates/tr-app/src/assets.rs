@@ -849,6 +849,15 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // `TextureAssets.HouseBanner`, `AssetInitializer.cs:265`, W4-g21
         // batch 4 host 53).
         "UI/House_Banner",
+        // W4-g21 batch 5 hosts 71/72/73 — the hotbar-lock icon
+        // (`TextureAssets.HbLock[0/1]`, `AssetInitializer.cs:475-476`), the
+        // block-replacement icon (`TextureAssets.blockReplaceIcon[0]`,
+        // `:477`) and the torch-biome-swap icon (`TextureAssets.Extra[211]`,
+        // the `ExtrasID.Count` loop `:362-365`).
+        "Lock_0",
+        "Lock_1",
+        "UI/BlockReplace_0",
+        "Extra_211",
         "UI/DisplaySlots_0",
         "UI/DisplaySlots_1",
         "UI/DisplaySlots_2",
@@ -2088,6 +2097,20 @@ pub struct Lookups {
     /// `UI/House_Banner`: the world housing banner (`Main.cs:40783`,
     /// W4-g21 batch 4 host 53).
     pub house_banner: Option<tr_render::SheetRect>,
+    /// `Images/Lock_0`/`Lock_1` (`TextureAssets.HbLock[0/1]`,
+    /// `AssetInitializer.cs:475-476`): the hotbar-lock icon's locked/unlocked
+    /// frames (`Main.DrawHotbarLockIcon`, `Main.cs:42488`, W4-g21 batch 5
+    /// host 71). Index 0 = locked, 1 = unlocked.
+    pub hb_lock: [Option<tr_render::SheetRect>; 2],
+    /// `Images/UI/BlockReplace_0` (`TextureAssets.blockReplaceIcon[0]`,
+    /// `AssetInitializer.cs:477`): the block-replacement icon's 3-frame
+    /// strip (`Main.DrawBlockReplacementIcon`, `Main.cs:42533`, W4-g21
+    /// batch 5 host 72).
+    pub block_replace: Option<tr_render::SheetRect>,
+    /// `Images/Extra_211` (`TextureAssets.Extra[211]`): the torch-biome-swap
+    /// icon's 4-frame strip (`Main.DrawTorchBiomeSwapIcon`, `Main.cs:42573`,
+    /// W4-g21 batch 5 host 73).
+    pub torch_biome: Option<tr_render::SheetRect>,
     /// `Inventory_Back18`: the crafting-recipe slot frame (`ItemSlot.cs:2272`).
     pub ui_back18: Option<tr_render::SheetRect>,
     /// `UI/PanelBackground`: the panel background 9-slice (`UIPanel.cs:30`).
@@ -2466,6 +2489,9 @@ impl Lookups {
                 atlas.sheet(&format!("UI/Sort_{i}")).copied()
             }),
             house_banner: atlas.sheet("UI/House_Banner").copied(),
+            hb_lock: [0, 1].map(|i| atlas.sheet(&format!("Lock_{i}")).copied()),
+            block_replace: atlas.sheet("UI/BlockReplace_0").copied(),
+            torch_biome: atlas.sheet("Extra_211").copied(),
             ui_back18: atlas.sheet("Inventory_Back18").copied(),
             ui_panel_bg: atlas.sheet("UI/PanelBackground").copied(),
             ui_panel_border: atlas.sheet("UI/PanelBorder").copied(),

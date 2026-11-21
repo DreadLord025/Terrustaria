@@ -2377,6 +2377,8 @@ pub(crate) mod front_flow_tests {
             frame_release: false,
             all_chest_stack_hover: false,
             inventory_sort_hover: false,
+            hotbar_lock_hover: false,
+            toggle_acc_hover: -1,
             house_banners: Vec::new(),
             keys: HashSet::new(),
             keybinds: crate::input_map::default_binds(),

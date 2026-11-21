@@ -175,6 +175,18 @@ impl App {
             let hide_misc = self.player.as_ref().map(|p| p.hide_misc).unwrap_or([false; 2]);
             let unlocked_super_cart = self.player.as_ref().is_some_and(|p| p.unlocked_super_cart);
             let enabled_super_cart = self.player.as_ref().is_some_and(|p| p.enabled_super_cart);
+            // The hotbar-lock + builder-accessory icon inputs (`Main.cs:42479-42596`,
+            // W4-g21 batch 5 hosts 71/72/73).
+            let hb_locked = self.player.as_ref().is_some_and(|p| p.hb_locked);
+            let unlocked_biome_torches =
+                self.player.as_ref().is_some_and(|p| p.unlocked_biome_torches);
+            let using_biome_torches =
+                self.player.as_ref().is_some_and(|p| p.using_biome_torches());
+            let tile_replacement_enabled =
+                self.player.as_ref().is_some_and(|p| p.tile_replacement_enabled());
+            let info_acc_mech_show_wires =
+                self.player.as_ref().is_some_and(|p| p.info_acc_mech_show_wires);
+            let auto_actuator = self.player.as_ref().is_some_and(|p| p.auto_actuator);
             // `Main.ActivePlayerFileData.Player.difficulty` for the world-select
             // grey-out (`UIWorldSelect.cs:179`) — snapshotted before the disjoint
             // borrow below (it reads `self.session_draft`).
@@ -1809,6 +1821,16 @@ impl App {
                             self.settings.stack_to_chests_mode,
                             &mut self.all_chest_stack_hover,
                             &mut self.inventory_sort_hover,
+                            // The hotbar-lock + builder-accessory icons
+                            // (`Main.cs:42479-42596`, W4-g21 batch 5).
+                            hb_locked,
+                            unlocked_biome_torches,
+                            using_biome_torches,
+                            tile_replacement_enabled,
+                            info_acc_mech_show_wires,
+                            auto_actuator,
+                            &mut self.hotbar_lock_hover,
+                            &mut self.toggle_acc_hover,
                             // The buff bar (`Main.DrawInterface_Resources_Buffs`).
                             &mut self.buff_alpha,
                             &mut self.buff_removals,

@@ -781,6 +781,14 @@ pub(crate) struct App {
     /// `Main.inventorySortMouseOver` (`Main.cs:1299`): the sort button's hover
     /// latch (`DoStatefulTickSound`, `Main.cs:41890`, W4-g21 batch 3).
     pub(crate) inventory_sort_hover: bool,
+    /// `Main.hotbarLockMouseOver` (`Main.cs:42515`): the hotbar-lock icon's
+    /// hover latch (`DoStatefulTickSound`, W4-g21 batch 5 host 71).
+    pub(crate) hotbar_lock_hover: bool,
+    /// `Main.toggleAccMouseOver` (`Main.cs:47588`): the builder-accessory
+    /// toggle row's shared hover latch — the block-replacement and
+    /// torch-biome-swap icons feed it (`DoStatefulTickSound(ref int, state)`,
+    /// `Main.cs:3249-3259`; -1 = none hovered). W4-g21 batch 5 hosts 72/73.
+    pub(crate) toggle_acc_hover: i32,
     /// The world housing banners' hover boxes (`DrawNPCHousesInWorld`,
     /// `Main.cs:40711-40832`), rebuilt each draw while `EquipPage == 1` — the
     /// right-click kick-out hit-tests them (`Main.cs:40824-40829`, W4-g21
@@ -4001,6 +4009,8 @@ impl App {
             frame_release: false,
             all_chest_stack_hover: false,
             inventory_sort_hover: false,
+            hotbar_lock_hover: false,
+            toggle_acc_hover: -1,
             house_banners: Vec::new(),
             keys: HashSet::new(),
             keybinds: crate::input_map::default_binds(),

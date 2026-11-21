@@ -1934,6 +1934,46 @@ impl App {
             self.coin_ammo_click(ctx, k, left, right_edge);
             return;
         }
+        // The hotbar-lock + builder-accessory icon toggles (`Main.cs:42479-42596`,
+        // W4-g21 batch 5 hosts 71/72/73): each left press flips its state and
+        // plays sound 22 (`SoundID.Unlock`), consuming the press before the slot
+        // grid. The hotbar-lock icon draws inside `DrawInventory` (`:41046`);
+        // the block-replacement / torch-biome icons ride `DrawBuilderAccToggles`
+        // (`:47575-47588`) and gate on `playerInventory`.
+        if left && self.inventory_open {
+            let push_up = ui::chrome::builder_accs_count_to_show(
+                self.player.as_ref().is_some_and(|p| p.info_acc_mech_show_wires),
+                self.player.as_ref().is_some_and(|p| p.auto_actuator),
+                self.player.as_ref().is_some_and(|p| p.unlocked_biome_torches),
+            ) >= 10;
+            if ui::chrome::hotbar_lock_hit(&self.lookups, push_up, self.mouse_pos) {
+                if let Some(p) = self.player.as_mut() {
+                    p.hb_locked = !p.hb_locked; // `:42507`
+                }
+                self.audio.play("Unlock"); // `SoundEngine.PlaySound(22)` (`:42506`)
+                return;
+            }
+            if ui::chrome::block_replace_hit(&self.lookups, push_up, self.mouse_pos) {
+                if let Some(p) = self.player.as_mut() {
+                    // `:42545`: `builderAccStatus[10] = enabled ? 1 : 0`.
+                    let enabled = p.builder_acc_status[10] == 0;
+                    p.builder_acc_status[10] = if enabled { 1 } else { 0 };
+                }
+                self.audio.play("Unlock"); // `:42544`
+                return;
+            }
+            if self.player.as_ref().is_some_and(|p| p.unlocked_biome_torches)
+                && ui::chrome::torch_biome_hit(&self.lookups, push_up, self.mouse_pos)
+            {
+                if let Some(p) = self.player.as_mut() {
+                    // `:42585`: `builderAccStatus[11] = enabled ? 1 : 0`.
+                    let enabled = p.builder_acc_status[11] == 0;
+                    p.builder_acc_status[11] = if enabled { 1 } else { 0 };
+                }
+                self.audio.play("Unlock"); // `:42584`
+                return;
+            }
+        }
         let Some(slot) = self.slot_at_mouse() else {
             return;
         };
@@ -1943,15 +1983,16 @@ impl App {
                 // the click latches `changeItem`, which `Player.Update`
                 // feeds to `Select` (`Player.cs:25087-25091`) — buffered,
                 // not immediate. The hover gate (`:43616`) refuses the
-                // locked hotbar (`hbLocked` has no port state — the lock
-                // icon is a recorded no-op, `ui/chrome.rs`), the torch
-                // auto-select hold and an active channel; `Main.blockMouse`
-                // (`:43620`) blocks the held button after a mid-use switch.
+                // locked hotbar (`hbLocked`, W4-g21 batch 5 host 71), the
+                // torch auto-select hold and an active channel;
+                // `Main.blockMouse` (`:43620`) blocks the held button after a
+                // mid-use switch.
+                let hb_locked = self.player.as_ref().is_some_and(|p| p.hb_locked);
                 let control_torch = self.keys.iter().any(|k| {
                     crate::input_map::is_bound(&self.keybinds, crate::input_map::Action::Torch, *k)
                 });
                 let channel = self.player.as_ref().is_some_and(|p| p.channel);
-                if !control_torch && !channel && !self.block_mouse {
+                if !hb_locked && !control_torch && !channel && !self.block_mouse {
                     if self.selection.select(self.selected, slot, false) {
                         self.audio.play("Menu_Tick"); // `Select`, `:506`
                     }
