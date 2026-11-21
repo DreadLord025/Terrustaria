@@ -39467,3 +39467,29 @@ tileCollide false), `ai_claymore_blade_slam` verbatim against
 `:69622-69631` — the drain's centre offset (16×16 → −8), ai1=128 /
 ai2=96 and the full damage (`:41967`) all compose; the both-states
 witness holds. All WRITTEN NOT RUN (code-only).
+
+## W4-d19 SWORD RETIRE — 26g SEALED (the retire closeout, code-only)
+
+The W4-d19 lane retires at FINAL tip `6b56e27c` + the retire pass
+(`docs/research/26g-clouds-keep-one.md`, SEALED banner). Four receipts
+published, zero behaviour change: **§7a** the d20c-T5 monitor — origin
+re-fetched, the only d20 branch is `task/W4-d20-proj-ai-191-200` at
+`243f81672`, T5 NOT landed (no `Player.cs:48870–48937` arm in
+`editing.rs`, no 972/982/983/984 row on d20 — the slashes-ONLY-d19
+rows-GATE honoured; the 1043 dup value-identical, keep-one); **§3a**
+the f33/93a §2 d19-949 drop-hunks re-verified at `6b56e27c` — drift
+census ZERO except pin I (+1 from the `remap` `pub(crate)` doc line:
+the 184 dispatch arm now :17399–17411), f33-side pins re-read EXACT at
+f33's LATEST tip `83387628b`; **§6a** the 978 keep-d12c verdict
+re-confirmed at the LATEST tips (d12d `4ba56e660`, d18 `8248a54be` —
+d18's copy still lacks `proj_frames[978]=5`, d12c's superset survives;
+the exact d18 drop-hunks V1–V5 published); **§8** THE SWORD-FAMILY
+merger-bible — d19 181–190 + d20 191–200 + terra-chain T5 + f33 949
+merge as ONE family in five ordered steps, every dup adjudicated
+in-note, T5 lands LAST against the merged rows and the §7 envelope
+witness (`w4_d19_the_terra_chain_payload_feeds_the_190_envelope`) is
+its gate. The residuals are merge-order, not coverage (§6). No
+cargo/rustc/rustfmt/tests/graphify invoked (code-only wave); the
+verification is whole-range re-reads at the exact tips + `git diff`
+drift censuses + `merge-base --is-ancestor` checks (all quoted in the
+note).

@@ -1,5 +1,17 @@
 # 26g — aiStyle-92 cloud family KEEP-ONE (W4-d19 × W4-d10 dup adjudication)
 
+> **SWORD RETIRE — SEALED** (branch `task/W4-d19-proj-ai-181-190`,
+> FINAL `6b56e27c` + this retire pass). The FINAL round's §1–§7 stand;
+> the retire pass adds §3a (the f33/93a §2 drop-hunks re-verified at
+> `6b56e27c` — ONE +1 shift, pin I), §6a (the 978 keep-d12c receipt at
+> the LATEST d18 tip `8248a54be` + the exact d18 drop-hunks V1–V5),
+> §7a (the d20c-T5 monitor — T5 NOT landed at d20 `243f81672`, the
+> slashes-ONLY-d19 rows-GATE re-confirmed, no row duplication) and §8
+> (THE SWORD-FAMILY merger-bible, one paragraph, five ordered steps).
+> No further d19 rounds are owed. The merger consumes §4 (d10 D1–D13)
+> + §3a/93a §2 (f33 A–L) + §6a (d18 V1–V5) + §7/§7a (T5's gate) in
+> §8's order — and nothing else.
+
 **Round.** W4-d19 FINAL (PROJ-181, code-only, branch
 `task/W4-d19-proj-ai-181-190`). The earlier rounds (follow-up 2, base
 `1054c396a`) adjudicated the dup arm-by-arm (§1–§3) and verified the
