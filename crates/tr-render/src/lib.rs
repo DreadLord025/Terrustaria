@@ -17,7 +17,7 @@ pub use atlas::{Atlas, AtlasImage, SheetLayout, SheetRect};
 pub use clip::{intersect as clip_intersect, ClipStack, NO_CLIP};
 pub use composite::TargetCompositor;
 pub use font_atlas::{FontAtlas, FontPageData, PageRect};
-pub use gpu::Gpu;
+pub use gpu::{offscreen_target_on, read_texture_rgba, Gpu};
 pub use post::{
     pass_index, FilterImages, FilterPass, FilterParams, PassId, PostPipeline, MAX_CHAIN,
     PASS_TABLE,

@@ -394,6 +394,12 @@ impl App {
                         // `TR_SHOW_INVISIBLE=1` pins it on for A/B shots.
                         draw_invisible_walls: crate::env::show_invisible(),
                     };
+                    // S1-G-13 consumers: park the frame's ambient light
+                    // parameters for the capture chunk render
+                    // (`Main.DrawCapture`'s `Lighting.LightTiles`,
+                    // `Main.cs:56727-56732` — the capture tick runs at the
+                    // next frame's head, before this region recomputes them).
+                    self.capture_light_params = Some(params);
                     // `Main.essScale`'s drift (`Main.cs:62264-62277`), which
                     // the C# runs once per draw pass just before `DrawItems`
                     // (`:62278`), behind `!Main.gamePaused`. The step-time
