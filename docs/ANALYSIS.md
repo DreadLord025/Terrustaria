@@ -39348,3 +39348,177 @@ three-draw twin). Verification = whole-block C# re-reads
 `LegacySoundPlayer.cs:963-968`/`:957-962`/`:717-727`,
 `Main.cs:43060-43086`/`:40227-40263`, `Dust.cs` via the ported
 `particles.rs` allocator) + hand arithmetic on the chunk crossings.
+
+## The W4-d79 sweep phase (2026-11-21, code-only mode)
+
+The four-family deferral + pool sweep on `task/W4-d79-sound-pitch-pool`
+(continuing phases 6-7), commits `7f3c29da` / `b78b02022` / `5a719d90e` +
+this docs commit.
+
+### Sweep 1 — the DyeTrader Strange Plants turn-in (Main.cs:40002-40020)
+
+The third orphaned Chat site (`:40016`) now has a ported seam. The f37
+(`908482d52`) + g58 (`0d683ec49`) tips port the shop price-math / happiness
+lanes but carry NO turn-in seam (no `GetDyeTraderReward` /
+`ExoticPlantsForDyeTrade` / `NPCChatText_DyeTraderRarePlant` anywhere), so the
+small self-contained arm ports here:
+
+- `world_sim/npcs.rs::dye_trader_turn_in` collapses the `DyeTraderRarePlant`
+  button (`NPCInteractions.cs:443-463`) onto the right-click (the Angler/Nurse
+  treatment). The button's hard-mode `Condition` (`:445-452`) is a UI gate;
+  the `Interact` body carries none, so the collapse runs unconditionally like
+  the Angler turn-in's. The `ExoticPlantsForDyeTrade` scan
+  (`FindItem(bool[])`, `Player.cs:55996-56006`) finds the first live Strange
+  Plant 3385-3388 (`ItemID.cs:1324`), decrements/airs the stack, plays the
+  unpositioned draw-free case-24 Chat between the decrement and the reward
+  (`:40016`), then the dye reward.
+- `give_dye_trader_reward` ports `Player.GetDyeTraderReward`
+  (`Player.cs:56685-56732`): the 14-dye base pool + the hard-mode additions
+  gated on the mech/Plantera/Martian/Moon Lord latches, ONE
+  `Next(list.Count)` pick + the stack-6 spawn at the trader centre on
+  `UpdatePlayers` (the Angler reward convention — the turn-in is the player's
+  item-use interaction under the `Main.cs:17754` swap). The dyes are
+  non-prefixable, so the spawn draws exactly the velocity triplet.
+- The `Lang.DyeTraderQuestChat(gotDye)` line (`Lang.cs:300-304`) draws on the
+  bare global stream via the new `lang::dialog_prefix_keys` —
+  `CreateDialogFilter`'s `key.StartsWith(prefix)` `FindAll` over the flat text
+  table (the sub-category prefixes `DyeTraderSpecialText.HasPlant`/`NoPlant`
+  the grouped-key table misses; the sorted stand-in keeps the index→line
+  mapping deterministic, the S1-L-12c convention).
+- The `npcChatCornerItem = 0` head (`:40004`) has no port field yet (deferred).
+
+Witnesses: `w4_d79_the_dye_trader_turn_in_trades_a_plant_for_a_dye` (the
+trade/empty-hand play counts + the HasPlant/NoPlant lines),
+`w4_d79_the_dye_reward_draws_ride_update_players_in_order` (the pick + 3-float
+`UpdatePlayers` order twin + the global-stream isolation).
+
+### Sweep 2 — the Nebula armor trio pickup + buff lifecycle (Player.cs:35045-35058)
+
+The 3453/3454/3455 consume arm lands via the 4143 pattern (the phase-7
+deferral closed):
+
+- The `IsAPickup` skip gate (`world_sim/items.rs`) admits the trio; the
+  `PickupItem` chain's FIRST arm (before hearts/stars, the C# `else if` order)
+  plays the POSITIONED case-7 Grab (`(int)position.X/Y` casts — unlike the
+  unpositioned heart/star arms, this one attenuates against the camera), one
+  `Next(-10, 11)` pitch on `UpdatePlayers` after the gate, `TurnToAir`, then
+  `NebulaLevelup(inner.buffType)` (3453→179 damage, 3454→173 life, 3455→176
+  mana, `Item.cs:31001-31018`). The netMode-1 send collapses to the local call.
+- `Player` gains `nebula_level_life`/`mana`/`damage` + `nebula_mana_counter`
+  (`Player.cs:924-930`, `nebulaMaxLevel = 3` `:922`). `nebula_levelup` ports
+  the family-wide `DelBuff` sweep (the `i--` rescan) + the clamp-0..3 bump +
+  `AddBuff(type + level - 1, 480)` (`:57030-57059`).
+- `update_buffs_nebula_scan` re-derives the three levels from the live buffs
+  (`UpdateBuffs_NebulaBuffs`, `:12070-12079` — the `buffTime == 2` step-down
+  refreshes the timer to 480). The C# runs these inside the `UpdateBuffs` slot
+  loop AFTER `ResetEffects` zeroes the levels (`:18755`); the port's split-loop
+  convention places the scan just before the buff-stat loop (the timer head
+  already decremented), the reset zeroes at the `ResetEffects` block. The
+  life-regen +6/level and damage +0.15/level folds ride the buff-stat loops
+  (`:10448-10461`).
+- `apply_nebula_buff_mana` ports the 6-count mana regen at the
+  `UpdateManaRegen` head (`:19421`/`:19565-19585`), wired into
+  `update_survival` before the regen machine. Draw-free.
+- The 12/5 nebula pull arm joins the `GrabItems` pull chain
+  (`:34953-34956`, between lifeMagnet-heart and void-vault).
+
+Witnesses: `w4_d79_the_nebula_pickup_levels_the_matching_buff_family` (the
+tier-1/tier-2 sweep + the independent families),
+`w4_d79_the_nebula_pickup_draws_one_pitch_and_no_text` (the one-pitch
+`UpdatePlayers` order twin — no combat-text draw, unlike the heart/star arms).
+
+### Sweep 3 — the SINGLE_SLOT_CUES audit (the MoonlordCry gap)
+
+The C# declares 19 single-instance `SoundEffectInstance` fields
+(`LegacySoundPlayer.cs:56-150`). The 17 `SINGLE_SLOT_CUES` rows + the dedicated
+`pixie_slot` (case 27) covered 18; **MoonlordCry (case 41,
+`SoundInstanceMoonlordCry` `:82`/:301) was the one gap**. Ported via the
+MaxMana/Pixie pattern:
+
+- The `Moonlord_Cry` bank row pins id 41 (`SoundID.MoonLord`,
+  `SoundID.cs:104`) and aliases the `NPC_Killed_10` asset the case re-creates
+  from (`SoundNpcKilled[10]`, `:1370` — no separate `Moonlord_Cry.xnb` ships;
+  the load loop resolves the alias).
+- `play_moonlord_cry` runs the attenuation gate first, draws ONE
+  `Next(-10, 11) * 0.01` pitch (`:1373`) on the caller stream, OVERRIDES the
+  volume with the player-distance falloff `1/(1 + dist)` (`:1371` — the cry's
+  own curve, NOT the camera attenuation) via the new `emit_custom_volume`
+  tail, and overwrites the dedicated `moonlord_cry_slot` WITHOUT a Stop (the
+  Coins/Chat/MaxMana no-Stop family, detach).
+- The two drawing cases (27/41) stay OUT of the draw-free `play_single_voice`
+  pool by contract (the pool is stream-neutral; these cases draw `Main.rand`).
+- Orphaned: no `PlaySound(41)` caller exists in the decompile (the E21 class —
+  the seam is table-complete for the future Moon Lord death wiring, the Pixie
+  precedent).
+
+Witness: `w4_d79_the_moonlord_cry_draws_one_pitch_and_overwrites_without_stop`
+(the one-pitch order twin, the no-Stop re-play, the out-of-range + muted
+draw-free refusals, the id-41 bank pin).
+
+### Sweep 4 — the pitch-pool master status (the sibling-lane bare-play census)
+
+The d79 base (`a725acb0`) carried **86 bare `audio.play(`/`play_at(` call
+sites** across `crates/`; the d79 phases 1-7 retired them all onto the faithful
+per-case pitch/pool paths (HEAD has only the `tracked_sound.rs:191`
+`sink.play()` — the `ActiveSound.Resume` seam, NOT a bare SFX play). The
+sibling sound lanes were re-censused against the base for NEW bare-play
+additions (the merger keep-one notes):
+
+| lane | tip | bare `.play(` count | NEW vs base (86) | verdict |
+| --- | --- | --- | --- | --- |
+| g21-sounds-main-1 | `7da02f439` | 107 | **+21** | menu cues + 2 Chat |
+| g22-sounds-main-2 | `e0f811358` | 89 | **+3** | menu cue drains |
+| g23-sounds-main-3 | `945391e33` | 90 | **+4** | menu cue drains |
+| e9-npc-sounds-2 | `a41b2b72c` | 86 | 0 | clean |
+| e10-player-sounds-wave | `dc55322a7` | 85 | **+5 menu, −6 Roar** | net −1 |
+| f1-proj-sounds-4 | `3eb572f5c` | 86 | 0 | clean |
+| d75-proj-sounds-1 | `382e4625b` | 86 | 0 | clean |
+| d76-proj-sounds-2 | `0a1fdae3a` | 86 | 0 | clean |
+| d77-proj-sounds-3 | `d61e6362d` | 86 | 0 | clean |
+| d80-tracked-sound-layer | `075b954d2` | 86 | 0 | clean |
+
+**The new bare-play sites (all MENU cues — cases 10/11/12, the draw-free
+single-voice pool the d79 `play_menu` façade already covers):**
+
+- **g21** (`app/clicks.rs` +9, `app/loop.rs` +9, `ui/mod.rs` +1,
+  `world_sim/npcs.rs` +2): the town/chatter/settings menu ticks + the two
+  **Chat** sites (`world_sim/npcs.rs:286` the talk open `:43083`, `:644` the
+  Angler turn-in `:40243`). The Chat pair is the SAME seam d79 phase 7 wired
+  through `play_single_voice("Chat", -1, -1)` — the merger keeps the d79
+  pool-routed version (the g21 bare `play("Chat")` bypasses the single-slot
+  overwrite). The 19 menu sites route through `play_menu`/`play_single_voice`
+  on merge (the d79 `chest::play_menu_sound` façade is the canonical path).
+- **g22** (`app/frame.rs` +1, `app/loop.rs` +2): the `IngameOptions.update` /
+  `settings_button_tick` / `menu.take_cue` drains — the per-site menu cue
+  queue (the g22 window census). All cases 10/11/12; route through `play_menu`.
+- **g23** (`app/frame/draw.rs` +1, `chat.rs` +1, `app/loop.rs` +2 shared with
+  g22): the `menu.take_pending_ticks` / `chat.drain_new_text_cues` drains —
+  the achievements/chat menu ticks. All cases 10/11/12; route through
+  `play_menu`.
+- **e10** (`app/loop.rs` +5 menu): the map/inventory toggle cues
+  (`Menu_Open`/`Menu_Close`/`Menu_Tick`). The lane ALSO rewrites the 6
+  `world_sim/editing.rs` `Roar_0` bare plays + the `editing/doors.rs` one onto
+  `play_roar` (the case-15 pool path) — the −6. Net −1 vs base. The 5 new menu
+  sites route through `play_menu`.
+
+**Merger keep-one notes:** every NEW bare-play site on the sibling tips is a
+case-10/11/12 menu cue OR the case-24 Chat pair — all already covered by the
+d79 `play_menu`/`play_single_voice` pool paths. NO new drawing-case bare plays
+(the pitch/pool contract holds). On merge, rewire the sibling bare sites onto
+the d79 façades (`chest::play_menu_sound(app, id)` for the menu cues,
+`play_single_voice("Chat", -1, -1)` for the Chat pair); the g21 Chat pair is a
+direct duplicate of the d79 phase-7 seam (keep d79's). The e9/f1/d75/d76/d77/
+d80 lanes add NO bare plays (their sound work rides the existing pool paths).
+The `tracked_sound.rs` `sink.play()` is the `ActiveSound.Resume` seam (the
+tracked layer, d80's lane) — NOT a bare SFX play, stays.
+
+**Witnesses (WRITTEN, NOT RUN — no compiler invoked).** Sweep 1: 2 (the
+trade/empty-hand contract, the pick+3-float order twin). Sweep 2: 2 (the
+buff-family tier sweep, the one-pitch-no-text order twin). Sweep 3: 1 (the
+cry's one-pitch/no-Stop/refusal contract). Verification = whole-block C#
+re-reads (`Main.cs:40002-40020`, `Player.cs:56685-56732`/`:55996-56006`/
+`:35043-35110`/`:57030-57059`/`:12070-12079`/`:19565-19585`/`:10444-10461`,
+`Lang.cs:300-304`/`:422-425`, `NPCInteractions.cs:443-463`,
+`Item.cs:31001-31018`, `ItemID.cs:1324`, `LegacySoundPlayer.cs:56-150`/
+`:1369-1375`, `SoundID.cs:104`) + the sibling-tip `git grep`/`git diff`
+bare-play census against the `a725acb0` base.
