@@ -2064,9 +2064,12 @@ fn moss_zombie_death(
 /// burst at (2.5·hd, −2.5), the 187/433 slimed extra 25x tinted dust-4
 /// burst (height pinned to 24, alpha 125, `Color(0,80,255,100)`,
 /// `:86973-86979`), then the per-kind ladder + early return. The live
-/// branches: 104 Werewolf → 117/118/118/119/119 (`:86982-86986`, sites
-/// 286-290); the 632/331/... tails land in later batches. The hit-half
-/// 186/632 Next(5) gore gates (`:86945-86952`) are g62's lane.
+/// branches: 104 Werewolf → 117/118x2/119x2 (`:86982-86986`, sites
+/// 286-290), 632 Maggot Zombie → 1214/1215x2/1216x2 + the Next(2)+2
+/// maggot-spawn seam (`:86991-87006`, sites 291-295), 331 Xmas Zombie →
+/// 488/489x2/490x2 (`:87011-87015`, sites 296-300); the 332/109/...
+/// tails land in later batches. The hit-half 186/632 Next(5) gore gates
+/// (`:86945-86952`) are g62's lane.
 fn zombie_arm_death(
     npc: &Npc,
     npc_type: i32,
@@ -2076,7 +2079,7 @@ fn zombie_arm_death(
     rng: &mut UnifiedRandom,
     world: &World,
     hit_direction: f32,
-    _outcome: &mut HitEffectOutcomeD,
+    outcome: &mut HitEffectOutcomeD,
 ) {
     // `:86969-86972` — the 50x dust-5 burst at the wider velocity.
     let (w, h) = npc.size();
@@ -2126,6 +2129,28 @@ fn zombie_arm_death(
         gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 118, s); // :86984
         gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 119, s); // :86985
         gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 119, s); // :86986
+        return;
+    }
+    if npc_type == 632 {
+        // `:86989-87008` — the Maggot Zombie ladder + the spawn seam +
+        // return.
+        gore.new_gore(rng, world, pos, vel, 1214, s); // :86991
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 1215, s); // :86992
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 1215, s); // :86993
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 1216, s); // :86994
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 1216, s); // :86995
+        // `:86996-87006` — the Next(2)+2 maggot spawns (the wiring
+        // wave's roster pass; the netMode==1 guard drops in SP).
+        outcome.maggot_zombie_spawns = Some((npc.x, npc.y));
+        return;
+    }
+    if npc_type == 331 {
+        // `:87009-87017` — the Xmas Zombie ladder + return.
+        gore.new_gore(rng, world, pos, vel, 488, s); // :87011
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 489, s); // :87012
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 489, s); // :87013
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 490, s); // :87014
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 490, s); // :87015
         return;
     }
 }
@@ -2376,7 +2401,7 @@ pub fn hit_effect_d(
     }
     // `:86937-...` — the giant zombie arm (430-436/590/591/3/52/53/536/
     // 104/109/331/332/132/161/162/186-189/200/223/251/319-321/632); the
-    // 104 Werewolf branch is live (sites 286-290), the rest land later.
+    // 104/632/331 branches are live (sites 286-300), the rest land later.
     else if matches!(npc_type, 430..=436 | 590 | 591 | 3 | 52 | 53 | 536 | 104 | 109 | 331 | 332 | 132 | 161 | 162 | 186 | 187 | 188 | 189 | 200 | 223 | 251 | 319 | 320 | 321 | 632)
     {
         zombie_arm_death(
@@ -4167,5 +4192,53 @@ mod tests {
             twin_dust(&mut twin, 30, 24); // height pinned to 24
         }
         assert_eq!(rng.peek(), twin.peek(), "the slimed zombie mirrors the C# draws");
+    }
+
+    /// `NPC.cs:86991-87006` — the Maggot Zombie ladder 1214/1215x2/1216x2
+    /// + the spawn seam returned (the count/per-spawn draws are the
+    /// wiring wave's, NOT drawn here).
+    #[test]
+    fn w4_f5d_the_maggot_zombie_returns_the_spawn_seam() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(293);
+        let out = hit_effect_d(&n, 632, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1214, 1215, 1215, 1216, 1216]);
+        assert_eq!(out.maggot_zombie_spawns, Some((100.0, 100.0)));
+        let mut twin = UnifiedRandom::new(293);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the maggot zombie mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87011-87015` — the Xmas Zombie ladder 488/489x2/490x2.
+    #[test]
+    fn w4_f5d_the_xmas_zombie_ladder_spawns_the_five() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(307);
+        let _ = hit_effect_d(&n, 331, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![488, 489, 489, 490, 490]);
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+        let mut twin = UnifiedRandom::new(307);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the xmas zombie mirrors the C# draws");
     }
 }
