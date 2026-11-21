@@ -258,6 +258,21 @@
 //! - 88029 — Travelling Merchant 368 (`:88023-88031`): ×100 dust 5.
 //! - 87681 — Tax Collector 441 (`:87675-87683`): ×100 dust 5.
 //! - 87701 — 86 (`:87695-87703`): ×100 dust 5.
+//! Batch 18 (the corruption/caster live arms):
+//! - 87147 — 83/84/179 (`:87141-87149`): ×50 dust 31, (0,0), scale 1.5,
+//!   noGravity (the LIVE arm has NO ×2 velocity — that's death-only).
+//! - 87458 — 217/218/219 (`:87452-87459`): ×100 dust 18, NPC rows.
+//! - 87543 — Clinger 101 (`:87537-87544`): ×100 dust 18, NPC rows.
+//! - 87579 — the Seeker 98/99/100 (`:87573-87580`): ×100 dust 18, NPC
+//!   rows.
+//! - 87723 — 155 (`:87717-87725`): ×100 dust 5.
+//! - 87741 — 329 (`:87735-87743`): ×100 dust 5.
+//! - 87759 — 163/238 (`:87753-87760`): ×100 dust 18 (plain — NO NPC
+//!   rows).
+//! - 87779 — 164/165 (`:87773-87780`): ×100 dust 18, plain.
+//! - 89613 — Goblin Summoner 471 (`:89607-89614`): ×100 dust 5.
+//! - 89633 — 472 (`:89627-89639`): ×100 dust 5 + per-dust Next(3)!=0 →
+//!   noGravity, then alpha 100 ALWAYS.
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -1310,6 +1325,54 @@ pub fn replay_hit_dust(
         48 | 62 | 66 | 633 | 368 | 441 | 86 => {
             for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
                 live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:87141-87149` — the corruption trio 83/84/179: ×50 dust 31,
+        // (0,0), scale 1.5, noGravity — the LIVE arm has NO velocity ×2
+        // (the `:87155` write is death-half only).
+        83 | 84 | 179 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                let idx = live_dust(s, 31, 0.0, 0.0, 0, Color::default(), 1.5, rng, dust, ctx, world);
+                dust.slot_mut(idx).no_gravity = true; // `:87148`
+            }
+        }
+        // `:87452-87459`/`:87537-87544`/`:87573-87580` — the corruption
+        // floaters (217-219), the Clinger and the Seeker segments: ×100
+        // dust 18 with the NPC's alpha/color/scale.
+        217 | 218 | 219 | 101 | 98 | 99 | 100 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 18, dir, -1.0, s.alpha, s.color, s.scale, rng, dust, ctx, world);
+            }
+        }
+        // `:87717-87743` — 155/329: ×100 dust 5.
+        155 | 329 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:87753-87780` — 163/238/164/165: ×100 dust 18, PLAIN (no NPC
+        // alpha/color/scale rows — unlike the :87458 group).
+        163 | 238 | 164 | 165 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 18, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:89607-89614` — the Goblin Summoner: ×100 dust 5.
+        471 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:89627-89639` — 472: ×100 dust 5, the per-dust Next(3)!=0 →
+        // noGravity AFTER the spawn internals, then alpha 100 ALWAYS.
+        472 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                let idx = live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                let d = dust.slot_mut(idx);
+                if rng.next_max(3) != 0 {
+                    d.no_gravity = true; // `:89636`
+                }
+                d.alpha = 100; // `:89638`
             }
         }
         // `:89526-89548`/`:89690-89700` — the three spheres are handled
@@ -2630,5 +2693,50 @@ mod tests {
         let live: Vec<_> = p2.slots().iter().filter(|d| d.active).collect();
         assert_eq!(live.len(), 5);
         assert!(live.iter().all(|d| d.dust_type == 40));
+    }
+
+    /// W4-g62 batch 18 — the 472 per-dust gate (`NPC.cs:89633-89638`):
+    /// Next(3) AFTER the internals, alpha 100 written unconditionally;
+    /// the corruption trio's LIVE arm has no velocity ×2.
+    #[test]
+    fn w4_g62_the_472_gate_and_the_corruption_trio() {
+        let world = air();
+        let ctx = ctx();
+        let s = snap(472, 100, 100, 5.0); // ×100 → 5
+        let mut rng = UnifiedRandom::new(173);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(173);
+        let mut twin = DustPool::new();
+        for _ in 0..5 {
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 5,
+                1.0, -1.0, 0, Color::default(), 1.0,
+            );
+            let d = twin.slot_mut(idx);
+            if twin_rng.next_max(3) != 0 {
+                d.no_gravity = true;
+            }
+            d.alpha = 100;
+        }
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+        // The corruption trio: dust 31 scale 1.5 noGravity, velocity
+        // UNMULTIPLIED (the spawn jitter only).
+        let c = snap(83, 100, 100, 10.0); // ×50 → 5
+        let mut r2 = UnifiedRandom::new(173);
+        let mut p2 = DustPool::new();
+        replay_hit_dust(&c, &mut r2, &mut p2, &ctx, &world);
+        let mut t2 = UnifiedRandom::new(173);
+        let mut q2 = DustPool::new();
+        for _ in 0..5 {
+            let idx = q2.new_dust(
+                &mut t2, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 31,
+                0.0, 0.0, 0, Color::default(), 1.5,
+            );
+            q2.slot_mut(idx).no_gravity = true;
+        }
+        assert_eq!(r2, t2);
+        assert_eq!(p2.slots(), q2.slots());
     }
 }
