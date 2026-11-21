@@ -11529,18 +11529,27 @@ mod dd2_goblin_tests {
         n.hp = n.max_hp;
         player.x = 160.0 * TILE_PX;
         player.y = 118.0 * TILE_PX;
-        // Phase 3 (the flame breath).
+        // Phase 3 (the flame breath). W4-d14 doc-sweep: the 687 rides the
+        // AI-shot list (`97c5a984`) — `NPC.cs:62026` passes `base.whoAmI` as
+        // ai1 so the aiStyle-136 arm anchors to the breathing NPC — with
+        // the CENTRE as the spawn point (the sim drain converts to the
+        // top-left).
         n.ai[0] = 3.0;
         n.ai[1] = 0.0;
-        let mut saw_breath = false;
+        n.slot = 5;
+        let mut breath = None;
         for _ in 0..50 {
             n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
-            if !n.wants_hostile_shot.is_empty() {
-                saw_breath = true;
+            if let Some(s) = n.wants_hostile_shot_ai.last().copied() {
+                breath = Some(s);
                 break;
             }
         }
-        assert!(saw_breath, "the flame breath fires");
+        let b = breath.expect("the flame breath fires");
+        assert_eq!(b.kind, 687, "the breath");
+        assert_eq!(b.ai1, 5.0, "ai1 names the breathing NPC (`:62026`)");
+        assert_eq!(b.damage, 35, "num3's breath damage");
+        assert!(b.vx.abs() == 10.0 && b.vy == 0.0, "the 10-speed sideways breath");
         // Phase 4 (the volley).
         let mut m = Npc::new(NpcKind::DD2Betsy, 100.0 * TILE_PX, 1400.0, 1, 0.0);
         m.hp = m.max_hp;
