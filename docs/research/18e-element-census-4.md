@@ -96,3 +96,16 @@ After this lane the transitive `UIElement` closure is fully accounted for:
 the `UIState` root → f23 (this doc), `UIInnerList`/`UIInnerProgressBar` →
 S1-H-13/d88/d83, screens → d84/d85/d86/c24/f22, framework base
 (`UIElement` itself) → research/18's P6 rows. No UNCLAIMED element remains.
+
+## DOC-SWEEP lane 37 addendum (2026-11-21, research/126)
+
+The craft/UI residuals this lane's wiring census left open were taken by
+the doc-sweep: the refocus-on-craft arm (`Recipe.TryRefocusingRecipe`
+`:477-495`) and the craft-grid SCROLL (the `UIList`/`UIScrollbar` machine)
+landed live, right-click craft parity landed (no craft-max exists in the
+source), the eleven filter tabs verified complete (no favorite-recipe
+star exists in `NewCraftingUI`), the loading-screen draw confirmed already
+wired (S1-E-17 — the deferred half is the `UIWorldGenDebug` DRIVER,
+contract in research/126 §5), and the closure verdict re-verified: no
+small unclaimed row remained. Commits `beb2af45` / `d2bbd976` / `3720a75b`
++ the research/126 doc; 10 witnesses written not run (code-only).

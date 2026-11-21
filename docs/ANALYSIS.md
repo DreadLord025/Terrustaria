@@ -2741,8 +2741,44 @@ z-order (`docs/UI.md` в†’ "Crafting panel"). The deviations:
   anywhere in the port (the same reason the char/world-name screens use
   stand-ins). The `CreativePowers.Tab*` hover label resolves through
   `Language.GetTextValue`, which the port's `lang::text` already serves.
-* No scrollbar interaction: the panel is draw-only for the recipe grid, without
-  `ItemSlot.Handle` (out of scope, as documented for the inventory panels above).
+* ~~No scrollbar interaction~~ — retired by the W4-f23 doc-sweep: the grid
+  scrolls (`UIList.ScrollWheel` `UIList.cs:107-114`, 120 px/notch), the
+  AutoHide Cyan bar grabs/drags/track-jumps (`UIScrollbar.cs:109-143`) and
+  the cells ride the `-ViewPosition` lift (`UIList.cs:181`) inside the
+  list's `OverflowHidden` scissor; `GetGridParameters`' culling window
+  bounds the draw AND the hover/click walk (`UIDynamicItemCollection.cs:87-96`),
+  so a row lifted above the list top draws clipped but is not hoverable
+  (`UIElement.ContainsPoint` up the parent chain). The recipe cells are
+  crafted through `handle_crafting_clicks` (i46); `ItemSlot.Handle`'s
+  inventory-slot half stays out of scope as documented above.
+* The refocus-on-craft arm is live (W4-f23 doc-sweep):
+  `craft::try_refocusing_recipe` ports `Recipe.cs:477-495` and the draw-path
+  rebuild runs it every frame the panel draws (`NewCraftingUI.Draw` →
+  `UpdateContents` `:585` → `UpdateRecipeList` `:257`), with
+  `App.craft_last_available` standing in for the pre-rebuild
+  `availableRecipe[focusRecipe]` capture (`:232-233`). Deviation: the C#
+  also runs `UpdateRecipeList` while the panel is CLOSED (`Main.cs:41712`,
+  the classic pip list's arm — unported), so the port's snapshot keeps the
+  last open frame's list across a close/reopen instead of tracking every
+  inventory change while closed. `CraftingUI.VisuallyRepositionRecipes`
+  (`CraftingUI.cs:132-139`, called at `Recipe.cs:239`/`:258`) shifts the
+  CLASSIC pip list's `availableRecipeY` offsets only — it has no effect on
+  the modern grid and stays unported with that list.
+* Right-click crafts exactly like left (W4-f23 doc-sweep): the select edge
+  is `HandleCraftSlot` `:505`'s `(mouseLeft && mouseLeftRelease) ||
+  (mouseRight && mouseRightRelease)` and the craft gate is
+  `HoverOverCraftingItemButton` `:42254-42255`'s `flag`/`flag2` — either
+  button selects, either held button keeps the craft locks and the
+  held-repeat. There is NO craft-max in the source: right-click crafts one
+  recipe like left; bulk crafting is the Shift ×10 (`:42272-42274`). The
+  filter tabs and the nearby-chests toggle stay left-only
+  (`UICreativeItemsInfiniteFilteringOptions.cs:80-100`,
+  `CraftingUI.cs:346` read `mouseLeft` only).
+* The favorite-recipe star does NOT exist in 1.4.5.8's crafting UI:
+  `NewCraftingUI.cs` and `Recipe.cs` carry no favorite/star state (the
+  inventory's `Item.favorited` is a different system, `Main.cs:42100`'s
+  slot favourite). The doc-sweep censused and confirmed the absence —
+  nothing to port (research/126).
 * The cancel button is always visible вЂ” `White * 0.4` at rest, `White` on hover.
   Vanilla's `UIImageButton` never hides the icon (`_visibilityInactive = 0.4f`,
   `UIImageButton.cs:13-15`); the port's plan wrongly assumed it hid while the search

@@ -415,7 +415,16 @@ source's child order:
   available-list positions, `:610`/`:510`, so a filter tab diverges the
   shown grid from the focus index space). `Main.inventoryBack` is the live
   `invAlpha` pulse (`ui/inv_pulse.rs`, `Main.cs:45697-45708`: 180..240 by
-  0.2/tick, byte-truncated);
+  0.2/tick, byte-truncated). The grid **scrolls** (W4-f23 doc-sweep): the
+  wheel spends 120 px/notch on `UIScrollbar.ViewPosition`
+  (`UIList.ScrollWheel` `:107-114`), the Cyan bar grabs/drags/track-jumps
+  (`UIScrollbar.cs:109-143`, handle alpha 1 vs 0.85 `:122`, hover-enter
+  sound 12 `:119`), the cells ride the `-ViewPosition` lift
+  (`UIList.cs:181`) inside the list's `OverflowHidden` scissor, and
+  `GetGridParameters`' culling window (`:87-96`, content height =
+  `UpdateSize`'s `44·ceil(n/cols)` MinHeight `:160-165`) bounds the draw
+  and the hover/click walk — a row lifted above the list top draws clipped
+  but is not hoverable;
 * the 11-tab filter strip (40×46 tabs cut from the 84×192 `Infinite_Tabs_B_2`
   sheet, 28×30 icons from the 330×30 `Infinite_Icons` sheet; strip at
   `(45, 316)`, above the panel body) with the non-sequential `ItemFilters.GetImage`
@@ -424,9 +433,14 @@ source's child order:
   `Images/UI/Craft` arrow at 0.8 scale — and the grid/nearby-chests toggles at
   `(42, 285)` / `(82, 285)` with the `DrawSelectedCraftingBarIndicator` bars.
 
-Deviations: no search/scrollbar interaction (the filter strip IS live, S1-H-7),
-the detail area renders without a selected recipe, the cancel button never
-hides — the full list is in `docs/ANALYSIS.md` → "Crafting panel".
+Deviations: no search interaction (the filter strip IS live, S1-H-7; the grid
+scroll IS live, W4-f23 doc-sweep), the detail area renders without a selected
+recipe, the cancel button never hides. Clicking a recipe cell crafts it with
+EITHER mouse button (select edge `HandleCraftSlot` `:505`, craft gate
+`Main.cs:42254-42255` — no craft-max exists; bulk is Shift ×10), and after a
+craft the focus follows the recipe across the rebuild
+(`Recipe.TryRefocusingRecipe` `:477-495`, W4-f23 doc-sweep) — the full list is
+in `docs/ANALYSIS.md` → "Crafting panel".
 
 ### Chest panel (`ui/chest.rs`, `Terraria/UI/ChestUI.cs`)
 
