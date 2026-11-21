@@ -2319,6 +2319,10 @@ pub(crate) mod front_flow_tests {
             npc_chat_last_hovered: -1,
             sign_cancel_cache: String::new(),
             sign_text_blinker: crate::ui::chest::TextBlinker::default(),
+            sign_hover: -1, // `Main.cs:67189`
+            sign_bubble: false,
+            sign_x: 0,
+            sign_y: 0,
             npc_assets: NpcAssets::default(),
             npc_timer: 0.0,
             next_worm_id: 1,

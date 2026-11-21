@@ -176,6 +176,21 @@ pub(crate) struct App {
     /// the sign-edit caret's blinker, advanced only while the edit text
     /// draws (the chest editor owns its own, `App.text_blinker`). W4-f22.
     pub(crate) sign_text_blinker: ui::chest::TextBlinker,
+    /// `Main.signHover` (`Main.cs:2049`, init -1 `:67189`): the hovered
+    /// sign's record index — the bubble-latch scan sets it
+    /// (`Player.cs:32108-32111`), `MouseOversClear` (`Main.cs:46511`)
+    /// clears it per update, `DrawMouseOver` (`:42940-42986`) prints the
+    /// text preview. W4-f22.
+    pub(crate) sign_hover: i32,
+    /// `Main.signBubble` (`Main.cs:2079`): the placed-sign bubble latch —
+    /// `Player.cs:32105` sets it whenever a sign tile is hovered in reach,
+    /// `MouseOversClear` (`Main.cs:46512`) clears it. W4-f22.
+    pub(crate) sign_bubble: bool,
+    /// `Main.signX/signY` (`Main.cs:2081`/`:2083`): the bubble anchor in
+    /// world pixels — `(origin.x*16 + 16, origin.y*16)` (`Player.cs:
+    /// 32106-32107`). W4-f22.
+    pub(crate) sign_x: i32,
+    pub(crate) sign_y: i32,
     /// `Main.combatText[100]` (`CombatText.cs:65`): the floating damage
     /// numbers, indexed and updated like the C# pool.
     pub(crate) combat_texts: Vec<crate::combat_text::CombatText>,
@@ -3641,6 +3656,10 @@ impl App {
             npc_chat_last_hovered: -1,
             sign_cancel_cache: String::new(),
             sign_text_blinker: ui::chest::TextBlinker::default(),
+            sign_hover: -1, // `Main.cs:67189`
+            sign_bubble: false,
+            sign_x: 0,
+            sign_y: 0,
             gpu: None,
             renderer: None,
             post: None,

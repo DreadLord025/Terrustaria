@@ -444,6 +444,64 @@ pub(crate) fn draw_bubble(
     r.push_ui_sprite(pos, [chat_w * zoom, chat_h * zoom], uv, [m; 4]);
 }
 
+/// `Main.DrawInterface_19_SignTileBubble` (`Main.cs:45739-45760`, the
+/// layer at `:44804-44808` — `InterfaceScaleType.Game`, the world zoom
+/// matrix): the placed-sign bubble while `Main.signBubble` holds.
+/// `num/num2` are the anchor minus `screenPosition` (`:45743-45744`) —
+/// the port's `(world − camera)·zoom + screen/2` transform, the same one
+/// the NPC bubble rides. The sign sits RIGHT of the player
+/// (`signX > position.X + width`, `:45750`) flips the sheet horizontally
+/// and shifts `−8 − Chat2.Width()` (`:45753`); otherwise `+8` (`:45757`).
+/// The draw is at `(num, num2 − 22)` in `Color(mouseTextColor ×4)`
+/// (`:45759`). The `gravDir == −1` mirror (`:45745-45748`) is
+/// unreachable: the port keeps `gravDir = 1` (player.rs — the same fold
+/// as [`draw_bubble`]'s `:43149-43153` arm). W4-f22.
+pub(crate) fn draw_sign_bubble(
+    r: &mut SpriteRenderer,
+    lookups: &Lookups,
+    player: Option<&crate::player::Player>,
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
+    anchor: Option<(i32, i32)>,
+    pulse: UiPulse,
+) {
+    let Some((sx, sy)) = anchor else {
+        return; // `if (Main.signBubble)` (`:45741`)
+    };
+    let Some(sheet) = lookups.ui_sign_bubble else {
+        return;
+    };
+    let Some(p) = player else {
+        return;
+    };
+    let mut num = (sx as f32 - camera.x) * zoom + screen.x * 0.5;
+    let num2 = (sy as f32 - camera.y) * zoom + screen.y * 0.5;
+    let flip = sx as f32 > p.x + p.width; // `:45750`
+    if flip {
+        num += (-8.0 - sheet.width as f32) * zoom; // `:45753`
+    } else {
+        num += 8.0 * zoom; // `:45757`
+    }
+    let (aw, ah) = (lookups.atlas_size.0 as f32, lookups.atlas_size.1 as f32);
+    let mut uv = [
+        sheet.x as f32 / aw,
+        sheet.y as f32 / ah,
+        (sheet.x + sheet.width) as f32 / aw,
+        (sheet.y + sheet.height) as f32 / ah,
+    ];
+    if flip {
+        uv = crate::render::player_layers::flip_uv(uv, true);
+    }
+    let m = pulse.text;
+    r.push_ui_sprite(
+        [num, num2 - 22.0 * zoom], // `:45759`
+        [sheet.width as f32 * zoom, sheet.height as f32 * zoom],
+        uv,
+        [m; 4],
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -726,6 +726,13 @@ pub fn draw_hud(
     edit_sign: bool,
     chest_editing: bool,
     sign_blinker: &mut chest::TextBlinker,
+    // `Main.signBubble`/`signX`/`signY` (`Main.cs:2079-2083`) — the
+    // placed-sign bubble anchor (`DrawInterface_19_SignTileBubble`,
+    // `Main.cs:45739-45760`). `None` while the latch is clear. W4-f22.
+    sign_bubble_anchor: Option<(i32, i32)>,
+    // `Main.signHover`'s record text (`Main.cs:42940-42986`) — the hover
+    // tooltip's preview. `None` while no sign is hovered. W4-f22.
+    sign_hover_text: Option<&str>,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -794,6 +801,19 @@ pub fn draw_hud(
     // the same world→UI transform as the emotes (`DrawNPCChatBubble`,
     // `Main.cs:43135-43161`).
     npc_chat::draw_bubble(r, lookups, npcs, player, camera, zoom, screen, mouse_pos, pulse);
+    // `DrawInterface_19_SignTileBubble` (`Main.cs:44804-44808`,
+    // `:45739-45760`): the placed-sign bubble rides the same world→UI
+    // transform, BEFORE the dialog (layer 19 < 23). W4-f22.
+    npc_chat::draw_sign_bubble(
+        r,
+        lookups,
+        player,
+        camera,
+        zoom,
+        screen,
+        sign_bubble_anchor,
+        pulse,
+    );
     // `DrawInterface_23_NPCSignsDialog` (`Main.cs:45713-45716`) →
     // `GUIChatDraw` (`:46709-46716`: `(npcChatText != "" || sign != -1) &&
     // !editChest`) → `NPCChatPanel.Draw` (`NPCChatPanel.cs:52-86`): the
@@ -1227,6 +1247,45 @@ pub fn draw_hud(
     // things `Main.DrawInterface` draws (`Main.cs:44939`); the OS pointer is
     // hidden while the vanilla `Cursor_0` is on screen.
     cursor::draw(r, lookups, cursor_state, mouse_pos);
+
+    // `DrawInterface_39_MouseOver` -> `DrawMouseOver`'s sign arm
+    // (`Main.cs:44904-44908`, `:42940-42986`): the hovered sign's text
+    // preview, the LAST interface layer (after the cursor). The gate
+    // (`:42940`): no earlier mouse text (`!Main.mouseText` — the port's
+    // hover-text producers above), a live hovered record, and
+    // `!mouseInterface` (the pointer over a UI panel suppresses it). The
+    // port's `mouseInterface` stand-in is the pointer-over-panel test: the
+    // open inventory grid / shop grid / chest panel / dialog box under the
+    // cursor, plus the fullscreen bestiary (the C# sets the flag from the
+    // per-cell `ItemSlot.Handle` hits, `Main.cs:41811-41813`; the port
+    // folds it to the panel rects). W4-f22.
+    let mouse_text_drawn = hover_item.is_some_and(|h| h.count > 0)
+        || pvp_hover_text.is_some()
+        || housing_hover_text.is_some();
+    let panel_w = lookups.ui_back.map_or(52.0, |b| b.width as f32);
+    let over_inventory_grid = inventory_open
+        && mouse_pos.x >= 20.0
+        && mouse_pos.x <= 20.0 + 10.0 * 56.0 * 0.85
+        && mouse_pos.y >= 20.0
+        && mouse_pos.y <= 20.0 + 5.0 * 56.0 * 0.85;
+    let over_shop_grid = shop.is_some()
+        && inventory::shop_slot_at(mouse_pos, panel_w).is_some();
+    let over_dialog = (talk_npc.is_some() || sign_open)
+        && !chest_editing
+        && in_rect(mouse_pos, npc_chat::panel_rect(lookups, screen, npc_chat_text));
+    let mouse_interface =
+        over_inventory_grid || over_shop_grid || chest_panel.chest >= 0 || bestiary_open || over_dialog;
+    if let Some(text) = sign_hover_text.filter(|_| !mouse_text_drawn && !mouse_interface) {
+        tooltip::draw_sign_hover_tooltip(
+            r,
+            lookups,
+            mouse_pos,
+            text,
+            screen,
+            pulse,
+            ingame_options.map_or(true, |(s, _)| s.opaque_tooltip_box),
+        );
+    }
 }
 
 /// Maps an `inventory::HoverRef` (which panel the pointer is over) to the item it

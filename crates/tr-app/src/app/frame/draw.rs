@@ -1812,6 +1812,21 @@ impl App {
                             self.sign_editing(),
                             chest_editing,
                             &mut self.sign_text_blinker,
+                            // `Main.signBubble`/`signX`/`signY` — the
+                            // placed-sign bubble anchor (W4-f22).
+                            self.sign_bubble.then_some((self.sign_x, self.sign_y)),
+                            // `Main.signHover`'s record text — the hover
+                            // tooltip's preview (W4-f22). Reads the
+                            // destructured `world` binding (the `self.world`
+                            // field is already borrowed by the draw site).
+                            (self.sign_hover >= 0)
+                                .then(|| {
+                                    world
+                                        .signs
+                                        .get(self.sign_hover as usize)
+                                        .map(|s| s.text.as_str())
+                                })
+                                .flatten(),
                         );
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after
