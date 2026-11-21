@@ -183,7 +183,12 @@ pub fn update_buff_frame(
     let status_ctx = StatusEffectContext {
         owned_projectile_counts: &owned_counts,
         day_time: inputs.day_time,
-        wolf_acc: false, // the Moon Charm accessory lane is unported
+        // `wolfAcc` (`Player.cs:2346`): the Moon Charm / Moon Shell /
+        // Celestial Shell grant (`:15182-15189`/`:15134-15143`/`:15402-15411`,
+        // W4-f12 gap 3). The equip pass arms it before this frame; the
+        // `:25605` clear runs at the merman-derivation tail AFTER the buff
+        // scan, so the flag is live here (the Werewolf 28 gate reads it).
+        wolf_acc: p.wolf_acc,
         merman: p.merman,
         shimmer_wet: p.shimmer_wet,
         x: p.x,
@@ -197,7 +202,10 @@ pub fn update_buff_frame(
     let misc_ctx = MiscEffectContext {
         owned_projectile_counts: &owned_counts,
         day_time: inputs.day_time,
-        wolf_acc: false,
+        // The misc module's 28 arm is NOT dispatched (the status module owns
+        // it), so this flag is read by no dispatched arm — kept faithful to
+        // the live field for the module's own witnesses.
+        wolf_acc: p.wolf_acc,
         merman: p.merman,
         held_item_type: inputs.held_item_type,
         armor_head: armor_slot(p, 0),

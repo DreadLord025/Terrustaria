@@ -1636,6 +1636,13 @@ pub struct Player {
     /// (861/3110/497, `:15134-15143`/`:15402-15410`/`:15566-15573`), read by
     /// the merman derivation then cleared (`:25598`).
     acc_merman: bool,
+    /// `Player.wolfAcc` (`Player.cs:2346`): the Moon Charm (485,
+    /// `:15182-15189`), Moon Shell (861, `:15134-15143`) and Celestial Shell
+    /// (3110, `:15402-15411`) grant — the Werewolf buff-28 gate reads it
+    /// (`:11895`), the `:25601-25604` night grant re-arms the buff, then it
+    /// clears (`:25605`). Neptune's Shell (497) does NOT grant it
+    /// (`:15566-15573` is accMerman-only).
+    pub wolf_acc: bool,
     /// `Player.timeSinceLastDashStarted` (`Player.cs:1050`): ticks since the
     /// last dash start, capped at 300 (`:24600-24604`); the Long Trail
     /// Rainbow wings' (45) run-slowdown ×6 gates on >= 60 (`:29324-29327`).
@@ -2898,6 +2905,7 @@ impl Player {
             rocket_release: false,
             merman: false,
             acc_merman: false,
+            wolf_acc: false,
             time_since_last_dash_started: 0,
             cart_mount: 13,
             release_grappling_hooks: false,
@@ -5400,13 +5408,22 @@ impl Player {
                 self.empress_brooch = true;
                 self.move_speed += 0.075;
             }
-            // The merman shells (`:15134-15143` Moon Charm 861,
-            // `:15402-15410` Celestial Shell 3110, `:15566-15573` Neptune's
+            // The merman shells (`:15134-15143` Moon Shell 861,
+            // `:15402-15411` Celestial Shell 3110, `:15566-15573` Neptune's
             // Shell 497): `accMerman` arms the wet transformation the flight
             // gates read (`CanUseWingAbilities` `:3994`, `WingAirLogicTweaks`
-            // `:26496`). The `wolfAcc`/`hideMerman` halves are the werewolf /
-            // visibility families (out of flight scope).
-            861 | 3110 | 497 => self.acc_merman = true,
+            // `:26496`). The Moon/Celestial Shells ALSO arm `wolfAcc` (the
+            // Werewolf lane, W4-f12 gap 3); Neptune's Shell does NOT
+            // (`:15566-15573` is accMerman-only). The `hideMerman`/`hideWolf`
+            // halves are the visibility family (draw seams, out of scope).
+            861 | 3110 => {
+                self.acc_merman = true;
+                self.wolf_acc = true;
+            }
+            497 => self.acc_merman = true,
+            // The Moon Charm (`:15182-15189`): `wolfAcc` only — no merman
+            // half (the charm is the werewolf-only accessory).
+            485 => self.wolf_acc = true,
             // The penetration rows: the Shark Tooth Necklace (3212,
             // `:13286-13289`) and the Honey Comb (4007, `:14485-14489`)
             // add a flat 5 each.
@@ -7031,6 +7048,9 @@ impl Player {
         // the shell grants below re-arm it. `merman` itself is re-derived
         // per tick (`:25577-25589`), not reset here.
         self.acc_merman = false;
+        // `:25605`: `wolfAcc = false` — the C# clears it after the night
+        // grant; the port's grant runs at the merman-derivation tail below,
+        // so the clear rides there too (the equip pass re-arms it first).
         self.accessory_life_regen = 0;
         // `UpdateEquips`' second loop (`Player.cs:12946-12952`): the functional
         // accessory pass over the slots 3..10, gated per slot - the seam below.
@@ -7164,6 +7184,19 @@ impl Player {
             && !self.lava_wet
             && (!self.mount.is_active() || !self.mount.is_considered_a_slime_mount());
         self.merman = self.acc_merman && merman_wet;
+        // `Player.cs:25601-25605`: the Werewolf night grant — a Moon Charm /
+        // Moon Shell / Celestial Shell (`wolfAcc`) while NOT merman, at
+        // night, without the buff already riding, re-arms buff 28 for 60
+        // ticks (the `TimeLeftDoesNotDecrease` set keeps it pinned). The
+        // `wereWolf` term reads THIS tick's `UpdateBuffs` result (the buff
+        // scan ran earlier in the tick, `:25566` < `:25601`); the flag
+        // clears right after (`:25605`), the equip grants re-arm it next
+        // tick. (W4-f12 gap 3 — the d71 werewolf EFFECT landed; this is the
+        // accessory GRANT lane it was waiting on.)
+        if self.wolf_acc && !self.merman && !world.day_time && !self.were_wolf {
+            self.buffs.add_buff(28, 60);
+        }
+        self.wolf_acc = false;
         // `Player.cs:25927-25930`: the defense floor — a pile of debuffs (Ichor
         // −15, Weak −4 a slot, Tipsy −4) may overshoot the armor's total, and
         // the C# never lets `statDefense` go negative (a negative value would
@@ -12602,6 +12635,87 @@ mod tests {
         w.eclipse = true;
         p.update(&w, PlayerInput::default());
         assert!(p.sky_stone_effects);
+    }
+
+    /// W4-f12 gap 3 — the Moon Charm (485) arms `wolfAcc` (`Player.cs:
+    /// 15182-15189`) and the `:25601-25604` night grant re-arms buff 28; the
+    /// d71 werewolf EFFECT (the wave-E status arm) then grants the stat block
+    /// on the NEXT tick's buff scan. Neptune's Shell (497) does NOT arm
+    /// `wolfAcc` (`:15566-15573` is accMerman-only).
+    #[test]
+    fn w4_f12_moon_charm_grants_the_werewolf_at_night() {
+        let mut w = World::new("t".into(), 64, 800);
+        w.day_time = false; // night
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 485; // Moon Charm
+        // Tick 1: the equip pass arms wolfAcc, the night grant adds buff 28.
+        p.update(&w, PlayerInput::default());
+        assert!(p.buffs.find_buff_index(28).is_some(), "the night grant (`:25603`)");
+        assert!(!p.wolf_acc, "the flag clears after the grant (`:25605`)");
+        // Tick 2: the buff scan reads the live wolfAcc (re-armed by the equip
+        // pass) and grants the werewolf stat block (`:11895-11904`).
+        p.update(&w, PlayerInput::default());
+        assert!(p.were_wolf, "the werewolf effect arms");
+        assert_eq!(p.melee_crit, 4 + 2, "`:11899`");
+        assert_eq!(p.stat_defense, 3, "`:11902`");
+        assert!((p.melee_damage - 1.051).abs() < 1e-4, "`:11900`");
+        assert!((p.melee_speed_bonus - 0.051).abs() < 1e-4, "`:11901`");
+        assert!((p.move_speed - 1.05).abs() < 1e-4, "`:11903`");
+        // Day breaks: the buff dies and the slot rescans (`:11905-11909`).
+        w.day_time = true;
+        p.update(&w, PlayerInput::default());
+        assert!(p.buffs.find_buff_index(28).is_none(), "the day gate deletes");
+        assert!(!p.were_wolf);
+    }
+
+    /// W4-f12 gap 3 — Neptune's Shell (497) arms accMerman but NOT wolfAcc,
+    /// so no werewolf grant fires (`:15566-15573` vs `:15182-15189`).
+    #[test]
+    fn w4_f12_neptunes_shell_does_not_grant_the_werewolf() {
+        let mut w = World::new("t".into(), 64, 800);
+        w.day_time = false;
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 497; // Neptune's Shell
+        p.update(&w, PlayerInput::default());
+        p.update(&w, PlayerInput::default());
+        assert!(p.buffs.find_buff_index(28).is_none(), "no wolfAcc -> no grant");
+        assert!(!p.were_wolf);
+    }
+
+    /// W4-f12 gap 3 — the Moon Shell (861) and Celestial Shell (3110) arm
+    /// BOTH accMerman and wolfAcc (`:15134-15143`/`:15402-15411`); dry at
+    /// night the werewolf grants (the merman gate is false while dry).
+    #[test]
+    fn w4_f12_moon_and_celestial_shells_grant_the_werewolf_dry() {
+        for kind in [861u16, 3110] {
+            let mut w = World::new("t".into(), 64, 800);
+            w.day_time = false;
+            let mut p = Player::spawn(&w);
+            p.equipped[3] = kind;
+            p.update(&w, PlayerInput::default());
+            p.update(&w, PlayerInput::default());
+            assert!(p.buffs.find_buff_index(28).is_some(), "{kind} grants at night");
+            assert!(p.were_wolf, "{kind} arms the werewolf");
+            assert!(!p.merman, "dry: not merman");
+        }
+    }
+
+    /// W4-f12 gap 3 — the merman gate (`:25601`): a Moon Shell while WET
+    /// turns the player merman, so the werewolf grant refuses (the C# never
+    /// runs both transformations at once).
+    #[test]
+    fn w4_f12_merman_shell_wet_refuses_the_werewolf() {
+        let mut w = liquid_pool_world(tr_core::tile::LiquidKind::Water);
+        w.day_time = false;
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 861; // Moon Shell
+        for _ in 0..30 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.wet, "the player settles in the water");
+        assert!(p.merman, "the shell turns the player merman");
+        assert!(p.buffs.find_buff_index(28).is_none(), "merman blocks the grant");
+        assert!(!p.were_wolf);
     }
 
     /// M3-EQUIP-13 — the armor pieces carry their own damage/crit/speed rows
