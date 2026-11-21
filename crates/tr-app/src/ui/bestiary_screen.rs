@@ -365,8 +365,18 @@ mod tests {
 
     const SCREEN: Vec2 = Vec2::new(1280.0, 720.0);
 
+    /// One test's localization load — the manager is process-global and
+    /// idempotent for the same culture (`lang::init`), the test_lock keeps
+    /// the culture-switching tests from racing these reads.
+    fn lang_ready() -> std::sync::MutexGuard<'static, ()> {
+        let guard = crate::lang::test_lock().lock().unwrap();
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        guard
+    }
+
     #[test]
     fn the_top_strip_lays_out_the_six_controls() {
+        let _lang = lang_ready();
         // At 1280x720 the panel is [190, 180, 900, 500]; the inner panel
         // loses 90 px height, the (12, 8) padding puts the strip at
         // (202, 188) 876 wide.
@@ -387,10 +397,17 @@ mod tests {
         assert_eq!(button, [848.0, 189.0, 22.0, 22.0]);
         assert_eq!(box_rect, [873.0, 188.0, 205.0, 24.0]);
         assert_eq!(cancel, [1052.0, 188.0, 24.0, 24.0]);
+        // The filter button overlaps the search bar's magnifier column
+        // (both at x 831..945 / 848..870) — the C# appends the search bar
+        // AFTER the buttons (`BuildPage:102-112` then `:147`), so it draws
+        // over and takes the click first. The port's click order matches:
+        // the search pieces are tested before the sort/filter toggles.
+        assert!(filter[0] < button[0] + button[2]);
     }
 
     #[test]
     fn the_grid_pages_instead_of_growing() {
+        let _lang = lang_ready();
         // The bestiary space at 1280x720: inner panel h = 500 - 90 = 410,
         // minus the (8, 8) padding = 394; middle h = 394 - 50 = 344,
         // space h = 340, w = 876 - 242 = 634 -> 8 cols x 4 rows = 32/page.
@@ -417,6 +434,7 @@ mod tests {
 
     #[test]
     fn the_option_grids_are_mutually_exclusive_and_close_rebuilds() {
+        let _lang = lang_ready();
         let mut ui = BestiaryUi::default();
         let tracker = WorldBestiary::new();
         ui.on_open(&tracker, SCREEN);
@@ -437,7 +455,8 @@ mod tests {
     }
 
     #[test]
-    fn the_sort_reclick_falls_back_but_keeps_the_clicked_id() {
+    fn the_sort_reclick_falls_back_to_the_default() {
+        let _lang = lang_ready();
         // ClickOption (:89-115): clicking the selected step prioritizes the
         // default 0, but _currentSelected takes the FALLBACK value too
         // (`this._currentSelected = num`, :109) — a second re-click of the
@@ -457,6 +476,7 @@ mod tests {
 
     #[test]
     fn the_search_change_rebuilds_and_the_whitespace_clears() {
+        let _lang = lang_ready();
         let mut ui = BestiaryUi::default();
         let tracker = WorldBestiary::new();
         ui.on_open(&tracker, SCREEN);
@@ -472,6 +492,7 @@ mod tests {
 
     #[test]
     fn the_option_panel_hit_skips_the_buttons() {
+        let _lang = lang_ready();
         let mut ui = BestiaryUi::default();
         let tracker = WorldBestiary::new();
         ui.on_open(&tracker, SCREEN);
@@ -498,6 +519,7 @@ mod tests {
 
     #[test]
     fn the_info_page_sits_beside_the_grid() {
+        let _lang = lang_ready();
         // The side-by-side layout: the space's right edge + 12 = the info
         // page's left edge; the page is 12 px TALLER than the middle.
         let panel = layout::panel_rect(SCREEN);

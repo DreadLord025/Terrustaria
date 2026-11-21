@@ -373,7 +373,7 @@ pub struct SortKey<'a> {
 }
 
 /// Build the snapshot for one entry.
-pub fn sort_key(entry: &BestiaryEntryDef, tracker: &WorldBestiary) -> SortKey<'_> {
+pub fn sort_key<'a>(entry: &'a BestiaryEntryDef, tracker: &WorldBestiary) -> SortKey<'a> {
     let unlock = crate::bestiary::unlock_state(entry, tracker);
     let stats = crate::npc::entry_stats(entry.kind, entry.variant.unwrap_or(SlimeVariant::Blue));
     SortKey {
@@ -592,6 +592,8 @@ mod tests {
 
     #[test]
     fn the_sort_chain_runs_the_prioritized_step_first() {
+        let _guard = crate::lang::test_lock().lock().unwrap();
+        crate::lang::init(tr_core::localization::GameCulture::English);
         // EntrySorter.Compare (:17-40): default prioritized 0 = the hidden
         // ByUnlockState — known entries sort before unknown ones.
         let tracker = WorldBestiary::new();
@@ -630,6 +632,8 @@ mod tests {
 
     #[test]
     fn the_sorting_id_puts_the_town_roster_first() {
+        let _guard = crate::lang::test_lock().lock().unwrap();
+        crate::lang::init(tr_core::localization::GameCulture::English);
         // GetSortedBestiaryEntriesList's first key is the town priority
         // list (NPCID.cs:10106-10113): 22 Merchant, 17 Guide, 18 Nurse...
         // — only the ported town ids interleave.
@@ -650,6 +654,7 @@ mod tests {
     #[test]
     fn the_search_matches_names_aliases_and_known_tags_only() {
         let _guard = crate::lang::test_lock().lock().unwrap();
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let eoc = entry(4);
         // Unknown entries match nothing (every provider gates on tier).
         assert!(!search_fits(eoc, UnlockState::NotKnownAtAll, "eye"));
@@ -676,6 +681,8 @@ mod tests {
 
     #[test]
     fn the_working_set_filters_then_sorts() {
+        let _guard = crate::lang::test_lock().lock().unwrap();
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let tracker = WorldBestiary::new();
         let mut filterer = EntryFilterer::default();
         let sorter = EntrySorter::default();

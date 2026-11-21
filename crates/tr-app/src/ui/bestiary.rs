@@ -2100,11 +2100,6 @@ fn portrait_data(
     }
 }
 
-/// `UIBestiaryEntryInfoPage`'s content for the selected entry: the
-/// `Portrait_Front` backdrop, the big portrait, the name (tier >= 1), the
-/// stat rows (tier >= 2 — `Stat_HP`/`Stat_Attack`/`Stat_Defense`/
-/// `Stat_Knockback`/`Stat_Copper`), the kill progress and the drop lines
-/// (rates only from tier 4).
 /// The info page (`UIBestiaryEntryInfoPage`) — the 230 px panel beside the
 /// grid (`info_page_rect`), border `(89, 116, 213)` / bg `(73, 94, 171)`
 /// (`:33-34`). `FillInfoForEntry(null)` empties the list (`:111-119`), so

@@ -1197,21 +1197,12 @@ impl App {
                 self.ui_left_press = false;
                 return;
             }
-            let (sort_btn, filter_btn) = ui::bestiary_screen::sort_filter_buttons_rects(screen);
-            if crate::ui::in_rect(mouse, sort_btn) {
-                self.bestiary_ui.toggle_sorting(&self.bestiary, screen);
-                self.ui_left_press = false;
-                return;
-            }
-            if crate::ui::in_rect(mouse, filter_btn) {
-                self.bestiary_ui.toggle_filtering(&self.bestiary, screen);
-                self.ui_left_press = false;
-                return;
-            }
             // The wrapped search bar (`UIWrappedSearchBar.cs:106`/`:135-136`/
             // `:149`): the magnifier/box toggle the input latch, the cancel
             // clears (sound 11) or ticks (sound 12). The pieces were
-            // resolved above (the right-click arm).
+            // resolved above (the right-click arm). The bar appends AFTER
+            // the sort/filter buttons (`BuildPage:102-112` then `:147`), so
+            // it takes the overlapping magnifier column first.
             if crate::ui::in_rect(mouse, cancel) {
                 let sound = self.bestiary_ui.search.cancel_click();
                 self.audio.play(if sound == 11 { "Menu_Close" } else { "Menu_Tick" });
@@ -1226,6 +1217,17 @@ impl App {
                 // for the cancel button (handled above) — the magnifier and
                 // the panel itself toggle.
                 self.bestiary_ui.search.search_area_click(false);
+                self.ui_left_press = false;
+                return;
+            }
+            let (sort_btn, filter_btn) = ui::bestiary_screen::sort_filter_buttons_rects(screen);
+            if crate::ui::in_rect(mouse, sort_btn) {
+                self.bestiary_ui.toggle_sorting(&self.bestiary, screen);
+                self.ui_left_press = false;
+                return;
+            }
+            if crate::ui::in_rect(mouse, filter_btn) {
+                self.bestiary_ui.toggle_filtering(&self.bestiary, screen);
                 self.ui_left_press = false;
                 return;
             }
