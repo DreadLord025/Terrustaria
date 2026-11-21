@@ -5046,7 +5046,11 @@ impl Npc {
         // in here — a thorns reflect landing in `contact` must survive to
         // the NEXT tick's AI, exactly like the C#'s player-update strike.
         self.just_hit = false;
-        self.find_frame();
+        // W4-c8 sweep — the world-read entry: the crawler groups resolve
+        // their slope probe against the live world (the d44
+        // find_frame_world pattern); every other kind falls through to
+        // the world-free hook unchanged.
+        self.find_frame_world(world);
         self.contact(player, rng);
     }
 
@@ -6823,7 +6827,161 @@ impl Npc {
         self.rotation = s.rotation;
     }
 
+    /// W4-c8 sweep — the crawler arm's tile-slope probe, CALLER-RESOLVED
+    /// (`NPC.cs:72807-72815` for the 357/448/484/606 group, `:72862-72870`
+    /// for the 485/486/487 group — the SAME probe): `Framing.GetTileSafely
+    /// ((int)Center.X/16, (int)position.Y/16)`, then the tile one row
+    /// BELOW when that tile's `slope() == 0`. `GetTileSafely` never
+    /// returns null (out of world / null slot → `new Tile()`, slope 0,
+    /// `Framing.cs:426-439`), so the probe always runs and the
+    /// out-of-bounds read is slope 0 — the `world.tile` None arm. The
+    /// int casts truncate toward zero, like the C#'s `(int)` on the
+    /// position floats. The d44 worm-slope bridge
+    /// (`origin/task/W4-d44-findframe-low-1` 7cb3f8d0,
+    /// `find_frame_worm_slope`) adopted verbatim for this family.
+    pub(crate) fn find_frame_crawler_slope(&self, world: &World) -> i32 {
+        let tx = (self.center().0 as i32) / 16;
+        let ty = (self.y as i32) / 16;
+        let slope = world.tile(tx, ty).map_or(0, |t| t.slope());
+        if slope == 0 {
+            world.tile(tx, ty + 1).map_or(0, |t| t.slope()) as i32
+        } else {
+            slope as i32
+        }
+    }
+
+    /// W4-c8 sweep — the slope tail BOTH crawler groups share
+    /// (`NPC.cs:72816-72825` / `:72871-72880`): slope 1 pins
+    /// `rotation = 0.785f`, slope 2 pins `-0.785f`, and either clears the
+    /// `localAI[0]` -2 marker to 0 (the "on a slope" flag the AI reads);
+    /// every other slope leaves the frame machine's writes untouched.
+    /// Runs AFTER the group's row/counter/tilt block — the C# order.
+    fn find_frame_crawler_slope_tail(&mut self, slope: i32) {
+        if slope == 1 {
+            self.rotation = 0.785;
+            self.local_ai[0] = 0.0;
+        } else if slope == 2 {
+            self.rotation = -0.785;
+            self.local_ai[0] = 0.0;
+        }
+    }
+
+    /// W4-c8 sweep — the WORLD-READ entry (the d44 `find_frame_world`
+    /// pattern): the two crawler groups resolve their slope probe
+    /// against the live world before the shared frame machine; every
+    /// other kind falls through to the world-free `find_frame` hook
+    /// unchanged. The world-free lane keeps slope 0 (the flat-tile
+    /// default, the g6 world-free convention).
+    pub(crate) fn find_frame_world(&mut self, world: &World) {
+        let slope = match self.kind {
+            // `case 357/448/484/606` (`NPC.cs:72807-72826`) and
+            // `case 485/486/487` (`:72862-72881`) — the same probe.
+            NpcKind::Worm
+            | NpcKind::GoldWorm
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Maggot
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy => self.find_frame_crawler_slope(world),
+            _ => {
+                self.find_frame();
+                return;
+            }
+        };
+        self.find_frame_crawler_groups();
+        self.find_frame_crawler_slope_tail(slope);
+    }
+
+    /// W4-c8 sweep — the two crawler FindFrame groups WITHOUT the slope
+    /// tail, split out of `find_frame` so the world-read entry can run
+    /// the tail with the resolved probe (the d44 `find_frame_c_world`
+    /// split precedent). The world-free `find_frame` calls this then the
+    /// tail with slope 0 — a cited no-op (neither 1 nor 2).
+    fn find_frame_crawler_groups(&mut self) {
+        match self.kind {
+            // W4-c8 — `case 357/448/484/606` (`NPC.cs:72774-72828`): the
+            // two-frame crawl. `localAI[0] = -2f`; grounded + still pins
+            // row 1 (`frame.Y = num`); grounded + moving runs the 12-tick
+            // two-frame cycle (`> num` wraps to 0); airborne adds the
+            // `direction * 0.1f` tilt and pins row 1. The slope-1/2
+            // ±0.785f rotation + `localAI[0] = 0` tail (`:72807-72826`)
+            // rides `find_frame_crawler_slope_tail` — the world-read
+            // entry resolves the probe, the world-free lane passes 0.
+            NpcKind::Worm | NpcKind::GoldWorm | NpcKind::EnchantedNightcrawler | NpcKind::Maggot => {
+                self.local_ai[0] = -2.0;
+                if self.vy == 0.0 {
+                    self.rotation = 0.0;
+                    if self.vx == 0.0 {
+                        self.frame = 1;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 12.0 {
+                            self.frame_counter = 0.0;
+                            self.frame += 1;
+                            if self.frame > 1 {
+                                self.frame = 0;
+                            }
+                        }
+                    }
+                } else {
+                    self.rotation += self.facing as f32 * 0.1;
+                    self.frame = 1;
+                }
+            }
+            // W4-c8 — `case 485/486/487` (`NPC.cs:72829-72883`): the grub
+            // trio. `spriteDirection = direction` + `localAI[0] = -2f`;
+            // grounded + still pins row 1; grounded + moving accumulates
+            // `|vx| * 5f` per tick, the > 10 reset advancing the row over
+            // the 4-frame strip (`> num * 3` wraps to 0); airborne the
+            // same tilt + row-1 pin. The slope tail (`:72862-72881`) is
+            // the same shared `find_frame_crawler_slope_tail`.
+            NpcKind::Grubby | NpcKind::Sluggy | NpcKind::Buggy => {
+                self.sprite_dir = self.facing;
+                self.local_ai[0] = -2.0;
+                if self.vy == 0.0 {
+                    self.rotation = 0.0;
+                    if self.vx == 0.0 {
+                        self.frame = 1;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += (self.vx * 5.0).abs();
+                        if self.frame_counter > 10.0 {
+                            self.frame_counter = 0.0;
+                            self.frame += 1;
+                            if self.frame > 3 {
+                                self.frame = 0;
+                            }
+                        }
+                    }
+                } else {
+                    self.rotation += self.facing as f32 * 0.1;
+                    self.frame = 1;
+                }
+            }
+            _ => {}
+        }
+    }
+
     pub(crate) fn find_frame(&mut self) {
+        // W4-c8 sweep — the crawler groups' shared machine + the slope
+        // tail at slope 0 (the world-free flat-tile default; the
+        // world-read entry `find_frame_world` resolves the probe). The
+        // tail at 0 writes nothing, so the world-free lane is unchanged.
+        if matches!(
+            self.kind,
+            NpcKind::Worm
+                | NpcKind::GoldWorm
+                | NpcKind::EnchantedNightcrawler
+                | NpcKind::Maggot
+                | NpcKind::Grubby
+                | NpcKind::Sluggy
+                | NpcKind::Buggy
+        ) {
+            self.find_frame_crawler_groups();
+            self.find_frame_crawler_slope_tail(0);
+            return;
+        }
         // `NPC.cs:66696-66704` — `num2` is the velocity class only while
         // `aiAction == 0`; `aiAction == 1` forces the crouch class 4 (the
         // King Slime's shrink/wind-up writes it, `:43224`/`:43342`).
@@ -6939,66 +7097,11 @@ impl Npc {
                     }
                 }
             }
-            // W4-c8 — `case 357/448/484/606` (`NPC.cs:72774-72828`): the
-            // two-frame crawl. `localAI[0] = -2f`; grounded + still pins
-            // row 1 (`frame.Y = num`); grounded + moving runs the 12-tick
-            // two-frame cycle (`> num` wraps to 0); airborne adds the
-            // `direction * 0.1f` tilt and pins row 1. The slope-1/2
-            // ±0.785f rotation + `localAI[0] = 0` tail (`:72807-72826`)
-            // reads the tile grid — deferred (find_frame carries no
-            // world seam; ANALYSIS "The crawling critters").
-            NpcKind::Worm | NpcKind::GoldWorm | NpcKind::EnchantedNightcrawler | NpcKind::Maggot => {
-                self.local_ai[0] = -2.0;
-                if self.vy == 0.0 {
-                    self.rotation = 0.0;
-                    if self.vx == 0.0 {
-                        self.frame = 1;
-                        self.frame_counter = 0.0;
-                    } else {
-                        self.frame_counter += 1.0;
-                        if self.frame_counter > 12.0 {
-                            self.frame_counter = 0.0;
-                            self.frame += 1;
-                            if self.frame > 1 {
-                                self.frame = 0;
-                            }
-                        }
-                    }
-                } else {
-                    self.rotation += self.facing as f32 * 0.1;
-                    self.frame = 1;
-                }
-            }
-            // W4-c8 — `case 485/486/487` (`NPC.cs:72829-72883`): the grub
-            // trio. `spriteDirection = direction` + `localAI[0] = -2f`;
-            // grounded + still pins row 1; grounded + moving accumulates
-            // `|vx| * 5f` per tick, the > 10 reset advancing the row over
-            // the 4-frame strip (`> num * 3` wraps to 0); airborne the
-            // same tilt + row-1 pin. The slope tail (`:72862-72881`) is
-            // the same deferred world probe.
-            NpcKind::Grubby | NpcKind::Sluggy | NpcKind::Buggy => {
-                self.sprite_dir = self.facing;
-                self.local_ai[0] = -2.0;
-                if self.vy == 0.0 {
-                    self.rotation = 0.0;
-                    if self.vx == 0.0 {
-                        self.frame = 1;
-                        self.frame_counter = 0.0;
-                    } else {
-                        self.frame_counter += (self.vx * 5.0).abs();
-                        if self.frame_counter > 10.0 {
-                            self.frame_counter = 0.0;
-                            self.frame += 1;
-                            if self.frame > 3 {
-                                self.frame = 0;
-                            }
-                        }
-                    }
-                } else {
-                    self.rotation += self.facing as f32 * 0.1;
-                    self.frame = 1;
-                }
-            }
+            // W4-c8 sweep — the crawler groups (357/448/484/606 +
+            // 485/486/487) moved ABOVE the match into
+            // `find_frame_crawler_groups` + the slope tail (the early
+            // return claims them; the world-read entry resolves the
+            // probe). The arms here are gone — one machine, one copy.
             // The Wizard/Mechanic: `FindFrame`'s humanoid-group case list
             // carries them (`NPC.cs:68554`/`:68556`) with no arm of their
             // own — the shared town body's rows stand.
@@ -24701,6 +24804,95 @@ mod tests {
         assert_eq!(t2.hp, 3);
         assert!(!t2.friendly);
         assert!(t2.behind_tiles);
+    }
+
+    /// W4-c8 sweep — the crawler slope probe reads `(int)Center.X/16,
+    /// (int)position.Y/16` and falls to the tile BELOW on slope 0
+    /// (`NPC.cs:72807-72815` / `:72862-72870`); out-of-world reads are
+    /// slope 0 (`Framing.GetTileSafely`'s `new Tile()`,
+    /// `Framing.cs:426-439`). The d44 worm-slope witness pattern.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c8_the_crawler_slope_probe_reads_the_world() {
+        let mut w = ground();
+        let mut n = bare(NpcKind::Worm);
+        // The 10x4 box: centre.x = 100 + 5 = 105 → tx 6; y = 464 → ty 29
+        // (air above the row-30 ground). Flat everywhere → 0.
+        n.x = 100.0;
+        n.y = 464.0;
+        assert_eq!(n.find_frame_crawler_slope(&w), 0, "air over flat ground");
+        // Slope on the probed tile itself: read directly, no fall-through.
+        let i = w.index(6, 29);
+        w.tiles[i].set_slope(2);
+        assert_eq!(n.find_frame_crawler_slope(&w), 2, "the probed tile wins");
+        // Slope 0 on the probed tile → the tile BELOW is read.
+        w.tiles[i].set_slope(0);
+        let j = w.index(6, 30);
+        w.tiles[j].set_slope(1);
+        assert_eq!(n.find_frame_crawler_slope(&w), 1, "the below fall-through");
+        // Out of world: slope 0 both reads.
+        n.x = -500.0;
+        n.y = -500.0;
+        assert_eq!(n.find_frame_crawler_slope(&w), 0, "out of world");
+        // The grub trio runs the SAME probe (`:72862-72870`).
+        let mut g = bare(NpcKind::Grubby);
+        g.x = 100.0;
+        g.y = 464.0;
+        assert_eq!(g.find_frame_crawler_slope(&w), 1, "485 shares the probe");
+    }
+
+    /// W4-c8 sweep — the world-read entry pins the slope tail on BOTH
+    /// groups: slope 1 → rotation 0.785 + localAI[0] cleared to 0,
+    /// slope 2 → -0.785 + 0, slope 0/3+ → the frame machine's writes
+    /// stand (localAI[0] = -2). The airborne tilt is OVERWRITTEN by the
+    /// tail (the C# runs the tail after the tilt, `:72804-72825`).
+    /// The world-free hook keeps slope 0. WRITTEN, NOT RUN.
+    #[test]
+    fn w4_c8_the_slope_tail_pins_rotation_on_both_groups() {
+        let mut w = ground();
+        // Ground under the probe: y = 480 → ty 30; centre tx 6.
+        let j = w.index(6, 30);
+        for kind in [NpcKind::Worm, NpcKind::GoldWorm, NpcKind::EnchantedNightcrawler,
+                     NpcKind::Maggot, NpcKind::Grubby, NpcKind::Sluggy, NpcKind::Buggy] {
+            let mut n = Npc::new(kind, 100.0, 480.0, 1, 0.0);
+            n.vx = 0.2; // grounded + moving: the cycle arms run first
+            // Slope 1: rotation +0.785, the -2 marker cleared.
+            w.tiles[j].set_slope(1);
+            n.find_frame_world(&w);
+            assert_eq!(n.rotation, 0.785, "{kind:?} :72818/:72873");
+            assert_eq!(n.local_ai[0], 0.0, "{kind:?} :72819/:72874");
+            // Slope 2: rotation -0.785.
+            w.tiles[j].set_slope(2);
+            n.find_frame_world(&w);
+            assert_eq!(n.rotation, -0.785, "{kind:?} :72823/:72878");
+            assert_eq!(n.local_ai[0], 0.0);
+            // Slope 3 (painted half-block etc.): no tail write — the
+            // grounded machine's rotation 0 + the -2 marker stand.
+            w.tiles[j].set_slope(3);
+            n.find_frame_world(&w);
+            assert_eq!(n.rotation, 0.0, "{kind:?} slope 3 leaves the machine's writes");
+            assert_eq!(n.local_ai[0], -2.0);
+            // Airborne + slope 1: the tilt runs, then the tail OVERWRITES.
+            w.tiles[j].set_slope(1);
+            n.vy = 1.0;
+            n.rotation = 0.0;
+            n.find_frame_world(&w);
+            assert_eq!(n.rotation, 0.785, "{kind:?} the tail wins over the tilt");
+            // The world-free hook: slope 0 — the machine's writes stand.
+            n.vy = 0.0;
+            n.find_frame();
+            assert_eq!(n.rotation, 0.0, "{kind:?} the world-free lane keeps slope 0");
+            assert_eq!(n.local_ai[0], -2.0);
+        }
+        // A NON-crawler kind falls through unchanged (the zombie arm).
+        let mut z = bare(NpcKind::Zombie);
+        z.vx = 1.0;
+        z.find_frame_world(&w);
+        let mut z2 = bare(NpcKind::Zombie);
+        z2.vx = 1.0;
+        z2.find_frame();
+        assert_eq!((z.frame, z.frame_counter), (z2.frame, z2.frame_counter),
+            "the fall-through is the world-free hook");
     }
 
     /// The Dye Trader's shop (`case 12`): the four always rows, the moon-phase

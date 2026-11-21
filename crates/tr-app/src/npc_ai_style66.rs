@@ -150,8 +150,11 @@
 //! a LONE `AI_006` worm (the StardustWormHead precedent) — the worm pass's
 //! head machine runs it (the 6/0.15 tunables, the 1000-px dig override,
 //! the FLEE aim inversion `:51861-51865`), no chain. The FindFrame family
-//! cases landed in `npc.rs::find_frame` (the slope tail deferred — no
-//! world seam). The GoldWorm sparkle ([`gold_worm_sparkle`]) stays
+//! cases live in `npc.rs::find_frame_crawler_groups` + the slope tail
+//! (`find_frame_crawler_slope_tail`) — the W4-c8 sweep wired the tail
+//! through `find_frame_world` (the d44 worm-slope world-read bridge
+//! pattern, BOTH production call sites). The GoldWorm sparkle
+//! ([`gold_worm_sparkle`]) stays
 //! unwired — the `UpdateNPC_CastLights` pre-pass has no tile-light seam
 //! in the sim yet (the style50 light-seam precedent). See docs/ANALYSIS.md
 //! "The crawling critters" → "W4-c8 — the roster + wiring wave".

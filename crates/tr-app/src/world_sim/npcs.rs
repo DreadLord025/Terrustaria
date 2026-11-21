@@ -4551,7 +4551,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         }
                         // `out.died`: hp is already 0 — the death pass owns
                         // the HitEffect + deactivation pair.
-                        npcs[i].find_frame();
+                        // W4-c8 sweep — the world-read entry (the d44
+                        // pattern, BOTH production call sites): the
+                        // crawler groups' slope tail reads the live world.
+                        npcs[i].find_frame_world(world);
                         npcs[i].contact(player, npcs_rng);
                     }
                     let n = &mut npcs[i];

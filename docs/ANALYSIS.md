@@ -30987,10 +30987,18 @@ portraits and the netglue bare seed. The wiring:
   four-frame cycle). All nine rotate (the draw whitelist).
 - **Deviations / deferrals (W4-c8)**: the FindFrame slope tail
   (`:72807-72826`/`:72862-72881`, the slope-1/2 ±0.785f rotation +
-  `localAI[0] = 0` marker) is DEFERRED — `find_frame` carries no world
-  seam (the slope probe reads `Framing.GetTileSafely` at the centre/top
-  tiles); the `localAI[0] = -2` marker and the rest of the cases are
-  exact. The GoldWorm sparkle (`gold_worm_sparkle`) stays unwired — the
+  `localAI[0] = 0` marker) is WIRED by the W4-c8 sweep — the d44
+  worm-slope world-read bridge pattern (`origin/task/W4-d44-findframe-
+  low-1` 7cb3f8d0): `find_frame_crawler_slope` resolves
+  `Framing.GetTileSafely((int)Center.X/16, (int)position.Y/16)` + the
+  slope-0 below-tile fall-through (`Framing.cs:426-439`'s `new Tile()`
+  out-of-world → slope 0), `find_frame_crawler_slope_tail` pins the
+  ±0.785f rotation + the marker clear AFTER the group machine (the C#
+  order — the tail overwrites the airborne tilt), and
+  `find_frame_world` runs at BOTH production call sites
+  (`npc.rs::update_rng_dust` tail + `world_sim/npcs.rs` slot loop);
+  the world-free `find_frame` keeps slope 0 (the flat-tile default).
+  The GoldWorm sparkle (`gold_worm_sparkle`) stays unwired — the
   `UpdateNPC_CastLights` pre-pass has no tile-light seam in the sim yet
   (the style50 light-seam precedent; the dust-43 spawn's internal draws
   must run in C# order when the dust feed lands). The `dontTakeDamage-
