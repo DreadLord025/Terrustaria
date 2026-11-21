@@ -793,6 +793,90 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     }
 }
 
+/// W4-d6 residual 7 — the 298-orb chain end-to-end (written, NOT run —
+/// code-only mode): the Spectre-Hood hit queues the intent, the pass-tail
+/// drain spawns the orb centred, and the armed style-52 dispatch flies it
+/// into the player for the contact heal (`Projectile.cs:28504-28532`).
+#[cfg(test)]
+mod w4_d6_heal_orb_chain_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::projectile::{LOST_SOUL, SPIRIT_HEAL};
+
+    #[test]
+    fn w4_d6_the_hit_intent_drains_into_a_flying_orb_that_heals_on_contact() {
+        // The 8x8 fixture world, the player parked mid-world; a high-life
+        // zombie overlapping a Lost Soul shot. The hood flag + the missing
+        // health arm the ghostHeal spawn; the drained 298 homes at speed 4
+        // through the (v*15+d)/16 blend and heals on the <50f contact.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.local_id = 0;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 40.0;
+        player.y = 40.0;
+        player.hp = 50;
+        player.max_hp = 100;
+        player.ghost_heal = true;
+        player.life_steal = 80.0;
+        app.player = Some(player);
+        let mut npc = crate::npc::Npc::new(crate::npc::NpcKind::Zombie, 56.0, 40.0, 1, 0.0);
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        npc.defense_override = Some(0);
+        app.npcs.push(npc);
+        // The magic shot overlapping the victim (the 12x12 soul box),
+        // flying right at 8 px/tick — it exits the 8x8 world (the
+        // out-of-world guard, no Kill) before the id-static 10-tick window
+        // expires, so exactly ONE hit lands and ONE orb spawns.
+        app.projectiles
+            .spawn_with_data_ai_owned(LOST_SOUL, 0, 58.0, 44.0, 8.0, 0.0, 100, 0.0, 0.0, 0.0);
+        update_projectiles(&mut app, 1.0 / 60.0);
+        // The drain spawned the orb: centred on the POST-strike victim
+        // centre (the 6x6 half-extent subtract), ai0 = the local player
+        // (the missing-health scan), ai1 = the 0.2 float share.
+        let orb = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == SPIRIT_HEAL)
+            .expect("the drained 298 lives");
+        let n = &app.npcs[0];
+        let (nw, nh) = n.size();
+        assert_eq!(orb.ai[0], 0.0, "the target scan picked the local player");
+        let strike = 10_000 - n.hp;
+        assert!(strike > 0, "the hit landed");
+        // The drain runs at the pass TAIL, so the orb's first AI tick is
+        // the NEXT pass — this tick it holds the spawn velocity 0.
+        assert_eq!(orb.vel, Vec2::ZERO, "the drain spawns at rest");
+        let heal = orb.ai[1];
+        assert!((heal - strike as f32 * 0.2).abs() < 1e-3, "the 0.2 share");
+        // The next tick: the armed 52 dispatch blends toward the player.
+        update_projectiles(&mut app, 1.0 / 60.0);
+        let orb = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == SPIRIT_HEAL)
+            .expect("the orb still flies (the victim centre is >50f out)");
+        assert!(orb.vel.length() > 0.0, "the blend armed");
+        assert!(orb.vel.x < 0.0, "steering left toward the player");
+        // Fly it home: enough ticks to cross the ~20f gap at ~1-4 px/tick.
+        for _ in 0..40 {
+            update_projectiles(&mut app, 1.0 / 60.0);
+        }
+        assert!(
+            !app.projectiles
+                .slots()
+                .iter()
+                .any(|p| p.active && p.kind == SPIRIT_HEAL),
+            "the contact killed the orb (:28526)"
+        );
+        let p = app.player.as_ref().unwrap();
+        assert!(p.hp > 50, "the contact healed");
+        assert!(p.hp <= 100, "the statLifeMax2 cap");
+    }
+}
+
 /// S1-E-21h — the pass-tail sound drain's stream contract (written, NOT
 /// run — code-only mode): the projectile cue plays consume the
 /// `UpdateProjectiles` stream ONLY when the attenuation gate passed, and

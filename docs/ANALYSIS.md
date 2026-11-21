@@ -39553,3 +39553,29 @@ Witness (WRITTEN NOT RUN, code-only):
 `w4_d6_the_spectre_hood_and_mask_swap_the_helmet_sheet` — the registry
 slots, the per-slot sheet resolution (distinct UVs), the hair
 suppression under both, the unported-slot and missing-sheet skips.
+
+## W4-d6 residual 7 — the 298-orb homing AI: machine-armed verification
+
+**The census confirms the machine is ARMED end-to-end** (no new AI code
+needed): the style-52 dispatch (`projectile.rs`, the `52 =>` arm) calls
+`ai_heal_orb` — the verbatim `Projectile.cs:28504-28532` port (the
+ai0-target speed-4 `(v·15+d)/16` blend, the <50f box-overlap contact,
+the owner-gated MoonLeech-refused heal through `Player.heal`'s
+HealEffect-RAW-then-cap order, the Kill-with-no-return). The 298 row
+(`:3883-3892`: 6×6, alpha 255, magic, tileCollide false, extraUpdates 3
+— four blend sub-steps per tick) and the 305 row (`:3965-3973`,
+extraUpdates 10 — eleven) landed with the W4-d6 main slice; the
+residual-3 slice added the ghostHeal spawn source and the pass-tail
+drain; residual 5 added the vampireHeal source. The orb's flight-to-
+target AI reads `Main.player[ai[0]]` — the port folds the 255-slot array
+to the single local player (a foreign index steers nothing, the
+`ai_spectre_shot` precedent).
+
+**The new witness closes the chain at the PASS level** (the earlier
+witnesses drove the pool directly): a hood-flagged player + a Lost Soul
+hit on a high-life zombie → the intent drains into a centred 298 at
+rest → the next pass's armed dispatch blends it toward the player → the
+contact heals and kills. The soul flies out of the fixture world so
+exactly one hit lands (the id-static 10-tick window would otherwise
+re-hit). WRITTEN NOT RUN (code-only):
+`w4_d6_the_hit_intent_drains_into_a_flying_orb_that_heals_on_contact`.
