@@ -152,6 +152,7 @@
 //! | 630-638 | `:86028-86054` | the critter family: gray cockatiel 675, squirrel 299/538, mouse 300, rat 610, seahorse 626, anglerfish 102 |
 //! | 639-646 | `:86058-86075` | the critter family: flying fish 224, eyeball flying fish 587, turtle 616 |
 //! | 647-654 | `:86079-86089` | the critter family: jungle turtle 617, sea turtle 625 (completes the block) |
+//! | 655-663 | `:86108-86125` | the penguin family 148/149/168/470 death (per-type gore pairs/triple) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -4088,6 +4089,43 @@ fn critter_family_death(
     }
 }
 
+/// The penguin family death (`NPC.cs:86102-86126`, sites 655-663): the
+/// 10-dust type-5 burst (SpeedX `2*hitDirection`, SpeedY -2), then the
+/// per-type gores at position — 148 Penguin → [160,161], 149 PenguinBlack →
+/// [162,163], 168 CorruptPenguin → [215,216], 470 CrimsonPenguin →
+/// [673,672,674] (the 673 precedes the 672). Scale defaults to 1.
+fn penguin_family_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:86102-86105` — the 10-dust type-5 burst.
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    // `:86106-86126` — the per-type gore list.
+    let gores: &[i32] = match npc_type {
+        148 => &[160, 161],
+        149 => &[162, 163],
+        168 => &[215, 216],
+        _ => &[673, 672, 674], // 470 CrimsonPenguin
+    };
+    let vel = Vec2::new(npc.vx, npc.vy);
+    for &ty in gores {
+        gore.new_gore(rng, world, pos, vel, ty, 1.0);
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -4575,6 +4613,10 @@ pub fn hit_effect_c(
         && npc.hp <= 0
     {
         critter_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86092-86127` — the penguin family arm (sites 655-663).
+    if (npc_type == 148 || npc_type == 149 || npc_type == 168 || npc_type == 470) && npc.hp <= 0 {
+        penguin_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -7277,6 +7319,28 @@ mod tests {
             critter_family_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
             let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
             assert_eq!(types, gores, "turtle {ty}");
+        }
+    }
+
+    /// `NPC.cs:86108-86125` — the penguin family: 148→[160,161],
+    /// 149→[162,163], 168→[215,216], 470→[673,672,674] (673 before 672).
+    #[test]
+    fn w4_f10_the_penguin_family_death_uses_the_per_type_list() {
+        let w = air();
+        let cases: [(i32, &[i32]); 4] = [
+            (148, &[160, 161]),
+            (149, &[162, 163]),
+            (168, &[215, 216]),
+            (470, &[673, 672, 674]),
+        ];
+        for (ty, gores) in cases {
+            let n = boss(100.0, 100.0, 30.0, 30.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(613);
+            penguin_family_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..gores.len()].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, gores, "penguin {ty}");
         }
     }
 
