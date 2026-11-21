@@ -2411,6 +2411,39 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Mothron",
     },
+    // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+    BestiaryEntryDef {
+        credit_id: "MothronSpawn",
+        net_id: 479,
+        kind: NpcKind::MothronSpawn,
+        variant: None,
+        quick_unlock: false,
+        name: "Baby Mothron",
+    },
+    BestiaryEntryDef {
+        credit_id: "Medusa",
+        net_id: 480,
+        kind: NpcKind::Medusa,
+        variant: None,
+        quick_unlock: false,
+        name: "Medusa",
+    },
+    BestiaryEntryDef {
+        credit_id: "GreekSkeleton",
+        net_id: 481,
+        kind: NpcKind::GreekSkeleton,
+        variant: None,
+        quick_unlock: false,
+        name: "Hoplite",
+    },
+    BestiaryEntryDef {
+        credit_id: "GraniteGolem",
+        net_id: 482,
+        kind: NpcKind::GraniteGolem,
+        variant: None,
+        quick_unlock: false,
+        name: "Granite Golem",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -2555,6 +2588,9 @@ pub fn try_entry_for_npc(
         NpcKind::CultistDragonBody3 => NpcKind::CultistDragonHead,
         NpcKind::CultistDragonBody4 => NpcKind::CultistDragonHead,
         NpcKind::CultistDragonTail => NpcKind::CultistDragonHead,
+        // W4-d40: the bestiary credit folds (`ContentSamples.cs`;
+        // the Hide=true variants have no own entry).
+        NpcKind::MothronEgg => NpcKind::Mothron,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -2649,6 +2685,9 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         NpcKind::CultistDragonBody3 => NpcKind::CultistDragonHead,
         NpcKind::CultistDragonBody4 => NpcKind::CultistDragonHead,
         NpcKind::CultistDragonTail => NpcKind::CultistDragonHead,
+        // W4-d40: the bestiary credit folds (`ContentSamples.cs`;
+        // the Hide=true variants have no own entry).
+        NpcKind::MothronEgg => NpcKind::Mothron,
         other => other,
     };
     ENTRIES

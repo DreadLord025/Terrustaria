@@ -1648,6 +1648,12 @@ fn portrait_data(
         | (NpcKind::BigMimicHallow, _)
         | (NpcKind::BigMimicJungle, _) => (sheet_i, 44.0, 28.0, 44.0, white),
         (NpcKind::Mothron, _) => (sheet_i, 50.0, 80.0, 50.0, white),
+        // W4-d40: the new kinds' portrait boxes (the SetDefaults w/h).
+        (NpcKind::MothronEgg, _) => (sheet_i, 34.0, 34.0, 34.0, white),
+        (NpcKind::MothronSpawn, _) => (sheet_i, 30.0, 46.0, 30.0, white),
+        (NpcKind::Medusa, _)
+        | (NpcKind::GreekSkeleton, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::GraniteGolem, _) => (sheet_i, 48.0, 28.0, 48.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
     }
 }

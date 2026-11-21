@@ -1086,6 +1086,22 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    // W4-d40 (NPCID 421-490 roster wave): MothronEgg, MothronSpawn, Medusa, GreekSkeleton, GraniteGolem.
+    /// `NPCID.MothronEgg` (478): 34x34, aiStyle 89, dmg 0, def 30, 200 HP,
+    /// kb 0.7, value 0 (`NPC.cs` SetDefaults arm).
+    MothronEgg,
+    /// `NPCID.MothronSpawn` (479): 46x30, aiStyle 90, dmg 50, def 14, 700 HP,
+    /// kb 0.3, value 0 (`NPC.cs` SetDefaults arm).
+    MothronSpawn,
+    /// `NPCID.Medusa` (480): 18x40, aiStyle 3, dmg 30, def 20, 400 HP,
+    /// kb 0.15, value 1000 (`NPC.cs` SetDefaults arm).
+    Medusa,
+    /// `NPCID.GreekSkeleton` (481): 18x40, aiStyle 3, dmg 22, def 10, 70 HP,
+    /// kb 0.4, value 300 (`NPC.cs` SetDefaults arm).
+    GreekSkeleton,
+    /// `NPCID.GraniteGolem` (482): 28x48, aiStyle 3, dmg 30, def 18, 110 HP,
+    /// kb 0.35, value 500 (`NPC.cs` SetDefaults arm).
+    GraniteGolem,
     // W4-d40 (NPCID 421-490 roster wave): BigMimicCorruption, BigMimicCrimson, BigMimicHallow, BigMimicJungle, Mothron.
     /// `NPCID.BigMimicCorruption` (473): 28x44, aiStyle 87, dmg 90, def 34, 3500 HP,
     /// kb 0.1, value 30000 (`NPC.cs` SetDefaults arm).
@@ -3748,6 +3764,12 @@ impl Npc {
             NpcKind::BigMimicHallow => 0.1,
             NpcKind::BigMimicJungle => 0.1,
             NpcKind::Mothron => 0.2,
+            // W4-d40: the SetDefaults knockBackResist rows (`NPC.cs`).
+            NpcKind::MothronEgg => 0.7,
+            NpcKind::MothronSpawn => 0.3,
+            NpcKind::Medusa => 0.15,
+            NpcKind::GreekSkeleton => 0.4,
+            NpcKind::GraniteGolem => 0.35,
             NpcKind::DungeonSpirit => 0.2,
             _ => 0.4,
         }
@@ -4182,6 +4204,12 @@ impl Npc {
             NpcKind::BigMimicHallow => 34,
             NpcKind::BigMimicJungle => 34,
             NpcKind::Mothron => 30,
+            // W4-d40: the SetDefaults defense rows (`NPC.cs`).
+            NpcKind::MothronEgg => 30,
+            NpcKind::MothronSpawn => 14,
+            NpcKind::Medusa => 20,
+            NpcKind::GreekSkeleton => 10,
+            NpcKind::GraniteGolem => 18,
             NpcKind::DungeonSpirit => 30,
             NpcKind::Slime => unreachable!(),
         }
@@ -4608,6 +4636,12 @@ impl Npc {
             NpcKind::BigMimicHallow => 30000.0,
             NpcKind::BigMimicJungle => 30000.0,
             NpcKind::Mothron => 50000.0,
+            // W4-d40: the SetDefaults value rows (`NPC.cs`).
+            NpcKind::MothronEgg => 0.0,
+            NpcKind::MothronSpawn => 0.0,
+            NpcKind::Medusa => 1000.0,
+            NpcKind::GreekSkeleton => 300.0,
+            NpcKind::GraniteGolem => 500.0,
             NpcKind::DungeonSpirit => 500.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -6683,6 +6717,14 @@ impl Npc {
             | NpcKind::BigMimicHallow
             | NpcKind::BigMimicJungle
             | NpcKind::Mothron => {}
+            // W4-d40: MothronEgg, MothronSpawn - the aiStyle machine is UNWIRED
+            // (the style73 precedent); the kind arm keeps the match exhaustive.
+            NpcKind::MothronEgg
+            | NpcKind::MothronSpawn => {}
+            // W4-d40: Medusa, GreekSkeleton, GraniteGolem ride the family machine.
+            NpcKind::Medusa
+            | NpcKind::GreekSkeleton
+            | NpcKind::GraniteGolem => self.update_skeleton(world, player, dt),
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
@@ -9757,6 +9799,113 @@ impl Npc {
             | NpcKind::BigMimicJungle
             | NpcKind::Mothron => {
                 self.frame = 0;
+            }
+            NpcKind::MothronEgg
+            | NpcKind::MothronSpawn => {
+                self.frame = 0;
+            }
+            NpcKind::Medusa => {
+                // `FindFrame` case 480 (`NPC.cs:75103-75167`): the ai[2] < 0
+                // petrify wind-up strides rows 21..count, the idle walks rows
+                // 0..7, the walk strides rows 10..count-4; the air pin is row 8.
+                let count = crate::render::entities::npc_rows(self.kind.cs_id());
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                    if self.ai[2] < 0.0 {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 3.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= count { self.frame = 21; }
+                        else if self.frame < 21 { self.frame = 21; }
+                    } else if self.vx == 0.0 {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 4.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame > 7 { self.frame = 0; }
+                    } else {
+                        self.frame_counter += 1.0 + self.vx.abs();
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= count - 4 { self.frame = 10; }
+                        else if self.frame < 10 { self.frame = 10; }
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 8;
+                }
+            }
+            NpcKind::GreekSkeleton => {
+                // `FindFrame` case 481 (`NPC.cs:71454-71515`): the grounded
+                // ai[2] attack ladder reads the ai[1] bands (rows 1/18/17/16
+                // off the 15 base), the idle is row 1, the walk strides 2..14;
+                // the air pin is row 0.
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                    if self.ai[2] > 0.0 {
+                        self.sprite_dir = self.facing;
+                        let a1 = self.ai[1];
+                        let n28 = if a1 < 22.0 { -14 }
+                            else if a1 < 28.0 { 3 }
+                            else if a1 < 34.0 { 2 }
+                            else if a1 < 40.0 { 1 } else { 0 };
+                        self.frame = (15 + n28) as u32;
+                        self.frame_counter = 0.0;
+                    } else if self.vx == 0.0 {
+                        self.frame = 1;
+                    } else {
+                        if self.frame < 2 { self.frame = 2; }
+                        self.frame_counter += self.vx.abs() * 2.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= 15 { self.frame = 2; }
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                }
+            }
+            NpcKind::GraniteGolem => {
+                // `FindFrame` case 482 (`NPC.cs:75202-75258`): the ai[2] < 0
+                // wind-up strides rows 11..count, the idle pins row 0, the
+                // walk strides rows 2..count-10; the air pin is row 1.
+                let count = crate::render::entities::npc_rows(self.kind.cs_id());
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                    if self.ai[2] < 0.0 {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 3.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= count { self.frame = 11; }
+                        else if self.frame < 11 { self.frame = 11; }
+                    } else if self.vx == 0.0 {
+                        self.frame_counter += 1.0;
+                        self.frame = 0;
+                    } else {
+                        self.frame_counter += 0.2 + self.vx.abs();
+                        if self.frame_counter > 8.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= count - 10 { self.frame = 2; }
+                        else if self.frame < 2 { self.frame = 2; }
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 1;
+                }
             }
             NpcKind::DukeFishron => {
                 if self.ai[0] == 0.0 || self.ai[0] == 5.0 {
@@ -19434,6 +19583,12 @@ impl Npc {
             NpcKind::BigMimicHallow => 475,
             NpcKind::BigMimicJungle => 476,
             NpcKind::Mothron => 477,
+            // W4-d40: the vanilla type ids (the G6 key stays injective).
+            NpcKind::MothronEgg => 478,
+            NpcKind::MothronSpawn => 479,
+            NpcKind::Medusa => 480,
+            NpcKind::GreekSkeleton => 481,
+            NpcKind::GraniteGolem => 482,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -24503,7 +24658,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 315] = [
+    pub(super) const ALL_KINDS: [NpcKind; 320] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24782,6 +24937,12 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-d40: MothronEgg, MothronSpawn, Medusa, GreekSkeleton, GraniteGolem.
+        NpcKind::MothronEgg,
+        NpcKind::MothronSpawn,
+        NpcKind::Medusa,
+        NpcKind::GreekSkeleton,
+        NpcKind::GraniteGolem,
         // W4-d40: BigMimicCorruption, BigMimicCrimson, BigMimicHallow, BigMimicJungle, Mothron.
         NpcKind::BigMimicCorruption,
         NpcKind::BigMimicCrimson,
@@ -28447,7 +28608,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            315,
+            320,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
@@ -35011,5 +35172,66 @@ mod w4_d40_bigmimiccorruption_bigmimiccrimson_tests {
         assert_eq!(crate::bestiary::entry_for_npc(NpcKind::BigMimicHallow, SlimeVariant::Blue).net_id, 475);
         assert_eq!(crate::bestiary::entry_for_npc(NpcKind::BigMimicJungle, SlimeVariant::Blue).net_id, 476);
         assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Mothron, SlimeVariant::Blue).net_id, 477);
+    }
+}
+
+/// W4-d40 (NPCID 421-490 roster wave): the MothronEgg, MothronSpawn, Medusa, GreekSkeleton, GraniteGolem
+/// `SetDefaults` rows pin against the C# through the port's piecewise
+/// tables (the small-kinds pin's shape). WRITTEN, NOT RUN (code-only).
+#[cfg(test)]
+mod w4_d40_mothronegg_mothronspawn_tests {
+    use super::*;
+
+    #[test]
+    fn w4_d40_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::MothronEgg, 478u16, 89u8, 34.0, 34.0, 0, 30, 200, 0.7f32, 0.0),
+            (NpcKind::MothronSpawn, 479u16, 90u8, 46.0, 30.0, 50, 14, 700, 0.3f32, 0.0),
+            (NpcKind::Medusa, 480u16, 3u8, 18.0, 40.0, 30, 20, 400, 0.15f32, 1000.0),
+            (NpcKind::GreekSkeleton, 481u16, 3u8, 18.0, 40.0, 22, 10, 70, 0.4f32, 300.0),
+            (NpcKind::GraniteGolem, 482u16, 3u8, 28.0, 48.0, 30, 18, 110, 0.35f32, 500.0),
+        ];
+        for (kind, ty, ai, ww, hh, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (ww, hh), "{kind:?} size");
+            assert_eq!(shell.size(), (ww, hh), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+        }
+        // The HitSound/DeathSound rows (`NPC.cs` SetDefaults).
+        assert_eq!(NpcKind::MothronEgg.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::MothronEgg.death_sound(), Some("NPC_Killed_1"));
+        assert_eq!(NpcKind::MothronSpawn.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::MothronSpawn.death_sound(), Some("NPC_Killed_1"));
+        assert_eq!(NpcKind::Medusa.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::Medusa.death_sound(), Some("NPC_Killed_1"));
+        assert_eq!(NpcKind::GreekSkeleton.hit_sound(), Some("NPC_Hit_2"));
+        assert_eq!(NpcKind::GreekSkeleton.death_sound(), Some("NPC_Killed_2"));
+        assert_eq!(NpcKind::GraniteGolem.hit_sound(), Some("NPC_Hit_41"));
+        assert_eq!(NpcKind::GraniteGolem.death_sound(), Some("NPC_Killed_43"));
+        // The protocol ids keep their vanilla slots (free in the space).
+        assert_eq!(NpcKind::MothronEgg.to_u16(), 478);
+        assert_eq!(NpcKind::from_u16(478), Some(NpcKind::MothronEgg));
+        assert_eq!(NpcKind::MothronSpawn.to_u16(), 479);
+        assert_eq!(NpcKind::from_u16(479), Some(NpcKind::MothronSpawn));
+        assert_eq!(NpcKind::Medusa.to_u16(), 480);
+        assert_eq!(NpcKind::from_u16(480), Some(NpcKind::Medusa));
+        assert_eq!(NpcKind::GreekSkeleton.to_u16(), 481);
+        assert_eq!(NpcKind::from_u16(481), Some(NpcKind::GreekSkeleton));
+        assert_eq!(NpcKind::GraniteGolem.to_u16(), 482);
+        assert_eq!(NpcKind::from_u16(482), Some(NpcKind::GraniteGolem));
+        // The bestiary credits (own entry or the credit-fold).
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::MothronEgg, SlimeVariant::Blue).kind, NpcKind::Mothron);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::MothronSpawn, SlimeVariant::Blue).net_id, 479);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Medusa, SlimeVariant::Blue).net_id, 480);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::GreekSkeleton, SlimeVariant::Blue).net_id, 481);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::GraniteGolem, SlimeVariant::Blue).net_id, 482);
     }
 }

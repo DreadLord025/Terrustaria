@@ -639,6 +639,12 @@ impl NpcKind {
             NpcKind::BigMimicHallow => 475,
             NpcKind::BigMimicJungle => 476,
             NpcKind::Mothron => 477,
+            // W4-d40: MothronEgg, MothronSpawn, Medusa, GreekSkeleton, GraniteGolem keep their vanilla ids (free in the protocol space).
+            NpcKind::MothronEgg => 478,
+            NpcKind::MothronSpawn => 479,
+            NpcKind::Medusa => 480,
+            NpcKind::GreekSkeleton => 481,
+            NpcKind::GraniteGolem => 482,
             NpcKind::WyvernTail => 228,
         }
     }
@@ -1023,6 +1029,12 @@ impl NpcKind {
             475 => NpcKind::BigMimicHallow,
             476 => NpcKind::BigMimicJungle,
             477 => NpcKind::Mothron,
+            // W4-d40: the vanilla ids (`to_u16` above).
+            478 => NpcKind::MothronEgg,
+            479 => NpcKind::MothronSpawn,
+            480 => NpcKind::Medusa,
+            481 => NpcKind::GreekSkeleton,
+            482 => NpcKind::GraniteGolem,
             228 => NpcKind::WyvernTail,
             _ => return None,
         })
@@ -1953,6 +1965,12 @@ impl NpcKind {
             | NpcKind::BigMimicHallow
             | NpcKind::BigMimicJungle => "NPC_Hit_4",
             NpcKind::Mothron => "NPC_Hit_44",
+            // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
+            NpcKind::MothronEgg
+            | NpcKind::MothronSpawn
+            | NpcKind::Medusa => "NPC_Hit_1",
+            NpcKind::GreekSkeleton => "NPC_Hit_2",
+            NpcKind::GraniteGolem => "NPC_Hit_41",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2311,6 +2329,12 @@ impl NpcKind {
             | NpcKind::BigMimicHallow
             | NpcKind::BigMimicJungle => "NPC_Killed_6",
             NpcKind::Mothron => "NPC_Killed_46",
+            // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
+            NpcKind::MothronEgg
+            | NpcKind::MothronSpawn
+            | NpcKind::Medusa => "NPC_Killed_1",
+            NpcKind::GreekSkeleton => "NPC_Killed_2",
+            NpcKind::GraniteGolem => "NPC_Killed_43",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2742,6 +2766,12 @@ impl NpcKind {
             | NpcKind::BigMimicHallow
             | NpcKind::BigMimicJungle => 87,
             NpcKind::Mothron => 88,
+            // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
+            NpcKind::MothronEgg => 89,
+            NpcKind::MothronSpawn => 90,
+            NpcKind::Medusa
+            | NpcKind::GreekSkeleton
+            | NpcKind::GraniteGolem => 3,
             NpcKind::DungeonSpirit => 56,
         }
     }
@@ -3326,6 +3356,12 @@ impl NpcKind {
             | NpcKind::BigMimicHallow
             | NpcKind::BigMimicJungle => (28.0, 44.0),
             NpcKind::Mothron => (80.0, 50.0),
+            // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
+            NpcKind::MothronEgg => (34.0, 34.0),
+            NpcKind::MothronSpawn => (46.0, 30.0),
+            NpcKind::Medusa
+            | NpcKind::GreekSkeleton => (18.0, 40.0),
+            NpcKind::GraniteGolem => (28.0, 48.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
         }
     }
@@ -4028,6 +4064,12 @@ impl NpcKind {
             NpcKind::BigMimicHallow => 3500,
             NpcKind::BigMimicJungle => 3500,
             NpcKind::Mothron => 6000,
+            // W4-d40: the SetDefaults lifeMax rows (`NPC.cs`).
+            NpcKind::MothronEgg => 200,
+            NpcKind::MothronSpawn => 700,
+            NpcKind::Medusa => 400,
+            NpcKind::GreekSkeleton => 70,
+            NpcKind::GraniteGolem => 110,
             NpcKind::DungeonSpirit => 200,
         }
     }
@@ -4446,6 +4488,12 @@ impl NpcKind {
             NpcKind::BigMimicHallow => 90,
             NpcKind::BigMimicJungle => 90,
             NpcKind::Mothron => 80,
+            // W4-d40: the SetDefaults damage rows (`NPC.cs`).
+            NpcKind::MothronEgg => 0,
+            NpcKind::MothronSpawn => 50,
+            NpcKind::Medusa => 30,
+            NpcKind::GreekSkeleton => 22,
+            NpcKind::GraniteGolem => 30,
             NpcKind::DungeonSpirit => 70,
         }
     }
