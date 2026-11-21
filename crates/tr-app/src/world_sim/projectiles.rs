@@ -260,6 +260,22 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         }
     });
     app.projectiles.set_spear_owner(spear_owner);
+    // W4-d9 — the aiStyle-90 lantern's owner snapshot
+    // (`Projectile.cs:32389-32416`'s `Main.player[owner]` reads; the scan
+    // gate's `Main.myPlayer` centre folds onto the same owner — the port
+    // simulates only the local owner's slots single-player). The screen
+    // width rides `app.screen_size()` (the `Main.screenWidth` stand-in).
+    let lantern_owner = app.player.as_ref().map(|p| {
+        let (cx, cy) = p.center();
+        crate::projectile_ai_style90::LanternOwner {
+            center: Vec2::new(cx, cy),
+            direction: p.facing,
+            dead: p.dead,
+            magic_lantern: p.magic_lantern,
+        }
+    });
+    app.projectiles.set_lantern_owner(lantern_owner);
+    app.projectiles.set_screen_width(sw as i32);
 
     // S1-P-i35 — the bobber arm's per-tick player/world snapshot (`AI_061` +
     // `FishingCheck`'s `Main.player[owner]` reads, `Projectile.cs:53658+`).

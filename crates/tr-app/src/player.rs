@@ -723,6 +723,12 @@ pub struct Player {
     /// `Player.DeadlySphereMinion` (`Player.cs:1288`) — buff 161's flag, the
     /// chain's last arm (`:10957-10972`).
     pub deadly_sphere_minion: bool,
+    /// `Player.magicLantern` (`Player.cs:2082`) — the MagicLantern light
+    /// pet's keep-alive flag (the aiStyle-90 arm pins `timeLeft = 2` while
+    /// it stands, `Projectile.cs:32393-32396`). The grant side (`:11372`,
+    /// the light-pet buff pass) is unported — the flag stays false until it
+    /// lands; the reset (`:18485`) rides the buff-clear pass (W4-d9).
+    pub magic_lantern: bool,
     /// `Player.dead`: the player is dead and waiting for the respawn timer
     /// (`Player.cs:38908`).
     pub dead: bool,
@@ -2619,6 +2625,8 @@ impl Player {
             stardust_guardian: false,
             stardust_dragon: false,
             deadly_sphere_minion: false,
+            // W4-d9 — the MagicLantern keep-alive flag (the field block).
+            magic_lantern: false,
             x: sx,
             y: sy,
             prev_x: sx,

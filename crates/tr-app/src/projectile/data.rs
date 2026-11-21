@@ -2495,6 +2495,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // aiStyle 89, hostile, alpha 255, ignoreWater, tileCollide false,
             // timeLeft 600, netImportant. The stock penetrate 1 (`:774`) stands.
             CULTIST_RITUAL => (14.0, 14.0, 89, 1, 600, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d9 — `Projectile.cs:5645-5654`: the MagicLantern (492): 18x32,
+            // aiStyle 90, friendly, penetrate −1, timeLeft ×5 = 18000,
+            // netImportant. The stock tileCollide true (`:775`) stands.
+            MAGIC_LANTERN => (18.0, 32.0, 90, -1, 5 * TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // `Projectile.cs:5329-5339` — the Phantasmal Bolt (462): 8x8,
             // aiStyle 1, hostile, `alpha = 255`, extraUpdates 3, tileCollide
             // false, ignoreWater. S1-D-5 carries the C# alpha (the slice-B
@@ -4174,6 +4178,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             )
             // W4-d9 — `Projectile.cs:5665`: the CultistRitual's netImportant.
             || kind == CULTIST_RITUAL
+            // W4-d9 — `Projectile.cs:5647`: the MagicLantern's netImportant.
+            || kind == MAGIC_LANTERN
             // S1-P-i55 — `Projectile.cs:7628`: the golf balls (721 + the 14
             // dyed twins) set `netImportant = true` themselves.
             || matches!(kind, GOLF_BALL | 739..=752),

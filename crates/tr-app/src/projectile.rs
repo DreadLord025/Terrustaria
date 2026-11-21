@@ -14199,7 +14199,7 @@ pub(crate) fn safe_normalize(v: Vec2) -> Vec2 {
 /// non-actuated, solid, non-solidTop tile for a strict box overlap (the
 /// halfBrick shrinks the tile's top by 8). The falling star's `ai[1]` latch
 /// reads it (`Projectile.cs:23871`).
-fn solid_collision(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
+pub(crate) fn solid_collision(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
     let x0 = ((pos.x / 16.0) as i32 - 1).clamp(0, world.width - 1);
     let x1 = (((pos.x + w) / 16.0) as i32 + 2).clamp(0, world.width - 1);
     let y0 = ((pos.y / 16.0) as i32 - 1).clamp(0, (world.height - 40).max(0));
@@ -14500,6 +14500,19 @@ pub struct ProjectilePool {
     /// churn). `None` = no player link: the aiStyle-19 arm holds the slot
     /// (the orphan guard, the yoyo precedent).
     spear_owner: Option<crate::projectile_ai_spear::SpearOwner>,
+    /// W4-d9 — the aiStyle-90 lantern's per-tick snapshot
+    /// (`Projectile.cs:32389-32416`'s `Main.player[owner]` reads + the
+    /// `Main.myPlayer` centre the scan gate reads — single-player folds
+    /// them onto one owner). The world-sim pass sets it through
+    /// [`ProjectilePool::set_lantern_owner`] (the `set_spear_owner`
+    /// precedent); `None` = no player link (the arm holds the slot).
+    lantern_owner: Option<crate::projectile_ai_style90::LanternOwner>,
+    /// W4-d9 — `Main.screenWidth` as the lantern's scan gate reads it
+    /// (`Projectile.cs:32416`). Fed per fixed step through
+    /// [`ProjectilePool::set_screen_width`] from `app.screen_size()`
+    /// (the `set_disco` precedent); the default mirrors the headless
+    /// 1280x720 fallback.
+    screen_width: i32,
     /// S1-P-i06 — the lances' channel-hold write-back (`SetDummyItemTime`,
     /// `Projectile.cs:45941`): the `itemAnimation`/`itemTime` value the arm
     /// asks the owner to re-arm this tick. The world-sim pass drains it after
@@ -14915,6 +14928,8 @@ impl ProjectilePool {
             pending_proj_sounds: Vec::new(),
             pending_channel_tracks: Vec::new(),
             spear_owner: None,
+            lantern_owner: None,
+            screen_width: 1280,
             pending_spear_hold: None,
             bobber_inputs: None,
             pending_splashes: Vec::new(),
@@ -15147,6 +15162,21 @@ impl ProjectilePool {
     /// pattern). `None` clears the link (the arm's orphan guard).
     pub fn set_spear_owner(&mut self, owner: Option<crate::projectile_ai_spear::SpearOwner>) {
         self.spear_owner = owner;
+    }
+
+    /// W4-d9 — the aiStyle-90 lantern's owner snapshot
+    /// (`Projectile.cs:32389-32416`). The world-sim pass builds it per fixed
+    /// step from the live player (the `set_spear_owner` pattern). `None`
+    /// clears the link (the dispatch's orphan guard).
+    pub fn set_lantern_owner(&mut self, owner: Option<crate::projectile_ai_style90::LanternOwner>) {
+        self.lantern_owner = owner;
+    }
+
+    /// W4-d9 — `Main.screenWidth` for the lantern's scan gate
+    /// (`Projectile.cs:32416`). The world-sim pass feeds `app.screen_size()`
+    /// per fixed step (the `set_disco` pattern).
+    pub fn set_screen_width(&mut self, width: i32) {
+        self.screen_width = width;
     }
 
     /// S1-P-i06 — drain the lances' channel-hold write-back
@@ -17943,6 +17973,27 @@ impl ProjectilePool {
                                 rng,
                             );
                             self.slots[i].kill_step(world);
+                        }
+                        // W4-d9 — the aiStyle-90 MagicLantern 492 light pet
+                        // (`Projectile.cs:32387-32514`): the owner-death
+                        // kill, the keep-alive, the tileCollide flip, the
+                        // 10-tick spelunker scan (the Next(4) draws
+                        // consumed), the hover accel + the rotation/frame
+                        // cycles. The `:32490` return exits AI() only —
+                        // Update still moves the slot, so kill_step runs
+                        // either way. The owner snapshot rides the
+                        // `set_lantern_owner` seam (no player → hold).
+                        90 => {
+                            if let Some(lo) = self.lantern_owner {
+                                crate::projectile_ai_style90::ai_magic_lantern(
+                                    &mut self.slots[i],
+                                    world,
+                                    lo,
+                                    self.screen_width,
+                                    rng,
+                                );
+                                self.slots[i].kill_step(world);
+                            }
                         }
                         102 => {
                             let player = owner.unwrap_or((0.0, 0.0));
