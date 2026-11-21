@@ -166,6 +166,7 @@ mod npc_findframe_extra5;
 mod npc_findframe_extra6;
 mod npc_findframe_extra7;
 mod npc_findframe_extra7b;
+mod npc_findframe_extra7c;
 mod npc_findframe_low1;
 mod persist;
 mod grapple;
