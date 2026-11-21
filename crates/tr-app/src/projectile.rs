@@ -8798,12 +8798,12 @@ impl Projectile {
     }
 
     /// S1-P-i21 — `AI()`'s aiStyle-45 moving-cloud arm (`Projectile.cs:27952-
-    /// 27986`, the `type == 237 || type == 243` branch; the 243 Blood Cloud is
-    /// not a ported kind). The cloud flies to the cursor point cached in
+    /// 27986`, the `type == 237 || type == 243` branch; W4-g2 d5 F5 rows the
+    /// 243 Blood Cloud twin). The cloud flies to the cursor point cached in
     /// `ai[0..1]` (the shoot arm writes it): each axis zeroes once it reaches
     /// or passes the target, and when both rest the cloud dies (`:27960-
-    /// 27973`) — the kill hook spawns the raining cloud 238. The rotation rides
-    /// `velocity.X * 0.02f` and the 4-frame sheet wraps (`:27975-27985`).
+    /// 27973`) — the kill hook spawns the raining twin (238/244). The rotation
+    /// rides `velocity.X * 0.02f` and the 4-frame sheet wraps (`:27975-27985`).
     fn ai_rain_cloud_moving(&mut self, world: &World) {
         let tx = self.ai[0];
         let ty = self.ai[1];
@@ -8842,14 +8842,35 @@ impl Projectile {
     }
 
     /// S1-P-i21 — `AI()`'s aiStyle-45 rain-drop arm (`Projectile.cs:28084-
-    /// 28105`, the `type == 239 || type == 245 || type == 264` branch; the
-    /// 245/264 hostile twins are not ported kinds). The 239 sets alpha 50
-    /// (`:28093-28096`); the shimmer bounce (`:28086-28092`) folds out — the
-    /// port carries no shimmer-liquid state on the tile. The drop falls at its
-    /// spawn `vy = 5` through the generic movement.
+    /// 28105`, the `type == 239 || type == 245 || type == 264` branch). The
+    /// 239 sets alpha 50 (`:28093-28096`), the blood drop 245 alpha 100
+    /// (`:28097-28100`), the hostile nimbus drop 264 the rotation
+    /// `atan2(vy, vx) + 1.57` (`:28101-28104`) — W4-g2 (d5 F5) rows all
+    /// three. The shimmer bounce (`:28086-28092`) is LIVE (W4-g2 — d5's F5
+    /// recorded the fold-out stale: the tile now carries
+    /// `liquid_kind() == Shimmer`): a full shimmer cell at the drop's
+    /// bottom-centre tile flips a falling `vy` and syncs. The drop falls at
+    /// its spawn `vy = 5` through the generic movement.
     fn ai_rain_drop(&mut self, world: &World) {
-        // `:28093-28096`: the 239's alpha.
-        self.alpha = 50;
+        // `:28086-28092`: the shimmer bounce — `(int)(Center.X / 16f)`,
+        // `(int)((position.Y + height) / 16f)`, the full-liquid shimmer
+        // cell and a falling drop.
+        let tx = ((self.pos.x + self.w * 0.5) / TILE_PX) as i32;
+        let ty = ((self.pos.y + self.h) / TILE_PX) as i32;
+        let shimmer = world
+            .tile(tx, ty)
+            .is_some_and(|t| t.liquid == u8::MAX && t.liquid_kind() == tr_core::tile::LiquidKind::Shimmer);
+        if shimmer && self.vel.y > 0.0 {
+            self.vel.y *= -1.0;
+            self.net_update = true;
+        }
+        // `:28093-28104`: the per-kind pin.
+        match self.kind {
+            RAIN_FRIENDLY => self.alpha = 50,
+            BLOOD_RAIN => self.alpha = 100,
+            RAIN_NIMBUS => self.rot = self.vel.y.atan2(self.vel.x) + 1.57,
+            _ => {}
+        }
         self.kill_step(world);
     }
 
@@ -17267,8 +17288,10 @@ impl ProjectilePool {
                             self.slots[i].kill_step(world);
                         }
                         44 => {
-                            if matches!(self.slots[i].kind, CHLOROPHYTE_SPORE_CLOUD | THUNDER_SPEAR_BOLT) {
-                                crate::projectile_ai_spear::ai_spear_subshot_44(&mut self.slots[i]);
+                            // W4-g2 (d5 F6): the Partisan's orb 229 joins
+                            // the 228/732 riders (its own arm branch).
+                            if matches!(self.slots[i].kind, CHLOROPHYTE_SPORE_CLOUD | THUNDER_SPEAR_BOLT | CHLOROPHYTE_ORB) {
+                                crate::projectile_ai_spear::ai_spear_subshot_44(&mut self.slots[i], world);
                             }
                             self.slots[i].kill_step(world);
                         }
@@ -17827,9 +17850,14 @@ impl ProjectilePool {
                         // cursor, the raining cloud spawns the drops and caps
                         // the owner at two (pool-side), the drop falls.
                         45 => match self.slots[i].kind {
-                            RAIN_CLOUD_MOVING => self.slots[i].ai_rain_cloud_moving(world),
-                            RAIN_CLOUD_RAINING => self.nimbus_step(i, world, rng),
-                            RAIN_FRIENDLY => self.slots[i].ai_rain_drop(world),
+                            // W4-g2 (d5 F5): the Blood Rain twins ride the
+                            // same arms (`:27952`/`:27987`/`:28084` gate on
+                            // 237|243 / 238|244 / 239|245|264).
+                            RAIN_CLOUD_MOVING | BLOOD_CLOUD_MOVING => {
+                                self.slots[i].ai_rain_cloud_moving(world)
+                            }
+                            RAIN_CLOUD_RAINING | BLOOD_CLOUD_RAINING => self.nimbus_step(i, world, rng),
+                            RAIN_FRIENDLY | BLOOD_RAIN | RAIN_NIMBUS => self.slots[i].ai_rain_drop(world),
                             _ => {}
                         },
                         // The aiStyle-129 spirit flame (`:36198-36309`): the
@@ -20007,6 +20035,10 @@ impl ProjectilePool {
                 // S1-P-i21 — `Kill()`'s type-237 arm (`:74535-74538`): the
                 // moving cloud's death spawns the raining cloud 238.
                 self.spawn_rain_cloud(i);
+                // W4-g2 (d5 F6) — `Kill()`'s type-229 arm (`:74450-74474`):
+                // the Partisan orb's death cue + the rowless-1128 child
+                // burst (the draws kept, the spawn declines until its row).
+                self.chlorophyte_orb_kill(i, rng);
                 // (Resync keep-one: the i22 `spawn_electrosphere` call was
                 // dropped — main's i16 `dart_electro_firework_kill` below
                 // owns the 442 arm (:73528-73552), keeping both would
@@ -21840,17 +21872,22 @@ impl ProjectilePool {
     }
 
     /// S1-P-i21 — `AI()`'s aiStyle-45 Nimbus chain (`Projectile.cs:27950-
-    /// 28105`), pool-side: the raining cloud's rain spawn and its two-cloud
-    /// cap need the whole pool, so they are not slot arms (the magnet
-    /// sphere's precedent). The moving cloud's fly-to-cursor half and the
-    /// rain drop's shimmer bounce are slot arms ([`Projectile::ai_rain_cloud_moving`]
+    /// 28105`), pool-side: the raining cloud's rain spawn and its owner cap
+    /// need the whole pool, so they are not slot arms (the magnet sphere's
+    /// precedent). The moving cloud's fly-to-cursor half and the rain drop's
+    /// shimmer bounce are slot arms ([`Projectile::ai_rain_cloud_moving`]
     /// / [`Projectile::ai_rain_drop`]); the moving cloud's death → raining
     /// cloud spawn is the kill hook ([`Self::spawn_rain_cloud`]).
+    /// W4-g2 (d5 F5): the blood twin 244 rides the SAME machine — the C#
+    /// gates are `type == 238 || type == 244` (`:27987`), with the 244's
+    /// rain cadence 10 (`:28030`) vs 8 and owner cap 1 (`:28072`) vs 2, and
+    /// its drop the 245 (`:28035`).
     fn nimbus_step(&mut self, slot: usize, world: &World, rng: &mut dyn DropRng) {
         let kind = self.slots[slot].kind;
-        if kind != RAIN_CLOUD_RAINING || self.slots[slot].owner != 0 {
+        if !matches!(kind, RAIN_CLOUD_RAINING | BLOOD_CLOUD_RAINING) || self.slots[slot].owner != 0 {
             return;
         }
+        let blood = kind == BLOOD_CLOUD_RAINING;
         // `:27989-27995`: the ground test — a 2×20 box at the cloud's bottom
         // centre; solid tiles below stop the rain.
         let cx = (self.slots[slot].pos.x + self.slots[slot].w * 0.5) as i32;
@@ -21867,8 +21904,8 @@ impl ProjectilePool {
                 self.slots[slot].frame = 0;
             }
         }
-        // `:28006-28015`: the age counter; past 18000 the cloud fades 5/tick
-        // and dies at alpha 255.
+        // `:28006-28024`: the age counter; past 18000 the cloud fades 5/tick
+        // and dies at alpha 255 (the 244 and 238 arms are identical bodies).
         self.slots[slot].ai[1] += 1.0;
         if self.slots[slot].ai[1] >= 18000.0 {
             self.slots[slot].alpha += 5;
@@ -21879,11 +21916,13 @@ impl ProjectilePool {
             }
             return;
         }
-        // `:28025-28047`: over ground, the rain counter runs; past 8 it resets
-        // and spawns the drop 239 at `cx + Next(-14, 15)`, `vy = 5`.
+        // `:28025-28047`: over ground, the rain counter runs; past 8 (the
+        // 244: past 10, `:28030`) it resets and spawns the drop 239/245 at
+        // `cx + Next(-14, 15)`, `vy = 5`.
         if over_ground {
             self.slots[slot].ai[0] += 1.0;
-            if self.slots[slot].ai[0] > 8.0 {
+            let cadence = if blood { 10.0 } else { 8.0 };
+            if self.slots[slot].ai[0] > cadence {
                 self.slots[slot].ai[0] = 0.0;
                 let x = cx as f32 + rng.next_range(-14, 15) as f32;
                 let (damage, owner) = {
@@ -21892,14 +21931,17 @@ impl ProjectilePool {
                 };
                 // The C# spawns at the bottom-centre point; the port's spawn
                 // takes the top-left, so the 4×40 drop is re-centred on x.
-                let Some(row) = proj_data(RAIN_FRIENDLY) else { return };
+                let drop_kind = if blood { BLOOD_RAIN } else { RAIN_FRIENDLY };
+                let Some(row) = proj_data(drop_kind) else { return };
                 self.spawn_with_data_ai_owned(
-                    RAIN_FRIENDLY, owner, x - row.w * 0.5, bottom as f32, 0.0, 5.0, damage, 0.0, 0.0, 0.0,
+                    drop_kind, owner, x - row.w * 0.5, bottom as f32, 0.0, 5.0, damage, 0.0, 0.0, 0.0,
                 );
             }
         }
         // `:28048-28082`: every 10 ticks the cloud counts its owner's living
-        // raining clouds and, past two, ages out the oldest (`ai[1] = 18000`).
+        // raining clouds and, past two (the 244: past ONE, `:28072`), ages
+        // out the oldest (`ai[1] = 18000`). The count is per-kind (`num330
+        // = this.type`, `:28057`) — the two families never mix.
         self.slots[slot].local_ai[0] += 1.0;
         if self.slots[slot].local_ai[0] < 10.0 {
             return;
@@ -21910,7 +21952,7 @@ impl ProjectilePool {
         let mut oldest = usize::MAX;
         let mut oldest_age = 0.0f32;
         for (j, p) in self.slots.iter().enumerate() {
-            if p.active && p.owner == owner && p.kind == RAIN_CLOUD_RAINING && p.ai[1] < 18000.0 {
+            if p.active && p.owner == owner && p.kind == kind && p.ai[1] < 18000.0 {
                 count += 1;
                 if p.ai[1] > oldest_age {
                     oldest = j;
@@ -21918,28 +21960,95 @@ impl ProjectilePool {
                 }
             }
         }
-        if count > 2 && oldest != usize::MAX {
+        let cap = if blood { 1 } else { 2 };
+        if count > cap && oldest != usize::MAX {
+            // `:28074`/`:28080`: the aged-out cloud syncs.
+            self.slots[oldest].net_update = true;
             self.slots[oldest].ai[1] = 18000.0;
         }
     }
 
-    /// S1-P-i21 — `Kill()`'s type-237 arm (`Projectile.cs:74535-74538`): the
-    /// moving cloud's death spawns the raining cloud 238 at its centre with
-    /// the same damage/knockback/owner. Owner-only, one-shot per cloud (the
-    /// `blast_spawned` flag, the inferno-bolt precedent), kind-gated so the
-    /// raining cloud never chains a second spawn.
+    /// S1-P-i21 — `Kill()`'s type-237/243 arms (`Projectile.cs:74535-74542`):
+    /// the moving cloud's death spawns the raining twin (238/244) at its
+    /// centre with the same damage/knockback/owner. Owner-only, one-shot per
+    /// cloud (the `blast_spawned` flag, the inferno-bolt precedent),
+    /// kind-gated so the raining cloud never chains a second spawn.
     fn spawn_rain_cloud(&mut self, slot: usize) {
         let p = &self.slots[slot];
-        if p.blast_spawned || p.kind != RAIN_CLOUD_MOVING || p.owner != 0 {
+        if p.blast_spawned || p.owner != 0 {
             return;
         }
+        let raining_kind = match p.kind {
+            RAIN_CLOUD_MOVING => RAIN_CLOUD_RAINING,
+            // W4-g2 (d5 F5): `:74539-74542` — the blood twin's arm.
+            BLOOD_CLOUD_MOVING => BLOOD_CLOUD_RAINING,
+            _ => return,
+        };
         let (cx, cy) = (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
         let (damage, knock_back, owner) = (p.damage, p.knock_back, p.owner);
         self.slots[slot].blast_spawned = true;
-        let Some(row) = proj_data(RAIN_CLOUD_RAINING) else { return };
+        let Some(row) = proj_data(raining_kind) else { return };
         self.spawn_with_data_ai_owned(
-            RAIN_CLOUD_RAINING, owner, cx - row.w * 0.5, cy - row.h * 0.5, 0.0, 0.0, damage, knock_back, 0.0, 0.0,
+            raining_kind, owner, cx - row.w * 0.5, cy - row.h * 0.5, 0.0, 0.0, damage, knock_back, 0.0, 0.0,
         );
+    }
+
+    /// W4-g2 (d5 F6) — `Kill()`'s type-229 arm (`Projectile.cs:74450-74474`):
+    /// the Partisan orb's death plays `SoundID.Item167` (every owner — the
+    /// cue precedes the owner gate) and, owner-only, bursts 32 spore-cloud
+    /// children (1128, two rows of 16, `:74456-74465`). The children are
+    /// ROWLESS (the aiStyle-92 claymore cloud is another family — a
+    /// recorded follow-up, the d5 census convention): the loop is ported
+    /// VERBATIM with its 64 `Main.rand` draws KEPT in order (`:74462`:
+    /// `Next(-25, 26)` X then `Next(-45, 46)` Y per child, `num533` 0..2 ×
+    /// `num534` 0..16) so the UpdateProjectiles stream stays aligned; the
+    /// spawn itself rides `spawn_with_data_ai_owned`, whose `proj_data`
+    /// guard silently declines the rowless 1128 until its row lands (the
+    /// same seam this task closes for the 229). The velocity maths
+    /// (`num535 = num534 / 4`, `num536 = num534 % 4`, the X/Y rolls with
+    /// the `0.35 + 0.125 * (num535 + 1)` velocity weight) rides the
+    /// request so the 1128 round needs no re-derivation. The 25× dust-157
+    /// tail (`:74467-74473`) draws nothing (the plain `Dust.NewDust`
+    /// overload) — skipped with the dust layer. The cue pushes straight
+    /// into the pool's queue: the death hook runs AFTER the sub-step
+    /// loop's `wants_sound` drain (the golf `tick.sounds` precedent).
+    fn chlorophyte_orb_kill(&mut self, slot: usize, rng: &mut dyn DropRng) {
+        let p = &self.slots[slot];
+        if p.kind != CHLOROPHYTE_ORB {
+            return;
+        }
+        // `:74452` — the death cue at `base.position`.
+        self.pending_proj_sounds
+            .push((2, 167, p.pos.x, p.pos.y, 0.0));
+        // `:74453-74466` — the owner-gated 32-child burst.
+        if p.owner != 0 {
+            return;
+        }
+        let (cx, cy) = (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        let (vx, vy, owner) = (p.vel.x, p.vel.y, p.owner);
+        for _ in 0..2 {
+            for num534 in 0..16i32 {
+                let num535 = num534 / 4;
+                let num536 = num534 % 4;
+                // `:74462` — the X roll first, then the Y roll (the C#
+                // constructor evaluates X before Y).
+                let sx = num536 as f32 - 2.0
+                    + (rng.next_range(-25, 26) as f32 * 0.01
+                        + vx * (0.35 + 0.125 * (num535 + 1) as f32));
+                let sy = rng.next_range(-45, 46) as f32 * 0.01;
+                // `:74463` — `NewProjectile(Center.X + num536 * 8 - 16,
+                // Center.Y, ..., 1128, 40, 0f, owner)`: the C# spawn takes
+                // the CENTRE and offsets the box (`:10876-10877`); the
+                // port's spawn takes the top-left, so the child's half-box
+                // comes off (the style-57 dispatch's `map_or` idiom — the
+                // rowless 1128 reads 0 until its row lands, and the spawn
+                // declines before the position is used either way).
+                let x = cx + (num536 * 8 - 16) as f32
+                    - proj_data(1128).map_or(0.0, |d| d.w) * 0.5;
+                let y = cy - proj_data(1128).map_or(0.0, |d| d.h) * 0.5;
+                self.spawn_with_data_ai_owned(1128, owner, x, y, sx, sy, 40, 0.0, 0.0, 0.0);
+            }
+        }
     }
 
     /// `Kill()`'s bomb path: `PrepareBombToBlow` (`Projectile.cs:46770-
