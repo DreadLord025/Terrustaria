@@ -201,6 +201,11 @@ mod projectile_ai_misc;
 // projectile/data.rs; the dispatch arms (14-gate + 33) are wired in
 // projectile.rs::update. Code-only mode — witness tests written not run.
 mod projectile_ai_light_items;
+// W4-g78 DOC-SWEEP lane 4: the SpelunkerProjectileHelper ore-spot dust
+// helper (SpelunkerProjectileHelper.cs:6-67) - PORTED-UNWIRED, the 473
+// glowstick head's AddSpotToCheck call + the PreUpdateAllProjectiles
+// cadence are the wiring lane's merge step (research/76).
+mod spelunker_helper;
 // S1-P-i55 golf: the two golf projectile AIs (721/739-752 aiStyle 149,
 // 722 aiStyle 150) + the club strike / tee placement / cup scoring,
 // reusing tr-core's golf.rs + golf_state.rs (code-only round — the
