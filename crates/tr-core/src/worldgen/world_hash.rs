@@ -238,6 +238,17 @@ mod tests {
     // S1-P-i33 (code-only): the wall-framing mask fix (see DEFAULT_WORLD
     // below) moves this pin too — glass & co. beside a wall change the
     // generated `wall_frame`. Stale-by-design; the gate re-pins it.
+    // W4-d105 lane 5 (2026-11-20, code-only): the classic unexecuted passes
+    // #37-45 land one per commit — Guide (the gen-time starter-NPC ledger,
+    // `WorldGen.cs:19685-19897`), Sunflowers (`:19898`), Herbs (`:19964`),
+    // Dye Plants (`:19981`), Flowers (`:20447`), Mushrooms (`:20599`),
+    // Random Gems (`:20729`), Moss Grass (`:20769`) and Larva (`:20868`).
+    // Each draws from its own `pass_rng("<vanilla name>")` stream (no other
+    // step's ledger shifts), but the tile writes move every world's hash BY
+    // DESIGN. The re-pins are DEFERRED to the merge gate (no compiler on
+    // this branch); the `a == b` determinism halves stay untouched. The
+    // Guide pass writes no tiles (the NPC ledger is not hashed), so its
+    // commit alone moves neither pin.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its

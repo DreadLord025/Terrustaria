@@ -1282,6 +1282,61 @@ fn apply_pose_pin(world: &mut World, mut p: Option<&mut crate::player::Player>, 
     world.revision = world.revision.wrapping_add(1);
 }
 
+/// The gen-time starter ledger's name resolution — `NPC.getNewNPCName`
+/// (`NPC.cs:7281-7325`): the kind's `RandomFromCategory(<Kind>Names,
+/// genRand)` pick, the raw draw word carried by the ledger record
+/// (`worldgen::starter_npcs`). The category size resolves the index exactly
+/// like `LanguageManager.RandomFromCategory` (`value[random.Next(Count)]`).
+/// Kinds with no category (the C#'s `_ => ""` arm) keep the static name.
+fn starter_npc_name(net_id: u16, roll: u32) -> String {
+    let category = match net_id {
+        17 => "MerchantNames",
+        18 => "NurseNames",
+        19 => "ArmsDealerNames",
+        20 => "DryadNames",
+        22 => "GuideNames",
+        38 => "DemolitionistNames",
+        54 => "ClothierNames",
+        107 => "GoblinTinkererNames",
+        108 => "WizardNames",
+        124 => "MechanicNames",
+        160 => "TruffleNames",
+        178 => "SteampunkerNames",
+        207 => "DyeTraderNames",
+        208 => "PartyGirlNames",
+        209 => "CyborgNames",
+        227 => "PainterNames",
+        228 => "WitchDoctorNames",
+        229 => "PirateNames",
+        353 => "StylistNames",
+        368 => "TravelingMerchantNames",
+        369 => "AnglerNames",
+        453 => "SkeletonMerchantNames",
+        441 => "TaxCollectorNames",
+        550 => "BartenderNames",
+        588 => "GolferNames",
+        633 => "BestiaryGirlNames",
+        663 => "PrincessNames",
+        637 => "CatNames_Siamese",
+        638 => "DogNames_Labrador",
+        656 => "BunnyNames_White",
+        670 => "SlimeNames_Blue",
+        678 => "SlimeNames_Green",
+        679 => "SlimeNames_Old",
+        680 => "SlimeNames_Purple",
+        681 => "SlimeNames_Rainbow",
+        682 => "SlimeNames_Red",
+        683 => "SlimeNames_Yellow",
+        684 => "SlimeNames_Copper",
+        _ => return String::new(),
+    };
+    let size = crate::lang::category_size(category);
+    if size == 0 {
+        return String::new();
+    }
+    crate::lang::random_from_category(category, (roll % size as u32) as usize)
+}
+
 impl App {
     /// The swapchain size in pixels (the deterministic fallback mirrors the
     /// `TR_SHOT`/headless default of 1280x720).
@@ -3031,8 +3086,49 @@ impl App {
         if sections.from_wld {
             // The file's roster wins; the Guide spawn is skipped (below).
         } else if sections.native.npcs.is_empty() {
-            if let Some(guide) = Npc::spawn_guide(&world, world.spawn_x) {
-                npcs.push(guide);
+            // W4-d105 lane 5 (#37): the gen-time starter-NPC ledger — the
+            // `Guide` pass (`WorldGen.cs:19685-19897`) spawned these with
+            // `NPC.NewNPC` at generation. A classic world carries exactly
+            // one homeless Guide; the seed worlds carry their own rosters.
+            // The records store the VANILLA netID; the name roll resolves
+            // through the kind's `getNewNPCName` category
+            // (`NPC.cs:7281-7325`).
+            for rec in &world.gen_npcs {
+                let Some((kind, _)) = crate::npc::kind_from_net_id(rec.kind as i32) else {
+                    continue;
+                };
+                let Some(mut npc) =
+                    Npc::spawn_town_at(&world, (rec.x / TILE_PX) as i32, (rec.y / TILE_PX) as i32, kind)
+                else {
+                    continue;
+                };
+                // `NPC.NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80770`) — the
+                // ledger carries the bottom-centre anchor; the port's Npc
+                // x/y is the top-left position.
+                let (w, h) = kind.size();
+                npc.x = rec.x - w * 0.5;
+                npc.y = rec.y - h;
+                // The port folds `NPC.direction` into `facing`
+                // (`npc.rs:1803-1806`).
+                npc.facing = rec.direction;
+                // Every starter spawn is homeless (`homeless = true` in
+                // every arm); the home tile rides the record for the
+                // look-for-home tick.
+                npc.home = None;
+                npc.given_name = if !rec.given_name_key.is_empty() {
+                    crate::lang::text(rec.given_name_key)
+                } else {
+                    starter_npc_name(rec.kind, rec.name_roll)
+                };
+                npcs.push(npc);
+            }
+            // Pre-ledger saves (and a ledger whose spawns all collided)
+            // keep the vanilla-gen arrival: one homeless Guide at the spawn
+            // point, which the look-for-home tick re-houses within seconds.
+            if npcs.is_empty() {
+                if let Some(guide) = Npc::spawn_guide(&world, world.spawn_x) {
+                    npcs.push(guide);
+                }
             }
         } else {
             for rec in &sections.native.npcs {

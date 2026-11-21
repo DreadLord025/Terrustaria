@@ -48,6 +48,7 @@ use super::mini_biomes;
 use super::noise::{Noise, Rng};
 use super::ocean;
 use super::spider_gem_moss;
+use super::starter_npcs;
 use super::structures;
 use super::surface;
 use super::temple;
@@ -1369,6 +1370,15 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("shell piles", "Shell Piles", step_shell_piles),
     step!("slopes", "Smooth World", step_slopes),
     step!("living trees", "Living Trees", step_living_trees),
+    // The vanilla Guide slot (`WorldGen.cs:19685`): after Spawn Point
+    // (`:19460`) / Grass Wall (`:19589`, d104/d106's ranges — not executed
+    // here) and before Sunflowers (`:19898`) / Planting Trees (`:19940`) —
+    // W4-d105 lane 5's first insertion, at the head of the port's tree
+    // family. The Spawn Point product it reads is the world tail's formula,
+    // published early by the adapter (the C# computes it before Guide too).
+    // The pass draws its one name roll per spawn from `pass_rng("Guide")`,
+    // so the insertion shifts no other step's ledger.
+    step!("guide", "Guide", step_guide),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
@@ -2188,6 +2198,44 @@ fn step_moss(
         water_line as f64,
         lava_line as f64,
         hell_top,
+    );
+}
+
+/// `Guide` (`WorldGen.cs:19685-19897`, `GenPassNameID.SpawnStarterNPCs`) —
+/// the gen-time starter town NPCs. The pass reads `Main.spawnTileX/Y`, the
+/// Spawn Point pass's product (`:19460-19588`); the port's Spawn Point is
+/// the world tail's formula, so the adapter publishes it here at pass time
+/// (the C# computes it BEFORE Guide too — more faithful than reading the
+/// tail's late value). Classic worlds use the height-map anchor; remix
+/// scans up from the bottom centre. The name rolls ride `pass_rng("Guide")`.
+fn step_guide(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let (spawn_x, spawn_y) = if opts.flags.contains(crate::seeds::SeedFlags::REMIX) {
+        let x = world.width / 2;
+        let mut y = world.height - 10;
+        while y > 0 && world.tile(x, y).is_some_and(|t| t.active()) {
+            y -= 1;
+        }
+        (x, (y + 1).max(1))
+    } else {
+        let map = gv.map();
+        (
+            map.spawn_center,
+            (map.heights[map.spawn_center as usize] - 6).max(1),
+        )
+    };
+    starter_npcs::pass_starter_npcs(
+        world,
+        opts,
+        spawn_x,
+        spawn_y,
+        &mut streams.pass_rng("Guide"),
     );
 }
 
@@ -3140,7 +3188,9 @@ mod tests {
         // `WorldGen.cs:21066`) between `sword shrines` and `mahogany trees`.
         // S1-K-2 wave C: + `thin ice` (vanilla "Micro Biomes",
         // `WorldGen.cs:20941`) before `campsites`.
-        assert_eq!(names.len(), 66);
+        // W4-d105 lane 5: + `guide` (vanilla "Guide", `WorldGen.cs:19685`)
+        // between `living trees` and `trees`.
+        assert_eq!(names.len(), 67);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3231,6 +3281,7 @@ mod tests {
                 "shell piles",
                 "slopes",
                 "living trees",
+                "guide",
                 "trees",
                 "surface flora",
                 "cacti",
@@ -3437,6 +3488,31 @@ mod tests {
         assert_eq!(pos("thin ice") + 1, pos("campsites"));
         assert!(pos("thin ice") < pos("sword shrines"));
         assert!(pos("thin ice") < pos("mahogany trees"));
+    }
+
+    /// W4-d105 lane 5 (#37): `guide` sits in its vanilla slot — after the
+    /// Spawn Point / Grass Wall pair (`WorldGen.cs:19460` / `:19589`, the
+    /// siblings' ranges) and before Sunflowers (`:19898`) / Planting Trees
+    /// (`:19940`). The port's tree family stands in for the unexecuted
+    /// Spawn Point / Grass Wall / Sunflowers slots, so the step lands at the
+    /// head of the family, immediately before `trees`.
+    #[test]
+    fn w4_d105_the_guide_step_sits_before_the_trees() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("guide") + 1, pos("trees"));
+        assert_eq!(names[pos("guide") - 1], "living trees");
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Spawn Point") < cpos("Guide"));
+        assert!(cpos("Grass Wall") < cpos("Guide"));
+        assert!(cpos("Guide") < cpos("Sunflowers"));
+        assert!(cpos("Guide") < cpos("Planting Trees"));
     }
 
     #[test]

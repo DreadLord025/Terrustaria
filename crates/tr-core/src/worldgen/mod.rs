@@ -39,6 +39,7 @@ mod ocean;
 pub mod pipeline;
 pub mod progress;
 mod spider_gem_moss;
+pub mod starter_npcs;
 mod structures;
 mod surface;
 mod temple;
@@ -324,6 +325,35 @@ mod tests {
                 (x.kind, x.wall, x.flags, x.frame_x, x.frame_y),
                 (y.kind, y.wall, y.flags, y.frame_x, y.frame_y)
             );
+        }
+    }
+
+    /// W4-d105 lane 5 (#37): the Guide pass lands its starter-NPC ledger
+    /// through the full pipeline — a classic world carries exactly one
+    /// homeless Guide (netID 22) at the spawn point, and two generations of
+    /// the same seed agree record-for-record (the name roll is
+    /// stream-deterministic).
+    #[test]
+    fn w4_d105_the_guide_ledger_lands_at_generation() {
+        let opts = GenOptions {
+            width: 512,
+            height: 512,
+            seed: 42,
+            ..Default::default()
+        };
+        let a = generate(&opts);
+        assert_eq!(a.gen_npcs.len(), 1, "one classic Guide");
+        let n = &a.gen_npcs[0];
+        assert_eq!(n.kind, 22);
+        assert_eq!((n.home_x, n.home_y), (a.spawn_x, a.spawn_y));
+        assert_eq!(n.direction, 1);
+        let b = generate(&opts);
+        assert_eq!(a.gen_npcs.len(), b.gen_npcs.len());
+        for (na, nb) in a.gen_npcs.iter().zip(&b.gen_npcs) {
+            assert_eq!(na.kind, nb.kind);
+            assert_eq!((na.x, na.y), (nb.x, nb.y));
+            assert_eq!((na.home_x, na.home_y), (nb.home_x, nb.home_y));
+            assert_eq!(na.name_roll, nb.name_roll);
         }
     }
 

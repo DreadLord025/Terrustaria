@@ -55,7 +55,13 @@ Jungle `:20813` are already executed steps; #46 Settle Liquids Again
 ## Status
 
 - [x] Range claim documented (this doc)
-- [ ] 37 Guide
+- [x] 37 Guide — `starter_npcs.rs::pass_starter_npcs` (the gen-time NPC
+      ledger `World.gen_npcs`, the App materialises at
+      `enter_loaded_world`); step `guide` before `trees` (the port's tree
+      family stands in for the unexecuted Spawn Point / Grass Wall /
+      Sunflowers slots); witness
+      `w4_d105_the_guide_step_sits_before_the_trees` + 9 unit tests.
+      No tile writes → neither hash pin moves on this commit.
 - [ ] 38 Sunflowers
 - [ ] 39 Herbs
 - [ ] 40 Dye Plants
