@@ -433,11 +433,38 @@ impl Rain {
             // the vanilla state machine (`update_time`) runs on the shared world
             // tick. Only the `cloudAlpha` ramp remains here, per rain tick
             // (documented deviation vs C#'s per-draw ramp, `Main.cs:61909-61924`),
-            // scaled by `max(1, dayRate)` (`:61902-61906`).
+            // scaled by `max(1, dayRate)` (`:61902-61906`). The `gameMenu` ×20
+            // arm (`:61907-61910`) folds — the port's rain rig never ticks in
+            // the menus (the front end runs `update_menu_music`, not this).
             let rate = i.day_rate.max(1) as f32;
             let ramp = RAMP_PER_TICK * rate;
-            let delta = (self.target - self.intensity).clamp(-ramp, ramp);
-            self.intensity += delta;
+            // `Main.cs:61911-61937` — the TWO-arm shape (W4-d130 final):
+            // while raining, `cloudAlpha` chases `maxRaining` in BOTH
+            // directions with the overshoot snap; while NOT raining it
+            // decays toward 0 UNCONDITIONALLY — `maxRaining` is not read
+            // (the earlier single clamp-toward-target was observation-equal
+            // only because `StopRain` zeroes the target; the C# arm is
+            // independent of it).
+            if self.raining {
+                // `:61913-61928`.
+                if self.intensity > self.target {
+                    self.intensity -= ramp;
+                    if self.intensity < self.target {
+                        self.intensity = self.target;
+                    }
+                } else if self.intensity < self.target {
+                    self.intensity += ramp;
+                    if self.intensity > self.target {
+                        self.intensity = self.target;
+                    }
+                }
+            } else {
+                // `:61930-61937`: the dry decay, floor 0.
+                self.intensity -= ramp;
+                if self.intensity < 0.0 {
+                    self.intensity = 0.0;
+                }
+            }
         }
 
         // `cloudBGAlpha` ramps toward the storm strength (kept at 10× the
@@ -2025,6 +2052,54 @@ mod tests {
         run(&mut rain, &w, 600);
         let a = rain.visual_alpha();
         assert!(a > 0.1 && a < 0.5, "ramp {a}");
+    }
+
+    /// W4-d130 final — the ramp's TWO arms (`Main.cs:61911-61937`): the
+    /// raining arm chases `maxRaining` in BOTH directions with the
+    /// overshoot snap; the NOT-raining arm decays toward 0 ignoring
+    /// `maxRaining` entirely.
+    #[test]
+    fn the_ramp_arms_chase_while_raining_and_decay_to_zero_when_dry() {
+        let w = ground();
+        let i = inputs(); // dayRate 1 → the 0.0005 step
+        let step = 1.0 / 60.0;
+        // The rain-start ramp: 0 → target 0.8, one step per tick.
+        let mut start = Rain::with_forced(11, None, false);
+        start.raining = true;
+        start.target = 0.8;
+        start.update(&w, &i, step, None);
+        assert!((start.intensity - 0.0005).abs() < 1e-9);
+        // The ChangeRain DOWN-shift while still raining (`:61913-61919`):
+        // intensity 0.8, new target 0.3 — the ramp walks DOWN and snaps
+        // at the target (no overshoot below it).
+        let mut down = Rain::with_forced(11, None, false);
+        down.raining = true;
+        down.target = 0.3;
+        down.intensity = 0.3002;
+        down.update(&w, &i, step, None);
+        assert_eq!(down.intensity, 0.3, "the overshoot snap (`:61916-61919`)");
+        // The up-shift snap (`:61924-61927`).
+        let mut up = Rain::with_forced(11, None, false);
+        up.raining = true;
+        up.target = 0.3;
+        up.intensity = 0.2998;
+        up.update(&w, &i, step, None);
+        assert_eq!(up.intensity, 0.3, "the up overshoot snap");
+        // The rain-STOP decay (`:61930-61937`): NOT raining with a stale
+        // NON-ZERO maxRaining — the C# ignores the target and decays to 0.
+        // (StopRain zeroes the target in the live flow; this pins the arm
+        // itself, the shape the earlier clamp-toward-target lacked.)
+        let mut dry = Rain::with_forced(11, None, false);
+        dry.raining = false;
+        dry.target = 0.8; // stale — the dry arm must NOT chase it
+        dry.intensity = 0.001;
+        dry.update(&w, &i, step, None);
+        assert!((dry.intensity - 0.0005).abs() < 1e-9, "decays DOWN, not up");
+        dry.update(&w, &i, step, None);
+        assert_eq!(dry.intensity, 0.0, "the 0 floor (`:61933-61936`)");
+        // The floor holds — no negative drift on further dry ticks.
+        dry.update(&w, &i, step, None);
+        assert_eq!(dry.intensity, 0.0);
     }
 
     #[test]

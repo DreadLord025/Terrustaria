@@ -8656,7 +8656,13 @@ verbatim; `RollLuck(25)` consumes the Rain stream through the loot engine's
 (`Next(75,151)В·100В·100 Г—maxTilesX/4200`, `:64670-64673`) is consumed but not stored вЂ”
 coin projectiles are unported. The cloud-alpha ramps (`cloudAlpha` and the
 `cloudBGAlpha` stand-in) scale by `max(1, day_rate)` (`:61902-61906`,
-`:13187/13205` shapes).
+`:13187/13205` shapes). W4-d130 final: the `cloudAlpha` ramp is the C#'s TWO-arm
+shape (`:61911-61937`) — while raining it chases `maxRaining` in both directions
+with the overshoot snap; while NOT raining it decays toward 0 UNCONDITIONALLY
+(the target is not read; the earlier single clamp-toward-target was
+observation-equal only because `StopRain` zeroes the target). `ChangeRain`'s
+three strength bands (`:64730`), the `IsRainingForever` floor skip and the
+`instant` arm were verified covered — no change.
 
 RNG stays per-consumer (the WEATHER-2 convention): Rain's splitmix is the single
 rain-consumer stream (the thunder tiers, the `update_time` rolls, the
