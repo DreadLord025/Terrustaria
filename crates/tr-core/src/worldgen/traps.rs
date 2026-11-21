@@ -301,7 +301,7 @@ fn place_trap(
     x2: i32,
     y2: i32,
     world_surface: f64,
-    rock_layer: f64,
+    _rock_layer: f64,
     lava_line: i32,
     shimmer: (i32, i32),
     boulder_pets: &mut i32,
@@ -509,7 +509,7 @@ fn trap_boulder(
     } else {
         6
     };
-    let mut num21 = x2 + rng.range(-1, 2);
+    let num21 = x2 + rng.range(-1, 2);
     let mut num22 = num - 8;
     // `:9221-9264`: the upward body scan.
     loop {
@@ -1053,7 +1053,8 @@ pub(crate) fn pass_traps(
 mod tests {
     use super::*;
 
-    /// A stone underground with a dirt floor row at 100, walls below.
+    /// A stone underground with a dirt floor row at 100, wall-less so
+    /// the scatter's `wall == 0` gate can place.
     fn trap_world() -> World {
         let mut w = World::new("tr".into(), 900, 600);
         for x in 0..w.width {
@@ -1061,7 +1062,6 @@ mod tests {
                 let i = w.index(x, y);
                 w.tiles[i].kind = 1;
                 w.tiles[i].flags |= FLAG_ACTIVE;
-                w.tiles[i].wall = 1;
             }
         }
         w
@@ -1094,22 +1094,27 @@ mod tests {
     #[test]
     fn w4_d104_34_the_dart_case_wires_the_plate() {
         let mut w = trap_world();
-        // A cave row at 95 with solid walls at x=430 and x=470.
+        // A cave at rows 97..=99 (every possible `num - Next(3)` row)
+        // with solid wall columns at x=430 and x=470 down to the floor.
         for x in 431..470 {
-            let i = w.index(x, 95);
-            w.tiles[i].flags &= !FLAG_ACTIVE;
-        }
-        for dx in -1..=1 {
-            for dy in -2..=0 {
-                let i = w.index(450 + dx, 99 + dy);
+            for y in 97..=99 {
+                let i = w.index(x, y);
                 w.tiles[i].flags &= !FLAG_ACTIVE;
+            }
+        }
+        for x in [430, 470] {
+            for y in 95..100 {
+                let i = w.index(x, y);
+                w.tiles[i].kind = 1;
+                w.tiles[i].flags |= FLAG_ACTIVE;
             }
         }
         let ok = trap_dart(&mut w, 450, 99, 0, &mut crate::worldgen::noise::Rng(7));
         assert!(ok, "the dart placed");
         assert!(w.tile(450, 99).is_some_and(|t| t.active() && t.kind == 135), "the plate");
-        let dart = (430..=470)
-            .any(|x| w.tile(x, 95).is_some_and(|t| t.active() && t.kind == 137));
+        let dart = [430, 470]
+            .iter()
+            .any(|&x| (97..=99).any(|y| w.tile(x, y).is_some_and(|t| t.active() && t.kind == 137)));
         assert!(dart, "the wall dart");
     }
 }
