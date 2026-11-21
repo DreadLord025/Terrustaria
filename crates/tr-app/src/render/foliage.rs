@@ -951,7 +951,7 @@ mod tests {
         // The gate: leaf_frequency(0) = 14000; find a FastRandom seed whose
         // first next_range(0, 14000) == 0 so the spawn fires deterministically.
         let mut gate_seed = None;
-        for seed in 0..4096u64 {
+        for seed in 0..200_000u64 {
             let mut probe = FastRandom::new(seed);
             if probe.next_range(0, wind::leaf_frequency(0.0)) == 0 {
                 gate_seed = Some(seed);

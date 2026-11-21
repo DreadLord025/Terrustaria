@@ -39339,4 +39339,4 @@ refusal, the two-stream census with the gate-stream step pin, the paused
 gate), `tr-core/gore.rs` 8 (the π/180 sway + wind*4 surface term, the
 underground drop, the collision rest switch, the water drift ×0.94 +
 underground zero, honey freeze, lava burn-up, the open-ground resume
-0.1/0/α+20, the 600+255 fade), `sand.rs` 1 (the wind recipe bounds).
+0.1/0/α+20 (then the same-tick fade point → 21), the 600+255 fade), `sand.rs` 1 (the wind recipe bounds).

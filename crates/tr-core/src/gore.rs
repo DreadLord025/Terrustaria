@@ -1966,9 +1966,12 @@ mod tests {
     fn w4_g68_the_rest_phase_drifts_on_water_with_the_wind() {
         let mut world = leaf_physics_world();
         // The rest probe: vector = pos + (4, 0); point = (vector + 1.5) >> 4.
-        // pos (160, 160) → vector (164, 160) → point (10, 10).
+        // pos (160, 160) → vector (164, 160) → point (10, 10). The liquid
+        // rect is `(x*16, y*16 + liquid/16, 16, 16 - liquid/16)` — liquid
+        // 100 gives top 166, height 10, intersecting the 3x3 probe at
+        // (164, 166) (`Gore.cs:1107-1109`).
         let i = world.index(10, 10);
-        world.tiles[i].liquid = 255;
+        world.tiles[i].liquid = 100;
         let mut pool = GorePool::new();
         spawn_leaf(&mut pool, &world, Vec2::new(160.0, 160.0));
         pool.slot_mut(0).velocity = Vec2::new(0.0, -1.0);
@@ -1992,7 +1995,7 @@ mod tests {
     fn w4_g68_honey_freezes_the_rest_drift() {
         let mut world = leaf_physics_world();
         let i = world.index(10, 10);
-        world.tiles[i].liquid = 255;
+        world.tiles[i].liquid = 100;
         world.tiles[i].flags |= crate::tile::FLAG_LIQUID_HONEY;
         let mut pool = GorePool::new();
         spawn_leaf(&mut pool, &world, Vec2::new(160.0, 160.0));
@@ -2008,7 +2011,7 @@ mod tests {
     fn w4_g68_lava_burns_the_leaf() {
         let mut world = leaf_physics_world();
         let i = world.index(10, 10);
-        world.tiles[i].liquid = 255;
+        world.tiles[i].liquid = 100;
         world.tiles[i].flags |= crate::tile::FLAG_LIQUID_LAVA;
         let mut pool = GorePool::new();
         spawn_leaf(&mut pool, &world, Vec2::new(160.0, 160.0));
@@ -2019,7 +2022,9 @@ mod tests {
 
     /// The ground freeing up under a resting leaf resumes the fall
     /// (`Gore.cs:1133-1138`): `velocity.Y = 0.1`, `timeLeft = 0`,
-    /// `alpha += 20`.
+    /// `alpha += 20` — then the same tick's fade tail (`:1149-1156`) adds
+    /// one `DisappearSpeedAlpha` point (timeLeft is already 0), so the
+    /// observable alpha after the tick is 21.
     #[test]
     fn w4_g68_open_ground_resumes_the_fall_and_starts_the_fade() {
         let world = leaf_physics_world(); // no solid under the probe
@@ -2031,7 +2036,7 @@ mod tests {
         let g = pool.slot(0);
         assert_eq!(g.velocity.y, 0.1);
         assert_eq!(g.time_left, 0);
-        assert_eq!(g.alpha, 20);
+        assert_eq!(g.alpha, 21, "the +20 resume plus the same-tick fade point");
     }
 
     /// The fade tail (`Gore.cs:1201-1208` + `:1055-1058`): one
