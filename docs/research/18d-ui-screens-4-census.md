@@ -1,5 +1,10 @@
 # 18d — UIState screens coverage census (W4-f22, verify-only)
 
+> **FINAL (2026-11-21): the UI-screens family is COMPLETE — see
+> [research/144](144-f22-ui-screens-retire.md)** (the retire declaration:
+> all 28 descendants accounted, the claim conflicts below resolved by the
+> landed d84/d85/d86/c24 code, the f22 retire round's five items).
+
 > Wave 4 · task/W4-f22-ui-screens-4 · base a725acb0 · researched 2026-11-20 ·
 > sources: `decompiled/Terraria/GameContent/UI/States/*` (29 files) +
 > `NewCraftingUI.cs`, `crates/tr-app/src/ui/` + `app/flow.rs`, and the pushed

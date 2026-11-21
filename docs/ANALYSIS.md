@@ -7248,6 +7248,24 @@ ANALYSIS deviation); f22's sign editor keeps the `KeyboardState` text
 path — the two layers do not interact until a consumer wires
 `get_input_text` into a front screen.
 
+**The W4-f22 RETIRE declaration (2026-11-21, code-only)** — the UI-screens
+family is COMPLETE (research/144): all 28 `UIState` descendants accounted
+— 26 ported (10 base re-verified in research/18d + 16 across the
+d84/d85/d86/c24 waves) and 2 standing scope-outs (`UIWorldGenDebug`
+dev-only, `UITextWrappingTest` test-only — d86's records). The f22 lane's
+own ports (the card renames, the sign editor end-to-end + the hover/break
+surfaces) are landed; the retire round closed the five hand-off items:
+the d120 dynamic-lines patch (research/143 §1, ported + verified
+equivalent), the sign-TILE placement census (item 171, the registry route
+complete), the one-text-store style verify (+ the wiring-425 exact-origin
+fix), the c25 keep-both compose (above), and the family declaration. The
+recorded follow-ups ride their lanes: the `CheckSign` break-cascade +
+sign-item drops (the break lane — the port's lazy `KillSign` sweep is
+live, the cascade/drops are not), the d2 epitaph write, the g58/f38/d120
+interaction buttons (the panel layout is already dynamic for them). No
+f22 follow-up is open; no cargo/tests/rustfmt/graphify invoked this phase
+— the witnesses are written not run, verified by the C# re-read.
+
 ## Town housing (S1-E-11a, 2026-11-14)
 
 `WorldGen.ScoreRoom` (`WorldGen.cs:5858-5992`) landed in `tr-core::housing`:
