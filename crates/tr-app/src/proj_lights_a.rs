@@ -226,7 +226,8 @@ use glam::Vec2;
 
 use crate::entity_lights::{tile_x, tile_y, XAnchor};
 use crate::projectile::{
-    Projectile, DEADLY_SPHERE, ORNAMENT_HOSTILE, THUNDER_SPEAR_BOLT, VORTEX_RITUAL_BOLT,
+    Projectile, DEADLY_SPHERE, MOONLORD_TURRET, NEBULA_ARCANUM, ORNAMENT_HOSTILE,
+    RAINBOW_CRYSTAL_EXPLOSION, TERRARIAN_BEAM, THUNDER_SPEAR_BOLT, VORTEX_RITUAL_BOLT,
 };
 
 /// The centre tile of a slot's post-step box, quotient-truncated (the
@@ -281,6 +282,41 @@ pub(crate) fn proj_lights_a(
         // then `frameCounter++` and the unconditional centre light (the
         // sim's `ai_vortex_bolt` runs the wrap latch / wand around it).
         out.push((cx, cy, [0.3, 0.45, 0.5]));
+    } else if p.kind == RAINBOW_CRYSTAL_EXPLOSION {
+        // `:34239` + `:34263-34265` — `newColor3 =
+        // Main.hslToRgb(ai[0], 1f, 0.5f)` computed at the arm head; the
+        // light fires at `alpha == 0` after the fade (the sim's
+        // `ai_rainbow_crystal_shard` runs it). `ToVector3()` divides the
+        // bytes by 255, then × 0.5.
+        if p.alpha == 0 {
+            let c = crate::ui::color::hsl_to_rgb(p.ai[0] as f64, 1.0, 0.5, 255);
+            out.push((
+                cx,
+                cy,
+                [
+                    c[0] as f32 / 255.0 * 0.5,
+                    c[1] as f32 / 255.0 * 0.5,
+                    c[2] as f32 / 255.0 * 0.5,
+                ],
+            ));
+        }
+    } else if p.kind == TERRARIAN_BEAM {
+        // `:34416` — aiStyle-115's head light, unconditional (the style's
+        // only rowed kind is the 604).
+        out.push((cx, cy, [0.075, 0.3, 0.15]));
+    } else if p.kind == NEBULA_ARCANUM {
+        // `:34800-34802` — aiStyle-118's tail: `alpha < 150` gates the
+        // centre light (the sim's `ai_nebula_arcanum` runs the −15 fade).
+        if p.alpha < 150 {
+            out.push((cx, cy, [0.7, 0.2, 0.6]));
+        }
+    } else if p.kind == MOONLORD_TURRET {
+        // `:37070` — AI_123's 641 arm: `(0.3, 0.9, 0.7) * this.Opacity`.
+        // `Opacity` is the `1 - alpha/255` view (`Projectile.cs:540-545`);
+        // the sim's `ai_floating_turrets` runs the −5 fade and the scale
+        // pin before this read.
+        let opacity = 1.0 - p.alpha as f32 / 255.0;
+        out.push((cx, cy, [0.3 * opacity, 0.9 * opacity, 0.7 * opacity]));
     }
     out
 }
@@ -344,6 +380,51 @@ mod tests {
     }
 
     #[test]
+    fn the_rainbow_crystal_shard_lights_its_hsl_hue_at_alpha_zero() {
+        // `:34265` — hslToRgb(ai[0], 1, 0.5) · 0.5, gated on alpha == 0.
+        // Hue 0 → (255, 0, 0) → (0.5, 0, 0).
+        let mut p = slot(RAINBOW_CRYSTAL_EXPLOSION);
+        p.alpha = 0;
+        p.ai[0] = 0.0;
+        assert_eq!(proj_lights_a(&p, None), vec![(10, 11, [0.5, 0.0, 0.0])]);
+        // The fade gate: alpha > 0 → dark.
+        p.alpha = 8;
+        assert!(proj_lights_a(&p, None).is_empty());
+    }
+
+    #[test]
+    fn the_terrarian_beam_lights_a_fixed_green() {
+        // `:34416` — (0.075, 0.3, 0.15), unconditional.
+        let p = slot(TERRARIAN_BEAM);
+        assert_eq!(
+            proj_lights_a(&p, None),
+            vec![(10, 11, [0.075, 0.3, 0.15])]
+        );
+    }
+
+    #[test]
+    fn the_nebula_arcanum_gates_on_alpha_under_150() {
+        // `:34802` — (0.7, 0.2, 0.6) only while alpha < 150.
+        let mut p = slot(NEBULA_ARCANUM);
+        p.alpha = 149;
+        assert_eq!(proj_lights_a(&p, None)[0].2, [0.7, 0.2, 0.6]);
+        p.alpha = 150;
+        assert!(proj_lights_a(&p, None).is_empty());
+    }
+
+    #[test]
+    fn the_moonlord_turret_scales_by_opacity() {
+        // `:37070` — (0.3, 0.9, 0.7) · (1 − alpha/255). alpha 0 → full.
+        let mut p = slot(MOONLORD_TURRET);
+        p.alpha = 0;
+        assert_eq!(proj_lights_a(&p, None)[0].2, [0.3, 0.9, 0.7]);
+        // alpha 255 → Opacity 0 → a zeroed light is still appended (the
+        // C# calls AddLight unconditionally inside the 641 arm).
+        p.alpha = 255;
+        assert_eq!(proj_lights_a(&p, None)[0].2, [0.0, 0.0, 0.0]);
+    }
+
+    #[test]
     fn every_ported_kind_has_a_proj_data_row() {
         // The absent-wholesale rule's invariant: every kind this feed serves
         // resolves a `proj_data` row (the spawn gate).
@@ -352,6 +433,10 @@ mod tests {
             THUNDER_SPEAR_BOLT,
             DEADLY_SPHERE,
             VORTEX_RITUAL_BOLT,
+            RAINBOW_CRYSTAL_EXPLOSION,
+            TERRARIAN_BEAM,
+            NEBULA_ARCANUM,
+            MOONLORD_TURRET,
         ] {
             assert!(
                 proj_data(kind).is_some(),
@@ -364,10 +449,16 @@ mod tests {
     fn an_unrowed_kind_contributes_nothing() {
         // The 502 Meowmere (site 4), the 1092 book (site 7), the 451
         // InfluxWaver (site 12), the 464/465/466 cultist orbs (sites 13-16),
-        // the 490 ritual (site 18), the 492 lantern (site 19) and the 518
-        // coin portal (site 20) have no rows; a slot carrying them (were one
-        // ever spawned) feeds no light.
-        for kind in [502u16, 1092, 451, 464, 465, 466, 490, 492, 518] {
+        // the 490 ritual (site 18), the 492 lantern (site 19), the 518
+        // coin portal (site 20), the 575 nebula sphere (site 21), the 590
+        // truffle spore (site 22), the 602 portal gate (site 24), the
+        // 612/953/978 trio (site 26), the 658 sandnado mark (site 28) and
+        // the 1115 glacier fang (site 29) have no rows; a slot carrying
+        // them (were one ever spawned) feeds no light.
+        for kind in [
+            502u16, 1092, 451, 464, 465, 466, 490, 492, 518, 575, 590, 602, 612, 953,
+            978, 658, 1115,
+        ] {
             let p = slot(kind);
             assert!(proj_lights_a(&p, None).is_empty());
         }
