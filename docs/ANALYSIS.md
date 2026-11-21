@@ -39244,3 +39244,105 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The tile-break fail + movement-sound wave (W4-c14, 2026-11-21)
+
+**Code-only mode**: implemented without invoking any compiler - no
+cargo/rustc/rustfmt, no test runs, no graphify refresh (the Lead's task
+constraint). The nine `w4_c14_*` witness tests are WRITTEN, NOT RUN; the
+branch `task/W4-c14-tile-break-footstep-sounds` is pushed unmerged for a
+verification pass. 33 C# `PlaySound` sites across 8 commits.
+
+### Census (what this wave covers)
+
+- **The mining fail ticks** - `Player.PickTile` `:53815`, the hammer
+  `:45692`, the axe `:45758`: each sub-100 hit calls
+  `WorldGen.KillTile(x, y, fail: true)`, whose entry plays
+  `KillTile_PlaySounds(fail: true)` (`WorldGen.cs:63558`) BEFORE the
+  dust. The shared `play_kill_fail_cue` plays the landed S1-E-21c table
+  through the pinned `kill_cue` map (the D3 convention - no gameplay
+  draws); `can_kill_tile` stands in for `CheckTileBreakability`'s
+  `num == 2` return (`:63542-63545`), which refuses BEFORE the sound.
+  The recorded i29/i30/i31 "per-tick sound is a deviation" notes close.
+- **The check tails** - `CheckOrb` (`WorldGen.cs:54335-54342`: the
+  crimson Heart's `frameX >= 36` plays the killed sound 4 style 1,
+  everything else Shatter 13) and `Check2x1`'s piggy arm (`:47235`
+  Shatter 13). `TileKill::check_sounds` carries `(id, style, x, y)` at
+  the CHECKED cell (the C# `i`, not the pair anchor); `break_tile`
+  drains it after the hit cell's own cue - the C# order (the entry sound
+  precedes the `SquareTileFrame` cascade).
+- **The wiring tools' ten Dig-0 sites** - `PlaceWire`/2/3/4
+  (`:58115`/`:58145`/`:58175`/`:58205`), `KillWire`/2/3/4
+  (`:58126`/`:58156`/`:58186`/`:58216`), `PlaceActuator`
+  (`:58015`), `KillActuator` (`:58026`). The pinned `Dig_1`
+  stand-in is replaced by `play_place_sound`'s case-0 path (the
+  `Next(3)` variation + `Next(-10,11)*0.01` pitch on `UpdatePlayers`,
+  gate-first). The cutter arms play BEFORE the item drop - the C# order
+  (`:58026` precedes `:58030`), so the cue's two draws precede the
+  drop's on the stream.
+- **The stoned transition** - `Player.cs:25225`: the Dig-0 plays on BOTH
+  edges (the site sits outside the `stoned` arm); the 20 dust 1 stay
+  skipped. `pending_stoned_sound` queues the truncated top-left.
+- **The cart-sound drain** - the Item53/55/56 cues (the rolling rattle
+  `Player.cs:19870`/`:19928`, the landing/bumper delegates
+  `DelegateMethods.cs:250`/`:255`) upgrade from the flat `play_at`
+  to the wave-A style facade (the audio-only GetRandomPitch NextFloat +
+  case 2's draws: 53/55's x0.75 arms + the signed `Next(-20,-11)*0.02`
+  windows).
+- **The Pogo Stick (43)** - `Player.cs:19784` (the HorizontalMovement
+  grounded hop: the half-speed hop + static `jumpHeight` 15 + the early
+  return ported whole) and `:20764` (the ground jump), both Item168 at
+  `base.Center`. `Item_168` joins the bank.
+- **The fart carts (51/53)** - the delegate trio
+  (`DelegateMethods.cs:308-326`): JumpingSoundFart Item16 (the off-rail
+  edge `Player.cs:28118-28121` - the base cart's delegate is EMPTY),
+  LandingSoundFart Item16 THEN Item53, BumperSoundFart Item16 THEN
+  Item56. The fart clouds (gore 435-437 + the dust) are visual seams.
+- **The Meowmere cart (33)** - `Mount.MeowcartLandingSound`
+  (`Mount.cs:661` `PlaySound(37, x, y, 5)`) / `MeowcartBumperSound`
+  (`:666` style 3): the new case-37 path
+  (`LegacySoundPlayer.cs:1326-1336`) - the `Next(57,59)` slot pick
+  (`Item_57`/`Item_58` join the bank at legacy id 37), the
+  `Style * 0.05` volume scale (the non-starGame arm) and the
+  `Next(-40,41)*0.01` pitch - TWO `UpdatePlayers` draws after the
+  gate. `sound.rs::meowcart_case37` carries the maths.
+- **The rocket cadence** - `Player.rocketSoundDelay` (`:2752`) lands:
+  the fuel tick's cue arm (`:26884-26896`) + the `:26903-26905`
+  per-tick decrement. The wings-4 jetpack frame arm (`:29471-29480`
+  Item13/60), the wings-45 Starboard arm (`:30165-30174` Item24/30
+  behind the whole `ShouldDrawWingsThatAreAlwaysAnimated` gate
+  `:30737-30748`) and the glide wings-4 arm (`:27149-27156`
+  Item13/60) queue their cues on the movement-cue drain.
+
+### Deliberate deviations / deferrals
+
+- **The fail-tick dust stays skipped** (the recorded visual seam); only
+  the sound closes.
+- **The vanity-rocket producer is unported**: the cue arm reads the
+  gameplay tier (the equip rows set `rocketBoots == vanityRocketBoots`,
+  `Player.cs:14420`/`:15023`/`:15222`/`:15380-15400`); tier 6 (the
+  Bee costume `:13090`) awaits its producer.
+- **The 53/55 playing guards stay the standing D4 deviation** (wave A):
+  a fresh source per play, no refusal while live.
+- **The fart clouds / the Meowcart dust / the wing frame tables are
+  visual seams** - the cues play, the particles wait for their waves.
+- **The `check_sounds` drain uses the pinned `kill_cue` map** (the
+  D3 convention, the `break_tile` precedent) - the crimson Heart's
+  killed-4 plays `NPC_Killed_1` pinned, no case-4 pitch draw; the
+  pitched upgrade is a follow-up if the D3 pin lifts.
+- **The pogo hop's `gravDir`** is 1 (the port has no gravity flip);
+  the hop uses the STATIC `Player.jumpSpeed` 5.01 / `jumpHeight` 15,
+  not the per-player rebased fields (the C# reads the statics).
+
+### Witness tests (written, NOT run)
+
+- `tr-core/edit/kill.rs::w4_c14_the_check_tail_sounds_ride_the_kill_record`
+- `world_sim/editing.rs::w4_c14_the_mining_fail_tick_plays_the_kill_fail_cue`
+- `world_sim/editing/wiring.rs::w4_c14_the_wire_placement_dig_draws_ride_the_player_stream`
+- `world_sim/editing/wiring.rs::w4_c14_the_cutter_dig_draws_precede_the_drop`
+- `world_sim/player.rs::w4_c14_the_stoned_transition_plays_the_dig_on_both_edges`
+- `player.rs::w4_c14_the_rocket_cue_rides_its_own_cadence`
+- `player.rs::w4_c14_the_pogo_hop_and_jump_queue_item168_at_the_centre`
+- `minecart.rs::w4_c14_the_fart_delegates_play_their_cue_pairs_in_order`
+  + `w4_c14_the_meowcart_delegates_queue_the_case37_cues`
+- `audio.rs::w4_c14_the_meowcart_case37_draws_the_slot_then_the_pitch`
