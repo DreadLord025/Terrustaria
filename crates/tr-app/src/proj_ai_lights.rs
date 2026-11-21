@@ -22,7 +22,7 @@
 //! it), and no ported arm draws `Main.rand` — the feed is pure, so its
 //! placement cannot move any stream.
 //!
-//! **Seal round (2026-11-21, the g18 research/360 §2 row-absence re-probe):**
+//! **Seal round (2026-11-21, the g18 research/366 §2 row-absence re-probe):**
 //! the re-probe over every pushed lane tip found SIX of the 19 unrowed
 //! kinds NOW ROWED — 435 MartianTurretBolt (W4-c11 `data.rs:1924`,
 //! `Projectile.cs:5056-5063`), 576 NebulaLaser (W4-d11 `data.rs:2517`,
@@ -48,7 +48,8 @@
 //! **86 covered / 21 absent of 107** merge-state census (63 + 20 + the
 //! 6 now-rowed kinds; the site-granularity reconciliation — the 978
 //! trio's unreachable third term and the 707/708 owner-centre seeds —
-//! is recorded in the seal note, research/367 §2).
+//! is recorded in ANALYSIS "The projectile AI-arm lights, second wave
+//! — SEAL", the e6-side authority the g18 bible §5 names).
 //!
 //! **The site register (all 40, in line order):**
 //!
@@ -668,7 +669,7 @@ mod tests {
         // `Main.player[this.owner]`; the 708 behind `!player.frozen`
         // `:69829`), NOT the projectile centre. The feed carries no
         // player slice beyond the 445 hand — both stay absent as
-        // owner-centre-seam task seeds (research/367 §2).
+        // owner-centre-seam task seeds (the ANALYSIS SEAL note §2).
         assert!(at(707).is_empty());
         assert!(at(708).is_empty());
     }
