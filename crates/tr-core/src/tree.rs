@@ -816,19 +816,57 @@ mod tests {
     }
 
     /// `WorldGen.cs:63131-63162` + `:63404-63417` — the shake records the
-    /// ground cell, dedupes per day, and the FX tail resolves the leafy
-    /// top's style (hitTree: true, height 1).
+    /// ground cell (row 20), dedupes per day, and the FX tail resolves the
+    /// walked leafy top's style (hitTree: true, height 1). The trunk walk
+    /// (`:63153-63158`) climbs from the ground to the canopy marker (row
+    /// 15 for the height-5 fx_tree), so the FX fires at the LEAFY TOP row,
+    /// not the ground row (the C# `bottomY` after the walk).
     #[test]
     fn w4_g17_the_shake_fx_records_and_dedupes() {
         let mut w = fx_tree(5);
         let first = shake_tree_fx(&mut w, 10, 17);
-        assert_eq!(first, Some((10, 20, 910)), "the ground cell + the forest leaf");
-        assert_eq!(w.tree_shakes, vec![(10, 20)]);
+        assert_eq!(first, Some((10, 15, 910)), "the leafy-top cell + the forest leaf");
+        assert_eq!(w.tree_shakes, vec![(10, 20)], "the dedupe records the GROUND cell");
         // The same tree shakes once per day.
         assert_eq!(shake_tree_fx(&mut w, 10, 15), None);
         // The dawn reset clears the book.
         w.tree_shakes.clear();
         assert!(shake_tree_fx(&mut w, 10, 17).is_some());
+    }
+
+    /// W4-g17 wiring wave 2 — the resolve/FX split: `shake_tree_resolve`
+    /// returns the site (family + ground cell + leafy top + original ground
+    /// row), `shake_tree_fx_at` resolves the FX from it without re-recording
+    /// the shake. The combined `shake_tree_fx` matches the split.
+    #[test]
+    fn w4_g17_the_shake_resolve_fx_split() {
+        let mut w = fx_tree(5);
+        let site = shake_tree_resolve(&mut w, 10, 17).expect("the tree shakes");
+        assert_eq!(site.tree_type, TreeType::Forest);
+        assert_eq!(site.bottom_x, 10);
+        assert_eq!(site.ground_row, 20, "the original ground row (the C# num)");
+        // The leafy top: the trunk walks up from row 19 to the canopy marker.
+        assert_eq!(site.bottom_y, 15, "the walked leafy-top row");
+        assert_eq!(w.tree_shakes, vec![(10, 20)]);
+        // The FX tail reads the site without re-recording.
+        let fx = shake_tree_fx_at(&w, &site);
+        assert_eq!(fx, Some((10, 15, 910)));
+        assert_eq!(w.tree_shakes, vec![(10, 20)], "the FX tail records nothing");
+        // The dedupe: a second resolve refuses.
+        assert!(shake_tree_resolve(&mut w, 10, 17).is_none());
+    }
+
+    /// `WorldGen.cs:27205-27212` — `IsPalmOasisTree`: a palm column inside
+    /// the beach margins (beachDistance 380) is an oasis tree; the edges
+    /// are not.
+    #[test]
+    fn w4_g17_the_palm_oasis_tree_beach_margins() {
+        // A 4000-wide world: the margins are [0, 380) and (3620, 4000].
+        assert!(!is_palm_oasis_tree(100, 4000), "the left beach is not oasis");
+        assert!(!is_palm_oasis_tree(3700, 4000), "the right beach is not oasis");
+        assert!(is_palm_oasis_tree(2000, 4000), "the interior is oasis");
+        assert!(is_palm_oasis_tree(380, 4000), "the left margin edge is oasis");
+        assert!(is_palm_oasis_tree(3620, 4000), "the right margin edge is oasis");
     }
 
     /// `WorldGen.cs:69443-69454` — the LOS box is the 1.2×screen rect
