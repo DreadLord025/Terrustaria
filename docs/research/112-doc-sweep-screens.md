@@ -38,8 +38,19 @@ runs `MinionSpawnFromInventoryItem.TryRespawn`
   clamp, the per-staff ai seeds (`:49582-49598`), the Pygmy/Pirate kind
   picks on the `UpdatePlayers` stream, the Spider mod-3 cycle, the
   Foxsparks `localAI[0] = 30`, and the Stardust Dragon's fresh-chain arm
-  (`:48520-48536` — the Apply kill guarantees no live chain; spawn damage
-  is `Damage` = 0, `originalDamage` carries the item damage).
+  (`:48520-48536`; spawn damage is `Damage` = 0, `originalDamage` carries
+  the item damage). **FINAL-phase correction**: the Apply kill sweep only
+  kills `minionSlots > 0` (`ScenarioTestLoadout.cs:129`) and the dragon
+  head 625 / tail 628 carry ZERO slots (`Projectile.cs:6731-6738`), so a
+  live head+tail SURVIVES — the grow-existing-chain arm (`:48537-48553`)
+  IS reachable and is now ported (two bodies at the player centre with
+  the aim velocity, the key relink, `ai[1] = 1` + netUpdate +
+  originalDamage on all three); a half chain (head xor tail) spawns
+  nothing. **Cap census**: `SpawnMinionOnCursor` (`:49573-49603`) has NO
+  minion-slot-cap check; `FreeUpPetsAndMinions` (`:51701-51851`) rides the
+  USE START (`:42780`), which `SilentlyShootItem` bypasses — an over-cap
+  respawn dies on the first pool tick (`Projectile.cs:16712`), exactly as
+  the C#. The buff grant precedes the spawn in both (`:37-45` then `:46`).
 - Remaining deviation: the non-summon per-item tail of `ItemCheck_Shoot`
   stays on the use path — unreachable here, since a loadout's `Minions`
   records are `TrackMinionSpawnFromItemUse` spawns (summon staffs only,
@@ -50,7 +61,10 @@ runs `MinionSpawnFromInventoryItem.TryRespawn`
   (`task/W4-g55-ui-loadout-save` exists on origin).
 
 Witnesses: `loadout.rs::the_respawn_grants_the_buff_and_spawns_at_the_cursor`,
-`::the_staff_arms_respawn_their_kinds` (written, not run).
+`::the_staff_arms_respawn_their_kinds`, and the FINAL-phase pair
+`::the_dragon_grow_arm_relinks_the_surviving_chain`,
+`::the_dragon_half_chain_spawns_nothing_and_the_fresh_arm_needs_both_dead`
+(written, not run).
 
 ## 2. WorldCreationAdvanced — full option census
 

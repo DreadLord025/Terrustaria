@@ -39299,10 +39299,24 @@ half):
   fold, the per-staff ai seeds + kind picks on the `UpdatePlayers`
   stream; the Stardust Dragon's fresh-chain arm included). The cursor
   is the camera (`RestoreMinionsFor` parks the mouse at the screen
-  centre). Remaining deviation: the non-summon per-item tail of
-  `ItemCheck_Shoot` stays on the use path — a loadout's `Minions`
-  records are `TrackMinionSpawnFromItemUse` spawns (summon staffs
-  only, `ProjectileID.cs:550`), so the tail is unreachable here.
+  centre). **The FINAL phase (2026-11-21) added the dragon GROW arm**
+  (`Player.cs:48537-48553`): the Apply kill sweep only kills
+  `minionSlots > 0` (`ScenarioTestLoadout.cs:129`) and the dragon head
+  625 / tail 628 carry ZERO slots (`Projectile.cs:6731-6738`), so a live
+  head+tail survives the apply and the respawn grows the chain (two
+  bodies at the player centre with the aim velocity, the key relink,
+  `ai[1] = 1` + netUpdate + originalDamage on all three); a half chain
+  (head xor tail) spawns nothing. Cap census: `SpawnMinionOnCursor` has
+  NO cap check and `FreeUpPetsAndMinions` rides the use start the silent
+  shot bypasses — an over-cap respawn dies on the first pool tick
+  (`Projectile.cs:16712`), as the C#. Remaining deviation: the
+  non-summon per-item tail of `ItemCheck_Shoot` stays on the use path —
+  a loadout's `Minions` records are `TrackMinionSpawnFromItemUse` spawns
+  (summon staffs only, `ProjectileID.cs:550` — the default-true set minus
+  388/625/627/628), so the tail is unreachable here. The Clay Pot (6161)
+  is tracked (its 1118 is in the set) but its generic-tail shot stays on
+  the use path — the respawn's summon-arm gate excludes it (the i25
+  census pin).
 - **Geometry**: the commands list's container/panel/search chain
   byte-for-byte (`BuildPage` `:34-83`); rows 70+5; the four
   `PositionItems` icon groups at (0.1-0.3, 0.75), (0.35-0.45, 0.75),

@@ -390,9 +390,18 @@ fn try_respawn(
 /// point + reach clamp (`SpawnMinionOnCursor` `:49575-49577`) and the
 /// per-staff ai seeds (`:49582-49598`). The `Main.rand` kind picks draw
 /// from the caller's stream (the use path's `UpdatePlayers` convention).
-/// The Stardust Dragon chain (`:48498-48554`) respawns head+body+body+tail
-/// fresh at the cursor when no chain lives (the Apply kill just emptied
-/// it) — the grow-existing-chain arm is unreachable from a loadout apply.
+/// NO minion-slot-cap check runs here — `SpawnMinionOnCursor` has none,
+/// and `FreeUpPetsAndMinions` rides the USE START (`Player.cs:42780`),
+/// which `SilentlyShootItem` bypasses; an over-cap respawn dies on the
+/// first pool tick (`Projectile.cs:16712`, the port's
+/// `summon_tick_block`), exactly as the C#.
+/// The Stardust Dragon chain (`:48498-48554`): the Apply kill sweep only
+/// kills `minionSlots > 0` (`ScenarioTestLoadout.cs:129`) and the dragon
+/// HEAD (625) / TAIL (628) carry ZERO slots (`Projectile.cs:6731-6738`),
+/// so a live head+tail SURVIVES the apply — the grow-existing-chain arm
+/// (`:48537-48553`) is reachable and ported below; the fresh-chain arm
+/// (`:48520-48536`) runs only when neither lives, and a half-chain
+/// (head xor tail) spawns NOTHING (the C# has no third arm).
 #[allow(clippy::too_many_arguments)]
 fn silently_shoot_summon(
     item: &ItemSlot,
@@ -447,13 +456,116 @@ fn silently_shoot_summon(
         )
     };
     if item.kind == 3531 {
+        // The chain scan (`:48500-48519`): the FIRST owned 625 head and the
+        // FIRST owned 628 tail in pool order. The Apply kill sweep only
+        // kills `minionSlots > 0` (`ScenarioTestLoadout.cs:129`); the head
+        // and tail carry ZERO slots (`Projectile.cs:6731-6738` — only the
+        // 626/627 bodies get 0.5), so a live chain's head+tail SURVIVE the
+        // apply and the grow arm below is the reachable one.
+        let mut head = None;
+        let mut tail = None;
+        for (i, s) in projectiles.slots().iter().enumerate() {
+            if s.active && s.owner == my_player {
+                if head.is_none() && s.kind == 625 {
+                    head = Some(i);
+                }
+                if tail.is_none() && s.kind == 628 {
+                    tail = Some(i);
+                }
+            }
+        }
+        if let (Some(_), Some(tail_slot)) = (head, tail) {
+            // The grow-existing-chain arm (`:48537-48553`): TWO new bodies
+            // (626 + 627) at the PLAYER-CENTRE point (`pointPosition` —
+            // `RotatedRelativePoint(MountedCenter)`, `:47196`; no mount /
+            // rotation in the port, the use path's precedent) with the AIM
+            // velocity (`num4/num5` — the aim normalized to `shootSpeed`,
+            // `:47277-47307`; the zero aim falls back to the facing), NOT
+            // the cursor/zero of the fresh arm. The first body's ai0 is the
+            // TAIL's current ai0 (its previous link's key), the second's is
+            // the first's key; `localAI[1]` links body1→body2→tail; the
+            // tail's ai0 re-keys to body2; all three carry `ai[1] = 1` +
+            // `netUpdate`; `originalDamage` on all three. Spawn damage is
+            // `Damage` = 0 (the silent shot's weaponDamage).
+            let aim = cursor_world - glam::Vec2::new(pcx, pcy);
+            let speed = fx.map_or(def.shoot_speed, |s| s.shoot_speed);
+            // `:47213-47224` — the aim-dot `ChangeDir` (flag true for 3531,
+            // `:47197-47201`): Dot(UnitX, aim) > 0 → 1 else −1; the zero aim
+            // takes the −1 arm too. The port models the facing write only
+            // (the use path's boomerang precedent — the pulley/itemRotation
+            // halves of `ChangeDir` stay unported); the grow arm's zero-aim
+            // fallback below is the one reader.
+            player.facing = if aim.x > 0.0 { 1 } else { -1 };
+            let (vx, vy) = if aim == glam::Vec2::ZERO {
+                // `:47291-47296` — num4 = direction, num5 = 0, then ×speed.
+                (player.facing as f32 * speed, 0.0)
+            } else {
+                let n = aim.normalize_or_zero() * speed;
+                (n.x, n.y)
+            };
+            let tail_ai0 = projectiles.slots()[tail_slot].ai[0];
+            let body_row = crate::projectile::proj_data(proj + 1);
+            let Some(body_row) = body_row else {
+                return;
+            };
+            let Some(body1) = projectiles.spawn_with_data_ai_owned(
+                proj + 1,
+                my_player,
+                pcx - body_row.w * 0.5,
+                pcy - body_row.h * 0.5,
+                vx,
+                vy,
+                0,
+                fx_kb,
+                tail_ai0,
+                0.0,
+            ) else {
+                return;
+            };
+            let body2_row = crate::projectile::proj_data(proj + 2);
+            let Some(body2_row) = body2_row else {
+                return;
+            };
+            let Some(body2) = projectiles.spawn_with_data_ai_owned(
+                proj + 2,
+                my_player,
+                pcx - body2_row.w * 0.5,
+                pcy - body2_row.h * 0.5,
+                vx,
+                vy,
+                0,
+                fx_kb,
+                f32::from_bits(projectiles.key_of(body1) as u32),
+                0.0,
+            ) else {
+                return;
+            };
+            // `:48541-48549` — the links + the ai[1] = 1 / netUpdate trio.
+            projectiles.set_local_ai1(body1, body2 as f32);
+            projectiles.set_ai1(body1, 1.0);
+            projectiles.set_local_ai1(body2, tail_slot as f32);
+            projectiles.set_ai1(body2, 1.0);
+            projectiles.set_ai0(tail_slot, f32::from_bits(projectiles.key_of(body2) as u32));
+            projectiles.set_ai1(tail_slot, 1.0);
+            for slot in [body1, body2, tail_slot] {
+                projectiles.slots_mut()[slot].net_update = true;
+                // `:48550-48552` — `originalDamage = damage` (UNSCALED).
+                projectiles.set_original_damage(slot, unscaled);
+            }
+            return;
+        }
+        if head.is_some() || tail.is_some() {
+            // A HALF chain (head xor tail): the C# has no third arm —
+            // neither `:48520` nor `:48537` matches, nothing spawns.
+            return;
+        }
         // The Stardust Dragon's fresh-chain arm (`:48520-48536`): head
         // 625 + bodies 626/627 + tail 628 at the RAW cursor point (no reach
         // clamp — `:48524-48525` reads `Main.MouseWorld` directly), zero
         // velocity, the key chain through `localAI[1]`, `originalDamage`
-        // on all four. The Apply kill guarantees no live chain. The spawn
-        // damage is `Damage` — the weaponDamage parameter, 0 for the silent
-        // shot (`:47053`); only `originalDamage` carries the item damage.
+        // on all four. The spawn damage is `Damage` — the weaponDamage
+        // parameter, 0 for the silent shot (`:47053`); only
+        // `originalDamage` carries the item damage.
         let mut slots = [usize::MAX; 4];
         for (k, kind) in [proj, proj + 1, proj + 2, proj + 3].iter().enumerate() {
             let Some(row) = crate::projectile::proj_data(*kind) else {
@@ -743,5 +855,125 @@ mod tests {
         assert_eq!(p.kind, want, "the stream's kind pick");
         assert_eq!(p.ai[1], 60.0, "the Pygmy ai1 seed");
         assert_eq!(p.local_ai[0], 30.0, "the localAI[0] = 30 payload");
+    }
+
+    /// The Stardust Dragon's GROW arm (`Player.cs:48537-48553`) — the Apply
+    /// kill sweep only kills `minionSlots > 0` (`ScenarioTestLoadout.cs:129`)
+    /// and the head 625 / tail 628 carry ZERO slots (`Projectile.cs:
+    /// 6731-6738`), so a live head+tail survives and the respawn GROWS the
+    /// chain: two bodies at the player centre with the aim velocity, the
+    /// key relink, `ai[1] = 1` + netUpdate + originalDamage on all three.
+    #[test]
+    fn the_dragon_grow_arm_relinks_the_surviving_chain() {
+        let (mut player, inventory, w) = respawn_fixture(3531, 0);
+        let mut projectiles = crate::projectile::ProjectilePool::new();
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        let (pcx, pcy) = player.center();
+        // A surviving head + tail (the Apply kill leaves them — 0 slots).
+        let head = projectiles
+            .spawn_with_data_ai_owned(625, 0, 100.0, 100.0, 0.0, 0.0, 0, 2.0, 0.0, 0.0)
+            .expect("the head row");
+        let tail = projectiles
+            .spawn_with_data_ai_owned(628, 0, 124.0, 100.0, 0.0, 0.0, 0, 2.0, 0.0, 0.0)
+            .expect("the tail row");
+        let tail_key_before = projectiles.key_of(head);
+        projectiles.set_ai0(tail, f32::from_bits(tail_key_before as u32));
+        let cursor = glam::Vec2::new(pcx + 32.0, pcy);
+        respawn_minions(
+            &[MinionRecord { item_type: 3531, item_prefix: 0 }],
+            &mut player,
+            &inventory,
+            &w,
+            &mut projectiles,
+            0,
+            cursor,
+            &mut rng,
+        );
+        let kinds: Vec<u16> = projectiles.slots().iter().filter(|s| s.active).map(|s| s.kind).collect();
+        assert_eq!(kinds, vec![625, 628, 626, 627], "the grow arm adds ONLY two bodies");
+        let (b1, b2) = (2, 3);
+        // The player-centre spawn (24x24 rows, `:6739-6740`).
+        for slot in [b1, b2] {
+            let p = &projectiles.slots()[slot];
+            assert_eq!(p.pos.x, pcx - 12.0, "the centre X minus half the box");
+            assert_eq!(p.pos.y, pcy - 12.0, "the centre Y minus half the box");
+            // The aim velocity at shootSpeed 10 (`:47277-47307`), NOT zero.
+            assert_eq!((p.vel.x, p.vel.y), (10.0, 0.0), "the aim normalized to shootSpeed");
+            assert_eq!(p.damage, 0, "Damage = weaponDamage = 0 (the silent shot)");
+            assert_eq!(p.ai[1], 1.0, "the grow arm's ai[1] = 1");
+            assert!(p.net_update, "the grow arm's netUpdate");
+            assert_eq!(p.original_damage, 40, "the UNSCALED item damage (`:48550-48551`)");
+        }
+        // The key chain: body1.ai0 = the tail's OLD ai0 (the head's key),
+        // body2.ai0 = body1's key, tail.ai0 = body2's key (`:48539-48547`).
+        assert_eq!(projectiles.slots()[b1].ai[0], f32::from_bits(tail_key_before as u32));
+        assert_eq!(
+            projectiles.slots()[b2].ai[0],
+            f32::from_bits(projectiles.key_of(b1) as u32)
+        );
+        assert_eq!(
+            projectiles.slots()[tail].ai[0],
+            f32::from_bits(projectiles.key_of(b2) as u32)
+        );
+        // The localAI[1] backlinks: body1→body2, body2→tail (`:48541/:48544`).
+        assert_eq!(projectiles.slots()[b1].local_ai[1], b2 as f32);
+        assert_eq!(projectiles.slots()[b2].local_ai[1], tail as f32);
+        assert_eq!(projectiles.slots()[tail].ai[1], 1.0, "the tail's ai[1] = 1");
+        assert!(projectiles.slots()[tail].net_update, "the tail's netUpdate");
+        assert_eq!(projectiles.slots()[tail].original_damage, 40, "`:48552`");
+        // The head is untouched by the grow arm (no writes in the C#).
+        assert_eq!(projectiles.slots()[head].ai[1], 0.0);
+        assert!(!projectiles.slots()[head].net_update);
+    }
+
+    /// The fresh-chain arm runs only when NEITHER head nor tail lives; a
+    /// HALF chain (head xor tail) spawns nothing — the C# has no third arm
+    /// (`Player.cs:48520`/`:48537` are the only two).
+    #[test]
+    fn the_dragon_half_chain_spawns_nothing_and_the_fresh_arm_needs_both_dead() {
+        // Half chain: a lone head.
+        let (mut player, inventory, w) = respawn_fixture(3531, 0);
+        let mut projectiles = crate::projectile::ProjectilePool::new();
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        let (pcx, pcy) = player.center();
+        projectiles
+            .spawn_with_data_ai_owned(625, 0, 100.0, 100.0, 0.0, 0.0, 0, 2.0, 0.0, 0.0)
+            .expect("the head row");
+        let cursor = glam::Vec2::new(pcx + 32.0, pcy);
+        respawn_minions(
+            &[MinionRecord { item_type: 3531, item_prefix: 0 }],
+            &mut player,
+            &inventory,
+            &w,
+            &mut projectiles,
+            0,
+            cursor,
+            &mut rng,
+        );
+        assert_eq!(
+            projectiles.slots().iter().filter(|s| s.active).count(),
+            1,
+            "the half chain spawns nothing"
+        );
+        // Fresh chain: no head, no tail — head+bodies+tail at the RAW cursor.
+        let (mut player, inventory, w) = respawn_fixture(3531, 0);
+        let mut projectiles = crate::projectile::ProjectilePool::new();
+        respawn_minions(
+            &[MinionRecord { item_type: 3531, item_prefix: 0 }],
+            &mut player,
+            &inventory,
+            &w,
+            &mut projectiles,
+            0,
+            cursor,
+            &mut rng,
+        );
+        let kinds: Vec<u16> = projectiles.slots().iter().filter(|s| s.active).map(|s| s.kind).collect();
+        assert_eq!(kinds, vec![625, 626, 627, 628], "the fresh four-part chain");
+        for s in projectiles.slots().iter().filter(|s| s.active) {
+            assert_eq!((s.vel.x, s.vel.y), (0.0, 0.0), "the fresh arm's zero velocity");
+            assert_eq!(s.damage, 0, "the fresh arm spawns Damage = 0");
+            assert_eq!(s.original_damage, 40, "originalDamage carries the item damage");
+        }
     }
 }
