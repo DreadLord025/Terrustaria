@@ -1,10 +1,15 @@
 # 26g — aiStyle-92 cloud family KEEP-ONE (W4-d19 × W4-d10 dup adjudication)
 
-**Round.** W4-d19 follow-up 2 (code-only, branch
-`task/W4-d19-proj-ai-181-190`, base `1054c396a`). The d10 branch
-(`task/W4-d10-proj-ai-91-100`, tip `1f0b60e96`, arm landed `b34ad73c5`)
-ported the SAME inline `AI()` arm `Projectile.cs:32558-32820` into
-`projectile_ai_91_100.rs::ai_clouds` that this branch's
+**Round.** W4-d19 FINAL (PROJ-181, code-only, branch
+`task/W4-d19-proj-ai-181-190`). The earlier rounds (follow-up 2, base
+`1054c396a`) adjudicated the dup arm-by-arm (§1–§3) and verified the
+d21 1129 contract (§5). THIS final round publishes: §4 the exact d10
+drop-hunks re-pinned to the d10 LATEST tip `732d3480b` for merger/d10b,
+§6 the 181–190 band armed-rowed FINAL table (no UNARMED_ROWED left),
+§7 the 190 terra-chain compose-contract receipt for d20c-T5. The d10
+branch (`task/W4-d10-proj-ai-91-100`, tip `732d3480b`, arm landed
+`b34ad73c5`) ported the SAME inline `AI()` arm `Projectile.cs:32558-32820`
+into `projectile_ai_91_100.rs::ai_clouds` that this branch's
 `projectile_ai_clouds.rs::cloud_family_step` ports. Both were read WHOLE
 against the C# arm and every cited helper; this note is the arm-by-arm
 adjudication + the merge instructions.
@@ -380,7 +385,18 @@ The 984/982/983 rows are pinned by the existing rows witness
 is AI-complete, use-path-inert until d20c-T5 lands the four spawner arms
 against these rows. No d19 change needed — the contract holds.**
 
-## Witnesses (this round, WRITTEN NOT RUN — code-only)
+## Witnesses — the FINAL round (WRITTEN NOT RUN — code-only)
+
+- `projectile_ai_sword_styles.rs`: +1 new
+  (`w4_d19_the_terra_chain_payload_feeds_the_190_envelope` — the §7
+  compose-contract receipt: the 972 row-gated spawn with the C#
+  use-path payload, the finite `num = 1/20` envelope read, the
+  `(1 + num·0.2)·ai2` scale pin, the progress-1 kill at the envelope
+  end). The module now carries 11 witnesses.
+- §4/§6/§7 are documentation (the drop-hunk publication, the band
+  table, the terra-chain receipt) — no further code change.
+
+### The earlier round's folds (kept for the record)
 
 - `projectile_ai_clouds.rs`: +2 new
   (`w4_d19_the_toxic_cloud_fades_and_spins_from_its_index`,
@@ -399,3 +415,30 @@ Verification = whole-block C# re-reads (`:32558-32820`,
 `Utils.cs:1807-1810`) + hand arithmetic (the 0.28864 re-derivation,
 the alpha-252 truncation, the bit-set membership checks for
 1/19/192/380).
+
+### FINAL-round verification (this round)
+
+- **§4 drop-hunks:** every range re-read WHOLE at d10 tip `732d3480b`
+  (`projectile_ai_91_100.rs` :95–454/:1845–1984, `projectile.rs`
+  :18195–18239/:23020–23049/:23222–23251, `data.rs`
+  :1715–1759/:4280–4293/:4455–4472/:4528–4542/:4778–4792,
+  `anchors.txt` :900). The const-consumer census: full-tree grep of
+  `TOXIC_CLOUD|GAS_TRAP|SPORE_CLOUD` at `732d3480b` — every hit is
+  inside a drop/edit hunk (the `remap` call-sites :242–412 likewise die
+  with D1; `proj_frames` survives for the 94 portal :712).
+- **§6 band table:** each arm/row/dispatch line re-read at its branch
+  tip (d19 `a3481f7c9`, main `a725acb04`, d18 `18916087b`, d12c
+  `9e668d0f0`); the 978 dup compared field-by-field (d12c's
+  `proj_frames[978]=5` vs d18's absence; `Main.cs:8493` re-read
+  verbatim — `Main.projFrames[978] = 5;`); the 978 row re-read against
+  `Projectile.cs:9253-9269` (the `:9268` second `timeLeft = 30` wins).
+- **§7 terra-chain:** the four use-path arms re-read WHOLE
+  (`Player.cs:48870-48937`), the 190 spine re-read
+  (`Projectile.cs:41972-42021`), the spawn seam's ai payload re-read
+  (`projectile.rs:15968-16052` — `ai: [ai0, ai1, 0, 0]` :16010,
+  `set_ai2` :15401, the row gate `proj_data(kind)?` :15981); r109 item 5
+  (d20 `0cb59a50d`) cross-read for the envelope-collapse finding.
+- Cross-branch ancestry verified by `git merge-base --is-ancestor`:
+  f33 `8a000407f` ∈ `7b334ea74`, d21 `9fa9e9ba0` is the tip, d12c
+  `9e668d0f0` ∈ `4ba56e660`, d18 `18916087b` NOT in main (the row is
+  in-flight).
