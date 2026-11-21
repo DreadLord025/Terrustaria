@@ -1410,12 +1410,13 @@ mod shimmer_tests {
         let d = &app.items[0];
         assert!(d.shimmered);
         assert_eq!(d.kind, 699);
-        // The tail set shimmerTime = 1 (the stack survived); it then decays
-        // 0.01/tick on the dry ticks after the transform — but the drop is
-        // still in the pool, so it stays shimmerWet and the ramp holds 1
-        // (the shimmered branch skips the ramp, the decay arm runs only when
-        // NOT (shimmerWet && !shimmered && over) — shimmered=true skips it).
-        assert_eq!(d.shimmer_time, 1.0, "the tail reset shimmerTime to 1");
+        // The tail set shimmerTime = 1 at the transform tick (the stack
+        // survived). The decay arm (`:538-545`) is NOT gated on `!shimmered`
+        // (a shimmered drop's ramp condition is false, so it falls to the
+        // decay), so the 1.0 dries 0.01/tick over the remaining ~28 ticks —
+        // it is below 1 but still positive (the GrabItems gate re-opens at 0).
+        assert!(d.shimmer_time < 1.0 && d.shimmer_time > 0.0,
+            "the tail reset then decayed: {}", d.shimmer_time);
         assert!(d.shimmer_wet, "the tail set shimmerWet");
         // The velocity was cut ×0.1 at the transform tick (2.0→0.2, 3.0→0.3),
         // then the shimmered float damps/rises it; the X friction (×0.95/tick)
@@ -1447,11 +1448,11 @@ mod shimmer_tests {
         }
         let spawn = app.items.iter().find(|d| d.kind == 225).expect("the cobweb spawn");
         assert!(spawn.shimmered, "the ingredient is shimmered");
-        assert_eq!(spawn.shimmer_time, 1.0);
-        assert!(spawn.shimmer_wet);
+        assert!(spawn.shimmer_wet, "SpawnShimmeredItem sets shimmerWet");
         assert_eq!(spawn.prefix, 0, "SpawnShimmeredItem passes prefix 0");
-        // The first spawn (n=0) has velocity (0 * (0%2*2-1), 0) = (0, 0).
-        assert_eq!(spawn.vel, Vec2::ZERO, "the n=0 fan velocity is zero");
+        // The first spawn (n=0) has fan velocity (0 * (0%2*2-1), 0) = (0, 0);
+        // the X friction keeps 0 at 0 (the shimmered float only writes vel.Y).
+        assert_eq!(spawn.vel.x, 0.0, "the n=0 fan has no horizontal velocity");
         // The source aired out (60 - 2*30 = 0).
         assert!(!app.items.iter().any(|d| d.kind == 3077));
     }
