@@ -77,6 +77,7 @@ per `docs/superpowers` agreements).
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 93 | Spider-cave biome gen census (W4-g41: web placement / egg sacs / wall coverage vs WorldGen.cs; landed M5-STRUCT-5 audit + the egg-sac validator chain port; code-only) | `93-spider-cave-census.md` | 🟡 |
 | 94 | NOT-THE-BEES host census (W4-g41 follow-up: FinishNotTheBees + NotTheBees vs WorldGen.cs; c31 co-lane claim check — zero pushed claims, host unclaimed/taken; ILied-family wiring census; spider_wall_remover wiring; code-only) | `94-not-the-bees-host-census.md` | 🟡 |
+| 95 | FinishNoTraps + FinishRemixWorld census (W4-g41 finish gaps: the two remaining classic-seed Finish tails vs WorldGen.cs; d107 co-lane claim check — remix host explicitly deferred, no-traps claims micro-seed side only, both unclaimed/taken; seam census + deviation pins; code-only) | `95-finish-no-traps-remix-census.md` | 🟡 |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

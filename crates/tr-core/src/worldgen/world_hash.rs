@@ -246,6 +246,15 @@ mod tests {
     // is flag-gated on NOT_THE_BEES — a classic 512 world never enters it, so
     // this pin is UNCHANGED by the host port (the egg-sac deferral above
     // stands). Census: `docs/research/94-not-the-bees-host-census.md`.
+    // W4-g41 finish gaps (2026-11-21, code-only): `finish_no_traps.rs`
+    // (`WorldGen.cs:25986-26224`) and `finish_remix.rs` (`:26350-26770`)
+    // land at `step_seed_finish`'s C# slots (`:22423-22426` FIRST /
+    // `:22444-22447` after FTW). BOTH are flag-gated (NO_TRAPS / REMIX) -
+    // a classic 512 world enters neither and draws nothing, so this pin
+    // is UNCHANGED by the two hosts (the egg-sac deferral above stands).
+    // The hosts draw on fresh `pass_rng("FinishNoTraps")` /
+    // `("FinishRemixWorld")` streams; the a == b witnesses are written
+    // NOT run. Census: `docs/research/95-finish-no-traps-remix-census.md`.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -310,6 +319,17 @@ mod tests {
     // / `pass_rng("FinishNotTheBees")` streams; the `a == b` determinism
     // witnesses (incl. a full-pipeline NTB+FTW world) are written NOT run.
     // Census: `docs/research/94-not-the-bees-host-census.md`.
+    // W4-g41 finish gaps (2026-11-21, code-only): the FinishNoTraps +
+    // FinishRemixWorld hosts (`finish_no_traps.rs` / `finish_remix.rs`,
+    // `WorldGen.cs:25986-26224` / `:26350-26770`) are flag-gated on
+    // NO_TRAPS / REMIX - a classic DEFAULT world never enters them and
+    // draws nothing, so this pin is UNCHANGED by the two hosts (the
+    // egg-sac re-pin deferral above stands as-is). d107 co-lane claim
+    // check: the remix host was explicitly deferred by d107's pushed
+    // ANALYSIS, the no-traps claims are micro-seed side only - both
+    // hosts unclaimed/taken. The a == b witnesses (full-pipeline
+    // NO_TRAPS and REMIX worlds) are written NOT run. Census:
+    // `docs/research/95-finish-no-traps-remix-census.md`.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
