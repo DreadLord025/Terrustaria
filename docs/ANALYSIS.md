@@ -11662,8 +11662,24 @@ Deliberate deviations and notes:
   C#'s `Main`-global (`NPC.unlockedSlimeRainbowSpawn`) вЂ” the save format does
   not carry it yet.
 - **The shimmered item's dust/light arms** (`WorldItem.cs:459-482`: dust 309 at
-  1/30 with the four colours, `AddLight` `(1 - shimmerTime) * 0.8`) are render
-  layer and skipped.
+  1/30 with the four colours, `AddLight` `(1 - shimmerTime) * 0.8`) — the dust
+  half landed in W4-g15 (`item_dust::shimmered_sparkle`); the `AddLight` half
+  is the render layer's.
+- **W4-g15 lane 5 census findings (the ramp's gates).** The port's
+  `update_shimmer` ramp (`item.rs`) gates on `shimmer_wet && !shimmered &&
+  over_shimmer(world)` but does NOT call `Item.CanShimmer`
+  (`Item.cs:49448-49464`) — the C#'s `CanShimmerAtPosition`
+  (`WorldItem.cs:756-768`) gates the ramp on it. A non-shimmerable item
+  (no transform / decraft / coin / makeNPC) therefore ramps in the port but
+  not in vanilla; the transform apply (`shimmer::apply_due_transforms`) does
+  gate on `can_shimmer`, so the ramp is cosmetic for those kinds (it never
+  transforms) — the deviation is the ramp itself, recorded here. The
+  `over_shimmer` probe reads the tile ABOVE the drop (`CanShimmerAtPosition`'s
+  `position.Y/16 - 1`), while the C#'s shimmered-float scan (`:493-504`) reads
+  the two cells at/below the centre — the port approximates both with the one
+  `over_shimmer` probe (the standing box-union convention). The shimmer
+  repulsion loop (`MoveInWorld` `:790-848`, the 50-neighbour ±0.1 push) is
+  e19b's (the shimmer lane) — skipped here.
 - **Out:** the player's В§7 rules (the buff 353 "Shimmering" frozen/emerge cycle,
   `ShimmerUnstuckHelper`'s unstuck вЂ” the helper is ported, the driver is not);
   `NPC.GetShimmered`'s own transform (`NPC.cs:91548`, the map is ported as a
