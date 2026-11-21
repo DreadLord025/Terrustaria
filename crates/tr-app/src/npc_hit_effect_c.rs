@@ -262,6 +262,7 @@
 //! | 1379-1388 | `:89359-89390` | the 346 SantaNK1 death (518-523 heads + the full 4-quadrant explosion) |
 //! | 1389-1394 | `:89400-89427` | the 127 SkeletronPrime death (149/150 heads + the full 4-quadrant explosion) |
 //! | 1395-1400 | `:89437-89464` | the 128-131 Prime-limb death (147/148 heads + the full 4-quadrant explosion) |
+//! | 1401-1405 | `:89520-89524` | the 24 FireImp death (45/46/46/47/47 ladder, type-6 dust) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -8476,6 +8477,40 @@ fn prime_limb_death(
     );
 }
 
+/// The 24 FireImp death (`NPC.cs:89514-89524`, sites 1401-1405): the
+/// 50-dust type-6 burst (Speed = base.velocity, Alpha 100, scale 2.5,
+/// noGravity + velocity ×2 post-writes), then the 5-gore ladder at
+/// position — 45 head, 46/46 at +20, 47/47 at +34 — with `base.velocity`.
+/// Scale defaults to 1.
+fn fire_imp_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 6, npc.vx, npc.vy, 100,
+            Color::default(), 2.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity *= 2.0;
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    gore.new_gore(rng, world, pos, vel, 45, 1.0); // :89520
+    gore.new_gore(rng, world, mid, vel, 46, 1.0); // :89521
+    gore.new_gore(rng, world, mid, vel, 46, 1.0); // :89522
+    gore.new_gore(rng, world, low, vel, 47, 1.0); // :89523
+    gore.new_gore(rng, world, low, vel, 47, 1.0); // :89524
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -9511,6 +9546,10 @@ pub fn hit_effect_c(
     // `:89433-89469` — the 128-131 Prime-limb arm (sites 1395-1400).
     if (128..=131).contains(&npc_type) && npc.hp <= 0 {
         prime_limb_death(npc, dust, dust_ctx, gore, rng, world);
+    }
+    // `:89503-89525` — the 24 FireImp arm (sites 1401-1405).
+    if npc_type == 24 && npc.hp <= 0 {
+        fire_imp_death(npc, dust, dust_ctx, gore, rng, world);
     }
     outcome
 }
@@ -14962,6 +15001,25 @@ mod tests {
         let heads: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
         assert_eq!(heads, vec![147, 148]);
         assert_eq!(gore.slots().iter().filter(|g| g.active).count(), 6);
+    }
+
+    /// `NPC.cs:89520-89524` — the FireImp death: the 45/46/46/47/47 ladder
+    /// after the 50-dust type-6 burst.
+    #[test]
+    fn w4_f10_the_fire_imp_death_spawns_the_ladder() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1499);
+        fire_imp_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![45, 46, 46, 47, 47]);
+        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+        let d = dust.slots().iter().find(|d| d.active).unwrap();
+        assert_eq!(d.dust_type, 6);
+        assert!(d.no_gravity);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
