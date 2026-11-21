@@ -27,6 +27,9 @@ impl App {
     // (`MinimapFrameManager.cs:45`, `Main.cs:41037`'s `ItemSlot.Handle`).
     self.handle_minimap_clicks();
     self.handle_fullmap_ping();
+    // The fullscreen map's close button (`Main.cs:56024-56033`) — after the
+    // ping detector, like the C#'s order inside `DrawMap` (`:55486` < `:56024`).
+    self.handle_fullmap_close();
     self.handle_bestiary_clicks();
     // The town-chatter panel's Close button + hover tick
     // (`NPCChatPanel.DrawButtons`, `NPCChatPanel.cs:88-162`) — the press

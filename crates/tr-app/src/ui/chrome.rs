@@ -791,9 +791,93 @@ pub fn draw_map_style_icons(
     }
 }
 
+/// The fullscreen map's close button (`Main.DrawMap`, `Main.cs:56016-56035`):
+/// `num85 = 10`, `num86 = screenHeight - 40` (`showFrameRate` is false in the
+/// port — the F10 toggle, `Main.cs:18492-18514`, is not ported, so the `-15`
+/// shift never fires). The hover box is the inclusive `[10, 42] x [y, y+30]`
+/// (`:56024`), the same 32x30 [`MAP_ICON_HIT`] the inventory row uses.
+pub fn fullmap_close_button_pos(screen: Vec2) -> [f32; 2] {
+    [10.0, screen.y - 40.0]
+}
+
+/// `Main.cs:56024-56035`: the hover flips the sheet to `MapIcon[4]` (`Map_4`,
+/// the hovered fullscreen-map icon — the same sheet the inventory row's `k=0`
+/// hover picks) and the tint to `Color(255, 255, 255, 255)`; unhovered it is
+/// `MapIcon[0]` at `Color(130, 130, 130, 130)`.
+pub fn fullmap_close_button_appearance(hovered: bool) -> ([f32; 4], usize) {
+    let byte = if hovered { 255 } else { 130 };
+    let c = byte as f32 / 255.0;
+    ([c, c, c, c], if hovered { 4 } else { 0 })
+}
+
+/// The close button's draw half (`Main.cs:56035`): the whole `MapIcon[n]`
+/// sheet at scale 1, origin zero. The C# gate `!UIWorldGenDebug.IsActive`
+/// (`:56014`) has no port counterpart (the worldgen debug UI is not ported),
+/// so the button always draws while the fullscreen map is up.
+pub fn draw_fullmap_close_button(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    screen: Vec2,
+    hovered: bool,
+) {
+    let (tint, sheet) = fullmap_close_button_appearance(hovered);
+    let Some(rect) = lookups.map_icons.get(sheet).and_then(|s| s.as_ref()) else {
+        return; // missing sheets draw nothing (`Lookups::default()`)
+    };
+    let Some(uv) = lookups.hud_uv(Some(rect)) else {
+        return;
+    };
+    r.push_ui_sprite(
+        fullmap_close_button_pos(screen),
+        [rect.width as f32, rect.height as f32],
+        uv,
+        tint,
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// W4-e18 residual census (written, not run - code-only): the fullscreen
+    /// close button's geometry (`Main.cs:56016-56024`). `num85 = 10`,
+    /// `num86 = screenHeight - 40` (the `showFrameRate` `-15` shift never
+    /// fires — F10 is not ported); the hover box is the inclusive 32x30.
+    #[test]
+    fn w4_e18_fullmap_close_button_pos_and_hover_box() {
+        let screen = Vec2::new(1600.0, 900.0);
+        assert_eq!(fullmap_close_button_pos(screen), [10.0, 860.0]);
+        let [x, y] = fullmap_close_button_pos(screen);
+        // The four corners are inside (inclusive, `:56024`).
+        for p in [
+            Vec2::new(x, y),
+            Vec2::new(x + 32.0, y),
+            Vec2::new(x, y + 30.0),
+            Vec2::new(x + 32.0, y + 30.0),
+        ] {
+            assert!(
+                p.x >= x && p.x <= x + MAP_ICON_HIT[0]
+                    && p.y >= y && p.y <= y + MAP_ICON_HIT[1],
+                "{p:?} is inside the close-button box"
+            );
+        }
+        // One pixel past any edge is outside.
+        let outside = Vec2::new(x + 32.01, y + 15.0);
+        assert!(outside.x > x + MAP_ICON_HIT[0]);
+    }
+
+    /// W4-e18 (written, not run - code-only): `Main.cs:56022-56027,56035` —
+    /// unhovered `num87 = 0` / `num88 = 130` (`Map_0`, grey), hovered
+    /// `num87 += 4` / `num88 = 255` (`Map_4`, white), tint `Color(n,n,n,n)`.
+    #[test]
+    fn w4_e18_fullmap_close_button_appearance_matches_the_hover_flip() {
+        let (tint, sheet) = fullmap_close_button_appearance(false);
+        assert_eq!(sheet, 0);
+        assert_eq!(tint, [130.0 / 255.0; 4]);
+        let (tint, sheet) = fullmap_close_button_appearance(true);
+        assert_eq!(sheet, 4);
+        assert_eq!(tint, [1.0; 4]);
+    }
 
     #[test]
     fn page_tab_x_at_1600() {
