@@ -5,15 +5,24 @@
 the execution log is §7. No cargo/tests were run (code-only mode) — the
 witnesses are WRITTEN NOT RUN.
 
-> **MERGER INSTRUCTION — keep the f29 TIP ONLY.** This branch was rebuilt
-> onto the e17 skeleton (`8500c3e5d`) and carries F1-F6 as cited patches on
-> top of it (§7). At merge time: land e17 → main first (§6 step 1), then
-> merge **the f29 tip** — its tree IS the e17 skeleton + the six fixes + the
-> deduped docs/witnesses. Do NOT cherry-pick the pre-rebuild f29 commits
-> (the `map_overlay.rs`/`map_pylons.rs` era, ≤ `d5aa3621f`): those modules
-> are retired and their code must not re-land. The f29 tip's diff vs the
-> e17 tip is exactly the F1-F6 patches + the witness union + the docs
-> dedupe — review that diff, not the branch's full history.
+> **MERGER INSTRUCTION — MAP-FAMILY UNIFIED, keep BOTH branch tips (§8).**
+> This branch was rebuilt onto the e17 skeleton (`8500c3e5d`) and carries
+> F1-F6 as cited patches on top of it (§7); its tip tree IS the e17
+> skeleton + the six fixes + the deduped docs/witnesses. The sibling
+> `task/W4-f46-minimap-reveal-2` (tip `6fb5e01e8`) carries the e18 reveal/
+> keys union (research/84). **f46-union-keep AND f29-overlay-keep — neither
+> absorbs the other**: the two diffs are disjoint subsystems sharing six
+> conflict sites; compose them per the §8 hunk table (**f46g-ruling:
+> f46-union FIRST, f29-TIP SECOND** — §8.0; the table itself is
+> order-independent). Do NOT
+> cherry-pick the pre-rebuild f29 commits (the `map_overlay.rs`/
+> `map_pylons.rs` era, ≤ `d5aa3621f`): those modules are retired and their
+> code must not re-land — the exact-hash warning list is §9. The e17 lane
+> is DEPRECATED as a separate merge (§10). The e18f style-2 D18 draw
+> (`099beeba5`) is NOT a third landing: it re-folds into the f46 union
+> BEFORE f46 lands, and the overlay-draw keep-one is ruled in §8.5.
+> Review the tip diffs (e17→f29-tip: 12 files; base→f46-tip: 25 files),
+> not the branch histories.
 
 **Phase (original):** reconcile, docs-only. No code changes to e17. This document is the
 adjudication record + fold-list + merge order for the two independent ports of
@@ -213,7 +222,12 @@ six targeted fixes, each with a C# cite and a witness:
   truncation — now a FIX not a deviation, DrawMoney row) and add the §4
   shared mouse-truncation note + the `showAllAvailableUnits` unported arm.
 
-## 6. Merge order
+## 6. Merge order (SUPERSEDED by §8 — the e17-first plan is retired)
+
+> **§6 is historical.** Step 1 ("e17 → main first") is RETIRED: the f29 tip
+> already absorbs the e17 skeleton (§7), and the two-landing compose is
+> f46-union-first → f29-TIP-second (§8.0, the f46g-ruling). The original
+> text stands below as the execution record's rationale.
 
 1. **e17 → main first** (it is the skeleton; per MAIN-RULES ref-update merge,
    canary + symbol verify after push). Its tip `8500c3e5d` already contains
@@ -250,7 +264,8 @@ was done as a **direct rebuild onto the e17 tip `8500c3e5d`** — the map-file
 set was taken from e17 wholesale (`git checkout 8500c3e5d -- …`), the f29
 duplicates deleted, and F1-F6 applied as small cited commits. The resulting
 tree is exactly what §6 step 2's conflict resolution would have produced;
-the merger keeps the f29 TIP ONLY (see the banner).
+the merger keeps the f29 TIP (see the banner + §8 — it lands SECOND onto
+post-f46 main per the f46g-ruling; neither branch absorbs the other).
 
 | Commit | Scope |
 | --- | --- |
@@ -276,6 +291,277 @@ tools/atlas_e17_check.js`: baseline 8123 → 8131 px, OK).
 **Verification owed at merge (§6 step 4):** `cargo test --workspace --skip
 migrates_version_2_kinds_to_item_ids` green, canary `main_anchors` green,
 then the ancestor + symbol checks per MAIN-RULES.
+
+---
+
+## 8. MAP-FAMILY unified merger instruction (retire phase, 2026-11-21)
+
+**Verdict (f46g-ruling): BOTH-branches-keep — f46-union-first →
+f29-TIP-second; neither branch absorbs the other.** The two tips carry
+disjoint subsystems (f46 = the e18 reveal/sections/keys/close-button union,
+research/84; f29 = the e17 overlay skeleton + F1-F6, §7 above — ~4 500 ln
+per 84 §10.3's scope check, crates-side diff +3 801/−118 over 16 files,
+its own EXECUTED keep-one with 34 witnesses) that share exactly six
+conflict files. An absorb-either-way move would force re-porting a whole
+subsystem; the per-hunk compose below is small and mechanical.
+Cross-record: research/84 §10.3 (on the f46 branch, tip `6fb5e01e8`)
+publishes the SAME two-landing order from the reveal side — f46 first,
+f29 tip second. The e18f style-2 D18 draw (`099beeba5`) is a re-fold into
+the f46 union, NOT a third landing — the overlay-draw keep-one is §8.5.
+
+**Tips compared (re-fetched this RESUME pass, 2026-11-21):**
+
+| Lane | Tip | Diff vs base `a725acb04` |
+| --- | --- | --- |
+| `task/W4-f29-map-overlay-2` (this branch) | `809d08238` (+ this retire commit) | 23 files; the map-file set IS e17 `8500c3e5d` + F1-F6 (12-file diff vs e17) |
+| `task/W4-f46-minimap-reveal-2` | `6fb5e01e8` (FINAL-FINAL; moved past the earlier `05a9f7b64` probe) | 25 files, +3381/−140 crates-side; e18 union base `670c948d` + final-sweep re-folds EXECUTED (84 §10.2) + the witness re-derivation `447494570` (1280×720 headless frame) |
+
+### 8.0 Landing order (f46g-ruling)
+
+1. **f46 tip → main first** (`6fb5e01e8`; MAIN-RULES ref-update merge;
+   it carries the whole reveal/input family per 84 §10.3 step 1 — and
+   the e18f D18 draw re-fold of §8.5 lands on it BEFORE this merge).
+2. **f29 TIP → main second** (`809d08238` + this retire commit), synced
+   onto post-f46 main, resolving the six conflict files per §8.2 (the
+   table is written f29-side/f46-side, order-independent — the same nine
+   hunks appear either way; the ruling picks f46-first to match 84 §10.3
+   and because the union's `pan_target: Option`/`recentre`/alpha state
+   are the surviving seams the f29 hunks fold ONTO). Its diff already
+   contains the whole e17 lane — e17 itself never lands (§10).
+3. §8.3 semantic folds + the §8.5 D18 seam land WITH the second merge as
+   small cited commits.
+4. Verify on the merged state: `cargo test --workspace --skip
+   migrates_version_2_kinds_to_item_ids` green (judge by `test result:
+   ok`), canary `main_anchors` green, atlas re-measure (§8.4), then the
+   ancestor + symbol checks per MAIN-RULES. All witnesses on both
+   branches are WRITTEN NOT RUN (code-only mode) — the catalog run at
+   merge is the first execution of the witness union: 34 f29-tip fns +
+   56 f46-tip fns, zero shared names (verified by `git grep -oE "fn
+   w4_"` on both tips), + the 2 D18 witnesses §8.5 folds = ~92.
+5. Retire per §10 + the §9 warning list.
+
+### 8.1 File-overlap check
+
+Both diffs touch: `anchors.txt`, `app/clicks.rs`, `app/flow.rs`,
+`app/frame.rs`, `app/frame/draw.rs`, `app/mod.rs`, `assets.rs`,
+`main.rs`, **`map.rs` (SAME FILE BOTH — the headline overlap)**,
+`docs/ANALYSIS.md`, `docs/PORT_MAP.md`, `docs/ROADMAP.md`,
+`docs/research/14-map-minimap.md`.
+
+Dry-run `git merge-tree --write-tree --merge-base a725acb04 809d08238
+6fb5e01e8` (tree `feddf3178`, reproducible; re-ran this RESUME pass after
+the f46 tip moved — the earlier `05a9f7b64` probe gave tree `f80877dba`
+with the SAME six files/nine hunks at the SAME line ranges): **6
+conflicted files, 9 hunks** — `map.rs` ×3, `frame/draw.rs` ×2,
+`clicks.rs` ×1, `main.rs` ×1, `anchors.txt` ×1, `research/14` ×1.
+Everything else auto-merges cleanly,
+including the heavy shared files: `app/mod.rs` (f46's `section_manager`/
+`debug_unlock_map` fields + the four movement-key `pan_target = None`
+cancels + f29's `map_left_press` field all coexist), `assets.rs` (f46's
+`Cursor_11` + f29's `Coin_0..3`/boss-head/icon blocks, one atlas),
+`app/flow.rs` (both test-rig field additions), `app/frame.rs` (f46's
+OS-pointer gate + f29's `map_left_press` snapshot at :243),
+`frame/world.rs` (f46-only: `map_reveal_draw` driver + the ping→close
+click order), `map_layers.rs`/`map_npc_icons.rs`/`map_player_icons.rs`/
+`doors.rs`/`lang.rs`/`ui/resources.rs`/`golf_state.rs` (f29-only),
+`map_sections.rs`/`ui/chrome.rs`/`ui/cursor.rs`/`ui/minimap.rs`/
+`app/loop.rs`/`netglue.rs`/`debug_panel.rs`/`world_sim/player.rs`/
+`tr-core/map/mod.rs` (f46-only). The auto-merged `anchors.txt` conflict
+resolves to the full 21-row union (3 f29/e17 + 18 f46) with zero base
+rows lost — verified row-by-row against all three tips.
+
+### 8.2 Per-hunk compose table (the 9 conflict hunks)
+
+Line numbers are the dry-run tree `feddf3178`'s conflicted files
+(re-verified identical to the `f80877dba` probe).
+
+| # | File / hunk | f29 side (HEAD) | f46 side | Resolution |
+| --- | --- | --- | --- | --- |
+| 1 | `map.rs:656-726` — `WorldMap` field tail | `pylon_tile`, `pan_target: bool`, `pan_target_end`, `pan_cancel_press`, `cancel_wormhole` | `update_map`, `refresh_map`, `change_queues`, `load_map`, `clear_map`, `map_ready`, `load_map_lock`, `load_map_last_x` | **KEEP BOTH field sets, but the pan state unifies on f46's `pan_target: Option<[f32;2]>`** (already declared above the conflict, f46's doc note names this fold): drop f29's `pan_target: bool` + `pan_target_end`; keep `pylon_tile`/`pan_cancel_press`/`cancel_wormhole`. `None` = the C# flag false, `Some(end)` = armed + destination in one field. |
+| 2 | `map.rs:754-777` — `WorldMap::new` initialisers | `pylon_tile: (-1,-1)`, `pan_target: false`, `pan_target_end: [0,0]`, `pan_cancel_press: false`, `cancel_wormhole: false` | the eight reveal-statics seeds (`clear_map: true` per `WorldGen.cs:6982`) | **KEEP BOTH**, minus the two retired pan initialisers (the shared `pan_target: None` seed already sits above the hunk). |
+| 3 | `map.rs:1264-1275` — `prepare`'s `reset_pos` arm | inline `pan_target = false; pos = center_tile; reset_pos = false` | `self.recentre(center_tile)` | **KEEP f46's `recentre` seam** — it clears the pan FIRST (`Main.cs:55418`) then recentres + disarms; identical semantics on the Option field. f29's inline arm retires. |
+| 4 | `frame/draw.rs:2227-2235` — the `prepare` call | `m.pan_cancel_press = self.mine_down && self.map_left_press;` + 6-arg `prepare` | 7-arg `prepare(..., settings.map_enabled)` | **KEEP BOTH**: f29's press-feed line, then f46's 7-arg call (the `map_enabled` param feeds the clearMap consume). |
+| 5 | `frame/draw.rs:2520-2595` — fullscreen draw tail after the hover text | the `:55988-55995` revenge `UseMouseOver` money row (`if !death_hovered`) | close button + thick cursor + a STALE single local-head icon (f46's pre-overlay base remnant) | **KEEP f29's money row + f46's close-button and cursor blocks, in that order** (C# `:55988` row → `:56014` button → `:56037` cursor); **DROP f46's single-head block** — f29's 255-loop (local + remote pins, `:55931-55976`, already auto-merged above the hunk) replaces it per 84 §10.3. Mind the shared closing brace: f29's side ends inside `if let Some(i)`, f46's inside `if let Some(p)` — re-balance when splicing. |
+| 6 | `clicks.rs:864-1032` — the fn block after `handle_fullmap_ping` | `handle_pylon_map_click` + `request_pylon_teleport` (the gate ladder) | `handle_fullmap_close` | **KEEP BOTH** (disjoint fns, one after another). In `handle_pylon_map_click`'s `PanTo` arm replace `m.pan_target = true; m.pan_target_end = [x,y]` with `m.pan_target = Some([info.x as f32, info.y as f32])` (hunk-1 field unification). The production wiring auto-merged: `frame/world.rs:29-32` ping→close, `draw.rs` pylon-click drain — untouched. |
+| 7 | `main.rs:59-64` — module list | `mod map_npc_icons; mod map_player_icons;` | `mod map_sections;` | **KEEP BOTH** (alphabetical: npc_icons, player_icons, sections). |
+| 8 | `anchors.txt:899-922` — the appended rows | 3 overlay rows (`draw_misc_map_icons`, `draw_npc_map_icons_fullscreen`, `pylon_line`) | 18 reveal/keys rows | **KEEP BOTH** — all 21 rows, zero deletions (the canary rule). Verified: every row's marker exists in the composed tree. |
+| 9 | `research/14:402-939` — appended census sections | the f29 overlay census + its SUPERSEDED banner (points here) | the e18 residual + f46 closeout censuses + the 84 cross-notes | **KEEP BOTH sections** (84 §10 item 6's keep-both rule); f29's banner stays on the f29 section only. |
+
+### 8.3 Semantic folds (auto-merged text that must still change)
+
+These compile-break or mis-behave if the merge is text-only — the dry-run
+tree carries them as-is:
+
+1. **`map.rs::prepare` pan block → Option.** The auto-merged body still
+   reads `if self.pan_target { pan_target_step(self.pos,
+   self.pan_target_end, ...) ... self.pan_target = false }`. Adapt:
+   `if let Some(end) = self.pan_target { let (pos, done) =
+   pan_target_step(self.pos, end, self.pan_cancel_press); self.pos = pos;
+   if done { self.pan_target = None; } }`. The pure F6 `pan_target_step`
+   + its witness are representation-agnostic — unchanged.
+2. **`world_sim/editing/doors.rs:242` 597-arm pan clear → `m.pan_target
+   = None`.** Per 84 §10.3 the arm's TryOpening effects should route
+   through f46's `app/loop.rs::try_open_fullscreen_map()` (inventory/
+   sign/talk clears + sound 10 + `set_open`; verified present on the
+   `6fb5e01e8` tip); f29's inline copy adds `close_shop()` — fold that
+   one line into the shared helper (C# `Player.cs:29107-29110` closes
+   the shop too) instead of keeping the duplicate. The `pylon_tile`/
+   `pylon_view_fit`/`reset_pos = false` tail stays on the f29 arm.
+3. **Minimap live alpha into f29's overlay passes (D17 fold, 84 §10.3).**
+   The layer-walk call already auto-merged with f46's `m.minimap_alpha`
+   last arg + f29's 3-tuple return and extended `MapIconInputs` — no
+   edit. But f29's later minimap passes hardcode alpha 1.0:
+   `NpcIconView.alpha` (`draw.rs:1679`), `draw_death_marker(..., 1.0,
+   ...)` (:1740), and the player-head draws (:1723/:1784) — the C#
+   passes `b/255` to `DrawNPCMapIcons2` (`:55709`), the `MapDeath` tint
+   (`:55754`) and `DrawPlayerHead` (`:55729`). Replace the 1.0s with
+   `m.minimap_alpha`; `draw_player_map_icon` needs an alpha param (or a
+   tint multiply at the call). Fullscreen keeps 1.0 (`b = byte.MaxValue`
+   at `Main.cs:55291`, never reassigned in the fullscreen arm). The
+   revenge/misc passes take no `b` in C# (`:55705-55706`) — leave them.
+4. **f46's `pan_target` doc note + anchors row stay truthful**: the note
+   says "the overlay pick folds only its lerp step + pylon-click arming
+   onto it" — after folds 1-2 that is exactly the state; no edit needed.
+
+### 8.4 Atlas re-measure (ran, this retire pass)
+
+`node tools/atlas_e17_check.js` on this tip: baseline 8123 → **8131 px**
+(47 icon sheets, OK). With f46's `UI/Cursor_11` (18×18) added through the
+same packer: **8131 px, 9606 sheets — still OK** (the 18-px row packs into
+existing slack). Bound 8192; margin 61 px. Re-measured live this RESUME
+pass (both runs above re-executed, identical numbers). Re-run at merge
+per 84 §10.3.
+
+### 8.5 The e18f style-2 D18 draw keep-one — f29 overlay vs e18 `099beeba5` (f46g-ruling)
+
+**The two are NOT rivals for the same pixels — but where they touch, ONE
+implementation lands, and the D18 draw re-folds into the f46 union, NOT
+into f29.**
+
+**What e18f ported** (`099beeba5`, on `task/W4-e18-minimap-reveal-queue`,
+NOT an ancestor of the f46 tip `6fb5e01e8` — verified `merge-base
+--is-ancestor` exit 1): the style-2 overlay DRAW arm verbatim —
+`map.rs::draw_overlay` + `clamp_overlay_axes` + `map_overlay_quad`
+(`Main.cs:55548-55578` + `:55609`, the `(byte)(255*mapOverlayAlpha)` tint
+`:55568`), the `draw.rs` call site (`Main.cs:62231-62235`'s in-world
+gate), the `num37` layer-walk call at the overlay transform
+(`:55615-55625`), the `:56046` MouseText tail, the pylon-scan gate
+widened to style 2, 3 witnesses + 1 anchor row
+(`map.rs|pub fn draw_overlay`). The `:55626-55694` icon block is
+explicitly LEFT to the f29/e17 overlay keep-one ("never twice" — the
+commit message says so).
+
+**What f29 owns**: the nine overlay DRAW pieces (~4 500 ln:
+`map_npc_icons.rs` 950 + `map_player_icons.rs` 809 + `map_layers.rs`
++723 + `map.rs` +320 + `clicks.rs` +139 + `assets.rs` +216 + draw wiring
++520 per 84 §10.3), F1-F6, its own EXECUTED rebuild + 34-witness union.
+f29 does NOT port the style-2 tile pass — its overlay lane is the
+fullscreen/minimap icon passes (`:55626-55694`/`:55922-56004`). The
+e18f draw is the `:55548-55625` half the f29 census never claimed.
+
+**Keep-one rulings (per shared piece):**
+
+| Piece | e18f `099beeba5` | f46 union `6fb5e01e8` | f29 tip | KEEP |
+| --- | --- | --- | --- | --- |
+| `overlay_scale`/`overlay_alpha` fields + seeds 2.5/0.35 | present | present (`a352b16e` fold) | absent | **union's** — e18f copied them byte-identical FROM the union; one copy at merge |
+| `map_key_alpha`/`map_alpha_clamp`/`overlay_scale_clamp` helpers | byte-identical copies | originals (`a352b16e`) | absent | **union's** (skip e18f's copies — the e18 branch's own `310c7b9b4` re-fold recipe says exactly this) |
+| style-2 key rows ×1.05/×0.95 ±0.015 | in `update_minimap_keys` | in `update_minimap_zoom_keys` (§10.1 keep-one) | absent | **union's fn** — e18f's key rows DROP with its `update_minimap_keys` variant (84 §10.1: the merger drops e18's variant wholesale) |
+| `draw_overlay`/`clamp_overlay_axes`/`map_overlay_quad` + the draw.rs call site + num37 walk + MouseText tail + pylon-gate widening | **UNIQUE — the union lacks it** (verified: `git grep "fn draw_overlay" 6fb5e01e8` empty) | absent | absent | **e18f's, re-folded onto the union** (recipe below) |
+| the `:55626-55694` icon block (revenge/misc/NPC heads/255-loop/death) | explicitly deferred | single-head remnant (drops per §8.2 hunk 5) | **the full port** | **f29 tip's** — never twice |
+| 3 witnesses | `w4_e18_the_style_two_keys_step_the_overlay_axes` (dup — union's `w4_f46_style_two_keys_step_the_overlay_scale_and_alpha` covers the input rows), `w4_e18_the_overlay_clamps_match_the_draw_side` (**unique half** — pins the `WorldMap::clamp_overlay_axes` METHOD, which only the draw arm brings; the union's `w4_f46_alpha_and_overlay_clamps_match_the_draw_side` pins the pure fns only), `w4_e18_the_overlay_quad_is_screen_centred_and_unscaled` (**unique**) | the pure-fn style-2/clamp witnesses | — | **2 fold with the draw arm** (quad + clamps-method; the clamps witness's trailing key-helper asserts dedupe against the union's pure-fn witness at the fold), the keys witness drops with the keys keep-one — matches the e18 census `310c7b9b4`'s "2 fold with the draw arm" |
+
+**Re-fold recipe (lands on the f46 branch BEFORE its merge — NOT on
+f29):** cherry-pick `099beeba5` onto `6fb5e01e8`; per-hunk: SKIP the
+byte-identical helper/field hunks (map.rs state half), DROP the
+`update_minimap_keys` style-2 rows (the union's `update_minimap_zoom_keys`
+already steps them), TAKE `draw_overlay`/`clamp_overlay_axes`/
+`map_overlay_quad` + the draw.rs call-site hunk + the pylon-scan gate
+widening + the 2 draw-arm witnesses (quad + clamps-method; dedupe the
+clamps witness's trailing key-helper asserts against the union's
+pure-fn witness) + the anchor row + the research/14 MAP-FINAL
+section + the PORT_MAP/ANALYSIS rows. The draw.rs call-site hunk applies
+against the union's evolved draw.rs (the `447494570` witness re-pin moved
+line numbers only, not the seams). The layer-walk call inside the D18
+arm constructs `MapIconInputs` WITHOUT f29's 4 extension fields
+(`map_fullscreen`/`pylon_tile`/`screen`/`left_press` — verified absent
+from the e18f hunk, present on the f29 tip's struct): when the f29 tip
+merges second (§8.0 step 2), that THIRD `map_layers_draw` call site gains
+the 4 fields like the other two (84 §10.3's "BOTH union call sites"
+becomes all three): `map_fullscreen: false`, `pylon_tile: (-1, -1)` (the
+style-2 arm draws no network lines — `TeleportPylonsMapLayer.cs:45`'s
+fullscreen gate), `screen`, `left_press: false` (the marker click is
+fullscreen-only, `:83`/`:90`). The walk's returned `PylonClick`/
+`cancel_wormhole` halves are inert at `map_fullscreen: false` — drop
+them at the call, keep the hover string for the MouseText tail.
+
+**Why NOT into f29:** folding the D18 draw into f29 would split the
+style-2 system across two branches — the keys/alpha state/clamps live on
+the union (`a352b16e`), the draw would live on f29, and the f29-first
+merge order would land a draw whose clamps/keys arrive one merge later.
+f46-first + the D18 re-fold keeps the whole style-2 system on ONE
+branch, and f29's second merge only extends the shared `MapIconInputs`
+struct — the same seam treatment as the other two call sites. This
+matches the e18 branch's own published recipe (`310c7b9b4`: "the
+099beeba5 re-fold recipe — skip the byte-identical helpers/fields, drop
+the dup key rows, take the draw arm + 2 witnesses + anchor") verbatim.
+
+## 9. Retired-commit warning list — pre-rebuild f29 commits MUST NOT re-land
+
+The eleven commits below are this branch's pre-rebuild era (the
+`map_overlay.rs`/`map_pylons.rs` modules + their wiring). The rebuild
+`352644d24` deleted those modules and re-took the map-file set from e17
+wholesale; **none of this code may re-land** — not by cherry-pick, not by
+a stale-tree merge resolution, not by "restoring" a file the merger
+thinks was lost. If a merge diff shows `map_overlay.rs` or `map_pylons.rs`
+being ADDED, the resolution is wrong — abort and redo per §8.
+
+| Hash (full) | Short | Era scope |
+| --- | --- | --- |
+| `e1ffdefc5658a44b0caf5bd3eeda51b56cbd059a` | `e1ffdefc5` | census (docs; superseded by the deduped research/14 section) |
+| `09f71b61f1afcf04388e01a9ebfe16c2431f01bc` | `09f71b61f` | P1 asset pack (17-head subset; superseded by e17's full 81-head set + F4 coin rows) |
+| `9320326cadcaf75cccc6457cb206aecb3003805a` | `9320326ca` | P2 `DrawNPCMapIcons` port (`map_overlay.rs`; net-id Golem bug, default-table townies, self-loop Destroyer walk — §1) |
+| `1de1ad19ae0e5d4e9b5ae9b971a85dbb3d4a8f2f` | `1de1ad19a` | P3 death/revenge/misc/minimap-heads/hover/`LocalizedDuration` (`map_overlay.rs` + f64 death epoch + f64 lang form — §4) |
+| `a920b704ce4bb1d5b55491fd0743cdd03e85e456` | `a920b704c` | P4 pylon lines/click/pan (`map_pylons.rs`, `apply_pylon_click`, `Mount.height_boost` — §4) |
+| `a0516edf4117d34c7055474690a240da2044fcc7` | `a0516edf4` | review fixes onto the retired modules (the surviving semantics re-landed as F1/F3) |
+| `e18bf6dd2d9ae2fcba963e8691d6e0a104c92348` | `e18bf6dd2` | docs/anchors for the retired homes (3 anchor rows pointed at `map_overlay.rs` — the live rows point at e17's modules) |
+| `aac7375b9cd5905ef8a2896e8b3d044965833cc0` | `aac7375b9` | minimap death y-pin witness fix (the 108.55 pin re-landed inside F5's folded witness) |
+| `598f32c6da3b0d6ad07d0926cde02ab3b0a3bb3a` | `598f32c6d` | hover-tile +10 fix onto the retired draw wiring (e17's wiring already carries it) |
+| `9f80c5375f98131affc79da35beed5154d3e1e7a` | `9f80c5375` | lang test_lock convention (re-landed in the witness union `c19521b32`) |
+| `d5aa3621f29e07f304d0ffa39c4f2114cdfccdb3` | `d5aa3621f` | the reconcile doc itself (this file's earlier revision; the tip's version supersedes it) |
+
+The ten EXEC commits (`352644d24` rebuild, `e78178e15` F1, `f8df2276f`
+F2, `22df1dee8` F3, `8ccb7966b` F4, `8a29b8253` F5, `b50d96ca0` F6,
+`c19521b32` witness union, `c15a13188` docs dedupe, `809d08238` EXECUTED
+status) are the branch's live history — but the merger still reviews the
+TIP TREE (12-file diff vs e17 `8500c3e5d`), not the history: the rebuild
+commit's diff contains the wholesale deletion of the retired modules and
+must not be replayed onto a tree that never had them.
+
+## 10. e17 branch DEPRECATED — drop wholesale, do not merge
+
+`task/W4-e17-map-overlay-layers` (origin tip `8500c3e5da0a1ebfda03123d412e37114e50aeeb`,
+re-probed this retire pass: **UNMOVED** since the §7 rebuild — zero
+post-skeleton commits) is fully absorbed: this branch's rebuild took its
+entire map-file set wholesale, and every e17-touched file outside that
+set is byte-identical in the f29 tip (verified: the e17-vs-base file list
+is a subset of the f29-vs-base list, and the 12-file e17→f29-tip diff is
+exactly F1-F6 + witnesses + docs). **Instruction to the merger: e17 never
+lands as its own merge — drop it wholesale.** The original §6 step 1
+("e17 → main first") is retired. After the f29 tip lands, delete
+`task/W4-e17-map-overlay-layers` local + remote per the lifecycle rules
+(its tip is content-contained, though not a git ancestor — the rebuild
+was a tree-take, so `git branch -d` will refuse; verify containment by
+the 12-file diff review, then delete with `-D` and record this section as
+the justification). The same retire rule applies to
+`task/W4-e18-minimap-reveal-queue` on the reveal side — with ONE
+qualification this RESUME pass verified: the e18 tip moved past the
+docs-only `a1a8be6e9` to `310c7b9b4` (the MAP-FINAL P1-P4 commits,
+including the D18 draw `099beeba5` + the witness re-derivation
+`4cc600a97`). The branch is fully absorbed ONLY AFTER §8.5's D18
+re-fold lands on the f46 union — the draw arm is e18-unique content
+until then. The witness re-derivation `4cc600a97` mirrors the union's
+`447494570` (identical bodies at merge, nothing to fold). Retire e18
+after the f46 merge per 84 §10.2/§10.3 + §8.5 here.
 
 ---
 
