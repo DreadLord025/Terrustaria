@@ -75,6 +75,8 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
+| 120 | W4-c33 Water Chests keep-one ADDENDUM → FINAL (arm-by-arm d103 9a935127 vs c33 321c9b66 vs WorldGen.cs:17245-17355, 18 arms d103 wins 9 / c33 0; KEEP d103 water_chests+buried_chest, DROP c33 pass_underwater_chests + g37 B3; the stocking carry = c33's WHOLE chest_gen.rs superset; §8 band-first order frozen, §9 FINAL at d103 12318e505 / g44 f688ab142; code-only) | `120-water-chests-keep-one.md` | ✅ FINAL |
+| 154 | W4-c33 UnderwaterChests + PyrX + Oasis remainder → chest-gen FINAL (was 12i, renamed per research/150 registry §3 — g38 wins 12i, g50 vacated 154→271; the full chest-site census: no unclaimed oasis/underwater arm, the seed finish-sweeps are d107 scope; c33d lands flag12 style/main gate + the outside-flag12 style-pottery rows + the flag7 mushroom arms + the flag5/flag6 num10>0 gates; g44 sky-lake/sky-chest disjoint + f35 crate-open compose; 3 new + 6 re-derived witnesses written not run; code-only) | `154-c33-underwater-chests-oasis.md` | ✅ FINAL |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

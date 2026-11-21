@@ -170,4 +170,55 @@ satisfies arm 1 but not arm 2), the A8 268 cycle slot under extraLiquid.
 | --- | --- |
 | c7393225 | (3) the underground-desert music 61 arm (the oasis family's real audio gap) |
 | 3ecb8b08 | (2)+(4) flag11 pyramid loot shape + flag5 two-halves verify + phantom-row deletions + mid-band re-derivation + CreativeWings 4978 + 5 witnesses |
-| (this commit) | (1) this ADDENDUM + the 12i ledger |
+| a257f8fbe | (1) this ADDENDUM + the 154 ledger (was 12i) |
+
+## 8. The residual band-first ORDER deviation (the S1-A-4 stand-in)
+
+The C# assigns the family mains (desert/ice/hell, `:36023-36125`) BEFORE
+the depth-band dispatch, so a family chest's slot-0 main is written first
+and the band's `num10 > 0` extras follow it. The port rolls the band rows
+FIRST (`stock_band`) and inserts the family main after (`stock_chest`'s
+main chain) — the documented S1-A-4 band-first interleave. The draw
+sequence WITHIN each group is verbatim; only the interleave differs. This
+is why the deep-arm family extras (`stock_chest`) gate on the family
+probes (`ctx.ice`/`ctx.desert`/`ctx.jungle`) rather than `preset_main`:
+the probes stand in for the C#'s `num10 > 0` (the family dispatch sets
+num10 even with no caller main). The caller-preset mains (water/sky/
+pyramid/jungle/web) DO ride `ev.main_item`, so their `num10 > 0` gates
+(flag5 pair, flag6 extras, the weapon-ladder skip) read `preset_main`
+directly. The dungeon cycle supplies its main internally (`DungeonCycle`),
+so the flag9 ladder keeps its family gate. **This order is frozen** — the
+merge gate's `a == b` determinism halves pin it; do not "fix" the interleave
+without a stream re-pin.
+
+## 9. FINAL — the keep-one verdict stands (c33d chest-gen-final, 2026-11-21)
+
+Re-verified at the pushed tips: **d103 `12318e505`** (`water_chests.rs` /
+`buried_chest.rs` / `chest_gen.rs` / `chest_stock.rs` UNCHANGED since
+`fe9a565f` — empty diff), **g44 `f688ab142`**, **g37 `81fd1e0d0`**. The
+arm-by-arm table (§3) is FINAL: **d103 wins A2/A4/A6/A7/A8/A10/A11/A15/A16,
+c33 wins nothing in the pass body** — KEEP d103's `water_chests.rs` +
+`buried_chest.rs` + pipeline wiring, DROP c33's
+`structures.rs::pass_underwater_chests` and g37 B3.
+
+**The stocking carry is c33's WHOLE `chest_gen.rs` block** (§4), now the
+post-c33d superset. The c33d phase (154 ledger) lands four more gate fixes
+on top of 3ecb8b08/5479468c that d103's copy still lacks:
+
+1. **flag12 is style/main based** (`:36176`), not the wall-73 probe — the
+   classic IslandHouse chest (sunplate walls) now stocks its SkyMill/
+   pottery/Cloud/wings rows; d103's `ctx.sky` gate misses them.
+2. **The style-pottery rows are OUTSIDE flag12** (`:37453`/`:37528`) — the
+   locked biome chests (flag10) roll the 5234 row; d103's nest drops it.
+3. **The flag7 mushroom arms** (`:36653`/`:36977`) — d103 has none.
+4. **The flag5/flag6 `num10 > 0` gates** — d103 rolls the pair/extras on
+   main-0 chests too.
+
+**Merger instruction (FINAL):** take c33's `chest_gen.rs` + `chest_stock.rs`
+wholesale (the superset); take d103's `water_chests.rs` + `buried_chest.rs`
++ pipeline slot; the two compose through the shared `ChestSiteEvent` seam
+(A17) with no signature changes. Fix d103's A2 extraLiquid double-draw at
+the merge (§3 row A2: draw the 5-list THEN overwrite with the 6-list). The
+witness union (§5) + the 4 new merge-gate witnesses + the c33d witnesses
+(154 ledger) are the merge gate. **No arm of the Water Chests pass remains
+unclaimed; the keep-one is FINAL.**

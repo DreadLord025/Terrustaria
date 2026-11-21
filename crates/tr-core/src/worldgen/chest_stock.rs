@@ -53,7 +53,9 @@ pub struct ChestCtx {
     /// The dungeon family (`Main.wallDungeon` at the anchor,
     /// `IsDungeon`'s probe).
     pub dungeon: bool,
-    /// The sky probe (wall 73 — the skyware house family).
+    /// The sky probe (wall 73 the cloud disc / wall 82 the disc-wall house
+    /// interior — the positional read; W4-c33d: the stocking's flag12 is
+    /// style/main based, this probe gates no loot row).
     pub sky: bool,
     /// `flag13` — the water family (the underwater chest probe).
     pub water: bool,
@@ -139,7 +141,12 @@ pub fn context_at(world: &World, x: i32, y: i32) -> ChestCtx {
         granite: wall_near(164) || wall_near(401),
         idol: wall_near(464) || wall_near(241),
         dungeon: wall_near_where(&dungeon_wall),
-        sky: wall_near(73),
+        // W4-g44: the verbatim IslandHouse interior is the disc wall 82
+        // (`WorldGen.cs:79222`); the cloud disc flood keeps wall 73. Both
+        // read as the positional sky probe. W4-c33d: the probe no longer
+        // gates any loot row — the stocking's flag12 is the style/main
+        // test (`:36176`), computed in `chest_gen.rs::stock_chest`.
+        sky: wall_near(73) || wall_near(82),
         water: near(4869) || wall_near(24),
     }
 }

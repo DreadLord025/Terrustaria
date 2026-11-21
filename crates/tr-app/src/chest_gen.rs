@@ -26,7 +26,11 @@
 //! engine. EVERY `num10 > 0` slot-0 write prefixes (`:36232`/`:36513`/
 //! `:36808`/`:37167`); the flag9 ladder's `generatedShadowKey`/
 //! `generatedRamRune` fairness flags ride the driver's once-per-world
-//! state (W4-c33 census).
+//! state (W4-c33 census). W4-c33d chest-gen-final: flag12 is the
+//! style/main test (`:36176`, not the wall-73 probe), the flag7 mushroom
+//! arms (`:36653`/`:36977`) land, the style-pottery rows (`:37453`/
+//! `:37528`) sit OUTSIDE flag12 (the locked biome chests roll them), and
+//! the flag5/flag6 extras carry the C#'s `num10 > 0` gates.
 //! Out of scope here (documented in the ROADMAP row): the seed-flavour rows
 //! (vampire/errorWorld/rainbow/tenthAnniversary, `SecretSeed`/`Main`
 //! statics the port does not generate), the remix/tenth-anniversary/FTW
@@ -344,6 +348,16 @@ fn stock_band(
     ctx: &Context,
     chest_style: i32,
     chest_kind: u16,
+    // `flag12` (`WorldGen.cs:36176-36178`): `kind == 21 && (num9 == 13 ||
+    // num10 ∈ {159, 65, 158, 2219})` — the skyware family is STYLE/MAIN
+    // based, not a wall probe. The flag is set BEFORE the remix retype
+    // (`:36179-36194`: the plain-remix sky chest becomes crimson-43 wood
+    // or corrupt-3 mahogany 467) and survives it, so the 467 tail block
+    // reads the same true flag (the main disjunct carries no kind gate —
+    // the sky mains survive the retype). W4-c33d chest-gen-final: the old
+    // `ctx.sky` wall-73 gate missed every classic island-house chest
+    // (sunplate walls) and fired on non-sky chests near cloud walls.
+    flag12: bool,
     preset_main: bool,
     y: i32,
     lava_line: i32,
@@ -456,7 +470,10 @@ fn stock_band(
             // callers always pre-set a main, so the arm always fires on
             // the style. The port rolls the band rows before the main
             // insertion (`stock_chest`), so the arm leads the band.
-            if chest_style == 17 && chest_kind == 21 {
+            // W4-c33d: the C# pair sits INSIDE the `num10 > 0` block — a
+            // style-17 chest with no main takes the weapon ELSE branch
+            // and rolls NO pair (the preset-main gate makes that exact).
+            if preset_main && chest_style == 17 && chest_kind == 21 {
                 if next(rng, 2) == 0 {
                     out.push(Row::plain(4425));
                 }
@@ -471,7 +488,11 @@ fn stock_band(
             // `flag12` `:36526-36532` (W4-c33 pyramid-loot census): the
             // skyware family's mid-band 1/40 CreativeWings 4978 with the
             // natural prefix — the island-house chests' rare accessory.
-            if ctx.sky && next(rng, 40) == 0 {
+            // W4-c33d: the gate is flag12 (style 13 / the four sky mains,
+            // `:36176`) AND a preset main — the C# row sits inside the
+            // mid band's `num10 > 0` block; a style-13 chest with no main
+            // takes the weapon ELSE branch and NO wings draw.
+            if flag12 && preset_main && next(rng, 40) == 0 {
                 let mut wings = Row::plain(4978);
                 roll_prefix_on(rng, &mut wings);
                 out.push(wings);
@@ -493,6 +514,22 @@ fn stock_band(
                     out.push(flare_gun);
                     out.push(Row::stacked(931, ranged(rng, 25, 51) as u32));
                 }
+                // `flag7` `:36653-36666` (W4-c33d chest-gen-final): the
+                // mushroom family (kind 21, style 32, `:36151-36153`) —
+                // the 1/2 ShroomMinecart 4450, then an INDEPENDENT 1/3
+                // MushroomVanity set 4779+4780+4781. Both rows sit in the
+                // `num10 == 0` ELSE branch (the family's own chests carry
+                // no preset main); the old copy had no flag7 arm at all.
+                if chest_kind == 21 && chest_style == 32 {
+                    if next(rng, 2) == 0 {
+                        out.push(Row::plain(4450));
+                    }
+                    if next(rng, 3) == 0 {
+                        out.push(Row::plain(4779));
+                        out.push(Row::plain(4780));
+                        out.push(Row::plain(4781));
+                    }
+                }
             }
             // `flag9 && !flag10` `:36555-36576` (W4-c33 census): the
             // dungeon extras — the ShadowKey 329 is the ONCE-per-world
@@ -501,6 +538,11 @@ fn stock_band(
             // and the 6156 1/4 WITH `Prefix(-1)`. The old copy rolled
             // Next(2) for the key, no fairness, no prefixes. The locked
             // biome chests (styles 23-27 / 467-13, flag10) skip the arm.
+            // W4-c33d: the ladder is INSIDE the C#'s `num10 > 0` block —
+            // but the port's dungeon cycle supplies that main internally
+            // (`stock_chest`'s flag9 arm inserts `dungeon.take()`), so the
+            // family gate below already implies num10 > 0; no extra
+            // preset-main gate (ev.main_item is 0 for the cycle chests).
             if ctx.dungeon && chest_style != 0 && !locked_biome_chest(chest_kind, chest_style) {
                 if !*genned_shadow_key || next(rng, 3) == 0 {
                     *genned_shadow_key = true;
@@ -600,7 +642,8 @@ fn stock_band(
             // `flag5` `:36845-36855` (W4-c33): the deep band's water-chest
             // pair — the vanilla slot is after the flag4 jungle rows (the
             // port's `stock_chest` inserts the main ahead of the band).
-            if chest_style == 17 && chest_kind == 21 {
+            // W4-c33d: `num10 > 0`-gated like the mid pair.
+            if preset_main && chest_style == 17 && chest_kind == 21 {
                 if next(rng, 2) == 0 {
                     out.push(Row::plain(4425));
                 }
@@ -610,6 +653,10 @@ fn stock_band(
             }
             // `:36856-36877` — the flag9 && !flag10 dungeon extras (the
             // same fairness ladder as the mid band, W4-c33 census).
+            // W4-c33d: the C# ladder is `num10 > 0`-gated; the port's
+            // dungeon cycle supplies that main internally (the flag9 arm
+            // inserts `dungeon.take()`), so the family gate implies it —
+            // same shape as the mid arm.
             if ctx.dungeon && chest_style != 0 && !locked_biome_chest(chest_kind, chest_style) {
                 if !*genned_shadow_key || next(rng, 3) == 0 {
                     *genned_shadow_key = true;
@@ -661,6 +708,20 @@ fn stock_band(
                         // vampire/errorWorld arms (parked with the seed
                         // lanes) — unreachable on the Next(7) pick.
                         _ => {}
+                    }
+                }
+                // `flag7` `:36977-36993` (W4-c33d chest-gen-final): the
+                // deep band's mushroom arm is an EITHER-OR — the 1/2
+                // ShroomMinecart 4450 ELSE the MushroomVanity set
+                // 4779+4780+4781 (the mid band's two independent rolls
+                // are NOT this shape). Inside the `num10 == 0` branch.
+                if chest_kind == 21 && chest_style == 32 {
+                    if next(rng, 2) == 0 {
+                        out.push(Row::plain(4450));
+                    } else {
+                        out.push(Row::plain(4779));
+                        out.push(Row::plain(4780));
+                        out.push(Row::plain(4781));
                     }
                 }
             }
@@ -851,10 +912,10 @@ fn stock_band(
     // flag13 furnace, flag9 BoneWelder] → flag12 pottery → flag12 Cloud
     // (BOTH blocks carry the Cloud stack — the old copy's "467 stops at
     // the pottery" note was wrong, `:37522-37527`) → the style row
-    // (21: styles 23-27; 467: style 13) → [21-only: the flag13 tablet
-    // pair]. The old `wood_family` 2198 50-101 row had NO C# counterpart
-    // (the only 2198 write in the whole block is the flag2 1/7 machine)
-    // and is dropped.
+    // (21: styles 23-27; 467: style 13 — OUTSIDE flag12, W4-c33d) →
+    // [21-only: the flag13 tablet pair]. The old `wood_family` 2198
+    // 50-101 row had NO C# counterpart (the only 2198 write in the whole
+    // block is the flag2 1/7 machine) and is dropped.
     // `flag4` `:37386-37393` / `:37473-37480` — the jungle pair.
     if ctx.jungle && next(rng, 4) == 0 {
         out.push(Row::plain(2204));
@@ -871,7 +932,9 @@ fn stock_band(
         out.push(Row::plain(669));
     }
     // `flag12` `:37402-37405` / `:37489-37492` — the Sky Mill at 1/3.
-    if ctx.sky && next(rng, 3) == 0 {
+    // W4-c33d: flag12 is the style/main test (`:36176`), not the wall
+    // probe — the classic island-house chest sits on SUNPLATE walls.
+    if flag12 && next(rng, 3) == 0 {
         out.push(Row::plain(2197));
     }
     if chest_kind == 21 {
@@ -889,8 +952,9 @@ fn stock_band(
         }
     }
     // `flag12` `:37418-37452` / `:37493-37527` — the pottery pick and the
-    // Cloud stack 50-101, in BOTH blocks.
-    if ctx.sky {
+    // Cloud stack 50-101, in BOTH blocks. W4-c33d: flag12 = style 13 /
+    // the four sky mains (`:36176`), NOT the wall-73 probe.
+    if flag12 {
         let pottery = match next(rng, 6) {
             0 => 5258,
             1 => 5226,
@@ -901,16 +965,20 @@ fn stock_band(
         };
         out.push(Row::plain(pottery));
         out.push(Row::stacked(751, ranged(rng, 50, 101) as u32));
-        // The style row: kind 21 styles 23-27 (`:37453-37456`), kind 467
-        // style 13 (`:37528-37531`) — a 1/2 pottery row each.
-        let style_row = if chest_kind == 21 {
-            (23..=27).contains(&chest_style)
-        } else {
-            chest_kind == 467 && chest_style == 13
-        };
-        if style_row && next(rng, 2) == 0 {
-            out.push(Row::plain(5234));
-        }
+    }
+    // The style row: kind 21 styles 23-27 (`:37453-37456`), kind 467
+    // style 13 (`:37528-37531`) — a 1/2 RemnantsofDevotion 5234 row each.
+    // W4-c33d: these `num9` tests sit OUTSIDE the flag12 blocks in the C#
+    // — the LOCKED BIOME chests (flag10, never flag12: their mains are
+    // 1156/1571/1569/1260/1572/4607) roll the row on their own style; the
+    // old copy's flag12 nest dropped every locked-chest draw.
+    let style_row = if chest_kind == 21 {
+        (23..=27).contains(&chest_style)
+    } else {
+        chest_kind == 467 && chest_style == 13
+    };
+    if style_row && next(rng, 2) == 0 {
+        out.push(Row::plain(5234));
     }
     if chest_kind == 21 && chest_style == 16 {
         // `flag13` `:37457-37469` — the Solar Tablet at 1/5, else the
@@ -1005,6 +1073,23 @@ fn stock_chest(
     let flag11 = chest_kind == 21
         && chest_style != 0
         && matches!(ev.main_item, 848 | 857 | 934);
+    // `flag12` (`:36176-36178`, W4-c33d chest-gen-final): `kind == 21 &&
+    // (num9 == 13 || num10 ∈ {159, 65, 158, 2219})` — the skyware family
+    // is STYLE/MAIN based. The classic island-house chest sits on the
+    // sunplate house walls (`IslandHouse :79222` writes disc wall 82 /
+    // sunplate 144), NOT the cloud-disc wall 73 — the old `ctx.sky`
+    // probe missed every faithful house chest and fired on non-sky
+    // chests near cloud walls. The flag12 remix retype (`:36179-36194`,
+    // crimson-43 wood / corrupt-3 mahogany 467) rides the placement core
+    // (g44's buried_chest); the retype keeps the flag set, so the 467
+    // tail block reads the same true flag12 (the style-13 arm of the
+    // `style_row` below covers the 467-13 locked desert chest, which is
+    // flag10 and NEVER flag12). The main disjunct carries NO kind gate:
+    // the corrupt retype flips kind to 467 AFTER flag12 is set, but the
+    // sky main survives — and 159/65/158/2219 are exclusively the
+    // IslandHouse cycle's mains, so the disjunct is exact either way.
+    let flag12 = (chest_kind == 21 && chest_style == 13)
+        || matches!(ev.main_item, 159 | 65 | 158 | 2219);
     // `:36222-36227`: `(flag23 && (flag | flag6)) | flag11` — the flag11
     // disjunct FORCES the surface arm at any depth (the pyramid chamber
     // sits deep in the sand; its band rows are the surface consumables).
@@ -1032,6 +1117,7 @@ fn stock_chest(
         &ctx,
         chest_style,
         chest_kind,
+        flag12,
         preset_main,
         y,
         ev.lava_line,
@@ -1126,12 +1212,17 @@ fn stock_chest(
         rows.insert(0, row);
     }
     // The fixed rows' family extras (`AddBuriedChest`'s two `num10 > 0`
-    // arms, the vanilla order: the surface arm's flag6 first `:36236-36257`,
-    // then the deep arm's flag2/flag3/flag4 `:36806-36847`); the tenth
-    // anniversary's flag11 rows park with M5-SEED-1.
+    // arms, the vanilla order: the surface arm's flag6 first `:36245-36266`,
+    // then the deep arm's flag2/flag3/flag4 `:36810-36844`); the tenth
+    // anniversary's flag11 rows park with M5-SEED-1. W4-c33d: BOTH arms
+    // sit inside the C#'s `num10 > 0` blocks — a natural style-0 chest
+    // (the flag/flag6 surface arm, the scatter's deep chests) rolls NO
+    // family extras; the `preset_main` gate makes that exact (the
+    // family-rolled mains — desert/ice/hell — keep the port's documented
+    // band-first order, ADDENDUM 120 §8).
     if band == Band::Surface {
-        if ctx.living_tree {
-            // `flag6` `:36240-36257`.
+        if preset_main && ctx.living_tree {
+            // `flag6` `:36245-36266`.
             if next(rng, 3) == 0 {
                 rows.push(Row::plain(5629));
             }
@@ -1146,6 +1237,15 @@ fn stock_chest(
         }
     } else if band != Band::Deepest {
         // The deep arm (the vanilla `num7 < maxTilesY - 250` branch).
+        // W4-c33d: the C# block is `num10 > 0` — the family dispatch
+        // (`:36023-36125`) SETS num10 for the desert/ice/hell families
+        // before the band runs, so their extras fire even with no caller
+        // main; the port rolls those mains after the band (the documented
+        // band-first order, ADDENDUM 120 §8), so the family probes below
+        // stand in for the num10 gate. A family-less natural chest enters
+        // no inner arm (the probes are the gate); a preset-main chest
+        // (water/sky/pyramid) enters exactly the arms whose probes read
+        // true, as the C# admits it through `num10 > 0`.
         if ctx.ice {
             // `flag2` `:36809-36813`.
             if next(rng, 5) == 0 {
@@ -1185,8 +1285,10 @@ fn stock_chest(
     }
     // W4-c33 census: the style-pottery rows and the flag13 tablet pair
     // moved into `stock_band`'s tail (the C# keeps them INSIDE the
-    // `itemIndex > 0` kind blocks, `:37453-37469` / `:37528-37531`, in the
-    // flag12 row order) — the old copy rolled them here a second time.
+    // `itemIndex > 0` kind blocks, `:37453-37469` / `:37528-37531`).
+    // W4-c33d: the pottery rows are num9 style tests OUTSIDE flag12 (the
+    // locked biome chests roll them); the flag13 tablet pair stays in the
+    // kind-21 block — the old copy rolled them here a second time.
     rows
 }
 
@@ -1754,14 +1856,17 @@ mod tests {
         w
     }
 
-    /// The sky probe reads the port's own writer: the floating-island houses
-    /// write `WALL_CLOUD` = 73 (`worldgen/islands.rs:26`/`:133`), not the
-    /// vanilla 216/187 cloud walls (216 is the underground desert's shell —
-    /// `worldgen/desert.rs`).
+    /// The sky probe reads the port's own writers: the cloud disc flood
+    /// writes `WALL_CLOUD` = 73 and the verbatim IslandHouse interior the
+    /// disc wall 82 (`worldgen/islands.rs`, W4-g44), not the vanilla
+    /// 216/187 cloud walls (216 is the underground desert's shell —
+    /// `worldgen/desert.rs`). W4-c33d: the probe is a POSITIONAL read only —
+    /// the stocking's flag12 is style/main based (`:36176`), so the probe
+    /// no longer gates any loot row; this witness pins the probe itself.
     #[test]
     fn the_sky_probe_reads_the_cloud_wall() {
         let mut w = rig();
-        // A cloud wall near the anchor: the skyware family's tail rows fire.
+        // A cloud wall near the anchor: the positional sky probe reads it.
         for dx in -2i32..=0 {
             for dy in -2i32..=0 {
                 let i = w.index(120 + dx, 197 + dy);
@@ -1770,6 +1875,18 @@ mod tests {
         }
         let ctx = tr_core::worldgen::chest_stock::context_at(&w, 120, 198);
         assert!(ctx.sky, "the cloud wall reads as the skyware family");
+        // The IslandHouse disc wall 82 reads the same probe (g44's graft).
+        let mut w82 = rig();
+        for dx in -2i32..=0 {
+            for dy in -2i32..=0 {
+                let i = w82.index(120 + dx, 197 + dy);
+                w82.tiles[i].wall = 82;
+            }
+        }
+        assert!(
+            tr_core::worldgen::chest_stock::context_at(&w82, 120, 198).sky,
+            "the IslandHouse disc wall reads the sky probe too"
+        );
         let mut w2 = rig();
         for dx in -2i32..=0 {
             for dy in -2i32..=0 {
@@ -2067,24 +2184,20 @@ mod tests {
         assert!(hits > 0, "the 1/4 flag4 row fires on some stream ({hits})");
         assert!(hits < 400, "and not on every one — the 1/4 gate is real");
 
-        // A style-25 skyware anchor (the cloud wall 73 near the seat) takes
-        // the flag12 block's 1/2 pottery row (`:37453-37456`).
+        // A style-25 LOCKED biome anchor takes the 1/2 RemnantsofDevotion
+        // row (`:37453-37456`). W4-c33d: the row is a num9 style test
+        // OUTSIDE flag12 — the locked chest (main 1260, the Frozen chest)
+        // needs no sky wall and no flag12; the old flag12 nest dropped it.
         let mut w = rig();
-        for dx in -2i32..=0 {
-            for dy in -2i32..=0 {
-                let i = w.index(100 + dx, 198 + dy);
-                w.tiles[i].wall = 73;
-            }
-        }
         put_chest(&mut w, 100, 198);
         let rows25 = (1u64..64).any(|seed| {
             let mut stock = ChestStock::new(seed, false);
             let mut rng = tr_core::UnifiedRandom::new(seed as i32);
-            stock_chest_at(&mut stock, &w, 100, 198, false, 25, 21, 0, &mut rng)
+            stock_chest_at(&mut stock, &w, 100, 198, false, 26, 21, 1260, &mut rng)
                 .iter()
                 .any(|r| r.kind == 5234)
         });
-        assert!(rows25, "the style-25 flag12 pottery row fires on some stream");
+        assert!(rows25, "the style-26 locked-chest pottery row fires on some stream");
     }
 
     #[test]
@@ -2151,6 +2264,24 @@ mod tests {
         );
 
         // The Cloud stack lands in BOTH blocks on a skyware anchor.
+        // W4-c33d: flag12 is style/main based — the kind-21 style-13 chest
+        // needs no wall at all; the 467 half is the remix corrupt retype's
+        // product (the core sets kind 467/style 3 and the flag stays set),
+        // so the driver carries the sky main 159 through it.
+        let mut w = rig();
+        put_chest(&mut w, 100, 198);
+        for (kind, style, main) in [(21u16, 13i32, 0u16), (467, 3, 159)] {
+            let mut stock = ChestStock::new(3, false);
+            let mut rng = tr_core::UnifiedRandom::new(3);
+            let rows = stock_chest_at(&mut stock, &w, 100, 198, false, style, kind, main, &mut rng);
+            assert!(
+                rows.iter().any(|r| r.kind == 751),
+                "the Cloud stack lands on the kind-{kind} block"
+            );
+        }
+        // The wall-73 negative: a style-0 main-0 chest beside a cloud wall
+        // is NOT flag12 — no SkyMill/pottery/Cloud draws (the old ctx.sky
+        // probe fired here).
         let mut w = rig();
         for dx in -2i32..=0 {
             for dy in -2i32..=0 {
@@ -2159,15 +2290,16 @@ mod tests {
             }
         }
         put_chest(&mut w, 100, 198);
-        for kind in [21u16, 467] {
-            let mut stock = ChestStock::new(3, false);
-            let mut rng = tr_core::UnifiedRandom::new(3);
-            let rows = stock_chest_at(&mut stock, &w, 100, 198, false, 13, kind, 0, &mut rng);
-            assert!(
-                rows.iter().any(|r| r.kind == 751),
-                "the Cloud stack lands on the kind-{kind} block"
-            );
-        }
+        let plain_hits = (1u64..120)
+            .filter(|&seed| {
+                let mut stock = ChestStock::new(seed, false);
+                let mut rng = tr_core::UnifiedRandom::new(seed as i32);
+                stock_chest_at(&mut stock, &w, 100, 198, false, 0, 21, 0, &mut rng)
+                    .iter()
+                    .any(|r| matches!(r.kind, 751 | 2197 | 5258 | 5226 | 5254 | 5238 | 5255 | 5388))
+            })
+            .count();
+        assert_eq!(plain_hits, 0, "a cloud-wall neighbour alone is not flag12");
     }
 
     /// The probe split: the pyramid's own sandstone walls (187) read the
@@ -2338,7 +2470,11 @@ mod tests {
 
     /// W4-c33 pyramid-loot census (`flag12` `:36526-36532`): the skyware
     /// family's mid-band 1/40 CreativeWings 4978 rolls with the natural
-    /// prefix; the surface/deep bands carry no such row.
+    /// prefix; the surface/deep bands carry no such row. W4-c33d: the
+    /// gate is flag12 (style 13 / the four sky mains) AND a preset main —
+    /// the fixture is a SUNPLATE-wall island house (no cloud wall 73),
+    /// the classic `IslandHouse` interior; a style-13 chest with NO main
+    /// rolls no wings draw (the `num10 > 0` block).
     #[test]
     fn the_sky_mid_band_rolls_the_creative_wings() {
         let mut w = World::new("t".into(), 200, 600);
@@ -2348,7 +2484,7 @@ mod tests {
         for dx in -2i32..=0 {
             for dy in -2i32..=0 {
                 let i = w.index(100 + dx, 300 + dy);
-                w.tiles[i].wall = 73; // the skyware cloud wall
+                w.tiles[i].wall = 82; // the IslandHouse disc wall (NOT 73)
             }
         }
         put_chest(&mut w, 100, 300);
@@ -2363,6 +2499,18 @@ mod tests {
             .count();
         assert!(hits > 0, "the 1/40 wings row fires ({hits}/900)");
         assert!(hits < 120, "and stays rare ({hits}/900 ~ 1/40)");
+        // The main-0 negative: a style-13 chest with no preset main takes
+        // the weapon ELSE branch — no wings row on ANY stream.
+        let zero_hits = (1u64..200)
+            .filter(|&seed| {
+                let mut stock = ChestStock::new(seed, false);
+                let mut rng = tr_core::UnifiedRandom::new(seed as i32);
+                stock_chest_at(&mut stock, &w, 100, 300, false, 13, 21, 0, &mut rng)
+                    .iter()
+                    .any(|r| r.kind == 4978)
+            })
+            .count();
+        assert_eq!(zero_hits, 0, "a main-0 style-13 chest rolls no wings");
     }
 
     /// `flag3`'s underground-desert arm (`:36023-36047`): the shallow four
@@ -2438,9 +2586,11 @@ mod tests {
         );
     }
 
-    /// `IslandHouse`'s cycle (`:79338-79363`): the first four sky chests of a
-    /// world take the fixed 159/65/158/2219 in order — the vanilla's
-    /// `skyIslandHouseCount` table before the `> 3` re-roll.
+    /// `IslandHouse`'s cycle (`:79348-79368`): the first four sky chests of
+    /// a world take the fixed 159/65/158/2219 in order — the vanilla's
+    /// `skyIslandHouseCount` table before the `> 3` re-roll. W4-c33d: the
+    /// fixture is the SUNPLATE house interior (disc wall 82), not the
+    /// cloud-disc wall 73 — flag12 is style/main based either way.
     #[test]
     fn the_sky_chests_walk_the_island_house_cycle() {
         let mut w = rig();
@@ -2448,13 +2598,13 @@ mod tests {
             for dx in -2i32..=0 {
                 for dy in -2i32..=0 {
                     let i = w.index(x + dx, 197 + dy);
-                    w.tiles[i].wall = 73; // the island house's cloud walls
+                    w.tiles[i].wall = 82; // the IslandHouse disc wall
                 }
             }
             let _ = slot;
             put_chest(&mut w, *x, 199);
         }
-        // The cycle itself moved to the site (`islands.rs::build_house`,
+        // The cycle itself moved to the site (`islands.rs::island_house`,
         // `GenVars.skyIslandHouseCount`); the hook inserts the site's pick
         // (`main_item`) into slot 0 — the walk order rides the same table.
         let mut stock = ChestStock::new(0x5EED, false);
@@ -2698,7 +2848,10 @@ mod tests {
     /// `:36856-36877` deep): the ShadowKey 329 and the RamRune 5465 are
     /// ONCE-per-world grants (`!genned || Next(3/8)==0`), the rune and the
     /// 6156 bracer prefix. The first dungeon chest grants both; a second
-    /// needs the odds roll.
+    /// needs the odds roll. W4-c33d: the ladder is `num10 > 0`-gated in the
+    /// C#; the port's dungeon cycle supplies that main internally (the
+    /// flag9 arm inserts `dungeon.take()`), so the driver keeps main 0 and
+    /// the family gate implies num10 > 0.
     #[test]
     fn the_dungeon_fairness_grants_once_per_world() {
         let mut w = deep_rig();
@@ -2729,6 +2882,16 @@ mod tests {
         let second = stock_chest_at(&mut stock, &w, 100, 340, false, 2, 21, 0, &mut rng);
         assert!(!second.iter().any(|r| r.kind == 329), "the key does not repeat");
         assert!(!second.iter().any(|r| r.kind == 5465), "the rune does not repeat");
+        // W4-c33d: the locked biome chest (style 26, flag10) skips the
+        // ladder entirely — its caller-preset main 1260 rides slot 0 but
+        // no ShadowKey/RamRune/bracer draws (`:36555`/`:36856` !flag10).
+        let mut stock_l = ChestStock::new(seed, false);
+        let mut rng_l = tr_core::UnifiedRandom::new(seed as i32);
+        let locked = stock_chest_at(&mut stock_l, &w, 100, 340, false, 26, 21, 1260, &mut rng_l);
+        assert!(
+            !locked.iter().any(|r| matches!(r.kind, 329 | 5465 | 6156)),
+            "a locked biome chest rolls no flag9 ladder"
+        );
     }
 
     /// Item 1 — the surface-gate fall-through (`:36227`): a preset-main
@@ -2854,5 +3017,138 @@ mod tests {
                 .any(|r| matches!(r.kind, 4425 | 4460))
         });
         assert!(pair, "the style-17 flag5 pair fires through the shared seam");
+    }
+
+    /// W4-c33d chest-gen-final — the flag7 mushroom family (`:36151-36153`
+    /// kind 21 style 32): the MID band rolls the 1/2 ShroomMinecart 4450
+    /// and an INDEPENDENT 1/3 MushroomVanity set 4779+4780+4781
+    /// (`:36653-36666`); the DEEP band's arm is an EITHER-OR (`:36977-
+    /// :36993`). Both sit in the `num10 == 0` branch — a preset main skips
+    /// them. The old copy had no flag7 arm at all.
+    #[test]
+    fn the_flag7_mushroom_rows_roll_the_two_band_shapes() {
+        // Mid band (y=300 between surface 200 and rock 400).
+        let mut w = World::new("t".into(), 200, 600);
+        w.world_surface = 200.0;
+        w.rock_layer = 400.0;
+        w.seed = 42;
+        put_chest(&mut w, 100, 300);
+        let mut cart = 0u32;
+        let mut vanity = 0u32;
+        let mut both = 0u32;
+        for seed in 1u64..400 {
+            let mut stock = ChestStock::new(seed, false);
+            let mut rng = tr_core::UnifiedRandom::new(seed as i32);
+            let rows = stock_chest_at(&mut stock, &w, 100, 300, false, 32, 21, 0, &mut rng);
+            let c = rows.iter().any(|r| r.kind == 4450);
+            let v = rows.iter().any(|r| r.kind == 4779);
+            if c {
+                cart += 1;
+            }
+            if v {
+                vanity += 1;
+                // The vanity set lands as the full triple.
+                assert!(rows.iter().any(|r| r.kind == 4780));
+                assert!(rows.iter().any(|r| r.kind == 4781));
+            }
+            if c && v {
+                both += 1;
+            }
+        }
+        assert!(cart > 0, "the mid 1/2 minecart fires ({cart}/400)");
+        assert!(vanity > 0, "the mid 1/3 vanity set fires ({vanity}/400)");
+        assert!(both > 0, "the mid rolls are INDEPENDENT ({both}/400 both)");
+        // Deep band (y=340, rock 300, height 600): the either-or — the
+        // vanity set lands ONLY when the minecart does not.
+        let mut wd = deep_rig();
+        put_chest(&mut wd, 100, 340);
+        let mut deep_cart = 0u32;
+        let mut deep_vanity = 0u32;
+        for seed in 1u64..400 {
+            let mut stock = ChestStock::new(seed, false);
+            let mut rng = tr_core::UnifiedRandom::new(seed as i32);
+            let rows = stock_chest_at(&mut stock, &wd, 100, 340, false, 32, 21, 0, &mut rng);
+            let c = rows.iter().any(|r| r.kind == 4450);
+            let v = rows.iter().any(|r| r.kind == 4779);
+            assert!(!(c && v), "the deep arm is an either-or ({seed})");
+            if c {
+                deep_cart += 1;
+            }
+            if v {
+                deep_vanity += 1;
+            }
+        }
+        assert!(deep_cart > 0, "the deep minecart fires ({deep_cart}/400)");
+        assert!(deep_vanity > 0, "the deep vanity set fires ({deep_vanity}/400)");
+        // The preset-main negative: a style-32 chest WITH a main takes the
+        // num10 > 0 branch — no flag7 draws on any stream.
+        let preset_hits = (1u64..120)
+            .filter(|&seed| {
+                let mut stock = ChestStock::new(seed, false);
+                let mut rng = tr_core::UnifiedRandom::new(seed as i32);
+                stock_chest_at(&mut stock, &wd, 100, 340, false, 32, 21, 186, &mut rng)
+                    .iter()
+                    .any(|r| matches!(r.kind, 4450 | 4779))
+            })
+            .count();
+        assert_eq!(preset_hits, 0, "a preset-main mushroom chest rolls no flag7");
+    }
+
+    /// W4-c33d chest-gen-final — the flag5 pair is `num10 > 0`-gated: a
+    /// style-17 chest with NO main takes the weapon ELSE branch and rolls
+    /// no 4425/4460 draws (`:36505`/`:36805` — the Water Chests callers
+    /// always pre-set a main, so the arm always fires on the real sites).
+    #[test]
+    fn a_mainless_style_17_chest_rolls_no_flag5_pair() {
+        for (y, mut w) in [(230i32, rig()), (340, deep_rig())] {
+            put_chest(&mut w, 100, y);
+            let hits = (1u64..150)
+                .filter(|&seed| {
+                    let mut stock = ChestStock::new(seed, false);
+                    let mut rng = tr_core::UnifiedRandom::new(seed as i32);
+                    stock_chest_at(&mut stock, &w, 100, y, false, 17, 21, 0, &mut rng)
+                        .iter()
+                        .any(|r| matches!(r.kind, 4425 | 4460))
+                })
+                .count();
+            assert_eq!(hits, 0, "a main-0 style-17 chest rolls no pair (y={y})");
+        }
+    }
+
+    /// W4-c33d chest-gen-final — the surface flag6 extras are `num10 > 0`-
+    /// gated (`:36245-36266`): a natural style-0 chest inside a living-tree
+    /// wall-244 probe rolls NO 5629/4429/4427/5528 draws; the tree's own
+    /// 832-main chest does.
+    #[test]
+    fn the_surface_flag6_extras_need_a_preset_main() {
+        let mut w = rig();
+        for dx in -2i32..=0 {
+            for dy in -2i32..=0 {
+                let i = w.index(100 + dx, 197 + dy);
+                w.tiles[i].wall = 244; // the living-tree passage wall
+            }
+        }
+        put_chest(&mut w, 100, 198);
+        let family: &[u16] = &[5629, 4429, 4427, 5528];
+        let plain_hits = (1u64..150)
+            .filter(|&seed| {
+                let mut stock = ChestStock::new(seed, false);
+                let mut rng = tr_core::UnifiedRandom::new(seed as i32);
+                stock_chest_at(&mut stock, &w, 100, 198, false, 0, 21, 0, &mut rng)
+                    .iter()
+                    .any(|r| family.contains(&r.kind))
+            })
+            .count();
+        assert_eq!(plain_hits, 0, "a main-0 surface chest rolls no flag6 extras");
+        let main_hits = (1u64..150)
+            .filter(|&seed| {
+                let mut stock = ChestStock::new(seed, false);
+                let mut rng = tr_core::UnifiedRandom::new(seed as i32);
+                stock_chest_at(&mut stock, &w, 100, 198, false, 12, 21, 832, &mut rng)
+                    .iter()
+                    .any(|r| family.contains(&r.kind))
+            })
+            .count();
+        assert!(main_hits > 0, "the 832-main tree chest rolls the flag6 extras");
     }
 }
