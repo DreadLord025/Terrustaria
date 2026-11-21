@@ -364,39 +364,68 @@ fn dye_left_click(held: &mut ItemSlot, target: &mut ItemSlot, held_dye: bool) ->
     }
 }
 
+/// [`App::slot_at_mouse`]'s body over disjoint fields — the draw pass's
+/// field destructure holds `renderer`/`lookups` mutably, so a whole-`self`
+/// method call there would conflict (the S1-W4-g81 seal); the free form
+/// reads only the three fields the hit test needs.
+pub(crate) fn slot_at_mouse_fields(
+    m: Vec2,
+    inventory_open: bool,
+    hotbar_scales: &[f32; HOTBAR],
+) -> Option<usize> {
+    if inventory_open {
+        let s = 0.85;
+        let i = ((m.x - 20.0) / (56.0 * s)).floor() as i32;
+        let j = ((m.y - 20.0) / (56.0 * s)).floor() as i32;
+        if !(0..10).contains(&i) || !(0..5).contains(&j) {
+            return None;
+        }
+        let lx = m.x - 20.0 - i as f32 * 56.0 * s;
+        let ly = m.y - 20.0 - j as f32 * 56.0 * s;
+        if lx > 52.0 * s || ly > 52.0 * s {
+            return None;
+        }
+        Some((i + j * 10) as usize)
+    } else {
+        // `GUIHotbarDrawInner` (`Main.cs:43614-43639`): same per-slot geometry
+        // as the draw pass — row `y` `(int)(20 + 22 * (1 - scale))`, x advance
+        // `(int)(Width * scale) + 4`, hover size the untruncated `Width * scale`
+        // (`ui::slot::closed_hotbar_metrics`).
+        let mut x = 20.0;
+        for i in 0..HOTBAR {
+            let sc = hotbar_scales[i].clamp(0.75, 1.0);
+            let (y, advance, size) = ui::slot::closed_hotbar_metrics(sc);
+            if m.x >= x && m.x <= x + size && m.y >= y && m.y <= y + size {
+                return Some(i);
+            }
+            x += advance;
+        }
+        None
+    }
+}
+
+/// [`App::coin_ammo_at_mouse`]'s body over disjoint fields (the draw
+/// pass's destructure holds `lookups` — the S1-W4-g81 seal's free form).
+pub(crate) fn coin_ammo_at_mouse_fields(
+    mouse: Vec2,
+    inventory_open: bool,
+    bestiary_open: bool,
+    cell: f32,
+) -> Option<(i32, usize)> {
+    if !inventory_open || bestiary_open {
+        return None;
+    }
+    ui::inventory::coin_ammo_hit(mouse, cell)
+}
+
 impl App {
     /// The slot under the cursor, using the same geometry as `draw_hud`.
     pub(crate) fn slot_at_mouse(&self) -> Option<usize> {
-        let m = self.mouse_pos;
-        if self.inventory_open {
-            let s = 0.85;
-            let i = ((m.x - 20.0) / (56.0 * s)).floor() as i32;
-            let j = ((m.y - 20.0) / (56.0 * s)).floor() as i32;
-            if !(0..10).contains(&i) || !(0..5).contains(&j) {
-                return None;
-            }
-            let lx = m.x - 20.0 - i as f32 * 56.0 * s;
-            let ly = m.y - 20.0 - j as f32 * 56.0 * s;
-            if lx > 52.0 * s || ly > 52.0 * s {
-                return None;
-            }
-            Some((i + j * 10) as usize)
-        } else {
-            // `GUIHotbarDrawInner` (`Main.cs:43614-43639`): same per-slot geometry
-            // as the draw pass — row `y` `(int)(20 + 22 * (1 - scale))`, x advance
-            // `(int)(Width * scale) + 4`, hover size the untruncated `Width * scale`
-            // (`ui::slot::closed_hotbar_metrics`).
-            let mut x = 20.0;
-            for i in 0..HOTBAR {
-                let sc = self.hotbar_scales[i].clamp(0.75, 1.0);
-                let (y, advance, size) = ui::slot::closed_hotbar_metrics(sc);
-                if m.x >= x && m.x <= x + size && m.y >= y && m.y <= y + size {
-                    return Some(i);
-                }
-                x += advance;
-            }
-            None
-        }
+        slot_at_mouse_fields(
+            self.mouse_pos,
+            self.inventory_open,
+            &self.hotbar_scales,
+        )
     }
 
     /// The shop grid's cell under the cursor — `Main.DrawInventory`'s shop
@@ -417,11 +446,12 @@ impl App {
     /// `Main.DrawInventory`'s rows (`Main.cs:41752-41782`) through the shared
     /// `ui::inventory::coin_ammo_hit` geometry. Closed inventory: nothing.
     pub(crate) fn coin_ammo_at_mouse(&self) -> Option<(i32, usize)> {
-        if !self.inventory_open || self.bestiary_open {
-            return None;
-        }
-        let cell = self.lookups.ui_back.map_or(52.0, |b| b.width as f32);
-        ui::inventory::coin_ammo_hit(self.mouse_pos, cell)
+        coin_ammo_at_mouse_fields(
+            self.mouse_pos,
+            self.inventory_open,
+            self.bestiary_open,
+            self.lookups.ui_back.map_or(52.0, |b| b.width as f32),
+        )
     }
 
     /// The [`chest::Source`] under the cursor for the shift-transfer arms: the

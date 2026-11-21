@@ -1610,8 +1610,22 @@ impl App {
                             // the `:130` ID gate never trips — the g86
                             // research/244 override system owns the ID).
                             let icon_enabled = self.cursor_item_icon_enabled;
-                            let over_ui_slot = self.slot_at_mouse().is_some()
-                                || self.coin_ammo_at_mouse().is_some()
+                            // The slot-surface hit tests over disjoint fields
+                            // (the destructure holds `renderer`/`lookups` —
+                            // a whole-`self` method call would conflict).
+                            let over_ui_slot = crate::app::clicks::slot_at_mouse_fields(
+                                self.mouse_pos,
+                                self.inventory_open,
+                                &self.hotbar_scales,
+                            )
+                            .is_some()
+                                || crate::app::clicks::coin_ammo_at_mouse_fields(
+                                    self.mouse_pos,
+                                    self.inventory_open,
+                                    self.bestiary_open,
+                                    lookups.ui_back.map_or(52.0, |b| b.width as f32),
+                                )
+                                .is_some()
                                 || self.wires_radial.hovering;
                             let inp = ui::wires_ui::RadialInputs {
                                 mouse: self.mouse_pos,
@@ -1893,7 +1907,21 @@ impl App {
                         // S1-W4-g81 residuals — `Main.ItemIconCacheVerification`
                         // (`Main.cs:45062` inside `DrawInterface_40`): the
                         // linger's per-draw decay, after the icon pass read it.
-                        self.item_icon_cache_verification();
+                        // Inlined over disjoint fields — the destructure holds
+                        // `renderer`, a whole-`self` method call would conflict
+                        // (the `App::item_icon_cache_verification` body verbatim).
+                        if self.item_icon_cache_time > 0 {
+                            let d = (self.item_icon_cache_pos - self.mouse_pos).length();
+                            if d != 0.0 {
+                                self.item_icon_cache_time -= 1;
+                            }
+                            if d > 4.0 {
+                                self.item_icon_cache_time = 0;
+                            }
+                            if self.item_icon_cache_kind != inventory[*selected].kind {
+                                self.item_icon_cache_time = 0;
+                            }
+                        }
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after
                         // the interface layers draw.
