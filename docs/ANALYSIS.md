@@ -18367,21 +18367,50 @@ code-only lane cannot run):
   `frame/world.rs:669` (`gfx_quality_apply`). Both it and the budget block
   (`:17076-17091`) are gated on `!isGeneratingOrLoadingWorld`, so neither fires
   during the load drain — the driver runs on the `ReInit` stock pair, exactly
-  as the C# load does. The `Setting_UseReducedMaxLiquids` 5000 cap
-  (`:17108-17111`) has no port settings field (deferred with the reduced-liquids
-  setting). Witness: `gfx_quality::quick_settle_overrides_the_quality_liquid_budgets`.
+  as the C# load does. **The `Setting_UseReducedMaxLiquids` caps ARE ported
+  (W4-g47 final phase, `d3a30ebf`)**: the settings field
+  (`settings.reduced_max_liquids`, launch-flag-only — `slowliquids=1`,
+  `Main.cs:5079-5083`, no config.json key, default false `:67008`), the
+  `ReInit` 5000 cap (`Liquid.cs:98-101`), the gfx `2500 + 2500 * gfxQuality`
+  budget (`:17080-17083`) + flat-5000 quickSettle override (`:17108-17111`),
+  and the pass-head `numLiquid > 2000` quickFall OR-arm (`:1057-1060`). The
+  MP-only `:1000-1003` cap stays out of scope (census deviation 9). Stock
+  (flag false) is byte-identical to the pre-port behaviour. Witnesses:
+  `gfx_quality::quick_settle_overrides_the_quality_liquid_budgets`,
+  `gfx_quality::reduced_max_liquids_caps_the_quality_and_quick_settle_budgets`,
+  `settings::slowliquids_launch_flag_sets_reduced_max_liquids`,
+  `liquid_settle_wiring::reduced_max_liquids_caps_reinit_at_5000`,
+  `liquid_settle_wiring::reduced_max_liquids_ors_numliquid_over_2000_into_quick_fall`.
 - **The `SettleWaterAt` gen re-type arm (`:178-192`) IS ported (W4-g47 settle
   wiring)** — gated on `generating`: the classic `waterLine` boundary (`:184-187`)
   and the remix `lavaLine`/`rockLayer`/`oceanDepths` band (`:182`), honey/shimmer
   keep their type (`:178`). `set_gen_settle_context` is R-12-5's plumbing seam.
-  The dungeon re-type (`:188-191`) is a recorded no-op (no ported
-  `InAnyPotentialDungeonBounds`/`IsConsideredDungeonWall`). The runtime settle
-  keeps `generating` down; the load settle arms it but the `waterLine` pin keeps
-  the arm dead. **Still dead / deferred:** `QuickWater`'s `ShimmerRemoveWater`
-  (`WorldGen.cs:34825` `generatingWorld`-gated, no ported `shimmerPosition`), the
-  noTraps boulder swap (subsumed by the pass-scoped `tilesIgnoreWater`), and
-  `LiquidInteractionsCleanup` (`generatingWorld && !skyblock`, strips gen merge
-  tiles 56/659) — they ride R-12-5's gen settle driver, like the R-11-5 branches.
+  **The dungeon re-type (`:188-191`) IS ported (W4-g47 final phase,
+  `d3a30ebf`)** — `GenDungeonContext` (`liquid.rs`): the outer potential-bounds
+  hitboxes (the f24/c30 `create_potential_dungeon_bounds` products, converted
+  from `DualDungeonSetup.dungeons[i].outer`) + the `Main.wallDungeon` base set
+  (`dungeon_features::is_dungeon_wall`) unioned with the dual-dungeon style-wall
+  extensions (`DungeonCrawler.cs:155-181`). STRICT `generatingWorld`-gated; the
+  wall reads the ORIGIN cell (the C# `tile` reference is bound at `:152` —
+  **f25's gen-local copy reads the LANDING cell instead, a deviation the merger
+  reconciles onto this form**). An un-armed context = the C# empty
+  `dungeonGenVars` list, arm dead; the runtime/load settle never arms it. The
+  runtime settle keeps `generating` down; the load settle arms it but the
+  `waterLine` pin keeps the classic arm dead. Witnesses:
+  `liquid_settle_wiring::the_gen_settle_dungeon_arm_retypes_lava_back_to_water`,
+  `...::the_dungeon_arm_needs_bounds_and_wall_and_stays_dead_unarmed`.
+  **`QuickWater`'s `ShimmerRemoveWater` (`:108`/`:138`) IS ported (final
+  phase)** — `WorldGen.cs:34823-34851` (the 150-radius circle, rows
+  `sy-150..=sy+75`, non-shimmer liquid zeroed + tombstone 162 deactivated),
+  STRICT `generatingWorld`-gated (`:34825`), position via
+  `set_gen_shimmer_position` — the gen driver copies the g36-A1 GenVars slot
+  (`gv.shimmer_position`, the `WorldGen.cs:15241` Shimmer-step write); `None`
+  mirrors the `Vector2D.Zero` reset (`:7039`), a corner no-op. Witnesses:
+  `liquid_settle_wiring::shimmer_remove_water_clears_the_circle_but_keeps_shimmer`,
+  `...::shimmer_remove_water_is_dead_on_load_and_without_a_position`.
+  **Still deferred:** the noTraps boulder swap (subsumed by the pass-scoped
+  `tilesIgnoreWater`) and `LiquidInteractionsCleanup` (`generatingWorld &&
+  !skyblock`, strips gen merge tiles 56/659 — f25's gen module carries it).
 - **MP scaling / net change set** (`:987-1004`/`:1151-1156`) stay out of
   scope (single-player target, census deviation 9/10).
 
@@ -18414,6 +18443,56 @@ g45's genuinely-better details (edge probe, live side reads, ring
 chunk-marking, explicit lily arm order) are already folded into g47's body
 (`551c1e7b`). g45's `genRand` nudge + 7/5-neighbour wakes (`ccfe0b42`) are a
 SEPARATE seam (`update_tile`'s averaging arms, not `del_water`) — keep those.
+
+### The g46c graft-union verdict (W4-g47 final phase, cross-note to research/69)
+
+The g46c in-flight graft (on `task/W4-g46-liquid-evaporation`, base
+research/69 `f3b33b92`) MUST adopt this keep-one table. research/69 was
+written against g47 `cfe5f1c9` — BEFORE the settle wiring (`551c1e7b` /
+`ba694653` / `95e9c1ef`) folded g45's details in and BEFORE the final phase
+(`d3a30ebf`) adopted g46's last loot delta. The updated adoption set:
+
+1. **`del_water` = g47 canonical, WHOLESALE** (this branch's tip). research/69
+   row 1's recipe ("g46 body grafted onto g47's skeleton") is SUPERSEDED: the
+   g45 details it wanted (edge probe, live side reads, ring marking, lily arm
+   order) are already in g47's body, and the one remaining g46 delta — the
+   `square_tile_frame_record` loot seam on the grass-ring / lily-reframe arms
+   (row 1's "g47 `square_tile_frame_default` DISCARDS the kill/drop records"
+   cell) — is ADOPTED into g47 at `d3a30ebf` (one `edit_kills` queue, g46's
+   `retire_kills` name dropped per row 1 step 2's own recommendation). g46's
+   `check_alch_tile` wrapper is NOT needed — g47's `edit::check_alch` already
+   returns the record. **Do NOT graft g46's `del_water` body over this one.**
+2. **g45-details-adopted**: `2249cf59` (edge probe), the live side re-reads,
+   the ring chunk-marking, the explicit lily 3-arm order — all in `551c1e7b`.
+   g45's nudge + extra wakes (`ccfe0b42`) stay a separate carry (research/69
+   rows 10/12: g46's `surface_rng` arm wins the stream pick; g45's 7/5-wakes
+   are the one non-superseded g45 item).
+3. **g45b AddWater-guards (`daa1cdb0`/`8e81814e`) are a SEPARATE seam — carry
+   them** (research/69's fixture note said "stays deferred"; that verdict is
+   now stale: g45 round 2 landed the guards WITH the fixture widening). The
+   graft takes g45b's `add_water` guards (the `:1163` border + `type != 546`
+   carve-out + the `:1183-1206` inline death check) onto g47's `add_water`
+   body, with g45b's embedded (+6,+6) fixtures. Two reconciliations: (a) the
+   `:1183` early-return reads `isGeneratingOrLoadingWorld` — g47's field for
+   that flag is `generating` (armed during the LOAD settle too), so g45b's
+   `self.generating` gate is already the right one; (b) g45b's inline
+   `kill_tile` discards the drop record — upgrade it to push the `TileKill`
+   onto `edit_kills` (the same loot-seam argument as the DelWater keep-one).
+4. **g46 evap (`524faa8b`) grafts as research/69 row 9 says** (faithful
+   unguarded `y > height-200`, `new_flow_fixture` sentinel) — g47 never
+   ported evaporation, no conflict.
+5. **The final-phase surfaces g46c must NOT overwrite** (`d3a30ebf`):
+   `reduced_max_liquids` (ReInit cap + pass-head OR-arm + gfx pair),
+   `GenDungeonContext` + `set_gen_dungeon_context` (the `:188-191` arm —
+   ORIGIN wall read; f25's gen-local landing-wall read is the deviation),
+   `set_gen_shimmer_position` + `shimmer_remove_water` (both `QuickWater`
+   arms), and the WIRED load hook (`App::new` → `settle_loaded_world`,
+   research/69 row 8's "stays UNWIRED" is stale — wired at `551c1e7b` with
+   the dry-world no-op proof). f25's gen-local `shimmer_remove_water` /
+   `in_any_potential_dungeon_bounds` copies dedupe onto these LiquidSystem
+   surfaces at the gen-driver graft (research/69 rows 4/5's "keep both"
+   becomes "keep one" — the gen module calls `sys.set_gen_shimmer_position`
+   / `sys.set_gen_dungeon_context` and drops its private copies).
 
 ## The Frost Legion machine (R-25-1, 2026-11-13)
 

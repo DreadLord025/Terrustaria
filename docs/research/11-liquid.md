@@ -102,7 +102,8 @@ still open items in ROADMAP §3.
 | `DelWater` retirement tail + `LiquidBuffer` counts | PORTED (W4-g47) | `liquid.rs` `del_water`/`end_pass`/`add_water` | `Liquid.cs:1470-1599` drain rules/keep-alive/swap-remove/lava grass ring/`CheckAlch`/`CheckLilyPad` tail + the `kill>=8` sweep's 254-promotion `:1109-1119` + `LiquidBuffer.cs:11-27` AddBuffer/DelBuffer (checkingLiquid bit, maxLiquidBuffer-2 cap, swap-remove promotion) — phase 2 `e43fa0bc`; the `Check*` drops ride `drain_edit_kills` |
 | `.wld` liquid bytes | PORTED | `wld/sections/tiles.rs:85-100`, `:237-242` | Liquid amount then kind byte, per the cited `WorldFile.cs:1480-1491`; the liquid byte participates in the RLE key exactly as `bTileHeader` does in the writer |
 | Render side (`liquid_draw`, `render/liquids`, waterfall) | PORTED | `liquid_draw.rs:88`, `world_sim/liquids.rs:27-44`, `waterfall/` | Water styles + shimmer draw are ROADMAP-M1.5-LIQUID-2/3 ✅ (re-verified: `liquid_draw.rs::build` builds the per-tile liquid instances, `liquid_type` maps the 4 kinds) |
-| Worldgen fills | PARTIAL | `worldgen/liquids.rs:21` (`place_liquids`) | Lake bowl + ocean shores + lava drips; the `SettleWaterAt` gen re-type arm (`Liquid.cs:178-192`) is ported + gated on `generating` (`set_gen_settle_context`, W4-g47 `551c1e7b`), but the gen settle DRIVER (the two `Settle Liquids` passes, `WorldGen.cs:16132`/`:21246`) is unported — R-12-5 |
+| Worldgen fills | PARTIAL | `worldgen/liquids.rs:21` (`place_liquids`) | Lake bowl + ocean shores + lava drips; the `SettleWaterAt` gen re-type arm (`Liquid.cs:178-192`) is ported + gated on `generating` (`set_gen_settle_context`, W4-g47 `551c1e7b`) INCLUDING the dungeon arm (`GenDungeonContext`, final phase `d3a30ebf` — f24/c30 bounds carry, ORIGIN wall read) and `QuickWater`'s `ShimmerRemoveWater` (g36-A1 `shimmer_position` seam); the gen settle DRIVER (the two `Settle Liquids` passes, `WorldGen.cs:16132`/`:21246`) is f25's `settle_liquids.rs` — graft per docs/research/70 |
+| `Setting_UseReducedMaxLiquids` (`slowliquids=1`) | PORTED (W4-g47 final) | `settings.rs` `reduced_max_liquids` + `apply_launch_args`, `liquid.rs` `set_reduced_max_liquids`/`re_init`, `gfx_quality.rs::apply` | `Main.cs:1665`/`:5079-5083`/`:67008` launch-only flag; `ReInit` 5000 cap (`Liquid.cs:98-101`), gfx `2500+2500q` (`Main.cs:17080-17083`) + flat-5000 quickSettle override (`:17108-17111`), pass-head `numLiquid>2000` quickFall OR-arm (`Liquid.cs:1057-1060`) — `d3a30ebf`; the MP `:1000-1003` arm stays out of scope (deviation 9) |
 
 ## Tests
 
@@ -164,6 +165,9 @@ still open items in ROADMAP §3.
    (`Liquid.cs:1163`), the `tile.type != 546` carve-out, and the
    `CheckWaterDeath/CheckLavaDeath` → `KillTile` of plants/breakables submerged in liquid
    (`:1183-1206`) are all absent; Rust's `is_solid` reads the static `TILE_SOLID` table only.
+   **FIXED on W4-g45 round 2 (`daa1cdb0`/`8e81814e`)** — guards + inline death check + the
+   (+6,+6) fixture widening; the g46c graft carries them onto g47's `add_water` (ANALYSIS
+   "The g46c graft-union verdict" item 3 — with the drop-record upgrade onto `edit_kills`).
 8. **`tilesIgnoreWater` (behavioural, low).** `Liquid.cs:69-73/986/1157` flips
    `Main.tileSolid[546]` (+ boulder solidity) for the whole pass; `Liquid.Update:451` also
    forces `tileSolid[379] = true` per cell. The port has a static table, so liquid vs those
