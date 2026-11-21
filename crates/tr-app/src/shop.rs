@@ -1258,6 +1258,65 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(4660, StockWhen::GolfPainting(2)),
             row(4661, StockWhen::GolfPainting(3)),
         ],
+        // The Tavernkeep's medal shop (index 21, `Chest.cs:2963-3154`, the
+        // registry `NPCInteractions.Shop(550, 21)`, `NPCInteractions.cs:508`
+        // — `NPCID.DD2Bartender = 550`): the two-tier gates — flag =
+        // `hardMode && downedMechBossAny` (`:2965`), num7 = `hardMode &&
+        // downedGolemBoss` (`:2966`). The Ale 353 and the mug 3828 (its
+        // price ladder 4g/1g/25s, `:2970-2981`), the Worn Paddle 3816, the
+        // medal-priced Defenders Forge 3813 (50), the four 5-medal tier-1
+        // sentries (`:2990-3004`), the tier-2 15-medal sentries at flag
+        // (`:3005-3023`), the tier-3 60-medal sentries at num7
+        // (`:3024-3042`), the 15-medal armor pieces at flag (`:3043-3097`)
+        // and the 50-medal tier-3 armor at num7 (`:3098-3152`). The C#
+        // jumps `num` to the fixed slots 10/20/30/4/14/24/34/7/17/27/37 —
+        // the port's dense Vec keeps the WRITE order (the grid fills left
+        // to right). Every medal row rides `shopSpecialCurrency = 0` (the
+        // Defender Medals wallet, `custom_currency.rs`).
+        21 => {
+            let mut rows = vec![
+                row(353, StockWhen::Always), // `:2967` the Ale
+                // `:2969-2982` — the mug's price ladder: 4 gold at the
+                // Golem tier, 1 gold at the mech tier, 25 silver else
+                // (`Item.buyPrice`, `Item.cs:49417-49420`).
+                ShopEntry {
+                    shop_custom_price: Some(if flags.hard_mode && flags.downed_golem {
+                        40000
+                    } else if flags.hard_mode && flags.downed_mech_any {
+                        10000
+                    } else {
+                        2500
+                    }),
+                    ..row(3828, StockWhen::Always)
+                },
+                row(3816, StockWhen::Always), // `:2983` the Worn Paddle
+                medal_row(3813, StockWhen::Always, 50), // `:2985-2987`
+            ];
+            // `:2990-3004` — the tier-1 sentry quartet (5 medals each).
+            for id in [3818, 3824, 3832, 3829] {
+                rows.push(medal_row(id, StockWhen::Always, 5));
+            }
+            // `:3005-3023` — the tier-2 sentries (15 medals, flag).
+            for id in [3819, 3825, 3833, 3830] {
+                rows.push(medal_row(id, StockWhen::DownedMechAny, 15));
+            }
+            // `:3024-3042` — the tier-3 sentries (60 medals, num7).
+            for id in [3820, 3826, 3834, 3831] {
+                rows.push(medal_row(id, TAVERNKEEP_TIER3, 60));
+            }
+            // `:3043-3097` — the tier-2 armor: 3800/3801/3802, then
+            // 3797/3798/3799, then 3803/3804/3805, then 3806/3807/3808
+            // (15 medals each, all at flag).
+            for id in [3800, 3801, 3802, 3797, 3798, 3799, 3803, 3804, 3805, 3806, 3807, 3808] {
+                rows.push(medal_row(id, StockWhen::DownedMechAny, 15));
+            }
+            // `:3098-3152` — the tier-3 armor: 3871..3882 (50 medals
+            // each, all at num7).
+            for id in 3871..=3882u16 {
+                rows.push(medal_row(id, TAVERNKEEP_TIER3, 50));
+            }
+            rows
+        }
         // The Travelling Merchant (`Chest.cs:2791-2810`): the stock is
         // NOT a fixed row list — it rides the 40 `Main.travelShop` slots
         // the visit roll generated (`Chest.SetupTravelShop`).
@@ -1289,6 +1348,11 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
 /// `Chest.cs:2794`'s gate list — the Palworld-collab items that put the
 /// Pal Metal armor (5735/5736) into the merchant's stock.
 const TRAVEL_ARMOR_GATES: [u16; 10] = [5667, 5663, 5664, 5665, 5666, 6174, 6148, 6149, 6150, 6151];
+
+/// `Chest.cs:2966`'s num7 — `Main.hardMode && NPC.downedGolemBoss`: the
+/// Tavernkeep's tier-3 gate (the 60-medal sentries + the 50-medal armor).
+const TAVERNKEEP_TIER3: StockWhen =
+    StockWhen::All(&[StockWhen::HardMode, StockWhen::DownedGolem]);
 
 // — W4-d122: the Steampunker's compound gates (`Chest.cs:2135-2245`),
 // named once so the if/else arms share ONE condition object (the `Not`
@@ -2110,6 +2174,19 @@ fn row(item: u16, when: StockWhen) -> ShopEntry {
         is_a_shop_item: false,
         prefix: 0,
         stack: 1, // `Item.SetDefaults`'s default stack (`Item.cs:49022`)
+    }
+}
+
+/// One Tavernkeep row (`Chest.cs:2963-3154`): the `shopCustomPrice` is a
+/// MEDAL count and `shopSpecialCurrency` is the Defender Medals id (0 —
+/// `CustomCurrencyManager.cs:17` registers it first). The price math
+/// early-returns on it (`Player.cs:35361-35365`) and the buy spends the
+/// wallet (`custom_currency.rs`).
+fn medal_row(item: u16, when: StockWhen, medals: i32) -> ShopEntry {
+    ShopEntry {
+        shop_custom_price: Some(medals),
+        shop_special_currency: crate::custom_currency::DEFENDER_MEDALS,
+        ..row(item, when)
     }
 }
 
@@ -4463,5 +4540,136 @@ mod w4_d122_princess_tests {
         for id in [1309, 857, 4144, 2584] {
             assert!(!h.contains(&id), "no block without the seed: {id}");
         }
+    }
+}
+
+#[cfg(test)]
+mod w4_d122_tavernkeep_tests {
+    use super::*;
+
+    /// W4-d122 shop currency — the Tavernkeep's case 21 (`Chest.cs:2963-
+    /// 3154`, `NPCInteractions.Shop(550, 21)`): pre-hardmode the stock is
+    /// the four head rows + the tier-1 sentry quartet, and every medal row
+    /// carries currency 0 with its RAW medal price. Written, not run
+    /// (code-only).
+    #[test]
+    fn the_tavernkeep_classic_stock_is_the_heads_plus_tier1() {
+        let base = resolve_stock_entries(21, &ShopFlags::default(), &[]);
+        assert_eq!(
+            base.iter().map(|e| e.item).collect::<Vec<_>>(),
+            vec![353, 3828, 3816, 3813, 3818, 3824, 3832, 3829],
+            "the tier-1 stock (`:2967-3004`)"
+        );
+        // The Ale/mug/Paddle are plain-currency rows; the mug's base price
+        // is 25 silver (`Item.buyPrice(0, 0, 25)`, `:2980`).
+        assert_eq!(base[0].shop_special_currency, -1);
+        assert_eq!(base[1].shop_custom_price, Some(2500));
+        assert_eq!(base[2].shop_special_currency, -1);
+        // The Defenders Forge 3813 costs 50 MEDALS (`:2985-2987`).
+        assert_eq!(base[3].shop_special_currency, 0);
+        assert_eq!(base[3].shop_custom_price, Some(50));
+        // The tier-1 sentries: 5 medals each, currency 0.
+        for e in &base[4..] {
+            assert_eq!(e.shop_special_currency, 0);
+            assert_eq!(e.shop_custom_price, Some(5));
+        }
+    }
+
+    /// The tier gates (`:2965-2966`): flag = hardMode && mechAny opens the
+    /// 15-medal sentries + the 12 armor pieces; num7 = hardMode && Golem
+    /// opens the 60-medal sentries + the 3871..3882 armor. The mech flag
+    /// ALONE (no hardmode) opens nothing. Written, not run (code-only).
+    #[test]
+    fn the_tavernkeep_tiers_gate_on_hardmode_conjuncts() {
+        // mechAny without hardmode: still the classic 8 rows.
+        let mech_only = ShopFlags { downed_mech_any: true, ..Default::default() };
+        assert_eq!(resolve_stock(21, &mech_only, &[]).len(), 8);
+        // hardmode + mechAny: +4 tier-2 sentries +12 armor = 24 rows.
+        let t2 = ShopFlags { hard_mode: true, downed_mech_any: true, ..Default::default() };
+        let s2 = resolve_stock_entries(21, &t2, &[]);
+        assert_eq!(s2.len(), 24);
+        assert_eq!(
+            s2[8..12].iter().map(|e| e.item).collect::<Vec<_>>(),
+            vec![3819, 3825, 3833, 3830],
+            "the tier-2 sentry quartet (`:3008-3022`)"
+        );
+        for e in &s2[12..] {
+            assert_eq!(e.shop_custom_price, Some(15), "the tier-2 armor price");
+        }
+        assert_eq!(
+            s2[12..].iter().map(|e| e.item).collect::<Vec<_>>(),
+            vec![3800, 3801, 3802, 3797, 3798, 3799, 3803, 3804, 3805, 3806, 3807, 3808],
+            "the armor write order (`:3046-3095`)"
+        );
+        // hardmode + Golem (no mech): the tier-3 rows open WITHOUT tier 2.
+        let t3only = ShopFlags { hard_mode: true, downed_golem: true, ..Default::default() };
+        let s3 = resolve_stock_entries(21, &t3only, &[]);
+        assert_eq!(s3.len(), 8 + 4 + 12, "tier 1 + tier-3 sentries + tier-3 armor");
+        assert_eq!(
+            s3[8..12].iter().map(|e| e.item).collect::<Vec<_>>(),
+            vec![3820, 3826, 3834, 3831]
+        );
+        for e in &s3[8..12] {
+            assert_eq!(e.shop_custom_price, Some(60));
+        }
+        for e in &s3[12..] {
+            assert_eq!(e.shop_custom_price, Some(50));
+        }
+        assert_eq!(
+            s3[12..].iter().map(|e| e.item).collect::<Vec<_>>(),
+            (3871u16..=3882).collect::<Vec<_>>()
+        );
+        // Golem WITHOUT hardmode opens nothing (`:2966`'s conjunct).
+        let golem_only = ShopFlags { downed_golem: true, ..Default::default() };
+        assert_eq!(resolve_stock(21, &golem_only, &[]).len(), 8);
+        // Both tiers: 8 + 4 + 4 + 12 + 12 = 40 rows, tier-2 BEFORE tier-3
+        // sentries, the armor blocks after (the C# write order).
+        let both = ShopFlags {
+            hard_mode: true,
+            downed_mech_any: true,
+            downed_golem: true,
+            ..Default::default()
+        };
+        let sb = resolve_stock_entries(21, &both, &[]);
+        assert_eq!(sb.len(), 40);
+        assert_eq!(sb[8].item, 3819, "tier-2 sentries first");
+        assert_eq!(sb[12].item, 3820, "then tier-3 sentries");
+        assert_eq!(sb[16].item, 3800, "then the tier-2 armor");
+        assert_eq!(sb[28].item, 3871, "then the tier-3 armor");
+    }
+
+    /// The mug's price ladder (`:2970-2981`): 4 gold at num7, 1 gold at
+    /// flag, 25 silver else — the Golem tier WINS over the mech tier (the
+    /// C# if/else-if order). Written, not run (code-only).
+    #[test]
+    fn the_tavernkeep_mug_price_ladder_follows_the_tiers() {
+        let mug = |f: &ShopFlags| {
+            resolve_stock_entries(21, f, &[])[1].shop_custom_price.unwrap()
+        };
+        assert_eq!(mug(&ShopFlags::default()), 2500);
+        let t2 = ShopFlags { hard_mode: true, downed_mech_any: true, ..Default::default() };
+        assert_eq!(mug(&t2), 10000);
+        let t3 = ShopFlags { hard_mode: true, downed_golem: true, ..Default::default() };
+        assert_eq!(mug(&t3), 40000);
+        let both = ShopFlags { downed_mech_any: true, ..t3 };
+        assert_eq!(mug(&both), 40000, "num7 wins over flag");
+    }
+
+    /// The raw-price early return (`Player.cs:35361-35365` →
+    /// `CustomCurrencySystem.cs:265-270`): a medal row's buy AND sell
+    /// halves are the raw store value — the mood and the Discount Card
+    /// never touch it. Written, not run (code-only).
+    #[test]
+    fn the_medal_rows_price_raw_under_mood_and_discount() {
+        let t2 = ShopFlags { hard_mode: true, downed_mech_any: true, ..Default::default() };
+        let entries = resolve_stock_entries(21, &t2, &[]);
+        let sentry = &entries[8]; // the 15-medal tier-2 Flameburst
+        assert_eq!(sentry.shop_special_currency, 0);
+        assert_eq!(buy_price_row(sentry, false, 1.0), 15);
+        assert_eq!(buy_price_row(sentry, true, 0.75), 15, "no discount/mood");
+        assert_eq!(display_price_row(sentry, true, 0.75), 15);
+        // The plain mug row still rides the mood (the 10000 override).
+        let mug = &entries[1];
+        assert_eq!(buy_price_row(mug, false, 0.75), 7500);
     }
 }

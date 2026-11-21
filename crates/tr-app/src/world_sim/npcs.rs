@@ -535,6 +535,9 @@ pub(crate) fn shop_index_for_kind(kind: NpcKind) -> Option<u32> {
         NpcKind::Princess => 24,
         NpcKind::DyeTrader => 12,
         NpcKind::PartyGirl => 13,
+        // W4-d122 shop currency: the Tavernkeep's medal shop
+        // (`NPCInteractions.cs:508`'s `Shop(550, 21)`).
+        NpcKind::DD2Bartender => 21,
         _ => return None,
     })
 }

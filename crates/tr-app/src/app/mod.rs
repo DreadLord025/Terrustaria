@@ -5893,4 +5893,98 @@ mod s1_p_i44_tests {
         assert!(app.shop_npc.is_none());
         assert!(app.shop_stock.is_empty());
     }
+
+    // — W4-d122 shop currency: the medal-buy witnesses (`Player.BuyItem`'s
+    // custom-currency arm, `Player.cs:35402-35405` → `CustomCurrencyManager.
+    // BuyItem`, `CustomCurrencyManager.cs:69-119`). Written, not run
+    // (code-only). —
+
+    fn medals(count: u32) -> ItemSlot {
+        ItemSlot {
+            kind: crate::custom_currency::DEFENDER_MEDAL_ITEM,
+            name: crate::registry::name(crate::custom_currency::DEFENDER_MEDAL_ITEM),
+            count,
+            prefix: 0,
+        }
+    }
+
+    /// A Tavernkeep medal row: the 15-medal tier-2 Flameburst Rod 3819
+    /// (`Chest.cs:3008-3010`), currency 0, raw price 15.
+    fn medal_stock_app() -> App {
+        let mut app = shop_app();
+        app.player = Some(Player::spawn(&app.world));
+        app.shop_stock = vec![crate::shop::ShopEntry {
+            item: 3819,
+            when: crate::shop::StockWhen::Always,
+            shop_custom_price: Some(15),
+            shop_special_currency: crate::custom_currency::DEFENDER_MEDALS,
+            buy_once: false,
+            is_a_shop_item: false,
+            prefix: 0,
+            stack: 1,
+        }];
+        app
+    }
+
+    #[test]
+    fn the_medal_buy_spends_the_wallet_not_the_purse() {
+        // `CustomCurrencyManager.BuyItem` (`:72-77`/`:114`): the inventory
+        // medal stack pays; `App.coins` never moves; the sellback memo
+        // stays empty (`ItemSlot.cs:2084`'s `shopSpecialCurrency == -1`
+        // half); the unit lands on the cursor like every shop buy.
+        let mut app = medal_stock_app();
+        app.inventory[0] = medals(20);
+        assert!(app.buy_shop_item(0));
+        assert_eq!(app.inventory[0].count, 5, "15 medals consumed");
+        assert_eq!(app.coins, 1_000_000, "the purse is untouched");
+        assert_eq!((app.mouse_item.kind, app.mouse_item.count), (3819, 1));
+        assert_eq!(app.shop_sellback.get_amount(3819, 0), 0, "no medal memo");
+        // The raw price ignores the mood AND the Discount Card
+        // (`Player.cs:35361-35365`'s early return).
+        app.shop_mood = 0.75;
+        app.discount_available = true;
+        assert!(app.buy_shop_item(0));
+        assert_eq!(app.inventory[0], crate::item::EMPTY_SLOT, "drained to air");
+    }
+
+    #[test]
+    fn the_medal_buy_spends_the_banks_after_the_inventory() {
+        // The spend order (`CustomCurrencySingleCoin.cs:30-67` over
+        // `BuyItem`'s `:89-93` container list): inventory first, then
+        // bank/bank2/bank3/bank4.
+        let mut app = medal_stock_app();
+        app.inventory[3] = medals(10);
+        let p = app.player.as_mut().unwrap();
+        p.banks[0][0] = medals(4);
+        p.banks[1][7] = medals(50);
+        assert!(app.buy_shop_item(0));
+        assert_eq!(app.inventory[3], crate::item::EMPTY_SLOT);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.banks[0][0].count, 0, "the piggy bank paid the last 5");
+        assert_eq!(p.banks[1][7].count, 50, "the safe untouched");
+    }
+
+    #[test]
+    fn the_short_medal_wallet_refuses_and_restores() {
+        // `CustomCurrencyManager.cs:77-80`: 14 < 15 refuses before any
+        // spend; the cursor/purse/stock stay put. The full-cache restore
+        // (`CustomCurrencySingleCoin.cs:68-72`) is pinned in
+        // `custom_currency.rs`'s own witnesses.
+        let mut app = medal_stock_app();
+        app.inventory[0] = medals(14);
+        assert!(!app.buy_shop_item(0));
+        assert_eq!(app.inventory[0].count, 14, "nothing moved");
+        assert_eq!(app.mouse_item.count, 0);
+        assert_eq!(app.coins, 1_000_000);
+        assert_eq!(app.shop_stock[0].stack, 1);
+        // A funded purse does NOT rescue a medal row (the currencies are
+        // separate — `Player.cs:35402-35405` never reads the coin count).
+        app.coins = 999_999_999;
+        assert!(!app.buy_shop_item(0));
+        // No player = no wallet: the medal row refuses (the C# always has
+        // a local player; the port's headless None is the safe refusal).
+        let mut no_player = medal_stock_app();
+        no_player.player = None;
+        assert!(!no_player.buy_shop_item(0));
+    }
 }
