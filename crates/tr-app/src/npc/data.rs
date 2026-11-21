@@ -586,6 +586,14 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // S1-D-3ff d39 wave 1: the critter band keeps its vanilla
+            // ids (355-359 are free in the protocol space — the max
+            // used id was 353, the BlazingWheel's port-local slot).
+            NpcKind::Firefly => 355,
+            NpcKind::Butterfly => 356,
+            NpcKind::Worm => 357,
+            NpcKind::LightningBug => 358,
+            NpcKind::Snail => 359,
         }
     }
 
@@ -916,6 +924,13 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            // S1-D-3ff d39 wave 1: the critter band's vanilla ids
+            // (`to_u16` above).
+            355 => NpcKind::Firefly,
+            356 => NpcKind::Butterfly,
+            357 => NpcKind::Worm,
+            358 => NpcKind::LightningBug,
+            359 => NpcKind::Snail,
             _ => return None,
         })
     }
@@ -1796,6 +1811,13 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            // S1-D-3ff d39 wave 1: the critter band's `SoundID.NPCHit1`
+            // rows (`NPC.cs:13525`/`:13539`/`:13553`/`:13567`/`:13581`).
+            NpcKind::Firefly
+            | NpcKind::Butterfly
+            | NpcKind::Worm
+            | NpcKind::LightningBug
+            | NpcKind::Snail => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2100,6 +2122,13 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            // S1-D-3ff d39 wave 1: the critter band's `SoundID.NPCDeath1`
+            // rows (`NPC.cs:13526`/`:13540`/`:13554`/`:13568`/`:13582`).
+            NpcKind::Firefly
+            | NpcKind::Butterfly
+            | NpcKind::Worm
+            | NpcKind::LightningBug
+            | NpcKind::Snail => "NPC_Killed_1",
             _ => return None,
         })
     }
@@ -2200,6 +2229,15 @@ impl NpcKind {
             // aiStyle-49 AI head sets `noGravity = true` every tick
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
             NpcKind::AngryNimbus => true,
+            // S1-D-3ff d39 wave 1: the critter flyers' `noGravity`
+            // rows — 355 (`NPC.cs:13528`), 356 (`:13542`), 358
+            // (`:13570`), 359 (`:13584` — the snail's AI toggles it per
+            // tick, `:34445`/`:34488`, but the stock row is true). The
+            // Worm (357) writes none — the grounded crawler stays false.
+            NpcKind::Firefly
+            | NpcKind::Butterfly
+            | NpcKind::LightningBug
+            | NpcKind::Snail => true,
             _ => false,
         }
     }
@@ -2451,6 +2489,13 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // S1-D-3ff d39 wave 1: the critter band's `SetDefaults`
+            // rows — 355 64 (`NPC.cs:13521`), 356 65 (`:13535`),
+            // 357 66 (`:13549`), 358 64 (`:13563`), 359 67 (`:13577`).
+            NpcKind::Firefly | NpcKind::LightningBug => 64,
+            NpcKind::Butterfly => 65,
+            NpcKind::Worm => 66,
+            NpcKind::Snail => 67,
         }
     }
 
@@ -2981,6 +3026,14 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // S1-D-3ff d39 wave 1: the critter band's `SetDefaults`
+            // boxes — 355 10x10 (`NPC.cs:13519-13520`), 356 10x10
+            // (`:13533-13534`), 357 10x4 (`:13547-13548`), 358 12x12
+            // (`:13561-13562`), 359 12x12 (`:13575-13576` — the snail's
+            // scale roll resizes via `size_override`, `:34364-34377`).
+            NpcKind::Firefly | NpcKind::Butterfly => (10.0, 10.0),
+            NpcKind::Worm => (10.0, 4.0),
+            NpcKind::LightningBug | NpcKind::Snail => (12.0, 12.0),
         }
     }
 
@@ -3622,6 +3675,13 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // S1-D-3ff d39 wave 1: the critter band's `lifeMax = 5`
+            // rows (`NPC.cs:13524`/`:13538`/`:13552`/`:13566`/`:13580`).
+            NpcKind::Firefly
+            | NpcKind::Butterfly
+            | NpcKind::Worm
+            | NpcKind::LightningBug
+            | NpcKind::Snail => 5,
         }
     }
 
@@ -3986,6 +4046,13 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // S1-D-3ff d39 wave 1: the critter band's `damage = 0`
+            // rows (`NPC.cs:13522`/`:13536`/`:13550`/`:13564`/`:13578`).
+            NpcKind::Firefly
+            | NpcKind::Butterfly
+            | NpcKind::Worm
+            | NpcKind::LightningBug
+            | NpcKind::Snail => 0,
         }
     }
 }

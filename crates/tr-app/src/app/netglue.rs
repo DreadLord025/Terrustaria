@@ -3566,6 +3566,20 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // S1-D-3ff d39 wave 1 — the critter band's net seed: the flyers
+        // (355/356/358) ride the hover ctor's open-air seed (the fishron
+        // hazards' precedent — the noGravity machines take over on the
+        // first tick); the ground crawlers (357 Worm, 359 Snail) plant
+        // their feet on the column surface (the wave-A walkers' shape).
+        crate::npc::NpcKind::Firefly
+        | crate::npc::NpcKind::Butterfly
+        | crate::npc::NpcKind::LightningBug => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        crate::npc::NpcKind::Worm | crate::npc::NpcKind::Snail => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
     })
 }
 

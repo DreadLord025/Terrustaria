@@ -2171,6 +2171,52 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Force Bubble",
     },
+    // S1-D-3ff d39 wave 1 — the critter band 355-359. The populator's
+    // `AddEmptyEntries_CrittersAndEnemies_Automated` registers each as a
+    // `BestiaryEntry.Critter` (`CountsAsACritter`: lifeMax <= 5 && damage
+    // == 0, `NPC.cs:6887-6896`); the credit id is the NPCID field name
+    // (`GetBestiaryCreditId`'s IdDictionary reflection) and the name rides
+    // `Lang.GetNPCName` (en-US NPCs.json:315-319).
+    BestiaryEntryDef {
+        credit_id: "Firefly",
+        net_id: 355,
+        kind: NpcKind::Firefly,
+        variant: None,
+        quick_unlock: false,
+        name: "Firefly",
+    },
+    BestiaryEntryDef {
+        credit_id: "Butterfly",
+        net_id: 356,
+        kind: NpcKind::Butterfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Butterfly",
+    },
+    BestiaryEntryDef {
+        credit_id: "Worm",
+        net_id: 357,
+        kind: NpcKind::Worm,
+        variant: None,
+        quick_unlock: false,
+        name: "Worm",
+    },
+    BestiaryEntryDef {
+        credit_id: "LightningBug",
+        net_id: 358,
+        kind: NpcKind::LightningBug,
+        variant: None,
+        quick_unlock: false,
+        name: "Lightning Bug",
+    },
+    BestiaryEntryDef {
+        credit_id: "Snail",
+        net_id: 359,
+        kind: NpcKind::Snail,
+        variant: None,
+        quick_unlock: false,
+        name: "Snail",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
