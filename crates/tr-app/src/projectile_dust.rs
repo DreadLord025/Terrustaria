@@ -1844,12 +1844,15 @@ mod tests {
         for (i, s) in dust.slots().iter().filter(|s| s.active).enumerate() {
             assert_eq!(s.dust_type, 6);
             assert_eq!(s.alpha, 100);
+            // The scale rides the pool's random base (`Dust.cs:190-191`:
+            // (1 + Next(-20,21)·0.01) × Scale) then the type-6 tweak ×0.7 —
+            // pin the BAND, not an exact value (the census test owns the draws).
             if i % 2 == 0 {
                 assert!(s.no_gravity, "the scale-2 puff floats");
-                assert_eq!(s.scale, 2.0 * 0.7, "scale 2 × the type-6 tweak 0.7");
+                assert!((0.56..=1.68).contains(&s.scale), "scale-2 band: {}", s.scale);
             } else {
                 assert!(!s.no_gravity, "the scale-1.25 puff falls");
-                assert_eq!(s.scale, 1.25 * 0.7, "scale 1.25 × the tweak");
+                assert!((0.35..=1.05).contains(&s.scale), "scale-1.25 band: {}", s.scale);
             }
         }
     }
@@ -1877,14 +1880,14 @@ mod tests {
         assert_eq!(rng.peek(), probe.peek(), "the pair-then-block census");
         assert_eq!(dust.slots().iter().filter(|s| s.active).count(), 10);
         // The (int) truncation: 960.7 → 960, 1600.9 → 1600. The anchor rides
-        // inside [hitbox − 1, hitbox − 1 + 31]; the pool's 5×5-clamped jitter
-        // adds [0,1] + 4 (the 0×0-box inset does NOT apply: the box is 2×2 →
-        // clamped 5×5, so Next(1) = 0 and the +4 inset DOES — Dust.cs:155-171
-        // clamps first). Pin the band, not the exact pixel.
+        // inside [hitbox − 1, hitbox − 1 + 31) = [959, 990); the pool's jitter
+        // adds Next(5−4) + 4 = 4 (the 2×2 box clamps to 5×5 FIRST,
+        // Dust.cs:155-171, so Next(1) = 0 and the +4 inset applies) — the
+        // final position band is [963, 994). Pin the band, not the pixel.
         for s in dust.slots().iter().filter(|s| s.active) {
             assert_eq!(s.dust_type, 322);
-            assert!((959.0..=995.0).contains(&s.position.x), "x band: {}", s.position.x);
-            assert!((1599.0..=1635.0).contains(&s.position.y), "y band: {}", s.position.y);
+            assert!((963.0..994.0).contains(&s.position.x), "x band: {}", s.position.x);
+            assert!((1603.0..1634.0).contains(&s.position.y), "y band: {}", s.position.y);
         }
     }
 
