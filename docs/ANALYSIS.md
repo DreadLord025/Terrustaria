@@ -39315,3 +39315,90 @@ the chain at that wave (their bodies are already the chain's 213/268 arms).
 Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify invoked**
 (user directive). The 38 witnesses are owed a compile window before merge.
 
+### The W4-d50 WIRING resume (2026-11-21, research/69 §4-6+8 mechanical apply)
+
+The owed-work resume lands the contracts above at this branch (base
+`2e243a2d`, the dead-clean phase-2 tip research/69 §8 receipted):
+
+1. **The pre_move-35 STRIP (research/69 §4, g13-inline-canonical).** The
+   `if d.dust_type == 35 { *lava_bubbles += 1; }` arm is deleted from
+   `dust_physics::pre_move` and the now-unused `lava_bubbles: &mut i32`
+   parameter dropped (§4: "d50's to drop"). The 299/300/301/305 shrink/lift
+   STAYS and is now WIRED: `particles.rs::update_dust` calls `pre_move` at the
+   C#'s exact `:468-472` position, immediately before its canonical INLINE
+   `:473-476` increment (transplanted verbatim from g13 `150e7204a` with the
+   `w4_g13_lava_bubbles_counts_the_live_type35_population` witness) and the
+   `:477` move. Exactly ONE increment per live 35 per pass — the
+   double-count §4 predicted is closed by construction.
+2. **The type_chain WIRING.** The live dust-update path census: ONE non-test
+   `update_dust` caller on this tree — `tr-app::minecart::tick`, driven by
+   `app/frame/world.rs::dust_phase` (`Main.cs:18047`'s slot, the player's
+   `spark_rng` or `rngs.global()`); no g64 scratch wrapper exists on this
+   base (the g64 worktree carries the same minecart entry). The tick's hook
+   is now `dust_physics::type_chain` over a `DustPhysicsEnv` built per slot:
+   `Player::solid_collision` / `player::wet_collision` probes (the landed
+   Collision ports), the `DustPlayerSnap` player snapshot (vx/vy/wet/center;
+   no-player = the (10,21) default-ctor fallback), the bright-default
+   `light_color` (43 never spuriously dies until the S1-E-5 sample seam),
+   the child-spawn sink drained post-pass through the verbatim `new_dust`
+   (+`no_gravity = true`, folded scale — the sentinel written too, the C#
+   shape) and the sand/snow deltas landed post-pass. The hook signature
+   gained the stream (`FnMut(&mut Dust, &mut R) -> bool`): the chain's census
+   draws ride the SAME `Main.rand`-equivalent the head rolls — one stream,
+   no new instances. The 213 hand-dispatch and `sand::type_268_arm` (+ its
+   `solid_at` box stand-in, which the real `Collision.SolidCollision` probe
+   supersedes) RETIRED into the chain; the 268 arm regains the C#'s
+   `SandStormCount++` (`:1791`), the `rotation = 0f` (`:1798`) and the
+   `!noLight` push gate (`:1804`) the stand-in dropped.
+3. **The G2 ONE-EDIT hunk (d54 `84eb739b`, research/131 §7.2a), applied
+   verbatim:** `DustPhysicsEnv` gains `snow_dust: &'a mut i32` after
+   `sand_storm_count`; the 76 arm's 'dropped' comment becomes
+   `*env.snow_dust += 1;`; the module-doc drop note retires. The d130
+   plumbing union rides with it: `DustPool::snow_dust` (field + ctor + the
+   `:428` head reset inside `update_dust`, d130's lines verbatim) and the
+   tick's `let mut snow = 0` … `pool.snow_dust = snow` landing (d130's
+   :1069/:1126 shape) — the snowfall budget (`Main.cs:13057`) reads a
+   maintained counter. d130's `snow::type_76_arm` is NOT on this tree; the
+   merge keeps d50's chain arm (the §7.2a verdict).
+4. **The decrement retire (research/69 §5), arm-by-arm in `dust_lights.rs`:**
+   206 `(d.scale - 0.1) * 0.4` → `d.scale * 0.4`; 174
+   `cap(d.scale - 0.01, 0.6)` → `cap(d.scale, 0.6)`; 230 recovers the
+   PRE-increment `(d.scale - 0.02) * 0.6` (the C# light precedes `:639`);
+   309 recovers the PRE-shrink `d.scale / 0.97` (the light precedes `:486`);
+   261 recovers the PRE-drift scale (the light precedes `:695-704`: net 0
+   when `noGravity && fadeIn == 0`, else `+0.0025`). **Residual boundary
+   (documented):** 261's fadeIn gate reads the PRE-arm fadeIn in C#; the
+   chain's `:2114` ramp may zero it after the arm, so a POST record at
+   `fadeIn == 0` that took the ramp with a non-zero PRE fadeIn is
+   indistinguishable on the record — the recovery treats it as the net-0
+   case (the dominant shape; 261 spawns with fadeIn 0). The 5-key witness
+   set re-pins each retired arm on POST-update records. g13's
+   `dust_lights_b.rs` replays are NOT on this tree — their arm-by-arm retire
+   rides the g13×d50 merge (research/69 §5's second paragraph).
+
+Witness deltas: the `pre_move` witness re-pins the STRIP (the 35 passes
+through untouched); the 76 witness pins `snow == 1`; the full-pool
+`tick_physics` harness drops its outer pre_move loop (the skeleton owns it
+now — the double-shrink closed) and lands the snow delta; the golden
+skeleton witness pins the `:428` snow head reset; the g13 lava witness
+transplanted verbatim; the dust_lights post-mutation witnesses re-pinned to
+the retired reads. Code-only mode again: **written NOT run, no
+cargo/rustc/rustfmt/tests/graphify invoked** (user directive) — the witness
+set is owed its compile window before merge.
+
+**Compile-window finding (this resume, hand-derived — CORRECTED):** the
+phase-1 `w4_d50_*` ARITHMETIC witnesses were written without accounting
+for the chain's own generic tails (the `:2073` air drag, the `:2081`
+rotation rebuild, the `:2127` burn-out −0.01 — all INSIDE `type_chain`, so
+the `run` helper's records carry them): the standalone-arms scale pins,
+the 154/213 rotation pins (vx dragged ×0.99 before the rebuild), the
+261/31/303/139/235/329/284/34/41/44/168/159/160/173 pins, the second-chain
+velocity/scale pins (the drag + burn-out precede the chain; only the
+`:2335` skeleton tail is suppressed) and the full-pool 130/60 pins. This
+resume RE-DERIVED and corrected every affected pin against the full chain
+statement order (operation-order-exact f32 expressions, not simplified
+constants). The scripted RNG-census draw-ORDER pins were unaffected — the
+draws precede the tails — and stand verbatim; the child-spawn scale pins
+likewise (the spawns record the arm-time scale, before the tails). No RNG
+order changed anywhere; the stream-pinned witnesses are untouched.
+
