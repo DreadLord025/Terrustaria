@@ -7,6 +7,7 @@
 //! `main.rs`.)
 
 pub(crate) mod capture_driver;
+pub(crate) mod capture_entities;
 pub(crate) mod capture_render;
 pub(crate) mod clicks;
 pub(crate) mod equip_swap;

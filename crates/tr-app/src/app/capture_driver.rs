@@ -272,6 +272,49 @@ impl App {
             player_assets: &self.player_assets,
             npc_assets: &self.npc_assets,
             leaf_spawns: &mut leaf_spawns,
+            clouds: &self.clouds,
+            counter: self.game_update_count,
+            mouse_text_color: self.mouse_text_color,
+        };
+        // The `captureEntities` arms' inputs (`Main.cs:56876-57017`): the
+        // live entity state at the chunk render. The held item mirrors the
+        // frame path's gate (`PlayerDrawLayers.cs:3084-3086`).
+        let held = match self.player.as_ref() {
+            Some(_)
+                if self.swing > 0.0
+                    || self.inventory.get(self.selected).is_some_and(|s| {
+                        s.count > 0 && crate::item::hold_style(s.kind) != 0
+                    }) =>
+            {
+                self.inventory
+                    .get(self.selected)
+                    .filter(|slot| slot.count > 0)
+                    .map(|slot| {
+                        (
+                            slot.kind,
+                            self.swing / self.swing_max.max(f32::EPSILON),
+                            slot.prefix,
+                        )
+                    })
+            }
+            _ => None,
+        };
+        let armor = [
+            self.equip.armor.first().map_or(0, |s| if s.count > 0 { s.kind } else { 0 }),
+            self.equip.armor.get(1).map_or(0, |s| if s.count > 0 { s.kind } else { 0 }),
+            self.equip.armor.get(2).map_or(0, |s| if s.count > 0 { s.kind } else { 0 }),
+        ];
+        let entities = crate::app::capture_entities::CaptureEntities {
+            player: self.player.as_ref(),
+            held,
+            armor,
+            npcs: &self.npcs,
+            items: &self.items,
+            projectiles: &self.projectiles,
+            rain: &self.rain,
+            gore: &self.gore,
+            dust: &mut self.dust,
+            scene_state: &self.scene_state,
         };
         let mut gpu_renderer = crate::app::capture_render::GpuCaptureRenderer {
             gpu,
@@ -279,6 +322,7 @@ impl App {
             family,
             compositor,
             cw,
+            entities: Some(entities),
             frame_buffer: None,
             scaled_buffer: None,
         };

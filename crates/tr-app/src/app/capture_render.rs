@@ -53,6 +53,17 @@ pub(crate) struct CaptureWorld<'a> {
     pub player_assets: &'a crate::render::entities::PlayerAssets,
     pub npc_assets: &'a crate::render::entities::NpcAssets,
     pub leaf_spawns: &'a mut Vec<crate::render::foliage::LeafSpawn>,
+    /// The capture's biome background-index override inputs
+    /// (`Main.cs:56675-56680`): the surface chains' texture-id tables read
+    /// the world's per-biome styles; the clouds ride the live frame's
+    /// sprites (the C# scales their positions for the capture camera,
+    /// `:56822-56828` — the port draws them at the chunk camera unscaled,
+    /// a documented approximation).
+    pub clouds: &'a [crate::render::sky::CloudSprite],
+    /// `Main.GameUpdateCount` — the animated background sheets' counter.
+    pub counter: u32,
+    /// `Main.mouseTextColor` — the Mushroom glow's pulse.
+    pub mouse_text_color: u8,
 }
 
 /// The GPU capture renderer — `Main.DrawCapture` through the family. Owns
@@ -68,6 +79,9 @@ pub(crate) struct GpuCaptureRenderer<'a> {
     pub family: &'a mut RenderTargetFamily,
     pub compositor: &'a mut TargetCompositor,
     pub cw: CaptureWorld<'a>,
+    /// The `captureEntities` arms' inputs (`Main.cs:56876-57017`); `None`
+    /// when the driver has no live entity state (headless tests).
+    pub entities: Option<crate::app::capture_entities::CaptureEntities<'a>>,
     /// `CaptureCamera._frameBuffer` (`:97`).
     pub frame_buffer: Option<(wgpu::Texture, wgpu::TextureView)>,
     /// `CaptureCamera._scaledFrameBuffer` (`:155`), sized per capture.
@@ -157,6 +171,21 @@ impl CaptureRenderer for GpuCaptureRenderer<'_> {
         let cw = &mut self.cw;
         let capture_background = settings.capture_background;
         let anim_time = cw.anim_time;
+        // The biome background-index override (`Main.cs:56675-56680`):
+        // fresh zeroed arrays + `UpdateBGVisibility_*(bgIndex, 1f)` —
+        // front[bgIndex] = 1, the far layer(s) per the style switch. The
+        // live frame's arrays are untouched (the port passes them as
+        // arguments — the C# save/restore equivalent).
+        let mut bg_front = [0.0f32; 16];
+        let mut bg_far = [0.0f32; 16];
+        crate::biome::advance_bg_alphas(
+            &mut bg_front,
+            &mut bg_far,
+            settings.biome.background_index,
+            cw.world.jungle_bg_style as i32,
+            cw.world.hallow_bg_style as i32,
+            1.0,
+        );
         // GATE RNG fix: one leaf-roll stream per chunk render — the C#
         // `DrawCapture`'s `DrawTiles` calls share the live `TileDrawing._rand`
         // (`TileDrawing.cs:104`); the port pins the chunk's stream to the
@@ -175,12 +204,40 @@ impl CaptureRenderer for GpuCaptureRenderer<'_> {
             [screen.x, screen.y],
             |layer, view, cam| {
                 render_capture_layer(
-                    gpu, renderer, cw, layer, view, cam, &liquid_alpha, ws, capture_background,
+                    gpu, renderer, cw, layer, view, cam, &liquid_alpha, ws,
+                    capture_background, &bg_front, &bg_far,
                 );
             },
         );
-        // Composite the layers onto the framebuffer in `DrawCapture` order.
-        composite_capture(gpu, renderer, self.family, self.compositor, camera, screen, &fb, anim_time);
+        // Composite the layers onto the framebuffer in `DrawCapture` order
+        // with the `captureEntities` arms interleaved at their C# sites:
+        // background (`:56921-56926`) → wall (`:56927`) → the mid entities
+        // (`:56928-56953`) → tile2 (`:56957-56963`) → the waterfalls
+        // (`:56964-56972`) → tile (`:56980-56988`) → the entity tail
+        // (`:56989-57017`) → water (`:57018-57027`).
+        let capture_entities = settings.capture_entities;
+        composite_capture(gpu, renderer, self.family, self.compositor, camera, screen, &fb, anim_time, SceneLayer::Background);
+        composite_capture(gpu, renderer, self.family, self.compositor, camera, screen, &fb, anim_time, SceneLayer::Wall);
+        if let Some(ents) = self.entities.as_ref() {
+            crate::app::capture_entities::draw_capture_mid_entities(
+                gpu, renderer, &self.cw, ents, camera, screen, &fb, capture_entities,
+            );
+        }
+        composite_capture(gpu, renderer, self.family, self.compositor, camera, screen, &fb, anim_time, SceneLayer::Tile2);
+        if capture_entities && self.entities.is_some() {
+            crate::app::capture_entities::draw_capture_waterfalls(
+                gpu, renderer, &mut self.cw, camera, screen, &fb, &liquid_alpha,
+            );
+        }
+        composite_capture(gpu, renderer, self.family, self.compositor, camera, screen, &fb, anim_time, SceneLayer::Tile);
+        if capture_entities {
+            if let Some(ents) = self.entities.as_mut() {
+                crate::app::capture_entities::draw_capture_entity_tail(
+                    gpu, renderer, &mut self.cw, ents, camera, screen, &fb,
+                );
+            }
+        }
+        composite_capture(gpu, renderer, self.family, self.compositor, camera, screen, &fb, anim_time, SceneLayer::Water);
         // GATE RNG fix: the chunk's stream is consumed; restore the fused
         // per-call re-seed semantics for whatever draws next.
         self.cw.scratch.leaf_rng_shared = false;
@@ -232,7 +289,10 @@ impl CaptureRenderer for GpuCaptureRenderer<'_> {
 
 /// One capture layer callback — the chunk-camera variant of the frame
 /// path's [`crate::app::layer_targets`] callbacks. The biome's water style
-/// overrides the liquid passes (`Main.cs:56899`/`:57026`).
+/// overrides the liquid passes (`Main.cs:56899`/`:57026`); the background
+/// pass renders the surface chains with the capture-only bg-alpha arrays
+/// (the `UpdateBGVisibility_*` override, `:56675-56680`) then the
+/// underground backdrop (`DrawBackground`, `:56924`).
 #[allow(clippy::too_many_arguments)]
 fn render_capture_layer(
     gpu: &tr_render::Gpu,
@@ -244,6 +304,8 @@ fn render_capture_layer(
     liquid_alpha: &[f32; 15],
     ws: usize,
     capture_background: bool,
+    bg_front: &[f32; 16],
+    bg_far: &[f32; 16],
 ) {
     renderer.set_screen_override(Some(cam.screen_size));
     let layer_cam = Vec2::new(
@@ -292,6 +354,36 @@ fn render_capture_layer(
             if capture_background {
                 let parked = renderer.take_back();
                 renderer.begin_back_batch();
+                // `DrawSimpleSurfaceBackground` + `DrawSurfaceBG`
+                // (`Main.cs:56767`, `:56837`): the surface chains at the
+                // chunk camera with the capture-only bg-alpha arrays. The
+                // sky tint is the frame's `ColorOfTheSkies` (the C#
+                // recomputes it from the biome's TileColor via SetBackColor,
+                // `:56709-56722` — the port keeps the live sky colour, a
+                // documented approximation); no ambience in the capture
+                // (the C# draws none — the ambient entities are a DoDraw
+                // pass, not a DrawCapture one).
+                let tint = crate::render::sky::color_of_the_skies(
+                    cw.world.time, cw.world.day_time, cw.world.moon_phase,
+                );
+                let amb_ctx = crate::ambience::SkyDrawCtx {
+                    camera: layer_cam,
+                    zoom: 1.0,
+                    screen: layer_screen,
+                    color_of_the_skies: tint,
+                    atmo: 1.0,
+                    bg_alpha_front: bg_front,
+                    background_enabled: true,
+                };
+                let mut amb_last = f32::INFINITY;
+                crate::render::sky::draw_surface_bg(
+                    renderer, layer_cam, 1.0, layer_screen, cw.world, cw.sky,
+                    cw.clouds, bg_front, bg_far, tint, 0.0, true, cw.anim_time,
+                    cw.counter, cw.mouse_text_color, &[], cw.lookups,
+                    &amb_ctx, &mut amb_last,
+                );
+                // `DrawBackground()` (`Main.cs:56924`): the underground
+                // backdrop under the surface chains.
                 let mut hell_bottom = 0.0;
                 crate::render::bg::draw_background(
                     renderer, layer_cam, 1.0, layer_screen, cw.world,
@@ -306,9 +398,10 @@ fn render_capture_layer(
 }
 
 /// One `DrawTiles(solidLayer, intoRenderTargets: false)` capture pass — the
-/// chunk camera, the biome's liquid alpha, no entities (the capture entity
-/// passes are the `captureEntities` arms, `Main.cs:56876-57017`, unported
-/// this round — documented deviation).
+/// chunk camera, the biome's liquid alpha. The entity args stay empty: the
+/// `captureEntities` arms draw through [`crate::app::capture_entities`] at
+/// their C# composite sites (`Main.cs:56876-57017`), not through the tile
+/// pass (the C# `DrawCapture` calls `DrawTiles` without entities too).
 #[allow(clippy::too_many_arguments)]
 fn draw_capture_tiles(
     renderer: &mut SpriteRenderer,
@@ -358,8 +451,10 @@ fn draw_capture_tiles(
     )
 }
 
-/// Composite the capture layers onto the framebuffer in `DrawCapture`
-/// order: background → wall → tile2 → tile → water (`Main.cs:56921-57027`).
+/// Composite ONE capture layer onto the framebuffer — the `DrawCapture`
+/// composite sites (`Main.cs:56921-57027`): background → wall → tile2 →
+/// tile → water, with the `captureEntities` arms interleaved between them
+/// (the caller drives the order).
 #[allow(clippy::too_many_arguments)]
 fn composite_capture(
     gpu: &tr_render::Gpu,
@@ -370,38 +465,31 @@ fn composite_capture(
     screen: Vec2,
     fb: &wgpu::TextureView,
     anim_time: f32,
+    layer: SceneLayer,
 ) {
     let screen_position = [camera.x - screen.x * 0.5, camera.y - screen.y * 0.5];
-    for layer in [
-        SceneLayer::Background,
-        SceneLayer::Wall,
-        SceneLayer::Tile2,
-        SceneLayer::Tile,
-        SceneLayer::Water,
-    ] {
-        let target = family.layer(layer);
-        let position = tr_render::layer_composite_position(
-            layer,
-            target.position(),
-            target.size(),
-            screen_position,
-            [camera.x, camera.y],
-            0.0,
-        );
-        renderer.draw_target_with(
-            compositor,
-            gpu,
-            fb,
-            target.view(),
-            target.size(),
-            position,
-            camera.to_array(),
-            1.0,
-            [FB as f32, FB as f32],
-            anim_time,
-            wgpu::LoadOp::Load,
-        );
-    }
+    let target = family.layer(layer);
+    let position = tr_render::layer_composite_position(
+        layer,
+        target.position(),
+        target.size(),
+        screen_position,
+        [camera.x, camera.y],
+        0.0,
+    );
+    renderer.draw_target_with(
+        compositor,
+        gpu,
+        fb,
+        target.view(),
+        target.size(),
+        position,
+        camera.to_array(),
+        1.0,
+        [FB as f32, FB as f32],
+        anim_time,
+        wgpu::LoadOp::Load,
+    );
 }
 
 /// Clear a view transparent (`GraphicsDevice.Clear(Color.Transparent)`).
