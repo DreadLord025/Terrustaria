@@ -1689,6 +1689,29 @@ fn portrait_data(
                 .unwrap_or(44.0);
             (sheet_i, h, 24.0, h, white)
         }
+        // W4-d41 — the hallowed ghoul's portrait: the 8-row strip.
+        (NpcKind::DesertGhoulHallow, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 24.0, h, white)
+        }
+        // W4-d41 — the lamias' portraits: the 9-row strips.
+        (NpcKind::DesertLamiaLight, _) | (NpcKind::DesertLamiaDark, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 9.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 24.0, h, white)
+        }
+        // W4-d41 — the sand poacher's portrait: the 5-row NPC_530 strip
+        // (the entry's own; the wall form folds onto it). The wall's arm
+        // exists for the match's exhaustiveness.
+        (NpcKind::DesertScorpionWalk, _) | (NpcKind::DesertScorpionWall, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 50.0, h, white)
+        }
     }
 }
 

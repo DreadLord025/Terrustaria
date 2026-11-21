@@ -739,6 +739,46 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Tainted Ghoul",
     },
+    // W4-d41 — the hallowed ghoul + the lamias (`BestiaryEntry.Enemy`,
+    // the automated populator; the HallowUndergroundDesert tag
+    // `:1423`, the UndergroundDesert/evil tags `:1557-1558`).
+    BestiaryEntryDef {
+        credit_id: "DesertGhoulHallow",
+        net_id: 527,
+        kind: NpcKind::DesertGhoulHallow,
+        variant: None,
+        quick_unlock: false,
+        name: "Dreamer Ghoul",
+    },
+    BestiaryEntryDef {
+        credit_id: "DesertLamiaLight",
+        net_id: 528,
+        kind: NpcKind::DesertLamiaLight,
+        variant: None,
+        quick_unlock: false,
+        name: "Lamia",
+    },
+    BestiaryEntryDef {
+        credit_id: "DesertLamiaDark",
+        net_id: 529,
+        kind: NpcKind::DesertLamiaDark,
+        variant: None,
+        quick_unlock: false,
+        name: "Lamia",
+    },
+    // W4-d41 — the sand poacher: ONE entry on the walker's id 530 — the
+    // wall form's draw modifiers hide it (the leinfors dictionary's
+    // `Hide = true`) and its credit folds onto 530
+    // (`ContentSamples.cs:1038`, `entry_for_npc`). The UndergroundDesert
+    // tag (`:1337`/`:1647`).
+    BestiaryEntryDef {
+        credit_id: "DesertScorpionWalk",
+        net_id: 530,
+        kind: NpcKind::DesertScorpionWalk,
+        variant: None,
+        quick_unlock: false,
+        name: "Sand Poacher",
+    },
     // The spheres: the Chaos Ball entry also covers Tim's ChaosBallTim
     // clone 665 (the port folds it — identical stats and name).
     BestiaryEntryDef {
@@ -2428,6 +2468,10 @@ pub fn try_entry_for_npc(
         // W4-d41 — the Tomb Crawler segments fold onto the head's entry
         // (the leinfors dictionary's `Hide = true`).
         NpcKind::TombCrawlerBody | NpcKind::TombCrawlerTail => NpcKind::TombCrawlerHead,
+        // W4-d41 — the sand poacher's wall form folds onto the walker's
+        // entry (`ContentSamples.cs:1038`: {531→530}; the leinfors
+        // dictionary's `Hide = true`).
+        NpcKind::DesertScorpionWall => NpcKind::DesertScorpionWalk,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -2520,6 +2564,9 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // W4-d41 — the Tomb Crawler segments ride the head's row (the
         // leinfors dictionary's `Hide = true`).
         NpcKind::TombCrawlerBody | NpcKind::TombCrawlerTail => NpcKind::TombCrawlerHead,
+        // W4-d41 — the sand poacher's wall form rides the walker's row
+        // (`ContentSamples.cs:1038`'s credit fold).
+        NpcKind::DesertScorpionWall => NpcKind::DesertScorpionWalk,
         other => other,
     };
     ENTRIES

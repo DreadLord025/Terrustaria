@@ -530,6 +530,13 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::DesertGhoul
         | NpcKind::DesertGhoulCorruption
         | NpcKind::DesertGhoulCrimson => &[],
+        // W4-d41 — the hallowed ghoul + the lamias: `{ 527..529, null }`
+        // (`NPCID.cs:9064-9069`); the sand poachers: `{ 530, [20] }` /
+        // `{ 531, [20] }` (`:9070-9083`).
+        NpcKind::DesertGhoulHallow
+        | NpcKind::DesertLamiaLight
+        | NpcKind::DesertLamiaDark => &[],
+        NpcKind::DesertScorpionWalk | NpcKind::DesertScorpionWall => &[20],
     }
 }
 

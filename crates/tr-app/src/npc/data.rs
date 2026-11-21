@@ -628,6 +628,14 @@ impl NpcKind {
             NpcKind::DesertGhoul => 524,
             NpcKind::DesertGhoulCorruption => 525,
             NpcKind::DesertGhoulCrimson => 526,
+            // W4-d41 — the hallowed ghoul + the lamias + the sand
+            // poachers keep their vanilla ids (527-531 free in the wire
+            // space). `NPCID.cs:11731-11739`.
+            NpcKind::DesertGhoulHallow => 527,
+            NpcKind::DesertLamiaLight => 528,
+            NpcKind::DesertLamiaDark => 529,
+            NpcKind::DesertScorpionWalk => 530,
+            NpcKind::DesertScorpionWall => 531,
         }
     }
 
@@ -991,6 +999,12 @@ impl NpcKind {
             524 => NpcKind::DesertGhoul,
             525 => NpcKind::DesertGhoulCorruption,
             526 => NpcKind::DesertGhoulCrimson,
+            // W4-d41 — the hallowed ghoul + the lamias + the sand poachers.
+            527 => NpcKind::DesertGhoulHallow,
+            528 => NpcKind::DesertLamiaLight,
+            529 => NpcKind::DesertLamiaDark,
+            530 => NpcKind::DesertScorpionWalk,
+            531 => NpcKind::DesertScorpionWall,
             _ => return None,
         })
     }
@@ -1966,6 +1980,12 @@ impl NpcKind {
             NpcKind::DesertGhoul
             | NpcKind::DesertGhoulCorruption
             | NpcKind::DesertGhoulCrimson => "NPC_Hit_37",
+            // W4-d41 — the hallowed ghoul's `NPCHit37` (`NPC.cs:14890`),
+            // the lamias' `NPCHit1` (`:14928`), the sand poachers'
+            // `NPCHit13` (`:14941`/`:14955`).
+            NpcKind::DesertGhoulHallow => "NPC_Hit_37",
+            NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => "NPC_Hit_1",
+            NpcKind::DesertScorpionWalk | NpcKind::DesertScorpionWall => "NPC_Hit_13",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2309,6 +2329,12 @@ impl NpcKind {
             NpcKind::DesertGhoul
             | NpcKind::DesertGhoulCorruption
             | NpcKind::DesertGhoulCrimson => "NPC_Killed_40",
+            // W4-d41 — the hallowed ghoul's `NPCDeath40` (`NPC.cs:14891`),
+            // the lamias' `NPCDeath1` (`:14929`), the sand poachers'
+            // `NPCDeath19` (`:14942`/`:14956`).
+            NpcKind::DesertGhoulHallow => "NPC_Killed_40",
+            NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => "NPC_Killed_1",
+            NpcKind::DesertScorpionWalk | NpcKind::DesertScorpionWall => "NPC_Killed_19",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2401,6 +2427,9 @@ impl NpcKind {
             // W4-d41 — the ancient orbs (522/523,
             // `NPC.cs:15790`/`:15805`; kb 0).
             NpcKind::AncientLight | NpcKind::AncientDoom => true,
+            // W4-d41 — the sand poacher's wall form (531,
+            // `NPC.cs:14948`; kb 0.5).
+            NpcKind::DesertScorpionWall => true,
             // The Hungry (115, `NPC.cs:10388`) — knockBackResist 1.1, so its
             // noGravity matters to the knockback (the leeches are resist 0).
             NpcKind::Hungry => true,
@@ -2726,6 +2755,15 @@ impl NpcKind {
             NpcKind::DesertGhoul
             | NpcKind::DesertGhoulCorruption
             | NpcKind::DesertGhoulCrimson => 3,
+            // W4-d41 — aiStyle 3, the hallowed ghoul + the lamias
+            // (`NPC.cs:14886`/`:14924`).
+            NpcKind::DesertGhoulHallow
+            | NpcKind::DesertLamiaLight
+            | NpcKind::DesertLamiaDark => 3,
+            // W4-d41 — aiStyle 3, the sand poacher's walker form
+            // (`NPC.cs:14937`); aiStyle 40, the wall form (`:14951`).
+            NpcKind::DesertScorpionWalk => 3,
+            NpcKind::DesertScorpionWall => 40,
             // W4-d41 — aiStyle 39, the shelly pair (`NPC.cs:14682`).
             NpcKind::GiantShelly | NpcKind::GiantShelly2 => 39,
         }
@@ -2851,6 +2889,12 @@ impl NpcKind {
             NpcKind::DesertGhoul
             | NpcKind::DesertGhoulCorruption
             | NpcKind::DesertGhoulCrimson => 2.0,
+            // W4-d41 — the hallowed ghoul's cap-2 group
+            // (`NPC.cs:57554-57579`), the lamias' cap-3 group
+            // (`:57520-57553`), the sand poacher walker's cap-2 group.
+            NpcKind::DesertGhoulHallow => 2.0,
+            NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => 3.0,
+            NpcKind::DesertScorpionWalk => 2.0,
             NpcKind::Salamander
             | NpcKind::Salamander2
             | NpcKind::Salamander3
@@ -3321,6 +3365,15 @@ impl NpcKind {
             NpcKind::DesertGhoul
             | NpcKind::DesertGhoulCorruption
             | NpcKind::DesertGhoulCrimson => (24.0, 44.0),
+            // W4-d41 — the hallowed ghoul's + the lamias' 24x44 box
+            // (`NPC.cs:14884-14885`/`:14922-14923`), the sand poacher
+            // walker's 50x20 (`:14935-14936`), the wall's 36x36
+            // (`:14949-14950`).
+            NpcKind::DesertGhoulHallow
+            | NpcKind::DesertLamiaLight
+            | NpcKind::DesertLamiaDark => (24.0, 44.0),
+            NpcKind::DesertScorpionWalk => (50.0, 20.0),
+            NpcKind::DesertScorpionWall => (36.0, 36.0),
         }
     }
 
@@ -3446,6 +3499,18 @@ impl NpcKind {
             NpcKind::DesertGhoul => 524,
             NpcKind::DesertGhoulCorruption => 525,
             NpcKind::DesertGhoulCrimson => 526,
+            // W4-d41 — the hallowed ghoul + the lamias keep their vanilla
+            // types (`NPCID.cs:11731-11735`); the sand poacher walker
+            // keeps its own (530). The wall form (531) folds onto the
+            // walker's bestiary net id (`ContentSamples.cs:1038`) — NO
+            // hand row (the worm-family precedent, s1_f_3's
+            // cs_id==net_id invariant); the wall-crawler's type gates
+            // read the KIND, and the REAL draw type rides
+            // render_key/texture_net_id.
+            NpcKind::DesertGhoulHallow => 527,
+            NpcKind::DesertLamiaLight => 528,
+            NpcKind::DesertLamiaDark => 529,
+            NpcKind::DesertScorpionWalk => 530,
             NpcKind::Goldfish => 55,
             NpcKind::Piranha => 58,
             NpcKind::Shark => 65,
@@ -4059,6 +4124,12 @@ impl NpcKind {
             NpcKind::DesertGhoul => 180,
             NpcKind::DesertGhoulCorruption => 250,
             NpcKind::DesertGhoulCrimson => 220,
+            // W4-d41 — the hallowed ghoul's 300 (`NPC.cs:14889` + the
+            // `:14912` +120), the lamias' 350 (`:14927`), the sand
+            // poachers' 320 (`:14940`/`:14954`).
+            NpcKind::DesertGhoulHallow => 300,
+            NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => 350,
+            NpcKind::DesertScorpionWalk | NpcKind::DesertScorpionWall => 320,
         }
     }
 
@@ -4461,6 +4532,12 @@ impl NpcKind {
             NpcKind::DesertGhoul => 50,
             NpcKind::DesertGhoulCorruption => 60,
             NpcKind::DesertGhoulCrimson => 64,
+            // W4-d41 — the hallowed ghoul's 54 (`NPC.cs:14887` + the
+            // `:14914` +4), the lamias' 52 (`:14925`), the sand
+            // poachers' 66 (`:14938`/`:14952`).
+            NpcKind::DesertGhoulHallow => 54,
+            NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => 52,
+            NpcKind::DesertScorpionWalk | NpcKind::DesertScorpionWall => 66,
         }
     }
 }

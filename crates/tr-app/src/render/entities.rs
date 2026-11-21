@@ -519,6 +519,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(DESERT_SHEETS)
             .chain(TOMB_SOLAR_SHEETS)
             .chain(ANCIENT_GHOUL_SHEETS)
+            .chain(LAMIA_SCORPION_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1146,6 +1147,10 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // NPC_514/NPC_515. (513 is the entry's own id.)
         NpcKind::TombCrawlerBody => 514,
         NpcKind::TombCrawlerTail => 515,
+        // W4-d41 — the sand poacher's wall form folds onto the walker's
+        // bestiary entry, but its DRAW sheet is its own NPC_531. (530 is
+        // the entry's own id.)
+        NpcKind::DesertScorpionWall => 531,
         _ => kind.net_id() as u16,
     }
 }
@@ -1305,6 +1310,11 @@ pub(crate) const TOMB_SOLAR_SHEETS: &[u32] = &[513, 514, 515, 516, 519];
 /// vanilla's `TextureAssets.Npc[type]`), keyed by the vanilla net id in
 /// `NpcAssets::npc_sheets` exactly like `TOMB_SOLAR_SHEETS`.
 pub(crate) const ANCIENT_GHOUL_SHEETS: &[u32] = &[522, 523, 524, 525, 526];
+
+/// W4-d41 — the hallowed ghoul's + the lamias' + the sand poachers' own
+/// sheets (the vanilla's `TextureAssets.Npc[type]`), keyed by the vanilla
+/// net id in `NpcAssets::npc_sheets` exactly like `ANCIENT_GHOUL_SHEETS`.
+pub(crate) const LAMIA_SCORPION_SHEETS: &[u32] = &[527, 528, 529, 530, 531];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3291,6 +3301,19 @@ pub(crate) fn draw_npcs(
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
+            // W4-d41 — the hallowed ghoul + the lamias + the sand
+            // poachers draw their OWN sheets (`LAMIA_SCORPION_SHEETS`)
+            // at `Main.npcFrameCount` rows (`Main.cs:67082`: 527/528/529
+            // eight/nine/nine, 530 five, 531 four) with the generic
+            // centred anchor. The wall form rotates with its flight.
+            NpcKind::DesertGhoulHallow
+            | NpcKind::DesertLamiaLight
+            | NpcKind::DesertLamiaDark
+            | NpcKind::DesertScorpionWalk
+            | NpcKind::DesertScorpionWall => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3415,6 +3438,10 @@ pub(crate) fn draw_npcs(
                     // stays 0 — the orb pulses, it does not spin).
                     | NpcKind::AncientLight
                     | NpcKind::AncientDoom
+                    // W4-d41 — the sand poacher's wall form rotates with
+                    // its flight (`NPC.cs:29810-29815`, the atan2 aim +
+                    // π/2).
+                    | NpcKind::DesertScorpionWall
                     // The saucer family (`Main.cs:24586-24612`) rotates
                     // about its CENTRE (the `origin = halfSize` draw point
                     // — the quad the anchors computed sits at that centre,

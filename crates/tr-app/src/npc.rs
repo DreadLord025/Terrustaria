@@ -1252,6 +1252,36 @@ pub enum NpcKind {
     /// −0.1 kb, +150 value (220 HP, 32 def, 64 dmg, kb 0.5, value 650).
     /// W4-d41.
     DesertGhoulCrimson,
+    /// `NPCID.DesertGhoulHallow` (527, `NPCID.cs:11731`) — the hallowed
+    /// ghoul (`NPC.cs:14911-14917`): the 524 row +120 HP, +6 def, +4 dmg,
+    /// −0.2 kb, +250 value (300 HP, 32 def, 54 dmg, kb 0.4, value 750).
+    /// W4-d41.
+    DesertGhoulHallow,
+    /// `NPCID.DesertLamiaLight` (528, `NPCID.cs:11733`) — the light
+    /// lamia (`aiStyle 3`, `NPC.cs:14920-14932`): 24x44, dmg 52, def 28,
+    /// 350 HP, kb 0.35, value 600, NPCHit1/NPCDeath1. The
+    /// `AI_003_Fighters` cap-3 group (`NPC.cs:57520-57553`). W4-d41.
+    DesertLamiaLight,
+    /// `NPCID.DesertLamiaDark` (529, `NPCID.cs:11735`) — the dark lamia
+    /// (`NPC.cs:14920-14932`'s `type >= 528 && <= 529` group — identical
+    /// stats). W4-d41.
+    DesertLamiaDark,
+    /// `NPCID.DesertScorpionWalk` (530, `NPCID.cs:11737`) — the sand
+    /// poacher's walker form (`aiStyle 3`, `NPC.cs:14933-14945`):
+    /// 50x20, dmg 66, def 24, 320 HP, kb 0.5, value 600,
+    /// NPCHit13/NPCDeath19. The `AI_003_Fighters` cap-2 group
+    /// (`NPC.cs:57554-57579`); the wall-stick transform into 531
+    /// (`:58875-58905`). W4-d41.
+    DesertScorpionWalk,
+    /// `NPCID.DesertScorpionWall` (531, `NPCID.cs:11739`) — the sand
+    /// poacher's wall form (`aiStyle 40`, `NPC.cs:14946-14959`):
+    /// 36x36, dmg 66, def 24, 320 HP, kb 0.5, value 600, noGravity,
+    /// NPCHit13/NPCDeath19. The aiStyle-40 wall-crawler
+    /// (`NPC.cs:29666-29898`): the 4/0.16 flight, the 8-px snapped aim,
+    /// the bounce, the no-wall transform back into 530. The bestiary
+    /// credit folds onto 530 (`ContentSamples.cs:1038`); the draw sheet
+    /// stays NPC_531. W4-d41.
+    DesertScorpionWall,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3757,6 +3787,12 @@ impl Npc {
             NpcKind::AncientLight | NpcKind::AncientDoom => 0.0,
             NpcKind::DesertGhoul => 0.6,
             NpcKind::DesertGhoulCorruption | NpcKind::DesertGhoulCrimson => 0.5,
+            // W4-d41 — the hallowed ghoul's 0.4 (`NPC.cs:14892` − the
+            // `:14915` 0.2), the lamias' 0.35 (`:14930`), the sand
+            // poachers' 0.5 (`:14943`/`:14957`).
+            NpcKind::DesertGhoulHallow => 0.4,
+            NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => 0.35,
+            NpcKind::DesertScorpionWalk | NpcKind::DesertScorpionWall => 0.5,
             _ => 0.4,
         }
     }
@@ -4173,6 +4209,12 @@ impl Npc {
             NpcKind::DesertGhoul => 26,
             NpcKind::DesertGhoulCorruption => 30,
             NpcKind::DesertGhoulCrimson => 32,
+            // W4-d41 — the hallowed ghoul's 32 (`NPC.cs:14888` + the
+            // `:14913` +6), the lamias' 28 (`:14926`), the sand
+            // poachers' 24 (`:14939`/`:14953`).
+            NpcKind::DesertGhoulHallow => 32,
+            NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => 28,
+            NpcKind::DesertScorpionWalk | NpcKind::DesertScorpionWall => 24,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4580,6 +4622,12 @@ impl Npc {
             NpcKind::AncientLight | NpcKind::AncientDoom => 0.0,
             NpcKind::DesertGhoul => 500.0,
             NpcKind::DesertGhoulCorruption | NpcKind::DesertGhoulCrimson => 650.0,
+            // W4-d41 — the hallowed ghoul's 750 (`NPC.cs:14893` + the
+            // `:14916` +250), the lamias' 600 (`:14931`), the sand
+            // poachers' 600 (`:14944`/`:14958`).
+            NpcKind::DesertGhoulHallow => 750.0,
+            NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => 600.0,
+            NpcKind::DesertScorpionWalk | NpcKind::DesertScorpionWall => 600.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6216,6 +6264,21 @@ impl Npc {
             NpcKind::DesertGhoul
             | NpcKind::DesertGhoulCorruption
             | NpcKind::DesertGhoulCrimson => self.update_skeleton(world, player, dt),
+            // W4-d41 — the hallowed ghoul + the lamias (527-529, aiStyle
+            // 3): the walker family; the cap-2/cap-3 ladder rows ride
+            // `npc_ai3_speeds::apply_ladder` (already covers 524-527 +
+            // 528/529).
+            NpcKind::DesertGhoulHallow
+            | NpcKind::DesertLamiaLight
+            | NpcKind::DesertLamiaDark => self.update_skeleton(world, player, dt),
+            // W4-d41 — the sand poacher's walker form (530, aiStyle 3):
+            // the walker family + the wall-stick transform into 531
+            // (`NPC.cs:58875-58905`).
+            NpcKind::DesertScorpionWalk => self.update_sand_poacher_walk(world, player, dt),
+            // W4-d41 — the sand poacher's wall form (531, aiStyle 40):
+            // the wall-crawler (`NPC.cs:29666-29898`) + the no-wall
+            // transform back into 530.
+            NpcKind::DesertScorpionWall => self.update_sand_poacher_wall(world, player),
             // W4-d41 — the salamanders (498-506, aiStyle 3): the
             // `AI_003_Fighters` SHOOTER block (`NPC.cs:59069-59801`, the
             // 498-506 terms) — the 70-tick cadence, the 7-speed spit 572
@@ -7859,13 +7922,79 @@ impl Npc {
             NpcKind::AncientLight => {
                 self.frame = 0;
             }
+            // W4-d41 — `case 528 : case 529` (`NPC.cs:69946-69977`): the
+            // lamias' grounded walk climbs from row 1 at the `|vx| + 1`
+            // accumulator's >9 step, wrapping at count-1 (9) back to 1;
+            // the idle row 0, the air row count-1 (8).
+            NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => {
+                if self.vy == 0.0 {
+                    if self.facing != 0 {
+                        self.sprite_dir = self.facing;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                        return;
+                    }
+                    self.frame_counter += self.vx.abs();
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 9.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 8 {
+                        self.frame = 1;
+                    }
+                } else {
+                    self.frame = 8;
+                    self.frame_counter = 0.0;
+                }
+            }
+            // W4-d41 — `case 530` (`NPC.cs:73086-73111`): the sand
+            // poacher walker's grounded walk cycles rows 0..3 at the
+            // |vx|*1.1 accumulator's 6-step (the while loop), the air
+            // holds row 4 (rising) / 0 (falling).
+            NpcKind::DesertScorpionWalk => {
+                if self.vy != 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.vy < 0.0 { 4 } else { 0 };
+                    return;
+                }
+                self.sprite_dir = self.facing;
+                self.frame_counter += self.vx.abs() * 1.1;
+                while self.frame_counter >= 6.0 {
+                    self.frame_counter -= 6.0;
+                    self.frame += 1;
+                    if self.frame > 3 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d41 — `case 531` (`NPC.cs:73116-73145`): the sand
+            // poacher wall's (|vx|+|vy|)*0.4 accumulator's 6/12/18/24
+            // bands stepping rows 0/1/2/3 (the lap resets at 24).
+            NpcKind::DesertScorpionWall => {
+                self.frame_counter += (self.vx.abs() + self.vy.abs()) * 0.4;
+                if self.frame_counter < 6.0 {
+                    self.frame = 0;
+                } else if self.frame_counter < 12.0 {
+                    self.frame = 1;
+                } else if self.frame_counter < 18.0 {
+                    self.frame = 2;
+                } else if self.frame_counter < 24.0 {
+                    self.frame = 3;
+                } else {
+                    self.frame_counter = 0.0;
+                }
+            }
             // W4-d41 — `case 524..527` (`NPC.cs:69908-69945`): the
             // desert ghouls' grounded walk climbs from row 2 at the
             // `|vx| + 1` accumulator's >9 step, wrapping at the 8-row
             // strip back to 2; the idle row 0, the air row 1.
             NpcKind::DesertGhoul
             | NpcKind::DesertGhoulCorruption
-            | NpcKind::DesertGhoulCrimson => {
+            | NpcKind::DesertGhoulCrimson
+            | NpcKind::DesertGhoulHallow => {
                 if self.vy == 0.0 {
                     if self.facing != 0 {
                         self.sprite_dir = self.facing;
@@ -12680,6 +12809,286 @@ impl Npc {
             self.hp = 0;
         }
         let _ = tick_rate;
+    }
+
+    /// W4-d41 — the sand poacher's walker form (530): the aiStyle-3
+    /// walker + the wall-stick transform into 531 (`NPC.cs:58875-58905`):
+    /// grounded + not confused + the 3x3 wall probe (>4 wall tiles) +
+    /// the bottom-center hitbox resize fits → Transform(531) with
+    /// withReposition=false, the 12-tick localAI[1] cooldown.
+    fn update_sand_poacher_walk(&mut self, world: &World, player: &mut Player, dt: f32) {
+        self.update_skeleton(world, player, dt);
+        // `:58875` — the transform gate: grounded + not confused.
+        if self.vy == 0.0 && self.buffs.find_buff_index(31).is_none() && self.local_ai[1] == 0.0 {
+            // `:58896` — NPCCanStickToWalls(531): the 3x3 wall probe.
+            if self.can_stick_to_walls(world, NpcKind::DesertScorpionWall) {
+                // `TryMoveToTransformableSpaceInto(531)` — the
+                // bottom-center resize (the 36x36 wall box from the
+                // 50x20 walker box: the height grows 16, the width
+                // shrinks 14 — the shrink always fits, the growth needs
+                // the headroom).
+                if let Some((nx, ny)) = self.transform_space(world, NpcKind::DesertScorpionWall) {
+                    self.x = nx;
+                    self.y = ny;
+                    self.transform_to_kind_no_reposition(world, player, NpcKind::DesertScorpionWall);
+                    self.local_ai[1] = 12.0;
+                }
+            }
+        }
+        // `:58902-58905` — the cooldown decay.
+        self.local_ai[1] = (self.local_ai[1] - 1.0).max(0.0);
+    }
+
+    /// W4-d41 — the sand poacher's wall form (531): the aiStyle-40
+    /// wall-crawler (`NPC.cs:29666-29898`). The 4/0.16 flight, the 8-px
+    /// snapped aim, the CanHit-gated approach/wander, the bounce, the
+    /// no-wall transform back into 530 (`:29888-29892`). The expert
+    /// 472-shot arm (`:29849-29868`) is constants-off (the port is
+    /// single-difficulty classic).
+    fn update_sand_poacher_wall(&mut self, world: &World, player: &Player) {
+        // `:29668-29671` — the retarget.
+        if self.target < 0 || self.target == 255 || player.dead {
+            let cand = crate::npc_target::session_candidate(player);
+            crate::npc_target::target_closest(self, world, &[cand], true, 40, 0);
+        }
+        // `:29679-29683` — the 531 parameters: 4 speed, 0.16 accel.
+        let (num596, num597) = (4.0f32, 0.16f32);
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        // `:29687-29692` — the 8-px snapped aim.
+        let mut dx = ((pcx / 8.0) as i32 * 8 - (cx / 8.0) as i32 * 8) as f32;
+        let mut dy = ((pcy / 8.0) as i32 * 8 - (cy / 8.0) as i32 * 8) as f32;
+        // `:29693-29697` — the confused flip.
+        if self.buffs.find_buff_index(31).is_some() {
+            dx *= -2.0;
+            dy *= -2.0;
+        }
+        // `:29698-29710` — the normalized aim at the speed.
+        let d = (dx * dx + dy * dy).sqrt();
+        if d == 0.0 {
+            dx = self.vx;
+            dy = self.vy;
+        } else {
+            let inv = num596 / d;
+            dx *= inv;
+            dy *= inv;
+        }
+        // `:29711-29715` — the dead-target flee.
+        if player.dead {
+            dx = self.facing as f32 * num596 / 2.0;
+            dy = -num596 / 2.0;
+        }
+        self.sprite_dir = -1;
+        // `:29717-29811` — the CanHit-gated approach/wander.
+        let can_hit = crate::projectile::can_hit(
+            world, self.x, self.y, w, h, player.x, player.y,
+            crate::player::WIDTH, player.height,
+        );
+        if !can_hit {
+            // The wander: the ai[0] counter's ±0.023 drift + the 0.007
+            // aim nudge + the 1.5/3 caps.
+            self.ai[0] += 1.0;
+            if self.ai[0] > 0.0 {
+                self.vy += 0.023;
+            } else {
+                self.vy -= 0.023;
+            }
+            if self.ai[0] < -100.0 || self.ai[0] > 100.0 {
+                self.vx += 0.023;
+            } else {
+                self.vx -= 0.023;
+            }
+            if self.ai[0] > 200.0 {
+                self.ai[0] = -200.0;
+            }
+            self.vx += dx * 0.007;
+            self.vy += dy * 0.007;
+            self.rotation = self.vy.atan2(self.vx);
+            if self.vx.abs() > 1.5 {
+                self.vx *= 0.9;
+            }
+            if self.vy.abs() > 1.5 {
+                self.vy *= 0.9;
+            }
+            self.vx = self.vx.clamp(-3.0, 3.0);
+            self.vy = self.vy.clamp(-3.0, 3.0);
+        } else {
+            // The approach: the double-add accel toward the aim.
+            if self.vx < dx {
+                self.vx += num597;
+                if self.vx < 0.0 && dx > 0.0 {
+                    self.vx += num597;
+                }
+            } else if self.vx > dx {
+                self.vx -= num597;
+                if self.vx > 0.0 && dx < 0.0 {
+                    self.vx -= num597;
+                }
+            }
+            if self.vy < dy {
+                self.vy += num597;
+                if self.vy < 0.0 && dy > 0.0 {
+                    self.vy += num597;
+                }
+            } else if self.vy > dy {
+                self.vy -= num597;
+                if self.vy > 0.0 && dy < 0.0 {
+                    self.vy -= num597;
+                }
+            }
+            self.rotation = dy.atan2(dx);
+        }
+        // `:29812-29815` — the 531 rotation offset.
+        self.rotation += std::f32::consts::FRAC_PI_2;
+        // `:29816-29842` — the bounce: the blocked axes reflect at
+        // ×-0.5 with the 2/1.5 floors.
+        if self.collide_x {
+            self.net_update = true;
+            self.vx = self.old_vx * -0.5;
+            if self.facing == -1 && self.vx > 0.0 && self.vx < 2.0 {
+                self.vx = 2.0;
+            }
+            if self.facing == 1 && self.vx < 0.0 && self.vx > -2.0 {
+                self.vx = -2.0;
+            }
+        }
+        if self.collide_y {
+            self.net_update = true;
+            self.vy = self.old_vy * -0.5;
+            if self.vy > 0.0 && self.vy < 1.5 {
+                self.vy = 2.0;
+            }
+            if self.vy < 0.0 && self.vy > -1.5 {
+                self.vy = -2.0;
+            }
+        }
+        // `:29888-29892` — the no-wall transform back into 530.
+        if self.local_ai[1] == 0.0 && !self.can_stick_to_walls(world, NpcKind::DesertScorpionWalk) {
+            if let Some((nx, ny)) = self.transform_space(world, NpcKind::DesertScorpionWalk) {
+                self.x = nx;
+                self.y = ny;
+                // The transform needs a &Player for the target re-pick;
+                // the wall form's target is the session player.
+                let mut p_clone = player.clone();
+                self.transform_to_kind_no_reposition(world, &mut p_clone, NpcKind::DesertScorpionWalk);
+                self.local_ai[1] = 12.0;
+            }
+        }
+        // `:29894-29897` — the cooldown decay.
+        self.local_ai[1] = (self.local_ai[1] - 1.0).max(0.0);
+        // The tile collision (the wall form has no noTileCollide row —
+        // `NPC.cs:14946-14959` writes only noGravity).
+        self.integrate_flyer_collision(world);
+    }
+
+    /// W4-d41 — `NPC.NPCCanStickToWalls` (`NPC.cs:55812-55831`): the 3x3
+    /// tile probe around the centre — a tile counts when it is NOT
+    /// (active && solid && !platform) AND has a wall; >4 counts → true.
+    /// The transformID overload (`:55787-55810`) probes the TARGET's
+    /// adjusted hitbox first, then the current centre.
+    fn can_stick_to_walls(&self, world: &World, target: NpcKind) -> bool {
+        // The target's adjusted hitbox (the bottom-center resize).
+        if let Some((nx, ny)) = self.transform_space(world, target) {
+            let (tw, th) = target.size();
+            let cx = nx + tw * 0.5;
+            let cy = ny + th * 0.5;
+            if self.wall_probe(world, cx, cy) {
+                return true;
+            }
+        }
+        let (w, h) = self.size();
+        self.wall_probe(world, self.x + w * 0.5, self.y + h * 0.5)
+    }
+
+    /// The 3x3 wall probe (`NPC.cs:55812-55831`).
+    fn wall_probe(&self, world: &World, cx: f32, cy: f32) -> bool {
+        let tx = (cx as i32) / 16;
+        let ty = (cy as i32) / 16;
+        let mut count = 0;
+        for i in (tx - 1)..=(tx + 1) {
+            for j in (ty - 1)..=(ty + 1) {
+                if let Some(t) = world.tile(i, j) {
+                    let solid = t.active()
+                        && tr_core::tiledata::TILE_SOLID.has(t.kind)
+                        && !tr_core::tiledata::SET_PLATFORMS.has(t.kind);
+                    if !solid && t.wall > 0 {
+                        count += 1;
+                        if count > 4 {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// W4-d41 — `Collision.TryChangingSizeFromBottomCenter`
+    /// (`Collision.cs:2486-2532`): the bottom-center hitbox resize for
+    /// the transform. The height growth probes the up/down headroom
+    /// (the 16-px step collision), the width shrink always fits. Returns
+    /// the new top-left, or None when the growth does not fit. The
+    /// port's stand-in: the height growth needs the full headroom above
+    /// (the `TileCollisionInStepsOf16` probe folds to the
+    /// `collides_rect` check at the grown box — the documented
+    /// granularity, the transform-space convention).
+    fn transform_space(&self, world: &World, target: NpcKind) -> Option<(f32, f32)> {
+        let (w, h) = self.size();
+        let (tw, th) = target.size();
+        let dh = th - h;
+        let dw = tw - w;
+        // The bottom-center anchor: the bottom edge stays, the centre X
+        // stays.
+        let bottom = self.y + h;
+        let cx = self.x + w * 0.5;
+        let nx = cx - tw * 0.5;
+        let ny = bottom - th;
+        if dh > 0.0 {
+            // The growth needs the headroom above (the up-probe).
+            if crate::player::collides_rect(world, nx, ny, tw, th) {
+                return None;
+            }
+        }
+        if dw > 0.0 {
+            // The width growth needs the side headroom.
+            if crate::player::collides_rect(world, nx, ny, tw, th) {
+                return None;
+            }
+        }
+        Some((nx, ny))
+    }
+
+    /// W4-d41 — `NPC.Transform` with `withReposition: false`
+    /// (`NPC.cs:81084-81114`): the caller already moved the position via
+    /// `TryMoveToTransformableSpaceInto`, so the bottom-anchored
+    /// reposition is SKIPPED — the kind swap + the SetDefaults subset +
+    /// the life rescale + the target re-pick only.
+    fn transform_to_kind_no_reposition(&mut self, world: &World, player: &Player, new_kind: NpcKind) {
+        let num = self.hp;
+        let num2 = self.max_hp;
+        self.kind = new_kind;
+        self.size_override = None;
+        self.max_hp = new_kind.max_hp();
+        self.scale = 1.0;
+        self.alpha = 0;
+        self.net_update = true;
+        self.ai = [0.0; 4];
+        self.local_ai = [0.0; 4];
+        self.target = 255;
+        self.old_target = 255;
+        self.target_rect = (0, 0, 0, 0);
+        self.frame = 0;
+        self.frame_counter = 0.0;
+        self.collide_x = false;
+        self.collide_y = false;
+        let cand = crate::npc_target::session_candidate(player);
+        crate::npc_target::target_closest(self, world, &[cand], true, new_kind.ai_style() as i32, 0);
+        self.hp = if num2 > 0 { (num * self.max_hp / num2).max(1) } else { 1 };
+        self.ai = [0.0; 4];
+        self.carrier_x = -1.0;
+        self.carrier_y = -1.0;
+        self.wants_transform = None;
     }
 
     // `update_scutlix_rider` RETIRED (S1-D-3-wire-saucer): the 390 arm is
@@ -19813,6 +20222,15 @@ impl Npc {
             NpcKind::DesertGhoul => 524,
             NpcKind::DesertGhoulCorruption => 525,
             NpcKind::DesertGhoulCrimson => 526,
+            // W4-d41 — the hallowed ghoul + the lamias + the sand
+            // poachers' vanilla type ids (the same values `to_u16`
+            // rides) — unused by every arm above, so the G6 key stays
+            // injective.
+            NpcKind::DesertGhoulHallow => 527,
+            NpcKind::DesertLamiaLight => 528,
+            NpcKind::DesertLamiaDark => 529,
+            NpcKind::DesertScorpionWalk => 530,
+            NpcKind::DesertScorpionWall => 531,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -24881,7 +25299,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 298] = [
+    pub(super) const ALL_KINDS: [NpcKind; 303] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -25193,6 +25611,12 @@ mod tests {
         NpcKind::DesertGhoul,
         NpcKind::DesertGhoulCorruption,
         NpcKind::DesertGhoulCrimson,
+        // W4-d41 — the hallowed ghoul + the lamias + the sand poachers.
+        NpcKind::DesertGhoulHallow,
+        NpcKind::DesertLamiaLight,
+        NpcKind::DesertLamiaDark,
+        NpcKind::DesertScorpionWalk,
+        NpcKind::DesertScorpionWall,
     ];
 
     #[test]
@@ -26090,6 +26514,185 @@ mod tests {
                 assert!(n.hp <= hp, "{kind:?} hp grew");
             }
         }
+    }
+
+    /// The hallowed ghoul's + the lamias' + the sand poachers'
+    /// `SetDefaults` rows (`NPC.cs:14911-14917` for 527, `:14920-14932`
+    /// for 528/529, `:14933-14959` for 530/531).
+    #[test]
+    fn w4_d41_the_lamia_scorpion_setdefaults_rows() {
+        // (kind, vanilla, w, h, ai, hp, dmg, def, value, kb)
+        let table = [
+            (NpcKind::DesertGhoulHallow, 527u16, 24.0, 44.0, 3u8, 300, 54, 32, 750.0, 0.4f32),
+            (NpcKind::DesertLamiaLight, 528, 24.0, 44.0, 3, 350, 52, 28, 600.0, 0.35),
+            (NpcKind::DesertLamiaDark, 529, 24.0, 44.0, 3, 350, 52, 28, 600.0, 0.35),
+            (NpcKind::DesertScorpionWalk, 530, 50.0, 20.0, 3, 320, 66, 24, 600.0, 0.5),
+            (NpcKind::DesertScorpionWall, 531, 36.0, 36.0, 40, 320, 66, 24, 600.0, 0.5),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb) in table {
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+        }
+        // The wall form is gravity-free; the rest are grounded walkers.
+        assert!(NpcKind::DesertScorpionWall.no_gravity());
+        assert!(!NpcKind::DesertScorpionWalk.no_gravity());
+        assert!(!NpcKind::DesertLamiaLight.no_gravity());
+        // The sound rows.
+        assert_eq!(NpcKind::DesertGhoulHallow.hit_sound(), Some("NPC_Hit_37"));
+        assert_eq!(NpcKind::DesertGhoulHallow.death_sound(), Some("NPC_Killed_40"));
+        for kind in [NpcKind::DesertLamiaLight, NpcKind::DesertLamiaDark] {
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} death");
+        }
+        for kind in [NpcKind::DesertScorpionWalk, NpcKind::DesertScorpionWall] {
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_13"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_19"), "{kind:?} death");
+        }
+        // The immunity rows: the ghoul/lamias null (`NPCID.cs:9064-9069`),
+        // the poachers [20] (`:9070-9083`).
+        for kind in [NpcKind::DesertGhoulHallow, NpcKind::DesertLamiaLight, NpcKind::DesertLamiaDark] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(!b.buff_immune.iter().any(|x| *x), "{kind:?} null immunity");
+        }
+        for kind in [NpcKind::DesertScorpionWalk, NpcKind::DesertScorpionWall] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[20], "{kind:?} OnFire-immune");
+        }
+    }
+
+    /// The bestiary rows: the ghoul/lamias carry their own entries; the
+    /// sand poacher's wall form folds onto the walker's 530 entry
+    /// (`ContentSamples.cs:1038`). The draw sheets stay the wall's own.
+    #[test]
+    fn w4_d41_the_lamia_scorpion_bestiary_and_sheets() {
+        for (kind, net, credit, name) in [
+            (NpcKind::DesertGhoulHallow, 527, "DesertGhoulHallow", "Dreamer Ghoul"),
+            (NpcKind::DesertLamiaLight, 528, "DesertLamiaLight", "Lamia"),
+            (NpcKind::DesertLamiaDark, 529, "DesertLamiaDark", "Lamia"),
+            (NpcKind::DesertScorpionWalk, 530, "DesertScorpionWalk", "Sand Poacher"),
+        ] {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, net, "{kind:?} net id");
+            assert_eq!(e.credit_id, credit, "{kind:?} credit");
+            assert_eq!(e.name, name, "{kind:?} name");
+        }
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::DesertScorpionWall, SlimeVariant::Blue).net_id,
+            530,
+            "the wall folds onto the walker"
+        );
+        // The DRAW sheets + row counts (`Main.npcFrameCount`,
+        // `Main.cs:67082`: 527 eight, 528/529 nine, 530 five, 531 four).
+        for (kind, net, rows) in [
+            (NpcKind::DesertGhoulHallow, 527u16, 8u32),
+            (NpcKind::DesertLamiaLight, 528, 9),
+            (NpcKind::DesertLamiaDark, 529, 9),
+            (NpcKind::DesertScorpionWalk, 530, 5),
+            (NpcKind::DesertScorpionWall, 531, 4),
+        ] {
+            assert_eq!(crate::render::entities::texture_net_id(kind), net);
+            assert_eq!(crate::render::entities::npc_rows(net), rows, "{kind:?} rows");
+        }
+    }
+
+    /// The lamias' `FindFrame` case (`NPC.cs:69946-69977`): the grounded
+    /// walk climbs from row 1 at the `|vx| + 1` >9 step, the idle row 0,
+    /// the air row 8. The sand poacher walker's case (`:73086-73111`):
+    /// the |vx|*1.1 6-step over rows 0..3, the air row 4/0. The wall's
+    /// case (`:73116-73145`): the (|vx|+|vy|)*0.4 6/12/18/24 bands.
+    #[test]
+    fn w4_d41_the_lamia_scorpion_find_frame_bands() {
+        let mut l = bare(NpcKind::DesertLamiaLight);
+        l.vx = 0.0;
+        l.vy = 0.0;
+        l.frame = 3;
+        l.find_frame();
+        assert_eq!(l.frame, 0, "the idle row");
+        l.vy = 1.0;
+        l.find_frame();
+        assert_eq!(l.frame, 8, "the air row");
+        l.vy = 0.0;
+        l.vx = 4.0;
+        l.facing = 1;
+        l.frame = 0;
+        l.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..16 {
+            l.find_frame();
+            rows.push(l.frame);
+        }
+        assert_eq!(&rows[..], &[0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 1], "the 1..7 cycle");
+        // The walker: 6 px/tick → 6.6/tick, a row every tick (>=6).
+        let mut s = bare(NpcKind::DesertScorpionWalk);
+        s.vx = 6.0;
+        s.vy = 0.0;
+        s.facing = 1;
+        s.frame = 0;
+        s.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..5 {
+            s.find_frame();
+            rows.push(s.frame);
+        }
+        assert_eq!(&rows[..], &[1, 2, 3, 0, 1], "the 0..3 cycle");
+        s.vy = -1.0;
+        s.find_frame();
+        assert_eq!(s.frame, 4, "the rising air row");
+        // The wall: the (|vx|+|vy|)*0.4 bands.
+        let mut w = bare(NpcKind::DesertScorpionWall);
+        w.vx = 10.0;
+        w.vy = 0.0;
+        w.frame_counter = 0.0;
+        w.find_frame();
+        assert_eq!(w.frame, 0, "4 < 6 → row 0");
+        w.frame_counter = 6.0;
+        w.find_frame();
+        assert_eq!(w.frame, 1, "6 + 4 = 10 → row 1");
+        w.frame_counter = 24.0;
+        w.find_frame();
+        assert_eq!(w.frame_counter, 0.0, "the 24 lap resets");
+    }
+
+    /// The sand poacher's wall-stick transform: the 3x3 wall probe
+    /// (>4 wall tiles) gates the 530→531 transform; the no-wall probe
+    /// gates the 531→530 transform back.
+    #[test]
+    fn w4_d41_the_sand_poacher_wall_transform() {
+        // A world with a wall-backed alcove: the walker stands on the
+        // floor, the 3x3 probe around its centre finds >4 wall tiles.
+        let mut w = ground();
+        // Carve a 5x5 alcove at (30, 25) with walls behind.
+        for x in 28..33 {
+            for y in 23..28 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile::default();
+                w.tiles[i].wall = 1;
+            }
+        }
+        w.compute_column_surface();
+        let mut player = Player::spawn(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 100.0 * TILE_PX;
+        // The walker at the alcove's centre.
+        let mut s = Npc::new(NpcKind::DesertScorpionWalk, 30.0 * TILE_PX, 25.0 * TILE_PX, 1, 0.0);
+        s.hp = s.max_hp;
+        s.vy = 0.0;
+        s.on_ground = true;
+        // The wall probe finds the alcove's walls.
+        assert!(s.can_stick_to_walls(&w, NpcKind::DesertScorpionWall), "the alcove's walls");
+        // The transform space fits (the 36x36 wall box in the 5x5 alcove).
+        assert!(s.transform_space(&w, NpcKind::DesertScorpionWall).is_some(), "the resize fits");
+        // The no-wall probe: a walker in the open air finds no walls.
+        let open = Npc::new(NpcKind::DesertScorpionWalk, 10.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+        assert!(!open.can_stick_to_walls(&w, NpcKind::DesertScorpionWall), "the open air");
     }
 
     /// The small-kinds wiring wave (S1-D-3-wire-smallkinds): the four wired
@@ -29655,8 +30258,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            298,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-d41's cavern crawdads/shellies four + the nine salamanders + the antlions/Dune Splicer five + the Tomb Crawler/solar fragments five + the ancient orbs/ghouls five)"
+            303,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-d41's cavern crawdads/shellies four + the nine salamanders + the antlions/Dune Splicer five + the Tomb Crawler/solar fragments five + the ancient orbs/ghouls five + the hallowed ghoul/lamias/sand poachers five)"
         );
         assert!(
             covered > 43,

@@ -3634,6 +3634,20 @@ fn npc_seed(
         | crate::npc::NpcKind::DesertGhoulCrimson => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
+        // W4-d41 — the hallowed ghoul + the lamias + the sand poacher
+        // walker (aiStyle 3): the ground walkers plant their feet.
+        crate::npc::NpcKind::DesertGhoulHallow
+        | crate::npc::NpcKind::DesertLamiaLight
+        | crate::npc::NpcKind::DesertLamiaDark
+        | crate::npc::NpcKind::DesertScorpionWalk => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // W4-d41 — the sand poacher's wall form (aiStyle 40, noGravity):
+        // the flyer rides the hover ctor.
+        crate::npc::NpcKind::DesertScorpionWall => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 
