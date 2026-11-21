@@ -36120,6 +36120,118 @@ batch-2 + 9 batch-3 [4 engine + 3 app drain + 2 wiring_devices unit]). The
 `validate_tile_square` helper went `pub(crate)` (the c42 fix-round precedent,
 shared with the campfire/tall-gate/trapdoor validators).
 
+## The Wiring.cs device residuals (W4-f11, code-only)
+
+The fifth pass over this lane: the five recorded ANALYSIS deviations plus the
+`Wiring.cs` census beyond `HitWireSingle`. Commits `ad80daaa` (engine) +
+`24fa39f1` (app).
+
+**(1) `HitWire` (the multi-tile entry, `:837-995`) vs landed.** The flood
+itself was already 1:1 (research-23 D1/D2 closed); the residual was the
+entry/exit map lifecycle: the C# clears ONLY `_wireDirectionList` at entry
+(`:839`) and `_wireSkip`/`_toProcess` at the EXIT (`:977-978`) — the port
+cleared both maps at entry too. Redundant on every standalone path (the
+previous pass exited clean), so the entry clears are gone; the seed loop
+re-inserts every seed (`Add(point, 4)` + `SkipWire`, `:843-844`). The
+`_toProcess.Add` site (`:973`) cannot throw a duplicate key: an entry exists
+⇔ the `TryGetValue` arm decremented and `continue`d (no enqueue), and it is
+removed exactly at zero, after which the fresh enqueue re-Adds. The C#'s
+nested gate-trip (`LogicGatePass` → `TripWire` while the outer flood's maps
+are live) wipes the outer state on its own exit — a static-sharing
+re-entrancy quirk the port's per-call structure does not reproduce
+(recorded, not chased: the gate chains re-trip from scratch either way).
+
+**(2) `CheckMech` cooldown machinery — full census.** All 38 C# call sites
+map 1:1: `HitSwitch` 18000 (`:303`) / 60 (`:362`); the cannons 480/3600
+(`:1330` via the style table) + snowball 60 (`:1391`); the toilet 60
+(`:1500`), fireworks box/fountain 30 (`:1516`/`:1528`), switch track 5
+(`:1745`), geyser 200 (`:3097`); the trap family 200/300/90 (`:1774`/
+`:1810`/`:1856`/`:1891`/`:1907`/`:1923`/`:1940`/`:1966`); the boulder
+statue 900 (`:2000`); the statues 30/600/300 (`:2266-2443`); the
+extractinator 60 (`:2561`) and hopper 60 (`:2651`). The queue cap is 999
+(`:464`, `MAX_MECHS`), the dedupe is per-position. Two `UpdateMech` fixes:
+the out-of-world/null branch does `_numMechs--` WITHOUT shifting (`:165-
+175`, research-23 D16) — `Vec::pop`, not `remove` (the dead slot survives
+until the descending loop drains past it); and the gate is `InWorld(x, y,
+1)` — fluff 1, one cell inside each edge (the port used fluff-0
+`in_bounds`).
+
+**(3) `SkipWire`/`running` lifecycle.** Three gaps closed: (a)
+`LogicGatePass` clears `blockPlayerTeleportationForOneIteration` at its
+tail (`:714-717`) — the plate poke (`PressurePlateHelper.PokeLocation`)
+and the PlayerAbove sensor arm set it, and without the clear the flag
+latched forever and every later teleporter pad refused the player; (b)
+`ClearAll` (`:125-143`) — the mech + pump queues empty on world load
+(`WorldGen.cs:6959`, the `WorldFile.cs:1977`/`:3455` sites), hooked into
+`enter_loaded_world`; (c) two per-arm SkipWire sets: case-216
+`LaunchRocket`'s `SkipWire(i, j)` AFTER the launch (`:1492`, the port
+dropped it) and the fireworks box's full 2×2 (`:1512-1515`, the port
+skipped only the left column — the fountain's 1×2 at `:1526-1527` was
+already right). The `running` flag's readers (the `SwitchMB`/
+`SwitchFountain`/`SwitchMonolith`/door-family `wire_skips` seams) were
+already ported; the census confirmed every `Wiring.running` gate in
+`WorldGen.cs` (`:31895`/`:37717`/`:50994`/`:51137`/`:51186`/`:51459`/
+`:51501`/`:51556`/`:51748`) has its port seam.
+
+**(4) Mass-wire 109/110 apply-side.** The d93 codecs (`5c32b508`) landed
+PARKED; the g48-g51 apply lanes were read and leave 109/110 unclaimed
+(the `netglue.rs` parked arms cite S1-I-4). This lane ports the operation
+(research-23 task 6 / D17): `mass_wire_operation_step` (`Wiring.cs:3329-
+3421`) — the Red→Green→Blue→Yellow→Actuator placement order (NOT the
+colour-pass order), the dry-stock `Some(false)` halt, the cutter half's
+cached kills; `mass_wire_operation_inner` (`:3235-3327`) — the L-shaped
+walk (column leg then row leg, the bend cell included, the endpoint once
+more, the ps corner never re-walked); and the app half
+(`wiring_devices::mass_wire_operation`, `:419-453`) — the 58-slot stock
+census (the port chains inventory+coins+ammo in the C# index order), the
+bill via `ConsumeItem` (`Player.cs:9269-9308`, forward scan), and the
+`DropCache` spawns at `master.Center` on `UpdatePlayers`. The Multicolor
+Wrench (3625) use arm (`Player.cs:46903-46918`) lands in
+`use_wiring_tool`: the ToolMode Actuator-strip (`:46908`), the
+`wireOperationsCooldown` gate (`:52075-52078`), the single-cell `ps==pe`
+operation. `Player.wire_operations_cooldown` + the `ResetEffects`
+decrement (`:18798-18800`) and `App.wire_tool_mode` (`WiresUI.cs:23`,
+default Red `:94`) are the new state.
+
+**(5) Hopper/extractinator engine seams — verified live.** The batch-3
+drains run at `world_sim/wiring.rs:362-367` inside the wiring tick
+(`take_hopper_requests` → `run_hopper`, `take_extractinator_requests` →
+`run_extractinator`), with the three app witnesses
+(`w4_f11_the_hopper_sucks_a_nearby_drop_into_the_chest`,
+`w4_f11_a_locked_chest_refuses_the_hopper`,
+`w4_f11_the_extractinator_rolls_a_chest_input`). No gap.
+
+**Deliberate deviations (code-only mode — no cargo/rustc/tests invoked):**
+- The mass-wire bill folds the two msg-110 round trips (`Wiring.cs:441-
+  442`) into the direct `ConsumeItem` loops (`:445-452`) — the port's
+  single-player i51 model (netMode 0). The 110 client arm
+  (`MessageBuffer.cs:3789-3807`) stays parked with the net lanes; the
+  `wireOperationsCooldown = 0` clear it carries has no positive setter in
+  1.4.5.8 (the only write is the clear), so the field + decrement + gate
+  keep the shape without a live throttle.
+- The cut cache (`Item.StartCachingType`/`DropCache`, `:3244-3245`/
+  `:3325-3326`) is a per-operation `(i32, i32)` counter, not the C#'s
+  global `cachedItemSpawnsByType` array — the mass operation is the only
+  cacher, and the totals drop in `maxStack` chunks at `master.Center`
+  with the `Item.NewItem` velocity rolls on `UpdatePlayers` (the C#'s
+  zero-spread call still draws them). The per-edit `SendData(17)` and
+  `PlaySound(0)` inside `Place*`/`Kill*` stay the caller's seams (the
+  port's `edit::place_wire` family is silent, the S1-K-4d precedent).
+- The Grand Design (3611) drag rides projectile 651
+  (`Projectile.cs:72053-72066`) — the projectile family is unported, so
+  only the 3625 click arm lands; the `WiresRadial` UI that sets ToolMode
+  is unported (the field keeps the Red default until it lands).
+- The `CanDoWireStuffHere` dual-dungeons temple arm
+  (`Player.cs:46934-46937`) has no ported seed — the wall-87 gate alone
+  runs (the S1-D-3 precedent).
+
+15 witness tests WRITTEN NOT RUN (10 core `w4_f11_residual_tests` + 3
+use-arm + 2 `wiring_devices` unit). The plate witness
+(`destroy_plate_releases_a_pressed_plate_and_pokes_the_switch`) was
+re-pinned for the gate-pass clear: the block now reads false after the
+poke (the C# truth), and the no-poke arm arms the flag manually to prove
+the unpressed plate leaves it untouched.
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the
