@@ -7097,6 +7097,60 @@ impl Projectile {
         }
     }
 
+    /// W4-d17 — `AI_168_FirstFractal` (`Projectile.cs:46537-46571`, the
+    /// dispatch `:36635-36638`): the Zenith's component sword (857), the
+    /// style's ONLY row (`:8220-8236`). The 60-tick life: `++localAI[0] >=
+    /// 59` kills; the first tick rolls `frame = Next(15)`; the velocity
+    /// rotates by `ai[0]` each sub-step; the opacity ramps in over 12 ticks
+    /// and out over the last 12; the rotation faces the flight + π/4·facing
+    /// (+π when facing left). The `manualDirectionChange` row keeps the
+    /// direction the AI writes (`:46552`), NOT the velocity-sign tail.
+    ///
+    /// RNG: the first tick's `Next(15)` (`:46548`); past `localAI[0] > 7`
+    /// the `Next(15)` dust gate (`:46562`) — a taken gate draws ONE
+    /// `NextFloat` for the colour's `Color.Lerp` amount (`:46564`, the
+    /// `Main.rand.NextFloat() * 0.3f` argument). The dust body + the
+    /// `GetFirstFractalColor` hue feed skip (no pool layer).
+    fn ai_first_fractal(&mut self, rng: &mut dyn tr_core::loot::DropRng) {
+        // `:46539-46544` — the 60-tick life.
+        let num = 60.0;
+        self.local_ai[0] += 1.0;
+        if self.local_ai[0] >= num - 1.0 {
+            self.kill_time_left = self.time_left;
+            self.active = false;
+            self.time_left = 0;
+            return;
+        }
+        // `:46545-46549` — the first-tick frame roll.
+        if self.frame_counter == 0 {
+            self.frame_counter = 1;
+            self.frame = rng.next_range(0, 15);
+        }
+        // `:46550` — the velocity spin by ai[0].
+        self.vel = rotate(self.vel, self.ai[0]);
+        // `:46551` — the opacity ramp: in over 12, out from 60 to 48.
+        let opacity = get_lerp_value(0.0, 12.0, self.local_ai[0])
+            * get_lerp_value(num, num - 12.0, self.local_ai[0]);
+        self.alpha = alpha_of(opacity);
+        // `:46552-46553` — the direction + sprite face the flight.
+        self.direction = if self.vel.x > 0.0 { 1 } else { -1 };
+        self.sprite_direction = self.direction;
+        // `:46554-46558` — the rotation: π/4·facing + the flight angle,
+        // +π when facing left.
+        self.rot = std::f32::consts::FRAC_PI_4 * self.sprite_direction as f32
+            + self.vel.y.atan2(self.vel.x);
+        if self.sprite_direction == -1 {
+            self.rot += std::f32::consts::PI;
+        }
+        // `:46559-46570` — the dust gate past tick 7. The body skips; the
+        // gate + the taken colour float stay (module doc).
+        if self.local_ai[0] > 7.0 {
+            if rng.next_range(0, 15) == 0 {
+                let _ = rng.next_float(); // the colour lerp amount (`:46564`)
+            }
+        }
+    }
+
     /// `AI_167_SparkleGuitar` (`Projectile.cs:46573-46591`): the 856's note
     /// arcs from the owner to the control point (`ai[0]/ai[1]`) over 90
     /// ticks via CatmullRom, then dies. The light write (`:46588`) is
@@ -13566,6 +13620,9 @@ pub(crate) fn trailing_mode(kind: u16) -> i32 {
         // W4-d17 — `ProjectileID.cs:521`'s `818, 2` entry: the White Tiger
         // Pounce's mode-2 ring (positions + rotations + sprite directions).
         WHITE_TIGER_POUNCE => 2,
+        // W4-d17 — `ProjectileID.cs:521`'s `857, 0` entry: the First
+        // Fractal's mode-0 ring (positions only).
+        FIRST_FRACTAL => 0,
         // `:17140`'s mode 3 — the three aimed spells with a trail drawer.
         MAGIC_MISSILE | FLAMELASH | RAINBOW_ROD_BULLET => 3,
         _ => -1,
@@ -17700,6 +17757,21 @@ impl ProjectilePool {
                         // (aiStyle 167): the 856's CatmullRom arc back to the
                         // owner. The light write SKIPPED (no pool layer).
                         167 => self.slots[i].ai_sparkle_guitar(owner),
+                        // W4-d17 — `AI()`'s `else if (this.aiStyle == 168)`
+                        // (`Projectile.cs:36635-36638`) -> `AI_168_FirstFractal`
+                        // (`:46537-46571`): the Zenith's component sword (857),
+                        // the style's ONLY row. The row keeps
+                        // `tileCollide = false` and aiStyle 168 is not in
+                        // `UpdatePosition`'s skip list (`:20435`), so the free
+                        // integrate runs every sub-step. The row sets
+                        // `manualDirectionChange` (`:8233`) — the AI's own
+                        // direction write (`:46552`) stands, NO velocity-sign
+                        // tail (`AutomaticallyChangesDirection` false).
+                        168 => {
+                            self.slots[i].ai_first_fractal(rng);
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
+                        }
                         // W4-d17 — `AI()`'s `else if (this.aiStyle == 166)`
                         // (`Projectile.cs:36627-36630`) -> `AI_166_Dove`
                         // (`:47540-47610`): the Release Doves (851) /
@@ -45637,5 +45709,131 @@ mod w4_d17_dove_tests {
         p.vel = Vec2::new(0.0, 0.0);
         p.dove_bounce(Vec2::new(0.0, -2.0));
         assert!((p.vel.y - 0.5).abs() < 1e-6, "the rising-Y x0.25 damp (:18356-18358)");
+    }
+}
+
+#[cfg(test)]
+mod w4_d17_first_fractal_tests {
+    //! W4-d17 — the aiStyle-168 machine (`AI_168_FirstFractal`,
+    //! `Projectile.cs:46537-46571`, the dispatch `:36635-36638`): the
+    //! Zenith's component sword (857). WRITTEN NOT RUN (code-only mode).
+    use super::*;
+
+    fn world() -> World {
+        World::new("t".into(), 256, 128)
+    }
+
+    struct CensusRng {
+        draws: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl tr_core::loot::DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            max - 1
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.5
+        }
+    }
+
+    fn tick(pool: &mut ProjectilePool, w: &mut World, rng: &mut CensusRng) {
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            rng,
+            0,
+            false,
+        );
+    }
+
+    /// Witness 1 — the row + the spin flight + the first-tick census
+    /// (`:8220-8236`, `:46539-46558`): the 32x32 box, aiStyle 168, alpha
+    /// 255, extraUpdates 1, local 10, ignoreWater, melee, projFrames 1 (no
+    /// override), trailing mode 0. A fractal at velocity (4, 0) with
+    /// ai0 = 0 (no spin): two sub-steps → localAI[0] = 2, the opacity ramp
+    /// GetLerpValue(0,12,2)·GetLerpValue(60,48,2) = (2/12)·1 → alpha
+    /// (int)((1−1/6)·255) = 212. The direction faces +X (1), the rotation
+    /// π/4 + 0. The first tick rolls Next(15) → frame 14; no dust gate
+    /// (localAI[0] ≤ 7).
+    #[test]
+    fn w4_d17_the_fractal_spins_and_ramps() {
+        let d = proj_data(FIRST_FRACTAL).unwrap();
+        assert_eq!((d.w, d.h, d.ai_style, d.penetrate), (32.0, 32.0, 168, -1));
+        assert_eq!((d.extra_updates, d.alpha, d.tile_collide), (1, 255, false));
+        assert!(d.ignore_water && d.melee, ":8229/:8227");
+        assert!(d.uses_local_immunity && d.local_hit_cooldown == 10, ":8231-8232");
+        assert_eq!(proj_frames(FIRST_FRACTAL), 1, "no projFrames[857] override");
+        assert_eq!(trailing_mode(FIRST_FRACTAL), 0, "ProjectileID.cs:521");
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(FIRST_FRACTAL, 0, 400.0, 300.0, 4.0, 0.0, 40, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut rng);
+        let s = &pool.slots()[slot];
+        assert!(s.active);
+        assert_eq!(s.local_ai[0], 2.0, "two sub-steps (:46540)");
+        assert_eq!(s.frame, 14, "Next(15) → 14 (:46548)");
+        assert_eq!(s.frame_counter, 1, "the first-tick latch (:46547)");
+        assert_eq!(s.alpha, 212, "(int)((1-2/12)*255) (:46551)");
+        assert_eq!(s.direction, 1, "the AI's direction write (:46552)");
+        assert_eq!(s.sprite_direction, 1);
+        assert!((s.rot - std::f32::consts::FRAC_PI_4).abs() < 1e-6, "pi/4 + 0 (:46554)");
+        // ai0 = 0 → no spin; the free integrate adds (4,0) twice.
+        assert_eq!(s.vel, Vec2::new(4.0, 0.0), "rotate by 0 (:46550)");
+        assert_eq!(s.pos, Vec2::new(408.0, 300.0), "two free integrates");
+        assert_eq!(rng.draws, vec![(0, 15)], "the first tick's Next(15) only");
+        assert_eq!(rng.floats, 0);
+    }
+
+    /// Witness 2 — the 59-tick kill + the dust-gate census
+    /// (`:46540-46544`, `:46559-46570`): at localAI[0] >= 59 the fractal
+    /// dies. Past tick 7 each sub-step rolls Next(15); the missed gate
+    /// (max−1 = 14) draws no float. A ai0 = π/2 spin turns (4,0) → (0,4)
+    /// each sub-step (the rotate helper).
+    #[test]
+    fn w4_d17_the_fractal_dies_at_fifty_nine_and_gates_the_dust() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(FIRST_FRACTAL, 0, 400.0, 300.0, 4.0, 0.0, 40, 0.0, 0.0, 0.0)
+            .unwrap();
+        // Seed localAI[0] = 57: sub-step 1 reaches 58 (live, rolls the dust
+        // gate), sub-step 2 reaches 59 → the kill returns BEFORE the gate.
+        pool.slots_mut()[slot].local_ai[0] = 57.0;
+        pool.slots_mut()[slot].frame_counter = 1; // skip the frame roll
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut rng);
+        let s = &pool.slots()[slot];
+        assert!(!s.active, "localAI[0] 59 >= 59 kills (:46540-46543)");
+        assert_eq!(s.time_left, 0);
+        // Sub-step 1 (localAI 58 > 7) rolls the gate; sub-step 2 kills at
+        // the head, before its gate. ONE Next(15), no float (missed gate).
+        assert_eq!(rng.draws, vec![(0, 15)], "one dust gate before the kill (:46562)");
+        assert_eq!(rng.floats, 0, "the missed gate draws no float");
+        // The spin: ai0 = pi/2 turns (4,0) a quarter-turn per sub-step.
+        let slot2 = pool
+            .spawn_with_data_ai_owned(
+                FIRST_FRACTAL, 0, 400.0, 300.0, 4.0, 0.0, 40, 0.0,
+                std::f32::consts::FRAC_PI_2, 0.0,
+            )
+            .unwrap();
+        pool.slots_mut()[slot2].frame_counter = 1;
+        let mut rng2 = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut rng2);
+        let s2 = &pool.slots()[slot2];
+        // Two quarter-turns: (4,0) → (0,4) → (−4,0).
+        assert!((s2.vel.x - (-4.0)).abs() < 1e-4, "two pi/2 spins: {}", s2.vel.x);
+        assert!(s2.vel.y.abs() < 1e-4, "the Y returns to 0: {}", s2.vel.y);
+        assert_eq!(s2.direction, -1, "the flight now faces -X (:46552)");
     }
 }

@@ -1146,6 +1146,13 @@ pub const CHUM_BUCKET: u16 = 820;
 pub const RELEASE_DOVES: u16 = 851;
 pub const RELEASE_LANTERN: u16 = 855;
 
+/// W4-d17 — `ProjectileID.FirstFractal` (857, `ProjectileID.cs:2268`) — the
+/// Zenith's component sword (aiStyle 168, `AI_168_FirstFractal`
+/// `Projectile.cs:46537-46571`, the dispatch `:36635-36638`). The 60-tick
+/// spin flight; `ai[0]` the per-tick rotation delta, `ai[1]` the hue
+/// (`GetFirstFractalColor` = `hslToRgb(ai[1], 1, 0.5)`, `:70517-70520`).
+pub const FIRST_FRACTAL: u16 = 857;
+
 /// W4-d17 — the aiStyle-161 kind set (the `DefaultToShortsword` callers:
 /// `Projectile.cs:7921`/`:8145`/`:8917`/`:10559`). The `Colliding` stab arm
 /// (`:15955`) and the `ownerHitCheck` gate (`:12637`) key on it.
@@ -3919,6 +3926,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:8197-8205` — the Release Lantern (855): 12x12, aiStyle 166,
             // `penetrate = -1`, `timeLeft = 1000`, `netImportant`.
             RELEASE_LANTERN => (12.0, 12.0, 166, -1, 1000, 0, true, false, false, RESET_STATE),
+            // W4-d17 — `Projectile.cs:8220-8236` — the First Fractal (857):
+            // 32x32, aiStyle 168, `alpha = 255`, melee, `tileCollide = false`,
+            // `ignoreWater`, `extraUpdates = 1`, the LOCAL pair (10),
+            // `manualDirectionChange`, `penetrate = -1`, drawLayer 6. NO
+            // `projFrames[857]` override — the stock 1 stands (the draw reads
+            // the hue sparkle, not a frame slice).
+            FIRST_FRACTAL => (32.0, 32.0, 168, -1, TIME_LEFT_DEFAULT, 1, false, false, false, (true, 10, false, -1, 255, 1.0)),
             // The spear family (S1-P-i06, aiStyle 19 — `DefaultToSpear`
             // `Projectile.cs:10720-10730`: friendly, `penetrate = -1`,
             // `tileCollide = false`, melee, `ownerHitCheck`, `usesOwnerLight`,
@@ -4308,7 +4322,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == GOLF_CLUB_HELPER
             // W4-d17 — `Projectile.cs:8013`: the White Tiger Pounce (818)
             // sets `ignoreWater = true`.
-            || kind == WHITE_TIGER_POUNCE,
+            || kind == WHITE_TIGER_POUNCE
+            // W4-d17 — `Projectile.cs:8229`: the First Fractal (857) sets
+            // `ignoreWater = true`.
+            || kind == FIRST_FRACTAL,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -4332,6 +4349,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d17 — `DefaultToShortsword` sets melee (`Projectile.cs:10783`):
             // the rapier-stab family (802/842/938-945/1127).
             || matches!(kind, GLADIUS_STAB | RULER_STAB | SHORTSWORD_STAB_FIRST..=SHORTSWORD_STAB_LAST | CHLOROPHYTE_SABER_STAB)
+            // W4-d17 — `Projectile.cs:8227`: the First Fractal (857) sets
+            // `melee = true`.
+            || kind == FIRST_FRACTAL
             || matches!(
                 kind,
                 // The explicit melee rows: the boomerangs (6/52/113,
