@@ -2266,6 +2266,51 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Blue Jellyfish",
     },
+    // W4-d34 kinds 1-70 (phase 4): the five register by their vanilla ids
+    // (the populator's automated pass). The Dungeon Guardian's provider is
+    // quickUnlock (`BestiaryDatabaseNPCsPopulator.cs:676`). The Spike Ball
+    // is Hide=true (`NPCID.cs:1710-1716`) but keeps its OWN entry — the
+    // BlazingWheel precedent (72 is Hide=true too, `NPCID.cs:1717-1723`).
+    BestiaryEntryDef {
+        credit_id: "PinkJellyfish",
+        net_id: 64,
+        kind: NpcKind::PinkJellyfish,
+        variant: None,
+        quick_unlock: false,
+        name: "Pink Jellyfish",
+    },
+    BestiaryEntryDef {
+        credit_id: "Crab",
+        net_id: 67,
+        kind: NpcKind::Crab,
+        variant: None,
+        quick_unlock: false,
+        name: "Crab",
+    },
+    BestiaryEntryDef {
+        credit_id: "DungeonGuardian",
+        net_id: 68,
+        kind: NpcKind::DungeonGuardian,
+        variant: None,
+        quick_unlock: true,
+        name: "Dungeon Guardian",
+    },
+    BestiaryEntryDef {
+        credit_id: "Antlion",
+        net_id: 69,
+        kind: NpcKind::Antlion,
+        variant: None,
+        quick_unlock: false,
+        name: "Antlion",
+    },
+    BestiaryEntryDef {
+        credit_id: "SpikeBall",
+        net_id: 70,
+        kind: NpcKind::SpikeBall,
+        variant: None,
+        quick_unlock: false,
+        name: "Spike Ball",
+    },
     BestiaryEntryDef {
         credit_id: "Bunny",
         net_id: 46,

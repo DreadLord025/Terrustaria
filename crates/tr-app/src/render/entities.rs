@@ -844,7 +844,12 @@ fn npc_add_height(n: &Npc) -> f32 {
         // `:22085` 63/64 → 4. The Snatcher (56), CorruptGoldfish (57) and
         // Vulture (61) have NO arm — the default 0 (`Main.cs:22004`).
         Demon => 14.0,
-        BlueJellyfish => 4.0,
+        BlueJellyfish | PinkJellyfish => 4.0,
+        // W4-d34 (phase 4): `Main.cs:22093` 69 → 4; `:22097` 70 → -4. The
+        // Crab (67) and Dungeon Guardian (68) have NO arm — the default 0
+        // (`Main.cs:22004`).
+        Antlion => 4.0,
+        SpikeBall => -4.0,
 
         // `:22087` 63/64/103 (the goblin townsfolk + the javelin T3) — the
         // Golem Head's 64 is resolved out by the town test above.
@@ -1266,6 +1271,7 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     31, 34, 37, 43, 46, // phase 1
     39, 40, 41, 47, 48, // phase 2
     56, 57, 61, 62, 63, // phase 3
+    64, 67, 68, 69, 70, // phase 4
 ];
 
 
@@ -3238,6 +3244,26 @@ pub(crate) fn draw_npcs(
             NpcKind::BlueJellyfish => {
                 pumpkin_moon_draw(assets.npc_sheet(63), npc_rows(63), n, w, h)
             }
+            // W4-d34 (phase 4): the PinkJellyfish / Crab / Antlion draw their
+            // own strips at the SetFrameSize row height; the Dungeon Guardian
+            // its single-frame head at the generic anchor; the Spike Ball its
+            // single frame through `scaled_anchor` (the 1.5 scale row rides
+            // n.scale — the BlazingWheel precedent).
+            NpcKind::PinkJellyfish => {
+                pumpkin_moon_draw(assets.npc_sheet(64), npc_rows(64), n, w, h)
+            }
+            NpcKind::Crab => {
+                pumpkin_moon_draw(assets.npc_sheet(67), npc_rows(67), n, w, h)
+            }
+            NpcKind::DungeonGuardian => {
+                generic_anchor(assets.npc_sheet(68), npc_rows(68), n, w, h)
+            }
+            NpcKind::Antlion => {
+                pumpkin_moon_draw(assets.npc_sheet(69), npc_rows(69), n, w, h)
+            }
+            NpcKind::SpikeBall => {
+                scaled_anchor(assets.npc_sheet(70), npc_rows(70), n, w, h)
+            }
 
         };
         let Some(tex) = tex else {
@@ -3403,6 +3429,11 @@ pub(crate) fn draw_npcs(
                     | NpcKind::Vulture
                     | NpcKind::Demon
                     | NpcKind::BlueJellyfish
+                    // W4-d34 (phase 4): the PinkJellyfish's chase aim / idle
+                    // tilt (the shared aiStyle-18 machine) and the Dungeon
+                    // Guardian's enraged spin (`NPC.cs:22260`).
+                    | NpcKind::PinkJellyfish
+                    | NpcKind::DungeonGuardian
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

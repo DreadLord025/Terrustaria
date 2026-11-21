@@ -3428,7 +3428,9 @@ fn npc_seed(
         | crate::npc::NpcKind::BlazingWheel
         | crate::npc::NpcKind::AngryNimbus
         | crate::npc::NpcKind::DungeonSpirit
-        | crate::npc::NpcKind::ForceBubble => {
+        | crate::npc::NpcKind::ForceBubble
+        // W4-d34 (phase 4): the Spike Ball seeds like the wheel trap.
+        | crate::npc::NpcKind::SpikeBall => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
@@ -3599,7 +3601,9 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
-        crate::npc::NpcKind::CorruptGoldfish | crate::npc::NpcKind::BlueJellyfish => {
+        crate::npc::NpcKind::CorruptGoldfish
+        | crate::npc::NpcKind::BlueJellyfish
+        | crate::npc::NpcKind::PinkJellyfish => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
         crate::npc::NpcKind::Vulture => {
@@ -3608,6 +3612,18 @@ fn npc_seed(
         crate::npc::NpcKind::Demon => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_cave_flyer(world, tx, y, kind)?
+        }
+        // W4-d34 (phase 4): the Crab plants on the surface and the Antlion
+        // anchors on the sand (the aiStyle-3 walker net shape, behindTiles);
+        // the Dungeon Guardian hangs in the air (the Skeletron net shape).
+        // The PinkJellyfish seeds in the water column (grouped above); the
+        // Spike Ball hangs in the air (the BlazingWheel trap net shape).
+        crate::npc::NpcKind::Crab | crate::npc::NpcKind::Antlion => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        crate::npc::NpcKind::DungeonGuardian => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
 
     })
