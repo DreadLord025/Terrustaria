@@ -39348,3 +39348,62 @@ lacks); and the dust_lights 206/174/230 local-decrement retire. The
 (f6 batch-4 `world_dust.rs::lava_bubbles`, STAGED, private `_random`
 `:132` stream - a per-visible-lava-cell spawner, not an Underworld bg
 lake; wiring stays f6's). No unclaimed consumer remains.
+
+## The 52 second-chain dust lights (W4-g13, flag-a closure)
+
+research/68 §3 flag-a found the 52 second-chain `AddLight` arms
+(`Dust.cs:1061-2312`) ORPHANED between `dust_lights.rs` ("lands with
+S1-E-3") and d50's `dust_physics` ("S1-E-5"). This lane closes the circular
+deferral: `crates/tr-app/src/dust_lights_b.rs` OWNS the 52, ports them as a
+pure per-slot collector (`dust_chain_light`, the e6/c19 `EntityLights`
+pattern) and feeds them post-move (`feed_dust_chain_lights`, wired in
+`app/frame/draw.rs` immediately after the FIRST-ladder `feed_dust_lights`,
+`Main.dust` slot order). 42 + 52 = the dust family's 94 sites; the full
+per-arm census (type/colour/intensity/gate) is `docs/research/69`.
+
+- **The scale/position replays.** The C# computes each arm's colour MID-ARM
+  from the scale/position of that moment; the port's pool runs the skeleton
+  only, so `light_scale`/`light_position` replay the owning arm's pre-light
+  mutations on a LOCAL copy (the `dust_lights.rs` 206/174 compensation
+  precedent, extended): 66/267 (+0.02), 20/21/231 (+0.005), 41 (+0.007), 44
+  (+0.0085), 27/45 (the burn-down + noLight double −0.06 + the player push),
+  35 ng (+0.03, the y+1 anchor), 35 wet (the wet probe + the alpha kill),
+  and the second chain's fadeIn ramp (+0.03 / −0.01). Each cites its d50
+  `type_chain` arm; the replays retire arm-by-arm when d50 wires (the flag-c
+  generalisation, research/69 §5).
+- **Two fidelity subtleties** (witnessed): type 21 WITH `noLightEmittance`
+  falls through to the ELSE arm (the 20 colour, `:1632-1644`) — it does NOT
+  go dark; the 35 alpha kill is draw-dependent only at `alpha == 255`
+  (`alpha += Next(2)` then `> 255`), so the pure collector mirrors the
+  draw-independent kill (`alpha > 255`) and leaves the boundary to d50.
+- **The ambient sample.** 244-247/43 read `Lighting.GetColor(tileX, tileY)`
+  (`Lighting.cs:216-242`) via `main_dust::light_color_bytes` (the light map
+  stores the RAW engine colour; GetColor multiplies GlobalBrightness,
+  truncates, clamps). The feed binds it over `style.brightness` AFTER the
+  Darkness block, so the sample reads the adjusted brightness. The 27/45
+  player push and the 35 wet probe ride the same seams d50's
+  `DustPhysicsEnv` uses (`player::wet_collision`, the player's vx/vy/wet).
+- **Dark sharers / absent site.** 274/292 (the 15/57/58 arm), 134 (the
+  130-133 arm), 223 (the 219-222 arm) share an arm with NO AddLight branch —
+  dark. Site 50 (226's `customData is Color` second light, `:2275`) is
+  absent wholesale (the field is dropped).
+- **RNG contract.** No arm draws `Main.rand` (the chain's rand draws are
+  d50's physics column); the feed is pure over the pool, so its placement
+  leaves the fixed-step order and every stream exact (the
+  `dust_lights_b.rs` RNG witness pins it). 23 per-arm colour-pin witnesses
+  WRITTEN NOT RUN (code-only mode).
+
+**flag-b strip-contract (d50's wiring wave).** d50's `pre_move`
+(`dust_physics.rs:170-172`) increments `lava_bubbles` for type 35, AND g13's
+landed inline increment (`particles.rs:359-361`) does the same — wiring both
+would DOUBLE-COUNT, halving the `< 200` budget. The contract: KEEP the
+inline increment (canonical, landed + witnessed, at the C#'s `:473-476`
+position), STRIP the 35 arm from `pre_move` (which keeps the 299-305
+shrink/lift the skeleton lacks). g13 does not edit d50's staged module —
+the strip is d50's wiring wave (research/69 §4).
+
+**flag-c retire note.** Once d50's `type_chain` wires into the `type_arm`
+hook, the pool carries the POST-mutation scale, so `dust_lights.rs`'s
+compensating local decrements (206 `:381`, 174 `:419`, 230 `:309`, plus
+309/261) DOUBLE-COUNT and retire; the same retire applies to this module's
+replays arm-by-arm (research/69 §5).
