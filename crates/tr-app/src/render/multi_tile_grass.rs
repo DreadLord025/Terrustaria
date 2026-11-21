@@ -17,15 +17,16 @@
 //! through the normal `resolve_tile_frame` path; this module adds the wind
 //! transform that was missing.
 //!
-//! Scope: the MultiTileGrass 2×2 / 3×2 / 2×3 / 1×2 family — the bulb family
-//! 236/238/702 (the shared `TileDrawing.cs:606-613` / `:8760-8764` arms), the
-//! 2×2 default-arm tiles 485/490/652, the frozen dragonfly jars 521-527
-//! (`:8940-8949`), the 3×2 oasis/echo plants 530/651/705 (`:8769-8774`), the
-//! 2×3 pinwheel 489 (`:8788-8791`) and the 1×2 golf flag 493 with its
-//! wind-sign flip + ∓6 px shift (`:8792-8795`, `:8983-8997`). Only 238
-//! animates a row among the bulb family; 236/702 have no `GetTileDrawData`
-//! case (`tileTop = 0`). The remaining roster (27 sunflower — landed
-//! per-cell; 233 detritus, 519 cattail) is the general-pass follow-up.
+//! Scope: the full MultiTileGrass roster — the bulb family 236/238/702 (the
+//! shared `TileDrawing.cs:606-613` / `:8760-8764` arms), the 2×2 default-arm
+//! tiles 485/490/652, the frozen dragonfly jars 521-527 (`:8940-8949`), the
+//! 3×2 oasis/echo plants 530/651/705 (`:8769-8774`), the 2×3 pinwheel 489
+//! (`:8788-8791`), the 1×2 golf flag 493 with its wind-sign flip + ∓6 px
+//! shift (`:8792-8795`, `:8983-8997`), the split-width 233 detritus
+//! (`:8765-8768`) and the climbing 519 cattail (`:8796-8800`, `ClimbCatTail`
+//! `:8807-8827`). The 27 sunflower is landed per-cell in `tiles.rs`. Only
+//! 238 animates a row among the bulb family; 236/702 have no
+//! `GetTileDrawData` case (`tileTop = 0`).
 //!
 //! Deviations (ANALYSIS "The Plantera bulb wind draw (W4-g84)"):
 //! - the deferred special-point ordering is approximated inline (the
@@ -269,6 +270,115 @@ pub(crate) fn golf_flag_sway(
     }
     let dx = if !flip { -6.0 } else { 6.0 };
     (sway, flip != base_flip, dx)
+}
+
+/// The 233 plant detritus's split-width MultiTileGrass transform
+/// (`TileDrawing.cs:8765-8768`: `sizeX = frameY != 0 ? 2 : 3`, `sizeY = 2`).
+/// Two shapes share the kind (`WorldGen.PlaceJunglePlant`,
+/// `WorldGen.cs:47865-47943` / `:47781-47864`, the port's
+/// `place_jungle_plant_detritus`): the 3×2 at frameY 0/18 (`frameX =
+/// 54*style + 18*col`) and the 2×2 at frameY 36/54 (`frameX = 36*style +
+/// 18*col`). The row within the object is `frameY/18 % 2`; the bottom-centre
+/// anchor is `(topLeftX*16 + sizeX*8, topLeftY*16 + 32)`. Default 0.15.
+pub(crate) fn detritus_sway(
+    wind: &Wind,
+    world: &World,
+    tx: i32,
+    ty: i32,
+    frame_x: i16,
+    frame_y: i16,
+    tile_top: i16,
+    sunflower_wind_counter: f32,
+) -> BulbSway {
+    let wide = frame_y == 0 || frame_y == 18; // the 3×2 shape
+    let size_x = if wide { 3 } else { 2 };
+    let stride = if wide { 54 } else { 36 };
+    let col = (frame_x.rem_euclid(stride) / 18) as i32;
+    let row = (frame_y / 18 % 2) as i32;
+    let top_left_x = tx - col;
+    let top_left_y = ty - row;
+    let cycle = wind.cycle(top_left_x, top_left_y, sunflower_wind_counter);
+    let in_wind = wind.in_a_place_with_wind(world, top_left_x, top_left_y, size_x, SIZE);
+    let mut num3 = 1.0 - (row + 1) as f32 / SIZE as f32;
+    if num3 == 0.0 {
+        num3 = 0.1;
+    }
+    if !in_wind {
+        num3 = 0.0;
+    }
+    BulbSway {
+        dy: cycle.abs() * 2.0 * num3,
+        rot: cycle * 0.15 * num3,
+        pivot: [
+            (top_left_x * 16 + size_x * 8 - tx * 16) as f32,
+            (top_left_y * 16 + 16 * SIZE - ty * 16 - tile_top as i32) as f32,
+        ],
+    }
+}
+
+/// `TileDrawing.ClimbCatTail` (`TileDrawing.cs:8807-8827`): walk up from the
+/// cattail's registered cell counting active 519 cells until a non-519 /
+/// inactive cell, a `frameX >= 180` flame-top, or row 10. Returns the height
+/// (the object's `sizeY`); the driver shifts the anchor up by `height - 1`
+/// (`:8799`).
+pub(crate) fn climb_cat_tail(world: &World, origin_x: i32, origin_y: i32) -> i32 {
+    let mut num = 0;
+    let mut num2 = origin_y;
+    while num2 > 10 {
+        let Some(tile) = world.tile(origin_x, num2) else {
+            break;
+        };
+        if !tile.active() || tile.kind != 519 {
+            break;
+        }
+        if tile.frame_x >= 180 {
+            num += 1;
+            break;
+        }
+        num2 -= 1;
+        num += 1;
+    }
+    num
+}
+
+/// The 519 cattail's MultiTileGrass transform (`TileDrawing.cs:8796-8800`,
+/// `:8934-8936`): a 1-wide stem whose height is [`climb_cat_tail`]; the
+/// registered cell is the flame-top, the object's top-left shifts up by
+/// `height - 1`. The wind-place gate probes only the TOP row
+/// (`InAPlaceWithWind(topLeftX, topLeftY, sizeX, 1)`, `:8935`), not the full
+/// stem. The bottom-centre anchor is `(topLeftX*16 + 8, topLeftY*16 +
+/// 16*height)`; default 0.15. `frameY` is the biome row (constant down the
+/// stem), so the row within the object comes from the cell's Y offset.
+pub(crate) fn cattail_sway(
+    wind: &Wind,
+    world: &World,
+    tx: i32,
+    ty: i32,
+    tile_top: i16,
+    sunflower_wind_counter: f32,
+) -> BulbSway {
+    let height = climb_cat_tail(world, tx, ty).max(1);
+    let top_left_x = tx;
+    let top_left_y = ty - (height - 1);
+    let row = ty - top_left_y;
+    let cycle = wind.cycle(top_left_x, top_left_y, sunflower_wind_counter);
+    // `flag = InAPlaceWithWind(topLeftX, topLeftY, sizeX, 1)` (`:8935`).
+    let in_wind = wind.in_a_place_with_wind(world, top_left_x, top_left_y, 1, 1);
+    let mut num3 = 1.0 - (row + 1) as f32 / height as f32;
+    if num3 == 0.0 {
+        num3 = 0.1;
+    }
+    if !in_wind {
+        num3 = 0.0;
+    }
+    BulbSway {
+        dy: cycle.abs() * 2.0 * num3,
+        rot: cycle * 0.15 * num3,
+        pivot: [
+            (top_left_x * 16 + 8 - tx * 16) as f32,
+            (top_left_y * 16 + 16 * height - ty * 16 - tile_top as i32) as f32,
+        ],
+    }
 }
 
 #[cfg(test)]
@@ -577,5 +687,79 @@ mod tests {
         let (_, xor_b, dx_b) = golf_flag_sway(&right, &w, 10, 21, 0, 18, 2, 0.0, false);
         assert!(!xor_b);
         assert_eq!(dx_b, 0.0);
+    }
+
+    // W4-g84 follow-up witness 11 — the 233 detritus split width: the 3×2
+    // shape (frameY 0/18, 54px stride) anchors at +24, the 2×2 shape
+    // (frameY 36/54, 36px stride) at +16; both reconstruct the top-left from
+    // their column and use the 2-row num3 ladder (0.5 / 0.1).
+    #[test]
+    fn w4_g84_detritus_split_width() {
+        let wind = windy();
+        let mut w = empty_world();
+        // 3×2 shape: frameY 0/18, frameX 0/18/36.
+        for row in 0..2 {
+            for col in 0..3 {
+                let i = w.index(10 + col, 20 + row);
+                w.tiles[i].kind = 233;
+                w.tiles[i].flags = FLAG_ACTIVE;
+                w.tiles[i].frame_x = (18 * col) as i16;
+                w.tiles[i].frame_y = (18 * row) as i16;
+            }
+        }
+        // 2×2 shape: frameY 36/54, frameX 0/18.
+        for row in 0..2 {
+            for col in 0..2 {
+                let i = w.index(20 + col, 20 + row);
+                w.tiles[i].kind = 233;
+                w.tiles[i].flags = FLAG_ACTIVE;
+                w.tiles[i].frame_x = (18 * col) as i16;
+                w.tiles[i].frame_y = (36 + 18 * row) as i16;
+            }
+        }
+        w.compute_chunks();
+        let wide_top = detritus_sway(&wind, &w, 10, 20, 0, 0, 2, 0.0);
+        let wide_right = detritus_sway(&wind, &w, 12, 20, 36, 0, 2, 0.0);
+        assert_eq!(wide_top.pivot, [24.0, 30.0]);
+        assert_eq!(wide_right.pivot, [-8.0, 30.0]); // col 2: 24 - 32
+        let narrow_top = detritus_sway(&wind, &w, 20, 20, 0, 36, 2, 0.0);
+        let narrow_bot = detritus_sway(&wind, &w, 20, 21, 0, 54, 2, 0.0);
+        assert_eq!(narrow_top.pivot, [16.0, 30.0]);
+        assert_eq!(narrow_bot.pivot, [16.0, 14.0]);
+        // The bottom row hits the 0.1 guard in both shapes.
+        let cycle = wind.cycle(20, 20, 0.0);
+        assert_eq!(narrow_bot.rot, cycle * 0.15 * 0.1);
+    }
+
+    // W4-g84 follow-up witness 12 — ClimbCatTail + the cattail transform: a
+    // 3-cell stem (flame-top frameX 180 at the registered cell, two stem
+    // cells below) climbs to height 3, the anchor shifts up 2 rows, and the
+    // wind gate probes only the top row. The num3 ladder is 2/3, 1/3, 0.1.
+    #[test]
+    fn w4_g84_cattail_climb_and_top_row_gate() {
+        let wind = windy();
+        let mut w = empty_world();
+        // Stem at x=10: rows 20 (flame-top), 21, 22 (base). frameY 0 biome.
+        for (row, fx) in [(20, 180), (21, 126), (22, 0)] {
+            let i = w.index(10, row);
+            w.tiles[i].kind = 519;
+            w.tiles[i].flags = FLAG_ACTIVE;
+            w.tiles[i].frame_x = fx;
+            w.tiles[i].frame_y = 0;
+        }
+        w.compute_chunks();
+        assert_eq!(climb_cat_tail(&w, 10, 20), 3);
+        // The registered cell is the flame-top (row 20); top-left = row 18.
+        // Anchor Y = top_left_y*16 + 16*height = 18*16 + 48 = 336; the cell's
+        // vector2 Y = 20*16 + tileTop 2 = 322; pivot Y = 336 - 322 = 14.
+        let top = cattail_sway(&wind, &w, 10, 20, 2, 0.0);
+        assert_eq!(top.pivot, [8.0, 14.0]);
+        let cycle = wind.cycle(10, 18, 0.0);
+        assert_eq!(top.rot, cycle * 0.15 * (2.0 / 3.0));
+        // A wall blocking ONLY the top row freezes the whole stem.
+        let i = w.index(10, 18);
+        w.tiles[i].wall = 1;
+        let frozen = cattail_sway(&wind, &w, 10, 20, 2, 0.0);
+        assert_eq!((frozen.dy, frozen.rot), (0.0, 0.0));
     }
 }

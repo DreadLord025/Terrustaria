@@ -978,7 +978,7 @@ pub(crate) fn draw_tiles(
                 } else if matches!(
                     tile.kind,
                     236 | 238 | 702 | 485 | 490 | 652 | 521 | 522 | 523 | 524 | 525 | 526
-                        | 527 | 530 | 651 | 705 | 489 | 493
+                        | 527 | 530 | 651 | 705 | 489 | 493 | 233 | 519
                 ) {
                     // W4-g84: the MultiTileGrass 2×2 / 3×2 family never draws
                     // through `DrawSingleTile` — C# registers the object's
@@ -998,9 +998,11 @@ pub(crate) fn draw_tiles(
                     // 530/651/705 use the wider anchor (`:8769-8774`); the
                     // 489 pinwheel is 2×3 (`:8788-8791`) and the 493 golf flag
                     // 1×2 with a wind-sign flip + ∓6 px shift (`:8792-8795`,
-                    // `:8983-8997`). Only 238 animates a row (`:5441-5444`);
-                    // 485/490/489/493's animation rides the landed
-                    // `drawdata_cases_b` arms.
+                    // `:8983-8997`); the 233 detritus splits 3×2 / 2×2 by frame
+                    // row (`:8765-8768`) and the 519 cattail climbs its stem
+                    // (`:8796-8800`, `ClimbCatTail :8807-8827`). Only 238
+                    // animates a row (`:5441-5444`); 485/490/489/493's
+                    // animation rides the landed `drawdata_cases_b` arms.
                     let (sw, flip_xor, dx) = if matches!(tile.kind, 530 | 651 | 705) {
                         (
                             crate::render::multi_tile_grass::grass_sway_3x2(
@@ -1023,6 +1025,23 @@ pub(crate) fn draw_tiles(
                         crate::render::multi_tile_grass::golf_flag_sway(
                             wind, world, tx, ty, tile.frame_x, tile.frame_y, dd.top,
                             sunflower_wind_counter, dd.flip,
+                        )
+                    } else if tile.kind == 233 {
+                        (
+                            crate::render::multi_tile_grass::detritus_sway(
+                                wind, world, tx, ty, tile.frame_x, tile.frame_y, dd.top,
+                                sunflower_wind_counter,
+                            ),
+                            false,
+                            0.0,
+                        )
+                    } else if tile.kind == 519 {
+                        (
+                            crate::render::multi_tile_grass::cattail_sway(
+                                wind, world, tx, ty, dd.top, sunflower_wind_counter,
+                            ),
+                            false,
+                            0.0,
                         )
                     } else {
                         let freeze = matches!(tile.kind, 521..=527);
