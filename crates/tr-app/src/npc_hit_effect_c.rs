@@ -143,6 +143,8 @@
 //! | 587-589 | `:85856-85858` | the 611/689 Owl/OwlMimic death (3 gores 1164/1164/1165) |
 //! | 590-593 | `:85874-85877` | the 624 Gnome death (4 gores 1190-1193) |
 //! | 594-596 | `:85893-85895` | the 628 Dandelion death: the first three gores (1205/1206/1206) |
+//! | 597 | `:85896` | the 628 Dandelion death: the 1207 tail |
+//! | 598-599 | `:85918-85919` | the 646-652 GemBunny death (2 gores, per-type offset (type-646)*2) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -3818,8 +3820,7 @@ fn gnome_death(
 
 /// The 628 Dandelion death (`NPC.cs:85889-85896`, sites 594-597): the
 /// 10-dust type-3 burst, then the 4 gores 1205/1206/1206/1207 at position
-/// (the 1206 repeats). This commit ports the first three gores (sites
-/// 594-596); the 1207 tail lands with the next batch. Scale defaults to 1.
+/// (the 1206 repeats). Scale defaults to 1.
 fn dandelion_death(
     npc: &Npc,
     dust: &mut DustPool,
@@ -3842,6 +3843,38 @@ fn dandelion_death(
     gore.new_gore(rng, world, pos, vel, 1205, 1.0); // :85893
     gore.new_gore(rng, world, pos, vel, 1206, 1.0); // :85894
     gore.new_gore(rng, world, pos, vel, 1206, 1.0); // :85895
+    gore.new_gore(rng, world, pos, vel, 1207, 1.0); // :85896
+}
+
+/// The 646-652 GemBunny death (`NPC.cs:85900-85919`, sites 598-599): the
+/// 10-dust burst of type `num468` (86+(type-646) for type<652, else 138 for
+/// the Amber 652), then the 2 gores `1234 + num471` / `1235 + num471` where
+/// `num471 = (type-646)*2`. Scale defaults to 1.
+fn gem_bunny_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:85900-85904` — num468 = 86+(type-646), or 138 for the Amber 652.
+    let num468 = if npc_type < 652 { 86 + (npc_type - 646) } else { 138 };
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, num468, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    // `:85917` — num471 = (type-646)*2.
+    let num471 = (npc_type - 646) * 2;
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 1234 + num471, 1.0); // :85918
+    gore.new_gore(rng, world, pos, vel, 1235 + num471, 1.0); // :85919
 }
 
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
@@ -4305,10 +4338,13 @@ pub fn hit_effect_c(
     if npc_type == 624 && npc.hp <= 0 {
         gnome_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:85879-85897` — the 628 Dandelion arm (sites 594-596 here; the 1207
-    // tail lands with the next batch).
+    // `:85879-85897` — the 628 Dandelion arm (sites 594-597, all four).
     if npc_type == 628 && npc.hp <= 0 {
         dandelion_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85898-85920` — the 646-652 GemBunny arm (sites 598-599).
+    if (646..=652).contains(&npc_type) && npc.hp <= 0 {
+        gem_bunny_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -6804,18 +6840,35 @@ mod tests {
         assert_eq!(types, vec![1190, 1191, 1192, 1193]);
     }
 
-    /// `NPC.cs:85893-85895` — the Dandelion death's first three gores:
-    /// 1205/1206/1206, after the 10-dust type-3 burst.
+    /// `NPC.cs:85893-85896` — the Dandelion death: the 4 gores
+    /// 1205/1206/1206/1207, after the 10-dust type-3 burst.
     #[test]
-    fn w4_f10_the_dandelion_death_spawns_the_first_three_gores() {
+    fn w4_f10_the_dandelion_death_spawns_the_four_gores() {
         let w = air();
         let n = boss(100.0, 100.0, 30.0, 40.0);
         let mut gore = GorePool::new();
         let mut dust = DustPool::new();
         let mut rng = UnifiedRandom::new(563);
         dandelion_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
-        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
-        assert_eq!(types, vec![1205, 1206, 1206]);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1205, 1206, 1206, 1207]);
+    }
+
+    /// `NPC.cs:85918-85919` — the GemBunny death: the per-type offset
+    /// (type-646)*2 shifts the 1234/1235 pair; the Amber 652 uses dust 138.
+    #[test]
+    fn w4_f10_the_gem_bunny_death_uses_the_per_type_offset() {
+        let w = air();
+        for ty in [646, 649, 652] {
+            let off = (ty - 646) * 2;
+            let n = boss(100.0, 100.0, 30.0, 24.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(569);
+            gem_bunny_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![1234 + off, 1235 + off], "bunny {ty}");
+        }
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
