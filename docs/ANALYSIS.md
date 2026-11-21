@@ -1329,6 +1329,38 @@ the pure `desert_preferred_style` helper. `UpdateOceanWaterLineForAmbience`'s ge
 **opacity** term stays the documented Q4 constant-1 deviation. 15 witnesses written
 not run (no compiler invoked, code-only mode).
 
+**W4-g71 WIRING phase (2026-11-21, code-only)** wired the background style rolls into
+`step_world_tail` (`WorldGen.cs:11338-11340`): `RandomizeTreeStyle` /
+`RandomizeCaveBackgrounds` / `RandomizeBackgrounds`, each on its own `pass_rng` slot,
+writing `World.tree_x`/`tree_style`/`cave_back_x`/`cave_back_style`/`ice_back_style`/
+`jungle_back_style`/`forest_bg_styles`/`underworld_bg_style` + the eight surface
+styles through `set_surface_bg_style`. The `hell_back_style` `Next(3)` (`:8247`) folds
+into the cave block (the former standalone tail draw is gone). The rolls are the
+canonical `worldgen/bg_rolls.rs` fns over a `RollRng` seam (xorshift `Rng` for the
+tail, `UnifiedRandom` for the boot re-roll). **g72c's "ACTIVE cave wiring" claim was
+STALE** — its tip `1f5c2b1e` is a census only (`345c334a`, "NO wiring"), zero roll
+code; `bg_rolls.rs` is the sole keep-one copy, g72's `bg_styles.rs` consumes the
+`World` fields. **The tile-hash pins do NOT move**: the tail is the last `streams.rng`
+consumer, the rolls ride isolated `pass_rng` slots and write only style fields (no
+tiles) — `SEED42_512`/`DEFAULT_WORLD` stay byte-identical; only the folded
+`hell_back_style` value moves (stale-by-design, the `a == b` determinism witness stays
+green). The boot re-roll (`Main.cs:6594-6603`) is ported as
+`bg_rolls::boot_reroll_backgrounds` — the menu seam (the C# runs it once per process
+before any load; `LoadWorldFlags` then overwrites with the file values, so a loaded
+world keeps its saved styles).
+
+**Deliberate deviation — the atlas budget guard.** A rolled non-default surface style
+can overflow the 8192 px atlas (style-0 baseline 7847 px; non-default styles add
+336–1503 px, measured). The C# draws surface bgs through `Main.spriteBatch` under the
+sky matrix, OUTSIDE the tile atlas (the S1-G-13 background-target family). Until that
+lands, `build_atlas_inner` runs `assets::fit_bg_styles_to_atlas`: on overflow it
+reverts the offending biome styles to slot-0 (the classic look) in fixed `setBG` order
+1..8 until the set fits (measured via the cheap `Atlas::packed_height`), then rebuilds.
+Deterministic, greedy, no RNG; the forest tree sets + underworld are not reverted
+(g70/g72 own their draw sides). This trades the rolled look for an in-bounds atlas on
+overflowing worlds — recorded here as the interim fix pending S1-G-13. See
+`docs/research/92-doc-sweep-bg.md` §2.
+
 Every row goes through `FrontLayer` + `front_layers`, which is a literal port of each
 `DrawSurfaceBG_*` row: the caller's `(scale, parallax, magicВ·k + top)` magic numbers,
 then `SetBackgroundOffsets` (`Main.cs:60384-60775`) overriding `bgScale`/`bgParallax` and,
