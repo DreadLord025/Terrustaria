@@ -39297,6 +39297,6 @@ outside landed (the C# `:14121` position).
 checked against the landed flail mult / immunity chain / post-strike arms, the
 14 kinds' rows + dispatch arms confirmed on main, the claim census grepped every
 pushed branch's projectile.rs for the C# line cites (zero matches = unclaimed).
-The 14 `w4_g3_ds_*` witnesses are WRITTEN, NOT RUN — no cargo/rustc/rustfmt/
+The 16 `w4_g3_ds_*` witnesses are WRITTEN, NOT RUN — no cargo/rustc/rustfmt/
 tests/graphify invoked (the Lead's constraint).
 
