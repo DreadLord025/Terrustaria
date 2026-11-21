@@ -2973,6 +2973,12 @@ fn fishing_use(app: &mut App, held: ItemSlot, world_pos: Vec2, press_edge: bool)
     for (npc_type, x, y) in app.projectiles.drain_fishing_enemies() {
         if npc_type == 682 {
             app.world.unlocked_slime_red_spawn = true;
+            // W4-c36 DOC-SWEEP — `Player.cs:52435` (`PullBobber`'s SP arm):
+            // the fished-out NPC spawn runs the roster check (17/26). The
+            // 682 spawn itself is the documented skip below, so the check
+            // can never see a town slime from this arm today — the wire is
+            // the faithful call order, cited.
+            crate::app::achievement_hooks::check_real_estate_and_town_slimes(app);
         }
         // The blood-moon fish enemies have no NpcKind rows (module doc) —
         // the roll ran verbatim, the spawn is the documented skip.

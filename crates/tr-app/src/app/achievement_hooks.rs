@@ -179,6 +179,43 @@ pub(crate) fn on_player_entered_world(app: &mut App) {
     // `App::try_grant_bestiary_100_net`) — not re-fired here.
 }
 
+/// W4-c36 DOC-SWEEP — `WorldGen.CheckAchievement_RealEstateAndTownSlimes`
+/// (`WorldGen.cs:5659-5677`): the roster scan marks every active, non-homeless
+/// NPC's type (no `townNPC` filter — the C# array is `NPCID.Count` wide), then
+/// the 25-id housed roster fires progression 17 (REAL_ESTATE_AGENT) and the
+/// 8 town slimes fire 26 (ALL_TOWN_SLIMES). Both tests are independent `if`s.
+/// The port's roster is partial: Truffle 160, Steampunker 178, Cyborg 209,
+/// Pirate 229, DD2 Bartender 550 and all eight town slimes (670/678-684) have
+/// no NpcKind rows, so both rows are unreachable in play until those kinds
+/// land — the wire is the faithful check, cited like the blood-moon no-op
+/// wires. `npc.home.is_none()` is the port's `homeless` flag
+/// (`world_sim/npcs.rs`'s arrival writes it).
+pub(crate) fn check_real_estate_and_town_slimes(app: &mut App) {
+    let mut housed: Vec<i32> = app
+        .npcs
+        .iter()
+        .filter(|n| n.hp > 0 && n.home.is_some())
+        .map(|n| n.kind.net_id())
+        .collect();
+    housed.sort_unstable();
+    housed.dedup();
+    // `:5668` — the 25-id roster, in the C#'s array-test order.
+    const ROSTER: [i32; 25] = [
+        38, 17, 107, 19, 22, 124, 228, 178, 18, 229, 209, 54, 108, 160, 20, 369, 207, 227, 208,
+        441, 353, 550, 588, 633, 663,
+    ];
+    if ROSTER.iter().all(|id| housed.contains(id)) {
+        // `:5671` — REAL_ESTATE_AGENT.
+        let _ = app.notify_progression_net(17);
+    }
+    // `:5673` — the eight town slimes.
+    const SLIMES: [i32; 8] = [670, 678, 679, 680, 681, 682, 683, 684];
+    if SLIMES.iter().all(|id| housed.contains(id)) {
+        // `:5675` — ALL_TOWN_SLIMES.
+        let _ = app.notify_progression_net(26);
+    }
+}
+
 /// W4-c36 — the per-tick reach/biome checks: `Player.UpdateBiomes`' tail
 /// (`Player.cs:16732-16776`) + `BordersMovement`'s two achievement reads
 /// (`:24066-24126`). Returns the `(row, condition)` pairs to complete — the
@@ -394,6 +431,61 @@ mod tests {
         p.y = 800.0 * 16.0 - 640.0 - 118.0 - p.height + 1.0;
         let rows = reach_check(&mut p, &world, false);
         assert!(rows.contains(&("ROCK_BOTTOM", "Reach")));
+    }
+
+    /// W4-c36 DOC-SWEEP — `WorldGen.CheckAchievement_RealEstateAndTownSlimes`
+    /// (`WorldGen.cs:5659-5677`): every ported town kind housed still leaves
+    /// REAL_ESTATE_AGENT open (Truffle/Steampunker/Cyborg/Pirate/Bartender
+    /// have no NpcKind rows), a homeless resident does not count, and the
+    /// town-slime row never fires without the eight slime kinds. The wire
+    /// is faithful but unreachable until the missing kinds land.
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_c36_the_real_estate_check_needs_the_full_roster() {
+        use crate::npc::{Npc, NpcKind};
+        let mut app = app_with_player();
+        let ported = [
+            NpcKind::Guide,
+            NpcKind::Merchant,
+            NpcKind::Nurse,
+            NpcKind::ArmsDealer,
+            NpcKind::GoblinTinkerer,
+            NpcKind::Wizard,
+            NpcKind::Dryad,
+            NpcKind::Demolitionist,
+            NpcKind::WitchDoctor,
+            NpcKind::Mechanic,
+            NpcKind::Angler,
+            NpcKind::Clothier,
+            NpcKind::Stylist,
+            NpcKind::DyeTrader,
+            NpcKind::Painter,
+            NpcKind::PartyGirl,
+            NpcKind::Golfer,
+            NpcKind::TaxCollector,
+            NpcKind::Zoologist,
+            NpcKind::Princess,
+        ];
+        for (i, kind) in ported.iter().enumerate() {
+            let mut n = Npc::new(*kind, 32.0, 100.0, 1, 0.0);
+            n.hp = n.max_hp;
+            n.home = Some((2 + i as i32, 6));
+            app.npcs.push(n);
+        }
+        check_real_estate_and_town_slimes(&mut app);
+        assert!(!done(&app, "REAL_ESTATE_AGENT"), "the five missing kinds keep it open");
+        assert!(!done(&app, "ALL_TOWN_SLIMES"), "no slime kinds exist");
+        // A homeless resident is not housed: clearing one home changes
+        // nothing observable here (the row was already open), but the
+        // predicate itself is the C#'s `!homeless` read.
+        app.npcs[0].home = None;
+        check_real_estate_and_town_slimes(&mut app);
+        assert!(!done(&app, "REAL_ESTATE_AGENT"));
+        // A dead NPC does not count either (`Main.npc[i].active`).
+        app.npcs[0].home = Some((2, 6));
+        app.npcs[0].hp = 0;
+        check_real_estate_and_town_slimes(&mut app);
+        assert!(!done(&app, "REAL_ESTATE_AGENT"));
     }
 
     /// `:148-195` — the enter-world sweep completes the stat/equip rows off

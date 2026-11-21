@@ -4945,10 +4945,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         app.npcs.push(n);
                         // `WorldGen.cs:5576`: the arrival fires NO_HOBO
                         // (progression 8) — the Truffle's IT_CAN_TALK (18,
-                        // `:5580`) waits on a ported Truffle kind, and
-                        // REAL_ESTATE_AGENT (17, `:5671`) on the full
-                        // `CheckAchievement_RealEstateAndTownSlimes` roster.
+                        // `:5580`) waits on a ported Truffle kind.
                         let _ = app.notify_progression_net(8);
+                        // W4-c36 DOC-SWEEP — `WorldGen.cs:5609`: the
+                        // successful arrival runs the roster check
+                        // (REAL_ESTATE_AGENT 17 / ALL_TOWN_SLIMES 26). The
+                        // port's roster is partial — the check is faithful
+                        // but unreachable until the missing kinds land
+                        // (`achievement_hooks.rs`'s module note).
+                        crate::app::achievement_hooks::check_real_estate_and_town_slimes(app);
                     }
                 }
             }
@@ -5146,6 +5151,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 } else if !npc.moon_despawn_kill {
                     app.world.downed_moon_lord = true;
                     app.world.lunar_apocalypse_is_up = false;
+                    // W4-c36 DOC-SWEEP — `NPC.cs:79398-79402` (case 398's
+                    // tail): `if (Main.getGoodWorld)` fires progression 30
+                    // (BOULDER_LORD). `Main.getGoodWorld` is the For The
+                    // Worthy seed bit (`WorldGen.cs:11118`).
+                    if app.world.seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY) {
+                        let _ = app.notify_progression_net(30);
+                    }
                 }
             }
             NpcKind::NebulaTower => {
@@ -15147,6 +15159,55 @@ mod moon_lord_tests {
             })
             .count();
         assert_eq!(alive_parts, 0, "the parts fall with their core");
+    }
+
+    /// W4-c36 DOC-SWEEP — `NPC.checkDead`'s case-398 tail
+    /// (`NPC.cs:79398-79402`): a Moon Lord core killed by a strike (no
+    /// despawn/part-clear flags) raises `downedMoonlord` AND, on a For The
+    /// Worthy world (`Main.getGoodWorld`, `WorldGen.cs:11118`), fires
+    /// progression 30 → BOULDER_LORD. A classic world raises the flag but
+    /// never fires; the despawn kill raises neither. WRITTEN NOT RUN
+    /// (code-only mode).
+    #[test]
+    fn w4_c36_the_ftw_moon_lord_kill_fires_boulder_lord() {
+        let boulder_done = |app: &App| {
+            app.achievements
+                .list
+                .iter()
+                .any(|a| a.name == "BOULDER_LORD" && a.completed)
+        };
+        // The For The Worthy world: the strike death fires 30.
+        let (mut app, _player) = app_player();
+        app.world.seeds.insert(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        // ai[0] = 2 skips the drama latch (`:78074-78078`'s once-guard) —
+        // the drama's own end passes through to the death events.
+        core.ai[0] = 2.0;
+        core.hp = 0;
+        app.npcs.push(core);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_moon_lord, "the flag raises");
+        assert!(boulder_done(&app), "the FTW kill fires progression 30");
+        // The classic world: the flag raises, no progression.
+        let (mut app, _player) = app_player();
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.ai[0] = 2.0;
+        core.hp = 0;
+        app.npcs.push(core);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_moon_lord);
+        assert!(!boulder_done(&app), "no getGoodWorld, no BOULDER_LORD");
+        // The despawn kill raises neither (the `:41504` bypass).
+        let (mut app, _player) = app_player();
+        app.world.seeds.insert(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.ai[0] = 2.0;
+        core.hp = 0;
+        core.moon_despawn_kill = true;
+        app.npcs.push(core);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(!app.world.downed_moon_lord, "the despawn ride skips the flag");
+        assert!(!boulder_done(&app), "and the progression");
     }
 
     #[test]
