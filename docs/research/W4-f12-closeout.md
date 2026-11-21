@@ -133,3 +133,43 @@ applies, and it stacks TIME (the tooltip's percentage derives from
 `buffTime`, the final-phase tooltip census). Witness:
 `w4_f12_closeout_regrant_is_refresh_except_the_two_additive_ids`
 (buffs.rs, written not run).
+
+## Item 4 — UpdateBuffs FINAL: the keep-one re-sweep vs the landed tips
+
+**Script re-run:** `tools/w4_f12_closeout_sweep.py` (committed) re-derives
+the C# case-list from `Player.cs:9875-12044` (270 ids, 6 range heads —
+unchanged) and diffs it against every ported ownership set, cross-checking
+the accessory registry against the module's real dispatch surface and the
+mount table against `BuffID.Sets.MountType` (66/66, zero missing/extra).
+Output (run, this tree):
+
+```
+INLINE_OWNED: 62  ACCESSORY_OWNED: 78  SUMMON_OWNED: 32
+DEBUFF_DISPATCH: 24  MISC_DISPATCH: 11  wave-E status: 37
+d73 non-orb: 4  g27 orbs: 18  mount head: 66  other lanes: 4
+missing owners: []   extra owned ids (non-mount): []
+VERDICT: set-diff EMPTY, zero dup-grants — keep-one HOLDS
+```
+
+(The sweep-phase table said ACCESSORY 79; the live registry is 78 — the
+sweep counted 146 Sunflower in both columns; the script pins it ONCE in
+ACCESSORY_OWNED with the documented inline movement half-split. Same
+coverage, no drift.)
+
+**The landed-tip deltas (merge-base a725acb04 for f50/d115/f49; d73 is an
+ancestor — already in this tree):**
+
+| tip | new buff writes | keep-one verdict |
+| --- | --- | --- |
+| d73 33c38000a | none new (the boosters module is IN this tree; its writes are the wiring's own) | already canonical |
+| d115 7c4fcb755 | inline 321 stat arm (player.rs effect match) + `AddBuff(59, 1800)` Hallowed OnHit + the `:25705-25708` orphan-59 clear + `add_buff_from_net_pvp` (the `!fromNetPvP` time gate, `:5287-5290`) | **321: KNOWN dup** (sweep gap-4 note stands — the wiring's booster arm is canonical, their inline copy folds out; witness `w4_f12_brain_buff_crits_and_minion_damage` pins the single grant). 59 grant/clear: NOT duplicated here (our `do_shadow_dodge` only deletes 59 + arms the timer; the grant was deferred) — theirs lands clean. `add_buff_from_net_pvp`: a buffs.rs signature refactor, semantically identical for the local path — merge takes their shape |
+| f49 6c0ee2aa2 | the three nebula scan arms + `update_buffs_nebula_buffs` + `NebulaLevelup` + the 94 drink grant | **nebula: KNOWN twin** (item 1 — the R3 contract + the published bridge hunk). 94 drink: our `potions.rs:216` already carries the SAME `AddBuff(94, 300)` (`:51938`) — the merge resolves to ONE line (their items.rs wholesale note covers the consume arms, not a second grant) |
+| f50 ff56e6e51 | **inline Panic-63 `move_speed += 1.0`** (their player.rs :7013) + the hurt-head grants `AddBuff(63, 480)` / `AddBuff(205, 300)` + `rederive_beetle_solar_buffs` (a FULL second copy of the `:10342-10443` orb ladders incl. the Might stats) + the beetle/solar recharge machines | **NEW DUP #1 — Panic 63:** our wiring dispatches 63 through DEBUFF_DISPATCH (`buff_effects.rs:149`, the same `:10130-10133` +1). Merged as-is: +2 moveSpeed/tick. Ruling: the wiring arm is canonical (witness `w4_f12_closeout_panic_63_grants_move_speed_once_through_the_wiring`, written not run); f50's inline 63 row folds out, their hurt-head GRANT stays. **NEW DUP #2 — the 95-100/170-172 ladder re-derivation:** `rederive_beetle_solar_buffs` re-runs the SAME slot-ordered arms our g27 `apply_orb_arm` owns (time pins, tier sweeps, the Might `0.1 × orbs` stats, the set-gate deletes). Two dispatches double-apply the Might stats and double-run the delete/rescan walk (the second pass sees the first pass's compaction — divergent slot order). Ruling: the g27 module is canonical (the c16/g27 contract); at the merge `update_beetle_solar_sets` drops its `rederive_beetle_solar_buffs()` call and keeps ONLY the machines (`apply_set_bonus_solar/beetle_*` + the always-zeros). **ORDERING + CONTEXT fixes required with that fold:** (a) f50 runs the machines inside `update_with_grapple` (:7451) — BEFORE our wiring seam (world_sim/player.rs :1230). The C# order is UpdateBuffs (:25566) → UpdateArmorSets (:25685): the scan derives the counts, THEN the machines read them and grant the next 5-tick ladder buff. Merged, the machine block must move to the wiring seam AFTER `update_buff_frame` (the same lift shape as f49's R3 step 4). (b) The wiring's `OrbContext::default()` stub (buff_frame_wiring.rs :153-155) must read the live set flags. The C# flag lifecycle: `beetleDefense/beetleOffense/setSolar` clear at `Player.Update` :25618-25620 — AFTER UpdateBuffs — so the scan reads the flags UpdateArmorSets armed LAST tick (persistent, not ResetEffects-cleared). f50's port clears them in its ResetEffects region (:6203-6205) and re-arms in the equip pass — with the machines lifted post-scan, the wiring would read all-false and delete every orb buff. The merge must keep the flags alive through the scan (either move the three clears to the post-scan position per :25618-25620, or snapshot the pre-clear values into `OrbContext`). The 205 grant: no dup (our tree has no `AddBuff(205)` writer — the reader arm is live, the grant was deferred; theirs lands clean) |
+
+**Script keep-one verify:** the sweep script's pairwise-disjointness
+assertion covers THIS tree; the two NEW dups above are CROSS-tree (they
+appear only in the merged file) — recorded here as merge rulings with the
+same keep-one shape as the sweep's 321/nebula notes. After the rulings the
+merged set-diff is empty again: 63 stays DEBUFF_DISPATCH-only, the orb
+ladder stays g27-only, 321 stays booster-only, the nebula tier writer
+stays `nebula_buffs`-only (+ the item-1 bridge).

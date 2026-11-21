@@ -791,6 +791,30 @@ mod tests {
 
     // ---- the debuff block -------------------------------------------------
 
+    /// W4-f12 closeout item 4 — the FINAL keep-one re-sweep vs the landed
+    /// tips (research/W4-f12-closeout.md): f50 (ff56e6e51) adds an INLINE
+    /// Panic-63 `move_speed += 1.0` reader in `player.rs`' effect match
+    /// while OUR wiring dispatches 63 through DEBUFF_DISPATCH
+    /// (`buff_effects.rs:149`, the same `:10130-10133` write). Merged as-is
+    /// that is +2 moveSpeed per tick — a NEW dup-grant, the sweep's 321
+    /// pattern recurring. Keep-one ruling: the wiring arm is canonical
+    /// (this witness pins the single +1); f50's inline copy folds out at
+    /// the merge (their hurt-head GRANT `AddBuff(63, 480)` stays theirs).
+    #[test]
+    fn w4_f12_closeout_panic_63_grants_move_speed_once_through_the_wiring() {
+        let mut p = player();
+        let mut pool = ProjectilePool::default();
+        let base = p.move_speed;
+        p.buffs.add_buff(63, 480);
+        run(&mut p, &mut pool);
+        assert!(
+            (p.move_speed - (base + 1.0)).abs() < 1e-6,
+            "ONE +1 (:10130-10133) — an inline twin would make it +2"
+        );
+        assert!(DEBUFF_DISPATCH.contains(&63), "the wiring owns the arm");
+        assert!(!INLINE_OWNED.contains(&63), "not inline-owned on this tree");
+    }
+
     #[test]
     fn w4_f12_lifeforce_raises_stat_life_max2() {
         // `:10197-10201`: statLifeMax2 += statLifeMax / 5 / 20 * 20.
