@@ -1,8 +1,11 @@
 # 68 — FindFrame master wire-census (W4-d44 census refresh, code-only)
 
-Audit date: 2026-11-21 (refresh 5 — the wave-B residual wire round;
-the §2 table is the refresh-2 mechanical scan with the refresh-3/4/5
-status cells updated, see the census-vintage note below §0).
+Audit date: 2026-11-21 (refresh 5 FINAL — the wave-B residual wire
+round + the full-band FindFrame-family declaration, §10; the §2
+table is the refresh-2 mechanical scan with the refresh-3/4/5 status
+cells updated, see the census-vintage note below §0). **UNCLAIMED = 0
+at the refresh-5 probe-time tips — every one of the 602 case ids
+carries an inline arm or a module machine on some pushed tip (§10).**
 Branch `task/W4-d44-findframe-low-1`,
 worktree `TR-W4-d44`. **Code-only mode: no cargo/rustc/tests/rustfmt/
 graphify invoked** — every claim below is git/file-read evidence against
@@ -1648,7 +1651,7 @@ counter-TICKS + the 0.2+|vx| >8 walk rows 2..9 both-clamps-2 + air 1).
 The frame counts 25/19/20 match `NPC_FRAME_COUNT` (the d40 inline
 reads `npc_rows(cs_id)`, the module `kind.frame_count()` — same
 table). The d44 hook `find_frame_kind_extra7b_claimed` returns `None`
-for all three (`npc.rs:6891`, the `Medusa | GreekSkeleton |
+for all three (`npc.rs:6924`, the `Medusa | GreekSkeleton |
 GraniteGolem` arm) — **RESOLVED, zero wire work**. The module arms
 ride as parity references; the merger keeps the d40 inline arms.
 
