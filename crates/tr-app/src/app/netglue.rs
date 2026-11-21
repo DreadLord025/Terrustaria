@@ -970,6 +970,152 @@ impl App {
                     }
                 }
             }
+            // `case 61` — a client used a boss/event summon item
+            // (`MessageBuffer.cs:2740-2878`): host-only (`:2744-2747`). A
+            // positive MPAllowedEnemies selector spawns the boss on the player
+            // (`:2748-2754`); negatives are the event ladder. The `7`/`78`
+            // re-sync pushes are the send path's (S1-I-4); the pet licenses
+            // (-12..-15), Mechdusa (-16), combat book v2 (-17) and peddler's
+            // satchel (-18) flags are unported (ANALYSIS).
+            C2s::SpawnBossEvent(ev) => {
+                let plr = ev.player;
+                let sel = ev.event;
+                if sel >= 0 {
+                    // `:2748-2754`: the MPAllowedEnemies gate + AnyNPCs live
+                    // inside spawn_on_player.
+                    crate::world_sim::npcs::spawn_on_player(self, plr as u8, sel as i32);
+                    return;
+                }
+                match sel {
+                    -4 => {
+                        // `:2755-2764`: the Pumpkin Moon — night, no DD2.
+                        if !self.world.day_time && !self.world.dd2_event_ongoing {
+                            self.chat.new_text(crate::lang::misc(31), crate::chat::COLOR_WORLD);
+                            self.world.start_pumpkin_moon();
+                        }
+                    }
+                    -5 => {
+                        // `:2765-2774`: the Frost Moon — night, no DD2.
+                        if !self.world.day_time && !self.world.dd2_event_ongoing {
+                            self.chat.new_text(crate::lang::misc(34), crate::chat::COLOR_WORLD);
+                            self.world.start_snow_moon();
+                        }
+                    }
+                    -6 => {
+                        // `:2775-2790`: the Eclipse — day, not already up.
+                        if self.world.day_time && !self.world.eclipse {
+                            let key = if self.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX) {
+                                106
+                            } else {
+                                20
+                            };
+                            self.chat.new_text(crate::lang::misc(key), crate::chat::COLOR_WORLD);
+                            self.world.eclipse = true;
+                        }
+                    }
+                    -7 => {
+                        // `:2791-2797`: the Martian Madness.
+                        self.world.invasion_delay = 0;
+                        crate::world_sim::npcs::start_invasion_in(
+                            self,
+                            1,
+                            4,
+                            Some(crate::app::RngKey::UpdatePlayers),
+                        );
+                    }
+                    -8 => {
+                        // `:2798-2805`: the Celestial Sigil's impending doom.
+                        // `NPC.AnyDanger` (`NPC.cs:80243`): an invasion, an
+                        // event or a live boss (the spawner's boss-kind list).
+                        let any_danger = self.world.invasion_type != 0
+                            || self.world.dd2_event_ongoing
+                            || self.world.pumpkin_moon
+                            || self.world.snow_moon
+                            || self.npcs.iter().any(|n| {
+                                n.hp > 0
+                                    && matches!(
+                                        n.kind,
+                                        crate::npc::NpcKind::KingSlime
+                                            | crate::npc::NpcKind::EyeOfCthulhu
+                                            | crate::npc::NpcKind::QueenBee
+                                            | crate::npc::NpcKind::SkeletronHead
+                                            | crate::npc::NpcKind::WallOfFlesh
+                                            | crate::npc::NpcKind::TheDestroyer
+                                            | crate::npc::NpcKind::SkeletronPrime
+                                            | crate::npc::NpcKind::Retinazer
+                                            | crate::npc::NpcKind::Spazmatism
+                                            | crate::npc::NpcKind::Plantera
+                                            | crate::npc::NpcKind::BrainOfCthulhu
+                                            | crate::npc::NpcKind::Golem
+                                            | crate::npc::NpcKind::DukeFishron
+                                            | crate::npc::NpcKind::Deerclops
+                                    )
+                            });
+                        if self.world.downed_golem
+                            && self.world.hard_mode
+                            && !any_danger
+                            && !crate::world_sim::lunar::anyone_near_cultists(self)
+                        {
+                            crate::world_sim::lunar::start_impending_doom(self, 720);
+                        }
+                    }
+                    -10 => {
+                        // `:2806-2819`: the Blood Moon — night, not already up.
+                        if !self.world.day_time && !self.world.blood_moon {
+                            self.chat.new_text(crate::lang::misc(8), crate::chat::COLOR_WORLD);
+                            self.world.blood_moon = true;
+                            if self.world.moon_phase == 0 {
+                                self.world.moon_phase = 5; // `:2812-2815`
+                            }
+                            let _ = self.notify_progression_net(4); // `:2816`
+                        }
+                    }
+                    -11 => {
+                        // `:2820-2825`: the Combat Book.
+                        self.chat.new_text(
+                            crate::lang::text("Misc.CombatBookUsed"),
+                            crate::chat::COLOR_WORLD,
+                        );
+                        self.world.combat_book_was_used = true;
+                    }
+                    -19 => {
+                        // `:2858-2861`: the Slime Rain.
+                        let raining = self.rain.is_raining();
+                        crate::world_sim::weather::start_slime_rain(
+                            &mut self.world,
+                            raining,
+                            self.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                        );
+                    }
+                    s if s < 0 => {
+                        // `:2862-2876`: the generic invasion fall-through.
+                        let inv = if s > -5 { -s } else { 1 }; // InvasionID.Count = 5
+                        if inv > 0 && self.world.invasion_type == 0 {
+                            self.world.invasion_delay = 0;
+                            crate::world_sim::npcs::start_invasion_in(
+                                self,
+                                1,
+                                inv as i32,
+                                Some(crate::app::RngKey::UpdatePlayers),
+                            );
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            // `case 63` — a client painted/coated a tile
+            // (`MessageBuffer.cs:2909-2928`): coat 0 paints
+            // (`WorldGen.paintTile` `:2917`), else coats (`paintCoatTile`
+            // `:2921`); the host relays to the others (`:2925`).
+            C2s::TilePaint(p) => {
+                if p.coat == 0 {
+                    paint_tile(&mut self.world, p.x as i32, p.y as i32, p.paint);
+                } else {
+                    paint_coat_tile(&mut self.world, p.x as i32, p.y as i32, p.paint);
+                }
+                self.world_key = None;
+                server.broadcast_except(&S2c::TilePaint(p), id); // `:2925`
+            }
             // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
             // codecs (`net.rs`); the host apply/relay arms
             // (`MessageBuffer.cs:1851-1867`, `:4282-4297`, `:4328-4343`) land
@@ -1952,6 +2098,17 @@ impl App {
             // (the host is authoritative, the `23` snapshots carry the NPC),
             // so the read is a no-op here — the host arm owns the effect.
             S2c::NpcHouse(_) => {}
+            // `case 63` — the host's tile paint/coat relay
+            // (`MessageBuffer.cs:2909-2928`): the client applies the same
+            // paint/coat to its world copy.
+            S2c::TilePaint(p) => {
+                if p.coat == 0 {
+                    paint_tile(&mut self.world, p.x as i32, p.y as i32, p.paint);
+                } else {
+                    paint_coat_tile(&mut self.world, p.x as i32, p.y as i32, p.paint);
+                }
+                self.world_key = None;
+            }
             // `case 59` — a peer tripped a switch: replay it locally
             // (`MessageBuffer.cs:2682-2693`).
             S2c::HitSwitch(hs) => {
@@ -3768,6 +3925,108 @@ fn npc_seed(
     })
 }
 
+/// `WorldGen.paintTile` (`WorldGen.cs:44110-44132`): an active tile whose
+/// colour differs takes the new paint. The `paintEffect` dust is draw-side
+/// (out); the `broadCast` send is the caller's relay. W4-g49.
+fn paint_tile(world: &mut World, x: i32, y: i32, color: u8) {
+    let Some(t) = world.tile_mut(x, y) else {
+        return;
+    };
+    if !t.active() || t.paint() == color {
+        return; // `:44113-44121`
+    }
+    t.set_paint(color); // `:44126`
+}
+
+/// `WorldGen.paintCoatTile` (`WorldGen.cs:44134-44180`): coat 0 strips the
+/// glow/echo bits, 1 sets fullbright, 2 sets invisible (echo); the strip/echo
+/// arms re-frame (`SquareTileFrame resetFrame:false`). W4-g49.
+fn paint_coat_tile(world: &mut World, x: i32, y: i32, coat: u8) {
+    let Some(t) = world.tile(x, y) else {
+        return;
+    };
+    if !t.active() {
+        return; // `:44137-44140`
+    }
+    let (fullbright, invisible) = (t.fullbright_block(), world.invisible_block(x, y));
+    match coat {
+        0 => {
+            if !fullbright && !invisible {
+                return; // `:44147-44150`
+            }
+            if let Some(t) = world.tile_mut(x, y) {
+                t.flags &= !tr_core::tile::FLAG_FULLBRIGHT; // `:44151`
+            }
+            world.set_invisible_block(x, y, false); // `:44152`
+            tr_core::framing::reframe_area(world, x, y, 1, false); // `:44153`
+        }
+        1 => {
+            if fullbright {
+                return; // `:44156-44159`
+            }
+            if let Some(t) = world.tile_mut(x, y) {
+                t.flags |= tr_core::tile::FLAG_FULLBRIGHT; // `:44160`
+            }
+        }
+        2 => {
+            if invisible {
+                return; // `:44163-44166`
+            }
+            world.set_invisible_block(x, y, true); // `:44167`
+            tr_core::framing::reframe_area(world, x, y, 1, false); // `:44168`
+        }
+        _ => {} // `:44144-44145` default: return false
+    }
+}
+
+/// `WorldGen.paintWall` (`WorldGen.cs:44230-44252`): a present wall whose
+/// colour differs takes the new paint. W4-g49.
+fn paint_wall(world: &mut World, x: i32, y: i32, color: u8) {
+    let Some(t) = world.tile(x, y) else {
+        return;
+    };
+    if t.wall == 0 || world.wall_paint(x, y) == color {
+        return; // `:44233-44241`
+    }
+    world.set_wall_paint(x, y, color); // `:44242`
+}
+
+/// `WorldGen.paintCoatWall` (`WorldGen.cs:44182-44228`): the wall twin of
+/// [`paint_coat_tile`] — the glow/echo bits ride `World.extras`. W4-g49.
+fn paint_coat_wall(world: &mut World, x: i32, y: i32, coat: u8) {
+    let Some(t) = world.tile(x, y) else {
+        return;
+    };
+    if t.wall == 0 {
+        return; // `:44185-44188`
+    }
+    let (fullbright, invisible) = (world.fullbright_wall(x, y), world.invisible_wall(x, y));
+    match coat {
+        0 => {
+            if !fullbright && !invisible {
+                return; // `:44195-44198`
+            }
+            world.set_fullbright_wall(x, y, false); // `:44199`
+            world.set_invisible_wall(x, y, false); // `:44200`
+            tr_core::framing::reframe_area(world, x, y, 1, false); // `:44201`
+        }
+        1 => {
+            if fullbright {
+                return; // `:44204-44207`
+            }
+            world.set_fullbright_wall(x, y, true); // `:44208`
+        }
+        2 => {
+            if invisible {
+                return; // `:44211-44214`
+            }
+            world.set_invisible_wall(x, y, true); // `:44215`
+            tr_core::framing::reframe_area(world, x, y, 1, false); // `:44216`
+        }
+        _ => {} // `:44192-44193` default: return false
+    }
+}
+
 fn npc_from_net(world: &World, n: &net::NpcInfo) -> Option<crate::npc::Npc> {
     let kind = crate::npc::NpcKind::from_u16(n.kind.max(0) as u16)?;
     let tx = (n.x / TILE_PX) as i32;
@@ -5513,6 +5772,60 @@ mod message_family_tests {
             npc.look_for_home_timeout,
             crate::town::KICK_OUT_LOOK_FOR_HOME_TIMEOUT,
             "the 3600-tick look-for-home timeout armed (`WorldGen.cs:4877`)"
+        );
+    }
+
+    /// W4-g49 `61 SpawnBossInvader` (`MessageBuffer.cs:2740-2878`): the -10
+    /// selector starts a Blood Moon at night (`:2806-2819`) — the flag up, the
+    /// empty moon phase bumped to 5, progression 4 fired.
+    #[test]
+    fn w4_g49_spawn_boss_event_blood_moon_at_night() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        host_app.world.day_time = false;
+        host_app.world.blood_moon = false;
+        host_app.world.moon_phase = 0;
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::SpawnBossEvent(net::SpawnBossEvent {
+                player: 0,
+                event: -10,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(host_app.world.blood_moon, "the blood moon started (`:2811`)");
+        assert_eq!(host_app.world.moon_phase, 5, "the empty phase bumped (`:2812-2815`)");
+    }
+
+    /// W4-g49 `63 SyncTilePaintOrCoating` (`MessageBuffer.cs:2909-2928`): the
+    /// host applies the paint to its world and relays; the client's copy takes
+    /// the same paint.
+    #[test]
+    fn w4_g49_tile_paint_applies_and_relays() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // An active stone tile at (5, 4) on both sides (the dirt row the pair
+        // builds is at y=4; repaint cell (5,4)).
+        for app in [&mut host_app, &mut client_app] {
+            let i = app.world.index(5, 4);
+            app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            app.world.tiles[i].set_paint(0);
+        }
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TilePaint(net::TilePaint {
+                x: 5,
+                y: 4,
+                paint: 13,
+                coat: 0,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert_eq!(
+            host_app.world.tile(5, 4).map(|t| t.paint()),
+            Some(13),
+            "the host painted the tile (`:2917`)"
+        );
+        assert_eq!(
+            client_app.world.tile(5, 4).map(|t| t.paint()),
+            Some(13),
+            "the relay painted the client's copy (`:2925`)"
         );
     }
 }

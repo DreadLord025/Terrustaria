@@ -140,6 +140,17 @@ pub mod id {
     /// given name + variation (`NetMessage.cs:1046-1053`,
     /// `MessageBuffer.cs:2612-2630`). W4-g49 (transplanted from W4-d92).
     pub const UNIQUE_TOWN_NPC_INFO: u8 = 56;
+    /// `61 SpawnBossUseLicenseStartEvent` (`MessageID.cs:135`) — a boss/event
+    /// summon (`NetMessage.cs:1073-1076`, `MessageBuffer.cs:2740-2878`).
+    /// W4-g49 (transplanted from W4-d99).
+    pub const SPAWN_BOSS_EVENT: u8 = 61;
+    /// `63 SyncTilePaintOrCoating` (`MessageID.cs:139`) — a tile paint/coat
+    /// (`NetMessage.cs:1081-1087`, `MessageBuffer.cs:2909-2928`). W4-g49
+    /// (transplanted from W4-d90).
+    pub const TILE_PAINT: u8 = 63;
+    /// `64 SyncWallPaintOrCoating` (`MessageID.cs:141`) — a wall paint/coat
+    /// (`NetMessage.cs:1081-1087`, `MessageBuffer.cs:2929-2948`). W4-g49.
+    pub const WALL_PAINT: u8 = 64;
     pub const TRAVEL_SHOP: u8 = 72; // MessageID.cs:157 / NetMessage.cs:1134-1141 / MessageBuffer.cs:3118-3126
     pub const ANGLER_QUEST: u8 = 74; // MessageID.cs:161 / NetMessage.cs:1145-1148 / MessageBuffer.cs:3147-3153
     pub const REVENGE_MARKER: u8 = 126; // MessageID.cs:266 / NetMessage.cs:1515-1517 / MessageBuffer.cs:4043-4048
@@ -1480,6 +1491,32 @@ pub struct UniqueTownNpcInfo {
     pub info: Option<(String, i32)>,
 }
 
+/// `msg 61 SpawnBossInvader`'s body (`NetMessage.cs:1073-1076`): two shorts —
+/// the player to spawn on and the event selector. Positive selectors are
+/// `NPCID` boss types gated by `NPCID.Sets.MPAllowedEnemies`
+/// (`MessageBuffer.cs:2748-2753`); negatives are the event ladder. Client→
+/// server only — every send site is a `netMode == 1` arm; the host answers
+/// with `7`/`78` pushes. W4-g49 (from W4-d99).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpawnBossEvent {
+    pub player: i16,
+    pub event: i16,
+}
+
+/// `msg 63/64 SyncTilePaintOrCoating / SyncWallPaintOrCoating`'s shared body
+/// (`NetMessage.cs:1081-1087`): the tile, the paint id byte and the coat flag
+/// byte — `coat == 0` paints (`WorldGen.paintTile`/`paintWall`), anything
+/// else coats (`paintCoatTile`/`paintCoatWall`,
+/// `MessageBuffer.cs:2909-2948`), then the host relays. W4-g49 (from W4-d90).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TilePaint {
+    pub x: i16,
+    pub y: i16,
+    pub paint: u8,
+    /// `b12`/`b10`: 0 = paint, non-zero = illuminant coat.
+    pub coat: u8,
+}
+
 /// `msg 72 TravelMerchantItems`'s body (`NetMessage.cs:1134-1141`): the
 /// `Main.travelShop` array — `Main.TravelShopMaxSlots = 40` (`Main.cs:67029`)
 /// `short` item types (`MessageBuffer.cs:3118-3126`).
@@ -1663,6 +1700,15 @@ pub enum C2s {
     /// given name + variation (`NPC.cs:90564`; the host answers `:2626`).
     /// W4-g49.
     UniqueTownNpcInfo(UniqueTownNpcInfo),
+    /// `61 SpawnBossInvader` - a client used a boss/event summon item
+    /// (`Player.ItemCheck_UseBossSpawners`/`UseEventItems`). W4-g49.
+    SpawnBossEvent(SpawnBossEvent),
+    /// `63 SyncTilePaintOrCoating` - a client painted/coated a tile
+    /// (`WorldGen.paintTile`/`paintCoatTile`). W4-g49.
+    TilePaint(TilePaint),
+    /// `64 SyncWallPaintOrCoating` - a client painted/coated a wall
+    /// (`WorldGen.paintWall`/`paintCoatWall`). W4-g49.
+    WallPaint(TilePaint),
     /// `30 TogglePVP` - a client flipped its PvP flag
     /// (`Main.cs`'s PvP toggle; `MessageBuffer.cs:1851-1867` relays it).
     TogglePvp(TogglePvp),
@@ -1756,6 +1802,10 @@ pub enum S2c {
     /// `56 UniqueTownNPCInfoSyncRequest` - the host's answer with the town
     /// NPC's given name + variation (`MessageBuffer.cs:2617-2623`). W4-g49.
     UniqueTownNpcInfo(UniqueTownNpcInfo),
+    /// `63 SyncTilePaintOrCoating` — the host's paint relay. W4-g49.
+    TilePaint(TilePaint),
+    /// `64 SyncWallPaintOrCoating` — the host's paint relay. W4-g49.
+    WallPaint(TilePaint),
     /// `59 HitSwitch` - the switch a peer tripped, relayed
     /// (`MessageBuffer.cs:2691`).
     HitSwitch(HitSwitch),
@@ -1885,6 +1935,9 @@ impl C2s {
             Self::HitSwitch(_) => id::HIT_SWITCH,
             Self::AddNpcBuff(_) => id::ADD_NPC_BUFF,
             Self::UniqueTownNpcInfo(_) => id::UNIQUE_TOWN_NPC_INFO,
+            Self::SpawnBossEvent(_) => id::SPAWN_BOSS_EVENT,
+            Self::TilePaint(_) => id::TILE_PAINT,
+            Self::WallPaint(_) => id::WALL_PAINT,
             Self::PlayerChest(_) => id::PLAYER_CHEST,
             Self::PlayerBuffs(_) => id::PLAYER_BUFFS,
             Self::TogglePvp(_) => id::TOGGLE_PVP,
@@ -1958,6 +2011,13 @@ impl C2s {
                     Some((name, variation)) => w.str(name).i32(*variation),
                     None => w,
                 }
+            }
+            // `NetMessage.cs:1073-1076`: (short)player + (short)event.
+            Self::SpawnBossEvent(e) => w.i16(e.player).i16(e.event),
+            // `NetMessage.cs:1081-1087`: short x + short y + byte paint +
+            // byte coat.
+            Self::TilePaint(p) | Self::WallPaint(p) => {
+                w.i16(p.x).i16(p.y).u8(p.paint).u8(p.coat)
             }
             Self::TogglePvp(t) => w.u8(t.player_id).bool(t.hostile),
             Self::PlayerMana(m) => w.u8(m.player_id).i16(m.mana).i16(m.max_mana),
@@ -2068,6 +2128,26 @@ impl C2s {
                 npc: r.i16()?,
                 info: None,
             }),
+            // `MessageBuffer.cs:2742-2743`: (short)player + (short)event.
+            id::SPAWN_BOSS_EVENT => Self::SpawnBossEvent(SpawnBossEvent {
+                player: r.i16()?,
+                event: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2911-2914` / `:2931-2934`: short, short,
+            // byte, byte.
+            id::TILE_PAINT | id::WALL_PAINT => {
+                let p = TilePaint {
+                    x: r.i16()?,
+                    y: r.i16()?,
+                    paint: r.u8()?,
+                    coat: r.u8()?,
+                };
+                if msg_id == id::TILE_PAINT {
+                    Self::TilePaint(p)
+                } else {
+                    Self::WallPaint(p)
+                }
+            }
             id::TOGGLE_PVP => Self::TogglePvp(TogglePvp {
                 player_id: r.u8()?,
                 hostile: r.bool()?,
@@ -2243,6 +2323,8 @@ impl S2c {
             Self::PlayerBuffs(_) => id::PLAYER_BUFFS,
             Self::NpcBuffs(_) => id::NPC_BUFFS,
             Self::UniqueTownNpcInfo(_) => id::UNIQUE_TOWN_NPC_INFO,
+            Self::TilePaint(_) => id::TILE_PAINT,
+            Self::WallPaint(_) => id::WALL_PAINT,
             Self::HitSwitch(_) => id::HIT_SWITCH,
             Self::PlayerChestIndex(_) => id::PLAYER_CHEST_INDEX,
             Self::ChestSize(_) => id::CHEST_SIZE,
@@ -2372,6 +2454,11 @@ impl S2c {
                     Some((name, variation)) => w.str(name).i32(*variation),
                     None => w,
                 }
+            }
+            // `NetMessage.cs:1081-1087`: short x + short y + byte paint +
+            // byte coat.
+            Self::TilePaint(p) | Self::WallPaint(p) => {
+                w.i16(p.x).i16(p.y).u8(p.paint).u8(p.coat)
             }
             Self::HitSwitch(h) => w.i16(h.x).i16(h.y),
             Self::PlayerChestIndex(c) => w.u8(c.player_id).i16(c.chest),
@@ -2533,6 +2620,21 @@ impl S2c {
                 npc: r.i16()?,
                 info: Some((r.str()?, r.i32()?)),
             }),
+            // `MessageBuffer.cs:2911-2914` / `:2931-2934`: short, short,
+            // byte, byte.
+            id::TILE_PAINT | id::WALL_PAINT => {
+                let p = TilePaint {
+                    x: r.i16()?,
+                    y: r.i16()?,
+                    paint: r.u8()?,
+                    coat: r.u8()?,
+                };
+                if msg_id == id::TILE_PAINT {
+                    Self::TilePaint(p)
+                } else {
+                    Self::WallPaint(p)
+                }
+            }
             id::HIT_SWITCH => Self::HitSwitch(HitSwitch {
                 x: r.i16()?,
                 y: r.i16()?,
@@ -4626,6 +4728,75 @@ mod tests {
         // The bare-slot request must not decode on the S2c side (the client
         // arm always reads the string + int, `MessageBuffer.cs:2619-2621`).
         assert!(S2c::decode(56, &mut NetReader::new(&[17, 0])).is_none());
+    }
+
+    /// W4-g49 `61 SpawnBossInvader` (`NetMessage.cs:1073-1076`): (short)player
+    /// + (short)selector. Positive = an NPCID boss; negative = the event
+    /// ladder — pin -19 (slime rain) so the sign bit survives the i16 round
+    /// trip. Client→server only. Byte-verbatim from W4-d99.
+    #[test]
+    fn w4_g49_spawn_boss_event_round_trips() {
+        for (player, event) in [(1i16, 4i16), (0, -19), (2, -16)] {
+            let e = SpawnBossEvent { player, event };
+            let f = C2s::SpawnBossEvent(e).encode();
+            assert_eq!(f[2], 61);
+            let mut body = Vec::new();
+            body.extend_from_slice(&player.to_le_bytes());
+            body.extend_from_slice(&event.to_le_bytes());
+            assert_eq!(&f[3..], &body);
+            match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+                C2s::SpawnBossEvent(d) => assert_eq!(d, e),
+                other => panic!("expected 61, got {:?}", other.msg_id()),
+            }
+        }
+    }
+
+    /// W4-g49 `63/64 SyncTilePaintOrCoating / SyncWallPaintOrCoating`
+    /// (`NetMessage.cs:1081-1087`): 63 and 64 share the case — (short)x +
+    /// (short)y + (byte)paint + (byte)coat. Byte-verbatim from W4-d90.
+    #[test]
+    fn w4_g49_tile_and_wall_paint_round_trip() {
+        let p = TilePaint {
+            x: 4210,
+            y: 1120,
+            paint: 13,
+            coat: 1,
+        };
+        let mut body = Vec::new();
+        body.extend_from_slice(&4210i16.to_le_bytes());
+        body.extend_from_slice(&1120i16.to_le_bytes());
+        body.push(13);
+        body.push(1);
+        for (mk, sid, rid) in [
+            (C2s::TilePaint as fn(TilePaint) -> C2s, 63u8, 63u8),
+            (C2s::WallPaint as fn(TilePaint) -> C2s, 64, 64),
+        ] {
+            let c = mk(p).encode();
+            assert_eq!(c[2], sid);
+            assert_eq!(&c[3..], &body);
+            match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+                C2s::TilePaint(d) if rid == 63 => assert_eq!(d, p),
+                C2s::WallPaint(d) if rid == 64 => assert_eq!(d, p),
+                other => panic!("expected {rid}, got {:?}", other.msg_id()),
+            }
+        }
+        for (mk, sid) in [
+            (S2c::TilePaint as fn(TilePaint) -> S2c, 63u8),
+            (S2c::WallPaint as fn(TilePaint) -> S2c, 64),
+        ] {
+            let f = mk(p).encode();
+            assert_eq!(f[2], sid);
+            assert_eq!(&f[3..], &body);
+            match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+                S2c::TilePaint(d) if sid == 63 => assert_eq!(d, p),
+                S2c::WallPaint(d) if sid == 64 => assert_eq!(d, p),
+                other => panic!("expected {sid}, got {:?}", other.msg_id()),
+            }
+        }
+        // coat == 0 is the plain-paint arm (`MessageBuffer.cs:2915-2922`).
+        let plain = TilePaint { coat: 0, ..p };
+        let c = C2s::TilePaint(plain).encode();
+        assert_eq!(*c.last().unwrap(), 0);
     }
 
     #[test]

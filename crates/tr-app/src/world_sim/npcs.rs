@@ -513,6 +513,93 @@ pub(crate) fn start_invasion_in(
     true
 }
 
+/// `NPCID.Sets.MPAllowedEnemies` (`NPCID.cs:10458`): the boss types a client
+/// may summon through `61 SpawnBossInvader` (`MessageBuffer.cs:2748`).
+const MP_ALLOWED_ENEMIES: [i32; 17] = [
+    4, 13, 50, 126, 125, 134, 127, 128, 131, 129, 130, 222, 245, 266, 370, 657, 668,
+];
+
+/// `NPC.SpawnOnPlayer` (`NPC.cs:80475-80633`) for the `61` reader: the
+/// MPAllowedEnemies boss spawn at the player. The 245 Golem's altar scan, the
+/// 370 Fishron's bobber scan and the 398 Moon Lord arm are the special cases;
+/// the rest ride the generic `GetSpawnArea` candidate scan.
+///
+/// Deviations (ANALYSIS "Net apply arms (W4-g49)"): the scan is the port's
+/// simplified surface placement (the `spawn_eye_of_cthulhu` precedent — the
+/// 500×50 off-screen candidate fidelity is the M4-BOSS polish follow-up); the
+/// 245 altar scan / 370 bobber scan / 398 Moon Lord and the `SpawnBoss`
+/// mecha-mayhem + `timeLeft *= 20` tails are unported; the `Announcement.
+/// HasAwoken` broadcast rides the port's literal stand-in.
+pub(crate) fn spawn_on_player(app: &mut App, plr: u8, npc_type: i32) {
+    if !MP_ALLOWED_ENEMIES.contains(&npc_type) {
+        return;
+    }
+    // The subject player: slot 0 is the host, the peers ride remote_players.
+    let (px, py) = if plr == 0 {
+        match app.player.as_ref() {
+            Some(p) => p.center(),
+            None => return,
+        }
+    } else {
+        match app.remote_players.get(&(plr as u32)) {
+            Some(p) => (p.x + crate::player::WIDTH * 0.5, p.y + crate::player::HEIGHT * 0.5),
+            None => return,
+        }
+    };
+    let Some(kind) = boss_kind_of(npc_type) else {
+        return; // the kind is unported (Betsy 657, the 128-131 bosses)
+    };
+    if app.npcs.iter().any(|n| n.kind == kind && n.hp > 0) {
+        return; // `NPC.AnyNPCs` — the boss is already up
+    }
+    let xt = ((px / TILE_PX) as i32).clamp(2, app.world.width - 3);
+    let yt = ((py / TILE_PX) as i32).clamp(2, app.world.height - 3);
+    let boss = match kind {
+        NpcKind::KingSlime => Npc::spawn_king_slime(&app.world, xt),
+        NpcKind::EyeOfCthulhu => Npc::spawn_eye_of_cthulhu(&app.world, px, py),
+        NpcKind::EaterOfWorldsHead | NpcKind::TheDestroyer => {
+            let mut h = Npc::spawn_worm_head(&app.world, xt, yt, kind);
+            h.hp = h.max_hp;
+            h.worm_left = if kind == NpcKind::EaterOfWorldsHead { 65 } else { 80 };
+            Some(h)
+        }
+        _ => {
+            let mut b = Npc::new(kind, px, py, 1, 0.0);
+            b.hp = b.max_hp;
+            Some(b)
+        }
+    };
+    let Some(mut boss) = boss else {
+        return;
+    };
+    boss.target = plr as i32;
+    boss.net_update = true;
+    app.npcs.push(boss);
+    // `NPC.SpawnBoss`' `Announcement.HasAwoken` broadcast (`NPC.cs:80703`).
+    let name = crate::lang::npc_name(npc_type);
+    let text = crate::lang::text_args("Announcement.HasAwoken", &[name]);
+    crate::chat::broadcast_death_text(&mut app.chat, &text, crate::chat::COLOR_BOSS_OR_EVENT);
+}
+
+/// The `61` selector's vanilla boss type → the port kind. `None` = unported.
+fn boss_kind_of(npc_type: i32) -> Option<NpcKind> {
+    Some(match npc_type {
+        4 => NpcKind::EyeOfCthulhu,
+        13 => NpcKind::EaterOfWorldsHead,
+        50 => NpcKind::KingSlime,
+        125 => NpcKind::Retinazer,
+        126 => NpcKind::Spazmatism,
+        127 => NpcKind::SkeletronPrime,
+        134 => NpcKind::TheDestroyer,
+        222 => NpcKind::QueenBee,
+        245 => NpcKind::Golem,
+        266 => NpcKind::BrainOfCthulhu,
+        370 => NpcKind::DukeFishron,
+        668 => NpcKind::Deerclops,
+        _ => return None,
+    })
+}
+
 /// The kind → the shop number (`NPCInteractions.cs:488-498`'s registry:
 /// `Shop(17, 1)`, `Shop(19, 2)` … `Shop(107, 6)` — the port keeps the
 /// vanilla indices). `None` = no shop (the Guide).
