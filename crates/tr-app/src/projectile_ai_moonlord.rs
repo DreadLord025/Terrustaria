@@ -178,7 +178,10 @@ pub(crate) fn step(p: &mut Projectile, world: &World) {
         }
         if p.vel == Vec2::ZERO {
             p.ai[0] = 0.0;
-            let settled = p.old_pos[1..].iter().all(|&q| q == p.old_pos[0]);
+            // The C# scans `1..oldPos.Length` (`:55441`) — the slot's live
+            // depth (the 640 keeps the port's 10-entry ring, its own
+            // recorded TrailCacheLength-20 deviation, module doc).
+            let settled = p.old_pos[1..p.trail_len].iter().all(|&q| q == p.old_pos[0]);
             if settled {
                 p.kill_time_left = p.time_left;
                 p.active = false;
@@ -440,7 +443,7 @@ mod tests {
         let mut p = shot(MOONLORD_ARROW_TRAIL);
         p.vel = Vec2::ZERO;
         p.local_ai[1] = 2.0;
-        p.old_pos = [Vec2::new(1600.0, 800.0); 10];
+        p.old_pos[..p.trail_len].fill(Vec2::new(1600.0, 800.0));
         step(&mut p, &w);
         assert!(!p.active, "the all-equal Kill (`:55450`)");
         assert_eq!(p.kill_time_left, 90, "the Kill() `num` capture (`:70649`)");

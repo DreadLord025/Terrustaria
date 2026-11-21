@@ -7,12 +7,14 @@
 //! (`:37454-37534`). The sprite emission lives in
 //! `Projectile::draw_kite` (`projectile.rs`).
 //!
-//! Deviations (ANALYSIS "W4-d16 kite residuals"): the C# kites carry
-//! `TrailCacheLength` 60/65/80 (`ProjectileID.cs:522`); the port's fixed
-//! 10-entry ring is the recorded trail-density deviation (the 640
-//! precedent) — ring indices past the port's depth read as the unwritten
-//! zero entries (the tail collapses to the head, exactly like the C#'s
-//! first frames). The `num18` wind-remap's first two assignments
+//! W4-d16 residual 6: the trail-depth deviation is CLOSED — the C# kites
+//! carry `TrailCacheLength` 60/65/80 (`ProjectileID.cs:522`; `SetDefaults`
+//! resizes `oldPos/oldRot/oldSpriteDirection`, `Projectile.cs:718-728`)
+//! and the port's rings now carry the per-kind depth
+//! (`Projectile::trail_len`, `trail_cache_length`); `draw_kite` slices
+//! `..trail_len` so the walk reads the full history. Unwritten entries
+//! still read as zeros (the tail collapses to the head on the first
+//! frames, exactly like the C#). The `num18` wind-remap's first two assignments
 //! (`:37157-37158`) are dead stores — the final `Remap(localAI[0], 0,
 //! 300, 0, 1)` (`:37159`) is the live value; the no-tail kinds' `num6`
 //! spin (`:37331`) is zeroed on the next line (`:37332`) — both fold to
@@ -283,9 +285,10 @@ pub(crate) fn kite_string_walk(
 /// walk). `frame_w` is the kite sprite frame's width (`rectangle.Width`),
 /// `box_half` is `proj.Size / 2` (`vector3`). The mutable locals
 /// (`num5/6/8/10/14/15`) persist ACROSS the tail iterations — the C#
-/// switch mutates them in place (`:37489-37502`). Ring indices past the
-/// port's 10-entry depth read as the unwritten zeros (the module-doc
-/// deviation). Returns the chains and the FINAL `num6` (the sprite's
+/// switch mutates them in place (`:37489-37502`). The slices carry the
+/// slot's per-kind `TrailCacheLength` depth (`trail_len`); an index past
+/// the FILLED history reads as the unwritten zero (the C#'s first-frames
+/// collapse). Returns the chains and the FINAL `num6` (the sprite's
 /// rotation add, `:37568`).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn kite_tail_chains(
@@ -404,8 +407,12 @@ mod w4_d16_kite_draw_tests {
     //! W4-d16 — the DrawKite geometry witnesses. WRITTEN NOT RUN
     //! (code-only mode). The parameter table census, the string walk's
     //! 12-px steps + final partial height, the zero-distance refusal,
-    //! the tail chain counts + the ring-zero collapse.
+    //! the tail chain counts + the ring-zero collapse. Residual 6: the
+    //! rings carry the per-kind `TrailCacheLength` depth (60/65/80) —
+    //! the deep-walk witness pins the tail's far segments reading real
+    //! history instead of the old 10-entry collapse.
     use super::*;
+    use crate::projectile::trail_cache_length;
 
     /// The per-kind table (`Main.cs:37161-37341`): the wyvern's 12-frame
     /// Extra[104], the colour kites' wrap columns, the no-tail five, the
@@ -467,14 +474,17 @@ mod w4_d16_kite_draw_tests {
 
     /// The tail chains (`:37463-37534`): one chain per tail, each
     /// `segs + 1` points; an EMPTY history ring collapses every point to
-    /// the head anchor (the C# zero-entry arm, `:37514-37517`).
+    /// the head anchor (the C# zero-entry arm, `:37514-37517`). The
+    /// slices carry the kind's full `TrailCacheLength` depth (766 → 60).
     #[test]
     fn w4_d16_kite_draw_the_tail_chains() {
         let p = kite_tail_params(766).unwrap();
         let center = Vec2::new(100.0, 100.0);
-        let old_pos = [Vec2::ZERO; 10];
-        let old_rot = [0.0; 10];
-        let old_dir = [0; 10];
+        let depth = trail_cache_length(766);
+        assert_eq!(depth, 60, "the colour kites' ring (`ProjectileID.cs:522`)");
+        let old_pos = vec![Vec2::ZERO; depth];
+        let old_rot = vec![0.0; depth];
+        let old_dir = vec![0; depth];
         let (chains, num6) = kite_tail_chains(
             &p, center, Vec2::splat(2.0), 30.0, 0.0, 1,
             0.0, 0.0, 0.0, 0.0, 5.0, &old_pos, &old_rot, &old_dir,
@@ -507,17 +517,82 @@ mod w4_d16_kite_draw_tests {
     fn w4_d16_kite_draw_the_history_clamp() {
         let p = kite_tail_params(766).unwrap();
         let center = Vec2::new(100.0, 100.0);
-        let mut old_pos = [Vec2::ZERO; 10];
+        let depth = trail_cache_length(766);
+        let mut old_pos = vec![Vec2::ZERO; depth];
         for (i, slot) in old_pos.iter_mut().enumerate() {
             *slot = Vec2::new(100.0 - 500.0, 100.0 + i as f32);
         }
-        let old_rot = [0.0; 10];
-        let old_dir = [1; 10];
+        let old_rot = vec![0.0; depth];
+        let old_dir = vec![1; depth];
         let (chains, _) = kite_tail_chains(
             &p, center, Vec2::splat(2.0), 30.0, 0.0, 1,
             0.0, 0.0, 0.0, 0.0, 5.0, &old_pos, &old_rot, &old_dir,
         );
         let d = chains[0][1].distance(chains[0][0]);
         assert!(d <= p.max_len + 1e-3, "the segment clamp: {d}");
+    }
+
+    /// Residual 6 — the per-kind depth census (`ProjectileID.cs:522`):
+    /// 766-770/824/826/828/829/839/840/843/852/853 → 60, 827/844 → 65,
+    /// 771/822/823/830/838/845/846/850 → 80. The C# tail walk's LAST
+    /// index is `segs × stride` (`num37 < (num3+1)*num4`, `:37507`):
+    /// stock 50 < 60, the 827/844 16×4 = 64 < 65, the wyvern 12×5 = 60
+    /// < 80 — every walk stays inside its kind's ring.
+    #[test]
+    fn w4_d16_kite_draw_the_trail_cache_length_census() {
+        for k in [766, 767, 768, 769, 770, 824, 826, 828, 829, 839, 840, 843, 852, 853] {
+            assert_eq!(trail_cache_length(k), 60, "kind {k}");
+        }
+        for k in [827, 844] {
+            assert_eq!(trail_cache_length(k), 65, "kind {k}");
+        }
+        for k in [771, 822, 823, 830, 838, 845, 846, 850] {
+            assert_eq!(trail_cache_length(k), 80, "kind {k}");
+        }
+        // Every kind's deepest tail index fits its ring.
+        for &k in crate::projectile_ai_kites::KITE_KINDS.iter() {
+            let p = kite_tail_params(k).unwrap();
+            let last = (p.segs * p.stride) as usize;
+            assert!(last < trail_cache_length(k), "kind {k}: index {last}");
+        }
+        // The non-kite default stays 10 (the factory default).
+        assert_eq!(trail_cache_length(1), 10);
+    }
+
+    /// Residual 6 — the deep walk: with the FULL 60-entry ring filled,
+    /// the stock tail's far segments read real history (indices 15..50)
+    /// instead of collapsing to the head like the old 10-entry port.
+    /// A far-left history line makes every non-head point sit `max_len`
+    /// left of its predecessor (the clamp saturates each step).
+    #[test]
+    fn w4_d16_kite_draw_the_deep_ring_walks_past_ten() {
+        let p = kite_tail_params(766).unwrap();
+        let center = Vec2::new(100.0, 100.0);
+        let depth = trail_cache_length(766);
+        // Every entry far left of the head — each segment clamps to
+        // max_len 10 toward it (the `:37524-37527` arm).
+        let old_pos = vec![Vec2::new(-400.0, 100.0); depth];
+        let old_rot = vec![0.0; depth];
+        let old_dir = vec![1; depth];
+        let (chains, _) = kite_tail_chains(
+            &p, center, Vec2::splat(2.0), 30.0, 0.0, 1,
+            0.0, 0.0, 0.0, 0.0, 5.0, &old_pos, &old_rot, &old_dir,
+        );
+        let list = &chains[0];
+        assert_eq!(list.len(), 11, "the head + 10 segments");
+        // The OLD 10-entry port collapsed points 3..10 to point 2 (the
+        // ring's indices 15+ read zero). The full ring keeps walking:
+        // point 4 (ring index 20) sits max_len left of point 3.
+        for i in 1..list.len() {
+            let d = list[i - 1].distance(list[i]);
+            assert!(
+                (d - p.max_len).abs() < 1e-3,
+                "segment {i} walks the deep history: {d}"
+            );
+        }
+        // The far end is ~10 × max_len from the head — the old port's
+        // collapsed tail never passed 2 × max_len.
+        let span = list[0].distance(*list.last().unwrap());
+        assert!(span > 9.0 * p.max_len, "the full-depth span: {span}");
     }
 }

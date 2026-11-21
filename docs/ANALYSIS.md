@@ -39290,11 +39290,20 @@ the item-use path, the draw and the census pins.
   (`:37568`, the generic `GetAlpha` tail `Projectile.cs:79744-79757`).
   The kites' mode-2 trailing (`ProjectileID.cs:521`) is wired so the tail
   walk reads `oldPos`/`oldRot`/`oldSpriteDirection`.
-  - Deviation: the C# `TrailCacheLength` is 60/65/80 per kite
-    (`ProjectileID.cs:522`); the port's fixed 10-entry ring is the recorded
-    trail-density deviation (the 640 precedent) — ring indices past the
-    port's depth read as the unwritten zeros (the tail collapses to the
-    head, exactly like the C#'s first frames). The `num18` wind-remap's
+  - CLOSED (residual 6): the C# `TrailCacheLength` is 60/65/80 per kite
+    (`ProjectileID.cs:522`) — `SetDefaults` RESIZES `oldPos/oldRot/
+    oldSpriteDirection` to it (`Projectile.cs:718-728`; the field's
+    `new Vector2[10]` at `:388` is only the pre-resize default). The port
+    now carries the per-kind depth: `Projectile::trail_len` +
+    `trail_cache_length(kind)` (projectile.rs), storage cap 80
+    (`TRAIL_RING_CAP` — the largest ported length; the unported 120/41/
+    51/71 kinds keep their own deviations), `reset_trailing_rings` on
+    every spawn seam (the `:729-735` zero included), the shift chain and
+    every reader (`draw_kite`'s tail slices, `trail_quads`, the 640's
+    at-rest scan) walk `..trail_len`. The old fixed-10 deviation is gone
+    for the kites; the 640's C#-20 ring stays its own recorded deviation
+    (`projectile_ai_moonlord.rs`). Unwritten entries still read zero (the
+    first-frames collapse, exactly like the C#). The `num18` wind-remap's
     first two assignments (`:37157-37158`) are dead stores — the final
     `Remap(localAI[0], 0, 300, 0, 1)` is the live value; the no-tail five's
     `num6` spin (`:37331`) is zeroed on the next line — both fold to

@@ -551,21 +551,34 @@ pub struct Projectile {
     /// AI_026 slice C latches it in `ai026_c_tick`; the other arms keep
     /// the stock ZERO until their movement ports land.
     pub old_position: Vec2,
-    /// `Projectile.oldPos` (`Projectile.cs:388`) — the 10-entry position ring the
+    /// `Projectile.oldPos` (`Projectile.cs:388`) — the position ring the
     /// `TrailingMode` chain shifts once per update call (`:17091-17195`),
     /// newest first (index 0 = this tick's position). M4-PROJ-6b Phase 7's
     /// trail quads walk it (`Main.DrawTrail`'s cheap fallback,
     /// `Main.cs:27886-27905`); an unwritten slot reads `Vec2::ZERO`, the C#'s
-    /// "no entry" marker.
-    pub old_pos: [Vec2; 10],
+    /// "no entry" marker. W4-d16 residual 6: the ring is per-kind — the C#
+    /// field starts `new Vector2[10]` but `SetDefaults` resizes it to
+    /// `ProjectileID.Sets.TrailCacheLength[type]` (`Projectile.cs:718-728`,
+    /// the factory default 10, `ProjectileID.cs:522`); the kites carry
+    /// 60/65/80. The port stores the full depth ([`TRAIL_RING_CAP`]) plus
+    /// [`Self::trail_len`] — the C# array length the walks read (the
+    /// `Array.Resize` stand-in; readers slice `..trail_len`).
+    pub old_pos: [Vec2; TRAIL_RING_CAP],
     /// `Projectile.oldRot` (`:390`) — the rotations the modes 2-5 record beside
     /// the ring positions (the C# orients the strip's width axis by them,
     /// `VertexStrip.cs:151-156`; the quad approximation orients by the segment
     /// direction instead, so the ring's rotations are state only here).
-    pub old_rot: [f32; 10],
+    /// Resized with `oldPos` (`:726`); slice `..trail_len`.
+    pub old_rot: [f32; TRAIL_RING_CAP],
     /// `Projectile.oldSpriteDirection` (`:392`) — the sprite directions the
-    /// modes 2-5 records beside the ring positions.
-    pub old_sprite_direction: [i32; 10],
+    /// modes 2-5 records beside the ring positions. Resized with `oldPos`
+    /// (`:727`); slice `..trail_len`.
+    pub old_sprite_direction: [i32; TRAIL_RING_CAP],
+    /// The live ring depth — the C# `oldPos.Length` after `SetDefaults`'
+    /// resize (`Projectile.cs:718-728`): [`trail_cache_length`] of the kind,
+    /// 10 for every kind the set omits. Set on spawn (`reset_trailing_rings`,
+    /// the `SetDefaults` zeroing `:729-735` included).
+    pub trail_len: usize,
     /// `Kill()`'s captured `num = this.timeLeft` (`Projectile.cs:70649`,
     /// taken BEFORE the `:70650` zeroing) — the 639 MoonlordArrow's death
     /// hook (`:73444-73451`) computes the 640 trail's spawn delay from it.
@@ -802,9 +815,10 @@ impl Default for Projectile {
             frame: 0,
             frame_counter: 0,
             old_position: Vec2::ZERO,
-            old_pos: [Vec2::ZERO; 10],
-            old_rot: [0.0; 10],
-            old_sprite_direction: [0; 10],
+            old_pos: [Vec2::ZERO; TRAIL_RING_CAP],
+            old_rot: [0.0; TRAIL_RING_CAP],
+            old_sprite_direction: [0; TRAIL_RING_CAP],
+            trail_len: 10,
             kill_time_left: 0,
             w: SIZE,
             h: SIZE,
@@ -10086,6 +10100,19 @@ impl Projectile {
         }
     }
 
+    /// `SetDefaults`' history-ring reset (`Projectile.cs:718-735`): the
+    /// per-kind depth (`TrailCacheLength[type]`, the `Array.Resize` at
+    /// `:723-728`) plus the all-zero clear (`:729-735`). The spawn seams
+    /// call it right after the slot write — the C# runs SetDefaults inside
+    /// `NewProjectile` ahead of the argument writes, and none of those
+    /// touch the rings.
+    pub(crate) fn reset_trailing_rings(&mut self) {
+        self.trail_len = trail_cache_length(self.kind).min(TRAIL_RING_CAP);
+        self.old_pos = [Vec2::ZERO; TRAIL_RING_CAP];
+        self.old_rot = [0.0; TRAIL_RING_CAP];
+        self.old_sprite_direction = [0; TRAIL_RING_CAP];
+    }
+
     /// `AI()`'s `TrailingMode` chain (`Projectile.cs:17091-17195`): the history
     /// rings shift **once per update call** — after the AI sub-steps, ahead of
     /// the `timeLeft--` at `:17201` — so a sub-stepped kind records one entry
@@ -10102,12 +10129,15 @@ impl Projectile {
             return;
         }
         // Modes 2-5 record the rotations and the sprite directions beside the
-        // positions; modes 0/1 the positions only.
+        // positions; modes 0/1 the positions only. The C# loops run to
+        // `oldPos.Length` — the slot's per-kind depth (`trail_len`, the
+        // `SetDefaults` resize `:718-728`), not the storage cap.
+        let len = self.trail_len;
         let with_rotations = mode >= 2;
-        shift_ring(&mut self.old_pos);
+        shift_ring(&mut self.old_pos[..len]);
         if with_rotations {
-            shift_ring(&mut self.old_rot);
-            shift_ring(&mut self.old_sprite_direction);
+            shift_ring(&mut self.old_rot[..len]);
+            shift_ring(&mut self.old_sprite_direction[..len]);
         }
         self.old_pos[0] = self.pos;
         if with_rotations {
@@ -10122,7 +10152,7 @@ impl Projectile {
             const PASSES: usize = 1; // `num25` (`:17152`)
             const AMOUNT: f32 = 0.65; // `amount` (`:17151`)
             for _ in 0..PASSES {
-                for i in (1..self.old_pos.len()).rev() {
+                for i in (1..len).rev() {
                     if self.old_pos[i] != Vec2::ZERO {
                         if self.old_pos[i].distance(self.old_pos[i - 1]) > 2.0 {
                             self.old_pos[i] =
@@ -10482,9 +10512,12 @@ impl Projectile {
             wind,
             visual_time,
             string_end.y,
-            &self.old_pos,
-            &self.old_rot,
-            &self.old_sprite_direction,
+            // The C# walks `oldPos[num37]` up to `(num3+1)*num4` — the
+            // per-kind TrailCacheLength depth (`SetDefaults`' resize), so
+            // the slices stop at the slot's live length, not the cap.
+            &self.old_pos[..self.trail_len],
+            &self.old_rot[..self.trail_len],
+            &self.old_sprite_direction[..self.trail_len],
         );
         let tail_sheet = lookups.kite_tails.get(&p.extra).copied();
         let num2 = if p.quarter_turn {
@@ -10652,7 +10685,7 @@ impl Projectile {
             self.w,
             self.h,
             self.local_ai[0],
-            &self.old_pos,
+            &self.old_pos[..self.trail_len],
             global_time,
         )
         .into_iter()
@@ -13578,9 +13611,37 @@ pub(crate) fn frame_slice_uv(
     )
 }
 
+/// W4-d16 residual 6 — the port's ring storage depth: the LARGEST
+/// `TrailCacheLength` among the ported kinds (the kites' 80 —
+/// `ProjectileID.cs:522`'s `771/822/823/830/838/845/846/850, 80`). The C#
+/// field is per-instance (`Array.Resize`, `Projectile.cs:723-728`); the port
+/// stores the cap in every slot and walks `..trail_len` (the memory-for-
+/// simplicity trade — a `Box<[Vec2]>` per ring would churn the pool's
+/// `Clone`/`Default` shape). The unported 120/41/51/71 kinds (872/883/887/
+/// 893) keep their own recorded deviations; when they land, raise this cap.
+pub(crate) const TRAIL_RING_CAP: usize = 80;
+
+/// `ProjectileID.Sets.TrailCacheLength` (`ProjectileID.cs:522`) — the ring
+/// depth `SetDefaults` resizes `oldPos/oldRot/oldSpriteDirection` to
+/// (`Projectile.cs:718-728`; the factory default 10). The in-scope slice:
+/// the kites' 60/65/80 census (the `DefaultToKite` 24 kinds —
+/// `766-770, 824, 826, 828, 829, 839, 840, 843, 852, 853 → 60`;
+/// `827, 844 → 65`; `771, 822, 823, 830, 838, 845, 846, 850 → 80`). Every
+/// other ported kind keeps the default 10 (the 640's C# 20 stays its own
+/// recorded deviation — `projectile_ai_moonlord.rs`, S1-D-4's ring).
+pub(crate) fn trail_cache_length(kind: u16) -> usize {
+    match kind {
+        771 | 822 | 823 | 830 | 838 | 845 | 846 | 850 => 80,
+        827 | 844 => 65,
+        k if crate::projectile_ai_kites::KITE_KINDS.contains(&k) => 60,
+        _ => 10,
+    }
+}
+
 /// `Projectile.cs:17093-17096`'s ring shift (and `:17131-17134`'s for the
 /// rotation rings): every entry takes its newer neighbour's value, which frees
-/// index 0 for the current one.
+/// index 0 for the current one. The walk stops at the slot's live depth
+/// (`oldPos.Length` — `trail_len`), never the storage cap.
 fn shift_ring<T: Copy>(ring: &mut [T]) {
     for i in (1..ring.len()).rev() {
         ring[i] = ring[i - 1];
@@ -15568,6 +15629,7 @@ impl ProjectilePool {
             if let Some(v) = st.ai2 {
                 p.ai[2] = v;
             }
+            p.reset_trailing_rings();
             self.slots[slot] = p;
             let base = slot * 256;
             self.local_immunity[base..base + 256].fill(0);
@@ -15877,6 +15939,8 @@ impl ProjectilePool {
             crit,
             ..Default::default()
         };
+        // `SetDefaults`' ring resize + zero (`:718-735`).
+        self.slots[slot].reset_trailing_rings();
         // A spawned slot starts with clean local immunity.
         let base = slot * 256;
         self.local_immunity[base..base + 256].fill(0);
@@ -16065,6 +16129,8 @@ impl ProjectilePool {
             detonated: false,
             ..Default::default()
         };
+        // `SetDefaults`' ring resize + zero (`:718-735`).
+        self.slots[slot].reset_trailing_rings();
         let base = slot * 256;
         self.local_immunity[base..base + 256].fill(0);
         Some(slot)
@@ -16309,6 +16375,9 @@ impl ProjectilePool {
             bonus_crit_chance: 0,
             ..Default::default()
         };
+        // `SetDefaults`' ring resize + zero (`:718-735`) — the kites' 60/65/80
+        // depths land here (W4-d16 residual 6).
+        self.slots[slot].reset_trailing_rings();
         let base = slot * 256;
         self.local_immunity[base..base + 256].fill(0);
         // `NewProjectile`'s tail (`Projectile.cs:11094`): `FinalizeProjectile`
@@ -30862,9 +30931,10 @@ mod phasmal_projectile_tests {
             trap: false,
             bounces: 0,
             blast_spawned: false,
-            old_pos: [Vec2::ZERO; 10],
-            old_rot: [0.0; 10],
-            old_sprite_direction: [0; 10],
+            old_pos: [Vec2::ZERO; TRAIL_RING_CAP],
+            old_rot: [0.0; TRAIL_RING_CAP],
+            old_sprite_direction: [0; TRAIL_RING_CAP],
+            trail_len: 10,
             kill_time_left: 0,
             should_fall_through: false,
             step_speed: 1.0,
@@ -31271,9 +31341,10 @@ mod ritual_projectile_tests {
             trap: false,
             bounces: 0,
             blast_spawned: false,
-            old_pos: [Vec2::ZERO; 10],
-            old_rot: [0.0; 10],
-            old_sprite_direction: [0; 10],
+            old_pos: [Vec2::ZERO; TRAIL_RING_CAP],
+            old_rot: [0.0; TRAIL_RING_CAP],
+            old_sprite_direction: [0; TRAIL_RING_CAP],
+            trail_len: 10,
             kill_time_left: 0,
             should_fall_through: false,
             step_speed: 1.0,
@@ -35658,6 +35729,47 @@ mod magic_ai_tests {
         // the set omits reads the −1 factory default.
         assert_eq!(trailing_mode(1120), -1, "the unported kind defaults");
         assert_eq!(trailing_mode(WOODEN_ARROW), -1, "the arrows have no history");
+    }
+
+    /// W4-d16 residual 6 — `SetDefaults`' ring resize (`Projectile.cs:718-728`,
+    /// `ProjectileID.Sets.TrailCacheLength` `ProjectileID.cs:522`): a spawned
+    /// kite carries its per-kind depth (60/65/80), the shift chain walks it,
+    /// and the entries past the old fixed 10 fill with real history. The
+    /// non-kite kinds keep the factory default 10. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d16_the_kite_rings_resize_to_the_trail_cache_length() {
+        let mut pool = ProjectilePool::new();
+        for (kind, want) in [(766u16, 60usize), (827, 65), (771, 80), (850, 80), (852, 60)] {
+            let slot = pool
+                .spawn_with_data_ai(kind, 100.0, 100.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+                .expect("the kite row");
+            let p = &pool.slots()[slot];
+            assert_eq!(p.trail_len, want, "kind {kind}'s TrailCacheLength");
+            assert_eq!(p.old_pos[0], Vec2::ZERO, "the SetDefaults zero (`:729-735`)");
+            assert_eq!(trailing_mode(kind), 2, "the kites' mode 2");
+        }
+        // The default-10 kinds keep the stock depth.
+        let gem = pool
+            .spawn_with_data(GEM_BOLT_AMETHYST, 100.0, 100.0, 4.0, 0.0, 20, 0.0)
+            .unwrap();
+        assert_eq!(pool.slots()[gem].trail_len, 10);
+        // Drive a colour kite 12 ticks: the mode-2 chain fills entries past
+        // the old 10-entry depth (the tail walk reads them, `Main.cs:37513`).
+        let kite = pool
+            .spawn_with_data_ai(766, 100.0, 100.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .unwrap();
+        for t in 0..12 {
+            let p = &mut pool.slots_mut()[kite];
+            p.pos = Vec2::new(100.0 + t as f32, 100.0);
+            p.shift_trailing_history();
+        }
+        let p = &pool.slots()[kite];
+        for i in 0..12 {
+            assert_ne!(p.old_pos[i], Vec2::ZERO, "entry {i} fills");
+        }
+        assert_eq!(p.old_pos[12], Vec2::ZERO, "the unwritten entry stays zero");
+        // The 60-deep shift never touches the storage past trail_len.
+        assert_eq!(p.old_pos[60], Vec2::ZERO);
     }
 
     #[test]
