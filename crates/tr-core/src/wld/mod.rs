@@ -1684,6 +1684,10 @@ mod tests {
         // (`:1413`, v261) — ride the round-trip at non-default values.
         world.combat_book_was_used = true;
         world.unlocked_slime_red_spawn = true;
+        // W4-g90 lane 7: the book-two + satchel world flags ride the
+        // round-trip at non-default values too.
+        world.combat_book_volume_two_was_used = true;
+        world.peddlers_satchel_was_used = true;
         world
     }
 
@@ -1910,6 +1914,15 @@ mod tests {
             got.unlocked_slime_red_spawn, want.unlocked_slime_red_spawn,
             "{context}: unlockedSlimeRedSpawn"
         );
+        // W4-g90 lane 7: the book-two + satchel flag bytes.
+        assert_eq!(
+            got.combat_book_volume_two_was_used, want.combat_book_volume_two_was_used,
+            "{context}: combatBookVolumeTwoWasUsed"
+        );
+        assert_eq!(
+            got.peddlers_satchel_was_used, want.peddlers_satchel_was_used,
+            "{context}: peddlersSatchelWasUsed"
+        );
     }
 
     #[test]
@@ -2053,6 +2066,10 @@ mod tests {
         // +1 partyGirl; +4 dyeTrader/truffle/armsDealer/nurse, +1 princess.
         tail[2030] = u8::from(world.unlocked_party_girl); // (`:1401`)
         tail[2035] = u8::from(world.unlocked_princess); // (`:1406`)
+        // W4-g90 lane 7: the two world-flag uses — book two at 2036
+        // (`WorldFile.cs:1407`, v259), satchel at 2037 (`:1408`, v260).
+        tail[2036] = u8::from(world.combat_book_volume_two_was_used);
+        tail[2037] = u8::from(world.peddlers_satchel_was_used);
         tail[2026] = u8::from(world.downed_deerclops); // downedDeerclops (`:1397`)
         // The rainbow slime in the 7-slime run at 2038 (`:1410-1414`):
         // green/old/purple, then rainbow@2041, red@2042 (gate V3, i35).
@@ -3640,9 +3657,24 @@ mod tests {
         // v260: the slime block does not exist yet (the satchel byte is last).
         let mut data = synthetic_file(260, &[2, 144], 160, 11);
         let tail_at = tail_offset_in_synthetic(&data, 260);
-        data[tail_at + flags_tail(260).len() - 1] = 1; // peddlersSatchelWasUsed — skipped
+        data[tail_at + flags_tail(260).len() - 1] = 1; // peddlersSatchelWasUsed
         let w = parse(&data).expect("v260 loads");
         assert!(!w.unlocked_slime_red_spawn, "below 261: red slime stays false");
+        // W4-g90 lane 7: the satchel byte now LANDS (v260, `:2405`); the
+        // book-two byte ahead of it stays 0.
+        assert!(w.peddlers_satchel_was_used, "peddlersSatchelWasUsed reads from 260");
+        assert!(!w.combat_book_volume_two_was_used, "the book-two byte stays 0");
+        // v258: the book-two byte does not exist yet (the princess byte is
+        // last) — below 259 the flag stays false.
+        let w = parse(&synthetic_file(258, &[2, 144], 160, 11)).expect("v258 loads");
+        assert!(!w.combat_book_volume_two_was_used, "below 259: book two stays false");
+        // v259: it lands — the LAST byte of the v259 tail.
+        let mut data = synthetic_file(259, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 259);
+        data[tail_at + flags_tail(259).len() - 1] = 1; // combatBookVolumeTwoWasUsed
+        let w = parse(&data).expect("v259 loads");
+        assert!(w.combat_book_volume_two_was_used, "combatBookVolumeTwoWasUsed reads from 259");
+        assert!(!w.peddlers_satchel_was_used, "below 260: the satchel stays false");
         // v261: green/old/purple(3) rainbow(1) red(1) yellow/copper(2) — the
         // red byte sits 3 from the tail end (2 skip + 1 red).
         let mut data = synthetic_file(261, &[2, 144], 160, 11);
@@ -3661,6 +3693,10 @@ mod tests {
         let tail_at = ptr1 - flags_tail(VER).len();
         assert_eq!(buf[tail_at + 1939], 1, "combatBookWasUsed at tail 1939");
         assert_eq!(buf[tail_at + 2042], 1, "unlockedSlimeRedSpawn at tail 2042");
+        // W4-g90 lane 7: the book-two/satchel bytes at their pinned offsets
+        // (2036/2037 — between the princess 2035 and the slime run 2038).
+        assert_eq!(buf[tail_at + 2036], 1, "combatBookVolumeTwoWasUsed at tail 2036");
+        assert_eq!(buf[tail_at + 2037], 1, "peddlersSatchelWasUsed at tail 2037");
     }
 
     // --- S1-A-7: the C#-generated world (real genRand) -----------------------
