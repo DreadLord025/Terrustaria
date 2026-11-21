@@ -39303,3 +39303,44 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The solutions census (W4-f25 closeout, 2026-11-21 - code-only mode)
+
+The Clentaminator family's full item -> projectile -> Convert chain,
+re-read against the decompilation (the ai_spray dispatch landed with the
+C3/C4 wiring; this round rows the missing sprays):
+
+- **The eight solution items** (AmmoID.Solution 780, `AmmoID.cs:168`):
+  Green 780 / Blue 781 / Purple 782 / Dark Blue 783 / Red 784 carry
+  `shoot` 0-4 (`Item.cs:10517-10561`); Sand 5392 / Snow 5393 / Dirt
+  5394 ride `DefaultToSolution` (`Item.cs:42772-42780` +
+  `:47799-47808`) = `shoot` 870/871/872 (1015/1016/1017 - 145). All
+  eight item rows were already in the registry.
+- **The two guns**: Clentaminator 779 (`Item.cs:10501-10516`, shoot
+  145, shootSpeed 7) and Clentaminator2 5134 (`:41174-41189`, shoot
+  145, shootSpeed 11) both useAmmo Solution; the additive resolution
+  arm (`Player.cs:53487-53490`, `ammo.rs::resolve_projectile`) lands
+  every pair on 145-149 / 1015-1017.
+- **The spray rows**: 145 was rowed; 146-149 are line-identical copies
+  of its SetDefaults arm (`Projectile.cs:2350-2397`) and 1015-1017
+  ride `DefaultToSpray` (`:9633-9636` -> `:10691-10702`) - the
+  closeout rows all seven beside 145 (6x6, aiStyle 31, pen -1,
+  extraUpdates 2, tileCollide false). Without the rows the ammo drained
+  and the spawn declined.
+- **The Convert dispatch** (`Projectile.cs:26791-26824`,
+  `ai_spray`): 145 -> 0 (cleanse), 146 -> 2 (C3 hallow), 147 -> 1 /
+  149 -> 4 (d1's powder cells, unmerged - no-op until they land),
+  148 -> 3 (g42's mushroom cell, unmerged - no-op), 1015/1016/1017 ->
+  5/6/7 (C4 desertify/snow/purify). The dispatch itself is verbatim and
+  complete; only the d1/g42 cells are pending.
+- **5495 is NOT a Clentaminator**: it is the Shimmer Gun
+  (`ItemID.cs:12673`, `Item.cs:43313-43325` - shoot 1042
+  ShimmerGunStream, aiStyle 60 `Projectile.cs:9848-9857`, no useAmmo).
+  Its `Player.cs:49124-49128` spawn arm passes ai1 = 1, but that is
+  the shimmer stream's own flag, not the spray's solution flag. No
+  solution arm belongs to it; the 1042 row is the shimmer lane's.
+
+Runtime-only (no worldgen step calls the sprays); both world-hash pins
+unchanged, a == b untouched. 2 witnesses written not run (the row-stats
+sweep + the eight-solution resolution on both guns); the earlier
+dispatch witness re-pointed at the rowed `proj` fixture.

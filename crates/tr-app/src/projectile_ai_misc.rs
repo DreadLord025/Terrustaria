@@ -68,10 +68,10 @@ use crate::projectile::{
 };
 
 /// `AI()`'s aiStyle-31 arm (`Projectile.cs:26786-26886`) — the Clentaminator
-/// spray. Only the PureSpray 145 has a `proj_data` row (the 146-149 /
-/// 1015-1017 solutions are unrowed); the per-kind ladder is ported whole so
-/// the later rows land on a faithful arm — the W4-f25 C3/C4 wiring arms the
-/// type-2/5/6/7 dispatch for them now.
+/// spray. All eight spray kinds carry `proj_data` rows now (the W4-f25
+/// closeout rowed 146-149 / 1015-1017 beside the 145); the per-kind ladder
+/// is ported whole — the W4-f25 C3/C4 wiring arms the type-2/5/6/7 dispatch,
+/// types 1/3/4 (the 147/148/149 sprays) stay no-ops until d1/g42 land.
 ///
 /// The dust-scale ladder (`:26845-26879`: the 7/3 threshold, the
 /// 0.2/0.4/0.6/0.8 fade steps, the flag13 ×1.2 and the `(int)(12·scale)`
@@ -794,6 +794,27 @@ mod tests {
         assert_eq!(proj_data(85).unwrap().ai_style, 193);
     }
 
+    /// W4-f25 closeout (solutions census): the seven solution sprays carry
+    /// the 145 row's stats verbatim — 146-149 are line-identical copies of
+    /// the `:2338-2347` arm (`Projectile.cs:2350-2397`), 1015-1017 ride
+    /// `DefaultToSpray` (`:9633-9636` → `:10691-10702`): 6x6, aiStyle 31,
+    /// pen -1, extraUpdates 2, tileCollide false, the stock 3600 life, no
+    /// class flag / immunity pair. WRITTEN NOT RUN (code-only round).
+    #[test]
+    fn w4_f25_closeout_the_solution_sprays_carry_the_145_row() {
+        for kind in (146..=149u16).chain(1015..=1017) {
+            let d = proj_data(kind).unwrap_or_else(|| panic!("kind {kind} rowed"));
+            assert_eq!((d.w, d.h), (6.0, 6.0), "kind {kind}");
+            assert_eq!(d.ai_style, 31, "kind {kind}");
+            assert_eq!(d.penetrate, -1, "kind {kind}");
+            assert_eq!(d.extra_updates, 2, "kind {kind}");
+            assert!(!d.tile_collide, "kind {kind}");
+            assert_eq!(d.time_left, 3600, "kind {kind}");
+            assert!(!d.uses_local_immunity, "kind {kind}");
+            assert!(!d.arrow && !d.trap, "kind {kind} sets no class flag");
+        }
+    }
+
     /// Style 31 (`:26826-26839`, `:26883-26885`): the owner-gated cleanse
     /// converts the corrupt grass under the spray, the life caps at 133,
     /// the counter advances and the spin reads the velocity sign. ZERO
@@ -832,22 +853,14 @@ mod tests {
     }
 
     /// W4-f25 wiring: the per-kind dispatch (`:26791-26834`) — the solution
-    /// kinds convert through their own cells. The 146-149/1015-1017 rows are
-    /// unrowed, so the slots are built field-by-field (the `proj` helper
-    /// needs a row). WRITTEN NOT RUN (code-only round).
+    /// kinds convert through their own cells. The closeout rowed
+    /// 146-149/1015-1017, so the slots ride the `proj` helper's row slice
+    /// (the 6x6 box's centre is pos + 3 = 1603/803, /16 truncates to the
+    /// fixture's (100, 50) tile). WRITTEN NOT RUN (code-only round).
     #[test]
     fn w4_f25_the_spray_dispatch_converts_each_solution_type() {
-        // A rowless spray slot at tile (100, 50), owner 0.
-        let spray = |kind: u16| {
-            let mut p = Projectile::default();
-            p.active = true;
-            p.kind = kind;
-            p.owner = 0;
-            p.pos = Vec2::new(100.0 * 16.0, 50.0 * 16.0);
-            p.w = 8.0;
-            p.h = 8.0;
-            p
-        };
+        // A rowed spray slot at tile (100, 50), owner 0.
+        let spray = |kind: u16| proj(kind);
         // 146 Blue Solution — type 2 hallow (`:26801-26804`): the grass 2 →
         // 109 and the stone 1 → 117 (the moss-or-stone row, C3).
         let mut w = world();

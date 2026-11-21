@@ -3308,6 +3308,21 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // ammo and then decline the spawn.
             85 => (6.0, 6.0, 193, 4, TIME_LEFT_DEFAULT, 2, true, false, false, RESET_STATE),
             145 => (6.0, 6.0, 31, -1, TIME_LEFT_DEFAULT, 2, false, false, false, RESET_STATE),
+            // W4-f25 closeout (solutions census): the four solution sprays
+            // 146-149 (`Projectile.cs:2350-2397` — line-identical copies of
+            // the 145 arm: 6x6, aiStyle 31, pen -1, extraUpdates 2,
+            // tileCollide false, `alpha`/`ignoreWater` dropped) and the
+            // three 1.4.4 sprays 1015-1017 (`:9633-9636` →
+            // `DefaultToSpray` `:10691-10702`, the same stats). Without
+            // these rows the Clentaminator's ammo resolution (`ammo.rs`'s
+            // additive Solution arm, 145 + the solution's own shoot) drains
+            // the ammo and then declines the spawn. The ai_spray per-kind
+            // dispatch (the W4-f25 C3/C4 wiring) converts 146 → type 2 and
+            // 1015/1016/1017 → types 5/6/7; 147/148/149 stay no-ops until
+            // d1's type-1/4 / g42's type-3 cells land.
+            146..=149 | 1015..=1017 => {
+                (6.0, 6.0, 31, -1, TIME_LEFT_DEFAULT, 2, false, false, false, RESET_STATE)
+            }
             1088 => (20.0, 20.0, 16, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // The Fairy Queen's shot 932 (`:8842-8856`): 10x10, aiStyle 181,
             // arrow, `penetrate = 5`, `timeLeft = 120`, `alpha = 0` and
