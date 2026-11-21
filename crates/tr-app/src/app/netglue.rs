@@ -2010,6 +2010,10 @@ impl App {
         let _ = want;
         self.world = world;
         self.liquids = LiquidSystem::new(&self.world);
+        // The launch flag survives the sim rebuild (the C# static is
+        // process-wide; `Main.cs:1665`).
+        self.liquids
+            .set_reduced_max_liquids(self.settings.reduced_max_liquids);
         self.map = Some(map::WorldMap::new(&self.world));
         self.npcs.clear();
         self.items.clear();
