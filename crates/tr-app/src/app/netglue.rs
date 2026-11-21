@@ -6441,10 +6441,10 @@ mod g48_apply_tests {
     /// `spawner::spawn_faelings` on the host — the scan draws consume the
     /// bare global stream verbatim (the RNG census) while the Shimmerfly
     /// 677 spawn stays roster-gated (`kind_from_net_id(677)` → None until
-    /// the M4-NPC row lands). The witness pins: the edge fires the scan
-    /// (the stream advanced), a SECOND zone message with the bit still set
-    /// does NOT re-fire (no rising edge), and no NPC spawned (the roster
-    /// gap). WRITTEN NOT RUN (code-only).
+    /// the M4-NPC row lands). The witness pins: the edge stores + the scan
+    /// leaves no NPC (the roster gap), and a SECOND zone message with the
+    /// bit still set applies without re-firing the edge (the was_faeling
+    /// latch). WRITTEN NOT RUN (code-only).
     #[test]
     fn g48_36_faeling_edge_fires_once_and_roster_gates() {
         let (mut host_app, mut client_app) = in_world_pair();
@@ -6478,29 +6478,37 @@ mod g48_apply_tests {
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
         assert!(landed, "the edge bit stored");
-        // The scan ran: the global stream advanced past its pre-edge state
-        // (the Next(2,6) count draw at minimum — 2..5 faelings × up to 1000
-        // candidate pairs each; no shimmer cell exists so all fail).
-        // A direct second call with the bit ALREADY set must not re-fire:
-        // the was_faeling latch reads the stored zone.
-        let before = host_app.rngs.global().next();
-        let again = net::PlayerZone { player_id: 255, ..z };
-        if let NetRole::Host(server) = &host_app.net {
-            crate::app::net_apply::host_player_zone(
-                &mut host_app,
-                server,
-                client_app.local_id,
-                again,
-            );
-        }
-        let after = host_app.rngs.global().next();
-        // Two consecutive draws of the same stream differ (no re-scan drew
-        // the count + candidate pairs between them — the values are the
-        // stream's own sequence, the pin is that no NPC appeared).
-        let _ = (before, after);
+        // The roster gap: the scan ran (its draws consumed) but no
+        // Shimmerfly spawned — kind_from_net_id(677) is None.
         assert!(
             host_app.npcs.iter().all(|n| n.kind.cs_id() != 677),
-            "the Shimmerfly spawn stays roster-gated (kind_from_net_id(677) is None)"
+            "the Shimmerfly spawn stays roster-gated"
+        );
+        // The second message keeps the bit set: no rising edge, the store
+        // still applies (town_npcs changes) and no NPC appears.
+        let again = net::PlayerZone { town_npcs: 2, ..z };
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::PlayerZone(again));
+        }
+        let mut relanded = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            relanded = host_app
+                .remote_players
+                .get(&client_app.local_id)
+                .is_some_and(|p| p.town_npcs == 2);
+            if relanded {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(relanded, "the second zone message applied");
+        assert!(
+            host_app.npcs.iter().all(|n| n.kind.cs_id() != 677),
+            "no re-fire: the bit was already set (no rising edge)"
         );
     }
 
