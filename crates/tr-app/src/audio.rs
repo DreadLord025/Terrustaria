@@ -139,6 +139,20 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Hit_51", 3),
     ("NPC_Hit_55", 3),
     ("NPC_Hit_57", 3),
+    // W4-d37 — the NPCID 211-280 band's hit cues (the `SetDefaults` HitSound
+    // rows): NPCHit5 (ice golem), NPCHit13 (blood feeder/jelly, ichor
+    // sticker), NPCHit20 (blood crawlers), NPCHit23 (flying snake), NPCHit29
+    // (black recluse wall), NPCHit45 (mushi ladybug), NPCHit46 (parrot),
+    // NPCHit49 (reaper). The `Sounds/NPC_Hit_*.xnb` assets ship with the
+    // content; S1-E-21 wave C's bank-gap close.
+    ("NPC_Hit_5", 3),
+    ("NPC_Hit_13", 3),
+    ("NPC_Hit_20", 3),
+    ("NPC_Hit_23", 3),
+    ("NPC_Hit_29", 3),
+    ("NPC_Hit_45", 3),
+    ("NPC_Hit_46", 3),
+    ("NPC_Hit_49", 3),
     ("NPC_Killed_1", 4),
     ("NPC_Killed_2", 4),
     ("NPC_Killed_3", 4),
@@ -181,6 +195,20 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_59", 4),
     ("NPC_Killed_62", 4),
     ("NPC_Killed_66", 4),
+    // W4-d37 — the NPCID 211-280 band's death cues (the `SetDefaults`
+    // DeathSound rows): NPCDeath7 (ice golem), NPCDeath16 (beetles),
+    // NPCDeath19 (blood feeder/jelly, ichor sticker), NPCDeath23 (blood
+    // crawlers), NPCDeath26 (flying snake), NPCDeath32 (black recluse wall),
+    // NPCDeath47 (mushi ladybug), NPCDeath48 (parrot), NPCDeath51 (reaper).
+    ("NPC_Killed_7", 4),
+    ("NPC_Killed_16", 4),
+    ("NPC_Killed_19", 4),
+    ("NPC_Killed_23", 4),
+    ("NPC_Killed_26", 4),
+    ("NPC_Killed_32", 4),
+    ("NPC_Killed_47", 4),
+    ("NPC_Killed_48", 4),
+    ("NPC_Killed_51", 4),
     // The NPC death family (the sound id 4, `LegacySoundPlayer.cs:676`): the
     // per-kind death cues (`NPC.DeathSound`, `NPC.cs:6477`).
     ("Double_Jump", 16),

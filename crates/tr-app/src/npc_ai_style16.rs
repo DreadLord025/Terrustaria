@@ -103,6 +103,9 @@ fn vanilla_type(kind: NpcKind) -> i32 {
         NpcKind::Goldfish => 55,
         NpcKind::Piranha => 58,
         NpcKind::Shark => 65,
+        // W4-d37 — the Blood Feeder (241) rides the generic aiStyle-16
+        // wet/dry machine (`NPC.cs:23824-23961`, the 0.1/0.1 chase + bob).
+        NpcKind::BloodFeeder => 241,
         _ => unreachable!("only aiStyle-16 kinds reach the family arm"),
     }
 }

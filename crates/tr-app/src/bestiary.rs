@@ -2171,6 +2171,55 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Force Bubble",
     },
+    // W4-d37 — the NPCID 211-280 band's own bestiary entries (the automated
+    // populator registers every non-Hide, non-town id; the names ride
+    // `Lang.GetNPCName`, en-US NPCs.json). The three Hide=true ids (230 the
+    // goldfish walker, 236 the jungle creeper, 239 the blood crawler) fold
+    // onto their visible twin's credit in `entry_for_npc`/`try_entry_for_npc`
+    // (the SleepingAngler precedent) — no own row here.
+    BestiaryEntryDef { credit_id: "CochinealBeetle", net_id: 217, kind: NpcKind::CochinealBeetle, variant: None, quick_unlock: false, name: "Cochineal Beetle" },
+    BestiaryEntryDef { credit_id: "CyanBeetle", net_id: 218, kind: NpcKind::CyanBeetle, variant: None, quick_unlock: false, name: "Cyan Beetle" },
+    BestiaryEntryDef { credit_id: "LacBeetle", net_id: 219, kind: NpcKind::LacBeetle, variant: None, quick_unlock: false, name: "Lac Beetle" },
+    BestiaryEntryDef { credit_id: "SeaSnail", net_id: 220, kind: NpcKind::SeaSnail, variant: None, quick_unlock: false, name: "Sea Snail" },
+    BestiaryEntryDef { credit_id: "Squid", net_id: 221, kind: NpcKind::Squid, variant: None, quick_unlock: false, name: "Squid" },
+    BestiaryEntryDef { credit_id: "FlyingFish", net_id: 224, kind: NpcKind::FlyingFish, variant: None, quick_unlock: false, name: "Flying Fish" },
+    BestiaryEntryDef { credit_id: "FlyingSnake", net_id: 226, kind: NpcKind::FlyingSnake, variant: None, quick_unlock: false, name: "Flying Snake" },
+    BestiaryEntryDef { credit_id: "Pirate", net_id: 229, kind: NpcKind::Pirate, variant: None, quick_unlock: false, name: "Pirate" },
+    BestiaryEntryDef { credit_id: "HornetFatty", net_id: 231, kind: NpcKind::HornetFatty, variant: None, quick_unlock: false, name: "Hornet" },
+    BestiaryEntryDef { credit_id: "HornetHoney", net_id: 232, kind: NpcKind::HornetHoney, variant: None, quick_unlock: false, name: "Hornet" },
+    BestiaryEntryDef { credit_id: "HornetLeafy", net_id: 233, kind: NpcKind::HornetLeafy, variant: None, quick_unlock: false, name: "Hornet" },
+    BestiaryEntryDef { credit_id: "HornetSpikey", net_id: 234, kind: NpcKind::HornetSpikey, variant: None, quick_unlock: false, name: "Hornet" },
+    BestiaryEntryDef { credit_id: "HornetStingy", net_id: 235, kind: NpcKind::HornetStingy, variant: None, quick_unlock: false, name: "Hornet" },
+    BestiaryEntryDef { credit_id: "JungleCreeperWall", net_id: 237, kind: NpcKind::JungleCreeperWall, variant: None, quick_unlock: false, name: "Jungle Creeper" },
+    BestiaryEntryDef { credit_id: "BlackRecluseWall", net_id: 238, kind: NpcKind::BlackRecluseWall, variant: None, quick_unlock: false, name: "Black Recluse" },
+    BestiaryEntryDef { credit_id: "BloodCrawlerWall", net_id: 240, kind: NpcKind::BloodCrawlerWall, variant: None, quick_unlock: false, name: "Blood Crawler" },
+    BestiaryEntryDef { credit_id: "BloodFeeder", net_id: 241, kind: NpcKind::BloodFeeder, variant: None, quick_unlock: false, name: "Blood Feeder" },
+    BestiaryEntryDef { credit_id: "BloodJelly", net_id: 242, kind: NpcKind::BloodJelly, variant: None, quick_unlock: false, name: "Blood Jelly" },
+    BestiaryEntryDef { credit_id: "IceGolem", net_id: 243, kind: NpcKind::IceGolem, variant: None, quick_unlock: false, name: "Ice Golem" },
+    BestiaryEntryDef { credit_id: "RainbowSlime", net_id: 244, kind: NpcKind::RainbowSlime, variant: None, quick_unlock: false, name: "Rainbow Slime" },
+    BestiaryEntryDef { credit_id: "Eyezor", net_id: 251, kind: NpcKind::Eyezor, variant: None, quick_unlock: false, name: "Eyezor" },
+    BestiaryEntryDef { credit_id: "Parrot", net_id: 252, kind: NpcKind::Parrot, variant: None, quick_unlock: false, name: "Parrot" },
+    BestiaryEntryDef { credit_id: "Reaper", net_id: 253, kind: NpcKind::Reaper, variant: None, quick_unlock: false, name: "Reaper" },
+    BestiaryEntryDef { credit_id: "ZombieMushroom", net_id: 254, kind: NpcKind::ZombieMushroom, variant: None, quick_unlock: false, name: "Spore Zombie" },
+    BestiaryEntryDef { credit_id: "ZombieMushroomHat", net_id: 255, kind: NpcKind::ZombieMushroomHat, variant: None, quick_unlock: false, name: "Spore Zombie" },
+    BestiaryEntryDef { credit_id: "FungoFish", net_id: 256, kind: NpcKind::FungoFish, variant: None, quick_unlock: false, name: "Fungo Fish" },
+    BestiaryEntryDef { credit_id: "AnomuraFungus", net_id: 257, kind: NpcKind::AnomuraFungus, variant: None, quick_unlock: false, name: "Anomura Fungus" },
+    BestiaryEntryDef { credit_id: "MushiLadybug", net_id: 258, kind: NpcKind::MushiLadybug, variant: None, quick_unlock: false, name: "Mushi Ladybug" },
+    BestiaryEntryDef { credit_id: "FungiBulb", net_id: 259, kind: NpcKind::FungiBulb, variant: None, quick_unlock: false, name: "Fungi Bulb" },
+    BestiaryEntryDef { credit_id: "GiantFungiBulb", net_id: 260, kind: NpcKind::GiantFungiBulb, variant: None, quick_unlock: false, name: "Giant Fungi Bulb" },
+    BestiaryEntryDef { credit_id: "IchorSticker", net_id: 268, kind: NpcKind::IchorSticker, variant: None, quick_unlock: false, name: "Ichor Sticker" },
+    BestiaryEntryDef { credit_id: "RustyArmoredBonesAxe", net_id: 269, kind: NpcKind::RustyArmoredBonesAxe, variant: None, quick_unlock: false, name: "Rusty Armored Bones" },
+    BestiaryEntryDef { credit_id: "RustyArmoredBonesFlail", net_id: 270, kind: NpcKind::RustyArmoredBonesFlail, variant: None, quick_unlock: false, name: "Rusty Armored Bones" },
+    BestiaryEntryDef { credit_id: "RustyArmoredBonesSword", net_id: 271, kind: NpcKind::RustyArmoredBonesSword, variant: None, quick_unlock: false, name: "Rusty Armored Bones" },
+    BestiaryEntryDef { credit_id: "RustyArmoredBonesSwordNoArmor", net_id: 272, kind: NpcKind::RustyArmoredBonesSwordNoArmor, variant: None, quick_unlock: false, name: "Rusty Armored Bones" },
+    BestiaryEntryDef { credit_id: "BlueArmoredBones", net_id: 273, kind: NpcKind::BlueArmoredBones, variant: None, quick_unlock: false, name: "Blue Armored Bones" },
+    BestiaryEntryDef { credit_id: "BlueArmoredBonesMace", net_id: 274, kind: NpcKind::BlueArmoredBonesMace, variant: None, quick_unlock: false, name: "Blue Armored Bones" },
+    BestiaryEntryDef { credit_id: "BlueArmoredBonesNoPants", net_id: 275, kind: NpcKind::BlueArmoredBonesNoPants, variant: None, quick_unlock: false, name: "Blue Armored Bones" },
+    BestiaryEntryDef { credit_id: "BlueArmoredBonesSword", net_id: 276, kind: NpcKind::BlueArmoredBonesSword, variant: None, quick_unlock: false, name: "Blue Armored Bones" },
+    BestiaryEntryDef { credit_id: "HellArmoredBones", net_id: 277, kind: NpcKind::HellArmoredBones, variant: None, quick_unlock: false, name: "Hell Armored Bones" },
+    BestiaryEntryDef { credit_id: "HellArmoredBonesSpikeShield", net_id: 278, kind: NpcKind::HellArmoredBonesSpikeShield, variant: None, quick_unlock: false, name: "Hell Armored Bones" },
+    BestiaryEntryDef { credit_id: "HellArmoredBonesMace", net_id: 279, kind: NpcKind::HellArmoredBonesMace, variant: None, quick_unlock: false, name: "Hell Armored Bones" },
+    BestiaryEntryDef { credit_id: "HellArmoredBonesSword", net_id: 280, kind: NpcKind::HellArmoredBonesSword, variant: None, quick_unlock: false, name: "Hell Armored Bones" },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -2292,6 +2341,15 @@ pub fn try_entry_for_npc(
         // kill credit is "Sharkron" — only the UI provider maps onto 370,
         // `BestiaryDatabaseNPCsPopulator.cs:691`).
         NpcKind::DetonatingBubble | NpcKind::Sharkron2 => NpcKind::DukeFishron,
+        // W4-d37 — the NPCID 211-280 band's Hide=true exclusions
+        // (`NPCID.cs`'s NPCBestiaryDrawOffset): the goldfish walker 230
+        // (`:616-620`) folds onto the Goldfish (55) credit, the jungle
+        // creeper 236 (`:2790-2794`) onto the JungleCreeperWall (237), the
+        // blood crawler 239 (`:2813-2817`) onto the BloodCrawlerWall (240)
+        // — the SleepingAngler precedent (no own bestiary entry).
+        NpcKind::GoldfishWalker => NpcKind::Goldfish,
+        NpcKind::JungleCreeper => NpcKind::JungleCreeperWall,
+        NpcKind::BloodCrawler => NpcKind::BloodCrawlerWall,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -2363,6 +2421,12 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // it never has an entry of its own (the Sleeping Angler precedent;
         // the banner fold agrees — `BannerSystem.cs:777-779` shares 141).
         NpcKind::ForceBubble => NpcKind::MartianOfficer,
+        // W4-d37 — the NPCID 211-280 band's Hide=true exclusions (the
+        // `try_entry_for_npc` folds above): 230 → Goldfish, 236 →
+        // JungleCreeperWall, 239 → BloodCrawlerWall.
+        NpcKind::GoldfishWalker => NpcKind::Goldfish,
+        NpcKind::JungleCreeper => NpcKind::JungleCreeperWall,
+        NpcKind::BloodCrawler => NpcKind::BloodCrawlerWall,
         other => other,
     };
     ENTRIES

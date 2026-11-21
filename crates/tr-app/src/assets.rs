@@ -1275,6 +1275,56 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_72",
         "NPC_250",
         "NPC_288",
+        // W4-d37 — the NPCID 211-280 band's own sheets, keyed by the vanilla
+        // net id in `NpcAssets::npc_sheets` (`render/entities.rs`'s
+        // D37_SHEETS). The three Hide=true bestiary folds (230/236/239) still
+        // pack their own draw sheet.
+        "NPC_217",
+        "NPC_218",
+        "NPC_219",
+        "NPC_220",
+        "NPC_221",
+        "NPC_224",
+        "NPC_226",
+        "NPC_229",
+        "NPC_230",
+        "NPC_231",
+        "NPC_232",
+        "NPC_233",
+        "NPC_234",
+        "NPC_235",
+        "NPC_236",
+        "NPC_237",
+        "NPC_238",
+        "NPC_239",
+        "NPC_240",
+        "NPC_241",
+        "NPC_242",
+        "NPC_243",
+        "NPC_244",
+        "NPC_251",
+        "NPC_252",
+        "NPC_253",
+        "NPC_254",
+        "NPC_255",
+        "NPC_256",
+        "NPC_257",
+        "NPC_258",
+        "NPC_259",
+        "NPC_260",
+        "NPC_268",
+        "NPC_269",
+        "NPC_270",
+        "NPC_271",
+        "NPC_272",
+        "NPC_273",
+        "NPC_274",
+        "NPC_275",
+        "NPC_276",
+        "NPC_277",
+        "NPC_278",
+        "NPC_279",
+        "NPC_280",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -1860,7 +1910,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 181] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 224] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1895,6 +1945,16 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 181] = [
         // The small-kinds wiring wave (S1-D-3-wire-smallkinds) — appended
         // last so the earlier slots keep their indexes.
         72, 250, 288,
+        // W4-d37 — the NPCID 211-280 band's own bestiary sheets (the 43
+        // visible kinds; the three Hide=true folds 230/236/239 ride their
+        // twin's credit and have no own slot). Appended last so the earlier
+        // slots keep their indexes.
+        217, 218, 219, 220, 221, 224, 226, 229,
+        231, 232, 233, 234, 235, 237, 238, 240,
+        241, 242, 243, 244, 251, 252, 253, 254,
+        255, 256, 257, 258, 259, 260, 268, 269,
+        270, 271, 272, 273, 274, 275, 276, 277,
+        278, 279, 280,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -2657,6 +2717,52 @@ impl Lookups {
                 atlas.sheet("NPC_72").copied(),
                 atlas.sheet("NPC_250").copied(),
                 atlas.sheet("NPC_288").copied(),
+                // W4-d37 — the NPCID 211-280 band's 43 own bestiary strips
+                // (the BESTIARY_NPC_SHEET_IDS order; the three Hide=true
+                // folds 230/236/239 have no own slot).
+                atlas.sheet("NPC_217").copied(),
+                atlas.sheet("NPC_218").copied(),
+                atlas.sheet("NPC_219").copied(),
+                atlas.sheet("NPC_220").copied(),
+                atlas.sheet("NPC_221").copied(),
+                atlas.sheet("NPC_224").copied(),
+                atlas.sheet("NPC_226").copied(),
+                atlas.sheet("NPC_229").copied(),
+                atlas.sheet("NPC_231").copied(),
+                atlas.sheet("NPC_232").copied(),
+                atlas.sheet("NPC_233").copied(),
+                atlas.sheet("NPC_234").copied(),
+                atlas.sheet("NPC_235").copied(),
+                atlas.sheet("NPC_237").copied(),
+                atlas.sheet("NPC_238").copied(),
+                atlas.sheet("NPC_240").copied(),
+                atlas.sheet("NPC_241").copied(),
+                atlas.sheet("NPC_242").copied(),
+                atlas.sheet("NPC_243").copied(),
+                atlas.sheet("NPC_244").copied(),
+                atlas.sheet("NPC_251").copied(),
+                atlas.sheet("NPC_252").copied(),
+                atlas.sheet("NPC_253").copied(),
+                atlas.sheet("NPC_254").copied(),
+                atlas.sheet("NPC_255").copied(),
+                atlas.sheet("NPC_256").copied(),
+                atlas.sheet("NPC_257").copied(),
+                atlas.sheet("NPC_258").copied(),
+                atlas.sheet("NPC_259").copied(),
+                atlas.sheet("NPC_260").copied(),
+                atlas.sheet("NPC_268").copied(),
+                atlas.sheet("NPC_269").copied(),
+                atlas.sheet("NPC_270").copied(),
+                atlas.sheet("NPC_271").copied(),
+                atlas.sheet("NPC_272").copied(),
+                atlas.sheet("NPC_273").copied(),
+                atlas.sheet("NPC_274").copied(),
+                atlas.sheet("NPC_275").copied(),
+                atlas.sheet("NPC_276").copied(),
+                atlas.sheet("NPC_277").copied(),
+                atlas.sheet("NPC_278").copied(),
+                atlas.sheet("NPC_279").copied(),
+                atlas.sheet("NPC_280").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),
