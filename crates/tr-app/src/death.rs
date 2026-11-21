@@ -366,9 +366,12 @@ pub fn tick_tomb_falls(app: &mut App, dt: f32) {
     app.tomb_falls.retain(|t| t.alive);
 }
 
-/// `Main.surviveHardcoreDeath` (`Main.cs:2638-2648`): the constant world
-/// (Don't Starve + 10th Anniversary, `dontdigestiveboi`) survives hardcore
-/// death unless it is also For The Worthy. Every other world permadeaths.
+/// `Main.surviveHardcoreDeath` (`Main.cs:2638-2648`): a world with BOTH the
+/// Don't Starve (the constant) and the 10th Anniversary (celebrationmk10)
+/// flags survives hardcore death unless it is also For The Worthy. Every
+/// other world permadeaths. (The two flags co-occur via the advanced seed
+/// toggles or a combined seed; the zenith/getfixedboi world carries both
+/// plus FTW, so it permadeaths.)
 pub fn survive_hardcore_death(seeds: tr_core::seeds::SeedFlags) -> bool {
     use tr_core::seeds::SeedFlags as S;
     if seeds.contains(S::DONT_STARVE) && seeds.contains(S::TENTH_ANNIVERSARY) {

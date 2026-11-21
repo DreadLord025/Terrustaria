@@ -225,7 +225,7 @@ pub fn update_sun_scorch(
     p.buffs.reset_buff_immune();
     // `:28654-28660` — the VampireOnFire particle request: cited skip (the
     // particle orchestrator is unported). The `!onFire` gate reads the
-    // OnFire! ! [24] buff slot.
+    // OnFire [24] buff slot.
     // `:28661-28663` — the three 3-tick debuffs: OnFire 24, Cursed 23, Slow 32.
     p.buffs.add_buff(24, 3);
     p.buffs.add_buff(23, 3);
