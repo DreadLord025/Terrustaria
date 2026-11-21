@@ -516,3 +516,34 @@ instruction, not a d-hunk note). Summary of the verdict:
   body-identical helper twins keep-one onto `tile_drains.rs`).
 * The d56/d57/d60 lanes g84's module docs defer to are exactly the
   §1 hunk tables above — no new seam obligations surfaced.
+
+### 8.1 d56-d60 latest-tip re-verify (RETIRE phase)
+
+`git rev-parse` of all five origin tips at the retire read:
+d56 `5d80b38a0` / d57 `70f43aa72` / d58 `a13635dcb` /
+d59 `f70498be0` / d60 `77429fe1d` — **byte-identical to the §1
+census tips (the 136-read). NO lane advanced.** f15 `8ca19097d`
+unchanged too; g68 `d247a1c9f` matches the FINAL-phase §7 read
+(the only tip that moved since the original census, already
+recorded). **Delta-note: NONE for d56-d60** — every §1 hunk table,
+§0 order correction, §2 fold script and §4 re-pin map stands
+verbatim. Spot re-verification of the two WIRED lanes' move-targets:
+
+* **d58 move-instructions still exact**: the tip's `tiles.rs`
+  carries `let mut chest_positions` (the per-draw HashMap, :599),
+  the `is_basic_chest(tile.kind)` gate inside the dd block (:756)
+  with ONE `let adj = tr_render::chest_frame_adjust` call (:765) —
+  the F0 MOVE to CAD step 8 and the C7 order-witness re-pin (§4)
+  apply unchanged. The f15 marker rename (`let (dd, glow) = if
+  active`, f15 tiles.rs:653) is confirmed still present at f15's
+  tip — the merged d58 witness must scan THAT marker.
+* **d59 move-instructions still exact**: the tip's dispatch chain
+  `tile.slope() != 0 && !SET_DONT_DRAW_TILE_SLOPES` (:1020) →
+  platform + `draw_platform_side_fill` (:1045) →
+  `SET_HAS_SLOPE_FRAMES` (:1049) → columns → `half_brick_join`
+  (:1071) → `push_half_brick_join` (:1075), helpers at
+  :1646/:1712/:1750/:1794 — the F0 wholesale replacement of the
+  fused `else if tile.slope() != 0` arm and the helper move-list
+  are unchanged. `FillNeighbor::from_world` (:179, the real
+  `World::invisible_block` bit) + its witness (:725) confirmed —
+  the C4 rebind target exists exactly as §2 records.
