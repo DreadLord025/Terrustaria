@@ -596,6 +596,11 @@ impl NpcKind {
             NpcKind::WalkingAntlion => 356,
             NpcKind::FlyingAntlion => 357,
             NpcKind::LarvaeAntlion => 358,
+            NpcKind::FairyCritterPink => 359,
+            NpcKind::FairyCritterGreen => 360,
+            NpcKind::FairyCritterBlue => 361,
+            NpcKind::ZombieMerman => 362,
+            NpcKind::EyeballFlyingFish => 363,
         }
     }
 
@@ -933,6 +938,11 @@ impl NpcKind {
             356 => NpcKind::WalkingAntlion,
             357 => NpcKind::FlyingAntlion,
             358 => NpcKind::LarvaeAntlion,
+            359 => NpcKind::FairyCritterPink,
+            360 => NpcKind::FairyCritterGreen,
+            361 => NpcKind::FairyCritterBlue,
+            362 => NpcKind::ZombieMerman,
+            363 => NpcKind::EyeballFlyingFish,
             _ => return None,
         })
     }
@@ -1819,6 +1829,12 @@ impl NpcKind {
             NpcKind::WalkingAntlion => "NPC_Hit_31",
             NpcKind::FlyingAntlion => "NPC_Hit_32",
             NpcKind::LarvaeAntlion => "NPC_Hit_31",
+            // W4-d42 - the roster's HitSound rows.
+            NpcKind::FairyCritterPink => "NPC_Hit_1",
+            NpcKind::FairyCritterGreen => "NPC_Hit_1",
+            NpcKind::FairyCritterBlue => "NPC_Hit_1",
+            NpcKind::ZombieMerman => "NPC_Hit_18",
+            NpcKind::EyeballFlyingFish => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2130,6 +2146,13 @@ impl NpcKind {
             NpcKind::WalkingAntlion => "NPC_Killed_34",
             NpcKind::FlyingAntlion => "NPC_Killed_35",
             NpcKind::LarvaeAntlion => "NPC_Killed_34",
+            // W4-d42 - the roster's DeathSound rows (614's null row
+            // rides the None fall-through).
+            NpcKind::FairyCritterPink => "NPC_Killed_1",
+            NpcKind::FairyCritterGreen => "NPC_Killed_1",
+            NpcKind::FairyCritterBlue => "NPC_Killed_1",
+            NpcKind::ZombieMerman => "NPC_Killed_21",
+            NpcKind::EyeballFlyingFish => "NPC_Killed_1",
             _ => return None,
         })
     }
@@ -2231,6 +2254,11 @@ impl NpcKind {
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
             // W4-d42 - the noGravity rows.
             NpcKind::DD2LightningBug
+            => true,
+            // W4-d42 - the noGravity rows.
+            NpcKind::FairyCritterPink
+            | NpcKind::FairyCritterGreen
+            | NpcKind::FairyCritterBlue
             => true,
             NpcKind::AngryNimbus => true,
             _ => false,
@@ -2490,6 +2518,12 @@ impl NpcKind {
             NpcKind::WalkingAntlion => 3,
             NpcKind::FlyingAntlion => 44,
             NpcKind::LarvaeAntlion => 3,
+            // W4-d42 - the NPCID 583-587 SetDefaults rows.
+            NpcKind::FairyCritterPink => 112,
+            NpcKind::FairyCritterGreen => 112,
+            NpcKind::FairyCritterBlue => 112,
+            NpcKind::ZombieMerman => 3,
+            NpcKind::EyeballFlyingFish => 44,
         }
     }
 
@@ -2602,6 +2636,9 @@ impl NpcKind {
             // 586's row is the full-life base of the life-scaled cap).
             NpcKind::WalkingAntlion => 2.5,
             NpcKind::LarvaeAntlion => 2.25,
+            // W4-d42 - the ladder's per-type caps (`npc_ai3_speeds.rs`;
+            // 586's row is the full-life base of the life-scaled cap).
+            NpcKind::ZombieMerman => 1.5,
             _ => return None,
         })
     }
@@ -3030,6 +3067,12 @@ impl NpcKind {
             NpcKind::WalkingAntlion => (26.0, 26.0),
             NpcKind::FlyingAntlion => (30.0, 22.0),
             NpcKind::LarvaeAntlion => (18.0, 18.0),
+            // W4-d42 - the NPCID 583-587 SetDefaults rows.
+            NpcKind::FairyCritterPink => (18.0, 20.0),
+            NpcKind::FairyCritterGreen => (18.0, 20.0),
+            NpcKind::FairyCritterBlue => (18.0, 20.0),
+            NpcKind::ZombieMerman => (18.0, 40.0),
+            NpcKind::EyeballFlyingFish => (32.0, 18.0),
         }
     }
 
@@ -3140,6 +3183,14 @@ impl NpcKind {
             NpcKind::WalkingAntlion => 580,
             NpcKind::FlyingAntlion => 581,
             NpcKind::LarvaeAntlion => 582,
+            // W4-d42 - the roster's TRUE vanilla types (the folded kinds
+            // keep their own - the AI arms read cs_id; the bestiary
+            // folds in entry_for_npc only).
+            NpcKind::FairyCritterPink => 583,
+            NpcKind::FairyCritterGreen => 584,
+            NpcKind::FairyCritterBlue => 585,
+            NpcKind::ZombieMerman => 586,
+            NpcKind::EyeballFlyingFish => 587,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -3685,6 +3736,12 @@ impl NpcKind {
             NpcKind::WalkingAntlion => 80,
             NpcKind::FlyingAntlion => 60,
             NpcKind::LarvaeAntlion => 30,
+            // W4-d42 - the NPCID 583-587 SetDefaults rows.
+            NpcKind::FairyCritterPink => 5,
+            NpcKind::FairyCritterGreen => 5,
+            NpcKind::FairyCritterBlue => 5,
+            NpcKind::ZombieMerman => 400,
+            NpcKind::EyeballFlyingFish => 300,
         }
     }
 
@@ -4055,6 +4112,12 @@ impl NpcKind {
             NpcKind::WalkingAntlion => 25,
             NpcKind::FlyingAntlion => 29,
             NpcKind::LarvaeAntlion => 10,
+            // W4-d42 - the NPCID 583-587 SetDefaults rows.
+            NpcKind::FairyCritterPink => 0,
+            NpcKind::FairyCritterGreen => 0,
+            NpcKind::FairyCritterBlue => 0,
+            NpcKind::ZombieMerman => 40,
+            NpcKind::EyeballFlyingFish => 35,
         }
     }
 }

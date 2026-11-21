@@ -1602,6 +1602,14 @@ fn portrait_data(
         (NpcKind::WalkingAntlion, _) => (sheet_i, 26.0, 26.0, 26.0, white),
         (NpcKind::FlyingAntlion, _) => (sheet_i, 22.0, 30.0, 22.0, white),
         (NpcKind::LarvaeAntlion, _) => (sheet_i, 18.0, 18.0, 18.0, white),
+        // W4-d42 - the roster's portraits rest the kinds' SetDefaults
+        // boxes on their own sheets (the WyvernHead literal-size
+        // precedent - the sheets are deferred, the index folds to 0).
+        (NpcKind::FairyCritterPink, _) => (sheet_i, 20.0, 18.0, 20.0, white),
+        (NpcKind::FairyCritterGreen, _) => (sheet_i, 20.0, 18.0, 20.0, white),
+        (NpcKind::FairyCritterBlue, _) => (sheet_i, 20.0, 18.0, 20.0, white),
+        (NpcKind::ZombieMerman, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::EyeballFlyingFish, _) => (sheet_i, 18.0, 32.0, 18.0, white),
     }
 }
 

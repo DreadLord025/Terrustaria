@@ -3180,6 +3180,25 @@ pub(crate) fn draw_npcs(
             // their own NPC_<id> sheets. The sheets are NOT packed yet
             // (the atlas headroom - the wyvern deferral precedent), so
             // `npc_sheet` returns None and the arm no-draws.
+            NpcKind::FairyCritterPink => {
+                generic_anchor(assets.npc_sheet(583), npc_rows(583), n, w, h)
+            }
+            NpcKind::FairyCritterGreen => {
+                generic_anchor(assets.npc_sheet(584), npc_rows(584), n, w, h)
+            }
+            NpcKind::FairyCritterBlue => {
+                generic_anchor(assets.npc_sheet(585), npc_rows(585), n, w, h)
+            }
+            NpcKind::ZombieMerman => {
+                generic_anchor(assets.npc_sheet(586), npc_rows(586), n, w, h)
+            }
+            NpcKind::EyeballFlyingFish => {
+                generic_anchor(assets.npc_sheet(587), npc_rows(587), n, w, h)
+            }
+            // W4-d42 - the roster's draw arms ride the generic anchor over
+            // their own NPC_<id> sheets. The sheets are NOT packed yet
+            // (the atlas headroom - the wyvern deferral precedent), so
+            // `npc_sheet` returns None and the arm no-draws.
             NpcKind::DD2LightningBug => {
                 generic_anchor(assets.npc_sheet(578), npc_rows(578), n, w, h)
             }

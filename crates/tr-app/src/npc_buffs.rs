@@ -493,6 +493,15 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::LarvaeAntlion => &[],
         NpcKind::DD2LightningBug
         | NpcKind::BartenderUnconscious => &[31],
+        // W4-d42 - the NPCID 583-587 immunity rows (`NPCID.cs:9395+`).
+        // The null rows + the fairies' ImmuneToAllBuffsThatAreNotWhips
+        // (the mask loop is unmodelled - the documented gap; the
+        // fairies' ImmuneToWhips rides `whip_immune`).
+        NpcKind::FairyCritterPink
+        | NpcKind::FairyCritterGreen
+        | NpcKind::FairyCritterBlue
+        | NpcKind::ZombieMerman
+        | NpcKind::EyeballFlyingFish => &[],
     }
 }
 
@@ -504,7 +513,8 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
 /// the pirate ship are on the ported roster — the whip tag gate
 /// (`WhipTagEffect.CanApplyTagToNPC`) reads this.
 pub fn whip_immune(kind: NpcKind) -> bool {
-    matches!(kind, NpcKind::MartianSaucer | NpcKind::FlyingDutchman)
+    // W4-d42 - the fairy critters' `ImmuneToWhips` rows (`NPCID.cs:9420+`).
+    matches!(kind, NpcKind::MartianSaucer | NpcKind::FlyingDutchman | NpcKind::FairyCritterPink | NpcKind::FairyCritterGreen | NpcKind::FairyCritterBlue)
 }
 
 impl NpcBuffs {

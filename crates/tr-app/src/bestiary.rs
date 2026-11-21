@@ -2205,6 +2205,48 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Antlion Larva",
     },
+    // W4-d42 - the NPCID 583-587 roster's own credits (the
+    // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
+    BestiaryEntryDef {
+        credit_id: "FairyCritterPink",
+        net_id: 583,
+        kind: NpcKind::FairyCritterPink,
+        variant: None,
+        quick_unlock: false,
+        name: "Pink Fairy",
+    },
+    BestiaryEntryDef {
+        credit_id: "FairyCritterGreen",
+        net_id: 584,
+        kind: NpcKind::FairyCritterGreen,
+        variant: None,
+        quick_unlock: false,
+        name: "Green Fairy",
+    },
+    BestiaryEntryDef {
+        credit_id: "FairyCritterBlue",
+        net_id: 585,
+        kind: NpcKind::FairyCritterBlue,
+        variant: None,
+        quick_unlock: false,
+        name: "Blue Fairy",
+    },
+    BestiaryEntryDef {
+        credit_id: "ZombieMerman",
+        net_id: 586,
+        kind: NpcKind::ZombieMerman,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie Merman",
+    },
+    BestiaryEntryDef {
+        credit_id: "EyeballFlyingFish",
+        net_id: 587,
+        kind: NpcKind::EyeballFlyingFish,
+        variant: None,
+        quick_unlock: false,
+        name: "Wandering Eye Fish",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
