@@ -189,6 +189,7 @@
 //! | 833-837 | `:86862-86866` | the 342 GingerbreadMan death (5 gores 500/501/501/502/502, type-0 dust) |
 //! | 838-843 | `:86884-86896` | the 338-340 ZombieElf death (per-type head + shared 497/498/499 tails) |
 //! | 844-847 | `:86912-86915` | the 343 Yeti death (4 gores 503/504/505/506, distinct +20 pair) |
+//! | 848-852 | `:86931-86935` | the 691 MossZombie death (5 gores 1391/1392/1392/1393/1393) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -5075,6 +5076,21 @@ fn yeti_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 506, s); // :86915
 }
 
+/// The 691 MossZombie death (`NPC.cs:86927-86935`, sites 848-852): the
+/// 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 5-gore ladder (1391,1392,1393).
+fn moss_zombie_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    five_gore_ladder(npc, dust, dust_ctx, gore, rng, world, hit_direction, 5, 50, 2.5, -2.5, 1391, 1392, 1393);
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -5704,6 +5720,10 @@ pub fn hit_effect_c(
     // `:86898-86916` — the 343 Yeti arm (sites 844-847).
     if npc_type == 343 && npc.hp <= 0 {
         yeti_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86917-86936` — the 691 MossZombie arm (sites 848-852).
+    if npc_type == 691 && npc.hp <= 0 {
+        moss_zombie_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -8971,6 +8991,20 @@ mod tests {
         assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
         assert_eq!(gore.slot(2).position, Vec2::new(100.0, 120.0));
         assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+    }
+
+    /// `NPC.cs:86931-86935` — the MossZombie death: the 5-gore ladder
+    /// 1391/1392/1393 after the 50-dust type-5 SpeedX-2.5 burst.
+    #[test]
+    fn w4_f10_the_moss_zombie_death_spawns_the_ladder() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(809);
+        moss_zombie_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1391, 1392, 1392, 1393, 1393]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
