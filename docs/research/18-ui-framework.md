@@ -126,7 +126,7 @@ Screens already covered by immediate ports are listed for completeness at the en
 | `UIElement.Activate/Deactivate/Initialize/ExecuteRecursively/CopyStyle` | lifecycle | none | MISSING | none today (immediate screens) |
 | `UserInterface` (object, `_currentState`, `_history`) | element stack, `GoBack`, 32-entry history | `flow.rs` table | MISSING/partial | `GoBack` semantics (2-state pop) not modelled |
 | `GameInterfaceLayer`, `LegacyGameInterfaceLayer`, `InterfaceScaleType` | named layer stack, 3 scale spaces | fixed order in `frame.rs` | MISSING | ordering is hard-coded; no per-layer zoom |
-| `UIState` (as a class you instantiate) | 100% root + `NoGamepadSupport` | `ui/state_root.rs::StateRoot`/`root_rect` (W4-f23) + `FrontScreen` / per-screen root | PORTED as a pure helper (W4-f23, research/18e) | the ctor rect rides the shared `resolve`; `NoGamepadSupport`'s only consumer arm (`UILinkPointNavigator.cs:280-283`) ported as a predicate; screens adopt the root rect later |
+| `UIState` (as a class you instantiate) | 100% root + `NoGamepadSupport` | `ui/state_root.rs::StateRoot`/`root_rect` (W4-f23) + `FrontScreen` / per-screen root | PORTED as a pure helper (W4-f23, research/18e); WIRED keep-one (wiring pass) | the ctor rect rides the shared `resolve`; `NoGamepadSupport`'s only consumer arm (`UILinkPointNavigator.cs:280-283`) ported as a predicate (parked — the only setter is UIWorldGenDebug's ctor, d86 scope-out); the nine landed full-screen root rects now route through `root_rect` |
 
 ### Element classes (`Terraria/UI/*.cs` + `GameContent/UI/Elements/*.cs`)
 

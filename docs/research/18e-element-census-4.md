@@ -71,11 +71,23 @@ against `InitPassIcons` + the `GenPassNameID` string values (0 mismatches).
   (research/18 deviation 10, Stage-1 exclusion).
 - **Dev screens stay scoped out** (d86): the element halves land as parked
   pure helpers (`#![allow(dead_code)]`), no screen wiring.
-- `crafting.rs`'s existing `recipe_cell`/`hit_test` (the immediate grid) is
-  untouched — `crafting_grid` supplies the C# class's state machine the
-  screen can adopt later (the S1-H-13 pattern), incl. the selected-recipe
-  `InventoryBack24` overlay (`ItemSlot.cs:2371-2374`) the immediate draw
-  does not have yet.
+- `crafting.rs`'s existing `recipe_cell` geometry is untouched —
+  `crafting_grid` supplies the C# class's state machine, adopted by the
+  live grid in the wiring pass below (the S1-H-13 pattern), incl. the
+  selected-recipe `InventoryBack24` overlay (`ItemSlot.cs:2371-2374`).
+
+## Wiring census (W4-f23 wiring pass, 2026-11-21)
+
+The five lane-4 modules were parked unwired; this pass censused their live
+consumers and wired what has them:
+
+| Module | Verdict | Evidence |
+| --- | --- | --- |
+| `state_root.rs` | **WIRED (keep-one)** — the nine landed full-screen root rects adopt `root_rect`: achievements/bestiary/emotes `panel_rect`, keyboard/char_creation/world_creation `layout`, world_load's bar+header resolves, char_select's `root_rect` parent (world_select delegates to it). Identity proven by `the_root_fills_its_parent_exactly`; zero pixel change. `StateRoot`/`no_gamepad_blocks_navigation` stay parked: the only `NoGamepadSupport` setter is `UIWorldGenDebug`'s ctor (`:883`, d86 scope-out) and the navigator is unported. | commit `fadad2be` |
+| `crafting_grid.rs` | **WIRED** — `NewCraftingUI` IS landed (`ui/crafting.rs`, live draw `ui/mod.rs`, clicks `app/clicks.rs`, `App.focus_recipe`): the grid loop builds `RecipeEntry` per shown recipe, `draw_slot` picks the overlay+tint (mouse arm), `slot_hovering` gates hover AND `hit_test` (exclusive edges — the old inclusive `<=` accepted the exact edge pixel), `slot_tint` rides `Available`, `grid_selection_highlight` draws the new `ui_back24` sheet in `Main.inventoryBack`. Selection = `available[focus_recipe]` (`OnActivate` `:904`; shown==available with no filter). Deviations: 40×40 cell stretch, invAlpha-pulse midpoint 210 stand-in, gamepad arm parked (ANALYSIS "Crafting panel"). | commit `92a05687` |
+| `worldgen_debug_elements.rs` | **DEBUG-DEFERRED** — no driver: `UIWorldGenDebug` unported (the `UIWorldLoad.cs:50-53` F5 arm parked at `app/flow.rs`, research-19 L1); the F3 workbench (`debug_panel.rs`, the e18 unlockMap precedent) has no pass-list tab; the loading screen draws only bar+message. | module-header census note |
+| `worldgen_pass_icons.rs` | **DEBUG-DEFERRED** with its element half — and the port's step names (`EXECUTED_PIPELINE` display names) are NOT the `GenPassNameID` string keys, so even the loading screen cannot look the table up without a name-mapping port. | module-header census note |
+| `text_wrapping_test.rs` | **DEBUG-DEFERRED** — the `TR_UI` preset was evaluated and is not cheap: `UITextWrappingTest` is a whole screen (UIList + mode/scale/lang labels + cycling, `:110-336`), needing a new `FrontScreen` variant with exhaustive draw/click/key arms — d86 scope, not a wiring pass. | module-header census note |
 
 ## Closure verdict
 

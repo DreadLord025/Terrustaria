@@ -8,6 +8,13 @@
 //! wrap/measure functions themselves (`Utils.WordwrapString*`,
 //! `ChatManager.GetStringSize`) are the caller's seams: the port takes their
 //! outputs (line counts / measured heights) as data.
+//!
+//! Wiring census (W4-f23 wiring pass): DEBUG-DEFERRED — the `TR_UI` preset
+//! was evaluated and is NOT cheap: `UITextWrappingTest` is a whole screen
+//! (`UIList` + mode-cycling buttons + the `UIText` mode label, `:110-260`),
+//! so a preset needs a new `FrontScreen` variant with exhaustive
+//! draw/click/key arms plus the screen port itself — d86 scope, not a wiring
+//! pass. The layout machine stays parked for it.
 #![allow(dead_code)] // dev-only harness (d86 scope-out); helpers parked for it
 
 /// `UITextWrappingTest.Mode` (`:16-24`), declaration order.

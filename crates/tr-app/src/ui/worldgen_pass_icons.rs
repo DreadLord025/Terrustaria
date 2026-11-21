@@ -6,6 +6,14 @@
 //! same vocabulary `tr-core`'s worldgen pipeline uses (`Step::vanilla`).
 //! The element half (factories/fit/centring) lives in
 //! `ui/worldgen_debug_elements.rs::PassIconEntry`; this is its data table.
+//!
+//! Wiring census (W4-f23 wiring pass): DEBUG-DEFERRED with its element half —
+//! the only consumer is `UIWorldGenDebug.GenPassElement` (d86 scope-out, no
+//! driver: the F5 arm is parked at `app/flow.rs`, the F3 workbench has no
+//! pass-list tab). The port's worldgen step names (`EXECUTED_PIPELINE`'s
+//! lowercase display names, `tr_core::worldgen::progress`) are NOT the
+//! `GenPassNameID` string keys, so even the loading screen cannot look up
+//! this table without a name-mapping port — deferred with the screen.
 #![allow(dead_code)] // dev-only screen (d86 scope-out); table parked for it
 
 /// The three `PassIconEntry` factories as data (`UIWorldGenDebug.cs:184-232`).

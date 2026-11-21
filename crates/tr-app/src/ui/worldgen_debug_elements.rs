@@ -8,6 +8,14 @@
 //! pure state/geometry halves so the scope-out loses no element behaviour.
 //! The controller/manifest/snapshot plumbing stays the screen's seam
 //! (inputs below stand in for `UIWorldGenDebug.Controller`/`WorldGen.Manifest`).
+//!
+//! Wiring census (W4-f23 wiring pass): DEBUG-DEFERRED — no live driver.
+//! `UIWorldGenDebug` itself is unported (the `UIWorldLoad.cs:50-53` F5 arm is
+//! parked at `app/flow.rs`'s WorldLoad key handler, research-19 L1); the F3
+//! developer workbench (`debug_panel.rs`, the e18 unlockMap precedent) has
+//! Items/NPCs/Bosses/World/Recipes tabs and no pass-list surface; the loading
+//! screen draws only the progress bar + message (`UIWorldLoad`, not the debug
+//! screen). The helpers stay parked until the screen (d86) lands.
 #![allow(dead_code)] // dev-only screen (d86 scope-out); helpers parked for it
 
 use super::char_creation::lerp_rgb;
