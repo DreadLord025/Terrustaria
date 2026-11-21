@@ -602,11 +602,233 @@ pub fn find_frame_extra12(kind: FindFrameExtra12Kind, s: &mut FrameState, i: &Fr
             }
             s.row = (s.counter / 8.0 + 2.0) as i32 as u32;
         }
-        // The GRID batch (564/565 dark mage, 576/577 ogre) lands in the
-        // next commit — the catch-all keeps every intermediate commit
-        // compiling (the e10/e11 batch precedent). The raw-cell
-        // machines ride the grid-draw seam (the module header).
-        _ => {}
+        // `case 564`/`case 565` (`NPC.cs:67998-67999` → `:68000-68421`):
+        // the RAW-`frame.Y` GRID machine (`s.row` holds the raw cell
+        // index — the draw samples the 5x9 grid `Main.cs:23890`, NOT
+        // the strip; the wiring is gated on the grid-draw seam, the
+        // module header). The frame.Width/Height = 80 override
+        // (`:68002-68003`) is draw-side (the port's grid UV owns it).
+        // The ai[0] > 0 && ai[1] == 0/1/2 ladders (`:68004-68410`):
+        // each the entry out-of-band counter-zero (LIVE — the ++
+        // follows, no overwrite), the base-cell snap, the ++counter,
+        // the sequential `if (counter >= stride*k)` rungs
+        // (last-match-wins) and the final reset rung; else the hover
+        // walk (`:68411-68419`): counter += |velocity|*0.1 + 1, the
+        // >= 40 reset, `(int)(counter/8)` rows 0-4. The sprite copy is
+        // UNCONDITIONAL in every ladder branch.
+        FindFrameExtra12Kind::DD2DarkMageT1 | FindFrameExtra12Kind::DD2DarkMageT3 => {
+            if i.ai0 > 0.0 && i.ai1 == 0.0 {
+                // `:68004-68113` — the summon ladder (7-tick).
+                s.sprite_dir = i.direction;
+                // `:68007-68010` — the entry gate (LIVE counter reset).
+                if s.row < 5 || s.row > 13 {
+                    s.counter = 0.0;
+                }
+                // `:68011-68012`.
+                s.row = 5;
+                s.counter += 1.0;
+                // `:68013-68104` — the 13 rungs at 7*k (k 1..13):
+                // 6/7 then 5/6/7 x2 then 8/9/10/11/12.
+                const SUMMON: [u32; 13] = [6, 7, 5, 6, 7, 5, 6, 7, 8, 9, 10, 11, 12];
+                for k in 1..=13usize {
+                    if s.counter >= (7 * k) as f32 {
+                        s.row = SUMMON[k - 1];
+                    }
+                }
+                // `:68105-68112` — the >= 7*14 = 98 reset-to-5 + zero.
+                if s.counter >= 98.0 {
+                    s.row = 5;
+                    s.counter = 0.0;
+                }
+                return;
+            }
+            if i.ai0 > 0.0 && i.ai1 == 1.0 {
+                // `:68114-68237` — the attack ladder (8-tick).
+                s.sprite_dir = i.direction;
+                // `:68117-68120`.
+                if s.row < 13 || s.row > 25 {
+                    s.counter = 0.0;
+                }
+                // `:68121-68122`.
+                s.row = 13;
+                s.counter += 1.0;
+                // `:68123-68228` — the 15 rungs at 8*k (k 1..15):
+                // 14..20 then 18/19/20 then 21..25.
+                const ATTACK: [u32; 15] =
+                    [14, 15, 16, 17, 18, 19, 20, 18, 19, 20, 21, 22, 23, 24, 25];
+                for k in 1..=15usize {
+                    if s.counter >= (8 * k) as f32 {
+                        s.row = ATTACK[k - 1];
+                    }
+                }
+                // `:68229-68236` — the >= 8*16 = 128 reset-to-14 + zero.
+                if s.counter >= 128.0 {
+                    s.row = 14;
+                    s.counter = 0.0;
+                }
+                return;
+            }
+            if i.ai0 > 0.0 && i.ai1 == 2.0 {
+                // `:68238-68410` — the gate ladder (8-tick).
+                s.sprite_dir = i.direction;
+                // `:68241-68244`.
+                if s.row < 26 || s.row > 40 {
+                    s.counter = 0.0;
+                }
+                // `:68245-68246`.
+                s.row = 26;
+                s.counter += 1.0;
+                // `:68247-68400` — the 22 rungs at 8*k (k 1..22):
+                // 27/28/29 then 26/27/28/29 x2 then 30..40.
+                const GATE: [u32; 22] = [
+                    27, 28, 29, 26, 27, 28, 29, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
+                    36, 37, 38, 39, 40,
+                ];
+                for k in 1..=22usize {
+                    if s.counter >= (8 * k) as f32 {
+                        s.row = GATE[k - 1];
+                    }
+                }
+                // `:68402-68409` — the >= 8*23 = 184 reset-to-26 + zero.
+                if s.counter >= 184.0 {
+                    s.row = 26;
+                    s.counter = 0.0;
+                }
+                return;
+            }
+            // `:68411-68419` — the hover walk: the |velocity|*0.1 + 1
+            // feed (the one non-integer accumulator, the e10
+            // sand-elemental precedent), the >= 40 (or negative) reset,
+            // the `(int)(counter/8)` row 0-4. No sprite write here.
+            s.counter += (i.vx * i.vx + i.vy * i.vy).sqrt() * 0.1 + 1.0;
+            if s.counter >= 40.0 || s.counter < 0.0 {
+                s.counter = 0.0;
+            }
+            s.row = (s.counter / 8.0) as i32 as u32;
+        }
+        // `case 576`/`case 577` (`NPC.cs:67584-67585` → `:67586-67709`):
+        // the RAW-`frame.Y` GRID machine (`s.row` holds the raw cell —
+        // the draw samples the 5x10 grid `Main.cs:23792`; the wiring is
+        // gated on the grid-draw seam). The frame.Width = 80 override
+        // (`:67588`) is draw-side. The entry gate reads the RAW cell
+        // (`num144 = this.frame.Y` `:67587` — cell-index comparisons,
+        // NOT pixel). The ai[0] > 0 && ai[1] == 0/2/1 ladders
+        // (`:67589-67681`): the stomp (variable strides 4/8/2), the
+        // pound (the entry snap to 39, the counter-HOLD at 38 and at
+        // 46-while-airborne, the >= 47 wrap-to-37), the swipe (5-tick);
+        // else the walk (`:67682-67707`): air cell 43 (NO backpedal
+        // branch), idle cell 0, the |vx| >= 60 reset + `1 +
+        // (int)(counter/6)` cells 1-10. The sprite copy is
+        // UNCONDITIONAL in every ladder branch.
+        FindFrameExtra12Kind::DD2OgreT2 | FindFrameExtra12Kind::DD2OgreT3 => {
+            if i.ai0 > 0.0 && i.ai1 == 0.0 {
+                // `:67589-67611` — the stomp ladder.
+                s.sprite_dir = i.direction;
+                // `:67592-67596` — the entry snap to 11 + counter zero.
+                if s.row < 11 || s.row > 20 {
+                    s.row = 11;
+                    s.counter = 0.0;
+                }
+                // `:67597-67605` — num145 = 4, the 13/19 = 8 and the
+                // 14/18 = 2 overrides.
+                let stride = if s.row == 13 || s.row == 19 {
+                    8.0
+                } else if s.row == 14 || s.row == 18 {
+                    2.0
+                } else {
+                    4.0
+                };
+                // `:67606-67610` — the ++counter >= stride gated < 20.
+                s.counter += 1.0;
+                if s.counter >= stride && s.row < 20 {
+                    s.counter = 0.0;
+                    s.row += 1;
+                }
+                return;
+            }
+            if i.ai0 > 0.0 && i.ai1 == 2.0 {
+                // `:67612-67667` — the pound ladder.
+                s.sprite_dir = i.direction;
+                // `:67615-67619` — the entry snap to 39 (NOT 37).
+                if s.row < 37 || s.row > 47 {
+                    s.row = 39;
+                    s.counter = 0.0;
+                }
+                // `:67620-67640` — num146 = 5, the 42 = 6 / 45 = 8 /
+                // 46 = 4 / 47 = 26 / 37-38 = 7 overrides.
+                let stride = if s.row == 42 {
+                    6.0
+                } else if s.row == 45 {
+                    8.0
+                } else if s.row == 46 {
+                    4.0
+                } else if s.row == 47 {
+                    26.0
+                } else if s.row == 37 || s.row == 38 {
+                    7.0
+                } else {
+                    5.0
+                };
+                // `:67641-67649` — flag10: the counter-HOLD at 46-while-
+                // airborne and at 38.
+                let advance = !(s.row == 46 && i.vy != 0.0) && s.row != 38;
+                // `:67650-67653`.
+                if advance {
+                    s.counter += 1.0;
+                }
+                // `:67654-67666` — the >= stride step (NOT gated on the
+                // cell here): < 47 advances, else wraps to 37.
+                if s.counter >= stride {
+                    if s.row < 47 {
+                        s.counter = 0.0;
+                        s.row += 1;
+                    } else {
+                        s.row = 37;
+                        s.counter = 0.0;
+                    }
+                }
+                return;
+            }
+            if i.ai0 > 0.0 && i.ai1 == 1.0 {
+                // `:67668-67681` — the swipe ladder (5-tick).
+                s.sprite_dir = i.direction;
+                // `:67671-67675` — the entry snap to 21 + counter zero.
+                if s.row < 21 || s.row > 38 {
+                    s.row = 21;
+                    s.counter = 0.0;
+                }
+                // `:67676-67680` — the ++counter >= 5 gated < 38.
+                s.counter += 1.0;
+                if s.counter >= 5.0 && s.row < 38 {
+                    s.counter = 0.0;
+                    s.row += 1;
+                }
+                return;
+            }
+            // `:67682-67707` — the walk: the vy == 0 sprite copy
+            // (`:67684-67687`), the air cell-43 pin (`:67688-67692` —
+            // NO backpedal branch), the idle cell-0 snap (`:67693-
+            // 67697`), the |vx| >= 60 reset (`:67700-67704`) + the
+            // `1 + (int)(counter/6)` cell 1-10 (`:67705`).
+            if i.vy == 0.0 {
+                s.sprite_dir = i.direction;
+            }
+            if i.vy != 0.0 {
+                s.counter = 0.0;
+                s.row = 43;
+                return;
+            }
+            if i.vx == 0.0 {
+                s.counter = 0.0;
+                s.row = 0;
+                return;
+            }
+            s.counter += i.vx.abs();
+            if s.counter >= 60.0 || s.counter < 0.0 {
+                s.counter = 0.0;
+            }
+            s.row = 1 + (s.counter / 6.0) as i32 as u32;
+        }
     }
 }
 
@@ -875,6 +1097,177 @@ mod tests {
             assert_eq!((s.row, s.counter), (1, 0.0));
             find_frame_extra12(k, &mut s, &input(0.0, 0.0));
             assert_eq!((s.row, s.counter), (9, 0.0));
+        }
+    }
+
+    /// 564/565 the dark mages (the RAW-cell GRID machine): the three
+    /// ai[1] ladders' rung boundaries + reset rungs, the LIVE entry
+    /// counter-zero, the UNCONDITIONAL sprite copy, the hover walk's
+    /// |v|*0.1+1 feed + >= 40 reset. `s.row` holds the raw cell (the
+    /// 5x9 grid, cells run past npcFrameCount = 9). Expectations
+    /// re-derived by mechanical replay (tools/_f27_s12_replay.py).
+    #[test]
+    fn f27s12_dark_mages_ride_the_raw_cell_grid_ladders() {
+        for k in [FindFrameExtra12Kind::DD2DarkMageT1, FindFrameExtra12Kind::DD2DarkMageT3] {
+            assert!(k.is_grid());
+            // The summon ladder (ai1 0): the 7*k rungs from in-band
+            // cell 5 — 6 at 7, 7 at 14, 5 at 21, ... 12 at 91, the
+            // >= 98 reset-to-5 + counter 0.
+            for (ctr, cell) in [
+                (0.0f32, 5u32), (6.0, 6), (13.0, 7), (20.0, 5), (27.0, 6),
+                (34.0, 7), (41.0, 5), (48.0, 6), (55.0, 7), (62.0, 8), (69.0, 9),
+                (76.0, 10), (83.0, 11), (90.0, 12), (97.0, 5),
+            ] {
+                let mut s = FrameState { row: 5, counter: ctr, sprite_dir: -1, ..Default::default() };
+                let i = FrameInput { ai0: 1.0, ai1: 0.0, ..Default::default() };
+                find_frame_extra12(k, &mut s, &i);
+                let expect_ctr = if ctr >= 97.0 { 0.0 } else { ctr + 1.0 };
+                assert_eq!((s.row, s.counter), (cell, expect_ctr), "summon ctr {ctr}");
+                assert_eq!(s.sprite_dir, 1);
+            }
+            // The attack ladder (ai1 1): the 8*k rungs from cell 13 —
+            // 14 at 8, 20 at 56, 18 at 64, 21 at 88, 25 at 120, the
+            // >= 128 reset-to-14 + counter 0.
+            for (ctr, cell) in [
+                (0.0f32, 13u32), (7.0, 14), (55.0, 20), (63.0, 18), (71.0, 19),
+                (79.0, 20), (87.0, 21), (119.0, 25), (127.0, 14),
+            ] {
+                let mut s = FrameState { row: 13, counter: ctr, ..Default::default() };
+                let i = FrameInput { ai0: 1.0, ai1: 1.0, ..Default::default() };
+                find_frame_extra12(k, &mut s, &i);
+                let expect_ctr = if ctr >= 127.0 { 0.0 } else { ctr + 1.0 };
+                assert_eq!((s.row, s.counter), (cell, expect_ctr), "attack ctr {ctr}");
+            }
+            // The gate ladder (ai1 2): the 8*k rungs from cell 26 —
+            // 27 at 8, 29 at 24, 26 at 32, 30 at 96, 40 at 176, the
+            // >= 184 reset-to-26 + counter 0.
+            for (ctr, cell) in [
+                (0.0f32, 26u32), (7.0, 27), (23.0, 29), (31.0, 26), (87.0, 29),
+                (95.0, 30), (175.0, 40), (183.0, 26),
+            ] {
+                let mut s = FrameState { row: 26, counter: ctr, ..Default::default() };
+                let i = FrameInput { ai0: 1.0, ai1: 2.0, ..Default::default() };
+                find_frame_extra12(k, &mut s, &i);
+                let expect_ctr = if ctr >= 183.0 { 0.0 } else { ctr + 1.0 };
+                assert_eq!((s.row, s.counter), (cell, expect_ctr), "gate ctr {ctr}");
+            }
+            // The LIVE entry reset: cell 0 (out of 5..13) zeroes the
+            // counter before the ++ (the first summon tick is 1).
+            let mut s = FrameState { row: 0, counter: 99.0, ..Default::default() };
+            find_frame_extra12(k, &mut s, &FrameInput { ai0: 1.0, ai1: 0.0, ..Default::default() });
+            assert_eq!((s.row, s.counter), (5, 1.0));
+            // The hover walk (ai0 0), still: +1.0/tick exact, the
+            // (int)(counter/8) row 0-4, the >= 40 reset tick shows 0.
+            let rows = rows_over(k, input(0.0, 0.0), 40);
+            let mut expect = Vec::new();
+            for r in 0u32..5 {
+                expect.extend(std::iter::repeat(r).take(8));
+            }
+            expect.push(0);
+            assert_eq!(rows, expect);
+            // The hover walk vx 3: the |v|*0.1+1 = 1.3/tick feed — row
+            // 0 through tick 6 (counter 7.8), row 1 at tick 7 (9.1),
+            // the >= 40 reset at tick 31 (counter 40.3 → 0, row 0).
+            let mut s = FrameState::default();
+            let i = input(3.0, 0.0);
+            for _ in 0..6 {
+                find_frame_extra12(k, &mut s, &i);
+            }
+            assert_eq!(s.row, 0);
+            assert!((s.counter - 7.8).abs() < 0.001, "ctr {}", s.counter);
+            find_frame_extra12(k, &mut s, &i);
+            assert_eq!(s.row, 1);
+            for _ in 0..24 {
+                find_frame_extra12(k, &mut s, &i);
+            }
+            // tick 31: the reset fired.
+            assert_eq!((s.row, s.counter), (0, 0.0));
+            // No rotation write; the hover walk writes no sprite.
+            let mut s = FrameState { sprite_dir: -1, rotation: 0.5, ..Default::default() };
+            find_frame_extra12(k, &mut s, &input(3.0, 0.0));
+            assert_eq!((s.sprite_dir, s.rotation), (-1, 0.5));
+        }
+    }
+
+    /// 576/577 the ogres (the RAW-cell GRID machine): the stomp's
+    /// variable strides, the pound's entry-snap-39 + counter-HOLDs +
+    /// wrap-to-37, the swipe's 5-tick step, the walk's air-43/idle-0 +
+    /// 1+counter/6 cells. `s.row` holds the raw cell (the 5x10 grid).
+    /// Expectations re-derived by mechanical replay.
+    #[test]
+    fn f27s12_ogres_ride_the_raw_cell_grid_ladders() {
+        for k in [FindFrameExtra12Kind::DD2OgreT2, FindFrameExtra12Kind::DD2OgreT3] {
+            assert!(k.is_grid());
+            // The stomp (ai1 0): the variable strides — cell 11 stride
+            // 4 (steps at ctr 3→4), cell 13 stride 8, cell 14 stride 2,
+            // cell 19 stride 8, cell 20 holds (the >= 20 gate).
+            for (cell, ctr, ncell, nctr) in [
+                (11u32, 3.0f32, 12u32, 0.0f32), (13, 7.0, 14, 0.0), (14, 1.0, 15, 0.0),
+                (19, 7.0, 20, 0.0), (20, 5.0, 20, 6.0),
+            ] {
+                let mut s = FrameState { row: cell, counter: ctr, sprite_dir: -1, ..Default::default() };
+                let i = FrameInput { ai0: 1.0, ai1: 0.0, ..Default::default() };
+                find_frame_extra12(k, &mut s, &i);
+                assert_eq!((s.row, s.counter), (ncell, nctr), "stomp cell {cell} ctr {ctr}");
+                assert_eq!(s.sprite_dir, 1);
+            }
+            // The stomp entry snap: cell 0 → 11, counter 0 THEN ++ → 1.
+            let mut s = FrameState { row: 0, counter: 99.0, ..Default::default() };
+            find_frame_extra12(k, &mut s, &FrameInput { ai0: 1.0, ai1: 0.0, ..Default::default() });
+            assert_eq!((s.row, s.counter), (11, 1.0));
+            // The pound (ai1 2): the entry snap to 39 (NOT 37), the
+            // strides 42=6/45=8/46=4/47=26/37-38=7, the >= 47 wrap.
+            for (cell, ctr, vy, ncell, nctr) in [
+                (39u32, 4.0f32, 0.0f32, 40u32, 0.0f32), (42, 5.0, 0.0, 43, 0.0),
+                (45, 7.0, 0.0, 46, 0.0), (46, 3.0, 0.0, 47, 0.0),
+                (47, 25.0, 0.0, 37, 0.0), (37, 6.0, 0.0, 38, 0.0),
+            ] {
+                let mut s = FrameState { row: cell, counter: ctr, ..Default::default() };
+                let i = FrameInput { ai0: 1.0, ai1: 2.0, vy, ..Default::default() };
+                find_frame_extra12(k, &mut s, &i);
+                assert_eq!((s.row, s.counter), (ncell, nctr), "pound cell {cell} ctr {ctr}");
+            }
+            // The pound counter-HOLD at 46-while-airborne: the counter
+            // does NOT advance (vy != 0), so no step fires.
+            let mut s = FrameState { row: 46, counter: 3.0, ..Default::default() };
+            find_frame_extra12(k, &mut s, &FrameInput { ai0: 1.0, ai1: 2.0, vy: 2.0, ..Default::default() });
+            assert_eq!((s.row, s.counter), (46, 3.0));
+            // The pound counter-HOLD at 38: even a large counter steps
+            // (the >= stride check is NOT gated on advance) → 39.
+            let mut s = FrameState { row: 38, counter: 99.0, ..Default::default() };
+            find_frame_extra12(k, &mut s, &FrameInput { ai0: 1.0, ai1: 2.0, ..Default::default() });
+            assert_eq!((s.row, s.counter), (39, 0.0));
+            // The pound entry snap: cell 0 → 39, counter 0 THEN ++ → 1.
+            let mut s = FrameState { row: 0, counter: 0.0, ..Default::default() };
+            find_frame_extra12(k, &mut s, &FrameInput { ai0: 1.0, ai1: 2.0, ..Default::default() });
+            assert_eq!((s.row, s.counter), (39, 1.0));
+            // The swipe (ai1 1): the 5-tick step gated < 38, cell 38
+            // holds (the counter keeps growing).
+            for (cell, ctr, ncell, nctr) in [
+                (21u32, 4.0f32, 22u32, 0.0f32), (37, 4.0, 38, 0.0), (38, 5.0, 38, 6.0),
+            ] {
+                let mut s = FrameState { row: cell, counter: ctr, ..Default::default() };
+                let i = FrameInput { ai0: 1.0, ai1: 1.0, ..Default::default() };
+                find_frame_extra12(k, &mut s, &i);
+                assert_eq!((s.row, s.counter), (ncell, nctr), "swipe cell {cell} ctr {ctr}");
+            }
+            // The walk: vx 4 — the 1+(int)(counter/6) cells 1-10, the
+            // >= 60 reset tick shows cell 1.
+            let rows = rows_over(k, input(4.0, 0.0), 16);
+            assert_eq!(rows, vec![1, 2, 3, 3, 4, 5, 5, 6, 7, 7, 8, 9, 9, 10, 1, 1]);
+            // The air pin cell 43 (NO backpedal branch), the idle cell 0.
+            let mut s = FrameState { row: 5, counter: 30.0, ..Default::default() };
+            find_frame_extra12(k, &mut s, &input(4.0, 2.0));
+            assert_eq!((s.row, s.counter), (43, 0.0));
+            find_frame_extra12(k, &mut s, &input(0.0, 0.0));
+            assert_eq!((s.row, s.counter), (0, 0.0));
+            // The backpedal does NOT pin (the ogre walk has no
+            // direction gate): direction -1 + vx +4 walks normally.
+            let mut s = FrameState::default();
+            let mut i = input(4.0, 0.0);
+            i.direction = -1;
+            find_frame_extra12(k, &mut s, &i);
+            assert_eq!((s.row, s.sprite_dir), (1, -1));
         }
     }
 }
