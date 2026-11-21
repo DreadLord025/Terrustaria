@@ -102,6 +102,13 @@ pub mod id {
     pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
     pub const ITEM_DEAD: u8 = 151; // NetMessage.cs:671-674 / MessageBuffer.cs:1537-1550
+    /// `162 DamageNPCAck` (`MessageID.cs:338`) — NO body: `SendData` has no
+    /// case 162, the frame is the bare id; the host fires it at the HEAD of
+    /// the `28` strike arm (`MessageBuffer.cs:1768-1771`) and the client
+    /// pops `NPC.pendingDamages[0]` (`MessageBuffer.cs:1819-1824`,
+    /// `NPC.AckDamage`, `NPC.cs:90703-90713`). W4-g52 owns the SEND side;
+    /// the client damage-queue apply is the apply-arm lane (g48-g51).
+    pub const NPC_STRIKE_ACK: u8 = 162;
     pub const NPC_INFO: u8 = 23; // NetMessage.cs:686-748 / MessageBuffer.cs:1563-1704
     /// `70 CatchNPC` (S1-P-i36): one `(short)` npc slot — the client's bug
     /// net caught it (`NPC.cs:79904`); the host converts
@@ -1788,6 +1795,10 @@ pub enum S2c {
     },
     /// `28 NPCStrike` — a validated strike, relayed by the host.
     NpcStrike(NpcStrike),
+    /// `162 DamageNPCAck` - the host's ack of a `28` strike, no body
+    /// (`MessageBuffer.cs:1768-1771` sends, `:1819-1824` pops
+    /// `NPC.pendingDamages[0]`).
+    NpcStrikeAck,
     /// `10 TileBlock` — one section's tile snapshot (the C#'s
     /// `SendSection`, `NetMessage.cs:2697-2712`).
     TileBlock(Box<TileBlock>),
@@ -2174,6 +2185,7 @@ impl S2c {
             Self::Projectile(_) => id::PROJECTILE,
             Self::ProjectileDead { .. } => id::PROJECTILE_DEAD,
             Self::NpcStrike(_) => id::NPC_STRIKE,
+            Self::NpcStrikeAck => id::NPC_STRIKE_ACK,
             Self::InitialSpawn => id::INITIAL_SPAWN,
             Self::Ping => id::PING,
             Self::NpcKilled { .. } => id::NPC_KILLED,
@@ -2276,6 +2288,8 @@ impl S2c {
             Self::PlayerState(ps) => ps.write_to(w),
             Self::Time { time, day } => w.f64(*time).bool(*day),
             Self::NpcStrike(st) => st.write_to(w),
+            // `SendData` has no case 162 — the bare id is the whole frame.
+            Self::NpcStrikeAck => w,
             Self::Edit { x, y, kind, tile } => w.i32(*x).i32(*y).u8(*kind).u16(*tile),
             Self::ChestItem(c) => w
                 .i16(c.chest)
@@ -2409,6 +2423,8 @@ impl S2c {
                 y: r.f32()?,
             },
             id::NPC_STRIKE => Self::NpcStrike(NpcStrike::read_from(r)?),
+            // `MessageBuffer.cs:1819-1824`: no body.
+            id::NPC_STRIKE_ACK => Self::NpcStrikeAck,
             id::INITIAL_SPAWN => Self::InitialSpawn,
             id::PING => Self::Ping,
             id::NPC_KILLED => Self::NpcKilled { npc: r.i16()? },
@@ -4993,6 +5009,23 @@ mod tests {
         for (i, f) in flags.iter().enumerate() {
             assert_eq!((packed & (1 << i)) != 0, *f);
         }
+    }
+
+    /// W4-g52 — `162 DamageNPCAck` (`MessageID.cs:338`): NO body, `SendData`
+    /// has no case 162, so the frame is the bare id (`MessageBuffer.cs:
+    /// 1768-1771` sends it at the head of the `28` arm; `:1819-1824` the
+    /// client pops `NPC.pendingDamages[0]`). Byte-verbatim with the d92 codec.
+    #[test]
+    fn w4_g52_npc_strike_ack_is_bodyless() {
+        let f = S2c::NpcStrikeAck.encode();
+        assert_eq!(f, vec![3, 0, 162]);
+        assert_eq!(S2c::NpcStrikeAck.msg_id(), id::NPC_STRIKE_ACK);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::NpcStrikeAck => {}
+            other => panic!("expected 162, got {:?}", other.msg_id()),
+        }
+        // The client never sends it — no C2s arm exists.
+        assert!(C2s::decode(162, &mut NetReader::new(&[])).is_none());
     }
 
     // ---- W4-g52: the SendData relay arms (NetMessage.cs:1692-1826) ----

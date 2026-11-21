@@ -461,6 +461,12 @@ impl App {
             // the strike and relays it, plus a full `23` update on death
             // (`MessageBuffer.cs:1805-1815`).
             C2s::NpcStrike(st) => {
+                // W4-g52 — the `162 DamageNPCAck` (`MessageBuffer.cs:1768-1771`):
+                // the server acks the striker BEFORE reading the strike body,
+                // ahead of every gate. The bodyless frame pops the client's
+                // `NPC.pendingDamages[0]` (`:1819-1824`, `NPC.AckDamage`); the
+                // damage-queue apply is the apply-arm lane (g48-g51).
+                server.send(id, &S2c::NpcStrikeAck);
                 let slot = st.npc as usize;
                 let gen_ok = self
                     .net_npc_gen
@@ -1245,7 +1251,13 @@ impl App {
         for (i, it) in self.items.iter().enumerate() {
             let slot = i as i16;
             let st = Self::item_state_of(slot, it);
-            server.send(id, &S2c::ItemState(Box::new(st)));
+            // W4-g52 — the `SendData(21)` pre-switch (`NetMessage.cs:89-100`):
+            // instanced never syncs, air rewrites to `151`. The `22` owner
+            // announcement below is unconditional (the C# join burst sends it
+            // per live slot regardless of the `21` gate).
+            if let Some(msg) = Self::item_send_gate(slot, it) {
+                server.send(id, &msg);
+            }
             server.send(
                 id,
                 &S2c::ItemOwner(Box::new(net::ItemOwner {
@@ -1950,6 +1962,11 @@ impl App {
                     }
                 }
             }
+            // W4-g52 — `case 162` (`MessageBuffer.cs:1819-1824`): the client
+            // pops `NPC.pendingDamages[0]` (`NPC.AckDamage`). The damage-queue
+            // is unported (the apply-arm lane, g48-g51); the SEND side lands
+            // here, the client read is a no-op until the queue exists.
+            S2c::NpcStrikeAck => {}
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
             // codecs (`net.rs`); the client read sites
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
@@ -2921,7 +2938,14 @@ impl App {
                     let slot = self.last_item_update as i16;
                     let st = Self::item_state_of(slot, &self.items[self.last_item_update]);
                     self.net_item_last.insert(slot, st);
-                    server.broadcast(&S2c::ItemState(Box::new(st)));
+                    // W4-g52 — the `SendData(21)` pre-switch
+                    // (`NetMessage.cs:89-100`): instanced never syncs, air
+                    // rewrites to `151`.
+                    if let Some(msg) =
+                        Self::item_send_gate(slot, &self.items[self.last_item_update])
+                    {
+                        server.broadcast(&msg);
+                    }
                 }
                 // `21 ItemDrop` — only the slots whose state changed since the
                 // last send (the port's batched stand-in for the C#'s
@@ -2933,7 +2957,11 @@ impl App {
                     let st = Self::item_state_of(slot, it);
                     if self.net_item_last.get(&slot) != Some(&st) {
                         self.net_item_last.insert(slot, st);
-                        server.broadcast(&S2c::ItemState(Box::new(st)));
+                        // W4-g52 — the `SendData(21)` pre-switch
+                        // (`NetMessage.cs:89-100`).
+                        if let Some(msg) = Self::item_send_gate(slot, it) {
+                            server.broadcast(&msg);
+                        }
                     }
                 }
                 let dead: Vec<i16> = self
@@ -3099,6 +3127,31 @@ impl App {
             shimmered: it.shimmered,
             shimmer_time: it.shimmer_time,
         }
+    }
+
+    /// Test-only: drain one queued client event without applying it (the
+    /// `162` ack is a client no-op, so a witness observes the raw frame).
+    #[cfg(test)]
+    fn net_events_for_test(&self) -> Option<net::ClientEvent> {
+        match &self.net {
+            NetRole::Client(client) => client.events.try_recv().ok(),
+            _ => None,
+        }
+    }
+
+    /// `SendData(21)`'s pre-switch (`NetMessage.cs:89-100`): an `instanced`
+    /// drop is never synced (`:92-95` returns), an `IsAir` one is rewritten to
+    /// `151 SyncItemDespawn` (`:96-99`). Returns the message to send, or `None`
+    /// when the C# returns without sending. The host's `21` producers (the join
+    /// burst + the cadence diff/heartbeat) all ride this gate.
+    fn item_send_gate(slot: i16, it: &item::ItemDrop) -> Option<S2c> {
+        if it.instanced {
+            return None; // `:92-95` — the instanced loot split never syncs
+        }
+        if it.is_air() {
+            return Some(S2c::ItemDead { slot }); // `:96-99` — the air rewrite
+        }
+        Some(S2c::ItemState(Box::new(Self::item_state_of(slot, it))))
     }
 
     /// Builds the `13 PlayerState` body for a stored peer snapshot (the
@@ -5914,5 +5967,98 @@ mod w4_g52_relay_tests {
             assert!(server.is_section_active(1, 2, 1, 1110));
         }
         let _ = client_app;
+    }
+
+    /// W4-g52 — the `SendData(21)` pre-switch (`NetMessage.cs:89-100`) on the
+    /// host's cadence producers: an `instanced` drop never syncs (`:92-95`),
+    /// an `IsAir` one rewrites to `151` (`:96-99`), a live one sends `21`.
+    #[test]
+    fn w4_g52_the_21_pre_switch_gates_instanced_and_air() {
+        // The gate itself, all three legs.
+        let live = item::ItemDrop::new(7, 3, 0, 100.0, 100.0, 0.0, 0.0, 0.0);
+        assert!(matches!(
+            App::item_send_gate(5, &live),
+            Some(S2c::ItemState(_))
+        ));
+        let mut instanced = item::ItemDrop::new(7, 3, 0, 100.0, 100.0, 0.0, 0.0, 0.0);
+        instanced.instanced = true;
+        assert!(App::item_send_gate(5, &instanced).is_none());
+        let mut air = item::ItemDrop::new(7, 3, 0, 100.0, 100.0, 0.0, 0.0, 0.0);
+        air.count = 0; // `Item.IsAir` — type > 0, stack <= 0 (`Item.cs:389-391`)
+        assert!(matches!(
+            App::item_send_gate(5, &air),
+            Some(S2c::ItemDead { slot: 5 })
+        ));
+        let air_kind = item::ItemDrop::new(0, 3, 0, 100.0, 100.0, 0.0, 0.0, 0.0);
+        assert!(matches!(
+            App::item_send_gate(5, &air_kind),
+            Some(S2c::ItemDead { slot: 5 })
+        ));
+
+        // End-to-end: the cadence diff streams the live drop, refuses the
+        // instanced one, and rewrites the air one to `151`.
+        let (mut host_app, mut client_app) = wide_pair();
+        host_app.items.clear();
+        let mut live = item::ItemDrop::new(7, 3, 0, 100.0, 100.0, 0.0, 0.0, 0.0);
+        live.age = 60.0;
+        let mut instanced = item::ItemDrop::new(9, 2, 0, 120.0, 100.0, 0.0, 0.0, 0.0);
+        instanced.age = 60.0;
+        instanced.instanced = true;
+        let mut air = item::ItemDrop::new(11, 1, 0, 140.0, 100.0, 0.0, 0.0, 0.0);
+        air.age = 60.0;
+        air.count = 0;
+        host_app.items.push(live); // slot 0
+        host_app.items.push(instanced); // slot 1
+        host_app.items.push(air); // slot 2
+        pump(&mut host_app, &mut client_app, 20);
+        // Only the live drop reached the client; the instanced one never
+        // synced and the air one's `151` removed nothing (it was never sent).
+        assert_eq!(client_app.items.len(), 1, "only the live drop synced");
+        assert_eq!(client_app.items[0].kind, 7);
+        assert!(client_app.net_items.contains_key(&0));
+        assert!(!client_app.net_items.contains_key(&1), "instanced never sent");
+        assert!(!client_app.net_items.contains_key(&2), "air rewrote to 151");
+    }
+
+    /// W4-g52 — the `162 DamageNPCAck` send (`MessageBuffer.cs:1768-1771`):
+    /// the host acks the striker at the HEAD of the `28` arm, ahead of the
+    /// generation gate. The frame is bodyless; the client's damage-queue
+    /// apply is the apply-arm lane, so the read is a no-op — the witness
+    /// drains the client's event channel directly to observe the ack.
+    #[test]
+    fn w4_g52_the_strike_arm_acks_the_striker_with_162() {
+        let (mut host_app, mut client_app) = wide_pair();
+        // Drain the join-burst frames so only the strike's frames remain.
+        while client_app.net_events_for_test().is_some() {}
+        // A strike for an UNKNOWN npc slot: the generation gate refuses the
+        // apply, but the C# sends the `162` BEFORE reading the body, so the
+        // ack must still reach the striker.
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::NpcStrike(net::NpcStrike {
+                npc: 200,
+                generation: 1,
+                damage: 1,
+                knock_back: 0.0,
+                hit_direction: 1,
+                crit: false,
+            }));
+        }
+        // Pump the host only (the client's channel stays undrained by
+        // poll_net), then read the frames the host pushed.
+        for _ in 0..15 {
+            host_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        let mut saw_ack = false;
+        while let Some(ev) = client_app.net_events_for_test() {
+            if let net::ClientEvent::Frame(S2c::NpcStrikeAck) = ev {
+                saw_ack = true;
+            }
+        }
+        assert!(
+            saw_ack,
+            "the 162 ack reached the striker even though the strike was refused"
+        );
     }
 }
