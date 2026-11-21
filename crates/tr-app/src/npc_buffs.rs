@@ -547,6 +547,12 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::BloodEelBody
         | NpcKind::BloodEelTail
         | NpcKind::Gnome => &[31],
+        // W4-d42 - the NPCID 625-629 immunity rows (`NPCID.cs:9395+`).
+        NpcKind::SeaTurtle
+        | NpcKind::Seahorse
+        | NpcKind::GoldSeahorse
+        | NpcKind::Dandelion => &[31],
+        NpcKind::IceMimic => &[20, 24, 31, 44, 323, 324],
     }
 }
 

@@ -1279,6 +1279,26 @@ pub enum NpcKind {
     /// 14x30, aiStyle 3, dmg 10, def 0,
     /// 25 HP, kb 1.0, value 0.
     Gnome,
+    /// `NPCID.SeaTurtle` (625) - `NPC.cs:17039-17050`:
+    /// 22x20, aiStyle 7, dmg 0, def 0,
+    /// 5 HP, kb 0.5, value 0.
+    SeaTurtle,
+    /// `NPCID.Seahorse` (626) - `NPC.cs:17051-17071 (catchItem 4480 :17066)`:
+    /// 16x20, aiStyle 118, dmg 0, def 0,
+    /// 5 HP, kb 1.0, value 0.
+    Seahorse,
+    /// `NPCID.GoldSeahorse` (627) - `NPC.cs:17051-17071 (rarity 3 :17064, catchItem 4482 :17069)`:
+    /// 16x20, aiStyle 118, dmg 0, def 0,
+    /// 5 HP, kb 1.0, value 0.
+    GoldSeahorse,
+    /// `NPCID.Dandelion` (628) - `NPC.cs:17072-17084`:
+    /// 22x40, aiStyle 119, dmg 15, def 0,
+    /// 50 HP, kb 0.0, value 50.
+    Dandelion,
+    /// `NPCID.IceMimic` (629) - `NPC.cs:17085-17106 (hardMode rows; !hardMode 30/12/300/20000 :17099-17105)`:
+    /// 24x24, aiStyle 25, dmg 80, def 30,
+    /// 500 HP, kb 0.3, value 100000.
+    IceMimic,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3790,6 +3810,12 @@ impl Npc {
             NpcKind::BloodEelBody => 0.0,
             NpcKind::BloodEelTail => 0.0,
             NpcKind::Gnome => 1.0,
+            // W4-d42 - the NPCID 625-629 SetDefaults rows.
+            NpcKind::SeaTurtle => 0.5,
+            NpcKind::Seahorse => 1.0,
+            NpcKind::GoldSeahorse => 1.0,
+            NpcKind::Dandelion => 0.0,
+            NpcKind::IceMimic => 0.3,
             _ => 0.4,
         }
     }
@@ -4224,6 +4250,12 @@ impl Npc {
             NpcKind::BloodEelBody => 30,
             NpcKind::BloodEelTail => 40,
             NpcKind::Gnome => 0,
+            // W4-d42 - the NPCID 625-629 SetDefaults rows.
+            NpcKind::SeaTurtle => 0,
+            NpcKind::Seahorse => 0,
+            NpcKind::GoldSeahorse => 0,
+            NpcKind::Dandelion => 0,
+            NpcKind::IceMimic => 30,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4650,6 +4682,12 @@ impl Npc {
             NpcKind::BloodEelBody => 0.0,
             NpcKind::BloodEelTail => 0.0,
             NpcKind::Gnome => 0.0,
+            // W4-d42 - the NPCID 625-629 SetDefaults rows.
+            NpcKind::SeaTurtle => 0.0,
+            NpcKind::Seahorse => 0.0,
+            NpcKind::GoldSeahorse => 0.0,
+            NpcKind::Dandelion => 50.0,
+            NpcKind::IceMimic => 100000.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6664,6 +6702,25 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // ---- W4-d42 batch 10: the NPCID 625-629 roster
+            // (data-only join). Unwired styles idle in place (the
+            // wyvern precedent); walkers ride the aiStyle-3 family,
+            // swimmers the aiStyle-16 family.
+            // `NPC.cs:17039-17050` - aiStyle 7 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::SeaTurtle => {}
+            // `NPC.cs:17051-17071 (catchItem 4480 :17066)` - aiStyle 118 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::Seahorse => {}
+            // `NPC.cs:17051-17071 (rarity 3 :17064, catchItem 4482 :17069)` - aiStyle 118 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::GoldSeahorse => {}
+            // `NPC.cs:17072-17084` - aiStyle 119 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::Dandelion => {}
+            // `NPC.cs:17085-17106 (hardMode rows; !hardMode 30/12/300/20000 :17099-17105)` - aiStyle 25 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::IceMimic => {}
             // ---- W4-d42 batch 9: the NPCID 620-624 roster
             // (data-only join). Unwired styles idle in place (the
             // wyvern precedent); walkers ride the aiStyle-3 family,
@@ -10386,6 +10443,155 @@ impl Npc {
                             self.frame = 1;
                         }
                     }
+                }
+            }
+            // W4-d42 - `FindFrame` case 625 (`NPC.cs:76732-76779`): the
+            // wet paddle rows 6..11 (>4, >8 idle), the dry walk rows
+            // 0..5 (>7) with the stand pin.
+            NpcKind::SeaTurtle => {
+                let num185 = if self.vx == 0.0 { 8.0 } else { 4.0 };
+                self.sprite_dir = self.facing;
+                if self.wet {
+                    if self.frame < 6 {
+                        self.frame = 6;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > num185 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame > 11 {
+                            self.frame = 6;
+                        }
+                    }
+                } else {
+                    if self.frame > 5 {
+                        self.frame = 0;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 7.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame > 5 {
+                            self.frame = 0;
+                        }
+                    }
+                    if self.vx == 0.0 {
+                        self.frame_counter = 0.0;
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 626/627 (`NPC.cs:76780-76819`):
+            // the velocity-sign sprite flip; dry row 0, the wet drift
+            // rows 3/2/1/0 by |velocity| > 0.15/0.05/0.025.
+            NpcKind::Seahorse | NpcKind::GoldSeahorse => {
+                if self.vx != 0.0 {
+                    self.sprite_dir = if self.vx > 0.0 { 1 } else { -1 };
+                }
+                if !self.wet {
+                    self.frame = 0;
+                } else {
+                    let speed = (self.vx * self.vx + self.vy * self.vy).sqrt();
+                    self.frame = if speed > 0.15 {
+                        3
+                    } else if speed > 0.05 {
+                        2
+                    } else if speed > 0.025 {
+                        1
+                    } else {
+                        0
+                    };
+                }
+            }
+            // W4-d42 - `FindFrame` case 628 (`NPC.cs:77103-77201`): the
+            // wind-facing sprite pin and the wind-speed accumulator
+            // read `Main.WindForVisuals` (unported - the 0 stand-in,
+            // the documented fold); the ai[0]==0 sway rows 0..6 and
+            // the localAI[0]==0 attack rows 6..10 are verbatim. The
+            // localAI[0]==1 lerp arm (:77182-77199) rides the
+            // aiStyle-119 wiring wave.
+            NpcKind::Dandelion => {
+                // `Main.WindForVisuals` is unported - 0f (the sprite
+                // pins +1, the accumulator rides the plain 1f).
+                let wind = 0.0f32;
+                self.sprite_dir = if wind > 0.0 { -1 } else { 1 };
+                if self.ai[0] == 0.0 {
+                    if self.frame == 6 {
+                        self.frame_counter += 1.0 + 0.5 * wind.abs();
+                        if self.frame_counter > 8.0 {
+                            self.frame_counter -= 8.0;
+                            self.frame = 0;
+                        }
+                    } else if self.frame > 5 {
+                        self.frame_counter = 0.0;
+                        self.frame = 6;
+                    } else {
+                        self.frame_counter += 1.0 + 0.5 * wind.abs();
+                        if self.frame_counter > 8.0 {
+                            self.frame_counter -= 8.0;
+                            self.frame += 1;
+                            if self.frame > 5 {
+                                self.frame = 0;
+                            }
+                        }
+                    }
+                } else if self.local_ai[0] == 0.0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 4.0 {
+                        self.frame_counter = 0.0;
+                        if self.frame == 6 {
+                            self.frame = 7;
+                        } else if self.frame < 7 {
+                            self.frame = 6;
+                        } else {
+                            self.frame += 1;
+                            if self.frame > 10 {
+                                self.frame = 7;
+                            }
+                        }
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 85/341/629 (`NPC.cs:73445-73515`,
+            // the chest group): the closed row 0, the open/close
+            // counter (-1 grounded / +1 airborne, clamped 0..12), the
+            // 3-tick phase rows 1..5 and the ai[3] hop offsets.
+            NpcKind::IceMimic => {
+                if self.ai[0] == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    if self.vy == 0.0 {
+                        self.frame_counter -= 1.0;
+                    } else {
+                        self.frame_counter += 1.0;
+                    }
+                    if self.frame_counter < 0.0 {
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame_counter > 12.0 {
+                        self.frame_counter = 12.0;
+                    }
+                    self.frame = if self.frame_counter < 3.0 {
+                        1
+                    } else if self.frame_counter < 6.0 {
+                        2
+                    } else if self.frame_counter < 9.0 {
+                        3
+                    } else if self.frame_counter < 12.0 {
+                        4
+                    } else {
+                        // The clamp caps the counter at 12, so the
+                        // `<15` arm (`:73486-73489`) is the live one:
+                        // row 5. The `<21`/else arms (`:73490-73504`)
+                        // are unreachable under the clamp.
+                        5
+                    };
+                }
+                if self.ai[3] == 2.0 {
+                    self.frame += 6;
+                } else if self.ai[3] == 3.0 {
+                    self.frame += 12;
                 }
             }
         }
@@ -20003,6 +20209,12 @@ impl Npc {
             NpcKind::BloodEelBody => 622,
             NpcKind::BloodEelTail => 623,
             NpcKind::Gnome => 624,
+            // W4-d42 - the vanilla ids 625-629 are free render keys.
+            NpcKind::SeaTurtle => 625,
+            NpcKind::Seahorse => 626,
+            NpcKind::GoldSeahorse => 627,
+            NpcKind::Dandelion => 628,
+            NpcKind::IceMimic => 629,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -25071,7 +25283,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 315] = [
+    pub(super) const ALL_KINDS: [NpcKind; 320] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -25404,6 +25616,12 @@ mod tests {
         NpcKind::BloodEelBody,
         NpcKind::BloodEelTail,
         NpcKind::Gnome,
+        // W4-d42 - the NPCID 625-629 roster.
+        NpcKind::SeaTurtle,
+        NpcKind::Seahorse,
+        NpcKind::GoldSeahorse,
+        NpcKind::Dandelion,
+        NpcKind::IceMimic,
     ];
 
     #[test]
@@ -25822,6 +26040,42 @@ mod tests {
         assert_eq!(NpcKind::BloodEelTail.to_u16(), 397u16);
         assert_eq!(NpcKind::Gnome.to_u16(), 398u16);
         assert_eq!(ALL_KINDS.len(), 315);
+    }
+
+    /// W4-d42 batch 10 - the NPCID 625-629 `SetDefaults` rows pin
+    /// against the C# (NPC.cs:17039-17050, NPC.cs:17051-17071 (catchItem 4480 :17066), NPC.cs:17051-17071 (rarity 3 :17064, catchItem 4482 :17069), NPC.cs:17072-17084, NPC.cs:17085-17106 (hardMode rows; !hardMode 30/12/300/20000 :17099-17105)), through the port's
+    /// tables - the smallkinds witness shape. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d42_b10_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::SeaTurtle, 625u16, 7u8, 22.0, 20.0, 0, 0, 5, 0.5f32, 0.0f32),
+            (NpcKind::Seahorse, 626u16, 118u8, 16.0, 20.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::GoldSeahorse, 627u16, 118u8, 16.0, 20.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::Dandelion, 628u16, 119u8, 22.0, 40.0, 15, 0, 50, 0.0f32, 50.0f32),
+            (NpcKind::IceMimic, 629u16, 25u8, 24.0, 24.0, 80, 30, 500, 0.3f32, 100000.0f32),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The port-local wire band (the vanilla types ride cs_id/net_id).
+        assert_eq!(NpcKind::SeaTurtle.to_u16(), 399u16);
+        assert_eq!(NpcKind::Seahorse.to_u16(), 400u16);
+        assert_eq!(NpcKind::GoldSeahorse.to_u16(), 401u16);
+        assert_eq!(NpcKind::Dandelion.to_u16(), 402u16);
+        assert_eq!(NpcKind::IceMimic.to_u16(), 403u16);
+        assert_eq!(ALL_KINDS.len(), 320);
     }
 
     /// The small-kinds wiring wave: the style axis claims 21/49/56/72, so
@@ -29339,7 +29593,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            315,
+            320,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(

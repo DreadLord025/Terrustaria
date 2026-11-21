@@ -636,6 +636,11 @@ impl NpcKind {
             NpcKind::BloodEelBody => 396,
             NpcKind::BloodEelTail => 397,
             NpcKind::Gnome => 398,
+            NpcKind::SeaTurtle => 399,
+            NpcKind::Seahorse => 400,
+            NpcKind::GoldSeahorse => 401,
+            NpcKind::Dandelion => 402,
+            NpcKind::IceMimic => 403,
         }
     }
 
@@ -1013,6 +1018,11 @@ impl NpcKind {
             396 => NpcKind::BloodEelBody,
             397 => NpcKind::BloodEelTail,
             398 => NpcKind::Gnome,
+            399 => NpcKind::SeaTurtle,
+            400 => NpcKind::Seahorse,
+            401 => NpcKind::GoldSeahorse,
+            402 => NpcKind::Dandelion,
+            403 => NpcKind::IceMimic,
             _ => return None,
         })
     }
@@ -1946,6 +1956,12 @@ impl NpcKind {
             NpcKind::BloodEelBody => "NPC_Hit_1",
             NpcKind::BloodEelTail => "NPC_Hit_1",
             NpcKind::Gnome => "NPC_Hit_1",
+            // W4-d42 - the roster's HitSound rows.
+            NpcKind::SeaTurtle => "NPC_Hit_1",
+            NpcKind::Seahorse => "NPC_Hit_1",
+            NpcKind::GoldSeahorse => "NPC_Hit_1",
+            NpcKind::Dandelion => "NPC_Hit_1",
+            NpcKind::IceMimic => "NPC_Hit_4",
             _ => return None,
         })
     }
@@ -2312,6 +2328,13 @@ impl NpcKind {
             NpcKind::BloodEelBody => "NPC_Killed_1",
             NpcKind::BloodEelTail => "NPC_Killed_1",
             NpcKind::Gnome => "NPC_Killed_1",
+            // W4-d42 - the roster's DeathSound rows (614's null row
+            // rides the None fall-through).
+            NpcKind::SeaTurtle => "NPC_Killed_1",
+            NpcKind::Seahorse => "NPC_Killed_1",
+            NpcKind::GoldSeahorse => "NPC_Killed_1",
+            NpcKind::Dandelion => "NPC_Killed_1",
+            NpcKind::IceMimic => "NPC_Killed_6",
             _ => return None,
         })
     }
@@ -2755,6 +2778,12 @@ impl NpcKind {
             NpcKind::BloodEelBody => 6,
             NpcKind::BloodEelTail => 6,
             NpcKind::Gnome => 3,
+            // W4-d42 - the NPCID 625-629 SetDefaults rows.
+            NpcKind::SeaTurtle => 7,
+            NpcKind::Seahorse => 118,
+            NpcKind::GoldSeahorse => 118,
+            NpcKind::Dandelion => 119,
+            NpcKind::IceMimic => 25,
         }
     }
 
@@ -3353,6 +3382,12 @@ impl NpcKind {
             NpcKind::BloodEelBody => (28.0, 28.0),
             NpcKind::BloodEelTail => (28.0, 28.0),
             NpcKind::Gnome => (14.0, 30.0),
+            // W4-d42 - the NPCID 625-629 SetDefaults rows.
+            NpcKind::SeaTurtle => (22.0, 20.0),
+            NpcKind::Seahorse => (16.0, 20.0),
+            NpcKind::GoldSeahorse => (16.0, 20.0),
+            NpcKind::Dandelion => (22.0, 40.0),
+            NpcKind::IceMimic => (24.0, 24.0),
         }
     }
 
@@ -3527,6 +3562,14 @@ impl NpcKind {
             NpcKind::BloodEelBody => 622,
             NpcKind::BloodEelTail => 623,
             NpcKind::Gnome => 624,
+            // W4-d42 - the roster's TRUE vanilla types (the folded kinds
+            // keep their own - the AI arms read cs_id; the bestiary
+            // folds in entry_for_npc only).
+            NpcKind::SeaTurtle => 625,
+            NpcKind::Seahorse => 626,
+            NpcKind::GoldSeahorse => 627,
+            NpcKind::Dandelion => 628,
+            NpcKind::IceMimic => 629,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -4124,6 +4167,12 @@ impl NpcKind {
             NpcKind::BloodEelBody => 6000,
             NpcKind::BloodEelTail => 6000,
             NpcKind::Gnome => 25,
+            // W4-d42 - the NPCID 625-629 SetDefaults rows.
+            NpcKind::SeaTurtle => 5,
+            NpcKind::Seahorse => 5,
+            NpcKind::GoldSeahorse => 5,
+            NpcKind::Dandelion => 50,
+            NpcKind::IceMimic => 500,
         }
     }
 
@@ -4542,6 +4591,12 @@ impl NpcKind {
             NpcKind::BloodEelBody => 60,
             NpcKind::BloodEelTail => 50,
             NpcKind::Gnome => 10,
+            // W4-d42 - the NPCID 625-629 SetDefaults rows.
+            NpcKind::SeaTurtle => 0,
+            NpcKind::Seahorse => 0,
+            NpcKind::GoldSeahorse => 0,
+            NpcKind::Dandelion => 15,
+            NpcKind::IceMimic => 80,
         }
     }
 }

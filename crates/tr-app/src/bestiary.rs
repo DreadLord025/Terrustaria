@@ -2453,6 +2453,48 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Gnome",
     },
+    // W4-d42 - the NPCID 625-629 roster's own credits (the
+    // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
+    BestiaryEntryDef {
+        credit_id: "SeaTurtle",
+        net_id: 625,
+        kind: NpcKind::SeaTurtle,
+        variant: None,
+        quick_unlock: false,
+        name: "Sea Turtle",
+    },
+    BestiaryEntryDef {
+        credit_id: "Seahorse",
+        net_id: 626,
+        kind: NpcKind::Seahorse,
+        variant: None,
+        quick_unlock: false,
+        name: "Seahorse",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldSeahorse",
+        net_id: 627,
+        kind: NpcKind::GoldSeahorse,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Seahorse",
+    },
+    BestiaryEntryDef {
+        credit_id: "Dandelion",
+        net_id: 628,
+        kind: NpcKind::Dandelion,
+        variant: None,
+        quick_unlock: false,
+        name: "Angry Dandelion",
+    },
+    BestiaryEntryDef {
+        credit_id: "IceMimic",
+        net_id: 629,
+        kind: NpcKind::IceMimic,
+        variant: None,
+        quick_unlock: false,
+        name: "Ice Mimic",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
