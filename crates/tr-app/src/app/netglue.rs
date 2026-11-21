@@ -3566,6 +3566,12 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-d25 STYLE-26 wiring: the gallopers plant feet on the column
+        // surface (the generic surface ctor; the style26 machine takes
+        // over on the first tick). The Unicorn arm mirrors d35 (C)'s
+        // 85/86 walker arm (the Mimic stays d35's).
+        crate::npc::NpcKind::Unicorn
+        | crate::npc::NpcKind::Wolf => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
     })
 }
 

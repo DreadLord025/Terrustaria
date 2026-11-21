@@ -370,7 +370,9 @@ const GLOW_NAMES = constStringList(assetsSrc, 'GLOW_SHEET_NAMES');
 
 // The L-8b branch's STATIC_SHEET_NAMES (renamed minecart rows + 25 additions).
 const { execSync } = require('child_process');
-const l8bSrc = execSync('git show origin/task/S1-L-8b-mount-data:crates/tr-app/src/assets.rs',
+// The S1-L-8b-mount-data branch was deleted after its merge; af957ee4 is
+// that merge commit (the L-8b static-sheet list survives in its tree).
+const l8bSrc = execSync('git show af957ee4:crates/tr-app/src/assets.rs',
   { cwd: path.join(__dirname, '..'), maxBuffer: 64 * 1024 * 1024 }).toString();
 const L8B_STATIC = constStringList(l8bSrc, 'STATIC_SHEET_NAMES');
 const L8B_ADDITIONS = L8B_STATIC.filter(n => !STATIC_NAMES.includes(n));

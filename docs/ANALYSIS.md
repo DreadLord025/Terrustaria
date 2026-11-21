@@ -24519,6 +24519,87 @@ Documented deviations, all deliberate:
   workers' slices); the `ai3_walk_speed` 6.0 rows stay as the cap pins
   the family tests read.
 
+## The STYLE-26 galloper wiring (W4-d25, 2026-11-21, code-only mode)
+
+The aiStyle-26 port+census (34b60539a) landed `npc_ai_style26.rs` UNWIRED
+(the verbatim `AI_026_Unicorns` core for the three new members, keyed on
+the vanilla type). This wiring round lands the kinds + the dispatch claim
+in two commits (2 kinds per commit). **Commit 1: the Unicorn (86) + the
+Wolf (155).** The Tumbleweed (546) — the only member needing the sim
+pre-pass (the wind/zone stamps + the same-type sibling scan) — lands with
+commit 2.
+
+**The kinds.** The Unicorn's rows mirror W4-d35 batch C (6ed8c22f)
+verbatim — protocol **440** (the vanilla 86 slot is the RayGunner's; the
+merge keep-one), `cs_id` 86, the full stat/sound/bestiary/netglue rows.
+The Wolf takes port-local **355** (the vanilla 155 slot is
+PlanterasTentacle's; 353 BlazingWheel / 354 WebbedStylist, 355/356 free
+across the co-lanes), `cs_id` 155. Both are gravity + tile-collide walkers
+(no alpha/noGravity/noTileCollide/behindTiles rows, `NPC.cs:9926-9938` /
+`:10961-10973`); the null `DebuffImmunitySets` rows (`NPCID.cs:6599` /
+`:7041`) carry no immunity.
+
+**The dispatch.** The axis' 26 arm (`npc.rs::update_rng`) routes the
+Unicorn/Wolf through `ai_026_gallop_family`: the `is_wet` stamp (the walk
+gate's wet conjunct + the case-86 sprite latch read it), the session
+player as slot 0 (`npc_target::session_candidate`, the S1-D-3p
+convention), ticker 0 (the `EverLastingTicker` stand-in), then
+`npc_ai_style26::ai_style26(cs_id, …)`. The 546-only ctx inputs
+(`gallop_wind_speed_target` / `gallop_zone_desert` / `gallop_zone_sandstorm`
+/ `siblings`) read their defaults on the 86/155 paths (never read there);
+the Tumbleweed's sim pre-pass stamps them with commit 2. The machine
+writes velocity + the step-up lift only — the caller owns the shared
+movement tail (`gallop_move_tail`: the port's GRAVITY/MAX_FALL 0.4/8.0 +
+the axis-separated `collides_rect` pass + the `unicorn_stuck_x`
+end-of-tick latch, the `npc_ai_unicorn.rs::unicorn_step` tail :497-521
+transcribed). The `update_kind_ai` arms are `unreachable!` markers (the
+S1-D-3 W-1 precedent). The 315/329 unicorn machine + the 410/423
+stand-ins route UNCHANGED (verify-only — the census witnesses re-pin
+them).
+
+**RNG by construction.** The 86/155 paths draw NO `Main.rand` (the
+machine's only draws are the 315 lob/dust + the 423 charge/dust, the other
+modules'). The chirp is 546-only; the `wants_sound` drain is wired anyway
+(the `NpcSoundCue::NpcHit` int-overload path — one pitch draw, no
+NextFloat) so the Tumbleweed lands without touching this arm.
+
+**FindFrame.** `case 86` (`NPC.cs:74404-74464`, the 16-row strip): the
+grounded/wet sprite latch (±2 deadband), the air row 15, the idle 0, the
+|vx|<3 slow walk over rows 1..8 (>=6 counter) + the gallop over rows 9..14
+(>=10 counter, both wraps snap into the band). `case 155`
+(`:74311-74374`, the 13-row strip): the air rows 10/11, the idle 0, the
+|vx|<4 turnaround rows 0..2 (>5 counter), the run's |vx|*0.4 accumulator
+(>8 advance, >9 wrap to 3). The bestiary-dummy floor (<3 → 3) is the icon
+path — unmodelled (the portrait reads row 0, the d35 convention).
+
+**The spawner.** The snow-arm 155 roll (`NPC.cs:4656-4658`) now spawns
+the Wolf kind (`spawn_zombie_variant`) — the zombie stand-in retired. The
+draw ORDER is unchanged (the 1/4 gate then the 1/3 roll), so the stream
+fingerprint is byte-identical; only the spawned kind differs (the S1-D-3z
+blood-moon precedent). The 169 (IceTortoise) roll keeps its zombie
+stand-in (unported). The `!blood_moon`-for-`!ZoneGraveyard` substitution
+is the pre-existing documented deviation (the graveyard flag is
+constants-off in the port's spawn ctx) — NOT silently fixed.
+
+**The draw — sheet deferral.** NPC_86/155 are NOT packed. The full-set
+skyline measurement (`tools/atlas_sim.js`, the L-8b git ref repointed to
+the merge af957ee4 since the branch was deleted) lands at 8132 px with
+NPC_86 alone / 8180 with NPC_155 alone, but **8217 with BOTH** (> the 8192
+strict-GPU bound); `npc_sheet` returns None and the draw skips (the d35
+(C) deferral precedent — the wyvern ~71-px headroom case). The packing
+rides the atlas-repack wave. The draw arms are present (the Unicorn
+`generic_anchor` 16 rows mirroring d35 verbatim; the Wolf
+`pumpkin_moon_draw` 13 rows); the portraits rest the `SetDefaults` box.
+
+**Witnesses (WRITTEN, NOT RUN — no compiler invoked).** 6 in
+`npc.rs::w4_d25_style26_wiring_tests` (the SetDefaults round-trip, the
+Unicorn live axis tick draw-free, the Wolf turnaround damp through the
+axis, the retired kind-arm panic, the case-155 + case-86 frame walks) +
+3 in `spawner.rs` (the snow-arm kind picks, the stream-fingerprint mirror,
+the 500-tick frozen A/B draw-free). The frozen A/B parks the player deep
+underground so the contact pass (the only RNG draw on the 86/155 path —
+`damage_var`) never fires.
+
 ## The frame phase split (S1-B-8)
 
 `app/frame.rs`'s single 2 110-line `frame()` became a phase-list orchestrator

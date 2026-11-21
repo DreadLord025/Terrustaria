@@ -586,6 +586,14 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-d25 STYLE-26 wiring: the Unicorn mirrors W4-d35 batch C
+            // (6ed8c22f) verbatim — protocol 440 (the vanilla 86 slot is
+            // the RayGunner's; the merge keep-one). The Wolf's vanilla
+            // 155 is PlanterasTentacle's protocol slot, so it takes the
+            // next-free port-local 355 (353 BlazingWheel, 354
+            // WebbedStylist; 355/356 free across the co-lanes).
+            NpcKind::Unicorn => 440,
+            NpcKind::Wolf => 355,
         }
     }
 
@@ -916,6 +924,9 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            // W4-d25 STYLE-26 wiring (the to_u16 rows above).
+            440 => NpcKind::Unicorn,
+            355 => NpcKind::Wolf,
             _ => return None,
         })
     }
@@ -1796,6 +1807,10 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            // W4-d25 STYLE-26 wiring: 86 NPCHit12 (`NPC.cs:9934`),
+            // 155 NPCHit1 (`:10969`). The Unicorn row mirrors d35 (C).
+            NpcKind::Unicorn => "NPC_Hit_12",
+            NpcKind::Wolf => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2100,6 +2115,10 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            // W4-d25 STYLE-26 wiring: 86 NPCDeath18 (`NPC.cs:9935`),
+            // 155 NPCDeath1 (`:10970`). The Unicorn row mirrors d35 (C).
+            NpcKind::Unicorn => "NPC_Killed_18",
+            NpcKind::Wolf => "NPC_Killed_1",
             _ => return None,
         })
     }
@@ -2451,6 +2470,9 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // W4-d25 STYLE-26 wiring: aiStyle 26 — `NPC.cs:9930` (86) /
+            // `:10965` (155). The Unicorn row mirrors d35 (C).
+            NpcKind::Unicorn | NpcKind::Wolf => 26,
         }
     }
 
@@ -2981,6 +3003,10 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-d25 STYLE-26 wiring: 86 46x42 (`NPC.cs:9928-9929`),
+            // 155 46x30 (`:10963-10964`). The Unicorn row mirrors d35 (C).
+            NpcKind::Unicorn => (46.0, 42.0),
+            NpcKind::Wolf => (46.0, 30.0),
         }
     }
 
@@ -3057,6 +3083,11 @@ impl NpcKind {
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
             NpcKind::ForceBubble => 384,
+            // W4-d25 STYLE-26 wiring: the vanilla `NPC.type` ids
+            // (`NPCID.cs:10849`/`:10987`) — the machine's type gates and
+            // the spawn rolls speak these, NOT the protocol ids (440/355).
+            NpcKind::Unicorn => 86,
+            NpcKind::Wolf => 155,
             // `NPCID.DesertDjinn` (533)
             NpcKind::DesertDjinn => 533,
             NpcKind::Goldfish => 55,
@@ -3622,6 +3653,10 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-d25 STYLE-26 wiring: 86 400 (`NPC.cs:9933`), 155 300
+            // (`:10968`). The Unicorn row mirrors d35 (C).
+            NpcKind::Unicorn => 400,
+            NpcKind::Wolf => 300,
         }
     }
 
@@ -3986,6 +4021,9 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-d25 STYLE-26 wiring: 86/155 dmg 65 (`NPC.cs:9931`/
+            // `:10966`). The Unicorn row mirrors d35 (C).
+            NpcKind::Unicorn | NpcKind::Wolf => 65,
         }
     }
 }

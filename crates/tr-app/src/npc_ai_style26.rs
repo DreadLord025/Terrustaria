@@ -1,9 +1,18 @@
 //! W4-d25 (aiStyle-26) — the unicorn/galloper family, `NPC.AI`'s
 //! `else if (this.aiStyle == 26) { this.AI_026_Unicorns(); }` block
 //! (`NPC.cs:25631-25634` → `AI_026_Unicorns` `:62366-62924`), ported
-//! 1:1 for the THREE unported members (code-only mode: no
-//! compiler/tests were run on this branch; the witness tests below
-//! are written, not executed).
+//! 1:1 for the THREE new members (code-only mode: no compiler/tests
+//! were run on this branch; the witness tests below are written, not
+//! executed).
+//!
+//! **WIRED (W4-d25 STYLE-26 wiring):** the Unicorn (86) + the Wolf
+//! (155) kinds land with their `SetDefaults` rows and ride the axis'
+//! 26 arm through `npc.rs::ai_026_gallop_family` (the wet stamp, the
+//! session-player candidate, the gravity/collision tail +
+//! `unicorn_stuck_x` latch). The Tumbleweed (546) kind + its sim
+//! pre-pass (the wind/zone stamps + the sibling scan) land with the
+//! wiring's second commit; until then its 546-only ctx inputs read
+//! their defaults on the 86/155 paths (never read there).
 //!
 //! ## Family census (`SetDefaults` `aiStyle = 26` rows, whole-file grep)
 //!
@@ -34,10 +43,11 @@
 //!   (`npc.rs::update_stardust_spider_small` /
 //!   `update_nebula_beast`, M4-EVENT-9; their deviation notes ride
 //!   those fns). Census-noted, NOT re-ported here.
-//! The port has no `NpcKind::Unicorn`/`Wolf`/`Tumbleweed` yet, so this
-//! module lands UNWIRED (the `npc_ai_style17.rs` pre-wiring
-//! precedent): a pure fn keyed on the vanilla type. The wiring step
-//! adds the kinds + the axis routing.
+//! The Unicorn/Wolf kinds are ported (the Unicorn rows mirror W4-d35
+//! batch C 6ed8c22f verbatim — protocol 440, the merge keep-one; the
+//! Wolf takes port-local 355). The Tumbleweed kind lands with the
+//! wiring's second commit. The fn stays pure, keyed on the vanilla
+//! type (`cs_id`), so the axis arm routes all three through one call.
 //!
 //! ## The machine (the shared core, verbatim)
 //!
@@ -94,7 +104,7 @@
 //! modules'). The fn takes no RNG parameter;
 //! `the_style26_arm_draws_no_rng` pins a `UnifiedRandom` state across
 //! every member's tick (written, not run).
-#![allow(dead_code)] // UNWIRED (W4-d25): the three kinds + the axis routing are the wiring step
+#![allow(dead_code)] // the GallopDefaults consts + the 546 ctx fields are read by the wiring's witnesses / the Tumbleweed commit
 
 use crate::npc::Npc;
 use crate::npc_target::{target_closest, TargetCandidate};

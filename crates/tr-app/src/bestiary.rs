@@ -2171,6 +2171,26 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Force Bubble",
     },
+    // W4-d25 STYLE-26 wiring: the Unicorn row mirrors W4-d35 batch C
+    // (6ed8c22f) verbatim (the merge keep-one); the Wolf's row rides
+    // `BestiaryDatabaseNPCsPopulator.cs:1513` (NightTime + Snow tags)
+    // and the en-US `NPCs.json:93` name.
+    BestiaryEntryDef {
+        credit_id: "Unicorn",
+        net_id: 86,
+        kind: NpcKind::Unicorn,
+        variant: None,
+        quick_unlock: false,
+        name: "Unicorn",
+    },
+    BestiaryEntryDef {
+        credit_id: "Wolf",
+        net_id: 155,
+        kind: NpcKind::Wolf,
+        variant: None,
+        quick_unlock: false,
+        name: "Wolf",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
