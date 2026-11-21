@@ -1435,14 +1435,15 @@ fn vulture_death(
     gore.new_gore(rng, world, pos14, vel, 88, 1.0); // :86623
 }
 
-/// The antlion arm (`NPC.cs:86545-86606`): the dust-250 census —
-/// `num513 = 100` hit / `num514 = 50` death (the 582 Larvae's 30/10,
-/// `:86549-86553`), then the per-kind sub-branch. The live branches:
-/// 69 Antlion → 97/98 (`:86568-86569`, sites 182-183), 580 Walking
-/// Antlion → 1094/1095/1096/1097 (`:86573-86576`, sites 184-187), 508
-/// Giant Walking Antlion → 811/812/813/814 (`:86588-86591`, sites
-/// 188-191); the 581/509/582 tails land next batch. All at position,
-/// scale 1f.
+/// The antlion arm (`NPC.cs:86545-86606`, sites 182-204): the dust-250
+/// census — `num513 = 100` hit / `num514 = 50` death (the 582 Larvae's
+/// 30/10, `:86549-86553`), then the per-kind sub-branch: 69 Antlion →
+/// 97/98 (`:86568-86569`), 580 Walking Antlion → 1094/1095/1096/1097
+/// (`:86573-86576`), 581 Flying Antlion → 1098/1099/1100/1101/1101
+/// (`:86580-86584`), 508 Giant Walking Antlion → 811/812/813/814
+/// (`:86588-86591`), 509 Giant Flying Antlion → 815/816/817/818/818
+/// (`:86595-86599`); the 582 Larvae tail (1102/1103, the 10-dust count)
+/// lands next batch. All at position, scale 1f.
 fn antlion_death(
     npc: &Npc,
     npc_type: i32,
@@ -1479,11 +1480,23 @@ fn antlion_death(
         gore.new_gore(rng, world, pos, vel, 1095, 1.0); // :86574
         gore.new_gore(rng, world, pos, vel, 1096, 1.0); // :86575
         gore.new_gore(rng, world, pos, vel, 1097, 1.0); // :86576
+    } else if npc_type == 581 {
+        gore.new_gore(rng, world, pos, vel, 1098, 1.0); // :86580
+        gore.new_gore(rng, world, pos, vel, 1099, 1.0); // :86581
+        gore.new_gore(rng, world, pos, vel, 1100, 1.0); // :86582
+        gore.new_gore(rng, world, pos, vel, 1101, 1.0); // :86583
+        gore.new_gore(rng, world, pos, vel, 1101, 1.0); // :86584
     } else if npc_type == 508 {
         gore.new_gore(rng, world, pos, vel, 811, 1.0); // :86588
         gore.new_gore(rng, world, pos, vel, 812, 1.0); // :86589
         gore.new_gore(rng, world, pos, vel, 813, 1.0); // :86590
         gore.new_gore(rng, world, pos, vel, 814, 1.0); // :86591
+    } else if npc_type == 509 {
+        gore.new_gore(rng, world, pos, vel, 815, 1.0); // :86595
+        gore.new_gore(rng, world, pos, vel, 816, 1.0); // :86596
+        gore.new_gore(rng, world, pos, vel, 817, 1.0); // :86597
+        gore.new_gore(rng, world, pos, vel, 818, 1.0); // :86598
+        gore.new_gore(rng, world, pos, vel, 818, 1.0); // :86599
     }
 }
 
@@ -1670,9 +1683,8 @@ pub fn hit_effect_d(
     else if npc_type == 133 {
         wandering_eye_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:86545-86606` — the antlion arm (69/580/581/508/509/582); the
-    // 69/580/508 branches are live (sites 182-191), the 581/509/582
-    // tails land next batch.
+    // `:86545-86606` — the antlion arm; the 69/580/581/508/509 branches
+    // are live (sites 182-201), the 582 Larvae tail lands next batch.
     else if matches!(npc_type, 69 | 580 | 581 | 508 | 509 | 582) {
         antlion_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
@@ -2938,6 +2950,40 @@ mod tests {
             let sandy = dust.slots().iter().find(|d| d.active).unwrap();
             assert_eq!(sandy.dust_type, 250, "the antlion puffs type 250");
             let mut twin = UnifiedRandom::new(191);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 26);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "antlion {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86580-86599` — the antlion flying tails: 581 Flying →
+    /// 1098/1099/1100/1101/1101, 509 Giant Flying → 815/816/817/818/818
+    /// (50 dust each).
+    #[test]
+    fn w4_f5d_the_antlion_flying_tails_spawn_the_five_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 26.0);
+        for (kind, want) in [
+            (581, vec![1098, 1099, 1100, 1101, 1101]),
+            (509, vec![815, 816, 817, 818, 818]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(193);
+            let _ = hit_effect_d(&n, kind, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "antlion {kind}");
+            let mut twin = UnifiedRandom::new(193);
             for _ in 0..50 {
                 twin_dust(&mut twin, 30, 26);
             }
