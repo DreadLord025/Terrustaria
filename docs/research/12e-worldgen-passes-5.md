@@ -90,7 +90,13 @@ Jungle `:20813` are already executed steps; #46 Settle Liquids Again
       pass's product, −1 reset); step `flowers` between `vines` and
       `muds walls in jungle` (DW-5.3's adjacency re-pinned +2); witness
       `w4_d105_the_flowers_step_sits_after_the_vines` + 3 unit tests.
-- [ ] 42 Mushrooms
+- [x] 42 Mushrooms — `surface.rs::pass_mushrooms` + `mushroom_cell`
+      (`:20599-20696`): the patch attempts turn the grass tufts (3) /
+      sunflowers (24) into mushrooms (frameX 144) and the glowing
+      mushrooms (201) tall (frameX 270); step `mushrooms` between
+      `flowers` and `muds walls in jungle` (DW-5.3's adjacency re-pinned
+      +3); witness `w4_d105_the_mushrooms_step_sits_after_the_flowers`
+      + 2 unit tests.
 - [ ] 43 Random Gems
 - [ ] 44 Moss Grass
 - [ ] 45 Larva

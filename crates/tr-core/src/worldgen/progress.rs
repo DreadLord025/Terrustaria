@@ -129,6 +129,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "vines" => PassMessage::Gen(43),
         // WorldGen.cs:20451 (Flowers).
         "flowers" => PassMessage::Gen(44),
+        // WorldGen.cs:20603 (Mushrooms).
+        "mushrooms" => PassMessage::Gen(45),
         // WorldGen.cs:12933.
         "floating islands" => PassMessage::Gen(12),
         // WorldGen.cs:16421.

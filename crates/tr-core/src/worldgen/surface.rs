@@ -1460,6 +1460,92 @@ fn allows_plants_to_grow(wall: u16) -> bool {
     ALLOWS_PLANTS_TO_GROW.contains(&wall)
 }
 
+/// `Mushrooms` (`WorldGen.cs:20599-20696`): `maxTilesX * 0.002` patch
+/// attempts (remix ×9). The classic arm rolls a centre column
+/// `Next(20, width-20)`, a half-width `Next(4, 10)` and a half-height
+/// `Next(15, 30)`, scans down from row 1 to the first active cell, then
+/// turns every grass tuft (3) / sunflower (24) in the box into a mushroom
+/// (frameX 144) and every glowing mushroom (201) into its tall form
+/// (frameX 270). The remix arm is the underground twin (`Next(8, 17)`
+/// half-sizes, the rock-layer y pick, the active-anchor gate).
+pub(crate) fn pass_mushrooms(
+    world: &mut World,
+    world_surface: f64,
+    rock_layer: f64,
+    remix: bool,
+    rng: &mut Rng,
+) {
+    let mut count = (world.width as f64 * 0.002) as i32;
+    if remix {
+        count *= 9;
+    }
+    for _ in 0..count {
+        let cx = rng.range(20, world.width - 20);
+        let mut half_x = rng.range(4, 10);
+        let mut half_y = rng.range(15, 30);
+        if remix {
+            // `:20615-20652` — the remix half-sizes + the underground y.
+            half_x = rng.range(8, 17);
+            half_y = rng.range(8, 17);
+            let y_lo = rock_layer as i32;
+            let y_hi = world.height - 350;
+            if y_hi <= y_lo {
+                continue;
+            }
+            let cy = rng.range(y_lo, y_hi);
+            // `:20620` — the anchor must be active.
+            if world.tile(cx, cy).is_some_and(|t| t.active()) {
+                for j in cx - half_x..cx + half_x {
+                    for k in cy - half_y..cy + half_y {
+                        // `:20626-20641` — the 10-border breaks.
+                        if j < 10 || k < 0 || j > world.width - 10 || k > world.height - 10 {
+                            break;
+                        }
+                        mushroom_cell(world, j, k);
+                    }
+                }
+            }
+        } else {
+            // `:20656-20692` — the classic scan down to the first active
+            // cell, then the box dress.
+            let mut l = 1;
+            while (l as f64) < world_surface - 1.0 {
+                if world.tile(cx, l).is_some_and(|t| t.active()) {
+                    for m in cx - half_x..cx + half_x {
+                        for n in l - half_y..l + half_y {
+                            if m < 10 || n < 0 || m > world.width - 10 || n > world.height - 10 {
+                                break;
+                            }
+                            mushroom_cell(world, m, n);
+                        }
+                    }
+                    break;
+                }
+                l += 1;
+            }
+        }
+    }
+}
+
+/// One box cell of the Mushrooms pass (`WorldGen.cs:20642-20649` remix /
+/// `:20680-20687` classic — the two bodies are identical): the grass tuft
+/// (3) / sunflower (24) → frameX 144, the glowing mushroom (201) → frameX
+/// 270. The C# tests `.type` with no active gate; the port matches it.
+fn mushroom_cell(world: &mut World, x: i32, y: i32) {
+    let Some(kind) = world.tile(x, y).map(|t| t.kind) else {
+        return;
+    };
+    if kind == 3 || kind == 24 {
+        if let Some(t) = world.tile_mut(x, y) {
+            t.frame_x = 144;
+        }
+    } else if kind == 201 {
+        if let Some(t) = world.tile_mut(x, y) {
+            t.frame_x = 270;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1785,5 +1871,49 @@ mod tests {
             .filter(|t| t.active() && t.kind == 73)
             .count();
         assert!(jungle_flowers > 0, "the jungle flowers ({jungle_flowers})");
+    }
+
+    /// `mushroom_cell` (`WorldGen.cs:20680-20687`): the grass tuft (3) and
+    /// sunflower (24) take frameX 144, the glowing mushroom (201) takes
+    /// frameX 270; other kinds stay.
+    #[test]
+    fn mushroom_cell_sets_the_frames() {
+        let mut w = grass_world(100, 100, 50);
+        for (x, kind, want) in [(40, 3u16, 144i16), (45, 24, 144), (50, 201, 270)] {
+            let i = w.index(x, 49);
+            w.tiles[i].kind = kind;
+            w.tiles[i].frame_x = 0;
+            w.tiles[i].flags |= FLAG_ACTIVE;
+            mushroom_cell(&mut w, x, 49);
+            assert_eq!(w.tile(x, 49).unwrap().frame_x, want, "kind {kind}");
+        }
+        // A stone cell stays untouched.
+        let i = w.index(55, 49);
+        w.tiles[i].kind = 1;
+        w.tiles[i].frame_x = 18;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        mushroom_cell(&mut w, 55, 49);
+        assert_eq!(w.tile(55, 49).unwrap().frame_x, 18);
+    }
+
+    /// The full pass (`:20599-20696`): the mushroom patches turn the
+    /// pre-seeded grass tufts into mushrooms (frameX 144).
+    #[test]
+    fn the_mushrooms_pass_turns_the_tufts() {
+        let mut w = grass_world(4200, 1200, 300);
+        for x in (100..4100).step_by(5) {
+            let i = w.index(x, 299);
+            w.tiles[i].kind = 3;
+            w.tiles[i].frame_x = 0;
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut rng = Rng::from_seed(17);
+        pass_mushrooms(&mut w, 350.0, 600.0, false, &mut rng);
+        let mushrooms = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 3 && t.frame_x == 144)
+            .count();
+        assert!(mushrooms > 0, "the mushrooms ({mushrooms})");
     }
 }

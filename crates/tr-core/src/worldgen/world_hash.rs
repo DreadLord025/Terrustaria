@@ -259,6 +259,9 @@ mod tests {
     // again by design. #41 Flowers recolours the grass tufts to the patch
     // styles (3 → 73) and plants the bare-top flowers
     // (`WorldGen.cs:20447-20598`) — both pins move again by design.
+    // #42 Mushrooms turns the grass tufts / sunflowers into mushrooms
+    // (frameX 144) and the glowing mushrooms tall (frameX 270)
+    // (`WorldGen.cs:20599-20696`) — both pins move again by design.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
