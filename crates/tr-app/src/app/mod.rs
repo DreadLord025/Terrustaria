@@ -2942,6 +2942,14 @@ impl App {
                     // `Player.cs:2048`; vanilla persists it in the `.plr`,
                     // `:54779`/`:55245`). Older sidecars load false.
                     p.ate_artisan_bread = saved.ate_artisan_bread;
+                    // W4-g90 lane 7: the five shimmer unlocks ride the same
+                    // v7 block (`Player.cs:54781-54786` minus the g89-owned
+                    // fruit) — the boosters resume on world reload.
+                    p.used_aegis_crystal = saved.used_aegis_crystal;
+                    p.used_arcane_crystal = saved.used_arcane_crystal;
+                    p.used_galaxy_pearl = saved.used_galaxy_pearl;
+                    p.used_gummy_worm = saved.used_gummy_worm;
+                    p.used_ambrosia = saved.used_ambrosia;
                     coins = saved.coins;
                     armor_kinds = saved.armor;
                     dye_kinds = saved.dye;

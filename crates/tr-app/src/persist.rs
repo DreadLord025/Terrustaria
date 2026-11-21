@@ -33,6 +33,22 @@ pub struct SavedPlayer {
     /// `Deserialize:55245`); the port's live-session sidecar carries it so
     /// the permanent unlock survives a `.trwld` reload.
     pub ate_artisan_bread: bool,
+    /// `Player.usedAegisCrystal` (`Player.cs:852`, save `:54781` / load
+    /// `:55255`) — version 7's second unlock line (W4-g90 lane 7); older
+    /// files load false (the ctor `:56078`).
+    pub used_aegis_crystal: bool,
+    /// `Player.usedArcaneCrystal` (`Player.cs:856`, `:54783`/`:55257`) —
+    /// version 7 (W4-g90 lane 7); older files load false (`:56080`).
+    pub used_arcane_crystal: bool,
+    /// `Player.usedGalaxyPearl` (`Player.cs:858`, `:54784`/`:55258`) —
+    /// version 7 (W4-g90 lane 7); older files load false (`:56081`).
+    pub used_galaxy_pearl: bool,
+    /// `Player.usedGummyWorm` (`Player.cs:860`, `:54785`/`:55259`) —
+    /// version 7 (W4-g90 lane 7); older files load false (`:56082`).
+    pub used_gummy_worm: bool,
+    /// `Player.usedAmbrosia` (`Player.cs:862`, `:54786`/`:55260`) —
+    /// version 7 (W4-g90 lane 7); older files load false (`:56083`).
+    pub used_ambrosia: bool,
 }
 
 pub fn player_path(world: &Path) -> PathBuf {
@@ -78,8 +94,22 @@ pub fn save(
         s.push_str(&format!("{kind} "));
     }
     s.push_str("\n");
-    // Version 7: the artisan-bread flag (0/1) on its own line.
+    // Version 7 (W4-g90): the artisan-bread flag (0/1), then the five
+    // shimmer-unlock flags in the .plr's own write order (`Player.cs:
+    // 54781-54786`: crystal, arcane, pearl, gummy, ambrosia — the 5338
+    // Aegis Fruit line is W4-g89's lane and joins at the merge). The g88
+    // superset contract places the life-maxima pair line AHEAD of this
+    // block at the merge; on this branch the flags follow the dye line.
     s.push_str(if player.ate_artisan_bread { "1\n" } else { "0\n" });
+    for flag in [
+        player.used_aegis_crystal,
+        player.used_arcane_crystal,
+        player.used_galaxy_pearl,
+        player.used_gummy_worm,
+        player.used_ambrosia,
+    ] {
+        s.push_str(if flag { "1\n" } else { "0\n" });
+    }
     std::fs::write(player_path(world), s)
 }
 
@@ -149,11 +179,31 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         }
     }
     // Version 7 adds the artisan-bread flag; older files load false (the
-    // ctor default, `Player.cs:56077`).
+    // ctor default, `Player.cs:56077`). W4-g90 lane 7 appends the five
+    // shimmer-unlock flags after it (the .plr write order `:54781-54786`
+    // minus the g89-owned 5338 fruit) — a v7 file written before this
+    // extension carries the bread line only, so each flag reads its own
+    // optional line and defaults false when absent.
     let mut ate_artisan_bread = false;
+    let mut used_aegis_crystal = false;
+    let mut used_arcane_crystal = false;
+    let mut used_galaxy_pearl = false;
+    let mut used_gummy_worm = false;
+    let mut used_ambrosia = false;
     if version == "7" {
         let flag_line = lines.next()?;
         ate_artisan_bread = flag_line.trim() == "1";
+        for slot in [
+            &mut used_aegis_crystal,
+            &mut used_arcane_crystal,
+            &mut used_galaxy_pearl,
+            &mut used_gummy_worm,
+            &mut used_ambrosia,
+        ] {
+            if let Some(line) = lines.next() {
+                *slot = line.trim() == "1";
+            }
+        }
     }
     Some(SavedPlayer {
         x,
@@ -165,6 +215,11 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         dye,
         kills,
         ate_artisan_bread,
+        used_aegis_crystal,
+        used_arcane_crystal,
+        used_galaxy_pearl,
+        used_gummy_worm,
+        used_ambrosia,
     })
 }
 
@@ -246,6 +301,50 @@ mod tests {
         std::fs::write(player_path(&path), line).unwrap();
         let s = load(&path).expect("v6 sidecar");
         assert!(!s.ate_artisan_bread);
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// W4-g90 lane 7: the five shimmer unlocks round-trip through the v7
+    /// flag block (`Player.cs:54781-54786` minus the g89-owned fruit).
+    #[test]
+    fn w4_g90_the_shimmer_unlocks_round_trip() {
+        let world = World::new("t".into(), 32, 32);
+        let mut p = Player::spawn(&world);
+        p.used_aegis_crystal = true;
+        p.used_galaxy_pearl = true;
+        p.used_ambrosia = true;
+        let dir = crate::test_world_helpers::test_scratch("persist-shimmer");
+        let path = dir.join("tr-persist-shimmer.trwld");
+        save(&path, &p, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[]).unwrap();
+        let s = load(&path).expect("the v7 sidecar");
+        assert!(s.used_aegis_crystal, "the crystal persisted");
+        assert!(!s.used_arcane_crystal, "the unused arcane stays false");
+        assert!(s.used_galaxy_pearl);
+        assert!(!s.used_gummy_worm);
+        assert!(s.used_ambrosia);
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// W4-g90 lane 7: a v7 sidecar written BEFORE the unlock extension (the
+    /// bread line only, the g90 first-pass shape) loads with all five
+    /// unlocks absent — each flag reads its own optional line.
+    #[test]
+    fn w4_g90_a_bread_only_v7_loads_without_the_unlocks() {
+        let dir = crate::test_world_helpers::test_scratch("persist-v7-bread-only");
+        let path = dir.join("tr-persist-v7.trwld");
+        let mut line = String::from("7\n1.0 2.0 100\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n89 80 76\n0 \n1007 0 0 0 0 1015 0 0 0 0 \n1\n");
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("the bread-only v7 still reads");
+        assert!(s.ate_artisan_bread, "the bread line parses");
+        assert!(!s.used_aegis_crystal, "the absent lines load false");
+        assert!(!s.used_arcane_crystal);
+        assert!(!s.used_galaxy_pearl);
+        assert!(!s.used_gummy_worm);
+        assert!(!s.used_ambrosia);
         crate::test_world_helpers::remove_scratch(&dir);
     }
 

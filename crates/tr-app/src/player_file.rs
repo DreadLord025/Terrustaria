@@ -115,6 +115,23 @@ pub struct PlayerFile {
     /// (`Deserialize`, `Player.cs:55243-55246`); older files load false
     /// (the ctor default, `:56077`). W4-g90.
     pub ate_artisan_bread: bool,
+    /// `Player.usedAegisCrystal` (`Player.cs:852`) — the 5337 permanent
+    /// life-regen ramp; read at release >= 260 (`:55255`, the six-unlock
+    /// block's FIRST bool). W4-g90 lane 7; older files load false
+    /// (the ctor `:56078`).
+    pub used_aegis_crystal: bool,
+    /// `Player.usedArcaneCrystal` (`Player.cs:856`) — the 5339 mana-regen
+    /// boost; read at `:55257` (the block's third bool). W4-g90 lane 7.
+    pub used_arcane_crystal: bool,
+    /// `Player.usedGalaxyPearl` (`Player.cs:858`) — the 5340 +0.03 luck;
+    /// read at `:55258` (the fourth bool). W4-g90 lane 7.
+    pub used_galaxy_pearl: bool,
+    /// `Player.usedGummyWorm` (`Player.cs:860`) — the 5341 +3 fishing
+    /// skill; read at `:55259` (the fifth bool). W4-g90 lane 7.
+    pub used_gummy_worm: bool,
+    /// `Player.usedAmbrosia` (`Player.cs:862`) — the 5342 +5% speed
+    /// triple; read at `:55260` (the sixth bool). W4-g90 lane 7.
+    pub used_ambrosia: bool,
     /// The 58 inventory slots as `(id, stack, prefix)`; `id == 0` = empty.
     pub inventory: [(i32, i32, u8); 58],
     /// `Item.favorited`'s per-slot bits for the inventory — bit `i` is
@@ -333,6 +350,12 @@ fn read_player_fields(
     // `ateArtisanBread` (`:55245`, gate 256 inside the 229 block) — W4-g90
     // models it; below 256 the ctor default false stands (`:56077`).
     let mut ate_artisan_bread = false;
+    // W4-g90 lane 7 — set by the 260+ unlock block below (ctor false).
+    let mut used_aegis_crystal = false;
+    let mut used_arcane_crystal = false;
+    let mut used_galaxy_pearl = false;
+    let mut used_gummy_worm = false;
+    let mut used_ambrosia = false;
     if version >= 229 {
         r.boolean().ok_or(PlayerFileError::Truncated("bt1"))?;
         r.boolean().ok_or(PlayerFileError::Truncated("bt2"))?;
@@ -343,9 +366,27 @@ fn read_player_fields(
             r.boolean().ok_or(PlayerFileError::Truncated("extra324"))?; // `:55247-55250`
         }
         if version >= 260 {
-            for _ in 0..6 {
-                r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
-            }
+            // The six shimmer/permanent unlocks (`:55255-55260`). W4-g90
+            // lane 7 keeps the crystal (1st), arcane (3rd), pearl (4th),
+            // gummy (5th) and ambrosia (6th); the SECOND bool —
+            // `usedAegisFruit` (`:55256`) — is W4-g89's lane and stays
+            // consumed-and-dropped until that branch merges.
+            used_aegis_crystal = r
+                .boolean()
+                .ok_or(PlayerFileError::Truncated("usedAegisCrystal"))?; // `:55255`
+            r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?; // usedAegisFruit `:55256` (g89)
+            used_arcane_crystal = r
+                .boolean()
+                .ok_or(PlayerFileError::Truncated("usedArcaneCrystal"))?; // `:55257`
+            used_galaxy_pearl = r
+                .boolean()
+                .ok_or(PlayerFileError::Truncated("usedGalaxyPearl"))?; // `:55258`
+            used_gummy_worm = r
+                .boolean()
+                .ok_or(PlayerFileError::Truncated("usedGummyWorm"))?; // `:55259`
+            used_ambrosia = r
+                .boolean()
+                .ok_or(PlayerFileError::Truncated("usedAmbrosia"))?; // `:55260`
         }
     }
     if version >= 182 {
@@ -440,6 +481,13 @@ fn read_player_fields(
             mana,
             mana_max,
             ate_artisan_bread,
+            [
+                used_aegis_crystal,
+                used_arcane_crystal,
+                used_galaxy_pearl,
+                used_gummy_worm,
+                used_ambrosia,
+            ],
             colors,
             inventory,
             inv_favorites,
@@ -500,6 +548,13 @@ fn read_player_fields(
             mana,
             mana_max,
             ate_artisan_bread,
+            [
+                used_aegis_crystal,
+                used_arcane_crystal,
+                used_galaxy_pearl,
+                used_gummy_worm,
+                used_ambrosia,
+            ],
             colors,
             inventory,
             inv_favorites,
@@ -653,6 +708,13 @@ fn read_player_fields(
         mana,
         mana_max,
         ate_artisan_bread,
+        [
+            used_aegis_crystal,
+            used_arcane_crystal,
+            used_galaxy_pearl,
+            used_gummy_worm,
+            used_ambrosia,
+        ],
         colors,
         inventory,
         inv_favorites,
@@ -674,6 +736,7 @@ fn finish_player_file(
     mana: i32,
     mana_max: i32,
     ate_artisan_bread: bool,
+    unlocks: [bool; 5],
     colors: [[u8; 3]; 7],
     inventory: [(i32, i32, u8); 58],
     inv_favorites: u64,
@@ -691,6 +754,11 @@ fn finish_player_file(
         mana,
         mana_max,
         ate_artisan_bread,
+        used_aegis_crystal: unlocks[0],
+        used_arcane_crystal: unlocks[1],
+        used_galaxy_pearl: unlocks[2],
+        used_gummy_worm: unlocks[3],
+        used_ambrosia: unlocks[4],
         hair_color: colors[0],
         skin_color: colors[1],
         eye_color: colors[2],
@@ -740,12 +808,21 @@ fn read_legacy_port_subset(
     // extraAccessory, biome-torch pair, artisan bread, six unlocks, dd2 —
     // the 11 bools the old subset writer emitted (no 324 dead slot). The
     // bread is the 4th (index 3) — W4-g90 models it (the old writer always
-    // emitted false, so legacy files load false).
+    // emitted false, so legacy files load false). W4-g90 lane 7 keeps the
+    // five shimmer unlocks at indices 4/6/7/8/9 (index 5 = the g89-owned
+    // Aegis Fruit, still dropped) — same always-false legacy files.
     let mut ate_artisan_bread = false;
+    let mut unlocks = [false; 5];
     for i in 0..11 {
         let b = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
-        if i == 3 {
-            ate_artisan_bread = b;
+        match i {
+            3 => ate_artisan_bread = b,
+            4 => unlocks[0] = b, // usedAegisCrystal
+            6 => unlocks[1] = b, // usedArcaneCrystal
+            7 => unlocks[2] = b, // usedGalaxyPearl
+            8 => unlocks[3] = b, // usedGummyWorm
+            9 => unlocks[4] = b, // usedAmbrosia
+            _ => {}
         }
     }
     let _tax = r.i32().ok_or(PlayerFileError::Truncated("tax"))?;
@@ -793,6 +870,11 @@ fn read_legacy_port_subset(
         mana,
         mana_max,
         ate_artisan_bread,
+        used_aegis_crystal: unlocks[0],
+        used_arcane_crystal: unlocks[1],
+        used_galaxy_pearl: unlocks[2],
+        used_gummy_worm: unlocks[3],
+        used_ambrosia: unlocks[4],
         hair_color: colors[0],
         skin_color: colors[1],
         eye_color: colors[2],
@@ -822,6 +904,21 @@ pub struct PlayerFileWrite {
     /// `Player.ateArtisanBread` (`Player.cs:2048`) — written at `:54779`
     /// (W4-g90). A fresh character carries false (the ctor, `:56077`).
     pub ate_artisan_bread: bool,
+    /// `Player.usedAegisCrystal` (`Player.cs:852`) — written at `:54781`
+    /// (W4-g90 lane 7). A fresh character carries false (ctor `:56078`).
+    pub used_aegis_crystal: bool,
+    /// `Player.usedArcaneCrystal` (`:856`) — written at `:54783` (W4-g90
+    /// lane 7; ctor `:56080`).
+    pub used_arcane_crystal: bool,
+    /// `Player.usedGalaxyPearl` (`:858`) — written at `:54784` (W4-g90
+    /// lane 7; ctor `:56081`).
+    pub used_galaxy_pearl: bool,
+    /// `Player.usedGummyWorm` (`:860`) — written at `:54785` (W4-g90
+    /// lane 7; ctor `:56082`).
+    pub used_gummy_worm: bool,
+    /// `Player.usedAmbrosia` (`:862`) — written at `:54786` (W4-g90
+    /// lane 7; ctor `:56083`).
+    pub used_ambrosia: bool,
     pub hair_color: [u8; 3],
     pub skin_color: [u8; 3],
     pub eye_color: [u8; 3],
@@ -891,12 +988,12 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     w.boolean(false); // `:54778` UsingBiomeTorches (unlocked=false -> false)
     w.boolean(file.ate_artisan_bread); // `:54779` ateArtisanBread (ctor `:56077`) — W4-g90
     w.boolean(false); // `:54780` the hardcoded `false` (the dead 324 slot)
-    w.boolean(false); // `:54781` usedAegisCrystal (ctor `:56078`)
-    w.boolean(false); // `:54782` usedAegisFruit (`:56079`)
-    w.boolean(false); // `:54783` usedArcaneCrystal (`:56080`)
-    w.boolean(false); // `:54784` usedGalaxyPearl (`:56081`)
-    w.boolean(false); // `:54785` usedGummyWorm (`:56082`)
-    w.boolean(false); // `:54786` usedAmbrosia (`:56083`)
+    w.boolean(file.used_aegis_crystal); // `:54781` usedAegisCrystal (ctor `:56078`) — W4-g90 lane 7
+    w.boolean(false); // `:54782` usedAegisFruit (`:56079`) — W4-g89's lane
+    w.boolean(file.used_arcane_crystal); // `:54783` usedArcaneCrystal (`:56080`) — W4-g90 lane 7
+    w.boolean(file.used_galaxy_pearl); // `:54784` usedGalaxyPearl (`:56081`) — W4-g90 lane 7
+    w.boolean(file.used_gummy_worm); // `:54785` usedGummyWorm (`:56082`) — W4-g90 lane 7
+    w.boolean(file.used_ambrosia); // `:54786` usedAmbrosia (`:56083`) — W4-g90 lane 7
     w.boolean(false); // `:54787` downedDD2EventAnyDifficulty
     w.i32(0); // `:54788` taxMoney
     w.i32(0); // `:54789` numberOfDeathsPVE
@@ -1162,6 +1259,11 @@ mod tests {
             mana: 20,
             mana_max: 20,
             ate_artisan_bread: false,
+            used_aegis_crystal: false,
+            used_arcane_crystal: false,
+            used_galaxy_pearl: false,
+            used_gummy_worm: false,
+            used_ambrosia: false,
             hair_color: [215, 90, 55],
             skin_color: [255, 125, 90],
             eye_color: [105, 90, 75],
@@ -1466,6 +1568,13 @@ mod tests {
             mana: 20,
             mana_max: 20,
             ate_artisan_bread: false, // the harness player never ate one
+            // The harness player used no shimmer items either (the golden
+            // fixture's unlock block is all false).
+            used_aegis_crystal: false,
+            used_arcane_crystal: false,
+            used_galaxy_pearl: false,
+            used_gummy_worm: false,
+            used_ambrosia: false,
             hair_color: [215, 90, 55],
             skin_color: [255, 125, 90],
             eye_color: [105, 90, 75],
@@ -1525,6 +1634,40 @@ mod tests {
         let plain = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample())))
             .expect("the plain file must read");
         assert!(!plain.ate_artisan_bread);
+    }
+
+    /// W4-g90 lane 7: the five shimmer unlocks round-trip through the
+    /// release-326 sections — the writes at `:54781-54786` (the fruit slot
+    /// `:54782` stays the g89 lane's false), the reads at `:55255-55260`
+    /// (gate 260). The walk stays aligned: the inventory past the block
+    /// reads back unchanged.
+    #[test]
+    fn w4_g90_the_shimmer_unlock_bools_survive_a_save_and_a_load() {
+        let written = PlayerFileWrite {
+            used_aegis_crystal: true,
+            used_arcane_crystal: true,
+            used_galaxy_pearl: true,
+            used_gummy_worm: true,
+            used_ambrosia: true,
+            ..sample()
+        };
+        let bytes = write_player_bytes(&written);
+        let file = read_player_bytes(&cbc_decrypt(&bytes)).expect("the unlock file must read");
+        assert!(file.used_aegis_crystal, "`:55255` reads back");
+        assert!(file.used_arcane_crystal, "`:55257`");
+        assert!(file.used_galaxy_pearl, "`:55258`");
+        assert!(file.used_gummy_worm, "`:55259`");
+        assert!(file.used_ambrosia, "`:55260`");
+        // The walk alignment: the slot past the unlock block is untouched.
+        assert_eq!(file.inventory[1], (3, 50, 0));
+        // The default sample carries all false (the ctor `:56078-56083`).
+        let plain = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample())))
+            .expect("the plain file must read");
+        assert!(!plain.used_aegis_crystal);
+        assert!(!plain.used_arcane_crystal);
+        assert!(!plain.used_galaxy_pearl);
+        assert!(!plain.used_gummy_worm);
+        assert!(!plain.used_ambrosia);
     }
 
     /// PKCS7 itself: the pad is 1..16 bytes of value n, and an aligned

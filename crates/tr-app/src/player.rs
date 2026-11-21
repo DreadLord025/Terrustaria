@@ -2128,10 +2128,36 @@ pub struct Player {
     /// 36702`: items 5139-5146 → 986-993), read by `ItemCheck_Shoot`
     /// (`:47181-47184`). Reset to -1 (`:16990`/`:18410`).
     pub override_fishing_bobber: i32,
-    /// `Player.usedGummyWorm` (`Player.cs:2074`): the 5341 permanent +3
+    /// `Player.usedGummyWorm` (`Player.cs:860`): the 5341 permanent +3
     /// fishing skill (`:45411-45416`, `:12857-12860`). NOT cleared by
     /// ResetEffects — a permanent unlock (the player-file field).
     pub used_gummy_worm: bool,
+    /// `Player.usedAegisCrystal` (`Player.cs:852`): the 5337 Aegis Crystal
+    /// permanent life-regen ramp +0.2/tick (`ItemCheck_UseShimmerPermanentItems`
+    /// `:45387-45392`, `UpdateLifeRegen` `:19113-19116`). NOT cleared by
+    /// ResetEffects — a permanent unlock (ctor `:56078` false, save `:54781` /
+    /// load `:55255`; W4-g90 DOC-SWEEP lane 7).
+    pub used_aegis_crystal: bool,
+    /// `Player.usedArcaneCrystal` (`Player.cs:856`): the 5339 Arcane Crystal
+    /// permanent mana-regen boost (`:45399-45404`; `UpdateManaRegen`
+    /// `:19430-19433` delay −0.05 + `:19453-19456` regen +statManaMax2/50).
+    /// NOT cleared by ResetEffects (ctor `:56080`, save `:54783` / load
+    /// `:55257`; W4-g90 lane 7).
+    pub used_arcane_crystal: bool,
+    /// `Player.usedGalaxyPearl` (`Player.cs:858`): the 5340 Galaxy Pearl
+    /// permanent +0.03 luck (`:45405-45410`, `RecalculateLuck`
+    /// `:29142-29145`). NOT cleared by ResetEffects (ctor `:56081`, save
+    /// `:54784` / load `:55258`; W4-g90 lane 7). The consumer lives in
+    /// `LuckState.used_galaxy_pearl`; `update_luck` mirrors this field into
+    /// it every tick (the persistence owner is here).
+    pub used_galaxy_pearl: bool,
+    /// `Player.usedAmbrosia` (`Player.cs:862`): the 5342 Ambrosia permanent
+    /// +5% mining/building/wall speed (`:45417-45422`,
+    /// `UpdatePermanentBoosters` `:12861-12866`: pickSpeed −0.05, tileSpeed
+    /// +0.05, wallSpeed +0.05). NOT cleared by ResetEffects (ctor `:56083`,
+    /// save `:54786` / load `:55260`; W4-g90 lane 7). NOT a minion slot —
+    /// the Demon Heart 3335 owns that (g87's lane).
+    pub used_ambrosia: bool,
     /// (Gate merge i35 ⨉ i41: `can_float_in_water` and `no_items` are
     /// declared ONCE, with the mount block above — the i35 duplicates
     /// folded into them; the fishing float bonus / bobber kill gate read
@@ -2933,6 +2959,10 @@ impl Player {
             acc_lava_fishing: false,
             override_fishing_bobber: -1,
             used_gummy_worm: false,
+            used_aegis_crystal: false, // `Player.cs:56078`
+            used_arcane_crystal: false, // `:56080`
+            used_galaxy_pearl: false, // `:56081`
+            used_ambrosia: false, // `:56083`
             acc_sentry_backpack: false,
             acc_sentry_backpack_grab_cooldown: 0,
             ballista_panic: false,
@@ -6865,6 +6895,17 @@ impl Player {
         if self.used_gummy_worm {
             self.fishing_skill += 3;
         }
+        // W4-g90 lane 7 — `UpdatePermanentBoosters`' Ambrosia row
+        // (`Player.cs:12861-12866`, the pass's LAST row): pickSpeed −0.05
+        // (the port's signed `pick_speed_bonus` +0.05, `pick_speed()`
+        // reads `1 - bonus`), tileSpeed/wallSpeed +0.05. The three adds
+        // re-run every tick after `ResetEffects` resets the speeds
+        // (`:18531-18532`, `:18690`) — the flag is permanent, the stats are not.
+        if self.used_ambrosia {
+            self.pick_speed_bonus += 0.05;
+            self.tile_speed_bonus += 0.05;
+            self.wall_speed_bonus += 0.05;
+        }
         // S1-P-i35 — `UpdateEquips`' post-loop bobber row
         // (`Player.cs:12985-12988`): the glow-bobber accessory's +10 skill,
         // AFTER the functional pass set the flag.
@@ -10584,6 +10625,12 @@ impl Player {
             self.zones,
         );
         self.luck_state.update_broken_mirror_decay(day_rate);
+        // W4-g90 lane 7 — the Galaxy Pearl mirror: `RecalculateLuck`
+        // (`Player.cs:29142-29145`) reads the player-file flag directly; the
+        // port's consumer lives in `LuckState.used_galaxy_pearl`, so the
+        // persistence owner (`Player.used_galaxy_pearl`, the 5340 use) seeds
+        // it before every recalculation.
+        self.luck_state.used_galaxy_pearl = self.used_galaxy_pearl;
         self.luck_state.recalculate_luck();
     }
 
@@ -11176,6 +11223,10 @@ impl Player {
                 // ×1.5 (`:19242-19245`), in the engine's own input slots.
                 extra_time: if self.crimson_regen { 1.0 } else { 0.0 },
                 extra_ramp_scale: if self.crimson_regen { 1.5 } else { 1.0 },
+                // W4-g90 lane 7 — the permanent shimmer crystals
+                // (`Player.cs:19113-19116` / `:19430-19433` + `:19453-19456`).
+                aegis_crystal: self.used_aegis_crystal,
+                arcane_crystal: self.used_arcane_crystal,
                 ..RegenInputs::default()
             };
             if let Some(death) = update_life_regen(&mut self.regen, &in_, &mut self.hp) {
@@ -12378,6 +12429,79 @@ mod tests {
         p.equipped[1] = 2764;
         p.update(&w, PlayerInput::default());
         assert!((p.melee_damage - 1.29).abs() < 1e-4);
+    }
+
+    /// W4-g90 lane 7 — `UpdatePermanentBoosters`' Ambrosia row
+    /// (`Player.cs:12861-12866`): the permanent +0.05 pick/tile/wall bonus
+    /// triple, re-added EVERY tick after `ResetEffects` resets the speeds
+    /// (`:18531-18532`, `:18690`) — never compounding, the flag survives.
+    #[test]
+    fn w4_g90_the_ambrosia_adds_its_speed_triple_every_tick() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        assert!(!p.used_ambrosia, "ctor false (`Player.cs:56083`)");
+        p.update(&w, PlayerInput::default());
+        assert!((p.pick_speed_bonus - 0.0).abs() < 1e-6, "no ambrosia, no bonus");
+        p.used_ambrosia = true;
+        p.update(&w, PlayerInput::default());
+        assert!((p.pick_speed_bonus - 0.05).abs() < 1e-6, "`:12863`");
+        assert!((p.tile_speed_bonus - 0.05).abs() < 1e-6, "`:12864`");
+        assert!((p.wall_speed_bonus - 0.05).abs() < 1e-6, "`:12865`");
+        // The next tick's reset + re-add: still exactly 0.05 each.
+        p.update(&w, PlayerInput::default());
+        assert!((p.pick_speed_bonus - 0.05).abs() < 1e-6, "no compounding");
+        assert!((p.tile_speed_bonus - 0.05).abs() < 1e-6);
+        assert!((p.wall_speed_bonus - 0.05).abs() < 1e-6);
+        assert!(p.used_ambrosia, "ResetEffects never clears the unlock");
+    }
+
+    /// W4-g90 lane 7 — the Galaxy Pearl mirror: `update_luck` seeds
+    /// `LuckState.used_galaxy_pearl` from the player-file flag before
+    /// `RecalculateLuck` (`Player.cs:29142-29145`), so the +0.03 lands.
+    #[test]
+    fn w4_g90_the_galaxy_pearl_feeds_the_luck_recalculation() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert!(p.luck().abs() < 1e-6, "the neutral state stays 0");
+        p.used_galaxy_pearl = true;
+        p.update(&w, PlayerInput::default());
+        assert!(p.luck_state.used_galaxy_pearl, "the mirror seeds the state");
+        assert!((p.luck() - 0.03).abs() < 1e-6, "the +0.03 term (`:29144`)");
+    }
+
+    /// W4-g90 lane 7 — the Aegis Crystal's +0.2 life-regen ramp
+    /// (`Player.cs:19113-19116`): the ramp time climbs 1.2/tick instead of
+    /// 1.0, and the Arcane Crystal's mana rows (`:19430-19433`,
+    /// `:19453-19456`) ride the same update. Driven through
+    /// `update_survival` directly (the standing-still state pinned).
+    #[test]
+    fn w4_g90_the_crystals_feed_the_regen_engines() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.used_aegis_crystal = true;
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        assert!(
+            (p.regen.life_regen_time - 1.2).abs() < 1e-5,
+            "the base +1 plus the crystal's +0.2 (`:19112-19116`)"
+        );
+        // The arcane crystal: a positive delay drains an extra 0.05. The
+        // player stands still (vx = vy = 0), so the base −1 and the
+        // still/grapple −1 both run: 4 − 1 − 1 − 0.05 = 1.95.
+        p.used_arcane_crystal = true;
+        p.regen.mana_regen_delay = 4.0;
+        p.mana = 0;
+        p.mana_max = 200;
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        assert!(
+            (p.regen.mana_regen_delay - 1.95).abs() < 1e-5,
+            "the −0.05 delay row (`:19432`), got {}",
+            p.regen.mana_regen_delay
+        );
+        // The sub-4 window counts as expired (ManaV2 flag3): the regen line
+        // ran — 200/3+1 = 67, doubled (still) = 134, +200/50 = 4 (the
+        // crystal's `:19455`), ×0.05 window scale → 6 (≥ the min 2).
+        assert!(p.regen.mana_regen > 0, "the regen line ran in the window");
     }
 
     /// M3-EQUIP-12 — the immunity rows of the accessories and the Snow/Molten

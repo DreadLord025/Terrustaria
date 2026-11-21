@@ -253,6 +253,13 @@ fn save_created_character(draft: &ui::char_creation::NewPlayerDraft, favorites: 
         mana: 20,      // `Player.cs:56075`
         mana_max: 20,  // `:56075`
         ate_artisan_bread: false, // the ctor default (`Player.cs:56077`)
+        // The five shimmer unlocks — fresh-character false (W4-g90 lane 7,
+        // ctor `:56078-56083`).
+        used_aegis_crystal: false,
+        used_arcane_crystal: false,
+        used_galaxy_pearl: false,
+        used_gummy_worm: false,
+        used_ambrosia: false,
         hair_color: rgb(draft.hair_color),
         skin_color: rgb(draft.skin_color),
         eye_color: rgb(draft.eye_color),
