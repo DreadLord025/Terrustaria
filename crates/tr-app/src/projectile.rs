@@ -3928,7 +3928,14 @@ impl Projectile {
             if self.kind == BLOOD_NAUTILUS_TEARS {
                 crate::proj_trail_dust::trail_813_windup(center, rng, dust, dust_ctx, world);
             }
-            scale = 0.0;
+            // W4-g64 FINAL (the d13 b56db900 fix adopted): the wind-up arm
+            // (`:33714-33783`) writes NO scale — the stock spawn 1 holds
+            // through the first 50 ticks (only the charge `:33797`, the
+            // full `:33891` and the dissolve `:33944` write). The old tail
+            // wrote 0.0 unconditionally; the drip's `scale = this.scale`
+            // and the generic draw read it (the d13 wind-up witness
+            // re-pinned 1.0 — this branch's twin re-pins below).
+            scale = self.scale;
         } else if self.ai[0] <= 90.0 {
             // `:33797-33799`'s charge.
             scale = (self.ai[0] - 50.0) / 40.0;
@@ -45255,6 +45262,9 @@ mod w4_g64_wiring_tests {
         let mut p = mk();
         let mut rng = CountRng { ranges: Vec::new(), floats: 0 };
         p.ai_vortex_ritual((1100.0, 1100.0), &mut rng, &mut sd, &sc, &w);
+        // W4-g64 FINAL (the d13 b56db900 re-pin): the wind-up writes NO
+        // scale — the stock spawn 1 holds (`:33714-33783`).
+        assert_eq!(p.scale, 1.0, "the wind-up writes NO scale — the stock 1 holds");
         let gates: Vec<(i32, i32)> = rng.ranges.iter().copied()
             .filter(|&(lo, hi)| (lo, hi) == (0, 4)).collect();
         assert_eq!(gates.len(), 2, "the wind-up's two Next(4) gates");
@@ -45305,6 +45315,9 @@ mod w4_g64_wiring_tests {
     /// top-left; the fix), zero velocity, the raw 619 id; the 813 is NOT
     /// on flag53 (no sound latch). The death tick (ai[0] = 180) still
     /// rolls the dissolve + the opacity tail (the Kill does not return).
+    /// W4-g64 FINAL — the d13 b56db900 wind-up scale fix re-pins the
+    /// first-50-tick drip scale to the stock 1 (the machine holds
+    /// `self.scale`; the old 0.0 tail shrank every wind-up drip).
     #[test]
     fn w4_g64_wire_813_squid_spawn_and_death_tick_tail() {
         let w = World::new("g64r2".into(), 200, 200);
@@ -45322,7 +45335,11 @@ mod w4_g64_wiring_tests {
             ..Default::default()
         };
         let mut rng = tr_core::UnifiedRandom::new(813);
-        for _ in 0..90 {
+        for _ in 0..50 {
+            p.ai_vortex_ritual((1100.0, 1100.0), &mut rng, &mut sd, &sc, &w);
+            assert_eq!(p.scale, 1.0, "the wind-up holds the stock scale (ai0 {})", p.ai[0]);
+        }
+        for _ in 0..40 {
             p.ai_vortex_ritual((1100.0, 1100.0), &mut rng, &mut sd, &sc, &w);
         }
         assert_eq!(p.ai[0], 90.0);

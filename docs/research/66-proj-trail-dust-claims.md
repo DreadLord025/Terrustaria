@@ -248,3 +248,46 @@ site). Summary of the deltas against this doc's stale rows:
 
 The remainder witnesses (6 style-124 + 3 813 + 1 596 + 5 keep-one = 15) are
 WRITTEN NOT RUN (code-only).
+
+## The FINAL phase cross-activation census (2026-11-21, the g63d/d19c reads)
+
+The g63 latest tip (`2ea3e711`, the f20b 357-seam cross-note over
+`036901a5`'s research/67 activation checklist) re-probes the owed
+AI_001 unrowed kinds. This lane's kinds are all ≥401 — **none of the
+281/174/176 rows is a g64 kind**, so no g64 emitter is owed for them.
+The cross-activation notes (the merge wave's inputs):
+
+- **281 (CannonBunny, aiStyle 49)** — the row stays UNCLAIMED on every
+  pushed tip (the g63 `eea7156f` census correction: the machine IS
+  claimed + ported — d5 `5f7390a3`'s `projectile_ai_style49.rs`,
+  UNWIRED; the `:23321-23364` aiStyle-2 twin is DEAD code, 281 rides
+  style 49 per `:3680`). The g63 `bunny_burst` emitter (the `ai[0]==3`
+  tick-3 block, sites `:28292/28298/28302`) stays UNWIRED — activation
+  = the row + d5's merge + the one-line call into d5's tick-3 block.
+  This branch's `CANNON_BUNNY` const (`data.rs:721`) is the
+  `BunnyCannonCanFire` scan anchor ONLY — it carries no `proj_data`
+  row and no dispatch arm; it does NOT activate the emitter (the
+  S1-F-9b row gate reads `proj_data`). The g16 dead-twin landing gore
+  + the g65 kill-census one-consumer rules are the merger's (g63's
+  research/67 rows).
+- **174/176 (IceSpike/JungleSpike, AI_001)** — unrowed on every pushed
+  tip (the g63 batch-7 re-probe). The g63 `ice_spike_dust`/
+  `jungle_spike_dust` emitters stay UNWIRED. **The `old_position`
+  latch debt:** the C# `Projectile.cs:17013` latches
+  `base.oldPosition = base.position` for EVERY projectile between the
+  AI and HandleMovement; this branch's latch (`projectile.rs`'s
+  `old_position = pos` seam) is golf-gated (`ai_style == 149 || 150`,
+  the S1-P-i55 slice) — the 174's `oldPosition − velocity×3` spawn
+  point (`:55036`) reads a stale zero latch until the activating merge
+  widens it to the C# every-projectile form. NOT widened here (the
+  widening changes every kind's `old_pos` reads — the golf pad probe
+  + the trident `old_vel` precedent ride the same field; the merge
+  wave owns the re-derivation).
+- **The d19c 92-clouds** — ZERO trail-dust sites (the `:32558-32820`
+  arm re-read whole: the only draw is the 1128 first-tick frame roll
+  `:32565`; the 1007 GasTrap particle broadcast is the particle
+  layer's skip). The d19 machine (`projectile_ai_clouds.rs`,
+  `c5a7e5d3`) is the sole owner of the 511/512/513/1007/1128 rows; no
+  g64 keep-one owed (the g64 ledger's "92" mentions are the 1092
+  LunarHook kind — a different id). Adjudicated in ANALYSIS "The
+  FINAL phase".

@@ -39546,3 +39546,77 @@ C# (`:33553-33678`, `:33679-34025`, `:34970-35696`, `:23411-23428`,
 `:23520-23556`, `:23954-24031`), the d11/d13/g63/e3 pushed tips via
 `git show`, and the stream-order mirrors.
 
+### The FINAL phase (2026-11-21, code-only) — the d13 DUP adjudication
+
+The d13 lane's latest local tip (`b56db900` activation 2/5 → `0f3cb141`
+activation 4/5; the PUSHED remote tip is still `a2588cd2` — the activation
+commits are read via the local branch ref, `git show`) re-lands the same
+rows/machines this branch's remainder wave ported. The byte-compare
+adjudication (the d13-rowed-957 GLOMMER report + the g64c-rows directive):
+
+**(1) The 895/898/957 rows — BYTE-EQUAL, keep-one published.** The row
+tuple on both branches is the identical 10-tuple
+`(20.0, 20.0, 124, -1, 18000, 0, false, false, false, RESET_STATE)`
+(d13 `data.rs:3572-3575`'s seven-kind arm vs this branch's `:3575-3577`
+three-kind arm — the shared kinds' VALUES are byte-identical; the d13 arm
+just matches four more kinds). The `netImportant`/`ignoreWater` flag-list
+entries are semantically identical (d13's `STYLE124_PETS.contains` vs this
+branch's three-kind `matches!` — same predicate on the rowed kinds). The
+`proj_frames` 6/16/12 pins are byte-equal (`Main.cs:8683/8686/8697`).
+**Merge rule: keep d13's SEVEN-kind arm + its `STYLE124_PETS` flag-list
+form** (the superset — this branch's three-kind arm is a strict subset);
+this branch's `FAIRY_QUEEN_PET`/`ICE_QUEEN_PET`/`GLOMMER_PET` const docs
+and the row comment retire into d13's. NO value change either way — the
+witness `w4_d13_the_seven_rows_carry_the_csharp_set_defaults` (d13) and this branch's
+`w4_g64_the_rowed_124_pets_carry_the_csharp_set_defaults` pin the same constants.
+
+**(2) The 813 machine — THREE-way keep-one (g64 vs d11 `e0395afc` vs d13
+`b56db900`).** All three ports carry the same four-phase timeline
+(`:33679-34025`); the g64 port is the dust-wired SUPERSET:
+
+| delta | d11 `e0395afc`/`eae7b509` | d13 `b56db900` | g64 (this branch, FINAL) |
+| --- | --- | --- | --- |
+| dust bodies | gates-only census (the `let _` skips) | gates-only census (the 13-site contract doc) | LIVE (`trail_813_*` — the bodies + internals on the stream) |
+| wind-up scale | writes 0.0 (STALE — the d11 machine predates the fix) | **holds `self.scale`** (`b56db900`'s fix, witness re-pinned 1.0) | **ADOPTED this phase** — `scale = self.scale` + both witnesses re-pinned 1.0 |
+| 108 row shape | the stale -1/RESET_STATE | corrected: stock pen 1 + alpha 255 + ignoreWater | the corrected shape (remainder 4 adopted) |
+| tick-90 Item8 cue | absent | `wants_sound` (the d13 residual) | present (remainder 4 adopted) |
+| once-per-death Kill | bare `active = false` | `self.active &&` + kill_time_left stamp + time_left zero | present (remainder 4 adopted) |
+| 619 spawn point | the TOP-LEFT (`self.pos` — stale) | the untruncated CENTRE | the C# `(int)Center` truncation (`:33884` verbatim — this branch keeps it, the d13 untruncated centre is the loser) |
+| 619 kind id | `NpcKind::BloodSquid.to_u16()` (the d11 DOC-SWEEP row) | the raw 619 | the raw 619 intent — the d11 NPC row (`npc_ai_blood_squid`) resolves it at the drain's `from_u16`; the intent VALUE is identical (619) either way |
+
+**Merge rule: ONE `ai_vortex_ritual` survives — the g64 dust-wired port**
+(the d11/d13 gates-only arms retire; their census witnesses re-derive at
+the swap — the explicit draws are a subset of the live bodies' stream).
+The d11 `NpcKind::BloodSquid` NPC-side row is ADDITIVE (it joins at the
+merge; the intent's raw 619 already resolves through it). The wind-up
+scale fix is now byte-identical on d13 + g64 (the d11 machine takes it at
+the swap). Witnesses: `w4_g64_wire_813_phase_gates_keep_the_d11_order`
+(re-pinned: the wind-up scale 1.0),
+`w4_g64_wire_813_squid_spawn_and_death_tick_tail` (re-pinned: the
+first-50-tick scale hold + the 180-tick parity twin re-derives on the
+fixed stream).
+
+**(3) The d19 92-clouds adjudication (d19c-active).** The d19 tip
+(`1054c396` docs over `c5a7e5d3` code) ports aiStyle 92's five rows
+(511/512/513 ToxicCloud, 1007 GasTrap, 1128 ClaymoreSporeCloud —
+`projectile_ai_clouds.rs`, the `:32558-32820` arm) + the 1126 spore
+drain. **ZERO trail-dust overlap:** the C# arm carries NO `Dust.NewDust`
+site (re-read whole, `:32558-32820` — the only draws are the 1128
+first-tick `Next(projFrames)` frame roll `:32565`; the 1007 particle
+broadcast is the particle layer's skip). The g64 kind ledger has no 92
+row (its 92 mentions are the 1092 LunarHook kind — a different id). The
+92-family dust census closes at ZERO sites; the d19 clouds machine is
+the sole owner, no keep-one owed. The 950/476 per-kind overlays + the
+949 torch-god event are d19's (no g64 kind).
+
+**(4) The g63d 281/174/176 cross-activation notes** — see research/66
+"the FINAL phase cross-activation census" (the rows stay unclaimed on
+every pushed tip; the g63 emitters stay UNWIRED; this branch's
+`old_position` latch stays golf-gated — the C# `:17013` latches every
+projectile, the activating merge widens it).
+
+**Code-only round.** The FINAL phase's re-pins are WRITTEN, NOT RUN.
+Verified by re-reading `:33679-34025` (the wind-up arm writes no scale),
+`:32558-32820` (the 92 arm draws no dust), `:5743-5756` + `:23830-24099`
+(the 503 row + arm), and the d13/d11/d19/g63/e3 tips via `git show`.
+
