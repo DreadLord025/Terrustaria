@@ -848,6 +848,62 @@ pub(crate) fn toxic_bubble_kill(p: &mut Projectile, rng: &mut dyn DropRng) {
     }
 }
 
+/// `AI()`'s aiStyle-96 arm (`Projectile.cs:33004-33028`) — the Ichor
+/// Flask's splash (524). The 0.6 age counter with the 500 kill, the
+/// 2-iteration dust gate (each `Next(3) != 0` — the draw ALWAYS runs, the
+/// taken branch's dust body skips), the 0.008 gravity. The dust's
+/// `(800 - ai[0]) / 800 + 0.1` scale feeds only the skipped body.
+pub(crate) fn ai_ichor_splash(p: &mut Projectile, rng: &mut dyn DropRng) {
+    // `:33006-33010` — the age + kill.
+    p.ai[0] += 0.6;
+    if p.ai[0] > 500.0 {
+        p.kill_time_left = p.time_left;
+        p.active = false;
+        p.time_left = 0;
+    }
+    // `:33011-33026` — the 2-iteration dust gate.
+    for _ in 0..2 {
+        if rng.next_range(0, 3) != 0 {
+            // The dust body (position/velocity/scale writes) is the
+            // dust-layer skip; no call-site draws inside.
+        }
+    }
+    // `:33027` — the gravity.
+    p.vel.y += 0.008;
+}
+
+/// The splash's `HandleMovement` blocked-move arm
+/// (`Projectile.cs:18807-18818`): a blocked move ages `ai[0] += 100` and
+/// reverses BOTH axes off the pre-collision velocity. The free move
+/// integrates; the collision box is the slot's own 10×10 (no
+/// `GetCollisionParams` override for 524).
+pub(crate) fn ichor_splash_move(p: &mut Projectile, world: &World) {
+    if p.tile_collide {
+        let last = p.vel;
+        let tc = crate::collision::tile_collision(
+            world,
+            [p.pos.x, p.pos.y],
+            [p.vel.x, p.vel.y],
+            p.w,
+            p.h,
+            true,
+            true,
+        );
+        p.vel = Vec2::new(tc.vel[0], tc.vel[1]);
+        if p.vel != last {
+            p.ai[0] += 100.0;
+            if p.vel.x != last.x {
+                p.vel.x = -last.x;
+            }
+            if p.vel.y != last.y {
+                p.vel.y = -last.y;
+            }
+        }
+    }
+    p.pos += p.vel;
+    p.direction = if p.vel.x < 0.0 { -1 } else { 1 };
+}
+
 // Witnesses (W4-d10 code-only round — WRITTEN NOT RUN).
 
 #[cfg(test)]
@@ -1406,5 +1462,63 @@ mod tests {
         q.vel = Vec2::new(3.0, 0.0);
         toxic_bubble_move(&mut q, &w2);
         assert!(!q.active, "the contact kill");
+    }
+
+    /// The 524 row (`Projectile.cs:5939-5952`): 10×10, aiStyle 96, alpha
+    /// 255, penetrate 5, ignoreWater, melee, extraUpdates 5, idStatic-10.
+    #[test]
+    fn w4_d10_s96_the_splash_row_is_verbatim() {
+        let d = proj_data(524).unwrap();
+        assert_eq!((d.w, d.h), (10.0, 10.0));
+        assert_eq!(d.ai_style, 96);
+        assert_eq!(d.alpha, 255);
+        assert_eq!(d.penetrate, 5);
+        assert!(d.ignore_water);
+        assert!(d.melee);
+        assert_eq!(d.extra_updates, 5);
+        assert!(d.uses_id_static_immunity);
+        assert_eq!(d.id_static_hit_cooldown, 10);
+    }
+
+    /// The age/kill/dust machine (`:33006-33027`): +0.6 per sub-step, the
+    /// 500 kill, TWO Next(3) draws per tick (always), the 0.008 gravity.
+    #[test]
+    fn w4_d10_s96_the_splash_ages_and_draws_two() {
+        let mut p = proj(524);
+        let mut rng = CensusRng::default();
+        ai_ichor_splash(&mut p, &mut rng);
+        assert!((p.ai[0] - 0.6).abs() < 1e-6);
+        assert!((p.vel.y - 0.008).abs() < 1e-6);
+        assert_eq!(rng.ranges, vec![(0, 3), (0, 3)], "the 2-iteration gate");
+        // The 500 kill (the C# keeps running the dust + gravity after).
+        p.ai[0] = 499.8;
+        ai_ichor_splash(&mut p, &mut rng);
+        assert!(!p.active);
+        assert_eq!(rng.ranges.len(), 4, "the post-kill gates still draw");
+    }
+
+    /// The bounce (`:18807-18818`): a blocked move ages +100 and reverses
+    /// both axes; open air integrates untouched.
+    #[test]
+    fn w4_d10_s96_the_splash_bounces_and_ages() {
+        let mut w = World::new("t".into(), 300, 200);
+        let mut p = proj(524);
+        p.vel = Vec2::new(6.0, 2.0);
+        let tx = ((p.pos.x + p.w + 6.0) / 16.0) as i32;
+        let ty = ((p.pos.y + p.h * 0.5 + 2.0) / 16.0) as i32;
+        let i = w.index(tx, ty);
+        w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        ichor_splash_move(&mut p, &w);
+        assert_eq!(p.ai[0], 100.0, "the +100 age");
+        assert!(p.vel.x < 0.0, "the X reverse");
+        // Open air: no age, no reverse.
+        let w2 = World::new("t".into(), 300, 200);
+        let mut q = proj(524);
+        q.vel = Vec2::new(6.0, 2.0);
+        let before = q.pos;
+        ichor_splash_move(&mut q, &w2);
+        assert_eq!(q.ai[0], 0.0);
+        assert_eq!(q.pos, before + Vec2::new(6.0, 2.0));
     }
 }

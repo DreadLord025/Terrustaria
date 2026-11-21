@@ -734,6 +734,9 @@ pub const COIN_PORTAL: u16 = 518;
 /// `ProjectileID.ToxicBubble` (523, `ProjectileID.cs:1600`) — the Toxic
 /// Flask's bubble, aiStyle 95 (`Projectile.cs:5929-5938`). W4-d10.
 pub const TOXIC_BUBBLE: u16 = 523;
+/// `ProjectileID.IchorSplash` (524, `ProjectileID.cs:1602`) — the Ichor
+/// Flask's splash, aiStyle 96 (`Projectile.cs:5939-5952`). W4-d10.
+pub const ICHOR_SPLASH: u16 = 524;
 /// `ProjectileID.LeafBlower` (`Projectile.cs:2937-2945`): the Leaf Blower's
 /// 14x14 petal, aiStyle 40 (`AI_040_LeafBlower` `:38003-38082`).
 pub const LEAF_BLOWER: u16 = 206;
@@ -1715,6 +1718,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             TOXIC_BUBBLE => (
                 32.0, 32.0, 95, 1, TIME_LEFT_DEFAULT, 0, true, false, false,
                 (false, -2, false, -1, 255, 1.0),
+            ),
+            // W4-d10 — the Ichor Flask's splash (`Projectile.cs:5939-5952`):
+            // 10×10, aiStyle 96, alpha 255, penetrate 5, ignoreWater,
+            // melee, extraUpdates 5, the idStatic-10 pair.
+            ICHOR_SPLASH => (
+                10.0, 10.0, 96, 5, TIME_LEFT_DEFAULT, 5, true, false, false,
+                (false, -2, true, 10, 255, 1.0),
             ),
             // `Projectile.cs:1310-1316` — the throwing knife (48): 12x12, aiStyle
             // 2, `penetrate = 2`.
@@ -4286,8 +4296,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (`Projectile.cs:3195`); the moving cloud 237 and the drop 239
             // keep the stock false.
             || kind == RAIN_CLOUD_RAINING
-            // W4-d10 — the Coin Portal sets `ignoreWater` (`:5887`).
-            || kind == COIN_PORTAL
+            // W4-d10 — the Coin Portal sets `ignoreWater` (`:5887`); the
+            // Ichor Splash too (`:5947`).
+            || matches!(kind, COIN_PORTAL | ICHOR_SPLASH)
             // S1-D-4: the Empress family's five arms all set `ignoreWater`
             // (`Projectile.cs:8365`/`:8378`/`:8414`/`:8725`/`:8768`).
             || matches!(
@@ -4357,8 +4368,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
                 // W4-d10 — the Chlorophyte Claymore's spore cloud (1128,
-                // `:10572`).
-                    | SPORE_CLOUD
+                // `:10572`) and the Ichor Flask's splash (524, `:5948`).
+                    | SPORE_CLOUD | ICHOR_SPLASH
             ),
         ranged: matches!(
             kind,

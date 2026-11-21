@@ -13687,7 +13687,9 @@ const AI_STYLE_1_RIDERS: [u16; 5] = [
 /// bombs) keep their pre-existing no-wind behaviour; the rest (10/14/…) port
 /// in a later phase or not at all.
 fn uses_wind_physics(ai_style: u8) -> bool {
-    matches!(ai_style, 2 | 8 | 24 | 28 | 29)
+    // W4-d10: 93 (`:22129`) and 96 (`:22130`) join the ported set — the
+    // nail and the ichor splash are wind-eligible in the C# list.
+    matches!(ai_style, 2 | 8 | 24 | 28 | 29 | 93 | 96)
 }
 
 /// `Terraria.Utilities.LCG32Random` (`Utilities/LCG32Random.cs:5-44`) — the
@@ -18099,6 +18101,17 @@ impl ProjectilePool {
                         95 => {
                             crate::projectile_ai_91_100::ai_toxic_bubble(&mut self.slots[i]);
                             crate::projectile_ai_91_100::toxic_bubble_move(&mut self.slots[i], world);
+                        }
+                        // W4-d10 — `AI()`'s `else if (this.aiStyle == 96)`
+                        // (`Projectile.cs:33004-33028`): the Ichor Flask's
+                        // splash (524) — the 0.6 age + 500 kill, the
+                        // 2×Next(3) dust gate, the 0.008 gravity. The
+                        // movement is the :18807-18818 bounce (+100 age,
+                        // both-axis reverse). aiStyle 96 joins the wind
+                        // list below (`ShouldUseWindPhysics` :22130).
+                        96 => {
+                            crate::projectile_ai_91_100::ai_ichor_splash(&mut self.slots[i], rng);
+                            crate::projectile_ai_91_100::ichor_splash_move(&mut self.slots[i], world);
                         }
                         165 => {
                             // `AI_165_Whip` (`:47667-48270`): the swing
@@ -22944,6 +22957,13 @@ impl ProjectilePool {
                 self.slots[slot].ai[1] += 1.0;
                 self.slots[slot].net_update = true;
             }
+            // W4-d10 — `Damage_PVE_Inner`'s 524 arm (`Projectile.cs:13227-
+            // 13231`): every landed ichor hit ages the splash 50 ticks and
+            // dirties the net flag.
+            if self.slots[slot].kind == ICHOR_SPLASH {
+                self.slots[slot].net_update = true;
+                self.slots[slot].ai[0] += 50.0;
+            }
             // W4-d10 — `Damage_PVE_Inner`'s aiStyle-93 arm
             // (`Projectile.cs:13334-13344`): the first hit sticks the nail
             // to the victim (`ai[1]=0`, `ai[0]=-victim-1`, the velocity
@@ -23293,6 +23313,12 @@ impl ProjectilePool {
                         // 20, 60 × Next(10, 30).
                         let t = 60 * rng.next_range(10, 30);
                         npcs[idx].buffs.add_buff(20, t);
+                    }
+                    ICHOR_SPLASH => {
+                        // W4-d10 — `:11387-11390`: the splash's Ichor 69,
+                        // 60 × Next(3, 8).
+                        let t = 60 * rng.next_range(3, 8);
+                        npcs[idx].buffs.add_buff(69, t);
                     }
                     _ => {}
                 }
