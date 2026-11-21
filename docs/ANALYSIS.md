@@ -39361,3 +39361,29 @@ clone_dust`, `UnifiedRandom::next_float_direction`). The 4 new witness tests
 (`projectile_dust.rs`: the SwordBeam census, the LightDisc 4×15 census, the
 Reflect math, the queue half) are WRITTEN, NOT RUN — **no
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked** (user directive).
+
+### WET-BLOCK CLAIM (W4-d53 batch 3 — the generic `Update` wet machine)
+
+**Claimed 2026-11-21** by `task/W4-d53-dust-sites-projectile`: the generic
+`Projectile.Update` wet block (`Projectile.cs:16790-17007`) plus the
+`:16786-16789` wet-clear preamble — the ONE real host-gap the batch-1 census
+cited (sites 1-8, `:16851-16987`). In-flight probe: two 90 s-spaced
+`git fetch` reads of `origin/task/W4-d53-dust-sites-projectile` both pinned
+the tip at `8a9cb90b` (the claim+census doc); no co-lane commit touches the
+`:16790-17007` wet block. The d53c session's skips stay outside this window.
+
+**Scope:** port the MACHINE verbatim — the `wetCount` cooldown fields, the
+lava/honey/shimmer flag latching (`Collision.LavaCollision` full box +
+`Collision.WetCollision` inset probe with the `Collision.honey`/`shimmer`
+out-params), the `IsDestroyedByWater` kill (85/15/188/34/1097/1106,
+`ProjectileID.cs:429`), the FireArrow 2→1 `TransformType` + light-0, the
+type-34 lava dry-out, the type-80 sandgun wet-clear + lava kill, the
+entry (`:16843-16916`) / exit (`:16917-16997`) edge machine with the 155
+velocity-halving carve-out, the dry-clear tail (`:16998-17003`) and the
+`wetCount--` (`:17004-17007`) — and wire the 8 skipped splash sites through
+the queue→drain contract (`pending_dust_bursts` → `projectile_dust::drain`,
+the batch-1 convention). The g15 WorldItem precedent (`SplashKind` /
+`wet_edges` / `splash_edge`) is the shape mirror; the projectile constants
+differ (10 dust per arm, scale 1.3 flat, exit-water box keeps the `-8`
+asymmetry INVERTED vs the item's, `wetCount = 10` on EXIT only — the entry
+arm sets NO cooldown, `Projectile.cs:16843-16915` verbatim).
