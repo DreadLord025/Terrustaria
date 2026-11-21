@@ -6683,12 +6683,12 @@ impl Npc {
         self.sprite_dir = s.sprite_dir;
     }
 
-    /// W4-d44 wire — the extra-5 claim set, gated to the batch-1
-    /// five 254-258 (268-277 ride the next wire batches).
+    /// W4-d44 wire — the extra-5 claim set, gated to the wired band
+    /// 254-258 + 268-272 (273-277 ride the next wire batch).
     fn find_frame_kind_extra5_claimed(
         cs_id: u16,
     ) -> Option<crate::npc_findframe_extra5::FindFrameExtra5Kind> {
-        if !(254..=258).contains(&cs_id) {
+        if !(254..=258).contains(&cs_id) && !(268..=272).contains(&cs_id) {
             return None;
         }
         crate::npc_findframe_extra5::find_frame_kind_extra5(cs_id as i16)
@@ -6755,14 +6755,14 @@ impl Npc {
         }
         // W4-d44 wire (f26 slice 5) — the `cs_id`-keyed hook into the
         // extra-wave-5 pure machines (`npc_findframe_extra5.rs`) via
-        // `find_frame_kind_extra5_claimed`: batch 1 claims the first
-        // five 254/255/256/257/258 (the mushroom zombie pair,
-        // FungoFish, AnomuraFungus, MushiLadybug); 268-277 ride the
-        // next batches. NO current kind's `cs_id` lands in the set
-        // (verified over the hand rows + the bestiary net ids), so
-        // this is stream-inert today; the arms draw no RNG (256's
-        // pulse gate excludes it, the f26b census) and none reads
-        // the world. The d45 hook precedent.
+        // `find_frame_kind_extra5_claimed`: the wired band 254-258 +
+        // 268-272 (the mushroom zombie pair, FungoFish, AnomuraFungus,
+        // MushiLadybug, IchorSticker, the first four Rusty Armored
+        // Bones); 273-277 ride the next batch. NO current kind's
+        // `cs_id` lands in the set (verified over the hand rows + the
+        // bestiary net ids), so this is stream-inert today; the arms
+        // draw no RNG (256's pulse gate excludes it, the f26b census)
+        // and none reads the world. The d45 hook precedent.
         if let Some(kind) = Self::find_frame_kind_extra5_claimed(self.kind.cs_id()) {
             self.find_frame_wave_extra5(kind);
             return;
@@ -33792,8 +33792,8 @@ mod w4_d44_wire_tests {
         }
     }
 
-    /// The extra-5 claim set is the batch-1 five 254-258; 268-277
-    /// ride the next batches. The band edges stay outside.
+    /// The extra-5 claim set is the wired band 254-258 + 268-272;
+    /// 273-277 ride the next batch. The band edges stay outside.
     #[test]
     fn w4_d44_the_extra5_claim_set_matches_the_batch_band() {
         use crate::npc_findframe_extra5::FindFrameExtra5Kind as K;
@@ -33803,15 +33803,22 @@ mod w4_d44_wire_tests {
             (256, K::FungoFish),
             (257, K::AnomuraFungus),
             (258, K::MushiLadybug),
+            (268, K::IchorSticker),
+            (269, K::RustyArmoredBonesAxe),
+            (270, K::RustyArmoredBonesFlail),
+            (271, K::RustyArmoredBonesSword),
+            (272, K::RustyArmoredBonesSwordNoArmor),
         ];
         for (id, k) in table {
             assert_eq!(Npc::find_frame_kind_extra5_claimed(id), Some(k), "{id}");
         }
-        for id in 268u16..=277 {
+        for id in 273u16..=277 {
             assert_eq!(Npc::find_frame_kind_extra5_claimed(id), None, "{id} later batch");
         }
         assert_eq!(Npc::find_frame_kind_extra5_claimed(253), None);
         assert_eq!(Npc::find_frame_kind_extra5_claimed(259), None);
+        assert_eq!(Npc::find_frame_kind_extra5_claimed(267), None);
+        assert_eq!(Npc::find_frame_kind_extra5_claimed(278), None);
     }
 
     /// The wave-C bridge copies the five fields both ways and feeds
@@ -34048,5 +34055,40 @@ mod w4_d44_wire_tests {
         n.vy = -1.0;
         n.find_frame_wave_extra5(K::MushiLadybug);
         assert_eq!((n.frame, n.frame_counter), (3, 0.0));
+        // IchorSticker: counter 5 → 6 steps row 2 → 3, counter zero;
+        // the full-4-row wrap returns to 0 (`NPC.cs:72887-72896`).
+        n.frame = 2;
+        n.frame_counter = 5.0;
+        n.find_frame_wave_extra5(K::IchorSticker);
+        assert_eq!((n.frame, n.frame_counter), (3, 0.0));
+        n.frame_counter = 5.0;
+        n.find_frame_wave_extra5(K::IchorSticker);
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0), "the wrap to 0");
+        // Armored Bones walk from idle: the lift-to-2 FIRST, then
+        // |vx|*2+1 = 3 (< 6, no step) — `NPC.cs:75861-75871`.
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.vx = 1.0;
+        n.vy = 0.0;
+        n.facing = 1;
+        n.sprite_dir = -1;
+        n.find_frame_wave_extra5(K::RustyArmoredBonesAxe);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (2, 3.0, 1));
+        // The walk accumulator steps at > 6: counter 5 + 1*2+1 = 8
+        // steps row 2 → 3.
+        n.frame_counter = 5.0;
+        n.find_frame_wave_extra5(K::RustyArmoredBonesFlail);
+        assert_eq!((n.frame, n.frame_counter), (3, 0.0));
+        // The full-count wrap returns to row 2 (rows 0/1 idle/air-only).
+        n.frame = 14;
+        n.frame_counter = 5.0;
+        n.find_frame_wave_extra5(K::RustyArmoredBonesSword);
+        assert_eq!((n.frame, n.frame_counter), (2, 0.0), "the wrap to 2");
+        // Air: the counter zeroes and row 0 pins (`:75877-75881`).
+        n.frame = 7;
+        n.frame_counter = 3.0;
+        n.vy = 1.0;
+        n.find_frame_wave_extra5(K::RustyArmoredBonesSwordNoArmor);
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0));
     }
 }
