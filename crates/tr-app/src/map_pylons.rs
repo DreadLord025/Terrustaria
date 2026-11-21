@@ -48,15 +48,16 @@ pub(crate) fn draw_line(
     if num2 == 0 {
         return;
     }
-    // The BlackTile frame is 16x16 (`TextureAssets.BlackTile.Value.Frame()`);
-    // the segment's source width is `value.Width` (16), so the origin is
-    // `(0, 16*0.5)` and the scale `(distance/num2/16, width/16)`.
-    let seg_len = distance / num2 as f32;
-    let size = [seg_len, width];
+    // The BlackTile frame is the whole sheet (`value.Frame()`); the C#
+    // origin is `(0, value.Width * 0.5)` and the scale
+    // `(distance/num2/16, width/16)`, so the drawn size is
+    // `(sheetW * distance/num2/16, sheetH * width/16)` and the scaled origin
+    // `(0, sheetW * width/32)`. The sheet is 16x16 in retail content.
+    let sw = sheet.width as f32;
+    let sh = sheet.height as f32;
+    let size = [sw * distance / num2 as f32 / 16.0, sh * width / 16.0];
     let (s, c) = rotation.sin_cos();
-    // origin = (0, value.Width * 0.5) = (0, 8) in source px; scaled by the
-    // segment scale it becomes (0, 8 * width/16) = (0, width/2).
-    let origin = [0.0, width * 0.5];
+    let origin = [0.0, sw * 0.5 * width / 16.0];
     for i in 0..num2 {
         let t = i as f32 / num2 as f32;
         let anchor = [
@@ -91,16 +92,18 @@ pub(crate) fn pylon_line_endpoint(
         (position[0] - map_position[0]) * map_scale + map_offset[0],
         (position[1] - map_position[1]) * map_scale + map_offset[1],
     ];
-    // Alignment.Center = (0.5, 0.5); scale = num = 1 (`:33`).
+    // Alignment.Center = (0.5, 0.5); scale = num = 1 (`:33`). The C#
+    // `GetUnclampedDrawRegion` truncates the top-left and the size to int
+    // (`(int)vector2.X`, `(int)(Width * num)`) BEFORE the Centre read.
     let origin = [frame_size[0] * 0.5, frame_size[1] * 0.5];
     let num = draw_scale * 1.0;
     let top_left = [pos[0] - origin[0] * num, pos[1] - origin[1] * num];
-    let w = frame_size[0] * num;
-    let h = frame_size[1] * num;
+    let w = (frame_size[0] * num) as i32;
+    let h = (frame_size[1] * num) as i32;
     // `Rectangle.Center` = `(X + Width/2, Y + Height/2)` (integer halves).
     [
-        (top_left[0] as i32 + (w as i32) / 2) as f32,
-        (top_left[1] as i32 + (h as i32) / 2) as f32,
+        (top_left[0] as i32 + w / 2) as f32,
+        (top_left[1] as i32 + h / 2) as f32,
     ]
 }
 

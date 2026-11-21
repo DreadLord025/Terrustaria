@@ -289,11 +289,12 @@ pub(crate) fn head_in_clip(pos: [f32; 2], clip: [f32; 4]) -> bool {
 }
 
 /// The hover rect of a head sheet centred at `pos`
-/// (`Main.cs:56167-56171`): `(pos - size/2*headScale, size*headScale)`,
-/// inclusive on all four edges.
+/// (`Main.cs:56167-56171`): `(pos - (Width/2)*headScale, Width*headScale)`,
+/// inclusive on all four edges. The C# `Width() / 2` is INTEGER division
+/// (`Texture2D.Width()` returns int), so an odd-width sheet's half truncates.
 pub(crate) fn head_hover(pos: [f32; 2], size: [f32; 2], head_scale: f32, mouse: Vec2) -> bool {
-    let x0 = pos[0] - size[0] / 2.0 * head_scale;
-    let y0 = pos[1] - size[1] / 2.0 * head_scale;
+    let x0 = pos[0] - (size[0] as i32 / 2) as f32 * head_scale;
+    let y0 = pos[1] - (size[1] as i32 / 2) as f32 * head_scale;
     let x1 = x0 + size[0] * head_scale;
     let y1 = y0 + size[1] * head_scale;
     mouse.x >= x0 && mouse.x <= x1 && mouse.y >= y0 && mouse.y <= y1
@@ -439,7 +440,9 @@ pub(crate) fn draw_npc_map_icons(
             continue;
         }
         // The townie half (`:56103-56117` / `:56148-56178` / `:56226-56253`).
-        if n.kind.is_town_npc_like() && townie_can_be_seen(n) {
+        // The C# gate is the `townNPC` flag — the port's `is_town_resident`
+        // set (the 21 kinds with `this.townNPC = true` in `SetDefaults`).
+        if n.kind.is_town_resident() && townie_can_be_seen(n) {
             let head = town_head_index(n);
             if head > 0 {
                 // `direction > 0` flips (`:56109-56112`).
@@ -852,10 +855,11 @@ pub(crate) fn draw_misc_map_icon(
     mouse: Vec2,
 ) -> bool {
     let Some(sheet) = sheet else { return false };
-    // `:56480`/`:56501`/`:56522`: the floored screen position.
+    // `:56480`/`:56501`/`:56522`: the `Utils.Floor` position — which is
+    // `(int)` TRUNCATION toward zero (`Utils.cs:1702-1707`), not Math.Floor.
     let pos = [
-        (((anchor[0]) / 16.0 - map_top_left[0]) * map_scale + map_offset[0]).floor(),
-        (((anchor[1] + height_offset) / 16.0 - map_top_left[1]) * map_scale + map_offset[1]).floor(),
+        (((anchor[0]) / 16.0 - map_top_left[0]) * map_scale + map_offset[0]) as i32 as f32,
+        (((anchor[1] + height_offset) / 16.0 - map_top_left[1]) * map_scale + map_offset[1]) as i32 as f32,
     ];
     if let Some(c) = clip {
         let px = pos[0] as i32;
@@ -941,8 +945,8 @@ pub(crate) fn draw_golf_ball_on_map(
         return;
     };
     let pos = [
-        ((center[0] / 16.0 - map_top_left[0]) * map_scale + map_offset[0]).floor(),
-        ((center[1] / 16.0 - map_top_left[1]) * map_scale + map_offset[1]).floor(),
+        ((center[0] / 16.0 - map_top_left[0]) * map_scale + map_offset[0]) as i32 as f32,
+        ((center[1] / 16.0 - map_top_left[1]) * map_scale + map_offset[1]) as i32 as f32,
     ];
     let Some(uv) = lookups.hud_uv(Some(&sheet)) else {
         return;
@@ -1403,7 +1407,8 @@ mod tests {
         assert!(last_hit_golf_ball(&golf, &pool, 3).is_some());
     }
 
-    /// `Main.cs:56480` — the misc icon's floored transform.
+    /// `Main.cs:56480` — the misc icon's `Utils.Floor` transform (which is
+    /// `(int)` truncation, `Utils.cs:1702-1707`).
     #[test]
     fn w4_f29_misc_icon_position_is_floored() {
         // anchor (161.7, 325.9), height_offset -21, scale 2.5, offset (100,50).
@@ -1413,9 +1418,12 @@ mod tests {
         let h_off = -21.0f32;
         let scale = 2.5f32;
         let off = [100.0f32, 50.0];
-        let x = ((anchor[0] / 16.0) * scale + off[0]).floor();
-        let y = (((anchor[1] + h_off) / 16.0) * scale + off[1]).floor();
-        assert_eq!(x, 125.0);
-        assert_eq!(y, 97.0);
+        let x = ((anchor[0] / 16.0) * scale + off[0]) as i32;
+        let y = (((anchor[1] + h_off) / 16.0) * scale + off[1]) as i32;
+        assert_eq!(x, 125);
+        assert_eq!(y, 97);
+        // A negative coordinate truncates toward zero (not Math.Floor).
+        let neg = (-125.265f32) as i32;
+        assert_eq!(neg, -125, "Utils.Floor is (int), not Math.Floor");
     }
 }
