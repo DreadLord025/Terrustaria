@@ -499,3 +499,87 @@ The keeper executes, in order:
 
 **Everything on this branch is either the keeper or the fold-input;
 nothing here needs a follow-up pass. The branch retires at this commit.**
+
+---
+
+## 9. W4-f33c RESUME addendum — the campfire-biome light census + the d19e receipt
+
+Code-only resume atop the retire FINAL `83387628b` (the f33c session
+TIMEOUT-died before its campfire work landed; this pass lands it). No
+cargo/tests/rustfmt/graphify — witnesses WRITTEN NOT RUN.
+
+### 9a. The d19e sword-drop-hunks receipt — §2 STANDS with the single I +1
+
+d19 RETIRED at `61f7638a5` (SWORD RETIRE phase 5, 26g SEALED). Its
+research/26g §3a re-verified every §2 hunk at `6b56e27c` (an ancestor of
+`61f7638a5`, `git merge-base --is-ancestor` exit 0; the diff to the final
+tip touches ONLY docs — ANALYSIS/26g/INDEX, no code drift). This pass
+re-read the hunks at the FINAL tip `61f7638a5` directly:
+
+- **A-H (sword_styles):** 392-481 / 1457-1482 / 1484-1525 / 17-19 / 50-52 /
+  72-74 / 107-111 / 1309-1312 — ALL EXACT, verbatim content re-read.
+- **I (projectile.rs):** **17399-17411 (+1)** — comment :17399-17402,
+  `184 =>` :17403, arm tail `}` :17411. The published +1 shift confirmed
+  byte-for-byte (the `remap` doc line near :14145 is the shift's cause).
+- **J:** d19 has NO 949 Kill wiring (its only `kill_census` matches are
+  `rocket_kill_census` :22218/:22306) — ADD f33's hook; f33 side re-read at
+  this tip: `projectile.rs:20015-20029` EXACT (comment :20015-20022, the
+  `kind == TORCH_GOD && !died_out_of_world` gate + `kill_census`
+  :20023-20029).
+- **K/L (data.rs):** d19 1137-1139 / 3684-3687 EXACT; f33's survivors
+  re-read at this tip: `data.rs:79-81` (const) + `:3675-3682` (row) — the
+  tuples IDENTICAL `(4.0, 4.0, 184, -1, TIME_LEFT_DEFAULT, 0, false,
+  false, false, RESET_STATE)`.
+- **f33 dispatch arm:** `projectile.rs:17554-17572` EXACT (comment
+  :17554-17561, `184 =>` :17562, active-gated `kill_step` :17569-17571).
+- **anchors.txt:899** still names the 184 clause in the d19 row (marker
+  `pub(crate) fn ai_nights_edge`) — repoint at merge, never delete.
+
+**Verdict: 93a §2 + d19e 26g §3a agree; the merger executes A-L with I at
+17399-17411. No f33-side change owed.** (26g §8's five-step sword-family
+order consumes this — step 2 is the f33 949 keep + the A-L drops.)
+
+### 9b. The campfire/torch biome-light census (C# → port state)
+
+Whole-window reads, this tip (`83387628b` + the f33c edits):
+
+| C# arm | Citation | Port state |
+| --- | --- | --- |
+| `SceneMetrics.HasCampfire` scan (215 frameY<36, 405 frameX<54) | `SceneMetrics.cs:378-380/:394-397` | PORTED — `scene_scan.rs:210-219` + `scene.rs:94` (e28's witnesses cover the 405/bast/window arms) |
+| Buff-87 2-tick grant | `Player.cs:25532-25535` | PORTED — `player.rs:7006-7008` (`auras.campfire`) |
+| +1 lifeRegen | `Player.cs:19170-19173` | PORTED — `regen.rs:177-179` |
+| ×1.1 ramp (after crimson/shinyStone, before expert halve) | `Player.cs:19250-19253` | PORTED — `regen.rs:206-208` (order matches: extra_ramp_scale then campfire then expert) |
+| Campfire tile light, all 16 biome columns + flicker | `TileLightScanner.cs:1062-1151` | PORTED — `scanner.rs` kind-215 arm; **the Ultra Bright green was 1.2825 (f32 0x3fa428f6) vs the C#'s 1.2824999f (0x3fa428f5) — 1-ULP drift FIXED this pass**; 16-column census witness added |
+| Torch tile light (frameY/22 → TorchColor) | `TileLightScanner.cs:1522-1527` | PORTED — `scanner.rs` kind-4 arm (`fx < 66` gate) |
+| `BiomeTorchPlaceStyle` (torch placement conversion) | `Player.cs:40236-40289`, gate `:40129-40132` | PORTED (S1-P-i42 + f33's 12-arm restore) — `editing.rs::biome_torch_place_style` |
+| `BiomeTorchHoldStyle` (held-torch LIGHT conversion) | `Player.cs:40291-40346` via `:49823` | PORTED — `player_lights.rs::biome_torch_hold_style` (12 arms, the happyFunTorchTime gate live) |
+| **`BiomeCampfirePlaceStyle` (campfire placement conversion)** | `Player.cs:40348-40401`, gate `:43426-43429` (`FigureOutWhatToPlace`) | **LANDED THIS PASS (was unclaimed — no branch carries it, whole-origin grep)** — `editing.rs::biome_campfire_place_style` + the `place_tile` gate; the ladder's OWN order (glowshroom 2nd, temple/dungeon before underworld, temple/jungle 13, dungeon 7); the `style == 0` gate INSIDE the body (`:40350` — the replacement callers don't pre-gate); 3 witnesses |
+| `BiomeCampfireHoldStyle` (held-campfire DRAW swap) | `Player.cs:40403-40458`, `PlayerDrawLayers.cs:3063` / `Main.cs:45053` | UNPORTED — draw-layer lane (the campfire emits NO held light; `ItemCheck_EmitHeldItemLight` has no 966 arm — the light seam is the tile, already ported). Left to the draw lane |
+| Replacement-path conversions | `Player.cs:39895-39902/:39919-39926` | UNPORTED with `WorldGen.ReplaceTile` itself (`liquid.rs:709` gap) — the ported body carries the style gate so the future callers need no re-derivation |
+| `Wiring.ToggleCampFire` (wire on/off, frameY ±36) | `Wiring.cs:1418-1422/:3000-3042` | CLAIMED — c42 + f11 both carry ports (keep-one at merge, their lanes); NOT this lane |
+| `GetCampfireItemDrop` (break-drop style table) | `WorldGen.cs:50039-50074` | UNPORTED — kill-cascade `tile_drop` lane (`registry.rs:238`'s 215 falls to `by_tile` → 966 for EVERY style today); not the light lane, left to the cascade owner |
+| Marshmallow roast (968 → 969 over a lit campfire) | `Player.cs:50349-50390` (frameY<54, miscTimer 900, Next(5)) | UNPORTED — food lane, RNG-bearing; not the light lane |
+
+The 405 fireplace light (`TileLightScanner.cs:1020-1061`, 6 columns) is
+ported (`scanner.rs` kind-405 arm, no drift found — the 405 table has no
+Ultra Bright column). The heart-lantern/star-in-bottle/bast/sunflower
+auras ride e28's lane (censused there, grants live in `player.rs`).
+
+### 9c. What this pass changed (files)
+
+- `crates/tr-core/src/tile_light/scanner.rs` — the 1.2824999f ULP fix +
+  the 16-column census witness (`w4_f33c_the_campfire_biome_columns_…`).
+- `crates/tr-app/src/world_sim/editing.rs` — `biome_campfire_place_style`
+  (the C# ladder verbatim, the in-body style gate) + the `place_tile`
+  conversion gate (kind 215, the property read) + 3 witnesses
+  (`w4_f33c_the_campfire_place_arms_…` / `…style_gate_and_the_remix_arm` /
+  `…place_route_converts_the_plain_campfire`).
+- `docs/ANALYSIS.md` — the campfire follow-up paragraph flipped to LANDED
+  (+ the ULP fix record, the still-unported halves named).
+- `anchors.txt` — the campfire-conversion row.
+- This §9 receipt.
+
+All witnesses WRITTEN NOT RUN (code-only). The retire verdict of §8
+stands — the f33c additions are the light lane's own small arm, disjoint
+from every keep-one hunk (editing.rs's placement region, not the 5043 use
+arm at :2007; scanner.rs untouched by any other lane's census).

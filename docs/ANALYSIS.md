@@ -37006,17 +37006,34 @@ arm table + order pins + the placement frameY route (`editing.rs`
 arm ids + the toggle gate (`player_lights.rs`). The d6 aiStyle-60 Shimmer
 stream's conversion (`Projectile.cs:29142`, `useWithoutTorchGodsFavor: true`)
 calls the same `pub(crate)` body — the visibility matches d6's `5d81f2de`.
-**Campfire family — the documented follow-up.** `BiomeCampfirePlaceStyle` /
-`BiomeCampfireHoldStyle` (`Player.cs:40348-40401`/`:40403-40460`, the 966 item
-→ tile 215) are a SEPARATE conversion family with its own arm order (shimmer
-15, glowshroom 14, temple 13, dungeon 7, underworld 2, hallow 12, corrupt 10,
-crimson 11, snow 3, jungle 13, desert 8) — the torch gate (`tileToCreate == 4`)
-never touches it; the campfire placement rides the TileObject route
-(`D_215`, `uses_custom_can_place`) and the conversion is unported (the
-`FigureOutWhatToPlace` preview half `:43426-43429` likewise). The tile-replacement
-path's conversion (`PlaceThing_TryReplacingTiles` `:39895-39902` /
-`PlaceThing_ValidTileForReplacement` `:39919-39926`) is unported with
-`WorldGen.ReplaceTile` itself (`liquid.rs:709`'s recorded gap).
+**Campfire family — the placement conversion LANDED (W4-f33c).**
+`BiomeCampfirePlaceStyle` (`Player.cs:40348-40401`, the 966 item → tile 215)
+is ported as `editing.rs::biome_campfire_place_style` with the C#'s OWN arm
+order — NOT the torch ladder's: glowshroom is SECOND (before temple and
+dungeon), temple/jungle share style 13, dungeon 7 (Bone), underworld 2
+(Demon), shimmer 15 first. The method carries the `style == 0` gate inside
+its body (`:40350`), so the biome campfire items' own placeStyle rides
+verbatim. The conversion runs in `place_tile` ahead of `place_item_tile`'s
+`CanPlace` (the campfire rides the TileObject route, `D_215`
+`uses_custom_can_place`), matching `FigureOutWhatToPlace` (`:43426-43429`)
+which BOTH the preview and the live placement read. The converted style
+writes the frameX column (54 × style, `D_215` horizontal) that
+`TileLightScanner.cs:1062-1151` lights — the biome-light half of the favour.
+Witnesses: the full campfire arm table + order pins + the style gate + the
+remix arm + the placement-route frameX/frameY write (`editing.rs`
+`w4_f33c_the_campfire_…`), and the scanner's 16-column RGB census
+(`scanner.rs::w4_f33c_the_campfire_biome_columns_…`). **The scanner's
+Ultra Bright green constant was a 1-ULP drift — FIXED**: `1.2825` rounded to
+f32 `0x3fa428f6`, but the C# `TileLightScanner.cs:1095` is `1.2824999f`
+(`0x3fa428f5`); the literal is now verbatim. STILL unported: the held-item
+draw conversion `BiomeCampfireHoldStyle` (`:40403-40460`,
+`PlayerDrawLayers.cs:3063` / `Main.cs:45053` — a DRAW-layer concern, the
+torch hold-light family is the light seam already ported), the tile-
+replacement callers (`PlaceThing_TryReplacingTiles` `:39899` /
+`PlaceThing_ValidTileForReplacement` `:39923`, unported with
+`WorldGen.ReplaceTile` itself, `liquid.rs:709`'s recorded gap), and the
+`GetCampfireItemDrop` break-drop style table (`WorldGen.cs:50039-50074` —
+the kill-cascade `tile_drop` lane, not the light lane).
 
 **Glowstick throw — the rows + AI were absent, now ported.** The six glowstick
 kinds (50/53/473/515/870/1089) had NO `proj_data` rows, so

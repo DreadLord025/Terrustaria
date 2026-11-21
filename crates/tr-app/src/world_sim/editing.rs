@@ -7544,6 +7544,24 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
             }
         }
     }
+    // W4-f33c — `FigureOutWhatToPlace`'s campfire half
+    // (`Player.cs:43426-43429`, the gate BOTH the preview (:43408) and the
+    // live placement (:39748) read): `UsingBiomeTorches && tileToCreate ==
+    // 215 && previewPlaceStyle == 0` → `BiomeCampfirePlaceStyle`
+    // (`:40348-40401`). The campfire rides the TileObject route (`D_215`,
+    // `uses_custom_can_place`), so the conversion runs HERE — ahead of
+    // `place_item_tile`'s `CanPlace` — not in the torch family's legacy
+    // `PlaceThing_Tiles_PlaceIt` arm (`:40129-40132`, style already fixed
+    // by the time the object route places). The converted style picks the
+    // frameX column `TileLightScanner.cs:1062-1151` lights — this is the
+    // biome-light half of the favour.
+    if kind == 215 {
+        if let Some(p) = app.player.as_ref() {
+            if p.using_biome_torches() {
+                style = biome_campfire_place_style(p, &app.world, style);
+            }
+        }
+    }
     if !place_item_and_consume(
         &mut app.world,
         &mut app.inventory[app.selected],
@@ -7647,6 +7665,81 @@ pub(crate) fn biome_torch_place_style(p: &crate::player::Player, world: &World) 
     // gate above never fires there (the player_lights hold-style precedent).
     if z.desert && world.seeds.contains(tr_core::seeds::SeedFlags::REMIX) {
         return 16;
+    }
+    0
+}
+
+/// `Player.BiomeCampfirePlaceStyle` (`Player.cs:40348-40401`): the biome
+/// campfire style for a plain campfire (966 → tile 215) placed with the
+/// Torch God's favour (W4-f33c). The arm order is the C#'s verbatim —
+/// NOT the torch ladder's: glowshroom comes SECOND (before temple and
+/// dungeon, `:40356-40359`), and temple/jungle share style 13 (the Jungle
+/// campfire), dungeon style 7 (Bone). The C# method carries the
+/// `style == 0` half INSIDE its own gate (`:40350`); the port takes the
+/// style and returns it unchanged when non-zero — the replacement callers
+/// (`:39899`/`:39923`) gate on the property but NOT on style, so the body
+/// must carry it. The converted style writes the frameX column (54 ×
+/// style, `D_215`'s `style_horizontal` def) that
+/// `TileLightScanner.cs:1062-1151` lights.
+pub(crate) fn biome_campfire_place_style(
+    p: &crate::player::Player,
+    world: &World,
+    style: i32,
+) -> i32 {
+    // `:40350` — `!UsingBiomeTorches` is the callers' gate; `style != 0`
+    // returns unchanged HERE (the C# `if` body simply never runs).
+    if style != 0 {
+        return style;
+    }
+    let z = p.zones;
+    // `:40352-40355` — the shimmer arm FIRST (the Shimmer campfire, style 15).
+    if z.shimmer {
+        return 15;
+    }
+    // `:40356-40359` — glowshroom BEFORE temple/dungeon (the torch ladder
+    // puts it after the underworld — the orders differ, keep the C#'s).
+    if z.glowshroom {
+        return 14;
+    }
+    // `:40360-40363` — the temple (Lihzhard) arm: the Jungle campfire 13.
+    if z.temple {
+        return 13;
+    }
+    // `:40364-40367` — the dungeon arm: the Bone campfire 7.
+    if z.dungeon {
+        return 7;
+    }
+    // `:40368-40371` — below the underworld layer (`Main.cs:2790`:
+    // `(height - 200) * 16`): the Demon campfire 2.
+    let underworld_px = (world.height - 200) as f32 * TILE_PX;
+    if p.y > underworld_px {
+        return 2;
+    }
+    if z.hallow {
+        return 12; // `:40372-40375`
+    }
+    if z.corrupt {
+        return 10; // `:40376-40379`
+    }
+    if z.crimson {
+        return 11; // `:40380-40383`
+    }
+    if z.snow {
+        return 3; // `:40384-40387`
+    }
+    if z.jungle {
+        return 13; // `:40388-40391` — same style as the temple arm
+    }
+    // `:40392-40395` — `(ZoneDesert && position.Y < worldSurface * 16.0) ||
+    // ZoneUndergroundDesert` (the f64 compare, the torch ladder's precedent).
+    if (z.desert && (p.y as f64) < world.world_surface * TILE_PX as f64)
+        || z.underground_desert
+    {
+        return 8;
+    }
+    // `:40396-40399` — `ZoneDesert && Main.remixWorld`.
+    if z.desert && world.seeds.contains(tr_core::seeds::SeedFlags::REMIX) {
+        return 8;
     }
     0
 }
@@ -17982,9 +18075,143 @@ mod item_mechanics {
         assert!(use_tile_item(&mut app, 15, 19));
         assert_eq!(app.world.tile(15, 19).unwrap().frame_y, 9 * 22);
         // The campfire item places tile 215 — the torch conversion's
-        // `kind == 4` gate never fires for it (the campfire family is the
-        // `BiomeCampfirePlaceStyle` follow-up, recorded in ANALYSIS).
+        // `kind == 4` gate never fires for it (the campfire family rides
+        // its OWN ladder, W4-f33c below).
         assert_eq!(registry::place_tile(966), Some(215));
+    }
+
+    // ---- W4-f33c: the biome-campfire conversion census ---------------------
+    // WRITTEN NOT RUN (code-only mode). `BiomeCampfirePlaceStyle`
+    // (`Player.cs:40348-40401`) — the campfire ladder's arm order DIFFERS
+    // from the torch's (glowshroom second, temple/dungeon before the
+    // underworld, temple/jungle share style 13, dungeon 7 Bone). The
+    // converted style picks the frameX column `TileLightScanner.cs:1062`
+    // lights (54 × style, `D_215` horizontal) — the biome-light half.
+
+    /// The full campfire arm table in the C#'s priority order — each zone
+    /// alone maps to its style, the earlier arms shadow the later ones.
+    #[test]
+    fn w4_f33c_the_campfire_place_arms_are_the_full_csharp_table() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.y = 100.0; // above the underworld line ((800-200)*16)
+        // The plain forest: style 0 (`:40400` falls through).
+        assert_eq!(biome_campfire_place_style(&p, &w, 0), 0);
+        // Each arm alone (the C# order: shimmer, glowshroom, temple, dungeon,
+        // underworld, hallow, corrupt, crimson, snow, jungle, desert, remix).
+        let cases: [(fn(&mut tr_core::scene::Zones), i32); 10] = [
+            (|z| z.shimmer = true, 15),       // `:40352-40355`
+            (|z| z.glowshroom = true, 14),    // `:40356-40359`
+            (|z| z.temple = true, 13),        // `:40360-40363`
+            (|z| z.dungeon = true, 7),        // `:40364-40367`
+            (|z| z.hallow = true, 12),        // `:40372-40375`
+            (|z| z.corrupt = true, 10),       // `:40376-40379`
+            (|z| z.crimson = true, 11),       // `:40380-40383`
+            (|z| z.snow = true, 3),           // `:40384-40387`
+            (|z| z.jungle = true, 13),        // `:40388-40391`
+            (|z| z.underground_desert = true, 8), // `:40392` second half
+        ];
+        for (set, style) in cases {
+            p.zones = tr_core::scene::Zones::default();
+            set(&mut p.zones);
+            assert_eq!(biome_campfire_place_style(&p, &w, 0), style);
+        }
+        // The underworld arm (`:40368-40371`): position.Y > (height-200)*16.
+        p.zones = tr_core::scene::Zones::default();
+        p.y = (w.height - 100) as f32 * TILE_PX;
+        assert_eq!(biome_campfire_place_style(&p, &w, 0), 2);
+        // The surface-desert half (`:40392` first half).
+        p.y = 100.0;
+        p.zones.desert = true;
+        assert_eq!(biome_campfire_place_style(&p, &w, 0), 8);
+        // The order pins — THE ladder differs from the torch's:
+        // glowshroom shadows temple AND dungeon AND the underworld.
+        p.zones = tr_core::scene::Zones::default();
+        p.zones.glowshroom = true;
+        p.zones.temple = true;
+        p.zones.dungeon = true;
+        p.y = (w.height - 100) as f32 * TILE_PX;
+        assert_eq!(biome_campfire_place_style(&p, &w, 0), 14, "glowshroom second");
+        p.zones.glowshroom = false;
+        assert_eq!(biome_campfire_place_style(&p, &w, 0), 13, "temple before dungeon");
+        p.zones.temple = false;
+        assert_eq!(biome_campfire_place_style(&p, &w, 0), 7, "dungeon before underworld");
+        // Shimmer shadows everything.
+        p.zones.shimmer = true;
+        assert_eq!(biome_campfire_place_style(&p, &w, 0), 15);
+    }
+
+    /// The method's own `style == 0` gate (`:40350`): a non-zero placeStyle
+    /// rides VERBATIM even inside a converting biome (the biome campfire
+    /// items place their own style — the replacement callers `:39899` /
+    /// `:39923` don't pre-gate style, the body must). The remix desert arm
+    /// (`:40396-40399`) converts below the surface line too.
+    #[test]
+    fn w4_f33c_the_campfire_style_gate_and_the_remix_arm() {
+        let mut w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.zones.snow = true;
+        // The Frozen Campfire's own style 3 stays 3 even in the jungle.
+        p.zones.jungle = true;
+        assert_eq!(biome_campfire_place_style(&p, &w, 3), 3);
+        assert_eq!(registry::place_style(3048), 3);
+        // Below the surface line, no remix: style 0 falls through.
+        p.zones = tr_core::scene::Zones::default();
+        p.zones.desert = true;
+        p.y = (w.world_surface * TILE_PX as f64 + 100.0) as f32;
+        assert_eq!(biome_campfire_place_style(&p, &w, 0), 0);
+        // The remix seed arms the second desert gate.
+        w.seeds |= tr_core::seeds::SeedFlags::REMIX;
+        assert_eq!(biome_campfire_place_style(&p, &w, 0), 8);
+    }
+
+    /// The placement route end-to-end: the 5043 unlock converts a plain
+    /// campfire's frameX to 54 × the biome style (`D_215`'s horizontal
+    /// write, `TileObject.cs:67-76` — `coordinate_full_width` 54), and the
+    /// scanner lights that column (`TileLightScanner.cs:1062`). The builder
+    /// toggle refuses the conversion; the biome campfire item's own style
+    /// rides verbatim.
+    #[test]
+    fn w4_f33c_the_place_route_converts_the_plain_campfire() {
+        let mut app = flat_app();
+        app.inventory[app.selected] = slot(966, 5);
+        let p = app.player.as_mut().unwrap();
+        p.unlocked_biome_torches = true;
+        p.zones.snow = true;
+        // The 3×2 object anchors on the floor row (y 20); target (15, 19)
+        // → object cells x 14-16, y 18-19.
+        assert!(use_tile_item(&mut app, 15, 19), "the placement succeeds");
+        let t = *app.world.tile(15, 19).unwrap();
+        assert!(t.active() && t.kind == 215);
+        // The centre column: 54 × 3 + 18 = 180 → frameX / 54 == 3, the
+        // Frozen campfire's [0.45, 0.75, 1.0] light column.
+        assert_eq!(t.frame_x, 3 * 54 + 18, "the snow campfire style (`:40384`)");
+        assert_eq!(t.frame_y, 18, "the bottom row of the lit pair (frameY < 36)");
+        assert_eq!(app.inventory[app.selected].count, 4, "one campfire consumed");
+        // The toggle OFF: the property reads false, the campfire stays plain.
+        let mut app = flat_app();
+        app.inventory[app.selected] = slot(966, 5);
+        let p = app.player.as_mut().unwrap();
+        p.unlocked_biome_torches = true;
+        p.builder_acc_status[11] = 1;
+        p.zones.snow = true;
+        assert!(use_tile_item(&mut app, 15, 19));
+        assert_eq!(app.world.tile(15, 19).unwrap().frame_x, 18, "plain campfire");
+        // No unlock: plain even in the biome (the `:43426` gate).
+        let mut app = flat_app();
+        app.inventory[app.selected] = slot(966, 5);
+        app.player.as_mut().unwrap().zones.snow = true;
+        assert!(use_tile_item(&mut app, 15, 19));
+        assert_eq!(app.world.tile(15, 19).unwrap().frame_x, 18);
+        // The Frozen Campfire item (3048, placeStyle 3) rides its own style
+        // even with the unlock ON in a converting biome (the body's gate).
+        let mut app = flat_app();
+        app.inventory[app.selected] = slot(3048, 5);
+        let p = app.player.as_mut().unwrap();
+        p.unlocked_biome_torches = true;
+        p.zones.jungle = true;
+        assert!(use_tile_item(&mut app, 15, 19));
+        assert_eq!(app.world.tile(15, 19).unwrap().frame_x, 3 * 54 + 18);
     }
 
     /// t4 — `WorldItem.UpdateItem`'s air constants (`WorldItem.cs:363-364`:
