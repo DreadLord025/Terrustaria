@@ -39698,4 +39698,65 @@ once-ever + consume + cadence + refusal), `player.rs` (the unlock survives
 ResetEffects), `player_file.rs` (the .plr :54781 round-trip + the four-bool
 block alignment), `persist.rs` (the .trplayer v10 token-4 round-trip + the
 v9 three-token back-read).
+
+## W4-g89j — AEGIS FINAL: the 139→145 rename, GAP-7 exact hunks, the token-4 receipt + the family declaration (2026-11-21, code-only)
+
+The final-phase pass on this branch (three work items, no game-logic change):
+
+1. **research/139 → 145** (g52c-net-master owns 139 for its COLLISION
+   report). The pushed-branch census: 140 (f29), 141 (e9), 142 (d122),
+   143/144 (c4) taken; **145 free**. The rod-teleport composition note is
+   renamed (`145-rod-teleport-union-composition.md`, a numbering note inside
+   records the old citations), every on-branch ref updated (INDEX, the
+   W4-g89h section above, PORT_MAP, the `rod_teleport.rs` module doc).
+2. **GAP-7 FINAL (research/145 §2a): the EXACT drain-move hunks published**
+   for the g11-union merger, re-pinned at g11's FINAL tip `98283df08`
+   (research/83+116 FINAL; the union code unchanged from `9a9ac1fd0`). The
+   placement refinement over the g89h prose: the drain sits INSIDE
+   `run_rod_arm` BETWEEN `rod_teleport` (`Player.cs:45512`) and
+   `chaos_state_tax` (`:45518`) — a drain after `rod_item_check` returns
+   would still leave the chaos `Next(2)` ahead of the dust. Three hunks:
+   the editing-tail drain (the g11 player-tick drain's req shape verbatim,
+   BEFORE the 5335 early return so the harmony rod's dust drains too), the
+   gap-5 inline-camera retirement (SAME merger commit — the replay owns
+   the camera, `main_dust.rs:463-478`), the re-pinned chaos witness (Entry +
+   Exit dust draws AHEAD of the `Next(2)`) + a new two-phase no-double-fire
+   witness. NOT wired on this branch: the teleport-dust seam is unreachable
+   (g89's base has no `pending_teleport_effect`/replay — `teleport_style` is
+   the bare move core `player.rs:9496`; g11's tip has no rod arm, `git grep
+   rod_item_check` empty). Wiring here would mean porting g11's union —
+   out of scope, g11's lane; the published hunks are the g11-union worklist.
+3. **The g88g-v10-token-4 receipt + the aegis-family declaration
+   (research/122 §7, FINAL-FINAL).** Probe: g88 tip `a9f1c29d8` (fold 7
+   FINAL, writer v11), a6 tip `115ce655a` (138 FINAL pushed), g90 tip
+   `94d33f2ca` (g90b `e76ee133e` ancestor-verified). The SAME-slot
+   double-writer question ANSWERED: both branches write line 8 token 4 =
+   `usedAegisCrystal`, same order/encoding — g88's six-token writer is a
+   strict superset of g89's `… 0 0` placeholder writer; **no semantic
+   conflict, g88's persist.rs is the merger keep** (138 §2/§8.2, 103 §9-L2),
+   g89's v10 writer/reader DROP. A g89 v10 file loads losslessly on g88's
+   reader; the reverse rejects (`"11"` hits g89's migrate `_ => return
+   None`, `persist.rs:127`) — the standing pre-merge incompatibility,
+   recorded, killed by the merge. The g88e-folded-crystal-trio (g90b's
+   flags) dedupes textually with g89i's declaration (same anchor after
+   `used_ambrosia`); the consumer (the regen f32-order slot) is the shape
+   a6 adopted (138 §3.3) — keep g90's anchor. **The aegis family is
+   ALL-LANDED on this branch: 5338/5341/5342/5337** — four use arms on the
+   shared core, four `.plr` bools both halves, four sidecar tokens with the
+   short-line back-reads; the merger per 138 §1/§8 + 103 §9 (use arms →
+   a6's machine, fields/consumers → g90's shapes, `.plr` → f44c's
+   `used_upgrades[6]`, sidecar → g88 v11). 5339/5340 stay a6/g90's.
+
+### Verification (W4-g89j)
+
+Code-only: re-read g11 tip `98283df08` (`main_dust.rs:405-497`,
+`teleport_dust.rs:92-131`, `player.rs:3431`/`:9498-9546`,
+`world_sim/player.rs:1564-1576`/`:1691-1693`, `world_sim/editing.rs:1998`),
+g88 tip `a9f1c29d8` (`persist.rs` writer `:260-267` / reader `:440-456` /
+the v7 recognitions, research/103 §9), a6 tip `115ce655a` (research/138
+§1/§2/§3.3/§6/§8), g90b `e76ee133e` (the trio + the regen slot), this
+branch's `persist.rs:104-110`/`:117-128`/`:189-200` + `rod_teleport.rs`.
+**No cargo/rustc/rustfmt/tests/graphify invoked.** No new witnesses (the
+GAP-7 witness hunks are merger worklist, written not applied); the docs
+receipts cite pushed tips verified by `git show`/`git grep`/`git ls-tree`.
  
