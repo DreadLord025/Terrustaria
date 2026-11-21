@@ -218,6 +218,7 @@
 //! | 1017-1022 | `:87604-87620` | the 10/11/12 GiantWorm + 95/96/97 Digger death (1 gore each, per-type offset) |
 //! | 1023-1028 | `:87638-87649` | the 13/14/15 Eater of Worlds death (2 gores each, per-type) |
 //! | 1029-1038 | `:87668-87693` | the 17 Merchant + 441 TaxCollector death (5 gores each, shimmer variants) |
+//! | 1039-1048 | `:87709-87733` | the 86 Unicorn (7 gores) + 155 Wolf (3 gores) death |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -5975,6 +5976,58 @@ fn town_npc_death(
     }
 }
 
+/// The 86 Unicorn death (`NPC.cs:87705-87715`, sites 1039-1045): the
+/// 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 7 gores 101/102/103/103/104/104/105 at position. Scale defaults to 1.
+fn unicorn_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    for ty in [101, 102, 103, 103, 104, 104, 105] {
+        gore.new_gore(rng, world, pos, vel, ty, 1.0);
+    }
+}
+
+/// The 155 Wolf death (`NPC.cs:87727-87733`, sites 1046-1048): the 50-dust
+/// type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the 3 gores
+/// 181/182/183 at position. Scale defaults to 1.
+fn wolf_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 181, 1.0); // :87731
+    gore.new_gore(rng, world, pos, vel, 182, 1.0); // :87732
+    gore.new_gore(rng, world, pos, vel, 183, 1.0); // :87733
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -6700,6 +6753,14 @@ pub fn hit_effect_c(
     // 1029-1038).
     if (npc_type == 17 || npc_type == 441) && npc.hp <= 0 {
         town_npc_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87695-87716` — the 86 Unicorn arm (sites 1039-1045).
+    if npc_type == 86 && npc.hp <= 0 {
+        unicorn_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87717-87734` — the 155 Wolf arm (sites 1046-1048).
+    if npc_type == 155 && npc.hp <= 0 {
+        wolf_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -10590,6 +10651,33 @@ mod tests {
         town_npc_death(&n3, 441, &mut dust3, &ctx(), &mut gore3, &mut rng3, &w, 1.0);
         let types3: Vec<i32> = gore3.slots()[..5].iter().map(|g| g.gore_type).collect();
         assert_eq!(types3, vec![768, 769, 770, 771, 771]);
+    }
+
+    /// `NPC.cs:87709-87715` — the Unicorn death: the 7 gores
+    /// 101/102/103/103/104/104/105.
+    #[test]
+    fn w4_f10_the_unicorn_death_spawns_the_seven_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 50.0, 40.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1013);
+        unicorn_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..7].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![101, 102, 103, 103, 104, 104, 105]);
+    }
+
+    /// `NPC.cs:87731-87733` — the Wolf death: the 3 gores 181/182/183.
+    #[test]
+    fn w4_f10_the_wolf_death_spawns_the_three_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1019);
+        wolf_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![181, 182, 183]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
