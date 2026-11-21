@@ -101,6 +101,13 @@
 //!   Tesla Turret 387 (`:84402-84411`, ×20) and the Martian Walker 520
 //!   (`:84425-84434`, ×20): dust 226 at (-dir,-1), post-spawn position
 //!   Lerp(pos, Centre, 0.25) + scale 0.5.
+//! Batch 6 (the solar pillar's gated-child live arms — ×20 dust 241 +
+//! the Next-gated dust-6 child, noGravity/scale 1.5/fadeIn 1/vel ×3):
+//! - 82791/82794 — 518/416 (`:82785-82800`), Next(4)==0.
+//! - 82829/82832 — 419 (`:82823-82838`), Next(4)==0.
+//! - 82890/82893 — 415 (`:82884-82899`), Next(4)==0.
+//! - 82924/82927 — 417 (`:82918-82933`), Next(4)==0.
+//! - 82965/82968 — 418 (`:82959-82974`), Next(2)==0 (the tighter gate).
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -579,6 +586,24 @@ pub fn replay_hit_dust(
                 d.position.x += (s.cx - d.position.x) * 0.25; // `:84349`
                 d.position.y += (s.cy - d.position.y) * 0.25;
                 d.scale = 0.5; // `:84350`
+            }
+        }
+        // `:82785-82974` — the solar pillar's gated-child arms: ×20 dust
+        // 241, then a Next(N)==0 gate per iteration spawning the dust-6
+        // child (noGravity, scale 1.5, fadeIn 1, velocity ×3). The gate
+        // is Next(4) for 518/416/419/415/417, Next(2) for 418 (`:82966`).
+        518 | 416 | 419 | 415 | 417 | 418 => {
+            let gate = if s.npc_type == 418 { 2 } else { 4 };
+            for _ in 0..hit_count(s.dmg, s.life_max, 20.0) {
+                live_dust(s, 241, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                if rng.next_max(gate) == 0 {
+                    let idx = live_dust(s, 6, 0.0, 0.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                    let d = dust.slot_mut(idx);
+                    d.no_gravity = true;
+                    d.scale = 1.5;
+                    d.fade_in = 1.0;
+                    d.velocity *= 3.0;
+                }
             }
         }
         // `:89526-89548`/`:89690-89700` — the three spheres are handled
@@ -1241,6 +1266,50 @@ mod tests {
             }
             assert_eq!(rng, twin_rng, "type {t}");
             assert_eq!(dust.slots(), twin.slots(), "type {t}");
+        }
+    }
+
+    /// W4-g62 batch 6 — the solar gated-child order (`NPC.cs:82791-
+    /// 82799`): the parent 241's internals draw FIRST, then the Next(4)
+    /// gate; on a hit the child 6 spawns with the four post-writes. The
+    /// 418 arm's gate is Next(2) (`:82966`) — twice the child rate.
+    #[test]
+    fn w4_g62_the_solar_child_gate_rides_after_the_parent() {
+        let world = air();
+        let ctx = ctx();
+        for (t, gate) in [(518, 4), (416, 4), (419, 4), (415, 4), (417, 4), (418, 2)] {
+            let s = snap(t, 100, 100, 50.0); // ×20 → 10 iterations
+            let mut rng = UnifiedRandom::new(79);
+            let mut dust = DustPool::new();
+            replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+            let mut twin_rng = UnifiedRandom::new(79);
+            let mut twin = DustPool::new();
+            let mut children = 0;
+            for _ in 0..10 {
+                twin.new_dust(
+                    &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 241,
+                    1.0, -1.0, 0, Color::default(), 1.0,
+                );
+                if twin_rng.next_max(gate) == 0 {
+                    children += 1;
+                    let idx = twin.new_dust(
+                        &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 6,
+                        0.0, 0.0, 0, Color::default(), 1.0,
+                    );
+                    let d = twin.slot_mut(idx);
+                    d.no_gravity = true;
+                    d.scale = 1.5;
+                    d.fade_in = 1.0;
+                    d.velocity *= 3.0;
+                }
+            }
+            assert_eq!(rng, twin_rng, "type {t}");
+            assert_eq!(dust.slots(), twin.slots(), "type {t}");
+            assert_eq!(
+                dust.slots().iter().filter(|d| d.active && d.dust_type == 6).count(),
+                children,
+                "type {t}"
+            );
         }
     }
 }
