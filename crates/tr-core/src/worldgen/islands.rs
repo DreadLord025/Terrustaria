@@ -418,10 +418,17 @@ pub(crate) fn pass_floating_islands(
             } else {
                 build_island(world, num7, num11, radius, false, rng);
             }
-            // `:13069`/`:13074` + `:13108-13112`: the ledger writes.
+            // `:13069`/`:13074` + `:13108-13112`: the ledger writes. The C#
+            // stores `num11` — the disc TOP (CloudIsland hangs down from j,
+            // `:78224`'s `m > num13 ≈ j`). The port's compact disc is
+            // CENTERED at num11 (the M1.4-WGEN-4 shape), so its top sits at
+            // `num11 - radius/2`; the ledger stores that row so the verbatim
+            // IslandHouse ground scan (`j-15`, `:79238`) reaches the grass
+            // cap exactly as the C#'s reaches its disc top.
+            let disc_top = num11 - radius / 2;
             gv.sky_lake.push(flag3);
             gv.island_house_x.push(num7);
-            gv.island_house_y.push(num11);
+            gv.island_house_y.push(disc_top);
             gv.island_style.push(num10);
             gv.num_island_houses += 1;
             num2 += 1;
