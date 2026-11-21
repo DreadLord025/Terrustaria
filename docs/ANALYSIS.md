@@ -39244,3 +39244,60 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The NPC.cs sound sites wave, batch 3 (W4-f2, 2026-11-21, code-only mode) — CLAIM
+
+**Census + claim.** `Select-String 'PlaySound'` over
+`decompiled/Terraria/NPC.cs` yields **232 sites** (first `:19415`,
+last `:93269`). The pushed claims read: **c13**
+(`task/W4-c13-npc-hit-sounds`, tip `09a3accf`) owns the StrikeNPC
+tail — the type-1 voice switch `:81495-81541`, the HitSound fallbacks
+`:81546`/`:81553`, the HitEffect bubble/sphere cues
+`:84231`/`:89528`/`:89540`/`:89692`; **e9**
+(`task/W4-e9-npc-sounds-2`, in flight — its uncommitted `audio.rs`
+claim registers `NPC_Killed_9` for the Vile Spit `:21480`) works the
+early line-order band from the top. The mid-file AI sites are either
+landed (E21g's 19, the style75 Item12/Item39 drains, the pillar
+dissolve/shield cues, the WoF `:25720`/`:25942` pair on the d127
+sibling) or unported-machine deferrals (the Pal/StatueMimic/Deerclops/
+DD2-boss families). **This lane (f2) claims the NEXT 40 UNCLAIMED
+sites: the two generic `UpdateNPCs`-stream emitters that remain —**
+
+* **`NPC.IdleSounds`** (`NPC.cs:90075-90208`, called at `:90422`
+  immediately BEFORE `AI()`): **32 sites** `:90081`-`:90205`, one
+  else-if chain of per-type `Main.rand.Next(N) == 0` gates playing
+  legacy case 29 (the Style-is-the-slot zombie bank,
+  `LegacySoundPlayer.cs:1008-1050` — the full per-style switch already
+  ported by S1-E-21e "for the later waves' callers", styles 24-87 at
+  ×0.5). The `shimmerTransparency > 0` head gate `:90077` wraps the
+  whole chain; the `base.wet` term rides arm 6 (types 63/64/103).
+* **`NPC.Collision_WaterCollision`'s splash cues**
+  (`NPC.cs:93052-93275`, inside `UpdateCollision` `:92526`, AFTER
+  `AI()`): **8 sites** — the entry quartet `:93121` (shimmer style
+  4) / `:93138` (honey default 1) / `:93154` (water 0) / `:93171`
+  (lava default 1) and the exit quartet `:93219` (shimmer 5) /
+  `:93236` (honey 1) / `:93252` (water 0) / `:93269` (lava 1), all
+  legacy case 19 (`LegacySoundPlayer.cs:871-910` — the
+  `splash_case19` styles-4/5 arms S1-E-21f ported are THIS wave's
+  callers). The `wetCount` 10-tick cooldown, the never-wet head gate
+  `:93055`, the aiStyle-116 pin `:93077-93080` and the per-liquid
+  kind/noGravity exclusion gates ride along; the exit-lava gate
+  `:93267` DROPS the `type != 147` term its entry twin `:93169`
+  carries (a C# quirk kept verbatim).
+
+**Seams (the landed conventions, g21's claim text).** The idle chain
+queues through the existing `Audio::play_fighter_moan` case-29 path
+(attenuation BEFORE the guard/pitch draw, the `UpdateNPCs` stream);
+the splash quartets through `Audio::play_splash_sound` (case 19).
+`Npc` gains `wet_count`/`lava_wet`/`honey_wet`/`shimmer_wet`
+(`wet` exists); `NpcKind::no_tile_collide()` joins `no_gravity()`
+(the 87-kind SetDefaults census + the pumpkin/frost defaults fold).
+The idle pass runs at the C# call position (pre-machine); the water
+pass at the per-NPC tail (post-machine, the `UpdateCollision`
+position). **Skips (documented):** the splash dust bursts (30/10-dust
+loops incl. the shimmer `Next(6)` colour rolls — the dust lanes'
+territory, the E21f player-splash precedent), the type-620 exit jump
+`:93181-93184` (movement), `TryRemovingWaterPerishableEffects`
+(buff seam), the lava strike/buff `:93325-93337` (combat seam).
+Commits land ≤10 sites each. Code-only: no cargo/tests/graphify;
+witnesses WRITTEN NOT RUN.
