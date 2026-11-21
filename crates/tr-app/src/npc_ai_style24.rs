@@ -73,9 +73,13 @@ pub const STYLE24_BIRDS: &[BirdDefaults] = &[
 
 /// `NPCID.Sets.BirdThatCanPoop` (`NPCID.cs:10435`):
 /// `CreateBoolSet(74, 297, 298, 442, 363, 365, 603, 609, 671, 672, 673,
-/// 674, 675)` — note it includes the four non-style-24 birds (Cardinal 363,
-/// BlueJay 365, Seagull 603, Cormorant 609) and EXCLUDES Owl 611 / OwlMimic
-/// 689 (the owls never poop).
+/// 674, 675)` — note it includes the four non-style-24 waterfowl (Duck2 363,
+/// DuckWhite2 365, Seagull2 603, Grebe2 609 — the aiStyle-68 swimming forms,
+/// `NPCID.cs:11403`/`:11407`/`:11883`/`:11895`, the `npc_ai_style68.rs`
+/// family) and EXCLUDES Owl 611 / OwlMimic 689 (the owls never poop).
+/// (W4-d127 census fix: the prior note mislabelled these "Cardinal 363 /
+/// BlueJay 365 / Seagull 603 / Cormorant 609" — Cardinal is 298 and BlueJay
+/// 297, both style-24 members of THIS family, `NPCID.cs:12394-12395`.)
 pub fn bird_that_can_poop(ty: i32) -> bool {
     matches!(ty, 74 | 297 | 298 | 442 | 363 | 365 | 603 | 609 | 671 | 672 | 673 | 674 | 675)
 }
@@ -1000,6 +1004,68 @@ mod tests {
         n2.local_ai[0] = 1.0;
         let out2 = ai_style_24(&mut n2, 689, &w, &c2, &mut UnifiedRandom::new(1));
         assert_eq!(out2.transform, None);
+    }
+
+    /// W4-d127 census — the family is EXACTLY the 11 `SetDefaults aiStyle = 24`
+    /// types (9 assignment sites: 74/297/298 share `NPC.cs:9751`), and the
+    /// poop set's four extra members are the aiStyle-68 WATERFOWL, not birds
+    /// of this arm. Pins the doc-fix: Cardinal is 298 and BlueJay 297 (both
+    /// style-24 members HERE, `NPCID.cs:12394-12395`), while 363/365/603/609
+    /// are Duck2/DuckWhite2/Seagull2/Grebe2 (`NPCID.cs:11403`/`:11407`/
+    /// `:11883`/`:11895`) — the old note's "Cardinal 363 / BlueJay 365" was a
+    /// mislabel. The owls 611/689 are style-24 but outside `BirdThatCanPoop`.
+    #[test]
+    fn the_census_splits_the_eleven_birds_from_the_four_waterfowl() {
+        let members: Vec<i32> = STYLE24_BIRDS.iter().map(|r| r.ty).collect();
+        assert_eq!(
+            members,
+            vec![74, 297, 298, 442, 611, 671, 672, 673, 674, 675, 689],
+            "the 11 aiStyle-24 SetDefaults members (NPC.cs:9751/14251/16850/\
+             17500/17514/17528/17542/17556/17671)"
+        );
+        // The four waterfowl are in the poop set but NOT style-24 members.
+        for ty in [363, 365, 603, 609] {
+            assert!(bird_that_can_poop(ty), "waterfowl {ty} poops (NPCID.cs:10435)");
+            assert!(!members.contains(&ty), "waterfowl {ty} is aiStyle-68, not 24");
+        }
+        // Cardinal 298 / BlueJay 297 ARE style-24 members (the doc-fix).
+        assert!(members.contains(&298), "Cardinal 298 is a style-24 bird");
+        assert!(members.contains(&297), "BlueJay 297 is a style-24 bird");
+        // The owls are style-24 but never poop.
+        assert!(members.contains(&611) && members.contains(&689));
+        assert!(!bird_that_can_poop(611) && !bird_that_can_poop(689));
+    }
+
+    /// W4-d127 — the owl's day/night perch gate (`NPC.cs:25373-25376`): a
+    /// perched owl (ai[0] == 0, already initialised) flushes to flight on
+    /// DAY or RAIN, and stays perched on a clear NIGHT. The perched owl is
+    /// exempt from the proximity flutter (`:25386`'s `type != 611 && != 689`),
+    /// so the day/night term is the ONLY take-off trigger at rest.
+    #[test]
+    fn the_perched_owl_flushes_by_day_or_rain_and_roosts_by_night() {
+        let w = air();
+        let players = [player(2000.0, 1000.0, 0.0, false)];
+        // Clear night: the owl keeps its perch (ai[0] stays 0).
+        let night = Style24Ctx { day_time: false, cloud_alpha: 0.0, ..ctx(&players, &[]) };
+        let mut n = bird(611, 1000.0, 1000.0);
+        n.ai[0] = 0.0;
+        n.local_ai[0] = 1.0; // skip the init; sit on the perch arm
+        ai_style_24(&mut n, 611, &w, &night, &mut UnifiedRandom::new(1));
+        assert_eq!(n.ai[0], 0.0, "a clear night keeps the owl perched");
+        // Day: the flush lifts it to flight.
+        let day = Style24Ctx { day_time: true, ..ctx(&players, &[]) };
+        let mut n2 = bird(611, 1000.0, 1000.0);
+        n2.ai[0] = 0.0;
+        n2.local_ai[0] = 1.0;
+        ai_style_24(&mut n2, 611, &w, &day, &mut UnifiedRandom::new(1));
+        assert_eq!(n2.ai[0], 1.0, "daytime flushes the owl (:25373-25376)");
+        // Rain (cloudAlpha > 0) at night: the flush lifts it too.
+        let rain = Style24Ctx { day_time: false, cloud_alpha: 0.5, ..ctx(&players, &[]) };
+        let mut n3 = bird(611, 1000.0, 1000.0);
+        n3.ai[0] = 0.0;
+        n3.local_ai[0] = 1.0;
+        ai_style_24(&mut n3, 611, &w, &rain, &mut UnifiedRandom::new(1));
+        assert_eq!(n3.ai[0], 1.0, "rain flushes the owl (:25373's cloudAlpha arm)");
     }
 
     /// `NPC.cs:25336-25342` — the owl init: localAI[0] == 0 targets, sets
