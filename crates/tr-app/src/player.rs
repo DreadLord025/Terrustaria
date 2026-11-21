@@ -1434,9 +1434,37 @@ pub struct Player {
     /// (`Player.cs:36302`).
     pub misc_counter: u32,
     /// `Player.pulley` / `Player.pulleyDir` (`Player.cs:1070`): the rope
-    /// pose — body rows 1 (dir 2) and 2 (dir 1).
+    /// pose — body rows 1 (dir 2) and 2 (dir 1). W4-f3 folded host: the
+    /// attach/move/dismount machine now runs (`find_pulley` /
+    /// `update_pulley_direction` / `pulley_ride`, `Player.cs:19644-19749` +
+    /// `:26116-26493`).
     pub pulley: bool,
     pub pulley_dir: u8,
+    /// `Player.pulleyFrame` / `pulleyFrameCounter` (`Player.cs:1074-1076`):
+    /// the pulley sprite's 2-frame climb cadence — the counter accumulates
+    /// `|velocity.Y * 0.75|` (+0.75 while moving) and wraps the frame at >10
+    /// (`:26468-26481`). The draw half is `PlayerDrawLayers.cs:2943`.
+    pub pulley_frame: i32,
+    pub pulley_frame_counter: f32,
+    /// `Player.ropeCount` (`Player.cs:1038`): the 10-tick re-attach lockout
+    /// the down-drop off a rope end sets (`:26444`); decremented per tick
+    /// (`:26116-26119`), the `FindPulley` gate reads `== 0` (`:26120`).
+    pub rope_count: i32,
+    /// `Player.releaseLeft` / `releaseRight` (`Player.cs:1772-1774`) and
+    /// `leftTimer` / `rightTimer` (`:1840-1842`): the run-key release latches
+    /// and the 7-tick hold timers, recomputed at tick end (`:27618-27652`).
+    /// The pulley direction machine reads `(releaseLeft || leftTimer == 0)`
+    /// — a fresh press OR a hold of 8+ ticks (`:26145`/`:26207`).
+    pub release_left: bool,
+    pub release_right: bool,
+    pub left_timer: i32,
+    pub right_timer: i32,
+    /// `Player.instantMovementAccumulatedThisFrame.X` (`Player.cs:2574`):
+    /// the pulley's per-tick ±1 rope-step accumulator (`:26200`/`:26204`),
+    /// zeroed at the tick head (`:24377`). The only C# consumer is the
+    /// accStopwatch speed readout (`Main.cs:47089`) — unported (no
+    /// stopwatch info-accessory row), a cited seam.
+    pub instant_movement_accumulated_x: f32,
     /// `Player.shieldRaised` (`Player.cs:36481`): body row 10.
     pub shield_raised: bool,
     /// `Player.sliding` (`Player.cs:1082`): the wall-cling/slide state — the
@@ -2959,6 +2987,14 @@ impl Player {
             misc_counter: 0,
             pulley: false,
             pulley_dir: 0,
+            pulley_frame: 0,
+            pulley_frame_counter: 0.0,
+            rope_count: 0,
+            release_left: false,
+            release_right: false,
+            left_timer: 0,
+            right_timer: 0,
+            instant_movement_accumulated_x: 0.0,
             shield_raised: false,
             sliding: false,
             sand_storm: false,
@@ -4018,6 +4054,9 @@ impl Player {
         self.swim_time = 0;
         self.pulley = false;
         self.pulley_dir = 0;
+        self.pulley_frame = 0;
+        self.pulley_frame_counter = 0.0;
+        self.rope_count = 0;
         self.shield_raised = false;
         self.sliding = false;
         self.sand_storm = false;
@@ -6394,6 +6433,9 @@ impl Player {
             self.fall_start2 = (self.y / TILE_PX) as i32;
         }
 
+        // `Player.cs:24376-24377`: `heldProj = -1` (unported) and the
+        // pulley rope-step accumulator zeroes at the tick head.
+        self.instant_movement_accumulated_x = 0.0;
         // `Player.cs:24364-24371`: the per-tick movement defaults;
         // `moveSpeed` multiplies acceleration and the primary gate while
         // `accRunSpeed` takes only the debuff (`Player.cs:26004-26010`).
@@ -7729,7 +7771,42 @@ impl Player {
                 }
             }
         }
-        if !grappling {
+        // W4-f3 folded host — the pulley head (`Player.cs:26116-26287`):
+        // the ropeCount decay, the FindPulley attach gate and the
+        // direction/dismount block. The C# slot sits after the extra-jump
+        // maintenance (`:26099`) and before the ride/movement split
+        // (`:26300`/`:26494`); the port's sitting/sleeping calls already ran
+        // at the control head (`:26125-26126` convention). `gravDir == 1f`
+        // folds true (no gravity flip). The `:26135`
+        // CancelAllJumpVisualEffects host now fires — the wall batch cited
+        // it folded while this machine was unported.
+        if self.rope_count > 0 {
+            self.rope_count -= 1; // `:26116-26119`
+        }
+        if !self.pulley
+            && !self.cced()
+            && !self.control_jump
+            && self.rope_count == 0
+            && !grappling
+            && !self.tongued
+            && !self.mount.is_active()
+        {
+            self.find_pulley(world); // `:26120-26123`
+        }
+        if self.pulley {
+            self.update_pulley_direction(world, tick_gravity); // `:26128-26287`
+        }
+        // W4-f3 — the pulley ride (`Player.cs:26300-26493`) replaces the
+        // whole run/jump/wing/dash block: the C# `:26494` movement arm is
+        // an `else if` of `this.pulley`, so while roped the boosts below,
+        // HorizontalMovement, JumpMovement and the wall/carpet machines
+        // never run — the ride owns the velocity (and refills the flight
+        // budgets itself, `:26482-26490`). The latch reads the POST-
+        // direction-block state (the `:26300` re-read), so an attach this
+        // tick rides immediately and a dismount falls through to the
+        // normal movement the same tick.
+        let pulley_ride = self.pulley;
+        if !grappling && !pulley_ride {
             // `:26496-26499`: the wing run-speed tweaks run before the
             // movement — vanilla gates them on `!merman` and
             // `mount.CanUseWings` too.
@@ -7784,7 +7861,13 @@ impl Player {
         // `:21024` clears the latch at the END of the held block, so the
         // jump branches read the PREVIOUS tick's latch — capture it first.
         let released = self.release_jump;
-        if input.jump && !grappling {
+        // W4-f3 — `JumpMovement` lives in the `:26494` else-if movement arm,
+        // so the pulley ride bypasses BOTH arms (the ride's own jump-off at
+        // `:26281-26286` owns the impulse; the release latch keeps its
+        // previous-tick value, like the C#'s skipped call).
+        if pulley_ride {
+            // no JumpMovement this tick
+        } else if input.jump && !grappling {
             // `:21024`: any held frame clears the release latch.
             self.release_jump = false;
             // W4-f3 — `:20632-20635`: a wall-slide disarms the auto-jump
@@ -7926,8 +8009,10 @@ impl Player {
         }
 
         // `Player.Update` → `DashMovement` (`Main` call order `:26757`): the
-        // velocity-only dash pass before the collision step.
-        if !grappling {
+        // velocity-only dash pass before the collision step. W4-f3: on a
+        // pulley tick the ride calls it itself (`:26491`) — same slot, one
+        // call per tick either way.
+        if !grappling && !pulley_ride {
             self.dash_movement(world, input);
         }
         // W4-f3 — `Player.cs:26758-26765`: the wall machines — the Rat mount
@@ -7938,12 +8023,21 @@ impl Player {
         // The five type-31 dust sites queue their snapshots here; the drain
         // replays them after the dash dust. `CarpetMovement` (`:26766`) stays
         // unported (the Magic Carpet's grant/machine are another lane).
-        if !grappling && !self.tongued {
+        // The pulley ride bypasses them (the `:26494` else-if).
+        if !grappling && !self.tongued && !pulley_ride {
             if self.mount.is_active() && self.mount.kind() == 55 {
                 self.wall_climb_movement(world, gravity);
             } else {
                 self.wallslide_movement(world, gravity);
             }
+        }
+        // W4-f3 — the pulley ride (`Player.cs:26300-26493`): the climb/descend
+        // velocity machine + the X snap + the flight refills. Its DashMovement
+        // call (`:26491`) rides here in the C# slot (the normal-movement dash
+        // above is gated off on a ride tick).
+        if pulley_ride {
+            self.pulley_ride(world, fall_cap);
+            self.dash_movement(world, input); // `:26491`
         }
         // `Player.cs:26767`: `DoubleJumpVisuals` right after the wall machines.
         // The performing-jump trail queues its snapshot here; the drain
@@ -7979,8 +8073,9 @@ impl Player {
         // rocket boots REPLACE the gravity integration on the ticks they run.
         // The plain gravity below applies only in the fallback. The wet ticks
         // skip the flight (the vanilla water physics dominate; the swim cap
-        // stays).
-        let flew = if !in_liquid && !self.webbed && !grappling {
+        // stays). W4-f3: the pulley ride bypasses the whole flight chain AND
+        // the plain-gravity add (the C# `:26494` else-if) — the ride owns vy.
+        let flew = if !in_liquid && !self.webbed && !grappling && !pulley_ride {
             self.flight_section(gravity, fall_cap)
         } else {
             false
@@ -7989,7 +8084,7 @@ impl Player {
         if self.vy == 0.0 {
             self.cart_ramp_time = 0;
         }
-        if !flew && !self.webbed && !grappling {
+        if !flew && !self.webbed && !grappling && !pulley_ride {
             // `Player.cs:27352-27359`: the ramp freeze — gravity applies only
             // once the ramp timer has run out; otherwise it ticks down.
             if self.cart_ramp_time <= 0 {
@@ -8315,8 +8410,33 @@ impl Player {
 
         self.update_frames(world);
 
-        // `Player.cs:27618-27635`: the release flags recompute at the end of
-        // the tick — the double-tap reads the press edges against them.
+        // `Player.cs:27618-27652`: the release flags + the 7-tick run-key
+        // hold timers recompute at the end of the tick — the pulley
+        // direction machine reads `(releaseLeft || leftTimer == 0)` next
+        // tick (a fresh press OR a hold of 8+ ticks). The port's
+        // `right_prev`/`left_prev` press-edge latches keep their own slot.
+        if self.control_right {
+            self.release_right = false;
+        } else {
+            self.release_right = true;
+            self.right_timer = 7;
+        }
+        if self.control_left {
+            self.release_left = false;
+        } else {
+            self.release_left = true;
+            self.left_timer = 7;
+        }
+        if self.right_timer > 0 {
+            self.right_timer -= 1;
+        } else if self.control_right {
+            self.right_timer = 7;
+        }
+        if self.left_timer > 0 {
+            self.left_timer -= 1;
+        } else if self.control_left {
+            self.left_timer = 7;
+        }
         self.right_prev = input.right;
         self.left_prev = input.left;
     }
@@ -9359,9 +9479,9 @@ impl Player {
     /// performing-jump visual flag clears. The port's single `performing_jump`
     /// stands in for the seven `isPerformingJump_*` flags (the DownDash flag is
     /// always false — the Dead-Cells dash is unported). The C# call sites are
-    /// the pulley block (`:26135`, movement unported — folded), the `jump == 0`
-    /// gate (`:26755`), the CCed flight arm (`:26811`) and the grapple pose
-    /// (`:36493`).
+    /// the pulley block (`:26135`, W4-f3 — the host now fires, see
+    /// `update_pulley_direction`), the `jump == 0` gate (`:26755`), the CCed
+    /// flight arm (`:26811`) and the grapple pose (`:36493`).
     fn cancel_all_jump_visual_effects(&mut self) {
         self.performing_jump = None;
     }
@@ -9972,6 +10092,407 @@ impl Player {
             self.sliding = true; // `:21825`
             self.queue_wall_dust(false); // `:21826`
         }
+    }
+
+    /// The raw `Main.tileRope[tile.type]` probe (`Player.cs:19665` /
+    /// `:24250`): active + rope kind — NOT `WorldGen.IsRope` (no
+    /// platform/track column probe). The C# null-tile arms (`new Tile()`)
+    /// read as inactive here. The rope kinds are the SAME `td::TILE_ROPE`
+    /// set the rope-coil placement writes (W4-g82/d4) and the g83 census
+    /// pinned disjoint from the natural vines — a placed coil column
+    /// attaches, a vine never does.
+    fn tile_rope_kind(world: &World, x: i32, y: i32) -> bool {
+        world
+            .tile(x, y)
+            .is_some_and(|t| t.active() && td::TILE_ROPE.has(t.kind))
+    }
+
+    /// `Player.FindPulley` (`Player.cs:19644-19749`): the rope attach —
+    /// called at `:26122` when up/down is held over a rope cell. Picks the
+    /// nearest of the three hang offsets (+6 / centre / -6), then falls back
+    /// +6 → -6 on a solid-body refusal. `portableStoolInfo.IsInUse`
+    /// (`:19646`) is unported (the Portable Stool has no row). The
+    /// `Main.cameraX` compensation snaps (`:19706`/`:19723`/`:19740`) are
+    /// render seams — the port's camera follows the position each frame.
+    fn find_pulley(&mut self, world: &World) {
+        // `:19646-19649`: the stool gate folds false; needs up OR down.
+        if !self.control_up && !self.control_down {
+            return;
+        }
+        let num = ((self.x + self.width / 2.0) / TILE_PX) as i32; // `:19650`
+        let num2 = ((self.y - 8.0) / TILE_PX) as i32; // `:19651`
+        if !crate::render::ropes::is_rope(world, num, num2).0 {
+            return; // `:19652-19655`
+        }
+        // `:19656-19668`: a lone rope cell (no rope-kind neighbour above or
+        // below) hangs the player at `row*16 + 22`; a column keeps the Y.
+        let mut num3 = self.y;
+        if !Self::tile_rope_kind(world, num, num2 - 1)
+            && !Self::tile_rope_kind(world, num, num2 + 1)
+        {
+            num3 = (num2 * 16 + 22) as f32;
+        }
+        // `:19669-19684`: the nearest-of-three pick (strict `<` ties keep
+        // the earlier candidate). `num4`'s direction-scaled init is dead —
+        // every pick arm overwrites it.
+        let centre = (num * 16 + 8) as f32 - self.width / 2.0;
+        let num5 = centre + 6.0;
+        let num6 = centre;
+        let num7 = centre - 6.0;
+        let mut num8 = 1;
+        let mut num9 = (self.x - num5).abs();
+        if (self.x - num6).abs() < num9 {
+            num8 = 2;
+            num9 = (self.x - num6).abs();
+        }
+        if (self.x - num7).abs() < num9 {
+            num8 = 3;
+        }
+        let mut num4 = num5;
+        if num8 == 1 {
+            num4 = num5;
+            self.pulley_dir = 2;
+            self.facing = 1;
+        }
+        if num8 == 2 {
+            num4 = num6;
+            self.pulley_dir = 1;
+        }
+        if num8 == 3 {
+            num4 = num7;
+            self.pulley_dir = 2;
+            self.facing = -1;
+        }
+        // `:19702-19748`: the three attach attempts — the picked offset,
+        // then +6 (dir 2, facing right), then -6 (dir 2, facing left). The
+        // dir/facing writes land BEFORE each probe and stay even when all
+        // three refuse (the C# leaves them mutated).
+        if !Self::solid_collision(world, num4, self.y, self.width, self.height) {
+            self.attach_pulley(num4, num3);
+            return;
+        }
+        num4 = num5;
+        self.pulley_dir = 2;
+        self.facing = 1;
+        if !Self::solid_collision(world, num4, self.y, self.width, self.height) {
+            self.attach_pulley(num4, num3);
+            return;
+        }
+        num4 = num7;
+        self.pulley_dir = 2;
+        self.facing = -1;
+        if !Self::solid_collision(world, num4, self.y, self.width, self.height) {
+            self.attach_pulley(num4, num3);
+        }
+    }
+
+    /// The shared attach tail of `FindPulley`'s three arms
+    /// (`Player.cs:19708-19714` et al.): `pulley = true`, the X snap, the
+    /// `gfxOffY` capture of the OLD Y minus the new, `stepSpeed = 2.5`, the
+    /// Y snap, `velocity.X = 0`.
+    fn attach_pulley(&mut self, x: f32, y: f32) {
+        self.pulley = true;
+        self.x = x;
+        self.gfx_off_y = self.y - y;
+        self.step_speed = 2.5;
+        self.y = y;
+        self.vx = 0.0;
+    }
+
+    /// `Player.CanMoveForwardOnRope` (`Player.cs:24247-24266`): the pulley's
+    /// lateral rope-step gate — the next column cell is a rope kind and the
+    /// hang box there is not solid. The `y2` neighbour arm (`:24255-24258`)
+    /// re-assigns the SAME `y*16+22` the unconditional write already set —
+    /// a no-op, folded.
+    fn can_move_forward_on_rope(&self, world: &World, dir: i32, x: i32, y: i32) -> bool {
+        let num = x + dir;
+        if !Self::tile_rope_kind(world, num, y) {
+            return false;
+        }
+        let num2 = (num * 16 + 8) as f32 - self.width / 2.0;
+        let y2 = (y * 16 + 22) as f32;
+        !Self::solid_collision(world, num2, y2, self.width, self.height)
+    }
+
+    /// The pulley direction/dismount block (`Player.cs:26128-26287`): runs
+    /// every tick `pulley` is set. The `:26135` `CancelAllJumpVisualEffects`
+    /// host NOW FIRES (the W4-f3 wall batch cited it folded while this
+    /// machine was unported). `gravDir != 1` (`:26269-26272`) folds — the
+    /// port keeps gravDir 1. The `Main.cameraX` deltas (`:26237`) are render
+    /// seams.
+    fn update_pulley_direction(&mut self, world: &World, gravity: f32) {
+        if self.mount.is_active() {
+            self.pulley = false; // `:26130-26133` — the block still runs
+        }
+        self.sand_storm = false; // `:26134`
+        self.cancel_all_jump_visual_effects(); // `:26135`
+        let num29 = ((self.x + self.width / 2.0) / TILE_PX) as i32; // `:26136`
+        let num30 = ((self.y - 8.0) / TILE_PX) as i32; // `:26137`
+        let mut flag12 = false;
+        if self.pulley_dir == 0 {
+            self.pulley_dir = 1; // `:26139-26142`
+        }
+        if self.pulley_dir == 1 {
+            // `:26143-26168`: facing the hang side, a fresh press (or a
+            // hold past the 7-tick timer) swings to the side hang (dir 2);
+            // the opposite key just turns the facing.
+            if self.facing == -1
+                && self.control_left
+                && (self.release_left || self.left_timer == 0)
+            {
+                self.pulley_dir = 2;
+                flag12 = true;
+            } else if (self.facing == 1 && self.control_right && self.release_right)
+                || self.right_timer == 0
+            {
+                // `:26150` — the `|| rightTimer == 0` sits OUTSIDE the
+                // direction/control parens: the C#'s own quirk, verbatim.
+                self.pulley_dir = 2;
+                flag12 = true;
+            } else {
+                if self.facing == 1 && self.control_left {
+                    self.facing = -1;
+                    flag12 = true;
+                }
+                if self.facing == -1 && self.control_right {
+                    self.facing = 1;
+                    flag12 = true;
+                }
+            }
+        } else if self.pulley_dir == 2 {
+            // `:26169-26191`: the side hang swings back to centre (dir 1)
+            // when the centre box is free.
+            let probe_x = (num29 * 16 + 8) as f32 - self.width / 2.0;
+            if self.facing == 1 && self.control_left {
+                flag12 = true;
+                if !Self::solid_collision(world, probe_x, self.y, self.width, self.height) {
+                    self.pulley_dir = 1;
+                    self.facing = -1;
+                    flag12 = true;
+                }
+            }
+            if self.facing == -1 && self.control_right {
+                flag12 = true;
+                if !Self::solid_collision(world, probe_x, self.y, self.width, self.height) {
+                    self.pulley_dir = 1;
+                    self.facing = 1;
+                    flag12 = true;
+                }
+            }
+        }
+        // `:26192-26205`: the rope-step accumulator — the only C# consumer
+        // is the accStopwatch readout (`Main.cs:47089`, unported info-acc).
+        let num31 = if self.control_left { -1 } else { 1 };
+        let flag13 = self.can_move_forward_on_rope(world, num31, num29, num30);
+        if (self.control_left && self.facing == -1) & flag13 {
+            self.instant_movement_accumulated_x -= 1.0;
+        }
+        if (self.control_right && self.facing == 1) & flag13 {
+            self.instant_movement_accumulated_x += 1.0;
+        }
+        // `:26206-26244`: the lateral rope step — a fresh press toward a
+        // rope column snaps the hang one tile over (the side-hang fallback
+        // on a solid box). The `y` init + neighbour re-assign (`:26215-
+        // 26228`) both write `num30*16+22` — folded to the one value.
+        let mut flag14 = false;
+        if !flag12
+            && ((self.control_left && (self.release_left || self.left_timer == 0))
+                || (self.control_right && (self.release_right || self.right_timer == 0)))
+        {
+            let num32 = num29 + num31;
+            if crate::render::ropes::is_rope(world, num32, num30).0 {
+                self.pulley_dir = 1;
+                self.facing = num31;
+                let mut num33 = (num32 * 16 + 8) as f32 - self.width / 2.0;
+                let y = (num30 * 16 + 22) as f32;
+                if Self::solid_collision(world, num33, y, self.width, self.height) {
+                    self.pulley_dir = 2;
+                    self.facing = -num31;
+                    num33 = (num32 * 16 + 8) as f32 - self.width / 2.0
+                        + if self.facing != 1 { -6.0 } else { 6.0 };
+                }
+                self.x = num33;
+                self.gfx_off_y = self.y - y;
+                self.y = y;
+                flag14 = true;
+            }
+        }
+        // `:26245-26256`: a released run key steps OFF the rope (the ±1
+        // nudge when standing still).
+        if !flag14
+            && !flag12
+            && !self.control_up
+            && ((self.control_left && self.release_left)
+                || (self.control_right && self.release_right))
+        {
+            self.pulley = false;
+            if self.control_left && self.vx == 0.0 {
+                self.vx = -1.0;
+            }
+            if self.control_right && self.vx == 0.0 {
+                self.vx = 1.0;
+            }
+        }
+        if self.vx != 0.0 {
+            self.pulley = false; // `:26257-26260`
+        }
+        if !crate::render::ropes::is_rope(world, num29, num30).0 {
+            self.pulley = false; // `:26261-26268`
+        }
+        if self.cced() {
+            self.pulley = false; // `:26273-26276`
+        }
+        if !self.pulley {
+            // `:26277-26280`: the dismount tick cancels the plain-gravity
+            // add the movement block applies later this same tick.
+            self.vy -= gravity;
+        }
+        if self.control_jump {
+            // `:26281-26286`: the jump-off — the full jump impulse.
+            self.pulley = false;
+            self.jump = self.jump_height;
+            self.vy = -self.jump_speed;
+        }
+    }
+
+    /// The pulley ride's side-step fallback (`Player.cs:26337-26363` /
+    /// `:26388-26414` — the two arms' bodies are identical): the centre
+    /// hang box is solid, so try +6 (dir 2, facing right) then -6 (dir 2,
+    /// facing left) at the extended height. The `Main.cameraX` deltas are
+    /// render seams.
+    fn pulley_sidestep(&mut self, world: &World, num34: i32, y_probe: f32, h_ext: f32) {
+        let mut x = (num34 * 16 + 8) as f32 - self.width / 2.0 + 6.0;
+        if !Self::solid_collision(world, x, y_probe, self.width, h_ext) {
+            self.pulley_dir = 2;
+            self.facing = 1;
+            self.x = x;
+            self.vx = 0.0;
+        } else {
+            x = (num34 * 16 + 8) as f32 - self.width / 2.0 - 6.0;
+            if !Self::solid_collision(world, x, y_probe, self.width, h_ext) {
+                self.pulley_dir = 2;
+                self.facing = -1;
+                self.x = x;
+                self.vx = 0.0;
+            }
+        }
+    }
+
+    /// The pulley ride (`Player.cs:26300-26493`): the climb/descend velocity
+    /// machine, the X snap + 2-frame cadence, and the per-tick flight
+    /// refills. `wingFrame` reads the port's single wing field (the
+    /// `wings`/`wingsLogic` fold, the `:11311` convention). `rocketFrame`
+    /// (`:26488`) has no port field (draw seam); `canCarpet = true`
+    /// (`:26483`) lands with the carpet machine; `DashMovement` (`:26491`)
+    /// rides the port's unconditional dash call; `UpdateControlHolds`
+    /// (`:26492`) is the `releaseUp` latch — no port consumer (the grapple
+    /// jump-off reads `input.up` directly), a cited seam.
+    fn pulley_ride(&mut self, world: &World, max_fall_speed: f32) {
+        self.fall_start = self.y as i32 / 16; // `:26302` — `(int)Y / 16`
+        self.wing_frame = if self.wings_logic == 4 { 3 } else { 0 }; // `:26303-26307`
+        let num34 = ((self.x + self.width / 2.0) / TILE_PX) as i32; // `:26308`
+        let num35 = ((self.y - 16.0) / TILE_PX) as i32; // `:26309`
+        let num36 = ((self.y - 8.0) / TILE_PX) as i32; // `:26310`
+        let mut flag15 = true;
+        // `:26311-26316`: flag16 — a rope cell above or below the hang row.
+        let flag16 = crate::render::ropes::is_rope(world, num34, num36 - 1).0
+            || crate::render::ropes::is_rope(world, num34, num36 + 1).0;
+        if !crate::render::ropes::is_rope(world, num34, num35).0 {
+            flag15 = false; // `:26321-26328` — no rope at the head row
+            if self.vy < 0.0 {
+                self.vy = 0.0;
+            }
+        }
+        let h_ext = (self.height + self.vy.abs() + 2.0) as i32 as f32;
+        if flag16 {
+            if self.control_up & flag15 {
+                // `:26331-26381`: the climb — the head-room probe at
+                // `y - |vy| - 2` (the plain height), the side-step fallback
+                // at the extended height, then the -0.2/-0.2 climb capped
+                // at -8 (the falling brake ×0.7 first).
+                let y2 = self.y - self.vy.abs() - 2.0;
+                if Self::solid_collision(world, self.x, y2, self.width, self.height) {
+                    self.pulley_sidestep(world, num34, y2, h_ext);
+                }
+                if self.vy > 0.0 {
+                    self.vy *= 0.7;
+                }
+                if self.vy > -3.0 {
+                    self.vy -= 0.2;
+                } else {
+                    self.vy -= 0.02;
+                }
+                if self.vy < -8.0 {
+                    self.vy = -8.0;
+                }
+            } else if self.control_down {
+                // `:26382-26432`: the descend — the foot-room probe at the
+                // CURRENT y with the extended height, the +0.2/+0.1 descent
+                // capped at maxFallSpeed (the rising brake ×0.7 first).
+                if Self::solid_collision(world, self.x, self.y, self.width, h_ext) {
+                    self.pulley_sidestep(world, num34, self.y, h_ext);
+                }
+                if self.vy < 0.0 {
+                    self.vy *= 0.7;
+                }
+                if self.vy < 3.0 {
+                    self.vy += 0.2;
+                } else {
+                    self.vy += 0.1;
+                }
+                if self.vy > max_fall_speed {
+                    self.vy = max_fall_speed;
+                }
+            } else {
+                // `:26433-26440`: the rest damp — ×0.7 with the ±0.1
+                // dead-band snap to zero.
+                self.vy *= 0.7;
+                if self.vy > -0.1 && self.vy < 0.1 {
+                    self.vy = 0.0;
+                }
+            }
+        } else if self.control_down {
+            // `:26442-26447`: the rope END — down drops off with the
+            // 10-tick re-attach lockout and a 1 px/tick start.
+            self.rope_count = 10;
+            self.pulley = false;
+            self.vy = 1.0;
+        } else {
+            // `:26448-26452`: the lone-cell rest snap.
+            self.vy = 0.0;
+            self.y = (num35 * 16 + 22) as f32;
+        }
+        // `:26453-26467`: the X snap — centre for dir 1, ±6 for dir 2. The
+        // `Main.cameraX` delta + ±32 clamp (`:26462-26466`) is a render seam.
+        let mut num37 = (num34 * 16 + 8) as f32 - self.width / 2.0;
+        if self.pulley_dir == 1 {
+            num37 = (num34 * 16 + 8) as f32 - self.width / 2.0;
+        }
+        if self.pulley_dir == 2 {
+            num37 = (num34 * 16 + 8) as f32 - self.width / 2.0 + 6.0 * self.facing as f32;
+        }
+        self.x = num37;
+        // `:26468-26481`: the 2-frame climb cadence.
+        self.pulley_frame_counter += (self.vy * 0.75).abs();
+        if self.vy != 0.0 {
+            self.pulley_frame_counter += 0.75;
+        }
+        if self.pulley_frame_counter > 10.0 {
+            self.pulley_frame += 1;
+            self.pulley_frame_counter = 0.0;
+        }
+        if self.pulley_frame > 1 {
+            self.pulley_frame = 0;
+        }
+        // `:26482-26490`: the per-tick refills — the extra jumps, the carpet
+        // pose clear, the wing/rocket budgets.
+        self.refresh_double_jumps();
+        self.carpet_frame = -1; // `:26484` (`canCarpet = true` rides the carpet machine)
+        self.wing_time = self.wing_time_max as f32;
+        self.rocket_time = self.rocket_time_max;
+        self.rocket_delay = 0;
+        self.can_rocket = false;
+        self.rocket_release = false;
     }
 
     /// `Item.wingSlot` (`Item.cs`'s `SetDefaults` cases — the 47 wings whose
@@ -23116,5 +23637,222 @@ mod w4_f3_wall_stealth_tests {
         p.update_stealth();
         assert!((p.acc_run_speed - 1.8).abs() < 1e-5, "the acc cut (:25848)");
         assert!((p.max_run_speed - 0.9).abs() < 1e-5, "the max cut (:25849)");
+    }
+}
+
+/// W4-f3 folded host — the rope-pulley attach/move/dismount machine
+/// (`Player.FindPulley` `Player.cs:19644-19749`, `CanMoveForwardOnRope`
+/// `:24247-24266`, the Update rope block `:26116-26493`). The `:26135`
+/// CancelAllJumpVisualEffects host now fires. Code-only mode: WRITTEN NOT RUN.
+#[cfg(test)]
+mod w4_f3_pulley_tests {
+    use super::*;
+    use super::tests::ground_world;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// A world with a rope column (kind 213) at tile-x 20, rows 40..60 (the
+    /// ground_world surface is row 60). The rope hangs in the air above the
+    /// ground; the player attaches mid-column.
+    fn rope_world() -> World {
+        let mut w = ground_world();
+        for y in 40..60 {
+            let i = w.index(20, y);
+            w.tiles[i] = Tile { kind: 213, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w
+    }
+
+    /// Puts the player centred on the rope column at row 50, holding UP so
+    /// the FindPulley gate fires. The centre hang offset is `20*16+8-width/2`.
+    fn on_rope(w: &World) -> Player {
+        let mut p = Player::spawn(w);
+        p.x = 20.0 * 16.0 + 8.0 - p.width / 2.0;
+        p.y = 50.0 * 16.0;
+        p.vx = 0.0;
+        p.vy = 0.0;
+        p.control_up = true;
+        p
+    }
+
+    /// `:19650-19655` + `:19702-19714` — over a rope cell with up held, the
+    /// nearest-of-three pick lands the centre hang (dir 1), zeroes vx and
+    /// sets stepSpeed 2.5. A column (rope above AND below) keeps the Y.
+    #[test]
+    fn w4_f3_find_pulley_attaches_the_centre_hang() {
+        let w = rope_world();
+        let mut p = on_rope(&w);
+        p.find_pulley(&w);
+        assert!(p.pulley, "the attach lands (:19708)");
+        assert_eq!(p.pulley_dir, 1, "the centre pick (:19694)");
+        assert_eq!(p.vx, 0.0, "(:19713)");
+        assert_eq!(p.step_speed, 2.5, "(:19711)");
+        assert_eq!(p.x, 20.0 * 16.0 + 8.0 - p.width / 2.0, "the centre offset");
+        assert_eq!(p.y, 50.0 * 16.0, "a column keeps the Y (:19665)");
+    }
+
+    /// `:19646-19649` — no up/down key, no attach. `:19652-19655` — no rope
+    /// cell, no attach.
+    #[test]
+    fn w4_f3_find_pulley_needs_a_key_and_a_rope() {
+        let w = rope_world();
+        let mut p = on_rope(&w);
+        p.control_up = false;
+        p.find_pulley(&w);
+        assert!(!p.pulley, "no key (:19646)");
+        let mut q = on_rope(&w);
+        q.x = 30.0 * 16.0; // off the column
+        q.find_pulley(&w);
+        assert!(!q.pulley, "no rope cell (:19652)");
+    }
+
+    /// `:19656-19668` — a LONE rope cell (no rope-kind neighbour above or
+    /// below) hangs the player at `row*16 + 22` and captures the old-Y delta
+    /// in gfxOffY.
+    #[test]
+    fn w4_f3_find_pulley_lone_cell_snaps_the_hang_row() {
+        let mut w = ground_world();
+        let i = w.index(20, 50);
+        w.tiles[i] = Tile { kind: 213, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let mut p = on_rope(&w);
+        p.find_pulley(&w);
+        assert!(p.pulley);
+        assert_eq!(p.y, (50 * 16 + 22) as f32, "the lone-cell hang (:19667)");
+        assert_eq!(p.gfx_off_y, 50.0 * 16.0 - (50 * 16 + 22) as f32, "(:19710)");
+    }
+
+    /// `:26281-26286` — the jump-off: controlJump clears the pulley and sets
+    /// the full jump impulse. `:26135` — the cancel host fires (the
+    /// performing-jump visual clears).
+    #[test]
+    fn w4_f3_the_pulley_jump_off_and_cancel_host() {
+        let w = rope_world();
+        let mut p = on_rope(&w);
+        p.find_pulley(&w);
+        assert!(p.pulley);
+        p.performing_jump = Some(ExtraJump::Cloud);
+        p.control_jump = true;
+        p.control_up = false;
+        p.update_pulley_direction(&w, GRAVITY);
+        assert!(!p.pulley, "the jump-off detaches (:26283)");
+        assert_eq!(p.jump, p.jump_height, "(:26284)");
+        assert_eq!(p.vy, -p.jump_speed, "(:26285)");
+        assert_eq!(p.performing_jump, None, "the :26135 cancel host fires");
+    }
+
+    /// `:26257-26260` — a non-zero vx steps off the rope. `:26261-26268` —
+    /// leaving the rope cell steps off.
+    #[test]
+    fn w4_f3_the_pulley_dismounts_on_velocity_or_leaving_the_rope() {
+        let w = rope_world();
+        let mut p = on_rope(&w);
+        p.find_pulley(&w);
+        p.vx = 2.0;
+        p.control_up = false;
+        p.update_pulley_direction(&w, GRAVITY);
+        assert!(!p.pulley, "vx != 0 steps off (:26259)");
+        let mut q = on_rope(&w);
+        q.find_pulley(&w);
+        q.control_up = false;
+        q.x = 30.0 * 16.0; // off the column
+        q.update_pulley_direction(&w, GRAVITY);
+        assert!(!q.pulley, "no rope cell steps off (:26267)");
+    }
+
+    /// `:26442-26447` — at the rope END (no rope above/below the hang row)
+    /// holding DOWN drops off with the 10-tick re-attach lockout and a 1
+    /// px/tick start. `:26116-26119` — the lockout decays per tick.
+    #[test]
+    fn w4_f3_the_rope_end_down_drop_sets_the_lockout() {
+        let mut w = ground_world();
+        let i = w.index(20, 50);
+        w.tiles[i] = Tile { kind: 213, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let mut p = on_rope(&w);
+        p.find_pulley(&w);
+        assert!(p.pulley);
+        p.control_up = false;
+        p.control_down = true;
+        p.pulley_ride(&w, MAX_FALL);
+        assert!(!p.pulley, "the end drop (:26445)");
+        assert_eq!(p.rope_count, 10, "(:26444)");
+        assert_eq!(p.vy, 1.0, "(:26446)");
+    }
+
+    /// `:26331-26381` — the climb: holding UP on a column accelerates the
+    /// rise (-0.2 per tick past -3, capped at -8). `:26302` — the fall origin
+    /// refreshes (no fall damage accrues while roped).
+    #[test]
+    fn w4_f3_the_pulley_climb_accelerates_up() {
+        let w = rope_world();
+        let mut p = on_rope(&w);
+        p.find_pulley(&w);
+        p.control_up = true;
+        p.vy = 0.0;
+        p.pulley_ride(&w, MAX_FALL);
+        assert_eq!(p.vy, -0.2, "the first climb tick (:26371)");
+        for _ in 0..60 {
+            p.pulley_ride(&w, MAX_FALL);
+        }
+        assert_eq!(p.vy, -8.0, "the climb cap (:26377-26380)");
+        assert_eq!(p.fall_start, p.y as i32 / 16, "(:26302)");
+    }
+
+    /// `:26468-26481` — the 2-frame climb cadence: the counter accumulates
+    /// |vy*0.75| + 0.75 while moving and wraps the frame at >10.
+    #[test]
+    fn w4_f3_the_pulley_frame_cadence_wraps() {
+        let w = rope_world();
+        let mut p = on_rope(&w);
+        p.find_pulley(&w);
+        p.control_up = true;
+        p.vy = -8.0; // |−8*0.75| + 0.75 = 6.75 per tick
+        p.pulley_ride(&w, MAX_FALL);
+        assert_eq!(p.pulley_frame, 0, "6.75 < 10 after one tick");
+        p.vy = -8.0;
+        p.pulley_ride(&w, MAX_FALL);
+        assert_eq!(p.pulley_frame, 1, "13.5 > 10 wraps to frame 1 (:26475)");
+        assert_eq!(p.pulley_frame_counter, 0.0, "(:26476)");
+    }
+
+    /// `:24247-24266` — the lateral rope-step gate: the next column cell is
+    /// a rope kind and the hang box there is not solid.
+    #[test]
+    fn w4_f3_can_move_forward_on_rope_probes_the_next_column() {
+        let w = rope_world();
+        let p = on_rope(&w);
+        // The column at x20 has rope at row 49 (the hang row for y=50*16).
+        assert!(p.can_move_forward_on_rope(&w, 0, 20, 49), "the rope cell itself");
+        assert!(!p.can_move_forward_on_rope(&w, 5, 20, 49), "no rope at x25");
+    }
+
+    /// The rope-coil interplay (W4-g82/d4 + the g83 census): the pulley
+    /// attaches to the SAME `td::TILE_ROPE` kinds the rope-coil placement
+    /// writes (213/214/353/365/366/504/449/450/451), and never to a natural
+    /// vine (the disjoint-set pin). A placed coil column climbs.
+    #[test]
+    fn w4_f3_the_pulley_attaches_every_rope_kind_not_vines() {
+        for kind in [213u16, 214, 353, 365, 366, 504, 449, 450, 451] {
+            let mut w = ground_world();
+            for y in 40..60 {
+                let i = w.index(20, y);
+                w.tiles[i] = Tile { kind, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+            let mut p = on_rope(&w);
+            p.find_pulley(&w);
+            assert!(p.pulley, "rope kind {kind} attaches (tileRope)");
+        }
+        // A natural vine (52) is NOT a rope — no attach (the g83 disjoint pin).
+        let mut w = ground_world();
+        for y in 40..60 {
+            let i = w.index(20, y);
+            w.tiles[i] = Tile { kind: 52, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut p = on_rope(&w);
+        p.find_pulley(&w);
+        assert!(!p.pulley, "a vine never attaches (IsVine disjoint tileRope)");
     }
 }
