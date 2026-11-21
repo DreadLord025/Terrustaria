@@ -9665,7 +9665,7 @@ mod tests {
         crate::registry::get(app.inventory[app.selected].kind).map_or(0, |d| d.use_ammo)
     }
 
-    fn shooter_app() -> App {
+    pub(super) fn shooter_app() -> App {
         let mut w = World::new("t".into(), 64, 800);
         for x in 0..64 {
             let i = w.index(x, 300);
@@ -9942,7 +9942,7 @@ mod tests {
     /// goes in the ammo slot, the second-to-last in the grid rows). The cursor
     /// sits 80 px right of the screen centre — within the 6-tile reach, the aim
     /// direction +x.
-    fn shooter_rig(kind: u16, name: &'static str, ammo: &[(usize, u16, u32)]) -> App {
+    pub(super) fn shooter_rig(kind: u16, name: &'static str, ammo: &[(usize, u16, u32)]) -> App {
         let mut app = shooter_app();
         app.inventory[app.selected] = crate::item::ItemSlot {
             kind,
@@ -9996,7 +9996,7 @@ mod tests {
     }
 
     /// Hold the button for `n` frames (the press IS the first frame).
-    fn hold(app: &mut App, screen: Vec2, n: usize, log: &mut Vec<(i32, usize)>) {
+    pub(super) fn hold(app: &mut App, screen: Vec2, n: usize, log: &mut Vec<(i32, usize)>) {
         for _ in 0..n {
             step(app, screen, log);
         }
@@ -18969,6 +18969,7 @@ mod wall_placement_tests {
 #[cfg(test)]
 mod w4_d15_monk_staff_use_tests {
     use super::*;
+    use super::tests::{hold, shooter_rig};
 
     /// The 3836 (Monk Staff T2, shoot 699): the use fires ONE 699 whose
     /// ai0 rides the `NextFloat() * speed * 0.75 * direction` roll
