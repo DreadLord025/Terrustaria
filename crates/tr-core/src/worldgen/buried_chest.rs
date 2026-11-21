@@ -587,25 +587,30 @@ mod tests {
 
     #[test]
     fn near_other_chests_blocks_the_second() {
+        // `Chest.NearOtherChests(x-1, y-1)`'s 50×16 window around the
+        // bottom-left anchor: a basic chest inside it refuses the place
+        // when `notNearOtherChests` is set. Plant one inside the window
+        // of the (49, 62) anchor — centre (48, 62), x 23..72 / y 54..61.
         let mut world = pocket_world();
+        let c = world.index(45, 60);
+        world.tiles[c].kind = 21;
+        world.tiles[c].flags |= FLAG_ACTIVE;
         let mut hell = 0usize;
-        let p1 = add_buried_chest(
+        let p = add_buried_chest(
             &mut world, 50, 60, 0, true, -1, false, 0,
             20.0, 200.0, flags(), 500, 0, &mut hell, 5, &mut Rng(42),
         );
-        assert!(p1.is_some());
-        // A second chest 4 columns away — inside the 50×16 exclusion.
-        for y in 60..64 {
-            for x in 54..58 {
-                let i = world.index(x, y);
-                world.tiles[i].flags &= !FLAG_ACTIVE;
-            }
-        }
+        assert!(p.is_none(), "NearOtherChests refuses the neighbour");
+        // Without the flag the same site places (the window is opt-in).
+        let mut world2 = pocket_world();
+        let c2 = world2.index(45, 60);
+        world2.tiles[c2].kind = 21;
+        world2.tiles[c2].flags |= FLAG_ACTIVE;
         let p2 = add_buried_chest(
-            &mut world, 55, 60, 0, true, -1, false, 0,
+            &mut world2, 50, 60, 0, false, -1, false, 0,
             20.0, 200.0, flags(), 500, 0, &mut hell, 5, &mut Rng(42),
         );
-        assert!(p2.is_none(), "NearOtherChests refuses the neighbour");
+        assert!(p2.is_some(), "notNearOtherChests=false ignores the window");
     }
 
     #[test]

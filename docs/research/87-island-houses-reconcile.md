@@ -35,7 +35,7 @@ is a direct source read (the C# line ranges are the ledger), no builds.
 | 12 | opposite wall column `num7..=num8+1` | :79338-79347 | ✓ | ✓ | ✓ | ✓ |
 | 13 | chest cycle `skyIslandHouseCount`, `>3 → Next(4)`, 159/65/158/2219 | :79348-79368 | ✓ | ✓ | ✓ | ✓ |
 | 14 | chest style getGood 2 / else 13 | :79369-79376 | ✓ | ✓ | ✓ | ✗ (13 only) |
-| 15 | `AddBuriedChest` core (floor scan, larva 231 veto, ±2 altar 26/237 veto, style resolution, stocking) | :79371/:79375 → :35889-35963 | ~ compact floor-scan + `place_chest` seam (no larva/altar vetoes — the house floor is sunplate, neither can occur on a fresh island; recorded stand-in) | ✓ full `buried_chest::add_buried_chest` | ✓ `add_sky_chest` slice (larva + altar vetoes, sky-band loot tree deferred to the chest lane) | ✓ own `add_buried_chest` |
+| 15 | `AddBuriedChest` core (floor scan, larva 231 veto, ±2 altar 26/237 veto, style resolution, stocking) | :79371/:79375 → :35889-35963 | ✓ FULL core after the islands-final graft (`e172bc76` — `buried_chest::add_buried_chest`, the d103 salvage; was ~ compact stand-in) | ✓ full `buried_chest::add_buried_chest` | ✓ `add_sky_chest` slice (larva + altar vetoes, sky-band loot tree deferred to the chest lane) | ✓ own `add_buried_chest` |
 | 16 | fountain scatter (style>0): 100000 attempts, first 50000 refuse 202, `Place2xX(207, style)` + `SwitchFountain` | :79377-79392 | ✓ (variant A; `Place2xX` fountain arm + `SwitchFountain` ±72) | ✓ | ✓ | ✓ |
 | 17 | `skyIslandHouseCount++` after the place | :79394 | ✓ | ✓ | ✓ | ✓ |
 | 18 | window strips wall 21, gate ¬remix∨(anniv∧¬getGood) | :79395-79419 | ✓ (variant A gate) | ✓ | ✓ | ✗ (always on) |
@@ -84,16 +84,13 @@ islands-pass stand-ins:
 2. **Drop `g37:passes_b.rs` §B5** (`island_house`, `switch_fountain`,
    `pass_floating_island_houses`) — classic-only, strictly dominated.
    The rest of passes_b.rs (B1-B4, B6-B9) is untouched by this call.
-3. **Salvage candidate (the one arm where a peer is MORE faithful):
-   #15, the `AddBuriedChest` core.** d103 routes through the full
-   `buried_chest::add_buried_chest` (the chest lane's core); d104's
-   `add_sky_chest` carries the larva-231 + ±2-altar-26/237 vetoes. g44's
-   compact `place_chest` seam omits them (inert on a fresh sunplate
-   island floor — neither tile kind can be present — but not on an
-   errorWorld deep island over existing terrain). **Merge-gate
-   follow-up:** when the chest lane's `buried_chest` core lands on main,
-   re-point g44's chest call (#15) at it, keeping the cycle/style arms
-   (#13/#14) unchanged. Until then the stand-in is recorded (ANALYSIS).
+3. **Salvage candidate — CLOSED (islands-final 1/5, `e172bc76`): #15,
+   the `AddBuriedChest` core.** d103's full core is grafted into g44 as
+   `worldgen/buried_chest.rs` and the house chest call re-pointed at it
+   (the larva-231 + ±2-altar-26/237 vetoes d104's slice carried are
+   inside it, plus the flag12 remix retype / errorWorld shuffle /
+   shimmer abort / noTraps swap neither sky slice had). See the FINAL
+   adjudication addendum below — no salvage candidates remain.
 4. **Ledger-y convention:** g44 stores `num11 - radius/2` for the
    compact discs (the disc-top composition fix, `a6412835`) and `num11`
    verbatim for the variant bodies; the peers store their own compact
@@ -129,3 +126,113 @@ sites at it).
 - `origin/task/W4-f24-worldgen-passes-7` @ `9f2276d5` (the claim ledger
   `docs/research/12k-f24-worldgen-gated.md` + `skyblock_gates.rs`).
 - This branch: `cb5985c9` (variant A), `2b041eaf` (variant B).
+
+---
+
+## FINAL adjudication addendum (2026-11-21, islands-final phase)
+
+The dispatch flagged a CONFLICT between this note's KEEP-g44 and d104's
+`docs/research/86-wg-passes-4-reconcile.md` (tip `0c7a3483`), which keeps
+d104 for pass 28-IslandHouses. Re-read of d104's latest confirms the two
+notes DO NOT actually conflict — they adjudicate different comparisons:
+
+1. **86 §1 B5 compares d104 vs g37 ONLY.** Its arm table has exactly two
+   port columns (`d104 (island_houses.rs)` / `g37
+   (passes_b.rs::island_house)`); g44 appears NOWHERE in 86 (verified by
+   a full-text scan of the tip's file). Its verdict — "d104 more complete
+   + better-seamed", the drunk/remix/getGood arms beating g37's
+   classic-only house — is correct FOR THAT PAIR and stands.
+2. **87 compares all FOUR ports including g44 AFTER variant A.** g44
+   carries every arm d104 has (the same drunk half-split, remix door
+   5/38, getGood chest style 2, remix furniture, anniversary gates,
+   fountain, palms — rows 3/11/14/16/18/19/21/22 above) PLUS the verbatim
+   islands-pass mechanics d104 keeps as compact stand-ins (count
+   formula, skyLakes tail, errorWorld triple, spawn re-draw, spacing,
+   y-band, skyblock arms, the variant bodies, the num10 style table —
+   the pass-level table above). On the house arms d104 ⊆ g44; on the
+   pass arms d104 ⊊ g44. "Peers strict-subsets" is a statement about
+   g44-vs-peers, not a denial of 86's d104-vs-g37 ordering.
+3. **d104's house module is UNCHANGED since 87's read**: `git diff
+   93b1938e 0c7a3483 -- crates/tr-core/src/worldgen/island_houses.rs`
+   is EMPTY (the reconcile commit touched docs only). The arm table
+   above is still current against d104's tip.
+4. **The one arm where a peer was MORE faithful (#15, the AddBuriedChest
+   core) is now closed IN g44** (islands-final 1/5, `e172bc76`): d103's
+   full `buried_chest` core (unchanged `eb018138` → `339d9f6d`, verified
+   by an empty diff) is grafted as `worldgen/buried_chest.rs` and the
+   `island_house` chest call re-pointed at it — the larva-231 +
+   ±2-altar-26/237 vetoes d104's `add_sky_chest` slice carried are
+   inside the core, plus the arms NEITHER peer's sky slice had: the
+   flag12 remix evil retype (`:36176-36196` — the plain remix world's
+   sky chest becomes crimson-43 wood / corrupt-3 mahogany 467; d104's
+   slice always placed 21/13), the errorWorld style shuffle, the
+   shimmer abort, the noTraps swap, `NearOtherChests`. After the graft
+   g44 is a superset of ALL THREE peers on EVERY arm — no salvage
+   candidates remain.
+
+**FINAL verdict (supersedes nothing, completes both notes): KEEP g44's
+`worldgen/islands.rs` + the grafted `worldgen/buried_chest.rs` for the
+Floating Islands + Floating Island Houses family.** At the merge:
+
+- Drop `d103:island_houses.rs`, `d104:island_houses.rs`, `g37:passes_b.rs`
+  §B5 (86 §2.3's "keeps ONE copy (d104's)" resolves to g44's once g44 is
+  in the comparison — the merge gate reads BOTH notes).
+- d103's `buried_chest.rs` ALSO carries the `Surface Chests` pass
+  (`:17130-17210`) — that half is d103's own claim (86 §2.3 keeps d103's
+  B1-B4 twins); at the merge the two `add_buried_chest` cores dedupe onto
+  ONE (this graft is the same code, re-pointed seams: `edit::solid_tile`
+  vs the local copy, `place_chest_kind` vs `place_chest`-21-only — the
+  kind-aware twin is the survivor, the remix 467 arm needs it).
+- 86's other verdicts are UNTOUCHED by this note: Quick Cleanup / Hellforge
+  ordering / Piles / Spawn Point stay d104's, Spreading Grass takes the
+  one-argument repeat:true fix, g39's helpers are the dedupe target.
+- The ledger-y convention (KEEP-4) and the anchors repointing (KEEP-5)
+  stand as written.
+
+### Islands-final cross-notes (the four sibling mechanics)
+
+- **Sky-lake fishing (2/5, `4c170c02`)**: the sky-band catch rows are
+  LANDED (`fishing.rs::vanilla_drop_rules`, M7-FISH-2) — re-census against
+  `GameContentFishDropPopulator.cs:73-81` (the six sky quest fish +
+  Damselfish 2304) and `:214` (the sky crate 3206 / Azure 3985 pair,
+  `Crate && Height0`) found ZERO gaps; three witnesses pin the rows and
+  the end-to-end sky-lake bowl (pond gate → height_level 0 → quest
+  catch). Claim read: f35 (`cd6d53a2f`) and f36 (`fac5f2224`) claim
+  expert bags / OOA medals only — no fishing claims on either tip.
+- **Skyware chest loot (3/5, `0898f352`)**: the flag12 tail (SkyMill
+  2197 1/3, the six-piece pottery, Cloud 751 ×50-100) verified landed in
+  `chest_gen.rs`; two gaps fixed — the sky main's `Prefix(-1)`
+  (`:36232`/`:36513`) and the CreativeWings 4978 1/40 rider
+  (`:36526-36531`); the 467-block census fixes (the Cloud stack rides
+  both blocks, the style-13 5234 row gates on 467) landed with 1/5.
+- **Harpy spawn band (4/5, `c55cdc02`)**: the 0.35/0.45 height-band latch
+  (`NPC.cs:980-987`) is landed verbatim (M4-EVENT-4b); the dispatch tail
+  gained the Wyvern arm's `!AnyNPCs(87) && !noWorms` short-circuits, the
+  town-slime `RollLuck(25)` draw and the TERMINAL Harpy default (no
+  ground fallthrough). The Harpy kind (48) is d34's claim
+  (`4012a7f3a`, npc-kinds-1-70, unmerged); d126 owns the Wyvern spawn
+  assembly. Claim read: g61 (`a96289284`) is spawn DUST only — no
+  spawn-wiring claims; the dispatch tail was unclaimed.
+
+### Sources read (addendum)
+
+- `decompiled/Terraria/WorldGen.cs` :35755-35798, :35877-36217,
+  :36234-36333, :36424-36539, :37390-37539, :37548-37568,
+  :57813-57846, :79344-79458, :9688-9695.
+- `decompiled/Terraria/Chest.cs` :543-557; `Tile.cs` :428-435
+  (`anyShimmer`); `ID/TileID.cs` :504 (`Sets.Boulders`).
+- `decompiled/Terraria/GameContent/FishDropRules/GameContentFishDropPopulator.cs`
+  :73-87, :204-223; `Projectile.cs` :20680-20754; `Main.cs` :67032
+  (the 41-fish quest pool); `ID/ItemID.cs` (the sky ids).
+- `decompiled/Terraria/NPC.cs` :969-1010, :1350-1424; `ID/NPCID.cs`
+  :10773/:10851/:12049.
+- `git show origin/task/W4-d103-worldgen-passes-3:crates/tr-core/src/worldgen/buried_chest.rs`
+  @ `339d9f6d` (the full core + the Surface Chests pass).
+- `git show origin/task/W4-d104-worldgen-passes-4:crates/tr-core/src/worldgen/island_houses.rs`
+  @ `0c7a3483` (`add_sky_chest` :379-431) +
+  `docs/research/86-wg-passes-4-reconcile.md` (full).
+- `origin/task/W4-d34-npc-kinds-1-70` @ `4012a7f3a` (the Harpy rows),
+  `origin/task/W4-d126-wyvern-chain-wire` @ `7ddf25a49` (no spawner.rs
+  diff — the assembly is its own pass), `origin/task/W4-g61-npc-spawn-dust`
+  @ `a96289284`, `origin/task/W4-f35-expert-drop-trees` @ `cd6d53a2f`,
+  `origin/task/W4-f36-ooa-medal-drops` @ `fac5f2224` (claim greps).

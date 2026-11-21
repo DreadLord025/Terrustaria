@@ -3601,11 +3601,22 @@ mod tests {
             assert!(n.is_none(), "seed {seed}: the sky default spawns nothing yet");
         }
         // The same world WITHOUT the skyMob latch runs the ground ladder
-        // (the control — the fallthrough the old port took).
+        // (the control — the fallthrough the old port took). Give the rig
+        // a real surface column so the day slime arm can land.
+        let mut wg = ground();
+        for x in 0..wg.width {
+            let i = wg.index(x, 30);
+            wg.tiles[i].kind = 1;
+            wg.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        wg.compute_column_surface();
+        let mut cg = probe_ctx(&wg);
+        cg.probe_exists = true;
+        cg.flags.hard_mode = false;
         let mut saw_ground = false;
         for seed in 0..200u64 {
             if spawn_npc_at(
-                &c,
+                &cg,
                 &mut UnifiedRandom::new(seed as i32),
                 2,
                 5 * 16,

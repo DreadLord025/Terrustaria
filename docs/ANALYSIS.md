@@ -39487,3 +39487,85 @@ skyblock fixed-anchor/clear-window arms, the drunk-variant `a == b`
 world-hash replay. The classic pins stay STALE-BY-DESIGN (the merge gate
 re-pins; `world_hash.rs`'s note stands).
 
+### W4-g44 islands-final phase (the four sibling mechanics + the FINAL adjudication, code-only mode, 2026-11-21)
+
+1. **The AddBuriedChest core graft (`e172bc76`).** The research/87
+   §KEEP-3 salvage is closed: d103's full placement core
+   (`WorldGen.cs:35877-36217`, unchanged `eb018138` → `339d9f6d`) lands
+   as `worldgen/buried_chest.rs` and `island_house`'s chest call
+   re-points at it. The core carries the shimmer/larva-231 column
+   aborts, the trySlope flatten/restore + the style-17 61×61 exclusion,
+   the remix centre-bottom abort, the ±2 boulder/altar-26/237 veto
+   (fluff 100), the flag15 default, the errorWorld style shuffle, the
+   family dispatch probes, the **flag12 remix evil retype**
+   (`:36176-36196` — the plain remix world's sky chest becomes
+   crimson-43 wood / corrupt-3 mahogany 467; the compact stand-in and
+   d104's sky slice both always placed 21/13), the noTraps swap and
+   `PlaceChest`'s boulder-under + `NearOtherChests` exclusions. The 467
+   place rides the new kind-aware `structures::place_chest_kind` (the
+   21 wrapper keeps its signature); `GenVars.hell_chest` is the core's
+   counter slot (the shuffled table stays with the tr-app driver, the
+   S1-A-4 seam). **Deviations:** the family MAIN-ITEM draws ride the
+   stocking hook (the pass-granularity stand-in, unchanged); the
+   `desertHiveHigh/Low` inputs read the Reset sentinels
+   (`maxTilesY`/0) until the hive bounds land — inert on the sky band;
+   the `dualDungeons`/`notTheBees` beach arms stay unported (d103's
+   recorded deferrals). Two chest_gen census fixes ride the graft: the
+   Cloud 751 stack rows fire in BOTH the 21 and 467 blocks
+   (`:37447`/`:37522-37527` — the old 21-only gate dropped the corrupt
+   sky chest's stack) and the style-13 5234 pottery row gates on 467
+   (`:37528` sits inside the `:37471` mahogany block, not the 21 block).
+2. **Sky-lake fishing (`4c170c02`).** Census-only: the sky-band catch
+   rows are landed (M7-FISH-2) — `FloatingIslandDrops`
+   (`GameContentFishDropPopulator.cs:73-81`: the six quest fish +
+   Damselfish 2304) and the sky crate pair (`:214`: 3206 early / 3985
+   hard, `Crate && Height0`). The height ladder
+   (`Projectile.cs:20712`) puts the islands-pass lakes in band 0. Three
+   witnesses pin the rows + the end-to-end bowl. f35/f36 claim no
+   fishing (cross-note in research/87's addendum).
+3. **Skyware chest loot (`0898f352`).** The flag12 tail verified landed;
+   two gaps fixed: the sky main's `Prefix(-1)` (`:36232`/`:36513` — the
+   accessories/Starfury are prefixable, the plain insert dropped the
+   roll) and the CreativeWings 4978 1/40 rider (`:36526-36531`).
+   **Deviation:** the wings row rides the sky-main arm in `stock_chest`
+   — the C# puts it in the mid-band `num10 > 0` block (`:36503`'s
+   `num7 < rockLayer` is true above the surface) while the port's band
+   model files the sky anchor under Surface; the family row follows the
+   main instead (the band-granularity stand-in, recorded).
+4. **Harpy spawn band (`c55cdc02`).** The 0.35/0.45 skyMob latch
+   (`NPC.cs:980-987`) was already verbatim; the dispatch tail
+   (`:1407-1422`) gains the Wyvern arm's `!AnyNPCs(87) && !noWorms`
+   short-circuit gates (the old port drew `Next(10)` unconditionally in
+   hardmode), the town-slime-purple `RollLuck(25)` draw (the unlock flag
+   reads false — no port source; the 686 kind deferred) and the
+   **terminal Harpy default** — a sky candidate never falls through to
+   the ground ladders (the old port spawned surface slimes in the sky
+   on a dispatch miss). **Deviations:** the Harpy spawn itself is
+   terminal-None until d34's kind (48) merges; the Wyvern spawn rides
+   d126's assembly (the dispatch consumes the roll); `RollLuck` runs as
+   the plain `Next` (the spawner's luck deferral). New
+   `SpawnContext.wyvern_exists` wired at both npcs.rs sites.
+5. **The FINAL adjudication (research/87 addendum).** The flagged
+   87-vs-86 conflict resolves: 86 §1 B5 compares d104 vs g37 ONLY (g44
+   appears nowhere in it) and its d104-wins verdict stands FOR THAT
+   PAIR; 87's four-way table (g44 after variant A) dominates d104 on
+   every house arm AND the pass mechanics. d104's house module is
+   unchanged since 87's read (empty diff `93b1938e` → `0c7a3483`).
+   With the #15 graft g44 is a superset of all three peers on every
+   arm — KEEP g44's islands.rs + buried_chest.rs; the merge dedupes the
+   two `add_buried_chest` cores onto the kind-aware survivor and keeps
+   d103's Surface Chests half. 86's other verdicts (Quick Cleanup /
+   Hellforge / Piles / Spawn Point / the Spreading Grass fix) untouched.
+
+**Witnesses (written, NOT run — code-only mode):** the core's floor /
+gold-style / shimmer / larva / boulder / altar / NearOtherChests /
+remix-retype arms (7), the house seam's retype events + larva refusal +
+errorWorld shuffle (3), the sky rows' conditions + the crate gates +
+the sky-lake bowl end-to-end (3), the skyware tail sweep + the 467
+Cloud row (1), the Wyvern gates' stream-tail replay + the terminal
+default + the band-latch sweep (3). The classic pins stay
+STALE-BY-DESIGN — the graft adds draws ONLY on the flagged seeds
+(errorWorld shuffle, noTraps swap) and the remix retype; the classic
+house stream is unchanged (the vetoes are inert on the sunplate floor,
+the flag12 swap gates on remix).
+

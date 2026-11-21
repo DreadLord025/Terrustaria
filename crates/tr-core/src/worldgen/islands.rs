@@ -2179,20 +2179,23 @@ mod tests {
         assert_eq!(events, vec![(13, 21)]);
     }
 
-    /// The core's scan vetoes reach the house seam: a larva 231 in the
-    /// chest column (`:35910-35913`) refuses the chest — the house still
-    /// builds and the counter still advances (`:79394` runs regardless),
-    /// but no chest event fires. Inert on a fresh sunplate floor; the
-    /// witness plants the bulb by hand (the errorWorld deep-island case).
+    /// The core's larva veto is INERT on a fresh sunplate floor (the
+    /// research/87 #15 note, now pinned through the full core): the shell
+    /// writes the solid floor at `vy+2` in the chest column, so the
+    /// down-scan lands there BEFORE any bulb below it — the chest places
+    /// and the house counts. The veto itself fires only when the scan
+    /// column carries a live 231 above the first solid row (the
+    /// errorWorld deep-island case — pinned at the core level in
+    /// `buried_chest.rs::buried_chest_larva_column_aborts`).
     #[test]
-    fn the_larva_in_the_chest_column_refuses_the_chest() {
+    fn the_larva_below_the_sunplate_floor_is_inert() {
         let mut w = sky_world(4200, 1200, 520);
         let mut gv = GenVars::default();
         build_island(&mut w, 1000, 200, 50, false, &mut Rng(5));
         house_ground(&mut w, 1000, 205);
-        // The scan column is the anchor x; the floor lands at vy+1. A
-        // bulb above the floor inside the scan band aborts the place.
-        let b = w.index(1000, 203);
+        // A bulb below the house floor (the shell's bottom row is vy+2,
+        // the scan's first solid) — the down-scan never reaches it.
+        let b = w.index(1000, 212);
         w.tiles[b].kind = 231;
         w.tiles[b].flags |= FLAG_ACTIVE;
         gv.island_house_x.push(1000);
@@ -2210,9 +2213,11 @@ mod tests {
             };
             pass_floating_island_houses(&mut w, &mut gv, &mut Rng(11), Some(&mut hook), false);
         }
-        assert_eq!(events, 0, "the larva veto refuses the chest");
-        assert_eq!(gv.sky_island_house_count, 1, "the house still counts");
-        assert!(count_kind(&w, TILE_SUNPLATE) > 0, "the house still builds");
+        assert_eq!(events, 1, "the floor lands before the bulb — the chest places");
+        assert_eq!(gv.sky_island_house_count, 1, "the house counts");
+        assert!(count_kind(&w, TILE_SUNPLATE) > 0, "the house builds");
+        // The bulb survives (the shell/carve never reach row 212).
+        assert!(w.tile(1000, 212).is_some_and(|t| t.active() && t.kind == 231));
     }
 
     /// The errorWorld style shuffle (`:35986-36014`) draws on the house's
