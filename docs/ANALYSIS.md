@@ -31136,6 +31136,26 @@ portraits and the netglue bare seed. The wiring:
   (the d22 carries), the re-pinned digger flee witness. Full register +
   merge notes: `docs/research/238-c8-crawler-final-census.md`.
 
+### W4-c8 RETIRE phase (2026-11-21, code-only — research/238 §7)
+
+**CRAWLER-FAMILY COMPLETE on the branch** — the nine aiStyle-66 kinds
+fully rowed + wired (gait/flicker/dig/Transform, the d22-composed
+fleeing worm-head, sparkle dust, hostile-shot flag, catch chain, the
+GENERIC sight provider + the 13-row gold peer table). The retire
+receipts (research/238): §3a the d22 saturation cross-warn — d22 tip
+`bcd42ddd1` re-read, the 150-tick `ground_air` loop UNFIXED
+(`npc.rs:21889`), the merger keeps c8's 110-tick pin; §1a the
+Goldfish-55 freeze-lift — 55 is a BASE kind on main (`a725acb04`), the
+lift is LIVE on this branch with no c4 merge needed (only c4's three
+UI `unlock_state` call sites still fold at merge); §7a the
+critter-lanes auto-cover — c7 `c2cc6ec61` / c9 `2042d77f1` / c10
+`5fcc68ae6` / e26 `048cca6cf` / c4 `0df6964be` tips verified: every
+lane's kinds carry the 5-HP/0-dmg rows the generic gate reads, the
+605/592 gold rows are pre-tabled — zero per-lane provider wiring at
+merge. The research number renamed 143→238 per the d54 registry-150
+(143 belongs to c4; 237 double-claimed e23/g61; 238 first-free at all
+356 tips).
+
 ## The aiStyle-9 sphere family (S1-D-3 aiStyle-9, 2026-11-18, code-only mode)
 
 `NPC.AI()`'s `if (this.aiStyle == 9)` arm (`NPC.cs:21377-21571`) now rides

@@ -319,3 +319,53 @@ are ENTRIES rows).
 - **d40/e26/c7/c9/c10**: no provider wiring needed (§1/§2) — row the
   kinds and the generic gates cover them.
 - **d35**: re-run `_d35_npc_census.py` on the merged base (§4).
+
+## 7. CRAWLER-FAMILY declaration (retire phase, 2026-11-21)
+
+**The crawling-critter family is COMPLETE on this branch.** All nine
+aiStyle-66 kinds (Worm 357, TruffleWorm 374, TruffleWormDigger 375,
+GoldWorm 448, EnchantedNightcrawler 484, Grubby 485, Sluggy 486,
+Buggy 487, Maggot 606 — the eight `aiStyle = 66` SetDefaults kinds plus
+the 374's dig-form 375) are rowed with their C# `SetDefaults` stats,
+`{31}` Confused immunities, bestiary entries (375 Hide folds onto the
+TruffleWorm card), the nine sheets + FindFrame cases + slope tails, and
+the whole machine is wired: the axis-66 claim runs the faithful
+walk/idle gait + 484 essScale flicker + 374 dig → inline
+`transform_to_kind(375)` (+16 sink), the digger rides the d22-upgraded
+worm-head pass as a lone fleeing worm (the `:51861` inversion at the C#
+position, faithful three-arm accel), the GoldWorm sparkle emits its
+gated dust 43, the `dontTakeDamageFromHostiles` flag gates hostile
+shots, all nine kinds ride the existing catch-net chain (375 the one
+non-catchable), and the bestiary unlocks on SIGHT through the GENERIC
+`counts_as_a_critter` gate (`NPC.cs:6887-6897`) with the full 13-row
+`GOLD_PEER_TABLE` + 14-member collection — a provider contract that
+auto-covers every sibling critter lane's kinds the moment they merge,
+with zero per-lane wiring. The residual work is merge-time only: the
+d22 keep-c8-superset + 110-tick pin (§3a receipt), the c4 UI
+`unlock_state_world` fold (§1a receipt — the 55 lift itself is already
+live), the d35 NPC-page census re-run (§4), and the d40 gold-band
+extensions of the peer table's unported rows.
+
+### 7a. The critter-lanes auto-cover RECEIPT (verified at the lane tips)
+
+The §1 contract table re-verified against each lane's PUSHED tip — the
+kinds exist and their `SetDefaults` rows are the 5-HP/0-dmg shape the
+generic gate reads (so the scan + dispatch cover them with no provider
+edit at merge):
+
+| lane | tip | kinds verified on the tip | the 5/0 rows |
+|---|---|---|---|
+| c7-fireflies | `c2cc6ec61` | Firefly/LightningBug/Lavafly/Shimmerfly (`npc.rs:1095-1107`, cs 355/358/654/677 `npc/data.rs:593+`) | `npc/data.rs:3666` max_hp 5, `:4034` damage 0 |
+| c9-snails | `2042d77f1` | Snail/GlowingSnail/MagmaSnail (`npc.rs:1095-1105`, cs 359/360/655; +Shimmerfly shared) | `npc/data.rs:3681` max_hp 5, `:4048` damage 0 |
+| c10-waterfowl | `5fcc68ae6` | Duck/Duck2/DuckWhite/DuckWhite2/Seagull/Seagull2/Grebe/Grebe2 (`npc.rs:1094+`, cs 362-365/602/603/608/609) | `npc/data.rs:3825-3832` max_hp 5 (`NPC.cs:13620`…`:16828` cited), `:4215-4222` damage 0 |
+| e26-ladybugs | `048cca6cf` | Frog/LadyBug/GoldLadyBug (`npc.rs:1095/1109/1115`, cs 361/604/605; +Duck peer row) | `npc/data.rs:3681` max_hp 5, `:4048` damage 0 |
+| c4-fish | `0df6964be` | Goldfish 55 (BASE — §1a), GoldGoldfish 592 (`npc.rs:1156`, cs row `npc/data.rs:625/3246`), GoldGoldfishWalker 593 (d42's interim entry re-points onto 592 per c4 research/148 item 5) | base 55 rows (§1a) + c4 `npc/data.rs:3710` max_hp 5 / `:4086` damage 0 (the 592/607/615/688 group); the stats witness `npc.rs:24441` pins 592 = 0 dmg / 5 HP |
+
+Gold-arm riders: e26's GoldLadyBug 605 → {604} and c4's GoldGoldfish 592
+→ {55} are ALREADY rows of `GOLD_PEER_TABLE` (§2) — their entries
+auto-ride the gold provider on merge; d40's gold band (443/442/444/445/
+446/447 + the unported 601/627/613/539) is likewise pre-tabled. The
+594/686 `cs_id` exclusions and the 549 Hide exclusion are in the gate
+for every lane. **No sibling lane needs to write a sight scan, a
+provider arm, or a peer-table row — the c8 machinery is the family's
+shared provider seam.**
