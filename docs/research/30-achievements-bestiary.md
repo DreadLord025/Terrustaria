@@ -289,20 +289,113 @@ Witnesses: `save_world_writes_the_achievement_condition_state`,
 ### Sites left unwired (owning systems absent — f30 or later lanes)
 
 - Progression 17/26 (`WorldGen.CheckAchievement_RealEstateAndTownSlimes`,
-  `WorldGen.cs:5659-5677`): the full 25-NPC roster / 8 town slimes — the
-  port's town roster is partial.
+  `WorldGen.cs:5659-5677`): **check PORTED (DOC-SWEEP)** —
+  `achievement_hooks.rs::check_real_estate_and_town_slimes`, wired at the
+  arrival (`:5609`), the fished-out 682 (`Player.cs:52435`) and the
+  rainbow-slime release (`WorldItem.cs:1742`). UNREACHABLE in play: Truffle
+  160, Steampunker 178, Cyborg 209, Pirate 229, Bartender 550 and the eight
+  town slimes 670/678-684 have no NpcKind rows.
 - Progression 18 (Truffle arrival, `WorldGen.cs:5580`): no Truffle NpcKind.
-- Progression 22 (`WorldGen.UnlockDoor`, `WorldGen.cs:37627` — the Lihzahrd
-  door): no temple-key use path; the fairy NPC sight (`NPC.cs:48647`) has no
-  fairy kind.
+- ~~Progression 22 (`WorldGen.UnlockDoor`, `WorldGen.cs:37627`)~~ **PORTED
+  (DOC-SWEEP)** — `editing/doors.rs::try_unlock_temple_door` + `unlock_door`:
+  the Temple Key 1141 pay (inventory + void-bag bank4), the +54 frame shift,
+  sound 22, progression 22. The fairy NPC sight (`NPC.cs:48647`,
+  HandleSpecialEvent 22 → FIND_A_FAIRY "Do") still has no fairy kind.
 - Progression 24 gnome-to-statue (`NPC.cs:55896`): no gnome AI.
-- `HandleSpecialEvent(9)` minecart kill (`Player.cs:27602`): no minecart
-  NPC-damage path; `(21)` pet-the-pet (`Player.cs:33350`/`:33397`): no
-  petting system.
-- Progressions 33-46 (f30's reserved tail): golf/fishing/research/shimmer
-  milestones, nurse 46, dryad 27, MechaMayhem 21.
-- `DoClassicTitleScreenAchievement` (`AchievementsHelper.cs:382-385`): the
-  title-screen menu path is unported.
+- `HandleSpecialEvent(9)` minecart kill (`Player.cs:27602`): the minecart
+  ride is ported (`minecart.rs`) but the NPC-collision damage block
+  (`GetMinecartDamage` + `ApplyDamageToNPC`, `Player.cs:27585-27604`) is
+  not — VEHICULAR_MANSLAUGHTER stays unwired; `(21)` pet-the-pet
+  (`Player.cs:33350`/`:33397`): no petting system.
+- Progressions 33-46 (f30's reserved tail): see the f30 census below.
+- `DoClassicTitleScreenAchievement` (`AchievementsHelper.cs:382-385`,
+  called at `Main.cs:63018` — the title-screen sun/moon grab): the classic
+  title screen is unported → GOING_OLDSCHOOL unwired.
+
+## W4-c36 DOC-SWEEP — lane 32 (2026-11-21)
+
+Co-lane reads (pushed tips): **f30** `f8cef8cb` (tail census: 21/37-partial/
+38/41 WIRED, 45 PREP, 31/33/34/35/36/39/40/43/44/46 CITED — reproduced in
+its "W4-f30 tail census" section on its branch); **g53** `a27adca8` (the
+achievements-screen sweep — the POPUP toast is already DONE on main via
+S1-E-26 wave A `d6b4fa09`, draw wired at `app/frame/draw.rs:1858`, and no
+g53 commit touches `ui/notifications.rs` — **skipped, nothing to take**).
+
+### 5043 Torch God's Favor — the 3-way keep-one note (c36 / f33b / g90b)
+
+The three branches touch ADJACENT C# methods, not the same logic — no
+keep-one deletion is needed, the split is by responsibility:
+
+| lane | owns | C# anchor |
+| --- | --- | --- |
+| **c36 (this branch)** | the USE path: `use_torch_gods_favor` (`editing.rs`) — `unlockedBiomeTorches` set, GAIN_TORCH_GODS_FAVOR completion (the ONLY achievement-credit path in the three), the bestiary TorchGod 664 credit, the stack pay | `Player.ItemCheck_UseTorchGodsFavor` `Player.cs:45226-45242` |
+| **f33b** (`333479e0`) | the EVENT machine: `torch_god.rs` happyFunTorchTime + the 949 rain + the survival 5043 DROP (`RequestNewItem`), and the trigger-gate flag READS — `has_torch_gods_favor` (the inventory scan, `Player.cs:18069-18076`) and `ctx.unlocked_biome_torches` (`:18066`). f33 completes NO achievement (grep: no `complete_condition`/`notify` in its diff) | `Player.cs:17718-17910`/`:18066-18086`, `Projectile.cs:42787-42822` |
+| **g90b** (`1f1b88f0`) | the NEIGHBOUR item: Artisan Loaf 5326 `use_artisan_loaf` at the same i37 press-edge seam — a different flag (`ateArtisanBread`), no 5043 code | `Player.ItemCheck_UseArtisanLoaf` `Player.cs:45216-45224` |
+
+Merge contract: keep c36's flag WRITE + credit and f33's flag READS (the
+event gate needs the use flag); the `editing.rs` use-seam arms are disjoint
+`if held.kind == …` branches (mechanical conflict at most). The C#'s second
+flag `UsingBiomeTorches = true` (`:45231`) stays folded into
+`unlocked_biome_torches` (the c36 batch-6 deviation, `player_lights.rs:97`).
+
+### DOC-SWEEP landed sites (C# → Rust)
+
+| C# site | Rust seam | Row(s) |
+| --- | --- | --- |
+| Coffin-cart mount (`Mount.cs:6301-6304`, `_type == 38`) | `player.rs::set_mount` queues `pending_grave_cart`; the player pass drains → progression 32 | ROLLIN_IN_YOUR_GRAVE |
+| FTW Moon Lord kill (`NPC.cs:79398-79402`, `Main.getGoodWorld` = the ForTheWorthy bit, `WorldGen.cs:11118`) | `world_sim/npcs.rs`'s MoonLordCore strike-death arm → progression 30 | BOULDER_LORD |
+| Locked Lihzahrd door (`Player.cs:32792-32834` + `WorldGen.UnlockDoor` `:37599-37627`) | `editing/doors.rs::try_unlock_temple_door`/`unlock_door` — the 1141 key pay + bank4 fallback, the frameY-594 top walk, the +54 shift, sound 22, progression 22 | TEMPLE_RAIDER |
+| `CheckAchievement_RealEstateAndTownSlimes` (`WorldGen.cs:5659-5677`) | `achievement_hooks.rs::check_real_estate_and_town_slimes` at the arrival (`:5609`), the fished-out 682 (`Player.cs:52435`), the rainbow-slime release (`WorldItem.cs:1742`) | REAL_ESTATE_AGENT + ALL_TOWN_SLIMES (faithful no-op wires — the roster kinds are unported) |
+
+Witnesses (WRITTEN NOT RUN, code-only):
+`w4_c36_the_coffin_cart_mount_completes_rollin_in_your_grave`,
+`w4_c36_the_temple_key_unlocks_the_lihzahrd_door`,
+`w4_c36_the_ftw_moon_lord_kill_fires_boulder_lord`,
+`w4_c36_the_real_estate_check_needs_the_full_roster`.
+
+### The 180-condition notify-path census (gap list)
+
+Method: every `Cond::Progression/Flag/Int/Float` row in
+`achievements_data.rs` (86 conditions) mapped to its live Rust notify site;
+the `Npc/Item/Tile/Craft` families (94 conditions) all have a live DISPATCH
+(`world_sim/npcs.rs` kill, `items.rs` pickup, `editing.rs` break,
+`clicks.rs` craft + the enter-world fan-out) — their per-id reachability is
+a content-coverage question (the NPC-kind/item tables), not a notify-path
+gap. Progression 0/2/4 have no listening row (faithful no-op wires).
+
+**Progression/flag/int/float conditions with NO notify path anywhere (the
+gap list, after c36+f30):**
+
+| Row | Cond | C# site | Missing owning system |
+| --- | --- | --- | --- |
+| IT_CAN_TALK | 18 | `WorldGen.cs:5580` | Truffle kind 160 |
+| TURN_GNOME_TO_STATUE | 24 | `NPC.cs:55896` | gnome AI |
+| QUEEN_MACHINE | 31 | `NPC.cs:78866` | Mechdusa summon 5334 + combined-boss death (f30 cited; the seed gate landed) |
+| FEAR_THE_SUN | 33 | `Player.cs:28647` | vampire sun-scorch (f30 cited) |
+| ITS_SHALING_OUTSIDE | 34 | `WorldGen.cs:71694` | boulder rain (f30 cited) |
+| EXTRA_LIFE | 35 | `Player.cs:38782` | hardcore death penalty (f30 cited) |
+| GRAVE_MISTAKE | 36 | `Player.cs:20473`/`:38836` | striking gravestones + MP teammate deaths (f30 cited) |
+| FORTUNE_FAVORS_THE_BOULD | 39 | `Main.cs:61828` | rainbow boulder draw (f30 cited) |
+| TRAINING_DAY | 40 | `Player.cs:25697` | combat book vol. 2 use 5336 (f30 cited) |
+| NEW_DIGS | 43 | `NPC.cs:53273` | town shimmer transform (f30 cited) |
+| MY_PEOPLE_NEED_ME | 44 | `Player.cs:24076` | remix top-world death (f30 cited) |
+| TRASH_COMPACTOR | 45 | `AchievementsHelper.cs:396` | Journey sacrifice UI (f30 PREP) |
+| INTERDIMENSIONAL_RECYCLING | 46 | `Main.cs:40294` | Dryad Joja-cola gift (f30 cited) |
+| SPICY_LICKS (partial) | 37 | `Player.cs:46574`/`:46588` | The Axe 1305 / Carbon+Ivy 4057/4372 chord arms (the 4715 arm wired by f30) |
+| VEHICULAR_MANSLAUGHTER | "Hit" | `Player.cs:27602` | minecart NPC-collision damage (`GetMinecartDamage` block) |
+| PET_THE_PET | "Do" | `Player.cs:33350`/`:33397` | petting system |
+| FIND_A_FAIRY | "Do" | `NPC.cs:48647` | fairy kind |
+| PURIFY_ENTIRE_WORLD | "Do" | `Main.cs:40276` (`DryadText_WorldPurityOrStardewValleyBit`) | Dryad world-status dialog (`GetDryadWorldStatusDialog` + the status button) |
+| TO_INFINITY_AND_BEYOND | "Do" | `Projectile.cs:70861` (1020 kill at Y ≤ 640) | Jim's Drone aiStyle 195 (the id row exists, the AI does not) |
+| GOING_OLDSCHOOL | "Do" | `Main.cs:63018` → `AchievementsHelper.cs:384` | classic title-screen sun/moon grab |
+
+**Reachable-but-gated (the wire exists, the gate cannot pass in play):**
+REAL_ESTATE_AGENT 17 + ALL_TOWN_SLIMES 26 (the DOC-SWEEP roster check —
+5 town kinds + 8 slime kinds missing), BOOK_WORM 29 (S1-F-15's tier bug
+reaches 100% too early — the hook itself fires).
+
+Everything else in the 86 has a live notify site on this branch or f30's
+(the full wired table: the c36 site table above + f30's tail census).
 
 ## Task seeds
 

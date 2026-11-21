@@ -14580,6 +14580,35 @@ powers/research вЂ” each needs its own scope.
   and both `notify_with` and `complete_condition` save per completing row.
   `Clear`/`ClearAll` (`AchievementManager.cs:152-178`) have no retail caller —
   unported. Witnesses pin the quit route and the row-targeted completion write.
+- **DOC-SWEEP batch (W4-c36 lane 32, 2026-11-21).** Four more sites after
+  reading the co-lane claims (f30's tail census `f8cef8cb` — its 21/37/38/41
+  wires are taken; g53's screen sweep — the popup toast was already done by
+  S1-E-26 wave A, skipped): the coffin-cart mount progression 32
+  (`Mount.cs:6301-6304` — `Player::set_mount` queues `pending_grave_cart`,
+  the player pass drains), the FTW Moon Lord kill progression 30
+  (`NPC.cs:79398-79402` — `Main.getGoodWorld` is the ForTheWorthy seed bit,
+  `WorldGen.cs:11118`; the strike-death arm only, the despawn/part-clear
+  rides skip it), the locked Lihzahrd door progression 22
+  (`Player.cs:32792-32834` + `WorldGen.UnlockDoor` `:37599-37627` —
+  `editing/doors.rs::try_unlock_temple_door`/`unlock_door`, the Temple Key
+  1141 inventory pay + void-bag bank4 fallback, the frameY-594 top walk and
+  the +54 three-cell shift), and `CheckAchievement_RealEstateAndTownSlimes`
+  (`WorldGen.cs:5659-5677` — `achievement_hooks.rs`, the faithful 25-id +
+  8-slime roster scan wired at the three C# call sites the port carries).
+  **Deviations:** the door arm's dust burst (4× Dust 11 per cell) and the MP
+  `52` door-sync send have no port layer (the standing tile-edit dust / net
+  gaps); the roster check is a faithful NO-OP wire in play — Truffle 160,
+  Steampunker 178, Cyborg 209, Pirate 229, Bartender 550 and the eight town
+  slimes have no NpcKind rows; the coffin-cart queue drains at the player
+  pass (the C# fires inside `SetMount` — same tick, the
+  `pending_lucky_break` convention). **5043 keep-one (c36/f33b/g90b):** no
+  overlap to delete — c36 owns the use-flag write + the achievement/bestiary
+  credit (`ItemCheck_UseTorchGodsFavor`), f33 owns the event machine + the
+  survival drop + the flag READS (`:18066-18076`), g90 owns the neighbouring
+  5326 loaf; the merge keeps both halves of the favor flag. The full
+  180-condition notify-path census (the gap list: 20 rows with no complete
+  notify path, each with its missing owning system) lives in research/30
+  "W4-c36 DOC-SWEEP". 4 witnesses written not run (code-only mode).
 - **The menu's `largeForOtherLanguages` flag is always `true`** (`flag = true` in
   `InitializePage`), which is what fixes the row height at `66 + 16 + 20 = 102`
   and the `MinWidth`/`MaxWidth` at 700/900. The in-game arm (`OnActivate`'s
