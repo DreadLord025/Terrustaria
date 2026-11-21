@@ -216,8 +216,11 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
         edit::TileInteraction::HitSwitch { x, y } => {
             // `Player.cs:32174-32178`: the used tile is a lever (132), a
             // switch (136) or a timer (144) — `Wiring.HitSwitch` fires and
-            // the click is consumed.
+            // the click is consumed. Research/95 §8.1: the flood's
+            // occupancy gates read the entity snapshot.
+            crate::world_sim::wiring::install_entity_snapshot(app);
             app.wiring.hit_switch(&mut app.world, *x, *y);
+            crate::world_sim::wiring::clear_entity_snapshot(app);
             // S1-E-21i — the Mech-28 click (`Wiring.cs:285`/`:310`/`:375`):
             // the pitch draw rides the `UpdatePlayers` stream — the tile
             // use runs in `Player.ItemCheck` (`Main.cs:17754`).

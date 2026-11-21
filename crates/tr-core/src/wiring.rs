@@ -320,6 +320,27 @@ pub struct Wiring {
     /// the app layer runs `TryFindChestForExtractinator`, the in-use gate and
     /// the reverse slot walk with the `RollExtractinatorDrop` roll.
     extractinator_requests: Vec<(i32, i32, u16)>,
+    /// The entity half of `Collision.EmptyTile(i, j, ignoreTiles: true)`
+    /// (`Collision.cs:1359-1380`) — research/95 §8.1, the g4-closure pattern
+    /// (`53063dd1`'s door-bash drain is the reference): the C# statics read
+    /// `Main.player`/`Main.npc` live; tr-core has no entity store, so the
+    /// holder installs a snapshot closure before each flood entry
+    /// ([`Self::with_entities`]) and the device arms consult it. `None` is
+    /// the always-free closure (the unit-test rigs — the `smart_cursor.rs`
+    /// precedent). Consumed by the trapdoor 386/387 and tall-gate 388/389
+    /// arms; door 11 is unaffected (`CloseDoor(forced: true)` skips the gate
+    /// entirely) and `OpenDoor` has no occupancy gate in C#.
+    cell_blocked: Option<CellBlocked>,
+}
+
+/// The [`Wiring::cell_blocked`] closure holder — a `Debug`-transparent box
+/// so the struct's derive keeps working (the closure itself is opaque).
+struct CellBlocked(Box<dyn Fn(i32, i32) -> bool>);
+
+impl std::fmt::Debug for CellBlocked {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("CellBlocked(<entity snapshot>)")
+    }
 }
 
 /// A device shot request: one `Projectile.NewProjectile` call from the device
@@ -447,6 +468,31 @@ impl Wiring {
     /// `Main.rand` rolls (the S1-L-6c seeded-stream contract).
     pub fn rand_mut(&mut self) -> &mut UnifiedRandom {
         &mut self.rand
+    }
+
+    /// The entity-occupancy snapshot install (research/95 §8.1, the
+    /// g4-closure pattern): the app layer installs the live player/NPC
+    /// box-overlap closure before each flood entry (`update`, `trip_wire`,
+    /// `hit_switch`, `switch_tiles`, the plate transitions) and clears it
+    /// after, so the trapdoor/tall-gate arms' `Collision.EmptyTile
+    /// (ignoreTiles: true)` gate sees the entities the C# statics read off
+    /// `Main`. The closure owns its snapshot (no `App` borrow escapes);
+    /// pair every install with [`Self::clear_entity_gate`] — a stale
+    /// snapshot must never outlive the tick that captured it.
+    pub fn install_entity_gate(&mut self, cell_blocked: impl Fn(i32, i32) -> bool + 'static) {
+        self.cell_blocked = Some(CellBlocked(Box::new(cell_blocked)));
+    }
+
+    /// Drops the installed entity snapshot (the always-free default
+    /// returns — the unit rigs' state).
+    pub fn clear_entity_gate(&mut self) {
+        self.cell_blocked = None;
+    }
+
+    /// The installed entity gate, or the always-free default (no snapshot —
+    /// the unit-test rigs and the pre-install callers).
+    fn entity_blocks(&self, x: i32, y: i32) -> bool {
+        self.cell_blocked.as_ref().is_some_and(|c| (c.0)(x, y))
     }
 
     /// `Wiring.CheckMech` (`Wiring.cs:455-471`): one cooldown entry per tile
@@ -2804,14 +2850,18 @@ impl Wiring {
             388 | 389 => {
                 let mut drops = Vec::new();
                 let mut skips = Vec::new();
-                let no_blocker = |_: i32, _: i32| false;
+                // Research/95 §8.1 CLOSED (the g4-closure pattern): the
+                // `Collision.EmptyTile(ignoreTiles: true)` entity gate reads
+                // the app-installed player/NPC snapshot (`with_entities`);
+                // no snapshot (unit rigs) is the always-free default.
+                let blocked = |x: i32, y: i32| self.entity_blocks(x, y);
                 let shifted = crate::edit::shift_tall_gate(
                     world,
                     i,
                     j,
                     kind == 389,
                     false,
-                    &no_blocker,
+                    &blocked,
                     &mut drops,
                     if self.running { Some(&mut skips) } else { None },
                 );
@@ -3072,7 +3122,10 @@ impl Wiring {
     /// `edit::shift_trapdoor` body. The true-then-false call order itself is
     /// a tie (identical in c42). Research/133 §4c.
     fn wire_trapdoor(&mut self, world: &mut World, i: i32, j: i32) {
-        let no_blocker = |_: i32, _: i32| false;
+        // Research/95 §8.1 CLOSED: the shift's per-row `Collision.EmptyTile
+        // (ignoreTiles: true)` gates (`WorldGen.cs:51499`/`:51533`) read the
+        // app-installed entity snapshot (the tall-gate arm's convention).
+        let blocked = |x: i32, y: i32| self.entity_blocks(x, y);
         let mut drops = Vec::new();
         let mut skips = Vec::new();
         let shifted = crate::edit::shift_trapdoor(
@@ -3081,7 +3134,7 @@ impl Wiring {
             j,
             true,
             -1,
-            &no_blocker,
+            &blocked,
             &mut drops,
             if self.running { Some(&mut skips) } else { None },
         ) || crate::edit::shift_trapdoor(
@@ -3090,7 +3143,7 @@ impl Wiring {
             j,
             false,
             -1,
-            &no_blocker,
+            &blocked,
             &mut drops,
             if self.running { Some(&mut skips) } else { None },
         );
@@ -6933,6 +6986,84 @@ mod w4_f11_door_gate_tests {
             .count();
         assert_eq!(open_count, 2, "the 2×1 open trapdoor was written");
         assert_eq!(wiring.take_door_sounds().len(), 1, "the shift cue");
+    }
+
+    /// Research/95 §8.1 CLOSED — the entity-occupancy snapshot (the
+    /// g4-closure pattern, `53063dd1`): an installed blocker on a gate row
+    /// refuses the tall-gate shift (`Collision.EmptyTile(ignoreTiles: true)`,
+    /// `WorldGen.cs:51755-51761`); a blocker elsewhere does not; the clear
+    /// restores the always-free default. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f11_the_entity_snapshot_gates_the_tall_gate() {
+        let rig = || {
+            let mut w = world();
+            let steps = [20, 18, 18, 18, 20];
+            let mut fy = 0i16;
+            for dy in 0..5i32 {
+                put(&mut w, 10, 17 + dy, 388, 0, fy);
+                fy += steps[dy as usize] as i16;
+            }
+            w
+        };
+        // A blocker on the third row (19) refuses the whole column.
+        let mut w = rig();
+        let mut wiring = Wiring::new();
+        wiring.install_entity_gate(|_, y| y == 19);
+        wiring.hit_wire_single(&mut w, 10, 17);
+        assert_eq!(w.tile(10, 17).unwrap().kind, 388, "the gate stayed closed");
+        assert!(wiring.take_door_sounds().is_empty(), "no cue on refusal");
+        // The same blocker one column over is free — the shift runs.
+        let mut w2 = rig();
+        wiring.clear_entity_gate();
+        wiring.install_entity_gate(|x, _| x == 11);
+        wiring.hit_wire_single(&mut w2, 10, 17);
+        assert_eq!(w2.tile(10, 17).unwrap().kind, 389, "the gate opened");
+        // The clear restores the always-free default (the unit convention).
+        wiring.clear_entity_gate();
+        let mut w3 = rig();
+        wiring.hit_wire_single(&mut w3, 10, 17);
+        assert_eq!(w3.tile(10, 17).unwrap().kind, 389, "no snapshot = free");
+    }
+
+    /// Research/95 §8.1 — the trapdoor's per-row EmptyTile gates
+    /// (`WorldGen.cs:51499`: the styleX-0 open needs row y+1 free on both
+    /// columns): an entity box on the destination row refuses BOTH wiring
+    /// attempts (the negated `playerAbove: false` try needs row y — also
+    /// blocked here), so the closed 2×2 survives. Door 11 is unaffected:
+    /// `CloseDoor(forced: true)` skips the gate entirely (`Wiring.cs:1463`).
+    #[test]
+    fn w4_f11_the_entity_snapshot_gates_the_trapdoor_not_the_forced_door() {
+        let mut w = world();
+        for dx in 0..2i32 {
+            for dy in 0..2i32 {
+                put(&mut w, 10 + dx, 18 + dy, 386, (dx * 18) as i16, (dy * 18) as i16);
+            }
+        }
+        let mut wiring = Wiring::new();
+        // Block rows 18 AND 19 over the trapdoor columns — both attempts
+        // refuse (styleX 0 checks y+1 = 19; the negated try checks y = 18).
+        wiring.install_entity_gate(|x, y| (10..=11).contains(&x) && (18..=19).contains(&y));
+        wiring.hit_wire_single(&mut w, 10, 18);
+        assert_eq!(w.tile(10, 18).unwrap().kind, 386, "the trapdoor stayed closed");
+        // The open door (11) closes THROUGH a full blocker: forced skips
+        // the occupancy gate. A fresh rig — open the door with no gate,
+        // then re-install an everything-blocker and close.
+        let mut w = world();
+        closed_door(&mut w);
+        let mut wiring2 = Wiring::new();
+        wiring2.seed_rand(7);
+        closed_door(&mut w);
+        wiring2.hit_wire_single(&mut w, 10, 18);
+        let open_cell = (17..20)
+            .flat_map(|y| [(10, y), (11, y), (9, y)])
+            .find(|&(x, y)| w.tile(x, y).is_some_and(|t| t.active() && t.kind == 11))
+            .expect("an open cell");
+        wiring2.install_entity_gate(|_, _| true); // block EVERYTHING
+        wiring2.hit_wire_single(&mut w, open_cell.0, open_cell.1);
+        assert!(
+            w.tile(10, 17).is_some_and(|t| t.active() && t.kind == 10),
+            "the forced close ran despite the blocker"
+        );
     }
 }
 

@@ -26,9 +26,14 @@ pub(crate) fn update_tile_entities(app: &mut App, dt: f32) {
     app.te_step.tick(dt.min(0.25), |_| {
         let day = app.world.day_time;
         let boxes = player_boxes.clone();
+        // Research/95 §8.1 — the sensors' `UpdateEndInternal` trips fire
+        // `HitSwitch`; the flood's occupancy gates read the entity snapshot
+        // (the g4-closure pattern).
+        crate::world_sim::wiring::install_entity_snapshot(app);
         let world = &mut app.world;
         let wiring = &mut app.wiring;
         tr_core::tile_entities::update_logic_sensors(world, wiring, day, &boxes);
+        wiring.clear_entity_gate();
         // S1-E-21i — the sensors' Mech-28 clicks (the logic sensor's
         // `UpdateEndInternal` fires `HitSwitch`, `TileEntity.cs` via
         // `tr_core::tile_entities`): `TileEntity.PerformUpdates` runs from

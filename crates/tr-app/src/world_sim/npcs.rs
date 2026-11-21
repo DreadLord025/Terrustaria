@@ -4649,6 +4649,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         let mut wiring = &mut app.wiring;
         let world = &mut app.world;
         let audio = &mut app.audio;
+        // Research/95 §8.1 — the plate trips' floods read the entity
+        // snapshot (the g4-closure pattern); one capture per pass (the
+        // scan does not move entities).
+        crate::world_sim::wiring::install_entity_snapshot_parts(
+            wiring,
+            app.player.as_ref(),
+            &app.npcs,
+        );
         for n in app.npcs.iter() {
             let (w, h) = n.size();
             let switch = crate::collision::switch_tiles(
@@ -4680,6 +4688,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 audio.play_switch_click(px as f32, py as f32, npcs_rng);
             }
         }
+        wiring.clear_entity_gate();
     }
     // The `59` sends after the last `player` borrow (`Collision.cs:3304`).
     // The door-bash drain below still draws the scoped `npcs_rng` binding

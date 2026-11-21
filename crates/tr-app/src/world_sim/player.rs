@@ -1122,6 +1122,14 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // `Player.cs:28274-28275`: the switch-tile bridge — the player's
             // box reaching a pressure plate trips the wiring (the C#'s call
             // sits right after `FloorVisuals`, inside `Player.Update`).
+            // Research/95 §8.1 — the flood's trapdoor/tall-gate arms read
+            // the entity snapshot (the g4-closure pattern); the player
+            // rides the SAME `p` borrow (the C# reads `Main.player` live).
+            crate::world_sim::wiring::install_entity_snapshot_parts(
+                &mut app.wiring,
+                Some(&*p),
+                &app.npcs,
+            );
             let switch = crate::collision::switch_tiles(
                 &mut app.wiring,
                 &mut app.world,
@@ -1133,6 +1141,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 p.height as i32,
                 5, // the player's objType (`Collision.SwitchTiles`)
             );
+            app.wiring.clear_entity_gate();
             if let Some((item, x, y)) = switch.dropped {
                 // `WorldGen.KillTile`'s drop for the broken plate.
                 crate::world_sim::items::spawn_item_drop_fields(
@@ -1160,7 +1169,13 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             }
             // `PressurePlateHelper.UpdatePlayerPosition(this)`
             // (`Player.cs:28276`): the weighted pressure plates (428) the
-            // player stands on.
+            // player stands on. Research/95 §8.1 — the transitions fire
+            // `HitSwitch`; install the entity snapshot for the scan.
+            crate::world_sim::wiring::install_entity_snapshot_parts(
+                &mut app.wiring,
+                Some(&*p),
+                &app.npcs,
+            );
             crate::world_sim::wiring::update_pressure_plates(
                 &mut app.wiring,
                 &mut app.world,
@@ -1171,6 +1186,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 p.width,
                 p.height,
             );
+            app.wiring.clear_entity_gate();
             // S1-E-21i — the weighted plates' clicks: `PressurePlateHelper.
             // Update` runs under its own `UpdatePressurePlates` swap
             // (`Main.cs:17763-17765`), so the press/release trips' pitch
@@ -1325,7 +1341,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // `Wiring.HitSwitch` at the magnet tile and announces it as `59`
             // (`Minecart.cs:1287`).
             if let Some((i, j)) = p.take_switch_trip() {
+                // Research/95 §8.1 — the track-switch trip's flood reads
+                // the entity snapshot (the g4-closure pattern).
+                crate::world_sim::wiring::install_entity_snapshot_parts(
+                    &mut app.wiring,
+                    Some(&*p),
+                    &app.npcs,
+                );
                 app.wiring.hit_switch(&mut app.world, i, j);
+                app.wiring.clear_entity_gate();
                 switch_sends.push((i, j));
                 // S1-E-21i — the track switch's Mech-28 click rides the
                 // `UpdatePlayers` stream (`Minecart.HitTrackSwitch` runs in

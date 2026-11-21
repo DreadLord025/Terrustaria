@@ -641,7 +641,11 @@ impl App {
                 ); // `:1886`
                 // `:1887-1893` — the Dead Man's Chest trips its wiring.
                 if is_rigged(&self.world, cx, cy) {
+                    // Research/95 §8.1 — the trip's flood reads the entity
+                    // snapshot (the g4-closure pattern).
+                    crate::world_sim::wiring::install_entity_snapshot(self);
                     self.wiring.hit_switch(&mut self.world, cx, cy);
+                    crate::world_sim::wiring::clear_entity_snapshot(self);
                     // S1-E-21i — the trip's Mech-28 click: the host's
                     // positioned gate refuses (netMode 2), draw-free.
                     for (px, py) in self.wiring.take_switch_clicks() {
@@ -781,8 +785,12 @@ impl App {
             // `case 59` — a tripped switch: apply and relay to the others
             // (`MessageBuffer.cs:2682-2693`).
             C2s::HitSwitch(hs) => {
+                // Research/95 §8.1 — the replayed flood reads the entity
+                // snapshot (the g4-closure pattern).
+                crate::world_sim::wiring::install_entity_snapshot(self);
                 self.wiring
                     .hit_switch(&mut self.world, hs.x as i32, hs.y as i32); // `:2687`
+                crate::world_sim::wiring::clear_entity_snapshot(self);
                 // S1-E-21i — the click plays on the host's stream shape
                 // (the bare `Main.rand`; the handler runs outside every
                 // swap). The netMode-2 gate refuses it, draw-free.
@@ -1771,8 +1779,12 @@ impl App {
             // `case 59` — a peer tripped a switch: replay it locally
             // (`MessageBuffer.cs:2682-2693`).
             S2c::HitSwitch(hs) => {
+                // Research/95 §8.1 — the replayed flood reads the entity
+                // snapshot (the g4-closure pattern).
+                crate::world_sim::wiring::install_entity_snapshot(self);
                 self.wiring
                     .hit_switch(&mut self.world, hs.x as i32, hs.y as i32);
+                crate::world_sim::wiring::clear_entity_snapshot(self);
                 // S1-E-21i — the client's click replay: the message handler
                 // runs outside every swap (`Main.cs:16895`'s NpcStrike
                 // precedent), so the pitch draws ride the bare stream.

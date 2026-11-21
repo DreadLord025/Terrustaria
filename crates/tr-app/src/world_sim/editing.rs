@@ -5737,7 +5737,11 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     // the click's pitch draw rides that stream (the `HitSwitch` precedent,
     // `doors.rs`). An unpressed plate is a no-op.
     if hit.as_ref().is_some_and(|h| h.kind == 428) {
+        // Research/95 §8.1 — the release trip's flood reads the entity
+        // snapshot (the g4-closure pattern).
+        crate::world_sim::wiring::install_entity_snapshot(app);
         app.wiring.destroy_plate(&mut app.world, tx, ty);
+        crate::world_sim::wiring::clear_entity_snapshot(app);
         for (px, py) in app.wiring.take_switch_clicks() {
             app.audio.play_switch_click(
                 px as f32,

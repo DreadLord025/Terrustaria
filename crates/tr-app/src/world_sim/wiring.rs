@@ -11,6 +11,76 @@ use glam::Vec2;
 use crate::app::App;
 use crate::npc::Npc;
 use crate::npc::NpcKind;
+use crate::player::Player;
+
+/// The entity half of `Collision.EmptyTile(i, j, ignoreTiles: true)`
+/// (`Collision.cs:1359-1380`) — research/95 §8.1, the g4-closure pattern
+/// (`53063dd1`'s door-bash drain, the `doors.rs::cell_blocked_by_entity`
+/// shape): a snapshot of the player/NPC boxes taken at the flood entry,
+/// installed on the engine via `Wiring::with_entities` so the trapdoor
+/// 386/387 and tall-gate 388/389 arms' occupancy gates see the entities the
+/// C# statics read off `Main.player`/`Main.npc`. XNA `Rectangle.Intersects`
+/// semantics — strict overlap, touching edges are free. The port keeps no
+/// dead/ghost flags on this gate (the `close_door` convention, doors.rs).
+pub(crate) struct EntitySnapshot(Vec<(f32, f32, f32, f32)>);
+
+impl EntitySnapshot {
+    /// Captures the live boxes: the single local player (`Player.width/
+    /// height` constants) plus every NPC's `kind.size()` box.
+    pub(crate) fn capture(player: Option<&Player>, npcs: &[Npc]) -> Self {
+        let mut boxes = Vec::with_capacity(npcs.len() + 1);
+        if let Some(p) = player {
+            boxes.push((p.x, p.y, crate::player::WIDTH, crate::player::HEIGHT));
+        }
+        for n in npcs {
+            let (w, h) = n.kind.size();
+            boxes.push((n.x, n.y, w, h));
+        }
+        Self(boxes)
+    }
+
+    /// The closure `Wiring::with_entities` installs — owns the snapshot, so
+    /// it borrows nothing from `App` (the split-field flood wraps stay
+    /// borrow-safe).
+    pub(crate) fn into_closure(self) -> impl Fn(i32, i32) -> bool + 'static {
+        move |x: i32, y: i32| {
+            let (x0, y0) = (x as f32 * 16.0, y as f32 * 16.0);
+            let (x1, y1) = (x0 + 16.0, y0 + 16.0);
+            self.0
+                .iter()
+                .any(|&(bx, by, bw, bh)| x0 < bx + bw && x1 > bx && y0 < by + bh && y1 > by)
+        }
+    }
+}
+
+/// Installs the entity-occupancy snapshot for the duration of one wiring
+/// flood entry (research/95 §8.1): captures the live player/NPC boxes and
+/// installs the closure on the engine. Every production `hit_switch`/
+/// `trip_wire`/`switch_tiles`/plate/update call site pairs this with
+/// [`clear_entity_snapshot`] right after the entry; the unit rigs keep the
+/// always-free default.
+pub(crate) fn install_entity_snapshot(app: &mut App) {
+    let snap = EntitySnapshot::capture(app.player.as_ref(), &app.npcs);
+    app.wiring.install_entity_gate(snap.into_closure());
+}
+
+/// Drops the snapshot (the always-free default returns).
+pub(crate) fn clear_entity_snapshot(app: &mut App) {
+    app.wiring.clear_entity_gate();
+}
+
+/// The split-borrow form of [`install_entity_snapshot`] — for the player
+/// tick, whose `p` borrow holds `app.player` across the plate scan (the
+/// snapshot captures the player through the SAME borrow, the C#'s
+/// `Main.player[k]` reads the live entity either way).
+pub(crate) fn install_entity_snapshot_parts(
+    wiring: &mut tr_core::wiring::Wiring,
+    player: Option<&Player>,
+    npcs: &[Npc],
+) {
+    let snap = EntitySnapshot::capture(player, npcs);
+    wiring.install_entity_gate(snap.into_closure());
+}
 
 /// `PressurePlateHelper.UpdatePlayerPosition`
 /// (`PressurePlateHelper.cs:60-100`): the **weighted** pressure plates
@@ -104,7 +174,12 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
     // `&mut App`, which the wiring closure holds across its body.
     let mut party_credits = 0;
     app.wiring_step.tick(dt.min(0.25), |_| {
+        // Research/95 §8.1 — the timer re-trips (`UpdateMech`'s case-144
+        // `TripWire`) run the trapdoor/tall-gate arms; install the live
+        // entity snapshot for the tick (the g4-closure pattern).
+        install_entity_snapshot(app);
         app.wiring.update(&mut app.world);
+        clear_entity_snapshot(app);
         // `Wiring.Teleport()` per registered pad pair (`Wiring.cs:3120-3178`):
         // every living player/NPC standing in a pad's 48×48 box moves to the
         // other pad. The `teleporting` re-entry flag and the MP section sync
@@ -676,6 +751,57 @@ mod tests {
     fn trip_and_tick(app: &mut App) {
         app.wiring.trip_wire(&mut app.world, 8, 20, 1, 1);
         update_wiring(app, 1.0 / 60.0);
+    }
+
+    /// Research/95 §8.1 CLOSED — the app-side snapshot (the g4-closure
+    /// pattern): an NPC standing in a tall-gate row refuses the wired
+    /// shift through `trip_wire`'s real flood; the same trip with the NPC
+    /// moved away opens the gate. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f11_the_npc_box_blocks_the_wired_tall_gate() {
+        let rig = || {
+            let mut app = app_with(388, 0, 0);
+            // Extend the gate to its full 1×5 column (rows 20..=24) and
+            // run the wire down it (the flood reaches every row).
+            let steps = [20, 18, 18, 18, 20];
+            let mut fy = 0i16;
+            for dy in 0..5i32 {
+                let i = app.world.index(10, 20 + dy);
+                app.world.tiles[i] = Tile { kind: 388, frame_x: 0, frame_y: fy, ..Default::default() };
+                app.world.tiles[i].flags |= FLAG_ACTIVE;
+                fy += steps[dy as usize] as i16;
+            }
+            app
+        };
+        // An NPC parked over row 22 (its box intersects the gate column).
+        let mut blocked = rig();
+        let npc = npc_of(NpcKind::Zombie, 10.0 * 16.0, 22.0 * 16.0);
+        blocked.npcs.push(npc);
+        install_entity_snapshot(&mut blocked);
+        blocked.wiring.trip_wire(&mut blocked.world, 8, 20, 1, 1);
+        blocked.wiring.clear_entity_gate();
+        assert_eq!(blocked.world.tile(10, 20).unwrap().kind, 388, "the NPC refused the shift");
+        // The same rig, the NPC one column over — free, the gate opens.
+        let mut free = rig();
+        let npc = npc_of(NpcKind::Zombie, 12.0 * 16.0, 22.0 * 16.0);
+        free.npcs.push(npc);
+        install_entity_snapshot(&mut free);
+        free.wiring.trip_wire(&mut free.world, 8, 20, 1, 1);
+        free.wiring.clear_entity_gate();
+        assert_eq!(free.world.tile(10, 20).unwrap().kind, 389, "the gate opened");
+        // The snapshot rectangle math: touching edges are free (XNA
+        // `Rectangle.Intersects`), strict overlap blocks. A 20×42 player
+        // at (32, 32) spans [32,52]×[32,74].
+        let mut app = rig();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 32.0;
+        player.y = 32.0;
+        app.player = Some(player);
+        let snap = EntitySnapshot::capture(app.player.as_ref(), &[]);
+        let gate = snap.into_closure();
+        assert!(gate(2, 2), "the player box overlaps cell (2,2)");
+        assert!(!gate(4, 2), "x=64 is past the box's right edge — free");
+        assert!(!gate(1, 2), "the cell [16,32] touches x=32 — free");
     }
 
     fn npc_of(kind: crate::npc::NpcKind, x: f32, y: f32) -> crate::npc::Npc {

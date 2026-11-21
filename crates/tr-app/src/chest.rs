@@ -1159,7 +1159,11 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         // death-achievement window has no port tracker (the achievement
         // needs the player-death wiring; recorded deviation).
         if crate::app::netglue::is_rigged(&app.world, ox, oy) {
+            // Research/95 §8.1 — the trip's flood reads the entity snapshot
+            // (the g4-closure pattern).
+            crate::world_sim::wiring::install_entity_snapshot(app);
             app.wiring.hit_switch(&mut app.world, x, y);
+            crate::world_sim::wiring::clear_entity_snapshot(app);
             // The Mech-28 click the trip queues (`Wiring.cs:339`) rides the
             // `UpdatePlayers` stream — the tile use runs in
             // `Player.ItemCheck` (`Main.cs:17754`), the doors.rs precedent.

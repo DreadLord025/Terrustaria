@@ -612,8 +612,11 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             }
             crate::projectile_ai_golf::GolfEffect::CupScored { hit_location, chat, cue } => {
                 // `Wiring.HitSwitch` + `SendData(59)` (`GolfHelper.cs:105-
-                // 106`) — the cup's tile trip.
+                // 106`) — the cup's tile trip. Research/95 §8.1: the flood's
+                // occupancy gates read the entity snapshot.
+                crate::world_sim::wiring::install_entity_snapshot(app);
                 app.wiring.hit_switch(&mut app.world, hit_location.0, hit_location.1);
+                crate::world_sim::wiring::clear_entity_snapshot(app);
                 app.send_hit_switch(hit_location.0, hit_location.1);
                 // The trip's Mech-28 clicks ride the same stream (the
                 // C# call sits inside the `UpdateProjectiles` swap).
@@ -641,6 +644,9 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                 // `Collision.SwitchTiles(..., 4)` (`Projectile.cs:20367`)
                 // — the projectile pressure-pad call. The switch sends
                 // ride the outcome (`Collision.cs:3304` et al.).
+                // Research/95 §8.1: the pad trips' floods read the entity
+                // snapshot.
+                crate::world_sim::wiring::install_entity_snapshot(app);
                 let outcome = crate::collision::switch_tiles(
                     &mut app.wiring,
                     &mut app.world,
@@ -652,6 +658,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                     h as i32,
                     4,
                 );
+                crate::world_sim::wiring::clear_entity_snapshot(app);
                 app.send_switch_outcome(&outcome);
                 // The tripped switches' Mech-28 clicks (S1-E-21i): the
                 // C#'s `Collision.SwitchTiles` runs inside
