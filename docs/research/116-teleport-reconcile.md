@@ -1,6 +1,14 @@
 # 116 — TeleportEffect reconcile: the 4-way union plan (W4-g11)
 
-**STATUS: EXECUTED + FINAL PHASE** (union-exec commits `56afc0c0` +
+**STATUS: SEALED (§8, 2026-11-21)** — EXECUTED + FINAL + RETIRE + the
+four seal receipts: this lane's teleport-union census (`9a9ac1fd`/
+`98283df0`/`2e978b279`), the g61d spawn-seal mutual at `6e922fc6`
+(pushed — the §7.1 push-owed flag RETIRED), the d54 bible
+(research/131 §8.3 item 4, the `main_dust.rs` THREE-WAY resolve per
+§6's per-fn table), and the teleport-family bible below. No further
+g11 commits planned; the merger's worklist is §7.2 unchanged.
+
+**Prior status: EXECUTED + FINAL PHASE** (union-exec commits `56afc0c0` +
 `8540a8ad`, docs `9a9ac1fd`; final phase: the g61b co-lane cross-verify +
 the fade PRE-AI re-slot + the statue style-14 latch + the main_dust.rs
 filename union-plan — §5/§6 below). The keep-one landed: g61's widest-11 body adapted per-hunk
@@ -514,3 +522,139 @@ Verification: code-only. Probe = `git -C TR-W4-g61 status --porcelain`
 + `git log` + direct-path file mtimes (no junction recursion); seam 6
 read as `git show 8f545007` (player.rs/world_sim/player.rs hunks quoted
 above); ancestry + ahead-counts from `git log origin..local --oneline`.
+
+## 8. SEAL (2026-11-21) — the four seal receipts + the teleport-family bible
+
+**This report is SEALED as research/116.** The lane's complete hand-off
+to the merge wave is §7.2's ONE-paragraph instruction; the receipts
+below are the seal-phase re-reads, every one from a pushed tip or a
+direct-path `git show` (no junction recursion, no checkouts of other
+lanes). Code-only throughout: every witness cited is WRITTEN NOT RUN.
+
+### 8.1 Receipt 1 — the teleport-union git-log census (this branch)
+
+`git log` census of the union chain at HEAD `2e978b279` (origin
+`task/W4-g11-dust-main-sites-1` == HEAD, ancestry exit 0; `9a9ac1fd0`
+and `98283df08` both ancestors of HEAD, exit 0):
+
+| commit | phase | what it seals |
+| --- | --- | --- |
+| `56afc0c01` | union 1/3 | `teleport_dust.rs` — g61's widest-11 body adapted per-hunk; the `DustRng` pool generalisation; `App.water_style` (gap 4); 8 witnesses |
+| `8540a8ad5` | union 2/3 | the App dispatcher + the **6 gap closures**; `update_npc_teleport_visuals` wired; the g12 boundary witness INVERTS; 4 gap + 4 g12 + 8 d54 union witnesses |
+| `9a9ac1fd0` | union 3/3 | **EXECUTED** docs (this report §4); research/83 F1-F7 exact patch-hunks published; INDEX/ANALYSIS/PORT_MAP/anchors |
+| `cc8c767b0` | final code | the seam-4 folds — fade PRE-AI (`NPC.cs:90322` before AI `:90423`) + the statue style-14 queue latch; `snowing` DEPRECATED; 2 witnesses |
+| `98283df08` | final docs | **FINAL** §5/§6 — the g61b co-lane census (no spawn-dust dup; pad-loop keep-g11-queue/drop-g61b-helper), the `main_dust.rs` g11×g13 ONE-file per-fn keep table, the :17238 pre-swap scope re-walk (the g11 global-stream claim STANDS) |
+| `c2e445a38`…`2e978b279` | dust-retire 1-4/4 | the d130e F1-applied receipt (research/83 §-receipt), the Main.cs FINAL sweep (research/65 — ZERO unclaimed sites), the g61b probe + seam-6 NO-DUP + §7.2's merger instruction |
+
+The six gaps re-verified IN CODE at HEAD (direct-path greps):
+gap 1 — the Queen-Slime hook queues `teleport_style(...,10)`
+(`projectile.rs:17069`), the Shellphone/no-space legs queue style 11
+(`player.rs:9483`/`:9600`/`:19684`); gap 2 — `other_position` on the req
+(`main_dust.rs:330`, fed `:375`); gap 3 — `extra_info2` on the req
+(`:416`/`:450`/`:526-552`, the style-9 pylon latch witness
+`w4_g11_style_9_carries_the_pylon_style` `:1177`); gap 4 — the stored
+`app.water_style` read at the dispatcher (`:336`, the `DrawWaters`
+write); gap 5 — the style-8 double cue + the replay-owned camera
+transition (the pad's inline arm retired); gap 6 — the single
+C#-position grant write (`:495`, `:37490-37491`). The keep-one seam
+census: `main_dust.rs` 30 `#[test]` (26 surviving after the 4-snow
+drop) + `teleport_dust.rs` 8 — all WRITTEN NOT RUN. **Seam-6
+key-summon: NO-DUP** (§7.1 stands — `Player.last_chest` +
+`chest_change_events` at the `Player.cs:25384` slot +
+`big_mimic_summon_check` `NPC.cs:77517-77605` are a NewNPC/
+BigMimicSpawnSmoke spawn family, never `TeleportEffect`; the shared
+UpdatePlayers tail keeps both at their cited slots).
+
+### 8.2 Receipt 2 — the g61d spawn-seal mutual (`6e922fc6`, pushed)
+
+`origin/task/W4-g61-npc-spawn-dust` == `6e922fc60` (re-read after
+`git fetch origin --prune`; ancestry exit 0; `b5ff1803d` is an
+ancestor of the seal, exit 0). **The §7.1 push-owed flag is RETIRED** —
+the +9 wiring commits (`1eedb9a33`…`b5ff1803d`) are pushed; the seal
+adds +4 (`e6fcb6432` KEEP-ONE-STALE fix, `df15960ac` crimson LIVE +
+roster census, `fd406ecba` FINAL, `6e922fc60` SEAL + the 237→238
+renumber). The g61d seal's receipt (1) names THIS lane's tip
+`2e978b279` — the keep-one is MUTUAL, g11-canonical both ends.
+
+The 7 DEPRECATED banners re-read in-place at `6e922fc60` (direct-path
+`git show` windows) — all point g11-canonical, the correct direction:
+
+| site | banner target |
+| --- | --- |
+| `npc_spawn_visuals.rs:470` | `teleport_effect` — FOLD-SOURCE, g11 `teleport_dust.rs` survives (`56afc0c0`) |
+| `npc_spawn_visuals.rs:860` | `portal_color` — FOLD-SOURCE, g11's copy survives (same `ui::color::hsl_to_rgb`) |
+| `npc_spawn_visuals.rs:882` | `pylon_spawn_in_world_dust` — FOLD-SOURCE, g11's style-9 body survives |
+| `npc_spawn_visuals.rs:938` | the env-level `npc_teleport` driver — RETIRED, g11's App-level replay supersedes (gap 2 `other_position`, the g11 `Npc` fields) |
+| `npc_spawn_visuals.rs:1011` | the `update_npc_teleport_visuals` triple — FOLD-SOURCE, g11's `&mut Npc` re-sign survives (`56afc0c0` + `cc8c767b`, PRE-AI slot kept) |
+| `world_sim/wiring.rs:557` | `npc_teleport_wiring` — the §5 DUP RISK: merger keeps the g11 QUEUE replay, drops the immediate helper (its borrow fixes die with it) |
+| `world_sim/npcs.rs:4408` | the copy-in/out fade drain — DEPRECATED SHAPE, g11's `&mut Npc` fade at the SAME pre-AI slot survives |
+
+**Stays g61** (the spawn-family bible, g61 research/238 §4):
+`poof_of_smoke` (`npc_spawn_visuals.rs:184`, `Utils.cs:1078-1093`),
+`big_mimic_spawn_smoke` (`:236`), `transform_visuals` (`:289` — the
+c10 census-dup contract keeps g61's FULL pool-writing body), the
+alt-texture transitions, and `Audio::play_teleport_cue`
+(`audio.rs:1572`) — the named cue helper survives; the g11 dispatcher
+closure may hoist it (the `npc_spawn_visuals.rs:81` note), ONE
+sound-callback shape at the merge. None of these ever calls
+`TeleportEffect` — the §5/§7.1 NO-DUP censuses hold.
+
+### 8.3 Receipt 3 — the d54 bible: `main_dust.rs` THREE-WAY, per §6
+
+d54 tip `38bfd1d22` (registry-150 published), bible at research/131
+§8 CONSOLIDATED FINAL (`ad0d95d4b`). Its §8.3 merger dust-checklist
+item 4 reads: **"main_dust.rs THREE-WAY resolve (g11 `98283df08` ×
+g13 `4444e1011` × d54) — ONE file per research/116 §6's per-fn
+table"** — KEEP g11 `teleport_effect` dispatcher + `CellRng`/
+`EffectRect` + `player_teleport`/`npc_teleport` + the Req types.
+The §6 per-fn keep table (lines above) is the authority; the §8.1
+fold table marks the g11 teleport union + the seam-4 folds
+**VERIFIED-EXECUTED** and the g11×g13 filename union **OWED
+(merger) — plan FINAL**; d54 keeps its own `world_dust_main.rs`
+filename, its teleport + snowing halves DROP (§3/§7.2). The g13 tip
+in the bible (`4444e1011`) is past this report's §6 read
+(`441f6120f`) — the later commits are the Main-COMPLETE sweep; the
+§6 byte-identity check covers `main_dust.rs` itself. No g11 edit
+owed: the bible cites this report, not a copy.
+
+### 8.4 Receipt 4 — research/116 SEALED + the teleport-family bible
+
+The teleport-family declaration (this lane's closing bible):
+
+* **ONE body:** `teleport_dust.rs::teleport_effect` (g61 `a9628928`
+  widest-11 adapted — `Main.cs:13233-13464`, styles 0-5/7/9/10/11/13,
+  `TeleportDustEnv`, canonical `hsl_to_rgb`, sounds at the C#
+  position, the style-10 clone guard, the pylon 9
+  `TeleportPylonsSystem.cs:327-393`) + `update_npc_teleport_visuals`
+  (`NPC.cs:92194-92241`, g11 `Npc` fields, PRE-AI `:90322`).
+* **ONE seam set:** `main_dust.rs` — the App dispatcher +
+  `player_teleport`/`npc_teleport` Entry-OLD→Exit-NEW replays +
+  `PlayerTeleportReq`/`NpcTeleportReq` (the statue-14 queue fold),
+  drained on the player tick / wiring pads / projectile-pass tail;
+  ONE `Npc` teleport field set (g11 `teleport_style_id` naming), ONE
+  sound-callback shape (`play_teleport_cue` stays g61's named helper).
+* **Fold-sources DROP at the merge:** the g61 teleport family (the 7
+  banners, §8.2), g12's `teleport_effect_case10/11/13` + 4 witnesses,
+  d54's teleport half + 7 witnesses + `hsl_and_portal_colors`; g11's
+  deprecated `snowing` half drops to d130 (research/83 — d130e
+  applied F1+F5+F7 locally at `16a792d56`, no hunks owed).
+* **Stays disjoint:** the g61 spawn family (§8.2), g13's sites 17-23
+  + `capture_snow_cull` (§6), g12's bone-arm/Moon-Lord halves, d54's
+  world-site bodies.
+* **Witness census:** g11's 26 surviving `main_dust.rs` + the
+  pad/statue wiring witnesses + `teleport_dust.rs`'s 8 + g13's 20 +
+  d130's re-pinned snow witnesses — **ALL WRITTEN NOT RUN**; the
+  merge-verify wave executes the catalog command. Every witness has
+  never been compiled — expect first-compile mechanical fixes (the
+  code-only convention, g61 research/238 §6 item 5).
+
+Seal verification: code-only (no cargo/tests/rustfmt/graphify). Tips
+re-read after `git fetch origin --prune`: origin g11 == `2e978b279`
+(ancestry exit 0), origin g61 == `6e922fc60` (ancestry exit 0,
+`b5ff1803d` ancestor exit 0, +4 over it); the union-chain census from
+`git log`; the 7 banners read as ≤10-line direct-path `git show`
+windows at `6e922fc60`; the gap markers grepped at HEAD
+(`main_dust.rs`/`player.rs`/`projectile.rs`); the d54 bible read at
+`38bfd1d22` (`git show`, §8.1/§8.3 windows); the g61 bible read at
+`6e922fc60` (research/238 §1/§4/§6). No further g11 commits are
+planned on this lane — §7.2 is the merger's complete instruction.
