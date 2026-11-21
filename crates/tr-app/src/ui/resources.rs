@@ -10,7 +10,7 @@ use glam::Vec2;
 use tr_render::SpriteRenderer;
 
 use super::UiPulse;
-use super::text::{hud_text, hud_text_width};
+use super::text::{hud_item_text, hud_text, hud_text_width};
 use crate::assets;
 use crate::player::{BREATH_MAX, Player, WIDTH as PLAYER_WIDTH};
 
@@ -576,15 +576,17 @@ pub fn draw_buffs(
         let a = buff_alpha[i];
         r.push_ui_sprite([x, y], [w, h], uv, [a, a, a, a]);
         // The icon text (`:43316-43327`): the `BuffTextHandlers` counter wins
-        // when the handler yields one, else the duration over 2 ticks —
-        // `FontAssets.ItemStack` at 0.8 under the icon.
+        // when the handler yields one, else the duration over 2 ticks.
         let text = buff_text(player, i).or_else(|| {
             try_get_buff_time(player, i, vampire_seed)
                 .filter(|t| *t > 2)
                 .map(|t| localized_duration(t / 60))
         });
         if let Some(text) = text {
-            crate::ui::text::hud_text(r, lookups, x, y + h, 0.85, [1.0; 4], &text);
+            // `:43327` — `FontAssets.ItemStack` at scale 0.8, tinted by the
+            // SAME per-slot alpha quadruple as the icon (the W4-f12 final
+            // census fixed the Mouse_Text font / 0.85 / full-white drift).
+            hud_item_text(r, lookups, x, y + h, 0.8, [a, a, a, a], &text);
         }
         // The hover + the right-click removal (`:43329-43349`). The C#'s
         // `!PlayerInput.IgnoreMouseInterface` gate has no port counterpart.
@@ -742,6 +744,67 @@ mod s1_e_6_tests {
         owned[69] = true;
         let names = banner_hover_names(&owned);
         assert_eq!(names.len(), 1, "{names:?}");
+    }
+
+    #[test]
+    fn w4_f12_final_icon_census_the_gates_are_the_csharp_sets() {
+        // The W4-f12 final-phase icon census (`Main.DrawBuffIcon`
+        // `Main.cs:43307-43368` vs `draw_buffs`): every id the C# gates
+        // out of the duration text hides it here too, and every other
+        // id keeps its timer. The `Main.debuff` / `vanityPet` / `lightPet`
+        // / `buffNoTimeDisplay` tables were script-diffed against
+        // `Main.cs:8865-8940` / `:9214+` / `:9288+` / `:9074-9199` —
+        // 76 / 74 / 12 / 124 entries, zero missing, zero extra.
+        let world = tr_core::World::new("t".into(), 10, 10);
+        let mut p = crate::player::Player::spawn(&world);
+        // The vanity pets (74) and light pets (12) never show a timer
+        // (`Main.cs:43295`); spot-check the head/tail of each set.
+        for b in [40, 382, 19, 299] {
+            p.buffs.buff_type[0] = b;
+            p.buffs.buff_time[0] = 3600;
+            assert_eq!(try_get_buff_time(&p, 0, false), None, "pet {b} hides");
+        }
+        // The 124-id `buffNoTimeDisplay` set (spot rows across the range).
+        for b in [28, 93, 150, 216, 335, 394] {
+            p.buffs.buff_type[0] = b;
+            assert_eq!(try_get_buff_time(&p, 0, false), None, "no-time {b}");
+        }
+        // The honey-48 wet gate and the expert wet-46 gate (`:43295`).
+        p.buffs.buff_type[0] = 48;
+        p.honey_wet = true;
+        assert_eq!(try_get_buff_time(&p, 0, false), None, "honey wet 48");
+        p.honey_wet = false;
+        assert_eq!(try_get_buff_time(&p, 0, false), Some(3600));
+        p.buffs.buff_type[0] = 46;
+        p.wet = true;
+        p.buffs.expert_mode = true;
+        assert_eq!(try_get_buff_time(&p, 0, false), None, "expert wet 46");
+        p.buffs.expert_mode = false;
+        assert_eq!(try_get_buff_time(&p, 0, false), Some(3600), "classic wet 46 shows");
+        // The vampire seed's sub-10 gates for 23/24/32 (`:43297-43300`).
+        for b in [23, 24, 32] {
+            p.buffs.buff_type[0] = b;
+            p.buffs.buff_time[0] = 9;
+            assert_eq!(try_get_buff_time(&p, 0, true), None, "vampire {b} <10");
+            assert_eq!(try_get_buff_time(&p, 0, false), Some(9), "no seed shows");
+            p.buffs.buff_time[0] = 10;
+            assert_eq!(try_get_buff_time(&p, 0, true), Some(10), "10 is not <10");
+        }
+        // A plain buff keeps its timer regardless of the seed.
+        p.buffs.buff_type[0] = 5;
+        p.buffs.buff_time[0] = 9;
+        assert_eq!(try_get_buff_time(&p, 0, true), Some(9));
+        // The 28 `BuffTextHandlers` ids override the timer with the owned
+        // counter (`:43317-43320`); with zero owned projectiles the
+        // duration fallback returns (`buff_text` yields None) — pinned by
+        // `the_buff_text_counter_is_xn_and_gated_on_a_positive_sum`.
+        assert_eq!(BUFF_TEXT_HANDLERS.len(), 28);
+        // The melee set is exactly the 8 flask ids (`Main.cs:8961+`,
+        // script-diffed): the hover passes rarity -10 for these only.
+        for b in [71, 73, 74, 75, 76, 77, 78, 79] {
+            assert!(crate::buffs::is_melee_buff(b), "flask {b}");
+        }
+        assert!(!crate::buffs::is_melee_buff(72), "72 is Tipsy, not a flask");
     }
 }
 
