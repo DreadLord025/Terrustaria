@@ -99,6 +99,9 @@
 //! | 422-424+ | `:84202` | the 454-459 Cultist Dragon death (10-dust type-16 burst + Next(1,4) bone loop) |
 //! | 425-428 | `:84223-84226` | the 372/373 Sharkron death (4 gores at Center, vel x0.8/x0.8/x0.9/x1) |
 //! | 429-434 | `:84273-84278` | the 370 Duke Fishron death (6 gores, direction-spread anchors) |
+//! | 435-438 | `:84296-84299` | the 381 BrainScrambler death (4 gores 587/590/588/589, type-227 dust) |
+//! | 439-441 | `:84317-84319` | the 382/390 RayGunner/ScutlixRider death (3 gores 591/592/593) |
+//! | 442-444 | `:84337-84339` | the 383 MartianOfficer death (3 gores 594/595/596) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -2501,6 +2504,90 @@ fn duke_fishron_death(
     gore.new_gore(rng, world, c, vel, 575, s); // :84278
 }
 
+/// The 381 BrainScrambler death (`NPC.cs:84292-84299`, sites 435-438): the
+/// 30-dust type-227 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 4 gores 587/590 at position, 588 at +20 Y, 589 at +34 Y (the 590 precedes
+/// the 588 — NOT a base+offset ladder).
+fn brain_scrambler_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:84292-84295` — the 30-dust type-227 burst.
+    for _ in 0..30 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 227, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 587, s); // :84296
+    gore.new_gore(rng, world, pos, vel, 590, s); // :84297
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 588, s); // :84298
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 589, s); // :84299
+}
+
+/// The 382/390 RayGunner / ScutlixRider death (`NPC.cs:84313-84319`, sites
+/// 439-441): the 30-dust type-227 burst, then the 3 gores 591/592/593 at the
+/// +0/+20/+34 Y ladder.
+fn ray_gunner_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..30 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 227, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 591, s); // :84317
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 592, s); // :84318
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 593, s); // :84319
+}
+
+/// The 383 MartianOfficer death (`NPC.cs:84333-84339`, sites 442-444): the
+/// 30-dust type-227 burst, then the 3 gores 594/595/596 at the +0/+20/+34 Y
+/// ladder. Same shape as the RayGunner, different types.
+fn martian_officer_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..30 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 227, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 594, s); // :84337
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 595, s); // :84338
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 596, s); // :84339
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -2783,6 +2870,19 @@ pub fn hit_effect_c(
     // `:84258-84280` — the 370 Duke Fishron arm (sites 429-434).
     if npc_type == 370 && npc.hp <= 0 {
         duke_fishron_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:84281-84301` — the 381 BrainScrambler arm (sites 435-438).
+    if npc_type == 381 && npc.hp <= 0 {
+        brain_scrambler_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:84302-84321` — the 382/390 RayGunner / ScutlixRider arm (sites
+    // 439-441).
+    if (npc_type == 382 || npc_type == 390) && npc.hp <= 0 {
+        ray_gunner_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:84322-84341` — the 383 MartianOfficer arm (sites 442-444).
+    if npc_type == 383 && npc.hp <= 0 {
+        martian_officer_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -4482,6 +4582,47 @@ mod tests {
         assert_eq!(gore.slot(3).position, Vec2::new(170.0, 150.0));
         assert_eq!(gore.slot(4).position, Vec2::new(150.0, 120.0));
         assert_eq!(gore.slot(5).position, Vec2::new(150.0, 150.0));
+    }
+
+    /// `NPC.cs:84296-84299` — the BrainScrambler death: the 4 gores
+    /// 587/590/588/589 (590 at position precedes the 588 at +20).
+    #[test]
+    fn w4_f10_the_brain_scrambler_death_spawns_the_four_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 44.0, 50.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(331);
+        brain_scrambler_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![587, 590, 588, 589]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(2).position, Vec2::new(100.0, 120.0));
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+    }
+
+    /// `NPC.cs:84317-84319` / `:84337-84339` — the RayGunner / MartianOfficer
+    /// deaths: the 3-gore +0/+20/+34 ladder with types 591/592/593 and
+    /// 594/595/596 respectively.
+    #[test]
+    fn w4_f10_the_ray_gunner_and_officer_deaths_spawn_the_ladders() {
+        let w = air();
+        for (f, gores) in [
+            (ray_gunner_death as fn(&Npc, &mut DustPool, &SpawnCtx, &mut GorePool, &mut UnifiedRandom, &World, f32), [591, 592, 593]),
+            (martian_officer_death, [594, 595, 596]),
+        ] {
+            let n = boss(100.0, 100.0, 44.0, 50.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(337);
+            f(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, gores);
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+            assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+            assert_eq!(gore.slot(2).position, Vec2::new(100.0, 134.0));
+        }
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
