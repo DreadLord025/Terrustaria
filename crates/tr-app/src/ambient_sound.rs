@@ -1108,6 +1108,55 @@ pub fn idle_sounds(
     else if npc_type == 580 && rng.next_max(800) == 0 {
         play(29, 44, rng);
     }
+    // `:90119-90122` — type 582's 800-roll, pinned style 44.
+    else if npc_type == 582 && rng.next_max(800) == 0 {
+        play(29, 44, rng);
+    }
+    // `:90123-90126` — type 581's 800-roll, Next(44, 47).
+    else if npc_type == 581 && rng.next_max(800) == 0 {
+        let style = rng.next_range(44, 47);
+        play(29, style, rng);
+    }
+    // `:90127-90130` — type 508's 800-roll, pinned style 44.
+    else if npc_type == 508 && rng.next_max(800) == 0 {
+        play(29, 44, rng);
+    }
+    // `:90131-90134` — type 509's 800-roll, Next(44, 47).
+    else if npc_type == 509 && rng.next_max(800) == 0 {
+        let style = rng.next_range(44, 47);
+        play(29, style, rng);
+    }
+    // `:90135-90138` — type 494's 600-roll, pinned style 47.
+    else if npc_type == 494 && rng.next_max(600) == 0 {
+        play(29, 47, rng);
+    }
+    // `:90139-90142` — the Deadly Sphere's 700-roll, Next(48, 50).
+    else if npc_type == 467 && rng.next_max(700) == 0 {
+        let style = rng.next_range(48, 50);
+        play(29, style, rng);
+    }
+    // `:90143-90146` — type 468's 700-roll, Next(50, 53).
+    else if npc_type == 468 && rng.next_max(700) == 0 {
+        let style = rng.next_range(50, 53);
+        play(29, style, rng);
+    }
+    // `:90147-90150` — the Dungeon Spirit's 400-roll, Next(53, 55).
+    else if npc_type == 288 && rng.next_max(400) == 0 {
+        let style = rng.next_range(53, 55);
+        play(29, style, rng);
+    }
+    // `:90151-90154` — the 524-527 quartet's 700-roll, Next(55, 57).
+    else if (npc_type == 524 || npc_type == 525 || npc_type == 526 || npc_type == 527)
+        && rng.next_max(700) == 0
+    {
+        let style = rng.next_range(55, 57);
+        play(29, style, rng);
+    }
+    // `:90155-90158` — the 496/497 pair's 600-roll, Next(57, 59).
+    else if (npc_type == 496 || npc_type == 497) && rng.next_max(600) == 0 {
+        let style = rng.next_range(57, 59);
+        play(29, style, rng);
+    }
 }
 
 /// `Main.cs:58741-58759`'s thunder strike tick (the `currentDayRateIteration
@@ -2034,8 +2083,8 @@ mod tests {
         assert!(gate(528, true), "the 528-532 break arm");
     }
 
-    /// W4-f2 — `IdleSounds`' else-if chain (`NPC.cs:90079-90118`, arms
-    /// 1-10): a matching type consumes its gate roll, then (on a hit) the
+    /// W4-f2 — `IdleSounds`' else-if chain (`NPC.cs:90079-90158`, arms
+    /// 1-20): a matching type consumes its gate roll, then (on a hit) the
     /// style roll, then the play's case-29 pitch draw — in that order, on
     /// the caller's stream. Seed 146 draws 0 on every gate (the derived
     /// witness seed); the `play` stand-in consumes the one
@@ -2063,6 +2112,21 @@ mod tests {
             (171, false, 600, Some((38, 41)), 39),
             (250, false, 700, Some((41, 44)), 42),
             (580, false, 800, None, 44),
+            // Batch 2 — arms 11-20 (`:90119-90158`).
+            (582, false, 800, None, 44),
+            (581, false, 800, Some((44, 47)), 45),
+            (508, false, 800, None, 44),
+            (509, false, 800, Some((44, 47)), 45),
+            (494, false, 600, None, 47),
+            (467, false, 700, Some((48, 50)), 49),
+            (468, false, 700, Some((50, 53)), 51),
+            (288, false, 400, Some((53, 55)), 54),
+            (524, false, 700, Some((55, 57)), 56),
+            (525, false, 700, Some((55, 57)), 56),
+            (526, false, 700, Some((55, 57)), 56),
+            (527, false, 700, Some((55, 57)), 56),
+            (496, false, 600, Some((57, 59)), 58),
+            (497, false, 600, Some((57, 59)), 58),
         ];
         for &(ty, wet, gate, style_roll, style) in arms {
             let mut rng = UnifiedRandom::new(146);
