@@ -128,6 +128,10 @@
 //! | 550 | `:85042` | the 225 UmbrellaSlime death (1 gore 314, blue alpha-100 type-4 dust) |
 //! | 551-552 | `:85133-85137` | the 604 LadyBug death (2 Next(2)-gated gores 1148/1149) |
 //! | 553-554 | `:85157-85161` | the 669 Stinkbug death (2 Next(2)-gated gores 1275/1276) |
+//! | 555-556 | `:85271-85272` | the 359 Snail hit/death (2 gores 547/548 EVERY hit; dust death-only) |
+//! | 557-558 | `:85292-85293` | the 360 GlowingSnail hit/death (2 gores 549/550, same shape) |
+//! | 559 | `:85313` | the 655 MagmaSnail hit/death (1 gore 1256, same shape) |
+//! | 560 | `:85334` | the 154 IceTortoise death (1 gore 180, type-67 vel-scaled dust) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -3347,10 +3351,12 @@ fn umbrella_slime_death(
     gore.new_gore(rng, world, pos, Vec2::new(npc.vx, npc.vy), 314, npc.scale); // :85042
 }
 
-/// The shared critter gated-dust burst (`NPC.cs:85118-85130` et al.): 6
-/// type-198 dusts (SpeedX `2*hitDirection`, SpeedY -2), each `Next(2) == 0`
-/// ? (noGravity, scale `1.5*this.scale`) : (scale `0.8*this.scale`). The
-/// gate draw fires per dust; both branches write the scale.
+/// The shared critter gated-dust burst (`NPC.cs:85118-85130` /
+/// `:85257-85269` et al.): 6 dusts of `dust_type` (SpeedX `2*hitDirection`,
+/// SpeedY -2), each `Next(2) == 0` ? (noGravity, scale `hi*this.scale`) :
+/// (scale `lo*this.scale`). The gate draw fires per dust; both branches
+/// write the scale. The LadyBug/Stinkbug use (198, 1.5, 0.8); the snails
+/// use (201/202/174, 1.2, 0.7).
 fn critter_gated_dust(
     npc: &Npc,
     dust: &mut DustPool,
@@ -3358,20 +3364,23 @@ fn critter_gated_dust(
     rng: &mut UnifiedRandom,
     world: &World,
     hit_direction: f32,
+    dust_type: i32,
+    hi: f32,
+    lo: f32,
 ) {
     let (w, h) = npc.size();
     let pos = Vec2::new(npc.x, npc.y);
     for _ in 0..6 {
         let idx = dust.new_dust(
-            rng, dust_ctx, world, pos, w as i32, h as i32, 198, 2.0 * hit_direction, -2.0, 0,
+            rng, dust_ctx, world, pos, w as i32, h as i32, dust_type, 2.0 * hit_direction, -2.0, 0,
             Color::default(), 1.0,
         );
         let d = dust.slot_mut(idx);
         if rng.next_max(2) == 0 {
             d.no_gravity = true;
-            d.scale = 1.5 * npc.scale;
+            d.scale = hi * npc.scale;
         } else {
-            d.scale = 0.8 * npc.scale;
+            d.scale = lo * npc.scale;
         }
     }
 }
@@ -3389,7 +3398,7 @@ fn ladybug_death(
     world: &World,
     hit_direction: f32,
 ) {
-    critter_gated_dust(npc, dust, dust_ctx, rng, world, hit_direction);
+    critter_gated_dust(npc, dust, dust_ctx, rng, world, hit_direction, 198, 1.5, 0.8);
     let pos = Vec2::new(npc.x, npc.y);
     let vel = Vec2::new(npc.vx, npc.vy);
     if rng.next_max(2) == 0 {
@@ -3412,7 +3421,7 @@ fn stinkbug_death(
     world: &World,
     hit_direction: f32,
 ) {
-    critter_gated_dust(npc, dust, dust_ctx, rng, world, hit_direction);
+    critter_gated_dust(npc, dust, dust_ctx, rng, world, hit_direction, 198, 1.5, 0.8);
     let pos = Vec2::new(npc.x, npc.y);
     let vel = Vec2::new(npc.vx, npc.vy);
     if rng.next_max(2) == 0 {
@@ -3421,6 +3430,62 @@ fn stinkbug_death(
     if rng.next_max(2) == 0 {
         gore.new_gore(rng, world, pos, vel, 1276, 1.0); // :85161
     }
+}
+
+/// The 359 Snail / 360 GlowingSnail / 655 MagmaSnail hit/death
+/// (`NPC.cs:85253-85314`, sites 555-559): the gated-dust burst runs ONLY on
+/// death (`life <= 0`), but the gores spawn on EVERY hit (they sit OUTSIDE
+/// the death block). The 359 spawns 547/548 (type-201 dust), the 360 spawns
+/// 549/550 (type-202 dust), the 655 spawns 1256 (type-174 dust); all use the
+/// 1.2/0.7 gated scales. `gore_types` is the per-arm list.
+fn snail_hit(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+    dust_type: i32,
+    gore_types: &[i32],
+) {
+    // The dust burst is death-only.
+    if npc.hp <= 0 {
+        critter_gated_dust(npc, dust, dust_ctx, rng, world, hit_direction, dust_type, 1.2, 0.7);
+    }
+    // The gores fire on every hit.
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    for &ty in gore_types {
+        gore.new_gore(rng, world, pos, vel, ty, npc.scale);
+    }
+}
+
+/// The 154 IceTortoise death (`NPC.cs:85328-85334`, site 560): the 50-dust
+/// type-67 burst (SpeedX/Y = `base.velocity`, alpha 90, scale 1.5, then
+/// noGravity + velocity ×0.2 post-writes), then the single gore 180 at
+/// position.
+fn ice_tortoise_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:85328-85333` — the 50-dust type-67 burst (velocity-scaled).
+    for _ in 0..50 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 67, npc.vx, npc.vy, 90,
+            Color::default(), 1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity *= 0.2;
+    }
+    gore.new_gore(rng, world, pos, Vec2::new(npc.vx, npc.vy), 180, npc.scale); // :85334
 }
 
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
@@ -3823,6 +3888,21 @@ pub fn hit_effect_c(
     // `:85140-85163` — the 669 Stinkbug arm (sites 553-554).
     if npc_type == 669 && npc.hp <= 0 {
         stinkbug_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85253-85314` — the 359/360/655 snail arms (sites 555-559); the gores
+    // fire on EVERY hit (the dust is death-only), so NOT life-gated here.
+    if npc_type == 359 {
+        snail_hit(npc, dust, dust_ctx, gore, rng, world, hit_direction, 201, &[547, 548]);
+    }
+    if npc_type == 360 {
+        snail_hit(npc, dust, dust_ctx, gore, rng, world, hit_direction, 202, &[549, 550]);
+    }
+    if npc_type == 655 {
+        snail_hit(npc, dust, dust_ctx, gore, rng, world, hit_direction, 174, &[1256]);
+    }
+    // `:85315-85336` — the 154 IceTortoise arm (site 560).
+    if npc_type == 154 && npc.hp <= 0 {
+        ice_tortoise_death(npc, dust, dust_ctx, gore, rng, world);
     }
     outcome
 }
@@ -6094,6 +6174,61 @@ mod tests {
                 assert!(gores.contains(&g.gore_type), "critter type {}", g.gore_type);
             }
         }
+    }
+
+    /// `NPC.cs:85271-85272` / `:85292-85293` / `:85313` — the snail hit:
+    /// the gores fire on EVERY hit (547/548, 549/550, 1256), the gated dust
+    /// only on death. A living snail spawns gores but no dust.
+    #[test]
+    fn w4_f10_the_snail_hit_spawns_gores_even_when_living() {
+        let w = air();
+        // Living snail: gores but no dust.
+        let mut n = boss(100.0, 100.0, 24.0, 20.0);
+        n.hp = 10;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(479);
+        snail_hit(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0, 201, &[547, 548]);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![547, 548]);
+        assert_eq!(dust.slots().iter().filter(|d| d.active).count(), 0);
+        // Dead snail: gores + the gated dust.
+        let mut n2 = boss(100.0, 100.0, 24.0, 20.0);
+        n2.hp = 0;
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(479);
+        snail_hit(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0, 202, &[549, 550]);
+        let types2: Vec<i32> = gore2.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![549, 550]);
+        assert!(dust2.slots().iter().filter(|d| d.active).count() > 0);
+        // The MagmaSnail: one gore 1256.
+        let mut n3 = boss(100.0, 100.0, 24.0, 20.0);
+        n3.hp = 0;
+        let mut gore3 = GorePool::new();
+        let mut dust3 = DustPool::new();
+        let mut rng3 = UnifiedRandom::new(479);
+        snail_hit(&n3, &mut dust3, &ctx(), &mut gore3, &mut rng3, &w, 1.0, 174, &[1256]);
+        assert_eq!(gore3.slot(0).gore_type, 1256);
+    }
+
+    /// `NPC.cs:85334` — the IceTortoise death: the single gore 180 at
+    /// position, after the 50-dust type-67 velocity-scaled burst.
+    #[test]
+    fn w4_f10_the_ice_tortoise_death_spawns_the_single_gore() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 50.0, 40.0);
+        n.vx = 3.0;
+        n.vy = 1.0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(487);
+        ice_tortoise_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w);
+        assert_eq!(gore.slot(0).gore_type, 180);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        // The dust carries noGravity and the velocity x0.2 post-write.
+        let d = dust.slots().iter().find(|d| d.active).unwrap();
+        assert!(d.no_gravity);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
