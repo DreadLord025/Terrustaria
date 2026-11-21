@@ -590,8 +590,9 @@ mod tests {
     }
 
     /// A staged player + world for the respawn witnesses — the
-    /// `use_loop_tests::app_with_staff` shape without the App: the cursor
-    /// beside the player makes the reach clamp the identity.
+    /// `use_loop_tests::app_with_staff` shape without the App. The cursor
+    /// rides through the reach clamp like the use path (the witnesses
+    /// assert kinds/damage/ai, not the clamped position).
     fn respawn_fixture(kind: u16, prefix: u16) -> (Player, [ItemSlot; crate::item::INV], tr_core::World) {
         let mut w = tr_core::World::new("t".into(), 64, 800);
         for x in 0..64 {

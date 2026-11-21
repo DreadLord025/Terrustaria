@@ -362,7 +362,10 @@ impl App {
         // `UIImageFramed.OnUpdate` closure ticks on every `MenuUI.Update`
         // (`WorldSeedOption_Everything.cs:79-96`), drawing from the bare
         // `Main.rand` (the front end runs outside every swap).
-        if matches!(self.front, Some(FrontScreen::WorldCreationAdvanced(_))) {
+        if matches!(
+            self.front,
+            Some(crate::app::flow::FrontScreen::WorldCreationAdvanced(_))
+        ) {
             self.world_advanced_glitch.tick(self.rngs.global());
         }
 
