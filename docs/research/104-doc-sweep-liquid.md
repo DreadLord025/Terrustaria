@@ -248,3 +248,72 @@ pass. The bucket port's `&mut World` `add_water`/`wake_around` calls depend
 on the g45 guarded signature (already on this branch); the e11
 `check_water_death`/`check_lava_death` seam is a merge-order dependency
 (e11 not in main yet).
+
+## 5-final. The FINAL per-fn owner table (LIQUID FINAL, 2026-11-21) — the single source of truth for the merger
+
+Written against the LIVE tips: g45 `6f5bd2a2` (this branch, + this phase's
+commits), g46 `f57d7bacd` (the graft-prep UNION, g46d NOT landed —
+research/69 A7 receipt), g47 `5c09a68b8` (closeout 1-4, the re-base target
+per research/70 §8), f25 `task/W4-f25-worldgen-passes-8` (gen module, stays
+on its branch). g47's ANALYSIS "The Liquid.cs FULL-FN final census"
+(`5c09a68b8`) script-diffed all 24 members and found the sim gaps-list
+EMPTY; this table AGREES with that census and adds the one axis it does not
+carry: **which lane's form the merger keeps per fn, and which g45 deltas
+are graft OBLIGATIONS on the new base**. Where this table and research/69's
+KEEP summary or A6 disagree, THIS table + research/70 §8-12 win.
+
+### 5a. Liquid.cs — every fn, one owner
+
+| C# fn (`Liquid.cs`) | FINAL owner (keep whose form) | g45 graft obligations on that form |
+| --- | --- | --- |
+| statics + ctor (`:15-55`/`:1669-1677`) | **g47** (`LiquidSystem` fields + consts; instance-per-world) | none — g45's constants verified matching (§1c) |
+| `NetSendLiquid` (`:57-67`) + broadcast tails | **out of scope** (MP, all lanes agree) | none |
+| `tilesIgnoreWater` (`:69-73`) | **g47** (`4288657c` export + pass-scoped fold) | none |
+| `worldGenTilesIgnoreWater` (`:75-81`) | **g47** (`4288657c` + `gen_ignore_water` fold) | none |
+| `ReInit` (`:83-102`) | **g47** (incl. the reduced-liquids 5000 cap) | none |
+| `QuickWater` (`:104-148`) | **g47** runtime + **f25** gen driver (verbose/noTraps/cleanup) | none |
+| `SettleWaterAt` (`:150-289`) | **g47** (gen re-type + dungeon arm + ORIGIN wall, `d3a30ebf`) | none |
+| `AttemptToMoveHoney/Lava/Shimmer` (`:291-433`) | **g47** | none |
+| `UpdateProgressDisplay` (`:435-447`) | **out of scope** (gen loading-bar UI) | none |
+| `Update` (`:449-964`) | **g47** skeleton + **g46** evap (`:466-474`) + **g46** `surface_rng` nudge (`:892-895`) + **g45** 7/5-neighbour extra wakes (`:748-771`/`:821-836`, `ccfe0b42` — the UNION carries them at :920/:941, the g47 tip does NOT) | **g45 fall-arm LIVE read** (`8d581953b`): the g47 tip STILL reads `start.liquid` (`5c09a68b8:liquid.rs:1015`) — the UNION's `own_now` form (:832) must survive the re-base; carry the g45 witness `the_fall_arm_moves_the_post_evaporation_level` |
+| `StartPanic` (`:966-981`) | **g47** | none |
+| `UpdateLiquid` (`:983-1158`) | **g47** (`update` + `end_pass` + the `update_world_tick` driver `3dbbe3ef` + the reduced-liquids OR-arm `d3a30ebf` + the buffer-arm pins `d9445fc4`) | the g45 pre-loop num8 promotion pin (`daa1cdb0`, `:1120-1129`) rides step 5 |
+| `AddWater` (`:1160-1207`) | **g47 skeleton + g45 GUARDED BODY** (research/70 step 5): the g45 `daa1cdb0` form (`&mut World`, 5-tile border, `kind != 546` carve-out, inline `check_water_death`/`check_lava_death` → `kill_tile`) REPLACES the g47/union queue-only form, with the `edit_kills` loot upgrade (push the `TileKill`, don't discard) | **the whole g45 body IS the obligation** + the (+6,+6) widened fixtures (A2) + the `liquid_addwater_guards` ×10 module + the `&mut World` ripple through `wake_around`/promotion/app callers; e11 seam merge-order dependency |
+| `UndergroundDesertCheck` (`:1209-1223`) | **g47** | none |
+| `LiquidCheck` (`:1225-1309`) | **g47** skeleton | **g45 down-arm LIVE re-read** (`c8908a55d`): BOTH the union (:1131/:1143) and the g47 tip (:1274) still read `down` pre-kill — re-read after `kill_tile` (`flag` stays pre-kill); carry `liquid_downarm_live` ×4 (the seven non-obsidianKill cut kinds 444/518/519/549/637/638/711) |
+| `LiquidOverwriteStrip` (`:1311-1323`) | **g47** | none |
+| `CreateLiquidMergeTile` (`:1325-1373`) | **g47** (cited `ReplaceTile` fallback) | none |
+| `GetLiquidMergeTypes` (`:1375-1443`) | **g47** | none |
+| `LavaCheck`/`HoneyCheck`/`ShimmerCheck` (`:1445-1468`) | **g47** | the g45 delay counters feed them (§1d verified); carry `shimmer_falls_every_visit_like_water` (`99a4f8ccf`) — dedupe against g47's closeout twin `shimmer_falls_every_visit_ungated` (same assertion: no delay gate, water cadence; keep ONE name, g47's fixture form + the g45 witness's cadence-trace assertions merged) |
+| `DelWater` (`:1470-1599`) | **g47** canonical wholesale (`d3a30ebf` loot seam, research/70 base verdict; the union re-derived the same seam under `retire_kills` — rename to `edit_kills`, not a behaviour merge) | the g45 sharper assertions (delay-inheritance, kill-0 survivor, mud-60 ring) per research/70 §11 |
+| `AddGameplaySnapshotComponents` (`:1601-1667`) | **out of scope** (dev tooling) | none |
+| instance fields (`:45-51`) | **g47** (`Entry`) | none |
+| `LiquidBuffer.cs` both fns (`:11-27`) | **g47** (`add_water` overflow + `end_pass` promotion, driver-2 census `d9445fc4`) | none |
+
+### 5b. The g45-owned surfaces OUTSIDE Liquid.cs (no other lane claims them)
+
+| Surface | Owner | Evidence |
+| --- | --- | --- |
+| `Player.ItemCheck_UseBuckets` (`Player.cs:46318-46504`) + `PutItemInInventoryFromItemUsage` (`:42141-42160`) + the five splashes | **g45** — `editing/buckets.rs` (`fa96cf32a`), wired before the melee arm; the union AND the g47 tip have NO buckets module (tree-verified both) | research/104 §1b; `bucket_use_tests` ×10 (+ the LIQUID-FINAL stack-consume additions §6) |
+| The bucket item ROWS (all twelve kinds) | **already in main** — `itemdata.rs` generated rows verified against `Item.cs` (§6a census) | no graft needed |
+| `WorldItem.TryFillBucket` (rain-fill, `WorldItem.cs:548-571`) | **g15** (`d43b490f3`, `task/W4-g15-dust-item-sites`, unmerged) — NOT g45's; do not duplicate | §6c |
+| The down-arm/fall-arm witness modules + the shimmer-flow pin | **g45** (graft obligations, 5a rows) | `liquid_downarm_live`, `the_fall_arm_moves_the_post_evaporation_level`, `shimmer_falls_every_visit_like_water` |
+| The widened (+6,+6) fixture helpers | **g45** (A2; research/70 step 5) | `basin`/`floor_world`/`shaft`/`put_as` on this branch |
+
+### 5c. Coordination verdicts (g47-drivers / g46-evap vs g45)
+
+- **No fn is double-owned.** g47 owns the machinery, g46 owns exactly two
+  `Update` arms (evap + nudge) and the DelWater-tail record refinements the
+  g47 canonical already absorbed, g45 owns the buckets module + four
+  witness modules + three sim deltas (guards / down-arm re-read / fall-arm
+  live read) + the extra wakes. f25 owns the gen driver only.
+- **The g47 closeout trio dedupes**: `honey_falls_once_every_eleven_visits`
+  / `quick_fall_bypasses_both_delay_gates` overlap the union's cadence pair
+  (research/70 §11: keep one name each); the g45
+  `shimmer_falls_every_visit_like_water` overlaps
+  `shimmer_falls_every_visit_ungated` — same keep-one rule, the merger picks
+  the g47 fixture + the merged assertions.
+- **Both stale reads exist on the NEW base** (5a `Update`/`LiquidCheck`
+  rows) — the g45 fixes are NOT union-only obligations; a re-base that
+  takes the g47 tip verbatim re-introduces them. The A7 receipt re-flags
+  this for g46d.
