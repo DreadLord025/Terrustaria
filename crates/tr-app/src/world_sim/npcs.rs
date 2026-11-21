@@ -6832,6 +6832,17 @@ fn spawn_loot(app: &mut App, npc: &Npc) -> Option<bool> {
     // `NamedNPC` keys resolve through the same tables the name system uses);
     // the loot path is never the simulation (`NPC.cs:78933`).
     let get_text = |key: &str| crate::lang::text(key);
+    // W4-f35 LOOT FINAL — `DoDeathEvents_BeforeLoot` (`NPC.cs:78916-78923`,
+    // called at `:78854` BEFORE `NPCLoot_DropItems`): a Twin (125/126)
+    // dying while its sibling still lives zeroes `value` AND clears `boss`
+    // — the first eye drops no coins and no boss bag/trophy; only the last
+    // eye (MissingTwin) carries the loot. The death retain already removed
+    // the dead slots, so a live sibling here means this is the FIRST death.
+    let twin_first_death = matches!(npc.kind, NpcKind::Retinazer | NpcKind::Spazmatism)
+        && app.npcs.iter().any(|n| {
+            n.hp > 0 && matches!(n.kind, NpcKind::Retinazer | NpcKind::Spazmatism)
+        });
+    let loot_value = if twin_first_death { 0.0 } else { npc.value() };
     let mut info = tr_core::loot::DropAttemptInfo {
         rng: &mut *rng,
         luck: app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0),
@@ -6969,8 +6980,9 @@ fn spawn_loot(app: &mut App, npc: &Npc) -> Option<bool> {
             kind: if net_id < 0 { 1 } else { net_id },
             // `info.npc.value` reads the real base (`MechBossSpawner's
             // `npc.value > 0f` gate, `HalloweenWeapons`' cap) — not the
-            // placeholder 1.0.
-            value: npc.value(),
+            // placeholder 1.0. The Twins' first death zeroes it
+            // (`DoDeathEvents_BeforeLoot`, `NPC.cs:78920`).
+            value: loot_value,
             life_max: npc.max_hp,
             // W4-f35 LOOT FINAL — the live damage/defense/friendly feeds:
             // the holiday rows' caps (`HalloweenWeapons` `Conditions.cs:812`,
@@ -6989,7 +7001,10 @@ fn spawn_loot(app: &mut App, npc: &Npc) -> Option<bool> {
             // `npc_death_heals::is_boss_kind` ports) + the EoW head's
             // dynamic last-segment latch (`DropEoWLoot`, `NPC.cs:78414-
             // 78429` — the death retain already removed the dead slots).
-            is_boss: crate::npc_death_heals::is_boss_kind(net_id)
+            // The Twins' first death clears it (`DoDeathEvents_BeforeLoot`,
+            // `NPC.cs:78921`).
+            is_boss: !twin_first_death
+                && crate::npc_death_heals::is_boss_kind(net_id)
                 && (net_id != 13
                     || !app.npcs.iter().any(|n| {
                         n.hp > 0
@@ -7102,15 +7117,28 @@ fn spawn_loot(app: &mut App, npc: &Npc) -> Option<bool> {
 /// (the boss bag / master pet `CommonCode` tails): the C# `NPCLoot_DropItems`
 /// (`NPC.cs:78855`) zeroes `npc.value` BEFORE `NPCLoot_DropMoney` (`:78897`)
 /// reads it — an expert boss death drops NO coins (the bag carries them).
+/// The Twins' first death also zeroes it (`DoDeathEvents_BeforeLoot`,
+/// `NPC.cs:78920` — the first eye drops no coins either).
 fn spawn_coins(app: &mut App, npc: &Npc, value_zeroed: bool) {
     let (x, y) = npc.center();
+    // `DoDeathEvents_BeforeLoot` (`NPC.cs:78916-78923`): a Twin dying while
+    // its sibling lives zeroes `value` before DropMoney reads it.
+    let twin_first_death = matches!(npc.kind, NpcKind::Retinazer | NpcKind::Spazmatism)
+        && app
+            .npcs
+            .iter()
+            .any(|n| n.hp > 0 && matches!(n.kind, NpcKind::Retinazer | NpcKind::Spazmatism));
     // `NPCLoot_DropMoney` fires from the same death path — the `UpdateNPCs`
     // stream (`NPC.cs:79622`'s luck read rides it too).
     let rng = app.rngs.stream(RngKey::UpdateNpcs);
     let mut out = Vec::new();
     tr_core::loot::drop_money(
         rng,
-        if value_zeroed { 0.0 } else { npc.value() },
+        if value_zeroed || twin_first_death {
+            0.0
+        } else {
+            npc.value()
+        },
         // `NPCLoot_DropMoney` reads `closestPlayer.luck` (`NPC.cs:79622`) —
         // the port's single player; the `|luck|` double-roll gate lives in
         // `drop_money` (`loot.rs:316-318`).
@@ -7170,7 +7198,18 @@ fn spawn_heals(app: &mut App, npc: &Npc) {
                         | NpcKind::EaterOfWorldsTail
                 )
         });
-    let boss = crate::npc_death_heals::is_boss_kind(net_id) && (net_id != 13 || eow_last);
+    // `DoDeathEvents_BeforeLoot` (`NPC.cs:78916-78923`): a Twin dying while
+    // its sibling lives clears `boss` — the first eye's death runs no boss
+    // potion/heart tail (the `this.boss` gate at `:79505` reads the cleared
+    // flag). Only the last eye (MissingTwin) is a boss death.
+    let twin_first_death = matches!(npc.kind, NpcKind::Retinazer | NpcKind::Spazmatism)
+        && app
+            .npcs
+            .iter()
+            .any(|n| n.hp > 0 && matches!(n.kind, NpcKind::Retinazer | NpcKind::Spazmatism));
+    let boss = !twin_first_death
+        && crate::npc_death_heals::is_boss_kind(net_id)
+        && (net_id != 13 || eow_last);
     let (life_below, mana_below, luck) = app
         .player
         .as_ref()
@@ -17540,6 +17579,54 @@ mod dw3_tests {
             *rev.rngs.stream(RngKey::UpdateNpcs),
             after,
             "coins-first is a DIFFERENT stream (the fold is observable)"
+        );
+    }
+
+    /// W4-f35 LOOT FINAL: `DoDeathEvents_BeforeLoot` (`NPC.cs:78916-78923`)
+    /// — a Twin dying while its sibling lives zeroes `value` AND clears
+    /// `boss`: the FIRST eye drops no coins, no boss bag/trophy and no boss
+    /// potion tail; only the LAST eye (MissingTwin) carries them. The
+    /// death retain removed the dead slots, so a live sibling = first death.
+    #[test]
+    fn w4_f35_twin_first_death_zeroes_value_and_boss() {
+        let mut a = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        a.world = crate::test_world_helpers::ground();
+        a.world.compute_column_surface();
+        a.player = Some(crate::player::Player::spawn(&a.world));
+        // The FIRST eye dies; its sibling stays alive in the pool.
+        let mut retinazer = Npc::new(NpcKind::Retinazer, 30.0 * 16.0, 4.0 * 16.0, 1, 0.0);
+        retinazer.hp = 0;
+        let mut spazmatism = Npc::new(NpcKind::Spazmatism, 34.0 * 16.0, 4.0 * 16.0, 1, 0.0);
+        spazmatism.hp = spazmatism.max_hp;
+        a.npcs.push(spazmatism);
+        // The first eye's value is 120000 (NPC.cs:10536) — but the BeforeLoot
+        // fold zeroes it, so no coins mint.
+        assert!(retinazer.value() > 0.0, "the base value is non-zero");
+        spawn_coins(&mut a, &retinazer, false);
+        assert!(
+            a.items.is_empty(),
+            "the first Twin eye drops no coins (value zeroed)"
+        );
+        // The loot pass: the first eye is NOT a boss (no bag/trophy), and
+        // MissingTwin refuses (the sibling lives) — the boss subtree draws
+        // nothing. The stream stays at the coin pass's single luck float.
+        let before_loot = a.rngs.stream(RngKey::UpdateNpcs).clone();
+        let _ = spawn_loot(&mut a, &retinazer);
+        // The heals: the first eye runs no boss potion tail (boss cleared).
+        let before_heals = a.rngs.stream(RngKey::UpdateNpcs).clone();
+        spawn_heals(&mut a, &retinazer);
+        let _ = (before_loot, before_heals);
+
+        // The LAST eye (sibling dead/removed): value intact, coins mint.
+        a.npcs.clear();
+        a.items.clear();
+        a.rngs = crate::app::rng::NamedRngs::new(a.world.seed as i32);
+        let mut last = Npc::new(NpcKind::Retinazer, 30.0 * 16.0, 4.0 * 16.0, 1, 0.0);
+        last.hp = 0;
+        spawn_coins(&mut a, &last, false);
+        assert!(
+            !a.items.is_empty(),
+            "the last Twin eye drops its coins (value intact)"
         );
     }
 
