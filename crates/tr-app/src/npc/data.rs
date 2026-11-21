@@ -616,6 +616,11 @@ impl NpcKind {
             NpcKind::Seagull => 376,
             NpcKind::Seagull2 => 377,
             NpcKind::LadyBug => 378,
+            NpcKind::GoldLadyBug => 379,
+            NpcKind::Maggot => 380,
+            NpcKind::Pupfish => 381,
+            NpcKind::Grebe => 382,
+            NpcKind::Grebe2 => 383,
         }
     }
 
@@ -973,6 +978,11 @@ impl NpcKind {
             376 => NpcKind::Seagull,
             377 => NpcKind::Seagull2,
             378 => NpcKind::LadyBug,
+            379 => NpcKind::GoldLadyBug,
+            380 => NpcKind::Maggot,
+            381 => NpcKind::Pupfish,
+            382 => NpcKind::Grebe,
+            383 => NpcKind::Grebe2,
             _ => return None,
         })
     }
@@ -1882,6 +1892,12 @@ impl NpcKind {
             NpcKind::Seagull => "NPC_Hit_1",
             NpcKind::Seagull2 => "NPC_Hit_1",
             NpcKind::LadyBug => "NPC_Hit_1",
+            // W4-d42 - the roster's HitSound rows.
+            NpcKind::GoldLadyBug => "NPC_Hit_1",
+            NpcKind::Maggot => "NPC_Hit_1",
+            NpcKind::Pupfish => "NPC_Hit_1",
+            NpcKind::Grebe => "NPC_Hit_1",
+            NpcKind::Grebe2 => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2221,6 +2237,13 @@ impl NpcKind {
             NpcKind::Seagull => "NPC_Killed_1",
             NpcKind::Seagull2 => "NPC_Killed_1",
             NpcKind::LadyBug => "NPC_Killed_1",
+            // W4-d42 - the roster's DeathSound rows (614's null row
+            // rides the None fall-through).
+            NpcKind::GoldLadyBug => "NPC_Killed_1",
+            NpcKind::Maggot => "NPC_Killed_1",
+            NpcKind::Pupfish => "NPC_Killed_1",
+            NpcKind::Grebe => "NPC_Killed_1",
+            NpcKind::Grebe2 => "NPC_Killed_1",
             _ => return None,
         })
     }
@@ -2343,6 +2366,10 @@ impl NpcKind {
             NpcKind::YellowDragonfly
             | NpcKind::GoldDragonfly
             | NpcKind::LadyBug
+            => true,
+            // W4-d42 - the noGravity rows.
+            NpcKind::GoldLadyBug
+            | NpcKind::Pupfish
             => true,
             NpcKind::AngryNimbus => true,
             _ => false,
@@ -2626,6 +2653,12 @@ impl NpcKind {
             NpcKind::Seagull => 7,
             NpcKind::Seagull2 => 68,
             NpcKind::LadyBug => 115,
+            // W4-d42 - the NPCID 605-609 SetDefaults rows.
+            NpcKind::GoldLadyBug => 115,
+            NpcKind::Maggot => 66,
+            NpcKind::Pupfish => 16,
+            NpcKind::Grebe => 7,
+            NpcKind::Grebe2 => 68,
         }
     }
 
@@ -3197,6 +3230,12 @@ impl NpcKind {
             NpcKind::Seagull => (22.0, 26.0),
             NpcKind::Seagull2 => (28.0, 22.0),
             NpcKind::LadyBug => (10.0, 10.0),
+            // W4-d42 - the NPCID 605-609 SetDefaults rows.
+            NpcKind::GoldLadyBug => (10.0, 10.0),
+            NpcKind::Maggot => (10.0, 4.0),
+            NpcKind::Pupfish => (20.0, 18.0),
+            NpcKind::Grebe => (22.0, 26.0),
+            NpcKind::Grebe2 => (28.0, 22.0),
         }
     }
 
@@ -3339,6 +3378,14 @@ impl NpcKind {
             NpcKind::Seagull => 602,
             NpcKind::Seagull2 => 603,
             NpcKind::LadyBug => 604,
+            // W4-d42 - the roster's TRUE vanilla types (the folded kinds
+            // keep their own - the AI arms read cs_id; the bestiary
+            // folds in entry_for_npc only).
+            NpcKind::GoldLadyBug => 605,
+            NpcKind::Maggot => 606,
+            NpcKind::Pupfish => 607,
+            NpcKind::Grebe => 608,
+            NpcKind::Grebe2 => 609,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -3908,6 +3955,12 @@ impl NpcKind {
             NpcKind::Seagull => 5,
             NpcKind::Seagull2 => 5,
             NpcKind::LadyBug => 5,
+            // W4-d42 - the NPCID 605-609 SetDefaults rows.
+            NpcKind::GoldLadyBug => 5,
+            NpcKind::Maggot => 5,
+            NpcKind::Pupfish => 5,
+            NpcKind::Grebe => 5,
+            NpcKind::Grebe2 => 5,
         }
     }
 
@@ -4302,6 +4355,12 @@ impl NpcKind {
             NpcKind::Seagull => 0,
             NpcKind::Seagull2 => 0,
             NpcKind::LadyBug => 0,
+            // W4-d42 - the NPCID 605-609 SetDefaults rows.
+            NpcKind::GoldLadyBug => 0,
+            NpcKind::Maggot => 0,
+            NpcKind::Pupfish => 0,
+            NpcKind::Grebe => 0,
+            NpcKind::Grebe2 => 0,
         }
     }
 }

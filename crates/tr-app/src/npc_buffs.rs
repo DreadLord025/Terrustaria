@@ -523,6 +523,12 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::Seagull
         | NpcKind::Seagull2
         | NpcKind::LadyBug => &[31],
+        // W4-d42 - the NPCID 605-609 immunity rows (`NPCID.cs:9395+`).
+        NpcKind::GoldLadyBug
+        | NpcKind::Maggot
+        | NpcKind::Pupfish
+        | NpcKind::Grebe
+        | NpcKind::Grebe2 => &[31],
     }
 }
 
