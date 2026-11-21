@@ -1902,7 +1902,9 @@ The verdicts, each with its C# cite:
 
 Deliberate deviations (recorded, not forced): the replacement toggle
 (`builderAccStatus[10]`, `TileReplacementEnabled` `Player.cs:3373`) defaults ON like
-vanilla's and has no UI yet; the `wallSpeed`/`tileSpeed` multipliers (`Player.cs:25920-25922`,
+vanilla's and flips on the `DrawBlockReplacementIcon` click (W4-g21 batch 5
+`7596fb26`, `Main.cs:42545` — the icon draws in `ui/chrome.rs`); the
+`wallSpeed`/`tileSpeed` multipliers (`Player.cs:25920-25922`,
 the Builder potion/accessory chain) and the `tileBoost + blockRange` reach extension are
 not modelled (the placement uses the base `useTime`/reach); the hammer's 2×2 mouse-half
 scan (`ItemCheck_UseMiningTools_TryFindingWallToHammer`, `Player.cs:45832-45906`) is
@@ -23157,9 +23159,11 @@ code-only mode).
 **Deliberate folds / deviations:**
 
 * `UsingBiomeTorches` (`:3950-3959`) is `unlockedBiomeTorches &&
-  builderAccStatus[11] == 0`: the port reads `p.unlocked_biome_torches`
-  (without the Torch God unlock the plain torch stays plain) and folds the
-  builder toggle to 0 (on). `happyFunTorchTime` folds to false (no field).
+  builderAccStatus[11] == 0`: the port reads `p.using_biome_torches()` —
+  both halves wired (W4-g21 batch 5 host 73: the `DrawTorchBiomeSwapIcon`
+  click flips `builderAccStatus[11]`, `Main.cs:42585`; the old "toggle
+  folds to 0 (on)" deviation is retired). `happyFunTorchTime` folds to
+  false (no field).
 * `BiomeTorchHoldStyle` (`:40291-40346`): the `ZoneShimmer` (`:40297`),
   `ZoneLihzhardTemple` (`:40305`), `ZoneUndergroundDesert` and remix-world
   desert arms (`:40337-40344`) read fields the port's `Zones` does not carry
@@ -39119,9 +39123,9 @@ witness tests are WRITTEN, NOT RUN.**
    `!hbLocked && !IgnoreMouseInterface && !controlTorch && !channel`
    (:43616) and `mouseLeft && !blockMouse` (:43620); `changeItem` feeds
    `Select` at `Player.cs:25087-25091`. Fixed: the click buffers through
-   `Select` behind the controlTorch/channel/blockMouse gates (hbLocked
-   has no port state — the lock icon is a recorded no-op,
-   `ui/chrome.rs:677-690`).
+   `Select` behind the hbLocked/controlTorch/channel/blockMouse gates
+   (hbLocked wired W4-g21 batch 5 `7596fb26` — the lock icon draws +
+   clicks, `ui/chrome.rs::draw_hotbar_lock`).
 6. **MISSING — smart-select auto-tool (LeftShift / cTorch)**: no port at
    all. Ported as `hotbar::SmartSelectCtx` + `smart_select_lookup`:
    `PickItemSelectionOverride` (`Player.cs:17410-17432` — the mouse-item
@@ -39197,9 +39201,10 @@ channel-state clear stays compatible).
   itemTime only.
 - **`lastItemUseAttemptSuccess`** (:554, the net-sync latch :6902) has no
   port field — the OnSelectionChanged reset is a no-op.
-- **`hbLocked`** (the hotbar lock, `Main.cs:42488-42507`) has no port
-  state — the lock icon is a recorded draw no-op (`ui/chrome.rs`); the
-  click gate reads the other three conditions only.
+- **`hbLocked`** (the hotbar lock, `Main.cs:42488-42507`) — **WIRED
+  W4-g21 batch 5 (`7596fb26`)**: `Player.hb_locked` (`player.rs`), the
+  lock icon draws + clicks (`ui/chrome.rs::draw_hotbar_lock`), the click
+  gate reads it alongside the other three conditions (`:43616`/`:43620`).
 - **`pStone`** (the Philosopher's Stone / Charm of Myths ×0.75 delay
   scale, :25477-25486/:51858-51861) has no port accessory flag —
   constants-off; the Strange Brew delay rolls the unscaled range.
@@ -39322,10 +39327,13 @@ modelled, F9 is the port's save key).
   `app/loop.rs:576-596` menu/front/emote hover, `app/flow.rs`,
   `chest.rs`/`ui/chest.rs` chest hover). The helper is not a Rust fn; the
   unported hover latches (`mapStyleMouseOver :41126`,
-  `equipPageMouseOver :41155`, `allChestStackHover :41865`,
-  `inventorySortMouseOver :41890`, `emoteMouseOver :42407`,
-  `bestiaryMouseOver :42463`, `hotbarLockMouseOver :42515`) are
+  `equipPageMouseOver :41155`, `emoteMouseOver :42407`,
+  `bestiaryMouseOver :42463`) are
   host-not-ported sub-states, not census sites (they call the helper).
+  The landed latches: `allChestStackHover :41865` +
+  `inventorySortMouseOver :41890` (batch 3), `hotbarLockMouseOver :42515` +
+  `toggleAccMouseOver :47588` (batch 5 — the latter is a g22-line host whose
+  hover tick is g21's helper site, the g22 census's own reading).
 - 12-15 `:13477`/`:13484`/`:13500`/`:13506` `Ambience` waterfall/lavafall
   (34/35) — collapsed into the persistent liquid-loop volume update
   (`app/frame.rs:295-344` → `Audio::set_liquid_loop`, the documented
@@ -39383,8 +39391,10 @@ site stays deferred with its host (no cue is invented):
   (the `QuickStacking.cs` engine) + `item_sorting.rs::sort_inventory`; see
   "Batch 3" below.
 - 71/72/73 `:42506`/`:42544`/`:42584` hotbar-lock / block-replacement /
-  torch-biome-swap icons — `draw_hotbar_lock` is a documented no-op
-  (`ui/chrome.rs:679`), the other two icons unported.
+  torch-biome-swap icons — **WIRED batch 5 (`7596fb26`)**: the three icons
+  draw + click (`ui/chrome.rs` + `app/clicks.rs`), `hbLocked` gates the
+  closed hotbar, `TileReplacementEnabled`/`UsingBiomeTorches` gate the
+  placement routes; see "Batch 5" below.
 - 77 `:43041` elder-slime transform (22) — no elder slime.
 - 80-90 `:43663`-`:43936` the hair/stylist window (`OpenHairWindow` /
   `CancelHairWindow` / `BuyHairWindow` / `DrawHairWindow`) — unported.
@@ -39471,3 +39481,80 @@ before the chest/crafting/inventory handlers. RNG: the kick-out cue is the
 Deviations: the variant head profiles are unported (the default head), the
 `gravDir == -1` flip is unported, the controller-housing-cursor arm is
 gamepad-only. 4 witnesses WRITTEN NOT RUN (code-only).
+
+### Batch 5 (hosts 71/72/73) — landed `7596fb26`
+
+The hotbar-lock + builder-accessory icon toggles
+(`Main.DrawHotbarLockIcon`/`DrawBlockReplacementIcon`/`DrawTorchBiomeSwapIcon`,
+`Main.cs:42479-42596`).
+
+| # | C# line | function | cue | Rust seam |
+|---|---------|----------|-----|-----------|
+| 71 | `:42506` | `DrawHotbarLockIcon` click | 22 `Unlock` | `app/clicks.rs` hotbar-lock arm → `Player.hb_locked` flip |
+| 72 | `:42544` | `DrawBlockReplacementIcon` click | 22 | same handler → `builder_acc_status[10]` flip |
+| 73 | `:42584` | `DrawTorchBiomeSwapIcon` click | 22 | same handler → `builder_acc_status[11]` flip |
+
+`ui/chrome.rs` ports the three icons: the `HbLock[hbLocked ? 0 : 1]`
+`Frame(2)` cell at `(0, 21|0)` (`:42481-42489`), the `blockReplaceIcon[0]`
+`Frame(3,1, enabled ? 0 : 1)` cell at `(0, 44|23)` (`:42524-42534`), the
+`Extra[211]` `Frame(4,1, enabled ? 1 : 0)` cell at `(0, 68|47)`
+(`:42564-42574`) — all scale 0.9 with the strict-edge hover box and the
+`OurFavoriteColor` overlay column (`:42513`/`:42552`/`:42592`). The
+`GetBuilderAccsCountToShow` push-up gate (`:47592-47597`,
+`totalDrawnIcons >= 10` at `:41043`/`:47370`) folds the unported
+ruler-line/grid + auto-paint flags to false. The hover latches:
+`hotbarLockMouseOver` (`:42515`, the `ref bool` helper `:3237-3247` —
+extracted as `chrome::stateful_tick`) and the shared `toggleAccMouseOver`
+int latch (`:47588`, the `ref int` helper `:3249-3259`; the wire/ruler
+icons before the block icon are unported so the port's state indices start
+at 0 — the g22 co-lane owns those icons' own click cues `:47413-:47556`).
+State wiring: `Player.hb_locked` (`Player.cs:1436`) gates the closed-hotbar
+hover/click (`GUIHotbarDrawInner`, `Main.cs:43616`/`:43620`);
+`TileReplacementEnabled` (`Player.cs:3373`) gates the wall-replacement
+route (`:39612` → `place_wall_route`); `UsingBiomeTorches`
+(`Player.cs:3950-3964`, getter + setter) gates the biome-torch hold light
+(`BiomeTorchHoldStyle`) AND the placement conversion (`:40129`) — the
+S1-P-i42 / player_lights "builder toggle folds to 0" deviation is RETIRED.
+Sheets: `Lock_0`/`Lock_1` (`AssetInitializer.cs:475-476`),
+`UI/BlockReplace_0` (`:477`), `Extra_211` (`:362-365`). RNG: every cue is
+the `PlaySound(int)` façade (`SoundEngine.cs:102-108` draws NONE).
+Deviations: the `MouseText` hover labels (`Lang.inter[5/6]`,
+`GameUI.BlockReplacerOn/Off`, `GameUI.TorchTypeSwapperOn/Off`) are unported
+(the port's icon tooltips are a recorded UI gap); `player.mouseInterface`
+is the port's click-consumption stand-in; the `DrawBuilderAccToggles`
+`sign >= 0` early return (`:47361`) reads `Player.sign` which this branch
+does not carry — when the f22 co-lane's sign editor composes in, the gate
+should read its sign-open state (recorded for the merger); the
+`UILinkPointNavigator` gamepad points are
+gamepad-only; the wire/ruler/actuator/paint icon row itself is the g22
+co-lane's census. 8 witnesses WRITTEN NOT RUN (code-only): 3 chrome
+(hit boxes / count+push gate / enter-edge tick) + 3 click (lock flip +
+closed-hotbar gate, block-status flip, torch unlock gate + setter) + 2
+gameplay (replacement toggle gates the wall conversion, biome toggle
+gates the placed torch style).
+
+### The chat-button census correction (sites 41-50) — batch 5 verify
+
+The batch-1 census recorded sites 41-50 (`:40502`-`:40665`,
+`DrawNPCChatButtons`' `npcChatFocus1-4` hover pairs) as host-not-ported
+"the legacy chat interaction buttons are deferred". The batch-5 verify
+re-read the C#: **`DrawNPCChatButtons` (`Main.cs:40474-40673`) has ZERO
+callers in the whole decompile** — it is dead 1.4.5.8 code, superseded by
+`NPCChatPanel.DrawButtons` (`NPCChatPanel.cs:88-162`). The LIVE hover tick
+is `NPCChatPanel.cs:159` (`_lastHovered != num2` → `PlaySound(12)`), which
+the port already plays in `app/clicks.rs::handle_npc_chat_clicks`
+(S1-E-10b — a different census site, outside the `Main.cs` wave). The
+ten sites are re-classified **DEAD-ARM** (not deferred): no port is owed,
+no cue is invented. The `:40656`/`:40665` pair inside the same dead
+function shares the classification. The NPCChatPanel-side button work
+(the interaction registry, the dynamic `INTERACTION_LINES` layout) is the
+**f22/d120 co-lanes' claim** (`task/W4-f22-ui-screens-4` ports the
+sign-aware panel + the ceil(count/4) line count per d120's retire note;
+`task/W4-d120-town-chatter` retired with all 40 `GetChat` arms accounted)
+— this lane reads their claims and touches neither `ui/npc_chat.rs` nor
+the panel geometry. The menu-region sites are **g22's claim**
+(`task/W4-g22-sounds-main-2`, retired: 151/151 menu sites claimed, the
+`:47413-:47556` builder-toggle click cues included); g21's batch 5 wires
+only the three icon clicks in its own `:3244`-`:43936` window plus the
+`:47588` hover-latch helper tick that g22's census explicitly leaves to
+g21 ("the hover tick stays — g21's site, not this batch's").
