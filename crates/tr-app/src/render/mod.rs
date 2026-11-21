@@ -25,6 +25,12 @@ pub(crate) mod special_points;
 // + platform slope side-fills) — the draw_tiles seam is contested by the
 // in-flight S1-G-1 siblings; wiring is the family's merge step.
 pub(crate) mod special_tiles;
+// W4-g31 attach phase: the TileDrawing static-ctor DRAW residual
+// (TileDrawing.cs:789-862 — noise[256] via System.Random(0), LinearNoise,
+// the hash mixers, DistToWanderingCircle, LavaLightA for the 717 glowmask
+// arm :1193-1197). The layer constants/_zero/registry halves of the ctor
+// are covered by tile_pass/special_points; this closes the last draw.
+pub(crate) mod tile_ctor;
 pub(crate) mod tile_cracks;
 // W4-g31 pass 4: UNWIRED deferred bucket drains (TileDrawing.cs PostDrawTiles
 // :414-442 bodies — DrawMultiTileVines(InWind)/DrawMultiTileGrass(InWind)/
