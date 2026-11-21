@@ -1009,6 +1009,32 @@ pub(crate) fn ai_flying_piggy(
     }
 }
 
+/// `AI()`'s aiStyle-98 arm (`Projectile.cs:33134-33152`) — the Lunatic
+/// Cultist's homing particle (526). The `(ai[0], ai[1])` target point: if
+/// the distance is shorter than the current speed the particle KILLS
+/// (the arrival), else the velocity lerps 10% toward the 15-speed seek.
+/// The 2-dust trail: each dust's scale draws ONE `NextFloat` (`:33150`)
+/// — the bodies skip. The spawner (`NPC.cs:36863`/`:36874`/`:36885`)
+/// packs the target into ai0/ai1.
+pub(crate) fn ai_cultist_particle(p: &mut Projectile, rng: &mut dyn DropRng) {
+    // `:33136-33141` — the arrival kill.
+    let center = Vec2::from(p.center());
+    let mut value7 = Vec2::new(p.ai[0], p.ai[1]) - center;
+    if value7.length() < p.vel.length() {
+        p.kill_time_left = p.time_left;
+        p.active = false;
+        p.time_left = 0;
+        return;
+    }
+    // `:33142-33144` — the 15-speed seek, the 0.1 lerp.
+    value7 = safe_normalize(value7) * 15.0;
+    p.vel = p.vel.lerp(value7, 0.1);
+    // `:33145-33151` — the 2-dust trail: ONE NextFloat scale per dust.
+    for _ in 0..2 {
+        let _ = rng.next_float();
+    }
+}
+
 // Witnesses (W4-d10 code-only round — WRITTEN NOT RUN).
 
 #[cfg(test)]
@@ -1723,5 +1749,44 @@ mod tests {
         s4[1].owner = 1;
         ai_flying_piggy(&mut s4, 0, None, 0);
         assert!(s4[0].active && s4[1].active);
+    }
+
+    /// The 526 row (`Projectile.cs:5962-5970`): 8×8, aiStyle 98,
+    /// tileCollide false, timeLeft 120, alpha 255, the stock penetrate 1.
+    #[test]
+    fn w4_d10_s98_the_particle_row_is_verbatim() {
+        let d = proj_data(526).unwrap();
+        assert_eq!((d.w, d.h), (8.0, 8.0));
+        assert_eq!(d.ai_style, 98);
+        assert!(!d.tile_collide);
+        assert_eq!(d.time_left, 120);
+        assert_eq!(d.alpha, 255);
+        assert_eq!(d.penetrate, 1);
+    }
+
+    /// The seek + arrival (`:33136-33144`): the velocity lerps 10% toward
+    /// the 15-speed target direction; the arrival (dist < speed) kills
+    /// with NO dust draws; the flight draws TWO NextFloat per tick.
+    #[test]
+    fn w4_d10_s98_the_particle_seeks_and_arrives() {
+        let mut p = proj(526);
+        // The target 100 px right of the centre (1604, 804).
+        p.ai[0] = 1704.0;
+        p.ai[1] = 804.0;
+        p.vel = Vec2::new(5.0, 0.0);
+        let mut rng = CensusRng::default();
+        ai_cultist_particle(&mut p, &mut rng);
+        // lerp(5, 15, 0.1) = 6.
+        assert!((p.vel.x - 6.0).abs() < 1e-5);
+        assert_eq!(rng.floats, 2, "the 2-dust trail");
+        // The arrival: the target 1 px away, speed 6 → the kill, no draws.
+        let mut q = proj(526);
+        q.ai[0] = 1605.0;
+        q.ai[1] = 804.0;
+        q.vel = Vec2::new(6.0, 0.0);
+        let mut rng2 = CensusRng::default();
+        ai_cultist_particle(&mut q, &mut rng2);
+        assert!(!q.active);
+        assert_eq!(rng2.floats, 0, "the arrival precedes the trail");
     }
 }

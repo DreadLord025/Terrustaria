@@ -18129,6 +18129,17 @@ impl ProjectilePool {
                             let v = self.slots[i].vel;
                             self.slots[i].pos += v;
                         }
+                        // W4-d10 — `AI()`'s `else if (this.aiStyle == 98)`
+                        // (`Projectile.cs:33134-33152`): the Lunatic
+                        // Cultist's homing particle (526) — the (ai0,ai1)
+                        // target seek, the arrival kill, the 2×NextFloat
+                        // dust trail. tileCollide false (`:5967`) — the
+                        // free integrate.
+                        98 => {
+                            crate::projectile_ai_91_100::ai_cultist_particle(&mut self.slots[i], rng);
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
+                        }
                         165 => {
                             // `AI_165_Whip` (`:47667-48270`): the swing
                             // machine. The Moon Lord whip's extra arms are

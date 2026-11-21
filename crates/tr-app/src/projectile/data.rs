@@ -741,6 +741,10 @@ pub const ICHOR_SPLASH: u16 = 524;
 /// Money Trough's flying piggy bank, aiStyle 97
 /// (`Projectile.cs:5953-5961`). W4-d10.
 pub const FLYING_PIGGY_BANK: u16 = 525;
+/// `ProjectileID.CultistBossParticle` (526, `ProjectileID.cs:1606`) — the
+/// Lunatic Cultist's homing particle, aiStyle 98
+/// (`Projectile.cs:5962-5970`). W4-d10.
+pub const CULTIST_BOSS_PARTICLE: u16 = 526;
 /// `ProjectileID.LeafBlower` (`Projectile.cs:2937-2945`): the Leaf Blower's
 /// 14x14 petal, aiStyle 40 (`AI_040_LeafBlower` `:38003-38082`).
 pub const LEAF_BLOWER: u16 = 206;
@@ -1737,6 +1741,16 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // friendly interactable, `IsInteractable` :78832).
             FLYING_PIGGY_BANK => (
                 30.0, 24.0, 97, 1, 10800, 0, false, false, false, RESET_STATE,
+            ),
+            // W4-d10 — the Lunatic Cultist's homing particle
+            // (`Projectile.cs:5962-5970`): 8×8, aiStyle 98, tileCollide
+            // false, timeLeft 120, alpha 255; the stock penetrate 1. The
+            // C# row sets NO hostile flag — the particle is a visual
+            // homing marker (the `:788` friendly default false stands;
+            // the port's hostile-contact proxy keeps it inert).
+            CULTIST_BOSS_PARTICLE => (
+                8.0, 8.0, 98, 1, 120, 0, false, false, false,
+                (false, -2, false, -1, 255, 1.0),
             ),
             // `Projectile.cs:1310-1316` — the throwing knife (48): 12x12, aiStyle
             // 2, `penetrate = 2`.
