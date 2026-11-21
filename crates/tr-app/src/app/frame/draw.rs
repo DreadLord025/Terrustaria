@@ -1606,20 +1606,10 @@ impl App {
                             // The Multicolor Wrench's in-reach icon latch
                             // (`Player.cs:46756-46760`) — the cursorItemIconEnabled
                             // stand-in (the icon ID stays 0 for the wiring tools).
-                            let icon_enabled = held.kind == 3625
-                                && held.count > 0
-                                && player.as_ref().is_some_and(|p| {
-                                    let (rx, ry) = p.tile_interaction_reach();
-                                    let (sw2, sh2) = (screen.x, screen.y);
-                                    let mx = camera.x + (self.mouse_pos.x - sw2 * 0.5) / *zoom;
-                                    let my = camera.y + (self.mouse_pos.y - sh2 * 0.5) / *zoom;
-                                    let (tx, ty) = ((mx / TILE_PX) as i32, (my / TILE_PX) as i32);
-                                    let lx = (p.x / TILE_PX) as i32 - rx;
-                                    let hx = ((p.x + crate::player::WIDTH) / TILE_PX).ceil() as i32 - 1 + rx;
-                                    let ly = (p.y / TILE_PX) as i32 - ry;
-                                    let hy = ((p.y + p.height) / TILE_PX).ceil() as i32 - 1 + ry;
-                                    tx >= lx && tx <= hx && ty >= ly && ty <= hy
-                                });
+                            // The cursor-icon latch (`Player.cs:46756-46760`)
+                            // — the sim's per-update in-reach write (the
+                            // `cursor_item_icon_enabled` field, S1-W4-g81).
+                            let icon_enabled = self.cursor_item_icon_enabled;
                             let over_ui_slot = self.slot_at_mouse().is_some()
                                 || self.coin_ammo_at_mouse().is_some()
                                 || self.wires_radial.hovering;
