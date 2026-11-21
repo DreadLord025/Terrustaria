@@ -39313,3 +39313,22 @@ shift + the other-kinds no-shift (`npc.rs`), the live-ring trail
 spawn (`npc_death_dust.rs`), and the twin-app stream-parity pair
 through the LIVE `update_npcs` retain (the 552 burst delta + the
 Spore hp==0 edge, `world_sim/npcs.rs`).
+
+Gore-remainder phase (research/110 §11): the playbook's 66 blanket
+`GORE-UNIMPL` rows were probe-time-stale. Re-read against f10's pushed
+tip `67c51ec7` (wave-C now covers `NPC.cs:82206-85334`) and f5's wave-D
+claim `97c70c97` (tip `b33ba0a9`, the WHOLE `:85560-89835` classic-mob
+chain, 853 gore sites - the claim covers the gore BODIES too, not just
+the dust census): 24 kinds are f10-owned (gore pushed), 32 f5-owned
+(11 pushed + 21 claimed), 10 have NO gore sites at all (261/265/288/
+326/330/352/384/402/410/533 - dust-only arms, g60's feed is their whole
+death-effects port). ZERO gore bodies are unclaimed, so g60 ports NO
+gore bodies - the feed's ARG draws were already complete and unchanged.
+The strip surface grows at wiring: f10 +24 dust loops, f5 +32 (the one
+ARG hand-off is the 490's two `Next(3)` wing picks - f5 batch 25
+re-draws them today; the 262-264 position pairs / 266 velocity pairs /
+369+376+663 tombstone picks are claimed-not-pushed and must read the
+g60-consumed stream position). Five sweep witnesses added (written not
+run): every one of the 66 kinds now carries a per-kind draw-count row
+(`w4_g60_gore_tail_*` - the f5/f10/no-gore sweeps + the Plantera trio +
+the Angler pair); the g60 witness count is 27.
