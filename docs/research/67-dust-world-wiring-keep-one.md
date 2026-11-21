@@ -48,7 +48,7 @@ is the same RNG-free port; keep f6's, drop e4's duplicate).
 | Mount spawn/dismount (6382/6391/6404/6413/6493) | `player.rs::queue_spawn_dust` ← `set_mount` (:6300) / `dismount` (:6169) / `start_death` (KillMe :38907) | UpdatePlayers |
 | Mount failed-dismount (6339) | `player.rs::quick_mount` ladder (:6058) | UpdatePlayers |
 | Mount movement (3878/3896/3939/3970/4000/4023/4103/4123) | `mount.rs::frame_extras` ← `player.rs::mount_update_frame` (the 5 PlayerFrame/TryLanding sites) | UpdatePlayers |
-| Mount drill beam (3113/3170) | STAGED — `UseDrill`/DrillMountData is M2-MOUNT-4 (no live caller) | UpdatePlayers (when wired) |
+| Mount drill beam (3113/3170) | STAGED — `UseDrill`/DrillMountData is M2-MOUNT-4 (no live caller); the exact activation seam is published below ("The mount ABILITIES co-lane") for c14/d8's successor lane | UpdatePlayers (when wired) |
 | Mount effects (4703/4719/4750/4782/4824/4849/5061/5071/5099/5149) | `player.rs::queue_mount_effect_dust` ← `update_mount` (UpdateEffects :4804) | UpdatePlayers |
 | Mount golf-cart smoke (4626) | DEAD — `EmitGolfCartSmoke` has zero callers (verified) | n/a |
 | Chest unlock (420) | `chest.rs::unlock_dust` ← both `unlock_chest` sites (:33178/:33204) | **UpdatePlayers** (re-pin: ItemCheck→TileInteractionsUse, NOT bare global) |
@@ -114,6 +114,62 @@ neither call may move inside the G6-cached range (both are per-DRAW
 cadence, `WorldFrameKey` untouched). The d60 tile-pass-attach contract
 (g68's rescan stand-in) does not change this order — the attached cells
 replay the same row-major sequence.
+
+## The mount ABILITIES co-lane — the drill-beam activation contract
+
+Co-lanes: `origin/task/W4-c14-tile-break-footstep-sounds` (tip `36732286`,
+Santank `:20957` is its double-jump SOUND site — `play_double_jump_sound`,
+not the ability machine) and `origin/task/W4-d8-proj-ai-71-80` (tip
+`50dcaa75`, "d8c" — the Scutlix ability half WIRED: `ability_charging`,
+`set_ability_active`, `stop_ability_charge`, `clamp_to_dead_zone`,
+`aim_ability_scutlix`, `scutlix_laser_fire`; its commit `f7687d54` states
+"Drill mining payload stays M2-MOUNT-4"). Neither lands the Drill
+mining machine. **f6's `drill_beam_dust` stays STAGED; the exact seam for
+whichever lane lands the mining machine (M2-MOUNT-4 or a wiring wave):**
+
+- **Call site:** `Mount.UseDrill` (`Mount.cs:3059-3179`) is called from
+  `Player.cs:28288-28291` — AFTER `ItemCheckWrapped` (:28285) +
+  `PlayerFrame` (:28286) + `DoDeadCellsBeheadedParticles` (:28287), inside
+  `Player.Update` under the `UpdatePlayers` swap (`Main.cs:17754`). Gate:
+  `_type == 8 && _abilityActive` (:3061). `UpdateDrill` (:3036, the
+  cooldown tick + diode lerp) runs earlier at `Player.cs:26683-26686`
+  (movement block) and draws NO dust.
+- **The two beam arms:** `controlUseItem` → blocks (:3067-3126): per free
+  beam, `DrillSmartCursor_Blocks` pick → `PickTile` (:3103, local only,
+  the DemonAltar hurt :3092-3096 + `noBuilding` refusals skip the pick but
+  NOT the dust) → **dust pair :3108-3116** → `SmoothSlope` (:3119, local
+  only, AFTER the dust) → `cooldown = drillPickTime`, `lastPurpose = 0`,
+  break. `controlUseTile` → walls (:3127-3178): same shape via
+  `DrillSmartCursor_Walls`/`PickWall`, dust pair :3165-3173,
+  `lastPurpose = 1`. The dust fires even when the pick was refused
+  (`flag2`/`flag3` false) and on remote players (`flag` false skips only
+  the pick/slope).
+- **The exact call:** `mount_dust::drill_beam_dust(target, player_center,
+  rng, dust, ctx, world)` — `target = ((point.X << 4) + 8, (point.Y << 4)
+  + 8)` (:3106/:3163), `player_center = mountedPlayer.Center` (:3107).
+  Signature KEEPS `(target, player_center)` — the double-atan2 fix
+  (research/131 §7.1, applied this branch `76aeaf3c`) lives inside. ONE
+  call per beam-accept, TWO dusts per call; RNG order per dust:
+  `Next(2)` side → `NextDouble` speed → the `NewDust` internals, all on
+  `UpdatePlayers` (the module-doc contract).
+- **Rust seam options (pick ONE, do not double-fire):** (a) direct call
+  inside the ported `UseDrill` on the `UpdatePlayers` stream — the C#
+  statement order is trivially preserved; or (b) a new
+  `MountDustRequest::DrillBeam { target, center }` variant queued by the
+  `UseDrill` port and drained by `mount_dust::drain_mount_dust`
+  (`world_sim/player.rs:1569`) — legal because `UseDrill` runs late in
+  `Player.Update` (:28290) and the drain sits at the tick tail: no other
+  mount emitter queues between the beam arms and the drain, so the
+  request order equals the C# order. If a future emitter is inserted
+  between :28290 and the tick tail, prefer (a).
+- **State the mining lane owns (not f6's):** `DrillMountData`
+  (`Mount.cs:36-50`: `beams[]` cooldown/curTileTarget/lastPurpose,
+  `beamCooldown`, diode rotation), `drillPickPower`/`drillPickTime`/
+  `amountOfBeamsAtOnce`, `DrillSmartCursor_Blocks/Walls` (:3181+, the
+  `PlotTileLine` scan). d8's `set_ability_active` (kind-8 gated) is the
+  `_abilityActive` writer the gate reads; f6's `MountState` already
+  carries `ability_active` (`mount.rs:2110`) — at merge keep ONE field
+  (d8's accessors + f6's declaration are the same C# `_abilityActive`).
 
 ## New player state (the wiring's fields)
 
