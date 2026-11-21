@@ -225,6 +225,7 @@
 //! | 1072-1078 | `:87847-87868` | the 241 BloodFeeder (2 gores) + 242 BloodJelly (5 gores) death |
 //! | 1079-1088 | `:87886-87900` | the 105/107 GoblinTinkerer + 106/108 Wizard death (5 gores each, shimmer) |
 //! | 1089-1098 | `:87916-87940` | the 123/124 Mechanic + 22 Guide death (5 gores each, shimmer) |
+//! | 1099-1108 | `:87956-87983` | the 550 Bartender + 588/589 Golfer death (5 gores each, +8 X offsets, shimmer) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -6334,6 +6335,70 @@ fn guide_death(
     gore.new_gore(rng, world, low, vel, if shimmer { 1316 } else { 75 }, 1.0);
 }
 
+/// The 550 DD2Bartender death (`NPC.cs:87952-87960`, sites 1099-1103): the
+/// 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 5 gores with shimmer variants and +8 X offsets on the second of each
+/// pair — 967 (1355 shimmer) head at +0, 968/968 (1356) at +20 (the second
+/// at +8 X), 969/969 (1357) at +34 (the second at +8 X). Scale defaults to 1.
+fn bartender_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer = npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(550);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1355 } else { 967 }, 1.0); // :87956
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, if shimmer { 1356 } else { 968 }, 1.0); // :87957
+    gore.new_gore(rng, world, Vec2::new(pos.x + 8.0, pos.y + 20.0), vel, if shimmer { 1356 } else { 968 }, 1.0); // :87958
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, if shimmer { 1357 } else { 969 }, 1.0); // :87959
+    gore.new_gore(rng, world, Vec2::new(pos.x + 8.0, pos.y + 34.0), vel, if shimmer { 1357 } else { 969 }, 1.0); // :87960
+}
+
+/// The 588/589 Golfer death (`NPC.cs:87972-87983`, sites 1104-1108): the
+/// 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 5 gores with shimmer variants and +8 X offsets — the head 1109 (1311
+/// shimmer) gated on `altTexture == 0` (the stand-in), then 1110/1110
+/// (1312) at +20 (the second at +8 X), 1111/1111 (1313) at +34 (the second
+/// at +8 X). Scale defaults to 1.
+fn golfer_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer = npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(588);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:87976-87978` — the head gated on altTexture == 0 (the stand-in).
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1311 } else { 1109 }, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, if shimmer { 1312 } else { 1110 }, 1.0); // :87980
+    gore.new_gore(rng, world, Vec2::new(pos.x + 8.0, pos.y + 20.0), vel, if shimmer { 1312 } else { 1110 }, 1.0); // :87981
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, if shimmer { 1313 } else { 1111 }, 1.0); // :87982
+    gore.new_gore(rng, world, Vec2::new(pos.x + 8.0, pos.y + 34.0), vel, if shimmer { 1313 } else { 1111 }, 1.0); // :87983
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -7108,6 +7173,14 @@ pub fn hit_effect_c(
     // `:87922-87941` — the 22 Guide arm (sites 1094-1098).
     if npc_type == 22 && npc.hp <= 0 {
         guide_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87942-87961` — the 550 DD2Bartender arm (sites 1099-1103).
+    if npc_type == 550 && npc.hp <= 0 {
+        bartender_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87962-87984` — the 588/589 Golfer arm (sites 1104-1108).
+    if (npc_type == 588 || npc_type == 589) && npc.hp <= 0 {
+        golfer_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -11200,6 +11273,43 @@ mod tests {
         guide_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
         let types2: Vec<i32> = gore2.slots()[..5].iter().map(|g| g.gore_type).collect();
         assert_eq!(types2, vec![1314, 1315, 1315, 1316, 1316]);
+    }
+
+    /// `NPC.cs:87956-87960` — the Bartender death: the 5 gores 967/968/969
+    /// with the +8 X offsets on the second of each pair.
+    #[test]
+    fn w4_f10_the_bartender_death_spawns_the_offset_gores() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 56.0);
+        n.variation_index = 0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1091);
+        bartender_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![967, 968, 968, 969, 969]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+        assert_eq!(gore.slot(2).position, Vec2::new(108.0, 120.0));
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+        assert_eq!(gore.slot(4).position, Vec2::new(108.0, 134.0));
+    }
+
+    /// `NPC.cs:87978-87983` — the Golfer death: the 5 gores 1109/1110/1111
+    /// with the +8 X offsets.
+    #[test]
+    fn w4_f10_the_golfer_death_spawns_the_offset_gores() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 56.0);
+        n.variation_index = 0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1093);
+        golfer_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1109, 1110, 1110, 1111, 1111]);
+        assert_eq!(gore.slot(2).position, Vec2::new(108.0, 120.0));
+        assert_eq!(gore.slot(4).position, Vec2::new(108.0, 134.0));
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
