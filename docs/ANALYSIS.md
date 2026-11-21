@@ -39376,10 +39376,12 @@ cargo/rustc/rustfmt/tests/dotnet/graphify invoked.**
 The g18 lane's SEAL round: the batch-1 claim/audit/oracle above is
 unchanged; this section records the family-wide census + the four
 cross-lane receipts + the bible. The full record is
-`docs/research/360-addlight-family-bible.md` (number 360 per registry-150
-§8.7 — "new docs take ≥360 after a registry check"; a fresh 362-tip
-ls-tree sweep finds no `docs/research/` file ≥352 at any tip, no
-`research/360` ref; the §8/§8.7 blocks consume 151–351). The family-census
+`docs/research/366-addlight-family-bible.md` (number 366 per registry-150
+§9 UNIFIED FINAL row 366 — chain 304→338→341→344→360→366, the mid-task
+supersession chain; g10-360 KEEPS first-add, g18 the fourth 360 claimant.
+The seal-time pick 360 followed the then-current §8.7 "new docs take ≥360"
++ a fresh 362-tip ls-tree sweep — no docs ≥352, no 360-numbered research
+ref at that scan; §9 superseded it and assigned 366). The family-census
 witness `crates/tr-app/tests/addlight_family_census.rs` (6 tests, WRITTEN
 NOT RUN) freezes the per-file counts + the Lighting.cs funnel + the
 gems-NEVER-emit-light boundary (the g19/f7 freeze precedent).
@@ -39469,7 +39471,7 @@ light-map-WRITE deferral (the 870 FloodFillTile / hooks' PlotTileLine /
 d13 pet casts / Player delegate lane / LaserDrill flood half — ONE task).
 The peripheral files (Mount 14, WaterfallManager 11, Gore 4,
 DelegateMethods 5, the particle/LeashedEntities/helper files) are censused
-in research/360 §5, owned by their own lanes. The gems-NEVER-emit-light
+in research/366 §5, owned by their own lanes. The gems-NEVER-emit-light
 verdict is a FAMILY boundary (the scanner-seeded ambience is the
 `tr-core/tile_light` lane, not this family). **SEAL**: no further
 census/arm/row work owed on the Main.cs batch-1 sites by g18 (e8 keeps the
@@ -39483,7 +39485,8 @@ quoted from each lane's final record; the witness counts machine-counted
 (`#[test]` grep); the proj 86/21 derived from the final registers + the 6
 row-activations (each `git grep '<CONST> =>'` verified); the gems refutation
 re-derived from the C# + the generated tables; the e6 compose re-verified
-(the true diffs, the craft.rs S1-L-11g provenance); the registry number 360
-per §8.7 + a fresh 362-tip sweep. **No cargo/rustc/rustfmt/tests/dotnet/
+(the true diffs, the craft.rs S1-L-11g provenance); the registry number 366
+per §9 UNIFIED FINAL row 366 (chain 304→338→341→344→360→366; the seal-time
+360 pick followed §8.7 + a fresh 362-tip sweep, §9 superseded it). **No cargo/rustc/rustfmt/tests/dotnet/
 graphify invoked.** The 6 family-census witnesses + g18's 5 oracle tests
 are WRITTEN, NOT RUN.

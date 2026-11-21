@@ -1,14 +1,19 @@
-# 360 — THE ADDLIGHT-FAMILY BIBLE (W4-g18 SEAL): the git-log census, the d54-bible reconcile, the c29 gems-premise refutation, the e6 compose, the family declaration
+# 366 — THE ADDLIGHT-FAMILY BIBLE (W4-g18 SEAL): the git-log census, the d54-bible reconcile, the c29 gems-premise refutation, the e6 compose, the family declaration
 
 > W4-g18 · 2026-11-21 · code-only (no cargo/tests/rustfmt/graphify run) ·
 > branch `task/W4-g18-addlight-main-1`, base `a725acb04` (main at claim).
-> Number **360**: registry-150 (`origin/task/W4-d54-dust-sites-world`,
-> `docs/research/150-research-number-registry.md`) §8.7 AMENDMENT-3 FROZEN
-> TABLE — "New docs take ≥360 after a registry check"; the §8/§8.7 blocks
-> consume 151–351 (winners 237–245 disjoint). A fresh 362-tip `ls-tree`
-> sweep at this seal finds NO `docs/research/` file ≥352 at any tip and no
-> `research/360` ref; 360 is the first free number ≥360. NO self-pick into
-> any reserved block (the §8.7 enforcement rule).
+> Number **366**: registry-150 (`origin/task/W4-d54-dust-sites-world`,
+> `docs/research/150-research-number-registry.md`, tip `b4c94432c`) §9
+> UNIFIED FINAL TABLE row 366 — THE SINGLE AUTHORITY. Chain
+> **304→338→341→344→360→366** (the mid-task supersession chain: the earlier
+> picks were all superseded by the advancing registry; g18's executed 360
+> at `7b2b9acb7` was the FOURTH 360 claimant — g10 `7414ba339` 17:31
+> first-add KEEPS 360 per §9.2 row 360). At seal-time the then-current
+> §8.7 FROZEN TABLE ("new docs take ≥360 after a registry check") had been
+> satisfied by a fresh 362-tip `ls-tree` sweep (no docs ≥352, no
+> sweep (no docs ≥352, no 360-numbered research ref at that scan); §9 later adjudicated the four-way 360
+> collision and assigned g18 → **366** (this rename). NO self-picks: §9
+> assignments ONLY; free floor 367+ requires a Lead assignment.
 >
 > This is the g18 lane's SEAL: the Main.cs batch-1 claim/audit/oracle
 > (`547154708`/`a99dfa964`/`22d529c5c`) is unchanged; this round adds the
@@ -322,8 +327,11 @@ the row-owning lanes; the light-map-write layer is its own task.
 * The e6 compose re-verified at the current tips (the true diffs
   `git diff a725acb04..<tip> --stat`, the draw.rs/main.rs/anchors hunks, the
   craft.rs S1-L-11g provenance `03711f456`).
-* The registry number 360 per §8.7 (new docs ≥360) + a fresh 362-tip
-  ls-tree sweep (no docs ≥352, no research/360 ref).
+* The registry number **366** per §9 UNIFIED FINAL row 366 (chain
+  304→338→341→344→360→366; g10-360 KEEPS, g18 the fourth 360 claimant).
+  The seal-time pick 360 followed the then-current §8.7 (new docs ≥360) +
+  a fresh 362-tip ls-tree sweep (no docs ≥352, no 360-numbered research ref at that
+  scan); §9 superseded it.
 * **No cargo/rustc/rustfmt/tests/dotnet/graphify invoked.** The witnesses
   (g18's 5 oracle tests + the family-census witness
   `tests/addlight_family_census.rs`) are WRITTEN, NOT RUN.

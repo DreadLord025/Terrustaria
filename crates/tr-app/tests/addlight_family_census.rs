@@ -13,14 +13,14 @@
 //! * `main_addlight_batch1.rs` (W4-g18 `a99dfa964`) - the 332-chain
 //!   behavioural oracle.
 //! THIS file freezes the FAMILY-LEVEL counts (the d54-bible reconcile,
-//! research/360): Projectile 107 / NPC 80 / Dust 94 / Player 46 /
+//! research/366): Projectile 107 / NPC 80 / Dust 94 / Player 46 /
 //! WorldItem 69 / Main 5 / TileDrawing 6, the EMPTY files (Item /
 //! TileObject / Wiring / NetMessage / WorldGen), and the Lighting.cs
 //! funnel gate. It reads the gitignored `decompiled/` junction at test
 //! time and FAILS when the junction is absent (the S1-L-12d localization
 //! precedent, the g19/f7 witnesses' `read_source`).
 //!
-//! The gems-NEVER-emit-light boundary (research/360 §3, the c29
+//! The gems-NEVER-emit-light boundary (research/366 §3, the c29
 //! research/260 refutation): the gem tiles 63-68/178/566 have NO
 //! `Main.tileLighted` write, NO top-level `TileLightScanner.ApplyTileLight`
 //! case, and the generated `TILE_LIGHTED`/`EMISSIVE` tables carry no gem
@@ -55,7 +55,7 @@ fn addlight_count(rel: &str) -> usize {
 
 #[test]
 fn the_core_addlight_family_per_file_census_is_frozen() {
-    // The core family (research/360 §1/§2). Each count is the whole-file
+    // The core family (research/366 §1/§2). Each count is the whole-file
     // `Lighting.AddLight(` token count, re-derived independently at the
     // g18 SEAL (not copied from the sibling lanes).
     assert_eq!(addlight_count("Terraria/Projectile.cs"), 107, "Projectile.cs — c19 (1-67) + e6 (68-107), the f7 freeze");
@@ -108,7 +108,7 @@ fn the_lighting_funnel_gate_is_pinned() {
 #[test]
 fn the_gem_tiles_have_no_tilelighted_write() {
     // The c29 gems-NEVER-emit-light refutation (research/260 Item 1,
-    // re-derived in research/360 §3): Main.tileLighted[] is written for
+    // re-derived in research/366 §3): Main.tileLighted[] is written for
     // ~100 ids but NEVER for the gem tiles 63-68 / 178 / 566 / 211.
     let text = read_source("Terraria/Main.cs");
     for gem in [63, 64, 65, 66, 67, 68, 178, 566, 211] {
