@@ -1464,3 +1464,71 @@ verify.py` (amended plan: 282 owned / 282 distinct ids / zero base clash
 (347 surviving / 72 gaps / 419 target), `_d37_seal_c9patch.py` (the S2
 hunk, `git apply --check` exit 0 + post-apply set-equality). No code was
 changed on this branch; this seal is the deliverable.
+
+# LV — ROSTER-LAGGARD-VERIFY receipt (supersedes S0/S1 statuses where they moved)
+
+Status: RESEARCH / verify-receipt — zero code diff `750d8e44..HEAD` re-
+verified (`git diff --stat -- crates anchors.txt` EMPTY, scripted). This
+round probes the flagged lanes at CURRENT origin tips (post-fetch
+14:52-14:55 local) and receipts what landed since the SEAL. Witness:
+`tools/_d37_lv_receipt.py` → `_d37_lv_receipt.json` (git-show only,
+direct paths, no junction recursion). The earlier d37f-dispatched
+laggard-exec phase IS ALIVE and ADVANCING (untracked `_d37_lag_*` /
+`_d37_e8s_*` witnesses still being written, newest 14:59; this receipt
+does NOT clobber them — its own files are `_d37_lv_*`).
+
+## LV1. Landed since the SEAL (receipts)
+
+| Lane | SEAL tip | LV tip | Receipt |
+|---|---|---|---|
+| **d125** | `d8047a109` (REGRESSED) | **`7a0482302`** | **REGRESSION RESOLVED** — the 3 local commits are pushed: `merge-base --is-ancestor cd2b1b1e3 origin/...` exit 0 (sheets + draw `cd2b1b1e3` + hitbox `86e3adfd3` + BossNoCheese `7a0482302` all on origin). E8 kinds orders STILL unexecuted: EmpressOfLight 229, PrismaticLacewing 237, decl 270/rows 272 |
+| **d36** | `bcf4ac551` (claim) | **`8c5839b03`** (14:28) | **R7 RE-PIN EXECUTED** — b0 five re-pinned 762-766 → **767-771** (ToxicSludge 767, Penguin 768, PenguinBlack 769, GiantTortoise 770, IceTortoise 771, scripted all-match); commit cites the d37-R7 receipt (762 reserved, 763-766 = d120 towns R6). Its batch-0 `603c967aa` at the E4 762-766 band is SUPERSEDED. NEW hover batch landed OFF the re-pin plan: **Crimera 781 / MossHornet 782 / Moth 793** — all three ids FREE in the lag-union witness (d39 moved off 781-787 to 817-823, so 781/782 are vacated; 793 sits in d36's S4 sub-band 791-804) — ACCEPT as-pushed pending the live executor's union re-derive. d36 is an ACTIVE re-pinning writer (clean tree at push time) |
+| **d39** | `907234441` (781-787 OFF-PLAN) | `a0d49dc1d` | **R7 SELF-CONSUMED** — the seven re-pinned 817-823 (Butterfly 817, ScorpionBlack 818, Scorpion 819, Grasshopper 820, ChatteringTeethBomb 821, CultistArcherBlue 822, CultistArcherWhite 823, scripted) — supersedes the SEAL's 781-787 acceptance |
+| **g8** | `82c93cecf` (LAGGARD) | **`1752c70df`** (14:37) | ALIVE, machine rounds landed (`e1d9578a4` RedDevil trident / `5767ca7c7` VampireBat flee + Vampire ROW / `058453096` FlyingSnake facing) + the **34-id claims-table published** (`docs/research/108-input-g8.md`, band 354-387 + Vampire 388). E8 move-table STILL unexecuted (PinkJellyfish still 356; Vampire@388 squats d37's RustyArmoredBonesAxe → 762 owed); ALL_KINDS decl STILL stale **270 / rows 305** (Vampire rowed, +1 vs SEAL's 304). Site-level re-derivation at the new tip: the live phase's `_d37_lag_g8_newtip.json` |
+| **c9** | `2042d77f1` (LAGGARD) | `2042d77f1` origin / **`c830aec3d` local** (1 ahead, 8 dirty) | **S2 FIX ABSORBED LOCALLY, NOT PUSHED** — local tip "gold-critter wave 1" carries the latent ALL_KINDS fix: decl **277 / rows 277**, array-set == to_u16-set TRUE, all four snails present, s1_f_3 pin **277** (270 + snail four + GoldBird/GoldGrasshopper/GoldMouse). Origin tip still the broken 270/274. The three gold critters at **442/446/447 duplicate c10's pushed rows** (`5fcc68ae6`) — c9's drop list grows by 3 at merge (kinds-lane rule: c10 keeps, c9 drops; c9's wiring composes). E8 moves still owed: Snail 359→740, GlowingSnail 360→741, Shimmerfly drop. The S2 patch is superseded by the local commit for the LOCAL lane; origin still needs the push |
+| **d42** | `2d7ac08c3` | **`bac408be0`** | research/239 FINAL (`bac408be0`) — the **11-kind keep-one drop-hunks** (7 dragonflies 595-601 + 4 waterfowl 602/603/608/609) published as EXECUTE-prep with node-verified ranges; **rows still present at tip** (scripted: all 7 dragonflies 595-601 in to_u16) — d42 keeps its rows on-branch per the E8 dropped-lane rule, the drops ride the merge wave. BloodSquid-619 hover gap CLOSED (`33b3cfe07`); research/143→238 renamed per the registry rule |
+| d41 | `5d036721d` | **`db12805be`** (14:20) | batches 3+4 PUSHED: Dune Splicer chain 510-512 + desert antlions 508/509 + Tomb Crawler 513-515 + solar fragments 516/519 (ALL_KINDS 283→293). 509 GiantFlyingAntlion duplicates c4's pushed row (same id — keep c4, d41 drops); 516 SolarFlare duplicates d23's SEAL-owned kind (keep d23, d41 drops) |
+| d43 | claim | **`0253bde90`** (12:35) | 63 kinds PUSHED at 631-697: 43 ACCEPT (cs==proto), 11 g10 dups + 6 grand-owned dups + 3 aliases (HallowBoss/EmpressButterfly/VileSpitEaterOfWorlds) drop — the live phase's lag-union adjudication |
+| g10 | local `5dee28650` | **origin `5dee28650`** | ELEVEN pets PUSHED (637/638/656/670/678-684), cs==proto, zero clash — SEAL's push order CONSUMED |
+| c4 | `0df6964be` | `0df6964be` | unchanged, retired; 3 drops still owed (BloodFeeder→d37@373, CorruptGoldfish→d34@277, FlyingFish splice) |
+
+## LV2. The lag-union witness (live phase, cited not superseded)
+
+The live laggard-exec phase's `_d37_lag_union.py` → `_d37_lag_union.json`
+(14:32) re-derives the grand union on top of the SEAL's 282-core plan:
+**core 282 (max 766) / grand 373 (max 823)** — +91 additions (d43 43,
+d41 21, g10 11, d39 7 at 817-823, d36 5 at 767-771, g8 Vampire 762,
+stranded Tumbleweed 788 / RuneWizard 789 / AncientCultistSquidhead 790),
+20 d43 drops; ALL UNION GATES PASSED (unique ids, zero base clash,
+i16-safe). d36's NEW hover batch (781/782/793) is NOT yet in that witness
+but all three ids verify FREE against it (LV1) — the live executor's next
+re-derive absorbs them; grand max stays 823 (d39's CultistArcherWhite).
+The SEAL's "grand ~439 slots / 583 kinds" pins predate the d43/d41-b3b4
+waves and are superseded by that re-derive when the live phase lands it.
+
+## LV3. Alive-status + remaining laggards
+
+- **d37f-laggard-exec: ALIVE** — witness writes at 14:44→14:59 continuous
+  (`_d37_lag_probe2/g8new/d42df/d42win`, `_d37_e8s_netprobe/d23probe/
+  vseow/basecs`); do NOT clobber; this receipt is additive.
+- **d36-writer: ALIVE** — pushed 14:28, clean tree, re-pinning active
+  (its foreign batch-1 WIP preserved as stash `d36-inflight-4`).
+- **g8: ALIVE** — pushed 14:37 (claims-table), 1 dirty file.
+- **c9: ALIVE local** — 1 unpushed commit + 8 dirty (gold-critter wave
+  in flight); origin stale since 07:13.
+- Still-laggard work orders (unchanged from S1 unless noted): g8 17
+  moves + 18 drops (17 + Vampire renumber 388→762) + decl fix 270→305;
+  c9 2 moves + 4 drops (Shimmerfly + 3 gold-critter dups) + PUSH; d120
+  4 towns→763-766 (retired, merge-wave); d125 2 moves + decl 270→272
+  (regression resolved, orders open); d42 11 merge-wave drops (hunks
+  published); c10 4 moves + 16 drops; d35 33 moves LAST; d40 1 drop;
+  c3/c6/c7/c8/d23/e26 per S1. d37 contributes ZERO moves (R8/LV
+  re-verified).
+
+### LV witness
+
+`_d37_lv_receipt.py` (read-only git-show probes at the LV1 tips: c9
+origin-vs-local ALL_KINDS census, g8 new-tip state, d36 R7 all-match +
+hover-batch free-id check vs the lag-union grand set, d39 817-823
+all-match, d125 ancestor check exit 0, d42 dragonfly presence, d37
+zero-code-diff). No code changed on this branch.
