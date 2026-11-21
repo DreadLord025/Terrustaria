@@ -989,17 +989,13 @@ mod w4_g86_feed_tests {
     #[test]
     fn w4_g86_the_nonzero_npc_win_fills_lists_but_keeps_the_rect_minus_one() {
         let mut app = altar_app();
-        // The Guide near the player but its box OFF the mouse: mouse at
-        // the altar centre (664, 616), the Guide at (568, 600) — inside
-        // the world region, distance > 0. The altar's nearest cell (41,38)
-        // is distance 0 from the mouse, so the TILE is closer and wins.
-        // To make the NPC win instead, put the mouse OFF the altar but
-        // ON the Guide's side: mouse (575, 610) is inside the Guide box
-        // (568..586, 600..640) → NPC distance 0 → zero-break, lists empty.
-        // So use a mouse OUTSIDE the Guide box but closer to it than to
-        // any altar cell: mouse (600, 610). Guide box right edge 586 →
-        // NPC distance 14; nearest altar cell (40,39) centre (648,632) →
-        // tile cell-rect distance ≈ sqrt((640-600)² + (624-610)²) ≈ 42.
+        // The Guide near the player but its box OFF the mouse: mouse
+        // (600, 610) is right of the Guide box (568..586, 600..640) → NPC
+        // distance 14 (the X gap). The nearest altar target to the mouse
+        // is cell (40,38) centre (648,616); its 16 px cell rect (640,608)
+        // gives the tile distance 40 (the X gap 640-600). 14 < 40 → the
+        // NPC wins the vote, but the tile provider still ran (non-zero
+        // NPC, no break) and filled the six altar cells.
         guide_at(&mut app, 568.0, 600.0);
         let mouse = (600.0, 610.0);
         smart_interact_lookup(&mut app, mouse, (37, 38));
