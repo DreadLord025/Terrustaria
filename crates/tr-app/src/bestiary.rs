@@ -2280,6 +2280,42 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Truffle Worm",
     },
+    // W4-f18 batch 4 — the Grasshopper, the ChatteringTeethBomb, the
+    // CultistArcherBlue and the ArmedZombie. The CultistArcherWhite 380
+    // (Hide=true, `NPCID.cs:3734-3739`) folds onto the CultistArcherBlue
+    // 379 — no row of its own (the DetonatingBubble precedent).
+    BestiaryEntryDef {
+        credit_id: "Grasshopper",
+        net_id: 377,
+        kind: NpcKind::Grasshopper,
+        variant: None,
+        quick_unlock: false,
+        name: "Grasshopper",
+    },
+    BestiaryEntryDef {
+        credit_id: "ChatteringTeethBomb",
+        net_id: 378,
+        kind: NpcKind::ChatteringTeethBomb,
+        variant: None,
+        quick_unlock: false,
+        name: "Chattering Teeth Bomb",
+    },
+    BestiaryEntryDef {
+        credit_id: "CultistArcherBlue",
+        net_id: 379,
+        kind: NpcKind::CultistArcherBlue,
+        variant: None,
+        quick_unlock: false,
+        name: "Cultist Archer",
+    },
+    BestiaryEntryDef {
+        credit_id: "ArmedZombie",
+        net_id: 430,
+        kind: NpcKind::ArmedZombie,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -2410,6 +2446,9 @@ pub fn try_entry_for_npc(
         // folds onto the TruffleWorm 374 (Hide=true, `NPCID.cs:3713-3718`).
         NpcKind::DuckWhite2 => NpcKind::DuckWhite,
         NpcKind::TruffleWormDigger => NpcKind::TruffleWorm,
+        // W4-f18 batch 4 — the CultistArcherWhite 380 folds onto the
+        // CultistArcherBlue 379 (Hide=true, `NPCID.cs:3734-3739`).
+        NpcKind::CultistArcherWhite => NpcKind::CultistArcherBlue,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -2488,6 +2527,9 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // onto their walker rows (the try_entry twin above).
         NpcKind::DuckWhite2 => NpcKind::DuckWhite,
         NpcKind::TruffleWormDigger => NpcKind::TruffleWorm,
+        // W4-f18 batch 4 — the CultistArcherWhite 380 folds onto the
+        // CultistArcherBlue 379 (the try_entry twin above).
+        NpcKind::CultistArcherWhite => NpcKind::CultistArcherBlue,
         other => other,
     };
     ENTRIES

@@ -1684,6 +1684,41 @@ fn portrait_data(
                 .unwrap_or(10.0);
             (sheet_i, h, 10.0, h, white)
         }
+        // W4-f18 batch 4 — the Grasshopper (2 frames), the ChatteringTeethBomb
+        // (4), the CultistArcherBlue (12), the ArmedZombie (7). The
+        // CultistArcherWhite 380 folds onto the CultistArcherBlue 379's
+        // entry — its arm keeps the exhaustive match whole (the fold
+        // precedent).
+        (NpcKind::Grasshopper, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 14.0, h, white)
+        }
+        (NpcKind::ChatteringTeethBomb, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(26.0);
+            (sheet_i, h, 20.0, h, white)
+        }
+        (NpcKind::CultistArcherBlue, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 12.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::CultistArcherWhite, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 12.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::ArmedZombie, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
     }
 }
 

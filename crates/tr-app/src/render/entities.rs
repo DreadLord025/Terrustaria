@@ -1123,6 +1123,9 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // credit's, not the texture's — the fishron-hazard precedent).
         NpcKind::DuckWhite2 => 365,
         NpcKind::TruffleWormDigger => 375,
+        // W4-f18 batch 4 — the folded CultistArcherWhite 380 keeps its OWN
+        // draw sheet (the bestiary fold is the credit's, not the texture's).
+        NpcKind::CultistArcherWhite => 380,
         _ => kind.net_id() as u16,
     }
 }
@@ -1266,6 +1269,7 @@ pub(crate) const CRITTER_SHEETS: &[u32] = &[
     355, 356, 357, 358, 359, // batch 1
     360, 361, 362, 363, 364, // batch 2 (the Duck2 363 draws its own sheet)
     365, 366, 367, 374, 375, // batch 3 (the folded 365/375 draw their own)
+    377, 378, 379, 380, 430, // batch 4 (the folded 380 draws its own)
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -3249,6 +3253,24 @@ pub(crate) fn draw_npcs(
             }
             NpcKind::TruffleWormDigger => {
                 pumpkin_moon_draw(assets.npc_sheet(375), npc_rows(375), n, w, h)
+            }
+            // W4-f18 batch 4 — the Grasshopper, the ChatteringTeethBomb,
+            // the cultist archers and the ArmedZombie ride the generic
+            // anchor (scale 1 — none carries a scale-rolled draw).
+            NpcKind::Grasshopper => {
+                pumpkin_moon_draw(assets.npc_sheet(377), npc_rows(377), n, w, h)
+            }
+            NpcKind::ChatteringTeethBomb => {
+                pumpkin_moon_draw(assets.npc_sheet(378), npc_rows(378), n, w, h)
+            }
+            NpcKind::CultistArcherBlue => {
+                pumpkin_moon_draw(assets.npc_sheet(379), npc_rows(379), n, w, h)
+            }
+            NpcKind::CultistArcherWhite => {
+                pumpkin_moon_draw(assets.npc_sheet(380), npc_rows(380), n, w, h)
+            }
+            NpcKind::ArmedZombie => {
+                pumpkin_moon_draw(assets.npc_sheet(430), npc_rows(430), n, w, h)
             }
         };
         let Some(tex) = tex else {

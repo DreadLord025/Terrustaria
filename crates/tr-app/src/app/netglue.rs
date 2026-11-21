@@ -3609,6 +3609,18 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-f18 batch 4 — the Grasshopper (grounded critter), the
+        // ChatteringTeethBomb / cultist archers / ArmedZombie (grounded
+        // fighters) plant their feet on the column surface (the machines
+        // take over on the first tick; the net state overwrites the
+        // position below).
+        crate::npc::NpcKind::Grasshopper
+        | crate::npc::NpcKind::ChatteringTeethBomb
+        | crate::npc::NpcKind::CultistArcherBlue
+        | crate::npc::NpcKind::CultistArcherWhite
+        | crate::npc::NpcKind::ArmedZombie => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
     })
 }
 

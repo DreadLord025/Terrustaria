@@ -610,6 +610,13 @@ impl NpcKind {
             NpcKind::Scorpion => 249,
             NpcKind::TruffleWorm => 252,
             NpcKind::TruffleWormDigger => 253,
+            // W4-f18 batch 4 — the next-free band 254.. (the vanilla types
+            // 377-430 ride cs_id/net_id, NOT these protocol ids).
+            NpcKind::Grasshopper => 254,
+            NpcKind::ChatteringTeethBomb => 255,
+            NpcKind::CultistArcherBlue => 256,
+            NpcKind::CultistArcherWhite => 257,
+            NpcKind::ArmedZombie => 258,
         }
     }
 
@@ -962,6 +969,13 @@ impl NpcKind {
             249 => NpcKind::Scorpion,
             252 => NpcKind::TruffleWorm,
             253 => NpcKind::TruffleWormDigger,
+            // W4-f18 batch 4 — the 254.. band (`to_u16` above).
+            // `NPCID.cs:11415-11541`.
+            254 => NpcKind::Grasshopper,
+            255 => NpcKind::ChatteringTeethBomb,
+            256 => NpcKind::CultistArcherBlue,
+            257 => NpcKind::CultistArcherWhite,
+            258 => NpcKind::ArmedZombie,
             _ => return None,
         })
     }
@@ -1861,6 +1875,9 @@ impl NpcKind {
             // W4-f18 batch 3 — the critters' `SoundID.NPCHit1` rows
             // (`NPC.cs:13653`/`:13665`/`:13766`/`:13781`).
             NpcKind::DuckWhite2 | NpcKind::ScorpionBlack | NpcKind::Scorpion | NpcKind::TruffleWorm | NpcKind::TruffleWormDigger => "NPC_Hit_1",
+            // W4-f18 batch 4 — the `SoundID.NPCHit1` rows (`NPC.cs:13815`/
+            // `:13829`/`:13843`/`:8616`).
+            NpcKind::Grasshopper | NpcKind::ChatteringTeethBomb | NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite | NpcKind::ArmedZombie => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2174,6 +2191,11 @@ impl NpcKind {
             // W4-f18 batch 3 — the critters' `SoundID.NPCDeath1` rows
             // (`NPC.cs:13654`/`:13666`/`:13767`/`:13782`).
             NpcKind::DuckWhite2 | NpcKind::ScorpionBlack | NpcKind::Scorpion | NpcKind::TruffleWorm | NpcKind::TruffleWormDigger => "NPC_Killed_1",
+            // W4-f18 batch 4 — the `SoundID.NPCDeath1` rows (`NPC.cs:
+            // 13816`/`:13830`/`:13844`); the ArmedZombie 430's NPCDeath2
+            // (`:8617`).
+            NpcKind::Grasshopper | NpcKind::ChatteringTeethBomb | NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => "NPC_Killed_1",
+            NpcKind::ArmedZombie => "NPC_Killed_2",
             _ => return None,
         })
     }
@@ -2561,6 +2583,12 @@ impl NpcKind {
             NpcKind::ScorpionBlack | NpcKind::Scorpion => 7,
             NpcKind::TruffleWorm => 66,
             NpcKind::TruffleWormDigger => 6,
+            // W4-f18 batch 4 — 377 1 (`NPC.cs:13813`), 378 41
+            // (`:13827`), 379/380 3 (`:13841`), 430 3 (`:8614`).
+            NpcKind::Grasshopper => 1,
+            NpcKind::ChatteringTeethBomb => 41,
+            NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 3,
+            NpcKind::ArmedZombie => 3,
         }
     }
 
@@ -2669,6 +2697,12 @@ impl NpcKind {
             NpcKind::Nutcracker | NpcKind::Krampus => 2.0,
             NpcKind::NutcrackerSpinning => 6.0,
             NpcKind::ElfArcher => 1.0,
+            // W4-f18 batch 4 — the cultist archers' shooter-default 1f
+            // (`NPC.cs:59717`, no 379/380 override); the ArmedZombie 430's
+            // charge-family cap 1f (`:58267`, the scale factor is 1 at the
+            // 1f default scale — the ladder applies it).
+            NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 1.0,
+            NpcKind::ArmedZombie => 1.0,
             _ => return None,
         })
     }
@@ -3114,6 +3148,13 @@ impl NpcKind {
             NpcKind::ScorpionBlack | NpcKind::Scorpion => (26.0, 18.0),
             NpcKind::TruffleWorm => (20.0, 10.0),
             NpcKind::TruffleWormDigger => (10.0, 10.0),
+            // W4-f18 batch 4 — 377 14x10 (`NPC.cs:13811-13812`), 378 20x26
+            // (`:13825-13826`), 379/380 18x40 (`:13839-13840`), 430 18x40
+            // (`:8612-8613`).
+            NpcKind::Grasshopper => (14.0, 10.0),
+            NpcKind::ChatteringTeethBomb => (20.0, 26.0),
+            NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => (18.0, 40.0),
+            NpcKind::ArmedZombie => (18.0, 40.0),
         }
     }
 
@@ -3767,6 +3808,12 @@ impl NpcKind {
             // W4-f18 batch 3 — the critters' `lifeMax = 5` rows
             // (`NPC.cs:13652`/`:13664`/`:13765`/`:13780`).
             NpcKind::DuckWhite2 | NpcKind::ScorpionBlack | NpcKind::Scorpion | NpcKind::TruffleWorm | NpcKind::TruffleWormDigger => 5,
+            // W4-f18 batch 4 — 377 5 (`NPC.cs:13814`), 378 200
+            // (`:13828`), 379/380 210 (`:13842`), 430 45 (`:8615`).
+            NpcKind::Grasshopper => 5,
+            NpcKind::ChatteringTeethBomb => 200,
+            NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 210,
+            NpcKind::ArmedZombie => 45,
         }
     }
 
@@ -4140,6 +4187,12 @@ impl NpcKind {
             // W4-f18 batch 3 — the critters' `damage = 0` rows
             // (`NPC.cs:13650`/`:13662`/`:13763`/`:13778`).
             NpcKind::DuckWhite2 | NpcKind::ScorpionBlack | NpcKind::Scorpion | NpcKind::TruffleWorm | NpcKind::TruffleWormDigger => 0,
+            // W4-f18 batch 4 — 377 0 (`NPC.cs:13812`), 378 120
+            // (`:13826`), 379/380 45 (`:13840`), 430 14 (`:8613`).
+            NpcKind::Grasshopper => 0,
+            NpcKind::ChatteringTeethBomb => 120,
+            NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 45,
+            NpcKind::ArmedZombie => 14,
         }
     }
 }

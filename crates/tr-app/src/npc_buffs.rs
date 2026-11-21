@@ -508,6 +508,14 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::Scorpion
         | NpcKind::TruffleWorm
         | NpcKind::TruffleWormDigger => &[31],
+        // W4-f18 batch 4 — 377-380 each immune to the Confused debuff (31)
+        // (`NPCID.cs`'s 377/378/379/380 rows); the ArmedZombie 430 has NO
+        // `DebuffImmunitySets` row (the null-row else-branch, no immunity).
+        NpcKind::Grasshopper
+        | NpcKind::ChatteringTeethBomb
+        | NpcKind::CultistArcherBlue
+        | NpcKind::CultistArcherWhite => &[31],
+        NpcKind::ArmedZombie => &[],
     }
 }
 

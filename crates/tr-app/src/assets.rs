@@ -1297,6 +1297,13 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_367",
         "NPC_374",
         "NPC_375",
+        // W4-f18 batch 4 — the kinds' own sheets (the folded
+        // CultistArcherWhite 380 draws its own art).
+        "NPC_377",
+        "NPC_378",
+        "NPC_379",
+        "NPC_380",
+        "NPC_430",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -1882,7 +1889,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 193] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 197] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1927,6 +1934,9 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 193] = [
         // (the DuckWhite2 365 folds onto 364, the TruffleWormDigger 375
         // onto 374 — neither has a slot of its own).
         366, 367, 374,
+        // W4-f18 batch 4 — the entry-bearing kinds (the CultistArcherWhite
+        // 380 folds onto 379, so it has no slot of its own).
+        377, 378, 379, 430,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -2707,6 +2717,12 @@ impl Lookups {
                 atlas.sheet("NPC_366").copied(),
                 atlas.sheet("NPC_367").copied(),
                 atlas.sheet("NPC_374").copied(),
+                // W4-f18 batch 4 — the entry-bearing kinds' strips, in
+                // BESTIARY_NPC_SHEET_IDS' appended order (380→379).
+                atlas.sheet("NPC_377").copied(),
+                atlas.sheet("NPC_378").copied(),
+                atlas.sheet("NPC_379").copied(),
+                atlas.sheet("NPC_430").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),
