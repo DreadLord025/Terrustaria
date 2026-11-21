@@ -379,6 +379,11 @@ pub fn death_text_key(death: DotDeath) -> (&'static str, u32) {
         DotDeath::Tongued => ("DeathText.WasLicked", 2),
         DotDeath::VampireSunlight => ("DeathText.VampireBurningInDaylight", 6),
         DotDeath::ChlorophyteSpore => ("DeathText.Spored", 1),
+        // W4-g89f — the rod's chaos-state death (`Lang.cs:1095-1103`):
+        // ByOther(13) Teleport_1, ByOther(14/15) the gendered rows (the
+        // SAME en-US text; the port has no Male flag — ANALYSIS W4-g89f).
+        DotDeath::Teleport => ("DeathText.Teleport_1", 1),
+        DotDeath::TeleportGendered => ("DeathText.Teleport_2_Male", 1),
     }
 }
 

@@ -54,8 +54,19 @@ pub enum DotDeath {
     Tongued,
     /// `ByOther(22)` — vampireBurningInSunlight (generic lane).
     VampireSunlight,
-    /// `ByOther(23)` — chlorophyteSpore (generic lane).
+    /// `ByOther(23)` - chlorophyteSpore (generic lane).
     ChlorophyteSpore,
+    /// `ByOther(13)` - the Rod of Discord's chaos-state teleport death
+    /// (`Player.cs:45521`, W4-g89f). NOT a DoT-lane reason - the rod arm
+    /// books it directly; the `Next(2)` male/female variant roll
+    /// (`:45522-45525`) picks between this and `TeleportFemale`.
+    Teleport,
+    /// `ByOther(14)`/`ByOther(15)` - the same death's gendered rows
+    /// (`Lang.cs:1098-1103`; both keys carry the SAME text in en-US).
+    /// The port has no player `Male` flag (the render draws the base male
+    /// frame), so the roll's 1-arm books this row and the 0-arm `Teleport`
+    /// - the text is identical either way (ANALYSIS W4-g89f).
+    TeleportGendered,
 }
 
 /// Per-tick inputs gathered by the caller (one 60 Hz tick of player state).

@@ -238,6 +238,10 @@ mod rain;
 // :43141-43172) + Spawn(RecallFromItem) (:37534-37710) + the spawn-position
 // helpers (:37718-37991). Wired into update_editing (the boss-spawner seam).
 mod recall_teleport;
+// W4-g89f: the Rod of Discord 1326 / Rod of Harmony 5335 use path —
+// ItemCheck_UseTeleportRod (Player.cs:45476-45534) + the chaos-state tax.
+// Wired into update_editing (the recall/boss-spawner seam).
+mod rod_teleport;
 mod regen;
 mod research;
 mod sand;

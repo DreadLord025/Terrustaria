@@ -39459,3 +39459,57 @@ TurnToAir + once-ever), `npc_ai_town.rs` (the vol-two block stacks + the
 growth full-heal + the damaged-NPC refusal), `player.rs` (both books fire
 TRAINING_DAY, one alone does not), `wld/mod.rs` (the v259 gate + the
 tail-2036 pin; the owned-fields round-trip extended).
+
+## W4-g89f — the Rod of Discord / Rod of Harmony use path (2026-11-21, code-only)
+
+Census: **5335 = RodOfHarmony** (`ItemID.cs:12353`) — the brief's "Advanced
+Combat Techniques Vol One" does not exist in 1.4.5.8; 5335 is the shimmered
+Rod of Discord (shimmer table 1326→5335). Unclaimed at probe: g87's branch
+(`task/W4-g87-demon-heart-use`) sits at main tip with ZERO commits (the
+demon-heart claim is 3335, ported by a6 `ea478936`); neither rod had a use
+arm. Ported BOTH kinds — one C# function, `ItemCheck_UseTeleportRod`
+(`Player.cs:45476-45534`, called `:43594`).
+
+The machine (`crates/tr-app/src/rod_teleport.rs`, the recall-module
+precedent): the mid-swing `itemAnimation > 0 && ItemTimeIsZero` gate,
+`ApplyItemTime` (20 ticks) BEFORE the aim gates (a refusal still pays the
+cadence), the gravDir-1 aim `(cursor − (width/2, height))`, the shared
+`limit_point_to_player_reachable_area` clamp (visibility widened to
+pub(crate)), the 50-px bounds flag, the NEW
+`collision::any_wall_of_type_on_line` (the verbatim `Collision.cs:973-1135`
+Bresenham substep walk, wall 350 — the temple line refusal), the aim-cell
+wall-87 temple gate (`!downedPlantBoss && (remix || below surface)`) +
+`Player::solid_collision`, then `teleport_style(point, 1)` + the style-1
+camera lerp (delay 10). **The 5335 difference**: `:45514-45517` returns
+before the chaos block — no tax, no buff 88, ever. The 1326 block: buff-88
+slot scan → `hp -= max_hp / 7` (INTEGER division), the `Next(2)` reason
+roll (UpdatePlayers stream, ONE draw per taxed teleport) →
+`ByOther(13)`/`ByOther(14/15)`, the `dot_death` booking at hp ≤ 0 (the
+npcs-pass drain runs KillMe), the unconditional regen reset, then
+`AddBuff(88, 360)` every discord teleport.
+
+Deviations: the `TeleportEffect` dust/sound bursts are the unported system
+(the recall module's §Scope precedent); the port has no player `Male` flag
+(the render draws the base male frame) so the roll's gendered arm books
+`DeathText.Teleport_2_Male` — the en-US text is IDENTICAL to the female row
+(`Lang.cs:1098-1103`, both "legs appeared where their head should be");
+the chaos read is the buff-88 slot scan (the `DebuffEffects.chaos_state`
+table row exists but has no live wiring); the hp floor-at-0 is the port's
+collapsed damage lane (the C# statLife goes negative; the ≤0 death test
+reads the same outcome). New `DotDeath::Teleport`/`TeleportGendered`
+variants + the `death_text_key` rows (`DeathText.Teleport_1`,
+`DeathText.Teleport_2_Male`, single-variant — no draw).
+
+### Verification (W4-g89f)
+
+Code-only: re-read `Player.cs:45476-45534` / `:45447-45473` /
+`:37414-37496` / `Collision.cs:973-1144` / `Item.cs:42318-42324` /
+`Lang.cs:1095-1103` / `Utils.cs:1807-1810`; **no cargo/rustc/rustfmt/
+tests/graphify invoked**. Six witness tests WRITTEN, NOT RUN:
+`rod_teleport.rs` (the harmony teleport + no-chaos-ever + the
+non-consumable stack; the discord arm-then-tax + the 360-tick window +
+the INTEGER tax + the regen reset; the chaos death booking + the ONE
+Next(2) draw on a cloned stream; the wall-350 line refusal keeps the
+cadence; the solid + temple refusals + the downed-boss opening),
+`collision.rs` (the wall-line walk: on-line hit, parallel/diagonal miss,
+zero-length never, the y-clamp endpoint).

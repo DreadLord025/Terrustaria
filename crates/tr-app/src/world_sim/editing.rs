@@ -655,7 +655,7 @@ fn remap_gem(value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32)
 /// the box KEEPS its size — on a world smaller than the view the clamp's
 /// max < min and `Utils.Clamp<T>` (`:223-234`, max first) returns the max,
 /// so the box hangs off the far edge exactly as the C#'s does (S1-P-i23).
-fn limit_point_to_player_reachable_area(
+pub(crate) fn limit_point_to_player_reachable_area(
     center: Vec2,
     point: Vec2,
     world: &tr_core::World,
@@ -2127,6 +2127,16 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     // frame at the top). A started use consumes the tick like the boss arms;
     // a live swing's per-tick arm runs without consuming.
     if crate::recall_teleport::recall_item_check(app, prev_mine_released && !prev_mine_down) {
+        return;
+    }
+    // W4-g89f — the Rod of Discord 1326 / Rod of Harmony 5335 arm
+    // (`ItemCheck_UseTeleportRod`, `Player.cs:45476-45534`, called `:43594`
+    // BEFORE the recall cluster's `:42976` block in C# order — the kinds
+    // are disjoint, so the position is observation-identical). Same
+    // mid-swing machine: the press edge starts the swing, the teleport
+    // fires at `ItemTimeIsZero` inside it; the harmony rod skips the
+    // chaos-state block (`:45514-45517`).
+    if crate::rod_teleport::rod_item_check(app, prev_mine_released && !prev_mine_down) {
         return;
     }
     // The boss spawners (`Player.ItemCheck_UseBossSpawners`,
