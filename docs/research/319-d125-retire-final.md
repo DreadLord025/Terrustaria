@@ -1,4 +1,11 @@
-# 282 — W4-d125 RETIRE FINAL: the empress-family declaration + the 636/661 dedupe + the BossNoCheese compose
+# 319 — W4-d125 RETIRE FINAL: the empress-family declaration + the 636/661 dedupe + the BossNoCheese compose
+
+Rename chain: 282 → **319** (the frozen research/150 registry on
+`origin/task/W4-d54-dust-sites-world`, `a15cb634b` — §8.2: key 282's
+winner is §7.2's owner f26; the losers g48/d125/f39-seal → 318/**319**/320).
+The companion sheets ledger renumbers 125 → 281 → **309** (§8.1 row 2):
+`309-empress-sheets-ledger.md`. The §5 record below preserves the
+RETIRE-time 281/282 self-picks as history; the numbers NOW live as 309/319.
 
 Status: ✅ FINAL (code-only mode — no cargo/tests/rustfmt/graphify run; every
 witness WRITTEN NOT RUN). Branch: `task/W4-d125-empress-r7-drain`, worktree
@@ -6,12 +13,12 @@ TR-W4-d125. Number per the research/150 collision registry
 (`origin/task/W4-d54-dust-sites-world`, `38bfd1d22`): the free block 151–236
 is consumed; a fresh all-tip `ls-tree` scan at RETIRE time found 237–246,
 262, 264, 266, 269, 271, 273, 274, 279, 280 taken by later lanes (244 alone
-is four-way: d53/f39/g48/g86). **281** (the sheets ledger, renumbered from
-125 — key 125's winner is d38's `125-d38-crossnote-atlas-addendum.md`,
-first-add 07:00:21 vs d125's 06:07:29… d125's doc is the LOSER on the
-registry's first-pushed rule only because d38's key-125 doc was scanned
-first at 150's scan time; either way d125 renames) and **282** (this doc)
-are this lane's free numbers, verified free across all 355+ remote tips.
+is four-way: d53/f39/g48/g86). The RETIRE-time self-picks were **281** (the
+sheets ledger, renumbered from 125 — key 125's verdict was later CORRECTED
+by 150 §7.1: d125's 06:07:29 doc WINS 125, d38's crossnote revoked → 293)
+and **282** (this doc), then verified free across all 355+ remote tips;
+the frozen §8 registry (`a15cb634b`) renumbered both — 281 = f26 →
+ledger **309** (§8.1), 282 = f26 → this FINAL **319** (§8.2).
 
 ## 0. Alive-status + the d37 REGRESSED flag — RESOLVED
 
@@ -150,8 +157,8 @@ the render remainders are sheet-gated, owned by the repack wave):
 | 661 EmpressButterfly (PrismaticLacewing) | AI_065 661 branch `NPC.cs:44896-45110` + release/death→SpawnBoss `:79493-79502` | `npc_ai_lacewing.rs` (8 witnesses) + the sim threat pre-pass + the death drain | ✅ WIRED |
 | proj 872/873/874/919/923 | the five AIs (S1-D-4) | `projectile_ai_empress.rs` (9 witnesses) + rows + the owned drain | ✅ WIRED |
 | proj 871 SplitShotCore / 924 FairyQueenHymn | `ProjectileID.cs:2296/:2402` | NO rows — 871 spawns only via the 872 split (the pure core requests the five rowed kinds); 924 is the hymn visual (no hostile damage path claimed) | declared remainder, BossNoCheese kind-match already covers both |
-| sheets NPC_636/NPC_661 | real .xnb 166×352 / 24×72 | D125_SHEETS packed, slots 181→183 (research/281) | ✅ PACKED |
-| draw | Main.cs:26471-26652 + GetAlpha :93501-93505 | `render/empress_draw.rs` (15 witnesses) + `draw_empress` | ✅ WIRED (5 tall strips deferred, research/281 §2) |
+| sheets NPC_636/NPC_661 | real .xnb 166×352 / 24×72 | D125_SHEETS packed, slots 181→183 (research/309) | ✅ PACKED |
+| draw | Main.cs:26471-26652 + GetAlpha :93501-93505 | `render/empress_draw.rs` (15 witnesses) + `draw_empress` | ✅ WIRED (5 tall strips deferred, research/309 §2) |
 | hitboxes 919/923/872 | Colliding :15625-15694 | damage_player's REPLACE arms + trail_extra 120-ring | ✅ WIRED |
 | BossNoCheese group | Player.cs:31332-31349 + Projectile.cs:14780-14797 | the counter seam + both consumer sites (§3) | ✅ WIRED + COMPOSED |
 | Terraprisma (5005) use → 946 blade | Item.cs:40278-40296 + Player.cs:53268/:48556/:10912 | the use-census witness (the prior session's frozen hunk, preserved) | witness WRITTEN NOT RUN; the 946 AI_156 machine is the a9 co-lane's claim |
@@ -164,18 +171,20 @@ DRAW + GetAlpha tints (render side), the 946 AI_156 machine (a9), the
 
 ## 5. Research-number registry compliance (per 150)
 
-- `125-empress-sheets-ledger.md` → **`281-empress-sheets-ledger.md`**
-  (key 125 collision: d38's crossnote wins the number; d39→230, e3→231
-  per 150 §1 — d125's doc was NOT in 150's scan (added 06:07:29, the scan
-  grouped only the docs pushed at its fetch); it is a NEW loser on the
-  same key, taking the next free number at RETIRE time). Header updated;
+- The sheets ledger: key 125 → 281 → **`309-empress-sheets-ledger.md`**
+  (key 125 collision at RETIRE: the ledger took 281 as the next free
+  number; the frozen 150 registry `a15cb634b` §7.1 later CORRECTED key
+  125's winner to d125 itself — d38's crossnote revoked → 293 — and §8.1
+  renumbered the 281 self-pick to **309**, f26 owning 281). Header updated;
   every ref updated on this branch: ANALYSIS ×2, PORT_MAP, ROADMAP,
   anchors.txt, assets.rs, empress_draw.rs, entities.rs ×3,
   tools/_d125_sheets_measure.js.
-- This FINAL doc takes **282** (281/282 verified free across all remote
-  tips at RETIRE; 244/245/246 were taken mid-session by d53/f39/g48/g86/
+- This FINAL doc took **282** at RETIRE (281/282 verified free across all
+  remote tips then; 244/245/246 were taken mid-session by d53/f39/g48/g86/
   g48/d10/g43 — the first RETIRE draft's 244/245 numbers were re-pinned
-  before any commit).
+  before any commit). The frozen 150 registry `a15cb634b` §8.2 adjudicated
+  282 to §7.2's owner f26: this doc renumbers to **319**
+  (`319-d125-retire-final.md`).
 - The registry itself (150) lives on d54's branch — not touched here.
 
 ## 6. Verification record

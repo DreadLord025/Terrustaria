@@ -1288,7 +1288,7 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // 166x174 — the ONLY one of the six overlay strips that fits the
         // solo headroom: +25 px at 8141/8141 main/font; the five tall
         // strips Extra_157/158/159/160/187 overflow +64..+214 and stay
-        // deferred to the repack wave, research/281 §2).
+        // deferred to the repack wave, research/309 §2).
         "Extra_188",
 ];
 

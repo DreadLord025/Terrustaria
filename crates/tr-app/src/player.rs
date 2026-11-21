@@ -12986,7 +12986,7 @@ mod tests {
         assert_eq!(p.hp, 99);
     }
 
-    /// W4-d125 RETIRE compose (research/282 §3): the d78-kept
+    /// W4-d125 RETIRE compose (research/319 §3): the d78-kept
     /// `SetImmuneTimeForAllTypes` array write (`Player.cs:38013-38021`)
     /// is live on this branch's BossNoCheese lane — a cross-dodge arms
     /// EVERY counter, so the boss hit refuses inside the dodge window

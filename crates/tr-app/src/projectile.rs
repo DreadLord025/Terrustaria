@@ -23589,7 +23589,7 @@ impl ProjectilePool {
         // the BossNoCheese shots land THROUGH the General i-frames (their
         // own `hurtCooldowns[1]` window gates them, not `immune`).
         let boss_no_cheese = matches!(p.kind, 452 | 454 | 455 | 462 | 871 | 872 | 873 | 874 | 919 | 923 | 924);
-        // The RETIRE compose (research/282 §3): d78's `damage_evp_boxed`
+        // The RETIRE compose (research/319 §3): d78's `damage_evp_boxed`
         // damage chain lands HERE on the live-contact path — the same
         // C# body (`Projectile.cs:14831-14844`), one keeper. g1's
         // raw-damage `death_burst_player_hit` stays dropped (26f §1).
@@ -24747,7 +24747,7 @@ mod tests {
         assert!(!pool.slots()[slot2].active, "the single-hit kill still fires");
     }
 
-    /// W4-d125 RETIRE compose (research/282 §3): the live-contact
+    /// W4-d125 RETIRE compose (research/319 §3): the live-contact
     /// `damage_player` carries d78's verbatim `Damage_EVP` damage chain
     /// (`Projectile.cs:14831-14844`) — `DamageVar(damage, -owner.luck)`,
     /// the difficulty sample, the EVP ×2 — onto BOTH lanes. The scripted

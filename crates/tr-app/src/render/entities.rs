@@ -298,7 +298,7 @@ pub(crate) struct NpcAssets {
     /// W4-d125 draw phase: the HallowBoss arm's halo ring (`Extra_188`,
     /// `Main.cs:26635-26639`) — the four phase-2 glow copies. The five
     /// tall overlay strips (Extra_157/158/159/160/187) stay deferred
-    /// (the atlas headroom, research/281 §2); their draws skip.
+    /// (the atlas headroom, research/309 §2); their draws skip.
     pub(crate) empress_halo: Option<BgTex>,
     /// `NPC_390` — the Scutlix ray rider (5 frames of 18x40), `NPC_391` —
     /// the Scutlix carrier (6 frames of 60x40).
@@ -1003,7 +1003,7 @@ fn generic_anchor_shift_y(n: &Npc, h: f32, frame_h: f32) -> f32 {
 /// the body draw. The five tall overlay strips (the arms Extra_158/160,
 /// the wings Extra_159/187, the shader body copy Extra_157) and the
 /// state-8/9/10 ghost rings are DEFERRED with their sheets (the atlas
-/// headroom, research/281 §2 — the pure geometry lives in
+/// headroom, research/309 §2 — the pure geometry lives in
 /// `empress_draw.rs` for the repack wave's wiring).
 fn draw_empress(
     r: &mut SpriteRenderer,
@@ -3744,7 +3744,7 @@ mod anchor_tests {
         // computes its own Centre position, the Deerclops precedent).
         assert!(!uses_generic_anchor(NpcKind::EmpressOfLight));
         // The Lacewing keeps the generic anchor (its afterimage ring is
-        // the draw-side remainder, research/281).
+        // the draw-side remainder, research/309).
         assert!(uses_generic_anchor(NpcKind::PrismaticLacewing));
         // The draw arm's source carries the dedicated call (the wiring
         // canary — a lossy merge that drops it fails here).

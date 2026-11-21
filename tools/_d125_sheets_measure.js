@@ -14,7 +14,7 @@
 // three packed sheets (NPC_636/NPC_661/Extra_188) — they re-measure the
 // FINAL state (8141/8141, 51 px headroom). The pre-landing base numbers
 // (8115/8119) and the per-sheet solo deltas are recorded in
-// docs/research/281-empress-sheets-ledger.md from the first run.
+// docs/research/309-empress-sheets-ledger.md from the first run.
 'use strict';
 const fs = require('fs');
 const path = require('path');

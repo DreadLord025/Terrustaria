@@ -35930,18 +35930,19 @@ The sibling-union overflow (d35's re-extraction: 26 branches / 339 names,
 skyline 9382, area bound 8835 — over the bound WITHOUT d125) is the
 atlas-repack wave's; d125's overflow-ledger entry (+2 names, +0.061 Mpx,
 low area pressure / high visibility, page-1 append under research/113's
-incremental two-page form) is `docs/research/281-empress-sheets-ledger.md`
-(the RETIRE renumber per the research/150 collision registry: key 125's
-winner is d38's `125-d38-crossnote-atlas-addendum.md`; 244 is this lane's
-free number — see research/282 §5).
+incremental two-page form) is `docs/research/309-empress-sheets-ledger.md`
+(chain 125→281→309 per the frozen research/150 registry `a15cb634b` §8.1:
+281's owner is f26; key 125's WIN is d125's own per §7.1 CORRECTION, d38's
+crossnote revoked → 293 — see research/319 §5).
 Witnesses: `the_d125_strips_divide_into_their_vanilla_rows`
 (render/entities.rs) + `the_d125_portraits_ride_the_real_sheet_dims`
 (ui/bestiary.rs) — WRITTEN NOT RUN.
 
 ### The d125 RETIRE phase (2026-11-21 — code-only mode)
 
-The lane's closing phase (research/282 FINAL; the sheets ledger
-renumbered 125→281 per the research/150 collision registry). Four
+The lane's closing phase (research/319 FINAL; the sheets ledger
+renumbered 125→281→309 and the FINAL 282→319 per the frozen research/150
+registry §8.1/§8.2). Four
 closures:
 
 1. **The d37 REGRESSED flag RESOLVED** — origin's tip is `7a0482302`
@@ -35954,12 +35955,12 @@ closures:
    ALL_KINDS stale decl 270→272 fixed (the array already listed 272).
    The roster witness updated. Everything net-keyed (ENTRIES 636/661,
    sheets, cs_id, the downed flag) untouched.
-3. **The 636/661 dedupe adjudicated** (research/282 §2): keep d125's
+3. **The 636/661 dedupe adjudicated** (research/319 §2): keep d125's
    EmpressOfLight/PrismaticLacewing (the full wired machines), drop
    d43's data-only HallowBoss/EmpressButterfly stand-ins at merge; the
    one d43 hunk d125 lacked — the `NPC_Killed_65` SFX_CUES row — folded
    in verbatim at RETIRE.
-4. **The BossNoCheese compose published** (research/282 §3): d125's
+4. **The BossNoCheese compose published** (research/319 §3): d125's
    player.rs seam keeps the lane with d78's two verbatim C# behaviours
    composed in — the `hurtCooldowns[id] == 0` write guard
    (`Player.cs:38392`) and the `SetImmuneTimeForAllTypes` array loop
@@ -35977,7 +35978,7 @@ closures:
    Terraprisma use-census witness (world_sim/editing.rs) preserved
    verbatim in its own commit.
 
-**The empress-family declaration** (research/282 §4): 636 + 661 + the
+**The empress-family declaration** (research/319 §4): 636 + 661 + the
 five rowed proj kinds + sheets + draw + hitboxes + the BossNoCheese
 group + the downed flag are COMPLETE on this branch; the remainders are
 sheet-gated render overlays (repack wave), the 946 AI_156 machine (a9
@@ -36095,7 +36096,7 @@ drawed FOUR times at the pulsing `Lerp(2,8,num14)` radius with the
 glow colour. `Extra_188` is PACKED (+25 px, the final set 8141/8141 —
 51 px headroom); the five tall strips (`Extra_157/158/159/160/187`, the
 arms/wings/shader-body) each overflow solo (+16..+138) and stay DEFERRED
-to the repack wave (research/281 §2's ledger: +1 packed, +5 deferred).
+to the repack wave (research/309 §2's ledger: +1 packed, +5 deferred).
 The `GameShaders.Misc["HallowBoss"]` body pass (`:26599-26610`) is a
 compiled HLSL effect not in the decompile — the body draws once with the
 plain tint (the pillar-glow precedent). The state-8/9/10 ghost rings +

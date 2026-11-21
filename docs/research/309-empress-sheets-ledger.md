@@ -1,4 +1,11 @@
-# 281 — W4-d125 sheet additions: the empress overflow-ledger entry
+# 309 — W4-d125 sheet additions: the empress overflow-ledger entry
+
+Rename chain: 125 → 281 → **309** (the frozen research/150 registry on
+`origin/task/W4-d54-dust-sites-world`, `a15cb634b` — §8.1 row 2: the 281
+self-pick loses to §7.2's owner f26; d125 takes **309**; key 125's WIN is
+d125's per §7.1 CORRECTION, d38's crossnote revoked → 293). This doc's
+companion RETIRE FINAL is `319-d125-retire-final.md` (§8.2: 282 = f26,
+d125-FINAL → **319**).
 
 Status: ✅ measured + packed SOLO; the cumulative reconciliation belongs to
 the atlas-repack wave. Branch: `task/W4-d125-empress-r7-drain` (remainder 1).
