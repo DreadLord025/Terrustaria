@@ -80,6 +80,15 @@ pub fn save(
     // Version 7 (W4-f33): the Torch God's Favor biome-torch pair on their own
     // line — `unlockedBiomeTorches` / `UsingBiomeTorches` (`Player.cs:54777-54778`),
     // 0/1 each.
+    // DEPRECATED-BY-SUPERSET (W4-f33 retire): the g88 superset writer v11
+    // (origin/task/W4-g88-life-fruit-use a9f1c29d, research/103 §2b) appends
+    // this SAME pair as the LAST post-dye line (line 16) — the union writer
+    // owns the format at the merge and this v7 writer retires with it. The
+    // line itself stays a DELIBERATE dual-carrier until 103 §2b's two
+    // conditions hold (character-load hydration + the exit `.plr` re-save,
+    // research/132 §2c); until then it is the only carrier of a mid-world
+    // favor use across a world reload. Keep compiling; comments-only mark.
+    // Receipt: research/93a §1 ↔ 103 §2b.
     s.push_str(&format!(
         "{} {}\n",
         u8::from(player.unlocked_biome_torches),
@@ -156,6 +165,15 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     // Version 7 (W4-f33) adds the Torch God biome-torch pair
     // (`Player.unlockedBiomeTorches` / `UsingBiomeTorches`, `Player.cs:55241-55242`);
     // older files load with the unlock absent.
+    // DEPRECATED-BY-SUPERSET (W4-f33 retire): the g88 v11 reader
+    // (research/103 §3, tip a9f1c29d) already back-reads this exact shape
+    // losslessly — the lone all-0/1-pair rule
+    // (`f33s_torch_only_v7_loads_positionally`) reads f33's torch-only v7
+    // as the torch pair, NOT a life pair (no maxima pair can be all-0/1;
+    // the permanent halves start 100/20). At the merge this reader arm
+    // dedups onto the superset's; restore precedence per 132 §2c:
+    // character load FIRST, sidecar SECOND (the sidecar wins as newer).
+    // Receipt: research/93a §1 ↔ 103 §2b.
     let (unlocked_biome_torches, using_biome_torches) = if version == "7" {
         let line = lines.next()?;
         let mut parts = line.split_whitespace();
