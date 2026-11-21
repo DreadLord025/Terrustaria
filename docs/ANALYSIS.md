@@ -39384,3 +39384,41 @@ lane's merge edit, the e3 arm keeps the hum skip cited until then.
 (`w4_e3_the_star_wrath_and_meteor_rows_are_verbatim`) is WRITTEN, NOT RUN —
 no cargo/rustc/rustfmt/tests/dotnet/graphify invoked. Verified by re-reading
 the cited C# SetDefaults arms and the pushed-tip census via `git show`.
+
+### The `Kill_Bombs` dust tail window, batch A (the wired 6 sites)
+
+The smallest unclaimed window (`:78227-78508`, 15 sites — the coverage
+census) ports in two batches. Batch A wires the six sites whose host kinds
+the port's `explode_bomb` gate admits: the bomb-family arm
+(`:78340/78345/78348` — the 28/37/516/519 bombs + the 30/397/517 grenades;
+the C# `:78329` list's 75/102/164 halves cited: 75 unrowed, 102/164 are the
+blast rows the gate refuses) and the big-bomb arm (`:78407/78412/78415` —
+the dynamite 29; the `:78384` list's 108/470/637/1002/1086/1087 halves
+cited: 108 rowed but refused, the rest unrowed).
+
+* **The seam.** `explode_bomb` gains `rng` + `DustPool` + `SpawnCtx` (the
+  `explode_rocket` precedent); the dispatch's thrown-bomb branch threads the
+  pass's stream + the live pool. The frozen zero-rng M4-PROJ-9 path's DUST
+  half is re-armed; its `damage_pve` FastRandom(0) stand-in stays its own
+  documented deviation (the hit rolls are not this window's).
+* **The C# order.** `Kill()` runs `PrepareBombToBlow` → `Damage()` →
+  `Kill_Bombs_DoUsualKillCode` → `Kill_ExplodeTiles`. The port inserts the
+  dust block between `damage_pve` and the crater walk: the family resizes to
+  22×22 (`:78332`) / the dynamite to 200×200 (`:78389-78394`) FIRST (the box
+  the dust reads), spawns, and the dynamite recentres to 10×10
+  (`:78437-78440`). Every resize keeps the centre fixed, so the crater walk
+  reads the same centre — the tile-break behaviour is unchanged.
+* **Draw order.** Per dust: the `NewDust` internals (no explicit argument
+  draws in these arms), then the post-writes (`velocity *= 1.4/5/3`,
+  `noGravity`). The four/eight corner-gore TYPE draws (`Next(61,64)`) stay on
+  the stream AFTER the dust loops — g16 wave-O's `bomb_corner_gores` /
+  `big_bomb_gores` (unwired) replace them at the merge, the same stream slot;
+  the `Next(10,31)`/`Next(-20,21)` kicks are the gore lane's internals.
+* **The dead `type == 773` override** (`:78334`, `num84 = 59`) is kept as the
+  caller's constant 6: 773 takes the `:78211` scarab branch first, so the
+  override is unreachable in the C# too (the coverage census's scarab five
+  are batch B's staged emitter).
+
+2 draw-mirror witnesses (`w4_e3_cov_bomb_family_dust_counts_and_gore_types`,
+`w4_e3_cov_big_bomb_dust_counts_and_pair_shape`) WRITTEN NOT RUN — the
+record-for-record twin-stream mirrors + the gore-type stream pins.

@@ -20361,8 +20361,9 @@ impl ProjectilePool {
             // projectile dies.
             if self.slots[i].detonated {
                 // S1-P-i16 — the rocket death census rides the pass's
-                // `UpdateProjectiles` stream (the thrown bombs keep their
-                // frozen zero-rng `explode_bomb` path).
+                // `UpdateProjectiles` stream; W4-e3 coverage phase: the
+                // thrown bombs' dust tail joins it (the frozen zero-rng
+                // path keeps only the damage_pve stand-in).
                 if is_launcher_rocket(self.slots[i].kind) {
                     let luck = player.as_deref().map(|p| p.luck_state.luck).unwrap_or(0.0);
                     self.explode_rocket(
@@ -20375,7 +20376,12 @@ impl ProjectilePool {
                         local_owner,
                     );
                 } else {
-                    self.explode_bomb(i, world, npcs);
+                    // W4-e3 coverage phase — the thrown-bomb dust tail now
+                    // rides the pass's stream + the live pool (the
+                    // `explode_rocket` precedent); the frozen zero-rng
+                    // M4-PROJ-9 path keeps only its `damage_pve`
+                    // FastRandom(0) stand-in.
+                    self.explode_bomb(i, world, npcs, rng, dust, dust_ctx);
                 }
             }
             // The per-sub-step `Damage()` calls (`Projectile.cs:17078`) moved
@@ -22325,9 +22331,25 @@ impl ProjectilePool {
 
     /// `Kill()`'s bomb path: `PrepareBombToBlow` (`Projectile.cs:46770-
     /// 46844`) resizes the box and re-arms the damage, `Damage()` walks the
-    /// NPCs through the resized box, `Kill_ExplodeTiles` (`:77265-77380`)
-    /// digs the radius circle, and the slot deactivates.
-    fn explode_bomb(&mut self, slot: usize, world: &mut World, npcs: &mut [Npc]) {
+    /// NPCs through the resized box, `Kill_Bombs_DoUsualKillCode`
+    /// (`:78329-78448`) resizes again + spawns the family dust (W4-e3
+    /// coverage phase — the `:78340/78345/78348` bomb-family + the
+    /// `:78407/78412/78415` big-bomb sites, the smallest unclaimed window;
+    /// docs/research/125-proj-dust-coverage.md), `Kill_ExplodeTiles`
+    /// (`:77265-77380`) digs the radius circle, and the slot deactivates.
+    /// The dust rides the pass's `UpdateProjectiles` stream (the
+    /// `explode_rocket` census precedent); the `damage_pve` FastRandom(0)
+    /// stand-in stays its own documented deviation. The gore TYPE draws
+    /// stay on the stream (the bodies + kicks are g16 wave-O's keep-one).
+    fn explode_bomb(
+        &mut self,
+        slot: usize,
+        world: &mut World,
+        npcs: &mut [Npc],
+        rng: &mut dyn DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         // S1-P-i28 — the grenades (30/397/517) resize to 128×128 and set
         // knockback 8 but KEEP their damage (`PrepareBombToBlow`
         // `Projectile.cs:46799-46803` — no `damage =` line), unlike the bombs
@@ -22369,6 +22391,49 @@ impl ProjectilePool {
             None,
             &mut tr_core::tile_light::FastRandom::new(0),
         );
+        // W4-e3 coverage phase — `Kill_Bombs_DoUsualKillCode`'s dust tail
+        // (`Projectile.cs:78329-78448`), between `Damage()` and
+        // `Kill_ExplodeTiles` exactly as the C# `Kill()` orders it. The
+        // bomb family (`:78329` list; the port's gate admits
+        // 28/37/516/519 + the grenades 30/397/517) resizes to 22×22
+        // (`:78332`) then spawns the 20+10×2 dust; the dynamite 29
+        // (`:78384` list) resizes to 200×200 (`:78389-78394`) then spawns
+        // the 50+80×2 dust and recentres to 10×10 (`:78437-78440`). The
+        // resize keeps the centre fixed, so the crater walk below reads
+        // the same centre. The 75/102/164 + 108/470/637/1002/1086/1087
+        // halves of the C# lists are cited skips (unrowed / the gate
+        // refuses them — the coverage census).
+        {
+            let kind = self.slots[slot].kind;
+            let big = kind == DYNAMITE;
+            let size = if big { 200.0 } else { 22.0 };
+            let p = &mut self.slots[slot];
+            let cx = p.pos.x + p.w * 0.5;
+            let cy = p.pos.y + p.h * 0.5;
+            p.w = size;
+            p.h = size;
+            p.pos = Vec2::new(cx - size * 0.5, cy - size * 0.5);
+            let mut d = crate::projectile_dust::ProjDust {
+                pool: dust,
+                ctx: dust_ctx,
+                rng: &mut *rng,
+            };
+            if big {
+                crate::projectile_dust::big_bomb_dust(&self.slots[slot], world, &mut d);
+            } else {
+                crate::projectile_dust::bomb_family_dust(&self.slots[slot], world, &mut d);
+            }
+            if big {
+                // `:78437-78447` — the dynamite recentres to 10×10 (the
+                // 1086/1087 22×22 half is unrowed, cited).
+                let p = &mut self.slots[slot];
+                let cx = p.pos.x + p.w * 0.5;
+                let cy = p.pos.y + p.h * 0.5;
+                p.w = 10.0;
+                p.h = 10.0;
+                p.pos = Vec2::new(cx - 5.0, cy - 5.0);
+            }
+        }
         // S1-P-i28 — `Kill_ExplodeTiles` (`Projectile.cs:77265-77296`): the
         // grenades (30/397/517) take the `ExplodeCrackedTiles` arm
         // (`:77271-77295` → `:78758-78778`) — ONLY cracked-brick tiles in the

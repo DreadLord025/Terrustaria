@@ -1147,6 +1147,151 @@ pub(crate) fn star_slash_976(p: &Projectile, world: &World, d: &mut ProjDust) {
 }
 
 // ---------------------------------------------------------------------------
+// Coverage phase — the `Kill_Bombs_DoUsualKillCode` dust tail
+// (`Projectile.cs:78211-78533`, 15 sites :78227-78508). THE smallest
+// genuinely unclaimed window (docs/research/125-proj-dust-coverage.md):
+// g65's Kill() span ends at :77262, g16 owns only the GORE sites here
+// (waves M/O leave "the dust loops before each" to the dust lane), main's
+// `rocket_kill_census` covers :77648-78210 only.
+//
+// The e3 emitter pattern: argument draws FIRST (the C# evaluates arguments
+// before the call), then the `NewDust` internals inside the pool, then the
+// post-spawn writes on the returned slot (the sentinel included). The gore
+// siblings' TYPE argument draws (`Next(61,64)`, the confetti `Next(276,283)`)
+// stay on the stream — the bodies + kicks are g16's (its wave-O
+// `bomb_corner_gores`/`big_bomb_gores`/`confetti_bomb_gores`/
+// `scarab_bomb_gores` replace the TYPE-only draws at the merge, the same
+// stream slot; the `Next(10,31)`/`Next(-20,21)` kicks join there).
+//
+// `Resize` (`Projectile.cs:22353-22359`) recentres on the OLD centre; the
+// callers resize BEFORE these emitters (the box the dust reads is the
+// resized one). The C#'s `(float)(base.width / 2)` is INTEGER division
+// widened — the port's `((p.w as i32) / 2) as f32` keeps it.
+// ---------------------------------------------------------------------------
+
+/// `:78338-78350` — the bomb family's dust (the C# `:78329` kind list
+/// 28/30/37/75/102/164/397/517/516/519): 20× dust-31 (scale 1.5, ×1.4
+/// velocity), then 10× the pair (dust-`num84` scale 2.5 noGravity ×5 +
+/// scale 1.5 ×3). `num84` is 6 (the C#'s `type == 773` override at `:78334`
+/// is DEAD inside this arm — 773 takes the `:78211` branch first; kept as
+/// the caller's constant). The caller ran `Resize(22, 22)` (`:78332`).
+/// WIRED through `explode_bomb` (the port's kind gate admits
+/// 28/37/516/519 + the grenades 30/397/517; the 75/102/164 halves are
+/// cited — 75 unrowed, 102/164 are blast rows the gate refuses).
+pub(crate) fn bomb_family_dust(p: &Projectile, world: &World, d: &mut ProjDust) {
+    for _ in 0..20 {
+        let idx = d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            31,
+            0.0,
+            0.0,
+            100,
+            Color::default(),
+            1.5,
+        );
+        d.pool.slot_mut(idx).velocity *= 1.4;
+    }
+    for _ in 0..10 {
+        let idx = d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            6,
+            0.0,
+            0.0,
+            100,
+            Color::default(),
+            2.5,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.no_gravity = true;
+        dust.velocity *= 5.0;
+        let idx = d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            6,
+            0.0,
+            0.0,
+            100,
+            Color::default(),
+            1.5,
+        );
+        d.pool.slot_mut(idx).velocity *= 3.0;
+    }
+    // `:78351-78366` — the four corner gores' TYPE arguments (the bodies +
+    // kicks are g16 wave-O's `bomb_corner_gores`, the keep-one).
+    for _ in 0..4 {
+        let _ = d.rng.next_range(61, 64);
+    }
+}
+
+/// `:78405-78417` — the big bomb's dust (the C# `:78384` kind list
+/// 29/108/470/637/1002/1086/1087): 50× dust-31 (scale 2, ×1.4 velocity),
+/// then 80× the pair (dust-6 scale 3 noGravity ×5 + scale 2 ×3). The caller
+/// resized first (the 29: 200×200 `:78389-78394`; the 1086/1087: 240×240
+/// `:78398-78403`; the rest keep the `PrepareBombToBlow` box). WIRED through
+/// `explode_bomb` for the dynamite 29; the 108/470/637/1002/1086/1087 halves
+/// cited (108 rowed but the gate refuses it, the rest unrowed).
+pub(crate) fn big_bomb_dust(p: &Projectile, world: &World, d: &mut ProjDust) {
+    for _ in 0..50 {
+        let idx = d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            31,
+            0.0,
+            0.0,
+            100,
+            Color::default(),
+            2.0,
+        );
+        d.pool.slot_mut(idx).velocity *= 1.4;
+    }
+    for _ in 0..80 {
+        let idx = d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            6,
+            0.0,
+            0.0,
+            100,
+            Color::default(),
+            3.0,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.no_gravity = true;
+        dust.velocity *= 5.0;
+        let idx = d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            6,
+            0.0,
+            0.0,
+            100,
+            Color::default(),
+            2.0,
+        );
+        d.pool.slot_mut(idx).velocity *= 3.0;
+    }
+    // `:78418-78436` — the 2×4 gores' TYPE arguments (g16 wave-O's
+    // `big_bomb_gores` = the wave-I boulder row ×2, the keep-one).
+    for _ in 0..8 {
+        let _ = d.rng.next_range(61, 64);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Witness tests-as-code — WRITTEN NOT RUN (code-only mode, W4-e3 batch 1).
 // Verified by re-reading the cited C# and mirroring every draw through the
 // same pool call on a twin stream; run with
@@ -2164,6 +2309,118 @@ mod tests {
             );
         }
         assert_eq!(active(&pool).len() - before, if gate == 0 { 1 } else { 0 });
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e3 coverage phase — `:78338-78350`: the bomb family's 20× dust-31
+    /// (×1.4 velocity) + 10× the dust-6 pair (2.5 noGravity ×5 / 1.5 ×3),
+    /// then the four gore TYPE draws. The caller resized to 22×22. Mirrored
+    /// record-for-record on a twin stream; the stream after equals the
+    /// mirror's (the four `Next(61,64)` stay). WRITTEN NOT RUN.
+    #[test]
+    fn w4_e3_cov_bomb_family_dust_counts_and_gore_types() {
+        let w = world();
+        let c = ctx();
+        let mut p = proj(28);
+        p.w = 22.0;
+        p.h = 22.0;
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(41);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(41);
+        let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+        bomb_family_dust(&p, &w, &mut d);
+        for _ in 0..20 {
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, p.pos, 22, 22, 31,
+                0.0, 0.0, 100, Color::default(), 1.5,
+            );
+            mpool.slot_mut(idx).velocity *= 1.4;
+        }
+        for _ in 0..10 {
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, p.pos, 22, 22, 6,
+                0.0, 0.0, 100, Color::default(), 2.5,
+            );
+            let md = mpool.slot_mut(idx);
+            md.no_gravity = true;
+            md.velocity *= 5.0;
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, p.pos, 22, 22, 6,
+                0.0, 0.0, 100, Color::default(), 1.5,
+            );
+            mpool.slot_mut(idx).velocity *= 3.0;
+        }
+        for _ in 0..4 {
+            let _ = mirror.next_range(61, 64);
+        }
+        assert_eq!(active(&pool).len(), 40, "20 + 10×2");
+        for i in 0..40 {
+            assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+            assert_eq!(pool.slot(i).scale, mpool.slot(i).scale);
+            assert_eq!(pool.slot(i).no_gravity, mpool.slot(i).no_gravity);
+        }
+        for i in 0..20 {
+            assert_eq!(pool.slot(i).dust_type, 31);
+        }
+        for i in 20..40 {
+            assert_eq!(pool.slot(i).dust_type, 6);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e3 coverage phase — `:78405-78417`: the big bomb's 50× dust-31
+    /// (scale 2, ×1.4) + 80× the dust-6 pair (3 noGravity ×5 / 2 ×3), then
+    /// the eight gore TYPE draws. The caller resized to 200×200 (the
+    /// dynamite). Mirrored; the noGravity alternation pins (every pair's
+    /// FIRST dust). WRITTEN NOT RUN.
+    #[test]
+    fn w4_e3_cov_big_bomb_dust_counts_and_pair_shape() {
+        let w = world();
+        let c = ctx();
+        let mut p = proj(29);
+        p.w = 200.0;
+        p.h = 200.0;
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(43);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(43);
+        let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+        big_bomb_dust(&p, &w, &mut d);
+        for _ in 0..50 {
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, p.pos, 200, 200, 31,
+                0.0, 0.0, 100, Color::default(), 2.0,
+            );
+            mpool.slot_mut(idx).velocity *= 1.4;
+        }
+        for _ in 0..80 {
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, p.pos, 200, 200, 6,
+                0.0, 0.0, 100, Color::default(), 3.0,
+            );
+            let md = mpool.slot_mut(idx);
+            md.no_gravity = true;
+            md.velocity *= 5.0;
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, p.pos, 200, 200, 6,
+                0.0, 0.0, 100, Color::default(), 2.0,
+            );
+            mpool.slot_mut(idx).velocity *= 3.0;
+        }
+        for _ in 0..8 {
+            let _ = mirror.next_range(61, 64);
+        }
+        assert_eq!(active(&pool).len(), 210, "50 + 80×2");
+        for i in 0..210 {
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+            assert_eq!(pool.slot(i).scale, mpool.slot(i).scale);
+        }
+        for i in 50..210 {
+            // The pair's first dust (even offset) carries noGravity.
+            assert_eq!(pool.slot(i).no_gravity, (i - 50) % 2 == 0);
+        }
         assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
     }
 
