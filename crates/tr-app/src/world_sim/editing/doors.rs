@@ -216,7 +216,8 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
         edit::TileInteraction::HitSwitch { x, y } => {
             // `Player.cs:32174-32178`: the used tile is a lever (132), a
             // switch (136) or a timer (144) — `Wiring.HitSwitch` fires and
-            // the click is consumed.
+            // the click is consumed. The §8.1 stamp first.
+            crate::world_sim::wiring::stamp_wiring_entity_boxes(app);
             app.wiring.hit_switch(&mut app.world, *x, *y);
             // S1-E-21i — the Mech-28 click (`Wiring.cs:285`/`:310`/`:375`):
             // the pitch draw rides the `UpdatePlayers` stream — the tile
@@ -238,6 +239,8 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
             }
+            // The §8.2 echoes: SP discards (the netMode-0 return).
+            let _ = app.wiring.take_door_echoes();
             app.send_hit_switch(*x, *y); // `:32178`/`:32226`/`:32340`
             app.world_key = None;
             return true;

@@ -4646,6 +4646,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // `app.world` borrows (and the `player` borrow) release.
     let mut switch_sends: Vec<(i32, i32)> = Vec::new();
     {
+        // The §8.1 stamp (parts form — the loop below re-borrows npcs):
+        // an NPC-tripped plate can shift a wired trapdoor/gate.
+        app.wiring.set_entity_boxes(
+            crate::world_sim::wiring::collect_entity_boxes(
+                app.player.as_deref(),
+                &app.npcs,
+                &app.remote_players,
+            ),
+        );
         let mut wiring = &mut app.wiring;
         let world = &mut app.world;
         let audio = &mut app.audio;
@@ -4684,6 +4693,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             for (open, px, py) in wiring.take_door_cues() {
                 audio.play_door_sound(open, px as f32, py as f32, npcs_rng);
             }
+            // The §8.2 echoes: SP discards (the netMode-0 return).
+            let _ = wiring.take_door_echoes();
         }
     }
     // The `59` sends after the last `player` borrow (`Collision.cs:3304`).

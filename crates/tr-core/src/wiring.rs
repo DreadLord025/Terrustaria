@@ -224,6 +224,14 @@ pub struct Wiring {
     snowball_cannon_cooldown: i32,
     /// `_wireSkip`: tiles already `HitWireSingle`'d in the running flood.
     skip: HashSet<(i32, i32)>,
+    /// The entity half of `Collision.EmptyTile(ignoreTiles: true)`
+    /// (`Collision.cs:1359-1378`, research/95 §8.1): the live player/NPC
+    /// rectangles `(x, y, w, h)` in pixels, snapshotted by the app right
+    /// before every trip entry (`stamp_wiring_entity_boxes`). tr-core has
+    /// no entity store — the C# reads `Main.player`/`Main.npc` at gate
+    /// time; the snapshot is the port's seam (the g4 NPC-bash closure is
+    /// the reference shape). Empty = always-free (the old closure).
+    entity_boxes: Vec<(f32, f32, f32, f32)>,
     /// `_toProcess`: pending multi-trigger counts — a wire reached through N
     /// paths must fire once and then stay silent for N-1 re-entries
     /// (`HitWire`'s `Add(point, 4)` + the decrement, `:915-950`).
@@ -313,6 +321,14 @@ pub struct Wiring {
     /// the [`Self::take_switch_clicks`] seam; the app drains these beside
     /// the switch clicks.
     door_cues: Vec<(bool, i32, i32)>,
+    /// `NetMessage.SendData(19)` door/gate/trapdoor echoes (research/95
+    /// §8.2): `(number, x, y, number4)` computed verbatim at the five
+    /// C# sites (`Wiring.cs:1450/:1458/:1465/:1480/:1485`) — the subtype
+    /// and direction the g48 apply lane's `19 ToggleDoorState` dispatch
+    /// reads (`MessageBuffer.cs:1299-1334`). SP is a no-op sink (the C#
+    /// `SendData` returns at `Main.netMode == 0`, `NetMessage.cs:341-344`);
+    /// the MP send attaches with the g48b codec lane (contract note).
+    door_echoes: Vec<(i32, i32, i32, i32)>,
     /// `HitWireSingle`'s case-314 switch-track flips (`Wiring.cs:1744-1748` →
     /// `Minecart.FlipSwitchTrack`, `Minecart.cs:1296-1319`): the hit cell after
     /// `CheckMech(5)` passes. The app owns the track-frame table and the flip.
@@ -485,6 +501,32 @@ impl Wiring {
         self.in_pumps.clear();
         self.out_pumps.clear();
         self.mechs.clear();
+    }
+
+    /// The §8.1 entity-half stamp (research/95 final): the app copies the
+    /// live player/NPC rectangles `(x, y, w, h)` in pixels here right
+    /// before each `trip_wire`/`hit_switch`/plate poke — the C# gate reads
+    /// `Main.player`/`Main.npc` live at `Collision.EmptyTile` time
+    /// (`Collision.cs:1366-1377`); the flood never moves entities itself,
+    /// so a per-entry snapshot is order-identical. The dead/ghost player
+    /// gate (`:1368`) is the app's stamp filter (it skips dead players).
+    pub fn set_entity_boxes(&mut self, boxes: Vec<(f32, f32, f32, f32)>) {
+        self.entity_boxes = boxes;
+    }
+
+    /// `Collision.EmptyTile(i, j, ignoreTiles: true)` (`Collision.cs:
+    /// 1359-1378`) over the stamped boxes: the 16×16 cell rectangle vs
+    /// every entity rectangle, XNA `Rectangle.Intersects` semantics
+    /// (strict overlap — touching edges are free; the int casts match
+    /// `new Rectangle((int)position.X, …)`). Returns whether the cell is
+    /// BLOCKED (the closure convention of the door/shift seams).
+    fn cell_blocked_by_entity(&self, x: i32, y: i32) -> bool {
+        let (x0, y0) = (x * 16, y * 16);
+        let (x1, y1) = (x0 + 16, y0 + 16);
+        self.entity_boxes.iter().any(|&(bx, by, bw, bh)| {
+            let (bx, by, bw, bh) = (bx as i32, by as i32, bw as i32, bh as i32);
+            x0 < bx + bw && x1 > bx && y0 < by + bh && y1 > by
+        })
     }
 
     /// `Wiring.UpdateMech` (`Wiring.cs:145-258`), run once per world update:
@@ -841,6 +883,15 @@ impl Wiring {
     /// seam).
     pub fn take_door_cues(&mut self) -> Vec<(bool, i32, i32)> {
         std::mem::take(&mut self.door_cues)
+    }
+
+    /// Drains the `SendData(19)` echoes (see [`Self::door_echoes`]) —
+    /// `(number, x, y, number4)` in queue order. The MP host relays them
+    /// through the g48 apply lane's `19` codec; SP discards (the C#
+    /// netMode-0 return). The tall-gate echo queues UNCONDITIONALLY
+    /// (`Wiring.cs:1458` sits after the ignored `ShiftTallGate` result).
+    pub fn take_door_echoes(&mut self) -> Vec<(i32, i32, i32, i32)> {
+        std::mem::take(&mut self.door_echoes)
     }
 
     /// Drains the case-314 switch-track flip requests (`Wiring.cs:1744-1748`).
@@ -2598,11 +2649,10 @@ impl Wiring {
             // 1453`): `ShiftTrapdoor(playerAbove: true)` first, then
             // `playerAbove: false` on refusal (`:1443-1446`) — the second
             // attempt sees the first's validate-kills, exactly as the C#.
-            // The `SendData(19)` echo (`:1450`) is Stage-2. The entity half
-            // of `Collision.EmptyTile` is the always-free closure — tr-core
-            // carries no entity store (the `smart_cursor.rs:312` precedent,
-            // ANALYSIS note); the kill guard rides the flood's own
-            // `CanKillTile` slice (the DeActive keep-one).
+            // The entity half of `Collision.EmptyTile` rides the stamped
+            // boxes (the §8.1 closure — the app snapshots the live
+            // player/NPC rectangles before the trip); the kill guard rides
+            // the flood's own `CanKillTile` slice (the DeActive keep-one).
             386 | 387 => {
                 let mut drops = Vec::new();
                 let mut skips = Vec::new();
@@ -2614,25 +2664,37 @@ impl Wiring {
                     j,
                     true,
                     -1,
-                    &|_, _| false,
+                    &|x, y| self.cell_blocked_by_entity(x, y),
                     &|w, x, y| self.can_kill_tile(w, x, y),
                     &mut drops,
                     if self.running { Some(&mut skips) } else { None },
                     &mut cues,
                 );
-                if !ok {
-                    crate::edit::shift_trapdoor(
+                // `bool value = type == 387` (`:1442`) — the ORIGINAL kind;
+                // `num66 = ShiftTrapdoor(above: true).ToInt()` (`:1443`),
+                // then `-ShiftTrapdoor(above: false).ToInt()` on refusal
+                // (`:1446`): +1 above-success, −1 below-success, 0 both-fail.
+                let mut num66 = i32::from(ok);
+                if num66 == 0 {
+                    let ok2 = crate::edit::shift_trapdoor(
                         world,
                         i,
                         j,
                         false,
                         -1,
-                        &|_, _| false,
+                        &|x, y| self.cell_blocked_by_entity(x, y),
                         &|w, x, y| self.can_kill_tile(w, x, y),
                         &mut drops,
                         if self.running { Some(&mut skips) } else { None },
                         &mut cues,
                     );
+                    num66 = -i32::from(ok2);
+                }
+                // `SendData(19, …, 3 - value.ToInt(), i, j, num66)`
+                // (`:1448-1451`) — success-only, the §8.2 echo queue.
+                if num66 != 0 {
+                    let value = i32::from(kind == 387);
+                    self.door_echoes.push((3 - value, i, j, num66));
                 }
                 self.actuation_drops.extend(drops);
                 for cell in skips {
@@ -2642,7 +2704,8 @@ impl Wiring {
             }
             // The tall-gate pair (388 closed / 389 open, `Wiring.cs:1454-
             // 1460`): `ShiftTallGate(i, j, type == 389)` — the result is
-            // ignored (the C# sends `19` unconditionally; Stage-2 here).
+            // ignored (the C# sends `19` unconditionally). The entity half
+            // rides the stamped boxes (the §8.1 closure).
             388 | 389 => {
                 let mut drops = Vec::new();
                 let mut skips = Vec::new();
@@ -2653,11 +2716,15 @@ impl Wiring {
                     j,
                     kind == 389,
                     false,
-                    &|_, _| false,
+                    &|x, y| self.cell_blocked_by_entity(x, y),
                     &mut drops,
                     if self.running { Some(&mut skips) } else { None },
                     &mut cues,
                 );
+                // `SendData(19, …, 4 + flag4.ToInt(), i, j)` (`:1458`) —
+                // UNCONDITIONAL (the shift result is ignored), flag4 =
+                // the original kind was the open gate (389).
+                self.door_echoes.push((4 + i32::from(kind == 389), i, j, 0));
                 self.actuation_drops.extend(drops);
                 for cell in skips {
                     self.skip.insert(cell);
@@ -2670,12 +2737,13 @@ impl Wiring {
             // SkipWire ×3 (`:31895-31899`, `Wiring.running`-gated) joins the
             // flood's skip set through the f11 §1 Option seam (the gate
             // lives at the call site). The `PlaySound(9)` cue (`:31908`)
-            // queues on success; the `SendData(19)` echo is Stage-2.
+            // queues on success; the `SendData(19, …, 1, i, j)` echo
+            // (`:1465`) joins the §8.2 queue on the same success gate.
             11 => {
                 let mut drops = Vec::new();
                 let mut skips = Vec::new();
-                // tr-core carries no entity store — `forced: true` skips
-                // the gate entirely, so the closure is never consulted.
+                // `forced: true` skips the entity gate entirely, so the
+                // closure is never consulted (the always-free stand-in).
                 if crate::edit::close_door(
                     world,
                     i,
@@ -2690,6 +2758,7 @@ impl Wiring {
                         self.skip.insert(cell);
                     }
                     self.door_cues.push((false, i * 16, j * 16));
+                    self.door_echoes.push((1, i, j, 0)); // `:1465`
                 }
             }
             // The closed door (10, `Wiring.cs:1469-1488`): one
@@ -2719,22 +2788,31 @@ impl Wiring {
                     if self.running { Some(&mut skips) } else { None },
                 );
                 // The retry is unconditional (`:1476-1478`) — the first
-                // attempt's validate-kills may have cleared the cell.
-                let opened = opened
-                    || crate::edit::open_door(
-                        world,
-                        i,
-                        j,
-                        -num67,
-                        &mut drops,
-                        if self.running { Some(&mut skips) } else { None },
-                    );
+                // attempt's validate-kills may have cleared the cell. The
+                // C# echoes the direction of the attempt that SUCCEEDED
+                // (`num67` at `:1485`, `-num67` at `:1480`) — the §8.2
+                // queue carries it as `number4`.
+                let dir = if opened {
+                    Some(num67)
+                } else if crate::edit::open_door(
+                    world,
+                    i,
+                    j,
+                    -num67,
+                    &mut drops,
+                    if self.running { Some(&mut skips) } else { None },
+                ) {
+                    Some(-num67)
+                } else {
+                    None
+                };
                 self.actuation_drops.extend(drops);
-                if opened {
+                if let Some(dir) = dir {
                     for cell in skips {
                         self.skip.insert(cell);
                     }
                     self.door_cues.push((true, i * 16, j * 16));
+                    self.door_echoes.push((0, i, j, dir)); // `:1480`/`:1485`
                 }
             }
             // The announcement box (425, `Wiring.cs:1177-1236`): the 2×2
@@ -3896,6 +3974,61 @@ pub fn try_toggle_light(
         _ => return false,
     }
     true
+}
+
+/// `ItemID.Sets.ItemsThatShouldNotBeInInventory` (`ItemID.cs:345`): the
+/// hearts/stars/mana pickups, the seasonal souls and the Defender Medals —
+/// the hopper never grabs them (`Wiring.cs:2612`/`:2667`). ONE copy: the
+/// app hopper's old `HOPPER_BANNED` list aliases this (the keep-one rule).
+pub const ITEMS_THAT_SHOULD_NOT_BE_IN_INVENTORY: &[u16] = &[
+    58, 184, 1734, 1735, 1867, 1868, 3453, 3454, 3455, 4143, 5013, 6135, 6136,
+];
+
+/// `Wiring.IsHopperInRangeOf(WorldItem)` (`Wiring.cs:2610-2636`): whether
+/// the drop's hitbox inflated by the hopper grab half-size (192/2 = 96 px
+/// per side, `HopperGrabHitboxSize` `:3429`) covers an ACTIVE wired chest
+/// (21/467, `tile.anyWire()` — the e20-unique [`WireState::any`] helper's
+/// first consumer, research/95 §8.9). The banned-set gate runs FIRST
+/// (`:2612-2615`). `ToTileCoordinates` is `(int)v >> 4` (`Utils.cs:1807-
+/// 1810`, arithmetic shift); `ClampedInWorld` clamps BOTH axes against
+/// `Main.maxTilesX` (`Utils.cs:1855-1858` — the C# uses maxTilesX for Y
+/// too, kept verbatim). The only C# caller is `WorldItem.FindOwner`
+/// (`WorldItem.cs:243`, the MP reservation refusal — a drop a hopper can
+/// reach is never reserved for a distant player); that owner-scan is
+/// unported (the port's items ride `net_reserved`), so this lands
+/// PORTED-UNWIRED with the FindOwner follow-up (contract note).
+pub fn is_hopper_in_range_of(
+    world: &World,
+    kind: u16,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+) -> bool {
+    if ITEMS_THAT_SHOULD_NOT_BE_IN_INVENTORY.contains(&kind) {
+        return false; // `:2612-2615`
+    }
+    // `hitbox.Inflate(96, 96)` (`:2617`): X/Y −96, W/H +192; the corners
+    // cast to int THEN shift (`:2618-2619`).
+    let x0 = ((x as i32) - 96) >> 4;
+    let y0 = ((y as i32) - 96) >> 4;
+    let x1 = ((x as i32) + (w as i32) + 96) >> 4;
+    let y1 = ((y as i32) + (h as i32) + 96) >> 4;
+    // `ClampedInWorld()` — both axes against maxTilesX (the C# shape).
+    let max = world.width - 1;
+    let (x0, x1) = (x0.clamp(0, max), x1.clamp(0, max));
+    let (y0, y1) = (y0.clamp(0, max), y1.clamp(0, max));
+    for i in x0..=x1 {
+        for j in y0..=y1 {
+            let Some(t) = world.tile(i, j) else {
+                continue; // the C# null-tile guard (`:2625`)
+            };
+            if t.active() && (t.kind == 21 || t.kind == 467) && world.wires.any(i, j) {
+                return true; // `:2628-2631`
+            }
+        }
+    }
+    false
 }
 
 
@@ -8029,5 +8162,150 @@ mod w4_f11_residual_tests {
         assert_eq!(out, None);
         assert_eq!(wires, 5, "the refusal billed nothing");
         assert!(!w.wires.get(10, 20, WireColor::Red));
+    }
+}
+
+#[cfg(test)]
+mod w4_c42_final_seam_tests {
+    //! W4-c42 FINAL — the research/95 §8 seam closures: §8.1 the entity
+    //! boxes gate the wired trapdoor/tall-gate shifts, §8.2 the SendData(19)
+    //! echo queue computes the subtype/direction verbatim, §8.9 the
+    //! IsHopperInRangeOf port. WRITTEN NOT RUN (code-only lane).
+
+    use super::*;
+    use crate::tile::{FLAG_ACTIVE, Tile};
+
+    fn world() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    fn put(w: &mut World, x: i32, y: i32, kind: u16, fx: i16, fy: i16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile { kind, frame_x: fx, frame_y: fy, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    /// §8.1 — a player box over the trapdoor's destination row refuses the
+    /// open (`WorldGen.cs:51466` — `Collision.EmptyTile(x, y+1)`): BOTH
+    /// attempts refuse (the second call re-decodes the same styleX-0
+    /// variant), the body stays closed. The refusal returns BEFORE any
+    /// sound (`:51466` precedes the `:51470` PlaySound) — no cues queue
+    /// (the double-thud shape is the FALL-THROUGH path, not this one).
+    /// The box (160, 336, 20, 42) covers cells (10, 21) and (11, 21) —
+    /// the styleX-0 destination row.
+    #[test]
+    fn c42_the_stamped_player_box_refuses_the_wired_trapdoor_open() {
+        let mut w = world();
+        for col in 0..2i32 {
+            for row in 0..2i32 {
+                put(&mut w, 10 + col, 20 + row, 386, (col * 18) as i16, (row * 18) as i16);
+            }
+        }
+        let mut wiring = Wiring::new();
+        wiring.set_entity_boxes(vec![(160.0, 336.0, 20.0, 42.0)]);
+        wiring.hit_wire_single(&mut w, 10, 20);
+        assert!(w.tile(10, 20).is_some_and(|t| t.active() && t.kind == 386), "still closed");
+        // No cue: the entity gate precedes every PlaySound site.
+        assert!(wiring.take_door_cues().is_empty());
+        // No echo on the both-fail path (`num66 == 0`, `:1448`).
+        assert!(wiring.take_door_echoes().is_empty());
+        // Clear the boxes: the same trip opens (the gate was the refusal).
+        wiring.set_entity_boxes(Vec::new());
+        wiring.hit_wire_single(&mut w, 10, 20);
+        assert_eq!(w.tile(10, 21).unwrap().kind, 387, "the open ran");
+    }
+
+    /// §8.1 — the tall gate's occupancy gate (`WorldGen.cs:51755-51761`):
+    /// a box over any column cell refuses the shift; the C# still queues
+    /// the UNCONDITIONAL `19` echo (`Wiring.cs:1458`).
+    #[test]
+    fn c42_the_stamped_box_refuses_the_wired_tall_gate_but_the_echo_queues() {
+        let mut w = world();
+        for (k, y) in (14..=18).enumerate() {
+            put(&mut w, 10, y, 388, 0, [0i16, 20, 38, 56, 74][k]);
+        }
+        let mut wiring = Wiring::new();
+        // A box over the gate's third row (y 16 → 256..272).
+        wiring.set_entity_boxes(vec![(160.0, 258.0, 20.0, 42.0)]);
+        wiring.hit_wire_single(&mut w, 10, 16);
+        assert_eq!(w.tile(10, 16).unwrap().kind, 388, "the shift refused");
+        assert!(wiring.take_door_cues().is_empty(), "no cue before the gate passes");
+        // `4 + flag4` = 4 (the original kind was the CLOSED gate 388).
+        assert_eq!(wiring.take_door_echoes(), vec![(4, 10, 16, 0)]);
+    }
+
+    /// §8.2 — the door echoes: the forced close queues `(1, i, j, 0)`
+    /// (`:1465`); the open queues `(0, i, j, dir)` with the direction of
+    /// the attempt that SUCCEEDED (`:1480`/`:1485`); the trapdoor success
+    /// queues `(3 - value, i, j, num66)` (`:1450`).
+    #[test]
+    fn c42_the_door_echo_queue_computes_the_send_data_19_fields() {
+        // The open pair closes: echo (1, hit, 0).
+        let mut w = world();
+        for row in 0..3i32 {
+            put(&mut w, 10, 17 + row, 11, 0, (row * 18) as i16);
+            put(&mut w, 11, 17 + row, 11, 18, (row * 18) as i16);
+        }
+        let mut wiring = Wiring::new();
+        wiring.hit_wire_single(&mut w, 11, 18);
+        assert_eq!(wiring.take_door_echoes(), vec![(1, 11, 18, 0)]);
+        // The closed door opens: echo (0, hit, ±1) — the direction matches
+        // the lean column (right lean = +1 opens into x+1, left = −1).
+        let mut w = world();
+        for row in 0..3i32 {
+            put(&mut w, 10, 17 + row, 10, 0, (row * 18) as i16);
+        }
+        let mut wiring = Wiring::new();
+        wiring.seed_rand(42);
+        wiring.hit_wire_single(&mut w, 10, 18);
+        let echoes = wiring.take_door_echoes();
+        assert_eq!(echoes.len(), 1);
+        let (number, x, y, dir) = echoes[0];
+        assert_eq!((number, x, y), (0, 10, 18));
+        let right = w.tile(11, 17).is_some_and(|t| t.active() && t.kind == 11);
+        assert_eq!(dir, if right { 1 } else { -1 }, "the echo carries the open direction");
+        // The closed trapdoor (386) opens ABOVE-first: value = 0, num66 =
+        // +1 → echo (3, hit, +1).
+        let mut w = world();
+        for col in 0..2i32 {
+            for row in 0..2i32 {
+                put(&mut w, 10 + col, 20 + row, 386, (col * 18) as i16, (row * 18) as i16);
+            }
+        }
+        let mut wiring = Wiring::new();
+        wiring.hit_wire_single(&mut w, 10, 20);
+        assert_eq!(wiring.take_door_echoes(), vec![(3, 10, 20, 1)]);
+        // The OPEN trapdoor (387) closes: value = 1 → number 2; the
+        // above-close succeeds → num66 = +1.
+        let mut wiring2 = Wiring::new();
+        wiring2.hit_wire_single(&mut w, 10, 21);
+        assert_eq!(wiring2.take_door_echoes(), vec![(2, 10, 21, 1)]);
+    }
+
+    /// §8.9 — `IsHopperInRangeOf` (`Wiring.cs:2610-2636`): the 96-px
+    /// inflated hitbox scans for an ACTIVE WIRED chest; the banned set
+    /// refuses before any scan; an unwired chest never counts.
+    #[test]
+    fn c42_is_hopper_in_range_of_scans_the_inflated_box_for_wired_chests() {
+        let mut w = world();
+        // A wired chest at (20, 20); the drop at (14*16, 20*16) = (224,
+        // 320): the inflated box x 128..334 → tiles 8..20 — the chest's
+        // column 20 is the box's LAST column (inclusive `<=`, `:2620`).
+        put(&mut w, 20, 20, 21, 0, 0);
+        w.wires.set(20, 20, WireColor::Blue, true);
+        assert!(is_hopper_in_range_of(&mut w, 7, 224.0, 320.0, 14.0, 14.0));
+        // One tile further left: x 208 → box 112..318 → tiles 7..19 — the
+        // chest at 20 is OUT (the strict scan window).
+        assert!(!is_hopper_in_range_of(&mut w, 7, 208.0, 320.0, 14.0, 14.0));
+        // The wire is required (`tile.anyWire()`, `:2628`).
+        w.wires.set(20, 20, WireColor::Blue, false);
+        assert!(!is_hopper_in_range_of(&mut w, 7, 224.0, 320.0, 14.0, 14.0));
+        w.wires.set(20, 20, WireColor::Blue, true);
+        // The banned set refuses FIRST (a heart 58 never scans).
+        assert!(!is_hopper_in_range_of(&mut w, 58, 224.0, 320.0, 14.0, 14.0));
+        // An INACTIVE chest never counts (`:2625`).
+        let i = w.index(20, 20);
+        w.tiles[i].flags &= !FLAG_ACTIVE;
+        assert!(!is_hopper_in_range_of(&mut w, 7, 224.0, 320.0, 14.0, 14.0));
     }
 }

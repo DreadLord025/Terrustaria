@@ -1122,6 +1122,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // `Player.cs:28274-28275`: the switch-tile bridge — the player's
             // box reaching a pressure plate trips the wiring (the C#'s call
             // sits right after `FloorVisuals`, inside `Player.Update`).
+            // The §8.1 stamp (parts form — inside the player borrow): the
+            // trip can shift a wired trapdoor/gate.
+            app.wiring.set_entity_boxes(
+                crate::world_sim::wiring::collect_entity_boxes(
+                    Some(&*p),
+                    &app.npcs,
+                    &app.remote_players,
+                ),
+            );
             let switch = crate::collision::switch_tiles(
                 &mut app.wiring,
                 &mut app.world,
@@ -1167,9 +1176,19 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
             }
+            // The §8.2 echoes: SP discards (the netMode-0 return).
+            let _ = app.wiring.take_door_echoes();
             // `PressurePlateHelper.UpdatePlayerPosition(this)`
             // (`Player.cs:28276`): the weighted pressure plates (428) the
-            // player stands on.
+            // player stands on. The §8.1 stamp (parts form): the poke can
+            // shift a wired trapdoor/gate on the plate's line.
+            app.wiring.set_entity_boxes(
+                crate::world_sim::wiring::collect_entity_boxes(
+                    Some(&*p),
+                    &app.npcs,
+                    &app.remote_players,
+                ),
+            );
             crate::world_sim::wiring::update_pressure_plates(
                 &mut app.wiring,
                 &mut app.world,
@@ -1201,6 +1220,8 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.rngs.stream(crate::app::RngKey::UpdatePressurePlates),
                 );
             }
+            // The §8.2 echoes: SP discards (the netMode-0 return).
+            let _ = app.wiring.take_door_echoes();
             if run_eligible && p.vy == 0.0 {
                 run_pixels += (p.x - run_x0).abs();
             }
@@ -1344,6 +1365,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // `Wiring.HitSwitch` at the magnet tile and announces it as `59`
             // (`Minecart.cs:1287`).
             if let Some((i, j)) = p.take_switch_trip() {
+                // The §8.1 stamp (parts form): the track trip can shift a
+                // wired trapdoor/gate on the magnet's line.
+                app.wiring.set_entity_boxes(
+                    crate::world_sim::wiring::collect_entity_boxes(
+                        Some(&*p),
+                        &app.npcs,
+                        &app.remote_players,
+                    ),
+                );
                 app.wiring.hit_switch(&mut app.world, i, j);
                 switch_sends.push((i, j));
                 // S1-E-21i — the track switch's Mech-28 click rides the
@@ -1365,6 +1395,8 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                         app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                     );
                 }
+                // The §8.2 echoes: SP discards (the netMode-0 return).
+                let _ = app.wiring.take_door_echoes();
             }
             // The wheel-spark drain: the tick queued fully-rolled dust-213
             // particles (`Minecart.WheelSparks` → `DelegateMethods.Minecart.Sparks`)

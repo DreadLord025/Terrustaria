@@ -12,6 +12,46 @@ use crate::app::App;
 use crate::npc::Npc;
 use crate::npc::NpcKind;
 
+/// The research/95 §8.1 entity-half stamp: copies the live player/NPC
+/// rectangles into the wiring engine right before a trip entry
+/// (`hit_switch`/`trip_wire`/plate poke/sensor scan/`update`). The C#
+/// `Collision.EmptyTile(ignoreTiles: true)` reads `Main.player`/`Main.npc`
+/// at gate time (`Collision.cs:1366-1377`); the flood never moves entities
+/// itself (the teleport events drain AFTER the step), so a per-entry
+/// snapshot is order-identical. The dead-player gate (`:1368`) filters the
+/// local player; the port has no ghost flag (`player.rs` note). The NPC
+/// box is `Npc::size()` (the live override — King Slime's hp-scaled body,
+/// the `Rectangle((int)position.X, …, width, height)` truth). MP peers
+/// join with their `PlayerNet` position (`hp > 0` stands in for the C#
+/// `active && !dead` — `PlayerNet` carries no dead flag, ANALYSIS note).
+pub(crate) fn stamp_wiring_entity_boxes(app: &mut App) {
+    let boxes = collect_entity_boxes(app.player.as_deref(), &app.npcs, &app.remote_players);
+    app.wiring.set_entity_boxes(boxes);
+}
+
+/// The parts form for sites inside a player borrow (the `p` alias borrows
+/// `app.player` only — the wiring/npcs/peers fields stay disjoint).
+pub(crate) fn collect_entity_boxes(
+    player: Option<&crate::player::Player>,
+    npcs: &[Npc],
+    peers: &std::collections::HashMap<u32, crate::net::PlayerNet>,
+) -> Vec<(f32, f32, f32, f32)> {
+    let mut boxes = Vec::new();
+    if let Some(p) = player.filter(|p| !p.dead) {
+        boxes.push((p.x, p.y, crate::player::WIDTH, p.height));
+    }
+    for n in npcs {
+        let (w, h) = n.size();
+        boxes.push((n.x, n.y, w, h));
+    }
+    for peer in peers.values() {
+        if peer.hp > 0 {
+            boxes.push((peer.x, peer.y, crate::player::WIDTH, crate::player::HEIGHT));
+        }
+    }
+    boxes
+}
+
 /// `PressurePlateHelper.UpdatePlayerPosition`
 /// (`PressurePlateHelper.cs:60-100`): the **weighted** pressure plates
 /// (428) — the ones that stay pressed while the player stands on them.
@@ -109,6 +149,9 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
     // `&mut App`, which the wiring closure holds across its body.
     let mut party_credits = 0;
     app.wiring_step.tick(dt.min(0.25), |_| {
+        // The §8.1 stamp: the timer re-trips inside `update` can shift
+        // trapdoors/gates — the entity gate reads the live boxes.
+        stamp_wiring_entity_boxes(app);
         app.wiring.update(&mut app.world);
         // `Wiring.Teleport()` per registered pad pair (`Wiring.cs:3120-3178`):
         // every living player/NPC standing in a pad's 48×48 box moves to the
@@ -380,6 +423,10 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                 app.rngs.stream(crate::app::RngKey::UpdateWorldGen),
             );
         }
+        // The §8.2 echoes: SP discards (the C# `SendData` netMode-0
+        // return, `NetMessage.cs:341-344`); the MP relay attaches with
+        // the g48b `19` codec lane (contract note).
+        let _ = app.wiring.take_door_echoes();
     });
     for _ in 0..party_credits {
         let _ = app.notify_progression_net(25);
@@ -581,10 +628,10 @@ fn spear_cap_allows(app: &App, req: &tr_core::wiring::TrapRequest) -> bool {
 
 /// `ItemID.Sets.ItemsThatShouldNotBeInInventory` (`ID/ItemID.cs:345`) — the
 /// hopper's grab gate (`Wiring.cs:2612`/`:2667`). Same set as `chest.rs`'s
-/// `BANNED_IN_INVENTORY` (the save-side air rule).
-const HOPPER_BANNED: &[u16] = &[
-    58, 184, 1734, 1735, 1867, 1868, 3453, 3454, 3455, 4143, 5013, 6135, 6136,
-];
+/// `BANNED_IN_INVENTORY` (the save-side air rule). The W4-c42 final aliases
+/// the core copy (`wiring::ITEMS_THAT_SHOULD_NOT_BE_IN_INVENTORY`, the
+/// `is_hopper_in_range_of` port's gate — one copy, research/95 §8.9).
+const HOPPER_BANNED: &[u16] = tr_core::wiring::ITEMS_THAT_SHOULD_NOT_BE_IN_INVENTORY;
 
 /// `Utils.CoinsCount` (`Utils.cs:1019-1046`): the copper-equivalent value of
 /// the coin slots (71×1, 72×100, 73×10000, 74×1000000). No ignore slots here.

@@ -1159,6 +1159,8 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         // death-achievement window has no port tracker (the achievement
         // needs the player-death wiring; recorded deviation).
         if crate::app::netglue::is_rigged(&app.world, ox, oy) {
+            // The §8.1 stamp: the rigged trip can shift a wired door family.
+            crate::world_sim::wiring::stamp_wiring_entity_boxes(app);
             app.wiring.hit_switch(&mut app.world, x, y);
             // The Mech-28 click the trip queues (`Wiring.cs:339`) rides the
             // `UpdatePlayers` stream — the tile use runs in
@@ -1179,6 +1181,8 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
             }
+            // The §8.2 echoes: SP discards (the netMode-0 return).
+            let _ = app.wiring.take_door_echoes();
             app.send_hit_switch(x, y); // `:33256`
             app.world_key = None;
         }

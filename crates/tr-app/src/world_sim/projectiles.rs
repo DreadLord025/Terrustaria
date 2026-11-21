@@ -612,7 +612,8 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             }
             crate::projectile_ai_golf::GolfEffect::CupScored { hit_location, chat, cue } => {
                 // `Wiring.HitSwitch` + `SendData(59)` (`GolfHelper.cs:105-
-                // 106`) — the cup's tile trip.
+                // 106`) — the cup's tile trip. The §8.1 stamp first.
+                crate::world_sim::wiring::stamp_wiring_entity_boxes(app);
                 app.wiring.hit_switch(&mut app.world, hit_location.0, hit_location.1);
                 app.send_hit_switch(hit_location.0, hit_location.1);
                 // The trip's Mech-28 clicks ride the same stream (the
@@ -633,6 +634,8 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                         app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
                     );
                 }
+                // The §8.2 echoes: SP discards (the netMode-0 return).
+                let _ = app.wiring.take_door_echoes();
                 if let Some(text) = chat {
                     app.chat.new_text(text, crate::chat::COLOR_SERVER_MESSAGE);
                 }
@@ -649,7 +652,9 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             crate::projectile_ai_golf::GolfEffect::PadProbe { pos, old_pos, w, h } => {
                 // `Collision.SwitchTiles(..., 4)` (`Projectile.cs:20367`)
                 // — the projectile pressure-pad call. The switch sends
-                // ride the outcome (`Collision.cs:3304` et al.).
+                // ride the outcome (`Collision.cs:3304` et al.). The §8.1
+                // stamp first (the trip can shift a wired trapdoor/gate).
+                crate::world_sim::wiring::stamp_wiring_entity_boxes(app);
                 let outcome = crate::collision::switch_tiles(
                     &mut app.wiring,
                     &mut app.world,
@@ -682,6 +687,8 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                         app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
                     );
                 }
+                // The §8.2 echoes: SP discards (the netMode-0 return).
+                let _ = app.wiring.take_door_echoes();
             }
             crate::projectile_ai_golf::GolfEffect::PlayerWrites {
                 facing,
