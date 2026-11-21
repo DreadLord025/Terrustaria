@@ -133,4 +133,68 @@ order) HOLD unchanged — the hunk adds no draws. The wall-stick transform
 (`:58875-58905`), the expert web-shot (`:58855-58874`) and `FindFrame`
 (`:73083-73111`/`:73227-73267`) ride the KINDS (d36/g8/d37), not this arm.
 
+## 3. research/88 stalactite keep-one — d106 still owns its half
+
+Tips read: matrix `origin/task/W4-g36-worldgen-missing-a` **`bf7b6bf5b`**
+(09:42; §3.2 unchanged from `6d46f6a54` — the gap-fill touched rows
+105/109 + the merge order, NOT §3.2), d106
+`origin/task/W4-d106-worldgen-passes-6` **`e2c2609c5`** (R5 tip, R4 =
+`29faa0995`).
+
+**d106-tip still owns its half — VERIFIED:**
+- `pass_stalac` (`spider_gem_moss.rs:774`) + the `Stalac` pipeline slot
+  (`pipeline.rs:1152`/`:1428`, vanilla `:22038` after Water Plants) on
+  ONE name-seeded `Streams::pass_unified("Stalac")` (`pipeline.rs:235`,
+  called `:2800`).
+- `place_tight` `pub(crate)`, generic over `chest_stock::WorldGenRand`
+  (`:402-404`); `check_stalactite` `:528` / `update_stalagtite_style`
+  `:703` same trait bound. d106's `place_tight` does NOT call the
+  validator (caller-runs convention, `:396-401` doc) — its Stalac sites
+  call `check_stalactite` explicitly (`:826-876`), its spider/webs sites
+  don't (`:1062`/`:1592`), keeping ITS spider output byte-identical to
+  the pre-validator base.
+- Matrix §3.2 + rows 67/107 unchanged at `bf7b6bf5b`: KEEP g41's chain
+  body + d106's generalisation + pass_unified; single home
+  `spider_gem_moss.rs`; DROP g36's local shimmer chain (exception clause
+  stands); g40's table arms dedupe onto g41's table.
+
+**The g41 half (this branch) — receipt:** the chain at
+`spider_gem_moss.rs:441-660` (`invalid_tile_for_piles_or_speleothems`
+`:441`, `get_stalagtite_style` `:450`, `get_desired_stalagtite_style`
+`:472` with the spider style-11 override `:498` + the hive small-sac arm
+`:513`, `update_stalagtite_style` `:524`, `check_stalactite` `:566`),
+wired INSIDE `place_tight`'s tail (`:422-424`); the moss set is the
+GENERATED `tiledata::TILE_MOSS` (`:106`, `sets.rs:44` — 627 included,
+`Main.cs:7031` re-read: 179/381/534/536/539/625/627/180/181/182/183)
+vs d106's local `MOSS_TILES`+`NEON_MOSS`+381 lists (same 11 members —
+dedupe onto the generated set).
+
+### FINAL INSTRUCTION (the gate's keep-one, exact)
+
+1. KEEP this branch's `spider_gem_moss.rs` chain body + frame table +
+   the 14 egg-sac witnesses + the `place_tight`-internal validator call.
+2. GRAFT d106 R4's signatures over it: `place_tight`/`check_stalactite`/
+   `update_stalagtite_style` take `rng: &mut impl
+   super::chest_stock::WorldGenRand` (the trait + both impls already
+   exist on this branch, `chest_stock.rs:185-213` — Xorshift64 AND
+   UnifiedRandom); swap the two `rng.range(0, n)` draws in `place_tight`
+   for `rng.next(n)` (same semantics under both impls); make
+   `place_tight`/`check_stalactite` `pub(crate)` for the Stalac pass.
+   Do NOT adopt d106's caller-runs convention — keep the validator
+   inside `place_tight` (g41's spider output already includes it; the
+   d106 Stalac sites then DROP their explicit `check_stalactite` calls
+   to avoid double-validation, which would double the `Next(3)` mismatch
+   draws — d106's own sites were written against ITS unvalidated base).
+3. KEEP d106's `pass_stalac` + slot + `pass_unified("Stalac")` stream
+   wholesale; its gem-tree scatter calls g42's trees per matrix row 107.
+4. DROP g36's local `shimmer.rs` chain; rewire its PlaceTight tail onto
+   the canonical `place_tight` (draw-schedule exception clause: if the
+   shimmer island arm's schedule differs, keep the local copy + record).
+5. Moss reads: one set — `tiledata::TILE_MOSS` (generated, never
+   hand-edit); delete d106's local lists at the graft.
+6. Re-pin AFTER the graft, sequentially per research/93 §FINAL STATUS
+   step 2 (d106 R1-R5 pins move by design; the g41 egg-sac pins move at
+   the same gate). The keep-one is RNG-neutral for the spider pass by
+   construction (same draws, same order — d106 proved byte-identity).
+
 <!-- NEXT-PHASES -->
