@@ -129,12 +129,11 @@ pub(crate) fn rain_dim_sky(sky: [f32; 3], cloud_alpha: f32, atmo: f32, remix: bo
     // `(byte)((float)(int)ch * num3)` — the XNA byte cast. In the C#'s
     // unchecked context a negative product wraps through the low byte
     // (`as i32 as u8`, the `cloud_color` convention); only a >1.11 cloudAlpha
-    // pin reaches it (vanilla maxRaining ≤ 1 keeps num3 ≥ 0.1).
-    [
-        ((sky[0] * 255.0) as i32 as f32 * num3) as i32 as u8 as f32 / 255.0,
-        ((sky[1] * 255.0) as i32 as f32 * num3) as i32 as u8 as f32 / 255.0,
-        ((sky[2] * 255.0) as i32 as f32 * num3) as i32 as u8 as f32 / 255.0,
-    ]
+    // pin reaches it (vanilla maxRaining ≤ 1 keeps num3 ≥ 0.1). The channel
+    // bytes come from the same `(byte)(float * 255)` truncation
+    // `draw_cloud_color` uses for `Main.ColorOfTheSkies`.
+    let ch = |v: f32| ((v * 255.0) as i32 as u8 as f32 * num3) as i32 as u8 as f32 / 255.0;
+    [ch(sky[0]), ch(sky[1]), ch(sky[2])]
 }
 
 /// `SunGradients` (`GameContent/Drawing/SunGradients.cs:37-197`): the 15-entry
