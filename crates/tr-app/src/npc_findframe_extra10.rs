@@ -616,9 +616,48 @@ pub fn find_frame_extra10(kind: FindFrameExtra10Kind, s: &mut FrameState, i: &Fr
                 }
             }
         }
-        // The batch-3 kinds land in the next commit (the 5-kinds-
-        // per-commit rule — the e8 batch-1 catch-all precedent).
-        _ => unimplemented!("extra-10 batch 3"),
+        // `case 542-545` (`NPC.cs:74681-74692`): the sand sharks'
+        // shared strip — `spriteDirection = direction`
+        // UNCONDITIONALLY (0 included, `:74685`), the counter++
+        // (`:74686`) with the >= 16 reset (`:74687-74690`), the row
+        // `(int)(counter / 4)` (`:74691`) over the 4-row sheet. No
+        // velocity read, no air split — the sharks swim behind the
+        // tiles (`behindTiles`, `:15925`) at a fixed cadence.
+        FindFrameExtra10Kind::SandShark
+        | FindFrameExtra10Kind::SandsharkCorrupt
+        | FindFrameExtra10Kind::SandsharkCrimson
+        | FindFrameExtra10Kind::SandsharkHallow => {
+            // `:74685`.
+            s.sprite_dir = i.direction;
+            // `:74686-74690`.
+            s.counter += 1.0;
+            if s.counter >= 16.0 {
+                s.counter = 0.0;
+            }
+            // `:74691`.
+            s.row = (s.counter / 4.0) as i32 as u32;
+        }
+        // `case 549` (`NPC.cs:67980-67992`): the Old One's Army lane
+        // portal — `spriteDirection = 1` + `rotation = 0` every tick
+        // (`:67981-67982`), the `++frameCounter >= 6` step
+        // (`:67983-67991`) over the FULL 8 rows with the >= count
+        // wrap. OUR `npc.rs` row-0 pin was WRONG (`npcFrameCount[549]`
+        // = 8, `Main.cs:67138` slot 9) — the arm delegates here (the
+        // 439-fix bridge shape).
+        FindFrameExtra10Kind::DD2LanePortal => {
+            // `:67981-67982`.
+            s.sprite_dir = 1;
+            s.rotation = 0.0;
+            // `:67983-67991` — the ++ then the >= 6 check.
+            s.counter += 1.0;
+            if s.counter >= 6.0 {
+                s.row += 1;
+                s.counter = 0.0;
+                if s.row >= kind.frame_count() {
+                    s.row = 0;
+                }
+            }
+        }
     }
 }
 
@@ -656,6 +695,11 @@ mod tests {
             FindFrameExtra10Kind::SquirrelGold,
             FindFrameExtra10Kind::PartyBunny,
             FindFrameExtra10Kind::SandElemental,
+            FindFrameExtra10Kind::SandShark,
+            FindFrameExtra10Kind::SandsharkCorrupt,
+            FindFrameExtra10Kind::SandsharkCrimson,
+            FindFrameExtra10Kind::SandsharkHallow,
+            FindFrameExtra10Kind::DD2LanePortal,
         ] {
             assert_eq!(
                 k.frame_count(),
@@ -998,11 +1042,78 @@ mod tests {
         assert_eq!((s.sprite_dir, s.rotation), (-1, 0.5));
     }
 
-    /// The batch-1+2 strip sweep: a 5x3x3 vx/vy/direction input grid
+    /// 542-545 the sand sharks: the UNCONDITIONAL direction copy +
+    /// the 16-tick 4-band strip (the counter resets at >=16 BEFORE
+    /// the row read, so the reset tick shows row 0). Expectations
+    /// re-derived by mechanical replay.
+    #[test]
+    fn f27s10_sand_sharks_swim_the_sixteen_tick_strip() {
+        let rows = rows_over(FindFrameExtra10Kind::SandShark, input(0.0, 0.0), 20);
+        assert_eq!(
+            rows,
+            vec![0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 0, 0, 0, 0, 1]
+        );
+        // All four sharks ride the SAME machine (the shared case).
+        for k in [
+            FindFrameExtra10Kind::SandsharkCorrupt,
+            FindFrameExtra10Kind::SandsharkCrimson,
+            FindFrameExtra10Kind::SandsharkHallow,
+        ] {
+            let rows = rows_over(k, input(3.0, -2.0), 20);
+            assert_eq!(
+                rows,
+                vec![0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 0, 0, 0, 0, 1],
+                "type {}",
+                k.vanilla_type()
+            );
+        }
+        // The UNCONDITIONAL direction copy (0 included).
+        for d in [-1i32, 0, 1] {
+            let mut s = FrameState { sprite_dir: 1, ..Default::default() };
+            let mut i = input(0.0, 0.0);
+            i.direction = d;
+            find_frame_extra10(FindFrameExtra10Kind::SandShark, &mut s, &i);
+            assert_eq!(s.sprite_dir, d, "direction {d}");
+        }
+        // No rotation write.
+        let mut s = FrameState { rotation: 0.5, ..Default::default() };
+        find_frame_extra10(FindFrameExtra10Kind::SandShark, &mut s, &input(0.0, 0.0));
+        assert_eq!(s.rotation, 0.5);
+    }
+
+    /// 549 DD2LanePortal: the sprite=1 + rotation=0 snap every tick +
+    /// the ++counter >=6 step over the FULL 8 rows. Expectations
+    /// re-derived by mechanical replay.
+    #[test]
+    fn f27s10_lane_portal_steps_the_full_eight_rows() {
+        let rows = rows_over(FindFrameExtra10Kind::DD2LanePortal, input(0.0, 0.0), 20);
+        assert_eq!(
+            rows,
+            vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3]
+        );
+        // The sprite/rotation snap fires EVERY tick (even the hold
+        // ticks), the counter untouched by the snap.
+        let mut s = FrameState {
+            row: 3,
+            counter: 2.0,
+            sprite_dir: -1,
+            rotation: 0.7,
+        };
+        find_frame_extra10(FindFrameExtra10Kind::DD2LanePortal, &mut s, &input(5.0, -3.0));
+        assert_eq!((s.row, s.counter), (3, 3.0));
+        assert_eq!((s.sprite_dir, s.rotation), (1, 0.0));
+        // The wrap: row 7 + counter 5 → the step lands 8, the >=8
+        // wrap snaps 0.
+        let mut s = FrameState { row: 7, counter: 5.0, ..Default::default() };
+        find_frame_extra10(FindFrameExtra10Kind::DD2LanePortal, &mut s, &input(0.0, 0.0));
+        assert_eq!((s.row, s.counter), (0, 0.0));
+    }
+
+    /// The 15-kind strip sweep: a 5x3x3 vx/vy/direction input grid
     /// (plus the aiAction/ai0 variants), 40 ticks each — every row
     /// stays inside its sheet (the extra-9 precedent).
     #[test]
-    fn f27s10_batch1_strip_sweep_stays_inside_the_sheets() {
+    fn f27s10_fifteen_kind_strip_sweep_stays_inside_the_sheets() {
         let kinds = [
             FindFrameExtra10Kind::DesertScorpionWall,
             FindFrameExtra10Kind::DesertBeast,
@@ -1014,6 +1125,11 @@ mod tests {
             FindFrameExtra10Kind::SquirrelGold,
             FindFrameExtra10Kind::PartyBunny,
             FindFrameExtra10Kind::SandElemental,
+            FindFrameExtra10Kind::SandShark,
+            FindFrameExtra10Kind::SandsharkCorrupt,
+            FindFrameExtra10Kind::SandsharkCrimson,
+            FindFrameExtra10Kind::SandsharkHallow,
+            FindFrameExtra10Kind::DD2LanePortal,
         ];
         for k in kinds {
             let count = k.frame_count();
