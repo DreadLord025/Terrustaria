@@ -39368,3 +39368,101 @@ check ran clean, and the nine new bank assets were confirmed on disk. The
 7 new `s1_e_21h_d77_*` witness tests are WRITTEN, NOT RUN — **no compiler
 invoked**. Commits `360bbb33`/`dcf54adc`/`13f29af5`/`1608360e`/`f5d8f263`/
 `0a74234a`/`ab859f19` on `task/W4-d77-proj-sounds-3` (pushed, unmerged).
+### d77 follow-up: the deferred-arm resolution + the queue volume term (2026-11-21)
+
+**Scope**: the ten state-bearing deferred kinds of part 3
+(710/661/617/659/681/16/34/79/452/454), re-audited against the PUSHED
+branches after the state lanes landed: d12 `9152b259` (the aiStyle-117
+explosion family — NOT the 710/661/617 Kill arms), d18 `d7d631e9`
+(aiStyle 178 — the 918 Firecracker, not the 720 Kill tail), d78 `5fe6d940`
+(`magic_death_blast`: the 79/16/34 resize+Damage+restore, the 634/635
+recentre, the 661 160-box) and g3 `778573ca`/`9ee2a7a1`
+(`aimed_spell_kill`/`nebula_spirit_onyx_kill`: the same 79/16/34 + the
+634/635/659/661 blasts WITH the Item10/Item14 cues already inline).
+
+**Armed (9 sites, commits `2a0c2c1b` 5 sites + `75044e75` 4 sites)** —
+every cue's play position is derivable from the PRE-hook box because
+`Resize` (`Projectile.cs:22353-22359`) keeps the centre:
+
+- `:71266`/`:71338` — 79/16 Item10 at Center (the blast + restore keep
+  the centre; the read is centre-invariant).
+- `:71418` — 34 Item10 at the post-restore position = the pre-hook
+  position (both resizes centre-keep).
+- `:71906` — 681 DD2_GoblinBomb at the centre: `PrepareBombToBlow`'s
+  `Resize(80,80)` (`:46804-46808`) keeps the centre and the arm's
+  `+width/2` recentre (`:71904-71905`) returns to it. **0.5 volume**:
+  `SoundID.DD2_GoblinBomb = new LegacySoundStyle(2, 14).WithVolume(0.5f)`
+  (`SoundID.cs:1596`) — the same case-2 style-14 asset as Item14, the
+  style object's `Volume` rides `SoundEngine.cs:99`'s
+  `type.Volume * volumeScale`.
+- `:72234` — 661 Item14 at `centre − 80` (the 160-box recentre, no
+  restore).
+- `:72512` — 659 Item14 at `centre − 40` (the 80-box recentre), gated
+  `ai[0] >= 0` (`:72505`).
+- `:72989` — 452 `PlaySound(29, x, y, 103)` CUE-FIRST (the play precedes
+  the 144-box resize/Damage): the case-29 fighter-moan façade
+  (`play_fighter_moan`, the Style-is-the-slot 103 ×0.4 arm + playing
+  guard + one `Next(-10, 11)` pitch); `Zombie_103` bank row added (asset
+  verified on disk).
+- `:73016` — 454 `PlaySound(4, x, y, 6)` CUE-FIRST (the play precedes the
+  208-box recentre/Damage): the id-4 int façade. **f1 overlap** — f1's
+  `kill_sound_cue` already maps 454 identically (pre-resize position);
+  keep-one at merge (see below).
+- `:78505` — the 1088 acorn's `PlaySound(0, base.Center)` Dig: the row
+  ALREADY landed (M3-ITEM-6, `proj_data(1088)` — the no-consume ammo
+  window), so no rowing was owed; d1b/g2b never claimed it (d1 = the
+  aiStyle-6 powder family, g2 = the rowless 229/243-245/264/290-292
+  census). The aiStyle-16 `Kill()` head skips the acorn's bomb prep
+  (`:70664`), so this is its only death cue.
+
+**Still deferred (2 kinds)**: the 710 Betsy Arrow (`:71659`) and the 617
+Nebula Arcanum (`:72286`) Kill resize+Damage bursts — their state writes
+are UNPORTED on every pushed branch (f20 slice D `4bd2f496` ports the
+AI_001 *flight overlays* `:57549`/`:55734`, not the Kill arms; d12's
+decade is styles 111-120; d78 part 1 stops at the 661). Arming the cue
+alone would mis-order the position read (both play AFTER a
+centre-snap+resize the port never performs). They arm when their Kill
+arms land.
+
+**The seam change (commit `9d35874a`)**: `pending_proj_sounds` /
+`drain_proj_sounds` gain the sixth term — the `volumeScale`
+(`SoundEngine.cs:93`'s fourth argument). `Audio::play_use_sound_scaled` /
+`play_proj_sound_scaled` fold it into the gate probe and the emit
+(`LegacySoundPlayer.cs:1411` — the multiply lands AFTER the attenuation
+gate and the case tweaks, so the refusal shape and the RNG census are
+scale-invariant); every stock caller keeps 1.0 through the unchanged
+5-arg peers. The drain routes id 29 to `play_fighter_moan` (truncated
+position). The `kill_tail_cue` map's payload is now
+`(id, style, x, y, volumeScale)`.
+
+**keep-one: `kill_tail_cue` (d77) vs `kill_sound_cue` (f1)** —
+RECOMMENDATION: keep d77's `kill_tail_cue` as the surviving seam, drop
+f1's `kill_sound_cue` at merge. Evidence: the d77 map is a strict
+superset of f1's 57-site map — every f1 arm appears in d77 with the same
+id/style/position semantics (the 932 Center, the DD2 pair, the blaze
+pre-snap, the gem PRE-resize thud, the Ice Block gate, the 454 id-4 cry),
+and d77 adds the sites f1 deferred or never reached: the skull Style-27
+pair + `penetrate != maxPenetrate` gate (`:74352`/`:74369`), the spore
+Grass gate (`:74515`), the 385 id-4 style-19 cry, the 69/70/621 +
+115/114/116/173/132/156/157 tail, the debris Item127 owner gate, the
+16-site rocket census (`rocket_kill_census`, f1 has a parallel 16-site
+copy — keep d77's, it carries the 133/136 Item62 picks f1 gated out),
+and this wave's nine deferred-arm cues + the volume term f1's queue
+cannot carry. The hook position is identical (inside the
+`!died_out_of_world` gate at the death hook); f1's drain id-0/13/4 routes
+are already in d77's drain, so only the map fn + its 4 witnesses drop.
+The 454 site is the one true duplicate payload — same pre-resize
+position, same id-4 route; either survivor plays it once (the hook runs
+once per death).
+
+**Verification.** Code-only: every armed arm re-read against its C#
+block (`:71257-71418`/`:71902-71951`/`:72226-72234`/`:72503-72512`/
+`:72987-73045`/`:78499-78510`, `Resize` `:22353-22359`,
+`PrepareBombToBlow` `:46804-46808`, the `Kill()` head `:70661-70687`),
+the pushed-branch write audit (d78/g3/d12/d18/f20 tips re-read), the
+`Zombie_103.xnb` asset confirmed on disk, the style row's 0.5 volume
+confirmed in `soundid.rs`. The 2 new witnesses
+(`s1_e_21h_d77_the_deferred_arms_whose_writes_landed`,
+`s1_e_21h_d77_the_goblin_bomb_scale_rides_after_the_gate_draw_free_census`)
+are WRITTEN, NOT RUN — **no compiler invoked**. Commits `9d35874a`/
+`2a0c2c1b`/`75044e75` on `task/W4-d77-proj-sounds-3` (pushed, unmerged).
