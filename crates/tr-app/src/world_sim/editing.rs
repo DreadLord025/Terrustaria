@@ -478,9 +478,17 @@ pub(crate) fn start_swing_extras(app: &mut App, held_kind: u16) {
         .as_ref()
         .map(|p| p.center())
         .unwrap_or((app.camera.x, app.camera.y));
-    app.swing_aim = (mouse_world - Vec2::new(cx, cy))
-        .y
-        .atan2((mouse_world - Vec2::new(cx, cy)).x);
+    // W4-d17 DOC-SWEEP — the useStyle-13 (rapier) `itemRotation` is written
+    // ONCE per shot off the JITTERED aim (`Player.cs:47376-47381`), not at
+    // the use start: the rapier launch arm in `fire_non_ammo_shot` owns the
+    // write (it runs BEFORE this seam on the press tick, so a mouse-aim
+    // overwrite here would clobber the jittered angle). The C# `ItemDraw`
+    // reads `itemRotation` only — `ApplyItemAnimation` never touches it.
+    if app.swing_style != 13 {
+        app.swing_aim = (mouse_world - Vec2::new(cx, cy))
+            .y
+            .atan2((mouse_world - Vec2::new(cx, cy)).x);
+    }
     // `Player.ItemCheck_StartActualUse` (`Player.cs:51681-51698`) plays the
     // item's `UseSound` at `base.Center` right after `ApplyItemAnimation`
     // (`:51680`) — this seam is the port's use-start (every swing/shot/
@@ -3095,7 +3103,15 @@ fn fire_non_ammo_shot(
     if held.kind == 3094 || held.kind == 3378 || held.kind == 3543 {
         spawn.y = p.y + (p.height as i32 / 3) as f32;
     }
-    let raw = fx_dmg as f32 * p.weapon_damage_multiplier(class);
+    // W4-d17 DOC-SWEEP — `Player.cs:47143-47146`: the Chlorophyte Saber
+    // 1227's `Damage = (int)((double)Damage * 0.7)` pre-pass runs BEFORE
+    // every spawn arm (the rapier launch below reads it). The double
+    // multiply is the C#'s cast; the port keeps f64 for the truncation.
+    let raw = if held.kind == 1227 {
+        ((fx_dmg as f32 * p.weapon_damage_multiplier(class)) as f64 * 0.7) as i32 as f32
+    } else {
+        fx_dmg as f32 * p.weapon_damage_multiplier(class)
+    };
     // The i28 consumable tail's flag reads snapshotted here — the shared
     // `p` read borrow must END before the mutable re-borrows below (the
     // boomerang facing flip, the Spider cycle write, the whip helper's
@@ -3156,6 +3172,15 @@ fn fire_non_ammo_shot(
     } else {
         Vec2::new(dir.x * shot_speed, dir.y * shot_speed)
     };
+    // W4-d17 DOC-SWEEP — `Player.cs:47376-47381`: the useStyle-13 shoot
+    // writes `itemRotation` off the (unjittered) aim ONCE per shot — the
+    // ore shortswords 938-945 take this generic path (no jitter block,
+    // `:47335` names only 802/842/1127); the rapier trio's arm below
+    // overwrites it with the jittered angle. The use-start seam skips the
+    // style-13 mouse write, so this is the only aim source.
+    if def.use_style == 13 {
+        app.swing_aim = shot.y.atan2(shot.x);
+    }
     // S1-P-i08 — the useStyle-1 boomerang throw (`Player.cs:49437`'s generic
     // `NewProjectile` tail): the exact-center spawn, the aim (or the facing
     // fallback) normalized to `shootSpeed / meleeSpeed`, `weaponDamage`,
@@ -3187,6 +3212,65 @@ fn fire_non_ammo_shot(
         );
         // Gate i08×i11: the throw-time crit stamp is gone — the per-hit
         // roll reads the melee class flag off `proj_data`.
+        if let Some(slot) = slot {
+            app.projectiles.set_armor_penetration(slot, arpen);
+            app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+        }
+    } else if held.kind == 4463 || held.kind == 486 || held.kind == 1227 {
+        // W4-d17 DOC-SWEEP — `ItemCheck_Shoot`'s rapier launch arm
+        // (`Player.cs:48840-48844`): the Gladius 4463 / Ruler 486 /
+        // Chlorophyte Saber 1227 spawn their stab (`802`/`842`/`1127`)
+        // with the EXACT `pointPosition` (no `+dir*10` — the C# passes
+        // `pointPosition` itself) and `ai1 = sItem.shootSpeed / speed`.
+        // `speed` already divided by `meleeSpeed` at `:47061-47063`
+        // (the port's `fx_spd`), so the quotient is the INVERTED
+        // melee-speed multiplier — the `AI_161_RapierStabs` 1127 stretch
+        // (`:47621-47626`) reads it. The aim jitter ran at `:47335-47348`
+        // (the 802/842/1127 block below `fire_non_ammo_shot`'s shot build).
+        // The C# `return`s — the generic tail's tweaks never run. The
+        // anchor is `RotatedRelativePoint(MountedCenter)` itself (the
+        // port's stationary-player fold = the centre, the i08 precedent).
+        // `Player.cs:47335-47348` — the 802/842/1127 aim jitter, BEFORE
+        // the spawn arms: `v2.SafeNormalize(Zero).RotatedBy(num8 *
+        // (NextFloat - 0.5)) * (v2.Length - NextFloatDirection * num9)`.
+        // num8 = π/4, num9 = 0.7; the 1127 takes num9 = 0.5 and
+        // num8 = 0.65 · Remap(meleeSpeed, 1, 1/3, 1, 0.25) (clamped —
+        // the descending-range `get_lerp_value`). RNG order: the angle
+        // `NextFloat` first, then the length `NextFloatDirection`
+        // (`NextDouble·2 − 1`, `Utils.cs:1203-1206`).
+        let (mut num8, mut num9) = (std::f32::consts::FRAC_PI_4, 0.7f32);
+        if proj == 1127 {
+            num9 = 0.5;
+            num8 = 0.65 * remap_clamped(p.melee_speed(held.kind), 1.0, 1.0 / 3.0, 1.0, 0.25);
+        }
+        let angle = num8 * (loot_rng.next_float() - 0.5);
+        let len_cut = (loot_rng.next_double() as f32 * 2.0 - 1.0) * num9;
+        let stab_vel = crate::projectile::rotate(shot.normalize_or_zero(), angle)
+            * (shot.length() - len_cut);
+        // `:47376-47381` — the useStyle-13 shoot writes `itemRotation =
+        // atan2(num5·dir, num4·dir) − fullRotation` off the JITTERED aim
+        // (once per shot, NOT per tick — the style-5 per-tick gate at the
+        // frame head does not cover 13). The port's `swing_aim` carries
+        // the raw angle; `item_rotation_for_aim` mirrors it by facing.
+        app.swing_aim = stab_vel.y.atan2(stab_vel.x);
+        // `ai1 = sItem.shootSpeed / speed` — the PREFIXED instance's
+        // shootSpeed over the melee-divided speed (`:47061-47063`), so
+        // the quotient is the inverted melee-speed multiplier.
+        let raw_shoot_speed = held_fx.map_or(def.shoot_speed, |s| s.shoot_speed);
+        let stab_ai1 = if fx_spd != 0.0 { raw_shoot_speed / fx_spd } else { 0.0 };
+        let (sw2, sh2) = crate::projectile::proj_data(proj)
+            .map_or((0.0, 0.0), |d| (d.w, d.h));
+        let slot = app.projectiles.spawn_with_data_ai(
+            proj,
+            pcx - sw2 * 0.5,
+            pcy - sh2 * 0.5,
+            stab_vel.x,
+            stab_vel.y,
+            raw as i32,
+            fx_kb,
+            0.0,
+            stab_ai1,
+        );
         if let Some(slot) = slot {
             app.projectiles.set_armor_penetration(slot, arpen);
             app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
@@ -18452,6 +18536,137 @@ mod s1_p_i08_throw_tests {
         assert_eq!(p.mana, 50);
         assert!(p.buffs.find_buff_index(94).is_some(), "ManaSickness 94");
         assert_eq!(app.inventory[app.selected].count, 2);
+    }
+
+    // ---- W4-d17 DOC-SWEEP: the rapier item use-path (161) ----------------
+    // WRITTEN NOT RUN (code-only mode). The launch arm `Player.cs:48840-
+    // 48844` (Gladius 4463 / Ruler 486 / Chlorophyte Saber 1227), the aim
+    // jitter `:47335-47348`, the style-13 shot-time `itemRotation` write
+    // `:47376-47381` and the 1227's ×0.7 pre-pass `:47143-47146`. The rigs
+    // reuse this module's boomerang fixtures (the stationary player, the
+    // cursor +80 px right — a clear rightward aim).
+
+    /// The rapier trio spawns its stab AT the rotated mount anchor (no
+    /// `+dir*10`), with `ai1 = shootSpeed / speed` = the inverted
+    /// melee-speed multiplier (1 at the stock speed). The Iron Shortsword
+    /// 6 (shoot 940) keeps the generic tail: no jitter, ai1 = 0.
+    #[test]
+    fn w4_d17_the_rapier_launch_spawns_at_the_anchor_with_the_speed_ratio() {
+        for (item, name, stab) in [
+            (4463u16, "Gladius", 802u16),
+            (486, "Ruler", 842),
+            (1227, "Chlorophyte Saber", 1127),
+        ] {
+            let mut app = boomerang_app(item, name);
+            fire_once(&mut app);
+            let shots: Vec<_> = app
+                .projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active && p.kind == stab)
+                .collect();
+            assert_eq!(shots.len(), 1, "{name}: one stab per use");
+            let s = shots[0];
+            let (cx, cy) = app.player.as_ref().unwrap().center();
+            let d = crate::projectile::proj_data(stab).unwrap();
+            // `NewProjectile` centres the box on `pointPosition` — the
+            // port's top-left spawn subtracts the half-box.
+            assert!(
+                (s.pos.x - (cx - d.w * 0.5)).abs() < 1e-3
+                    && (s.pos.y - (cy - d.h * 0.5)).abs() < 1e-3,
+                "{name}: the anchor is the mount centre, not +10 px"
+            );
+            assert_eq!(s.ai[0], 0.0, "{name}: ai0 = 0 (:48842)");
+            assert!(
+                (s.ai[1] - 1.0).abs() < 1e-5,
+                "{name}: ai1 = shootSpeed/speed = 1 at stock meleeSpeed"
+            );
+        }
+        // The Iron Shortsword 6 rides the generic tail (the C# `:48840`
+        // names only 4463/486/1227): ai1 stays 0, the +10 px offset stands.
+        let mut app = boomerang_app(6, "Iron Shortsword");
+        fire_once(&mut app);
+        let s = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == 940)
+            .expect("the 940 stab spawns");
+        assert_eq!(s.ai[1], 0.0, "the ore shortswords carry no ai1 payload");
+    }
+
+    /// The aim jitter (`Player.cs:47335-47348`): the velocity rotates by
+    /// `π/4·(NextFloat−0.5)` and its length drops by
+    /// `NextFloatDirection·0.7` — two `UpdatePlayers` draws, angle first.
+    /// The 1227's ×0.7 damage pre-pass (`:47143-47146`) truncates 80 → 56.
+    /// The style-13 aim write (`:47376-47381`) reads the JITTERED velocity.
+    #[test]
+    fn w4_d17_the_rapier_jitter_draws_two_and_the_saber_cuts_damage() {
+        let far_listener = |app: &mut App| {
+            app.audio.set_listener(crate::sound::Listener {
+                camera_center: (100000.0, 100000.0),
+                sound_volume: 1.0,
+                ambient_volume: 1.0,
+                quiet_ambient_sounds: false,
+                game_menu: false,
+                generating_or_loading: false,
+                server: false,
+            });
+        };
+        let mut app = boomerang_app(4463, "Gladius");
+        far_listener(&mut app);
+        seed_stream(&mut app, 0x51AB);
+        fire_once(&mut app);
+        let after = stream_of(&mut app);
+        assert_eq!(
+            after,
+            draws_after(0x51AB, 2),
+            "the jitter spends the angle NextFloat + the length NextDouble"
+        );
+        let s = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == 802)
+            .unwrap();
+        // The length stays inside the ±0.7 band around shootSpeed 2.4.
+        let len = s.vel.length();
+        assert!(len > 2.4 - 0.7 - 1e-4 && len < 2.4 + 0.7 + 1e-4, "the cut band");
+        // The rotation stays inside ±π/8.
+        let ang = s.vel.y.atan2(s.vel.x);
+        assert!(ang.abs() <= std::f32::consts::FRAC_PI_8 + 1e-5, "the angle band");
+        // The style-13 aim is the jittered angle, NOT the raw mouse aim (0).
+        assert!(
+            (app.swing_aim - ang).abs() < 1e-6,
+            "the itemRotation write reads the jittered aim (:47378)"
+        );
+        // The Saber: 80 × 0.7 = 56 (the double-multiply truncation).
+        let mut app = boomerang_app(1227, "Chlorophyte Saber");
+        far_listener(&mut app);
+        fire_once(&mut app);
+        let s = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == 1127)
+            .unwrap();
+        assert_eq!(s.damage, 56, "the ×0.7 pre-pass (:47143-47146)");
+        // The melee-speed stretch: a +0.2 raw bonus → meleeSpeed = 1/1.2,
+        // speed = 2.4·1.2, ai1 = 2.4/(2.4·1.2) = 1/1.2.
+        let mut app = boomerang_app(1227, "Chlorophyte Saber");
+        far_listener(&mut app);
+        app.player.as_mut().unwrap().melee_speed_bonus = 0.2;
+        fire_once(&mut app);
+        let s = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == 1127)
+            .unwrap();
+        assert!(
+            (s.ai[1] - 1.0 / 1.2).abs() < 1e-5,
+            "ai1 carries the inverted multiplier for the 1127 stretch"
+        );
     }
 }
 
