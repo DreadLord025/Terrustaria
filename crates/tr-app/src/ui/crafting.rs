@@ -332,26 +332,88 @@ fn title_width(lookups: &assets::Lookups) -> f32 {
     }
 }
 
+/// [`title_width`] for the App-side layout builders (the scroll frame in
+/// `frame/draw.rs`) — the same measurement the draw and click paths use.
+pub(crate) fn title_width_for(lookups: &assets::Lookups) -> f32 {
+    title_width(lookups)
+}
+
+/// `UIDynamicItemCollection.UpdateSize` (`UIDynamicItemCollection.cs:160-165`):
+/// `_itemsPerLine = Width / 44` (int division) and `MinHeight = 44 *
+/// ceil(count / itemsPerLine)`. The grid element fills the `UIList`'s inner
+/// list, so its width is [`Layout::list`]'s.
+pub fn grid_cols(l: &Layout) -> usize {
+    ((l.list[2] as i32) / 44).max(1) as usize
+}
+
+/// The `UIList`'s `_innerListHeight` for `n` shown recipes: the single grid
+/// child's outer height (`UIList.RecalculateChildren` `UIList.cs:116-128` —
+/// one item, no `ListPadding`), which is the fill height raised to the
+/// grid's `MinHeight` (`UpdateSize` `:164`). Never below the list's own
+/// height, so a short grid never scrolls.
+pub fn grid_content_height(l: &Layout, n: usize) -> f32 {
+    let cols = grid_cols(l);
+    let rows = (n + cols - 1) / cols;
+    l.list[3].max(44.0 * rows as f32)
+}
+
+/// `GetGridParameters`' start half (`UIDynamicItemCollection.cs:83-91`):
+/// `(startX, startY, startItemIndex)` for the scrolled grid. `rect` is the
+/// grid's rect — the inner list lifted by `-ViewPosition`
+/// (`UIList.DrawSelf` `UIList.cs:181`); `viewCullingArea` is the list's own
+/// rect (`UIInnerList.GetViewCullingArea` `UIList.cs:34-37`). Both truncate
+/// to ints (`ToRectangle`), and `num = (min(cullTop, rectTop) - cullTop) / 44`
+/// is C# int division (toward zero). The start row snaps in 44 px steps
+/// while `startY` rides the truncated lifted top — the fractional scroll
+/// remainder shifts every drawn cell.
+fn grid_start(l: &Layout, scroll: f32) -> (f32, i32, i32) {
+    let (rx, rw) = (l.list[0] as i32, l.list[2] as i32);
+    let cols = grid_cols(l) as i32;
+    // `startX = rectangle.Center.X - (int)(44 * _itemsPerLine * 0.5f)` (`:85`).
+    let start_x = rx as f32 + rw as f32 * 0.5 - (44 * cols) as f32 * 0.5;
+    let rect_top = (l.list[1] - scroll) as i32;
+    let cull_top = l.list[1] as i32;
+    let num = (cull_top.min(rect_top) - cull_top) / 44;
+    (start_x, rect_top - num * 44, -num * cols)
+}
+
+/// `GetGridParameters`' culling window (`UIDynamicItemCollection.cs:87-96`):
+/// `[startItemIndex, endItemIndex)` — the rows `DrawSelf` walks (and so the
+/// only cells whose `DrawSlot` hover/click fires). `endItemIndex =
+/// min(count, ceil(cullHeight / 44) * cols + startItemIndex + cols)` (`:92-96`).
+/// The quirk is faithful: a top row with only a sub-44px sliver visible is
+/// culled until the scroll crosses the next 44 px step.
+pub fn grid_cull_range(l: &Layout, n: usize, scroll: f32) -> (usize, usize) {
+    let cols = grid_cols(l) as i32;
+    let (_, _, start) = grid_start(l, scroll);
+    let cull_h = l.list[3] as i32;
+    // `(int)Math.Ceiling(cullHeight / 44f) * cols` (`:92`).
+    let num2 = ((cull_h as f32 / 44.0).ceil() as i32) * cols;
+    let end = (n as i32).min(num2 + start + cols);
+    ((start.max(0) as usize).min(n), (end.max(0) as usize).min(n))
+}
+
 /// The `i`-th recipe cell's origin and 44x44 hover/click rect —
 /// `UIDynamicItemCollection.GetGridParameters` (`:81-97`) +
 /// `GetItemSlotHitbox` (`:75-79`): the grid element fills the `UIList`'s
 /// inner list (`UIList.cs:57` Width/Height fill, `:122-123` single item at
-/// Top 0), so its rect is [`Layout::list`]; `startX = Center.X -
+/// Top 0) lifted by `-ViewPosition` (`UIList.cs:181`); `startX = Center.X -
 /// (int)(44 * _itemsPerLine * 0.5f)` (the rows are centred, int-truncated),
-/// `startY = rect.Top`; each cell is `startX + num % cols * 44, startY +
-/// num / cols * 44` — **integer** division, 44x44 hitboxes (`:78`).
-/// `_itemsPerLine = Width / 44` (`:162`, int division). The shared geometry
-/// for the draw pass and `hit_test`.
-pub fn recipe_cell(l: &Layout, i: usize) -> [f32; 4] {
-    // `GetDimensions().ToRectangle()` (`CalculatedStyle.cs:15-18`) truncates
-    // X/Width to ints before `Center.X` (`:25-28`).
-    let (rx, rw) = (l.list[0] as i32, l.list[2] as i32);
-    let cols = (rw / 44).max(1);
-    // `startX = rectangle.Center.X - (int)(44 * _itemsPerLine * 0.5f)` (`:85`).
-    let start_x = rx as f32 + rw as f32 * 0.5 - (44 * cols) as f32 * 0.5;
-    let col = (i % cols as usize) as f32;
-    let row = (i / cols as usize) as f32;
-    [start_x + col * 44.0, l.list[1] + row * 44.0, 44.0, 44.0]
+/// each cell is `startX + num % cols * 44, startY + num / cols * 44` —
+/// **integer** division (toward zero, so rows above the cull start keep
+/// their hitboxes), 44x44 (`:78`). `scroll` is the live
+/// `UIScrollbar.ViewPosition`; the shared geometry for the draw pass and
+/// `hit_test`.
+pub fn recipe_cell(l: &Layout, i: usize, scroll: f32) -> [f32; 4] {
+    let (start_x, start_y, start) = grid_start(l, scroll);
+    let cols = grid_cols(l) as i32;
+    let num = i as i32 - start;
+    [
+        start_x + (num % cols) as f32 * 44.0,
+        (start_y + num / cols * 44) as f32,
+        44.0,
+        44.0,
+    ]
 }
 
 /// `UIDynamicItemCollection.DrawSelf` (`UIDynamicItemCollection.cs:40`):
@@ -363,28 +425,107 @@ pub const GRID_INVENTORY_SCALE: f32 = 3465.0 / 4095.0;
 
 /// The recipe grid cell the mouse is over, mapped back to the available
 /// recipe list (`NewCraftingUI`'s clickable recipe slots). Cells are 44x44 on
-/// a 44 px pitch, centred on the list rect ([`recipe_cell`]).
+/// a 44 px pitch, centred on the list rect ([`recipe_cell`]) and lifted by
+/// the live scroll; only the `GetGridParameters` culling window is walked
+/// (`DrawSlot` — and so `HandleCraftSlot` — never fires outside it), and a
+/// cell must sit inside the list rect: `base.IsMouseHovering`
+/// (`UIDynamicItemCollection.cs:52`) walks up through the `UIList`'s
+/// `ContainsPoint` (`UIElement.cs:354-357`), which the lifted grid does not
+/// override (`UIInnerList`'s always-true `ContainsPoint` is the inner
+/// list's, one level below the grid).
 pub(crate) fn hit_test(
     screen: Vec2,
     lookups: &assets::Lookups,
     mouse: Vec2,
     available: &[usize],
+    scroll: f32,
 ) -> Option<usize> {
     let l = layout(screen, title_width(lookups), false);
-    for (i, recipe) in available.iter().enumerate() {
+    let scroll = clamp_scroll(scroll, &l, available.len());
+    let (start, end) = grid_cull_range(&l, available.len(), scroll);
+    if !in_rect(mouse, l.list) {
+        return None;
+    }
+    for i in start..end {
         // The base walk's hover gate (`UIDynamicItemCollection.cs:52` via
         // `crafting_grid::slot_hovering`): int-truncated mouse, exclusive
         // right/bottom, on the same 44x44 cell rect the draw hovers.
         if super::crafting_grid::slot_hovering(
             true,
-            recipe_cell(&l, i).map(|v| v as i32),
+            recipe_cell(&l, i, scroll).map(|v| v as i32),
             [mouse.x, mouse.y],
             false,
         ) {
-            return Some(*recipe);
+            return Some(available[i]);
         }
     }
     None
+}
+
+/// `UIScrollbar.ViewPosition`'s clamp for the craft grid — the shared
+/// `char_select::clamp_scroll` over the grid's content height
+/// ([`grid_content_height`], `UIList.UpdateScrollbar` `:130-137` →
+/// `SetView` `UIScrollbar.cs:72-78`).
+pub(crate) fn clamp_scroll(scroll: f32, l: &Layout, n: usize) -> f32 {
+    super::char_select::clamp_scroll(scroll, l.list[3], grid_content_height(l, n))
+}
+
+/// `UIList.ScrollWheel` (`UIList.cs:107-114`) for the craft grid:
+/// `ViewPosition -= evt.ScrollWheelValue`, one notch = 120 raw units
+/// (`char_select::WHEEL_STEP`), clamped by `SetView`.
+pub(crate) fn scroll_wheel(scroll: f32, delta: i32, l: &Layout, n: usize) -> f32 {
+    super::char_select::scroll_wheel(scroll, delta, l.list[3], grid_content_height(l, n))
+}
+
+/// Whether the wheel reaches the craft grid — `UserInterface.Update`
+/// dispatches to `GetElementAt` (`:219-221`): the whole list rect (the
+/// `UIInnerList`'s always-true `ContainsPoint`, `UIList.cs:16-19`) plus the
+/// attached scrollbar (`UIScrollbar` is its own target). The bar attaches
+/// only while the content overflows (`CanScroll`, `UIScrollbar.cs:49` via
+/// `SetView`'s clamp).
+pub(crate) fn wheel_target(l: &Layout, n: usize, mouse: Vec2) -> bool {
+    let content_h = grid_content_height(l, n);
+    in_rect(mouse, l.list)
+        || (super::char_select::scrollbar_attaches(l.list[3], content_h)
+            && in_rect(mouse, l.scrollbar))
+}
+
+/// `UIScrollbar.LeftMouseDown` (`UIScrollbar.cs:126-143`) for the craft
+/// grid's bar: `(new ViewPosition, drag latch)` — `Some(offset)` grabs the
+/// handle (`_dragYOffset = mouse.Y - handle.Y`, `:134-135`), `None` is the
+/// track jump (`:137-141`). `None` overall = the press was not the bar's.
+pub(crate) fn scrollbar_press(
+    l: &Layout,
+    n: usize,
+    scroll: f32,
+    mouse: Vec2,
+) -> Option<(f32, Option<f32>)> {
+    let content_h = grid_content_height(l, n);
+    if !super::char_select::scrollbar_attaches(l.list[3], content_h)
+        || !in_rect(mouse, l.scrollbar)
+    {
+        return None;
+    }
+    let handle = panel::scrollbar_handle_at(l.scrollbar, l.list[3], content_h, scroll);
+    if in_rect(mouse, handle) {
+        return Some((scroll, Some(mouse.y - handle[1])));
+    }
+    Some((
+        panel::scrollbar_jump_value(l.scrollbar, l.list[3], content_h, handle[3], mouse.y),
+        None,
+    ))
+}
+
+/// The drag frame (`UIScrollbar.DrawSelf`, `UIScrollbar.cs:109-112`): while
+/// `_isDragging` the position follows the pointer with the latched offset.
+pub(crate) fn scrollbar_drag(l: &Layout, n: usize, drag_offset: f32, mouse_y: f32) -> f32 {
+    panel::scrollbar_drag_value(
+        l.scrollbar,
+        l.list[3],
+        grid_content_height(l, n),
+        drag_offset,
+        mouse_y,
+    )
 }
 
 /// Draws the whole panel in the source's z-order. `mouse_pos` only feeds the hover
@@ -398,7 +539,9 @@ pub(crate) fn hit_test(
 /// (`:196`, `int?` — the port derives it from `Main.focusRecipe` via
 /// `availableRecipe[focusRecipe]`, `OnActivate` `:904`) and `inventory_back`
 /// is `Main.inventoryBack`, the selected-cell overlay's tint
-/// (`ItemSlot.cs:2373`).
+/// (`ItemSlot.cs:2373`). `scroll` is the live `UIScrollbar.ViewPosition`
+/// (`UIList.cs:181` lifts the grid by it) and `scroll_hover` is the
+/// `_isDragging || _isHoveringOverHandle` latch (`UIScrollbar.cs:122`).
 #[allow(clippy::too_many_arguments)]
 pub fn draw(
     r: &mut SpriteRenderer,
@@ -412,6 +555,8 @@ pub fn draw(
     filter_flags: [bool; 11],
     selected_recipe_index: Option<usize>,
     inventory_back: [f32; 4],
+    scroll: f32,
+    scroll_hover: bool,
 ) {
     // `UpdateText` (`:417-427`): the search bar's width is inset by the title's
     // measured outer width, so measure it before building the layout.
@@ -471,21 +616,33 @@ pub fn draw(
     //    the base walk's hover gate decides the hover, and the machine picks
     //    the selection overlay + the White-vs-DisabledSlotColor tint. The port
     //    is mouse-only (`using_gamepad = false`, `current_point = 0` — gamepad
-    //    unported, research/18 dev. 10).
-    for (i, recipe_idx) in craft_shown.iter().enumerate() {
-        let cell = recipe_cell(&l, i);
-        let mut entry = super::crafting_grid::RecipeEntry::new(*recipe_idx);
+    //    unported, research/18 dev. 10). The cells ride the live scroll: the
+    //    grid rect is the inner list lifted by `-ViewPosition`
+    //    (`UIList.cs:181`), `GetGridParameters` culls to the visible window
+    //    (`:87-96`) and the `UIList`'s `OverflowHidden` scissor
+    //    (`UIList.cs:59`, `UIElement.cs:222-237`) clips the straddling rows.
+    let scroll = clamp_scroll(scroll, &l, craft_shown.len());
+    let (start, end) = grid_cull_range(&l, craft_shown.len(), scroll);
+    r.push_clip(l.list);
+    for i in start..end {
+        let recipe_idx = craft_shown[i];
+        let cell = recipe_cell(&l, i, scroll);
+        let mut entry = super::crafting_grid::RecipeEntry::new(recipe_idx);
         // `UpdateContents` `:610`: `availableIndex = i` walks the RAW
         // `Main.availableRecipe` list — with a filter active the shown
         // position diverges from it (W4-f23 deviation fix).
-        entry.available_index = super::crafting_grid::available_position(craft_raw, *recipe_idx);
+        entry.available_index = super::crafting_grid::available_position(craft_raw, recipe_idx);
         entry.grid_index = i as i32; // `:606` (the shown list is `_filteredRecipes`)
-        let hovering = super::crafting_grid::slot_hovering(
-            true,
-            cell.map(|v| v as i32),
-            [mouse_pos.x, mouse_pos.y],
-            false,
-        );
+        // `base.IsMouseHovering` needs the pointer inside the LIST too
+        // (`UIElement.ContainsPoint` up the parent chain) — a cell lifted
+        // above the list's top is drawn clipped but not hoverable.
+        let hovering = in_rect(mouse_pos, l.list)
+            && super::crafting_grid::slot_hovering(
+                true,
+                cell.map(|v| v as i32),
+                [mouse_pos.x, mouse_pos.y],
+                false,
+            );
         let d = super::crafting_grid::draw_slot(&entry, selected_recipe_index, false, 0, hovering);
         // `ItemSlot.Draw`'s context-41 background (`ItemSlot.cs:2298-2302`,
         // `:2340-2343`, `:2355`): `Inventory_Back18` at the hitbox's TopLeft,
@@ -560,12 +717,26 @@ pub fn draw(
             r.push_ui_sprite([cell[0] + 6.0, cell[1] + 6.0], [32.0, 32.0], r.white_uv(), [0.5; 4]);
         }
     }
+    r.pop_clip();
 
-    // 6. The scrollbar (`:376-384`): an empty list views 1 of 1, and
-    //    `AutoHide` hides it when it cannot scroll (`UIScrollbar.cs:105`).
-    // `auto_hide` with `view == max_view`: nothing scrolls yet, so the handle
-    // is drawn at `pos` 0 (`UIScrollbar.cs:93`).
-    panel::draw_scrollbar(r, lookups, l.scrollbar, 1.0, 1.0, 0.0, true);
+    // 6. The scrollbar (`:376-384`): `UIList.UpdateScrollbar`
+    //    (`UIList.cs:130-137`) feeds `SetView(listHeight, innerListHeight)`
+    //    — the grid's content height ([`grid_content_height`]) — and
+    //    `AutoHide` hides the bar when it cannot scroll
+    //    (`UIScrollbar.cs:105`, `CanScroll` `:49`). The handle rides the
+    //    live `ViewPosition` and the hover/drag latch's 1-vs-0.85 alpha
+    //    (`:122`).
+    let content_h = grid_content_height(&l, craft_shown.len());
+    panel::draw_scrollbar_handle_alpha(
+        r,
+        lookups,
+        l.scrollbar,
+        l.list[3],
+        content_h,
+        scroll,
+        true,
+        if scroll_hover { 1.0 } else { 0.85 },
+    );
 
     // 7. The filter strip (`:387-392`), drawn over the panel subtree, matching
     //    `totalContainer`'s child order (`:330`, `:392`); `active` is the
@@ -1131,7 +1302,7 @@ mod tests {
         let cols = 10usize; // 450 / 44, integer division (C# `:162`)
         let n = 25usize; // two full rows plus a partial third
         for i in 0..n {
-            let cell = recipe_cell(&l, i);
+            let cell = recipe_cell(&l, i, 0.0);
             let row = i / cols;
             let col = i % cols;
             // Y is a pure function of the row index: top + row * 44.
@@ -1146,15 +1317,15 @@ mod tests {
         // next pitch — no per-iteration accumulation (the old float
         // `i as f32 / cols` drifted each icon by 44/cols = 4.4 px).
         for i in 0..cols {
-            assert_eq!(recipe_cell(&l, i)[1], 446.0);
+            assert_eq!(recipe_cell(&l, i, 0.0)[1], 446.0);
         }
         for i in cols..2 * cols {
-            assert_eq!(recipe_cell(&l, i)[1], 490.0);
+            assert_eq!(recipe_cell(&l, i, 0.0)[1], 490.0);
         }
-        assert_eq!(recipe_cell(&l, 2 * cols)[1], 534.0);
+        assert_eq!(recipe_cell(&l, 2 * cols, 0.0)[1], 534.0);
         // The centred rows leave a 5 px margin each side: 37 + 10*44 = 477,
         // and the list spans [32, 482] (`:85`'s integer-halved centre).
-        assert_eq!(recipe_cell(&l, 9)[0] + 44.0, 477.0);
+        assert_eq!(recipe_cell(&l, 9, 0.0)[0] + 44.0, 477.0);
     }
 
     #[test]
@@ -1167,10 +1338,10 @@ mod tests {
         let l = layout(screen, title_width(&lookups), false);
         let available: Vec<usize> = (0..25).collect();
         for (i, &recipe) in available.iter().enumerate() {
-            let [x, y, _, _] = recipe_cell(&l, i);
+            let [x, y, _, _] = recipe_cell(&l, i, 0.0);
             let centre = Vec2::new(x + 22.0, y + 22.0);
             assert_eq!(
-                hit_test(screen, &lookups, centre, &available),
+                hit_test(screen, &lookups, centre, &available, 0.0),
                 Some(recipe),
                 "cell {i}"
             );
@@ -1178,13 +1349,13 @@ mod tests {
         // The 44x44 hitboxes tile the row with no gap (`:78` pitch == size):
         // one px left of the centred start hits nothing, and the boundary
         // between cells 0 and 1 belongs to cell 1 (exclusive left of it).
-        let [x, y, _, _] = recipe_cell(&l, 0);
+        let [x, y, _, _] = recipe_cell(&l, 0, 0.0);
         assert_eq!(
-            hit_test(screen, &lookups, Vec2::new(x - 1.0, y + 20.0), &available),
+            hit_test(screen, &lookups, Vec2::new(x - 1.0, y + 20.0), &available, 0.0),
             None
         );
         assert_eq!(
-            hit_test(screen, &lookups, Vec2::new(x + 44.0, y + 20.0), &available),
+            hit_test(screen, &lookups, Vec2::new(x + 44.0, y + 20.0), &available, 0.0),
             Some(available[1])
         );
     }
@@ -1199,26 +1370,26 @@ mod tests {
         let lookups = assets::Lookups::default();
         let l = layout(screen, title_width(&lookups), false);
         let available: Vec<usize> = (0..25).collect();
-        let [x, y, _, _] = recipe_cell(&l, 0);
+        let [x, y, _, _] = recipe_cell(&l, 0, 0.0);
         // Just inside the right/bottom edges: still cell 0 (truncation).
         assert_eq!(
-            hit_test(screen, &lookups, Vec2::new(x + 43.9, y + 43.9), &available),
+            hit_test(screen, &lookups, Vec2::new(x + 43.9, y + 43.9), &available, 0.0),
             Some(available[0])
         );
         // Exactly ON the right edge (x+44): outside cell 0 — the next cell
         // starts there, so the point lands on cell 1 (`Rectangle.Contains`).
         assert_eq!(
-            hit_test(screen, &lookups, Vec2::new(x + 44.0, y + 20.0), &available),
+            hit_test(screen, &lookups, Vec2::new(x + 44.0, y + 20.0), &available, 0.0),
             Some(available[1])
         );
         // Exactly ON the bottom edge (y+44): the row below starts there.
         assert_eq!(
-            hit_test(screen, &lookups, Vec2::new(x + 20.0, y + 44.0), &available),
+            hit_test(screen, &lookups, Vec2::new(x + 20.0, y + 44.0), &available, 0.0),
             Some(available[10])
         );
         // Below the last shown row: nothing (the shown list ends at row 2).
         assert_eq!(
-            hit_test(screen, &lookups, Vec2::new(x + 20.0, y + 3.0 * 44.0), &available),
+            hit_test(screen, &lookups, Vec2::new(x + 20.0, y + 3.0 * 44.0), &available, 0.0),
             None
         );
     }
@@ -1257,6 +1428,119 @@ mod tests {
         assert!(draw_slot(&e, Some(3), false, 0, false).grid_selection_highlight);
         // No focus (focusRecipe out of range → null, `:904`/`:614`): no overlay.
         assert!(!draw_slot(&e, None, false, 0, false).grid_selection_highlight);
+    }
+
+    /// W4-f23 doc-sweep: the grid's scroll geometry — `UpdateSize`
+    /// (`UIDynamicItemCollection.cs:160-165`), `GetGridParameters`' culling
+    /// window (`:81-97`) and the `UIList.cs:181` lift.
+    #[test]
+    fn grid_content_height_and_culling_match_the_source() {
+        let l = layout(Vec2::new(1600.0, 900.0), W, false);
+        // 450 / 44 = 10 columns; the list is 404 tall at 1600x900.
+        assert_eq!(grid_cols(&l), 10);
+        // 25 recipes = 3 rows = 132 < 404: the fill height wins, no scroll.
+        assert_eq!(grid_content_height(&l, 25), l.list[3]);
+        assert_eq!(clamp_scroll(50.0, &l, 25), 0.0);
+        // 110 recipes = 11 rows = 484 > 404: MinHeight is the content.
+        assert_eq!(grid_content_height(&l, 110), 484.0);
+        assert_eq!(clamp_scroll(999.0, &l, 110), 80.0);
+        // Unscrolled: start 0, end = min(110, ceil(404/44)*10 + 0 + 10) = 110
+        // (`:92-96` — the +cols slack keeps the whole list).
+        assert_eq!(grid_cull_range(&l, 110, 0.0), (0, 110));
+        // Fully scrolled (80): num = (min(446, 366) - 446)/44 = -1 (C# int
+        // division toward zero) → start 10, startY 410; end = min(110,
+        // 100 + 10 + 10) = 110.
+        assert_eq!(grid_cull_range(&l, 110, 80.0), (10, 110));
+        // The first visible cell of row 1 sits at the lifted top + 44:
+        // (446 - 80) trunc 366, -(-1)*44 → 410, row (10-10)/10 = 0 → 410.
+        assert_eq!(recipe_cell(&l, 10, 80.0)[1], 410.0);
+        // Row 0's cells keep their hitboxes ABOVE the list (num negative,
+        // toward-zero division) — drawn clipped, not hoverable.
+        assert_eq!(recipe_cell(&l, 0, 80.0)[1], 366.0);
+    }
+
+    /// W4-f23 doc-sweep: `UIList.ScrollWheel` (`:107-114`) — one notch is
+    /// 120 raw units (`char_select::WHEEL_STEP`), wheel-up walks the view
+    /// back, `SetView` clamps both rails.
+    #[test]
+    fn the_wheel_scrolls_120px_per_notch_and_clamps() {
+        let l = layout(Vec2::new(1600.0, 900.0), W, false);
+        // 110 recipes → 80 px of travel.
+        assert_eq!(scroll_wheel(0.0, -1, &l, 110), 80.0, "down clamps at 80");
+        assert_eq!(scroll_wheel(80.0, 1, &l, 110), 0.0, "up clamps at 0");
+        // A short list never scrolls (the clamp range is empty).
+        assert_eq!(scroll_wheel(0.0, -5, &l, 25), 0.0);
+        // The wheel target: the list rect, plus the bar only while attached.
+        assert!(wheel_target(&l, 110, Vec2::new(200.0, 500.0)));
+        assert!(wheel_target(&l, 110, Vec2::new(490.0, 500.0)), "the bar");
+        assert!(!wheel_target(&l, 25, Vec2::new(490.0, 500.0)), "detached bar");
+        assert!(!wheel_target(&l, 110, Vec2::new(600.0, 500.0)), "outside");
+    }
+
+    /// W4-f23 doc-sweep: the scrolled hit-test — a cell lifted above the
+    /// list's top is not hoverable (`base.IsMouseHovering` needs the
+    /// pointer inside the `UIList`), and the culling window bounds the walk.
+    #[test]
+    fn scrolled_hit_test_stays_inside_the_list() {
+        let screen = Vec2::new(1600.0, 900.0);
+        let lookups = assets::Lookups::default();
+        let l = layout(screen, title_width(&lookups), false);
+        let available: Vec<usize> = (0..110).collect();
+        // Row 0's cell 0 at scroll 80 draws at y 366 — above the list top
+        // 446. Its centre (388) is outside the list: no hit.
+        let c0 = recipe_cell(&l, 0, 80.0);
+        assert_eq!(
+            hit_test(screen, &lookups, Vec2::new(c0[0] + 22.0, c0[1] + 22.0), &available, 80.0),
+            None
+        );
+        // Cell 10 (row 1) straddles the list top at scroll 80: it draws at
+        // y 410..454, only the 446..454 sliver is inside the list. A click
+        // in that sliver hits (`IsMouseHovering` needs the pointer in the
+        // list; the hitbox itself spans the full 44).
+        let c10 = recipe_cell(&l, 10, 80.0);
+        assert_eq!(c10[1], 410.0);
+        assert_eq!(
+            hit_test(screen, &lookups, Vec2::new(c10[0] + 22.0, 450.0), &available, 80.0),
+            Some(10)
+        );
+        // The cell's centre (432) is above the list top: not hoverable.
+        assert_eq!(
+            hit_test(screen, &lookups, Vec2::new(c10[0] + 22.0, c10[1] + 22.0), &available, 80.0),
+            None
+        );
+        // The last row's cells still hit inside the list.
+        let c109 = recipe_cell(&l, 109, 80.0);
+        assert_eq!(
+            hit_test(screen, &lookups, Vec2::new(c109[0] + 22.0, c109[1] + 22.0), &available, 80.0),
+            Some(109)
+        );
+    }
+
+    /// W4-f23 doc-sweep: `UIScrollbar.LeftMouseDown` (`:126-143`) — the
+    /// handle grab latches the offset, the track press centres the handle.
+    #[test]
+    fn the_bar_press_grabs_the_handle_or_jumps_the_track() {
+        let l = layout(Vec2::new(1600.0, 900.0), W, false);
+        // Detached (25 recipes): no press.
+        assert_eq!(scrollbar_press(&l, 25, 0.0, Vec2::new(490.0, 500.0)), None);
+        // Attached (110 recipes): the handle at pos 0 spans the bar's top.
+        let handle = panel::scrollbar_handle_at(l.scrollbar, l.list[3], 484.0, 0.0);
+        let grab = Vec2::new(handle[0] + 10.0, handle[1] + 5.0);
+        assert_eq!(
+            scrollbar_press(&l, 110, 0.0, grab),
+            Some((0.0, Some(5.0))),
+            "the grab keeps mouse.Y - handle.Y"
+        );
+        // A track press below the handle jumps the view (no latch).
+        let track = Vec2::new(handle[0] + 10.0, l.scrollbar[1] + l.scrollbar[3] - 10.0);
+        let jumped = scrollbar_press(&l, 110, 0.0, track).expect("the track takes it");
+        assert_eq!(jumped.1, None);
+        assert!(jumped.0 > 0.0 && jumped.0 <= 80.0);
+        // The drag frame follows the pointer with the latched offset:
+        // the same pointer that jumped the track drags to the same value
+        // when the latch is the track jump's centring offset.
+        let dragged = scrollbar_drag(&l, 110, (handle[3] as i32 >> 1) as f32, track.y);
+        assert_eq!(dragged, jumped.0);
     }
 
     #[test]

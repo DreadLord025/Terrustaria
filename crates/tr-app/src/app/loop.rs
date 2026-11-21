@@ -344,6 +344,17 @@ impl ApplicationHandler for App {
                 if self.front_wheel(d.round() as i32) {
                     return;
                 }
+                // `Main.DoScrollingInInventory`'s tail
+                // (`Main.cs:17453-17456`): `NewCraftingUI.Visible` sets
+                // `flag = false` — the classic crafting list never scrolls
+                // while the modern panel is up; the panel's own `UIList`
+                // owns the notch through `UserInterface.Update`
+                // (`:219-222`), and the accumulator is consumed whatever
+                // the hit.
+                if self.menu.is_none() && self.front.is_none() && self.crafting_open {
+                    self.craft_wheel(d.round() as i32);
+                    return;
+                }
                 if self.map.as_ref().is_some_and(|m| m.open) {
                     // `Player.cs:25190-25197`: while the map is fullscreen the wheel
                     // zooms it instead of cycling the hotbar.
@@ -521,9 +532,24 @@ impl ApplicationHandler for App {
                             // achievement popup's click reads
                             // (`InGamePopups.cs:124`), consumed per frame.
                             self.ui_left_release = true;
+                            // `UIScrollbar.LeftMouseUp`
+                            // (`UIScrollbar.cs:145-149`): the craft bar's
+                            // drag latch clears on the release.
+                            self.craft_scrollbar_release();
                         }
                         if pressed {
                             self.ui_left_press = true;
+                            // `UIScrollbar.LeftMouseDown`
+                            // (`UIScrollbar.cs:126-143`): the craft grid's
+                            // bar grabs the handle or jumps the track
+                            // before the recipe cells see the press
+                            // (`evt.Target == this`).
+                            if self.menu.is_none()
+                                && self.front.is_none()
+                                && self.craft_scrollbar_press()
+                            {
+                                return;
+                            }
                             // The debug panel's click (the self-contained
                             // cheat-sheet — the panel consumes the clicks
                             // inside its rect).

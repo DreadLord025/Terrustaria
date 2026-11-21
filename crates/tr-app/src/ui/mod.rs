@@ -691,6 +691,11 @@ pub fn draw_hud(
     craft_selected: Option<usize>,
     // `Main.inventoryBack` — the overlay's tint (`ItemSlot.cs:2373`).
     inventory_back: [f32; 4],
+    // The craft grid's live `UIScrollbar.ViewPosition` (`UIList.cs:181`)
+    // and the `_isDragging || _isHoveringOverHandle` latch
+    // (`UIScrollbar.cs:122`).
+    craft_scroll: f32,
+    craft_scroll_hover: bool,
     pulse: UiPulse,
     m_h: f32,
     map_style: i32,
@@ -1011,6 +1016,8 @@ pub fn draw_hud(
                 craft_filter_flags,
                 craft_selected,
                 inventory_back,
+                craft_scroll,
+                craft_scroll_hover,
             );
             // The hovered filter tab's label — `ShowButtonName`
             // (`UICreativeItemsInfiniteFilteringOptions.cs:125-132`):
@@ -1029,7 +1036,7 @@ pub fn draw_hud(
             }
             // Hovering a recipe shows the crafted item's tooltip
             // (`Main.HoverOverCraftingItemButton`, `Main.cs:42250`).
-            if let Some(idx) = crafting::hit_test(screen, lookups, mouse_pos, craft_shown) {
+            if let Some(idx) = crafting::hit_test(screen, lookups, mouse_pos, craft_shown, craft_scroll) {
                 let (kind, count) = crate::craft::RECIPES[idx].create;
                 let hover = crate::item::ItemSlot {
                     kind,

@@ -670,6 +670,17 @@ pub(crate) struct App {
     /// from THIS list before the rebuild (`TryRefocusingRecipe` `:477-495`,
     /// wired in `frame/draw.rs`). Empty until the panel first draws.
     pub(crate) craft_last_available: Vec<usize>,
+    /// The craft grid's `UIScrollbar.ViewPosition` (`UIScrollbar.cs:37-47`):
+    /// the wheel (`UIList.ScrollWheel` `:107-114`) and the bar's press/drag
+    /// (`:126-143`, `:109-112`) write it; `SetView` clamps it to
+    /// `contentHeight - listHeight` every rebuild.
+    pub(crate) craft_scroll: f32,
+    /// The bar's `_isDragging` grab offset (`UIScrollbar.cs:134-135`) —
+    /// `Some` while the handle is held, `None` after `LeftMouseUp` (`:148`).
+    pub(crate) craft_scroll_drag: Option<f32>,
+    /// `_isHoveringOverHandle` (`UIScrollbar.cs:115-120`): re-derived every
+    /// draw frame; the enter edge plays sound 12 (`:119`).
+    pub(crate) craft_scroll_hover: bool,
     /// `Main._currentRecipeBeingCrafted` (`Main.cs:2352`): the held-repeat's
     /// recipe lock — a different recipe or a maxStack-1 product resets it.
     pub(crate) current_recipe_being_crafted: i32,
@@ -3905,6 +3916,9 @@ impl App {
             buff_removals: Vec::new(),
             focus_recipe: 0,
             craft_last_available: Vec::new(),
+            craft_scroll: 0.0,
+            craft_scroll_drag: None,
+            craft_scroll_hover: false,
             current_recipe_being_crafted: -1,
             prevent_craft_click: false,
             pointer: ui::pointer::PointerState::default(),

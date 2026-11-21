@@ -1703,6 +1703,52 @@ impl App {
                         let craft_selected = (self.focus_recipe >= 0)
                             .then(|| craft_available.get(self.focus_recipe as usize).copied())
                             .flatten();
+                        // The craft grid's scrollbar frame, in
+                        // `UIScrollbar.DrawSelf`'s order (`:103-124`):
+                        // `SetView`'s clamp rides every rebuild
+                        // (`UIList.UpdateScrollbar` `:130-137`), the drag
+                        // arm re-derives the position from the pointer
+                        // (`:109-112`), then the handle hover latch with
+                        // its enter-edge sound 12 (`:115-120`). The latch
+                        // and the drag only run while the bar can scroll
+                        // (`AutoHide`'s `CanScroll` gate, `:105`).
+                        if self.crafting_open {
+                            let cl = ui::crafting::layout(
+                                screen,
+                                ui::crafting::title_width_for(lookups),
+                                false,
+                            );
+                            let content_h =
+                                ui::crafting::grid_content_height(&cl, craft_shown.len());
+                            self.craft_scroll = ui::char_select::clamp_scroll(
+                                self.craft_scroll,
+                                cl.list[3],
+                                content_h,
+                            );
+                            if ui::char_select::scrollbar_attaches(cl.list[3], content_h) {
+                                if let Some(offset) = self.craft_scroll_drag {
+                                    self.craft_scroll = ui::crafting::scrollbar_drag(
+                                        &cl,
+                                        craft_shown.len(),
+                                        offset,
+                                        self.mouse_pos.y,
+                                    );
+                                }
+                                let handle = ui::panel::scrollbar_handle_at(
+                                    cl.scrollbar,
+                                    cl.list[3],
+                                    content_h,
+                                    self.craft_scroll,
+                                );
+                                let hovering = ui::in_rect(self.mouse_pos, handle);
+                                if hovering && !self.craft_scroll_hover {
+                                    self.audio.play("Menu_Tick"); // `:119`
+                                }
+                                self.craft_scroll_hover = hovering || self.craft_scroll_drag.is_some();
+                            } else {
+                                self.craft_scroll_hover = false;
+                            }
+                        }
                         ui::draw_hud(
                             renderer,
                             *camera,
@@ -1737,6 +1783,8 @@ impl App {
                             // ticked in the per-frame animation block above)
                             // — the byte colour, no more midpoint stand-in.
                             self.inv_pulse.inventory_back(),
+                            self.craft_scroll,
+                            self.craft_scroll_hover,
                             ui::UiPulse {
                                 // `Main.mouseTextColor / 255` (`Main.cs:20355`).
                                 text: self.mouse_text_color as f32 / 255.0,

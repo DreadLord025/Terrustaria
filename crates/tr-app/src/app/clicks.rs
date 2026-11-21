@@ -961,7 +961,13 @@ impl App {
             &gates,
         );
         let available = self.craft_filters.shown(raw_available.clone());
-        let Some(idx) = ui::crafting::hit_test(screen, &self.lookups, self.mouse_pos, &available)
+        let Some(idx) = ui::crafting::hit_test(
+            screen,
+            &self.lookups,
+            self.mouse_pos,
+            &available,
+            self.craft_scroll,
+        )
         else {
             return false;
         };
@@ -1069,6 +1075,108 @@ impl App {
         }
         self.ui_left_press = false;
         true
+    }
+
+    /// The craft grid's live shown list — the same inputs
+    /// `handle_crafting_clicks` and the draw path feed
+    /// (`Recipe.UpdateRecipeList` + `NewCraftingUI.UpdateContents`).
+    fn craft_shown_list(&self) -> Vec<usize> {
+        let Some(player) = self.player.as_ref() else {
+            return Vec::new();
+        };
+        let reach = craft::tile_reach(
+            player.equipped[..10].contains(&2215) || player.equipped[..10].contains(&3061),
+            self.mouse_item.kind == 1923,
+            self.creative_powers.far_placement_range(),
+            player.ate_artisan_bread,
+        );
+        let adj = craft::scan_adjacent(&self.world, player, reach);
+        let zones = craft::Zones {
+            snow: self.scene_metrics.zone_snow,
+            graveyard: self.scene_metrics.zone_graveyard,
+        };
+        let gates = craft::Gates {
+            unlocked_biome_torches: player.unlocked_biome_torches,
+            mechdusa: self.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX)
+                && self
+                    .world
+                    .seeds
+                    .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+        };
+        let in_range = craft::chests_in_range(
+            &self.world,
+            player,
+            &self.world_chests,
+            self.settings.craft_from_nearby_chests,
+        );
+        let raw = craft::available_with_gates(
+            &self.inventory,
+            &self.equip,
+            &self.world_chests,
+            &in_range,
+            &adj,
+            &zones,
+            self.craft_filter.as_ref(),
+            None,
+            &gates,
+        );
+        self.craft_filters.shown(raw)
+    }
+
+    /// `UIList.ScrollWheel` (`UIList.cs:107-114`) for the craft grid:
+    /// `UserInterface.Update` hands the notch to the element under the
+    /// pointer (`:219-221`) — the list rect or the attached bar — and
+    /// zeroes the accumulator whatever the hit (`Main.cs:17453-17456`:
+    /// `NewCraftingUI.Visible` sets `flag = false`, so the classic list's
+    /// scroll never also runs). Returns whether the panel consumed the
+    /// notch (the hotbar arm must not see it).
+    pub(crate) fn craft_wheel(&mut self, delta: i32) -> bool {
+        if !self.crafting_open {
+            return false;
+        }
+        let (sw, sh) = self.screen_size();
+        let l = ui::crafting::layout(
+            Vec2::new(sw, sh),
+            ui::crafting::title_width_for(&self.lookups),
+            false,
+        );
+        let n = self.craft_shown_list().len();
+        if ui::crafting::wheel_target(&l, n, self.mouse_pos) {
+            self.craft_scroll = ui::crafting::scroll_wheel(self.craft_scroll, delta, &l, n);
+        }
+        true
+    }
+
+    /// `UIScrollbar.LeftMouseDown` (`UIScrollbar.cs:126-143`) for the craft
+    /// grid's bar: the handle grab latches `_dragYOffset`, a track press
+    /// jumps the view. Returns whether the bar took the press — the same
+    /// press must not reach the recipe cells (`evt.Target == this`).
+    pub(crate) fn craft_scrollbar_press(&mut self) -> bool {
+        if !self.crafting_open || !self.ui_left_press {
+            return false;
+        }
+        let (sw, sh) = self.screen_size();
+        let l = ui::crafting::layout(
+            Vec2::new(sw, sh),
+            ui::crafting::title_width_for(&self.lookups),
+            false,
+        );
+        let n = self.craft_shown_list().len();
+        let Some((scroll, drag)) =
+            ui::crafting::scrollbar_press(&l, n, self.craft_scroll, self.mouse_pos)
+        else {
+            return false;
+        };
+        self.craft_scroll = scroll;
+        self.craft_scroll_drag = drag;
+        self.ui_left_press = false;
+        true
+    }
+
+    /// `UIScrollbar.LeftMouseUp` (`UIScrollbar.cs:145-149`): the drag latch
+    /// clears on the release.
+    pub(crate) fn craft_scrollbar_release(&mut self) {
+        self.craft_scroll_drag = None;
     }
 
     /// The town-chatter panel's clicks (`NPCChatPanel.DrawButtons`,
@@ -5265,7 +5373,7 @@ mod s1_h_7_tests {
             .position(|&r| craft::RECIPES[r].create.0 == 8)
             .expect("the torch recipe is available");
         let l = ui::crafting::layout(screen, 0.0, false);
-        let [x, y, _, _] = ui::crafting::recipe_cell(&l, pos);
+        let [x, y, _, _] = ui::crafting::recipe_cell(&l, pos, 0.0);
         Vec2::new(x + 22.0, y + 22.0)
     }
 
@@ -5616,7 +5724,7 @@ mod s1_h_7_tests {
         // position, not 0 (the grid position) nor the recipe-table index.
         let (sw, sh) = app.screen_size();
         let l = ui::crafting::layout(Vec2::new(sw, sh), 0.0, false);
-        let [x, y, _, _] = ui::crafting::recipe_cell(&l, 0);
+        let [x, y, _, _] = ui::crafting::recipe_cell(&l, 0, 0.0);
         app.mouse_pos = Vec2::new(x + 22.0, y + 22.0);
         app.focus_recipe = -1; // nothing focused
         app.ui_left_press = true;
@@ -5660,7 +5768,7 @@ mod s1_h_7_tests {
             .position(|&r| craft::RECIPES[r].create.0 == create)
             .expect("the recipe is available");
         let l = ui::crafting::layout(screen, 0.0, false);
-        let [x, y, _, _] = ui::crafting::recipe_cell(&l, pos);
+        let [x, y, _, _] = ui::crafting::recipe_cell(&l, pos, 0.0);
         Vec2::new(x + 22.0, y + 22.0)
     }
 
