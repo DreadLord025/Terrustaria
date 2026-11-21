@@ -3969,6 +3969,16 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             GOLF_CLUB_HELPER => {
                 (2.0, 2.0, 150, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
             }
+            // W4-f30 — the gravestone family (aiStyle 17, the falling
+            // tombstone): 24x24, knockBack 12, penetrate -1, the stock
+            // tileCollide/timeLeft (`Projectile.cs:1258-1270` the plain 43,
+            // `:2872-2937` the grave markers 201-205, `:5971-5983` the rich
+            // gravestones 527-531 — every row identical bar the type). The
+            // FTW `friendly && hostile` pair is a spawn-time gate
+            // (`DropTombstone`), not a SetDefaults row.
+            43 | 201..=205 | 527..=531 => {
+                (24.0, 24.0, 17, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {

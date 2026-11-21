@@ -495,6 +495,27 @@ pub struct Projectile {
     /// PVE pass hits NPCs), false = the hostile shots (the player-contact
     /// pass hurts the owner).
     pub friendly: bool,
+    /// `Projectile.hostile` (`Projectile.cs:764`, reset false): the shot hurts
+    /// players. The port's player-contact pass keys on `!friendly` (its
+    /// single-player stand-in); this field carries the C# flag for the arms
+    /// that need BOTH contact lanes — the FTW gravestone (`friendly &&
+    /// hostile`, `Projectile.cs:1266-1269`). W4-f30.
+    pub hostile: bool,
+    /// `Projectile.miscText` (`Projectile.cs:792`, reset ""): the tombstone's
+    /// epitaph (`DropTombstone` writes it, `Player.cs:39135`; the aiStyle-17
+    /// landing copies it to the sign, `Projectile.cs:25361`). W4-f30.
+    pub misc_text: String,
+    /// W4-f30 — the aiStyle-17 gravestone's landing request: the
+    /// `(tileX, tileY, style, epitaph)` the C# places inline
+    /// (`Projectile.cs:25333-25364`); the world_sim's projectile pass resolves
+    /// it into the world (the `wants_mark_spawn` intent pattern — the AI arm
+    /// cannot borrow the world mutably mid-dispatch). `None` for every slot
+    /// that did not land this tick.
+    pub(crate) wants_gravestone_place: Option<(i32, i32, i32, String)>,
+    /// W4-f30 — `Player.OnKillNPC`'s GRAVE_MISTAKE latch
+    /// (`Player.cs:20471-20474`): this gravestone's strike killed a town NPC
+    /// this tick. The world_sim pass fires progression 36 and clears it.
+    pub(crate) grave_mistake_kill: bool,
     /// `timeLeft` — ticks down once per update, `Kill()` at `<= 0` (`:17201`).
     pub time_left: i32,
     /// `maxPenetrate` / `penetrate`; 1 = single hit.
@@ -785,6 +806,10 @@ impl Default for Projectile {
             knock_back: 0.0,
             crit: false,
             friendly: true,
+            hostile: false,
+            misc_text: String::new(),
+            wants_gravestone_place: None,
+            grave_mistake_kill: false,
             time_left: TIME_LEFT_DEFAULT,
             max_penetrate: 1,
             penetrate: 1,
@@ -7438,6 +7463,68 @@ impl Projectile {
             }
         }
         self.kill_step(world);
+    }
+
+    /// W4-f30 — `AI()`'s aiStyle-17 arm (`Projectile.cs:25316-25366`): the
+    /// falling gravestone (43 / 201-205 / 527-531). The grounded X friction
+    /// (`velocity.Y == 0 → velocity.X *= 0.98`), the spin
+    /// (`rotation += velocity.X * 0.1`), the 0.2 gravity, the FTW rest kill
+    /// (`|vx|+|vy| < 1 → damage/knockBack 0`), then the owner-gated landing
+    /// scan: the tile at `(center.X/16, (Bottom.Y-4)/16)`, the style off the
+    /// type (201-205 → 1-5, 527-531 → 6-10), `TileObject.CanPlace/Place(85,
+    /// style)`. The placement rides the `wants_gravestone_place` intent (the
+    /// world_sim pass owns the mutable world); the epitaph sign + the Dig
+    /// sound ride the same drain. The generic `kill_step` integrates the
+    /// position (the C#'s `HandleMovement` default, the aiStyle-18 precedent).
+    fn ai_gravestone(&mut self, world: &World, local_owner: u8) {
+        // `:25318-25321` — the grounded friction + the spin.
+        if self.vel.y == 0.0 {
+            self.vel.x *= 0.98;
+        }
+        self.rot += self.vel.x * 0.1;
+        // `:25323` — the gravity.
+        self.vel.y += 0.2;
+        // `:25324-25328` — the FTW rest: a nearly-still stone deals nothing.
+        let get_good = world.seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+        if get_good && self.vel.x.abs() + self.vel.y.abs() < 1.0 {
+            self.damage = 0;
+            self.knock_back = 0.0;
+        }
+        // `:25329-25332` — only the owner's machine places the tile.
+        if self.owner == local_owner {
+            // `:25333-25334` — the landing cell.
+            let num146 = ((self.pos.x + self.w / 2.0) / 16.0) as i32;
+            let num147 = ((self.pos.y + self.h - 4.0) / 16.0) as i32;
+            if world.tile(num146, num147).is_some() {
+                // `:25339-25347` — the style off the type.
+                let style = if (201..=205).contains(&self.kind) {
+                    (self.kind - 200) as i32
+                } else if (527..=531).contains(&self.kind) {
+                    (self.kind - 527) as i32 + 6
+                } else {
+                    0
+                };
+                // `:25348-25364` — CanPlace/Place + the sign + the Kill ride
+                // the intent (the pass resolves them with the mutable world).
+                self.wants_gravestone_place =
+                    Some((num146, num147, style, self.misc_text.clone()));
+            }
+        }
+        // The movement: `HandleMovement`'s `TileCollision` zeroes the blocked
+        // axis (the stone rests on the ground, `Collision.cs:299-330`) — the
+        // gravestone does NOT die on contact (the aiStyle-17 row keeps
+        // `tileCollide` for the rest, the landing scan above places the tile).
+        // The port's per-axis destination probe stands in for the swept
+        // collision (the `kill_step` precedent's recorded approximation).
+        let nx = self.pos.x + self.vel.x;
+        let ny = self.pos.y + self.vel.y;
+        if crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h) {
+            self.vel.x = 0.0;
+        }
+        if crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h) {
+            self.vel.y = 0.0;
+        }
+        self.pos += self.vel;
     }
 
     /// `AI()`'s aiStyle-12 arm (`Projectile.cs:24501-24635`) — the Aqua
@@ -16080,6 +16167,47 @@ impl ProjectilePool {
         out
     }
 
+    /// W4-f30 — the aiStyle-17 gravestone's landing placements
+    /// (`Projectile.cs:25348-25364`): the `(tileX, tileY, style, epitaph)`
+    /// the world_sim pass resolves into the world (`place_item_tile(85,
+    /// style)` + the sign text + the Dig sound). On a successful placement
+    /// the C# `Kill()`s the projectile (`:25364`) — the pass calls
+    /// [`Self::kill_gravestone`] with the slot index after the place lands.
+    pub fn drain_gravestone_places(&mut self) -> Vec<(usize, i32, i32, i32, String)> {
+        let mut out = Vec::new();
+        for (i, p) in self.slots.iter_mut().enumerate() {
+            if let Some((x, y, style, text)) = p.wants_gravestone_place.take() {
+                out.push((i, x, y, style, text));
+            }
+        }
+        out
+    }
+
+    /// W4-f30 — the gravestone's post-placement `Kill()` (`Projectile.cs:25364`):
+    /// the slot dies once its tile landed. A refused placement keeps the
+    /// stone falling (the C# `flag7` false arm — no Kill).
+    pub fn kill_gravestone(&mut self, slot: usize) {
+        self.slots[slot].kill_time_left = self.slots[slot].time_left;
+        self.slots[slot].active = false;
+        self.slots[slot].time_left = 0;
+    }
+
+    /// W4-f30 — `Player.OnKillNPC`'s GRAVE_MISTAKE latch drain
+    /// (`Player.cs:20471-20474`): true once if any gravestone's strike killed
+    /// a town NPC this tick (the world_sim pass fires progression 36). The
+    /// latches clear on the read — one notify per tick, the C#'s per-kill
+    /// event folded (the achievement is one-shot anyway).
+    pub fn drain_grave_mistake(&mut self) -> bool {
+        let mut any = false;
+        for p in self.slots.iter_mut() {
+            if p.grave_mistake_kill {
+                any = true;
+                p.grave_mistake_kill = false;
+            }
+        }
+        any
+    }
+
     /// `AI_108`'s 578 bolt spawn (`Projectile.cs:33838-33841`): the lightning
     /// marker resolves into a `VORTEX_RITUAL_BOLT` (580) with the marker's
     /// owner/damage/knockBack and the aim payload `(x, y, vx, vy, ai0)`.
@@ -17270,6 +17398,12 @@ impl ProjectilePool {
                             self.slots[i].ai_bomb(world, &npcs[..], rng, local_owner);
                         }
                         18 => self.slots[i].ai_demon_scythe(world),
+                        // W4-f30 — `AI()`'s aiStyle-17 arm
+                        // (`Projectile.cs:25316-25366`): the falling
+                        // gravestone (43/201-205/527-531). The friction/spin/
+                        // gravity + the FTW rest + the owner-gated landing
+                        // scan (the placement rides `wants_gravestone_place`).
+                        17 => self.slots[i].ai_gravestone(world, local_owner),
                         // `AI()`'s `else if (this.aiStyle == 12)`
                         // (`Projectile.cs:24501-24635`) — the Aqua Scepter's
                         // water stream (22): the scale decay, the gravity and
@@ -19835,7 +19969,7 @@ impl ProjectilePool {
                 // post-loop call made hit-killed shots survive one frame —
                 // S1-A-9). The immunity gates make the repeated calls
                 // idempotent, exactly like the C#'s.
-                self.damage_pve(world, i, npcs, Some(flail_inputs), owner, player.as_deref_mut(), rng);
+                self.damage_pve(world, i, npcs, Some(flail_inputs), owner, player.as_deref_mut(), rng, local_owner);
                 // The hostile shots' player contact (`Damage_PVP`'s
                 // single-player stand-in): the box overlap -> `Player.hurt`
                 // (the iframes gate inside), the shot dies on the hit.
@@ -19850,7 +19984,7 @@ impl ProjectilePool {
                 // `hostile` stays false — an idle minion never hurts
                 // its owner.
                 if self.slots[i].active
-                    && !self.slots[i].friendly
+                    && (!self.slots[i].friendly || self.slots[i].hostile)
                     && !DUNGEON_DEBRIS.contains(&self.slots[i].kind)
                     && self.slots[i].kind != SLIME_MINION
                 {
@@ -21911,6 +22045,9 @@ impl ProjectilePool {
             None,
             None,
             &mut tr_core::tile_light::FastRandom::new(0),
+            // The bomb kill is not a gravestone — the GRAVE_MISTAKE owner
+            // gate never fires here; 0 (the local player) stands in.
+            0,
         );
         // S1-P-i28 — `Kill_ExplodeTiles` (`Projectile.cs:77265-77296`): the
         // grenades (30/397/517) take the `ExplodeCrackedTiles` arm
@@ -22524,6 +22661,7 @@ impl ProjectilePool {
         owner: Option<(f32, f32)>,
         mut player: Option<&mut crate::player::Player>,
         rng: &mut dyn tr_core::loot::DropRng,
+        local_owner: u8,
     ) {
         let is_whip = tr_core::whip::is_whip(self.slots[slot].kind);
         let (damage, owner_idx, uses_local, uses_id_static, max_penetrate, kb, center) = {
@@ -22596,6 +22734,18 @@ impl ProjectilePool {
         // Projectile.cs:12938 — DamageVar uses the owner's luck when the shot
         // is owned; non-owned shots roll without luck.
         let luck = player.as_deref().map(|p| p.luck_state.luck).unwrap_or(0.0);
+        // W4-f30 — `Player.OnKillNPC`'s GRAVE_MISTAKE latch
+        // (`Player.cs:20463-20476`): a gravestone projectile
+        // (`ProjectileID.Sets.IsAGravestone`, `ProjectileID.cs:190`) whose
+        // strike kills a town NPC fires progression 36. The C# runs the
+        // check on the killing blow (`attempt.DidNPCDie()`, `:13650-13652`);
+        // the port latches it on the slot and the world_sim pass fires the
+        // notify. Only the local player's gravestones count
+        // (`Main.myPlayer == whoAmI`, `:20465`).
+        let gravestone_kind = self.slots[slot].kind;
+        let is_gravestone = gravestone_kind == 43
+            || (201..=205).contains(&gravestone_kind)
+            || (527..=531).contains(&gravestone_kind);
         // `keepIterating`: the walk stops once a hit consumed the projectile.
         // The index walk: the strike reaches the carrier's life pool
         // (`NPC.realLife`, `NPC.cs:81374-81378`), so the NPC list is
@@ -22651,7 +22801,9 @@ impl ProjectilePool {
             if p.kind == 443 && !p.friendly {
                 continue;
             }
-            if refuses_friendly(n, p.kind, kill_guide, kill_clothier) {
+            if refuses_friendly(n, p.kind, kill_guide, kill_clothier)
+                && !is_gravestone
+            {
                 continue;
             }
             // `Damage_PVE_Inner`'s `!this.friendly` refusal (`:12611`): the
@@ -23013,9 +23165,23 @@ impl ProjectilePool {
             crate::special_arrows::status_npc(self.slots[slot].kind, &mut npcs[idx], rng);
             self.special_bullet_status_npc(slot, &mut npcs[idx], rng);
             let expert = player.as_deref().is_some_and(|pl| pl.buffs.expert_mode);
+            // W4-f30 — the pre-strike life for the GRAVE_MISTAKE killing-blow
+            // check (`NPCKillAttempt.DidNPCDie`, `Player.cs:20457`).
+            let hp_before = npcs[idx].hp;
+            let npc_is_town = npcs[idx].kind.is_town_npc_like();
             let landed = Npc::strike_projectile(
                 npcs, idx, strike_dmg, from_x, kb, hit_crit, Some(owner_idx as u8), expert,
             );
+            // `Player.OnKillNPC` (`Player.cs:20471-20474`): the gravestone's
+            // killing blow on a town NPC latches 36 (the local owner only).
+            if is_gravestone
+                && npc_is_town
+                && hp_before > 0
+                && npcs[idx].hp <= 0
+                && owner_idx == local_owner as usize
+            {
+                self.slots[slot].grave_mistake_kill = true;
+            }
             // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`): the
             // Destroyer body's probe launch gate (`:89266-89285`) — the
             // Next(25) roll rides the strike's stream (the C# HitEffect runs
@@ -24565,7 +24731,7 @@ mod tests {
         pool.slots_mut()[slot].penetrate = -1;
         pool.slots_mut()[slot].max_penetrate = -1;
         let mut rng = tr_core::tile_light::FastRandom::new(7);
-        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng, 0);
         assert!(npc.hp < 10_000, "the burst lands");
         // The sentinel stamp: update_count 0 + (u32::MAX) — never expires.
         let stamp = pool.id_static.get(&(RAINBOW_CRYSTAL_EXPLOSION, 0)).copied();
@@ -24573,7 +24739,7 @@ mod tests {
         assert_eq!(npc.immune[0], 0, "the id-static arm clears the per-owner window");
         // A second hit on the same NPC is refused (the sentinel blocks).
         let hp_after = npc.hp;
-        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng, 0);
         assert_eq!(npc.hp, hp_after, "the block-forever sentinel refuses the re-hit");
     }
 
@@ -24594,7 +24760,7 @@ mod tests {
                 .spawn_with_data_ai(kind, npc.x, npc.y, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
                 .unwrap();
             let mut rng = tr_core::tile_light::FastRandom::new(7);
-            pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+            pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng, 0);
             assert!(npc.hp < 10_000, "kind {kind} lands");
             assert_eq!(npc.immune[0], 5, "kind {kind}: the 5-tick per-type arm");
         }
@@ -24616,7 +24782,7 @@ mod tests {
                 .spawn_with_data_ai(kind, npc.x, npc.y, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
                 .unwrap();
             let mut rng = tr_core::tile_light::FastRandom::new(7);
-            pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+            pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng, 0);
             assert!(npc.hp < 10_000, "kind {kind} lands");
             assert_eq!(npc.immune[0], want, "kind {kind}: the per-type arm");
         }
@@ -24644,13 +24810,13 @@ mod tests {
                 .spawn_with_data_ai(LAST_PRISM_LASER, npc.x, npc.y, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
                 .unwrap();
             let mut rng = tr_core::tile_light::FastRandom::new(7);
-            pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+            pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng, 0);
             assert!(npc.hp < 10_000, "the laser lands");
             assert_eq!(npc.immune[0], 5, "the 5-tick per-type arm (plain walk)");
             // penetrate −1 keeps the shot alive, but the 5-tick window
             // refuses the immediate re-hit (`:12620-12624`).
             let hp_after = npc.hp;
-            pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+            pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng, 0);
             assert_eq!(npc.hp, hp_after, "the per-owner window refuses the re-hit");
         }
         // The boxed walk — same arm, same position in the if/else chain.
@@ -24717,6 +24883,7 @@ mod tests {
             None,
             None,
             &mut rng,
+            0,
         );
         assert!(
             npc.hp < before,
@@ -24759,6 +24926,7 @@ mod tests {
             None,
             None,
             &mut rng,
+            0,
         );
         assert_eq!(
             npc.hp,
@@ -24809,6 +24977,7 @@ mod tests {
             Some(player.center()),
             Some(&mut player),
             &mut rng,
+            0,
         );
         // `checkArmorPenetration(25, 0, 200)` = 25/2 = 12 (`NPC.cs:81148`);
         // the ±15% DamageVar rolls 40 into [34, 46], + 12 − 100 stays under
@@ -24844,6 +25013,7 @@ mod tests {
             Some(player.center()),
             Some(&mut player),
             &mut rng3,
+            0,
         );
         let lost3 = 500 - npc3.hp;
         assert!(
@@ -24879,6 +25049,7 @@ mod tests {
             None,
             None,
             &mut rng2,
+            0,
         );
         assert_eq!(npc2.hp, 499, "the ownerless shot keeps the floor of 1");
     }
@@ -25222,6 +25393,155 @@ mod tests {
             !pool.slots()[slot].active,
             "extraUpdates = 2 with timeLeft = 11 must die on frame 4"
         );
+    }
+
+    // ---- W4-f30: the gravestone (aiStyle 17) + GRAVE_MISTAKE (36) ----------
+
+    /// `Projectile.cs:1258-1270` / `:2872-2937` / `:5971-5983` — the gravestone
+    /// family's SetDefaults row: 24x24, aiStyle 17, penetrate -1, the stock
+    /// tileCollide/timeLeft. Every kind (43 / 201-205 / 527-531) shares it.
+    #[test]
+    fn f30_the_gravestone_rows_carry_the_aistyle17_box() {
+        for kind in [43u16, 201, 202, 203, 204, 205, 527, 528, 529, 530, 531] {
+            let d = proj_data(kind).expect("the gravestone row");
+            assert_eq!(d.ai_style, 17, "kind {kind}");
+            assert_eq!((d.w, d.h), (24.0, 24.0), "kind {kind}");
+            assert_eq!(d.penetrate, -1, "kind {kind}");
+            assert!(d.tile_collide, "kind {kind}");
+        }
+    }
+
+    /// `Projectile.cs:25316-25366` — the aiStyle-17 arm: the 0.2 gravity, the
+    /// spin, the grounded friction, the FTW rest kill, and the owner-gated
+    /// landing scan (the style off the type). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn f30_the_gravestone_falls_spins_and_scans_the_landing() {
+        let w = ground();
+        let mut p = Projectile {
+            active: true,
+            kind: 203, // grave marker, style 3
+            owner: 0,
+            pos: Vec2::new(20.0 * 16.0, 10.0 * 16.0),
+            vel: Vec2::new(2.0, 0.0),
+            w: 24.0,
+            h: 24.0,
+            damage: 70,
+            knock_back: 10.0,
+            ..Default::default()
+        };
+        p.ai_gravestone(&w, 0);
+        // `:25323` — the gravity; `:25322` — the spin.
+        assert!((p.vel.y - 0.2).abs() < 1e-5, "vy += 0.2: {}", p.vel.y);
+        assert!((p.rot - 0.2).abs() < 1e-5, "rot += vx*0.1: {}", p.rot);
+        // The landing cell is in the air (row 10) — no placement intent yet.
+        assert!(p.wants_gravestone_place.is_none());
+        // Drop it to the ground row (the ground() surface is row 30): the
+        // landing cell `(center.X/16, (Bottom.Y-4)/16)` reaches the solid.
+        p.pos = Vec2::new(20.0 * 16.0, 28.0 * 16.0);
+        p.vel = Vec2::new(0.0, 0.0);
+        p.ai_gravestone(&w, 0);
+        // `:25318-25320` — the grounded friction (vy == 0 at the arm head).
+        // The placement intent carries the style 3 (203 - 200).
+        let (tx, ty, style, _) = p.wants_gravestone_place.expect("the landing scan");
+        assert_eq!(style, 3, "203 → style 3");
+        assert_eq!(tx, 20, "center.X/16");
+        assert_eq!(ty, ((28.0 * 16.0 + 24.0 - 4.0) / 16.0) as i32);
+        // A non-owner never places (`:25329-25332`).
+        let mut q = p.clone();
+        q.wants_gravestone_place = None;
+        q.owner = 1;
+        q.ai_gravestone(&w, 0);
+        assert!(q.wants_gravestone_place.is_none(), "the owner gate");
+    }
+
+    /// `Projectile.cs:25324-25328` — the FTW rest: a nearly-still stone on a
+    /// For The Worthy world deals nothing (damage/knockBack 0).
+    #[test]
+    fn f30_the_ftw_rest_zeroes_the_damage() {
+        let mut w = ground();
+        w.seeds = tr_core::seeds::SeedFlags::from(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+        let mut p = Projectile {
+            active: true,
+            kind: 43,
+            owner: 0,
+            pos: Vec2::new(20.0 * 16.0, 28.0 * 16.0),
+            vel: Vec2::new(0.3, 0.0), // |vx|+|vy| = 0.3 < 1 after the +0.2 gravity → 0.5
+            w: 24.0,
+            h: 24.0,
+            damage: 70,
+            knock_back: 10.0,
+            ..Default::default()
+        };
+        p.ai_gravestone(&w, 0);
+        assert_eq!(p.damage, 0, "the FTW rest zeroes the damage");
+        assert_eq!(p.knock_back, 0.0, "the FTW rest zeroes the knockback");
+        // A classic world keeps the damage.
+        let classic = ground();
+        let mut q = p.clone();
+        q.damage = 70;
+        q.knock_back = 10.0;
+        q.vel = Vec2::new(0.3, 0.0);
+        q.ai_gravestone(&classic, 0);
+        assert_eq!(q.damage, 70, "the classic stone keeps its damage");
+    }
+
+    /// `Player.OnKillNPC` (`Player.cs:20471-20474`) — a gravestone's strike
+    /// that kills a town NPC latches GRAVE_MISTAKE; a non-town kill or a
+    /// non-gravestone kill does not. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn f30_the_gravestone_town_kill_latches_grave_mistake() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        // A town NPC (the Guide) at low life, in the stone's box.
+        let mut guide = Npc::new(NpcKind::Guide, 20.0 * 16.0, 28.0 * 16.0, 1, 0.0);
+        guide.hp = 1;
+        guide.max_hp = 250;
+        let mut npcs = vec![guide];
+        // The FTW gravestone: friendly + hostile, damage 70.
+        let slot = pool
+            .spawn_with_data_ai_owned(43, 0, 20.0 * 16.0, 28.0 * 16.0, 0.0, 0.0, 70, 10.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot].friendly = true;
+        pool.slots_mut()[slot].hostile = true;
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(&w, slot, &mut npcs, None, None, None, &mut rng, 0);
+        assert!(npcs[0].hp <= 0, "the stone killed the Guide");
+        assert!(pool.drain_grave_mistake(), "the town kill latches 36");
+        assert!(!pool.drain_grave_mistake(), "the latch drains once");
+        // A non-town NPC (a zombie) killed by the stone does NOT latch.
+        let mut zombie = Npc::new(NpcKind::Zombie, 20.0 * 16.0, 28.0 * 16.0, 1, 0.0);
+        zombie.hp = 1;
+        let mut npcs2 = vec![zombie];
+        let slot2 = pool
+            .spawn_with_data_ai_owned(43, 0, 20.0 * 16.0, 28.0 * 16.0, 0.0, 0.0, 70, 10.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot2].friendly = true;
+        pool.damage_pve(&w, slot2, &mut npcs2, None, None, None, &mut rng, 0);
+        assert!(npcs2[0].hp <= 0, "the stone killed the zombie");
+        assert!(!pool.drain_grave_mistake(), "a non-town kill never latches");
+    }
+
+    /// `Player.cs:38834-38837` + `hurt_inner` — the killing blow's source
+    /// projectile latches on the hit that zeroes the life pool; a non-lethal
+    /// hit leaves it unset. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn f30_the_killing_blow_latches_the_source_projectile() {
+        let w = ground();
+        let mut p = crate::player::Player::spawn(&w);
+        p.hp = 50;
+        p.immune = false;
+        p.hurt_cd = 0.0;
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        // A non-lethal gravestone hit: no latch.
+        p.hurt_with_source(10, p.x, &mut rng, true, 43);
+        assert!(p.hp > 0);
+        assert_eq!(p.death_source_projectile, None, "a non-lethal hit never latches");
+        // The lethal gravestone hit: the source latches.
+        p.immune = false;
+        p.hurt_cd = 0.0;
+        p.hurt_with_source(9999, p.x, &mut rng, true, 203);
+        assert_eq!(p.hp, 0);
+        assert_eq!(p.death_source_projectile, Some(203), "the killing blow latches");
     }
 }
 #[cfg(test)]
@@ -27136,7 +27456,7 @@ mod flail_tests {
             pool.slots[slot].ai[0] = state;
             let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
             let mut rng = tr_core::tile_light::FastRandom::new(7);
-            pool.damage_pve(&w, slot, &mut npcs, Some(ins), Some((500.0, 500.0)), None, &mut rng);
+            pool.damage_pve(&w, slot, &mut npcs, Some(ins), Some((500.0, 500.0)), None, &mut rng, 0);
             let dealt = 10_000 - npcs[0].hp;
             // 200 × 2 = 400 pre-variance; ±15% DamageVar → 340..460.
             assert!(
@@ -27169,7 +27489,7 @@ mod flail_tests {
             .unwrap();
         let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
         let mut rng = tr_core::tile_light::FastRandom::new(7);
-        pool.damage_pve(&w, moon, &mut npcs, Some(ins), Some((500.0, 500.0)), None, &mut rng);
+        pool.damage_pve(&w, moon, &mut npcs, Some(ins), Some((500.0, 500.0)), None, &mut rng, 0);
         let dealt = 10_000 - npcs[0].hp;
         // 200 × 2 = 400 (no ×0.8 in flight); ±15% → 340..460. The old port
         // would have dealt 200 × 0.8 = 160 (~136..184).
@@ -29280,6 +29600,7 @@ mod s1_p_i09_yoyo_tests {
             Some((400.0, 509.0)),
             Some(&mut player),
             &mut tr_core::tile_light::FastRandom::new(7),
+            0,
         );
         assert!(npc.hp < before, "the hit landed");
         let p = &pool.slots[slot];
@@ -29326,6 +29647,7 @@ mod s1_p_i09_yoyo_tests {
                 Some((400.0, 509.0)),
                 Some(&mut player),
                 &mut tr_core::tile_light::FastRandom::new(7),
+                0,
             );
             (before - npc.hp, pool.slots[slot].local_ai[0])
         };
@@ -29369,6 +29691,7 @@ mod s1_p_i09_yoyo_tests {
             Some((400.0, 509.0)),
             None,
             &mut tr_core::tile_light::FastRandom::new(7),
+            0,
         );
         let p = &pool.slots[slot];
         assert!((p.vel.x - 2.0).abs() < 1e-4, "10 / 5 along the axis: {:?}", p.vel);
@@ -29392,6 +29715,7 @@ mod s1_p_i09_yoyo_tests {
             Some((400.0, 509.0)),
             None,
             &mut tr_core::tile_light::FastRandom::new(7),
+            0,
         );
         assert_eq!(pool.slots[slot].vel.y, -16.0, "the lift clamps at -16");
     }
@@ -29415,6 +29739,7 @@ mod s1_p_i09_yoyo_tests {
             Some((400.0, 509.0)),
             None,
             &mut tr_core::tile_light::FastRandom::new(7),
+            0,
         );
         assert!(
             (pool.slots[slot].vel - Vec2::new(2.0, 0.0)).length() < 1e-4,
@@ -29462,6 +29787,7 @@ mod s1_p_i09_yoyo_tests {
                 Some((400.0, 509.0)),
                 Some(&mut player),
                 &mut tr_core::tile_light::FastRandom::new(7),
+                0,
             );
             before - npc.hp
         };
@@ -30380,6 +30706,10 @@ mod phasmal_projectile_tests {
             old_position: Vec2::ZERO,
             crit: false,
             friendly: false,
+            hostile: false,
+            misc_text: String::new(),
+            wants_gravestone_place: None,
+            grave_mistake_kill: false,
             time_left: 600,
             max_penetrate: -1,
             penetrate: -1,
@@ -30789,6 +31119,10 @@ mod ritual_projectile_tests {
             old_position: Vec2::ZERO,
             crit: false,
             friendly: false,
+            hostile: false,
+            misc_text: String::new(),
+            wants_gravestone_place: None,
+            grave_mistake_kill: false,
             time_left: 600,
             max_penetrate: -1,
             penetrate: -1,

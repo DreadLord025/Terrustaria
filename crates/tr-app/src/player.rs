@@ -733,6 +733,11 @@ pub struct Player {
     /// (`AllowsRespawnTimerSkip` `:38964`, `UpdateDead` `:17045-17055`).
     /// W4-f30: the hardcore death penalty (`death.rs`).
     pub ghost: bool,
+    /// W4-f30 — `PlayerDeathReason.SourceProjectileType` on the killing blow
+    /// (`Player.cs:38834`): the projectile kind that zeroed the life pool, if
+    /// any. The gravestone teammate-death check (`KillMe`'s 36 arm) reads it;
+    /// the death path consumes it. `None` for a non-projectile death.
+    pub death_source_projectile: Option<u16>,
     /// `Player.aggro` (`Player.cs:1446`, the int default 0): the stealth
     /// offset the shared NPC target scan subtracts (`NPC.cs:77688`) and
     /// the facing-inheritance gate reads (`:77749`). The stealth armour
@@ -2516,6 +2521,7 @@ impl Player {
         Self {
             dead: false,
             ghost: false,
+            death_source_projectile: None,
             // The S1-D-3p stock values (`Player.cs:1446`/`:2994`/`:870`'s
             // field defaults): no stealth, no per-type calm, no tank pet.
             aggro: 0,
@@ -3637,6 +3643,9 @@ impl Player {
         self.breath_cd = 0;
         self.regen = RegenState::default();
         self.dot_death = None;
+        // W4-f30 — the killing-blow source clears on the respawn (the next
+        // death latches its own).
+        self.death_source_projectile = None;
         self.fall_start = (self.y / TILE_PX) as i32;
         self.wet = false;
         self.lava_wet = false;
@@ -4430,6 +4439,13 @@ impl Player {
         // also selects the 20-tick immunity window below, not 40).
         let amount = amount.max(1);
         self.hp = (self.hp - amount).max(0);
+        // W4-f30 — the killing blow's source projectile (`PlayerDeathReason.
+        // SourceProjectileType`, `Player.cs:38834`): the gravestone teammate-
+        // death check (`KillMe`'s 36 arm) reads it. Latched only on the hit
+        // that zeroes the life pool; the death path consumes it.
+        if self.hp <= 0 {
+            self.death_source_projectile = source_projectile;
+        }
         // `Player.Hurt`'s immunity window (`Player.cs:38382-38385`):
         // `int num7 = (pvp ? 8 : ((num2 != 1.0) ? (this.longInvince ? 80 : 40)
         // : (this.longInvince ? 40 : 20)));` then, on the General lane,

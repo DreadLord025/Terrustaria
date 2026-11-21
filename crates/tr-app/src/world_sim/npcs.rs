@@ -6557,12 +6557,27 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 app.rngs.stream(RngKey::UpdatePlayers),
             );
             player.dot_death = None;
+            // W4-f30 — `KillMe`'s teammate-gravestone arm (`Player.cs:38834-
+            // 38837`): a gravestone projectile's killing blow fires 36. The
+            // C# gates on `whoAmI != Main.myPlayer && team == LocalPlayer.team`
+            // (a TEAMMATE's death, credited to the local player); the port is
+            // single-player, so the local gravestone self-kill stands in (the
+            // documented MP deviation — the `OnKillNPC` town-kill arm above
+            // is the primary 36 site). The killing-blow source was latched by
+            // `hurt_inner`; consume it here.
+            let grave_self_kill = player
+                .death_source_projectile
+                .is_some_and(|k| k == 43 || (201..=205).contains(&k) || (527..=531).contains(&k));
+            player.death_source_projectile = None;
             drop(player);
             // `Player.KillMe`'s chat broadcast: the resolved message in
             // the Death color (`ChatColors.cs`); the ported monitor rides
             // the App.
             crate::chat::broadcast_death(&mut app.chat, &death_text);
             crate::death::on_player_death(app, dx, dy, &death_text);
+            if grave_self_kill {
+                let _ = app.notify_progression_net(36);
+            }
             if let Some(player) = app.player.as_mut() {
                 player.start_death(&app.world, boss_near, false);
             }

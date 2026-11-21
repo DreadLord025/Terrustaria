@@ -566,6 +566,73 @@ pub fn on_player_death(app: &mut App, x: f32, y: f32, death_text: &str) {
     tomb.pos = Vec2::new(x, y);
     tomb.text = death_text.to_string();
     app.tomb_falls.push(tomb);
+    // W4-f30 — `Player.DropTombstone` (`Player.cs:39108-39137`): the REAL
+    // aiStyle-17 gravestone projectile. The scatter vx + the kind already
+    // rolled above (`roll_tombstone`, the same `Next(-35,36)` retry / `Next(6)`
+    // / rich `Next(5)+527` draws); the launch adds `Next(10,30)*0.1*hitDirection`
+    // to vx and `Next(-40,-20)*0.1` to vy (FTW ×1.5 both), the damage 70 /
+    // knockback 10 on FTW else 0/0, and `ai[0] = whoAmI` (the dead player's
+    // index — the `ByProjectile` death-attribution key, `Projectile.cs:14637`).
+    // The `friendly && hostile` pair is FTW-only (`Projectile.cs:1266-1269`);
+    // a classic stone is inert (the `tomb_falls` visual above keeps falling).
+    let get_good = app.world.seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+    let hit_direction = 1i32; // the port's death path carries no hitDirection; the C# default arm
+    let (vx, vy, damage, kb) = {
+        let rng = app.rngs.stream(RngKey::UpdatePlayers);
+        let launch_x = rng.next_range(10, 30) as f32 * 0.1 * hit_direction as f32;
+        let launch_y = rng.next_range(-40, -20) as f32 * 0.1;
+        let vx = tomb.vel.x + launch_x;
+        if get_good {
+            (vx * 1.5, launch_y * 1.5, 70, 10.0)
+        } else {
+            (vx, launch_y, 0, 0.0)
+        }
+    };
+    let kind = tomb.kind;
+    let owner = app.local_id as u8;
+    // `NewProjectile`'s X/Y overload centres the box on the player centre
+    // (`Player.cs:39127`'s `position.X + width/2, position.Y + height/2`).
+    let cx = x + crate::player::WIDTH * 0.5;
+    let cy = y + crate::player::HEIGHT * 0.5;
+    if let Some(slot) = app.projectiles.spawn_with_data_ai_owned(
+        kind, owner, cx - 12.0, cy - 12.0, vx, vy, damage, kb, owner as f32, 0.0,
+    ) {
+        let p = &mut app.projectiles.slots_mut()[slot];
+        // `:1266-1269` — the FTW gravestone hits both NPCs and players.
+        p.friendly = get_good;
+        p.hostile = get_good;
+        // `:39134-39135` — the epitaph: the death text + the date line.
+        p.misc_text = format!("{}\n{}", death_text, tombstone_date());
+    }
+}
+
+/// `Player.DropTombstone`'s date line (`Player.cs:39128-39133`):
+/// `DateTime.Now.ToString("MMMM d, yyy")` under the English culture (the
+/// port's `GameCulture` is English; the `"D"` long-date arm is the non-English
+/// fallback). The civil-from-days conversion is the `world_select` precedent
+/// (no date library); the clock is the host's UTC now.
+fn tombstone_date() -> String {
+    const MONTHS: [&str; 12] = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    ];
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let days = (secs / 86_400) as i64;
+    // Hinnant's civil_from_days (the `world_select::civil_from_days` twin).
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = y + (m <= 2) as i64;
+    format!("{} {}, {}", MONTHS[(m - 1) as usize], d, year)
 }
 
 #[cfg(test)]
@@ -772,10 +839,14 @@ mod revenge_tests {
             tvx += expect.next_range(-30, 31) as f32 * 0.1;
         }
         expect.next_max(6);
+        // W4-f30 — the DropTombstone launch draws (`Player.cs:39127`):
+        // Next(10,30) then Next(-40,-20), after the scatter/kind roll.
+        expect.next_range(10, 30);
+        expect.next_range(-40, -20);
         assert_eq!(
             *app.rngs.stream(RngKey::UpdatePlayers),
             expect,
-            "two draws per gem drop, then the tombstone roll"
+            "two draws per gem drop, then the tombstone roll + launch"
         );
     }
 
@@ -838,6 +909,9 @@ mod revenge_tests {
             tvx += expect.next_range(-30, 31) as f32 * 0.1;
         }
         expect.next_max(6);
+        // W4-f30 — the DropTombstone launch draws (`Player.cs:39127`).
+        expect.next_range(10, 30);
+        expect.next_range(-40, -20);
         on_player_death(&mut app, 100.0, 100.0, "Tester was slain...");
         // The drops: gem + block + armor + dye + silver + arrows + cursor
         // stone (the starter tool did NOT drop), no PURSE coin drop.
@@ -928,6 +1002,9 @@ mod revenge_tests {
             tvx += expect.next_range(-30, 31) as f32 * 0.1;
         }
         expect.next_max(6);
+        // W4-f30 — the DropTombstone launch draws (`Player.cs:39127`).
+        expect.next_range(10, 30);
+        expect.next_range(-40, -20);
         on_player_death(&mut app, 100.0, 100.0, "Tester was slain...");
         assert!(app.items.is_empty(), "the cursor RETURNED, no world drop");
         assert_eq!(app.mouse_item.count, 0, "the cursor aired out");
@@ -1030,6 +1107,49 @@ mod revenge_tests {
         on_player_death(&mut soft, 100.0, 100.0, "Tester was slain...");
         let row = soft.achievements.list.iter().find(|a| a.name == "EXTRA_LIFE").unwrap();
         assert!(!row.completed, "softcore never fires 35");
+    }
+
+    /// W4-f30 — `Player.DropTombstone` (`Player.cs:39108-39137`): the death
+    /// spawns the real aiStyle-17 gravestone projectile. A classic world's
+    /// stone is inert (friendly/hostile false, damage 0); a For The Worthy
+    /// world's stone is friendly + hostile with damage 70 / knockback 10.
+    /// The epitaph carries the death text + the date line. WRITTEN NOT RUN.
+    #[test]
+    fn f30_the_death_spawns_the_gravestone_projectile() {
+        use tr_core::seeds::SeedFlags as S;
+        let rig = |seeds: S| {
+            let mut app = flow_app(None, vec![], vec![]);
+            app.world.seeds = seeds;
+            app.player = Some(crate::player::Player::spawn(&app.world));
+            app.coins = 0;
+            app
+        };
+        // The classic world: the stone is inert.
+        let mut app = rig(S::none());
+        on_player_death(&mut app, 100.0, 100.0, "Tester was slain...");
+        let stone = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && (p.kind == 43 || (201..=205).contains(&p.kind) || (527..=531).contains(&p.kind)))
+            .expect("the gravestone spawned");
+        assert!(!stone.friendly && !stone.hostile, "the classic stone is inert");
+        assert_eq!(stone.damage, 0);
+        assert!(stone.misc_text.starts_with("Tester was slain...\n"), "the epitaph");
+        // The FTW world: friendly + hostile, damage 70 / knockback 10.
+        let mut ftw = rig(S::from(S::FOR_THE_WORTHY));
+        on_player_death(&mut ftw, 100.0, 100.0, "Tester was slain...");
+        let stone = ftw
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && (p.kind == 43 || (201..=205).contains(&p.kind) || (527..=531).contains(&p.kind)))
+            .expect("the gravestone spawned");
+        assert!(stone.friendly && stone.hostile, "the FTW stone hits both lanes");
+        assert_eq!(stone.damage, 70);
+        assert_eq!(stone.knock_back, 10.0);
+        // `ai[0]` carries the dead player's index (the ByProjectile key).
+        assert_eq!(stone.ai[0], ftw.local_id as f32);
     }
 }
 
