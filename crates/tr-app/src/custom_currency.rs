@@ -130,13 +130,13 @@ pub(crate) fn count_wallet(inventories: [&[ItemSlot]; 5]) -> i64 {
 /// cache (`ItemCacheRestore`, `CustomCurrencySystem.cs:257-263`) and
 /// return false — nothing moves on a failed buy.
 fn try_purchasing(price: i64, inventories: [&mut [ItemSlot]; 5]) -> bool {
+    let mut num = price;
     if num == 0 {
         return true; // `:73` — a zero price covers before the walk
     }
     // `:28` — the full-cache snapshot (the port's slots are Copy).
     let cache: [Vec<ItemSlot>; 5] =
         std::array::from_fn(|i| inventories[i].to_vec());
-    let mut num = price;
     for (i, slots) in inventories.iter_mut().enumerate() {
         for (k, slot) in slots.iter_mut().enumerate() {
             // `BuyItem`'s `:103` Accepts scan + the `:98` ignore list.
