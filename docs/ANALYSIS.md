@@ -39453,3 +39453,28 @@ ground machine 881/934/854/875/860 (:60816-62889, census-only
 (:70444-70466, AI_145), ogre_stomp (:68780, AI_135). The d78 magic-death-
 blasts lane (`5fe6d940`, kinds 79/16/34/634/635/661) is a co-lane — read-only,
 no overlap with these gore rows, no double-feed.
+
+**SEAL (research/360, 2026-11-21, code-only)**: the family gate re-run
+matches the f5 seal (111 §10.2) exactly — NPC 1345 / Projectile 165 /
+WorldGen 36 / Player 32 / Main 0 = Σ1578, the f5 window 853; the 165-line
+coverage cross-check finds every grep line cited by a `projectile_gore_*`
+module (159 exact + 6 range-cited — the `gore_j` 240-corner doc-comment
+line break + the `gore_m` frost table row), zero uncited. The g65 compose
+(research/360 §3): the death-dust drain (241 arms → **316** distinct kinds
+— the owed-pool "309" was the stale batch-28 census, 26i's "317" a +1
+miscount; the roster matches g65's 346 bible kind-for-kind) carries ZERO
+gore bodies and these modules ZERO dust refs — the bodies are DISJOINT,
+both lanes merge whole; the overlap is g65's draw-only gore census stubs
+(`gore_census` :4756 + the inline `let _` loops), retired for every WIRED
+kind by the §3.2 drop-table (12 drop hunks at g65 tip `37ec2f3aa`, the
+KEEP list for the deferred hosts pinned) — the stubs and the bodies draw
+the identical stream values (6 compose witnesses `w4_g16_seal_*` in
+`projectile_gore_o.rs` pin the six stub shapes, WRITTEN NOT RUN). Two
+caveats published: the **706** DD2 twin (g65's drain arm covers
+664|666|668|706, `gore_death_arms` only the three rowed kinds — re-check
+706's row status at merge before dropping the `:269` census whole) and
+the **503** stub draw-gate (g65 `:3697` skips the `Next(16,18)` for 503;
+the C# `:75729-75733` ALWAYS draws then overrides — g65 owes the one-line
+fix before the 503 row lands; g16's `kill9_503_gores` keeps the draw).
+The 87 g16 witnesses (73 module + 14 wiring) stay WRITTEN NOT RUN, owed
+one compile window before merge.

@@ -246,4 +246,182 @@ mod tests {
         assert_eq!(rng.peek(), twin.peek());
         assert_eq!(gore.slots()[..4].iter().filter(|g| g.active).count(), 4);
     }
+
+    // ---- W4-g16 SEAL compose witnesses (research/360 §3, WRITTEN NOT RUN) ----
+    // Each pins a g16 body fn's draw row against the g65 `gore_census` stub
+    // shape it supersedes at merge (projectile_death_dust.rs @ f6e07bb90):
+    // the stub's let-_ discards become these real spawns, draw-for-draw.
+
+    /// The plain `gore_census(rng, n, false, false)` stub (g65 :4756) vs the
+    /// celeb2 kill row (`kill_row_gores`, the 645/452/454/448/459 hosts):
+    /// Next(100) X/Y pair, Next(61,64) type, the kicks Next(10,31) Y then
+    /// Next(-20,21) X, the two Next(-10,11) nudges - seven ranges per gore.
+    #[test]
+    fn w4_g16_seal_the_g65_plain_census_stub_matches_the_celeb2_kill_row() {
+        let w = air();
+        let mut p = proj();
+        p.w = 144.0;
+        p.h = 144.0;
+        let mut gore = GorePool::new();
+        let mut rng = UnifiedRandom::new(211);
+        crate::projectile_gore_g::kill_row_gores(&p, 3, &mut gore, &mut rng, &w);
+        let mut twin = UnifiedRandom::new(211);
+        for _ in 0..3 {
+            let _ = twin.next_max(100);
+            let _ = twin.next_max(100);
+            let _ = twin.next_range(61, 64);
+            let _ = twin.next_range(10, 31);
+            let _ = twin.next_range(-20, 21);
+            let _ = twin.next_range(-10, 11);
+            let _ = twin.next_range(-10, 11);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the 454 three-row census");
+        assert_eq!(gore.slots()[..3].iter().filter(|g| g.active).count(), 3);
+    }
+
+    /// The scatter+lift stub (`gore_census(rng, ngore, true, true)`, g65's
+    /// dd2_explosion_dust :269) vs `dd2_explosion_gores` (:71888-71900):
+    /// the plain row, then UnitY.RotatedByRandom(PI) (TWO NextDouble) +
+    /// NextDouble radius, then the Next(2) Y-drop gate, then the nudges.
+    /// Count 4, or 8 with setApprenticeT3 (the caller's flag).
+    #[test]
+    fn w4_g16_seal_the_g65_scatter_lift_stub_matches_the_dd2_row() {
+        let w = air();
+        let mut p = proj();
+        p.w = 96.0;
+        p.h = 96.0;
+        for count in [4, 8] {
+            let mut gore = GorePool::new();
+            let mut rng = UnifiedRandom::new(223);
+            crate::projectile_gore_f::dd2_explosion_gores(&p, count, &mut gore, &mut rng, &w);
+            let mut twin = UnifiedRandom::new(223);
+            for _ in 0..count {
+                let _ = twin.next_max(100);
+                let _ = twin.next_max(100);
+                let _ = twin.next_range(61, 64);
+                let _ = twin.next_range(10, 31);
+                let _ = twin.next_range(-20, 21);
+                let _ = twin.next_double(); // RotatedByRandom draw 1
+                let _ = twin.next_double(); // RotatedByRandom draw 2
+                let _ = twin.next_double(); // the radius
+                let _ = twin.next_max(2); // the Y-drop gate
+                let _ = twin.next_range(-10, 11);
+                let _ = twin.next_range(-10, 11);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "the dd2 census at count {count}");
+            assert_eq!(
+                gore.slots()[..count as usize].iter().filter(|g| g.active).count(),
+                count as usize
+            );
+        }
+    }
+
+    /// The scatter-only stub (`gore_census(rng, 2, true, false)`, g65's 617
+    /// :2152 / 467 :2458 / 468 :2492) vs `kill608_617_gores` (the
+    /// fire_explosion_gores keep-one): the plain row + the three-double
+    /// scatter, NO lift gate, then the nudges.
+    #[test]
+    fn w4_g16_seal_the_g65_scatter_stub_matches_the_617_pair() {
+        let w = air();
+        let mut p = proj();
+        p.w = 176.0;
+        p.h = 176.0;
+        let mut gore = GorePool::new();
+        let mut rng = UnifiedRandom::new(227);
+        crate::projectile_gore_f::kill608_617_gores(&p, &mut gore, &mut rng, &w);
+        let mut twin = UnifiedRandom::new(227);
+        for _ in 0..2 {
+            let _ = twin.next_max(100);
+            let _ = twin.next_max(100);
+            let _ = twin.next_range(61, 64);
+            let _ = twin.next_range(10, 31);
+            let _ = twin.next_range(-20, 21);
+            let _ = twin.next_double();
+            let _ = twin.next_double();
+            let _ = twin.next_double();
+            let _ = twin.next_range(-10, 11);
+            let _ = twin.next_range(-10, 11);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the 617 scatter census");
+        assert_eq!(gore.slots()[..2].iter().filter(|g| g.active).count(), 2);
+    }
+
+    /// The confetti stub (g65's confetti_burst :4968 / the 284 inline
+    /// :3804) vs `confetti_gores_vel`: Next(276,283) type, the two kicks,
+    /// then the ADD-then-MULTIPLY ladder (four Next(-50,51)), the
+    /// Next(-20,21) scale, the two Next(-50,51) nudges - ten ranges.
+    /// The 178 passes the velocity, the 284 passes -vel*0.3.
+    #[test]
+    fn w4_g16_seal_the_g65_confetti_stub_matches_the_178_284_rows() {
+        let w = air();
+        let p = proj();
+        for (count, vel) in [(40, p.vel), (5, -p.vel * 0.3)] {
+            let mut gore = GorePool::new();
+            let mut rng = UnifiedRandom::new(229);
+            crate::projectile_gore_h::confetti_gores_vel(&p, count, vel, &mut gore, &mut rng, &w);
+            let mut twin = UnifiedRandom::new(229);
+            for _ in 0..count {
+                let _ = twin.next_range(276, 283);
+                let _ = twin.next_range(10, 31);
+                let _ = twin.next_range(-20, 21);
+                let _ = twin.next_range(-50, 51);
+                let _ = twin.next_range(-50, 51);
+                let _ = twin.next_range(-50, 51);
+                let _ = twin.next_range(-50, 51);
+                let _ = twin.next_range(-20, 21);
+                let _ = twin.next_range(-50, 51);
+                let _ = twin.next_range(-50, 51);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "the confetti census at count {count}");
+            assert_eq!(
+                gore.slots()[..count as usize].iter().filter(|g| g.active).count(),
+                count as usize
+            );
+        }
+    }
+
+    /// The corner stub (g65's 681 :4409 / 240 :3368 inline 4x3 loops) vs
+    /// `goblin_bomb_gores` / `kill240_corner_gores`: per gore Next(61,64)
+    /// type + the two kicks; the sign postlude draws NOTHING.
+    #[test]
+    fn w4_g16_seal_the_g65_corner_stub_matches_the_681_240_fours() {
+        let w = air();
+        let p = proj();
+        let mut gore = GorePool::new();
+        let mut rng = UnifiedRandom::new(233);
+        crate::projectile_gore_f::goblin_bomb_gores(&p, &mut gore, &mut rng, &w);
+        crate::projectile_gore_j::kill240_corner_gores(&p, &mut gore, &mut rng, &w);
+        let mut twin = UnifiedRandom::new(233);
+        for _ in 0..8 {
+            let _ = twin.next_range(61, 64);
+            let _ = twin.next_range(10, 31);
+            let _ = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the two corner fours");
+        assert_eq!(gore.slots()[..8].iter().filter(|g| g.active).count(), 8);
+    }
+
+    /// The star stub (g65's 955 :3896 / 12 :3742 inline loops) vs
+    /// `kill12_star_gores`: per gore ONE NextFloat (the CircularEdge unit),
+    /// the SelectRandom(16,17x7) Next(8) pick, the two kicks. The g65 stub
+    /// folded the screen gate true; the g16 body gates on the real padded
+    /// screen (the caller's `trail_on_screen`) - the drop makes the
+    /// off-screen case C#-correct (zero rows).
+    #[test]
+    fn w4_g16_seal_the_g65_star_stub_matches_the_955_seven() {
+        let w = air();
+        let p = proj();
+        let mut gore = GorePool::new();
+        let mut rng = UnifiedRandom::new(239);
+        crate::projectile_gore_j::kill12_star_gores(&p, &mut gore, &mut rng, &w);
+        let mut twin = UnifiedRandom::new(239);
+        for _ in 0..7 {
+            let _ = twin.next_float(); // CircularEdge unit
+            let _ = twin.next_range(0, 8); // SelectRandom(16,17x7)
+            let _ = twin.next_range(10, 31);
+            let _ = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the 955 star census");
+        assert_eq!(gore.slots()[..7].iter().filter(|g| g.active).count(), 7);
+    }
 }
