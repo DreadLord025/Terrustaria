@@ -948,7 +948,102 @@ mod chest_save_tests {
             None,
             assets::Lookups::default(),
             (0, 0, 0, 0),
+            None,
         )
+    }
+
+    /// W4-f44 SEAL — the character-load hydration through the real
+    /// `App::new` (research/132 §2c's precedence witness): the parked
+    /// `.plr` hydrates the live Player FIRST, the `.trplayer` sidecar
+    /// restore runs SECOND and wins on the fields both carry (hp).
+    /// A `None` park keeps the fresh session spawn untouched.
+    #[test]
+    fn w4_f44_the_played_character_hydrates_before_the_sidecar_restore() {
+        let dir = scratch("seal-hydration-precedence");
+        let plr = dir.join("Hydra.plr");
+        let world_path = dir.join("w.trwld");
+        let file = crate::player_file::PlayerFileWrite {
+            name: "Hydra".into(),
+            life: 300,
+            life_max: 300,
+            mana: 40,
+            mana_max: 60,
+            extra_accessory: true,
+            unlocked_biome_torches: true,
+            using_biome_torches: true,
+            used_upgrades: [false, true, false, true, false, false],
+            voice_variant: 2,
+            voice_pitch_offset: -0.25,
+            inv_favorites: 1 << 4,
+            ..Default::default()
+        };
+        crate::player_file::write_player_file(&plr, &file).expect("the .plr writes");
+        // The sidecar: hp 250 (newer session state) + a position.
+        let p = Player::spawn(&chest_rig());
+        crate::persist::save(
+            &world_path,
+            &p,
+            [(0, 0); 50],
+            0,
+            [0; 3],
+            &[0; 10],
+            &[],
+        )
+        .expect("the sidecar writes");
+        // Overwrite the sidecar's hp line: the writer stamped the fresh
+        // spawn's 100; the session state we test is 250.
+        let side = crate::persist::player_path(&world_path);
+        let text = std::fs::read_to_string(&side).unwrap();
+        let mut lines = text.lines();
+        let version = lines.next().unwrap();
+        let mut pos: Vec<&str> = lines.next().unwrap().split_whitespace().collect();
+        let rest: Vec<&str> = lines.collect();
+        pos[2] = "250";
+        let mut rebuilt = format!("{version}\n{}\n", pos.join(" "));
+        for line in rest {
+            rebuilt.push_str(line);
+            rebuilt.push('\n');
+        }
+        std::fs::write(&side, rebuilt).unwrap();
+
+        let app = App::new(
+            settings::Settings::default(),
+            chest_rig(),
+            WorldSections::native(save::WorldSide::default()),
+            world_path.clone(),
+            tr_render::Atlas::build(Vec::new(), 8192),
+            None,
+            assets::Lookups::default(),
+            (0, 0, 0, 0),
+            Some(plr.clone()),
+        );
+        let live = app.player.as_ref().expect("the player spawns");
+        // The character-load halves landed.
+        assert_eq!(live.max_hp, 300);
+        assert_eq!((live.mana, live.mana_max), (40, 60));
+        assert!(live.extra_accessory && live.unlocked_biome_torches);
+        assert_eq!(live.builder_acc_status[11], 0, "the setter's using-true");
+        assert!(live.used_aegis_fruit && live.used_galaxy_pearl);
+        assert!(live.luck_state.used_galaxy_pearl);
+        assert_eq!(live.voice_variant, 2);
+        assert_eq!(live.voice_pitch_offset, -0.25);
+        assert_eq!(app.player_name, "Hydra", "the file's name is active");
+        assert!(app.is_favorite(4), "the .plr bitfield hydrates the stars");
+        // The sidecar wins on hp (the newer state, §2c) — clamped to the
+        // hydrated max, not the fresh spawn's 100.
+        assert_eq!(live.hp, 250, "sidecar hp wins over the .plr life");
+        assert_eq!(app.play_player.as_deref(), Some(plr.as_path()));
+        // The None park: the fresh session character stands.
+        let plain = app_for(
+            chest_rig(),
+            WorldSections::native(save::WorldSide::default()),
+            dir.join("plain.trwld"),
+        );
+        let fresh = plain.player.as_ref().unwrap();
+        assert_eq!((fresh.hp, fresh.max_hp), (100, 100));
+        assert_eq!(fresh.voice_variant, 1, "the ctor default stands");
+        assert!(!fresh.extra_accessory);
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 
     /// DW-2.2: the save → load round-trip through the App path — a stocked

@@ -434,6 +434,12 @@ pub(crate) struct App {
     /// draft feeds the implicit session entry's name/difficulty
     /// (`UICharacterCreation.cs:1704-1711`; no `.plr` writer — documented).
     pub(crate) session_draft: Option<ui::char_creation::NewPlayerDraft>,
+    /// W4-f44 SEAL — `Main.ActivePlayerFileData` (`Main.cs:66216`
+    /// `data.SetAsActive()` at `SelectPlayer`): the played card's `.plr`
+    /// path, parked by `CharPlay` and re-read by the world swap's fresh
+    /// `App::new` (the character-load hydration, research/132 §2c/§4).
+    /// `None` keeps the implicit session character (the boot default).
+    pub(crate) play_player: Option<PathBuf>,
     /// `PlayerInput.SettingsForUI.ShowGamepadHints`'s port stand-in: the
     /// keyboard's two-layer gate (`UIVirtualKeyboard.cs:675-678`) — false
     /// without a gamepad, so the desktop `outerLayer2` draws (Review Focus 6);
@@ -2718,6 +2724,10 @@ impl App {
         let post = self.post.take();
         let noise_tex = self.noise_tex.take();
         let water_mask = self.water_mask.take();
+        // The played character rides the swap (`Main.ActivePlayerFileData`
+        // survives `Main.LoadWorld`): the fresh `App::new` re-reads the
+        // parked `.plr` and hydrates the live Player (W4-f44 SEAL).
+        let play_player = self.play_player.take();
         // The fresh App carries the new world's state (clouds, sky, stars,
         // player, npcs, town rooms, chests, liquids, rain, wind, atmo,
         // bestiary, the loader pins) exactly as App::new built it at boot.
@@ -2730,6 +2740,7 @@ impl App {
             font_atlas,
             lookups,
             atlas_stats,
+            play_player,
         );
         // The fresh manager loaded its conditions in `App::new`; re-bind its
         // `_savePath` (`AchievementManager.cs:41-55`) exactly as boot did.
@@ -2817,6 +2828,7 @@ impl App {
         font_atlas: Option<tr_render::FontAtlas>,
         lookups: assets::Lookups,
         atlas_stats: (u32, u32, usize, usize),
+        play_player: Option<PathBuf>,
     ) -> App {
         let mut world = world;
         let clouds = make_clouds(&world, &lookups);
@@ -2826,6 +2838,23 @@ impl App {
         let npc_assets = make_npc_assets(&atlas);
         let player_enabled = !crate::env::no_player();
         let mut player = player_enabled.then(|| Player::spawn(&world));
+        // W4-f44 SEAL — the character-load hydration (`Main.SelectPlayer`
+        // → `data.SetAsActive`, `Main.cs:66208-66216`; research/132 §2c's
+        // precedence: character-load FIRST, the sidecar restore SECOND,
+        // sidecar wins as the newer state). The played card's `.plr`
+        // re-reads through the full walk and its per-player state lands
+        // on the live Player; a failed read keeps the fresh spawn (the
+        // C# `GetFileData` null-skip shape, `Player.cs:55862-55881`).
+        let mut loaded_character: Option<crate::player_file::PlayerFile> = None;
+        if let (Some(path), Some(p)) = (play_player.as_ref(), player.as_mut()) {
+            match crate::player_file::read_player_file(path) {
+                Ok(file) => {
+                    p.hydrate_from_file(&file);
+                    loaded_character = Some(file);
+                }
+                Err(e) => log::warn!("character load failed: {e}"),
+            }
+        }
         let mut npcs = Vec::new();
         // The town rooms (`WorldGen.TownManager`, world-file section 9): built
         // from the loaded section so the home re-validation below can consult
@@ -3411,8 +3440,13 @@ impl App {
         let atmo = 1.0_f32;
 
         // Character name and the session menu (`M6`): screenshots and debug hooks skip
-        // the menu so the deterministic output stays unchanged.
-        let player_name = crate::env::player_name().unwrap_or_else(|| menu::random_name());
+        // the menu so the deterministic output stays unchanged. A loaded
+        // character's file name wins (`Main.ActivePlayerFileData.Player.name`).
+        let player_name = loaded_character
+            .as_ref()
+            .map(|f| f.name.clone())
+            .or_else(crate::env::player_name)
+            .unwrap_or_else(|| menu::random_name());
         let join_target = crate::env::join_target()
             .map(|addr| (addr, crate::env::join_password().unwrap_or_default()));
         let auto_host = crate::env::auto_host();
@@ -3606,8 +3640,15 @@ impl App {
             creative_powers,
             #[cfg(feature = "debug")]
             debug_panel: tr_debug::Panel::new(),
-            favorite_slots: Vec::new(),
+            // The played character's `.plr` favourite bitfield hydrates
+            // the live slots (BUG-03's play-side half, `Player.cs:54820-54824`).
+            favorite_slots: loaded_character.as_ref().map_or_else(Vec::new, |f| {
+                (0..crate::inv::INV_SLOTS)
+                    .filter(|&i| f.inv_favorites & (1 << i) != 0)
+                    .collect()
+            }),
             play_world: None,
+            play_player,
             world_gen_job: None,
             capture: crate::capture::CaptureManager::default(),
             invasion_spawn_timer: 0.0,
@@ -5123,6 +5164,7 @@ pub(crate) mod tr_hooks {
             font_atlas,
             lookups,
             stats,
+            None,
         );
         app.static_sheets = boot_static;
         app.fonts_cache = boot_fonts;

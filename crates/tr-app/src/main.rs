@@ -358,6 +358,9 @@ fn main() -> Result<()> {
         font_atlas,
         lookups,
         atlas_stats,
+        // The boot has no played card yet — the front end parks one on
+        // `CharPlay` (the W4-f44 hydration seam).
+        None,
     );
     // `MapHelper.LoadMap`: restore the explored map from the `.map` sidecar.
     app.static_sheets = boot_static;

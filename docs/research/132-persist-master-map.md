@@ -43,7 +43,7 @@ been superseded):
 | `origin/task/W4-d109-framing-genrand-a3` | `81894095` | `.trwld` **v18** dense W×H framing-variants block (port-only, LAST; `variants_from_save` arms resetFrame:false) |
 | `origin/task/W4-f45-wld-header-2` (+c43 `076970809` in lineage) | `6352d3840` | `.wld` header/flags second half OWNED (13 phases — the flags merge base per 138 §5); **c43's `.trwld` v18 44-byte identity tail** (generator version/GUID/worldId/CreationTime/LastPlayed) + the `.plr` `.bak`/revision-carry/UtcNow envelope — the L1 envelope co-lane |
 | `origin/task/W4-g55-ui-loadout-save` | `cde865fc2` | `.plr` loadout family + `.trplayer` v7 loadout block (folded into g88's superset) |
-| `origin/task/W4-e10-player-sounds-wave` | **`432dd5ab1`** over `693e3850a` (the voice-picker + persistence docs) | **voice-write LANDED** (the char-creation picker + the draft→`.plr` threading + its own i32 transport diff) — the keep-one vs THIS branch's u8 transport is §4; the live-Player hydration hunk is still open on BOTH branches |
+| `origin/task/W4-e10-player-sounds-wave` | **`432dd5ab1`** over `693e3850a` (the voice-picker + persistence docs) | **voice-write LANDED** (the char-creation picker + the draft→`.plr` threading + its own i32 transport diff) — the keep-one vs THIS branch's u8 transport is §4; the live-Player hydration hunk is CLOSED by this branch's SEAL-phase port (§4's e10c receipt) |
 | this branch | `bdd1cc79a` (FINAL docs over `63204f85` slot-11 property fix) | `.plr` complete (research/99) + the timestamp fix + the UsingBiomeTorches property seam; `.trplayer` stays main's **v6**; `.trwld` stays **v17** |
 
 ---
@@ -185,25 +185,26 @@ meaning:
 - **G7 (this lane)** models the `.plr` slots so a VANILLA character's
   already-used upgrades survive a port read→re-save (the audit's loss
   case). It invents no state; `PlayerFile.used_upgrades` is a verbatim
-  byte carrier. The live `Player` on THIS branch has only
+  byte carrier. The live `Player` on THIS branch now carries ALL SIX
+  (the SEAL-phase hydration port declared the five siblings beside
   `used_gummy_worm` (i35) + `ate_artisan_bread` (reach formula) — the
-  other four G7 slots have no live consumer here; the g-lanes own them.
+  g90b declaration spots, so the g-lanes' consumers fold textually).
 - **g89/g90 sidecar bools** carry the LIVE session's unlock state
   (the use arms set `Player.used_*`, the booster rows read them every
   tick) across world reloads, because the `.plr` is not re-saved
   in-session. Same field, same meaning — a second carrier for a
   different save cadence.
-- **The merge boundary:** the live `Player.used_*` fields (g89/g90's
-  declarations) are the single live truth; the sidecar restores them at
-  world load (`app/mod.rs`'s `persist::load` block); the `.plr` G7
-  carrier restores them at CHARACTER load (once the character-load path
-  hydrates a live Player — today the `.plr` reader feeds only the card
-  list, `save_list.rs:294`). When both restores exist, the character
-  load runs FIRST (App::new spawns the Player), the sidecar restore
-  second (world load) — the sidecar wins for a world that was saved
-  after the character file, which is the correct precedence (it is the
-  newer state). A `.plr`-only field (extraAccessory etc.) has no sidecar
-  line, so no precedence question arises.
+- **The merge boundary (LIVE since the SEAL-phase port):** the live
+  `Player.used_*` fields are the single live truth; the `.plr` G7
+  carrier restores them at CHARACTER load (`CharPlay` parks the
+  card's path, `App::new` calls `Player::hydrate_from_file` — §4's
+  e10c receipt); the sidecar restores them at world load (the
+  `persist::load` block, which runs AFTER the hydration in the same
+  `App::new`). The character load runs FIRST, the sidecar restore
+  second — the sidecar wins for a world that was saved after the
+  character file, which is the correct precedence (it is the newer
+  state). A `.plr`-only field (extraAccessory etc.) has no sidecar
+  line under the §2f default-DROP, so no precedence question arises.
 
 ### 2d. The f33 torch-favor v7 fork (the EIGHTH v7 collision — FINAL-phase input)
 
@@ -503,8 +504,10 @@ tips being final.
    (its `w4_e10_the_voice_pair_round_trips_at_the_csharp_offsets` ==
    this branch's `the_voice_pair_round_trips_clamps_and_derives` first
    arm — keep one; the clamp + gender-derive arms are already covered
-   here). The live-Player hydration hunk stays OPEN on both branches
-   (§4 — the f44c full-walk seam, `CharPlay` is routing-only).
+   here). The live-Player hydration hunk is CLOSED on this branch
+   (§4's e10c receipt — the SEAL-phase port: `CharPlay` parks the
+   card's `.plr`, `App::new` hydrates the live Player; e10's fold
+   keeps its consumers and drops its own hydration note).
 8. Anchors: this lane's rows stay; the g-lanes' `.plr` witnesses
    re-pin onto the array fields (their assertions are slot-value
    assertions — mechanically portable).
@@ -802,6 +805,11 @@ superseded. What e10 carries now (the diff against main, re-read):
   seam: "the live in-world Player's hydration from a loaded file is
   the f44c save-load audit's seam (`CharPlay` is routing-only, spec
   §9.4), so it stays at the ctor's 1 in play until that lands."
+  **That seam is now LANDED here** (the e10c receipt below — this
+  branch declares the same `voice_variant: i32`/`voice_pitch_offset:
+  f32` live pair at the same ctor defaults, so e10's declaration hunk
+  dedups textually; `voice_override` stays e10's — it is a per-tick
+  equip-derived field, not a persisted one).
 
 **Row 67-68 status (this lane):** COMPLETE on the `.plr` side —
 `voice_variant: u8` + `voice_pitch_offset: f32` ride both models
@@ -829,20 +837,73 @@ read exactly like the C#). e10's `save_list.rs` test-fixture hunks
 (the `voice_variant: 1, voice_pitch_offset: 0.0` literals) dedup onto
 this branch's fixtures (same values, the u8 type).
 
-**The hydration hunk (STILL OPEN on both branches — the receipt):**
-neither branch hydrates a live in-world `Player` from a loaded `.plr`
-(this branch's reader feeds the card list, `save_list.rs:294`; e10's
-`693e3850a` note pins `CharPlay` as routing-only). The seam is
-unchanged and clean: `p.voice_variant = file.voice_variant as i32`
-(the 1..4 clamp already applied on the read side) + `p.voice_pitch_offset
-= file.voice_pitch_offset`, at the future character-load restore block
-(the same block that seats the G7 unlock restores, §2c). The save
-direction casts back (`file.voice_variant = p.voice_variant as u8`).
-e10 owns the CONSUMERS (the voice trees, the pitch remap
-`Utils.Remap(-1,1,-0.7,0.7)`); this lane owns the TRANSPORT. The
-picker UI seam the FINAL probe flagged is now CLOSED by e10's push —
-the remaining gap is the hydration hunk alone, and it is a shared
-remainder (the character-load path), not a voice-specific one.
+**The hydration hunk — CLOSED on THIS branch (the e10c receipt, the
+SEAL-phase port).** The RETIRE state ("STILL OPEN on both branches":
+this branch's reader fed only the card list, `save_list.rs:294`; e10's
+`693e3850a` note pinned `CharPlay` as routing-only) is superseded by
+this phase's code commit. The census found the hunk SMALL (the reader
+already models every field; only the apply-side was missing) and it
+is ported on the canonical walk:
+
+- **The park** (`app/flow.rs`, `apply_front_flow`): `CharPlay(i)` parks
+  the card's `.plr` path on `App.play_player` — the
+  `Main.SelectPlayer` → `data.SetAsActive` seam
+  (`UICharacterListItem.cs:256-261`, `Main.cs:66208-66216`). A
+  disk-less card (the session stand-in / a fake) parks `None`.
+- **The carry** (`app/mod.rs`, `swap_world`): the park rides the
+  `App::new` reset (`Main.ActivePlayerFileData` survives
+  `Main.LoadWorld`); `App::new` gains the `play_player` parameter
+  (boot/tests pass `None` — the fresh session spawn is untouched, the
+  golden/screenshot determinism holds).
+- **The apply** (`Player::hydrate_from_file`, `player.rs`): the read
+  `PlayerFile`'s per-player state lands on the live Player — the
+  stats (the reader's 500/200/400 clamps already applied), the G7
+  unlock family (`extra_accessory`, the torch pair through the
+  slot-11 SETTER then the builder-array copy in C# order — the
+  `63204f85` property model, `ate_artisan_bread`, the six
+  `used_upgrades` onto the five new sibling fields + the existing
+  `used_gummy_worm`, the super-cart BitsByte split), the voice pair
+  (`p.voice_variant = file.voice_variant as i32` — the 1..4 clamp
+  already applied on the read side — + `p.voice_pitch_offset =
+  file.voice_pitch_offset`, exactly the seam this section predicted),
+  the pearl's `LuckState` mirror (the `:29142-29145` +0.03 term's
+  input), and the counters (angler/golfer/deaths/team). The file's
+  name becomes `App.player_name`; the `inv_favorites` bitfield
+  hydrates `favorite_slots` (BUG-03's play-side half).
+- **The precedence** (§2c, LIVE): the hydration runs FIRST in
+  `App::new` (right after `Player::spawn`), the `.trplayer` sidecar
+  restore runs SECOND (the existing block) and wins on the shared
+  fields — the sidecar hp clamps against the HYDRATED max, not the
+  fresh 100.
+- **The new live fields** (`player.rs`): `voice_variant: i32` (ctor 1,
+  `Player.cs:56045` — e10's live width, the u8 transport casts),
+  `voice_pitch_offset: f32`, `used_aegis_crystal/used_aegis_fruit/
+  used_arcane_crystal/used_galaxy_pearl/used_ambrosia` (the
+  `Player.cs:852-862` siblings of the existing `used_gummy_worm` —
+  the g90b declaration spots, so the powerup lanes' folds dedup
+  textually). The voice CONSUMERS stay e10's (the hurt cue keeps its
+  variant-1 stand-in until that fold); the upgrade CONSUMERS stay the
+  powerup lanes' (the fields are the persistence owners).
+- **The witnesses (written not run, code-only):**
+  `w4_f44_the_character_load_hydrates_the_live_player` (player.rs —
+  the full field set through a real write→read→hydrate round, both
+  slot-11 arms: the array-overwrite disable + the setter-alone
+  enable, the cart BitsByte split, the pearl mirror),
+  `w4_f44_char_play_parks_the_cards_plr_path` (flow.rs — the disk
+  card parks its path, the session stand-in parks `None`),
+  `w4_f44_the_played_character_hydrates_before_the_sidecar_restore`
+  (saveglue.rs — the real `App::new` e2e: the `.plr` hydrates, the
+  sidecar hp 250 WINS over the file's 300-life at the hydrated max,
+  the name/favourites land, the `None` park keeps the fresh spawn).
+
+**The remaining shared remainder is the EXIT-SAVE alone** (the `.plr`
+re-save at world exit — the save funnel writes the sidecar only):
+103 §2b rule 3's condition (b). Condition (a) — this hunk — is MET.
+The save direction casts back (`file.voice_variant = p.voice_variant
+as u8`) when that lane lands. e10 owns the CONSUMERS (the voice
+trees, the pitch remap `Utils.Remap(-1,1,-0.7,0.7)`); this lane owns
+the TRANSPORT + the HYDRATION. The picker UI seam was CLOSED by e10's
+push; the hydration seam is CLOSED by this port — the e10c receipt.
 
 ## 5. The back-compat matrix (cross-layer)
 
@@ -1034,6 +1095,26 @@ arithmetic re-derived against our FINAL `bdd1cc79a` base (the
 conditional fold). No cargo/tests/rustfmt/graphify per the lane
 constraint.
 
+**SEAL-phase verification (item 3 — the hydration port):** the
+census ran over every `read_player_file`/`PlayerFile` caller (only
+`save_list.rs:294`'s card list + the creation writer consumed the
+reader — no live-Player apply existed), the `CharPlay` routing
+(`flow.rs`'s click gate + `next_flow_state`), the `swap_world` →
+`App::new` reset and the sidecar restore block's position; the C#
+anchors re-read (`Main.cs:66208-66251` SelectPlayer,
+`UICharacterListItem.cs:256-262` PlayGame, `Player.cs:55216-55278`
+the unlock reads, `:55710-55745` the cart/voice reads, `:3950-3964`
+the property, `:852-862` the six field decls, `:56045` the voice
+ctor, `:29142-29145` the pearl term — the +0.03 mirror verified
+against `luck.rs:201-203`); e10's live-field shapes re-read at
+`432dd5ab1` (player.rs `:2000-2010` — the i32/f32 pair matched). A
+brace/paren balance sweep of the five touched files (the player.rs
+−1 paren delta is pre-existing at HEAD, comment text) + a full
+`git diff` re-read. 3 witnesses written not run; no cargo/tests/
+rustfmt/graphify per the lane constraint. The golden `.plr` parity
+is untouched (no codec change — the port is apply-side only; the
+`None` park keeps every existing boot/screenshot path byte-identical).
+
 ## 8. The FINAL-FINAL merger persist-checklist (THE merger-bible — all
 recognition rules, all claimants, all dedup steps, in order)
 
@@ -1146,9 +1227,10 @@ merger executes, it does not re-decide.
    version headers (L2 → v12 at the dh fold) move.
 2. The back-compat witness-matrix is §5 — run it as the merge
    acceptance list (every row is a written witness on some lane).
-3. The e10 hydration hunk + the character-load restore block + the
-   exit-save are the SHARED remainders (§2c/§4) — they are seams, not
-   conflicts; no lane blocks another.
+3. The character-load hydration is LANDED on this branch (§4's e10c
+   receipt — the SEAL-phase port). The EXIT-SAVE (the `.plr` re-save
+   at world exit) is the one remaining SHARED remainder (§2c/§4) —
+   a seam, not a conflict; no lane blocks another.
 
 ### Step 5 — canaries
 

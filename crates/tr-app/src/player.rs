@@ -1889,6 +1889,20 @@ pub struct Player {
     /// wave-A façade (the `GetRandomPitch` NextFloat rides the audio-only
     /// stream; `Item32`'s variance is 0, the draw is still consumed).
     pending_flap_sound: Option<(u16, f32, f32)>,
+    /// W4-f44 SEAL — `Player.voiceVariant` (`Player.cs:1346`, ctor 1
+    /// `:56045`): the character's hurt/death voice family. The `.plr`
+    /// persists it (`:54924`/`:55730`, the 1..4 clamp `:55831`); the
+    /// character-load hydration restores it (`hydrate_from_file`).
+    /// The i32 width is e10's live-field shape (132 §4's keep-one: the
+    /// u8 transport casts as-i32 here); the voice CONSUMERS (the
+    /// PlayHurtSound/PlayDeathSound trees + the pitch remap) are e10's
+    /// lane — this branch's hurt cue keeps its variant-1 stand-in until
+    /// that fold.
+    pub voice_variant: i32,
+    /// `Player.voicePitchOffset` (`Player.cs:1348`, default 0): the
+    /// per-character pitch the default-voice arms remap through
+    /// `Utils.Remap(-1,1,-0.7,0.7)` (`:38699-38700`) — e10's consumer.
+    pub voice_pitch_offset: f32,
     /// `Player.ManaEffect` (`Player.cs:4531-4538`): the mana-restore combat
     /// text the cuffs arm queues from `Hurt` (`:38291-38303`) — the caller
     /// owns `Main.combatText`, so the Player hands the amount over (the
@@ -2127,6 +2141,20 @@ pub struct Player {
     /// fishing skill (`:45411-45416`, `:12857-12860`). NOT cleared by
     /// ResetEffects — a permanent unlock (the player-file field).
     pub used_gummy_worm: bool,
+    /// W4-f44 SEAL — the five sibling one-use permanents
+    /// (`Player.cs:852-862`: `usedAegisCrystal`/`usedAegisFruit`/
+    /// `usedArcaneCrystal`/`usedGalaxyPearl`/`usedAmbrosia`; the use arms
+    /// `:45332-45424` are the powerup lanes', the `.plr` halves ride
+    /// `used_upgrades[0/1/2/3/5]`, `Serialize:54781-54786`). The
+    /// character-load hydration restores them (`Player.hydrate_from_file`);
+    /// the pearl's luck mirror rides `LuckState.used_galaxy_pearl`
+    /// (`:29142-29145`'s +0.03 term — the g90b mirror shape, 132 §4).
+    /// NOT cleared by ResetEffects — permanent unlocks.
+    pub used_aegis_crystal: bool,
+    pub used_aegis_fruit: bool,
+    pub used_arcane_crystal: bool,
+    pub used_galaxy_pearl: bool,
+    pub used_ambrosia: bool,
     /// (Gate merge i35 ⨉ i41: `can_float_in_water` and `no_items` are
     /// declared ONCE, with the mount block above — the i35 duplicates
     /// folded into them; the fishing float bonus / bobber kill gate read
@@ -2470,6 +2498,65 @@ impl Player {
             self.yoyo_hit_counter += 1;
         }
         hit
+    }
+
+    /// W4-f44 SEAL — the character-load hydration (`Main.SelectPlayer` →
+    /// `PlayerFileData.SetAsActive` → `Main.ActivePlayerFileData`,
+    /// `Main.cs:66208-66216`; the fields themselves are the `Deserialize`
+    /// targets, `Player.cs:55216-55745`). Applies the read `.plr`'s
+    /// per-player state onto the live Player BEFORE any sidecar restore
+    /// (132 §2c's precedence: character first, sidecar second, sidecar
+    /// wins as the newer state). Scope: the stats, the permanent-unlock
+    /// family (the torch pair through the slot-11 SETTER, the six
+    /// used-upgrades, the Demon Heart slot, the super-cart BitsByte), the
+    /// voice pair (e10's consumer seam, 132 §4) and the counters. The
+    /// inventory/equip/bank payloads stay the App-level restore's scope
+    /// (the sidecar's lossy projection today; the full `.plr` inventory
+    /// restore is the exit-save lane's remainder).
+    pub fn hydrate_from_file(&mut self, file: &crate::player_file::PlayerFile) {
+        // The stats (`Deserialize:55216-55234` — the reader already
+        // applied the 500/200/400 clamps).
+        self.max_hp = file.life_max;
+        self.hp = file.life.clamp(0, file.life_max);
+        self.mana_max = file.mana_max;
+        self.mana = file.mana.clamp(0, file.mana_max);
+        // The unlock/seed block (`:55235-55266`).
+        self.extra_accessory = file.extra_accessory;
+        self.unlocked_biome_torches = file.unlocked_biome_torches;
+        // The `:55242` read lands on the SETTER (`Player.cs:3960-3963`,
+        // `builderAccStatus[11] = !value`); the >=230 builder-array read
+        // (`:55635-55653`) runs LATER in the C# and overwrites slot 11
+        // from the file — the reader's `builder_acc_status` already rode
+        // that order, so copying the array AFTER the setter is the C#
+        // final state (the 63204f85 property model, no stored toggle).
+        self.builder_acc_status[11] = i32::from(!file.using_biome_torches);
+        self.builder_acc_status = file.builder_acc_status;
+        self.ate_artisan_bread = file.ate_artisan_bread;
+        // The six one-use upgrades in file order (`:55255-55260`:
+        // crystal/fruit/arcane/pearl/worm/ambrosia).
+        self.used_aegis_crystal = file.used_upgrades[0];
+        self.used_aegis_fruit = file.used_upgrades[1];
+        self.used_arcane_crystal = file.used_upgrades[2];
+        self.used_galaxy_pearl = file.used_upgrades[3];
+        self.used_gummy_worm = file.used_upgrades[4];
+        self.used_ambrosia = file.used_upgrades[5];
+        // The pearl's luck mirror (g90b's shape — the Player field is
+        // the persistence owner, `LuckState` the per-tick consumer).
+        self.luck_state.used_galaxy_pearl = file.used_upgrades[3];
+        // The super-cart BitsByte (`:55710-55719`: bit 0 unlocked,
+        // bit 1 enabled; the <253 derive already ran in the reader).
+        self.unlocked_super_cart = file.super_cart & 1 != 0;
+        self.enabled_super_cart = file.super_cart & 2 != 0;
+        // The voice pair (`:55728-55745`, the 1..4 clamp already applied
+        // by `finish_player_file`) — e10's i32 live width, 132 §4.
+        self.voice_variant = file.voice_variant as i32;
+        self.voice_pitch_offset = file.voice_pitch_offset;
+        // The counters (`:55624-55627`/`:55692-55695`/`:55271-55278`).
+        self.angler_quests_finished = file.angler_quests_finished;
+        self.golfer_score = file.golfer_score;
+        self.deaths_pve = file.deaths_pve.max(0) as u32;
+        self.deaths_pvp = file.deaths_pvp.max(0) as u32;
+        self.team = file.team as i32;
     }
 
     pub fn spawn(world: &World) -> Self {
@@ -2873,6 +2960,8 @@ impl Player {
             wing_frame: 0,
             wing_frame_counter: 0,
             pending_flap_sound: None,
+            voice_variant: 1, // `Player.cs:56045`
+            voice_pitch_offset: 0.0,
             pending_mana_effect: None,
             pending_heal_effect: None,
             pending_retaliate: None,
@@ -2928,6 +3017,13 @@ impl Player {
             acc_lava_fishing: false,
             override_fishing_bobber: -1,
             used_gummy_worm: false,
+            // The five sibling permanents (`Player.cs:852-862` field
+            // initializers, all false) — the hydration restores them.
+            used_aegis_crystal: false,
+            used_aegis_fruit: false,
+            used_arcane_crystal: false,
+            used_galaxy_pearl: false,
+            used_ambrosia: false,
             acc_sentry_backpack: false,
             acc_sentry_backpack_grab_cooldown: 0,
             ballista_panic: false,
@@ -13740,6 +13836,84 @@ mod tests {
         }
         assert!(!p.allows_respawn_timer_skip(true, false, false));
         assert!(p.allows_respawn_timer_skip(false, false, false));
+    }
+
+    /// W4-f44 SEAL — the character-load hydration (research/132 §2c/§4's
+    /// hunk): a written `.plr` re-read through the full walk lands its
+    /// per-player state on the live Player. The torch pair rides the
+    /// slot-11 SETTER + the later builder-array overwrite (the C# order,
+    /// `Player.cs:55242` then `:55635-55653`); the six used-upgrades land
+    /// in file order with the pearl's luck mirror; the super-cart
+    /// BitsByte splits into the two bools; the voice pair casts u8→i32
+    /// (e10's live width).
+    #[test]
+    fn w4_f44_the_character_load_hydrates_the_live_player() {
+        let dir = crate::test_world_helpers::test_scratch("f44-seal-hydration");
+        let path = dir.join("Hydra.plr");
+        let file = crate::player_file::PlayerFileWrite {
+            name: "Hydra".into(),
+            life: 240,
+            life_max: 300,
+            mana: 60,
+            mana_max: 80,
+            extra_accessory: true,
+            unlocked_biome_torches: true,
+            using_biome_torches: true,
+            ate_artisan_bread: true,
+            used_upgrades: [true, false, true, true, false, true],
+            tax_money: 0,
+            deaths_pve: 7,
+            deaths_pvp: 2,
+            team: 3,
+            angler_quests_finished: 12,
+            golfer_score: 45,
+            // Slot 11 = 1 (disabled): the writer emits the GETTER
+            // (unlocked && slot==0 → false; the raw using-true field is
+            // ignored, 63204f85), the read's setter sets slot 11 = 1 and
+            // the >=230 array read keeps 1 — the getter reads false.
+            builder_acc_status: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            super_cart: 3, // unlocked + enabled
+            voice_variant: 3,
+            voice_pitch_offset: 0.5,
+            ..Default::default()
+        };
+        crate::player_file::write_player_file(&path, &file).expect("the .plr writes");
+        let read = crate::player_file::read_player_file(&path).expect("the .plr reads");
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.hydrate_from_file(&read);
+        assert_eq!((p.hp, p.max_hp), (240, 300));
+        assert_eq!((p.mana, p.mana_max), (60, 80));
+        assert!(p.extra_accessory && p.unlocked_biome_torches && p.ate_artisan_bread);
+        // The C# final state: the array read won, slot 11 = 1 → the
+        // UsingBiomeTorches getter (unlocked && slot==0) is false.
+        assert_eq!(p.builder_acc_status[11], 1);
+        assert!(!(p.unlocked_biome_torches && p.builder_acc_status[11] == 0));
+        assert!(p.used_aegis_crystal && !p.used_aegis_fruit);
+        assert!(p.used_arcane_crystal && p.used_galaxy_pearl);
+        assert!(!p.used_gummy_worm && p.used_ambrosia);
+        assert!(p.luck_state.used_galaxy_pearl, "the pearl mirror rides");
+        assert!(p.unlocked_super_cart && p.enabled_super_cart);
+        assert_eq!(p.voice_variant, 3);
+        assert_eq!(p.voice_pitch_offset, 0.5);
+        assert_eq!(p.angler_quests_finished, 12);
+        assert_eq!(p.golfer_score, 45);
+        assert_eq!((p.deaths_pve, p.deaths_pvp), (7, 2));
+        assert_eq!(p.team, 3);
+        // The setter-alone arm: a file whose builder array keeps slot 11
+        // at 0 with the using-true byte hydrates the toggle ON.
+        let on = crate::player_file::PlayerFileWrite {
+            unlocked_biome_torches: true,
+            using_biome_torches: true,
+            super_cart: 1, // unlocked, disabled
+            ..Default::default()
+        };
+        crate::player_file::write_player_file(&path, &on).unwrap();
+        let read = crate::player_file::read_player_file(&path).unwrap();
+        p.hydrate_from_file(&read);
+        assert_eq!(p.builder_acc_status[11], 0, "using-true + slot-0 array");
+        assert!(p.unlocked_super_cart && !p.enabled_super_cart);
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 
     #[test]
