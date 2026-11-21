@@ -8,6 +8,9 @@
 //! methods, in the original call order.
 
 pub(crate) mod camera;
+// W4-g86: the cursorItemIcon overlay feed — the self-contained hover-icon
+// decode arms (research/244 the system seed + owner contract).
+pub(crate) mod cursor_item_icon;
 pub(crate) mod gfx_quality;
 pub(crate) mod clock;
 pub(crate) mod editing;
