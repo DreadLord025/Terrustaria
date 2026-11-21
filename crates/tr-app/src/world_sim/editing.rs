@@ -6038,7 +6038,78 @@ fn break_drop_events(
             events.push((id, count.max(1) as u32, pile.x, pile.y));
         }
     }
+    // W4-f41 closeout: the broken Pigronata's loot block (`CheckChand`'s
+    // `type == 454` arm, `WorldGen.cs:52880-52963`) — `Main.rand` only, the
+    // break's stage stream, at the trigger cell. The C# spawns the coins in
+    // 32x32 / 52x52 rects around the cell; the port's drop spawn convention
+    // folds the rect into the cell-origin pop (recorded, like the pot/pile
+    // loot).
+    for pig in &kill.pigronata_events {
+        for (id, count) in pigronata_loot(main_rng) {
+            events.push((id, count, pig.x, pig.y));
+        }
+    }
     (events, portals)
+}
+
+/// `CheckChand`'s Pigronata loot block (`WorldGen.cs:52880-52963`), all
+/// `Main.rand`: `Next(9)` picks the outcome — 0/1 nothing; 2/3/4 a
+/// `Next(10,31)` silver budget split into `Next(2,11)` stacks; 5/6 a
+/// `Next(60,80)` silver budget in `Next(3,16)` stacks + one Flask of Party
+/// 1358; 7 a `Next(10,31)` silver budget in `Next(2,9)` stacks + one Gold
+/// Coin 73; 8 the jackpot — a fixed 100-silver budget in `Next(3,16)`
+/// stacks, then a `Next(30,91)` Party Bullet 1349 budget in `Next(7,14)`
+/// stacks, then ONE Flask of Party and ONE Gold Coin (the two singles AFTER
+/// both loops, `:52958-52959`). Each loop clamps the stack roll to the
+/// remaining budget (`if (num > budget) num = budget`) and subtracts it —
+/// the budget always drains to exactly 0.
+fn pigronata_loot(rng: &mut UnifiedRandom) -> Vec<(u16, u32)> {
+    let mut drops = Vec::new();
+    // The budget-split loop shared by every arm: `budget` silver/bullets,
+    // stacks drawn `Next(lo, hi)` clamped to the remainder.
+    fn split_budget(
+        drops: &mut Vec<(u16, u32)>,
+        id: u16,
+        mut budget: i32,
+        lo: i32,
+        hi: i32,
+        rng: &mut UnifiedRandom,
+    ) {
+        while budget > 0 {
+            let mut n = rng.next_range(lo, hi);
+            if n > budget {
+                n = budget;
+            }
+            budget -= n;
+            drops.push((id, n as u32));
+        }
+    }
+    match rng.next_max(9) {
+        // :52884-52899 — cases 2/3/4.
+        2 | 3 | 4 => {
+            split_budget(&mut drops, 72, rng.next_range(10, 31), 2, 11, rng);
+        }
+        // :52901-52916 — cases 5/6.
+        5 | 6 => {
+            split_budget(&mut drops, 72, rng.next_range(60, 80), 3, 16, rng);
+            drops.push((1358, 1));
+        }
+        // :52918-52932 — case 7.
+        7 => {
+            split_budget(&mut drops, 72, rng.next_range(10, 31), 2, 9, rng);
+            drops.push((73, 1));
+        }
+        // :52934-52960 — case 8, the jackpot.
+        8 => {
+            split_budget(&mut drops, 72, 100, 3, 16, rng);
+            split_budget(&mut drops, 1349, rng.next_range(30, 91), 7, 14, rng);
+            drops.push((1358, 1));
+            drops.push((73, 1));
+        }
+        // :52882 — cases 0/1 fall through the switch: nothing.
+        _ => {}
+    }
+    drops
 }
 
 /// `WorldGen.KillTile_GetTreeDrops` (`WorldGen.cs:66189-66261`) — the killed
@@ -12621,6 +12692,140 @@ mod tests {
         app2.inventory[app2.selected] = slot(3747, 1);
         assert!(!use_tile_item(&mut app2, 11, 10));
         assert_eq!(app2.inventory[app2.selected].count, 1, "kept");
+    }
+
+    // ---- W4-f41 closeout: the Pigronata loot rolls --------------------------
+
+    /// `CheckChand`'s `type == 454` arm (`WorldGen.cs:52880-52963`): the
+    /// `Next(9)` outcome table — 0/1 nothing, 2/3/4 silver rain, 5/6 silver
+    /// rain + Flask of Party, 7 silver rain + one gold, 8 the jackpot (100
+    /// silver + 30-90 Party Bullets + flask + gold). Mirrored-oracle: a twin
+    /// stream replays the EXACT C# draw sequence per arm (budget roll, then
+    /// the clamped stack loop, then the singles) and the expected drop list
+    /// is compared element-for-element; a third stream pins the position.
+    #[test]
+    fn w4_f41_the_pigronata_loot_arms_match_the_next9_table() {
+        // The C# budget-split loop, replayed on the oracle stream.
+        fn oracle_split(
+            expected: &mut Vec<(u16, u32)>,
+            id: u16,
+            mut budget: i32,
+            lo: i32,
+            hi: i32,
+            r: &mut tr_core::UnifiedRandom,
+        ) {
+            while budget > 0 {
+                let mut n = r.next_range(lo, hi);
+                if n > budget {
+                    n = budget;
+                }
+                budget -= n;
+                expected.push((id, n as u32));
+            }
+        }
+        let mut seen = [false; 9];
+        for seed in 0..400i32 {
+            let mut rng = tr_core::UnifiedRandom::new(seed);
+            let mut oracle = tr_core::UnifiedRandom::new(seed);
+            let drops = pigronata_loot(&mut rng);
+            let outcome = oracle.next_max(9);
+            seen[outcome as usize] = true;
+            let mut expected: Vec<(u16, u32)> = Vec::new();
+            match outcome {
+                0 | 1 => {}
+                2 | 3 | 4 => {
+                    oracle_split(&mut expected, 72, oracle.next_range(10, 31), 2, 11, &mut oracle);
+                }
+                5 | 6 => {
+                    oracle_split(&mut expected, 72, oracle.next_range(60, 80), 3, 16, &mut oracle);
+                    expected.push((1358, 1));
+                }
+                7 => {
+                    oracle_split(&mut expected, 72, oracle.next_range(10, 31), 2, 9, &mut oracle);
+                    expected.push((73, 1));
+                }
+                8 => {
+                    oracle_split(&mut expected, 72, 100, 3, 16, &mut oracle);
+                    oracle_split(&mut expected, 1349, oracle.next_range(30, 91), 7, 14, &mut oracle);
+                    expected.push((1358, 1));
+                    expected.push((73, 1));
+                }
+                _ => unreachable!(),
+            }
+            assert_eq!(drops, expected, "seed {seed}: outcome {outcome}");
+            // The arm consumed exactly the oracle's draws — the next draw
+            // on both streams agrees (the position contract).
+            assert_eq!(
+                rng.next_max(1_000_000),
+                oracle.next_max(1_000_000),
+                "seed {seed}: the stream position matches"
+            );
+            if seen.iter().all(|s| *s) {
+                return;
+            }
+        }
+        panic!("400 seeds never reached every Next(9) outcome: {seen:?}");
+    }
+
+    /// W4-f41 — the full break path: the item 3746 places the 4x3 through
+    /// the registry route (`Item.cs:33164-33175`, `TileObjectData.cs:3161-
+    /// 3168` — origin (2,0), AnchorTop (SolidTile|SolidSide, 1, 1)); breaking
+    /// the anchor cell collapses it and the loot spawns at the break cell
+    /// through the `pigronata_events` channel.
+    #[test]
+    fn w4_f41_the_pigronata_break_spawns_the_loot_through_the_app() {
+        assert_eq!(registry::place_tile(3746), Some(454));
+        let mut w = object_world();
+        // The stone ceiling row 16 (the doorway fixture's row).
+        for x in 0..40 {
+            let i = w.index(x, 16);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        app.inventory[app.selected] = slot(3746, 2);
+        assert!(use_tile_item(&mut app, 12, 17), "hangs from the ceiling");
+        assert_eq!(app.inventory[app.selected].count, 1, "one consumed");
+        // Origin (2, 0): the click (12, 17) writes x 10..=13, y 17..=19.
+        for dy in 0..3i32 {
+            for dx in 0..4i32 {
+                let t = app.world.tile(10 + dx, 17 + dy).unwrap();
+                assert!(t.active() && t.kind == 454, "cell ({dx},{dy})");
+            }
+        }
+        // Break the check's anchor ceiling cell (ox+1 = 11, row 16).
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) =
+            tr_core::UnifiedRandom::new(0x5EED);
+        break_tile(&mut app, 11, 16);
+        for dy in 0..3i32 {
+            for dx in 0..4i32 {
+                assert!(
+                    !app.world.tile(10 + dx, 17 + dy).unwrap().active(),
+                    "cell ({dx},{dy}) collapsed"
+                );
+            }
+        }
+        // The loot: the hit cell's stone + the Next(9) arm's rolls. The loot
+        // spawns at the CHECKED cell — the first framed Pigronata cell
+        // (10, 17) — while the stone drops at the hit cell (11, 16).
+        // Whatever the seed rolled, every spawned kind is in the C# set and
+        // no 3746/454 item ever spawns.
+        assert!(!app.items.is_empty(), "the stone drop at minimum");
+        for it in &app.items {
+            assert!(
+                matches!(it.kind, 3 | 72 | 73 | 1349 | 1358),
+                "unexpected loot kind {}",
+                it.kind
+            );
+            if it.kind == 3 {
+                assert_eq!((it.pos.x / 16.0) as i32, 11, "the stone at the hit");
+                assert_eq!((it.pos.y / 16.0) as i32, 16);
+            } else {
+                assert_eq!((it.pos.x / 16.0) as i32, 10, "the loot at the check");
+                assert_eq!((it.pos.y / 16.0) as i32, 17);
+            }
+        }
     }
 
     // ---- Phase 3 (M1.4-TO-4): drops + RNG streams ---------------------------

@@ -76,6 +76,21 @@ pub struct PileLootEvent {
     pub y: i32,
 }
 
+/// One broken Pigronata's loot block — `CheckChand`'s `type == 454` arm
+/// (`WorldGen.cs:52880-52963`): `Main.rand.Next(9)` picks the outcome —
+/// 0/1 nothing, 2/3/4 silver rain, 5/6 silver rain + Flask of Party,
+/// 7 silver rain + one gold, 8 the jackpot (100 silver + 30-90 Party
+/// Bullets + Flask of Party + one gold). The app resolves the rolls on
+/// `Main.rand` (the break's stage stream) in the C# order; a `Check*`-level
+/// `Item.NewItem` block, so it is NOT `noItem`-gated (the pot/pile
+/// convention). The loot spawns at the TRIGGER cell `(i, j)`, not the
+/// decoded origin.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct PigronataEvent {
+    pub x: i32,
+    pub y: i32,
+}
+
 /// One killed tree cell's drop record — `WorldGen.KillTile_GetTreeDrops`
 /// (`WorldGen.cs:66189-66261`) for the trunk kinds (5/596/616/634) and the
 /// `case 323` palm arm of `KillTile_GetItemDrops` (`:65232-65266`). The C#
@@ -150,6 +165,8 @@ pub struct TileKill {
     pub events: Vec<PotEvent>,
     pub herb_events: Vec<HerbEvent>,
     pub pile_events: Vec<PileLootEvent>,
+    /// Every broken Pigronata's loot block (`CheckChand`'s 454 arm).
+    pub pigronata_events: Vec<PigronataEvent>,
     /// Every killed tree cell's drop record.
     pub tree_events: Vec<TreeDropEvent>,
     /// The palm cells whose canopy frame the C# re-rolls
@@ -453,6 +470,9 @@ fn square_tile_frame(
         // 1x1 body (:46875-46971) have none — they run and kill while another
         // object's kill loop is in flight.
         let guarded = destroy_object_guarded(cell);
+        // The ring-walk shape reads the kind after the mutable check/kill
+        // calls below — copy it out before the `cell` borrow ends (NLL).
+        let cell_kind = cell.kind;
         if *destroy_object && guarded {
             continue;
         }
@@ -474,6 +494,11 @@ fn square_tile_frame(
         }
         if let Some(pile) = plan.pile_event {
             kill.pile_events.push(pile);
+        }
+        // `CheckChand`'s Pigronata loot block is likewise a `Check*`-level
+        // `Item.NewItem` family (:52880-52963) — not `noItem`-gated.
+        if let Some(pig) = plan.pigronata_event {
+            kill.pigronata_events.push(pig);
         }
         // `SpawnThingsFromPot`'s only gate is `Main.netMode != 1`
         // (:57011-57014) — the `noItem` flag never suppresses pot loot, so
@@ -513,16 +538,33 @@ fn square_tile_frame(
                 if depth < 8 {
                     d.set(depth + 1);
                     let (mid_y, mid_x) = ((ry0 + ry1) / 2, (rx0 + rx1) / 2);
-                    for (mx, my) in [
-                        (rx0, ry0),
-                        (rx1, ry0),
-                        (rx0, ry1),
-                        (rx1, ry1),
-                        (mid_x, ry0),
-                        (mid_x, ry1),
-                        (rx0, mid_y),
-                        (rx1, mid_y),
-                    ] {
+                    // W4-f41 closeout: `CheckChand`'s tail (:52969-52975) is
+                    // a FULL nested (width+2)x5 walk — outer x, inner y, the
+                    // C# loop order; both 34 and 454 ride it. The other
+                    // tails keep the 8-point perimeter sample.
+                    let points: Vec<(i32, i32)> = if matches!(cell_kind, 34 | 454) {
+                        let mut v = Vec::with_capacity(
+                            ((rx1 - rx0 + 1) * (ry1 - ry0 + 1)) as usize,
+                        );
+                        for mx in rx0..=rx1 {
+                            for my in ry0..=ry1 {
+                                v.push((mx, my));
+                            }
+                        }
+                        v
+                    } else {
+                        vec![
+                            (rx0, ry0),
+                            (rx1, ry0),
+                            (rx0, ry1),
+                            (rx1, ry1),
+                            (mid_x, ry0),
+                            (mid_x, ry1),
+                            (rx0, mid_y),
+                            (rx1, mid_y),
+                        ]
+                    };
+                    for (mx, my) in points {
                         square_tile_frame(world, mx, my, no_item, destroy_object, kill);
                     }
                     d.set(depth);
@@ -566,6 +608,7 @@ fn kill_plan_cells(
             kill.events.extend(inner.events);
             kill.herb_events.extend(inner.herb_events);
             kill.pile_events.extend(inner.pile_events);
+            kill.pigronata_events.extend(inner.pigronata_events);
             kill.tree_events.extend(inner.tree_events);
             kill.palm_frame_rolls.extend(inner.palm_frame_rolls);
             kill.mushroom_frame_rolls.extend(inner.mushroom_frame_rolls);
@@ -615,12 +658,15 @@ struct CheckPlan {
     pot_event: Option<PotEvent>,
     herb_event: Option<HerbEvent>,
     pile_event: Option<PileLootEvent>,
+    /// `CheckChand`'s Pigronata loot block (`WorldGen.cs:52880-52963`) —
+    /// only the 454 arm carries one.
+    pigronata_event: Option<PigronataEvent>,
     /// The `Check*` tail's `TileFrame` ring — only the checks that CLOSE with
     /// one in C# (`Check3x2` `WorldGen.cs:49841-49849`, `Check3x4`
-    /// :50161-50168, `Check4x2` :47499-47506; the others — CheckOnTable1x1,
-    /// Check1xX, Check2xX, Check1x2Top, Check2x2, Check3x3, CheckChest — have
-    /// no tail, so their remainders float until a later break, the vanilla
-    /// deferred-pop semantics).
+    /// :50161-50168, `Check4x2` :47499-47506, `CheckChand` :52969-52975; the
+    /// others — CheckOnTable1x1, Check1xX, Check2xX, Check1x2Top, Check2x2,
+    /// Check3x3, CheckChest — have no tail, so their remainders float until a
+    /// later break, the vanilla deferred-pop semantics).
     ring: Option<((i32, i32), (i32, i32))>,
 }
 
@@ -632,14 +678,15 @@ struct CheckPlan {
 /// `Check3x2` (:49187, dispatch :85980-85989), 15 → `Check1x2` (:43335),
 /// 18 → `Check2x1` (:46973), 21 → `CheckChest` (:57923, via
 /// `TileID.Sets.BasicChest` :85616-85619), 27 → `CheckSunflower` (:85639),
-/// 28 → `CheckPot` (:85643), 34 → `Check3x3` (:53059), 42 → `Check1x2Top`
+/// 28 → `CheckPot` (:85643), 34/454 → `CheckChand` (:52794, the dispatch group
+/// :85510-85513 — W4-f41 closeout: the old Check3x3 attribution for 34 was a
+/// stand-in, the C# sends both kinds to CheckChand), 42 → `Check1x2Top`
 /// (:46706), 79/90 → `Check4x2` (:47408), 82/83/84 → `CheckAlch` (the
 /// `Main.tileAlch` default arm, :85830-85832), 93 → `Check1xX` (:37788),
 /// 100/172 → `Check2x2`'s default (:48397), 101 → `Check3x4` (:50076),
 /// 104 → `Check2xX` (:37993), 185 → `CheckPile` (:85275), 219/642 →
 /// `Check3x3`'s bottom-support arm (:53059, the `:53114` support group — the
-/// M7-EXTRACT-1 extractinators; tile 34's is the ceiling arm, the `else` at
-/// `:53129-53139`).
+/// M7-EXTRACT-1 extractinators and the party monolith 455).
 fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     let kind = world.tile(x, y)?.kind;
     match kind {
@@ -656,7 +703,11 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         21 => check_chest(world, x, y),
         27 => check_sunflower(world, x, y),
         28 => check_pot(world, x, y),
-        34 => check_chandelier(world, x, y),
+        // W4-f41 closeout: the Pigronata (454) rides CheckChand too — the
+        // C# `case 34: case 454:` group (`WorldGen.cs:85510-85513`); its
+        // loot is the `type == 454` Next(9) block (:52880-52963), not an
+        // item drop.
+        34 | 454 => check_chandelier(world, x, y, kind),
         // M7-EXTRACT-1: the extractinators ride `Check3x3`'s bottom-support
         // arm (`WorldGen.cs:53114-53127`, the group the C# lists 219/642 in).
         // W4-f41: the party monolith (455) rides the same arm (the dispatch
@@ -1185,6 +1236,7 @@ fn check_orb(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        pigronata_event: None,
         ring: None,
     })
 }
@@ -1231,6 +1283,7 @@ fn check_piggy(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        pigronata_event: None,
         ring: None,
         // floats until a later break (`WorldGen.cs`'s Check2x1 tail).
     })
@@ -1281,6 +1334,7 @@ fn check_lamp(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        pigronata_event: None,
         ring: None,
         // floats until a later break (`WorldGen.cs`'s check_lamp).
     })
@@ -1345,6 +1399,7 @@ fn check_clock(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        pigronata_event: None,
         ring: None,
         // floats until a later break (`WorldGen.cs`'s check_clock).
     })
@@ -1402,6 +1457,7 @@ fn check_bookcase(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        pigronata_event: None,
         ring: Some(region_ring(&region)),
     })
 }
@@ -1456,6 +1512,7 @@ fn check_lantern(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        pigronata_event: None,
         ring: None,
         // floats until a later break (`WorldGen.cs`'s check_lantern).
     })
@@ -1522,6 +1579,7 @@ fn check_bed_bathtub(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        pigronata_event: None,
         ring: Some(region_ring(&region)),
     })
 }
@@ -1590,6 +1648,7 @@ fn check_2x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        pigronata_event: None,
         ring: None,
         // The C# tail rings a 4x4 `TileFrame` walk (`:48791-48798`); the
         // port's candelabra/sink slice keeps the deferred-pop convention
@@ -1662,6 +1721,7 @@ fn check_2x2_style(world: &mut World, x: i32, y: i32, kind: u16) -> Option<Check
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        pigronata_event: None,
         ring: Some(region_ring(&region)),
     })
 }
@@ -1736,35 +1796,59 @@ fn check_3x3_bottom(world: &mut World, x: i32, y: i32, kind: u16) -> Option<Chec
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        pigronata_event: None,
         ring: None,
         // floats until a later break (`WorldGen.cs`'s Check3x3 has no tail).
     })
 }
 
-/// `WorldGen.Check3x3`'s else branch (`WorldGen.cs:53059-53145`) for the
-/// chandelier (34): the nine cells carry the style frames and the ceiling
-/// tile above the middle column is a solid non-solid-top.
-fn check_chandelier(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
-    let kind = world.tile(x, y)?.kind;
+/// `WorldGen.CheckChand` (`WorldGen.cs:52794-52976`) for the chandelier (34)
+/// and the Pigronata (454): the style walk reads `num3` columns (3 for the
+/// chandelier, **4** for the Pigronata, `:52803-52807` — the registry def is
+/// 4x3 with origin (2,0), `TileObjectData.cs:3161-3168`); the cells carry the
+/// style frames and the ceiling tile above the origin's middle column
+/// (`ox + 1`, the walk's anchor column) is a solid non-solid-top
+/// (`:52857-52864`). The kill loop wraps `destroyObject` (:52869/:52968) and
+/// the tail frames the `(width+2) x 5` ring (:52969-52975). The 454 break
+/// carries the `Next(9)` loot block (:52880-52963) as a [`PigronataEvent`]
+/// at the TRIGGER cell — the rolls resolve app-side; the chandelier's own
+/// `case 34` drop (:52964-52967) rides the 34 arm's `GetItemDrop_Chandeliers`
+/// (the port's chandelier keeps its recorded no-item drop — the style rows
+/// are the chandelier lane's, census unchanged here).
+fn check_chandelier(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> {
     let t = world.tile(x, y)?;
+    let width = if kind == 454 { 4 } else { 3 }; // :52803-52807
     let mut style_col = t.frame_x as i32 / 18;
     let mut sx = 0i32;
-    while style_col >= 3 {
-        style_col -= 3;
+    while style_col >= width {
+        style_col -= width;
         sx += 1;
     }
     let ox = x - style_col;
-    let style_x = 54 * sx;
-    let style_row = t.frame_y as i32 / 54;
-    let oy = y - (t.frame_y as i32 % 54 / 18);
+    let style_x = 18 * width * sx;
+    let mut row = t.frame_y as i32 / 18;
+    let mut style_row = 0i32;
+    while row >= 3 {
+        row -= 3;
+        style_row += 1;
+    }
+    // :52829-52837 — the second style block starts 37 rows down.
+    if style_x >= 108 {
+        style_row += 37 * (style_x / 108);
+    }
+    let mut style_y = 54 * style_row;
+    if style_x >= 108 {
+        style_y -= 54 * (style_x / 108) * 37;
+    }
+    let oy = y - row;
     let mut broken = false;
-    let mut region = Vec::with_capacity(9);
-    for k in ox..ox + 3 {
+    let mut region = Vec::with_capacity((width * 3) as usize);
+    for k in ox..ox + width {
         for l in oy..oy + 3 {
             region.push((k, l));
             let expected = (
                 ((k - ox) * 18 + style_x) as i16,
-                ((l - oy) * 18 + style_row * 54) as i16,
+                ((l - oy) * 18 + style_y) as i16,
             );
             if world
                 .tile(k, l)
@@ -1774,10 +1858,15 @@ fn check_chandelier(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
             }
         }
     }
-    // `:53117-53124`: the ceiling anchor above the origin column.
+    // :52857-52864 — the ceiling anchor above the origin's middle column
+    // (`num + 1` — for the Pigronata that is ox+1, one LEFT of the def's
+    // origin column ox+2; the check's own maths, not the registry anchor).
+    // The gate is `nactive() && tileSolid && !tileSolidTop` verbatim — no
+    // halfBrick/slope terms (the old Check3x3-attribution stand-in's
+    // liquid allowance was not the C#).
     let ceil = world.tile(ox + 1, oy - 1);
     let ceil_ok = ceil.is_some_and(|c| {
-        (c.active() || c.has_any_liquid())
+        crate::tileobject::nactive(c)
             && td::TILE_SOLID.has(c.kind)
             && !td::TILE_SOLID_TOP.has(c.kind)
     });
@@ -1788,7 +1877,7 @@ fn check_chandelier(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         return None;
     }
     Some(CheckPlan {
-        drop: Some(ObjectDrop {
+        drop: (kind == 34).then(|| ObjectDrop {
             tile_kind: kind,
             x,
             y,
@@ -1798,8 +1887,10 @@ fn check_chandelier(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
-        ring: None,
-        // floats until a later break (`WorldGen.cs`'s check_chandelier).
+        // :52880-52963 — the Pigronata's loot block, at the trigger cell.
+        pigronata_event: (kind == 454).then(|| PigronataEvent { x, y }),
+        // :52969-52975 — the (width+2) x 5 TileFrame tail.
+        ring: Some(((ox - 1, oy - 1), (ox + width, oy + 3))),
     })
 }
 
@@ -1863,6 +1954,7 @@ fn check_door_closed(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        pigronata_event: None,
         ring: None,
         // floats until a later break (`WorldGen.cs`'s check_door_closed).
     })
@@ -1912,6 +2004,7 @@ fn check_door_open(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        pigronata_event: None,
         ring: None,
         // floats until a later break (`WorldGen.cs`'s check_door_open).
     })
@@ -2089,6 +2182,7 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
         pot_event: None,
         herb_event: None,
         pile_event,
+        pigronata_event: None,
         ring: Some(region_ring(&region)),
     })
 }
@@ -2128,6 +2222,7 @@ fn check_chair(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        pigronata_event: None,
         ring: None,
         // floats until a later break (`WorldGen.cs`'s check_chair).
     })
@@ -2167,6 +2262,7 @@ fn check_bench(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        pigronata_event: None,
         ring: None,
         // floats until a later break (`WorldGen.cs`'s check_bench).
     })
@@ -2222,6 +2318,7 @@ fn check_chest(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        pigronata_event: None,
         ring: None,
         // floats until a later break (`WorldGen.cs`'s check_chest).
     })
@@ -2314,6 +2411,7 @@ fn check_sunflower(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        pigronata_event: None,
         ring: None,
     })
 }
@@ -2494,6 +2592,7 @@ fn check_pot(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: Some(PotEvent { style, x, y }),
         herb_event: None,
         pile_event: None,
+        pigronata_event: None,
         ring: None,
     })
 }
@@ -2519,6 +2618,7 @@ fn check_pile(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
             pot_event: None,
             herb_event: None,
             pile_event: None,
+            pigronata_event: None,
             ring: None,
         });
     }
@@ -2552,6 +2652,7 @@ fn check_pile(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        pigronata_event: None,
         ring: None,
     })
 }
@@ -2662,6 +2763,7 @@ fn check_pile_2x1(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckP
         pot_event: None,
         herb_event: None,
         pile_event,
+        pigronata_event: None,
         ring: None,
     })
 }
@@ -2747,6 +2849,7 @@ fn check_on_table_1x1(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        pigronata_event: None,
         ring: None,
     })
 }
@@ -2825,6 +2928,7 @@ fn check_alch(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
             y,
         }),
         pile_event: None,
+        pigronata_event: None,
         ring: None,
     })
 }
@@ -5327,6 +5431,130 @@ mod tests {
                 .any(|d| d.tile_kind == 457 && d.item == Some(3749)),
             "the mismatched-column break still drops the present"
         );
+    }
+
+    // ---- W4-f41 closeout: the Pigronata (454) CheckChand arm ---------------
+
+    /// A 4x3 Pigronata (454) at columns 10..=13, rows 17..=19 hanging from
+    /// the doorway world's stone ceiling (row 16) — style-0 frames
+    /// `(dx*18, dy*18)`. The check's anchor column is ox+1 = 11 (NOT the
+    /// registry origin column ox+2 = 12 — `WorldGen.cs:52857`'s `num + 1`).
+    fn pigronata_world() -> World {
+        let mut w = doorway_world();
+        for dy in 0..3i32 {
+            for dx in 0..4i32 {
+                set_object_cell(
+                    &mut w,
+                    10 + dx,
+                    17 + dy,
+                    454,
+                    (dx * 18) as i16,
+                    (dy * 18) as i16,
+                );
+            }
+        }
+        w
+    }
+
+    /// W4-f41 — the hanging Pigronata survives a neighbour break while its
+    /// ceiling anchor holds (`CheckChand`, `WorldGen.cs:52843-52864` — the
+    /// 4-wide frame scan `:52803-52807` + the ox+1 ceiling gate).
+    #[test]
+    fn w4_f41_the_pigronata_hangs_while_the_anchor_holds() {
+        let mut w = pigronata_world();
+        trigger_at(&mut w, 9, 20);
+        for dy in 0..3 {
+            for dx in 0..4 {
+                assert!(
+                    w.tile(10 + dx, 17 + dy).unwrap().active(),
+                    "cell ({dx},{dy}) anchored"
+                );
+            }
+        }
+        // The anchor quirk: breaking the ceiling above the REGISTRY origin
+        // column (12) leaves it standing — the check reads only ox+1 (11).
+        let kill = trigger_at(&mut w, 12, 16);
+        assert!(w.tile(10, 17).unwrap().active(), "the ox+1 anchor holds");
+        assert!(
+            kill.pigronata_events.is_empty(),
+            "no loot while the anchor holds"
+        );
+    }
+
+    /// W4-f41 — breaking the ceiling anchor collapses the whole 4x3 and
+    /// records ONE Pigronata loot event at the CHECKED cell — the first
+    /// surviving object cell the break's `SquareTileFrame` visits ((10,17)
+    /// in the row-major order around (11,16)), the C# `CheckChand(i, j)`
+    /// trigger, NOT the decoded origin and NOT the broken stone. No item
+    /// drop record: the 454 loot is the event, never `tile_drop`.
+    #[test]
+    fn w4_f41_the_pigronata_anchor_break_records_the_loot_event() {
+        let mut w = pigronata_world();
+        let kill = trigger_at(&mut w, 11, 16);
+        let mut cells = Vec::new();
+        for dy in 0..3 {
+            for dx in 0..4 {
+                cells.push((10 + dx, 17 + dy));
+            }
+        }
+        assert_all_gone(&w, &cells);
+        assert_eq!(kill.pigronata_events.len(), 1, "one loot block, not 12");
+        assert_eq!(kill.pigronata_events[0].x, 10, "the first framed cell x");
+        assert_eq!(kill.pigronata_events[0].y, 17, "the first framed cell y");
+        assert!(
+            kill.object_drops.iter().all(|d| d.tile_kind != 454),
+            "the Pigronata has no item-drop record"
+        );
+    }
+
+    /// W4-f41 — the style walk reads FOUR columns for 454 (`:52806`): a
+    /// style-1 Pigronata (frameX 72..=126) decodes its origin from any cell,
+    /// and the second style block's 37-row skip (`:52829-52837`) keeps
+    /// style 2 (frameX 144+) at row 0 — the same maths the chandelier's
+    /// 3-wide walk ports, parameterised by the width.
+    #[test]
+    fn w4_f41_the_pigronata_style_walk_reads_four_columns() {
+        // Style 1: frameX = 72 + dx*18, frames row 0.
+        let mut w = doorway_world();
+        for dy in 0..3i32 {
+            for dx in 0..4i32 {
+                set_object_cell(
+                    &mut w,
+                    10 + dx,
+                    17 + dy,
+                    454,
+                    (72 + dx * 18) as i16,
+                    (dy * 18) as i16,
+                );
+            }
+        }
+        trigger_at(&mut w, 9, 20);
+        assert!(w.tile(13, 19).unwrap().active(), "style 1 stands");
+        let kill = trigger_at(&mut w, 11, 16);
+        assert_eq!(kill.pigronata_events.len(), 1, "style 1 breaks whole");
+        assert!(
+            !w.tile(13, 19).unwrap().active(),
+            "the far column dies with the origin"
+        );
+        // Style 2: frameX = 144 + dx*18 — num6 = 144 >= 108, so the row
+        // offset is 54*37 - 54*1*37 = 0 (:52829-52837): frames stay row 0.
+        let mut w2 = doorway_world();
+        for dy in 0..3i32 {
+            for dx in 0..4i32 {
+                set_object_cell(
+                    &mut w2,
+                    10 + dx,
+                    17 + dy,
+                    454,
+                    (144 + dx * 18) as i16,
+                    (dy * 18) as i16,
+                );
+            }
+        }
+        trigger_at(&mut w2, 9, 20);
+        assert!(w2.tile(10, 17).unwrap().active(), "style 2 stands");
+        let kill2 = trigger_at(&mut w2, 11, 16);
+        assert_eq!(kill2.pigronata_events.len(), 1, "style 2 breaks whole");
     }
 
     #[test]
