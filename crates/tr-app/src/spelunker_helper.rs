@@ -28,7 +28,7 @@
 //!   missed; the counter+scan half is [`SpelunkerProjectileHelper::held_3002_tick`]
 //!   (ATTACH-READY, this module — uncontested); the caller-side field +
 //!   dust-drain seam is contested, contract in research/77 §1.3 +
-//!   research/78 §3.
+//!   research/375 §3.
 //! The helper's `Main.rand` is the caller's stage stream (the `DropRng`
 //! seam, the d60 particles convention): `UpdateProjectiles` for the two
 //! projectile callers, `UpdatePlayers` for the held 3002. The dust spawns
@@ -214,7 +214,7 @@ impl SpelunkerProjectileHelper {
     /// Next(4) draws land before the pass's UpdateProjectiles draws (§1.2).
     /// ATTACH-READY, UNWIRED: the caller seam (`world_sim/player.rs`'s tick,
     /// the `take_sticky_dust` dust-drain cluster :1366 + the `Player` field)
-    /// is contested — research/77 §1.3 + research/78 §3 carry the hunks.
+    /// is contested — research/77 §1.3 + research/375 §3 carry the hunks.
     pub fn held_3002_tick(
         &mut self,
         world: &World,

@@ -39447,10 +39447,10 @@ through the caller's stream when attached (the `None` path draws nothing).
 9 new witnesses WRITTEN, NOT RUN (spelunker_helper 1, npc_hunter_tint 4,
 projectile_ai_light_items 4).
 
-### The sight-retire seal (W4-g78, 2026-11-21 — research/78)
+### The sight-retire seal (W4-g78, 2026-11-21 — research/375, renamed from 78 per registry-150 §10.2)
 
 The sight family closes: every mechanic has a named final owner and a
-landed-or-published hunk (the bible: research/78 §5).
+landed-or-published hunk (the bible: research/375 §5).
 
 * **The c42 wiring-seal**: research/77 §3.1 is CONSUMED at c42
   `f173fb88d` — the landed names are `TileInteraction::MonolithToggle` /
@@ -39471,7 +39471,7 @@ landed-or-published hunk (the bible: research/78 §5).
   uncontested consumer (the actuation drain, `world_sim/wiring.rs`);
   the editing.rs/doors.rs/recall_teleport.rs drains are contested
   (g85/g48, d79/e10/g24, g83) — the one-fix hunk locations + the lane
-  ownership: research/78 §2.3. **Deliberate scope limit:** the per-cell
+  ownership: research/375 §2.3. **Deliberate scope limit:** the per-cell
   /pot/tree/wall 16×16-family drops keep the tile feed (the same class
   of gap, but the whole-feed audit is the item-spawn lane's — recorded
   so the merger does not fix the ObjectDrop drains twice).
@@ -39481,9 +39481,9 @@ landed-or-published hunk (the bible: research/78 §5).
   `byte++`, the >=10 wrap runs ONE `add_spot_to_check` on the SHARED
   helper instance; NO distance/netMode gate). The `Player` field + the
   `world_sim/player.rs` tick/drain are contested (18 lanes at the
-  window) — hunks research/78 §3.
+  window) — hunks research/375 §3.
 * **The keep-one dedupe**: the EXACT delete line-ranges publish
-  (research/78 §4) — g78's copy re-exports d9's `pub` bitset+fn; d13's
+  (research/375 §4) — g78's copy re-exports d9's `pub` bitset+fn; d13's
   inline table deletes at `projectile_ai_pets124.rs:59-80` (the g64
   file-union copy: :57-78, the fn body byte-identical); d56's tr-render
   copy STAYS (tr-render has no tr-core/tr-app dependency — verified

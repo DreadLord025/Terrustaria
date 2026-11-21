@@ -353,7 +353,7 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
             // The spawn joins the wiring block's own seeded stream (the
             // S1-L-6c contract; the C# truth is `UpdateWorldGen` — ANALYSIS).
             let rng = app.wiring.rand_mut();
-            // W4-g78 FIX-ONCE (research/78 §2): the actuation cascade's
+            // W4-g78 FIX-ONCE (research/375 §2): the actuation cascade's
             // `Check*` drops spawn at the C# rect CENTRE (the obsolete
             // `Item.NewItem` overload's `X + Width/2`, `Item.cs:49651`),
             // not the tile top-left — `ObjectDrop::spawn_centre_px` carries
@@ -665,7 +665,7 @@ mod tests {
         npc
     }
 
-    /// W4-g78 FIX-ONCE (research/78 §2) — the actuation drain spawns the
+    /// W4-g78 FIX-ONCE (research/375 §2) — the actuation drain spawns the
     /// popped object at the C# rect CENTRE: the work bench (18, the 2×1
     /// `Check2x1` `WorldGen.cs:47130`'s 32×32) over the actuated block at
     /// (10, 21) drops its item centred at `(10*16+16, 20*16+16)` = (176,

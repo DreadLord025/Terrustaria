@@ -33,7 +33,7 @@ pub struct ObjectDrop {
 }
 
 impl ObjectDrop {
-    /// W4-g78 — the FIX-ONCE centre conversion (research/78 §2). EVERY C#
+    /// W4-g78 — the FIX-ONCE centre conversion (research/375 §2). EVERY C#
     /// `Check*` routine spawns through the obsolete `Item.NewItem(source,
     /// X, Y, Width, Height, …)` overload (`Item.cs:49649-49652`): the rect
     /// becomes `center = (X + Width/2, Y + Height/2)` — a 32×32 furniture
@@ -43,7 +43,7 @@ impl ObjectDrop {
     /// top-left is `center − 8`. The app spawns the port's 14×14 box at
     /// `centre − SIZE/2` (the same box-centre convention).
     ///
-    /// The rect census (research/78 §2): every producer's own `NewItem` is
+    /// The rect census (research/375 §2): every producer's own `NewItem` is
     /// 32×32 EXCEPT the closed/open door checks (10/11 — 16×16 via
     /// `DropDoorItem`) and the on-table 1×1 group (13/33/49/78 —
     /// `CheckOnTable1x1` `WorldGen.cs:43503-43546` spawns NOTHING itself;
@@ -2876,7 +2876,7 @@ mod tests {
     use super::*;
     use crate::tile::FLAG_ACTIVE;
 
-    /// W4-g78 FIX-ONCE (research/78 §2) — the `Item.NewItem` rect→centre
+    /// W4-g78 FIX-ONCE (research/375 §2) — the `Item.NewItem` rect→centre
     /// conversion (`Item.cs:49649-49652`): the 32×32 furniture rect at
     /// `(10*16, 18*16)` centres at `(176, 304)`; the door's 16×16
     /// (`DropDoorItem` `WorldGen.cs:69413`) at `(168, 296)`; the on-table

@@ -785,7 +785,7 @@ pub(crate) fn spawn_item_drop_px(
 }
 
 /// The CENTRE-position variant — W4-g78's FIX-ONCE for the object-drop
-/// centre gap (research/78 §2). The C# `Check*` routines spawn through the
+/// centre gap (research/375 §2). The C# `Check*` routines spawn through the
 /// obsolete rect overload (`Item.cs:49649-49652`: `center = (X + Width/2,
 /// Y + Height/2)`), so `Item.NewItem(…, x*16, y*16, 32, 32, …)` centres the
 /// 16×16 `WorldItem` box (`WorldItem.cs:138`) at `(x*16+16, y*16+16)`; the
@@ -795,7 +795,7 @@ pub(crate) fn spawn_item_drop_px(
 /// box at `centre − SIZE/2` — the same box-centre convention, no +1. The
 /// draws are byte-identical to [`spawn_item_drop_px`] (only the position
 /// differs). The per-cell / pot / tree / wall drops keep the tile variant
-/// (their own gap is the separate 16×16-family residual, research/78 §2).
+/// (their own gap is the separate 16×16-family residual, research/375 §2).
 pub(crate) fn spawn_item_drop_centre(
     items: &mut Vec<ItemDrop>,
     rng: &mut UnifiedRandom,
@@ -1568,7 +1568,7 @@ mod spawn_rng_tests {
         );
     }
 
-    /// W4-g78 FIX-ONCE (research/78 §2): the centre entry places the 14×14
+    /// W4-g78 FIX-ONCE (research/375 §2): the centre entry places the 14×14
     /// box at `centre − SIZE/2` — a chest's (21) 32×32 rect at tile (10, 18)
     /// centres the drop's box at (176, 304) exactly. The OLD top-left feed
     /// landed the box centre at (168, 295) — 8 px left / 9 px up (the C#

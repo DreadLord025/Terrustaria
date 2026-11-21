@@ -1,4 +1,15 @@
-# 78 — W4-g78 SIGHT-RETIRE seal (the sight family closed; the retire hunks)
+# 375 — W4-g78 SIGHT-RETIRE seal (the sight family closed; the retire hunks)
+
+> **NUMBER CHAIN: 78 → 375 (FINAL, EXECUTED per registry-150 §10.2 row
+> 375).** Number: **78→375 RENUMBER EXECUTED per registry-150 ROUND-5
+> §10** — the d54 registry at `08d21666e`, origin tip
+> `task/W4-d54-dust-sites-world`, §10 IS AUTHORITY for this key. The
+> fresh full-sweep found 78 = **c40** `78-doc-sweep-weather.md`
+> (`29af285f9` 06:57:53, missed since round 1) — c40 KEEPS 78; g78's
+> `78-sight-retire-seal.md` (`66cbf9983` 16:11:32) loses → **375**
+> (§10.2 row 375). g78's 64→179 assignment unchanged, still owed. All
+> refs (INDEX/ANALYSIS/PORT_MAP/anchors/code-comments) follow this
+> rename; the old key 78 survives only in this chain-banner (history).
 
 > W4 lane g78 · sight-retire (code-only RESUME) · 2026-11-21 · base
 > `82bc71ea8` (research/77, the wiring attach contracts) · no
