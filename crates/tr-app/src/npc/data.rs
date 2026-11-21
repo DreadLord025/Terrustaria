@@ -621,6 +621,12 @@ impl NpcKind {
             NpcKind::CultistDragonTail => 459,
             NpcKind::Butcher => 460,
             NpcKind::CreatureFromTheDeep => 461,
+            // W4-d40: Fritz, Nailhead, CrimsonBunny, CrimsonGoldfish, Psycho keep their vanilla ids (free in the protocol space).
+            NpcKind::Fritz => 462,
+            NpcKind::Nailhead => 463,
+            NpcKind::CrimsonBunny => 464,
+            NpcKind::CrimsonGoldfish => 465,
+            NpcKind::Psycho => 466,
             NpcKind::WyvernTail => 228,
         }
     }
@@ -987,6 +993,12 @@ impl NpcKind {
             459 => NpcKind::CultistDragonTail,
             460 => NpcKind::Butcher,
             461 => NpcKind::CreatureFromTheDeep,
+            // W4-d40: the vanilla ids (`to_u16` above).
+            462 => NpcKind::Fritz,
+            463 => NpcKind::Nailhead,
+            464 => NpcKind::CrimsonBunny,
+            465 => NpcKind::CrimsonGoldfish,
+            466 => NpcKind::Psycho,
             228 => NpcKind::WyvernTail,
             _ => return None,
         })
@@ -1899,6 +1911,12 @@ impl NpcKind {
             | NpcKind::CultistDragonTail => "NPC_Hit_56",
             NpcKind::Butcher => "NPC_Hit_7",
             NpcKind::CreatureFromTheDeep => "NPC_Hit_1",
+            // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
+            NpcKind::Fritz
+            | NpcKind::Nailhead
+            | NpcKind::CrimsonBunny
+            | NpcKind::CrimsonGoldfish => "NPC_Hit_1",
+            NpcKind::Psycho => "NPC_Hit_48",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2239,6 +2257,12 @@ impl NpcKind {
             | NpcKind::CultistDragonTail => "NPC_Killed_60",
             NpcKind::Butcher => "NPC_Killed_17",
             NpcKind::CreatureFromTheDeep => "NPC_Killed_1",
+            // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
+            NpcKind::Fritz
+            | NpcKind::Nailhead
+            | NpcKind::CrimsonBunny
+            | NpcKind::CrimsonGoldfish => "NPC_Killed_1",
+            NpcKind::Psycho => "NPC_Killed_50",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2359,6 +2383,8 @@ impl NpcKind {
             NpcKind::CultistDragonBody3
             | NpcKind::CultistDragonBody4
             | NpcKind::CultistDragonTail => true,
+            // W4-d40: the SetDefaults noGravity rows (`NPC.cs`).
+            NpcKind::CrimsonGoldfish => true,
             NpcKind::AngryNimbus => true,
             _ => false,
         }
@@ -2646,6 +2672,12 @@ impl NpcKind {
             | NpcKind::CultistDragonTail => 6,
             NpcKind::Butcher
             | NpcKind::CreatureFromTheDeep => 3,
+            // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
+            NpcKind::Fritz
+            | NpcKind::Nailhead
+            | NpcKind::CrimsonBunny
+            | NpcKind::Psycho => 3,
+            NpcKind::CrimsonGoldfish => 16,
             NpcKind::DungeonSpirit => 56,
         }
     }
@@ -3212,6 +3244,12 @@ impl NpcKind {
             | NpcKind::CultistDragonTail => (32.0, 32.0),
             NpcKind::Butcher
             | NpcKind::CreatureFromTheDeep => (18.0, 40.0),
+            // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
+            NpcKind::Fritz => (20.0, 24.0),
+            NpcKind::Nailhead
+            | NpcKind::Psycho => (18.0, 40.0),
+            NpcKind::CrimsonBunny
+            | NpcKind::CrimsonGoldfish => (18.0, 20.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
         }
     }
@@ -3896,6 +3934,12 @@ impl NpcKind {
             NpcKind::CultistDragonTail => 10000,
             NpcKind::Butcher => 700,
             NpcKind::CreatureFromTheDeep => 400,
+            // W4-d40: the SetDefaults lifeMax rows (`NPC.cs`).
+            NpcKind::Fritz => 270,
+            NpcKind::Nailhead => 4000,
+            NpcKind::CrimsonBunny => 75,
+            NpcKind::CrimsonGoldfish => 110,
+            NpcKind::Psycho => 550,
             NpcKind::DungeonSpirit => 200,
         }
     }
@@ -4296,6 +4340,12 @@ impl NpcKind {
             NpcKind::CultistDragonTail => 50,
             NpcKind::Butcher => 70,
             NpcKind::CreatureFromTheDeep => 60,
+            // W4-d40: the SetDefaults damage rows (`NPC.cs`).
+            NpcKind::Fritz => 70,
+            NpcKind::Nailhead => 100,
+            NpcKind::CrimsonBunny => 21,
+            NpcKind::CrimsonGoldfish => 31,
+            NpcKind::Psycho => 70,
             NpcKind::DungeonSpirit => 70,
         }
     }

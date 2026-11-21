@@ -1630,6 +1630,12 @@ fn portrait_data(
         | (NpcKind::CultistDragonTail, _) => (sheet_i, 32.0, 32.0, 32.0, white),
         (NpcKind::Butcher, _)
         | (NpcKind::CreatureFromTheDeep, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        // W4-d40: the new kinds' portrait boxes (the SetDefaults w/h).
+        (NpcKind::Fritz, _) => (sheet_i, 24.0, 20.0, 24.0, white),
+        (NpcKind::Nailhead, _)
+        | (NpcKind::Psycho, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::CrimsonBunny, _)
+        | (NpcKind::CrimsonGoldfish, _) => (sheet_i, 20.0, 18.0, 20.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
     }
 }

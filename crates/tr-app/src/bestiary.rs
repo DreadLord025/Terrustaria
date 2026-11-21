@@ -2288,6 +2288,47 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Creature from the Deep",
     },
+    // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+    BestiaryEntryDef {
+        credit_id: "Fritz",
+        net_id: 462,
+        kind: NpcKind::Fritz,
+        variant: None,
+        quick_unlock: false,
+        name: "Fritz",
+    },
+    BestiaryEntryDef {
+        credit_id: "Nailhead",
+        net_id: 463,
+        kind: NpcKind::Nailhead,
+        variant: None,
+        quick_unlock: false,
+        name: "Nailhead",
+    },
+    BestiaryEntryDef {
+        credit_id: "CrimsonBunny",
+        net_id: 464,
+        kind: NpcKind::CrimsonBunny,
+        variant: None,
+        quick_unlock: false,
+        name: "Vicious Bunny",
+    },
+    BestiaryEntryDef {
+        credit_id: "CrimsonGoldfish",
+        net_id: 465,
+        kind: NpcKind::CrimsonGoldfish,
+        variant: None,
+        quick_unlock: false,
+        name: "Vicious Goldfish",
+    },
+    BestiaryEntryDef {
+        credit_id: "Psycho",
+        net_id: 466,
+        kind: NpcKind::Psycho,
+        variant: None,
+        quick_unlock: false,
+        name: "Psycho",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

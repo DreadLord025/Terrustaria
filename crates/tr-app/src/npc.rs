@@ -1086,6 +1086,22 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    // W4-d40 (NPCID 421-490 roster wave): Fritz, Nailhead, CrimsonBunny, CrimsonGoldfish, Psycho.
+    /// `NPCID.Fritz` (462): 20x24, aiStyle 3, dmg 70, def 14, 270 HP,
+    /// kb 0.7, value 600 (`NPC.cs` SetDefaults arm).
+    Fritz,
+    /// `NPCID.Nailhead` (463): 18x40, aiStyle 3, dmg 100, def 34, 4000 HP,
+    /// kb 0.1, value 3000 (`NPC.cs` SetDefaults arm).
+    Nailhead,
+    /// `NPCID.CrimsonBunny` (464): 18x20, aiStyle 3, dmg 21, def 5, 75 HP,
+    /// kb 0.4, value 500 (`NPC.cs` SetDefaults arm).
+    CrimsonBunny,
+    /// `NPCID.CrimsonGoldfish` (465): 18x20, aiStyle 16, dmg 31, def 7, 110 HP,
+    /// kb 0.4, value 500 (`NPC.cs` SetDefaults arm).
+    CrimsonGoldfish,
+    /// `NPCID.Psycho` (466): 18x40, aiStyle 3, dmg 70, def 40, 550 HP,
+    /// kb 0.5, value 1500 (`NPC.cs` SetDefaults arm).
+    Psycho,
     // W4-d40 (NPCID 421-490 roster wave): CultistDragonBody3, CultistDragonBody4, CultistDragonTail, Butcher, CreatureFromTheDeep.
     /// `NPCID.CultistDragonBody3` (457): 32x32, aiStyle 6, dmg 50, def 30, 10000 HP,
     /// kb 0.0, value 0 (`NPC.cs` SetDefaults arm).
@@ -3682,6 +3698,12 @@ impl Npc {
             NpcKind::CultistDragonTail => 0.0,
             NpcKind::Butcher => 0.25,
             NpcKind::CreatureFromTheDeep => 0.3,
+            // W4-d40: the SetDefaults knockBackResist rows (`NPC.cs`).
+            NpcKind::Fritz => 0.7,
+            NpcKind::Nailhead => 0.1,
+            NpcKind::CrimsonBunny => 0.4,
+            NpcKind::CrimsonGoldfish => 0.4,
+            NpcKind::Psycho => 0.5,
             NpcKind::DungeonSpirit => 0.2,
             _ => 0.4,
         }
@@ -4098,6 +4120,12 @@ impl Npc {
             NpcKind::CultistDragonTail => 30,
             NpcKind::Butcher => 30,
             NpcKind::CreatureFromTheDeep => 22,
+            // W4-d40: the SetDefaults defense rows (`NPC.cs`).
+            NpcKind::Fritz => 14,
+            NpcKind::Nailhead => 34,
+            NpcKind::CrimsonBunny => 5,
+            NpcKind::CrimsonGoldfish => 7,
+            NpcKind::Psycho => 40,
             NpcKind::DungeonSpirit => 30,
             NpcKind::Slime => unreachable!(),
         }
@@ -4506,6 +4534,12 @@ impl Npc {
             NpcKind::CultistDragonTail => 0.0,
             NpcKind::Butcher => 1000.0,
             NpcKind::CreatureFromTheDeep => 1000.0,
+            // W4-d40: the SetDefaults value rows (`NPC.cs`).
+            NpcKind::Fritz => 600.0,
+            NpcKind::Nailhead => 3000.0,
+            NpcKind::CrimsonBunny => 500.0,
+            NpcKind::CrimsonGoldfish => 500.0,
+            NpcKind::Psycho => 1500.0,
             NpcKind::DungeonSpirit => 500.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -6557,6 +6591,14 @@ impl Npc {
             // W4-d40: Butcher, CreatureFromTheDeep ride the family machine.
             NpcKind::Butcher
             | NpcKind::CreatureFromTheDeep => self.update_skeleton(world, player, dt),
+            // W4-d40: Fritz, Nailhead, Psycho ride the family machine.
+            NpcKind::Fritz
+            | NpcKind::Nailhead
+            | NpcKind::Psycho => self.update_skeleton(world, player, dt),
+            // W4-d40: CrimsonBunny ride the family machine.
+            NpcKind::CrimsonBunny => self.update_zombie(world, player, dt),
+            // W4-d40: CrimsonGoldfish ride the family machine.
+            NpcKind::CrimsonGoldfish => self.update_swimmer(world, player, rng),
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
@@ -9453,6 +9495,82 @@ impl Npc {
                 } else {
                     self.frame_counter = 0.0;
                     self.frame = 1;
+                }
+            }
+            NpcKind::Fritz
+            | NpcKind::Nailhead => {
+                // The humanoid-group walk (`NPC.cs:68610-68613`'s case list
+                // carries 453/460/462/463): the town machine over the kind's
+                // own `npcFrameCount` strip.
+                self.humanoid_town_frame();
+            }
+            NpcKind::CrimsonBunny => {
+                // `FindFrame` case 464 (`NPC.cs:76855-76904`, the 443 bunny
+                // group): the grounded |vx|+1 accumulator steps the 7-row
+                // strip, the rise pin is row 4 and the fall pin row 6.
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                    if self.vx == 0.0 { self.frame = 0; self.frame_counter = 0.0; return; }
+                    self.frame_counter += self.vx.abs();
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 6.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= crate::render::entities::npc_rows(self.kind.cs_id()) {
+                        self.frame = 0;
+                    }
+                } else if self.vy < 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 6;
+                }
+            }
+            NpcKind::CrimsonGoldfish => {
+                // `FindFrame` case 465 (`NPC.cs:74186-74226`): spriteDirection
+                // follows direction; the wet 6-tick bands walk rows 0..3, the
+                // dry bands walk rows 4/5 (the 6-row sheet).
+                self.sprite_dir = self.facing;
+                self.frame_counter += 1.0;
+                if self.wet {
+                    if self.frame_counter < 6.0 { self.frame = 0; }
+                    else if self.frame_counter < 12.0 { self.frame = 1; }
+                    else if self.frame_counter < 18.0 { self.frame = 2; }
+                    else if self.frame_counter < 24.0 { self.frame = 3; }
+                    else { self.frame_counter = 0.0; }
+                } else if self.frame_counter < 6.0 { self.frame = 4; }
+                else if self.frame_counter < 12.0 { self.frame = 5; }
+                else { self.frame_counter = 0.0; }
+            }
+            NpcKind::Psycho => {
+                // `FindFrame` case 466 (`NPC.cs:75466-75531`): the ai[2] <= 0
+                // stealth rows (0 / 1 / 2 on the ==0 / <-8 bands), else the
+                // grounded 4..17 walk stride; the air pin is row 3.
+                if self.ai[2] <= 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                    if self.ai[2] == 0.0 { self.frame = 0; }
+                    else if self.ai[2] < -8.0 { self.frame = 1; }
+                    else { self.frame = 2; }
+                } else if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                    if self.vx == 0.0 { self.frame = 2; self.frame_counter = 0.0; return; }
+                    if self.frame < 4 { self.frame = 4; }
+                    self.frame_counter += self.vx.abs() * 2.0;
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 7.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 17 { self.frame = 4; }
+                    if self.frame < 4 { self.frame = 4; }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 3;
                 }
             }
             NpcKind::DukeFishron => {
@@ -19113,6 +19231,12 @@ impl Npc {
             NpcKind::CultistDragonTail => 459,
             NpcKind::Butcher => 460,
             NpcKind::CreatureFromTheDeep => 461,
+            // W4-d40: the vanilla type ids (the G6 key stays injective).
+            NpcKind::Fritz => 462,
+            NpcKind::Nailhead => 463,
+            NpcKind::CrimsonBunny => 464,
+            NpcKind::CrimsonGoldfish => 465,
+            NpcKind::Psycho => 466,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -24182,7 +24306,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 300] = [
+    pub(super) const ALL_KINDS: [NpcKind; 305] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24461,6 +24585,12 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-d40: Fritz, Nailhead, CrimsonBunny, CrimsonGoldfish, Psycho.
+        NpcKind::Fritz,
+        NpcKind::Nailhead,
+        NpcKind::CrimsonBunny,
+        NpcKind::CrimsonGoldfish,
+        NpcKind::Psycho,
         // W4-d40: CultistDragonBody3, CultistDragonBody4, CultistDragonTail, Butcher, CreatureFromTheDeep.
         NpcKind::CultistDragonBody3,
         NpcKind::CultistDragonBody4,
@@ -28108,7 +28238,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            300,
+            305,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
@@ -34483,5 +34613,68 @@ mod w4_d40_cultistdragonbody3_cultistdragonbody4_tests {
         assert_eq!(Npc::new(NpcKind::CultistDragonBody3, 0.0, 0.0, 1, 0.0).alpha, 255);
         assert_eq!(Npc::new(NpcKind::CultistDragonBody4, 0.0, 0.0, 1, 0.0).alpha, 255);
         assert_eq!(Npc::new(NpcKind::CultistDragonTail, 0.0, 0.0, 1, 0.0).alpha, 255);
+    }
+}
+
+/// W4-d40 (NPCID 421-490 roster wave): the Fritz, Nailhead, CrimsonBunny, CrimsonGoldfish, Psycho
+/// `SetDefaults` rows pin against the C# through the port's piecewise
+/// tables (the small-kinds pin's shape). WRITTEN, NOT RUN (code-only).
+#[cfg(test)]
+mod w4_d40_fritz_nailhead_tests {
+    use super::*;
+
+    #[test]
+    fn w4_d40_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::Fritz, 462u16, 3u8, 20.0, 24.0, 70, 14, 270, 0.7f32, 600.0),
+            (NpcKind::Nailhead, 463u16, 3u8, 18.0, 40.0, 100, 34, 4000, 0.1f32, 3000.0),
+            (NpcKind::CrimsonBunny, 464u16, 3u8, 18.0, 20.0, 21, 5, 75, 0.4f32, 500.0),
+            (NpcKind::CrimsonGoldfish, 465u16, 16u8, 18.0, 20.0, 31, 7, 110, 0.4f32, 500.0),
+            (NpcKind::Psycho, 466u16, 3u8, 18.0, 40.0, 70, 40, 550, 0.5f32, 1500.0),
+        ];
+        for (kind, ty, ai, ww, hh, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (ww, hh), "{kind:?} size");
+            assert_eq!(shell.size(), (ww, hh), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+        }
+        // The HitSound/DeathSound rows (`NPC.cs` SetDefaults).
+        assert_eq!(NpcKind::Fritz.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::Fritz.death_sound(), Some("NPC_Killed_1"));
+        assert_eq!(NpcKind::Nailhead.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::Nailhead.death_sound(), Some("NPC_Killed_1"));
+        assert_eq!(NpcKind::CrimsonBunny.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::CrimsonBunny.death_sound(), Some("NPC_Killed_1"));
+        assert_eq!(NpcKind::CrimsonGoldfish.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::CrimsonGoldfish.death_sound(), Some("NPC_Killed_1"));
+        assert_eq!(NpcKind::Psycho.hit_sound(), Some("NPC_Hit_48"));
+        assert_eq!(NpcKind::Psycho.death_sound(), Some("NPC_Killed_50"));
+        // The noGravity rows.
+        assert!(NpcKind::CrimsonGoldfish.no_gravity());
+        // The protocol ids keep their vanilla slots (free in the space).
+        assert_eq!(NpcKind::Fritz.to_u16(), 462);
+        assert_eq!(NpcKind::from_u16(462), Some(NpcKind::Fritz));
+        assert_eq!(NpcKind::Nailhead.to_u16(), 463);
+        assert_eq!(NpcKind::from_u16(463), Some(NpcKind::Nailhead));
+        assert_eq!(NpcKind::CrimsonBunny.to_u16(), 464);
+        assert_eq!(NpcKind::from_u16(464), Some(NpcKind::CrimsonBunny));
+        assert_eq!(NpcKind::CrimsonGoldfish.to_u16(), 465);
+        assert_eq!(NpcKind::from_u16(465), Some(NpcKind::CrimsonGoldfish));
+        assert_eq!(NpcKind::Psycho.to_u16(), 466);
+        assert_eq!(NpcKind::from_u16(466), Some(NpcKind::Psycho));
+        // The bestiary credits (own entry or the credit-fold).
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Fritz, SlimeVariant::Blue).net_id, 462);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Nailhead, SlimeVariant::Blue).net_id, 463);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::CrimsonBunny, SlimeVariant::Blue).net_id, 464);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::CrimsonGoldfish, SlimeVariant::Blue).net_id, 465);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Psycho, SlimeVariant::Blue).net_id, 466);
     }
 }
