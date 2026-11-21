@@ -222,6 +222,7 @@
 //! | 1049-1056 | `:87749-87771` | the 329 Hellhound (3 gores) + 163/238 BlackRecluse (5 gores) death |
 //! | 1057-1061 | `:87787-87791` | the 164/165 WallCreeper death (5 gores 207/208/208/208/208) |
 //! | 1062-1071 | `:87807-87831` | the 239/240 BloodCrawler + 236/237 JungleCreeper death (5 gores each) |
+//! | 1072-1078 | `:87847-87868` | the 241 BloodFeeder (2 gores) + 242 BloodJelly (5 gores) death |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -6166,6 +6167,57 @@ fn jungle_creeper_death(
     }
 }
 
+/// The 241 BloodFeeder death (`NPC.cs:87843-87848`, sites 1072-1073): the
+/// 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 2 gores 354/355 at position. Scale defaults to 1.
+fn blood_feeder_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 354, 1.0); // :87847
+    gore.new_gore(rng, world, pos, vel, 355, 1.0); // :87848
+}
+
+/// The 242 BloodJelly death (`NPC.cs:87860-87868`, sites 1074-1078): the
+/// 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 5 gores 356/357/357/358/358 at position. Scale defaults to 1.
+fn blood_jelly_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    for ty in [356, 357, 357, 358, 358] {
+        gore.new_gore(rng, world, pos, vel, ty, 1.0);
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -6919,6 +6971,14 @@ pub fn hit_effect_c(
     // `:87813-87832` — the 236/237 JungleCreeper arm (sites 1067-1071).
     if (npc_type == 236 || npc_type == 237) && npc.hp <= 0 {
         jungle_creeper_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87833-87849` — the 241 BloodFeeder arm (sites 1072-1073).
+    if npc_type == 241 && npc.hp <= 0 {
+        blood_feeder_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87850-87869` — the 242 BloodJelly arm (sites 1074-1078).
+    if npc_type == 242 && npc.hp <= 0 {
+        blood_jelly_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -10905,6 +10965,33 @@ mod tests {
         jungle_creeper_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
         let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
         assert_eq!(types, vec![332, 333, 334, 335, 335]);
+    }
+
+    /// `NPC.cs:87847-87848` — the BloodFeeder death: the 2 gores 354/355.
+    #[test]
+    fn w4_f10_the_blood_feeder_death_spawns_the_two_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1051);
+        blood_feeder_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![354, 355]);
+    }
+
+    /// `NPC.cs:87864-87868` — the BloodJelly death: the 5 gores
+    /// 356/357/357/358/358.
+    #[test]
+    fn w4_f10_the_blood_jelly_death_spawns_the_five_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1061);
+        blood_jelly_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![356, 357, 357, 358, 358]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
