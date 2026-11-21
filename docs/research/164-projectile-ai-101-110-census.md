@@ -1,4 +1,9 @@
-# Projectile aiStyles 101-110 — census + port (W4-d11)
+# 164 — Projectile aiStyles 101-110 — census + port (W4-d11)
+
+Renumbered `26d` → **164** per the d54 collision registry (`150`, `38bfd1d22`,
+§1 key `26d`: W4-d12's 111-120 census first-add 00:06:06 wins the key, this
+lane's 04:17:27 copy takes the assigned free 164; the 164 slot re-verified
+unclaimed at every pushed tip at the RETIRE-round scan).
 
 Branch `task/W4-d11-proj-ai-101-110`, base `a725acb0` (main). Code-only round:
 the witness tests are WRITTEN NOT RUN (no compiler invoked on this branch);
@@ -144,3 +149,72 @@ the four hit-site rolls ride the `UpdateProjectiles` stream in C# order.
   are Kill()-tail). No overlap: d11 carries no `kill_tail_cue` map at all
   (verified — the seam is d77's, `0573b70f2`), so it adds no competing 539/576
   cue. Merge keeps d77's cue arms; d11's AI-row + proc work is disjoint.
+
+## RETIRE round (the five-item closeout — research/245 is the FINAL)
+
+1. **Git-log census, band 101-110.** `origin/main` (`051600da8` at the scan)
+   carries NONE of the band: no `projectile_ai_101_110.rs` (ls-tree empty),
+   zero `ai_medusa_ray`/`ai_tower_orb`/`ai_nurse_syringe` hits (grep exit 1),
+   no nebula-sweep commit in `git log origin/main --grep=nebula` (the hits
+   are the i40 wings / ManaV2 lanes). The nebula-sweep landed ON THIS BRANCH
+   ONLY: producer `121672908` + completion `ab42de2d7` + census `2894f6f7d`.
+   NOT landed on main; the branch is the sole carrier.
+2. **d77c cues 539-id4-style7 / 576 compose CONFIRMED.** d77 tip `5f10560b2`'s
+   `kill_tail_cue` (projectile.rs:20211) arms `539 => (4, 7, centre−40)` —
+   the C# `:72565-72571` re-read: the 80-box recentre (`position=Center`,
+   `width=height=80`, `Center=position`) then `Damage()` then the id-4
+   style-7 play, so centre−40 is the derived read; the `NPC_Killed_7` bank
+   row + int-facade style-7 arm live in d77's audio.rs (:154-155/:1443).
+   The 576 rides the common-bullet list (`:76038` re-read: 576 IS on the
+   24-kind arm) `=> (2, 10, pos)` at :20440. d11 carries NO `kill_tail_cue`
+   and NO competing 539/576 cue push (grep census: the band module's only
+   sound-adjacent text is the module-doc pointer); d11's rows (539
+   `data.rs:2508`, 576 `:2517`) are exactly what d77's comment cites
+   (`e0395afc`). f20 `7d6e2b72` ports the 576 AI_001 overlay ROW-GATED INERT
+   until d11 merges — the three-lane chain (d11 row → f20 overlay → d77
+   Kill cue) composes with zero overlap.
+3. **813 three-way keep-one (g64 × d11 × d13).** g64 `3cdc64236`'s dust-wired
+   `ai_vortex_ritual` (5-arg, `trail_813_windup/_charge/_full/_dissolve` +
+   the opacity tail on the live DustPool) is the STRICT SUPERSET and
+   SURVIVES: it already absorbed d11's `be58df9e` dissolve-no-return fix and
+   d13's `b56db900` wind-up scale fix (`scale = self.scale` — the C#
+   `:33714-33783` writes NO scale; re-read confirms) + the `a2588cd2`
+   once-per-death Kill head + the Item8 tick-90 cue + the `(int)Center`
+   truncation (`:33884` re-read: `(int)base.Center.X/Y` — g64 keeps the C#
+   verbatim). d11's gates-only machine + d13's machine DROP at merge. THE
+   ROW: d11's `-1`/`RESET_STATE` (alpha 0) was stale — the C# `:6282-6293`
+   block sets alpha 255 + friendly + hostile + ignoreWater + drawLayer 1
+   and NEVER sets penetrate (stock 1, `:774` re-read). This round corrects
+   d11's row + the `:6290` ignoreWater flag-list entry to the g64/d13 shape;
+   the tuple is now BYTE-EQUAL across all three tips (string-compare
+   verified) — the `w4_d11_retire_the_marker_row_is_byte_equal_across_the_three_way`
+   witness pins it (WRITTEN NOT RUN). The 619 spawn resolves through d11's
+   `NpcKind::BloodSquid` row (`eae7b5097`) at merge — g64's raw-619 intent
+   comment ("kind unported") is stale against d11's landed row; g64's own
+   FINAL 1 already records this resolution.
+4. **All-armed/rowed census + remaining gaps.** All ten styles 101-110 have
+   exactly one live dispatch arm (projectile.rs:18050-18237: 101/102/103/
+   104/105/106/107/108/109/110 — one each). All 20 rowed kinds resolve:
+   536/591→101, 539/573/574→102, 540→103, 565→104, 567/568→105,
+   569/570/571→106, 575/596→107, 578/579/813→108, 582→109, 584→110, plus
+   the 576 laser row→1 (f20's overlay). Remaining gaps (all cited, none
+   owed by this lane): the 535 head anchor waits on d10's merge (d10 tip
+   `72431e61f` HAS the 535 row :1806 + the 100 arm :18339 — the probe
+   resolves at merge); the 578/579 charge/full/dissolve dust arms + the
+   579 wind-up bodies are g64's axis (its machine wires them); the 813
+   dust BODIES ride g64's superset; the 596 keep-one is d11's
+   `ai_nebula_sphere` + g64's `trail_596` bool seam (g64 FINAL pins it);
+   the 582/584/619 cited skips all landed in the DOC-SWEEP wave.
+5. **research FINAL + declaration** → `245-w4-d11-retire-final.md` (the
+   number per the registry-150 first-free scan at the RETIRE tip: 244
+   taken f39/g48, 245 free at all 361 tips; the 246/247 seats were claimed
+   by d10/g40/g43 mid-round — the race the registry documents). The
+   declaration: the band-101-110 family is d11-owned wholesale; the nebula
+   PROC producer is d11-unique (360-tip grep census: only d11 carries
+   `set_nebula`/`nebula_cd`/`:13826`/`wants_nebula_pickup`; d6's hit is the
+   `can_ghost_heal` FIELD shape, see the FINAL's keep-one row); the nebula
+   LIFECYCLE half folds into the mana-family declaration (`fb771bfb8`):
+   f49's `nebula_levelup`/tier fields/zeros, f12's g27 `apply_orb_arm` tier
+   writer, d117/f49's `regen.rs` mana cadence — d11's player.rs twins DROP
+   at merge; the `can_ghost_heal` keep-one is d6's FIELD (same C# gate,
+   ctor-derived; d11's method retires, the call site reads the field).
