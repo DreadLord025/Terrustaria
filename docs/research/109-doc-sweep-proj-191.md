@@ -240,3 +240,121 @@ const/row definitions (resolve to c10's). **Do not keep both arms** (a double
 `200 =>` match arm is a compile error; a double row is a duplicate-match
 warning). The d20 witnesses (`projectile_ai_misc.rs:2268-2330`) should be
 dropped with the arm; c10's cover the same ground.
+
+---
+
+## Item 4 — Jumino gift item 5276: row census + use/eat arm (aiStyle 192)
+
+**C# source.** `AI_192_JuminoAnimation` (`Projectile.cs:41501-41638`), the
+completion gift (`:41632-41637`):
+
+```
+if (this.ai[0] >= num5) {
+    int num12 = Item.NewItem(new EntitySource_Gift(this),
+        base.Center + new Vector2(0f, 12f), 5276);   // :41634
+    Main.item[num12].velocity = new Vector2(0f, 0f);  // :41635
+    this.Kill();                                      // :41636
+}
+```
+
+The gift is item **5276**. Its `SetDefaults` (`Item.cs:41867-41872`):
+
+```
+case 5276:
+    this.DefaultToVanitypet(994, 345);   // shoot 994 (JunimoPet), buff 345
+    this.width = 32; this.height = 32;
+    this.SetShopValues(ItemRarityColor.Orange3, Item.buyPrice(0, 1));
+    break;
+```
+
+`DefaultToVanitypet` (`Item.cs:47936-47950`): `damage 0, useStyle 1, width 16,
+height 30, UseSound = SoundID.Item2, useAnimation/useTime 20, rare 3, noMelee,
+value sellPrice(0,2), buffType = buffID, shoot = projId`. So 5276 is a **vanity
+pet item** (NOT consumable/food): use-style 1, `buffType 345` (JunimoPet),
+`shoot 994`, `buffTime 0` (the pet buff is persistent, re-granted by `UpdatePet`).
+`ItemID.cs` name `JunimoPetItem`; projectile `ProjectileID.cs` `JunimoPet = 994`.
+
+**Row census — does 5276 exist?** YES. `itemdata.rs:5442`:
+`ItemDef { id: 5276, name: "Junimo Pet Item", projectile: Some(994),
+use_style: 1, use_time: 20, use_animation: 20, buff_type: 345, buff_time: 0,
+consumable: false, potion: false, heal_life: 0, heal_mana: 0, use_sound:
+Some(127), width: 32, height: 32, rare: 3, value: 10000, ... }`.
+
+Field-by-field vs C#: `projectile 994` ✓, `buff_type 345` ✓, `use_style 1` ✓,
+`use_time/animation 20` ✓, `consumable false` ✓ (vanity pet, not food),
+`width/height 32` ✓ (the case override), `rare 3` ✓, `value 10000` =
+`buyPrice(0,1)` = 1 gold = 10000 copper ✓ (`Item.cs:49417-49419`).
+`use_sound Some(127)` = `SOUND_STYLES[127]` = `Item2` (sound_id 2, style 2,
+`soundid.rs:154`) = `SoundID.Item2` (`SoundID.cs:1385`) ✓ — the
+`DefaultToVanitypet` UseSound. **The row is FAITHFUL.**
+
+**The gift drain (d20's port).** `ai_jumino` (`projectile_ai_misc.rs:964`)
+queues `p.wants_gift_item = Some((5276, center.x, center.y + 12.0))` (`:1060`);
+the pool drains it (`projectile.rs::drain_gift_items`, `:15040-15048`); the sim
+resolves it (`world_sim/projectiles.rs:612-629`): three `NextFloat` draws (the
+`Item.NewItem` velocity triplet, `Main.cs:17775` `UpdateProjectiles` swap) then
+`ItemDrop::new(5276, 1, 0, x - SIZE/2, y - SIZE/2, 0, 0, 0)` — the explicit
+velocity zeroing (`:41635`) overrides the rolled triplet. **The gift drop is
+FAITHFUL** (the item spawns at `Center + (0,12)`, velocity 0, prefix 0).
+
+**Use/eat arm census — what happens when the player USES 5276?** This is where
+the real gap lives, and it is **cross-lane** (the item-use path + pet-equip):
+
+1. **The use-path drink gate refuses it.** `world_sim/editing.rs:2313-2350`:
+   the food arm needs `consumable && buff_type ∈ {26,206,207}` (5276 is not);
+   `potions::use_potion_item` (`:2348`) needs `drinkable(def)` (`potions.rs:358`:
+   `consumable && (potion || heal>0 || buff_type>0 && use_style ∈ {2,9})`) —
+   5276 is `consumable: false`, `use_style 1`, so **`drinkable` is false**. The
+   pet item is NOT a drink/food. Correct — the C# pet item rides the **shoot
+   path**, not the consumable path.
+2. **The shoot path grants the buff but the pet spawn arm is missing.** The
+   generic shoot (`editing.rs:2737-2799`) grants `buff_type 345` at
+   `:2773-2774` (`AddBuff(345, buff_time=0)`) and calls `free_up_pets_and_minions`
+   (`:2787`, 994 ∈ `PROJ_PET`, `data.rs:4595`). BUT the C# **pet-buff shoot arm**
+   (`Player.cs:48561-48583`: kill the owner's same-kind pets, then
+   `NewProjectile(pointPosition, num4, num5, projToShoot, 0, 0f, i)` — damage 0,
+   kb 0) has **no port** (grep `48561|48582` in `editing.rs`: 0 hits). The
+   generic `fire_non_ammo_shot` tail (`:4093+`) would fire 994 as a *generic
+   shot* with the item's damage/kb, not the pet arm's damage-0/kb-0 spawn.
+3. **The buff is granted with time 0 → it expires immediately.** `AddBuff(345,
+   0)` (`buffs.rs:192`) stores `buff_time = 0`; `update_buffs_tick` (`:388`)
+   skips `buff_time <= 0` slots, and `remove_expired_buffs` (`player.rs:5728`)
+   deletes them. The C# avoids this via **`UpdatePet`** (`Player.cs:17298-17309`,
+   called `:25573`): every tick, if `miscEquips[0].buffType >= 1 && stack >= 1`
+   and the buff is a vanity/light pet and `!hideMisc[0]` and `FindBuffIndex(num)
+   == -1`, it re-grants `AddBuff(num, 3600)` + plays the UseSound. **`UpdatePet`
+   has no port** (grep `UpdatePet|update_pet` in crates: 0 hits). So even if the
+   buff were granted, nothing re-grants it → the pet never persists.
+4. **The pet projectile 994 has no `proj_data` row.** Grep `994 =>|JUNIMO_PET =>`
+   in `projectile/data.rs`: 0 hits (994 appears only in the `PROJ_PET` id list
+   `:4595`). The C# 994 row (`Projectile.cs:9436-9445`): netImportant, 20×20,
+   aiStyle 26, friendly, penetrate −1, `timeLeft *= 5`. The pet AI
+   (`AI_026`, `:58102`, the 994 keep-alive `:58845-58855` reads
+   `petFlagJunimoPet`) is partially ported (`projectile_ai026_c.rs` lists 994 in
+   its doc `:25/:955/:968` but `AI_026_C_KINDS = [SLIME_MINION]` only, `:120` —
+   **994 is NOT in any ported aiStyle-26 slice**). The buff-effect spawn
+   (`buff_effects_accessory.rs:86` `(345, 994)` in `PET_BUFF_ARMS`, dispatched
+   `:308-310` → `spawn_pet_if_needed`) DOES spawn 994 via `pool.spawn` when buff
+   345 is active — but `spawn_pet_if_needed` (`:121-151`) documents "the port's
+   data-row table has no pet rows yet (`proj_data` returns None), so the plain
+   spawn carries the slot; the pet AI/box lands with the pet-AI task".
+
+**Verdict — row FAITHFUL, gift drop FAITHFUL; the use/eat arm is a cross-lane
+real gap.** The d20 lane's responsibility (the 192 AI + the gift drop) is
+complete and correct. The pet item's *use* → *persistent pet* chain is broken
+across three unported pieces, all outside the proj-191-200 lane:
+
+- **T4a (item-use lane):** the pet-buff shoot arm `Player.cs:48561-48583`
+  (kill same-kind + damage-0/kb-0 spawn) in `editing.rs::fire_non_ammo_shot`.
+- **T4b (pet-equip lane):** `Player.UpdatePet`/`UpdatePetLight`
+  (`Player.cs:17298-17340`) — the per-tick `miscEquips[0..1]` buff re-grant
+  (3600) + UseSound, the persistence mechanism for ALL vanity/light pets.
+- **T4c (pet-AI lane):** the 994 `proj_data` row (`Projectile.cs:9436-9445`) +
+  the aiStyle-26 pet slice covering 994 (the keep-alive `:58845-58855`).
+
+These are **not d20 ports** — they belong to the item-use, pet-equip and pet-AI
+lanes respectively. The gift item 5276 itself is correctly rowed and dropped;
+picking it up and using it currently grants a buff that expires the same tick
+(no `UpdatePet`) and spawns no persistent pet (no 994 row/AI). **Recorded as
+seeds, not ported here** (cross-lane; porting would touch `editing.rs` and the
+pet-equip hot files outside this lane's scope).
