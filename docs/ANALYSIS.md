@@ -39244,3 +39244,93 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The Torch God event + favor (W4-f33, task/W4-f33-torch-god-favor, 2026-11-21, code-only mode)
+
+The C# has NO `TorchGod.cs`/`TorchGodPunishment` files — the event is the
+`Player.happyFunTorchTime` machine inline in `Player.cs`. Ported to
+`crates/tr-app/src/torch_god.rs` (the event + the favor grant) and
+`projectile_ai_torch_god.rs` (the 949 aiStyle-184 shot), wired through
+`luck.rs`'s scan seam, `player.rs::update_luck`/`start_death` and the
+`world_sim/player.rs` drain. Ownership: W4-f33 owns the EVENT + the favor
+ITEM grant; a6 owns the 5043 use arm (`ItemCheck_UseTorchGodsFavor`,
+`Player.cs:45226-45243`); e27 owns the torch-luck scan (untouched — the
+seam only adds the C# head/trigger around it).
+
+Ported verbatim: the trigger tail (`:18066-18086` — cooldown 0, locked
+biome torches, >100 lit torches, below surface, no 5043 in the 59-slot
+inventory), the scan-replacing head (`:17733-17742`), `TorchAttack`
+(`:17813-17910` — the 21-tick cadence, the x-outer/y-inner ±100-tile scan
+into the 400-slot candidate cap with both breaks, the ONE `Next(num)`
+volley pick, the `frameX += 66` snuff + unlit list, the 95-survival /
+200-cap ends, the `−180` finale delay), `RelightTorches`
+(`:17797-17811` — the 3600 cooldown + the `−66` loop over active torch
+tiles), `EndOngoingTorchGodEvent` (`:17718-17729`, called from the
+surface abort + `KillMe` `:38857`), the 949 `SetDefaults` row
+(`Projectile.cs:8948-8955` — 4×4/184/−1/no-tileCollide), `AI_184`
+(`:42787-42822` — the owner+unlock-gated `SelfHurtPlayers`, the Item8
+latch, the ai[1] budget drain, the 4-dust trail), `SelfHurtPlayers` for
+the 949 (`:15025-15062` — rect-rect `Colliding`, `DamageVar(dmg, −luck)`,
+non-PVP Hurt, the shot NEVER dies), the `Kill()` 20-dust + Item10 census
+(`:70976-70995`), and `TorchID.Dust` (`TorchID.cs:179-184`).
+
+RNG contract (the exact-draw discipline): the event's draws ride the
+`UpdatePlayers` stream IN-TICK inside `update_luck` (the C# call
+position, `Player.cs:25645`) — one `Next(num)` per volley (`:17881`),
+the grant's `Item.NewItem` velocity pair `Next(-30,31)`/`Next(-40,-15)`
+(`Item.cs:49749-49750`; `Prefix(0)` draws NOTHING, `:511-514`). The
+949's dust censuses ride `UpdateProjectiles`: per dust the six
+`Dust.NewDust` draws (`Dust.cs:170-175`/`:190`, the empress precedent)
++ the torch-family seventh `Next(-10,6)` (`Dust.cs:214-219` — every
+`TorchID.Dust` id except 156/234/66) + the AI's `Next(3)` noGravity roll
+= 8 draws/dust (7 for 156/234/66): 32/tick (28 rainbow), 160 on death
+(140 rainbow). The pool-pressure skip draws (`Dust.cs:114-148`) and the
+off-screen early-out (`:98`) are the documented no-skip assumption;
+`ChildSafety.Disabled = true` by default (`ChildSafety.cs:33`).
+
+Deliberate folds/deviations:
+- **The deferred-write seam**: the decision + ALL RNG run in-tick; the
+  tile snuff/relight, the pool spawn and the item push land at the
+  `world_sim` drain right after the player tick (the `pending_*`
+  convention — the player tick holds `&World`). Same fixed step, zero
+  draw-order change; the next tick's scans see the writes like the C#.
+- **The favor drop keeps the C# call's own RNG**: the generic
+  `spawn_item_drop_px` pins the −1 natural roll + the phase triple; the
+  grant's `RequestNewItem(..., prefix: 0)` draws only the velocity pair —
+  a dedicated push (`push_favor_drop`), not the generic seam.
+  `ReserveForLocalPlayer` in single-player is a no-op
+  (`WorldItem.cs:295-305`) — no grab delay.
+- **Difficulty**: `Main.Difficulty` folds to Classic 1.0 (the
+  `MOON_POINT_SCALAR` precedent) → the volley damage is 40; the
+  `HostileProjectileDamageMultiplier` curve (`GameDifficultyData.cs:85`)
+  is ported as the identity line with the 0.5 clamp and witnessed at all
+  four difficulties (20/40/80/120).
+- **The dead player's event abort** drains on the dead branch (the C#
+  `KillMe` runs it for `Main.myPlayer`); `update_dead` never reaches
+  `update_luck`.
+- **Dust visuals / sounds**: the dust bodies are the documented pool skip
+  (the censuses keep the draws); the Item8/Item10 cues ride the
+  `wants_sound`/`pending_proj_sounds` pass-tail drain (the S1-E-21c batch
+  convention — the deferred pitch draw is the recorded sound-wave
+  deviation).
+- **The 949's lane exclusions**: stock `friendly = false`/`hostile =
+  false` — the PVE walk refuses it (a new kind gate beside the 443/266
+  ones) and the hostile-contact lane exempts it (the hurt rides the AI's
+  own `SelfHurtPlayers`); the out-of-world guard's deaths skip the Kill
+  census (no `Kill()` call, `:16696`).
+- **XNA float forms**: the launch aim + the budget drain use the
+  f32-sum/f64-sqrt `Length` and the reciprocal-multiply `Normalize`
+  (NaN on zero, no guard — the `npc_ai_style64` precedent).
+- The favor USE (a6) and the `TorchGodsFlavor` buff-376 cosmetic
+  (`Player.cs:40185-40234`, the 1084 helper) are NOT this task's scope;
+  `unlocked_biome_torches` stays the shared flag both read.
+
+Verification: code-only — **no cargo/rustc/tests/graphify invoked**. 24
+witness tests WRITTEN NOT RUN (`torch_god.rs` 14: the curve, the cadence,
+the one-draw-per-volley stream pin, the 400 cap + x-outer order, the
+no-candidate/95/200 ends, the finale −180, the surface abort, the relight
+loop, the five trigger gates, the head, the full scan-seam trigger, the
+death abort; `projectile_ai_torch_god.rs` 10: the row, the dust table,
+the budget drain, the Item8 latch, the 32/28 + 160/140 census stream
+pins, the SelfHurt hit + i-frames, the unlock immunity, the
+dead/owner/overlap gates, the aim forms).
