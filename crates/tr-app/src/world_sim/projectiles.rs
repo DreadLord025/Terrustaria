@@ -766,11 +766,17 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         }
     }
     // `Kill()`'s type-651 mass-wire intents (`Projectile.cs:72051-72067`):
-    // `Wiring.MassWireOperation(ps, pe, master)` is UNPORTED (the mass-op
-    // lane — `world_sim/editing/wiring.rs:27-29` records the same gap for
-    // the Multicolor Wrench). The intents drain here and drop; the ghost
-    // preview + the anchor/release machine are the ported visuals
-    // (ANALYSIS "The Wire Kite ghost (S1-W4-g81)").
+    // `Wiring.MassWireOperation(ps, pe, master)` is UNPORTED ON THIS
+    // BRANCH. The compose verdict (research/283): c42 owns the apply
+    // (`world_sim/wiring.rs::mass_wire_operation`, fold-133 `05ae5cc6`),
+    // f11 threads the `drop_rng` param (research/133 §8.4a), d13 owns the
+    // pool seam. The merger replaces this drop with the published
+    // direct-drain hunk (f11 research/133 §8.4b): RAW ToolMode
+    // (`Wiring.cs:3241` — no Actuator strip, that mask is the 3625 arm's
+    // `Player.cs:46908`), no cooldown gate, `owner == local_id`,
+    // `RngKey::UpdateProjectiles` (the Kill's stage, `Main.cs:17775`).
+    // ONE drain shape, never both. The ghost preview + the anchor/release
+    // machine are the ported visuals (ANALYSIS "The Wire Kite ghost").
     let _mass_ops = app.projectiles.drain_mass_wire_ops();
 }
 

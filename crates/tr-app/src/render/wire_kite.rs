@@ -271,7 +271,10 @@ pub fn draw_wire_kite(
     let ps = (p.ai[0] as i32, p.ai[1] as i32);
     let cx = p.pos.x + p.w * 0.5;
     let cy = p.pos.y + p.h * 0.5;
-    let pe = ((cx / 16.0) as i32, (cy / 16.0) as i32);
+    // `Main.cs:31627` — `proj.Center.ToTileCoordinates()` = `(int)X >> 4`
+    // (`Utils.cs:1807-1810`): cast FIRST, then arithmetic-shift (floors
+    // negatives; the truncating-divide form differed there).
+    let pe = ((cx as i32) >> 4, (cy as i32) >> 4);
     let (c47, c46) = ghost_colors(tool_mode);
     let actuator = tool_mode & mode::ACTUATOR != 0;
     let t47 = tint(c47);

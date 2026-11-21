@@ -14,9 +14,13 @@
 //! they are not ported (no observable effect).
 //!
 //! Deviations (ANALYSIS "The Wire Kite ghost (S1-W4-g81)"):
-//! * `Wiring.MassWireOperation` is unported — the kill intent rides out
-//!   to the world sim (the `wants_mark_spawn` pattern) and is DROPPED
-//!   there with a documented note until the mass-op lane lands;
+//! * `Wiring.MassWireOperation` is unported ON THIS BRANCH - the kill
+//!   intent rides out to the world sim (the `wants_mark_spawn` pattern)
+//!   and is DROPPED there with a documented note. The compose verdict
+//!   (research/283): c42 owns the apply (`world_sim/wiring.rs::
+//!   mass_wire_operation`, fold-133), f11 threads the `drop_rng` param,
+//!   d13 owns the pool seam - the merger replaces this lane's drop with
+//!   the published direct-drain hunk (f11 research/133 §8.4b);
 //! * the right-click kill's `player.mouseInterface = true` /
 //!   `Main.blockMouse = true` writes (`:35713-35714`) ride the tick
 //!   struct — `blockMouse` has a port field, `mouseInterface` folds into
@@ -82,25 +86,19 @@ pub(crate) fn ai_wire_kite(
         // owns the channel cancel + the mass-op gate; localAI[0] stays 0
         // so no operation fires).
         kill(p);
-        return tick;
-    }
-    if right_press {
+    } else if right_press {
         // `:35710-35715` — the right-click cancel: Kill +
         // mouseInterface + blockMouse.
         kill(p);
         tick.block_mouse = true;
-        return tick;
-    }
-    if !owner.channel {
+    } else if !owner.channel {
         // `:35716-35723` — the channel release: arm the mass-op flag
         // THEN Kill — the Kill arm reads localAI[0] == 1.
         if p.local_ai[0] == 0.0 {
             p.local_ai[0] = 1.0;
         }
         kill(p);
-        return tick;
-    }
-    if p.local_ai[1] == 0.0 {
+    } else if p.local_ai[1] == 0.0 {
         // `:35726-35736` — ride the cursor: Center = mouse world point
         // (the port's box is top-left, so subtract the half-box), one
         // tick of move cooldown per actual move.
@@ -123,14 +121,15 @@ pub(crate) fn ai_wire_kite(
             p.vel = Vec2::ZERO;
         }
     }
-    // `:35745` — the velocity zero runs on EVERY local tick (outside the
+    // `:35745` - the velocity zero runs on EVERY local tick (outside the
     // cooldown gate).
     p.vel = Vec2::ZERO;
-    // `:35746-35823` — the two L-walk tile scans are dead reads in the
+    // `:35746-35823` - the two L-walk tile scans are dead reads in the
     // C# (module doc); not ported.
-    // `:35825-35832` — the owner writes. `Math.Sign(float)` is the float
-    // sign (-1/0/+1 on the RAW value, NOT the int-truncated one — a 0.5
-    // velocity still flips the facing).
+    // `:35825-35832` - the owner writes. The C# has NO early return after
+    // the kill arms - the tail runs on the kill tick too (the d13 census).
+    // `Math.Sign(float)` is the float sign (-1/0/+1 on the RAW value, NOT
+    // the int-truncated one - a 0.5 velocity still flips the facing).
     if owner.vel_x != 0.0 {
         tick.facing = Some(if owner.vel_x > 0.0 { 1 } else { -1 });
     }
@@ -156,8 +155,9 @@ fn kill(p: &mut Projectile) {
 /// `Kill()`'s type-651 arm (`Projectile.cs:72051-72067`): with
 /// `localAI[0] == 1` and a local owner, `MassWireOperation` runs from the
 /// anchor `(ai[0], ai[1])` to the release cell (`Center.ToTileCoordinates`
-/// — `(int)(Center.X / 16)`, the FLOOR-divide form for positives; the C#
-/// `ToTileCoordinates` is `(int)(X / 16f)` — verbatim truncation).
+/// — `(int)X >> 4`, `Utils.cs:1807-1810`: the C# casts to int FIRST, then
+/// arithmetic-shifts; for positives that equals the truncating divide,
+/// for negatives it floors — the d13 pool shape is the same form).
 /// Returns the `(ps, pe)` pair; the world sim drops it with the
 /// documented mass-op note.
 pub(crate) fn kill_mass_wire_op(p: &Projectile) -> Option<((i32, i32), (i32, i32))> {
@@ -167,7 +167,7 @@ pub(crate) fn kill_mass_wire_op(p: &Projectile) -> Option<((i32, i32), (i32, i32
     let ps = (p.ai[0] as i32, p.ai[1] as i32);
     let cx = p.pos.x + p.w * 0.5;
     let cy = p.pos.y + p.h * 0.5;
-    let pe = ((cx / 16.0) as i32, (cy / 16.0) as i32);
+    let pe = ((cx as i32) >> 4, (cy as i32) >> 4);
     Some((ps, pe))
 }
 
@@ -233,24 +233,43 @@ mod tests {
         // `:35716-35723` + `:72051-72067`.
         let mut p = kite(195.0, 315.0);
         p.ai = [10.0, 20.0, 0.0, 0.0];
-        ai_wire_kite(&mut p, owner(false), Vec2::ZERO, false);
+        let tick = ai_wire_kite(&mut p, owner(false), Vec2::ZERO, false);
         assert!(!p.active);
         assert_eq!(p.local_ai[0], 1.0);
         assert_eq!(p.time_left, 0);
+        // `:35825-35832` — the owner tail runs on the KILL tick too (the
+        // C# has no return after the kill arms; the d13 census).
+        assert!(tick.held_proj);
+        assert_eq!(tick.dummy_item_time, Some(2));
+        assert!(tick.zero_item_rotation);
         let op = kill_mass_wire_op(&p).expect("the release fires the op");
         assert_eq!(op.0, (10, 20));
         assert_eq!(op.1, (12, 20), "centre (200,320) → tile (12,20)");
     }
 
     #[test]
+    fn the_release_cell_floors_negative_centres() {
+        // `Utils.cs:1807-1810`: `(int)X >> 4` — the arithmetic shift
+        // floors: centre (-1, -1) → tile (-1, -1), NOT the truncating
+        // divide's (0, 0).
+        let mut p = kite(-6.0, -6.0);
+        p.local_ai[0] = 1.0;
+        let op = kill_mass_wire_op(&p).expect("the latch fires");
+        assert_eq!(op.1, (-1, -1), "(-1)>>4 = -1");
+    }
+
+    #[test]
     fn the_right_click_kills_without_the_mass_op() {
-        // `:35710-35715`: localAI[0] stays 0 — no operation.
+        // `:35710-35715`: localAI[0] stays 0 - no operation.
         let mut p = kite(195.0, 315.0);
         let tick = ai_wire_kite(&mut p, owner(true), Vec2::ZERO, true);
         assert!(!p.active);
         assert_eq!(p.local_ai[0], 0.0);
         assert!(tick.block_mouse);
         assert!(kill_mass_wire_op(&p).is_none());
+        // The owner tail runs on the kill tick (`:35825-35832`).
+        assert!(tick.held_proj);
+        assert!(tick.zero_item_rotation);
     }
 
     #[test]
@@ -259,9 +278,13 @@ mod tests {
         let mut p = kite(195.0, 315.0);
         let mut o = owner(true);
         o.refuse = true;
-        ai_wire_kite(&mut p, o, Vec2::ZERO, false);
+        let tick = ai_wire_kite(&mut p, o, Vec2::ZERO, false);
         assert!(!p.active);
         assert!(kill_mass_wire_op(&p).is_none());
+        // The owner tail runs on the kill tick (the C# else-if chain has
+        // no return; `:35825-35832` follows it).
+        assert!(tick.held_proj);
+        assert_eq!(tick.dummy_item_time, Some(2));
     }
 
     #[test]

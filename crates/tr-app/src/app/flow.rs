@@ -2332,7 +2332,20 @@ pub(crate) mod front_flow_tests {
             pointer_ms: 0.0,
             pointer_event: None,
             mouse_pos: Vec2::ZERO,
+            // S1-W4-g81 residuals — the WiresUI state the App::new ctor
+            // carries (`WiresUI.cs:23`/`:92-95` — the static ctor seeds
+            // ToolMode = Red; the radial starts closed), mirrored here so
+            // the test ctor matches (the two-literal census, the c42
+            // fold-133 wire_tool_mode precedent).
+            wire_tool_mode: ui::wires_ui::TOOL_MODE_DEFAULT,
+            wires_radial: ui::wires_ui::WiresRadial::default(),
             cursor: ui::cursor::CursorState::default(),
+            // S1-W4-g81 residuals — the held-tool cursor-icon latch +
+            // the 10-frame cache (`Main.cs:2411-2415`), both start off.
+            cursor_item_icon_enabled: false,
+            item_icon_cache_pos: Vec2::ZERO,
+            item_icon_cache_kind: 0,
+            item_icon_cache_time: 0,
             os_cursor_hidden: None,
             mine_down: false,
             place_down: false,
