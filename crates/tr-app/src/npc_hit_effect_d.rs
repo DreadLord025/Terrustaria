@@ -1565,6 +1565,57 @@ fn parrot_death(
     gore.new_gore(rng, world, pos, vel, 374, 1.0); // :86657
 }
 
+/// The 489/586 blood zombie arm (`NPC.cs:86659-86689`, sites 208-217):
+/// the 50x dust-5 burst at (2.5·hd, −2.5) — the WIDER velocity of the
+/// blood-moon rows — then the per-kind ladder carrying `this.scale`:
+/// 489 Blood Zombie → 722/723/723/724/724 (`:86675-86679`), 586 Zombie
+/// Merman → 1106/1107/1107/1108/1108 (`:86683-86687`), at the
+/// +0/+20/+20/+34/+34 Y ladder. NOTE the C# uses two independent ifs
+/// (`:86673`, `:86681`), not else-if — mutually exclusive on type, so
+/// the port's else-if is equivalent.
+fn blood_zombie_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86669-86672` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let (head, mid, legs) = if npc_type == 489 {
+        (722, 723, 724) // :86675-86679
+    } else {
+        (1106, 1107, 1108) // :86683-86687
+    };
+    gore.new_gore(rng, world, pos, vel, head, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, s);
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -1763,6 +1814,10 @@ pub fn hit_effect_d(
     // `:86642-86658` — the 252 Parrot arm (sites 206-207).
     else if npc_type == 252 {
         parrot_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86659-86689` — the 489/586 blood zombie arm (sites 208-217).
+    else if npc_type == 489 || npc_type == 586 {
+        blood_zombie_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -3117,6 +3172,44 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86675-86687` — the blood zombie ladders: 489 →
+    /// 722/723/723/724/724, 586 → 1106/1107/1107/1108/1108 at the
+    /// +0/+20/+20/+34/+34 Y ladder, this.scale carried, the 50x dust
+    /// census at the wider 2.5 velocity.
+    #[test]
+    fn w4_f5d_the_blood_zombie_ladders_carry_the_scale() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        n.scale = 1.1;
+        for (kind, want) in [
+            (489, vec![722, 723, 723, 724, 724]),
+            (586, vec![1106, 1107, 1107, 1108, 1108]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(211);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "blood zombie {kind}");
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+            assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+            assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+            for i in 0..5 {
+                assert_eq!(gore.slot(i).scale, 1.1);
+            }
+            assert!(!gore.slot(5).active, "exactly five gores");
+            let mut twin = UnifiedRandom::new(211);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "blood zombie {kind} mirrors the C# draws");
         }
     }
 }
