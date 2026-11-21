@@ -486,6 +486,29 @@ pub enum ProjTrackedCue {
     /// aiStyle-16 `Kill()` tail (`Projectile.cs:70673-70677`, the
     /// `netMode != 2` stop gate folds with the single-player port).
     BombFuseStop,
+    /// `PlayTrackedSound(style, Center)` — a one-shot tracked play, the
+    /// handle DISCARDED (the C# does not store it): Betsy's fireball shot
+    /// (`Projectile.cs:56509`), the Ballista tower shot (`:68615`), the
+    /// Lightning Aura zap (`:68905`), the Dark Mage attack (`:56466`), the
+    /// Dark Mage summon marker (`:36441`). The `&'static str` is the
+    /// `SoundID` field name (`TrackedStyle::by_name`). ZERO gameplay draws.
+    OneShot(&'static str),
+    /// `PlayTrackedSound(style, Center).ToFloat()` into `local_ai[idx]`
+    /// (only when `play`), then the per-tick `GetActiveSound` follow: null →
+    /// `SlotId.Invalid`, else `Position = Center` — the Flameburst tower
+    /// shot (`Projectile.cs:68465-68475`, idx 1) and the Phantom Phoenix
+    /// shot (`:55776-55798`, idx 0). The arm owns the one-shot latch and
+    /// sets `play` on the latch tick only; the follow runs every tick.
+    /// ZERO gameplay draws.
+    HandlePlayFollow { style: &'static str, idx: usize, play: bool },
+    /// `PlayTrackedSound(style, Center)` at the `Kill()` tail — Betsy's
+    /// fireball impact (`Projectile.cs:71637`). The handle is discarded.
+    /// ZERO gameplay draws.
+    KillOneShot(&'static str),
+    /// `PlayTrackedSound(style)` — the GLOBAL one-shot overload (no
+    /// position, `SoundEngine.cs:142-149`): the Explosive Trap's explode
+    /// (`Projectile.cs:69362`). The handle is discarded. ZERO gameplay draws.
+    GlobalOneShot(&'static str),
 }
 
 /// One pool slot (`Projectile.cs:296-470`, the engine-relevant subset).
@@ -10669,13 +10692,15 @@ impl Projectile {
     ///
     /// The port's kind set carries the 673 only (the 674 has no `proj_data`
     /// row), so the arm ports the marker's ramp: the summon cue at the 70th
-    /// tick (SKIPPED — no tracked-sound layer), the counter, the opacity
-    /// curve and the kill past 80.
+    /// tick, the counter, the opacity curve and the kill past 80.
     fn ai_dark_mage_raise(&mut self, world: &World) {
         if self.kind == DARK_MAGE_MARKER {
-            // `:36438-36440` — the summon cue at `ai[0] == 70` (SKIPPED: no
-            // tracked-sound layer in the pool).
-            // `:36441` — the counter.
+            // `:36439-36442` — the summon cue (`DD2_SkeletonSummoned`) at
+            // `ai[0] == 70`, BEFORE the counter increment. W4-d80.
+            if self.ai[0] == 70.0 {
+                self.wants_tracked = Some(ProjTrackedCue::OneShot("DD2_SkeletonSummoned"));
+            }
+            // `:36443` — the counter.
             self.ai[0] += 1.0;
             // `:36442-36452` — the opacity ramp: 0 → 1 over the first 20
             // ticks, 1 until the 60th, then back to 0 by the 80th; the kill
@@ -10712,14 +10737,22 @@ impl Projectile {
     /// helper (`:42592-42634`) — the Insanity shadow (964 friendly / 965
     /// hostile).
     ///
-    /// The tracked sound (`:42507-42515`: the cue on the first tick of each
-    /// variation and the per-tick position update of the playing sound) is
-    /// SKIPPED — the pool has no tracked-sound layer (S1-E-23). The alpha
-    /// ramp, the four variation choreographies and the kill are ported.
+    /// The tracked sound (`:42506-42518`: the cue on the first tick of each
+    /// variation into `localAI[1]` and the per-tick position follow) rides
+    /// the `HandlePlayFollow` cue (W4-d80). The alpha ramp, the four
+    /// variation choreographies and the kill are ported.
     fn ai_insanity_shadow(&mut self, world: &World) {
         // `:42593-42633` — the variation pick.
         let (variation, fake_counter, counter_max) = shadow_hand_variation(self.ai[0]);
         let from_value = fake_counter / counter_max;
+        // `:42506-42518` — the tracked cue (`DD2_GhastlyGlaiveImpactGhost`)
+        // on the first tick of each variation (`fakeCounter == 0`), then the
+        // per-tick follow (null → Invalid, else Position = Center). W4-d80.
+        self.wants_tracked = Some(ProjTrackedCue::HandlePlayFollow {
+            style: "DD2_GhastlyGlaiveImpactGhost",
+            idx: 1,
+            play: fake_counter == 0.0,
+        });
         // `:42516-42527` — the alpha ramp: +25/tick over the last 15 ticks of
         // the variation, −25/tick before that, floored at 50 and capped at
         // 255.
@@ -16896,6 +16929,13 @@ impl ProjectilePool {
                                     sub_steps as i32 - 2 - sub as i32,
                                 )
                             }
+                            // W4-d80 — the DD2 aiStyle-1 tracked-shot riders
+                            // (706 Phantom Phoenix / 709 Sky Dragon's Fury,
+                            // `Projectile.cs:55767-55863`/`:54696-54725`):
+                            // kind-disjoint from A/B/C, gated after them.
+                            kind if crate::projectile_ai_dd2_shots::covers(kind) => {
+                                crate::projectile_ai_dd2_shots::step(&mut self.slots[i], world)
+                            }
                             // S1-D-4 — the Frost Moon family's four
                             // aiStyle-1 kinds (345/348/349/350,
                             // `projectile_ai_frostmoon`): kind-disjoint
@@ -18789,12 +18829,21 @@ impl ProjectilePool {
                             // `:68458-68461` — the kind guard (the port's
                             // aiStyle-131 rows are exactly these three).
                             if matches!(projectile.kind, FLAME_BURST_SHOT_1 | FLAME_BURST_SHOT_2 | FLAME_BURST_SHOT_3) {
-                                // `:68462-68475` — the one-shot latch; the
-                                // tracked sound slot (`localAI[1]`) and its
-                                // position follow are skipped.
-                                if projectile.local_ai[0] == 0.0 {
+                                // `:68462-68475` — the one-shot latch + the
+                                // tracked sound (`DD2_FlameburstTowerShot`,
+                                // `:68465`) into `localAI[1]`, then the
+                                // per-tick follow (null → Invalid, else
+                                // Position = Center). W4-d80: the play fires
+                                // on the latch tick; the follow every tick.
+                                let play = projectile.local_ai[0] == 0.0;
+                                if play {
                                     projectile.local_ai[0] = 1.0;
                                 }
+                                projectile.wants_tracked = Some(ProjTrackedCue::HandlePlayFollow {
+                                    style: "DD2_FlameburstTowerShot",
+                                    idx: 1,
+                                    play,
+                                });
                                 // `:68476-68483` — the alpha fade.
                                 if projectile.alpha > 0 {
                                     projectile.alpha -= 25;
@@ -19049,8 +19098,10 @@ impl ProjectilePool {
                                         // `:68610-68642` — the fire state.
                                         projectile.frame = num4 + (projectile.ai[1] / num6 as f32) as i32;
                                         if projectile.ai[1] == num6 as f32 {
-                                            // The tracked shot sound (`:68615`)
-                                            // is skipped — no sound layer.
+                                            // `:68615` — the tracked shot sound
+                                            // (`DD2_BallistaTowerShot`), the
+                                            // handle discarded. W4-d80.
+                                            projectile.wants_tracked = Some(ProjTrackedCue::OneShot("DD2_BallistaTowerShot"));
                                             let mut vector = Vec2::new(projectile.direction as f32, 0.0);
                                             let num8 = projectile.ai_134_ballista_find_target(world, npcs, shot_range, dead_bottom_angle, center, p_minion_target);
                                             if num8 != -1 {
@@ -19175,11 +19226,66 @@ impl ProjectilePool {
                                     // `:68886-68907` — the zap-period counter.
                                     // The `ai[0] == 0` arm scans for a chaseable
                                     // NPC in the box to gate the zap SOUND
-                                    // (`:68905`, skipped — no sound layer); the
-                                    // counter wrap is the state the port keeps.
+                                    // (`DD2_LightningAuraZap`, `:68905`). W4-d80.
                                     projectile.ai[0] += 1.0;
                                     if projectile.ai[0] >= num3 as f32 {
                                         projectile.ai[0] = 0.0;
+                                    }
+                                    if projectile.ai[0] == 0.0 {
+                                        // `:68893-68902` — the zap scan: a
+                                        // chaseable NPC whose hitbox is within
+                                        // width/2 of the centre AND collides
+                                        // (the aiStyle-137 `Colliding` arm,
+                                        // `:15800-15813`).
+                                        let (cx, cy) = projectile.center();
+                                        let center = Vec2::new(cx, cy);
+                                        let my_rect = tr_core::whip::Rect::new(
+                                            projectile.pos.x as i32,
+                                            projectile.pos.y as i32,
+                                            projectile.w as i32,
+                                            projectile.h as i32,
+                                        );
+                                        let half_w = projectile.w as i32 / 2;
+                                        let half_h = projectile.h as i32 / 2;
+                                        let mut zap = false;
+                                        for n in npcs.iter() {
+                                            if !chaseable(n) {
+                                                continue;
+                                            }
+                                            let (nw, nh) = n.size();
+                                            let target = tr_core::whip::Rect::new(
+                                                n.x as i32, n.y as i32, nw as i32, nh as i32,
+                                            );
+                                            if target.distance(cx, cy) >= half_w as f32 {
+                                                continue;
+                                            }
+                                            // `Colliding`'s 137 arm: the box
+                                            // overlap + the target's distance
+                                            // to the centre < height/2 - 20 +
+                                            // the CanHit arc (centre or top).
+                                            if !my_rect.intersects(target)
+                                                || target.distance(cx, cy) >= (half_h - 20) as f32
+                                            {
+                                                continue;
+                                            }
+                                            let tc = Vec2::new(
+                                                target.left() as f32 + target.w as f32 / 2.0,
+                                                target.top() as f32 + target.h as f32 / 2.0,
+                                            );
+                                            let top = Vec2::new(
+                                                target.left() as f32 + target.w as f32 / 2.0,
+                                                target.top() as f32,
+                                            );
+                                            if projectile.ai_137_lightning_aura_can_hit(world, tc)
+                                                || projectile.ai_137_lightning_aura_can_hit(world, top)
+                                            {
+                                                zap = true;
+                                                break;
+                                            }
+                                        }
+                                        if zap {
+                                            projectile.wants_tracked = Some(ProjTrackedCue::OneShot("DD2_LightningAuraZap"));
+                                        }
                                     }
                                     // `:68908-68947` — the one-shot ground scan
                                     // and resize.
@@ -19388,8 +19494,11 @@ impl ProjectilePool {
                                             ))
                                         });
                                         if found {
-                                            // The tracked sound (`:69362`) is
-                                            // skipped — no sound layer.
+                                            // `:69362` — the tracked explode
+                                            // sound (`DD2_ExplosiveTrapExplode`),
+                                            // the GLOBAL overload (no position).
+                                            // W4-d80.
+                                            projectile.wants_tracked = Some(ProjTrackedCue::GlobalOneShot("DD2_ExplosiveTrapExplode"));
                                             projectile.local_ai[0] = cooldown;
                                             // `:69364` — the blast spawns at
                                             // `Center + (0, -num2)` with zero
@@ -19898,9 +20007,10 @@ impl ProjectilePool {
                         self.pending_proj_sounds.push(req);
                     }
                     // W4-d80 — forward the arm's queued tracked-sound intent
-                    // (the bomb fuse ensure) into the pool's tracked queue
-                    // (the same `wants_sound` pattern): the sim drain applies
-                    // it against the pool and writes the handle back.
+                    // (the bomb fuse ensure, the DD2 one-shots / handle
+                    // follows) into the pool's tracked queue (the same
+                    // `wants_sound` pattern): the sim drain applies it
+                    // against the pool and writes the handle back.
                     if let Some(cue) = self.slots[i].wants_tracked.take() {
                         let pos = self.slots[i].pos;
                         let (w, h) = (self.slots[i].w, self.slots[i].h);
@@ -20093,6 +20203,20 @@ impl ProjectilePool {
                     self.pending_proj_tracked.push((
                         i,
                         ProjTrackedCue::BombFuseStop,
+                        pos.x + w * 0.5,
+                        pos.y + h * 0.5,
+                    ));
+                }
+                // W4-d80 — `Kill()`'s type-686 arm (`Projectile.cs:71635-
+                // 71638`): Betsy's fireball impact (`DD2_BetsyFireballImpact`),
+                // the tracked one-shot at the death hook. The 711 Betsy's
+                // Wrath impact (`:71641`) has no ported row — deferred.
+                if self.slots[i].kind == BETSY_FIREBALL {
+                    let pos = self.slots[i].pos;
+                    let (w, h) = (self.slots[i].w, self.slots[i].h);
+                    self.pending_proj_tracked.push((
+                        i,
+                        ProjTrackedCue::KillOneShot("DD2_BetsyFireballImpact"),
                         pos.x + w * 0.5,
                         pos.y + h * 0.5,
                     ));

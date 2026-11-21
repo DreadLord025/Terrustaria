@@ -327,13 +327,14 @@ pub(crate) fn step(p: &mut Projectile, world: &World, owner: Option<(f32, f32)>)
         p.local_ai[0] = 1.0;
     }
     // `:56504-56532` — Betsy's fireball (686): the localAI[0] sound latch
-    // (DD2_BetsyFireballShot skipped), the alpha fade 25 from ai[0] >= 2
-    // (BEFORE this tick's gravity — the counter already rode above), the
-    // two dust rolls (`Main.rand.Next(4)` / `Next(3)` + the oldPos[9] gate,
-    // `:56519-56531`, SKIPPED).
+    // (`DD2_BetsyFireballShot`, `:56509` — the tracked one-shot, W4-d80),
+    // the alpha fade 25 from ai[0] >= 2 (BEFORE this tick's gravity — the
+    // counter already rode above), the two dust rolls (`Main.rand.Next(4)`
+    // / `Next(3)` + the oldPos[9] gate, `:56519-56531`, SKIPPED).
     if p.kind == BETSY_FIREBALL {
         if p.local_ai[0] == 0.0 {
             p.local_ai[0] = 1.0;
+            p.wants_tracked = Some(crate::projectile::ProjTrackedCue::OneShot("DD2_BetsyFireballShot"));
         }
         if p.ai[0] >= 2.0 {
             p.alpha -= 25;

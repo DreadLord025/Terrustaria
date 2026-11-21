@@ -73,6 +73,43 @@ fn apply_proj_tracked_cue(
             }
             p.local_ai[2] = 0.0;
         }
+        // W4-d80 — the DD2 projectile one-shots (research/64 deferred): the
+        // fire-and-forget tracked plays + the handle-store-and-follow dance.
+        // ZERO gameplay draws (the variation/pitch picks ride the two
+        // audio-only statics).
+        ProjTrackedCue::OneShot(name) | ProjTrackedCue::KillOneShot(name) => {
+            // `PlayTrackedSound(style, Center)` — the handle is discarded
+            // (`Projectile.cs:56509`/`:68615`/`:68905`/`:56466`/`:36441`/
+            // `:71637`). The 10 000-px guard + the cap run inside the play.
+            if let Some(style) = crate::tracked_sound::TrackedStyle::by_name(name) {
+                let _ = audio.play_tracked(style, x, y, Default::default());
+            }
+        }
+        ProjTrackedCue::GlobalOneShot(name) => {
+            // `PlayTrackedSound(style)` — the global overload (no position,
+            // `SoundEngine.cs:142-149`): the Explosive Trap's explode
+            // (`Projectile.cs:69362`). No distance guard (global).
+            if let Some(style) = crate::tracked_sound::TrackedStyle::by_name(name) {
+                let _ = audio.play_tracked_global(style);
+            }
+        }
+        ProjTrackedCue::HandlePlayFollow { style, idx, play } => {
+            // `:68462-68475` / `:55774-55798`: the one-shot play into
+            // `localAI[idx]` (the arm's latch gates `play`), then the
+            // per-tick follow: `GetActiveSound == null` → `SlotId.Invalid`,
+            // else `Position = Center`.
+            if play {
+                if let Some(style) = crate::tracked_sound::TrackedStyle::by_name(style) {
+                    let id = audio.play_tracked(style, x, y, Default::default());
+                    p.local_ai[idx] = id.to_float();
+                }
+            }
+            let h = SlotId::from_float(p.local_ai[idx]);
+            match audio.get_active_sound_mut(h) {
+                None => p.local_ai[idx] = SlotId::INVALID.to_float(),
+                Some(s) => s.position = (x, y),
+            }
+        }
     }
 }
 
@@ -1369,6 +1406,132 @@ mod w4_d80_bomb_fuse_tests {
         assert_eq!(style.variations, 1);
         assert!((style.volume - 0.2).abs() < 1e-6, "the 0.2 volume");
         assert_eq!(style.max_tracked_instances, 0);
+    }
+}
+
+/// W4-d80 — the DD2 projectile one-shots (research/64 deferred): the
+/// fire-and-forget tracked plays, the handle-store-and-follow dance and the
+/// RNG contract (zero gameplay draws). WRITTEN NOT RUN (code-only mode).
+#[cfg(test)]
+mod w4_d80_dd2_one_shot_tests {
+    use super::*;
+    use crate::projectile::ProjTrackedCue;
+    use tr_core::slot::SlotId;
+
+    /// The headless rig: the DD2 cues seeded silent so the plays resolve
+    /// their assets and add slots (no output device). EVERY variation of
+    /// each family is seeded — the `random_sound` pick draws 0..3, so a
+    /// missing `_1`/`_2` would fold the play to `SlotId::INVALID`.
+    fn rig() -> (crate::audio::Audio, Vec<Projectile>) {
+        let mut audio = crate::audio::Audio::new(None);
+        for cue in [
+            "dd2_betsy_fireball_shot_0",
+            "dd2_betsy_fireball_shot_1",
+            "dd2_betsy_fireball_shot_2",
+            "dd2_betsy_fireball_impact_0",
+            "dd2_betsy_fireball_impact_1",
+            "dd2_betsy_fireball_impact_2",
+            "dd2_flameburst_tower_shot_0",
+            "dd2_flameburst_tower_shot_1",
+            "dd2_flameburst_tower_shot_2",
+            "dd2_phantom_phoenix_shot_0",
+            "dd2_phantom_phoenix_shot_1",
+            "dd2_phantom_phoenix_shot_2",
+            "dd2_explosive_trap_explode_0",
+            "dd2_explosive_trap_explode_1",
+            "dd2_explosive_trap_explode_2",
+        ] {
+            audio.test_seed_tracked_cue(cue);
+        }
+        let p = Projectile {
+            active: true,
+            kind: crate::projectile::BETSY_FIREBALL,
+            owner: 0,
+            pos: Vec2::new(96.0, 96.0),
+            time_left: 180,
+            ..Default::default()
+        };
+        (audio, vec![p])
+    }
+
+    /// The fire-and-forget one-shot (`OneShot`/`KillOneShot`): the play adds
+    /// a slot, the handle is NOT stored (the C# discards it). The global
+    /// overload (`GlobalOneShot`) plays without a position.
+    #[test]
+    fn w4_d80_the_dd2_one_shot_plays_and_discards() {
+        let (mut audio, mut slots) = rig();
+        let before = audio.test_audio_streams();
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::OneShot("DD2_BetsyFireballShot"), 100.0, 100.0);
+        // The handle is discarded — local_ai stays 0.
+        assert_eq!(slots[0].local_ai[0], 0.0, "the one-shot discards the handle");
+        assert_eq!(slots[0].local_ai[1], 0.0);
+        assert_eq!(slots[0].local_ai[2], 0.0);
+        // The play drew the audio-only statics (3 variations → the pick +
+        // the always-drawn pitch roll).
+        let after = audio.test_audio_streams();
+        assert_ne!(after.0, before.0, "the variation pick moved");
+        assert_ne!(after.1, before.1, "the pitch roll moved");
+        // The kill-tail one-shot plays too.
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::KillOneShot("DD2_BetsyFireballImpact"), 100.0, 100.0);
+        // The global overload (the trap explode).
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::GlobalOneShot("DD2_ExplosiveTrapExplode"), 100.0, 100.0);
+    }
+
+    /// The handle-store-and-follow (`HandlePlayFollow`): the play tick
+    /// stores the handle into `local_ai[idx]`; the follow re-points the live
+    /// sound; a reaped handle folds to `SlotId.Invalid`.
+    #[test]
+    fn w4_d80_the_dd2_handle_play_follow() {
+        let (mut audio, mut slots) = rig();
+        // The play tick (idx 1, the Flameburst convention).
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::HandlePlayFollow { style: "DD2_FlameburstTowerShot", idx: 1, play: true }, 100.0, 100.0);
+        let id = SlotId::from_float(slots[0].local_ai[1]);
+        assert!(id.is_active(), "the play stored a live handle");
+        audio.test_keep_tracked_alive(id);
+        // The follow tick: no re-play, the position re-points.
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::HandlePlayFollow { style: "DD2_FlameburstTowerShot", idx: 1, play: false }, 200.0, 200.0);
+        assert_eq!(SlotId::from_float(slots[0].local_ai[1]), id, "no re-play");
+        assert_eq!(audio.get_active_sound(id).unwrap().position, (200.0, 200.0), "the follow re-points");
+        // A reaped handle folds to Invalid (the C# null arm). Clear the
+        // keep-alive seam so the headless slot (no sink) reaps on update.
+        if let Some(s) = audio.get_active_sound_mut(id) {
+            s.set_test_keep_alive(false);
+        }
+        audio.update_tracked(false);
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::HandlePlayFollow { style: "DD2_FlameburstTowerShot", idx: 1, play: false }, 300.0, 300.0);
+        assert_eq!(slots[0].local_ai[1].to_bits(), 65535, "the reaped handle folds to SlotId.Invalid");
+    }
+
+    /// The RNG contract: the DD2 one-shot drain leaves the gameplay stream
+    /// pristine (the plays draw only the audio-only statics).
+    #[test]
+    fn w4_d80_the_dd2_one_shot_drain_is_gameplay_draw_free() {
+        let (mut audio, mut slots) = rig();
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        let peek = rng.peek();
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::OneShot("DD2_BetsyFireballShot"), 100.0, 100.0);
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::HandlePlayFollow { style: "DD2_PhantomPhoenixShot", idx: 0, play: true }, 100.0, 100.0);
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::GlobalOneShot("DD2_ExplosiveTrapExplode"), 100.0, 100.0);
+        assert_eq!(rng.peek(), peek, "zero Main.rand draws on the DD2 one-shot path");
+    }
+
+    /// The style rows resolve through `soundid.rs` (the trackable names).
+    #[test]
+    fn w4_d80_the_dd2_one_shot_styles_resolve() {
+        for (name, cue, variations) in [
+            ("DD2_BetsyFireballShot", "dd2_betsy_fireball_shot", 3u32),
+            ("DD2_BetsyFireballImpact", "dd2_betsy_fireball_impact", 3),
+            ("DD2_FlameburstTowerShot", "dd2_flameburst_tower_shot", 3),
+            ("DD2_PhantomPhoenixShot", "dd2_phantom_phoenix_shot", 3),
+            ("DD2_SkyDragonsFuryShot", "dd2_sky_dragons_fury_shot", 3),
+            ("DD2_ExplosiveTrapExplode", "dd2_explosive_trap_explode", 3),
+            ("DD2_SkeletonSummoned", "dd2_skeleton_summoned", 1),
+        ] {
+            let style = crate::tracked_sound::TrackedStyle::by_name(name).unwrap_or_else(|| panic!("{name}"));
+            assert_eq!(style.cue, cue, "{name}");
+            assert_eq!(style.variations, variations, "{name}");
+            assert_eq!(style.max_tracked_instances, 0, "{name} uncapped");
+        }
     }
 }
 

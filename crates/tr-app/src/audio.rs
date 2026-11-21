@@ -516,6 +516,44 @@ const TRACKED_CUES: &[&str] = &[
     // W4-d80 — the vampire sun-scorch sizzle (`SoundID.cs:1708`, vol 1;
     // `Player.cs:28590-28603`).
     "sizzle",
+    // W4-d80 — the DD2 projectile one-shots (research/64 deferred): the
+    // tower shots (`SoundID.cs:1604`/`:1607`/`:1610`), the trap explode
+    // (`:1605`), the summon marker (`:1663`), the ghastly glaive ghost
+    // (`:1652`), Betsy's fireball shot/impact (`:1613`/`:1614`), the
+    // Phantom Phoenix shot (`:1656`), the Sky Dragon's Fury shot (`:1657`)
+    // and the Dark Mage attack (`:1617`). The variation assets ride the
+    // tracked plays' `random_sound` pick.
+    "dd2_flameburst_tower_shot_0",
+    "dd2_flameburst_tower_shot_1",
+    "dd2_flameburst_tower_shot_2",
+    "dd2_ballista_tower_shot_0",
+    "dd2_ballista_tower_shot_1",
+    "dd2_ballista_tower_shot_2",
+    "dd2_lightning_aura_zap_0",
+    "dd2_lightning_aura_zap_1",
+    "dd2_lightning_aura_zap_2",
+    "dd2_lightning_aura_zap_3",
+    "dd2_explosive_trap_explode_0",
+    "dd2_explosive_trap_explode_1",
+    "dd2_explosive_trap_explode_2",
+    "dd2_skeleton_summoned",
+    "dd2_ghastly_glaive_impact_ghost_0",
+    "dd2_ghastly_glaive_impact_ghost_1",
+    "dd2_ghastly_glaive_impact_ghost_2",
+    "dd2_betsy_fireball_shot_1",
+    "dd2_betsy_fireball_shot_2",
+    "dd2_betsy_fireball_impact_0",
+    "dd2_betsy_fireball_impact_1",
+    "dd2_betsy_fireball_impact_2",
+    "dd2_phantom_phoenix_shot_0",
+    "dd2_phantom_phoenix_shot_1",
+    "dd2_phantom_phoenix_shot_2",
+    "dd2_sky_dragons_fury_shot_0",
+    "dd2_sky_dragons_fury_shot_1",
+    "dd2_sky_dragons_fury_shot_2",
+    "dd2_dark_mage_attack_0",
+    "dd2_dark_mage_attack_1",
+    "dd2_dark_mage_attack_2",
 ];
 
 /// The `Sounds/Custom/` trackables the item-use wave names

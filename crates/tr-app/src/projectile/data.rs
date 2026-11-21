@@ -402,6 +402,14 @@ pub const BETSY_BREATH: u16 = 687;
 /// `ProjectileID.DD2BetsyFireball` (686) — Betsy's fireball
 /// (`AI_110`'s phase-4 volley: `NewProjectile(..., 686, 35, ...)`).
 pub const BETSY_FIREBALL: u16 = 686;
+/// `ProjectileID.DD2PhoenixBowShot` (706) — the Phantom Phoenix's shot
+/// (`Projectile.cs:7461-7473`: 66x66, aiStyle 1, the tracked
+/// `DD2_PhantomPhoenixShot` loop, W4-d80).
+pub const PHANTOM_PHOENIX: u16 = 706;
+/// `ProjectileID.MonkStaffT3_AltShot` (709) — the Sky Dragon's Fury shot
+/// (`Projectile.cs:7508-7520`: 12x12, aiStyle 1, the tracked
+/// `DD2_SkyDragonsFuryShot` one-shot, W4-d80).
+pub const SKY_DRAGONS_FURY_SHOT: u16 = 709;
 /// `ProjectileID.PirateCannonBall`-family shell (240) — the Dutchman
 /// cannon's (`Projectile.cs:3219-3228`: 16x16, aiStyle 2, hostile,
 /// penetrate -1, alpha 255).
@@ -2633,6 +2641,36 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 RESET_STATE,
             ),
+            // W4-d80 — the Phantom Phoenix shot (706, `Projectile.cs:7461-
+            // 7473`): 66x66, aiStyle 1, friendly, alpha 255, timeLeft 300,
+            // ranged, penetrate -1, usesLocalNPCImmunity + cooldown 10.
+            PHANTOM_PHOENIX => (
+                66.0,
+                66.0,
+                1,
+                -1,
+                300,
+                0,
+                true,
+                false,
+                false,
+                (true, 10, false, -1, 255, 1.0),
+            ),
+            // W4-d80 — the Sky Dragon's Fury shot (709, `Projectile.cs:7508-
+            // 7520`): 12x12, aiStyle 1, friendly, melee, alpha 255,
+            // ignoreWater, extraUpdates 1, scale 0.6.
+            SKY_DRAGONS_FURY_SHOT => (
+                12.0,
+                12.0,
+                1,
+                1,
+                TIME_LEFT_DEFAULT,
+                1,
+                true,
+                false,
+                true,
+                (false, -2, false, -1, 255, 0.6),
+            ),
             // --- The magic (caster) families (M4-PROJ-6, in `ProjectileID`
             // order) --- the aiStyle declaration is what Phases 3-4 need; the
             // AI arms land beside the arrow/boomerang/bomb arms in those
@@ -4211,7 +4249,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == HIGH_VELOCITY_BULLET
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
-            || kind == GOLF_CLUB_HELPER,
+            || kind == GOLF_CLUB_HELPER
+            // W4-d80 — the Sky Dragon's Fury shot (709, `:7516`).
+            || kind == SKY_DRAGONS_FURY_SHOT,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -4246,6 +4286,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | LIGHTS_BANE | TERRARIAN_BEAM
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
+                    // W4-d80 — the Sky Dragon's Fury shot (709, `:7514`).
+                    | SKY_DRAGONS_FURY_SHOT
             ),
         ranged: matches!(
             kind,
@@ -4275,6 +4317,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // C# writes ranged on them too; the owner-255 gate keeps the
             // flags moot, the census stays verbatim.
                 | SNOW_BALL_HOSTILE | BULLET_SNOWMAN
+            // W4-d80 — the Phantom Phoenix shot (706, `:7469`).
+                | PHANTOM_PHOENIX
         ),
         magic: matches!(
             kind,
@@ -4703,6 +4747,12 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // wraps at it. The other glowsticks/flares keep the stock 1 (no
         // `projFrames` override in `Main.cs:8444-8727`).
         FAIRY_GLOWSTICK => 4,
+        // W4-d80 — the Phantom Phoenix's 8-frame sheet (`Main.cs:8456`) —
+        // `frame = frameCounter / 5` (`Projectile.cs:55841`); the Sky
+        // Dragon's Fury shot's 3-frame sheet (`Main.cs:8554`) — the 3-tick
+        // frame machine (`:54704-54712`) wraps at 3.
+        PHANTOM_PHOENIX => 8,
+        SKY_DRAGONS_FURY_SHOT => 3,
         _ => 1,
     }
 }
