@@ -1279,6 +1279,9 @@ impl Audio {
         let (x, y) = (x.trunc(), y.trunc());
         let cue = match style_num {
             1 => "NPC_Hit_1",
+            // W4-d41 — the Tumbleweed's hop cue (`NPC.cs:62568`:
+            // `PlaySound(3, base.Center, 11)`).
+            11 => "NPC_Hit_11",
             _ => return None,
         };
         let style = npc_sound_style(cue, "NPC_Hit_", 3)?;

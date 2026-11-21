@@ -1975,6 +1975,12 @@ pub struct Npc {
     /// the desert despawn gate read them (`NPC.cs:62710`/`:62570`).
     pub zone_sandstorm: bool,
     pub zone_desert: bool,
+    /// W4-d41 — the OTHER active Tumbleweeds' (x, y) in slot order — the
+    /// AI_026 sibling-spread scan's inputs (`NPC.cs:62382-62403`'s
+    /// `Main.npc[i]` loop). `Npc::update_rng` cannot see its siblings, so
+    /// the sim's pre-pass stamps this (the twin_time_lefts carrier
+    /// precedent); outside the sim it stays empty.
+    pub tumbler_siblings: Vec<(f32, f32)>,
     /// The Twins' shared-despawn seam (S1-D-3-wire-retinazer): the OTHER
     /// active type-125/126 NPCs' `timeLeft`s in slot order — the C#'s
     /// `num400 != whoAmI` scan inside the aiStyle-30/31 arms
@@ -3373,6 +3379,7 @@ impl Npc {
             wind_speed_target: 0.0,
             zone_sandstorm: false,
             zone_desert: false,
+            tumbler_siblings: Vec::new(),
             twin_time_lefts: Vec::new(),
             slot: 0,
             wants_martian_invasion: false,
@@ -8174,8 +8181,11 @@ impl Npc {
             }
             // W4-d41 — the tortured soul rides the humanoid FindFrame
             // group (`NPC.cs:68615`): the 8-row strip, the num108 = 12
-            // walk clock (`:69528-69531`), the idle row 1, the air row 0
-            // (the blood-zombie shape, the 12-step instead of the 8).
+            // walk clock (`:69528-69531`) over the generic `|vx|*2 + 1`
+            // counter (`:69552-69553` — the +0.5 counter is the 489
+            // row's, NOT this one), the idle row 0 (`:69515-69519` —
+            // only 140/489 take the row-1 branch), the air row 1
+            // (`:69642-69646`, the non-town-slime else).
             NpcKind::DemonTaxCollector => {
                 if self.vy == 0.0 {
                     if self.facing == 1 {
@@ -8185,11 +8195,11 @@ impl Npc {
                         self.sprite_dir = -1;
                     }
                     if self.vx == 0.0 {
-                        self.frame = 1;
+                        self.frame = 0;
                         self.frame_counter = 0.0;
                     } else {
-                        self.frame_counter += self.vx.abs();
-                        self.frame_counter += 0.5;
+                        self.frame_counter += self.vx.abs() * 2.0;
+                        self.frame_counter += 1.0;
                         if self.frame < 2 {
                             self.frame = 2;
                         }
@@ -8203,7 +8213,7 @@ impl Npc {
                     }
                 } else {
                     self.frame_counter = 0.0;
-                    self.frame = 0;
+                    self.frame = 1;
                 }
             }
             // W4-d41 — the bride rides the walker FindFrame group
@@ -27136,7 +27146,8 @@ mod tests {
             rows.push(b.frame);
         }
         assert_eq!(&rows[..], &[2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 6, 7, 7, 7, 2], "the 2..7 cycle");
-        // The tortured soul: the 12-step walk clock.
+        // The tortured soul: the 12-step walk clock over the |vx|*2 + 1
+        // counter — 4 px/tick → 9/tick, a row every 2 ticks (>12).
         let mut t = bare(NpcKind::DemonTaxCollector);
         t.vx = 4.0;
         t.vy = 0.0;
@@ -27148,7 +27159,13 @@ mod tests {
             t.find_frame();
             rows.push(t.frame);
         }
-        assert_eq!(&rows[..], &[2, 2, 2, 3, 3, 3, 4, 4, 4], "the 12-step cycle");
+        assert_eq!(&rows[..], &[2, 3, 3, 4, 4, 5, 5, 6, 6], "the 12-step cycle");
+        t.vx = 0.0;
+        t.find_frame();
+        assert_eq!(t.frame, 0, "the idle row 0 (:69515-69519)");
+        t.vy = 1.0;
+        t.find_frame();
+        assert_eq!(t.frame, 1, "the air row 1 (:69642-69646)");
         // The bride: the 3-row walker strip.
         let mut br = bare(NpcKind::TheBride);
         br.vx = 4.0;

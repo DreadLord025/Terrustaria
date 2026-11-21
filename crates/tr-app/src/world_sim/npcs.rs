@@ -4294,15 +4294,34 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // W4-d41 — the Tumbleweed's wind/zone pre-stamps (`NPC.cs:62709-62714`'s
     // windSpeedTarget + `:62710`/`:62570`'s ZoneSandstorm/ZoneDesert): the
     // AI's `&World` borrow cannot reach `app.wind`/`app.scene_metrics`.
+    // The sibling-spread scan's inputs (`:62382-62403`) ride the same
+    // pre-pass: every OTHER active 546's (x, y) in slot order (the
+    // twin_time_lefts carrier precedent).
     {
         let wind_target = app.wind.speed_target;
         let sandstorm = app.scene_metrics.zone_sandstorm;
         let desert = app.scene_metrics.zone_desert;
-        for n in app.npcs.iter_mut() {
+        // The slot index rides the C#'s `i != base.whoAmI` exclusion —
+        // two tumblers at the SAME position still spread (the position
+        // compare would drop the twin).
+        let tumbler_positions: Vec<(usize, f32, f32)> = app
+            .npcs
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| n.kind == NpcKind::Tumbleweed && n.hp > 0)
+            .map(|(i, n)| (i, n.x, n.y))
+            .collect();
+        for (i, n) in app.npcs.iter_mut().enumerate() {
             if n.kind == NpcKind::Tumbleweed {
                 n.wind_speed_target = wind_target;
                 n.zone_sandstorm = sandstorm;
                 n.zone_desert = desert;
+                n.tumbler_siblings.clear();
+                for &(j, sx, sy) in &tumbler_positions {
+                    if j != i {
+                        n.tumbler_siblings.push((sx, sy));
+                    }
+                }
             }
         }
     }

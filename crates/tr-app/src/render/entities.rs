@@ -3397,6 +3397,15 @@ pub(crate) fn draw_npcs(
                 k[3] as f32 / 255.0 * fade,
             ]
         } else {
+            // W4-d41 — the sand slime's (537) `color = new Color(255,
+            // 250, 0, 0) * 0.2f` row (`NPC.cs:15869`, the byte-truncated
+            // (51, 50, 0, 0)) rides the generic draw's `color !=
+            // default` overlay (`Main.cs:25513-25516`) through
+            // `GetColor` (`NPC.cs:93695-93750`): the overlay's alpha is
+            // `color.A - (255 - light.A)` = 0, so it draws nothing in
+            // the premultiplied pipeline — the base GetAlpha pass (the
+            // light * fade here, the alpha-50 ctor row) is the whole
+            // visible tint. Documented no-op, not a missing row.
             [c[0] * fade, c[1] * fade, c[2] * fade, fade]
         };
         let tint = if n.hurt_cd > 0.0 {
