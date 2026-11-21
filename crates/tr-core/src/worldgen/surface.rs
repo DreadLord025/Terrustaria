@@ -370,7 +370,11 @@ pub(crate) fn plant_cacti(world: &mut World, rng: &mut Rng, map: &SurfaceMap, wi
 ///
 /// Sweep 2 (`:18314-18351`): over the ±10-margin columns, the FIRST
 /// surface dirt cell (the `flag2` open-sky latch, reset by any wall-less
-/// air cell) takes `SpreadGrass(num3, num4, 0, 2, repeat: false)`; the
+/// air cell) takes the LIVE `SpreadGrass(num3, num4)` call (`:18334`) —
+/// the defaults `dirt: 0, grass: 2, repeat: true` (`:75146`), so the
+/// bounded 3×3 recursion fires. The `repeat: false` call at `:18339` is
+/// ONLY the unreachable `catch` fallback (SpreadGrass carries its own
+/// try/catch `:75148/:75254` and never throws) — research/86 §6.1. The
 /// column scan breaks past `worldSurfaceHigh`.
 pub(crate) fn pass_spreading_grass(
     world: &mut World,
@@ -450,8 +454,10 @@ pub(crate) fn pass_spreading_grass(
         while (num4 as f64) < world_surface - 1.0 {
             if world.tile(num3, num4).is_some_and(|t| t.active()) {
                 if flag2 && world.tile(num3, num4).is_some_and(|t| t.kind == 0) {
-                    // `grassSpread = 0; SpreadGrass(num3, num4, 0, 2,
-                    // repeat: false)` (`:18334-18338`).
+                    // The LIVE call `grassSpread = 0; SpreadGrass(num3,
+                    // num4)` (`:18333-18334`) — the default `repeat: true`
+                    // (`:75146`); the `repeat: false` at `:18339` is the
+                    // dead catch arm (research/86 §6.1).
                     let mut grass_spread = 0i32;
                     super::evil::spread_evil_grass(
                         world,
@@ -461,7 +467,7 @@ pub(crate) fn pass_spreading_grass(
                         2,
                         world_surface,
                         &mut grass_spread,
-                        false,
+                        true,
                     );
                 }
                 if (num4 as f64) > surface_high {
@@ -1080,15 +1086,20 @@ pub(crate) fn pass_spawn_point(
 mod tests {
     use super::*;
 
-    /// W4-d104 pass 31: the first-surface dirt takes grass, the covered
-    /// dirt stays, and two runs are byte-equal (a == b — the classic arm
-    /// draws no RNG).
+    /// W4-d104 pass 31: the first-surface dirt takes grass; with the
+    /// LIVE `repeat: true` call (research/86 §6.1) the recursion carries
+    /// the grass DOWN the open-flanked column until the surface rule
+    /// (`j >= worldSurface && dirt == 0`, `:75162`) refuses at row 100.
+    /// (Stale-by-design re-derivation: the pre-fix `repeat: false` port
+    /// grassed only row 60 and left row 70 dirt — the faithful recursion
+    /// grasses rows 60..99.) Two runs are byte-equal (a == b — the
+    /// classic arm draws no RNG).
     #[test]
     fn w4_d104_31_the_surface_dirt_takes_grass() {
         let build = || {
             let mut w = World::new("sg".into(), 300, 200);
             // A dirt column at x=150: the surface cell at row 60 (open
-            // sky above), a buried dirt cell at row 70 under a cover.
+            // sky above), the column runs down past worldSurface 100.
             for y in 60..200 {
                 let i = w.index(150, y);
                 w.tiles[i].kind = 0;
@@ -1102,7 +1113,21 @@ mod tests {
         pass_spreading_grass(&mut b, 100.0, 90.0, -1, -1);
         assert_eq!(a.tiles, b.tiles, "a == b: the classic arm replays");
         assert_eq!(a.tile(150, 60).unwrap().kind, 2, "the first dirt takes grass");
-        assert_eq!(a.tile(150, 70).unwrap().kind, 0, "the buried dirt stays");
+        assert_eq!(
+            a.tile(150, 70).unwrap().kind,
+            2,
+            "the recursion grasses down the open-flanked column"
+        );
+        assert_eq!(
+            a.tile(150, 99).unwrap().kind,
+            2,
+            "the last above-surface cell grasses"
+        );
+        assert_eq!(
+            a.tile(150, 100).unwrap().kind,
+            0,
+            "the surface rule refuses at worldSurface"
+        );
     }
 
     /// W4-d104 pass 31: the ±3 flavour scan retypes an exposed stone to
@@ -1127,6 +1152,64 @@ mod tests {
         w.tiles[i].kind = 1;
         pass_spreading_grass(&mut w, 100.0, 90.0, -1, -1);
         assert_eq!(w.tile(150, 60).unwrap().kind, 53, "the sand latch wins");
+    }
+
+    /// W4-d104 pass 31 fix (research/86 §6.1): the LIVE `:18334` call
+    /// takes the default `repeat: true` — the grass spreads along the
+    /// whole first-surface dirt run (the 3×3 recursion), not just the
+    /// seed cell. The covered dirt (row 70 under the grassed column)
+    /// stays: the recursion's enclosure scan refuses a buried cell.
+    #[test]
+    fn w4_d104_31_the_grass_spread_recurses() {
+        let build = || {
+            let mut w = World::new("sg".into(), 300, 200);
+            // A horizontal dirt shelf at row 60, columns 100..200, open
+            // sky above — every cell is a "first surface" candidate, but
+            // only the leftmost fires the call; the recursion must carry
+            // the grass to the far end.
+            for x in 100..200 {
+                let i = w.index(x, 60);
+                w.tiles[i].kind = 0;
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+            w
+        };
+        let mut a = build();
+        let mut b = build();
+        pass_spreading_grass(&mut a, 100.0, 90.0, -1, -1);
+        pass_spreading_grass(&mut b, 100.0, 90.0, -1, -1);
+        assert_eq!(a.tiles, b.tiles, "a == b: the recursive arm replays");
+        for x in 100..200 {
+            assert_eq!(
+                a.tile(x, 60).unwrap().kind,
+                2,
+                "the recursion grassed the whole shelf (x={x})"
+            );
+        }
+    }
+
+    /// W4-d104 pass 31 fix: the recursion's `grassSpread < 1000` cap
+    /// (`:75241`) bounds DEPTH (the counter increments before the call,
+    /// decrements after) — a linear shelf recurses one deeper per cell,
+    /// so the walk from the first seed saturates near depth 1000; the
+    /// outer column loop then RE-SEEDS the next un-grassed first-surface
+    /// dirt with a fresh `grassSpread = 0` (`:18333`), exactly like the
+    /// C#. The shelf grasses end-to-end either way.
+    #[test]
+    fn w4_d104_31_the_long_shelf_grasses_past_the_depth_cap() {
+        let mut w = World::new("sg".into(), 1200, 200);
+        // A 1100-cell dirt shelf at row 60 (columns 50..1150), open sky
+        // above — deeper than the 1000 cap counts, but the counter
+        // decrements on unwind so the walk never saturates.
+        for x in 50..1150 {
+            let i = w.index(x, 60);
+            w.tiles[i].kind = 0;
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        pass_spreading_grass(&mut w, 100.0, 90.0, -1, -1);
+        for x in 50..1150 {
+            assert_eq!(w.tile(x, 60).unwrap().kind, 2, "the long shelf grassed (x={x})");
+        }
     }
 
     /// W4-d104 pass 32: the ore patch drops a vein into the grass floor

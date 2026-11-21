@@ -2018,7 +2018,7 @@ fn solid_tile2(world: &World, x: i32, y: i32) -> bool {
 
 /// `WorldGen.SpreadGrass` (`WorldGen.cs:75146-75268`), the slice the evil
 /// shell's four call shapes run (`(0, 23)`, `(0, 199)`, `(59, 661)`,
-/// `(59, 662)`) plus the Spreading Grass pass's `(0, 2, repeat: false)`
+/// `(59, 662)`) plus the Spreading Grass pass's `(0, 2, repeat: true)`
 /// (W4-d104 pass 31). Ported locally into this module (D18 — `growth.rs`'s
 /// slice carries the inverted guard, Decision #13; `biomes.rs`'s stays the
 /// jungle pass's local slice). During generation
@@ -2030,8 +2030,10 @@ fn solid_tile2(world: &World, x: i32, y: i32) -> bool {
 /// (`:75219-75223` — wall and liquid kept; `SquareTileFrame` deferred). No
 /// trees exist during generation, so
 /// `TryConvertingOrKillingTreesAbove...` is a no-op. `repeat` is the C#'s
-/// parameter (`:75146`) — the evil calls take the default `true`, the
-/// Spreading Grass pass passes `false` (`:18338`).
+/// parameter (`:75146`) — every generation call takes the default `true`
+/// (the evil calls AND the Spreading Grass pass's live `:18334` call;
+/// the `repeat: false` at `:18339` is the dead catch arm — research/86
+/// §6.1).
 pub(crate) fn spread_evil_grass(
     world: &mut World,
     i: i32,

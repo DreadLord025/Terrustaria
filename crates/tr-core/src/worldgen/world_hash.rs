@@ -271,6 +271,15 @@ mod tests {
     // every world (the 512 included). No RNG draw (the classic arm is
     // draw-free), so only the tiles move. Stale-by-design; the gate
     // re-pins. The a == b halves stay untouched.
+    // W4-d104 pass 31 fix (2026-11-21, code-only, research/86 §6.1): the
+    // sweep-2 call flips `repeat:false` → `repeat:true` — the LIVE
+    // `:18334` call takes the C# default (`:75146`); the ported
+    // `repeat:false` was the dead `:18339` catch arm. The 3×3 recursion
+    // now fires, so MORE surface cells grass (the whole first-surface
+    // dirt run above worldSurface, not one cell per column). Still NO
+    // RNG draw — no pinned grass-spread draws exist to re-derive; this
+    // pin was ALREADY stale-by-design and folds into the same deferred
+    // re-pin. The a == b halves stay untouched.
     // W4-d104 pass 32 (2026-11-21, code-only): the `Surface Ore and
     // Stone` pass (`WorldGen.cs:18447-18511` + `OrePatch` `:10579-10705`
     // + `StonePatch` `:10242-10324`) lands — the ore/stone patch scatters
@@ -368,6 +377,10 @@ mod tests {
     // and the first-surface grass land across the default world. No RNG
     // draw; re-pin DEFERRED to the merge gate; the a == b halves stay
     // untouched.
+    // W4-d104 pass 31 fix (2026-11-21, code-only, research/86 §6.1): the
+    // repeat:true flip (above) fires the 3×3 recursion — more surface
+    // cells grass, still zero draws. Folds into the SAME deferred
+    // re-pin; the a == b halves stay untouched.
     // W4-d104 pass 32 (2026-11-21, code-only): the `Surface Ore and
     // Stone` pass (above) moves this pin BY DESIGN — the default world's
     // ore veins + stone blobs land on the surface band. Re-pin DEFERRED
