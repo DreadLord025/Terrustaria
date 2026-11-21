@@ -454,4 +454,62 @@ mod tests {
         assert!(sky.lanterns[0].position.y > 7000.0, "reset to the surface band");
         assert!(sky.lanterns[0].time_until_float > 0, "a fresh float timer");
     }
+
+    /// W4-f40 DOC-SWEEP — the wind drift (`LanternSky.cs:126-135`): the sky
+    /// consumes `Main.windSpeedCurrent` live (the d130 `lanterns_up` freeze
+    /// only skips the wind TARGET walk — the current speed still eases, so
+    /// the drift survives a lantern night). The X drift is
+    /// `(0.1 + wind) * (3 - speed) * 0.5 * (i/len + 1.5) / 2.5`; a zero wind
+    /// falls back to 0.1 (`:127-130`); the rotation takes the wind's sign
+    /// (`:135`). The port reads `app.wind.speed_current` at the update seam
+    /// (`app/frame/world.rs`), NOT a frozen snapshot.
+    #[test]
+    fn w4_f40_the_lantern_drift_consumes_the_live_wind() {
+        // One lantern, i=0 of len=1, so the depth factor is (0/1+1.5)/2.5.
+        // Pin speed and the float timer so the Y terms are exactly known.
+        let mut sky = LanternSky::new();
+        sky.lanterns = vec![Lantern {
+            variant: 0,
+            time_until_float: 0,
+            time_until_float_max: 1,
+            position: Vec2::new(0.0, 5000.0), // sin(0)=0 → no bob
+            depth: 3.0,
+            rotation: 0.0,
+            speed: 1.0, // (3 - speed) = 2
+            active: true,
+        }];
+        sky.lanterns_drawing = 1;
+        // wind = 0.4: X drift = (0.1+0.4)*2*0.5*(1.5)/2.5 = 0.5*2*0.5*0.6 = 0.3.
+        sky.update(true, 0.4, 800, 400.0);
+        assert!(
+            (sky.lanterns[0].position.x - 0.3).abs() < 1e-5,
+            "the +0.4 wind drifts X by 0.3: {}",
+            sky.lanterns[0].position.x
+        );
+        // The rotation sign follows the wind (sin(0)=0 → num2=0, so rotation
+        // is 0 here; use a nonzero X to expose the sign instead).
+        sky.lanterns[0].position = Vec2::new(60.0, 5000.0); // sin(0.5)≈0.479
+        sky.update(true, -0.4, 800, 400.0);
+        assert!(sky.lanterns[0].rotation < 0.0, "negative wind flips the rotation");
+        // The zero-wind fallback: wind 0 → 0.1, X drift = (0.1+0.1)*2*0.5*0.6
+        // = 0.12 (NOT zero — the lanterns still drift on a calm night).
+        let mut calm = LanternSky::new();
+        calm.lanterns = vec![Lantern {
+            variant: 0,
+            time_until_float: 0,
+            time_until_float_max: 1,
+            position: Vec2::new(0.0, 5000.0),
+            depth: 3.0,
+            rotation: 0.0,
+            speed: 1.0,
+            active: true,
+        }];
+        calm.lanterns_drawing = 1;
+        calm.update(true, 0.0, 800, 400.0);
+        assert!(
+            (calm.lanterns[0].position.x - 0.12).abs() < 1e-5,
+            "the 0→0.1 fallback still drifts: {}",
+            calm.lanterns[0].position.x
+        );
+    }
 }
