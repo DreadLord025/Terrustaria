@@ -1661,6 +1661,13 @@ mod tests {
         world.seed = 0xDEAD_BEEF;
         // W4-f45: the game mode (Master) round-trips through the i32 head.
         world.game_mode = 2;
+        // W4-f45: the tree/cave zone tables + ice/jungle styles, each non-zero.
+        world.tree_x = [100, 200, 300];
+        world.tree_style = [1, 2, 3, 4];
+        world.cave_back_x = [110, 210, 310];
+        world.cave_back_style = [5, 6, 7, 0];
+        world.ice_back_style = 3;
+        world.jungle_back_style = 1;
         world.spawn_x = 71;
         world.spawn_y = 62;
         world.world_surface = 123.5;
@@ -1825,6 +1832,22 @@ mod tests {
         assert_eq!(
             got.hell_back_style, want.hell_back_style,
             "{context}: hell back style"
+        );
+        // W4-f45: the tree/cave zone tables + ice/jungle styles.
+        assert_eq!(got.tree_x, want.tree_x, "{context}: treeX");
+        assert_eq!(got.tree_style, want.tree_style, "{context}: treeStyle");
+        assert_eq!(got.cave_back_x, want.cave_back_x, "{context}: caveBackX");
+        assert_eq!(
+            got.cave_back_style, want.cave_back_style,
+            "{context}: caveBackStyle"
+        );
+        assert_eq!(
+            got.ice_back_style, want.ice_back_style,
+            "{context}: iceBackStyle"
+        );
+        assert_eq!(
+            got.jungle_back_style, want.jungle_back_style,
+            "{context}: jungleBackStyle"
         );
         assert_eq!(got.downed_eoc, want.downed_eoc, "{context}: downedBoss1");
         assert_eq!(got.downed_eow, want.downed_eow, "{context}: downedBoss2");
@@ -2354,7 +2377,22 @@ mod tests {
     /// the tail, patched by `expected_flags_block`.)
     fn flags_tail_prefix(world: &World) -> Vec<u8> {
         let mut b = Vec::new();
-        b.resize(3 * 4 + 4 * 4 + 3 * 4 + 4 * 4 + 2 * 4, 0); // tree/cave arrays + ice/jungle
+        // W4-f45: the tree/cave zone tables + ice/jungle styles are owned —
+        // the 16 i32s before hellBackStyle (`WorldFile.cs:1253-1268`).
+        for &x in &world.tree_x {
+            b.extend_from_slice(&x.to_le_bytes());
+        }
+        for &s in &world.tree_style {
+            b.extend_from_slice(&s.to_le_bytes());
+        }
+        for &x in &world.cave_back_x {
+            b.extend_from_slice(&x.to_le_bytes());
+        }
+        for &s in &world.cave_back_style {
+            b.extend_from_slice(&s.to_le_bytes());
+        }
+        b.extend_from_slice(&world.ice_back_style.to_le_bytes());
+        b.extend_from_slice(&world.jungle_back_style.to_le_bytes());
         b.extend_from_slice(&(world.hell_back_style as i32).to_le_bytes());
         b.extend_from_slice(&world.spawn_x.to_le_bytes());
         b.extend_from_slice(&world.spawn_y.to_le_bytes());
@@ -3749,6 +3787,19 @@ mod tests {
         ptr1 - flags_tail(version).len()
     }
 
+    /// The flags block's START inside a synthetic file: the tail offset minus
+    /// the owned prefix (the tree/cave/back-style + spawn/layers/time block)
+    /// minus the world head (name/seed/genVer/GUID/worldId/bounds). The head's
+    /// width is version-gated exactly like `header_section`.
+    fn flags_start_in_synthetic(data: &[u8], version: i32) -> usize {
+        let world = World::new("x".into(), 8, 6);
+        let head = cs_string("TileFixture").len()
+            + if version >= 179 { cs_string("12345").len() + 8 } else { 0 }
+            + if version >= 181 { 16 } else { 0 }
+            + 4 + 6 * 4; // world id + the six bounds/dims
+        tail_offset_in_synthetic(data, version) - flags_tail_prefix(&world).len() - head
+    }
+
     #[test]
     fn s1_j_3b_the_newly_owned_flags_land_at_their_csharp_byte_offsets() {
         // The byte-layout contract for the S1-J-3b close set: patch each
@@ -4332,19 +4383,7 @@ mod tests {
     /// 112 (`:2035`). Written, NOT run (code-only mode).
     #[test]
     fn w4_f45_the_game_mode_lands_at_the_csharp_offsets_and_gates() {
-        // The flags block's start inside a synthetic file: the tail offset
-        // minus the owned prefix (world head + GameMode/seeds/times/moon +
-        // the tree/cave/back-style block + spawn/layers/time).
-        let flags_start = |data: &[u8], v: i32| {
-            let world = World::new("x".into(), 8, 6);
-            let head = cs_string("TileFixture").len()
-                + if v >= 179 { cs_string("12345").len() + 8 } else { 0 }
-                + if v >= 181 { 16 } else { 0 }
-                + 4 + 6 * 4; // world id + the six bounds/dims
-            tail_offset_in_synthetic(data, v)
-                - flags_tail_prefix(&world).len()
-                - head
-        };
+        let flags_start = flags_start_in_synthetic;
         // v326: the i32 head carries Master (2).
         let mut data = fixture();
         let at = flags_start(&data, VER);
@@ -4387,6 +4426,45 @@ mod tests {
         let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
         let flags_at = ptr1 - block.len();
         assert_eq!(&buf[flags_at..flags_at + 4], &2i32.to_le_bytes());
+    }
+
+    /// W4-f45 — the tree/cave zone tables + ice/jungle styles land at their C#
+    /// offsets (`WorldFile.cs:1253-1268`, ungated — present in every version
+    /// that carries the flags block) and the gen roll fills them per size.
+    /// Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_tree_cave_tables_land_and_the_gen_roll_fills_them() {
+        // v326: patch the 16 i32s (treeX[3]@0, treeStyle[4]@12, caveBackX[3]@28,
+        // caveBackStyle[4]@40, ice@56, jungle@60 — relative to the prefix that
+        // follows moonType) into the independent table and read them back.
+        let mut data = fixture();
+        let prefix_at = flags_start_in_synthetic(&data, VER) + 4 /* GameMode */
+            + 9 /* seed bools */ + 16 /* times */ + 1 /* moonType */;
+        let vals: [i32; 16] = [
+            100, 200, 300, // treeX
+            1, 2, 3, 4, // treeStyle
+            110, 210, 310, // caveBackX
+            5, 6, 7, 0, // caveBackStyle
+            3, 1, // ice, jungle
+        ];
+        for (i, v) in vals.iter().enumerate() {
+            data[prefix_at + 4 * i..prefix_at + 4 * i + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        let w = parse(&data).expect("the patched fixture parses");
+        assert_eq!(w.tree_x, [100, 200, 300], "treeX");
+        assert_eq!(w.tree_style, [1, 2, 3, 4], "treeStyle");
+        assert_eq!(w.cave_back_x, [110, 210, 310], "caveBackX");
+        assert_eq!(w.cave_back_style, [5, 6, 7, 0], "caveBackStyle");
+        assert_eq!(w.ice_back_style, 3, "iceBackStyle");
+        assert_eq!(w.jungle_back_style, 1, "jungleBackStyle");
+        // The writer's own block carries the owned world's tables (the prefix
+        // is the independent `flags_tail_prefix`, checked by the sweep).
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let block = expected_flags_block(&world);
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let flags_at = ptr1 - block.len();
+        assert_eq!(&buf[flags_at..ptr1], &block[..], "the owned block matches the table");
     }
 
     // --- S1-A-7: the C#-generated world (real genRand) -----------------------

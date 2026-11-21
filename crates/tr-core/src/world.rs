@@ -111,6 +111,25 @@ pub struct World {
     /// part of the `.wld` format and is re-rolled per session at load (`Main.cs:6603`),
     /// so the port fixes it at generation like `moon_type`. Loaded worlds keep 0.
     pub hell_back_style: u8,
+    /// `Main.treeX[3]` / `Main.treeStyle[4]` (`WorldFile.cs:1253-1259` write /
+    /// `:2051-2057` read): the surface tree-background zone boundaries (tile X)
+    /// and their styles. `WorldGen.RandomizeTreeStyle` (`WorldGen.cs:8117-8190`)
+    /// rolls them per world size; the g72 bg-layers lane's `GetTreeStyle`
+    /// consumer reads them. Unused zone slots stay `maxTilesX` / style 0.
+    pub tree_x: [i32; 3],
+    pub tree_style: [i32; 4],
+    /// `Main.caveBackX[3]` / `Main.caveBackStyle[4]` (`WorldFile.cs:1260-1266`
+    /// write / `:2058-2064` read): the cave-background zone boundaries and
+    /// styles. `WorldGen.RandomizeCaveBackgrounds` (`WorldGen.cs:8192-8249`)
+    /// rolls them; the g72 lane's `GetCaveBackgroundStyle` consumer reads them.
+    pub cave_back_x: [i32; 3],
+    pub cave_back_style: [i32; 4],
+    /// `Main.iceBackStyle` (`WorldFile.cs:1267` / `:2065`): the snow cave
+    /// background, `RandomizeCaveBackgrounds`' `Next(4)` tail (`:8246`).
+    pub ice_back_style: i32,
+    /// `Main.jungleBackStyle` (`WorldFile.cs:1268` / `:2066`): the jungle cave
+    /// background, `RandomizeCaveBackgrounds`' `Next(2)` tail (`:8248`).
+    pub jungle_back_style: i32,
     // Per-biome surface background *style* variants (`WorldGen.corruptBG`,
     // `jungleBG`, `hallowBG`, `crimsonBG`, `mushroomBG`). The `.wld` stores the
     // style byte (`IO/WorldFile.cs:1318-1325`, `:1375`) and `WorldGen.setBG`
@@ -815,6 +834,14 @@ impl World {
             fast_forward_to_dawn: false,
             fast_forward_to_dusk: false,
             hell_back_style: 0,
+            // The tree/cave zone tables start at the C# defaults (all zero —
+            // the generation roll fills them, `WorldGen.cs:8117-8249`).
+            tree_x: [0; 3],
+            tree_style: [0; 4],
+            cave_back_x: [0; 3],
+            cave_back_style: [0; 4],
+            ice_back_style: 0,
+            jungle_back_style: 0,
             corrupt_bg_style: 0,
             jungle_bg_style: 0,
             hallow_bg_style: 0,

@@ -2738,9 +2738,98 @@ fn step_world_tail(
     // generator here so it is fixed for the seed; the phase starts at 0.
     world.moon_type = (streams.rng.next_u32() % 9) as u8;
     world.moon_phase = 0;
+    // W4-f45 — `RandomizeTreeStyle` (`WorldGen.cs:8117-8190`) +
+    // `RandomizeCaveBackgrounds` (`:8192-8245`): the tree/cave zone tables the
+    // `.wld` flags block carries (`WorldFile.cs:1253-1266`), the g72 bg-layers
+    // lane's consumers. The C# draws them BEFORE the moon/hell rolls
+    // (`:11338-11341`); the port keeps its frozen moon→hell order (the
+    // `worldgen_rolls_hell_back_style` pin) and draws the zone tables between
+    // them — the accepted stream deviation (the port's xorshift stream is not
+    // byte-comparable with the C#'s Knuth one anyway, research/35 #5).
+    randomize_tree_style(world, &mut streams.rng);
+    randomize_cave_backgrounds(world, &mut streams.rng);
     // `Main.hellBackStyle = WorldGen.genRand.Next(3)` (`WorldGen.cs:8247`), drawn
     // from the same generator; it picks the animated magma/hell sheets at draw time.
     world.hell_back_style = (streams.rng.next_u32() % 3) as u8;
+    // `RandomizeCaveBackgrounds`' tail (`WorldGen.cs:8246-8248`): the ice
+    // `Next(4)` and jungle `Next(2)` styles, in C# order around the hell roll.
+    // The port draws them after the hell roll (the same accepted deviation).
+    world.ice_back_style = (streams.rng.next_u32() % 4) as i32;
+    world.jungle_back_style = (streams.rng.next_u32() % 2) as i32;
+}
+
+/// `WorldGen.RandomizeTreeStyle` (`WorldGen.cs:8117-8190`): the surface tree
+/// background zones. Small (4200) gets 2 zones, medium (6400) 3, large 4; each
+/// boundary is a `Next` around its fractional centre, the styles are distinct
+/// `Next(6)` rolls (the while-loops re-roll collisions), and a rolled 0 becomes
+/// 4 on a 2-in-3 (`Next(3) != 0`). Unused boundaries stay `maxTilesX`.
+fn randomize_tree_style(world: &mut World, rng: &mut crate::rng::Xorshift64) {
+    let w = world.width as f64;
+    let band = |rng: &mut crate::rng::Xorshift64, centre: f64, half: f64| {
+        rng.range((w * centre - w * half) as i32, (w * centre + w * half) as i32)
+    };
+    let zones = if world.width == 4200 {
+        world.tree_x[0] = band(rng, 0.5, 0.25);
+        world.tree_x[1] = world.width;
+        world.tree_x[2] = world.width;
+        2
+    } else if world.width == 6400 {
+        world.tree_x[0] = band(rng, 0.334, 0.2);
+        world.tree_x[1] = band(rng, 0.667, 0.2);
+        world.tree_x[2] = world.width;
+        3
+    } else {
+        world.tree_x[0] = band(rng, 0.25, 0.15);
+        world.tree_x[1] = band(rng, 0.5, 0.15);
+        world.tree_x[2] = band(rng, 0.75, 0.15);
+        4
+    };
+    // The distinct style rolls (`:8122-8127` / `:8143-8153` / `:8167-8182`).
+    for i in 0..zones {
+        world.tree_style[i] = rng.range(0, 6);
+        while (0..i).any(|j| world.tree_style[j] == world.tree_style[i]) {
+            world.tree_style[i] = rng.range(0, 6);
+        }
+    }
+    // The 0->4 reroll (`:8130-8136` / `:8155-8161` / `:8183-8189`).
+    for i in 0..zones {
+        if world.tree_style[i] == 0 && rng.range(0, 3) != 0 {
+            world.tree_style[i] = 4;
+        }
+    }
+}
+
+/// `WorldGen.RandomizeCaveBackgrounds` (`WorldGen.cs:8192-8245`): the cave
+/// background zones — the same per-size boundary bands as the tree table but
+/// with `Next(8)` styles and no 0->4 reroll. The ice/jungle/hell tail
+/// (`:8246-8248`) is drawn by the caller around its frozen hell roll.
+fn randomize_cave_backgrounds(world: &mut World, rng: &mut crate::rng::Xorshift64) {
+    let w = world.width as f64;
+    let band = |rng: &mut crate::rng::Xorshift64, centre: f64, half: f64| {
+        rng.range((w * centre - w * half) as i32, (w * centre + w * half) as i32)
+    };
+    let zones = if world.width == 4200 {
+        world.cave_back_x[0] = band(rng, 0.5, 0.25);
+        world.cave_back_x[1] = world.width;
+        world.cave_back_x[2] = world.width;
+        2
+    } else if world.width == 6400 {
+        world.cave_back_x[0] = band(rng, 0.334, 0.2);
+        world.cave_back_x[1] = band(rng, 0.667, 0.2);
+        world.cave_back_x[2] = world.width;
+        3
+    } else {
+        world.cave_back_x[0] = band(rng, 0.25, 0.15);
+        world.cave_back_x[1] = band(rng, 0.5, 0.15);
+        world.cave_back_x[2] = band(rng, 0.75, 0.15);
+        4
+    };
+    for i in 0..zones {
+        world.cave_back_style[i] = rng.range(0, 8);
+        while (0..i).any(|j| world.cave_back_style[j] == world.cave_back_style[i]) {
+            world.cave_back_style[i] = rng.range(0, 8);
+        }
+    }
 }
 
 // --- the runner -------------------------------------------------------------
@@ -3823,5 +3912,57 @@ mod tests {
             PassMessage::Key("WorldGeneration.LivingTrees").resolve(&text),
             "<WorldGeneration.LivingTrees>"
         );
+    }
+
+    /// W4-f45 — `RandomizeTreeStyle`/`RandomizeCaveBackgrounds`
+    /// (`WorldGen.cs:8117-8249`): the per-size zone counts, the distinct style
+    /// rolls, the unused-boundary `maxTilesX` fill and the 0->4 tree reroll.
+    /// The roll functions are tested directly (no full generate — the width
+    /// branches are the contract). Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_tree_cave_rolls_follow_the_per_size_branches() {
+        use crate::rng::Xorshift64;
+        // Small (4200): 2 zones, the unused boundaries stay maxTilesX.
+        let mut w = World::new("t".into(), 4200, 1200);
+        let mut rng = Xorshift64::from_seed(7);
+        randomize_tree_style(&mut w, &mut rng);
+        randomize_cave_backgrounds(&mut w, &mut rng);
+        assert_eq!(w.tree_x[1], 4200, "small: treeX[1] stays maxTilesX");
+        assert_eq!(w.tree_x[2], 4200);
+        assert_eq!(w.cave_back_x[1], 4200);
+        assert!(w.tree_x[0] > 0 && w.tree_x[0] < 4200, "the band is in range");
+        assert_ne!(w.tree_style[0], w.tree_style[1], "distinct styles");
+        assert!(w.tree_style[0] < 6 && w.tree_style[1] < 6, "Next(6)");
+        assert!(w.tree_style[2] == 0 && w.tree_style[3] == 0, "unused styles 0");
+        assert_ne!(w.cave_back_style[0], w.cave_back_style[1]);
+        assert!(w.cave_back_style[0] < 8, "Next(8)");
+        // Medium (6400): 3 zones.
+        let mut w = World::new("t".into(), 6400, 1800);
+        let mut rng = Xorshift64::from_seed(7);
+        randomize_tree_style(&mut w, &mut rng);
+        assert_eq!(w.tree_x[2], 6400, "medium: treeX[2] stays maxTilesX");
+        assert!(w.tree_x[1] < 6400, "the 2nd boundary is a band");
+        assert!(w.tree_style[2] != w.tree_style[0] && w.tree_style[2] != w.tree_style[1]);
+        // Large (8400): 4 zones, every boundary a band, 4 distinct styles.
+        let mut w = World::new("t".into(), 8400, 2400);
+        let mut rng = Xorshift64::from_seed(7);
+        randomize_tree_style(&mut w, &mut rng);
+        randomize_cave_backgrounds(&mut w, &mut rng);
+        assert!(w.tree_x[2] < 8400, "large: the 3rd boundary is a band");
+        let mut styles: Vec<i32> = w.tree_style.to_vec();
+        styles.sort_unstable();
+        styles.dedup();
+        assert_eq!(styles.len(), 4, "4 distinct tree styles");
+        let mut caves: Vec<i32> = w.cave_back_style.to_vec();
+        caves.sort_unstable();
+        caves.dedup();
+        assert_eq!(caves.len(), 4, "4 distinct cave styles");
+        // Determinism: the same seed rolls the same tables.
+        let mut a = World::new("t".into(), 8400, 2400);
+        let mut b = World::new("t".into(), 8400, 2400);
+        randomize_tree_style(&mut a, &mut Xorshift64::from_seed(42));
+        randomize_tree_style(&mut b, &mut Xorshift64::from_seed(42));
+        assert_eq!(a.tree_x, b.tree_x);
+        assert_eq!(a.tree_style, b.tree_style);
     }
 }

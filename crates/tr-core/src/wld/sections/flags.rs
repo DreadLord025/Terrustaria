@@ -34,24 +34,24 @@ pub fn write(w: &mut Writer, world: &World) {
     write_world_flavour(w, world);
     write_times(w, world);
     // WorldFile.cs:1252-1269: the moon type, tree/cave backgrounds, the
-    // ice/jungle/hell back styles. Only `hellBackStyle` is owned; the tree and
-    // cave arrays are unowned (no port state — `net.rs`'s `WorldInfo` carries
-    // the same fields as zeros).
+    // ice/jungle/hell back styles. W4-f45 claims the tree/cave zone tables +
+    // the ice/jungle styles (the g72 bg-layers lane's consumers); the gen
+    // roll (`RandomizeTreeStyle`/`RandomizeCaveBackgrounds`) stamps them.
     w.u8(world.moon_type);
-    for _ in 0..3 {
-        w.i32(0); // treeX
+    for &x in &world.tree_x {
+        w.i32(x); // treeX (`:1253-1255`)
     }
-    for _ in 0..4 {
-        w.i32(0); // treeStyle
+    for &s in &world.tree_style {
+        w.i32(s); // treeStyle (`:1256-1259`)
     }
-    for _ in 0..3 {
-        w.i32(0); // caveBackX
+    for &x in &world.cave_back_x {
+        w.i32(x); // caveBackX (`:1260-1262`)
     }
-    for _ in 0..4 {
-        w.i32(0); // caveBackStyle
+    for &s in &world.cave_back_style {
+        w.i32(s); // caveBackStyle (`:1263-1266`)
     }
-    w.i32(0); // iceBackStyle — unowned
-    w.i32(0); // jungleBackStyle — unowned
+    w.i32(world.ice_back_style); // iceBackStyle (`:1267`)
+    w.i32(world.jungle_back_style); // jungleBackStyle (`:1268`)
     w.i32(world.hell_back_style as i32);
     // WorldFile.cs:1270-1281: spawn, layer heights, the time snapshot, the
     // moon phase, the blood moon/eclipse, the dungeon anchor. W4-f45 claims
@@ -400,14 +400,23 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     if version >= 284 {
         world.last_played = r.u64()? as i64; // LastPlayed (`DateTime.ToBinary`)
     }
-    // WorldFile.cs:2021-2068 — moon type, the tree/cave arrays, the back styles. Only the
-    // moon type and `hellBackStyle` are owned.
+    // WorldFile.cs:2021-2068 — moon type, the tree/cave arrays, the back styles.
+    // W4-f45 claims the tree/cave zone tables + the ice/jungle styles.
     world.moon_type = r.u8()?.min(8);
-    r.skip(3 * 4)?; // treeX
-    r.skip(4 * 4)?; // treeStyle
-    r.skip(3 * 4)?; // caveBackX
-    r.skip(4 * 4)?; // caveBackStyle
-    r.skip(2 * 4)?; // iceBackStyle, jungleBackStyle
+    for x in &mut world.tree_x {
+        *x = r.i32()?; // treeX (`:2051-2053`)
+    }
+    for s in &mut world.tree_style {
+        *s = r.i32()?; // treeStyle (`:2054-2057`)
+    }
+    for x in &mut world.cave_back_x {
+        *x = r.i32()?; // caveBackX (`:2058-2060`)
+    }
+    for s in &mut world.cave_back_style {
+        *s = r.i32()?; // caveBackStyle (`:2061-2064`)
+    }
+    world.ice_back_style = r.i32()?; // iceBackStyle (`:2065`)
+    world.jungle_back_style = r.i32()?; // jungleBackStyle (`:2066`)
     world.hell_back_style = r.i32()? as u8;
     // WorldFile.cs:2069-2083 — spawn, layers, time snapshot, moon phase, blood moon,
     // eclipse, dungeon.
