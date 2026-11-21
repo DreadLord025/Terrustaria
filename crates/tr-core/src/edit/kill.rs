@@ -696,7 +696,13 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         79 | 90 => check_bed_bathtub(world, x, y),
         82 | 83 | 84 => check_alch(world, x, y),
         93 => check_lamp(world, x, y),
-        100 | 172 => check_candelabra_sink(world, x, y),
+        // `Check2x2`'s default branch (`WorldGen.cs:48397`, dispatch
+        // :85653-85659 + :85784-85798 + the 316-318 range guard :85662): the
+        // candelabra 100, the sink 172 and the 28 water-cage kinds (fish bowls
+        // 282/505/543/598, fairy jars 568-570, butterflies 288-295/360/580/620,
+        // dragonflies 521-527, jellyfish 316-318).
+        100 | 172 | 282 | 505 | 543 | 598 | 568..=570 | 288..=295 | 360 | 580 | 620 | 521..=527
+        | 316..=318 => check_2x2(world, x, y),
         101 => check_bookcase(world, x, y),
         104 => check_clock(world, x, y),
         185 => check_pile(world, x, y),
@@ -1571,11 +1577,17 @@ fn check_bed_bathtub(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     })
 }
 
-/// `WorldGen.Check2x2`'s default branch (`WorldGen.cs:48397-48470`) for the
-/// candelabra (100) and the sink (172): the 2x2 cells with the style frames
-/// (the sink's full height is 38) and the solid-or-table floor without
-/// half-bricks.
-fn check_candelabra_sink(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
+/// `WorldGen.Check2x2`'s default branch (`WorldGen.cs:48397-48799`) for the
+/// candelabra (100), the sink (172) and the water-cage family (the fish bowls
+/// 282/505/543/598, fairy jars 568-570, butterfly jars 288-295/360/580/620,
+/// dragonfly jars 521-527, jellyfish bowls 316-318): the 2x2 cells with the
+/// style frames (the sink's full height is 38) and the solid-or-table floor
+/// without half-bricks (:48452-48463). The drop (:48570-48751) is the object's
+/// item — every water-cage kind's drop equals its placing item, so `item:
+/// None` resolves through `by_tile`; the candelabra/sink keep their style-0
+/// slice. (The boulder/ceiling/chandelier arms of Check2x2 — 95/126/132/138/
+/// 484/664/665/711-716 — are separate lanes, not ported here.)
+fn check_2x2(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     let kind = world.tile(x, y)?.kind;
     let t = world.tile(x, y)?;
     let full = if kind == 172 { 38 } else { 36 };
@@ -1632,7 +1644,7 @@ fn check_candelabra_sink(world: &mut World, x: i32, y: i32) -> Option<CheckPlan>
         herb_event: None,
         pile_event: None,
         ring: None,
-        // floats until a later break (`WorldGen.cs`'s check_candelabra_sink).
+        // floats until a later break (`WorldGen.cs`'s check_2x2).
     })
 }
 
@@ -5930,5 +5942,63 @@ mod tests {
         assert_eq!(kill.object_drops[0].tile_kind, 42);
         assert_eq!(kill.object_drops[0].item, None, "the lantern resolves via by_tile");
         assert_eq!((kill.object_drops[0].x, kill.object_drops[0].y), (10, 17));
+    }
+
+    // ---- W4-g34: the Check2x2 water-cage break-drop (research/68 §2) ----
+
+    /// A placed 2x2 water cage over the stone floor: origin (10, 18), cells
+    /// x 10..=11, y 18..=19, frames `(dx*18, dy*18)` (style 0).
+    fn cage_2x2_world(kind: u16) -> World {
+        let mut w = object_world();
+        for dx in 0..2 {
+            for dy in 0..2 {
+                set_object_cell(&mut w, 10 + dx, 18 + dy, kind, (dx * 18) as i16, (dy * 18) as i16);
+            }
+        }
+        w
+    }
+
+    #[test]
+    fn w4_g34_water_cage_2x2_break_drops_the_cage_item() {
+        // `Check2x2`'s default branch (`WorldGen.cs:48570-48751`): breaking
+        // any cell sweeps all four and drops the cage item at the trigger
+        // cell. Every water-cage drop equals the placing item (`item: None`
+        // → `by_tile`; the itemdata census pins 282→250 … 318→2441).
+        for kind in [
+            282u16, 505, 543, 598, 568, 569, 570, 288, 289, 290, 291, 292, 293, 294, 295, 360,
+            580, 620, 521, 522, 523, 524, 525, 526, 527, 316, 317, 318,
+        ] {
+            let mut w = cage_2x2_world(kind);
+            let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+            let cells: Vec<(i32, i32)> = (10..=11)
+                .flat_map(|x| (18..=19).map(move |y| (x, y)))
+                .collect();
+            assert_all_gone(&w, &cells);
+            assert_eq!(kill.object_drops.len(), 1, "kind {kind}");
+            assert_eq!(kill.object_drops[0].tile_kind, kind);
+            // The trigger is the first surviving cell in SquareTileFrame
+            // order around the hit (10, 19): (11, 18).
+            assert_eq!((kill.object_drops[0].x, kill.object_drops[0].y), (11, 18));
+            assert_eq!(kill.object_drops[0].item, None, "kind {kind}");
+        }
+    }
+
+    #[test]
+    fn w4_g34_jellyfish_bowl_2x2_break_drops_the_jar() {
+        // The jellyfish bowls 316-318 (the animated-light cages, research/68
+        // §3) drop their jar item on break — the placing items 2439/2440/2441
+        // (pinned by the itemdata census); the record carries `item: None`
+        // and the app resolves it via `by_tile`.
+        for kind in [316u16, 317, 318] {
+            let mut w = cage_2x2_world(kind);
+            let kill = kill_tile(&mut w, 11, 18, false).unwrap();
+            assert_all_gone(&w, &[(10, 18), (10, 19), (11, 18), (11, 19)]);
+            assert_eq!(kill.object_drops.len(), 1, "kind {kind}");
+            assert_eq!(kill.object_drops[0].tile_kind, kind);
+            assert_eq!(kill.object_drops[0].item, None);
+            // The trigger is the first surviving cell in SquareTileFrame
+            // order around the hit (11, 18): (10, 18).
+            assert_eq!((kill.object_drops[0].x, kill.object_drops[0].y), (10, 18));
+        }
     }
 }
