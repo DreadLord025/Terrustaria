@@ -1414,15 +1414,41 @@ hell floor line (`hellBlackBoxBottom` is produced by the previous frame's magma 
 
 Deviations kept for the rock/magma passes: the 9-slice/4-slice light smoothing
 (`Lighting.GetColor9Slice/4Slice`) is collapsed to the flat per-cell colour, like the dirt
-pass; `undergroundBackground` is pinned to the classic set (`Main.cs:53817-53824`) because
-`PickUndergroundBackgroundStyle` needs `Main.caveBackX`/`caveBackStyle` and the
-`SceneMetrics` zone counts, so the per-biome cave sets (`Main.cs:53825-53987`) and the
-`ugBackTransition` cross-fade are dead code; XNA clamps out-of-range source rectangles to
+pass; `undergroundBackground` is pinned to the classic set (`Main.cs:53817-53824`) in the
+LIVE pass — the style machine itself is now ported UNWIRED (W4-g72 lane 3,
+`render/bg_styles.rs`: `DrawBackground_PickUndergroundBackgroundStyle` `Main.cs:54033-54095`,
+the full 22-case `UpdateBackgroundStyles` sheet table `:53812-54008` and the
+`ugBackTransition` latch/decay step `:52823-52841`, 9 witnesses written not run). Wiring
+is blocked on two owned-state gaps: the per-biome sheets overflow the single 8192 px atlas
+(the full static+gore set already packs to 7530 px, measured with the `tools/atlas_sim.js`
+skyline twin — even one extra biome set overflows), and the style rolls
+(`WorldGen.RandomizeCaveBackgrounds`, `WorldGen.cs:8192-8249`) would insert draws into the
+worldgen tail and move the frozen `world_hash` pins. The wall-parallax gate IS live and
+now carries the full `WallLightAt(i, j, showInvisibleWalls)` (`Main.cs:55169-55181`): an
+Echo-coated non-light wall keeps lighting the backdrop while invisible walls are hidden
+(the coating is set by `WorldGen.cs:966/970/976` and the `.wld` load `WorldFile.cs:2672` —
+the old "never set, table alone decides" shortcut was wrong); the show flag rides the
+`TR_SHOW_INVISIBLE` pin until the Echo Monolith / see-invisible accessory lands. XNA clamps out-of-range source rectangles to
 the sheet edge (`SamplerState.PointClamp`, `Main.cs:2774`) and the port clamps the cell's
 source offset instead вЂ” the quad-UV pipeline cannot smear per pixel, which only affects
 the last 16 px column of each 128 px rock block. The draw pad `Main.offScreenRange` (the
 padded render target of `WorldSceneLayerTarget`) cancels out of the draw positions in the
 port's unpadded viewport and survives only as the dirt sheet's visibility padding.
+
+The hell parallax stack (`Main.DrawUnderworldBackground`/`DrawUnderworldBackgroundLayer`,
+`Main.cs:52665-52796` — the five-layer `TextureAssets.Underworld` stack `DrawBG` runs after
+`DrawSurfaceBG`, `:64050-64053`) is ported UNWIRED as pure geometry (W4-g72 lane 3,
+`render/underworld_bg.rs`): the `(maxTilesY - 220) * 16` gate, the `(zoom - 1) * 0.5 * 200`
+push-up, the 14-texture switch (texture 1's TRANSPOSED quadrant cycle, the `num4 = 0`
+no-op lifts, the 250/100/20×num2 scaled lifts), the truncated-numerator first index, the
+width-minus-one pitch, the `vec.Floor()` after the index, the strict off-screen walk, the
+`-2 .. +4+ceil` loop span and the layer-0 (11,3,7) black fill row, plus `WorldGen.setBG(9)`'s
+three style sets (`WorldGen.cs:7609-7635`); 9 witnesses with exact-f32-derived expectations
+written not run. Wiring needs the sheets OUTSIDE the tile atlas (the C# draws them through
+`Main.spriteBatch` under the sky matrix): one style set alone measures 8424 px against the
+8192 strict-GPU bound, so the S1-G-13 background-target family or a second texture array
+must land first; the `underworldBG` style byte is also still skip-read from the `.wld`
+(`wld/sections/flags.rs:566`).
 
 The sheet is anchored to `Main.worldSurface`, so its value must match `TerrainPass.ApplyPass`:
 `worldSurface = (int)(max(surfaceY) + 25.0)` вЂ” the *deepest* column, not the mean вЂ” with
