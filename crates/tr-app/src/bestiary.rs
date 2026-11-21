@@ -2171,7 +2171,9 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Force Bubble",
     },
-    // W4-d35 (A): the 73/74/75/77/78 data-wave entries.
+    // W4-d35: the 33 data-wave kinds' entries (73..140), id order.
+    // The Hide kinds (96/97/99/100/112) have NO own row - their
+    // credit folds onto the head (try_entry_for_npc/entry_for_npc).
     BestiaryEntryDef {
         credit_id: "GoblinScout",
         net_id: 73,
@@ -2210,7 +2212,8 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         kind: NpcKind::Mummy,
         variant: None,
         quick_unlock: false,
-    // W4-d35 (B): the 79/80/82/83/84 data-wave entries.
+        name: "Mummy",
+    },
     BestiaryEntryDef {
         credit_id: "DarkMummy",
         net_id: 79,
@@ -2249,7 +2252,8 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         kind: NpcKind::EnchantedSword,
         variant: None,
         quick_unlock: false,
-    // W4-d35 (C): the 85/86/93/94/95 data-wave entries.
+        name: "Enchanted Sword",
+    },
     BestiaryEntryDef {
         credit_id: "Mimic",
         net_id: 85,
@@ -2288,14 +2292,16 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         kind: NpcKind::DiggerHead,
         variant: None,
         quick_unlock: false,
-    // W4-d35 (D): the 98 data-wave entries.
+        name: "Digger",
+    },
     BestiaryEntryDef {
         credit_id: "SeekerHead",
         net_id: 98,
         kind: NpcKind::SeekerHead,
         variant: None,
         quick_unlock: false,
-    // W4-d35 (E): the 101/102/103/104/109 data-wave entries.
+        name: "World Feeder",
+    },
     BestiaryEntryDef {
         credit_id: "Clinger",
         net_id: 101,
@@ -2334,7 +2340,8 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         kind: NpcKind::Clown,
         variant: None,
         quick_unlock: false,
-    // W4-d35 (F): the 110/116/120/121 data-wave entries.
+        name: "Clown",
+    },
     BestiaryEntryDef {
         credit_id: "SkeletonArcher",
         net_id: 110,
@@ -2365,7 +2372,8 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         kind: NpcKind::Slimer,
         variant: None,
         quick_unlock: false,
-    // W4-d35 (G): the 122/137/140 data-wave entries.
+        name: "Slimer",
+    },
     BestiaryEntryDef {
         credit_id: "Gastropod",
         net_id: 122,
@@ -2389,18 +2397,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Possessed Armor",
-    },
-        name: "Slimer",
-    },
-        name: "Clown",
-    },
-        name: "World Feeder",
-    },
-        name: "Digger",
-    },
-        name: "Enchanted Sword",
-    },
-        name: "Mummy",
     },
 ];
 
