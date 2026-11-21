@@ -1179,6 +1179,11 @@ fn check_orb(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     if kind == 31 {
         world.shadow_orb_smashed = true;
         world.shadow_orb_count += 1;
+        // `:54296-54318`'s summon-half selector: the smash's own crimson
+        // bit (`flag`), recorded for the app's count-poll summon (the
+        // vanilla summons synchronously inside THIS smash — the port's
+        // poll reads the last completed smash's bit).
+        world.orb_smash_crimson = crimson;
         // `:54331` — `AchievementsHelper.NotifyProgressionEvent(7)`
         // (SMASHING_POPPET) sits INSIDE case 31 too (after the chat arm,
         // before the `:54332` break); the app's break seam drains the
@@ -5159,5 +5164,12 @@ mod tests {
         assert!(w.orb_smash_notify_pending, "31 fires SMASHING_POPPET");
         assert!(std::mem::take(&mut w.orb_smash_notify_pending), "the drain");
         assert!(!w.orb_smash_notify_pending, "taken once");
+        // W4-g85 final — the summon-half selector: the crimson smash
+        // records its bit (`:54296`'s flag), the corruption smash clears it.
+        assert!(w.orb_smash_crimson, "the heart smash is the Brain half");
+        add_shadow_orb(&mut w, 140, 100, false);
+        let _ = super::kill_tile(&mut w, 139, 99, false).expect("the orb break");
+        assert!(!w.orb_smash_crimson, "the orb smash is the EoW half");
+        assert_eq!(w.shadow_orb_count, 2, "both 31 breaks counted");
     }
 }

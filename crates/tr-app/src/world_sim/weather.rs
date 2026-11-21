@@ -358,28 +358,51 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
     // crossing (the `Next(50)` after the boss-2 downing), the resolution
     // lands the ore at the 16200 morning boundary (the fn self-gates on
     // the tick's time).
+    // W4-g85 final — the bookend gate census is in `meteor_night_bookend`
+    // (the raise half; the crossing arm is the recorded dead-arm — the
+    // clock advances in `time_phase`, not this tick, ANALYSIS S1-A-10's
+    // follow-up row; the helper keeps the gate faithful + witnessable).
     if !app.world.spawn_meteor {
         let dusk = dusk_pre && app.world.time >= 32400.0;
         if dusk {
-            // `UpdateTime_StartNight`'s roll (`Main.cs:65230`) — the
-            // `UpdateTime` stream (the arm rides the port's weather phase;
-            // the within-stream order deviation is the ANALYSIS note).
-            if tr_core::worldgen::meteor::night_roll(
-                app.rngs.stream(crate::app::RngKey::UpdateTime),
-                app.world.downed_eow,
-            ) {
-                app.world.spawn_meteor = true;
-            }
+            meteor_night_bookend(app);
         }
     } else {
         // `HandleMeteorFall` runs inside `Main.UpdateTime` (`Main.cs:65141`)
-        // — the resolution draws `UpdateTime`.
+        // — the resolution draws `UpdateTime`. LIVE: the boss-death flag
+        // (npcs.rs's orb-boss arm) resolves here on the next morning.
         let now = app.world.time;
         tr_core::worldgen::meteor::resolve(
             &mut app.world,
             now,
             app.rngs.stream(crate::app::RngKey::UpdateTime),
         );
+    }
+}
+
+/// `Main.UpdateTime_StartNight`'s meteor bookend (`Main.cs:65230-65237`),
+/// W4-g85 final — the full gate:
+/// * `:65230`: `Main.rand.Next(50) == 0 && netMode != 1 && downedBoss2` —
+///   the DRAW runs unconditionally (leftmost operand; the boss flag and
+///   the client check only gate the raise). The boss-2 flag is armed by
+///   the orb-boss DEATHS (`NPC.cs:79457`'s shared `downedBoss2`, npcs.rs)
+///   — a 3-orb smash alone never meteors; the summoned EoW/Brain must
+///   die first (its death raises the flag directly, the guaranteed
+///   first) or a later night rolls 1/50.
+/// * `:65234-65237`: `!isThereAWorldSurface` (`Main.cs:2788`:
+///   `worldSurface <= 50.0` — the remix/FTW inversion) CANCELS the raise
+///   immediately after the roll. Boundary-only: a mid-day boss-death
+///   flag survives to the next morning's `HandleMeteorFall`.
+pub(crate) fn meteor_night_bookend(app: &mut App) {
+    let rolled = tr_core::worldgen::meteor::night_roll(
+        app.rngs.stream(crate::app::RngKey::UpdateTime),
+        app.world.downed_eow,
+    );
+    if rolled && !app.is_client() {
+        app.world.spawn_meteor = true;
+    }
+    if app.world.world_surface <= 50.0 {
+        app.world.spawn_meteor = false;
     }
 }
 
@@ -1420,6 +1443,65 @@ mod tests {
                 key.name()
             );
         }
+    }
+
+    /// W4-g85 final: the dusk bookend's full meteor gate (`Main.cs:65230`
+    /// + `:65234-65237`, `meteor_night_bookend`): the smash flag alone
+    /// never meteors — the roll reads `downedBoss2` (armed by the
+    /// orb-boss DEATH, `NPC.cs:79457`), the `Next(50)` draws even when
+    /// the flag is down, and a no-surface world (`worldSurface <= 50`,
+    /// `Main.cs:2788`) cancels the raise. The crossing arm itself is the
+    /// recorded dead arm (ANALYSIS S1-A-10's follow-up row — the clock
+    /// advances in `time_phase` before this tick); the helper keeps the
+    /// gate faithful and directly witnessable.
+    #[test]
+    fn w4_g85_the_meteor_bookend_gates_on_boss_death_and_surface() {
+        // Find the seed whose FIRST UpdateTime draw hits Next(50) == 0.
+        let hit_seed = (0i32..5000)
+            .find(|&s| UnifiedRandom::new(s).next_max(50) == 0)
+            .expect("a first-draw hit seed exists");
+        // (a) The smash flag UP but no boss death: the draw runs, no raise.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.rngs = crate::app::rng::NamedRngs::new(hit_seed);
+        app.world.shadow_orb_smashed = true;
+        app.world.downed_eow = false;
+        let before = app.rngs.stream(crate::app::RngKey::UpdateTime).clone();
+        meteor_night_bookend(&mut app);
+        assert!(
+            !app.world.spawn_meteor,
+            "the smash flag alone never raises spawnMeteor — downedBoss2 gates"
+        );
+        assert_ne!(
+            *app.rngs.stream(crate::app::RngKey::UpdateTime),
+            before,
+            "the Next(50) drew even with the boss flag down (leftmost operand)"
+        );
+        // (b) The boss death armed: the same seed's hit raises the flag.
+        let mut app2 = flow_app(None, vec![], vec![]);
+        app2.rngs = crate::app::rng::NamedRngs::new(hit_seed);
+        app2.world.downed_eow = true;
+        meteor_night_bookend(&mut app2);
+        assert!(app2.world.spawn_meteor, "the 1/50 hit + downedBoss2 raises");
+        // (c) The no-surface cancel (`:65234-65237`): worldSurface <= 50
+        // clears even a hit raise.
+        let mut app3 = flow_app(None, vec![], vec![]);
+        app3.rngs = crate::app::rng::NamedRngs::new(hit_seed);
+        app3.world.downed_eow = true;
+        app3.world.world_surface = 50.0;
+        meteor_night_bookend(&mut app3);
+        assert!(
+            !app3.world.spawn_meteor,
+            "!isThereAWorldSurface cancels the bookend raise"
+        );
+        // (d) The live resolution half: a boss-death flag mid-morning
+        // resolves on the tick (`HandleMeteorFall`, time > 16200) — the
+        // DW-2.2 test pins the stream; here just the flag lifecycle.
+        let mut app4 = flow_app(None, vec![], vec![]);
+        app4.world.day_time = false;
+        app4.world.time = 17000.0;
+        app4.world.spawn_meteor = true;
+        update_world_tick(&mut app4, STEP);
+        assert!(!app4.world.spawn_meteor, "the morning tick resolved the flag");
     }
 
     /// DW-2.3: two same-seed runs of `update_world_tick` produce identical
