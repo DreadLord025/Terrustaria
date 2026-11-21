@@ -22467,6 +22467,18 @@ style rows already existed); the hemogoblin shark rides the existing
 rows the first pass added are c4's (581/587) — left in the bank (harmless, the
 table tolerates unused cues) for c4 to claim.
 
+**FINAL phase (research/239)**: the lane closes at **32 owned kinds** — the
+11 d33/c10-owned dragonflies (595-601) + waterfowl (602/603/608/609) are
+keep-one DROPPED at merge (the exact d42 drop-hunks are published in
+research/239 §1a, merger-mechanical; d42 keeps its rows on-branch so the
+exhaustive matches compile). The GoldGoldfishWalker-593 bestiary fold
+re-points onto c4's now-ported GoldGoldfish-592 (research/239 §2, the
+interim OWN entry retires at merge). The 592/607/615 re-adjudication
+(c4 STANDS, d42 ceded) + the CorruptGoldfish-405/Arapaima-406 verdicts
+(keep d34@277 / accept c4@406) are in research/239 §3. The BloodSquid-619
+hover bob/boost/rise gap is CLOSED (deviation 3 above). The 32-kind
+vanilla-free band declaration is research/239 §4.
+
 ## The Destroyer machine (aiStyle-37, S1-D-3, 2026-11-18 — code-only mode)
 
 `NPC.AI_037_Destroyer` (`NPC.cs:49756-50242`, dispatched at `:28991-28994`)
