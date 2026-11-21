@@ -4208,6 +4208,14 @@ fn fire_non_ammo_shot(
             // PurpleLaser rides `ai0 = Main.rand.Next(3, 6)`
             // (the extraUpdates remap the rider reads).
             (loot_rng.next_range(3, 6) as f32, 0.0)
+        } else if held.kind == 2880 {
+            // W4-d9 wiring — `Player.cs:49405-49408`: the InfluxWaver's
+            // `ai7 = -1f` → the spawn's `ai[0]` (the generic tail's
+            // `NewProjectile(..., ai7, ai8, ai9)`, `:49437`). The aiStyle-81
+            // arm's launch-fade leg reads `ai[0] == -1` (`Projectile.cs:
+            // 31005`); without the seed the wave would skip the fade and
+            // start mid-pulse. No RNG draw.
+            (-1.0, 0.0)
         } else {
             (0.0, 0.0)
         };
@@ -17386,6 +17394,32 @@ mod use_loop_tests {
             !app.projectiles.slots().iter().any(|s| s.active && s.kind == 482),
             "no ceiling → flag8 → no wall"
         );
+    }
+
+    /// W4-d9 wiring — the InfluxWaver 2880 USE path (`Player.cs:49405-
+    /// 49408`'s `ai7 = -1f` → the generic `:49437` tail's `ai[0]`): the
+    /// melee wave spawns with the launch-fade seed the aiStyle-81 arm
+    /// reads (`Projectile.cs:31005`), the aim normalized to shootSpeed 11
+    /// (÷ meleeSpeed), the class-scaled melee damage. Progression: the
+    /// Martian Saucer 395 drop (`loot_db_gen.rs:1292`) + the Zenith 4956
+    /// recipe ingredient (`recipes_gen.rs:17780`) — the d19/d20 bands
+    /// carry the id/row, the use-path seed is this wiring. WRITTEN, NOT
+    /// RUN (code-only mode).
+    #[test]
+    fn w4_d9_the_influx_waver_use_seeds_the_launch_fade() {
+        let mut app = app_with_staff(2880); // the Influx Waver — shoot 451, melee
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        let slot = app.projectiles.slots().iter().find(|s| s.active && s.kind == 451)
+            .expect("the wave spawned");
+        assert_eq!(slot.ai[0], -1.0, "the launch-fade seed (`:49407`)");
+        assert_eq!(slot.ai[1], 0.0);
+        assert_eq!(slot.damage, 100, "the class-scaled melee damage");
+        // The cursor sits left of the player → the aim is (-1, 0), the
+        // velocity -shootSpeed (11) on X at meleeSpeed 1.
+        assert_eq!((slot.vel.x, slot.vel.y), (-11.0, 0.0));
+        assert!(slot.melee, "the melee class flag");
     }
 }
 
