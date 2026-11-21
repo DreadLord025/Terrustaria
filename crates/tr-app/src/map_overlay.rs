@@ -1310,10 +1310,12 @@ mod tests {
         let y = (last[1] / 16.0) * scale + 300.0 - (2.0 - scale / 5.0 * 2.0) - 10.0 * scale;
         assert_eq!(x, 200.0);
         assert_eq!(y, 339.6);
-        // Minimap: the sub-offsets add, no -10*scale inset.
+        // Minimap: the sub-offsets add, no -10*scale inset. The y-offset is
+        // `-(2 - scale/5*2)` = -(2 - 0.8) = -1.2 (NOT the head's -2*scale/5).
         let got = minimap_death_marker_pos(last, [500.0, 90.0], [5.0, 10.0], [-0.5, -0.25], 2.0);
         assert_eq!(got[0], 509.5);
-        assert_eq!(got[1], 108.95);
+        // y = (320/16 - 10)*2 + 90 - 1.2 - 0.25 = 20 + 90 - 1.2 - 0.25 = 108.55.
+        assert_eq!(got[1], 108.55);
     }
 
     /// `Main.cs:55752` — the minimap death clip is +8/+8/-18/-16, strict.
