@@ -722,7 +722,9 @@ caller) — the full list is in `docs/ANALYSIS.md` →
   12 on the hover edge, sound 11 + `talkNPC = -1` on the click). The
   right-click open rides `world_sim::npcs::talk_to_npc`. The sign half landed
   W4-f22 (the `sign != -1` gate, the Edit/Save interaction row, the edit caret —
-  see "Sign editor" above). Deferred: the other
+  see "Sign editor" above); the retire phase landed the dynamic interaction
+  layout (`ceil(count/4)` lines + the 22 px row y-step, `NPCChatPanel.cs:174`/
+  `:106`) for the merge lane's >4-button rows. Deferred: the other
   interaction buttons, the portrait, the corner item, the IME composition,
   the Dryad Stardew override and the gamepad arms — `docs/ANALYSIS.md` →
   "Town chatter UI (S1-E-10b)".

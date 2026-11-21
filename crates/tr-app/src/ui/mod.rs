@@ -1272,7 +1272,15 @@ pub fn draw_hud(
         && inventory::shop_slot_at(mouse_pos, panel_w).is_some();
     let over_dialog = (talk_npc.is_some() || sign_open)
         && !chest_editing
-        && in_rect(mouse_pos, npc_chat::panel_rect(lookups, screen, npc_chat_text));
+        && in_rect(
+            mouse_pos,
+            npc_chat::panel_rect(
+                lookups,
+                screen,
+                npc_chat_text,
+                npc_chat::interaction_count(sign_open),
+            ),
+        );
     let mouse_interface =
         over_inventory_grid || over_shop_grid || chest_panel.chest >= 0 || bestiary_open || over_dialog;
     if let Some(text) = sign_hover_text.filter(|_| !mouse_text_drawn && !mouse_interface) {

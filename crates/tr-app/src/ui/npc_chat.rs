@@ -64,14 +64,27 @@ pub(crate) fn panel_lines(lookups: &Lookups, chat_text: &str) -> Vec<String> {
     rows
 }
 
-/// The interaction row count the port renders: `CloseChat`
-/// (`NPCInteractions.cs:271-287`, `Condition() => true`) plus the sign
-/// context's `OpenSign` (`:15-42`, `Condition() => LocalPlayer.sign > -1`,
-/// registered AFTER CloseChat at `:515-516`) — the shop / happiness /
-/// housing / … buttons are deferred (module header), so
-/// `_neededInteractionLines = ceil(count / 4) = 1` (`NPCChatPanel.cs:174`,
-/// `AllowedInteractionsPerLine = 4` `:30`).
-const INTERACTION_LINES: usize = 1;
+/// `_neededInteractionLines = (int)Math.Ceiling(count / 4f)`
+/// (`PrepareInteractions`, `NPCChatPanel.cs:174`,
+/// `AllowedInteractionsPerLine = 4` `:30`) — the integer ceil the panel
+/// height (`:68`) and the button-row origin (`:93`) both read. The
+/// W4-d120 compose note's dynamic-lines fix: the shop / happiness /
+/// housing rows (g58/f38/d120's buttons) push the count past 4 at merge,
+/// so the line count grows with the label list instead of pinning 1.
+fn interaction_lines(count: usize) -> usize {
+    count.div_ceil(4) // `Math.Ceiling(count / 4f)` (`:174`)
+}
+
+/// The live interaction count (`PrepareInteractions`' Condition filter,
+/// `NPCChatPanel.cs:164-175`): index 0 is always CloseChat
+/// (`NPCInteractions.cs:271-287`, `Condition() => true`), index 1 the
+/// sign's `OpenSign` (`:15-42`, `Condition() => LocalPlayer.sign > -1`,
+/// registered AFTER CloseChat at `:515-516`). The shop / happiness /
+/// housing / … buttons are deferred (module header); the merge lane
+/// grows this count alongside [`interactions`].
+pub(crate) fn interaction_count(sign_open: bool) -> usize {
+    1 + usize::from(sign_open)
+}
 
 /// The live interaction list (`PrepareInteractions`, `NPCChatPanel.cs:
 /// 164-175`): index 0 is always CloseChat, index 1 the sign's
@@ -89,10 +102,17 @@ pub(crate) fn interactions(sign_open: bool, edit_sign: bool) -> Vec<String> {
 
 /// The panel's box (`NPCChatPanel.cs:65-68` via the selection half's
 /// `chat_box_rect`/`chat_box_height`): `[x, y, w, h]` in UI pixels.
-pub(crate) fn panel_rect(lookups: &Lookups, screen: Vec2, chat_text: &str) -> [f32; 4] {
+/// `interaction_count` is the live label count ([`interaction_count`]) —
+/// the height carries `ceil(count/4)` interaction lines (`:68`, `:174`).
+pub(crate) fn panel_rect(
+    lookups: &Lookups,
+    screen: Vec2,
+    chat_text: &str,
+    interaction_count: usize,
+) -> [f32; 4] {
     let base = chat_box_rect(screen.x as i32, screen.y as i32);
     let lines = panel_lines(lookups, chat_text).len();
-    let h = chat_box_height(lines, INTERACTION_LINES);
+    let h = chat_box_height(lines, interaction_lines(interaction_count));
     [base.x as f32, base.y as f32, base.w as f32, h as f32]
 }
 
@@ -100,7 +120,8 @@ pub(crate) fn panel_rect(lookups: &Lookups, screen: Vec2, chat_text: &str) -> [f
 /// is `panelArea.BottomLeft() + (30, -22·lines + max(0, 2·(lines−1)) − 4)`,
 /// the rect 22 tall and as wide as the label measured at scale 0.9
 /// (shrunk to fit 260 px, `:113-117`). The Close-only convenience over
-/// [`interaction_rects`] — the sign-aware sites pass the full row.
+/// [`interaction_rects`] (one live interaction — the talk case); the
+/// sign-aware sites pass the full row.
 pub(crate) fn close_button_rect(lookups: &Lookups, screen: Vec2, chat_text: &str) -> [f32; 4] {
     interaction_rects(lookups, screen, chat_text, &[crate::lang::inter(52)])[0]
 }
@@ -108,23 +129,26 @@ pub(crate) fn close_button_rect(lookups: &Lookups, screen: Vec2, chat_text: &str
 /// The full interaction row's rects (`DrawButtons`' per-button walk,
 /// `NPCChatPanel.cs:93-135`): one rect per live label, the x advancing by
 /// each measured width + 30 (`:135`), the `num % 4 == 0` row reset
-/// (`:103-107`). The sign row joins while a sign is open
-/// ([`interactions`]).
+/// (`:103-107`) which also steps y by `num / 4 * 22` (`:106` — the
+/// W4-d120 compose note's y-step, landed with the dynamic line count).
+/// The sign row joins while a sign is open ([`interactions`]).
 pub(crate) fn interaction_rects(
     lookups: &Lookups,
     screen: Vec2,
     chat_text: &str,
     labels: &[String],
 ) -> Vec<[f32; 4]> {
-    let panel = panel_rect(lookups, screen, chat_text);
-    let il = INTERACTION_LINES as f32;
+    let panel = panel_rect(lookups, screen, chat_text, labels.len());
+    let il = interaction_lines(labels.len()) as f32;
     let base_x = panel[0] + 30.0;
-    let y = panel[1] + panel[3] - 22.0 * il + (2.0 * (il - 1.0)).max(0.0) - 4.0;
+    let base_y = panel[1] + panel[3] - 22.0 * il + (2.0 * (il - 1.0)).max(0.0) - 4.0;
     let mut x = base_x;
+    let mut y = base_y;
     let mut out = Vec::with_capacity(labels.len());
     for (i, label) in labels.iter().enumerate() {
         if i % 4 == 0 {
-            x = base_x; // `:103-107`
+            x = base_x; // `:105`
+            y = base_y + (i / 4) as f32 * 22.0; // `:106`
         }
         let w0 = text::ui_font_width(lookups, label, 0.9)
             .unwrap_or(label.chars().count() as f32 * 8.0 * 0.9);
@@ -181,7 +205,7 @@ pub(crate) fn draw_panel(
     blinker: &mut super::chest::TextBlinker,
 ) -> bool {
     let lines = panel_lines(lookups, chat_text);
-    let panel = panel_rect(lookups, screen, chat_text);
+    let panel = panel_rect(lookups, screen, chat_text, interaction_count(sign_open));
     let (x, y, _w, h) = (panel[0], panel[1], panel[2], panel[3]);
     // `:71-72` — the top splice (source `(0, 0, ChatBack.Width(), h−30)`)
     // and the bottom 30 px (`(0, Height−30, Width, 30)`), both at scale 1:
@@ -514,7 +538,7 @@ mod tests {
     fn the_close_row_rides_the_panel_bottom() {
         let lookups = assets::Lookups::default();
         let screen = Vec2::new(1920.0, 1080.0);
-        let panel = panel_rect(&lookups, screen, "Hello there");
+        let panel = panel_rect(&lookups, screen, "Hello there", 1);
         // One text line (no font sheet: the 8 px/char estimate keeps
         // "Hello there" well under 460), one interaction line.
         assert_eq!(panel, [710.0, 100.0, 500.0, 90.0], "30 + 30·1 + 30·1");
@@ -636,5 +660,39 @@ mod tests {
         assert!(!app.sign_editing(), "SubmitSignText closed the editor");
         assert_eq!(app.world.signs[0].text, "written");
         assert_eq!(app.player.as_ref().unwrap().sign, 0, "the sign stays open");
+    }
+
+    /// W4-f22 retire — the d120 compose note's dynamic-lines fix:
+    /// `_neededInteractionLines = ceil(count/4)` (`NPCChatPanel.cs:174`)
+    /// grows the panel (`:68`'s `30·lines + max(0, 2·(lines−1))`) and the
+    /// `num % 4 == 0` reset steps the row y by `num / 4 * 22` (`:106`).
+    /// With 5 buttons the 5th rides a second row 22 px down at the row
+    /// origin; the ≤4 rows keep the landed one-line layout.
+    #[test]
+    fn more_than_four_buttons_wrap_to_a_second_row() {
+        let lookups = assets::Lookups::default();
+        let screen = Vec2::new(1920.0, 1080.0);
+        assert_eq!(interaction_lines(0), 0, "ceil(0/4)");
+        assert_eq!(interaction_lines(4), 1, "ceil(4/4)");
+        assert_eq!(interaction_lines(5), 2, "ceil(5/4) (`:174`)");
+        assert_eq!(interaction_lines(8), 2, "ceil(8/4)");
+        assert_eq!(interaction_lines(9), 3, "ceil(9/4)");
+        // One text line ("Hi" under 460 at the 8 px/char estimate).
+        let five: Vec<String> = (0..5).map(|i| format!("B{i}")).collect();
+        let panel5 = panel_rect(&lookups, screen, "Hi", five.len());
+        // `:68`: 30 + 30·1 + 30·2 + max(0, 2·(2−1)) = 122.
+        assert_eq!(panel5[3], 122.0);
+        let rects = interaction_rects(&lookups, screen, "Hi", &five);
+        let base_y = panel5[1] + panel5[3] - 22.0 * 2.0 + 2.0 - 4.0; // `:93`
+        assert_eq!(rects[0][1], base_y);
+        assert_eq!(rects[3][1], base_y, "the first row keeps the origin y");
+        assert_eq!(rects[4][0], panel5[0] + 30.0, "`:105` — x resets");
+        assert_eq!(rects[4][1], base_y + 22.0, "`:106` — num/4·22");
+        // The ≤4 case is unchanged: one line, no y step.
+        let four = &five[..4];
+        let panel4 = panel_rect(&lookups, screen, "Hi", four.len());
+        assert_eq!(panel4[3], 90.0, "30 + 30·1 + 30·1 + 0");
+        let r4 = interaction_rects(&lookups, screen, "Hi", four);
+        assert!(r4.iter().all(|r| r[1] == r4[0][1]));
     }
 }

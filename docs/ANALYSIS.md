@@ -6915,8 +6915,13 @@ Deliberate deviations / deferred:
 - **The other interaction buttons** (`NPCInteractions.All`,
   `NPCInteractions.cs:486-531` вЂ” shop, happiness, housing, reforge, the
   Dryad/Tavernkeep/Dye-Trader specials, вЂ¦) are deferred: they ride systems
-  this panel task does not own. The port renders only `CloseChat`, so
-  `_neededInteractionLines` is the constant 1 (`ceil(1/4)`, `:174`).
+  this panel task does not own. The port renders only `CloseChat` (+ the
+  sign's Edit/Save while a sign is open), but the layout is dynamic:
+  `interaction_lines = ceil(count/4)` (`:174`) feeds the panel height
+  (`:68`) and the `num % 4 == 0` reset steps the row y by `num/4*22`
+  (`:106`) — the W4-d120 compose note's >4-button fix landed with the
+  W4-f22 retire phase, so the merge lane only grows `interactions` /
+  `interaction_count`.
 - **The portrait** (`Main.DrawNPCPortrait`, `Main.cs:40318`, called at
   `NPCChatPanel.cs:79`) and **the corner item**
   (`Main.DrawNPCChatBottomRightItem`, `:39789`/`:80`) are deferred.
