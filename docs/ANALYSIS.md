@@ -22209,6 +22209,80 @@ and the change-broadcast (`Misc.StartedVictory*`) are the host/UI seam.
 change a threshold/divisor, never the draw count or order — a same-seed twin with the seed
 forced differs only in state/outcome, never in stream position (the witnesses pin this).
 
+## The W4-f39 closeout (2026-11-21, code-only mode)
+
+**Code-only mode.** No `cargo`/`rustc`/`rustfmt`/test run was invoked in any closeout
+phase; witnesses WRITTEN NOT RUN, verified by re-reading the C# in ≤100-line windows and
+hand-arithmetic. The atlas budget was measured with the node harness (`tools/atlas_sim.js`),
+not cargo. Five items, one commit each on top of Phase B (`bd5a5a24a`):
+
+* **SlimeSky** (`746bd0037`): `GameContent/Skies/SlimeSky.cs` ported whole as
+  `slime_sky.rs` on the c39 `event_skies.rs` pattern — the `GenerateSlimes` scatter, the
+  generate/reset RNG-order asymmetry (speed-before-texture vs texture-before-speed), the
+  24-wrap frame counter, the surface-line reset/-100 respawn vs the `_isLeaving` drain,
+  and the `Draw` index walk's quirks kept verbatim (ascending depths 1.6..3.35 with
+  break-at-min empty every band ≥ 1.6 — the visible strata are the 1.0 front-row close +
+  the flush; `j < num2` excludes the nearest slime). The byte-truncated tint chain
+  (sky-lift × depth tier × 0.8) pinned in the witnesses. Activation edge-detects
+  `World.slime_rain` at the pause-gated ambience phase (the five Start/StopSlimeRain
+  SkyManager call sites' stand-in, load path covered); the private stream is
+  world-seed-pinned (the c39 deviation). `Sky_Slime_1..4` packed — atlas 8119→8139 px,
+  fits 8192. The draw rides a new depth-sandwich band (`render/bg.rs::draw_sandwich_band`,
+  `AmbiencePass.slime_sky`) threaded through `draw_sky`'s boundaries.
+* **KingSlime spawn-from-rain** (`c786ffb32`): the kill-150 threshold arm
+  (`NPC.cs:79092`) now calls a faithful `NPC.SpawnOnPlayer(plr,50)` port
+  (`spawner.rs::spawn_king_slime_on_player`, `NPC.cs:80475-80633`) instead of the
+  refusing surface-scan stand-in. Kept verbatim: the 500×50 attempts, the `m < 250`
+  `tile[num16, num16]` wall typo, the down-walk's safe-area gate, the King-only `m < 400`
+  `Collision.CanHit` headroom + line-of-sight pair, `HasTileSpawnSpace`,
+  `CheckNotSpawningOnScreen` (with `safeRangeX/Y` RAW as pixels per `:5444` — the ambient
+  helper's `* TILE_PX` is that lane's own deviation, NOT copied), the `flag`/`num10`/
+  `num11` stale-candidate carry across `m` and the `m == 499` relaxation. `SpawnBoss`
+  lands bottom-centre `(x*16+8, y*16)`, targets the player, `timeLeft = 937*20`; the
+  `Announcement.HasAwoken` broadcast rides `NewNPC`'s type-50 arm (`:80787-80790` — the
+  `SpawnBoss` switch's case-50 silence `:80705` is redundant). The scan draws the
+  `UpdateNPCs` stream via copy-out/write-back; the counter flip stays unconditional
+  (`:79093`). The witness rig widened to 400×400 (the 64-wide rig clamped the spawn area
+  shut).
+* **The event music tracks** (`cb9955257`): `flag24 = Main.slimeRain` (`Main.cs:12200`)
+  → SlimeRain 48 at `:12654` (gates `!ZoneGraveyard && (!bloodMoon || dayTime)` + the
+  surface band), seated between the eclipse and the shimmer where the C# chain has it;
+  and the moon-event tail `:12982-12989` (pumpkinMoon→30, snowMoon→32, gate
+  `screenPosition.Y/16 < worldSurface + 10 || remixWorld`) — two plain `if`s AFTER the
+  whole else-if chain that override even the boss pick on the surface band. The port's
+  early-return ladder kept the tail out of reach; `decide_new_music` now wraps
+  `decide_world_music` and runs the tail verbatim (the menu arm returns before it,
+  `:12531`; the music-box override still wins after). `MusicEnv` gains `slime_rain`/
+  `pumpkin_moon`/`snow_moon`/`remix_world`/`moon_tail_band` (the camera-centre →
+  screenPosition top-left conversion documented at the field).
+* **The seasonal emote/help-text gates** (`da058b714`):
+  `emotes.rs::seasonal_boss_emote_gates` ports `UIEmotesMenu.GetEmotesBosses`' five-event
+  tail (`UIEmotesMenu.cs:250-269`) reading the Phase-B World flags;
+  `seasonal_help_text_gate` ports the Guide hints' pure gates (`Main.cs:39752/:39757`,
+  helpText 1155/1156 → `GuideHelpTextSpecific.Help_1155/1156`, Town resource group) for
+  the future helpText machine (unported). **Co-lane hand-off:** this branch's wheel is
+  the flat `EMOTE_COUNT` roster; the gated wheel is W4-g54's `EmoteGates`, whose
+  `from_world` pins the five seasonal flags `false` — at the merge g54 reads the World
+  fields instead (field names identical). No second wheel ported here.
+* **The v18-claim input doc** (this commit): `docs/research/244-f39-v18-claim-input.md`
+  re-receipts registry row #8 at the closeout tip for the g71c union-final merger — the
+  five bytes unchanged (keep-one with c39, union seat [51..56] per 92 §1-FULL.2 A3), the
+  seven truncation-site families re-pinned (+5→+107, the six mid-record cuts re-arm),
+  the `.wld` force-today deference discharged. The closeout adds ZERO persist bytes.
+
+**Documented deviations (closeout):** the SlimeSky activation is an edge-detect at the
+ambience phase, not the five SkyManager call sites (the load path is covered by the
+same edge); the private RNG stream is world-seed-pinned (the c39 event_skies convention).
+The `SpawnOnPlayer` port duplicates `GetSpawnArea`'s arithmetic inline (the full
+`SpawnContext` needs ~24 fields the scan never reads) and inlines the
+`CheckNotSpawningOnScreen` rect test with the RAW safe ranges (the ambient helper's
+`* TILE_PX` stays that lane's deviation). The counter pass still runs BEFORE the
+boss-death `checkDead` pass (the Phase-A recorded deviation — a slime dying in the same
+tick as the King still counts). The music moon tail now overrides the boss pick on the
+surface band — the C# behaviour the early-return ladder had dropped (a behaviour FIX,
+not a deviation). The emote wheel/help-text machine stay unported on this branch (the
+g54 hand-off + the future helpText machine).
+
 ## S1-D-3 вЂ” the aiStyle-8 caster family (`npc_ai_bat.rs`, 2026-11-18, code-only mode)
 
 **Code-only mode.** This slice landed under the Lead's code-only directive: no

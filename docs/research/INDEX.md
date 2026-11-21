@@ -75,6 +75,7 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
+| 244 | W4-f39 v18-claim INPUT for g71c (the closeout receipt: registry row #8 re-receipted at `da058b714` — the five seasonal downeds byte-identical to c39's claim, keep-one drops f39's hunks, union seat [51..56] per 92 §1-FULL.2 A3; the seven truncation-site families re-pinned at the closeout tip (+5→+107, the six mid-record cuts re-arm); the `.wld` force-today deference DISCHARGED (flags.rs:209-210 live); the four closeout commits add ZERO persist bytes; the g54 EmoteGates five-pin hand-off; code-only) | `244-f39-v18-claim-input.md` | ✅ |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
