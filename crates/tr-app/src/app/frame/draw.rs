@@ -1691,7 +1691,12 @@ impl App {
                             self.shop_npc.map(|_| {
                                 (
                                     self.shop_stock.as_slice(),
-                                    self.shop_mood,
+                                    // `Main.cs:41793` — the chrome reads the
+                                    // LATCHED `currentShoppingSettings.
+                                    // PriceAdjustment`, not the shop-open
+                                    // `shop_mood` capture (the buy-lane
+                                    // repoint, research/143).
+                                    self.shopping_settings.price_adjustment,
                                     self.discount_available,
                                 )
                             }),
@@ -1799,6 +1804,18 @@ impl App {
                         // the coin cells' animation clocks step per frame after
                         // the interface layers draw.
                         self.coin_slot.update_slot_anims();
+                        // `Main.DrawNPCPortrait` (`Main.cs:40335`): while the
+                        // chat panel draws, the hop counter reads THEN
+                        // increments (`npcChatPortraitFrameCounter++`). The
+                        // portrait draw is deferred (S1-E-10b), but the
+                        // counter ticks on the same gate — the panel draws
+                        // iff `talk_npc` holds, and every ported town kind
+                        // has an `NPCPortraits` row (`NPCID.cs:5894+`), so
+                        // the provider/texture null-gates never bind.
+                        if self.talk_npc.is_some() {
+                            self.npc_chat_portrait_frame_counter =
+                                self.npc_chat_portrait_frame_counter.wrapping_add(1);
+                        }
                         // `Main.DrawDeathText`'s overlay (`Main.cs:45324-45341`):
                         // the death broadcast + the softcore "Dropped coins"
                         // line while the respawn timer runs.

@@ -167,6 +167,14 @@ pub(crate) struct App {
     /// interaction index; the hover-change edge plays sound 12 (`:157-160`)
     /// and `Close` resets it to −1 (`:267`).
     pub(crate) npc_chat_last_hovered: i32,
+    /// `Main.npcChatPortraitFrameCounter` (`Main.cs:1771`) — the portrait
+    /// hop clock: `DrawNPCPortrait` reads THEN increments it per drawn
+    /// frame (`:40335`), `DoNPCPortraitHop` (`:40675-40678`) resets it to 0.
+    /// The portrait DRAW is deferred (no portrait system, S1-E-10b); the
+    /// counter + the hop math (`ui::npc_chat::portrait_hop_lift`) are
+    /// ported so the animation state is faithful when the draw lands
+    /// (research/143's portrait census).
+    pub(crate) npc_chat_portrait_frame_counter: i32,
     /// `Player.currentShoppingSettings` (`Player.cs:2916`) — latched by
     /// `SetTalkNPC` (`Player.cs:4383-4390`): the talk open runs
     /// `ShopHelper.GetShoppingSettings`, the close resets to `NotInShop`
@@ -211,8 +219,14 @@ pub(crate) struct App {
     /// whenever the shop index changes (`Main.UpdateOldNPCShop`,
     /// `Main.cs:18204-18211`).
     pub(crate) shop_sellback: crate::shop::SellbackHelper,
-    /// The happiness multiplier captured at the open
-    /// (`currentShoppingSettings.PriceAdjustment`).
+    /// The happiness multiplier captured at the shop open — the W4-f37
+    /// capture seam (`world_sim/npcs.rs`'s `try_open_town_shop_at_cursor`,
+    /// gated `talk_npc != Some(idx)`). The TRANSACTION readers (buy/sell/
+    /// reforge/nurse/tax/chrome) all read the `shopping_settings` latch
+    /// instead (`Player.cs:35382-35388` etc. — `currentShoppingSettings`'
+    /// only write site is `SetTalkNPC` `:4389`); this field stays as the
+    /// f37 merge side's shop-open capture (research/143, the buy-lane
+    /// repoint census).
     pub(crate) shop_mood: f32,
     /// `Player.discountAvailable` (`Player.cs:25638`): refreshed from
     /// `discountEquipped` when no shop is open; the Discount Card writer
@@ -1698,8 +1712,18 @@ impl App {
         if entry.item == 0 || entry.stack == 0 {
             return false; // `:2043`'s `inv[slot].type <= 0` / `:2060`'s stack gate
         }
-        let price =
-            crate::shop::buy_price_row(entry, self.discount_available, self.shop_mood) as u64;
+        // W4-g58 final: the charge reads the TALK-OPEN LATCH
+        // (`currentShoppingSettings.PriceAdjustment`, `Player.cs:35382-35388`
+        // — the ONLY write site is `Player.SetTalkNPC` `:4389`), not the
+        // shop-open `shop_mood` capture: the vanilla shop button's
+        // Condition requires `TalkNPCType == npc.type` (`NPCInteractions.cs`
+        // Shop), so the talk latch is always live at the buy. Same shape as
+        // the reforge repoint (`13be13a6a`, `Main.cs:41591`).
+        let price = crate::shop::buy_price_row(
+            entry,
+            self.discount_available,
+            self.shopping_settings.price_adjustment,
+        ) as u64;
         if self.coins < price {
             return false;
         }
@@ -1756,12 +1780,16 @@ impl App {
             .map(|s| s.value)
             .unwrap_or(crate::itemdata::ITEMS[item.kind as usize].value);
         let amount = self.shop_sellback.get_amount(item.kind, item.prefix);
+        // W4-g58 final: `Player.SellItem` prices through
+        // `GetItemExpectedPrice` (`Player.cs:35170` → `:35383`/`:35388`),
+        // which DIVIDES by the TALK-OPEN LATCH — the same repoint as the
+        // buy above (`shop_mood` stays the f37 shop-open capture).
         let payout = crate::shop::sell_payout(
             value,
             false,
             false,
             self.discount_available,
-            self.shop_mood,
+            self.shopping_settings.price_adjustment,
             item.count,
             amount,
         );
@@ -1966,8 +1994,15 @@ impl App {
     /// `AchievementsHelper.HandleSpecialEvent(this, 20)` → the
     /// `TALK_TO_NPC_AT_MAX_HAPPINESS` "Do" row, `AchievementsHelper.cs:
     /// 355-357`) fires here on the LATCHED adjustment; the bestiary chat
-    /// tracker (`:4381`) and the portrait reset (`:4397+`) ride their own
-    /// lanes.
+    /// tracker (`:4381`) rides its own lane. The portrait arm (`:4395-
+    /// 4403`): `npcChatPortrait = null`, then a live NPC with an
+    /// `NPCID.Sets.NPCPortraits` row takes the provider + hops
+    /// (`DoNPCPortraitHop`, `Main.cs:40675-40678`). The provider/draw stay
+    /// deferred (no portrait system); the hop counter ports — every ported
+    /// town kind carries a portrait row (`NPCID.cs:5894-6100`: 22/19/54/
+    /// 38/20/207/107/588/124/17/18/227/208/229/663/142/453/178/353/550/
+    /// 441/368/160/228/108/633/680/678-684/670/638/637/656 + the pets),
+    /// so the `TryGetValue` gate is always-true for the ported roster.
     pub(crate) fn set_talk_npc(&mut self, idx: Option<usize>) {
         self.talk_npc = idx;
         self.shopping_settings = match idx {
@@ -2015,6 +2050,13 @@ impl App {
                     "Do",
                 );
             }
+        }
+        // `:4395-4403` — the local-player portrait arm: the provider
+        // clears on EVERY call (the close too); a live portrait-row NPC
+        // re-arms it and hops. The provider is unported (no portrait
+        // system); the hop counter resets here for a live talk.
+        if idx.is_some() {
+            crate::ui::npc_chat::do_npc_portrait_hop(self);
         }
     }
 
@@ -3680,6 +3722,7 @@ impl App {
             mouse_reforge: false,
             reforge_scale: 0.8, // `Main.cs:67157`
             shop_mood: 1.0,
+            npc_chat_portrait_frame_counter: 0,
             discount_available: false,
             shop_closed_flag: false,
             creative_powers,
@@ -5877,6 +5920,11 @@ mod s1_p_i44_tests {
         app.shop_stock =
             crate::shop::resolve_stock_entries(1, &crate::shop::ShopFlags::default(), &[]);
         app.shop_mood = 1.0;
+        // W4-g58 final: the transactions read the TALK latch
+        // (`shopping_settings.price_adjustment`, `Player.cs:35382-35388`);
+        // the fixture's mood 1 is the NotInShop default — pinned here so
+        // the price witnesses read the latch, not the stale shop capture.
+        app.shopping_settings.price_adjustment = 1.0;
         app.coins = 1_000_000;
         app
     }
@@ -5923,10 +5971,10 @@ mod s1_p_i44_tests {
 
     #[test]
     fn the_happiness_and_discount_ride_the_buy_charge() {
-        // `Player.cs:35387` — the mood multiplies the buy; `:35373` — the
-        // Discount Card truncates ×0.8 first.
+        // `Player.cs:35387` — the LATCHED mood multiplies the buy; `:35373`
+        // — the Discount Card truncates ×0.8 first.
         let mut app = shop_app();
-        app.shop_mood = 0.75;
+        app.shopping_settings.price_adjustment = 0.75;
         assert!(app.buy_shop_item(0));
         assert_eq!(app.coins, 1_000_000 - 30000);
         let mut app = shop_app();
@@ -6018,6 +6066,73 @@ mod s1_p_i44_tests {
         assert!(app.shop_stock.is_empty());
         assert_eq!(app.shop_sellback.get_amount(88, 0), 0);
         assert_eq!(app.shop_mood, 1.0);
+    }
+
+    /// W4-g58 final — the buy/sell transactions read the TALK-OPEN LATCH
+    /// (`Player.GetItemExpectedPrice`, `Player.cs:35382-35388`:
+    /// `currentShoppingSettings.PriceAdjustment`, the ONLY write site
+    /// `Player.SetTalkNPC` `:4389`), NOT the shop-open `shop_mood` capture.
+    /// The vanilla shop button's Condition requires `TalkNPCType ==
+    /// npc.type` (`NPCInteractions.cs:59-62`), so the latch is always live
+    /// at the transaction; a stale shop capture and a post-latch housing
+    /// change must not move the price.
+    #[test]
+    fn the_buy_and_sell_read_the_talk_latch_not_the_shop_capture() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = shop_app();
+        // A HOMELESS Merchant: the NoHome sentinel rides the 1.5 ceiling
+        // (`ShopHelper.cs:107-110` → the `:178` clamp).
+        let mut merchant = crate::npc::Npc::new(crate::npc::NpcKind::Merchant, 32.0, 100.0, 1, 0.0);
+        merchant.hp = merchant.max_hp;
+        merchant.home = None;
+        app.npcs.push(merchant);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.set_talk_npc(Some(0)); // the latch (`Player.cs:4389`)
+        assert_eq!(app.shopping_settings.price_adjustment, 1.5);
+        // The stale shop capture says 1.0 — the C# charge ignores it:
+        // the Mining Helmet 88 (40000) buys at 40000 × 1.5 = 60000
+        // (`:35387`, the f32 multiply is exact here), NOT 40000.
+        app.shop_mood = 1.0;
+        assert!(app.buy_shop_item(0));
+        assert_eq!(app.coins, 1_000_000 - 60000, "the latched 1.5 prices the buy");
+        // The sell DIVIDES (`:35388`): 40000 / 1.5f = 26666.666 → banker's
+        // 26667, /5 = 5333 per unit; the sellback memo refunds the bought
+        // unit at its 60000 buy price (`Player.cs:35191-35195`), so the
+        // one-unit round trip pays 5333 + (60000 − 5333) = 60000.
+        let item = app.mouse_item;
+        assert_eq!((item.kind, item.count), (88, 1));
+        let payout = app.sell_item(&item);
+        assert_eq!(payout, 60000, "the memo refund rides the latched buy price");
+        assert_eq!(app.coins, 1_000_000, "the round trip is purse-neutral");
+        // A fresh helmet (no memo) sells at the plain latched divide:
+        // 26667 / 5 = 5333.
+        app.shop_sellback.clear();
+        assert_eq!(app.sell_item(&held(88, 1)), 5333);
+        // House him AFTER the latch: a fresh mood pass would drop the
+        // sentinel (LoveSpace ×0.95 → 0.95), but the transactions read the
+        // latch — the buy still charges 60000.
+        app.npcs[0].home = Some((2, 6));
+        app.mouse_item = crate::item::EMPTY_SLOT;
+        let coins = app.coins;
+        assert!(app.buy_shop_item(0));
+        assert_eq!(
+            app.coins,
+            coins - 60000,
+            "the post-latch housing change is inert (the latched 1.5 prices)"
+        );
+        // A re-latch picks the new mood up: the housed Merchant's biome
+        // rows are Like Forest / Dislike Desert (`PersonalityDatabase
+        // Populator.cs:32-36`); the 8×8 flow world is beach-width (every
+        // column within BEACH_DISTANCE 380 of an edge → Ocean, no Forest
+        // row), so the housed-alone mood is LoveSpace ×0.95
+        // (`ShopHelper.cs:147-151`) → the buy charges 40000 × 0.95 = 38000.
+        app.set_talk_npc(Some(0));
+        assert_eq!(app.shopping_settings.price_adjustment, 0.95);
+        app.mouse_item = crate::item::EMPTY_SLOT;
+        let coins = app.coins;
+        assert!(app.buy_shop_item(0));
+        assert_eq!(app.coins, coins - 38000, "the re-latch reads the housed mood");
     }
 
     #[test]

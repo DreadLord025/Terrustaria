@@ -2202,6 +2202,7 @@ pub(crate) mod front_flow_tests {
             revenge_markers: Vec::new(),
             revenge_tick: 0,
             shop_mood: 1.0,
+            npc_chat_portrait_frame_counter: 0,
             discount_available: false,
             shop_closed_flag: false,
             creative_powers: crate::creative::CreativePowers::new(),

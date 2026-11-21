@@ -1122,7 +1122,9 @@ impl App {
             // (the report REPLACES the chat line — the talk latch stays).
             crate::chest::play_menu_sound(self, 12);
             self.npc_chat_text = self.shopping_settings.happiness_report.clone();
-            // `Main.DoNPCPortraitHop` (`:310`) — the portrait is unported.
+            // `Main.DoNPCPortraitHop` (`:310`) — the hop counter resets
+            // (the portrait draw stays deferred, S1-E-10b).
+            ui::npc_chat::do_npc_portrait_hop(self);
         }
     }
 
@@ -5780,6 +5782,9 @@ mod s1_p_i44_shop_click_tests {
         app.shop_stock =
             crate::shop::resolve_stock_entries(1, &crate::shop::ShopFlags::default(), &[]);
         app.shop_mood = 1.0;
+        // The transactions read the TALK latch (W4-g58 final,
+        // `Player.cs:35382-35388`) — the fixture pins the NotInShop 1.0.
+        app.shopping_settings.price_adjustment = 1.0;
         app.coins = 1_000_000;
         app
     }

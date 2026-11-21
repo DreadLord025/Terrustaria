@@ -321,6 +321,43 @@ fn draw_interaction_button(
     );
 }
 
+/// `Utils.EaseOutBounce` (`Utils.cs:355-358`) → `BounceEaseOut(x, 4, 2.0)`
+/// (`:360-363`): `1 − (1−t)² · |sin(t·4π)|` — the portrait hop's landing
+/// curve. f64 throughout (the C# is `double`).
+pub(crate) fn ease_out_bounce(x: f64) -> f64 {
+    1.0 - (1.0 - x).powi(2) * (x * (4.0 * std::f64::consts::PI)).sin().abs()
+}
+
+/// `Main.DrawNPCPortrait`'s hop lift (`Main.cs:40335-40359`): the frame
+/// counter's `num3 = num % 120`, `num4 = num / 120`; while `num4 == 0`
+/// (the first 120 drawn frames after a `DoNPCPortraitHop` reset) the
+/// portrait centre lifts by `(-56) * 0.25 * (1 − EaseOutBounce(
+/// clamp(num3, 0, 80) / 80))` px (`:40358` — `num2 = 56`, the negative
+/// y is UP). Past frame 119 the lift is 0 and stays 0 (the `num4 == 0`
+/// gate — the hop does NOT repeat every 120 frames). The C# `if (0 != 0)`
+/// wobble (`:40347-40354`) and `flag2 = false` sway (`:40360-40372`) are
+/// dead code — dropped. The portrait DRAW itself is deferred (no portrait
+/// system, S1-E-10b); this is the animation state the draw will consume.
+pub(crate) fn portrait_hop_lift(frame_counter: i32) -> f32 {
+    let num3 = (frame_counter % 120) as f64;
+    let num4 = frame_counter / 120;
+    if num4 != 0 {
+        return 0.0;
+    }
+    let t = num3.clamp(0.0, 80.0) / 80.0;
+    (-56.0f64 * 0.25 * (1.0 - ease_out_bounce(t))) as f32
+}
+
+/// `Main.DoNPCPortraitHop` (`Main.cs:40675-40678`): the counter resets to
+/// 0 — the next drawn frame starts the hop. Called by the talk open
+/// (`Player.SetTalkNPC`, `Player.cs:4397-4402` — the `NPCPortraits` lookup
+/// gates it; every ported town kind has a portrait row, `NPCID.cs:5894+`)
+/// and the chat actions (`ReportHappiness.Interact` `NPCInteractions.cs:
+/// 310`, the nurse/tax/angler/guide/dryad/party-girl/tavernkeep texts).
+pub(crate) fn do_npc_portrait_hop(app: &mut crate::app::App) {
+    app.npc_chat_portrait_frame_counter = 0;
+}
+
 /// The hover pick behind `Main.instance.currentNPCShowingChatBubble`
 /// (`Main.cs:43069`, set in `HoverOverNPCs` `:42990-43086`): the first
 /// live town-like NPC whose box the pointer is over AND whose box
@@ -595,5 +632,80 @@ mod tests {
         app.set_talk_npc(None);
         assert_eq!(app.shopping_settings.price_adjustment, 1.0);
         assert!(app.shopping_settings.happiness_report.is_empty());
+    }
+
+    /// W4-g58 final — `Utils.EaseOutBounce` (`Utils.cs:355-363`) and the
+    /// hop lift (`Main.cs:40355-40359`): `1 − (1−t)²·|sin(4πt)|` sampled
+    /// at the quarter points (the sin zeros make them exact), the lift
+    /// `-56·0.25·(1−ease)` clamped at frame 80, and the `num4 == 0` gate
+    /// (past frame 119 the hop does NOT repeat).
+    #[test]
+    fn the_portrait_hop_lift_matches_the_bounce() {
+        // The ease at its exact quarter points: t=0 → 1, t=0.25 → 1−
+        // 0.5625·|sin π| = 1, t=0.5 → 1, t=1 → 1 (the sin zeros); the
+        // mid-bounce dips: t=0.125 → 1−0.765625·1 = 0.234375, t=0.375 →
+        // 1−0.390625 = 0.609375, t=0.625 → 1−0.140625 = 0.859375.
+        assert!((ease_out_bounce(0.0) - 1.0).abs() < 1e-12);
+        assert!((ease_out_bounce(0.125) - 0.234375).abs() < 1e-12);
+        assert!((ease_out_bounce(0.25) - 1.0).abs() < 1e-12);
+        assert!((ease_out_bounce(0.375) - 0.609375).abs() < 1e-12);
+        assert!((ease_out_bounce(0.5) - 1.0).abs() < 1e-12);
+        assert!((ease_out_bounce(0.625) - 0.859375).abs() < 1e-12);
+        assert!((ease_out_bounce(1.0) - 1.0).abs() < 1e-12);
+        // The lift: frame 0 rests (ease 1 → lift 0); frame 10 (t=0.125)
+        // lifts -14·(1−0.234375) = -10.71875 px (UP); frame 30 (t=0.375)
+        // -14·0.390625 = -5.46875; frame 50 (t=0.625) -14·0.140625 =
+        // -1.96875; frame 80+ clamps to t=1 → 0.
+        assert_eq!(portrait_hop_lift(0), 0.0);
+        assert!((portrait_hop_lift(10) - (-10.71875)).abs() < 1e-4);
+        assert!((portrait_hop_lift(30) - (-5.46875)).abs() < 1e-4);
+        assert!((portrait_hop_lift(50) - (-1.96875)).abs() < 1e-4);
+        assert_eq!(portrait_hop_lift(80), 0.0);
+        assert_eq!(portrait_hop_lift(119), 0.0);
+        // The `num4 == 0` gate: frame 120 wraps num3 to 0 but num4 = 1 —
+        // no second hop (the C# `flag = num4 == 0`, `:40345`/`:40355`).
+        assert_eq!(portrait_hop_lift(120), 0.0);
+        assert_eq!(portrait_hop_lift(130), 0.0);
+        assert_eq!(portrait_hop_lift(1000), 0.0);
+    }
+
+    /// W4-g58 final — `Main.DoNPCPortraitHop` (`Main.cs:40675-40678`)
+    /// resets the counter; the talk open hops (`Player.cs:4401`), the
+    /// Happiness button hops (`NPCInteractions.cs:310`), and the counter
+    /// ticks per drawn frame (`Main.cs:40335`).
+    #[test]
+    fn the_portrait_hop_resets_on_the_talk_and_the_report() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut guide = Npc::new(crate::npc::NpcKind::Guide, 100.0, 100.0, 1, 0.0);
+        guide.hp = guide.max_hp;
+        guide.home = Some((6, 6));
+        app.npcs.push(guide);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        // A mid-hop counter: the talk open resets it (`Player.cs:4401`).
+        app.npc_chat_portrait_frame_counter = 57;
+        app.set_talk_npc(Some(0));
+        assert_eq!(app.npc_chat_portrait_frame_counter, 0, "the talk open hops");
+        // The Happiness button's Interact hops again (`:310`).
+        app.npc_chat_portrait_frame_counter = 42;
+        app.npc_chat_text = "Hello there".to_string();
+        let (sw, sh) = app.screen_size();
+        let happy = happiness_button_rect(
+            &app.lookups,
+            Vec2::new(sw, sh),
+            &app.npc_chat_text,
+            true,
+        )
+        .expect("the Condition holds");
+        app.mouse_pos = Vec2::new(happy[0] + 2.0, happy[1] + 2.0);
+        app.ui_left_press = true;
+        app.handle_npc_chat_clicks();
+        assert_eq!(app.npc_chat_portrait_frame_counter, 0, "the report hops");
+        // The close does NOT hop (`Player.cs:4397` clears the provider;
+        // the hop is inside the `nPC != null` arm).
+        app.npc_chat_portrait_frame_counter = 9;
+        app.set_talk_npc(None);
+        assert_eq!(app.npc_chat_portrait_frame_counter, 9, "the close is hop-free");
     }
 }

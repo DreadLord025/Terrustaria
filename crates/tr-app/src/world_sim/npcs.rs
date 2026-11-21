@@ -90,6 +90,9 @@ pub(crate) const TAX_CAP: i32 = 250_000;
 /// 142 unported) + the rows that NAME him (the Merchant `:43-60`, the
 /// Angler `:141-158`, the PartyGirl `:119-140`, the Clothier `:285-302`).
 pub(crate) fn tax_collector_payout(app: &mut App, npc_idx: usize) -> bool {
+    // `Main.DoNPCPortraitHop` (`Main.cs:40224` — the tail of BOTH the
+    // purse>0 and the empty-purse arms).
+    crate::ui::npc_chat::do_npc_portrait_hop(app);
     if app.world.tax_money <= 0 {
         return true;
     }
@@ -448,7 +451,11 @@ pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     }) else {
         return try_open_town_shop_at_cursor(app, world_pos);
     };
-    app.nurse_heal()
+    let healed = app.nurse_heal();
+    // `Main.NPCChatText_DoNurseHeal`'s tail (`Main.cs:40177`): the hop is
+    // UNCONDITIONAL — every arm (paid, short purse, nothing to heal).
+    crate::ui::npc_chat::do_npc_portrait_hop(app);
+    healed
 }
 
 /// `Main.CanStartInvasion` (`Main.cs:64414-64432`): `invasionType != 0`
@@ -650,6 +657,8 @@ pub(crate) fn rescue_bound_angler(n: &mut Npc, world: &mut tr_core::World) {
 /// decrement, the `anglerQuestsFinished++` and the reward
 /// (`Player.GetAnglerReward`, `Player.cs:56302`).
 pub(crate) fn angler_turn_in(app: &mut App, angler_idx: usize) -> bool {
+    // `Main.DoNPCPortraitHop` (`Main.cs:40262` — the tail, handed or not).
+    crate::ui::npc_chat::do_npc_portrait_hop(app);
     let mut handed = false;
     // `:40232`'s gate: the day's quest is open and this player has not
     // already handed it in (`anglerWhoFinishedToday`'s single-player
@@ -698,11 +707,16 @@ fn give_angler_reward(app: &mut App, angler_idx: usize) {
     // `GetAnglerReward`'s `questItemType` — the 5303/5302 Jellyfish arm
     // gates on the current quest fish (`Player.cs:56345-56354`).
     let quest_item = crate::angler::QUEST_POOL[app.world.angler_quest as usize];
-    // `:56306`: the Angler's `currentShoppingSettings.PriceAdjustment` — the
-    // mood pass leaves the town roster at 1.0 (`ShopHelper.cs:103`'s
-    // exclusions do not cover 369, but the port's town NPCs carry no mood
-    // rows for him yet, so the plain 1.0 stands).
-    let adjustment = 1.0f32;
+    // `:56306`: the Angler's `currentShoppingSettings.PriceAdjustment` —
+    // the TALK-OPEN LATCH (`Player.cs:4389`). The vanilla turn-in is the
+    // AnglerQuest chat button (`Condition: TalkNPCType == 369`,
+    // `NPCInteractions.cs:137-140`), so the latch is live; the port's
+    // collapsed right-click latched through `talk_to_npc` ahead of this
+    // dispatch. His rows ARE ported (`happiness.rs`: Like Ocean / Dislike
+    // Desert `PersonalityDatabasePopulator.cs:97-101`, the neighbor switch
+    // `AllPersonalitiesModifier.cs:141-158`) — the old constants-off 1.0
+    // was stale. A direct headless call with no latch keeps NotInShop 1.0.
+    let adjustment = app.shopping_settings.price_adjustment;
     // `DropAnglerAccByMissing`'s inventory scan (`Player.cs:56590-56594`):
     // the port's one inventory (the armor/bank/loadout scans are
     // constants-off — the port carries neither).
@@ -936,24 +950,35 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         return false;
     };
     let shop = shop_index_for_kind(app.npcs[idx].kind).unwrap_or(1);
-    let (pcx, pcy) = app
-        .player
-        .as_ref()
-        .map(|p| p.center())
-        .unwrap_or((0.0, 0.0));
-    // The Princess head draws the bare `Main.rand` stand-in
-    // (`NamedRngs::global()`) — the shop-open mood recompute rides the same
-    // stream the talk-open latch does (`Main.cs:43081`'s chain).
-    let rng = app.rngs.global();
-    let mut roll = |n: i32| rng.next_max(n);
-    let mood = crate::happiness::process_mood(
-        &app.world,
-        &app.npcs,
-        &app.npcs[idx],
-        (pcx, pcy),
-        false,
-        &mut roll,
-    );
+    // W4-g58 final (the f37 capture-once contract, research/68 §4):
+    // `currentShoppingSettings` is captured ONCE per `SetTalkNPC`
+    // (`Player.cs:4387-4390`); `Main.OpenShop` (`Main.cs:40459-40467`) does
+    // NOT recompute it. When the talk latch already names this NPC the
+    // capture stands — no second Princess random-love draw on
+    // `NamedRngs::global()`. The port's collapsed chat-button entry (the
+    // recorded #9 deviation — the shop opens with `talk_npc = None`)
+    // captures HERE, through the SAME `shopping_settings` builder so the
+    // buy/sell latch readers (`Player.cs:35382-35388`) see the mood.
+    if app.talk_npc != Some(idx) {
+        let (pcx, pcy) = app
+            .player
+            .as_ref()
+            .map(|p| p.center())
+            .unwrap_or((0.0, 0.0));
+        let raining = app.world.raining;
+        let rng = app.rngs.global();
+        let mut roll = |n: i32| rng.next_max(n);
+        let settings = crate::happiness::shopping_settings(
+            &app.world,
+            &app.npcs,
+            &app.npcs[idx],
+            (pcx, pcy),
+            raining,
+            &mut roll,
+        );
+        app.shop_mood = settings.price_adjustment;
+        app.shopping_settings = settings;
+    }
     let flags = crate::shop::ShopFlags {
         hard_mode: app.world.hard_mode,
         downed_slime_king: app.world.downed_slime_king,
@@ -1033,7 +1058,6 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         &inv_ids,
         app.world.moon_phase as u32,
     );
-    app.shop_mood = mood.multiplier;
     app.shop_npc = Some(idx);
     if !same_shop {
         app.shop_sellback.clear();
