@@ -218,7 +218,14 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                     // 50 roster NPCs in index order), one roll from the core
                     // stream when the collection is non-empty, and only the
                     // rolled NPC moves — to `(x - width/2, y - height - 1)` with
-                    // the roll's style 14.
+                    // the roll's style 14 (`Wiring.cs:2437`/`:2465`). W4-g11
+                    // final phase (g61b seam-4 fold, research/116 §5): the
+                    // move rides `NPC.Teleport` (`NPC.cs:81035-81058`) through
+                    // the SAME replay queue as the pads — style 14 has NO
+                    // `TeleportEffect` arm (the switch falls through, zero
+                    // dust), but the `teleportTime`/`teleportStyle` grants
+                    // latch (`:81052-81053`) for the per-tick fade. The
+                    // `SendData(65)` relay is the server arm — dropped.
                     let mut candidates = Vec::new();
                     for (idx, n) in app.npcs.iter().enumerate() {
                         if n.hp > 0 && roster.contains(&n.kind.cs_id()) {
@@ -232,10 +239,16 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                         continue;
                     }
                     let roll = app.wiring.rand_next(candidates.len() as i32) as usize;
-                    let npc = &mut app.npcs[candidates[roll]];
-                    let (w, h) = npc.size();
-                    npc.x = x as f32 - w * 0.5;
-                    npc.y = y as f32 - h - 1.0;
+                    let slot = candidates[roll];
+                    let (w, h) = app.npcs[slot].size();
+                    npc_teleports.push(crate::main_dust::NpcTeleportReq {
+                        index: slot,
+                        new_x: x as f32 - w * 0.5,
+                        new_y: y as f32 - h - 1.0,
+                        style: 14,
+                        extra_info: 0,
+                        key: crate::app::RngKey::UpdateWorldGen,
+                    });
                 }
                 // The boulder statue's projectile 99 (aiStyle 25) has no ported
                 // family — dropped with the ANALYSIS note, like the other
@@ -981,6 +994,21 @@ mod tests {
             "the moved NPC's y: {} vs {}",
             moved.y,
             anchor_y - h - 1.0
+        );
+        // W4-g11 final phase (g61b seam-4 fold, research/116 §5): the move
+        // rides the `NPC.Teleport` replay — style 14 has NO TeleportEffect
+        // arm (zero dust, the wiring stream spends only the roster roll),
+        // but the `teleportTime`/`teleportStyle` grants latch
+        // (`NPC.cs:81052-81053`) for the per-tick fade.
+        assert_eq!(moved.teleport_time, 1.0, "the teleport time latches");
+        assert_eq!(moved.teleport_style_id, 14, "the statue's style 14");
+        assert_eq!(
+            app.npcs[other].teleport_time, 0.0,
+            "the unpicked NPC never teleports"
+        );
+        assert!(
+            !app.dust.slots().iter().any(|d| d.active),
+            "style 14 draws no TeleportEffect dust"
         );
     }
 

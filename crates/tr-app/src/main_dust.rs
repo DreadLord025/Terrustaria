@@ -35,7 +35,17 @@
 //!
 //! RNG slots (one per C# pass): `snowing` runs at `Main.cs:17238`, BEFORE
 //! the `DoUpdateInWorld` swap (`:17732`) — the bare `Main.rand`, the port's
-//! `NamedRngs::global()` stand-in. `TeleportEffect` is called from
+//! `NamedRngs::global()` stand-in. **d130 adjudication (research/83
+//! §-adjudication): the pre-swap claim STANDS** — `DoUpdate` (`:16828`)
+//! runs `:17238` with no enclosing `SwapRandom` (`Update` `:16774` →
+//! `DoUpdate` `:16788`, the first swap is `:17732` inside the LATER
+//! `DoUpdateInWorld`), so the C# draws land on the bare `Main.rand` that
+//! `RandomSwap.Swap` (`:3204-3215`) restores after every pass. d130's
+//! tip `560a02ea` KEPT its per-consumer splitmix (its §4: "the WEATHER-2
+//! convention decision of §2 stands") — F1 REFUTED-AS-APPLIED, the fold
+//! stays a merger decision per d130 §2's own delegation; the g11 F1
+//! hunks remain the published recommendation, not an applied patch.
+//! `TeleportEffect` is called from
 //! `Player.Teleport` (`Player.cs:37444`/`:37489`, the `UpdatePlayers`
 //! swap), `NPC.Teleport` (`NPC.cs:81044`/`:81051`, the caller's NPC pass)
 //! and `Wiring.Teleport` (`Wiring.cs:3154`/`:3170`, the `UpdateWorldGen`
@@ -44,8 +54,17 @@
 //! Wiring status (W4-g11 wiring round — BOTH seams WIRED): the snow site —
 //! `world_sim::scene_scan::update_scene` calls `snowing` at the `:17238`
 //! slot (before `Sandstorm.EmitDust` `:17247`, on `NamedRngs::global()`),
-//! and the `rain.rs` `Snowflake` vector stand-in is retired (keep-one). The
-//! type-76 physics arm (`snowDust++`, the scale lerp — `Dust.cs:1745-1763`)
+//! and the `rain.rs` `Snowflake` vector stand-in is retired (keep-one).
+//! **RETIRE-NOTE (research/83 keep-one, d130-canonical): this module's
+//! `snowing` + `SnowingEnv` + `MAX_SCREEN_W`/`SNOW_TILE_MAX` are DEPRECATED
+//! — the merger drops them for d130's `snow.rs` (wired + the real
+//! `DustPool.snow_dust` counter + the type-76 AI/tails/draw); d130's tip
+//! `560a02ea` folded the g11 details it lacked (the in-body pause gate
+//! F3, the HiDef 4096 budget F2, the census wording) and KEPT its own
+//! stream (F1 not applied — see the adjudication above). This branch
+//! keeps the body compiling until the drop; the four snow witnesses
+//! below migrate to d130's fixture per §-patch F7 (the merger's port).**
+//! The type-76 physics arm (`snowDust++`, the scale lerp — `Dust.cs:1745-1763`)
 //! is d50's `dust_physics.rs` lane; until it lands the flakes ride the
 //! generic `UpdateDust` move/kills, and the pool's generic draw pass is the
 //! draw lane's. The `TeleportEffect` styles — `Player.Teleport`
@@ -56,7 +75,10 @@
 //! (`npc_teleport` below) drained by the wiring pads in pool order. The
 //! per-tick `Player.UpdateTeleportVisuals` decay stays the W4-e1 dust
 //! lane's; the NPC per-tick fade (`NPC.UpdateNPC_TeleportVisuals`) is
-//! WIRED at the `UpdateNPC` tail (`world_sim/npcs.rs`, `NPC.cs:90322`).
+//! WIRED PRE-AI in the `UpdateNPC` preamble (`world_sim/npcs.rs`,
+//! `NPC.cs:90322` — before `AI()` `:90423`; the g61b seam-4 position
+//! fold, research/116 §5), fed `Main.timeForVisualEffects` as the
+//! `anim_time*60 % 216000` stand-in (g61b's shape).
 //! `recall_teleport` runs its own recall dust, NOT `TeleportEffect` (the
 //! mirror/recall cluster calls `Spawn`, not `Teleport`). The witnesses below
 //! pin the ports + the wiring — the union witness set (research/116 §3:
@@ -116,6 +138,12 @@ pub(crate) struct SnowingEnv {
 /// `Main.snowing()` (`Main.cs:13032-13116`) — the ambient snowfall's dust
 /// spawn, verbatim. Runs on the bare `Main.rand` (the caller passes
 /// `NamedRngs::global()` — `:17238` sits before every `SwapRandom`).
+///
+/// **DEPRECATED (research/83 keep-one): the merger drops this body for
+/// d130's `snow.rs::snowing` — see the module-doc RETIRE-NOTE. The g11
+/// details d130 lacked (the in-body pause gate, the HiDef 4096 budget)
+/// landed on ITS branch at `85250712`; the stream stays d130's splitmix
+/// (F1 refuted-as-applied, §-adjudication in research/83).**
 ///
 /// `Main.snowDust` (`Main.cs:621`) is a Main static the pool does not carry
 /// (d50's note: the 76 arm's `snowDust++` is cited and skipped); the budget

@@ -27,9 +27,12 @@
 //!   fields instead of g61's `(f32, i32, i32)` triple).
 //! * [`update_npc_teleport_visuals`] takes the g11 `Npc` fields
 //!   (`npc.rs`: `teleport_time`/`teleport_style_id`/
-//!   `last_portal_color_index`) instead of the triple; WIRED at the
-//!   `UpdateNPC` tail (`NPC.cs:90322`, `world_sim/npcs.rs`) on the
-//!   `UpdateNPCs` stream.
+//!   `last_portal_color_index`) instead of the triple; WIRED PRE-AI in
+//!   the `UpdateNPC` slot preamble (`NPC.cs:90322` — after the cast
+//!   lights `:90320`, BEFORE `AI()` `:90423`; `world_sim/npcs.rs`, the
+//!   g61b seam-4 order fold, research/116 §5) on the `UpdateNPCs`
+//!   stream, fed `Main.timeForVisualEffects` as the `anim_time*60 %
+//!   216000` stand-in (g61b `c289d64f`'s shape).
 //!
 //! RNG contract (the d50 `DustPool` contract, S1-E-1): every draw rides
 //! the caller's ONE stream in C# evaluation order — argument draws
@@ -506,9 +509,11 @@ fn pylon_spawn_in_world_dust<R: DustRng>(
 }
 
 /// `NPC.UpdateNPC_TeleportVisuals` (`NPC.cs:92194-92241`) — the
-/// per-tick teleport fade, called from `UpdateNPC` (`:90322`) AFTER
-/// the AI + cast lights, on the `UpdateNPCs` stream. WIRED at the
-/// `world_sim/npcs.rs` per-slot tail. The teleport fields are the g11
+/// per-tick teleport fade, called from `UpdateNPC` (`:90322`) after the
+/// cast lights (`:90320`) and BEFORE `AI()` (`:90423`), on the
+/// `UpdateNPCs` stream. WIRED PRE-AI in the `world_sim/npcs.rs` slot
+/// preamble (the g61b seam-4 order fold, research/116 §5). The teleport
+/// fields are the g11
 /// `Npc` fields (research/116 §2 — they replace g61's triple);
 /// `time_for_visual_effects` is `Main.timeForVisualEffects`
 /// (`Main.cs:1181`, a double).
