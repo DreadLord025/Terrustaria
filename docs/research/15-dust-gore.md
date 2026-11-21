@@ -160,7 +160,7 @@ Rust (`crates/`):
 | `DataStructures/PlayerDrawSet.cs` | 23 | 3 | none | MISSING |
 | `Main.cs` | 23 | 0 | `sand.rs` covers `Sandstorm.EmitDust` (Main.cs:17247) only | PARTIAL |
 | `DelegateMethods.cs` | 18 | 3 | minecart sparks (223-242) | PARTIAL |
-| `WorldItem.cs` | 17 | 1 | none | MISSING |
+| `WorldItem.cs` | 17 | 1 | `item_dust.rs` (W4-g15 — the 17 sites; the `:653` gore sibling is the gore lane's skip) | PORTED (dust) |
 | `GameContent/Golf/GolfHelper.cs` | 8 | 0 | none | MISSING |
 | `Dust.cs` (self, QuickDust helpers) | 8 | 4 | none | MISSING |
 | `Graphics/Renderers/FakeFishParticle.cs` | 4 | 0 | none | MISSING |
