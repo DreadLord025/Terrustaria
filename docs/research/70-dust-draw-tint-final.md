@@ -177,3 +177,117 @@ same 157 maths (`/100−1.6`, +50, cap 255, uncapped alpha; 190→a29 /
 The anchors row re-points at `pub fn get_alpha_with_globals` (the retired
 `pub fn get_alpha_disco` marker would fail the canary). §2-3 above stay as
 the HISTORICAL closure record; the live seam is the canonical one.
+
+## 7. RETIRE — the DrawDust-tint wiring-contract (exact wire-hunks for the draw lane)
+
+Probed at g67 tip `30b39fce` (the cull+else-kill `2c452edd` is an ancestor,
+`merge-base --is-ancestor` exit 0; research/134 R3 carries the d130 fold).
+The draw lane's live generic-path consumers today are g67's
+`rain::draw_splashes` (the `dustWater()` family), `sand::draw` (268) and
+`minecart::draw` (213). The 8-consumer census (§1) maps onto them as
+follows; every hunk below is the EXACT edit the draw lane applies.
+
+### 7.1 The tint-feed compose (the `:38973` wire)
+
+The C# `:38968-38973` sequence per live slot: light sample at
+`(int)((double)pos + 4.0) / 16` → the 6/15/59-64 WHITE override →
+`GetAlpha(newColor)`. The canonical seam (§6) folds the 157/327 arms in at
+their exact positions, so ONE call replaces `get_alpha` at every generic
+tint site — no type routing at the caller.
+
+**Hunk W1 — the globals sample, once per draw pass** (`app/frame/draw.rs`,
+immediately before the world-effect dust block — after the gore draw
+`:1369-1373`, before `sand::draw` `:1376`; the g67 union inserts
+`draw_splashes` between `:1380` and the foliage draw):
+
+```rust
+// `Main.DrawDust`'s globals (research/70 §7): sampled once per pass.
+// mouseTextColor is the DoUpdate_AnimateCursorColors pulse already
+// ticked in this frame's update; dayTime is the world clock; Disco are
+// the DoUpdate_AnimateDiscoRGB bytes (C# ints clamped 0..=255).
+let dust_globals = tr_core::dust_table::DustDrawGlobals {
+    mouse_text_color: self.mouse_text_color,
+    day_time: world.day_time,
+    disco_rgb: [
+        self.disco[0] as i32,
+        self.disco[1] as i32,
+        self.disco[2] as i32,
+    ],
+};
+```
+
+**Hunk W2 — `rain::draw_splashes` signature + tint call** (g67
+`rain.rs:1463-1494`): add two params after `screen: Vec2`:
+
+```rust
+    globals: &tr_core::dust_table::DustDrawGlobals,
+    rng: &mut impl tr_core::particles::DustRng,
+```
+
+and replace `:1494`
+
+```rust
+        let tint = tr_core::dust_table::get_alpha(&d, new_color);
+```
+
+with
+
+```rust
+        // `:38969-38973`: the WHITE override for 6/15/59-64, then the
+        // globals seam (research/70 §7 — the 157/327 arms ride here).
+        let new_color = if matches!(d.dust_type, 6 | 15 | 59..=64) {
+            tr_core::particles::Color::WHITE
+        } else {
+            new_color
+        };
+        let tint =
+            tr_core::dust_table::get_alpha_with_globals(&d, new_color, globals, rng);
+```
+
+(the splash family is 33/98-105/123/288 — the override and the 157/327
+arms never fire for it today; the wire is behaviour-identical and keeps
+the entry exact for the family's future spawners, the `:39006` overlay
+precedent).
+
+**Hunk W3 — the call site** (`app/frame/draw.rs`, g67's `:1295-1297`):
+
+```rust
+                    crate::rain::draw_splashes(
+                        dust, renderer, lookups, light, draw_cam, world_zoom, screen,
+                        &dust_globals, self.rngs.global(),
+                    );
+```
+
+`rngs.global()` is the bare `Main.rand` slot — the same slot the g13
+spawn feeds ride (`:1249`), so the 327 draws land in the C# stream
+position by construction: AFTER the item sparkle (`:38664`, DrawItems
+before DrawDust) and the retro liquid pair (`:57789`, DrawWaters before
+both), BEFORE the end-of-Draw `DrawnThisUpdate` set (`:62478`, g13's
+relocation — the mark reads clear through the draw, `:1240`).
+
+**Hunk W4 — the generic all-type walk** (the DRAW lane's remainder,
+research/68 §2): the same two-line tint compose at the `:38973` position
+of its slot loop, `globals` sampled once (W1) and `rng` threaded as
+`&mut` through the walk. The trail arms (§1 rows 1-6) call `get_alpha`
+pure — 157/327 match no trail type, so no trail hunk needs the seam; the
+331 cross (`:38999`) reads `GetAlpha(dust.color)` — also pure for every
+type that reaches it. The 213 scale-force (`:38974`) and the black-death
+(`:39015`) stay as ported.
+
+### 7.2 The cull+else-kill compose (g67-owns, already landed)
+
+`splash_cull_rect`/`dust_in_cull_rect` (`rain.rs:1561/1573`) + the
+`:1481-1484` else-kill ARE the `:38832/:38847/:39020-39022` port — the
+draw lane does NOT re-port them; the generic walk reuses the two helpers
+(one wide rect for the whole family, the `:38845` restore is a no-op).
+The tint-feed (W1-W4) composes INSIDE the cull-survivor branch, exactly
+where `draw_splashes` already sits.
+
+### 7.3 The per-family stand-ins (no wire owed)
+
+`sand::draw` (268) and `minecart::draw` (213) read the table through
+identity-equivalent short forms (268 at alpha 0: GetAlpha is the light
+itself; 213's arm ignores the light) — neither type is 157/327 nor
+6/15/59-64, so the seam swap is a no-op for them; they fold into the
+generic walk (W4) when the draw lane lands it, not before. Until W1-W4
+land, no live code calls the seam — staged, zero behavioural delta.
