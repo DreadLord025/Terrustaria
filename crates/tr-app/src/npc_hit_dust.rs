@@ -62,6 +62,20 @@
 //! - 89531/89534 — the Burning Sphere 25 (`:89526-89537`): 20 PAIRS of
 //!   dust 6 at (-vx·0.2,-vy·0.2), alpha 100 — scale 2 noGravity ×2, then
 //!   scale 1 ×2 (the Item10 cue is c13's lane).
+//! Batch 3 (the remaining spheres + the caster/boss live arms):
+//! - 89543/89546 — the Water Sphere 33 (`:89538-89548`): the 20-pair
+//!   dust-172 shape, scales 1.2/0.6.
+//! - 89695/89698 — the Chaos Ball 30/665 (`:89690-89700`): the 20-pair
+//!   dust-27 shape, scales 2/1.
+//! - 89481/89482 — Meteor Head 23 (`:89470-89485`): ×100 — the Next(2)
+//!   25/6 selector BEFORE the spawn, then the dust-6 velocity pair
+//!   (vx·0.2, vy·0.2) alpha 100 scale 2 noGravity.
+//! - 89509 — Fire Imp 24 (`:89503-89512`): ×100 dust 6 at (vx,vy),
+//!   alpha 100 scale 2.5 noGravity.
+//! - 84264 — Duke Fishron 370 (`:84258-84266`): ×100 dust 5.
+//! - 84213 — Sharkron 372/373 (`:84207-84215`): ×100 dust 5.
+//! - 86527 — Wandering Eye 133 (`:86521-86534`): ×100 dust 5 (the
+//!   half-life gore latch `:86529-86533` is draw-free, d55's body).
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -204,26 +218,32 @@ pub fn replay_hit_dust(
     world: &World,
 ) {
     let dir = s.hit_dir as f32;
-    // `:89526-89537` — the Burning Sphere: EVERY strike (live or dead —
-    // the arm carries NO life gate, so the killing blow's HitEffect
-    // still bursts; it is a strike arm, not a death-event arm). 20
-    // pairs of dust 6 at the reflected velocity; the Item10 cue
-    // (`:89528`) is c13's sound lane. The pair shape: scale-2 noGravity
-    // ×2, then scale-1 ×2.
-    if s.npc_type == 25 {
+    // `:89526-89548`/`:89690-89700` — the three spheres: EVERY strike
+    // (live or dead — the arms carry NO life gate, so the killing blow's
+    // HitEffect still bursts; they are strike arms, not death-event
+    // arms). 20 pairs at the reflected velocity; the Item10 cues
+    // (`:89528`/`:89540`/`:89692`) are c13's sound lane. Pair shape:
+    // first noGravity ×2 at scale A, second ×2 at scale B.
+    let sphere = match s.npc_type {
+        25 => Some((6, 2.0, 1.0)),    // `:89531`/`:89534`
+        33 => Some((172, 1.2, 0.6)),  // `:89543`/`:89546`
+        30 | 665 => Some((27, 2.0, 1.0)), // `:89695`/`:89698`
+        _ => None,
+    };
+    if let Some((dust_type, scale_a, scale_b)) = sphere {
         for _ in 0..20 {
             let idx = live_dust(
-                s, 6, -s.vx * 0.2, -s.vy * 0.2, 100, Color::default(), 2.0,
+                s, dust_type, -s.vx * 0.2, -s.vy * 0.2, 100, Color::default(), scale_a,
                 rng, dust, ctx, world,
             );
             let d = dust.slot_mut(idx);
-            d.no_gravity = true; // `:89532`
-            d.velocity *= 2.0; // `:89533`
+            d.no_gravity = true;
+            d.velocity *= 2.0;
             let idx = live_dust(
-                s, 6, -s.vx * 0.2, -s.vy * 0.2, 100, Color::default(), 1.0,
+                s, dust_type, -s.vx * 0.2, -s.vy * 0.2, 100, Color::default(), scale_b,
                 rng, dust, ctx, world,
-            ); // `:89534`
-            dust.slot_mut(idx).velocity *= 2.0; // `:89535`
+            );
+            dust.slot_mut(idx).velocity *= 2.0;
         }
         return;
     }
@@ -385,8 +405,59 @@ pub fn replay_hit_dust(
                 );
             }
         }
-        // `:89526-89537` — the Burning Sphere is handled ABOVE the life
-        // gate (the every-strike arm); this match never sees 25.
+        // `:89470-89485` — Meteor Head: ×100, the Next(2) selector
+        // BEFORE the spawn (0 → dust 6, else 25), then the dust-6
+        // velocity pair (alpha 100, scale 2, noGravity). The death
+        // halves' second 50-loop is g60's.
+        23 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                let mut t = 25;
+                if rng.next_max(2) == 0 {
+                    t = 6; // `:89477-89480`
+                }
+                live_dust(s, t, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world); // `:89481`
+                let idx = live_dust(
+                    s, 6, s.vx * 0.2, s.vy * 0.2, 100, Color::default(), 2.0,
+                    rng, dust, ctx, world,
+                ); // `:89482`
+                dust.slot_mut(idx).no_gravity = true; // `:89483`
+            }
+        }
+        // `:89503-89512` — Fire Imp: ×100 dust 6 at the NPC's own
+        // velocity, alpha 100 scale 2.5 noGravity.
+        24 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                let idx = live_dust(
+                    s, 6, s.vx, s.vy, 100, Color::default(), 2.5,
+                    rng, dust, ctx, world,
+                );
+                dust.slot_mut(idx).no_gravity = true; // `:89510`
+            }
+        }
+        // `:84258-84266` — Duke Fishron's live blood (the death half's
+        // 150-loop + the six centre gores are g60's).
+        370 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:84207-84215` — the Sharkrons' live blood (the death half's
+        // 75-dust centre burst is g60's).
+        372 | 373 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:86521-86534` — the Wandering Eye: ×100 dust 5; the half-life
+        // gore latch (`:86529-86533`) draws NOTHING (the body is d55's).
+        133 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:89526-89548`/`:89690-89700` — the three spheres are handled
+        // ABOVE the life gate (the every-strike arms); this match never
+        // sees 25/33/30/665.
         _ => {}
     }
 }
@@ -799,5 +870,127 @@ mod tests {
         }
         assert_eq!(rng2, twin_rng);
         assert_eq!(dust2.slots(), twin.slots());
+    }
+
+    /// W4-g62 batch 3 — the Water Sphere/Chaos Ball pair shapes
+    /// (`NPC.cs:89543-89547`/`:89695-89699`): dust 172 at 1.2/0.6 and
+    /// dust 27 at 2/1, every strike, the stream mirrors all 20 pairs.
+    #[test]
+    fn w4_g62_the_water_and_chaos_sphere_pairs() {
+        let world = air();
+        let ctx = ctx();
+        for (t, dt, sa, sb) in [(33, 172, 1.2f32, 0.6f32), (30, 27, 2.0, 1.0), (665, 27, 2.0, 1.0)] {
+            let mut s = snap(t, 1, 30, 30.0);
+            s.vx = -3.0;
+            s.vy = 1.5;
+            let mut rng = UnifiedRandom::new(41);
+            let mut dust = DustPool::new();
+            replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+            let mut twin_rng = UnifiedRandom::new(41);
+            let mut twin = DustPool::new();
+            for _ in 0..20 {
+                let idx = twin.new_dust(
+                    &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, dt,
+                    0.6, -0.3, 100, Color::default(), sa,
+                );
+                let d = twin.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 2.0;
+                let idx = twin.new_dust(
+                    &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, dt,
+                    0.6, -0.3, 100, Color::default(), sb,
+                );
+                twin.slot_mut(idx).velocity *= 2.0;
+            }
+            assert_eq!(rng, twin_rng, "type {t}");
+            assert_eq!(dust.slots(), twin.slots(), "type {t}");
+        }
+    }
+
+    /// W4-g62 batch 3 — the Meteor Head's selector-then-pair order
+    /// (`NPC.cs:89476-89483`): Next(2) BEFORE the first spawn, the
+    /// dust-6 pair after; one iteration mirrors exactly.
+    #[test]
+    fn w4_g62_the_meteor_head_selector_rides_before_the_spawn() {
+        let world = air();
+        let ctx = ctx();
+        let mut s = snap(23, 50, 50, 1.0); // ×100 → 2
+        s.vx = 5.0;
+        s.vy = 2.0;
+        let mut rng = UnifiedRandom::new(43);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(43);
+        let mut twin = DustPool::new();
+        for _ in 0..2 {
+            let mut t = 25;
+            if twin_rng.next_max(2) == 0 {
+                t = 6;
+            }
+            twin.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, t,
+                1.0, -1.0, 0, Color::default(), 1.0,
+            );
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 6,
+                1.0, 0.4, 100, Color::default(), 2.0,
+            );
+            twin.slot_mut(idx).no_gravity = true;
+        }
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+    }
+
+    /// W4-g62 batch 3 — the Fire Imp's own-velocity dust 6
+    /// (`NPC.cs:89509-89510`): scale 2.5, alpha 100, noGravity.
+    #[test]
+    fn w4_g62_the_fire_imp_rides_its_own_velocity() {
+        let world = air();
+        let ctx = ctx();
+        let mut s = snap(24, 60, 60, 3.0); // ×100 → 5
+        s.vx = -2.0;
+        s.vy = 0.5;
+        let mut rng = UnifiedRandom::new(47);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(47);
+        let mut twin = DustPool::new();
+        for _ in 0..5 {
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 6,
+                -2.0, 0.5, 100, Color::default(), 2.5,
+            );
+            twin.slot_mut(idx).no_gravity = true;
+        }
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+    }
+
+    /// W4-g62 batch 3 — the Fishron/Sharkron/WanderingEye live arms are
+    /// the plain ×100 dust-5 shape (`NPC.cs:84264`/`:84213`/`:86527`),
+    /// and the Wandering Eye's half-life gore latch draws NOTHING.
+    #[test]
+    fn w4_g62_the_blood_arms_share_the_dust5_shape() {
+        let world = air();
+        let ctx = ctx();
+        for t in [370, 372, 373, 133] {
+            let mut s = snap(t, 20, 100, 10.0); // ×100 → 10
+            if t == 133 {
+                s.life = 20; // below half — the gore latch arm, no draws
+            }
+            let mut rng = UnifiedRandom::new(53);
+            let mut dust = DustPool::new();
+            replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+            let mut twin_rng = UnifiedRandom::new(53);
+            let mut twin = DustPool::new();
+            for _ in 0..10 {
+                twin.new_dust(
+                    &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 5,
+                    1.0, -1.0, 0, Color::default(), 1.0,
+                );
+            }
+            assert_eq!(rng, twin_rng, "type {t}");
+            assert_eq!(dust.slots(), twin.slots(), "type {t}");
+        }
     }
 }
