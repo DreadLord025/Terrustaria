@@ -1532,3 +1532,350 @@ origin-vs-local ALL_KINDS census, g8 new-tip state, d36 R7 all-match +
 hover-batch free-id check vs the lag-union grand set, d39 817-823
 all-match, d125 ancestor check exit 0, d42 dragonfly presence, d37
 zero-code-diff). No code changed on this branch.
+
+---
+
+# E8-RECONCILE-SEAL — the final dedupe + grand-union re-derive (SUPERSEDES the LV/lag-union counts and the SEAL S4 pins where they conflict)
+
+Status: RESEARCH / FINAL-SEAL — zero code diff `750d8e44..HEAD` re-verified
+(`git diff --stat -- crates anchors.txt` EMPTY). Author lane: W4-d37
+(executor, E8-reconcile-seal phase), branch `task/W4-d37-npc-kinds-211-280`.
+This round re-derives the ENTIRE roster at the CURRENT origin tips (the
+wave pushed 30+ commits mid-phase — the Lead's named hashes d39-a0d49dc1 /
+d41-5d036721 / d42-2d7ac08c / d43-0253bde9 / f18-a832d38e / g10-5dee2865
+are all superseded except f18/g10), adjudicates every duplicate port with
+source-read depth evidence, COMPOSES with the concurrent LAGGARD-EXEC
+(research/250) and d43-retire (research/304) lane-published verdicts rather
+than re-opening them, absorbs the SIX new claimants those rounds missed,
+and seals the merger bible. Witnesses: `tools/_d37_e8s_sweep.py` (362-ref
+sweep), `_d37_e8s_census.py` (34-lane census), `_d37_e8s_dups.py` (123 dup
+names / 66 contested protos), `_d37_e8s_plan.py` (395-owned collision
+check), `_d37_e8s_counts.py`, `_d37_e8s_acct.py`, `_d37_e8s_gaps.py`,
+`_d37_e8s_emit.py` → `_d37_e8s_tables.md`. All git-show only, direct paths,
+no junction recursion. Witnesses WRITTEN NOT RUN (code-only lane).
+
+## X0. Tips read (the E8-SEAL re-fetch; the live-wave truth)
+
+| Lane | Tip read | New kinds | Note |
+|---|---|---|---|
+| base | `a725acb04` | — | 270 kinds, ENTRIES 241, slots 181, NPC sheets 270, cues 55 |
+| c3 | `ccb981eb3` | 3 | kinds unchanged (docs rename 247→329); WaterBoltMimic 694 canonical |
+| c4 | `8abf0f1d8` | 13 | retired; 8 owned after drops |
+| c6 | `5de680219` | 1 | PumpkingBlade dup |
+| c7 | `c2cc6ec61` | 4 | Firefly/LightningBug/Lavafly/Shimmerfly |
+| c7b | `90abc1edf` | 4 | **NEW claimant** (c7-style65-critters): the SAME four firefly kinds at the SAME ids — one canonical c7 owner, c7b drops all 4 |
+| c8 | `10192602a` | 9 | retire phase 4 |
+| c9 | `2267c93e8` | 9 | +5 gold-critter dups (442/443/445/446/447); ALL_KINDS fixed 279/279 |
+| c10 | `15f93d134` | 20 | retire 4/4 SEALED |
+| d9 | `88677f9de` | 7 | CultistDragon fam (d40 dups) + AncientCultistSquidhead 521 NEW |
+| d11 | `2894f6f7d` | 1 | BloodSquid 619 dup of d42 |
+| d23 | `b00e7626f` | 23 | style-14 wave +14 (12 dups of g8/d34/d35/d37 + SporeBat/QueenSlimeMinionPurple) |
+| d103 | `882be0ec1` | 1 | **NEW claimant**: Wraith 360 dup of d35 |
+| d120 | `2408233da` | 5 | retired, orders unexecuted |
+| d125 | `5a26ae348` | 2 | **EXECUTED** EmpressOfLight 229→636, PrismaticLacewing 237→742 |
+| d33 | `36aae03d0` | 11 | +4 fairy/balloon kinds (359/360/361/368) NOW WIRED (axis 112/113) |
+| d34 | `f0d92564e` | 20 | **phase 4** +5 at 281-285 — SQUATS d38's anchor (new hard collision) |
+| d35 | `8fa3b3dbf` | 33 | ATLAS RETIRE; renumber NOT executed (LAST by design) |
+| d36 | `a11f61850` | 9 | R7 re-pin EXECUTED 767-771 + hover batch Crimera 781/MossHornet 782/Moth 793 + **Wolf 772 NEW** |
+| d37 | `7bea5c835` | 46 | this lane; ZERO-MOVE (354-399 byte-identical to 750d8e44) |
+| d38 | `b888a9575` | 35 | RETIRE sheet 4 SEALED |
+| d39 | `048c74f8f` | 7 | R7 self-consumed 817-823 |
+| d40 | `78ee5647c` | 56 | SEAL research/285: MothronEgg 478 own-entry fix + 479 drain + co-lane sheets phase (22 slots, unpushed) |
+| d41 | `065efdf97` | 38 | batches 3-6: 494-537 (TombCrawler/solar/desert ghoul-lamia-poacher) |
+| d42 | `adb304ab8` | 43 | executed 578-630; 11 drops owed (7 dragonfly + 4 fairy/balloon) |
+| d43 | `715cf5f91` | 63 | retire research/304: 21 drops published; band 631-696 complete |
+| e21 | `2fb0a36ee` | 2 | **NEW claimant**: Bunny 229 (d34 dup) + PartyBunny 237 NEW (cs 540) |
+| e26 | `a23c64933` | 3 | ALL DONE (Frog 744 executed, Duck dropped) |
+| f18 | `a832d38ea` | 20 | verify lane — ALL 20 are dups, drop wholesale |
+| f42 | `425d4ff9d` | 9 | Tumbleweed 546 NEW + 8 dups |
+| f47 | `057f44a68` | 1 | ShimmerSlime 676 (shimmer-dust wired) |
+| g5 | `f044bd315` | 2 | LibrarianSkeleton 693 + RuneWizard **827** (executed re-pin) |
+| g62 | `428e93ecb` | 2 | **NEW claimant**: GoblinShark 620 + Shimmerfly 677 dups |
+| g8 | `dd3cb0572` | 35 | **EXECUTED** 18-move renumber 745-762 (incl. Vampire 762); 17 dups remain |
+| g10 | `5dee28650` | 11 | PUSHED, cs==proto, town-pet machine wired |
+
+Sweep totals: **362 refs, 39 data.rs-changed, 34 kind-claimants, 398
+distinct new kind-names, 123 duplicate kind-names (150 extra ports), 66
+contested protocol ids.** Every lane's `to_u16`↔`from_u16` bijection
+verified; **zero stale ALL_KINDS declarations remain** (c9 fixed its
+array, g8 fixed 305/305, d125 fixed 272/272 — the S2/R0 laggard decls are
+all consumed).
+
+## X1. DEDUPE adjudications (the Lead's five named contests + the new ones)
+
+Ownership rule (E2/E3 stands): a kinds-lane owns over a wiring lane; among
+kinds-lanes the lower band owns; **the wired implementation wins over a
+data-only stub at the same vanilla type** (the R2/R3 depth rule); an
+EXECUTED lane-published verdict (LAGGARD-EXEC research/250, d43-retire
+research/304) is COMPOSED, not re-opened, unless a source read disproves it.
+
+### X1a. 693-LibrarianSkeleton — d43 × g5 → **KEEP g5** (g5-caster-wired canonical: YES)
+
+Both rows identical stats (hp 70, dmg 18, def 2, kb 0.6, value 160,
+aiStyle 8, 18x40 — `NPC.cs:17725-17735`). The depth difference is the
+**book shot**: g5 phase 5 (`96f074959`) ports projectile 1092
+(`LIBRARIAN_BOOK`, `projectile/data.rs`), the 54-frame sheet, the
+`AI_FindNearbyBook` feed (`npc_ai_bat.rs` gates on
+`NpcKind::LibrarianSkeleton`), and the RuneBlast 129 timeLeft-300 arm
+(`world_sim/npcs.rs`). d43's row **explicitly skips it** — its
+`npc_ai_bat.rs:437-440` comment: "the LibrarianSkeleton (693) is ported,
+but its book shot (projectile 1092 via AI_FindNearbyBook, NPC.cs:62308)
+is a documented skip — the book-search feed is unplumbed (the kind casts
+silently)". d43-retire research/304 concurs (693→g5). **DROP d43@693**
+(variant + to/from arms + ALL_KINDS + ENTRIES + stat arms); d43's cs_id-693
+hand row and update_caster dispatch compose onto g5's kind. g5 keeps 693
+(vanilla-free, cs==proto).
+
+### X1b. 636-HallowBoss — d43 × d125 → **KEEP d125 EmpressOfLight@636** (same-vanilla name collapse)
+
+d43's `HallowBoss` and d125's `EmpressOfLight` are the SAME vanilla type
+636 (`NPCID.cs:11949`), identical stats (hp 70000, dmg 80, def 50, kb 0,
+value 250000, aiStyle 120). d125's is the **live-wired** implementation:
+`ai_120_empress` dispatch (`npc.rs:5774`), `render/empress_draw.rs` (the
+dedicated draw, Extra_188 halo), the BossNoCheese counter routing
+(`7a0482302`), the hitbox phase. d43's `HallowBoss` dispatch is `{}` (the
+`npc_ai_empress.rs` module is UNWIRED — its own doc says "the live dispatch
+wiring [is] the documented [gap]"). d125 EXECUTED 229→636 (`5a26ae348`),
+restoring protocol==cs. **The name collapses to EmpressOfLight** (d125's,
+the wired owner); **DROP d43 HallowBoss@636** wholesale. d43's
+projectile_ai_empress.rs (the five projectile AIs) composes at merge.
+
+### X1c. 637/638 (+ the other 9 pets) — d43 × g10 → **KEEP g10** (g10-wired canonical)
+
+d43 ports all eleven pets at cs==proto (637/638/656/670/678-684) but its
+dispatch is `update_guide` (a stand-in) or `{}`. g10's are the **faithful
+town-pet machine**: `ai_007_town_pet_family` + `integrate_town_pet_collision`
++ `npc_findframe_pet::town_pet_find_frame` wired at `npc.rs:7014`, the
+unreachable kind arms (the style-7 axis claims them), the town flags +
+exclusions. d43-retire research/304 concurs (11 pets→g10). **DROP d43's
+eleven pet rows**; g10 keeps cs==proto, zero renumber. (The Lead named
+637/638; the verdict extends to all eleven — d43's 656/670/678-684 are the
+same contest.)
+
+### X1d. 361/362 — e26 × c4 × c10 × f18 → resolved by the executed state
+
+- **361 Frog**: e26 EXECUTED 361→744 (`a23c64933`); f18's Frog@243 drops
+  to e26@744. c4 never ported Frog (the Lead's "c4" here is the f18
+  verify-lane overlap). e26 owns Frog@744 (cs 361).
+- **362 Duck**: c10 owns the Duck family (362-365→731-734 owed); e26
+  DROPPED its Duck@362 (executed); f18's Duck@244/Duck2@245/DuckWhite@246/
+  DuckWhite2@247 drop to c10@731-734. c4 never ported Duck.
+- The 361/362 protocol ids themselves are d37's Pirate@361 /
+  GoldfishWalker@362 — the small-lane kinds were ALWAYS port-local squatters
+  on d37's anchor, now all shifted off (744/731-734).
+
+### X1e. 355-380 — f18 × d39 × d42 → f18 drops wholesale, d39 keeps 817-823
+
+f18 is a VERIFY lane that re-ported 20 already-owned kinds at 237-258
+(the reserved-hole corridor). **ALL 20 f18 ports DROP** (X3 f18 table):
+the 7 critters to c7/c8/c9/e26/c10, the 7 d39-band kinds to d39@817-823,
+ArmedZombie to d40@430. d39's seven (Butterfly/ScorpionBlack/Scorpion/
+Grasshopper/ChatteringTeethBomb/CultistArcherBlue/CultistArcherWhite) keep
+817-823 (R7 self-consumed, `048c74f8f`). d42 never ported the 355-380
+critters (its band is 578-630); the Lead's "d42" here is the f18×d39
+overlap. f18's style modules (npc_ai_style65/41/etc.) are keep-one
+candidates vs c10/d39's at merge — the style65 module: c10's
+`ai_065_butterflies` (the d30 module, dust+lerp wired) vs d39/f18's
+`ai_065_step` — **keep c10's** (the superset; d39/f18's are the pure
+velocity variant), the Butterfly kind routes through it.
+
+### X1f. The NEW claimants + the d34-phase-4 collision (this round's additions)
+
+- **d34 phase 4 × d38 (281-285 HARD)**: d34's PinkJellyfish/Crab/
+  DungeonGuardian/Antlion/SpikeBall at 281-285 squat d38's witness-pinned
+  RaggedCaster..DiabolistRed. d38 KEEPS (anchor). d34's PinkJellyfish/
+  Antlion/SpikeBall are g8 machine dups → DROP to g8@745/746/747.
+  **Crab/DungeonGuardian re-pin 282→791, 283→792** (LAGGARD-EXEC award,
+  both free; d36's Wolf took 772). d34 keeps 266-280 + 791/792.
+- **d33 fairy/balloon × d42 (583-585/594)**: d33 NOW wires the machines
+  (axis 112 `ai_112_fairy`, 113 `ai_113_balloon`); d42's rows are data-only
+  `{}` stubs. **d33 owns** (wired superset, the R3 dragonfly precedent
+  extends); d33 re-pins 359/360/361/368 → **583/584/585/594** (d42's
+  executed vanilla-free ids, freed by its stub drop — cs==proto restored).
+  **DROP d42's four stubs** (its 11-drop list = 7 dragonfly + 4 fairy/balloon).
+- **d23 SporeBat/QueenSlimeMinionPurple × d43 (634/660)**: C# confirms
+  both aiStyle 14 (`NPC.cs` type 634/660). d43's dispatch is
+  `update_cave_bat` (faithful); d23's is a style-1/slime stand-in. BUT
+  d43-retire research/304 + LAGGARD-EXEC both award d23 (the style-14 axis
+  `update_cave_bat` is the keeper-fold, d23's row re-pins to the vanilla
+  id). **COMPOSE: d23 owns, re-pins 407→634, 409→660; DROP d43's two
+  rows.** (The axis machine is identical either way; the lane-published
+  verdict stands.)
+- **d23 SolarFlare × d41 (516)**: d23 has the own visible ENTRIES row
+  (net 516); d41's is entry-less. C# `GetExclusions` excludes Hide=true
+  ids from entry registration, BUT the populator's
+  `FindEntryByNPCID(516).Info` call registers spawn-conditions — the C#
+  truth is 516 HAS an entry (the Hide modifier only hides the DRAW).
+  LAGGARD-EXEC awards d23. **COMPOSE: d23 keeps SolarFlare@408; DROP
+  d41@516.** (d41's entry-less witness is the deviation; d23's row is
+  C#-faithful.)
+- **c4 GiantFlyingAntlion × d41 (509)**: LAGGARD-EXEC final awards c4
+  (style44 axis + the 509 overrides). **COMPOSE: c4 keeps 509; DROP
+  d41@509** (its dedicated `update_giant_flying_antlion` composes at merge).
+- **c4 Pufferfish/Orca × d43 (688/692)**: d43-retire's conditional FIRED —
+  d43 owns, having ABSORBED c4's just_hit puff-fix + the Orca wet-anchor
+  (both swimmers now carry the fix, verified). **COMPOSE: d43 keeps
+  688/692; DROP c4's two rows** (c4's style16 wiring composes).
+- **c3 WaterBoltMimic × d43 (694)**: d43-retire awards c3 (the style-10
+  skull lane, the 694 anchor entities.rs:966/:1018). **COMPOSE: c3 keeps
+  694; DROP d43@694.**
+- **e21 PartyBunny (237 NEW)**: cs 540, free in protocol space. 237 is a
+  d37-owned cs hole (JungleCreeperWall). **Re-pin 237→540** (vanilla-free,
+  cs==proto). e21's Bunny@229 drops to d34@270.
+- **f42 Tumbleweed (354→546)**: cs 546 free; 354 squats d37's
+  CochinealBeetle. **Re-pin 354→546** (vanilla-free). f42's 8 dups drop.
+- **g5 RuneWizard (354→827)**: cs 172 is base-owned (DD2DarkMageT3 proto
+  172) so vanilla-free impossible; g5 EXECUTED the re-pin to 827 (free,
+  above d39's 823). **Accept 827 as-pushed.**
+- **d9 AncientCultistSquidhead (521)**: NEW, vanilla-free, free. Keep 521.
+  d9's CultistDragon fam (454-459) drops to d40.
+- **d36 Wolf (772)**: NEW hover-batch kind, cs 155, 772 free. Keep 772.
+- **c7b/d103/g62**: all-dup claimants (c7b's 4 fireflies = c7's; d103's
+  Wraith = d35's; g62's GoblinShark = d42's, Shimmerfly = c7's). Drop
+  wholesale; their wiring composes.
+
+## X2. Grand-union recount (CURRENT tips, deduped, collision-free)
+
+Scripted-verified (`_d37_e8s_plan.py`): **395 owned kinds, 395 distinct
+final ids, ZERO id clashes, ZERO base clash, max id 827 ≪ i16::MAX
+(32767) — i16-SAFE.** The `23` body's kind field is i16 (`net.rs:612`,
+`to_u16() as i16`); `the_protocol_id_space_round_trips_every_kind` asserts
+`id <= i16::MAX` per kind and keeps guarding.
+
+| Pin | E8-SEAL value | Derivation |
+|---|---|---|
+| owned new kinds | **395** | 398 distinct names − 3 same-vanilla collapses (HallowBoss→EmpressOfLight, EmpressButterfly→PrismaticLacewing, VileSpitEoW→VileSpitEaterOfWorlds) |
+| `ALL_KINDS` / `to_u16` / `from_u16` / `s1_f_3` | **665** | 270 base + 395 owned |
+| bestiary `ENTRIES` rows | **583** | 241 base + 342 owned new-kind rows; **all 583 positive net ids DISTINCT** (scripted, zero dups) |
+| owned kinds WITHOUT entry | **53** | the Hide folds / segments / no-entry fixtures (list in `_d37_e8s_counts.json`) |
+| `STATIC_SHEET_NAMES` NPC rows | **593** | 270 base + 323 distinct new NPC_ names across the 34 tips |
+| `BESTIARY_NPC_SHEET_IDS` | **440 surviving / 517 target** | 440 distinct net-covered slots as pushed; + 77 real gaps (X4) |
+| `SFX_CUES` NPC hit/death cues | **117 unique** | 55 base + 62 new (naive append 165; dedupe 48) |
+| max protocol id | **827** | g5 RuneWizard (grand union); i16-safe |
+| renumber owed | **59 moves / 336 keeps / 153 drops** | per-lane X3 tables |
+
+The LV/lag-union "grand 373 / max 823" and LAGGARD-EXEC "389 / max 823 /
+659-577-581-432-117" pins are **superseded**: this round adds the six new
+claimants (c7b/d103/e21/g62 + d33's fairy four + d36 Wolf), the d41
+batch-6 desert wave, and re-derives ENTRIES/sheets/slots at the newest
+tips (d40's MothronEgg entry fix, d43's 689 Hide-fold, d125's executed
+636/742). The 3-name collapse (636/661/666) is the same-vanilla dedupe the
+earlier rounds counted as drops — here it is explicit.
+
+## X3. E8 per-lane old→new tables — REFRESHED (lanes execute on own branches)
+
+The full mechanical tables (every move arm + every drop with keeper) are
+in **`tools/_d37_e8s_tables.md`** (generated by `_d37_e8s_emit.py` from the
+verified plan). Summary of the shifting lanes:
+
+| Lane | Owned | Move | Drop | Renumber instruction |
+|---|---|---|---|---|
+| c10 | 4 | 4 | 16 | Duck family 362-365→731-734; drop 12 roster-tail + 4 waterfowl dups |
+| c3 | 1 | 0 | 2 | keep WaterBoltMimic 694; drop GiantCursedSkull/CursedSkull |
+| c4 | 8 | 0 | 5 | keep 406/465/509/581/587/592/607/615; drop BloodFeeder/FlyingFish/CorruptGoldfish/Pufferfish/Orca |
+| c6 | 0 | 0 | 1 | drop PumpkingBlade |
+| c7 | 4 | 2 | 0 | Firefly 355→735, LightningBug 358→736; keep 654/677 |
+| c7b | 0 | 0 | 4 | drop all 4 (c7 canonical) |
+| c8 | 4 | 3 | 5 | Worm/TruffleWorm/TruffleWormDigger 357/374/375→737-739; keep Maggot 606; drop 5 d40 dups |
+| c9 | 3 | 2 | 6 | Snail/GlowingSnail 359/360→740/741; keep MagmaSnail 655; drop 5 golds + Shimmerfly |
+| d9 | 1 | 0 | 6 | keep AncientCultistSquidhead 521; drop CultistDragon fam |
+| d11 | 0 | 0 | 1 | drop BloodSquid |
+| d23 | 4 | 3 | 19 | AngryTrapper 357→743, SporeBat 407→634, QueenSlimeMinionPurple 409→660; keep SolarFlare 408; drop 19 |
+| d103 | 0 | 0 | 1 | drop Wraith |
+| d120 | 4 | 4 | 1 | towns 241-244→763-766; drop BartenderUnconscious |
+| d125 | 2 | 0 | 0 | KEEP (executed 636/742) |
+| d33 | 11 | 4 | 0 | fairy/balloon 359/360/361/368→583/584/585/594; keep 7 dragonflies 595-601 |
+| d34 | 17 | 2 | 3 | Crab 282→791, DungeonGuardian 283→792; keep 266-280; drop PinkJellyfish/Antlion/SpikeBall |
+| d35 | 33 | 33 | 0 | +269 order-preserving 429-461→698-730 (LAST, E7) |
+| d36 | 9 | 0 | 0 | KEEP (executed 767-771 + 781/782/793 + Wolf 772) |
+| d37 | 46 | 0 | 0 | KEEP (ZERO-MOVE, R8) |
+| d38 | 35 | 0 | 0 | KEEP |
+| d39 | 7 | 0 | 0 | KEEP (executed 817-823) |
+| d40 | 55 | 0 | 1 | drop CrimsonGoldfish (c4 impl survives @465) |
+| d41 | 36 | 0 | 2 | keep 494-537 minus 509/516; drop GiantFlyingAntlion/SolarFlare |
+| d42 | 32 | 0 | 11 | keep 578-630 minus 11; drop 7 dragonfly + 4 fairy/balloon |
+| d43 | 42 | 0 | 21 | keep 631-696 minus 21; drop per X1 (pets/empress/aliases/693/694/654/655/676/677/634/660) |
+| e21 | 1 | 1 | 1 | PartyBunny 237→540; drop Bunny |
+| e26 | 3 | 0 | 0 | KEEP (executed Frog 744) |
+| f18 | 0 | 0 | 20 | drop ALL 20 (verify lane) |
+| f42 | 1 | 1 | 8 | Tumbleweed 354→546; drop 8 dups |
+| f47 | 1 | 0 | 0 | KEEP ShimmerSlime 676 |
+| g5 | 2 | 0 | 0 | KEEP (LibrarianSkeleton 693 + RuneWizard 827 executed) |
+| g62 | 0 | 0 | 2 | drop GoblinShark/Shimmerfly |
+| g8 | 18 | 0 | 17 | KEEP (executed 745-762); drop 17 dups |
+| g10 | 11 | 0 | 0 | KEEP (cs==proto) |
+
+**Total: 59 moves, 336 keeps, 153 drops.** Every move changes the listed
+`to_u16` arms AND the mirrored `from_u16` arms + the band's witness
+pins/comments; every drop removes variant + to/from arms + ALL_KINDS row +
+ENTRIES row + stat arms, keeping the canonical owner's row and the dropped
+lane's AI/draw/sound wiring (keyed on the canonical kind). `cs_id`,
+ENTRIES `net_id`, sheets, render keys and every cs/net-keyed seam DO NOT
+CHANGE (R1's seam evidence). The bijection gate +
+`the_protocol_id_space_round_trips_every_kind` + s1_f_3 guard each splice.
+
+## X4. Portrait-slot gaps (CURRENT tips, fill ownership)
+
+`_d37_e8s_gaps.py`: 440 surviving distinct slots; **77 REAL gaps** (the
+deliberate non-gaps — d33's 5 hidden dragonfly colours, d35's 6 sheet
+deferrals, d43's OwlMimic 689 Hide-fold onto Owl 611 — excluded):
+
+| Owner | Count | Kinds (canonical net id) | Fill vehicle |
+|---|---|---|---|
+| c4 | 7 | Arapaima 157, CrimsonGoldfish 465, GiantFlyingAntlion 509, EyeballFlyingFish 587, GoldGoldfish 592, Pupfish 607, Dolphin 615 | merge-wave append (c4 packed STYLE16/44 sheets, no grid slots) |
+| c8 | 1 | TruffleWormDigger 375 | merge-wave append |
+| d120 | 4 | SantaClaus 142, Truffle 160, Steampunker 178, Cyborg 209 | merge-wave append (lane retired) |
+| d33 | 1 | WindyBalloon 594 | d33's fairy/balloon phase appends |
+| d40 | 26 | CultistTablet 437 … GraniteFlyer 483 (the 26-list in `_d37_e8s_gaps.json`) | **d40's co-lane sheets phase** (research/285: 22 slots packed 181→203, unpushed) + merge-wave remainder |
+| d41 | 17 | Crawdad 494 … SandSlime 537 (the 17-list) | d41's portraits phase / merge-wave append |
+| d42 | 21 | DD2LightningBug 578 … IceMimic 629 (the 21-list) | d35's lazy-load wave (research/113 §10; d42 ruled NO-PACK 8382>8192) |
+
+**Core slot target: 440 + 77 = 517.** d40's co-lane sheets phase (22 slots)
+is unpushed — it rides the merge wave; the 26-gap list is the pre-phase
+state, the phase closes 22 of them.
+
+## X5. The FINAL merger bible (one paragraph)
+
+Merge in the order **d34 → d38 → d37 → d40 → d42 → d35-renumber-last →
+the small lanes + the new claimants**, per E7: the first four are
+pairwise-clean keep-receipts (d34 266-280 + Crab/DungeonGuardian 791/792,
+d38 281-337, d37 354-399 ZERO-move, d40 430-488 minus the CrimsonGoldfish
+row c4's impl retires); d42's executed 578-630 band splices clean once its
+11 drops (7 dragonfly → d33, 4 fairy/balloon → d33) land; d35 executes its
++269 renumber (429-461→698-730) LAST against the settled roster with
+ENTRIES wholesale from its splice-repaired tip; then the small lanes
+splice with their X3 tables — c4 keeps its eight at 406/465/509/581/587/
+592/607/615 and drops five, c3 keeps WaterBoltMimic 694, c7/c8/c9/c10 move
+their contested kinds to 735-741/731-734 and drop their dups, d23 moves
+AngryTrapper→743 + SporeBat→634 + QueenSlimeMinionPurple→660 and drops
+nineteen, d120's four towns→763-766 ride the merge wave (lane retired),
+d125's executed 636/742 keep, g5's LibrarianSkeleton 693 + RuneWizard 827
+keep, g8's executed 745-762 keep and drop seventeen, d33's fairy/balloon
+re-pin to 583-585/594, d34's Crab/DungeonGuardian→791/792, e21's
+PartyBunny→540, f42's Tumbleweed→546, d9's AncientCultistSquidhead 521
+keeps, d36/d39/d41/e26/g10/f47 keep their executed/pushed ids, f18/c7b/
+d103/g62/d11 drop wholesale; every splice is guarded by the **bijection
+gate** — the round-trip test (`decodable == ALL_KINDS.len()`, i16-safe)
+plus the s1_f_3 coverage pin must equal **665** after all lanes land, with
+the count pins **ENTRIES 583, sheets 593, slots 517, cues 117** re-asserted
+at each step; the atlas union (593 NPC sheets) exceeds one 8192 page, so
+d35's research/113 lazy-load contract (NPC rows leave STATIC_SHEET_NAMES,
+per-world resident+spawnable packing, texture_net_id keying) is MANDATORY
+at the merge, and the X4 gap appends ride it. **Grand-union max id 827,
+i16-safe; 395 owned kinds; zero collision; zero base clash.**
+
+### E8-SEAL witness
+
+`_d37_e8s_sweep.py` (362 refs → 34 claimants), `_d37_e8s_census.py`
+(34-lane bijection + ALL_KINDS + cs_id + ENTRIES census, zero stale decls),
+`_d37_e8s_dups.py` (123 dup names / 66 contested protos), `_d37_e8s_plan.py`
+(395 owned / 395 distinct ids / zero clash / zero base clash / max 827
+i16-safe), `_d37_e8s_counts.py` (ENTRIES 583 all-distinct-nets / sheets 593
+/ slots 440 / cues 117), `_d37_e8s_acct.py` (59 moves / 336 keeps / 153
+drops), `_d37_e8s_gaps.py` (77 gaps / 517 target), `_d37_e8s_emit.py` →
+`_d37_e8s_tables.md` (the per-lane work orders). Depth probes:
+`_d37_e8s_newprobe/d34probe/d34b/dispute/fairy/puffer/puffer2/lastprobe/
+netprobe/vseow/vseow2/d23probe/d23b/d9probe/f42probe/basecs/lastprobe.py`
+(git-show source reads at the cited tips). No code was changed on this
+branch; this seal is the deliverable. Witnesses WRITTEN NOT RUN.
+

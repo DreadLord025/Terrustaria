@@ -50,6 +50,12 @@
   "LightningBug": 358,
   "Shimmerfly": 677
  },
+ "origin/task/W4-c7-style65-critters": {
+  "Firefly": 355,
+  "Lavafly": 654,
+  "LightningBug": 358,
+  "Shimmerfly": 677
+ },
  "origin/task/W4-c8-style66-crawling-critters": {
   "Buggy": 487,
   "EnchantedNightcrawler": 484,
@@ -71,6 +77,9 @@
   "MagmaSnail": 655,
   "Shimmerfly": 677,
   "Snail": 359
+ },
+ "origin/task/W4-d103-worldgen-passes-3": {
+  "Wraith": 360
  },
  "origin/task/W4-d11-proj-ai-101-110": {
   "BloodSquid": 619
@@ -114,10 +123,14 @@
  "origin/task/W4-d33-npc-ai-styles-95-127": {
   "BlackDragonfly": 595,
   "BlueDragonfly": 596,
+  "FairyCritterBlue": 361,
+  "FairyCritterGreen": 360,
+  "FairyCritterPink": 359,
   "GoldDragonfly": 601,
   "GreenDragonfly": 597,
   "OrangeDragonfly": 598,
   "RedDragonfly": 599,
+  "WindyBalloon": 368,
   "YellowDragonfly": 600
  },
  "origin/task/W4-d34-npc-kinds-1-70": {
@@ -185,7 +198,8 @@
   "Moth": 793,
   "Penguin": 768,
   "PenguinBlack": 769,
-  "ToxicSludge": 767
+  "ToxicSludge": 767,
+  "Wolf": 772
  },
  "origin/task/W4-d37-npc-kinds-211-280": {
   "AnomuraFungus": 383,
@@ -344,6 +358,8 @@
   "AncientLight": 522,
   "Crawdad": 494,
   "Crawdad2": 495,
+  "DemonTaxCollector": 534,
+  "DesertBeast": 532,
   "DesertGhoul": 524,
   "DesertGhoulCorruption": 525,
   "DesertGhoulCrimson": 526,
@@ -368,8 +384,11 @@
   "Salamander7": 504,
   "Salamander8": 505,
   "Salamander9": 506,
+  "SandSlime": 537,
+  "SlimeSpiked": 535,
   "SolarFlare": 516,
   "SolarGoop": 519,
+  "TheBride": 536,
   "TombCrawlerBody": 514,
   "TombCrawlerHead": 513,
   "TombCrawlerTail": 515
@@ -553,47 +572,47 @@
  },
  "origin/task/W4-g5-npc-style7-caster-doc": {
   "LibrarianSkeleton": 693,
-  "RuneWizard": 354
+  "RuneWizard": 827
  },
  "origin/task/W4-g62-npc-hit-dust": {
   "GoblinShark": 620,
   "Shimmerfly": 677
  },
  "origin/task/W4-g8-npc-kind-wire-1": {
-  "Antlion": 357,
+  "Antlion": 746,
   "BlueJellyfish": 355,
-  "CrimsonAxe": 371,
+  "CrimsonAxe": 753,
   "CursedHammer": 361,
   "CursedSkull": 375,
   "Demon": 376,
-  "Derpling": 370,
+  "Derpling": 752,
   "EnchantedSword": 362,
-  "FloatyGross": 372,
+  "FloatyGross": 754,
   "FlyingSnake": 384,
   "Gastropod": 365,
   "GiantBat": 377,
-  "GiantFlyingFox": 382,
+  "GiantFlyingFox": 759,
   "GreenJellyfish": 364,
   "Harpy": 386,
-  "Herpling": 369,
-  "IceBat": 380,
-  "IceElemental": 368,
+  "Herpling": 751,
+  "IceBat": 757,
+  "IceElemental": 750,
   "IlluminantBat": 379,
-  "Lavabat": 381,
-  "LostGirl": 373,
+  "Lavabat": 758,
+  "LostGirl": 755,
   "Mimic": 363,
-  "Nymph": 374,
-  "PinkJellyfish": 356,
+  "Nymph": 756,
+  "PinkJellyfish": 745,
   "Pixie": 359,
-  "RedDevil": 387,
+  "RedDevil": 761,
   "Slimer": 378,
-  "SpikeBall": 358,
+  "SpikeBall": 747,
   "Squid": 385,
-  "Vampire": 388,
-  "VampireBat": 383,
+  "Vampire": 762,
+  "VampireBat": 760,
   "Vulture": 354,
-  "WallCreeper": 366,
-  "WallCreeperWall": 367,
+  "WallCreeper": 748,
+  "WallCreeperWall": 749,
   "Wraith": 360
  }
 }
