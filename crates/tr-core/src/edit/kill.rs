@@ -1179,6 +1179,13 @@ fn check_orb(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     if kind == 31 {
         world.shadow_orb_smashed = true;
         world.shadow_orb_count += 1;
+        // `:54331` — `AchievementsHelper.NotifyProgressionEvent(7)`
+        // (SMASHING_POPPET) sits INSIDE case 31 too (after the chat arm,
+        // before the `:54332` break); the app's break seam drains the
+        // flag into the manager (W4-c36 co-lane keep-one — its batch 5
+        // sets the same flag unconditionally on the pre-fix base; this
+        // gate is the four-case-correct half).
+        world.orb_smash_notify_pending = true;
     }
     Some(CheckPlan {
         drop: Some(crate::edit::ObjectDrop {
@@ -5122,11 +5129,15 @@ mod tests {
         assert_eq!(kill.object_drops.first().unwrap().item, Some(29));
         assert!(!w.shadow_orb_smashed, "12 never arms the goblin rolls");
         assert_eq!(w.shadow_orb_count, 0);
+        // W4-g85 round 2 — `:54331` is INSIDE case 31: the 12 break never
+        // queues the progression-7 notify (c36's unconditional set would).
+        assert!(!w.orb_smash_notify_pending, "12 never fires SMASHING_POPPET");
         // Tile 639 → 109, flags still down.
         place(&mut w, 639, 40, 20, false);
         let kill = super::kill_tile(&mut w, 40, 20, false).expect("the 639 break");
         assert_eq!(kill.object_drops.first().unwrap().item, Some(109));
         assert!(!w.shadow_orb_smashed);
+        assert!(!w.orb_smash_notify_pending, "639 never fires it either");
         // Tile 696 orb half → 5469; crimson half → 5470; flags still down.
         place(&mut w, 696, 60, 20, false);
         let kill = super::kill_tile(&mut w, 60, 20, false).expect("the 696 break");
@@ -5136,11 +5147,17 @@ mod tests {
         assert_eq!(kill.object_drops.first().unwrap().item, Some(5470));
         assert!(!w.shadow_orb_smashed, "the replica never counts");
         assert_eq!(w.shadow_orb_count, 0);
+        assert!(!w.orb_smash_notify_pending, "the replica never fires it");
         // Tile 31 crimson half → the forced Undertaker 800 + the flags.
         add_shadow_orb(&mut w, 100, 100, true);
         let kill = super::kill_tile(&mut w, 99, 99, false).expect("the heart break");
         assert_eq!(kill.object_drops.first().unwrap().item, Some(800));
         assert!(w.shadow_orb_smashed, "31 arms the flag");
         assert_eq!(w.shadow_orb_count, 1);
+        // W4-g85 round 2 — the case-31 smash queues the progression-7
+        // notify (`:54331`); the app's break_tile drain takes it.
+        assert!(w.orb_smash_notify_pending, "31 fires SMASHING_POPPET");
+        assert!(std::mem::take(&mut w.orb_smash_notify_pending), "the drain");
+        assert!(!w.orb_smash_notify_pending, "taken once");
     }
 }

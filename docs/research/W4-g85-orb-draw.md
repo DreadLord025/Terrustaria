@@ -371,15 +371,6 @@ invaders/moon arms use. `NpcKind::GoblinScout` (73) is W4-d35's in-flight
 data wave (`npc.rs`, `NPC.cs:9732-9746`) — the kind lands there; this
 contract is the SPAWN gate only.
 
-**Why the flags matter (the progression chain).** `shadowOrbSmashed` is
-raised ONLY by case-31 orb smashes (`WorldGen.cs:54292`, the g85 seam-3
-fix — 12/639/696 never arm it). `downedGoblins` clears the gate once the
-army is defeated. So the scout spawns in the window **after the first
-shadow-orb smash, before the goblin army is downed** — exactly the
-pre-invasion scouting phase. The dawn invasion roll (`Main.cs:65448-65461`,
-landed `world.rs::roll_morning_invasion`) is the OTHER `shadowOrbSmashed`
-consumer; both read the same flag the g85 loot fix now sets correctly.
-
 **Port insertion point.** `spawner.rs:1155-1160` — the day arm currently
 falls straight to `spawn_basic_slime` ("the day ladder's
 critter/water/wind specials all sit behind unmodelled tile+weather
@@ -390,3 +381,106 @@ and `ctx.world.seeds.contains(SeedFlags::REMIX)` for the remix term;
 `num45` is `(x - ctx.world.spawn_x).abs()` (the `spawn_basic_slime` dist
 convention). The stream is the same `UnifiedRandom` the night ladder
 already rides (the `SpawnNPC` swap, `Main.rand`).
+
+**Why the flags matter (the progression chain).** `shadowOrbSmashed` is
+raised ONLY by case-31 orb smashes (`WorldGen.cs:54292`, the g85 seam-3
+fix — 12/639/696 never arm it). `downedGoblins` clears the gate once the
+army is defeated. So the scout spawns in the window **after the first
+shadow-orb smash, before the goblin army is downed** — exactly the
+pre-invasion scouting phase. The dawn invasion roll (`Main.cs:65448-65461`,
+landed `world.rs::roll_morning_invasion`) is the OTHER `shadowOrbSmashed`
+consumer; both read the same flag the g85 loot fix now sets correctly.
+
+### 7.3 The progression-7 chain — VERIFIED + the case-31 gate reconciled
+
+**The contract question:** does c36's landed `orb-smash-7` read the
+case-31-only flags the g85 seam-3 fix produces? **Verdict: the chain is
+correct AFTER this round's reconciliation; c36's in-flight copy alone
+would mis-fire.**
+
+* **The C# position.** `AchievementsHelper.NotifyProgressionEvent(7)`
+  (`WorldGen.cs:54331`) sits INSIDE `case 31` — after the `:54322-54330`
+  chat arm, before the `:54332` `break`. The 12/639/696 cases break at
+  `:54230`/`:54233`/`:54236` and NEVER reach it. So SMASHING_POPPET fires
+  on a 31 smash only (orb OR crimson-heart half — both are case 31).
+* **c36's copy (`6c8eb75dd`, in flight, NOT on main).** Its `check_orb`
+  sets `world.orb_smash_notify_pending = true` UNCONDITIONALLY (its base
+  predates the four-case fix — its `check_orb` still rolls the 5-way table
+  for every kind and raises the flags for every kind). Merged AS-IS with
+  the g85 seam-3 fix, the 12/639/696 breaks would queue a notify the C#
+  never fires. The g85 seam-3 fix corrected the FLAGS but c36's notify
+  rode the old unconditional shape.
+* **The reconciliation (this round).** The flag set moves INSIDE the
+  `if kind == 31` block in `check_orb` (`kill.rs`), beside the
+  `shadow_orb_smashed`/`shadow_orb_count` writes — the same case-31 gate.
+  The `World.orb_smash_notify_pending` field + the `break_tile` drain
+  (`editing.rs`, `std::mem::take` → `notify_progression_net(7)`) are
+  ported here with the c36 keep-one note; at merge keep ONE field/drain
+  and THIS gate.
+* **The full chain, verified end to end:** case-31 smash →
+  `check_orb` sets `orb_smash_notify_pending` (and the smash flags) →
+  `break_tile` drains it → `notify_progression_net(7)`
+  (`netglue.rs:2974`: host broadcasts `S2c::ProgressionEvent`, SP/client
+  fires locally) → `achievements.notify_progression(7)` →
+  `SMASHING_POPPET` (`achievements_data.rs:163-168`,
+  `Cond::Progression(7)`, `AchievementInitializer.cs:49-51`). The
+  `netMode != 1 && !generatingWorld` gate (`:54224`) is the port's
+  standing single-player/host reduction (the whole drop switch already
+  rides it).
+* **Drain coverage (a c36-lane observation, NOT changed here).** The
+  drain sits in `break_tile` — the player-mining path. Other
+  `edit::kill_tile` callers (projectile tile-breaks `projectile.rs`,
+  collision `collision.rs:973`, touch-damage, the player wall-break
+  `player.rs:1364`) can also trigger `check_orb` on a 31 cell; their
+  notify stays pending until the next `break_tile`. That is c36's drain
+  placement (kept verbatim for keep-one); widening it to every kill path
+  is the c36/achievement lane's call, not this draw lane's.
+
+The four-case witness (`w4_g85_the_orb_drop_switch_is_four_cases_not_one_table`)
+now also pins the notify: 12/639/696 leave `orb_smash_notify_pending`
+false, the 31 smash sets it, and the `mem::take` drain takes it once.
+
+### 7.4 The orb/heart LIGHT emit — VERIFIED scanner-seeded (NOT AddLight)
+
+**The contract question:** is the shadow-orb/crimson-heart light wired
+through `AddLight` (the g18-oracle co-lane)? **Verdict: the family's light
+is SCANNER-seeded, not entity-list `AddLight` — already landed, nothing
+to wire; g18's census independently confirms the AddLight remainder is
+empty.**
+
+* **The orb family (31/696 + the 26/695 altars).** The glow pulse is
+  `TileLightScanner.ApplyTileLight`'s `case 26/31/695/696`
+  (`TileLightScanner.cs:2965-2983`): the per-tile
+  `FastRandom.Next(-5,6)*0.0025f` jitter, purple `(0.31+n, 0.1, 0.44+2n)`
+  for the orb stage (`fx<36`), orange `(0.5+2n, 0.2+n, 0.1)` for the
+  heart/altar stage. LANDED in `tile_light/scanner.rs::misc_lights`
+  (`:1051-1061`, the `26|31|695|696` arm) — the g85 slice added 2
+  stage/jitter witnesses there, NOT a second copy. The scanner writes the
+  light into the `LightMap` directly (`apply_tile_light`), NOT through
+  `Lighting.AddLight`.
+* **The Heart object (12) / ManaCrystal (639).** Neither has a top-level
+  scanner `case 12`/`case 639` light arm — every `case 12` in
+  `TileLightScanner.cs` (`:838`/`:1123`/`:1250`/`:1895`/`:2173`) is a
+  NESTED style-row inside another kind's switch (torch 4 / chandelier 93 /
+  lamp 34 colour tables), and 639 has NO scanner mention at all. Their
+  visible glow is the SHINE effect (`Main.tileShine[12]=300`
+  `Main.cs:7518`, `[639]=300` `:9652` + `tileShine2[639]` `:9653`) — the
+  `Main.shine` light modulation in `GetFinalLight` (`:4384-4387`) and the
+  sparkle dust the g85 `orb_shine_sparkle` already ports. Not an AddLight
+  source either.
+* **The g18 co-lane census (read, not duplicated).** W4-g18
+  (`547154708`/`a99dfa964`) re-derived f9's five-site verdict: Main.cs has
+  EXACTLY five `Lighting.AddLight` call sites, ALL in `DrawProj`'s
+  hook-chain arms (the 332 Christmas hook `:29016-29028` four colour rows
+  + the 488 Illuminant hook `:29186`), all claimed by e8's in-flight
+  `tile_lights.rs`. Its NEGATIVE census: "Main.cs has NO update-side or
+  ambient AddLight: tile ambience (torches/lava/glowing blocks) is
+  scanner-seeded (TileLightScanner, ported in tr-core/tile_light), not
+  entity-list fed." The orb family is exactly that scanner-seeded
+  ambience — so there is NO orb AddLight site for g18/g19 to claim, and
+  the g85 ambient/shine wiring (the dust) + the landed scanner arm (the
+  light) are the complete picture.
+
+**Nothing to wire for item 4** — the light emit was already landed
+(scanner) and the g85 dust wiring completes the draw side. This section
+is the verification record the contract asked for.

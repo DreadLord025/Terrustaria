@@ -39396,3 +39396,19 @@ explicitly defers the `DrawSingleTile` prologue arms `:911-962`.
 2 new witnesses (family gate + lift floors R/G not B; dust gate
 miss-draws-once / hit dust-204 fadeIn/noLight/no-noGravity + scale band +
 stream mirror) — WRITTEN NOT RUN; 20 total on the branch.
+
+### Wiring round 2 — the progression-7 chain reconciled (same branch)
+
+c36's in-flight `orb_smash_notify_pending` (batch 5, `6c8eb75dd`) is set
+UNCONDITIONALLY in its `check_orb` — its base predates the g85 four-case
+fix. The C# `NotifyProgressionEvent(7)` (`WorldGen.cs:54331`) sits INSIDE
+case 31 (the 12/639/696 cases break before it), so merged as-is the
+non-31 breaks would mis-fire SMASHING_POPPET. This round ports the field
++ the `break_tile` drain (c36 keep-one) with the set INSIDE the
+`if kind == 31` block — the same gate as the smash flags. Chain verified:
+case-31 smash → flag → `break_tile` `mem::take` → `notify_progression_net(7)`
+→ `SMASHING_POPPET` (`Cond::Progression(7)`). The four-case witness now
+pins the notify per kind. Drain-coverage note: the drain rides
+`break_tile` only (c36's placement, kept verbatim) — projectile/collision
+kill paths leave the notify pending until the next `break_tile`; widening
+it is the c36 lane's call. Census `docs/research/W4-g85-orb-draw.md` §7.3.
