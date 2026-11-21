@@ -39244,3 +39244,114 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+## The g51 apply-arm parks + the f21 cross-check (S1-I-1 W4-g51, 2026-11-21)
+
+The g51 lane wires the APPLY arms for the in-range ids whose codecs the
+d89-d100 lanes parked, then deepens the four self-contained parks and
+cross-checks the f21 tail codecs (origin/task/W4-f21-net-ids-verify-tail
+5274a097) for the SMALL apply arms in its range. Code-only: every arm
+re-read against the cited C# windows; the witnesses are WRITTEN, NOT RUN
+(no cargo/rustc/rustfmt/tests/graphify invoked).
+
+### The four deepened parks
+
+- **id-136 SyncCavernMonsterType — WIRED (store + consumer census).**
+  `World::cavern_monster_type` (the `NPC.cs:6585` `int[2,3]`
+  Main-global standing-in) + `World::set_world_specific_monsters`
+  (`NPC.cs:18102-18134` verbatim: `UnifiedRandom(worldID)`, two
+  DISTINCT `Next(3)` bands with the num-only re-roll, per-cell
+  `Next(494,496)`/`Next(496,498)`/`Next(498,507)`), rolled at
+  `enter_loaded_world` (the `WorldFile.cs:771` load tail). The client
+  arm stores the six ushorts row-major (`MessageBuffer.cs:4210-4216`);
+  the join bundle pushes the grid (`:870`, before the `:871` bestiary
+  burst). The ONLY grid read is `NPC.cs:5099` (`SpawnNPC`'s
+  `Next(3)==0` → `cavernMonsterType[Next(2),Next(3)]`); the spawner's
+  cavern ladder draws 3+2+3 exactly there (between the miner `:5075`
+  and skeleton `:5133` arms). The 494-506 kinds (Crawdads/Giant
+  Shellies/Salamanders) have no `NpcKind` — the roster gap falls
+  through, `kind_from_net_id` resolves live if they land.
+- **id-140 SetMiscEventValues — the three kinds WIRED to their observable
+  state.** Kind 0 (client `CreditsRollEvent.SetRemainingTimeDirect`):
+  `World::credits_roll_remaining_time` + the Clamp 0..28800 setter +
+  `tick_credits_roll` (one decrement per UpdateTime call, independent of
+  dayRate — sits OUTSIDE the creative-freeze gate, `Main.cs:64968` runs
+  UpdateTime even at dayRate 0); the join push (`NetMessage.cs:2818`,
+  the `!=0` gate). The CreditsRollSky cinematic stays unported. Kinds
+  1/2 (host `TransformCopperSlime`/`TransformElderSlime`): the unlock
+  gate ONCE + the type gate + the `7 WorldData` re-push;
+  `World::unlocked_slime_old_spawn`/`unlocked_slime_copper_spawn` +
+  .wld persistence (the v261 7-slime block, tail 2039/2044). The
+  `Transform(684/679)` + particle park with the town-slime kinds (the
+  `check_real_estate_and_town_slimes` roster gap). The
+  `GetPickedUpByMonsters_Special` pickup (`WorldItem.cs:1086-1116`,
+  the kind-1 send site) rides the items-pass post-pass + the 684 kind —
+  cited follow-up.
+- **id-162 DamageNPCAck — WIRED (the client prediction queue).**
+  `NPC.pendingDamages` (`NPC.cs:6159`) ported as
+  `App::net_pending_damages` + the pure helpers
+  (`net_npc_sync::PendingDamage`/push/add/ack/get, the Matches
+  slot+generation gate, the FIFO pop, the empty-queue no-op-log). The
+  client strike pushes (carrier-resolved) + folds the landed damage
+  (`send_npc_strike` `&mut self`); the host acks EVERY `28` with a
+  bodyless `162` BEFORE the generation gate
+  (`MessageBuffer.cs:1768-1771`); the client pops FIFO; the `23`
+  reader reconciles (`life_full` → lifeMax, then wire_life − pending;
+  the despawn gate reads the WIRE life, not the reconciled one). The
+  phase-change ai-copy half is structural (the port's `23` body carries
+  no ai array; `SetStrikePhaseChange` has no ported trigger — the flag
+  stays false). `ClearAll` clears the queue on world install
+  (`NPC.cs:8369`).
+- **id-158 ExtraSpawnSectionLoaded — DOCUMENTED SKIP (netMode+seed-gated,
+  large).** The client arm runs `Spawn(PlayerSpawnContext.TeamSwap)` →
+  `Spawn_SetPositionAtTeamSpawn` (`Player.cs:37993-38011`), gated on
+  `Main.teamBasedSpawnsSeed` + a successful
+  `TryGetExtraSpawnPointForTeam`. The send is the `157` tail
+  (`MessageBuffer.cs:2355-2363`) behind the same seed gate. The spawn
+  points are a secret-seed WORLDGEN feature: `ExtraSpawnPointManager`
+  (446 lines, the skyblock/roundLandmass/extraLiquid landmass scans) fills
+  the per-team `Point[]`; `MicroSeedFlags::TEAM_BASED_SPAWNS` (bit 33)
+  has no ported generator. The port's `teamBasedSpawnsSeed` reads false,
+  so the arm is unreachable until the seed + manager + Spawn team-position
+  land (M5-seed rows). The `7 WorldInfo` body already carries
+  `extra_spawn_points` (the empty Vec today).
+
+### The f21 cross-check — the 107-compatible status table
+
+The f21 lane's 43 tail codecs include 17 ids in the g51 range. The SMALL
+apply arms (bodyless/ignore/small-store, self-contained consumers) are
+lifted onto this branch and WIRED; the BIG ones (the TE families, the
+dryad animation) stay **apply-owner-needed** — their codecs live on the
+f21 branch (not merged) and their consumers are unported subsystems.
+
+| id | C# name | Apply size | Verdict on g51 |
+| --- | --- | --- | --- |
+| 129 | FinishedConnectingToServer | bodyless | WIRED — the team re-push (`45` when team>0); the UI-scale/preparation-state are front-end internals the install owns |
+| 138 | ClientSyncedInventory | bodyless, no reader | WIRED — the host no-op (the C# default-arm drop) |
+| 139 | SetCountsAsHostForGameplay | small store | WIRED — `PlayerNet::counts_as_host` (the creative-power authority consumer is unported, stored-not-simulated) |
+| 145 | SyncItemsWithShimmerDeprecated | dead | census constant only (no variant; the 24 precedent) |
+| 146 | ShimmerActions | small (2 kinds) | WIRED — kind 1 `AddCoinLuck` (the local player's coin_luck, 1000px gate, 1e6 cap); kind 0 `ShimmerEffect` FX parks with the shimmer dust/sound system |
+| 148 | SyncItemCannotBeTakenByEnemiesDeprecated | dead | census constant only (no variant) |
+| 152 | ItemUseSound | small (byte player) | WIRED — host id-force + relay; client plays the peer's held item's UseSound at its Centre (`initial_use_sound`) |
+| 160 | ItemPosition | small (slot+Vector2) | WIRED — the drop position snap (no velocity), `net_items` |
+| 161 | HostToken | small (string) | WIRED — the host compare against the empty configured token refuses every claim; `PlayerNet::host` stays false (no HostToken config) |
+| 121 | TEDisplayDollDataSync | BIG (TE doll) | apply-owner-needed — the doll WriteData/WriteDummySync + the TEDisplayDoll entity consumer (unported) |
+| 122 | RequestTileEntityInteraction | BIG (TE anchor) | apply-owner-needed — `tileEntityAnchor` Set/Clear + `SetInteractionAnchor` (the TE interaction system unported) |
+| 123 | WeaponsRackTryPlacing | BIG (TE rack) | apply-owner-needed — `TEWeaponsRack.TryPlacing` (the 89 body twin; the rack entity consumer unported) |
+| 124 | TEHatRackItemSync | BIG (TE hat rack) | apply-owner-needed — the dye +2 fold/unfold + `TEHatRack.WriteItem` (the hat-rack entity consumer unported) |
+| 133 | FoodPlatterTryPlacing | BIG (TE platter) | apply-owner-needed — `TEFoodPlatter.TryPlacing` (the 89 body twin; the platter entity consumer unported) |
+| 144 | RequestQuestEffect | BIG (dryad) | apply-owner-needed — `HaveDryadDoStardewAnimation` (`NPC.cs:19184-19229`: the dryad ai writes + the 995 projectile spawn; the Stardew system unported) |
+| 149 | DeadCellsDisplayJarTryPlacing | BIG (TE jar) | apply-owner-needed — `TEDeadCellsDisplayJar.TryPlacing` (the 89 body twin; the jar entity consumer unported) |
+| 156 | TELeashedEntityAnchorPlaceItem | BIG (TE anchor) | apply-owner-needed — `TELeashedEntityAnchorWithItem.InsertItem` (the respawn-leash; the anchor entity consumer unported) |
+
+The BIG ids' codecs stay on the f21 branch (origin/task/W4-f21-net-ids-
+verify-tail); when the TE-entity / dryad subsystems land, the apply owner
+lifts the codec + wires the consumer. The TryPlacing quadruplets
+(89/123/133/149) share one `TryPlacingItem` body (byte-equality pinned
+by f21); 89's consumer is the item-frame placement, also unported.
+
+Witnesses: `net.rs::tests::w4_g51_f21_*` (the bodyless pair, the
+CountsAsHost/ShimmerAction/ItemUseSound/ItemPosition/HostToken round
+trips), `netglue::tests::the_f21_small_apply_arms_store_and_snap`, plus
+the four park witnesses (`w4_g51_the_cavern_grid_*`,
+`the_credits_roll_time_*`/`the_town_slime_transform_*`,
+`w4_g51_the_pending_*`/`the_pending_damage_queue_*`). WRITTEN NOT RUN.

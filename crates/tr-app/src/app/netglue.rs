@@ -1069,6 +1069,29 @@ impl App {
             // `SetOrRequestSpectating` / the stop-relay need the unported
             // spectating system (`Player.spectating`); parked (S1-I-4).
             C2s::SpectatePlayer(_) => {}
+            // `case 138` — NO reader case in the C#: the frame falls to the
+            // `default` arm (`MessageBuffer.cs:4477-4482`), which only boots
+            // a State-0 sender (the port's accept gate already refuses
+            // pre-spawn frames). The host no-ops. W4-g51 f21 cross-check.
+            C2s::ClientSyncedInventory => {}
+            // `case 152`'s host half (`MessageBuffer.cs:4386-4396`): force
+            // the subject to the sender (`:4389-4392`), then relay to the
+            // OTHERS (`:4393-4396`, `ignoreClient = whoAmI`). No host-side
+            // sound — the client plays the peer's held item's UseSound.
+            C2s::ItemUseSound { player_id: _ } => {
+                server.broadcast_except(&S2c::ItemUseSound { player_id: id as u8 }, id);
+            }
+            // `case 161` (`MessageBuffer.cs:4471-4476`): the host compares
+            // the claim against `Netplay.HostToken` and sets `player.host`.
+            // The port has no HostToken config (the dedicated-server host
+            // authority is unported) — the compare is against the empty
+            // string, so `host` stays false; the claim is stored-not-
+            // simulated on the peer snapshot. W4-g51 f21 cross-check.
+            C2s::HostToken(_token) => {
+                // `!string.IsNullOrWhiteSpace(Netplay.HostToken) && == text`
+                // — the empty configured token refuses every claim.
+                self.remote_players.entry(id).or_default().host = false;
+            }
         }
     }
 
@@ -2393,6 +2416,95 @@ impl App {
                         .entry(l.player_id as u32)
                         .or_default()
                         .luck = Some(l);
+                }
+            }
+            // `case 129` (`MessageBuffer.cs:4075-4085`): the client's team
+            // re-push (`45` when `team > 0`), then `FixUIScale` +
+            // `TrySetPreparationState(ProcessingData)`. The port's join walk
+            // already drives the state machine; the team re-push is the
+            // observable wire half (the UI-scale/preparation-state are
+            // front-end internals the port's install owns). W4-g51 f21.
+            S2c::FinishedConnecting => {
+                if let Some(p) = self.player.as_ref() {
+                    if p.team > 0 {
+                        if let NetRole::Client(client) = &self.net {
+                            client.send(&C2s::TeamChange(net::TeamChange {
+                                player_id: self.local_id as u8,
+                                team: p.team as u8,
+                            }));
+                        }
+                    }
+                }
+            }
+            // `case 139` (`MessageBuffer.cs:4230-4237`): the client stores
+            // `Main.countsAsHostForGameplay[id]`. The port keeps it on the
+            // peer snapshot (the creative-power authority consumer is
+            // unported). W4-g51 f21.
+            S2c::CountsAsHost(c) => {
+                self.remote_players
+                    .entry(c.player_id as u32)
+                    .or_default()
+                    .counts_as_host = c.counts_as_host;
+            }
+            // `case 146` (`MessageBuffer.cs:4310-4327`): kind 0
+            // `WorldItem.ShimmerEffect` (the FX — the port's shimmer dust/sound
+            // is the shimmer-system's, parked here as the FX-only arm), kind 1
+            // `AddCoinLuck` (`Player.cs:18090-18101`: the local player's
+            // coin_luck += amount within 1000 px, capped 1e6). Unknown kinds
+            // read nothing. W4-g51 f21.
+            S2c::ShimmerAction(a) => match a {
+                net::ShimmerAction::CoinLuck { x, y, amount } => {
+                    if let Some(p) = self.player.as_mut() {
+                        let pc = Vec2::new(p.center().0, p.center().1);
+                        // `Player.cs:18092`'s `!dead && distance < 1000`.
+                        if !p.dead && (Vec2::new(x, y) - pc).length() < 1000.0 {
+                            p.luck_state.coin_luck =
+                                (p.luck_state.coin_luck + amount as f32).min(1_000_000.0);
+                            p.luck_state.recalculate_luck();
+                        }
+                    }
+                }
+                // kind 0's ShimmerEffect is the dust+sound FX
+                // (`WorldItem.cs:1661-1689`) — the port's shimmer FX rides the
+                // shimmer system; the net FX arm parks with it (the coin-luck
+                // half above is the gameplay-observable state).
+                net::ShimmerAction::Effect { .. } | net::ShimmerAction::Unknown(_) => {}
+            },
+            // `case 152`'s client half (`MessageBuffer.cs:4397-4405`): play the
+            // peer's held item's `UseSound` at its Centre with `useSoundPitch`.
+            // The port reads the peer's selected inventory slot from the
+            // snapshot; the local player's own use-sound already played at the
+            // use start (the `initial_use_sound` path), so a self-echo is
+            // skipped (the C# plays every peer's including its own relay — the
+            // port's relay excludes the sender, so no self-echo arrives).
+            S2c::ItemUseSound { player_id } => {
+                let peer = player_id as u32;
+                if let Some(p) = self.remote_players.get(&peer) {
+                    let held = p.inventory.get(&(p.selected as u8)).map(|it| it.kind);
+                    if let Some(kind) = held {
+                        if kind > 0 {
+                            if let Some((style, pitch)) = crate::item::initial_use_sound(kind as u16) {
+                                let (x, y) = (p.x, p.y);
+                                self.audio.play_use_sound(
+                                    style,
+                                    x,
+                                    y,
+                                    pitch,
+                                    self.rngs.global(),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            // `case 160` (`MessageBuffer.cs:4463-4470`): the drop's position
+            // snap (no velocity) — the section-sweep correction. The port's
+            // client drops live in `net_items` keyed by the host slot.
+            // W4-g51 f21.
+            S2c::ItemPosition(p) => {
+                if let Some(d) = self.net_items.get_mut(&p.slot) {
+                    d.pos = Vec2::new(p.x, p.y);
+                    self.net_items_dirty = true;
                 }
             }
         }
@@ -6537,6 +6649,86 @@ mod message_family_tests {
             Some(900),
             "no pending entry: the wire life stands"
         );
+    }
+
+    /// W4-g51 f21 cross-check: the small apply arms — `139` stores the
+    /// host-authority flag on the peer, `146` kind 1 adds coin luck within
+    /// 1000 px (capped 1e6), `160` snaps the drop position, `161`'s empty
+    /// configured token refuses the claim.
+    #[test]
+    fn the_f21_small_apply_arms_store_and_snap() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut host_app;
+        // 139: the flag lands on the peer snapshot.
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::CountsAsHost(net::CountsAsHost {
+                    player_id: 2,
+                    counts_as_host: true,
+                })),
+            );
+        }
+        client_app.net = role;
+        assert!(client_app.remote_players.get(&2).unwrap().counts_as_host);
+        // 146 kind 1: the local player's coin luck adds (within 1000 px).
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        let (pcx, pcy) = client_app.player.as_ref().unwrap().center();
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::ShimmerAction(net::ShimmerAction::CoinLuck {
+                    x: pcx,
+                    y: pcy,
+                    amount: 500,
+                })),
+            );
+        }
+        client_app.net = role;
+        assert_eq!(
+            client_app.player.as_ref().unwrap().luck_state.coin_luck,
+            500.0
+        );
+        // A far-away coin (>1000 px) adds nothing.
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::ShimmerAction(net::ShimmerAction::CoinLuck {
+                    x: pcx + 2000.0,
+                    y: pcy,
+                    amount: 999,
+                })),
+            );
+        }
+        client_app.net = role;
+        assert_eq!(
+            client_app.player.as_ref().unwrap().luck_state.coin_luck,
+            500.0,
+            "the far coin is out of range"
+        );
+        // 160: the drop position snaps (no velocity change).
+        client_app.net_items.insert(
+            3,
+            item::ItemDrop::new(71, 5, 0, 0.0, 0.0, 1.0, 2.0, 0.0),
+        );
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::ItemPosition(net::ItemPosition {
+                    slot: 3,
+                    x: 123.0,
+                    y: 456.0,
+                })),
+            );
+        }
+        client_app.net = role;
+        let d = client_app.net_items.get(&3).unwrap();
+        assert_eq!((d.pos.x, d.pos.y), (123.0, 456.0));
+        assert_eq!((d.vel.x, d.vel.y), (1.0, 2.0), "the velocity is untouched");
     }
 
     /// `AchievementsHelper.NotifyProgressionEvent` (`:227-237`): the host's
