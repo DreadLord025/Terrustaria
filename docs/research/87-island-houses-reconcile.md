@@ -613,3 +613,59 @@ delta: on Harpy shot ticks TWO draws (X then Y), on reset-eligible ticks
 ONE `Next(400)` — the g8 machine round's stream witnesses must pin both.
 Until then a merged Harpy flies + approaches + bounces + wets (the shared
 arms) but does not shoot — the recorded skip, exactly as g8's tip.
+
+## RETIRE §7 — sky-lake FISHING end-to-end: the chain compose-note (2026-11-21)
+
+The `4c170c027` census-landed verdict (M7-FISH-2) re-verified at f35's
+LATEST tip **`1abae9ade`** (the doc-sweep tip; the crate machinery landed
+`00a5b27db`). **The full chain COMPOSES — every leg is landed, no seam is
+missing, no lane re-claims another's leg.** The one witness gap (a
+crate-caught-in-a-sky-lake end-to-end) is a COMPOSITION of two existing
+witnesses, noted below, not a port gap.
+
+### The chain, leg by leg (all reads at the retire tips)
+
+| # | Leg | Owner / tip | Evidence |
+| --- | --- | --- | --- |
+| 1 | The lake EXISTS + survives settle | **g44** (this branch) | `islands.rs:192` the `WillWaterPlacedHereStayPut` gate (`WorldGen.cs:78530-78537`); closeout §2's witness `w4_g44_the_sky_lake_water_survives_settle` (`islands.rs:2323`) — 600 settled updates, mass unchanged. |
+| 2 | The bowl is FISHABLE + rolls the space band | **g44** `4c170c027` | witness `the_sky_lake_bowl_builds_a_space_band_attempt` (`fishing.rs:2566`): the compact CloudLake clears the 75-tile pond gate (`get_fishing_pond_state`), `try_build_fishing_attempt` rolls `height_level 0` (the `Projectile.cs:20712` `y < worldSurface*0.5` arm, re-read at retire — the ladder :20712-20731 verbatim in `fishing.rs:398-432`). |
+| 3 | The QUEST catch (the Cloudfish witness) | **g44** `4c170c027` | same witness, second half: `AttemptInputs.quest_item = 2453` + `angler_alive` → the probe carries `quest_fish 2453` into the context (`FishingCheck_ProbeForQuestFish`, `Projectile.cs:20734`) → the `QuestFish(2453) + Height0` row (`fishing.rs:1795`, `GameContentFishDropPopulator.cs:73-81`) answers over a 60-seed sweep. All seven sky rows (2461/2453/2473/2476/2458/2459/2304) pinned by the row-condition witness (`fishing.rs:2449-2479`). |
+| 4 | The CRATE catch rows | **g44** `4c170c027` (M7-FISH-2, base-landed) | `fishing.rs:1675-1676`: `[3206]` Rare 1/1 `Crate && Height0 && EarlyMode`, `[3985]` Rare 1/1 `Crate && Height0 && HardMode` (`CONDS_CRATE_H0_*`, `:1589-1590`; the populator `:214` pair). The band+hardmode witness (`fishing.rs:2545-2558`): the azure answers in hardmode, the early crate is GONE in hardmode, BOTH refuse at `height_level 1`. |
+| 5 | The bite → reel → catch delivery | base (S1-P-i35, M7-FISH-2 consumers) | `projectile_bobber.rs`: `bobber_step` builds the attempt through leg 2's `try_build_fishing_attempt` (`:379`), `accumulate_bite` (`:306`), the reel state (`:192+`); `kill_hook` (`:431`, `Projectile.cs:71986-71994`) rolls `catch_stack` and queues `(item, stack)`; `world_sim/projectiles.rs:569` drains into `slot_for_pickup` (inventory-first, overflow drops — `GiveItemToPlayer` :53907-53958). A rolled 3206/3985 rides this leg IDENTICALLY to a fish — `ai[1]` carries any item id. |
+| 6 | The crate OPEN (the 26-crate dispatch) | **f35** `00a5b27db` @ tip `1abae9ade` | `fishing_crates.rs`: `is_fishing_crate` includes 3206 (`:81`) + 3985 (`:94`), `is_hardmode_crate` includes 3985 (`:109`); the clicks `OpenableBag` dispatch routes both into `open_fishing_crate` (`Player.cs:8028-9250`). The SKY arms: the weapon pick `[158, 65, 159, 2219]` Next(4) (`:421`, C# `:8653-8663` — Starfury/Enchanted Boomerang/Ball O'Hurt/Shiny Red Balloon), the tails (`:610`, C# `:9117-9157`): 1/2 pottery Next(6) over the SAME six pieces as the sky CHEST (5226/5254/5238/5258/5255/5388), 1/2 Cloud 751 ×50-100, 1/40 CreativeWings 4978, the `skyblock_low_tiles`-seam 1/3 SkyMill 2197. |
+
+### The compose verdicts
+
+- **f35 does NOT touch `tr-core/src/fishing.rs`** (empty diff vs
+  origin/main at `1abae9ade`, verified) — the catch-side rows are g44's
+  census-landed M7-FISH-2 base code; f35 owns ONLY the open side. Zero
+  claim overlap; the merge is a clean union.
+- **The sky-crate OPEN witnesses exist**: `w4_f35_sky_crate_low_tiles_
+  seam_gates_the_sky_mill` (`fishing_crates.rs:1364` — the seam on/off
+  pair) + the 3206/3985 rows inside `w4_f35_every_shared_crate_zero_
+  script_grants_the_traced_rows` (`:1223`, the pair at `:1257/:1262`) and
+  `w4_f35_every_shared_crate_replays_the_csharp_draw_order` (`:1813`, the
+  sky pair with `skyblock_low_tiles: true` at `:1837-1838`).
+- **The one recorded seam** (f35's own doc): `CrateEnv::skyblock_low_tiles`
+  wires FALSE (the gen-time active-tile census `WorldGen.cs:3209-3217` is
+  unported — the e25-style constants-off note). On a NORMAL sky-lake world
+  that is the C#-correct value (lowTiles is a skyblock-seed flag); the
+  SkyMill tail activates only when a skyblock lane ports the census. Not
+  a g44 gap, not an f35 gap — a named future seam.
+- **The composition witness gap (recorded, not blocking):** no single
+  witness drives legs 2→4→5→6 in one run (catch a 3206 IN the bowl, then
+  open it). Both halves are pinned separately (leg 4's band witness rolls
+  the crate id; leg 6's witnesses open that id); the join is `kill_hook`'s
+  item-id-agnostic queue — the same drain the fish witnesses ride. A
+  future composed witness would build the §2 bowl, force `crate = true`
+  on the context, sweep to a 3206, feed it through `kill_hook` →
+  `drain_catches` → `open_fishing_crate`, and assert a sky grant list.
+  WRITTEN NOWHERE yet — this note is the receipt that the chain needs no
+  port work, only that optional witness.
+- **The chest-side sibling** (for the merger's family map): the sky CHEST
+  loot (`0898f3521`, the flag12 tails + Prefix(-1) + the CreativeWings
+  rider) and the sky CRATE tails share the pottery/cloud/wings rows by
+  C# design (`WorldGen.cs:37418-37527` vs `Player.cs:9117-9157`) — two
+  landings of the same item family, NOT a dedupe target (different
+  streams, different gates: the chest's Next(6) is unconditional inside
+  flag12, the crate's rides its own 1/2).
