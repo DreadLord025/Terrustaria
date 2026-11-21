@@ -2101,28 +2101,68 @@ impl App {
         )
     }
 
-    /// `Main.NPCChatText_DoNurseHeal` (`Main.cs:40103+`): `BuyItem(healCost)`
-    /// → the life to full + the removable debuffs cleared. Returns false
-    /// when the purse is short or there is nothing to heal.
+    /// `Main.NPCChatText_DoNurseHeal` (`Main.cs:40103-40178`): the paid
+    /// heal — `BuyItem(healCost)` → the HealEffect text + the pre-heal
+    /// life-band dialog (227/228/229/230), the life to full, the removable
+    /// debuffs cleared. The refused heal answers one of 52/53/54
+    /// (`Next(3)`); nothing-to-heal answers 55/56/57 (`Next(3)`, or
+    /// `Next(1, 3)` while ChildSafety is ON — the blood line 55 drops).
+    /// Returns false when the purse is short or there is nothing to heal.
+    /// The sound-12 head + the Item4 success cue are W4-g21's (its
+    /// `nurse_heal` hunk); the portrait hop (`:40177`) is g58's.
     pub(crate) fn nurse_heal(&mut self, nurse_idx: usize) -> bool {
         let _ = nurse_idx; // the C# cost reads the player's captured settings
         let cost = self.nurse_heal_cost();
-        if cost <= 0 || self.coins < cost as u64 {
+        if cost <= 0 {
+            // `:40157-40175` — nothing to heal. The `Next(3)` draws FIRST,
+            // then the ChildSafety arm RE-DRAWS `Next(1, 3)` (both draws
+            // spend the stream — the C# does not reuse the first roll).
+            let mut roll = self.rngs.global().next_max(3);
+            if !self.dust.child_safety.disabled {
+                roll = self.rngs.global().next_range(1, 3);
+            }
+            self.npc_chat_text = crate::lang::dialog(55 + roll);
+            return false;
+        }
+        if self.coins < cost as u64 {
+            // `:40140-40155` — `BuyItem` refused: one of the three
+            // "can't afford" lines (`Next(3)` → 52/53/54).
+            let roll = self.rngs.global().next_max(3);
+            self.npc_chat_text = crate::lang::dialog(52 + roll);
             return false;
         }
         let Some(player) = self.player.as_mut() else {
             return false;
         };
+        // `:40112` — `HealEffect(statLifeMax2 - statLife)` BEFORE the life
+        // fills: the text carries the missing amount. The click runs
+        // outside every swap — the jitter draws ride the global stand-in.
+        let missing = player.max_hp - player.hp;
+        // `:40113-40128` — the dialog band reads the PRE-heal life: the
+        // `(double)` compares are exact f64 promotions of the i32 pair.
+        let life = player.hp as f64;
+        let max = player.max_hp as f64;
+        let line = if life < max * 0.25 {
+            227
+        } else if life < max * 0.5 {
+            228
+        } else if life < max * 0.75 {
+            229
+        } else {
+            230
+        };
         player.hp = player.max_hp;
         // The removable debuffs clear (`DoNurseHeal`'s removal block,
-        // `Main.cs:40147`: `Main.debuff[b] && buffTime > 0 &&
+        // `Main.cs:40130-40138`: `Main.debuff[b] && buffTime > 0 &&
         // !NurseCannotRemoveDebuff[b]`).
         player.clear_nurse_removable_debuffs();
         self.coins -= cost as u64;
-        // `AchievementsHelper.HandleNurseService(healCost)` (`Main.cs:40111`,
+        // `AchievementsHelper.HandleNurseService(healCost)` (`Main.cs:40110`,
         // `AchievementsHelper.cs:407-410`): the paid amount rides
         // FREQUENT_FLYER's `Pay` float, i.e. `BuyItem` succeeded.
         let _ = self.achievements.notify_custom_float("Pay", cost as f32);
+        crate::potions::spawn_heal_text_on(self, missing, self.rngs.global());
+        self.npc_chat_text = crate::lang::dialog(line);
         true
     }
 
@@ -5652,6 +5692,97 @@ mod s1_e_18_tests {
             .find(|a| a.name == "FREQUENT_FLYER")
             .and_then(|a| a.tracker_values())
             .map_or(0, |(v, _)| v)
+    }
+
+    /// W4-f37 doc-sweep — `NPCChatText_DoNurseHeal`'s dialog ladder
+    /// (`Main.cs:40113-40128`): the band reads the PRE-heal life against
+    /// `statLifeMax2` — `< 0.25` → 227, `< 0.5` → 228, `< 0.75` → 229,
+    /// else 230 — and the `HealEffect` text (`:40112`) carries the missing
+    /// amount. The exact-quarter boundaries fall to the NEXT band (the
+    /// compares are strict `<`).
+    #[test]
+    fn the_nurse_dialog_band_reads_the_pre_heal_life() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        // (pre-heal life, expected LegacyDialog row) at max 400.
+        for (hp, row) in [(99, 227), (100, 228), (199, 228), (200, 229), (299, 229), (300, 230)] {
+            let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+            let mut player = crate::player::Player::spawn(&app.world);
+            player.max_hp = 400;
+            player.hp = hp;
+            app.player = Some(player);
+            app.npcs.push(crate::npc::Npc::new(
+                crate::npc::NpcKind::Nurse,
+                32.0,
+                100.0,
+                1,
+                0.0,
+            ));
+            let cost = app.nurse_heal_cost();
+            app.coins = cost as u64;
+            assert!(app.nurse_heal(0));
+            assert_eq!(
+                app.npc_chat_text,
+                crate::lang::dialog(row),
+                "hp {hp} answers row {row}"
+            );
+            // The HealEffect text: the missing amount, HealLife colour.
+            let t = app
+                .combat_texts
+                .iter()
+                .find(|t| t.active)
+                .expect("the heal text spawned");
+            assert_eq!(t.text, (400 - hp).to_string());
+            assert_eq!(t.color, crate::combat_text::HEAL_LIFE);
+        }
+    }
+
+    /// W4-f37 doc-sweep — the refused heal (`Main.cs:40140-40155`): one
+    /// `Next(3)` on the bare-`Main.rand` stand-in picks 52/53/54; the
+    /// nothing-to-heal arm (`:40157-40175`) draws `Next(3)` then RE-DRAWS
+    /// `Next(1, 3)` while ChildSafety is ON (both draws spend the stream),
+    /// so the blood line 55 never answers under the gate.
+    #[test]
+    fn the_nurse_refusals_draw_the_dialog_rolls() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.hp = player.max_hp / 2;
+        app.player = Some(player);
+        app.npcs.push(crate::npc::Npc::new(
+            crate::npc::NpcKind::Nurse,
+            32.0,
+            100.0,
+            1,
+            0.0,
+        ));
+        let cost = app.nurse_heal_cost();
+        // The poor purse: ONE Next(3) → 52 + roll.
+        app.coins = cost as u64 - 1;
+        let mut twin = app.rngs.global().clone();
+        let roll = twin.next_max(3);
+        assert!(!app.nurse_heal(0));
+        assert_eq!(app.npc_chat_text, crate::lang::dialog(52 + roll));
+        assert_eq!(*app.rngs.global(), twin, "one draw spent");
+        // Nothing to heal, ChildSafety OFF (blood on): ONE Next(3) → 55+.
+        app.player.as_mut().unwrap().hp = app.player.as_ref().unwrap().max_hp;
+        app.sync_child_safety(Some(true)); // disabled = true → the gate OFF
+        let mut twin = app.rngs.global().clone();
+        let roll = twin.next_max(3);
+        assert!(!app.nurse_heal(0));
+        assert_eq!(app.npc_chat_text, crate::lang::dialog(55 + roll));
+        assert_eq!(*app.rngs.global(), twin, "one draw spent");
+        // ChildSafety ON (blood off): Next(3) THEN Next(1, 3) — two draws,
+        // the second picks the line (56/57 only).
+        app.sync_child_safety(Some(false));
+        let mut twin = app.rngs.global().clone();
+        let _first = twin.next_max(3);
+        let roll = twin.next_range(1, 3);
+        assert!(!app.nurse_heal(0));
+        assert_eq!(app.npc_chat_text, crate::lang::dialog(55 + roll));
+        assert!((56..=57).contains(&(55 + roll)), "the blood line drops");
+        assert_eq!(*app.rngs.global(), twin, "two draws spent");
     }
 }
 
