@@ -22264,7 +22264,7 @@ not cargo. Five items, one commit each on top of Phase B (`bd5a5a24a`):
   the flat `EMOTE_COUNT` roster; the gated wheel is W4-g54's `EmoteGates`, whose
   `from_world` pins the five seasonal flags `false` — at the merge g54 reads the World
   fields instead (field names identical). No second wheel ported here.
-* **The v18-claim input doc** (this commit): `docs/research/244-f39-v18-claim-input.md`
+* **The v18-claim input doc** (this commit): `docs/research/281-f39-v18-claim-input.md`
   re-receipts registry row #8 at the closeout tip for the g71c union-final merger — the
   five bytes unchanged (keep-one with c39, union seat [51..56] per 92 §1-FULL.2 A3), the
   seven truncation-site families re-pinned (+5→+107, the six mid-record cuts re-arm),

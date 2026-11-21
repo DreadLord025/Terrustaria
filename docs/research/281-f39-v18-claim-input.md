@@ -1,4 +1,4 @@
-# 244 — W4-f39 v18-claim INPUT for g71c (the closeout receipt, code-only)
+# 281 — W4-f39 v18-claim INPUT for g71c (the closeout receipt, code-only)
 
 Lane: `task/W4-f39-weather-slimerain`, closeout tip `da058b714` (this doc's
 commit follows it). Written 2026-11-21 for the **g71c union-final merger**
@@ -9,12 +9,23 @@ truncation-site moves. It does NOT re-open the layout: **research/92
 §1-FULL (seating 103 §L3-ARBITER A3, `d09d7e10a`) stays THE byte-order
 authority**; f44's research/132 stays the L1/L2 + cross-layer merger-bible.
 
-Number: 244 — a fresh 358-tip `ls-tree docs/research/` scan (2026-11-21)
-finds no 244 at any tip (max seated: 243, g58's seal-verification; the
-237-243 collisions belong to those lanes per registry 150 + g58's 243
-correction note). f39's earlier phases published NO numbered research doc
-(the census rows live in ANALYSIS/PORT_MAP), so this is the lane's first
-number claim.
+Number: **281 — RENUMBERED 244 → 281 at the f39 seal** (registry 150
+first-pushed-wins, d54 round-2 refresh `72226e500`). The original 244 pick
+(a 358-tip scan at closeout 5, max seated 243) raced g48's correction
+phase: **g48 `244-c28-18-send-switch.md` first-add `2b61530b4`
+2026-11-21T14:30:16+02:00 WINS 244**; this doc's first-add `8704691a3`
+14:32:01 is 1m45s later → LOSER. Both pushes postdate the registry's
+final sweep, so the §6.3 cutoff rule applies: losers self-adjudicate and
+take ≥281 after a fresh sweep (the 244-280 block is fully assigned).
+A fresh **386-tip / 22 694-row** `ls-tree docs/research/` sweep at the seal
+finds 247-300 empty at every tip (246 = d10's executed `247` assignment
+off-by-one, `d89380ca1` 14:52:30 — d10's own post-cutoff chain, not this
+lane's to fix); **281 is the first free number ≥281**. Content-preserving
+rename per registry §3: body unchanged, header + every ref re-pointed
+(ANALYSIS / ROADMAP / INDEX on this branch). f39's earlier phases
+published NO numbered research doc (the census rows live in
+ANALYSIS/PORT_MAP), so this stays the lane's first number claim. The
+seal receipt + the slimerain-family bible: research/282.
 
 ## 1. The claim — registry row #8 re-receipted at the closeout tip
 
