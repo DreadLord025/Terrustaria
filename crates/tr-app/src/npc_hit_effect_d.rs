@@ -2075,9 +2075,12 @@ fn moss_zombie_death(
 /// type list omits it — ported as written), 162 Frankenstein →
 /// 194/195x2/196x2 (`:87048-87052`, sites 317-321), 188/434 Swamp Zombie
 /// → 243/244x2/245x2 (`:87057-87061`, sites 322-326), 200/436 Female
-/// Zombie → 262/263x2/264x2 (`:87066-87070`, sites 327-331); the
-/// 319/320/321/223/... tails land in later batches. The hit-half
-/// 186/632 Next(5) gore gates (`:86945-86952`) are g62's lane.
+/// Zombie → 262/263x2/264x2 (`:87066-87070`, sites 327-331), 319 Doctor
+/// Zombie → 451/453x2/452x2 (`:87075-87079`, sites 332-336; mid 453 NOT
+/// 452), 320 Superman Zombie → 454/455/456x2 (`:87084-87087`, sites
+/// 337-340, the FOUR shape); the 321/223/... tails land in later
+/// batches. The hit-half 186/632 Next(5) gore gates (`:86945-86952`)
+/// are g62's lane.
 fn zombie_arm_death(
     npc: &Npc,
     npc_type: i32,
@@ -2219,6 +2222,25 @@ fn zombie_arm_death(
         gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 263, s); // :87068
         gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 264, s); // :87069
         gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 264, s); // :87070
+        return;
+    }
+    if npc_type == 319 {
+        // `:87073-87081` — the Doctor Zombie ladder + return: NOTE the
+        // mid type is 453 (NOT 452 — the legs are 452).
+        gore.new_gore(rng, world, pos, vel, 451, s); // :87075
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 453, s); // :87076
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 453, s); // :87077
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 452, s); // :87078
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 452, s); // :87079
+        return;
+    }
+    if npc_type == 320 {
+        // `:87082-87089` — the Superman Zombie FOUR + return: 454 head,
+        // 455 at +20 Y (single), 456x2 at +34 Y.
+        gore.new_gore(rng, world, pos, vel, 454, s); // :87084
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 455, s); // :87085
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 456, s); // :87086
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 456, s); // :87087
         return;
     }
 }
@@ -2469,8 +2491,8 @@ pub fn hit_effect_d(
     }
     // `:86937-...` — the giant zombie arm (430-436/590/591/3/52/53/536/
     // 104/109/331/332/132/161/162/186-189/200/223/251/319-321/632); the
-    // 104/632/331/332/109/161/162/188/200 branches are live (sites
-    // 286-331), the rest land later.
+    // 104/632/331/332/109/161/162/188/200/319/320 branches are live
+    // (sites 286-340), the rest land later.
     else if matches!(npc_type, 430..=436 | 590 | 591 | 3 | 52 | 53 | 536 | 104 | 109 | 331 | 332 | 132 | 161 | 162 | 186 | 187 | 188 | 189 | 200 | 223 | 251 | 319 | 320 | 321 | 632)
     {
         zombie_arm_death(
@@ -4410,6 +4432,43 @@ mod tests {
                 twin_dust(&mut twin, 30, 44);
             }
             for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "zombie {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87075-87087` — the Doctor ladder 451/453x2/452x2 (mid 453
+    /// NOT 452) and the Superman FOUR 454/455/456x2 (single +20 row).
+    #[test]
+    fn w4_f5d_the_doctor_and_superman_zombie_ladders() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, want) in [
+            (319, vec![451, 453, 453, 452, 452]),
+            (320, vec![454, 455, 456, 456]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(337);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "zombie {kind}");
+            if kind == 320 {
+                assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+                assert_eq!(gore.slot(2).position, Vec2::new(100.0, 134.0));
+            }
+            let mut twin = UnifiedRandom::new(337);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..want.len() {
                 let _ky = twin.next_range(10, 31);
                 let _kx = twin.next_range(-20, 21);
             }
