@@ -914,6 +914,11 @@ impl App {
         // cells' either-button arms.
         if self.mine_down && ui::crafting::nearby_toggle_hit(screen, self.mouse_pos) {
             self.settings.craft_from_nearby_chests = !self.settings.craft_from_nearby_chests;
+            // `NewCraftingUI.RefreshGrid()` (`CraftingUI.cs:349`): the shown
+            // list re-derives every frame in the port, so the refresh is a
+            // no-op here (the draw rebuilds `craft_raw_list`).
+            self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)` (`:350`)
+            let _ = self.settings.save(); // `Main.SaveSettings()` (`:351`)
             self.ui_left_press = false;
             return true;
         }
@@ -5922,6 +5927,55 @@ mod s1_h_7_tests {
         assert_eq!(
             pick.prefix, expected,
             "the crafted item keeps the rolled prefix"
+        );
+    }
+
+    /// W4-f23 closeout item 4 — the nearby-chests toggle's full click
+    /// semantics (`CraftingUI.DrawCraftFromNearbyChestsToggle`,
+    /// `CraftingUI.cs:346-352`): the LEFT press flips
+    /// `Player.Settings.CraftFromNearbyChests`, plays sound 12 (`:350`) and
+    /// persists (`Main.SaveSettings`, `:351`). The toggle is LEFT-only
+    /// (`:346` reads `mouseLeft && mouseLeftRelease`), unlike the recipe
+    /// cells' either-button arms.
+    #[test]
+    fn the_nearby_toggle_flips_the_setting_and_plays_the_tick() {
+        let mut app = craft_app();
+        app.settings.craft_from_nearby_chests = true;
+        let (sw, sh) = app.screen_size();
+        let l = ui::crafting::layout(Vec2::new(sw, sh), 0.0, false);
+        app.mouse_pos = Vec2::new(l.nearby_toggle[0], l.nearby_toggle[1]);
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.mine_down = true;
+        assert!(app.handle_crafting_clicks(), "the toggle click is consumed");
+        assert!(!app.settings.craft_from_nearby_chests, "the setting flipped");
+        assert!(!app.ui_left_press, "the press was consumed");
+        assert_eq!(app.audio.played_count(), before + 1, "sound 12 (`:350`)");
+        // A second click flips it back.
+        app.mine_down = false;
+        app.handle_crafting_clicks();
+        app.ui_left_press = true;
+        app.mine_down = true;
+        assert!(app.handle_crafting_clicks());
+        assert!(app.settings.craft_from_nearby_chests, "flipped back on");
+    }
+
+    /// The toggle is LEFT-only: a held RIGHT button over the toggle does
+    /// NOT flip the setting (`CraftingUI.cs:346` reads `mouseLeft` only —
+    /// the W4-f23 doc-sweep 4b parity must not let a held right flip it).
+    #[test]
+    fn a_held_right_does_not_flip_the_nearby_toggle() {
+        let mut app = craft_app();
+        app.settings.craft_from_nearby_chests = true;
+        let (sw, sh) = app.screen_size();
+        let l = ui::crafting::layout(Vec2::new(sw, sh), 0.0, false);
+        app.mouse_pos = Vec2::new(l.nearby_toggle[0], l.nearby_toggle[1]);
+        app.place_down = true; // right held, left NOT down
+        app.ui_right_press = true;
+        app.handle_crafting_clicks();
+        assert!(
+            app.settings.craft_from_nearby_chests,
+            "the right button never flips the LEFT-only toggle"
         );
     }
 }

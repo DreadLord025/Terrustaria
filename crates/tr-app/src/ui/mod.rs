@@ -696,6 +696,9 @@ pub fn draw_hud(
     // (`UIScrollbar.cs:122`).
     craft_scroll: f32,
     craft_scroll_hover: bool,
+    // `Player.Settings.CraftFromNearbyChests` (`Player.cs:360`) — the
+    // nearby-chests toggle's live frame pick (`CraftingUI.cs:340`).
+    craft_from_nearby_chests: bool,
     pulse: UiPulse,
     m_h: f32,
     map_style: i32,
@@ -1018,6 +1021,7 @@ pub fn draw_hud(
                 inventory_back,
                 craft_scroll,
                 craft_scroll_hover,
+                craft_from_nearby_chests,
             );
             // The hovered filter tab's label — `ShowButtonName`
             // (`UICreativeItemsInfiniteFilteringOptions.cs:125-132`):

@@ -1675,6 +1675,35 @@ impl App {
                                 self.craft_scroll_hover = false;
                             }
                         }
+                        // The nearby-chests toggle's hover cue
+                        // (`CraftingUI.DrawCraftFromNearbyChestsToggle`,
+                        // `:354`'s `DoStatefulTickSound(ref
+                        // Main.nearbyCraftingMouseOver, flag)`): the latch
+                        // follows the ±15 px hover square, the enter edge
+                        // plays sound 12 (`Main.cs:3244`). Runs only while
+                        // the panel draws — the C# runs it inside the toggle
+                        // draw; with the panel closed the latch holds its
+                        // last value until `Main.ResetInventoryState`
+                        // (`:3225`) clears it on the inventory open/close
+                        // (the port clears it in the draw's else arm below,
+                        // the same net effect: no stale enter-edge cue on
+                        // reopen). The toggle is hidden in the guide menu
+                        // (`NewCraftingUI.cs:492-494`), which the port never
+                        // enters (`guide_mode` stays false).
+                        if self.crafting_open {
+                            let nearby_hover = ui::crafting::nearby_toggle_hit(
+                                screen,
+                                self.mouse_pos,
+                            );
+                            if ui::crafting::stateful_tick_sound(
+                                &mut self.nearby_crafting_mouse_over,
+                                nearby_hover,
+                            ) {
+                                self.audio.play("Menu_Tick");
+                            }
+                        } else {
+                            self.nearby_crafting_mouse_over = false;
+                        }
                         ui::draw_hud(
                             renderer,
                             *camera,
@@ -1711,6 +1740,7 @@ impl App {
                             self.inv_pulse.inventory_back(),
                             self.craft_scroll,
                             self.craft_scroll_hover,
+                            settings.craft_from_nearby_chests,
                             ui::UiPulse {
                                 // `Main.mouseTextColor / 255` (`Main.cs:20355`).
                                 text: self.mouse_text_color as f32 / 255.0,

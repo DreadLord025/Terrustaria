@@ -681,6 +681,12 @@ pub(crate) struct App {
     /// `_isHoveringOverHandle` (`UIScrollbar.cs:115-120`): re-derived every
     /// draw frame; the enter edge plays sound 12 (`:119`).
     pub(crate) craft_scroll_hover: bool,
+    /// `Main.nearbyCraftingMouseOver` (`Main.cs:1309`): the nearby-chests
+    /// toggle's hover latch (`CraftingUI.cs:354`'s
+    /// `DoStatefulTickSound`), re-derived every draw frame the panel draws;
+    /// the enter edge plays sound 12 (`Main.cs:3244`). Cleared by
+    /// `Main.ResetInventoryState` (`:3225`) on the inventory open/close.
+    pub(crate) nearby_crafting_mouse_over: bool,
     /// `Main._currentRecipeBeingCrafted` (`Main.cs:2352`): the held-repeat's
     /// recipe lock — a different recipe or a maxStack-1 product resets it.
     pub(crate) current_recipe_being_crafted: i32,
@@ -3919,6 +3925,7 @@ impl App {
             craft_scroll: 0.0,
             craft_scroll_drag: None,
             craft_scroll_hover: false,
+            nearby_crafting_mouse_over: false,
             current_recipe_being_crafted: -1,
             prevent_craft_click: false,
             pointer: ui::pointer::PointerState::default(),

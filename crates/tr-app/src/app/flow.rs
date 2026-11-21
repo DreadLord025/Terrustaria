@@ -2330,6 +2330,7 @@ pub(crate) mod front_flow_tests {
             craft_scroll: 0.0,
             craft_scroll_drag: None,
             craft_scroll_hover: false,
+            nearby_crafting_mouse_over: false,
             current_recipe_being_crafted: -1,
             prevent_craft_click: false,
             pointer: ui::pointer::PointerState::default(),

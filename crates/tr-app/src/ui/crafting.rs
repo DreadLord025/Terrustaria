@@ -557,6 +557,7 @@ pub fn draw(
     inventory_back: [f32; 4],
     scroll: f32,
     scroll_hover: bool,
+    craft_from_nearby_chests: bool,
 ) {
     // `UpdateText` (`:417-427`): the search bar's width is inset by the title's
     // measured outer width, so measure it before building the layout.
@@ -748,7 +749,7 @@ pub fn draw(
     draw_detail_area(r, lookups, &l, guide_mode);
 
     // 9. The toggles (`:484-495`).
-    draw_toggles(r, lookups, &l, mouse_pos, guide_mode);
+    draw_toggles(r, lookups, &l, mouse_pos, guide_mode, craft_from_nearby_chests);
 }
 
 /// The selected-recipe cell's `Inventory_Back24` overlay
@@ -854,6 +855,7 @@ fn draw_toggles(
     l: &Layout,
     mouse_pos: Vec2,
     guide_mode: bool,
+    craft_from_nearby_chests: bool,
 ) {
     // `CraftingUI.DrawGridToggle` (`CraftingUI.cs:267-334`).
     let (gx, gy) = (l.grid_toggle[0], l.grid_toggle[1]);
@@ -873,12 +875,30 @@ fn draw_toggles(
     if !guide_mode {
         let (nx, ny) = (l.nearby_toggle[0], l.nearby_toggle[1]);
         let hover = toggle_hover(mouse_pos, nx, ny);
-        // `num = 2 - CraftFromNearbyChests.ToInt() * 2 + hover` (`CraftingUI.cs:340`);
-        // the setting defaults to true (`Player.cs:406`), so `2 - true*2` cancels
-        // and `num` is just the hover bit (0, or 1 while hovered).
-        let num = hover as usize;
+        // `num = 2 - CraftFromNearbyChests.ToInt() * 2 + hover`
+        // (`CraftingUI.cs:340`): ON → 0/1 (the open chest), OFF → 2/3 (the
+        // closed chest). The setting defaults to true (`Player.cs:406`) but
+        // the toggle flips it, so the frame reads the LIVE setting — the old
+        // `num = hover` stand-in drew the open chest even when the setting
+        // was off (W4-f23 closeout item 4).
+        let num = 2 - (craft_from_nearby_chests as usize) * 2 + hover as usize;
         draw_centered_toggle(r, lookups, lookups.chest_craft[num], nx, ny);
     }
+}
+
+/// `Main.DoStatefulTickSound(ref bool flag, bool state)` (`Main.cs:3237-3247`):
+/// the latch follows the state, and the enter edge (`false → true`) plays
+/// `SoundEngine.PlaySound(12)`. The nearby-chests toggle's hover cue
+/// (`CraftingUI.cs:354`, `ref Main.nearbyCraftingMouseOver`) rides it.
+/// Returns whether the cue plays so the caller owns the audio side effect.
+pub fn stateful_tick_sound(flag: &mut bool, state: bool) -> bool {
+    if *flag != state {
+        *flag = state;
+        if *flag {
+            return true; // `:3244` — SoundEngine.PlaySound(12)
+        }
+    }
+    false
 }
 
 // ---- Task 3: the filter strip and the search bar ----
@@ -1231,6 +1251,34 @@ mod tests {
         assert!(!toggle_hover(Vec2::new(27.0, 285.0), 42.0, 285.0));
         assert!(!toggle_hover(Vec2::new(42.0, 300.0), 42.0, 285.0));
         assert!(!toggle_hover(Vec2::new(42.0, 270.0), 42.0, 285.0));
+    }
+
+    /// W4-f23 closeout item 4 — the nearby-chests toggle's frame pick
+    /// (`CraftingUI.cs:340`): `num = 2 - CraftFromNearbyChests.ToInt() * 2 +
+    /// hover`. ON draws the open chest (0/1), OFF the closed chest (2/3);
+    /// the old `num = hover` stand-in drew the open chest even when the
+    /// setting was off.
+    #[test]
+    fn the_nearby_toggle_frame_reads_the_live_setting() {
+        let frame = |on: bool, hover: bool| 2 - (on as usize) * 2 + hover as usize;
+        assert_eq!(frame(true, false), 0, "ON, idle: ChestCraft_0 (open)");
+        assert_eq!(frame(true, true), 1, "ON, hovered: ChestCraft_1");
+        assert_eq!(frame(false, false), 2, "OFF, idle: ChestCraft_2 (closed)");
+        assert_eq!(frame(false, true), 3, "OFF, hovered: ChestCraft_3");
+    }
+
+    /// `Main.DoStatefulTickSound(ref bool, bool)` (`Main.cs:3237-3247`): the
+    /// latch follows the state; only the enter edge (`false → true`) plays
+    /// the cue. Held-hover and leave are silent; a re-enter plays again.
+    #[test]
+    fn the_stateful_tick_sound_fires_only_on_the_enter_edge() {
+        let mut flag = false;
+        assert!(stateful_tick_sound(&mut flag, true), "enter: cue");
+        assert!(flag);
+        assert!(!stateful_tick_sound(&mut flag, true), "held: silent");
+        assert!(!stateful_tick_sound(&mut flag, false), "leave: silent");
+        assert!(!flag);
+        assert!(stateful_tick_sound(&mut flag, true), "re-enter: cue");
     }
 
     // ---- Task 3: the filter strip and the search bar ----
