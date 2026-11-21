@@ -1,4 +1,4 @@
-# 117 — DOC-SWEEP: clouds / sky (lane 33, W4-g69)
+# 117 — DOC-SWEEP: clouds / sky (lane 33, W4-g69) — SEALED
 
 **Branch:** `task/W4-g69-weather-clouds-parallax` (continues the DONE `9717c0bb`
 cloud-parallax work). **Mode:** code-only — no cargo/tests/graphify invoked;
@@ -7,6 +7,15 @@ flagged after the g69 cloud lane landed. Companion lanes: `task/W4-g70-bg-layers
 (forest sets, tip `b86c8d69`), `task/W4-g71-bg-layers-2` (surface variants, tip
 `2b57b362`; its DOC-SWEEP doc `92-doc-sweep-bg.md` owns the v18 layout contract),
 `task/W4-g72-bg-layers-3` (cavern/hell styles).
+
+**SEAL (CLOUDS RETIRE, 2026-11-21):** this doc is CLOSED. The retire sweep
+added §6 (the g69d-star-visual dispatch census + the small ports), §7 (the
+weather-family compose confirmations) and §8 (the 12-deferred-consumers
+activation census + the GERunner live-flavour fix), and §9 (the clouds-family
+declaration). §1's v18 cross-note is SUPERSEDED by g71's SEALED
+`92-doc-sweep-bg.md` §1-SEAL at tip `b706737a1` (the 64a-stable [0..53] prefix
+WINS; the crimson byte rides the f45 `.wld` flags dedupe — see §9). Retire
+commits: `fd0edd6b6` (consumer 4), `99a67f9ee` (star visual), this seal.
 
 Five items, five verdicts:
 
@@ -301,6 +310,204 @@ fix. No code change this sweep (census only).
 
 ---
 
+## 6. g69d-star-visual — the dispatch census + the small ports (RETIRE)
+
+The dispatch asked: any unclaimed star-twinkle/cloud-parallax arm? Census at
+the sibling tips (read from origin, no checkouts):
+
+### Claim map
+
+| Arm | C# | Owner at its tip | Status |
+| --- | --- | --- | --- |
+| Static starfield spawn | `Star.cs:86-158` | **g69** (`make_stars`, `sky.rs:408`) | landed (seed-pinned deviation documented) |
+| Celestial dims (`DrawSunAndMoon` num12/num13) | `Main.cs:62848-63028` | **g70** (`752655914`: `cloud_alpha` param + `sky_color` byte chain, its `sky.rs:903/:1019`) | landed on g70 |
+| Star visibility GATE | `Main.cs:63051` | **UNCLAIMED at g70's tip** — g70 added the `cloud_alpha` param (its `sky.rs:722`) but its gate (its `sky.rs:815`) STILL reads `255·(1−storm)`; the param feeds only the celestial dims | **PORTED HERE** (`99a67f9e`) |
+| Graveyard star-opacity head | `Main.cs:63037-63045` | unclaimed (g70's comment still says "not modelled", its `sky.rs:812`) | **PORTED HERE** |
+| Shimmer star heads (sky dim + pass skip + i%3 tint) | `Main.cs:63047-63050`, `:62086-62088`, `:63087-63110` | unclaimed (no `shimmer` hit in g70's sky.rs) | **PORTED HERE** |
+| `DrawStar` brightness/opacity chain | `Main.cs:63066-63086` | g69 (partial — no graveyard/shimmer terms) | **COMPLETED HERE** |
+| `DrawStar` skyblock bgTopY zero | `Main.cs:63114-63117` | unclaimed | **PORTED HERE** |
+| Falling-star SOUND pair 37/38 | `LegacySoundPlayer.cs:1329-1350` | **g23** (`945391e33`: `main_sounds_batch3.rs:328-377` — the `star_game`/`fall_speed_y`/70px hit gate coded, "DEFERRED — no live consumer") | stays g23's, dormant |
+| Falling-star VISUAL subsystem | `Star.cs:41-84/:160-260`, `Main.cs:63140-63171`, `:17249-17274`, `:19865-19871` | **UNCLAIMED everywhere** (`starfall_boost`/`fall_time` grep across g70/g71/g72/d130/g68/g23: only `npc_ai_style67.rs`'s unrelated fall-timer hits) | **TASK-SEED below** |
+| Cloud-parallax residual arms | `Main.cs:59644-59703` | g69 — the three cY formulas + bucket gates + byte chain all landed (`cloud_distant_cy`/`cloud_closer_cy`/`cloud_closest_cy`, witnesses `cloud_pass_cy_formulas_are_verbatim` + `draw_cloud_color_replays_the_byte_chain`) | **NONE unclaimed** |
+
+### The small ports (`99a67f9e`)
+
+Two shared helpers in `render/sky.rs`, both read by `draw_sky`:
+
+* **`star_pass_heads`** (`Main.cs:63030-63058`): the graveyard opacity
+  `1 − GraveyardVisualIntensity·1.4` with the ≤0 field kill; the shimmer sky
+  dim `colorOfTheSkies *= 1 − shimmerAlpha` (XNA byte multiply) feeding BOTH
+  the gate and `DrawStar`; the gate `remixWorld || 255·(1 − cloudAlpha·atmo)
+  − skyR − 25 > 0` on the RAW cloudAlpha (the `storm`/cloudBGAlpha stand-in
+  retired — the §5 cross-note is DISCHARGED); the `shimmerAlpha == 1`
+  whole-pass skip (`:62086-62088`).
+* **`draw_star_color`** (`Main.cs:63066-63110`): the per-channel `(int)`
+  truncation BEFORE the /3 average, the `(double)·1.4` cap-255,
+  `color *= starOpacity`, the shimmer i%3 channel tint (**0→G, 1→B, 2→R** —
+  `:63090-63100`; the `(1f − num·0f)` term is the literal 1; the two
+  sequential twinkle multiplies), `Color.Lerp` byte lerp, and the
+  artificial-false `*= 1 − num`. The `artificial: true` second call site
+  (`:62203`, the shimmer-surface star pass, `*= num` at `:63105`) is
+  UNPORTED with its surface pass — noted, not faked.
+* `DrawStar`'s `worldSurface <= 30` bgTopY zero (`:63114-63117`) inline in
+  the star loop.
+
+`draw_sky` gains `graveyard_intensity`/`shimmer_alpha`/`cloud_alpha` params,
+fed from `scene_state.graveyard_visual_intensity`/`scene_state.shimmer_alpha`
+/`rain.raw_alpha()` at `app/frame/draw.rs`. **Merge note for g70:** its tip
+adds a `cloud_alpha: f32` param with the SAME name and semantics (RAW
+`Main.cloudAlpha`) — ONE param at the merge, both bodies read it; g70's
+celestial-dim uses and this gate fix compose without overlap.
+
+### TASK-SEED — the falling-star visual lane (unclaimed)
+
+A coherent follow-up (suggested slug `W4-hXX-star-fall-visual`), NOT a small
+fix — it needs integrated per-star state the static field lacks:
+
+1. `StarSprite` gains `falling/hidden/fadeIn/fallSpeed/fallTime/velocity`
+   (`Star.cs:23-39`); `Star.Update`'s falling branch (`:173-205`: fallTime +=
+   dayRate, position += fallSpeed·(dayRate+99)/100, hide at Y>1500, twinkle
+   ×3 speed, rotation += 0.5) and the normal branch (`:207-234`: fadeIn
+   decay 6.1728395E-05·dayRate·10, the 0.6..1 twinkle bounce, the 6.28
+   rotation wrap) — replacing the sine approximation ONLY when the lane
+   lands (the anim_time pin is a documented deviation until then).
+2. `Star.Fall` (`:160-169`, the `!anySecretSeedIsActive || starGame` gate,
+   Y `Next(700,1001)·0.01`, X `Next(-400,401)·0.01` on `Main.rand`),
+   `Star.StarFall(x)` (`:62-84`, nearest non-hidden non-falling by
+   design-space X), `NightSetup` (`:41-60`, starfallBoost 1-in-10
+   `Next(300,501)·0.01` else 1-in-3 `Next(100,151)·0.01`, anniversary 5/2;
+   called at `UpdateTime_StartDay`'s night arm `Main.cs:65223`).
+3. `UpdateStars` (`:237-316`): the dayCheck respawn at day-time ≥27000
+   (`SpawnStars(i)`'s 10-candidate max-min-distance pick `:100-126`), the
+   per-star Update, and the menu-secret-seed gravity sim (`:261-316`).
+4. The `DrawStar` falling trail (`Main.cs:63140-63157`: fallTime capped 30,
+   `fallSpeed·j·0.4` offsets, `1−j/30` scale/colour fade) + the starGame
+   mouse-hit redirect (`:63158-63170`: <70px, normalize·10, Y-flip, sounds
+   38+37 — **g23's dormant pair activates HERE**, its
+   `main_sounds_batch3.rs:375` gate is the ready seam).
+5. Spawn triggers: the shimmer-arm `Next(90)` Fall + hidden respawn
+   (`Main.cs:17256-17273`), the menu `Next(12)` Fall (`:19865-19871`), the
+   star-cannon `AI_148_StarSpawner` link (`Projectile.cs:53107`, aiStyle 148
+   unported), and the Enchanted Nightcrawler spawn gate (`NPC.cs:2406`:
+   `numClouds≤55 && cloudBGActive==0 && starfallBoost>3` — reads the LIVE
+   cloud statics already).
+
+The `starGame` seed state itself (`WorldGen.cs:11212-11215`) is the lane's
+prerequisite; g23's audio census already documents it.
+
+---
+
+## 7. Weather-family compose — CONFIRMED (g67f + g61)
+
+### g67f-8b9a1ff4 rain-seal (research/146, the WEATHER-FAMILY bible)
+
+Read at `origin/task/W4-g67-weather-rain-splash` tip `8b9a1ff46` (its
+`docs/research/146-g67-post-union-folds.md`, SEAL paragraph): *"**g69**
+(`task/W4-g69-weather-clouds-parallax`) owns the cloud draw/parallax lane
+including `rain_dim_sky` (the XNA byte-truncate-FIRST convention,
+`98067533`) — the `cloudAlpha`/`cloudBG` VALUES it reads come from d130's
+rain state, g69 keeps its draw bodies."* **CONFIRMED — the compose is
+clean:**
+
+* g69's draw bodies (`cloud.rs`, the three `DrawClouds_*` passes,
+  `draw_cloud_color`, `rain_dim_sky`, `cloud_bg_draw_step`) read only
+  `Rain` accessors + `CloudField` statics — no rain-state writes outside
+  `cloud_bg_draw_step` (the per-DRAW `cloudBGAlpha` ramp, `Main.cs:59358-59373`).
+* d130's tip (`b8f655708`, research/83 s9 SEALED — the mutual receipt)
+  carries the accessor surface g69 reads: `raw_alpha`→**`cloud_alpha()`**
+  (d130 `rain.rs:303`, the unclamped `Main.cloudAlpha`), `visual_alpha()`
+  (`:297`), `max_raining()` (`:292`), `is_raining()`/`is_it_raining()`
+  (`:309/:321`), `cloud_bg()` (`:373`). **One rename at the merge:** g69's
+  `rain.raw_alpha()` call sites (`draw.rs:312/:1092/:1160`,
+  `scene_scan.rs:617`) become `rain.cloud_alpha()` — same value, d130's
+  name wins (its s8 d130-canonical declaration).
+* **One divergence to resolve at the merge (flagged, NOT touched here):**
+  d130's `rain.rs:504-516` still runs its own per-TICK `cloud_bg` ramp
+  (`CLOUD_BG_RAMP_PER_TICK` 0.005, the intensity-chasing stand-in g69's
+  deviation fix retired on ITS branch). g69's `cloud_bg_draw_step` (per-DRAW
+  ±0.0005·dayRate by `cloudBGActive`, the C# verbatim) is the canonical
+  schedule per the 146 bible's "g69 keeps its draw bodies" — the merger
+  drops d130's tick-side ramp block and keeps g69's draw-head step + the
+  `weather.rs` gate chain. Both branches' `cloud_bg()` accessor stays.
+* d130's `draw.rs:304-309` still carries the OLD `(1 − visual·0.9).max(0.1)`
+  sky-dim stand-in — g69's `rain_dim_sky` (byte-truncate-first, `98067533`)
+  supersedes it per the bible; keep g69's two call sites.
+* The star-visual ports (§6) read `scene_state` + `rain.raw_alpha()` only —
+  they compose with d130's state the same way (the rename applies).
+
+### g61-NightKey-crimson (research/238 at its SEAL tip `6e922fc60`)
+
+Read at `origin/task/W4-g61-npc-spawn-dust`: its §2 declares the Night Key
+pick LIVE — `chest.rs::big_mimic_summon_check` (`:1370`, the `:1469-1472`
+comment) reads `app.world.crimson`, the g69 field hunks carried VERBATIM
+(its `git diff --no-index` against `20d0380f` EMPTY for both files' crimson
+hunks). **CONFIRMED:** the field/ctor/worldgen hunks dedupe to one at the
+merge; the `.trwld` v18 tail + `.wld` flags read stay g69's (g61 does not
+duplicate them); loaded worlds keep the corruption default until g69's save
+layer merges — g61's own note, still true. Its witness
+`w4_g61_the_crimson_night_key_clears_and_reads_the_world_evil` rides the
+same field. NOTE: g61's doc renumbered 237→**238** at its seal (registry-150
+first-pushed-wins, e23 owns 237) — cite `238-g61-spawn-family-final.md`.
+The big-mimic kinds 473-476 AUTO-activate at the d40 merge (`8fe1d6d31`,
+own bestiary rows) per its §3 — consumer 5 below.
+
+---
+
+## 8. The 12 deferred consumers — activation census (g71e-92 §5's ask)
+
+g71's SEALED 92 (`b706737a1`) §5 lists "g69's 12 deferred consumers" as a
+merge-scoped gap. Re-censused at the CURRENT origin tips — **which activate:**
+
+| # | Consumer (C#) | Verdict | Evidence |
+| --- | --- | --- | --- |
+| 1 | Powder tile conversion (`Projectile.cs:24191-24202`) | **ACTIVATED-BY-d1** — but NOT a crimson consumer: the Convert types are per-PROJECTILE constants (10→11, 11→1, 463→4), no `WorldGen.crimson` read in the arm (re-read `:24180-24209`). d1's `projectile_ai_powder.rs:187-189` ports all three verbatim through `convert_sized` | d1 tip `212516a82`; §2's row was over-broad — the powder TILE arm never reads the world evil |
+| 2 | Powder NPC evil-transform (`Projectile.cs:14759-14770`) | **STILL-DEFERRED, flavour-corrected** — the crimson bool is `this.type == 463` (`:14763`), NOT `WorldGen.crimson`; the gap is `AttemptToConvertNPCToEvil` (`NPC.cs:91928-91963`: 46/303/337/443/540→464/47, 55/230/592/593→465/57, 148/149→470/168). No port on d1/g61/c10 | grep `convert_npc_to_evil|AttemptToConvertNPCToEvil` across d1/g61/c10: zero hits |
+| 3 | Blood-moon NPC evil-transform (`NPC.cs:91911-91926`) | **STILL-DEFERRED** — this one DOES read `WorldGen.crimson` (`:91920`); same `AttemptToConvertNPCToEvil` gap + the `value==0` save/restore dance | no `blood_moon_transform` port on g61/c10/b3/d30 |
+| 4 | Evil biome spread runner (`WorldGen.cs:76304` GERunner) | **ALREADY-WIRED-ON-BASE + FIXED THIS SWEEP** — §2's "GERunner unported" row was STALE: `spread.rs:605` `gerunner` + `:680` `initialize_hard_mode` port the V-strip on this branch's own base. The feed was the stale `(seed>>56)&1` stand-in; `fd0edd6b6` re-points it to `world.crimson` (the C# reads the static INSIDE the convert arm `:76304`, after the wobble roll — flavour changes no draw). The IslandHouse half (`:79205`) is g44's: its `islands.rs:1198` reads the `crimson` param fed `opts.crimson` at `pipeline.rs:2632` — ACTIVATED-BY-g44 (`9ce512b4f`, the islands-family keeper; d103's `island_houses.rs` is the DROP side per its matrix-88 row 73) | `growth.rs:27/48/66`, `micro_surface.rs:425`, witness `w4_g69_the_hardmode_v_reads_the_live_world_evil` |
+| 5 | Big Mimic spawn kind (`NPC.cs:77594-77598`) | **ACTIVATED-BY-g61** — `chest.rs::big_mimic_summon_check` reads `app.world.crimson` (§7 above); kinds AUTO at d40 | g61 tip `6e922fc60`, research/238 §2-§3 |
+| 6 | WoF brick box (`NPC.cs:79047`) | **STILL-DEFERRED** — no `brick_box`/`BrickBox` port on d35/g36-g39/f24/f25/d101-d106 | grep zero hits |
+| 7 | Altar drop (`NPC.cs:79600-79611`, 5533/5532) | **STILL-DEFERRED (half-adjacent)** — g86 (`e6d02d2f0`) ports the altar SMASH (`ores.rs:163` + `editing.rs:1303-1311`) but not `NPCLoot_DropAltar` (the altar-NPC loot path); the item rows 5532/5533 exist (`itemdata.rs:5698-5699`) | grep `DropAltar` on g86: zero |
+| 8 | Boss-bag open (`Player.cs:7250-7251`) | **STILL-DEFERRED** — the bag DROP rows are registered (`loot_db_gen.rs:1325` etc.) on g87-g90 but no `OpenBossBag`/`open_boss_bag` port anywhere | grep zero hits across g87/g88/g89/g90/f16/e19/f47 |
+| 9 | Shimmer decraft variant preference (`ShimmerTransforms.cs:22-29`) | **ACTIVATED-BY-e19** — `shimmer.rs:149` `decrafting_recipe_index(world_crimson, …)` ports the preference; `ShimmerContext.world_crimson` fed `app.world.crimson` at `:418`; the recipe `crimson`/`corruption` tags landed in `recipes_gen.rs` (15 `crimson: true` rows) — §2's "no tags" note is STALE at e19's tip. e19 also carries g69's `World.crimson` field + v18 save hunks (its `save.rs:434-438/:824` cite W4-g69) — dedupe at merge | e19 tip `e7e466d46` |
+| 10 | Painter shop paintings (`Chest.cs:2178-2185`, `:2211-2218`) | **ACTIVATED-BY-d122 (rows), feed OPEN** — d122's `shop.rs:1001-1002` rows 2193/4142 + `:1018-1019` 784/782 ride `StockWhen::CrimsonWorld`; BUT its `ShopFlags::from_world` (`:222`) still defaults `crimson_world: false` (`:189`, the "port persists no world-evil type" comment `:219-221` is STALE — g69's field exists). **Merge step:** d122's `from_world` gains `crimson_world: world.crimson` (g69's own `shop.rs:124` already does this on ITS superset rows — the keep-one is d122's shop per its 142 FINAL, so the ONE-LINE feed graft is the merger's) | d122 tip `962084663` |
+| 11 | Guide help-text lines (`Main.cs:39490-39682`) | **STILL-DEFERRED** — no `help_text`/`guide_help` port on c24/d120/f38/c25 | grep zero hits |
+| 12 | `Recipe.GetRequiredTileStyle` (`Recipe.cs:16742`) | **STILL-DEFERRED** — no `required_tile` port on g58/c24/d81/d82 or HEAD | grep zero hits |
+
+**Scoreboard:** 3 ACTIVATED by sibling lanes (5 g61, 9 e19, 10 d122-rows),
+1 ACTIVATED-BY-g44 (4's IslandHouse half), 1 WIRED-HERE (4's GERunner half,
+`fd0edd6b6`), 1 flavour-corrected non-consumer (1), 6 STILL-DEFERRED
+(2, 3, 6, 7, 8, 11, 12 — 2 and 3 share the one
+`AttemptToConvertNPCToEvil` gap). The d122 `from_world` one-line feed graft
+is the only NEW merge step this census adds; everything else composes as
+the sibling lanes' own seals declare.
+
+---
+
+## 9. CLOUDS-FAMILY declaration (the merger bible, one paragraph)
+
+**KEEP g69 wholesale for the cloud + star-static family:** `cloud.rs` (the
+200-slot pool, `addCloud`/`RollRareCloud` incl. the type-36 crimson gate, the
+`updateCloudLayer`/`update_num_clouds` cadence, `UpdateCloudParallax`, the
+`CloudEnv::gather` feeds), the three `DrawClouds_*` passes + `draw_cloud_color`
++ `cloud_bg_draw_step` (the per-DRAW cloudBGAlpha ramp — d130's tick-side
+stand-in ramp DROPS), `rain_dim_sky` (byte-truncate-first `98067533` — d130's
+`(1−visual·0.9).max(0.1)` stand-in DROPS at both sites), `make_stars` +
+`star_pass_heads` + `draw_star_color` (the §6 ports; g70's celestial-dim
+`cloud_alpha` param dedupes to ONE with g69's gate param, same name/semantics),
+the `World.crimson` field + `.wld` flags read + `.trwld` v18 tail byte (g61/e19
+carry the field hunks verbatim — dedupe to one; the v18 tail offset follows
+g71's SEALED 92 §1-SEAL layout authority, NOT this doc's §1 proposal; the
+`.wld` flags byte dedupes onto f45's write per 92 §1-SEAL.2). **Values from
+d130:** every `cloudAlpha`/`cloudBG`/`maxRaining` read goes through d130's
+`Rain` accessors (`raw_alpha`→`cloud_alpha` rename at the merge). **Wind from
+g68** (the single wind-flag owner). **Falling-star visual = the §6 task-seed,
+unclaimed; falling-star sound = g23's dormant pair.** No two family branches
+own the same fn body after the three named drops (d130 tick-ramp, d130
+sky-dim stand-in, g70 star-gate stand-in) and two dedupes (cloud_alpha param,
+crimson field hunks).
+
+---
+
 ## Witnesses (WRITTEN NOT RUN — code-only)
 
 | Witness | File | Mechanic |
@@ -315,6 +522,11 @@ fix. No code change this sweep (census only).
 | `w4_g69_the_drunk_dawn_flips_the_world_evil` | `world_sim/clock.rs` | 2 |
 | `w4_g69_the_weather_counter_jump_replays_the_full_cadence` | `cloud.rs` | 3 |
 | `w4_g69_rain_dim_sky_is_the_global_byte_truncated_formula` | `render/sky.rs` | 4 |
+| `w4_g69_the_hardmode_v_reads_the_live_world_evil` | `world_sim/growth.rs` | 8 (retire) |
+| `w4_g69_the_star_gate_reads_the_raw_cloud_alpha` | `render/sky.rs` | 6 (retire) |
+| `w4_g69_draw_star_color_replays_the_byte_chain` | `render/sky.rs` | 6 (retire) |
+| `initialize_hard_mode_runs_both_runners` (re-pinned onto `world.crimson`) | `spread.rs` | 8 (retire) |
+| `test_dw_1_1_hardmode_init_draws_the_update_worldgen_stream` (re-pinned) | `world_sim/growth.rs` | 8 (retire) |
 
 ## Commits (this sweep)
 
@@ -322,4 +534,18 @@ fix. No code change this sweep (census only).
 - `bf7151b5` — mechanic 3: spawn-cadence verify + init-deviation doc + jump witness.
 - `7f1581d1` — mechanic 4: rain-cloud darkening census + `rain_dim_sky` global dim.
 - `c7e5476a` / `98067533` — mechanic 4 fixups: unchecked byte wrap + byte-first truncation.
-- (this doc) — mechanic 1 cross-note + mechanic 5 census + INDEX/ANALYSIS/PORT_MAP.
+- `20d0380f` — the doc-sweep publish (mechanic 1 cross-note + mechanic 5 census).
+
+## Commits (the RETIRE sweep)
+
+- `fd0edd6b6` — retire 1: the hardmode-V evil flavour reads the LIVE
+  `World.crimson` (consumer 4's GERunner half; 3 callers re-pointed, 2
+  witnesses re-pinned + 1 new).
+- `99a67f9ee` — retire 2 (g69d-star-visual): `star_pass_heads` +
+  `draw_star_color` + the skyblock bgTopY zero; 2 new witnesses.
+- `16e0a9dff` — retire 2 fixup: the brightness witness re-derived on the f64
+  1.4 (`(int)(155·1.4)` = 216, not 217 — the double representation truncates
+  down; the graveyard case follows).
+- (this seal) — §6 census/ports/task-seed + §7 compose confirmations + §8
+  activation census + §9 clouds-family declaration; INDEX/ANALYSIS/PORT_MAP/
+  anchors updated. **SEALED — no further g69 commits planned.**

@@ -1566,7 +1566,7 @@ coins and the 1-in-40 giant-star roll. The original seeds it with
 pins the stream to the world seed so screenshots stay deterministic. `draw_sky` ports
 `DrawStarsInBackground`/`DrawStar` (`Main.cs:63030-63173`): the sky-colour visibility gate
 `255В·(1 в€’ cloudAlphaВ·atmo) в€’ skyR в€’ 25 > 0` (fades the field out across dawn; the
-graveyard dim is not modelled), the greyscale brightness formula, the
+graveyard dim is PORTED at the W4-g69 retire, see the RETIRE UPDATE below), the greyscale brightness formula, the
 `position/1920В·screenWidth + sceneArea.bgTopY` mapping with the frame wrap, and the
 `tex.Size()В·scaleВ·twinkle` draw with `Star.Update`'s rotation/twinkle speeds (the 0.6..1
 twinkle oscillation is sine-approximated around the same centre and range). Two known
@@ -1588,6 +1588,33 @@ sky-sweep visibility gate is g70b's. Cross-note: the port's star gate
 (`sky.rs:704`) reads `storm` (cloudBGAlpha) where the C# (`Main.cs:63051`) reads
 `cloudAlpha·atmo` — g70b's sky-sweep adds the `cloud_alpha` param; flagged so the
 two lanes don't both rewrite it.
+
+Star-pass RETIRE UPDATE (W4-g69 retire, `99a67f9e`, docs/research/117 §6 SEALED):
+the cross-note above is DISCHARGED — g69 owns the gate fix. New shared helpers in
+`render/sky.rs`: `star_pass_heads` (`Main.cs:63030-63058`) ports the graveyard
+opacity head (`1 − GraveyardVisualIntensity·1.4`, the field dead at ≤ 0 — the
+"not modelled" note is retired), the shimmer sky dim (`colorOfTheSkies *=
+1 − shimmerAlpha`, XNA byte multiply, feeding BOTH the gate and DrawStar), the
+`shimmerAlpha == 1` whole-pass skip (`:62086-62088`), and the gate itself on the
+RAW `cloudAlpha·atmo` with the `remixWorld ||` unconditional arm — the
+cloudBGAlpha stand-in is gone. `draw_star_color` (`Main.cs:63066-63110`) ports
+the full DrawStar colour chain: the per-channel `(int)` truncation before the
+/3 average, the `(double)·1.4` cap-255, `color *= starOpacity`, the shimmer i%3
+channel tint (0→G, 1→B, 2→R; the literal `(1f − num·0f)` = 1; two sequential
+twinkle multiplies), `Color.Lerp` byte lerp and the artificial-false
+`*= 1 − num`. The `artificial: true` shimmer-surface star pass (`:62203`, the
+`*= num` arm) stays unported with its surface pass. DrawStar's skyblock bgTopY
+zero (`worldSurface ≤ 30`, `:63114-63117`) landed inline. `draw_sky` gains
+`graveyard_intensity`/`shimmer_alpha`/`cloud_alpha` params fed from
+`scene_state` + `rain.raw_alpha()`; g70's tip adds a `cloud_alpha` param with
+the SAME name/semantics for its celestial dims — ONE param at the merge. The
+falling-star visual stays UNCLAIMED at every sibling tip → the research/117 §6
+task-seed (five-step port plan; g23's dormant sound pair activates from it).
+The hardmode-V evil flavour also went live this retire (`fd0edd6b6`):
+`initialize_hard_mode` reads `world.crimson` (the C# GERunner reads the
+`WorldGen.crimson` static inside the convert arm, `WorldGen.cs:76304`) —
+the `(seed >> 56) & 1` re-derivation that ignored the UI pick / persisted
+flavour / drunk dawn flip is retired at all three callers.
 
 Screenshot harness: `TR_SHOT` runs pin `dt` to exactly 1/60 (so `anim_time`-driven phases
 land on the same value per frame) and `TR_MOUSE=x,y` pins the OS pointer вЂ” the vanilla

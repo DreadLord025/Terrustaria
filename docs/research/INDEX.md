@@ -75,7 +75,7 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
-| 117 | DOC-SWEEP clouds/sky (lane 33, W4-g69: v18 tail union crimson cross-note, World.crimson consumers census + 5 wirings, numCloudsTemp cadence verify, rain-cloud darkening global-dim fix, falling-star visual census; code-only) | `117-doc-sweep-clouds.md` | ✅ |
+| 117 | DOC-SWEEP clouds/sky (lane 33, W4-g69: v18 tail union crimson cross-note, World.crimson consumers census + 5 wirings, numCloudsTemp cadence verify, rain-cloud darkening global-dim fix, falling-star visual census; RETIRE: §6 g69d-star-visual ports + falling-star task-seed, §7 g67f/g61 compose confirmed, §8 12-consumer activation census + GERunner live-flavour fix, §9 clouds-family declaration; code-only) | `117-doc-sweep-clouds.md` | ✅ SEALED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
