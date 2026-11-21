@@ -2472,6 +2472,7 @@ impl App {
             state,
             back,
             tail,
+            rename_index: None,
         })));
     }
 
@@ -2507,8 +2508,10 @@ impl App {
         }
     }
 
-    /// The submit tail. The rename tail keeps Task 6's notice (no `.plr`
-    /// writer, spec §9.4); the creator's naming tails run
+    /// The submit tail. The card-rename tails run `OnFinishedSettingName`
+    /// (`UICharacterListItem.cs:208-214` / `UIWorldListItem.cs:427-432` —
+    /// the `.plr`/world-file read-modify-write, research/19 M1); the
+    /// creator's naming tails run
     /// `OnFinishedNaming` (`:1684-1689`: the trimmed name lands in the draft,
     /// `SetState(this)` restores the screen) and `OnFinishedNamingAndCreating`
     /// (`:1696-1702`: the same, then `FinishCreatingCharacter`). The chest
@@ -2524,6 +2527,9 @@ impl App {
         // `Main.npcChatText`'s sync `:1061-1067`).
         let chest_text = session.state.text.clone();
         let back = session.back.clone();
+        // `RenameButtonClick`'s `this._data` — the card the keyboard belongs
+        // to (`UICharacterListItem.cs:196-206`, `UIWorldListItem.cs:415-425`).
+        let rename_index = session.rename_index;
         // `InternalSubmit`'s cue (`SoundEngine.PlaySound(10)`,
         // `UIVirtualKeyboard.cs:975`) — the callers' `TextIsValidForSubmit`
         // gates already ran (`:358-365`'s click gate, `keyboard_enter`'s
@@ -2531,7 +2537,23 @@ impl App {
         self.audio.play("Menu_Open");
         match session.tail {
             KeyboardTail::Rename => {
-                self.front_hint = Some("Renaming is not ported yet (no save-file writer)".into());
+                // `UICharacterListItem.OnFinishedSettingName` (`:208-214`):
+                // `Main.menuMode = 10` (the saving pass-through), `_data.Rename`
+                // (`PlayerFileData.cs:207-214` — the `.plr` read-modify-write),
+                // then `OpenCharacterSelectUI`'s re-list.
+                self.rename_player_entry(rename_index, &name);
+                self.enter_front(back.expect("the rename tail is built with a back screen"));
+            }
+            KeyboardTail::WorldRename => {
+                // `UIWorldListItem.OnFinishedSettingName` (`:427-432`):
+                // `Main.menuMode = 10` + `_data.Rename` -> `WorldGen.RenameWorld`
+                // (`WorldGen.cs:6721-6753`); the rename callback's `menuMode = 6`
+                // (`WorldFileData.cs:448-451`) reopens the world select — the
+                // port's world file keeps its stem (the vanilla
+                // `GetWorldPathFromName` move is the cloud path's, `:433`), so
+                // the re-list re-reads the rewritten header.
+                self.rename_world_entry(rename_index, &name);
+                self.audio.play("Menu_Open"); // `GetRenameCallback:473` — sound 10
                 self.enter_front(back.expect("the rename tail is built with a back screen"));
             }
             KeyboardTail::Name => {

@@ -351,6 +351,54 @@ pub fn erase_world(path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// `WorldFileData.Rename` -> `WorldGen.RenameWorld` -> `RenameWorldCallBack`
+/// (`IO/WorldFileData.cs:444-453`, `WorldGen.cs:6721-6753`): `SetAsActive` +
+/// `WorldFile.LoadWorld`, `Main.worldName = newName`, `WorldFile.SaveWorld`
+/// — the world file's header name is rewritten, every other payload byte
+/// rides through unchanged. The port's listing reads `.trwld`
+/// (`list_worlds`), so the native container is the rename target: the name
+/// is the one header field (`save.rs:230-232` — u32 byte length + UTF-8, at
+/// offset 20 after magic 8 + version 4 + seed 8), spliced in place like the
+/// `.plr` rename (`player_file::rename_player_file`). The file keeps its
+/// stem: the vanilla `GetWorldPathFromName` move is the cloud-save path's
+/// (`WorldFileData.cs:433`), and `RenameWorldCallBack` itself only rewrites
+/// the loaded file. `false` when the header cannot be read (the C#'s
+/// `WorldGen.loadFailed` arm re-lists without writing, `:6735-6743`).
+pub fn rename_world(path: &Path, new_name: &str) -> bool {
+    let Ok(raw) = std::fs::read(path) else {
+        return false;
+    };
+    let Some(spliced) = splice_trwld_name(&raw, new_name) else {
+        return false;
+    };
+    std::fs::write(path, spliced).is_ok()
+}
+
+/// The `.trwld` header-name splice [`rename_world`] runs — the same
+/// read-modify-write shape as the `.plr` rename: validate the header prefix
+/// the listing validates (`binio::read_trwld_header`), replace ONLY the name
+/// field, keep every later byte (the tile body and the v7+ side sections).
+fn splice_trwld_name(raw: &[u8], new_name: &str) -> Option<Vec<u8>> {
+    let header = tr_core::binio::read_trwld_header(raw, tr_core::save::VERSION);
+    if !header.valid {
+        return None;
+    }
+    // `save.rs:227-232`: MAGIC(8) + VERSION(4) + seed(8), then the u32 name
+    // length + the UTF-8 bytes.
+    let mut r = tr_core::binio::Reader::new(raw);
+    r.skip(8 + 4 + 8)?;
+    let name_len = r.u32()? as usize;
+    let name_start = r.pos();
+    r.skip(name_len)?;
+    let name_end = r.pos();
+    let mut out = Vec::with_capacity(raw.len() + new_name.len());
+    out.extend_from_slice(&raw[..name_start - 4]);
+    out.extend_from_slice(&(new_name.len() as u32).to_le_bytes());
+    out.extend_from_slice(new_name.as_bytes());
+    out.extend_from_slice(&raw[name_end..]);
+    Some(out)
+}
+
 /// `Main.ErasePlayer` (`Main.cs:4772-4791`) for a sidecar-backed entry:
 /// deletes the file and its `.bak` (`:4775-4778`) and the sibling directory
 /// named by the extensionless path (`:4782-4786`); the caller re-lists
@@ -500,6 +548,61 @@ mod tests {
         buf.extend_from_slice(&height.to_le_bytes());
         buf.extend_from_slice(b"junk tail");
         std::fs::write(path, buf).unwrap();
+    }
+
+    // --- The world-card rename (research/19 M1 twin, W4-f22) ------------------
+
+    #[test]
+    fn rename_world_rewrites_the_header_name_and_the_relist_reads_it() {
+        // `WorldGen.RenameWorldCallBack` (`WorldGen.cs:6727-6753`): load,
+        // `Main.worldName = newName`, save — the file keeps its stem, the
+        // re-list reads the rewritten header. The tile body rides through
+        // unchanged (the full parse still succeeds).
+        let dir = temp_dir("rename-world");
+        let path = dir.join("alpha.trwld");
+        write_world(&path, "Alpha", 64, 48);
+        assert!(rename_world(&path, "Renamed Realm"));
+        let listed = list_worlds(&dir, 0);
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].name, "Renamed Realm");
+        assert!(listed[0].valid);
+        // The whole file still parses — only the header name changed.
+        let raw = std::fs::read(&path).unwrap();
+        let (world, _side) = tr_core::save::parse(&raw).unwrap();
+        assert_eq!(world.name, "Renamed Realm");
+        assert_eq!((world.width, world.height), (64, 48));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rename_world_splice_keeps_every_byte_past_the_name_field() {
+        // The header-only witness: magic/version/seed before the name and the
+        // whole tail after it are byte-identical; only the u32 length + the
+        // name bytes change.
+        let dir = temp_dir("rename-world-splice");
+        let path = dir.join("mid.trwld");
+        write_header_only(&path, "Mid", 6400, 1800);
+        let raw = std::fs::read(&path).unwrap();
+        let spliced = splice_trwld_name(&raw, "A Longer World Name").unwrap();
+        assert_eq!(&spliced[..20], &raw[..20]); // magic 8 + version 4 + seed 8
+        let old_len = u32::from_le_bytes(raw[20..24].try_into().unwrap()) as usize;
+        let new_len = u32::from_le_bytes(spliced[20..24].try_into().unwrap()) as usize;
+        assert_eq!(new_len, "A Longer World Name".len());
+        assert_eq!(&spliced[24 + new_len..], &raw[24 + old_len..]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rename_world_refuses_an_invalid_header_and_a_missing_file() {
+        // The `WorldGen.loadFailed` arm (`WorldGen.cs:6735-6743`): no write,
+        // the caller re-lists. Garbage and a missing path both answer false.
+        let dir = temp_dir("rename-world-bad");
+        let path = dir.join("junk.trwld");
+        std::fs::write(&path, b"not a world at all").unwrap();
+        assert!(!rename_world(&path, "X"));
+        assert_eq!(std::fs::read(&path).unwrap(), b"not a world at all");
+        assert!(!rename_world(&dir.join("absent.trwld"), "X"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

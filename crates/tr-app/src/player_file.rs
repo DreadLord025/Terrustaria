@@ -1090,6 +1090,54 @@ pub fn write_player_file(path: &Path, file: &PlayerFileWrite) -> Result<(), Play
     Ok(())
 }
 
+/// `PlayerFileData.Rename` (`IO/PlayerFileData.cs:207-214`) for a card the
+/// port has no live `Player` for: the trimmed name lands on the stored
+/// character and `Player.SavePlayer` re-writes the file. The vanilla mutates
+/// `Player.name` then serializes the WHOLE live player; the port models only
+/// the card state, so the write is a read-modify-write splice: decrypt
+/// (`LoadPlayer:55073-55076`), replace ONLY `Serialize`'s first field
+/// (`Player.cs:54752`'s name string — the byte right after the 4-byte
+/// release + the 20-byte `FileMetadata`), keep every other byte (including
+/// the unmodelled tail the writer would default), re-encrypt with the
+/// write-side PKCS7 envelope (`:54734-54742`). The `.bak` copy is
+/// `InternalSavePlayerFile:54730-54733` — the previous file before the
+/// overwrite. `Player.GetFileData` skips files that cannot load
+/// (`Player.cs:55862-55881`), so the read gate runs first.
+pub fn rename_player_file(path: &Path, new_name: &str) -> Result<(), PlayerFileError> {
+    let raw = std::fs::read(path)?;
+    let plain = cbc_decrypt(&raw);
+    // The load gate: a file the listing would skip cannot be renamed either.
+    read_player_bytes(&plain)?;
+    let spliced = rename_plaintext_name(&plain, new_name)
+        .ok_or(PlayerFileError::Truncated("rename name field"))?;
+    // `InternalSavePlayerFile:54730-54733`: `FileUtilities.Copy(path, path +
+    // ".bak")` when the file exists — it does (the read above succeeded).
+    let mut bak = path.as_os_str().to_os_string();
+    bak.push(".bak");
+    std::fs::write(PathBuf::from(bak), &raw)?;
+    std::fs::write(path, cbc_encrypt(&spliced))?;
+    Ok(())
+}
+
+/// The name-field splice [`rename_player_file`] runs: `Serialize`'s first
+/// field (`Player.cs:54752`) sits at offset 24 — the `i32` release
+/// (`InternalSavePlayerFile:54738`) plus the 20-byte `FileMetadata`
+/// (`FileMetadata.cs:22-27`: u64 magic + u32 revision + u64 favorites). The
+/// 7-bit-length-prefixed string is replaced whole; every later byte keeps
+/// its value. `None` when the field cannot be walked (a truncated file).
+fn rename_plaintext_name(plain: &[u8], new_name: &str) -> Option<Vec<u8>> {
+    let mut r = Reader::new(plain);
+    r.skip(4 + 20)?;
+    let name_start = r.pos();
+    r.cs_string()?;
+    let name_end = r.pos();
+    let mut w = Writer::new();
+    w.bytes(&plain[..name_start]);
+    w.cs_string(new_name);
+    w.bytes(&plain[name_end..]);
+    Some(w.into_inner())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1149,6 +1197,82 @@ mod tests {
             inv_favorites: 1 << 0 | 1 << 2, // slots 0 and 2 starred
             last_saved_binary: 0,
         }
+    }
+
+    // --- The card rename (research/19 M1, W4-f22) -----------------------------
+
+    #[test]
+    fn rename_rewrites_only_the_name_field_and_baks_the_previous_file() {
+        // `PlayerFileData.Rename` (`IO/PlayerFileData.cs:207-214`): the name
+        // lands, `Player.SavePlayer` re-writes, `InternalSavePlayerFile:54730-
+        // 54733` copies the previous file to `.bak`. Every OTHER field keeps
+        // its value — the splice never re-defaults the unmodelled tail.
+        let dir = crate::test_world_helpers::test_scratch("plr-rename");
+        let path = dir.join("Belsin.plr");
+        write_player_file(&path, &sample()).unwrap();
+        let before = read_player_file(&path).unwrap();
+        rename_player_file(&path, "Zephyra").unwrap();
+        let after = read_player_file(&path).unwrap();
+        assert_eq!(after.name, "Zephyra");
+        // The rest of the card state is untouched.
+        assert_eq!(after.difficulty, before.difficulty);
+        assert_eq!(after.hair, before.hair);
+        assert_eq!(after.inventory, before.inventory);
+        assert_eq!(after.inv_favorites, before.inv_favorites);
+        assert_eq!(after.hair_color, before.hair_color);
+        assert_eq!(after.revision, before.revision);
+        // The `.bak` is the pre-rename file (`:54732`).
+        let bak = dir.join("Belsin.plr.bak");
+        assert_eq!(read_player_file(&bak).unwrap().name, "Belsin");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rename_splice_keeps_every_byte_past_the_name_field() {
+        // The plaintext witness: only `Serialize`'s first field changes; the
+        // bytes before it (release + FileMetadata) and after it (the whole
+        // remaining Serialize walk) are byte-identical.
+        let plain = serialize_plaintext(&sample());
+        let spliced = rename_plaintext_name(&plain, "A Much Longer Name Than Before").unwrap();
+        let mut r = Reader::new(&plain);
+        r.skip(4 + 20).unwrap();
+        let name_start = r.pos();
+        r.cs_string().unwrap();
+        let name_end = r.pos();
+        assert_eq!(&spliced[..name_start], &plain[..name_start]);
+        let mut r2 = Reader::new(&spliced);
+        r2.skip(4 + 20).unwrap();
+        assert_eq!(r2.cs_string().unwrap(), "A Much Longer Name Than Before");
+        let tail_start = r2.pos();
+        assert_eq!(&spliced[tail_start..], &plain[name_end..]);
+        // A truncated buffer refuses instead of mis-splicing.
+        assert!(rename_plaintext_name(&plain[..25], "X").is_none());
+    }
+
+    #[test]
+    fn rename_refuses_a_file_the_listing_would_skip() {
+        // `Player.GetFileData`'s null-on-failure skip (`Player.cs:55862-55881`)
+        // gates the rename too — garbage is not renamed, nothing is written.
+        let dir = crate::test_world_helpers::test_scratch("plr-rename-bad");
+        let path = dir.join("junk.plr");
+        std::fs::write(&path, b"unreadable").unwrap();
+        assert!(rename_player_file(&path, "X").is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), b"unreadable");
+        assert!(!dir.join("junk.plr.bak").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rename_round_trips_a_multibyte_name_through_the_7bit_length() {
+        // The keyboard allows any text (`Lang.menu[45]`, no charset gate); a
+        // >127-byte name exercises the multi-byte 7-bit length prefix on both
+        // the write (`Writer::cs_string`) and the read walk.
+        let long = "Ы".repeat(80); // 160 UTF-8 bytes -> a 2-byte length prefix
+        let plain = serialize_plaintext(&sample());
+        let spliced = rename_plaintext_name(&plain, &long).unwrap();
+        let file = read_player_bytes(&spliced).unwrap();
+        assert_eq!(file.name, long);
+        assert_eq!(file.inventory, sample().inventory);
     }
 
     #[test]

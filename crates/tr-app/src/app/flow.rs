@@ -69,19 +69,33 @@ pub(crate) struct KeyboardSession {
     pub(crate) request: ui::keyboard::Request,
     pub(crate) state: ui::keyboard::KeyboardState,
     pub(crate) back: Option<FrontScreen>,
-    /// Which submit tail runs — the rename notice (Task 6) or the character
-    /// creator's naming flows (`Click_Naming` -> `OnFinishedNaming`,
+    /// Which submit tail runs — the card renames (research/19 M1) or the
+    /// character creator's naming flows (`Click_Naming` -> `OnFinishedNaming`,
     /// `UICharacterCreation.cs:1659-1689`; `Click_NamingAndCreating` ->
     /// `OnFinishedNamingAndCreating` -> `FinishCreatingCharacter`, `:1668-1702`).
     pub(crate) tail: KeyboardTail,
+    /// The card index the rename tails write back to — `RenameButtonClick`'s
+    /// `this._data` (`UICharacterListItem.cs:196-206`, `UIWorldListItem.cs:
+    /// 415-425`): the keyboard belongs to ONE card, so the submit does not
+    /// search the list by name (`App.players`/`App.worlds` index). `None` on
+    /// every non-rename session.
+    pub(crate) rename_index: Option<usize>,
 }
 
 /// The keyboard's on-submit behaviour (`UIVirtualKeyboard.cs:86`'s event pair).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum KeyboardTail {
-    /// The card renames: the port has no `.plr` writer, so Submit notices
-    /// (Task 6's documented deviation).
+    /// The character-card rename (`UICharacterListItem.OnFinishedSettingName`,
+    /// `:208-214`): the trimmed name lands through `PlayerFileData.Rename`
+    /// (`IO/PlayerFileData.cs:207-214` — the `.plr` read-modify-write,
+    /// research/19 M1), then `OpenCharacterSelectUI` re-lists.
     Rename,
+    /// The world-card rename (`UIWorldListItem.OnFinishedSettingName`,
+    /// `:427-432`): the trimmed name lands through `WorldFileData.Rename` ->
+    /// `WorldGen.RenameWorld` (`IO/WorldFileData.cs:444-453`,
+    /// `WorldGen.cs:6721-6753` — the world file's header rewrite), then the
+    /// rename callback's `menuMode = 6` reopens the world select.
+    WorldRename,
     /// `Click_Naming` (`:1659-1666`): the name lands in the draft, the
     /// creation screen returns.
     Name,
@@ -553,8 +567,8 @@ impl FrontScreenBehaviours for FrontScreen {
                     // opens over the card's name — `Lang.menu[45]` "Enter
                     // Character Name:", `allowEmpty: true`, the ctor's
                     // 20-character cap (`:199`, `UIVirtualKeyboard.cs:159`).
-                    // There is no `.plr` writer to rename into (spec §9.4),
-                    // so Submit stays the not-ported notice (Task 6's flow).
+                    // Submit runs `OnFinishedSettingName`'s `.plr` rename
+                    // (`KeyboardTail::Rename`, research/19 M1).
                     Some(ui::char_select::CardAction::Rename(i)) => {
                         let name = app
                             .players
@@ -571,6 +585,11 @@ impl FrontScreenBehaviours for FrontScreen {
                             },
                             FrontScreen::CharSelect,
                         );
+                        // `this._data` rides the session — the submit writes
+                        // back to THIS card, not a name search.
+                        if let Some(FrontScreen::Keyboard(session)) = app.front.as_mut() {
+                            session.rename_index = Some(i);
+                        }
                         None
                     }
                     // `DeleteButtonClick` (`:242-254`): parks the target, then
@@ -965,7 +984,7 @@ impl FrontScreenBehaviours for FrontScreen {
                             .get(i)
                             .map(|w| w.name.clone())
                             .unwrap_or_default();
-                        app.open_keyboard(
+                        app.open_keyboard_with_tail(
                             ui::keyboard::Request {
                                 label: ui::keyboard::enter_world_name(),
                                 initial: name,
@@ -973,8 +992,14 @@ impl FrontScreenBehaviours for FrontScreen {
                                 max_length: 27,
                                 context: ui::keyboard::Context::Text,
                             },
-                            FrontScreen::WorldSelect,
+                            Some(FrontScreen::WorldSelect),
+                            KeyboardTail::WorldRename,
                         );
+                        // `this._data` rides the session (`UIWorldListItem.cs:
+                        // 415-425`) — the submit rewrites THIS world's header.
+                        if let Some(FrontScreen::Keyboard(session)) = app.front.as_mut() {
+                            session.rename_index = Some(i);
+                        }
                         None
                     }
                     // `DeleteButtonClick` (`:346-358`): parks the target, then
@@ -1648,6 +1673,7 @@ pub(crate) mod front_flow_tests {
                 state,
                 back: Some(FrontScreen::CharSelect),
                 tail: KeyboardTail::Rename,
+                rename_index: None,
             })
         };
         let fronts = [
@@ -2022,10 +2048,70 @@ pub(crate) mod front_flow_tests {
         let c0 = ui::world_select::card_layout(l.list, 0, false);
         app.mouse_pos = centre(c0.rename);
         front_press(&mut app);
-        assert!(
-            matches!(app.front, Some(FrontScreen::Keyboard(_))),
-            "Rename opens the world-naming keyboard"
+        let Some(FrontScreen::Keyboard(session)) = app.front.as_ref() else {
+            panic!("Rename opens the world-naming keyboard");
+        };
+        // `UIWorldListItem.cs:419`: `Lang.menu[48]`, the card's name,
+        // `allowEmpty: true`, the 27 cap; `this._data` rides the session.
+        assert_eq!(session.request.label, ui::keyboard::enter_world_name());
+        assert_eq!(session.request.initial, "W1");
+        assert!(session.request.allow_empty);
+        assert_eq!(session.request.max_length, 27);
+        assert_eq!(session.tail, KeyboardTail::WorldRename);
+        assert_eq!(session.rename_index, Some(0));
+        assert_eq!(session.back, Some(FrontScreen::WorldSelect));
+    }
+
+    #[test]
+    fn world_rename_submit_rewrites_the_file_and_reopens_the_select() {
+        // `OnFinishedSettingName` (`UIWorldListItem.cs:427-432`) ->
+        // `WorldGen.RenameWorldCallBack` (`WorldGen.cs:6727-6753`): the header
+        // name is rewritten, the callback's sound 10 + `menuMode = 6` reopen
+        // the world select, whose `OnActivate` re-list reads the new name.
+        let dir = crate::test_world_helpers::test_scratch("flow-world-rename");
+        let path = dir.join("w1.trwld");
+        tr_core::save::save(
+            &path,
+            &World::new("W1".into(), 8, 8),
+            &tr_core::save::WorldSide::default(),
+        )
+        .unwrap();
+        let mut w = world_entry("W1");
+        w.path = Some(path.clone());
+        let request = ui::keyboard::Request {
+            label: ui::keyboard::enter_world_name(),
+            initial: "W1".into(),
+            allow_empty: true,
+            max_length: 27,
+            context: ui::keyboard::Context::Text,
+        };
+        let state = ui::keyboard::KeyboardState::new(&request);
+        let mut app = flow_app(
+            Some(FrontScreen::Keyboard(Box::new(KeyboardSession {
+                request,
+                state,
+                back: Some(FrontScreen::WorldSelect),
+                tail: KeyboardTail::WorldRename,
+                rename_index: Some(0),
+            }))),
+            vec![],
+            vec![w],
         );
+        app.keyboard_character('Z');
+        let before = app.audio.played_count();
+        app.keyboard_submit();
+        assert_eq!(app.front, Some(FrontScreen::WorldSelect));
+        assert!(app.menu.is_none(), "the invariant holds");
+        assert!(
+            app.audio.played_count() >= before + 2,
+            "the submit cue (10) + the rename callback's cue (10, :473)"
+        );
+        // The file's header carries the trimmed typed name; the stem stays.
+        let raw = std::fs::read(&path).unwrap();
+        let (world, _) = tr_core::save::parse(&raw).unwrap();
+        assert_eq!(world.name, "W1Z");
+        assert!(path.exists(), "the file keeps its stem");
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 
     #[test]
@@ -3093,6 +3179,7 @@ pub(crate) mod front_flow_tests {
                 state,
                 back: Some(FrontScreen::CharSelect),
                 tail: KeyboardTail::Rename,
+                rename_index: None,
             }))),
             vec![entry("Bob", false)],
             vec![],
@@ -3125,6 +3212,9 @@ pub(crate) mod front_flow_tests {
         assert!(session.request.allow_empty);
         assert_eq!(session.request.max_length, 20);
         assert_eq!(session.back, Some(FrontScreen::CharSelect));
+        // `this._data` rides the session — the submit writes card 0.
+        assert_eq!(session.rename_index, Some(0));
+        assert_eq!(session.tail, KeyboardTail::Rename);
         // The state seeds from the request (`UIVirtualKeyboard.cs:429-433`) —
         // a non-empty start stays Default.
         assert_eq!(session.state.text, "Bob");
@@ -3150,13 +3240,31 @@ pub(crate) mod front_flow_tests {
     }
 
     #[test]
-    fn keyboard_submit_reopens_with_the_not_ported_notice() {
-        // The rename tail (`:205-213`) reopens the screen; the port's rename
-        // itself is the notice (no save-file writer, spec §9.4).
+    fn keyboard_submit_renames_the_card_and_reopens() {
+        // The rename tail (`UICharacterListItem.OnFinishedSettingName`,
+        // `:208-214`): the trimmed name lands on the parked card
+        // (`rename_index` — `this._data`), then `OpenCharacterSelectUI`
+        // reopens. The seam write itself:
+        let mut app = flow_app(
+            Some(FrontScreen::CharSelect),
+            vec![entry("Bob", false)],
+            vec![],
+        );
+        app.rename_player_entry(Some(0), "  Bobby  ".trim());
+        assert_eq!(app.players[0].name, "Bobby", "the trimmed name lands");
+        assert!(app.front_hint.is_none(), "the rename writes, no notice");
+        // The full submit tail: the keyboard closes back to the char select
+        // (the re-list rebuilds the disk-less fake from `TR_FAKE_CHARS`, the
+        // same shape as the fake erase — the disk-backed rename persists
+        // through the `.plr` write, witnessed in `player_file::tests`).
         let mut app = keyboard_app();
+        if let Some(FrontScreen::Keyboard(session)) = app.front.as_mut() {
+            session.rename_index = Some(0);
+            session.state.text = "Bobby".into();
+        }
         app.keyboard_submit();
         assert_eq!(app.front, Some(FrontScreen::CharSelect));
-        assert!(app.front_hint.is_some(), "the submit tail notices");
+        assert!(app.menu.is_none(), "the invariant holds");
     }
 
     #[test]
@@ -3177,6 +3285,7 @@ pub(crate) mod front_flow_tests {
                 state,
                 back: Some(FrontScreen::CharSelect),
                 tail: KeyboardTail::Rename,
+                rename_index: None,
             }))),
             vec![],
             vec![],
@@ -3253,6 +3362,7 @@ pub(crate) mod front_flow_tests {
                 state,
                 back: None,
                 tail: KeyboardTail::ChestRename,
+                rename_index: None,
             }))),
             vec![],
             vec![],
