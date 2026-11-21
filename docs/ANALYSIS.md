@@ -39375,9 +39375,11 @@ commits: `f4da0697` (order), `d9b6219b` (lifetime), `a5ba9493` (gates),
    `moonType`/`wind`/`numClouds` (`:10873-10876`) - a whole-init
    determinism project (research/67 §4), not a cage-lane change.
 5. **Witness union**: 42 supplement witnesses ported into
-   `critter_cage_anim.rs` (54 total) + 3 tiles.rs wiring witnesses + 2
-   frame.rs app-side witnesses + 2 mod.rs key/warm-up witnesses, all
-   WRITTEN NOT RUN. Keep-one folds per research/67 §5. Two g33
+   `critter_cage_anim.rs` (54 total) + 7 new app-side wiring witnesses
+   (tiles.rs order/t0-parity, frame.rs tick-order/key-gate, mod.rs
+   key-coverage/warm-up-lifetime) + the renamed/updated tiles.rs feed
+   witness, all WRITTEN NOT RUN. Keep-one folds per
+   research/67 §5. Two g33
    written-not-run assertions re-derived against the C# during the port:
    the butterfly forward +8 hop reads the POST-increment frame (g33's
    6->15 pin unreachable; now 3->4->12 + the 7->0 wrap), the pufferfish
