@@ -329,6 +329,14 @@ g53 commit touches `ui/notifications.rs` — **skipped, nothing to take**).
 
 ### 5043 Torch God's Favor — the 3-way keep-one note (c36 / f33b / g90b)
 
+> **SUPERSEDED by the RETIRE (3) FINAL verdict below** — f33's tip moved
+> past `333479e0` (the probe this table read): `8a000407` landed the FULL
+> `ItemCheck_UseTorchGodsFavor` body + the `HandleSpecialEvent(24)` named
+> dispatcher, and f33's retire closeout (research/93a §3b/§8, tip
+> `83387628b`) adjudicates **keep-f33-full-body, DROP c36's reduced copy
+> and a6's arm**. The "no keep-one deletion needed" verdict below is
+> stale; the exact c36 drop-hunk is published in RETIRE (3).
+
 The three branches touch ADJACENT C# methods, not the same logic — no
 keep-one deletion is needed, the split is by responsibility:
 
@@ -927,6 +935,102 @@ hook fires; the residual gate is c37's provider fold). Everything else
 in the 86 mapped conditions has a live notify site on this branch, f30's
 tip, or a published merge join; the 94 Npc/Item/Tile/Craft conditions all
 keep their live dispatch (per-id reachability is content coverage).
+
+## W4-c36 RETIRE (3) — 5043 FINAL: keep-f33-full-body, the c36 drop-hunk (2026-11-21)
+
+**The verdict is f33's** (research/93a §3b + §8, retire tip `83387628b`,
+read in full): the f33 tip `8a000407` landed the WHOLE
+`ItemCheck_UseTorchGodsFavor` body (`torch_god_favor_use.rs` —
+`run_favor_arm` `:98`, the `handle_special_event(24)` credit `:117`, the
+press-edge machine `torch_gods_favor_item_check` `:182`, the
+`editing.rs:2007` seam) + the named dispatcher (`achievements.rs:482-487`).
+a6b `d7de8bd5` fixed its broadcast (row-targeted now) but still lacks the
+ApplyItemTime order, the `UsingBiomeTorches` property accessor, the net
+split, the msg-51 request and the `:43323` re-arm. **KEEP f33's full body;
+DROP a6's arm and c36's reduced copy.** c36's enter-world re-check
+(`achievement_hooks.rs:173-176`, the `OnPlayerEnteredWorld` `:192-195`
+arm) is a SEPARATE wire and SURVIVES — it re-completes the row for a
+character whose `.plr` carries the unlock (idempotent).
+
+**Re-verified at the moved tips (this pass):** a6 `c039e4448` (retire
+1/4+2/4 are docs — its 5043 arm is UNCHANGED from `d7de8bd5`, the §3b
+drop pins still valid: `powerups.rs:347-366` the fn, `:104` the dispatch
+entry, `:71` the `is_powerup` leg, `:1071`/`:1093` the two witnesses);
+f33 `83387628b` (the seam `editing.rs:2007` + the dispatcher intact);
+the `GAIN_TORCH_GODS_FAVOR` row is blob-identical c36↔f33
+(`e048692067a9…`). **g53 `04013f53d`'s row-category correction rides its
+own tip** (`Category::Slayer`, blob `b9f8c4f8…` — the vanilla
+`(AchievementCategory)0` default; c36's `Category::None` row dedups onto
+g53's at merge, no c36 edit — the registry is e22/g53's lane).
+
+### The exact c36 drop-hunk (apply at the f33×c36 merge, THIS tip's lines)
+
+All four hunks are in `crates/tr-app/src/world_sim/editing.rs` (tip
+`5be9d3438` line numbers — the RETIRE phases are doc-only, the code lines
+are `3a64a1b96`'s):
+
+**Hunk 1 — the `is_summon` gate list, `:2017`, replace:**
+
+```rust
+                | 4271 | 2767 | 29 | 109 | 1291 | 5043
+```
+
+**with:**
+
+```rust
+                | 4271 | 2767 | 29 | 109 | 1291
+```
+
+(the 5043 leg leaves the summon gate — f33's favor arm rides its OWN
+`:43600` permanent-item seam, not the mid-swing summon list.)
+
+**Hunk 2 — the dispatch arm, `:2088-2094`, DELETE (7 lines):**
+
+```rust
+        // W4-c36 — the Torch God's Favor (`ItemCheck_UseTorchGodsFavor`,
+        // `Player.cs:45226-45242`): the 5043 use while locked unlocks the
+        // biome torches and fires HandleSpecialEvent(24) →
+        // GAIN_TORCH_GODS_FAVOR ("Use").
+        if held.kind == 5043 && held.count > 0 && use_torch_gods_favor(app) {
+            return;
+        }
+```
+
+(f33's `editing.rs:2007` seam replaces it — the C# `ItemCheck` order puts
+the favor check at the permanent-item seam BEFORE the summon gate.)
+
+**Hunk 3 — the reduced fn, `:16325-16353`, DELETE (29 lines: the doc
+`:16325-16331` + `pub(crate) fn use_torch_gods_favor` `:16332-16353`).**
+The reduced copy's gaps vs the C# body (f33 93a §3b's table): no
+`UsingBiomeTorches` write (the port folds it into `unlocked_biome_torches`,
+`player_lights.rs:97`'s recorded deviation — f33 carries the real
+accessor pair), no net split / msg-51 request, the stack pay inline
+instead of the `:43280-43326` consumable tail with the `:43323` re-arm.
+
+**Hunk 4 — the witness, `:16534-16559`, DELETE (26 lines: the doc
+`:16534-16536` + `#[test]` `:16537` +
+`w4_c36_the_torch_gods_favor_unlocks_and_completes` `:16538-16559`).**
+Its assertions re-pin onto f33's six witnesses (93a §3's list: the
+Use-flag row pin `achievements.rs:839`, the event-24 isolation `:868`,
+the use-arm grant + credit). The enter-world sweep witness
+(`achievement_hooks.rs:516-544`, `the_enter_world_sweep_completes_the_loaded_rows`
+— its `GAIN_TORCH_GODS_FAVOR` assertion `:534`) SURVIVES untouched.
+
+**Keep on c36 (NOT dropped):** the `GAIN_TORCH_GODS_FAVOR` registry row
+(`achievements_data.rs:1004-1010` — e22/g53's lane owns its category
+correction), the enter-world re-check (`achievement_hooks.rs:173-176`),
+the `complete_condition` primitive (`achievements.rs` — ONE helper at the
+merge, a6b==c36==f33; a6b's `frac`-clear line rides the survivor if the
+shared `Condition` carries `frac`, 93a §8 step 3). The
+`player_lights.rs:94-98` fold comment retires at the merge (f33's accessor
+pair replaces the folded read — the biome-torch hold-style then reads the
+real `UsingBiomeTorches` property).
+
+**Anchors:** `anchors.txt:901`'s feature text names
+`use_torch_gods_favor` beside the power-up fn — the MARKER
+(`fn use_permanent_powerup`) survives the drop; the merger repoints the
+feature-text clause to f33's `torch_god_favor_use.rs` (the canary rule —
+never delete the row).
 
 ## Task seeds
 
