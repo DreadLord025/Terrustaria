@@ -4,7 +4,7 @@
 //! (code-only mode: no compiler/tests were run on this branch; the witness
 //! tests below are written, not executed).
 //!
-//! ## Census (research/26d row 43)
+//! ## Census (research/156 row 43 — was 26d, registry §3)
 //!
 //! ONE vanilla member: CrystalLeafShot 227 (`ProjectileID.cs:1008`,
 //! `SetDefaults` `Projectile.cs:3124-3136`: `netImportant`,
@@ -20,8 +20,12 @@
 //! * `:27863-27875` — the one-shot cue: `soundDelay == 0 && type == 227`
 //!   latches `soundDelay = -1`, plays sound 6 (the INT overload
 //!   `PlaySound(6, (int)X, (int)Y)` — default style 1) and spawns 8× dust
-//!   157, each drawing ONE `Main.rand.NextFloat()` at the call site
-//!   (`:27873`, `velocity += base.velocity * NextFloat()`).
+//!   157 through [`crystal_leaf_burst_227`] — the W4-e3 STAGED emitter
+//!   ACTIVATED here (research/231 row 1: the 8 kept call-site `NextFloat`
+//!   draws are REPLACED by the emitter — the g63 body-skip supersede
+//!   convention). Per dust: `NewDust` internals FIRST, then `noGravity`,
+//!   `velocity *= 3`, `scale = 1.5`, then the POST-spawn
+//!   `velocity += base.velocity * NextFloat()` (`:27870-27873`).
 //! * `:27876-27878` — the hue chain: `num320 = (((1 − timeLeft/180) * −6 *
 //!   0.85 + 0.33) % 1 + 1) % 1`; `Lerp(hslToRgb(num320, 1, 0.5), Red,
 //!   Remap(num320, 0.33, 0.7, 0, 1))`, then `Lerp(value, Lerp(LimeGreen,
@@ -33,25 +37,30 @@
 //!
 //! ## Skips (documented)
 //!
-//! The dust BODIES (no dust layer in the pool) — the explicit call-site
-//! `NextFloat` draws STAY (the `projectile_ai_misc` convention). The
-//! particle-orchestrator request is render state (no particle layer) —
+//! The particle-orchestrator request is render state (no particle layer) —
 //! the hue chain is ported as [`leaf_shot_hue`] so the wiring draw can
 //! read it. The id-6 sound rides `wants_sound` as `(6, 1, …)`; the pool
 //! drain's id-6 façade is a wiring follow-up (today it plays only ids 0/2,
 //! `world_sim/projectiles.rs:460-473`) — the intent + the −1 latch are the
-//! observable state.
+//! observable state. The Kill hook's 15× dust-157 bodies + their 15
+//! `NextFloat` draws are W4-g65's (`projectile_death_dust.rs`'s 227 drain
+//! arm, `:74524-74534`, snapshot→drain on the live stream) — the g65
+//! body-lane supersede; `leaf_shot_kill` keeps only the id-6 cue intent.
 //!
 //! ## RNG contract
 //!
-//! The AI arm: 8 `NextFloat` on the first tick only (the soundDelay latch).
-//! The Kill hook: 15 `NextFloat` (the 15× dust 157's `oldVelocity` blend,
-//! `:74531`) + the sound-6 int play (no draw at the call site). Both on the
+//! The AI arm: per dust, the `NewDust` internals then ONE POST-spawn
+//! `NextFloat` (`:27873`), ×8, first tick only (the soundDelay latch) —
+//! the e3 emitter's draw order, no longer a bare 8-float census. The Kill
+//! hook draws NOTHING at the machine (the cue is draw-free); its 15
+//! `NextFloat` + internals ride the g65 death drain. Both on the
 //! `UpdateProjectiles` stream, in the C#'s order.
 #![allow(dead_code)] // UNWIRED (W4-d5): the 227 row + the dispatch arm are the wiring step
 
 use crate::projectile::{Projectile, get_lerp_value};
 use tr_core::loot::DropRng;
+use tr_core::particles::{Color, DustPool, DustRng, SpawnCtx};
+use tr_core::World;
 
 /// `ProjectileID.CrystalLeafShot` (`ProjectileID.cs:1008`).
 pub const CRYSTAL_LEAF_SHOT: u16 = 227;
@@ -59,6 +68,61 @@ pub const CRYSTAL_LEAF_SHOT: u16 = 227;
 /// The `SetDefaults` row (`Projectile.cs:3124-3136`):
 /// (width, height, timeLeft, penetrate, extraUpdates).
 pub const SHOT_DEFAULTS: (f32, f32, i32, i32, u32) = (14.0, 14.0, 180, 1, 180);
+
+/// The pool's [`DustRng`] over the pass's [`DropRng`] stream (the W4-e3
+/// `ProjDustRng` bundle, `projectile_dust.rs:47-59` — merger keep-one):
+/// `Next(max)` is `Next(0, max)` (`UnifiedRandom.cs:136-139`).
+struct LeafDustRng<'a>(&'a mut dyn DropRng);
+
+impl DustRng for LeafDustRng<'_> {
+    fn next_max(&mut self, max: i32) -> i32 {
+        self.0.next_range(0, max)
+    }
+    fn next_range(&mut self, min: i32, max: i32) -> i32 {
+        self.0.next_range(min, max)
+    }
+    fn next_float(&mut self) -> f32 {
+        self.0.next_float()
+    }
+}
+
+/// `:27867-27874` — the 227's first-tick 8× dust-157 burst: the W4-e3
+/// STAGED emitter `style43_crystal_leaf_burst_227`
+/// (`projectile_dust.rs:1707`, research/231 row 1) ACTIVATED — body
+/// verbatim (merger keep-one with e3's copy; this lane's machine is its
+/// only caller). Per dust: internals, `noGravity`, vel×3, scale 1.5, then
+/// the POST-spawn `vel += base.vel * NextFloat()`. Sentinel behaviour is
+/// the pool's (post-writes land on slot 6000, `Dust.cs:79`). The caller
+/// owns the soundDelay latch.
+pub(crate) fn crystal_leaf_burst_227(
+    p: &Projectile,
+    world: &World,
+    dust: &mut DustPool,
+    rng: &mut dyn DropRng,
+    ctx: &SpawnCtx,
+) {
+    for _ in 0..8 {
+        let idx = dust.new_dust(
+            &mut LeafDustRng(rng),
+            ctx,
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            157,
+            0.0,
+            0.0,
+            0,
+            Color::default(),
+            1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity *= 3.0;
+        d.scale = 1.5;
+        d.velocity += p.vel * rng.next_float();
+    }
+}
 
 /// XNA `Color.Lerp` (`Color.cs`): per-channel float lerp, `(byte)`
 /// truncation — NOT banker's rounding (the `ui::color` module doc).
@@ -91,8 +155,17 @@ pub fn leaf_shot_hue(time_left: i32) -> (u8, [u8; 3]) {
 
 /// `AI()`'s aiStyle-43 arm (`Projectile.cs:27860-27892`), verbatim.
 /// `local_owner` is `Main.myPlayer`; the particle request itself is the
-/// documented render skip — the latch + the hue stay.
-pub fn leaf_shot_step(p: &mut Projectile, rng: &mut dyn DropRng, local_owner: u8) {
+/// documented render skip — the latch + the hue stay. The dust burst is
+/// the activated e3 emitter ([`crystal_leaf_burst_227`]).
+#[allow(clippy::too_many_arguments)]
+pub fn leaf_shot_step(
+    p: &mut Projectile,
+    world: &World,
+    dust: &mut DustPool,
+    rng: &mut dyn DropRng,
+    ctx: &SpawnCtx,
+    local_owner: u8,
+) {
     // `:27862` — the velocity-facing spin (+π: the sheet faces down-left).
     p.rot = p.vel.y.atan2(p.vel.x) + 3.14;
     // `:27863-27875` — the one-shot cue (the −1 latch never re-arms: the
@@ -102,11 +175,9 @@ pub fn leaf_shot_step(p: &mut Projectile, rng: &mut dyn DropRng, local_owner: u8
         // `SoundEngine.PlaySound(6, (int)X, (int)Y)` — the int overload's
         // default style 1 (the drain's id-6 façade is the wiring follow-up).
         p.wants_sound = Some((6, 1, p.pos.x, p.pos.y, 0.0));
-        for _ in 0..8 {
-            // `:27873` — the dust 157's call-site NextFloat; the body is
-            // the documented dust skip.
-            let _ = rng.next_float();
-        }
+        // `:27867-27874` — the 8× dust-157 burst, pool internals + the
+        // POST-spawn NextFloat blend (the e3 emitter, activated).
+        crystal_leaf_burst_227(p, world, dust, rng, ctx);
     }
     // `:27879-27891` — the post-increment latch: fires every other tick.
     let old = p.frame_counter;
@@ -122,14 +193,13 @@ pub fn leaf_shot_step(p: &mut Projectile, rng: &mut dyn DropRng, local_owner: u8
 }
 
 /// `Kill()`'s type-227 hook (`Projectile.cs:74524-74533`): the sound-6 int
-/// play + 15× dust 157, each with ONE call-site `NextFloat`
-/// (`velocity += oldVelocity * NextFloat()`). The dust bodies are the
-/// documented skip; the draws stay, in order.
-pub fn leaf_shot_kill(p: &mut Projectile, rng: &mut dyn DropRng) {
+/// play (draw-free). The 15× dust-157 bodies + their POST-spawn
+/// `NextFloat` blends (`:74529-74532`) are W4-g65's death drain
+/// (`projectile_death_dust.rs`'s 227 arm — snapshot→drain on the live
+/// `UpdateProjectiles` stream); the g65 body-lane supersedes this hook's
+/// former 15-float census, exactly like the AI burst's e3 supersede.
+pub fn leaf_shot_kill(p: &mut Projectile) {
     p.wants_sound = Some((6, 1, p.pos.x, p.pos.y, 0.0));
-    for _ in 0..15 {
-        let _ = rng.next_float();
-    }
 }
 
 #[cfg(test)]
@@ -154,48 +224,108 @@ mod tests {
         }
     }
 
+    fn ctx() -> SpawnCtx {
+        SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(1280.0, 720.0),
+            max_dust_to_draw: 6000,
+        }
+    }
+
+    fn world() -> World {
+        World::new("test".into(), 64, 64)
+    }
+
     /// `:27862` — the rotation faces the velocity + π.
     #[test]
     fn w4_d5_s43_the_rotation_faces_the_velocity_plus_pi() {
+        let (w, c) = (world(), ctx());
+        let mut dust = DustPool::new();
         let mut rng = UnifiedRandom::new(43);
         let mut p = shot(Vec2::new(12.0, 0.0));
-        leaf_shot_step(&mut p, &mut rng, 0);
+        leaf_shot_step(&mut p, &w, &mut dust, &mut rng, &c, 0);
         assert!((p.rot - 3.14).abs() < 1e-5, "atan2(0,12)=0 → 3.14");
         let mut p = shot(Vec2::new(0.0, -12.0));
-        leaf_shot_step(&mut p, &mut rng, 0);
+        leaf_shot_step(&mut p, &w, &mut dust, &mut rng, &c, 0);
         assert!((p.rot - (3.14 - std::f32::consts::FRAC_PI_2)).abs() < 1e-5);
     }
 
     /// `:27863-27875` — the first tick latches soundDelay −1, queues the
-    /// id-6 cue and draws EXACTLY 8 NextFloat; later ticks draw nothing.
+    /// id-6 cue and emits EXACTLY 8 dust-157 bodies through the pool
+    /// (noGravity, scale 1.5); later ticks emit nothing. The draw-mirror
+    /// witness below pins the stream position.
     #[test]
-    fn w4_d5_s43_the_first_tick_draws_eight_floats_once() {
+    fn w4_d5_s43_the_first_tick_emits_eight_bodies_once() {
+        let (w, c) = (world(), ctx());
+        let mut dust = DustPool::new();
         let mut rng = UnifiedRandom::new(43);
-        let mut oracle = UnifiedRandom::new(43);
         let mut p = shot(Vec2::new(12.0, 0.0));
-        leaf_shot_step(&mut p, &mut rng, 0);
+        leaf_shot_step(&mut p, &w, &mut dust, &mut rng, &c, 0);
         assert_eq!(p.sound_delay, -1);
         assert_eq!(p.wants_sound, Some((6, 1, p.pos.x, p.pos.y, 0.0)));
-        for _ in 0..8 {
-            assert_eq!(rng.next_float().to_bits(), oracle.next_float().to_bits());
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 8);
+        for d in &active {
+            assert_eq!(d.dust_type, 157);
+            assert!(d.no_gravity);
+            assert_eq!(d.scale, 1.5);
         }
         for _ in 0..20 {
-            leaf_shot_step(&mut p, &mut rng, 0);
+            leaf_shot_step(&mut p, &w, &mut dust, &mut rng, &c, 0);
         }
-        assert_eq!(rng.next_float().to_bits(), oracle.next_float().to_bits(), "no further draws");
+        assert_eq!(dust.slots().iter().filter(|d| d.active).count(), 8, "no further bursts");
+    }
+
+    /// The activated emitter's draw order (research/231's activation
+    /// contract): per dust, the verbatim `NewDust` internals FIRST, then
+    /// the post-writes with the POST-spawn `NextFloat` blend — mirrored
+    /// body-for-body against a direct `DustPool::new_dust` loop on a
+    /// cloned stream; the streams re-align afterwards. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d5_s43_the_burst_mirrors_the_pool_internals_and_post_float() {
+        let (w, c) = (world(), ctx());
+        let p = shot(Vec2::new(12.0, -5.0));
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(43);
+        crystal_leaf_burst_227(&p, &w, &mut dust, &mut rng, &c);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(43);
+        for _ in 0..8 {
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, p.pos, 14, 14, 157,
+                0.0, 0.0, 0, Color::default(), 1.0,
+            );
+            let md = mpool.slot_mut(idx);
+            md.no_gravity = true;
+            md.velocity *= 3.0;
+            md.scale = 1.5;
+            md.velocity += p.vel * mirror.next_float();
+        }
+        for i in 0..8 {
+            assert_eq!(dust.slot(i).dust_type, 157);
+            assert_eq!(dust.slot(i).position, mpool.slot(i).position);
+            assert_eq!(dust.slot(i).velocity, mpool.slot(i).velocity);
+            assert_eq!(dust.slot(i).scale, mpool.slot(i).scale);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000), "stream re-aligned");
     }
 
     /// `:27879` — the post-increment fires every OTHER tick: counter
     /// 0→1 (no fire), 1→0 (fire), 0→1, …
     #[test]
     fn w4_d5_s43_the_frame_latch_fires_every_other_tick() {
+        let (w, c) = (world(), ctx());
+        let mut dust = DustPool::new();
         let mut rng = UnifiedRandom::new(1);
         let mut p = shot(Vec2::new(1.0, 0.0));
-        p.sound_delay = -1; // silence the cue's draws
+        p.sound_delay = -1; // silence the cue's burst
         let mut fires = 0;
         for tick in 0..10 {
             let old = p.frame_counter;
-            leaf_shot_step(&mut p, &mut rng, 0);
+            leaf_shot_step(&mut p, &w, &mut dust, &mut rng, &c, 0);
             if old >= 1 {
                 fires += 1;
                 assert_eq!(p.frame_counter, 0, "fire resets @{tick}");
@@ -222,17 +352,17 @@ mod tests {
         assert_eq!(piece, (h as f32 * 255.0) as u8);
     }
 
-    /// The Kill hook draws EXACTLY 15 NextFloat and queues the id-6 cue.
+    /// The Kill hook queues the id-6 cue and draws NOTHING — the 15×
+    /// dust-157 bodies + their NextFloat blends ride the g65 death drain
+    /// (`projectile_death_dust.rs`'s 227 arm, `:74524-74534`).
     #[test]
-    fn w4_d5_s43_the_kill_hook_draws_fifteen_floats() {
+    fn w4_d5_s43_the_kill_hook_queues_the_cue_draw_free() {
         let mut rng = UnifiedRandom::new(5);
         let mut oracle = UnifiedRandom::new(5);
         let mut p = shot(Vec2::new(3.0, 4.0));
-        leaf_shot_kill(&mut p, &mut rng);
+        leaf_shot_kill(&mut p);
         assert_eq!(p.wants_sound, Some((6, 1, p.pos.x, p.pos.y, 0.0)));
-        for _ in 0..15 {
-            assert_eq!(rng.next_float().to_bits(), oracle.next_float().to_bits());
-        }
-        assert_eq!(rng.next_float().to_bits(), oracle.next_float().to_bits(), "15 only");
+        assert_eq!(rng.next_float().to_bits(), oracle.next_float().to_bits(), "zero draws");
+        assert_eq!(rng.next_range(0, 999), oracle.next_range(0, 999));
     }
 }
