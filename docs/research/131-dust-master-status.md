@@ -860,3 +860,22 @@ applied in place above:
    d54's own 1-40 dispatch is LATENT (the router body + 7 witnesses
    WRITTEN NOT RUN) until the queue-drain wiring folds it into the same
    `SpawnParticlesDirect` port — never both routers for one kind.
+
+### 8.5 The Orch-family declaration (d54j round)
+
+**61/61 ParticleOrchestrator dust sites PORTED** (the §8.2 census row's
+61 ND/NDP/NDD sites, +7 CloneDust siblings riding their parents' arms):
+**e4's 15 kinds WIRED** (orch sites 41-61, `orchestrator_dust.rs` —
+`spawn_orchestra` dispatch + the queue/drain/hit/post-strike seams,
+wiring batches 5-8 through SEAL `c38af30f3`; its mount half drops to f6)
++ **d54's 24 routed arms / 28 kind bytes in the router**
+(`orch_dispatch.rs::spawn_orchestra_d54`, the `_ => {}` arm's d54 half,
+this round `97c8c5180`, research/370 — LATENT until the queue-drain
+wiring; the bodies were the four batch modules 5-8, sites 1-40). The
+**renderer/net remainders stay seeded, NOT ported**: the
+`StormLightningParticle`/`LightningGenerator` bolt generation (the
+`:1038` EndPosition seam — caller-resolved), the FadingParticle /
+PrettySparkle / RandomizedFrame visual requests (RNG-free; their
+ARGUMENT draws are consumed in order at each arm), and the
+`netmodules.rs:447` Particles-carrier drain (the net lane's wiring
+step). No orchestrator dust site is unclaimed.

@@ -137,7 +137,12 @@ named machines 87+36 → **79+36**; Kill() remainder 234 → **CLOSED**
 (g65 `f6e07bb90`/`c356cb99c`, 406 = 399+7, 316-kind FINAL drain, 0
 unclaimed); e4 UNWIRED → **WIRED** (wiring batches 5-8 through SEAL
 `c38af30f3`; the mount half still drops to f6; the reforge tail keeps
-prefix.rs count-only as its ONE path).
+prefix.rs count-only as its ONE path). The **§8.5 Orch-family
+declaration** landed with the follow-up commit: 61/61 sites ported —
+e4-15 WIRED + d54-24 router (LATENT) + the renderer/net remainders
+seeded (StormLightning bolt generation, the particle-visual requests,
+the netmodules.rs Particles drain). The anchors.txt canary row
+(`spawn_orchestra_d54`) landed in the same follow-up.
 
 Code-only mode: no cargo/tests/rustfmt/graphify invoked; witnesses
 WRITTEN NOT RUN, owed a compile window in the merge-verify wave.
