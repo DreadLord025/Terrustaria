@@ -103,6 +103,19 @@ pub(crate) fn ai_spray(p: &mut Projectile, world: &mut World, local_owner: u8) {
     // desertify/snow/purify sprays (`spread::convert_sized_spray`, C4). Types
     // 1/3/4 (the 147/148/149 solutions) ride d1's `convert_sized` / g42's
     // mushroom cell on their branches — unrowed here, a no-op until they land.
+    //
+    // W4-f25 g42e GROWTH-SEAL park (g42 tip 910cc9747, 12j phase 9 SEALED):
+    // the FOURTH Convert(3) call site IS this dispatch — `Projectile.cs:
+    // 26834` with num245 = 3 for the DarkBlueSolution spray 148 (item 783
+    // shoot 3 + Clentaminator 145, `Player.cs:53487-53490`). g42's
+    // `spread::convert_cell_mushroom` (G7) is READY and its sized walk
+    // `convert_sized_mushroom` (`WorldGen.cs:55067-55083`, the same square +
+    // Manhattan-<6 gate as the cleanse, RNG-free) landed there with its
+    // witness. MERGER CONTRACT (one arm, published both sides): add
+    // `3 => tr_core::spread::convert_sized_mushroom(world, tx, ty, size)`
+    // into the match below — NOT wired on this branch (the fn does not
+    // exist here; the compile would break, the 12j/12g cross-notes carry
+    // the contract). Types 1/4 stay d1's `convert_sized` arms the same way.
     if p.owner == local_owner {
         let tx = ((p.pos.x + p.w * 0.5) / 16.0) as i32;
         let ty = ((p.pos.y + p.h * 0.5) / 16.0) as i32;
@@ -906,6 +919,23 @@ mod tests {
         p.owner = 1;
         ai_spray(&mut p, &mut w, 0);
         assert_eq!(w.tile(100, 50).unwrap().kind, 2, "the owner gate");
+        // W4-f25 g42e GROWTH-SEAL park witness — the FOURTH Convert(3) site
+        // (`:26805-26808` maps 148 → 3, `:26834` runs the sized walk): on
+        // THIS branch the type-3 arm is a documented no-op — the jungle
+        // grass 60 under the spray STANDS (g42's convert_cell_mushroom /
+        // convert_sized_mushroom, tip 910cc9747, are unmerged). At the merge
+        // the ONE-arm contract (`3 => convert_sized_mushroom(world, tx, ty,
+        // size)`) flips this pin: the 60 becomes 70 inside the Manhattan-<6
+        // diamond (the g42 seal witness pins that half on its side). The
+        // counter/cap/spin run for 148 either way. WRITTEN NOT RUN.
+        let mut w = world();
+        put(&mut w, 100, 50, 60);
+        let mut p = spray(148);
+        p.time_left = 3600;
+        ai_spray(&mut p, &mut w, 0);
+        assert_eq!(w.tile(100, 50).unwrap().kind, 60, "the type-3 park (no-op until g42 merges)");
+        assert_eq!(p.time_left, 133, "the cap runs for 148");
+        assert_eq!(p.ai[0], 1.0, "the counter runs for 148");
     }
 
     /// Style 193 (`:41339-41348`, `:41372`, `:41391`): the counter, the

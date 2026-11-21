@@ -460,3 +460,35 @@ hits are 1/2/4 only — `:2045-2059`, `:18379-18382`, `:26437-26440`,
 + `convert_sized_biome`, 9fc704a15), UNWIRED; c32's BiomeDungeonRoom
 bodies use `DungeonUtils.ChangeTileType`, not Convert. Both pins
 unchanged.
+
+## g42e GROWTH-SEAL (2026-11-21) — the fourth Convert(3) site parked
+
+g42's growth seal (tip 910cc9747, `12j-g42-biome-mushroom.md` phase 9
+SEALED) completed `spread::convert_sized_mushroom`
+(`WorldGen.cs:55067-55083` — the same square + Manhattan-<6 walk as
+`convert_cleanse`, the `convert_cell_mushroom` per-cell arm, RNG-free)
+and corrected the mushroom-CONVERT census to FOUR sites: the fourth is
+**this lane's ai_spray dispatch** — `Projectile.cs:26834` with num245 = 3
+for the DarkBlueSolution spray 148 (`:26805-26808`; item 783 shoot 3 +
+Clentaminator 145 via `Player.cs:53487-53490`). The UpdateWorld side has
+no Convert(3) (the grass-70 mud spread is g42's T-3/D1/D4).
+
+- **The park**: the type-3 arm stays a no-op HERE (the g42 fns do not
+  exist on this branch — wiring would not compile); the dispatch-site
+  comment carries the one-arm MERGER CONTRACT:
+  `3 => tr_core::spread::convert_sized_mushroom(world, tx, ty, size)`
+  into the `match conversion` — the 133-cap/counter/spin already run for
+  every kind, this arm is the only missing piece. Types 1/4 ride d1's
+  `convert_sized` the same way.
+- **The witness**: the dispatch test gained the park pin — a 60 under a
+  148 spray STANDS on this branch (no-op), the cap/counter run; at the
+  merge the one-arm contract flips the tile pin to 70 (g42's seal witness
+  `w4_g42_seal_the_sized_mushroom_walk_matches_the_convert_gate` pins the
+  walk itself: size-2 full diamond, size-3 Manhattan-6 corner refusal,
+  a == b). Written not run.
+- The g42 seal's c31 DUP-RECONCILE (the jungle-tail keepers + the ONE
+  drop-hunk set in 12j phase 9) touches no f25 file — noted for the
+  merger's worldgen master merge, no action here.
+
+Runtime-only (the ai_spray comment + witness), both pins unchanged,
+a == b untouched. 1 witness written not run.
