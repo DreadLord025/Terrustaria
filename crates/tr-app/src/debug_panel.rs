@@ -814,23 +814,19 @@ fn world_click(app: &mut App, row: usize) {
         12 => {
             // The `/map pretty` chat command (`ToolkitDebugCommands.cs:480-494`):
             // `Main.clearMap = true` (`:483`) then `DebugOptions.unlockMap = 2`
-            // + `Main.refreshMap = true` (`:486-487`). The reveal itself rides
-            // the section sweep (`Main.cs:61871-61879`): the `refreshMap`
-            // consume resets the sweep (`:61890-61891`), and the 5 ms-budget
-            // walk unlocks every loaded section over the following frames
+            // + `Main.refreshMap = true` (`:486-487`), or `unlockMap = 0` on
+            // the toggle-off arm (`:491`). W4-f46 salvage (research/84 §4):
+            // the row routes through the verbatim flag-path `unlock_map`
+            // (the option is `App.debug_unlock_map`, the C# static's home).
+            // The reveal itself rides the section sweep
+            // (`Main.cs:61871-61879`): the `refreshMap` consume resets the
+            // sweep (`:61890-61891`), and the 5 ms-budget walk unlocks
+            // every loaded section over the following frames
             // (`:61873-61876`), zeroing the option once exhausted
-            // (`:61880-61883`). The old direct `unlock_map` walk skipped the
-            // queue entirely.
+            // (`:61880-61883`). The old direct bulk walk skipped the queue
+            // entirely.
             if let Some(m) = app.map.as_mut() {
-                m.clear_map = true; // `:483`, both arms
-            }
-            if app.debug_unlock_map == 0 {
-                app.debug_unlock_map = 2; // `:486`, the "pretty" argument
-                if let Some(m) = app.map.as_mut() {
-                    m.refresh_map = true; // `:487`
-                }
-            } else {
-                app.debug_unlock_map = 0; // `:491`, the toggle-off arm
+                m.unlock_map(&mut app.debug_unlock_map, true);
             }
         }
         13 => {
@@ -1177,7 +1173,7 @@ mod tests {
         // The sweep's consume resets the walk, then the budget walk unlocks
         // the loaded sections (`:61873-61876`). One section fits the 260x200
         // grid (1x1), so a single sweep pass reveals it all.
-        app.map_reveal_sweep();
+        app.map_reveal_sweep_core(10_000.0);
         let m = app.map.as_ref().unwrap();
         assert!(
             m.tiles.iter().any(|t| t.light > 0),
@@ -1201,7 +1197,7 @@ mod tests {
         app.section_manager = crate::map_sections::MapSections::new(260, 200);
         // Reveal something first so the wipe is observable.
         click_world(&mut app, 12);
-        app.map_reveal_sweep();
+        app.map_reveal_sweep_core(10_000.0);
         assert!(app.map.as_ref().unwrap().tiles.iter().any(|t| t.light > 0));
         click_world(&mut app, 13);
         let m = app.map.as_ref().unwrap();

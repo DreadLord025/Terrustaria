@@ -577,36 +577,11 @@ impl App {
     /// keeps walking while paused; only the `updateMap` consume arm
     /// (`:61886`) checks `!gamePaused`. The draw site's in-world gate
     /// implies the menu/gen gates; the staged `.map` upload (`load_map`)
-    /// rides the `!Main.loadMap` gate (`:61863`).
-    pub(crate) fn map_reveal_driver(
-        &mut self,
-        r: &mut tr_render::SpriteRenderer,
-        gpu: &tr_render::Gpu,
-        paused: bool,
-    ) {
-        let pos = self
-            .player
-            .as_ref()
-            .map(|p| [p.x, p.y])
-            .unwrap_or([0.0, 0.0]);
-        Self::map_reveal_draw(
-            &mut self.map,
-            &mut self.section_manager,
-            &mut self.debug_unlock_map,
-            &self.world,
-            pos,
-            self.settings.map_enabled,
-            paused,
-            r,
-            gpu,
-        );
-    }
-
-    /// The field-borrow form of [`Self::map_reveal_driver`] — the draw
-    /// region's 55-field destructure holds `map`/`world`/`settings` out of
-    /// `&mut self` reach, so the call site (`frame/draw.rs`) passes the
+    /// rides the `!Main.loadMap` gate (`:61863`). The field-borrow shape:
+    /// the draw region's 55-field destructure holds `map`/`world`/
+    /// `settings` out of `&mut self` reach, so the call site passes the
     /// parts; `section_manager`/`debug_unlock_map` stay disjoint `self`
-    /// fields (W4-f46 placement salvage, research/84 §3).
+    /// fields.
     pub(crate) fn map_reveal_draw(
         map: &mut Option<crate::map::WorldMap>,
         section_manager: &mut crate::map_sections::MapSections,
@@ -1041,9 +1016,11 @@ mod w4_e18_reveal_driver_tests {
     fn w4_e18_paused_skips_the_consume_but_not_the_sweep() {
         let mut app = rig();
         let m = app.map.as_mut().unwrap();
+        // Queue FIRST: `QueueChange` is a no-op while `refreshMap` is
+        // armed (`MapRenderer.cs:290`), so the entry must land before it.
+        m.queue_change(50, 50); // a pending change in target (0,0)
         m.refresh_map = true;
         m.update_map = Some([40, 40, 100, 60]);
-        m.queue_change(50, 50); // a pending change in target (0,0)
         app.map_reveal_sweep_core(10_000.0);
         app.map_reveal_consume(true);
         // The sweep walked (sections drawn) ...
@@ -1088,9 +1065,11 @@ mod w4_e18_reveal_driver_tests {
         let mut app = rig();
         app.settings.map_enabled = false;
         let m = app.map.as_mut().unwrap();
+        // Queue before arming the refresh: `QueueChange` is a no-op while
+        // `refreshMap` is armed (`MapRenderer.cs:290`).
+        m.queue_change(50, 50); // a pending change in target (0,0)
         m.refresh_map = true;
         m.update_map = Some([40, 40, 100, 60]);
-        m.queue_change(50, 50); // a pending change in target (0,0)
         assert!(m.changes_queued());
         app.map_reveal_consume(false);
         let m = app.map.as_ref().unwrap();

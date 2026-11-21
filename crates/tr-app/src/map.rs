@@ -659,7 +659,7 @@ impl WorldMap {
     /// `DebugOptions.unlockMap = 1` (flat) or `2` (pretty) plus
     /// `Main.refreshMap = true` when off, or `unlockMap = 0` when already
     /// on. The reveal itself rides the section sweep
-    /// (`App::map_reveal_sweep`, `Main.cs:61871-61883`): the `refreshMap`
+    /// (`App::map_reveal_sweep_core`, `Main.cs:61871-61883`): the `refreshMap`
     /// re-walk (`:61888-61892`) clears the drawn bits and the spiral
     /// re-visits every section, unlocking each as it draws.
     /// W4-f46 salvage (research/84 §4) replaces the old dead bulk ceil-loop
@@ -2042,19 +2042,21 @@ mod tests {
     /// driver's consumer always has a rect to consume.
     #[test]
     fn w4_f46_the_export_arms_update_map_even_on_an_empty_intersect() {
-        // A 30x30 processed area at (28, 28): the 28-per-side shrink
-        // (`LightingEngine.cs:252`) inverts it — x0 = 56 > x1 = 30 — so the
-        // intersect with the world/scene rects is empty.
+        // The processed area sits right of the player's scene box: the
+        // compute pads 60 per side (AREA_PADDING 28 + CACHE_MARGIN 32),
+        // the export shrinks 28 (`LightingEngine.cs:252`), so the rect
+        // lands at x [268, 360) after the world inset — while the scene
+        // box around tile x 100 ends at 185. Left >= Right: empty.
         let world = World::new("empty".into(), 400, 120);
         let mut p = Player::spawn(&world);
         p.x = 100.0 * TILE_PX;
         p.y = 40.0 * TILE_PX;
         let light = LightMap::compute(
             &world,
-            28,
-            28,
-            58,
-            58,
+            300,
+            40,
+            340,
+            70,
             &LightParams::default(),
         );
         let mut m = WorldMap::new(&world);
