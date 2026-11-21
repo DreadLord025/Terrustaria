@@ -21418,13 +21418,15 @@ impl ProjectilePool {
         }
     }
 
-    /// W4-g16 wiring batch 3 — `Kill()`'s gore death arms, in the C# body
+    /// W4-g16 wiring batch 3/4 — `Kill()`'s gore death arms, in the C# body
     /// order (`Projectile.cs`): the 856 Stellar Tune (`:71598-71630`), the
     /// 664/666/668 DD2 explosion loop (`:71821-71900`), the 681 goblin bomb
     /// (`:71902-71951`), the 645 Lunar Flare (`:72094-72125`), the 617 Nebula
     /// Arcanum (`:72278-72372`), the 452/454 phantasmal pair
-    /// (`:72987-73045`), the 459 Charged Blaster Orb (`:73338-73389`) and the
-    /// 448 saucer missile (`:73603-73631`). Kind-gated, once per death (a dead
+    /// (`:72987-73045`), the 459 Charged Blaster Orb (`:73338-73389`), the
+    /// 448 saucer missile (`:73603-73631`), the 178 confetti cannon
+    /// (`:74565-74588`), the 9/955 falling-star pair (`:75681-75747`) and the
+    /// 240 Dutchman shell (`:75855-75893`). Kind-gated, once per death (a dead
     /// slot never returns to `active`). The gore pool is threaded — `None`
     /// (the pool-only tests) spawns nothing (these kinds had no landed census,
     /// so there is no draw pin to keep); the caller-side resizes / `Damage()`
@@ -21440,9 +21442,17 @@ impl ProjectilePool {
     /// (`:73086`/`:73133`/`:73242`), the 709 Sky Dragon's Fury (`:73367`'s
     /// twin — the 459 arm is wired, the 709 keeps the same row shape), the
     /// 616/424-426 (`:73668`/`:73843`), the 510 Star Cannon (`:73691`), the
-    /// 408 phoenix (`:73754`) and the 1037/1049 nebula bolts (`:73895`).
-    /// Their site fns stay landed in `projectile_gore_e.rs` .. `_h.rs`; the
-    /// wiring rides the host's row when it lands (the `npc_hit_effect_a.rs`
+    /// 408 phoenix (`:73754`), the 1037/1049 nebula bolts (`:73895`), the 289
+    /// confetti (`:74605`), the 191-194 tombstones (`:74812`), the 1053 lava
+    /// boulder (`:74898`), the 1078 (`:75030`), the 728 star (`:75145`), the
+    /// 723 shadow (`:75172`), the 724/725/726/907/1133 falling stars
+    /// (`:75204`), the 12 star (`:75709`/`:75744`), the 503 (`:75734`), the
+    /// 281/162 tombstone corners (`:75754`/`:75831` — the AI landing gores ARE
+    /// wired in `ai_style2`, the Kill corners await the rows), the 712
+    /// (`:76116`), the 1023 barrel (`:76881`), the 312 (`:76919`), the 246/249
+    /// (`:76960`/`:77003`) and the 370/371 ducks (`:77172`/`:77189`). Their
+    /// site fns stay landed in `projectile_gore_e.rs` .. `_l.rs`; the wiring
+    /// rides the host's row when it lands (the `npc_hit_effect_a.rs`
     /// precedent). The 617's 620 death-burst spawn (`:72336-72371`) is ALSO
     /// deferred — the 620 has no row; the 618 sweep (`:72327-72335`) IS wired
     /// (the subshot is rowed).
@@ -21623,6 +21633,53 @@ impl ProjectilePool {
                         &self.slots[slot], 1, g, rng, world,
                     );
                 }
+                self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+            }
+            // `:74565-74588` — the 178 confetti cannon: the 85-dust loop
+            // (the dust lane's skip), then FORTY confetti gores at the
+            // velocity (`confetti_gores`, the wave-H row — type Next(276,283)
+            // + the ADD-then-MULTIPLY seven-roll postlude). No resize, no
+            // Damage. The 289 twin (`:74605`, ×15) is deferred — no row.
+            CANNON_BOMB => {
+                if let Some(g) = self.gore_pool.as_mut() {
+                    crate::projectile_gore_h::confetti_gores(
+                        &self.slots[slot], 40, g, rng, world,
+                    );
+                }
+            }
+            // `:75681-75747` — the 9/955 falling-star pair (the 12/503 twins
+            // are deferred — no rows). The 955 takes the screen-gated star
+            // row ×7 (`:75704-75711`, CircularEdge × velocity.Length() +
+            // SelectRandom(16,17×7)); the 9 takes the else branch's ×3
+            // Next(16,18) at vel×0.05 (`:75727-75735`). The dust loops before
+            // are the dust lane's. No resize, no Damage.
+            STAR_CANNON_STAR => {
+                if self.trail_on_screen(&self.slots[slot]) {
+                    if let Some(g) = self.gore_pool.as_mut() {
+                        crate::projectile_gore_j::kill12_star_gores(
+                            &self.slots[slot], g, rng, world,
+                        );
+                    }
+                }
+            }
+            STARFURY => {
+                if let Some(g) = self.gore_pool.as_mut() {
+                    crate::projectile_gore_j::kill9_503_gores(
+                        &self.slots[slot], 3, false, g, rng, world,
+                    );
+                }
+            }
+            // `:75855-75893` — the 240 Dutchman shell: the two dust loops
+            // (the dust lane's skip), the four corner gores (magnitude 1.0,
+            // `kill240_corner_gores`), then the 96×96 recentre + the box
+            // `Damage()` (`:75887-75893`).
+            DUTCHMAN_SHELL => {
+                if let Some(g) = self.gore_pool.as_mut() {
+                    crate::projectile_gore_j::kill240_corner_gores(
+                        &self.slots[slot], g, rng, world,
+                    );
+                }
+                resize(&mut self.slots[slot], 96.0);
                 self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
             }
             _ => {}
@@ -45259,5 +45316,133 @@ mod w4_g16_batch3_kill_gore_tests {
         let twin = UnifiedRandom::new(53);
         assert_eq!(rng.peek(), twin.peek(), "off-screen draws nothing");
         assert!((pool.slots()[slot].w - 128.0).abs() < 1e-6, "the resize still runs");
+    }
+
+    /// The 178 confetti cannon (`:74565-74588`): FORTY confetti gores at the
+    /// velocity — each type Next(276,283) + the two kicks + the ADD-then-
+    /// MULTIPLY seven-roll postlude (Next(-50,51)×2, Next(-50,51)×2,
+    /// Next(-20,21), Next(-50,51)×2). No resize, no Damage. The 85-dust loop
+    /// before is the dust lane's skip.
+    #[test]
+    fn w4_g16_b4_the_178_confetti_draws_forty_rows() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(CANNON_BOMB, 0, 100.0, 100.0, 2.0, -1.0, 50, 0.0, 0.0, 0.0)
+            .expect("the 178 row spawns");
+        pool.slots_mut()[slot].time_left = 1;
+        pool.set_gore_pool(Some(GorePool::new()));
+        let mut w = world();
+        let mut rng = UnifiedRandom::new(61);
+        kill_tick(&mut pool, &mut w, &mut rng);
+        let mut twin = UnifiedRandom::new(61);
+        for _ in 0..40 {
+            let _ = twin.next_range(276, 283);
+            let _ = twin.next_range(10, 31);
+            let _ = twin.next_range(-20, 21);
+            let _ = twin.next_range(-50, 51);
+            let _ = twin.next_range(-50, 51);
+            let _ = twin.next_range(-50, 51);
+            let _ = twin.next_range(-50, 51);
+            let _ = twin.next_range(-20, 21);
+            let _ = twin.next_range(-50, 51);
+            let _ = twin.next_range(-50, 51);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the forty confetti rows");
+        let gore = pool.take_gore_pool().unwrap();
+        let active = gore.slots().iter().filter(|g| g.active).count();
+        assert_eq!(active, 40, "forty gores");
+    }
+
+    /// The 955 Star Cannon star (`:75704-75711`): the screen-gated star row
+    /// ×7 — each ONE NextFloat (CircularEdge unit) + Next(8) (SelectRandom
+    /// 16,17×7) + the two kicks. Off-screen the row draws nothing.
+    #[test]
+    fn w4_g16_b4_the_955_star_row_screen_gate() {
+        // On-screen: seven star gores.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(STAR_CANNON_STAR, 0, 100.0, 100.0, 3.0, -2.0, 50, 0.0, 0.0, 0.0)
+            .expect("the 955 row spawns");
+        pool.slots_mut()[slot].time_left = 1;
+        pool.set_gore_pool(Some(GorePool::new()));
+        pool.set_trail_screen(Some((Vec2::ZERO, Vec2::new(800.0, 600.0))));
+        let mut w = world();
+        let mut rng = UnifiedRandom::new(63);
+        kill_tick(&mut pool, &mut w, &mut rng);
+        let mut twin = UnifiedRandom::new(63);
+        for _ in 0..7 {
+            let _ = twin.next_float(); // CircularEdge unit
+            let _ = twin.next_range(0, 8); // SelectRandom(16,17×7)
+            let _ = twin.next_range(10, 31);
+            let _ = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the seven star rows");
+        let gore = pool.take_gore_pool().unwrap();
+        assert_eq!(gore.slots().iter().filter(|g| g.active).count(), 7, "seven gores");
+        // Off-screen (no screen fed): the kill row draws nothing (the trail
+        // is off-screen too — the AI draws nothing).
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(STAR_CANNON_STAR, 0, 100.0, 100.0, 3.0, -2.0, 50, 0.0, 0.0, 0.0)
+            .expect("the 955 row spawns");
+        pool.slots_mut()[slot].time_left = 1;
+        pool.set_gore_pool(Some(GorePool::new()));
+        let mut w = world();
+        let mut rng = UnifiedRandom::new(63);
+        kill_tick(&mut pool, &mut w, &mut rng);
+        let twin = UnifiedRandom::new(63);
+        assert_eq!(rng.peek(), twin.peek(), "off-screen draws nothing");
+    }
+
+    /// The 9 Starfury star (`:75727-75735`): the else branch's ×3 Next(16,18)
+    /// at vel×0.05 + the two kicks each. No screen gate, no resize, no Damage.
+    /// The trail is off-screen (no screen fed) so the AI draws nothing.
+    #[test]
+    fn w4_g16_b4_the_9_star_draws_three_rows() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(STARFURY, 0, 100.0, 100.0, 3.0, -2.0, 50, 0.0, 0.0, 0.0)
+            .expect("the 9 row spawns");
+        pool.slots_mut()[slot].time_left = 1;
+        pool.set_gore_pool(Some(GorePool::new()));
+        let mut w = world();
+        let mut rng = UnifiedRandom::new(65);
+        kill_tick(&mut pool, &mut w, &mut rng);
+        let mut twin = UnifiedRandom::new(65);
+        for _ in 0..3 {
+            let _ = twin.next_range(16, 18);
+            let _ = twin.next_range(10, 31);
+            let _ = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the three star rows");
+        let gore = pool.take_gore_pool().unwrap();
+        assert_eq!(gore.slots().iter().filter(|g| g.active).count(), 3, "three gores");
+    }
+
+    /// The 240 Dutchman shell (`:75855-75893`): the four corner gores
+    /// (magnitude 1.0 — Next(61,64) + kicks each, post ×0.4 then the sign
+    /// pair), then the 96×96 recentre + the box Damage. The AI is pre-aged
+    /// past the ai[0]==3 landing burst so it draws nothing.
+    #[test]
+    fn w4_g16_b4_the_240_corners_and_the_96_resize() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(DUTCHMAN_SHELL, 0, 100.0, 100.0, 0.0, 0.0, 50, 0.0, 5.0, 0.0)
+            .expect("the 240 row spawns");
+        pool.slots_mut()[slot].time_left = 1;
+        pool.set_gore_pool(Some(GorePool::new()));
+        let mut w = world();
+        let mut rng = UnifiedRandom::new(67);
+        kill_tick(&mut pool, &mut w, &mut rng);
+        let mut twin = UnifiedRandom::new(67);
+        for _ in 0..4 {
+            let _ = twin.next_range(61, 64);
+            let _ = twin.next_range(10, 31);
+            let _ = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the four corner rows");
+        let gore = pool.take_gore_pool().unwrap();
+        assert_eq!(gore.slots().iter().filter(|g| g.active).count(), 4, "four corners");
+        assert!((pool.slots()[slot].w - 96.0).abs() < 1e-6, "the trailing 96×96");
     }
 }
