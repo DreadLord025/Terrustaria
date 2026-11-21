@@ -648,6 +648,12 @@ impl App {
                         self.audio
                             .play_switch_click(px as f32, py as f32, self.rngs.global());
                     }
+                    // W4-c42 — the rigged chest's wired door cues (the bare
+                    // stream, the switch-click precedent).
+                    for (open, px, py) in self.wiring.take_door_cues() {
+                        self.audio
+                            .play_door_sound(open, px as f32, py as f32, self.rngs.global());
+                    }
                     server.broadcast_except(
                         &S2c::HitSwitch(net::HitSwitch {
                             x: cx as i16,
@@ -789,6 +795,12 @@ impl App {
                 for (px, py) in self.wiring.take_switch_clicks() {
                     self.audio
                         .play_switch_click(px as f32, py as f32, self.rngs.global());
+                }
+                // W4-c42 — the trip's wired door cues (the bare stream, the
+                // switch-click precedent).
+                for (open, px, py) in self.wiring.take_door_cues() {
+                    self.audio
+                        .play_door_sound(open, px as f32, py as f32, self.rngs.global());
                 }
                 self.world_key = None;
                 server.broadcast_except(&S2c::HitSwitch(hs), id); // `:2691`
@@ -1779,6 +1791,11 @@ impl App {
                 for (px, py) in self.wiring.take_switch_clicks() {
                     self.audio
                         .play_switch_click(px as f32, py as f32, self.rngs.global());
+                }
+                // W4-c42 — the replay's wired door cues (the bare stream).
+                for (open, px, py) in self.wiring.take_door_cues() {
+                    self.audio
+                        .play_door_sound(open, px as f32, py as f32, self.rngs.global());
                 }
                 self.world_key = None;
             }

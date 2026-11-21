@@ -297,6 +297,14 @@ pub struct Wiring {
     /// [`Self::rand`] — so the app layer drains these and plays them on its
     /// stage's named stream (`take_statue_spawns`' event-queue seam).
     switch_clicks: Vec<(i32, i32)>,
+    /// The door cues from `HitWireSingle`'s door arms (`Wiring.cs:1461-1488`
+    /// → `WorldGen.CloseDoor`/`OpenDoor`'s `PlaySound(9/8, i*16, j*16)`,
+    /// `WorldGen.cs:31906`/`:37732`): `(open, px, py)` in play order, queued
+    /// only when the toggle SUCCEEDS (the C# plays inside the WorldGen body,
+    /// past its guards). The pitch draw rides the CALLER's stage stream —
+    /// the [`Self::take_switch_clicks`] seam; the app drains these beside
+    /// the switch clicks.
+    door_cues: Vec<(bool, i32, i32)>,
 }
 
 /// A device shot request: one `Projectile.NewProjectile` call from the device
@@ -772,6 +780,14 @@ impl Wiring {
     /// wiring stand-in stream.
     pub fn take_switch_clicks(&mut self) -> Vec<(i32, i32)> {
         std::mem::take(&mut self.switch_clicks)
+    }
+
+    /// Drains the door cues queued by the door arms (see [`Self::door_cues`])
+    /// — `(open, px, py)`, world pixels, in play order. The app plays each on
+    /// its stage's stream (`audio::play_door_sound`, the `switch_clicks`
+    /// seam).
+    pub fn take_door_cues(&mut self) -> Vec<(bool, i32, i32)> {
+        std::mem::take(&mut self.door_cues)
     }
 
     /// Drains the trap emission requests (the case-137 trap family).
@@ -2409,6 +2425,71 @@ impl Wiring {
                     }
                 }
             }
+            // ---- W4-c42 batch 1: the missing tile-mechanical arms, in C#
+            // ---- evaluation order (the claim doc's census). The C# runs
+            // ---- them as `if (type == …) { … return; }` blocks between the
+            // ---- switch tables; the port's single match keeps the order.
+            // The campfire family (`TileID.Sets.Campfires` = {215},
+            // `TileID.cs:616`; `Wiring.cs:1418-1421` → `ToggleCampFire`
+            // `:3000-3042`): the 3×2 anchor from `frameX % 54 / 18` /
+            // `frameY % 36 / 18`, the active+same-kind validation, then the
+            // frameY ±36 keyed on the anchor's `frameY >= 36`.
+            215 => self.toggle_camp_fire(world, i, j, tile_frame_x, tile_frame_y),
+            // The active stone block (130 → 131, `Wiring.cs:1423-1432`):
+            // the above-cell gate — `Main.tile[i, j-1] != null &&
+            // (!above.active() || !PreventsActuationUnder[above.type]) &&
+            // CanKillTile(i, j)` — then the swap + the SquareTileFrame wake.
+            130 => {
+                let above_ok = match world.tile(i, j - 1) {
+                    Some(above) => {
+                        !above.active() || !PREVENTS_ACTUATION_UNDER.contains(&above.kind)
+                    }
+                    None => false, // the C# null-tile conjunct (`:1425`)
+                };
+                // `WorldGen.CanKillTile(i, j)` — the same anchored-tile
+                // slice `DeActive` reads (`Self::can_kill_tile`); for a 130
+                // cell the chest-inventory cases never apply (they test the
+                // tile's OWN kind 21/467/88), so the slice is complete here.
+                if above_ok && self.can_kill_tile(world, i, j) {
+                    world.swap_tile_kind(i, j, 131);
+                    let drops = crate::edit::square_tile_frame_default(world, i, j);
+                    self.actuation_drops.extend(drops);
+                }
+            }
+            // The inactive stone block (131 → 130, `Wiring.cs:1433-1439`):
+            // the unconditional swap + wake.
+            131 => {
+                world.swap_tile_kind(i, j, 130);
+                let drops = crate::edit::square_tile_frame_default(world, i, j);
+                self.actuation_drops.extend(drops);
+            }
+            // The open door (11 → `WorldGen.CloseDoor(i, j, forced: true)`,
+            // `Wiring.cs:1461-1468`): the forced close skips the entity
+            // occupancy gate (`WorldGen.cs:31858-31867`); the hinge column's
+            // SkipWire ×3 (`:31895-31900`, `Wiring.running`-gated) joins the
+            // flood's skip set. The `PlaySound(9)` cue (`:31906`) queues on
+            // success; the `SendData(19)` echo is Stage-2.
+            11 => {
+                let mut drops = Vec::new();
+                let mut skips = Vec::new();
+                // tr-core carries no entity store — `forced: true` skips
+                // the gate entirely, so the closure is never consulted.
+                if crate::edit::close_door_wired(
+                    world,
+                    i,
+                    j,
+                    true,
+                    &|_, _| false,
+                    &mut drops,
+                    &mut skips,
+                ) {
+                    self.actuation_drops.extend(drops);
+                    for cell in skips {
+                        self.skip.insert(cell);
+                    }
+                    self.door_cues.push((false, i * 16, j * 16));
+                }
+            }
             // The announcement box (425, `Wiring.cs:1177-1236`): the 2×2
             // SkipWire, then the disabled guard, then the sign text through
             // `Main.NewTextMultiline` — the app prints the drained texts
@@ -2443,6 +2524,18 @@ impl Wiring {
                 // (`:1202-1233`). The single-player branch only; the app
                 // resolves the player-distance gate.
                 self.announcement_events.push((num7, num8, text));
+            }
+            // The torch family (`TileID.Sets.Torches` = {4}, `TileID.cs:615`;
+            // `Wiring.cs:1575-1579` → `ToggleTorch` `:2903-2918`): the cell's
+            // frameX ±66 (the lit/unlit sheet halves). The C# evaluates the
+            // set test after case 235's switch and before case 429's.
+            4 => {
+                let f = world.tile_frame_x(i, j);
+                if f < 66 {
+                    world.set_tile_frame_x(i, j, f + 66);
+                } else {
+                    world.set_tile_frame_x(i, j, f - 66);
+                }
             }
             // The wire bulb (429, `:1583-1613`): `frameX` steps by the
             // colour's bit — red +18/−18, green +36, blue +72, yellow +144 —
@@ -2745,6 +2838,50 @@ impl Wiring {
             for y in num2..num2 + 3 {
                 world.set_tile_frame_x(x, y, world.tile_frame_x(x, y) + num4);
                 self.skip.insert((x, y)); // `Wiring.SkipWire` (`:2988-2991`)
+            }
+        }
+    }
+
+    /// `Wiring.ToggleCampFire` (`Wiring.cs:3000-3042`, the caller
+    /// `:1418-1421` gated on `TileID.Sets.Campfires` = {215}): the 3×2
+    /// sprite's frameY ±36 around its anchor, keyed on the anchor's
+    /// `frameY >= 36`; the active+same-kind validation kills a broken
+    /// body (drops collected), SkipWire 3×2, and only active same-kind
+    /// cells shift (`:3034-3038`). The `forcedStateWhereTrueIsOn`
+    /// parameter is null at the wire call site — the gate always passes.
+    fn toggle_camp_fire(
+        &mut self,
+        world: &mut World,
+        i: i32,
+        j: i32,
+        frame_x: i16,
+        frame_y: i16,
+    ) {
+        if !crate::tiledata::SET_CAMPFIRES.has(world.tile(i, j).map_or(0, |t| t.kind)) {
+            return; // `:3002-3005`
+        }
+        let num3 = i32::from(frame_x % 54 / 18);
+        let num4 = i32::from(frame_y % 36 / 18);
+        let (num5, num6) = (i - num3, j - num4);
+        // `WorldGen.ValidateTileSquareIsActiveAndOfType(num5, num6, 3, 2,
+        // type)` (`:3012-3015`): the shared validator.
+        let mut drops = Vec::new();
+        let kind = world.tile(i, j).map_or(0, |t| t.kind);
+        if !crate::edit::validate_tile_square(world, num5, num6, 3, 2, kind, &mut drops) {
+            self.actuation_drops.extend(drops);
+            return;
+        }
+        let num7: i32 = if world.tile_frame_y(num5, num6) >= 36 { -36 } else { 36 };
+        for k in num5..num5 + 3 {
+            for l in num6..num6 + 2 {
+                self.skip.insert((k, l)); // `Wiring.SkipWire` (`:3030-3033`)
+                if world
+                    .tile(k, l)
+                    .is_some_and(|t| t.active() && t.kind == kind)
+                {
+                    let f = world.tile_frame_y(k, l);
+                    world.set_tile_frame_y(k, l, f + num7);
+                }
             }
         }
     }
@@ -5992,3 +6129,145 @@ mod s1_l6_tests {
     }
 }
 
+#[cfg(test)]
+mod w4_c42_batch1_tests {
+    //! W4-c42 batch 1 — the five missing tile-mechanical arms: the campfire
+    //! 215 (`ToggleCampFire`), the torch 4 (`ToggleTorch`), the stone blocks
+    //! 130/131 and the open-door close (11 → `CloseDoor(forced: true)`).
+    //! WRITTEN NOT RUN (code-only lane).
+
+    use super::*;
+    use crate::tile::{Tile, FLAG_ACTIVE};
+
+    fn put(w: &mut World, x: i32, y: i32, kind: u16, fx: i16, fy: i16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile { kind, frame_x: fx, frame_y: fy, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    fn world() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    #[test]
+    fn c42_the_campfire_flips_its_3x2_body_and_skips_it() {
+        // `Wiring.cs:3000-3042`: the anchor decodes from `frameX % 54 / 18`
+        // / `frameY % 36 / 18`; the lit body (anchor frameY 0) shifts +36
+        // over every active same-kind cell, SkipWire 3×2.
+        let mut w = world();
+        for col in 0..3i32 {
+            for row in 0..2i32 {
+                put(&mut w, 10 + col, 20 + row, 215, (col * 18) as i16, (row * 18) as i16);
+            }
+        }
+        let mut wiring = Wiring::new();
+        wiring.hit_wire_single(&mut w, 11, 21); // a non-anchor cell
+        for col in 0..3i32 {
+            for row in 0..2i32 {
+                assert_eq!(w.tile(10 + col, 20 + row).unwrap().frame_y, (row * 18 + 36) as i16);
+                assert!(wiring.skip.contains(&(10 + col, 20 + row)));
+            }
+        }
+        // The second hit flips back (anchor frameY 36 >= 36 → −36).
+        let mut wiring2 = Wiring::new();
+        wiring2.hit_wire_single(&mut w, 10, 20);
+        for col in 0..3i32 {
+            for row in 0..2i32 {
+                assert_eq!(w.tile(10 + col, 20 + row).unwrap().frame_y, (row * 18) as i16);
+            }
+        }
+    }
+
+    #[test]
+    fn c42_the_campfire_validation_kills_a_broken_body() {
+        // `:3012-3015`: a missing cell fails ValidateTileSquareIsActiveAndOfType
+        // — the matching cells die (drops collected) and no frame shifts.
+        let mut w = world();
+        for col in 0..3i32 {
+            for row in 0..2i32 {
+                if (col, row) != (2, 1) {
+                    put(&mut w, 10 + col, 20 + row, 215, (col * 18) as i16, (row * 18) as i16);
+                }
+            }
+        }
+        let mut wiring = Wiring::new();
+        wiring.hit_wire_single(&mut w, 10, 20);
+        for col in 0..3i32 {
+            for row in 0..2i32 {
+                if (col, row) != (2, 1) {
+                    assert!(!w.tile_active(10 + col, 20 + row), "({col},{row}) killed");
+                }
+            }
+        }
+        assert!(!wiring.take_actuation_drops().is_empty(), "the kills queue drops");
+    }
+
+    #[test]
+    fn c42_the_torch_toggles_frame_x_by_66() {
+        // `Wiring.cs:2903-2918` (`ToggleTorch`): frameX < 66 → +66, else −66.
+        for (start, next) in [(0i16, 66i16), (66, 0), (132, 66)] {
+            let mut w = world();
+            put(&mut w, 10, 20, 4, start, 0);
+            let mut wiring = Wiring::new();
+            wiring.hit_wire_single(&mut w, 10, 20);
+            assert_eq!(w.tile_frame_x(10, 20), i32::from(next), "start {start}");
+        }
+    }
+
+    #[test]
+    fn c42_the_active_stone_block_swaps_and_wakes() {
+        // `Wiring.cs:1423-1432`: air above + CanKillTile passes → 130 → 131.
+        let mut w = world();
+        put(&mut w, 10, 20, 130, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.hit_wire_single(&mut w, 10, 20);
+        assert_eq!(w.tile(10, 20).unwrap().kind, 131);
+        // The chest above refuses (`PreventsActuationUnder`, `:1425`).
+        let mut w2 = world();
+        put(&mut w2, 10, 20, 130, 0, 0);
+        put(&mut w2, 10, 19, 21, 0, 0);
+        let mut wiring2 = Wiring::new();
+        wiring2.hit_wire_single(&mut w2, 10, 20);
+        assert_eq!(w2.tile(10, 20).unwrap().kind, 130, "the chest holds the block");
+        // An inactive above-cell passes the conjunct (`!above.active()`).
+        let mut w3 = world();
+        put(&mut w3, 10, 20, 130, 0, 0);
+        let i = w3.index(10, 19);
+        w3.tiles[i] = Tile { kind: 21, ..Default::default() }; // NOT active
+        let mut wiring3 = Wiring::new();
+        wiring3.hit_wire_single(&mut w3, 10, 20);
+        assert_eq!(w3.tile(10, 20).unwrap().kind, 131);
+    }
+
+    #[test]
+    fn c42_the_inactive_stone_block_swaps_back_unconditionally() {
+        // `Wiring.cs:1433-1439`: 131 → 130 with no gate — even under a chest.
+        let mut w = world();
+        put(&mut w, 10, 20, 131, 0, 0);
+        put(&mut w, 10, 19, 21, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.hit_wire_single(&mut w, 10, 20);
+        assert_eq!(w.tile(10, 20).unwrap().kind, 130);
+    }
+
+    #[test]
+    fn c42_the_open_door_closes_forced_and_skips_the_hinge() {
+        // `Wiring.cs:1461-1468` → `CloseDoor(forced: true)`
+        // (`WorldGen.cs:31805-31909`): the open pair (frameX 0/18, rows
+        // 0/18/36) closes onto the hinge column; the hinge's three cells
+        // join the skip set (`:31895-31900`) and the close cue queues.
+        let mut w = world();
+        for row in 0..3i32 {
+            put(&mut w, 10, 17 + row, 11, 0, (row * 18) as i16);
+            put(&mut w, 11, 17 + row, 11, 18, (row * 18) as i16);
+        }
+        let mut wiring = Wiring::new();
+        wiring.hit_wire_single(&mut w, 11, 18); // the leaf cell
+        assert_eq!(w.tile(10, 18).unwrap().kind, 10, "the hinge closed");
+        assert!(!w.tile_active(11, 18), "the leaf deactivated");
+        for row in 0..3i32 {
+            assert!(wiring.skip.contains(&(10, 17 + row)), "hinge row {row} skipped");
+        }
+        assert_eq!(wiring.take_door_cues(), vec![(false, 11 * 16, 18 * 16)]);
+    }
+}

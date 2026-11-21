@@ -1153,6 +1153,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
             }
+            // W4-c42 — the player-tripped wired door cues (same stream).
+            for (open, px, py) in app.wiring.take_door_cues() {
+                app.audio.play_door_sound(
+                    open,
+                    px as f32,
+                    py as f32,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
             // `PressurePlateHelper.UpdatePlayerPosition(this)`
             // (`Player.cs:28276`): the weighted pressure plates (428) the
             // player stands on.
@@ -1172,6 +1181,16 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // draws ride that stream, not the player's.
             for (px, py) in app.wiring.take_switch_clicks() {
                 app.audio.play_switch_click(
+                    px as f32,
+                    py as f32,
+                    app.rngs.stream(crate::app::RngKey::UpdatePressurePlates),
+                );
+            }
+            // W4-c42 — the weighted plates' wired door cues (the
+            // UpdatePressurePlates stream, the click precedent).
+            for (open, px, py) in app.wiring.take_door_cues() {
+                app.audio.play_door_sound(
+                    open,
                     px as f32,
                     py as f32,
                     app.rngs.stream(crate::app::RngKey::UpdatePressurePlates),
@@ -1327,6 +1346,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 // the player tick, `Main.cs:17754`).
                 for (px, py) in app.wiring.take_switch_clicks() {
                     app.audio.play_switch_click(
+                        px as f32,
+                        py as f32,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
+                }
+                // W4-c42 — the track trip's wired door cues (same stream).
+                for (open, px, py) in app.wiring.take_door_cues() {
+                    app.audio.play_door_sound(
+                        open,
                         px as f32,
                         py as f32,
                         app.rngs.stream(crate::app::RngKey::UpdatePlayers),

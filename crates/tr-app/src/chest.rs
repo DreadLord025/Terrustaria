@@ -1170,6 +1170,15 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
             }
+            // W4-c42 — the rigged chest's wired door cues (same stream).
+            for (open, px, py) in app.wiring.take_door_cues() {
+                app.audio.play_door_sound(
+                    open,
+                    px as f32,
+                    py as f32,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
             app.send_hit_switch(x, y); // `:33256`
             app.world_key = None;
         }

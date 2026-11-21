@@ -831,6 +831,38 @@ pub fn close_door(
     cell_blocked: &dyn Fn(i32, i32) -> bool,
     drops: &mut Vec<ObjectDrop>,
 ) -> bool {
+    close_door_inner(world, i, j, forced, cell_blocked, drops, false, &mut Vec::new())
+}
+
+/// The wired caller's seam (W4-c42, `Wiring.cs:1461-1468`): the same body,
+/// but the `Wiring.SkipWire` ×3 (`WorldGen.cs:31895-31900`, gated on
+/// `Main.netMode != 1 && Wiring.running`) is collected into `skips` — the
+/// caller (the wiring flood, `running == true`) inserts them into its skip
+/// set. The C# skips happen before the trailing reframe, which reads no
+/// skip state, so collecting them out and inserting after the call is
+/// order-identical.
+pub fn close_door_wired(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    forced: bool,
+    cell_blocked: &dyn Fn(i32, i32) -> bool,
+    drops: &mut Vec<ObjectDrop>,
+    skips: &mut Vec<(i32, i32)>,
+) -> bool {
+    close_door_inner(world, i, j, forced, cell_blocked, drops, true, skips)
+}
+
+fn close_door_inner(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    forced: bool,
+    cell_blocked: &dyn Fn(i32, i32) -> bool,
+    drops: &mut Vec<ObjectDrop>,
+    collect_skips: bool,
+    skips: &mut Vec<(i32, i32)>,
+) -> bool {
     let Some(tile) = world.tile(i, j) else {
         return false;
     };
@@ -916,7 +948,14 @@ pub fn close_door(
             }
         }
     }
-    // `Wiring.SkipWire` ×3 (:31893-31898) — no wiring in the port.
+    // `Wiring.SkipWire` ×3 (:31893-31898) — the hinge column, gated on
+    // `Main.netMode != 1 && Wiring.running`; the wired caller collects them
+    // (`close_door_wired`), the interaction path has no running flood.
+    if collect_skips {
+        for k in num3..num3 + 3 {
+            skips.push((num2, k));
+        }
+    }
     // The trailing `WorldGen.TileFrame` 3x4 loop (:31900-31905).
     ensure_frame_important(world, 10);
     framing::reframe_area(world, num2, num3, 2, false);

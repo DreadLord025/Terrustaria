@@ -341,6 +341,17 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                 app.rngs.stream(crate::app::RngKey::UpdateWorldGen),
             );
         }
+        // W4-c42 — the wired door arms' PlaySound(8/9) cues
+        // (`WorldGen.cs:37732`/`:31906` inside `HitWireSingle`): the same
+        // `UpdateWorldGen` stage stream as the switch clicks.
+        for (open, px, py) in app.wiring.take_door_cues() {
+            app.audio.play_door_sound(
+                open,
+                px as f32,
+                py as f32,
+                app.rngs.stream(crate::app::RngKey::UpdateWorldGen),
+            );
+        }
     });
     for _ in 0..party_credits {
         let _ = app.notify_progression_net(25);

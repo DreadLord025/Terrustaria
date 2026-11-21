@@ -4679,6 +4679,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             for (px, py) in wiring.take_switch_clicks() {
                 audio.play_switch_click(px as f32, py as f32, npcs_rng);
             }
+            // W4-c42 — the NPC-tripped wired door cues: the same UpdateNPCs
+            // stream (the C# plays inside the trip's WorldGen body).
+            for (open, px, py) in wiring.take_door_cues() {
+                audio.play_door_sound(open, px as f32, py as f32, npcs_rng);
+            }
         }
     }
     // The `59` sends after the last `player` borrow (`Collision.cs:3304`).

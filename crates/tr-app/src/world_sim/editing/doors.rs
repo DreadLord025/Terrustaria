@@ -228,6 +228,16 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
             }
+            // W4-c42 — the wired door cues ride the same UpdatePlayers
+            // stream (the C# plays inside the trip's WorldGen body).
+            for (open, px, py) in app.wiring.take_door_cues() {
+                app.audio.play_door_sound(
+                    open,
+                    px as f32,
+                    py as f32,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
             app.send_hit_switch(*x, *y); // `:32178`/`:32226`/`:32340`
             app.world_key = None;
             return true;

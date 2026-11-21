@@ -624,6 +624,15 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                         app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
                     );
                 }
+                // W4-c42 — the cup trip's wired door cues (same stream).
+                for (open, px, py) in app.wiring.take_door_cues() {
+                    app.audio.play_door_sound(
+                        open,
+                        px as f32,
+                        py as f32,
+                        app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
+                    );
+                }
                 if let Some(text) = chat {
                     app.chat.new_text(text, crate::chat::COLOR_SERVER_MESSAGE);
                 }
@@ -659,6 +668,15 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                 // pitch draws ride this pass's stream.
                 for (px, py) in app.wiring.take_switch_clicks() {
                     app.audio.play_switch_click(
+                        px as f32,
+                        py as f32,
+                        app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
+                    );
+                }
+                // W4-c42 — the pad probe's wired door cues (same stream).
+                for (open, px, py) in app.wiring.take_door_cues() {
+                    app.audio.play_door_sound(
+                        open,
                         px as f32,
                         py as f32,
                         app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
