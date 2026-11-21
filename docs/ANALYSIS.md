@@ -8955,7 +8955,7 @@ RNG census; the deliberate deviations:
   `20b2cea61` lands the id-3 `(3,29)` / id-4 `(4,6)` style routes + the
   `rainbow_boulder` trackable, audible after the merge; the SEAL receipt
   + the id-4 style-vs-int overload split + the f1/d77 kill-map
-  double-play keep-one live in research/248 §2). The dust-free callers (the witnesses,
+  double-play keep-one live in research/331 §2). The dust-free callers (the witnesses,
   the `update` scratch entry) keep the census behaviour: the bodies do not
   spawn and their internals do not draw — only the explicit gate draws ride
   the stream; the gore census path (type pick + kicks) stands when
@@ -8974,10 +8974,12 @@ C# lines.
 
 ### The boulder-family SEAL (W4-d3, 2026-11-21, code-only mode)
 
-The SEAL wave (research/248, number per registry-150 — 248 first free at
-the all-tip scan) closes the task with five receipts; the full evidence +
-the family bible (C# anchor → port → owner per layer) live in
-`docs/research/248-d3-boulder-family-seal.md`. Summary:
+The SEAL wave (research/331, renumbered 248→331 per registry-150 §9 —
+g82's published reservation wins the 248 key, d3's add POST-publish;
+originally 248 first free at the all-tip scan) closes the task with five
+receipts; the full evidence + the family bible (C# anchor → port → owner
+per layer) live in
+`docs/research/331-d3-boulder-family-seal.md`. Summary:
 
 1. **The landing wave SEALED** — the bodies wave above + the 763 spike
    latch (`:55518-55529`, `spike_spawn_dust`) / kill (`:75067-75078`,
@@ -9002,7 +9004,7 @@ the family bible (C# anchor → port → owner per layer) live in
    duplicate d3's LIVE-slot bodies (the corpse-velocity compounds, the
    1053 resize/restore + gore pool + lava flood, the 763 spawn latch are
    d3-unique state). Draw orders agree — the fold is RNG-neutral; g65's
-   arms drop/re-pin at the union, its 79 half stays (research/248 §3's
+   arms drop/re-pin at the union, its 79 half stays (research/331 §3's
    per-kind table).
 4. **1023/1081 — d3 stopped short** (d75's part-4/5 flag): neither is
    aiStyle-25; they only neighbour the bounce ladder. The SEAL re-probe
@@ -9011,7 +9013,7 @@ the family bible (C# anchor → port → owner per layer) live in
    falling arm queues the `:19845` Dig itself). **1023 stays unrowed at
    every tip** — its Kill dust (g65 b26), gore (g16 wave K) and
    particles (d54 b7) are staged, the row + AI/movement halves are the
-   gap: task-seeded **S1-P-i58** (research/248 §4; i57 is d53's
+   gap: task-seeded **S1-P-i58** (research/331 §4; i57 is d53's
    wetVelocity seed).
 5. **Witnesses stay WRITTEN NOT RUN** — this SEAL is doc + comment-only
    (the module doc's sound/g65 notes refreshed); no cargo/tests/rustfmt/

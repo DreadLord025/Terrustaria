@@ -4,7 +4,7 @@
 > §3: f20's `26f-projectile-ai001-overlays-round2.md` wins the key at
 > 05:13:47; d3's 09:28:41 loses) — executed at the W4-d3 SEAL, no external
 > refs at tip. The SEAL receipts + the boulder-family bible live in
-> `248-d3-boulder-family-seal.md`.
+> `331-d3-boulder-family-seal.md` (renumbered 248→331 per registry-150 §9).
 >
 > Researched 2026-11-21 against the W4-d3 branch tip (`986ab27b`). C# cites
 > are `decompiled/Terraria/Projectile.cs` (stable); Rust cites are

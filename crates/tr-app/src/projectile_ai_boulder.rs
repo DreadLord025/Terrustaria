@@ -57,7 +57,7 @@
 //! `app/netmodules.rs:448`; their SETTINGS draws stay), `Collision.HitTiles`
 //! (effect-only dust, `Collision.cs:3103`), `Lighting.AddLight`/`CastLightOpen`
 //! and the sounds (parked on `wants_sound`; the death cues push straight
-//! into `pending_proj_sounds`). SOUND LAYER (the W4-d3 SEAL, research/248
+//! into `pending_proj_sounds`). SOUND LAYER (the W4-d3 SEAL, research/331
 //! §2): the id-3 `(3,29)` / id-4 `(4,6)` / id-42 `(42,274)` routes are
 //! SIBLING-CUED — d75 (`task/W4-d75-proj-sounds-1` `20b2cea61`) lands the
 //! drain arms (`play_npc_hit_sound`/`play_npc_death_style` + the
@@ -72,7 +72,7 @@
 //! family's ONLY gore is the 1053 lava death's four gibs (`:74898-74913`,
 //! type `Next(61, 64)`, [`lava_death_gore`]).
 //!
-//! G65 COMPOSE (the W4-d3 SEAL, research/248 §3): g65's snapshot→drain
+//! G65 COMPOSE (the W4-d3 SEAL, research/331 §3): g65's snapshot→drain
 //! death-dust lane (`projectile_death_dust.rs`, tip `b0842907c`) carries
 //! the SAME boulder-kind arms (the 99-family default incl. 1048, the
 //! 1053/1054/1055/1005/763 bursts, the 1047 half of its `1047 | 79`

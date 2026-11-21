@@ -1,15 +1,21 @@
-# 248 — W4-d3 SEAL: the boulder-family bible + the five receipts (FINAL)
+# 331 — W4-d3 SEAL: the boulder-family bible + the five receipts (FINAL)
 
+> Renumbered **248 → 331** per registry-150 **§9 UNIFIED FINAL** (d54 tip
+> `b243c7086`, §9.2 row 331): g82's published round-2 reservation wins the
+> 248 key (§6.3 `26e-f-rope-union-final.md`, publish `72226e500` 14:47:50);
+> d3's add `740026af6` 16:10:40 is POST-publish → loses → **331**. Chain:
+> 248 → 331.
+>
 > Sealed 2026-11-21 against the W4-d3 tip `5ff9fe983` (branch
-> `task/W4-d3-proj-ai-21-30`, code-only mode). Number per **registry-150**
-> (`docs/research/150-research-number-registry.md`, d54 `38bfd1d22`): the
-> 151–236 block consumed, 237–247 taken at pushed tips (244/246 carry
-> sibling collisions — those lanes'/the merger's problem, NOT renumbered
-> here), **248 first free at this SEAL-tip scan** (every
-> `origin/task/W4-*` tip's `docs/research/` ls-tree walked; 248/249+ carry
-> no file at any tip). The registry-assigned rename `26f → 170`
-> (21-30 band status) is executed on this branch in the same wave; 26b
-> (the census) keeps its key — uncontested at the registry scan.
+> `task/W4-d3-proj-ai-21-30`, code-only mode). Original number claim per
+> registry-150 (`docs/research/150-research-number-registry.md`, d54
+> `38bfd1d22`): the 151–236 block consumed, 237–247 taken at pushed tips
+> (244/246 carry sibling collisions), 248 first free at this SEAL-tip
+> scan (every `origin/task/W4-*` tip's `docs/research/` ls-tree walked) —
+> superseded by §9's reservation verdict above, kept for provenance. The
+> registry-assigned rename `26f → 170` (21-30 band status) is executed on
+> this branch in the same wave; 26b (the census) keeps its key —
+> uncontested at the registry scan.
 >
 > C# cites are `decompiled/Terraria/Projectile.cs` (stable) unless named;
 > Rust cites are at the d3 tip `5ff9fe983` unless a sibling hash is given.
@@ -241,7 +247,7 @@ it)"). The two kinds are NOT aiStyle-25 — they only share
   orchestrator particles on d54 (batch 7 `965e9612c`, the
   DeadCellsBarrel 2-head-draw + spark loop + rotated ring). **The row +
   the AI/movement halves are the gap** — task-seeded **S1-P-i58**
-  (ROADMAP + research/90 R-248-1; i57 is d53's wetVelocity seed, taken
+  (ROADMAP + research/90 R-331-1; i57 is d53's wetVelocity seed, taken
   at its pushed tip; i58 free at every tip at this scan).
 
 ## 5. The boulder-family bible (the family map, C# → port → owner)
@@ -294,7 +300,9 @@ bee/switch seams, the one-tick-lag plate scan. The particle bodies,
   `:74857-74876`).
 - The registry scan: every `origin/task/W4-*` tip's `docs/research/`
   ls-tree walked; 248 free at all tips (237-247 taken; 244/246 sibling
-  collisions noted, not touched). S1-P-i58 free at all tips (i57 taken
+  collisions noted, not touched) — that SEAL-time claim SUPERSEDED by
+  registry-150 §9 (g82's reservation wins 248; this doc renumbered 331).
+  S1-P-i58 free at all tips (i57 taken
   by d53's pushed seed).
 - **No cargo / rustc / tests / rustfmt / graphify invoked.** The
   branch's witnesses stay WRITTEN NOT RUN; this SEAL adds no new
