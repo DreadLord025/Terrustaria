@@ -888,12 +888,12 @@ mod tests {
         let dir = crate::test_world_helpers::test_scratch("persist-bread");
         let path = dir.join("tr-persist-bread.trwld");
         save(&path, &p, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[], 0).unwrap();
-        let s = load(&path).expect("v8 sidecar");
+        let s = load(&path).expect("v9 sidecar");
         assert!(s.ate_artisan_bread, "the flag survives the round trip");
         assert!(!s.used_aegis_fruit, "the aegis slot stays clear");
         let fresh = Player::spawn(&world);
         save(&path, &fresh, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[], 0).unwrap();
-        assert!(!load(&path).expect("v8 sidecar").ate_artisan_bread);
+        assert!(!load(&path).expect("v9 sidecar").ate_artisan_bread);
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
@@ -913,7 +913,7 @@ mod tests {
         let path = dir.join("tr-persist-loadout.trwld");
         let inv = [(0u16, 0u32); 50];
         save(&path, &p, inv, 0, [0, 0, 0], &[0; 10], &[], 1 << 5).unwrap();
-        let s = load(&path).expect("v8 sidecar");
+        let s = load(&path).expect("v9 sidecar");
         assert_eq!(s.current_loadout_index, 1);
         assert_eq!(s.equip_share_flags, 1 << 5);
         assert_eq!(s.loadouts[2].armor[0].kind, 90);

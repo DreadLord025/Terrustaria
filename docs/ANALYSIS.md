@@ -39352,22 +39352,26 @@ click buffers; the player tick applies).
   ManaEffect queue, STAR_POWER + TOPPED_OFF timing + the GET_A_LIFE
   sparing, the CCed refusal) — WRITTEN, NOT RUN.
 
-## The sidecar superset (W4-g88 ⨉ g89 ⨉ g89b ⨉ g90 ⨉ g55 — final v8)
+## The sidecar superset (W4-g88 ⨉ g89 ⨉ g89b ⨉ g89c ⨉ g90 ⨉ g55 — final v9)
 
-- **The collision.** Five lane writers collided on the post-dye block:
+- **The collision.** Six lane writers collided on the post-dye block:
   g89 (`920014cb`, `origin/task/W4-g89-aegis-fruit-use`) bumped v7 with
   the `usedAegisFruit` 0/1 flag; g88 (`f1eb9b60`) bumped v7 with the
   `statLifeMax statLifeMax2` pair; g90 (`1f1b88f0`,
   `origin/task/W4-g90-artisan-bread-use`) bumped v7 with the
   `ateArtisanBread` 0/1 flag; g55 (`cde865fc`) bumped v7 with the
   loadout block; g89b (`9bf03ede`) bumped v8 widening the unlock line to
-  `usedAegisFruit usedGummyWorm`. A naive merge would misparse one
-  lane's file as another's.
-- **The ONE superset contract (this branch's writer, version 8 —
-  g89b's unlock-line shape kept).** After the dye line:
-  **(1)** the unlock line `usedAegisFruit usedGummyWorm` (TWO tokens —
-  g89b's position; tokens 3+ RESERVED for ambrosia/galaxy-pearl/
-  arcane-crystal/aegis-crystal/DD2, the layout doc's token map), **(2)**
+  `usedAegisFruit usedGummyWorm`; g89c (`78766306`) bumped v9 widening
+  it again to `usedAegisFruit usedGummyWorm usedAmbrosia`. A naive merge
+  would misparse one lane's file as another's (g89d's research/122 §2
+  records the v9-line-as-life-pair corruption class against the
+  pre-fold-3 token-count reader).
+- **The ONE superset contract (this branch's writer, version 9 —
+  g89c's unlock-line shape kept).** After the dye line:
+  **(1)** the unlock line `usedAegisFruit usedGummyWorm usedAmbrosia`
+  (THREE tokens — g89c's position; tokens 4+ RESERVED for galaxy-pearl/
+  arcane-crystal/aegis-crystal/DD2 — the crystal tokens 4/5/6 land at
+  v10 per research/122 §3), **(2)**
   the life pair `statLifeMax statLifeMax2` (TWO tokens), **(3)** the mana
   pair `statManaMax statManaMax2` (TWO tokens), **(4)** the artisan-bread
   flag line (ONE token — g90's flag, after the mana pair per the fold
@@ -39380,8 +39384,9 @@ click buffers; the player tick applies).
   (`Player.cs:54773`/`:54775`/`:54779`/`:54782` writes;
   `:55220-55229`/`:55245`/`:55256` reads) and the loadouts at
   `:54919-54923`/`:55720-55727`.
-- **The tolerant reader.** v8: the FIRST post-dye line is POSITIONALLY
-  the unlock line (g89b's contract; 1 or 2 tokens read, tokens 3+
+- **The tolerant reader.** v8/v9: the FIRST post-dye line is
+  POSITIONALLY the unlock line (g89b/g89c's contract; 1, 2 or 3 tokens
+  read — short lines back-read, missing tokens keep false; tokens 4+
   reserved and skipped). v7: the FIRST one-token line → the aegis flag,
   the SECOND → the bread flag. Both versions then dispatch the
   remaining lines on TOKEN COUNT/SHAPE: the first two-token line → the
@@ -39392,13 +39397,15 @@ click buffers; the player tick applies).
   (g55's block self-identifies by its set lines; index clamps 0..2,
   `Utils.Clamp` `:55720-55727`). So g89's flag-only v7, g88's
   pre-reconciliation life-only v7, g90's bread-only v7, g55's
-  loadout-only v7, g89b's unlock-only v8, the partial supersets and the
+  loadout-only v7, g89b's unlock-only v8, g89c's unlock-only v9, the
+  partial supersets (incl. this branch's own pre-v9 v8 superset) and the
   full superset all load;
   missing pieces keep None/false/empty and the fresh defaults. Any
   merge of the lanes keeps THIS reader (the superset). Known ambiguity:
   a lone flag line cannot self-identify, so g90's bread-only file reads
-  into the aegis slot (slot 1 wins); the superset writer emits both
-  flags so the ambiguity ends at the fold (the layout doc records it).
+  into the aegis slot (slot 1 wins — research/122 §3's recommended
+  resolution); the superset writer emits all three flags so the
+  ambiguity ends at the fold (the layout doc records it).
 - **The flag fields are carried, not used.** `Player.used_aegis_fruit`
   lands on this branch ONLY for the sidecar round-trip (declared at
   g89's exact position after `used_gummy_worm`, ctor false `:56079`, so
@@ -39407,7 +39414,17 @@ click buffers; the player tick applies).
   writes the flag in play. `used_gummy_worm` pre-existed (S1-P-i35's
   +3 fishing consumer, `player.rs`); the g89b fold adds ONLY its
   sidecar carrier + restore — the 5341 use arm and the shared
-  `use_shimmer_permanent_item` core stay g89b's scope.
+  `use_shimmer_permanent_item` core stay g89b's scope. The g89c fold
+  adds `Player.used_ambrosia` the same way (declared at g89c's exact
+  position after `used_aegis_fruit`, ctor false `:56083`): the
+  three-speed row (`:12861-12866` — `pickSpeed -= 0.05f; tileSpeed +=
+  0.05f; wallSpeed += 0.05f`) and the 5342 use arm stay g89c's scope.
+  Census (g89c, verified `ItemID.cs:12355-12369`): Ambrosia is **5342**
+  NOT 5336 — 5336 is Combat Book Vol Two, a WORLD flag
+  (`NPC.combatBookVolumeTwoWasUsed`, `Player.cs:45337-45349`, `.wld`
+  `:1407`/`:2416-2423`), never a sidecar token; 5343 is
+  PeddlersSatchel (also world-owned); LifeFruit is **1291**
+  (`ItemID.cs:4265`).
 - **The loadout fields are carried, not used (g55 fold).**
   `loadout.rs` lands byte-identical to g55 (`cde865fc`, blob
   `a647ae55`); `Player.loadouts`/`current_loadout_index` +
@@ -39421,16 +39438,22 @@ click buffers; the player tick applies).
   (a saved 405-life character keeps its hp); the mana pair feeds
   `mana_max_base`/`mana_max`; the flag restores verbatim.
 - **The merger contract doc.** `docs/research/103-persist-v7-layout.md`
-  carries the full token order/counts, the unlock line's RESERVED
-  booster tokens (ambrosia/pearl/arcane/crystal/DD2 — the vanilla
-  `:54780-54787` order), the back-compat matrix (every predecessor shape
-  → its witness) and the merge guidance. It wins over any lane's local
-  layout note.
-- **Code-only mode.** Witnesses: `persist.rs` (the FULL v8 superset
-  round-trip with the exact line order, g89's flag-only v7, the
+  carries the full token order/counts, the unlock line's token map
+  (tokens 1-3 LIVE: aegis/gummy/ambrosia; tokens 4-6 RESERVED for the
+  crystal lane at v10, token 7 DD2), the back-compat matrix (every
+  predecessor shape → its witness) and the merge guidance. g89d's
+  `docs/research/122-persist-v9-addendum.md` (`4344bd50`, carried onto
+  this branch with a §6 fold receipt) is the g89-lane view of the same
+  line-8 contract + the v10 crystal reservation + the merger recipe;
+  103 links it. They win over any lane's local layout note.
+- **Code-only mode.** Witnesses: `persist.rs` (the FULL v9 superset
+  round-trip with the exact line order (`9\n` header, `1 1 1` unlock
+  line), g89's flag-only v7, the
   life-only v7, g90's bread-only v7 (the bounded lone-flag ambiguity),
   g55's loadout-only v7, the 3-line pre-fold superset, g89b's
-  unlock-only v8 + the 1-token back-read + the reserved-token skip,
+  unlock-only v8 + the 1-token back-read, g89c's unlock-only v9 + the
+  2-token back-read + the pre-v9 superset v8 back-read + the
+  reserved-token skip (tokens 4+),
   the both-caps read clamp, the loadout index clamp, the bread/loadout
   round-trips — plus the extended v5/v6 back-compat assertions) +
   `crystals.rs` +1 (the crystal-upgrade sidecar round-trip + the

@@ -75,7 +75,8 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
-| 103 | The `.trplayer` FINAL layout — the v7-collision superset (W4-g88 ⨉ g89 ⨉ g89b ⨉ g90 ⨉ g55), writer v8; THE MERGER CONTRACT: token order/counts, the unlock line's reserved booster tokens, the back-compat matrix | `103-persist-v7-layout.md` | ✅ contract |
+| 103 | The `.trplayer` FINAL layout — the v7-collision superset (W4-g88 ⨉ g89 ⨉ g89b ⨉ g89c ⨉ g90 ⨉ g55), writer v9; THE MERGER CONTRACT: token order/counts, the unlock line's token map (1-3 live, 4-6 crystal-reserved → v10), the back-compat matrix | `103-persist-v7-layout.md` | ✅ contract |
+| 122 | The `.trplayer` v9 addendum (g89d `4344bd50`, carried verbatim + a §6 fold receipt): the line-8 unlock contract after dye, the two in-flight v7 forks, the reconciled v10 crystal reservation, the merger recipe | `122-persist-v9-addendum.md` | ✅ addendum |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
