@@ -6134,7 +6134,7 @@ impl Npc {
             NpcKind::EaterOfSouls | NpcKind::Hornet | NpcKind::MeteorHead => {
                 unreachable!("aiStyle 5 rides the style axis (S1-D-2)")
             }
-            NpcKind::KingSlime => self.update_king_slime(world, player, rng),
+            NpcKind::KingSlime => self.update_king_slime(world, player, rng, dust, dust_ctx),
             NpcKind::EyeOfCthulhu => self.update_eye_of_cthulhu(world, player),
             NpcKind::ServantOfCthulhu => {
                 unreachable!("aiStyle 5 rides the style axis (S1-D-2)")
@@ -9805,9 +9805,20 @@ impl Npc {
     /// the hop cycle (the hp-scaled rate), the shrink/grow teleport, the
     /// hp-scaled body and the 5 %-hp minion batches.
     ///
-    /// The dust and the gore are SKIPPED — no dust/gore layer. The MP-only
-    /// branches use the single-player values.
-    fn update_king_slime(&mut self, world: &World, player: &mut Player, rng: &mut UnifiedRandom) {
+    /// W4-e2 batch 6: the three dust sites are WIRED through the live
+    /// DustPool on the UpdateNPCs stream — the shrink ring 43251 (!flag3),
+    /// the grow ring 43278 (every state-6 tick) and the every-tick body
+    /// drip 43365 (pre-resize box/scale, post-movement velocity). The
+    /// crown gore 734 (`:43233`) stays d55/f4's gore lane (zero argument
+    /// draws). The MP-only branches use the single-player values.
+    fn update_king_slime(
+        &mut self,
+        world: &World,
+        player: &mut Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         // `:43123-43133` — the flags and the getGood world's scale factor.
         // `num2` stays 1.0 (the getGood `num3 = 2f` scale row `:43128-43131`
         // is constants-off, the classic solo env — ANALYSIS).
@@ -9928,6 +9939,12 @@ impl Npc {
             num = 0.5 + ((60.0 - self.ai[0]) / 60.0).clamp(0.0, 1.0) * 0.5;
             if self.ai[0] >= 60.0 {
                 flag3 = true;
+                // `:43231-43234` — the `ai[0] == 60` crown gore 734
+                // (`Gore.NewGore(Center + (-40, -height/2), velocity,
+                // 734)`): the body is d55/f4's gore lane (W4-f4 E3,
+                // `npc_hit_effect_e.rs`); its ARGUMENT draws are zero
+                // (the position/velocity are fixed expressions), so the
+                // dust stream below is unaffected.
                 // `:43235-43241` — `base.Bottom = (localAI[1], localAI[2])`
                 // (`Entity.cs:128-131`): x centres on the spot, y anchors
                 // the bottom.
@@ -9935,6 +9952,16 @@ impl Npc {
                 self.y = self.king_slime_local[2] - h;
                 self.ai[1] = 6.0;
                 self.ai[0] = 0.0;
+            }
+            // W4-e2 site 43251 — the shrink ring (`:43247-43255`): 10×4
+            // at (position + UnitX*-20, width+40, height), alpha 150,
+            // Color(78,136,255,80), scale 2; post noGravity, velocity *=
+            // 0.5. Gated `!flag3` — the teleport tick itself spawns none.
+            if !flag3 {
+                crate::npc_dust::king_slime_teleport_ring(
+                    self.x, self.y, w as i32, h as i32, self.vx, self.vy, 0.5,
+                    rng, dust, dust_ctx, world,
+                );
             }
         } else if self.ai[1] == 6.0 {
             // `:43257-43282` — the grow-back: 30 ticks at the same ramp.
@@ -9950,6 +9977,13 @@ impl Npc {
                 let cand = crate::npc_target::session_candidate(player);
                 crate::npc_target::target_closest(self, world, &[cand], true, 15, 0);
             }
+            // W4-e2 site 43278 — the grow-back ring (`:43276-43281`):
+            // the SAME 10×4 body as the shrink ring but velocity *= 2,
+            // and it runs EVERY state-6 tick (no !flag gate).
+            crate::npc_dust::king_slime_teleport_ring(
+                self.x, self.y, w as i32, h as i32, self.vx, self.vy, 2.0,
+                rng, dust, dust_ctx, world,
+            );
         }
         // `:43283` — `this.dontTakeDamage = (this.hide = flag3)`: the
         // teleport tick is unhittable (K-4). The `hide` draw-skip has no
@@ -10023,6 +10057,17 @@ impl Npc {
                 }
             }
         }
+        // W4-e2 site 43365 — the every-tick body drip (`:43365-43367`):
+        // ONE type-4 at (position, width, height), alpha 255,
+        // Color(0,80,255,80), scale = this.scale*1.2; post noGravity,
+        // velocity *= 0.5. The C# runs it AFTER the movement block and
+        // BEFORE the `life <= 0` return + the hp-scale write, so it reads
+        // the PRE-resize box (w, h) and scale, and the POST-movement
+        // velocity. A corpse still drips on its death tick.
+        crate::npc_dust::king_slime_body_drip(
+            self.x, self.y, w as i32, h as i32, self.vx, self.vy, self.scale,
+            rng, dust, dust_ctx, world,
+        );
         // `:43365-43382` — the body scale: the hp drives the size (the
         // C#'s `num9`). `:43368-43371` — `life <= 0` returns BEFORE the
         // scale write (the port no longer scales a corpse — K-4).
@@ -28663,6 +28708,14 @@ mod s1_d_3g_tests {
         n
     }
 
+    /// W4-e2 batch 6 — the scratch dust pool + permissive ctx for the
+    /// King Slime's wired dust sites (the `update_rng` convention: the
+    /// whole world on-screen, the full 6000 budget, so the pool never
+    /// culls and the scratch spawns always land).
+    fn dust_fixture(w: &tr_core::World) -> (tr_core::particles::DustPool, tr_core::particles::SpawnCtx) {
+        (tr_core::particles::DustPool::new(), permissive_dust_ctx(w))
+    }
+
     /// S1-D-3g — the King Slime's body scales with its hp
     /// (`AI_015_KingSlime`, `NPC.cs:43340-43356`): the scale is
     /// `life / lifeMax * 0.5 + 0.75` and the box is 98x92 times it.
@@ -28674,7 +28727,8 @@ mod s1_d_3g_tests {
         player.y = 200.0;
         let mut k = king();
         let mut rng = UnifiedRandom::new(12345);
-        k.update_king_slime(&w, &mut player, &mut rng);
+        let (mut dust, dctx) = dust_fixture(&w);
+        k.update_king_slime(&w, &mut player, &mut rng, &mut dust, &dctx);
         // The full-hp scale: 0.5 + 0.75 = 1.25.
         assert!(
             (k.scale - 1.25).abs() < 0.001,
@@ -28686,7 +28740,7 @@ mod s1_d_3g_tests {
         assert_eq!(k.size_override, Some((122.0, 115.0)));
         // At half the hp the scale drops to 1.0.
         k.hp = k.max_hp / 2;
-        k.update_king_slime(&w, &mut player, &mut rng);
+        k.update_king_slime(&w, &mut player, &mut rng, &mut dust, &dctx);
         assert!(
             (k.scale - 1.0).abs() < 0.001,
             "the half-hp scale ({})",
@@ -28704,16 +28758,17 @@ mod s1_d_3g_tests {
         player.y = 200.0;
         let mut k = king();
         let mut rng = UnifiedRandom::new(12345);
+        let (mut dust, dctx) = dust_fixture(&w);
         // The first tick: the `ai[3]` latch is set to the full hp — no batch.
-        k.update_king_slime(&w, &mut player, &mut rng);
+        k.update_king_slime(&w, &mut player, &mut rng, &mut dust, &dctx);
         assert!(!k.wants_minion, "no batch at the full hp");
         // A hair of damage is not enough (the 5 % window).
         k.hp = k.max_hp - 1;
-        k.update_king_slime(&w, &mut player, &mut rng);
+        k.update_king_slime(&w, &mut player, &mut rng, &mut dust, &dctx);
         assert!(!k.wants_minion, "no batch inside the 5 % window");
         // A 5 % loss spawns the batch.
         k.hp = k.max_hp - (k.max_hp / 20) - 1;
-        k.update_king_slime(&w, &mut player, &mut rng);
+        k.update_king_slime(&w, &mut player, &mut rng, &mut dust, &dctx);
         assert!(k.wants_minion, "the 5 % batch");
         assert!(
             (1..=3).contains(&k.wants_minion_batch),
@@ -28750,8 +28805,14 @@ mod s1_d_3g_tests {
         player.x = 5000.0;
         player.y = 100.0;
         let mut rng = UnifiedRandom::new(9);
-        let before = rng.clone();
-        k.update_king_slime(&w, &mut player, &mut rng);
+        let (mut dust, dctx) = dust_fixture(&w);
+        // W4-e2 batch 6 re-derivation: the tick now spawns the shrink ring
+        // (10×4, `:43251`, !flag3 holds at ai[0]=31) + the body drip
+        // (1×4, `:43365`). The mirror replays those pool internals; the
+        // teleport-spot SEARCH still draws nothing (ai[2] < 300).
+        let mut mirror = UnifiedRandom::new(9);
+        let mut mpool = tr_core::particles::DustPool::new();
+        k.update_king_slime(&w, &mut player, &mut rng, &mut dust, &dctx);
         // The guard skipped the state write: the timer ADVANCED, not reset.
         assert_eq!(k.ai[0], 31.0, "the shrink timer advances (guard held)");
         assert_eq!(k.ai[1], 5.0, "still shrinking");
@@ -28759,8 +28820,89 @@ mod s1_d_3g_tests {
         assert_eq!(k.king_slime_local[2], 888.0, "teleport target preserved");
         // EncourageDespawn(10) armed the despawn window (`:43155`).
         assert_eq!(k.despawn_timer, 10, "the boss is encouraged to despawn");
-        // No teleport-spot search this tick (ai[2] < 300): zero draws.
-        assert_eq!(rng, before, "the gated write consumes no draw");
+        // The shrink ring: 10×4 at (x-20, y), box (width+40, height),
+        // alpha 150, Color(78,136,255,80), scale 2, velocity *= 0.5.
+        let (kw, kh) = (98.0f32, 92.0f32); // the pre-resize SetDefaults box
+        for _ in 0..10 {
+            let idx = mpool.new_dust(
+                &mut mirror, &dctx, &w, glam::Vec2::new(k.x - 20.0, k.y),
+                kw as i32 + 40, kh as i32, 4, k.vx, k.vy, 150,
+                tr_core::particles::Color::new(78, 136, 255, 80), 2.0,
+            );
+            let d = mpool.slot_mut(idx);
+            d.no_gravity = true;
+            d.velocity *= 0.5;
+        }
+        // The body drip: 1×4 at (x, y), box (width, height), alpha 255,
+        // Color(0,80,255,80), scale = this.scale*1.2, velocity *= 0.5.
+        let idx = mpool.new_dust(
+            &mut mirror, &dctx, &w, glam::Vec2::new(k.x, k.y),
+            kw as i32, kh as i32, 4, k.vx, k.vy, 255,
+            tr_core::particles::Color::new(0, 80, 255, 80), k.scale * 1.2,
+        );
+        let d = mpool.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity *= 0.5;
+        // The stream matches the dust census exactly — the teleport-spot
+        // search contributed ZERO draws (the gated write held).
+        assert_eq!(rng.peek(), mirror.peek(), "the shrink ring + body drip census");
+    }
+
+    /// W4-e2 batch 6 — the grow-back ring (site 43278, `NPC.cs:43276-
+    /// 43281`) runs EVERY state-6 tick with velocity *= 2, then the body
+    /// drip (site 43365) follows the movement block. The witness pre-arms
+    /// state 6 mid-grow (ai[0] = 10 → 11, no grow-end), ticks once, and
+    /// mirrors the 10×4 ring (mult 2) + the 1×4 drip through the pool.
+    #[test]
+    fn w4_e2_the_grow_ring_and_body_drip_ride_the_stream() {
+        let mut w = tr_core::World::new("t".into(), 200, 200);
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut player = Player::spawn(&w);
+        player.x = 250.0;
+        player.y = 100.0;
+        let mut k = Npc::new(NpcKind::KingSlime, 100.0, 100.0, 1, 0.0);
+        k.hp = k.max_hp;
+        k.king_slime_local[3] = 1.0; // skip the one-shot init
+        k.ai[1] = 6.0;
+        k.ai[0] = 10.0; // -> 11: mid-grow, no grow-end TargetClosest
+        k.ai[3] = k.max_hp as f32; // no minion batch this tick
+        let mut rng = UnifiedRandom::new(17);
+        let mut mirror = UnifiedRandom::new(17);
+        let (mut dust, dctx) = dust_fixture(&w);
+        let mut mpool = tr_core::particles::DustPool::new();
+        k.update_king_slime(&w, &mut player, &mut rng, &mut dust, &dctx);
+        assert_eq!(k.ai[0], 11.0, "the grow timer advanced");
+        assert_eq!(k.ai[1], 6.0, "still growing");
+        let (kw, kh) = (98.0f32, 92.0f32);
+        // The grow ring: 10×4, velocity *= 2 (the shrink's 0.5 twin).
+        for _ in 0..10 {
+            let idx = mpool.new_dust(
+                &mut mirror, &dctx, &w, glam::Vec2::new(k.x - 20.0, k.y),
+                kw as i32 + 40, kh as i32, 4, k.vx, k.vy, 150,
+                tr_core::particles::Color::new(78, 136, 255, 80), 2.0,
+            );
+            let d = mpool.slot_mut(idx);
+            d.no_gravity = true;
+            d.velocity *= 2.0;
+        }
+        // The body drip: 1×4, alpha 255, velocity *= 0.5.
+        let idx = mpool.new_dust(
+            &mut mirror, &dctx, &w, glam::Vec2::new(k.x, k.y),
+            kw as i32, kh as i32, 4, k.vx, k.vy, 255,
+            tr_core::particles::Color::new(0, 80, 255, 80), k.scale * 1.2,
+        );
+        let d = mpool.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity *= 0.5;
+        assert_eq!(rng.peek(), mirror.peek(), "the grow ring + body drip census");
+        // 11 dusts landed (10 ring + 1 drip), all type 4, all noGravity.
+        let live: Vec<usize> = (0..6000).filter(|&i| dust.slot(i).active).collect();
+        assert_eq!(live.len(), 11);
+        for &i in &live {
+            assert_eq!(dust.slot(i).dust_type, 4);
+            assert!(dust.slot(i).no_gravity);
+        }
     }
 }
 

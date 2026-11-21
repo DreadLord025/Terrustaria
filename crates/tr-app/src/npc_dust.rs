@@ -45,8 +45,12 @@
 //!   3×(Next(3)<2) trail (`:39958-39989`, STAGED — no `NpcKind` yet).
 //! - 40024/40035 — the Ancient Light 522's 13×261 launch + the
 //!   2×(Next(10-min(7,|v|))<1) trail (`:40017-40049`, STAGED).
-//! - 40100/40110/40120 — the Squidhead 521's three Next(6) ring gates
-//!   (`:40097-40126`, STAGED).
+//! - 40100/40110/40120 — the Ancient Doom 523's three Next(6) ring gates
+//!   (`:40097-40126`, aiStyle 101, STAGED). W4-e2 batch 6 attribution fix:
+//!   batch 5 mislabeled these "Squidhead 521" — aiStyle 101's only user is
+//!   type 523 (`SetDefaults` `:15799`), the cultist's Ancient Doom; the
+//!   Squidhead 521 is aiStyle 86 (`:15772`) and its own sites are
+//!   37337/37464 below.
 //! - 40193/40302 — the Sand Elemental 541's bottom sand pair + the
 //!   CatmullRom tether (`:40189-40204`/`:40266-40309`, STAGED).
 //! - 40834/40851/40947 — the Eternia Crystal's win-ring / win-pulse /
@@ -58,6 +62,14 @@
 //!   `update_moon_lord_head`).
 //! - 42675/42873 — the True Eye's orbit spoke pair + the deathray
 //!   socket fan (`:42673-42678`/`:42863-42878`, `update_true_eye`).
+//!
+//! Batch 6 (the :42873-44037 window's unclaimed tail — f4's third wave
+//! owns 44037+, the window holds ONLY the King Slime's three sites; the
+//! :21562-39039 gap census + the floater fade-entry follow in the next
+//! commits, see research/64):
+//! - 43251/43278/43365 — the King Slime's shrink 10×4 ring / grow-back
+//!   10×4 ring / every-tick body 4 (`:43249-43254`/`:43276-43281`/
+//!   `:43365-43367`, `update_king_slime` — WIRED, the live DustPool).
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -392,7 +404,7 @@ pub fn moon_leech_rings(
 // =====================================================================
 // W4-e2 batch 5 — the line-order continuation (20 sites after 39362).
 // The STAGED emitters below carry the kinds the port has no `NpcKind`
-// for yet (SolarGoop 519, AncientLight 522, Squidhead 521, SandElemental
+// for yet (SolarGoop 519, AncientLight 522, AncientDoom 523, SandElemental
 // 541); their machines arrive with the wiring wave, the dust bodies +
 // RNG order are pinned here (the `npc_ai_style9` solar-flare-helper
 // precedent). The faithful machines' sites are armed inline in npc.rs.
@@ -579,8 +591,10 @@ pub fn ancient_light_trail(
     }
 }
 
-/// Sites 40100/40110/40120 — the Squidhead (521)'s three ring gates
-/// (`NPC.cs:40097-40126`, aiStyle 101). Three SEQUENTIAL `Next(6) == 0`
+/// Sites 40100/40110/40120 — the Ancient Doom (523)'s three ring gates
+/// (`NPC.cs:40097-40126`, aiStyle 101 — `SetDefaults` `:15799` gives 523
+/// the style; the Squidhead 521 is aiStyle 86, `:15772`, and owns
+/// 37337/37464 instead). Three SEQUENTIAL `Next(6) == 0`
 /// gates (each draws even when the previous passed). On a pass:
 /// gate 1 — vector210 = UnitY.RotatedByRandom(2π), NewDust(Center -
 /// vector210*20, 0, 0, 27), post: noGravity, position = Center -
@@ -593,7 +607,7 @@ pub fn ancient_light_trail(
 /// vector212*30, 0, 0, 240), post: position = Center - vector212*20*
 /// scale, velocity = Zero, scale = 0.5 + NextFloat, fadeIn 0.5, noLight
 /// (NO noGravity). STAGED.
-pub fn squidhead_rings(
+pub fn ancient_doom_rings(
     cx: f32,
     cy: f32,
     scale: f32,
@@ -813,6 +827,73 @@ pub fn nebula_floater_teleport_burst(
         d.no_gravity = true;
         d.scale = 2.5;
     }
+}
+
+// =====================================================================
+// W4-e2 batch 6 — the King Slime's teleport rings + body drip (3 sites).
+// The :42873-44037 window's only unclaimed sites (f4's third wave owns
+// 44037+). WIRED inline in `npc.rs::update_king_slime` on the live
+// DustPool / UpdateNPCs stream.
+// =====================================================================
+
+/// Sites 43251/43278 — the King Slime's shrink / grow-back teleport rings
+/// (`NPC.cs:43249-43254` / `:43276-43281`, AI_015). IDENTICAL bodies: 10
+/// type-4 `NewDust(position + UnitX*-20, width+40, height, 4, vx, vy,
+/// 150, Color(78,136,255,80), 2)`; post-writes noGravity then
+/// `velocity *= vel_mult` (0.5 shrink / 2 grow). The shrink loop is gated
+/// `!flag3` (the teleport tick itself spawns none); the grow loop runs
+/// every tick of state 6. No explicit `Main.rand` draws outside the pool.
+pub fn king_slime_teleport_ring(
+    x: f32,
+    y: f32,
+    width: i32,
+    height: i32,
+    vx: f32,
+    vy: f32,
+    vel_mult: f32,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let color = Color::new(78, 136, 255, 80);
+    for _ in 0..10 {
+        let idx = dust.new_dust(
+            rng, ctx, world, Vec2::new(x - 20.0, y), width + 40, height, 4,
+            vx, vy, 150, color, 2.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity *= vel_mult;
+    }
+}
+
+/// Site 43365 — the King Slime's every-tick body drip (`NPC.cs:43365-
+/// 43367`, AI_015): ONE type-4 `NewDust(position, width, height, 4, vx,
+/// vy, 255, Color(0,80,255,80), scale*1.2)`; post noGravity, velocity *=
+/// 0.5. Runs AFTER the movement block, BEFORE the `life <= 0` return and
+/// the hp-scale write — so it reads the PRE-resize box and scale.
+pub fn king_slime_body_drip(
+    x: f32,
+    y: f32,
+    width: i32,
+    height: i32,
+    vx: f32,
+    vy: f32,
+    scale: f32,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let color = Color::new(0, 80, 255, 80);
+    let idx = dust.new_dust(
+        rng, ctx, world, Vec2::new(x, y), width, height, 4,
+        vx, vy, 255, color, scale * 1.2,
+    );
+    let d = dust.slot_mut(idx);
+    d.no_gravity = true;
+    d.velocity *= 0.5;
 }
 
 #[cfg(test)]
@@ -1175,19 +1256,19 @@ mod tests {
         }
     }
 
-    /// Sites 40100/40110/40120 — the squidhead's three sequential Next(6)
+    /// Sites 40100/40110/40120 — the Ancient Doom's three sequential Next(6)
     /// gates; each passed gate draws the RotatedByRandom pair + the pool
     /// internals + the per-gate post draws (Next(10,21) for gate 1, a
     /// NextFloat scale for each). The mirror replays all three.
     #[test]
-    fn w4_e2_squidhead_three_sequential_ring_gates() {
+    fn w4_e2_ancient_doom_three_sequential_ring_gates() {
         let w = world();
         let c = ctx();
         let mut pool = DustPool::new();
         let mut mpool = DustPool::new();
         let mut rng = UnifiedRandom::new(91);
         let mut mirror = UnifiedRandom::new(91);
-        squidhead_rings(1000.0, 1000.0, 1.0, &mut rng, &mut pool, &c, &w);
+        ancient_doom_rings(1000.0, 1000.0, 1.0, &mut rng, &mut pool, &c, &w);
         // Gate 1: Next(6), then on 0 the rotation pair + NewDust(Center -
         // v*20, 0, 0, 27) + Next(10,21) + NextFloat.
         if mirror.next_max(6) == 0 {
@@ -1366,6 +1447,80 @@ mod tests {
             assert!(pool.slot(i).no_gravity);
             assert_eq!(pool.slot(i).scale, 2.5);
         }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e2 batch 6 — sites 43251/43278: the shrink ring (vel_mult 0.5)
+    /// and the grow ring (vel_mult 2) are the SAME 10×4 body at
+    /// (x-20, y), box (width+40, height), alpha 150, Color(78,136,255,80),
+    /// scale 2; post noGravity then velocity *= mult. Mirrored pool
+    /// internals pin the stream; the two mults differ only in the post.
+    #[test]
+    fn w4_e2_king_slime_teleport_ring_shrink_and_grow() {
+        let w = world();
+        let c = ctx();
+        for (mult, seed) in [(0.5f32, 131u64), (2.0, 137)] {
+            let mut pool = DustPool::new();
+            let mut mpool = DustPool::new();
+            let mut rng = UnifiedRandom::new(seed);
+            let mut mirror = UnifiedRandom::new(seed);
+            king_slime_teleport_ring(
+                900.0, 700.0, 122, 115, 1.5, -2.0, mult,
+                &mut rng, &mut pool, &c, &w,
+            );
+            for _ in 0..10 {
+                let idx = mpool.new_dust(
+                    &mut mirror, &c, &w, Vec2::new(900.0 - 20.0, 700.0),
+                    122 + 40, 115, 4, 1.5, -2.0, 150, Color::new(78, 136, 255, 80), 2.0,
+                );
+                let d = mpool.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= mult;
+            }
+            assert_eq!(active(&pool).len(), 10, "mult {mult}: 10 dusts");
+            for i in 0..10 {
+                assert_eq!(pool.slot(i).dust_type, 4);
+                assert!(pool.slot(i).no_gravity);
+                assert_eq!(pool.slot(i).color, Color::new(78, 136, 255, 80));
+                assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+                assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+            }
+            assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+        }
+    }
+
+    /// W4-e2 batch 6 — site 43365: ONE type-4 body drip at (x, y), box
+    /// (width, height), alpha 255, Color(0,80,255,80), scale = scale*1.2;
+    /// post noGravity, velocity *= 0.5. The scale argument is the
+    /// PRE-resize `this.scale` (the C# runs the drip before the hp-scale
+    /// write), so the witness pins scale*1.2 at the caller's value.
+    #[test]
+    fn w4_e2_king_slime_body_drip_single_255() {
+        let w = world();
+        let c = ctx();
+        let mut pool = DustPool::new();
+        let mut mpool = DustPool::new();
+        let mut rng = UnifiedRandom::new(141);
+        let mut mirror = UnifiedRandom::new(141);
+        king_slime_body_drip(
+            900.0, 700.0, 122, 115, 1.5, -2.0, 1.25,
+            &mut rng, &mut pool, &c, &w,
+        );
+        let idx = mpool.new_dust(
+            &mut mirror, &c, &w, Vec2::new(900.0, 700.0), 122, 115, 4,
+            1.5, -2.0, 255, Color::new(0, 80, 255, 80), 1.25 * 1.2,
+        );
+        let d = mpool.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity *= 0.5;
+        assert_eq!(active(&pool).len(), 1);
+        assert_eq!(pool.slot(0).dust_type, 4);
+        assert_eq!(pool.slot(0).alpha, 255);
+        assert_eq!(pool.slot(0).color, Color::new(0, 80, 255, 80));
+        assert!(pool.slot(0).no_gravity);
+        assert_eq!(pool.slot(0).position, mpool.slot(0).position);
+        assert_eq!(pool.slot(0).velocity, mpool.slot(0).velocity);
+        assert_eq!(pool.slot(0).scale, mpool.slot(0).scale);
         assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
     }
 }
