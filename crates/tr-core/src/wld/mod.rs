@@ -1684,6 +1684,10 @@ mod tests {
         // (`:1413`, v261) — ride the round-trip at non-default values.
         world.combat_book_was_used = true;
         world.unlocked_slime_red_spawn = true;
+        // W4-g71: the three new setBG style bytes at non-default values.
+        world.snow_bg_style = 7;
+        world.desert_bg_style = 51;
+        world.ocean_bg_style = 6;
         world
     }
 
@@ -1910,6 +1914,13 @@ mod tests {
             got.unlocked_slime_red_spawn, want.unlocked_slime_red_spawn,
             "{context}: unlockedSlimeRedSpawn"
         );
+        // W4-g71: the three new setBG style bytes (slots 3/6/7).
+        assert_eq!(got.snow_bg_style, want.snow_bg_style, "{context}: snowBG");
+        assert_eq!(
+            got.desert_bg_style, want.desert_bg_style,
+            "{context}: desertBG"
+        );
+        assert_eq!(got.ocean_bg_style, want.ocean_bg_style, "{context}: oceanBG");
     }
 
     #[test]
