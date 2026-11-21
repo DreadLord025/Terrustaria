@@ -2352,14 +2352,14 @@ fn cursed_weapon_death(
     }
 }
 
-/// The 262/263/264 Plantera family death (`NPC.cs:87165-87219`): the
-/// 150x dust-167 burst — the C# death loop's `type == 265` gate
-/// (`:87188`) is always false in this arm (265 has its own arm), so the
-/// Next(3) short-circuits and every puff is 167 — then the per-kind
+/// The 262/263/264 Plantera family death (`NPC.cs:87165-87219`, sites
+/// 365-377): the 150x dust-167 burst — the C# death loop's `type == 265`
+/// gate (`:87188`) is always false in this arm (265 has its own arm), so
+/// the Next(3) short-circuits and every puff is 167 — then the per-kind
 /// scatter gores at `pos + (Next(width), Next(height))` (the argument
-/// draws X then Y BEFORE each NewGore), `this.scale` carried. The live
-/// branch: 262 Plantera → the nine 381/382/383/384/385/386/386/387/387
-/// (`:87199-87207`, sites 365-373); the 263/264 pairs land next batch.
+/// draws X then Y BEFORE each NewGore), `this.scale` carried: 262
+/// Plantera → the nine 381-385/386x2/387x2 (`:87199-87207`), 263 Hook →
+/// 390/391 (`:87211-87212`), 264 Tentacle → 388/389 (`:87216-87217`).
 fn plantera_death(
     npc: &Npc,
     npc_type: i32,
@@ -2401,6 +2401,57 @@ fn plantera_death(
             let pos = scatter(rng);
             gore.new_gore(rng, world, pos, vel, t, s); // :87199-87207
         }
+    }
+    if npc_type == 263 {
+        // `:87209-87213` — the Hook pair 390/391 (independent if in C#,
+        // mutually exclusive on type).
+        let pos = scatter(rng);
+        gore.new_gore(rng, world, pos, vel, 390, s); // :87211
+        let pos = scatter(rng);
+        gore.new_gore(rng, world, pos, vel, 391, s); // :87212
+    }
+    if npc_type == 264 {
+        // `:87214-87218` — the Tentacle pair 388/389.
+        let pos = scatter(rng);
+        gore.new_gore(rng, world, pos, vel, 388, s); // :87216
+        let pos = scatter(rng);
+        gore.new_gore(rng, world, pos, vel, 389, s); // :87217
+    }
+}
+
+/// The 266 Brain of Cthulhu death (`NPC.cs:87238-87258`, sites 378-383):
+/// the 150x dust-5 burst, then SIX gores 396-401 at position with
+/// velocity `(Next(-30,31)*0.2, Next(-30,31)*0.2)` — the argument draws
+/// X then Y BEFORE each NewGore — scale 1f (no this.scale argument).
+fn brain_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87248-87251` — the 150x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        150,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    for t in [396, 397, 398, 399, 400, 401] {
+        // `:87252-87257` — the scatter velocity argument, X then Y.
+        let vx = rng.next_range(-30, 31) as f32 * 0.2;
+        let vy = rng.next_range(-30, 31) as f32 * 0.2;
+        gore.new_gore(rng, world, pos, Vec2::new(vx, vy), t, 1.0);
     }
 }
 
@@ -2671,10 +2722,18 @@ pub fn hit_effect_d(
     else if matches!(npc_type, 83 | 84 | 179) {
         cursed_weapon_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:87165-87219` — the 262/263/264 Plantera family arm; the 262 nine
-    // are live (sites 365-373), the 263/264 pairs land next batch.
+    // `:87165-87219` — the 262/263/264 Plantera family arm, COMPLETE
+    // (sites 365-377).
     else if matches!(npc_type, 262 | 263 | 264) {
         plantera_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87220-87237` — the 265 Spore arm: NO gore sites (the 15x
+    // Next(3)-gated dust-166/167 census is the dust lanes'; the
+    // life >= 0 gate — at exactly hp==0 the arm returns with NO dust,
+    // the g60 fix precedent). Recorded, not ported.
+    // `:87238-87258` — the 266 Brain of Cthulhu arm (sites 378-383).
+    else if npc_type == 266 {
+        brain_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -4825,5 +4884,63 @@ mod tests {
             assert_eq!(gore.slot(i).position, Vec2::new(px, py), "gore {i} anchor");
         }
         assert_eq!(rng.peek(), twin.peek(), "the plantera mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87211-87217` — the Hook pair 390/391 and the Tentacle
+    /// pair 388/389, same scatter-anchor contract.
+    #[test]
+    fn w4_f5d_the_hook_and_tentacle_pairs_scatter() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 30.0);
+        for (kind, want) in [(263, vec![390, 391]), (264, vec![388, 389])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(379);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "plantera part {kind}");
+            assert!(!gore.slot(2).active, "exactly two gores");
+            let mut twin = UnifiedRandom::new(379);
+            for _ in 0..150 {
+                twin_dust(&mut twin, 30, 30);
+            }
+            for i in 0..2 {
+                let px = 100.0 + twin.next_max(30) as f32;
+                let py = 100.0 + twin.next_max(30) as f32;
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+                assert_eq!(gore.slot(i).position, Vec2::new(px, py));
+            }
+            assert_eq!(rng.peek(), twin.peek(), "plantera part {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87252-87257` — the Brain six 396-401 at position with the
+    /// scatter velocity (Next(-30,31)*0.2 X then Y BEFORE each NewGore),
+    /// scale 1f; the 150x dust-5 census first.
+    #[test]
+    fn w4_f5d_the_brain_six_scatter_the_velocity_draws() {
+        let w = air();
+        let n = mob(100.0, 100.0, 60.0, 60.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(383);
+        let _ = hit_effect_d(&n, 266, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![396, 397, 398, 399, 400, 401]);
+        let mut twin = UnifiedRandom::new(383);
+        for _ in 0..150 {
+            twin_dust(&mut twin, 60, 60);
+        }
+        for i in 0..6 {
+            let vx = twin.next_range(-30, 31) as f32 * 0.2;
+            let vy = twin.next_range(-30, 31) as f32 * 0.2;
+            let ky = twin.next_range(10, 31) as f32 * 0.1;
+            let kx = twin.next_range(-20, 21) as f32 * 0.1;
+            assert_eq!(gore.slot(i).velocity.x, vx + kx);
+            assert_eq!(gore.slot(i).velocity.y, vy - ky);
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the brain mirrors the C# draws");
     }
 }
