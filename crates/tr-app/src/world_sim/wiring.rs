@@ -353,7 +353,19 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
             // The spawn joins the wiring block's own seeded stream (the
             // S1-L-6c contract; the C# truth is `UpdateWorldGen` — ANALYSIS).
             let rng = app.wiring.rand_mut();
-            crate::world_sim::items::spawn_item_drop(&mut app.items, rng, id, 1, drop.x, drop.y);
+            // W4-g78 FIX-ONCE (research/78 §2): the actuation cascade's
+            // `Check*` drops spawn at the C# rect CENTRE (the obsolete
+            // `Item.NewItem` overload's `X + Width/2`, `Item.cs:49651`),
+            // not the tile top-left — `ObjectDrop::spawn_centre_px` carries
+            // the per-kind rect (32×32 furniture / 16×16 doors + on-table).
+            let (cx, cy) = drop.spawn_centre_px();
+            crate::world_sim::items::spawn_item_drop_centre(
+                &mut app.items,
+                rng,
+                id,
+                1,
+                glam::Vec2::new(cx, cy),
+            );
         }
     }
     // The trap emissions spawn after the fixed step (`NewProjectile` with
@@ -651,6 +663,43 @@ mod tests {
         let mut npc = crate::npc::Npc::new(kind, x, y, 1, 0.0);
         npc.hp = npc.max_hp;
         npc
+    }
+
+    /// W4-g78 FIX-ONCE (research/78 §2) — the actuation drain spawns the
+    /// popped object at the C# rect CENTRE: the work bench (18, the 2×1
+    /// `Check2x1` `WorldGen.cs:47130`'s 32×32) over the actuated block at
+    /// (10, 21) drops its item centred at `(10*16+16, 20*16+16)` = (176,
+    /// 336), NOT the old top-left feed's box centre (168, 327).
+    #[test]
+    fn w4_g78_the_actuation_drop_spawns_at_the_rect_centre() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = world();
+        w.frame_important = vec![false; tr_core::tiledata::TILE_COUNT];
+        // The actuator block at (10, 21), wired to the switch at (8, 21).
+        let bi = w.index(10, 21);
+        w.tiles[bi] = Tile { kind: 1, ..Default::default() };
+        w.tiles[bi].flags |= FLAG_ACTIVE | tr_core::tile::FLAG_ACTUATOR;
+        w.wires.set(10, 21, tr_core::wiring::WireColor::Red, true);
+        w.wires.set(9, 21, tr_core::wiring::WireColor::Red, true);
+        let si = w.index(8, 21);
+        w.tiles[si] = Tile { kind: 135, ..Default::default() };
+        w.tiles[si].flags |= FLAG_ACTIVE;
+        w.wires.set(8, 21, tr_core::wiring::WireColor::Red, true);
+        // The bench pair on top (frameX 0/18 — the left origin at (10, 20)).
+        for (x, fx) in [(10, 0i16), (11, 18)] {
+            let i = w.index(x, 20);
+            w.tiles[i] = Tile { kind: 18, frame_x: fx, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        app.world = w;
+        app.wiring.trip_wire(&mut app.world, 8, 21, 1, 1);
+        update_wiring(&mut app, 1.0 / 60.0);
+        let bench = app
+            .items
+            .iter()
+            .find(|d| d.kind == crate::registry::tile_drop(18, 0).unwrap())
+            .expect("the bench drop spawned");
+        assert_eq!(bench.center(), glam::Vec2::new(176.0, 336.0));
     }
 
     /// S1-E-18f — `BirthdayParty.ToggleManualParty`'s up-state edge fires
