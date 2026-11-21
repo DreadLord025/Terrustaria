@@ -1000,7 +1000,7 @@ fn boss_half_size(kind: NpcKind, frame_h: f32) -> f32 {
 /// listed; the rest of the switch (the DD2 support ring effects, the
 /// `469`/`357`/`467` ids) has no port kind. The `694` Water Bolt Mimic's
 /// `num45`/`num46` terms (`:23096-23113`) ride the c3 keeper at merge
-/// (research/304 §1 — d43's 694 variant retires onto c3's).
+/// (research/343 §1 — d43's 694 variant retires onto c3's).
 fn npc_anchor_nudge(n: &Npc) -> f32 {
     use NpcKind::*;
     let mut num46 = 0.0;
