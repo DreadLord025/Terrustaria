@@ -566,6 +566,50 @@ mod tests {
         assert_eq!(b.buff_time[2], 100);
     }
 
+    /// W4-f12 closeout item 3 — the stack-count SOURCE census
+    /// (research/W4-f12-closeout.md): the HUD xN is NEVER a buff-stack
+    /// count — `AddBuff` has no stack field at all. The full per-buff
+    /// re-grant semantics: DEFAULT = refresh-to-max (`:5419-5421`, never
+    /// additive, never a second slot); the ONLY additive ids are 94
+    /// (cap 600) and 383 (cap 43200) (`BuffID.cs:53`); the tier families
+    /// "stack" by REPLACING the id (fed wipe `:5277-5286`, pet/melee
+    /// exclusivity, the orb/nebula ladders' clear+regrant) — one slot per
+    /// id always. The xN text source is the 28-handler
+    /// `ownedProjectileCounts` sum (ui/resources.rs `buff_text`), which
+    /// beats the timer (`Main.cs:43317-43324`).
+    #[test]
+    fn w4_f12_closeout_regrant_is_refresh_except_the_two_additive_ids() {
+        let mut b = BuffSlots::default();
+        // DEFAULT refresh-to-max: a shorter re-grant never lowers, a longer
+        // one raises, and NO second slot ever appears for the same id.
+        b.add_buff(2, 600);
+        b.add_buff(2, 60);
+        assert_eq!(b.buff_time[0], 600, "max, not additive (:5419)");
+        b.add_buff(2, 900);
+        assert_eq!(b.buff_time[0], 900);
+        assert_eq!(b.active_count(), 1, "one slot per id");
+        // 94 Mana Sickness: additive to 600 (the f49 drink path re-arms
+        // 300 per potion — two drinks inside the window stack the TIME).
+        let mut m = BuffSlots::default();
+        m.add_buff(94, 300);
+        m.add_buff(94, 300);
+        assert_eq!(m.buff_time[0], 600, "additive (:5410-5417)");
+        m.add_buff(94, 300);
+        assert_eq!(m.buff_time[0], 600, "capped (BuffID.cs:53)");
+        // 383 Kite: additive to 43200 — the second additive id.
+        let mut k = BuffSlots::default();
+        k.add_buff(383, 43_000);
+        k.add_buff(383, 400);
+        assert_eq!(k.buff_time[0], 43_200);
+        // The fed family REPLACES (the IsFedState wipe): tier upgrades are
+        // id swaps, not stacks — the xN of a minion buff counts PROJECTILES.
+        let mut f = BuffSlots::default();
+        f.add_buff(26, 1000);
+        f.add_buff(206, 1000);
+        assert_eq!(f.active_count(), 1, "the fed wipe (:5277-5286)");
+        assert!(f.active_types().contains(&206));
+    }
+
     #[test]
     fn dead_cells_station_extends_by_1_2_truncating() {
         let mut b = BuffSlots::default();

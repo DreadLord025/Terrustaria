@@ -91,3 +91,45 @@ Witness: `w4_f12_closeout_ice_frame_persists_and_cycles_across_ticks`
 (written not run) — 36 below-half ticks wrap the 12-frame cycle to
 (0, 0), tick 37 resumes at counter 1 (persistence), the above-half delete
 arm freezes the pair.
+
+## Item 3 — buff-stack display: the stack-count SOURCE census (COMPLETE)
+
+**The xN source is NOT buff stacks.** `DrawBuffIcon`'s text precedence
+(`Main.cs:43316-43324`): (1) `BuffID.Sets.BuffTextHandlers[id].
+HandleBuffText()` — all 28 handlers are
+`CachedProjectileCounterBuffTextHandler` (`BuffID.cs:54-168`), which sums
+`Main.LocalPlayer.ownedProjectileCounts` over its projectile list and
+returns `"x" + num` when > 0 (`CachedProjectileCounterBuffTextHandler.cs:
+12-30` — the sum is a float but the counts are ints, so the text is an
+integer count); (2) else the duration over 2 ticks. Port: `buff_text` +
+`BUFF_TEXT_HANDLERS` (`ui/resources.rs:411-454`), verified 1:1 in the
+final-phase icon census (28 ids, exact projectile lists, the xN-over-
+timer precedence witness). The handler-owned ids are exactly the
+summon/minion families (the 28 SUMMON_OWNED overlap minus the non-handler
+rows) — the count SOURCE is the per-tick projectile recount
+(`update_projectile_caches`, C# `:12184-12215`), never `buffTime`.
+
+**The per-buff stack semantics census (`AddBuff`, `Player.cs:5263-5449`
+— there is NO stack-count field anywhere):**
+
+| family | re-grant semantics | C# | port |
+| --- | --- | --- | --- |
+| DEFAULT (every id not below) | refresh-to-max: `buffTime[i] < time → = time`, never additive, never a 2nd slot | :5419-5421 | `buffs.rs:248-249` ✓ |
+| Mana Sickness 94 | ADDITIVE `+= time` capped 600 | :5410-5417 + BuffID.cs:53 | `buffs.rs:242-247` ✓ (f49's drink re-arms 300/drink — stacks TIME) |
+| Kite 383 | ADDITIVE capped 43200 | same | same ✓ |
+| fed 26/206/207/332/333/334 | IsFedState wipe-then-add: the new tier REPLACES every fed slot | :5277-5286 | `buffs.rs:196-202` ✓ |
+| light pets (12) / vanity pets (74) | family-exclusive wipe (the no-rescan skip quirk preserved) | :5377-5400 | `buffs.rs:259+` ✓ |
+| flasks 71-79 (meleeBuff) | family-exclusive wipe WITH `i--` rescan | :5361-5375 | ✓ |
+| Warmth 124 | side-effect: cuts existing 46 to max(5, t/4), 47 to max(5, t/2) | :5300-5323 | `buffs.rs:296+` ✓ |
+| orb tiers 95-100/170-172 | ladder: clear lower rows + re-grant the new tier id at 5 ticks (scan pins) | :10342-10443 + :16366-16581 | g27 scan ✓ (the machines f50's) |
+| nebula tiers 173-181 | pickup `NebulaLevelup` clears + re-grants tier+1; expiry steps DOWN (buffType--, time 480) instead of dying | :57030-57059 + :12070-12079 | g27 `nebula_buffs` ✓ (the pickup f49's) |
+| mounts (66) | scan re-affirms `buffTime = 10` every tick | :9881-9884 | `player.rs:5897-5904` ✓ |
+| TimeLeftDoesNotDecrease (28/334/29/159/150/93/348/366) | timer never ticks down | :9871 + BuffID.cs:47 | `buffs.rs:388-397` ✓ |
+
+**Verdict: census COMPLETE, zero gaps.** No buff has an increment-style
+stack counter in the C#; the display's only "xN" is the projectile-count
+handler. The 94-additive semantics is the one place "stack" language
+applies, and it stacks TIME (the tooltip's percentage derives from
+`buffTime`, the final-phase tooltip census). Witness:
+`w4_f12_closeout_regrant_is_refresh_except_the_two_additive_ids`
+(buffs.rs, written not run).
