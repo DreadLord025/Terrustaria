@@ -62,9 +62,8 @@ use tr_core::loot::DropRng;
 
 use crate::npc::Npc;
 use crate::projectile::{
-    Projectile, alpha_of, can_hit, chaseable, chaseable_held, get_lerp_value, npc_center,
-    opacity_of, remap, rotate, rotation_vector, safe_normalize, safe_normalize_or, solid_tiles,
-    wrap_angle,
+    Projectile, alpha_of, can_hit, chaseable, chaseable_held, get_lerp_value, npc_center, remap,
+    rotate, rotation_vector, safe_normalize, solid_tiles, wrap_angle,
 };
 
 /// `AI()`'s aiStyle-31 arm (`Projectile.cs:26786-26886`) — the Clentaminator
