@@ -5,11 +5,13 @@ Date: 2026-11-21. Author: W4-g46 (reconcile phase, code-only — no cargo/tests 
 > **STALE-TIP WARNING (W4-g45 LIQUID RETIRE, 2026-11-21).** Everything below
 > through A7 is written against the PRE-RE-FOLD tips (union `f57d7bacd`,
 > graft-prep). The g46d RE-FOLD LANDED: `origin/task/W4-g46-liquid-evaporation`
-> is now **`9bc722e5`** (base-swapped onto g47 `95e9c1ef`). Read **A8** (the
-> NOW-LANDED receipt) + **A8-graft** (the exact down-arm hunk for g46e-seal)
-> at the tail FIRST; the A1-A7 flags are historical except where A8
-> re-marks them. The per-fn owner table of record is research/104 §5-final;
-> the family receipt is research/104 §7 (SEALED).
+> is now **`9bc722e5`** (base-swapped onto g47 `95e9c1ef`). Read **A9** (the
+> LIQUID SEAL reconcile — the ONE authoritative fold-list for g46e,
+> reconciled against g47 `ca76d68ee` §15) at the tail FIRST, then **A8**
+> (the NOW-LANDED receipt) + **A8-graft** (the exact down-arm hunk; A9.1
+> rules the `2bbadd9bd` verbatim form wins). The A1-A7 flags are historical
+> except where A8/A9 re-mark them. The per-fn owner table of record is
+> research/104 §5-final; the family receipt is research/104 §7 (SEALED).
 
 > **UNION-CONTRACT (graft-prep phase, 2026-11-21).** The UNION `liquid.rs` is
 > now LANDED on `task/W4-g46-liquid-evaporation` (this branch). **The merger
@@ -711,3 +713,98 @@ research/104 §5-final — they postdate research/70's census scope):
    obligation, not a dedupe of something already there. The g47 fixture
    calls `sys.add_water(&w, …)` (pre-guard signature) — re-pin to
    `&mut w` at the graft.
+
+### A9. LIQUID SEAL reconcile (W4-g45, 2026-11-21) — ONE authoritative fold-list for g46e
+
+Written against fresh fetches this pass: **g46 union `9bc722e5f` UNCHANGED**
+(g46e NOT landed — every graft obligation below is still PENDING), **g47
+seal tip `ca76d68ee`** (research/70 §15 published its own delta-fold list),
+**g45 tip `3eca9d8d1`** (this branch). This section reconciles A8/A8-graft
+with g47 §15 into ONE list. Where A8-graft and §15 differ, the rulings
+below win; where they agree, both stand.
+
+#### A9.1 The graft-hunk verdict: SAME behaviour, take `2bbadd9bd` verbatim
+
+`git show 2bbadd9bd -- liquid.rs` re-read this pass: the down-arm re-read
+line is **byte-identical** to A8-graft's
+(`let down = world.tile(x, y + 1).copied().unwrap_or_default();` inserted
+after the `kill_tile` block, before the gate — `flag` stays the pre-kill
+read in both). Only the comment differs: A8-graft says "W4-g45 doc-sweep",
+`2bbadd9bd` says "W4-g45 doc-sweep carry (c8908a55, adopted onto the g47
+base)" and keeps the full rationale (the seven cut kinds
+444/518/519/549/637/638/711, `remove_tile` `WorldGen.cs:63885` keeps
+liquid+type, the `:1274`/`:1278` flag cite). **The g46e graft applies the
+`2bbadd9bd` hunk verbatim** (one source, keeps the adoption provenance);
+A8-graft's hunk remains a valid fallback — zero semantic delta. Union
+target re-verified fresh: `9bc722e5:liquid.rs` down copy :1414, burn
+`kill_tile` :1422, stale gate :1426, merge-type reads :1436-1441 — the
+re-read is still ABSENT. **Seal not done until this hunk is in** (104 §7d).
+
+#### A9.2 The ONE authoritative fold-list (union `9bc722e5f` → g46e)
+
+Supersedes §15 Seal 2's table where amended (amendments flagged ⚠).
+Every "union lacks" claim below was re-grep-verified on the `9bc722e5`
+blobs THIS pass (evidence column).
+
+| # | Fold | Source | Union evidence (fresh) |
+| --- | --- | --- | --- |
+| 1 | down-arm re-read hunk + `liquid_downarm_live` ×4 (ONE module copy) | g47 `2bbadd9bd` (= g45 `c8908a55d`; A9.1) | stale gate :1426; `liquid_downarm_live` grep = 0 |
+| 2 | fall-arm reaction witness `the_fall_arm_reads_the_live_post_reaction_level` ×1; `own_now` comment upgrade ONLY (base cite `Liquid.cs:570-575` + the reaction-consumption case) | g47 `2bbadd9bd` (= g45 `8d581953b`) | `own_now` :1112/:1119-1126 LIVE (zero code delta); witness grep = 0; `shelf_world` :2933 + `stone_row` :2941 present — fixture rides as-is |
+| 3 | ⚠ fall-arm EVAP witness `the_fall_arm_moves_the_post_evaporation_level` ×1 | **g45** `3eca9d8d1:liquid.rs:2415` (NOT `2bbadd9bd` — §15 Seal 4 attributes it correctly as a g45 graft rider) | grep = 0; append into `liquid_merge_cadence` :4395 |
+| 4 | ⚠ shimmer-flow keep-ONE **merged form** (g47 shelf fixture + g45 cadence-trace asserts + `entry.delay == 0`), `add_water` re-pinned `&mut w` | g45 `shimmer_falls_every_visit_like_water` :2503 × g47 `4c81731bc` `shimmer_falls_every_visit_ungated` | BOTH twins grep = 0 (the re-fold base `95e9c1ef` predates `4c81731bc`). §15 says fold the ungated twin alone; A8-graft ruling 3 + §13 say keep-one merged — the MERGED form wins (one pin, both assert families). Union `add_water` :565 is `&mut World` |
+| 5 | quickFall swap: `quick_fall_bypasses_both_delay_gates` replaces the union's lava-only pin (net 0); honey pin DEDUPES onto the union form (keep ONE, net 0) | g47 `4c81731bc` | union lava-only `quick_fall_bypasses_the_delay_gate` :4489; `honey_falls_once_every_eleven_visits` :4470 already sentinel-riding |
+| 6 | render-gaps closure ALL-CODE: `liquid_draw.rs` +244 (`LiquidAnimClock`/`wave_mask`/`has_full_water`/`VISCOSITY_MASK`), `app/mod.rs` +7 (`liquid_clock` field + `App::new` + per-update tick), `render/liquids.rs` clock wiring, `render/tiles.rs` +6, `frame/draw.rs` +18/−3 | g47 `a9dba7cf1` | `liquid_draw` symbols grep = 0; `app/mod.rs` `liquid_clock` grep = 0; union still `anim_time * 8.0` :99/:206 + `* 0.5` :100 |
+| 7 | ⚠ compile-critical rider: `flow.rs` App literal +1 `liquid_clock` — fold WITH row 6, never apart | g47 `bf5fc4ffb` | union `flow.rs` literal has `liquid_step` :2413, NO `liquid_clock` |
+| 8 | `editing/buckets.rs` whole + `mod buckets`/`use_buckets` pre-melee wire + `bucket_use_tests` ×15 | **g45** `fa96cf32a` (rides at the union→main merge per §13/104 §7b — NOT a g47 delta) | union `editing/` tree = doors/sentry/wiring only |
+| 9 | docs wholesale: research/70 §8–§15 (replace the union's snapshot), ANALYSIS census/carry/render sections, PORT_MAP rows | g47 `e420e351e`/`4c81731bc`/`5c09a68b8`/`2bbadd9bd`/`a9dba7cf1`/`0823ec3dd`/`776e64671`/`ca76d68ee` | ⚠ union's carried 70 measures **137 lines, §1–§7 only** (§15's "153-line" is its own count — the ABSENCE claim holds: §8–§15 grep = 0) |
+| 10 | anchors: the 6 g47 closeout/retire rows (`honey_falls…`, `LiquidAnimClock`, `wave_mask`, `has_full_water`, `the_fall_arm_reads…`, `liquid_downarm_live`) + the g45 rows re-pointed (buckets wire, downarm-live, the two pins) | g47 commits above + g45 `anchors.txt` | all 6 markers grep = 0 on union `anchors.txt` |
+
+⚠ **Re-pin rider on row 2 (new this pass):** the g47 witness body calls
+`sys.add_water(&w, …)` (pre-guard signature). Union :565 is `&mut World`
+(re-fold step 3) — re-pin to `&mut w` at the graft, SAME as row 4's twin.
+§15 flagged this only for the shimmer twin; it applies to every g47
+closeout witness that calls `add_water`.
+
+g45 `liquid_downarm_live` module re-pinned to THIS tip: `3eca9d8d1:liquid.rs:3167-3271`
+(`put_as` :3186 / `plant_below` :3194 module-local; `floor_world(9,120,8)`
+widened form). `sys.liquid_check(&mut w, …)` matches union :1347 — graft as-is.
+
+#### A9.3 Pin matrix: 102 measured → 109 + 2 sealed (agrees with §15 Seal 4)
+
+Re-measured fresh: union `9bc722e5:liquid.rs` `#[test]` count = **102**.
+Fold deltas: +1 merged shimmer pin (row 4), +1 fall-reaction (row 2),
++4 downarm-live (row 1), quickFall swap net 0, honey dedupe net 0 → 108;
++1 g45 evap-form fall witness (row 3) → **109 `liquid.rs` pins + 2 compose
+pins**. Compose pins verified present on the union: `wiring.rs`
+`the_pump_moves_water_and_adopts_the_type` **:3922** (§15's :3945-3949
+cites the wake-order asserts inside it) + `world_sim/wiring.rs`
+`r_12_5_the_pump_transfer_wakes_the_settle_and_the_water_flows` :670.
+The g45 ×15 `bucket_use_tests` ride row 8 OUTSIDE `liquid.rs` (not in the
+109). Reconciliation vs §13's 99+2 projection: +10 = the g45b guards ×10
+module that landed at re-fold step 3 (`16fd6ad78`) ahead of graft step 5.
+
+#### A9.4 The g15 push-owed probe (LOCAL-ONLY — no push from this lane)
+
+Fresh `ls-remote` + fetch this pass: `origin/task/W4-g15-dust-item-sites`
+is **STILL `f8f35d799`**; local tip `7981aa5bf` is **20 ahead**
+(`rev-list --count` = 20). `d43b490f3` (TryFillBucket):
+`merge-base --is-ancestor` → local YES (exit 0), remote NO (exit 1).
+**PUSH OWED** — the g15 lane owner (or the merger taking the local tip)
+must publish `7981aa5bf`; the liquid merger's compose contract
+(104 §6c-compose) is written against the LOCAL tip. This lane does NOT
+push the foreign branch. If the remote is still behind at merge time,
+the merger waits or takes the local tip — never the stale remote.
+
+#### A9.5 The seal bible (104 §7 stays SEALED; this is the live monitor)
+
+Family landing = **g46-union-canonical** (`9bc722e5f` + the A9.2 fold)
+carrying **g47-machinery-source** (`ca76d68ee` seal tip, successor-wins),
+**g45-buckets/deltas** (rows 1-4/8 g45 provenance, guards/wakes/fixtures
+already union-side), **f25-gen** (step 6 DELETE-dedupe + step 7 producer
+contexts + gen-hash RE-DERIVE, §11 row 1). Gate: `cargo test --workspace
+-- --skip migrates_version_2_kinds_to_item_ids` (judge by `test result:
+ok` lines) + the anchors canary + the runtime-inert contract (+ render
+addition: `liquid_clock` pure dt+wind, RNG-free, liquid-free worlds
+bit-identical). Expected **109 + 2** written-not-run pins. **The seal is
+NOT done until the down-arm hunk (row 1) is in the union.** 104 §7 remains
+the receipt of record; post-seal corrections ride THIS section (A9+).
