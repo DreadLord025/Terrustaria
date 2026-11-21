@@ -36071,10 +36071,20 @@ and the d56 conventions branch (5d80b38a):
    the any-solid bottom anchor (`:81904/:81908`), the `up != num`
    side-merge gate (`:81912`) and the two neighbour re-frame requests
    (`:81923-81930`, returned as pure output — the probe never mutates).
-   UNWIRED: `framing.rs` is contested by W4-d109/d110; the intended call
-   site is `frame_of_variant`'s `else if td::TILE_ROPE.has(me)` arm
-   between the dirt branch and the generic switch, re-probing after the
-   requested neighbour re-frames (the C# runs them BEFORE the mask read).
+    WIRED (2026-11-21, wiring phase): the production copy is
+    `tr_core::framing_rope::rope_frame_arm` (verbatim twin, the d56
+    inlined-table convention), called from `frame_of_variant`'s merge-chain
+    tail AFTER the moss/dirt families and BEFORE the mask build - for rope
+    kinds every generic family above is a no-op (no rope id is in BLEND_ALL
+    / dirt / mud / moss sets), so the tail site is observation-identical to
+    the C#'s arm position. d109/d110 own `frame_of_variant`'s HEAD (the
+    8-way dispatch) and the wall passes - the tail region is append-safe.
+    The :81923-81930 neighbour re-frame requests only WRITE the neighbours'
+    frames, never this cell's neighbour KINDS, so this cell's mask is
+    independent of them; the port's square reframe (`reframe_area` after
+    every edit + `frame_world`) covers the neighbour writes (recorded
+    deviation - the render twin keeps the pure request output for its
+    witnesses).
 
 2. **The rope-coil lane** — `projectile_rope_coil.rs` (new module):
    * the aiStyle-35 machine (`Projectile.cs:27189-27291`): the 30-tick

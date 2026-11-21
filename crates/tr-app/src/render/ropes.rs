@@ -13,6 +13,15 @@
 //! module is only the rope-specific behind-the-cell draw plus its
 //! `WorldGen.IsRope`/`GetRopeEnds` probes.
 //!
+//! W4-g82 WIRED (2026-11-21): the framing arm below is now LIVE through its
+//! tr-core twin `tr_core::framing_rope::rope_frame_arm`, called from
+//! `framing::frame_of_variant`'s merge-chain tail (the append-safe zone —
+//! d109/d110 own the head/wall halves). This render-side copy stays as the
+//! witness-pinned reference incl. the pure reframe-request output (the d56
+//! inlined-table convention, the coil module's IsRope twin precedent); the
+//! production framing runs the core copy, whose square-reframe callers
+//! subsume the :81923-81930 neighbour requests.
+//!
 //! WIRED (S1-G-1f, 2026-11-19): `render/tiles.rs::draw_tiles` calls
 //! [`wants_back_rope`] + [`draw_back_rope`] after the visibility gates and
 //! before the cell's own sprite — the `DrawBasicTile` dispatch site
@@ -204,10 +213,11 @@ pub(crate) fn draw_back_rope(
 // carries only the `!tileRope` blend-all gate (`:81731`, framing.rs:928);
 // the rope arm itself was never ported, so every rope cell framed through
 // the generic RULES as if it were a plain block. This is the DRAW-side
-// decision maths, verbatim; UNWIRED (code-only, the d56 convention) —
-// `framing.rs` is contested by the in-flight W4-d109/d110 framing siblings.
+// decision maths, verbatim; WIRED W4-g82 (2026-11-21) via the tr-core twin
+// `tr_core::framing_rope::rope_frame_arm` — this copy stays the
+// witness-pinned reference (the module doc's wiring note).
 //
-// Intended call site: `frame_of_variant` (tr-core/framing.rs), as an
+// Call site (LIVE in the core twin): `frame_of_variant` (tr-core/framing.rs), as an
 // `else if td::TILE_ROPE.has(me)` arm AFTER the dirt branch (`:81743`) and
 // BEFORE the generic per-type switch (`:81934`), replacing the four side
 // slots of `n` before the mask build (framing.rs:1009). The two recursive
