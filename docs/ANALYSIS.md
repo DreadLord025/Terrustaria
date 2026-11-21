@@ -39244,3 +39244,109 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+## The W4-d15 DD2 slice (task/W4-d15-proj-ai-141-150, 2026-11-21, code-only)
+
+The census of the `match data.ai_style` dispatch for aiStyles 141-150:
+147 (Celebration Mk2, `projectile_ai_misc::ai_celeb2_rocket`) and
+149/150 (golf, `projectile_ai_golf`, S1-P-i55) were already landed;
+**141, 142, 143, 144, 145, 146, 148 were MISSING** (the `_ => {}`
+fall-through). All seven ported verbatim into
+`crates/tr-app/src/projectile_ai_dd2.rs`, one style per commit:
+
+- **141** `AI_141_MonkStaffT1Explosion` (`Projectile.cs:69602-69620`) +
+  `CreateImpactExplosion_SleepyOctopod` (`:69680-69731`) +
+  `CreateImpactExplosion2_SleepyOctopod` (`:69733-69772`) — the 698
+  ground blast: the 20-tick counter kill, the tick-1 tile walk as the
+  draw census (per qualifying exposed-solid tile: amount×8 first-row
+  dusts with TWO `NextFloat`s each — the Y scale `:69709` + the X kick
+  `:69710` — then amount×8−1 second-row dusts with ONE each `:69720`),
+  the 25-point ring (2 floats each) + the unshocked second ring (1 float
+  each). The `KillTile_GetTileDustAmount` table rides the misc module's
+  `kill_tile_dust_amount_fail` (widened `pub(crate)`).
+- **142** `AI_142_MonkStaffT2And3` (`:69817-69968`) — the 699/708 swing:
+  the anchor Centre pin + `heldProj` claim ahead of the dead gate, the
+  frozen hold, the π+num·2π swing arc (the `Utils.RotatedBy` double-angle
+  seam, `bow_launch::rotated_by`), the 708's animation-2/6/10 709 volley
+  (`NextVector2Square(-0.2,0.2)` = 2 `NextDouble` + `Next(4)`; the switch
+  overwrite keeps the draws spent), the 2-float trail + `Next(3)`
+  sparkle, the `Next(6)`/float/`Next(3)` dust gates (k = 0, 2 only — the
+  k = 1/3 switch arms are the C#'s own dead branches). The
+  `player.heldProj`/`reuseDelay = 2` writes ride the
+  `pending_dd2_writes` drain (the `take_spear_hold` precedent).
+- **143** `AI_143_MonkStaffT2Ghast` (`:69970-70036`) — the 700 ghast:
+  the tracked-sound fold (the `localAI[1]` slot latch keeps
+  `SlotId.Invalid` = `f32::from_bits(65535)`, `ReLogic.Utilities/
+  SlotId.cs:5`/`:75-78`; zero draws), the ±25 alpha ramps (100 floor /
+  255 cap at the 50-tick midpoint), the ×0.98 decay, the 5-tick frame
+  wrap 4, the velocity-sign facing + π flip, the 60-tick kill (the
+  facing/rotation/dust still run on the kill tick — no early return),
+  the [10,34) trail window (2 floats/tick). The `SummonMonkGhast`
+  hit-hook spawner (`:15155-15184`) is a `Damage_PVE` seam follow-up —
+  unchanged here.
+- **144** `AI_144_DD2Pet` (`:70038-70324`) — the 701/702/703/764/1050
+  pets: the per-kind parameter block + pet-flag `timeLeft = 2` re-pin,
+  the ghost sparkle gate chain (`Next(24)` → `Next(3)` → the else
+  `Next(2)` → 1 float), the 764 own-counter spin phase + the
+  speed-gated `Next(30)`/`Next(15)` gates, the 1050 12-step
+  `IsShakeable` tree scan (`tr_core::tiledata::SET_IS_SHAKEABLE`, the
+  generated `TileID.cs:488` set) + the shake-tick `Next(100)` /
+  conditional `Next(20)` / conditional `Next(5)` census, the 1000-px
+  teleport + the leash velocity + the flight/idle rotation-frame
+  machines. Recorded folds: the `PlotTileLine` light casts
+  (`:70087-70091`), the `Opacity` write (`:70155`, no port field — the
+  Last Prism fold), the dead `Hitbox.Intersects` read (`:70143-70144`),
+  the `KillTile_MakeTileDust`/`PlaySounds`/`DropItems` effects
+  (`:70217-70229` — no tile-drop seam; their own rolls ride
+  `WorldGen.genRand`, NOT `Main.rand`), the `suspiciouslookingTentacle`
+  half of `:70241` (folds false; the `petFlagDD2Ghost` half reads for
+  EVERY kind).
+- **145** `AI_145_BookStaffStorm` (`:70326-70468`) — the 704 twister:
+  the `soundDelay = -1` tracked-loop fold, the `localAI[0] >= 16`
+  fast-forward to 285 + the 300-tick kill, the 16×160 solid/wet column
+  probe's ±2/±4 velocity ladder (clamp ±16, counter +2/−1), the <270
+  swirl's 3+conditional-float census, the three 5/7/7 gore gates — each
+  taken branch: `NextVector2Square(0,1)` = 2 doubles, one velocity
+  float, `SelectRandom(1007,1008,1008)` = one `Next(3)`, then the G3
+  `NewGore` kicks (`Next(10,31)` Y-first, `Next(-20,21)` X,
+  `Gore.cs:1327-1328`).
+- **146** `AI_146_DD2Victory` (`:53960-53962`) — an EMPTY C# body; the
+  713 banner's documented no-op arm (the free integrate + the 900-tick
+  life are the whole behaviour). `hostile = true` rides the
+  `spawn_hostile` seam.
+- **148** `AI_148_StarSpawner` (`:53094-53128`) — the 720 spawner: the
+  daylight kill (remix exempt), the day-rate age, the one-shot
+  `Star.StarFall` census (`Next(700,1001)` then `Next(-400,401)`,
+  `Star.cs:166-167`; the secret-seed gate `WorldGen.cs:429` suppresses
+  BOTH draws; the visual fall is the recorded skip — `render/sky.rs`'s
+  `StarSprite` has no fall state), the 180-age steer (the −1 sentinel
+  and every inactive player index read the default 20×42 box at (0,0) →
+  centre (10,21), the `Player` ctor fold) + the FallingStar 12 spawn
+  (damage 1000, knockback 10, ai1 = 10, the position args pre-centred
+  for the dispatch's half-box recentre) + the kill. aiStyle 148 is on
+  `UpdatePosition`'s skip list (`:20435`) — NO free integrate. The 12
+  joins the i22 `ai_falling_star` machine (the 955 precedent) plus its
+  `:23841` daylight kill and the `:23982` light 0.9; the 12/955 block's
+  screen-gated gore/dust draws (`:23973-23986`) stay the i22 arm's
+  recorded layer skips.
+
+Rows landed in `projectile/data.rs`: 698/699/700/708/709 (`:7385-7432`,
+`:7491-7520`), 701/702/703 (`:7433-7446`), 704 (`:7447-7460`), 713
+(`:7560-7571`), 720 (`:7617-7625`), 764 (`:7866-7878`), 1050
+(`:9953-9966`), 12 (`:924-938`, light 1f in `set_defaults_light`);
+`proj_frames`: 700→4, 709→3, 701→3, 702→4, 703→8, 1050→16
+(`Main.cs:8473`/`:8554`/`:8626-8628`/`:8719`; the 764 keeps the stock 1).
+The `Dd2Owner` snapshot rides `set_dd2_owner` (the `set_spear_owner`
+pattern); the 142 writes drain at the world-sim pass tail.
+
+### Verification
+
+Code-only: every arm re-read against the cited C# windows (the ≤100-line
+reads); the seam call sites checked against the actual signatures by
+read/grep (`DropRng`, `proj_data`/`proj_frames`, `solid_collision`/
+`solid_tile`/`wet_collision`, `SET_IS_SHAKEABLE`, `Player.pet_flags`,
+`spawn_with_data_ai_owned`, `World::day_rate`/`seeds`). The 27 witness
+tests in `projectile_ai_dd2.rs` are WRITTEN, NOT RUN — **no cargo/rustc/
+rustfmt/tests/graphify invoked**. The dispatch coverage pin
+(`s1_d_4c_every_rowed_style_has_exactly_one_live_arm`) sees one live arm
+per new style; the `#[deny(unreachable_patterns)]` guard covers
+duplicates.
