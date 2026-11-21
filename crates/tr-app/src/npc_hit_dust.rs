@@ -93,6 +93,14 @@
 //! - 87440 — the Leech 117-119 (`:87436-87444`): FLAT 5 dust 5.
 //! - 87485 — Queen Bee 222 (`:87481-87489`): ×100 dust 18,
 //!   alpha/color/scale.
+//! Batch 5 (the Martian/solar live arms — two shapes):
+//! - 84308/84328/84368/84388/84456/84476/84508 — the martian grunts
+//!   (382/390/383/385/386/389/388/399, `:84302-84533`): the
+//!   `dmg/(lifeMax·50)` bound, dust 227 (dir,-1).
+//! - 84348/84408/84431 — the ForceBubble 384 (`:84342-84351`, ×50), the
+//!   Tesla Turret 387 (`:84402-84411`, ×20) and the Martian Walker 520
+//!   (`:84425-84434`, ×20): dust 226 at (-dir,-1), post-spawn position
+//!   Lerp(pos, Centre, 0.25) + scale 0.5.
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -123,6 +131,9 @@ pub struct HitDustSnapshot {
     pub y: f32,
     pub w: i32,
     pub h: i32,
+    /// `base.Center` (the martian Lerp arms read it, `NPC.cs:84349`).
+    pub cx: f32,
+    pub cy: f32,
     /// `base.velocity` post-knockback (the FireImp/sphere arms read it).
     pub vx: f32,
     pub vy: f32,
@@ -138,6 +149,7 @@ impl HitDustSnapshot {
     /// shared position — after the knockback and the bubble re-arm).
     pub fn capture(n: &Npc, dmg: i32, hit_dir: i32) -> Self {
         let (w, h) = n.size();
+        let (cx, cy) = n.center();
         Self {
             npc_type: n.kind.cs_id() as i32,
             life: n.hp,
@@ -148,6 +160,8 @@ impl HitDustSnapshot {
             y: n.y,
             w: w as i32,
             h: h as i32,
+            cx,
+            cy,
             vx: n.vx,
             vy: n.vy,
             alpha: n.alpha as i32,
@@ -542,6 +556,31 @@ pub fn replay_hit_dust(
                 live_dust(s, 18, dir, -1.0, s.alpha, s.color, s.scale, rng, dust, ctx, world);
             }
         }
+        // `:84302-84533` — the martian grunts' dust 227: the bound is
+        // `dmg / (lifeMax * 50)` (the C# `(double)(this.lifeMax * 50)` —
+        // the ×50 sits INSIDE the divisor, unlike the ×mult arms).
+        382 | 390 | 383 | 385 | 386 | 389 | 388 | 399 => {
+            let bound = s.dmg / (s.life_max * 50) as f64;
+            let mut count = 0u32;
+            while (count as f64) < bound {
+                live_dust(s, 227, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                count += 1;
+            }
+        }
+        // `:84342-84351`/`:84402-84411`/`:84425-84434` — the ForceBubble
+        // (×50), the Tesla Turret and the Walker (×20): dust 226 at
+        // (-dir, -1), post-spawn position Lerp toward Centre 0.25 +
+        // scale 0.5 (the XNA float lerp, per axis).
+        384 | 387 | 520 => {
+            let mult = if s.npc_type == 384 { 50.0 } else { 20.0 };
+            for _ in 0..hit_count(s.dmg, s.life_max, mult) {
+                let idx = live_dust(s, 226, -dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                let d = dust.slot_mut(idx);
+                d.position.x += (s.cx - d.position.x) * 0.25; // `:84349`
+                d.position.y += (s.cy - d.position.y) * 0.25;
+                d.scale = 0.5; // `:84350`
+            }
+        }
         // `:89526-89548`/`:89690-89700` — the three spheres are handled
         // ABOVE the life gate (the every-strike arms); this match never
         // sees 25/33/30/665.
@@ -582,6 +621,8 @@ mod tests {
             y: 100.0,
             w: 24,
             h: 18,
+            cx: 112.0,
+            cy: 109.0,
             vx: 0.0,
             vy: 0.0,
             alpha: 0,
@@ -1147,6 +1188,59 @@ mod tests {
             let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len() as u32, want, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == dt), "type {t}");
+        }
+    }
+
+    /// W4-g62 batch 5 — the martian divisor (`NPC.cs:84306`): the ×50
+    /// sits INSIDE the divisor — a full-lifeMax hit draws 0, a 50×
+    /// lifeMax hit draws exactly 1 (NOT the ×mult arms' shape).
+    #[test]
+    fn w4_g62_the_martian_bound_divides_by_lifemax_times_50() {
+        let world = air();
+        let ctx = ctx();
+        for t in [382, 390, 383, 385, 386, 389, 388, 399] {
+            let s = snap(t, 300, 300, 300.0); // 300/(300·50) = 0.02 → 0
+            let mut rng = UnifiedRandom::new(71);
+            let twin = UnifiedRandom::new(71);
+            let mut dust = DustPool::new();
+            replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+            assert_eq!(rng, twin, "type {t}: a full-life hit draws nothing");
+            let big = snap(t, 300, 300, 15000.0); // 15000/15000 = 1 → 1
+            let mut rng2 = UnifiedRandom::new(71);
+            let mut dust2 = DustPool::new();
+            replay_hit_dust(&big, &mut rng2, &mut dust2, &ctx, &world);
+            assert_eq!(dust2.slots().iter().filter(|d| d.active).count(), 1, "type {t}");
+            assert!(dust2.slots().iter().filter(|d| d.active).all(|d| d.dust_type == 227));
+        }
+    }
+
+    /// W4-g62 batch 5 — the ForceBubble/Turret/Walker Lerp arm
+    /// (`NPC.cs:84348-84350`): dust 226 at (-dir,-1), the position lerps
+    /// 0.25 toward Centre, scale pinned 0.5 — the mirror replays the
+    /// exact post-writes on the twin pool.
+    #[test]
+    fn w4_g62_the_martian_lerp_arm_mirrors_the_post_writes() {
+        let world = air();
+        let ctx = ctx();
+        for (t, mult) in [(384, 50.0), (387, 20.0), (520, 20.0)] {
+            let s = snap(t, 1000, 1000, 40.0 * mult); // → 40 dusts
+            let mut rng = UnifiedRandom::new(73);
+            let mut dust = DustPool::new();
+            replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+            let mut twin_rng = UnifiedRandom::new(73);
+            let mut twin = DustPool::new();
+            for _ in 0..40 {
+                let idx = twin.new_dust(
+                    &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 226,
+                    -1.0, -1.0, 0, Color::default(), 1.0,
+                );
+                let d = twin.slot_mut(idx);
+                d.position.x += (112.0 - d.position.x) * 0.25;
+                d.position.y += (109.0 - d.position.y) * 0.25;
+                d.scale = 0.5;
+            }
+            assert_eq!(rng, twin_rng, "type {t}");
+            assert_eq!(dust.slots(), twin.slots(), "type {t}");
         }
     }
 }
