@@ -4939,7 +4939,10 @@ impl Npc {
         // in here — a thorns reflect landing in `contact` must survive to
         // the NEXT tick's AI, exactly like the C#'s player-update strike.
         self.just_hit = false;
-        self.find_frame();
+        // W4-d44 wire — the world-read entry: the worm's slope probe
+        // resolves against the live world (`NPC.cs:72807-72815`); every
+        // other kind rides the world-free hook unchanged.
+        self.find_frame_world(world);
         self.contact(player, rng);
     }
 
@@ -6591,7 +6594,124 @@ impl Npc {
         self.rotation = s.rotation;
     }
 
+    /// W4-d44 wire (d48 wave C) — the worm arm's tile-slope probe,
+    /// CALLER-RESOLVED (`NPC.cs:72807-72815`): `Framing.GetTileSafely
+    /// ((int)Center.X/16, (int)position.Y/16)`, then the tile one row
+    /// BELOW when that tile's `slope() == 0`. `GetTileSafely` never
+    /// returns null (out of world / null slot → `new Tile()`, slope 0,
+    /// `Framing.cs:426-439`), so the probe always runs and the
+    /// out-of-bounds read is slope 0 — the `world.tile` None arm. The
+    /// int casts truncate toward zero, like the C#'s `(int)` on the
+    /// position floats.
+    pub(crate) fn find_frame_worm_slope(&self, world: &World) -> i32 {
+        let tx = (self.center().0 as i32) / 16;
+        let ty = (self.y as i32) / 16;
+        let slope = world.tile(tx, ty).map_or(0, |t| t.slope());
+        if slope == 0 {
+            world.tile(tx, ty + 1).map_or(0, |t| t.slope()) as i32
+        } else {
+            slope as i32
+        }
+    }
+
+    /// W4-d44 wire (d48 wave C) — the bridge into `npc_findframe_c`'s
+    /// pure machines: copy the five `FindFrame` fields out, run one
+    /// tick, copy them back (the `find_frame_wave_a` precedent).
+    /// `direction` is `facing` (the C#'s `Entity.direction`); `wet`
+    /// rides the NPC's own field (the frog/duck-swimmer gaits), `ai2`
+    /// the butterfly's colour bank (`NPC.cs:72769`), `local_ai2` the
+    /// firefly's glow flag (`:72705-72708`); `slope` is the
+    /// caller-resolved worm tile probe (`:72807-72825`) — the world-
+    /// free entry passes 0 (the flat-tile default, the g6 world-free
+    /// lane convention). The worm's `localAI[0]` -2f pin copies back.
+    fn find_frame_wave_c(
+        &mut self,
+        kind: crate::npc_findframe_c::FindFrameKind,
+        slope: i32,
+    ) {
+        let mut s = crate::npc_findframe_c::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+            local_ai0: self.local_ai[0],
+        };
+        let i = crate::npc_findframe_c::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            wet: self.wet,
+            ai2: self.ai[2],
+            local_ai2: self.local_ai[2],
+            slope,
+        };
+        crate::npc_findframe_c::find_frame_c(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
+        self.local_ai[0] = s.local_ai0;
+    }
+
+    /// W4-d44 wire (d48 wave C) — the WORLD-READ entry: the claimed
+    /// wave-C kinds ride the world-read arm (the worm resolves its
+    /// slope probe against the live world); every other kind falls
+    /// through to the world-free `find_frame` hook unchanged.
+    pub(crate) fn find_frame_world(&mut self, world: &World) {
+        if let Some(kind) = Self::find_frame_kind_c_claimed(self.kind.cs_id()) {
+            self.find_frame_c_world(kind, world);
+            return;
+        }
+        self.find_frame();
+    }
+
+    /// W4-d44 wire — the wave-C world-read arm: the worm kind (357)
+    /// resolves its slope probe against the world before the bridge;
+    /// every other wave-C kind ignores the field, so the probe is
+    /// skipped (RNG-free either way). Split out of `find_frame_world`
+    /// so the seam witness can drive it with an explicit kind (no
+    /// current `NpcKind` maps to 357 yet).
+    fn find_frame_c_world(
+        &mut self,
+        kind: crate::npc_findframe_c::FindFrameKind,
+        world: &World,
+    ) {
+        let slope = if kind == crate::npc_findframe_c::FindFrameKind::Worm {
+            self.find_frame_worm_slope(world)
+        } else {
+            0
+        };
+        self.find_frame_wave_c(kind, slope);
+    }
+
+    /// W4-d44 wire — the wave-C claim set: the module mapper MINUS
+    /// the 366 scorpion (g7's high2 hook owns the `366 | 367` group,
+    /// `NPC.cs:76820-76850`; census research/68 §3.5), gated to the
+    /// batch-1 five 355-359 (360-365 ride the next wire batches).
+    fn find_frame_kind_c_claimed(cs_id: u16) -> Option<crate::npc_findframe_c::FindFrameKind> {
+        if !(355..=359).contains(&cs_id) {
+            return None;
+        }
+        crate::npc_findframe_c::find_frame_kind_c(cs_id as i16)
+    }
+
     pub(crate) fn find_frame(&mut self) {
+        // W4-d44 wire (d48 wave C) — the `cs_id`-keyed hook into the
+        // wave-C pure machines (`npc_findframe_c.rs`) via
+        // `find_frame_kind_c_claimed`: batch 1 claims 355-359 (the
+        // firefly pair, butterfly, worm, snail); 360-365 ride the
+        // next batches; 366 NEVER (the g7 high2 scorpion fold owns
+        // `366 | 367`, `NPC.cs:76820-76850`; census research/68
+        // §3.5). NO current kind's `cs_id` lands in the set
+        // (verified over the hand rows + the bestiary net ids), so
+        // this is stream-inert today; the arms draw no RNG. The
+        // world-free lane passes slope 0 — the world-read entry
+        // `find_frame_world` resolves the worm probe. The d45 hook
+        // precedent.
+        if let Some(kind) = Self::find_frame_kind_c_claimed(self.kind.cs_id()) {
+            self.find_frame_wave_c(kind, 0);
+            return;
+        }
         // `NPC.cs:66696-66704` — `num2` is the velocity class only while
         // `aiAction == 0`; `aiAction == 1` forces the crouch class 4 (the
         // King Slime's shrink/wind-up writes it, `:43224`/`:43342`).
@@ -33544,5 +33664,197 @@ mod s1_f_13d_tests {
             assert_eq!(n.vy, 0.0);
             assert!(n.wants_hostile_shot.is_empty(), "{kind:?} fires nothing");
         }
+    }
+}
+
+/// W4-d44 wire — the findframe wire seam witnesses (the d45/g7
+/// precedent). The pure machines carry their own pinned witnesses
+/// inside their modules; these pin the NPC-side seam: the hooks are
+/// inert for every current kind, the wave-C claim set excludes the
+/// g7-owned 366 scorpion, the bridges copy their fields both ways,
+/// and the worm's slope probe reads the world exactly like
+/// `NPC.cs:72807-72825`. WRITTEN NOT RUN (code-only mode — no
+/// compiler invoked on this branch).
+#[cfg(test)]
+mod w4_d44_wire_tests {
+    use super::tests::{bare, ground, ALL_KINDS};
+    use super::*;
+
+    /// The wave-C hook fires for NO current kind — the inertness
+    /// proof (the hand `cs_id` rows + the bestiary net-id fallback
+    /// skip all of 355-365; the roster wave owns them).
+    #[test]
+    fn w4_d44_the_wave_c_hook_is_inert_for_every_current_kind() {
+        for kind in ALL_KINDS {
+            assert_eq!(
+                Npc::find_frame_kind_c_claimed(kind.cs_id()),
+                None,
+                "{kind:?} cs_id {} must not ride the wave-C hook yet",
+                kind.cs_id()
+            );
+        }
+    }
+
+    /// The claim set is the batch-1 five 355-359 — the module mapper
+    /// minus the 366 scorpion (the g7 high2 hook maps `366 | 367` to
+    /// the one scorpion machine, `NPC.cs:76820-76850`; census
+    /// research/68 §3.5) and minus the not-yet-wired 360-365. The
+    /// band edges stay outside.
+    #[test]
+    fn w4_d44_the_wave_c_claim_set_is_355_to_365_only() {
+        use crate::npc_findframe_c::FindFrameKind as K;
+        let table = [
+            (355u16, K::Firefly),
+            (356, K::Butterfly),
+            (357, K::Worm),
+            (358, K::LightningBug),
+            (359, K::Snail),
+        ];
+        for (id, k) in table {
+            assert_eq!(Npc::find_frame_kind_c_claimed(id), Some(k), "{id}");
+        }
+        // Batch 2 widens to 360-365; until then they stay unclaimed.
+        for id in 360u16..=365 {
+            assert_eq!(Npc::find_frame_kind_c_claimed(id), None, "{id} batch 2");
+        }
+        assert_eq!(Npc::find_frame_kind_c_claimed(366), None, "the g7 fold");
+        assert_eq!(Npc::find_frame_kind_c_claimed(367), None);
+        assert_eq!(Npc::find_frame_kind_c_claimed(354), None);
+    }
+
+    /// The wave-C bridge copies the five fields both ways and feeds
+    /// vx/vy/facing/wet/ai2/local_ai2/slope through — pinned on the
+    /// firefly (the glow bank, `NPC.cs:72705-72708`), the worm (the
+    /// slope override + the localAI[0] lift, `:72816-72825`), the
+    /// butterfly (the colour bank + tilt, `:72739-72772`) and the
+    /// snail delegate (`:72238-72295`).
+    #[test]
+    fn w4_d44_the_wave_c_bridge_copies_the_five_fields_both_ways() {
+        use crate::npc_findframe_c::FindFrameKind as K;
+        let mut n = bare(NpcKind::Piranha);
+        // Firefly: counter 3 → 4 crosses into row 1; the glow-off
+        // (local_ai[2] = 0) shifts +2 rows; the flip rides facing.
+        n.frame = 0;
+        n.frame_counter = 3.0;
+        n.sprite_dir = 1;
+        n.facing = -1;
+        n.local_ai[2] = 0.0;
+        n.find_frame_wave_c(K::Firefly, 0);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (3, 4.0, -1));
+        // Glow ON (local_ai[2] = 1): no shift.
+        n.frame = 0;
+        n.frame_counter = 3.0;
+        n.local_ai[2] = 1.0;
+        n.find_frame_wave_c(K::Firefly, 0);
+        assert_eq!((n.frame, n.frame_counter), (1, 4.0));
+        // Worm grounded idle: the -2f pin + row 1, slope 0.
+        n.frame = 0;
+        n.frame_counter = 5.0;
+        n.local_ai[0] = 7.0;
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.rotation = 0.3;
+        n.find_frame_wave_c(K::Worm, 0);
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0));
+        assert_eq!(n.local_ai[0], -2.0, "the -2f pin copies back");
+        assert_eq!(n.rotation, 0.0);
+        // Slope 1: the +0.785 override lifts localAI[0] to 0.
+        n.find_frame_wave_c(K::Worm, 1);
+        assert_eq!(n.rotation, 0.785);
+        assert_eq!(n.local_ai[0], 0.0);
+        // Slope 2: the -0.785 override.
+        n.find_frame_wave_c(K::Worm, 2);
+        assert_eq!(n.rotation, -0.785);
+        assert_eq!(n.local_ai[0], 0.0);
+        // Butterfly: vx 2 → rotation 0.6, counter 0 + 1 + (2+0)/2 = 2
+        // (< 7 → row 0); ai[2] = 3 banks +6 rows.
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.rotation = 0.0;
+        n.vx = 2.0;
+        n.vy = 0.0;
+        n.ai[2] = 3.0;
+        n.find_frame_wave_c(K::Butterfly, 0);
+        assert_eq!((n.frame, n.frame_counter), (6, 2.0));
+        assert_eq!(n.rotation, 0.6);
+        // Snail delegate: vx 1 / vy 0 walks, counter 0 → 1, row 0.
+        n.frame = 3;
+        n.frame_counter = 0.0;
+        n.vx = 1.0;
+        n.vy = 0.0;
+        n.find_frame_wave_c(K::Snail, 0);
+        assert_eq!((n.frame, n.frame_counter), (0, 1.0));
+        // The zero-velocity snail freezes row + counter.
+        n.frame = 2;
+        n.frame_counter = 17.0;
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.find_frame_wave_c(K::GlowingSnail, 0);
+        assert_eq!((n.frame, n.frame_counter), (2, 17.0));
+    }
+
+    /// The worm slope probe reads `(int)Center.X/16, (int)position.Y/16`
+    /// and falls to the tile BELOW on slope 0 (`NPC.cs:72807-72815`);
+    /// out-of-world reads are slope 0 (`Framing.GetTileSafely`'s
+    /// `new Tile()`, `Framing.cs:426-439`).
+    #[test]
+    fn w4_d44_the_worm_slope_probe_reads_the_world() {
+        let mut w = ground();
+        let mut n = bare(NpcKind::Piranha);
+        // Centre.x = 100 + nw/2 → tx 6; position.y = 464 → ty 29
+        // (air above the row-30 ground). Flat everywhere → 0.
+        n.x = 100.0;
+        n.y = 464.0;
+        assert_eq!(n.find_frame_worm_slope(&w), 0, "air over flat ground");
+        // Slope on the probed tile itself: read directly, no fall-through.
+        let i = w.index(6, 29);
+        w.tiles[i].set_slope(2);
+        assert_eq!(n.find_frame_worm_slope(&w), 2, "the probed tile wins");
+        // Slope 0 on the probed tile → the tile BELOW is read.
+        w.tiles[i].set_slope(0);
+        let j = w.index(6, 30);
+        w.tiles[j].set_slope(1);
+        assert_eq!(n.find_frame_worm_slope(&w), 1, "the below fall-through");
+        // Out of world: slope 0 both reads.
+        n.x = -500.0;
+        n.y = -500.0;
+        assert_eq!(n.find_frame_worm_slope(&w), 0, "out of world");
+    }
+
+    /// The world-read entry runs the wave-C bridge with the resolved
+    /// slope and falls through to the world-free hook for every other
+    /// kind — pinned on the worm over a slope-1 ground tile (driven
+    /// through `find_frame_c_world` with the explicit kind — no
+    /// current `NpcKind` maps to 357 yet) and on a wave-A slime (the
+    /// stand-in path must not move).
+    #[test]
+    fn w4_d44_the_world_entry_resolves_the_worm_slope() {
+        let mut w = ground();
+        let mut n = bare(NpcKind::Piranha);
+        // Centre.x = 100 + nw/2 → tx 6; y = 480 → ty 30 (the ground).
+        n.x = 100.0;
+        n.y = 480.0;
+        let j = w.index(6, 30);
+        w.tiles[j].set_slope(1);
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.local_ai[0] = 5.0;
+        n.find_frame_c_world(crate::npc_findframe_c::FindFrameKind::Worm, &w);
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0), "the idle pin");
+        assert_eq!(n.rotation, 0.785, "the slope-1 override");
+        assert_eq!(n.local_ai[0], 0.0, "the lift");
+        // A wave-A kind rides the world-free hook unchanged: the
+        // world entry and the world-free hook agree tick-for-tick.
+        let mut s = bare(NpcKind::Slime);
+        s.vx = 0.0;
+        s.vy = 0.0;
+        s.find_frame_world(&w);
+        let mut t = bare(NpcKind::Slime);
+        t.vx = 0.0;
+        t.vy = 0.0;
+        t.find_frame();
+        assert_eq!((s.frame, s.frame_counter), (t.frame, t.frame_counter));
     }
 }

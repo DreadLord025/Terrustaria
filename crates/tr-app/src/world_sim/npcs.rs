@@ -4507,7 +4507,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         }
                         // `out.died`: hp is already 0 — the death pass owns
                         // the HitEffect + deactivation pair.
-                        npcs[i].find_frame();
+                        // W4-d44 wire — the world-read entry: the d48
+                        // worm's slope probe resolves against the live
+                        // world (`NPC.cs:72807-72815`); every other kind
+                        // rides the world-free hook unchanged.
+                        npcs[i].find_frame_world(world);
                         npcs[i].contact(player, npcs_rng);
                     }
                     let n = &mut npcs[i];
