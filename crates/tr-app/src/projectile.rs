@@ -25310,6 +25310,93 @@ mod tests {
             "extraUpdates = 2 with timeLeft = 11 must die on frame 4"
         );
     }
+
+    /// W4-g56 — the Void Lens row (`Projectile.cs:7726-7735`): 30×24,
+    /// aiStyle 154, tileCollide false, timeLeft 10800, alpha 255 (Opacity
+    /// 0), the stock penetrate 1; `projFrames[734] = 8` (`Main.cs:8504`).
+    #[test]
+    fn w4_g56_the_void_lens_row_matches_set_defaults() {
+        let d = proj_data(VOID_LENS).expect("the 734 row");
+        assert_eq!((d.w, d.h), (30.0, 24.0), ":7728-7729");
+        assert_eq!(d.ai_style, 154, ":7730");
+        assert!(!d.tile_collide, ":7731");
+        assert_eq!(d.time_left, 10800, ":7732");
+        assert_eq!(d.alpha, 255, ":7733 — Opacity 0, the fade-in starts invisible");
+        assert_eq!(d.penetrate, 1, "the stock :774 — the type arm writes none");
+        assert_eq!(proj_frames(VOID_LENS), 8, "Main.cs:8504");
+        assert!(spawnable_kinds().contains(&VOID_LENS), "the atlas packs the sheet");
+    }
+
+    /// W4-g56 — `AI_154_VoidLens` (`Projectile.cs:52154-52196`): the ×0.94
+    /// velocity decay, direction 1, the 5-tick frame machine wrapping at 8
+    /// and the 0.03/tick Opacity fade-in through the `(int)Clamp` setter.
+    /// The free move integrates (`HandleMovement`'s !tileCollide gate).
+    #[test]
+    fn w4_g56_ai_154_decays_frames_and_fades_in() {
+        let mut w = ground();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(VOID_LENS, 320.0, 160.0, 4.0, 0.0, 0, 0.0)
+            .expect("a free slot");
+        assert_eq!(pool.slots()[slot].alpha, 255);
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        for _ in 0..5 {
+            pool.update(
+                &mut w, &mut [], None, None, None,
+                YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+            );
+        }
+        let p = &pool.slots()[slot];
+        assert!(p.active);
+        assert_eq!(p.direction, 1, ":52178");
+        // 5 ticks of ×0.94 on 4.0.
+        let mut v = 4.0f32;
+        for _ in 0..5 { v *= 0.94; }
+        assert!((p.vel.x - v).abs() < 1e-5, ":52177 — the ×0.94 decay");
+        assert_eq!(p.frame, 1, ":52179-52186 — the 5th tick advances the frame");
+        assert_eq!(p.frame_counter, 0);
+        // The Opacity fade: 5 × 0.03 = 0.15 → alpha (int)(0.85 * 255) = 216.
+        assert_eq!(p.alpha, 216, ":52187-52194 + the setter's (int) truncation");
+        // 40 ticks: the frame machine wraps 8 → 0 (40 / 5 = 8 advances).
+        for _ in 0..35 {
+            pool.update(
+                &mut w, &mut [], None, None, None,
+                YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+            );
+        }
+        let p = &pool.slots()[slot];
+        assert_eq!(p.frame, 0, "8 advances wrap at projFrames[734] = 8");
+        assert_eq!(p.alpha, 0, "the fade-in caps at Opacity 1 (alpha 0)");
+    }
+
+    /// W4-g56 — the sibling cull (`Projectile.cs:52159-52175`): a second
+    /// own lens kills the OLDER one (the lower timeLeft); the newer
+    /// survives. A younger sibling kills ITSELF instead.
+    #[test]
+    fn w4_g56_the_sibling_cull_keeps_the_younger_lens() {
+        let mut w = ground();
+        let mut pool = ProjectilePool::new();
+        let older = pool
+            .spawn_with_data(VOID_LENS, 320.0, 160.0, 0.0, 0.0, 0, 0.0)
+            .expect("slot 0");
+        // Age the first lens so its timeLeft is lower.
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        for _ in 0..10 {
+            pool.update(
+                &mut w, &mut [], None, None, None,
+                YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+            );
+        }
+        let newer = pool
+            .spawn_with_data(VOID_LENS, 340.0, 160.0, 0.0, 0.0, 0, 0.0)
+            .expect("slot 1");
+        pool.update(
+            &mut w, &mut [], None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+        );
+        assert!(!pool.slots()[older].active, ":52173 — the older sibling dies");
+        assert!(pool.slots()[newer].active, "the younger survives");
+    }
 }
 #[cfg(test)]
 mod falling_tests {

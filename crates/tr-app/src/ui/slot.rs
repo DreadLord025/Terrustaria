@@ -30,6 +30,9 @@ fn context_texture_index(context: i32, index: i32) -> u8 {
         // `ItemSlot.cs:2215-2218`: the world-chest slots (3) are
         // `Inventory_Back5`.
         3 => 8,
+        // W4-g56 — `ItemSlot.cs:2218-2221`: the bank (4) AND void-vault (32)
+        // slots are `Inventory_Back2`.
+        4 | 32 => 11,
         // `ItemSlot.cs:2222-2225`: reforge (5) and guide (7) are `Inventory_Back4`.
         5 | 7 => 2,
         // `ItemSlot.cs:2226-2228`: trash (6) is `Inventory_Back7`.
@@ -69,6 +72,7 @@ pub(crate) fn background_for(
         8 => lookups.ui_back5,       // Inventory_Back5
         9 => lookups.ui_back10,      // Inventory_Back10
         10 => lookups.ui_back6,      // Inventory_Back6
+        11 => lookups.ui_back2,      // Inventory_Back2 (banks/vault, W4-g56)
         _ => lookups.ui_back,        // Inventory_Back
     }
 }
@@ -95,14 +99,21 @@ pub(crate) fn favorited_background_active(context: i32, favorited: bool, item: &
 }
 
 /// `ItemSlot.cs:2154-2158`: the sheet the favorited arm swaps in — the gold
-/// `Inventory_Back10`, or `Inventory_Back19` for context 32 (the loadout
-/// panel, not ported, so the base sheet stands in for it). The tint stays
-/// `Main.inventoryBack`; `Main.OurFavoriteColor` (`Main.cs:66748`) colours the
-/// tooltip name, not the frame.
+/// `Inventory_Back10`, or `Inventory_Back19` for context 32 (the void
+/// vault's purple frame, W4-g56). The tint stays `Main.inventoryBack`;
+/// `Main.OurFavoriteColor` (`Main.cs:66748`) colours the tooltip name, not
+/// the frame.
 pub(crate) fn favorited_background_for(
     lookups: &assets::Lookups,
+    context: i32,
 ) -> Option<SheetRect> {
-    lookups.ui_back10
+    if context == 32 {
+        // `:2155-2158` — the vault favorite frame; the packed sheet may be
+        // absent (a content-less build), the gold frame stands in then.
+        lookups.ui_back19.or(lookups.ui_back10)
+    } else {
+        lookups.ui_back10
+    }
 }
 
 /// `ItemSlot.cs:2403-2470`: the `Extra_54` frame index for an empty equipment
@@ -406,7 +417,7 @@ fn draw_slot_flagged(
         // `ItemSlot.cs:2149-2156`: the favorited arm sits at the head of the
         // C# sheet chain — it beats the hotbar row frame (`context == 0 && slot
         // < 10` → `Inventory_Back9`) too.
-        (favorited_background_for(lookups), tint)
+        (favorited_background_for(lookups, context), tint)
     } else {
         (background_for(lookups, context, index), tint)
     };
@@ -763,7 +774,7 @@ mod tests {
         };
         let pick = |c, f| {
             if favorited_background_active(c, f, &favorited) {
-                favorited_background_for(&lk)
+                favorited_background_for(&lk, c)
             } else {
                 background_for(&lk, c, 0)
             }
@@ -772,5 +783,30 @@ mod tests {
         assert_eq!(pick(1, true).map(|r| r.x), Some(10));
         assert_eq!(pick(5, true).map(|r| r.x), Some(10));
         assert_eq!(pick(0, false).map(|r| r.x), Some(9), "unfavorited hotbar row");
+    }
+
+    /// W4-g56 — `ItemSlot.cs:2155-2158`: the context-32 favorite swaps to
+    /// `Inventory_Back19` (the vault's purple frame), not the gold one; the
+    /// unpacked sheet falls back to the gold frame.
+    #[test]
+    fn w4_g56_the_vault_favorite_uses_inventory_back19() {
+        let mut lk = assets::Lookups::default();
+        lk.ui_back10 = Some(rect(10));
+        assert_eq!(
+            favorited_background_for(&lk, 32).map(|r| r.x),
+            Some(10),
+            "the unpacked _19 falls back to the gold frame"
+        );
+        lk.ui_back19 = Some(rect(19));
+        assert_eq!(favorited_background_for(&lk, 32).map(|r| r.x), Some(19));
+        assert_eq!(
+            favorited_background_for(&lk, 0).map(|r| r.x),
+            Some(10),
+            "the grid keeps the gold frame"
+        );
+        // `ItemSlot.cs:2218-2221`: contexts 4 AND 32 draw Inventory_Back2.
+        lk.ui_back2 = Some(rect(2));
+        assert_eq!(background_for(&lk, 4, 0).map(|r| r.x), Some(2));
+        assert_eq!(background_for(&lk, 32, 7).map(|r| r.x), Some(2));
     }
 }

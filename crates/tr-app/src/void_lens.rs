@@ -162,8 +162,7 @@ pub(crate) fn try_interacting(app: &mut App, index: usize) -> u8 {
     // Main.mouseRightRelease` — the port's press edge;
     // `Player.BlockInteractionWithProjectiles` is net-only, 0 here).
     if app.place_down && !app.place_prev_down {
-        app.place_prev_down = true; // `:37709` — `mouseRightRelease = false`
-        app.ui_right_press = false;
+        app.ui_right_press = false; // the press is consumed (`mouseRightRelease = false`)
         let chest = app.player.as_ref().map_or(-1, |p| p.chest);
         if chest == -5 {
             // `:37713-37717` — the re-click closes, Item130.
@@ -281,4 +280,193 @@ pub(crate) fn tick_tracker(app: &mut App) -> u32 {
         return 130;
     }
     0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn lens_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = tr_core::World::new("t".into(), 200, 200);
+        app.player = Some(Player::spawn(&app.world));
+        app
+    }
+
+    /// Spawn a lens whose CENTRE sits at `(cx, cy)` world px.
+    fn spawn_lens(app: &mut App, cx: f32, cy: f32) -> usize {
+        app.projectiles
+            .spawn_with_data_ai_owned(VOID_LENS, 0, cx - 15.0, cy - 12.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .expect("a free slot")
+    }
+
+    /// Point the mouse at a world position (the camera-relative screen
+    /// mapping `try_interacting` inverts).
+    fn aim(app: &mut App, world: Vec2) {
+        let (sw, sh) = app.screen_size();
+        app.mouse_pos = (world - app.camera) * app.zoom + Vec2::new(sw * 0.5, sh * 0.5);
+    }
+
+    /// `ProjectileKey.Pack`/unpack (`ProjectileKey.cs:16-31`): the bit
+    /// layout round-trips, the generation mask is 14 bits.
+    #[test]
+    fn w4_g56_the_key_pack_matches_the_csharp_layout() {
+        let key = pack_key(7, 300, 0x1234);
+        assert_eq!(key as u32, 7 | (300 << 8) | (0x1234 << 18));
+        assert_eq!(unpack_key(key), (7, 300, 0x1234));
+        // The masks truncate: index 10 bits, generation 14.
+        assert_eq!(unpack_key(pack_key(0, 0x7FF, 0x7FFF)), (0, 0x3FF, 0x3FFF));
+    }
+
+    /// `TryInteractingWithVoidLens` (`Main.cs:37707-37734`): the right
+    /// press on a hovered in-range lens opens chest −5 with stackSplit
+    /// 600, the tracker latch, the tile point off the lens centre, the
+    /// inventory open and the talk/shop clears; the re-click closes.
+    /// Both transitions play Item130.
+    #[test]
+    fn w4_g56_the_right_press_toggles_the_vault_open_and_closed() {
+        let mut app = lens_app();
+        let (px, py) = app.player.as_ref().unwrap().center();
+        let idx = spawn_lens(&mut app, px + 20.0, py);
+        aim(&mut app, Vec2::new(px + 20.0, py));
+        app.place_down = true;
+        app.place_prev_down = false;
+        let before = app.audio.played_count();
+        let mode = try_interacting(&mut app, idx);
+        assert_eq!(mode, 0, "the mouse path answers 0 (:37736-37744)");
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.chest, -5, ":37721");
+        assert_eq!(p.chest_x, ((px + 20.0) / 16.0) as i32, ":37728");
+        assert_eq!(p.chest_y, (py / 16.0) as i32, ":37729");
+        assert_ne!(p.void_lens_chest, LensTracker::default(), ":37727 — the tracker latches");
+        assert_eq!(p.void_lens_chest.kind, 734);
+        assert_eq!(app.stack_split, 600, ":37720");
+        assert!(app.inventory_open, ":37732");
+        assert_eq!(app.no_throw, 2, ":37699");
+        assert_eq!(app.audio.played_count(), before + 1, "Item130 (:37733)");
+        assert!(!app.ui_right_press, "the press is consumed");
+        // The re-click closes (:37713-37717), Item130 again.
+        app.place_prev_down = false;
+        let before = app.audio.played_count();
+        try_interacting(&mut app, idx);
+        assert_eq!(app.player.as_ref().unwrap().chest, -1);
+        assert_eq!(app.audio.played_count(), before + 1);
+    }
+
+    /// `:37682-37695` — out of the Simple reach, or the pointer off the
+    /// hitbox, or lastMouseInterface: no interaction, no toggle.
+    #[test]
+    fn w4_g56_the_gates_refuse_out_of_range_off_hitbox_and_interface() {
+        let mut app = lens_app();
+        let (px, py) = app.player.as_ref().unwrap().center();
+        // Far away: the reach gate refuses (:37682-37685).
+        let idx = spawn_lens(&mut app, px + 400.0, py);
+        aim(&mut app, Vec2::new(px + 400.0, py));
+        app.place_down = true;
+        app.place_prev_down = false;
+        try_interacting(&mut app, idx);
+        assert_eq!(app.player.as_ref().unwrap().chest, -1);
+        // In range but the pointer misses the box: no toggle (:37688).
+        let idx2 = spawn_lens(&mut app, px + 20.0, py);
+        aim(&mut app, Vec2::new(px + 60.0, py));
+        try_interacting(&mut app, idx2);
+        assert_eq!(app.player.as_ref().unwrap().chest, -1);
+        // Hovered but lastMouseInterface: refused (:37688's second half).
+        aim(&mut app, Vec2::new(px + 20.0, py));
+        app.last_mouse_interface = true;
+        try_interacting(&mut app, idx2);
+        assert_eq!(app.player.as_ref().unwrap().chest, -1);
+        // Held button (no press edge): no toggle either.
+        app.last_mouse_interface = false;
+        app.place_prev_down = true;
+        try_interacting(&mut app, idx2);
+        assert_eq!(app.player.as_ref().unwrap().chest, -1);
+    }
+
+    /// `HandleBeingInChestRange`'s lens arm (`Player.cs:31051-31073`):
+    /// a dead tracked lens force-closes with 130; an out-of-range hitbox
+    /// point closes too; in range stays open and re-seeds chestX/Y.
+    #[test]
+    fn w4_g56_the_tracker_tick_closes_on_death_and_range() {
+        let mut app = lens_app();
+        let (px, py) = app.player.as_ref().unwrap().center();
+        let idx = spawn_lens(&mut app, px + 20.0, py);
+        aim(&mut app, Vec2::new(px + 20.0, py));
+        app.place_down = true;
+        app.place_prev_down = false;
+        try_interacting(&mut app, idx);
+        assert_eq!(app.player.as_ref().unwrap().chest, -5);
+        // In range: stays open, no cue.
+        assert_eq!(tick_tracker(&mut app), 0);
+        assert_eq!(app.player.as_ref().unwrap().chest, -5);
+        // The lens dies: 130 + close (:31054-31058).
+        app.projectiles.kill(idx);
+        assert_eq!(tick_tracker(&mut app), 130);
+        assert_eq!(app.player.as_ref().unwrap().chest, -1);
+        assert_eq!(
+            app.player.as_ref().unwrap().void_lens_chest,
+            LensTracker::default(),
+            "the close clears the tracker"
+        );
+        // Re-open, then walk out of the Simple reach: 130 + close
+        // (:31064-31071). The lens stays alive.
+        let idx2 = spawn_lens(&mut app, px + 20.0, py);
+        aim(&mut app, Vec2::new(px + 20.0, py));
+        app.place_prev_down = false;
+        try_interacting(&mut app, idx2);
+        assert_eq!(app.player.as_ref().unwrap().chest, -5);
+        app.player.as_mut().unwrap().x += 400.0;
+        assert_eq!(tick_tracker(&mut app), 130);
+        assert_eq!(app.player.as_ref().unwrap().chest, -1);
+    }
+
+    /// `:31019-31026`/`:31095` — the tracker clears when another container
+    /// owns the open state or the chest is closed; a tile-vault open
+    /// (no tracker) never rides the lens close.
+    #[test]
+    fn w4_g56_the_tracker_clears_on_other_containers_and_tile_opens() {
+        let mut app = lens_app();
+        let (px, py) = app.player.as_ref().unwrap().center();
+        let idx = spawn_lens(&mut app, px + 20.0, py);
+        aim(&mut app, Vec2::new(px + 20.0, py));
+        app.place_down = true;
+        app.place_prev_down = false;
+        try_interacting(&mut app, idx);
+        // Another container takes the open state: the tracker clears,
+        // no cue (:31023-31026).
+        app.player.as_mut().unwrap().chest = -2;
+        assert_eq!(tick_tracker(&mut app), 0);
+        assert_eq!(
+            app.player.as_ref().unwrap().void_lens_chest,
+            LensTracker::default()
+        );
+        // A tile-vault open (chest −5, NO tracker — the BankOpen arm) is
+        // not a lens open: the tick answers 0 and the tile-range close
+        // owns it (the chest.rs `tracked_open` gate).
+        app.player.as_mut().unwrap().chest = -5;
+        assert_eq!(tick_tracker(&mut app), 0);
+        assert_eq!(app.player.as_ref().unwrap().chest, -5);
+    }
+
+    /// `IsProjectileInteractableAndInInteractionRange`
+    /// (`Player.cs:23153-23169`): the hitbox's closest point decides the
+    /// reach — a lens whose box edge is in range answers true even when
+    /// its centre tile is outside the ±5/±3 region.
+    #[test]
+    fn w4_g56_the_range_probe_clamps_to_the_hitbox() {
+        let mut app = lens_app();
+        let p = app.player.as_ref().unwrap();
+        let (px, py) = p.center();
+        // The box spans [px+90, px+120]: the closest point px+90 clamps
+        // into the ±5 reach even though the centre px+105 sits further.
+        let idx = spawn_lens(&mut app, px + 105.0, py);
+        let proj = app.projectiles.slots()[idx];
+        assert!(lens_in_interaction_range(p, &proj), "the clamped edge is in reach");
+        // A dead lens never answers (:23155-23158).
+        app.projectiles.kill(idx);
+        let proj = app.projectiles.slots()[idx];
+        assert!(!lens_in_interaction_range(app.player.as_ref().unwrap(), &proj));
+    }
 }

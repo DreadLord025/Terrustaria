@@ -1678,15 +1678,48 @@ impl App {
                             // `LootAllFromBank` is the default settings
                             // (`GetItemSettings.cs:55`): no vault arm, so
                             // `None` (the overflow stays in the bank).
-                            0 => crate::bank::loot_all(
-                                &mut p.banks[bi],
-                                &mut self.inventory,
-                                &mut self.equip.coins,
-                                &mut self.equip.ammo,
-                                None,
-                                &mut self.audio,
-                                &mut rng,
-                            ),
+                            // W4-g56 — the void-vault arm (`:447-460`) skips
+                            // the FAVORITED slots (`!player.bank4.item[l]
+                            // .favorited`, `:451`); the other banks' items
+                            // cannot favorite, so the gate is theirs too
+                            // (a no-op).
+                            0 => {
+                                if chest_open == -5 {
+                                    // The favorited stacks park outside the
+                                    // drain, then return to their slots.
+                                    let mut parked = [crate::item::EMPTY_SLOT; crate::bank::BANK_SLOTS];
+                                    for i in 0..crate::bank::BANK_SLOTS {
+                                        if p.vault_favorites[i] {
+                                            parked[i] = p.banks[bi][i];
+                                            p.banks[bi][i] = crate::item::EMPTY_SLOT;
+                                        }
+                                    }
+                                    crate::bank::loot_all(
+                                        &mut p.banks[bi],
+                                        &mut self.inventory,
+                                        &mut self.equip.coins,
+                                        &mut self.equip.ammo,
+                                        None,
+                                        &mut self.audio,
+                                        &mut rng,
+                                    );
+                                    for i in 0..crate::bank::BANK_SLOTS {
+                                        if p.vault_favorites[i] {
+                                            p.banks[bi][i] = parked[i];
+                                        }
+                                    }
+                                } else {
+                                    crate::bank::loot_all(
+                                        &mut p.banks[bi],
+                                        &mut self.inventory,
+                                        &mut self.equip.coins,
+                                        &mut self.equip.ammo,
+                                        None,
+                                        &mut self.audio,
+                                        &mut rng,
+                                    );
+                                }
+                            }
                             // `ChestUI.DepositAll` (`:540-659`) — the
                             // MoveCoins pre-pass runs for every container
                             // kind (:543-562).
@@ -1728,6 +1761,21 @@ impl App {
                                     &mut rng,
                                 );
                             }
+                            // W4-g56 — the bank Sort row (id 4,
+                            // `ItemSorting.SortChest`, `ItemSorting.cs:
+                            // 1629-1653`): every container kind sorts its
+                            // own slots; the damage-ranked layer order reads
+                            // the local player's class multipliers (the
+                            // world-chest `chest_sort_click` precedent).
+                            4 => {
+                                let mult = [
+                                    p.melee_damage,
+                                    p.ranged_damage,
+                                    p.magic_damage,
+                                    p.minion_damage,
+                                ];
+                                crate::item_sorting::sort_chest(&mut p.banks[bi], mult);
+                            }
                             _ => {
                                 let _ = crate::bank::restock(
                                     &mut p.banks[bi],
@@ -1759,6 +1807,28 @@ impl App {
                 ui::inventory::bank_slot_at(self.mouse_pos, m_h)
             }) {
                 let bi = crate::bank::bank_for_chest(chest_open).unwrap();
+                // W4-g56 — the void vault's Alt+left favorite toggle
+                // (`ItemSlot.cs:611-620`'s cursor-3 arm over context 32 —
+                // `canFavoriteAt[32]` is true, `:386-394`): the toggle eats
+                // the press before the movement arms, sound 12 on both
+                // flips (`ToggleFavorited`, `:873-877`). The favorite bit
+                // rides `Player.vault_favorites` (the `.plr` per-slot bools).
+                if left
+                    && chest_open == -5
+                    && self.cursor_override == CURSOR_FAVORITE
+                {
+                    let toggled = self.player.as_mut().is_some_and(|p| {
+                        if p.banks[bi][bank_idx].count == 0 {
+                            return false; // `:607-609` — air returns first
+                        }
+                        p.vault_favorites[bank_idx] = !p.vault_favorites[bank_idx];
+                        true
+                    });
+                    if toggled {
+                        self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                    }
+                    return;
+                }
                 // Read the cell and the cursor up front so the `&mut self`
                 // pickup helper never overlaps the player borrow; the cell is
                 // written back once the branch settles.
@@ -1773,6 +1843,53 @@ impl App {
                 let can_take = held.count == 0
                     || (crate::bank::can_stack(&held, &target)
                         && held.count < crate::registry::max_stack(target.kind));
+                // W4-g56 — `RightClick`'s ctx-32 swap block
+                // (`ItemSlot.cs:1685-1697`): a single wearable / dye jumps
+                // to its equipment row on the press edge (the ctx-0/3/4
+                // ladder covers 32 too), ahead of the pickup split. The
+                // `HasItemSwap` cycle (`:1668-1675`) runs first — the
+                // Void Bag 4131 ↔ Closed Void Bag 5325 pair is in the set.
+                if !left
+                    && (held.count == 0 || !crate::bank::can_stack(&held, &target))
+                    && target.count == 1
+                    && target.kind > 0
+                {
+                    if crate::sortdata::HAS_ITEM_SWAP.get(target.kind) {
+                        if right_edge {
+                            if let Some(new_kind) =
+                                crate::app::equip_swap::try_item_swap(&mut target)
+                            {
+                                if let Some(p) = self.player.as_mut() {
+                                    p.banks[bi][bank_idx] = target;
+                                }
+                                self.audio
+                                    .play(crate::app::equip_swap::after_item_swap_cue(new_kind));
+                                self.stack_split = 30; // `:2007`
+                                self.ui_right_press = false; // `:2008`
+                            }
+                        }
+                        return;
+                    }
+                    if crate::app::equip_swap::can_be_equipped(&target)
+                        || registry::get(target.kind).is_some_and(|d| d.dye > 0)
+                    {
+                        if right_edge {
+                            let mut item = target;
+                            if self.swap_equip_click(None, &mut item) {
+                                if let Some(p) = self.player.as_mut() {
+                                    p.banks[bi][bank_idx] = item;
+                                    // The source's favourite clears with the
+                                    // move (`retainFavoriteOnMoveAt` keeps 32
+                                    // on a plain move, but `EquipSwap`'s
+                                    // `SwapClearFavorite` clears it — the
+                                    // ctx-0 grid arm's same write).
+                                    p.vault_favorites[bank_idx] = false;
+                                }
+                            }
+                        }
+                        return;
+                    }
+                }
                 if left {
                     if held.count == 0 {
                         held = target;
@@ -2326,6 +2443,22 @@ impl App {
                 if item.count > 0 && chest::can_favorite_at(ctx) {
                     self.cursor_override = CURSOR_FAVORITE;
                     return;
+                }
+            }
+            // W4-g56 — the void vault's cells (context 32) favorite too
+            // (`canFavoriteAt[32]`, `ItemSlot.cs:386-394`); the other banks
+            // (4) are not in the table.
+            if self.open_container() == -5 {
+                let m_h = (self.screen_size().1 as f32 - 600.0) / 2.0;
+                if let Some(idx) = ui::inventory::bank_slot_at(self.mouse_pos, m_h) {
+                    let stocked = self
+                        .player
+                        .as_ref()
+                        .is_some_and(|p| p.banks[3][idx].count > 0);
+                    if stocked && chest::can_favorite_at(32) {
+                        self.cursor_override = CURSOR_FAVORITE;
+                        return;
+                    }
                 }
             }
             if let Some(slot) = self.slot_at_mouse() {
@@ -4244,6 +4377,146 @@ mod tests {
             "the bank cell keeps the rest"
         );
         assert!(app.stack_split > 1, "the transfer armed the split cooldown");
+    }
+
+    // --- W4-g56: the void vault's context-32 surface ------------------------
+
+    /// A `bank_app` with the VOID VAULT open (chest −5, bank index 3).
+    fn vault_app() -> App {
+        let mut app = bank_app();
+        app.player.as_mut().unwrap().chest = -5;
+        app
+    }
+
+    /// W4-g56 — `ChestUI.LootAll`'s bank4 arm (`ChestUI.cs:447-460`): the
+    /// favorited slots stay (`!player.bank4.item[l].favorited`, `:451`),
+    /// the rest drain into the player.
+    #[test]
+    fn w4_g56_vault_loot_all_skips_the_favorited_slots() {
+        let mut app = vault_app();
+        {
+            let p = app.player.as_mut().unwrap();
+            p.banks[3][0] = slot(9, 5);
+            p.banks[3][1] = slot(3, 7);
+            p.vault_favorites[1] = true; // the stone is starred
+        }
+        app.mouse_pos = Vec2::new(510.0, 330.0); // the bank's Loot All row (m_h 60)
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.banks[3][0].count, 0, "the unstarred wood drained");
+        assert_eq!(p.banks[3][1], slot(3, 7), "the favorited stone stayed (:451)");
+        assert!(app.inventory.iter().any(|s| s.kind == 9 && s.count == 5));
+        assert!(!app.inventory.iter().any(|s| s.kind == 3 && s.count == 7));
+    }
+
+    /// W4-g56 — Alt+left-click on a vault cell toggles its favorite
+    /// (`canFavoriteAt[32]`, `ItemSlot.cs:386-394`; the cursor-3 arm
+    /// `:611-620` + `ToggleFavorited` `:873-877`, sound 12). The held item
+    /// neither swaps nor merges — the override eats the press.
+    #[test]
+    fn w4_g56_alt_click_toggles_the_vault_favorite() {
+        let mut app = vault_app();
+        app.player.as_mut().unwrap().banks[3][0] = slot(9, 6);
+        app.keys.insert(KeyCode::AltLeft);
+        app.mouse_pos = Vec2::new(20.0, 330.0); // vault row 0 at m_h 60
+        app.mouse_item = slot(3, 1); // held: the override must eat the click
+        app.ui_left_press = true;
+        // The production chain: the chest handler's hover evaluation lights
+        // cursor 3 (the vault cell is a favoritable context-32 surface),
+        // then the inventory handler's toggle arm consumes the press.
+        assert!(!app.handle_chest_clicks(), "no chest surface takes it");
+        assert_eq!(app.cursor_override, CURSOR_FAVORITE, "the vault cell lit cursor 3");
+        app.handle_inventory_clicks();
+        assert!(app.player.as_ref().unwrap().vault_favorites[0], "the toggle fired");
+        assert_eq!(app.mouse_item, slot(3, 1), "the held item stayed");
+        assert_eq!(
+            app.player.as_ref().unwrap().banks[3][0],
+            slot(9, 6),
+            "the cell item stayed"
+        );
+        // The second Alt+click clears it.
+        app.ui_left_press = true;
+        app.handle_chest_clicks();
+        app.handle_inventory_clicks();
+        assert!(!app.player.as_ref().unwrap().vault_favorites[0]);
+        // An AIR cell never toggles (`:607-609`).
+        app.mouse_pos = Vec2::new(20.0 + 56.0 * 0.85, 330.0); // cell 1, empty
+        app.ui_left_press = true;
+        app.handle_chest_clicks();
+        app.handle_inventory_clicks();
+        assert!(!app.player.as_ref().unwrap().vault_favorites[1]);
+    }
+
+    /// W4-g56 — the bank Sort row (id 4, `ItemSorting.SortChest`,
+    /// `ItemSorting.cs:1629-1653`): the vault's slots reorder through the
+    /// same layer engine the world chest uses.
+    #[test]
+    fn w4_g56_the_bank_sort_row_reorders_the_vault() {
+        let mut app = vault_app();
+        {
+            let p = app.player.as_mut().unwrap();
+            p.banks[3][0] = slot(2, 10); // dirt
+            p.banks[3][1] = slot(24, 1); // the melee sword
+        }
+        app.mouse_pos = Vec2::new(510.0, 434.0); // the Sort row (id 4, m_h 60)
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.banks[3][0].kind, 24, "the sword sorts before the dirt");
+        assert_eq!(p.banks[3][1].kind, 2);
+    }
+
+    /// W4-g56 — `RightClick`'s ctx-32 `HasItemSwap` cycle
+    /// (`ItemSlot.cs:1668-1675`): a single Void Bag 4131 in the vault
+    /// cycles to the Closed Void Bag 5325 on the press edge (the pair is
+    /// in `ItemID.Sets.HasItemSwap`), ahead of the pickup split.
+    #[test]
+    fn w4_g56_the_vault_right_click_cycles_the_void_bag() {
+        let mut app = vault_app();
+        app.player.as_mut().unwrap().banks[3][0] = slot(4131, 1);
+        app.mouse_item = EMPTY_SLOT;
+        app.mouse_pos = Vec2::new(20.0, 330.0);
+        app.ui_right_press = true;
+        app.place_down = true;
+        app.handle_inventory_clicks();
+        assert_eq!(
+            app.player.as_ref().unwrap().banks[3][0].kind,
+            5325,
+            "the 4131 → 5325 cycle (:1906-1910)"
+        );
+        assert_eq!(app.mouse_item.count, 0, "the pickup split never ran");
+        assert_eq!(app.stack_split, 30, ":2007");
+        assert!(!app.ui_right_press, ":2008");
+    }
+
+    /// W4-g56 — `RightClick`'s ctx-32 `SwapEquip` ladder
+    /// (`ItemSlot.cs:1685-1697`): a single wearable in the vault jumps to
+    /// its equipment row on the press edge; the source's favorite clears.
+    #[test]
+    fn w4_g56_the_vault_right_click_equips_a_single_wearable() {
+        let mut app = vault_app();
+        // The Hermes Boots (accessory, `Item.cs`'s row) — a wearable.
+        app.player.as_mut().unwrap().banks[3][0] = slot(54, 1);
+        app.player.as_mut().unwrap().vault_favorites[0] = true;
+        app.mouse_item = EMPTY_SLOT;
+        app.mouse_pos = Vec2::new(20.0, 330.0);
+        app.ui_right_press = true;
+        app.place_down = true;
+        app.handle_inventory_clicks();
+        assert_eq!(
+            app.player.as_ref().unwrap().banks[3][0].count,
+            0,
+            "the boots left the vault"
+        );
+        assert!(
+            app.equip.armor.iter().any(|s| s.kind == 54),
+            "the boots landed on an accessory row"
+        );
+        assert!(
+            !app.player.as_ref().unwrap().vault_favorites[0],
+            "the source's favourite cleared with the move"
+        );
     }
 
     /// M7-UI-2c — shift+click on a coin/ammo cell transfers into the open

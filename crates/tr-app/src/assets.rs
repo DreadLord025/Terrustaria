@@ -761,6 +761,9 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Logo",
         "Inventory_Back",
         "Inventory_Back2",
+        // W4-g56 — `ItemSlot.cs:2155-2158`: the favorited void-vault slot
+        // (context 32) swaps to `Inventory_Back19`.
+        "Inventory_Back19",
         "Inventory_Back5",
         "Inventory_Back9",
         "Inventory_Back14",
@@ -2033,6 +2036,12 @@ pub struct Lookups {
     pub ui_back4: Option<tr_render::SheetRect>,
     /// `Inventory_Back5`: the world-chest slot frame (`ItemSlot.cs:2215-2221`).
     pub ui_back5: Option<tr_render::SheetRect>,
+    /// `Inventory_Back2`: the bank / void-vault slot frame (`ItemSlot.cs:
+    /// 2218-2221` — contexts 4 AND 32, W4-g56).
+    pub ui_back2: Option<tr_render::SheetRect>,
+    /// `Inventory_Back19`: the favorited void-vault slot frame
+    /// (`ItemSlot.cs:2155-2158` — context 32's favorite swap, W4-g56).
+    pub ui_back19: Option<tr_render::SheetRect>,
     /// `Inventory_Back6`: shop slot frame (`ItemSlot.cs:2292`).
     pub ui_back6: Option<tr_render::SheetRect>,
     /// `Inventory_Back7`: the trash slot frame (`ItemSlot.cs:2295`).
@@ -2417,6 +2426,8 @@ impl Lookups {
             ui_back3: atlas.sheet("Inventory_Back3").copied(),
             ui_back4: atlas.sheet("Inventory_Back4").copied(),
             ui_back5: atlas.sheet("Inventory_Back5").copied(),
+            ui_back2: atlas.sheet("Inventory_Back2").copied(),
+            ui_back19: atlas.sheet("Inventory_Back19").copied(),
             ui_back6: atlas.sheet("Inventory_Back6").copied(),
             ui_back7: atlas.sheet("Inventory_Back7").copied(),
             ui_back12: atlas.sheet("Inventory_Back12").copied(),

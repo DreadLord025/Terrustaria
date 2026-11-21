@@ -1104,6 +1104,12 @@ pub struct Player {
     /// per-tick range/death close reads it (`Player.cs:31051-31073`,
     /// W4-g56 `void_lens.rs`).
     pub void_lens_chest: crate::void_lens::LensTracker,
+    /// `bank4.item[i].favorited` (`Player.cs:55495`'s per-slot bools) —
+    /// the void vault is the one bank whose slots CAN favorite
+    /// (`ItemSlot.canFavoriteAt[32]`, `ItemSlot.cs:386-394`); the
+    /// favorited stacks refuse LootAll (`ChestUI.cs:451`) and draw the
+    /// `Inventory_Back19` frame (`ItemSlot.cs:2155-2158`). W4-g56.
+    pub vault_favorites: [bool; crate::bank::BANK_SLOTS],
     /// `Player.ateArtisanBread` (`Player.cs:2048`): the artisan loaf's
     /// +4-tile crafting reach (`Player.AdjTiles`, `:35671`). The item that
     /// sets it (5326, `Player.cs:45218-45221`) has no ported use effect yet,
@@ -2703,6 +2709,7 @@ impl Player {
             prev_synced_chest: crate::bank::CHEST_CLOSED,
             void_vault_enabled: false,
             void_lens_chest: crate::void_lens::LensTracker::default(),
+            vault_favorites: [false; crate::bank::BANK_SLOTS],
             ate_artisan_bread: false,
             unlocked_biome_torches: false,
             pinned_jumps: [false; 9],

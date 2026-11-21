@@ -688,6 +688,10 @@ pub fn draw_hud(
     chest_panel: chest::PanelState<'_>,
     reforge: Option<(&crate::item::ItemSlot, u64, i32)>,
     bank: Option<(&[ItemSlot], i32)>,
+    // W4-g56 — the void vault's per-slot favorite bits (context 32's
+    // `Inventory_Back19` arm, `ItemSlot.cs:2155-2158`); `None` for the
+    // other banks.
+    bank_favorites: Option<&[bool; crate::bank::BANK_SLOTS]>,
     // `Main.DrawPVPIcons`'s inputs (`Main.cs:42654`): the net mode / seed gates,
     // the local player's `hostile` + `team` and the `teamCooldown` timer.
     pvp: &chrome::PvpIconState,
@@ -860,6 +864,7 @@ pub fn draw_hud(
             mouse_pos,
             m_h,
             bank,
+            bank_favorites,
             // `Main.ChestOrShopUIVisible` (`Main.cs:2939-2952`): the trash
             // slot shifts while a container or shop panel is open (bug 20).
             chest_panel.chest >= 0 || shop.is_some(),

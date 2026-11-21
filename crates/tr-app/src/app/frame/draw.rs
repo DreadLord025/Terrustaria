@@ -1814,6 +1814,11 @@ impl App {
                                 crate::bank::bank_for_chest(p.chest)
                                     .map(|bi| (&p.banks[bi][..], p.chest))
                             }),
+                            // W4-g56 — the void vault's favorite bits ride
+                            // the draw (context 32's `Inventory_Back19`).
+                            player.as_ref().and_then(|p| {
+                                (p.chest == -5).then_some(&p.vault_favorites)
+                            }),
                             // `Main.DrawPVPIcons`'s state (`Main.cs:42654`): the
                             // net-mode / team-based-spawns gates, the local
                             // player's `hostile` + `team` and `Main.teamCooldown`.
