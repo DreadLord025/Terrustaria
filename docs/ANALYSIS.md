@@ -2436,6 +2436,39 @@ and is multiplied by the caller's `volumeScale`. `audio.rs` applies the pan to a
 source (the far channel is attenuated); the listener is refreshed each frame from the
 camera centre and the three volume sliders.
 
+### The player-voice wave (W4-e10, `Player.PlayHurtSound`/`PlayDeathSound`)
+
+`Player.cs:38569-38746`'s hurt/death decision trees are ported table-complete
+(`player.rs::hurt_voice`/`death_voice`, drained in `world_sim/player.rs`): stoned →
+`voiceOverride` (the 19 voice-accessory arms) → mount (52/54/55/56/61) → werewolf →
+Frost/Necro armor → Don't-Starve world → `voiceVariant`, in the C#'s exact priority
+order. The producers land with it: the voice accessory's `Item.voiceSlot`
+(`voice_slot_of`), the wolf-shell grants + the buff-28 night arm, the
+`ApplyArmorSoundAndDustChanges` Necro/Frost slot-id derivation, and the
+`UpdateBootVisualEffects` vanity boot tiers. The female case-20 play, the voice style
+façade (case 2/42) and the mount/armor NPC int arms (case 3/4) join `audio.rs`; the
+`Female_Hit_0..2` / `NPC_Hit_5`/`47` / `Item_35` rows and the player-voice trackables
+join the bank. The wing/rocket cues (`:26889`/`:26894` boot trigger, `:27154`/`:29478`
+wings-4, `:30172` wings-45) drain on `UpdatePlayers` — the `WingFrame` cue before the
+boot cue, the C# order.
+
+Deviations:
+* **No voice-picker / save-load surface.** `voiceVariant` stays at the ctor's 1 and
+  `voicePitchOffset` at 0 until a character-creation/save surface lands; the decision
+  tree is table-complete and the override/armor/mount arms are reachable in play.
+  `skinVariant` defaults to 0 (male) the same way.
+* **The hurt/death plays drain at the pass tail**, not mid-`Hurt`/`KillMe` (the
+  S1-E-21c batch convention) — the gameplay draws still ride `UpdatePlayers` in the
+  C# order relative to the other drained cues.
+* **The wing frame machines stay visual seams** — only the wings-4/45 rocket SOUND +
+  `rocketDelay2` cadence land; the per-wing frame tables and the `:27154` glide-path
+  twin (a separate movement branch) are deferred.
+* **The trackable voice cues pin the first variation** (`_0` for the multi-variation
+  DST families), the standing D3 pin — the C#'s `LegacySoundStyle.Random` variation
+  pick is an audio-only stream.
+* **The D4 instance stop/re-create pool stands** — the voice plays spawn a fresh
+  source per play (no `SoundInstancePlayerHit`/`FemaleHit` slot tracking).
+
 ### Ambience emitters (`tr-app/ambient_sound.rs`, M6-AUDIO-1)
 
 The ambience *audio* of 1.4.5.8 is five emitters; `Main.Ambience` (the waterfall/lavafall
