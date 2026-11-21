@@ -6716,23 +6716,16 @@ impl Npc {
         self.sprite_dir = s.sprite_dir;
     }
 
-    /// W4-d44 wire — the extra-6 claim set: the FIRST 11 slice-6 ids
-    /// 278-287 + 290 (the three Hell Armored Bones, the six post-
-    /// Plantera dungeon casters, the Bone Lee, the Paladin). The
-    /// in-module lookup's 291/292/293/295 arms are EXCLUDED this round
-    /// (the ≤11-kind wire cap; they ride a later batch). The band
-    /// edges stay outside.
+    /// W4-d44 wire — the extra-6 claim set: the FULL slice-6 band
+    /// 278-287 + 290-293 + 295, all 15 kinds (the in-module lookup
+    /// verbatim). The first batch claimed 278-287 + 290 (the ≤11-kind
+    /// cap); this batch widens to the LAST FOUR 291/292/293/295 (the
+    /// Sniper/Tactical draw pair, the Commando archer delegate, the
+    /// Angry Bones Big Muscle fighter). The band edges stay outside.
     fn find_frame_kind_extra6_claimed(
         cs_id: u16,
     ) -> Option<crate::npc_findframe_extra6::FindFrameExtra6Kind> {
-        use crate::npc_findframe_extra6::FindFrameExtra6Kind as K;
-        match crate::npc_findframe_extra6::find_frame_kind_extra6(cs_id as i16) {
-            Some(
-                K::SkeletonSniper | K::TacticalSkeleton | K::SkeletonCommando
-                | K::AngryBonesBigMuscle,
-            ) => None,
-            other => other,
-        }
+        crate::npc_findframe_extra6::find_frame_kind_extra6(cs_id as i16)
     }
 
     /// W4-d44 wire — the extra-5 claim set: the FULL slice-5 band
@@ -6818,14 +6811,15 @@ impl Npc {
         }
         // W4-d44 wire (f26 slice 6) — the `cs_id`-keyed hook into the
         // extra-wave-6 pure machines (`npc_findframe_extra6.rs`) via
-        // `find_frame_kind_extra6_claimed`: the FIRST 11 ids 278-287 +
-        // 290 (the three Hell Armored Bones, the six dungeon casters,
-        // the Bone Lee, the Paladin); 291/292/293/295 ride a later
-        // batch (the ≤11-kind cap). NO current kind's `cs_id` lands in
-        // the set (verified over the hand rows + the bestiary net ids),
-        // so this is stream-inert today; the arms draw no RNG (the
-        // f26 wave-6 mechanical grep over all eight cited ranges =
-        // ZERO) and none reads the world. The extra5 hook precedent.
+        // `find_frame_kind_extra6_claimed`: ALL 15 ids 278-287 +
+        // 290-293 + 295 (the three Hell Armored Bones, the six dungeon
+        // casters, the Bone Lee, the Paladin, the Sniper/Tactical draw
+        // pair, the Commando, the Angry Bones Big Muscle). NO current
+        // kind's `cs_id` lands in the set (verified over the hand rows
+        // + the bestiary net ids), so this is stream-inert today; the
+        // arms draw no RNG (the f26 wave-6 mechanical grep over all
+        // eight cited ranges = ZERO) and none reads the world. The
+        // extra5 hook precedent.
         if let Some(kind) = Self::find_frame_kind_extra6_claimed(self.kind.cs_id()) {
             self.find_frame_wave_extra6(kind);
             return;
@@ -33900,11 +33894,11 @@ mod w4_d44_wire_tests {
         }
     }
 
-    /// The extra-6 claim set is the FIRST 11 slice-6 ids 278-287 + 290;
-    /// the module mapper's 291/292/293/295 arms are EXCLUDED this round
-    /// (the ≤11-kind cap); the band edges stay outside.
+    /// The extra-6 claim set is the FULL slice-6 band 278-287 +
+    /// 290-293 + 295 — all 15 kinds; the band edges + the port-covered
+    /// 288/289/294/296 stay outside.
     #[test]
-    fn w4_d44_the_extra6_claim_set_is_the_first_eleven() {
+    fn w4_d44_the_extra6_claim_set_matches_the_batch_band() {
         use crate::npc_findframe_extra6::FindFrameExtra6Kind as K;
         let table = [
             (278u16, K::HellArmoredBonesSpikeShield),
@@ -33918,15 +33912,14 @@ mod w4_d44_wire_tests {
             (286, K::DiabolistWhite),
             (287, K::BoneLee),
             (290, K::Paladin),
+            (291, K::SkeletonSniper),
+            (292, K::TacticalSkeleton),
+            (293, K::SkeletonCommando),
+            (295, K::AngryBonesBigMuscle),
         ];
         for (id, k) in table {
             assert_eq!(Npc::find_frame_kind_extra6_claimed(id), Some(k), "{id}");
         }
-        // The four later-batch ids are EXCLUDED (the cap).
-        assert_eq!(Npc::find_frame_kind_extra6_claimed(291), None);
-        assert_eq!(Npc::find_frame_kind_extra6_claimed(292), None);
-        assert_eq!(Npc::find_frame_kind_extra6_claimed(293), None);
-        assert_eq!(Npc::find_frame_kind_extra6_claimed(295), None);
         // The band edges + the port-covered 288/289/294/296 stay outside.
         assert_eq!(Npc::find_frame_kind_extra6_claimed(277), None);
         assert_eq!(Npc::find_frame_kind_extra6_claimed(288), None);
@@ -34031,6 +34024,57 @@ mod w4_d44_wire_tests {
         n.frame_counter = 3.0;
         n.find_frame_wave_extra6(K::Paladin);
         assert_eq!((n.frame, n.frame_counter), (1, 0.0));
+        // Sniper draw pose (ai[2] > 0): the UNCONDITIONAL direction copy
+        // (0 included) + row (int)ai[2]-1, counter zeroed (the BREAK).
+        n.vy = 0.0;
+        n.vx = 0.0;
+        n.facing = 0;
+        n.sprite_dir = 1;
+        n.ai[2] = 3.0;
+        n.frame = 0;
+        n.frame_counter = 5.0;
+        n.find_frame_wave_extra6(K::SkeletonSniper);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (2, 0.0, 0));
+        // Sniper walk (ai[2] == 0): the |vx|*3.3 accumulator lifts row
+        // <7 to 7; vx 1 → +3.3 < 6 → row 7 holds.
+        n.ai[2] = 0.0;
+        n.facing = 1;
+        n.vx = 1.0;
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.find_frame_wave_extra6(K::TacticalSkeleton);
+        assert_eq!((n.frame, n.frame_counter), (7, 3.3));
+        // Sniper air: row 6, counter zeroed.
+        n.vy = 1.0;
+        n.frame = 9;
+        n.frame_counter = 2.0;
+        n.find_frame_wave_extra6(K::SkeletonSniper);
+        assert_eq!((n.frame, n.frame_counter), (6, 0.0));
+        // Commando archer delegate: the shot pose pins row (int)ai[2]
+        // (NO -1), the walk climbs rows 6..19 at |vx|*3, the air row 0.
+        n.vy = 0.0;
+        n.vx = 0.0;
+        n.ai[2] = 4.0;
+        n.frame = 0;
+        n.frame_counter = 3.0;
+        n.find_frame_wave_extra6(K::SkeletonCommando);
+        assert_eq!((n.frame, n.frame_counter), (4, 0.0));
+        n.ai[2] = 0.0;
+        n.vx = 1.0;
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.find_frame_wave_extra6(K::SkeletonCommando);
+        assert_eq!((n.frame, n.frame_counter), (6, 3.0));
+        n.vy = 1.0;
+        n.find_frame_wave_extra6(K::SkeletonCommando);
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0));
+        // Angry Bones Big Muscle: the fighter delegate, the air snaps
+        // row 0 (295 IS in the :69647 pin list, unlike the Bone Lee 287).
+        n.vy = 1.0;
+        n.frame = 5;
+        n.frame_counter = 2.0;
+        n.find_frame_wave_extra6(K::AngryBonesBigMuscle);
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0));
     }
 
     /// The wave-C bridge copies the five fields both ways and feeds
