@@ -2163,6 +2163,56 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Dungeon Spirit",
     },
+    // W4-d38 b6 — BestiaryEntry.Enemy(318)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "DemonEyeSpaceship",
+        net_id: 318,
+        kind: NpcKind::DemonEyeSpaceship,
+        variant: None,
+        quick_unlock: false,
+        name: "Demon Eye",
+    },
+    // W4-d38 b6 — BestiaryEntry.Enemy(322)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "SkeletonTopHat",
+        net_id: 322,
+        kind: NpcKind::SkeletonTopHat,
+        variant: None,
+        quick_unlock: false,
+        name: "Skeleton",
+    },
+    // W4-d38 b6 — BestiaryEntry.Enemy(323)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "SkeletonAstonaut",
+        net_id: 323,
+        kind: NpcKind::SkeletonAstonaut,
+        variant: None,
+        quick_unlock: false,
+        name: "Skeleton",
+    },
+    // W4-d38 b6 — BestiaryEntry.Enemy(324)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "SkeletonAlien",
+        net_id: 324,
+        kind: NpcKind::SkeletonAlien,
+        variant: None,
+        quick_unlock: false,
+        name: "Skeleton",
+    },
+    // W4-d38 b6 — BestiaryEntry.Enemy(328)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "PumpkingBlade",
+        net_id: 328,
+        kind: NpcKind::PumpkingBlade,
+        variant: None,
+        quick_unlock: false,
+        name: "Pumpking",
+    },
     // W4-d38 b5 — BestiaryEntry.Enemy(302)
     // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
     BestiaryEntryDef {

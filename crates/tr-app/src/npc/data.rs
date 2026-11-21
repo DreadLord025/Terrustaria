@@ -570,6 +570,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 353,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
+            // W4-d38 b6 — vanilla ids kept (free protocol slots).
+            NpcKind::DemonEyeSpaceship => 318,
+            NpcKind::SkeletonTopHat => 322,
+            NpcKind::SkeletonAstonaut => 323,
+            NpcKind::SkeletonAlien => 324,
+            NpcKind::PumpkingBlade => 328,
             // W4-d38 b5 — vanilla ids kept (free protocol slots).
             NpcKind::SlimeMasked => 302,
             NpcKind::BunnySlimed => 303,
@@ -937,6 +943,12 @@ impl NpcKind {
             353 => NpcKind::BlazingWheel,
             250 => NpcKind::AngryNimbus,
             288 => NpcKind::DungeonSpirit,
+            // W4-d38 b6 — decode at the vanilla ids.
+            318 => NpcKind::DemonEyeSpaceship,
+            322 => NpcKind::SkeletonTopHat,
+            323 => NpcKind::SkeletonAstonaut,
+            324 => NpcKind::SkeletonAlien,
+            328 => NpcKind::PumpkingBlade,
             // W4-d38 b5 — decode at the vanilla ids.
             302 => NpcKind::SlimeMasked,
             303 => NpcKind::BunnySlimed,
@@ -1848,6 +1860,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Hit_1",
             NpcKind::AngryNimbus => "NPC_Hit_30",
             NpcKind::DungeonSpirit => "NPC_Hit_36",
+            // W4-d38 b6 — SetDefaults HitSound rows.
+            NpcKind::DemonEyeSpaceship => "NPC_Hit_1",
+            NpcKind::SkeletonTopHat => "NPC_Hit_2",
+            NpcKind::SkeletonAstonaut => "NPC_Hit_2",
+            NpcKind::SkeletonAlien => "NPC_Hit_2",
+            NpcKind::PumpkingBlade => "NPC_Hit_1",
             // W4-d38 b5 — SetDefaults HitSound rows.
             NpcKind::SlimeMasked => "NPC_Hit_1",
             NpcKind::BunnySlimed => "NPC_Hit_1",
@@ -2182,6 +2200,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Killed_1",
             NpcKind::AngryNimbus => "NPC_Killed_33",
             NpcKind::DungeonSpirit => "NPC_Killed_39",
+            // W4-d38 b6 — SetDefaults DeathSound rows.
+            NpcKind::DemonEyeSpaceship => "NPC_Killed_1",
+            NpcKind::SkeletonTopHat => "NPC_Killed_2",
+            NpcKind::SkeletonAstonaut => "NPC_Killed_2",
+            NpcKind::SkeletonAlien => "NPC_Killed_2",
+            NpcKind::PumpkingBlade => "NPC_Killed_1",
             // W4-d38 b5 — SetDefaults DeathSound rows.
             NpcKind::SlimeMasked => "NPC_Killed_1",
             NpcKind::BunnySlimed => "NPC_Killed_1",
@@ -2323,6 +2347,8 @@ impl NpcKind {
             NpcKind::GiantCursedSkull => true,
             // W4-d38 b5 — the noGravity SetDefaults rows.
             NpcKind::Ghost => true,
+            // W4-d38 b6 — the noGravity SetDefaults rows.
+            NpcKind::PumpkingBlade => true,
             NpcKind::AngryNimbus => true,
             _ => false,
         }
@@ -2575,6 +2601,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // W4-d38 b6 — SetDefaults aiStyle rows.
+            NpcKind::DemonEyeSpaceship => 2,
+            NpcKind::SkeletonTopHat => 3,
+            NpcKind::SkeletonAstonaut => 3,
+            NpcKind::SkeletonAlien => 3,
+            NpcKind::PumpkingBlade => 59,
             // W4-d38 b5 — SetDefaults aiStyle rows.
             NpcKind::SlimeMasked => 1,
             NpcKind::BunnySlimed => 7,
@@ -2713,6 +2745,10 @@ impl NpcKind {
             NpcKind::Nutcracker | NpcKind::Krampus => 2.0,
             NpcKind::NutcrackerSpinning => 6.0,
             NpcKind::ElfArcher => 1.0,
+            // W4-d38 b6 — AI_003 per-type walk caps.
+            NpcKind::SkeletonTopHat => 1.0,
+            NpcKind::SkeletonAstonaut => 1.0,
+            NpcKind::SkeletonAlien => 1.0,
             // W4-d38 b3 — AI_003 per-type walk caps.
             NpcKind::TacticalSkeleton => 1.0,
             NpcKind::SkeletonCommando => 1.0,
@@ -3145,6 +3181,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-d38 b6 — SetDefaults width/height rows.
+            NpcKind::DemonEyeSpaceship => (30.0, 32.0),
+            NpcKind::SkeletonTopHat => (18.0, 40.0),
+            NpcKind::SkeletonAstonaut => (18.0, 40.0),
+            NpcKind::SkeletonAlien => (18.0, 40.0),
+            NpcKind::PumpkingBlade => (80.0, 80.0),
             // W4-d38 b5 — SetDefaults width/height rows.
             NpcKind::SlimeMasked => (24.0, 18.0),
             NpcKind::BunnySlimed => (18.0, 20.0),
@@ -3329,6 +3371,10 @@ impl NpcKind {
             // case list carries 338-340 (`NPC.cs:68603-68605`) on their
             // 15-frame strips (`Main.npcFrameCount[338..340]`, `Main.cs`).
             NpcKind::ZombieElf | NpcKind::ZombieElfBeard | NpcKind::ZombieElfGirl => 15,
+            // W4-d38 b6 — humanoid-group FindFrame strips.
+            NpcKind::SkeletonTopHat => 16,
+            NpcKind::SkeletonAstonaut => 15,
+            NpcKind::SkeletonAlien => 16,
             // W4-d38 b3 — humanoid-group FindFrame strips.
             NpcKind::AngryBonesBig => 16,
             NpcKind::AngryBonesBigMuscle => 15,
@@ -3822,6 +3868,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-d38 b6 — SetDefaults lifeMax rows.
+            NpcKind::DemonEyeSpaceship => 60,
+            NpcKind::SkeletonTopHat => 115,
+            NpcKind::SkeletonAstonaut => 65,
+            NpcKind::SkeletonAlien => 70,
+            NpcKind::PumpkingBlade => 5000,
             // W4-d38 b5 — SetDefaults lifeMax rows.
             NpcKind::SlimeMasked => 25,
             NpcKind::BunnySlimed => 5,
@@ -4216,6 +4268,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-d38 b6 — SetDefaults damage rows.
+            NpcKind::DemonEyeSpaceship => 20,
+            NpcKind::SkeletonTopHat => 23,
+            NpcKind::SkeletonAstonaut => 18,
+            NpcKind::SkeletonAlien => 22,
+            NpcKind::PumpkingBlade => 65,
             // W4-d38 b5 — SetDefaults damage rows.
             NpcKind::SlimeMasked => 7,
             NpcKind::BunnySlimed => 0,

@@ -1595,6 +1595,14 @@ fn portrait_data(
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
+        // W4-d38 b6 — the 30x32 SetDefaults box.
+        (NpcKind::DemonEyeSpaceship, _) => (sheet_i, 32.0, 30.0, 32.0, white),
+        // W4-d38 b6 — the 18x40 SetDefaults box.
+        (NpcKind::SkeletonTopHat
+        | NpcKind::SkeletonAstonaut
+        | NpcKind::SkeletonAlien, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        // W4-d38 b6 — the 80x80 SetDefaults box.
+        (NpcKind::PumpkingBlade, _) => (sheet_i, 80.0, 80.0, 80.0, white),
         // W4-d38 b5 — the 24x18 SetDefaults box.
         (NpcKind::SlimeMasked, _) => (sheet_i, 18.0, 24.0, 18.0, white),
         // W4-d38 b5 — the 18x20 SetDefaults box.
