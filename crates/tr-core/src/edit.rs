@@ -1236,7 +1236,7 @@ mod tests {
     fn w4_f41_the_monolith_item_places_the_3x3_and_toggles() {
         let mut w = object_world();
         assert!(
-            tr_core::tileobject::routes_through_tile_object(455, 0),
+            crate::tileobject::routes_through_tile_object(455, 0),
             "the CustomPlace route (TileObjectData.cs:3101/4101)"
         );
         // Clicking (11, 19) with origin (1, 2) → the object spans
