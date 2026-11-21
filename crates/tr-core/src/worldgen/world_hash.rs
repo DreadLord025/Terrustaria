@@ -267,7 +267,10 @@ mod tests {
     // (`WorldGen.cs:20729-20768`) — both pins move again by design.
     // #44 Moss Grass grows the long moss 184 on the free neighbours of
     // every moss tile (`WorldGen.cs:20769-20812`) — both pins move again
-    // by design.
+    // by design. #45 Larva moves the larva placement out of the hive pass
+    // into its own slot (the 3×4 clear + the Place3x3-231 writes,
+    // `WorldGen.cs:20868-20900`) — the hive-pass larva tiles now land later
+    // (after the muds-walls scan), so both pins move again by design.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its

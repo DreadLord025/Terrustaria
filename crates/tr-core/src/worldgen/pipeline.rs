@@ -376,6 +376,14 @@ pub(crate) struct GenVars {
     /// never fires — the seam is in place for the log pass to write.
     pub(crate) log_x: i32,
     pub(crate) log_y: i32,
+    /// `GenVars.numLarva`/`larvaX`/`larvaY` (`GenVars.cs:150-154`, reset 0
+    /// at `WorldGen.cs:11245`, the 100-entry arrays `GenVars.cs:446-447`) —
+    /// the larva anchors the hive pass publishes
+    /// (`HiveBiome.CreateStandForLarva`, `HiveBiome.cs:357-365`) and the
+    /// `BeeLarvaInBeehives` pass consumes (`WorldGen.cs:20868-20900`,
+    /// W4-d105 lane 5 #45). The port's Vec carries the counter implicitly
+    /// (the 100-entry cap rides the push).
+    pub(crate) larva: Vec<(i32, i32)>,
 }
 
 impl Default for GenVars {
@@ -440,6 +448,8 @@ impl Default for GenVars {
             // zero-init until the fallen-log pass writes it.
             log_x: -1,
             log_y: 0,
+            // `GenVars.numLarva` resets to 0 (`WorldGen.cs:11245`).
+            larva: Vec::new(),
         }
     }
 }
@@ -1169,9 +1179,11 @@ pub(crate) const VANILLA_CHAIN: &[PassDecl] = &[
 /// `Step::vanilla` values for those constants (`ID/GenPassNameID.cs:239-325`),
 /// which is where the two vocabularies meet.
 ///
-/// Two of the twelve have no executed step in the port yet (`Larva` —
-/// `GenPassNameID.BeeLarvaInBeehives` — and `Shimmer`); listing them keeps the
-/// table 1:1 with the C# so a future step cannot silently un-prune itself.
+/// One of the twelve has no executed step in the port yet (`Shimmer`);
+/// listing it keeps the table 1:1 with the C# so a future step cannot
+/// silently un-prune itself. `Larva` (`GenPassNameID.BeeLarvaInBeehives`)
+/// gained its executed step with W4-d105 lane 5 #45 — the prune now skips
+/// a real step.
 pub(crate) const DUAL_DUNGEON_DISABLED_PASSES: [&str; 12] = [
     "Ice",                     // GenPassNameID.IceBiome            "Generate Ice Biome"
     "Full Desert",             // GenPassNameID.DesertBiome         "Full Desert"
@@ -1425,6 +1437,12 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
         "Muds Walls In Jungle",
         step_muds_walls_in_jungle
     ),
+    // The vanilla Larva slot (`WorldGen.cs:20868`): after Muds Walls In
+    // Jungle (`:20813`), before Micro Biomes (`:20901`, the port's grouped
+    // micro steps sit earlier) — W4-d105 lane 5's last insertion. The pass
+    // consumes the hive pass's larva ledger and draws nothing (the 3×4
+    // clear + the Place3x3-231 writes are deterministic).
+    step!("larva", "Larva", step_larva),
     step!(
         "floating islands",
         "Floating Islands",
@@ -2511,6 +2529,27 @@ fn step_moss_grass(
     spider_gem_moss::pass_moss_grass(world, &mut streams.pass_rng("Moss Grass"));
 }
 
+/// `Larva` (`WorldGen.cs:20868-20900`, `GenPassNameID.BeeLarvaInBeehives`)
+/// — the larva ledger the hive pass published: each anchor gets the 3×4
+/// clear centre + the `PlaceTile(231)` larva. The
+/// `Skyblock.denyAllGeneration` gate (`:20870`) rides the adapter; the
+/// pass draws nothing (the writes are deterministic), so no stream is
+/// consumed. The dual-dungeons prune (`DUAL_DUNGEON_DISABLED_PASSES`)
+/// already skips this step's vanilla slot.
+fn step_larva(
+    world: &mut World,
+    gv: &mut GenVars,
+    _streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if skyblock_deny_all_generation(opts) {
+        return;
+    }
+    structures::pass_larva(world, &gv.larva);
+}
+
 /// `Webs And Honey` (`WorldGen.cs:19995`) — the wall-keyed sweep that hangs
 /// cobweb in the spider caves and honeyed speleothems in the hives.
 fn step_webs_and_honey(
@@ -2533,7 +2572,13 @@ fn step_beehives(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    structures::pass_beehives(world, gv.spans(), gv.layers().rock_layer, &mut streams.srng);
+    // The larva anchors ride the GenVars ledger (W4-d105 lane 5 #45): the
+    // hive pass publishes them, the `BeeLarvaInBeehives` pass places them.
+    let spans = gv.spans().clone();
+    let rock_layer = gv.layers().rock_layer;
+    let mut larva = std::mem::take(&mut gv.larva);
+    structures::pass_beehives(world, &spans, rock_layer, &mut streams.srng, &mut larva);
+    gv.larva = larva;
 }
 
 fn step_hell_forts(
@@ -3480,8 +3525,10 @@ mod tests {
         // between `vines` and `muds walls in jungle`, + `mushrooms`
         // (vanilla "Mushrooms", `:20599`) after `flowers`, + `random gems`
         // (vanilla "Random Gems", `:20729`) after `mushrooms`, + `moss
-        // grass` (vanilla "Moss Grass", `:20769`) after `random gems`.
-        assert_eq!(names.len(), 74);
+        // grass` (vanilla "Moss Grass", `:20769`) after `random gems`,
+        // + `larva` (vanilla "Larva", `:20868`) after `muds walls in
+        // jungle`.
+        assert_eq!(names.len(), 75);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3571,6 +3618,7 @@ mod tests {
                 "random gems",
                 "moss grass",
                 "muds walls in jungle",
+                "larva",
                 "floating islands",
                 "remove water",
                 "shell piles",
@@ -3722,7 +3770,10 @@ mod tests {
         // the vanilla Flowers `:20447` / Mushrooms `:20599` / Random Gems
         // `:20729` / Moss Grass `:20769` slots).
         assert_eq!(pos("muds walls in jungle"), pos("vines") + 5);
-        assert_eq!(names[pos("muds walls in jungle") + 1], "floating islands");
+        // + larva (W4-d105 lane 5, the vanilla Larva slot `:20868`) between
+        // `muds walls in jungle` and `floating islands`.
+        assert_eq!(names[pos("muds walls in jungle") + 1], "larva");
+        assert_eq!(names[pos("muds walls in jungle") + 2], "floating islands");
         // The vanilla chain carries the same relative pairs.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -3970,6 +4021,27 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Random Gems") < cpos("Moss Grass"));
         assert!(cpos("Moss Grass") < cpos("Muds Walls In Jungle"));
+    }
+
+    /// W4-d105 lane 5 (#45): `larva` sits immediately after `muds walls in
+    /// jungle` and before `floating islands` — the vanilla Muds Walls In
+    /// Jungle (`WorldGen.cs:20813`) → Larva (`:20868`) → Micro Biomes
+    /// (`:20901`) chain (the port's grouped micro steps sit earlier, so
+    /// `floating islands` stands in for the next executed slot).
+    #[test]
+    fn w4_d105_the_larva_step_sits_after_the_muds_walls() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("larva"), pos("muds walls in jungle") + 1);
+        assert_eq!(pos("larva") + 1, pos("floating islands"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Muds Walls In Jungle") < cpos("Larva"));
+        assert!(cpos("Larva") < cpos("Micro Biomes"));
     }
 
     #[test]

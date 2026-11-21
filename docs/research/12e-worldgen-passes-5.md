@@ -117,4 +117,15 @@ Jungle `:20813` are already executed steps; #46 Settle Liquids Again
       re-pinned +5); witness
       `w4_d105_the_moss_grass_step_sits_after_the_random_gems` + 3 unit
       tests.
-- [ ] 45 Larva
+- [x] 45 Larva — `structures.rs::pass_larva` + `place_larva`
+      (`:20868-20900` + the `Place3x3`-231 arm `:53534-53633`); the hive
+      pass (`pass_beehives`) now publishes the larva anchors into the
+      `GenVars.larva` ledger (`HiveBiome.CreateStandForLarva`
+      `HiveBiome.cs:357-365`, the 5-border clamp + the 100-entry cap)
+      instead of placing them inline — the Larva pass owns the 3×4 clear
+      + the 3×3 larva object; step `larva` between `muds walls in jungle`
+      and `floating islands` (DW-5.3's adjacency re-pinned); the
+      dual-dungeons prune now skips a real step; witness
+      `w4_d105_the_larva_step_sits_after_the_muds_walls` + 3 unit tests.
+
+**Lane 5 complete: all nine passes (#37-45) landed, one per commit.**
