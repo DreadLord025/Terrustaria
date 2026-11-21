@@ -1198,10 +1198,6 @@ impl NpcKind {
                     | NpcKind::PartyGirl
                     | NpcKind::Wizard
                     | NpcKind::Mechanic
-            )
-    }
-                    | NpcKind::Wizard
-                    | NpcKind::Mechanic
                     // W4-d34: the Old Man carries `townNPC = true`
                     // (`NPC.cs:9199`) — `isLikeATownNPC` (`NPC.cs:6856`).
                     | NpcKind::OldMan

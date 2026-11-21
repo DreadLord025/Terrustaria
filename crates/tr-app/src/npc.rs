@@ -18438,8 +18438,6 @@ impl Npc {
                     | NpcKind::EyeOfCthulhu
                     | NpcKind::BoundGoblin
                     | NpcKind::GoblinTinkerer
-            ) {
-                    | NpcKind::GoblinTinkerer
                     // W4-d34: the Old Man is friendly — never contact-damages.
                     | NpcKind::OldMan
             ) {
