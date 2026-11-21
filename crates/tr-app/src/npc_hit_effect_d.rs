@@ -110,7 +110,15 @@ pub struct HitEffectOutcomeD {
     /// position/velocity/ai draws and the `Start: whoAmI+1` scan ride the
     /// wiring wave's roster pass (the f10 `nebula_brain_spawn` precedent).
     /// The C# `netMode == 1` early-return (`:85685-85688`) drops in SP.
-    pub king_slime_spawns: Option<(f32, f32)>,
+    /// The 632 Maggot Zombie's maggot-spawn seam (`NPC.cs:86996-87006`):
+    /// `num550 = Next(2) + 2` spawns of NPC-606 at
+    /// `(pos.X + width/2, pos.Y + Next(height/2) + 10)`, each with
+    /// velocity `(Next(-10,10)*0.2, -3.5 - Next(5,10)*0.3 - i*0.5)`.
+    /// `Some((x,y))` = the NPC position the spawns anchor on; the count
+    /// draw + the per-spawn draws ride the wiring wave's roster pass
+    /// (the king_slime_spawns precedent). The `netMode == 1` guard drops
+    /// in SP.
+    pub maggot_zombie_spawns: Option<(f32, f32)>,
 }
 
 /// The death-half dust loop shared by the classic rows (`NPC.cs` per-arm
@@ -2011,6 +2019,117 @@ fn yeti_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 506, s); // :86915
 }
 
+/// The 691 Moss Zombie death (`NPC.cs:86917-86936`, sites 281-285): the
+/// 50x dust-5 burst at (2.5·hd, −2.5), then the ladder
+/// 1391/1392/1392/1393/1393 at +0/+20/+20/+34/+34 Y, `this.scale`
+/// carried.
+fn moss_zombie_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86927-86930` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 1391, s); // :86931
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 1392, s); // :86932
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 1392, s); // :86933
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 1393, s); // :86934
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 1393, s); // :86935
+}
+
+/// The giant zombie arm's death (`NPC.cs:86937-...`): the 50x dust-5
+/// burst at (2.5·hd, −2.5), the 187/433 slimed extra 25x tinted dust-4
+/// burst (height pinned to 24, alpha 125, `Color(0,80,255,100)`,
+/// `:86973-86979`), then the per-kind ladder + early return. The live
+/// branches: 104 Werewolf → 117/118/118/119/119 (`:86982-86986`, sites
+/// 286-290); the 632/331/... tails land in later batches. The hit-half
+/// 186/632 Next(5) gore gates (`:86945-86952`) are g62's lane.
+fn zombie_arm_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+    _outcome: &mut HitEffectOutcomeD,
+) {
+    // `:86969-86972` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    // `:86973-86979` — the 187/433 slimed extra burst: height pinned to
+    // 24 (NOT the NPC's), speed (hd, -1), alpha 125, tinted.
+    if npc_type == 187 || npc_type == 433 {
+        for _ in 0..25 {
+            dust.new_dust(
+                rng,
+                dust_ctx,
+                world,
+                pos,
+                w as i32,
+                24,
+                4,
+                hit_direction,
+                -1.0,
+                125,
+                Color::new(0, 80, 255, 100),
+                1.0,
+            );
+        }
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    if npc_type == 104 {
+        // `:86980-86988` — the Werewolf ladder + return.
+        gore.new_gore(rng, world, pos, vel, 117, s); // :86982
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 118, s); // :86983
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 118, s); // :86984
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 119, s); // :86985
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 119, s); // :86986
+        return;
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -2250,6 +2369,27 @@ pub fn hit_effect_d(
     // `:86898-86916` — the 343 Yeti arm (sites 277-280).
     else if npc_type == 343 {
         yeti_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86917-86936` — the 691 Moss Zombie arm (sites 281-285).
+    else if npc_type == 691 {
+        moss_zombie_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86937-...` — the giant zombie arm (430-436/590/591/3/52/53/536/
+    // 104/109/331/332/132/161/162/186-189/200/223/251/319-321/632); the
+    // 104 Werewolf branch is live (sites 286-290), the rest land later.
+    else if matches!(npc_type, 430..=436 | 590 | 591 | 3 | 52 | 53 | 536 | 104 | 109 | 331 | 332 | 132 | 161 | 162 | 186 | 187 | 188 | 189 | 200 | 223 | 251 | 319 | 320 | 321 | 632)
+    {
+        zombie_arm_death(
+            npc,
+            npc_type,
+            dust,
+            dust_ctx,
+            gore,
+            rng,
+            world,
+            hit_direction,
+            &mut outcome,
+        );
     }
     outcome
 }
@@ -3962,5 +4102,70 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the yeti mirrors the C# draws");
+    }
+
+    /// `NPC.cs:86931-86935` — the Moss Zombie ladder 1391/1392x2/1393x2,
+    /// this.scale carried, 50x dust-5 at the wider velocity.
+    #[test]
+    fn w4_f5d_the_moss_zombie_ladder_carries_the_scale() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        n.scale = 1.0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(277);
+        let _ = hit_effect_d(&n, 691, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1391, 1392, 1392, 1393, 1393]);
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+        let mut twin = UnifiedRandom::new(277);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the moss zombie mirrors the C# draws");
+    }
+
+    /// `NPC.cs:86982-86986` — the Werewolf ladder 117/118x2/119x2 in the
+    /// giant zombie arm; the 187 slimed extra 25x tinted dust-4 burst
+    /// (height 24, alpha 125) rides the census BEFORE any gores.
+    #[test]
+    fn w4_f5d_the_werewolf_ladder_and_the_slimed_extra_burst() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(281);
+        let _ = hit_effect_d(&n, 104, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![117, 118, 118, 119, 119]);
+        let mut twin = UnifiedRandom::new(281);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the werewolf mirrors the C# draws");
+        // The 187 slimed zombie: the extra 25x tinted burst runs between
+        // the 50x burst and the (unported) gores — the census pins it.
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(283);
+        let _ = hit_effect_d(&n, 187, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let slimed = dust.slots().iter().any(|d| d.active && d.dust_type == 4);
+        assert!(slimed, "the 187's tinted dust-4 burst spawned");
+        let mut twin = UnifiedRandom::new(283);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..25 {
+            twin_dust(&mut twin, 30, 24); // height pinned to 24
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the slimed zombie mirrors the C# draws");
     }
 }
