@@ -191,6 +191,37 @@
 //! snake's 317-319). The 64 PinkJellyfish tint (225,70,140) lands with
 //! its kind row (d36's band, unpushed).
 //!
+//! ## Scope — batch 13 (the d37 tail, 3 kinds — the rowed set COMPLETE)
+//!
+//! | C# type(s) | death arm | shape |
+//! | --- | --- | --- |
+//! | 220/221 SeaSnail/Squid | `:88513-88516` | 20× type-151 2.5×dir scale-0.7 (d37) |
+//! | 229 Pirate | `:88129-88143` | the IsShimmerVariant dust SPLIT: 50× type-180 at velocity vel×2 noGrav scale-1.4 vs 50× type-5 2.5×dir (d37) |
+//!
+//! The Pirate's shimmer gate reads `variation_index == 1 &&
+//! shimmer_town_transform(229)` (the `NPC.cs:6713-6723` IsShimmerVariant
+//! composition; 229 IS a ShimmerTownTransform member). The altTexture
+//! gore gate is a field read + constants — no argument draws.
+//!
+//! ## The row-gated remainder after batches 11-13 (the census doc)
+//!
+//! The 83-kind row-gated set re-intersected against EVERY pushed roster
+//! tip yields **23 newly-rowed clean kinds** — ALL activated above
+//! (d34's 14: 31/34/37/39/40/41/43/47/48/56/57/61/62/63; c4's 157; d23's
+//! 175; d37's 7: 217/218/219/220/221/226/229). **60 stay row-gated
+//! UNWIRED** (the S1-F-9b convention): the base-present folded segments
+//! 8/9/11/12/14/15/88-92/118/119 (their cs_id folds ride the ALREADY-wired
+//! heads 7/10/13/87/117 — the arms fire through the head's match, the
+//! segments' own rows are sentinel/fold, no new activation), 105
+//! BoundGoblin (folds 107, already wired) + 139 Probe (folds 134, the
+//! Destroyer head UNWIRED), and the d36 band's 43 kinds (64/68/69 +
+//! 141/142/148/149/150/152/153/154/155/158/159/160/163-171/173/174/
+//! 176-182/185/195-199/201-206/209 — the claim `65e481f9` is pushed but
+//! NO kind rows yet; 157/175 are c4b/d23b-claimed, activated above).
+//! **Boundary check (g60 research/110):
+//! every activated cs_id ≤ 229 ≤ 230 — ZERO kinds > 230, the boundary
+//! stays CLEAN, nothing flags to the g60 lane.**
+//!
 //! ## The lane's remainder (the census's absent kinds)
 //!
 //! The 173-kind dust-first clean census had 109 kinds with NO port kind
@@ -1091,6 +1122,52 @@ pub fn death_dust(
                     rng, ctx, world, pos, w, h, 5, 2.0 * dir, -2.0, 0,
                     Color::default(), 1.0,
                 );
+            }
+        }
+        // ---- batch 13 (the d37 tail: the sea pair + the pirate, 3 kinds
+        // — the lane's newly-rowed set COMPLETE at 23 activations).
+        // `NPC.cs:88513-88516` — the Sea Snail (220) / Squid (221): 20
+        // type-151 puffs at 2.5×dir/-2.5, alpha 0, scale 0.7 (d37's rows).
+        // The 297 / 298/299 gore tail `:88517-88525` is constant types +
+        // `this.scale`, no argument draws.
+        220 | 221 => {
+            for _ in 0..20 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 151, 2.5 * dir, -2.5, 0,
+                    Color::default(), 0.7,
+                );
+            }
+        }
+        // `NPC.cs:88129-88143` — the Pirate (229): the `IsShimmerVariant`
+        // gate (`NPC.cs:6713-6723`: variation_index == 1 AND
+        // `ShimmerTownTransform[229]`, true in the set) selects the
+        // dust branch — the shimmer death draws 50 type-180 puffs at
+        // the corpse's velocity, vel×2 + noGravity + scale = 1.4
+        // (`:88131-88137`); the plain death draws 50 type-5 puffs at
+        // 2.5×dir/-2.5 (`:88140-88143`, the town shape). The altTexture
+        // gore gate `:88144-88151` (328/329/329/330/330) is a field read
+        // + constants, no argument draws. d37's row.
+        229 => {
+            if npc.variation_index == 1
+                && crate::npc_ai_town::shimmer_town_transform(npc_type)
+            {
+                for _ in 0..50 {
+                    let idx = dust.new_dust(
+                        rng, ctx, world, pos, w, h, 180, npc.vx, npc.vy, 0,
+                        Color::default(), 1.0,
+                    );
+                    let d = dust.slot_mut(idx);
+                    d.velocity *= 2.0;
+                    d.no_gravity = true;
+                    d.scale = 1.4;
+                }
+            } else {
+                for _ in 0..50 {
+                    dust.new_dust(
+                        rng, ctx, world, pos, w, h, 5, 2.5 * dir, -2.5, 0,
+                        Color::default(), 1.0,
+                    );
+                }
             }
         }
         _ => return false,
@@ -2323,5 +2400,71 @@ mod tests {
         let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
         assert_eq!(live.len(), 15);
         assert!(live.iter().all(|d| d.dust_type == 5));
+    }
+
+    // ---- batch 13 (the d37 tail: the sea pair + the pirate).
+
+    /// `NPC.cs:88513-88516` — the Sea Snail (220) / Squid (221): 20
+    /// type-151 puffs at 2.5×dir/-2.5, scale 0.7 (the pool's ±0.2 jitter
+    /// over 0.7); both ids share the census.
+    #[test]
+    fn w4_g59_the_sea_snail_and_squid_share_one_census() {
+        let w = air();
+        let n = corpse(NpcKind::Skeleton);
+        let mut states = Vec::new();
+        for ty in [220, 221] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(239);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 20, "type {ty}");
+            for d in &live {
+                assert_eq!(d.dust_type, 151);
+                assert_eq!(d.alpha, 0);
+                assert!(d.scale >= 0.5 - 1e-6 && d.scale <= 0.9 + 1e-6);
+            }
+            states.push(rng.peek());
+        }
+        assert_eq!(states[0], states[1]);
+    }
+
+    /// `NPC.cs:88129-88143` — the Pirate (229): the plain death draws
+    /// 50×5 at 2.5×dir/-2.5; the shimmer death (variation_index == 1,
+    /// the ShimmerTownTransform[229] set member) draws 50×180 at the
+    /// corpse's velocity, vel×2 + noGravity + scale = 1.4 — the twin
+    /// pool pins the exact writes.
+    #[test]
+    fn w4_g59_the_pirate_death_splits_on_the_shimmer_gate() {
+        let w = air();
+        let mut n = corpse(NpcKind::Skeleton);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(241);
+        assert!(death_dust(&n, 229, &mut dust, &ctx(), &mut rng, &w));
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 50);
+        assert!(live.iter().all(|d| d.dust_type == 5));
+        n.variation_index = 1;
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(241);
+        assert!(death_dust(&n, 229, &mut dust, &ctx(), &mut rng, &w));
+        let mut twin = DustPool::new();
+        let mut twin_rng = UnifiedRandom::new(241);
+        let (bw, bh) = n.size();
+        let pos = Vec2::new(n.x, n.y);
+        for _ in 0..50 {
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx(), &w, pos, bw as i32, bh as i32,
+                180, 2.0, -1.0, 0, Color::default(), 1.0,
+            );
+            let d = twin.slot_mut(idx);
+            d.velocity *= 2.0;
+            d.no_gravity = true;
+            d.scale = 1.4;
+        }
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 50);
+        assert!(live.iter().all(|d| d.dust_type == 180 && d.no_gravity && d.scale == 1.4));
     }
 }
