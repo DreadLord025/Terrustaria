@@ -307,7 +307,11 @@ PNGs plus all 32 tree canopy/branch styles and the 42 cloud textures in parallel
   `DrawSurfaceBG` biome layer stack and its cross-fade), `bg.rs` (the `Main.DrawBackground`
   family: surface transition, dirt sheet, underworld black box, rock, magma — with the
   shared `PassPrologue`), `bg_styles.rs` (the cavern style pick + 22-case sheet table +
-  `ugBackTransition` step, UNWIRED — W4-g72), `underworld_bg.rs` (the hell parallax stack
+  `ugBackTransition` step, UNWIRED — W4-g72), `bg_target.rs` (the background-target
+  capture/consume seams — the style-specific half d69's S1-G-13 family does not own:
+  the `WorldSceneLayerTarget` camera-override adapter, the `DoDraw` consume dispatch, the
+  underworld `screenTarget` routing, the cross-fade tint, the `DrawCapture` camera override
+  and the layer-plan→sprite adapter; UNWIRED — W4-g72), `underworld_bg.rs` (the hell parallax stack
   geometry, UNWIRED — W4-g72), `tiles.rs` (the tile/wall/slope loop + the sunflower's
   special sway pass and its own wind counter), `liquids.rs` (the two
   `Main.DrawLiquid(bg)` passes), `entities.rs` (player/NPC sprite composition, held item,

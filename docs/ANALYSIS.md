@@ -1446,9 +1446,46 @@ width-minus-one pitch, the `vec.Floor()` after the index, the strict off-screen 
 three style sets (`WorldGen.cs:7609-7635`); 9 witnesses with exact-f32-derived expectations
 written not run. Wiring needs the sheets OUTSIDE the tile atlas (the C# draws them through
 `Main.spriteBatch` under the sky matrix): one style set alone measures 8424 px against the
-8192 strict-GPU bound, so the S1-G-13 background-target family or a second texture array
-must land first; the `underworldBG` style byte is also still skip-read from the `.wld`
-(`wld/sections/flags.rs:566`).
+8192 strict-GPU bound, so a second texture array / target must land first; the `underworldBG`
+style byte is also still skip-read from the `.wld` (`wld/sections/flags.rs:566`).
+
+**Routing correction (W4-g72 lane 3 phase 5, `render/bg_target.rs`).** The earlier "the
+S1-G-13 background-target family" wording above conflated two destinations. The C# census
+(`bg_target.rs` module docs) shows the underworld stack does NOT render into
+`backgroundTarget`: `DrawBG` (`Main.cs:63973-64063`) runs `DrawSurfaceBG` +
+`DrawUnderworldBackground(GameZoomTarget)` (`:64049-64053`) while `DoDraw` has bound
+`screenTarget` via `Filters.Scene.BeginCapture` when `flag3` (`:62098-62100`, the same gate
+as d69's `sky_target_active`); `FilterManager.EndCapture` then composites `skyTarget` FIRST
+and `screenTarget` SECOND into `screenTargetSwap`, both `Color.White` under
+`GameViewMatrix.Effects` (`FilterManager.cs:146-152`). `skyTarget` holds only the gradient /
+stars / sun / moon (`:62025-62095`). The CAVERN tree (`DrawBackground`, `:52798-52853`) is the
+one that captures into `backgroundTarget` (`RenderToTargets` phase 2, `:57290` →
+`RenderBackground` `:55200-55218`), composited with the cave-parallax X shift (`:62213`). In
+both cases the "target texture" is the DESTINATION — the sheets are still `TextureAssets`
+drawn through `Main.spriteBatch`, never the tile atlas. `bg_target.rs` ports the style-specific
+seams d69's generic family (`9ba463ae`, `tr_render::targets`) does not own: the
+`WorldSceneLayerTarget.UpdateContent` camera override → `draw_background` adapter
+(`WorldSceneLayerTarget.cs:49-57` + the `:52818` `drawOffset`), the `DoDraw` background consume
+dispatch (`:62207-62215`, destination math left to d69's `layer_composite_position`), the
+underworld `screenTarget` routing, the `ugBackTransition` byte-truncate cross-fade tint
+(`:53077-53081` et al.), the `DrawCapture` `!CameraSpaceEffects` camera override
+(`:56844-56858`, `Utils.Clamp` max-first + `Rectangle.Intersect`) and the
+`underworld_layer_plan` → sprite adapter (`:52786-52795`, `None`-safe without the atlas-blocked
+sheets). UNWIRED: the frame-path composition is d69's in-flight consumers lane and the sheet
+sources still overflow the atlas; 10 witnesses WRITTEN NOT RUN. No atlas sheet added.
+
+**The cave-style rolls are unowned (W4-g72 lane 3 phase 6, `docs/research/64`).**
+`WorldGen.RandomizeCaveBackgrounds` (`WorldGen.cs:8192-8249`) draws `caveBackX[0..3]` +
+`caveBackStyle[0..4]` (with three distinctness rejection loops) + `iceBackStyle`/`hellBackStyle`/
+`jungleBackStyle` on the shared `genRand` stream, in the worldgen tail BETWEEN
+`RandomizeTreeStyle` (`:11338`) and `RandomizeBackgrounds` (`:11340`) and BEFORE
+`RandomizeMoonState`'s `Next(9)` (`:11341`); it is ALSO re-rolled at boot (`Main.cs:6603`),
+overwriting the `.wld`-persisted arrays (`WorldFile.cs:1260-1269`/`:2058-2066`). The port's
+`step_world_tail` (`pipeline.rs:2685-2731`) draws only `moon_type` + `hell_back_style` and must
+stay the last rng-consuming step, so inserting the cave block shifts the frozen `world_hash`
+pins (`SEED42_512`/`DEFAULT_WORLD`) — a worldgen lane's call, NOT this one. Research note 64
+documents the exact draw list, order, width-arm bounds, the moon-before-cave ordering
+constraint and the re-pin requirement; no RNG drawn, no pin touched, no `World` field added.
 
 The sheet is anchored to `Main.worldSurface`, so its value must match `TerrainPass.ApplyPass`:
 `worldSurface = (int)(max(surfaceY) + 25.0)` вЂ” the *deepest* column, not the mean вЂ” with
