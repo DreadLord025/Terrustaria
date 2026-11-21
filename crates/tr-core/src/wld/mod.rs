@@ -1684,6 +1684,9 @@ mod tests {
         // (`:1413`, v261) — ride the round-trip at non-default values.
         world.combat_book_was_used = true;
         world.unlocked_slime_red_spawn = true;
+        // W4-c31 jungle residuals: the dungeon anchor round-trips too.
+        world.dungeon_x = 2400;
+        world.dungeon_y = 320;
         world
     }
 
@@ -1713,6 +1716,11 @@ mod tests {
         assert_eq!(got.moon_phase, want.moon_phase, "{context}: moon phase");
         assert_eq!(got.blood_moon, want.blood_moon, "{context}: blood moon");
         assert_eq!(got.eclipse, want.eclipse, "{context}: eclipse");
+        assert_eq!(
+            (got.dungeon_x, got.dungeon_y),
+            (want.dungeon_x, want.dungeon_y),
+            "{context}: dungeon anchor"
+        );
         assert_eq!(
             got.hell_back_style, want.hell_back_style,
             "{context}: hell back style"
@@ -1937,6 +1945,10 @@ mod tests {
         let mut tail = flags_tail(VER);
         tail[0] = u8::from(world.blood_moon);
         tail[1] = u8::from(world.eclipse);
+        // dungeonX/Y at tail offsets 2..10 (`SaveWorldFlags:1275-1276`,
+        // W4-c31 jungle residuals — the Plantera bulb event reads them).
+        tail[2..6].copy_from_slice(&world.dungeon_x.to_le_bytes());
+        tail[6..10].copy_from_slice(&world.dungeon_y.to_le_bytes());
         // The hardmode trio at tail offset 76 (2+8+1+11+7+8+1+20+8+1+9 bytes
         // of flags before it) — `SaveWorldFlags:1315-1317`.
         let mut at = 76;

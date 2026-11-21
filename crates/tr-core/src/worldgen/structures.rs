@@ -840,8 +840,11 @@ mod tests {
         for &(x, y) in &spots {
             let shell = w.tile(x - 3, y - 3).unwrap();
             assert!(shell.active() && shell.kind == 119, "the shell at ({x},{y})");
+            // The interior carries the hut wall (23 for 119). A torch may
+            // have landed on one interior cell (it keeps the wall), so the
+            // wall — not the active bit — is the stable assertion.
             let inner = w.tile(x, y).unwrap();
-            assert!(!inner.active() && inner.wall == 23, "the interior wall");
+            assert_eq!(inner.wall, 23, "the interior wall at ({x},{y})");
         }
     }
 

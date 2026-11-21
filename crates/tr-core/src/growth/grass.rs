@@ -1,6 +1,7 @@
 //! The grass/spread family of the world-growth ticks (S1-K-3b split out of
 //! `growth.rs`; behaviour frozen - verbatim move). `UpdateWorld_GrassGrowth`
-//! (`:74269-74424`), `SpreadGrass` (`:75146-75257`), `MossConversion`
+//! (`:74269-74508` — the case-60/70 hardmode tail landed W4-c31),
+//! `SpreadGrass` (`:75146-75257`), `MossConversion`
 //! (`:71457-71503`) + the moss arm (`:72371-72424`), and the M5-SPREAD-1 wall
 //! arms: `Convert`'s wall chains (`:55100+`), `SpreadGrassWalls`
 //! (`:74884-74982`) and `SpreadDesertWalls` (`:74984-75123`). The public
@@ -233,12 +234,10 @@ fn mushroom_grass_tail(world: &mut World, i: i32, j: i32, rng: &mut UnifiedRando
     // `Next(250) == 0 && TryGrowingTreeByType(5, i, j) && PlayerLOS(i, j)`
     // (`:74502`) — the `&&` short-circuit draws only after the roll passes.
     // `TryGrowingTreeByType(5, ...)` dispatches to `GrowTree` (`:30348-30349`).
-    let grew = rng.next_max(250) == 0 && super::trees::grow_tree(world, i, j, rng);
-    if grew {
-        // `PlayerLOS` (`:69443-69454`) gates the `TreeGrowFXCheck` leaf FX
-        // only; the tree already grew. The FX is draw-side (no growth-tick
-        // channel in the port) — the LOS read parks with it.
-    }
+    // `PlayerLOS` (`:69443-69454`) gates the `TreeGrowFXCheck` leaf FX only;
+    // the tree already grew. The FX is draw-side (no growth-tick channel in
+    // the port) — the LOS read parks with it.
+    let _grew = rng.next_max(250) == 0 && super::trees::grow_tree(world, i, j, rng);
 }
 
 /// `WorldGen.SpreadGrass` (`WorldGen.cs:75146-75257`), the runtime slice
@@ -1368,7 +1367,9 @@ mod tests {
     // --- W4-c31 jungle residuals: the case-60 hardmode tail ---------------
 
     /// A jungle-grass (60) cell at (i, j) with a grass floor below the
-    /// placement row min_j = j-1, hardmode + all three mechs downed.
+    /// placement row min_j = j-1, hardmode + all three mechs downed. The
+    /// ground row j carries grass under every box column (the 2×2/3×2
+    /// placement scans read it).
     fn jungle_growth_world() -> World {
         let mut w = World::new("jg".into(), 400, 400);
         w.world_surface = 100.0;
@@ -1376,14 +1377,14 @@ mod tests {
         w.downed_mech_boss1 = true;
         w.downed_mech_boss2 = true;
         w.downed_mech_boss3 = true;
-        // The grass floor row at y=201 (the placement ground for min_j=200).
+        // The grass ground rows at y=200/201 (the placement ground for
+        // min_j=199 reads row 200 under columns 199..201).
         for x in 0..400 {
-            let i = w.index(x, 201);
-            w.tiles[i] = Tile { kind: 60, flags: FLAG_ACTIVE, ..Default::default() };
+            for y in 200..=201 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 60, flags: FLAG_ACTIVE, ..Default::default() };
+            }
         }
-        // The jungle-grass source at (200, 200).
-        let i = w.index(200, 200);
-        w.tiles[i] = Tile { kind: 60, flags: FLAG_ACTIVE, ..Default::default() };
         w
     }
 
@@ -1440,7 +1441,9 @@ mod tests {
         assert!(!saw_fruit_or_bulb, "no fruit/bulb before hardmode");
     }
 
-    /// The liquid veto: a water cell at min_j blocks the tail.
+    /// The liquid veto: a water cell at min_j blocks the tail. Driven on
+    /// the tail fn directly (flag=false) so the plant-above roll cannot
+    /// place a 61 that would wipe the liquid.
     #[test]
     fn the_liquid_veto_blocks_the_tail() {
         let mut w = jungle_growth_world();
@@ -1448,7 +1451,7 @@ mod tests {
         w.tiles[i].liquid = 200; // water at the placement row
         let mut rng = UnifiedRandom::new(5);
         for _ in 0..500 {
-            update_world_grass_growth(&mut w, 200, 200, 199, 202, 199, 202, true, &mut rng);
+            jungle_grass_hardmode_tail(&mut w, 200, 200, 199, false, &mut rng);
         }
         assert!(
             !w.tile(200, 199).is_some_and(|t| t.active() && matches!(t.kind, 236 | 238 | 233)),

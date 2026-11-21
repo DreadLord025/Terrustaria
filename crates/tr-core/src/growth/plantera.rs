@@ -150,10 +150,14 @@ pub fn generate_plantera_bulb_on_all_mechs_defeated(
         let mut py = y0 + rng.next_max(rect_h);
         // The ceiling walk (`:74142-74168`): up to 500 steps upward, the
         // first jungle-grass (60) — or mud (59) when force_bulb — ends it.
+        // `tile` starts at the drawn cell (`:74141`) — if the walk breaks on
+        // the first bounds check, the post-walk gate reads that cell.
         let mut num5 = 500;
         let mut done = false;
-        let mut tile_kind = 0u16;
-        let mut tile_active = false;
+        let (mut tile_kind, mut tile_active) = world
+            .tile(px, py)
+            .map(|t| (t.kind, t.active()))
+            .unwrap_or((0, false));
         while !done {
             num5 -= 1;
             if num5 <= 0 {

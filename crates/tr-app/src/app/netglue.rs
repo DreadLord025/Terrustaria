@@ -1992,6 +1992,10 @@ impl App {
         if info.rock_layer > 0 {
             world.rock_layer = info.rock_layer as f64;
         }
+        // `Main.dungeonX/dungeonY` — the Plantera bulb event's rectangle
+        // reads it (W4-c31 jungle residuals).
+        world.dungeon_x = info.dungeon_x as i32;
+        world.dungeon_y = info.dungeon_y as i32;
         // The sections fill the world; the stream must cover the whole grid.
         let want = net::sections_x(world.width) * net::sections_y(world.height);
         let mut seen: std::collections::HashSet<(i32, i32)> = Default::default();
@@ -2078,8 +2082,8 @@ impl App {
             lobby_id: 0,
             sandstorm_severity: 0.0,
             extra_spawn_points: Vec::new(),
-            dungeon_x: 0,
-            dungeon_y: 0,
+            dungeon_x: w.dungeon_x as i16,
+            dungeon_y: w.dungeon_y as i16,
         }
     }
 
