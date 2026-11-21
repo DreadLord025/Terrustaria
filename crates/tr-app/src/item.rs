@@ -2253,6 +2253,39 @@ mod tests {
         assert_eq!(ys[1] - ys[0], 8.0, "entry {:?} exit {:?}", ys[0], ys[1]);
         assert!((304.0..=323.0).contains(&ys[0]), "entry band at pos.Y+0");
     }
+
+    /// ARBITER FINAL v2 fold тАФ the e19 seal witness
+    /// `w4_e19_the_entry_splash_gate_reads_the_local_lava_probe` re-driven
+    /// through the keeper latch: the `:886` entry gate reads the LOCAL
+    /// `flag2` (this tick's `LavaCollision`), NOT the sticky `base.lavaWet`.
+    /// A drop whose sticky lava flag is FALSE at the tick head still queues
+    /// the LAVA family when the local probe hits lava this tick: the latch
+    /// reads `lava_now`, and the `:866-869` arm sets the sticky flag the
+    /// same tick. The e19 seal landed the identical verbatim read тАФ this
+    /// twin completes the keeper's witness superset (v2 §fold 4).
+    /// WRITTEN NOT RUN (code-only lane).
+    #[test]
+    fn w4_f47k2_the_entry_splash_gate_reads_the_local_lava_probe() {
+        // The f47 entry-latch fixture shape: a 40x80 world (the slime-engine
+        // probe clamps its scan to `height - 40`), the lava pool at row 12.
+        let mut w = World::new("entrylava".into(), 40, 80);
+        for x in 0..40 {
+            let j = w.index(x, 12);
+            w.tiles[j].liquid = 255;
+            w.tiles[j].set_liquid_kind(tr_core::tile::LiquidKind::Lava);
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        // Park at y 184: the inset probe (y+4..+12 = 188..196) overlaps the
+        // row-12 surface (192.06); the full-box LavaCollision hits too.
+        let mut d = ItemDrop::new(2, 1, 0, 30.0 * TILE_PX, 184.0, 0.0, 0.0, 0.0);
+        assert!(!d.lava_wet, "the sticky flag starts false");
+        d.update(&w, 1.0 / 60.0);
+        assert!(d.wet && d.lava_wet, "the :866-869 arm set the sticky flag");
+        let s = d.splash_due.expect("the entry splash armed");
+        assert!(!s.exit && s.lava, "the gate read the LOCAL probe (:886)");
+        assert_eq!(d.wet_count, 19, "20 armed, decremented same tick");
+    }
 }
 
 /// S1-P-i47 — the ground-item pickup/stacking witnesses (`Player.GrabItems`

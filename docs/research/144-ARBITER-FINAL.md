@@ -1,5 +1,11 @@
 # 144 ARBITER FINAL — the splash keep-one, definitive (merger-blocker resolved)
 
+> **SUPERSEDED by `144-ARBITER-FINAL-v2.md`** (the e19 SHIMMER SEAL
+> `0fb0ac4ad` landed the verbatim entry gate, mooting this doc's
+> tiebreak; v2 re-rules on witness superset coverage at both new tips
+> and re-pins the drop-hunks at `0fb0ac4ad`). The keeper pick is
+> UNCHANGED (f47); 141/master reads v2. Kept as the lane record.
+
 > Rendered 2026-11-21 on `task/W4-f47-liquid-shimmer-2` (tip `1997be092`,
 > the arbitration commit follows). Code-only: no cargo/tests/rustfmt/
 > graphify. Both tips read directly: f47 `1997be092` (this branch) and

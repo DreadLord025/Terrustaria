@@ -1,10 +1,11 @@
 # 144 — the item entry/exit splash KEEP-ONE (W4-f47 × W4-e19, 2-way)
 
-> **ARBITER FINAL: `144-ARBITER-FINAL.md`** — the e19 lane rendered a
-> divergent verdict at its tip `c7a38bea5` (keep e19, retire f47); the
-> arbitration UPHELD this doc's keeper (the f47 `Splash` shape) with
-> the sticky-vs-local lemma verified and the e19 census trio folded.
-> The merger reads the FINAL, not this receipt.
+> **ARBITER FINAL v2: `144-ARBITER-FINAL-v2.md`** — the e19 SHIMMER
+> SEAL (`0fb0ac4ad`) re-opened the dispute (keep e19) after fixing its
+> entry gate verbatim; the v2 arbitration re-ruled at both new tips on
+> witness SUPERSET COVERAGE and UPHELD this doc's keeper (the f47
+> `Splash` shape). Both prior FINALs are superseded; the merger reads
+> v2, not this receipt. (v1 record: `144-ARBITER-FINAL.md`.)
 
 > Coded 2026-11-21 on `task/W4-f47-liquid-shimmer-2` (base `a2561d6d`).
 > Code-only: no cargo/tests/rustfmt/graphify invoked; every verdict is a
