@@ -563,6 +563,122 @@ pub fn get_tile_data(
     Some(resolved)
 }
 
+/// `TileObjectData.GetTileData(Tile)` (`TileObjectData.cs:5196-5261`) —
+/// the frame-based style resolution: `frameX / CoordinateFullWidth` and
+/// `frameY / CoordinateFullHeight` pick the sub-tile and alternate. The
+/// three `GetStyleOverride` resolvers (`:5294-5327`) short-circuit it.
+/// Returns the resolved def (the base def when no sub-tile/alternate
+/// matches), or `None` for an unregistered / inactive tile.
+pub fn get_tile_data_for_tile(tile: &Tile) -> Option<&'static TileObjectDef> {
+    if !tile.active() {
+        return None;
+    }
+    let def = def_for_tile(tile.kind)?;
+    let num = i32::from(tile.frame_x) / def.coordinate_full_width().max(1);
+    let num2 = i32::from(tile.frame_y) / def.coordinate_full_height().max(1);
+    // :5222-5226 — the style override wins before the arithmetic.
+    match def.get_style_override {
+        GetStyleOverride::Detritus => {
+            // :5294-5301 — frameY >= 36 -> SubTiles[0].
+            if tile.frame_y >= 36 {
+                return def.subtiles.first().map(|(_, d)| *d).or(Some(def));
+            }
+            return Some(def);
+        }
+        GetStyleOverride::SmallPiles => {
+            // :5303-5310 — frameY >= 18 -> SubTiles[0].
+            if tile.frame_y >= 18 {
+                return def.subtiles.first().map(|(_, d)| *d).or(Some(def));
+            }
+            return Some(def);
+        }
+        GetStyleOverride::Stalactite => {
+            // :5312-5327 — frameY >= 90/72/36 -> SubTiles[2/1/0].
+            let idx = if tile.frame_y >= 90 {
+                2
+            } else if tile.frame_y >= 72 {
+                1
+            } else if tile.frame_y >= 36 {
+                0
+            } else {
+                return Some(def);
+            };
+            return def.subtiles.get(idx).map(|(_, d)| *d).or(Some(def));
+        }
+        GetStyleOverride::None => {}
+    }
+    let mut wrap = def.style_wrap_limit;
+    if wrap == 0 {
+        wrap = 1;
+    }
+    let num4 = if !def.style_horizontal {
+        num * wrap + num2
+    } else {
+        num2 * wrap + num
+    };
+    let mut num5 = num4 / def.style_multiplier.max(1);
+    let mut num6 = num4 % def.style_multiplier.max(1);
+    let skip = def.style_line_skip;
+    if skip > 1 {
+        if def.style_horizontal {
+            num5 = num2 / skip * wrap + num;
+            num6 = num2 % skip;
+        } else {
+            num5 = num / skip * wrap + num2;
+            num6 = num % skip;
+        }
+    }
+    // :5241-5248 — the sub-tile pick.
+    let mut resolved = def;
+    if num5 >= 0 {
+        if let Some((_, sub)) = def.subtiles.iter().find(|(s, _)| *s as i32 == num5) {
+            resolved = sub;
+        }
+    }
+    // :5249-5259 — the alternate whose style band covers num6.
+    for alt in resolved.alternates {
+        if num6 >= alt.style && num6 <= alt.style + alt.random_style_range {
+            return Some(alt);
+        }
+    }
+    Some(resolved)
+}
+
+/// `TileObjectData.CheckWaterDeath(Tile)` (`TileObjectData.cs:5083-5095`):
+/// the resolved def's `WaterDeath` flag, or the global `Main.tileWaterDeath`
+/// table when the def is absent / uses the global liquid checks. An
+/// inactive tile answers false (:5085-5088).
+pub fn check_water_death(tile: &Tile) -> bool {
+    check_liquid_death(tile, false)
+}
+
+/// `TileObjectData.CheckLavaDeath(Tile)` (`TileObjectData.cs:5107-5119`).
+pub fn check_lava_death(tile: &Tile) -> bool {
+    check_liquid_death(tile, true)
+}
+
+fn check_liquid_death(tile: &Tile, lava: bool) -> bool {
+    if !tile.active() {
+        return false;
+    }
+    match get_tile_data_for_tile(tile) {
+        Some(def) if !def.uses_global_liquid_checks => {
+            if lava {
+                def.lava_death
+            } else {
+                def.water_death
+            }
+        }
+        _ => {
+            if lava {
+                crate::tiledata::TILE_LAVA_DEATH.has(tile.kind)
+            } else {
+                TILE_WATER_DEATH.contains(&tile.kind)
+            }
+        }
+    }
+}
+
 /// `TileObjectData.CalculatePlacementStyle` (`TileObjectData.cs:1990-1998`).
 /// The `alternate` parameter is part of the C# signature but its body never
 /// reads it — kept 1:1.

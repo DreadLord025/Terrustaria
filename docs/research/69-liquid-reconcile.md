@@ -2,6 +2,30 @@
 
 Date: 2026-11-21. Author: W4-g46 (reconcile phase, code-only — no cargo/tests run).
 
+> **UNION-CONTRACT (graft-prep phase, 2026-11-21).** The UNION `liquid.rs` is
+> now LANDED on `task/W4-g46-liquid-evaporation` (this branch). **The merger
+> keeps THIS branch's `crates/tr-core/src/liquid.rs` verbatim and DROPS the
+> g45 (`2f15b7ba`) and g47 (`cfe5f1c9`) versions of that file** — the union
+> already contains every KEEP item from both, grafted per the table below.
+> The supporting files on this branch are the union too:
+> `crates/tr-core/src/tileobject.rs` and
+> `crates/tr-app/src/world_sim/gfx_quality.rs` are the g47 versions verbatim
+> (the `GetTileData(Tile)`/`CheckWaterDeath`/`CheckLavaDeath` seams + the
+> quickSettle quality override); `crates/tr-core/src/edit.rs`,
+> `crates/tr-core/src/edit/kill.rs` and
+> `crates/tr-app/src/world_sim/editing.rs` are the g46 versions (the
+> `check_alch_tile`/`check_lily_pad`/`square_tile_frame_record` seams + the
+> `resolve_liquid_retire_kills` app resolver); `crates/tr-app/src/world_sim/liquids.rs`
+> drains the union `retire_kills` queue inside the tick and resolves after it.
+> The f25 gen pass (`worldgen/settle_liquids.rs`) stays on its OWN branch
+> (`task/W4-f25-*`) — it is NOT part of this union and the merger takes it
+> separately; its gen-hash pins need re-derivation after the DelWater/buffer
+> graft (row 11 warning below). The single kill queue is named `retire_kills`
+> (g46's name); the g47 `WaterCheck` liquid-death records ride it too, and the
+> g47 `drain_edit_kills` accessor is renamed `drain_retire_kills`. All
+> witnesses are written-not-run (code-only mode); the merger runs the full
+> union post-graft.
+
 Four lanes touched `crates/tr-core/src/liquid.rs` (and neighbours) from the
 same base `a725acb0` (wave-3 landing). This note is the per-function 4-way
 comparison against the decompiled C# (`decompiled/Terraria/Liquid.cs`,
@@ -340,3 +364,54 @@ evap/nudge/record-seams/underworld_layer → dedupe f25's quickSettle arms and
 keep its gen module + exports → carry g45 extra-wakes + witness union →
 re-derive f25 gen-hash pins and the re-pinned nudge witnesses → run the full
 union (no lane ran any of them).
+
+## Graft-prep landing record (what THIS branch now carries)
+
+The union `liquid.rs` on this branch is the g47 skeleton (`cfe5f1c9`) with the
+g46 grafts applied and the g45 carry-forward appended. Concretely:
+
+- **Structural base = g47**: `del_water(&mut self, world, l: usize)` with the
+  keep-alive return (`:1506-1510`, `stuck`-gated) and the swap-remove INSIDE
+  `del_water` before the alch/lily tail (`:1575-1579`); `end_pass` is g47's
+  (backwards sweep + 254→255 promotion + `min(active,buffer)` swap-remove
+  promotion + the stuck band); `add_water` is g47's (`curMaxLiquid-1` overflow,
+  `maxLiquidBuffer-2` cap + checking mark); the QuickWater/SettleWaterAt/
+  AttemptToMove* family, `start_panic`/panic drain, `re_init`,
+  `settle_loaded_world` (UNWIRED), `water_check`, the quickSettle arms and the
+  `quick_fall = quick_settle` pass-head derivation are all g47's.
+- **g46 grafts**: the `underworld_layer` field (seeded `height-200` in `new`,
+  `i32::MAX` in the `#[cfg(test)] new_flow_fixture`), the underworld
+  evaporation block in `update_tile` (`y > underworld_layer`, water-only,
+  `min(2,liquid)`, pre-flow, zero-kill `KILL_DEAD`), the live post-evap
+  `own_now` read in the fall arm, the `surface_rng` field + the Next(30) nudge
+  in the 3-cell arm, the record-producing lava grass ring
+  (`square_tile_frame_record` → `retire_kills`), the `check_alch_tile` /
+  `check_lily_pad` (pure g46 form, no closure) alch/lily tail with the
+  `square_tile_frame_record` reframe arm, and the drained-type-reset
+  `mark_chunk`. The single kill queue is `retire_kills` (g46 name); the g47
+  `WaterCheck` liquid-death kills push to it; `drain_edit_kills` →
+  `drain_retire_kills`.
+- **g45 carry-forward**: the 7/5-neighbour extra-wake passes (`:748-771` /
+  `:821-836`, centre-diff reduction, before the conditional centre write) in
+  the row arms; the `liquid_merge_cadence`, `liquid_delwater` and
+  `liquid_nudge_wakes` witness modules (re-pinned per the disposition table:
+  the nudge witnesses on `surface_rng` with `w.seed = 35/0`, the extra-wake
+  witness re-derived onto the 7-arm fixed-point fixture, the layer-row evap
+  boundary on the g46 unguarded gate, the delay-inheritance / grass-ring /
+  dry-pad / buffer-delay-0 / kill-0-stuck witnesses kept, the g45 duplicates
+  dropped in favour of g47's named equivalents).
+- **Flow witnesses** use `new_flow_fixture` (the evaporation sentinel) so the
+  ~20 flow pins and `mass_conserved` stay out of the band; the evaporation
+  witnesses and the layer-row boundary use `new`.
+- **Supporting files**: `tileobject.rs` + `gfx_quality.rs` = g47 verbatim;
+  `edit.rs` + `edit/kill.rs` + `world_sim/editing.rs` = g46 verbatim (the
+  `resolve_liquid_retire_kills` resolver, doc updated to name the WaterCheck
+  records); `world_sim/liquids.rs` = the g47 inside-tick drain shape on the
+  union `retire_kills` queue.
+- **f25 gen pass**: NOT on this branch — stays on `task/W4-f25-*`; the merger
+  takes it separately and re-derives its gen-hash pins (row 11 warning).
+
+Witness count: 72 `#[test]` fns in the union `liquid.rs` (g47's 49 + g46's 6
+evap/stream/lily-tail pins + g45's 17 carried cadence/delwater/nudge pins,
+minus the 5 g45 duplicates dropped per the disposition table). All
+written-not-run; compile-by-inspection only (no cargo/tests in this phase).

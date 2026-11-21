@@ -5764,14 +5764,16 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     app.world_key = None;
 }
 
-/// The `Liquid.DelWater` tail's kill records (`Liquid.cs:1529-1598`, drained
-/// from `LiquidSystem::drain_retire_kills`): the lava grass-ring reframes,
-/// the herb `CheckAlch` and the lily-pad `CheckLilyPad`/`SquareTileFrame`
-/// kills carry the same loot rolls a player break does. The C# runs them
-/// inside `UpdateLiquid`'s `Main.rand` swap (`WorldGen.cs:71529`), so the
-/// rolls ride the `UpdateLiquid` stream; the pot/pile `genRand` stand-ins
-/// take one throw each, the `break_tile` precedent. No hit cell (the pad /
-/// herb cell's own drops ride its `herb_events`/`object_drops` records).
+/// The `Liquid.DelWater` tail's kill records (`Liquid.cs:1529-1598`) plus the
+/// `WaterCheck` liquid-death kills (`WorldGen.cs:80435-80448`), drained from
+/// `LiquidSystem::drain_retire_kills` (the W4-g46/g47 union queue): the lava
+/// grass-ring reframes, the herb `CheckAlch`, the lily-pad
+/// `CheckLilyPad`/`SquareTileFrame` and the liquid-death object kills carry
+/// the same loot rolls a player break does. The C# runs them inside
+/// `UpdateLiquid`'s `Main.rand` swap (`WorldGen.cs:71529`), so the rolls ride
+/// the `UpdateLiquid` stream; the pot/pile `genRand` stand-ins take one throw
+/// each, the `break_tile` precedent. No hit cell (the pad / herb cell's own
+/// drops ride its `herb_events`/`object_drops` records).
 pub(crate) fn resolve_liquid_retire_kills(app: &mut App, kills: Vec<edit::TileKill>) {
     if kills.is_empty() {
         return;

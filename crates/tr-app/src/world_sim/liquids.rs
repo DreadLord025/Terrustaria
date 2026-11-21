@@ -14,6 +14,10 @@ pub(crate) fn update_liquids(app: &mut App, dt: f32) {
     let liquids = &mut app.liquids;
     let world = &mut app.world;
     let audio = &mut app.audio;
+    // The retirement-tail kills drain inside the tick (the `liquids` borrow)
+    // and resolve after it (the `app` borrow) — the two cannot overlap
+    // (the g47 seam shape; the queue is the union's `retire_kills`).
+    let mut pending_kills = Vec::new();
     app.liquid_step.tick(dt, |_| {
         *liquid_tick = liquid_tick.wrapping_add(1);
         if *liquid_tick % 2 == 0 {
@@ -26,13 +30,15 @@ pub(crate) fn update_liquids(app: &mut App, dt: f32) {
             for (kind, x, y) in liquids.drain_merge_events() {
                 audio.play_liquid_change(kind, x, y);
             }
+            // `Liquid.cs:1529-1598` / `WorldGen.cs:80435-80448`: the
+            // retirement-tail grass-ring/herb/lily-pad kills and the
+            // WaterCheck liquid-death kills spawn their drops inline under
+            // the UpdateLiquid swap — the port queues the records and
+            // resolves them after the tick (W4-g46/g47 union).
+            pending_kills.extend(liquids.drain_retire_kills());
         }
     });
-    // The `DelWater` tail's kill records (`Liquid.cs:1529-1598`): the lava
-    // grass-ring, the herb and the lily-pad kills resolve their loot on the
-    // `UpdateLiquid` stream (the C# runs them inside that swap).
-    let retire_kills = app.liquids.drain_retire_kills();
-    super::editing::resolve_liquid_retire_kills(app, retire_kills);
+    super::editing::resolve_liquid_retire_kills(app, pending_kills);
     app.liquid_step.cap_backlog();
 }
 
