@@ -3590,6 +3590,25 @@ fn npc_seed(
         crate::npc::NpcKind::CorruptBunny => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
+        // W4-d34 (phase 3): the Snatcher anchors in air (the ManEater net
+        // shape); the CorruptGoldfish plants like the swimmers; the Vulture
+        // perches on the column surface; the Demon hangs in the air (the bat
+        // net shape); the BlueJellyfish seeds in the water column (the
+        // swimmer net shape).
+        crate::npc::NpcKind::Snatcher => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        crate::npc::NpcKind::CorruptGoldfish | crate::npc::NpcKind::BlueJellyfish => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        crate::npc::NpcKind::Vulture => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        crate::npc::NpcKind::Demon => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_cave_flyer(world, tx, y, kind)?
+        }
 
     })
 }

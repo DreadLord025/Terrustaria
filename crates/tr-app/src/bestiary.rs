@@ -2224,6 +2224,48 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Harpy",
     },
+    // W4-d34 kinds 1-70 (phase 3): the five register by their vanilla ids
+    // (the populator's automated pass).
+    BestiaryEntryDef {
+        credit_id: "Snatcher",
+        net_id: 56,
+        kind: NpcKind::Snatcher,
+        variant: None,
+        quick_unlock: false,
+        name: "Snatcher",
+    },
+    BestiaryEntryDef {
+        credit_id: "CorruptGoldfish",
+        net_id: 57,
+        kind: NpcKind::CorruptGoldfish,
+        variant: None,
+        quick_unlock: false,
+        name: "Corrupt Goldfish",
+    },
+    BestiaryEntryDef {
+        credit_id: "Vulture",
+        net_id: 61,
+        kind: NpcKind::Vulture,
+        variant: None,
+        quick_unlock: false,
+        name: "Vulture",
+    },
+    BestiaryEntryDef {
+        credit_id: "Demon",
+        net_id: 62,
+        kind: NpcKind::Demon,
+        variant: None,
+        quick_unlock: false,
+        name: "Demon",
+    },
+    BestiaryEntryDef {
+        credit_id: "BlueJellyfish",
+        net_id: 63,
+        kind: NpcKind::BlueJellyfish,
+        variant: None,
+        quick_unlock: false,
+        name: "Blue Jellyfish",
+    },
     BestiaryEntryDef {
         credit_id: "Bunny",
         net_id: 46,

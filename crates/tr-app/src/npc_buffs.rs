@@ -493,6 +493,11 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => &[20, 24, 31, 323], // :6322-6340
         NpcKind::CorruptBunny => &[],          // :6377 null row
         NpcKind::Harpy => &[31],               // :6379-6383
+        NpcKind::Snatcher => &[31],            // :6410-6416
+        NpcKind::CorruptGoldfish => &[31],     // :6417-6423
+        NpcKind::Vulture => &[31],             // :6445-6451
+        NpcKind::Demon => &[24, 31, 153, 323], // :6452-6458
+        NpcKind::BlueJellyfish => &[31],       // :6459-6465
     }
 }
 

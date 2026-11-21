@@ -1287,6 +1287,12 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_41",
         "NPC_47",
         "NPC_48",
+        // W4-d34 kinds 1-70 coverage wave (phase 3).
+        "NPC_56",
+        "NPC_57",
+        "NPC_61",
+        "NPC_62",
+        "NPC_63",
 ];
 
 
@@ -1874,7 +1880,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 191] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 196] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1914,6 +1920,8 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 191] = [
         31, 34, 37, 43, 46,
         // W4-d34 kinds 1-70 coverage wave (phase 2) — appended last.
         39, 40, 41, 47, 48,
+        // W4-d34 kinds 1-70 coverage wave (phase 3) — appended last.
+        56, 57, 61, 62, 63,
     ];
 
 
@@ -2690,6 +2698,12 @@ impl Lookups {
                 atlas.sheet("NPC_41").copied(),
                 atlas.sheet("NPC_47").copied(),
                 atlas.sheet("NPC_48").copied(),
+                // W4-d34 kinds 1-70 coverage wave (phase 3).
+                atlas.sheet("NPC_56").copied(),
+                atlas.sheet("NPC_57").copied(),
+                atlas.sheet("NPC_61").copied(),
+                atlas.sheet("NPC_62").copied(),
+                atlas.sheet("NPC_63").copied(),
             ],
 
 

@@ -599,6 +599,11 @@ impl NpcKind {
             NpcKind::BoneSerpentTail => 273,
             NpcKind::CorruptBunny => 274,
             NpcKind::Harpy => 275,
+            NpcKind::Snatcher => 276,
+            NpcKind::CorruptGoldfish => 277,
+            NpcKind::Vulture => 278,
+            NpcKind::Demon => 279,
+            NpcKind::BlueJellyfish => 280,
         }
     }
 
@@ -939,6 +944,11 @@ impl NpcKind {
             273 => NpcKind::BoneSerpentTail,
             274 => NpcKind::CorruptBunny,
             275 => NpcKind::Harpy,
+            276 => NpcKind::Snatcher,
+            277 => NpcKind::CorruptGoldfish,
+            278 => NpcKind::Vulture,
+            279 => NpcKind::Demon,
+            280 => NpcKind::BlueJellyfish,
             _ => return None,
         })
     }
@@ -1842,6 +1852,11 @@ impl NpcKind {
             NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => "NPC_Hit_2", // :9235/:9252/:9270
             NpcKind::CorruptBunny => "NPC_Hit_1",  // :9356
             NpcKind::Harpy => "NPC_Hit_1",         // :9368
+            NpcKind::Snatcher => "NPC_Hit_1",         // :9484
+            NpcKind::CorruptGoldfish => "NPC_Hit_1",  // :9498
+            NpcKind::Vulture => "NPC_Hit_28",         // :9563
+            NpcKind::Demon => "NPC_Hit_21",           // :9576
+            NpcKind::BlueJellyfish => "NPC_Hit_25",   // :9591
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2155,6 +2170,11 @@ impl NpcKind {
             NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => "NPC_Killed_5", // :9236/:9253/:9271
             NpcKind::CorruptBunny => "NPC_Killed_1",  // :9357
             NpcKind::Harpy => "NPC_Killed_1",         // :9370
+            NpcKind::Snatcher => "NPC_Killed_1",         // :9486
+            NpcKind::CorruptGoldfish => "NPC_Killed_1",  // :9499
+            NpcKind::Vulture => "NPC_Killed_31",         // :9564
+            NpcKind::Demon => "NPC_Killed_24",           // :9578
+            NpcKind::BlueJellyfish => "NPC_Killed_28",   // :9592
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2271,6 +2291,14 @@ impl NpcKind {
             // `:9369`). The Bone Serpent writes noGravity but kb 0 (`:9239`) —
             // the Y-pop selector never reaches it (the leech precedent).
             NpcKind::Harpy => true,
+            // W4-d34 (phase 3): the CorruptGoldfish's `noGravity = true`
+            // (`NPC.cs:9491`, kb 1 — no row); the Vulture's aiStyle-17 head
+            // write (`:24024`, kb 0.8 `:9562`); the Demon's aiStyle-14 head
+            // write (`:22851`, kb 0.8 `:9577`); the BlueJellyfish's
+            // `noGravity = true` (`:9584`, kb 1 — no row). The Snatcher (56)
+            // writes noGravity but kb 0 (`:9485`) — the Y-pop selector never
+            // reaches it (the ManEater precedent).
+            NpcKind::CorruptGoldfish | NpcKind::Vulture | NpcKind::Demon | NpcKind::BlueJellyfish => true,
             _ => false,
         }
     }
@@ -2531,6 +2559,11 @@ impl NpcKind {
             NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => 6, // :9230/:9247/:9265
             NpcKind::CorruptBunny => 3,  // :9352
             NpcKind::Harpy => 14,        // :9364
+            NpcKind::Snatcher => 13,         // :9480
+            NpcKind::CorruptGoldfish => 16,  // :9494
+            NpcKind::Vulture => 17,          // :9558
+            NpcKind::Demon => 14,            // :9572
+            NpcKind::BlueJellyfish => 18,    // :9587
         }
     }
 
@@ -3072,6 +3105,11 @@ impl NpcKind {
             NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => (22.0, 22.0), // :9228/:9245/:9263
             NpcKind::CorruptBunny => (18.0, 20.0),  // :9350-9351
             NpcKind::Harpy => (24.0, 34.0),         // :9362-9363
+            NpcKind::Snatcher => (30.0, 30.0),        // :9478-9479
+            NpcKind::CorruptGoldfish => (18.0, 20.0), // :9492-9493
+            NpcKind::Vulture => (36.0, 36.0),         // :9556-9557
+            NpcKind::Demon => (28.0, 48.0),           // :9570-9571
+            NpcKind::BlueJellyfish => (26.0, 26.0),   // :9585-9586
         }
     }
 
@@ -3162,6 +3200,11 @@ impl NpcKind {
             // Destroyer precedent).
             NpcKind::CorruptBunny => 47,
             NpcKind::Harpy => 48,
+            NpcKind::Snatcher => 56,
+            NpcKind::CorruptGoldfish => 57,
+            NpcKind::Vulture => 61,
+            NpcKind::Demon => 62,
+            NpcKind::BlueJellyfish => 63,
             // `NPCID.DesertDjinn` (533)
             NpcKind::DesertDjinn => 533,
             NpcKind::Goldfish => 55,
@@ -3747,6 +3790,11 @@ impl NpcKind {
             NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => 300, // :9234/:9251/:9269
             NpcKind::CorruptBunny => 70,   // :9355
             NpcKind::Harpy => 100,         // :9367
+            NpcKind::Snatcher => 60,          // :9483
+            NpcKind::CorruptGoldfish => 100,  // :9497
+            NpcKind::Vulture => 40,           // :9561
+            NpcKind::Demon => 120,            // :9575
+            NpcKind::BlueJellyfish => 34,     // :9590
         }
     }
 
@@ -4122,6 +4170,11 @@ impl NpcKind {
             NpcKind::BoneSerpentTail => 16,   // :9267
             NpcKind::CorruptBunny => 20,      // :9353
             NpcKind::Harpy => 25,             // :9365
+            NpcKind::Snatcher => 25,          // :9481
+            NpcKind::CorruptGoldfish => 30,   // :9495
+            NpcKind::Vulture => 15,           // :9559
+            NpcKind::Demon => 32,             // :9573
+            NpcKind::BlueJellyfish => 25,     // :9588
         }
     }
 }

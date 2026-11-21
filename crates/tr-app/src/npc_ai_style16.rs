@@ -103,6 +103,10 @@ fn vanilla_type(kind: NpcKind) -> i32 {
         NpcKind::Goldfish => 55,
         NpcKind::Piranha => 58,
         NpcKind::Shark => 65,
+        // W4-d34: the CorruptGoldfish (57) rides the same family arm — the
+        // C#'s type-57 branches are the shared wet/dry machine (no 57-only
+        // arm; the critter exclusion `:23700` keeps it OUT, so it chases).
+        NpcKind::CorruptGoldfish => 57,
         _ => unreachable!("only aiStyle-16 kinds reach the family arm"),
     }
 }

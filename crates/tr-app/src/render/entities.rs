@@ -840,6 +840,11 @@ fn npc_add_height(n: &Npc) -> f32 {
         // W4-d34: `Main.cs:22069` 48 → 32; `:22125` 39/40/41 → 26.
         Harpy => 32.0,
         BoneSerpentHead | BoneSerpentBody | BoneSerpentTail => 26.0,
+        // W4-d34 (phase 3): `Main.cs:22081` 62 → 14 (the 62/66/156 group);
+        // `:22085` 63/64 → 4. The Snatcher (56), CorruptGoldfish (57) and
+        // Vulture (61) have NO arm — the default 0 (`Main.cs:22004`).
+        Demon => 14.0,
+        BlueJellyfish => 4.0,
 
         // `:22087` 63/64/103 (the goblin townsfolk + the javelin T3) — the
         // Golem Head's 64 is resolved out by the town test above.
@@ -1255,7 +1260,14 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     250, // the Angry Nimbus
     288, // the Dungeon Spirit
     384, // the Force Bubble
+    // W4-d34 kinds 1-70 coverage wave (phases 1-3): the coverage kinds'
+    // own sheets (the vanilla's `TextureAssets.Npc[type]`), keyed by the
+    // vanilla net id in `NpcAssets::npc_sheets` exactly like the rows above.
+    31, 34, 37, 43, 46, // phase 1
+    39, 40, 41, 47, 48, // phase 2
+    56, 57, 61, 62, 63, // phase 3
 ];
+
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3209,6 +3221,23 @@ pub(crate) fn draw_npcs(
             NpcKind::Harpy => {
                 pumpkin_moon_draw(assets.npc_sheet(48), npc_rows(48), n, w, h)
             }
+            // W4-d34 (phase 3): each kind draws its own sheet at the
+            // SetFrameSize row height (the pumpkin arm's shape).
+            NpcKind::Snatcher => {
+                pumpkin_moon_draw(assets.npc_sheet(56), npc_rows(56), n, w, h)
+            }
+            NpcKind::CorruptGoldfish => {
+                pumpkin_moon_draw(assets.npc_sheet(57), npc_rows(57), n, w, h)
+            }
+            NpcKind::Vulture => {
+                pumpkin_moon_draw(assets.npc_sheet(61), npc_rows(61), n, w, h)
+            }
+            NpcKind::Demon => {
+                pumpkin_moon_draw(assets.npc_sheet(62), npc_rows(62), n, w, h)
+            }
+            NpcKind::BlueJellyfish => {
+                pumpkin_moon_draw(assets.npc_sheet(63), npc_rows(63), n, w, h)
+            }
 
         };
         let Some(tex) = tex else {
@@ -3367,6 +3396,13 @@ pub(crate) fn draw_npcs(
                     | NpcKind::BoneSerpentBody
                     | NpcKind::BoneSerpentTail
                     | NpcKind::Harpy
+                    // W4-d34 (phase 3): the Vulture's velocity tilt
+                    // (`NPC.cs:73540`), the Demon's (`:73891`), the
+                    // BlueJellyfish's chase aim / idle tilt (`:24291`/
+                    // `:24334`/`:24390`).
+                    | NpcKind::Vulture
+                    | NpcKind::Demon
+                    | NpcKind::BlueJellyfish
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

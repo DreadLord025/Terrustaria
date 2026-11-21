@@ -1634,6 +1634,40 @@ fn portrait_data(
                 .unwrap_or(20.0);
             (sheet_i, h, 18.0, h, white)
         }
+        // W4-d34 (phase 3): the Snatcher the 3-row bite strip; the
+        // CorruptGoldfish the 6-row fish strip; the Vulture the 6-row flap
+        // (row 0 is the perch); the Demon the 5-row flap; the BlueJellyfish
+        // the 7-row pulse strip (the classic rows 0..3).
+        (NpcKind::Snatcher, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(30.0);
+            (sheet_i, h, 30.0, h, white)
+        }
+        (NpcKind::CorruptGoldfish, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::Vulture, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(36.0);
+            (sheet_i, h, 36.0, h, white)
+        }
+        (NpcKind::Demon, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(48.0);
+            (sheet_i, h, 28.0, h, white)
+        }
+        (NpcKind::BlueJellyfish, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(26.0);
+            (sheet_i, h, 26.0, h, white)
+        }
     }
 }
 
