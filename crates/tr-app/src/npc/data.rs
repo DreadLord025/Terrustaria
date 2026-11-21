@@ -583,6 +583,17 @@ impl NpcKind {
             NpcKind::AngryTrapper => 357,
             NpcKind::FungiBulb => 259,
             NpcKind::GiantFungiBulb => 260,
+            // The aiStyle-9 spit/flare family (W4-d23): VileSpit 112 was
+            // rowed by d35 at protocol 455 (the roster's claim — the
+            // vanilla 112 slot is the AncientCultist's, `to_u16`'s guard).
+            // SolarFlare 516 / VileSpitEoW 666 are UNROWED: the reconcile
+            // directive parks them on the 400+ free band (408/411) even
+            // though their vanilla slots are free — the d37-354-399
+            // collision's union numbering (research/108 addendum).
+            // `NPC.cs:10326-10341` / `:15394-15408` / `:17418-17433`.
+            NpcKind::VileSpit => 455,
+            NpcKind::SolarFlare => 408,
+            NpcKind::VileSpitEoW => 411,
             // The Wyvern family (`S1-D-3` wyvern, `NPCID.cs:10851-10861`):
             // the vanilla ids 87-92 collide with the port-local
             // Scutlix/saucer band (87-92 above). GATE REASSIGN (L-C): the
@@ -928,6 +939,11 @@ impl NpcKind {
             357 => NpcKind::AngryTrapper,
             259 => NpcKind::FungiBulb,
             260 => NpcKind::GiantFungiBulb,
+            // The aiStyle-9 spit/flare family (W4-d23): the d35-rowed 455
+            // + the unrowed 400+ band (`to_u16` above).
+            455 => NpcKind::VileSpit,
+            408 => NpcKind::SolarFlare,
+            411 => NpcKind::VileSpitEoW,
             // The Wyvern family (`S1-D-3` wyvern): the gate-reassigned
             // 223-228 band (`to_u16` above; the vanilla 87-92 collide with
             // the Scutlix/saucer ids). `NPCID.cs:10851-10861`.
@@ -1817,6 +1833,9 @@ impl NpcKind {
             | NpcKind::AngryTrapper
             | NpcKind::FungiBulb
             | NpcKind::GiantFungiBulb => "NPC_Hit_1",
+            // The aiStyle-9 spit/flare family (W4-d23): 112/666/516 all
+            // carry `HitSound = null` (`NPC.cs:10334`/`:17426`/`:15402`) —
+            // no hit cue (the `_ => return None` fallthrough).
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2129,6 +2148,10 @@ impl NpcKind {
             | NpcKind::AngryTrapper
             | NpcKind::FungiBulb
             | NpcKind::GiantFungiBulb => "NPC_Killed_1",
+            // The aiStyle-9 spit/flare family (W4-d23): 112/666 NPCDeath9
+            // (`NPC.cs:10335`/`:17427`); 516 `DeathSound = null`
+            // (`:15403`) — the `_ => return None` fallthrough.
+            NpcKind::VileSpit | NpcKind::VileSpitEoW => "NPC_Killed_9",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2246,6 +2269,9 @@ impl NpcKind {
             | NpcKind::AngryTrapper
             | NpcKind::FungiBulb
             | NpcKind::GiantFungiBulb => true,
+            // The aiStyle-9 spit/flare family (W4-d23): 112/666/516 all
+            // write `noGravity = true` (`NPC.cs:10336`/`:17428`/`:15404`).
+            NpcKind::VileSpit | NpcKind::VileSpitEoW | NpcKind::SolarFlare => true,
             _ => false,
         }
     }
@@ -2345,6 +2371,9 @@ impl NpcKind {
             NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => 8,
             // aiStyle 9 - NPC.cs:9097, :9139, :15703
             NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => 9,
+            // aiStyle 9 — the spit/flare family (W4-d23): 112 (`NPC.cs:10330`),
+            // 516 (`:15398`), 666 (`:17422`).
+            NpcKind::VileSpit | NpcKind::SolarFlare | NpcKind::VileSpitEoW => 9,
             // aiStyle 11 - NPC.cs:9170
             NpcKind::SkeletronHead => 11,
             // aiStyle 12 - NPC.cs:9187
@@ -3043,6 +3072,11 @@ impl NpcKind {
             NpcKind::ManEater | NpcKind::Snatcher | NpcKind::Clinger | NpcKind::AngryTrapper => (30.0, 30.0),
             NpcKind::FungiBulb => (20.0, 20.0),
             NpcKind::GiantFungiBulb => (36.0, 36.0),
+            // The aiStyle-9 spit/flare family (W4-d23): 112/666 16x16
+            // (`NPC.cs:10328-10329`/`:17420-17421`), 516 26x26
+            // (`:15396-15397`).
+            NpcKind::VileSpit | NpcKind::VileSpitEoW => (16.0, 16.0),
+            NpcKind::SolarFlare => (26.0, 26.0),
         }
     }
 
@@ -3696,6 +3730,9 @@ impl NpcKind {
             NpcKind::AngryTrapper => 300,
             NpcKind::FungiBulb => 90,
             NpcKind::GiantFungiBulb => 300,
+            // The aiStyle-9 spit/flare family (W4-d23): 112/666/516 all
+            // `lifeMax = 1` (`NPC.cs:10333`/`:17425`/`:15401`).
+            NpcKind::VileSpit | NpcKind::VileSpitEoW | NpcKind::SolarFlare => 1,
         }
     }
 
@@ -4069,6 +4106,10 @@ impl NpcKind {
             NpcKind::AngryTrapper => 100,
             NpcKind::FungiBulb => 24,
             NpcKind::GiantFungiBulb => 70,
+            // The aiStyle-9 spit/flare family (W4-d23): 112/666 dmg 65
+            // (`NPC.cs:10331`/`:17423`), 516 dmg 100 (`:15399`).
+            NpcKind::VileSpit | NpcKind::VileSpitEoW => 65,
+            NpcKind::SolarFlare => 100,
         }
     }
 }

@@ -492,6 +492,9 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::ManEater | NpcKind::AngryTrapper | NpcKind::FungiBulb | NpcKind::GiantFungiBulb => &[20, 31],
         NpcKind::Snatcher => &[31],
         NpcKind::Clinger => &[39, 31],
+        // The aiStyle-9 spit/flare family (W4-d23): 112/666 `{31}`
+        // (`NPCID.cs:6758-6764`/`:6765-6771`), 516 `{31}` (`:9005-9011`).
+        NpcKind::VileSpit | NpcKind::VileSpitEoW | NpcKind::SolarFlare => &[31],
     }
 }
 

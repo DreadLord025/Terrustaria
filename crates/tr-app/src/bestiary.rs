@@ -2222,6 +2222,34 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Giant Fungi Bulb",
     },
+    // The aiStyle-9 spit/flare family (W4-d23): the three wired kinds' own
+    // entries — the populator registers all three by id (112/666 the
+    // Corruption spit, 516 the Solar Pillar flare; the normal-enemy kill
+    // ladder, no quick-unlock).
+    BestiaryEntryDef {
+        credit_id: "VileSpit",
+        net_id: 112,
+        kind: NpcKind::VileSpit,
+        variant: None,
+        quick_unlock: false,
+        name: "Vile Spit",
+    },
+    BestiaryEntryDef {
+        credit_id: "VileSpitEaterOfWorlds",
+        net_id: 666,
+        kind: NpcKind::VileSpitEoW,
+        variant: None,
+        quick_unlock: false,
+        name: "Vile Spit",
+    },
+    BestiaryEntryDef {
+        credit_id: "SolarFlare",
+        net_id: 516,
+        kind: NpcKind::SolarFlare,
+        variant: None,
+        quick_unlock: false,
+        name: "Solar Flare",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

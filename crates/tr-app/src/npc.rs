@@ -1119,6 +1119,28 @@ pub enum NpcKind {
     /// FungiSpore 261 spawn drains through `wants_fungi_spore`. The
     /// vanilla 260 protocol slot is free.
     GiantFungiBulb,
+    /// `NPCID.VileSpit` (112) — the Corruptor's spit (`aiStyle 9`): 16x16,
+    /// dmg 65, def 0, 1 HP, kb 0, noGravity + noTileCollide, scale 0.9,
+    /// alpha 80, HitSound null / NPCDeath9 (`NPC.cs:10326-10341`). WIRED
+    /// (W4-d23): the axis' 9 arm rides `npc_ai_style9::sphere_family_step`
+    /// (the `ai[0]` counter + the `ai[0]==2` double-move). Rowed by d35 —
+    /// protocol id 455 (the roster's claim; the vanilla 112 slot is the
+    /// AncientCultist's, `to_u16`'s guard).
+    VileSpit,
+    /// `NPCID.SolarFlare` (516) — the Solar Pillar's homing flare
+    /// (`aiStyle 9`): 26x26, dmg 100, def 0, 1 HP, kb 0, noGravity,
+    /// noTileCollide FALSE, alpha 0, HitSound/DeathSound null
+    /// (`NPC.cs:15394-15408`). WIRED (W4-d23): the axis' 9 arm (the
+    /// one-shot `RotatedByRandom` launch + the per-tick homing steer).
+    /// Unrowed — protocol id 408 (the 400+ free band; the vanilla 516
+    /// slot is free but the reconcile directive parks unrowed kinds).
+    SolarFlare,
+    /// `NPCID.VileSpitEaterOfWorlds` (666) — the Eater of Worlds' spit
+    /// (`aiStyle 9`): the 112 row verbatim (`NPC.cs:17418-17433`), the
+    /// ftw `GetAttackDamage_CappedAtMaster(32f)` damage arm. WIRED
+    /// (W4-d23): the axis' 9 arm. Unrowed — protocol id 411 (the 400+
+    /// free band; the vanilla 666 slot is free).
+    VileSpitEoW,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -2998,7 +3020,14 @@ impl Npc {
                 .or_else(|| kind.holiday_zombie_scale())
                 // The BlazingWheel's `scale = 1.2f` row (`NPC.cs:9730`,
                 // the small-kinds wiring wave).
-                .unwrap_or(if kind == NpcKind::BlazingWheel { 1.2 } else { 1.0 }),
+                .unwrap_or(match kind {
+                    NpcKind::BlazingWheel => 1.2,
+                    // The Vile Spits' `scale = 0.9f` rows (`NPC.cs:10339`/
+                    // `:17431`, W4-d23) — the render scale, the hitbox stays
+                    // 16x16 (the C# `base.width` is unscaled).
+                    NpcKind::VileSpit | NpcKind::VileSpitEoW => 0.9,
+                    _ => 1.0,
+                }),
             net_offset: Vec2::ZERO,
             burn: 0.0,
             wants_minion: false,
@@ -3189,6 +3218,11 @@ impl Npc {
                             // instead of the C#'s 100→255.
                             NpcKind::BurningSphere | NpcKind::ChaosBall => 100,
                             NpcKind::WaterSphere => 255,
+                            // The Vile Spits' `alpha = 80` rows
+                            // (`NPC.cs:10340`/`:17432`, W4-d23); the Solar
+                            // Flare spawns at 0 (`:15406`) and fades in via
+                            // the AI's `alpha += 40` — the stock 0 stands.
+                            NpcKind::VileSpit | NpcKind::VileSpitEoW => 80,
                             _ => 0,
                         }
                     }),
@@ -3473,6 +3507,9 @@ impl Npc {
             NpcKind::ManEater | NpcKind::Snatcher | NpcKind::FungiBulb | NpcKind::GiantFungiBulb => 0.0,
             NpcKind::Clinger => 0.2,
             NpcKind::AngryTrapper => 0.25,
+            // The aiStyle-9 spit/flare family (W4-d23): 112/666/516 kb 0
+            // (`NPC.cs:10338`/`:17430`/`:15407`).
+            NpcKind::VileSpit | NpcKind::VileSpitEoW | NpcKind::SolarFlare => 0.0,
             // The volley bees: kb 0.5 (`NPC.cs:11705`/`:11718`).
             NpcKind::Bee | NpcKind::BeeSmall => 0.5,
             NpcKind::SkeletronHead => 0.0,
@@ -3848,6 +3885,9 @@ impl Npc {
             NpcKind::Clinger | NpcKind::AngryTrapper => 30,
             NpcKind::FungiBulb => 4,
             NpcKind::GiantFungiBulb => 20,
+            // The aiStyle-9 spit/flare family (W4-d23): 112/666/516 def 0
+            // (`NPC.cs:10332`/`:17424`/`:15400`).
+            NpcKind::VileSpit | NpcKind::VileSpitEoW | NpcKind::SolarFlare => 0,
             // The volley bees' SetDefaults defense (`NPC.cs:11702`/`:11715`).
             // The classic difficulty keeps them verbatim (the
             // `ScaleStats_ByDifficulty_Tweaks` ×0.8 remap, `:18222`, is
@@ -4243,6 +4283,9 @@ impl Npc {
             NpcKind::Clinger => 600.0,
             NpcKind::AngryTrapper => 650.0,
             NpcKind::GiantFungiBulb => 1250.0,
+            // The aiStyle-9 spit/flare family (W4-d23): 112/666/516 write
+            // no `value` row — the SetDefaults stock 0 (`NPC.cs:8544`).
+            NpcKind::VileSpit | NpcKind::VileSpitEoW | NpcKind::SolarFlare => 0.0,
             // The volley bees write no `value` row (`NPC.cs:11696-11721`)
             // — the SetDefaults default 0 (`NPC.cs:8527`).
             NpcKind::Bee | NpcKind::BeeSmall => 0.0,
@@ -6299,7 +6342,13 @@ impl Npc {
             // S1-D-3: the aiStyle-9 sphere family (25/30+665/33) rides the
             // style axis (`ai_009_sphere_family`) — this arm is unreachable
             // through `update_rng` (the axis claims style 9 first).
-            NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => {
+            // W4-d23: the spit/flare members (112/666/516) joined the axis.
+            NpcKind::ChaosBall
+            | NpcKind::BurningSphere
+            | NpcKind::WaterSphere
+            | NpcKind::VileSpit
+            | NpcKind::VileSpitEoW
+            | NpcKind::SolarFlare => {
                 unreachable!("aiStyle 9 rides the style axis (S1-D-3)")
             }
             // The small-kinds wiring wave: the four kinds ride the style
@@ -8366,6 +8415,31 @@ impl Npc {
             }
             // The spheres: `Main.npcFrameCount` 30/25/33 = 1.
             NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => {}
+            // The Vile Spits: `Main.npcFrameCount[112/666]` = 1 and no
+            // `FindFrame` case — the single row holds (W4-d23).
+            NpcKind::VileSpit | NpcKind::VileSpitEoW => {}
+            // The Solar Flare's `case 516` (`NPC.cs:70740-70757`): the
+            // localAI[1] one-shot seeds a random row + counter (two
+            // `Next(3)` draws), then the >3 counter steps the row, wrapping
+            // past row 3 (`Main.npcFrameCount[516]` = 4). The two draws ride
+            // the caller's stream — but `find_frame` has no rng seam, so the
+            // one-shot seed is the documented skip (the row starts at 0 and
+            // the counter at 0; the C#'s random phase offset is cosmetic).
+            NpcKind::SolarFlare => {
+                if self.local_ai[1] == 0.0 {
+                    self.local_ai[1] = 1.0;
+                    // `frame.Y = num * Next(3)` + `frameCounter += Next(3)`
+                    // — the rng-free fold starts both at 0 (the skip above).
+                }
+                self.frame_counter += 1.0;
+                if self.frame_counter > 3.0 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                    if self.frame > 3 {
+                        self.frame = 0;
+                    }
+                }
+            }
             // The swimmers: the plain flap cycles over `Main.npcFrameCount`
             // 55/58 = 6, 65 = 4 (`Main.cs:67082`).
             NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => {
@@ -18840,6 +18914,13 @@ impl Npc {
             NpcKind::AngryTrapper => 357,
             NpcKind::FungiBulb => 259,
             NpcKind::GiantFungiBulb => 260,
+            // The aiStyle-9 spit/flare family (W4-d23): VileSpit's vanilla
+            // 112 is the AncientCultist's key above, so it rides the
+            // protocol id 455; 516/666 are free vanilla keys. The G6 key
+            // stays injective.
+            NpcKind::VileSpit => 455,
+            NpcKind::SolarFlare => 516,
+            NpcKind::VileSpitEoW => 666,
             // The wyvern family (S1-D-3): the gate-reassigned protocol ids
             // (`to_u16`'s 223-228 band) — the vanilla 87-92 collide with the
             // Scutlix/saucer arms above, so the hash rides the port band
@@ -23918,7 +23999,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 276] = [
+    pub(super) const ALL_KINDS: [NpcKind; 279] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24197,6 +24278,10 @@ mod tests {
         NpcKind::AngryTrapper,
         NpcKind::FungiBulb,
         NpcKind::GiantFungiBulb,
+        // The aiStyle-9 spit/flare family (W4-d23).
+        NpcKind::VileSpit,
+        NpcKind::SolarFlare,
+        NpcKind::VileSpitEoW,
         // The wyvern family (S1-D-3 wyvern).
         NpcKind::WyvernHead,
         NpcKind::WyvernLegs,
@@ -27815,8 +27900,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            276,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-d23's six man-eaters)"
+            279,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-d23's six man-eaters + W4-d23's three spit/flare kinds)"
         );
         assert!(
             covered > 43,
@@ -31431,6 +31516,11 @@ mod s1_d_2_tests {
         (NpcKind::ChaosBall, 9),
         (NpcKind::BurningSphere, 9),
         (NpcKind::WaterSphere, 9),
+        // The aiStyle-9 spit/flare family (W4-d23, `NPC.cs:10330`/`:15398`/
+        // `:17422`).
+        (NpcKind::VileSpit, 9),
+        (NpcKind::SolarFlare, 9),
+        (NpcKind::VileSpitEoW, 9),
         (NpcKind::Goldfish, 16),
         (NpcKind::Piranha, 16),
         (NpcKind::Shark, 16),
@@ -33920,6 +34010,187 @@ mod w4_d23_style9_census_tests {
         let speed = (water.vx * water.vx + water.vy * water.vy).sqrt();
         assert!((speed - 6.0).abs() < 0.01, "the default num120 6 (:21410)");
         assert_eq!(rng, UnifiedRandom::new(33), "both ticks draw nothing");
+    }
+}
+
+// =====================================================================
+// W4-d23 — the aiStyle-9 WIRING witnesses (the spit/flare family).
+// WRITTEN, NOT RUN (code-only mode). The three kinds (112/666/516) ride
+// the axis' 9 arm -> `npc_ai_style9::sphere_family_step` (the machine
+// extended with the 516 launch/steer + the 112/666 counter/double-move).
+// =====================================================================
+#[cfg(test)]
+mod w4_d23_style9_wiring_tests {
+    use super::*;
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
+
+    fn air() -> World {
+        World::new("t".into(), 200, 200)
+    }
+
+    fn player_at(w: &World, x: f32, y: f32) -> Player {
+        let mut p = Player::spawn(w);
+        p.x = x;
+        p.y = y;
+        p.dead = false;
+        p
+    }
+
+    /// The three kinds' SetDefaults rows pin against the C# through the
+    /// port's tables (the man-eater pin's shape).
+    #[test]
+    fn w4_d23_the_spit_flare_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::VileSpit, 112u16, 9u8, 16.0, 16.0, 65, 0, 1, 0.0f32, 0.0f32),
+            (NpcKind::VileSpitEoW, 666, 9, 16.0, 16.0, 65, 0, 1, 0.0, 0.0),
+            (NpcKind::SolarFlare, 516, 9, 26.0, 26.0, 100, 0, 1, 0.0, 0.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert!(kind.no_gravity(), "{kind:?} noGravity");
+        }
+        // The spits' alpha 80 + scale 0.9 rows; the flare spawns at 0.
+        assert_eq!(Npc::new(NpcKind::VileSpit, 0.0, 0.0, 1, 0.0).alpha, 80);
+        assert_eq!(Npc::new(NpcKind::VileSpitEoW, 0.0, 0.0, 1, 0.0).alpha, 80);
+        assert_eq!(Npc::new(NpcKind::SolarFlare, 0.0, 0.0, 1, 0.0).alpha, 0);
+        assert_eq!(Npc::new(NpcKind::VileSpit, 0.0, 0.0, 1, 0.0).scale, 0.9);
+        // The protocol ids: VileSpit the d35-rowed 455; the unrowed
+        // 516/666 on the 400+ free band (408/411).
+        assert_eq!(NpcKind::VileSpit.to_u16(), 455);
+        assert_eq!(NpcKind::SolarFlare.to_u16(), 408);
+        assert_eq!(NpcKind::VileSpitEoW.to_u16(), 411);
+        for (kind, _, _, _, _, _, _, _, _, _) in rows {
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+    }
+
+    /// The Vile Spit rides the axis: the `ai[0]` counter ticks and clamps
+    /// at 3 (`NPC.cs:21472-21476`), the `ai[0] == 2` tick doubles the move
+    /// (`:21479`), and the tick draws NOTHING (the dust burst is the skip).
+    #[test]
+    fn w4_d23_the_vile_spit_counter_and_double_move_ride_the_axis() {
+        let w = air();
+        let mut p = player_at(&w, 1700.0, 1600.0);
+        let mut spit = Npc::new(NpcKind::VileSpit, 1000.0, 1000.0, 1, 0.0);
+        spit.hp = spit.max_hp;
+        // Seed a live velocity + a committed target so the launch is past.
+        spit.target = 0;
+        spit.vx = 7.0;
+        spit.vy = 0.0;
+        spit.ai[0] = 1.0; // ++ -> 2: the double-move tick.
+        let mut rng = UnifiedRandom::new(5);
+        let x0 = spit.x;
+        spit.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(spit.ai[0], 2.0, "the counter ticked (:21472)");
+        // The double-move (+7) plus the generic integration (+7) = +14.
+        assert!((spit.x - (x0 + 14.0)).abs() < 1e-4, "the ai[0]==2 double-move (:21479)");
+        assert_eq!(rng, UnifiedRandom::new(5), "the spit tick draws nothing");
+        // The clamp: ai[0] 3 stays 3.
+        spit.ai[0] = 3.0;
+        spit.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(spit.ai[0], 3.0, "the clamp at 3 (:21473-21476)");
+    }
+
+    /// The Vile Spit dies inside a solid tile (`NPC.cs:21490-21495`): the
+    /// `SolidCollision` probe folds to hp 0, draw-free.
+    #[test]
+    fn w4_d23_the_vile_spit_dies_in_a_solid_tile() {
+        let mut w = air();
+        // A solid block at the spit's tile (62, 62) — the spit at 1000,1000.
+        let i = w.index(62, 62);
+        w.tiles[i] = Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let mut p = player_at(&w, 1700.0, 1600.0);
+        let mut spit = Npc::new(NpcKind::VileSpit, 992.0, 992.0, 1, 0.0);
+        spit.hp = spit.max_hp;
+        spit.target = 0;
+        let mut rng = UnifiedRandom::new(6);
+        spit.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(spit.hp, 0, "the solid-tile death (:21494)");
+        assert_eq!(rng, UnifiedRandom::new(6), "the death draws nothing");
+    }
+
+    /// The Solar Flare's first tick draws EXACTLY three rand values in the
+    /// C#'s order: NextDouble, NextDouble (the RotatedByRandom pair), then
+    /// NextFloat (the 6..10 speed) — `NPC.cs:21395-21400`. The launch's
+    /// velocity is then overwritten by the `target == 255` straight aim
+    /// (`:21407-21449`, the C#'s own order), but the draws still land.
+    #[test]
+    fn w4_d23_the_solar_flare_launch_draws_two_doubles_then_a_float() {
+        let w = air();
+        let mut p = player_at(&w, 1700.0, 1600.0);
+        let mut flare = Npc::new(NpcKind::SolarFlare, 1000.0, 1000.0, 1, 0.0);
+        flare.hp = flare.max_hp;
+        assert_eq!(flare.ai[0], 0.0, "the launch sentinel");
+        let mut rng = UnifiedRandom::new(77);
+        let mut witness = UnifiedRandom::new(77);
+        flare.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(flare.ai[0], 1.0, "the one-shot launch latch (:21388)");
+        assert_eq!(flare.alpha, 40, "the fade-in 0 -> 40 (:21384)");
+        // The three draws in C# order (the helper's own sequence).
+        let _ = witness.next_double();
+        let _ = witness.next_double();
+        let _ = witness.next_float();
+        assert_eq!(rng, witness, "exactly NextDouble/NextDouble/NextFloat");
+        // The straight aim overwrote the launch velocity at the 6-speed.
+        let speed = (flare.vx * flare.vx + flare.vy * flare.vy).sqrt();
+        assert!((speed - 6.0).abs() < 0.01, "the num120 6 launch, speed {speed}");
+    }
+
+    /// The frozen-behaviour A/B: the axis-routed arm produces the exact
+    /// pure-module state sequence over 500 ticks. Both runs share one
+    /// world/player stream; every tick's kinematics + the RNG stream must
+    /// be bit-equal. The flare exercises the launch draw + the homing steer;
+    /// the spit the counter/double-move.
+    #[test]
+    fn w4_d23_the_style9_axis_keeps_the_module_behaviour() {
+        let w = air();
+        for kind in [NpcKind::VileSpit, NpcKind::SolarFlare] {
+            let mut player_a = player_at(&w, 1700.0, 1600.0);
+            let mut player_b = player_at(&w, 1700.0, 1600.0);
+            let mut axis = Npc::new(kind, 1000.0, 1000.0, 1, 0.0);
+            axis.hp = axis.max_hp;
+            let mut pure = axis.clone();
+            let mut rng_a = UnifiedRandom::new(99);
+            let mut rng_b = UnifiedRandom::new(99);
+            let flags = crate::npc_ai_style9::Style9Flags {
+                red_hat: axis.red_hat_skeletron_adjustments_enabled(),
+                ..Default::default()
+            };
+            for tick in 0..500u64 {
+                // A: the live axis route (update_rng -> the 9 arm).
+                axis.update_rng(&w, &mut player_a, 1.0 / 60.0, &mut rng_a);
+                // B: the pure module + the same preamble + tail.
+                pure.update_preamble(1.0 / 60.0);
+                pure.gfx_off_y = crate::npc_ai_unicorn_b::gfx_off_y_decay(
+                    pure.gfx_off_y, pure.vx, pure.step_speed,
+                );
+                crate::npc_ai_style9::sphere_family_step(
+                    &mut pure, &w, &player_b, flags, &mut rng_b,
+                );
+                pure.just_hit = false;
+                pure.find_frame();
+                pure.contact(&mut player_b, &mut rng_b);
+                assert_eq!((axis.x, axis.y), (pure.x, pure.y), "{kind:?} tick {tick} position");
+                assert_eq!((axis.vx, axis.vy), (pure.vx, pure.vy), "{kind:?} tick {tick} velocity");
+                assert_eq!(axis.ai, pure.ai, "{kind:?} tick {tick} ai");
+                assert_eq!(axis.alpha, pure.alpha, "{kind:?} tick {tick} alpha");
+                assert_eq!(axis.rotation, pure.rotation, "{kind:?} tick {tick} rotation");
+                assert_eq!(axis.target, pure.target, "{kind:?} tick {tick} target");
+                assert_eq!(axis.frame, pure.frame, "{kind:?} tick {tick} frame");
+                assert_eq!(rng_a, rng_b, "{kind:?} tick {tick} RNG stream parity");
+            }
+        }
     }
 }
 

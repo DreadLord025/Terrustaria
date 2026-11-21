@@ -1611,6 +1611,17 @@ fn portrait_data(
                 .unwrap_or(40.0);
             (sheet_i, h, 40.0, h, white)
         }
+        // The aiStyle-9 spit/flare family (W4-d23): the spits rest the
+        // single-frame 16x16 sheet (`Main.npcFrameCount[112/666]` = 1);
+        // the flare the 4-row strip over the 26x26 box
+        // (`Main.npcFrameCount[516]` = 4 — `Main.cs:67082`).
+        (NpcKind::VileSpit | NpcKind::VileSpitEoW, _) => (sheet_i, 16.0, 16.0, 16.0, white),
+        (NpcKind::SolarFlare, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(26.0);
+            (sheet_i, h, 26.0, h, white)
+        }
         // S1-D-3z — the holiday zombies' portrait rests the same 18x40
         // `SetDefaults` box (`NPC.cs:13035-13036`/`:13206-13207`).
         (NpcKind::ZombieDoctor

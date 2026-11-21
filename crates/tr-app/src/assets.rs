@@ -1284,6 +1284,12 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_175",
         "NPC_259",
         "NPC_260",
+        // The aiStyle-9 spit/flare family (W4-d23): the three kinds' own
+        // sheets, keyed by the vanilla net id in `NpcAssets::npc_sheets`
+        // (`render/entities.rs`'s SPIT_FLARE_SHEETS).
+        "NPC_112",
+        "NPC_666",
+        "NPC_516",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -1869,7 +1875,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 187] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 190] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1907,6 +1913,9 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 187] = [
         // The man-eater family (W4-d23) — appended last so the earlier
         // slots keep their indexes.
         43, 56, 101, 175, 259, 260,
+        // The aiStyle-9 spit/flare family (W4-d23) — appended last so the
+        // earlier slots keep their indexes.
+        112, 666, 516,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -2677,6 +2686,11 @@ impl Lookups {
                 atlas.sheet("NPC_175").copied(),
                 atlas.sheet("NPC_259").copied(),
                 atlas.sheet("NPC_260").copied(),
+                // The aiStyle-9 spit/flare family (W4-d23) — the three new
+                // strips (112/666/516).
+                atlas.sheet("NPC_112").copied(),
+                atlas.sheet("NPC_666").copied(),
+                atlas.sheet("NPC_516").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

@@ -516,6 +516,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(FISHRON_SHEETS)
             .chain(SMALL_KIND_SHEETS)
             .chain(MANEATER_SHEETS)
+            .chain(SPIT_FLARE_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1259,6 +1260,16 @@ pub(crate) const MANEATER_SHEETS: &[u32] = &[
     175, // the Angry Trapper
     259, // the Fungi Bulb
     260, // the Giant Fungi Bulb
+];
+
+/// The aiStyle-9 spit/flare family's sheets (W4-d23): Vile Spit (112),
+/// Vile Spit EoW (666) and Solar Flare (516) each draw their own
+/// `NPC_<id>` art. Keyed by the vanilla net id ([`NpcKind::cs_id`]) in
+/// [`NpcAssets::npc_sheet`].
+pub(crate) const SPIT_FLARE_SHEETS: &[u32] = &[
+    112, // the Vile Spit
+    666, // the Vile Spit (Eater of Worlds)
+    516, // the Solar Flare
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -3201,6 +3212,15 @@ pub(crate) fn draw_npcs(
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
+            // The aiStyle-9 spit/flare family (W4-d23): each draws its own
+            // `NPC_<id>` sheet at `Main.npcFrameCount[type]` rows (112/666
+            // one, 516 four — `Main.cs:67082`) with the generic centred
+            // anchor. The spits rest at row 0; the flare's strip animates.
+            // The 516 AI writes `rotation` every tick (the whitelist below).
+            NpcKind::VileSpit | NpcKind::VileSpitEoW | NpcKind::SolarFlare => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3359,6 +3379,9 @@ pub(crate) fn draw_npcs(
                     | NpcKind::AngryTrapper
                     | NpcKind::FungiBulb
                     | NpcKind::GiantFungiBulb
+                    // The Solar Flare's homing steer writes `rotation +=
+                    // 0.1 * direction` every tick (`NPC.cs:21499`, W4-d23).
+                    | NpcKind::SolarFlare
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

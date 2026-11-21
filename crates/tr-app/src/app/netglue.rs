@@ -3579,6 +3579,16 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // The aiStyle-9 spit/flare family (W4-d23): the spits fly through
+        // tiles (noTileCollide/noGravity); the flare collides but the hover
+        // ctor's open-air seed is the join shape (the aiStyle-9 machine
+        // takes over on the first tick — the fishron precedent).
+        crate::npc::NpcKind::VileSpit
+        | crate::npc::NpcKind::VileSpitEoW
+        | crate::npc::NpcKind::SolarFlare => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 
