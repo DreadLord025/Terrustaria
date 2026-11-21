@@ -15,6 +15,21 @@ full scan found 32 colliding number keys** (26 bare numbers 08, 61–71, 90–95
 copies) across 64 lanes**. Free renumber block assigned: **151–236, sequential**
 (150 = this registry; max number seen at any tip then was 144).
 
+> ## 🔄🔄🔄🔄🔄 §10 (round 5, full-sweep mini-refresh) — READ THIS FIRST for LOW keys
+>
+> The dispatched post-cutoff brief (g63-240 / d10-246 / g48-244+245 /
+> f39-244 / e10 / f6-67) is **fully covered by the landed rounds 3/3-ext/
+> 4/§9** (coverage table in §10) — most renames already EXECUTED. A fresh
+> **FULL 362-tip sweep (21 368 rows)** additionally found **11 losers with
+> ZERO §1–§9 coverage** on OLD winner keys: new keys **75 = g37** (f32 →
+> **380**) and **78 = c40** (g78 → **375**); late landings g46-71→**374**,
+> g1-26d→**373**, c26-64→**376**, g2-26d→**377**, f3-67→**378**,
+> f47-144-v2→**379**; pre-round-2 misses c14-83→**371**, d78-26f→**372**;
+> and **f18's §6.3 249 assignment VOID** (249 = d15 KEEPS per §9.1) →
+> **381 RE-ISSUE**. **§10 block 371–381, machine-checked unique/no-gaps/
+> no-overlap (§5 round-5). Free floor 382+.** §9 remains authority for
+> 240+; §10 only ADDS the low-key residue + the f18 re-issue.
+>
 > ## ⛔ SUPERSEDED DRAFT — round-4 dispatch table (commit `a15cb634b`, written against tip `0426245f2`) — DO NOT EXECUTE
 >
 > This block was dispatched before the Lead's own **§8 ROUND-4 FINAL +
@@ -1006,6 +1021,41 @@ this fetch. Later pushes self-adjudicate per the same rules (losers take
 - No cargo/tests/rustfmt/graphify run (docs-only round, per mandate). No
   other branch touched; publication on `task/W4-d54-dust-sites-world` only.
 
+### Round 5 (§10, this commit)
+
+- Brief re-check: all six dispatched post-cutoff claims (g63-240 `1c52d5ee3`,
+  d10-246 `d89380ca1`, g48-244/245 `2b61530b4`, f39-244 `8704691a3`,
+  e10-voice-seal `01054aeb9`, f6-67) verified ALREADY adjudicated + mostly
+  EXECUTED by rounds 3/3-ext/4/§9 (coverage table in §10 header). g63's
+  298 rename EXECUTED `10775b366` 16:08:43; g61→273 EXECUTED `707a972e1`;
+  g50→271 EXECUTED `e2fd0637d`; d10→247 EXECUTED `72431e61f`; f4→305
+  EXECUTED `331b29858`; d125→309/319 EXECUTED `5f8569945`.
+- **FULL sweep (not lean):** `git fetch origin --prune` (one connection-reset
+  retry at 90 s) — **362 tips**, per-tip `git ls-tree docs/research/` =
+  **21 368 rows**. Number-key grouping: 50 colliding keys (45 bare + 5
+  letter-suffixed); every key cross-checked against §1–§9 coverage by
+  filename grep — **11 losers with ZERO coverage found** (§10.1): two
+  never-adjudicated keys (75 g37-vs-f32, 78 c40-vs-g78), two pre-round-2
+  sweep misses (c14-83 10:33:58, d78-26f 12:50:43), seven post-adjudication
+  late landings on old winner keys (g46-71, g1-26d, c26-64, g2-26d, f3-67,
+  f47-144-v2, f18-64/249-void).
+- First-add adjudication: `git log <tip> --diff-filter=A --format='%h|%cI' -1`
+  for all 11 loser docs + the 75/78 winners (g37 `53a5b5b51` 04:32:49,
+  c40 `29af285f9` 06:57:53) + d15's 249 (`869ac7edd` 16:23:40, §9.1 KEEPS).
+- f18 re-issue basis: §6.3 assigned f18→249, but d15 executed 249
+  post-publish and §9.1 (Lead authority) rules 249=d15 KEEPS — the
+  g15-77→284-voided→358 precedent (§9.2 row 358) applies; f18→381.
+- Refs lists: `git grep -l -F <oldname> <tip> -- docs/ crates/` per loser
+  (g2/f18 have code-comment cites; g46 none outside self).
+- **Machine check (python, regex over §10.2 arrow-backtick targets +
+  whole-file overlap scan):** `s10.2 target rows: 11 / unique: 11 /
+  sorted: [371..381] / dups: [] / missing: [] / extra: [] / overlap with
+  other arrow-targets: [] / overlap with s9.2/s8.7 table numbers: [] /
+  MACHINE-CHECK PASS: 11 unique assignments 371-381, no gaps, no dups,
+  no overlap with s1-s9`.
+- No cargo/tests/rustfmt/graphify run (docs-only round, per mandate). No
+  other branch touched; publication on `task/W4-d54-dust-sites-world` only.
+
 ---
 
 ## §8 — ROUND 4 FINAL (Lead direct-append; the 281-block self-pick race + post-§7.4 claims)
@@ -1234,3 +1284,89 @@ new docs ≥370 require a Lead assignment appended here; NO self-picks.
 Orch note: d54's orch_dust*.rs modules carry the e4-reserved first-40 +
 union steps; the 24-arm router remainder (orch_dispatch.rs, d54j catalog)
 is in flight as a separate dispatch.
+
+---
+
+## §10 — ROUND 5 (full-sweep mini-refresh, executor append) — the LOW-KEY residue the high-number rounds missed
+
+Scope: the dispatched round-3 mini-refresh brief (post-cutoff claims
+g63-240 / d10-246 / g48-244+245 / f39-244 / e10-voice-seal / f6-67) was
+re-checked against a **fresh FULL sweep: 362 tips, 21 368 ls-tree rows**
+(`git ls-tree docs/research/` per tip, first-add `%cI` adjudication).
+**Every brief claim is ALREADY adjudicated** by the landed rounds — no
+re-adjudication needed:
+
+| Brief item | Already covered by |
+| --- | --- |
+| g63 `240-proj-trail-dust-family-final` (1c52d5ee3 14:54:20) | §7.3 →298, **EXECUTED** 10775b366 (`298-…` at tip); 67→199 EXECUTED same commit; g63 needs nothing |
+| d10 `246-…-final` (d89380ca1 14:52:30) | §7.3/§7.4: 246=e23 reservation, d10→247 **EXECUTED** 72431e61f; 165/166 EXECUTED |
+| g48 244/245 (2b61530b4 14:30:16) | §7.1 pre-publish WINS; g48's contested 244→281/245→282 exits renumbered §9.2 **310/318 DONE** 09364c008; 237→239→272 DONE |
+| f39 `244-f39-v18-claim-input` (8704691a3 14:32:01) | §7.3→299 superseded by §9.2 chain 244→281→**316 DONE** 2c4808922; 282-seal→**320 DONE** |
+| e10 `W4-e10-voice-seal.md` (01054aeb9) | lane-prefixed name, outside the NN-key space — no collision, no action (§7.2 rule) |
+| f6 67-key (`67-dust-world-wiring-keep-one`) | round-1 §3 f6→**198**, still owed at f6 tip (SEAL a8968a222 kept 67); g63 renamed away →199; 67 stays d54's until the dust-union merge |
+
+**What the full sweep DID find: 11 losers with ZERO coverage in §1–§9** —
+new docs that landed on OLD winner keys (64/67/71/75/78/83/26d/26f/144)
+after those keys' adjudication rounds, invisible to the lean claimant-tip
+re-checks (which only watched 240+). Two keys (**75, 78**) were never
+adjudicated in ANY round; two claimants (**c14-83 10:33:58, d78-26f
+12:50:43**) predate even the round-2 sweep and were missed then (the
+125/144/145 missed-claimant pattern). Plus **f18's round-2 249 assignment
+is VOID**: d15 executed 249 (`869ac7edd` 16:23:40) and §9.1 rules
+**249=d15 KEEPS** — the g15-77→284-voided→358 precedent applies: the
+assignment holder whose number was taken by a Lead-confirmed executed
+winner gets a RE-ISSUE, not the old number.
+
+### §10.1 — adjudication (winners KEEP; all timestamps 2026-11-21 +02:00)
+
+| Key | Winner (keeps) | Winner claim | NEW uncovered loser → FREE number |
+| --- | --- | --- | --- |
+| 64 (+1) | W4-d64 (round 1) | 11-20T18:54:02 | W4-c26 `64-buff-hud-family.md` f3782d94a 16:16:34 → **376** |
+| 67 (+1) | W4-d54 (round 1, own) | 01:23:05 | W4-f3 `67-e1b-141-e1-drop-hunks.md` 58d16612f 16:22:23 → **378** (f3's 65→303 assignment unchanged, still owed) |
+| 71 (+1) | W4-e20 (round 1) | 03:50:05 | W4-g46 `71-liquid-seal-hunks.md` db2322656 15:48:47 → **374** (g46's 69 win + 70-fork→252 unchanged) |
+| 75 (NEW key) | **W4-g37** | `75-worldgen-pass-reconcile.md` 53a5b5b51 04:32:49 (missed since round 1) | W4-f32 `75-sweep-luck-loot.md` b67b708fc 17:01:21 → **380** |
+| 78 (NEW key) | **W4-c40** | `78-doc-sweep-weather.md` 29af285f9 06:57:53 (missed since round 1) | W4-g78 `78-sight-retire-seal.md` 66cbf9983 16:11:32 → **375** (g78's 64→179 assignment unchanged, still owed) |
+| 83 (+1) | W4-d130 (round 2) | 04:12:25 | W4-c14 `83-mount-abilities-census.md` 447f322c3 10:33:58 (pre-round-2, missed) → **371** |
+| 26d (+2) | W4-d12 (round 1) | 00:06:06 | W4-g1 `26d-g1-proj-missing-a-family-bible.md` ef671cf2b 15:39:06 → **373**; W4-g2 `26d-projectile-rowless-riders-g2d.md` 5900648e0 16:18:41 → **377** (g1's 160 / g2's 157+163 unchanged, still owed) |
+| 26f (+1) | W4-f20 (round 1) | 05:13:47 | W4-d78 `26f-d78-final-kill-dedupe.md` fd59c51a0 12:50:43 (pre-round-2, missed) → **372** |
+| 144 (+1) | W4-e19 (§7.1 corrected) | 08:45:32 | W4-f47 `144-ARBITER-FINAL-v2.md` 057f44a68 16:27:02 (THIRD f47 144 doc) → **379** (f47's 277/278 unchanged, still owed) |
+| 249 (VOID re-issue) | **W4-d15** (§9.1 KEEPS, executed 869ac7edd 16:23:40) | §9 authority | W4-f18 `64-npc-kinds-351-697-census.md` 898b0d1f8 05:02:54 — §6.3's →249 assignment **VOID** (249=d15 per §9.1; g15-284→358 precedent) → **381 RE-ISSUE** |
+
+### §10.2 — per-lane rename-INSTRUCTION table (round 5; lanes execute on OWN branches)
+
+Same procedure as §3/§9: `git mv`, update the number header + chain-banner
+(cite §10), update every listed ref (`git grep -l -F <oldname> <tip>`, self
+excluded). Old names are the CURRENT tip names (verified present at this
+sweep). Claim-time order 371–381.
+
+| Lane (branch `task/W4-…`) | old filename → new filename | doc title (first header) | refs-to-update on own branch |
+| --- | --- | --- | --- |
+| c14-tile-break-footstep-sounds | `83-mount-abilities-census.md` → `371-mount-abilities-census.md` | 83 — Mount special-ability census (M2-MOUNT-4, W4-c14 sound lane) | `docs/research/INDEX.md` — 83 belongs to d130's weather-reconcile (04:12:25 < 10:33:58) |
+| d78-ui-sounds-menus | `26f-d78-final-kill-dedupe.md` → `372-d78-final-kill-dedupe.md` | 26f — d78 FINAL: the Kill death-effect dedupe adjudication + drop-vs-keep tables (W4-d78) | `docs/ANALYSIS.md`, `docs/research/INDEX.md` — 26f belongs to f20 (round-1 winner) |
+| g1-proj-ai-missing-a | `26d-g1-proj-missing-a-family-bible.md` → `373-g1-proj-missing-a-family-bible.md` | 26d-g1 — the proj-missing-a family bible (W4-g1, lane a) — FINAL | `docs/ANALYSIS.md`, `docs/PORT_MAP.md`, `docs/research/26d-projectile-kill-hooks-census.md` (becomes `160-…` — g1's owed round-1 rename), `docs/research/INDEX.md` |
+| g46-liquid-evaporation | `71-liquid-seal-hunks.md` → `374-liquid-seal-hunks.md` | 71 — Liquid SEAL: the steps-6/7 merger hunks + the liquid-family bible | (none) — 71 belongs to e20's wiring-device-reconcile; g46's 69 KEEP + 70-fork→252 unchanged |
+| g78-tile-echo-draw | `78-sight-retire-seal.md` → `375-sight-retire-seal.md` | 78 — W4-g78 SIGHT-RETIRE seal (the sight family closed; the retire hunks) | `docs/research/INDEX.md` — 78 belongs to c40's earlier doc-sweep-weather (06:57:53) |
+| c26-buff-hud | `64-buff-hud-family.md` → `376-buff-hud-family.md` | 64 — Buff-HUD family FINAL census + bible (W4-c26 compose, 2026-11-21) | `docs/ANALYSIS.md`, `docs/research/INDEX.md` — 64 belongs to d64 (round-1 winner) |
+| g2-proj-ai-missing-b | `26d-projectile-rowless-riders-g2d.md` → `377-projectile-rowless-riders-g2d.md` | 26d — the g2d rowless riders: the 981 row + the phaseblade/491 task-seeds + the Shimmer drop-hunk | `crates/tr-app/src/projectile.rs` (comment cites), `docs/ANALYSIS.md`, `docs/PORT_MAP.md`, `docs/research/26d-projectile-rowless-kinds-w4-g2.md` (becomes `163-…` — g2's owed round-1 rename) |
+| f3-dust-player-3 | `67-e1b-141-e1-drop-hunks.md` → `378-e1b-141-e1-drop-hunks.md` | 67 — The e1b-141 reconcile: e1 drop-hunks + keep-lanes (f3 × g66 × e1) | `docs/research/INDEX.md` — 67 belongs to d54 (dust-union lineage); f3's 65→303 still owed |
+| f47-liquid-shimmer-2 | `144-ARBITER-FINAL-v2.md` → `379-ARBITER-FINAL-v2.md` | 144 ARBITER FINAL v2 — the splash keep-one, THE definitive verdict | `docs/research/121-doc-sweep-shimmer.md`, `docs/research/144-ARBITER-FINAL.md` (becomes `278-…` — owed), `docs/research/144-item-splash-keep-one.md` (becomes `277-…` — owed), `docs/research/INDEX.md` — 144 belongs to e19 (§7.1) |
+| f32-luck-consumers | `75-sweep-luck-loot.md` → `380-sweep-luck-loot.md` | 75 — SWEEP-LUCK-LOOT: the Player.cs luck-factor / loot-drop census (W4-f32 resume) | `docs/research/INDEX.md` — 75 belongs to g37's earlier worldgen-pass-reconcile (04:32:49) |
+| f18-npc-kinds-verify-2 | `64-npc-kinds-351-697-census.md` → `381-npc-kinds-351-697-census.md` | 64 — NPC kinds 351–697 SetDefaults census + first-20 port (W4-f18) | `crates/tr-app/src/npc_w4_f18_witnesses.rs` (comment cites) — **RE-ISSUE of §6.3's f18→249 row** (249=d15 KEEPS per §9.1, executed 869ac7edd; the g15-284→358 void-re-issue precedent); do NOT take 249 |
+
+### §10.3 — rules + verification
+
+- **Round-5 block consumed: 371–381 (11 assignments = 10 uncovered losers +
+  1 void re-issue), claim-time order, machine-checked unique / no gaps / no
+  overlap with any §1–§9 target (§5 round-5 record). Free floor: 382+.**
+  New docs require a registry check + Lead assignment; NO self-picks
+  (§9.4 enforcement unchanged).
+- 75=g37 and 78=c40 are WINNER keys now (first-add authority) — do not
+  re-take them. c14/d78's pre-round-2 docs were sweep misses, not new
+  pushes; their losers still renumber (the 125/144/145 correction pattern).
+- f18: §6.3's 249 row is superseded by this §10.2 re-issue. d15's 249 doc
+  needs NO action (§9.1 KEEPS).
+- All §9.2 rows verified untouched by this section; §10 only ADDS numbers
+  371–381. Where §10 and §6.3 disagree on f18, §10 wins.
+- **Cutoff note (round 5):** full sweep 362 tips / 21 368 rows at this
+  fetch (post-§9.4). Later pushes self-adjudicate per the §9.4 rule
+  (Lead assignment ≥382) or request a round-6 refresh.

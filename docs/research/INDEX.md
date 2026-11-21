@@ -77,11 +77,26 @@ per `docs/superpowers` agreements).
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 131 | Dust cross-lane MASTER STATUS — **BIBLE-FINAL §8** (W4-d54: all-lane tips + per-fold VERIFIED/OWED table, Dust.cs FAMILY COMPLETE declaration + per-family spawn censuses, merger keep-one symbol checklist, witness recount 318→492 gross/≈461 net; F1-F7/g75d/116/G1-G6 closed, R5-R7+G2+e3-contracts+f6-push owed) | `131-dust-master-status.md` | ✅ consolidated final |
 
-| 150 | Research-number COLLISION REGISTRY (W4-d54 doc-integrity: **§4-REFRESH round 3 + §7.4 EXTENSION + Lead's FROZEN §8 ROUND-4 FINAL + §8.5/§8.6/§8.7 AMENDMENTS (END of file — THE AUTHORITY)** — §7.2-assigned lanes KEEP 281–303; the post-§7.4 self-pick wave renumbers 308+ per the FROZEN table: 281×10 self-pickers→308–317 (d30 shifted→338 by g13's honored pre-§8 308), 282 g48/d125/f39→318/319/320, 283 f26-KEEPS g59→321, 244 g48-WINS d43/g5→322/323, 245 g48-WINS g65→324→346 (§8.7), 246 e23-WINS g40/d16→325/326, 247 d10-EXECUTED-KEEPS d16/g68/c3/d6→327–330, 248 e26-first-KEEPS d3/c27→331/332, 249 d15-KEEPS, 284 g52-executed-pre-§8-KEEPS d32→348, 304 d50-KEEPS d119/g17/d43/e5→333/339/343/351, 240 g62/f30→334/335, 243 d13/f24→336/337; §8.7 FROZEN batch e2/d43/c24/d40/g65/g15/d32/c9/c7/e5→341–351; FROZEN live set 191 = 151–236 + 246–280 + 281–303 + 304–307 + 308–337 + 338–351; 237–245 winner-consumed; **free floor 352+, new docs ≥360 after round-5 re-scan; NO SELF-PICKS — execute §8/§8.7 ONLY**; an interim §8-DRAFT block mid-file is SUPERSEDED, do not execute) | `150-research-number-registry.md` | registry |
+| 150 | Research-number COLLISION REGISTRY (W4-d54 doc-integrity: **§9 UNIFIED FINAL TABLE (Lead, 308–370, THE SINGLE AUTHORITY for 240+) + §10 ROUND-5 full-sweep mini-refresh (371–381, the LOW-key residue)** — rounds 3/3-ext/4/§8-FROZEN consolidated into §9: 281/282/283=f26, 284=g52, 244/245=g48, 246=e23, 247=d10-EXECUTED, **248=g82-reservation (e26→357, NOT 333)**, 249=d15, 250=d37, 304=d50, 305=f4, 308=g13; §9.2 rows 308–368 EXECUTED (49/49 §9.4) + 369=d34 DONE + 370=d54j owed; **§10 round-5 FULL 362-tip sweep (21 368 rows) found 11 ZERO-coverage losers on OLD winner keys**: new keys 75=g37 (f32→380) / 78=c40 (g78→375), late landings g46-71→374 / g1-26d→373 / c26-64→376 / g2-26d→377 / f3-67→378 / f47-144v2→379, pre-round-2 misses c14-83→371 / d78-26f→372, **f18's §6.3 249 assignment VOID (249=d15 §9.1)→381 RE-ISSUE**; §10 block 371–381 machine-checked unique/no-gaps/no-overlap; the dispatched post-cutoff brief (g63-240/d10-246/g48-244+245/f39-244/e10/f6-67) ALL already adjudicated+mostly EXECUTED; **free floor 382+; NO SELF-PICKS — execute §9/§10 ONLY**; mid-file §8-DRAFT SUPERSEDED, do not execute) | `150-research-number-registry.md` | registry |
 
 ## ⚠️ Collision-aware index note (2026-11-21, W4-d54) — READ BEFORE MERGING
 
-**REFRESHED round 3 + §7.4 EXTENSION + the Lead's FROZEN §8 ROUND-4 FINAL (END of the registry file — §8/§8.5/§8.6/§8.7 ARE AUTHORITY; the mid-file §8-DRAFT is superseded).**
+**REFRESHED round 5 (§10): the registry's §9 UNIFIED FINAL TABLE (Lead) is THE
+SINGLE AUTHORITY for keys 240+ (308–370, §9.4 EXECUTION COMPLETE 49/49); §10
+adds the round-5 FULL-sweep LOW-key residue (371–381). The mid-file §8-DRAFT
+is superseded; the FROZEN §8/§8.5/§8.6/§8.7 are consolidated into §9. Where
+any earlier section disagrees with §9/§10, §9/§10 win.**
+
+**§10 round-5 (full 362-tip sweep, 21 368 rows): the dispatched post-cutoff
+brief — g63-240 (→298 EXECUTED), d10-246 (→247 EXECUTED), g48-244/245
+(WINS; docs →310/318 DONE), f39-244 (→316 DONE), e10-voice-seal (lane-prefixed,
+no number), f6-67 (→198 owed) — is ALL already adjudicated by rounds 3/3-ext/
+4/§9. The sweep additionally found 11 losers with ZERO prior coverage on OLD
+winner keys: 75=g37 KEEPS (f32→380), 78=c40 KEEPS (g78→375), 64=d64 (c26→376),
+67=d54 (f3→378), 71=e20 (g46→374), 83=d130 (c14→371), 26d=d12 (g1→373,
+g2→377), 26f=f20 (d78→372), 144=e19 (f47-v2→379), and f18's §6.3 249
+assignment VOID (249=d15 KEEPS per §9.1) → 381 RE-ISSUE. Block 371–381
+machine-checked unique/no-gaps/no-overlap. Free floor 382+.**
 The number space `docs/research/NN-*.md` is **collided across the task/W4-\*
 branches**: the round-3 re-scan of all **360** remote tips (21 172 rows; +2
 lanes: f12-buff-effects base-carry, g11-teleport-dust successor) finds **53
@@ -110,20 +125,22 @@ honored pre-§8 executed 308), 282 = f26 KEEPS (g48/d125/f39-seal →
 284 = g52 executed-pre-§8 KEEPS (d32 → 348); 244 = g48 WINS (d43/g5 →
 322/323; d43's later 304 self-pick → 343), 245 = g48 WINS (g65 → 324,
 its executed 308 → 346 §8.7), 246 = e23 reservation (g40/d16 → 325/326),
-247 = d10 EXECUTED KEEPS (d16-bible/g68/c3/d6 → 327–330), 248 = e26 first
-KEEPS (d3/c27 → 331/332), 249 = d15 sole KEEPS, 304 = d50 KEEPS
+247 = d10 EXECUTED KEEPS (d16-bible/g68/c3/d6 → 327–330), 248 = **g82's
+published round-2 reservation WINS per §9 (e26 → 357 CORRECTION, d3/c27 →
+331/332 DONE)**, 249 = d15 KEEPS (f18's §6.3 249 assignment VOID → 381
+§10 re-issue), 304 = d50 KEEPS
 (d119/g17/d43/e5 → 333/339/343/351), 240 (g62/f30 → 334/335), 243
 (d13/f24 → 336/337); §8.7 FROZEN batch: e2 → 341+342, c24 → 344, d40 → 345,
 g15 → 347, c9's 312 self-pick → 349. f39's §7.3 299 row superseded → 316
 (chain 244→281→316).**
-**Free floor 352+ (new docs ≥360 after round-5 re-scan) — NO SELF-PICKS: execute §8/§8.7 assignments ONLY; do NOT pick max-on-origin+1 or
-first-free-at-your-last-fetch without checking the registry AND a fresh
-all-tip sweep** (f11's interim 151–153, g50's 154, g48's 237/239, g56+f21's
-239, d53+c42+g63+f4's 240, d50's 243, f39+d53+g86's 244, d10+g43's 246,
-g67's 247 and the c8/d42/g61 triple-238 all collided
-that way). Pushes after the registry's FROZEN §8 sweep self-adjudicate per
-§8.7's enforcement rule (future self-picks INVALID; execute §8/§8.7 or
-request round 5).
+**Free floor 382+ (§10 round-5; §9 consumed 308–370) — NO SELF-PICKS: execute
+§9/§10 assignments ONLY; new docs require a registry check + Lead assignment;
+do NOT pick max-on-origin+1 or first-free-at-your-last-fetch** (f11's interim
+151–153, g50's 154, g48's 237/239, g56+f21's 239, d53+c42+g63+f4's 240,
+d50's 243, f39+d53+g86's 244, d10+g43's 246, g67's 247, the c8/d42/g61
+triple-238, the 281×10/282×3/360×4 self-pick waves and the §10 low-key
+landings all collided that way). §9.4 enforcement: future self-picks
+INVALID; execute the §9/§10 assignment or request a round-6 refresh.
 
 **Merger rules (dedupe per registry, not per filename guess):**
 1. Numbers 08, 61–63, 90–92 belong to the inherited base census docs
