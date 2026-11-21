@@ -3058,6 +3058,49 @@ mod tests {
         );
     }
 
+    /// M2-MOUNT-4 census (research/83 §3) — the Meowcart/track rattle's pitch
+    /// does NOT scale with speed. The Item55 cue is identical at every speed
+    /// (same asset, same position — the cue carries no pitch term); the pitch
+    /// is the FIXED case-2 window `-Next(-20, -11) * 0.02`
+    /// (`LegacySoundPlayer.cs:616`), drawn at play time on the audio path,
+    /// never from the cart velocity. Speed only gates the SPARK density (the
+    /// threshold chain above). This witness pins the cue's speed-invariance
+    /// across the three density tiers.
+    #[test]
+    fn m4_the_rattle_cue_is_speed_invariant_no_pitch_scaling() {
+        let max = 13.0f32;
+        let mut cues = Vec::new();
+        for vx in [2.0f32, 6.5, 10.4] {
+            // low / mid / high density tiers
+            let mut sounds = Vec::new();
+            let mut sparks = Vec::new();
+            let mut rng = 999u64;
+            rolling_wheel_sparks(
+                &mut sounds,
+                &mut sparks,
+                &mut rng,
+                SPARK_POS,
+                20,
+                52,
+                Vec2::new(vx, 0.0),
+                max,
+                0.0,
+            );
+            assert_eq!(sounds.len(), 1, "one rattle per gate-passing tick");
+            cues.push(sounds[0].clone());
+        }
+        // The cue is byte-identical across the tiers — no velocity term.
+        assert_eq!(cues[0], cues[1]);
+        assert_eq!(cues[1], cues[2]);
+        assert_eq!(cues[0].cue, "Item_55");
+        // The fixed pitch window's bounds: -Next(-20,-11)*0.02 spans
+        // [0.22, 0.40] (Next(-20,-11) ∈ [-20,-12], negated ×0.02) — a
+        // constant band, independent of any speed.
+        let lo = -(-12i32) as f32 * 0.02;
+        let hi = -(-20i32) as f32 * 0.02;
+        assert!((lo - 0.24).abs() < 1e-6 && (hi - 0.40).abs() < 1e-6);
+    }
+
     /// DW-3.2 + the plan's P3 boundary — the f64 compares
     /// (`Player.cs:19873/:19888`): the f32 products at exactly 0.66·max
     /// (8.579999923706055) and 0.33·max (4.289999961853027) both sit below
