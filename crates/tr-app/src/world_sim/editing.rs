@@ -19158,6 +19158,48 @@ mod s1_p_i08_throw_tests {
         }
         assert!(found_single && found_double, "both arms exercised");
     }
+
+    /// W4-d17 SEAL — the idle co-lane's Chlorophyte Claymore empowered
+    /// swing (`Player.cs:48897-48913`): `flag11 = chlorophyteBladeCounter
+    /// <= 0` → ×1.5 damage (the float multiply truncates), ×1.25
+    /// knockback, velocity `(dir, 0)`, and the counter adds
+    /// `itemAnimation · 3` (the prefixed max 32 at the use-start tick).
+    /// The 1126 slash row is d19/d20's — the spawn no-ops but the counter
+    /// write + the launch decision run. The per-tick drain
+    /// (`:42830-42833`) decrements while positive.
+    #[test]
+    fn w4_d17_the_claymore_empowers_then_cools_down() {
+        let mut app = boomerang_app(1226, "Chlorophyte Claymore");
+        // The silent listener: the use cue draws nothing (the stream
+        // stays clean for the counter census).
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (100000.0, 100000.0),
+            sound_volume: 1.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        assert_eq!(app.player.as_ref().unwrap().chlorophyte_blade_counter, 0);
+        fire_once(&mut app);
+        // The empowered use: counter += 32·3 = 96, then the SAME tick's
+        // update_editing drain runs BEFORE the use (the :42830 slot sits
+        // ahead of ItemCheck) — the write lands after it: 96.
+        assert_eq!(
+            app.player.as_ref().unwrap().chlorophyte_blade_counter, 96,
+            "itemAnimation(32) * 3 (:48910)"
+        );
+        // The next tick drains one (:42831-42833).
+        fire_once(&mut app);
+        assert_eq!(app.player.as_ref().unwrap().chlorophyte_blade_counter, 95);
+        // The row gate: 1126 is unrowed here (d19/d20's aiStyle-190/191
+        // machines) — no projectile spawned, recorded not faked.
+        assert!(
+            !app.projectiles.slots().iter().any(|p| p.active && p.kind == 1126),
+            "the 1126 row is d19/d20's — the spawn no-ops until merge"
+        );
+    }
 }
 
 /// S1-P-i33 — the wall placement/removal census fixes: the adjacency gate,

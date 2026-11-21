@@ -46597,3 +46597,373 @@ mod w4_d17_first_fractal_tests {
         assert_eq!(s2.direction, -1, "the flight now faces -X (:46552)");
     }
 }
+
+#[cfg(test)]
+mod w4_d17_followup_whip_proc_tests {
+    //! W4-d17 SEAL — the idle co-lane's whip proc-spawn children
+    //! (`TagEffectState.OnHit` `:109-119`: OnTaggedHit → OnProcHit → the
+    //! consume; the port's `proc_armed` snapshot before `on_hit` keeps the
+    //! C# order). WRITTEN NOT RUN (code-only mode). The 916/917/918/1038/
+    //! 1039 rows are d18/d20's — the spawn seams no-op until they merge
+    //! (the Zenith precedent); the RNG censuses + the row-gated decisions
+    //! pin here. The 1036/1037 rows are THIS branch's — live.
+    use super::*;
+
+    fn world() -> World {
+        World::new("t".into(), 256, 128)
+    }
+
+    /// The draw census: every explicit call-site draw records its
+    /// (min, max) / float / double kind in order.
+    enum Draw {
+        Range(i32, i32),
+        Float,
+        Double,
+    }
+    struct CensusRng {
+        draws: Vec<Draw>,
+    }
+    impl tr_core::loot::DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push(Draw::Range(min, max));
+            min // the deterministic pick
+        }
+        fn next_float(&mut self) -> f32 {
+            self.draws.push(Draw::Float);
+            0.5
+        }
+        fn next_double(&mut self) -> f64 {
+            self.draws.push(Draw::Double);
+            0.5
+        }
+    }
+
+    fn whip(pool: &mut ProjectilePool, kind: u16, tag: u16, damage: i32) -> usize {
+        let slot = pool
+            .spawn_with_data_ai_owned(kind, 0, 100.0, 100.0, 4.0, 0.0, damage, 2.0, 0.0, 0.0)
+            .expect("the whip row");
+        pool.set_whip_params(slot, tag, 0, 30.0);
+        slot
+    }
+
+    /// The unclaimed rows land verbatim (`Projectile.cs:9767-9792`):
+    /// the 1036 spark 18x10 aiStyle 67 pen −1 netImportant local(20)
+    /// manualFallThrough; the 1037 meteor 24x24 aiStyle 5 local(−1)
+    /// scale 0.8 extraUpdates 1 alpha 254 tileCollide false. The claimed
+    /// children stay row-gated (None) on this branch.
+    #[test]
+    fn w4_d17_the_unclaimed_proc_rows_land_and_the_claimed_stay_gated() {
+        let cob = proj_data(COB_WHIP_PROJ).expect("the 1036 row is this lane's");
+        assert_eq!((cob.w, cob.h, cob.ai_style, cob.penetrate), (18.0, 10.0, 67, -1));
+        assert!(cob.net_important && cob.decides_manual_fall_through, ":9774/:9778");
+        assert!(cob.uses_local_immunity, ":9775");
+        assert_eq!(cob.local_hit_cooldown, 20, ":9776");
+        let met = proj_data(METEOR_WHIP_METEOR).expect("the 1037 row is this lane's");
+        assert_eq!((met.w, met.h, met.ai_style), (24.0, 24.0, 5));
+        assert_eq!(met.local_hit_cooldown, -1, ":9787");
+        assert_eq!((met.scale, met.extra_updates, met.alpha), (0.8, 1, 254));
+        assert!(!met.tile_collide, ":9791 — the AI's bottom latch re-arms");
+        for claimed in [SCYTHE_WHIP_PROJ, COOL_WHIP_PROJ, FIRE_WHIP_PROJ, FLOWER_WHIP_PETAL, CONSTELLATION_STAR] {
+            assert!(proj_data(claimed).is_none(), "{claimed}: d18/d20's row, gated here");
+        }
+    }
+
+    /// The Starcrash proc (`WhipTagEffect_Starcrash.cs:14-25`): the dead
+    /// first-offset `Next(400)` STILL draws, then the `NextFloatDirection`
+    /// (one NextDouble), then `Next(3)` — the C# order. The meteor spawns
+    /// at `Center + (0,-280).RotatedBy(angle)` with velocity toward the
+    /// victim ×8, damage `(int)(calcDamage·1.33)`, ai1 = the victim's top.
+    #[test]
+    fn w4_d17_the_starcrash_proc_spends_three_draws_and_spawns_the_meteor() {
+        let w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = whip(&mut pool, METEOR_WHIP, 5476, 20);
+        let mut p = crate::player::Player::spawn(&w);
+        p.tag_effects.try_apply_tag_to_npc(5476, 0, crate::npc::NpcKind::Zombie);
+        p.tag_effects.try_enable_proc(5476, 0);
+        let mut rng = CensusRng { draws: Vec::new() };
+        pool.tag_on_hit(
+            slot, 0, Some(&mut p), Vec2::new(400.0, 300.0), 288.0,
+            Vec2::new(24.0, 40.0), 20, &mut rng,
+        );
+        // The consume ran (Starcrash consumes) but the snapshot fired.
+        assert!(!p.tag_effects.can_proc(5476, 0), "the proc consumed");
+        assert_eq!(rng.draws.len(), 3, "Next(400) dead + NextDouble + Next(3)");
+        assert!(matches!(rng.draws[0], Draw::Range(0, 400)), "the dead store still draws");
+        assert!(matches!(rng.draws[1], Draw::Double), "NextFloatDirection");
+        assert!(matches!(rng.draws[2], Draw::Range(0, 3)), "the ai0 roll");
+        let met = pool.slots().iter().find(|s| s.active && s.kind == METEOR_WHIP_METEOR)
+            .expect("the 1037 row is live — the meteor spawns");
+        assert_eq!(met.damage, 26, "(int)(20·1.33)");
+        assert!((met.vel.length() - 8.0).abs() < 1e-4, "DirectionFrom ×8");
+        assert_eq!(met.ai[0], 0.0, "Next(3) → min 0");
+        assert_eq!(met.ai[1], 288.0, "ai1 = targetNPC.position.Y");
+        // The point: angle = (0.5·2−1)·2π·0.125 = 0 → (0,-280) unrotated;
+        // the box centre at (400, 20), the top-left less the half-box.
+        assert!((met.pos.x + met.w * 0.5 - 400.0).abs() < 1e-3);
+        assert!((met.pos.y + met.h * 0.5 - 20.0).abs() < 1e-3);
+    }
+
+    /// The Firecracker proc (`WhipTagEffect_Firecracker.cs:20-24`): the
+    /// 918 explosion damage is `(int)(calcDamage·2.75)` — the row is d18's
+    /// so the spawn no-ops, but the armed-window decision + the consume
+    /// still run, and the proc body draws NOTHING (zero-velocity spawn).
+    #[test]
+    fn w4_d17_the_firecracker_proc_consumes_and_draws_nothing() {
+        let w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = whip(&mut pool, FIRE_WHIP, 4912, 20);
+        let mut p = crate::player::Player::spawn(&w);
+        p.tag_effects.try_apply_tag_to_npc(4912, 0, crate::npc::NpcKind::Zombie);
+        p.tag_effects.try_enable_proc(4912, 0);
+        let mut rng = CensusRng { draws: Vec::new() };
+        pool.tag_on_hit(
+            slot, 0, Some(&mut p), Vec2::new(400.0, 300.0), 288.0,
+            Vec2::new(24.0, 40.0), 20, &mut rng,
+        );
+        assert!(!p.tag_effects.can_proc(4912, 0), "Firecracker consumes");
+        assert!(rng.draws.is_empty(), "the 918 spawn draws nothing");
+        assert!(
+            !pool.slots().iter().any(|s| s.active && s.kind == FIRE_WHIP_PROJ),
+            "the 918 row is d18's — the spawn no-ops"
+        );
+    }
+
+    /// The DarkHarvest tagged hit (`WhipTagEffect_DarkHarvest.cs:16-21`):
+    /// fires on EVERY tagged hit (no proc window), the 916 row is d18's
+    /// (no-op), and the class does NOT consume (`proc_hit_consumes` false).
+    #[test]
+    fn w4_d17_the_dark_harvest_tagged_hit_never_consumes_the_window() {
+        let w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = whip(&mut pool, SCYTHE_WHIP, 4680, 20);
+        let mut p = crate::player::Player::spawn(&w);
+        p.tag_effects.try_apply_tag_to_npc(4680, 0, crate::npc::NpcKind::Zombie);
+        p.tag_effects.try_enable_proc(4680, 0);
+        let mut rng = CensusRng { draws: Vec::new() };
+        pool.tag_on_hit(
+            slot, 0, Some(&mut p), Vec2::new(400.0, 300.0), 288.0,
+            Vec2::new(24.0, 40.0), 20, &mut rng,
+        );
+        assert!(p.tag_effects.can_proc(4680, 0), "DarkHarvest leaves the window");
+        assert!(rng.draws.is_empty(), "the 916 spawn draws nothing");
+    }
+
+    /// The FlowerWhip fan (`WhipTagEffect_ViolentDisplayOfFlower.cs:17-33`):
+    /// the base angle NextFloat, the count `3 + Next(0,4)` (→ 3 at min),
+    /// then per petal the RotatedByRandom's TWO NextDouble draws + the ai0
+    /// NextFloat — 2 + 3·3 = 11 draws; the 1038 row is d20's (no spawns).
+    #[test]
+    fn w4_d17_the_flower_fan_spends_two_plus_three_per_petal() {
+        let w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = whip(&mut pool, FLOWER_WHIP, 5477, 20);
+        let mut p = crate::player::Player::spawn(&w);
+        p.tag_effects.try_apply_tag_to_npc(5477, 0, crate::npc::NpcKind::Zombie);
+        p.tag_effects.try_enable_proc(5477, 0);
+        let mut rng = CensusRng { draws: Vec::new() };
+        pool.tag_on_hit(
+            slot, 0, Some(&mut p), Vec2::new(400.0, 300.0), 288.0,
+            Vec2::new(24.0, 40.0), 20, &mut rng,
+        );
+        assert!(!p.tag_effects.can_proc(5477, 0), "the fan consumes");
+        assert_eq!(rng.draws.len(), 11, "base + count + 3×(2 doubles + 1 float)");
+        assert!(matches!(rng.draws[0], Draw::Float), "the base angle");
+        assert!(matches!(rng.draws[1], Draw::Range(0, 4)), "the count roll");
+        for petal in 0..3 {
+            let b = 2 + petal * 3;
+            assert!(matches!(rng.draws[b], Draw::Double));
+            assert!(matches!(rng.draws[b + 1], Draw::Double));
+            assert!(matches!(rng.draws[b + 2], Draw::Float), "the ai0");
+        }
+        assert!(
+            !pool.slots().iter().any(|s| s.active && s.kind == FLOWER_WHIP_PETAL),
+            "the 1038 row is d20's — the fan no-ops"
+        );
+    }
+
+    /// The 917/1036 derived-flag spawns (`Projectile.cs:13915-13935`): the
+    /// FIRST hit spawns (1036 live: damage 2, arpen 30 `:9777`, the flag
+    /// latches) + grants the buff unconditionally; the SECOND hit skips the
+    /// spawn (the flag) but re-grants. The 917 stays d18-row-gated.
+    #[test]
+    fn w4_d17_the_cob_spark_spawns_once_and_the_buff_regrants() {
+        let w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = whip(&mut pool, COB_WHIP, 5473, 20);
+        let mut p = crate::player::Player::spawn(&w);
+        let mut rng = CensusRng { draws: Vec::new() };
+        pool.whip_on_hit(
+            slot, 0, true, Some(&mut p), true, Vec2::new(400.0, 300.0),
+            Vec2::new(100.0, 100.0), &w, &mut rng,
+        );
+        assert!(p.cob_whip_buff, "the spawn latches the derived flag");
+        let spark = pool.slots().iter().find(|s| s.active && s.kind == COB_WHIP_PROJ)
+            .expect("the 1036 row is live");
+        assert_eq!(spark.damage, 2, ":13928 num54 = 2");
+        assert_eq!(spark.armor_penetration, 30, ":9777");
+        let i = p.buffs.find_buff_index(365).expect("the 365 grant");
+        assert_eq!(p.buffs.buff_time[i], 180, ":13934");
+        // The second hit: no new spark, the buff re-granted.
+        pool.whip_on_hit(
+            slot, 0, true, Some(&mut p), true, Vec2::new(400.0, 300.0),
+            Vec2::new(100.0, 100.0), &w, &mut rng,
+        );
+        assert_eq!(
+            pool.slots().iter().filter(|s| s.active && s.kind == COB_WHIP_PROJ).count(),
+            1,
+            "the derived flag gates the second spawn"
+        );
+        assert!(rng.draws.is_empty(), "the spawn arms draw nothing");
+    }
+
+    /// The Constellation fan (`Projectile.cs:13938-13944` +
+    /// `:14937-14957`): the first armed hit latches localAI[0], spawns the
+    /// fan BEFORE RemoveAllProcs, then clears every window. Per star: one
+    /// NextDouble (NextFloatDirection) + one NextFloat (ai1). The 1034
+    /// curve's stock 20 segments (21 points — the 1034 arm only scales
+    /// range ×2.2) → the i=2 step-3 walk visits 6 points; the 1039 row is
+    /// d18's (no spawns) but the draws pin the fan's shape.
+    #[test]
+    fn w4_d17_the_constellation_fan_spawns_before_the_clear() {
+        let w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = whip(&mut pool, CONSTELLATION_WHIP, 5479, 20);
+        let mut p = crate::player::Player::spawn(&w);
+        p.tag_effects.try_apply_tag_to_npc(5479, 0, crate::npc::NpcKind::Zombie);
+        p.tag_effects.try_enable_proc(5479, 0);
+        let mut rng = CensusRng { draws: Vec::new() };
+        pool.whip_on_hit(
+            slot, 0, true, Some(&mut p), true, Vec2::new(400.0, 300.0),
+            Vec2::new(100.0, 100.0), &w, &mut rng,
+        );
+        assert_eq!(pool.slots()[slot].local_ai[0], 1.0, "the first-hit latch");
+        assert!(!p.tag_effects.can_proc(5479, 0), "RemoveAllProcs ran AFTER");
+        // i = 2, 5, 8, 11, 14, 17 < Count-1 = 20 (21 points): six stars,
+        // two draws each.
+        assert_eq!(rng.draws.len(), 12, "6 stars × (NextDouble + NextFloat)");
+        for star in 0..6 {
+            assert!(matches!(rng.draws[star * 2], Draw::Double));
+            assert!(matches!(rng.draws[star * 2 + 1], Draw::Float));
+        }
+        assert!(
+            !pool.slots().iter().any(|s| s.active && s.kind == CONSTELLATION_STAR),
+            "the 1039 row is d18's — the fan no-ops"
+        );
+    }
+}
+
+#[cfg(test)]
+mod w4_d17_followup_meteor_tests {
+    //! W4-d17 SEAL — the 1037 Starcrash meteor's aiStyle-5 per-type arms
+    //! (`Projectile.cs:23865`/`:23886`/`:23946` + the `:24063-24098` dust
+    //! gates) + `Kill()`'s 1037 arm (`:73862-73920`). WRITTEN NOT RUN
+    //! (code-only mode).
+    use super::*;
+
+    fn world() -> World {
+        World::new("t".into(), 256, 128)
+    }
+
+    struct CensusRng {
+        draws: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl tr_core::loot::DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.5
+        }
+    }
+
+    fn tick(pool: &mut ProjectilePool, w: &mut World, rng: &mut CensusRng) {
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            w, &mut npcs, None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), rng, 0, false,
+        );
+    }
+
+    /// The flight tick (`:23865-23868` + `:23886-23899` + `:23946-23949`
+    /// + the trail gates): the bottom latch re-arms tileCollide at
+    /// `Bottom.Y >= ai[1]`, the alpha fades −10 (floor 0), the rotation
+    /// is the velocity angle − π/2, and the two Next(2) gates + the !wet
+    /// NextVector2Circular floats ride the stream — per sub-step (the
+    /// row's extraUpdates 1 → two walks per tick).
+    #[test]
+    fn w4_d17_the_meteor_latches_fades_and_spins() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(
+                METEOR_WHIP_METEOR, 0, 400.0, 300.0, 4.0, 0.0, 26, 2.0, 0.0, 900.0,
+            )
+            .unwrap();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut rng);
+        let s = &pool.slots()[slot];
+        assert!(s.active, "the bottom (324) is above ai1 900 — no tiles");
+        assert!(!s.tile_collide, "the latch stays false above the target");
+        assert_eq!(s.alpha, 234, "254 − 10 − 10, two sub-steps (:23887)");
+        // velocity (4,0): ToRotation 0 − π/2 (:23948).
+        assert!(
+            (s.rot - (-std::f32::consts::FRAC_PI_2)).abs() < 1e-5,
+            "the velocity-angle rotation, got {}", s.rot
+        );
+        // Per sub-step: Next(2), Next(2), then !wet two floats.
+        assert_eq!(rng.draws, vec![(0, 2), (0, 2), (0, 2), (0, 2)]);
+        assert_eq!(rng.floats, 4, "two NextVector2Circular pairs");
+    }
+
+    /// The Kill arm (`:73862-73920`): the recentre resize to
+    /// `(int)(192·scale)` then `Resize(64,64)`, `localAI[1] = −1` +
+    /// `maxPenetrate = 0` + the box Damage (local owner only), then the
+    /// 3-gore ring's 9-draw-per-gore census + the !wet 4-dust
+    /// SelectRandom+NextFloat pairs. The dust/gore BODIES skip.
+    #[test]
+    fn w4_d17_the_meteor_kill_resizes_and_spends_the_ring_draws() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(
+                METEOR_WHIP_METEOR, 0, 400.0, 300.0, 0.0, 0.0, 26, 2.0, 0.0, 300.0,
+            )
+            .unwrap();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        pool.meteor_whip_kill(slot, &mut npcs, (false, false), &mut rng, 0.0, 0);
+        let s = &pool.slots()[slot];
+        // scale 0.8 → (int)(192·0.8) = 153 recentre, then the 64 box.
+        assert_eq!((s.w, s.h), (64.0, 64.0), "Resize(64,64) (:73880)");
+        // The recentre keeps the centre: (412, 312) → pos (380, 280).
+        assert!((s.pos.x - 380.0).abs() < 1e-3 && (s.pos.y - 280.0).abs() < 1e-3);
+        assert_eq!(s.local_ai[1], -1.0, ":73884");
+        assert_eq!(s.max_penetrate, 0, ":73885");
+        // 3 gores × 9 draws: pos X/Y Next(100) pair, Next(61,64),
+        // NewGore's internal Y Next(10,31) + X Next(-20,21), the
+        // NextVector2Circular float pair, the two Next(-10,11) jitters.
+        let gore_cycle = [
+            (0, 100), (0, 100), (61, 64), (10, 31), (-20, 21),
+        ];
+        for g in 0..3 {
+            let b = g * 7;
+            for (k, pair) in gore_cycle.iter().enumerate() {
+                assert_eq!(rng.draws[b + k], *pair, "gore {g} draw {k}");
+            }
+            assert_eq!(rng.draws[b + 5], (-10, 11));
+            assert_eq!(rng.draws[b + 6], (-10, 11));
+        }
+        // + the 4-dust SelectRandom Next(3) each = 21 + 4 range draws.
+        assert_eq!(rng.draws.len(), 25);
+        for d in 0..4 {
+            assert_eq!(rng.draws[21 + d], (0, 3), "SelectRandom(6,259,158)");
+        }
+        // Floats: 3 gores × 2 (NextVector2Circular) + 4 dust NextFloat.
+        assert_eq!(rng.floats, 10);
+    }
+}
+
