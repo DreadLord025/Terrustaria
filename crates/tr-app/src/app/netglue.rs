@@ -1993,6 +1993,37 @@ impl App {
                     p.minion_attack_target_npc = m.npc as i32;
                 }
             }
+            // `case 100` — an NPC pulled through a portal (W4-g50,
+            // `MessageBuffer.cs:3598-3610`): the color parity flip feeds the
+            // entry effect, `Teleport(dest, 4, color)` snaps the position
+            // and stores the un-flipped color (`NPC.cs:81045-81048`), the
+            // velocity overwrites and `netOffset *= 0f` (`:3608`). The slot
+            // is the HOST's NPC index — the client's slot-keyed store.
+            S2c::NpcPortalTeleport(p) => {
+                let Some(npc) = self.net_npcs.get_mut(&(p.npc as u32)) else {
+                    return;
+                };
+                npc.x = p.x;
+                npc.y = p.y;
+                npc.vx = p.velocity_x;
+                npc.vy = p.velocity_y;
+                npc.net_offset = Vec2::ZERO;
+                npc.last_portal_color_index = p.color_index;
+                self.net_npcs_dirty = true;
+            }
+            // `case 101` — the four Lunar tower shields (W4-g50,
+            // `MessageBuffer.cs:3611-3651`): each ushort clamps to
+            // `0..LunarShieldPowerMax` (the static 100, `NPC.cs:95252` —
+            // NOT the downed-halved `ShieldStrengthTowerMax`). The reader
+            // is `netMode != 2`-gated; the port's client applies it.
+            S2c::TowerShields(t) => {
+                const LUNAR_SHIELD_POWER_MAX: i32 = 100; // `NPC.cs:95252`
+                let clamp = |v: u16| (v as i32).clamp(0, LUNAR_SHIELD_POWER_MAX);
+                self.world.tower_shield_solar = clamp(t.solar);
+                self.world.tower_shield_vortex = clamp(t.vortex);
+                self.world.tower_shield_nebula = clamp(t.nebula);
+                self.world.tower_shield_stardust = clamp(t.stardust);
+            }
             // `151` — the slot is gone.
             S2c::ItemDead { slot } => {
                 self.net_items.remove(&slot);
@@ -6216,5 +6247,53 @@ mod message_family_tests {
         let entry = host_app.remote_players.get(&peer).expect("peer stored");
         assert_eq!(entry.minion_rest_target_point, (320.0, 640.0));
         assert_eq!(entry.minion_attack_target_npc, 7);
+    }
+
+    /// `case 100` (`MessageBuffer.cs:3598-3610`): the NPC snaps to the dest
+    /// with the live velocity, a zeroed netOffset and the stored color.
+    #[test]
+    fn w4_g50_the_100_npc_portal_snaps_the_slot() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let slime = crate::npc::Npc::spawn_slime_sky(100.0, 100.0, crate::npc::SlimeVariant::Blue);
+        host_app.npcs.push(slime);
+        pump(&mut host_app, &mut client_app, 15);
+        assert!(client_app.net_npcs.contains_key(&0));
+        client_app.net_npcs.get_mut(&0).unwrap().net_offset = Vec2::new(30.0, 20.0);
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::NpcPortalTeleport(net::NpcPortalTeleport {
+                npc: 0,
+                color_index: 3,
+                x: 500.0,
+                y: 300.0,
+                velocity_x: 2.5,
+                velocity_y: -1.0,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        let npc = &client_app.net_npcs[&0];
+        assert_eq!((npc.x, npc.y), (500.0, 300.0));
+        assert_eq!((npc.vx, npc.vy), (2.5, -1.0));
+        assert_eq!(npc.net_offset, Vec2::ZERO, "netOffset *= 0f (`:3608`)");
+        assert_eq!(npc.last_portal_color_index, 3);
+    }
+
+    /// `case 101` (`MessageBuffer.cs:3611-3651`): each shield clamps to
+    /// 0..LunarShieldPowerMax (100) — an over-max ushort lands at 100.
+    #[test]
+    fn w4_g50_the_101_tower_shields_clamp_to_the_power_max() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::TowerShields(net::TowerShields {
+                solar: 65535,
+                vortex: 55,
+                nebula: 0,
+                stardust: 100,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        assert_eq!(client_app.world.tower_shield_solar, 100, "over-max clamps");
+        assert_eq!(client_app.world.tower_shield_vortex, 55);
+        assert_eq!(client_app.world.tower_shield_nebula, 0);
+        assert_eq!(client_app.world.tower_shield_stardust, 100);
     }
 }

@@ -165,6 +165,16 @@ pub mod id {
     /// `NetMessage.cs:1357-1360`, `MessageBuffer.cs:3584-3597`). Both
     /// directions — the host forces the id and relays.
     pub const MINION_ATTACK_TARGET: u8 = 115;
+    /// `100 TeleportNPCThroughPortal` (W4-g50, S1-I-4): `(ushort)` npc,
+    /// `(short)` color, dest Vector2, live-velocity Vector2
+    /// (`MessageID.cs:214`, `NetMessage.cs:1361-1369`,
+    /// `MessageBuffer.cs:3598-3610`, host→client only).
+    pub const NPC_PORTAL_TELEPORT: u8 = 100;
+    /// `101 UpdateTowerShieldStrengths` (W4-g50, S1-I-4): four ushorts
+    /// Solar/Vortex/Nebula/Stardust (`MessageID.cs:216`,
+    /// `NetMessage.cs:1371-1376`, `MessageBuffer.cs:3611-3651`,
+    /// host→client only).
+    pub const TOWER_SHIELDS: u8 = 101;
     pub const PLAYER_STATE: u8 = 13; // NetMessage.cs:446-513 / MessageBuffer.cs:952-1059
     pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
@@ -1995,6 +2005,43 @@ pub struct MinionAttackTarget {
     pub npc: i16,
 }
 
+/// `msg 100 TeleportNPCThroughPortal`'s body (`NetMessage.cs:1361-1369`):
+/// `(ushort)number` (the NPC slot), `(short)number4` (the portal color index
+/// `owner * 2 + ai[1]`, `PortalHelper.cs:181`), `number2`/`number3` (the
+/// destination floats) then `WriteVector2(nPC2.velocity)` — the NPC's
+/// *current* velocity, read from the live entity at send time, NOT the
+/// destination floats echoed back. The host sends it after the portal-gun
+/// (type 602) pulls an NPC through (`PortalHelper.cs:195-204`, followed by a
+/// `23` NPCInfo push); the client flips the color parity
+/// (`num145 + (num145 % 2 == 0 ? 1 : -1)`), teleports with style 4, overwrites
+/// the velocity and zeroes `netOffset` (`MessageBuffer.cs:3598-3610`).
+/// Server→client only.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NpcPortalTeleport {
+    pub npc: u16,
+    pub color_index: i16,
+    pub x: f32,
+    pub y: f32,
+    pub velocity_x: f32,
+    pub velocity_y: f32,
+}
+
+/// `msg 101 UpdateTowerShieldStrengths`'s body (`NetMessage.cs:1371-1376`):
+/// the four `NPC.ShieldStrengthTower*` statics as `ushort`s in the written
+/// order Solar, Vortex, Nebula, Stardust. Sent by the 629 bolt's shield chip
+/// (`Projectile.cs:72944-72978`), the apocalypse start (`WorldGen.cs:86689`)
+/// and the join push (`MessageBuffer.cs:869`). The reader clamps each to
+/// `0..LunarShieldPowerMax` (= 100, `NPC.cs:95252`) — that clamp is the apply
+/// arm's job (`MessageBuffer.cs:3611-3651`); the codec carries the raw
+/// ushorts. Server→client only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TowerShields {
+    pub solar: u16,
+    pub vortex: u16,
+    pub nebula: u16,
+    pub stardust: u16,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -2302,6 +2349,12 @@ pub enum S2c {
     /// `115 MinionAttackTargetUpdate` - a peer's minion attack target,
     /// relayed (`MessageBuffer.cs:3594`; W4-g50).
     MinionAttackTarget(MinionAttackTarget),
+    /// `100 TeleportNPCThroughPortal` - an NPC pulled through a portal
+    /// (`PortalHelper.cs:195-204`; `MessageBuffer.cs:3598-3610`; W4-g50).
+    NpcPortalTeleport(NpcPortalTeleport),
+    /// `101 UpdateTowerShieldStrengths` - the four Lunar tower shields
+    /// (`NetMessage.cs:1371-1376`; `MessageBuffer.cs:3611-3651`; W4-g50).
+    TowerShields(TowerShields),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2839,6 +2892,8 @@ impl S2c {
             Self::PlayerPortalTeleport(_) => id::TELEPORT_PLAYER_PORTAL,
             Self::MinionRestTarget(_) => id::MINION_REST_TARGET,
             Self::MinionAttackTarget(_) => id::MINION_ATTACK_TARGET,
+            Self::NpcPortalTeleport(_) => id::NPC_PORTAL_TELEPORT,
+            Self::TowerShields(_) => id::TOWER_SHIELDS,
         }
     }
 
@@ -3034,6 +3089,17 @@ impl S2c {
             Self::MinionRestTarget(m) => w.u8(m.player_id).f32(m.x).f32(m.y),
             // `NetMessage.cs:1357-1360`: (byte)number + (short)target.
             Self::MinionAttackTarget(m) => w.u8(m.player_id).i16(m.npc),
+            // `NetMessage.cs:1371-1376`: the four shields in written order.
+            Self::TowerShields(t) => w.u16(t.solar).u16(t.vortex).u16(t.nebula).u16(t.stardust),
+            // `NetMessage.cs:1361-1369`: (ushort)npc + (short)color + the
+            // destination floats + WriteVector2(the NPC's live velocity).
+            Self::NpcPortalTeleport(p) => w
+                .u16(p.npc)
+                .i16(p.color_index)
+                .f32(p.x)
+                .f32(p.y)
+                .f32(p.velocity_x)
+                .f32(p.velocity_y),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -3321,6 +3387,23 @@ impl S2c {
             id::MINION_ATTACK_TARGET => Self::MinionAttackTarget(MinionAttackTarget {
                 player_id: r.u8()?,
                 npc: r.i16()?,
+            }),
+            // `MessageBuffer.cs:3614-3617` — the four ushorts in order.
+            id::TOWER_SHIELDS => Self::TowerShields(TowerShields {
+                solar: r.u16()?,
+                vortex: r.u16()?,
+                nebula: r.u16()?,
+                stardust: r.u16()?,
+            }),
+            // `MessageBuffer.cs:3600-3604` — ushort npc, short color, dest
+            // Vector2, live-velocity Vector2.
+            id::NPC_PORTAL_TELEPORT => Self::NpcPortalTeleport(NpcPortalTeleport {
+                npc: r.u16()?,
+                color_index: r.i16()?,
+                x: r.f32()?,
+                y: r.f32()?,
+                velocity_x: r.f32()?,
+                velocity_y: r.f32()?,
             }),
             _ => return None,
         })
@@ -5993,6 +6076,60 @@ mod tests {
         match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
             S2c::MinionAttackTarget(d) => assert_eq!(d, m),
             other => panic!("expected 115, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `100 TeleportNPCThroughPortal` (`NetMessage.cs:1361-1369`): ushort
+    /// npc, short color, dest Vector2, live-velocity Vector2. Host→client
+    /// only (`MessageBuffer.cs:3598-3610`).
+    #[test]
+    fn w4_g50_npc_portal_teleport_round_trips() {
+        let p = NpcPortalTeleport {
+            npc: 42,
+            color_index: 3,
+            x: 900.5,
+            y: 1200.25,
+            velocity_x: -2.0,
+            velocity_y: 4.5,
+        };
+        let f = S2c::NpcPortalTeleport(p).encode();
+        assert_eq!(f[2], 100);
+        let mut body = Vec::new();
+        body.extend_from_slice(&42u16.to_le_bytes());
+        body.extend_from_slice(&3i16.to_le_bytes());
+        body.extend_from_slice(&900.5f32.to_le_bytes());
+        body.extend_from_slice(&1200.25f32.to_le_bytes());
+        body.extend_from_slice(&(-2.0f32).to_le_bytes());
+        body.extend_from_slice(&4.5f32.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::NpcPortalTeleport(d) => assert_eq!(d, p),
+            other => panic!("expected 100, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `101 UpdateTowerShieldStrengths` (`NetMessage.cs:1371-1376`): the
+    /// four ushorts in written order Solar/Vortex/Nebula/Stardust. The
+    /// codec carries the RAW values — the 0..100 clamp is the apply arm's
+    /// job (`MessageBuffer.cs:3618-3649`).
+    #[test]
+    fn w4_g50_tower_shields_round_trips() {
+        let t = TowerShields {
+            solar: 100,
+            vortex: 55,
+            nebula: 0,
+            stardust: 65535, // over the max — the apply clamps it
+        };
+        let f = S2c::TowerShields(t).encode();
+        assert_eq!(f[2], 101);
+        let mut body = Vec::new();
+        for v in [100u16, 55, 0, 65535] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TowerShields(d) => assert_eq!(d, t),
+            other => panic!("expected 101, got {:?}", other.msg_id()),
         }
     }
 }
