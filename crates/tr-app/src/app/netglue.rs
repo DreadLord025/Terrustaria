@@ -53,6 +53,10 @@ const TEAM_COLORS: [[u8; 3]; 6] = [
     [224, 100, 242],
 ];
 
+/// `Main.maxNPCs` (`Main.cs:67005`, 200): the NPC slot-array bound the
+/// `56`/`60` readers gate on (`MessageBuffer.cs:2615`, `:2701`). W4-g49.
+const MAX_NPCS: usize = 200;
+
 /// The `13` heartbeat span in `net_tick` calls: the C#'s
 /// `netPlayCounter % 420 == 0` at 60 Hz = 7 s (`Main.cs:64522-64529`); the
 /// port's tick runs at 10 Hz, so 42 calls cover the same span.
@@ -901,6 +905,68 @@ impl App {
                                 body: sm.encode(),
                             },
                         );
+                    }
+                }
+            }
+            // `case 56` — a client asks for a town NPC's given name + variation
+            // (`MessageBuffer.cs:2612-2630`): behind the `0..maxNPCs` slot gate
+            // (`:2615`) the host answers the asker with the pair (`:2626`).
+            C2s::UniqueTownNpcInfo(req) => {
+                let slot = req.npc;
+                if slot >= 0 && (slot as usize) < self.npcs.len() {
+                    if let Some(npc) = self.npcs.get(slot as usize) {
+                        server.send(
+                            id,
+                            &S2c::UniqueTownNpcInfo(net::UniqueTownNpcInfo {
+                                npc: slot,
+                                info: Some((npc.given_name.clone(), npc.variation_index)),
+                            }),
+                        ); // `:2626`
+                    }
+                }
+            }
+            // `case 60` — an NPC's household banner (`MessageBuffer.cs:2695-2739`):
+            // the `npc >= maxNPCs` cheat gate boots the sender (`:2701-2705`);
+            // a town-like NPC's status 1 kicks it out (`WorldGen.kickOut`
+            // `:2732`), anything else moves its room (`WorldGen.moveRoom`
+            // `:2736`). The client-only homeless/homeTile writes (`:2708-2713`)
+            // and the TownManager client arms (`:2718-2728`) are not the host's.
+            C2s::NpcHouse(h) => {
+                let slot = h.npc;
+                // `:2701-2705`: only `num258 >= Main.maxNPCs` boots; a negative
+                // slot falls through to the town gate (no such NPC) below.
+                if (slot as usize) >= MAX_NPCS {
+                    // `:2703` `BootPlayer(whoAmI, NetworkText.FromKey("Net.CheatingInvalid"))`.
+                    server.kick(id, &crate::lang::text("Net.CheatingInvalid"));
+                    return;
+                }
+                let idx = slot as usize;
+                let Some(npc) = self.npcs.get(idx) else {
+                    return; // no such NPC — the town gate (`:2714-2717`) refuses
+                };
+                let is_town = npc.kind.is_town_npc_like();
+                if !is_town {
+                    return; // `:2714-2717`
+                }
+                if h.status == 1 {
+                    // `WorldGen.kickOut` (`:2732`, `WorldGen.cs:4869-4879`).
+                    let mut rooms = std::mem::take(&mut self.town_rooms);
+                    crate::town::kick_out(&mut rooms, &mut self.npcs[idx]);
+                    self.town_rooms = rooms;
+                } else {
+                    // `WorldGen.moveRoom` (`:2736`, `WorldGen.cs:4843-4855`):
+                    // the room re-check (`SpawnTownNPC`) finds the new spot.
+                    if let Some(spot) = crate::town::quick_find_home(
+                        &self.world,
+                        &self.npcs,
+                        h.home_x as i32,
+                        h.home_y as i32,
+                        Some(idx),
+                        self.npcs[idx].kind.net_id(),
+                    ) {
+                        let mut rooms = std::mem::take(&mut self.town_rooms);
+                        crate::town::move_room(&mut rooms, &mut self.npcs[idx], spot);
+                        self.town_rooms = rooms;
                     }
                 }
             }
@@ -1863,6 +1929,29 @@ impl App {
                 }
                 self.net_npcs_dirty = true;
             }
+            // `case 56` — the host's answer with a town NPC's given name +
+            // variation (`MessageBuffer.cs:2612-2630`): behind the
+            // `0..maxNPCs` slot gate (`:2615`) the client stores the pair
+            // (`:2619-2622`).
+            S2c::UniqueTownNpcInfo(info) => {
+                let slot = info.npc;
+                if slot >= 0 && (slot as usize) < MAX_NPCS {
+                    if let Some((name, variation)) = info.info {
+                        if let Some(npc) = self.net_npcs.get_mut(&(slot as u32)) {
+                            npc.given_name = name; // `:2620`
+                            npc.variation_index = variation; // `:2622`
+                            self.net_npcs_dirty = true;
+                        }
+                    }
+                }
+            }
+            // `case 60` — an NPC's household banner (`MessageBuffer.cs:2695-2739`):
+            // the client sets homeless/homeTile (`:2708-2713`) and, for a
+            // town-like NPC, runs the TownManager kick-out/room arm
+            // (`:2718-2728`). The port's client keeps no housing simulation
+            // (the host is authoritative, the `23` snapshots carry the NPC),
+            // so the read is a no-op here — the host arm owns the effect.
+            S2c::NpcHouse(_) => {}
             // `case 59` — a peer tripped a switch: replay it locally
             // (`MessageBuffer.cs:2682-2693`).
             S2c::HitSwitch(hs) => {
@@ -1961,7 +2050,6 @@ impl App {
             // `:4282-4297`, `:4328-4343`) land
             // with the send-path pass (S1-I-4) — nothing sends them yet.
             S2c::TogglePvp(_)
-            | S2c::NpcHouse(_)
             | S2c::TravelShop(_)
             | S2c::AnglerQuest(_)
             | S2c::RevengeMarker(_)
@@ -5367,6 +5455,64 @@ mod message_family_tests {
                 .iter()
                 .any(|m| m.color == TEAM_COLORS[1]),
             "the team-change announcement reached the sender in the team colour"
+        );
+    }
+
+    /// W4-g49 `56 UniqueTownNPCInfoSyncRequest` (`MessageBuffer.cs:2612-2630`):
+    /// the client's bare-slot request is answered by the host with the town
+    /// NPC's given name + variation (`:2626`), which the client stores behind
+    /// the slot gate (`:2615-2623`).
+    #[test]
+    fn w4_g49_town_npc_info_request_answers_and_stores() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // A Guide (net id 22, town-like) in slot 0 with a given name.
+        let mut guide = crate::npc::Npc::new(crate::npc::NpcKind::Guide, 100.0, 100.0, 1, 0.0);
+        guide.given_name = "Andrew".into();
+        guide.variation_index = 1;
+        host_app.npcs.clear();
+        host_app.npcs.push(guide);
+        // The client's copy of the NPC (the 23 snapshot's stand-in).
+        let mut client_guide = crate::npc::Npc::new(crate::npc::NpcKind::Guide, 100.0, 100.0, 1, 0.0);
+        client_guide.given_name = String::new();
+        client_guide.variation_index = 0;
+        client_app.net_npcs.insert(0, client_guide);
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::UniqueTownNpcInfo(net::UniqueTownNpcInfo {
+                npc: 0,
+                info: None,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        let stored = client_app.net_npcs.get(&0).expect("the client NPC");
+        assert_eq!(stored.given_name, "Andrew", "the host answer's name landed (`:2620`)");
+        assert_eq!(stored.variation_index, 1, "the variation landed (`:2622`)");
+    }
+
+    /// W4-g49 `60 Unknown60` (`MessageBuffer.cs:2695-2739`): a town-like NPC's
+    /// status 1 kicks it out — the host runs `WorldGen.kickOut` (`:2732`), the
+    /// NPC goes homeless with the 3600-tick look-for-home timeout.
+    #[test]
+    fn w4_g49_npc_house_kick_out_makes_the_town_npc_homeless() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let mut guide = crate::npc::Npc::new(crate::npc::NpcKind::Guide, 100.0, 100.0, 1, 0.0);
+        guide.home = Some((10, 10));
+        host_app.npcs.clear();
+        host_app.npcs.push(guide);
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::NpcHouse(net::NpcHouse {
+                npc: 0,
+                home_x: 0,
+                home_y: 0,
+                status: 1, // kick-out (`:2730-2733`)
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        let npc = &host_app.npcs[0];
+        assert!(npc.home.is_none(), "the kick-out cleared the home (`WorldGen.cs:4876`)");
+        assert_eq!(
+            npc.look_for_home_timeout,
+            crate::town::KICK_OUT_LOOK_FOR_HOME_TIMEOUT,
+            "the 3600-tick look-for-home timeout armed (`WorldGen.cs:4877`)"
         );
     }
 }

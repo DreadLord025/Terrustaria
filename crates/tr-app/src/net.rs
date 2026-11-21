@@ -136,6 +136,10 @@ pub mod id {
     /// (`NetMessage.cs:1067-1072`, `MessageBuffer.cs:2695-2739`; sent by
     /// `SendNPCHousesAndTravelShop`, `NetMessage.cs:2845`).
     pub const NPC_HOUSE: u8 = 60;
+    /// `56 UniqueTownNPCInfoSyncRequest` (`MessageID.cs:125`) — the town NPC's
+    /// given name + variation (`NetMessage.cs:1046-1053`,
+    /// `MessageBuffer.cs:2612-2630`). W4-g49 (transplanted from W4-d92).
+    pub const UNIQUE_TOWN_NPC_INFO: u8 = 56;
     pub const TRAVEL_SHOP: u8 = 72; // MessageID.cs:157 / NetMessage.cs:1134-1141 / MessageBuffer.cs:3118-3126
     pub const ANGLER_QUEST: u8 = 74; // MessageID.cs:161 / NetMessage.cs:1145-1148 / MessageBuffer.cs:3147-3153
     pub const REVENGE_MARKER: u8 = 126; // MessageID.cs:266 / NetMessage.cs:1515-1517 / MessageBuffer.cs:4043-4048
@@ -1462,6 +1466,20 @@ pub struct NpcHouse {
     pub status: u8,
 }
 
+/// `msg 56 UniqueTownNPCInfoSyncRequest`'s body (`NetMessage.cs:1046-1053`):
+/// `(short)` npc slot, then — ONLY in the host's answer (`netMode == 2`) —
+/// `GivenName` (`BinaryWriter.Write(string)`: 7-bit length + UTF-8) and
+/// `(int)` townNpcVariationIndex. The client's request is the bare slot
+/// (`NPC.cs:90564`); the host's read arm answers it back to the asker
+/// (`MessageBuffer.cs:2626`), the client's read arm stores the pair behind
+/// the `0..Main.maxNPCs` slot gate (`:2615-2623`). W4-g49 (from W4-d92).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UniqueTownNpcInfo {
+    pub npc: i16,
+    /// Present only in the host's answer (`NetMessage.cs:1048` netMode gate).
+    pub info: Option<(String, i32)>,
+}
+
 /// `msg 72 TravelMerchantItems`'s body (`NetMessage.cs:1134-1141`): the
 /// `Main.travelShop` array — `Main.TravelShopMaxSlots = 40` (`Main.cs:67029`)
 /// `short` item types (`MessageBuffer.cs:3118-3126`).
@@ -1641,6 +1659,10 @@ pub enum C2s {
     /// `53 AddNPCBuff` - a client applied a buff to an NPC
     /// (`NPC.AddBuff`'s `netMode == 1` send, `NPC.cs:89932-89935`).
     AddNpcBuff(AddNpcBuff),
+    /// `56 UniqueTownNPCInfoSyncRequest` - a client asks for a town NPC's
+    /// given name + variation (`NPC.cs:90564`; the host answers `:2626`).
+    /// W4-g49.
+    UniqueTownNpcInfo(UniqueTownNpcInfo),
     /// `30 TogglePVP` - a client flipped its PvP flag
     /// (`Main.cs`'s PvP toggle; `MessageBuffer.cs:1851-1867` relays it).
     TogglePvp(TogglePvp),
@@ -1731,6 +1753,9 @@ pub enum S2c {
     PlayerBuffs(PlayerBuffs),
     /// `54 NPCBuffs` - an NPC's buff pairs (`MessageBuffer.cs:2573`).
     NpcBuffs(NpcBuffs),
+    /// `56 UniqueTownNPCInfoSyncRequest` - the host's answer with the town
+    /// NPC's given name + variation (`MessageBuffer.cs:2617-2623`). W4-g49.
+    UniqueTownNpcInfo(UniqueTownNpcInfo),
     /// `59 HitSwitch` - the switch a peer tripped, relayed
     /// (`MessageBuffer.cs:2691`).
     HitSwitch(HitSwitch),
@@ -1859,6 +1884,7 @@ impl C2s {
             Self::SignData(_) => id::SIGN_DATA,
             Self::HitSwitch(_) => id::HIT_SWITCH,
             Self::AddNpcBuff(_) => id::ADD_NPC_BUFF,
+            Self::UniqueTownNpcInfo(_) => id::UNIQUE_TOWN_NPC_INFO,
             Self::PlayerChest(_) => id::PLAYER_CHEST,
             Self::PlayerBuffs(_) => id::PLAYER_BUFFS,
             Self::TogglePvp(_) => id::TOGGLE_PVP,
@@ -1924,6 +1950,15 @@ impl C2s {
             }
             Self::HitSwitch(h) => w.i16(h.x).i16(h.y),
             Self::AddNpcBuff(a) => w.i16(a.npc).u16(a.buff_type).i16(a.time),
+            // `NetMessage.cs:1046-1053`: (short)npc; the name + variation
+            // ride only the host's answer (the client sends the bare slot).
+            Self::UniqueTownNpcInfo(t) => {
+                let w = w.i16(t.npc);
+                match &t.info {
+                    Some((name, variation)) => w.str(name).i32(*variation),
+                    None => w,
+                }
+            }
             Self::TogglePvp(t) => w.u8(t.player_id).bool(t.hostile),
             Self::PlayerMana(m) => w.u8(m.player_id).i16(m.mana).i16(m.max_mana),
             Self::TeamChange(t) => w.u8(t.player_id).u8(t.team),
@@ -2026,6 +2061,12 @@ impl C2s {
                 npc: r.i16()?,
                 buff_type: r.u16()?,
                 time: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2614`: the host reads ONLY the (short) slot —
+            // the request is bodyless past it (`NPC.cs:90564`).
+            id::UNIQUE_TOWN_NPC_INFO => Self::UniqueTownNpcInfo(UniqueTownNpcInfo {
+                npc: r.i16()?,
+                info: None,
             }),
             id::TOGGLE_PVP => Self::TogglePvp(TogglePvp {
                 player_id: r.u8()?,
@@ -2201,6 +2242,7 @@ impl S2c {
             Self::SignData(_) => id::SIGN_DATA,
             Self::PlayerBuffs(_) => id::PLAYER_BUFFS,
             Self::NpcBuffs(_) => id::NPC_BUFFS,
+            Self::UniqueTownNpcInfo(_) => id::UNIQUE_TOWN_NPC_INFO,
             Self::HitSwitch(_) => id::HIT_SWITCH,
             Self::PlayerChestIndex(_) => id::PLAYER_CHEST_INDEX,
             Self::ChestSize(_) => id::CHEST_SIZE,
@@ -2321,6 +2363,15 @@ impl S2c {
                     w = w.u16(*id).u16(*time);
                 }
                 w.u16(0)
+            }
+            // `NetMessage.cs:1046-1053`: (short)npc, then the netMode == 2
+            // answer's string + (int) variation.
+            Self::UniqueTownNpcInfo(t) => {
+                let w = w.i16(t.npc);
+                match &t.info {
+                    Some((name, variation)) => w.str(name).i32(*variation),
+                    None => w,
+                }
             }
             Self::HitSwitch(h) => w.i16(h.x).i16(h.y),
             Self::PlayerChestIndex(c) => w.u8(c.player_id).i16(c.chest),
@@ -2476,6 +2527,12 @@ impl S2c {
                 }
                 Self::NpcBuffs(NpcBuffs { npc, buffs })
             }
+            // `MessageBuffer.cs:2614-2622`: (short)npc, then the host
+            // answer's string + (int) variation.
+            id::UNIQUE_TOWN_NPC_INFO => Self::UniqueTownNpcInfo(UniqueTownNpcInfo {
+                npc: r.i16()?,
+                info: Some((r.str()?, r.i32()?)),
+            }),
             id::HIT_SWITCH => Self::HitSwitch(HitSwitch {
                 x: r.i16()?,
                 y: r.i16()?,
@@ -4529,6 +4586,46 @@ mod tests {
             S2c::NpcHouse(d) => assert_eq!(d, h),
             other => panic!("expected 60, got {:?}", other.msg_id()),
         }
+    }
+
+    /// W4-g49 `56 UniqueTownNPCInfoSyncRequest` (`NetMessage.cs:1046-1053`):
+    /// (short)npc; the netMode == 2 answer appends GivenName (7-bit length +
+    /// UTF-8) + (int)variation. The client request is the bare slot
+    /// (`NPC.cs:90564`). Byte-verbatim from W4-d92.
+    #[test]
+    fn w4_g49_unique_town_npc_info_round_trips() {
+        let req = UniqueTownNpcInfo {
+            npc: 17,
+            info: None,
+        };
+        let c = C2s::UniqueTownNpcInfo(req.clone()).encode();
+        assert_eq!(c, vec![5, 0, 56, 17, 0]);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::UniqueTownNpcInfo(d) => assert_eq!(d, req),
+            other => panic!("expected 56, got {:?}", other.msg_id()),
+        }
+        // The host answer (`MessageBuffer.cs:2619-2622` reads string + int).
+        let ans = UniqueTownNpcInfo {
+            npc: 17,
+            info: Some(("Andrew".into(), 1)),
+        };
+        let f = S2c::UniqueTownNpcInfo(ans.clone()).encode();
+        assert_eq!(f[2], 56);
+        let mut body = Vec::new();
+        body.extend_from_slice(&17i16.to_le_bytes());
+        body.push(6); // Write7BitEncodedInt(6) — one byte
+        body.extend_from_slice(b"Andrew");
+        body.extend_from_slice(&1i32.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::UniqueTownNpcInfo(d) => assert_eq!(d, ans),
+            other => panic!("expected 56, got {:?}", other.msg_id()),
+        }
+        // Truncated before the variation int must not decode.
+        assert!(S2c::decode(56, &mut NetReader::new(&body[..12])).is_none());
+        // The bare-slot request must not decode on the S2c side (the client
+        // arm always reads the string + int, `MessageBuffer.cs:2619-2621`).
+        assert!(S2c::decode(56, &mut NetReader::new(&[17, 0])).is_none());
     }
 
     #[test]
