@@ -257,13 +257,20 @@ fn apply_format_spec(arg: &str, spec: &str) -> String {
     let Ok(value) = arg.parse::<i64>() else {
         return arg.to_string();
     };
-    // Only the digit/literal section grammar is numeric formatting; anything
-    // else (date/standard specifiers) keeps the ignore behaviour.
-    if !spec.contains(['0', '#'])
-        || !spec
-            .chars()
-            .all(|c| matches!(c, '#' | '0' | ';' | '+' | '-' | ' '))
-    {
+    // Custom numeric format vs standard specifier (.NET's rule): a
+    // multi-section spec is always custom; a single-section spec is standard
+    // when it is one alphabetic char optionally followed by digits (N0, D5,
+    // F2 — keep the ignore behaviour), custom otherwise.
+    let multi_section = spec.contains(';');
+    if !multi_section {
+        let mut chars = spec.chars();
+        if let Some(first) = chars.next() {
+            if first.is_ascii_alphabetic() && chars.all(|c| c.is_ascii_digit()) {
+                return arg.to_string();
+            }
+        }
+    }
+    if !spec.contains(['0', '#']) && !multi_section {
         return arg.to_string();
     }
     let sections: Vec<&str> = spec.split(';').collect();

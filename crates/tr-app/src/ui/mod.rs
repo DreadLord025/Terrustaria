@@ -839,6 +839,10 @@ pub fn draw_hud(
     }
 
     let mut open_hover: Option<inventory::HoverRef> = None;
+    // `Main.LocalPlayer.chest` (`Player.cs:2876`) — the favourite rows'
+    // bank-blocked notice (`Main.cs:20659`); captured before `chest::draw`
+    // moves the panel state.
+    let open_chest = chest_panel.chest;
     // `Main.mouseItem.IsAir` (`Main.cs:41430`): every accessory tick draw and hit
     // is gated on the cursor holding nothing.
     let mouse_item_is_air = mouse_item.kind == 0 || mouse_item.count == 0;
@@ -1236,7 +1240,7 @@ pub fn draw_hud(
             },
             inventory: Some(&inventory[..]),
             held_kind: inventory[selected].kind,
-            open_chest: chest_panel.chest,
+            open_chest,
             ..Default::default()
         },
         ingame_options.map_or(true, |(s, _)| s.opaque_tooltip_box),
