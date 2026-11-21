@@ -11611,6 +11611,17 @@ impl Player {
         // (`LegacyPlayerRenderer.cs:457,468`), so its ease after a step must
         // invalidate the cached range or the offset animation freezes.
         h ^= self.gfx_off_y.to_bits().wrapping_mul(0x27D4_EB2F);
+        // W4-d115 wiring round: the dodge afterimages' pixel inputs —
+        // the shadow counter steps ±1 per draw frame
+        // (`LegacyPlayerRenderer.cs:433-448`) and the brain ring reads the
+        // sim counter; both change the ghosts' pixels inside the cached
+        // world range, so they ride the key. The per-frame alpha rolls'
+        // frame-count term is mixed in by the draw orchestrator while
+        // the shadow counter is live (the vine-grid gate convention: a
+        // ghost-free frame keeps the pre-wiring key bit-for-bit).
+        h ^= self.shadow_dodge_count.to_bits().wrapping_mul(0x51ED_2701);
+        h ^= (self.brain_of_confusion_dodge_animation_counter as u32)
+            .wrapping_mul(0x85EB_CA77);
         // The mount's animator state feeds the mount sprites' pixels
         // (`Mount.Draw`'s frame rect + the per-frame player offset).
         if self.mount.is_active() {
@@ -19741,6 +19752,23 @@ mod tests {
         // from the draw orchestrator (witnessed in tiles.rs's scan).
         let method = body.find("pub fn step_shadow_dodge_draw_counter").unwrap();
         assert!(method < writes[0].0, "the write sits inside the step method");
+    }
+
+    /// W4-d115 wiring round — the ghosts' pixel inputs ride the G6 key:
+    /// a counter step or a brain-window tick invalidates the cached
+    /// world range (the ghosts draw inside it).
+    #[test]
+    fn w4_d115_wiring_the_dodge_counters_ride_the_render_key() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        let base = p.render_key();
+        p.shadow_dodge_count = 1.0;
+        assert_ne!(p.render_key(), base, "the shadow counter rides the key");
+        p.shadow_dodge_count = 0.0;
+        p.brain_of_confusion_dodge_animation_counter = 300;
+        assert_ne!(p.render_key(), base, "the brain counter rides the key");
+        p.brain_of_confusion_dodge_animation_counter = 0;
+        assert_eq!(p.render_key(), base, "a ghost-free player keeps the old key");
     }
 
     // -- S1-P-i41: mount item use + data witnesses ---------------------------

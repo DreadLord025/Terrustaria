@@ -1200,6 +1200,28 @@ pub(crate) fn draw_tiles(
     );
     draw_phase("player");
     if let Some(p) = player {
+        // W4-d115 wiring round — `LegacyPlayerRenderer.cs:433-467`: the
+        // dodge afterimages (the shadow pair + the brain ring) draw
+        // BEFORE the main copy (`:468-475`). The ghost seed rides the
+        // frame's sparkle pin (the `TrySparkling` convention — the two
+        // `Next(-10,11)` alpha rolls replay per frame); the counter step
+        // already ran in `App::draw_region` (the C# steps it inside this
+        // same block, `:433-448`).
+        stats.quads += crate::render::entities::draw_dodge_afterimages(
+            r,
+            player_assets,
+            lookups,
+            p,
+            held,
+            armor,
+            light,
+            style,
+            anim_time,
+            camera,
+            zoom,
+            screen,
+            sparkle_seed ^ 0x2545_F491_4F0A_DDB7,
+        );
         stats.quads += draw_player(
             r,
             player_assets,
@@ -1871,6 +1893,36 @@ mod tests {
         assert_eq!(dd_block.matches("anim_row,").count(), 3);
         assert!(dd_block.contains("anim_counter,"));
         assert!(body.contains("weather_vane_bobframe: tile_anim.weather_vane_bobframe"));
+    }
+
+    /// W4-d115 wiring round — the dodge afterimages draw BEFORE the main
+    /// player copy (`LegacyPlayerRenderer.cs:433-467` precedes the
+    /// `:468-475` final draw), inside the same cached player pass, and
+    /// the counter step runs in the draw orchestrator (the C# steps it
+    /// inside the renderer block — the port steps the live field before
+    /// the render clone). Source-scan witness, the back-rope convention.
+    #[test]
+    fn w4_d115_wiring_the_dodge_ghosts_draw_before_the_main_player_copy() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let ghosts = body
+            .find("draw_dodge_afterimages(")
+            .expect("the afterimage pass is wired");
+        let player_pass = body.find("draw_phase(\"player\")").unwrap();
+        let main = body[ghosts..].find("draw_player(").expect("the main copy");
+        assert!(player_pass < ghosts, "the ghosts ride the player pass");
+        assert!(main > 0, "the ghosts draw before the main copy (:433-467 < :468)");
+        // Exactly one afterimage dispatch — the local player only (the
+        // remote copies carry no dodge state, the peer lane is parked).
+        assert_eq!(body.matches("draw_dodge_afterimages(").count(), 1);
+        // The step lives in the draw orchestrator, before the clone.
+        let draw_src = include_str!("../app/frame/draw.rs");
+        let step = draw_src
+            .find("step_shadow_dodge_draw_counter()")
+            .expect("the counter step is wired");
+        let clone = draw_src.find("let render_player =").unwrap();
+        assert!(step < clone, "the step runs before the render clone");
     }
 
     // S1-G-9: `DrawSingleTile_SlicedBlock`'s per-slice light chain
