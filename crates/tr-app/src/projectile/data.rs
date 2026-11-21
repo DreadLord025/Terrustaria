@@ -345,6 +345,11 @@ pub const NEBULA_SPHERE: u16 = 575;
 pub const DESERT_DJINN_CURSE: u16 = 596;
 pub const VORTEX_LIGHTNING: u16 = 578;
 pub const VORTEX_PORTAL: u16 = 579;
+/// `ProjectileID.BloodNautilusTears` (813) — the Blood Nautilus' tear
+/// ritual marker, aiStyle 108 (`Projectile.cs:6282-6293`: the shared
+/// 32x32 row with the 578/579, friendly + hostile, alpha 255,
+/// tileCollide false, ignoreWater, drawLayer 1). W4-d11.
+pub const BLOOD_NAUTILUS_TEARS: u16 = 813;
 pub const VORTEX_RITUAL_BOLT: u16 = 580;
 pub const TOWER_DAMAGE_BOLT: u16 = 629;
 pub const VORTEX_DART: u16 = 581;
@@ -2557,8 +2562,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // ignoreWater, extraUpdates 2.
             TOWER_DAMAGE_BOLT => (8.0, 8.0, 122, -1, TIME_LEFT_DEFAULT, 2, false, false, true, RESET_STATE),
             // `:6282-6293`'s ritual markers (the 578 lightning + the 579
-            // portal): 32x32, aiStyle 108, tileCollide false, ignoreWater.
-            VORTEX_LIGHTNING | VORTEX_PORTAL => {
+            // portal + the 813 Blood Nautilus tears, W4-d11): 32x32,
+            // aiStyle 108, tileCollide false, ignoreWater.
+            VORTEX_LIGHTNING | VORTEX_PORTAL | BLOOD_NAUTILUS_TEARS => {
                 (32.0, 32.0, 108, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
             }
             // `:6294-6305`'s VortexLightning (the 580): 14x14, aiStyle 88,

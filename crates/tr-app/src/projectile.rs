@@ -3745,17 +3745,27 @@ impl Projectile {
         self.pos += self.vel;
     }
 
-    /// `AI()`'s aiStyle-108 block (`Projectile.cs:33679-33988`) — the
-    /// ritual markers (the 578 lightning / the 579 portal): the timeline
-    /// `ai[0] <= 50 -> <= 90 -> <= 120 -> else` with the scale/alpha ramps
-    /// and the rotation decrements, the 578's aim rotation, the 580 bolt it
-    /// fires at the 90th tick, and the 579's two VortexAliens.
+    /// `AI()`'s aiStyle-108 block (`Projectile.cs:33679-34025`) — the
+    /// ritual markers (the 578 lightning / the 579 portal / the 813 Blood
+    /// Nautilus tears, W4-d11): the timeline `ai[0] <= 50 -> <= 90 ->
+    /// <= 120 -> else` with the scale/alpha ramps and the rotation
+    /// decrements, the 578's aim rotation, the 580 bolt it fires at the
+    /// 90th tick, the 579's two VortexAliens, and the 813's BloodSquid
+    /// (619) spawn + its per-stage dust-gate census.
     ///
-    /// Deviations: the dust arms (229/240/5, the `ai[1] == 1f` burst) are
-    /// unmodelled; the late-stage clone spawn rides the 580's own machine.
+    /// Deviations: the 578/579 dust arms (229/240, the `ai[1] == 1f`
+    /// burst) stay unmodelled (the pre-existing recorded skip — their
+    /// gate rolls are NOT on the stream, the 578/579 witnesses pin the
+    /// current stream); the 813's dust GATES are modelled (the W4-d11
+    /// census, the bodies skip). The late-stage clone spawn rides the
+    /// 580's own machine. The 813's 619 spawn intent carries the raw C#
+    /// NPC id (the BloodSquid kind is unported — the drain's `from_u16`
+    /// folds it, a cited skip).
     fn ai_vortex_ritual(&mut self, player: (f32, f32), rng: &mut dyn tr_core::loot::DropRng) {
-        // `:33696-33700`'s first-tick sound latch.
-        if self.local_ai[1] == 0.0 {
+        // `:33681` — flag53: the 578/579 pair (the 813 is NOT on it).
+        let flag53 = self.kind == VORTEX_PORTAL || self.kind == VORTEX_LIGHTNING;
+        // `:33696-33700`'s first-tick sound latch (the 578/579 only).
+        if flag53 && self.local_ai[1] == 0.0 {
             self.local_ai[1] = 1.0;
         }
         // `:33705-33713`'s aim (the 578 only: the 579's ai[1] is the burst
@@ -3772,18 +3782,46 @@ impl Projectile {
         self.ai[0] += 1.0;
         let scale;
         if self.ai[0] <= 50.0 {
-            // The wind-up: the dust arms (unmodelled).
+            // The wind-up: the 578/579 dust arms (unmodelled). The 813's
+            // two Next(4) gates (`:33762`/`:33772`) — the bodies skip.
             scale = 0.0;
+            if self.kind == BLOOD_NAUTILUS_TEARS {
+                if rng.next_range(0, 4) == 0 {
+                    // `:33764-33770` — the 5 dust (RotatedByRandom pair +
+                    // Next(10,21) + NextFloat): body skipped, gates only.
+                }
+                if rng.next_range(0, 4) == 0 {
+                    // `:33774-33780` — the 240 dust: body skipped.
+                }
+            }
         } else if self.ai[0] <= 90.0 {
             // `:33797-33799`'s charge.
             scale = (self.ai[0] - 50.0) / 40.0;
             self.alpha = 255 - (255.0 * scale) as i32;
             self.rot -= std::f32::consts::PI / 20.0;
+            // The 813's two Next(2) gates (`:33860`/`:33871`).
+            if self.kind == BLOOD_NAUTILUS_TEARS {
+                if rng.next_range(0, 2) == 0 {
+                    // `:33862-33869` — the 5 dust: body skipped.
+                }
+                if rng.next_range(0, 2) == 0 {
+                    // `:33873-33880` — the 240 dust: body skipped.
+                }
+            }
         } else if self.ai[0] <= 120.0 {
             // `:33891-33893`'s full charge.
             scale = 1.0;
             self.alpha = 0;
             self.rot -= std::f32::consts::PI / 60.0;
+            // The 813's if/else Next(2) gate (`:33896` — ONE roll, the
+            // taken branch's dust body skips).
+            if self.kind == BLOOD_NAUTILUS_TEARS {
+                if rng.next_range(0, 2) == 0 {
+                    // `:33898-33905` — the 5 dust: body skipped.
+                } else {
+                    // `:33909-33916` — the 240 dust: body skipped.
+                }
+            }
         } else {
             // `:33944-33950`'s dissolve.
             scale = 1.0 - (self.ai[0] - 120.0) / 60.0;
@@ -3792,6 +3830,13 @@ impl Projectile {
             if self.alpha >= 255 {
                 self.active = false;
                 return;
+            }
+            // The 813's two Next(3) switch gates (`:33955`, the case-2
+            // no-op draws nothing further).
+            if self.kind == BLOOD_NAUTILUS_TEARS {
+                for _ in 0..2 {
+                    let _ = rng.next_range(0, 3);
+                }
             }
         }
         self.scale = scale;
@@ -3802,7 +3847,7 @@ impl Projectile {
                 // centre, `ai0 = ai[1]`.
                 let (vx, vy) = (self.ai[1].cos() * 8.0, self.ai[1].sin() * 8.0);
                 self.wants_ritual_bolt = Some((self.pos.x - vx, self.pos.y - vy, vx, vy, self.ai[1]));
-            } else {
+            } else if self.kind == VORTEX_PORTAL {
                 // `:33844-33856`'s two VortexAliens (427) at the centre
                 // with `-UnitY.RotatedByRandom(2*PI) * rand.Next(4, 9) - UnitY*2`.
                 // B-6d: BOTH spawn (`for num815 < 2`) — the single-Option
@@ -3825,6 +3870,21 @@ impl Projectile {
                     self.wants_mark_spawn
                         .push((NpcKind::VortexAlien.to_u16(), self.pos.x, self.pos.y, vx, vy));
                 }
+            } else if self.kind == BLOOD_NAUTILUS_TEARS {
+                // `:33882-33886`'s BloodSquid (619) at the centre, zero
+                // velocity. The raw C# id rides the intent (the kind is
+                // unported — the drain folds it, a cited skip).
+                self.wants_mark_spawn.push((619, self.pos.x, self.pos.y, 0.0, 0.0));
+            }
+        }
+        // `:34018-34024` — the 813's opacity dust tail: one NextFloat
+        // gate against Opacity (1 - alpha/255), the taken branch's
+        // NextVector2Circular pair (the 90 dust body skips).
+        if self.kind == BLOOD_NAUTILUS_TEARS {
+            let opacity = 1.0 - self.alpha as f32 / 255.0;
+            if rng.next_float() < opacity {
+                let _ = rng.next_float(); // NextVector2Circular X
+                let _ = rng.next_float(); // NextVector2Circular Y
             }
         }
     }
@@ -31151,6 +31211,82 @@ mod ritual_projectile_tests {
             p.ai_vortex_ritual((300.0, 300.0), &mut rng);
         }
         assert!(!p.active, "the marker dies");
+    }
+
+    /// W4-d11 — the 813 BloodNautilusTears row rides the shared 108 row
+    /// (`Projectile.cs:6282-6293`).
+    #[test]
+    fn w4_d11_108_the_tears_row_rides_the_shared_marker() {
+        let d = proj_data(BLOOD_NAUTILUS_TEARS).expect("the 813 row");
+        assert_eq!(d.ai_style, 108);
+        assert_eq!((d.w, d.h), (32.0, 32.0));
+        assert!(!d.tile_collide, ":6289");
+    }
+
+    /// W4-d11 — the 813's 90th-tick BloodSquid (619) spawn
+    /// (`Projectile.cs:33882-33886`): one intent, the raw C# id, zero
+    /// velocity. The 813 is NOT on flag53 (no sound latch, no aim).
+    #[test]
+    fn w4_d11_108_the_tears_spawn_the_blood_squid_at_90() {
+        let mut p = rspawn(BLOOD_NAUTILUS_TEARS, 200.0, 200.0);
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        for _ in 0..90 {
+            p.ai_vortex_ritual((300.0, 300.0), &mut rng);
+        }
+        assert_eq!(p.ai[0], 90.0);
+        assert_eq!(p.wants_mark_spawn.len(), 1, "one BloodSquid");
+        let (kind, x, y, vx, vy) = p.wants_mark_spawn[0];
+        assert_eq!(kind, 619, "the raw C# NPC id (the kind is unported)");
+        assert!((x - 200.0).abs() < 1.0 && (y - 200.0).abs() < 1.0);
+        assert_eq!((vx, vy), (0.0, 0.0), ":33884's zero velocity");
+        assert_eq!(p.local_ai[1], 0.0, "the 813 is not on flag53");
+    }
+
+    /// W4-d11 — the 813's per-stage dust-gate census (the bodies skip):
+    /// wind-up two Next(4), charge two Next(2), full-charge ONE Next(2)
+    /// if/else, dissolve two Next(3); plus the per-tick opacity NextFloat
+    /// gate (`:34018`). A scripted stream proves the order.
+    #[test]
+    fn w4_d11_108_the_tears_dust_gate_census() {
+        struct CountRng {
+            ranges: Vec<(i32, i32)>,
+            floats: usize,
+        }
+        impl DropRng for CountRng {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                self.ranges.push((min, max));
+                min
+            }
+            fn next_float(&mut self) -> f32 {
+                self.floats += 1;
+                0.0
+            }
+        }
+        // Wind-up tick (ai[0] = 1): two Next(4) + the opacity gate (alpha
+        // 0 -> opacity 1, the NextFloat gate passes -> +2 circular floats).
+        let mut p = rspawn(BLOOD_NAUTILUS_TEARS, 200.0, 200.0);
+        let mut rng = CountRng { ranges: Vec::new(), floats: 0 };
+        p.ai_vortex_ritual((300.0, 300.0), &mut rng);
+        assert_eq!(rng.ranges, vec![(0, 4), (0, 4)], ":33762/:33772");
+        assert_eq!(rng.floats, 3, "the opacity gate + the circular pair");
+        // Charge tick (ai[0] = 51): two Next(2) + the opacity gate.
+        let mut p = rspawn(BLOOD_NAUTILUS_TEARS, 200.0, 200.0);
+        p.ai[0] = 50.0;
+        let mut rng = CountRng { ranges: Vec::new(), floats: 0 };
+        p.ai_vortex_ritual((300.0, 300.0), &mut rng);
+        assert_eq!(rng.ranges, vec![(0, 2), (0, 2)], ":33860/:33871");
+        // Full-charge tick (ai[0] = 91): ONE Next(2) if/else.
+        let mut p = rspawn(BLOOD_NAUTILUS_TEARS, 200.0, 200.0);
+        p.ai[0] = 90.0;
+        let mut rng = CountRng { ranges: Vec::new(), floats: 0 };
+        p.ai_vortex_ritual((300.0, 300.0), &mut rng);
+        assert_eq!(rng.ranges, vec![(0, 2)], ":33896's single if/else roll");
+        // Dissolve tick (ai[0] = 121): two Next(3).
+        let mut p = rspawn(BLOOD_NAUTILUS_TEARS, 200.0, 200.0);
+        p.ai[0] = 120.0;
+        let mut rng = CountRng { ranges: Vec::new(), floats: 0 };
+        p.ai_vortex_ritual((300.0, 300.0), &mut rng);
+        assert_eq!(rng.ranges, vec![(0, 3), (0, 3)], ":33955's two switch rolls");
     }
 
     #[test]
