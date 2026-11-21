@@ -195,6 +195,7 @@
 //! | 873-878 | `:87029-87034` | the zombie block: 109 Clown (6 gores, extra +46 Y gore 120) |
 //! | 879-888 | `:87039-87052` | the zombie block: 161/431 ZombieEskimo + 162 Frankenstein (5-gore ladders) |
 //! | 889-898 | `:87057-87070` | the zombie block: 188/434 SwampZombie + 200/436 FemaleZombie (5-gore ladders) |
+//! | 899-907 | `:87075-87087` | the zombie block: 319 ZombieDoctor (5 gores) + 320 ZombieSuperman (4 gores) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -5113,7 +5114,10 @@ fn moss_zombie_death(
 /// 191/192/193) and the 162 Frankenstein (sites 884-888: ladder
 /// 194/195/196), the 188/434 SwampZombie (sites 889-893: ladder
 /// 243/244/245) and the 200/436 FemaleZombie (sites 894-898: ladder
-/// 262/263/264). The remaining zombie types land with the next batches. The 187/433 SlimedZombie adds a 25-dust type-4 blue burst
+/// 262/263/264), the 319 ZombieDoctor (sites 899-903: ladder 451/453/452,
+/// the 453 middle precedes the 452 tail) and the 320 ZombieSuperman (sites
+/// 904-907: 4 gores 454/455/456/456, only ONE +20 gore). The remaining
+/// zombie types land with the next batches. The 187/433 SlimedZombie adds a 25-dust type-4 blue burst
 /// (the wiring wave's hit-half detail is noted per arm).
 fn zombie_block_death(
     npc: &Npc,
@@ -5222,6 +5226,25 @@ fn zombie_block_death(
         gore.new_gore(rng, world, mid, vel, 263, s); // :87068
         gore.new_gore(rng, world, low, vel, 264, s); // :87069
         gore.new_gore(rng, world, low, vel, 264, s); // :87070
+        return;
+    }
+    // `:87073-87080` — the 319 ZombieDoctor ladder (the 453 middle precedes
+    // the 452 tail).
+    if npc_type == 319 {
+        gore.new_gore(rng, world, pos, vel, 451, s); // :87075
+        gore.new_gore(rng, world, mid, vel, 453, s); // :87076
+        gore.new_gore(rng, world, mid, vel, 453, s); // :87077
+        gore.new_gore(rng, world, low, vel, 452, s); // :87078
+        gore.new_gore(rng, world, low, vel, 452, s); // :87079
+        return;
+    }
+    // `:87082-87088` — the 320 ZombieSuperman (4 gores: 454 head, 455 at
+    // +20, 456/456 at +34 — only ONE +20 gore).
+    if npc_type == 320 {
+        gore.new_gore(rng, world, pos, vel, 454, s); // :87084
+        gore.new_gore(rng, world, mid, vel, 455, s); // :87085
+        gore.new_gore(rng, world, low, vel, 456, s); // :87086
+        gore.new_gore(rng, world, low, vel, 456, s); // :87087
         return;
     }
 }
@@ -5861,11 +5884,12 @@ pub fn hit_effect_c(
         moss_zombie_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     // `:86937-87139` — the big zombie block; the 104/632/331/332/109/161/
-    // 431/162/188/434/200/436 (sites 853-898); the rest lands with the next
-    // batches.
+    // 431/162/188/434/200/436/319/320 (sites 853-907); the rest lands with
+    // the next batches.
     if (npc_type == 104 || npc_type == 632 || npc_type == 331 || npc_type == 332 || npc_type == 109
         || npc_type == 161 || npc_type == 431 || npc_type == 162 || npc_type == 188
-        || npc_type == 434 || npc_type == 200 || npc_type == 436)
+        || npc_type == 434 || npc_type == 200 || npc_type == 436 || npc_type == 319
+        || npc_type == 320)
         && npc.hp <= 0
     {
         zombie_block_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction, &mut outcome);
@@ -9231,6 +9255,33 @@ mod tests {
             let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
             assert_eq!(types, gores, "zombie {ty}");
         }
+    }
+
+    /// `NPC.cs:87075-87087` — the zombie block: 319 ZombieDoctor ladder
+    /// 451/453/452 (453 middle before 452 tail), 320 ZombieSuperman 4 gores
+    /// 454/455/456/456 (only one +20 gore).
+    #[test]
+    fn w4_f10_the_zombie_block_doctor_and_superman() {
+        let w = air();
+        // The ZombieDoctor 319.
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(829);
+        let mut out = HitEffectOutcomeC::default();
+        zombie_block_death(&n, 319, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0, &mut out);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![451, 453, 453, 452, 452]);
+        // The ZombieSuperman 320: only 4 gores.
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(829);
+        let mut out2 = HitEffectOutcomeC::default();
+        zombie_block_death(&n, 320, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0, &mut out2);
+        let types2: Vec<i32> = gore2.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![454, 455, 456, 456]);
+        assert_eq!(gore2.slot(1).position, Vec2::new(100.0, 120.0));
+        assert_eq!(gore2.slot(2).position, Vec2::new(100.0, 134.0));
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
