@@ -517,12 +517,15 @@ mod tests {
         // phaseblades (sites 35-36), the 1091/1117 storm lightning (site
         // 37), the 1078 meteor ore (site 38), the 567/568 spore traps (site
         // 39) have no rows; the rowed 248 FlowerPowPetal is aiStyle 1 and
-        // never reaches AI_196 (site 40). A slot carrying any of them feeds
-        // no light.
+        // never reaches AI_196 (site 40). Sites 41-50 add the 1116
+        // petalstorm (41), the 614 cell shot (42), the 636 daybreak (43),
+        // the 1020 drone (44), the 973/972/984 sword beams (45-47), the
+        // 933/1100 fractals (48-49) and the 535 medusa head (50). A slot
+        // carrying any of them feeds no light.
         for kind in [
             502u16, 1092, 451, 464, 465, 466, 490, 492, 518, 575, 590, 602, 612, 953,
             978, 658, 1115, 731, 1105, 1098, 1059, 1074, 1091, 1117, 1078, 567, 568,
-            248, 1038,
+            248, 1038, 1116, 614, 636, 1020, 973, 972, 984, 933, 1100, 535,
         ] {
             let p = slot(kind);
             assert!(proj_lights_a(&p, None).is_empty());
