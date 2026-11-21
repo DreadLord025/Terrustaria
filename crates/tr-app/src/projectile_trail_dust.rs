@@ -2175,6 +2175,204 @@ pub(crate) fn water_gun_stream(
 }
 
 // ---------------------------------------------------------------------------
+// Batch 7 — the owed AI_001 unrowed-kind emitters (55/174/176/299/374/376,
+// the research/66 remainder census). Written + witnessed UNWIRED: the rows
+// live on UNMERGED branches (55 on W4-d22 `204e0651`, 299 on W4-c3
+// `f6b0468d`) or nowhere yet (174/176/374/376 — the all-branch sweep) —
+// the row is the wiring gate (the S1-F-9b convention). The activation
+// checklist (research/67) names each merge + call site.
+// ---------------------------------------------------------------------------
+
+/// Site 55492 — the Hornet Stinger 55's per-tick dust (`Projectile.cs:
+/// 55490-55494`, AI_001): ONE dust 18 at position, box w×h, alpha 0,
+/// scale 0.9; noGravity. No gate draws — unconditional every tick.
+/// UNWIRED at this tip (the 55 row + `ai_hornet_stinger` arm are W4-d22's
+/// `204e0651`, unmerged; its arm body-skips this block).
+#[allow(dead_code)]
+pub(crate) fn hornet_stinger_trail(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let idx = dust.new_dust(
+        &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+        18, 0.0, 0.0, 0, Color::default(), 0.9,
+    );
+    dust.slot_mut(idx).no_gravity = true; // `:55493`
+}
+
+/// Site 55036 — the Ice Spike 174's `alpha == 0` dust (`Projectile.cs:
+/// 55032-55040`, AI_001, BEFORE the machine's alpha −50 fade at `:55041`):
+/// ONE dust 76 at `oldPosition − velocity×3`, box w×h, alpha 50;
+/// noGravity + noLight, velocity ×0.5. No explicit draws. `old_pos` is
+/// the slot's `base.oldPosition` latch (`Projectile.cs:16766` region —
+/// the trident `old_vel` precedent). UNWIRED (no 174 row on any pushed
+/// tip; the Frost Legion's spike, `SetDefaults :2602-2611`).
+#[allow(dead_code)]
+pub(crate) fn ice_spike_dust(
+    p: &TrailSlot,
+    old_pos: Vec2,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    if p.alpha != 0 {
+        return; // `:55034` — the window closes after the first fade.
+    }
+    let idx = dust.new_dust(
+        &mut DustDraw(rng), ctx, world, old_pos - p.vel * 3.0, p.w as i32, p.h as i32,
+        76, 0.0, 0.0, 50, Color::default(), 1.0,
+    );
+    let d = dust.slot_mut(idx);
+    d.no_gravity = true; // `:55037`
+    d.no_light = true; // `:55038`
+    d.velocity *= 0.5; // `:55039`
+}
+
+/// Site 55113 — the Jungle Spike 176's `alpha == 0` dust (`Projectile.cs:
+/// 55109-55118`, AI_001, BEFORE the alpha −50 fade at `:55119`): ONE dust
+/// 22 at `oldPosition`, box w×h, alpha 100, scale 0.5; noGravity +
+/// noLight, velocity ×0.15, fadeIn 0.8. No explicit draws. UNWIRED (no
+/// 176 row on any pushed tip; `SetDefaults :2621-2629`).
+#[allow(dead_code)]
+pub(crate) fn jungle_spike_dust(
+    p: &TrailSlot,
+    old_pos: Vec2,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    if p.alpha != 0 {
+        return; // `:55111`
+    }
+    let idx = dust.new_dust(
+        &mut DustDraw(rng), ctx, world, old_pos, p.w as i32, p.h as i32,
+        22, 0.0, 0.0, 100, Color::default(), 0.5,
+    );
+    let d = dust.slot_mut(idx);
+    d.no_gravity = true; // `:55114`
+    d.no_light = true; // `:55115`
+    d.velocity *= 0.15; // `:55116`
+    d.fade_in = 0.8; // `:55117`
+}
+
+/// Sites 56638/56650 — the Shadowflames 299's burst + trail
+/// (`Projectile.cs:56631-56656`, AI_001). `local_ai0` is the counter
+/// BEFORE the C# `:56645` increment: at 6 → 40× dust 181 (alpha 100,
+/// default scale; velocity ×3 + v×0.75, scale ×1.2, noGravity); then
+/// the caller increments; past 6 → 3× dust 181 per tick (speeds =
+/// v×0.2, alpha 100; velocity ×0.6, scale ×1.4, noGravity). The
+/// `localAI[0]++` + the Item8 cue stay the machine's (the c3 slice-A
+/// arm owns them). No explicit draws. UNWIRED at this tip (the 299 row
+/// + slice-A arm are W4-c3's `f6b0468d`, unmerged; its arm body-skips
+/// both dust loops).
+#[allow(dead_code)]
+pub(crate) fn shadowflames_dust(
+    p: &TrailSlot,
+    local_ai0: f32,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    // `:56633-56644` — the tick-6 burst (the counter pre-increment).
+    if local_ai0 == 6.0 {
+        for _ in 0..40 {
+            let idx = dust.new_dust(
+                &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+                181, 0.0, 0.0, 100, Color::default(), 1.0,
+            );
+            let d = dust.slot_mut(idx);
+            d.velocity *= 3.0; // `:56639`
+            d.velocity += p.vel * 0.75; // `:56640`
+            d.scale *= 1.2; // `:56641`
+            d.no_gravity = true; // `:56642`
+        }
+    }
+    // `:56646-56655` — the post-6 trail (the counter AFTER the `:56645`
+    // increment — the caller passes the pre-increment value, so the
+    // C# `localAI[0] > 6` reads `local_ai0 + 1 > 6` here).
+    if local_ai0 + 1.0 > 6.0 {
+        for _ in 0..3 {
+            let idx = dust.new_dust(
+                &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+                181, p.vel.x * 0.2, p.vel.y * 0.2, 100, Color::default(), 1.0,
+            );
+            let d = dust.slot_mut(idx);
+            d.velocity *= 0.6; // `:56651`
+            d.scale *= 1.4; // `:56652`
+            d.no_gravity = true; // `:56653`
+        }
+    }
+}
+
+/// Site 55553 — the Hornet Stinger 374's 1-in-2 dust (`Projectile.cs:
+/// 55544-55557`, AI_001; the `localAI[0]` Item17 latch is the machine's):
+/// the `Next(2) == 0` gate draws every tick; taken → ONE dust 18 at
+/// position, box w×h, alpha 0, scale 0.9; noGravity, velocity ×0.5.
+/// UNWIRED (no 374 row on any pushed tip; the Hornet minion's shot,
+/// `SetDefaults :4576-4586` — scale ×0.9 at spawn).
+#[allow(dead_code)]
+pub(crate) fn hornet_minion_stinger_dust(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    // `:55551` — the gate, always drawn.
+    if rng.next_range(0, 2) != 0 {
+        return;
+    }
+    let idx = dust.new_dust(
+        &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+        18, 0.0, 0.0, 0, Color::default(), 0.9,
+    );
+    let d = dust.slot_mut(idx);
+    d.no_gravity = true; // `:55554`
+    d.velocity *= 0.5; // `:55555`
+}
+
+/// Site 55574 — the Imp Fireball 376's post-3 dust (`Projectile.cs:
+/// 55558-55586`, AI_001). `local_ai0` is the counter AFTER the C#
+/// `:55564` increment (the machine owns the Item20 latch + the
+/// increment): past 3 → `count` dusts 6 (1, or 2 past 5) at
+/// `position + (0,2)`, box w×h, speeds = v×0.2, alpha 100, scale 2;
+/// noGravity, velocity ×0.3 per axis, noLight. The `wet && !lavaWet`
+/// Kill (`:55580-55584`) is the machine's. No explicit draws. UNWIRED
+/// (no 376 row on any pushed tip; the Flying Imp's shot, `SetDefaults
+/// :4600-4614`).
+#[allow(dead_code)]
+pub(crate) fn imp_fireball_dust(
+    p: &TrailSlot,
+    local_ai0: f32,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    if local_ai0 <= 3.0 {
+        return; // `:55565`
+    }
+    let count = if local_ai0 > 5.0 { 2 } else { 1 }; // `:55567-55571`
+    for _ in 0..count {
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world,
+            p.pos + Vec2::new(0.0, 2.0), p.w as i32, p.h as i32,
+            6, p.vel.x * 0.2, p.vel.y * 0.2, 100, Color::default(), 2.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true; // `:55575`
+        d.velocity *= 0.3; // `:55576-55577` (both axes — the Vec2 mul)
+        d.no_light = true; // `:55578`
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Witnesses — WRITTEN NOT RUN (code-only mode). Each mirrors the C#
 // draw sequence on a recording stream + a scratch pool with the
 // permissive ctx (the npc.rs `dust_ctx` convention), so the pool never
@@ -3097,5 +3295,136 @@ mod tests {
         // roll 0 → each alpha gate adds 25 → 75 + 75 = 150.
         assert_eq!(dust.slot(0).alpha, 150);
         assert!(dust.slots()[..6].iter().all(|d| d.dust_type == 211 && d.no_gravity));
+    }
+
+    // ---- batch 7: the owed AI_001 emitters (UNWIRED, row-gated) ----
+
+    /// W4-g63 — the 55 stinger trail: ONE dust 18 per tick, noGravity,
+    /// scale 0.9, no gate draws.
+    #[test]
+    fn w4_g63_the_hornet_stinger_trail_draws_one() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(6.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        hornet_stinger_trail(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 1);
+        assert_eq!(dust.slot(0).dust_type, 18);
+        assert!(dust.slot(0).no_gravity);
+        assert!((dust.slot(0).scale - 0.9).abs() < 0.2, "0.9 × the ±0.2 jitter");
+    }
+
+    /// W4-g63 — the 174 ice spike: the alpha==0 window spawns ONE dust 76
+    /// at oldPosition − v×3 (noGravity + noLight, velocity ×0.5); a faded
+    /// slot (alpha > 0) spawns nothing.
+    #[test]
+    fn w4_g63_the_ice_spike_window_and_point() {
+        let w = world();
+        let c = ctx(&w);
+        let mut p = slot(Vec2::new(100.0, 100.0), Vec2::new(4.0, 2.0));
+        let old = Vec2::new(96.0, 98.0);
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        ice_spike_dust(&p, old, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 1);
+        let d = dust.slot(0);
+        assert_eq!(d.dust_type, 76);
+        assert!(d.no_gravity && d.no_light);
+        assert_eq!(d.alpha, 50);
+        // The spawn point: (96,98) − (12,6) = (84,92), box 16×16 jitter.
+        assert!((d.position.x - 84.0 - 8.0).abs() <= 8.0);
+        assert!((d.position.y - 92.0 - 8.0).abs() <= 8.0);
+        // Faded: no spawn.
+        p.alpha = 205;
+        let mut dust = DustPool::new();
+        ice_spike_dust(&p, old, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 0);
+    }
+
+    /// W4-g63 — the 176 jungle spike: ONE dust 22 at oldPosition, alpha
+    /// 100, scale 0.5, fadeIn 0.8, velocity ×0.15.
+    #[test]
+    fn w4_g63_the_jungle_spike_fade_in() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(4.0, 2.0));
+        let old = Vec2::new(96.0, 98.0);
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        jungle_spike_dust(&p, old, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 1);
+        let d = dust.slot(0);
+        assert_eq!(d.dust_type, 22);
+        assert!(d.no_gravity && d.no_light);
+        assert_eq!(d.alpha, 100);
+        assert!((d.fade_in - 0.8).abs() < 1e-6);
+        assert!((d.scale - 0.5).abs() < 0.2);
+    }
+
+    /// W4-g63 — the 299 shadowflames: the pre-increment counter 6 fires
+    /// the 40-burst AND the post-increment 7 > 6 fires the 3-trail on the
+    /// SAME tick (43 dusts); counter 5 fires neither; counter 7 fires
+    /// only the trail.
+    #[test]
+    fn w4_g63_the_shadowflames_burst_and_trail_cadence() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(4.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        shadowflames_dust(&p, 6.0, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 43, "40 burst + 3 trail on the tick-6");
+        assert!(dust.slots()[..43].iter().all(|d| d.dust_type == 181 && d.no_gravity));
+        let mut dust = DustPool::new();
+        shadowflames_dust(&p, 5.0, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 0, "counter 5: no burst, 6 not > 6");
+        let mut dust = DustPool::new();
+        shadowflames_dust(&p, 7.0, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 3, "counter 7: trail only");
+    }
+
+    /// W4-g63 — the 374 minion stinger: the Next(2) gate draws every
+    /// tick; taken → dust 18 noGravity velocity ×0.5.
+    #[test]
+    fn w4_g63_the_hornet_minion_stinger_gate() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(6.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(1);
+        hornet_minion_stinger_dust(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(rng.ranges, vec![(0, 2)]);
+        assert_eq!(live(&dust), 0, "refused gate");
+        let mut rng = Recorder::new(0);
+        hornet_minion_stinger_dust(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(rng.ranges[0], (0, 2));
+        assert_eq!(live(&dust), 1);
+        assert_eq!(dust.slot(0).dust_type, 18);
+        assert!(dust.slot(0).no_gravity);
+    }
+
+    /// W4-g63 — the 376 imp fireball: the post-increment counter gates —
+    /// 3 draws nothing, 4 draws ONE dust 6, 6 draws TWO; the point is
+    /// position + (0,2), noGravity + noLight, scale 2.
+    #[test]
+    fn w4_g63_the_imp_fireball_count_ladder() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(4.0, 0.0));
+        let mut rng = Recorder::new(0);
+        let mut dust = DustPool::new();
+        imp_fireball_dust(&p, 3.0, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 0, "counter 3: not > 3");
+        let mut dust = DustPool::new();
+        imp_fireball_dust(&p, 4.0, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 1, "counter 4: one");
+        let d = dust.slot(0);
+        assert_eq!(d.dust_type, 6);
+        assert!(d.no_gravity && d.no_light);
+        assert!((d.scale - 2.0).abs() < 0.2);
+        let mut dust = DustPool::new();
+        imp_fireball_dust(&p, 6.0, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 2, "counter 6: two");
     }
 }

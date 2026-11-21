@@ -165,6 +165,20 @@ lands.
   `NextVector2Square` helper (`Utils.cs:1251-1254`). 14 draw-mirror
   witnesses WRITTEN NOT RUN (the 118/119+128 pair and the 305/298 pair
   share one witness each).
+- batch 7 (2026-11-21 follow-up): 55, 174, 176, 299, 374, 376 — the owed
+  `AI_001` unrowed-kind emitters, written + witnessed UNWIRED. The 55
+  HornetStinger per-tick dust 18 (`:55490-55494`, no gate), the 174
+  IceSpike alpha==0 dust 76 at `oldPosition − v×3` (`:55032-55040`,
+  BEFORE the fade), the 176 JungleSpike alpha==0 dust 22 at oldPosition
+  with fadeIn 0.8 (`:55109-55118`), the 299 Shadowflames tick-6 40×181
+  burst + post-6 3×181 trail (`:56631-56656`, the pre-increment counter
+  convention — tick 6 fires BOTH, 43 dusts), the 374 HornetStinger
+  minion 1-in-2 dust 18 (`:55544-55557`), the 376 ImpFireball post-3
+  1/2× dust 6 ladder (`:55558-55586`, the post-increment counter). The
+  174/176 emitters take `old_pos` explicitly — the slot's
+  `old_position` latch (`Projectile.cs:17013`) is golf-gated at this
+  tip (`projectile.rs:20308`); the activating merge must widen the
+  latch (research/67). 6 draw-mirror witnesses WRITTEN NOT RUN.
 - (following batches recorded in their commit messages + this table)
 
 Kinds with NO ported `proj_data` row keep their dust arm UNWIRED (the
@@ -217,13 +231,16 @@ per kind, cited at each emitter).
 
 Of the 20 `AI_001` per-kind gated kinds ≤400, batch 5 re-armed the 10
 ROWED ones with dust (41/120/207/265/270/282/325/337/350/355) + the 357
-emitter (UNWIRED, f20b's). The remaining 9 are UNROWED at this tip and
-their emitters are the lane's continuation:
-- **55** Stinger (`:55490-55494`, dust 18 noGravity) — no row.
+emitter (UNWIRED, f20b's). The remaining 9 (the 2026-11-21 re-probe
+against every pushed tip):
+- **55** Stinger (`:55490-55494`, dust 18 noGravity) — ROWED on **d22**
+  (`204e0651`, `HORNET_STINGER` + the `ai_hornet_stinger` resting-flight
+  arm which body-skips the dust). Batch 7 emitter written; activates
+  with d22's merge (research/67).
 - **174** IceSpike (`:55032-55051`, alpha==0 dust 76 at oldPosition−v*3)
-  — no row.
+  — no row on any pushed tip. Batch 7 emitter written UNWIRED.
 - **176** JungleSpike (`:55109-55129`, alpha==0 dust 22 at oldPosition)
-  — no row.
+  — no row on any pushed tip. Batch 7 emitter written UNWIRED.
 - **267** PoisonDart (`:57292-57306`) — ROWED, but its C# block draws NO
   dust (the fade + gravity only; the 479's split dust `:57344-57347` is
   the Ichor Dart, a different kind). Censused closed — no emitter owed.
@@ -231,15 +248,23 @@ their emitters are the lane's continuation:
   gravity) — ROWED (ai001_c), but their C# blocks draw NO dust ≤400 (the
   expert homing is RNG-free). Censused closed — no emitter owed.
 - **299** Shadowflames (`:56631-56656`, localAI[0]==6 40×181 burst +
-  post-6 3×181 trail) — no row.
-- **374** HornetStinger (`:55544-55557`, 1-in-2 dust 18) — no row.
-- **376** ImpFireball (`:55558-55586`, post-3 1/2× dust 6) — no row.
+  post-6 3×181 trail) — ROWED on **c3** (`f6b0468d`, the slice-A
+  `SHADOWFLAMES` arm owns the counter + the Item8 cue, body-skips both
+  dust loops). NOT the d2 tombstones (`61c47ed7`/`f430ccf8` rowed kinds
+  43/201-205/527-531, aiStyle 17 — no 299). Batch 7 emitter written;
+  activates with c3's merge (research/67).
+- **374** HornetStinger (`:55544-55557`, 1-in-2 dust 18) — no row on
+  any pushed tip. Batch 7 emitter written UNWIRED.
+- **376** ImpFireball (`:55558-55586`, post-3 1/2× dust 6) — no row on
+  any pushed tip. Batch 7 emitter written UNWIRED.
 
 The 267/275/276 closures are the batch-4 no-dust convention (the rowed
 kind whose C# arm draws nothing). The 55/174/176/299/374/376 emitters
-are unrowed-kind work (batch 6's shape) — they ride the d-lane rows.
+are batch 7 — all six written + witnessed; the rowed-on-unmerged ones
+(55→d22, 299→c3) activate per research/67's checklist, the rest wait
+on a d-lane row.
 
-## Status (2026-11-21)
+## Status (2026-11-21, the follow-up round)
 
 The ROWED inline-machine kinds ≤400 are RE-ARMED end-to-end (batches
 1-4): every kind with a `proj_data` row whose `AI()` arm carries
@@ -248,9 +273,10 @@ on the `UpdateProjectiles` stream, wired from
 `world_sim/projectiles.rs` via the `update_dust` seam. The no-dust
 rowed kinds are censused closed (batch 4). Batch 5 re-armed the 10 rowed
 `AI_001` slice-module kinds (+ the 357 emitter for f20b); batch 6 wrote
-the 17 unrowed-kind emitters UNWIRED. 44 draw-mirror witnesses WRITTEN
-NOT RUN (code-only, the actual `#[test]` tally): 19 (batches 1-4) + 11
-(batch 5) + 14 (batch 6). The
-281 bunny stays UNWIRED (no row, no machine). The unrowed `AI_001`
-emitters (55/174/176/299/374/376) + the d-lane row activations are the
-documented remainder above.
+the 17 unrowed-kind emitters UNWIRED; batch 7 wrote the 6 owed `AI_001`
+emitters (55/174/176/299/374/376) UNWIRED. 50 draw-mirror witnesses
+WRITTEN NOT RUN (code-only, the actual `#[test]` tally): 19 (batches
+1-4) + 11 (batch 5) + 14 (batch 6) + 6 (batch 7). The 281 bunny stays
+UNWIRED (the machine is d5's, the row unclaimed — the corrected census
+above). The activation checklist for the merger is **research/67**
+(which merge unlocks which emitter, incl. the 357 f20-slice-D seam).
