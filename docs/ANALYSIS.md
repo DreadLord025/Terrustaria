@@ -39304,7 +39304,8 @@ row "Dangerous-tile outline / GetTileOutlineInfo … MISSING"; the pylon pass
 feeds `selection_mode = 0`, `pylons.rs:35`). The outline texture
 `Images/Misc/TileOutlines/Tiles_26` exists (`AssetInitializer.cs:356-360`).
 
-**Ported** as `crates/tr-app/src/render/tile_outlines.rs` (UNWIRED):
+**Ported** as `crates/tr-app/src/render/tile_outlines.rs` (WIRED — see the
+feed-seam section below):
 * `in_smart_cursor_highlight_area` — `Main.cs:3945-3957` verbatim: the
   selected-membership out-param computed FIRST (before every gate), `hideUI`
   refuses, the `Collision.InTileBounds` interaction-rect gate (reusing
@@ -39317,19 +39318,89 @@ feeds `selection_mode = 0`, `pylons.rs:35`). The outline texture
   `OutlineQuad` record (the `HighlightMask[type]` sheet name, the framed
   full-height rect `:1406`, the tint). Returns `None` on every refusal.
 
-### Deviations / feed seams (UNWIRED, documented)
+### Deviations / feed seams — WIRED in the follow-up commits
 
-* `Main.SmartInteractTileCoords`/`…Selected` (the highlight-area point lists,
-  `Main.cs:2035-2037`, filled by the smart-cursor lookup tail, cleared by
-  `ClearSmartInteract` `:48054-48062`) are unported — the
-  `world_sim/smart_cursor` lane owns the lookup. `HighlightArea` carries the
-  lists + the interaction rect; fed empty = no outline = the pre-wiring pixels.
-* The `HighlightMask` sheets are not atlas-packed; the draw tail returns an
-  `OutlineQuad` record for the atlas-binding wave (the `CrackQuad`/
-  `SpecialSprite` seam convention).
-* **RNG: ZERO draws** — `GetTileOutlineInfo`, `InSmartCursorHighlightArea` and
-  `GetSelectionGlowColor` are pure reads/integer maths; the outline never
-  touches a stream.
+The two seams the first commit left open are now landed (60970eee feed,
+54698e53 atlas+draw):
+
+* **Seam 1 — the SmartInteractTileCoords feed.** The lists are NOT filled by
+  `SmartCursorHelper.SmartCursorLookup` (the g79-landed tool lookup,
+  `tr_core::smart_cursor` — that one re-points `Main.SmartCursorX/Y`); they
+  are filled by the OTHER half of the `Player.cs:25446-25447` pair,
+  `Player.SmartInteractLookup` (`:17374-17398`) →
+  `SmartInteractSystem.RunQuery` (`SmartInteractSystem.cs:31-61`) →
+  `TileSmartInteractCandidateProvider` (`:63-480`). Ported as
+  `crates/tr-app/src/world_sim/smart_interact.rs` and called from
+  `world_sim/editing.rs` right after the smart-cursor re-point (the port's
+  `Player.Update` seam). Verbatim: `ClearSmartInteract` (`Main.cs:48054-48062`),
+  the `!SmartCursorIsUsed || !mouseItem.IsAir` gate (`:17381`), the Simple
+  reach region + the 10-tile clamps (`:17402-17407`), the
+  `BlockBecauseYouAreOverAnImportantTile` provider (InWorld fluff 10 +
+  `DisableSmartInteract`, `TileID.cs:510`), `FillPotentialTargetTiles`'
+  campfire/`TileUsedInRecipes`/`CountsAsWaterForCrafting`/57-id-literal/
+  6-conditional arms (`:359-480` — chairs 15/toilets 497 within 40 px of the
+  feet (`IsWithinSnappngRangeToTile`, `Player.cs:17365-17372`), LihzahrdAltar
+  237 with item 1293, SnowballLauncher 212 with item 949, Sundial 356 /
+  Moondial 663 off cooldown), `ProvideCandidate`'s size switch (`:115-289`,
+  the `(w, h, pad)` rows + the campfire (3,2) override), the top-left anchor
+  modulo (`:299-300`), the closest-vote `<=` tie (`:92`, LATER targets win),
+  the first-selected-only list fill (`:312-337`) and `WinCandidacy`'s
+  reach±10 interaction rect (`:52-55`).
+  *Unported providers (documented):* the Potion-of-Return gate, the
+  interactable-projectile list and the town-NPC scan
+  (`SmartInteractSystem.cs:15-17`) — only the tile provider runs, so its
+  candidate always wins the min-distance vote. The NPC/proj wins would set
+  `SmartInteractNPC/Proj` (no outline-list effect); the potion gate would
+  steal a win from a farther tile candidate. `UILinkPointNavigator`/gamepad
+  hints are false (no gamepad UI), so `DemandOnlyZeroDistanceTargets` is
+  false and the strict zero-distance arm never runs. `Main.hideUI` has no
+  port state — the outline gate reads false.
+* **Seam 2 — the HighlightMask atlas pack + draw call.** `assets.rs` packs
+  one `Misc/TileOutlines/Tiles_{kind}` sheet per `HasOutlines` id
+  (`AssetInitializer.cs:356-362`, 95 sheets; the content dir's two extra
+  files Tiles_14/Tiles_469 are NOT in the set and stay unpacked).
+  `draw_tile_outlines` walks the coords list, resolves each cell through the
+  tile pass's drawdata chain (`draw_data` → `apply_world_corrections` →
+  `case_draw_data` → `apply_cases_a`, the `tiles.rs:653-734` inputs) and
+  pushes the `:1404-1408` quad (the plain `tileTop` anchor — NO half-brick
+  shift, NO `draw_dx/dy` nudge; the C# tail builds its own vector) into the
+  always-rebuilt world-effect range right after the cached tile pass
+  (`frame/draw.rs`, the crack/pylon convention). **Contested-seam note:**
+  the C# tail draws per-tile at the END of `DrawSingleTile`; the port defers
+  to the post-pass overlay because the highlight lists change every tick
+  and cannot ride the G6-cached range — the same documented z-order
+  approximation the pylon pass keeps (nothing but entities draws between).
+  The `WorldFrameKey` is untouched.
+* **RNG: ZERO draws** — `GetTileOutlineInfo`, `InSmartCursorHighlightArea`,
+  `GetSelectionGlowColor` and the whole `SmartInteractLookup` scan are pure
+  reads/integer maths; neither seam touches a stream.
+
+### The HasOutlines feed census (seam 3 — which outline tiles have no feed?)
+
+The full `TileID.Sets.HasOutlines` set (`TileID.cs:551`) is **95 ids**.
+Cross-referenced against `FillPotentialTargetTiles`' feed arms and
+`ProvideCandidate`'s size switch (decoded from the generated
+`SET_HAS_OUTLINES` bitset + the ported recipe station set):
+
+* **Every one of the 95 has BOTH a feed arm and a size arm — there is NO
+  orphan outline tile.** The feed reaches them three ways:
+  - 56 via the literal switch (`:385-444`) or the campfire/water sets;
+  - 6 via the conditional arms (15, 497, 237, 212, 356, 663);
+  - **33 via `Recipe.TileUsedInRecipes` ONLY** (the recipe stations absent
+    from the literal switch): 16, 17, 18, **26**, 77, 86, 94, 96, 101, 106,
+    114, 133, 134, 217, 218, 220, 228, 243, 247, 283, 300, 301, 302, 303,
+    304, 305, 306, 307, 308, 355, 412, 499, 622. The altar 26's feed is the
+    recipe-station arm (`Recipe.cs:9166` et al., `requiredTile = 26` — the
+    boss summons / night items); 77/133/134/302/304/355/17/96 inherit
+    through the `TileCountsAs` chains (`Recipe.cs:559-571`).
+* **Five ids are sized but NOT outlined** (they feed the interact machinery
+  but draw no outline): 14 Tables, 469 Tables2, 491 VoidVault, 573
+  TatteredWoodSign, 597 TeleportationPylon. 491/597 carry their own
+  selection glow in the pylon/void-lens pass (`pylons.rs`, the
+  `selection_mode` seam — still fed 0 there; wiring THAT seam to the same
+  lists is a follow-up, the `Extra_93`/column-2 masks are already packed).
+* The content dir carries 97 `Tiles_*.xnb` files — the 95 set members plus
+  the two non-set leftovers (14, 469); every set member has its file.
 
 ### Verification
 
@@ -39340,3 +39411,15 @@ Rust symbols checked by read/grep (`td::SET_HAS_OUTLINES`, `TileSet::has`,
 graphify invoked**. The HasOutlines membership (26 yes / 695 no) and the
 TILE_SOLID/TILE_LIGHTED bits were re-derived from the generated bitsets by a
 direct decode (26/695/31/696 all non-solid, all lighted).
+
+The wiring commits add 6 feed witnesses (`smart_interact.rs`
+`w4_g86_feed_tests`: the altar's six-cell fill + selection + the reach±10
+rect, the off-object coords-only fill, the runtime-flag/mouse-item gates,
+the DisableSmartInteract block, the size-switch rows, the all-95-have-a-
+size-arm census) and 1 wiring witness (`tile_outlines.rs`
+`w4_g86_the_atlas_pack_and_the_draw_hook_are_wired`: the pack gate, the
+draw-hook position between the cached range and the pylon pass, the
+repoint→feed call order) — all WRITTEN NOT RUN, same code-only mode. The
+feed census (95/95 covered, 33 recipe-only, 5 sized-not-outlined, 97 files
+vs 95 set members) was derived by a direct set decode over
+`recipes_gen.rs`'s station lists + the `TileCountsAs` pairs.
