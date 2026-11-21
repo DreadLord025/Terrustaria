@@ -39350,3 +39350,83 @@ rustfmt/tests/graphify invoked**. The dispatch coverage pin
 (`s1_d_4c_every_rowed_style_has_exactly_one_live_arm`) sees one live arm
 per new style; the `#[deny(unreachable_patterns)]` guard covers
 duplicates.
+
+### The W4-d15 wiring round (the four remaining seams, 2026-11-21, code-only)
+
+The census of the slice's remaining seams — what was live, what was
+missing, and where each landed:
+
+1. **The Dd2Owner write drain was LIVE** (`world_sim/projectiles.rs`'s
+   `take_dd2_writes` tail) — but the C#'s per-tick `heldProj = -1` reset
+   (`Player.cs:24376`, the movement-defaults block) was MISSING: a stale
+   claim survived every tick with no live claimant. The reset joins
+   `Player::update_with_grapple`'s defaults block (the `:24364-24371`
+   site); the 142 claim re-arms it through the drain each live tick.
+   3 drain/reset witnesses in `world_sim/projectiles.rs`.
+2. **The 709 volley spawn path was MISSING its item arms.** The census:
+   item 3836 (Monk Staff T2, `Item.cs:33977-33994`) shoots 699 with
+   `ai0 = NextFloat() * speed * 0.75 * direction` (`Player.cs:48731-
+   48735`) — the generic port tail spawned it ai0 = 0, collapsing the
+   142 swing arc's radius. Item 3858 (Monk Staff T3, `Item.cs:34104-
+   34123`) shoots 707 normally and 708 on the right-click alt
+   (`Player.cs:48736-48747`): `ItemCheck_ManageRightClickFeatures`
+   (`:31646-31650`) arms `altFunctionUse = 1` + forces `controlUseItem`
+   (3858 is an `ItemsThatAllowRepeatedRightClick` member, `ItemID.cs:342`
+   — the port's only ported member), the use-start gate converts 1→2
+   (`:42735-42738`), the animation-zero head clears 2 (`:42673-42676`),
+   a released left button clears 1 (`:31691-31694`). The alt arm spawns
+   the 708 at velocity ×1.5, `ai0 = (0.3 + 0.7·NextFloat) · speed · 1.75
+   · direction`, damage ×0.5 (int truncation), knockback +4. `speed`
+   stays the `:47059-47063` value computed off the ITEM's shoot 707 — a
+   `NoMeleeSpeedVelocityScaling` member (`ProjectileID.cs:547`), so NO
+   meleeSpeed division even on the alt shot. The `App.alt_function_use`
+   latch + the `update_editing` head/manage blocks + the two
+   `fire_non_ammo_shot` arms landed; the 707 row (`Projectile.cs:7474-
+   7490`, aiStyle 140 — OUTSIDE the 141-150 slice, the free integrate
+   holds it until the 140 port) lands verbatim so the normal arm spawns.
+   4 witnesses in `world_sim/editing.rs`.
+3. **The 1050 tree-shake DropItems was a recorded skip** — now wired.
+   The arm queues a `Dd2Shake` (the scanned cell + the taken `Next(5)`
+   gate; the three `Main.rand` draws stay inline on the
+   `UpdateProjectiles` stream); the pass drains it: the
+   `KillTile_PlaySounds(fail: true)` cue through the break-sound table,
+   and `editing::dd2_shake_tile_drops` — the per-cell
+   `KillTile_GetItemDrops` rolls WITHOUT killing the tile (the pet
+   shakes, never breaks): the trunk kinds 5/596/616/634 ride the break
+   path's `trunk_tree_drops` resolver (axe power = the closest player's
+   held slot, the `WorldGen.cs:66255-66256` read), the gem trees
+   583-589 ride `gem_tree_drops`, the mushroom 72 rides
+   `mushroom_tree_drops`, the palm 323 rides its `:65232-65266` arm.
+   `SpecialSeedFeatures.ShouldDropExtraWood` (tenth + drunk + !remix +
+   !notTheBees, `SpecialSeedFeatures.cs:17-27`) gates the ×2/×3 stacks.
+   The dust body stays the pool's layer skip. The tree-scan witness
+   asserts the queue.
+4. **The 148 spawner's item census: NO item shoots 720.** Starfury (65)
+   shoots 9 (`Item.cs:2158`, the i22 arm already landed); the ONLY 720
+   spawn site in the whole decompilation is `WorldGen.SpawnFallingObjects`'s
+   natural-starfall loop (`WorldGen.cs:71853`, called from `UpdateWorld`
+   `:71624`). The loop lands in the growth pass
+   (`world_sim/growth.rs::spawn_natural_starfall`, after the growth
+   picks — the C#'s call order): the `isThereAWorldSurface` gate
+   (`Main.cs:2788`), the daylight gate (remix exempt), the dayRate loop
+   of `Next(8000) < 10 · (maxTilesX/4200 · starfallBoost)` gate rolls,
+   the sky point, the `RollLuck(15)`/`RollBadLuck(15)` (remix)
+   player-targeted branch (`Next(1,640)` then `Next(-n,n+1)`), the
+   solid-box refusal and the velocity rolls normalized to 12. Recorded
+   folds: `starfallBoost` pins 1 (the `Star.NightSetup` roll chain,
+   `Main.cs:65223` → `Star.cs:41-60`, is its own census follow-up — no
+   port state), `Player.FindClosest` folds to the one player (no player
+   reads the inactive slot: position (0,0), luck 0), `afkCounter` folds
+   0 (no port field, the hotbar census). The boulder-rain/meteor-shower/
+   coin-rain arms ahead of the loop keep their unported-state folds.
+   5 witnesses in `world_sim/growth.rs` (the daylight/no-surface
+   draw-free gates, the gate-roll draw-order twin, the forced-hit
+   payload pin, the phase-order pin). The existing DW-1.4 draw-count
+   pin stays valid — the day fixture's loop returns draw-free.
+
+All wiring-round witnesses are WRITTEN, NOT RUN (the code-only round's
+contract). The RNG streams are untouched in order: every new draw sits
+in its C# slot (the use arms on `UpdatePlayers`, the shake drain + the
+starfall loop on their pass streams — `UpdateProjectiles` /
+`UpdateWorldGen` respectively, the `genRand == Main.rand` swap,
+`WorldGen.cs:4445`).
