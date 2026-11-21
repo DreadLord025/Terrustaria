@@ -68,6 +68,158 @@ pub struct SpawnFlags {
     pub wof_active: bool,
 }
 
+/// W4-d127 chain item 4 — the style-24 birds' SPAWN gates, transcribed
+/// verbatim from `NPC.SpawnAnNPC` (`NPC.cs:1282+`). UNWIRED helpers
+/// (the census-ownership rule): the bird kinds land on the roster
+/// co-lanes (74=d35, 297/298=d38, 442=d40, 611=d42, 671-675/689=d43)
+/// and the spawner-ladder wiring is that merge step — these pure gates
+/// pin the C#'s conditions + draw order so the merge has the census in
+/// one place (the `moon_boss_slots` precedent). g61 owns spawn DUST
+/// only (its tip touches npc_spawn_visuals.rs, not the pool ladder).
+///
+/// RNG census (the enclosing `case 2/109/477/492` block,
+/// `NPC.cs:2377+`, `flag10 = surfaceSpawn`):
+/// * the owl gate `(!raining && !dayTime && Next(5) == 0) & flag10`
+///   (`:2437`): ONE Next(5); on hit `RollBadLuckExtreme(100)`
+///   (`Luck.cs:40-51` — positive luck: NextFloat + Next(1000) on hit;
+///   negative: NextFloat + Next(10) on hit; zero luck: Next(100)
+///   only) picks 689 mimic on 0 else 611 owl;
+/// * the day-bird gate `(dayTime && time < 18000.0 && Next(3) != 0)
+///   & flag10` (`:2449`): Next(3); on hit ONE Next(4) pick, then the
+///   gold promotion `RollLuck(goldCritterChance=400)`
+///   (`NPC.cs:95159`) → 442, else pick 0→297, 1→298, default→74
+///   (`:2451-2470` — the Next(4) draws BEFORE the gold roll);
+/// * the jungle surface gate `surfaceSpawn && ZoneJungle &&
+///   !ZoneCrimson && !ZoneCorrupt && Next(7) == 0` (`:3801`): on hit
+///   `dayTime && time < 43200.00064373016 && Next(3) != 0` → ONE
+///   Next(5) pick 671-675 (`:3803-3826`); else `SpawnFrog`
+///   (`:5609-5622` — the 687/445/361 ladder, NOT a bird);
+/// * the jungle MUD tile gate `tileType == 60 && dayTime &&
+///   Next(3) != 0` (`:2336-2361`, the water-ladder mud-critter scan):
+///   ONE Next(5) pick 671-675; else SpawnFrog.
+pub struct BirdSpawnGates {
+    /// `this.surfaceSpawn` (`NPC.cs:1202`).
+    pub surface: bool,
+    /// `Main.dayTime`.
+    pub day_time: bool,
+    /// `Main.time` (the day clock, 0..54000 day / 0..32400 night).
+    pub time: f64,
+    /// `this.raining` (`Main.raining`).
+    pub raining: bool,
+    /// `this.ZoneJungle`.
+    pub zone_jungle: bool,
+    /// `this.ZoneCrimson || this.ZoneCorrupt` (the jungle gate's
+    /// exclusion pair).
+    pub zone_evil: bool,
+    /// `Player.luck` — the RollLuck/RollBadLuckExtreme input.
+    pub luck: f32,
+}
+
+/// The owl gate's pick (`NPC.cs:2437-2447`): `Some(true)` = the 689
+/// mimic, `Some(false)` = the 611 owl, `None` = no spawn (the gate
+/// missed). Draw order: Next(5) gate, then RollBadLuckExtreme(100).
+pub fn bird_spawn_owl_pick(g: &BirdSpawnGates, rng: &mut UnifiedRandom) -> Option<bool> {
+    // `:2437` — `(!this.raining && !Main.dayTime && Main.rand.Next(5)
+    // == 0) & flag10`: the C# `&` evaluates BOTH sides, but the Next(5)
+    // sits inside the parenthesised `&&` chain — it draws only when
+    // !raining && !dayTime hold (the short-circuit), and flag10 gates
+    // the SPAWN, not the draw. The port keeps the draw gated by the
+    // weather/time pair and the spawn gated by surface (the vanilla
+    // stream shape: a non-surface roll still consumes).
+    if g.raining || g.day_time {
+        return None;
+    }
+    if rng.next_max(5) != 0 {
+        return None;
+    }
+    if !g.surface {
+        return None;
+    }
+    // `:2439` — RollBadLuckExtreme(100) == 0 → 689, else 611.
+    Some(roll_bad_luck_extreme(g.luck, 100, rng) == 0)
+}
+
+/// `Luck.RollBadLuckExtreme(float luck, int range)` (`Luck.cs:40-51`):
+/// positive luck rolls NextFloat() then Next(range*10) on a hit;
+/// negative rolls NextFloat() then Next(range/10) on a hit; zero luck
+/// draws Next(range) only. (The style-24 module's
+/// `roll_only_bad_luck_extreme` is the ONLY-bad sibling, `:53-60`.)
+pub fn roll_bad_luck_extreme(luck: f32, range: i32, rng: &mut UnifiedRandom) -> i32 {
+    if luck > 0.0 && rng.next_float() < luck {
+        return rng.next_max(range * 10);
+    }
+    if luck < 0.0 && rng.next_float() < 0.0 - luck {
+        return rng.next_max(range / 10);
+    }
+    rng.next_max(range)
+}
+
+/// `Luck.RollLuck(float luck, int range)` (`Luck.cs:5-16`): positive
+/// luck NextFloat + Next(Next(range/2, range)) on hit; negative
+/// NextFloat + Next(Next(range, range*2)) on hit; else Next(range).
+pub fn roll_luck(luck: f32, range: i32, rng: &mut UnifiedRandom) -> i32 {
+    if luck > 0.0 && rng.next_float() < luck {
+        return rng.next_max(rng.next_range(range / 2, range));
+    }
+    if luck < 0.0 && rng.next_float() < 0.0 - luck {
+        return rng.next_max(rng.next_range(range, range * 2));
+    }
+    rng.next_max(range)
+}
+
+/// The day-bird gate's pick (`NPC.cs:2449-2470`): the vanilla type
+/// (74/297/298/442) or `None`. Draw order: Next(3) gate, Next(4) pick,
+/// THEN the gold RollLuck(400) — the pick draws even when the gold
+/// promotion wins (`num38 = Main.rand.Next(4)` precedes the roll).
+pub fn bird_spawn_day_pick(g: &BirdSpawnGates, rng: &mut UnifiedRandom) -> Option<i32> {
+    // `:2449` — `(Main.dayTime && Main.time < 18000.0 &&
+    // Main.rand.Next(3) != 0) & flag10`.
+    if !g.day_time || g.time >= 18000.0 {
+        return None;
+    }
+    if rng.next_max(3) == 0 {
+        return None;
+    }
+    if !g.surface {
+        return None;
+    }
+    // `:2451` — the pick draws FIRST.
+    let num38 = rng.next_max(4);
+    // `:2452-2456` — the gold promotion (goldCritterChance = 400,
+    // `NPC.cs:95159`).
+    if roll_luck(g.luck, 400, rng) == 0 {
+        return Some(442);
+    }
+    // `:2457-2469` — 0→297, 1→298, default→74.
+    Some(match num38 {
+        0 => 297,
+        1 => 298,
+        _ => 74,
+    })
+}
+
+/// The jungle-surface gate's pick (`NPC.cs:3801-3829`): `Some(ty)` =
+/// one of 671-675, `None` = no bird (the gate missed OR the SpawnFrog
+/// fallback won — the frog ladder is NOT this lane's). Draw order:
+/// Next(7) gate, Next(3) day gate, Next(5) pick.
+pub fn bird_spawn_jungle_pick(g: &BirdSpawnGates, rng: &mut UnifiedRandom) -> Option<i32> {
+    // `:3801` — `this.surfaceSpawn && this.ZoneJungle &&
+    // !this.ZoneCrimson && !this.ZoneCorrupt && Main.rand.Next(7) == 0`.
+    if !g.surface || !g.zone_jungle || g.zone_evil {
+        return None;
+    }
+    if rng.next_max(7) != 0 {
+        return None;
+    }
+    // `:3803` — `Main.dayTime && Main.time < 43200.00064373016 &&
+    // Main.rand.Next(3) != 0` (the double literal kept verbatim).
+    if !g.day_time || g.time >= 43200.00064373016 || rng.next_max(3) == 0 {
+        return None; // the SpawnFrog fallback (`:3828`)
+    }
+    // `:3805-3825` — the Next(5) pick, case 0..4 → 671..675.
+    Some(671 + rng.next_max(5))
+}
+
 /// The wave-20 boss kinds the `Spawner` ctor weights (`NPC.cs:273-286`):
 /// 315/325/327/328/344/345/346, each with its `SetDefaults` `npcSlots`
 /// (the common reset is `npcSlots = 1f`, `NPC.cs:8510`; the per-type writes
@@ -4647,5 +4799,164 @@ mod tests {
         assert_eq!((rate.spawn_rate, rate.max_spawns), (360, 6));
         let rate = get_spawn_rate(&day, &mut UnifiedRandom::new(1));
         assert_eq!((rate.spawn_rate, rate.max_spawns), (600, 5));
+    }
+
+    /// W4-d127 chain item 4 — the bird spawn-gates census: the three
+    /// gates' conditions + draw order vs the C# (`NPC.cs:2437-2470`,
+    /// `:3801-3829`), swept over seeds with a stream mirror. WRITTEN
+    /// NOT RUN.
+    #[test]
+    fn the_bird_spawn_gates_match_the_census() {
+        let night_clear = BirdSpawnGates {
+            surface: true, day_time: false, time: 0.0, raining: false,
+            zone_jungle: false, zone_evil: false, luck: 0.0,
+        };
+        // The owl gate: rain or day consumes NOTHING (the && chain
+        // short-circuits before the Next(5)).
+        for mut g in [
+            BirdSpawnGates { raining: true, ..night_clear },
+            BirdSpawnGates { day_time: true, ..night_clear },
+        ] {
+            g.surface = true;
+            let mut rng = UnifiedRandom::new(7);
+            let mut mirror = UnifiedRandom::new(7);
+            assert_eq!(bird_spawn_owl_pick(&g, &mut rng), None);
+            // No draw consumed: the mirror's next draw matches.
+            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+        }
+        // The night gate over seeds: every hit is 611 or 689, and the
+        // zero-luck RollBadLuckExtreme(100) is a plain Next(100) — the
+        // 689 pick fires exactly when that draw is 0.
+        let mut owls = 0;
+        let mut mimics = 0;
+        for seed in 0..200u64 {
+            let mut rng = UnifiedRandom::new(seed);
+            let mut mirror = UnifiedRandom::new(seed);
+            match bird_spawn_owl_pick(&night_clear, &mut rng) {
+                Some(mimic) => {
+                    // The mirror replays: Next(5) gate then Next(100).
+                    let gate = mirror.next_max(5);
+                    assert_eq!(gate, 0, "a hit means the gate drew 0");
+                    let roll = mirror.next_max(100);
+                    assert_eq!(mimic, roll == 0, "the 689 pick is the roll==0");
+                    if mimic { mimics += 1; } else { owls += 1; }
+                }
+                None => {
+                    let gate = mirror.next_max(5);
+                    if gate == 0 {
+                        // Gate hit but non-surface? No — surface true;
+                        // a None with gate 0 cannot happen here.
+                        panic!("seed {seed}: gate hit but no pick");
+                    }
+                }
+            }
+            assert_eq!(rng.next_max(1000), mirror.next_max(1000), "stream aligned");
+        }
+        assert!(owls > 0 && mimics > 0, "both owl forms reachable");
+        // The day gate: night or late-day consumes nothing; morning
+        // hits pick 74/297/298 (zero luck never promotes gold — the
+        // RollLuck(400) is a plain Next(400), 0 promotes).
+        let morning = BirdSpawnGates { day_time: true, time: 0.0, ..night_clear };
+        let mut picks = std::collections::BTreeSet::new();
+        for seed in 0..400u64 {
+            let mut rng = UnifiedRandom::new(seed);
+            if let Some(ty) = bird_spawn_day_pick(&morning, &mut rng) {
+                picks.insert(ty);
+            }
+        }
+        assert!(picks.contains(&74) && picks.contains(&297) && picks.contains(&298));
+        assert!(picks.contains(&442), "the gold promotion reachable at zero luck");
+        // The jungle gate: the five macaws, and the evil-zone /
+        // non-jungle exclusions consume nothing.
+        let jungle = BirdSpawnGates {
+            zone_jungle: true, day_time: true, time: 0.0, ..night_clear
+        };
+        let mut jpick = std::collections::BTreeSet::new();
+        for seed in 0..600u64 {
+            let mut rng = UnifiedRandom::new(seed);
+            if let Some(ty) = bird_spawn_jungle_pick(&jungle, &mut rng) {
+                jpick.insert(ty);
+            }
+        }
+        assert_eq!(
+            jpick.into_iter().collect::<Vec<_>>(),
+            vec![671, 672, 673, 674, 675],
+            "exactly the five jungle birds"
+        );
+        for g in [
+            BirdSpawnGates { zone_evil: true, ..jungle },
+            BirdSpawnGates { zone_jungle: false, ..jungle },
+            BirdSpawnGates { surface: false, ..jungle },
+        ] {
+            let mut rng = UnifiedRandom::new(3);
+            let mut mirror = UnifiedRandom::new(3);
+            assert_eq!(bird_spawn_jungle_pick(&g, &mut rng), None);
+            assert_eq!(rng.next_max(1000), mirror.next_max(1000), "no draw on the exclusion");
+        }
+        // The jungle day cutoff: the C# double literal 43200.00064373016
+        // — time just under it still spawns, at/after it falls to frog.
+        let late = BirdSpawnGates { time: 43200.0, ..jungle };
+        let mut hit = false;
+        for seed in 0..600u64 {
+            if bird_spawn_jungle_pick(&late, &mut UnifiedRandom::new(seed)).is_some() {
+                hit = true;
+                break;
+            }
+        }
+        assert!(hit, "time 43200.0 < the literal cutoff still spawns");
+        let past = BirdSpawnGates { time: 43200.00064373016, ..jungle };
+        for seed in 0..50u64 {
+            let mut rng = UnifiedRandom::new(seed);
+            let mut mirror = UnifiedRandom::new(seed);
+            assert_eq!(bird_spawn_jungle_pick(&past, &mut rng), None);
+            // The Next(7) still draws (the gate precedes the time test).
+            let _ = mirror.next_max(7);
+            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+        }
+    }
+
+    /// W4-d127 chain item 4 — the luck-roll draw census
+    /// (`Luck.cs:5-16`/`:40-51`): zero luck = ONE Next(range); positive
+    /// luck hit = NextFloat + the doubled-range draw; negative luck hit
+    /// = NextFloat + the halved-range draw. The nested RollLuck draws
+    /// Next(inner) THEN Next(outer) — order pinned. WRITTEN NOT RUN.
+    #[test]
+    fn the_luck_rolls_draw_in_the_census_order() {
+        // Zero luck: exactly one Next(range), no NextFloat.
+        let mut rng = UnifiedRandom::new(11);
+        let mut mirror = UnifiedRandom::new(11);
+        assert_eq!(roll_bad_luck_extreme(0.0, 100, &mut rng), mirror.next_max(100));
+        assert_eq!(rng.next_max(999), mirror.next_max(999));
+        let mut rng = UnifiedRandom::new(11);
+        let mut mirror = UnifiedRandom::new(11);
+        assert_eq!(roll_luck(0.0, 400, &mut rng), mirror.next_max(400));
+        assert_eq!(rng.next_max(999), mirror.next_max(999));
+        // Full luck (1.0): the NextFloat ALWAYS hits (< 1.0), so the
+        // extreme roll draws NextFloat + Next(range*10) — two draws.
+        let mut rng = UnifiedRandom::new(5);
+        let mut mirror = UnifiedRandom::new(5);
+        let f = mirror.next_float();
+        assert!(f < 1.0);
+        assert_eq!(roll_bad_luck_extreme(1.0, 100, &mut rng), mirror.next_max(1000));
+        assert_eq!(rng.next_max(999), mirror.next_max(999));
+        // Full bad luck (-1.0): NextFloat < 1.0 always hits → Next(10).
+        let mut rng = UnifiedRandom::new(5);
+        let mut mirror = UnifiedRandom::new(5);
+        let _ = mirror.next_float();
+        assert_eq!(roll_bad_luck_extreme(-1.0, 100, &mut rng), mirror.next_max(10));
+        // RollLuck at full luck: NextFloat, Next(range/2..range) inner,
+        // then Next(inner) outer — three draws, inner BEFORE outer.
+        let mut rng = UnifiedRandom::new(9);
+        let mut mirror = UnifiedRandom::new(9);
+        let _ = mirror.next_float();
+        let inner = mirror.next_range(200, 400);
+        assert_eq!(roll_luck(1.0, 400, &mut rng), mirror.next_max(inner));
+        assert_eq!(rng.next_max(999), mirror.next_max(999));
+        // RollLuck at full BAD luck: the widened range (400..800).
+        let mut rng = UnifiedRandom::new(9);
+        let mut mirror = UnifiedRandom::new(9);
+        let _ = mirror.next_float();
+        let inner = mirror.next_range(400, 800);
+        assert_eq!(roll_luck(-1.0, 400, &mut rng), mirror.next_max(inner));
     }
 }
