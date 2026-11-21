@@ -23098,6 +23098,34 @@ impl ProjectilePool {
                     let proj_cx = p.pos.x + p.w * 0.5;
                     p.direction = if npc_cx < proj_cx { -1 } else { 1 };
                 }
+                // W4-g3 — `Damage_PVE_Inner`'s aiStyle-68 arm
+                // (`Projectile.cs:13149-13163`): the Molotov cocktail's hit
+                // fuses `timeLeft` to 3 (the `if (timeLeft > 3)` guard) and
+                // points `direction` at the victim's side — the aiStyle-16
+                // shape verbatim. Post-strike placement is observationally
+                // identical (the fuse/direction are read by the NEXT tick's
+                // AI, no draw between — the aiStyle-16 precedent above).
+                if proj_data(self.slots[slot].kind).map_or(0, |d| d.ai_style) == 68 {
+                    let p = &mut self.slots[slot];
+                    if p.time_left > 3 {
+                        p.time_left = 3;
+                    }
+                    let (nw, _) = npcs[idx].size();
+                    let npc_cx = npcs[idx].x + nw * 0.5;
+                    let proj_cx = p.pos.x + p.w * 0.5;
+                    p.direction = if npc_cx < proj_cx { -1 } else { 1 };
+                }
+                // W4-g3 — `Damage_PVE_Inner`'s aiStyle-50 arm
+                // (`Projectile.cs:13164-13175`): the Inferno Fork bolt/blast
+                // hit points `direction` at the victim's side (NO fuse — the
+                // C# arm has no `timeLeft` write). RNG-free state write.
+                if proj_data(self.slots[slot].kind).map_or(0, |d| d.ai_style) == 50 {
+                    let p = &mut self.slots[slot];
+                    let (nw, _) = npcs[idx].size();
+                    let npc_cx = npcs[idx].x + nw * 0.5;
+                    let proj_cx = p.pos.x + p.w * 0.5;
+                    p.direction = if npc_cx < proj_cx { -1 } else { 1 };
+                }
                 // S1-P-i16 — `StatusNPC`'s dart debuffs
                 // (`Projectile.cs:11635-11645` the 267 Poison Dart,
                 // `:11482-11489` the 478/480 Cursed Flames + the 479
@@ -44382,5 +44410,73 @@ mod s1_p_i25_dragon_tests {
         let cy = d.pos.y + d.h * 0.5;
         assert!((cx - 412.0).abs() < 0.01, "the centre kept: {cx}");
         assert!((cy - 312.0).abs() < 0.01, "the centre kept: {cy}");
+    }
+}
+
+// --- W4-g3: the unclaimed OnHit direction arms (aiStyle 68 / 50) ----------
+#[cfg(test)]
+mod w4_g3_onhit_direction_tests {
+    use super::*;
+
+    fn air() -> World {
+        World::new("t".into(), 200, 200)
+    }
+
+    /// A landed hit points the shot's `direction` at the victim's side
+    /// (`Projectile.cs:13149-13175`). The Molotov (aiStyle 68) also fuses
+    /// `timeLeft` to 3; the Inferno Fork (aiStyle 50) only turns. Both are
+    /// RNG-free post-strike state writes (the aiStyle-16 precedent).
+    #[test]
+    fn w4_g3_the_molotov_hit_fuses_and_faces_the_victim() {
+        let w = air();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(MOLOTOV_COCKTAIL, 500.0, 500.0, 4.0, 0.0, 20, 2.0)
+            .expect("the molotov row");
+        pool.slots_mut()[slot].time_left = 360;
+        let mut npc = Npc::new(NpcKind::Slime, 490.0, 500.0, 1, 0.0);
+        npc.hp = 500;
+        npc.max_hp = 500;
+        pool.damage_pve(
+            &w,
+            slot,
+            std::slice::from_mut(&mut npc),
+            None,
+            None,
+            None,
+            &mut tr_core::tile_light::FastRandom::new(7),
+        );
+        let p = &pool.slots()[slot];
+        assert_eq!(p.time_left, 3, "the fuse (`:13151-13154`)");
+        // The victim centre (490+12) is LEFT of the shot centre (500+7).
+        assert_eq!(p.direction, -1, "faces the victim (`:13155-13162`)");
+    }
+
+    /// The Inferno Fork bolt (aiStyle 50) turns to face the victim but keeps
+    /// its lifetime (the C# arm has no `timeLeft` write, `:13164-13175`).
+    #[test]
+    fn w4_g3_the_inferno_hit_faces_the_victim_without_fusing() {
+        let w = air();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(INFERNO_FORK_BOLT, 500.0, 500.0, 4.0, 0.0, 20, 2.0)
+            .expect("the inferno bolt row");
+        let life = pool.slots()[slot].time_left;
+        let mut npc = Npc::new(NpcKind::Slime, 505.0, 500.0, 1, 0.0);
+        npc.hp = 500;
+        npc.max_hp = 500;
+        pool.damage_pve(
+            &w,
+            slot,
+            std::slice::from_mut(&mut npc),
+            None,
+            None,
+            None,
+            &mut tr_core::tile_light::FastRandom::new(7),
+        );
+        let p = &pool.slots()[slot];
+        assert_eq!(p.time_left, life, "no fuse on aiStyle 50");
+        // The victim centre (505+12) is RIGHT of the shot centre (500+6).
+        assert_eq!(p.direction, 1, "faces the victim (`:13166-13173`)");
     }
 }
