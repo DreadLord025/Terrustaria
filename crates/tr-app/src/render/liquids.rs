@@ -514,6 +514,29 @@ fn push_waterfall_split(
     quads
 }
 
+/// `TileDrawing.cs:3858`'s half-brick spout clause (W4-g75 retire-contract):
+/// `tileCache.halfBrick() && (num3 > 160 || num > 160) &&
+/// Main.instance.waterfallManager.CheckForWaterfall(tileX, tileY)` — a
+/// half-brick that spouts a waterfall suppresses its OWN behind-water mask
+/// so the fall reads clean. `num3`/`num` are the LEFT/RIGHT neighbours'
+/// liquid with the type-379 (bubble) exclusion (`:3835-3844`). The
+/// `inActive()` half of the same refusal line is owned by the g80 actuator
+/// lane (`liquid_behind_refused`, af6cd44f — that commit explicitly leaves
+/// THIS clause as a recorded deviation); the two halves compose by OR.
+fn liquid_behind_spout_refused(
+    tile: &tr_core::tile::Tile,
+    left: &tr_core::tile::Tile,
+    right: &tr_core::tile::Tile,
+    waterfall: &tr_core::waterfall::WaterfallManager,
+    tx: i32,
+    ty: i32,
+) -> bool {
+    // `num3` (`:3843`) / `num` (`:3837`): a 379 neighbour contributes 0.
+    let num3 = if left.kind != 379 { left.liquid as i32 } else { 0 };
+    let num = if right.kind != 379 { right.liquid as i32 } else { 0 };
+    tile.half_brick() && (num3 > 160 || num > 160) && waterfall.check_for_waterfall(tx, ty)
+}
+
 /// `TileDrawing.DrawTile_LiquidBehindTile`: a block that stands in liquid gets the
 /// liquid drawn *behind* it, so the transparent parts of edge and slope frames show
 /// water instead of the parallax background.
@@ -529,6 +552,7 @@ pub(crate) fn draw_tile_liquid_behind(
     ty: i32,
     tile: &tr_core::tile::Tile,
     water_style: usize,
+    waterfall: &tr_core::waterfall::WaterfallManager,
 ) -> u32 {
     // `BlocksWaterDrawingBehindSelf`: chests and friends never draw water behind
     // themselves, and while sloped they fall back to the plain liquid frame.
@@ -548,6 +572,11 @@ pub(crate) fn draw_tile_liquid_behind(
     let neighbor = |dx: i32, dy: i32| world.tile(tx + dx, ty + dy).copied().unwrap_or_default();
     let right = neighbor(1, 0);
     let left = neighbor(-1, 0);
+    // `TileDrawing.cs:3858`'s spout clause (before the neighbour-liquid scan,
+    // as in C#): a spouting half-brick refuses its own behind-water mask.
+    if liquid_behind_spout_refused(tile, &left, &right, waterfall, tx, ty) {
+        return 0;
+    }
     let above = neighbor(0, -1);
     let below = neighbor(0, 1);
     let mut level = 0i32;
@@ -822,5 +851,72 @@ mod tests {
         let empty = World::new("mask-dry".into(), 40, 40);
         let dry = tr_core::liquid_draw::build(&empty, 0, 0, 39, 39);
         assert!(water_mask_rects(&dry).is_empty());
+    }
+
+    /// W4-g75 retire-contract — `TileDrawing.cs:3858`'s half-brick spout
+    /// clause: a half-brick with >160 liquid to a side that the manager's
+    /// `CheckForWaterfall` list carries refuses its own behind-water mask.
+    /// The manager list is built by the REAL `find_waterfalls` scan
+    /// (`WaterfallManager.cs:182-197`), not a hand-stuffed probe.
+    #[test]
+    fn w4_g75_a_spouting_half_brick_refuses_its_liquid_behind_draw() {
+        use tr_core::tile::{Tile, FLAG_ACTIVE, FLAG_HALF_BRICK};
+        let mut w = World::new("spout".into(), 40, 40);
+        let brick = w.tile_mut(10, 10).unwrap();
+        brick.kind = 1;
+        brick.flags |= FLAG_ACTIVE | FLAG_HALF_BRICK;
+        // Water running down the right-hand side (>160), open air left.
+        w.tile_mut(11, 10).unwrap().liquid = 200;
+        let mut mgr = tr_core::waterfall::WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        assert!(mgr.check_for_waterfall(10, 10), "the scan found the spout");
+        let t = w.tile(10, 10).copied().unwrap();
+        let left = w.tile(9, 10).copied().unwrap_or_default();
+        let right = w.tile(11, 10).copied().unwrap();
+        assert!(
+            liquid_behind_spout_refused(&t, &left, &right, &mgr, 10, 10),
+            "TileDrawing.cs:3858 halfBrick && num > 160 && CheckForWaterfall"
+        );
+        // 160 exactly does NOT trip `> 160` (the C# comparison is strict).
+        let mut edge = Tile { kind: 1, ..Default::default() };
+        edge.flags |= FLAG_ACTIVE | FLAG_HALF_BRICK;
+        let mut side = Tile::default();
+        side.liquid = 160;
+        assert!(!liquid_behind_spout_refused(&edge, &side, &side, &mgr, 10, 10));
+        // A full block never refuses via this clause even with a spout list
+        // entry at its cell (halfBrick() gates the whole arm).
+        let full = Tile { kind: 1, flags: FLAG_ACTIVE, ..Default::default() };
+        assert!(!liquid_behind_spout_refused(&full, &right, &left, &mgr, 10, 10));
+        // An unlisted cell keeps its behind-water (CheckForWaterfall false).
+        assert!(!liquid_behind_spout_refused(&t, &left, &right, &mgr, 12, 10));
+    }
+
+    /// W4-g75 retire-contract — the `:3835-3844` type-379 (bubble)
+    /// exclusion: a 379 neighbour contributes 0 to `num3`/`num`, so a
+    /// bubble-packed side cannot trip the spout clause on its own.
+    #[test]
+    fn w4_g75_a_bubble_neighbour_does_not_feed_the_spout_clause() {
+        use tr_core::tile::{Tile, FLAG_ACTIVE, FLAG_HALF_BRICK};
+        let mut mgr = tr_core::waterfall::WaterfallManager::new();
+        // Force a list entry by scanning a real spout, then probe the clause
+        // with bubble sides: the >160 test must read 0 for kind 379.
+        let mut w = World::new("bubble".into(), 40, 40);
+        let brick = w.tile_mut(10, 10).unwrap();
+        brick.kind = 1;
+        brick.flags |= FLAG_ACTIVE | FLAG_HALF_BRICK;
+        w.tile_mut(11, 10).unwrap().liquid = 200;
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        let mut t = Tile { kind: 1, ..Default::default() };
+        t.flags |= FLAG_ACTIVE | FLAG_HALF_BRICK;
+        let bubble = Tile { kind: 379, liquid: 255, ..Default::default() };
+        assert!(
+            !liquid_behind_spout_refused(&t, &bubble, &bubble, &mgr, 10, 10),
+            "TileDrawing.cs:3835/:3841 — type 379 neighbours read num = 0"
+        );
+        // One real side >160 still trips (the other side's 379 zeroes only
+        // its own term).
+        let side = Tile { liquid: 200, ..Default::default() };
+        assert!(liquid_behind_spout_refused(&t, &bubble, &side, &mgr, 10, 10));
+        assert!(liquid_behind_spout_refused(&t, &side, &bubble, &mgr, 10, 10));
     }
 }
