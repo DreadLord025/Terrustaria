@@ -2476,15 +2476,17 @@ impl Wiring {
                 let mut drops = Vec::new();
                 let mut skips = Vec::new();
                 let mut cues = Vec::new();
+                // `only_close_or_open: -1` — the C# default (both directions).
                 let ok = crate::edit::shift_trapdoor(
                     world,
                     i,
                     j,
                     true,
+                    -1,
                     &|_, _| false,
                     &|w, x, y| self.can_kill_tile(w, x, y),
                     &mut drops,
-                    &mut skips,
+                    if self.running { Some(&mut skips) } else { None },
                     &mut cues,
                 );
                 if !ok {
@@ -2493,10 +2495,11 @@ impl Wiring {
                         i,
                         j,
                         false,
+                        -1,
                         &|_, _| false,
                         &|w, x, y| self.can_kill_tile(w, x, y),
                         &mut drops,
-                        &mut skips,
+                        if self.running { Some(&mut skips) } else { None },
                         &mut cues,
                     );
                 }
@@ -2521,7 +2524,7 @@ impl Wiring {
                     false,
                     &|_, _| false,
                     &mut drops,
-                    &mut skips,
+                    if self.running { Some(&mut skips) } else { None },
                     &mut cues,
                 );
                 self.actuation_drops.extend(drops);
@@ -6517,6 +6520,45 @@ mod w4_c42_batch2_tests {
                 put(w, 10 + col, 20 + row, 386, (col * 18) as i16, (row * 18) as i16);
             }
         }
+    }
+
+    /// The f11 `onlyCloseOrOpen` param (research/95 §2 merge,
+    /// `WorldGen.cs:51450`/`:51534`): 1 = open-only refuses a CLOSE on 387,
+    /// 0 = close-only refuses an OPEN on 386 — both fall to the PlaySound(9)
+    /// thud at the ORIGINAL hit cell (the anchor adjustment only runs
+    /// inside the branch). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn c42_the_trapdoor_only_close_or_open_gates_the_direction() {
+        // 386 + onlyCloseOrOpen 0 (close-only): no open, one refusal thud.
+        let mut w = world();
+        closed_trapdoor(&mut w);
+        let mut drops = Vec::new();
+        let mut cues = Vec::new();
+        let ok = crate::edit::shift_trapdoor(
+            &mut w, 10, 20, true, 0, &|_, _| false,
+            &|_, _, _| true, &mut drops, None, &mut cues,
+        );
+        assert!(!ok);
+        assert!(w.tile(10, 20).is_some_and(|t| t.active() && t.kind == 386));
+        assert_eq!(cues, vec![(false, 10 * 16, 20 * 16)]);
+        // 387 + onlyCloseOrOpen 1 (open-only): no close, one refusal thud.
+        let mut w2 = world();
+        put(&mut w2, 10, 20, 387, 0, 0);
+        put(&mut w2, 11, 20, 387, 18, 0);
+        let mut cues2 = Vec::new();
+        let ok2 = crate::edit::shift_trapdoor(
+            &mut w2, 10, 20, true, 1, &|_, _| false,
+            &|_, _, _| true, &mut drops, None, &mut cues2,
+        );
+        assert!(!ok2);
+        assert!(w2.tile(10, 20).is_some_and(|t| t.active() && t.kind == 387));
+        assert_eq!(cues2, vec![(false, 10 * 16, 20 * 16)]);
+        // The default −1 still opens (the c42 arm's shape).
+        let ok3 = crate::edit::shift_trapdoor(
+            &mut w, 10, 20, true, -1, &|_, _| false,
+            &|_, _, _| true, &mut drops, None, &mut cues,
+        );
+        assert!(ok3);
     }
 
     #[test]

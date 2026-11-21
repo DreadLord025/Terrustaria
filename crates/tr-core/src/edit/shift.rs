@@ -10,9 +10,11 @@
 //! true)` entity half rides a `cell_blocked` closure (tr-core carries no
 //! entity store — the wiring caller passes the always-free closure, the
 //! `smart_cursor.rs:312` precedent); the `Wiring.SkipWire` calls
-//! (`Wiring.running`-gated) are collected into `skips` for the flood's skip
-//! set; the `PlaySound(8/9)` cues queue into `cues` as `(open, px, py)` —
-//! the door-family cue vocabulary (`audio::play_door_sound`, ids 8/9).
+//! (`Wiring.running`-gated) are collected into `wire_skips` — the f11 §1
+//! Option shape (research/95 union-exec): the caller passes `Some` only
+//! while `Wiring.running`, `None` on the NPC/interaction stages; the
+//! `PlaySound(8/9)` cues queue into `cues` as `(open, px, py)` — the
+//! door-family cue vocabulary (`audio::play_door_sound`, ids 8/9).
 
 use crate::framing;
 use crate::tile::{Tile, FLAG_ACTIVE, FLAG_FULLBRIGHT, FLAG_HALF_BRICK, FLAG_INACTIVE};
@@ -69,18 +71,23 @@ fn use_block_colors(t: &mut Tile, cache: (u8, bool)) {
 /// `WorldGen.ShiftTrapdoor(x, y, playerAbove, onlyCloseOrOpen = -1)`
 /// (`WorldGen.cs:51447-51596`): the trapdoor pair 386 (closed) / 387 (open).
 /// The wired caller (`Wiring.cs:1443-1446`) tries `playerAbove: true` first,
-/// then `false` on refusal. `skips` collects the `Wiring.running`-gated
-/// SkipWire cells, `cues` the PlaySound(8) success / PlaySound(9) fallback
+/// then `false` on refusal, both with the C# default `onlyCloseOrOpen = -1`
+/// (f11's param, merged per research/95 §2: −1 = both directions, 0 =
+/// close-only, 1 = open-only — a future hammer/interact caller needs it).
+/// `wire_skips` collects the `Wiring.running`-gated SkipWire cells (the §1
+/// Option seam), `cues` the PlaySound(8) success / PlaySound(9) fallback
 /// failure positions, `drops` the cut/drip sweep's KillTile cascades.
+#[allow(clippy::too_many_arguments)]
 pub fn shift_trapdoor(
     world: &mut World,
     x: i32,
     y: i32,
     player_above: bool,
+    only_close_or_open: i32,
     cell_blocked: &dyn Fn(i32, i32) -> bool,
     can_kill: &dyn Fn(&World, i32, i32) -> bool,
     drops: &mut Vec<ObjectDrop>,
-    skips: &mut Vec<(i32, i32)>,
+    wire_skips: Option<&mut Vec<(i32, i32)>>,
     cues: &mut Vec<(bool, i32, i32)>,
 ) -> bool {
     // `Framing.GetTileSafely(x, y)` (:51449) — the ORIGINAL cell's kind
@@ -88,16 +95,18 @@ pub fn shift_trapdoor(
     // anchor adjustment below).
     let start_kind = world.tile(x, y).map_or(0, |t| t.kind);
     let (mut x, mut y) = (x, y);
-    if start_kind == 386 {
-        // `onlyCloseOrOpen != 1` — the wired caller passes the default −1.
+    if start_kind == 386 && only_close_or_open != 1 {
+        // :51450 — the open branch gates on `onlyCloseOrOpen != 1`.
         let (style_x, style_y) = get_top_left_and_styles(world, &mut x, &mut y, 2, 2, 18, 18);
         if style_x == 0 {
             // :51453-51494 — the top-row variant opens DOWNWARD.
             if !validate_tile_square(world, x, y, 2, 2, 386, drops) {
                 return false;
             }
-            for cell in [(x, y), (x, y + 1), (x + 1, y), (x + 1, y + 1)] {
-                skips.push(cell); // `Wiring.SkipWire` (:51461-51464)
+            if let Some(skips) = wire_skips.as_mut() {
+                for cell in [(x, y), (x, y + 1), (x + 1, y), (x + 1, y + 1)] {
+                    skips.push(cell); // `Wiring.SkipWire` (:51461-51464)
+                }
             }
             if cell_blocked(x, y + 1) || cell_blocked(x + 1, y + 1) {
                 return false; // `Collision.EmptyTile(ignoreTiles: true)` (:51466)
@@ -131,8 +140,10 @@ pub fn shift_trapdoor(
             if !validate_tile_square(world, x, y, 2, 2, 386, drops) {
                 return false;
             }
-            for cell in [(x, y - 1), (x, y), (x + 1, y - 1), (x + 1, y)] {
-                skips.push(cell); // :51503-51506
+            if let Some(skips) = wire_skips.as_mut() {
+                for cell in [(x, y - 1), (x, y), (x + 1, y - 1), (x + 1, y)] {
+                    skips.push(cell); // :51503-51506
+                }
             }
             if cell_blocked(x, y) || cell_blocked(x + 1, y) {
                 return false; // :51508
@@ -160,8 +171,8 @@ pub fn shift_trapdoor(
             return true;
         }
     }
-    if start_kind == 387 {
-        // `onlyCloseOrOpen != 0` (:51534) — the close branch.
+    if start_kind == 387 && only_close_or_open != 0 {
+        // :51534 — the close branch gates on `onlyCloseOrOpen != 0`.
         let _ = get_top_left_and_styles(world, &mut x, &mut y, 2, 1, 18, 18);
         // :51537-51542 — either open cell the kill rules refuse blocks the
         // close. The caller injects `WorldGen.CanKillTile` — the wiring
@@ -190,8 +201,10 @@ pub fn shift_trapdoor(
                 }
             }
         }
-        for cell in [(x, y), (x, y + num3), (x + 1, y), (x + 1, y + num3)] {
-            skips.push(cell); // :51558-51561
+        if let Some(skips) = wire_skips.as_mut() {
+            for cell in [(x, y), (x, y + num3), (x + 1, y), (x + 1, y + num3)] {
+                skips.push(cell); // :51558-51561
+            }
         }
         cues.push((true, x * 16 + 16, y * 16)); // PlaySound(8) (:51563)
         for num5 in 0..2 {
@@ -239,7 +252,24 @@ pub fn shift_trapdoor(
 /// (open). The wired caller (`Wiring.cs:1454-1459`) passes
 /// `closing = (type == 389)` and ignores the result. The gate's def is
 /// ALWAYS `GetTileData(388, frameX / 18)` (:51733) — the closed kind's
-/// registry entry, even when opening.
+/// registry entry, 2-arg → alternate 0, even when opening (the research/95
+/// §3 canonical decode; g4's alternate-1 and f11's no-lookup both dropped).
+///
+/// **The NPC-bash drain re-point contract (research/95 §3, g4 `53063dd1`):**
+/// the `wants_door_bash` gate-388 arm in `world_sim/npcs.rs` calls THIS body
+/// (its own `edit::shift_tall_gate` copy is dropped) with
+/// `closing: false, forced: false`, a REAL player/NPC box-overlap
+/// `cell_blocked` closure (the `close_door` convention — the reference
+/// implementation for the §8.1 entity-half seam), `wire_skips: None` (no
+/// flood runs on the NPC stage — the C# `Wiring.running` gate is false
+/// there), and a local `cues` vec drained on the UpdateNpcs stream
+/// (`play_door_sound(open, px, py, …)` per cue — NOT the drain's old
+/// hit-cell `play_door_sound(true, tx*16, ty*16)` call: this body queues
+/// the cue at the ADJUSTED top `(x*16+16, y*16+16)`, `:51762`). Refusal →
+/// `ai[3] = 60.0` + `net_update`; success → `world_key = None`; drops
+/// spawn on UpdateNpcs. The reframe here is radius 4 (the safe superset);
+/// g4's radius-2 copy MISSED rows y−1/y+5 of the C# walk — never revive it.
+#[allow(clippy::too_many_arguments)]
 pub fn shift_tall_gate(
     world: &mut World,
     x: i32,
@@ -248,7 +278,7 @@ pub fn shift_tall_gate(
     forced: bool,
     cell_blocked: &dyn Fn(i32, i32) -> bool,
     drops: &mut Vec<ObjectDrop>,
-    skips: &mut Vec<(i32, i32)>,
+    wire_skips: Option<&mut Vec<(i32, i32)>>,
     cues: &mut Vec<(bool, i32, i32)>,
 ) -> bool {
     let kind: u16 = if closing { 388 } else { 389 };
@@ -280,8 +310,10 @@ pub fn shift_tall_gate(
     if !validate_tile_square(world, x, y, width, height, expected, drops) {
         return false; // :51744-51747
     }
-    for j in 0..height {
-        skips.push((x, y + j)); // `Wiring.SkipWire` (:51750-51753)
+    if let Some(skips) = wire_skips {
+        for j in 0..height {
+            skips.push((x, y + j)); // `Wiring.SkipWire` (:51750-51753)
+        }
     }
     for k in 0..height {
         // :51755-51761 — the entity occupancy gate (`forced` skips it; the
