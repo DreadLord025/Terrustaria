@@ -194,6 +194,14 @@ pub mod id {
     /// (`MessageID.cs:224`, `NetMessage.cs:1395-1399`,
     /// `MessageBuffer.cs:3736-3741`, client→host only).
     pub const GEM_LOCK_TOGGLE: u8 = 105;
+    /// `106 PoofOfSmoke` (W4-g50, S1-I-4): one uint — the HalfVector2
+    /// PackedValue (`MessageID.cs:226`, `NetMessage.cs:1400-1402`,
+    /// `MessageBuffer.cs:3742-3751`, host→client only).
+    pub const POOF_OF_SMOKE: u8 = 106;
+    /// `107 SmartTextMessage` (W4-g50, S1-I-4): RGB + NetworkText +
+    /// `(short)` WidthLimit (`MessageID.cs:228`, `NetMessage.cs:769-774`,
+    /// `MessageBuffer.cs:3752-3757`, host→client only).
+    pub const SMART_TEXT: u8 = 107;
     pub const PLAYER_STATE: u8 = 13; // NetMessage.cs:446-513 / MessageBuffer.cs:952-1059
     pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
@@ -2121,6 +2129,112 @@ pub struct GemLockToggle {
     pub on: bool,
 }
 
+/// `HalfTypeHelper.Convert(float)` — the FNA/XNA float32→float16 pack
+/// (FNA `src/Graphics/PackedVector/HalfTypeHelper.cs`, the code Terraria's
+/// `HalfVector2` rides; not in the decompiled trees, which stop at the game
+/// assemblies). Verbatim: the round-to-nearest-even mantissa adds and the
+/// subnormal/overflow arms, sign in bit 15.
+pub fn half_pack(f: f32) -> u16 {
+    let i = f.to_bits() as i32;
+    let s = (i >> 16) & 0x0000_8000;
+    let mut e = ((i >> 23) & 0x0000_00ff) - (127 - 15);
+    let mut m = i & 0x007f_ffff;
+    if e <= 0 {
+        if e < -10 {
+            return s as u16;
+        }
+        m |= 0x0080_0000;
+        let t = 14 - e;
+        let a = (1 << (t - 1)) - 1;
+        let b = (m >> t) & 1;
+        m = (m + a + b) >> t;
+        (s | m) as u16
+    } else if e == 0xff - (127 - 15) {
+        if m == 0 {
+            (s | 0x7c00) as u16
+        } else {
+            m >>= 13;
+            (s | 0x7c00 | m | if m == 0 { 1 } else { 0 }) as u16
+        }
+    } else {
+        m += 0x0000_0fff + ((m >> 13) & 1);
+        if (m & 0x0080_0000) != 0 {
+            m = 0;
+            e += 1;
+        }
+        if e > 30 {
+            return (s | 0x7c00) as u16;
+        }
+        (s | (e << 10) | (m >> 13)) as u16
+    }
+}
+
+/// `HalfTypeHelper.Convert(ushort)` — the float16→float32 expand, verbatim
+/// (the subnormal normalize loop, `exp` starting at -14). Inf/NaN expand
+/// bit-for-bit (exp field 31 → 0xff, the payload rides the mantissa shift).
+pub fn half_unpack(value: u16) -> f32 {
+    let mut mantissa = (value & 1023) as u32;
+    let mut exp: u32 = 0xffff_fff2; // -14
+    let rst = if (value & 0x7c00) == 0 {
+        if mantissa != 0 {
+            while (mantissa & 1024) == 0 {
+                exp = exp.wrapping_sub(1);
+                mantissa <<= 1;
+            }
+            mantissa &= 0xffff_fbff;
+            (((value as u32 & 0x8000) << 16) | (exp.wrapping_add(127) << 23))
+                | (mantissa << 13)
+        } else {
+            (value as u32 & 0x8000) << 16
+        }
+    } else {
+        (((value as u32 & 0x8000) << 16)
+            | (((((value as u32 >> 10) & 0x1f).wrapping_sub(15)).wrapping_add(127)) << 23))
+            | (mantissa << 13)
+    };
+    f32::from_bits(rst)
+}
+
+/// `HalfVector2.PackHelper` (`HalfVector2.cs:94-97` in the FNA tree): x in
+/// the low 16 bits, y in the high 16.
+pub fn pack_half_vector2(x: f32, y: f32) -> u32 {
+    half_pack(x) as u32 | ((half_pack(y) as u32) << 16)
+}
+
+/// `HalfVector2.ToVector2` (`HalfVector2.cs:37-43`): the inverse split.
+pub fn unpack_half_vector2(packed: u32) -> (f32, f32) {
+    (
+        half_unpack(packed as u16),
+        half_unpack((packed >> 16) as u16),
+    )
+}
+
+/// `msg 106 PoofOfSmoke`'s body (`NetMessage.cs:1400-1402`): one `uint` —
+/// `new HalfVector2(number, number2).PackedValue`, the poof position in two
+/// float16s. Sent by the host at the slime-transform poof
+/// (`Projectile.cs:14742-14746`), the critter poof (`NPC.cs:79882-79887`)
+/// and the wiring lamps (`Wiring.cs:826`, `:2276`, `:2330`, `:2398`); the
+/// client replays `Utils.PoofOfSmoke` (`MessageBuffer.cs:3742-3751`,
+/// `Utils.cs:1078-1093` — the gore/dust burst). The payload keeps the packed
+/// bits so the wire is byte-exact; use [`pack_half_vector2`]/
+/// [`unpack_half_vector2`] at the seams.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PoofOfSmoke {
+    pub packed: u32,
+}
+
+/// `msg 107 SmartTextMessage`'s body (`NetMessage.cs:769-774`): the three
+/// RGB bytes (`number2`/`number3`/`number4`), the `NetworkText`, then the
+/// `(short)number5` width limit. The client runs `Main.NewTextMultiline`
+/// (`MessageBuffer.cs:3752-3757`, `Main.cs:64638-64642` — the chat line +
+/// the sound-12 cue). Server→client only.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SmartText {
+    pub color: Rgb,
+    pub text: NetText,
+    pub width_limit: i16,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -2450,6 +2564,13 @@ pub enum S2c {
     /// `104 ShopOverride` - one open-shop slot's rebuilt item
     /// (`NetMessage.cs:1387-1394`; `MessageBuffer.cs:3715-3735`; W4-g50).
     ShopOverride(ShopOverride),
+    /// `106 PoofOfSmoke` - a smoke poof at a half-float position
+    /// (`NetMessage.cs:1400-1402`; the client replays `Utils.PoofOfSmoke`,
+    /// `MessageBuffer.cs:3742-3751`; W4-g50).
+    PoofOfSmoke(PoofOfSmoke),
+    /// `107 SmartTextMessage` - a multiline chat line + the sound-12 cue
+    /// (`NetMessage.cs:769-774`; `MessageBuffer.cs:3752-3757`; W4-g50).
+    SmartText(SmartText),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -3015,6 +3136,8 @@ impl S2c {
             Self::NebulaLevelupRequest(_) => id::NEBULA_LEVELUP_REQUEST,
             Self::MoonlordCountdown(_) => id::MOONLORD_COUNTDOWN,
             Self::ShopOverride(_) => id::SHOP_OVERRIDE,
+            Self::PoofOfSmoke(_) => id::POOF_OF_SMOKE,
+            Self::SmartText(_) => id::SMART_TEXT,
         }
     }
 
@@ -3238,6 +3361,15 @@ impl S2c {
                 .u8(s.prefix)
                 .i32(s.value)
                 .u8(u8::from(s.buy_once)),
+            // `NetMessage.cs:1400-1402`: the HalfVector2's PackedValue.
+            Self::PoofOfSmoke(p) => w.u32(p.packed),
+            // `NetMessage.cs:769-774`: the three RGB bytes, the NetworkText,
+            // the short width limit.
+            Self::SmartText(t) => {
+                let w = w.u8(t.color.0).u8(t.color.1).u8(t.color.2);
+                let w = t.text.clone().write_to(w);
+                w.i16(t.width_limit)
+            }
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -3574,6 +3706,14 @@ impl S2c {
                     buy_once: flags.get(0),
                 })
             }
+            // `MessageBuffer.cs:3747` — the packed HalfVector2 uint.
+            id::POOF_OF_SMOKE => Self::PoofOfSmoke(PoofOfSmoke { packed: r.u32()? }),
+            // `MessageBuffer.cs:3755` — RGB, NetworkText, short width limit.
+            id::SMART_TEXT => Self::SmartText(SmartText {
+                color: r.rgb()?,
+                text: NetText::read_from(r)?,
+                width_limit: r.i16()?,
+            }),
             _ => return None,
         })
     }
@@ -6405,6 +6545,54 @@ mod tests {
         match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
             C2s::GemLockToggle(d) => assert_eq!(d, g),
             other => panic!("expected 105, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `106 PoofOfSmoke` (`NetMessage.cs:1400-1402`): one uint — the
+    /// HalfVector2 PackedValue (x low 16, y high 16). Host→client only
+    /// (`MessageBuffer.cs:3742-3751`).
+    #[test]
+    fn w4_g50_poof_of_smoke_round_trips() {
+        let packed = pack_half_vector2(123.5, -67.25);
+        let p = PoofOfSmoke { packed };
+        let f = S2c::PoofOfSmoke(p).encode();
+        assert_eq!(f[2], 106);
+        assert_eq!(&f[3..], &packed.to_le_bytes());
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PoofOfSmoke(d) => assert_eq!(d, p),
+            other => panic!("expected 106, got {:?}", other.msg_id()),
+        }
+        // The half-float round trip keeps the packed bits exact.
+        let (x, y) = unpack_half_vector2(packed);
+        assert_eq!(pack_half_vector2(x, y), packed);
+        // The known half-float pins: 1.0 = 0x3C00, -2.0 = 0xC000.
+        assert_eq!(half_pack(1.0), 0x3C00);
+        assert_eq!(half_pack(-2.0), 0xC000);
+        assert_eq!(half_unpack(0x3C00), 1.0);
+        assert_eq!(half_unpack(0xC000), -2.0);
+    }
+
+    /// `107 SmartTextMessage` (`NetMessage.cs:769-774`): the three RGB
+    /// bytes, the NetworkText, the short width limit. Host→client only
+    /// (`MessageBuffer.cs:3752-3757`).
+    #[test]
+    fn w4_g50_smart_text_round_trips() {
+        let t = SmartText {
+            color: Rgb(255, 200, 150),
+            text: NetText("A wave is approaching...".into()),
+            width_limit: 400,
+        };
+        let f = S2c::SmartText(t.clone()).encode();
+        assert_eq!(f[2], 107);
+        let mut body = vec![255u8, 200, 150];
+        body.push(0); // NetworkText literal mode
+        body.push(24); // the 7-bit length
+        body.extend_from_slice(b"A wave is approaching...");
+        body.extend_from_slice(&400i16.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::SmartText(d) => assert_eq!(d, t),
+            other => panic!("expected 107, got {:?}", other.msg_id()),
         }
     }
 }

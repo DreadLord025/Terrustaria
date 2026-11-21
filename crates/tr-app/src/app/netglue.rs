@@ -1191,6 +1191,76 @@ impl App {
         }));
     }
 
+    /// `Utils.PoofOfSmoke` (`Utils.cs:1078-1093`, W4-g50): the gore burst
+    /// then the dust ring, verbatim draw order on the bare `Main.rand`
+    /// stream. `num = Main.rand.Next(3, 7)` gores; each draws a rotation
+    /// (`NextFloat() * 2π` → `ToRotationVector2`), scaled by `(2, 0.7) *
+    /// 0.7`, type `Next(11, 14)`, then scale 0.7 + velocity ×0.5. The 10
+    /// dusts are type 16 at the position, 14×14 box, alpha 100, scale 1.5,
+    /// each shifted +5 and given a rotation-scaled velocity with a second
+    /// `NextFloat` radius (`0.5 + 0.5 * NextFloat()`).
+    fn poof_of_smoke(&mut self, position: Vec2) {
+        let ctx = self.spawn_ctx();
+        let rng = self.rngs.global();
+        let num = rng.next_range(3, 7);
+        for _ in 0..num {
+            let rng = self.rngs.global();
+            let angle = rng.next_float() * std::f32::consts::TAU;
+            let rot = Vec2::new(
+                (angle as f64).cos() as f32,
+                (angle as f64).sin() as f32,
+            );
+            let velocity = rot * Vec2::new(2.0, 0.7) * 0.7;
+            let gore_type = rng.next_range(11, 14);
+            let idx = self.gore.new_gore(
+                rng,
+                &self.world,
+                position,
+                velocity,
+                gore_type,
+                1.0,
+            );
+            if idx != tr_core::gore::GORE_SENTINEL {
+                let g = self.gore.slot_mut(idx);
+                g.scale = 0.7;
+                g.velocity *= 0.5;
+            }
+        }
+        for _ in 0..10 {
+            // `Dust.NewDust(position, 14, 14, 16, 0, 0, 100, default, 1.5)`
+            // draws the position/velocity/frame rolls INSIDE the spawn; the
+            // `obj.position += 5` and the rotation-velocity assignment are
+            // post-spawn writes whose angle/radius draws come AFTER.
+            let rng = self.rngs.global();
+            let idx = self.dust.new_dust(
+                rng,
+                &ctx,
+                &self.world,
+                position,
+                14,
+                14,
+                16,
+                0.0,
+                0.0,
+                100,
+                tr_core::particles::Color::default(),
+                1.5,
+            );
+            let rng = self.rngs.global();
+            let angle = rng.next_float() * std::f32::consts::TAU;
+            let rot = Vec2::new(
+                (angle as f64).cos() as f32,
+                (angle as f64).sin() as f32,
+            );
+            let radius = 0.5 + 0.5 * rng.next_float();
+            if idx != tr_core::particles::DUST_SENTINEL {
+                let d = self.dust.slot_mut(idx);
+                d.position += Vec2::new(5.0, 5.0);
+                d.velocity = rot * Vec2::new(2.0, 0.7) * 0.7 * radius;
+            }
+        }
+    }
+
     /// The `102` client fan (`MessageBuffer.cs:3662-3705`): the picker's
     /// team gate, the 700 px distance cull, the spiral dust trail per
     /// qualifying player, then `NebulaLevelup` on the local player. The
@@ -2308,6 +2378,26 @@ impl App {
                     stack: s.stack.max(0) as u32,
                     value: Some(s.value),
                 };
+            }
+            // `case 106` — the smoke poof (W4-g50,
+            // `MessageBuffer.cs:3742-3751` → `Utils.PoofOfSmoke`,
+            // `Utils.cs:1078-1093`): the packed half-float position, then
+            // the gore burst (3..6 gores, types 11..13, scale 0.7, velocity
+            // ×0.5) and the 10-dust type-16 ring. The draws ride the bare
+            // `Main.rand` stream (the message-time replay convention).
+            S2c::PoofOfSmoke(p) => {
+                let (x, y) = net::unpack_half_vector2(p.packed);
+                self.poof_of_smoke(Vec2::new(x, y));
+            }
+            // `case 107` — the smart chat line (W4-g50,
+            // `MessageBuffer.cs:3752-3757` → `Main.NewTextMultiline`,
+            // `Main.cs:64638-64642`): the chat line in the wire colour +
+            // the sound-12 cue. The width-limit word wrap is the port's
+            // recorded flat-text gap (`chat.rs:97-98`).
+            S2c::SmartText(t) => {
+                self.chat
+                    .new_text(t.text.0.clone(), [t.color.0, t.color.1, t.color.2]);
+                self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
             }
             // `151` — the slot is gone.
             S2c::ItemDead { slot } => {
@@ -6705,5 +6795,56 @@ mod message_family_tests {
         assert!(host_app.world.tile(10, 4).unwrap().frame_y >= 54);
         // The 3×3 relay carried the flip to the client.
         assert!(client_app.world.tile(10, 4).unwrap().frame_y >= 54);
+    }
+
+    /// `case 106` (`MessageBuffer.cs:3742-3751`, `Utils.cs:1078-1093`): the
+    /// poof spawns the gore burst + the type-16 dust ring.
+    #[test]
+    fn w4_g50_the_106_poof_spawns_gore_and_dust() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::PoofOfSmoke(net::PoofOfSmoke {
+                packed: net::pack_half_vector2(200.0, 100.0),
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        assert!(
+            client_app
+                .dust
+                .slots()
+                .iter()
+                .any(|d| d.active && d.dust_type == 16),
+            "the type-16 dust ring spawned"
+        );
+        assert!(
+            client_app
+                .gore
+                .slots()
+                .iter()
+                .any(|g| g.active && (11..14).contains(&g.gore_type)),
+            "the 11..13 gore burst spawned"
+        );
+    }
+
+    /// `case 107` (`MessageBuffer.cs:3752-3757`): the smart text lands as a
+    /// chat line in the wire colour.
+    #[test]
+    fn w4_g50_the_107_smart_text_lands_a_chat_line() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::SmartText(net::SmartText {
+                color: net::Rgb(255, 200, 150),
+                text: net::NetText("A wave is approaching...".into()),
+                width_limit: 400,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        let line = client_app
+            .chat
+            .messages
+            .iter()
+            .find(|m| m.text == "A wave is approaching...")
+            .expect("the chat line landed");
+        assert_eq!(line.color, [255, 200, 150]);
     }
 }
