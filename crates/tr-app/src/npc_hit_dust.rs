@@ -225,6 +225,24 @@
 //! - 84873 — 344 (`:84867-84874`): ×100 dust 196.
 //! - 84898 — 326 (`:84892-84899`): ×100 dust 191, scale 1.1.
 //! - 84915 — 304 (`:84909-84916`): ×100 dust 189, scale 1.3.
+//! Batch 16 (the remaining simple live arms + the hook selector):
+//! - 85503 — 122 (`:85497-85505`): ×50 dust 72, alpha 200, vel ×1.5.
+//! - 85522 — Pixie 75 (`:85516-85523`): ×50 dust 55, alpha 200,
+//!   this.color.
+//! - 84932 — 302 (`:84926-84933`): ×100 dust 192, alpha 100, grey.
+//! - 84950 — the Golem parts 245-249 (`:84944-84951`): ×100 dust 148.
+//! - 85016 — 204 (`:85010-85017`): ×100 dust 4, alpha 100,
+//!   (149,208,104).
+//! - 85033 — 225 (`:85027-85034`): ×100 dust 4, alpha 100, blue.
+//! - 85051 — 243 (`:85045-85052`): ×150 dust 161.
+//! - 85384 — Toxic Sludge 141 (`:85378-85385`): ×100 dust 4,
+//!   this.alpha, (210,230,140).
+//! - 85364 — the Frost Legion 143/144/145 (`:85358-85366`): ×100 dust
+//!   76 noGravity.
+//! - 87173/87181 — the Plantera parts 262/263/264 (`:87165-87183`):
+//!   ×100 — 262 above half life gates Next(3)!=0 → 166 else 167 (the
+//!   draw ONLY when type==262 && life > lifeMax/2, integer half); the
+//!   `:87175` type-265 arm is dead inside this group.
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -1156,6 +1174,90 @@ pub fn replay_hit_dust(
             };
             for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
                 live_dust(s, t, dir, -1.0, 0, Color::default(), sc, rng, dust, ctx, world);
+            }
+        }
+        // `:85497-85505` — 122: ×50 dust 72, alpha 200, vel ×1.5.
+        122 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                let idx = live_dust(s, 72, 0.0, 0.0, 200, Color::default(), 1.0, rng, dust, ctx, world);
+                dust.slot_mut(idx).velocity *= 1.5; // `:85504`
+            }
+        }
+        // `:85516-85523` — the Pixie: ×50 dust 55, alpha 200, this.color.
+        75 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                live_dust(s, 55, 0.0, 0.0, 200, s.color, 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:84926-84933` — 302: ×100 dust 192, alpha 100, the grey tint.
+        302 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(
+                    s, 192, dir, -1.0, 100, Color::new(100, 100, 100, 100), 1.0,
+                    rng, dust, ctx, world,
+                );
+            }
+        }
+        // `:84944-84951` — the Golem parts: ×100 dust 148.
+        245..=249 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 148, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:85010-85017` — 204: ×100 dust 4, alpha 100, the green tint.
+        204 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(
+                    s, 4, dir, -1.0, 100, Color::new(149, 208, 104), 1.0,
+                    rng, dust, ctx, world,
+                );
+            }
+        }
+        // `:85027-85034` — 225: ×100 dust 4, alpha 100, the blue tint.
+        225 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(
+                    s, 4, dir, -1.0, 100, Color::new(0, 80, 255, 100), 1.0,
+                    rng, dust, ctx, world,
+                );
+            }
+        }
+        // `:85045-85052` — 243: ×150 dust 161.
+        243 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 150.0) {
+                live_dust(s, 161, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:85378-85385` — the Toxic Sludge: ×100 dust 4, this.alpha,
+        // the (210,230,140) tint.
+        141 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(
+                    s, 4, dir, -1.0, s.alpha, Color::new(210, 230, 140), 1.0,
+                    rng, dust, ctx, world,
+                );
+            }
+        }
+        // `:85358-85366` — the Frost Legion trio: ×100 dust 76,
+        // noGravity (the death half's ×1.2 scale is g60's).
+        143 | 144 | 145 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                let idx = live_dust(s, 76, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                dust.slot_mut(idx).no_gravity = true; // `:85365`
+            }
+        }
+        // `:87165-87183` — the Plantera parts: ×100. The 262 arm gates
+        // Next(3)!=0 → 166 ONLY above half life (`this.life >
+        // this.lifeMax / 2`, INTEGER half); below half — and for
+        // 263/264 — the else spawns 167 with NO draw (the `:87175`
+        // type-265 condition is dead inside this group).
+        262 | 263 | 264 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                if s.npc_type == 262 && s.life > s.life_max / 2 && rng.next_max(3) != 0 {
+                    live_dust(s, 166, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                } else {
+                    live_dust(s, 167, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                }
             }
         }
         // `:89526-89548`/`:89690-89700` — the three spheres are handled
@@ -2360,6 +2462,76 @@ mod tests {
             if t == 352 {
                 assert!(live.iter().all(|d| d.no_gravity));
             }
+        }
+    }
+
+    /// W4-g62 batch 16 — the Plantera-hook selector (`NPC.cs:87171-
+    /// 87182`): 262 above half life draws Next(3) per iteration (!=0 →
+    /// 166, else 167); at/below half NO draw, always 167; 263/264 never
+    /// draw the gate. The half is INTEGER (`lifeMax / 2`).
+    #[test]
+    fn w4_g62_the_plantera_hook_gate_is_half_life_integer() {
+        let world = air();
+        let ctx = ctx();
+        // Above half: the gate draws.
+        let s = snap(262, 60, 100, 5.0); // ×100 → 5
+        let mut rng = UnifiedRandom::new(157);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(157);
+        let mut twin = DustPool::new();
+        for _ in 0..5 {
+            let t = if twin_rng.next_max(3) != 0 { 166 } else { 167 };
+            twin.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, t,
+                1.0, -1.0, 0, Color::default(), 1.0,
+            );
+        }
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+        // At exactly half (50 of 100): NO gate draw, all 167.
+        let half = snap(262, 50, 100, 5.0);
+        let mut r2 = UnifiedRandom::new(157);
+        let mut p2 = DustPool::new();
+        replay_hit_dust(&half, &mut r2, &mut p2, &ctx, &world);
+        let mut t2 = UnifiedRandom::new(157);
+        let mut q2 = DustPool::new();
+        for _ in 0..5 {
+            q2.new_dust(
+                &mut t2, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 167,
+                1.0, -1.0, 0, Color::default(), 1.0,
+            );
+        }
+        assert_eq!(r2, t2);
+        assert_eq!(p2.slots(), q2.slots());
+        // 263/264: same gate-free shape.
+        for t in [263, 264] {
+            let s3 = snap(t, 90, 100, 5.0);
+            let mut r3 = UnifiedRandom::new(157);
+            let mut p3 = DustPool::new();
+            replay_hit_dust(&s3, &mut r3, &mut p3, &ctx, &world);
+            assert_eq!(r3, t2, "type {t} draws no gate");
+        }
+    }
+
+    /// W4-g62 batch 16 — the tinted/scaled simple rows.
+    #[test]
+    fn w4_g62_the_batch16_rows() {
+        let world = air();
+        let ctx = ctx();
+        for (t, dt, mult) in [
+            (122, 72, 50.0), (75, 55, 50.0), (302, 192, 100.0),
+            (245, 148, 100.0), (204, 4, 100.0), (225, 4, 100.0),
+            (243, 161, 150.0), (141, 4, 100.0), (143, 76, 100.0),
+        ] {
+            let s = snap(t, 100, 100, 10.0);
+            let want = hit_count(10.0, 100, mult);
+            let mut r = UnifiedRandom::new(163);
+            let mut p = DustPool::new();
+            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len() as u32, want, "type {t}");
+            assert!(live.iter().all(|d| d.dust_type == dt), "type {t}");
         }
     }
 }
