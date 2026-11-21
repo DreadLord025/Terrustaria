@@ -39244,3 +39244,100 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The NPC hit-dust lane (W4-g62)
+
+(2026-11-21, code-only mode, branch `task/W4-g62-npc-hit-dust`.)
+
+### Scope
+
+`NPC.HitEffect`'s LIVE (`life > 0`) per-kind dust arms — the whole giant
+else-if chain `NPC.cs:81654-89834` reached from `StrikeNPC_Inner`'s
+`HitEffect(hitDirection, num)` tail (`:81476-81489`). Ported as
+`crates/tr-app/src/npc_hit_dust.rs` (`HitDustSnapshot` +
+`replay_hit_dust`), 32 batches, ~240 dust sites. The full per-site ledger
+(C# `Dust.NewDust*` line = site id, with the exact args/post-writes) lives
+in the module header; a census sweep at the end confirmed **0 uncovered
+live sites**: all 629 `Dust.NewDust` sites in the range are either cited
+in the ledger (exact line or range) or classified death-half.
+
+### Lane boundaries (what is NOT here)
+
+- The DEATH halves of the same arms (the `life <= 0` sides) are
+  **W4-g59/g60**'s lane — including the 658-660/667/676/657 death blocks,
+  the 371 bubble ring (`:84239`), the daybreak prologue (`:81735`) and
+  the gore-only deaths (686/594/467/346/139/440 etc.).
+- Spawn-side dust is **g61**'s; hit sounds are **c13**'s
+  (`strike_hit_cue`/`queue_hit_effect_sound` — landed 09a3accf, not on
+  main; this lane does not depend on it).
+- The gore BODIES are **d55**'s. Where a gore call sits between dust
+  draws, its ARGUMENT draws are consumed here in C# order (the W4-e2
+  split precedent): the zombie-group 186/632 `Next(5)` gates (`:86945`/
+  `:86949`), the Deerclops 694 LIVE arm (`:88645-88648` — NO live dust,
+  only the clamped `max(1,min(5,(int)(dmg/lifeMax·3)))` count × 2
+  NextFloat per gore).
+
+### Architecture — the strike-time capture + UpdateNPCs drain
+
+The C# runs `HitEffect` at STRIKE time, inside the strike's stream swap
+(`UpdatePlayers` for melee, `UpdateProjectiles` for the projectile
+walk). The port captures a `HitDustSnapshot` on all strike entries
+(`npc.rs::strike_pooled`/`hurt`/`hurt_from_projectile`) at the C#
+`HitEffect` call moment — AFTER the damage write and knockback
+(`NPC.cs:81387-81475` precede `:81488`), so `life` is post-damage and
+`vx/vy` post-knockback — pushes it to `NPC.wants_hit_dust`, and
+`world_sim/npcs.rs::update_npcs` drains the queue at the TOP of the pass
+(after the uid sweep, before the death retain drops dead slots) through
+the verbatim `DustPool::new_dust`/`new_dust_direct`
+(`tr_core::particles`, the d50 contract already on main). The
+`wants_gallop_dust` queue is the precedent.
+
+**RNG stream-placement deviation (the recorded fold, the W-10 gallop
+precedent):** every draw rides the **UpdateNPCs** stream after the tick,
+not the strike's own stream. The draw SEQUENCE per strike is identical
+and in C# statement order (explicit `Main.rand` argument/gate draws
+FIRST, then the pool internals, then the post-spawn writes — the
+sentinel slot 6000 takes the writes exactly like the C# when the pool
+refuses); only the stream placement differs. No existing stream
+reordered.
+
+### Numeric conventions
+
+- Loop bounds are f64 with the division FIRST:
+  `(num as f64) < dmg / (lifeMax as f64) * mult` — never
+  `dmg * mult / lifeMax` (different rounding at the boundary).
+- The martian arms (381 `:84287` etc.) use the `dmg / (lifeMax*50)`
+  divisor form verbatim.
+- `Color * float` truncates per byte (XNA): e.g. (222,108,48)×0.7 →
+  (155,75,33,178).
+- `hit_color`: only the Slime variants + MotherSlime write
+  `this.color` (`(0,0,0,50)` for the base slime); every other type keeps
+  `default(Color)` — the snapshot mirrors that.
+- The gold-critter block (`:84637-84644`, `NPCID.Sets.IsGoldCritter` =
+  `NPCID.cs:10126`: 442-448/539/592/593/601/605/613/627) is a STANDALONE
+  if BEFORE the giant chain: FLAT 10 with the `Next(232,234)` type
+  argument drawn BEFORE each spawn. Type 627 ALSO sits in the chain's
+  `:85942` group, so both arms fire in C# order (gold first, then the
+  ×20 dust-5 chain arm); every other gold type returns after the block.
+- Every-strike arms verified life-INDEPENDENT in C# (they run above any
+  life gate): the spheres 25/33/30/665, 690, 374/375, 112/666, 516 and
+  the crystal 522.
+
+### Deferred (documented remainders)
+
+- The 519 oldPos trail (`:83008-83022`) and the Stardust Worm 402's
+  oldPos trail (`:83579-83596`) need the NPC oldPos ring the port does
+  not carry yet — they land with that field.
+
+### Verification
+
+Code-only: every arm re-read against the cited C# windows (≤100-line
+reads); the seam call sites checked by read/grep (`DustPool::new_dust`/
+`new_dust_direct` signatures, `SpawnCtx`, `RngKey::UpdateNpcs`,
+`bow_launch::rotated_by`, `tile_light::palette::hsl_to_rgb` for the
+rainbow slime 661). The 59 witness tests in `npc_hit_dust.rs` plus the
+`npc.rs` seam witness (`w4_g62_every_landed_strike_queues_one_hit_dust_
+capture`) are WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/
+graphify invoked**. Witness convention: twin `UnifiedRandom` + twin
+`DustPool` replaying the exact draw sequence,
+`assert_eq!(rng, twin_rng)` + `assert_eq!(dust.slots(), twin.slots())`.
