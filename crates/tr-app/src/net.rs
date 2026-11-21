@@ -160,6 +160,10 @@ pub mod id {
     /// immunity (`NetMessage.cs:1533-1541`, `MessageBuffer.cs:4122-4133`).
     /// W4-g51 lifted the parked d92 codec and wired the client arm.
     pub const TAMPER_WITH_NPC: u8 = 131;
+    /// `134 UpdatePlayerLuckFactors` (`MessageID.cs:282`) — a player's luck
+    /// factors (`NetMessage.cs:1555-1567`, `MessageBuffer.cs:4164-4193`).
+    /// W4-g51 lifted the parked d97 codec and wired the apply+relay arms.
+    pub const UPDATE_PLAYER_LUCK_FACTORS: u8 = 134;
     pub const DEAD_PLAYER: u8 = 135; // MessageID.cs:284 / NetMessage.cs:1569-1571 / MessageBuffer.cs:4195-4203
     /// `140 SetMiscEventValues` (`MessageID.cs:294`) — kind 0 is the credits
     /// roll's remaining time (`NetMessage.cs:1591-1594`,
@@ -596,6 +600,11 @@ pub struct PlayerNet {
     /// has open, fed by `80 SyncPlayerChestIndex`
     /// (`MessageBuffer.cs:3216-3227`). `None` = closed (`-1`), the `Default`.
     pub chest: Option<i16>,
+    /// `Main.player[id]`'s luck factors, fed by `134 UpdatePlayerLuckFactors`
+    /// (`MessageBuffer.cs:4164-4193`). Stored-not-simulated on the peer (the
+    /// port does not run remote player sims); the local player's live state
+    /// is `Player.luck_state`. `None` = never synced (the C# field defaults).
+    pub luck: Option<UpdatePlayerLuckFactors>,
 }
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four
@@ -1623,6 +1632,55 @@ pub struct TamperWithNpc {
     pub immune: Option<(i32, i16)>,
 }
 
+/// `msg 134 UpdatePlayerLuckFactors`'s body (`NetMessage.cs:1555-1567`):
+/// `(byte)number`, then the eight `Player` luck fields in writer order —
+/// `ladyBugLuckTimeLeft` (int, `Player.cs:3084`), `torchLuck` (float,
+/// `:3062`), `luckPotion` (byte, `:1134`), `HasGardenGnomeNearby` (bool,
+/// `:2076`), `brokenMirrorBadLuck` (bool, `:2078`),
+/// `equipmentBasedLuckBonus` (float, `:2774`), `coinLuck` (float, `:3092`),
+/// `kiteLuckLevel` (byte, `:3094`). The reader mirrors the order
+/// (`MessageBuffer.cs:4166-4174`) and applies + `RecalculateLuck` (`:4188`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct UpdatePlayerLuckFactors {
+    pub player_id: u8,
+    pub ladybug_luck_time_left: i32,
+    pub torch_luck: f32,
+    pub luck_potion: u8,
+    pub has_garden_gnome_nearby: bool,
+    pub broken_mirror_bad_luck: bool,
+    pub equipment_based_luck_bonus: f32,
+    pub coin_luck: f32,
+    pub kite_luck_level: u8,
+}
+
+impl UpdatePlayerLuckFactors {
+    fn write_to(&self, w: NetWriter) -> NetWriter {
+        w.u8(self.player_id)
+            .i32(self.ladybug_luck_time_left)
+            .f32(self.torch_luck)
+            .u8(self.luck_potion)
+            .bool(self.has_garden_gnome_nearby)
+            .bool(self.broken_mirror_bad_luck)
+            .f32(self.equipment_based_luck_bonus)
+            .f32(self.coin_luck)
+            .u8(self.kite_luck_level)
+    }
+
+    fn read_from(r: &mut NetReader) -> Option<Self> {
+        Some(Self {
+            player_id: r.u8()?,
+            ladybug_luck_time_left: r.i32()?,
+            torch_luck: r.f32()?,
+            luck_potion: r.u8()?,
+            has_garden_gnome_nearby: r.bool()?,
+            broken_mirror_bad_luck: r.bool()?,
+            equipment_based_luck_bonus: r.f32()?,
+            coin_luck: r.f32()?,
+            kite_luck_level: r.u8()?,
+        })
+    }
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1745,6 +1803,10 @@ pub enum C2s {
     /// `130 FishOutNPC` - a client fished an NPC out at the tile point
     /// (`Player.cs:52423-52426`; the host spawns, `MessageBuffer.cs:4086-4121`).
     FishOutNpc(FishOutNpc),
+    /// `134 UpdatePlayerLuckFactors` - a client's luck factors
+    /// (`Player.UpdateLuck`'s `luckNeedsSync` send, `Player.cs:29048`; the
+    /// host applies + relays, `MessageBuffer.cs:4164-4193`).
+    UpdatePlayerLuckFactors(UpdatePlayerLuckFactors),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1882,6 +1944,10 @@ pub enum S2c {
     /// statue-break 582 spawns, `WorldGen.cs:48373-48376`;
     /// `MessageBuffer.cs:4122-4133`).
     TamperWithNpc(TamperWithNpc),
+    /// `134 UpdatePlayerLuckFactors` - a peer's luck factors, relayed by the
+    /// host (`MessageBuffer.cs:4191`); the client applies the eight fields +
+    /// `RecalculateLuck` (`:4180-4188`).
+    UpdatePlayerLuckFactors(UpdatePlayerLuckFactors),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -1973,6 +2039,7 @@ impl C2s {
             Self::TilePicking(_) => id::TILE_PICKING,
             Self::GolfBallInCup(_) => id::GOLF_BALL_IN_CUP,
             Self::FishOutNpc(_) => id::FISH_OUT_NPC,
+            Self::UpdatePlayerLuckFactors(_) => id::UPDATE_PLAYER_LUCK_FACTORS,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2050,6 +2117,8 @@ impl C2s {
             // `NetMessage.cs:1528-1532`: (ushort)tile x, (ushort)tile y,
             // (short)npc type.
             Self::FishOutNpc(f) => w.u16(f.tile_x).u16(f.tile_y).i16(f.npc_type),
+            // `NetMessage.cs:1555-1567`: the eight luck fields in writer order.
+            Self::UpdatePlayerLuckFactors(l) => l.write_to(w),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2194,6 +2263,10 @@ impl C2s {
                 tile_y: r.u16()?,
                 npc_type: r.i16()?,
             }),
+            // `MessageBuffer.cs:4166-4174`: the eight luck fields.
+            id::UPDATE_PLAYER_LUCK_FACTORS => {
+                Self::UpdatePlayerLuckFactors(UpdatePlayerLuckFactors::read_from(r)?)
+            }
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -2358,6 +2431,7 @@ impl S2c {
             Self::RemoveRevengeMarker(_) => id::REMOVE_REVENGE_MARKER,
             Self::GolfBallInCup(_) => id::GOLF_BALL_IN_CUP,
             Self::TamperWithNpc(_) => id::TAMPER_WITH_NPC,
+            Self::UpdatePlayerLuckFactors(_) => id::UPDATE_PLAYER_LUCK_FACTORS,
         }
     }
 
@@ -2517,6 +2591,9 @@ impl S2c {
                     None => w,
                 }
             }
+            // `NetMessage.cs:1555-1567`: the eight luck fields (the relay
+            // reuses the writer case).
+            Self::UpdatePlayerLuckFactors(l) => l.write_to(w),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2750,6 +2827,10 @@ impl S2c {
                     None
                 };
                 Self::TamperWithNpc(TamperWithNpc { npc, kind, immune })
+            }
+            // `MessageBuffer.cs:4166-4174`: the eight luck fields.
+            id::UPDATE_PLAYER_LUCK_FACTORS => {
+                Self::UpdatePlayerLuckFactors(UpdatePlayerLuckFactors::read_from(r)?)
             }
             _ => return None,
         })
@@ -4932,6 +5013,47 @@ mod tests {
         match S2c::decode(g[2], &mut NetReader::new(&g[3..])).expect("decode") {
             S2c::TamperWithNpc(d) => assert_eq!(d, bare),
             other => panic!("expected 131, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `134 UpdatePlayerLuckFactors` body byte-pins the eight
+    /// luck fields in writer order (`NetMessage.cs:1555-1567`) and
+    /// round-trips both directions.
+    #[test]
+    fn w4_g51_update_player_luck_factors_round_trips() {
+        let l = UpdatePlayerLuckFactors {
+            player_id: 2,
+            ladybug_luck_time_left: 3600,
+            torch_luck: 0.25,
+            luck_potion: 3,
+            has_garden_gnome_nearby: true,
+            broken_mirror_bad_luck: false,
+            equipment_based_luck_bonus: 0.05,
+            coin_luck: 1234.5,
+            kite_luck_level: 2,
+        };
+        let mut body = vec![2u8];
+        body.extend_from_slice(&3600i32.to_le_bytes());
+        body.extend_from_slice(&0.25f32.to_le_bytes());
+        body.push(3);
+        body.push(1); // gnome true
+        body.push(0); // mirror false
+        body.extend_from_slice(&0.05f32.to_le_bytes());
+        body.extend_from_slice(&1234.5f32.to_le_bytes());
+        body.push(2);
+        let c = C2s::UpdatePlayerLuckFactors(l).encode();
+        assert_eq!(c[2], 134);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::UpdatePlayerLuckFactors(d) => assert_eq!(d, l),
+            other => panic!("expected 134, got {:?}", other.msg_id()),
+        }
+        let f = S2c::UpdatePlayerLuckFactors(l).encode();
+        assert_eq!(f[2], 134);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::UpdatePlayerLuckFactors(d) => assert_eq!(d, l),
+            other => panic!("expected 134, got {:?}", other.msg_id()),
         }
     }
 

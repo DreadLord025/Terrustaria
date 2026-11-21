@@ -865,6 +865,19 @@ impl App {
                     self.check_real_estate_and_town_slimes(); // `:4118`
                 }
             }
+            // `case 134` — a client's luck factors (`MessageBuffer.cs:
+            // 4164-4193`): the host forces the subject to the sender
+            // (`:4175-4178`), stores the eight fields on the peer snapshot
+            // (the port does not simulate remote players, so the
+            // `RecalculateLuck` :4188 result is not derived here — the
+            // factors are stored-not-simulated like the C# host's
+            // `Main.player[num104]`), then relays to the OTHERS (`:4189-
+            // 4192`, `ignoreClient = num104`).
+            C2s::UpdatePlayerLuckFactors(mut l) => {
+                l.player_id = id as u8; // `:4177`
+                self.remote_players.entry(id).or_default().luck = Some(l);
+                server.broadcast_except(&S2c::UpdatePlayerLuckFactors(l), id);
+            }
             // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
             // codecs (`net.rs`); the host apply/relay arms
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
@@ -1947,7 +1960,7 @@ impl App {
             // codecs (`net.rs`); the client read sites
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
             // `:2695-2739`, `:3118-3126`, `:3147-3153`,
-            // `:4195-4203`, `:4238-4249`, `:4282-4297`, `:4328-4343`) land
+            // `:4238-4249`, `:4282-4297`, `:4328-4343`) land
             // with the send-path pass (S1-I-4) — nothing sends them yet.
             S2c::TogglePvp(_)
             | S2c::PlayerMana(_)
@@ -1955,10 +1968,16 @@ impl App {
             | S2c::NpcHouse(_)
             | S2c::TravelShop(_)
             | S2c::AnglerQuest(_)
-            | S2c::DeadPlayer { .. }
             | S2c::MiscEventValue(_)
             | S2c::ProjectileTrackers(_)
             | S2c::SyncLoadout(_) => {}
+            // `case 135`'s client half (`MessageBuffer.cs:4195-4203`):
+            // `Main.player[num103].immuneAlpha = 255` — the dead-peer ghost
+            // fade. The port's `immuneAlpha` blinkVisual half is draw-side
+            // and stays out (`player.rs`'s `update_immunity` doc, R-03-5),
+            // so there is no field to write; the arm is parked with the
+            // render-side ghost fade (S1-I-4).
+            S2c::DeadPlayer { .. } => {}
             // `case 128`'s client half (`MessageBuffer.cs:4070-4072`):
             // `PutBallInCup_TextAndEffects` — the cup dust/sound/chat FX
             // (`GolfHelper.cs:115-123`) ride the golf system (M4-GOLF-1);
@@ -1987,6 +2006,24 @@ impl App {
                     npc.immune = [time; 256]; // `:92512-92515`
                 } else if from_who >= 0 && (from_who as usize) < npc.immune.len() {
                     npc.immune[from_who as usize] = time; // `:92517-92520`
+                }
+            }
+            // `case 134`'s client half (`MessageBuffer.cs:4180-4188`): the
+            // eight fields land on `Main.player[num104]` then
+            // `RecalculateLuck`. The local player's live `luck_state` takes
+            // the apply + recalc; a peer's factors are stored on the snapshot
+            // (stored-not-simulated, the host convention).
+            S2c::UpdatePlayerLuckFactors(l) => {
+                if l.player_id as u32 == self.local_id {
+                    if let Some(p) = self.player.as_mut() {
+                        apply_luck_factors(&mut p.luck_state, &l);
+                        p.luck_state.recalculate_luck(); // `:4188`
+                    }
+                } else {
+                    self.remote_players
+                        .entry(l.player_id as u32)
+                        .or_default()
+                        .luck = Some(l);
                 }
             }
         }
@@ -3729,6 +3766,21 @@ fn npc_seed(
     })
 }
 
+/// `MessageBuffer.cs:4180-4187`'s eight-field apply — the writer order
+/// (`NetMessage.cs:1555-1567`) lands on the `Player` luck fields verbatim.
+/// The `RecalculateLuck` tail (`:4188`) is the caller's (the local player's
+/// live state recalculates; a peer snapshot is stored-not-simulated).
+fn apply_luck_factors(ls: &mut crate::luck::LuckState, l: &net::UpdatePlayerLuckFactors) {
+    ls.lady_bug_luck_time_left = l.ladybug_luck_time_left;
+    ls.torch_luck = l.torch_luck;
+    ls.luck_potion = l.luck_potion;
+    ls.has_garden_gnome_nearby = l.has_garden_gnome_nearby;
+    ls.broken_mirror_bad_luck = l.broken_mirror_bad_luck;
+    ls.equipment_based_luck_bonus = l.equipment_based_luck_bonus;
+    ls.coin_luck = l.coin_luck;
+    ls.kite_luck_level = l.kite_luck_level;
+}
+
 fn npc_from_net(world: &World, n: &net::NpcInfo) -> Option<crate::npc::Npc> {
     let kind = crate::npc::NpcKind::from_u16(n.kind.max(0) as u16)?;
     let tx = (n.x / TILE_PX) as i32;
@@ -4227,6 +4279,46 @@ mod handshake_tests {
         client_app.net = role;
         assert_eq!(client_app.npcs[0].immune[3], 7);
         assert_eq!(client_app.npcs[0].immune[0], 20, "the other slots kept 20");
+    }
+
+    /// W4-g51 `134 UpdatePlayerLuckFactors`: the local player's eight luck
+    /// fields land + `RecalculateLuck` runs (`MessageBuffer.cs:4180-4188`);
+    /// a peer's factors are stored on the snapshot (stored-not-simulated).
+    #[test]
+    fn the_luck_factors_apply_to_the_local_player_and_recalculate() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut host_app;
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        let me = client_app.local_id as u8;
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::UpdatePlayerLuckFactors(
+                    net::UpdatePlayerLuckFactors {
+                        player_id: me,
+                        ladybug_luck_time_left: 0,
+                        torch_luck: 0.0,
+                        luck_potion: 3,
+                        has_garden_gnome_nearby: true,
+                        broken_mirror_bad_luck: false,
+                        equipment_based_luck_bonus: 0.0,
+                        coin_luck: 0.0,
+                        kite_luck_level: 0,
+                    },
+                )),
+            );
+        }
+        client_app.net = role;
+        let p = client_app.player.as_ref().unwrap();
+        assert_eq!(p.luck_state.luck_potion, 3);
+        assert!(p.luck_state.has_garden_gnome_nearby);
+        // RecalculateLuck: potion 3 × 0.1 + gnome 0.2 = 0.5.
+        assert!(
+            (p.luck_state.luck - 0.5).abs() < 1e-5,
+            "the recalculated luck is 0.5, got {}",
+            p.luck_state.luck
+        );
     }
 
     #[test]
