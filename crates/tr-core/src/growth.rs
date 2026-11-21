@@ -1325,9 +1325,6 @@ pub(super) mod tests {
         }
     }
 
-    use super::*;
-
-    use super::*;
     use crate::tile::Tile;
 
     fn world() -> World {
@@ -1684,6 +1681,36 @@ pub(super) mod tests {
             !w.frame_important.get(52).copied().unwrap_or(false),
             "vine 52 is not frame-important (Main.cs census)"
         );
+    }
+
+    /// W4-g83 stream pin (contract §3, seam 5): the overground vine write's
+    /// draws ride the CALLER's `UpdateWorldGen` stream — the dispatcher's
+    /// tail adds EXACTLY the vine arm's draws (the dye-head `Next(3000)` +
+    /// `grow_overground_vines`), no new stream and no reseed. The twin drives
+    /// the same sequence by hand on a fresh same-seed stream; equal
+    /// `UnifiedRandom` state proves the genRand position matches. A 52 vine
+    /// pick (not a `grass_pass` member, no early return) isolates the chain.
+    #[test]
+    fn w4_g83_the_vine_write_draws_the_update_worldgen_position() {
+        let mut w = world();
+        w.world_surface = 250.0;
+        put(&mut w, 100, 199, 2, 0); // the dirt support above
+        put(&mut w, 100, 200, 52, 0); // the vine pick, free cell below
+        let mut rng = UnifiedRandom::new(11);
+        update_world_overground_tile(&mut w, 100, 200, true, false, 0.0, 0.0, &mut rng);
+        // The twin: the dye head draws Next(3000) (plant_dye on a 52 cell
+        // draws nothing — no matching arm), then the vine chain.
+        let mut twin = UnifiedRandom::new(11);
+        let mut tw = world();
+        tw.world_surface = 250.0;
+        put(&mut tw, 100, 199, 2, 0);
+        put(&mut tw, 100, 200, 52, 0);
+        if twin.next_max(3000) == 0 {
+            crate::growth::plant_dye(&mut tw, 100, 200, false, &mut twin);
+        }
+        crate::vine_growth::grow_overground_vines(&mut tw, 100, 200, &mut twin);
+        assert_eq!(rng, twin, "the vine write consumed exactly the UpdateWorldGen prefix");
+        assert_eq!(w.tiles, tw.tiles, "the same vine landed");
     }
 
     /// W4-g83 wiring witness (contract §3): the jungle-thorn arm rides the

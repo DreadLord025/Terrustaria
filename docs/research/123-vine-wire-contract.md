@@ -409,7 +409,8 @@ The four remaining seams landed on `task/W4-g83-vine-draw-residuals`
 | §2 checks + rng threading | `885514e1d` | `check_underwater_plant` as the case-549 arm BEFORE the tree arms + `check_vines` as the non-solid `IsVine` arm after cactus-80 in `edit/kill.rs::square_tile_frame`; the gate admits vine kinds + 549 explicitly; the whole `kill_tile`/`square_tile_frame_*`/cascade family threads `&mut UnifiedRandom` (the caller's ACTIVE genRand — growth `UpdateWorldGen`, liquid `UpdateLiquid`, wiring `self.rand`, edit `UpdatePlayers`, npc `UpdateNpcs`, projectile `UpdateProjectiles`, net the bare global, worldgen a fresh `UnifiedRandom(world.seed)` stand-in); the port-only `frame_important[vine]` writes dropped (`plant_vine` + `grow_vine_arm`); `frame_world`'s cosmetic-only check-skip recorded (fn doc + ANALYSIS row below) |
 | §3 grow-tops + jungle-thorn | `2325528ce` | `grow_overground_vines` at `update_world_overground_tile`'s tail + `grow_underground_jungle_thorn` after `grow_vine_arm` + the dead overground-69 arm DELETED; both on the caller's `UpdateWorldGen` stream |
 | §4 thorn down-merge | `6b9a1d9fa` | the 4-line `grass_below`/`down = num` insertion in `framing.rs::frame_of_variant` after the own-slope match; `thorn_down_merge_frame` kept as the thin witness fixture delegating to `frame_of_variant` (the standalone re-port + private RULES copy dropped) |
-| §1.2 g31 keep-one deltas | (this commit) | `rising_vine_strip_segments` takes `show_invisible` and reads the FULL `IsVisible` (the `is_visible` helper added to `vines.rs`, byte-shape identical to the union's); `draw_reverse_vines` threads it; the fused-pass caller passes its `show_invisible_blocks` |
+| §1.2 g31 keep-one deltas | `02f4abe9d` | `rising_vine_strip_segments` takes `show_invisible` and reads the FULL `IsVisible` (the `is_visible` helper added to `vines.rs`, byte-shape identical to the union's); `draw_reverse_vines` threads it; the fused-pass caller passes its `show_invisible_blocks` |
+| §3/§2 stream pins | (this commit) | the genRand-position witnesses: `growth.rs::w4_g83_the_vine_write_draws_the_update_worldgen_position` (the dispatcher's tail adds EXACTLY the dye-head `Next(3000)` + `grow_overground_vines` draws — the hand-driven twin's `UnifiedRandom` state matches, no new stream/reseed) + `kill.rs::w4_g83_the_seaweed_tip_rerolls_draw_the_callers_genrand` (the case-549 twin pins the exact caller-stream prefix with `frame_rng` seeded differently — the tip draws the ACTIVE genRand, never the variant stream) |
 
 ### 9.1 The g31 keep-one FINAL hunk-pair (g31e d-hunk-prep reads this)
 
@@ -509,10 +510,11 @@ expects.
 
 vines.rs 21 (20 + 1 full-IsVisible) + vine_checks.rs 17 + vine_growth.rs 16
 + tiles.rs 14 + kill.rs +2 (the dispatch conversion/kill + the seaweed
-caller-stream twin) + growth.rs +2 (the overground tail + the underground
-thorn / dead-arm pair) + framing.rs +1 (the down-merge fold + slope order +
-the four pairs) = **73 written not run** (g83's share: 10 + 17 + 16 + 2 + 2
-+ 2 + 1 + 1 = 51). World-hash pins unchanged: the worldgen callers' new
+caller-stream twin) + growth.rs +3 (the overground tail + the underground
+thorn / dead-arm pair + the UpdateWorldGen-position twin) + framing.rs +1
+(the down-merge fold + slope order + the four pairs) = **74 written not
+run** (g83's share: 10 + 17 + 16 + 2 + 2 + 3 + 1 + 1 = 52). World-hash pins
+unchanged: the worldgen callers' new
 `UnifiedRandom(world.seed)` stand-ins are drawn ONLY by a seaweed tip
 re-roll (none exists in the pinned passes' framing rings — the temple
 furniture/altar, the FTW plant kills and the no-traps spikes frame no 549),
