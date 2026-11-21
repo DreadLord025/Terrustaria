@@ -108,11 +108,11 @@ pub fn write(w: &mut Writer, world: &World) {
     w.u8(world.crimson_bg_style); // setBG(5) crimsonBG
     w.u8(0); // setBG(6) desertBG
     w.u8(0); // setBG(7) oceanBG
-    // WorldFile.cs:1326-1332: clouds and wind — the cloud state is unowned;
-    // W4-f45 claims the wind target (`App.wind.speed_target` snapshots into
-    // `World.wind_speed_target` at save, `saveglue.rs`).
-    w.i32(0); // cloudBGActive
-    w.i16(0); // numClouds
+    // WorldFile.cs:1326-1332: clouds and wind — W4-f45 claims the cloud pair
+    // (the g69 CloudField lane's consumers) beside the wind target
+    // (`App.wind.speed_target` snapshots into `World.wind_speed_target`).
+    w.i32(world.cloud_bg_active); // cloudBGActive (`:1326`)
+    w.i16(world.num_clouds as i16); // numClouds (`:1327`, the C# short cast)
     w.f32(world.wind_speed_target); // windSpeedTarget (W4-f45)
     // WorldFile.cs:1329-1338: today's fisherman list — W4-f45 claims the name
     // list (`Main.anglerWhoFinishedToday`); the port's single player collapses
@@ -492,8 +492,14 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     world.hallow_bg_style = r.u8()?; // setBG(4) hallowBG
     world.crimson_bg_style = r.u8()?; // setBG(5) crimsonBG
     r.skip(2)?; // setBG(6..7) desertBG, oceanBG
-    r.skip(4)?; // cloudBGActive — the load re-rolls it (`:2144`), no store
-    r.skip(2)?; // numClouds
+    // W4-f45: the cloud pair lands. `:2143` derives cloudBGAlpha from the
+    // stored value, then `:2144` re-rolls cloudBGActive (`-genRand.Next(8640,
+    // 86400)`) — the load does NOT restore the stored timer (the g69 lane's
+    // live machine re-rolls it), so the port reads it into the World mirror
+    // for the round-trip but the App keeps its own re-roll. numClouds (`:2145`)
+    // restores as-is.
+    world.cloud_bg_active = r.i32()?; // cloudBGActive (`:2142`)
+    world.num_clouds = r.i16()? as i32; // numClouds (`:2145`)
     // W4-f45: the wind target lands; `:2147` sets `windSpeedCurrent` to it
     // (the App restores both from this one field, `app/mod.rs`).
     world.wind_speed_target = r.f32()?; // windSpeedTarget (`:2146`)

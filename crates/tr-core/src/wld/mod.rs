@@ -1783,6 +1783,9 @@ mod tests {
         world.lantern_night_manual = true;
         world.lantern_night_next_night_is_genuine = true;
         world.wind_speed_target = 0.4;
+        // W4-f45: the cloud pair (the g69 CloudField lane's mirrors).
+        world.cloud_bg_active = -12345;
+        world.num_clouds = 150;
         world.saved_bartender = true;
         world.crimson = true;
         world.dungeon_x = 123;
@@ -2103,6 +2106,11 @@ mod tests {
             "{context}: windSpeedTarget"
         );
         assert_eq!(
+            got.cloud_bg_active, want.cloud_bg_active,
+            "{context}: cloudBGActive"
+        );
+        assert_eq!(got.num_clouds, want.num_clouds, "{context}: numClouds");
+        assert_eq!(
             got.saved_bartender, want.saved_bartender,
             "{context}: savedBartender"
         );
@@ -2255,7 +2263,10 @@ mod tests {
         tail[90] = world.jungle_bg_style;
         tail[92] = world.hallow_bg_style;
         tail[93] = world.crimson_bg_style;
-        // W4-f45: the wind target at 102..106 (cloudBGActive@96, numClouds@100).
+        // W4-f45: the cloud pair at 96..102 (cloudBGActive@96 i32, numClouds@100
+        // i16) and the wind target at 102..106.
+        tail[96..100].copy_from_slice(&world.cloud_bg_active.to_le_bytes());
+        tail[100..102].copy_from_slice(&(world.num_clouds as i16).to_le_bytes());
         tail[102..106].copy_from_slice(&world.wind_speed_target.to_le_bytes());
         // savedAngler..savedGolfer follow the 4-byte angler-list count at
         // 106..110 (88 trio-end + 8 setBG + 10 clouds/wind = 106).
@@ -4464,6 +4475,41 @@ mod tests {
         let block = expected_flags_block(&world);
         let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
         let flags_at = ptr1 - block.len();
+        assert_eq!(&buf[flags_at..ptr1], &block[..], "the owned block matches the table");
+    }
+
+    /// W4-f45 — `cloudBGActive`/`numClouds` land at tail 96/100
+    /// (`WorldFile.cs:1326-1327`, ungated) and round-trip; the load reads the
+    /// stored cloudBGActive into the World mirror (the C# re-rolls the live
+    /// timer at `:2144`, the g69 lane's machine — the mirror keeps the file
+    /// value for the round-trip). Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_cloud_pair_lands_at_the_csharp_offsets() {
+        let mut data = fixture();
+        let tail_at = tail_offset_in_synthetic(&data, VER);
+        data[tail_at + 96..tail_at + 100].copy_from_slice(&(-54321i32).to_le_bytes());
+        data[tail_at + 100..tail_at + 102].copy_from_slice(&180i16.to_le_bytes());
+        let w = parse(&data).expect("the patched fixture parses");
+        assert_eq!(w.cloud_bg_active, -54321, "cloudBGActive at tail 96");
+        assert_eq!(w.num_clouds, 180, "numClouds at tail 100");
+        // The wind target after them stays 0 (the patch did not touch it).
+        assert_eq!(w.wind_speed_target, 0.0, "windSpeedTarget at tail 102 untouched");
+        // The writer's own block carries the owned world's pair.
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let block = expected_flags_block(&world);
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let flags_at = ptr1 - block.len();
+        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let tail_at = flags_at + prefix_len;
+        assert_eq!(
+            i32::from_le_bytes(buf[tail_at + 96..tail_at + 100].try_into().unwrap()),
+            -12345, "cloudBGActive round-trips"
+        );
+        assert_eq!(
+            i16::from_le_bytes(buf[tail_at + 100..tail_at + 102].try_into().unwrap()),
+            150, "numClouds round-trips"
+        );
         assert_eq!(&buf[flags_at..ptr1], &block[..], "the owned block matches the table");
     }
 

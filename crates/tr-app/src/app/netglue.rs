@@ -2067,7 +2067,9 @@ impl App {
             hell_back_style: w.hell_back_style,
             // W4-f45: the wind target is World-owned now (`WorldFile.cs:1328`).
             wind_speed_target: w.wind_speed_target,
-            num_clouds: 0,
+            // W4-f45: numClouds is World-owned (`NetMessage.cs:276`'s
+            // `(byte)Main.numClouds`).
+            num_clouds: w.num_clouds as u8,
             tree_x: w.tree_x,
             tree_style: std::array::from_fn(|i| w.tree_style[i] as u8),
             cave_back_x: w.cave_back_x,

@@ -687,6 +687,16 @@ pub struct World {
     /// snapshots it here, the load restores both target and current
     /// (`:2147` `windSpeedCurrent = windSpeedTarget`).
     pub wind_speed_target: f32,
+    /// `Main.cloudBGActive` (`WorldFile.cs:1326` write / `:2142` read): the
+    /// overcast state machine's timer — negative counts down to the next
+    /// overcast, >= 1 is the active bank. The C# writes the live value but the
+    /// load re-rolls it (`:2144` `-genRand.Next(8640, 86400)`), so the stored
+    /// value is informational; the g69 CloudField lane owns the live machine.
+    pub cloud_bg_active: i32,
+    /// `Main.numClouds` (`WorldFile.cs:1327` write / `:2145` read): the cloud
+    /// count (the C# casts to a short on write). The g69 CloudField lane's
+    /// `update_num_clouds` walk owns the live value; the file round-trips it.
+    pub num_clouds: i32,
     /// `NPC.savedBartender` (`NPC.cs:6283`, set at `:52960`'s
     /// `AI_007_TownEntities_UpdateSavedStates`): the bound bartender's
     /// rescue flag. The rescue path is unported, so the file round-trips.
@@ -969,6 +979,8 @@ impl World {
             lantern_night_manual: false,
             lantern_night_next_night_is_genuine: false,
             wind_speed_target: 0.0,
+            cloud_bg_active: 0,
+            num_clouds: 0,
             saved_bartender: false,
             crimson: false,
             dungeon_x: 0,
