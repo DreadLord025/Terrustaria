@@ -25,7 +25,10 @@
 //! * the HELD Spelunker Glowstick 3002 (`Player.cs:50094-50099`, the
 //!   `spelunkerTimer` 10-tick counter inside `ItemCheck_EmitHeldItemLight`,
 //!   NO distance gate, `!pulley`-gated) — the THIRD C# caller research/76
-//!   missed; contract in research/77 §1.3.
+//!   missed; the counter+scan half is [`SpelunkerProjectileHelper::held_3002_tick`]
+//!   (ATTACH-READY, this module — uncontested); the caller-side field +
+//!   dust-drain seam is contested, contract in research/77 §1.3 +
+//!   research/78 §3.
 //! The helper's `Main.rand` is the caller's stage stream (the `DropRng`
 //! seam, the d60 particles convention): `UpdateProjectiles` for the two
 //! projectile callers, `UpdatePlayers` for the held 3002. The dust spawns
@@ -192,6 +195,44 @@ impl SpelunkerProjectileHelper {
             return false;
         };
         (spot - pc).length() < screen_width + 30.0 * 16.0
+    }
+
+    /// The HELD Spelunker Glowstick 3002 tick — the third `AddSpotToCheck`
+    /// caller (`Player.cs:50094-50099`, `ItemCheck_EmitHeldItemLight` called
+    /// from `ItemCheck` `:42849` behind `!JustDroppedAnItem &&
+    /// IsAllowedToHoldItems` `:42847`). The whole 3002 block sits behind
+    /// `sItem.type == 3002 && !this.pulley` (`:50081`) — the caller gates
+    /// kind + pulley + the `:42847` pair; this fn ticks ONLY the counter +
+    /// scan half (the light half stays `player_lights.rs`'s pure 3002 arm).
+    /// `spelunker_timer` is the C# `byte spelunkerTimer` (`Player.cs:810`)
+    /// passed by the caller — its ONLY writer is this counter (`:50094-50097`),
+    /// it never resets in `ResetEffects`; the byte wraps at 256 (the C#
+    /// `byte++`), unreachable while held (the `>= 10` reset fires first).
+    /// NO distance gate, NO netMode gate (research/77 §1 caller 3). `rng` is
+    /// the **UpdatePlayers** stage stream — the player tick runs BEFORE the
+    /// projectile pass (`Main.cs:17754` vs `:17775`), so the held scan's
+    /// Next(4) draws land before the pass's UpdateProjectiles draws (§1.2).
+    /// ATTACH-READY, UNWIRED: the caller seam (`world_sim/player.rs`'s tick,
+    /// the `take_sticky_dust` dust-drain cluster :1366 + the `Player` field)
+    /// is contested — research/77 §1.3 + research/78 §3 carry the hunks.
+    pub fn held_3002_tick(
+        &mut self,
+        world: &World,
+        center: Vec2,
+        spelunker_timer: &mut u8,
+        rng: &mut dyn tr_core::loot::DropRng,
+        out: &mut Vec<SpelunkerDust>,
+    ) {
+        // `:50094-50098` — the counter wrap: ++ then >= 10 resets and scans.
+        *spelunker_timer = spelunker_timer.wrapping_add(1);
+        if *spelunker_timer >= 10 {
+            *spelunker_timer = 0;
+            // `:50098` — `AddSpotToCheck(base.Center)`: the SAME shared
+            // helper instance (`Main.instance.SpelunkerProjectileHelper`,
+            // `Main.cs:2233`) — the held scan dedupes against the projectile
+            // callers' sets and the pass-head 10-tick clear (§1.1).
+            self.add_spot_to_check(world, center, rng, out);
+        }
     }
 
     /// `CheckSpot` (`:35-66`): the ±30-tile window around the spot's tile
@@ -424,6 +465,85 @@ mod tests {
         assert_eq!(out.len(), 4, "the clear reopens the spot");
         assert_eq!(rng.pos, 4);
         assert_eq!(h.frame_counter, 0, "the counter wrapped");
+    }
+
+    /// `Player.cs:50094-50098` — the held-3002 counter: 9 ticks roll nothing
+    /// (timer 1..9); the 10th wraps to 0 and runs ONE AddSpotToCheck on the
+    /// UpdatePlayers stream. The counter is the caller's field, not the
+    /// helper's — a fresh helper with timer 9 scans on the FIRST tick.
+    #[test]
+    fn w4_g78_the_held_3002_counter_wraps_at_ten() {
+        let w = world_with_ore();
+        let mut h = SpelunkerProjectileHelper::default();
+        let spot = Vec2::new(648.0, 648.0);
+        let mut timer = 0u8;
+        let mut rng = Scripted { draws: vec![0, 0], pos: 0 };
+        let mut out = Vec::new();
+        for _ in 0..9 {
+            h.held_3002_tick(&w, spot, &mut timer, &mut rng, &mut out);
+        }
+        assert_eq!(timer, 9);
+        assert_eq!(rng.pos, 0, "no scan before the wrap");
+        assert!(out.is_empty());
+        h.held_3002_tick(&w, spot, &mut timer, &mut rng, &mut out);
+        assert_eq!(timer, 0, "the >= 10 arm resets");
+        assert_eq!(rng.pos, 2, "the wrap scans once (two tiles)");
+        assert_eq!(out.len(), 2);
+        // The NEXT 9 ticks stay quiet again (the spot dedupe would ALSO
+        // refuse, but the counter gate fires first — zero calls).
+        for _ in 0..9 {
+            h.held_3002_tick(&w, spot, &mut timer, &mut rng, &mut out);
+        }
+        assert_eq!(rng.pos, 2);
+    }
+
+    /// `Player.cs:50098` + `Main.cs:2233` — the held scan shares the ONE
+    /// helper instance with the projectile callers: a 473-style
+    /// add_spot_to_check on the same position dedupes the held wrap's scan
+    /// (no second scan, no rolls), and the pass-head 10-tick clear reopens
+    /// BOTH callers' sets on the same tick (§1.2's shared-cadence pin).
+    #[test]
+    fn w4_g78_the_held_scan_shares_the_projectile_dedupe() {
+        let w = world_with_ore();
+        let mut h = SpelunkerProjectileHelper::default();
+        let spot = Vec2::new(648.0, 648.0);
+        let mut timer = 9u8;
+        let mut rng = Scripted { draws: vec![0, 0, 0, 0], pos: 0 };
+        let mut out = Vec::new();
+        // The projectile caller scans first (the C# order is reversed in
+        // the frame, but the SET semantics are order-free: one scan wins).
+        h.add_spot_to_check(&w, spot, &mut rng, &mut out);
+        assert_eq!(rng.pos, 2);
+        // The held wrap fires the same tick: deduped, NOTHING rolls.
+        h.held_3002_tick(&w, spot, &mut timer, &mut rng, &mut out);
+        assert_eq!(timer, 0);
+        assert_eq!(rng.pos, 2, "the shared position set refuses the scan");
+        assert_eq!(out.len(), 2);
+        // The pass-head clear reopens both: the next held wrap re-scans.
+        for _ in 0..10 {
+            h.on_pre_update_all_projectiles();
+        }
+        timer = 9;
+        h.held_3002_tick(&w, spot, &mut timer, &mut rng, &mut out);
+        assert_eq!(rng.pos, 4, "the clear reopened the held scan too");
+        assert_eq!(out.len(), 4);
+    }
+
+    /// `Player.cs:810` — the counter is a `byte`: the port's u8 wraps like
+    /// the C# `byte++` (255 → 0). The wrap is unreachable while held (the
+    /// >= 10 reset fires at 10), but the field arithmetic must match if a
+    /// caller ever feeds a pre-loaded value: 255 + 1 = 0, NO scan.
+    #[test]
+    fn w4_g78_the_held_counter_is_a_wrapping_byte() {
+        let w = world_with_ore();
+        let mut h = SpelunkerProjectileHelper::default();
+        let mut timer = 255u8;
+        let mut rng = Scripted { draws: vec![], pos: 0 };
+        let mut out = Vec::new();
+        h.held_3002_tick(&w, Vec2::new(648.0, 648.0), &mut timer, &mut rng, &mut out);
+        assert_eq!(timer, 0, "the byte wraps 255 -> 0");
+        assert_eq!(rng.pos, 0, "the wrapped 0 is below 10: no scan");
+        assert!(out.is_empty());
     }
 
     /// `:50`: the 30-tile radius gate — a spelunkable tile INSIDE the ±30
