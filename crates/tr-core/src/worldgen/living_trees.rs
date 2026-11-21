@@ -828,9 +828,110 @@ fn horizontal_tunnel(world: &mut World, rng: &mut Rng, x: i32, y: i32) {
     }
 }
 
+// --- Wood Tree Walls (W4-g36 A4) ----------------------------------------------
+
+/// The Wood Tree Walls pass (`GenPassNameID.LivingTreeWalls`,
+/// `WorldGen.cs:15717-15749`): the living-wood wall fill — every surface
+/// cell in `[25, maxTilesX - 25) × [25, worldSurface)` whose 5-cell cross
+/// touches a living-wood tile (191) gets wall 244 when all four DIAGONAL
+/// neighbours are living wood or already wall 244. RNG-free (the C# body
+/// draws nothing — the `progress.Set` fractions are bookkeeping). The
+/// `Skyblock.denyAllGeneration` gate (`:15719`) is the caller's.
+///
+/// The diagonal gate is the C#'s `k != i && l != j` (`:15735`) — BOTH
+/// offsets non-zero, i.e. the four corners only (the edge-adjacent cells
+/// are exempt). The cross test reads `.type` WITHOUT an active gate
+/// (`:15728`), the corner test WITH one (`:15735`) — both verbatim.
+pub(crate) fn wood_tree_walls(world: &mut World, world_surface: f64) {
+    let kind_at = |x: i32, y: i32| world.tile(x, y).map_or(0, |t| t.kind);
+    for i in 25..world.width - 25 {
+        let mut j = 25i32;
+        while (j as f64) < world_surface {
+            // The 5-cell cross (`:15728`).
+            if kind_at(i, j) == TILE_LIVING_WOOD
+                || kind_at(i, j - 1) == TILE_LIVING_WOOD
+                || kind_at(i - 1, j) == TILE_LIVING_WOOD
+                || kind_at(i + 1, j) == TILE_LIVING_WOOD
+                || kind_at(i, j + 1) == TILE_LIVING_WOOD
+            {
+                let mut ok = true;
+                for k in (i - 1)..=(i + 1) {
+                    for l in (j - 1)..=(j + 1) {
+                        // `k != i && l != j` — the four corners only.
+                        if k != i && l != j {
+                            let corner = world.tile(k, l);
+                            let is_wood = corner.is_some_and(|t| t.active() && t.kind == TILE_LIVING_WOOD);
+                            let wall = corner.map_or(0, |t| t.wall);
+                            if !is_wood && wall != WALL_LIVING_WOOD {
+                                ok = false;
+                            }
+                        }
+                    }
+                }
+                if ok {
+                    if let Some(t) = world.tile_mut(i, j) {
+                        t.wall = WALL_LIVING_WOOD;
+                    }
+                }
+            }
+            j += 1;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// W4-g36 A4: a living-wood cross with four wood corners gets wall
+    /// 244; a missing corner refuses; the edge-adjacent cells are exempt
+    /// from the corner gate (`WorldGen.cs:15735`).
+    #[test]
+    fn a4_the_wall_fill_needs_four_wood_corners() {
+        let mut w = World::new("wtw".into(), 80, 80);
+        let put = |w: &mut World, x: i32, y: i32| {
+            let i = w.index(x, y);
+            w.tiles[i].kind = TILE_LIVING_WOOD;
+            w.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+        };
+        // The cross at (40, 40) + the four corners.
+        for (x, y) in [(40, 40), (40, 39), (39, 40), (41, 40), (40, 41)] {
+            put(&mut w, x, y);
+        }
+        for (x, y) in [(39, 39), (41, 39), (39, 41), (41, 41)] {
+            put(&mut w, x, y);
+        }
+        wood_tree_walls(&mut w, 60.0);
+        assert_eq!(w.tile(40, 40).unwrap().wall, WALL_LIVING_WOOD);
+        // Remove one corner (make it inactive air): the fill refuses.
+        let mut w2 = w.clone();
+        let i = w2.index(41, 41);
+        w2.tiles[i] = crate::tile::Tile::default();
+        // Clear the wall the first run wrote so the second run re-tests.
+        w2.tiles[w2.index(40, 40)].wall = 0;
+        wood_tree_walls(&mut w2, 60.0);
+        assert_eq!(w2.tile(40, 40).unwrap().wall, 0, "a missing corner refuses");
+    }
+
+    /// W4-g36 A4: an existing wall-244 corner counts as wood for the gate
+    /// (`:15735`'s `wall != 244` disjunct), and the pass is RNG-free
+    /// (two runs are tile-identical).
+    #[test]
+    fn a4_wall_244_corners_count_and_the_pass_is_rng_free() {
+        let mut w = World::new("wtw".into(), 80, 80);
+        let i = w.index(40, 40);
+        w.tiles[i].kind = TILE_LIVING_WOOD;
+        w.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+        // The four corners carry wall 244 but no tiles.
+        for (x, y) in [(39, 39), (41, 39), (39, 41), (41, 41)] {
+            w.tiles[w.index(x, y)].wall = WALL_LIVING_WOOD;
+        }
+        wood_tree_walls(&mut w, 60.0);
+        assert_eq!(w.tile(40, 40).unwrap().wall, WALL_LIVING_WOOD);
+        let before = w.tiles.clone();
+        wood_tree_walls(&mut w, 60.0);
+        assert_eq!(w.tiles, before, "the pass is idempotent and RNG-free");
+    }
 
     /// A tree-friendly grassland: the empty sky `GrowLivingTree`'s clearance
     /// scan wants (50 wide, 20 tall), grass from row 200 down (the anchor

@@ -256,6 +256,11 @@ mod tests {
     // `clean up dirt` — the per-column walkers convert wall 2 → 59 on
     // every world with surface dirt walls, so this pin moves BY DESIGN;
     // deferred to the gate.
+    // W4-g36 A4 (code-only): the Wood Tree Walls pass
+    // (`WorldGen.cs:15717-15749`, `living_trees.rs::wood_tree_walls`)
+    // lands after `living trees` — the wall-244 fill behind the living
+    // wood crosses moves this pin BY DESIGN (RNG-free, no ledger shift);
+    // deferred to the gate.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -311,6 +316,9 @@ mod tests {
     // W4-g36 A3 (code-only): the Dirt Rock Wall Runner pass (see
     // SEED42_512 above) — the wall 2 → 59 conversions move this pin BY
     // DESIGN; deferred. Own `pass_rng("Dirt Rock Wall Runner")` stream.
+    // W4-g36 A4 (code-only): the Wood Tree Walls pass (see SEED42_512
+    // above) — the wall-244 fill moves this pin BY DESIGN; deferred.
+    // RNG-free; the `a == b` halves stay untouched.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
