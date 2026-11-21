@@ -75,6 +75,8 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
+| 162 | Projectile aiStyles 201-210 COVERAGE census (W4-d21: 7 MISSING ported, 206 verify-only a9, 207 empty/no kinds, 210 pre-ported; renumbered 26d→162 per registry §6) | `162-projectile-ai-201-210-census.md` | 🟢 SEALED — band CLOSED (research/308) |
+| 308 | W4-d21 FINAL: the 201-210 band table + the d77c cue-1115 compose receipt + the all-styles-armed/kinds-rowed census + the proj-AI-1-210-all-decades-CLOSED ledger (registry §7.4: 308+ FREE; code-only) | `308-projectile-ai-201-210-final.md` | 🟢 SEALED — 24 witnesses written not run; dirty-9 fold-2 co-lane idle NOT staged |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

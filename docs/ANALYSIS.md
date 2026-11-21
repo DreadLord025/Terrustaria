@@ -39247,7 +39247,8 @@ click buffers; the player tick applies).
 
 ## The projectile aiStyles 201-210 (W4-d21, task/W4-d21-proj-ai-201-210, 2026-11-21, code-only mode)
 
-The census (`docs/research/26d-projectile-ai-201-210-census.md`) found seven
+The census (`docs/research/162-projectile-ai-201-210-census.md`, renumbered
+from 26d per the collision registry §6) found seven
 MISSING styles on `a725acb0`: **201, 202, 203, 204, 205, 208, 209** (no rows,
 no dispatch arms). 210 was already ported (`ai_yoyo_shot`, M4-PROJ-4b); 206
 landed on the sibling a9 branch (`8c4fded8`, `forbidden_minion_step` —
@@ -39302,3 +39303,56 @@ documented slope skip, the slope ride is core to these two machines. The 205's
 The 11 witness tests are WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/
 dotnet/graphify invoked** (code-only mode). Verified by re-reading the cited C#
 blocks and hand arithmetic.
+
+### SEAL addendum (2026-11-21, head `70fe977c3`, registry 308)
+
+The FINAL band table + the proj-AI-1-210-all-decades-CLOSED ledger live in
+`docs/research/308-projectile-ai-201-210-final.md`; the census renumbered
+26d → **162** (collision registry §6, d12 owns the 26d key).
+
+- **Folds 3+4 UNFOLDED** (`b8a4d1288` + `70fe977c3`): the
+  `LightningGenerator` + `MultiPointHitbox` port landed
+  (`lightning_generator.rs`, 738 lines) — the census proved the generator
+  is NOT render-only (`SolidTileCollision` truncates the bolts, the
+  truncation re-centers the 203 kill, the bolt positions ARE the damage
+  hitbox). Own `LCG32Random(ai[2])` stream, zero `Main.rand`;
+  `CalcRotations` stays the render-only skip. `storm_lightning_kill`
+  generates the real bolt; the `MultiPointHitbox` rides the pool's
+  `custom_hitbox` through `damage_pve_boxed`'s 203 arm;
+  `StormLightningCollisionCheck`'s full chain (explosion rect + liquid
+  `PlotLine` + multi-point) replaces the 64-px fold above. The
+  electrification `Next(4)` draws stay. 12 more witnesses written not run
+  (24 committed total: 15 module + 9 generator).
+- **Fold 2 (player.petting) IN FLIGHT, NOT COMMITTED**: the dirty-9
+  co-lane (idle ~3h at seal, hashes stable, NOT staged — the d20 SEAL
+  precedent) unfolds the 204's state-5 joy: `PettingInfo`/`pet_animal`/
+  `update_petting_animal`/`change_dir` (`player.rs`), the `TryPetting`
+  right-click chain + the `BlockInteractionWithProjectiles` decrement
+  (`world_sim/editing.rs`), the `PROJ_CUSTOM_CUES` id-42 trackable arm
+  (`audio.rs`, the digtoise joy `pal_digtoise_joy` style 289), the
+  `CanVisuallyHoldItem`/4952-light petting refusals. The fold bullet above
+  ("no ported petting layer") describes the COMMITTED state; the lane's
+  commit supersedes it. 7 more witnesses ride that commit.
+- **The folds that STAY**: gravDir −1 (upright-only), Legendary (the e25
+  curves live only on their unmerged sibling branch — the World carries
+  no game mode), the 205 tracked-loop sound body (d80's layer), the 208
+  charge/muzzle AI cues (`GlacierFang_Charging` `:36940` /
+  `GlacierFang_Muzzle` `:36961`, id-2 styles 210/201 — no pushed sounds
+  lane ports the play sites; the `sound_delay` latch + mana pay run), the
+  dust/gore/light/particle bodies, the PickTile App-drain seam.
+- **The d77c cue-1115 compose**: d77 `5f10560b2`'s `kill_tail_cue` 1115
+  arm (`(2, 27, pos.x, pos.y, 1.0)`, C# `:75502`) is ARMED-ON-D21 — the
+  row + the aiStyle-208 arm live here (`9fa9e9ba`), the cue map entry
+  lands at the merge hunk-disjoint (d21 ports no 1115 Kill cue; the
+  d76 1020/1105/1084 cues compose the same way against d21's draw-only
+  Kill seams). Receipt: research/308 S2.
+- **The ledger**: the C# aiStyle space is exactly 1..210 (`AI()` closes
+  `:36803-36807`; 809 `this.aiStyle = N` writes, 210 distinct, max 210,
+  zero 207 writes). All 21 decade lanes carry their band's machines;
+  the remaining gaps are the seven UNWIRED machines (d5's 41/42/43/46/49
+  + d7's 63/69 — bodies landed, rows/arms owed), a9's four
+  (156/164/169/206 — armed on a9, `UNARMED_ROWED` empties at its tip,
+  merge-pending), the kind-gated 170/171/173/179/180 (scan artifacts,
+  not gaps), and the 207 faithful no-op. CLOSED = census-complete +
+  machine-ported + witnesses-written; NOT merged, NOT dispatch-live
+  everywhere, NOT run. The per-tip evidence table: research/308 S3.

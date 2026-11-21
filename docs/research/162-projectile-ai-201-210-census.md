@@ -1,4 +1,13 @@
-# 26d — Projectile aiStyles 201-210 COVERAGE census (W4-d21)
+# 162 — Projectile aiStyles 201-210 COVERAGE census (W4-d21)
+
+> Renumbered 26d → **162** per the research-number collision registry
+> (`150-research-number-registry.md` §6, W4-d54 `0426245f2`): d12 owns
+> the 26d key (00:06:06), d21's add (02:40:39) is a loser → 162
+> (uncontested, the sequential 151-236 block). Executed by the d21 SEAL
+> round; the FINAL band table + the 1-210 ledger live in
+> `308-projectile-ai-201-210-final.md`. The `.rs` module-header cites
+> still say `26d-…` — the in-flight fold-2 lane owns those files; the
+> rename's code-comment sweep rides its commit (or the merge).
 
 > Researched 2026-11-21 against `a725acb0` (wave-3 complete). C# cites are
 > `decompiled/Terraria/Projectile.cs` (stable); Rust cites are
