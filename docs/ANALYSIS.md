@@ -39896,3 +39896,47 @@ S1-P-i57 follow-up — NOT landed here (the free-move finding shrinks its
 scope: the ~42 free moves drop out of the owed pool, leaving the
 tile-collision path). RNG-neutral (the drag has no draws). Witnesses
 WRITTEN NOT RUN (code-only — no cargo/rustc/rustfmt/tests/graphify).
+
+### The e3 AI-inline-40 coverage-table compose (W4-d53 RETIRE item 3)
+
+The d53-side compose of e3's AI-inline-40 coverage (e3 tip `0b48616fa`,
+research/125 SEALED — the AI-inline RETIRE). e3's region table
+(research/125 §"Region coverage", the 1195-site method-attribution cut)
+rows the `AI()` inline style machines (`:23199-36808`) at **233 sites:
+153 lane-cited (e3/f5/g63/g64) + 40 main-only stubs + 40 UNCITED**. The
+40 UNCITED are the AI-INLINE-40 window e3's round-2 ported; the compose
+verdict from d53's seat:
+
+| disposition | count | sites | owner / activating merge |
+| ----------- | ----- | ----- | ------------------------ |
+| e3 STAGED emitters | 34 | the 40-site ledger rows 1-37 minus the 3 wired | the cited d-lane machine merges (d5 style43, d6 guns+FlamingJack, d9 styles 81/86/87/89/90, d10 91/94/96/98, d12 explosions+DandelionSeed, d13 geyser+sandnado_mark, d14 elder_wins) |
+| e3 WIRED (live on e3's base) | 3 | 33993/34005 (578/579 vortex dissolve twin) + 56049 (1006 ShimmerArrow, the AI_001-edges-2) | live (`ai_vortex_ritual_dust` / `special_arrows::step_dust`) |
+| g64-CLAIMED (per-kind ≥401 axis) | 3 | 34020 (813 opacity tail), 35601/35681 (650 scan/point sparkles) | g64 `trail_813_*` / `trail_650_*` (the union-table, research/196) |
+
+**37 of 40 ported by e3 (34 STAGED + 3 WIRED), 3 g64-claimed — zero
+unclaimed in the AI-inline-40 window.** The two RETIRE flag flips e3
+re-verified at the moved tips: **321 FlamingJack** NOW rowed+machined on
+d6 (`7edfcd495`, `ai_flaming_jack` projectile.rs:4731, the `:28832-28838`
+zero-explicit-draw skip → the emitter ADDS the pool internals, the
+style87 add-shape) and **836 DandelionSeed** on d12 (`c98bd8937`,
+`ai_dandelion_seed` :10080, the `:34121-34126` latch-burst skip → the
+add-shape again); **981 SilverBullet** STILL unrowed (the 345-branch
+scan), its `ai001_silver_bullet_drip_981` stays STAGED for the bullet-row
+wave. The `_Old` residue resolved: `AI_019_Spears_Old` DEAD (zero
+callers tree-wide, 8 sites cite-dropped, the named-machine uncited floor
+87→79), `AI_009_MagicMissiles_Old` LIVE (the `:43199` type==491 head, 5
+sites task-seeded d1).
+
+**d53's compose receipt:** d53 owns NONE of the AI-inline-40 (its claim
+is the early-AI `:16851-22297` sites 1-40 + the wet-machine host, all
+before `AI()` at `:23199`); the early-AI region is FULLY claimed (e3's
+table: 28+15 sites, 0 uncited). The d53×e3 boundary is clean — d53's
+site 40 (`:22297` SuperStarSlash 977) is the keep-one-e3 (`star_slash_dust`),
+e3's window starts at `:22308`. The g64 `clone_dust` genericization
+keep-one CONFIRMED (e3 §4: bodies identical, only g64's 3 doc-comment
+lines differ — take either, prefer g64's docs); the g63 doc-66 `:79`
+census-error receipt published (the `:29245/29284` pair is the 1042
+ShimmerGunStream's, e3's `style60_shimmer_gun_trail_1042`, NOT the 358
+last-prism's — the g63 fix owed on g63's branch, no code collision).
+The compose adds no d53 code: the AI-inline-40 is e3's ported window +
+the d-lane activation contracts, d53's seat is the boundary witness.
