@@ -159,9 +159,11 @@ pub fn draw_menu_cue(line: u32) -> Option<&'static DrawMenuCueSite> {
 /// The colour-screen focus-change tick (`Main.cs:51274-51277`): after the four
 /// HSL bars run, `if (num51 != Main.focusColor) SoundEngine.PlaySound(12)`.
 /// `num51` is the focus captured at the block head; the tick fires once when
-/// the focused slider/bar changed this frame. Draw-free legacy id 12. The
-/// caller (the App draw loop) gates on the colour screen being live and drains
-/// the cue through `Audio` — this is the pure decision.
+/// the focused slider/bar changed this frame (enter AND leave). Draw-free
+/// legacy id 12. **W4-g23: WIRED** — `menu/mod.rs::draw_color_screen_chrome`
+/// runs the capture/reset (`:51117-51118`), maps the highlight flags to the
+/// focus ids (`:51149`/`:51181`/`:51218`/`:51255`) and queues through
+/// `Menu::pending_ticks`; the frame loop drains after `Menu::draw`.
 pub fn color_focus_tick(focus_before: i32, focus_after: i32) -> bool {
     focus_before != focus_after // `:51274`
 }
@@ -172,34 +174,54 @@ pub fn color_focus_tick(focus_before: i32, focus_after: i32) -> bool {
 /// is the row (0 = minus, 1 = plus), `num71` the channel (0 R, 1 G, 2 B), so
 /// the ids are 10/11/12 (minus) and 20/21/22 (plus). Fires once on the
 /// hover-enter edge. Draw-free id 12.
+///
+/// **W4-g23 wiring census: DEAD ARM — stays unwired.** The RGB block's
+/// `else if (flag)` at `:51284` follows the HSL block's `if (flag)` at
+/// `:51110` — the same `flag`, so the branch is unreachable in vanilla
+/// (the `:51285-51477` RGB labels/buttons/`colorDelay` machine never runs).
+/// The port must NOT wire this cue: there is no live C# call position.
 pub fn color_button_hover_tick(focus_color: i32, row: i32, channel: i32) -> bool {
     let id = (row + 1) * (channel + 10); // `:51386`/`:51390`
     focus_color != id
 }
 
-/// The volume/parallax value-bar hover tick (`Main.cs:51573-51576`): after the
+/// The volume value-bar hover tick (`Main.cs:51573-51576`): after the
 /// three bars run and `rightLock` latches, `if (IngameOptions.rightHover !=
-/// rightHover) SoundEngine.PlaySound(12)`. `right_hover` is the id captured at
-/// the block head (`-1` when none); `new_hover` is this frame's hovered bar.
-/// Fires once when the hovered bar changed. Draw-free id 12. The same shape
-/// covers the parallax block's single bar.
+/// rightHover) SoundEngine.PlaySound(12)`. `right_hover_before` is the
+/// persistent static captured at the block head (`:51527`, `-1` when none);
+/// `right_hover_after` is this frame's hovered bar. Fires once when the
+/// hovered bar changed — ENTER, bar-to-bar moves AND LEAVE (the comparison
+/// is `!=`, not `!= -1`). Draw-free id 12.
+///
+/// **W4-g23 wiring census correction:** the parallax block (`:51578-51653`)
+/// has NO `PlaySound` of its own — the earlier "same shape covers parallax"
+/// note was wrong. Only the menuMode 26 volume block ticks. Wired in
+/// `menu/mod.rs::volume_drag_pass` (the `Menu::pending_ticks` drain).
 pub fn value_bar_hover_tick(right_hover_before: i32, right_hover_after: i32) -> bool {
     right_hover_before != right_hover_after // `:51573`
 }
 
 /// `Main.CanceledGivingServerPassword` (`Main.cs:51950-51956`): the join
 /// password screen's cancel plays id 11 (`:51952`) then drops to menuMode 0
-/// and disconnects. The cue is the constant 11; the port's Back row currently
-/// returns to the port screen (the documented plan deviation,
-/// `menu/pages.rs:957-961`), so the cue arm is unwired here.
+/// and disconnects. **W4-g23: WIRED** — `menu/actions.rs`'s `Act::Nav` arm
+/// queues the id on the JoinPassword Back row (`:48592-48596`,
+/// `selectedMenu == 3`); the port's Back returns to the port screen (the
+/// documented plan deviation, `menu/pages.rs`), the cue id is the C#'s.
 pub fn canceled_giving_server_password_cue() -> u32 {
     11 // `:51952`
 }
 
 /// `Main.OnSubmitServerIP` (`Main.cs:52056-52062`): submitting the join IP
-/// plays id 12 (`:52059`) then opens menuMode 131. The port's
-/// `Menu::submit_join_ip` navigates but the blanket tick currently covers the
-/// cue; this is the per-site id the g22 seam should resolve to.
+/// plays id 12 (`:52059`) then opens menuMode 131. **W4-g23: WIRED** — both
+/// the Accept row (`menu/actions.rs`'s `Act::Nav` arm, `:50865-50868`) and
+/// the Enter path (`Menu::submit_join_ip`) queue the id; the frame drain
+/// plays it. This is a tail-site call position, NOT one of the 75 DrawMenu
+/// census rows — it does not ride g22's seam.
+///
+/// The sibling text-change ticks (`:50796` getIP, `:50901` getPort,
+/// `:48551`/`:48675` the password screens — `GetInputText`'s per-frame
+/// string compare) are DrawMenu-inline sites in g22's window boundary
+/// census; they ride g22's seam, not this lane.
 pub fn on_submit_server_ip_cue() -> u32 {
     12 // `:52059`
 }
@@ -210,9 +232,14 @@ pub fn on_submit_server_ip_cue() -> u32 {
 /// cancelled), `if (!this.unityMouseOver) SoundEngine.PlaySound(12)` then
 /// `unityMouseOver = true`. Fires once on the hover-enter edge. `eligible`
 /// folds the team/potion/netMode/wormhole gates (`:55960`); `was_hovering` is
-/// `unityMouseOver`. Draw-free id 12. The fullscreen map itself is unported
-/// (the `map.rs` draw is the minimap/fullscreen background only), so this
-/// machine lands unwired.
+/// `unityMouseOver`. Draw-free id 12.
+///
+/// **W4-g23 wiring census: DEFERRED — no live consumer.** The port's
+/// fullscreen map draws only the LOCAL player's head icon
+/// (`app/frame/draw.rs`'s `draw_player_map_icon`); the remote-player head
+/// loop (`Main.cs:55917-55976`), `HasUnityPotion` and `cancelWormHole` are
+/// unported. Wiring the cue would invent a call position; the machine
+/// stays unwired behind witnesses until the remote heads land.
 pub fn unity_map_hover_tick(eligible: bool, was_hovering: bool) -> bool {
     eligible && !was_hovering // `:55960` + `:55963`
 }
@@ -221,7 +248,14 @@ pub fn unity_map_hover_tick(eligible: bool, was_hovering: bool) -> bool {
 /// `MapIcon` button, on `mouseLeft && mouseLeftRelease`, plays id 10
 /// (`:56031`) then `mapFullscreen = false`. `hovered` is the inclusive rect
 /// test (`:56024`), `click_edge` the press. Returns the cue id when the close
-/// fires. The port's fullscreen-map close is not wired to this icon yet.
+/// fires.
+///
+/// **W4-g23 wiring census: DEFERRED — no live consumer.** The port's
+/// fullscreen map has no close icon (the `MapIcon[num87]` button at
+/// `(10, screenHeight - 40)` is undrawn); the port closes via Escape/`M`
+/// (`app/loop.rs`), whose C# arms (`Player.ToggleInv`/`TryOpeningFullscreenMap`)
+/// play NO sound — wiring 10 there would invent a cue. Stays unwired until
+/// the icon lands.
 pub fn fullscreen_map_close_cue(hovered: bool, click_edge: bool) -> Option<u32> {
     if hovered && click_edge {
         Some(10) // `:56031`
@@ -237,9 +271,16 @@ pub fn fullscreen_map_close_cue(hovered: bool, click_edge: bool) -> Option<u32> 
 /// Returns the new `hasClickPanOn` when the toggle fires (cue 12), `None`
 /// otherwise. `mode_is_click` folds `buttonControlMode == Click`,
 /// `can_toggle` is `CanTogglePanControlModeWithInteract()`, `right_just_pressed`
-/// is the `Utils.JustBecameTrue(Main.mouseRight, ...)` edge (`:62752`). The
-/// camera-pan port (`world_sim/camera.rs`) carries the free-fly pan only; this
-/// toggle arm is unwired.
+/// is the `Utils.JustBecameTrue(Main.mouseRight, ...)` edge (`:62752`).
+///
+/// **W4-g23 wiring census: DEFERRED — no live consumer.** The port's
+/// `world_sim/camera.rs::update_camera_pan` ports the `UpdateCameraPan`
+/// walk (`:62680-62720`) but not the `GetPlayerControlledCameraPan` source
+/// (`:62748-62832`): `PlayerInput.CurrentProfile.PanControl_Keyboard`,
+/// `hasClickPanOn`, `GetPanControlValues` (the scope/binocular pan factors)
+/// and the `_panControlKeyAvailable` latch are unported. The vanilla
+/// default mode is `Hold` (0), so the Click arm is unreachable without the
+/// profile UI anyway. Stays unwired behind witnesses.
 pub fn click_pan_toggle(
     mode_is_click: bool,
     can_toggle: bool,
@@ -255,20 +296,22 @@ pub fn click_pan_toggle(
 
 /// `Main.NewText` / `NewTextMultiline`'s cue tail (`Main.cs:64632-64642`):
 /// both overloads push the line to `chatMonitor` then `SoundEngine.PlaySound(12)`
-/// (`:64635` / `:64641`). The cue is the constant 12. The port's
-/// `ChatMonitor::new_text` is cue-less; the achievement caller plays
-/// `Menu_Tick` manually (`app/mod.rs:2162`), the other callers do not — the
-/// centralized tail is this id, unwired until the chat drain lands.
+/// (`:64635` / `:64641`). **W4-g23: WIRED** — centralized in
+/// `chat.rs::ChatMonitor::new_text` (the `pending_cues` queue); the frame
+/// loop drains once per frame (`app/frame.rs`) and the achievement
+/// subscriber drains its own lines inline (`app/mod.rs`), so every append
+/// plays exactly one 12, in append order.
 pub fn new_text_cue() -> u32 {
     12 // `:64635` / `:64641`
 }
 
 /// `Main.SelectPlayer`'s cue arms (`Main.cs:66208-66251`): with no pending
 /// callback, the multiplayer branch plays id 10 (`:66224`) and the
-/// single-player tail plays id 10 (`:66248`). Both are the constant 10; the
-/// port already plays `Menu_Open` on the front-screen `CharPlay` click
-/// (`app/flow.rs:1269`), so these are landed-by-equivalent — recorded here for
-/// the census. `multiplayer` selects the branch (both draw nothing, both 10).
+/// single-player tail plays id 10 (`:66248`). Both are the constant 10.
+/// **W4-g23: LANDED-BY-EQUIVALENT** — the port plays `Menu_Open` on the
+/// front-screen `CharPlay` click (`app/flow.rs:1269`), the port's
+/// `SelectPlayer` call position; no new wiring needed. Recorded for the
+/// census. `multiplayer` selects the branch (both draw nothing, both 10).
 pub fn select_player_cue(multiplayer: bool) -> u32 {
     let _ = multiplayer; // both arms play 10 (`:66224` / `:66248`)
     10
@@ -307,9 +350,16 @@ pub fn star_hit_case37(rng: &mut dyn FnMut(i32, i32) -> i32) -> (i32, f32, f32) 
 /// * 10`, and if the result still points down (`Y > 0`) it is flipped up
 /// (`Y *= -1`). Returns the reflected velocity; the caller bumps `starsHit`
 /// and plays the case-38 then case-37 pair (`:63168-63169`). `within_70` is
-/// the `Vector2.Distance(mouse, starPos) < 70f` gate (`:63158`). The star
-/// minigame is unported (the sky pass draws stars but runs no `starGame`), so
-/// this lands unwired behind witnesses.
+/// the `Vector2.Distance(mouse, starPos) < 70f` gate (`:63158`).
+///
+/// **W4-g23 wiring census: DEFERRED — no live consumer.** `Main.starGame`
+/// is set only by `WorldGen.Reset`'s everything-seed arm
+/// (`WorldGen.cs:11212-11215`) and cleared outside worldgen
+/// (`Main.cs:62899-62902`); the port's sky pass (`render/sky.rs`) draws
+/// static twinkling stars with no `Star.falling`/`fallSpeed`/`Update`
+/// (`Star.cs:165-176`) and no `starsHit`. The hit pair's exact RNG slots
+/// (case 38 then 37, audibility-gated, bare `Main.rand`) are pinned by the
+/// witnesses below; the wiring lands with the falling-star machine.
 pub fn star_hit_reflect(
     star_pos: [f32; 2],
     mouse: [f32; 2],

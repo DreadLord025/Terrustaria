@@ -332,6 +332,12 @@ pub struct Menu {
     /// grab — 0 music, 1 sound, 2 ambient, 3 parallax (`rightLock` 3/2/4 and
     /// the parallax block's 2). Cleared on release and on page changes.
     pub bar_grab: Option<u8>,
+    /// `IngameOptions.rightHover` (`Main.cs:51527-51528`): the persistent
+    /// static the volume block captures at its head, resets to -1 and lets
+    /// the bars re-fill (port ids 0/1/2, parallax 3). W4-g23: the `:51573`
+    /// hover-change tick reads the before/after edge. Like the C# static it
+    /// survives page changes (the parallax block fills it but never ticks).
+    bar_right_hover: i32,
     /// `Main.grabColorSlider` (`Main.cs:51104-51115`): the sticky HSL grab —
     /// 1 hue, 2 sat, 3 lum, 4 alpha; 0 when idle. Reset whenever the menu is
     /// not on a colour screen.
@@ -344,6 +350,16 @@ pub struct Menu {
     /// edit colour of the 25/252 screens. The struct default is all-zero, like
     /// XNA `Color`'s.
     pub sel_color: [u8; 4],
+    /// `Main.focusColor` (`Main.cs:2423`): the HSL block's focus id — 1 hue,
+    /// 2 sat, 3 lum, 4 alpha, 0 none. The W4-g23 wiring reads the change edge
+    /// for the `:51274-51277` tick (`main_sounds_batch3::color_focus_tick`).
+    /// The vanilla static is never reset off-screen; the port mirrors that.
+    pub focus_color: i32,
+    /// The chrome-pass cue queue (W4-g23): legacy ids the draw-time passes
+    /// recorded (`:51276` colour-focus tick, `:51575` volume-bar hover tick),
+    /// drained by the frame loop after `Menu::draw` — the C# plays them
+    /// inline inside `DrawMenu`, the port's draw half cannot borrow `Audio`.
+    pending_ticks: Vec<u32>,
     /// `Main.setKey` (`Main.cs:50408-50410` / `:50523-50526`): the bind row
     /// being rebound on the menuMode 27/272727 lists — the row shows `"_"`
     /// and the next key press fills it ([`Menu::key`]); `None` when idle.
@@ -409,9 +425,12 @@ impl Menu {
             mouse: Vec2::ZERO,
             mouse_down: false,
             bar_grab: None,
+            bar_right_hover: -1, // `IngameOptions.rightHover` (`IngameOptions.cs:32`, -1)
             color_grab: 0,
             hsl_bars: sliders::HslBars { h: -1.0, s: -1.0, l: -1.0, a: -1.0 },
             sel_color: [0, 0, 0, 0],
+            focus_color: 0, // `Main.focusColor` (`Main.cs:2423`, static default 0)
+            pending_ticks: Vec::new(),
             set_key: None,
             // Seeded from the persisted table (`Main.LoadSettings`'s `Key*`
             // reads, `Main.cs:4582-4600`) so the settings screen shows what the
@@ -559,6 +578,14 @@ impl Menu {
                 self.focus_keyboard = true;
             }
         }
+    }
+
+    /// W4-g23 — drains the chrome-pass cue queue ([`Self::pending_ticks`]):
+    /// the legacy ids the draw-time colour/volume passes recorded this frame,
+    /// in C# statement order (the colour block runs before the volume block).
+    /// The frame loop plays each through `Audio` after `Menu::draw` returns.
+    pub fn take_pending_ticks(&mut self) -> Vec<u32> {
+        std::mem::take(&mut self.pending_ticks)
     }
 
     /// Left click on the hovered row.
@@ -940,7 +967,18 @@ impl Menu {
             self.settings.ambient_volume,
         ];
         let had_grab = self.bar_grab.is_some();
-        volume_drag_pass(screen_w, self.mouse, self.mouse_down, &mut self.bar_grab, &mut volumes);
+        let tick = volume_drag_pass(
+            screen_w,
+            self.mouse,
+            self.mouse_down,
+            &mut self.bar_grab,
+            &mut volumes,
+            &mut self.bar_right_hover,
+        );
+        // W4-g23 — the `:51575` tick, queued for the frame loop's drain.
+        if tick {
+            self.pending_ticks.push(12); // `Main.cs:51575`
+        }
         self.settings.music_volume = volumes[0];
         self.settings.sound_volume = volumes[1];
         self.settings.ambient_volume = volumes[2];
@@ -964,6 +1002,7 @@ impl Menu {
             self.mouse_down,
             &mut self.bar_grab,
             &mut self.settings.parallax_scroll,
+            &mut self.bar_right_hover,
         );
         if had_grab && !self.mouse_down && self.persist {
             let _ = self.settings.save();
@@ -996,7 +1035,11 @@ impl Menu {
         // `num59 = 0.15f` (`Main.cs:51238-51239`), `0f` for 252 (`:51240-51241`).
         let lum_floor = if alpha_bar { 0.0 } else { 0.15 };
         let had_grab = self.color_grab != 0;
-        sliders::draw_color_sliders(
+        // `int num51 = Main.focusColor; Main.focusColor = 0;`
+        // (`Main.cs:51117-51118`): the block-head capture, then the reset.
+        let focus_before = self.focus_color;
+        self.focus_color = 0;
+        let highlight = sliders::draw_color_sliders(
             r,
             lookups,
             screen.x,
@@ -1008,6 +1051,20 @@ impl Menu {
             self.mouse_down,
             &mut self.color_grab,
         );
+        // `Main.focusColor = 1/2/3/4` (`:51149`/`:51181`/`:51218`/`:51255`):
+        // the active row's id — the highlight flags ARE the focus conditions.
+        for (i, hl) in highlight.iter().enumerate() {
+            if *hl {
+                self.focus_color = (i + 1) as i32;
+            }
+        }
+        // W4-g23 — `if (num51 != Main.focusColor) SoundEngine.PlaySound(12)`
+        // (`Main.cs:51274-51277`): the pure decision half, wired here; the
+        // frame loop drains `pending_ticks` after the draw (no `Audio` borrow
+        // inside the draw half).
+        if crate::main_sounds_batch3::color_focus_tick(focus_before, self.focus_color) {
+            self.pending_ticks.push(12); // `:51276`
+        }
         // `Main.selColor = Main.hslToRgb(Main.hBar, Main.sBar, Main.lBar)`
         // (`Main.cs:51279-51284`).
         self.sel_color = recompose_sel_color(alpha_bar, &self.hsl_bars);
@@ -1087,20 +1144,29 @@ fn value_bar_drag(
 /// The menuMode 26 drag pass (`Main.cs:51527-51572`): clears the sticky lock on
 /// release, lets the last hovered-or-grabbed bar win `rightHover` (music →
 /// sound → ambient, `:51570-51572`) and stores the dragged volumes.
+/// `right_hover` mirrors the persistent `IngameOptions.rightHover` static
+/// (`:51527-51528` head capture + reset). Returns the hover-change tick
+/// decision (W4-g23): `if (IngameOptions.rightHover != rightHover)
+/// SoundEngine.PlaySound(12)` (`:51573-51576`), via the pure half.
 fn volume_drag_pass(
     screen_w: f32,
     mouse: Vec2,
     mouse_down: bool,
     grab: &mut Option<u8>,
     volumes: &mut [f32; 3],
-) {
+    right_hover: &mut i32,
+) -> bool {
+    // `int rightHover = IngameOptions.rightHover; IngameOptions.rightHover =
+    // -1;` (`Main.cs:51527-51528`).
+    let hover_before = *right_hover;
+    *right_hover = -1;
     // `if (!Main.mouseLeft) { IngameOptions.rightLock = -1; }` (`Main.cs:51529-51531`).
     if !mouse_down {
         *grab = None;
     }
     // `float x = Main.screenWidth / 2 - 40 + 37` (`Main.cs:51479`).
     let right_x = screen_w / 2.0 - 40.0 + 37.0;
-    let mut right_hover: Option<u8> = None;
+    let mut hover: Option<u8> = None;
     // `num80 - 18 + {30, 60, 90}` (`Main.cs:51480`, `:51533`, `:51545`,
     // `:51557`); `rightLock` 3/2/4 are the port's 0/1/2. Later matches
     // overwrite `rightHover`, like the C# sequence.
@@ -1111,25 +1177,35 @@ fn volume_drag_pass(
             volumes[i] = v;
         }
         if hovered {
-            right_hover = Some(id);
+            hover = Some(id);
         }
     }
+    // `IngameOptions.rightHover = 3/2/4` (`:51539`/`:51551`/`:51563`) — the
+    // port ids ride the same persistent static.
+    *right_hover = hover.map_or(-1, |h| h as i32);
     // `if (IngameOptions.rightHover != -1) IngameOptions.rightLock =
     // IngameOptions.rightHover` (`Main.cs:51570-51572`).
-    if let Some(h) = right_hover {
+    if let Some(h) = hover {
         *grab = Some(h);
     }
+    // W4-g23 — `:51573`'s change-edge decision (fires on ENTER and LEAVE,
+    // including bar-to-bar moves; the pure half keeps the exact comparison).
+    crate::main_sounds_batch3::value_bar_hover_tick(hover_before, *right_hover)
 }
 
 /// The menuMode 28 drag pass (`Main.cs:51598-51652`): the parallax bar reuses
 /// the value-bar mechanics, storing `bgScroll = (int)(value * 100f)`
-/// (`Main.cs:51642`) into the 0..=100 slider.
+/// (`Main.cs:51642`) into the 0..=100 slider. `right_hover` rides the same
+/// persistent static — the parallax block fills it (`:51639`) but has NO
+/// `PlaySound` of its own (the whole `:51578-51653` block is cue-less; the
+/// W4-g23 census correction).
 fn parallax_drag_pass(
     screen_w: f32,
     mouse: Vec2,
     mouse_down: bool,
     grab: &mut Option<u8>,
     parallax_scroll: &mut u8,
+    right_hover: &mut i32,
 ) {
     // `if (!Main.mouseLeft) { IngameOptions.rightLock = -1; }` (`Main.cs:51601-51603`).
     if !mouse_down {
@@ -1142,6 +1218,10 @@ fn parallax_drag_pass(
     if let Some(v) = stored {
         // `Main.bgScroll = (int)(num98 * 100f)` (`Main.cs:51642`).
         *parallax_scroll = (v * 100.0) as u8;
+    }
+    // `IngameOptions.rightHover = 2` (`:51639`) — the port's parallax id 3.
+    if hovered {
+        *right_hover = 3;
     }
     // `if (IngameOptions.rightHover != -1) IngameOptions.rightLock =
     // IngameOptions.rightHover` (`Main.cs:51650-51652`).
@@ -3073,5 +3153,148 @@ mod tests {
         m.activate(5);
         assert_eq!(m.page, Page::Credits);
         assert!(m.hint.is_none());
+    }
+
+    // ---- W4-g23 wiring witnesses (written not run, code-only mode) --------
+
+    /// W4-g23 — the colour-focus tick wiring (`Main.cs:51117-51118`,
+    /// `:51149`/`:51181`/`:51218`/`:51255`, `:51274-51277`): the block-head
+    /// capture + reset, the highlight-flag → id map, and the change-edge
+    /// queue. Drives the SAME pure pass the chrome calls
+    /// (`sliders::color_sliders_update` — the draw wrapper's state half)
+    /// with the real bar geometry, then the chrome's decision sequence.
+    #[test]
+    fn w4_g23_the_colour_focus_tick_queues_on_the_change_edge() {
+        let mut m = menu(Page::CursorColor);
+        let left = sliders::color_slider_left(1600.0);
+        let tops = sliders::color_slider_tops(320.0);
+        let on_hue = Vec2::new(left + 89.0, tops[0] + 8.0);
+        // One chrome frame: capture, reset, run the pass, map the flags,
+        // compare — the `draw_color_screen_chrome` sequence (`:51117-51277`).
+        let mut frame = |m: &mut Menu, mouse: Vec2| {
+            let focus_before = m.focus_color; // `:51117`
+            m.focus_color = 0; // `:51118`
+            let hl = sliders::color_sliders_update(
+                1600.0, 320.0, &mut m.hsl_bars, 0.15, false, mouse, false, &mut m.color_grab,
+            );
+            for (i, h) in hl.iter().enumerate() {
+                if *h {
+                    m.focus_color = (i + 1) as i32; // `:51149` etc.
+                }
+            }
+            if crate::main_sounds_batch3::color_focus_tick(focus_before, m.focus_color) {
+                m.pending_ticks.push(12); // `:51276`
+            }
+        };
+        // Frame 1: pointer enters the hue row — focus 0 → 1, one tick.
+        frame(&mut m, on_hue);
+        assert_eq!(m.focus_color, 1);
+        assert_eq!(m.take_pending_ticks(), vec![12], "the enter edge");
+        // Frame 2: still on the hue row — 1 → 1, NO tick.
+        frame(&mut m, on_hue);
+        assert!(m.take_pending_ticks().is_empty(), "no repeat inside");
+        // Frame 3: pointer moves to the luminosity row — 1 → 3, tick.
+        frame(&mut m, Vec2::new(left + 89.0, tops[2] + 8.0));
+        assert_eq!(m.focus_color, 3);
+        assert_eq!(m.take_pending_ticks(), vec![12], "the row-to-row move");
+        // Frame 4: pointer leaves every row — 3 → 0, the LEAVE edge ticks
+        // (`num51 != focusColor` fires both ways, `:51274`).
+        frame(&mut m, Vec2::new(10.0, 10.0));
+        assert_eq!(m.focus_color, 0);
+        assert_eq!(m.take_pending_ticks(), vec![12], "the leave edge");
+    }
+
+    /// W4-g23 — the volume-bar hover tick wiring (`Main.cs:51527-51528`,
+    /// `:51539`/`:51551`/`:51563`, `:51573-51576`): the persistent-static
+    /// head capture + reset, the bar refill, the change-edge decision.
+    /// Exercises the real `volume_drag_pass` with the port's bar geometry.
+    #[test]
+    fn w4_g23_the_volume_hover_tick_fires_on_enter_move_and_leave() {
+        let mut m = menu(Page::Volume);
+        // The music bar's hit centre: right_x = 1600/2 - 40 + 37 = 797,
+        // cy = 320 - 18 + 30 = 332 (`:51479-51480`, `:51533`).
+        let right_x = 1600.0 / 2.0 - 40.0 + 37.0;
+        let (_, hit) = sliders::value_bar_rects(right_x, 332.0);
+        let on_music = Vec2::new(hit[0] + hit[2] * 0.5, hit[1] + hit[3] * 0.5);
+        // Frame 1: pointer enters the music bar — -1 → 0, tick.
+        m.mouse = on_music;
+        m.mouse_down = false;
+        m.drag_volume_screen(1600.0);
+        assert_eq!(m.bar_right_hover, 0);
+        assert_eq!(m.take_pending_ticks(), vec![12], "the enter edge");
+        // Frame 2: same bar — 0 → 0, no tick.
+        m.drag_volume_screen(1600.0);
+        assert!(m.take_pending_ticks().is_empty(), "no repeat inside");
+        // Frame 3: pointer moves to the ambient bar (cy = 392) — 0 → 2, tick.
+        let (_, hit) = sliders::value_bar_rects(right_x, 392.0);
+        m.mouse = Vec2::new(hit[0] + hit[2] * 0.5, hit[1] + hit[3] * 0.5);
+        m.drag_volume_screen(1600.0);
+        assert_eq!(m.bar_right_hover, 2);
+        assert_eq!(m.take_pending_ticks(), vec![12], "the bar-to-bar move");
+        // Frame 4: pointer leaves the bars — 2 → -1, the LEAVE edge ticks.
+        m.mouse = Vec2::new(10.0, 10.0);
+        m.drag_volume_screen(1600.0);
+        assert_eq!(m.bar_right_hover, -1);
+        assert_eq!(m.take_pending_ticks(), vec![12], "the leave edge");
+    }
+
+    /// W4-g23 — the parallax block is CUE-LESS (`Main.cs:51578-51653` has no
+    /// `PlaySound`; the batch-3 doc's "same shape covers parallax" is the
+    /// census correction): the pass fills the shared `rightHover` static
+    /// but never queues a tick.
+    #[test]
+    fn w4_g23_the_parallax_bar_fills_right_hover_but_never_ticks() {
+        let mut m = menu(Page::Parallax);
+        // The parallax bar: right_x = 1600/2 - 40 = 760, cy = 412 (`:51633`).
+        let (_, hit) = sliders::value_bar_rects(1600.0 / 2.0 - 40.0, 412.0);
+        m.mouse = Vec2::new(hit[0] + hit[2] * 0.5, hit[1] + hit[3] * 0.5);
+        m.mouse_down = false;
+        m.drag_parallax_screen(1600.0);
+        assert_eq!(m.bar_right_hover, 3, "the port's parallax id fills the static");
+        assert!(m.take_pending_ticks().is_empty(), "no PlaySound in the block");
+        // Leaving also stays silent (the C# block has no comparison tail).
+        m.mouse = Vec2::new(10.0, 10.0);
+        m.drag_parallax_screen(1600.0);
+        assert!(m.take_pending_ticks().is_empty());
+    }
+
+    /// W4-g23 — the IP-submit cue arm (`Main.cs:52056-52062`,
+    /// `:50865-50868`): BOTH the Accept row (`selectedMenu == 9`) and the
+    /// Enter path reach `OnSubmitServerIP`'s `PlaySound(12)` (`:52059`).
+    #[test]
+    fn w4_g23_the_ip_submit_ticks_on_the_accept_row_and_enter() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        // The Accept row (row 9, enabled once the IP is non-blank).
+        let mut m = menu(Page::JoinIp);
+        m.get_ip = "127.0.0.1".into();
+        m.activate(9);
+        assert_eq!(m.page, Page::JoinPort);
+        assert_eq!(m.take_pending_ticks(), vec![12], "`:52059` via the row");
+        // The Enter path (`Main.inputTextEnter`, `:50865-50868`).
+        let mut m = menu(Page::JoinIp);
+        m.get_ip = "127.0.0.1".into();
+        m.key(winit::keyboard::KeyCode::Enter);
+        assert_eq!(m.page, Page::JoinPort);
+        assert_eq!(m.take_pending_ticks(), vec![12], "`:52059` via Enter");
+    }
+
+    /// W4-g23 — the password-cancel cue arm (`Main.cs:51950-51956`,
+    /// `:48592-48596`): the join-password Back row plays 11
+    /// (`CanceledGivingServerPassword`, `:51952`). The port's Back returns
+    /// to the port screen (the documented plan deviation); the cue id is
+    /// the C#'s either way. Escape walks the parent WITHOUT the cue — the
+    /// C# `flag5` gamepad-Back arm is unported, so no id is invented.
+    #[test]
+    fn w4_g23_the_password_cancel_back_row_ticks_11() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let mut m = menu(Page::JoinPassword);
+        m.activate(3); // the Back row
+        assert_eq!(m.page, Page::JoinIp);
+        assert_eq!(m.take_pending_ticks(), vec![11], "`:51952`");
+        // Escape (the port's parent walk) queues nothing.
+        let mut m = menu(Page::JoinPassword);
+        m.key(winit::keyboard::KeyCode::Escape);
+        assert_eq!(m.page, Page::JoinPort);
+        assert!(m.take_pending_ticks().is_empty());
     }
 }

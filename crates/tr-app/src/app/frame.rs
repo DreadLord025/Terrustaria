@@ -463,6 +463,12 @@ impl App {
         // the update branch queued this frame become popups + the chat line
         // + the cue. S1-E-26 wave A.
         self.drain_achievement_completions();
+        // W4-g23 — the `Main.NewText`/`NewTextMultiline` cue tails
+        // (`Main.cs:64635`/`:64641`), centralized in `ChatMonitor::new_text`:
+        // every chat append this frame (deaths, rolls, server messages, the
+        // bed/spawn notices) plays its 12, in append order. The achievement
+        // subscriber drained its own lines already; this covers the rest.
+        self.chat.drain_new_text_cues(&self.audio);
         // S1-B-8 — the draw-half pre-snapshot spine (see `frame/world.rs`);
         // the pure field snapshots below stay inline: the draw region's
         // borrow scaffolding, consumed by the destructure.

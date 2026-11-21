@@ -152,6 +152,29 @@ impl Menu {
                 if self.in_game_keybinds {
                     return Action::ReturnToWorld;
                 }
+                // W4-g23 — the two tail-site cue arms whose C# call positions
+                // are the standalone submit/cancel functions, not DrawMenu
+                // rows (the 75-site census rides g22's seam):
+                match (self.page, *page) {
+                    // The Accept row (`Main.cs:50865-50868`, `selectedMenu
+                    // == 9`) calls `OnSubmitServerIP` — `PlaySound(12)` at
+                    // `:52059`. The Enter twin queues in `submit_join_ip`.
+                    (Page::JoinIp, Page::JoinPort) => {
+                        self.pending_ticks
+                            .push(crate::main_sounds_batch3::on_submit_server_ip_cue());
+                    }
+                    // The Back row (`Main.cs:48592-48596`, `selectedMenu
+                    // == 3`) calls `CanceledGivingServerPassword` —
+                    // `PlaySound(11)` at `:51952`. The port's Back returns
+                    // to the port screen (the documented plan deviation,
+                    // `pages.rs`); the cue id is the C#'s either way.
+                    (Page::JoinPassword, Page::JoinIp) => {
+                        self.pending_ticks.push(
+                            crate::main_sounds_batch3::canceled_giving_server_password_cue(),
+                        );
+                    }
+                    _ => {}
+                }
                 self.nav_to(*page);
                 Action::None
             }
@@ -488,7 +511,12 @@ impl Menu {
     /// `Main.OnSubmitServerIP` (`Main.cs:52056-52062`): store the text, then
     /// `menuMode = 131` and `clrInput()` (the key-state reset, `:20001-20004`).
     /// No validation — the vanilla quirk above lets a blank IP through.
+    /// W4-g23: the `PlaySound(12)` (`:52059`) queues for the frame drain —
+    /// the Enter path (`:50865-50868`) reaches the cue here; the Accept row
+    /// queues in `activate`'s `Act::Nav` arm.
     fn submit_join_ip(&mut self) {
+        self.pending_ticks
+            .push(crate::main_sounds_batch3::on_submit_server_ip_cue()); // `:52059`
         self.nav_to(Page::JoinPort);
     }
 

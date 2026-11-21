@@ -67,6 +67,12 @@ pub struct ChatMonitor {
     pub blink_timer: u32,
     /// `Main.textBlinkerState`: `1` draws the `|` cursor.
     pub blink_on: bool,
+    /// W4-g23 — `Main.NewText`/`NewTextMultiline`'s `PlaySound(12)` tails
+    /// (`Main.cs:64635`/`:64641`): one legacy id per append, drained by the
+    /// App once per frame (`ChatMonitor` has no `Audio` — the pure monitor
+    /// records the cue, the frame loop plays it). The C# plays inline at
+    /// the append; the port's drain preserves the per-line count and order.
+    pending_cues: Vec<u32>,
 }
 
 impl ChatMonitor {
@@ -86,6 +92,32 @@ impl ChatMonitor {
         );
         while self.messages.len() > MESSAGE_CAP {
             self.messages.pop();
+        }
+        // `Main.NewText`'s `SoundEngine.PlaySound(12)` tail (`Main.cs:64635`;
+        // the multiline twin `:64641` folds into the same append) — W4-g23
+        // wires the centralized cue here; the App drains it per frame.
+        self.pending_cues
+            .push(crate::main_sounds_batch3::new_text_cue());
+    }
+
+    /// W4-g23 — drains the `NewText` cue queue: the legacy ids the appends
+    /// recorded since the last drain, in append order. The frame loop plays
+    /// each (`12` → `Menu_Tick`); one cue per line, like the C# tail.
+    pub fn take_pending_cues(&mut self) -> Vec<u32> {
+        std::mem::take(&mut self.pending_cues)
+    }
+
+    /// W4-g23 — the App-side drain of [`Self::take_pending_cues`]: plays each
+    /// queued `NewText` tail through `Audio` (12 → `Menu_Tick`, the
+    /// `Main.cs:64635`/`:64641` ids). The frame loop calls this once per
+    /// frame; the achievement subscriber calls it inline after its append.
+    pub fn drain_new_text_cues(&mut self, audio: &crate::audio::Audio) {
+        for id in self.take_pending_cues() {
+            audio.play(match id {
+                10 => "Menu_Open",
+                11 => "Menu_Close",
+                _ => "Menu_Tick", // 12
+            });
         }
     }
 
@@ -518,5 +550,29 @@ mod tests {
         // The expired line stays in the scrollback (the 500-line log).
         assert_eq!(chat.messages.len(), 2);
         assert_eq!(chat.visible_lines(true).count(), 2);
+    }
+
+    /// W4-g23 — the `NewText` cue tail wiring (`Main.cs:64632-64642`): every
+    /// append queues exactly one legacy 12 (`:64635`/`:64641`), the drain
+    /// empties the queue in append order, and `update` (the timer decay)
+    /// queues nothing.
+    #[test]
+    fn w4_g23_every_new_text_append_queues_one_12_and_the_drain_empties() {
+        let mut chat = ChatMonitor::default();
+        chat.new_text("first", COLOR_DEATH);
+        chat.new_text("second", COLOR_WORLD);
+        assert_eq!(chat.take_pending_cues(), vec![12, 12], "one per append");
+        assert!(chat.take_pending_cues().is_empty(), "the drain empties");
+        // The timer decay is not an append — no cue.
+        chat.update();
+        assert!(chat.take_pending_cues().is_empty());
+        // The send path folds into new_text, so it cues too.
+        chat.send(
+            "hello",
+            "Belsin",
+            &mut tr_core::UnifiedRandom::new(1),
+            &mut crate::emotes::EmoteSystem::default(),
+        );
+        assert_eq!(chat.take_pending_cues(), vec![12]);
     }
 }
