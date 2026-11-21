@@ -1724,12 +1724,21 @@ impl SceneState {
     }
 
     /// `SceneState.UpdateShimmer` (`SceneState.cs:283-309`): the two ramps.
-    /// The monolith states (`:284,288`) and the perspective-player shimmering
-    /// term land with their systems (M4 events / M2-BUFF shimmer); the active
-    /// trigger is `metrics.ZoneShimmer` with its depth window.
+    /// W4-d70 DOC-SWEEP: the `ShimmerMonolithState` terms (`:285-289`) are
+    /// ported — state 1 (the placed monolith's on frame) triggers, state 2
+    /// (the off frame) suppresses. The perspective-player
+    /// `shimmerMonolithShader` term (`Player.ApplyShader` 5347) has no port
+    /// field yet (the accessory shader grants are unported), so it folds to
+    /// false; the active trigger is `metrics.ZoneShimmer` with its depth
+    /// window plus the monolith state.
     fn update_shimmer(&mut self, metrics: &SceneMetrics) {
-        let flag = metrics.zone_shimmer
+        let mut flag = metrics.shimmer_monolith_state == 1
+            || metrics.zone_shimmer
             || (metrics.player_shimmering && metrics.underground_for_shimmering);
+        // `:286-289`: the off frame suppresses every trigger.
+        if metrics.shimmer_monolith_state == 2 {
+            flag = false;
+        }
         if flag {
             move_towards_impl(
                 self.skip_transitions,
@@ -3763,6 +3772,29 @@ mod tests {
             "alpha decays after the delay: {}",
             st.shimmer_alpha
         );
+    }
+
+    /// W4-d70 DOC-SWEEP — `SceneState.cs:285-289`: the ShimmerMonolith's on
+    /// frame (state 1) triggers the ramps without the zone; the off frame
+    /// (state 2) suppresses even an active zone.
+    #[test]
+    fn the_shimmer_monolith_state_gates_the_ramps() {
+        let mut m = SceneMetrics::new();
+        // No zone, no shimmering player — only the monolith.
+        m.shimmer_monolith_state = 1;
+        let mut st = SceneState::new();
+        for _ in 0..40 {
+            st.update(&m);
+        }
+        assert!(st.shimmer_alpha >= 0.99, "the on frame triggers: {}", st.shimmer_alpha);
+        // The off frame suppresses an otherwise-active zone.
+        m.zone_shimmer = true;
+        m.shimmer_monolith_state = 2;
+        let mut st2 = SceneState::new();
+        for _ in 0..40 {
+            st2.update(&m);
+        }
+        assert_eq!(st2.shimmer_alpha, 0.0, "the off frame suppresses");
     }
 
     /// The zone needs the depth window (`SceneMetrics.cs:704`): the count

@@ -110,7 +110,7 @@ format and alpha behaviour as the vanilla XNA stack, so the frame is pixel-ident
 | Sampler state: `PointClamp` | PORTED | `sprite.rs:179-187` | One nearest + clamp-to-edge sampler for the whole atlas; matches `Main.DefaultSamplerState = PointClamp` (`Main.cs:2780`). |
 | Sampler state: `LinearClamp` (`Main.cs:45025`, `48204`, `55613`) | MISSING | — | The vanilla's UI/logo paths that sample linearly (and `Main.SamplerStateForCursor`, `Main.cs:45257`) cannot be reproduced; the port has one sampler for every draw. |
 | Scissor rects | MISSING | — | The vanilla saves/restores `GraphicsDevice.ScissorRectangle` around scissored batches (`Main.cs:25403-25424`, `Main.cs:40406-40414`, `Main.ScissorState` at `Main.cs:2329`). The port has **no scissor anywhere** — `grep set_scissor` over `crates/` returns nothing, and `tr-app/src/ui/char_creation.rs:1859` admits it: "the port has no scissor, so they are skipped" (`UIList.OverflowHidden`). |
-| Screen shake / camera offset | PARTIAL | `tr-app/src/settings.rs:180,291` (flag only) | Vanilla: `Main.UseScreenShake` (435, default true at 66575) plus the `MoonLordShake` **screen filter** (`Main.cs:64976-64984`, `Main.cs:52194`). The port keeps the option flag but the filter is inert: `PASS_TABLE` maps `"MoonLordShake" → FilterMoonLordShake` with pass index **0** = passthrough (`post.rs:147`). No camera-offset shake exists in vanilla either (the only `shake` hits are `UseScreenShake`, `MoonLordShake`, tree shakes, `punchCameraModifier.IsAScreenShake`), so the camera model matches; the *filter* is missing (D-7). |
+| Screen shake / camera offset | DONE (S1-G-6 + W4-d70) | `tr-app/src/settings.rs:180,291` (flag), `world_sim/lunar.rs` (the tick driver), `tr-core/src/scene.rs` (`moon_lord_target_position`/`moon_lord_shader_apply`), `post.wgsl` pass 10 | Vanilla: `Main.UseScreenShake` (435, default true at 66575) plus the `MoonLordShake` **screen filter** (`Main.cs:64976-64984`, `Main.cs:52194`). The filter is live: `PASS_TABLE` maps `"MoonLordShake" → FilterMoonLordShake` pass **10**, the countdown intensity feeds `UseIntensity`, and W4-d70 landed the `UpdateMoonLordIndex` anchor + `LatestFilterStrength` (the `GetMoonLordColoring` input). The compiled HLSL amplitude is a visual approximation (D-12); the anchor-relative falloff is untranslated (the shake stays whole-view). No camera-offset shake exists in vanilla either, so the camera model matches. |
 | View transform / zoom | PARTIAL | `sprite.wgsl:85-89`, `frame.rs` (draw_cam) | Vanilla: `Main.Transform = GameViewMatrix.TransformationMatrix` (2743) — a CPU-side matrix; the zoom is `GameZoomTarget` clamped 1..2 (`Main.cs:16808`, `16812`) with `ForcedMinimumZoom` (243). Port: the transform is computed in the vertex shader from `Globals.cam`/`zoom`; the zoom clamp exists in the settings loader (`settings.rs:446`) but the *runtime* `GameZoomTarget` step and `ForcedMinimumZoom` have no located equivalent (module 01/02 territory). The port additionally snaps the camera to the zoom grid (`frame.rs:817` per module 02) — vanilla applies a raw scale matrix (D-8). |
 | Render-target format & alpha semantics | PORTED | `gpu.rs:87-92,94-112,145-176`, `post.rs:512` | The surface picks the first **sRGB** format; the offscreen scene target reuses `gpu.config.format` (`gpu.rs:145`) so the scene pass sRGB-encodes on store and the filter pass round-trips byte-exact (`post.rs:20-25`). Atlas and map textures are `Rgba8UnormSrgb` (`sprite.rs:143`, `541`); the font pages are BC2/DXT3 (`sprite.rs:443`) — the retail `SurfaceFormat.Dxt3`. Alpha: `alpha_mode = caps.alpha_modes[0]` (opaque on desktop) and the atlas keeps the authored alpha; the water mask is `R8Unorm` (`water_mask.rs:20`). |
 | Tiles 16 px on an 18 px sheet grid | PORTED | `atlas.rs::SheetLayout::Tile` (13-33) | `geometry() == (18, 0)` — matches AGENTS.md and `ANALYSIS.md:1416`. |
@@ -248,7 +248,18 @@ equation, the tint pre-linearisation, the draw-call count or the atlas UV phase.
   `FilterHeatDistortion`/`FilterWaterDistortion` HLSL is not in the decompile. Admitted
   in `post.wgsl:134-137` and in the M1.4-BG-18 ROADMAP row.
 - **D-13 — Twenty of 29 scene filters are inert (behavioural, medium).**
-  `post.rs::PASS_TABLE` (136-175) gives pass index 0 to Nebula/Solar/Stardust/Vortex,
+  **Re-censused W4-d70 DOC-SWEEP (2026-11-21):** `post.rs::PASS_TABLE` (140-179) has
+  29 rows; 10 carry a real WGSL pass (Graveyard 1, Noir 2, BloodMoon 3, Sandstorm
+  fg/bg 4/5, Blizzard fg/bg 6/7, HeatDistortion 8, WaterDistortion 9, MoonLordShake
+  10) and 19 resolve to passthrough 0 (Nebula/Solar/Stardust/Vortex, the four
+  Monolith rows, MoonLord, MonolithMoonLord, testInvert, Sepia, the three Crystal
+  rows, Test/Test2/Test3, CRT). The MoonLordShake row is now live (S1-G-6 + W4-d70),
+  so the old "Twenty" count is 19. The activation readers are a separate gap: the
+  tower/monolith/MoonLord/Sepia/CRT/Test2 rows have no `ManageSpecialBiomeVisuals`
+  reader in the driver (`filters.rs:314-317`), and Noir's reader is absent too (the
+  `noir_monolith` metric is scanned but never activates the board slot). The full
+  per-row census is `docs/research/111-doc-sweep-screenfx.md`. The original text
+  follows. `post.rs::PASS_TABLE` (136-175) gives pass index 0 to Nebula/Solar/Stardust/Vortex,
   the four Monolith rows, MoonLord(+Shake), testInvert, Sepia, the three Crystal rows,
   Test/Test2/Test3 and CRT. The ROADMAP row admits "towers/monoliths/Aurora/Sepia OUT";
   the MoonLord shake (D-7) is not in that list.
@@ -272,10 +283,15 @@ equation, the tint pre-linearisation, the draw-call count or the atlas UV phase.
   `DrawPrettyStarSparkle` (`:35297-35313`), `DrawInfernoRings` (`:64275-64324`)
   and `DrawLensFlare` (`NextHorizonRenderer.cs:363-533`), wired at the
   `Main.cs:62316-62320` seam. `Player` now carries `defendedByPaladin`/`inferno`/
-  `flameRingScale`/`flameRingRot` (the buff-43/116 arms). Deviations: the paladin
-  peer loops no-op until `PlayerNet` carries team/shield state; the lens flare's
-  sun-occlusion mask + advanced-shadow offset are unported. Details in ANALYSIS
-  "The screen effects (S1-E-16)".
+  `flameRingScale`/`flameRingRot` (the buff-43/116 arms). **W4-d70 DOC-SWEEP
+  (2026-11-21):** the paladin peer loops are live (`PlayerNet` team/dead +
+  the inventory-derived shield flag); the lens flare's advanced-shadow offset
+  + sun-scorch override are ported (the `Player` shadow ring + the vampire
+  sun-scorch chain); the `MoonlordDeathDrama` producers (the core/DD2 light
+  ramps, the crash explosions, the death piece-fling) drain into `SceneState`.
+  Remaining deviation: the GPU sun-occlusion pixel mask (a render-target
+  readback, not a tile probe). Details in ANALYSIS "The screen effects
+  (S1-E-16)" + `docs/research/111-doc-sweep-screenfx.md`.
 
 ## Task seeds
 

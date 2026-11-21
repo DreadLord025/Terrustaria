@@ -9,8 +9,14 @@
 //!
 //! The C# routine reads `Main.*` statics; the port passes them per frame
 //! through [`SceneVisualInputs`]. The `Noir` parameter block is ported and
-//! unit-tested but has no M1 activation path (the monolith is M4 content);
-//! HeatDistortion/WaterDistortion/Aurora are phase-4/sky-manager work.
+//! unit-tested but has no M1 activation path (the monolith is M4 content).
+//! HeatDistortion/WaterDistortion ARE ported (phase 4: the board slots, the
+//! `heat_zone_flags`/`heat_distortion_intensity`/`water_distortion_intensity`
+//! formulas, the WGSL distortion passes 8/9 + the water mask); the compiled
+//! HLSL amplitudes are visual approximations and the WaterDistortion
+//! entity-wave/ripple buffer is not ported (the mask is the liquid coverage).
+//! Aurora is a `SkyManager` visual, not a filter. W4-d70 DOC-SWEEP: the
+//! HeatDistortion branches read the live `sun_scorch_counter`.
 
 use tr_core::scene::{
     EffectPriority, FilterBoard, FilterId, Sandstorm, SceneMetrics, SceneState, WaterShader,
@@ -314,7 +320,10 @@ impl FilterDriver {
         // The `ManageSpecialBiomeVisuals` subset, in the source's call order
         // (the activation order is the same-priority tie-break). The tower/
         // monolith/MoonLord rows (`:81-91`), Aurora (`:95`) and
-        // Sepia/Noir/CRT/Test2 (`:101-104`) have no M1 activation reader.
+        // Sepia/CRT/Test2 (`:101,103-104`) have no M1 activation reader.
+        // Noir (`:102`) has a scanned `noir_monolith` metric but no board
+        // manage call either — its pass + parameter block are ported, the
+        // activation reader is the gap (W4-d70 DOC-SWEEP census, research/111).
         let (heat_underworld, heat_desert) = heat_zone_flags(
             metrics.tile_center.1,
             inputs.max_tiles_y,
