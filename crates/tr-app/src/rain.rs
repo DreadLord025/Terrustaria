@@ -5,7 +5,13 @@
 //! that ends the event, and one drop per `MakeRain` spawn slot per tick with the
 //! original fall velocity (`wind * 18, 14` px/tick). Drops are drawn rotated around
 //! their top-left origin with the local light colour, and die on solid or wet tiles
-//! with a splash. The ambient snowfall is NOT this rig's: vanilla's `Main.snowing()`
+//! (`Collision.SolidCollision`/`WetCollision`, `Rain.cs:117`) with a splash — the
+//! gfx-quality-gated `Dust.NewDust(position - velocity, 2, 2, Dust.dustWater())`
+//! recipe (`Rain.cs:120-131`, g67 `40128e5d` transplanted onto this branch's
+//! verbatim core, `docs/research/83-weather-reconcile.md` §3) drained into the
+//! App's shared `DustPool` (the d50 contract), the water-style splash family
+//! (33/98..105/123/288) whose per-tick physics is the `Dust.cs:1834-1874` arm
+//! (`water_splash_arm` below). The ambient snowfall is NOT this rig's: vanilla's `Main.snowing()`
 //! (`Main.cs:13032-13116`) spawns `Dust` type 76 into the shared pool wherever the
 //! scene metrics count snow tiles at the surface — `crate::snow` owns that spawn,
 //! AI and draw (W4-d130); the old biome-gated flake approximation is retired.
@@ -62,7 +68,6 @@ const CLOUD_BG_RAMP_PER_TICK: f32 = 0.005;
 const NUM_CLOUDS_STAND_IN: i32 = 100;
 const DROP_W: f32 = 2.0;
 const DROP_H: f32 = 40.0;
-const SPLASH_LIFE: f32 = 0.32;
 
 #[derive(Clone, Copy, Debug, Default)]
 struct Drop {
@@ -73,14 +78,6 @@ struct Drop {
     rot: f32,
     /// Rain frame type (`waterStyle * 3 + rand(3)`, `Rain.cs:205`).
     kind: u8,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct Splash {
-    pos: Vec2,
-    vel: Vec2,
-    life: f32,
-    frame: u8,
 }
 
 /// A `WaterfallManager.TrySparkling` particle: `Dust.NewDust(..., 43, ...)` with
@@ -129,7 +126,6 @@ pub struct Rain {
     /// `DrawRain`/`Update` walk order and `NewRain` takes the first inactive
     /// slot (`Rain.cs:187-194`), so the pool keeps fixed slots, never compacts.
     drops: Vec<Drop>,
-    splashes: Vec<Splash>,
     sparkles: Vec<Sparkle>,
     rng: u64,
     forced: Option<f32>,
@@ -273,7 +269,6 @@ impl Rain {
             lightning_speed: 0.0,
             lightning_decay: 0.008,
             drops: vec![Drop::default(); MAX_DROPS],
-            splashes: Vec::with_capacity(128),
             sparkles: Vec::with_capacity(64),
             rng,
             forced,
@@ -392,19 +387,43 @@ impl Rain {
     /// (`update_time`, driven by `world_sim::weather::update_world_tick`) and the
     /// lightning chain runs there too (`thunder_step`). `day_rate` scales the
     /// ramps (`Main.cs:61902-61906`'s `num4 < 1 → 1` clamp shape).
-    pub fn update(&mut self, world: &World, inputs: &RainInputs, dt: f32) {
+    ///
+    /// `pool` is the splash drain seam (g67 `40128e5d`, transplanted per
+    /// `docs/research/83-weather-reconcile.md` §3): `Some((DustPool, SpawnCtx))`
+    /// from the world pass (the d50 contract — collision splashes spawn
+    /// through `DustPool::new_dust` on Rain's own stream); `None` keeps the
+    /// gate rolling with the spawn dropped (the drop-sim tests).
+    pub fn update(
+        &mut self,
+        world: &World,
+        inputs: &RainInputs,
+        dt: f32,
+        mut pool: Option<(
+            &mut tr_core::particles::DustPool,
+            &tr_core::particles::SpawnCtx,
+        )>,
+    ) {
         let step = 1.0 / TICKS_PER_SEC;
         let mut acc = self.accum + dt.min(0.25);
         let mut steps = 0;
         while acc >= step && steps < 12 {
-            self.tick(world, inputs);
+            self.tick(
+                world,
+                inputs,
+                pool.as_mut().map(|(p, c)| (&mut **p, &**c)),
+            );
             acc -= step;
             steps += 1;
         }
         self.accum = acc.min(step * 12.0);
     }
 
-    fn tick(&mut self, world: &World, i: &RainInputs) {
+    fn tick(
+        &mut self,
+        world: &World,
+        i: &RainInputs,
+        pool: Option<(&mut tr_core::particles::DustPool, &tr_core::particles::SpawnCtx)>,
+    ) {
         if let Some(f) = self.forced {
             self.intensity = f;
             self.target = f;
@@ -447,13 +466,10 @@ impl Rain {
         if self.intensity > 0.0 {
             self.spawn(world, i);
         }
-        self.update_drops(world, i);
-        for s in &mut self.splashes {
-            s.pos += s.vel;
-            s.vel.y += 0.12;
-            s.life -= 1.0 / TICKS_PER_SEC;
-        }
-        self.splashes.retain(|s| s.life > 0.0);
+        self.update_drops(world, i, pool);
+        // The splash particles are `DustPool` slots now (g67's lane,
+        // transplanted) — the shared `update_dust` pass ticks them
+        // (`water_splash_arm`), nothing to advance here.
         // The generic `Dust.Update` fade (`alpha -= 25` per tick from 254).
         for s in &mut self.sparkles {
             s.alpha -= 25.0 / 255.0;
@@ -824,7 +840,17 @@ impl Rain {
     /// `Collision.SolidCollision`/`WetCollision` 2x2 boxes (`:117`); the
     /// `:120` impact roll fires for ALL THREE `:117` kills (below-screen
     /// included) and NEVER for the remix kill-only arm (`:110-116`).
-    fn update_drops(&mut self, world: &World, i: &RainInputs) {
+    ///
+    /// `pool` is the splash drain seam (g67): the world tick hands it the
+    /// App's `DustPool` + `SpawnCtx` (the d50 contract — the spawn rides
+    /// `DustPool::new_dust` and Rain's own stream); the drop-sim tests pass
+    /// `None` (no pool — the gate still rolls, the spawn is dropped).
+    fn update_drops(
+        &mut self,
+        world: &World,
+        i: &RainInputs,
+        mut pool: Option<(&mut tr_core::particles::DustPool, &tr_core::particles::SpawnCtx)>,
+    ) {
         // `:112/:117`: `screenPosition.Y + screenHeight + 100f` — the port's
         // camera is the view CENTRE; the world-space view bottom plus the
         // 100f margin as RAW world px (the C# adds it unscaled — g67's shape;
@@ -861,11 +887,13 @@ impl Rain {
                     // below-screen one included (`:120` sits outside the
                     // NewDust call). The g67 reading is correct (006bc04d /
                     // 40128e5d); the earlier collision-only gate was WRONG
-                    // and is fixed here (docs/research/83). The stand-in
-                    // splash keeps the roll; g67 owns the real
-                    // `Dust.NewDust(..., dustWater())` spawn + AI/draw.
+                    // and is fixed here (docs/research/83). The gate rolls
+                    // even when the dust would cull or no pool is handed;
+                    // the spawn is g67's real DustPool recipe (§3 union).
                     if self.range(0, 100) as f32 < i.gfx_quality * 100.0 {
-                        self.spawn_splash(d);
+                        if let Some((p, ctx)) = pool.as_mut() {
+                            self.spawn_splash(p, ctx, world, i.camera, d.pos, d.vel);
+                        }
                     }
                 }
                 solid || below || wet
@@ -1007,26 +1035,49 @@ impl Rain {
         };
     }
 
-    /// The impact splash stand-in — the port's own approximation of the C#'s
-    /// `Dust.NewDust(pos - velocity, 2, 2, dustWater())` puff (`Rain.cs:122-130`:
-    /// alpha 38, velocity `*0.1 - vel*0.025`, `Y -= 2`, scale 0.6, noGravity).
-    /// The verbatim pool spawn + the splash dust's AI/draw are g67's scope
-    /// (weather-rain-splash); this keeps the visible impact until it lands.
-    fn spawn_splash(&mut self, d: Drop) {
-        let n = 1 + (self.next_u64() & 1) as usize;
-        for _ in 0..n {
-            if self.splashes.len() >= 256 {
-                break;
-            }
-            let jitter = Vec2::new((self.rand01() * 2.0 - 1.0) * 1.2, 0.0);
-            let frame = self.range(0, 3) as u8;
-            self.splashes.push(Splash {
-                pos: d.pos + Vec2::new(2.0, 2.0),
-                vel: d.vel * 0.0975 + jitter - Vec2::new(0.0, 2.0),
-                life: SPLASH_LIFE,
-                frame,
-            });
-        }
+    /// The `Rain.Update` splash recipe (`Rain.cs:122-130`, g67 `40128e5d`
+    /// transplanted per docs/research/83 §3): one
+    /// `Dust.NewDust(position - velocity, 2, 2, Dust.dustWater())` through the
+    /// shared pool (the d50 contract — its rolls ride Rain's own stream via
+    /// `SplitmixRand`, the WEATHER-2 per-consumer convention), then the eight
+    /// slot writes on the returned index — the refused sentinel included
+    /// (`Main.dust[6000]`, the sand.rs convention). The caller rolled the
+    /// `Next(100) < gfxQuality * 100` gate (`:120`).
+    fn spawn_splash(
+        &mut self,
+        pool: &mut tr_core::particles::DustPool,
+        ctx: &tr_core::particles::SpawnCtx,
+        world: &World,
+        camera: Vec2,
+        pos: Vec2,
+        vel: Vec2,
+    ) {
+        // `Dust.dustWater()` (`Dust.cs:402-418`): the per-water-style splash id.
+        let water_style = crate::biome::calculate_water_style(world, camera) as i32;
+        let idx = pool.new_dust(
+            &mut crate::app::SplitmixRand(&mut self.rng),
+            ctx,
+            world,
+            pos - vel,
+            2,
+            2,
+            tr_core::particles::dust_water(water_style),
+            0.0,
+            0.0,
+            0,
+            tr_core::particles::Color::default(),
+            1.0,
+        );
+        let d = pool.slot_mut(idx);
+        // `:123-130` — the eight writes, in order.
+        d.position.x -= 2.0;
+        d.position.y += 2.0;
+        d.alpha = 38;
+        d.velocity *= 0.1;
+        d.velocity += -vel * 0.025;
+        d.velocity.y -= 2.0;
+        d.scale = 0.6;
+        d.no_gravity = true;
     }
 
     /// `Main.DrawRain` (`Main.cs:38800-38826`) — the drop pass, verbatim
@@ -1049,10 +1100,10 @@ impl Rain {
         screen: Vec2,
         shimmer_alpha: f32,
     ) {
-        if self.drop_count() == 0
-            && self.splashes.is_empty()
-            && self.flash <= 0.01
-        {
+        // The splash dust draws through the pool's own `DrawDust` entry
+        // (`draw_splashes`, the g67 seam) — the drops/flash still gate
+        // this pass.
+        if self.drop_count() == 0 && self.flash <= 0.01 {
             return;
         }
         if self.flash > 0.01 {
@@ -1091,20 +1142,6 @@ impl Rain {
                 uv,
                 tint,
                 d.rot,
-            );
-        }
-        for s in &self.splashes {
-            let Some(uv) = lookups.dust_uv(330, s.frame as i32 * 10, 8, 8) else {
-                continue;
-            };
-            let c = light_at(light, s.pos);
-            let a = (s.life / SPLASH_LIFE).clamp(0.0, 1.0) * 0.8;
-            r.push_fx_sprite_rot(
-                to_screen(s.pos),
-                [8.0 * 0.6 * zoom, 8.0 * 0.6 * zoom],
-                uv,
-                [c[0], c[1], c[2], a],
-                0.0,
             );
         }
         // `WaterfallManager.TrySparkling`'s `Dust` 43 sparkles: scale 0.5, the
@@ -1147,6 +1184,170 @@ pub(crate) fn rain_tint(light: [f32; 3], shimmer_alpha: f32) -> [f32; 4] {
         out[k] = b as f32 / 255.0;
     }
     out
+}
+
+/// The splash-dust family — every id `Dust.dustWater()` (`Dust.cs:402-418`)
+/// can return: the water-style-0 default 33 and the per-style rows
+/// 98..=105 / 123 / 288. The shared `UpdateDust` hook ([`water_splash_arm`])
+/// and the `DrawDust` entry ([`draw_splashes`]) filter on it.
+pub(crate) fn is_splash_type(t: i32) -> bool {
+    matches!(t, 33 | 98..=105 | 123 | 288)
+}
+
+/// `Dust.UpdateDust`'s splash-family arm (`Dust.cs:1834-1874`, g67 `40128e5d`
+/// transplanted per docs/research/83 §3): the
+/// `308 | 33 | 52 | 266 | 98..=105 | 123 | 288` if-block — a standalone
+/// statement of the C#'s FIRST ladder (between the `:477` move and the fresh
+/// `if (type >= 130 …)` chain head at `:2130`), so the hook returns `false`
+/// and the second chain's final `else if (type != 304 && noGravity)` tail
+/// (`:2335`) still runs alongside — the minecart/sand convention. The arm
+/// draws NO `Main.rand` (the probes are pure collision reads); the shared
+/// loop's ChildSafety arm never fires for these ids (`ChildSafety.cs:32`).
+///
+/// The 308/52/266 members of the C# list are carried verbatim; today only
+/// the `dustWater()` family spawns through this seam.
+pub(crate) fn water_splash_arm(d: &mut tr_core::particles::Dust, world: &World) -> bool {
+    if !matches!(d.dust_type, 308 | 33 | 52 | 266 | 98..=105 | 123 | 288) {
+        return false;
+    }
+    // `:1836-1844`: the still-in-X arm — solid contact zeroes the scale,
+    // then the spin and the nibble run regardless.
+    if d.velocity.x == 0.0 {
+        if crate::player::Player::solid_collision(world, d.position.x, d.position.y, 2.0, 2.0) {
+            d.scale = 0.0;
+        }
+        d.rotation += 0.5;
+        d.scale -= 0.01;
+    }
+    // `:1845-1849`: the wet probe fades the splash into the surface.
+    if crate::player::wet_collision(world, d.position.x, d.position.y, 4.0, 4.0) {
+        d.alpha += 20;
+        d.scale -= 0.1;
+    }
+    // `:1850-1855`: the fade pair, then the alpha-255 kill.
+    d.alpha += 2;
+    d.scale -= 0.005;
+    if d.alpha > 255 {
+        d.scale = 0.0;
+    }
+    // `:1856-1859`: the fall-speed clamp.
+    if d.velocity.y > 4.0 {
+        d.velocity.y = 4.0;
+    }
+    // `:1860-1873`: the no-gravity spray — the sign-picked spin, the grow,
+    // the X stretch and the sink.
+    if d.no_gravity {
+        if d.velocity.x < 0.0 {
+            d.rotation -= 0.2;
+        } else {
+            d.rotation += 0.2;
+        }
+        d.scale += 0.03;
+        d.velocity.x *= 1.05;
+        d.velocity.y += 0.15;
+    }
+    false
+}
+
+/// `Main.DrawDust`'s generic path (`Main.cs:38836-39018`, g67 `40128e5d`
+/// transplanted) over the pool's splash-family slots (`dustWater()`,
+/// [`is_splash_type`]): the light sample at `(position + 4) / 16`
+/// (`:38968`), the `GetAlpha` tint (`:38973`, the default formula for the
+/// whole family — `dust_table`), the `(4, 4)` origin rotated draw at
+/// `GetVisualScale` (`:39005`), the `GetColor` overlay when the spawn colour
+/// is non-zero (`:39006-39012`, never for rain — `default(Color)`), and the
+/// full-dark kill (`:39015`). The pool's `maxDustToDraw` scan bound is the
+/// update loop's own kill (`Dust.cs:2393-2395`); this entry walks the live
+/// family slots.
+///
+/// The 4×4 on-screen cull rect (`:38847`, the ±1000/±1050 slack box) is not
+/// modelled — the spawn cull already dropped off-screen dust and the shared
+/// loop kills below-view slots; a documented widening (ANALYSIS).
+pub(crate) fn draw_splashes(
+    pool: &mut tr_core::particles::DustPool,
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    light: &LightMap,
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
+) {
+    for i in 0..tr_core::particles::DUST_SENTINEL {
+        if !pool.slot(i).active || !is_splash_type(pool.slot(i).dust_type) {
+            continue;
+        }
+        let d = *pool.slot(i);
+        // `:38968`: `Lighting.GetColor((int)((double)pos.X + 4.0) / 16, …)`
+        // as XNA bytes (the gore-pass convention, `render/gore.rs`).
+        let c = light_at(light, d.position + Vec2::splat(4.0));
+        let new_color = tr_core::particles::Color::new(
+            ((c[0] * 255.0) as i32).min(255) as u8,
+            ((c[1] * 255.0) as i32).min(255) as u8,
+            ((c[2] * 255.0) as i32).min(255) as u8,
+            255,
+        );
+        let tint = tr_core::dust_table::get_alpha(&d, new_color);
+        // `:38849`/`:39005`: the visual scale and rotation (304-only pins
+        // never fire for this family).
+        let scale = tr_core::dust_table::get_visual_scale(&d);
+        let rot = tr_core::dust_table::get_visual_rotation(&d);
+        let Some(uv) = lookups.dust_uv(d.frame_x, d.frame_y, d.frame_w as u32, d.frame_h as u32)
+        else {
+            continue;
+        };
+        // The `(4, 4)` origin (`:39005`): XNA rotates about `position` with
+        // the origin scaled by scale·zoom — the rotated top-left is
+        // `anchor − R(rot)·(origin·scale·zoom)` (the gore `plan_quad`
+        // emulation, `render/gore.rs:190-200`).
+        let anchor = [
+            (d.position.x - camera.x) * zoom + screen.x * 0.5,
+            (d.position.y - camera.y) * zoom + screen.y * 0.5,
+        ];
+        let origin = 4.0 * scale * zoom;
+        let (s, co) = rot.sin_cos();
+        let pos = [
+            anchor[0] - (origin * co - origin * s),
+            anchor[1] - (origin * s + origin * co),
+        ];
+        let size = [
+            d.frame_w as f32 * scale * zoom,
+            d.frame_h as f32 * scale * zoom,
+        ];
+        let tint_f = [
+            tint.r as f32 / 255.0,
+            tint.g as f32 / 255.0,
+            tint.b as f32 / 255.0,
+            tint.a as f32 / 255.0,
+        ];
+        r.push_fx_sprite_rot(pos, size, uv, tint_f, rot);
+        // `:39006-39012`: the overlay only when the spawn colour is packed
+        // non-zero — rain spawns `default(Color)`, so this arm is dead here
+        // but kept verbatim for the family's other future spawners.
+        if d.color != tr_core::particles::Color::default() {
+            let overlay = tr_core::dust_table::get_color(&d, tint);
+            if overlay != tr_core::particles::Color::default() {
+                r.push_fx_sprite_rot(
+                    pos,
+                    size,
+                    uv,
+                    [
+                        overlay.r as f32 / 255.0,
+                        overlay.g as f32 / 255.0,
+                        overlay.b as f32 / 255.0,
+                        overlay.a as f32 / 255.0,
+                    ],
+                    rot,
+                );
+            }
+        }
+        // `:39015-39017`: `newColor == Color.Black` deactivates — XNA's
+        // Black is `(0, 0, 0, 255)` (packed 0xFF000000), so only an
+        // alpha-0 dust in full dark dies; a faded dust in the dark draws
+        // invisibly and survives, exactly like the C#.
+        if tint == tr_core::particles::Color::new(0, 0, 0, 255) {
+            pool.slot_mut(i).active = false;
+        }
+    }
 }
 
 /// `Lighting.GetColor` for a world-space point, clamped to the computed light rect.
@@ -1205,22 +1406,57 @@ mod tests {
     fn run(rain: &mut Rain, w: &World, n: usize) {
         let i = inputs();
         for _ in 0..n {
-            rain.update(w, &i, 1.0 / 60.0);
+            rain.update(w, &i, 1.0 / 60.0, None);
         }
+    }
+
+    /// The pool + ctx the splash drain needs — the camera-centred view the
+    /// `run` helper uses, full dust budget (g67's `splash_ctx`, adapted).
+    fn splash_ctx() -> tr_core::particles::SpawnCtx {
+        crate::app::spawn_ctx_from(
+            false,
+            false,
+            Vec2::new(32.0 * 16.0, 25.0 * 16.0),
+            Vec2::new(1600.0, 200.0),
+            1.0,
+            6000,
+        )
+    }
+
+    /// The live splash-dust population (`dustWater()`'s family,
+    /// `Dust.cs:402-418`).
+    fn splash_count(pool: &tr_core::particles::DustPool) -> usize {
+        pool.slots()[..tr_core::particles::DUST_SENTINEL]
+            .iter()
+            .filter(|d| d.active && is_splash_type(d.dust_type))
+            .count()
     }
 
     #[test]
     fn forced_rain_spawns_drops_that_die_on_the_ground() {
         let w = ground();
         let mut rain = Rain::with_forced(7, Some(1.0), false);
-        run(&mut rain, &w, 120);
+        let mut pool = tr_core::particles::DustPool::new();
+        let ctx = splash_ctx();
+        let i = inputs();
+        for _ in 0..120 {
+            rain.update(&w, &i, 1.0 / 60.0, Some((&mut pool, &ctx)));
+        }
         assert!(rain.drop_count() > 100, "drops {}", rain.drop_count());
         // `ground()` is 64 tall — SolidCollision/WetCollision clamp their
         // scan at `height - 40` (row 24), so the row-30 floor is invisible
         // and the drops die BELOW-SCREEN. The :120 gate rolls for that kill
         // too (the combined :117 branch — W4-d130 reconcile), so at quality
-        // 1 the impacts still leave splashes at a steady state.
-        assert!(!rain.splashes.is_empty(), "impacts should leave splashes");
+        // 1 the impacts still leave splash dust at a steady state — the
+        // spawn's own off-screen cull (margin 400 at dCount 0) keeps the
+        // just-below-view dust (`Rain.cs:122`'s `dustWater()` = 33 here).
+        assert!(splash_count(&pool) > 0, "impacts should leave splashes");
+        assert!(
+            pool.slots()[..tr_core::particles::DUST_SENTINEL]
+                .iter()
+                .any(|d| d.active && d.dust_type == 33),
+            "the water-style-0 splash type"
+        );
     }
 
     #[test]
@@ -1263,25 +1499,28 @@ mod tests {
         pin_drop(&mut rain, 3, Vec2::new(500.0, 591.0), Vec2::new(0.0, 14.0));
         let mut r = StreamReplay(rain.rng);
         let _gate = r.next(0, 100);
-        rain.update_drops(&w, &i);
+        rain.update_drops(&w, &i, None);
         assert!(!rain.drops[3].active, "the below-screen kill fired");
         assert_eq!(rain.rng, r.0, "exactly ONE draw: the gate");
         // (b) quality 0 never splashes but STILL rolls — the positive arm:
-        // at quality 1 the same below-screen kill splashes (the stand-in
-        // consumes its own draws behind the gate).
+        // at quality 1 the same below-screen kill splashes (the real
+        // DustPool recipe consumes its six default-block draws behind the
+        // gate — g67's lane, transplanted).
         let mut zero = Rain::with_forced(7, Some(0.0), false);
         let mut zi = inputs();
         zi.gfx_quality = 0.0;
         pin_drop(&mut zero, 0, Vec2::new(500.0, 591.0), Vec2::new(0.0, 14.0));
+        let mut pool = tr_core::particles::DustPool::new();
+        let ctx = splash_ctx();
         let state = zero.rng;
-        zero.update_drops(&w, &zi);
+        zero.update_drops(&w, &zi, Some((&mut pool, &ctx)));
         assert_ne!(zero.rng, state, "the gate rolls even at quality 0");
-        assert!(zero.splashes.is_empty(), "quality 0: no splash");
+        assert_eq!(splash_count(&pool), 0, "quality 0: no splash");
         let mut one = Rain::with_forced(7, Some(0.0), false);
         pin_drop(&mut one, 0, Vec2::new(500.0, 591.0), Vec2::new(0.0, 14.0));
-        one.update_drops(&w, &inputs()); // quality 1
+        one.update_drops(&w, &inputs(), Some((&mut pool, &ctx))); // quality 1
         assert!(
-            !one.splashes.is_empty(),
+            splash_count(&pool) > 0,
             "the below-screen kill SPLASHES at quality 1"
         );
         // (c) the solid kill: a TALL world — the probes clamp their scan at
@@ -1306,10 +1545,9 @@ mod tests {
         pin_drop(&mut solid_rain, 1, Vec2::new(500.0, 1268.0), Vec2::new(0.0, 14.0));
         let mut r = StreamReplay(solid_rain.rng);
         let _gate = r.next(0, 100);
-        solid_rain.update_drops(&tall, &si);
+        solid_rain.update_drops(&tall, &si, None);
         assert!(!solid_rain.drops[1].active, "the solid kill fired");
         assert_eq!(solid_rain.rng, r.0, "solid kill: ONE gate draw");
-        assert!(solid_rain.splashes.is_empty(), "quality 0: no splash");
         // (d) the wet kill: the same floor as a full liquid tile — the wet
         // probe's surface is `tileY + (256-liquid)/32*2` (`Collision.cs`
         // arm, `player.rs::wet_collision`); the drop steps into it dry-solid-
@@ -1325,10 +1563,13 @@ mod tests {
         pin_drop(&mut wet_rain, 2, Vec2::new(500.0, 1268.0), Vec2::new(0.0, 14.0));
         let mut r = StreamReplay(wet_rain.rng);
         let _gate = r.next(0, 100);
-        wet_rain.update_drops(&wet_w, &si);
+        wet_rain.update_drops(&wet_w, &si, None);
         assert!(!wet_rain.drops[2].active, "the wet kill fired");
         assert_eq!(wet_rain.rng, r.0, "wet kill: ONE gate draw");
-        assert!(wet_rain.splashes.is_empty(), "quality 0: no splash");
+        // The quality-0 no-splash arms: one pool shared across (b)'s zero
+        // run and these — `None` above spawns nothing, the pool still holds
+        // only (b)'s single quality-1 dust, never a quality-0 one.
+        assert_eq!(splash_count(&pool), 1, "only the quality-1 kill spawned");
     }
 
     #[test]
@@ -1342,11 +1583,13 @@ mod tests {
         let mut i = inputs();
         i.remix_world = true;
         pin_drop(&mut rain, 5, Vec2::new(500.0, 591.0), Vec2::new(0.0, 14.0));
+        let mut pool = tr_core::particles::DustPool::new();
+        let ctx = splash_ctx();
         let state = rain.rng;
-        rain.update_drops(&w, &i);
+        rain.update_drops(&w, &i, Some((&mut pool, &ctx)));
         assert!(!rain.drops[5].active, "the remix bottom kill fired");
         assert_eq!(rain.rng, state, "the remix arm consumes NO roll");
-        assert!(rain.splashes.is_empty(), "the remix arm never splashes");
+        assert_eq!(splash_count(&pool), 0, "the remix arm never splashes");
     }
 
     #[test]
@@ -1360,7 +1603,7 @@ mod tests {
         let mut i = inputs();
         i.snow_tile_count = tr_core::scene::thresholds::SNOW_TILE_NORMAL;
         for _ in 0..120 {
-            full.update(&w, &i, 1.0 / 60.0);
+            full.update(&w, &i, 1.0 / 60.0, None);
         }
         assert_eq!(full.drop_count(), 0, "the snow suppression zeroes the budget");
         assert!(full.is_raining(), "the event itself keeps running");
@@ -1368,7 +1611,7 @@ mod tests {
         let mut half = Rain::with_forced(17, Some(1.0), false);
         i.snow_tile_count = tr_core::scene::thresholds::SNOW_TILE_NORMAL / 2;
         for _ in 0..120 {
-            half.update(&w, &i, 1.0 / 60.0);
+            half.update(&w, &i, 1.0 / 60.0, None);
         }
         assert!(half.drop_count() > 0, "3/4 of the budget still spawns");
     }
@@ -1382,13 +1625,13 @@ mod tests {
         let mut i = inputs();
         i.atmo = 0.39;
         for _ in 0..60 {
-            low.update(&w, &i, 1.0 / 60.0);
+            low.update(&w, &i, 1.0 / 60.0, None);
         }
         assert_eq!(low.drop_count(), 0, "below 0.4 nothing spawns");
         let mut mid = Rain::with_forced(19, Some(1.0), false);
         i.atmo = 0.8;
         for _ in 0..60 {
-            mid.update(&w, &i, 1.0 / 60.0);
+            mid.update(&w, &i, 1.0 / 60.0, None);
         }
         let budget = (750.0_f64 * 0.8_f64.powf(9.0)) as usize;
         assert!(mid.drop_count() > 0);
@@ -1409,7 +1652,7 @@ mod tests {
         let mut rain = Rain::with_forced(23, Some(1.0), false);
         let mut i = inputs();
         i.wind_speed_current = 0.5;
-        rain.update(&w, &i, 1.0 / 60.0);
+        rain.update(&w, &i, 1.0 / 60.0, None);
         assert!(rain.drop_count() > 0);
         for d in rain.drops.iter().filter(|d| d.active) {
             assert!(
@@ -1436,7 +1679,7 @@ mod tests {
         let w = ground();
         let mut rain = Rain::with_forced(7, Some(1.0), false);
         let i = inputs();
-        rain.update(&w, &i, 1.0 / 60.0);
+        rain.update(&w, &i, 1.0 / 60.0, None);
         let mut r = StreamReplay::new(7);
         let view_min_x = (i.camera.x - i.screen.x * 0.5) as i32; // -288
         let view_min_y = i.camera.y - i.screen.y * 0.5; // 300
@@ -1481,11 +1724,11 @@ mod tests {
         let w = ground();
         let mut open = Rain::with_forced(29, Some(1.0), false);
         let mut i = inputs();
-        open.update(&w, &i, 1.0 / 60.0);
+        open.update(&w, &i, 1.0 / 60.0, None);
         assert_eq!(open.drop_count(), 27, "the open rate");
         let mut rain = Rain::with_forced(29, Some(1.0), false);
         i.any_danger = true;
-        rain.update(&w, &i, 1.0 / 60.0);
+        rain.update(&w, &i, 1.0 / 60.0, None);
         let throttled = 1600.0 / 1920.0 * 25.0 * 1.25 * 0.05;
         let mut n = 0;
         let mut k = 0.0_f32;
@@ -1510,7 +1753,7 @@ mod tests {
         let mut i = inputs();
         i.gfx_quality = 0.5;
         for _ in 0..240 {
-            rain.update(&w, &i, 1.0 / 60.0);
+            rain.update(&w, &i, 1.0 / 60.0, None);
         }
         assert!(
             rain.drop_count() <= 562,
@@ -1521,7 +1764,7 @@ mod tests {
         let mut full = Rain::with_forced(31, Some(1.0), false);
         i.gfx_quality = 1.0;
         for _ in 0..240 {
-            full.update(&w, &i, 1.0 / 60.0);
+            full.update(&w, &i, 1.0 / 60.0, None);
         }
         assert!(full.drop_count() > 562, "the full budget fills higher");
     }
@@ -2137,7 +2380,7 @@ mod tests {
         let mut fast = Rain::with_forced(11, None, false);
         fast.raining = true;
         fast.target = 1.0;
-        fast.update(&w, &i, step);
+        fast.update(&w, &i, step, None);
         assert!(
             (fast.visual_alpha() - 0.03).abs() < 1e-6,
             "60× ramp: {}",
@@ -2148,7 +2391,7 @@ mod tests {
         slow.raining = true;
         slow.target = 1.0;
         i.day_rate = 1;
-        slow.update(&w, &i, step);
+        slow.update(&w, &i, step, None);
         assert!(
             (slow.visual_alpha() - 0.0005).abs() < 1e-9,
             "dry ramp: {}",
@@ -2158,7 +2401,7 @@ mod tests {
         let mut deck = Rain::with_forced(11, None, false);
         deck.intensity = 1.0; // above the 0.05 gate: the deck chases the intensity
         i.day_rate = 60;
-        deck.update(&w, &i, step);
+        deck.update(&w, &i, step, None);
         assert!(
             (deck.cloud_bg() - 0.3).abs() < 1e-6,
             "deck at FF: {}",
@@ -2167,7 +2410,7 @@ mod tests {
         let mut dry = Rain::with_forced(11, None, false);
         dry.intensity = 1.0;
         i.day_rate = 1;
-        dry.update(&w, &i, step);
+        dry.update(&w, &i, step, None);
         assert!(
             (dry.cloud_bg() - 0.005).abs() < 1e-9,
             "deck dry: {}",
@@ -2194,7 +2437,7 @@ mod tests {
         let mut i = inputs();
         i.camera = Vec2::new(512.0, 400.0);
         i.day_rate = 60;
-        rain.update(&w, &i, 1.0 / 60.0);
+        rain.update(&w, &i, 1.0 / 60.0, None);
         assert_eq!(rain.max_raining(), 0.8);
         assert!(rain.is_raining());
 
@@ -2281,5 +2524,380 @@ mod tests {
             app.sandstorm.time_left < 5_000,
             "the sandstorm arm ran after the rain section"
         );
+    }
+
+    // ---- g67 transplanted: the rain collision splash → DustPool lane -------
+    // g67 `40128e5d`'s seven witnesses, adapted to this branch's fixed
+    // 750-slot pool (`pin_drop` instead of the compacted-Vec push, quality
+    // through `RainInputs` instead of the `Rain.gfx_quality` field) per
+    // docs/research/83 §3. Derived by hand from the C# (`Rain.cs:96-133`,
+    // `Dust.cs:75-256`'s default block, `Dust.cs:1834-1874`) over the port's
+    // splitmix seam (`app/frame.rs`'s `SplitmixRand`): one `next_rand` step
+    // per draw, the 53-bit sample, the C# `Next` conversions.
+
+    /// A TALL ground world: `Collision.SolidCollision`/`WetCollision` clamp
+    /// their scan at `maxTilesY - 40` (`Collision.cs:2708`/`:1594`), so the
+    /// 64-tall `ground()`'s row-30 floor is invisible to the real probes —
+    /// the collision witnesses need rows under `height - 40` (128 − 40 = 88).
+    fn tall_ground() -> World {
+        let mut w = World::new("rain-tall".into(), 64, 128);
+        for x in 0..64 {
+            for y in 30..128 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    /// g67 witness — `Rain.cs:117-131`'s solid-kill splash: the gate roll,
+    /// the `NewDust(position - velocity, 2, 2, 33)` defaults and the eight
+    /// recipe writes. Hand-derived on seed 7's stream: the gate is
+    /// `next_rand % 100`; the default block's six draws are
+    /// `Next(1)`×2 (the min-5 box), `Next(-20,21)`×2 (velocity), `Next(3)`
+    /// (frame row), `Next(-20,21)` (scale). Every expected value below is
+    /// pinned through the SAME seam the spawn uses, so the test replays the
+    /// stream draw-for-draw rather than trusting a snapshot.
+    #[test]
+    fn w4_g67_solid_impact_spawns_the_recipe_dust_on_rains_stream() {
+        let w = tall_ground();
+        let mut rain = Rain::with_forced(7, Some(1.0), false);
+        let i = inputs(); // gfx_quality 1: the gate always passes
+        // Impact: pos (500, 470) + vel (0, 14) → (500, 484) — inside the
+        // row-30 solid (480..496). `position - velocity` = (500, 470).
+        let pos = Vec2::new(500.0, 470.0);
+        let vel = Vec2::new(0.0, 14.0);
+        pin_drop(&mut rain, 0, pos, vel);
+        let mut pool = tr_core::particles::DustPool::new();
+        let ctx = splash_ctx();
+        // Replay the expected stream on a twin of Rain's seeded state.
+        let mut twin = rain.rng;
+        let gate = (crate::app::next_rand(&mut twin) % 100) as f32;
+        assert!(gate < 100.0, "full quality: the gate always passes");
+        // The default block, `Dust.cs:153-193` through SplitmixRand.
+        let mut sr = crate::app::SplitmixRand(&mut twin);
+        use tr_core::particles::DustRng;
+        let jx = sr.next_max(1); // width 2 → min-5 box → Next(1) = 0
+        let jy = sr.next_max(1);
+        let vx = sr.next_range(-20, 21) as f32 * 0.1;
+        let vy = sr.next_range(-20, 21) as f32 * 0.1;
+        let row = sr.next_max(3);
+        let sc = 1.0 + sr.next_range(-20, 21) as f32 * 0.01;
+        drop(sr);
+        // Type 33's spawn tweak (`Dust.cs:230-235`): alpha 170, vel ×0.5,
+        // vel.Y += 1 — BEFORE the recipe writes.
+        let tweak_v = Vec2::new(vx, vy) * 0.5 + Vec2::new(0.0, 1.0);
+        // The eight recipe writes (`Rain.cs:123-130`).
+        let want_pos = Vec2::new(500.0 + jx as f32 + 4.0 - 2.0, 470.0 + jy as f32 + 4.0 + 2.0);
+        let want_vel = tweak_v * 0.1 + -vel * 0.025 - Vec2::new(0.0, 2.0);
+        rain.update_drops(&w, &i, Some((&mut pool, &ctx)));
+        assert_eq!(rain.drop_count(), 0, "the solid kill fired");
+        assert_eq!(rain.rng, twin, "gate + 6 default-block draws, in order");
+        let live: Vec<_> = pool.slots()[..tr_core::particles::DUST_SENTINEL]
+            .iter()
+            .filter(|d| d.active)
+            .collect();
+        assert_eq!(live.len(), 1, "one splash dust");
+        let d = live[0];
+        assert_eq!(
+            d.dust_type, 33,
+            "dustWater(): the small-world beach style 13 maps to the default 33"
+        );
+        assert_eq!(d.position, want_pos);
+        assert_eq!(d.velocity, want_vel);
+        assert_eq!(d.alpha, 38, "`:125` overwrites the tweak's 170");
+        assert_eq!(d.scale, 0.6, "`:129` overwrites the rolled scale (twin: {sc})");
+        assert!(d.no_gravity, "`:130`");
+        assert_eq!(d.frame_x, 330);
+        assert_eq!(d.frame_y, 10 * row);
+        assert_eq!((d.frame_w, d.frame_h), (8, 8));
+        assert_eq!(d.color, tr_core::particles::Color::default());
+    }
+
+    /// g67 witness — the gfx gate (`Rain.cs:120`): quality 0 rolls
+    /// `Next(100)` and NEVER spawns (the roll still consumes the stream);
+    /// the refused sentinel takes the eight writes without a live slot
+    /// when the ctx is paused (`Dust.cs:85`).
+    #[test]
+    fn w4_g67_the_gfx_gate_rolls_even_when_it_refuses() {
+        let w = tall_ground();
+        let mut rain = Rain::with_forced(7, Some(1.0), false);
+        let mut i = inputs();
+        i.gfx_quality = 0.0;
+        pin_drop(&mut rain, 0, Vec2::new(500.0, 470.0), Vec2::new(0.0, 14.0));
+        let mut pool = tr_core::particles::DustPool::new();
+        let ctx = splash_ctx();
+        let mut twin = rain.rng;
+        let _gate = crate::app::next_rand(&mut twin) % 100;
+        rain.update_drops(&w, &i, Some((&mut pool, &ctx)));
+        assert_eq!(rain.rng, twin, "exactly ONE draw: the gate");
+        assert_eq!(splash_count(&pool), 0, "quality 0: no splash");
+        // The paused ctx refuses INSIDE NewDust (`Dust.cs:85`) — the gate
+        // passed, the sentinel took the writes, nothing lives.
+        let mut rain = Rain::with_forced(7, Some(1.0), false);
+        pin_drop(&mut rain, 0, Vec2::new(500.0, 470.0), Vec2::new(0.0, 14.0));
+        let paused = tr_core::particles::SpawnCtx {
+            game_paused: true,
+            ..splash_ctx()
+        };
+        let mut twin = rain.rng;
+        let _gate = crate::app::next_rand(&mut twin) % 100;
+        rain.update_drops(&w, &inputs(), Some((&mut pool, &paused)));
+        assert_eq!(rain.rng, twin, "the guard precedes every default draw");
+        assert_eq!(splash_count(&pool), 0, "the paused guard refused");
+        assert!(!pool.slot(tr_core::particles::DUST_SENTINEL).active);
+        assert_eq!(
+            pool.slot(tr_core::particles::DUST_SENTINEL).alpha,
+            38,
+            "the sentinel took the recipe writes (Main.dust[6000])"
+        );
+    }
+
+    /// g67 witness — the below-screen kill ALSO spawns (`Rain.cs:117`'s
+    /// combined branch): a drop past `screenPosition.Y + screenHeight + 100`
+    /// rolls the gate and calls NewDust; the off-screen cull
+    /// (`Dust.cs:97-101`, margin 400 at dCount 0) is what drops it.
+    #[test]
+    fn w4_g67_below_screen_kill_rolls_the_gate_and_culls_far_dust() {
+        let w = ground();
+        let mut rain = Rain::with_forced(7, Some(1.0), false);
+        let i = inputs();
+        // bottom = 400 + 100 + 100 = 600. The drop lands at y 605 — below,
+        // dry (the ground rows are solid but the y-clamp `height-40`=24
+        // keeps SolidCollision off them) and inside the dust cull box
+        // (view y 300..500 + margin 400 → -100..900; 605-14=591 is INSIDE,
+        // so this one SURVIVES the cull — the C# spawns it too).
+        pin_drop(&mut rain, 0, Vec2::new(500.0, 591.0), Vec2::new(0.0, 14.0));
+        let mut pool = tr_core::particles::DustPool::new();
+        let ctx = splash_ctx();
+        rain.update_drops(&w, &i, Some((&mut pool, &ctx)));
+        assert_eq!(rain.drop_count(), 0, "below-screen kill");
+        assert_eq!(splash_count(&pool), 1, "the combined branch spawns it");
+        // Far below (y 1205 → dust at 1191 > 900): the cull refuses.
+        let mut rain = Rain::with_forced(7, Some(1.0), false);
+        pin_drop(&mut rain, 0, Vec2::new(500.0, 1205.0), Vec2::new(0.0, 14.0));
+        let mut pool = tr_core::particles::DustPool::new();
+        let mut twin = rain.rng;
+        let _gate = crate::app::next_rand(&mut twin) % 100;
+        rain.update_drops(&w, &i, Some((&mut pool, &ctx)));
+        assert_eq!(rain.rng, twin, "the cull precedes the default draws");
+        assert_eq!(splash_count(&pool), 0, "off-screen dust culled");
+    }
+
+    /// g67 witness — the wet-kill arm (`Rain.cs:117`'s WetCollision):
+    /// a drop entering a liquid tile dies and splashes; the probe is the
+    /// 2×2 inset rect (`Collision.cs:1576-1587`), the surface at
+    /// `tileY + (256-liquid)/32*2`.
+    #[test]
+    fn w4_g67_wet_surface_impact_splashes() {
+        let mut w = World::new("wet".into(), 64, 128);
+        // A full water tile at (31, 29): surface y = 464, box 464..480.
+        let idx = w.index(31, 29);
+        w.tiles[idx].liquid = 255;
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut rain = Rain::with_forced(7, Some(1.0), false);
+        // The drop's next step lands at (500, 466): the 2×2 probe's inset
+        // rect (500..502, 466.5..467.5) overlaps the water surface.
+        pin_drop(&mut rain, 0, Vec2::new(500.0, 452.0), Vec2::new(0.0, 14.0));
+        let mut pool = tr_core::particles::DustPool::new();
+        let ctx = splash_ctx();
+        rain.update_drops(&w, &inputs(), Some((&mut pool, &ctx)));
+        assert_eq!(rain.drop_count(), 0, "the wet kill fired");
+        assert_eq!(splash_count(&pool), 1, "wet impacts splash too");
+    }
+
+    /// g67 witness — `water_splash_arm` (`Dust.cs:1834-1874`), the
+    /// no-gravity spray on a dry, still-X splash: the solid probe zeroes
+    /// nothing (open air), the spin +0.5 then the −0.01 nibble, the fade
+    /// pair (+2 alpha, −0.005 scale), the sign-picked +0.2 spin, the +0.03
+    /// grow, the ×1.05 X stretch and the +0.15 sink. No RNG draws.
+    #[test]
+    fn w4_g67_the_splash_arm_runs_the_1834_chain() {
+        let w = World::new("air".into(), 64, 64);
+        let mut d = tr_core::particles::Dust {
+            dust_type: 33,
+            position: Vec2::new(500.0, 300.0),
+            velocity: Vec2::new(0.0, -1.0),
+            alpha: 38,
+            scale: 0.6,
+            rotation: 0.0,
+            no_gravity: true,
+            active: true,
+            ..Default::default()
+        };
+        let matched = water_splash_arm(&mut d, &w);
+        assert!(!matched, "FIRST-ladder arm: the gravity tail still runs");
+        // Still X: rotation +0.5, scale −0.01; fade +2/−0.005; noGravity:
+        // X ≥ 0 → +0.2 spin, +0.03 scale, ×1.05 X, +0.15 Y.
+        assert_eq!(d.alpha, 40);
+        assert!((d.scale - (0.6 - 0.01 - 0.005 + 0.03)).abs() < 1e-6);
+        assert!((d.rotation - 0.7).abs() < 1e-6);
+        assert_eq!(d.velocity.x, 0.0);
+        assert!((d.velocity.y - (-1.0 + 0.15)).abs() < 1e-6);
+        // Moving X < 0: the −0.2 spin arm, no still-X block.
+        let mut d = tr_core::particles::Dust {
+            dust_type: 33,
+            velocity: Vec2::new(-2.0, 5.0),
+            alpha: 38,
+            scale: 0.6,
+            no_gravity: true,
+            active: true,
+            ..Default::default()
+        };
+        water_splash_arm(&mut d, &w);
+        assert!((d.rotation - -0.2).abs() < 1e-6, "the negative-X spin");
+        assert!((d.velocity.x - -2.1).abs() < 1e-6, "×1.05");
+        assert!(
+            (d.velocity.y - 4.15).abs() < 1e-6,
+            "the >4 clamp then the +0.15 sink"
+        );
+        // Wet contact: +20 alpha and −0.1 scale on top of the fade pair.
+        let mut ww = World::new("wet".into(), 64, 64);
+        let idx = ww.index(31, 18);
+        ww.tiles[idx].liquid = 255; // surface y 288..304 — the 4×4 probe at 300 hits
+        let mut d = tr_core::particles::Dust {
+            dust_type: 33,
+            position: Vec2::new(500.0, 300.0),
+            velocity: Vec2::new(1.0, 0.0),
+            alpha: 38,
+            scale: 0.6,
+            no_gravity: true,
+            active: true,
+            ..Default::default()
+        };
+        water_splash_arm(&mut d, &ww);
+        assert_eq!(d.alpha, 60, "38 + 20 (wet) + 2 (fade)");
+        assert!((d.scale - (0.6 - 0.1 - 0.005 + 0.03)).abs() < 1e-6);
+        // The alpha-255 kill zeroes the scale (`:1852-1855`).
+        let mut d = tr_core::particles::Dust {
+            dust_type: 33,
+            velocity: Vec2::new(1.0, 0.0),
+            alpha: 254,
+            scale: 0.6,
+            no_gravity: true,
+            active: true,
+            ..Default::default()
+        };
+        water_splash_arm(&mut d, &w);
+        assert_eq!(d.alpha, 256);
+        assert_eq!(d.scale, 0.03, "zeroed then the +0.03 grow");
+        // A non-family type is a no-op (the hook falls through).
+        let mut d = tr_core::particles::Dust {
+            dust_type: 213,
+            scale: 1.0,
+            alpha: 10,
+            active: true,
+            ..Default::default()
+        };
+        let before = d;
+        assert!(!water_splash_arm(&mut d, &w));
+        assert_eq!(d, before);
+    }
+
+    /// g67 witness — the splash family rides the SHARED `update_dust`
+    /// loop (the minecart::tick seam): the head move precedes the arm, the
+    /// generic no-gravity tail (`Dust.cs:2335`) runs alongside (the arm
+    /// returns false), and the scale-floor kill fires below 0.1.
+    #[test]
+    fn w4_g67_splashes_tick_through_the_shared_pool_loop() {
+        let w = World::new("air".into(), 64, 64);
+        let mut pool = tr_core::particles::DustPool::new();
+        {
+            let d = pool.slot_mut(0);
+            d.active = true;
+            d.dust_type = 33;
+            d.position = Vec2::new(500.0, 300.0);
+            d.velocity = Vec2::new(0.0, -1.0);
+            d.alpha = 38;
+            d.scale = 0.6;
+            d.no_gravity = true;
+            d.frame_x = 330;
+            d.frame_w = 8;
+            d.frame_h = 8;
+        }
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        crate::minecart::tick(
+            &mut pool,
+            &mut rng,
+            6000,
+            Vec2::new(500.0, 300.0),
+            Vec2::new(1600.0, 900.0),
+            1.0,
+            &w,
+            0.0,
+            false,
+        );
+        let d = pool.slot(0);
+        assert!(d.active);
+        assert_eq!(d.position, Vec2::new(500.0, 299.0), "the :477 move first");
+        // Arm: alpha 40, scale 0.615, rot 0.7, vel (0, -0.85); then the
+        // tail's ×0.92 damp and fadeIn-gated −0.04.
+        assert_eq!(d.alpha, 40);
+        assert!((d.scale - (0.615 - 0.04)).abs() < 1e-6, "arm + tail shrink");
+        assert!((d.velocity.y - (-0.85 * 0.92)).abs() < 1e-6, "the tail damp");
+        // The scale floor: a 0.11 splash with moving X shrinks under 0.1 in
+        // one tick (arm −0.005 + 0.03 = +0.025, tail −0.04 → net −0.015).
+        let d = pool.slot_mut(0);
+        d.scale = 0.11;
+        d.velocity = Vec2::new(1.0, 0.0);
+        crate::minecart::tick(
+            &mut pool,
+            &mut rng,
+            6000,
+            Vec2::new(500.0, 300.0),
+            Vec2::new(1600.0, 900.0),
+            1.0,
+            &w,
+            0.0,
+            false,
+        );
+        assert!(!pool.slot(0).active, "0.11 − 0.015 < the 0.1 floor");
+    }
+
+    /// g67 witness — the RNG census: N solid impacts consume exactly
+    /// N × (1 gate + 6 default-block) draws on Rain's stream, in slot order
+    /// (the fixed pool's walk order — the compacted Vec's kill order in
+    /// g67); the pool's pressure bands never roll at slot 0..N (dCount 0,
+    /// the low band resets it). A second Rain from the same seed replays
+    /// the identical stream.
+    #[test]
+    fn w4_g67_the_splash_draws_ride_rains_stream_in_kill_order() {
+        let w = tall_ground();
+        let i = inputs();
+        let mut a = Rain::with_forced(7, Some(1.0), false);
+        let mut b = Rain::with_forced(7, Some(1.0), false);
+        for r in [&mut a, &mut b] {
+            for k in 0..5 {
+                pin_drop(
+                    r,
+                    k,
+                    Vec2::new(400.0 + k as f32 * 32.0, 470.0),
+                    Vec2::new(0.0, 14.0),
+                );
+            }
+        }
+        let mut pa = tr_core::particles::DustPool::new();
+        let mut pb = tr_core::particles::DustPool::new();
+        let ctx = splash_ctx();
+        a.update_drops(&w, &i, Some((&mut pa, &ctx)));
+        b.update_drops(&w, &i, Some((&mut pb, &ctx)));
+        assert_eq!(a.rng, b.rng, "the same seed replays the same draws");
+        assert_eq!(splash_count(&pa), 5);
+        for idx in 0..tr_core::particles::DUST_SENTINEL {
+            assert_eq!(pa.slot(idx), pb.slot(idx), "slot {idx} byte-equal");
+        }
+        // The census: 5 kills × 7 draws from the seed state.
+        let mut twin = Rain::with_forced(7, Some(1.0), false).rng;
+        for _ in 0..(5 * 7) {
+            crate::app::next_rand(&mut twin);
+        }
+        assert_eq!(a.rng, twin, "5 × (gate + 6 defaults), no extra draws");
     }
 }

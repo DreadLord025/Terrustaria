@@ -1105,8 +1105,14 @@ pub(crate) fn tick(
                 // the matched arm — the flake keeps its own fall velocity.
                 crate::snow::type_76_arm(d, player_vy, world, &mut snow_dust);
                 crate::snow::type_76_tails(d);
+            } else {
+                // g67 (transplanted, docs/research/83 §3): the rain collision
+                // splashes (`dustWater()`'s family) ride the shared loop's
+                // `Dust.cs:1834-1874` arm — it gates on the C#'s full member
+                // list (308/52/266 included) and no-ops every other type.
+                crate::rain::water_splash_arm(d, world);
             }
-            // All arms return false: the 213/268 arms are standalone
+            // All arms return false: the 213/268/splash arms are standalone
             // statements of the C#'s FIRST ladder (between the `:477` move and
             // the fresh `if (dust.type >= 130 ...)` chain head at `:2127`), so
             // they do NOT exclude the second chain's final

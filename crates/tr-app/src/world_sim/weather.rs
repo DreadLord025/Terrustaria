@@ -65,7 +65,14 @@ pub(crate) fn update_rain(app: &mut App, dt: f32, screen: Vec2) {
         gfx_quality: app.gfx_quality.quality,
         remix_world: app.wind.remix_world,
     };
-    app.rain.update(&app.world, &inputs, dt);
+    // g67's splash drain (transplanted, docs/research/83 §3): the collision
+    // splashes drain into the shared `DustPool` (the d50 contract) —
+    // `Rain.Update`'s `Dust.NewDust` (`Rain.cs:122`) rides Rain's own stream
+    // inside `new_dust`, the ctx is the whole-App spawn snapshot (`Main`
+    // statics, `Dust.cs:77-98`).
+    let ctx = app.spawn_ctx();
+    app.rain
+        .update(&app.world, &inputs, dt, Some((&mut app.dust, &ctx)));
 }
 
 /// The cross-system inputs of the vanilla lightning chain
@@ -825,6 +832,7 @@ mod tests {
             &app.world,
             &test_inputs(&app, 1),
             STEP,
+            None,
         );
         assert_eq!(app.rain.max_raining(), 0.8);
         app.wind.speed_current = 0.55;
@@ -856,6 +864,7 @@ mod tests {
             &app.world,
             &test_inputs(&app, 1),
             STEP,
+            None,
         );
         app.wind.speed_current = 0.55;
         app.wind.speed_target = 0.8;
