@@ -57,8 +57,8 @@ use crate::render::special_points::{
     self, SpecialPoints,
 };
 use crate::render::tile_drains::{
-    self, DrainCellLight, DrainFairyJar, DrainFlame, DrainJarItem, DrainSprite,
-    PlainLight, PortedBodyDrain, RisingVineSegment,
+    self, DrainFairyJar, DrainFlame, DrainJarItem, DrainSprite, PlainLight,
+    PortedBodyDrain, RisingVineSegment,
 };
 use crate::render::tile_draw_pass::LegacyCaches;
 use crate::render::tile_pass::{

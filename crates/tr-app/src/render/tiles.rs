@@ -1188,8 +1188,9 @@ pub(crate) fn draw_tiles(
     // SHADOW attach — the union's draw_layer/post_draw_tiles drivers run
     // at the C# PostDrawTiles position (after the fused walk + the inline
     // foliage/vine passes, before the NPC pass) over the same camera
-    // rect, PLAN-ONLY: no sprites pushed, a separate _rand stream (never
-    // leaf_rng), no shared state mutated, the G6 key untouched. Default
+    // rect, PLAN-ONLY: no sprites pushed, a separate _rand stream (the
+    // fused pass's roll stream is never passed in), no shared state
+    // mutated, the G6 key untouched. Default
     // OFF — unset the pin and zero union code runs here. The pixel
     // binding (the fused loop split into the two draw_layer calls) is
     // §8's merge script.
