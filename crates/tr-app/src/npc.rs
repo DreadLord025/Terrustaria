@@ -1088,8 +1088,11 @@ pub enum NpcKind {
     DungeonSpirit,
 
     // ---- W4-d42: the NPCID 578-630 SetDefaults roster (data-only join;
-    // the protocol ids ride the port-local 354..404 band, the vanilla
-    // types ride `cs_id`/`net_id`/the bestiary). ----
+    // the protocol ids ride the VANILLA 578-630 slots — the 108 union
+    // plan's vanilla-free band, the d38/d40 precedent — and the vanilla
+    // types ride `cs_id`/`net_id`/the bestiary). The eight kinds other
+    // lanes own are NOT here: 581/587 (c4 style-44), 592/607/615 (c4b
+    // style-16), 604/605 (e26b luck), 606 (c8 style-66). ----
     /// `NPCID.DD2LightningBugT3` (578) — the Old One's Army's tier-3
     /// lightning bug (`NPC.cs:16536-16553`: 30×24, aiStyle 111, dmg 80,
     /// def 36, 500 HP, kb 0.8, noGravity/noTileCollide, npcSlots 0,
@@ -1108,12 +1111,6 @@ pub enum NpcKind {
     /// 508/580/582 lerp machine (`NPC.cs:58139-58202`, ported in
     /// `npc_ai3_speeds.rs`).
     WalkingAntlion,
-    /// `NPCID.FlyingAntlion` (581) — the desert swarmer (`NPC.cs:
-    /// 14868-14881`: 30×22, aiStyle 44, dmg 29, def 8, 60 HP, kb 0.5,
-    /// value 90, npcSlots 0.8). The aiStyle-44 machine is ported
-    /// (`npc_ai_style44.rs`) but UNWIRED — the family merge step owns
-    /// the dispatch claim (the wyvern precedent).
-    FlyingAntlion,
     /// `NPCID.LarvaeAntlion` (582) — the desert larva (`NPC.cs:
     /// 16569-16582`: 18×18, aiStyle 3, dmg 10, def 2, 30 HP, kb 0.75,
     /// value 40, npcSlots 0.4). The 582 lerp arm (`NPC.cs:58144-58150`:
@@ -1135,10 +1132,6 @@ pub enum NpcKind {
     /// 18x40, aiStyle 3, dmg 40, def 20,
     /// 400 HP, kb 0.0, value 1000.
     ZombieMerman,
-    /// `NPCID.EyeballFlyingFish` (587) - `NPC.cs:16623-16637`:
-    /// 32x18, aiStyle 44, dmg 35, def 18,
-    /// 300 HP, kb 0.0, value 1000.
-    EyeballFlyingFish,
     /// `NPCID.TorchZombie` (590) - `NPC.cs:16666-16678`:
     /// 18x40, aiStyle 3, dmg 14, def 6,
     /// 45 HP, kb 0.5, value 60.
@@ -1147,10 +1140,6 @@ pub enum NpcKind {
     /// 18x40, aiStyle 3, dmg 14, def 6,
     /// 45 HP, kb 0.5, value 60.
     ArmedTorchZombie,
-    /// `NPCID.GoldGoldfish` (592) - `NPC.cs:16679-16693`:
-    /// 20x18, aiStyle 16, dmg 0, def 0,
-    /// 5 HP, kb 0.5, value 0.
-    GoldGoldfish,
     /// `NPCID.GoldGoldfishWalker` (593) - `NPC.cs:16694-16706`:
     /// 18x20, aiStyle 7, dmg 0, def 0,
     /// 5 HP, kb 1.0, value 0.
@@ -1195,22 +1184,6 @@ pub enum NpcKind {
     /// 28x22, aiStyle 68, dmg 0, def 0,
     /// 5 HP, kb 1.0, value 0.
     Seagull2,
-    /// `NPCID.LadyBug` (604) - `NPC.cs:16763-16780 (catchItem type-604+4361 :16779)`:
-    /// 10x10, aiStyle 115, dmg 0, def 0,
-    /// 5 HP, kb 1.0, value 0.
-    LadyBug,
-    /// `NPCID.GoldLadyBug` (605) - `NPC.cs:16763-16780 (rarity 3 :16777)`:
-    /// 10x10, aiStyle 115, dmg 0, def 0,
-    /// 5 HP, kb 1.0, value 0.
-    GoldLadyBug,
-    /// `NPCID.Maggot` (606) - `NPC.cs:16781-16794`:
-    /// 10x4, aiStyle 66, dmg 0, def 0,
-    /// 5 HP, kb 1.0, value 0.
-    Maggot,
-    /// `NPCID.Pupfish` (607) - `NPC.cs:16795-16808`:
-    /// 20x18, aiStyle 16, dmg 0, def 0,
-    /// 5 HP, kb 0.5, value 0.
-    Pupfish,
     /// `NPCID.Grebe` (608) - `NPC.cs:16809-16820`:
     /// 22x26, aiStyle 7, dmg 0, def 0,
     /// 5 HP, kb 1.0, value 0.
@@ -1239,10 +1212,6 @@ pub enum NpcKind {
     /// 18x20, aiStyle 7, dmg 0, def 0,
     /// 5 HP, kb 1.0, value 0.
     ExplosiveBunny,
-    /// `NPCID.Dolphin` (615) - `NPC.cs:16892-16904`:
-    /// 20x18, aiStyle 16, dmg 0, def 0,
-    /// 5 HP, kb 0.5, value 0.
-    Dolphin,
     /// `NPCID.Turtle` (616) - `NPC.cs:16905-16917 (catchItem type-616+4464 :16916)`:
     /// 22x20, aiStyle 7, dmg 0, def 0,
     /// 5 HP, kb 0.5, value 0.
@@ -3262,9 +3231,8 @@ impl Npc {
             immortal: false,
             friendly: kind.is_town_resident()
                 || kind == NpcKind::SleepingAngler
-                // W4-d42 - the explicit friendly rows (the bound stand / the maggot).
-                || kind == NpcKind::Maggot
-                // W4-d42 - the explicit friendly rows (the bound stand / the maggot).
+                // W4-d42 - the explicit friendly row (the bound stand,
+                // `NPC.cs:16556`).
                 || kind == NpcKind::BartenderUnconscious
                 // `NPC.SetDefaults`' catchable arm (`NPC.cs:17851-17855`):
                 // every `Main.npcCatchable` kind spawns friendly with the
@@ -3347,11 +3315,11 @@ impl Npc {
                         100
                     } else {
                         match kind {
+                            // W4-d42 - the alpha-255 spawn-fade rows
+                            // (`NPC.cs:16620` 586, `:16948` 619, `:16966`
+                            // 620, `:16985`/`:17005`/`:17024` 621-623).
                             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2
-                            | NpcKind::Sharkron
-                            | NpcKind::Sharkron2
                             | NpcKind::ZombieMerman
-                            | NpcKind::EyeballFlyingFish
                             | NpcKind::BloodSquid
                             | NpcKind::GoblinShark
                             | NpcKind::BloodEelHead
@@ -3764,18 +3732,15 @@ impl Npc {
             NpcKind::DD2LightningBug => 0.8,
             NpcKind::BartenderUnconscious => 0.5,
             NpcKind::WalkingAntlion => 0.5,
-            NpcKind::FlyingAntlion => 0.5,
             NpcKind::LarvaeAntlion => 0.75,
             // W4-d42 - the NPCID 583-587 SetDefaults rows.
             NpcKind::FairyCritterPink => 1.0,
             NpcKind::FairyCritterGreen => 1.0,
             NpcKind::FairyCritterBlue => 1.0,
             NpcKind::ZombieMerman => 0.0,
-            NpcKind::EyeballFlyingFish => 0.0,
             // W4-d42 - the NPCID 590-594 SetDefaults rows.
             NpcKind::TorchZombie => 0.5,
             NpcKind::ArmedTorchZombie => 0.5,
-            NpcKind::GoldGoldfish => 0.5,
             NpcKind::GoldGoldfishWalker => 1.0,
             NpcKind::WindyBalloon => 0.3,
             // W4-d42 - the NPCID 595-599 SetDefaults rows.
@@ -3789,11 +3754,7 @@ impl Npc {
             NpcKind::GoldDragonfly => 1.0,
             NpcKind::Seagull => 1.0,
             NpcKind::Seagull2 => 1.0,
-            NpcKind::LadyBug => 1.0,
             // W4-d42 - the NPCID 605-609 SetDefaults rows.
-            NpcKind::GoldLadyBug => 1.0,
-            NpcKind::Maggot => 1.0,
-            NpcKind::Pupfish => 0.5,
             NpcKind::Grebe => 1.0,
             NpcKind::Grebe2 => 1.0,
             // W4-d42 - the NPCID 610-614 SetDefaults rows.
@@ -3803,7 +3764,6 @@ impl Npc {
             NpcKind::GoldWaterStrider => 1.0,
             NpcKind::ExplosiveBunny => 1.0,
             // W4-d42 - the NPCID 615-619 SetDefaults rows.
-            NpcKind::Dolphin => 0.5,
             NpcKind::Turtle => 0.5,
             NpcKind::TurtleJungle => 0.5,
             NpcKind::BloodNautilus => 0.0,
@@ -4206,18 +4166,15 @@ impl Npc {
             NpcKind::DD2LightningBug => 36,
             NpcKind::BartenderUnconscious => 15,
             NpcKind::WalkingAntlion => 10,
-            NpcKind::FlyingAntlion => 8,
             NpcKind::LarvaeAntlion => 2,
             // W4-d42 - the NPCID 583-587 SetDefaults rows.
             NpcKind::FairyCritterPink => 0,
             NpcKind::FairyCritterGreen => 0,
             NpcKind::FairyCritterBlue => 0,
             NpcKind::ZombieMerman => 20,
-            NpcKind::EyeballFlyingFish => 18,
             // W4-d42 - the NPCID 590-594 SetDefaults rows.
             NpcKind::TorchZombie => 6,
             NpcKind::ArmedTorchZombie => 6,
-            NpcKind::GoldGoldfish => 0,
             NpcKind::GoldGoldfishWalker => 0,
             NpcKind::WindyBalloon => 0,
             // W4-d42 - the NPCID 595-599 SetDefaults rows.
@@ -4231,11 +4188,7 @@ impl Npc {
             NpcKind::GoldDragonfly => 0,
             NpcKind::Seagull => 0,
             NpcKind::Seagull2 => 0,
-            NpcKind::LadyBug => 0,
             // W4-d42 - the NPCID 605-609 SetDefaults rows.
-            NpcKind::GoldLadyBug => 0,
-            NpcKind::Maggot => 0,
-            NpcKind::Pupfish => 0,
             NpcKind::Grebe => 0,
             NpcKind::Grebe2 => 0,
             // W4-d42 - the NPCID 610-614 SetDefaults rows.
@@ -4245,7 +4198,6 @@ impl Npc {
             NpcKind::GoldWaterStrider => 0,
             NpcKind::ExplosiveBunny => 0,
             // W4-d42 - the NPCID 615-619 SetDefaults rows.
-            NpcKind::Dolphin => 0,
             NpcKind::Turtle => 0,
             NpcKind::TurtleJungle => 0,
             NpcKind::BloodNautilus => 24,
@@ -4640,18 +4592,15 @@ impl Npc {
             NpcKind::DD2LightningBug => 0.0,
             NpcKind::BartenderUnconscious => 0.0,
             NpcKind::WalkingAntlion => 80.0,
-            NpcKind::FlyingAntlion => 90.0,
             NpcKind::LarvaeAntlion => 40.0,
             // W4-d42 - the NPCID 583-587 SetDefaults rows.
             NpcKind::FairyCritterPink => 0.0,
             NpcKind::FairyCritterGreen => 0.0,
             NpcKind::FairyCritterBlue => 0.0,
             NpcKind::ZombieMerman => 1000.0,
-            NpcKind::EyeballFlyingFish => 1000.0,
             // W4-d42 - the NPCID 590-594 SetDefaults rows.
             NpcKind::TorchZombie => 60.0,
             NpcKind::ArmedTorchZombie => 60.0,
-            NpcKind::GoldGoldfish => 0.0,
             NpcKind::GoldGoldfishWalker => 0.0,
             NpcKind::WindyBalloon => 0.0,
             // W4-d42 - the NPCID 595-599 SetDefaults rows.
@@ -4665,11 +4614,7 @@ impl Npc {
             NpcKind::GoldDragonfly => 0.0,
             NpcKind::Seagull => 0.0,
             NpcKind::Seagull2 => 0.0,
-            NpcKind::LadyBug => 0.0,
             // W4-d42 - the NPCID 605-609 SetDefaults rows.
-            NpcKind::GoldLadyBug => 0.0,
-            NpcKind::Maggot => 0.0,
-            NpcKind::Pupfish => 0.0,
             NpcKind::Grebe => 0.0,
             NpcKind::Grebe2 => 0.0,
             // W4-d42 - the NPCID 610-614 SetDefaults rows.
@@ -4679,7 +4624,6 @@ impl Npc {
             NpcKind::GoldWaterStrider => 0.0,
             NpcKind::ExplosiveBunny => 0.0,
             // W4-d42 - the NPCID 615-619 SetDefaults rows.
-            NpcKind::Dolphin => 0.0,
             NpcKind::Turtle => 0.0,
             NpcKind::TurtleJungle => 0.0,
             NpcKind::BloodNautilus => 20000.0,
@@ -6770,10 +6714,9 @@ impl Npc {
             // ladder's own per-type arm (`npc_ai3_speeds.rs`).
             NpcKind::Gnome => self.update_zombie(world, player, dt),
             // ---- W4-d42 batch 8: the NPCID 615-619 roster
-            // (data-only join). Unwired styles idle in place (the
-            // wyvern precedent); walkers ride the aiStyle-3 family,
-            // swimmers the aiStyle-16 family.
-            NpcKind::Dolphin => self.update_swimmer(world, player, rng),
+            // (data-only join; 615 the Dolphin is c4b's). Unwired styles
+            // idle in place (the wyvern precedent); walkers ride the
+            // aiStyle-3 family.
             // `NPC.cs:16905-16917 (catchItem type-616+4464 :16916)` - aiStyle 7 is UNWIRED (the
             // MartianTurret/wyvern precedent): the idle stand-in.
             NpcKind::Turtle => {}
@@ -6811,16 +6754,9 @@ impl Npc {
             // MartianTurret/wyvern precedent): the idle stand-in.
             NpcKind::ExplosiveBunny => {}
             // ---- W4-d42 batch 6: the NPCID 605-609 roster
-            // (data-only join). Unwired styles idle in place (the
-            // wyvern precedent); walkers ride the aiStyle-3 family,
-            // swimmers the aiStyle-16 family.
-            // `NPC.cs:16763-16780 (rarity 3 :16777)` - aiStyle 115 is UNWIRED (the
-            // MartianTurret/wyvern precedent): the idle stand-in.
-            NpcKind::GoldLadyBug => {}
-            // `NPC.cs:16781-16794` - aiStyle 66 is UNWIRED (the
-            // MartianTurret/wyvern precedent): the idle stand-in.
-            NpcKind::Maggot => {}
-            NpcKind::Pupfish => self.update_swimmer(world, player, rng),
+            // (data-only join; 605 the GoldLadyBug is e26b's, 606 the
+            // Maggot c8's, 607 the Pupfish c4b's). Unwired styles idle
+            // in place (the wyvern precedent).
             // `NPC.cs:16809-16820` - aiStyle 7 is UNWIRED (the
             // MartianTurret/wyvern precedent): the idle stand-in.
             NpcKind::Grebe => {}
@@ -6828,9 +6764,8 @@ impl Npc {
             // MartianTurret/wyvern precedent): the idle stand-in.
             NpcKind::Grebe2 => {}
             // ---- W4-d42 batch 5: the NPCID 600-604 roster
-            // (data-only join). Unwired styles idle in place (the
-            // wyvern precedent); walkers ride the aiStyle-3 family,
-            // swimmers the aiStyle-16 family.
+            // (data-only join; 604 the LadyBug is e26b's). Unwired
+            // styles idle in place (the wyvern precedent).
             // `NPC.cs:16720-16738` - aiStyle 114 is UNWIRED (the
             // MartianTurret/wyvern precedent): the idle stand-in.
             NpcKind::YellowDragonfly => {}
@@ -6843,9 +6778,6 @@ impl Npc {
             // `NPC.cs:16751-16762` - aiStyle 68 is UNWIRED (the
             // MartianTurret/wyvern precedent): the idle stand-in.
             NpcKind::Seagull2 => {}
-            // `NPC.cs:16763-16780 (catchItem type-604+4361 :16779)` - aiStyle 115 is UNWIRED (the
-            // MartianTurret/wyvern precedent): the idle stand-in.
-            NpcKind::LadyBug => {}
             // ---- W4-d42 batch 4: the NPCID 595-599 roster
             // (data-only join). Unwired styles idle in place (the
             // wyvern precedent); walkers ride the aiStyle-3 family,
@@ -6866,16 +6798,15 @@ impl Npc {
             // MartianTurret/wyvern precedent): the idle stand-in.
             NpcKind::RedDragonfly => {}
             // ---- W4-d42 batch 3: the NPCID 590-594 roster
-            // (data-only join). Unwired styles idle in place (the
-            // wyvern precedent); walkers ride the aiStyle-3 family,
-            // swimmers the aiStyle-16 family.
+            // (data-only join; 592 the GoldGoldfish is c4b's). Unwired
+            // styles idle in place (the wyvern precedent); walkers ride
+            // the aiStyle-3 family.
             // `NPC.cs:16666-16678` - the aiStyle-3 walk rides the C#
             // ladder's own per-type arm (`npc_ai3_speeds.rs`).
             NpcKind::TorchZombie => self.update_zombie(world, player, dt),
             // `NPC.cs:16666-16678 (the 590/591 group)` - the aiStyle-3 walk rides the C#
             // ladder's own per-type arm (`npc_ai3_speeds.rs`).
             NpcKind::ArmedTorchZombie => self.update_zombie(world, player, dt),
-            NpcKind::GoldGoldfish => self.update_swimmer(world, player, rng),
             // `NPC.cs:16694-16706` - aiStyle 7 is UNWIRED (the
             // MartianTurret/wyvern precedent): the idle stand-in.
             NpcKind::GoldGoldfishWalker => {}
@@ -6883,9 +6814,9 @@ impl Npc {
             // MartianTurret/wyvern precedent): the idle stand-in.
             NpcKind::WindyBalloon => {}
             // ---- W4-d42 batch 2: the NPCID 583-587 roster
-            // (data-only join). Unwired styles idle in place (the
-            // wyvern precedent); walkers ride the aiStyle-3 family,
-            // swimmers the aiStyle-16 family.
+            // (data-only join; 587 the EyeballFlyingFish is c4's).
+            // Unwired styles idle in place (the wyvern precedent);
+            // walkers ride the aiStyle-3 family.
             // `NPC.cs:16583-16607` - aiStyle 112 is UNWIRED (the
             // MartianTurret/wyvern precedent): the idle stand-in.
             NpcKind::FairyCritterPink => {}
@@ -6898,13 +6829,10 @@ impl Npc {
             // `NPC.cs:16608-16622` - the aiStyle-3 walk rides the C#
             // ladder's own per-type arm (`npc_ai3_speeds.rs`).
             NpcKind::ZombieMerman => self.update_zombie(world, player, dt),
-            // `NPC.cs:16623-16637` - aiStyle 44 is UNWIRED (the
-            // MartianTurret/wyvern precedent): the idle stand-in.
-            NpcKind::EyeballFlyingFish => {}
             // ---- W4-d42 batch 1: the NPCID 578-582 roster
-            // (data-only join). Unwired styles idle in place (the
-            // wyvern precedent); walkers ride the aiStyle-3 family,
-            // swimmers the aiStyle-16 family.
+            // (data-only join; 581 the FlyingAntlion is c4's). Unwired
+            // styles idle in place (the wyvern precedent); walkers ride
+            // the aiStyle-3 family.
             // `NPC.cs:16536-16553` - aiStyle 111 is UNWIRED (the
             // wyvern precedent); the noGravity/noTileCollide raw
             // integration tail (`NPC.cs:90494-90498`) runs so the
@@ -6918,9 +6846,6 @@ impl Npc {
             // `NPC.cs:14854-14867` - the aiStyle-3 walk rides the C#
             // ladder's own per-type arm (`npc_ai3_speeds.rs`).
             NpcKind::WalkingAntlion => self.update_zombie(world, player, dt),
-            // `NPC.cs:14868-14881` - aiStyle 44 is UNWIRED (the
-            // MartianTurret/wyvern precedent): the idle stand-in.
-            NpcKind::FlyingAntlion => {}
             // `NPC.cs:16569-16582` - the aiStyle-3 walk rides the C#
             // ladder's own per-type arm (`npc_ai3_speeds.rs`).
             NpcKind::LarvaeAntlion => self.update_zombie(world, player, dt),
@@ -9724,22 +9649,6 @@ impl Npc {
                     }
                 }
             }
-            // W4-d42 - `FindFrame` case 509/581 (`NPC.cs:70104-70119`):
-            // the direction-matched sprite flip + the 3-tick counter
-            // over the 9-frame strip.
-            NpcKind::FlyingAntlion => {
-                if (self.vx > 0.0 && self.facing > 0) || (self.vx < 0.0 && self.facing < 0) {
-                    self.sprite_dir = self.facing;
-                }
-                self.frame_counter += 1.0;
-                if self.frame_counter >= 3.0 {
-                    self.frame_counter = 0.0;
-                    self.frame += 1;
-                    if self.frame >= 9 {
-                        self.frame = 0;
-                    }
-                }
-            }
             // W4-d42 - 583 `NPC.cs:16583-16607`, 584 `NPC.cs:16583-16607 (catchItem 4069 :16599)`, 585 `NPC.cs:16583-16607 (catchItem 4070 :16602)` (`FindFrame` `NPC.cs:67875` / the fairies `:69835`): the 4-tick counter over
             // the 4-frame strip.
             NpcKind::FairyCritterPink | NpcKind::FairyCritterGreen | NpcKind::FairyCritterBlue => {
@@ -9795,27 +9704,6 @@ impl Npc {
                     }
                 }
             }
-            // W4-d42 - `FindFrame` case 587 (`NPC.cs:74764-74785`): the
-            // velocity-sign sprite flip + tilt, the 6-tick counter
-            // over the 4-frame strip.
-            NpcKind::EyeballFlyingFish => {
-                if self.vx > 0.0 {
-                    self.sprite_dir = 1;
-                    self.rotation = self.vy * 0.2;
-                }
-                if self.vx < 0.0 {
-                    self.sprite_dir = -1;
-                    self.rotation = (0.0 - self.vy) * 0.2;
-                }
-                self.frame_counter += 1.0;
-                if self.frame_counter >= 6.0 {
-                    self.frame += 1;
-                    self.frame_counter = 0.0;
-                }
-                if self.frame >= 4 {
-                    self.frame = 0;
-                }
-            }
             // W4-d42 - `FindFrame`'s case-3 walker group (590 `NPC.cs:16666-16678`).
             NpcKind::TorchZombie => {
                 self.walker_frame();
@@ -9861,32 +9749,6 @@ impl Npc {
                             self.frame_counter = 0.0;
                         }
                     }
-                }
-            }
-            // W4-d42 - `FindFrame` case 592/607 (`NPC.cs:74187-74226`):
-            // the wet swim rows 0..3 on the 6-tick phases, the dry
-            // flop rows 4..5.
-            NpcKind::GoldGoldfish => {
-                self.sprite_dir = self.facing;
-                self.frame_counter += 1.0;
-                if self.wet {
-                    if self.frame_counter < 6.0 {
-                        self.frame = 0;
-                    } else if self.frame_counter < 12.0 {
-                        self.frame = 1;
-                    } else if self.frame_counter < 18.0 {
-                        self.frame = 2;
-                    } else if self.frame_counter < 24.0 {
-                        self.frame = 3;
-                    } else {
-                        self.frame_counter = 0.0;
-                    }
-                } else if self.frame_counter < 6.0 {
-                    self.frame = 4;
-                } else if self.frame_counter < 12.0 {
-                    self.frame = 5;
-                } else {
-                    self.frame_counter = 0.0;
                 }
             }
             // W4-d42 - `FindFrame` case 593 (`NPC.cs:75923-75962`): the
@@ -10006,92 +9868,6 @@ impl Npc {
                     if self.frame < 11 {
                         self.frame = 11;
                     }
-                }
-            }
-            // W4-d42 - `FindFrame` case 604/605 (`NPC.cs:66961-66980`):
-            // the moving-only counter (2-tick phases over 4), ground
-            // rows 0..3, air rows 4..7.
-            NpcKind::LadyBug => {
-                self.sprite_dir = self.facing;
-                if self.vx != 0.0 || self.vy != 0.0 {
-                    self.frame_counter += 1.0;
-                    if self.frame_counter >= 8.0 {
-                        self.frame_counter = 0.0;
-                    }
-                }
-                if self.vy == 0.0 {
-                    self.frame = self.frame_counter as u32 / 2;
-                } else {
-                    self.frame = 4 + self.frame_counter as u32 / 2;
-                }
-            }
-            // W4-d42 - `FindFrame` case 604/605 (`NPC.cs:66961-66980`):
-            // the moving-only counter (2-tick phases over 4), ground
-            // rows 0..3, air rows 4..7.
-            NpcKind::GoldLadyBug => {
-                self.sprite_dir = self.facing;
-                if self.vx != 0.0 || self.vy != 0.0 {
-                    self.frame_counter += 1.0;
-                    if self.frame_counter >= 8.0 {
-                        self.frame_counter = 0.0;
-                    }
-                }
-                if self.vy == 0.0 {
-                    self.frame = self.frame_counter as u32 / 2;
-                } else {
-                    self.frame = 4 + self.frame_counter as u32 / 2;
-                }
-            }
-            // W4-d42 - `FindFrame` case 606 (`NPC.cs:72777-72828`): the
-            // ground crawl rows 0..1 (12-tick), the air row 1 with the
-            // direction spin. The `localAI[0]` slope latch + the tile
-            // slope probe (:72807-72826) ride the AI wiring (the
-            // aiStyle-66 machine is UNWIRED - the stand-in note).
-            NpcKind::Maggot => {
-                if self.vy == 0.0 {
-                    self.rotation = 0.0;
-                    if self.vx == 0.0 {
-                        self.frame = 1;
-                        self.frame_counter = 0.0;
-                    } else {
-                        self.frame_counter += 1.0;
-                        if self.frame_counter > 12.0 {
-                            self.frame_counter = 0.0;
-                            self.frame += 1;
-                            if self.frame > 1 {
-                                self.frame = 0;
-                            }
-                        }
-                    }
-                } else {
-                    self.rotation += self.facing as f32 * 0.1;
-                    self.frame = 1;
-                }
-            }
-            // W4-d42 - `FindFrame` case 592/607 (`NPC.cs:74187-74226`):
-            // the wet swim rows 0..3 on the 6-tick phases, the dry
-            // flop rows 4..5.
-            NpcKind::Pupfish => {
-                self.sprite_dir = self.facing;
-                self.frame_counter += 1.0;
-                if self.wet {
-                    if self.frame_counter < 6.0 {
-                        self.frame = 0;
-                    } else if self.frame_counter < 12.0 {
-                        self.frame = 1;
-                    } else if self.frame_counter < 18.0 {
-                        self.frame = 2;
-                    } else if self.frame_counter < 24.0 {
-                        self.frame = 3;
-                    } else {
-                        self.frame_counter = 0.0;
-                    }
-                } else if self.frame_counter < 6.0 {
-                    self.frame = 4;
-                } else if self.frame_counter < 12.0 {
-                    self.frame = 5;
-                } else {
-                    self.frame_counter = 0.0;
                 }
             }
             // W4-d42 - `FindFrame` case 602/608 (`NPC.cs:73819-73841` /
@@ -10265,24 +10041,6 @@ impl Npc {
                 } else {
                     self.frame_counter = 0.0;
                     self.frame = 6;
-                }
-            }
-            // W4-d42 - `FindFrame` case 615 (`NPC.cs:74227-74243`): the
-            // dry ai[2]==1 flop pins row 4; else the dry double-tick
-            // counter, the row = counter/7 over 4 (28-tick lap).
-            NpcKind::Dolphin => {
-                self.sprite_dir = self.facing;
-                if !self.wet && self.ai[2] == 1.0 {
-                    self.frame = 4;
-                } else {
-                    if !self.wet {
-                        self.frame_counter += 1.0;
-                    }
-                    self.frame_counter += 1.0;
-                    if self.frame_counter >= 28.0 {
-                        self.frame_counter = 0.0;
-                    }
-                    self.frame = self.frame_counter as u32 / 7;
                 }
             }
             // W4-d42 - `FindFrame` case 616/617 (`NPC.cs:76686-76731`):
@@ -20181,18 +19939,15 @@ impl Npc {
             NpcKind::DD2LightningBug => 578,
             NpcKind::BartenderUnconscious => 579,
             NpcKind::WalkingAntlion => 580,
-            NpcKind::FlyingAntlion => 581,
             NpcKind::LarvaeAntlion => 582,
             // W4-d42 - the vanilla ids 583-587 are free render keys.
             NpcKind::FairyCritterPink => 583,
             NpcKind::FairyCritterGreen => 584,
             NpcKind::FairyCritterBlue => 585,
             NpcKind::ZombieMerman => 586,
-            NpcKind::EyeballFlyingFish => 587,
             // W4-d42 - the vanilla ids 590-594 are free render keys.
             NpcKind::TorchZombie => 590,
             NpcKind::ArmedTorchZombie => 591,
-            NpcKind::GoldGoldfish => 592,
             NpcKind::GoldGoldfishWalker => 593,
             NpcKind::WindyBalloon => 594,
             // W4-d42 - the vanilla ids 595-599 are free render keys.
@@ -20206,11 +19961,7 @@ impl Npc {
             NpcKind::GoldDragonfly => 601,
             NpcKind::Seagull => 602,
             NpcKind::Seagull2 => 603,
-            NpcKind::LadyBug => 604,
             // W4-d42 - the vanilla ids 605-609 are free render keys.
-            NpcKind::GoldLadyBug => 605,
-            NpcKind::Maggot => 606,
-            NpcKind::Pupfish => 607,
             NpcKind::Grebe => 608,
             NpcKind::Grebe2 => 609,
             // W4-d42 - the vanilla ids 610-614 are free render keys.
@@ -20220,7 +19971,6 @@ impl Npc {
             NpcKind::GoldWaterStrider => 613,
             NpcKind::ExplosiveBunny => 614,
             // W4-d42 - the vanilla ids 615-619 are free render keys.
-            NpcKind::Dolphin => 615,
             NpcKind::Turtle => 616,
             NpcKind::TurtleJungle => 617,
             NpcKind::BloodNautilus => 618,
@@ -25307,7 +25057,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 321] = [
+    pub(super) const ALL_KINDS: [NpcKind; 313] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -25590,18 +25340,15 @@ mod tests {
         NpcKind::DD2LightningBug,
         NpcKind::BartenderUnconscious,
         NpcKind::WalkingAntlion,
-        NpcKind::FlyingAntlion,
         NpcKind::LarvaeAntlion,
         // W4-d42 - the NPCID 583-587 roster.
         NpcKind::FairyCritterPink,
         NpcKind::FairyCritterGreen,
         NpcKind::FairyCritterBlue,
         NpcKind::ZombieMerman,
-        NpcKind::EyeballFlyingFish,
         // W4-d42 - the NPCID 590-594 roster.
         NpcKind::TorchZombie,
         NpcKind::ArmedTorchZombie,
-        NpcKind::GoldGoldfish,
         NpcKind::GoldGoldfishWalker,
         NpcKind::WindyBalloon,
         // W4-d42 - the NPCID 595-599 roster.
@@ -25615,11 +25362,7 @@ mod tests {
         NpcKind::GoldDragonfly,
         NpcKind::Seagull,
         NpcKind::Seagull2,
-        NpcKind::LadyBug,
         // W4-d42 - the NPCID 605-609 roster.
-        NpcKind::GoldLadyBug,
-        NpcKind::Maggot,
-        NpcKind::Pupfish,
         NpcKind::Grebe,
         NpcKind::Grebe2,
         // W4-d42 - the NPCID 610-614 roster.
@@ -25629,7 +25372,6 @@ mod tests {
         NpcKind::GoldWaterStrider,
         NpcKind::ExplosiveBunny,
         // W4-d42 - the NPCID 615-619 roster.
-        NpcKind::Dolphin,
         NpcKind::Turtle,
         NpcKind::TurtleJungle,
         NpcKind::BloodNautilus,
@@ -25745,8 +25487,9 @@ mod tests {
     }
 
     /// W4-d42 batch 1 - the NPCID 578-582 `SetDefaults` rows pin
-    /// against the C# (NPC.cs:16536-16553, NPC.cs:16554-16568, NPC.cs:14854-14867, NPC.cs:14868-14881, NPC.cs:16569-16582), through the port's
-    /// tables - the smallkinds witness shape. WRITTEN, NOT RUN (code-only mode).
+    /// against the C# (NPC.cs:16536-16553, NPC.cs:16554-16568, NPC.cs:14854-14867, NPC.cs:16569-16582), through the port's
+    /// tables - the smallkinds witness shape. 581 the FlyingAntlion is
+    /// c4's (the style-44 lane). WRITTEN, NOT RUN (code-only mode).
     #[test]
     fn w4_d42_b1_the_defaults_match_the_csharp_rows() {
         // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
@@ -25754,7 +25497,6 @@ mod tests {
             (NpcKind::DD2LightningBug, 578u16, 111u8, 30.0, 24.0, 80, 36, 500, 0.8f32, 0.0f32),
             (NpcKind::BartenderUnconscious, 579u16, 0u8, 34.0, 8.0, 10, 15, 250, 0.5f32, 0.0f32),
             (NpcKind::WalkingAntlion, 580u16, 3u8, 26.0, 26.0, 25, 10, 80, 0.5f32, 80.0f32),
-            (NpcKind::FlyingAntlion, 581u16, 44u8, 30.0, 22.0, 29, 8, 60, 0.5f32, 90.0f32),
             (NpcKind::LarvaeAntlion, 582u16, 3u8, 18.0, 18.0, 10, 2, 30, 0.75f32, 40.0f32),
         ];
         for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
@@ -25771,18 +25513,18 @@ mod tests {
             assert_eq!(shell.value(), value, "{kind:?} value");
             assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
         }
-        // The port-local wire band (the vanilla types ride cs_id/net_id).
-        assert_eq!(NpcKind::DD2LightningBug.to_u16(), 354u16);
-        assert_eq!(NpcKind::BartenderUnconscious.to_u16(), 355u16);
-        assert_eq!(NpcKind::WalkingAntlion.to_u16(), 356u16);
-        assert_eq!(NpcKind::FlyingAntlion.to_u16(), 357u16);
-        assert_eq!(NpcKind::LarvaeAntlion.to_u16(), 358u16);
-        assert_eq!(ALL_KINDS.len(), 275);
+        // The vanilla-free wire band (protocol == NPCID, the 108 plan).
+        assert_eq!(NpcKind::DD2LightningBug.to_u16(), 578u16);
+        assert_eq!(NpcKind::BartenderUnconscious.to_u16(), 579u16);
+        assert_eq!(NpcKind::WalkingAntlion.to_u16(), 580u16);
+        assert_eq!(NpcKind::LarvaeAntlion.to_u16(), 582u16);
+        assert_eq!(ALL_KINDS.len(), 274);
     }
 
     /// W4-d42 batch 2 - the NPCID 583-587 `SetDefaults` rows pin
-    /// against the C# (NPC.cs:16583-16607, NPC.cs:16583-16607 (catchItem 4069 :16599), NPC.cs:16583-16607 (catchItem 4070 :16602), NPC.cs:16608-16622, NPC.cs:16623-16637), through the port's
-    /// tables - the smallkinds witness shape. WRITTEN, NOT RUN (code-only mode).
+    /// against the C# (NPC.cs:16583-16607, NPC.cs:16583-16607 (catchItem 4069 :16599), NPC.cs:16583-16607 (catchItem 4070 :16602), NPC.cs:16608-16622), through the port's
+    /// tables - the smallkinds witness shape. 587 the EyeballFlyingFish
+    /// is c4's. WRITTEN, NOT RUN (code-only mode).
     #[test]
     fn w4_d42_b2_the_defaults_match_the_csharp_rows() {
         // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
@@ -25791,7 +25533,6 @@ mod tests {
             (NpcKind::FairyCritterGreen, 584u16, 112u8, 18.0, 20.0, 0, 0, 5, 1.0f32, 0.0f32),
             (NpcKind::FairyCritterBlue, 585u16, 112u8, 18.0, 20.0, 0, 0, 5, 1.0f32, 0.0f32),
             (NpcKind::ZombieMerman, 586u16, 3u8, 18.0, 40.0, 40, 20, 400, 0.0f32, 1000.0f32),
-            (NpcKind::EyeballFlyingFish, 587u16, 44u8, 32.0, 18.0, 35, 18, 300, 0.0f32, 1000.0f32),
         ];
         for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
             let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
@@ -25807,25 +25548,24 @@ mod tests {
             assert_eq!(shell.value(), value, "{kind:?} value");
             assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
         }
-        // The port-local wire band (the vanilla types ride cs_id/net_id).
-        assert_eq!(NpcKind::FairyCritterPink.to_u16(), 359u16);
-        assert_eq!(NpcKind::FairyCritterGreen.to_u16(), 360u16);
-        assert_eq!(NpcKind::FairyCritterBlue.to_u16(), 361u16);
-        assert_eq!(NpcKind::ZombieMerman.to_u16(), 362u16);
-        assert_eq!(NpcKind::EyeballFlyingFish.to_u16(), 363u16);
-        assert_eq!(ALL_KINDS.len(), 280);
+        // The vanilla-free wire band (protocol == NPCID, the 108 plan).
+        assert_eq!(NpcKind::FairyCritterPink.to_u16(), 583u16);
+        assert_eq!(NpcKind::FairyCritterGreen.to_u16(), 584u16);
+        assert_eq!(NpcKind::FairyCritterBlue.to_u16(), 585u16);
+        assert_eq!(NpcKind::ZombieMerman.to_u16(), 586u16);
+        assert_eq!(ALL_KINDS.len(), 278);
     }
 
     /// W4-d42 batch 3 - the NPCID 590-594 `SetDefaults` rows pin
-    /// against the C# (NPC.cs:16666-16678, NPC.cs:16666-16678 (the 590/591 group), NPC.cs:16679-16693, NPC.cs:16694-16706, NPC.cs:16707-16719), through the port's
-    /// tables - the smallkinds witness shape. WRITTEN, NOT RUN (code-only mode).
+    /// against the C# (NPC.cs:16666-16678, NPC.cs:16666-16678 (the 590/591 group), NPC.cs:16694-16706, NPC.cs:16707-16719), through the port's
+    /// tables - the smallkinds witness shape. 592 the GoldGoldfish is
+    /// c4b's. WRITTEN, NOT RUN (code-only mode).
     #[test]
     fn w4_d42_b3_the_defaults_match_the_csharp_rows() {
         // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
         let rows = [
             (NpcKind::TorchZombie, 590u16, 3u8, 18.0, 40.0, 14, 6, 45, 0.5f32, 60.0f32),
             (NpcKind::ArmedTorchZombie, 591u16, 3u8, 18.0, 40.0, 14, 6, 45, 0.5f32, 60.0f32),
-            (NpcKind::GoldGoldfish, 592u16, 16u8, 20.0, 18.0, 0, 0, 5, 0.5f32, 0.0f32),
             (NpcKind::GoldGoldfishWalker, 593u16, 7u8, 18.0, 20.0, 0, 0, 5, 1.0f32, 0.0f32),
             (NpcKind::WindyBalloon, 594u16, 113u8, 20.0, 20.0, 0, 0, 1, 0.3f32, 0.0f32),
         ];
@@ -25843,13 +25583,12 @@ mod tests {
             assert_eq!(shell.value(), value, "{kind:?} value");
             assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
         }
-        // The port-local wire band (the vanilla types ride cs_id/net_id).
-        assert_eq!(NpcKind::TorchZombie.to_u16(), 364u16);
-        assert_eq!(NpcKind::ArmedTorchZombie.to_u16(), 365u16);
-        assert_eq!(NpcKind::GoldGoldfish.to_u16(), 366u16);
-        assert_eq!(NpcKind::GoldGoldfishWalker.to_u16(), 367u16);
-        assert_eq!(NpcKind::WindyBalloon.to_u16(), 368u16);
-        assert_eq!(ALL_KINDS.len(), 285);
+        // The vanilla-free wire band (protocol == NPCID, the 108 plan).
+        assert_eq!(NpcKind::TorchZombie.to_u16(), 590u16);
+        assert_eq!(NpcKind::ArmedTorchZombie.to_u16(), 591u16);
+        assert_eq!(NpcKind::GoldGoldfishWalker.to_u16(), 593u16);
+        assert_eq!(NpcKind::WindyBalloon.to_u16(), 594u16);
+        assert_eq!(ALL_KINDS.len(), 282);
     }
 
     /// W4-d42 batch 4 - the NPCID 595-599 `SetDefaults` rows pin
@@ -25879,18 +25618,19 @@ mod tests {
             assert_eq!(shell.value(), value, "{kind:?} value");
             assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
         }
-        // The port-local wire band (the vanilla types ride cs_id/net_id).
-        assert_eq!(NpcKind::BlackDragonfly.to_u16(), 369u16);
-        assert_eq!(NpcKind::BlueDragonfly.to_u16(), 370u16);
-        assert_eq!(NpcKind::GreenDragonfly.to_u16(), 371u16);
-        assert_eq!(NpcKind::OrangeDragonfly.to_u16(), 372u16);
-        assert_eq!(NpcKind::RedDragonfly.to_u16(), 373u16);
-        assert_eq!(ALL_KINDS.len(), 290);
+        // The vanilla-free wire band (protocol == NPCID, the 108 plan).
+        assert_eq!(NpcKind::BlackDragonfly.to_u16(), 595u16);
+        assert_eq!(NpcKind::BlueDragonfly.to_u16(), 596u16);
+        assert_eq!(NpcKind::GreenDragonfly.to_u16(), 597u16);
+        assert_eq!(NpcKind::OrangeDragonfly.to_u16(), 598u16);
+        assert_eq!(NpcKind::RedDragonfly.to_u16(), 599u16);
+        assert_eq!(ALL_KINDS.len(), 287);
     }
 
     /// W4-d42 batch 5 - the NPCID 600-604 `SetDefaults` rows pin
-    /// against the C# (NPC.cs:16720-16738, NPC.cs:16720-16738 (rarity 3 :16735), NPC.cs:16739-16750, NPC.cs:16751-16762, NPC.cs:16763-16780 (catchItem type-604+4361 :16779)), through the port's
-    /// tables - the smallkinds witness shape. WRITTEN, NOT RUN (code-only mode).
+    /// against the C# (NPC.cs:16720-16738, NPC.cs:16720-16738 (rarity 3 :16735), NPC.cs:16739-16750, NPC.cs:16751-16762), through the port's
+    /// tables - the smallkinds witness shape. 604 the LadyBug is e26b's.
+    /// WRITTEN, NOT RUN (code-only mode).
     #[test]
     fn w4_d42_b5_the_defaults_match_the_csharp_rows() {
         // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
@@ -25899,7 +25639,6 @@ mod tests {
             (NpcKind::GoldDragonfly, 601u16, 114u8, 10.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),
             (NpcKind::Seagull, 602u16, 7u8, 22.0, 26.0, 0, 0, 5, 1.0f32, 0.0f32),
             (NpcKind::Seagull2, 603u16, 68u8, 28.0, 22.0, 0, 0, 5, 1.0f32, 0.0f32),
-            (NpcKind::LadyBug, 604u16, 115u8, 10.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),
         ];
         for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
             let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
@@ -25915,25 +25654,23 @@ mod tests {
             assert_eq!(shell.value(), value, "{kind:?} value");
             assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
         }
-        // The port-local wire band (the vanilla types ride cs_id/net_id).
-        assert_eq!(NpcKind::YellowDragonfly.to_u16(), 374u16);
-        assert_eq!(NpcKind::GoldDragonfly.to_u16(), 375u16);
-        assert_eq!(NpcKind::Seagull.to_u16(), 376u16);
-        assert_eq!(NpcKind::Seagull2.to_u16(), 377u16);
-        assert_eq!(NpcKind::LadyBug.to_u16(), 378u16);
-        assert_eq!(ALL_KINDS.len(), 295);
+        // The vanilla-free wire band (protocol == NPCID, the 108 plan).
+        assert_eq!(NpcKind::YellowDragonfly.to_u16(), 600u16);
+        assert_eq!(NpcKind::GoldDragonfly.to_u16(), 601u16);
+        assert_eq!(NpcKind::Seagull.to_u16(), 602u16);
+        assert_eq!(NpcKind::Seagull2.to_u16(), 603u16);
+        assert_eq!(ALL_KINDS.len(), 291);
     }
 
     /// W4-d42 batch 6 - the NPCID 605-609 `SetDefaults` rows pin
-    /// against the C# (NPC.cs:16763-16780 (rarity 3 :16777), NPC.cs:16781-16794, NPC.cs:16795-16808, NPC.cs:16809-16820, NPC.cs:16821-16832), through the port's
-    /// tables - the smallkinds witness shape. WRITTEN, NOT RUN (code-only mode).
+    /// against the C# (NPC.cs:16809-16820, NPC.cs:16821-16832), through the port's
+    /// tables - the smallkinds witness shape. 605 the GoldLadyBug is
+    /// e26b's, 606 the Maggot c8's, 607 the Pupfish c4b's. WRITTEN, NOT
+    /// RUN (code-only mode).
     #[test]
     fn w4_d42_b6_the_defaults_match_the_csharp_rows() {
         // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
         let rows = [
-            (NpcKind::GoldLadyBug, 605u16, 115u8, 10.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),
-            (NpcKind::Maggot, 606u16, 66u8, 10.0, 4.0, 0, 0, 5, 1.0f32, 0.0f32),
-            (NpcKind::Pupfish, 607u16, 16u8, 20.0, 18.0, 0, 0, 5, 0.5f32, 0.0f32),
             (NpcKind::Grebe, 608u16, 7u8, 22.0, 26.0, 0, 0, 5, 1.0f32, 0.0f32),
             (NpcKind::Grebe2, 609u16, 68u8, 28.0, 22.0, 0, 0, 5, 1.0f32, 0.0f32),
         ];
@@ -25951,13 +25688,10 @@ mod tests {
             assert_eq!(shell.value(), value, "{kind:?} value");
             assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
         }
-        // The port-local wire band (the vanilla types ride cs_id/net_id).
-        assert_eq!(NpcKind::GoldLadyBug.to_u16(), 379u16);
-        assert_eq!(NpcKind::Maggot.to_u16(), 380u16);
-        assert_eq!(NpcKind::Pupfish.to_u16(), 381u16);
-        assert_eq!(NpcKind::Grebe.to_u16(), 382u16);
-        assert_eq!(NpcKind::Grebe2.to_u16(), 383u16);
-        assert_eq!(ALL_KINDS.len(), 300);
+        // The vanilla-free wire band (protocol == NPCID, the 108 plan).
+        assert_eq!(NpcKind::Grebe.to_u16(), 608u16);
+        assert_eq!(NpcKind::Grebe2.to_u16(), 609u16);
+        assert_eq!(ALL_KINDS.len(), 293);
     }
 
     /// W4-d42 batch 7 - the NPCID 610-614 `SetDefaults` rows pin
@@ -25987,23 +25721,23 @@ mod tests {
             assert_eq!(shell.value(), value, "{kind:?} value");
             assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
         }
-        // The port-local wire band (the vanilla types ride cs_id/net_id).
-        assert_eq!(NpcKind::Rat.to_u16(), 384u16);
-        assert_eq!(NpcKind::Owl.to_u16(), 385u16);
-        assert_eq!(NpcKind::WaterStrider.to_u16(), 386u16);
-        assert_eq!(NpcKind::GoldWaterStrider.to_u16(), 387u16);
-        assert_eq!(NpcKind::ExplosiveBunny.to_u16(), 388u16);
-        assert_eq!(ALL_KINDS.len(), 305);
+        // The vanilla-free wire band (protocol == NPCID, the 108 plan).
+        assert_eq!(NpcKind::Rat.to_u16(), 610u16);
+        assert_eq!(NpcKind::Owl.to_u16(), 611u16);
+        assert_eq!(NpcKind::WaterStrider.to_u16(), 612u16);
+        assert_eq!(NpcKind::GoldWaterStrider.to_u16(), 613u16);
+        assert_eq!(NpcKind::ExplosiveBunny.to_u16(), 614u16);
+        assert_eq!(ALL_KINDS.len(), 298);
     }
 
     /// W4-d42 batch 8 - the NPCID 615-619 `SetDefaults` rows pin
-    /// against the C# (NPC.cs:16892-16904, NPC.cs:16905-16917 (catchItem type-616+4464 :16916), NPC.cs:16905-16917, NPC.cs:16918-16933 (value Item.buyPrice(0,2)=20000 :16930), NPC.cs:16934-16949), through the port's
-    /// tables - the smallkinds witness shape. WRITTEN, NOT RUN (code-only mode).
+    /// against the C# (NPC.cs:16905-16917 (catchItem type-616+4464 :16916), NPC.cs:16905-16917, NPC.cs:16918-16933 (value Item.buyPrice(0,2)=20000 :16930), NPC.cs:16934-16949), through the port's
+    /// tables - the smallkinds witness shape. 615 the Dolphin is c4b's.
+    /// WRITTEN, NOT RUN (code-only mode).
     #[test]
     fn w4_d42_b8_the_defaults_match_the_csharp_rows() {
         // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
         let rows = [
-            (NpcKind::Dolphin, 615u16, 16u8, 20.0, 18.0, 0, 0, 5, 0.5f32, 0.0f32),
             (NpcKind::Turtle, 616u16, 7u8, 22.0, 20.0, 0, 0, 5, 0.5f32, 0.0f32),
             (NpcKind::TurtleJungle, 617u16, 7u8, 22.0, 20.0, 0, 0, 5, 0.5f32, 0.0f32),
             (NpcKind::BloodNautilus, 618u16, 117u8, 100.0, 100.0, 55, 24, 7000, 0.0f32, 20000.0f32),
@@ -26023,13 +25757,12 @@ mod tests {
             assert_eq!(shell.value(), value, "{kind:?} value");
             assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
         }
-        // The port-local wire band (the vanilla types ride cs_id/net_id).
-        assert_eq!(NpcKind::Dolphin.to_u16(), 389u16);
-        assert_eq!(NpcKind::Turtle.to_u16(), 390u16);
-        assert_eq!(NpcKind::TurtleJungle.to_u16(), 391u16);
-        assert_eq!(NpcKind::BloodNautilus.to_u16(), 392u16);
-        assert_eq!(NpcKind::BloodSquid.to_u16(), 393u16);
-        assert_eq!(ALL_KINDS.len(), 310);
+        // The vanilla-free wire band (protocol == NPCID, the 108 plan).
+        assert_eq!(NpcKind::Turtle.to_u16(), 616u16);
+        assert_eq!(NpcKind::TurtleJungle.to_u16(), 617u16);
+        assert_eq!(NpcKind::BloodNautilus.to_u16(), 618u16);
+        assert_eq!(NpcKind::BloodSquid.to_u16(), 619u16);
+        assert_eq!(ALL_KINDS.len(), 302);
     }
 
     /// W4-d42 batch 9 - the NPCID 620-624 `SetDefaults` rows pin
@@ -26059,13 +25792,13 @@ mod tests {
             assert_eq!(shell.value(), value, "{kind:?} value");
             assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
         }
-        // The port-local wire band (the vanilla types ride cs_id/net_id).
-        assert_eq!(NpcKind::GoblinShark.to_u16(), 394u16);
-        assert_eq!(NpcKind::BloodEelHead.to_u16(), 395u16);
-        assert_eq!(NpcKind::BloodEelBody.to_u16(), 396u16);
-        assert_eq!(NpcKind::BloodEelTail.to_u16(), 397u16);
-        assert_eq!(NpcKind::Gnome.to_u16(), 398u16);
-        assert_eq!(ALL_KINDS.len(), 315);
+        // The vanilla-free wire band (protocol == NPCID, the 108 plan).
+        assert_eq!(NpcKind::GoblinShark.to_u16(), 620u16);
+        assert_eq!(NpcKind::BloodEelHead.to_u16(), 621u16);
+        assert_eq!(NpcKind::BloodEelBody.to_u16(), 622u16);
+        assert_eq!(NpcKind::BloodEelTail.to_u16(), 623u16);
+        assert_eq!(NpcKind::Gnome.to_u16(), 624u16);
+        assert_eq!(ALL_KINDS.len(), 307);
     }
 
     /// W4-d42 batch 10 - the NPCID 625-629 `SetDefaults` rows pin
@@ -26095,13 +25828,13 @@ mod tests {
             assert_eq!(shell.value(), value, "{kind:?} value");
             assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
         }
-        // The port-local wire band (the vanilla types ride cs_id/net_id).
-        assert_eq!(NpcKind::SeaTurtle.to_u16(), 399u16);
-        assert_eq!(NpcKind::Seahorse.to_u16(), 400u16);
-        assert_eq!(NpcKind::GoldSeahorse.to_u16(), 401u16);
-        assert_eq!(NpcKind::Dandelion.to_u16(), 402u16);
-        assert_eq!(NpcKind::IceMimic.to_u16(), 403u16);
-        assert_eq!(ALL_KINDS.len(), 320);
+        // The vanilla-free wire band (protocol == NPCID, the 108 plan).
+        assert_eq!(NpcKind::SeaTurtle.to_u16(), 625u16);
+        assert_eq!(NpcKind::Seahorse.to_u16(), 626u16);
+        assert_eq!(NpcKind::GoldSeahorse.to_u16(), 627u16);
+        assert_eq!(NpcKind::Dandelion.to_u16(), 628u16);
+        assert_eq!(NpcKind::IceMimic.to_u16(), 629u16);
+        assert_eq!(ALL_KINDS.len(), 312);
     }
 
     /// W4-d42 batch 11 - the NPCID 630-630 `SetDefaults` rows pin
@@ -26127,9 +25860,9 @@ mod tests {
             assert_eq!(shell.value(), value, "{kind:?} value");
             assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
         }
-        // The port-local wire band (the vanilla types ride cs_id/net_id).
-        assert_eq!(NpcKind::BloodMummy.to_u16(), 404u16);
-        assert_eq!(ALL_KINDS.len(), 321);
+        // The vanilla-free wire band (protocol == NPCID, the 108 plan).
+        assert_eq!(NpcKind::BloodMummy.to_u16(), 630u16);
+        assert_eq!(ALL_KINDS.len(), 313);
     }
 
     /// The small-kinds wiring wave: the style axis claims 21/49/56/72, so
@@ -29647,8 +29380,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            321,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
+            313,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d42's 43 NPCID 578-630 kinds (the 108 vanilla-free band; 581/587/592/604/605/606/607/615 ride c4/c4b/e26b/c8), L-B gate)"
         );
         assert!(
             covered > 43,

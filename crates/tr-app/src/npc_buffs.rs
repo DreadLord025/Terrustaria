@@ -489,7 +489,6 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // (the mask loop is unmodelled - the documented gap; the
         // fairies' ImmuneToWhips rides `whip_immune`).
         NpcKind::WalkingAntlion
-        | NpcKind::FlyingAntlion
         | NpcKind::LarvaeAntlion => &[],
         NpcKind::DD2LightningBug
         | NpcKind::BartenderUnconscious => &[31],
@@ -500,16 +499,14 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::FairyCritterPink
         | NpcKind::FairyCritterGreen
         | NpcKind::FairyCritterBlue
-        | NpcKind::ZombieMerman
-        | NpcKind::EyeballFlyingFish => &[],
+        | NpcKind::ZombieMerman => &[],
         // W4-d42 - the NPCID 590-594 immunity rows (`NPCID.cs:9395+`).
         // The null rows + the fairies' ImmuneToAllBuffsThatAreNotWhips
         // (the mask loop is unmodelled - the documented gap; the
         // fairies' ImmuneToWhips rides `whip_immune`).
         NpcKind::TorchZombie
         | NpcKind::ArmedTorchZombie => &[],
-        NpcKind::GoldGoldfish
-        | NpcKind::GoldGoldfishWalker
+        NpcKind::GoldGoldfishWalker
         | NpcKind::WindyBalloon => &[31],
         // W4-d42 - the NPCID 595-599 immunity rows (`NPCID.cs:9395+`).
         NpcKind::BlackDragonfly
@@ -521,13 +518,9 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::YellowDragonfly
         | NpcKind::GoldDragonfly
         | NpcKind::Seagull
-        | NpcKind::Seagull2
-        | NpcKind::LadyBug => &[31],
+        | NpcKind::Seagull2 => &[31],
         // W4-d42 - the NPCID 605-609 immunity rows (`NPCID.cs:9395+`).
-        NpcKind::GoldLadyBug
-        | NpcKind::Maggot
-        | NpcKind::Pupfish
-        | NpcKind::Grebe
+        NpcKind::Grebe
         | NpcKind::Grebe2 => &[31],
         // W4-d42 - the NPCID 610-614 immunity rows (`NPCID.cs:9395+`).
         NpcKind::Rat
@@ -536,8 +529,7 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::GoldWaterStrider
         | NpcKind::ExplosiveBunny => &[31],
         // W4-d42 - the NPCID 615-619 immunity rows (`NPCID.cs:9395+`).
-        NpcKind::Dolphin
-        | NpcKind::Turtle
+        NpcKind::Turtle
         | NpcKind::TurtleJungle
         | NpcKind::BloodNautilus
         | NpcKind::BloodSquid => &[31],

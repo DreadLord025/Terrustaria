@@ -586,62 +586,57 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
-            // W4-d42 — the NPCID 578-630 roster: the port-local 354..404
-            // band, one id per kind in vanilla-type order (the pirate
-            // renumber's precedent — the vanilla 578-630 slots are NOT
-            // the wire ids; the real types ride `cs_id`/`net_id`). 354
-            // is the next free slot above the BlazingWheel's 353.
-            NpcKind::DD2LightningBug => 354,
-            NpcKind::BartenderUnconscious => 355,
-            NpcKind::WalkingAntlion => 356,
-            NpcKind::FlyingAntlion => 357,
-            NpcKind::LarvaeAntlion => 358,
-            NpcKind::FairyCritterPink => 359,
-            NpcKind::FairyCritterGreen => 360,
-            NpcKind::FairyCritterBlue => 361,
-            NpcKind::ZombieMerman => 362,
-            NpcKind::EyeballFlyingFish => 363,
-            NpcKind::TorchZombie => 364,
-            NpcKind::ArmedTorchZombie => 365,
-            NpcKind::GoldGoldfish => 366,
-            NpcKind::GoldGoldfishWalker => 367,
-            NpcKind::WindyBalloon => 368,
-            NpcKind::BlackDragonfly => 369,
-            NpcKind::BlueDragonfly => 370,
-            NpcKind::GreenDragonfly => 371,
-            NpcKind::OrangeDragonfly => 372,
-            NpcKind::RedDragonfly => 373,
-            NpcKind::YellowDragonfly => 374,
-            NpcKind::GoldDragonfly => 375,
-            NpcKind::Seagull => 376,
-            NpcKind::Seagull2 => 377,
-            NpcKind::LadyBug => 378,
-            NpcKind::GoldLadyBug => 379,
-            NpcKind::Maggot => 380,
-            NpcKind::Pupfish => 381,
-            NpcKind::Grebe => 382,
-            NpcKind::Grebe2 => 383,
-            NpcKind::Rat => 384,
-            NpcKind::Owl => 385,
-            NpcKind::WaterStrider => 386,
-            NpcKind::GoldWaterStrider => 387,
-            NpcKind::ExplosiveBunny => 388,
-            NpcKind::Dolphin => 389,
-            NpcKind::Turtle => 390,
-            NpcKind::TurtleJungle => 391,
-            NpcKind::BloodNautilus => 392,
-            NpcKind::BloodSquid => 393,
-            NpcKind::GoblinShark => 394,
-            NpcKind::BloodEelHead => 395,
-            NpcKind::BloodEelBody => 396,
-            NpcKind::BloodEelTail => 397,
-            NpcKind::Gnome => 398,
-            NpcKind::SeaTurtle => 399,
-            NpcKind::Seahorse => 400,
-            NpcKind::GoldSeahorse => 401,
-            NpcKind::Dandelion => 402,
-            NpcKind::IceMimic => 403,
-            NpcKind::BloodMummy => 404,
+            // W4-d42 — the NPCID 578-630 roster rides its VANILLA ids
+            // (protocol == NPCID, the d38/d40 vanilla-free precedent; the
+            // 108 union plan §3: protocol space >=489 is free on the union,
+            // so 578-630 need no renumber). The port-local 354-404 band the
+            // first pass used COLLIDED with d37's 354-399 (108 §2a) — lifted.
+            // The eight kinds other lanes own are NOT here: 581/587 (c4
+            // style-44), 592/607/615 (c4b style-16), 604/605 (e26b luck),
+            // 606 (c8 style-66) — their ids stay free for those branches.
+            NpcKind::DD2LightningBug => 578,
+            NpcKind::BartenderUnconscious => 579,
+            NpcKind::WalkingAntlion => 580,
+            NpcKind::LarvaeAntlion => 582,
+            NpcKind::FairyCritterPink => 583,
+            NpcKind::FairyCritterGreen => 584,
+            NpcKind::FairyCritterBlue => 585,
+            NpcKind::ZombieMerman => 586,
+            NpcKind::TorchZombie => 590,
+            NpcKind::ArmedTorchZombie => 591,
+            NpcKind::GoldGoldfishWalker => 593,
+            NpcKind::WindyBalloon => 594,
+            NpcKind::BlackDragonfly => 595,
+            NpcKind::BlueDragonfly => 596,
+            NpcKind::GreenDragonfly => 597,
+            NpcKind::OrangeDragonfly => 598,
+            NpcKind::RedDragonfly => 599,
+            NpcKind::YellowDragonfly => 600,
+            NpcKind::GoldDragonfly => 601,
+            NpcKind::Seagull => 602,
+            NpcKind::Seagull2 => 603,
+            NpcKind::Grebe => 608,
+            NpcKind::Grebe2 => 609,
+            NpcKind::Rat => 610,
+            NpcKind::Owl => 611,
+            NpcKind::WaterStrider => 612,
+            NpcKind::GoldWaterStrider => 613,
+            NpcKind::ExplosiveBunny => 614,
+            NpcKind::Turtle => 616,
+            NpcKind::TurtleJungle => 617,
+            NpcKind::BloodNautilus => 618,
+            NpcKind::BloodSquid => 619,
+            NpcKind::GoblinShark => 620,
+            NpcKind::BloodEelHead => 621,
+            NpcKind::BloodEelBody => 622,
+            NpcKind::BloodEelTail => 623,
+            NpcKind::Gnome => 624,
+            NpcKind::SeaTurtle => 625,
+            NpcKind::Seahorse => 626,
+            NpcKind::GoldSeahorse => 627,
+            NpcKind::Dandelion => 628,
+            NpcKind::IceMimic => 629,
+            NpcKind::BloodMummy => 630,
         }
     }
 
@@ -972,59 +967,52 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
-            // W4-d42 — the NPCID 578-630 roster's port-local 354..404
-            // band (`to_u16` above).
-            354 => NpcKind::DD2LightningBug,
-            355 => NpcKind::BartenderUnconscious,
-            356 => NpcKind::WalkingAntlion,
-            357 => NpcKind::FlyingAntlion,
-            358 => NpcKind::LarvaeAntlion,
-            359 => NpcKind::FairyCritterPink,
-            360 => NpcKind::FairyCritterGreen,
-            361 => NpcKind::FairyCritterBlue,
-            362 => NpcKind::ZombieMerman,
-            363 => NpcKind::EyeballFlyingFish,
-            364 => NpcKind::TorchZombie,
-            365 => NpcKind::ArmedTorchZombie,
-            366 => NpcKind::GoldGoldfish,
-            367 => NpcKind::GoldGoldfishWalker,
-            368 => NpcKind::WindyBalloon,
-            369 => NpcKind::BlackDragonfly,
-            370 => NpcKind::BlueDragonfly,
-            371 => NpcKind::GreenDragonfly,
-            372 => NpcKind::OrangeDragonfly,
-            373 => NpcKind::RedDragonfly,
-            374 => NpcKind::YellowDragonfly,
-            375 => NpcKind::GoldDragonfly,
-            376 => NpcKind::Seagull,
-            377 => NpcKind::Seagull2,
-            378 => NpcKind::LadyBug,
-            379 => NpcKind::GoldLadyBug,
-            380 => NpcKind::Maggot,
-            381 => NpcKind::Pupfish,
-            382 => NpcKind::Grebe,
-            383 => NpcKind::Grebe2,
-            384 => NpcKind::Rat,
-            385 => NpcKind::Owl,
-            386 => NpcKind::WaterStrider,
-            387 => NpcKind::GoldWaterStrider,
-            388 => NpcKind::ExplosiveBunny,
-            389 => NpcKind::Dolphin,
-            390 => NpcKind::Turtle,
-            391 => NpcKind::TurtleJungle,
-            392 => NpcKind::BloodNautilus,
-            393 => NpcKind::BloodSquid,
-            394 => NpcKind::GoblinShark,
-            395 => NpcKind::BloodEelHead,
-            396 => NpcKind::BloodEelBody,
-            397 => NpcKind::BloodEelTail,
-            398 => NpcKind::Gnome,
-            399 => NpcKind::SeaTurtle,
-            400 => NpcKind::Seahorse,
-            401 => NpcKind::GoldSeahorse,
-            402 => NpcKind::Dandelion,
-            403 => NpcKind::IceMimic,
-            404 => NpcKind::BloodMummy,
+            // W4-d42 — the NPCID 578-630 roster's VANILLA ids (`to_u16`
+            // above; the 108 union plan's vanilla-free band). 581/587/592/
+            // 604/605/606/607/615 stay free for c4/c4b/e26b/c8.
+            578 => NpcKind::DD2LightningBug,
+            579 => NpcKind::BartenderUnconscious,
+            580 => NpcKind::WalkingAntlion,
+            582 => NpcKind::LarvaeAntlion,
+            583 => NpcKind::FairyCritterPink,
+            584 => NpcKind::FairyCritterGreen,
+            585 => NpcKind::FairyCritterBlue,
+            586 => NpcKind::ZombieMerman,
+            590 => NpcKind::TorchZombie,
+            591 => NpcKind::ArmedTorchZombie,
+            593 => NpcKind::GoldGoldfishWalker,
+            594 => NpcKind::WindyBalloon,
+            595 => NpcKind::BlackDragonfly,
+            596 => NpcKind::BlueDragonfly,
+            597 => NpcKind::GreenDragonfly,
+            598 => NpcKind::OrangeDragonfly,
+            599 => NpcKind::RedDragonfly,
+            600 => NpcKind::YellowDragonfly,
+            601 => NpcKind::GoldDragonfly,
+            602 => NpcKind::Seagull,
+            603 => NpcKind::Seagull2,
+            608 => NpcKind::Grebe,
+            609 => NpcKind::Grebe2,
+            610 => NpcKind::Rat,
+            611 => NpcKind::Owl,
+            612 => NpcKind::WaterStrider,
+            613 => NpcKind::GoldWaterStrider,
+            614 => NpcKind::ExplosiveBunny,
+            616 => NpcKind::Turtle,
+            617 => NpcKind::TurtleJungle,
+            618 => NpcKind::BloodNautilus,
+            619 => NpcKind::BloodSquid,
+            620 => NpcKind::GoblinShark,
+            621 => NpcKind::BloodEelHead,
+            622 => NpcKind::BloodEelBody,
+            623 => NpcKind::BloodEelTail,
+            624 => NpcKind::Gnome,
+            625 => NpcKind::SeaTurtle,
+            626 => NpcKind::Seahorse,
+            627 => NpcKind::GoldSeahorse,
+            628 => NpcKind::Dandelion,
+            629 => NpcKind::IceMimic,
+            630 => NpcKind::BloodMummy,
             _ => return None,
         })
     }
@@ -1909,18 +1897,15 @@ impl NpcKind {
             NpcKind::DD2LightningBug => "dd2_lightning_bug_hurt_0",
             NpcKind::BartenderUnconscious => "NPC_Hit_1",
             NpcKind::WalkingAntlion => "NPC_Hit_31",
-            NpcKind::FlyingAntlion => "NPC_Hit_32",
             NpcKind::LarvaeAntlion => "NPC_Hit_31",
             // W4-d42 - the roster's HitSound rows.
             NpcKind::FairyCritterPink => "NPC_Hit_1",
             NpcKind::FairyCritterGreen => "NPC_Hit_1",
             NpcKind::FairyCritterBlue => "NPC_Hit_1",
             NpcKind::ZombieMerman => "NPC_Hit_18",
-            NpcKind::EyeballFlyingFish => "NPC_Hit_1",
             // W4-d42 - the roster's HitSound rows.
             NpcKind::TorchZombie => "NPC_Hit_1",
             NpcKind::ArmedTorchZombie => "NPC_Hit_1",
-            NpcKind::GoldGoldfish => "NPC_Hit_1",
             NpcKind::GoldGoldfishWalker => "NPC_Hit_1",
             // W4-d42 - the roster's HitSound rows.
             NpcKind::BlackDragonfly => "NPC_Hit_1",
@@ -1933,11 +1918,7 @@ impl NpcKind {
             NpcKind::GoldDragonfly => "NPC_Hit_1",
             NpcKind::Seagull => "NPC_Hit_1",
             NpcKind::Seagull2 => "NPC_Hit_1",
-            NpcKind::LadyBug => "NPC_Hit_1",
             // W4-d42 - the roster's HitSound rows.
-            NpcKind::GoldLadyBug => "NPC_Hit_1",
-            NpcKind::Maggot => "NPC_Hit_1",
-            NpcKind::Pupfish => "NPC_Hit_1",
             NpcKind::Grebe => "NPC_Hit_1",
             NpcKind::Grebe2 => "NPC_Hit_1",
             // W4-d42 - the roster's HitSound rows.
@@ -1947,7 +1928,6 @@ impl NpcKind {
             NpcKind::GoldWaterStrider => "NPC_Hit_1",
             NpcKind::ExplosiveBunny => "NPC_Hit_1",
             // W4-d42 - the roster's HitSound rows.
-            NpcKind::Dolphin => "NPC_Hit_1",
             NpcKind::Turtle => "NPC_Hit_1",
             NpcKind::TurtleJungle => "NPC_Hit_1",
             NpcKind::BloodNautilus => "NPC_Hit_1",
@@ -2275,7 +2255,6 @@ impl NpcKind {
             NpcKind::DD2LightningBug => "dd2_lightning_bug_death_0",
             NpcKind::BartenderUnconscious => "NPC_Killed_6",
             NpcKind::WalkingAntlion => "NPC_Killed_34",
-            NpcKind::FlyingAntlion => "NPC_Killed_35",
             NpcKind::LarvaeAntlion => "NPC_Killed_34",
             // W4-d42 - the roster's DeathSound rows (614's null row
             // rides the None fall-through).
@@ -2283,12 +2262,10 @@ impl NpcKind {
             NpcKind::FairyCritterGreen => "NPC_Killed_1",
             NpcKind::FairyCritterBlue => "NPC_Killed_1",
             NpcKind::ZombieMerman => "NPC_Killed_21",
-            NpcKind::EyeballFlyingFish => "NPC_Killed_1",
             // W4-d42 - the roster's DeathSound rows (614's null row
             // rides the None fall-through).
             NpcKind::TorchZombie => "NPC_Killed_2",
             NpcKind::ArmedTorchZombie => "NPC_Killed_2",
-            NpcKind::GoldGoldfish => "NPC_Killed_1",
             NpcKind::GoldGoldfishWalker => "NPC_Killed_1",
             NpcKind::WindyBalloon => "NPC_Killed_63",
             // W4-d42 - the roster's DeathSound rows (614's null row
@@ -2304,12 +2281,8 @@ impl NpcKind {
             NpcKind::GoldDragonfly => "NPC_Killed_1",
             NpcKind::Seagull => "NPC_Killed_1",
             NpcKind::Seagull2 => "NPC_Killed_1",
-            NpcKind::LadyBug => "NPC_Killed_1",
             // W4-d42 - the roster's DeathSound rows (614's null row
             // rides the None fall-through).
-            NpcKind::GoldLadyBug => "NPC_Killed_1",
-            NpcKind::Maggot => "NPC_Killed_1",
-            NpcKind::Pupfish => "NPC_Killed_1",
             NpcKind::Grebe => "NPC_Killed_1",
             NpcKind::Grebe2 => "NPC_Killed_1",
             // W4-d42 - the roster's DeathSound rows (614's null row
@@ -2320,7 +2293,6 @@ impl NpcKind {
             NpcKind::GoldWaterStrider => "NPC_Killed_1",
             // W4-d42 - the roster's DeathSound rows (614's null row
             // rides the None fall-through).
-            NpcKind::Dolphin => "NPC_Killed_1",
             NpcKind::Turtle => "NPC_Killed_1",
             NpcKind::TurtleJungle => "NPC_Killed_1",
             NpcKind::BloodNautilus => "NPC_Killed_1",
@@ -2450,8 +2422,7 @@ impl NpcKind {
             | NpcKind::FairyCritterBlue
             => true,
             // W4-d42 - the noGravity rows.
-            NpcKind::GoldGoldfish
-            | NpcKind::WindyBalloon
+            NpcKind::WindyBalloon
             => true,
             // W4-d42 - the noGravity rows.
             NpcKind::BlackDragonfly
@@ -2463,15 +2434,9 @@ impl NpcKind {
             // W4-d42 - the noGravity rows.
             NpcKind::YellowDragonfly
             | NpcKind::GoldDragonfly
-            | NpcKind::LadyBug
             => true,
             // W4-d42 - the noGravity rows.
-            NpcKind::GoldLadyBug
-            | NpcKind::Pupfish
-            => true,
-            // W4-d42 - the noGravity rows.
-            NpcKind::Dolphin
-            | NpcKind::BloodNautilus
+            NpcKind::BloodNautilus
             | NpcKind::BloodSquid
             => true,
             // W4-d42 - the noGravity rows.
@@ -2735,18 +2700,15 @@ impl NpcKind {
             NpcKind::DD2LightningBug => 111,
             NpcKind::BartenderUnconscious => 0,
             NpcKind::WalkingAntlion => 3,
-            NpcKind::FlyingAntlion => 44,
             NpcKind::LarvaeAntlion => 3,
             // W4-d42 - the NPCID 583-587 SetDefaults rows.
             NpcKind::FairyCritterPink => 112,
             NpcKind::FairyCritterGreen => 112,
             NpcKind::FairyCritterBlue => 112,
             NpcKind::ZombieMerman => 3,
-            NpcKind::EyeballFlyingFish => 44,
             // W4-d42 - the NPCID 590-594 SetDefaults rows.
             NpcKind::TorchZombie => 3,
             NpcKind::ArmedTorchZombie => 3,
-            NpcKind::GoldGoldfish => 16,
             NpcKind::GoldGoldfishWalker => 7,
             NpcKind::WindyBalloon => 113,
             // W4-d42 - the NPCID 595-599 SetDefaults rows.
@@ -2760,11 +2722,7 @@ impl NpcKind {
             NpcKind::GoldDragonfly => 114,
             NpcKind::Seagull => 7,
             NpcKind::Seagull2 => 68,
-            NpcKind::LadyBug => 115,
             // W4-d42 - the NPCID 605-609 SetDefaults rows.
-            NpcKind::GoldLadyBug => 115,
-            NpcKind::Maggot => 66,
-            NpcKind::Pupfish => 16,
             NpcKind::Grebe => 7,
             NpcKind::Grebe2 => 68,
             // W4-d42 - the NPCID 610-614 SetDefaults rows.
@@ -2774,7 +2732,6 @@ impl NpcKind {
             NpcKind::GoldWaterStrider => 116,
             NpcKind::ExplosiveBunny => 7,
             // W4-d42 - the NPCID 615-619 SetDefaults rows.
-            NpcKind::Dolphin => 16,
             NpcKind::Turtle => 7,
             NpcKind::TurtleJungle => 7,
             NpcKind::BloodNautilus => 117,
@@ -3344,18 +3301,15 @@ impl NpcKind {
             NpcKind::DD2LightningBug => (30.0, 24.0),
             NpcKind::BartenderUnconscious => (34.0, 8.0),
             NpcKind::WalkingAntlion => (26.0, 26.0),
-            NpcKind::FlyingAntlion => (30.0, 22.0),
             NpcKind::LarvaeAntlion => (18.0, 18.0),
             // W4-d42 - the NPCID 583-587 SetDefaults rows.
             NpcKind::FairyCritterPink => (18.0, 20.0),
             NpcKind::FairyCritterGreen => (18.0, 20.0),
             NpcKind::FairyCritterBlue => (18.0, 20.0),
             NpcKind::ZombieMerman => (18.0, 40.0),
-            NpcKind::EyeballFlyingFish => (32.0, 18.0),
             // W4-d42 - the NPCID 590-594 SetDefaults rows.
             NpcKind::TorchZombie => (18.0, 40.0),
             NpcKind::ArmedTorchZombie => (18.0, 40.0),
-            NpcKind::GoldGoldfish => (20.0, 18.0),
             NpcKind::GoldGoldfishWalker => (18.0, 20.0),
             NpcKind::WindyBalloon => (20.0, 20.0),
             // W4-d42 - the NPCID 595-599 SetDefaults rows.
@@ -3369,11 +3323,7 @@ impl NpcKind {
             NpcKind::GoldDragonfly => (10.0, 10.0),
             NpcKind::Seagull => (22.0, 26.0),
             NpcKind::Seagull2 => (28.0, 22.0),
-            NpcKind::LadyBug => (10.0, 10.0),
             // W4-d42 - the NPCID 605-609 SetDefaults rows.
-            NpcKind::GoldLadyBug => (10.0, 10.0),
-            NpcKind::Maggot => (10.0, 4.0),
-            NpcKind::Pupfish => (20.0, 18.0),
             NpcKind::Grebe => (22.0, 26.0),
             NpcKind::Grebe2 => (28.0, 22.0),
             // W4-d42 - the NPCID 610-614 SetDefaults rows.
@@ -3383,7 +3333,6 @@ impl NpcKind {
             NpcKind::GoldWaterStrider => (10.0, 10.0),
             NpcKind::ExplosiveBunny => (18.0, 20.0),
             // W4-d42 - the NPCID 615-619 SetDefaults rows.
-            NpcKind::Dolphin => (20.0, 18.0),
             NpcKind::Turtle => (22.0, 20.0),
             NpcKind::TurtleJungle => (22.0, 20.0),
             NpcKind::BloodNautilus => (100.0, 100.0),
@@ -3510,7 +3459,6 @@ impl NpcKind {
             NpcKind::DD2LightningBug => 578,
             NpcKind::BartenderUnconscious => 579,
             NpcKind::WalkingAntlion => 580,
-            NpcKind::FlyingAntlion => 581,
             NpcKind::LarvaeAntlion => 582,
             // W4-d42 - the roster's TRUE vanilla types (the folded kinds
             // keep their own - the AI arms read cs_id; the bestiary
@@ -3519,13 +3467,11 @@ impl NpcKind {
             NpcKind::FairyCritterGreen => 584,
             NpcKind::FairyCritterBlue => 585,
             NpcKind::ZombieMerman => 586,
-            NpcKind::EyeballFlyingFish => 587,
             // W4-d42 - the roster's TRUE vanilla types (the folded kinds
             // keep their own - the AI arms read cs_id; the bestiary
             // folds in entry_for_npc only).
             NpcKind::TorchZombie => 590,
             NpcKind::ArmedTorchZombie => 591,
-            NpcKind::GoldGoldfish => 592,
             NpcKind::GoldGoldfishWalker => 593,
             NpcKind::WindyBalloon => 594,
             // W4-d42 - the roster's TRUE vanilla types (the folded kinds
@@ -3543,13 +3489,9 @@ impl NpcKind {
             NpcKind::GoldDragonfly => 601,
             NpcKind::Seagull => 602,
             NpcKind::Seagull2 => 603,
-            NpcKind::LadyBug => 604,
             // W4-d42 - the roster's TRUE vanilla types (the folded kinds
             // keep their own - the AI arms read cs_id; the bestiary
             // folds in entry_for_npc only).
-            NpcKind::GoldLadyBug => 605,
-            NpcKind::Maggot => 606,
-            NpcKind::Pupfish => 607,
             NpcKind::Grebe => 608,
             NpcKind::Grebe2 => 609,
             // W4-d42 - the roster's TRUE vanilla types (the folded kinds
@@ -3563,7 +3505,6 @@ impl NpcKind {
             // W4-d42 - the roster's TRUE vanilla types (the folded kinds
             // keep their own - the AI arms read cs_id; the bestiary
             // folds in entry_for_npc only).
-            NpcKind::Dolphin => 615,
             NpcKind::Turtle => 616,
             NpcKind::TurtleJungle => 617,
             NpcKind::BloodNautilus => 618,
@@ -4138,18 +4079,15 @@ impl NpcKind {
             NpcKind::DD2LightningBug => 500,
             NpcKind::BartenderUnconscious => 250,
             NpcKind::WalkingAntlion => 80,
-            NpcKind::FlyingAntlion => 60,
             NpcKind::LarvaeAntlion => 30,
             // W4-d42 - the NPCID 583-587 SetDefaults rows.
             NpcKind::FairyCritterPink => 5,
             NpcKind::FairyCritterGreen => 5,
             NpcKind::FairyCritterBlue => 5,
             NpcKind::ZombieMerman => 400,
-            NpcKind::EyeballFlyingFish => 300,
             // W4-d42 - the NPCID 590-594 SetDefaults rows.
             NpcKind::TorchZombie => 45,
             NpcKind::ArmedTorchZombie => 45,
-            NpcKind::GoldGoldfish => 5,
             NpcKind::GoldGoldfishWalker => 5,
             NpcKind::WindyBalloon => 1,
             // W4-d42 - the NPCID 595-599 SetDefaults rows.
@@ -4163,11 +4101,7 @@ impl NpcKind {
             NpcKind::GoldDragonfly => 5,
             NpcKind::Seagull => 5,
             NpcKind::Seagull2 => 5,
-            NpcKind::LadyBug => 5,
             // W4-d42 - the NPCID 605-609 SetDefaults rows.
-            NpcKind::GoldLadyBug => 5,
-            NpcKind::Maggot => 5,
-            NpcKind::Pupfish => 5,
             NpcKind::Grebe => 5,
             NpcKind::Grebe2 => 5,
             // W4-d42 - the NPCID 610-614 SetDefaults rows.
@@ -4177,7 +4111,6 @@ impl NpcKind {
             NpcKind::GoldWaterStrider => 5,
             NpcKind::ExplosiveBunny => 5,
             // W4-d42 - the NPCID 615-619 SetDefaults rows.
-            NpcKind::Dolphin => 5,
             NpcKind::Turtle => 5,
             NpcKind::TurtleJungle => 5,
             NpcKind::BloodNautilus => 7000,
@@ -4564,18 +4497,15 @@ impl NpcKind {
             NpcKind::DD2LightningBug => 80,
             NpcKind::BartenderUnconscious => 10,
             NpcKind::WalkingAntlion => 25,
-            NpcKind::FlyingAntlion => 29,
             NpcKind::LarvaeAntlion => 10,
             // W4-d42 - the NPCID 583-587 SetDefaults rows.
             NpcKind::FairyCritterPink => 0,
             NpcKind::FairyCritterGreen => 0,
             NpcKind::FairyCritterBlue => 0,
             NpcKind::ZombieMerman => 40,
-            NpcKind::EyeballFlyingFish => 35,
             // W4-d42 - the NPCID 590-594 SetDefaults rows.
             NpcKind::TorchZombie => 14,
             NpcKind::ArmedTorchZombie => 14,
-            NpcKind::GoldGoldfish => 0,
             NpcKind::GoldGoldfishWalker => 0,
             NpcKind::WindyBalloon => 0,
             // W4-d42 - the NPCID 595-599 SetDefaults rows.
@@ -4589,11 +4519,7 @@ impl NpcKind {
             NpcKind::GoldDragonfly => 0,
             NpcKind::Seagull => 0,
             NpcKind::Seagull2 => 0,
-            NpcKind::LadyBug => 0,
             // W4-d42 - the NPCID 605-609 SetDefaults rows.
-            NpcKind::GoldLadyBug => 0,
-            NpcKind::Maggot => 0,
-            NpcKind::Pupfish => 0,
             NpcKind::Grebe => 0,
             NpcKind::Grebe2 => 0,
             // W4-d42 - the NPCID 610-614 SetDefaults rows.
@@ -4603,7 +4529,6 @@ impl NpcKind {
             NpcKind::GoldWaterStrider => 0,
             NpcKind::ExplosiveBunny => 0,
             // W4-d42 - the NPCID 615-619 SetDefaults rows.
-            NpcKind::Dolphin => 0,
             NpcKind::Turtle => 0,
             NpcKind::TurtleJungle => 0,
             NpcKind::BloodNautilus => 55,

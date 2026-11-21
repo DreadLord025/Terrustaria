@@ -2190,14 +2190,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Antlion Charger",
     },
     BestiaryEntryDef {
-        credit_id: "FlyingAntlion",
-        net_id: 581,
-        kind: NpcKind::FlyingAntlion,
-        variant: None,
-        quick_unlock: false,
-        name: "Antlion Swarmer",
-    },
-    BestiaryEntryDef {
         credit_id: "LarvaeAntlion",
         net_id: 582,
         kind: NpcKind::LarvaeAntlion,
@@ -2239,14 +2231,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Zombie Merman",
     },
-    BestiaryEntryDef {
-        credit_id: "EyeballFlyingFish",
-        net_id: 587,
-        kind: NpcKind::EyeballFlyingFish,
-        variant: None,
-        quick_unlock: false,
-        name: "Wandering Eye Fish",
-    },
     // W4-d42 - the NPCID 590-594 roster's own credits (the
     // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
     BestiaryEntryDef {
@@ -2257,10 +2241,15 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Zombie",
     },
+    // W4-d42 - the GoldGoldfishWalker's interim OWN entry: its vanilla
+    // credit folds onto the GoldGoldfish (592, `ContentSamples.cs:1049`),
+    // but 592 is c4b's unported kind — the d40 BoneThrowingSkeleton2/3
+    // unported-fold-target precedent. The merge folds it onto 592 once
+    // c4b lands (the `entry_for_npc` note).
     BestiaryEntryDef {
-        credit_id: "GoldGoldfish",
-        net_id: 592,
-        kind: NpcKind::GoldGoldfish,
+        credit_id: "GoldGoldfishWalker",
+        net_id: 593,
+        kind: NpcKind::GoldGoldfishWalker,
         variant: None,
         quick_unlock: false,
         name: "Gold Goldfish",
@@ -2301,40 +2290,8 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Seagull",
     },
-    BestiaryEntryDef {
-        credit_id: "LadyBug",
-        net_id: 604,
-        kind: NpcKind::LadyBug,
-        variant: None,
-        quick_unlock: false,
-        name: "Ladybug",
-    },
     // W4-d42 - the NPCID 605-609 roster's own credits (the
     // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
-    BestiaryEntryDef {
-        credit_id: "GoldLadyBug",
-        net_id: 605,
-        kind: NpcKind::GoldLadyBug,
-        variant: None,
-        quick_unlock: false,
-        name: "Gold Ladybug",
-    },
-    BestiaryEntryDef {
-        credit_id: "Maggot",
-        net_id: 606,
-        kind: NpcKind::Maggot,
-        variant: None,
-        quick_unlock: false,
-        name: "Maggot",
-    },
-    BestiaryEntryDef {
-        credit_id: "Pupfish",
-        net_id: 607,
-        kind: NpcKind::Pupfish,
-        variant: None,
-        quick_unlock: false,
-        name: "Pupfish",
-    },
     BestiaryEntryDef {
         credit_id: "Grebe",
         net_id: 608,
@@ -2387,14 +2344,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
     },
     // W4-d42 - the NPCID 615-619 roster's own credits (the
     // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
-    BestiaryEntryDef {
-        credit_id: "Dolphin",
-        net_id: 615,
-        kind: NpcKind::Dolphin,
-        variant: None,
-        quick_unlock: false,
-        name: "Dolphin",
-    },
     BestiaryEntryDef {
         credit_id: "Turtle",
         net_id: 616,
@@ -2703,7 +2652,11 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // W4-d42 - the Hide=true folds (`NPCID.cs`'s draw modifiers):
         // one credit per family (the SleepingGolfer precedent).
         NpcKind::ArmedTorchZombie => NpcKind::TorchZombie,
-        NpcKind::GoldGoldfishWalker => NpcKind::GoldGoldfish,
+        // The GoldGoldfishWalker (593) folds onto the GoldGoldfish (592,
+        // `ContentSamples.cs:1049`); 592 is c4b's unported kind, so the
+        // walker keeps its OWN entry for now (the d40 BoneThrowingSkeleton2/3
+        // unported-fold-target precedent) — the merge re-points this arm at
+        // `NpcKind::GoldGoldfish` and drops the walker's entry once c4b lands.
         // W4-d42 - the Hide=true folds (`NPCID.cs`'s draw modifiers):
         // one credit per family (the SleepingGolfer precedent).
         NpcKind::BlackDragonfly => NpcKind::RedDragonfly,
