@@ -415,6 +415,17 @@ pub struct WorldMap {
     needs_full_upload: bool,
     /// `Main.resetMapFull`: recentre on the next `prepare`.
     reset_pos: bool,
+    /// `Main.PanTargetMapFullscreen` + `PanTargetMapFullscreenEnd`
+    /// (`Main.cs:849-851`, seeds false / (-1,-1) `:66758-66759`): an
+    /// offscreen pylon marker click pans the fullscreen map toward the
+    /// target (`TeleportPylonsMapLayer.cs:105-107`, the 0.15 lerp
+    /// `Main.cs:55361-55385`). `None` = the C# flag false. The step itself
+    /// rides the overlay pick (f29 `map_pylons.rs::pan_target_step` / e17
+    /// `prepare`); the union carries the state so the input-side cancels
+    /// (`Player.cs:24776-24791` movement keys, `Main.cs:55418`
+    /// resetMapFull, `Player.cs:32199` door close) have their seam —
+    /// W4-f46 shared-gap close (research/84 §10).
+    pub pan_target: Option<[f32; 2]>,
     /// `PingMapLayer`'s pool (`PingMapLayer.cs:16-19`): the ping positions
     /// in world tiles + their age in seconds (the C# stamps `DateTime.Now`
     /// and compares `TotalSeconds > 15`).
@@ -489,6 +500,9 @@ impl WorldMap {
             uploaded: false,
             needs_full_upload: false,
             reset_pos: true,
+            // `Main.cs:66758-66759`: `PanTargetMapFullscreen = false`,
+            // `PanTargetMapFullscreenEnd = (-1, -1)` — no pan armed.
+            pan_target: None,
             pings: Vec::new(),
             ping_outbox: Vec::new(),
             update_map: None,

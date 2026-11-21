@@ -655,14 +655,20 @@ closeout code):**
   (`map_pylons.rs::pan_target_step`, cancel on `ui_left_press`); e17's
   `pan_target: bool` + `pan_target_end` + `pan_cancel_press` steps in
   `WorldMap::prepare` ahead of the clamps (the C# position,
-  `Main.cs:55361-55385` < `:55387`). Keep-one with the overlay pick. Two
-  gaps BOTH share, for the merger to close against the C#: the movement-key
-  pan cancel (`Player.cs:24776`/`:24781`/`:24786`/`:24791` — each
-  `controlUp/Down/Left/Right` sets `PanTargetMapFullscreen = false`; neither
-  sibling's pan-key block clears the target) and f29's `resetMapFull` arm
-  does not clear the pan (`Main.cs:55418`; e17's does). The union's
-  `prepare` signature carries the extra `map_enabled` param (the clearMap
-  consume gate) — e17's pan block folds in as a hunk ahead of the clamps.
+  `Main.cs:55361-55385` < `:55387`). Keep-one with the overlay pick. The
+  movement-key pan cancel gap BOTH shared (`Player.cs:24776`/`:24781`/
+  `:24786`/`:24791` — each `controlUp/Down/Left/Right` sets
+  `PanTargetMapFullscreen = false`; neither sibling's pan-key block cleared
+  the target) is CLOSED on the union (W4-f46 shared-gap pass): the union
+  carries `WorldMap.pan_target: Option<[f32;2]>` (f29's representation,
+  `None` = the C# flag false; e17's bool+end pair converts 1:1 if e17 wins)
+  and each held movement row in `update_map_input` sets it to `None` before
+  its pan step. The overlay pick folds only its STEP + ARMING hunks onto
+  this state; its duplicate field drops. The `resetMapFull` pan clear
+  (`Main.cs:55418`, missing in f29's arm; e17's had it) closes next on the
+  union's recentre seam. The union's `prepare` signature carries the extra
+  `map_enabled` param (the clearMap consume gate) — e17's pan block folds
+  in as a hunk ahead of the clamps.
 - **`set_open` / `WorldMap` fields:** both add `map_pylon_tile` (+ the pan
   state) and clear the pylon selection in the open arm
   (`Player.cs:29113`/`Main.cs:41102`); the union's `set_open` is the base's

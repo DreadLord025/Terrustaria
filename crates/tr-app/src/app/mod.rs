@@ -1396,7 +1396,8 @@ impl App {
 
     /// `Player.cs:24774-24793` + `24898-24908`: the fullscreen-map controls. The pan
     /// step is `16 / scale` tiles **once per frame, with no `dt` factor** (the
-    /// original runs it in the per-frame input pass).
+    /// original runs it in the per-frame input pass); each movement arm also
+    /// cancels the pylon pan target (`PanTargetMapFullscreen = false`).
     pub(crate) fn update_map_input(&mut self) {
         let (sw, _) = self.screen_size();
         let Some(m) = self.map.as_mut() else { return };
@@ -1412,16 +1413,24 @@ impl App {
                 .any(|k| crate::input_map::is_bound(&binds, action, *k))
                 || k(arrow)
         };
+        // `Player.cs:24774-24793`: each held movement row pans the map AND
+        // cancels an armed pylon pan target (`PanTargetMapFullscreen =
+        // false` in every arm, `:24776`/`:24781`/`:24786`/`:24791` — the
+        // shared gap both overlay siblings missed, W4-f46 close).
         if held(crate::input_map::Action::Up, KeyCode::ArrowUp) {
+            m.pan_target = None; // `:24776`
             m.pos[1] -= step;
         }
         if held(crate::input_map::Action::Down, KeyCode::ArrowDown) {
+            m.pan_target = None; // `:24781`
             m.pos[1] += step;
         }
         if held(crate::input_map::Action::Left, KeyCode::ArrowLeft) {
+            m.pan_target = None; // `:24786`
             m.pos[0] -= step;
         }
         if held(crate::input_map::Action::Right, KeyCode::ArrowRight) {
+            m.pan_target = None; // `:24791`
             m.pos[0] += step;
         }
         // `Main.cs:67191-67192`: `cMapZoomIn = "Add"`, `cMapZoomOut =
@@ -6000,6 +6009,46 @@ mod w4_e18_map_drag_capture_tests {
         app.capture.interface.active = false;
         app.update_map_input();
         assert_eq!(app.map_grab, Some([140.0, 120.0]), "the anchor re-grabs");
+    }
+
+    /// W4-f46 shared-gap close (written, not run - code-only): each held
+    /// movement row cancels an armed pylon pan target
+    /// (`Player.cs:24776`/`:24781`/`:24786`/`:24791` — every arm sets
+    /// `PanTargetMapFullscreen = false` before its pan step); the gap both
+    /// overlay siblings (f29/e17) missed. Without a movement key held the
+    /// armed target survives the input pass (the lerp step is the overlay
+    /// pick's seam, not this fn's).
+    #[test]
+    fn w4_f46_movement_keys_cancel_the_fullscreen_pan_target() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = tr_core::World::new("pancancel".into(), 260, 200);
+        app.map = Some(map::WorldMap::new(&app.world));
+        let m = app.map.as_mut().unwrap();
+        m.open = true;
+        m.pos = [50.0, 50.0];
+        m.pan_target = Some([80.0, 80.0]);
+        let step = 16.0 / m.scale;
+        // No movement held: the target survives.
+        app.update_map_input();
+        assert_eq!(app.map.as_ref().unwrap().pan_target, Some([80.0, 80.0]));
+        // Each of the four rows cancels it (`cUp/cDown/cLeft/cRight`,
+        // `Main.cs:67163-67166`, defaults W/S/A/D) and pans once.
+        for (code, axis, delta) in [
+            (KeyCode::KeyW, 1usize, -step),
+            (KeyCode::KeyS, 1, step),
+            (KeyCode::KeyA, 0, -step),
+            (KeyCode::KeyD, 0, step),
+        ] {
+            let m = app.map.as_mut().unwrap();
+            m.pan_target = Some([80.0, 80.0]);
+            let before = m.pos[axis];
+            app.keys.insert(code);
+            app.update_map_input();
+            app.keys.remove(&code);
+            let m = app.map.as_ref().unwrap();
+            assert_eq!(m.pan_target, None, "{code:?} clears the pan target");
+            assert_eq!(m.pos[axis], before + delta, "{code:?} pans once");
+        }
     }
 }
 
