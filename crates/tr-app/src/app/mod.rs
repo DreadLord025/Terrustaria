@@ -712,6 +712,12 @@ pub(crate) struct App {
     /// the C# seeds it `DateTime.Now.Ticks`; the port seeds the world seed
     /// (determinism rule, ANALYSIS "The tile-crack overlay").
     pub(crate) mine_crack_rng: tr_core::UnifiedRandom,
+    /// W4-f6 wiring — `TileDrawing._rand` (`TileDrawing.cs:104`/:191): the
+    /// special-tile pass's PRIVATE stream (the pylon crystal's dust gate,
+    /// `:8669-8670`). Deviation: the C# parameterless ctor is clock-seeded;
+    /// the port seeds the world seed (the `mine_crack_rng` determinism
+    /// convention). NOT a `SwapRandom` key.
+    pub(crate) tile_draw_rand: tr_core::UnifiedRandom,
     pub(crate) edit_target: Option<(i32, i32)>,
     /// The smart cursor's continuity locks (`SmartCursorHelper`'s two
     /// static `Point?` fields — the M7-SMARTCURSOR-1 app wiring).
@@ -3910,6 +3916,7 @@ impl App {
             mine_crack_style: 0,
             mine_crack_target: None,
             mine_crack_rng: tr_core::UnifiedRandom::new(world_seed as i32),
+            tile_draw_rand: tr_core::UnifiedRandom::new(world_seed as i32),
             edit_target: None,
             smart_cursor: Default::default(),
             smart_cursor_used: false,

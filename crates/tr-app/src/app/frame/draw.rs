@@ -1228,6 +1228,10 @@ impl App {
                             lens_counter: self.game_update_count % 40,
                             show_invisible: crate::env::show_invisible(),
                         };
+                        // W4-f6 wiring: the special-tile dust rolls — the
+                        // pylon gates on the private `tile_draw_rand`, the
+                        // void lens + the pylon spawn on the bare global.
+                        let special_ctx = self.spawn_ctx();
                         crate::render::pylons::draw_pylons_trophies_void(
                             renderer,
                             world,
@@ -1240,6 +1244,10 @@ impl App {
                             &special_env,
                             game_paused_for_specials,
                             &mut self.entity_lights,
+                            &mut self.tile_draw_rand,
+                            self.rngs.global(),
+                            dust,
+                            &special_ctx,
                         );
                     }
 
