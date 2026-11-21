@@ -8002,6 +8002,35 @@ the OLD `8791f07f` (as `f1c24c381`); its `e8e6b159c` re-port LOST the
 error) and lacks the §3b.4 hammer half. The merger re-picks the device-arm
 reconcile from `cf0b8f9c`/`0055ac801`, NOT from `8791f07f`.
 
+**FINAL-FINAL round (research-71 §7, tip `6d1754719`).** The four closing
+censuses: (1) the c42 monitor RE-FLAGS CRITICAL — the re-fetched c42 tip
+`79b81ae77` (fold-133) never consumed the §6a re-pick: the slice-`resize`
+latent compile error is still at its `world_sim/wiring.rs:627/674/726/748`,
+the hammer half is still absent (`edit/hammer.rs:417` returns `Consumed`
+for 314, zero `TrackHammer` hits), and its research-71 copy is the OLD
+176-line doc; (2) the minecart RIDE census VERIFIED COMPLETE — M2-PHYS-7
+claimed and landed the whole ride machine (f6 claims only the 27 Mount.cs
+dust sites, "the minecart-213 wheel sparks are already minecart.rs"), and
+the one unclaimed sim-side residual `Minecart.IsPressurePlate`
+(`Minecart.cs:549-560`) closed as `minecart::is_pressure_plate`
+(`6d1754719`): the active-314 front-20/21 gate verbatim — the PRESSED
+variants 22/23 do NOT count, `tile.active()` NOT `nactive()` — whose sole
+consumer is `WorldGen.IsItATrigger` (`WorldGen.cs:26817`) inside the
+unported `BrokenTrapCleanup` worldgen pass (`:22121-22140` →
+`ClearBrokenTraps` `:26840-26958`, the 314 arm sets `frameX=1` not kill
+`:26948-26951`); `dead_code` until that lane lands. The rail-sprite draw
+(`TrackColors`/`GetSourceRect`/the four Draw* predicates,
+`Minecart.cs:1321-1532`, consumers `TileDrawing.cs:3789-3820`) and the
+mechanical-cart auto-fit (`GetAreExpectationsForSidesMet`/
+`TryFittingTileOrientation`, `:1534-1621`, sole consumers
+`MinecartDiggerHelper.cs:112-159`) stay CONTRACTED to the M2-MOUNT draw /
+ability lanes — the e20 `TRACK_FRAMES` table + options cache feed both;
+(3) the Wiring.cs device-family census CLOSED — every fn ported or claimed
+on a live branch (the dart/geyser/explosives arms and the 144-timer periods
+all present with witnesses; there is no separate geyser/explosives timer fn
+in C# — the cooldowns are `CheckMech` args); the 144/421/422/235/506/226
+fixes stay c42's (`de176ccdd`, an ancestor of the c42 tip, NOT of e20).
+
 ## Falling blocks (M7-FALL-1)
 
 `tr-core/src/falling.rs` ports the trigger half of

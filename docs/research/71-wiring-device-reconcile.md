@@ -1,5 +1,17 @@
 # 71 — Wiring device-arm duplicate reconcile (W4-e20 × W4-f11) + e21 census
 
+> **STATUS: FINAL-FINAL (§7) — 2026-11-21, branch
+> `task/W4-e20-wiring-device-arms-2`.** The four final censuses ran (§7):
+> the c42 re-pick monitor RE-FLAGS CRITICAL (tip `79b81ae77` still carries
+> the slice-`resize` latent compile error + the missing hammer half — §7a),
+> the minecart RIDE census VERIFIED COMPLETE (M2-PHYS-7 claimed + landed;
+> f6 claims only the Mount.cs dust sites; `IsPressurePlate` closed
+> `6d1754719`; the draw/DiggerHelper residuals contracted — §7b), the
+> Wiring.cs device-family census CLOSED (every fn ported or claimed on a
+> live branch; dart/geyser/explosives/timers all present — §7c), and this
+> doc's final state recorded (§7d). The EXECUTED merge-IN record below
+> stands; the merger instructions are §5 + §6a + §7a.
+>
 > **STATUS: EXECUTED (merge-IN phase) — 2026-11-21, branch
 > `task/W4-e20-wiring-device-arms-2`.** The §3b must-merge-IN list landed on the
 > canonical e20 branch: §3b.1 PlaySound(7) (`f167082e` — the empty-slot arm's
@@ -350,6 +362,135 @@ chain into the UNCONDITIONAL ore `else` (`:460-487`). Only mode −1 returns −
 (the non-input skip). Witness
 `every_extractable_kind_always_yields_the_consume_is_draw_independent` sweeps
 all 16 input kinds × 219/642 × both hardmode states × 300 seeds.
+
+## 7. FINAL-FINAL — the four closing censuses (2026-11-21, post-`29d9dc224`)
+
+> **The e20 branch tip for this round: `6d1754719`** (on `29d9dc224`, the
+> first-compile mechanical). All witnesses WRITTEN NOT RUN (code-only lane).
+
+### 7a. c42 re-pick monitor — RE-FLAG CRITICAL (the §6a instruction was NOT consumed)
+
+Re-fetched `origin/task/W4-c42-wiring-device-arms` (tip `79b81ae77`, the
+fold-133 docs commit). The §6a re-pick instruction has NOT been acted on:
+
+- **Ancestry**: `cf0b8f9c0`, `0055ac801`, `29d9dc224`, `a2d6cdad`,
+  `0cea13365` are ALL non-ancestors of the c42 tip
+  (`git merge-base --is-ancestor … origin/task/W4-c42-wiring-device-arms`
+  → exit 1 for each). The fold-133 series (`e5569c2a7`…`79b81ae77`) landed
+  on top of the stale `e8e6b159c` device base and never touched it
+  (`git log … -- world_sim/wiring.rs minecart.rs` — the newest device-arm
+  commit is still `e8e6b159c`).
+- **The latent compile error is STILL PRESENT** at the c42 tip:
+  `world_sim/wiring.rs:627` `slots: &mut [crate::item::ItemSlot]` +
+  `:674` `slots.resize(…)` (`try_move_coins_in_chest`), `:726` slice +
+  `:748` `slots.resize(…)` (`try_put_item_in_chest`); `hopper_pull` still
+  routes through `chest_slots_mut` (`:817`/`:843`/`:897`), which returns
+  `Option<&mut [ItemSlot]>` (`chest.rs`, `c.slots.as_mut_slice()`). No
+  `resize` extension trait exists anywhere in c42's crates (grep). A slice
+  has no `resize` — **CRITICAL latent compile error**, unchanged from §6a.
+- **The §3b.4 hammer half is STILL ABSENT**: `minecart.rs` keeps the
+  pound-only `frame_track_pound` (`:1385`, the doc comment still says the
+  non-pound arms are "unreachable here and not ported"); no
+  `frame_track_hammer`/`frame_track_place`/`refit_tracks_around`/
+  `track_item`; `edit/hammer.rs:413-417` still returns
+  `PoundOutcome::Consumed` for 314; `TrackHammer` greps ZERO hits in c42's
+  crates. The track-piece census (`865e9d83f`) is absent too — c42's only
+  `place_track` hits are TEST fixtures (`minecart.rs:1568`,
+  `player.rs:17160`), and `editing.rs` has no `cell_drops` 314 arm.
+- **c42's research-71 copy is the OLD 176-line pre-§6a doc** (no STATUS
+  banner, no addendum) — the branch never saw the re-pick instruction.
+
+**Merger instruction (unchanged, now RE-FLAGGED): re-pick the device-arm
+reconcile from `cf0b8f9c`/`0055ac801` (now `6d1754719`), NOT from
+`8791f07f`/`f1c24c381`/`e8e6b159c`.** Taking c42's device halves ships a
+non-compiling slice-`resize` pair and drops the hammer/placement/track-item
+census. c42's fold-133 series and its OTHER union-exec items
+(doors/trapdoors/tall-gates/light unification/mass-wire) are independent of
+the device arms and merge on their own terms; `de176ccdd` (the
+144/421/422/235/506/226 fix round) IS an ancestor of the c42 tip and stays
+c42's to land (the e20 branch still carries the pre-fix halves — see §7c).
+
+### 7b. Minecart RIDE census — VERIFIED COMPLETE; the residuals contracted
+
+**Claim check**: the ride machine is M2-PHYS-7's (`docs/ANALYSIS.md`
+"Minecart riding (M2-PHYS-7)" :10919; PORT_MAP's `Minecart.cs` row —
+"done (ride physics + sparks + sounds)"), landed on main before the
+`a725acb04` branch point. **f6 does NOT claim the ride**: its research/65
+claims doc says verbatim "the minecart-213 wheel sparks are already
+`minecart.rs`; these are the OTHER mount dusts" — f6's 27 sites are all
+`Mount.cs` (movement extras, UpdateEffects gem/steam/exhaust/confetti
+carts, spawn/dismount), wired in its six wiring commits. No overlap.
+
+**The ride-physics census** (every C# fn → the port, hand-checked):
+
+| C# (`Minecart.cs`) | Port | Verdict |
+| --- | --- | --- |
+| `Initialize` tables `:103-547` | `TRACK_FRAMES` (+`tile_height`/`TEXTURE_POSITION`), `track_switch_options` OnceLock | complete (§1) |
+| `TrackCollision` `:562-941` | `track_collision` — the 2-px magnet march, corner switch, follow flags, booster `last_boost`, bumper/bouncy rewind, ramp launch, open-end release, Y snap | complete (witnesses: straight/corner/ramp/bumper/bouncy/open-end/boost-once/sentinels) |
+| `OnTrack`/`GetOnTrack`/`TrackRotation`/`GetWheelsPositions`/`GetMagnetPosition` `:1200-1294` | same-named fns | complete |
+| `HitTrackSwitch` `:1281-1288` | the ride flag3 → `pending_switch_trip` → `world_sim/player.rs` drain → `wiring.hit_switch` + the Mech-28 click on UpdatePlayers | complete (net 59 = MP, out) |
+| `FlipSwitchTrack`/`FrameTrack`/`PlaceTrack`/`GetTrackItem` | e20's kept halves (§2, §6b, §6c) | complete |
+| `WheelSparks` `:1623-1630` + the sparks pool | `wheel_sparks`/`rolling_wheel_sparks`/`spawn_spark`/`tick`/`draw` | complete |
+| The inline ride branches (`Player.cs:26623-28161`) | `player.rs` — cart stats 13/13/0.04, boost ±4, the `vy==0` accel gate, coast/friction, the −0.001 jump nudge, `cartRampTime`, the TrackCollision slot + water scale, landing/bumper cues | complete (M2-PHYS-7 deviations recorded) |
+| `IsPressurePlate` `:549-560` | **CLOSED this round (`6d1754719`)**: `minecart::is_pressure_plate` — the active-314 front-20/21 gate verbatim (the PRESSED variants 22/23 do NOT count; `tile.active()` NOT `nactive()`); sole consumer `WorldGen.IsItATrigger` (`WorldGen.cs:26817`) in the unported `BrokenTrapCleanup` pass (`:22121-22140` → `ClearBrokenTraps` `:26840-26958`, whose 314 arm sets `frameX=1` not kill `:26948-26951`) — `dead_code` until that worldgen lane lands; NOT the ride trip (flag3 spans all type-1 frames). 1 witness | closed |
+| `TrackColors` `:1321-1440`, `DrawLeftDecoration`/`DrawRightDecoration`/`DrawBumper`/`DrawBouncyBumper` `:1442-1484`, `GetSourceRect` `:1519-1532` | UNPORTED — **CONTRACT: the rail-sprite draw lane** (M2-MOUNT-1/3 per ANALYSIS; the tile renderer skips `frame_y < 0` and 314's frames are INDICES, `render/tiles.rs:147-159`). Consumers: `TileDrawing.cs:3789-3820` (front/back/decor/bumper quads). The e20 `TRACK_FRAMES` table carries `TEXTURE_POSITION` + the type column the draw reads — the track-frame feed is ready | contracted |
+| `GetAreExpectationsForSidesMet`/`TryFittingTileOrientation`/`ConvertOffsetY*` `:1534-1621` | UNPORTED — **CONTRACT: the mechanical-cart (Drill Mount) lane**. Sole consumers: `MinecartDiggerHelper.cs:112/:116/:155/:159` (the digger's track auto-fit); no other caller exists in the decompile (grep). Rides M2-MOUNT-4's ability mounts | contracted |
+
+The e20 track-frame work (the OnceLock options cache, the FULL FrameTrack,
+the placement/hammer wakes) feeds BOTH contracted lanes: the draw reads
+`TRACK_FRAMES`/`TEXTURE_POSITION`, the digger reads
+`track_switch_options` + the connection columns through the two Convert
+helpers (`-1→0, 1→2, _→1` / `0→-1, 2→1, _→0`).
+
+### 7c. Wiring.cs device-family FINAL census — CLOSED (nothing unclaimed left)
+
+Script-diff of every `public/private static` fn in `Wiring.cs` against the
+e20 tree + the live branches' claims:
+
+| C# fn | Port / claim | Status |
+| --- | --- | --- |
+| `SetCurrentUser` `:77-88` | SP folds to `Main.myPlayer` (the SP-discarded convention); MP-only | folded |
+| `Initialize`/`SkipWire`/`ClearAll` | `Wiring::new`/`skip`/`clear_all` — `clear_all` + the world-load hook are c42 fold-133 fix-family 1 (`e5569c2a7`, f11 `ad80daaa`/`24fa39f1` per-hunk) | claimed c42 |
+| `UpdateMech` `:145-257` | `update` — the out-of-world pop-not-remove fix is c42 fold-133 fix-family 2 (`90c4fb12f`) | ported + fix claimed c42 |
+| `HitSwitch` `:259-378` | `hit_switch` — all arms incl. the 132/411 else-arm (D5 closed S1-L-6); the port adds an `!active` early-return the C# lacks — unreachable from every live caller (the `Player.cs` use sites gate on active tiles; `Collision.SwitchTiles` filters `active()` `:3259`; the ride trip fires on active tracks) — recorded, not a deviation in practice | ported |
+| `PokeLogicGate`/`LogicGatePass`/`CheckLogicGate` | ported; the one-iteration teleport-block clear tail is c42 fold-133 fix-family 3 (`2458b5960`) | ported + fix claimed c42 |
+| `Actuate`/`ActuateForced`/`DeActive`/`ReActive` | ported (M7-WIRE-3 PASS, research-23) | ported |
+| `MassWireOperation`(+Inner/Step) `:419-453`/`:3235-3421` | c42 fold-133 fix-family 6 (`05ae5cc68` — core + app + the 3625 use arm + lifecycle) | claimed c42 |
+| `CheckMech`/`XferWater`/`TripWire`/`PixelBoxPass`/`HitWire` | ported; the pump `active()` gate fix is e21 (`7c9a67a2f`) | ported |
+| `GetProjectileSource`/`GetNPCSource`/`GetItemSource` | entity-source seams (the request drains) | folded |
+| `HitWireSingle` `:996-2553` | the ~70-arm dispatch — e20's slice + S1-L-6 + c42 batch 1 (campfire 215/torch 4/130-131/door 11) + f11 (door 10/trapdoors 386-387/tall gates 388-389). The 144/421/422 wakes + actuator guard, the 235/226 `downedPlantBoss` guards and the 506 shared-validator fix are c42 `de176ccdd` (ancestor of the c42 tip, NOT of e20 — the e20 halves stay pre-fix; the merger takes c42's) | ported/claimed |
+| `Extractinator`/`TryFindChestForExtractinator`/`Hopper`/`TryToPutItemInChest`/`TryMoveCoinsInChest`/`TryAddingToEmptySlot`/`TryAddingToStack` | e20's kept bodies (§2, §3b merged) | ported |
+| `IsHopperInRangeOf` `:2610-2636` | MP-only reservation gate — SP-discarded (§6d) | discarded |
+| The 11 `Toggle*` statics | c42's d6 unification (`6381b52d1`) | claimed c42 |
+| `ExplodeMine` `:3074-3082` | `explode_mine` — 164/250/10 at the cell centre, both callers (`HitSwitch:290`, case 210 `:2041`); witness `dw_3_3_the_mine_fires_through_the_wire_and_the_switch` | ported |
+| `GeyserTrap` `:3084-3118` | `geyser_trap` — the `frameX/36` column, `CheckMech(200)`, 654/20/2 up/down at `(num2+1, ·)*16`, both callers (`HitSwitch:294`, case 443 `:1984`); witness `dw_3_3_the_geyser_fires_by_the_frame_column`. The entity-contact gate (`Collision.SwitchTiles` objType 1/5) rides `collision.rs::switch_tiles` | ported |
+| `Teleport`/`TeleporterHitboxIntersects` | ported (the pad registration + the app drain's hitbox union) | ported |
+
+**Dart-trap / geyser-timer / explosives-timer check (the prompt's three
+suspects)**: the dart family is `trap_emit` (137, frameY 0/1/2/5 →
+98/184/187/980 + the wall negatives −10/−9/−8 with `speedY=0`, §3a.1) —
+witnessed (`the_dart_trap_fires_the_verbatim_shot`,
+`the_trap_variants_map_verbatim`, the cooldown gate). There is NO separate
+geyser/explosives TIMER fn in C# — the geyser's 200-tick and the trap's
+200-tick cooldowns are `CheckMech` args (ported); the tile-144 timer's
+60/180/300/30/15 periods are `update` (witness
+`the_timer_pulses_on_its_period_then_pops`); the explosives 141 arm is
+`explosives` (108/500/10, witness `dw_3_3_the_explosives_kill_the_tile_and_fire_the_108`).
+**Nothing unported and unclaimed remains in Wiring.cs.** The only
+worldgen-side residual found by the sweep is the `BrokenTrapCleanup` pass
+(`WorldGen.cs:22121-22140` + `IsItATrigger`/`IsItATrap`/`ClearBrokenTraps`
+`:26805-26958`) — the worldgen-passes lanes' scope; its 314 dependency
+(`IsPressurePlate`) is closed on this branch (`6d1754719`, §7b).
+
+### 7d. This doc's final state
+
+The e20 branch (`task/W4-e20-wiring-device-arms-2`) is the canonical
+device-arm superset: every §3a fix, every §3b win, the §6 follow-ups, the
+first-compile mechanical (`29d9dc224`) and the §7b `IsPressurePlate` close
+(`6d1754719`). The merger takes THIS branch's device halves wholesale
+(§5 + §6a + §7a), c42's non-device union-exec + fold-133 + `de176ccdd`
+fixes on their own terms, e21's four fixes (§4), and the two §7b contracts
+(the rail draw, the digger auto-fit) ride their named lanes.
 
 *All comparisons hand-verified against the decompiled source at the cited
 lines; no cargo/tests/graphify run (code-only lane).*
