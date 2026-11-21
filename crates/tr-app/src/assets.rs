@@ -492,6 +492,11 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_181",
         "Extra_198",
         "Extra_93",
+        // W4-g12 doc-sweep: the glowing-mushroom-tree cap
+        // (`TextureAssets.ShroomCap`, `AssetInitializer.cs:532` —
+        // `Images/Shroom_Tops`, the 3-frame 62x42 strip
+        // `TileDrawing.cs:994-1006` draws over a type-72 trunk top).
+        "Shroom_Tops",
         // Armor sheets, slots 1..4 = copper/iron/silver/gold. `AssetInitializer.cs:
         // 165-185` indexes the texture arrays by the armor slot itself, so the file
         // number equals the slot: `Armor_Head_{n}`, `Armor_Legs_{n}` and the

@@ -39340,3 +39340,22 @@ Verification: code-only; 3 witnesses WRITTEN NOT RUN
 (`tr-core/src/sky.rs` 2 — the shared red ramp + the sky replacement;
 `render/sky.rs` 1 — the 25-floor dominance over every phase floor, the
 daylight no-op and the untouched forest arm).
+
+## The shroom-cap overlay (W4-g12 doc-sweep)
+
+research/09's tree row carried "shroom cap MISSING" since S1-F-9 wave A.
+Ported: `tiles.rs::shroom_cap_frame` + the cap draw in the tile loop
+(`TileDrawing.cs:994-1006`): a type-72 trunk-top cell at `frameX >= 36`
+draws `TextureAssets.ShroomCap` (`Images/Shroom_Tops`,
+`AssetInitializer.cs:532` — now packed in `STATIC_SHEET_NAMES`) at
+`(x*16 - 22, y*16 - 26)`, source `(num4*62, 0, 60, 42)` where `num4` is
+0/1/2 by the EXACT `frameY == 18`/`== 36` equalities, tinted with the raw
+`Lighting.GetColor(x, y)` and flipped by the case's `tileSpriteEffect`.
+The C# site precedes the `!flag` return (`:1014`), so the port draws the
+cap before its `skip_draw`/vine `continue`s and the cell sprite; a
+missing sheet leaves the cap undrawn (the `r.uv` None arm, the
+load-static convention). Deviation: fully dark cells fold into the
+merged black rectangle before the cap site (the standing dark-cell
+merge — the cap tint there is zero, pixel-identical). 2 witnesses
+WRITTEN NOT RUN (the frame-equality arms; the draw-order/anchor/rect/
+raw-light source scan).

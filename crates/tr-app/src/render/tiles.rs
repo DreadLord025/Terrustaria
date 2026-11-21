@@ -195,6 +195,25 @@ pub(crate) fn resolve_tile_frame(
     frame.or_else(|| lookups.plain_tex(kind))
 }
 
+/// The shroom-cap frame column (`TileDrawing.cs:994-1005`): only a
+/// type-72 trunk-top cell at `tileFrameX >= 36` carries a cap;
+/// `num4 = 0`, lifted to 1 at `tileFrameY == 18` and 2 at `== 36`
+/// (exact equality — every other row keeps 0). The source rect is
+/// `(num4 * 62, 0, 60, 42)` on `TextureAssets.ShroomCap`
+/// (`Images/Shroom_Tops`, `AssetInitializer.cs:532`).
+pub(crate) fn shroom_cap_frame(frame_x: i16, frame_y: i16) -> Option<i32> {
+    if frame_x < 36 {
+        return None;
+    }
+    Some(if frame_y == 18 {
+        1
+    } else if frame_y == 36 {
+        2
+    } else {
+        0
+    })
+}
+
 /// One cell of the sunflower's special-pass sway
 /// (`TileDrawing.DrawMultiTileGrassInWind`, `TileDrawing.cs:8916-9041`).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -825,6 +844,31 @@ pub(crate) fn draw_tiles(
                         tile,
                         water_style,
                     );
+                }
+                // W4-g12 doc-sweep: the glowing-mushroom cap
+                // (`TileDrawing.cs:994-1006`, research/09's "shroom cap
+                // MISSING"): a type-72 trunk top at `frameX >= 36` draws
+                // the `Shroom_Tops` 60x42 sprite over the cell BEFORE the
+                // trunk quad, at `(x*16 - 22, y*16 - 26)` with the raw
+                // `Lighting.GetColor(x, y)` tint and the case's flip.
+                // Runs for every visible cap cell regardless of the draw
+                // `flag` (the C# site precedes the `!flag` return); the
+                // port's dark-cell merge above already folded the black
+                // cells, whose cap tint is zero anyway.
+                if active && tile.kind == 72 {
+                    if let Some(col) = shroom_cap_frame(tile.frame_x, tile.frame_y) {
+                        if let Some(uv) = r.uv("Shroom_Tops", col as f32 * 62.0, 0.0, 60.0, 42.0)
+                        {
+                            let c = style.shade(raw_l, tx, ty, anim_time);
+                            r.push_sprite(
+                                [tx as f32 * TILE_PX - 22.0, ty as f32 * TILE_PX - 26.0],
+                                [60.0, 42.0],
+                                flip_uv(uv, dd.flip),
+                                [c[0], c[1], c[2], 1.0],
+                            );
+                            stats.quads += 1;
+                        }
+                    }
                 }
                 // The switch's early `return` arms (751/752 off their (0,0)
                 // frame, the palm's frond columns 323): no sprite at all.
@@ -1806,6 +1850,45 @@ fn draw_tile_flames(
 mod tests {
     use super::*;
     use tr_core::wind::Wind;
+
+    /// W4-g12 doc-sweep: the shroom-cap frame pick
+    /// (`TileDrawing.cs:994-1005`) — the `frameX >= 36` gate and the two
+    /// EXACT `frameY` equalities (18 → 1, 36 → 2, everything else 0).
+    #[test]
+    fn w4_g12_shroom_cap_frame_matches_the_two_equality_arms() {
+        // Below 36: no cap at all (the trunk-body columns).
+        assert_eq!(shroom_cap_frame(0, 0), None);
+        assert_eq!(shroom_cap_frame(18, 18), None);
+        assert_eq!(shroom_cap_frame(34, 36), None);
+        // The gate is >=, so 36 itself carries a cap.
+        assert_eq!(shroom_cap_frame(36, 0), Some(0));
+        assert_eq!(shroom_cap_frame(36, 18), Some(1));
+        assert_eq!(shroom_cap_frame(54, 36), Some(2));
+        // Exact equality, not a band: 19/37/54 keep column 0.
+        assert_eq!(shroom_cap_frame(36, 19), Some(0));
+        assert_eq!(shroom_cap_frame(36, 37), Some(0));
+        assert_eq!(shroom_cap_frame(36, 54), Some(0));
+    }
+
+    /// W4-g12 doc-sweep: the cap draw sits BEFORE the `skip_draw`/vine
+    /// `continue`s and the cell sprite (`TileDrawing.cs:994` precedes the
+    /// `!flag` return `:1014`), uses the raw cell light and the
+    /// `(-22, -26)` anchor with the 60x42 rect at `num4 * 62`.
+    #[test]
+    fn w4_g12_shroom_cap_draws_before_the_skip_arms_with_the_raw_light() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let cap = body.find("shroom_cap_frame(tile.frame_x").expect("the cap hook");
+        let skip = body.find("if dd.skip_draw").expect("the skip arm");
+        assert!(cap < skip, "the cap draws before the switch's return arms");
+        let cap_block = &body[cap - 400..skip];
+        assert!(cap_block.contains("- 22.0"), "the -22 x anchor (:1005)");
+        assert!(cap_block.contains("- 26.0"), "the -26 y anchor (:1005)");
+        assert!(cap_block.contains("60.0, 42.0"), "the 60x42 rect (:1005)");
+        assert!(cap_block.contains("raw_l"), "Lighting.GetColor, not the ghosted l");
+        assert!(cap_block.contains("dd.flip"), "tileSpriteEffect rides the case flip");
+    }
 
     /// S1-G-1f draw-order witness: the back-rope hook sits at the C#
     /// dispatch position — AFTER `DrawSingleTile`'s visibility gates
