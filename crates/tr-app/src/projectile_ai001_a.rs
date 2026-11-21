@@ -853,4 +853,44 @@ mod tests {
         assert_eq!(p.vel.y, 0.0, "no gravity — straight flight");
         assert_eq!(p.local_ai[0], 10.0, "the counter increments every tick");
     }
+
+    /// W4-c3 gap 1 — the 299 SPAWN-side census + drain witness. The whole
+    /// decompiled tree carries exactly ONE `NewProjectile` site for type
+    /// 299: `NPC.cs:21808-21810` (the 289 Giant Cursed Skull's volley,
+    /// `short num158 = 299`). Item 3014 is the ClingerStaff (`Item.cs:27882`
+    /// shoots 482, `ProjectileID.cs:1518`); the ShadowFlameBow is item
+    /// **3052** (`ItemID.cs:7787`, `Item.cs:28223` shoots the arrow 495) —
+    /// neither fires 299. GoblinSummoner 471 is aiStyle-3 (`NPC.cs:15731`)
+    /// whose flight arm spawns NPC 30 (`:56514`), never a 299 projectile.
+    /// So the spawn side is fully claimed by the style-10 machine's
+    /// `wants_hostile_shot` push — this witness pins the sim drain's seam:
+    /// `spawn_hostile` (`world_sim/npcs.rs`'s shot drain) lands the 299
+    /// row, hostile, and the pool's slice-A dispatch flies it.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c3_the_299_spawn_drain_lands_the_row_hostile() {
+        let mut pool = ProjectilePool::new();
+        // The drain's call shape: kind, centre, the 6-speed aim, damage
+        // 25, knockback 0 (`NPC.cs:21810` → `spawn_hostile`).
+        let slot = pool
+            .spawn_hostile(SHADOWFLAMES, Vec2::new(160.0, 160.0), Vec2::new(6.0, 0.0), 25, 0.0)
+            .expect("the 299 row spawns");
+        let p = &pool.slots()[slot];
+        assert_eq!(p.kind, SHADOWFLAMES);
+        assert!(p.active);
+        assert!(!p.friendly, "spawn_hostile clears friendly");
+        assert_eq!(p.damage, 25, "the volley's num157 (:21807)");
+        assert_eq!((p.w, p.h), (6.0, 6.0), "the row rides the spawn");
+        assert_eq!(p.extra_updates, 2, "Projectile.cs:3901");
+        assert_eq!(p.penetrate, -1);
+        assert!(!p.tile_collide);
+        // One pool step routes it through the slice-A arm (the resting
+        // counter + the straight flight — the row/arm witness above pins
+        // the machine itself).
+        let mut w = world();
+        step_pool(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[0], 0.0, "the seam routed 299 to the slice-A arm");
+        assert_eq!(p.local_ai[0], 3.0, "3 sub-steps (extraUpdates 2) per tick");
+    }
 }
