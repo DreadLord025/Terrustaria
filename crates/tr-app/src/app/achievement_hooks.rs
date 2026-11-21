@@ -258,7 +258,7 @@ mod tests {
     }
 
     fn slot(kind: u16) -> ItemSlot {
-        ItemSlot { kind, name: String::new(), count: 1, prefix: 0 }
+        ItemSlot { kind, name: "", count: 1, prefix: 0 }
     }
 
     fn done(app: &App, name: &str) -> bool {
