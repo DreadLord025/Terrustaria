@@ -155,6 +155,15 @@ impl App {
     /// `QueuedAbort = true` once (the `!QueuedAbort` gate) + sound 11. The
     /// key path calls this on the Inventory press edge; the flag reaches
     /// the worker through the job's atomic (`WorldGenerator.cs:433-437`).
+    /// `UIWorldGenDebug.Open()`/`Close()` (`UIWorldLoad.cs:50-53`'s F5 arm →
+    /// `UIWorldGenDebug.cs:854-879`): the debug pass-list overlay toggles over
+    /// the loading screen. The port lands the driver as an overlay (W4-f23
+    /// closeout item 1), so the toggle flips `App.worldgen_debug_open`; the
+    /// `DebugOptions.enableDebugCommands` gate is the caller's (`TR_DEBUG`).
+    pub(crate) fn worldgen_debug_toggle(&mut self) {
+        self.worldgen_debug_open = !self.worldgen_debug_open;
+    }
+
     pub(crate) fn world_load_queue_abort(&mut self) {
         let Some(job) = self.world_gen_job.as_ref() else {
             return;

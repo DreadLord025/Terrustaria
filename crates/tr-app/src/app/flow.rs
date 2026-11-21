@@ -308,6 +308,14 @@ pub(crate) struct FrontDraw<'a> {
     pub(crate) vk_grid: bool,
     /// The caret's `UITextBox._frameCount`.
     pub(crate) frame_count: u64,
+    /// The `UIWorldGenDebug` driver's pass-list feed (W4-f23 closeout item 1):
+    /// the live job's per-step snapshot + the executed pipeline's descriptors,
+    /// `None` when no generation job runs (the `TR_UI=worldload` preset). The
+    /// debug overlay (`App.worldgen_debug_open`, the F5 arm) reads it.
+    pub(crate) worldgen_debug: Option<ui::worldgen_debug::DebugFeed>,
+    /// `UIWorldGenDebug.IsActive` (`App.worldgen_debug_open`) — the F5 debug
+    /// pass-list overlay draws over the loading screen while true.
+    pub(crate) worldgen_debug_open: bool,
 }
 
 /// The five front screens' behaviour surface — the C# `UIState` shape: the
@@ -488,6 +496,22 @@ impl FrontScreenBehaviours for FrontScreen {
                     state,
                     d.screen,
                 );
+                // `UIWorldGenDebug.Open()` (`UIWorldLoad.cs:50-53`): the F5
+                // debug pass-list overlay draws OVER the loading screen while
+                // active (W4-f23 closeout item 1). The driver reads the live
+                // job's per-step feed; the scroll rides `App.front_scroll`.
+                if d.worldgen_debug_open {
+                    if let Some(feed) = d.worldgen_debug.as_ref() {
+                        ui::worldgen_debug::draw(
+                            d.renderer,
+                            d.lookups,
+                            d.screen,
+                            feed,
+                            d.scroll,
+                            d.mouse,
+                        );
+                    }
+                }
             }
         }
     }
@@ -1088,11 +1112,17 @@ impl FrontScreenBehaviours for FrontScreen {
             // abort once and plays sound 11. The port reads the press edge
             // here (the C# polls `Triggers.Current.Inventory` every Update;
             // the `!QueuedAbort` gate makes the held key a no-op after the
-            // first). The F5 debug arm (`:50-53`) needs `UIWorldGenDebug`
-            // (unported, research-19 L1).
+            // first). The F5 debug arm (`:50-53`) opens `UIWorldGenDebug`
+            // while `DebugOptions.enableDebugCommands` — the port's
+            // `TR_DEBUG` stand-in (W4-f23 closeout item 1: the driver lands
+            // as an overlay over the loading screen, not a new FrontScreen).
             FrontScreen::WorldLoad(_) => {
                 if let PhysicalKey::Code(code) = event.physical_key {
-                    if app.is_bound(crate::input_map::Action::Inventory, code) {
+                    if code == KeyCode::F5 && crate::env::debug() {
+                        // `UIWorldGenDebug.Open()` (`:52`) — the debug
+                        // pass-list overlay toggles over the loading screen.
+                        app.worldgen_debug_toggle();
+                    } else if app.is_bound(crate::input_map::Action::Inventory, code) {
                         app.world_load_queue_abort();
                     }
                 }
@@ -1140,6 +1170,25 @@ impl App {
     /// consume the notch. `_scrollbar.ViewPosition -= evt.ScrollWheelValue`
     /// (`:112`), clamped by `SetView` (`UIScrollbar.cs:75`).
     pub(crate) fn front_wheel(&mut self, delta: i32) -> bool {
+        // The `UIWorldGenDebug` pass-list overlay scrolls its own list while
+        // active (W4-f23 closeout item 1) — the `GenPassList`'s `UIList.
+        // ScrollWheel` (`UIList.cs:107-114`), clamped by `SetView`.
+        if self.worldgen_debug_open {
+            if let Some(feed) = self.worldgen_debug_feed() {
+                let (sw, sh) = self.screen_size();
+                let l = ui::worldgen_debug::layout(Vec2::new(sw, sh));
+                let content_h = ui::worldgen_debug::content_height(feed.steps.len());
+                if ui::in_rect(self.mouse_pos, l.list) {
+                    self.front_scroll = ui::char_select::scroll_wheel(
+                        self.front_scroll,
+                        delta,
+                        l.list[3],
+                        content_h,
+                    );
+                }
+                return true;
+            }
+        }
         let Some((cards, header)) = self.front_list() else {
             return false;
         };
@@ -2372,6 +2421,7 @@ pub(crate) mod front_flow_tests {
             zoom_pinned: false,
             debug: false,
             debug_overlay: false,
+            worldgen_debug_open: false,
             keys: HashSet::new(),
             keybinds: crate::input_map::default_binds(),
             map_binds: crate::input_map::default_map_binds(),
@@ -3013,6 +3063,70 @@ pub(crate) mod front_flow_tests {
         if let Some(dir) = tr_core::save::default_world_dir() {
             let _ = std::fs::remove_file(dir.join("LoadTest.trwld"));
         }
+    }
+
+    /// W4-f23 closeout item 1 — the F5 debug arm (`UIWorldLoad.cs:50-53`):
+    /// `UIWorldGenDebug.Open()` toggles the pass-list overlay over the loading
+    /// screen while `DebugOptions.enableDebugCommands` (the port's `TR_DEBUG`
+    /// stand-in gates the key path). The driver feeds `PassState` per executed
+    /// step from the live job; the overlay scrolls its own list.
+    #[test]
+    fn the_f5_debug_overlay_toggles_and_feeds_the_pass_list() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = flow_app(None, vec![], vec![]);
+        let dir = std::env::temp_dir().join(format!("tr-w4-f23-dbg-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let opts = tr_core::worldgen::GenOptions {
+            name: "dbg".into(),
+            width: 512,
+            height: 512,
+            seed: 3,
+            ..Default::default()
+        };
+        let job = crate::app::worldgen_job::WorldGenJob::spawn(
+            opts,
+            dir.join("dbg.trwld"),
+            ui::world_load::WorldLoadFlags::default(),
+            false,
+            false,
+        );
+        app.world_gen_job = Some(job);
+        app.enter_front(FrontScreen::WorldLoad(Box::new(ui::world_load::WorldLoadState::new())));
+        // The overlay starts closed; the toggle opens it (`UIWorldGenDebug.Open`).
+        assert!(!app.worldgen_debug_open);
+        app.worldgen_debug_toggle();
+        assert!(app.worldgen_debug_open);
+        // The driver's feed carries the executed pipeline + the job's snapshot.
+        let feed = app.worldgen_debug_feed().expect("the live job feeds the driver");
+        assert!(!feed.steps.is_empty(), "the executed pipeline has steps");
+        assert_eq!(
+            feed.steps.len(),
+            tr_core::worldgen::pipeline::executed_steps(tr_core::seeds::MicroSeedFlags::none()).len()
+        );
+        // The wheel scrolls the overlay's list (the GenPassList's UIList).
+        let (sw, sh) = app.screen_size();
+        let l = ui::worldgen_debug::layout(Vec2::new(sw, sh));
+        app.mouse_pos = Vec2::new(l.list[0] + 10.0, l.list[1] + 10.0);
+        let ch = ui::worldgen_debug::content_height(feed.steps.len());
+        if ch > l.list[3] {
+            assert!(app.front_wheel(-1), "the overlay consumes the notch");
+            assert!(app.front_scroll > 0.0, "the list scrolled down");
+        }
+        // Toggle closed again (`UIWorldGenDebug.Close`).
+        app.worldgen_debug_toggle();
+        assert!(!app.worldgen_debug_open);
+        // Drain the worker so the test leaves no thread running.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+        loop {
+            app.update_world_load();
+            if app.world_gen_job.is_none() {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "the worker must finish");
+            std::thread::yield_now();
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The abort completion tail: a queued abort drains to `JobResult::Aborted`

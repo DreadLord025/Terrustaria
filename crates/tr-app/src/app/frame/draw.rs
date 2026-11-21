@@ -1550,6 +1550,8 @@ impl App {
                             scroll: self.front_scroll,
                             vk_grid: self.vk_grid,
                             frame_count: *frame_count,
+                            worldgen_debug: self.worldgen_debug_feed(),
+                            worldgen_debug_open: self.worldgen_debug_open,
                         };
                         front.draw(&mut d);
                         // The port's not-ported notice for the front screens
@@ -2289,6 +2291,20 @@ impl App {
     /// grid. Extracted from the draw region (W4-f23 closeout item 2) so the
     /// rebuild reads the same inputs from either C# draw site — the modern
     /// grid (`:585`) and the classic pip-list arm (`Main.cs:41712`).
+    /// The `UIWorldGenDebug` driver's per-frame feed (W4-f23 closeout item 1):
+    /// the live job's per-step snapshot + the executed pipeline's descriptors.
+    /// `None` when no generation job runs (the `TR_UI=worldload` preset parks a
+    /// fixed snapshot with no worker — the debug overlay has nothing to feed).
+    pub(crate) fn worldgen_debug_feed(&self) -> Option<ui::worldgen_debug::DebugFeed> {
+        let job = self.world_gen_job.as_ref()?;
+        let snap = job.snapshot();
+        Some(ui::worldgen_debug::DebugFeed {
+            steps: tr_core::worldgen::pipeline::executed_steps(job.micro_flags),
+            current_step: snap.current_step,
+            completed_steps: snap.completed_steps,
+        })
+    }
+
     pub(super) fn craft_raw_list(&self) -> Vec<usize> {
         // The reach (`Player.tileRangeX/Y` + `TileReachCheckSettings.Simple`):
         // the Extendo Grip / the Architect's Gizmo Pack, the held Toolbox,

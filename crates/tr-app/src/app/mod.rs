@@ -775,6 +775,13 @@ pub(crate) struct App {
     /// The debug *window* (the typed always-present overlay, top-left). Its own
     /// toggle (F4) so it can be up while the large `TR_DEBUG` overlay is off.
     pub(crate) debug_overlay: bool,
+    /// `UIWorldGenDebug.IsActive` (`UIWorldGenDebug.cs:794`) — the F5 debug
+    /// pass-list overlay over the loading screen (`UIWorldLoad.cs:50-53`'s
+    /// `DebugOptions.enableDebugCommands && F5` arm, the port's `TR_DEBUG`
+    /// stand-in). W4-f23 closeout item 1: the driver lands as an overlay,
+    /// not a new FrontScreen variant (the d85 dev-screens co-lane owns the
+    /// full screen; this wires the parked element halves to the live job).
+    pub(crate) worldgen_debug_open: bool,
     pub(crate) keys: HashSet<KeyCode>,
     /// `Main.cUp`..`Main.cMount` (`Main.cs:67163-67176`): the live gameplay
     /// bind table, mirrored from `settings.keybinds` so a rebind in the
@@ -3968,6 +3975,7 @@ impl App {
             zoom_pinned: crate::env::zoom_pinned(),
             debug: crate::env::debug(),
             debug_overlay: false,
+            worldgen_debug_open: false,
             keys: HashSet::new(),
             keybinds: crate::input_map::default_binds(),
             map_binds: crate::input_map::default_map_binds(),

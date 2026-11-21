@@ -1046,6 +1046,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/WorldGen/Outer_Crimson",
         "UI/WorldGen/Outer_Random",
         "UI/WorldGen/Outer_Lower",
+        // W4-f23 closeout item 1: the worldgen-debug pass-list icons —
+        // `GenPassElement.PassIconEntry.FromBestiaryIcon` frames this 16×5
+        // sheet (`UIWorldGenDebug.cs:184-196`, `Icon_Tags_Shadow`).
+        "UI/Bestiary/Icon_Tags_Shadow",
         "UI/CharCreation/CategoryPanel",
         "UI/CharCreation/CategoryPanelBorder",
         "UI/CharCreation/CategoryPanelHighlight",
@@ -2205,6 +2209,10 @@ pub struct Lookups {
     /// requests `Images/UI/WorldGen/Outer_{Corrupt,Crimson,Random,Lower}`.
     /// Index order: 0 Corrupt, 1 Crimson, 2 Random, 3 Lower.
     pub worldgen_outer: [Option<tr_render::SheetRect>; 4],
+    /// `UI/Bestiary/Icon_Tags_Shadow` 416×130 (16×5 cells of 26 px) — the
+    /// worldgen-debug pass-list icons (`UIWorldGenDebug.cs:184-196`,
+    /// `GenPassElement.PassIconEntry.FromBestiaryIcon`). W4-f23 closeout 1.
+    pub ui_bestiary_tags_shadow: Option<tr_render::SheetRect>,
     /// `UI/CharCreation/CategoryPanel` 44x44 (`UIColoredImageButton.cs:41`).
     pub cc_panel: Option<tr_render::SheetRect>,
     /// `UI/CharCreation/CategoryPanelBorder` 44x44 (`UIColoredImageButton.cs:52`).
@@ -2710,6 +2718,7 @@ impl Lookups {
                 atlas.sheet("UI/WorldGen/Outer_Random").copied(),
                 atlas.sheet("UI/WorldGen/Outer_Lower").copied(),
             ],
+            ui_bestiary_tags_shadow: atlas.sheet("UI/Bestiary/Icon_Tags_Shadow").copied(),
             cc_panel: atlas.sheet("UI/CharCreation/CategoryPanel").copied(),
             cc_panel_border: atlas.sheet("UI/CharCreation/CategoryPanelBorder").copied(),
             cc_panel_highlight: atlas

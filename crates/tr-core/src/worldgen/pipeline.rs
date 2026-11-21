@@ -1405,6 +1405,41 @@ pub fn pass_name_id(step: &str) -> Option<&'static str> {
         .filter(|v| !v.is_empty())
 }
 
+/// One executed step's public descriptor — the `UIWorldGenDebug` driver's
+/// pass-list row input (W4-f23 closeout item 1). `name` is the display name
+/// (`EXECUTED_PIPELINE`'s `name`, what `GenProgressHook::begin_step` carries),
+/// `vanilla` the `GenPassNameID` key (`Step::vanilla`, "" for a port-only
+/// step), `weight` the vanilla slot's `PassLegacy._weightMap` entry (1.0
+/// where the map has none — the same value `apply_step` hands `begin_step`),
+/// `enabled` the special-seed disable gate (`pass_disabled_by_special_seeds`,
+/// `WorldGen.cs:22493-22509` — a disabled pass applies no tiles).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ExecutedStep {
+    pub name: &'static str,
+    pub vanilla: &'static str,
+    pub weight: f64,
+    pub enabled: bool,
+}
+
+/// The executed pipeline as public descriptors, in execution order — the
+/// `UIWorldGenDebug.GenPassList`'s rows (`UIWorldGenDebug.cs:1059-1069` walks
+/// `Controller.Passes`). The driver feeds these to `PassState` per step; the
+/// icon lookup rides [`pass_name_id`] + `ui::worldgen_pass_icons::get_step_icon`.
+pub fn executed_steps(micro_flags: crate::seeds::MicroSeedFlags) -> Vec<ExecutedStep> {
+    EXECUTED_PIPELINE
+        .iter()
+        .map(|s| ExecutedStep {
+            name: s.name,
+            vanilla: s.vanilla,
+            weight: VANILLA_CHAIN
+                .iter()
+                .find(|p| p.name == s.vanilla)
+                .map_or(1.0, |p| p.weight),
+            enabled: !pass_disabled_by_special_seeds(s.vanilla, micro_flags),
+        })
+        .collect()
+}
+
 // --- the step adapters (the generate() call sites, verbatim) ----------------
 
 /// The vanilla Wavy Caves slot (`WorldGen.cs:12271`): the Don't Starve

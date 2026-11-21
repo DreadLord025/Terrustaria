@@ -41,6 +41,7 @@ pub mod uistate;
 pub mod world_creation;
 pub(crate) mod world_load;
 pub mod world_select;
+pub mod worldgen_debug;
 pub mod worldgen_debug_elements;
 pub mod worldgen_pass_icons;
 
