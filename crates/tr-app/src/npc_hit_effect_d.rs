@@ -4414,6 +4414,48 @@ fn water_bolt_mimic_death(
     }
 }
 
+/// The 453 Skeleton Merchant death (`NPC.cs:88661-88683`, sites
+/// 710-714): the 20x dust-26 burst at (2.5·hd, −2.5), then the
+/// altTexture-gated head 638 (shimmer 1342, default-0 stand-in) + the
+/// mid split 639/640 (shimmer 1346/1345 — the two +20 slots DIFFER) +
+/// the legs split 641/642 (shimmer 1344/1347 — the two +34 slots
+/// DIFFER too), `this.scale` carried.
+fn skeleton_merchant_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88671-88674` — the 20x dust-26 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 26, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    // `:88675-88678` — the head, altTexture==0 stand-in (always taken).
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1342 } else { 638 }, s); // :88677
+    let (mid1, mid2, leg1, leg2) = if shimmer {
+        (1346, 1345, 1344, 1347)
+    } else {
+        (639, 640, 641, 642)
+    };
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid1, s); // :88679
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid2, s); // :88680
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, leg1, s); // :88681
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, leg2, s); // :88682
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -4936,6 +4978,10 @@ pub fn hit_effect_d(
     // NextFloat scatter anchors, no dust).
     else if npc_type == 694 {
         water_bolt_mimic_death(npc, gore, rng, world);
+    }
+    // `:88661-88683` — the 453 Skeleton Merchant arm (sites 710-714).
+    else if npc_type == 453 {
+        skeleton_merchant_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -8683,5 +8729,35 @@ mod tests {
             assert_eq!(gore.slot(i).position, c + Vec2::new(ox, oy), "gore {i} anchor");
         }
         assert_eq!(rng.peek(), twin.peek(), "the water bolt mimic mirrors the C# draws");
+    }
+
+    /// `NPC.cs:88677-88682` — the Skeleton Merchant: normal
+    /// 638/639/640/641/642 vs shimmer 1342/1346/1345/1344/1347 (ALL
+    /// four tail slots differ).
+    #[test]
+    fn w4_f5d_the_skeleton_merchant_splits_all_four_tail_slots() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (shimmer, want) in [
+            (false, vec![638, 639, 640, 641, 642]),
+            (true, vec![1342, 1346, 1345, 1344, 1347]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(701);
+            let _ = hit_effect_d(&n, 453, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "merchant shimmer={shimmer}");
+            let mut twin = UnifiedRandom::new(701);
+            for _ in 0..20 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "merchant shimmer={shimmer} mirrors");
+        }
     }
 }
