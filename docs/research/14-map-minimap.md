@@ -383,49 +383,47 @@ fullscreen map and the minimap, against the port at main `a725acb0`. The e17 sib
 | Fullscreen player head | `Main.cs:55931-55954` | `frame/draw.rs:1962-1980` + `entities.rs:1904` — local player only, singleplayer border |
 | MapBG backdrop | `Main.cs:56342-56444` | `map.rs::map_bg_index` — landed earlier |
 
-### UNCLAIMED (this task ports them)
+### PORTED (W4-f29, 2026-11-21, code-only — witnesses written not run)
 
-1. **Pylon network lines** — `TeleportPylonsMapLayer.cs:45-64` + `DrawLine` `:18-28`: fullscreen +
-   `Main.MapPylonTile != (-1,-1)`, one black 6px + one white 2px line from the hovered pylon's
-   `GetUnclampedDrawRegion` centre to every OTHER revealed pylon; <=5-segment `Vector2.Lerp`
-   stretch of BlackTile, origin `(0, w/2)`, scale `(len/segments/16, width/16)`. MISSING.
-2. **Pylon hover/click state** — `MapPylonTile` set by the pylon tile right-click
-   (`Player.cs:32180-32212`: anchor `x - frameX/18%3, y - frameY/18%4`, the reveal-inclusive rect
-   inflate-20 recentre + scale fit), cleared by `TryOpeningFullscreenMap` (`:29113`) and the
-   inventory map icon (`Main.cs:41102`); marker click teleports (`:90-109`,
-   `handle_teleport_request` already in `tr-core/pylons.rs`) or pans to an offscreen pylon
-   (`DrawClamped` `MapOverlayDrawContext.cs:118-216`, Extra_299 arrow frame (2,1) of 3x3, border 10).
-   MISSING (marker hover text exists; no click, no clamped offscreen icons, no lines).
-3. **Boss head icons** — `DrawNPCMapIcons`/`2`/`3` (`Main.cs:56099-56292`) boss half +
-   `GetBossHeadTextureIndex` (`NPC.cs:7557-7606`, the `NPCID.Sets.BossHeadTextures` table
-   `NPCID.cs:10479` + the 7 type overrides), `GetBossHeadRotation` (`:7608-7632`),
-   `GetBossHeadSpriteEffects` (`:7634-7642`), the Destroyer 134 segment-average (`:56125-56137`),
-   `DrawNPCHeadBoss` (`:56562-56565`) → `OutlinedTextureRenderer` rings
-   (`AnOutlinedDrawRenderTargetContent.cs:38-62`: 8 black @Manhattan-4 + 4 border @2). MISSING.
-4. **Town NPC head icons** — same three functions' townie half + `TownNPCProfiles.GetHeadIndexSafe`
-   (`TownNPCProfiles.cs:200-207`), `DrawNPCHeadFriendly` (`Main.cs:56553-56560`, the
-   `nextDialogue.ShowIndicator` notification icon), `direction > 0` flip, `Center + gfxOffY +
-   netOffset`, per-mode offsets (fullscreen `-10*scale`; minimap `-2*scale/5` + clip
-   `(miniMapX+12, +10, W-16, H-14)`), hover names (`FullName` / `GivenOrTypeName`). MISSING.
-5. **Player death markers** — `DrawPlayerDeathMarker` (`Main.cs:56446-56464`) + the three call
-   sites (`:55672-55691` overlay, `:55742-55765` minimap, `:55977-55987` fullscreen),
-   `lastDeathPostion/lastDeathTime/showLastDeath` (`Player.cs:846-850`, set in `KillMe`
-   `:38846-38848`), MapDeath texture centred origin, `-(2 - scale/5*2)` y-offset, hover
-   `Game.PlayerDeathTime` via `Lang.LocalizedDuration`. MISSING (no `last_death` fields at all).
-6. **Revenge coin markers** — `RevengeMarker.DrawMapIcon` (`CoinLossRevengeSystem.cs:252-266`:
-   coin tier <100c copper / <10000c silver / >=1000000c platinum / else gold, `Frame(1,8)`,
-   centred) + `DrawMapIcons` (`:482-496`) + `UseMouseOver` (`:268-273`, `ItemSlot.DrawMoney` at
-   `MouseScreen/drawScale + (-28) + (4,0)`), three call sites `Main.cs:55626/55705/55922`.
-   The marker SYSTEM is ported (`revenge.rs`) but draws nothing on the map. MISSING.
-7. **Misc map icons** — `DrawMiscMapIcons` (`Main.cs:56466-56539`): PotionOfReturn home portal
-   (Extra_175) + exit portal (Extra_173) at `pos + (0, -height/2)`, floored, `GameUI.PotionOfReturn*`
-   hover; last golf ball (Extra_176 + the projectile texture on top, ball name hover). The player
-   fields exist (`player.rs:1279-1283`), `GolfState.get_last_hit_ball` exists — no map draws. MISSING.
-8. **Minimap player heads** — `Main.cs:55712-55741` (the port draws the fullscreen local head only;
-   the minimap head loop with its clip margins `(x+6, y+6, W-16, H-14)` is absent). MISSING.
-9. **Fullscreen hover tile/chest names** — `Main.cs:55784-55913` (`Light > 40` gate, chest 21/441/
-   467/468 + dresser 88 origin decode, `DrawMap_FindChestName` `:56631-56643`,
-   `Lang.GetMapObjectName`). `lang.rs::map_object_name_for_tile` exists but no call site. MISSING.
+All nine pieces below landed on `task/W4-f29-map-overlay-2` (base main `a725acb0`).
+The new module `crates/tr-app/src/map_overlay.rs` carries the head/death/revenge/misc/
+hover machinery; `crates/tr-app/src/map_pylons.rs` carries the pylon lines/clamp/click;
+`map_layers.rs` gained the `DrawClamped` markers + the `PylonClick` outcome; the draw
+sites (`app/frame/draw.rs`) wire both the fullscreen and minimap passes. The e17
+sibling branch had 0 commits at port time — nothing was claimed.
+
+1. **Pylon network lines** — `TeleportPylonsMapLayer.cs:45-64` + `DrawLine` `:18-28`:
+   `map_pylons.rs::draw_pylon_lines` + `draw_line` (the <=5-segment BlackTile stretch,
+   origin `(0, w/2)`, scale `(len/segments/16, width/16)`, the real sheet dims). PORTED.
+2. **Pylon hover/click state** — `WorldMap.map_pylon_tile`/`pan_target`; the right-click
+   arm `world_sim/editing/doors.rs::use_pylon` (anchor decode + reveal-inclusive inflate-20
+   recentre + scale fit, `map_pylons.rs::pylon_right_click_view`); `set_open` clears the
+   tile; the marker click `map_layers.rs::PylonClick` → `App::apply_pylon_click` (the
+   `handle_teleport_request` ladder + style-9 `Teleport`, or the pan target);
+   `DrawClamped` offscreen markers + Extra_299 arrows (`map_layers.rs::draw_pylon_clamped`);
+   the pan step `map_pylons.rs::pan_target_step` in `update_map_input`. PORTED.
+3. **Boss head icons** — `map_overlay.rs::boss_head_texture_index` (the 40-row table +
+   7 overrides), `boss_head_rotation`, `boss_head_flip`, `destroyer_average_center`,
+   `draw_npc_head_boss` → `draw_head_outlined` (the 8+4 ring composite). PORTED.
+4. **Town NPC head icons** — `map_overlay.rs::town_head_index` (the default table),
+   `draw_npc_head_friendly`, the `direction > 0` flip, `Center + gfxOffY + netOffset`,
+   the per-mode transforms (`head_pos`) + minimap clip, `npc_full_name`/`npc_given_or_type_name`
+   hover. The `nextDialogue.ShowIndicator` icon is gated off (no dialogue queue — ANALYSIS). PORTED.
+5. **Player death markers** — `Player.last_death_position/last_death_time/show_last_death`
+   set in `start_death` (`KillMe` `:38846-38848`); `map_overlay.rs::draw_player_death_marker`
+   (fullscreen) + `draw_minimap_death_marker` (the extra -4 hover box) + the minimap clip;
+   `lang.rs::localized_duration` (`Lang.LocalizedDuration`). PORTED.
+6. **Revenge coin markers** — `map_overlay.rs::revenge_coin_tier`, `draw_revenge_map_icon`
+   (the `Frame(1,8)` row 0), `coins_split`, `revenge_use_mouse_over` (the horizontal
+   `ItemSlot.DrawMoney` row). PORTED.
+7. **Misc map icons** — `map_overlay.rs::draw_misc_map_icon` (the `Utils.Floor` = `(int)`
+   truncation), `draw_golf_ball_on_map`, `last_hit_golf_ball` (the four `GetLastHitBall`
+   guards re-derived from the stored snapshot + live slot). PORTED.
+8. **Minimap player heads** — the minimap head loop in `app/frame/draw.rs` (the
+   `(x+6, y+6, W-16, H-14)` clip, `Center + gfxOffY + height/2`). PORTED.
+9. **Fullscreen hover tile/chest names** — `map_overlay.rs::fullscreen_hover_name`
+   (the `Light > 40` gate, the chest/dresser lookup bounds + origin decode) +
+   `find_chest_name` (`DrawMap_FindChestName`). PORTED.
 
 ### Verify-only (out of scope, recorded)
 

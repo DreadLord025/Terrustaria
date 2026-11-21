@@ -19149,6 +19149,48 @@ or minimap is actually drawing, so the TE walk stays off the hot path.
 the hover text feeds the map's text line through `ui::text::hud_text` (the C#
 `ref text`).
 
+**Second half (W4-f29, 2026-11-21, code-only).** The remaining `Main.DrawMap`
+overlay machinery landed in `map_overlay.rs` (the NPC head icons, the death
+markers, the revenge coin markers, the misc portal/golf icons, the fullscreen
+hover tile/chest names) and `map_pylons.rs` (the pylon network lines, the
+`DrawClamped` offscreen markers + arrows, the right-click recentre and the
+marker click teleport/pan). The head composites reproduce
+`OutlinedTextureRenderer.DrawWithOutlines` over the
+`AnOutlinedDrawRenderTargetContent` rings (8 black @Manhattan-4 + 4 white @2)
+as tinted copies of the head sheet — the same no-render-target convention
+`draw_player_map_icon` already uses. The death markers gained
+`Player.last_death_position/last_death_time/show_last_death` (set in
+`start_death`, the `KillMe` `:38846-38848` stamps); `lastDeathTime` is the
+wall-clock seconds since the Unix epoch (the C# `DateTime.Now`). The pylon
+click's teleport rides the existing `tr_core::pylons::handle_teleport_request`
+gate ladder + the style-9 `Player.Teleport`; the pan target rides
+`WorldMap.pan_target` stepped in `update_map_input`.
+
+Deliberate deviations (each cited at its site):
+- **The town-head notification icon is gated off.** `DrawNPCHeadFriendly`
+  (`Main.cs:56556-56559`) draws `Utils.DrawNotificationIcon` when
+  `nextDialogue.ShowIndicator`; the port has no `nextDialogue` queue (the chat
+  panel is click-driven), so the gate is always false. The `UI_quickicon1`
+  sheet is packed for when the queue lands.
+- **`GetHeadIndexSafe` resolves through the one default table.** Every ported
+  town kind's profile is a `LegacyWithSimpleShimmer`/`LegacyNPCProfile` whose
+  `GetHeadTextureIndex` returns the default head (`Profiles.cs:106-109`) — the
+  same value `NPC.TypeToDefaultHeadIndex` maps. The shimmered alternate heads
+  (55-80) ride `townNpcVariationIndex` (unported); the variant pets
+  (Cat/Dog/Bunny 637/638/656) have no port kind.
+- **`Utils.Floor` is `(int)` truncation, not `Math.Floor`** (`Utils.cs:1702-
+  1707`): the misc portal/golf icon positions truncate toward zero, which
+  differs from `Math.Floor` only for negative coordinates.
+- **The pylon TE placement hook is a deferred seam.** The network scan reads
+  the loaded `.wld` pylons (`scan_pylons` over the TE book); the
+  `TETeleportationPylon.PlacementPreviewHook_AfterPlacement` post-place hook
+  that would register a freshly-placed pylon is the documented wave-A callback
+  seam (`tileobject.rs:304-307`), not yet installed. The line/click machinery
+  ports against the existing scan.
+- **The revenge `UseMouseOver` coin row** reproduces `ItemSlot.DrawMoney`'s
+  horizontal layout (`ItemSlot.cs:3663-3683`) in the UIScale batch; the
+  `CoinSlot.DrawItemCoin` sizeLimit 1024 never binds on the 16-px coin frames.
+
 ## Dust & gore (module 15) (S1-E-1, 2026-11-14; S1-E-3, 2026-11-17)
 
 `crates/tr-core/src/particles.rs` is the `Main.dust` analog: the C# keeps the pool as the static `Main.dust[6001]` array plus the three static pressure counters (`Dust.dCount`, `lavaBubbles`, `SandStormCount`, `Dust.cs:12-16`), and the port carries the same global-pool semantics вЂ” one pool the App owns, spawns addressed by slot, slot 6000 the refuse sentinel `NewDust` returns and never scans (`Main.cs:66985`, `Dust.cs:79`/`:103`). The spawn path is a 1:1 transcription of `Dust.cs:10-407`: the guard chain (`:77-101`), the off-screen cull with the `400*(1-dCount)` margin (`:89-97`), the first-inactive-slot scan and the five pressure bands (`:103-152`), the default block with the per-100 frame shift (`:153-193`), the `ChildSafety` re-type arm (`:194-213`, `ChildSafety.cs:33`) and the per-type tweak chain (`:214-252`). The pool draws from the caller-passed stream (the `DustRng` seam, the C# `Next`/`NextFloat` conversions `UnifiedRandom.cs:120-141`), so per-consumer streams are preserved: the pool's band rolls are the only added draws on the clients' streams. The sand spawn site additionally regained the C# `NewDust` velocity/scale rolls the stand-in had skipped (`Sandstorm.cs:226`; the final 0.9 scale pin unchanged), and `Settings::blood` arms `pool.child_safety` at spawn вЂ” blood on is the vanilla default (the gate skipped), blood off sets `ChildSafety.Disabled` false and the re-type fires.
