@@ -26040,10 +26040,10 @@ Deliberate deviations:
   draw RNG stream order.
 - The strip applies NO `GetFinalLight` actuation ghost (the C# reads
   `Lighting.GetColor` raw, `:9081`); fullbright -> White is ported (`:9084`).
-- The reverse-vine (549, `DrawRisingVineStrip` `:9134-9193`) and multi-tile
-  vine (`DrawMultiTileVines` `:8829-8888`) passes are separate C# passes and
-  stay unported (S1-G-1's remaining waves); their cells keep the old inline
-  draw.
+- The reverse-vine (549, `DrawRisingVineStrip` `:9134-9193`) pass landed with
+  W4-g83 (UNWIRED, below); the multi-tile vine (`DrawMultiTileVines`
+  `:8829-8888`) pass is the furniture lane (d57) and stays out. Until wired,
+  their cells keep the old inline draw.
 - The dark-cell merge still covers unlit vine cells (the port's black-quad
   coverage shape); the C# `DrawBlackHelper` runs inside `DrawSingleTile`,
   which the vine cells never reach - a documented z-order/coverage
@@ -26054,6 +26054,93 @@ platform/no-attach/bottom-slope/half-brick attachment gates, the calm straight
 hang, the sway ladder + anchor walk, the blocking-wall freeze, the remix
 gate, the grid push subtract/bounce, the gap/bottom-bound break, the Echo
 hide-not-break.
+
+## The vine draw residuals (W4-g83, 2026-11-21)
+
+The four unclaimed vine-family residual groups left after the S1-G-1a hanging
+strip + the d56 animated-tile draw gate: the **vine-tip variants** (the rising
+seaweed strip + its tip-frame columns), the **jungle thorns** (the underground
+grow arm + the down-merge frame), the **glowing mushroom vines** (the 528
+conversion/grow arms) and the **grow-tops** (the overground vine grow chain).
+All UNWIRED code-only — the natural seams are contested by in-flight siblings
+(`tiles.rs`/`draw.rs` d56-d60, `framing.rs` d109/d110/g48, `growth.rs`
+d102/d106/g42, `drawdata.rs` d62/g34/g79); the ports land in unclaimed modules
+and the wiring is the family's merge step. No RNG stream, frame-cache key or
+fixed-step order changes until wired.
+
+### Phase 1 — the rising-vine draw pass (`render/vines.rs`)
+
+`draw_reverse_vines` / `rising_vine_strip_segments` / `collect_reverse_vine_root`
+port `DrawReverseVines` (`TileDrawing.cs:8903-8914`), `DrawRisingVineStrip`
+(`:9134-9193`) and `CrawlToBottomOfReverseVineAndAddSpecialPoint` (`:764-782`).
+Verbatim differences from the hanging strip, each pinned by a witness:
+- the anchor starts `(x*16+8, startY*16+16+2)` (`:9138`, +16+2 not -2) and
+  walks UP along `(rot - PI/2)` (`:9190`, not `+ PI/2`);
+- the walk runs `num7 > 10` descending (`:9144`, not `< maxTilesY-10`);
+- the exposure gate has NO remix arm — always `num7 < worldSurface` (`:9163`);
+- the grid push is `GetWindGridPush(x, num7, 40, -0.004)` (`:9167`, the
+  40-window / negative force, not 20 / 0.01);
+- the rotation negates the ladder: `num2 * (0 - num4) * cycle` (`:9179`);
+- the origin pivots at the sprite's BOTTOM-centre
+  `(tileWidth/2, halfBrickHeight - tileTop + tileHeight)` (`:9188`);
+- NO glowmask: `:9173` discards the glow out-params (`out var _`).
+The reverse crawl starts AT `j` (`:767`, not `j-1`) and roots at `k-1` (the row
+ABOVE the attachable floor); `torch::top_edge_can_be_attached_to` is lifted to
+`pub` (identical to g28/g30 — keep-one at merge). The `ReverseVineThreads` set
+is `{549}` alone (`TileID.cs:545`). 10 `w4_g83_*` witnesses written not run.
+
+### Phase 2 — the vine lifecycle checks (`tr-core::vine_checks`)
+
+`check_vines` ports `WorldGen.CheckVines` (`WorldGen.cs:84858-84960`): the
+eight-family LAST-write-wins type-conversion ladder (ash 638, mushroom 528,
+hallow 115, jungle 62, corrupt 636, crimson 205, plain 52 [excluded for 382],
+flower 382 — `:84883-84914`) reads the `nactive && !bottomSlope` support above;
+a mismatch converts the cell + `SquareTileFrame`, otherwise the per-type
+support gates kill an unsupported vine (`:84921-84958`). The glowing-mushroom
+arm (70/528 → 528) is the `num4` flag. `can_underwater_plant_grow_here`
+(`:58542-58576`) + `check_underwater_plant` (`:58578-58627`) port the seaweed
+validity (50-border, three full-water cells, sand/same-type support, the
+0/63-69/80-81 wall whitelist) and the TIP-FRAME variants — `frameX` column 0
+(lone), 1-7 (a 549 above, `Next(1,8)*18`) or 7-12 (a 549 below,
+`Next(7,13)*18`), `frameY = 0`. These columns are the rising strip's
+per-segment source frames (`DrawRisingVineStrip` `:9173`). 16 witnesses.
+
+### Phase 3 — the grow-tops + jungle thorns (`tr-core::vine_growth`)
+
+`grow_overground_vines` ports `UpdateWorld_OvergroundTile`'s vine chain
+(`WorldGen.cs:72506-72802`): the plain/flower 2/52/382/192 arm (the wall
+68/65/66/63 + below-wall + remix `Next(5)` flower pick, `:72516-72535`; the
+`num24` budget `:72508-72512` is dead in the C# and not carried), then the
+jungle 60/62/384/226 (the `TooManyJungleVinesNearby` gate on 226), mushroom
+70/528, hallow 109/115, corrupt 23/661/636, crimson 199/662/205 and ash
+633/638 arms — each behind the free-below gate, the 10-row grass look-up and
+`grow_more_vines`' density (`:45586-45621`, the 60 budget ÷5 on a 528 source,
+the LOS-weighted `(j-y)*2`/`*20` accumulation). `too_many_jungle_vines_nearby`
+(`:73189-73212`) is the ±9×±5 clamped box counting active 62, true strictly
+above the cap (default 6). `grow_underground_jungle_thorn` (`:73658-73661`)
+is the underground dispatcher's 69 arm — `GrowSpike(69, 60)` with NO roll; the
+port's overground 69 arm (`growth.rs:843`) sits inside `grass_pass`, which 69
+is not a member of, so it never fires — the genuine arm is the underground
+one. `thorn_down_merge_frame` (`:82043-82066`) ports the thorn down-merge:
+cases 32/352/69/655 fold a matching grass neighbour BELOW into the thorn
+(`down = num`) before the generic block frameset — these are direct `down=num`
+assignments, NOT `TileMergeAttempt` calls, so `tools/GenTileData`'s merge
+parser never emits them and `framing.rs` lacks them. The slope adjustments run
+BEFORE the merge (`:81632-81700` precedes `:82043`), so a sloped grass-below
+cell does not merge. The generic frameset (`framing.rs::RULES`) is re-ported
+verbatim (the table is private to the contested `framing.rs`). 16 witnesses.
+
+Deliberate deviations (all phases): the `Main.netMode == 2`
+`NetMessage.SendData`/`SendTileSquare` sides are MP scope; `SquareTileFrame`
+rides `edit::square_tile_frame_default`; `CopyPaintAndCoating` copies `meta` +
+the extras byte (the `grow_spike` convention). The LitNature shader +
+biomeSight dust stay the standing S1-G-1a deviations. The multi-tile vine
+(`DrawMultiTileVines(:InWind)`) is the furniture lane (d57), out of scope.
+
+Verification: code-only, no compiler invoked; every arm re-read against the
+cited C# windows; 42 witnesses WRITTEN NOT RUN (10 + 16 + 16). The world-hash
+pins are unchanged (no wired behaviour change). Anchors: 3 rows
+(`draw_reverse_vines`, `check_vines`, `grow_overground_vines`).
 
 ## The accessory/set-bonus buff-effect block (S1-E-7 wave C, 2026-11-18)
 
