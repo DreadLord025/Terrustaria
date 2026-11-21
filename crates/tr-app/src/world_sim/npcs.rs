@@ -5923,6 +5923,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             || kind == crate::projectile::QUEEN_BEE_STINGER
             || kind == crate::projectile::DEMON_SICKLE
             || kind == crate::projectile::SKULL
+            // W4-d36 E4 item 4 — the Hornet family's Stinger volley: the
+            // C#'s post-spawn `Main.projectile[num24].timeLeft = 300`
+            // (`NPC.cs:50797`). WITHOUT this row the wired shot
+            // (`npc.rs::ai_005_hover_family` → `npc_ai_style5::style5_tail`)
+            // lives the stock 3600 — a 12× lifetime deviation.
+            || kind == crate::projectile::STINGER
         {
             300
         } else {

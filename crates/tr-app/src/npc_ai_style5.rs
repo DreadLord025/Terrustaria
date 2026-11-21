@@ -15,11 +15,14 @@
 //! the `|| kind == crate::projectile::STINGER` row for the C#'s
 //! `timeLeft = 300` post-spawn override (`NPC.cs:50797`).
 //!
-//! ## Wiring contract (the follow-up edit, `npc.rs` only)
+//! ## Wiring (LANDED — `npc.rs::ai_005_hover_family`, the E4 batch-2 pass)
 //!
-//! In `ai_005_hover_family`, immediately AFTER the `update_hover` call for
-//! `Hornet` / `MossHornet` / `Moth` (the C# runs these arms at the END of
-//! `AI_005`, after the collision/dust block `:50656-50713`):
+//! The family arm carries the `rng` parameter (the `ai_009_sphere_family`
+//! signature precedent) and calls `style5_tail` AFTER the kind match (the
+//! C# runs these arms at the END of `AI_005`, after the collision/dust
+//! block `:50656-50713`); the frozen A/B twin
+//! (`s1_d_2_the_style_axis_keeps_the_hover_behaviour`) calls the tail too,
+//! so the axis-vs-kind-dispatch equivalence holds. The landed shape:
 //!
 //! ```ignore
 //! let env = crate::npc_ai_style5::Style5TailEnv {
@@ -37,18 +40,16 @@
 //! if let Some(s) = out.shot {
 //!     self.wants_hostile_shot.push((crate::projectile::STINGER, s.x, s.y, s.vx, s.vy, s.damage));
 //! }
-//! for (style, sx, sy) in out.sounds { /* the style75 out.sounds drain,
-//!     world_sim/npcs.rs:4492-4499 — SOUND_STYLES + play_use_sound at the
-//!     C# call position, on the UpdateNPCs stream */ }
+//! self.wants_item_sounds.extend(out.sounds);
 //! ```
 //!
-//! The family arm needs the `rng` parameter threaded through (the
-//! `ai_009_sphere_family` signature precedent — the axis caller at
-//! `npc.rs:4761` already holds the live `UpdateNPCs` stream), and the
-//! sim's timed-shot list needs `|| kind == crate::projectile::STINGER`
-//! (the QUEEN_BEE_STINGER row's shape, `world_sim/npcs.rs`'s drain).
+//! The sim's timed-shot list carries `|| kind == crate::projectile::STINGER`
+//! (the QUEEN_BEE_STINGER row's shape, `world_sim/npcs.rs`'s drain) — the
+//! batch-2 wiring commit's header claimed it but the hunk was missing;
+//! the follow-up commit lands it (without the row the shot lives the
+//! stock 3600, a 12× lifetime deviation).
 //!
-//! Recorded deviations (the wiring note's, docs/ANALYSIS.md):
+//! Recorded deviations (docs/research/110 §3):
 //! * The port's `hover_step` integrates INSIDE the AI (the C# integrates in
 //!   `UpdateCollision` AFTER the arm) — the tail's velocity writes land on
 //!   the NEXT tick's integration (a one-tick lag on the wet buoyancy only;
@@ -56,9 +57,13 @@
 //! * `Collision.CanHit(this, targetData)` folds to the port's centre-only
 //!   `can_hit_line` probe (`npc.rs:10065`'s convention — the target box
 //!   collapses to its centre point).
-//! * The `Item17` cue rides the returned `sounds` list (the style75
-//!   `out.sounds` shape), drained at the C# call position — NOT the
-//!   `wants_sound` queue (which drains post-AI, after this arm's draws).
+//! * The `Item17` cue rides `wants_item_sounds` → the sim's POST-TICK drain
+//!   (the W-10 unicorn-tails placement), NOT the C#'s mid-AI call position
+//!   (`:50756`, before the same tick's charge rolls): the cue's pitch draw
+//!   lands after this NPC's later draws and the tick's other queue drains.
+//!   The gameplay RNG order is untouched (the cue's own façade draw rides
+//!   the audio stream position only) — the deliberate placement deviation,
+//!   research/110 §3.
 //!
 //! ## RNG order (by construction, `Main.rand` on the UpdateNPCs stream)
 //!
@@ -108,7 +113,7 @@ pub struct Style5TailEnv<'a> {
 /// the jittered, normalized ×8 velocity, damage `(int)(30f*scale)` for 176
 /// / `(int)(10f*scale)` otherwise, knockback 0, and the post-spawn
 /// `timeLeft = 300` (the sim's timed-shot list owns the override —
-/// `world_sim/npcs.rs`'s `STINGER` row).
+/// `world_sim/npcs.rs`'s `STINGER` row, landed with the wiring).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StingerShot {
     pub x: f32,
