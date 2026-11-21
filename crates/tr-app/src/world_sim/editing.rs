@@ -2013,7 +2013,8 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         let held = app.inventory[app.selected];
         let is_summon = matches!(
             held.kind,
-            43 | 361 | 602 | 1844 | 1958 | 3601 | 1315 | 70 | 560 | 1133 | 1331 | 544 | 556 | 557
+            43 | 361 | 602 | 1844 | 1958 | 3601 | 1315 | 70 | 560 | 1133 | 1331 | 544 | 556
+                | 557 | 5120
         );
         if is_summon && held.count > 0 {
             if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && app.mine_released {
@@ -15966,7 +15967,7 @@ fn summon_item_check(app: &App, item: u16) -> bool {
 pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
     let held = app.inventory[app.selected];
     let item = held.kind;
-    if !matches!(item, 70 | 560 | 1133 | 1331 | 544 | 556 | 557) {
+    if !matches!(item, 70 | 560 | 1133 | 1331 | 544 | 556 | 557 | 5120) {
         return false;
     }
     if !summon_item_check(app, item) {
@@ -15976,10 +15977,12 @@ pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
     // 560/1133 run ungated). The mech trio swaps the biome for the clock:
     // `!Main.IsItDay()` (`:43838`/`:43849`/`:43860`); the 1.4.5 item
     // variant's DisabledBossSummonVariant folds out (no variant system).
+    // The Deer Thing 5120 gates on ZoneSnow (`:43906`).
     let zone_ok = match item {
         70 => app.scene_metrics.zone_corrupt,
         1331 => app.scene_metrics.zone_crimson,
         544 | 556 | 557 => !app.world.day_time,
+        5120 => app.scene_metrics.zone_snow,
         _ => true,
     };
     if !zone_ok {
@@ -16035,6 +16038,16 @@ pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
             b.hp = b.max_hp;
             Some(b)
         }
+        // W4-e10 — the Deer Thing 5120 (`Player.cs:43906-43918`): the
+        // ZoneSnow gate above, then `NPC.SpawnOnPlayer(plr, 668)` — the
+        // generic surface-scan spawn (`NPC.cs:80631`'s SpawnBoss); the
+        // port parks the Deerclops at the player like the King Slime arm
+        // (the surface scan's deviation, ANALYSIS S1-P).
+        5120 => {
+            let mut d = Npc::new(NpcKind::Deerclops, px, py, 1, 0.0);
+            d.hp = d.max_hp;
+            Some(d)
+        }
         _ => {
             let mut b = Npc::new(NpcKind::BrainOfCthulhu, px, py, 1, 0.0);
             b.hp = b.max_hp;
@@ -16045,8 +16058,8 @@ pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
         return false;
     };
     // W4-e10 — the C# cue sites (`Player.cs:43760`/`:43775`/`:43792`/
-    // `:43808`/`:43826`/`:43842`/`:43864`/`:43879`), at the player's
-    // TOP-LEFT (truncated), before the spawn.
+    // `:43808`/`:43826`/`:43842`/`:43864`/`:43879`/`:43909`), at the
+    // player's TOP-LEFT (truncated), before the spawn.
     let (plx, ply) = app
         .player
         .as_ref()
@@ -16648,6 +16661,35 @@ mod loot_summon_tests {
             mirror,
             "the Item173 case-2 pitch is the only draw"
         );
+        // W4-e10 — the Deer Thing 5120 (`Player.cs:43906-43918`): the
+        // ZoneSnow gate refuses off-biome (no cue, stack intact); in the
+        // snow the roar plays once (case 15, no draws) and the Deerclops
+        // spawns.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 5120,
+            name: "Deer Thing".into(),
+            count: 1,
+            prefix: 0,
+        };
+        app.scene_metrics.zone_snow = false;
+        let before = app.audio.played_count();
+        let rng_before = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        assert!(!use_boss_summon_item(&mut app), "off-biome refuses");
+        assert_eq!(app.audio.played_count(), before, "no cue on the refusal");
+        assert_eq!(app.inventory[app.selected].count, 1, "the stack is intact");
+        app.scene_metrics.zone_snow = true;
+        assert!(use_boss_summon_item(&mut app));
+        assert_eq!(app.audio.played_count(), before + 1, "the deer's roar");
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            rng_before,
+            "case 15 draws nothing"
+        );
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Deerclops && n.hp > 0),
+            "the Deerclops spawned"
+        );
+        assert_eq!(app.inventory[app.selected].count, 0, "the deer paid one");
     }
 
     /// W4-e10 — the invasion items' roars ride the case-15 slot-0 seam

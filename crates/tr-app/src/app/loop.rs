@@ -766,6 +766,22 @@ impl App {
                     }
                 }
             }
+            _ if self.is_map_bound(crate::input_map::MapAction::Style, code) => {
+                // W4-e10 — the map-style cycle (`Player.cs:24949-24965`,
+                // `Main.cMapStyle`, default Tab): the press edge plays
+                // `PlaySound(12)` (`:24953`) and cycles `Main.mapStyle`
+                // 0→1→2→0. The C# arm sits in the NOT-fullscreen branch
+                // (`:24909`'s else) — the fullscreen map eats the movement
+                // keys but the style row still runs after it; the port's
+                // press-edge `world_key` stands in for `releaseMapStyle`.
+                if !self.map.as_ref().is_some_and(|m| m.open) {
+                    self.audio.play("Menu_Tick");
+                    self.map_style += 1;
+                    if self.map_style > 2 {
+                        self.map_style = 0;
+                    }
+                }
+            }
             _ if self.is_bound(crate::input_map::Action::Smart, code) => {
                 // The smart-cursor toggle (`Player.TryToToggleSmartCursor`,
                 // `Player.cs:24867`/`:28814-28820`): the press edge flips
@@ -985,6 +1001,33 @@ mod tests {
         assert_eq!(app.audio.played_count(), before + 2, "the map open chime");
         app.world_key(KeyCode::KeyM); // the cMapFull close, `:24973`
         assert_eq!(app.audio.played_count(), before + 3, "the cMapFull close chime");
+    }
+
+    /// W4-e10 — the map-style cycle key (`Main.cMapStyle`, default Tab,
+    /// `Player.cs:24949-24965`): each press plays 12 and cycles
+    /// `Main.mapStyle` 0→1→2→0; the fullscreen map parks the row (the C#
+    /// arm sits in the not-fullscreen branch, `:24909`'s else).
+    #[test]
+    fn w4_e10_the_map_style_key_cycles_with_the_tick() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.map_style = 1;
+        let before = app.audio.played_count();
+        app.world_key(KeyCode::Tab); // 1 -> 2
+        assert_eq!(app.map_style, 2);
+        assert_eq!(app.audio.played_count(), before + 1, "the 12 tick");
+        app.world_key(KeyCode::Tab); // 2 -> 0 (the wrap)
+        assert_eq!(app.map_style, 0);
+        app.world_key(KeyCode::Tab); // 0 -> 1
+        assert_eq!(app.map_style, 1);
+        assert_eq!(app.audio.played_count(), before + 3);
+        // The fullscreen map parks the style row.
+        app.map = Some(WorldMap::new(&app.world));
+        if let Some(m) = app.map.as_mut() {
+            m.set_open(true);
+        }
+        app.world_key(KeyCode::Tab);
+        assert_eq!(app.map_style, 1, "the fullscreen branch keeps the style");
+        assert_eq!(app.audio.played_count(), before + 3, "no tick under the map");
     }
 
     #[test]
