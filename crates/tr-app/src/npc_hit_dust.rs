@@ -415,9 +415,12 @@
 //!   the per-type tint, post-spawn Next(3)!=0 → noGravity (the death
 //!   40-count halves are g60's).
 //! - 82051 — 667 (`:82025-82056`): LIVE FLAT 7 dust 10, alpha 80, scale
-//!   1.1, the same gate; the LIVE 3-gore sibling's argument draws
-//!   (Next(1,10) + Next(4) each, `:82043-82047`) ride BEFORE the dust
-//!   loop (bodies f10's legit DD2 window).
+//!   1.1, the same gate; the LIVE 3-gore twin (`:82043-82047`) now
+//!   EMITS: per iteration the NewGore 1218 kicks (Next(10,31) Y then
+//!   Next(-20,21) X) FIRST, then the velocity OVERWRITE's Next(1,10) +
+//!   Next(4) draws (×2 / −(2.5+…) — NOT the death arm's ×2.5 / −(3+…));
+//!   the FIFTH hit-half site, g62 EMIT-AT-WIRING per e5 research/351 §4
+//!   (the old "bodies f10's legit DD2 window" mislabel superseded).
 //! - 82070 — 676 (`:82058-82077`): LIVE FLAT 8 dust 310, alpha 80,
 //!   scale 1.1, the gate, then velocity ×1.5 + base.velocity·0.1.
 //! Batch 29 (the Queen Slime herself + the crystal ring):
@@ -513,12 +516,15 @@
 //!   ·0.5), this.scale carried (f5's death twin :88654 shape).
 //! The gore bodies draw through the verbatim `GorePool::new_gore`
 //! (`tr_core::gore`, the S1-E-4 pool already on main) on the SAME
-//! UpdateNPCs stream, C# statement order. The OTHER hit-half gore
-//! siblings stay argument-consumed here + body-owned by their lanes:
-//! the confetti slime's 5 (`:84738`) = f10's LEGIT `party_slime_confetti`
-//! (its window ≤ :85559), the Queen minion 667's 3 (`:82043-82047`) =
-//! f10's legit DD2 window — their wiring strips the re-drawn dust AND
-//! the re-drawn argument picks (g60 §12.4 precedent).
+//! UpdateNPCs stream, C# statement order. The FIFTH hit-half site
+//! (`:82045`, the 667 GoldenSlime live 3-gore twin — e5 research/351
+//! §§3-4, the census correction 1299+5) is ALSO g62 EMIT-AT-WIRING:
+//! the 3×2 NewGore kicks now spawn BEFORE each overwrite pair in C#
+//! order (+6 draws). The OTHER hit-half gore sibling stays argument-
+//! consumed here + body-owned by its lane: the confetti slime's 5
+//! (`:84738`) = f10's LEGIT `party_slime_confetti` (its window
+//! ≤ :85559) — its wiring strips the re-drawn dust AND the re-drawn
+//! argument picks (g60 §12.4 precedent).
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -717,8 +723,9 @@ fn live_dust(
 /// 89832`, plus the standalone slime `if` at `:84721`), so a per-type
 /// match is faithful. Types outside the ledger emit nothing — their
 /// arms land with the later g62 batches or the g59/g60 death lane.
-/// The FOUR hit-half gore bodies (batch 35: `:86532`/`:86947`/`:86951`/
-/// `:88648`) spawn through the verbatim `GorePool::new_gore` on the
+/// The FIVE hit-half gore bodies (batch 35: `:86532`/`:86947`/`:86951`/
+/// `:88648`, plus `:82045` the 667 live 3-gore twin — e5 research/351
+/// §4) spawn through the verbatim `GorePool::new_gore` on the
 /// SAME stream, C# statement order (the f5 research/111 hand-off).
 pub fn replay_hit_dust(
     s: &HitDustSnapshot,
@@ -847,8 +854,9 @@ pub fn replay_hit_dust(
     // LIVE halves (FLAT 7/7/8, alpha 80, the post-spawn Next(3)!=0 →
     // noGravity). The death halves' 40-count bursts are g60's lane, so
     // this block gates on life > 0 (unlike the life-independent sphere/
-    // flare arms above). 667's LIVE 3-gore siblings' ARGUMENT draws ride
-    // BEFORE the dust loop (`:82043-82047`, the bodies f10's legit window).
+    // flare arms above). 667's LIVE 3-gore twin EMITS here (`:82043-
+    // 82047` — the FIFTH hit-half site, g62 EMIT-AT-WIRING per e5
+    // research/351 §4): kicks + overwrite BEFORE the dust loop.
     if s.life > 0 && matches!(s.npc_type, 658..=660 | 667 | 676) {
         let (count, t, tint, sc) = match s.npc_type {
             658 => (7, 4, Color::new(78, 136, 255, 150), 1.0),
@@ -858,11 +866,21 @@ pub fn replay_hit_dust(
             _ => (8, 310, Color::default(), 1.1), // 676
         };
         if s.npc_type == 667 {
-            // `:82043-82047` — 3 × (Next(1,10) then Next(4)); the
-            // velocity expressions consume them in argument order.
+            // `:82043-82047` — the FIFTH hit-half site (e5 research/351
+            // §§3-4, g62 EMIT-AT-WIRING). Per iteration the C# order:
+            // `:82045` NewGore((position.X, Center.Y - 10f), Zero, 1218)
+            // draws the 2 pool kicks FIRST (Next(10,31) Y then
+            // Next(-20,21) X, Gore.cs:1327-1328; Scale = 1f default),
+            // THEN `:82046` OVERWRITES the slot velocity, its
+            // Next(1,10) then Next(4) consumed in argument order
+            // (×2 / −(2.5+…) — NOT the death arm's ×2.5 / −(3+…)).
             for _ in 0..3 {
-                let _ = rng.next_range(1, 10);
-                let _ = rng.next_max(4);
+                let idx = gore.new_gore(
+                    rng, world, Vec2::new(s.x, s.cy - 10.0), Vec2::ZERO, 1218, 1.0,
+                ); // `:82045`
+                let x = rng.next_range(1, 10) as f32 * 0.3 * 2.0 * dir;
+                let y = 0.0 - (2.5 + rng.next_max(4) as f32 * 0.3);
+                gore.slot_mut(idx).velocity = Vec2::new(x, y); // `:82046`
             }
         }
         for _ in 0..count {
@@ -4152,9 +4170,10 @@ mod tests {
         assert_eq!(dust.slots(), twin.slots());
     }
 
-    /// W4-g62 batch 28 — the Queen minion LIVE gate: a dead snapshot
-    /// draws NOTHING (the 40-count death halves are g60's); 667's live
-    /// gore-argument draws precede the dust loop; 676's velocity adds.
+    /// W4-g62 batch 28 (re-derived per e5 research/351 §4) — the Queen
+    /// minion LIVE gate: a dead snapshot draws NOTHING (the 40-count
+    /// death halves are g60's); 667's live 3-gore twin EMITS 3×(2 kicks
+    /// + 2 overwrite draws) before the dust loop; 676's velocity adds.
     #[test]
     fn w4_g62_the_queen_minion_live_gate_and_667_draws() {
         let world = air();
@@ -4167,16 +4186,24 @@ mod tests {
         replay_hit_dust(&dead, &mut rng, &mut dust, &mut gore, &ctx, &world);
         assert_eq!(rng, twin, "the death halves are g60's");
         assert!(dust.slots().iter().all(|d| !d.active));
-        // 667 live: 3 × 2 gore-arg draws then 7 × (spawn + Next(3)).
+        // 667 live: 3 × (2 NewGore kicks + 2 overwrite draws) then
+        // 7 × (spawn + Next(3)) — the +6-draw EMIT-AT-WIRING fix
+        // (e5 research/351 §4, the fifth hit-half site :82045).
         let s = snap(667, 100, 100, 10.0);
         let mut r2 = UnifiedRandom::new(233);
         let mut p2 = DustPool::new();
-        replay_hit_dust(&s, &mut r2, &mut p2, &mut gore, &ctx, &world);
+        let mut g2 = GorePool::new();
+        replay_hit_dust(&s, &mut r2, &mut p2, &mut g2, &ctx, &world);
         let mut t2 = UnifiedRandom::new(233);
         let mut q2 = DustPool::new();
+        let mut h2 = GorePool::new();
         for _ in 0..3 {
-            let _ = t2.next_range(1, 10);
-            let _ = t2.next_max(4);
+            // `:82045` — kicks FIRST at (position.X, Center.Y - 10f).
+            let idx = h2.new_gore(&mut t2, &world, Vec2::new(100.0, 99.0), Vec2::ZERO, 1218, 1.0);
+            // `:82046` — the ×2 / −(2.5+…) overwrite (hit_dir = 1).
+            let x = t2.next_range(1, 10) as f32 * 0.3 * 2.0;
+            let y = 0.0 - (2.5 + t2.next_max(4) as f32 * 0.3);
+            h2.slot_mut(idx).velocity = Vec2::new(x, y);
         }
         for _ in 0..7 {
             let idx = q2.new_dust(
@@ -4189,6 +4216,8 @@ mod tests {
         }
         assert_eq!(r2, t2);
         assert_eq!(p2.slots(), q2.slots());
+        assert_eq!(g2.slots(), h2.slots());
+        assert_eq!(g2.slots().iter().filter(|g| g.active).count(), 3);
         // 676 live: FLAT 8 dust 310, the velocity ×1.5 + 0.1·vel add.
         let mut s3 = snap(676, 100, 100, 10.0);
         s3.vx = 2.0;

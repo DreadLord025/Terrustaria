@@ -39610,6 +39610,8 @@ Transform 7/7, witnesses 105/105, table 19/19 — **ALL BYTE-IDENTICAL**. The
 missed + the 4 hit-half gore bodies owned + the 133 latch owned + the
 TrailCache widening landed and mutually receipted.
 
+**FIFTH hit-half site LANDED (e5 research/351 §§3-4, `74ae9b085`):** the 667 GoldenSlime LIVE 3-gore twin (`NPC.cs:82043-82047`, site `:82045`) now EMITS in g62's 667 arm — per iteration the `NewGore((position.X, Center.Y - 10f), Zero, 1218)` kicks (`Next(10,31)` Y then `Next(-20,21)` X, `Gore.cs:1327-1328`, Scale 1f default) FIRST, then the `:82046` velocity OVERWRITE (`Next(1,10)*0.3*2*hitDirection`, `-(2.5+Next(4)*0.3)` — NOT the death arm's ×2.5 / −(3+…)); the old "bodies f10's legit DD2 window" mislabel superseded, the witness `w4_g62_the_queen_minion_live_gate_and_667_draws` re-derived to 3×(2 kicks + 2 overwrite) + 7 dust with a twin `GorePool` (+6 draws, WRITTEN NOT RUN).
+
 ### Verification
 
 Code-only: every arm re-read against the cited C# windows (≤100-line
