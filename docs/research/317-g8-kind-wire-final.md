@@ -1,14 +1,17 @@
-# 281 — W4-g8 kind-wire FINAL (the E8 execution receipt + the kind-wire-family bible)
+# 317 — W4-g8 kind-wire FINAL (the E8 execution receipt + the kind-wire-family bible)
 
 > W4-g8 lane (`task/W4-g8-npc-kind-wire-1`) · FINAL / SEAL · 2026-11-21 ·
 > code-only mode (no cargo/tests/rustfmt/graphify; witnesses WRITTEN NOT RUN).
-> Registry: **281** — the first free number above the all-origin-tip scan's
-> max 280 (the research/150 first-pushed-wins convention; the scan walked
-> every pushed `task/W4-*` ref's `docs/research/` tree). This lane's earlier
-> claims-table rode **108** (`108-input-g8.md`, commit `1752c70df`) — that
-> number COLLIDES with d37's `108-roster-master-reconcile.md`; the merger
-> keeps d37's 108 (the roster authority) and this 281 is the g8 FINAL
-> (the 108 file's E8-receipt banner points here).
+> Registry: **317** — the research/150 registry §9 UNIFIED FINAL assignment
+> (§9.2 row 317, d54 `b243c7086`): this doc was published as **281** (the
+> first free number above the all-origin-tip scan's max 280), but 281
+> belongs to f26's `68-findframe-census-addendum-7h.md` (§7.3 ASSIGNED);
+> the 10 self-pickers renumber **308–317 in claim order** — g8 takes 317
+> (chain 281→317). This lane's earlier claims-table rode **108**
+> (`108-input-g8.md`, commit `1752c70df`) — that number COLLIDES with d37's
+> `108-roster-master-reconcile.md`; the merger keeps d37's 108 (the roster
+> authority) and this 317 is the g8 FINAL (the 108 file's E8-receipt banner
+> points here).
 
 ## 1. The git-log census — what landed on this branch
 

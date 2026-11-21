@@ -12,9 +12,10 @@
 > The stale
 > ALL_KINDS decl 270→**305** (R0 said 304; the measured array carries the
 > Vampire too). The FINAL seal + the kind-wire-family bible live in
-> **research/281** (registry first-free; this 108 number COLLIDES with
-> d37's 108-roster-master-reconcile — the merger keeps d37's, this file
-> folds into 281's receipt). Code-only: witnesses written not run.
+> **research/317** (registry §9.2 row 317, chain 281→317; this 108 number
+> COLLIDES with d37's 108-roster-master-reconcile — the merger keeps
+> d37's, this file folds into 317's receipt). Code-only: witnesses written
+> not run.
 
 > W4-g8 lane 1 (the d22–d33 UNWIRED-machine kinds ≤230) · published 2026-11-21 ·
 > sources: `crates/tr-app/src/npc.rs` + `npc/data.rs` (the roster/stat tables),

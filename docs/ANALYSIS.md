@@ -39611,7 +39611,7 @@ kind→style rows (including the no-83-kind gap), the frozen-behaviour
 A/B + stream parity for all seven migrated kinds, the 76/80/82
 zero-draw censuses, and the kind-arm retirement guard.
 
-### W4-g8 E8 SEAL: the kind-wire lane consumes the d37 roster orders (research/281 FINAL)
+### W4-g8 E8 SEAL: the kind-wire lane consumes the d37 roster orders (research/317 FINAL)
 
 The d37 ROSTER SEAL flagged g8 as a LAGGARD ("zero movement, stale
 ALL_KINDS"). This SEAL executes the E8 g8 move-table: the **17 owned
@@ -39664,8 +39664,9 @@ lane's whole point — they wire the style axis, not the kind row).
 The E8 receipt witness
 (`w4_g8_e8_the_owned_kinds_ride_745_761_and_the_cs_ids_stay`) + the
 re-pinned machine witnesses are WRITTEN NOT RUN (code-only). The
-kind-wire-family bible + the full receipts live in research/281 (the
-registry first-free above the all-origin-tip max 280; the lane's earlier
+kind-wire-family bible + the full receipts live in research/317 (the
+registry §9.2 row 317 assignment, chain 281→317 — 281 belongs to f26's
+addendum-7h; the lane's earlier
 108 claims-table number collides with d37's roster-master 108 — the
-merger keeps d37's, 281 is the g8 FINAL). Co-lane dirty-12 ALIVE
+merger keeps d37's, 317 is the g8 FINAL). Co-lane dirty-12 ALIVE
 (d12's docs modified seconds before the first probe) — untouched.
