@@ -39474,3 +39474,29 @@ call shapes (horizontal included) are ported and tested. 6 witnesses
 WRITTEN NOT RUN (the denomination sum, the mid-walk cap, the split
 walk, the truncating CenteredRectangle, the call-shape source scan,
 the savings-row bounce).
+
+## The submerged lily-pad redraw (W4-g12 doc-sweep)
+
+`render/liquids.rs:197` dropped `Main.DrawTileInWater`
+(`Main.cs:57536-57551`) with "the generator never places tile 518" —
+stale on two counts: the c33 lane ports `PlaceLilyPad`
+(`WorldGen.cs:59086-59200`, fd7fae0e8), and loaded vanilla worlds carry
+pads regardless. Ported as `liquids.rs::draw_tile_in_water`: the
+active-518 gate, `num = liquid/16 - 3` (byte integer divide), the
+`SolidTile(x, y-1) && num > 8` ceiling clamp (the full nactive probe —
+actuated/platform/half/sloped ceilings do not clamp), the tile's own
+16x16 frame at `(x*16, y*16 - num) + drawOffset` with the
+`Lighting.GetColor` tint, no rotation/flip/scale.
+
+**STAGED, not wired:** the only C# caller is the retro `oldDrawWater`
+sprite pass (`Main.cs:57667`, reached when `!Lighting.NotRetro`,
+`:57519-57522`). The port's liquid draw is the `LiquidRenderer` record
+path in every mode; the retro sprite pass itself is unported and its
+dust feeds are the g13 lane's (`retro_liquid_dust_feed`, wired). The
+redraw joins that pass when it lands — the g13 merge or a retro-liquid
+follow-up calls this fn per liquid cell in the C# walk order (row-major
+`i` outer / `j` inner, before the water quad, `:57667-57669`). The
+`GetTileDrawTexture` paint lookup folds to the plain frame (518 has no
+paint variants in `TilePaintSystemV2`; a painted pad would need the
+g79 paint chain — recorded). 2 witnesses WRITTEN NOT RUN (the lift/
+clamp ladder incl. the actuated ceiling, the gate/anchor source scan).

@@ -194,8 +194,12 @@ pub(crate) fn draw_liquids(
 /// `rgb/max(r,g,b)` with `alpha = max(r,g,b)` — the same source contribution
 /// with a slightly dimmed backdrop under the sparkle (documented deviation).
 ///
-/// `Main.DrawTileInWater` (the tile-518 submerged redraw) is not ported: the
-/// generator never places tile 518.
+/// `Main.DrawTileInWater` (the tile-518 submerged redraw) is ported below
+/// ([`draw_tile_in_water`], W4-g12 doc-sweep) — STAGED: its only C# caller
+/// is the retro `oldDrawWater` sprite pass (`Main.cs:57667`), which the
+/// port has not ported (the liquid draw is the `LiquidRenderer` record
+/// path); the g13 lane owns that pass's dust feeds. The "generator never
+/// places tile 518" note was stale — the c33 lane ports `PlaceLilyPad`.
 pub(crate) fn draw_shimmer(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -268,6 +272,84 @@ pub(crate) fn draw_shimmer(
         quads += push_split_premultiplied(r, suv, d, &glitter);
     }
     quads
+}
+
+/// `WorldGen.SolidTile(x, y)` (`WorldGen.cs:70111-70131`) for the
+/// submerged-redraw probe: `nactive` (active, non-actuated), solid,
+/// non-solidTop, non-halfBrick, slopeless. Out-of-world reads false
+/// (the C# try/catch).
+fn solid_tile_probe(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    t.active()
+        && !t.inactive()
+        && td::TILE_SOLID.has(t.kind)
+        && !td::TILE_SOLID_TOP.has(t.kind)
+        && !t.half_brick()
+        && t.slope() == 0
+}
+
+/// `Main.DrawTileInWater` (`Main.cs:57536-57551`, W4-g12 doc-sweep): the
+/// retro `oldDrawWater` pass redraws a submerged LILY PAD (tile 518)
+/// OVER the water quad so the pad floats on the surface instead of
+/// drowning under it. `num = tile.liquid / 16 - 3` (byte integer
+/// divide), clamped to 8 under a solid ceiling (`WorldGen.SolidTile(x,
+/// y - 1) && num > 8`); the sprite is the tile's own 16x16 frame at
+/// `(x*16, y*16 - num) + drawOffset`, tinted `Lighting.GetColor(x, y)`,
+/// no rotation/flip/scale.
+///
+/// STAGED (the module note above): the caller is the retro sprite pass
+/// the port has not ported; `draw_offset` is the C#'s
+/// `-screenPosition + offScreenRange` vector — the port's world-range
+/// equivalent is `Vec2::ZERO` (the GPU transform applies). The tint
+/// comes in as the shaded light colour (the caller's `style.shade`
+/// convention); `atlas` resolves the frame through `Lookups::rect_uv`.
+pub(crate) fn draw_tile_in_water(
+    r: &mut SpriteRenderer,
+    world: &World,
+    lookups: &assets::Lookups,
+    atlas: &tr_render::Atlas,
+    tint: [f32; 3],
+    draw_offset: [f32; 2],
+    x: i32,
+    y: i32,
+) -> u32 {
+    // `:57538`: active AND type 518 — nothing else redraws.
+    let Some(tile) = world.tile(x, y) else {
+        return 0;
+    };
+    if !tile.active() || tile.kind != 518 {
+        return 0;
+    }
+    // `:57542-57546`: the integer lift + the solid-ceiling clamp.
+    let mut num = tile.liquid as i32 / 16 - 3;
+    if solid_tile_probe(world, x, y - 1) && num > 8 {
+        num = 8;
+    }
+    // `:57547-57548`: the tile's own frame (`GetTileDrawTexture` — the
+    // 518 sheet has no paint/style variants, the plain frame is exact).
+    let Some(tf) = lookups.rect_uv(
+        atlas,
+        518,
+        tile.frame_x,
+        tile.frame_y,
+        16,
+        16,
+    ) else {
+        return 0;
+    };
+    // `:57549`.
+    r.push_sprite(
+        [
+            x as f32 * TILE_PX + draw_offset[0],
+            y as f32 * TILE_PX - num as f32 + draw_offset[1],
+        ],
+        [16.0, 16.0],
+        tf.uv,
+        [tint[0], tint[1], tint[2], 1.0],
+    );
+    1
 }
 
 /// Pushes one record's quad as the 3x3 bilinear split (the shared light-split
@@ -631,6 +713,63 @@ pub(crate) fn draw_tile_liquid_behind(
 mod tests {
     use super::*;
     use tr_core::liquid_draw::LiquidDraw;
+
+    /// W4-g12 doc-sweep: `DrawTileInWater`'s lift maths
+    /// (`Main.cs:57542-57546`): `liquid/16 - 3` integer, clamped to 8
+    /// ONLY under a solid ceiling and ONLY when above 8.
+    #[test]
+    fn w4_g12_the_submerged_lift_is_the_byte_divide_with_the_ceiling_clamp() {
+        let mut w = World::new("t".into(), 64, 64);
+        let put = |w: &mut World, x: i32, y: i32, kind: u16, liquid: u8| {
+            let i = w.index(x, y);
+            w.tiles[i].kind = kind;
+            w.tiles[i].liquid = liquid;
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        };
+        // The pad cell: liquid 255 -> 255/16 - 3 = 15 - 3 = 12.
+        put(&mut w, 10, 10, 518, 255);
+        let lift = |w: &World| -> i32 {
+            let t = w.tile(10, 10).unwrap();
+            let mut num = t.liquid as i32 / 16 - 3;
+            if super::solid_tile_probe(w, 10, 9) && num > 8 {
+                num = 8;
+            }
+            num
+        };
+        // No ceiling: the raw 12 stands.
+        assert_eq!(lift(&w), 12);
+        // A solid stone ceiling clamps to 8.
+        put(&mut w, 10, 9, 1, 0);
+        assert_eq!(lift(&w), 8);
+        // A platform ceiling (solidTop) does NOT clamp.
+        w.tiles[w.index(10, 9)].kind = 19;
+        assert_eq!(lift(&w), 12);
+        // A shallow pad under the ceiling: 128/16 - 3 = 5, below the
+        // clamp threshold — the clamp never lowers.
+        w.tiles[w.index(10, 9)].kind = 1;
+        w.tiles[w.index(10, 10)].liquid = 128;
+        assert_eq!(lift(&w), 5);
+        // An actuated ceiling is not solid (nactive).
+        w.tiles[w.index(10, 9)].flags |= tr_core::tile::FLAG_INACTIVE;
+        w.tiles[w.index(10, 10)].liquid = 255;
+        assert_eq!(lift(&w), 12);
+    }
+
+    /// W4-g12 doc-sweep: the redraw gate (`Main.cs:57538`) — only an
+    /// ACTIVE type-518 cell redraws; the source scan pins the anchor
+    /// (`y*16 - num`), the 16x16 frame and the no-flip/no-rot draw.
+    #[test]
+    fn w4_g12_the_redraw_gate_and_anchor_match_the_csharp() {
+        let src = include_str!("liquids.rs");
+        let body = &src[src.find("pub(crate) fn draw_tile_in_water(").unwrap()..];
+        let body = &body[..body.find("/// Pushes one record's quad")];
+        assert!(body.contains("tile.kind != 518"), "the type gate");
+        assert!(body.contains("!tile.active()"), "the active gate");
+        assert!(body.contains("/ 16 - 3"), "the integer lift");
+        assert!(body.contains("num > 8"), "the clamp threshold");
+        assert!(body.contains("- num as f32"), "the y anchor lifts by num");
+        assert!(body.contains("[16.0, 16.0]"), "the 16x16 frame");
+    }
 
     fn record(x: i32, y: i32, w: i32, h: i32, visible: bool) -> LiquidDraw {
         LiquidDraw {
