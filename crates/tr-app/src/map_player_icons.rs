@@ -133,6 +133,14 @@ pub(crate) fn rect_contains_point(rect: [f32; 4], p: [f32; 2]) -> bool {
     x >= rx && x < rx + rect[2] as i32 && y >= ry && y < ry + rect[3] as i32
 }
 
+/// `Utils.Floor(Vector2)` (`Utils.cs:1702-1707`): `vec.X = (int)vec.X` —
+/// TRUNCATION toward zero, NOT `Math.Floor`; the two differ only for
+/// negative coordinates. The misc portal/golf positions ride it
+/// (`Main.cs:56480`/`:56501`/`:56522`). W4-f29 fix F3 (research/140 §3).
+pub(crate) fn utils_floor(v: [f32; 2]) -> [f32; 2] {
+    [v[0] as i32 as f32, v[1] as i32 as f32]
+}
+
 /// `Utils.CenteredRectangle` (`Utils.cs:947-950`): the `(int)` truncations
 /// on the corner AND the size.
 pub(crate) fn centered_rect(center: [f32; 2], size: [f32; 2]) -> [f32; 4] {
@@ -355,12 +363,13 @@ fn draw_return_portal(
 ) -> Option<String> {
     let sheet = sheet?;
     let uv = lookups.hud_uv(Some(&sheet))?;
-    let v = [
-        (((pos.0) / 16.0 - map_top_left[0]) * map_scale + map_offset[0]).floor(),
-        (((pos.1 - player_height / 2.0) / 16.0 - map_top_left[1]) * map_scale
-            + map_offset[1])
-            .floor(),
-    ];
+    // `:56480`/`:56501`: `Utils.Floor` is `(int)` TRUNCATION toward zero
+    // (`Utils.cs:1702-1707` `vec.X = (int)vec.X`), NOT `Math.Floor` — the
+    // two differ for negative coordinates. W4-f29 fix F3 (research/140 §3).
+    let v = utils_floor([
+        ((pos.0) / 16.0 - map_top_left[0]) * map_scale + map_offset[0],
+        ((pos.1 - player_height / 2.0) / 16.0 - map_top_left[1]) * map_scale + map_offset[1],
+    ]);
     if let Some(c) = clip {
         if !rect_contains_point(c, v) {
             return None;
@@ -397,10 +406,12 @@ fn draw_golf_marker(
     draw_scale: f32,
     mouse: Vec2,
 ) -> Option<String> {
-    let v = [
-        ((ball.center.x / 16.0 - map_top_left[0]) * map_scale + map_offset[0]).floor(),
-        ((ball.center.y / 16.0 - map_top_left[1]) * map_scale + map_offset[1]).floor(),
-    ];
+    // `:56522`: `Utils.Floor` = `(int)` truncation, not `Math.Floor`
+    // (W4-f29 fix F3, research/140 §3).
+    let v = utils_floor([
+        (ball.center.x / 16.0 - map_top_left[0]) * map_scale + map_offset[0],
+        (ball.center.y / 16.0 - map_top_left[1]) * map_scale + map_offset[1],
+    ]);
     if let Some(c) = clip {
         if !rect_contains_point(c, v) {
             return None;
@@ -671,6 +682,28 @@ mod tests {
         assert_eq!(head[0] - 4.0, pos[0] - 14.0 * s);
         assert_eq!(head[1] - 4.0, pos[1] - 2.0 - 14.0 * s);
         assert_eq!(head[2], 28.0 * s);
+    }
+
+    /// W4-f29 fix F3 — `Main.cs:56480`: the misc icon's `Utils.Floor`
+    /// transform is `(int)` truncation (`Utils.cs:1702-1707`), not
+    /// `Math.Floor`.
+    #[test]
+    fn w4_f29_misc_icon_position_is_floored() {
+        // anchor (161.7, 325.9), height_offset -21, scale 2.5, offset (100,50).
+        // x = (161.7/16)*2.5 + 100 = 25.265.. + 100 = 125.265 -> 125.
+        // y = ((325.9-21)/16)*2.5 + 50 = 47.64.. + 50 = 97.64 -> 97.
+        let anchor = [161.7f32, 325.9];
+        let h_off = -21.0f32;
+        let scale = 2.5f32;
+        let off = [100.0f32, 50.0];
+        let v = utils_floor([
+            (anchor[0] / 16.0) * scale + off[0],
+            ((anchor[1] + h_off) / 16.0) * scale + off[1],
+        ]);
+        assert_eq!(v, [125.0, 97.0]);
+        // A negative coordinate truncates toward zero (not Math.Floor,
+        // which would answer -126).
+        assert_eq!(utils_floor([-125.265, -97.64]), [-125.0, -97.0]);
     }
 
     /// `CoinLossRevengeSystem.cs:262`: the coin tiers.
