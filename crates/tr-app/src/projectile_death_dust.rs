@@ -4380,6 +4380,74 @@ fn death_bursts(
                 }
             }
         }
+        // `:71902-71951` — the 681 DD2 goblin bomb: resize 22×22 centred
+        // BEFORE the dust; 10 iterations of dust-31 alpha 100 scale 1.5
+        // vel×1.4 (gravity) + dust-6 alpha 100 scale 1.5 vel×1.4 noGravity
+        // fadeIn 2; then 10 PAIRS dust-6 alpha 100 (scale 2.5 noGravity
+        // vel×5, then scale 1.5 vel×3 GRAVITY); 4 corner gores Next(61,64)
+        // + kicks. The 80-resize + Damage AFTER stay unported.
+        681 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let pos = center - Vec2::splat(11.0);
+            for _ in 0..10 {
+                let idx = dust.new_dust(rng, ctx, world, pos, 22, 22, 31, 0.0, 0.0, 100, Color::default(), 1.5);
+                dust.slot_mut(idx).velocity *= 1.4;
+                let idx = dust.new_dust(rng, ctx, world, pos, 22, 22, 6, 0.0, 0.0, 100, Color::default(), 1.5);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 1.4;
+                d.no_gravity = true;
+                d.fade_in = 2.0;
+            }
+            for _ in 0..10 {
+                let idx = dust.new_dust(rng, ctx, world, pos, 22, 22, 6, 0.0, 0.0, 100, Color::default(), 2.5);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 5.0;
+                let idx = dust.new_dust(rng, ctx, world, pos, 22, 22, 6, 0.0, 0.0, 100, Color::default(), 1.5);
+                dust.slot_mut(idx).velocity *= 3.0;
+            }
+            for _ in 0..4 {
+                let _ = rng.next_range(61, 64);
+                let _ = rng.next_range(10, 31);
+                let _ = rng.next_range(-20, 21);
+            }
+        }
+        // `:75374-75424` — the 1120: the gem-bolt shape at dust-170 (the
+        // num669=87 then =170 overwrite); dir = vel.SafeNormalize(Zero)
+        // zeroed when |vel|<1; 15× dust-170 speed dir alpha 50 scale 1.2
+        // noGravity scale×1.15 vel×1.8 += dir×1.5 vel×=NextFloat; 30× more
+        // (noGravity=Next(12)!=0, scale×=1+0.6×NextFloat, vel×4.2, the
+        // gravity ones scale×0.4 fadeIn 0 noLight, vel×=NextFloat). The
+        // 112/22 resizes + Damage AFTER the dust stay unported (the dust
+        // reads the ORIGINAL box).
+        1120 => {
+            let mut dir = safe_normalize(s.vel);
+            if s.vel.length() < 1.0 {
+                dir = Vec2::ZERO;
+            }
+            for _ in 0..15 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 170, dir.x, dir.y, 50, Color::default(), 1.2);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.scale *= 1.15;
+                d.velocity *= 1.8;
+                d.velocity += dir * 1.5;
+                d.velocity *= rng.next_float();
+            }
+            for _ in 0..30 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 170, dir.x, dir.y, 50, Color::default(), 1.2);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = rng.next_max(12) != 0;
+                d.scale *= 1.0 + 0.6 * rng.next_float();
+                d.velocity *= 4.2;
+                if !d.no_gravity {
+                    d.scale *= 0.4;
+                    d.fade_in = 0.0;
+                    d.no_light = true;
+                }
+                d.velocity *= rng.next_float();
+            }
+        }
         _ => {}
     }
 }
@@ -7391,5 +7459,25 @@ mod tests {
             assert_eq!(dust.slots(), dust2.slots());
             assert_eq!(rng, rng2);
         }
+    }
+
+    /// The 681 goblin bomb: 10 dust-31 + 30 dust-6 = 40 (10 fadeIn-2 + 20
+    /// pair). The 1120: 45 dust-170 (15 + 30).
+    #[test]
+    fn w4_g65_the_681_1120_bursts() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(681)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 40);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 31).count(), 10);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 6).count(), 30);
+        assert_eq!(active.iter().filter(|d| d.fade_in == 2.0).count(), 10);
+        let mut dust = DustPool::new();
+        drain(&[snap(1120)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 45);
+        assert!(active.iter().all(|d| d.dust_type == 170));
+        assert!(active[..15].iter().all(|d| d.no_gravity));
     }
 }

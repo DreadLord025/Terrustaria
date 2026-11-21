@@ -39978,6 +39978,20 @@ the production hook (`projectile.rs:20027`) no longer rolls those draws
 arm with a consumed census. Witness: the 932 dust-267 + White clones +
 determinism — WRITTEN NOT RUN.
 
+### Batch 31 (2 kinds, the last free dust arms `:71902` / `:75374`)
+
+681 (the DD2 goblin bomb: resize 22×22 centred BEFORE the dust; 10
+iterations of dust-31 vel×1.4 gravity + dust-6 vel×1.4 noGravity fadeIn
+2; 10 pairs dust-6 (vel×5 noGravity / vel×3 GRAVITY); 4 corner gores; the
+80-resize + Damage AFTER unported), 1120 (the gem-bolt shape at dust-170
+— the num669=87 then =170 overwrite; dir SafeNormalize zeroed |vel|<1;
+15× scale×1.15 vel×1.8 += dir×1.5 vel×=NextFloat + 30× noGravity=
+Next(12)!=0 scale×=1+0.6×NextFloat vel×4.2 gravity ones scale×0.4 fadeIn
+0 noLight; the 112/22 resizes + Damage AFTER the dust unported — the dust
+reads the ORIGINAL box). A full Kill-body type-condition sweep confirmed
+these were the last two FREE dust arms. Witnesses: the 681 40-count +
+fadeIn-2 split, the 1120 45-count — WRITTEN NOT RUN.
+
 ### The re-census (all Kill dust arms vs the 104 + d12 + i17/i18 + g16)
 
 A full re-grep of `Projectile.cs:70642-77262` for `Dust.NewDust*` sites,
