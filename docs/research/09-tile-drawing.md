@@ -229,6 +229,16 @@ disco arms 160/692 (`Main.DiscoR/G/B`), tile 83's texture override, 323's frond-
    domain". TILE-DRAW-4 is marked DONE on an unprovable equivalence. Severity:
    **pixel / determinism of screenshots**, and it defeats the C#'s one-draw-per-tile
    caching (per-tile cost now scales with painted pixels).
+   **W4-g79 update (2026-11-20, code-only)**: the residuals AROUND the recolor landed —
+   the pass-selection ladder `Main.ConvertPaintIdToTileShaderIndex` (`Main.cs:58677-58696`,
+   `drawdata.rs::convert_paint_id_to_tile_shader_index`: illuminant 31 → pass 0, negative
+   30 → 43 walls / 42 tiles, grass 1..12 → +27), the pre-258 Illuminant→Glow load
+   conversion (`WorldFile.cs:2807-2825`, `wld/mod.rs`), and the paint-preview lookup
+   chain (`Player.FindPaintOrCoating` + `TryFindingPaintInplayerInventory` wired into
+   the smart-cursor seam; `Main.TryGetAmmo`'s brush/roller preview record ported
+   unwired — its `DrawInterface_40_InteractItemIcon` draw site is unported). The
+   recolor equivalence itself is untouched — ANALYSIS "Tile paint draw residuals
+   (W4-g79)".
 10. **Tile colour lookup** — C# `GetFinalLight` (:4358-4402) = `(tileLight*tint)/255`
    truncating multiply, then `fullbrightBlock` → White, else `inActive` → `actColor`
    (RGB × 0.4), else `ShouldTileShine` (:4404-4433) → `Main.shine`. The port folds this

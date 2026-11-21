@@ -39244,3 +39244,91 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## Tile paint draw residuals (W4-g79, 2026-11-20, code-only)
+
+The paint-coating DRAW residuals left after TILE-DRAW-4 (the shader-side
+recolor) and W4-d66 (the light-scanner paint flags + the wall /765 gate,
+`35b595d7`). Three unclaimed pieces, ported verbatim; the g78 echo co-lane
+owns the Echo-visibility draw arms and was not touched.
+
+### 1. The pre-258 Illuminant load conversion
+
+`WorldFile.LoadWorld_LastMinuteFixes` (`WorldFile.cs:1854-1860`) runs
+`ConvertIlluminantPaintToNewField` (`:2807-2825`) on every file older than
+258: Illuminant used to be paint id 31 and became the Glow coating bits —
+`if (tile.active() && tile.color() == 31) { tile.color(0);
+tile.fullbrightBlock(true); }` and the wall arm WITHOUT the active gate.
+The port's `.wld` load never converted, so a pre-258 world drew its
+illuminant tiles through the paint-31 path (unpainted AND dark — the Glow
+bit the tile pass reads, `tiles.rs` `fullbright_block`, was never set)
+and its illuminant walls took the paint-31 tint instead of white light.
+`wld/mod.rs::convert_illuminant_paint_to_new_field` now runs in
+`parse_table` (before `check_saved_ore_tiers`, matching the C#'s
+post-load fix order): tile paint 31 → 0 + `FLAG_FULLBRIGHT` on active
+tiles only; wall paint 31 → 0 + extras `0x80` with the Echo/Glow-block
+bits preserved. Modern (≥ 258) files load verbatim — the gate is the
+file version, not the paint value.
+
+### 2. The paint → shader-pass selection
+
+`Main.ConvertPaintIdToTileShaderIndex` (`Main.cs:58677-58696`) is the
+ladder every baked paint target selects its compiled pass with
+(`TilePaintSystemV2.cs:77`; the wall settings carry
+`UseWallShaderHacks = true`, `TreePaintSystemData.cs:220-224`; the
+display dolls call it flags-off, `PlayerDrawHelper.cs:55`):
+illuminant 31 → pass 0 (drawn UNPAINTED — the glow is light-side, the
+S1-G-4 `sprite.wgsl` behaviour confirmed); negative 30 → pass **43** on
+walls but **42** on tiles (the `>= 28` +12 shift); brown 28 / shadow 29 →
+40/41; the grass special-group arm remaps ONLY the basic hues 1..12 →
++27 (deep 13..24 keep their own passes). Ported as
+`drawdata.rs::convert_paint_id_to_tile_shader_index`. The pass BODIES
+stay compiled-HLSL-absent: the port's per-pixel `paint_recolor`
+reconstruction (ANALYSIS "Paint and coatings") is unchanged — this pins
+the pass SELECTION, including the negative-on-walls quirk the shader
+reconstruction cannot express (documented deviation stands).
+
+### 3. The paint-preview lookup chain
+
+`Player.FindPaintOrCoating` (`Player.cs:41927-41944`): the first
+stocked `Item.PaintOrCoating` (`Item.cs:353-362`) in the ammo slots
+54..57 wins, else the first over the flat 0..58 carry range (grid, coins,
+ammo). Ported as `item.rs::find_paint_or_coating` over the port's split
+arrays in the C# index order. Two consumers:
+
+* `SmartCursorHelper.TryFindingPaintInplayerInventory`
+  (`SmartCursorHelper.cs:93`/`:177-191`): only the held brush/roller
+  ids (1071/1543/1072/1544) scan; the pick fills
+  `paintLookup`/`paintCoatingLookup`. The seam
+  (`world_sim/smart_cursor.rs`) fed hardcoded 0/0, so the already-ported
+  `Step_PaintBrush`/`Step_PaintRoller` (`:727-812`) stood down —
+  they now re-point at the closest cell that still needs the selected
+  paint/coating. `Player.HeldItem` is `inventory[selectedItem]`
+  (`Player.cs:3853`); an emptied slot is air, so the wiring gates on
+  count > 0.
+* `Main.TryGetAmmo`'s brush/roller arm (`Main.cs:45117-45136`): the
+  cursor paint preview — offset (22, 22) for the brush, (28, 28) for the
+  roller, the previewed item the same lookup pick, out-defaults
+  `Color.White`/scale 0.8. Ported as `item.rs::paint_tool_preview`.
+  UNWIRED: the draw site `DrawInterface_40_InteractItemIcon`
+  (`Main.cs:45038-45115`) is itself unported (the cursor item-icon pass
+  has no port); the record rides ready like the other cursor-icon arms.
+  The `FlexibleTileWand` arm (`:45137-45142`) stays out (no wand
+  placement cycle). The previewed paint's tint is `GetAlpha`'s default
+  arm (`Item.cs:49324-49339`, white at alpha 0); the spectre tools'
+  own gFade arm (`:49246-49252`) needs `Main.gFade` (unported).
+
+### Verification
+
+Code-only: every arm re-read against the cited C# windows; the wiring
+checked against the actual signatures (`App.inventory`/`equip`,
+`inv::EquipSlots`, `registry::get`'s `paint`/`paint_coating`
+fields, the `Lookup` seam). 8 witnesses WRITTEN NOT RUN — **no
+cargo/tests/graphify invoked**: `wld/mod.rs` 3 (the v250 record fixture
+through the real parser, the direct body's inactive/Echo-bit arms, the
+v326 no-conversion gate), `drawdata.rs` 1 (the exhaustive pass ladder
+incl. the wall-hack 43 and the grass remap bounds), `item.rs` 2 (the
+ammo-first/coin-row/empty-slot scan order; the verbatim preview offsets +
+the no-paint None), `world_sim/smart_cursor.rs` 2 (the Red-Paint floor
+re-point + painted-cell skip; the Glow-coating lookup + the non-tool
+gate).
