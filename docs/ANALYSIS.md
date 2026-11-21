@@ -11677,7 +11677,20 @@ The landed M7-SHIMMER-1 item chain was re-read against `WorldItem.cs:1691-1853`
 `task/W4-e19-liquid-quicksell-shimmer`, code-only — witnesses WRITTEN NOT RUN).
 The six transform tables re-verified verbatim + order-preserved against the
 decompiled sets (316/114/6/1/6/4 entries — `ItemID.cs:353-356`/`:1318`,
-`NPCID.cs:10470`). Fixes:
+`NPCID.cs:10470`). Round 3 re-ran the census mechanically (the
+`CreateIntSet`/`CreateBoolSet` rows diffed entry-by-entry against
+`shimmer_tables.rs`: all six order-identical, zero unclaimed entries — the
+NPC-side `ShimmerTransformToItem`/`ShimmerTownTransform` sets are f47's phase-1
+claim, keep-one on merge). The ONE gap the census found was the lunar-brick
+moon-phase arm: `lunar_brick_for_moon_phase` read an inverted 0=empty/4=full
+convention, but `Main.GetMoonPhase()` is `(MoonPhase)Main.moonPhase`
+(`Main.cs:3199-3202`) over the RAW enum (`Enums/MoonPhase.cs`: Full 0,
+ThreeQuartersAtLeft 1, HalfAtLeft 2, QuarterAtLeft 3, Empty 4, QuarterAtRight
+5, HalfAtRight 6, ThreeQuartersAtRight 7 — the info-accessory names at
+`Main.cs:46897-46928` confirm 0=FullMoon/4=NewMoon, and the clock's
+`moon_phase` wraps 0..7 like `Main.moonPhase`). The switch now carries the
+enum's real indices (Full 0 → 5408, the `_` default Empty 4 → 5406); the two
+witnesses re-pinned. Fixes:
 
 - **The shared tail** (`:1835-1852`) now runs for EVERY arm that reaches it:
   `shimmerTime = stack > 0 ? 1 : 0`, `shimmerWet = true`, `velocity *= 0.1f`,

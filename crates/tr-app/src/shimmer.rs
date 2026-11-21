@@ -1012,9 +1012,10 @@ mod tests {
             assert!(!can_shimmer(&ctx(), raw, 1, 0));
         }
         // The lunar-brick arm IS reachable directly (3461, no remap): the
-        // moon-phase table drives it (`ShimmerTransforms.cs:106-108`).
+        // moon-phase table drives it (`ShimmerTransforms.cs:106-108`) — the
+        // RAW enum index 0 is Full (`Enums/MoonPhase.cs`, round 3 census).
         assert_eq!(
-            resolve_shimmer(&ShimmerContext { moon_phase: 4, ..ctx() }, 3461, 1, 0),
+            resolve_shimmer(&ShimmerContext { moon_phase: 0, ..ctx() }, 3461, 1, 0),
             ShimmerOutcome::Transform { new_type: 5408 }
         );
     }
