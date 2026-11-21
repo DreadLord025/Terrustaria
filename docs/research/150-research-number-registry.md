@@ -1149,36 +1149,36 @@ e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
 |---|---|---|---|
 | 308 | g13 | 308-dust-main-family-bible | KEEP |
 | 309 | d125 | 309-empress-sheets-ledger | DONE 5f8569945 |
-| 310 | g48 | 281-c28-18-send-switch (244→281) | rename owed |
+| 310 | g48 | 310-c28-18-send-switch | DONE 09364c008 |
 | 311 | — | FREE (c9 moved to 349) | free |
 | 312 | d106 | 281-d106-worldgen-6-retire-final | rename owed |
 | 313 | d9 | 313-projectile-ai-81-90-final | DONE c1cd16f79 |
 | 314 | c25 | 314-c25-keyboard-text-field-final | DONE 0736bbc4e (keyboard.rs pinned-blob comments intentional) |
 | 315 | c32 | 281-convert-tables-family-bible | rename owed |
-| 316 | f39 | 281-f39-v18-claim-input (244→281) | rename owed |
-| 317 | g8 | 281-g8-kind-wire-final | rename owed |
-| 318 | g48 | 282-39-item-ownership-seed (245→282) | rename owed |
+| 316 | f39 | 316-f39-v18-claim-input | DONE 2c4808922 |
+| 317 | g8 | 317-g8-kind-wire-final | DONE f1a23ab2e |
+| 318 | g48 | 318-39-item-ownership-seed | DONE 09364c008 |
 | 319 | d125 | 319-d125-retire-final | DONE 5f8569945 |
-| 320 | f39 | 282-f39-seal | rename owed |
-| 321 | g59 | 283-g59-death-bible | rename owed |
+| 320 | f39 | 320-f39-seal | DONE 2c4808922 |
+| 321 | g59 | 321-death-effects-family-bible | DONE a8b8e5918 |
 | 322 | g5 | 322-caster-family-declaration | DONE 39170deae (executed pre-reconcile, honored; no collision) |
 | 323 | — | FREE (g5 took 322 executed) | free |
 | 324 | — | FREE (g65 moved to 346) | free |
 | 325 | g40 | 246-w4g40-desert-marble-final | rename owed |
-| 326 | d16 | 246-d16-research-final | rename owed |
-| 327 | d16 | 247-kite-family-bible | rename owed |
-| 328 | g68 | 247-g68-wind-seal | rename owed |
-| 329 | c3 | 247-cursed-skull-family-bible | rename owed |
+| 326 | d16 | 326-d16-research-final | DONE 346d55bb6 |
+| 327 | d16 | 327-kite-family-bible | DONE 346d55bb6 |
+| 328 | g68 | 328-g68-wind-seal | DONE 97a6fd083 |
+| 329 | c3 | 329-cursed-skull-family-bible | DONE ccb981eb3 |
 | 330 | d6 | 247-projectile-ai-51-60-band-bible | rename owed |
 | 331 | d3 | 248-d3-boulder-family-seal | rename owed |
 | 332 | c27 | 248-c27-set-time-final | rename owed |
-| 333 | d119 | 304-d119-housing-bible | rename owed |
-| 334 | g62 | 240-g62-hit-dust | rename owed |
+| 333 | d119 | 333-housing-relocation-family-bible | DONE aaced1581 |
+| 334 | g62 | 334-g62-hit-dust-final | DONE 87299d2c8 |
 | 335 | f30 | 335-f30-systems-retire | DONE 981400cda |
 | 336 | d13 | 304-…-final (executed 243→304 e310bd6e7) | rename owed 304→336 |
 | 337 | f24 | 243-f24-room-content | rename owed |
 | 338 | d30 | 338-band-65-72-retire | DONE ee73eff97 |
-| 339 | g17 | 304-g17-gore-world-final | rename owed |
+| 339 | g17 | 339-g17-gore-world-final | DONE 2c73354f1 |
 | 340 | d21 | 308-projectile-ai-201-210-final | rename owed |
 | 341 | e2 | 341-npc-dust-window-coverage | DONE 0f830c2e6 |
 | 342 | e2 | 342-npc-dust-family-bible | DONE 0f830c2e6 |
@@ -1204,10 +1204,11 @@ e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
 | 362 | g55 | 334-g55-loadout-family-final (b4bf0e08b 17:37, post-§9 self-pick into g62's assigned 334) | NEW rename owed 334→362 |
 | 363 | d31 | 352-d31-style83-wiring-retire-final (1f0bd6385 17:39, post-§9 self-pick into d1's assigned 352) | NEW rename owed 352→363 |
 | 364 | g16 | 360-proj-gore-family-final (1254ff5e0 17:40:42, third 360 claimant; g10 17:31 first) | NEW rename owed 360→364 |
+| 365 | e21 | 285-e21-wiring-tail-seal (b7c7b2b61, post-§9 self-pick into §7.2's 285) | NEW rename owed 285→365 |
 
 ### §9.3 — rules
 
-- Free floor: **365+**. New docs require a registry check + Lead assignment; NO self-picks.
+- Free floor: **366+**. New docs require a registry check + Lead assignment; NO self-picks.
 - 311/322/324/299 are FREE holes — do NOT take them without a Lead assignment.
 - e26's 248 doc: g82's reservation wins (§6.3); e26→357 (not 333).
 - d13 has TWO docs: pet-light FINAL→336, band-final→353.
