@@ -7050,6 +7050,39 @@ registry (`Initialize`, `:488-512`): 17→1, 19→2, 20→3, 38→4, 54→5,
 227→15, 228→16, 229→17, 353→18, 368→19, 453→20, 550→21, 588→22,
 633→23, 663→24, 227→25 (decor).
 
+**The BartenderUnconscious 579 spawn census (the d41 cross-note)** —
+the C# spawn arm is `NPC.SpawnAnNPC`'s else-if (`NPC.cs:1656-1659`):
+`!NPC.savedBartender && DD2Event.ReadyToFindBartender &&
+!NPC.AnyNPCs(579) && Main.rand.Next(80) == 0 && !this.waterTile` →
+`SpawnNPC(spawnTileX*16+8, spawnTileY*16, 579)` (the `SpawnNPC`
+wrapper `:5238-5267` → `NewNPC` with the natural-spawn source; the
+slime-1 rerolls `:5240-5250` never fire for 579). The gate reads:
+`ReadyToFindBartender => NPC.downedBoss2` (`DD2Event.cs:87` — the
+EoW/BoC down, NOT a DD2-invasion flag). Chain position (tab-depth
+census): the arm is a TOP-LEVEL else-if of `SpawnAnNPC`'s big ladder
+(3 tabs, `:1656`) — the sibling AFTER the wall-244 marble-critter
+block (`:1584`, whose inner `spawnTileY > worldSurface` gate `:1597`
+holds the surface-critter chain) and BEFORE the spider-wall arm
+(`:1660`); it fires on ANY spawn tile the earlier arms declined
+(no biome gate of its own beyond `!waterTile`). The draw is the BARE
+`Main.rand.Next(80)` (no RollLuck), and `savedBartender` raises on
+the 550 TRANSFORM — the talk's `AI_000_TransformBoundNPC(i, 550)`
+(`:19857-19860`) runs `Transform(550)` THEN
+`AI_007_TownEntities_UpdateSavedStates` (`:44884-44894`), whose
+switch case 550 sets the flag (`NPC.cs:52934-52963`, the set at
+`:52959-52961`); the same update also runs per-tick from the town AI
+(`:53185`), so a housed Tavernkeep keeps it raised. Not on the 579
+spawn. The bound 579 also skips
+`TargetClosest` (`:19864-19868`) and floats in liquid (`:19869+`,
+the Sleeping Angler twin). d41's pushed tip is a CLAIM only
+(4ed22f0b3, band 491-560, "DD2 band 548-560 mine") — 579 is OUTSIDE
+that band (d42's 561-630); d42's tip is a non-compiling WIP
+checkpoint (88df58090). d120 owns the 579 KIND + chat arm (the claim
+doc); the SPAWN arm + the 579→550 talk transform stay the wiring
+lane's (c41/f43's town-spawn surgery or d42's kind lane) — this
+census is the cross-note for whichever lands it. NO spawn code in
+d120 (the directive's scope: census + cross-note).
+
 ## Town chatter UI (S1-E-10b, 2026-11-18, code-only mode)
 
 `crates/tr-app/src/ui/npc_chat.rs` ports the UI half of the town chatter вЂ”
