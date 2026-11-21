@@ -264,6 +264,7 @@
 //! | 1395-1400 | `:89437-89464` | the 128-131 Prime-limb death (147/148 heads + the full 4-quadrant explosion) |
 //! | 1401-1405 | `:89520-89524` | the 24 FireImp death (45/46/46/47/47 ladder, type-6 dust) |
 //! | 1406-1414 | `:89597-89625` | the goblin block (per-type ladder + 111's 131) + 471 GoblinSummoner (distinct +20 pair) |
+//! | 1415-1422 | `:89651-89688` | the 472 ShadowFlameApparition (679/680) + 480 Medusa ladder + 185 SnowFlinx 240 |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -8593,6 +8594,94 @@ fn goblin_summoner_death(
     gore.new_gore(rng, world, low, vel, 678, s); // :89625
 }
 
+/// The 472 ShadowFlameApparition death (`NPC.cs:89642-89652`, sites
+/// 1415-1416): the 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY
+/// -2.5), each dust drawing `Next(3)` AFTER the spawn — `!= 0` sets
+/// noGravity — then alpha 100; then the 679/680 pair at position with
+/// `base.velocity` at `this.scale`.
+fn shadow_flame_apparition_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+        // `:89645-89649` — the post-spawn Next(3) gate + alpha.
+        let d = dust.slot_mut(idx);
+        if rng.next_max(3) != 0 {
+            d.no_gravity = true;
+        }
+        d.alpha = 100;
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 679, s); // :89651
+    gore.new_gore(rng, world, pos, vel, 680, s); // :89652
+}
+
+/// The 480 Medusa death (`NPC.cs:89664-89672`, sites 1417-1421): the
+/// 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 5-gore ladder at `this.scale` — 692 head, 693/693 at +20, 694/694 at +34.
+fn medusa_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    gore.new_gore(rng, world, pos, vel, 692, s); // :89668
+    gore.new_gore(rng, world, mid, vel, 693, s); // :89669
+    gore.new_gore(rng, world, mid, vel, 693, s); // :89670
+    gore.new_gore(rng, world, low, vel, 694, s); // :89671
+    gore.new_gore(rng, world, low, vel, 694, s); // :89672
+}
+
+/// The 185 SnowFlinx death (`NPC.cs:89684-89688`, site 1422): the 50-dust
+/// type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then ONE gore 240
+/// at position with `base.velocity` at `this.scale`.
+fn snow_flinx_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    gore.new_gore(rng, world, pos, Vec2::new(npc.vx, npc.vy), 240, npc.scale); // :89688
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -9644,6 +9733,18 @@ pub fn hit_effect_c(
     // `:89607-89626` — the 471 GoblinSummoner arm (sites 1410-1414).
     if npc_type == 471 && npc.hp <= 0 {
         goblin_summoner_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89627-89653` — the 472 ShadowFlameApparition arm (sites 1415-1416).
+    if npc_type == 472 && npc.hp <= 0 {
+        shadow_flame_apparition_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89654-89673` — the 480 Medusa arm (sites 1417-1421).
+    if npc_type == 480 && npc.hp <= 0 {
+        medusa_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89674-89689` — the 185 SnowFlinx arm (site 1422).
+    if npc_type == 185 && npc.hp <= 0 {
+        snow_flinx_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -15152,6 +15253,65 @@ mod tests {
         goblin_summoner_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
         let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
         assert_eq!(types, vec![675, 676, 677, 678, 678]);
+    }
+
+    /// `NPC.cs:89644-89652` — the ShadowFlameApparition death: the 679/680
+    /// pair; the twin pins the per-dust Next(3) AFTER the 6 default-block
+    /// draws (type 5 is ChildSafety-dangerous, so with the gate armed a
+    /// 7th draw can fire — the default ctx leaves it disarmed).
+    #[test]
+    fn w4_f10_the_shadow_flame_apparition_death_draws_the_no_gravity_gate() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1531);
+        shadow_flame_apparition_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![679, 680]);
+        let mut twin = UnifiedRandom::new(1531);
+        for _ in 0..50 {
+            let _px = twin.next_max(40 - 4);
+            let _py = twin.next_max(56 - 4);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+            let _gate = twin.next_max(3);
+        }
+        for _ in 0..2 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the apparition mirrors the C# draws");
+        assert!(dust.slots().iter().filter(|d| d.active).all(|d| d.alpha == 100));
+    }
+
+    /// `NPC.cs:89668-89672` — the Medusa death: the 692/693/693/694/694
+    /// ladder.
+    #[test]
+    fn w4_f10_the_medusa_death_spawns_the_ladder() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1543);
+        medusa_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![692, 693, 693, 694, 694]);
+    }
+
+    /// `NPC.cs:89688` — the SnowFlinx death: the single 240 gore.
+    #[test]
+    fn w4_f10_the_snow_flinx_death_spawns_the_single_gore() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1549);
+        snow_flinx_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        assert_eq!(gore.slot(0).gore_type, 240);
+        assert_eq!(gore.slots().iter().filter(|g| g.active).count(), 1);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
