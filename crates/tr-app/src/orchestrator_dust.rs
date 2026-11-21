@@ -45,7 +45,12 @@
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled by
 //! the merge-verify wave, not executed here.
 
-#![allow(dead_code)] // unwired until the orchestrator drain lands (code-only mode)
+// The wiring wave landed the drains (`world_sim/projectiles.rs` +
+// `world_sim/player.rs` + `world_sim/editing.rs`); the kinds whose callers
+// are unported (PaladinsHammer has ZERO C# callers; the AI_186 / useStyle-5
+// PrincessWeapon arms wait on their machines) keep the emitters reachable
+// through `spawn_orchestra` below.
+#![allow(dead_code)]
 
 use glam::Vec2;
 use tr_core::particles::{Color, DustPool, SpawnCtx};
@@ -483,9 +488,19 @@ pub(crate) fn stardust_punch(
 /// `(num3 + NextFloat*0.12) % 1, 1, 0.4 + NextFloat*0.25`, internals,
 /// velocity = Circular(1,1) += movement * NextFloatDirection * 0.5,
 /// noGravity, scale = 0.6 + NextFloat*0.9, fadeIn = 0.7 + NextFloat*0.8,
-/// clone (scale/2, fadeIn*0.75, White). NOTE: `prefix.rs` (S1-P-i45)
-/// consumes this spawn's draws count-only on the reforge tail — the
-/// wiring wave folds that drain into this emitter (research/66).
+/// clone (scale/2, fadeIn*0.75, White). NOTE (the wiring-wave fold,
+/// research/66): this FULL emitter owns every IN-WORLD RainbowRodHit site
+/// (the 79 projectile hit `Projectile.cs:14234` + death `:71316`, the
+/// Kaleidoscope tag `WhipTagEffect_Kaleidoscope.cs:9`; the 1047
+/// RainbowBoulder's `:71244` loop is deferred with its unported machine).
+/// The REFORGE tail
+/// (`Main.cs:41911-41920`) keeps `prefix.rs`'s count-only 272-draw drain
+/// (S1-P-i45) as its ONE draw path — the two are disjoint by call site, so
+/// no site double-draws. The count-only form is exact under the documented
+/// empty-pool / on-screen assumption (`Dust.cs:97-152` cull + pressure bands
+/// draw nothing then); a pool-aware fold would change the frozen reforge
+/// stream and re-pin the 602 witness, so it stays count-only (recorded
+/// deviation, `prefix.rs::reforge_rainbow_rod_hit_draws`).
 pub(crate) fn rainbow_rod_hit(
     s: &OrchestraSettings,
     rng: &mut UnifiedRandom,
@@ -707,6 +722,85 @@ pub(crate) fn wof_goat_mount_flames(
     world: &World,
 ) {
     flame_mount_arm(8, s, rng, dust, ctx, world);
+}
+
+/// `Utils.NextVector2FromRectangle` (`Utils.cs:1256-1259`): TWO `NextFloat`
+/// draws, X FIRST — `(float)rect.X + NextFloat() * (float)rect.Width`, then
+/// Y. The rect is the C#'s integer `Rectangle` (the NPC `Hitbox` / the
+/// whip-tag `npcHit.Hitbox`); the caller truncates the entity box to ints
+/// exactly like `Entity.getRect()`.
+pub(crate) fn next_vector2_from_rectangle(
+    rng: &mut UnifiedRandom,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+) -> Vec2 {
+    let px = x as f32 + rng.next_float() * w as f32;
+    let py = y as f32 + rng.next_float() * h as f32;
+    Vec2::new(px, py)
+}
+
+/// `ParticleOrchestraType` (`GameContent/Drawing/ParticleOrchestraType.cs:3-88`)
+/// — the enum's byte values, in declaration order. Only the kinds this lane
+/// owns emitters for are named; the dispatch below routes them.
+pub(crate) mod orchestra_kind {
+    pub const FLAME_WADERS: u8 = 1;
+    pub const WOF_GOAT_MOUNT_FLAMES: u8 = 3;
+    pub const RAINBOW_ROD_HIT: u8 = 5;
+    pub const STARDUST_PUNCH: u8 = 7;
+    pub const PRINCESS_WEAPON: u8 = 8;
+    pub const PALADINS_HAMMER: u8 = 9;
+    pub const TRUE_NIGHTS_EDGE: u8 = 12;
+    pub const EXCALIBUR: u8 = 13;
+    pub const TRUE_EXCALIBUR: u8 = 14;
+    pub const TERRA_BLADE: u8 = 15;
+    pub const SHIMMER_ARROW: u8 = 25;
+    pub const BLUE_LIGHTNING_SMALL: u8 = 37;
+    pub const CLASSY_CANE: u8 = 55;
+    pub const FORMAT_C: u8 = 72;
+    pub const RED_LIGHTNING_SMALL: u8 = 77;
+}
+
+/// `ParticleOrchestrator.SpawnParticlesDirect` (`ParticleOrchestrator.cs:162-
+/// 420`) — the synchronous dispatch the `RequestParticleSpawn` head (`:52-59`)
+/// calls. The port routes ONLY the kinds this lane owns (sites 41-61); every
+/// other enum value is a d54 / unported `Spawn_*` body and drops here (the
+/// `netmodules.rs` Particles carrier's documented drop, extended to the local
+/// path). `BlueLightningSmall` (37) and `RedLightningSmall` (77) BOTH route to
+/// `Spawn_LightningSmall` (`:291-292`/`:399-400`); the red caller packs
+/// `GetLightningColor(1122).PackedValue` into `settings.info` (the emitter's
+/// `info != 0` arm re-types 226→331 and re-colours). The draws ride the
+/// CALLER's pass stream in C# statement order (the module contract).
+pub(crate) fn spawn_orchestra(
+    kind: u8,
+    s: &OrchestraSettings,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    use orchestra_kind::*;
+    match kind {
+        FLAME_WADERS => flame_waders(s, rng, dust, ctx, world),
+        WOF_GOAT_MOUNT_FLAMES => wof_goat_mount_flames(s, rng, dust, ctx, world),
+        RAINBOW_ROD_HIT => rainbow_rod_hit(s, rng, dust, ctx, world),
+        STARDUST_PUNCH => stardust_punch(s, rng, dust, ctx, world),
+        PRINCESS_WEAPON => princess_weapon(s, rng, dust, ctx, world),
+        PALADINS_HAMMER => paladins_hammer(s, rng, dust, ctx, world),
+        TRUE_NIGHTS_EDGE => true_nights_edge(s, rng, dust, ctx, world),
+        EXCALIBUR => excalibur(s, rng, dust, ctx, world),
+        TRUE_EXCALIBUR => true_excalibur(s, rng, dust, ctx, world),
+        TERRA_BLADE => terra_blade(s, rng, dust, ctx, world),
+        SHIMMER_ARROW => shimmer_arrow(s, rng, dust, ctx, world),
+        BLUE_LIGHTNING_SMALL | RED_LIGHTNING_SMALL => lightning_small(s, rng, dust, ctx, world),
+        CLASSY_CANE => classy_cane(s, rng, dust, ctx, world),
+        FORMAT_C => format_c(s, rng, dust, ctx, world),
+        // Every other kind: a d54-reserved or unported Spawn_* body — no
+        // emitter here, no draws (the C# would run its own body; the port's
+        // lane boundary drops it, research/66).
+        _ => {}
+    }
 }
 
 #[cfg(test)]
