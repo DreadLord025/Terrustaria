@@ -105,35 +105,72 @@ pub const EQUIP_PAGE_MISC: i32 = 2;
 /// `EquipPage == 1` (`Main.cs:41368`): the NPC housing page.
 const EQUIP_PAGE_HOUSING: i32 = 1;
 
-/// `ItemSlot.LoadoutSlotColors[0, 0..2]` (`ItemSlot.cs:365-371`) — the loadout-1
-/// (green) palette. `TryGetSlotColor` (`ItemSlot.cs:2807-2819`) maps context 8/10
-/// (armour/accessory) to 0, 9/11 (vanity) to 1 and 12 (dye) to 2. The three loadouts
-/// are coloured green/blue/red; a fresh character is on loadout 1.
-const LOADOUT1_COLORS: [[f32; 3]; 3] = [
-    [50.0 / 255.0, 106.0 / 255.0, 64.0 / 255.0],
-    [46.0 / 255.0, 106.0 / 255.0, 98.0 / 255.0],
-    [45.0 / 255.0, 85.0 / 255.0, 105.0 / 255.0],
+/// `ItemSlot.LoadoutSlotColors` (`ItemSlot.cs:365-382`) — the three loadout
+/// palettes (green / blue / red), each `[armor, vanity, dye]`.
+/// `TryGetSlotColor` (`ItemSlot.cs:2807-2819`) maps context 8/10
+/// (armour/accessory) to 0, 9/11 (vanity) to 1 and 12 (dye) to 2. A fresh
+/// character is on loadout 0 (the green row).
+const LOADOUT_SLOT_COLORS: [[[f32; 3]; 3]; 3] = [
+    [
+        [50.0 / 255.0, 106.0 / 255.0, 64.0 / 255.0],
+        [46.0 / 255.0, 106.0 / 255.0, 98.0 / 255.0],
+        [45.0 / 255.0, 85.0 / 255.0, 105.0 / 255.0],
+    ],
+    [
+        [35.0 / 255.0, 106.0 / 255.0, 126.0 / 255.0],
+        [50.0 / 255.0, 89.0 / 255.0, 140.0 / 255.0],
+        [57.0 / 255.0, 70.0 / 255.0, 128.0 / 255.0],
+    ],
+    [
+        [122.0 / 255.0, 63.0 / 255.0, 83.0 / 255.0],
+        [104.0 / 255.0, 46.0 / 255.0, 85.0 / 255.0],
+        [84.0 / 255.0, 37.0 / 255.0, 87.0 / 255.0],
+    ],
 ];
 
 /// `ItemSlot.GetColorByLoadout` (`ItemSlot.cs:2778-2792`): the equipment/vanity/dye
 /// backgrounds are `Inventory_Back13` (a white sheet) tinted by
 /// `loadoutColor * Main.inventoryBack`, lerped toward white by the loadout-change
 /// flash (`num`, normally 0 once 30 frames have passed). Contexts without a loadout
-/// colour keep `inventoryBack` unchanged.
-fn equip_tint(context: i32, inv_back: [f32; 4]) -> [f32; 4] {
+/// colour keep `inventoryBack` unchanged. `flash` is the precomputed
+/// `num * num * num` lerp factor (`Utils.Remap(timeSinceChange, 0, 30, 0.5, 0)`,
+/// cubed; 0 when `FlashyEffectsInterface` is off or 30 frames have passed).
+fn equip_tint(context: i32, inv_back: [f32; 4], loadout: usize, flash: f32) -> [f32; 4] {
     let idx = match context {
         8 | 10 => 0,
         9 | 11 => 1,
         12 => 2,
         _ => return inv_back,
     };
-    let c = LOADOUT1_COLORS[idx];
-    [
+    let c = LOADOUT_SLOT_COLORS[loadout.min(2)][idx];
+    let base = [
         c[0] * inv_back[0],
         c[1] * inv_back[1],
         c[2] * inv_back[2],
         inv_back[3],
+    ];
+    // `Color.Lerp(value, Color.White, num * num * num)` (`:2791`).
+    [
+        base[0] + (1.0 - base[0]) * flash,
+        base[1] + (1.0 - base[1]) * flash,
+        base[2] + (1.0 - base[2]) * flash,
+        base[3] + (1.0 - base[3]) * flash,
     ]
+}
+
+/// The loadout-change flash factor (`ItemSlot.cs:2786-2791`):
+/// `num = Utils.Remap(timeForVisualEffects - lastChange, 0, 30, 0.5, 0)` (clamped),
+/// then `num^3`. `Main.FlashyEffectsInterface` off forces 0. A never-changed
+/// stamp (`NEG_INFINITY`) yields 0.
+pub fn loadout_flash(last_change: f32, time_for_visuals: f32, flashy: bool) -> f32 {
+    if !flashy || !last_change.is_finite() {
+        return 0.0;
+    }
+    let elapsed = time_for_visuals - last_change;
+    // `Utils.GetLerpValue(0, 30, elapsed, clamped: true)` then `Lerp(0.5, 0, t)`.
+    let t = (elapsed / 30.0).clamp(0.0, 1.0);
+    let num = 0.5 + (0.0 - 0.5) * t;
+    num * num * num
 }
 
 // ---------------------------------------------------------------------------
@@ -184,6 +221,10 @@ pub struct InventoryHit {
     /// `Main.hidePVPAndTeamIcons` (`Main.cs:42053-42056`) — set by the housing
     /// page once its columns reach the PVP icons.
     pub hide_pvp_icons: bool,
+    /// The hovered loadout button (`Main.DrawLoadoutButtons`' `state`,
+    /// `Main.cs:41956-41990`), -1 = none. Drives the `DoStatefulTickSound` 12
+    /// cue and the `UI.LoadoutN` mouse text.
+    pub loadout_hover: i32,
 }
 
 // ---------------------------------------------------------------------------
@@ -500,6 +541,12 @@ pub fn draw(
     // `Main.mouseItem.IsAir`: every tick draw and hit is gated on it
     // (`Main.cs:41430`, `:41453`).
     mouse_air: bool,
+    // `Player.CurrentLoadoutIndex` (`Player.cs:3207`) — the equipment-slot
+    // palette + the loadout buttons' active frame (`Main.cs:41394,41963`).
+    current_loadout: usize,
+    // The loadout-change flash factor (`ItemSlot.GetColorByLoadout:2786-2791`,
+    // precomputed by `loadout_flash`).
+    loadout_flash: f32,
 ) -> InventoryHit {
     // `Main.DrawInventory`'s button pair (`Main.cs:41012-41013`):
     // `DrawBestiaryIcon` rides beside `DrawEmoteBubblesButton`. The bestiary
@@ -706,6 +753,18 @@ pub fn draw(
         let vanity_x = equip_column_x(EquipColumn::Vanity, screen.x);
         let dye_x = equip_column_x(EquipColumn::Dye, screen.x);
 
+        // `Main.DrawLoadoutButtons(num20, flag4, flag5)` (`Main.cs:41394`):
+        // the three loadout buttons beside the armour column, drawn before
+        // the slots. The hover state rides the hit for the tick sound + text.
+        hit.loadout_hover = super::loadout::draw(
+            r,
+            lookups,
+            screen.x,
+            base_y,
+            current_loadout,
+            [mouse.x, mouse.y],
+        );
+
         // `Main.cs:41396-41463`: `Player.armor[0..9]` (context 8 / 10).
         let mut row = 0usize;
         for idx in 0..10usize {
@@ -725,7 +784,7 @@ pub fn draw(
                 idx as i32,
                 false,
                 INVENTORY_SCALE,
-                equip_tint(context, INVENTORY_BACK),
+                equip_tint(context, INVENTORY_BACK, current_loadout, loadout_flash),
             );
             if hit.hovered.is_none() && hit_test(mouse, armor_x, y, INVENTORY_SCALE, cell) {
                 hit.hovered = Some(HoverRef::Armor(idx));
@@ -776,7 +835,7 @@ pub fn draw(
                 idx as i32,
                 false,
                 INVENTORY_SCALE,
-                equip_tint(context, INVENTORY_BACK),
+                equip_tint(context, INVENTORY_BACK, current_loadout, loadout_flash),
             );
             if hit.hovered.is_none() && hit_test(mouse, vanity_x, y, INVENTORY_SCALE, cell) {
                 hit.hovered = Some(HoverRef::Armor(idx));
@@ -802,7 +861,7 @@ pub fn draw(
                 idx as i32,
                 false,
                 INVENTORY_SCALE,
-                equip_tint(12, INVENTORY_BACK),
+                equip_tint(12, INVENTORY_BACK, current_loadout, loadout_flash),
             );
             if hit.hovered.is_none() && hit_test(mouse, dye_x, y, INVENTORY_SCALE, cell) {
                 hit.hovered = Some(HoverRef::Dye(idx));
@@ -1132,18 +1191,40 @@ mod tests {
     #[test]
     fn equip_tint_uses_loadout1_palette() {
         // `ItemSlot.cs:365-371` row 0 = green/teal/blue; multiplied by
-        // `Main.inventoryBack` (`ItemSlot.cs:2785`).
+        // `Main.inventoryBack` (`ItemSlot.cs:2785`). No flash (loadout 0).
         let back = INVENTORY_BACK;
-        let armor = equip_tint(10, back);
+        let armor = equip_tint(10, back, 0, 0.0);
         assert!((armor[0] - 50.0 / 255.0 * back[0]).abs() < 1e-6);
         assert!(armor[1] > armor[0] && armor[1] > armor[2], "armour slot is green");
-        let vanity = equip_tint(11, back);
+        let vanity = equip_tint(11, back, 0, 0.0);
         assert!(vanity[2] > vanity[0], "vanity slot is teal");
-        let dye = equip_tint(12, back);
+        let dye = equip_tint(12, back, 0, 0.0);
         assert!(dye[2] > dye[1], "dye slot is blue");
         // Contexts without a loadout colour keep the plain background.
-        assert_eq!(equip_tint(16, back), back);
-        assert_eq!(equip_tint(33, back), back);
+        assert_eq!(equip_tint(16, back, 0, 0.0), back);
+        assert_eq!(equip_tint(33, back, 0, 0.0), back);
+    }
+
+    /// W4-g55 — the tint follows the current loadout's palette row
+    /// (`ItemSlot.LoadoutSlotColors[loadoutIndex]`, `ItemSlot.cs:2825`) and the
+    /// change-flash lerps it toward white (`GetColorByLoadout:2791`).
+    #[test]
+    fn w4_g55_the_tint_follows_the_loadout_and_flash() {
+        let back = INVENTORY_BACK;
+        // Loadout 1 (blue row): the armour slot's blue channel dominates.
+        let l1 = equip_tint(10, back, 1, 0.0);
+        assert!(l1[2] > l1[0], "loadout 2 armour is blue");
+        // Loadout 2 (red row): the armour slot's red channel dominates.
+        let l2 = equip_tint(10, back, 2, 0.0);
+        assert!(l2[0] > l2[1] && l2[0] > l2[2], "loadout 3 armour is red");
+        // A full flash (factor 1) lerps every channel to white.
+        let flashed = equip_tint(10, back, 0, 1.0);
+        assert_eq!(flashed, [1.0; 4]);
+        // The flash factor decays over 30 frames and is 0 when flashy is off.
+        assert_eq!(loadout_flash(0.0, 0.0, true), 0.125); // 0.5^3 at elapsed 0
+        assert_eq!(loadout_flash(0.0, 30.0, true), 0.0);
+        assert_eq!(loadout_flash(0.0, 0.0, false), 0.0);
+        assert_eq!(loadout_flash(f32::NEG_INFINITY, 100.0, true), 0.0);
     }
 
     #[test]

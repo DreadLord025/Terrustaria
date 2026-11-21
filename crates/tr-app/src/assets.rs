@@ -411,6 +411,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_274",
         "Extra_290",
         "Extra_291",
+        // W4-g55: the loadout-button sheet (`TextureAssets.Extra[259]`,
+        // `Main.DrawLoadoutButtons:41950`) — a 3x3 grid (frameX = idle/active/
+        // hover, frameY = the loadout index).
+        "Extra_259",
         // S1-L-8b: the `TextureAssets.GlowMask` strips the mount rows name —
         // SpookyWood 283 (`Mount.cs:1980`), WoF goat 284 (`:2095`), LavaShark
         // 285 (`:2187`), Bat 370 (`:2474`). They load as `Images/Glow_{id}`
@@ -1978,6 +1982,10 @@ pub struct Lookups {
     pub extra_282: Option<tr_render::SheetRect>,
     pub extra_299: Option<tr_render::SheetRect>,
     pub extra_305: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Extra[259]`: the loadout-button sheet
+    /// (`Main.DrawLoadoutButtons`, `Main.cs:41950`) — `Frame(3, 3, frameX, i)`,
+    /// frameX 0 idle / 1 active / 2 hover-overlay, frameY the loadout index.
+    pub extra_259: Option<tr_render::SheetRect>,
     /// `TextureAssets.Extra[49]`: the `ScreenObstruction` border
     /// (`ScreenObstruction.cs:53`).
     pub extra_49: Option<tr_render::SheetRect>,
@@ -2401,6 +2409,7 @@ impl Lookups {
             extra_282: atlas.sheet("Extra_282").copied(),
             extra_299: atlas.sheet("Extra_299").copied(),
             extra_305: atlas.sheet("Extra_305").copied(),
+            extra_259: atlas.sheet("Extra_259").copied(),
             extra_49: atlas.sheet("Extra_49").copied(),
             extra_98: atlas.sheet("Extra_98").copied(),
             flame_ring: atlas.sheet("FlameRing").copied(),

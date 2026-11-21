@@ -1797,6 +1797,23 @@ impl App {
             }
             return;
         }
+        // `Main.DrawLoadoutButtons`' click arm (`Main.cs:41965-41978`): a left
+        // press-edge on a loadout button switches the set. The buttons draw
+        // only on the equipment page (`EquipPage == 0`, `Main.cs:41394`), and
+        // sit right of the armour column, so they are probed before the slots.
+        if left && self.inventory_open && self.equip_page == 0 {
+            let (sw, sh) = self.screen_size();
+            let base_y = ui::inventory::equip_page_base_y(sh, self.main_m_h());
+            if let Some(i) =
+                ui::loadout::button_hit(sw, base_y, [self.mouse_pos.x, self.mouse_pos.y])
+            {
+                // `TrySwitchingLoadout` plays the 12 cue + consumes the press
+                // itself (`Player.cs:5671-5673`); the press is already consumed
+                // at the head of this handler.
+                self.try_switching_loadout(i);
+                return;
+            }
+        }
         // The equipment columns (`Main.cs:41288,41450,41491,41519`): armour,
         // vanity, dye and — on the misc page — the misc-equip/misc-dye pair.
         // `ItemSlot.Handle` runs for every cell `DrawInventory` draws, so the
@@ -4062,6 +4079,53 @@ mod tests {
         app.inventory_open = true;
         app.player = Some(crate::player::Player::spawn(&app.world));
         app
+    }
+
+    /// W4-g55 — a left press-edge on a loadout button switches the set
+    /// (`Main.DrawLoadoutButtons:41975-41977` → `Player.TrySwitchingLoadout`).
+    /// At the headless 1280x720 the buttons sit at x 1236, y 174/210/246.
+    #[test]
+    fn w4_g55_a_loadout_button_click_switches_the_set() {
+        let mut app = inv_app();
+        app.equip_page = 0;
+        // The live set (loadout 0) wears an Iron Helmet; loadout 1 stores an
+        // Ancient Iron Helmet.
+        app.equip.armor[0] = slot(90, 1);
+        app.player.as_mut().unwrap().loadouts[1].armor[0] = slot(954, 1);
+        // Click button 1 (centre 1252, 226).
+        app.mouse_pos = Vec2::new(1252.0, 226.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.player.as_ref().unwrap().current_loadout_index, 1);
+        assert_eq!(app.equip.armor[0].kind, 954, "loadout 1's head is live");
+        assert_eq!(
+            app.player.as_ref().unwrap().loadouts[0].armor[0].kind,
+            90,
+            "the old head stored in loadout 0"
+        );
+        // Clicking the active button again is a no-op (same index).
+        app.mouse_pos = Vec2::new(1252.0, 226.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.player.as_ref().unwrap().current_loadout_index, 1);
+    }
+
+    /// W4-g55 — the loadout buttons draw only on the equipment page; on the
+    /// misc page (`EquipPage == 2`) the same coordinates hit no button.
+    #[test]
+    fn w4_g55_the_loadout_buttons_are_equipment_page_only() {
+        let mut app = inv_app();
+        app.equip_page = crate::ui::inventory::EQUIP_PAGE_MISC;
+        app.equip.armor[0] = slot(90, 1);
+        app.player.as_mut().unwrap().loadouts[1].armor[0] = slot(954, 1);
+        app.mouse_pos = Vec2::new(1252.0, 226.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(
+            app.player.as_ref().unwrap().current_loadout_index,
+            0,
+            "no switch on the misc page"
+        );
     }
 
     /// M7-UI-2b — the coin (ctx 1) and ammo (ctx 2) rows became click
