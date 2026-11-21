@@ -1917,6 +1917,14 @@ pub struct Player {
     /// mount is active. `Mount.TryDismount` needs `&World`, so the tick hands
     /// the request over (the `pending_switch_trip` convention).
     pending_dismount: bool,
+    /// W4-d115 — the `62 SyncDodge` send queue (`Player.NinjaDodge`'s
+    /// `NetMessage.SendData(62, -1, -1, null, whoAmI, 1f)`,
+    /// `Player.cs:38161-38164`, and the Shadow `:38038` / Brain `:38053` /
+    /// Sash `:38115` twins): the handlers run inside the sim lanes, so the
+    /// send hands over to the net tick (the `pending_hurt_sound`
+    /// convention). The net-apply path (`apply_net_dodge`, W4-c27) never
+    /// queues — the C# reader does not re-send (`MessageBuffer.cs:2887-2902`).
+    pending_dodge_sends: Vec<u8>,
     /// S1-P-i41 — the Chillet mount's `SoundID.PalChillet` play
     /// (`Mount.SetMount` `Mount.cs:6283-6286`, `SoundEngine.PlaySound(
     /// SoundID.PalChillet, mountedPlayer.Center)`): `(position.X,
@@ -2877,6 +2885,7 @@ impl Player {
             pending_heal_effect: None,
             pending_retaliate: None,
             pending_dismount: false,
+            pending_dodge_sends: Vec::new(),
             pending_chillet_sound: None,
             pending_no_space_sound: None,
             pending_no_space_teleport: false,
@@ -3320,6 +3329,16 @@ impl Player {
         self.pending_hurt_sound.take()
     }
 
+    /// W4-d115 — takes the queued `62 SyncDodge` sends (the dodge handlers'
+    /// `NetMessage.SendData(62, .., whoAmI, kind)`, `Player.cs:38038/:38053/
+    /// :38115/:38163`). The net tick drains them through the `C2s`/`S2c`
+    /// `SyncDodge` wires (the `take_hurt_sound` convention); the net-apply
+    /// path (`apply_net_dodge`) never queues, so a relayed dodge is not
+    /// re-sent (the C# reader, `MessageBuffer.cs:2887-2902`, does not send).
+    pub(crate) fn take_dodge_sends(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.pending_dodge_sends)
+    }
+
     /// Takes the queued death cue (`Player.PlayDeathSound`,
     /// `Player.cs:38868`).
     pub(crate) fn take_death_sound(&mut self) -> Option<&'static str> {
@@ -3652,6 +3671,7 @@ impl Player {
         self.pending_drown_sound = false;
         self.pending_flap_sound = None;
         self.pending_dismount = false;
+        self.pending_dodge_sends.clear();
         // `Player.spawn`/`Spawn` never resets `stickyBreak` (`Player.cs:1966` —
         // the only writers are `StickyMovement`'s own four sites), so the port
         // keeps the counter across a revive too.
@@ -4239,8 +4259,11 @@ impl Player {
         self.set_immune_time_for_all_types(if self.long_invince { 120 } else { 80 });
     }
 
-    /// `Player.NinjaDodge` (`Player.cs:38119-38121`): the 120/80 immunity; the
-    /// 100x dust + gore burst is deferred to S1-E-1.
+    /// `Player.NinjaDodge` (`Player.cs:38119-38165`): the 120/80 immunity; the
+    /// 100x dust + gore burst is deferred to S1-E-1 (the W4-g17 wave-C port).
+    /// The `SendData(62, .., 1f)` tail (`:38161-38164`) queues at the `Hurt`
+    /// caller (`hurt_inner`'s belt arm) — the 62 reader shares this handler
+    /// and never re-sends (W4-c27/W4-d115).
     fn ninja_dodge(&mut self) {
         self.set_immune_time_for_all_types(if self.long_invince { 120 } else { 80 });
     }
@@ -4338,7 +4361,7 @@ impl Player {
         if self.hurt_cd > 0.0 || self.hp <= 0 {
             return false;
         }
-        // The dodge roll block (`Player.cs:38214-38241`), slotted after the
+        // The dodge roll block (`Player.cs:38214-38236`), slotted after the
         // cooldown early-return (the port's `hurt_cd`-gate IS the C# `flag`
         // for the General counter) and before the defense reduction.
         // `whoAmI == Main.myPlayer` collapses in the single-player port. The
@@ -4355,6 +4378,13 @@ impl Player {
             }
             if self.black_belt && rng.next_range(0, 10) == 0 {
                 self.ninja_dodge();
+                // `Player.NinjaDodge`'s tail (`Player.cs:38161-38164`):
+                // `NetMessage.SendData(62, -1, -1, null, whoAmI, 1f)` — the
+                // send queues for the net tick (the `pending_hurt_sound`
+                // convention). It sits at the HURT caller, not inside the
+                // handler: `apply_net_dodge` (the 62 reader, W4-c27) shares
+                // the handler and must not re-send. W4-d115.
+                self.pending_dodge_sends.push(1);
                 return false;
             }
             if self.brain_of_confusion
@@ -19008,6 +19038,37 @@ mod tests {
         let mut rng = DodgeRng::with_rolls(&[1]);
         assert!(p.hurt(20, p.x + 100.0, &mut rng, true));
         assert!(p.hp < hp);
+    }
+
+    /// W4-d115 — the Black Belt / Master Ninja Gear dodge queues the
+    /// `62 SyncDodge` kind-1 send (`Player.NinjaDodge`'s tail,
+    /// `Player.cs:38161-38164`); the 62 reader (`apply_net_dodge`, W4-c27)
+    /// shares the handler and never re-sends. Both 963 and 984 arm the belt.
+    #[test]
+    fn w4_d115_ninja_dodge_queues_the_kind_1_send_and_the_reader_does_not() {
+        for kind in [963u16, 984] {
+            let mut p = dodge_player_with(&[kind]);
+            assert!(p.take_dodge_sends().is_empty(), "nothing queued pre-hit");
+            let mut rng = DodgeRng::with_rolls(&[0]);
+            assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the belt dodges");
+            assert_eq!(rng.draws, vec![(0, 10)], "exactly the belt Next(10)");
+            assert_eq!(p.take_dodge_sends(), vec![1], "kind 1 = NinjaDodge (:38163)");
+            assert!(p.take_dodge_sends().is_empty(), "the take is one-shot");
+            // The reader's own-id apply runs the SAME handler but queues no
+            // send (the C# reader does not SendData, `MessageBuffer.cs:2889`).
+            expire_dodge_window(&mut p);
+            p.apply_net_dodge(1);
+            assert!(p.immune, "the reader still arms the i-frames");
+            assert!(
+                p.take_dodge_sends().is_empty(),
+                "the net-apply path never re-sends"
+            );
+        }
+        // A missed roll lands the hit and queues nothing.
+        let mut p = dodge_player_with(&[963]);
+        let mut rng = DodgeRng::with_rolls(&[1]);
+        assert!(p.hurt(20, p.x + 100.0, &mut rng, true));
+        assert!(p.take_dodge_sends().is_empty(), "no dodge, no send");
     }
 
     #[test]

@@ -2843,8 +2843,44 @@ impl App {
     /// per-NPC / per-projectile `netSpam` gates, `NPC.cs:90583-90631` /
     /// `Projectile.cs:17210-17244`) — NOT by a whole-set broadcast here.
     pub(crate) fn net_tick(&mut self, dt: f32) {
+        // W4-d115 — the dodge handlers' `SendData(62)` queue
+        // (`Player.cs:38038/:38053/:38115/:38163`) drains EVERY tick, ahead
+        // of the 10 Hz state batch: the C# send is inline in `Hurt`, the
+        // port's queue hands it to this phase of the same fixed step (the
+        // `take_hurt_sound` convention). `NetMessage.SendData`'s netMode
+        // gate (`NetMessage.cs:83-86`) drops the sends single-player — the
+        // take still runs so the queue cannot grow unbounded.
+        let dodge_sends = self
+            .player
+            .as_mut()
+            .map(|p| p.take_dodge_sends())
+            .unwrap_or_default();
         if matches!(self.net, NetRole::Off) {
             return;
+        }
+        if !dodge_sends.is_empty() {
+            let me = self.local_id as u8;
+            match &self.net {
+                NetRole::Host(server) => {
+                    for kind in dodge_sends {
+                        server.broadcast(&S2c::SyncDodge(net::SyncDodge {
+                            player_id: me,
+                            kind,
+                        }));
+                    }
+                }
+                NetRole::Client(client) => {
+                    for kind in dodge_sends {
+                        // The host forces the id to the sender
+                        // (`MessageBuffer.cs:2885`); ours is informational.
+                        client.send(&C2s::SyncDodge(net::SyncDodge {
+                            player_id: me,
+                            kind,
+                        }));
+                    }
+                }
+                NetRole::Off => {}
+            }
         }
         // `Ping.Update` (`Main.cs:17817-17820`) runs once per **frame** in
         // `UpdateWorld_Client`, not on the 10 Hz net cadence, and needs no
@@ -5664,5 +5700,53 @@ mod message_family_tests {
         pump(&mut host_app, &mut client_app, 12);
         let peer = client_app.remote_players.get(&0).expect("host peer");
         assert_eq!(peer.stealth, 0.625);
+    }
+
+    /// W4-d115 — a real belt dodge on the client queues the `62` kind-1 send
+    /// (`Player.NinjaDodge` `Player.cs:38161-38164`); `net_tick` drains the
+    /// queue every tick (the `take_hurt_sound` convention), so after the pump
+    /// the local queue is empty and the host forced the relay id to the
+    /// sender (`MessageBuffer.cs:2885`). The sender's own echo is excluded
+    /// (`:2905`), so the client does not re-apply / re-send its own dodge.
+    #[test]
+    fn w4_d115_ninja_dodge_send_drains_on_the_net_tick() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let mut p = player::Player::spawn(&client_app.world);
+        p.equipped[3] = 963; // the Black Belt
+        p.update(&client_app.world, player::PlayerInput::default());
+        assert!(p.black_belt);
+        // A scripted Next(10)==0 dodges the hit (the belt roll).
+        struct ZeroRng;
+        impl tr_core::loot::DropRng for ZeroRng {
+            fn next_range(&mut self, _min: i32, _max: i32) -> i32 {
+                0
+            }
+            fn next_float(&mut self) -> f32 {
+                0.5
+            }
+        }
+        assert!(!p.hurt(20, p.x + 100.0, &mut ZeroRng, true), "the belt dodges");
+        client_app.player = Some(p);
+        // The send is queued by the dodge, not yet drained.
+        assert_eq!(
+            client_app.player.as_ref().unwrap().take_dodge_sends(),
+            vec![1]
+        );
+        // Re-arm a fresh dodge, then let the net tick drain it.
+        {
+            let p = client_app.player.as_mut().unwrap();
+            p.immune = false;
+            p.immune_time = 0;
+            p.hurt_cd = 0.0;
+            assert!(!p.hurt(20, p.x + 100.0, &mut ZeroRng, true));
+        }
+        pump(&mut host_app, &mut client_app, 12);
+        assert!(
+            client_app.player.as_ref().unwrap().take_dodge_sends().is_empty(),
+            "net_tick drained the 62 send queue"
+        );
+        // The host's own player is not the subject (the relay excludes the
+        // sender), so its dodge bookkeeping is untouched.
+        assert_eq!(host_app.player.as_ref().unwrap().shadow_dodge_timer, 0);
     }
 }
