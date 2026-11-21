@@ -1727,8 +1727,11 @@ pub(crate) fn style43_crystal_leaf_burst_227(p: &Projectile, world: &World, d: &
 }
 
 /// `:28832-28838` — the 321 FlamingJack's per-tick dust-6 head (aiStyle-55,
-/// STAGED — NO machine on any pushed tip; the row + the target-scan machine
-/// are the activating wave). The caller gates on the C#'s
+/// STAGED — RETIRE re-probe: the row + machine are NOW on the d6 tip
+/// `7edfcd495` (`FLAMING_JACK` data.rs:1057/:2858 + `ai_flaming_jack`
+/// projectile.rs:4731, the dispatch-55 arm; its `:28832-28838` skip rolls
+/// nothing — a ZERO-explicit-draw machine, so this emitter ADDS the pool
+/// internals at the d6 merge, the style87 shape). The caller gates on the C#'s
 /// `ai[0] >= 0 && ai[0] < maxNPCs` window (`:28795`); the dust itself is
 /// unconditional inside it: the 8-px inset box, vel×0.5 + vel×0.5,
 /// noGravity, noLight, scale 1.4.
@@ -2161,8 +2164,11 @@ pub(crate) fn vortex_dissolve_twin_578_579(
 }
 
 /// `:34118-34127` — the 836 DandelionSeed's first-tick 3× dust-31 burst
-/// (aiStyle-112's `type == 836` head, STAGED — no row/machine on this base;
-/// the g64 deferred ledger cites it as the latch-burst co-lane remainder).
+/// (aiStyle-112's `type == 836` head, STAGED — RETIRE re-probe: the row +
+/// machine are NOW on the d12 tip `c98bd8937` (`DANDELION_SEED` data.rs:1090/
+/// :3697 + `ai_dandelion_seed` projectile.rs:10080, the dispatch-112 arm; its
+/// `:34121-34126` latch-burst skip is all NewDust internals — ZERO explicit
+/// draws, so this emitter ADDS the pool internals at the d12 merge).
 /// The caller owns the localAI[0] latch. Per dust: type 31, alpha 50,
 /// Color.White, scale 1.2, vel×0.3, noGravity.
 pub(crate) fn style112_dandelion_burst_836(p: &Projectile, world: &World, d: &mut ProjDust) {

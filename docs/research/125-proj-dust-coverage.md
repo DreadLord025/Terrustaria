@@ -1,6 +1,10 @@
-# 125 — PROJ-DUST master coverage census (W4-e3, coverage phase, 2026-11-21; REFRESHED same day, the AI-INLINE-40 round)
+# 125 — PROJ-DUST master coverage census (W4-e3, coverage phase, 2026-11-21; REFRESHED same day, the AI-INLINE-40 round; SEALED same day, the RETIRE phase)
 
-Status: CENSUS + two window claims (the `:78227-78508` Kill_Bombs tail,
+Status: **SEALED** (the RETIRE phase, below — the 34-STAGED activation
+contracts re-verified against the moved d-lane tips, the `_Old` residue
+resolved LIVE/DEAD, the g63 doc-66 receipt published, the g64 `clone_dust`
+keep-one confirmed; no new sites claimed after this seal). CENSUS + two
+window claims (the `:78227-78508` Kill_Bombs tail,
 DONE; the AI-INLINE-40 + AI_001-edges-2 window, DONE this refresh — see the
 round-2 sections at the bottom). Code-only mode — no cargo/rustc/tests/
 rustfmt/graphify invoked. Method: a fresh `Dust.NewDust` line scan of
@@ -89,7 +93,8 @@ main draw-census stubs + the uncited remainders below.
    `trail_650_scan_sparkle`/`trail_650_point_sparkle`; `:34020` remainder
    2's `trail_813_opacity_tail` — the `:34018-34024` range cite); the other
    **37 are PORTED by W4-e3** (34 staged + 3 wired — the round-2 ledger
-   below). The g63 doc-66 census row "60 | 358 (`:29167/.../29245/29284`)"
+   below; the RETIRE pass re-verified all 34 contracts at the moved tips —
+   321/836 are now d6/d12-rowed, see the RETIRE section). The g63 doc-66 census row "60 | 358 (`:29167/.../29245/29284`)"
    MIS-ATTRIBUTES the last two: `:29234`'s `type != 1042` return precedes
    them — they are the **1042 ShimmerGunStream's** (the e3
    `style60_shimmer_gun_trail_1042` correction; g63's 358 emitter covers
@@ -110,7 +115,8 @@ main draw-census stubs + the uncited remainders below.
    **Owner: ASSIGNED THIS REFRESH — the per-machine assignment table at the
    bottom of this doc** (which d-lane owns which machine → the
    dust-activation contract per merge; the round-1 "unassigned" status is
-   superseded).
+   superseded; the RETIRE pass resolves the `_Old` residue — 8 DEAD
+   cite-dropped, 5 LIVE task-seeded to d1).
 5. **`AI_001` — 2 sites**: 56049, 56748 (the g63 batch-5/6 remainder edges).
    **RESOLVED THIS REFRESH — both ported by W4-e3**: the 56049 is the 1006
    ShimmerArrow's rainbow sparkle + CloneDust twin (WIRED — the 1006 row +
@@ -211,7 +217,7 @@ Projectile.cs claim change). The claim deltas against the round-1 census:
 | # | site(s) | kind(s) / aiStyle | e3 emitter | state | activating merge |
 | - | ------- | ----------------- | ---------- | ----- | ---------------- |
 | 1 | 27869 | 227 CrystalLeafShot / 43 | `style43_crystal_leaf_burst_227` | STAGED | d5 `projectile_ai_style43` (UNWIRED, no row) — its 8 kept NextFloat draws superseded |
-| 2 | 28833 | 321 FlamingJack / 55 | `style55_flaming_jack_head_321` | STAGED | NO machine on any tip — the row+machine wave (d6 band follow-up) |
+| 2 | 28833 | 321 FlamingJack / 55 | `style55_flaming_jack_head_321` | STAGED | **d6 `ai_flaming_jack`** (RETIRE: row+machine NOW on d6 `7edfcd495` — projectile.rs:4731, the `:28832-28838` zero-explicit-draw skip; the emitter ADDS the pool internals, the style87 shape) |
 | 3-4 | 29245, 29284 | 1042 ShimmerGunStream / 60 | `style60_shimmer_gun_trail_1042` | STAGED | d6 `projectile_ai_guns` (rowed there, dust-skipped) |
 | 5-8 | 31017, 31053, 31149, 31207 | 451 InfluxWaver / 81 | `style81_influx_spark_451` (one body, 4 call gates) | STAGED | d9 `projectile_ai_style81` |
 | 9 | 31896 | 464 CultistBossIceMist / 86 | `style86_ice_mist_ring_464` | STAGED | d9 `projectile_ai_style86` |
@@ -224,7 +230,7 @@ Projectile.cs claim change). The claim deltas against the round-1 census:
 | 17 | 33147 | 526 CultistBossParticle / 98 | `style98_cultist_particle_pair_526` | STAGED | d10 |
 | 18-19 | 33993, 34005 | 578/579 Vortex markers / 108 | `vortex_dissolve_twin_578_579` | **WIRED** | live on this base (`ai_vortex_ritual_dust`; the g64 skip-cite resolved) |
 | — | 34020 | 813 / 108 | g64 `trail_813_opacity_tail` | g64-CLAIMED | — |
-| 20 | 34123 | 836 DandelionSeed / 112 | `style112_dandelion_burst_836` | STAGED | NO row on any tip (the g64 deferred ledger's latch-burst remainder) |
+| 20 | 34123 | 836 DandelionSeed / 112 | `style112_dandelion_burst_836` | STAGED | **d12 `ai_dandelion_seed`** (RETIRE: row+machine NOW on d12 `c98bd8937` — projectile.rs:10080, the `:34121-34126` latch-burst zero-explicit-draw skip; the emitter ADDS the pool internals) |
 | 21-25 | 34507, 34512, 34516, 34524, 34531 | 612/953/978 / 117 flag58 | `style117_whip_explosion_612` | STAGED | d12 `projectile_ai_explosions` (kept-draws census REPLACED) |
 | 26-28 | 34542, 34551, 34588 | 624 / 117 flag59 | `style117_guardian_explosion_624` | STAGED | d12 |
 | — | 35601, 35681 | 650 / 124 | g64 `trail_650_*` | g64-CLAIMED | — |
@@ -283,12 +289,12 @@ the fresh method-attribution scan (143 `void AI*` signatures).
 | ------- | ----- | ----- | ------------------------- | ------------------------ |
 | AI_003_Boomerang | 15 | 38896-39617 | main (`ai_boomerang`) | dust-lane follow-up at its skip slots |
 | AI_009_MagicMissiles | 5 | 43370-43416 | main (`ai_magic_missile`, projectile.rs:8298) | dust-lane follow-up |
-| AI_009_MagicMissiles_Old | 5 | 43574-43635 | UNPORTED (the 491 legacy) — d1 band remainder | row+machine wave first |
+| AI_009_MagicMissiles_Old | 5 | 43574-43635 | **LIVE legacy** (RETIRE census: called at `:43199` under `type == 491` in `AI_009_MagicMissiles`; the 491 FlyingKnife row unported on every tip) — d1 band remainder | row+machine wave first (the task seed below) |
 | AI_010 | 13 | 57832-57940 | main (the falling-tile arms) + d1 band | the sand/falling-tile dust: dust-lane follow-up; the unported sub-arms d1's |
 | AI_015_Flails_Dust | 7 | 44410-44470 | main (`ai_flail`) | dust-lane follow-up (the machine is NAMED for its dust) |
 | AI_016_Bombs | 20 | 47035-47456 | main (`ai_bomb`/`ai_rocket`) | dust-lane follow-up; the e3 Kill_Bombs tail already covers the death half |
 | AI_019_Spears | 14 | 45886-46048 | main (`ai_spear` + projectile_ai_spear) | dust-lane follow-up |
-| AI_019_Spears_Old | 8 | 46490-46530 | UNPORTED legacy — no tip claims | row+machine wave first |
+| AI_019_Spears_Old | 8 | 46490-46530 | **DEAD code** (RETIRE census: zero callers tree-wide — the `:46222` definition is the only occurrence in `decompiled/Terraria/*.cs`) | CITE-DROP — the 8 sites leave the uncited floor (the RETIRE section below) |
 | AI_026 | 24 | 59182-63904 | main (the ai026_a/b/c slices) | dust-lane follow-up per slice |
 | AI_029_GemStaffs (+ActuallyGemStaffs) | 9+2 | 37650-37813, 37851/37869 | main (`ai_gem_staff`) | dust-lane follow-up |
 | AI_040_LeafBlower | 2 | 38046/38054 | main (`ai_leaf_blower`, draws threaded) | dust-lane follow-up at the petal-fade slots |
@@ -352,9 +358,145 @@ the fresh method-attribution scan (143 `void AI*` signatures).
 | AI_209_ChlorophyteClaymoreBladeSlam | 4 | 69742-69803 | **d21** | d21 merge |
 | AI_210_YoyoShots | 1 | 36877 | main (`ai_yoyo_shot`) | dust-lane follow-up |
 
-Unassigned residue (no machine port on any tip, no band owner): the two
-`_Old` legacy machines (13 sites). The 358 WaterGun's `:29167/29191` stay
+Unassigned residue — RESOLVED by the RETIRE census (below): of the two
+`_Old` legacy machines (13 sites), `AI_019_Spears_Old`'s 8 are DEAD code
+(zero callers — cite-drop) and `AI_009_MagicMissiles_Old`'s 5 are LIVE
+(the 491 dispatch at `:43199`) — task-seeded to the d1 band's row+machine
+wave. The 358 WaterGun's `:29167/29191` stay
 g63's (batch 6, d6-rowed); the 406's `:29205/29229` stay g64's ledger.
 The AI_001 121-site region minus g63's 15 + e3's 2 edges = 104 main-stub
 sites whose per-kind arms are the slice modules' — the g63 batch-5/7
 pattern (a `step_dust` variant per slice) is their activation shape.
+
+## RETIRE (2026-11-21, the sealing pass — the AI-inline family declared DONE)
+
+**Declaration: the W4-e3 AI-inline family is DONE.** The two windows this
+branch claimed — the `:78227-78508` Kill_Bombs dust tail (15 sites) and the
+AI-INLINE-40 + AI_001-edges-2 window (37+2 sites) — are fully ported (the
+ledgers above), witnessed (WRITTEN NOT RUN, code-only) and contract-cited.
+No further site claims ride this branch; the residue is assigned below.
+This doc is SEALED: later tip movement is recorded as receipts, not
+re-openings.
+
+### (1) The 34-STAGED activation contracts — re-verified at the latest tips
+
+All seven cited machine lanes were re-fetched and their machines + dust-skip
+censuses re-read at their CURRENT tips (2026-11-21 retire fetch):
+
+| lane | retire tip | machine evidence (module/fn + the dust census) |
+| ---- | ---------- | ---------------------------------------------- |
+| d5 `e46d9eb7f` | `projectile_ai_style43.rs` | still `#![allow(dead_code)] // UNWIRED` (:51 — the 227 row + dispatch are d5's own wiring step); the `:27873` 8×NextFloat kept-draws census intact (:106-107) — the e3 emitter supersedes it at the d5 merge |
+| d6 `7edfcd495` | `projectile_ai_guns.rs` + `ai_flaming_jack` | the 1042 row (:2874) + the 6×[3 Next(2) + Next(6)] + Next(4)-gated Next(6) trail census intact; **NEW: the 321 row (:1057/:2858) + `ai_flaming_jack` (projectile.rs:4731, dispatch-55 arm :17942) — the `:28832-28838` skip rolls NOTHING** |
+| d9 `7a418c636` | `projectile_ai_style81/86/87/89/90.rs` | all five present; style81's consumed-draws census (:31-34), style86's 24-NextDouble census (:30-32), style87's ZERO-explicit-draw census (:29), style89's kept draws (:38-40), style90's Next(4)-head-kept census (:38-40) — all intact |
+| d10 `e1519df75` | `projectile_ai_91_100.rs` | present; the per-style censuses intact — 91 ZERO draws (:46), 94 the tick-40 Next(3) (:56), 96 the 2× Next(3) gates (:65), 98 the 2× NextFloat scales (:67) |
+| d12 `c98bd8937` | `projectile_ai_explosions.rs` + `ai_dandelion_seed` | the flag58/flag59 per-family RNG censuses intact (module header :24-36); **NEW: the 836 row (:1090/:3697) + `ai_dandelion_seed` (projectile.rs:10080, dispatch-112 arm :19568) — the `:34121-34126` latch burst is SKIPPED as all-NewDust-internals, ZERO explicit draws** |
+| d13 `462c86097` | `projectile_ai_geyser.rs` + `projectile_ai_sandnado_mark.rs` | both present; the by-construction RNG censuses intact (geyser :10 + the CensusRng witness :277; sandnado_mark :9 + :164) |
+| d14 `eaa05ae9e` | `ai_elder_wins` (projectile.rs:10720) | present (moved from :10694 at the round-2 read); the taken-branch 5-draw census intact (the doc-comment :10694-10718) |
+
+**The two flag flips** (the round-2 "NO row on any tip" flags):
+
+- **321 FlamingJack — NOW ROWED on d6.** The round-2 ledger's "row+machine
+  wave (d6 band follow-up)" has LANDED on the d6 branch itself. Contract
+  update: `style55_flaming_jack_head_321` activates at the **d6 merge**,
+  dropped into `ai_flaming_jack`'s `:28832-28838` skip (inside the C#'s
+  `ai[0]` window, after the target machine). The d6 machine keeps ZERO
+  explicit draws there, so the emitter ADDS the pool internals (the
+  style87 add-shape, NOT the replace-shape).
+- **836 DandelionSeed — NOW ROWED on d12.** Same flip: row + machine +
+  dispatch all on the d12 tip. Contract update:
+  `style112_dandelion_burst_836` activates at the **d12 merge**, dropped
+  into `ai_dandelion_seed`'s `:34118-34127` latch block (the caller owns
+  the `localAI[0]` latch; the emitter fires INSIDE it). ZERO explicit
+  draws — the add-shape again. The g64 deferred-ledger latch-burst
+  remainder is thereby owned by d12's machine + this emitter.
+- **981 SilverBullet — STILL unrowed** (the full 345-branch remote scan:
+  no `SILVER_BULLET`/`981 =>` row in any pushed tip's `projectile/data.rs`).
+  `ai001_silver_bullet_drip_981` stays STAGED for the bullet-row wave; its
+  fade-chain slot citation (`:56746` between `:56728` and `:56753`) stands.
+- 227 CrystalLeafShot — still unrowed even on d5 (its module's own
+  `UNWIRED` marker); the d5 row+dispatch step activates machine AND
+  emitter together. Unchanged.
+
+The remaining 31 staged emitters' contracts are UNCHANGED — every cited
+machine exists at its lane's latest tip with its census intact; the
+replace-vs-add split in "the staged-emitter activation contract" above
+gains two add-shape members (321, 836).
+
+### (2) The `_Old` legacy residue — the LIVE/DEAD caller census
+
+The round-1/2 "13 unassigned sites" were the two `_Old` machines. The
+caller census (the full `decompiled/Terraria/*.cs` scan, not just
+Projectile.cs — the private methods cannot be called cross-file anyway):
+
+- **`AI_009_MagicMissiles_Old` (`:43427`, 5 sites `:43574-43635`) — LIVE.**
+  One caller: `AI_009_MagicMissiles`'s head (`:43197-43200`): `if (type ==
+  491) { AI_009_MagicMissiles_Old(); return; }`. The 491 FlyingKnife
+  (`ProjectileID.cs:1536`) is UNROWED on every pushed tip (the 345-branch
+  scan: only the 16 MagicMissile row exists). **Disposition: task seed,
+  owner lane d1** (the aiStyle-6/9 band remainder): the 491 row +
+  `AI_009_MagicMissiles`'s type-491 head + the `_Old` body ride one wave;
+  its 5 dust sites activate by the e3 emitter pattern in that wave's
+  dust follow-up. NOTE the `_Old` body itself branches on `type == 16`
+  too (`:43434`) — dead for the only reachable kind 491, kept verbatim
+  when ported (the census-F2 convention).
+- **`AI_019_Spears_Old` (`:46222`, 8 sites `:46490-46530`) — DEAD.**
+  ZERO callers anywhere in the decompiled tree (the definition line is
+  the only occurrence; the live spear dispatch `:25310` calls
+  `AI_015_Flails`/`AI_019_Spears`, never the `_Old`). **Disposition:
+  CITE-DROP** — the 8 sites leave the coverage floor; no port owes them.
+  The named-machine uncited count 87 → **79** (the residue 13 → 5, all
+  LIVE, all task-seeded above). The sibling `AI_015_Flails_Old`
+  (`:44205`) is likewise dead (zero callers) but carries NO dust sites —
+  it never entered this census.
+
+### (3) The g63 doc-66 census-error receipt (mutual, published here)
+
+**e3 → g63**: the round-2 correction stands, re-verified against g63's
+current tip `2ea3e7110` (unchanged since the round-2 read):
+
+- The error: `docs/research/66-proj-trail-dust-claims.md:79` (g63's tip)
+  rows `| 60 | 358 (:29167/29191/29205/29229/29245/29284) | last prism |`.
+  The last four lines are NOT the 358's: the C#'s kind gates are
+  `type == 358` (`:29158-29196` — `:29167/29191` only), `type == 406`
+  (`:29197-29233` — `:29205/29229`), then **`if (type != 1042) return`
+  (`:29234-29237`)** before `:29245/29284` — those two are the **1042
+  ShimmerGunStream's** (dust 324, not the 358's dust 211).
+- No port collision: g63's actual emitter
+  (`projectile_trail_dust.rs:2134-2135` at its tip) cites
+  `:29167/29191` (`:29158-29196`) ONLY — the code was always right; only
+  the doc row over-claims. The 406's `:29205/29229` are g64's ledger
+  (kinds ≥401).
+- The correction's port: e3 `style60_shimmer_gun_trail_1042`
+  (`projectile_dust.rs:1641`, STAGED for the d6 merge) owns
+  `:29245/29284`; the d6 machine's per-tick 1042 census (the 6×[3
+  Next(2)+Next(6)] + Next(4)-gated Next(6)) is its wiring contract.
+- **g63-lane read request**: fix the `:79` row to
+  `| 60 | 358 (:29167/29191) | ... |` (the 406 pair to the g64 ledger,
+  the 1042 pair to e3's emitter) at g63's next touch. e3 does not edit
+  g63's branch. This receipt + research/125's round-2 section are the
+  mutual record; the g63 acknowledgement (if any) lands on g63's branch.
+
+### (4) The g64 `clone_dust` genericization — keep-one CONFIRMED
+
+The e3 pool change (batch B, `977b112d`) and g64's `853039bfcc` are the
+SAME change: `DustPool::clone_dust` generic over `R: DustRng` (e3 HEAD
+`particles.rs:692`, g64 tip `:699`). Verified by `git diff HEAD
+origin/task/W4-g64-proj-trail-dust-2 -- crates/tr-core/src/particles.rs`:
+**the function bodies are identical — the only delta is g64's three
+doc-comment additions** (the W4-g64 attribution lines on
+`new_dust_perfect`/`new_dust_direct`/`clone_dust`). **Keep-one at merge:
+take EITHER body verbatim; prefer g64's doc-comments** (they document the
+seam for both lanes' callers). The sentinel guard, the field-copy list
+and the dropped `shader`/`customData` are identical on both sides. No
+reconciliation edit owed by either lane.
+
+### (5) The sealing state
+
+- 1195-site census: windows 1 (g65 remainder), 4 (the per-machine table,
+  now 79+36 uncited after the cite-drop) stay assigned; windows 2/3/5 are
+  e3-DONE; the Kill-tail 15 are e3-DONE.
+- The e3 branch `task/W4-e3-dust-sites-proj-2` retires here: no further
+  commits beyond the receipts. The merge order is the activation order —
+  each d-lane merge activates its cited emitters per the contracts above.
+- Code-only throughout: no cargo/rustc/tests/rustfmt/graphify invoked;
+  all evidence is git-tip reads + C# line reads.

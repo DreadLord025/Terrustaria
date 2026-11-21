@@ -39502,8 +39502,9 @@ draw-mirror witnesses WRITTEN NOT RUN.
   d12 explosions (the kept-draws census REPLACED), d13 geyser + sandnado
   mark (their per-tick RNG censuses are the stream-parity contract), d14
   elder-wins. The 321 FlamingJack, 836 DandelionSeed and 981 SilverBullet
-  have NO row on any pushed tip — the row waves activate them. The
-  UNGUARDED XNA `Vector2.Normalize` is kept where the C# uses it (the 490
+  had NO row at the round-2 read — the RETIRE re-probe (below) found the
+  321/836 rows+machines LANDED on the d6/d12 tips; the 981 stays unrowed.
+  The UNGUARDED XNA `Vector2.Normalize` is kept where the C# uses it (the 490
   ring, the 624 ring, the 126 pull — a zero pick propagates NaN verbatim,
   the `npc_ai_empress` divergence note inverted: here the C# behaviour IS
   the port). `Color.White * 0.1` = (25,25,25,25) — the XNA byte multiply
@@ -39512,3 +39513,38 @@ draw-mirror witnesses WRITTEN NOT RUN.
   per-machine table (d12/d14/d15/d16/d17/d18/d19/d20/d21 own their bands'
   machines; the main-ported machines' dust is a dust-lane follow-up; the
   two `_Old` legacy machines are the only unassigned residue).
+
+### The RETIRE pass (same day — research/125 SEALED, the AI-inline family declared DONE)
+
+The retire re-probe re-fetched the seven cited machine lanes and re-read
+every dust-skip census at the CURRENT tips: d5 `e46d9eb7f` (style43 still
+UNWIRED, its 8-NextFloat census intact), d6 `7edfcd495` (guns + the 1042
+trail census intact), d9 `7a418c636` (all five style modules + censuses),
+d10 `e1519df75` (the 91/94/96/98 censuses), d12 `c98bd8937` (explosions
+flag58/59 censuses), d13 `462c86097` (geyser + sandnado_mark by-construction
+censuses), d14 `eaa05ae9e` (`ai_elder_wins` now at projectile.rs:10720, the
+5-draw taken-branch census intact). All 34 STAGED contracts stand.
+
+* **Two flag flips**: the 321 FlamingJack is NOW rowed+machined on d6
+  (`ai_flaming_jack`, projectile.rs:4731 — its `:28832-28838` skip rolls
+  NOTHING) and the 836 DandelionSeed on d12 (`ai_dandelion_seed`,
+  projectile.rs:10080 — the `:34121-34126` latch burst skipped as
+  all-internals). Both emitters switch to the ADD-shape (the style87
+  precedent: ZERO explicit draws kept, the emitter adds the pool
+  internals) and activate at the d6/d12 merges respectively. The 981
+  SilverBullet is STILL unrowed (the 345-branch remote scan).
+* **The `_Old` residue resolved**: `AI_019_Spears_Old` (`:46222`, 8 sites)
+  is DEAD — zero callers tree-wide — CITE-DROPPED (the named-machine
+  uncited floor 87 → 79). `AI_009_MagicMissiles_Old` (`:43427`, 5 sites)
+  is LIVE — the `type == 491` head at `:43199` calls it; the 491
+  FlyingKnife is unrowed everywhere — task-seeded to the d1 band's
+  row+machine wave.
+* **The g63 receipt published** (research/125 RETIRE §3): the doc-66 `:79`
+  row's `:29245/29284` mis-attribution re-verified at g63's unchanged tip
+  `2ea3e7110` (the C# `:29234` `type != 1042` return; g63's emitter cites
+  `:29158-29196` only — no code collision); the g63-lane doc fix is
+  requested, e3 does not edit g63's branch.
+* **The g64 keep-one CONFIRMED**: `git diff` of `particles.rs` between
+  this HEAD and g64's tip shows the `clone_dust` bodies IDENTICAL — the
+  only delta is g64's three doc-comment lines. Take either body at merge;
+  prefer g64's doc-comments. No reconciliation edit owed.
