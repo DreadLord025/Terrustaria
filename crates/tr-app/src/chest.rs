@@ -1326,14 +1326,19 @@ pub(crate) fn chest_change_events(app: &mut App) {
         .player
         .as_ref()
         .map_or((-1, -1), |p| (p.chest, p.last_chest));
-    // `:28764-28767`: the close edge — the just-closed chest's coords.
-    if chest == -1 && last_chest >= 0 {
-        if let Some(c) = app.world_chests.get(last_chest as usize) {
-            if !is_removed(c) {
-                let (x, y) = c.tile;
-                big_mimic_summon_check(app, x, y);
-            }
-        }
+    // `:28764-28767`: the close edge — the just-closed chest's coords. The
+    // coords copy out before the summon (the `world_chests` borrow must end
+    // before `big_mimic_summon_check`'s whole-app `&mut`).
+    let close_coords = if chest == -1 && last_chest >= 0 {
+        app.world_chests
+            .get(last_chest as usize)
+            .filter(|c| !is_removed(c))
+            .map(|c| c.tile)
+    } else {
+        None
+    };
+    if let Some((x, y)) = close_coords {
+        big_mimic_summon_check(app, x, y);
     }
     // `:28768-28772`: the open edge — `GasTrapCheck` (the gas-trap item 5346,
     // `Projectile.cs:41242-41290`) is unported (no gas-trap projectile family);
@@ -1408,15 +1413,20 @@ pub(crate) fn big_mimic_summon_check(app: &mut App, x: i32, y: i32) -> bool {
     // the 2×2. The `SendData(34)` + `SendTileSquare` relays are server arms.
     let mut bx = x;
     let mut by = y;
-    if let Some(t) = app.world.tile(bx, by) {
-        if is_basic_chest(t.kind) {
-            if t.frame_x % 36 != 0 {
-                bx -= 1;
-            }
-            // `:77564`: the frameY probe reads the (possibly x-shifted) cell.
-            if app.world.tile(bx, by).is_some_and(|t| t.frame_y % 36 != 0) {
-                by -= 1;
-            }
+    // The frame values copy out before the second probe (the `t` borrow of
+    // app.world must end before the re-read at the shifted cell).
+    let anchor_frame = app
+        .world
+        .tile(bx, by)
+        .filter(|t| is_basic_chest(t.kind))
+        .map(|t| (t.frame_x, t.frame_y));
+    if let Some((fx, _fy)) = anchor_frame {
+        if fx % 36 != 0 {
+            bx -= 1;
+        }
+        // `:77564`: the frameY probe reads the (possibly x-shifted) cell.
+        if app.world.tile(bx, by).is_some_and(|t| t.frame_y % 36 != 0) {
+            by -= 1;
         }
     }
     // `:77569-77574`: clear the ORIGINAL chest's slots (`Main.chest[num]`).

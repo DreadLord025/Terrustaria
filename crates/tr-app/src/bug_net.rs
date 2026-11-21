@@ -756,6 +756,10 @@ pub(crate) fn catch_npc(app: &mut App, i: usize, who: u8) -> bool {
     };
     let ty = n.kind.cs_id() as i32;
     let ci = catch_item(ty, n.ai[2]);
+    // W4-g61 wiring: copy the poof anchor out before the match — the `n`
+    // borrow (app.npcs) must end before the poof arm's whole-app
+    // `spawn_ctx()` / field borrows (the NLL last-use is the center read).
+    let (cx, cy) = n.center();
     let net_mode = app_net_mode(app);
     let outcome = catch_outcome(net_mode, n.hp > 0, ci, ty, n.spawned_from_statue);
     match outcome {
@@ -777,7 +781,6 @@ pub(crate) fn catch_npc(app: &mut App, i: usize, who: u8) -> bool {
             // Convert arm's item spawn rides the same stream). The
             // `23` despawn rides the net cadence's gone-diff, the
             // `106` smoke broadcast has no port message.
-            let (cx, cy) = n.center();
             let poof_at = Vec2::new(cx - 20.0, cy - 20.0);
             let ctx = app.spawn_ctx();
             let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
