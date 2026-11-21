@@ -265,6 +265,16 @@ AI_001 unrowed kinds. This lane's kinds are all ≥401 — **none of the
 281/174/176 rows is a g64 kind**, so no g64 emitter is owed for them.
 The cross-activation notes (the merge wave's inputs):
 
+**Re-probe receipt (the g63d-active read, this FINAL round):** a fresh
+`git fetch origin task/W4-g63-proj-trail-dust-1` confirms the tip is still
+`2ea3e7110` (no activation-phase row commit landed). The `281 =>` /
+`174 =>` / `176 =>` / `CANNON_BUNNY =>` `proj_data` arms are ZERO on both
+the g63 tip and this branch's HEAD (the grep exit-1 census) — the rows
+stay UNCLAIMED, the emitters stay UNWIRED. The "g63d-active" phase is the
+research/67 activation CHECKLIST (which merge unlocks which emitter), not
+a row-landing commit; nothing changed for the 281/174/176 activation
+state since the batch-7 re-probe.
+
 - **281 (CannonBunny, aiStyle 49)** — the row stays UNCLAIMED on every
   pushed tip (the g63 `eea7156f` census correction: the machine IS
   claimed + ported — d5 `5f7390a3`'s `projectile_ai_style49.rs`,
@@ -401,3 +411,96 @@ HandleMovement / enchant sites stay the movement/enchant lanes'.
 
 The lane is RETIRED: no further g64 trail-dust work is owed. The merge
 wave owns the keep-one executions + the witness compile/run.
+
+## The FINAL union-table (2026-11-21, the research/66 + research/125 input)
+
+The per-kind TRAIL-dust coverage union across the three disjoint axes
+(the family declaration above) — the research/66 (this ledger, g64 ≥401)
++ research/125 (e3's coverage census) + g63's ≤400 ledger merged into one
+per-kind table for the merge wave. "Wired" = the emitter is called at its
+C# site on the `UpdateProjectiles` stream at THIS tip (the S1-F-9b row
+gate); "unwired" = the emitter is written + witnessed but no `proj_data`
+row activates it. The keep-one column names the surviving machine/arm at
+the merge (the ANALYSIS keep-one table + the bible §8.3 step 9).
+
+### g64 ≥401 axis (this lane) — 24 wired kinds, 21 unrowed
+
+| kind | style | emitter | wired? | keep-one at merge |
+| --- | --- | --- | --- | --- |
+| 406 | 60 | `trail_406` | UNWIRED (no row) | — (unrowed, cited) |
+| 419/420/421/422 | 73 | `trail_419`/`_420`/`_421`/`_422` | UNWIRED | — |
+| 447 | 79 | `trail_447` | WIRED (`ai_saucer_deathray`) | g64 (sole) |
+| 450 | 14 | `trail_450` | WIRED (`ai_spear`) | g64 (sole) |
+| 455 | 84 | `trail_455` | WIRED (`ai_moonlord_turret_laser` 455 arm) | g64 (sole) |
+| 461 | 84 | `trail_461` | WIRED (`ai_charged_blaster_beam`) | g64 (sole) |
+| 465/466 | 88 | `trail_465`/`_466` | UNWIRED | — |
+| 497 | 2 | `trail_497` | UNWIRED | e3 `ai_style2` 497 arm survives; `trail_497` retires (stream-exact) |
+| 503 | 5 | `trail_503` | **WIRED (FINAL 2)** — `ai_falling_star` 503 half | e3 `ai_falling_star_family` survives; g64 503 half retires (row byte-identical) |
+| 504/954/979 | 2 | `trail_504` | WIRED kind-gated to 954 (504/979 unrowed) | e3 `ai_style2` split survives; g64 954 call retires |
+| 509 | 20 | `trail_509` | WIRED (`ai_drill` tail, jitter-replacement) | g64 (sole) |
+| 533 | 66 | `trail_533_dash_ring`/`_spin_ring` | WIRED (`ai_twins_minion`) | g64 (sole) |
+| 537/538/539/573 | 84/14/102 | `trail_537`/`_538`/`_539_*`/`_573_*` | UNWIRED | — |
+| 574 | 102 | `trail_574_host` | WIRED (`ai_nebula_eye` host) | g64 (sole) |
+| 578/579 | 108 | `trail_578`/`_579` | WIRED (`ai_vortex_ritual` wind-up) | g64 wind-up survives; d11/d13 machines take it |
+| 596 | 107 | `trail_596` | WIRED (`ai_djinn_curse`, bool seam) | d11 `ai_nebula_sphere` 575 half + g64 seam; ONE machine |
+| 618 | 119 | `trail_618` | WIRED (`ai_nebula_arm`) | g64 (sole) |
+| 642 | 84 | `trail_642` | WIRED (`ai_moonlord_turret_laser`, draws-kept-replacement) | g64 (sole) |
+| 644 | 112 | `trail_644` | WIRED (`ai_rainbow_crystal_shard`, prism-hue orbit) | g64 (sole) |
+| 650 | 124 | `trail_650_scan_sparkle`/`_point_sparkle` | WIRED (`ai_pets_style124`) | g64 dust-wired pets124 survives (d13 machine + dust) |
+| 656/669 | 127/68 | `trail_656`/`_669` | UNWIRED | — |
+| 659 | 129 | `trail_659` | WIRED (`ai_spirit_flame`) | g64 (sole) |
+| 723 | 5 | `trail_723` | UNWIRED | f48 `ai_cloak_star` survives + takes the cloak dust half |
+| 732 | 44 | `trail_732` | WIRED (`projectile_ai_spear`) | g64 (sole) |
+| 813 | 108 | `trail_813_windup`/`_charge`/`_full`/`_dissolve`/`_opacity_tail` | WIRED (`ai_vortex_ritual`) | g64 dust-wired survives; d11/d13 gates-only retire |
+| 895/898 | 124 | `trail_895`/`_898` | WIRED (`ai_pets_style124`) | g64 dust-wired pets124 survives |
+| 907 | 30 | `trail_907` | UNWIRED | — |
+| 957 | 124 | (no dust body — the column scan + Next(150) rest roll) | WIRED (`ai_pets_style124`) | g64 dust-wired pets124 survives (d13 row superset) |
+| 967/1026 | 28 | `trail_967`/`_1026` | WIRED (`ai_frost_bolt`) | g64 (sole) |
+| 1048/1053 | 25 | `trail_1048`/`_1053` | UNWIRED | — |
+| 1092 | 18 | `trail_1092` | UNWIRED | — |
+| 1114 | 24 | `trail_1114` | UNWIRED | — |
+| 1133 | 5 | `trail_1133` | UNWIRED | f48 `ai_cloak_star` survives + takes the 1133 dust half |
+
+**Wired: 24 kinds** (447/450/455/461/503/509/533/574/578/579/596/618/642/
+644/650/659/732/813/895/898/954/957/967/1026 — the 650 light pet's scan +
+point sparkles ride the same wired `ai_pets_style124` machine). **Unrowed:
+21 kinds with their own unwired emitter** (406/419/420/421/422/465/466/
+497/537/538/539/573/656/669/723/907/1048/1053/1092/1114/1133) **+ the 2
+spark riders 504/979** (they share the 954-gated `trail_504` arm — no
+emitter of their own; the FINAL 2 census's "21 unrowed" counts the
+own-emitter kinds). The 957 draws NO dust body (its stream draw is the
+cycle-end Next(150) rest roll); it is wired for the behaviour-coupled
+column scan.
+
+### g63 ≤400 axis (the g63 ledger, `projectile_trail_dust.rs`)
+
+The g63 tip (`2ea3e7110`) wires its rowed ≤400 kinds (batches 1-5) + the
+17 unrowed emitters (batch 6) + the 6 owed AI_001 emitters (batch 7:
+55/174/176/299/374/376). The 281/174/176 rows stay UNCLAIMED on every
+pushed tip (the FINAL cross-activation census above) — their emitters
+stay UNWIRED pending the row + machine merges. The g63 axis is DISJOINT
+from g64 (the kind gates ≤400 / ≥401 never overlap); no keep-one between
+the two per-kind axes. The 357 pulse-bolt seam waits on f20 slice D (the
+g63 research/67 contract, nothing owed by g64).
+
+### e3 aiStyle-generic axis (`projectile_dust.rs`, research/125)
+
+The e3 tip (`ac6392cf2`) owns the `:22297-24318` aiStyle-generic window
+(styles 2/4/5/6/8/152) + the `:78227-78508` Kill_Bombs dust tail (15
+sites). This is a DIFFERENT axis (aiStyle-generic, not per-kind) — no body
+overlap with the g63/g64 per-kind arms. The keep-one twins (497/504/503/
+723/1133) are the per-kind arms that retire into the e3/f48 machines (the
+table above); the e3 generic window itself is KEPT whole. The 503/1037/
+1049 rows landed on e3 `80d47a568` (the FINAL 2 constants-copy source).
+
+### The union verdict
+
+The Projectile.cs in-flight trail-dust family is COMPLETE: every per-kind
+≥401 trail site is either WIRED (24 kinds) or cited-unrowed (21 own-emitter
+kinds + the 2 spark riders), every ≤400 site is g63's (wired or
+cited-unrowed), and the aiStyle-generic window is e3's. The three axes are
+DISJOINT and all KEEP at merge; the only retirements are the per-kind twins
+that feed the surviving e3/f48/d11 machines (the keep-one column). The
+Kill-family death sites stay g65's; the one-shot spawn-latch bursts stay
+d53/e3/f5's; the wet-entry / HandleMovement / enchant sites stay the
+movement/enchant lanes'. NO trail-dust site is unclaimed across the union.

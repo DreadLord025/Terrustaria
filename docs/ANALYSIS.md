@@ -39696,3 +39696,47 @@ g64 ≥401, e3 aiStyle-generic) are declared disjoint-KEEP per the bible.
 **Code-only round.** Nothing compiled or run; the retire verdicts are
 `git show`/span-comparison receipts at the exact tips named above.
 
+## The FINAL union-table (2026-11-21, code-only) — the research/66 + research/125 per-kind coverage union
+
+The closing per-kind coverage table for the merge wave, published in
+`docs/research/196-proj-trail-dust-claims-g64.md` "The FINAL union-table".
+It merges the three disjoint trail-dust axes into one per-kind view:
+
+- **g64 ≥401 (this lane):** 24 kinds WIRED at their C# sites on the
+  `UpdateProjectiles` stream (447/450/455/461/503/509/533/574/578/579/596/
+  618/642/644/650/659/732/813/895/898/954/957/967/1026 — the 650 light
+  pet's scan + point sparkles ride the wired `ai_pets_style124` machine);
+  21 kinds cited-UNWIRED with their own emitter (406/419/420/421/422/465/
+  466/497/537/538/539/573/656/669/723/907/1048/1053/1092/1114/1133) + the
+  2 spark riders 504/979 (they share the 954-gated `trail_504` arm). The
+  957 draws NO dust body — its stream draw is the cycle-end Next(150)
+  rest roll (the behaviour-coupled column scan is wired). The wired /
+  unwired split is the S1-F-9b row gate (a `proj_data` row activates the
+  emitter); the grep census at this tip confirms zero machine call sites
+  for the 21 unwired emitters.
+- **g63 ≤400:** the g63 tip `2ea3e7110` wires its rowed kinds + cites the
+  unrowed emitters (batches 1-7). The 281/174/176 rows stay UNCLAIMED on
+  every pushed tip (the FINAL cross-activation census re-probe: zero
+  `281 =>`/`174 =>`/`176 =>` `proj_data` arms on the g63 tip AND this
+  branch) — their emitters stay UNWIRED pending the row + machine merges.
+  DISJOINT from g64 (the ≤400 / ≥401 kind gates never overlap).
+- **e3 aiStyle-generic:** the e3 tip `ac6392cf2` owns the `:22297-24318`
+  window (styles 2/4/5/6/8/152) + the `:78227-78508` Kill_Bombs tail — a
+  different axis, no body overlap. The 503/1037/1049 rows landed on e3
+  `80d47a568` (the FINAL 2 constants-copy source).
+
+**The keep-one retirements** (the per-kind twins that feed the surviving
+machines): 497/504/503 → e3's `ai_style2`/`ai_falling_star_family`;
+723/1133 → f48's `ai_cloak_star`; 596 → d11's `ai_nebula_sphere` 575 half
++ the g64 bool seam; 813/895/898/957/650 → the g64 dust-wired
+`ai_vortex_ritual`/`ai_pets_style124` (the d11/d13 gates-only arms retire).
+All pinned by the `w4_g64_keep_one_*` parity witnesses + the FINAL 1/2
+re-pins. The three axes are DISJOINT and all KEEP at merge; NO trail-dust
+site is unclaimed across the union. The Kill-family death sites stay
+g65's; the one-shot spawn-latch bursts stay d53/e3/f5's; the wet-entry /
+HandleMovement / enchant sites stay the movement/enchant lanes'.
+
+**Code-only round.** The union-table is a `git grep` census receipt (the
+wired call sites + the zero-row checks at the exact tips named); nothing
+compiled or run.
+
