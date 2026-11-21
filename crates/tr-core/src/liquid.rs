@@ -1,5 +1,26 @@
 //! Cellular liquid simulation, ported from `Liquid.UpdateLiquid` / `Liquid.Update`.
 //!
+//! DEPRECATED-BY-UNION (W4-g45 LIQUID RETIRE, 2026-11-21): the sim machinery
+//! and the duplicated witness halves of this file are SUPERSEDED by the g46
+//! RE-FOLD union — `origin/task/W4-g46-liquid-evaporation` tip `9bc722e5`
+//! (research/69 A8 receipt; research/104 §5-final owner table). The merger
+//! takes the UNION's `liquid.rs` wholesale; this branch's copy is a
+//! fold-SOURCE, not a landing target. STAY-LIVE fold-source pieces (the
+//! union does NOT carry them — graft obligations, see A8-graft):
+//!   * the down-arm LIVE post-burn re-read in `liquid_check` (`c8908a55d`,
+//!     the `let down = …` re-read after `kill_tile` — the union's :1414/:1426
+//!     still reads the pre-kill copy; exact hunk published in A8-graft);
+//!   * the `liquid_downarm_live` ×4 witness module (bottom of this file);
+//!   * `the_fall_arm_moves_the_post_evaporation_level` (the union HAS the
+//!     `own_now` behaviour at :1112 but no pin);
+//!   * `shimmer_falls_every_visit_like_water` (keep-one with the g47 twin
+//!     `shimmer_falls_every_visit_ungated` — the re-fold dropped BOTH);
+//!   * `world_sim/editing/buckets.rs` + its witnesses (g45-unique).
+//! Everything else below (machinery, fixtures, `liquid_delwater` /
+//! `liquid_nudge_wakes` / `liquid_addwater_guards` / cadence dup pins) is
+//! carried — usually upgraded — on the union; per-site banners name the
+//! canonical form. Do not extend the deprecated halves.
+//!
 //! Terraria keeps a bounded list of *active* liquid tiles instead of scanning the
 //! whole world. Every second game tick it walks one `curMaxLiquid / cycles` stride
 //! of that list (a list shorter than one stride is re-walked in full); each entry
@@ -233,6 +254,11 @@ impl LiquidSystem {
     /// in the cell. `&mut World` because the death kill (`WorldGen.KillTile`,
     /// `:1201`) runs INLINE — the C# kills before `AddWater` returns, so the
     /// cascade's tile edits are visible to the rest of the caller's visit.
+    /// DEPRECATED-BY-UNION (dup half): the canonical form is the re-fold's
+    /// `9bc722e5:liquid.rs:565` — same guards, plus the `edit_kills` LOOT
+    /// UPGRADE (the inline death's `TileKill` queues on `edit_kills` instead
+    /// of the discard below; research/70 step 5). This g45 body is the
+    /// fold-source the union already absorbed; keep the union's form.
     pub fn add_water(&mut self, world: &mut World, x: i32, y: i32) {
         if x < 0 || y < 0 || x >= self.width || y >= self.height || self.is_checking(x, y) {
             return;
@@ -446,6 +472,12 @@ impl LiquidSystem {
     /// C#'s `numLiquid--` + `checkingLiquid(false)` + the swap live in the
     /// caller's sweep; the `checkingLiquid` clear and the alch/lily-pad tail
     /// run here on the retired cell's coordinates.
+    /// DEPRECATED-BY-UNION (dup half): the canonical form is g47's wholesale
+    /// `del_water` (the splice INSIDE before the tail, the `edit_kills` loot
+    /// seam via `check_alch`/`check_lily_pad(raw_solid)` — re-fold
+    /// `9bc722e5:liquid.rs:859`). The sharper g45 assertions (delay
+    /// inheritance, kill-0 survivor, mud-60 ring) already unioned per
+    /// research/70's witness table; keep the union's form.
     fn del_water(&mut self, world: &mut World, l: usize) -> bool {
         let (x, y) = (self.active[l].x, self.active[l].y);
         let here_i = world.index(x, y);
@@ -627,6 +659,12 @@ impl LiquidSystem {
         // exists; a sub-200 fixture world would put the C# layer below
         // row 0 and evaporate every cell — the ported water witnesses
         // pin the flow there (ANALYSIS "The liquid reactions", W4-c34).
+        // DEPRECATED-BY-UNION (dup half): the canonical evap form is g46's
+        // re-fold graft (`9bc722e5:liquid.rs:1043-1051`): the `underworld_layer`
+        // FIELD seeded in `new` (+ the `new_flow_fixture` `i32::MAX` sentinel),
+        // NO `>= 0` guard (the C# has none), and the immediate `KILL_DEAD`
+        // return when the shed empties the cell (`:475-478`'s `kill = 999`),
+        // not the post-block zero-check below. Keep the union's form.
         let underworld_layer = self.height - 200;
         if underworld_layer >= 0
             && y > underworld_layer
@@ -706,6 +744,11 @@ impl LiquidSystem {
         // resurrected the shed units on every fall inside the band (the
         // g46 UNION's `own_now` fix, f57d7bacd:832 — keep that form at the
         // graft). `start` stays the kill-bookkeeping capture (`:464`).
+        // UNION-ABSORBED (W4-g45 LIQUID RETIRE): the re-fold carries this
+        // exact fix (`9bc722e5:liquid.rs:1112`); dedupe keep-one, the
+        // union's copy wins. The g45 PIN
+        // (`the_fall_arm_moves_the_post_evaporation_level`) is NOT on the
+        // union — it stays a fold-source carry (research/69 A8-graft).
         let own_now = world.tiles[i].liquid;
         if let Some(below) = world.tile(x, y + 1).copied() {
             if !self.tile_is_solid(&below)
@@ -792,6 +835,9 @@ impl LiquidSystem {
                     // from the average. The neighbours all hold `avg` now, so
                     // the clause reduces to the centre-diff test; the centre
                     // still holds `own` here (the C# reads the pre-write tile5).
+                    // UNION-ABSORBED (LIQUID RETIRE): the re-fold carries this
+                    // arm verbatim (`9bc722e5:liquid.rs:1200-1212`); dedupe
+                    // keep-one, the union's copy wins. Same for the 5-arm below.
                     if own as i32 != avg {
                         for nx in [x - 1, x + 1, x - 2, x + 2, x - 3, x + 3] {
                             self.add_water(world, nx, y);
@@ -837,6 +883,13 @@ impl LiquidSystem {
                     // SquareTileFrame centre re-roll consumes — ANALYSIS
                     // "The liquid delay machinery", W4-g45); it advances the
                     // shared stream exactly when the C# does (only on a 254).
+                    // DEPRECATED-BY-UNION (dup half): the canonical stream is
+                    // g46's per-consumer `LiquidSystem::surface_rng` (world-
+                    // seeded UnifiedRandom, `9bc722e5:liquid.rs:248/:470/:1259`)
+                    // — research/70's stream pick, NOT this `frame_rng`
+                    // stand-in. The three nudge witnesses are RE-PINNED onto
+                    // `surface_rng` on the union (`liquid_nudge_wakes`,
+                    // :4781 there); keep the union's form.
                     if avg == 254 && world.frame_rng.next_max(30) == 0 {
                         avg = 255;
                     }
@@ -1006,6 +1059,10 @@ impl LiquidSystem {
             // clears everything but wall/liquid), so the amount/type reads
             // below see the same liquid the C# does. `flag` stays the PRE-kill
             // read — the C# computes it at `:1274`, before `:1278`'s burn.
+            // STAY-LIVE (NOT deprecated — g45-UNIQUE sim delta): the g46
+            // re-fold union STILL reads the pre-kill copy (`9bc722e5:1414`,
+            // gate :1426). This re-read is the g46e-seal graft obligation;
+            // the exact hunk is published in research/69 A8-graft.
             let down = world.tile(x, y + 1).copied().unwrap_or_default();
             if !((!down.active() || td::TILE_OBSIDIAN_KILL.has(down.kind)) || flag) {
                 return;
@@ -2155,6 +2212,19 @@ mod liquid_sim {
 /// the underworld water evaporation, the down-arm sub-24 drain and the
 /// shimmer-side merge arms the R-11-5 suite left open. Written, NOT run
 /// (code-only mode).
+/// DEPRECATED-BY-UNION (dup halves ONLY — this module is a MIXED carrier):
+/// the union (`9bc722e5:liquid.rs:4395` cadence + `:4247`
+/// `liquid_evaporation`) carries the delay pins re-pinned onto the
+/// `new_flow_fixture` sentinel, DROPS
+/// `water_evaporates_two_per_visit_below_the_underworld_layer` (the g45
+/// `>= 0` guard form) for g46's four evap pins, and RE-PINS the layer-row
+/// boundary onto the unguarded g46 gate. STAY-LIVE fold-source pieces the
+/// union does NOT carry (graft per research/69 A8-graft):
+/// `the_fall_arm_moves_the_post_evaporation_level` (the union has the
+/// `own_now` behaviour, no pin) and `shimmer_falls_every_visit_like_water`
+/// (keep-one with the g47 twin `shimmer_falls_every_visit_ungated` — the
+/// re-fold dropped BOTH). The widened `floor_world`/`shaft`/`put_as`
+/// helpers here match the union's forms (fold-neutral).
 #[cfg(test)]
 mod liquid_merge_cadence {
     use super::*;
@@ -2338,6 +2408,9 @@ mod liquid_merge_cadence {
     /// down arm moves the 98 — the pre-fix port moved the pre-evap 100,
     /// resurrecting the two shed units on every fall. (The g46 UNION's
     /// `own_now` form, f57d7bacd:832 — the graft keeps it.) Written, NOT run.
+    /// STAY-LIVE (g45-UNIQUE fold-source): the re-fold union has the
+    /// behaviour but NO pin — graft into the union's `liquid_merge_cadence`
+    /// (research/69 A8-graft item 2).
     #[test]
     fn the_fall_arm_moves_the_post_evaporation_level() {
         // shaft(5, 400, 350, 2): floor at 356, layer at 212; the cell at
@@ -2420,6 +2493,12 @@ mod liquid_merge_cadence {
     /// water, but the fall's `skipLiquid` mark (`:586-587`) costs one visit
     /// per step (`:1096-1104`): the same one-tile-per-two-passes cadence
     /// `water_falls_per_csharp` pins. Written, NOT run (code-only mode).
+    /// STAY-LIVE (g45-UNIQUE fold-source): keep-one with the g47 twin
+    /// `shimmer_falls_every_visit_ungated` (`4c81731bc:liquid.rs:3002`) —
+    /// the re-fold union dropped BOTH; the merged pin (g47 shelf fixture +
+    /// these cadence-trace assertions + the `entry.delay == 0` assert, the
+    /// `add_water` call re-pinned `&mut w`) is the g46e graft obligation
+    /// (research/69 A8-graft item 3).
     #[test]
     fn shimmer_falls_every_visit_like_water() {
         let mut w = shaft(5, 120, 30, 2);
@@ -2449,6 +2528,15 @@ mod liquid_merge_cadence {
 /// window. The sweep is driven through `end_pass` directly so the pinned
 /// counters are not disturbed by the per-visit `update_tile` first.
 /// Written, NOT run (code-only mode).
+/// DEPRECATED-BY-UNION (dup half): the union carries this module at
+/// `9bc722e5:liquid.rs:4610` (`liquid_delwater`) with the sharper g45
+/// assertions merged per research/70's witness table (delay-inheritance,
+/// kill-0 survivor, mud-60 ring, the grass-ring RECORD assertion on
+/// `edit_kills`); the overlapping pairs keep the g47 names
+/// (`the_retirement_sweep_promotes_254_before_delwater` /
+/// `delwater_keeps_a_full_cell_over_an_open_below_alive` /
+/// `delwater_retires_a_submerged_herb_through_check_alch`). Keep the
+/// union's module.
 #[cfg(test)]
 mod liquid_delwater {
     use super::*;
@@ -2654,6 +2742,13 @@ mod liquid_delwater {
 /// (`:748-771`/`:821-836`). The nudge rides the port's `genRand` stand-in
 /// (`World.frame_rng`); the RNG census pins the exact draw. Written, NOT
 /// run (code-only mode).
+/// DEPRECATED-BY-UNION (dup half): the union carries this module at
+/// `9bc722e5:liquid.rs:4781` — the nudge ×3 RE-PINNED onto `surface_rng`
+/// (the world-seeded stream, research/70's witness table) and the
+/// extra-wake arm RE-DERIVED onto the g47 3-cell fixture shape (the C#'s
+/// 3-cell arm has no extra wakes; the union's fixture drives the 7-arm).
+/// Keep the union's module; the `frame_rng` seeds below are the dropped
+/// stream pick.
 #[cfg(test)]
 mod liquid_nudge_wakes {
     use super::*;
@@ -2763,6 +2858,12 @@ mod liquid_nudge_wakes {
 /// else-arm, lava rides `CheckLavaDeath`. The fixtures are embedded past
 /// the border (the g47 co-lane's documented precondition). Written, NOT
 /// run (code-only mode).
+/// DEPRECATED-BY-UNION (dup half): the union carries this module at
+/// `9bc722e5:liquid.rs:4900` with the research/70 re-pin applied — the
+/// inline-death witness (`water_kills_a_submerged_torch`) asserts the
+/// queued `TileKill` on `edit_kills` instead of this module's discard
+/// form. Keep the union's module; the guards BODY here is likewise the
+/// pre-upgrade fold-source (see the `add_water` banner above).
 #[cfg(test)]
 mod liquid_addwater_guards {
     use super::*;
@@ -3057,6 +3158,11 @@ mod liquid_addwater_guards {
 /// The existing `lava_burns_the_submerged_cut_plant_below` witness uses
 /// plant 3, which IS `tileObsidianKill` — it passes either way and cannot
 /// discriminate. Written, NOT run (code-only mode).
+/// STAY-LIVE (NOT deprecated — g45-UNIQUE fold-source): the g46 re-fold
+/// union (`9bc722e5`) has NO downarm-live module and its `liquid_check`
+/// down arm STILL reads the pre-kill copy (:1414/:1426). This module +
+/// the re-read in `liquid_check` above are graft obligations for the
+/// g46e-seal — the exact hunk is published in research/69 A8-graft.
 #[cfg(test)]
 mod liquid_downarm_live {
     use super::*;
