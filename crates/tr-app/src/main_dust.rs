@@ -834,6 +834,55 @@ pub(crate) fn retro_liquid_dust_feed(
     *drew_lava = true;
 }
 
+/// The capture-mode snow cull (`Main.DrawCapture`, `Main.cs:56735-56744`):
+/// unless the capture area sits STRICTLY inside the current view with a
+/// 16-px margin on every side, every live type-76 flake dies before the
+/// chunk renders (the snow would otherwise smear across the capture). The
+/// gate is the C#'s four-negation OR verbatim — it fires when ANY side
+/// fails the strict containment, i.e. also for an area wholly OFF-screen;
+/// only a strictly-inside area keeps its snow. `area` is the capture
+/// `settings.Area` tile rect `(x, y, w, h)` (the `* 16` products are INTEGER
+/// before the float cast, `:56735`); `view_pos`/`view_size` are the saved
+/// `Main.screenPosition`/`screenWidth`/`screenHeight` (`vector`/`num2`/
+/// `num3`, `:56694-56696`) — the PRE-capture view, not the area's camera.
+/// The walk spans `Main.dust.Length` = 6001 slots INCLUDING the sentinel
+/// (`:56737`, the pool's full slice — the sentinel is inactive, so the
+/// extra slot is a no-op, kept for the verbatim range). No RNG draw, no
+/// other type touched. Returns the cull count (witness convenience; the
+/// C# is void). STAGED: `DrawCapture`'s GPU half is the S1-G-13
+/// render-target seam (`CaptureRenderer` stub, ANALYSIS "The render-target
+/// family"); the wiring calls this at `:56735`'s position when that lands.
+#[allow(dead_code)]
+pub(crate) fn capture_snow_cull(
+    area: (i32, i32, i32, i32),
+    view_pos: Vec2,
+    view_size: Vec2,
+    pool: &mut DustPool,
+) -> usize {
+    let (ax, ay, aw, ah) = area;
+    let left = (ax * 16) as f32;
+    let top = (ay * 16) as f32;
+    let right = ((ax + aw) * 16) as f32;
+    let bottom = ((ay + ah) * 16) as f32;
+    // `:56735` — the containment gate, the C#'s negation shape kept.
+    if !(!(left > view_pos.x - 16.0)
+        || !(top > view_pos.y - 16.0)
+        || !(right < view_pos.x + view_size.x + 16.0)
+        || !(bottom < view_pos.y + view_size.y + 16.0))
+    {
+        return 0;
+    }
+    // `:56737-56743` — the full-array walk, active type-76 only.
+    let mut culled = 0;
+    for d in pool.slots_mut() {
+        if d.active && d.dust_type == 76 {
+            d.active = false;
+            culled += 1;
+        }
+    }
+    culled
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1517,5 +1566,57 @@ mod tests {
         assert_eq!(ry2, 4, "the shallow pocket below lifts rect_y to 4");
         // The background pass skips the shallow-below cell entirely.
         assert!(retro_surface_rect(20, 20, 255, 0, 100, false, false, &world, true).is_none());
+    }
+
+    // ---------------------------------------- capture snow-cull witnesses --
+
+    /// Seed three live type-76 flakes + one type-35 + one dead 76 directly
+    /// (the cull is RNG-free; no spawn draws needed).
+    fn cull_rig() -> DustPool {
+        let mut pool = DustPool::new();
+        for (i, (ty, active)) in [(76, true), (76, true), (76, true), (35, true), (76, false)]
+            .into_iter()
+            .enumerate()
+        {
+            let d = pool.slot_mut(i);
+            d.dust_type = ty;
+            d.active = active;
+        }
+        pool
+    }
+
+    /// `Main.cs:56735` — an area STRICTLY inside the view (16-px margin on
+    /// every side) keeps its snow: the gate is false, nothing dies.
+    #[test]
+    fn w4_g13_a_strictly_inside_capture_area_keeps_its_snow() {
+        let mut pool = cull_rig();
+        // View (0,0)-(1920,1080); area tiles (2,2)-(118,65) → px
+        // (32,32)-(1888,1040): every side clears the ±16 margin strictly.
+        let n = capture_snow_cull((2, 2, 116, 63), Vec2::ZERO, Vec2::new(1920.0, 1080.0), &mut pool);
+        assert_eq!(n, 0, "the containment gate holds");
+        assert_eq!(live(&pool).len(), 4, "all three flakes + the 35 survive");
+    }
+
+    /// Any side failing the strict containment fires the cull: exactly the
+    /// live type-76 slots die, the 35 and the dead 76 are untouched. The
+    /// four boundary touches (== on each side) all fail the strict compare.
+    #[test]
+    fn w4_g13_the_cull_kills_only_live_type76_on_any_boundary_failure() {
+        // Left edge touches: area.x*16 == view.x - 16 → `>` fails → cull.
+        let mut pool = cull_rig();
+        let n = capture_snow_cull((-1, 2, 10, 10), Vec2::ZERO, Vec2::new(1920.0, 1080.0), &mut pool);
+        assert_eq!(n, 3, "the three live flakes die");
+        assert!(pool.slot(3).active, "the type-35 survives");
+        assert!(!pool.slot(4).active, "the dead 76 stays dead");
+        assert_eq!(live(&pool).len(), 1);
+        // Right edge touches: (x+w)*16 == view.x + width + 16 → `<` fails.
+        let mut pool = cull_rig();
+        // (111+10)*16 = 1936 == 1920+16 → boundary → cull.
+        let n = capture_snow_cull((111, 2, 10, 10), Vec2::ZERO, Vec2::new(1920.0, 1080.0), &mut pool);
+        assert_eq!(n, 3, "the right-boundary touch culls too");
+        // A wholly OFF-screen area also culls (the OR fires on every side).
+        let mut pool = cull_rig();
+        let n = capture_snow_cull((500, 500, 10, 10), Vec2::ZERO, Vec2::new(1920.0, 1080.0), &mut pool);
+        assert_eq!(n, 3, "off-screen areas cull (the gate is containment, not overlap)");
     }
 }
