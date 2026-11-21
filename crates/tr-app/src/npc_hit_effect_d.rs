@@ -5435,6 +5435,82 @@ fn shadowflame_apparition_death(
     gore.new_gore(rng, world, pos, vel, 680, s); // :89652
 }
 
+/// The 480 Medusa death (`NPC.cs:89654-89673`, sites 833-837): the 50x
+/// dust-5 burst at (2.5·hd, −2.5), then 692 at position, TWO 693 at Y+20,
+/// TWO 694 at Y+34 — `this.scale` carried.
+fn medusa_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89664-89667` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 692, s); // :89668
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 693, s); // :89669
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 693, s); // :89670
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 694, s); // :89671
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 694, s); // :89672
+}
+
+/// The 185 Snow Flinx death (`NPC.cs:89674-89689`, site 838): the 50x
+/// dust-5 burst at (2.5·hd, −2.5), then ONE gore 240 at position —
+/// `this.scale` carried.
+fn snow_flinx_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89684-89687` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    // `:89688` — the single gore, scale carried.
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 240, npc.scale);
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -6095,6 +6171,17 @@ pub fn hit_effect_d(
     else if npc_type == 472 {
         shadowflame_apparition_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
+    // `:89654-89673` — the 480 Medusa arm (sites 833-837).
+    else if npc_type == 480 {
+        medusa_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89674-89689` — the 185 Snow Flinx arm (site 838).
+    else if npc_type == 185 {
+        snow_flinx_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89690-89701` — the 30/665 arm: NO gore sites (the ungated 20x
+    // paired dust-27 census + the Item10 cue are the dust/c13 lanes';
+    // recorded, not ported).
     outcome
 }
 
@@ -10583,5 +10670,51 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the apparition mirrors the C# draws");
+    }
+
+    /// `NPC.cs:89668-89672` — the Medusa ladder 692/693+693/694+694;
+    /// `:89688` — the Snow Flinx single 240 after the same dust census.
+    #[test]
+    fn w4_f5d_the_medusa_ladder_and_the_flinx_single() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        n.scale = 1.25;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(857);
+        let _ = hit_effect_d(&n, 480, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![692, 693, 693, 694, 694]);
+        let offsets = [0.0, 20.0, 20.0, 34.0, 34.0];
+        for (i, dy) in offsets.iter().enumerate() {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0 + dy), "gore {i}");
+            assert_eq!(gore.slot(i).scale, 1.25, "gore {i} scale");
+        }
+        assert!(!gore.slot(5).active, "exactly five gores");
+        let mut twin = UnifiedRandom::new(857);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the medusa mirrors the C# draws");
+
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(859);
+        let _ = hit_effect_d(&n, 185, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        assert_eq!(gore.slot(0).gore_type, 240);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(0).scale, 1.25);
+        assert!(!gore.slot(1).active, "exactly one gore");
+        let mut twin = UnifiedRandom::new(859);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        let _ky = twin.next_range(10, 31);
+        let _kx = twin.next_range(-20, 21);
+        assert_eq!(rng.peek(), twin.peek(), "the flinx mirrors the C# draws");
     }
 }
