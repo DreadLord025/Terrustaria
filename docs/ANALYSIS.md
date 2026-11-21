@@ -39301,6 +39301,34 @@ Deliberate folds (recorded):
 - The `LanternNightActive` `InfoToSetBackColor` field (`Main.cs:216`)
   is WRITE-ONLY in the C# (no reader) вЂ” a dead field, not ported.
 - The world-load clear (`WorldGen.cs:6996` `LanternNight.WorldClear` +
-  `SkyManager.Reset`) rides `enter_loaded_world`; the vanilla file
-  carries no lantern temps (S1-J-7), so they reset on load by design.
+  `SkyManager.Reset`) rides the CLEAR-THEN-RESTORE sites — `swap_world`
+  ahead of the `App::new` restore, `client_install_world` ahead of the
+  tile install, NOT `enter_loaded_world` (the DOC-SWEEP order fix
+  `5a19073e`: the C# `clearWorld` precedes `SetOngoingToTemps`, so a tail
+  clear would clobber f45's restored lantern quad; the earlier
+  `enter_loaded_world` note is superseded). The vanilla `.wld` carries
+  the quad at the v≥207 flags sites; the TRWLD file carries no lantern
+  temps (S1-J-7) — f40 claims NO v18 tail bytes (research/105 §9.3).
+
+### The RETIRE phase — the LANTERN-FAMILY declaration (research/105 §9)
+
+The retire phase adjudicated the sibling duplicates and published the
+unified merger order (105 §9.4 + c39 research/114 §7/§11 at `4f72847e`):
+
+- **The doves volley** (§9.1): d17 `8a9e035e` vs f40 `3d7a9b77` were
+  DIVERGENT ports of `Player.cs:48383-48392` — keep-one landed on this
+  branch: d17's standalone per-item arm FORM + f40's exact-centre spawn
+  graft + the zero-aim/facing prologue; the lantern's exact-centre point
+  rides the generic tail's `release_spawn` override. The FINAL splice's
+  unclosed-witness brace defect fixed. d17's witness re-derived verbatim
+  here as the keeper (union-scoped: green when d17's 851/855 rows fold).
+- **The wish row** (§9.2): f40's 4702 row is NOT one of f41's eleven
+  `PartyUp` gift rows; f41 `be4cb841` ported the same row independently.
+  The merge keeps f41's `case 13` superset; f40's `LanternNight` variant
+  renames to `LanternsUp`; ONE field + ONE feed line.
+- **The merger order** (§9.4): d17 machine → f40 use-side → c39
+  gates/triggers (+ the v18 9-way union) → f40 sky module wholesale
+  (c39's interim lantern half drops) → f41 shop superset → f45
+  persistence (the c43≡f45 identity keep-ONE). All family witnesses
+  remain WRITTEN NOT RUN until the merged tree runs the catalog command.
 

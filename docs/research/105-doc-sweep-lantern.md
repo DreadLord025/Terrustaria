@@ -611,10 +611,10 @@ NOT RUN until the merged tree runs the catalog command.
 
 | Hash | Item |
 | --- | --- |
-| (this phase's item 1) | §9.1 the doves adjudication + keep-one publish + brace fix |
-| (item 2) | §9.2 the shop-row dedupe receipt |
-| (item 3) | §9.3 the 114 FINAL receipts |
-| (item 4) | §9.4 the LANTERN-FAMILY declaration |
+| `85a9253c` | 1 — §9.1 the doves adjudication + keep-one publish + brace fix (editing.rs + anchor + this note's §9) |
+| `40256123` | 2 — §9.2 the shop-row dedupe receipt (shop.rs + npcs.rs feed comments) |
+| `0ec61e92` | 3 — §9.3 the 114 FINAL receipts (save.rs no-v18-claim + world_clear doc) |
+| (this) | 4 — §9.4 the LANTERN-FAMILY declaration (lantern_sky.rs module doc + ANALYSIS 'The RETIRE phase' + INDEX + PORT_MAP rows) |
 
 Evidence: `Player.cs:48360-48404` (the doves arm re-read whole),
 `:47180-47253` (the anchor/facing prologue), `:47280-47309` (the

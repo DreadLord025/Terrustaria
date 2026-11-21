@@ -35,6 +35,23 @@
 //! §1b's KEEP verdict — per-world variety, still deterministic; the C#'s
 //! time seed is unobservable in a deterministic port, recorded).
 //!
+//! LANTERN-FAMILY declaration (W4-f40 RETIRE, research/105 §9.4 — the
+//! unified merger order over 105 §8 + c39 research/114 §7/§11):
+//! 1. d17's projectile machine (851/855 rows + `ai_dove` family + c39's
+//!    entity-light graft) — the spawn seam goes live;
+//! 2. f40's use-side keep-one (§9.1: the grafted d17-form doves arm + the
+//!    generic tail's `release_spawn` override + both witness sets);
+//! 3. c39's gates + triggers (the weather `LanternGates` line, ONE wind
+//!    flag name, ONE trigger call-site set on f40's id-helper, the five
+//!    moon-boss arms + the v18 9-way 106-byte union tail);
+//! 4. THIS module wholesale (the seed graft included) — c39's
+//!    `event_skies.rs` lantern half DROPS, `Extra_134` dedupes, the
+//!    PartySky reset extends f40's clear seam;
+//! 5. f41's shop `case 13` superset (§9.2: the 4702 row + the 11 gift
+//!    rows; f40's `LanternNight` variant renames to `LanternsUp`);
+//! 6. f45's persistence last (the `.wld` quad sites + the c43≡f45
+//!    identity keep-ONE; f40's clear-then-restore order is the contract).
+//!
 //! Deliberate folds (ANALYSIS "The lantern-night sky (W4-f40)"):
 //! - `FocusHelper.PauseSkies` (`:115`) — the port's update rides the same
 //!   step-gated ambience phase, so the pause is the phase gate itself.
