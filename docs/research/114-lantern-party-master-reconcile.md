@@ -580,3 +580,88 @@ the four rows it has not seen: g72, c39, g87, g90, c43/f45 — whichever
 note lands last must reconcile to one 106-byte head; the ORDER here is the
 C#-field-order rule both notes already use, so the extension is
 mechanical).
+
+---
+
+## 9. Event-flag CENSUS — every C# `SetEventFlagCleared` site vs the port (COMPLETE)
+
+Re-read from the decompiled tree (recursive `SetEventFlagCleared(` sweep:
+ONLY `Main.cs` and `NPC.cs` call it — no GameContent/IO/other caller).
+**26 C# call sites, covering every id 0–25 exactly once** (the Twins'
+shared case 125/126 is ONE site). The helper itself
+(`NPC.cs:78759-78766`) fires `OnGameEventClearedForTheFirstTime` on the
+false→true edge only — the port's `first` parameter is that edge.
+
+| id | C# site | Flag | Port death-arm (c39 tip) | Verdict |
+| --- | --- | --- | --- | --- |
+| 0 | `Main.cs:64336` | downedGoblins | `npcs.rs:2458` (invasion type 1, the `_` arm) | WIRED |
+| 1 | `Main.cs:64341` | downedFrost (**frost legion**) | `npcs.rs:2437` (invasion type 2) | WIRED |
+| 2 | `Main.cs:64346` | downedPirates | `npcs.rs:2444` (type 3) | WIRED |
+| 3 | `Main.cs:64351` | downedMartians | `npcs.rs:2451` (type 4) | WIRED |
+| 4 | `NPC.cs:79219` | downedHalloweenTree (**Mourning Wood 325**) | `npcs.rs:5137`, pumpkin-moon gated | WIRED — the SKIP row (§0.1's fixed label; NOT Pumpking) |
+| 5 | `NPC.cs:79213` | downedHalloweenKing (**Pumpking 327**) | `npcs.rs:5129`, pumpkin-moon gated | WIRED — the DEFAULT arm, ARMS (the pumpkin-moon distinction the brief asks about: 325→4 skip, 327→5 arm, both live) |
+| 6 | `NPC.cs:79346` | downedGolemBoss | `npcs.rs:5168` (Golem body) | WIRED |
+| 7 | `NPC.cs:79349` | downedFishron | `npcs.rs:5178` | WIRED |
+| 8 | `NPC.cs:79387` | downedQueenBee | `npcs.rs:5414` | WIRED |
+| 9 | `NPC.cs:79394` | downedAncientCultist | `npcs.rs:5253` | WIRED |
+| 10 | `NPC.cs:79398` | downedMoonlord | `npcs.rs:5225` (core, `checkDead`-only gate) | WIRED |
+| 11 | `NPC.cs:79416` | downedSlimeKing | `npcs.rs:5384` | WIRED |
+| 12 | `NPC.cs:79433` | downedPlantBoss | `npcs.rs:5458` | WIRED |
+| 13 | `NPC.cs:79441` | downedBoss1 (EoC) | `npcs.rs:5404` | WIRED |
+| 14 | `NPC.cs:79457` | downedBoss2 (EoW/Brain, cases 13/14/15/266) | `npcs.rs:5288` (EaterOfWorldsHead + BrainOfCthulhu shared arm) | WIRED |
+| 15 | `NPC.cs:79463` | downedBoss3 (Skeletron) | `npcs.rs:5467` | WIRED |
+| 16 | `NPC.cs:79476` | downedMechBoss1 (Prime 134) | `npcs.rs:5420` | WIRED |
+| 17 | `NPC.cs:79426` | downedMechBoss2 (Twins 125/126, ONE C# site) | `npcs.rs:5439` + `:5451` (TWO port arms — one per eye, each gated on the sibling dead; the C# `this.boss` gate folds: only the boss eyes reach the arm) | WIRED (the one site→two-arm split) |
+| 18 | `NPC.cs:79469` | downedMechBoss3 (Destroyer 127) | `npcs.rs:5426` | WIRED |
+| 19 | `NPC.cs:79490` | hardMode (WoF 113, local `eventFlag`) | `npcs.rs:5486` (outside-guard capture + unconditional call) | WIRED |
+| 20 | `NPC.cs:79231` | downedChristmasIceQueen (345) | `npcs.rs:5153`, snow-moon gated | WIRED — default arm, ARMS |
+| 21 | `NPC.cs:79225` | downedChristmasTree (Everscream 344) | `npcs.rs:5145`, snow-moon gated | WIRED — SKIP |
+| 22 | `NPC.cs:79237` | downedChristmasSantank (346) | `npcs.rs:5161`, snow-moon gated | WIRED — SKIP |
+| 23 | `NPC.cs:79352` | downedEmpressOfLight (636) | **NONE on c39** — the kind is UNPORTED here | UNWIRED-BY-KIND: **d125** (`d8047a10`) ports `NpcKind::EmpressOfLight` + the death arm, but its arm writes `app.world.downed_empress_of_light = true` DIRECTLY — no `SetEventFlagCleared` edge, no lantern arm. **Merge obligation (cross-receipt to d125):** route its arm through `on_game_event_cleared(ev, 23, !was_down)` (id 23 is a DEFAULT row — the Empress's first kill ARMS the lantern night). c39 cannot wire it: no kind to match on this branch. |
+| 24 | `NPC.cs:79358` | downedQueenSlime (657) | **NONE anywhere** — the kind is unported on EVERY sibling (no `NpcKind::QueenSlime` in any wave-4 branch read) | UNWIRED-BY-KIND: the `World.downed_queen_slime` flag exists (v15 `.trwld` byte + `.wld` `:1396` read, shop/scene consumers live) but only load/save writes it. When the Queen Slime kind lands, its death arm must call id 24 (default row — ARMS; also a dual-dungeon Hallow-tier wall clear, below). Nothing to wire today. |
+| 25 | `NPC.cs:79355` | downedDeerclops (668) | `npcs.rs:5184` | WIRED |
+
+**Count reconciliation:** 26 C# sites − Empress (23) − QueenSlime (24) =
+24 wired ids; + the Twins' second port arm = **25 port call sites** (the
+exec's "20 re-pointed + 5 added" — the 20 included the Twins pair). The
+id-table witness (`w4_c39_the_event_clear_id_table_skips_only_the_three_
+moon_bosses`, `world_events.rs:686`) already sweeps ALL 26 ids: 23 arm rows
+(incl. 23/24 — the table is kind-agnostic) + the 3 skips + the repeat-edge
+arm. **No id in 0–25 is missing from the table; the only unwired DEATH
+ARMS are the two unported kinds.**
+
+**Solar eclipse:** NOT an event-flag id — the C# has no `downedEclipse`
+and no `SetEventFlagCleared` call for it (the eclipse is a rolled weather
+event, `Main.cs:65062`'s `StartEclipse`, cleared by time, not by a kill).
+Nothing to wire; the brief's question resolves NO-OP.
+
+**`NPC.downedMechBossAny`** (`:79427/:79470/:79477` set it beside the mech
+flags): the port derives it (`World::downed_mech_boss_any()`,
+`world.rs:1070` — the OR of the three flags). Observationally identical:
+the C# static latches true on the first mech death and never resets
+within a world; the OR is true exactly when any flag is. Verified
+equivalent — no separate field needed.
+
+**`OnGameEventClearedForTheFirstTime`'s NON-lantern halves** (the helper
+ports the lantern half only — `world_events.rs:372`; the remainders, all
+recorded, none c39-scoped):
+- case 10 `CreditsRollEvent.TryStartingCreditsRoll()` (`NPC.cs:78779`) —
+  unported (the `npcs.rs:5224` comment records it; the net module
+  `net.rs:1500` carries the remaining-time message shape only).
+- cases 16/17/18 `WorldGen.GeneratePlanteraBulbOnAllMechsDefeated()`
+  (`:78784-78787`, gated `netMode != 1 && hardMode && all three`) —
+  unported (the helper doc records it; the bulb TILE exists,
+  `wiring.rs:4886`, the generation pass does not).
+- the `Main.dualDungeonsSeed` wall-clear switch (`:78794-78822`,
+  `WorldGen.ClearUnbreakableWallsWithPaintUpTo` tiers EarlyGame/ EvilBoss/
+  JungleBoss/Dungeon/Hallow for ids 11/13, 14, 8, 15/19, 16/17/18/24) —
+  unported (the seed flag exists, `worldgen/pipeline.rs:3720`'s gate; the
+  wall-clear fn does not). A worldgen lane's scope, not the lantern
+  lane's; recorded here so the census is COMPLETE.
+
+**Census verdict: no event-id is silently unwired.** Every ported kind's
+death arm rides the id table; the two gaps are kind-gaps (d125's Empress
+arm needs the helper route at merge — the cross-receipt above; the Queen
+Slime waits on its kind), and the eclipse is a non-event. WRITTEN NOT RUN
+(no new code this phase — the census is a doc verdict over the exec's
+already-landed arms).
