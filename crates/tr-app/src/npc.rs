@@ -1167,9 +1167,15 @@ pub enum NpcSoundCue {
     NpcHit(i32),
     /// `PlaySound(4, pos, style)` — the int killed overload: the tower
     /// dissolve's 60-tick cry (`NPC.cs:39059`, style 22), the Moon
-    /// parts' laser wind-up (`:41838`/`:42338`/`:42611`, style 6);
-    /// case 4's one pitch draw, NO NextFloat.
+    /// parts' laser wind-up (`:41838`/`:42338`/`:42611`, style 6), the
+    /// Vile Spits' every-`ai[0]==2`-tick cry (`:21480`, style 9, the e9
+    /// union — research/94 §3); case 4's one pitch draw, NO NextFloat.
     NpcDeath(i32),
+    /// W4-f2 reconcile (e9 union) — `PlaySound(SoundID.NPCDeath55,
+    /// (int)Center.X, (int)Center.Y)` — the Ghost's flee cry
+    /// (`NPC.cs:24693`, the aiStyle-22 type-316 `localAI[3]` 0→1 latch,
+    /// the style façade); case 4.
+    NpcDeath55,
     /// `PlaySound(SoundID.NPCDeath61, Center)` — the Moon Lord core's
     /// crash cry (`NPC.cs:41432`, the style façade); case 4.
     NpcDeath61,

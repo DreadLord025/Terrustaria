@@ -1155,6 +1155,9 @@ fn play_npc_sound_request(
         NpcSoundCue::NpcDeath61 => {
             audio.play_npc_death_style(61, req.x, req.y, rng);
         }
+        NpcSoundCue::NpcDeath55 => {
+            audio.play_npc_death_style(55, req.x, req.y, rng);
+        }
         NpcSoundCue::NpcDeath13 => {
             audio.play_npc_death_style(13, req.x, req.y, rng);
         }
@@ -17487,6 +17490,51 @@ mod dw3_tests {
         let before = app.audio.played_count();
         update_npcs(&mut app, 1.0 / 60.0);
         assert_eq!(app.audio.played_count() - before, 0, "one roar per charge");
+    }
+
+    /// W4-f2 reconcile (e9's wiring witness adapted, research/94 §5) —
+    /// the IdleSounds wiring's stream contract (`NPC.cs:90422`, the
+    /// style49 module's cited obligation): the AngryNimbus's `Next(700)`
+    /// gate roll runs BEFORE the AI arm on the `UpdateNPCs` stream —
+    /// consumed even on failure; a hit adds the `Next(41, 44)` slot pick
+    /// and (the gate + slot guard passing) the case-29 `Next(-10, 11)`
+    /// pitch. The cloud parks out of the rain window, so the AI arm
+    /// itself draws nothing (`nimbus_step`'s one draw is the 9th
+    /// qualifying shot tick).
+    #[test]
+    fn w4_f2_the_nimbus_idle_roll_rides_the_stream_before_the_ai() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = crate::test_world_helpers::ground();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 150.0 * 16.0;
+        player.y = 110.0 * 16.0;
+        app.player = Some(player);
+        // Inside the headless listener's radius, horizontally OFF the
+        // player's box (the rain window fails → zero AI draws).
+        let mut cloud = Npc::new(NpcKind::AngryNimbus, 1400.0, 1000.0, 1, 0.0);
+        cloud.hp = cloud.max_hp;
+        app.npcs.push(cloud);
+        app.rngs = crate::app::rng::NamedRngs::new(7);
+        let before = app.audio.played_count();
+        update_npcs(&mut app, 1.0 / 60.0);
+        // The mirror stream: the gate roll always; a hit adds the slot
+        // pick (Next(3) ≡ Next(41, 44) on the sample) + the case-29 pitch.
+        let mut witness = UnifiedRandom::new(7);
+        let hit = witness.next_max(700) == 0;
+        if hit {
+            let _ = witness.next_max(3);
+            let _ = witness.next_range(-10, 11);
+        }
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateNpcs),
+            witness,
+            "the idle gate roll rides the stream before the (draw-free) AI"
+        );
+        assert_eq!(
+            app.audio.played_count() - before,
+            u64::from(hit),
+            "the cry plays exactly when the gate hits"
+        );
     }
 
     /// S1-E-21g — the drain's stream contract in isolation (the machines'

@@ -148,6 +148,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     // The Wyvern's death cue (`NPC.cs:9951`'s `NPCDeath8`, S1-D-3 wyvern)
     // — the `Sounds/NPC_Killed_8.xnb` asset ships with the content.
     ("NPC_Killed_8", 4),
+    // W4-f2 reconcile (e9 union, research/94 §3) — the Vile Spit's
+    // `ai[0] == 2` tick cry (`SoundID`-less `PlaySound(4, pos, 9)`,
+    // `NPC.cs:21480`; `Sounds/NPC_Killed_9.xnb`).
+    ("NPC_Killed_9", 4),
     ("NPC_Killed_10", 4),
     ("NPC_Killed_11", 4),
     ("NPC_Killed_12", 4),
@@ -176,6 +180,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     // Tesla Turret's (`NPC.cs:13931`'s `NPCDeath56`, S1-F-13d).
     ("NPC_Killed_45", 4),
     ("NPC_Killed_56", 4),
+    // W4-f2 reconcile (e9 union, research/94 §3) — the Ghost's flee cry
+    // (`NPC.cs:24693`'s `SoundID.NPCDeath55`, the aiStyle-22 type-316
+    // `localAI[3]` 0→1 latch; the style façade).
+    ("NPC_Killed_55", 4),
     ("NPC_Killed_54", 4),
     ("NPC_Killed_57", 4),
     ("NPC_Killed_59", 4),
@@ -1417,6 +1425,12 @@ impl Audio {
         let (x, y) = (x.trunc(), y.trunc());
         let cue = match style_num {
             13 => "NPC_Killed_13",
+            // W4-f2 reconcile (e9 union) — the Ghost's flee cry
+            // (`NPC.cs:24693`, `PlaySound(SoundID.NPCDeath55,
+            // (int)Center.X, (int)Center.Y)` — the façade consumes the
+            // NextFloat on the audio-only stream; the 316 machine's
+            // wiring consumes the row).
+            55 => "NPC_Killed_55",
             61 => "NPC_Killed_61",
             _ => return None,
         };
@@ -1442,6 +1456,11 @@ impl Audio {
         // Center via `:83-85`) — truncate here.
         let (x, y) = (x.trunc(), y.trunc());
         let cue = match style_num {
+            // W4-f2 reconcile (e9 union) — the Vile Spit's every-
+            // `ai[0]==2`-tick cry (`NPC.cs:21480`, `PlaySound(4, pos, 9)`
+            // — the int overload, NO NextFloat; the 112/666 kinds'
+            // wiring consumes the row).
+            9 => "NPC_Killed_9",
             6 => "NPC_Killed_6",
             22 => "NPC_Killed_22",
             _ => return None,
@@ -4173,6 +4192,47 @@ mod tests {
             assert_eq!(played.map(|s| s.to_string()), Some(name.clone()));
             assert_eq!(rng.peek(), witness.peek(), "style {style}: one pitch draw");
         }
+    }
+
+    /// W4-f2 reconcile (e9 union, research/94 §3/§5) — the Vile Spit's
+    /// int style-9 cry (`NPC.cs:21480`) and the Ghost's NPCDeath55 façade
+    /// (`:24693`): both resolve to registered bank rows, the int peer
+    /// draws ONE case-4 pitch with no NextFloat, the façade adds the
+    /// audio-only NextFloat; muted plays draw nothing.
+    #[test]
+    fn w4_e9_the_spit_and_ghost_death_rows_follow_the_overload_split() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        assert!(sfx_cue_registered("NPC_Killed_9"));
+        assert!(sfx_cue_registered("NPC_Killed_55"));
+        // The int overload (style 9): one Next(-10, 11), no NextFloat.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        let style_before = audio.sound_style_random.clone();
+        assert_eq!(
+            audio.play_npc_death_int(9, 0.0, 0.0, &mut rng),
+            Some("NPC_Killed_9")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one gameplay draw");
+        assert_eq!(audio.sound_style_random, style_before, "no NextFloat");
+        // The style façade (NPCDeath55): the same draw + the NextFloat.
+        let mut rng = UnifiedRandom::new(7);
+        assert_eq!(
+            audio.play_npc_death_style(55, 0.0, 0.0, &mut rng),
+            Some("NPC_Killed_55")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one gameplay draw");
+        assert_ne!(audio.sound_style_random, style_before, "the NextFloat");
+        // Muted: both peers draw nothing (the gate precedes the switch).
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_npc_death_int(9, 0.0, 0.0, &mut rng), None);
+        assert_eq!(audio.play_npc_death_style(55, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
     }
 
     /// S1-E-21i — the wall-break play's RNG contract
