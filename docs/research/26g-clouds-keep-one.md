@@ -220,6 +220,36 @@ At the d10×d19 merge (the gate's job — this branch never merges):
 7. **collision.rs:** d19's shared probe survives (§2); d10's private
    twin dies with its arm. The new probe witness stays.
 
+## §5 — the 1129/d21 merge-contract (re-verified at d21 tip `9fa9e9ba0`)
+
+d21's latest tip is `9fa9e9ba0` (docs) over the port `20fe4b3ed`. Read
+at that tip:
+
+- **Row** (`data.rs:2962`, `CHLOROPHYTE_CLAYMORE_BLADE_SLAM = 1129`):
+  `(16.0, 16.0, 209, -1, 5, 0, false, false, false, (true, -1, false,
+  -1, 255, 1.0))` — every field against `:10580-10596`: 16×16, aiStyle
+  209, penetrate −1, timeLeft 5, tileCollide false, friendly (stock),
+  alpha 255, the LOCAL pair (−1), scale 1.0 stock; `ignoreWater` rides
+  the overlay (`:4298`, `:10587`), melee the overlay (`:4335`,
+  `:10593`). `ownerHitCheck` (`:10594`) is the recorded spear-seam
+  deviation (d21's comment). VERBATIM.
+- **Arm** (`projectile_ai_201_210.rs:117-130`): `w = (int)ai[1]`,
+  `h = (int)ai[2]`, `ai[0]++`, `>20 → Kill` — verbatim against
+  `AI_209_ChlorophyteClaymoreBladeSlam` `:69622-69631`, zero draws.
+- **Dispatch** (`projectile.rs:19891`): `209 => ai_claymore_blade_slam
+  + pos += vel` — the free integrate (tileCollide false), ONE arm.
+- **Compose with the d19 drain:** `drain_claymore_spores` spawns
+  `spawn_with_data_ai_owned(1129, owner, x − row.w·0.5, y − row.h·0.5,
+  0, 0, damage, 0.0, 0.0, 128.0)` + `set_ai2(96)` — the C# `:41967`
+  call `(vector6, Zero, 1129, (int)(damage·1f), 0f, owner, 0f, 128f,
+  96f)` with `NewProjectile`'s centre convention (`:10876-10877`,
+  16×16 → −8). ai0 = 0 (the age starts fresh), ai1 = 128 → w = 128,
+  ai2 = 96 → h = 96 on the child's first AI tick. The full damage
+  rides. The both-states witness
+  (`w4_d19_the_spore_drain_centres_the_clouds_and_parks_the_slam`)
+  holds pre-merge (row absent → no-op) and post-merge (row present →
+  the centred spawn + the ai pins). **Contract GREEN — no change.**
+
 ## Witnesses (this round, WRITTEN NOT RUN — code-only)
 
 - `projectile_ai_clouds.rs`: +2 new
