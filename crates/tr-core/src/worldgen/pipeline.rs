@@ -1186,6 +1186,40 @@ pub(crate) fn pass_disabled_by_special_seeds(
         && DUAL_DUNGEON_DISABLED_PASSES.contains(&vanilla)
 }
 
+/// `Skyblock.denyAllGeneration` (`WorldGen.cs:3131`): the skyblock world
+/// skips the pass wholesale. W4-d105 lane 5's Herbs / Dye Plants / Random
+/// Gems / Larva gates.
+pub(crate) fn skyblock_deny_all_generation(opts: &GenOptions) -> bool {
+    opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK)
+}
+
+/// `Skyblock.denySomeGeneration` (`WorldGen.cs:3133-3147`): a skyblock world
+/// skips the pass UNLESS one of the eight surface-shaping micro seeds is on
+/// (then it runs), or — with none of them — `extraLivingTrees` is on (then it
+/// runs too). W4-d105 lane 5's Sunflowers / Flowers / Mushrooms / Moss Grass
+/// gates.
+pub(crate) fn skyblock_deny_some_generation(opts: &GenOptions) -> bool {
+    use crate::seeds::{MicroSeedFlags as M, SeedFlags};
+    if !opts.flags.contains(SeedFlags::SKYBLOCK) {
+        return false;
+    }
+    let m = opts.micro_flags;
+    let shaping = m.intersects(
+        M::WORLD_IS_FROZEN
+            | M::SURFACE_IS_DESERT
+            | M::SURFACE_IS_MUSHROOMS
+            | M::WORLD_IS_INFECTED
+            | M::HALLOW_ON_THE_SURFACE
+            | M::NO_INFECTION
+            | M::EXTRA_FLOATING_ISLANDS
+            | M::EXTRA_LIQUID,
+    );
+    if shaping {
+        return false;
+    }
+    !m.contains(M::EXTRA_LIVING_TREES)
+}
+
 // --- the executed pipeline (today's order, verbatim call sites) -------------
 
 type StepFn = fn(&mut World, &mut GenVars, &mut Streams, &GenOptions, &Noise, &ConfigSection);
@@ -1379,6 +1413,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // The pass draws its one name roll per spawn from `pass_rng("Guide")`,
     // so the insertion shifts no other step's ledger.
     step!("guide", "Guide", step_guide),
+    // The vanilla Sunflowers slot (`WorldGen.cs:19898`): immediately after
+    // Guide (`:19685`), before Planting Trees (`:19940`) — W4-d105 lane 5.
+    // The pass draws its band rolls from `pass_rng("Sunflowers")`, so the
+    // insertion shifts no other step's ledger.
+    step!("sunflowers", "Sunflowers", step_sunflowers),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
@@ -2237,6 +2276,26 @@ fn step_guide(
         spawn_y,
         &mut streams.pass_rng("Guide"),
     );
+}
+
+/// `Sunflowers` (`WorldGen.cs:19898-19939`, `GenPassNameID.SunflowersPart2`)
+/// — the `maxTilesX * 0.002` band attempts over the grass tops. The
+/// `Skyblock.denySomeGeneration` gate (`:19900`) rides the adapter; the
+/// band rolls and the `PlaceSunflower` style draws ride
+/// `pass_rng("Sunflowers")`.
+fn step_sunflowers(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if skyblock_deny_some_generation(opts) {
+        return;
+    }
+    let world_surface = gv.layers().world_surface;
+    surface::pass_sunflowers(world, world_surface, &mut streams.pass_rng("Sunflowers"));
 }
 
 /// `Webs And Honey` (`WorldGen.cs:19995`) — the wall-keyed sweep that hangs
@@ -3189,8 +3248,9 @@ mod tests {
         // S1-K-2 wave C: + `thin ice` (vanilla "Micro Biomes",
         // `WorldGen.cs:20941`) before `campsites`.
         // W4-d105 lane 5: + `guide` (vanilla "Guide", `WorldGen.cs:19685`)
-        // between `living trees` and `trees`.
-        assert_eq!(names.len(), 67);
+        // between `living trees` and `trees`, + `sunflowers` (vanilla
+        // "Sunflowers", `:19898`) between `guide` and `trees`.
+        assert_eq!(names.len(), 68);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3282,6 +3342,7 @@ mod tests {
                 "slopes",
                 "living trees",
                 "guide",
+                "sunflowers",
                 "trees",
                 "surface flora",
                 "cacti",
@@ -3513,6 +3574,25 @@ mod tests {
         assert!(cpos("Grass Wall") < cpos("Guide"));
         assert!(cpos("Guide") < cpos("Sunflowers"));
         assert!(cpos("Guide") < cpos("Planting Trees"));
+    }
+
+    /// W4-d105 lane 5 (#38): `sunflowers` sits immediately after `guide`
+    /// and before `trees` — the vanilla Guide (`WorldGen.cs:19685`) →
+    /// Sunflowers (`:19898`) → Planting Trees (`:19940`) chain.
+    #[test]
+    fn w4_d105_the_sunflowers_step_sits_between_guide_and_trees() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("sunflowers"), pos("guide") + 1);
+        assert_eq!(pos("sunflowers") + 1, pos("trees"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Guide") < cpos("Sunflowers"));
+        assert!(cpos("Sunflowers") < cpos("Planting Trees"));
     }
 
     #[test]

@@ -62,7 +62,12 @@ Jungle `:20813` are already executed steps; #46 Settle Liquids Again
       Sunflowers slots); witness
       `w4_d105_the_guide_step_sits_before_the_trees` + 9 unit tests.
       No tile writes → neither hash pin moves on this commit.
-- [ ] 38 Sunflowers
+- [x] 38 Sunflowers — `surface.rs::pass_sunflowers` + `place_sunflower`
+      (the band attempts `:19898-19939` + the 2×4 `PlaceSunflower`
+      `:53636-53686`); step `sunflowers` between `guide` and `trees`;
+      witness `w4_d105_the_sunflowers_step_sits_between_guide_and_trees`
+      + 5 unit tests; the `Skyblock.denySomeGeneration` gate helper lands
+      in `pipeline.rs`. Hash pins stale-by-design (tile 27 writes).
 - [ ] 39 Herbs
 - [ ] 40 Dye Plants
 - [ ] 41 Flowers

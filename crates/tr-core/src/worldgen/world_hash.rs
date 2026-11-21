@@ -248,7 +248,9 @@ mod tests {
     // DESIGN. The re-pins are DEFERRED to the merge gate (no compiler on
     // this branch); the `a == b` determinism halves stay untouched. The
     // Guide pass writes no tiles (the NPC ledger is not hashed), so its
-    // commit alone moves neither pin.
+    // commit alone moves neither pin. #38 Sunflowers writes tile 27 on the
+    // grass tops (the band attempts + the PlaceSunflower style draws), so
+    // both pins move by design from that commit on.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
