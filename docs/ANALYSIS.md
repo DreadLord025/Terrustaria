@@ -39246,14 +39246,18 @@ closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
 ## The Demon Heart / Minecart / Pet License use arms (W4-g87)
 
-**Status: DONE (code-only, 2026-11-21).** The unclaimed remainder of the
+**Status: DONE (code-only, 2026-11-21; closeout folded the a6 deltas + the
+slot-8 UI port, see research/143).** The unclaimed remainder of the
 `Player.ItemCheck_OwnerOnlyCode` permanent-item cluster (`Player.cs:45192-
 45424`). The sibling lanes own the rest (the g90 DOC-SWEEP census is the
 authoritative lane map): the Life Crystal 29 / Mana Crystal 109 / Life Fruit
 1291 (g88 `crystals.rs`/`life_fruit.rs`), the Artisan Loaf 5326 (g90), the
 Torch God's Favor 5043 (f33), the Combat Book 4382 / Volume Two 5336 + the
 Peddler's Satchel 5343 (g89/g90), and the shimmer permanents 5337/5338/5339/
-5340/5341/5342 (g89/g90). This lane ports ONLY:
+5340/5341/5342 (g89/g90). **W4-a6 (`origin/task/W4-a6-crystals-powerups`
+tip `8ed96ee5`) independently ported the SAME three families on
+`powerups.rs`** — the closeout adjudication (research/143) keeps THIS lane's
+module as the carrier and folded a6's four fidelity deltas in:
 
 * **Demon Heart 3335** (`ItemCheck_UseDemonHeart` `:45192-45200`, called
   `:43598`): the permanent expert accessory slot. The gate `!extraAccessory
@@ -39262,20 +39266,39 @@ Peddler's Satchel 5343 (g89/g90), and the shimmer permanents 5337/5338/5339/
   on it `ApplyItemTime` (30-tick cadence) + `extraAccessory = true` (`:45197`)
   + the generic consumable pay (`:43280-43326`). The slot-8 consumer
   (`player.rs:4880` + `equip_swap.rs:104`) already landed (S1-H-5/i48) — the
-  flag had no writer until now.
+  flag had no writer until now. **The closeout added the CheckCanUse START
+  refusal** (`ItemCheck_TryStartUse` `:52021-52023` →
+  `ItemCheck_CheckCanUse_Inner` `:52051-52054`: `extraAccessory ||
+  !Main.expertMode` refuses the use START — a used heart or a classic world
+  never swings, never plays the UseSound; a6 `ea478936`'s `use_start_refused`
+  shape) and the `ApplyItemAnimation` reuseDelay tail (`:4496`, both stock
+  items carry 0).
 * **Minecart Powerup 5289** (`ItemCheck_UseMinecartPowerUp` `:45202-45214`,
   called `:43599`): the Super Cart unlock ONCE (`unlockedSuperCart` `:45209`)
   + the ALWAYS `QuickSpawnItem(3353)` Minecart Mech (`:45212`). Unlike the
   other permanents the use has NO flag gate (`:45204`) — a re-use still
-  spawns a Mech and pays the stack. The `QuickSpawnItem` -> `GetOrDropItem`
-  fills the inventory first, the overflow drops at the player centre; the
-  Mech's prefix rolls on `UpdateItems` (the bobber-catch drain's convention).
+  spawns a Mech and pays the stack (**both lanes agree; the census's
+  "flag-gate" reading of a6 was wrong** — a6 `bb36e6ee`'s
+  `use_minecart_powerup` has no flag gate either, research/143 §2). The
+  closeout upgraded `QuickSpawnItem` to a6's full `GetItem` deposit walk
+  (`item::deposit_pickup` + the per-slot chime/`NotifyItemPickup` + the void
+  vault LAST resort + the prefix-preserved overflow at `base.Center`,
+  `Player.cs:39330-39399`/`:7196-7199`); `Prefix(-1)` rolls ONCE on the use's
+  `UpdatePlayers` swap (`Item.cs:528`'s `Main.rand`) — the Mech is in no
+  prefixable set (`itemdata.rs:3519` `accessory: false`, no weapon class), so
+  the roll draws NOTHING (the old UpdateItems overflow-only deviation is
+  resolved).
 * **Pet Licenses 4829/4830/4910** (`ItemCheck_UsePetLicenses` `:45352-45366`
   -> `LicenseOrExchangePet` `:45438-45445` -> `NPC.UnlockOrExchangePet`
   `NPC.cs:80894-80918`, called `:43606`): the `boughtCat`/`boughtDog`/
   `boughtBunny` WORLD unlocks + the `Misc.License*Used` `ChatColors.World`
   text. The grant gate `ItemTimeIsZero && (!petBoughtFlag || NPC.AnyNPCs)`
-  (`:45440`).
+  (`:45440`). The closeout adopted a6 `d46221b2`'s LIVE `AnyNPCs` net-id scan
+  (`n.hp > 0 && n.kind.net_id() == npc_type` — no ported kind answers today,
+  but the exchange gate starts answering when a town-pet kind lands) + the
+  `!bought` guard: the exchange pass posts `Misc.PetExchangeFail`
+  (`RerollVariationForNPCType` false, `NPC.cs:80914-80917`) WITHOUT a
+  re-raise or a license re-print.
 
 **The machine.** The Demon Heart + Minecart Powerup ride g88's
 `life_fruit::permanent_upgrade_item_check` shape (inlined in
@@ -39291,16 +39314,42 @@ fn-pointer machine's per-item closure).
 **Deviations (recorded):**
 * The Pet License exchange (`NPC.UnlockOrExchangePet`'s `RerollVariation`
   arms, `NPC.cs:80910-80917`) needs a live TownCat/Dog/Bunny NPC + the
-  `TownNPCProfiles` variation table — neither is shipped. `NPC.AnyNPCs` is
-  therefore always false (a re-use refuses) and the exchange folds to the
-  fail branch; the first-purchase unlock is the live path. The
+  `TownNPCProfiles` variation table — neither is shipped. The LIVE
+  `NPC.AnyNPCs` net-id scan therefore never answers today (a re-use refuses)
+  and the exchange folds to the `Misc.PetExchangeFail` line; the
+  first-purchase unlock is the live path. The
   `NetMessage.TrySendData(7)` world sync (`:80908`) has no SP port.
 * The `NetMessage.SendData(4)` player-info syncs (`:45198`/`:45210`) have no
   single-player port.
-* The Mech's `QuickSpawnItem` prefix rolls on `UpdateItems` at the overflow
-  drop (the port's `spawn_item_drop_px` convention); the C# rolls it at spawn
-  (`Prefix(-1)` `:7176`) and `GetItem` keeps it — the recorded order deviation
-  (the bobber-catch drain's same shape).
+* ~~The Mech's `QuickSpawnItem` prefix rolls on `UpdateItems` at the overflow
+  drop~~ **RESOLVED at the closeout**: the full a6 `GetItem` walk rolls
+  `Prefix(-1)` once on the use's `UpdatePlayers` swap; the Mech is
+  non-prefixable so the roll draws nothing, and the overflow keeps the
+  prefix (no fresh roll). The per-slot pickup chimes draw only when audible
+  (the witnesses mute the listener).
+
+**The slot-8 UI/draw port (closeout 2).** The census found the draw side
+hardcoded hidden (`ui/inventory.rs` `DEMON_HEART_SLOT: bool = false` /
+`EXTRA_ACCESSORY_SLOTS: i32 = 0`) — the live `extra_accessory` flag had no
+draw consumer. Ported: `Player.CanDemonHeartAccessoryBeShown` /
+`CanMasterModeAccessoryBeShown` / `GetAmountOfExtraAccessorySlotsToShow`
+(`Player.cs:4276-4306` — the unlock OR a stored `armor[8]`/`armor[18]`/
+`dye[8]` item shows the row; master is unported so slot 9 shows only while
+occupied) + `ui::inventory::ExtraAccessoryShow` (the `flag4`/`flag5` show pair
++ the `flag6/7/8` unlock bits) threaded through `equip_page_base_y` /
+`accessory_tick_rects` / `accessory_tick_click` / `equip_cell_at` / `draw`:
+the Demon Heart row joins all three columns (armor 8 / vanity 18 / dye 8),
+the tick column gains its 6th tick, the defense anchor drops to row 8
+(`num35 = num19 - 1`, `Main.cs:41421-41424`), a shown-but-locked row draws the
+dim `(80,80,80,80)` background (`Main.cs:41452`/`:41493`/`:41521`) and refuses
+the interact unless the cursor is air (`ItemSlot.Handle`'s `flag6 ||
+Main.mouseItem.IsAir`, `:41450`/`:41491`/`:41519`); the Settings-button
+avoidance reads the LIVE count (`Main.cs:45508`). The world-space accessory
+VISUALS (wings/balloons/shields on the player sprite) remain unported for
+EVERY accessory slot (`render/player_layers.rs` — the composite machine
+draws head/body/legs + mount only), so slot 8 needs no per-slot draw port
+beyond the UI row; the `hideVisibleAccessory[8]` tick is live and persists
+through the g55 loadout block's hide flags.
 
 **Persistence.** The `.plr` (vanilla `Player.Serialize`) halves of
 `extraAccessory` (`:54776`) and the super-cart BitsByte (`:54914-54918`) are
@@ -39318,7 +39367,14 @@ queen-slime byte's shape; pre-v18 loads false). The combat-book-vol-two /
 peddler-satchel `.trwld` v18 pair is the g90 lane's — the Lead merges the two
 v18 tails.
 
-**Verification (code-only).** 6 use-arm witnesses + 3 persist witnesses +
-the `.wld` owned-field round-trip + the `.trwld` v18 round-trip — all WRITTEN
-NOT RUN (the lane's no-cargo constraint). Every touched file parse-checked
-via `rustfmt --edition 2024 --check`.
+**Verification (code-only).** 8 use-arm witnesses (the closeout added the
+used-heart START refusal + the resident-non-pet exchange refusal, extended
+the minecart witness with the re-use second-Mech leg and the RNG census with
+the cart) + 3 UI witnesses (the row-show predicate per leg, the row joins the
+columns at row 8 y=556, the shown-locked dim) + 3 persist witnesses + the
+`.wld` owned-field round-trip + the `.trwld` v18 round-trip — all WRITTEN NOT
+RUN (the lane's no-cargo constraint). Every touched file parse-checked via
+`rustfmt --edition 2024 --check` (the closeout's delta vs HEAD is
+non-positive on every file — the repo carries pre-existing fmt drift the
+lane does not widen). The a6 fold-input adjudication + the g88f/g71c
+persistence fold recipes: `docs/research/143-g87-fold-input.md`.
