@@ -6,10 +6,12 @@
 //! (`Player.cs:17731-18088`).
 //!
 //! Everything the port cannot drive yet is a *neutral-default input* in
-//! [`LuckState`]: `usedGalaxyPearl` (no player-file writer), the lantern-night
-//! flag (M4-EVENT-4), the garden-gnome flag (tile 567, M4 content) and the
-//! equipment bonus (M3-EQUIP). The formula already applies them in the original
-//! order, so those tasks only fill the inputs — the M2-BUFF-2 pattern.
+//! [`LuckState`]: `usedGalaxyPearl` (no player-file writer), the garden-gnome
+//! flag (tile 567, M4 content) and the equipment bonus (M3-EQUIP). The formula
+//! already applies them in the original order, so those tasks only fill the
+//! inputs — the M2-BUFF-2 pattern. The lantern-night flag IS driven now
+//! (W4-f40): `world_sim/player.rs` snapshots `LanternNight.LanternsUp` beside
+//! the auras/zones each tick (`Player.cs:29146-29149`).
 //!
 //! The value is **never clamped** — the −0.7/1.0 caps are UI-only
 //! (`NormalizedLuck`, `Player.cs:4107-4122`); only `torchLuck` floors at 0
@@ -75,8 +77,9 @@ pub struct LuckState {
     /// player file (`:54784/:55258`); the port has no player-file writer, so
     /// it stays the default (deviation recorded in ANALYSIS).
     pub used_galaxy_pearl: bool,
-    /// `LanternNight.LanternsUp` (`LanternNight.cs:17-27`) — no lantern-night
-    /// system in the port (M4-EVENT-4); the all-false gate, like `rain.rs`.
+    /// `LanternNight.LanternsUp` (`LanternNight.cs:17-27`) — W4-f40 wires it:
+    /// `world_sim/player.rs` snapshots the event flag each tick beside the
+    /// auras/zones (`Player.cs:29146-29149`'s live read).
     pub lantern_night: bool,
     /// `Player.HasGardenGnomeNearby` (`Player.cs:2076`) — copied from the
     /// SceneMetrics tile-567 count (`SceneMetrics.cs:591`); M4 content.

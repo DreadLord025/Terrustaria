@@ -24151,13 +24151,38 @@ mod tests {
         };
         let rows = crate::shop::resolve_stock(13, &night, &[]);
         assert!(rows.contains(&4552), "the night row by night");
-        // The graveyard/lantern/golfer/pirate/golem/hardmode/party rows ride
-        // flags the port has not modelled.
+        // The graveyard/golfer/pirate/golem/hardmode/party rows ride flags
+        // the port has not modelled. W4-f40: the lantern row IS modelled
+        // now, but stays out while the lanterns are down (the default).
         assert!(!rows.contains(&4682), "no graveyard goggles");
         assert!(!rows.contains(&4743), "no football at score 0");
         assert!(!rows.contains(&3369), "no pirate row");
         assert!(!rows.contains(&3546), "no golem row");
         assert!(!rows.contains(&3749), "no party block");
+        assert!(!rows.contains(&4702), "no Release Lantern while lanterns down");
+    }
+
+    /// W4-f40 — `Chest.cs:2309-2312`: the Party Girl's Release Lantern
+    /// (4702) row appears exactly while `LanternNight.LanternsUp`.
+    #[test]
+    fn w4_f40_the_party_girl_sells_the_release_lantern_on_a_lantern_night() {
+        let down = crate::shop::ShopFlags::default();
+        assert!(
+            !crate::shop::resolve_stock(13, &down, &[]).contains(&4702),
+            "the lantern row is gated off by default"
+        );
+        let up = crate::shop::ShopFlags {
+            lanterns_up: true,
+            ..Default::default()
+        };
+        let rows = crate::shop::resolve_stock(13, &up, &[]);
+        assert!(rows.contains(&4702), "the Release Lantern row while lanterns up");
+        // The row's `num` position: right after 4681 (the graveyard 4682 is
+        // constants-off), ahead of the always 4791 tail (`Chest.cs:2300-2312`).
+        let pos_4681 = rows.iter().position(|&id| id == 4681).unwrap();
+        let pos_4702 = rows.iter().position(|&id| id == 4702).unwrap();
+        let pos_4791 = rows.iter().position(|&id| id == 4791).unwrap();
+        assert!(pos_4681 < pos_4702 && pos_4702 < pos_4791, "the C# num order");
     }
 
     #[test]

@@ -22,6 +22,12 @@ pub struct ShopFlags {
     pub downed_moon_lord: bool,
     pub night: bool,
     pub blood_moon: bool,
+    /// W4-f40: `LanternNight.LanternsUp` (`Chest.cs:2309`) — the Party
+    /// Girl's Release-Lantern (4702) row appears only while the lanterns
+    /// are up. Fed from `App.world_events` at the shop-open seam (the
+    /// `from_world` view leaves it false: the flag lives on the event
+    /// state, not the `World`, like the other event gates).
+    pub lanterns_up: bool,
     pub zone_snow: bool,
     pub zone_jungle: bool,
     pub downed_boss2: bool,
@@ -75,6 +81,7 @@ impl Default for ShopFlags {
             downed_moon_lord: false,
             night: false,
             blood_moon: false,
+            lanterns_up: false,
             zone_snow: false,
             zone_jungle: false,
             downed_boss2: false,
@@ -166,6 +173,9 @@ pub enum StockWhen {
     HardMode,
     Night,
     BloodMoon,
+    /// W4-f40: `LanternNight.LanternsUp` (`Chest.cs:2309-2312`) — the Party
+    /// Girl's Release Lantern (4702) row.
+    LanternNight,
     DownedBoss3,
     DownedBoss2Or3OrHard,
     ZoneSnow,
@@ -507,6 +517,11 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(2738, StockWhen::Always),
             row(4470, StockWhen::Always),
             row(4681, StockWhen::Always),
+            // W4-f40: `Chest.cs:2309-2312` — the Release Lantern (4702)
+            // row appears while the lanterns are up (the graveyard 4682
+            // row above it stays constants-off, so this lands right after
+            // 4681 in the port's `num` order).
+            row(4702, StockWhen::LanternNight),
             row(4791, StockWhen::Always),
             row(3747, StockWhen::Always),
             row(3732, StockWhen::Always),
@@ -1264,6 +1279,7 @@ pub fn resolve_stock_entries_moon(
             StockWhen::HardMode => flags.hard_mode,
             StockWhen::Night => flags.night,
             StockWhen::BloodMoon => flags.blood_moon,
+            StockWhen::LanternNight => flags.lanterns_up,
             StockWhen::DownedBoss3 => flags.downed_boss3,
             StockWhen::DownedBoss2Or3OrHard => {
                 flags.downed_boss2 || flags.downed_boss3 || flags.hard_mode

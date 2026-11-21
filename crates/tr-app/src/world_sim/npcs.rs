@@ -917,6 +917,9 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         downed_moon_lord: app.world.downed_moon_lord,
         night: !app.world.day_time,
         blood_moon: app.world.blood_moon,
+        // W4-f40: `Chest.cs:2309`'s `LanternNight.LanternsUp` gate — the
+        // Party Girl's Release-Lantern row reads the live event flag.
+        lanterns_up: crate::world_events::lanterns_up(&app.world_events),
         zone_snow: app.scene_metrics.zone_snow,
         zone_jungle: app.scene_metrics.zone_jungle,
         // `NPC.downedBoss2`/`downedBoss3` — the world's own latches (the
