@@ -517,6 +517,12 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::GreenDragonfly
         | NpcKind::OrangeDragonfly
         | NpcKind::RedDragonfly => &[31],
+        // W4-d42 - the NPCID 600-604 immunity rows (`NPCID.cs:9395+`).
+        NpcKind::YellowDragonfly
+        | NpcKind::GoldDragonfly
+        | NpcKind::Seagull
+        | NpcKind::Seagull2
+        | NpcKind::LadyBug => &[31],
     }
 }
 

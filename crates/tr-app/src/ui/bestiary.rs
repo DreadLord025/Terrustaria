@@ -1620,6 +1620,12 @@ fn portrait_data(
         // boxes on their own sheets (the WyvernHead literal-size
         // precedent - the sheets are deferred, the index folds to 0).
         (NpcKind::RedDragonfly, _) => (sheet_i, 10.0, 10.0, 10.0, white),
+        // W4-d42 - the roster's portraits rest the kinds' SetDefaults
+        // boxes on their own sheets (the WyvernHead literal-size
+        // precedent - the sheets are deferred, the index folds to 0).
+        (NpcKind::GoldDragonfly, _) => (sheet_i, 10.0, 10.0, 10.0, white),
+        (NpcKind::Seagull, _) => (sheet_i, 26.0, 22.0, 26.0, white),
+        (NpcKind::LadyBug, _) => (sheet_i, 10.0, 10.0, 10.0, white),
     }
 }
 

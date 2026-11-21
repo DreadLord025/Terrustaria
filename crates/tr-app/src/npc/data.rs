@@ -611,6 +611,11 @@ impl NpcKind {
             NpcKind::GreenDragonfly => 371,
             NpcKind::OrangeDragonfly => 372,
             NpcKind::RedDragonfly => 373,
+            NpcKind::YellowDragonfly => 374,
+            NpcKind::GoldDragonfly => 375,
+            NpcKind::Seagull => 376,
+            NpcKind::Seagull2 => 377,
+            NpcKind::LadyBug => 378,
         }
     }
 
@@ -963,6 +968,11 @@ impl NpcKind {
             371 => NpcKind::GreenDragonfly,
             372 => NpcKind::OrangeDragonfly,
             373 => NpcKind::RedDragonfly,
+            374 => NpcKind::YellowDragonfly,
+            375 => NpcKind::GoldDragonfly,
+            376 => NpcKind::Seagull,
+            377 => NpcKind::Seagull2,
+            378 => NpcKind::LadyBug,
             _ => return None,
         })
     }
@@ -1866,6 +1876,12 @@ impl NpcKind {
             NpcKind::GreenDragonfly => "NPC_Hit_1",
             NpcKind::OrangeDragonfly => "NPC_Hit_1",
             NpcKind::RedDragonfly => "NPC_Hit_1",
+            // W4-d42 - the roster's HitSound rows.
+            NpcKind::YellowDragonfly => "NPC_Hit_1",
+            NpcKind::GoldDragonfly => "NPC_Hit_1",
+            NpcKind::Seagull => "NPC_Hit_1",
+            NpcKind::Seagull2 => "NPC_Hit_1",
+            NpcKind::LadyBug => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2198,6 +2214,13 @@ impl NpcKind {
             NpcKind::GreenDragonfly => "NPC_Killed_1",
             NpcKind::OrangeDragonfly => "NPC_Killed_1",
             NpcKind::RedDragonfly => "NPC_Killed_1",
+            // W4-d42 - the roster's DeathSound rows (614's null row
+            // rides the None fall-through).
+            NpcKind::YellowDragonfly => "NPC_Killed_1",
+            NpcKind::GoldDragonfly => "NPC_Killed_1",
+            NpcKind::Seagull => "NPC_Killed_1",
+            NpcKind::Seagull2 => "NPC_Killed_1",
+            NpcKind::LadyBug => "NPC_Killed_1",
             _ => return None,
         })
     }
@@ -2315,6 +2338,11 @@ impl NpcKind {
             | NpcKind::GreenDragonfly
             | NpcKind::OrangeDragonfly
             | NpcKind::RedDragonfly
+            => true,
+            // W4-d42 - the noGravity rows.
+            NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly
+            | NpcKind::LadyBug
             => true,
             NpcKind::AngryNimbus => true,
             _ => false,
@@ -2592,6 +2620,12 @@ impl NpcKind {
             NpcKind::GreenDragonfly => 114,
             NpcKind::OrangeDragonfly => 114,
             NpcKind::RedDragonfly => 114,
+            // W4-d42 - the NPCID 600-604 SetDefaults rows.
+            NpcKind::YellowDragonfly => 114,
+            NpcKind::GoldDragonfly => 114,
+            NpcKind::Seagull => 7,
+            NpcKind::Seagull2 => 68,
+            NpcKind::LadyBug => 115,
         }
     }
 
@@ -3157,6 +3191,12 @@ impl NpcKind {
             NpcKind::GreenDragonfly => (10.0, 10.0),
             NpcKind::OrangeDragonfly => (10.0, 10.0),
             NpcKind::RedDragonfly => (10.0, 10.0),
+            // W4-d42 - the NPCID 600-604 SetDefaults rows.
+            NpcKind::YellowDragonfly => (10.0, 10.0),
+            NpcKind::GoldDragonfly => (10.0, 10.0),
+            NpcKind::Seagull => (22.0, 26.0),
+            NpcKind::Seagull2 => (28.0, 22.0),
+            NpcKind::LadyBug => (10.0, 10.0),
         }
     }
 
@@ -3291,6 +3331,14 @@ impl NpcKind {
             NpcKind::GreenDragonfly => 597,
             NpcKind::OrangeDragonfly => 598,
             NpcKind::RedDragonfly => 599,
+            // W4-d42 - the roster's TRUE vanilla types (the folded kinds
+            // keep their own - the AI arms read cs_id; the bestiary
+            // folds in entry_for_npc only).
+            NpcKind::YellowDragonfly => 600,
+            NpcKind::GoldDragonfly => 601,
+            NpcKind::Seagull => 602,
+            NpcKind::Seagull2 => 603,
+            NpcKind::LadyBug => 604,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -3854,6 +3902,12 @@ impl NpcKind {
             NpcKind::GreenDragonfly => 5,
             NpcKind::OrangeDragonfly => 5,
             NpcKind::RedDragonfly => 5,
+            // W4-d42 - the NPCID 600-604 SetDefaults rows.
+            NpcKind::YellowDragonfly => 5,
+            NpcKind::GoldDragonfly => 5,
+            NpcKind::Seagull => 5,
+            NpcKind::Seagull2 => 5,
+            NpcKind::LadyBug => 5,
         }
     }
 
@@ -4242,6 +4296,12 @@ impl NpcKind {
             NpcKind::GreenDragonfly => 0,
             NpcKind::OrangeDragonfly => 0,
             NpcKind::RedDragonfly => 0,
+            // W4-d42 - the NPCID 600-604 SetDefaults rows.
+            NpcKind::YellowDragonfly => 0,
+            NpcKind::GoldDragonfly => 0,
+            NpcKind::Seagull => 0,
+            NpcKind::Seagull2 => 0,
+            NpcKind::LadyBug => 0,
         }
     }
 }

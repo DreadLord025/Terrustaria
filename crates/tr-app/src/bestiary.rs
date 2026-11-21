@@ -2283,6 +2283,32 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Dragonfly",
     },
+    // W4-d42 - the NPCID 600-604 roster's own credits (the
+    // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
+    BestiaryEntryDef {
+        credit_id: "GoldDragonfly",
+        net_id: 601,
+        kind: NpcKind::GoldDragonfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Dragonfly",
+    },
+    BestiaryEntryDef {
+        credit_id: "Seagull",
+        net_id: 602,
+        kind: NpcKind::Seagull,
+        variant: None,
+        quick_unlock: false,
+        name: "Seagull",
+    },
+    BestiaryEntryDef {
+        credit_id: "LadyBug",
+        net_id: 604,
+        kind: NpcKind::LadyBug,
+        variant: None,
+        quick_unlock: false,
+        name: "Ladybug",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -2488,6 +2514,10 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         NpcKind::BlueDragonfly => NpcKind::RedDragonfly,
         NpcKind::GreenDragonfly => NpcKind::RedDragonfly,
         NpcKind::OrangeDragonfly => NpcKind::RedDragonfly,
+        // W4-d42 - the Hide=true folds (`NPCID.cs`'s draw modifiers):
+        // one credit per family (the SleepingGolfer precedent).
+        NpcKind::YellowDragonfly => NpcKind::RedDragonfly,
+        NpcKind::Seagull2 => NpcKind::Seagull,
         other => other,
     };
     ENTRIES

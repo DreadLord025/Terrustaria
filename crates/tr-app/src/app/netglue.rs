@@ -3566,6 +3566,20 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-d42 - the roster's ground/stand kinds plant on the column
+        // surface (the wave-A walker precedent).
+        crate::npc::NpcKind::Seagull
+        => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        // W4-d42 - the roster's flyers seed in the open air (the net
+        // state overwrites the position below).
+        crate::npc::NpcKind::YellowDragonfly
+        | crate::npc::NpcKind::GoldDragonfly
+        | crate::npc::NpcKind::Seagull2
+        | crate::npc::NpcKind::LadyBug
+        => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
         // W4-d42 - the roster's flyers seed in the open air (the net
         // state overwrites the position below).
         crate::npc::NpcKind::BlackDragonfly

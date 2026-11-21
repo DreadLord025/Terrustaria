@@ -1179,6 +1179,26 @@ pub enum NpcKind {
     /// 10x10, aiStyle 114, dmg 0, def 0,
     /// 5 HP, kb 1.0, value 0.
     RedDragonfly,
+    /// `NPCID.YellowDragonfly` (600) - `NPC.cs:16720-16738`:
+    /// 10x10, aiStyle 114, dmg 0, def 0,
+    /// 5 HP, kb 1.0, value 0.
+    YellowDragonfly,
+    /// `NPCID.GoldDragonfly` (601) - `NPC.cs:16720-16738 (rarity 3 :16735)`:
+    /// 10x10, aiStyle 114, dmg 0, def 0,
+    /// 5 HP, kb 1.0, value 0.
+    GoldDragonfly,
+    /// `NPCID.Seagull` (602) - `NPC.cs:16739-16750`:
+    /// 22x26, aiStyle 7, dmg 0, def 0,
+    /// 5 HP, kb 1.0, value 0.
+    Seagull,
+    /// `NPCID.Seagull2` (603) - `NPC.cs:16751-16762`:
+    /// 28x22, aiStyle 68, dmg 0, def 0,
+    /// 5 HP, kb 1.0, value 0.
+    Seagull2,
+    /// `NPCID.LadyBug` (604) - `NPC.cs:16763-16780 (catchItem type-604+4361 :16779)`:
+    /// 10x10, aiStyle 115, dmg 0, def 0,
+    /// 5 HP, kb 1.0, value 0.
+    LadyBug,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3651,6 +3671,12 @@ impl Npc {
             NpcKind::GreenDragonfly => 1.0,
             NpcKind::OrangeDragonfly => 1.0,
             NpcKind::RedDragonfly => 1.0,
+            // W4-d42 - the NPCID 600-604 SetDefaults rows.
+            NpcKind::YellowDragonfly => 1.0,
+            NpcKind::GoldDragonfly => 1.0,
+            NpcKind::Seagull => 1.0,
+            NpcKind::Seagull2 => 1.0,
+            NpcKind::LadyBug => 1.0,
             _ => 0.4,
         }
     }
@@ -4055,6 +4081,12 @@ impl Npc {
             NpcKind::GreenDragonfly => 0,
             NpcKind::OrangeDragonfly => 0,
             NpcKind::RedDragonfly => 0,
+            // W4-d42 - the NPCID 600-604 SetDefaults rows.
+            NpcKind::YellowDragonfly => 0,
+            NpcKind::GoldDragonfly => 0,
+            NpcKind::Seagull => 0,
+            NpcKind::Seagull2 => 0,
+            NpcKind::LadyBug => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4451,6 +4483,12 @@ impl Npc {
             NpcKind::GreenDragonfly => 0.0,
             NpcKind::OrangeDragonfly => 0.0,
             NpcKind::RedDragonfly => 0.0,
+            // W4-d42 - the NPCID 600-604 SetDefaults rows.
+            NpcKind::YellowDragonfly => 0.0,
+            NpcKind::GoldDragonfly => 0.0,
+            NpcKind::Seagull => 0.0,
+            NpcKind::Seagull2 => 0.0,
+            NpcKind::LadyBug => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6457,6 +6495,25 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // ---- W4-d42 batch 5: the NPCID 600-604 roster
+            // (data-only join). Unwired styles idle in place (the
+            // wyvern precedent); walkers ride the aiStyle-3 family,
+            // swimmers the aiStyle-16 family.
+            // `NPC.cs:16720-16738` - aiStyle 114 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::YellowDragonfly => {}
+            // `NPC.cs:16720-16738 (rarity 3 :16735)` - aiStyle 114 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::GoldDragonfly => {}
+            // `NPC.cs:16739-16750` - aiStyle 7 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::Seagull => {}
+            // `NPC.cs:16751-16762` - aiStyle 68 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::Seagull2 => {}
+            // `NPC.cs:16763-16780 (catchItem type-604+4361 :16779)` - aiStyle 115 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::LadyBug => {}
             // ---- W4-d42 batch 4: the NPCID 595-599 roster
             // (data-only join). Unwired styles idle in place (the
             // wyvern precedent); walkers ride the aiStyle-3 family,
@@ -9547,6 +9604,94 @@ impl Npc {
                     self.frame_counter = 0.0;
                 }
                 self.frame = self.frame_counter as u32 / 3;
+            }
+            // W4-d42 - `FindFrame` case 595-601 (`NPC.cs:72722-72738`):
+            // the direction-locked flap, the row = counter/3 over the
+            // 4-frame strip (12-tick lap).
+            NpcKind::YellowDragonfly | NpcKind::GoldDragonfly => {
+                self.sprite_dir = self.facing;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 12.0 {
+                    self.frame_counter = 0.0;
+                }
+                self.frame = self.frame_counter as u32 / 3;
+            }
+            // W4-d42 - `FindFrame` case 602/608 (`NPC.cs:73819-73841` /
+            // `:73749-73771`): stand row 0, the walk steps rows 3..9
+            // every 4 ticks.
+            NpcKind::Seagull => {
+                self.sprite_dir = self.facing;
+                if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 4.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 10 {
+                        self.frame = 3;
+                    }
+                    if self.frame < 3 {
+                        self.frame = 3;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 603/609 (`NPC.cs:73842-73886` /
+            // `:73772-73818`): the wet paddle rows 1..2 (8-tick), the
+            // dry stand row 1, the fly rows 11..14 (4-tick) with the
+            // vx*0.1 tilt.
+            NpcKind::Seagull2 => {
+                self.sprite_dir = self.facing;
+                if self.wet {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 8.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 2 {
+                        self.frame = 1;
+                    }
+                    if self.frame < 1 {
+                        self.frame = 1;
+                    }
+                    self.rotation = 0.0;
+                } else if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame = 1;
+                    self.frame_counter = 0.0;
+                    self.rotation = 0.0;
+                } else {
+                    self.rotation = self.vx * 0.1;
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 4.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 15 {
+                        self.frame = 11;
+                    }
+                    if self.frame < 11 {
+                        self.frame = 11;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 604/605 (`NPC.cs:66961-66980`):
+            // the moving-only counter (2-tick phases over 4), ground
+            // rows 0..3, air rows 4..7.
+            NpcKind::LadyBug => {
+                self.sprite_dir = self.facing;
+                if self.vx != 0.0 || self.vy != 0.0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 8.0 {
+                        self.frame_counter = 0.0;
+                    }
+                }
+                if self.vy == 0.0 {
+                    self.frame = self.frame_counter as u32 / 2;
+                } else {
+                    self.frame = 4 + self.frame_counter as u32 / 2;
+                }
             }
         }
     }
@@ -19133,6 +19278,12 @@ impl Npc {
             NpcKind::GreenDragonfly => 597,
             NpcKind::OrangeDragonfly => 598,
             NpcKind::RedDragonfly => 599,
+            // W4-d42 - the vanilla ids 600-604 are free render keys.
+            NpcKind::YellowDragonfly => 600,
+            NpcKind::GoldDragonfly => 601,
+            NpcKind::Seagull => 602,
+            NpcKind::Seagull2 => 603,
+            NpcKind::LadyBug => 604,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -24201,7 +24352,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 290] = [
+    pub(super) const ALL_KINDS: [NpcKind; 295] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24504,6 +24655,12 @@ mod tests {
         NpcKind::GreenDragonfly,
         NpcKind::OrangeDragonfly,
         NpcKind::RedDragonfly,
+        // W4-d42 - the NPCID 600-604 roster.
+        NpcKind::YellowDragonfly,
+        NpcKind::GoldDragonfly,
+        NpcKind::Seagull,
+        NpcKind::Seagull2,
+        NpcKind::LadyBug,
     ];
 
     #[test]
@@ -24742,6 +24899,42 @@ mod tests {
         assert_eq!(NpcKind::OrangeDragonfly.to_u16(), 372u16);
         assert_eq!(NpcKind::RedDragonfly.to_u16(), 373u16);
         assert_eq!(ALL_KINDS.len(), 290);
+    }
+
+    /// W4-d42 batch 5 - the NPCID 600-604 `SetDefaults` rows pin
+    /// against the C# (NPC.cs:16720-16738, NPC.cs:16720-16738 (rarity 3 :16735), NPC.cs:16739-16750, NPC.cs:16751-16762, NPC.cs:16763-16780 (catchItem type-604+4361 :16779)), through the port's
+    /// tables - the smallkinds witness shape. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d42_b5_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::YellowDragonfly, 600u16, 114u8, 10.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::GoldDragonfly, 601u16, 114u8, 10.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::Seagull, 602u16, 7u8, 22.0, 26.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::Seagull2, 603u16, 68u8, 28.0, 22.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::LadyBug, 604u16, 115u8, 10.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The port-local wire band (the vanilla types ride cs_id/net_id).
+        assert_eq!(NpcKind::YellowDragonfly.to_u16(), 374u16);
+        assert_eq!(NpcKind::GoldDragonfly.to_u16(), 375u16);
+        assert_eq!(NpcKind::Seagull.to_u16(), 376u16);
+        assert_eq!(NpcKind::Seagull2.to_u16(), 377u16);
+        assert_eq!(NpcKind::LadyBug.to_u16(), 378u16);
+        assert_eq!(ALL_KINDS.len(), 295);
     }
 
     /// The small-kinds wiring wave: the style axis claims 21/49/56/72, so
@@ -28259,7 +28452,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            290,
+            295,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(

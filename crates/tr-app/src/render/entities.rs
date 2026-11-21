@@ -1118,6 +1118,11 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // W4-d42 - the folded kinds keep their OWN draw sheets (the
         // ForceBubble precedent - the bestiary credit folds, the
         // sheet does not).
+        NpcKind::YellowDragonfly => 600,
+        NpcKind::Seagull2 => 603,
+        // W4-d42 - the folded kinds keep their OWN draw sheets (the
+        // ForceBubble precedent - the bestiary credit folds, the
+        // sheet does not).
         NpcKind::BlackDragonfly => 595,
         NpcKind::BlueDragonfly => 596,
         NpcKind::GreenDragonfly => 597,
@@ -3187,6 +3192,25 @@ pub(crate) fn draw_npcs(
             }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
+            }
+            // W4-d42 - the roster's draw arms ride the generic anchor over
+            // their own NPC_<id> sheets. The sheets are NOT packed yet
+            // (the atlas headroom - the wyvern deferral precedent), so
+            // `npc_sheet` returns None and the arm no-draws.
+            NpcKind::YellowDragonfly => {
+                generic_anchor(assets.npc_sheet(600), npc_rows(600), n, w, h)
+            }
+            NpcKind::GoldDragonfly => {
+                generic_anchor(assets.npc_sheet(601), npc_rows(601), n, w, h)
+            }
+            NpcKind::Seagull => {
+                generic_anchor(assets.npc_sheet(602), npc_rows(602), n, w, h)
+            }
+            NpcKind::Seagull2 => {
+                generic_anchor(assets.npc_sheet(603), npc_rows(603), n, w, h)
+            }
+            NpcKind::LadyBug => {
+                generic_anchor(assets.npc_sheet(604), npc_rows(604), n, w, h)
             }
             // W4-d42 - the roster's draw arms ride the generic anchor over
             // their own NPC_<id> sheets. The sheets are NOT packed yet
