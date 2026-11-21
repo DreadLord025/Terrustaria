@@ -480,10 +480,11 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     if let Some(p) = app.player.as_mut() {
         app.projectiles.apply_channel_tracks(p);
     }
-    // W4-f49 — the Last Prism interval pay's mana-flower auto-drink
-    // (`Player.CheckMana` `:52588-52609` reached from `AI_075`'s
-    // `Projectile.cs:66613`): the pool-side pay took the ManaV2 empty arm on
-    // a short interval; the flower lane re-runs the FULL CheckMana (the
+    // W4-f49 — the AI_075 channel holders' mana-flower auto-drink
+    // (`Player.CheckMana` `:52588-52609` reached from the Last Prism's
+    // interval pay `Projectile.cs:66613` AND the Charged Blaster Cannon's
+    // `flag3` pay `:66479`): the pool-side pay took the ManaV2 empty arm on
+    // a short pay tick; the flower lane re-runs the FULL CheckMana (the
     // QuickMana drink + the post-drink re-pay) here, where the inventory is
     // reachable. The draws + the heal text ride `UpdateProjectiles`
     // (`Main.cs:17775`, the AI_075 caller's swap) — the drain convention.

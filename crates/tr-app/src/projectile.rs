@@ -769,15 +769,18 @@ pub struct Projectile {
     /// S1-P-i35 — the pull's Duke Fishron spawn (`Player.cs:52403-52414`,
     /// `NPC.SpawnOnPlayer(plr, 370)`): the owner player id.
     pub wants_duke_spawn: bool,
-    /// W4-f49 — the Last Prism interval pay's mana-flower auto-drink
-    /// (`Player.CheckMana` `:52588-52609` reached from `AI_075`'s
-    /// `Projectile.cs:66613`): `Some(rawAmountToPay)` when the interval pay
-    /// was short AND `manaFlower` is armed — the pure pool-side pay already
-    /// took the ManaV2 empty arm; the world-sim pass re-runs the FULL
-    /// `CheckMana` (the QuickMana drink + the post-drink re-pay) through
+    /// W4-f49 — the `AI_075` channel holders' mana-flower auto-drink
+    /// (`Player.CheckMana` `:52588-52609` reached from the Last Prism's
+    /// interval pay `Projectile.cs:66613` AND the Charged Blaster Cannon's
+    /// `flag3` pay `:66479`): `Some(rawAmountToPay)` when the pay was short
+    /// AND `manaFlower` is armed — the pure pool-side pay already took the
+    /// ManaV2 empty arm; the world-sim pass re-runs the FULL `CheckMana`
+    /// (the QuickMana drink + the post-drink re-pay) through
     /// `potions::check_mana_with_flower_on` on the `UpdateProjectiles`
     /// stream (the pool cannot borrow the inventory). `None` = no flower
-    /// drink owed this tick.
+    /// drink owed this tick. (The name keeps the prism-era anchor; the
+    /// blaster shares the slot — `drain_prism_flower_drinks` walks ALL
+    /// slots.)
     pub(crate) wants_prism_flower_drink: Option<i32>,
 }
 
@@ -16154,12 +16157,14 @@ impl ProjectilePool {
         std::mem::take(&mut self.pending_npc_hit_sounds)
     }
 
-    /// W4-f49 — the Last Prism interval pay's mana-flower auto-drink intents
-    /// (`Player.CheckMana` `:52588-52609` reached from `AI_075`'s
-    /// `Projectile.cs:66613`): the raw `item.mana` per short+flower interval.
+    /// W4-f49 — the `AI_075` channel holders' mana-flower auto-drink intents
+    /// (`Player.CheckMana` `:52588-52609` reached from the Last Prism's
+    /// interval pay `Projectile.cs:66613` AND the Charged Blaster Cannon's
+    /// `flag3` pay `:66479`): the raw `item.mana` per short+flower pay tick.
     /// The world sim re-runs the FULL `CheckMana` (the QuickMana drink + the
     /// post-drink re-pay) through `potions::check_mana_with_flower_on` on the
     /// `UpdateProjectiles` stream — the pool cannot borrow the inventory.
+    /// The walk covers ALL slots (the name keeps the prism-era anchor).
     pub fn drain_prism_flower_drinks(&mut self) -> Vec<i32> {
         let mut out = Vec::new();
         for p in self.slots.iter_mut() {
@@ -20658,7 +20663,8 @@ impl ProjectilePool {
 
     /// S1-P-i22 — `AI_075`'s Charged Blaster Cannon holder 460 arm
     /// (`Projectile.cs:66360-66538`): the channel charge machine. `ai[0]`
-    /// counts the charge (the slow-magic rate is 1 — no ManaV2); the orb 459
+    /// counts the charge at `GetSlowMagicUseRate()` (1, or 1/2.5 under the
+    /// ManaV2 slow cast); the orb 459
     /// fires at charge 1 / every 10 to 50 / every 30 from 80 to 180, the beam
     /// 461 at charge 180 (damage ×1.5, `ai1 = this.key`), and the holder dies
     /// when the channel releases or the beam is gone past 180. The mana pays
@@ -20671,8 +20677,18 @@ impl ProjectilePool {
         owner: Option<(f32, f32)>,
         mut player: Option<&mut crate::player::Player>,
     ) {
-        // `:66362` — `ai[0] += GetSlowMagicUseRate()` (1f, no ManaV2).
-        self.slots[slot].ai[0] += 1.0;
+        // `:66362` — `ai[0] += GetSlowMagicUseRate()` (`Player.cs:47028-
+        // 47035`): 1f normally, 1/2.5 while the ManaV2 slow cast is armed
+        // (`GetSlowMagicMultiplier` `:47046-47049` returns 2.5f — the
+        // pre-fix port hard-coded 1f "no ManaV2", but ManaV2 IS shipped).
+        let rate = player.as_deref().map_or(1.0, |p| {
+            if p.slow_magic_use {
+                1.0 / crate::regen::SLOW_MAGIC_MULTIPLIER
+            } else {
+                1.0
+            }
+        });
+        self.slots[slot].ai[0] += rate;
         let charge = self.slots[slot].ai[0];
         // `:66363-66371` — the stage counter (0/1/2 at 80/180).
         let mut stage = 0;
@@ -20734,16 +20750,30 @@ impl ProjectilePool {
             let mut spawn_orb = false;
             let mut orb_ai1 = 0.7f32;
             if let Some(p) = player.as_deref_mut() {
-                // `:66478-66479` — `flag6 = !flag3 || CheckMana(mana, pay)`.
+                // `:66478-66479` — `flag6 = !flag3 || CheckMana(mana, pay)`
+                // (`Player.cs:52576-52617`): the pay scales by `manaCost`
+                // (`:52579`); under the shipped ManaV2 the check NEVER
+                // refuses — a short bar drains to 0 and arms the slow cast
+                // (`:52610-52614`), the holder LIVES (the pre-fix port paid
+                // the raw unscaled mana and KILLED the holder on a short
+                // bar — the pre-V2 lane). W4-f49 residuals: the flower lane
+                // (`:52588-52609`) owes the pass-tail the FULL re-check,
+                // the prism's `wants_prism_flower_drink` intent convention
+                // (`ai_last_prism`, `Projectile.cs:66613`'s twin).
                 let mana_ok = !mana_tick
                     || match crate::registry::item(p.channel_item) {
                         Some(item) => {
-                            if p.mana >= item.mana {
-                                p.mana -= item.mana;
-                                true
-                            } else {
-                                false
+                            let ok = crate::regen::check_mana(
+                                &mut p.mana,
+                                &mut p.slow_magic_use,
+                                item.mana,
+                                p.mana_cost,
+                                true,
+                            );
+                            if p.slow_magic_use && p.mana_flower {
+                                self.slots[slot].wants_prism_flower_drink = Some(item.mana);
                             }
+                            ok
                         }
                         None => true,
                     };
@@ -36222,6 +36252,122 @@ mod magic_ai_tests {
         }
         assert_eq!(player.mana, 0);
         assert_eq!(pool.slots()[holder].wants_prism_flower_drink, None);
+    }
+
+    /// W4-f49 residuals — the Charged Blaster Cannon rig: player 0 on the
+    /// 2882 row (damage 100, mana 14, shoot_speed 14), the 460 holder
+    /// spawned at (793, 151) heading east, mid-channel aiming east.
+    fn blaster_rig() -> (World, ProjectilePool, crate::player::Player, usize) {
+        let w = world();
+        let mut pool = ProjectilePool::new();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0;
+        player.y = 100.0;
+        player.channel = true;
+        player.channel_item = 2882;
+        player.channel_proj_expected = CHARGED_BLASTER_CANNON;
+        player.mana = 120;
+        let center = player.center();
+        player.channel_target = Vec2::new(center.0 + 1040.0, center.1);
+        let holder = pool
+            .spawn_with_data_ai_owned(
+                CHARGED_BLASTER_CANNON, 0, 793.0, 151.0, 14.0, 0.0, 100, 2.0, 0.0, 0.0,
+            )
+            .unwrap();
+        pool.slots_mut()[holder].friendly = true;
+        (w, pool, player, holder)
+    }
+
+    /// W4-f49 residuals — the blaster's `flag3` pay IS `CheckMana`
+    /// (`Projectile.cs:66479` → `Player.cs:52576-52617`): at charge 80 the
+    /// pay scales by `manaCost` (14 × 0.5 = 7, the pre-fix port paid the
+    /// raw 14), and a SHORT bar takes the ManaV2 empty arm — drain to 0,
+    /// arm the slow cast, the holder LIVES (the pre-fix port killed it,
+    /// the pre-V2 refusal lane). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f49_the_blaster_pay_scales_and_never_kills_under_v2() {
+        let (mut w, mut pool, mut player, holder) = blaster_rig();
+        player.mana_cost = 0.5;
+        player.mana = 120;
+        for _ in 0..80 {
+            step_player(&mut pool, &mut w, &mut player);
+        }
+        assert!(pool.slots()[holder].active, "the charge-80 pay fired");
+        assert_eq!(player.mana, 113, "14 × 0.5 = 7 at the flag3 tick");
+        assert!(!player.slow_magic_use, "the exact pay never arms the slow cast");
+        // The short-bar twin: 5 mana cannot pay the scaled 7.
+        let (mut w, mut pool, mut player, holder) = blaster_rig();
+        player.mana_cost = 0.5;
+        player.mana = 5;
+        for _ in 0..80 {
+            step_player(&mut pool, &mut w, &mut player);
+        }
+        assert!(
+            pool.slots()[holder].active,
+            "ManaV2: the empty-bar pay keeps the holder alive (:52610-52614)"
+        );
+        assert_eq!(player.mana, 0, "the V2 empty arm drains the bar");
+        assert!(player.slow_magic_use, "DoRunOutOfManaEffect armed");
+    }
+
+    /// W4-f49 residuals — the blaster's short+flower pay tick owes the
+    /// pass-tail a FULL CheckMana re-run (the `:52588-52609` lane through
+    /// the shared `wants_prism_flower_drink` intent, the `:66613` prism
+    /// convention): the raw 14 rides the slot, the drain takes it; a
+    /// full-bar pay and a flowerless short pay owe nothing. WRITTEN NOT RUN.
+    #[test]
+    fn w4_f49_the_blaster_short_pay_owes_a_flower_drink() {
+        let (mut w, mut pool, mut player, holder) = blaster_rig();
+        player.mana_cost = 0.5;
+        player.mana = 5;
+        player.mana_flower = true;
+        for _ in 0..80 {
+            step_player(&mut pool, &mut w, &mut player);
+        }
+        assert_eq!(
+            pool.slots()[holder].wants_prism_flower_drink,
+            Some(14),
+            "the raw item.mana rides the shared intent"
+        );
+        assert_eq!(pool.drain_prism_flower_drinks(), vec![14]);
+        assert_eq!(pool.slots()[holder].wants_prism_flower_drink, None);
+        // Full bar: no drink owed. Flowerless short: no drink owed.
+        let (mut w, mut pool, mut player, holder) = blaster_rig();
+        player.mana_cost = 0.5;
+        player.mana = 120;
+        player.mana_flower = true;
+        for _ in 0..80 {
+            step_player(&mut pool, &mut w, &mut player);
+        }
+        assert_eq!(pool.slots()[holder].wants_prism_flower_drink, None);
+        let (mut w, mut pool, mut player, holder) = blaster_rig();
+        player.mana_cost = 0.5;
+        player.mana = 5;
+        player.mana_flower = false;
+        for _ in 0..80 {
+            step_player(&mut pool, &mut w, &mut player);
+        }
+        assert_eq!(pool.slots()[holder].wants_prism_flower_drink, None);
+    }
+
+    /// W4-f49 residuals — the charge clock reads `GetSlowMagicUseRate()`
+    /// (`Projectile.cs:66362` → `Player.cs:47028-47035`): while the ManaV2
+    /// slow cast is armed the charge advances 1/2.5 per tick (the pre-fix
+    /// port hard-coded 1f). Ten ticks from rest land at charge 4, not 10.
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_f49_the_blaster_charge_slows_under_the_slow_cast() {
+        let (mut w, mut pool, mut player, holder) = blaster_rig();
+        player.slow_magic_use = true;
+        for _ in 0..10 {
+            step_player(&mut pool, &mut w, &mut player);
+        }
+        let charge = pool.slots()[holder].ai[0];
+        assert!(
+            (charge - 4.0).abs() < 1e-4,
+            "10 × (1/2.5) = 4 (charge {charge})"
+        );
+        assert!(player.slow_magic_use, "no pay tick ran — the flag stays");
     }
 }
 #[cfg(test)]
