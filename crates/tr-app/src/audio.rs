@@ -555,6 +555,10 @@ pub(crate) const PLAYER_VOICE_CUES: &[&str] = &[
     "player_hit_vampire",
     "player_hit_fairy",
     "player_death_retro",
+    // W4-e10 — the hunger transition's cue (`SoundID.Hungry`,
+    // `SoundID.cs`'s `CreateTrackable("hungry")`, one variation):
+    // `UpdateHungerBuffs`' 333-expiry arm (`Player.cs:12138`).
+    "hungry",
 ];
 
 /// Whether the cue name is in the SFX bank (the item-use coverage test's

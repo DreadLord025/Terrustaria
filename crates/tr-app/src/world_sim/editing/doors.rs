@@ -634,6 +634,71 @@ mod tests {
         app
     }
 
+    /// W4-e10 — the golem altar's roar rides the case-15 slot-0 seam
+    /// (`Player.cs:32782`: `PlaySound(15, (int)position.X, (int)position.Y,
+    /// 0)`): one play, NO `UpdatePlayers` draw, before the spawn.
+    #[test]
+    fn w4_e10_the_golem_altar_roar_draws_nothing() {
+        let mut w = object_world();
+        // The altar's origin cell (frameX 18 / frameY 0, `:32770`'s scan).
+        set_tile(&mut w, 12, 19, 237);
+        let i = w.index(12, 19);
+        w.tiles[i].frame_x = 18;
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        app.world.hard_mode = true;
+        app.world.downed_plant_boss = true;
+        let mut player = Player::spawn(&app.world);
+        player.x = 10.0 * TILE_PX;
+        player.y = 17.0 * TILE_PX;
+        app.player = Some(player);
+        app.inventory[0] = ItemSlot {
+            kind: 1293,
+            name: "Lihzahrd Power Cell".into(),
+            count: 1,
+            prefix: 0,
+        };
+        let before = app.audio.played_count();
+        let rng_before = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        assert!(use_golem_altar(&mut app));
+        assert_eq!(app.audio.played_count(), before + 1, "the altar's roar");
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            rng_before,
+            "case 15 draws nothing"
+        );
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Golem && n.hp > 0),
+            "the Golem spawned"
+        );
+    }
+
+    /// W4-e10 — the dial cue is the `SoundID.Item4` style façade at the
+    /// player's top-left (`Player.cs:32642`/`:32652`): exactly ONE case-2
+    /// `Next(-6, 7)` pitch draw on `UpdatePlayers` after the gate (the
+    /// façade's `GetRandomPitch` NextFloat is audio-only).
+    #[test]
+    fn w4_e10_the_dial_cue_spends_one_case2_pitch_draw() {
+        let mut w = object_world();
+        set_tile(&mut w, 10, 19, 356); // the Enchanted Sundial
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        let mut player = Player::spawn(&app.world);
+        player.x = 9.0 * TILE_PX;
+        player.y = 17.0 * TILE_PX;
+        app.player = Some(player);
+        let mut mirror = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        let _ = mirror.next_range(-6, 7);
+        let before = app.audio.played_count();
+        assert!(interact_tile(&mut app, 10, 19), "the sundial fires");
+        assert_eq!(app.audio.played_count(), before + 1, "the Item4 chime");
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            mirror,
+            "the one case-2 pitch draw, nothing else"
+        );
+    }
+
     #[test]
     fn the_bed_sleep_half_snaps_within_96_px_and_toggles_off() {
         // DW-1.3/DW-1.6 — `Player.cs:32669-32677`: the 96-px gate wraps
