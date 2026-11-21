@@ -86,9 +86,63 @@ use crate::projectile::{
     MOON_BOULDER, POULDER, RAINBOW_BOULDER, ROLLING_CACTUS, ROLLING_CACTUS_SPIKE, SPIDER_BOULDER,
 };
 use glam::Vec2;
+use tr_core::gore::GorePool;
 use tr_core::loot::DropRng;
+use tr_core::particles::{Color, DustPool, DustRng, SpawnCtx};
 use tr_core::tiledata as td;
 use tr_core::world::World;
+
+/// The machines' `DropRng` stream seen as the pool's [`DustRng`] seam (the
+/// W4-g63/g64 `DustDraw` shape, replicated here for a clean merge keep-one):
+/// `Next(max)` delegates to `Next(0, max)` — both are one `Sample()` draw
+/// (`UnifiedRandom.cs:120-141`), so the interleaving with the machine's own
+/// behaviour rolls stays byte-identical.
+pub(crate) struct DustDraw<'a>(pub &'a mut dyn DropRng);
+
+impl DustRng for DustDraw<'_> {
+    fn next_max(&mut self, max: i32) -> i32 {
+        self.0.next_range(0, max)
+    }
+    fn next_range(&mut self, min: i32, max: i32) -> i32 {
+        self.0.next_range(min, max)
+    }
+    fn next_float(&mut self) -> f32 {
+        self.0.next_float()
+    }
+}
+
+/// `Utils.NextVector2Unit` (`Utils.cs:1261-1264`): one `NextFloat` angle,
+/// `ToRotationVector2` = the double-angle float cos/sin.
+fn next_vector2_unit(rng: &mut dyn DropRng) -> Vec2 {
+    let angle = (std::f64::consts::PI * 2.0) as f32 * rng.next_float();
+    Vec2::new((angle as f64).cos() as f32, (angle as f64).sin() as f32)
+}
+
+/// `Utils.NextVector2Circular` (`Utils.cs:1266-1269`): the unit draw THEN a
+/// second `NextFloat` radius scale — `unit * (halfW, halfH) * r`.
+fn next_vector2_circular(rng: &mut dyn DropRng, half_w: f32, half_h: f32) -> Vec2 {
+    let unit = next_vector2_unit(rng);
+    let r = rng.next_float();
+    Vec2::new(unit.x * half_w * r, unit.y * half_h * r)
+}
+
+/// `Utils.NextVector2FromRectangle` (`Utils.cs:1256-1259`): TWO `NextFloat`
+/// draws, X then Y — `(rect.X + r*rect.Width, rect.Y + r*rect.Height)`.
+fn next_vector2_from_rect(rng: &mut dyn DropRng, x: f32, y: f32, w: f32, h: f32) -> Vec2 {
+    Vec2::new(x + rng.next_float() * w, y + rng.next_float() * h)
+}
+
+/// `Main.hslToRgb` → the pool's sRGB-byte [`Color`] (the `trail_644` shape:
+/// the byte-quantised palette `tr_core::tile_light::hsl_to_rgb`, alpha 255).
+fn hsl_color(hue: f32, sat: f32, lum: f32) -> Color {
+    let rgb = tr_core::tile_light::hsl_to_rgb(hue, sat, lum);
+    Color::new(
+        (rgb[0] * 255.0) as u8,
+        (rgb[1] * 255.0) as u8,
+        (rgb[2] * 255.0) as u8,
+        255,
+    )
+}
 
 /// The 13 aiStyle-25 kinds (the census 26b row set).
 pub(crate) const BOULDER_KINDS: [u16; 13] = [
@@ -611,6 +665,9 @@ fn wall_nudge(p: &mut Projectile, world: &World) {
 /// The AI arm (`Projectile.cs:26015-26415`). `tile_frame_665` is the app's
 /// `Main.tileFrame[665]` (the pool setter feeds it — the `set_disco`
 /// pattern); `spam_survives` is the pool's PreventSpam precompute.
+/// `dust`/`dust_ctx` are the live dust layer (the g64 seam): the 1053/1048
+/// trail bodies spawn through the verbatim `DustPool::new_dust` on the SAME
+/// `UpdateProjectiles` stream the gate draws ride.
 #[allow(clippy::too_many_arguments)]
 fn ai_boulder(
     p: &mut Projectile,
@@ -621,6 +678,8 @@ fn ai_boulder(
     local_owner: u8,
     tile_frame_665: i32,
     spam_survives: bool,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
 ) {
     // `:26017` — the localAI[2] tick. The `:26018-26021` netMode-2 netUpdate
     // cadence is the MP layer (the port simulates netMode 0) — skipped.
@@ -634,12 +693,39 @@ fn ai_boulder(
         p.frame = tile_frame_665;
     }
     let mut flag9 = false;
-    // `:26031-26049` — the 1053 ember dust: three `Next(3)` gates DRAWN,
-    // the dust bodies skipped.
+    // `:26031-26049` — the 1053 ember dust: THREE independent `Next(3)` gates,
+    // each drawing every tick; the taken gates spawn through the verbatim
+    // `DustPool::new_dust` (the g64 `trail_1053` body, inlined at its C# site).
     if p.kind == LAVA_BOULDER {
-        let _ = rng.next_range(0, 3);
-        let _ = rng.next_range(0, 3);
-        let _ = rng.next_range(0, 3);
+        if rng.next_range(0, 3) == 0 {
+            // `:26033-26038` — type 31 at the 6-px-inset box, scale 1.5.
+            let idx = dust.new_dust(
+                &mut DustDraw(rng), dust_ctx, world,
+                p.pos + Vec2::new(6.0, 6.0), p.w as i32 - 12, p.h as i32 - 12,
+                31, 0.0, 0.0, 100, Color::default(), 1.5,
+            );
+            let d = dust.slot_mut(idx);
+            d.velocity *= 0.3;
+            d.velocity.y -= 2.0;
+        }
+        if rng.next_range(0, 3) == 0 {
+            // `:26039-26043` — type 6 at the 4-px-inset box, scale 1.5.
+            let idx = dust.new_dust(
+                &mut DustDraw(rng), dust_ctx, world,
+                p.pos + Vec2::new(4.0, 4.0), p.w as i32 - 8, p.h as i32 - 8,
+                6, 0.0, 0.0, 100, Color::default(), 1.5,
+            );
+            dust.slot_mut(idx).no_gravity = true;
+        }
+        if rng.next_range(0, 3) == 0 {
+            // `:26044-26048` — type 6 at the full box, scale 1 (the default).
+            let idx = dust.new_dust(
+                &mut DustDraw(rng), dust_ctx, world,
+                p.pos, p.w as i32, p.h as i32,
+                6, 0.0, 0.0, 100, Color::default(), 1.0,
+            );
+            dust.slot_mut(idx).velocity.y -= 1.0;
+        }
     }
     // `:26050-26066` — the 1054 cobweb trail (netMode != 1 folds true): the
     // box's tile walk, `!active && liquid == 0` then the `Next(7)` gate,
@@ -850,10 +936,18 @@ fn ai_boulder(
         p.vel.y += 0.3;
     }
     // `:26395-26399` — the 1048 poo-fly dust (netMode != 2 folds true): the
-    // settings' circular pair + the scale float DRAWN, the body skipped.
+    // circular pair + the scale float, then the type-322 body (the g64
+    // `trail_1048`, inlined). The only post-write is noGravity.
     if p.kind == POULDER && p.vel.length() > 1.0 {
-        let _ = (rng.next_float(), rng.next_float());
-        let _ = rng.next_float();
+        let c = center(p);
+        let v23 = c + next_vector2_circular(rng, p.w * 0.4, p.h * 0.4);
+        let scale = 0.75 + rng.next_float() * 0.25; // `:26398` argument
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), dust_ctx, world,
+            v23 - Vec2::ONE, 2, 2, 322,
+            -p.vel.x * 0.5, -p.vel.y * 0.5, 0, Color::default(), scale,
+        );
+        dust.slot_mut(idx).no_gravity = true;
     }
     // `:26400-26414` — the wet kills (netMode != 1 folds true). `AnyWet`
     // (`Entity.cs:36-46`) = wet || lavaWet || honeyWet || shimmerWet.
@@ -947,6 +1041,8 @@ fn tile_cut_prologue(
 /// The per-kind bounce ladder (`Projectile.cs:18941-19277`) — runs on a
 /// blocked move (`flag`, the `:17896-17904` velocity/slope change). Returns
 /// the 727's spike requests (the pool resolves them with the corpse lift).
+/// `dust`/`dust_ctx` carry the movement-dust bodies (the 1053's `:18947-18956`
+/// 10×2 burst and the 1048's `:19242-19246` 10-dust ring — this task's sites).
 #[allow(clippy::too_many_arguments)]
 fn bounce_ladder(
     p: &mut Projectile,
@@ -957,6 +1053,8 @@ fn bounce_ladder(
     rng: &mut dyn DropRng,
     local_owner: u8,
     spam_survives: bool,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
 ) -> Vec<SpikeSpawn> {
     let mut spikes = Vec::new();
     let dig = |p: &mut Projectile| {
@@ -967,7 +1065,33 @@ fn bounce_ladder(
         GHOULDER | BOULDER | MINI_BOULDER | LIFE_CRYSTAL_BOULDER | LAVA_BOULDER
         | BOULDER_THAT_SPAWNS_PET => {
             if p.vel.y != last.y && last.y > 5.0 {
-                // The 1053's 10×2 dust (`:18947-18956`): no explicit draws.
+                // `:18947-18956` — the 1053's 10×2 bounce burst (this task's
+                // movement site): per iteration a type-6 scale-2 dust (vel ×8,
+                // noGravity) then a type-6 scale-1.25 dust (vel ×2, X ×1.5,
+                // Y −2), both at `(pos.X, pos.Y + 8)` box `(w, h − 8)`. No
+                // explicit argument draws — only the NewDust internals.
+                if p.kind == LAVA_BOULDER {
+                    for _ in 0..10 {
+                        let anchor = Vec2::new(p.pos.x, p.pos.y + 8.0);
+                        let idx = dust.new_dust(
+                            &mut DustDraw(rng), dust_ctx, world,
+                            anchor, p.w as i32, p.h as i32 - 8,
+                            6, 0.0, 0.0, 100, Color::default(), 2.0,
+                        );
+                        let d = dust.slot_mut(idx);
+                        d.velocity *= 8.0;
+                        d.no_gravity = true;
+                        let idx = dust.new_dust(
+                            &mut DustDraw(rng), dust_ctx, world,
+                            anchor, p.w as i32, p.h as i32 - 8,
+                            6, 0.0, 0.0, 100, Color::default(), 1.25,
+                        );
+                        let d = dust.slot_mut(idx);
+                        d.velocity *= 2.0;
+                        d.velocity.x *= 1.5;
+                        d.velocity.y -= 2.0;
+                    }
+                }
                 dig(p);
                 p.vel.y = -last.y * 0.2;
                 if p.kind == GHOULDER {
@@ -1100,14 +1224,22 @@ fn bounce_ladder(
             if hard {
                 p.local_ai[1] += 3.0;
                 p.wants_sound = Some((2, 177, p.pos.x, p.pos.y, 0.0));
-                // `:19242-19246` — 10 dust, each settings'
-                // NextVector2FromRectangle pair (2 floats) DRAWN.
+                // `:19242-19246` — 10 dust (this task's movement site): each a
+                // NextVector2FromRectangle(Hitbox) pair (2 floats) THEN the
+                // type-322 body at `vector23 − One`, box 2×2, speeds −vel×0.5.
+                // The C# reads the POST-bounce velocity (the writes above).
                 for _ in 0..10 {
-                    let _ = (rng.next_float(), rng.next_float());
+                    let v23 = next_vector2_from_rect(rng, p.pos.x, p.pos.y, p.w, p.h);
+                    dust.new_dust(
+                        &mut DustDraw(rng), dust_ctx, world,
+                        v23 - Vec2::ONE, 2, 2, 322,
+                        -p.vel.x * 0.5, -p.vel.y * 0.5, 0, Color::default(), 1.0,
+                    );
                 }
                 // `:19247-19254` — the 2+Next(2) PooFly particles: the
                 // count draw + per-particle rectangle pair DRAWN, bodies
-                // skipped.
+                // skipped (the ParticleOrchestrator layer — `Spawn_PooFly`
+                // `ParticleOrchestrator.cs:2317` draws no settings RNG).
                 let flies = 2 + rng.next_range(0, 2);
                 for _ in 0..flies {
                     let _ = (rng.next_float(), rng.next_float());
@@ -1173,6 +1305,8 @@ fn boulder_movement(
     rng: &mut dyn DropRng,
     local_owner: u8,
     spam_survives: bool,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
 ) -> Vec<SpikeSpawn> {
     let mut spikes = Vec::new();
     // `:16765` — wetVelocity starts at the velocity.
@@ -1368,7 +1502,9 @@ fn boulder_movement(
         if blocked {
             // `:17910-17984` — the tile-cut prologue, then the ladder.
             tile_cut_prologue(p, world, rng, local_owner);
-            spikes = bounce_ladder(p, last, world, npcs, player, rng, local_owner, spam_survives);
+            spikes = bounce_ladder(
+                p, last, world, npcs, player, rng, local_owner, spam_survives, dust, dust_ctx,
+            );
         }
     }
     // `UpdatePosition` (`:20433-20446`) — the wet/dry integrate. The C#
@@ -1410,6 +1546,8 @@ pub(crate) fn boulder_step(
     local_owner: u8,
     tile_frame_665: i32,
     spam_survives: bool,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
 ) -> Vec<SpikeSpawn> {
     if !BOULDER_KINDS.contains(&p.kind) {
         return Vec::new();
@@ -1428,7 +1566,7 @@ pub(crate) fn boulder_step(
     if !p.ignore_water {
         crate::projectile_bobber::probe_wet(p, world);
     }
-    ai_boulder(p, world, npcs, player, rng, local_owner, tile_frame_665, spam_survives);
+    ai_boulder(p, world, npcs, player, rng, local_owner, tile_frame_665, spam_survives, dust, dust_ctx);
     // `:17009-17012` — the Shimmer float (the AI may have killed the slot;
     // the C# runs Shimmer on the dead slot too — its writes land on a corpse
     // nothing reads, but the port keeps the order).
@@ -1445,7 +1583,7 @@ pub(crate) fn boulder_step(
     }
     // `:17013` — the oldPosition latch between the AI and HandleMovement.
     p.old_position = p.pos;
-    let spikes = boulder_movement(p, world, npcs, player, rng, local_owner, spam_survives);
+    let spikes = boulder_movement(p, world, npcs, player, rng, local_owner, spam_survives, dust, dust_ctx);
     // `:17016-17026` + `AutomaticallyChangesDirection` (`:17281-17288`,
     // true for aiStyle 25): the direction follows velocity.X's sign.
     p.direction = if p.vel.x < 0.0 { -1 } else { 1 };
@@ -1508,21 +1646,40 @@ pub(crate) fn boulder_explosion(p: &Projectile, rng: &mut dyn DropRng) -> Vec<(f
     out
 }
 
-/// The 1047 rainbow death burst's draw census (`Projectile.cs:71192-71255`):
-/// the `NextFloat` hue seed, then per filled oldPos entry the `Next(1, 4)`
-/// count (the 0.3/0.65/0.85 threshold decrements) and 3 floats per dust
-/// (velocity scale / scale / fadeIn — the NewDust+CloneDust internals ride
-/// the skipped dust layer), then the 14 colour floats. The two RainbowRodHit
-/// particles (`:71242-71249`) carry no settings draws — bodies skipped. The
-/// ring is the port's 10 entries (the C#'s 25 — the module-doc deviation).
-pub(crate) fn rainbow_boulder_death_draws(p: &Projectile, rng: &mut dyn DropRng) {
-    let _ = rng.next_float(); // `:71196`
+/// The 1047 rainbow death burst (`Projectile.cs:71192-71255`). The `NextFloat`
+/// hue seed, then per filled oldPos entry the `Next(1, 4)` count (the
+/// 0.3/0.65/0.85 threshold decrements), the hue colour, and per dust the
+/// type-267 body + the 3 explicit floats (velocity scale / scale / fadeIn)
+/// + the position lerp + the white CloneDust. Then the 14 type-66 hue dust.
+/// The two RainbowRodHit particles (`:71242-71249`) carry no settings draws —
+/// their BODIES skip (the ParticleOrchestrator layer; `Spawn_RainbowRodHit`
+/// `ParticleOrchestrator.cs:3444` draws its own internals, unported). The ring
+/// is the port's 10 entries (the C#'s 25 — the module-doc deviation).
+///
+/// CENSUS: this arm spawns **zero** `Gore.NewGore` — the "rainbow shards" are
+/// dust 267/66 + particles, NOT gore (the family's only gore is the 1053 lava
+/// four, [`lava_death_gore`]).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn rainbow_boulder_death(
+    p: &Projectile,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    world: &World,
+) {
+    let target_start = center(p);
+    let hue_seed = rng.next_float(); // `:71196`
     let len = p.old_pos.len() as f32;
+    let mut target3 = target_start;
     for (i, &op) in p.old_pos.iter().enumerate() {
         if op == Vec2::ZERO {
             break;
         }
+        let vector8 = op;
+        let lerp_value = crate::projectile::get_lerp_value(len, 0.0, i as f32);
+        let new_color2 = hsl_color((hue_seed + lerp_value) % 1.0, 1.0, 0.65);
         let mut count = rng.next_range(1, 4); // `:71205`
+        let num57 = 0.3 + (1.0 - 0.3) * lerp_value; // `MathHelper.Lerp(0.3, 1, lv)`
         let step = i as f32;
         if step >= len * 0.3 {
             count -= 1;
@@ -1533,14 +1690,53 @@ pub(crate) fn rainbow_boulder_death_draws(p: &Projectile, rng: &mut dyn DropRng)
         if step >= len * 0.85 {
             count -= 3;
         }
+        // `:71220` — DirectionTo(target3).SafeNormalize(Zero); target3 = vector8.
+        let vector9 = safe_normalize_default(target3 - vector8, Vec2::ZERO);
+        target3 = vector8;
+        let vector10 = Vec2::new(p.w * 0.5, p.h * 0.5); // `base.Size / 2`
         for _ in 0..count.max(0) {
-            let _ = rng.next_float(); // `:71226` velocity scale
-            let _ = rng.next_float(); // `:71228` scale
-            let _ = rng.next_float(); // `:71229` fadeIn
+            // `:71225-71232` — the type-267 body, then the explicit floats.
+            let idx = dust.new_dust(
+                &mut DustDraw(rng), dust_ctx, world,
+                vector8, p.w as i32, p.h as i32, 267,
+                0.0, 0.0, 0, new_color2, 1.0,
+            );
+            {
+                let d = dust.slot_mut(idx);
+                d.velocity *= rng.next_float() * 0.8; // `:71226`
+                d.no_gravity = true; // `:71227`
+                d.scale = 0.9 + rng.next_float() * 1.2; // `:71228`
+                d.fade_in = rng.next_float() * 1.2 * num57; // `:71229`
+                d.velocity += vector9 * 6.0; // `:71230`
+                d.scale *= num57; // `:71231`
+                // `:71232` — Vector2.Lerp(vector8 + vector10, dust.position, lv).
+                let from = vector8 + vector10;
+                d.position = from + (d.position - from) * lerp_value;
+            }
+            // `:71233-71239` — the white clone (the sentinel guard is the C#'s
+            // `num59 != 6000`; clone_dust also guards internally).
+            if idx != tr_core::particles::DUST_SENTINEL {
+                let cidx = dust.clone_dust(&mut DustDraw(rng), dust_ctx, world, idx);
+                let c = dust.slot_mut(cidx);
+                c.scale /= 2.0;
+                c.fade_in *= 0.85;
+                c.color = Color::new(255, 255, 255, 255);
+            }
         }
     }
+    // `:71242-71249` — the two RainbowRodHit particles: no settings draws,
+    // bodies skipped (the particle layer).
+    // `:71250-71255` — the 14 type-66 hue dust.
     for _ in 0..14 {
-        let _ = rng.next_float(); // `:71252` the hslToRgb hue
+        let hue = rng.next_float(); // `:71252` the hslToRgb hue argument
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), dust_ctx, world,
+            p.pos, p.w as i32, p.h as i32, 66,
+            0.0, 0.0, 100, hsl_color(hue, 1.0, 0.5), 1.7,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity *= 3.0;
     }
 }
 
@@ -1727,26 +1923,190 @@ pub(crate) fn bee_hive_bees(
     out
 }
 
-/// The family Kill arm's dust-loop census (`Projectile.cs:74938-74948` /
-/// `:74973-74981` / `:75083-75091`): `count` dust, each with the explicit
-/// `Next(2)` scale gate DRAWN and the ×factor velocity growth (a verbatim
-/// C# quirk — the corpse's velocity compounds per dust).
-pub(crate) fn family_dust_loop(p: &mut Projectile, count: i32, factor: f32, rng: &mut dyn DropRng) {
+/// The family Kill arm's dust loop (`Projectile.cs:74938-74948` /
+/// `:74973-74981` / `:75083-75091`): `count` dust of `dust_type`, each a
+/// `NewDust(pos, w, h, type)` (the default alpha 0 / scale 1) THEN the
+/// explicit `Next(2)` scale gate (×`scale_bump` on a 0) and the ×`factor`
+/// corpse-velocity compound (a verbatim C# quirk — the velocity compounds
+/// per dust, but the dust's speed argument is the stock 0, so the compound
+/// never reaches the dust). The g64 seam: the internals roll the caller's
+/// stream inside `new_dust`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn family_dust_loop(
+    p: &mut Projectile,
+    count: i32,
+    factor: f32,
+    dust_type: i32,
+    scale_bump: f32,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    world: &World,
+) {
     for _ in 0..count {
-        let _ = rng.next_range(0, 2);
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), dust_ctx, world,
+            p.pos, p.w as i32, p.h as i32, dust_type,
+            0.0, 0.0, 0, Color::default(), 1.0,
+        );
+        if rng.next_range(0, 2) == 0 {
+            dust.slot_mut(idx).scale *= scale_bump;
+        }
         p.vel *= factor;
     }
 }
 
-/// The 1053 lava death's gore census (`Projectile.cs:74898-74913`): four
-/// gores, each the `Next(61, 64)` type + the `NewGore` kicks
+/// The 1053 lava death's gore body (`Projectile.cs:74898-74913`): four gores
+/// at `pos + (w/2 − 24, h/2 − 24)` (INTEGER division — the caller resized to
+/// 64×64 first), each the `Next(61, 64)` type pick THEN the `NewGore` kicks
 /// (`Next(10, 31)` Y then `Next(-20, 21)` X, `Gore.cs:1327-1328` — the G3
-/// order). The bodies skip.
-pub(crate) fn lava_death_gore_draws(rng: &mut dyn DropRng) {
+/// order, inside `new_gore`), post `scale = 1.5` + the sign pairs ±1.5 in
+/// order (+,+ / −,+ / +,− / −,−). The g16 `lava_boulder_gores` body.
+pub(crate) fn lava_death_gore(
+    p: &Projectile,
+    rng: &mut dyn DropRng,
+    gore: &mut GorePool,
+    world: &World,
+) {
+    let pos = Vec2::new(
+        p.pos.x + (p.w as i32 / 2) as f32 - 24.0,
+        p.pos.y + (p.h as i32 / 2) as f32 - 24.0,
+    );
+    let signs = [(1.5, 1.5), (-1.5, 1.5), (1.5, -1.5), (-1.5, -1.5)];
+    for (sx, sy) in signs {
+        let ty = rng.next_range(61, 64);
+        let idx = gore.new_gore(rng, world, pos, Vec2::ZERO, ty, 1.0);
+        let g = gore.slot_mut(idx);
+        g.scale = 1.5;
+        g.velocity.x += sx;
+        g.velocity.y += sy;
+    }
+}
+
+/// The 1053 lava death's dust body (`Projectile.cs:74877-74897`): the caller
+/// recentred + resized to 64×64 first. 25× type-31 scale-2 dust (vel ×1.4),
+/// then 40 iterations of a type-6 scale-3 dust (noGravity, vel ×5) + a type-6
+/// scale-2 dust (vel ×3). No explicit argument draws — only the internals.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn lava_death_dust(
+    p: &Projectile,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    world: &World,
+) {
+    let (w, h) = (p.w as i32, p.h as i32);
+    for _ in 0..25 {
+        // `:74885-74889`
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), dust_ctx, world, p.pos, w, h,
+            31, 0.0, 0.0, 100, Color::default(), 2.0,
+        );
+        dust.slot_mut(idx).velocity *= 1.4;
+    }
+    for _ in 0..40 {
+        // `:74890-74897`
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), dust_ctx, world, p.pos, w, h,
+            6, 0.0, 0.0, 100, Color::default(), 3.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity *= 5.0;
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), dust_ctx, world, p.pos, w, h,
+            6, 0.0, 0.0, 100, Color::default(), 2.0,
+        );
+        dust.slot_mut(idx).velocity *= 3.0;
+    }
+}
+
+/// The 1054 spider death's dust (`Projectile.cs:74921-74927`): 20× type-30
+/// dust at the box, speed (0, −1). No explicit draws, no post-writes.
+pub(crate) fn spider_death_dust(
+    p: &Projectile,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    world: &World,
+) {
+    for _ in 0..20 {
+        dust.new_dust(
+            &mut DustDraw(rng), dust_ctx, world, p.pos, p.w as i32, p.h as i32,
+            30, 0.0, -1.0, 0, Color::default(), 1.0,
+        );
+    }
+}
+
+/// The 1055 Ghoulder death's dust (`Projectile.cs:74928-74937`): 50× type-192
+/// dust at `pos + (4, 4)` box `(w − 8, h − 8)`, speed vel×0.5, alpha 100,
+/// colour (100,100,100,100); post scale ×1.5, vel ×2, noGravity.
+pub(crate) fn ghoulder_death_dust(
+    p: &Projectile,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    world: &World,
+) {
+    for _ in 0..50 {
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), dust_ctx, world,
+            p.pos + Vec2::new(4.0, 4.0), p.w as i32 - 8, p.h as i32 - 8,
+            192, p.vel.x * 0.5, p.vel.y * 0.5, 100, Color::new(100, 100, 100, 100), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.scale *= 1.5;
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+}
+
+/// The 763 RollingCactusSpike's spawn-latch burst (`AI_001`
+/// `Projectile.cs:55518-55529`): the `localAI[0] == 0` first-tick latch sets
+/// 1, then 5× `NewDustDirect(pos − vel, w, h, 40, 0, 0, 0, default, 1.1)`,
+/// noGravity + vel ×1.5. The latch write is the caller's (it gates the burst);
+/// this fn runs only on the taken branch. No explicit argument draws.
+pub(crate) fn spike_spawn_dust(
+    p: &Projectile,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    world: &World,
+) {
+    for _ in 0..5 {
+        let idx = dust.new_dust_direct(
+            &mut DustDraw(rng), dust_ctx, world,
+            p.pos - p.vel, p.w as i32, p.h as i32,
+            40, 0.0, 0.0, 0, Color::default(), 1.1,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity *= 1.5;
+    }
+}
+
+/// The 763 RollingCactusSpike's Kill dust (`Projectile.cs:75067-75078`): 4×
+/// type-40 dust at the box, each the `Next(2)` scale gate (×0.8 on a 0),
+/// noGravity, and the ×1.9 corpse-velocity compound (the family quirk — the
+/// dust's speed argument is the stock 0, so the compound never reaches it).
+pub(crate) fn spike_kill_dust(
+    p: &mut Projectile,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    world: &World,
+) {
     for _ in 0..4 {
-        let _ = rng.next_range(61, 64);
-        let _ = rng.next_range(10, 31);
-        let _ = rng.next_range(-20, 21);
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), dust_ctx, world,
+            p.pos, p.w as i32, p.h as i32, 40,
+            0.0, 0.0, 0, Color::default(), 1.0,
+        );
+        if rng.next_range(0, 2) == 0 {
+            dust.slot_mut(idx).scale *= 0.8;
+        }
+        dust.slot_mut(idx).no_gravity = true;
+        p.vel *= 1.9;
     }
 }
 
@@ -1812,6 +2172,19 @@ mod tests {
         World::new("t".into(), 200, 200)
     }
 
+    /// A permissive ctx: the whole world on-screen, the full budget — the
+    /// pool never culls (the g64 `ctx()` convention).
+    fn ctx() -> SpawnCtx {
+        SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(3200.0, 3200.0),
+            max_dust_to_draw: 6000,
+        }
+    }
+
     /// The 13 rows + the 763 spike match `SetDefaults`
     /// (`Projectile.cs:1833-1870`, `:7038-7047`, `:9918-9937`, `:7855-7865`).
     #[test]
@@ -1860,12 +2233,14 @@ mod tests {
     #[test]
     fn w4_d3_the_boulder_gravity_and_roll() {
         let mut w = world();
+        let c = ctx();
+        let mut dust = DustPool::new();
         let mut p = proj(BOULDER);
         p.pos = Vec2::new(1600.0, 1600.0);
         p.vel = Vec2::new(2.0, 0.0);
         p.ai[0] = 1.0; // skip the wall-nudge ladder
         let mut rng = ScriptRng::new(&[], &[]);
-        ai_boulder(&mut p, &mut w, &[], None, &mut rng, 0, 0, true);
+        ai_boulder(&mut p, &mut w, &[], None, &mut rng, 0, 0, true, &mut dust, &c);
         assert_eq!(p.ai[0], 1.0, ":26336");
         assert!((p.vel.y - 0.3).abs() < 1e-6, ":26393");
         assert!((p.vel.x - 2.05).abs() < 1e-6, ":26371-26374 the +0.05 accel");
@@ -1873,7 +2248,7 @@ mod tests {
         assert_eq!(p.local_ai[2], 1.0, ":26017");
         // The 16 px/tick cap (`:26337-26340`).
         p.vel.y = 20.0;
-        ai_boulder(&mut p, &mut w, &[], None, &mut rng, 0, 0, true);
+        ai_boulder(&mut p, &mut w, &[], None, &mut rng, 0, 0, true, &mut dust, &c);
         assert!((p.vel.y - 16.3).abs() < 1e-6, "cap 16 then +0.3");
     }
 
@@ -1883,6 +2258,8 @@ mod tests {
     #[test]
     fn w4_d3_the_wall_nudge_ladder() {
         let mut w = world();
+        let c = ctx();
+        let mut dust = DustPool::new();
         // A solid column at tile x=99 (px 1584..1600), rows 100/101.
         for ty in [100, 101] {
             let idx = w.index(99, ty);
@@ -1895,7 +2272,7 @@ mod tests {
         p.vel = Vec2::ZERO;
         p.ai[0] = 1.0;
         let mut rng = ScriptRng::new(&[], &[]);
-        ai_boulder(&mut p, &mut w, &[], None, &mut rng, 0, 0, true);
+        ai_boulder(&mut p, &mut w, &[], None, &mut rng, 0, 0, true, &mut dust, &c);
         // The nudge sets 0.5, then the shared +0.05 accel (`:26371`).
         assert!((p.vel.x - 0.55).abs() < 1e-6, "the left wall rolls right");
         // No walls: centre 1615.5 / 16 = 100 (even) → +0.5, then +0.05.
@@ -1905,7 +2282,7 @@ mod tests {
         q.ai[0] = 1.0;
         let empty = world();
         let mut w2 = empty;
-        ai_boulder(&mut q, &mut w2, &[], None, &mut rng, 0, 0, true);
+        ai_boulder(&mut q, &mut w2, &[], None, &mut rng, 0, 0, true, &mut dust, &c);
         assert!((q.vel.x - 0.55).abs() < 1e-6, "the even-parity fallback");
     }
 
@@ -1914,12 +2291,14 @@ mod tests {
     #[test]
     fn w4_d3_the_bouncy_boulder_bounce() {
         let w = world();
+        let c = ctx();
+        let mut dust = DustPool::new();
         let mut p = proj(BOUNCY_BOULDER);
         p.pos = Vec2::new(1600.0, 1600.0);
         p.vel = Vec2::new(0.0, 0.0); // the collision zeroed both axes
         let last = Vec2::new(6.0, 6.0);
         let mut rng = ScriptRng::new(&[], &[]);
-        let spikes = bounce_ladder(&mut p, last, &w, &[], None, &mut rng, 0, true);
+        let spikes = bounce_ladder(&mut p, last, &w, &[], None, &mut rng, 0, true, &mut dust, &c);
         assert!(spikes.is_empty());
         assert!((p.vel.x + 5.7).abs() < 1e-6, "-6 × 0.95");
         assert!((p.vel.y + 5.7).abs() < 1e-6);
@@ -1929,7 +2308,7 @@ mod tests {
         let mut q = proj(BOUNCY_BOULDER);
         q.vel = Vec2::ZERO;
         let mut rng2 = ScriptRng::new(&[], &[]);
-        bounce_ladder(&mut q, Vec2::new(0.4, 0.4), &w, &[], None, &mut rng2, 0, true);
+        bounce_ladder(&mut q, Vec2::new(0.4, 0.4), &w, &[], None, &mut rng2, 0, true, &mut dust, &c);
         assert!((q.vel.x + 0.04).abs() < 1e-6);
         assert_eq!(q.local_ai[1], 0.0);
         // The bounce budget (`:19073-19076`).
@@ -1937,7 +2316,7 @@ mod tests {
         r.local_ai[1] = 21.0;
         r.vel = Vec2::ZERO;
         let mut rng3 = ScriptRng::new(&[], &[]);
-        bounce_ladder(&mut r, Vec2::new(6.0, 0.0), &w, &[], None, &mut rng3, 0, true);
+        bounce_ladder(&mut r, Vec2::new(6.0, 0.0), &w, &[], None, &mut rng3, 0, true, &mut dust, &c);
         assert!(!r.active, "localAI[1] > 20 kills");
     }
 
@@ -1946,26 +2325,28 @@ mod tests {
     #[test]
     fn w4_d3_the_moon_boulder_ladder() {
         let w = world();
+        let c = ctx();
+        let mut dust = DustPool::new();
         let mut p = proj(MOON_BOULDER);
         p.vel = Vec2::new(0.0, 0.0);
         let mut rng = ScriptRng::new(&[], &[]);
-        bounce_ladder(&mut p, Vec2::new(0.0, 5.0), &w, &[], None, &mut rng, 0, true);
+        bounce_ladder(&mut p, Vec2::new(0.0, 5.0), &w, &[], None, &mut rng, 0, true, &mut dust, &c);
         assert!((p.vel.y + 4.5).abs() < 1e-6, "-5 × 0.9");
         let mut q = proj(MOON_BOULDER);
         q.vel = Vec2::new(0.0, 0.0);
-        bounce_ladder(&mut q, Vec2::new(0.0, 2.0), &w, &[], None, &mut rng, 0, true);
+        bounce_ladder(&mut q, Vec2::new(0.0, 2.0), &w, &[], None, &mut rng, 0, true, &mut dust, &c);
         assert_eq!(q.local_ai[1], 999.0, "the soft-landing pin");
         // Four X bounces at ×−0.75, the fifth kills.
         let mut r = proj(MOON_BOULDER);
         r.vel = Vec2::new(0.0, 0.0);
         for i in 0..4 {
             r.vel.x = 0.0;
-            bounce_ladder(&mut r, Vec2::new(4.0, 0.0), &w, &[], None, &mut rng, 0, true);
+            bounce_ladder(&mut r, Vec2::new(4.0, 0.0), &w, &[], None, &mut rng, 0, true, &mut dust, &c);
             assert!(r.active, "bounce {i}");
             assert_eq!(r.local_ai[1], (i + 1) as f32);
         }
         r.vel.x = 0.0;
-        bounce_ladder(&mut r, Vec2::new(4.0, 0.0), &w, &[], None, &mut rng, 0, true);
+        bounce_ladder(&mut r, Vec2::new(4.0, 0.0), &w, &[], None, &mut rng, 0, true, &mut dust, &c);
         assert!(!r.active, "the fifth X hit kills");
     }
 
@@ -2003,11 +2384,13 @@ mod tests {
     #[test]
     fn w4_d3_the_ghoulder_bounce_and_chase() {
         let w = world();
+        let c = ctx();
+        let mut dust = DustPool::new();
         let mut p = proj(GHOULDER);
         p.pos = Vec2::new(1600.0, 1600.0);
         p.vel = Vec2::new(0.0, 0.0);
         let mut rng = ScriptRng::new(&[], &[]);
-        bounce_ladder(&mut p, Vec2::new(0.0, 6.0), &w, &[], None, &mut rng, 0, true);
+        bounce_ladder(&mut p, Vec2::new(0.0, 6.0), &w, &[], None, &mut rng, 0, true, &mut dust, &c);
         assert_eq!(p.ai[1], 1.0, "the bounce arms the flight");
         assert!((p.vel.y + 1.2).abs() < 1e-6, "-6 × 0.2");
         // The chase: the player directly right, overlapping X → chase.
@@ -2020,7 +2403,7 @@ mod tests {
         p.vel = Vec2::ZERO;
         p.tile_collide = true;
         let mut w2 = world();
-        ai_boulder(&mut p, &mut w2, &[], Some(&pl), &mut rng, 0, 0, true);
+        ai_boulder(&mut p, &mut w2, &[], Some(&pl), &mut rng, 0, 0, true, &mut dust, &c);
         assert!(!p.tile_collide, ":26180");
         assert_eq!(p.local_ai[0], 3.0, "the ramp");
         // toward = player.Center − boulder.Center, normalized ×6, /36.
@@ -2086,23 +2469,25 @@ mod tests {
     #[test]
     fn w4_d3_the_rainbow_boulder_ai_gates() {
         let mut w = world();
+        let c = ctx();
+        let mut dust = DustPool::new();
         let mut p = proj(RAINBOW_BOULDER);
         p.pos = Vec2::new(1600.0, 1600.0);
         p.ai[1] = 5.0;
         let mut rng = ScriptRng::new(&[], &[]);
-        ai_boulder(&mut p, &mut w, &[], None, &mut rng, 0, 0, true);
+        ai_boulder(&mut p, &mut w, &[], None, &mut rng, 0, 0, true, &mut dust, &c);
         assert_eq!(p.ai[1], 4.0, "the countdown");
         assert!(rng.draws.is_empty(), "no gates during the flight");
         assert_eq!(rng.float_draws, 1, "the ShimmerBlock settings float");
         // ai[1] == 0: Next(4) = 1 (no bounce), Next(180) = 1 (no wander).
         p.ai[1] = 0.0;
         let mut rng2 = ScriptRng::new(&[1, 1], &[]);
-        ai_boulder(&mut p, &mut w, &[], None, &mut rng2, 0, 0, true);
+        ai_boulder(&mut p, &mut w, &[], None, &mut rng2, 0, 0, true, &mut dust, &c);
         assert_eq!(rng2.draws, vec![(0, 4), (0, 180)]);
         // A non-local owner skips the Next(180) draw entirely.
         p.owner = 1;
         let mut rng3 = ScriptRng::new(&[1], &[]);
-        ai_boulder(&mut p, &mut w, &[], None, &mut rng3, 0, 0, true);
+        ai_boulder(&mut p, &mut w, &[], None, &mut rng3, 0, 0, true, &mut dust, &c);
         assert_eq!(rng3.draws, vec![(0, 4)]);
     }
 
@@ -2111,31 +2496,55 @@ mod tests {
     #[test]
     fn w4_d3_the_spider_boulder_cobweb_trail() {
         let mut w = world();
+        let c = ctx();
+        let mut dust = DustPool::new();
         let mut p = proj(SPIDER_BOULDER);
         // A 31×31 box at (1600, 1600): tiles 100..101 both axes (4 cells).
         p.pos = Vec2::new(1600.0, 1600.0);
         p.ai[0] = 1.0;
         let mut rng = ScriptRng::new(&[0, 1, 1, 1], &[]);
-        ai_boulder(&mut p, &mut w, &[], None, &mut rng, 0, 0, true);
+        ai_boulder(&mut p, &mut w, &[], None, &mut rng, 0, 0, true, &mut dust, &c);
         assert_eq!(rng.draws, vec![(0, 7); 4], "one gate per empty cell");
         assert!(w.tile(100, 100).unwrap().active(), "the first cell webbed");
         assert_eq!(w.tile(100, 100).unwrap().kind, 51);
         assert!(!w.tile(101, 100).unwrap().active());
     }
 
-    /// The family dust-loop census (`:74938-74948`): 30 Next(2) gates and
-    /// the ×1.9 velocity compounding (the verbatim corpse-velocity quirk).
+    /// The family dust-loop body (`:74938-74948`): 30 type-1 dust, each the
+    /// NewDust internals THEN the Next(2) ×1.4 scale gate, and the ×1.9
+    /// corpse-velocity compound (the verbatim quirk). A mirrored stream
+    /// through the same pool calls lands identical records + stream tail.
     #[test]
-    fn w4_d3_the_family_dust_loop_census() {
+    fn w4_d3_the_family_dust_loop_body() {
+        let w = world();
+        let c = ctx();
         let mut p = proj(BOULDER);
+        p.pos = Vec2::new(1600.0, 1600.0);
         p.vel = Vec2::new(1.0, 0.0);
-        let mut rng = ScriptRng::new(&[0; 30], &[]);
-        family_dust_loop(&mut p, 30, 1.9, &mut rng);
-        assert_eq!(rng.draws, vec![(0, 2); 30]);
-        assert!(
-            (p.vel.x / 1.9f32.powi(30) - 1.0).abs() < 1e-4,
-            "×1.9 per dust (relative — the f32 accumulation drifts)",
-        );
+        let mut dust = DustPool::new();
+        let mut rng = tr_core::UnifiedRandom::new(11);
+        let mut mpool = DustPool::new();
+        let mut mirror = tr_core::UnifiedRandom::new(11);
+        family_dust_loop(&mut p, 30, 1.9, 1, 1.4, &mut rng, &mut dust, &c, &w);
+        // The mirror: the same pool calls in the same order.
+        let mut mv = Vec2::new(1.0, 0.0);
+        for _ in 0..30 {
+            let idx = mpool.new_dust(&mut mirror, &c, &w, p.pos, 31, 31, 1, 0.0, 0.0, 0, Color::default(), 1.0);
+            if mirror.next_max(2) == 0 {
+                mpool.slot_mut(idx).scale *= 1.4;
+            }
+            mv *= 1.9;
+        }
+        assert!((p.vel.x / 1.9f32.powi(30) - 1.0).abs() < 1e-3, "×1.9 per dust");
+        let act: Vec<usize> = (0..6000).filter(|&i| dust.slot(i).active).collect();
+        let mact: Vec<usize> = (0..6000).filter(|&i| mpool.slot(i).active).collect();
+        assert_eq!(act, mact);
+        for i in act {
+            assert_eq!(dust.slot(i), mpool.slot(i), "slot {i}");
+        }
+        for _ in 0..8 {
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
+        }
     }
 
     /// The getGood BoulderExplosion (`:70563-70575`): Next(2,5) = 2 shards,
@@ -2184,32 +2593,85 @@ mod tests {
         assert_eq!(bee_hive_bees(&p, 98, &mut rng2).len(), 2);
     }
 
-    /// The 1047 kill draw census (`:71192-71255`): the seed float, then per
-    /// filled ring entry the Next(1,4) count with the threshold decrements
-    /// and 3 floats per surviving dust, then the 14 colour floats.
+    /// The 1047 kill body (`:71192-71255`): the seed float, per filled ring
+    /// entry the Next(1,4) count + the threshold decrements, the type-267
+    /// body + 3 floats + the white clone, then the 14 type-66 hue dust. A
+    /// mirrored stream through the same pool calls lands identical records.
+    /// CENSUS: the arm spawns zero gore (the shards are dust + particles).
     #[test]
-    fn w4_d3_the_rainbow_boulder_death_census() {
+    fn w4_d3_the_rainbow_boulder_death_body() {
+        let w = world();
+        let c = ctx();
         let mut p = proj(RAINBOW_BOULDER);
+        p.pos = Vec2::new(1600.0, 1600.0);
         // Three filled entries (the port's 10-ring): steps 0, 1, 2 — all
         // below the 0.3×10 = 3 threshold, so no decrements.
-        p.old_pos[0] = Vec2::new(1.0, 1.0);
-        p.old_pos[1] = Vec2::new(2.0, 2.0);
-        p.old_pos[2] = Vec2::new(3.0, 3.0);
-        // counts 4, 1, 2 → 7 dust × 3 floats + 1 seed + 14 colour = 36.
-        let mut rng = ScriptRng::new(&[4, 1, 2], &[]);
-        rainbow_boulder_death_draws(&p, &mut rng);
-        assert_eq!(rng.draws, vec![(1, 4), (1, 4), (1, 4)]);
-        assert_eq!(rng.float_draws, 1 + 7 * 3 + 14);
-        // The threshold decrements: step 3 (≥ 3) loses 1, step 7 (≥ 6.5)
-        // loses 3 total, step 9 (≥ 8.5) loses 6 → a 4-count dies at step 9.
-        let mut q = proj(RAINBOW_BOULDER);
-        for i in 0..10 {
-            q.old_pos[i] = Vec2::new(i as f32 + 1.0, 1.0);
+        p.old_pos[0] = Vec2::new(1590.0, 1600.0);
+        p.old_pos[1] = Vec2::new(1595.0, 1600.0);
+        p.old_pos[2] = Vec2::new(1598.0, 1600.0);
+        let mut dust = DustPool::new();
+        let mut rng = tr_core::UnifiedRandom::new(23);
+        let mut mpool = DustPool::new();
+        let mut mirror = tr_core::UnifiedRandom::new(23);
+        rainbow_boulder_death(&p, &mut rng, &mut dust, &c, &w);
+        // The mirror: the same pool calls in the same order (the count draws
+        // are read from the mirror so the branches match).
+        let hue_seed = mirror.next_float();
+        let len = p.old_pos.len() as f32;
+        let mut target3 = center(&p);
+        for (i, &op) in p.old_pos.iter().enumerate() {
+            if op == Vec2::ZERO {
+                break;
+            }
+            let lv = crate::projectile::get_lerp_value(len, 0.0, i as f32);
+            let col = hsl_color((hue_seed + lv) % 1.0, 1.0, 0.65);
+            let mut count = mirror.next_range(1, 4);
+            let num57 = 0.3 + 0.7 * lv;
+            let step = i as f32;
+            if step >= len * 0.3 { count -= 1; }
+            if step >= len * 0.65 { count -= 2; }
+            if step >= len * 0.85 { count -= 3; }
+            let v9 = safe_normalize_default(target3 - op, Vec2::ZERO);
+            target3 = op;
+            let v10 = Vec2::new(p.w * 0.5, p.h * 0.5);
+            for _ in 0..count.max(0) {
+                let idx = mpool.new_dust(&mut mirror, &c, &w, op, 31, 31, 267, 0.0, 0.0, 0, col, 1.0);
+                {
+                    let d = mpool.slot_mut(idx);
+                    d.velocity *= mirror.next_float() * 0.8;
+                    d.no_gravity = true;
+                    d.scale = 0.9 + mirror.next_float() * 1.2;
+                    d.fade_in = mirror.next_float() * 1.2 * num57;
+                    d.velocity += v9 * 6.0;
+                    d.scale *= num57;
+                    let from = op + v10;
+                    d.position = from + (d.position - from) * lv;
+                }
+                if idx != tr_core::particles::DUST_SENTINEL {
+                    let cidx = mpool.clone_dust(&mut mirror, &c, &w, idx);
+                    let cc = mpool.slot_mut(cidx);
+                    cc.scale /= 2.0;
+                    cc.fade_in *= 0.85;
+                    cc.color = Color::new(255, 255, 255, 255);
+                }
+            }
         }
-        let mut rng2 = ScriptRng::new(&[4; 10], &[]);
-        rainbow_boulder_death_draws(&q, &mut rng2);
-        // dust counts: 4,4,4,3,3,3,3,1,1,0 → 26 dust × 3 = 78 + 15 = 93.
-        assert_eq!(rng2.float_draws, 1 + 26 * 3 + 14);
+        for _ in 0..14 {
+            let hue = mirror.next_float();
+            let idx = mpool.new_dust(&mut mirror, &c, &w, p.pos, 31, 31, 66, 0.0, 0.0, 100, hsl_color(hue, 1.0, 0.5), 1.7);
+            let d = mpool.slot_mut(idx);
+            d.no_gravity = true;
+            d.velocity *= 3.0;
+        }
+        let act: Vec<usize> = (0..6000).filter(|&i| dust.slot(i).active).collect();
+        let mact: Vec<usize> = (0..6000).filter(|&i| mpool.slot(i).active).collect();
+        assert_eq!(act, mact);
+        for i in act {
+            assert_eq!(dust.slot(i), mpool.slot(i), "slot {i}");
+        }
+        for _ in 0..8 {
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
+        }
     }
 
     /// The lava flood (`:70538-70552`): the radius-4 diamond fills lava on
@@ -2264,5 +2726,232 @@ mod tests {
         }
         assert!(hurts_player(ROLLING_CACTUS_SPIKE));
         assert!(!hurts_player(1)); // a plain arrow stays on the generic lane
+    }
+
+    /// The 1053 ember trail (`:26031-26049`): three independent Next(3) gates
+    /// draw every tick; the taken gates spawn their own shapes. A mirrored
+    /// stream through the same pool calls lands identical records.
+    #[test]
+    fn w4_d3_the_lava_boulder_ember_trail_body() {
+        let mut w = world();
+        let c = ctx();
+        let mut p = proj(LAVA_BOULDER);
+        p.pos = Vec2::new(1600.0, 1600.0);
+        p.ai[0] = 1.0; // skip the wall-nudge ladder
+        let mut dust = DustPool::new();
+        let mut rng = tr_core::UnifiedRandom::new(31);
+        let mut mpool = DustPool::new();
+        let mut mirror = tr_core::UnifiedRandom::new(31);
+        ai_boulder(&mut p, &mut w, &[], None, &mut rng, 0, 0, true, &mut dust, &c);
+        // The mirror: the three gates + their bodies (the 1053 arm draws
+        // nothing else — the cobweb/rainbow blocks are other kinds).
+        if mirror.next_max(3) == 0 {
+            let idx = mpool.new_dust(&mut mirror, &c, &w, p.pos + Vec2::new(6.0, 6.0), 19, 19, 31, 0.0, 0.0, 100, Color::default(), 1.5);
+            let d = mpool.slot_mut(idx);
+            d.velocity *= 0.3;
+            d.velocity.y -= 2.0;
+        }
+        if mirror.next_max(3) == 0 {
+            let idx = mpool.new_dust(&mut mirror, &c, &w, p.pos + Vec2::new(4.0, 4.0), 23, 23, 6, 0.0, 0.0, 100, Color::default(), 1.5);
+            mpool.slot_mut(idx).no_gravity = true;
+        }
+        if mirror.next_max(3) == 0 {
+            let idx = mpool.new_dust(&mut mirror, &c, &w, p.pos, 31, 31, 6, 0.0, 0.0, 100, Color::default(), 1.0);
+            mpool.slot_mut(idx).velocity.y -= 1.0;
+        }
+        let act: Vec<usize> = (0..6000).filter(|&i| dust.slot(i).active).collect();
+        let mact: Vec<usize> = (0..6000).filter(|&i| mpool.slot(i).active).collect();
+        assert_eq!(act, mact);
+        for i in act {
+            assert_eq!(dust.slot(i), mpool.slot(i), "slot {i}");
+        }
+        for _ in 0..8 {
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
+        }
+    }
+
+    /// The 1053 bounce burst (`:18947-18956`, this task's movement site): a
+    /// >5 Y-block spawns 10×2 type-6 dust (scale 2 vel×8 noGravity, then
+    /// scale 1.25 vel×2 X×1.5 Y−2) at `(pos.X, pos.Y+8)` box `(w, h−8)`.
+    #[test]
+    fn w4_d3_the_lava_boulder_bounce_burst_body() {
+        let w = world();
+        let c = ctx();
+        let mut p = proj(LAVA_BOULDER);
+        p.pos = Vec2::new(1600.0, 1600.0);
+        p.vel = Vec2::new(0.0, 0.0); // the collision zeroed Y
+        let mut dust = DustPool::new();
+        let mut rng = tr_core::UnifiedRandom::new(37);
+        let mut mpool = DustPool::new();
+        let mut mirror = tr_core::UnifiedRandom::new(37);
+        bounce_ladder(&mut p, Vec2::new(0.0, 6.0), &w, &[], None, &mut rng, 0, true, &mut dust, &c);
+        let anchor = Vec2::new(1600.0, 1608.0);
+        for _ in 0..10 {
+            let idx = mpool.new_dust(&mut mirror, &c, &w, anchor, 31, 23, 6, 0.0, 0.0, 100, Color::default(), 2.0);
+            let d = mpool.slot_mut(idx);
+            d.velocity *= 8.0;
+            d.no_gravity = true;
+            let idx = mpool.new_dust(&mut mirror, &c, &w, anchor, 31, 23, 6, 0.0, 0.0, 100, Color::default(), 1.25);
+            let d = mpool.slot_mut(idx);
+            d.velocity *= 2.0;
+            d.velocity.x *= 1.5;
+            d.velocity.y -= 2.0;
+        }
+        let act: Vec<usize> = (0..6000).filter(|&i| dust.slot(i).active).collect();
+        let mact: Vec<usize> = (0..6000).filter(|&i| mpool.slot(i).active).collect();
+        assert_eq!(act.len(), 20, "10×2 dust");
+        assert_eq!(act, mact);
+        for i in act {
+            assert_eq!(dust.slot(i), mpool.slot(i), "slot {i}");
+        }
+        for _ in 0..8 {
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
+        }
+    }
+
+    /// The 1048 bounce ring (`:19242-19246`, this task's movement site): a
+    /// hard bounce spawns 10 type-322 dust, each a NextVector2FromRectangle
+    /// pair (2 floats) then the body at `v23 − One` box 2×2 speeds −vel×0.5.
+    /// The PooFly particles' count + rectangle pairs draw after (bodies skip).
+    #[test]
+    fn w4_d3_the_poulder_bounce_ring_body() {
+        let w = world();
+        let c = ctx();
+        let mut p = proj(POULDER);
+        p.pos = Vec2::new(1600.0, 1600.0);
+        p.vel = Vec2::new(0.0, 0.0);
+        let mut dust = DustPool::new();
+        let mut rng = tr_core::UnifiedRandom::new(41);
+        let mut mpool = DustPool::new();
+        let mut mirror = tr_core::UnifiedRandom::new(41);
+        bounce_ladder(&mut p, Vec2::new(0.0, 6.0), &w, &[], None, &mut rng, 0, true, &mut dust, &c);
+        // The post-bounce velocity: −6 × 0.75 = −4.5 Y (the 0.75 band).
+        let bv = Vec2::new(0.0, -4.5);
+        for _ in 0..10 {
+            let v23 = next_vector2_from_rect(&mut mirror, 1600.0, 1600.0, 31.0, 31.0);
+            mpool.new_dust(&mut mirror, &c, &w, v23 - Vec2::ONE, 2, 2, 322, -bv.x * 0.5, -bv.y * 0.5, 0, Color::default(), 1.0);
+        }
+        let flies = 2 + mirror.next_max(2);
+        for _ in 0..flies {
+            let _ = (mirror.next_float(), mirror.next_float());
+        }
+        let act: Vec<usize> = (0..6000).filter(|&i| dust.slot(i).active).collect();
+        let mact: Vec<usize> = (0..6000).filter(|&i| mpool.slot(i).active).collect();
+        assert_eq!(act.len(), 10, "the 10-dust ring");
+        assert_eq!(act, mact);
+        for i in act {
+            assert_eq!(dust.slot(i), mpool.slot(i), "slot {i}");
+        }
+        for _ in 0..8 {
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
+        }
+    }
+
+    /// The 1053 lava death gore (`:74898-74913`): four gores, each the
+    /// Next(61,64) type + the NewGore kicks (Y then X), post scale 1.5 + the
+    /// sign pairs. A mirrored stream lands identical gore records.
+    #[test]
+    fn w4_d3_the_lava_death_gore_body() {
+        let w = world();
+        let mut p = proj(LAVA_BOULDER);
+        p.pos = Vec2::new(1600.0, 1600.0);
+        p.w = 64.0;
+        p.h = 64.0;
+        let mut gore = GorePool::new();
+        let mut rng = tr_core::UnifiedRandom::new(43);
+        let mut mgore = GorePool::new();
+        let mut mirror = tr_core::UnifiedRandom::new(43);
+        lava_death_gore(&p, &mut rng, &mut gore, &w);
+        let pos = Vec2::new(1600.0 + 32.0 - 24.0, 1600.0 + 32.0 - 24.0);
+        for (sx, sy) in [(1.5, 1.5), (-1.5, 1.5), (1.5, -1.5), (-1.5, -1.5)] {
+            let ty = mirror.next_range(61, 64);
+            let idx = mgore.new_gore(&mut mirror, &w, pos, Vec2::ZERO, ty, 1.0);
+            let g = mgore.slot_mut(idx);
+            g.scale = 1.5;
+            g.velocity.x += sx;
+            g.velocity.y += sy;
+        }
+        let act: Vec<usize> = (0..600).filter(|&i| gore.slot(i).active).collect();
+        let mact: Vec<usize> = (0..600).filter(|&i| mgore.slot(i).active).collect();
+        assert_eq!(act.len(), 4, "the four gores");
+        assert_eq!(act, mact);
+        for i in act {
+            assert_eq!(gore.slot(i).gore_type, mgore.slot(i).gore_type);
+            assert_eq!(gore.slot(i).scale, mgore.slot(i).scale);
+            assert_eq!(gore.slot(i).velocity, mgore.slot(i).velocity);
+        }
+        for _ in 0..8 {
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
+        }
+    }
+
+    /// The 763 spawn-latch burst (`:55518-55529`): 5× NewDustDirect type-40
+    /// at `pos − vel`, scale 1.1, noGravity + vel ×1.5. A mirrored stream
+    /// lands identical records.
+    #[test]
+    fn w4_d3_the_spike_spawn_latch_body() {
+        let w = world();
+        let c = ctx();
+        let mut p = proj(ROLLING_CACTUS_SPIKE);
+        p.pos = Vec2::new(1600.0, 1600.0);
+        p.vel = Vec2::new(2.0, -1.0);
+        let mut dust = DustPool::new();
+        let mut rng = tr_core::UnifiedRandom::new(47);
+        let mut mpool = DustPool::new();
+        let mut mirror = tr_core::UnifiedRandom::new(47);
+        spike_spawn_dust(&p, &mut rng, &mut dust, &c, &w);
+        for _ in 0..5 {
+            let idx = mpool.new_dust_direct(&mut mirror, &c, &w, p.pos - p.vel, 10, 10, 40, 0.0, 0.0, 0, Color::default(), 1.1);
+            let d = mpool.slot_mut(idx);
+            d.no_gravity = true;
+            d.velocity *= 1.5;
+        }
+        let act: Vec<usize> = (0..6000).filter(|&i| dust.slot(i).active).collect();
+        let mact: Vec<usize> = (0..6000).filter(|&i| mpool.slot(i).active).collect();
+        assert_eq!(act.len(), 5, "the 5-dust latch");
+        assert_eq!(act, mact);
+        for i in act {
+            assert_eq!(dust.slot(i), mpool.slot(i), "slot {i}");
+        }
+        for _ in 0..8 {
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
+        }
+    }
+
+    /// The 763 Kill dust (`:75067-75078`): 4× type-40 dust, the Next(2) ×0.8
+    /// scale gate, noGravity, the ×1.9 corpse compound. A mirrored stream
+    /// lands identical records + the velocity compound.
+    #[test]
+    fn w4_d3_the_spike_kill_dust_body() {
+        let w = world();
+        let c = ctx();
+        let mut p = proj(ROLLING_CACTUS_SPIKE);
+        p.pos = Vec2::new(1600.0, 1600.0);
+        p.vel = Vec2::new(1.0, 0.0);
+        let mut dust = DustPool::new();
+        let mut rng = tr_core::UnifiedRandom::new(53);
+        let mut mpool = DustPool::new();
+        let mut mirror = tr_core::UnifiedRandom::new(53);
+        spike_kill_dust(&mut p, &mut rng, &mut dust, &c, &w);
+        let mut mv = Vec2::new(1.0, 0.0);
+        for _ in 0..4 {
+            let idx = mpool.new_dust(&mut mirror, &c, &w, p.pos, 10, 10, 40, 0.0, 0.0, 0, Color::default(), 1.0);
+            if mirror.next_max(2) == 0 {
+                mpool.slot_mut(idx).scale *= 0.8;
+            }
+            mpool.slot_mut(idx).no_gravity = true;
+            mv *= 1.9;
+        }
+        assert!((p.vel.x / 1.9f32.powi(4) - 1.0).abs() < 1e-4, "×1.9 per dust");
+        let act: Vec<usize> = (0..6000).filter(|&i| dust.slot(i).active).collect();
+        let mact: Vec<usize> = (0..6000).filter(|&i| mpool.slot(i).active).collect();
+        assert_eq!(act.len(), 4, "the 4-dust kill");
+        assert_eq!(act, mact);
+        for i in act {
+            assert_eq!(dust.slot(i), mpool.slot(i), "slot {i}");
+        }
+        for _ in 0..8 {
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
+        }
     }
 }

@@ -14579,6 +14579,13 @@ pub struct ProjectilePool {
     /// `(kind 210/211, x, y, vx, vy)`, drained into the NPC vec (the
     /// Queen-Bee volley precedent).
     pending_boulder_bees: Vec<crate::projectile_ai_boulder::BoulderBee>,
+    /// W4-d3 — the live gore pool the boulder Kill arms spawn into (the
+    /// W4-g16 `set_gore_pool` seam): the world-sim pass moves the App's pool
+    /// in for the step and takes it back after (the `golf_ctx` take/replace
+    /// precedent). `None` = the dust-free callers (the witnesses, the
+    /// `update` scratch entry) — the gore bodies skip, only the type picks +
+    /// kicks draw (the pre-port census behaviour).
+    gore_pool: Option<tr_core::gore::GorePool>,
 }
 
 impl Default for ProjectilePool {
@@ -14971,7 +14978,20 @@ impl ProjectilePool {
             tile_frame_665: 0,
             pending_boulder_drops: Vec::new(),
             pending_boulder_bees: Vec::new(),
+            gore_pool: None,
         }
+    }
+
+    /// W4-d3 — move the live gore pool in for the update pass (the W4-g16
+    /// `set_gore_pool` seam). The boulder Kill arms spawn into it mid-walk.
+    pub fn set_gore_pool(&mut self, pool: Option<tr_core::gore::GorePool>) {
+        self.gore_pool = pool;
+    }
+
+    /// W4-d3 — take the gore pool back after the pass (the sites spawned
+    /// into it mid-walk; the world-sim writes it back to the App).
+    pub fn take_gore_pool(&mut self) -> Option<tr_core::gore::GorePool> {
+        self.gore_pool.take()
     }
 
     /// `Player.UpdateBlacklistedTilesForGrappling` (`Player.cs:6210-6248`) for
@@ -16627,12 +16647,59 @@ impl ProjectilePool {
         npcs: &mut [Npc],
         owner: Option<(f32, f32)>,
         aim: Option<Vec2>,
+        player: Option<&mut crate::player::Player>,
+        inputs: YoyoInputs,
+        flail_inputs: FlailInputs,
+        rng: &mut dyn tr_core::loot::DropRng,
+        local_owner: u8,
+        hostile_local: bool,
+    ) {
+        // W4-d3 — the boulder dust lane's scratch entry (the W4-g64/g63
+        // `update`/`update_dust` seam shape): the dust-free callers run the
+        // walk on a scratch pool with a permissive ctx — the AI-level gate
+        // draws still ride the caller's stream, the pool's own rolls land on
+        // the scratch pool (the live sim threads the real pool through
+        // [`ProjectilePool::update_dust`]).
+        let mut dust = tr_core::particles::DustPool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(world.width as f32 * TILE_PX, world.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        };
+        self.update_dust(
+            world, npcs, owner, aim, player, inputs, flail_inputs, rng, local_owner,
+            hostile_local, &mut dust, &ctx,
+        );
+    }
+
+    /// W4-d3 — the full walk with the caller's RNG stream AND the live dust
+    /// pool + spawn ctx (the W4-g64 `update_dust` seam): the boulder family's
+    /// dust bodies (the 1053/1048 trails, the movement bursts, the Kill-arm
+    /// bursts) roll `Main.rand` through the verbatim `DustPool::new_dust` on
+    /// the SAME `UpdateProjectiles` stream the AI draws ride
+    /// (`Main.cs:17775-17777`'s `SwapRandom("UpdateProjectiles")` wraps
+    /// `UpdateWorld_Projectiles`, dust included). The live sim
+    /// (`world_sim/projectiles.rs`) threads `app.dust` + the frame's
+    /// `spawn_ctx` here; every other kind ignores the pool.
+    #[allow(clippy::too_many_arguments)]
+    #[deny(unreachable_patterns)]
+    pub fn update_dust(
+        &mut self,
+        world: &mut World,
+        npcs: &mut [Npc],
+        owner: Option<(f32, f32)>,
+        aim: Option<Vec2>,
         mut player: Option<&mut crate::player::Player>,
         inputs: YoyoInputs,
         flail_inputs: FlailInputs,
         rng: &mut dyn tr_core::loot::DropRng,
         local_owner: u8,
         hostile_local: bool,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
     ) {
         self.update_count += 1;
         // `Player.Update`'s clear (`Player.cs:28300-28301`): the C#
@@ -16981,6 +17048,24 @@ impl ProjectilePool {
                                     &mut self.slots[i],
                                     world,
                                 )
+                            }
+                            // W4-d3 — the 763 RollingCactusSpike (the 727's
+                            // bounce child): `AI_001`'s `localAI[0] == 0`
+                            // spawn-latch 5-dust burst (`Projectile.cs:
+                            // 55518-55529`) ahead of the generic arrow flight.
+                            // The latch sets 1 once; the burst rides the live
+                            // dust pool on the UpdateProjectiles stream. The
+                            // 763 is NOT on the `flag3 = false` list
+                            // (`:55947-56031`), so the generic flight's
+                            // `ai[0]++` + gravity apply (the `ai_arrow` tail).
+                            ROLLING_CACTUS_SPIKE => {
+                                if self.slots[i].local_ai[0] == 0.0 {
+                                    self.slots[i].local_ai[0] = 1.0;
+                                    crate::projectile_ai_boulder::spike_spawn_dust(
+                                        &self.slots[i], rng, dust, dust_ctx, world,
+                                    );
+                                }
+                                self.slots[i].ai_arrow(world);
                             }
                             _ => self.slots[i].ai_arrow(world),
                         },
@@ -17510,6 +17595,8 @@ impl ProjectilePool {
                                 local_owner,
                                 self.tile_frame_665,
                                 spam,
+                                dust,
+                                dust_ctx,
                             );
                             if !spikes.is_empty() {
                                 let owner_id = self.slots[i].owner;
@@ -20227,7 +20314,7 @@ impl ProjectilePool {
                 // sub-step loop, and this hook runs after it (the golf-strike
                 // `pending_proj_sounds.push` precedent).
                 if !died_out_of_world {
-                    self.boulder_kill(i, world, npcs.len(), rng, local_owner);
+                    self.boulder_kill(i, world, npcs.len(), rng, local_owner, dust, dust_ctx);
                 }
             }
             // S1-P-i16 — the dart split / cluster ring spawn requests the
@@ -21270,6 +21357,7 @@ impl ProjectilePool {
     /// precedent); the id-3/4/42 styles the `play_proj_sound` façade does not
     /// serve drop at the drain (the sound-layer census). The item drops and
     /// the bee spawns park on the pool for the world-sim pass.
+    #[allow(clippy::too_many_arguments)]
     fn boulder_kill(
         &mut self,
         slot: usize,
@@ -21277,6 +21365,8 @@ impl ProjectilePool {
         npc_count: usize,
         rng: &mut dyn DropRng,
         local_owner: u8,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
     ) {
         use crate::projectile_ai_boulder as boulder;
         let kind = self.slots[slot].kind;
@@ -21309,14 +21399,15 @@ impl ProjectilePool {
         }
         // `:71192-71255` — the 1047 rainbow death burst: the RainbowBoulder
         // cue (`SoundID.RainbowBoulder` = (42, 274)) at the centre, then the
-        // oldPos-ring dust census + the 14 hue floats (the bodies skip).
+        // oldPos-ring dust body + the 14 hue dust (the RainbowRodHit particle
+        // bodies skip — the ParticleOrchestrator layer). CENSUS: zero gore.
         if kind == RAINBOW_BOULDER {
             let c = {
                 let p = &self.slots[slot];
                 Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
             };
             self.pending_proj_sounds.push((42, 274, c.x, c.y, 0.0));
-            boulder::rainbow_boulder_death_draws(&self.slots[slot], rng);
+            boulder::rainbow_boulder_death(&self.slots[slot], rng, dust, dust_ctx, world);
         }
         // `:74841-74968` — the family arm (the 10 kinds).
         if matches!(
@@ -21340,15 +21431,59 @@ impl ProjectilePool {
                 (p.pos.x, p.pos.y)
             };
             self.pending_proj_sounds.push((id, style, px, py, 0.0));
-            // `:74877-74948` — the per-kind death dust/gore. The 1053's gore
-            // census stays (4 × the type pick + the NewGore kicks); the 1054/
-            // 1055 dust bodies skip (no explicit draws); the 1057 skips the
-            // loop entirely (`:74938` `type != 1057`); the rest run the 30×
-            // Next(2) scale gate + the ×1.9 corpse-velocity compound.
+            // `:74877-74948` — the per-kind death dust/gore BODIES (the g64/g16
+            // seams). The 1053 recentres + resizes to 64×64, runs its 25+80
+            // dust + the 4-gore burst, then restores 31×31; the 1054/1055 run
+            // their own dust; the 1057 skips the loop entirely (`:74938`
+            // `type != 1057`); the rest run the 30× type-num599 dust loop.
             if kind == LAVA_BOULDER {
-                boulder::lava_death_gore_draws(rng);
-            } else if kind != SPIDER_BOULDER && kind != GHOULDER && kind != BOULDER_THAT_SPAWNS_PET {
-                boulder::family_dust_loop(&mut self.slots[slot], 30, 1.9, rng);
+                // `:74877-74920` — the recentre + 64×64 resize (the C# adds
+                // w/2, h/2 then subtracts the NEW w/2, h/2 — the centre pin).
+                let p = &mut self.slots[slot];
+                p.pos.x += p.w / 2.0;
+                p.pos.y += p.h / 2.0;
+                p.w = 64.0;
+                p.h = 64.0;
+                p.pos.x -= p.w / 2.0;
+                p.pos.y -= p.h / 2.0;
+                boulder::lava_death_dust(&self.slots[slot], rng, dust, dust_ctx, world);
+                // The gore body rides the live pool (the g16 seam); the
+                // dust-free callers keep the census draws (type pick + kicks).
+                if let Some(g) = self.gore_pool.as_mut() {
+                    boulder::lava_death_gore(&self.slots[slot], rng, g, world);
+                } else {
+                    for _ in 0..4 {
+                        let _ = rng.next_range(61, 64);
+                        let _ = rng.next_range(10, 31);
+                        let _ = rng.next_range(-20, 21);
+                    }
+                }
+                // `:74914-74919` — the restore to 31×31.
+                let p = &mut self.slots[slot];
+                p.pos.x += p.w / 2.0;
+                p.pos.y += p.h / 2.0;
+                p.w = 31.0;
+                p.h = 31.0;
+                p.pos.x -= p.w / 2.0;
+                p.pos.y -= p.h / 2.0;
+            } else if kind == SPIDER_BOULDER {
+                boulder::spider_death_dust(&self.slots[slot], rng, dust, dust_ctx, world);
+            } else if kind == GHOULDER {
+                boulder::ghoulder_death_dust(&self.slots[slot], rng, dust, dust_ctx, world);
+            } else if kind != BOULDER_THAT_SPAWNS_PET {
+                // `:74847-74856` — the num599 dust type: 1013→243, 727→40,
+                // 1014→12, 1021→323, 1048→322, else 1.
+                let dust_type = match kind {
+                    BOUNCY_BOULDER => 243,
+                    ROLLING_CACTUS => 40,
+                    LIFE_CRYSTAL_BOULDER => 12,
+                    MOON_BOULDER => 323,
+                    POULDER => 322,
+                    _ => 1,
+                };
+                boulder::family_dust_loop(
+                    &mut self.slots[slot], 30, 1.9, dust_type, 1.4, rng, dust, dust_ctx, world,
+                );
             }
             // `:74950-74957` — the owner-gated item drops: the 1057 drops the
             // Boulder pet item 5523, the 1014 the Life Crystal 29.
@@ -21383,7 +21518,14 @@ impl ProjectilePool {
                 (p.pos.x, p.pos.y)
             };
             self.pending_proj_sounds.push((0, 0, px, py, 0.0));
-            boulder::family_dust_loop(&mut self.slots[slot], 10, 1.6, rng);
+            boulder::family_dust_loop(
+                &mut self.slots[slot], 10, 1.6, 1, 1.1, rng, dust, dust_ctx, world,
+            );
+        }
+        // `:75067-75078` — the 763 RollingCactusSpike arm: 4× type-40 dust,
+        // the Next(2) ×0.8 scale gate, noGravity, the ×1.9 corpse compound.
+        if kind == ROLLING_CACTUS_SPIKE {
+            boulder::spike_kill_dust(&mut self.slots[slot], rng, dust, dust_ctx, world);
         }
         // `:75080-75123` — the 655 BeeHive arm: the NPCDeath int play (4, the
         // stock style 1), the 30× Next(2) scale gate + ×1.9 compound, then the
@@ -21394,7 +21536,9 @@ impl ProjectilePool {
                 (p.pos.x, p.pos.y)
             };
             self.pending_proj_sounds.push((4, 1, px, py, 0.0));
-            boulder::family_dust_loop(&mut self.slots[slot], 30, 1.9, rng);
+            boulder::family_dust_loop(
+                &mut self.slots[slot], 30, 1.9, 147, 1.4, rng, dust, dust_ctx, world,
+            );
             if self.slots[slot].wet {
                 // `:75096` — the honey drop, stack rolled on this stream.
                 let stack = rng.next_range(2, 6);

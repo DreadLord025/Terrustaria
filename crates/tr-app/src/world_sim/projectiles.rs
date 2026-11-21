@@ -389,8 +389,15 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     if let Some(ctx) = golf_ctx {
         app.projectiles.set_golf_context(ctx);
     }
+    // W4-d3 — the boulder dust/gore lane's live seam (the W4-g64/g16 shapes):
+    // the frame's spawn ctx (`Main.screenPosition/width/height` + the gfx
+    // budget) captured BEFORE the step closure's field borrows, and the App's
+    // gore pool moved in for the step (the `golf_ctx` take/replace precedent).
+    let dust_spawn_ctx = app.spawn_ctx();
+    let gore_pool = std::mem::replace(&mut app.gore, tr_core::gore::GorePool::new());
+    app.projectiles.set_gore_pool(Some(gore_pool));
     app.projectile_step.tick(dt.min(0.25), |_| {
-        app.projectiles.update(
+        app.projectiles.update_dust(
             &mut app.world,
             &mut app.npcs,
             owner,
@@ -401,8 +408,14 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             rng,
             local_owner,
             hostile_local,
+            &mut app.dust,
+            &dust_spawn_ctx,
         );
     });
+    // W4-d3 — the gore pool writeback: the boulder Kill arms spawned into it.
+    if let Some(pool) = app.projectiles.take_gore_pool() {
+        app.gore = pool;
+    }
     app.projectile_step.cap_backlog();
     // S1-P-i55 — the golf context writeback: the arms mutated the clone
     // (RecordSwing / the cup scoring); the resolved state is authoritative
