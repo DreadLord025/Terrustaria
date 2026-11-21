@@ -159,3 +159,84 @@ no port needed. The only future consumer would be a held-item draw layer that
 renders the flint sprite at `itemLocation` — at which point the +0/+1 px wobble
 becomes visible and the (already-consumed) draw can feed it. **No task seed**
 (cosmetic, blocked on the held-item draw layer).
+
+---
+
+## Item 3 — aiStyle 200 BirdDroppings: duplicate vs W4-c10 (keep-one)
+
+Two branches ported the **same** `AI_200_BirdDroppings`
+(`Projectile.cs:39985-40017`) + the 1080 `SetDefaults` row
+(`Projectile.cs:10078-10086`):
+
+- **d20 (this lane, `e239723b`)**: `projectile_ai_misc.rs::ai_bird_droppings`
+  (`:725-761`) + dispatch `projectile.rs:17381-17389` (arm then `kill_step`) +
+  row `projectile/data.rs:3611` + `ignoreWater` overlay `:4277`.
+- **c10 (`task/W4-c10-style68-waterfowl`, `98a99fb1`)**: a dedicated module
+  `projectile_bird_droppings.rs::bird_droppings_step` (245 lines) + dispatch
+  `projectile.rs:19778-19806` (the module owns the whole body) + row
+  `projectile/data.rs:3982` + `ignoreWater` overlay `:4201`.
+
+**The C# arm** (`:39985-40017`): `velocity.Y += 0.3` capped 16 (`:39987-39991`);
+TWO dust-329 iterations, each `NewDust(Center,1,1,329)` + `velocity *= 0.1` then
+a `Main.rand.Next(2)` gate — hit: `scale = NextFloat*0.5+0.5`, `velocity +=
+base.velocity`, `noGravity`; miss: `scale = NextFloat*0.4+0.4`, `velocity *=
+0.5`, `velocity += base.velocity/2` (`:39992-40008`); then the int-truncated
+10×10 rect vs every active-and-alive player's rect, XNA `Intersects` → `Kill()`
+(`:40009-40016`). Movement is NOT in the arm — `HandleMovement`'s type-1080
+branch (`:18921-18928`): after tile collision, `if (velocity != lastVelocity) {
+position += velocity; Kill(); }` (the splat).
+
+**Line-by-line fidelity comparison:**
+
+| Aspect | C# | d20 `ai_bird_droppings` | c10 `bird_droppings_step` |
+| --- | --- | --- | --- |
+| 0.3 gravity / 16 cap | `:39987-39991` | `:731-734` ✓ | `:65-68` ✓ |
+| dust RNG census | 2×(Next(2),NextFloat) | `:738-744` if/else, one float each ✓ | `:73-76` flat pair ✓ (equivalent draws) |
+| player-intersect kill | int rects, strict edges, `!dead` | `:748-760` reads `pl.width/height` (live hitbox) ✓ | `:82-91` rect seam, dispatch passes `WIDTH/HEIGHT` consts |
+| movement / splat | `:18921-18928` integrate-then-kill | `kill_step` (`projectile.rs:10088`) — per-axis probe, integrate-then-kill ✓ | inline `:97-107` — same probe shape ✓ |
+| 1080 row | 10×10/200/α255/pen−1/ignoreWater/tileCollide-true/timeLeft-3600 | `data.rs:3611` ✓ | `data.rs:3982` ✓ **byte-identical tuple** |
+
+Both arms are **FAITHFUL** and behaviourally equivalent: the dust census draws
+the same `2×(Next(2),NextFloat)` in order (d20's if/else and c10's flat pair both
+consume exactly one float per branch — the C# draws one scale float either way);
+the kill is the same int-truncated strict-edge rect test; the splat is the same
+integrate-then-kill probe. The rows are byte-identical
+`(10.0, 10.0, 200, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2,
+false, -1, 255, 1.0))`.
+
+**Two micro-differences (neither a fidelity loss):**
+
+1. **Player rect source.** d20 reads the live `pl.width`/`pl.height`
+   (`player.rs:1703/1711`, mount-shrinkable); c10's dispatch passes the
+   `WIDTH`/`HEIGHT` constants (`player.rs:26-27`). For the unmounted session
+   player they are equal (20×42). d20 is marginally more general (a mounted
+   player's shrunk hitbox would intersect correctly); c10 matches the C#
+   `Main.player[j].width/height` read only for the stock size. **Edge-case
+   only**, no observable difference in the single-player unmounted port.
+2. **Module shape.** c10 isolates the drop in its own module (the aiStyle-19
+   spear precedent) and owns the movement inline; d20 folds it into
+   `projectile_ai_misc.rs` and reuses the pool's shared `kill_step`. Both are
+   house-style; c10's is self-contained, d20's shares the movement helper.
+
+**Keep-one decision — KEEP c10's module at merge.** Rationale:
+
+- c10's `projectile_bird_droppings.rs` is the **dedicated, self-contained**
+  module with the fuller doc (the `HandleMovement` splat cite, the damage-free
+  `Kill()` note, the `ignoreWater`/`wet=false` spawn cite) and **7 hand-derived
+  witnesses** (`:165-256`: the row, the gravity+census, the player-rect kill
+  incl. the strict edge + dead-player, the blocked-step splat). d20's arm has
+  the row + gravity/census + kill witnesses but no dedicated splat witness.
+- c10 is the **waterfowl lane** — the 1080 drop is the waterfowl/bird's own
+  shot (`NPC.cs:34632`/`:25322`), so the drop belongs with its spawner's lane.
+- The d20 arm is a **verbatim duplicate** that adds no fidelity over c10.
+
+**Merge instruction (T3):** when c10 and d20 both land, **keep
+`projectile_bird_droppings.rs` + c10's dispatch/row**, and **drop d20's
+`ai_bird_droppings` (`projectile_ai_misc.rs:711-761`), its dispatch arm
+(`projectile.rs:17381-17389`) and its duplicate row/overlay** — OR repoint d20's
+dispatch to call c10's module. The rows are identical so no data conflict; the
+only conflict is the two `200 =>` dispatch arms and the two `BIRD_DROPPINGS`
+const/row definitions (resolve to c10's). **Do not keep both arms** (a double
+`200 =>` match arm is a compile error; a double row is a duplicate-match
+warning). The d20 witnesses (`projectile_ai_misc.rs:2268-2330`) should be
+dropped with the arm; c10's cover the same ground.
