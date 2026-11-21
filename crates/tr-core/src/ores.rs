@@ -239,7 +239,10 @@ impl Default for SavedOreTiers {
 /// classic / `[21..23]` alternates, ChatColors.World) rides the app seam —
 /// `world_sim/editing.rs::hammer_tile_hit` broadcasts on the returned ore
 /// (the core has no chat/lang store; the W4-d103 POST FINAL wiring).
-/// The wraith spawn (`:49078-49105`) parks — no `NPC.SpawnOnPlayer` port.
+/// The wraith spawn (`:49078-49105`) rides the app seam — the core has
+/// no NPC roster; `world_sim/editing.rs::hammer_tile_hit` runs the
+/// `Main.rand.Next(2) + 1` count + `SpawnOnPlayer(82)`'s 200×30 scan on
+/// the returned smash (W4-d103 WG-POST RETIRE — the g8-kind activation).
 pub fn smash_altar(
     world: &mut World,
     tiers: &mut SavedOreTiers,

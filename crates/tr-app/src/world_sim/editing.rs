@@ -1331,6 +1331,54 @@ fn hammer_tile_hit(
                 &crate::lang::misc(blessing),
                 crate::chat::COLOR_WORLD,
             );
+            // `WorldGen.SmashAltar`'s wraith spawn (`WorldGen.cs:49078-
+            // 49105`, W4-d103 WG-POST RETIRE — the g8-kind activation):
+            // `netMode != 1` folds true; the journey spawn-disable gate
+            // (`:49082-49093`) parks (the creative lane owns the
+            // per-player disable state); `Player.FindClosest` is the
+            // session player (single-player); `Main.rand.Next(2) + 1`
+            // wraiths ride `NPC.SpawnOnPlayer(plr, 82)` — the 200×30
+            // scan (`NPC.cs:80570-80574`) + `SpawnBoss(num10*16+8,
+            // num11*16, 82, plr)` (`:80631`/`:80676`). The draws ride
+            // the UpdatePlayers stream (the smash's own SwapRandom).
+            // `SpawnBoss`'s `timeLeft *= 20` (`:80686`) rides the
+            // despawn window; the 82 case skips the HasAwoken broadcast
+            // (`:80706`). The getGood `NewNPC` Next(3) transform draw
+            // (`:80752`) parks with the seed lane (no 82 arm anyway).
+            let wraith_count = {
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                rng.next_max(2) + 1
+            };
+            for _ in 0..wraith_count {
+                let Some(p) = app.player.as_ref() else {
+                    break;
+                };
+                let (pos, center) = ((p.x, p.y), p.center());
+                let spot = {
+                    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    crate::spawner::spawn_on_player_tile(&app.world, pos, center, 82, rng)
+                };
+                if let Some((sx, sy)) = spot {
+                    // `NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80770`): the
+                    // feet at the ground tile's top edge, centred on the
+                    // column (+8).
+                    let (w, h) = NpcKind::Wraith.size();
+                    let mut n = Npc::new(
+                        NpcKind::Wraith,
+                        sx as f32 * TILE_PX + 8.0 - w * 0.5,
+                        sy as f32 * TILE_PX - h,
+                        1,
+                        0.0,
+                    );
+                    // `NewNPC`'s `timeLeft = (int)(750 * 1.25)`
+                    // (`:80772`) then `SpawnBoss`'s ×20 (`:80686`).
+                    n.despawn_timer = 937 * 20;
+                    // `SpawnBoss` passes `Target = plr` (`:80676`) — the
+                    // session player is slot 0.
+                    n.target = 0;
+                    app.npcs.push(n);
+                }
+            }
             app.world.altars_smashed = altars + 1;
             let _ = app.notify_progression_net(6);
             app.world_key = None;
@@ -11547,6 +11595,61 @@ mod tests {
         };
         assert_eq!(line.text, crate::lang::misc(key));
         assert_eq!(line.color, crate::chat::COLOR_WORLD);
+    }
+
+    /// W4-d103 WG-POST RETIRE (the g8-kind activation): the smash spawns
+    /// `Main.rand.Next(2) + 1` Wraiths (`WorldGen.cs:49100-49104`) through
+    /// `SpawnOnPlayer(82)`'s 200×30 scan — the count mirror rides the
+    /// UpdatePlayers stream, the spawned bodies carry the `SpawnBoss`
+    /// timeLeft ×20 (`NPC.cs:80686`) and target the session player.
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d103_retire_the_smash_spawns_the_wraiths() {
+        let mut w = World::new("t".into(), 420, 800);
+        let i = w.index(30, 260);
+        w.tiles[i] = Tile {
+            kind: 26,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        // A ground row under the player: the scan's down-column walk
+        // (`NPC.cs:80593-80603`) needs a solid floor inside the spawn
+        // band (the all-air fixture would find none — the C# spawns
+        // nothing there either).
+        for x in 0..420 {
+            let g = w.index(x, 300);
+            w.tiles[g] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[g].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        let mut app = mining_app(w, 30, 260);
+        app.world.hard_mode = true;
+        app.inventory[app.selected].kind = 367; // the Pwnhammer (hammer 80)
+        mine_frames(&mut app, 30);
+        assert_eq!(app.world.altars_smashed, 1, "the smash ran");
+        // The count draw (`:49100`) rides the same stream the smash's
+        // own draws consumed — mirror the whole prefix by replaying a
+        // twin smash on a cloned rig is the DW-1.4 shape; here the pin
+        // is the range + the roster: every spawned body is a Wraith
+        // with the ×20 despawn window and the slot-0 target.
+        let wraiths: Vec<_> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::Wraith)
+            .collect();
+        assert!(
+            (1..=2).contains(&wraiths.len()),
+            "Next(2)+1 wraiths, got {}",
+            wraiths.len()
+        );
+        for n in wraiths {
+            assert_eq!(n.despawn_timer, 937 * 20, "SpawnBoss timeLeft ×20");
+            assert_eq!(n.target, 0, "SpawnBoss Target = plr");
+            assert_eq!(n.hp, 160, "the SetDefaults lifeMax (NPC.cs:9861)");
+        }
     }
 
     // ---- S1-P-i31: the hammer interaction --------------------------------
