@@ -2225,6 +2225,7 @@ pub(crate) mod front_flow_tests {
             selected: 0,
             selection: crate::hotbar::SelectionState::new(),
             block_mouse: false,
+            pending_mass_wire_ops: Vec::new(),
             hotbar_scales: [0.75; HOTBAR],
             inventory_open: false,
             crafting_open: false,

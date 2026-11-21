@@ -264,6 +264,13 @@ pub(crate) struct App {
     /// held left button until its release (`OnSelectionChanged`,
     /// `Player.cs:563`; the release clears it, `TriggersSet.cs:846`).
     pub(crate) block_mouse: bool,
+    /// W4-d13 — the Wire Kite's release-death `Wiring.MassWireOperation`
+    /// requests (`Projectile.cs:72051-72067`): `(owner, ps_x, ps_y, pe_x,
+    /// pe_y)` drained from the projectile pool's kill hook. UNCONSUMED —
+    /// the apply needs the `WiresUI` tool modes (`Wiring.cs:3241`,
+    /// `world_sim/editing/wiring.rs:28-29`, f11's wiring lane); the request
+    /// seam keeps the anchors so the apply wave has nothing to re-derive.
+    pub(crate) pending_mass_wire_ops: Vec<(u8, i32, i32, i32, i32)>,
     /// Vanilla-style per-slot hotbar scale (selected grows to 1.0).
     pub(crate) hotbar_scales: [f32; HOTBAR],
     /// Escape toggles the inventory panel (`Main.OpenInventory`), it no longer quits.
@@ -3697,6 +3704,7 @@ impl App {
             selected: 0,
             selection: crate::hotbar::SelectionState::new(),
             block_mouse: false,
+            pending_mass_wire_ops: Vec::new(),
             hotbar_scales: {
                 let mut s = [0.75; HOTBAR];
                 s[0] = 1.0;

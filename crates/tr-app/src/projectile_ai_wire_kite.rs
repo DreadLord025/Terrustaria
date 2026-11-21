@@ -26,9 +26,13 @@
 //!
 //! The `Kill()` hook's `Wiring.MassWireOperation` (`Projectile.cs:72051-
 //! 72067`, the `localAI[0] == 1` release latch this arm sets at `:35720`)
-//! is the wiring system's documented deferral (`world_sim/editing/
+//! is WIRED to the request seam: the pool's death hook queues
+//! `(owner, ps, pe)` (`take_mass_wire_ops`) and the world-sim pass parks
+//! them on `app.pending_mass_wire_ops` (a per-tick buffer). The APPLY
+//! itself stays the wiring lane's documented deferral (`world_sim/editing/
 //! wiring.rs:28-29` — the mass wire operation needs the unported `WiresUI`
-//! tool modes); the death-hook site cites it.
+//! tool modes, f11's claim); the anchors are kept so the apply wave has
+//! nothing to re-derive.
 
 use glam::Vec2;
 
@@ -277,5 +281,68 @@ mod w4_d13_style125_tests {
         pl.vx = 0.0;
         let _ = p.ai_wire_kite(Some(&mut pl), None, false, false, 0, 0);
         assert_eq!(pl.facing, -1, "a zero velocity keeps the facing");
+    }
+
+    /// `Kill()`'s type-651 arm (`Projectile.cs:72051-72067`): the
+    /// `localAI[0] == 1` release latch queues the MassWireOperation
+    /// request — `ps = (ai[0], ai[1])`, `pe = Center.ToTileCoordinates()`
+    /// (`(int)X >> 4`). A latch-free death queues nothing; the drain
+    /// empties the queue. The APPLY stays f11's wiring-lane deferral.
+    #[test]
+    fn w4_d13_the_release_latch_queues_the_mass_wire_request() {
+        use crate::projectile::ProjectilePool;
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(WIRE_KITE, 0, 100.0, 100.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .expect("the kite row spawns");
+        {
+            let p = &mut pool.slots_mut()[slot];
+            p.local_ai[0] = 1.0; // the release latch
+            p.ai[0] = 12.0; // ps.X
+            p.ai[1] = 34.0; // ps.Y
+            p.time_left = 1; // the lifetime kill this pass
+        }
+        let mut rng = tr_core::tile_light::FastRandom::new(3);
+        pool.update(
+            &mut w,
+            &mut [],
+            None,
+            None,
+            None,
+            crate::projectile::YoyoInputs::default(),
+            crate::projectile::FlailInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
+        assert!(!pool.slots()[slot].active, "the lifetime kill fired");
+        let ops = pool.take_mass_wire_ops();
+        assert_eq!(ops.len(), 1, "the latched death queues one request");
+        // Centre = (105, 105) → (105 >> 4, 105 >> 4) = (6, 6).
+        assert_eq!(ops[0], (0, 12, 34, 6, 6), "ps from ai, pe from Centre");
+        assert!(pool.take_mass_wire_ops().is_empty(), "the drain empties");
+        // A latch-free death (the right-click press kill leaves
+        // localAI[0] == 0) queues nothing.
+        let slot2 = pool
+            .spawn_with_data_ai_owned(WIRE_KITE, 0, 100.0, 100.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .expect("the second kite");
+        pool.slots_mut()[slot2].time_left = 1;
+        pool.update(
+            &mut w,
+            &mut [],
+            None,
+            None,
+            None,
+            crate::projectile::YoyoInputs::default(),
+            crate::projectile::FlailInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
+        assert!(
+            pool.take_mass_wire_ops().is_empty(),
+            "no latch, no request"
+        );
     }
 }

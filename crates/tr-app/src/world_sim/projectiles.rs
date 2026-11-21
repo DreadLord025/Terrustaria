@@ -445,6 +445,15 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         app.swing = secs;
         app.item_time = secs;
     }
+    // W4-d13 — `Kill()`'s type-651 MassWireOperation requests
+    // (`Projectile.cs:72051-72067`): the release-latch deaths queued their
+    // `(owner, ps, pe)` anchors; the app slot holds THIS tick's requests
+    // (a per-tick buffer — the C# applies synchronously inside Kill).
+    // The APPLY stays the wiring lane's deferral (the `WiresUI` tool modes,
+    // `world_sim/editing/wiring.rs:28-29` — f11's claim); when it lands it
+    // consumes the buffer at this same seam, before the next pass replaces
+    // it. Until then the requests are dropped tick-end (the deferral).
+    app.pending_mass_wire_ops = app.projectiles.take_mass_wire_ops();
     // S1-C-7 wave B — the hostile-shot lane's hurt modifiers (`Player.Hurt`
     // `:38396-38517` via `Projectile.Damage` `Projectile.cs:14868`): the
     // accepted shot queued its retaliate request and possibly a dismount-on-
