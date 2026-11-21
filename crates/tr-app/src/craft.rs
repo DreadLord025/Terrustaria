@@ -2917,4 +2917,344 @@ mod tests {
         let inv3 = [crate::item::EMPTY_SLOT; INV];
         assert!(!can_craft(&inv3, &equip2, &[], &[], silver, &adj, &zones));
     }
+
+    // ---- S1-L-11g: the freeze guards (`ROADMAP` row S1-L-11g) ----
+    // The verified parts stay frozen: `Recipe`/`Requirement`/`GROUPS`
+    // (34/34 groups, order = id), the group-expansion rule, `TileCountsAs`
+    // (9 pairs), the environment flags, the consume order and the alchemy
+    // 1/3 discount. Each guard pins the port against the C# call sites so a
+    // later edit that drifts any of them fails here, not in play.
+
+    #[test]
+    fn s1_l_11g_the_group_table_is_frozen_verbatim() {
+        // `Recipe.SetupRecipeGroups` (`Recipe.cs:499-533`): all 34 groups in
+        // registration order — the id IS the order (`Register`'s
+        // `nextRecipeGroupIndex++`), the icon is `Items[0]`
+        // (`GetPlaceholderItemType`), the members are the ctor's variadic
+        // `Items`. The spot checks in
+        // `the_group_table_is_the_setuprecipegroups_order` stay; this pins
+        // EVERY row so no member list can drift unnoticed.
+        let want: &[(&str, &[u16])] = &[
+            ("Birds", &[2015, 2016, 2017]),
+            ("Scorpions", &[2157, 2156]),
+            ("Squirrels", &[2018, 3563]),
+            ("Bugs", &[3194, 3192, 3193]),
+            ("Ducks", &[2123, 2122]),
+            (
+                "Butterflies",
+                &[1998, 2001, 1994, 1995, 1996, 1999, 1997, 2000],
+            ),
+            ("Fireflies", &[1992, 2004]),
+            ("Snails", &[2006, 2007]),
+            ("Dragonflies", &[4334, 4335, 4336, 4338, 4339, 4337]),
+            ("Turtles", &[4464, 4465]),
+            ("Macaws", &[5212, 5300]),
+            ("Cockatiels", &[5312, 5313]),
+            ("CloudBalloons", &[399, 1250]),
+            ("BlizzardBalloons", &[1163, 1251]),
+            ("SandstormBalloons", &[983, 1252]),
+            ("CritterGuides", &[4767, 5453]),
+            ("NatureGuides", &[5309, 5454]),
+            ("Seashells", &[2625, 2626]),
+            (
+                "Fruit",
+                &[
+                    4009, 4282, 4283, 4284, 4285, 4286, 4287, 4288, 4289, 4290, 4291, 4292,
+                    4293, 4294, 4295, 4296, 4297, 5277, 5278,
+                ],
+            ),
+            ("Balloons", &[3738, 3736, 3737]),
+            ("CobaltBar", &[381, 1184]),
+            ("MythrilBar", &[382, 1191]),
+            ("AdamantiteBar", &[391, 1198]),
+            (
+                "GemCritter",
+                &[
+                    4838, 4844, 4843, 4841, 4842, 4840, 4839, 4831, 4837, 4836, 4834, 4835,
+                    4833, 4832,
+                ],
+            ),
+            ("MagicMirror", &[50, 3199]),
+            ("Wood", &[9, 619, 620, 621, 911, 1729, 2504, 2503, 5215]),
+            ("Stone", &[3, 61, 836, 409]),
+            ("Sand", &[169, 408, 1246, 370, 3272, 3338, 3274, 3275]),
+            ("IronBar", &[22, 704]),
+            ("SilverBar", &[21, 705]),
+            ("GoldBar", &[19, 706]),
+            ("Fragment", &[3458, 3456, 3457, 3459]),
+            ("PressurePlate", &[542, 852, 543, 541, 1151, 529, 853, 4261]),
+            ("Jellyfish", &[2436, 2437, 2438]),
+        ];
+        assert_eq!(GROUPS.len(), 34, "34/34 groups");
+        assert_eq!(want.len(), GROUPS.len());
+        for (i, (name, members)) in want.iter().enumerate() {
+            let g = &GROUPS[i];
+            assert_eq!(g.id, i as u16, "group {i}: registration order = id");
+            assert_eq!(g.name, *name, "group {i} name");
+            assert_eq!(g.members, *members, "group {i} ({name}) members");
+            assert_eq!(g.icon, members[0], "group {i}: icon = Items[0]");
+        }
+    }
+
+    #[test]
+    fn s1_l_11g_tile_counts_as_is_the_nine_setup_pairs() {
+        // `Recipe.SetupTileInheritance` (`Recipe.cs:559-571`): exactly nine
+        // `AddTileCountsAs` calls, in this order — standing near `tile` also
+        // satisfies a `countsAs` station requirement. The walk test
+        // (`station_inheritance_walks_the_counts_as_chain`) pins the
+        // recursion; this pins the TABLE itself (no pair added/dropped).
+        let want: &[(u16, u16)] = &[
+            (96, 215),
+            (17, 215),
+            (302, 17),
+            (77, 17),
+            (133, 77),
+            (134, 16),
+            (355, 13),
+            (699, 13),
+            (304, 86),
+        ];
+        assert_eq!(TILE_COUNTS_AS, want, "the nine SetupTileInheritance pairs");
+        // Every pair satisfies its requirement through the chain walk.
+        for &(tile, counts_as) in TILE_COUNTS_AS {
+            assert!(
+                satisfies_station(counts_as, tile),
+                "near {tile} satisfies the {counts_as} requirement"
+            );
+        }
+        // The direction is one-way: the parent does not satisfy the child.
+        assert!(!satisfies_station(96, 215));
+        // The three-hop walk 133 -> 77 -> 17 -> 215 stays reachable.
+        assert!(satisfies_station(215, 133));
+        // `TileID.Sets.CountsAsWaterForCrafting` (`TileID.cs:553`): the sink
+        // (172) and the water fountain (207) — the water-filter pair.
+        assert_eq!(COUNTS_AS_WATER, [172, 207]);
+    }
+
+    #[test]
+    fn s1_l_11g_requirement_matches_is_the_csharp_branch() {
+        // `RequiredItemEntry.Matches` (`Recipe.cs:36-43`): a plain entry is
+        // item equality ONLY; a group entry is `RecipeGroup.Contains` — the
+        // membership test, independent of the authored item id.
+        let plain = Requirement::item(22, 15);
+        assert_eq!(plain.group, NO_GROUP);
+        assert!(plain.matches(22));
+        assert!(!plain.matches(704), "the plain bar row does not accept Lead");
+        assert!(!plain.matches(21));
+        let wood = Requirement::group(9, RecipeGroups::WOOD, 10);
+        assert!(wood.matches(9));
+        assert!(wood.matches(5215), "the LAST member (Shadewood) matches");
+        assert!(!wood.matches(22), "a non-member never matches");
+        // The group branch reads membership only — the authored item id is
+        // not consulted (the C# stores the group, not an item, in the entry).
+        let odd = Requirement { item: 999, stack: 1, group: RecipeGroups::WOOD };
+        assert!(odd.matches(9), "membership, not the authored id");
+        assert!(!odd.matches(999), "the authored id is not a member");
+        // The sentinel and the lookup boundary: ids 0..33 exist, 34 does not.
+        assert_eq!(NO_GROUP, u16::MAX);
+        assert!(group(33).is_some());
+        assert!(group(34).is_none());
+    }
+
+    #[test]
+    fn s1_l_11g_the_group_expansion_crafts_from_any_member() {
+        // `CreateRequiredItemQuickLookups` (`Recipe.cs:15162-15191`): an
+        // authored item that belongs to a group's members substitutes the
+        // whole member set — the torch's wood entry carries the Wood group,
+        // so ANY member crafts it; a plain bar row keeps item equality.
+        let torch = recipe_by_create(8);
+        assert_eq!(torch.required.len(), 2);
+        assert_eq!(torch.required[0].item, 23, "gel first");
+        assert_eq!(
+            torch.required[1].group,
+            RecipeGroups::WOOD,
+            "the wood entry is group-expanded"
+        );
+        // Palm Wood (2503) is the second-to-last member — the craft works
+        // with no plain Wood (9) in stock at all.
+        let inv = inv_with(&[(23, 1), (2503, 1)]);
+        assert!(
+            can_craft(&inv, &empty_equip(), &[], &[], torch, &dry_adj(), &Zones::default()),
+            "any Wood-group member satisfies the expanded entry"
+        );
+        // The iron helm's bar entry is NOT group-based in the C# source
+        // (`test_dw_1_1` pins item 22): Lead (704) does not substitute.
+        let helm = recipe_by_create(90);
+        assert_eq!(helm.required.len(), 1);
+        assert_eq!(helm.required[0].group, NO_GROUP, "the plain bar row");
+        let adj = test_adj(helm.stations);
+        let lead = inv_with(&[(704, 15)]);
+        assert!(
+            !can_craft(&lead, &empty_equip(), &[], &[], helm, &adj, &Zones::default()),
+            "the plain row does not expand to the bar group"
+        );
+        let iron = inv_with(&[(22, 15)]);
+        assert!(can_craft(&iron, &empty_equip(), &[], &[], helm, &adj, &Zones::default()));
+    }
+
+    #[test]
+    fn s1_l_11g_environment_flags_gate_independently() {
+        // `PlayerMeetsEnvironmentConditions` (`Recipe.cs:322-358`): each
+        // `need*` flag is an independent AND term — its own source satisfies
+        // it, no other source does, and unset flags never gate. Synthetic
+        // rows off `BASE` freeze the semantics without riding the generated
+        // table (the real-row coverage stays in
+        // `the_environment_gates_the_liquid_and_biome_recipes`).
+        let zones = Zones::default();
+        let adj = dry_adj();
+        let plain = Recipe { ..BASE };
+        assert!(meets_environment(&plain, &adj, &zones), "no flags - no gates");
+        // (flag, the adjacency/zone source that satisfies it)
+        let water = Recipe { need_water: true, ..BASE };
+        assert!(!meets_environment(&water, &adj, &zones));
+        let mut wet = dry_adj();
+        wet.water = true;
+        assert!(meets_environment(&water, &wet, &zones));
+        let mut honeyed = dry_adj();
+        honeyed.honey = true;
+        assert!(!meets_environment(&water, &honeyed, &zones), "honey is not water");
+        let honey = Recipe { need_honey: true, ..BASE };
+        assert!(!meets_environment(&honey, &adj, &zones));
+        assert!(meets_environment(&honey, &honeyed, &zones));
+        assert!(!meets_environment(&honey, &wet, &zones), "water is not honey");
+        let lava = Recipe { need_lava: true, ..BASE };
+        let mut lavaed = dry_adj();
+        lavaed.lava = true;
+        assert!(!meets_environment(&lava, &adj, &zones));
+        assert!(meets_environment(&lava, &lavaed, &zones));
+        assert!(!meets_environment(&lava, &wet, &zones));
+        let snow = Recipe { need_snow: true, ..BASE };
+        let snowy = Zones { snow: true, graveyard: false };
+        assert!(!meets_environment(&snow, &adj, &zones));
+        assert!(meets_environment(&snow, &adj, &snowy));
+        let graveyard = Recipe { need_graveyard: true, ..BASE };
+        let grim = Zones { snow: false, graveyard: true };
+        assert!(!meets_environment(&graveyard, &adj, &zones));
+        assert!(meets_environment(&graveyard, &adj, &grim));
+        assert!(!meets_environment(&graveyard, &adj, &snowy), "snow is not graveyard");
+        // Two flags AND together: both sources or nothing.
+        let both = Recipe { need_water: true, need_snow: true, ..BASE };
+        assert!(!meets_environment(&both, &wet, &zones));
+        assert!(!meets_environment(&both, &adj, &snowy));
+        assert!(meets_environment(&both, &wet, &snowy));
+        // The station term rides the `TileCountsAs` walk: near 17 satisfies
+        // a 215 requirement, an empty adjacency does not.
+        let station = Recipe { stations: &[215], ..BASE };
+        assert!(!meets_environment(&station, &adj, &zones));
+        assert!(meets_environment(&station, &test_adj(&[17]), &zones));
+    }
+
+    #[test]
+    fn s1_l_11g_the_consume_order_is_grid_coins_ammo_then_chests() {
+        // `CraftingRequests.Consume` (`CraftingRequests.cs:227`):
+        // `ConsumeItemsFrom(Main.LocalPlayer.inventory, 58, …)` — the 50-slot
+        // grid, then the four coin and four ammo slots in array order — then
+        // the chest passes in `Recipe._recipeChests` order (`:218-254`). One
+        // flat `Matches` pass, partial decrement else clear-to-air
+        // (`:262-290`). A synthetic 12-wood row drains 2 grid + 3 coins +
+        // 4 ammo + 3 of the FIRST chest's 5; the second chest stays intact.
+        static REQ: [Requirement; 1] = [Requirement::item(9, 12)];
+        let recipe = Recipe { create: (9, 1), required: &REQ, ..BASE };
+        let stock = || {
+            let mut inv = [crate::item::EMPTY_SLOT; INV];
+            inv[0] = chest_slot(9, 2);
+            let mut equip = empty_equip();
+            equip.coins[0] = chest_slot(9, 3);
+            equip.ammo[0] = chest_slot(9, 4);
+            let chests = vec![
+                WorldChest {
+                    tile: (33, 33),
+                    slots: vec![chest_slot(9, 5)],
+                    name: String::new(),
+                    max_items: DEFAULT_MAX_ITEMS as usize,
+                    ..Default::default()
+                },
+                WorldChest {
+                    tile: (34, 33),
+                    slots: vec![chest_slot(9, 6)],
+                    name: String::new(),
+                    max_items: DEFAULT_MAX_ITEMS as usize,
+                    ..Default::default()
+                },
+            ];
+            (inv, equip, chests)
+        };
+        let adj = dry_adj();
+        let zones = Zones::default();
+        let (mut inv, mut equip, mut chests) = stock();
+        assert!(can_craft(&inv, &equip, &chests, &[0, 1], &recipe, &adj, &zones));
+        let mut rng = UnifiedRandom::new(1);
+        let mut prefix_rng = UnifiedRandom::new(2);
+        assert_eq!(
+            try_craft(
+                &mut inv, &mut equip, &mut chests, &[0, 1], &recipe, &adj, &zones,
+                &Gates::default(), &mut rng, &mut prefix_rng
+            ),
+            Some(CreatedItem { kind: 9, count: 1, prefix: 0 })
+        );
+        assert_eq!(inv[0], crate::item::EMPTY_SLOT, "the grid drained first");
+        assert_eq!(equip.coins[0].count, 0, "then the coin slots");
+        assert_eq!(equip.ammo[0].count, 0, "then the ammo slots");
+        assert_eq!(chests[0].slots, [chest_slot(9, 2)], "the FIRST chest gives the rest");
+        assert_eq!(chests[1].slots, [chest_slot(9, 6)], "the second chest untouched");
+        // The chest order is the in-range list order (`foreach` over
+        // `_recipeChests`): reversed, the SECOND chest drains first.
+        let (mut inv, mut equip, mut chests) = stock();
+        assert_eq!(
+            try_craft(
+                &mut inv, &mut equip, &mut chests, &[1, 0], &recipe, &adj, &zones,
+                &Gates::default(), &mut rng, &mut prefix_rng
+            ),
+            Some(CreatedItem { kind: 9, count: 1, prefix: 0 })
+        );
+        assert_eq!(chests[1].slots, [chest_slot(9, 3)], "the listed-first chest drained");
+        assert_eq!(chests[0].slots, [chest_slot(9, 5)], "the listed-second untouched");
+        // The partial-decrement shape: a stack bigger than the need keeps
+        // its remainder (and its slot), it is not cleared.
+        let mut inv = [crate::item::EMPTY_SLOT; INV];
+        inv[0] = chest_slot(9, 5);
+        let mut equip = empty_equip();
+        let mut left = 3u32;
+        consume_inv(&mut inv, &mut equip, &REQ[0], &mut left);
+        assert_eq!(left, 0);
+        assert_eq!(inv[0], chest_slot(9, 2), "partial decrement keeps the slot");
+    }
+
+    #[test]
+    fn s1_l_11g_the_alchemy_discount_needs_both_flags() {
+        // `GetIngredientCraftingDiscount` (`Recipe.cs:214-228`): the 1/3
+        // per-unit roll runs ONLY when `this.alchemy && player.alchemyTable`
+        // — either flag off means zero discount and ZERO rng draws; a zero
+        // stack rolls nothing. The same-seed stream replay stays pinned in
+        // `the_craft_rolls_come_from_the_unified_random_stream`.
+        let mut ref_rng = UnifiedRandom::new(7);
+        let cases = [
+            (false, true, 9u32),
+            (true, false, 9),
+            (false, false, 9),
+            (true, true, 0),
+        ];
+        for (alchemy, table, stack) in cases {
+            let mut rng = UnifiedRandom::new(7);
+            assert_eq!(
+                ingredient_discount(alchemy, table, stack, &mut rng),
+                0,
+                "alchemy={alchemy} table={table} stack={stack}"
+            );
+            assert_eq!(rng.peek(), ref_rng.peek(), "no draws consumed");
+        }
+        // Both flags on: the discount is bounded by the stack and the rolls
+        // are exactly `stack` draws of `Next(3) == 0`.
+        let mut rng = UnifiedRandom::new(7);
+        let mut want = 0u32;
+        for _ in 0..9 {
+            if ref_rng.next_max(3) == 0 {
+                want += 1;
+            }
+        }
+        let got = ingredient_discount(true, true, 9, &mut rng);
+        assert_eq!(got, want);
+        assert!(got <= 9, "the discount never exceeds the stack");
+        assert_eq!(rng.peek(), ref_rng.peek(), "exactly 9 draws");
+    }
 }
