@@ -651,6 +651,11 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         // Heart), 31 (Shadow Orb), 639 (Mana Crystal).
         12 | 31 | 639 => check_orb(world, x, y),
         14 | 87 | 88 | 186 | 187 => check_3x2(world, x, y, kind),
+        // `Check3x2`'s small-cage group (`WorldGen.cs:49234`'s support group,
+        // dispatch :85976-85989 + the 391-394 range guard :85543): the 3x2
+        // cages drop their cage item (:49460-49524).
+        285 | 286 | 298 | 299 | 310 | 339 | 361..=364 | 391..=394 | 532 | 533 | 538 | 544 | 555
+        | 556 | 582 | 619 | 629 => check_3x2(world, x, y, kind),
         // `Check6x3` (`WorldGen.cs:50242`, dispatch :86019-86026 + the
         // :85278 type-guard fall-through): the 41 cage kinds — 275-281
         // listed at the case, the rest routed by the default's
@@ -1884,10 +1889,27 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
                 broken = true;
             }
         }
-        // The per-column support judge (:49280-49373 + the trailing
-        // `else if` :49396-49399). The 186/ style sets re-judge the ground
-        // family from `TileID.Sets` (`TileID.cs:89-94/558`).
+        // The per-column support judge (:49234-49377). The small cages and
+        // the platform-friendly furniture (:49234's group) accept a platform
+        // below in addition to `SolidTileAllowBottomSlope`/solid-top-frameY0;
+        // the 186/187 piles re-judge the ground family from `TileID.Sets`
+        // (`TileID.cs:89-94/558`); everything else keeps the plain
+        // `SolidTileAllowBottomSlope` arm (the trailing `else if`, :49374).
         match kind {
+            // :49234 — the cage / platform group.
+            285 | 286 | 298 | 299 | 310 | 339 | 361..=364 | 532 | 533 | 538 | 544 | 555 | 556
+            | 582 | 619 | 629 => {
+                let below = world.tile(k, oy + rows);
+                let solid_top = below.is_some_and(|b| {
+                    crate::tileobject::nactive(b)
+                        && td::TILE_SOLID_TOP.has(b.kind)
+                        && b.frame_y == 0
+                });
+                let platform = below.is_some_and(|b| b.active() && td::SET_PLATFORMS.has(b.kind));
+                if !solid_tile_allow_bottom_slope(world, k, oy + rows) && !solid_top && !platform {
+                    broken = true;
+                }
+            }
             186 => {
                 if !solid_tile_allow_bottom_slope(world, k, oy + rows)
                     || invalid_tile_for_piles(world, k, oy + rows)
@@ -1972,13 +1994,14 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
     if !broken {
         return None;
     }
-    // The drop is the table family's alone (`GetItemDrop_Tables(style)` for
-    // 14, `GetItemDrop_Pianos/Dressers(style)` for 87/88 — the slices cover
-    // style 0 → 32); the piles' per-cell
-    // case group is empty (:65759-65815) and `Check3x2`'s destroy switch
-    // carries the pile specials — for 187 the sword-in-stone styles roll
-    // the Enchanted Sword (:49828-49839), resolved app-side like the 2x1
-    // coin table.
+    // The drop: the table family (`GetItemDrop_Tables(style)` for 14,
+    // `GetItemDrop_Pianos/Dressers(style)` for 87/88 — the slices cover
+    // style 0 → 32) and the small cages (:49460-49524 — each drops its cage
+    // item, which equals the placing item, so `item: None` resolves through
+    // `registry::tile_drop`/`by_tile`). The piles' per-cell case group is
+    // empty (:65759-65815) and `Check3x2`'s destroy switch carries the pile
+    // specials — for 187 the sword-in-stone styles roll the Enchanted Sword
+    // (:49828-49839), resolved app-side like the 2x1 coin table.
     let pile_event = if kind == 187 {
         // `int frameX = Main.tile[i, j].frameX;` (:49443) — the CHECKED
         // cell's frameX (a survivor of the pile; the dispatch never runs on
@@ -1994,8 +2017,16 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
     } else {
         None
     };
+    // The small cages drop their cage item at the trigger cell (:49460-49524);
+    // 361-364 → 3073+type-361 and 391-394 → 3254+type-391 are the computed
+    // arms, the rest are the fixed pairs. All equal the placing item.
+    let cage_drop = matches!(
+        kind,
+        285 | 286 | 298 | 299 | 310 | 339 | 361..=364 | 391..=394 | 532 | 533 | 538 | 544 | 555
+            | 556 | 582 | 619 | 629
+    );
     Some(CheckPlan {
-        drop: (kind == 14 || kind == 87 || kind == 88).then(|| ObjectDrop {
+        drop: (kind == 14 || kind == 87 || kind == 88 || cage_drop).then(|| ObjectDrop {
             tile_kind: kind,
             x,
             y,
@@ -5280,5 +5311,62 @@ mod tests {
             "the table carries the cage"
         );
         assert!(w.tile(10, 18).is_some_and(|t| t.active() && t.kind == 275));
+    }
+
+    // ---- W4-g34: the Check3x2 small-cage break-drop (research/68 §2) ----
+
+    /// A placed 3x2 small cage over the stone floor: origin (9, 18), cells
+    /// x 9..=11, y 18..=19, frames `(dx*18, dy*18)` (style 0).
+    fn cage_3x2_world(kind: u16) -> World {
+        let mut w = object_world();
+        for dx in 0..3 {
+            for dy in 0..2 {
+                set_object_cell(&mut w, 9 + dx, 18 + dy, kind, (dx * 18) as i16, (dy * 18) as i16);
+            }
+        }
+        w
+    }
+
+    #[test]
+    fn w4_g34_small_cage_3x2_break_drops_the_cage_item() {
+        // `Check3x2`'s cage arms (`WorldGen.cs:49460-49524`): breaking any
+        // cell sweeps all six and drops the cage item at the trigger cell.
+        // The record carries `item: None` — the app resolves it through
+        // `registry::tile_drop`/`by_tile` to the placing item (the cage item,
+        // e.g. 285→2174, 361→3073, 391→3254; the itemdata census pins those).
+        for kind in [
+            285u16, 286, 298, 299, 310, 339, 361, 362, 363, 364, 391, 392, 393, 394, 532, 533,
+            538, 544, 555, 556, 582, 619, 629,
+        ] {
+            let mut w = cage_3x2_world(kind);
+            let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+            let cells: Vec<(i32, i32)> = (9..=11)
+                .flat_map(|x| (18..=19).map(move |y| (x, y)))
+                .collect();
+            assert_all_gone(&w, &cells);
+            assert_eq!(kill.object_drops.len(), 1, "kind {kind}");
+            assert_eq!(kill.object_drops[0].tile_kind, kind);
+            // The trigger is the first surviving cell in SquareTileFrame
+            // order around the hit (10, 19): (9, 18).
+            assert_eq!((kill.object_drops[0].x, kill.object_drops[0].y), (9, 18));
+            assert_eq!(kill.object_drops[0].item, None, "kind {kind}");
+        }
+    }
+
+    #[test]
+    fn w4_g34_small_cage_3x2_stands_on_a_platform() {
+        // :49234-49240 — the cage group accepts a platform below (the
+        // `TileID.Sets.Platforms` disjunct), unlike the table family's plain
+        // SolidTileAllowBottomSlope. The cage survives on a platform row.
+        let mut w = cage_3x2_world(285);
+        for x in 9..=11 {
+            set_object_cell(&mut w, x, 20, 19, 0, 0); // platform 19
+        }
+        let kill = kill_tile(&mut w, 12, 20, false).unwrap();
+        assert!(
+            !kill.object_drops.iter().any(|d| d.tile_kind == 285),
+            "the platform carries the cage"
+        );
+        assert!(w.tile(10, 18).is_some_and(|t| t.active() && t.kind == 285));
     }
 }
