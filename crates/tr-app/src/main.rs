@@ -139,6 +139,9 @@ mod npc_ai_style74;
 mod npc_ai_style75;
 mod npc_ai_wyvern;
 mod npc_ai_style9;
+// W4-f2 closeout (research/94 §10) — the tail census's two UNCLAIMED
+// sites' pure staged decisions (the Medusa gaze + the BigMimic reflect).
+mod npc_sounds_tail;
 mod npc_ai_style30;
 mod npc_ai_style31;
 mod npc_ai_style47;

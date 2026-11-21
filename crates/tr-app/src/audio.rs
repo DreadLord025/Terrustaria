@@ -176,6 +176,12 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_45", 4),
     ("NPC_Killed_42", 4),
     ("NPC_Killed_44", 4),
+    // W4-f2 closeout (e9b tail union, research/94 §10) — Medusa's
+    // stone-gaze cry (`NPC.cs:56403`, `PlaySound(4, pos, 17)` int
+    // overload) and the balloon pops' `NPCDeath63` (`NPC.cs:43726`/
+    // `:47951`/`:48062`, the style façade).
+    ("NPC_Killed_17", 4),
+    ("NPC_Killed_63", 4),
     // The Force Bubble's death cue (`NPC.cs:13890`'s `NPCDeath45`) and the
     // Tesla Turret's (`NPC.cs:13931`'s `NPCDeath56`, S1-F-13d).
     ("NPC_Killed_45", 4),
@@ -342,6 +348,16 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_188", 2),
     ("Item_196", 2),
     ("Item_210", 2),
+    // W4-f2 closeout (e9b tail union, research/94 §10) — the NPC AI sites'
+    // Item cues (`SoundID.Item167/170/172` = `LegacySoundStyle(2, N)`,
+    // `SoundID.cs:1551-1556`; `Item150` `:1534`): the Queen Slime's landing
+    // thud (`NPC.cs:45558`), the Blood Nautilus' volley/scream
+    // (`:47263`/`:47268`/`:47293`) and the Big Mimic's projectile-reflect
+    // tink (`:66429`).
+    ("Item_167", 2),
+    ("Item_170", 2),
+    ("Item_172", 2),
+    ("Item_150", 2),
     // `SoundID.Roar` = 15 (`SoundID.cs`) — the boss-summon roar
     // (`Player.cs:43765`'s `SoundEngine.PlaySound(15, ...)`; the `Roar_0`
     // cue family).
@@ -491,6 +507,13 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Zombie_85", 29),
     ("Zombie_86", 29),
     ("Zombie_87", 29),
+    // W4-f2 closeout (e9b tail union, research/94 §10) — the Queen Slime's
+    // idle moan bank (case 65, `LegacySoundPlayer.cs:1382-1402`:
+    // `Next(115, 118)` behind the 115/116/117 playing guards, ×0.5, NO
+    // pitch draw — the `NPC.cs:45759` site).
+    ("Zombie_115", 65),
+    ("Zombie_116", 65),
+    ("Zombie_117", 65),
     ("Zombie_109", 45),
 ];
 
@@ -531,6 +554,20 @@ pub(crate) const NPC_CUSTOM_CUES: &[&str] = &[
     // S1-E-21g — the EoW head's dig rumble (`SoundID.EOWDiggin`,
     // `SoundID.cs:1763`'s `CreateTrackable("eow_dig")`, one variation).
     "eow_dig",
+    // W4-f2 closeout (e9b tail union, research/94 §10) — the Pals'
+    // pain/joy cries (`AI_127_Pal`, `NPC.cs:42983`/`:42987`/`:42997`/
+    // `:43001`; `SoundID.cs:1714-1721`'s `CreateTrackable(...)
+    // .WithVolume(0.35f)`, one variation each) and the Statue Mimic's
+    // scare/jump/laugh (`AI_126_StatueMimic`, `NPC.cs:43562`/`:43569`/
+    // `:43580`/`:43608`; `SoundID.cs:1741-1743`, the laugh three
+    // variations — the `_0` pin like wave A).
+    "pal_cattiva_pain",
+    "pal_foxparks_pain",
+    "pal_cattiva_joy",
+    "pal_foxparks_joy",
+    "statuemimic_scare",
+    "statuemimic_jump",
+    "statuemimic_laugh_0",
 ];
 
 /// The `Sounds/Custom/` trackable cues the liquid-merge events play
@@ -1432,6 +1469,12 @@ impl Audio {
             // wiring consumes the row).
             55 => "NPC_Killed_55",
             61 => "NPC_Killed_61",
+            // W4-f2 closeout (e9b tail union, research/94 §10) — the
+            // balloon pops' `this.DeathSound` = `NPCDeath63`
+            // (`SetDefaults` 686/594, `NPC.cs:17636`/`:16716`; the
+            // ClumsySlimeBalloon `:43726` + the WindyBalloon
+            // `:47951`/`:48062` sites, the style façade).
+            63 => "NPC_Killed_63",
             _ => return None,
         };
         let style = npc_sound_style(cue, "NPC_Killed_", 4)?;
@@ -1463,6 +1506,11 @@ impl Audio {
             9 => "NPC_Killed_9",
             6 => "NPC_Killed_6",
             22 => "NPC_Killed_22",
+            // W4-f2 closeout (e9b tail union, research/94 §10) — Medusa's
+            // stone-gaze cry (`NPC.cs:56403`, `PlaySound(4,
+            // (int)position.X, (int)position.Y, 17)` — the int overload,
+            // NO NextFloat; the 480 kind's wiring consumes the row).
+            17 => "NPC_Killed_17",
             _ => return None,
         };
         let style = npc_sound_style(cue, "NPC_Killed_", 4)?;
@@ -1665,6 +1713,76 @@ impl Audio {
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.emit("eow_dig", x, y, style.volume, pitch.clamp(-1.0, 1.0));
         Some("eow_dig")
+    }
+
+    /// W4-f2 closeout (e9b tail union, research/94 §10) — one case-65
+    /// Queen Slime idle-moan play (`NPC.cs:45759`, `PlaySound(65,
+    /// base.position)` — the int overload, NO `GetRandomPitch` NextFloat).
+    /// The attenuation gate first (`LegacySoundPlayer.cs:369-436`), then
+    /// case 65 (`:1382-1402`): the 115/116/117 playing guards refuse
+    /// BEFORE any draw, `Next(115, 118)` picks the slot, ×0.5 volume, NO
+    /// pitch draw. The slot is overwritten (detached, the case creates a
+    /// fresh instance `:1397`). Returns the asset played; `None` when the
+    /// gate or a playing guard refused.
+    pub fn play_queen_slime_moan(
+        &mut self,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        let x = x.trunc();
+        let y = y.trunc();
+        if sound::play_sound(65, x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let voice = crate::ambient_sound::critter_legacy_voice(
+            65,
+            0,
+            &mut |lo, hi| rng.next_range(lo, hi),
+            &|slot| self.zombie_playing(slot),
+        )?;
+        self.play_critter(voice, x, y);
+        Some(voice.asset)
+    }
+
+    /// W4-f2 closeout (e9b tail union, research/94 §10) — one
+    /// `Sounds/Custom/` NPC trackable play by asset name (the Pal pain/joy
+    /// cries `NPC.cs:42983-43001` and the Statue Mimic's scare/jump/laugh
+    /// `:43562-43608`; `SoundID.CreateTrackable`, `SoundID.cs:1714-1743`).
+    /// The style façade (`SoundEngine.cs:93-99`) consumes the
+    /// `GetRandomPitch` NextFloat on the audio-only stream (the Pal rows
+    /// variance 0, the Statue Mimic rows 0.1 — the draw still happens),
+    /// then the attenuation gate, then case 42
+    /// (`LegacySoundPlayer.cs:1376-1381`): no volume tweak, no gameplay
+    /// draw, the style's own volume, the pinned first variation (the
+    /// multi-variation laugh plays `_0`, the wave-A pin). `cue` must be a
+    /// registered [`NPC_CUSTOM_CUES`] name. Returns the cue played;
+    /// `None` when the name is unregistered or the gate refused.
+    pub fn play_npc_trackable(
+        &mut self,
+        cue: &'static str,
+        x: f32,
+        y: f32,
+    ) -> Option<&'static str> {
+        if !NPC_CUSTOM_CUES.contains(&cue) {
+            return None;
+        }
+        // The multi-variation families pin `_0` (the bank's name); the
+        // style row's trackable is the base name (strip the suffix).
+        let base = cue.strip_suffix("_0").unwrap_or(cue);
+        let style = crate::soundid::SOUND_STYLES
+            .iter()
+            .find(|s| s.sound_id == 42 && s.trackable == Some(base))?;
+        let draw = self.sound_style_random.next_float();
+        let pitch = sound::get_random_pitch(style.pitch_variance, draw);
+        let x = x.trunc();
+        let y = y.trunc();
+        if sound::play_sound(42, x, y, self.listener, style.volume).is_none() {
+            return None;
+        }
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit(cue, x, y, style.volume, pitch.clamp(-1.0, 1.0));
+        Some(cue)
     }
 
     /// S1-E-21 wave B — one tile/wall-placement cue
@@ -4233,6 +4351,129 @@ mod tests {
         assert_eq!(audio.play_npc_death_int(9, 0.0, 0.0, &mut rng), None);
         assert_eq!(audio.play_npc_death_style(55, 0.0, 0.0, &mut rng), None);
         assert_eq!(rng.peek(), peek);
+    }
+
+    /// W4-f2 closeout (e9b tail union, research/94 §10) — the tail bank
+    /// rows: Medusa's int style-17 gaze (`NPC.cs:56403`), the balloon
+    /// pops' NPCDeath63 façade (`:43726`/`:47951`/`:48062`), the Queen
+    /// Slime's case-65 moan bank (`:45759` → `LegacySoundPlayer.cs:1382-
+    /// 1402`, ONE `Next(115, 118)` slot draw, no pitch), the four Item
+    /// cues (`Item167/170/172/150` — case 2's one `Next(-6, 7)` each) and
+    /// the Pal/StatueMimic trackables (case 42 — the façade NextFloat on
+    /// the audio-only stream, NO gameplay draw, the laugh's `_0` pin).
+    #[test]
+    fn w4_f2_the_tail_bank_rows_follow_the_overload_split() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        for name in [
+            "NPC_Killed_17",
+            "NPC_Killed_63",
+            "Zombie_115",
+            "Zombie_116",
+            "Zombie_117",
+            "Item_167",
+            "Item_170",
+            "Item_172",
+            "Item_150",
+        ] {
+            assert!(sfx_cue_registered(name), "{name} in the bank");
+        }
+        for name in [
+            "pal_cattiva_pain",
+            "pal_foxparks_pain",
+            "pal_cattiva_joy",
+            "pal_foxparks_joy",
+            "statuemimic_scare",
+            "statuemimic_jump",
+            "statuemimic_laugh_0",
+        ] {
+            assert!(NPC_CUSTOM_CUES.contains(&name), "{name} in the custom list");
+        }
+        // Medusa's gaze: the int overload, one case-4 pitch, no NextFloat.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        let style_before = audio.sound_style_random.clone();
+        assert_eq!(
+            audio.play_npc_death_int(17, 0.0, 0.0, &mut rng),
+            Some("NPC_Killed_17")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one gameplay draw");
+        assert_eq!(audio.sound_style_random, style_before, "no NextFloat");
+        // The balloon pop: the façade adds the audio-only NextFloat.
+        let mut rng = UnifiedRandom::new(7);
+        assert_eq!(
+            audio.play_npc_death_style(63, 0.0, 0.0, &mut rng),
+            Some("NPC_Killed_63")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one gameplay draw");
+        assert_ne!(audio.sound_style_random, style_before, "the NextFloat");
+        // The Queen Slime moan: ONE slot draw Next(115, 118), no pitch.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let slot = witness.next_range(115, 118);
+        let style_before = audio.sound_style_random.clone();
+        let expected: &'static str = match slot {
+            115 => "Zombie_115",
+            116 => "Zombie_116",
+            _ => "Zombie_117",
+        };
+        let played = audio
+            .play_queen_slime_moan(0.0, 0.0, &mut rng)
+            .expect("the gate passes");
+        assert_eq!(played, expected);
+        assert_eq!(rng.peek(), witness.peek(), "the slot pick is the only draw");
+        assert_eq!(audio.sound_style_random, style_before, "no NextFloat");
+        // The four Item cues: the façade + case 2's one Next(-6, 7).
+        let mut witness2 = UnifiedRandom::new(7);
+        let _ = witness2.next_range(-6, 7);
+        for style in [167, 170, 172, 150] {
+            let mut rng = UnifiedRandom::new(7);
+            let expected: &'static str = match style {
+                167 => "Item_167",
+                170 => "Item_170",
+                172 => "Item_172",
+                _ => "Item_150",
+            };
+            let played = audio
+                .play_npc_item_cue(style, 0.0, 0.0, &mut rng)
+                .expect("the bank row resolves");
+            assert_eq!(played, expected);
+            assert_eq!(rng.peek(), witness2.peek(), "style {style}: one pitch");
+        }
+        // The trackables: NO gameplay draw; the façade NextFloat rides
+        // the audio-only stream; the laugh pins `_0`.
+        for cue in [
+            "pal_cattiva_pain",
+            "pal_foxparks_joy",
+            "statuemimic_scare",
+            "statuemimic_laugh_0",
+        ] {
+            let style_before = audio.sound_style_random.clone();
+            assert_eq!(audio.play_npc_trackable(cue, 0.0, 0.0), Some(cue));
+            assert_ne!(audio.sound_style_random, style_before, "{cue}: the NextFloat");
+        }
+        // Unregistered names refuse (the bank-gap guard); eow_dig is a
+        // registered NPC custom cue but has its own play (play_eow_dig).
+        assert_eq!(audio.play_npc_trackable("eow_dig", 0.0, 0.0), Some("eow_dig"));
+        assert_eq!(audio.play_npc_trackable("not_a_cue", 0.0, 0.0), None);
+        // Muted: every tail play draws nothing on either stream.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        let style_before = audio.sound_style_random.clone();
+        assert_eq!(audio.play_npc_death_int(17, 0.0, 0.0, &mut rng), None);
+        assert_eq!(audio.play_npc_death_style(63, 0.0, 0.0, &mut rng), None);
+        assert_eq!(audio.play_queen_slime_moan(0.0, 0.0, &mut rng), None);
+        assert_eq!(audio.play_npc_item_cue(167, 0.0, 0.0, &mut rng), None);
+        assert_eq!(audio.play_npc_trackable("pal_cattiva_pain", 0.0, 0.0), None);
+        assert_eq!(rng.peek(), peek, "no gameplay draws while muted");
+        // The façade NextFloats are consumed BEFORE the gate
+        // (`SoundEngine.cs:99`) — the audio-only stream still advances on
+        // the façade peers; the int peers (17/65) never draw it.
+        assert_ne!(audio.sound_style_random, style_before);
     }
 
     /// S1-E-21i — the wall-break play's RNG contract

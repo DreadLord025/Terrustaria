@@ -474,6 +474,24 @@ pub fn critter_legacy_voice(
             }
             Some(voice(109, 0.3, roll(-10, 11)))
         }
+        // W4-f2 closeout (e9b tail union, research/94 §10) — case 65
+        // (`:1382-1402`): the Queen Slime's idle moan (`NPC.cs:45759`'s
+        // `Next(360) == 0` site — the 657 kind is unported on f2, d33's
+        // machine owns it; the arm lands table-complete). The 115/116/117
+        // playing guards refuse BEFORE any draw; `Next(115, 118)` picks
+        // the slot, ×0.5, NO pitch draw (the case sets Volume/Pan only).
+        65 => {
+            if is_playing(115) || is_playing(116) || is_playing(117) {
+                return None;
+            }
+            let slot = roll(115, 118).max(0) as usize;
+            Some(CritterVoice {
+                slot,
+                asset: zombie_asset(slot),
+                volume_mult: 0.5,
+                pitch: 0.0,
+            })
+        }
         // S1-E-21e — the fighter-moan cases (`AI_003_Fighters`,
         // `NPC.cs:57340-57367`). Case 14 (`:793-824`): NO pitch draw and no
         // playing guard — the style-542 slot 7, the 489/586 `Next(21, 24)`
@@ -654,6 +672,11 @@ fn zombie_asset(slot: usize) -> &'static str {
         85 => "Zombie_85",
         86 => "Zombie_86",
         87 => "Zombie_87",
+        // W4-f2 closeout (e9b tail union) — the Queen Slime moan's case-65
+        // slots (`LegacySoundPlayer.cs:1396`'s `Next(115, 118)`).
+        115 => "Zombie_115",
+        116 => "Zombie_116",
+        117 => "Zombie_117",
         109 => "Zombie_109",
         _ => "Zombie_0",
     }
@@ -1225,7 +1248,10 @@ pub fn idle_sounds(
 /// mutated state back out.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct WaterWetState {
-    /// `Entity.wet` — the previous tick's liquid-overlap flag.
+    /// `Entity.wet` — the previous tick's liquid-overlap flag. The sim
+    /// snapshots `Npc::wet_prev` here (NOT `Npc::wet` — the bat/swimmer
+    /// wrappers overwrite that pre-AI with the `is_wet` stand-in; the
+    /// edge keys on the pass latch, e9b's point — research/94 §9).
     pub wet: bool,
     /// `Entity.wetCount` — the 10-tick splash cooldown.
     pub wet_count: i32,
@@ -1233,6 +1259,11 @@ pub struct WaterWetState {
     pub lava_wet: bool,
     pub honey_wet: bool,
     pub shimmer_wet: bool,
+    /// `Entity.velocity.X` — the exit edge halves it (`NPC.cs:93179`,
+    /// BEFORE the wet clear + the splash arms). e9b's wiring write,
+    /// adopted into the pure pass (research/94 §9): the sim snapshots
+    /// `Npc::vx` in and copies it back out; only the exit edge writes.
+    pub vx: f32,
 }
 
 /// W4-f2 — `NPC.Collision_WaterCollision`'s splash-cue half
@@ -1258,8 +1289,10 @@ pub struct WaterWetState {
 /// attenuation gate and the playing guard, on the `UpdateNPCs` stream.
 /// The dust bursts (`:93096-93118` etc.) are the documented visual skip
 /// (the dust lanes' territory, the E21f player-splash precedent); the
-/// type-620 exit jump (`:93181-93184`) is staged as [`water_exit_jump`]
-/// (the reconcile doc-sweep, research/94 §8a — the 620 kind is unported).
+/// exit velocity.X halving (`:93179`) rides [`WaterWetState::vx`] (the
+/// e9b union, research/94 §9); the type-620 exit jump (`:93181-93184`)
+/// is staged as [`water_exit_jump`] (the reconcile doc-sweep,
+/// research/94 §8a — the 620 kind is unported).
 ///
 /// `wet_now`/`honey_now`/`shimmer_now` are THIS tick's
 /// `Collision.WetCollision` results (`npc_ai_slime::wet_collision`);
@@ -1398,9 +1431,11 @@ pub fn water_collision_sounds(
         state.wet = true; // `:93175`
     } else if state.wet {
         // `:93177-93272` — the exit edge. The velocity halving
-        // (`:93179`) is the movement lane's; the type-620 jump
-        // (`:93181-93184`) is staged as [`water_exit_jump`] (the 620 kind
-        // is unported — research/94 §8a); the splash gate stands alone.
+        // (`:93179`) runs FIRST, before the wet clear + the arms (e9b's
+        // wiring write, adopted into the pass — research/94 §9); the
+        // type-620 jump (`:93181-93184`) is staged as [`water_exit_jump`]
+        // (the 620 kind is unported — research/94 §8a).
+        state.vx *= 0.5; // `:93179`
         state.wet = false; // `:93180`
         if state.wet_count == 0 {
             state.wet_count = 10;
@@ -2599,6 +2634,7 @@ mod tests {
                 lava_wet,
                 honey_wet,
                 shimmer_wet,
+                vx: 4.0,
             };
             let mut plays: Vec<i32> = Vec::new();
             water_collision_sounds(
@@ -2609,6 +2645,7 @@ mod tests {
             assert_eq!(plays, vec![style], "lava={lava_wet} shimmer={shimmer_wet} honey={honey_wet}");
             assert_eq!(st.wet_count, 10);
             assert!(!st.wet, "the exit clears wet");
+            assert_eq!(st.vx, 2.0, ":93179's halving (e9b union, research/94 §9)");
             // The tail clears the latches on the dry state + ticks down.
             water_collision_tail(&mut st);
             assert!(!st.lava_wet && !st.honey_wet && !st.shimmer_wet);
@@ -2696,5 +2733,47 @@ mod tests {
         // The default-invalid target centre (0,0) is ABOVE any positive
         // body centre — the C# reads it raw (the empress precedent).
         assert_eq!(water_exit_jump(620, 0.0, 200.0), -8.0);
+    }
+
+    /// W4-f2 closeout (e9b tail union, research/94 §10) — case 65
+    /// (`LegacySoundPlayer.cs:1382-1402`): the Queen Slime moan's slot
+    /// pick is `Next(115, 118)` behind the 115/116/117 playing guards;
+    /// ×0.5, NO pitch draw. The guards refuse BEFORE the slot draw.
+    #[test]
+    fn w4_f2_the_case65_moan_picks_115_118_behind_the_guards() {
+        // A hitting slot roll (lo=115): the pick lands the rolled slot,
+        // ×0.5, pitch 0 — exactly ONE roll call.
+        let mut calls = 0u32;
+        let voice = critter_legacy_voice(
+            65,
+            0,
+            &mut |lo, hi| {
+                calls += 1;
+                assert_eq!((lo, hi), (115, 118), "the slot window");
+                lo + 1 // slot 116
+            },
+            &|_| false,
+        )
+        .expect("the guards clear");
+        assert_eq!(calls, 1, "the slot pick is the only draw");
+        assert_eq!(voice.slot, 116);
+        assert_eq!(voice.asset, "Zombie_116");
+        assert_eq!(voice.volume_mult, 0.5);
+        assert_eq!(voice.pitch, 0.0, "case 65 sets Volume/Pan only");
+        // Each playing guard refuses BEFORE any draw.
+        for busy in [115usize, 116, 117] {
+            let mut calls = 0u32;
+            let v = critter_legacy_voice(
+                65,
+                0,
+                &mut |_, _| {
+                    calls += 1;
+                    0
+                },
+                &|slot| slot == busy,
+            );
+            assert!(v.is_none(), "slot {busy} playing refuses");
+            assert_eq!(calls, 0, "the guard precedes the draw");
+        }
     }
 }

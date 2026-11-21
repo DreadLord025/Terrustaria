@@ -1158,11 +1158,33 @@ fn play_npc_sound_request(
         NpcSoundCue::NpcDeath55 => {
             audio.play_npc_death_style(55, req.x, req.y, rng);
         }
+        // W4-f2 closeout (e9b tail union, research/94 §10).
+        NpcSoundCue::NpcHit6 => {
+            audio.play_npc_hit_sound("NPC_Hit_6", req.x, req.y, rng);
+        }
+        NpcSoundCue::NpcDeath63 => {
+            audio.play_npc_death_style(63, req.x, req.y, rng);
+        }
         NpcSoundCue::NpcDeath13 => {
             audio.play_npc_death_style(13, req.x, req.y, rng);
         }
         NpcSoundCue::EowDig => {
             audio.play_eow_dig(req.x, req.y);
+        }
+        NpcSoundCue::ItemCue(style) => {
+            audio.play_npc_item_cue(style, req.x, req.y, rng);
+        }
+        NpcSoundCue::SandSharkCry => {
+            audio.play_fighter_moan(14, 542, req.x, req.y, rng);
+        }
+        NpcSoundCue::QueenSlimeMoan => {
+            audio.play_queen_slime_moan(req.x, req.y, rng);
+        }
+        NpcSoundCue::Pixie => {
+            audio.play_pixie(req.x, req.y, rng);
+        }
+        NpcSoundCue::Trackable(cue) => {
+            audio.play_npc_trackable(cue, req.x, req.y);
         }
     }
 }
@@ -4602,11 +4624,17 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                                 world, npcs[i].x, npcs[i].y, nw as i32, nh as i32,
                             );
                         let mut wstate = crate::ambient_sound::WaterWetState {
-                            wet: npcs[i].wet,
+                            // e9b union (research/94 §9) — the edge keys on
+                            // the pass latch: `wet` itself is overwritten
+                            // pre-AI by the bat/swimmer `is_wet` wrappers.
+                            wet: npcs[i].wet_prev,
                             wet_count: npcs[i].wet_count,
                             lava_wet: npcs[i].lava_wet,
                             honey_wet: npcs[i].honey_wet,
                             shimmer_wet: npcs[i].shimmer_wet,
+                            // `:93179` — the exit halving rides the pass
+                            // (e9b union, research/94 §9).
+                            vx: npcs[i].vx,
                         };
                         // `Collision_LavaCollision` latches lavaWet on a
                         // lava overlap (`:93322-93324`), BEFORE the water
@@ -4664,6 +4692,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         );
                         crate::ambient_sound::water_collision_tail(&mut wstate);
                         npcs[i].wet = wstate.wet;
+                        // `:93175`/`:93180` — stamp the edge latch with the
+                        // same write (e9b's `wet_prev`, research/94 §9).
+                        npcs[i].wet_prev = wstate.wet;
+                        npcs[i].vx = wstate.vx;
                         npcs[i].wet_count = wstate.wet_count;
                         npcs[i].lava_wet = wstate.lava_wet;
                         npcs[i].honey_wet = wstate.honey_wet;
@@ -17631,6 +17663,60 @@ mod dw3_tests {
         assert_eq!(ls.immune[255], 0, "the immune body arms nothing");
         assert!(ls.buffs.find_buff_index(24).is_none());
         assert_eq!(ls.hp, ls_hp0, "no strike on the LavaSlime");
+    }
+
+    /// W4-f2 closeout (e9b union, research/94 §9) — the splash EDGE keys
+    /// on the `wet_prev` latch, not `wet`: a CaveBat (aiStyle 14,
+    /// `!noTileCollide` — it DOES reach the water block) overwrites
+    /// `self.wet` pre-AI with the `is_wet` stand-in
+    /// (`npc.rs::update_cave_bat`). Parked inside a water column, the
+    /// machine's probe sets `wet = true` BEFORE the pass — keying the
+    /// edge on `wet` would see wet→wet and MISS the entry edge entirely.
+    /// The latch stays false, so the entry fires: `wetCount` arms 10
+    /// (`:93089` — even though the bat's `noGravity` refuses the play
+    /// gate) and decays to 9, and BOTH `wet` and `wet_prev` stamp true
+    /// at the tail (`:93175`). The next tick is a true wet→wet: the
+    /// cooldown decays 9→8 with no second arming.
+    #[test]
+    fn w4_f2_the_splash_edge_keys_on_the_wet_prev_latch() {
+        use tr_core::tile::LiquidKind;
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut world = crate::test_world_helpers::ground();
+        world.day_time = true;
+        world.world_surface = 50.0;
+        // A water column ABOVE the surface line (x 60..64, y 40..50).
+        for x in 60..64 {
+            for y in 40..50 {
+                let i = world.index(x, y);
+                world.tiles[i].liquid = 255;
+                world.tiles[i].set_liquid_kind(LiquidKind::Water);
+            }
+        }
+        app.world = world;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 150.0 * 16.0;
+        player.y = 110.0 * 16.0;
+        app.player = Some(player);
+        let mut bat = Npc::new(NpcKind::CaveBat, 61.0 * 16.0, 42.0 * 16.0, 1, 0.0);
+        bat.hp = bat.max_hp;
+        assert!(!bat.wet_prev, "the latch spawns false");
+        app.npcs.push(bat);
+        app.rngs = crate::app::rng::NamedRngs::new(7);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let b = &app.npcs[0];
+        assert!(b.wet, "the machine probe + the pass both set wet");
+        assert!(b.wet_prev, "the tail stamps the latch (:93175)");
+        assert_eq!(b.wet_count, 9, "the entry armed 10 (:93089 — the noGravity gate refuses only the PLAY), the tail decayed");
+        assert!(b.wants_sound.is_empty(), "the queue drained (nothing queued — the gate refused)");
+        // The next tick: wet_prev true → no edge, no re-arming.
+        let before = app.audio.played_count();
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.audio.played_count() - before,
+            0,
+            "no re-splash while the latch is wet"
+        );
+        assert_eq!(app.npcs[0].wet_count, 8);
     }
 
     /// S1-E-21g — the drain's stream contract in isolation (the machines'

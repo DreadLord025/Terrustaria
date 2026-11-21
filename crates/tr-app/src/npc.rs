@@ -1176,6 +1176,18 @@ pub enum NpcSoundCue {
     /// (`NPC.cs:24693`, the aiStyle-22 type-316 `localAI[3]` 0→1 latch,
     /// the style façade); case 4.
     NpcDeath55,
+    /// W4-f2 closeout (e9b tail union, research/94 §10) —
+    /// `PlaySound(SoundID.NPCHit6, base.position)` — the Pirate Ghost's
+    /// spawn cue (`NPC.cs:44848`, the aiStyle-122 `localAI[0]` 0→1 latch,
+    /// the style façade — NPCHit6 is the legacy id-3 style 6,
+    /// `SoundID.cs:1262`); case 3's one pitch draw + the façade NextFloat.
+    NpcHit6,
+    /// W4-f2 closeout (e9b tail union, research/94 §10) —
+    /// `PlaySound(SoundID.NPCDeath63, base.position)` — the balloon pops'
+    /// `this.DeathSound` (`NPC.cs:43726` the ClumsySlimeBalloon 686,
+    /// `:47951`/`:48062` the WindyBalloon 594; `SetDefaults`
+    /// `:17636`/`:16716`'s NPCDeath63); the style façade, case 4.
+    NpcDeath63,
     /// `PlaySound(SoundID.NPCDeath61, Center)` — the Moon Lord core's
     /// crash cry (`NPC.cs:41432`, the style façade); case 4.
     NpcDeath61,
@@ -1186,6 +1198,42 @@ pub enum NpcSoundCue {
     /// (`NPC.cs:51990`, the trackable façade, case 42 — no gameplay
     /// draws, the pinned variation like wave A).
     EowDig,
+    /// W4-f2 closeout (e9b tail union, research/94 §10) —
+    /// `PlaySound(SoundID.ItemN, pos)` — the NPC AI sites' item cues:
+    /// the Antlion's spit (`NPC.cs:24449`, Item5 — g8's `Item5` folds
+    /// here), the ShadowFlameApparition/Squidhead teleports
+    /// (`:37268`/`:37321`, Item8 — the `Item8` variant's callers keep
+    /// their own arm), the Queen Slime's landing thud (`:45558`,
+    /// Item167), the Blood Nautilus' volley/scream
+    /// (`:47263`/`:47268`/`:47293`, Item170/172), the Big Mimic's
+    /// reflect tink (`:66429`, Item150) and the FairyEffects
+    /// shimmer-release chime (`:48682`, Item4). The style façade +
+    /// case 2's one pitch draw.
+    ItemCue(i32),
+    /// W4-f2 closeout (e9b tail union) — `PlaySound(14, base.Center,
+    /// 542)` — the Sand Shark's style-542 cry (`NPC.cs:40632`, the
+    /// aiStyle-103 chase latch): the int overload, case 14's style-542
+    /// slot-7 path (NO draws, ×0.4). The d33 machine owns the site (its
+    /// sounds out-struct); this cue is the queue-side spelling.
+    SandSharkCry,
+    /// W4-f2 closeout (e9b tail union) — `PlaySound(65, base.position)`
+    /// — the Queen Slime's idle moan (`NPC.cs:45759`, the `Next(360) ==
+    /// 0` gate): the int overload, case 65's `Next(115, 118)` slot pick
+    /// behind the 115/116/117 playing guards, ×0.5, NO pitch draw.
+    QueenSlimeMoan,
+    /// W4-f2 closeout (e9b tail union) — `PlaySound(27, (int)position.X,
+    /// (int)position.Y)` — the FairyCritter's Pixie hum
+    /// (`NPC.cs:48327`/`:48473`/`:48545`): the int overload, case 27's
+    /// one `Next(-10, 11)` pitch draw (the live-slot update returns null
+    /// but the draw still happens).
+    Pixie,
+    /// W4-f2 closeout (e9b tail union) — the Pal pain/joy cries
+    /// (`NPC.cs:42983`/`:42987`/`:42997`/`:43001`) and the Statue Mimic's
+    /// scare/jump/laugh (`:43562`/`:43569`/`:43580`/`:43608`): the
+    /// `Sounds/Custom/` trackables, case 42 — the façade NextFloat on
+    /// the audio-only stream, NO gameplay draw, the pinned first
+    /// variation.
+    Trackable(&'static str),
 }
 
 /// One queued play: the cue plus the C# call site's world-pixel position
@@ -1805,9 +1853,22 @@ pub struct Npc {
     /// swimmer cases read it for the wet flap vs the dry flop
     /// (`NPC.cs:74181`/`:74654`). W4-f2: the water-collision pass
     /// (`Collision_WaterCollision`, `NPC.cs:93052-93275`) owns the
-    /// authoritative write now — the swimmer machines' own `is_wet`
-    /// caches keep their reads (the pass re-derives the same flag).
+    /// authoritative write (`:93175`/`:93180`) — but the bat/swimmer
+    /// wrappers overwrite it pre-AI with the `is_wet` stand-in for the
+    /// machine reads, so the splash EDGE keys on [`Npc::wet_prev`]
+    /// (e9b's point, adopted — research/94 §9).
     pub wet: bool,
+    /// W4-f2 closeout (e9b union, research/94 §9) — the PREVIOUS
+    /// `Collision_WaterCollision` pass's `base.wet` (the edge detector's
+    /// `was_wet`). The port's bat/swimmer wrappers (`update_cave_bat`/
+    /// `update_swimmer`) probe `self.wet` fresh pre-AI for the machine's
+    /// reads (the documented `is_wet` stand-in — those kinds are
+    /// `!no_tile_collide()` and DO reach the water block), so the splash
+    /// edge cannot key on `self.wet` — it keys on this latch, which the
+    /// sim stamps at the pass's tail alongside `wet` (the C#'s `base.wet`
+    /// write, `NPC.cs:93175`/`:93180`). e9b's `wet_prev` field, adopted
+    /// verbatim (the name and the rationale).
+    pub wet_prev: bool,
     /// W4-f2 — `Entity.wetCount` (`NPC.cs:93058`/`:93089`/`:93187`): the
     /// splash cooldown, armed to 10 on a wet entry/exit edge, decremented
     /// once per `UpdateCollision` (`:92533-92536`); the never-wet head
@@ -3157,6 +3218,9 @@ impl Npc {
             },
             head_turn: 0,
             wet: false,
+            // e9b union (research/94 §9) — the splash edge latch spawns
+            // false (the Entity default; the first pass sees a dry NPC).
+            wet_prev: false,
             // W4-f2 — `Entity.wetCount`/`lavaWet`/`honeyWet`/`shimmerWet`
             // spawn at 0/false (`Entity.cs`'s field defaults).
             wet_count: 0,
