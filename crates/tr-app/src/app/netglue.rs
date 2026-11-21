@@ -925,6 +925,19 @@ impl App {
                     }
                 }
             }
+            // `case 58` — a client played its held instrument
+            // (`MessageBuffer.cs:2639-2650`): the host forces the id to the
+            // sender (`:2644`) and relays to the others (`:2649`), then
+            // breaks — the instrument switch is client-only. W4-g49.
+            C2s::InstrumentSound(s) => {
+                server.broadcast_except(
+                    &S2c::InstrumentSound(net::InstrumentSound {
+                        player_id: id as u8, // `:2644` + `:2649`'s number
+                        pitch: s.pitch,
+                    }),
+                    id,
+                );
+            }
             // `case 60` — an NPC's household banner (`MessageBuffer.cs:2695-2739`):
             // the `npc >= maxNPCs` cheat gate boots the sender (`:2701-2705`);
             // a town-like NPC's status 1 kicks it out (`WorldGen.kickOut`
@@ -2416,6 +2429,81 @@ impl App {
                 let peer = self.remote_players.entry(tc.player_id as u32).or_default();
                 peer.team = tc.team as i32; // `:2336`
             }
+            // `case 57` — the world-evil census bytes
+            // (`MessageBuffer.cs:2631-2638`): client-only, stores
+            // `WorldGen.tGood/tEvil/tBlood` in the writer's order. The Dryad
+            // world-status report reads them back
+            // (`Lang.GetDryadWorldStatusDialog`, `Lang.cs:251-293`). W4-g49.
+            S2c::WorldEvilBytes(e) => {
+                self.world_evil_good = e.good; // `:2634`
+                self.world_evil_evil = e.evil; // `:2635`
+                self.world_evil_blood = e.blood; // `:2636`
+            }
+            // `case 58` — a peer's instrument (`MessageBuffer.cs:2652-2679`):
+            // the client plays the held instrument's sound at the peer's
+            // position. The guitar chords (4057/4372/4715) and drums (4673)
+            // ride `PlayGuitarChord`/`PlayDrums`; anything else stores
+            // `Main.musicPitch` and plays Item35 (507) / Item47 (1305) /
+            // Item26 (default). W4-g49.
+            S2c::InstrumentSound(s) => {
+                let peer = s.player_id as u32;
+                let (px, py, held) = if peer == self.local_id {
+                    // Our own echo: the local player's centre + held item.
+                    match self.player.as_ref() {
+                        Some(p) => {
+                            let (cx, cy) = p.center();
+                            (cx, cy, self.inventory[self.selected].kind)
+                        }
+                        None => return,
+                    }
+                } else {
+                    match self.remote_players.get(&peer) {
+                        Some(p) => {
+                            // The peer's centre: position + half the hitbox
+                            // (`Player.Center`, the port's 20×42 stand-in).
+                            let held = p
+                                .inventory
+                                .get(&(p.selected as u8))
+                                .map(|it| it.kind.max(0) as u16)
+                                .unwrap_or(0);
+                            (p.x + 10.0, p.y + 21.0, held)
+                        }
+                        None => return, // no such peer — the C# would NPE
+                    }
+                };
+                // `CheckBytes` runs from `Main.Update` (`Main.cs:16895`)
+                // outside every `SwapRandom`, so the draws ride the
+                // bare-`Main.rand` stand-in (the `28` strike precedent).
+                match held {
+                    // `:2656-2660` — the guitar chords.
+                    4057 | 4372 | 4715 => self.play_guitar_chord(px, py, s.pitch),
+                    // `:2661-2663` — the drums.
+                    4673 => self.play_drums(px, py, s.pitch),
+                    _ => {
+                        // `:2666` — `Main.musicPitch = num40`.
+                        self.music_pitch = s.pitch;
+                        self.audio.set_music_pitch(s.pitch);
+                        // `:2667-2676` — Item35 / Item47 / Item26.
+                        let style = match held {
+                            507 => 35,
+                            1305 => 47,
+                            _ => 26,
+                        };
+                        let idx = crate::soundid::SOUND_STYLES
+                            .iter()
+                            .position(|st| st.sound_id == 2 && st.style == style);
+                        if let Some(idx) = idx {
+                            self.audio.play_use_sound(
+                                idx as u16,
+                                px,
+                                py,
+                                0.0,
+                                self.rngs.global(),
+                            );
+                        }
+                    }
+                }
+            }
             // `case 72` — the travel shop's stock (`MessageBuffer.cs:3118-3126`):
             // the client stores the 40 shorts into `Main.travelShop`
             // (`:3121-3124`). The shop index 19 reads them back.
@@ -3584,6 +3672,68 @@ impl App {
                 server.send(i as u32, &S2c::NpcKilled { npc: npc_net_id });
             }
         }
+    }
+
+    /// `Player.PlayGuitarChord` (`Player.cs:46671-46703`): the chord ladder
+    /// over `range` (the `58` pitch), six `1/6` bands picking int types
+    /// 49/48/47/51/52/50. The bad-luck roll (`RollOnlyBadLuckExtreme(10)`,
+    /// `Luck.cs:53-60`) draws on `Main.rand` — the net replay's bare stream
+    /// (`Main.cs:16895`); on 0 it adds `Next(-50, 51) * 0.01` to the pitch
+    /// offset. W4-g49.
+    fn play_guitar_chord(&mut self, cx: f32, cy: f32, range: f32) {
+        let num = 1.0f32 / 6.0;
+        let mut pitch_offset = 0.0f32;
+        let luck = self.player.as_ref().map(|p| p.luck()).unwrap_or(0.0);
+        let rng = self.rngs.global();
+        // `:46675-46678` — `RollOnlyBadLuckExtreme(10) == 0`.
+        if tr_core::loot::roll_only_bad_luck_extreme(rng, luck, 10) == 0 {
+            pitch_offset = rng.next_range(-50, 51) as f32 * 0.01;
+        }
+        // `:46679-46702` — the six bands, in the C#'s order.
+        let sound_type = if range > num * 5.0 {
+            49
+        } else if range > num * 4.0 {
+            48
+        } else if range > num * 3.0 {
+            47
+        } else if range > num * 2.0 {
+            51
+        } else if range > num {
+            52
+        } else {
+            50
+        };
+        self.audio.play_instrument_int(sound_type, cx, cy, pitch_offset);
+    }
+
+    /// `Player.PlayDrums` (`Player.cs:46705-46748`): the drum ladder over
+    /// `range`, ten `1/10` bands picking int types 59/58/53/57/62/61/54/56/
+    /// 55/60. No luck roll, no pitch offset (the default 0). W4-g49.
+    fn play_drums(&mut self, cx: f32, cy: f32, range: f32) {
+        let num = 1.0f32 / 10.0;
+        // `:46708-46747` — the ten bands, in the C#'s order.
+        let sound_type = if range > num * 9.0 {
+            59
+        } else if range > num * 8.0 {
+            58
+        } else if range > num * 7.0 {
+            53
+        } else if range > num * 6.0 {
+            57
+        } else if range > num * 5.0 {
+            62
+        } else if range > num * 4.0 {
+            61
+        } else if range > num * 3.0 {
+            54
+        } else if range > num * 2.0 {
+            56
+        } else if range > num {
+            55
+        } else {
+            60
+        };
+        self.audio.play_instrument_int(sound_type, cx, cy, 0.0);
     }
 
     /// `AchievementsHelper.NotifyProgressionEvent` (`:227-237`): the host
@@ -6347,5 +6497,110 @@ mod message_family_tests {
         assert_eq!(client_app.invasion_progress_icon, 3, "icon stored (`:47691`)");
         assert_eq!(client_app.invasion_progress_wave, 5, "wave stored (`:47692`)");
         assert_eq!(client_app.invasion_progress_display_left, 160, "the display window armed (`:47693`)");
+    }
+
+    /// W4-g49 `57 Unknown57` (`MessageBuffer.cs:2631-2638`): the client
+    /// stores the three world-evil bytes in the writer's order
+    /// (`WorldGen.tGood/tEvil/tBlood`), and the Dryad report reads them back.
+    #[test]
+    fn w4_g49_world_evil_bytes_store_and_feed_the_dryad_report() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Host(server) = &host_app.net {
+            server.send(client_app.local_id, &S2c::WorldEvilBytes(net::WorldEvilBytes {
+                good: 200,
+                evil: 100,
+                blood: 50,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert_eq!(client_app.world_evil_good, 200, "tGood stored (`:2634`)");
+        assert_eq!(client_app.world_evil_evil, 100, "tEvil stored (`:2635`)");
+        assert_eq!(client_app.world_evil_blood, 50, "tBlood stored (`:2636`)");
+        // The display consumer (`Lang.GetDryadWorldStatusDialog`): all three
+        // > 0 selects the WorldStatusAll arm, no pure flag.
+        let (text, pure) = crate::lang::dryad_world_status_dialog(
+            &client_app.world.name,
+            client_app.world_evil_good,
+            client_app.world_evil_evil,
+            client_app.world_evil_blood,
+        );
+        assert!(!pure, "200/100/50 is not entirely pure");
+        assert!(text.contains("200%"), "the hallow percent rides the report: {text}");
+    }
+
+    /// W4-g49 `58 InstrumentSound` (`MessageBuffer.cs:2639-2681`): the host
+    /// relays a peer's instrument; the client's default arm stores
+    /// `Main.musicPitch` (`:2666`) and plays the held item's sound. The host
+    /// peer holds no instrument (air), so the default (Item26) arm runs.
+    #[test]
+    fn w4_g49_instrument_sound_stores_the_music_pitch() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // Let the join bundle land so the host's peer record (slot 0) exists
+        // with its inventory — the arm reads the peer's held item.
+        pump(&mut host_app, &mut client_app, 20);
+        if let NetRole::Host(server) = &host_app.net {
+            server.send(client_app.local_id, &S2c::InstrumentSound(net::InstrumentSound {
+                player_id: 0, // the host peer
+                pitch: 0.45,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert_eq!(client_app.music_pitch, 0.45, "Main.musicPitch stored (`:2666`)");
+        assert!(matches!(client_app.net, NetRole::Client(_)), "the instrument did not kick the client");
+    }
+
+    /// W4-g49 `58`'s host half (`MessageBuffer.cs:2642-2650`): the host forces
+    /// the id to the sender (`:2644`) and relays to the OTHER clients
+    /// (`:2649`). A second client receives the relay with the sender's slot,
+    /// not the bogus id the sender wrote, and its default arm stores the pitch.
+    #[test]
+    fn w4_g49_instrument_sound_host_forces_the_sender_id() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let addr = match &host_app.net {
+            NetRole::Host(server) => server.addr().to_string(),
+            _ => unreachable!("host role"),
+        };
+        let mut second = crate::app::flow::front_flow_tests::flow_app(
+            None,
+            Vec::<crate::ui::save_list::PlayerEntry>::new(),
+            Vec::<crate::ui::save_list::WorldEntry>::new(),
+        );
+        second.player_name = "second".into();
+        second.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        second.join_target = Some((addr, String::new()));
+        // Drive the second client to IN_WORLD (the handshake poll loop).
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while second.net_state != net::client_state::IN_WORLD
+            && !matches!(second.net, NetRole::Off)
+            && std::time::Instant::now() < deadline
+        {
+            second.poll_net();
+            host_app.poll_net();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        for _ in 0..8 {
+            host_app.poll_net();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        let sender_slot = client_app.local_id;
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::InstrumentSound(net::InstrumentSound {
+                player_id: 99, // the host must overwrite this (`:2644`)
+                pitch: 0.25,
+            }));
+        }
+        for _ in 0..40 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            second.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            second.poll_net();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        // The second client received the relay attributed to the sender's
+        // slot; 58 has no own-echo gate, so the default arm stored the pitch.
+        assert_eq!(second.music_pitch, 0.25, "the relay carried the pitch");
+        assert_ne!(sender_slot, second.local_id, "distinct slots");
     }
 }

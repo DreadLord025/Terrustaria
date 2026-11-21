@@ -319,6 +319,28 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_117", 2),
     ("Item_128", 2),
     ("Item_130", 2),
+    // W4-g49 `58 InstrumentSound` — the guitar chords and drum hits: the
+    // int-overload `PlaySound(47..52)` remaps to `SoundItem[133..138]`
+    // (`LegacySoundPlayer.cs:1212-1232`, `num = 133 + type - 47`) and
+    // `PlaySound(53..62)` to `SoundItem[139..148]` (`:1234-1246`,
+    // `num = 139 + type - 53`). `Player.PlayGuitarChord` (`Player.cs:46671`)
+    // and `PlayDrums` (`:46705`) name the int types.
+    ("Item_133", 2),
+    ("Item_134", 2),
+    ("Item_135", 2),
+    ("Item_136", 2),
+    ("Item_137", 2),
+    ("Item_138", 2),
+    ("Item_139", 2),
+    ("Item_140", 2),
+    ("Item_141", 2),
+    ("Item_142", 2),
+    ("Item_143", 2),
+    ("Item_144", 2),
+    ("Item_145", 2),
+    ("Item_146", 2),
+    ("Item_147", 2),
+    ("Item_148", 2),
     ("Item_151", 2),
     ("Item_152", 2),
     ("Item_156", 2),
@@ -614,6 +636,11 @@ pub struct Audio {
     /// device, so the bug/UI flows assert the click sounds through this
     /// instead of a real playback).
     played: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    /// `Main.musicPitch` (`Main.cs:697`): the case-2 music styles' pitch
+    /// (`LegacySoundPlayer.cs:638`). The App mirrors its own field here per
+    /// frame (the `58` client store writes it); the default 0f is the
+    /// pre-W4-g49 stand-in value.
+    music_pitch: f32,
     /// `LegacySoundStyle.Random` (`LegacySoundStyle.cs:9`): the static
     /// `UnifiedRandom` the trackable styles' `Style` getter draws its
     /// variation pick from (`:21-28`, `Next(_style, _style + Variations)`).
@@ -744,6 +771,7 @@ impl Audio {
             handle,
             cues,
             played: Default::default(),
+            music_pitch: 0.0,
             liquid_loops: [None, None],
             tracked: crate::tracked_sound::SoundPlayer::default(),
             sound_style_random: tr_core::unified_random::UnifiedRandom::new(1),
@@ -773,6 +801,13 @@ impl Audio {
     /// `Main.soundVolume`/`Main.ambientVolume`, `Main.gameMenu`).
     pub fn set_listener(&mut self, listener: Listener) {
         self.listener = listener;
+    }
+
+    /// `Main.musicPitch` (`Main.cs:697`) — the case-2 music styles' pitch
+    /// (`LegacySoundPlayer.cs:638`). The App mirrors its field here (the
+    /// `58 InstrumentSound` client store writes it, W4-g49).
+    pub fn set_music_pitch(&mut self, pitch: f32) {
+        self.music_pitch = pitch;
     }
 
     /// A 2D sound (`PlaySound(type)`, no position → no attenuation).
@@ -1090,7 +1125,7 @@ impl Audio {
         } else {
             debug_assert_eq!(style.sound_id, 2, "item-use styles are the id-2 family");
             let mut roll = |lo: i32, hi: i32| rng.next_range(lo, hi);
-            let (num, tweak, pitch) = sound::item_use_case2(style.style, &mut roll);
+            let (num, tweak, pitch) = sound::item_use_case2(style.style, self.music_pitch, &mut roll);
             let cue = format!("Item_{num}");
             (
                 cue,
@@ -1231,6 +1266,66 @@ impl Audio {
         let draw = self.sound_style_random.next_float();
         let pitch_offset = sound::get_random_pitch(style.pitch_variance, draw);
         self.npc_hit_play(cue, style, pitch_offset, x, y, rng)
+    }
+
+    /// W4-g49 `58 InstrumentSound` — the int-overload instrument play
+    /// (`SoundEngine.cs:83-86` → `:102-108`: `PlaySound(type, Centre, 1,
+    /// pitchOffset)` calls the legacy player DIRECTLY — no `GetRandomPitch`
+    /// NextFloat). The guitar chords (`Player.PlayGuitarChord`,
+    /// `Player.cs:46671-46703`: types 47-52) and drum hits (`PlayDrums`,
+    /// `:46705-46748`: types 53-62) route through the case-2 default arm's
+    /// 47..52 / 53..62 remaps (`LegacySoundPlayer.cs:1212-1246`):
+    /// `num = 133 + type - 47` (×0.45 volume) / `num = 139 + type - 53`
+    /// (×0.7 volume), NO pitch draw — the final `Clamp(0 + pitchOffset)`
+    /// (`:1410`) is the caller's offset alone. The chord-bank Stop sweep
+    /// (`:1220-1226`) and the drum slot Stop (`:1237-1240`) are the standing
+    /// D4 instance-pool deviation. `rng` is unused (no draws in these arms)
+    /// but kept for signature parity with the other play paths.
+    /// Returns the cue played; `None` when the attenuation gate refused.
+    pub fn play_instrument_int(
+        &mut self,
+        sound_type: i32,
+        x: f32,
+        y: f32,
+        pitch_offset: f32,
+    ) -> Option<&'static str> {
+        // `SoundEngine.cs:85` — the Vector2 overload truncates.
+        let (x, y) = (x.trunc(), y.trunc());
+        // The attenuation gate first — the int overload draws nothing
+        // before the switch (`LegacySoundPlayer.cs:369-436`).
+        if sound::play_sound(2, x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let (num, tweak): (i32, f32) = match sound_type {
+            // `:1212-1232` — the guitar chords, ×0.45, no pitch draw.
+            47..=52 => (133 + sound_type - 47, 0.45),
+            // `:1234-1246` — the drum hits, ×0.7, no pitch draw.
+            53..=62 => (139 + sound_type - 53, 0.7),
+            _ => return None,
+        };
+        let cue: &'static str = match num {
+            133 => "Item_133",
+            134 => "Item_134",
+            135 => "Item_135",
+            136 => "Item_136",
+            137 => "Item_137",
+            138 => "Item_138",
+            139 => "Item_139",
+            140 => "Item_140",
+            141 => "Item_141",
+            142 => "Item_142",
+            143 => "Item_143",
+            144 => "Item_144",
+            145 => "Item_145",
+            146 => "Item_146",
+            147 => "Item_147",
+            148 => "Item_148",
+            _ => return None,
+        };
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // `:1410-1411` — Clamp(pitch + pitchOffset), Volume *= volumeScale(1).
+        let _ = self.emit(cue, x, y, tweak, pitch_offset.clamp(-1.0, 1.0));
+        Some(cue)
     }
 
     /// S1-E-21g — the int-overload peer of [`Audio::play_npc_hit_sound`]

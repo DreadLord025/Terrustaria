@@ -789,7 +789,10 @@ pub fn draw_hud(
     // dialogue panel while `talkNPC >= 0` (`CanHoldConversation`,
     // `:276-283`; the sign half is unported).
     if talk_npc.is_some() {
-        npc_chat::draw_panel(r, lookups, screen, npc_chat_text, pulse, mouse_pos);
+        // The Dryad's status button (`DryadPurification`, W4-g49) draws only
+        // while the talk NPC is the Dryad.
+        let dryad_status = npc_chat::dryad_status_active(npcs, talk_npc);
+        npc_chat::draw_panel(r, lookups, screen, npc_chat_text, pulse, mouse_pos, dryad_status);
     }
 
     // `Main.DrawBestiaryIcon(num, num2)` (`Main.cs:41013`): the button rides

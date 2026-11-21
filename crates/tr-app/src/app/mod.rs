@@ -1062,6 +1062,20 @@ pub(crate) struct App {
     pub(crate) invasion_progress_display_left: i32,
     pub(crate) invasion_progress_alpha: f32,
     pub(crate) invasion_progress_near: bool,
+    /// `Main.musicPitch` (`Main.cs:697`, reset 0f `:66720`): the music-box /
+    /// instrument pitch the `58 InstrumentSound` client arm stores
+    /// (`MessageBuffer.cs:2666`) and the case-2 music styles read back
+    /// (`LegacySoundPlayer.cs:638`). W4-g49.
+    pub(crate) music_pitch: f32,
+    /// `WorldGen.tGood/tEvil/tBlood` (`WorldGen.cs:4180-4184`, the world-evil
+    /// census percentages): the `57 Unknown57` client store
+    /// (`MessageBuffer.cs:2634-2636`). Transient census (recomputed by
+    /// `WorldGen.CountTiles` `:71156-71169`, not .wld-saved) — the App-field
+    /// standing-in for the WorldGen statics. The Dryad world-status report
+    /// (`Lang.GetDryadWorldStatusDialog`, `Lang.cs:251-293`) reads them. W4-g49.
+    pub(crate) world_evil_good: u8,
+    pub(crate) world_evil_evil: u8,
+    pub(crate) world_evil_blood: u8,
     /// The placed tombstones' epitaphs keyed by the tile anchor
     /// (vanilla stores the text in the projectile's `miscText` and then the
     /// tile render reads it — `Projectile.miscText`).
@@ -4066,6 +4080,10 @@ impl App {
             invasion_progress_display_left: 0,
             invasion_progress_alpha: 0.0,
             invasion_progress_near: false,
+            music_pitch: 0.0,
+            world_evil_good: 0,
+            world_evil_evil: 0,
+            world_evil_blood: 0,
             tomb_texts: Vec::new(),
             projectile_step: FixedStepper::new(1.0 / 60.0, 8),
             dev_throw: crate::env::dev_throw(),

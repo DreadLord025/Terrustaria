@@ -190,6 +190,21 @@ pub mod id {
     pub const PROJECTILE_TRACKERS: u8 = 142; // MessageID.cs:298 / NetMessage.cs:1603-1610 / MessageBuffer.cs:4282-4297
     pub const SYNC_LOADOUT: u8 = 147; // MessageID.cs:308 / NetMessage.cs:1624-1628 / MessageBuffer.cs:4328-4343
 
+    // ---- W4-g49: the F21-TAIL apply ids (codecs transplanted byte-verbatim
+    // from origin/task/W4-f21-net-ids-verify-tail 5274a097, batches 3/4/5/7) ----
+    /// `57 Unknown57` (`MessageID.cs:127`) — the world-evil census push:
+    /// writer `NetMessage.cs:1054-1058` (`WorldGen.tGood/tEvil/tBlood`,
+    /// three `byte`s, `WorldGen.cs:4180-4184`); reader
+    /// `MessageBuffer.cs:2631-2638` is client-only. Sends: the join push
+    /// (`MessageBuffer.cs:867`) + `WorldGen.cs:71173` — S2c-only.
+    pub const WORLD_EVIL_BYTES: u8 = 57;
+    /// `58 InstrumentSound` (`MessageID.cs:129`) — writer
+    /// `NetMessage.cs:1059-1062` (`(byte)player + float pitch`); reader
+    /// `MessageBuffer.cs:2639-2681`: the host forces the id to the sender
+    /// and relays, the client plays the held instrument's sound
+    /// (`Player.cs:46544`/`:46573`/`:46587`/`:46602`/`:46622` send sites).
+    pub const INSTRUMENT_SOUND: u8 = 58;
+
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
     /// before the slot is fully in-world (State 10) — exactly what those
@@ -1638,6 +1653,32 @@ pub struct InvasionProgress {
     pub wave: i8,
 }
 
+// ---- W4-g49 F21-TAIL: the transplanted bodies (byte-verbatim from
+// origin/task/W4-f21-net-ids-verify-tail 5274a097) ----
+
+/// `msg 57 Unknown57`'s body (`NetMessage.cs:1054-1058`): the three
+/// world-evil bytes `WorldGen.tGood`, `tEvil`, `tBlood` in that order
+/// (writer order good→evil→blood; the reader assigns the same order,
+/// `MessageBuffer.cs:2634-2636`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WorldEvilBytes {
+    pub good: u8,
+    pub evil: u8,
+    pub blood: u8,
+}
+
+/// `msg 58 InstrumentSound`'s body (`NetMessage.cs:1059-1062`): the player
+/// id byte then the pitch float (`number2`, the raw `writer.Write(number2)`
+/// — no cast). The reader (`MessageBuffer.cs:2639-2681`) forces the id to
+/// the sender on the host and relays; the client's switch plays the guitar
+/// chords (4057/4372/4715), drums (4673) or the item sound (507 → Item35,
+/// 1305 → Item47, else Item26) with `Main.musicPitch = pitch`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct InstrumentSound {
+    pub player_id: u8,
+    pub pitch: f32,
+}
+
 /// `msg 72 TravelMerchantItems`'s body (`NetMessage.cs:1134-1141`): the
 /// `Main.travelShop` array — `Main.TravelShopMaxSlots = 40` (`Main.cs:67029`)
 /// `short` item types (`MessageBuffer.cs:3118-3126`).
@@ -1859,6 +1900,10 @@ pub enum C2s {
     /// `147 SyncLoadout` - a client switched loadout
     /// (`MessageBuffer.cs:4328-4343` relays it).
     SyncLoadout(SyncLoadout),
+    /// `58 InstrumentSound` — a client played its held instrument
+    /// (`Player.cs:46544` etc.; host id-force + relay
+    /// `MessageBuffer.cs:2642-2650`). W4-g49 (from W4-f21).
+    InstrumentSound(InstrumentSound),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1999,6 +2044,13 @@ pub enum S2c {
     /// `147 SyncLoadout` - a peer's loadout (join push
     /// `NetMessage.cs:2908`, relay `MessageBuffer.cs:4340`).
     SyncLoadout(SyncLoadout),
+    /// `57 Unknown57` — the world-evil bytes, join push
+    /// (`MessageBuffer.cs:867`) + `WorldGen.cs:71173`; client-only reader
+    /// (`MessageBuffer.cs:2631-2638`). S2c-only. W4-g49 (from W4-f21).
+    WorldEvilBytes(WorldEvilBytes),
+    /// `58 InstrumentSound` — a peer's instrument, host relay
+    /// (`MessageBuffer.cs:2649`). W4-g49 (from W4-f21).
+    InstrumentSound(InstrumentSound),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2096,6 +2148,7 @@ impl C2s {
             Self::TeamChange(_) => id::TEAM_CHANGE,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::InstrumentSound(_) => id::INSTRUMENT_SOUND,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2202,6 +2255,8 @@ impl C2s {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // `NetMessage.cs:1059-1062`: (byte)player + raw float pitch.
+            Self::InstrumentSound(s) => w.u8(s.player_id).f32(s.pitch),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2363,6 +2418,12 @@ impl C2s {
                 player_id: r.u8()?,
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
+            }),
+            // `MessageBuffer.cs:2641-2646`: ReadByte + ReadSingle (the id
+            // force to the sender is the apply arm's, not the codec's).
+            id::INSTRUMENT_SOUND => Self::InstrumentSound(InstrumentSound {
+                player_id: r.u8()?,
+                pitch: r.f32()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2560,6 +2621,8 @@ impl S2c {
             Self::MiscEventValue(_) => id::MISC_EVENT_VALUES,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::WorldEvilBytes(_) => id::WORLD_EVIL_BYTES,
+            Self::InstrumentSound(_) => id::INSTRUMENT_SOUND,
         }
     }
 
@@ -2746,6 +2809,10 @@ impl S2c {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // `NetMessage.cs:1054-1058`: tGood, tEvil, tBlood — three bytes.
+            Self::WorldEvilBytes(e) => w.u8(e.good).u8(e.evil).u8(e.blood),
+            // `NetMessage.cs:1059-1062` — the shared body.
+            Self::InstrumentSound(s) => w.u8(s.player_id).f32(s.pitch),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2990,6 +3057,17 @@ impl S2c {
                 player_id: r.u8()?,
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
+            }),
+            // `MessageBuffer.cs:2634-2636`: three ReadByte, good→evil→blood.
+            id::WORLD_EVIL_BYTES => Self::WorldEvilBytes(WorldEvilBytes {
+                good: r.u8()?,
+                evil: r.u8()?,
+                blood: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2641-2646` — the shared read.
+            id::INSTRUMENT_SOUND => Self::InstrumentSound(InstrumentSound {
+                player_id: r.u8()?,
+                pitch: r.f32()?,
             }),
             _ => return None,
         })
@@ -5307,6 +5385,74 @@ mod tests {
                 other => panic!("expected 78, got {:?}", other.msg_id()),
             }
         }
+    }
+
+    /// W4-g49 F21-TAIL `57 Unknown57` — byte-pin transplanted verbatim
+    /// from W4-f21 batch 4 (`w4_f21_world_evil_bytes_round_trips`).
+    #[test]
+    fn w4_g49_world_evil_bytes_round_trips() {
+        // `NetMessage.cs:1054-1058`: tGood, tEvil, tBlood — three raw bytes
+        // in the writer's order; the reader assigns the same order
+        // (`MessageBuffer.cs:2634-2636`).
+        let b = WorldEvilBytes {
+            good: 200,
+            evil: 100,
+            blood: 50,
+        };
+        let f = S2c::WorldEvilBytes(b).encode();
+        assert_eq!(f[2], 57);
+        assert_eq!(&f[3..], &[200, 100, 50]);
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(f[2], &mut r).expect("decode") {
+            S2c::WorldEvilBytes(d) => assert_eq!(d, b),
+            other => panic!("expected 57, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // S2c-only: no C2s variant (the reader is netMode==1-gated).
+        assert!(C2s::decode(57, &mut NetReader::new(&[1, 2, 3])).is_none());
+        // A truncated blood byte must not decode.
+        assert!(S2c::decode(57, &mut NetReader::new(&[1, 2])).is_none());
+    }
+
+    /// W4-g49 F21-TAIL `58 InstrumentSound` — byte-pin transplanted verbatim
+    /// from W4-f21 batch 5 (`w4_f21_instrument_sound_round_trips_both_directions`).
+    #[test]
+    fn w4_g49_instrument_sound_round_trips_both_directions() {
+        // `NetMessage.cs:1059-1062`: (byte)number + raw float number2 (no
+        // cast — the pitch rides as a full float, `Player.cs:46544`'s num6).
+        let b = InstrumentSound {
+            player_id: 4,
+            pitch: 0.45,
+        };
+        let mut body = vec![4u8];
+        body.extend_from_slice(&0.45f32.to_le_bytes());
+        let f = C2s::InstrumentSound(b).encode();
+        assert_eq!(f[2], 58);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::InstrumentSound(d) => assert_eq!(d, b),
+            other => panic!("expected 58, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        let f = S2c::InstrumentSound(b).encode();
+        assert_eq!(f[2], 58);
+        match S2c::decode(58, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::InstrumentSound(d) => assert_eq!(d, b),
+            other => panic!("expected 58, got {:?}", other.msg_id()),
+        }
+        // A negative pitch rides verbatim (the drums' num9 can be negative
+        // before the round; the wire is the raw float).
+        let neg = InstrumentSound {
+            player_id: 0,
+            pitch: -0.25,
+        };
+        let f = C2s::InstrumentSound(neg).encode();
+        let mut body = vec![0u8];
+        body.extend_from_slice(&(-0.25f32).to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        // A truncated pitch must not decode.
+        assert!(C2s::decode(58, &mut NetReader::new(&[4, 0, 0])).is_none());
     }
 
     #[test]
