@@ -65,6 +65,8 @@
 //! | 234-235 | `:83270-83271` | the 428 Nebula Brain death (2 gores, vel x0.8, Next(2) type-229/240 dust) |
 //! | 236-240 | `:83305-83309` | the 424 Vortex Soldier death (5 gores, gated type-242 dust) |
 //! | 241-243 | `:83340-83342` | the 423 Vortex Hornet death (3 gores at Center, vel x0.8/x0.9) |
+//! | 244-246 | `:83373-83375` | the 421 Vortex Larva death (3 gores at Center, vel x0.8/x0.9) |
+//! | 247-249 | `:83406-83408` | the 420 Vortex Rider death (3 gores at Center, vel x0.8/x0.9) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -1414,6 +1416,48 @@ fn vortex_hornet_death(
     gore.new_gore(rng, world, c, vel * 0.9, 792, 1.0); // :83342
 }
 
+/// The 421 Vortex Larva death (`NPC.cs:83364-83375`, sites 244-246): the
+/// 10-iteration UNGATED type-249 + type-242 burst, then the 3 gores
+/// 785/786/787 at Center with velocity ×0.8/×0.8/×0.9. Same shape as the
+/// Hornet, 10 iterations and different types.
+fn vortex_larva_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    vortex_death_dust(npc, dust, dust_ctx, rng, world, hit_direction, 10, None);
+    let c = center(npc);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, c, vel * 0.8, 785, 1.0); // :83373
+    gore.new_gore(rng, world, c, vel * 0.8, 786, 1.0); // :83374
+    gore.new_gore(rng, world, c, vel * 0.9, 787, 1.0); // :83375
+}
+
+/// The 420 Vortex Rider death (`NPC.cs:83397-83408`, sites 247-249): the
+/// 10-iteration UNGATED type-249 + type-242 burst, then the 3 gores
+/// 782/783/784 at Center with velocity ×0.8/×0.8/×0.9. Same shape as the
+/// Larva, different types.
+fn vortex_rider_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    vortex_death_dust(npc, dust, dust_ctx, rng, world, hit_direction, 10, None);
+    let c = center(npc);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, c, vel * 0.8, 782, 1.0); // :83406
+    gore.new_gore(rng, world, c, vel * 0.8, 783, 1.0); // :83407
+    gore.new_gore(rng, world, c, vel * 0.9, 784, 1.0); // :83408
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -1578,6 +1622,14 @@ pub fn hit_effect_c(
     // `:83312-83344` — the 423 Vortex Hornet arm (sites 241-243).
     if npc_type == 423 && npc.hp <= 0 {
         vortex_hornet_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:83345-83377` — the 421 Vortex Larva arm (sites 244-246).
+    if npc_type == 421 && npc.hp <= 0 {
+        vortex_larva_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:83378-83410` — the 420 Vortex Rider arm (sites 247-249).
+    if npc_type == 420 && npc.hp <= 0 {
+        vortex_rider_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -2523,6 +2575,30 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the hornet death mirrors the C# draws");
+    }
+
+    /// `NPC.cs:83373-83375` / `:83406-83408` — the Vortex Larva / Rider
+    /// deaths: 3 gores each at Center, velocity x0.8/x0.8/x0.9, after the
+    /// 10x ungated (type-249 + type-242) burst. The types differ per arm.
+    #[test]
+    fn w4_f10_the_vortex_larva_and_rider_deaths_spawn_their_gores() {
+        let w = air();
+        for (ty, gores, f) in [
+            (421, [785, 786, 787], vortex_larva_death as fn(&Npc, &mut DustPool, &SpawnCtx, &mut GorePool, &mut UnifiedRandom, &World, f32)),
+            (420, [782, 783, 784], vortex_rider_death),
+        ] {
+            let n = boss(100.0, 100.0, 40.0, 40.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(157);
+            f(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, gores, "kind {ty}");
+            // Center = (120,120).
+            for i in 0..3 {
+                assert_eq!(gore.slot(i).position, Vec2::new(120.0, 120.0));
+            }
+        }
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
