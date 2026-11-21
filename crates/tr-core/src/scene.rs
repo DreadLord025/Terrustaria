@@ -2097,6 +2097,14 @@ impl FilterBoard {
         self.slots[id.index()].active
     }
 
+    /// `Filter.Deactivate` (`Filter.cs:44-47`): drop `Active` (the opacity
+    /// fades out on the next `update`). `Main.ClearVisualPostProcessEffects`
+    /// (`Main.cs:52114-52252`) calls this on every active filter when the
+    /// world closes back to the menu.
+    pub fn deactivate(&mut self, id: FilterId) {
+        self.slots[id.index()].active = false;
+    }
+
     /// `Filter.IsHidden = hidden` (`Filter.cs:12`; `SceneState.cs:161`).
     pub fn set_hidden(&mut self, id: FilterId, hidden: bool) {
         self.slots[id.index()].hidden = hidden;
@@ -2471,6 +2479,130 @@ pub fn heat_distortion_intensity(
 /// (`Sandstorm.cs:131-138`).
 pub fn is_desert_bg_style(bg_style: i32) -> bool {
     matches!(bg_style, 2 | 5 | 13 | 14)
+}
+
+// --- MoonLordScreenShaderData (W4-d70): the Moon Lord screen-filter shader ---
+//
+// `GameContent/Shaders/MoonLordScreenShaderData.cs`: the `FilterMoonLord` /
+// `FilterMoonLordShake` / `MonolithMoonLord` rows share this shader
+// (`ScreenEffectInitializer.cs:22-24`). Its `Apply` override picks a world
+// target (`UpdateMoonLordIndex`) and publishes `LatestFilterStrength`, the
+// value `Main.GetMoonLordColoring` (`Main.cs:26323-26332`) lerps the Moon
+// Lord's parts toward `(183, 255, 255)` with. The S1-G-6 tick driver feeds the
+// shake's `UseIntensity`; this is the target/strength half it left inert.
+
+/// One NPC row `UpdateMoonLordIndex` reads (`MoonLordScreenShaderData.cs:30-68`):
+/// only the core (398) and the deathray eye (400, `ai[0] == 4`) matter.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct MoonLordShaderNpc {
+    /// `Main.npc[i].type`.
+    pub npc_type: i32,
+    /// `Main.npc[i].Center`.
+    pub center: [f32; 2],
+    /// `Main.npc[i].ai[0]`.
+    pub ai0: f32,
+    /// `Main.npc[i].ai[1]`.
+    pub ai1: f32,
+}
+
+/// `NPC.MoonLordAttacksArray2`'s duration row (`NPC.InitializeMoonLordAttacks2`,
+/// `NPC.cs:6968-7008`, `[1, j]`): the ten attack lengths the deathray sequencer
+/// walks. The attack-id row `[0, j]` is not read by `UpdateMoonLordIndex`.
+pub const MOON_LORD_ATTACK_DURATIONS: [i32; 10] = [53, 90, 53, 135, 53, 200, 53, 375, 53, 135];
+
+/// `MoonLordScreenShaderData.UpdateMoonLordIndex`
+/// (`MoonLordScreenShaderData.cs:20-79`): the world-space shake anchor. The
+/// core's centre is the base; a deathray eye (`type == 400 && ai[0] == 4`)
+/// whose attack-phase weight beats the running best lerps toward it, and a
+/// core in the `ai[0] == -2` despawn fade lerps back toward the core. Returns
+/// `_targetPositionInWorld`.
+pub fn moon_lord_target_position(npcs: &[MoonLordShaderNpc]) -> [f32; 2] {
+    let mut vector = [0.0f32; 2]; // the core centre
+    let mut value = [0.0f32; 2]; // the best deathray eye centre
+    let mut num = 0.0f32; // the best eye weight
+    let mut num2 = 0.0f32; // the core despawn-fade weight
+    for n in npcs {
+        // `:36-43`: the core centre, plus the `-2` despawn remap.
+        if n.npc_type == 398 {
+            vector = n.center;
+            if n.ai0 == -2.0 {
+                num2 = remap(n.ai1, 55.0, 60.0, 1.0, 0.0);
+            }
+        }
+        // `:44-47`: only the deathray eye (`ai[0] == 4`) contributes.
+        if n.npc_type != 400 || n.ai0 != 4.0 {
+            continue;
+        }
+        let num3 = n.ai1;
+        // `:48-62`: walk the attack-duration row to the current attack's
+        // elapsed ticks (`num6 = ai[1] - sum of the prior durations`).
+        let mut num5 = 0i32;
+        for &dur in MOON_LORD_ATTACK_DURATIONS.iter() {
+            if dur as f32 + num5 as f32 > num3 {
+                break;
+            }
+            num5 += dur;
+        }
+        let num6 = num3 as i32 - num5;
+        // `:63`: the rise (0..180) times the fall (340..360) window.
+        let num7 = remap(num6 as f32, 0.0, 180.0, 0.0, 1.0)
+            * remap(num6 as f32, 340.0, 360.0, 1.0, 0.0);
+        // `:64-68`: last-match-wins on a strictly greater weight.
+        if num7 > num {
+            value = n.center;
+            num = num7;
+        }
+    }
+    // `:70-78`: the eye lerp, then the despawn-fade lerp back to the core.
+    let mut target = vector;
+    if num > 0.0 {
+        target = [
+            lerp(target[0], value[0], num),
+            lerp(target[1], value[1], num),
+        ];
+    }
+    if num2 > 0.0 {
+        target = [
+            lerp(target[0], vector[0], num2),
+            lerp(target[1], vector[1], num2),
+        ];
+    }
+    target
+}
+
+/// `MoonLordScreenShaderData.Apply` (`MoonLordScreenShaderData.cs:81-96`):
+/// `(UseTargetPosition value, LatestFilterStrength)`. The `aimAtPlayer`
+/// variant (`MonolithMoonLord`) aims at `SceneMetrics.Center` with strength 1;
+/// the `FilterMoonLord`/`FilterMoonLordShake` variant tracks the NPC anchor
+/// and fades the strength by its distance from the scene centre
+/// (`Remap(dist, 4000, 8000, 1, 0)`).
+pub fn moon_lord_shader_apply(
+    aim_at_player: bool,
+    scene_center: [f32; 2],
+    npcs: &[MoonLordShaderNpc],
+) -> ([f32; 2], f32) {
+    if aim_at_player {
+        return (scene_center, 1.0);
+    }
+    let target = moon_lord_target_position(npcs);
+    let dx = target[0] - scene_center[0];
+    let dy = target[1] - scene_center[1];
+    let dist = (dx * dx + dy * dy).sqrt();
+    let strength = remap(dist, 4000.0, 8000.0, 1.0, 0.0);
+    (target, strength)
+}
+
+/// `Main.GetMoonLordColoring` (`Main.cs:26323-26332`): the Moon Lord parts'
+/// tint — `Color.Lerp(White, (183, 255, 255), LatestFilterStrength)`, returned
+/// as sRGB bytes. The `:26326-26330` branch reads `ai[3]`/`ai[0]` into
+/// discarded locals (no effect on the colour), so it is a no-op here.
+pub fn moon_lord_coloring(latest_filter_strength: f32) -> [u8; 3] {
+    let t = latest_filter_strength;
+    [
+        lerp(255.0, 183.0, t) as u8,
+        255, // green is 255 on both endpoints
+        255, // blue is 255 on both endpoints
+    ]
 }
 
 #[cfg(test)]
@@ -3997,5 +4129,105 @@ mod s1_e_16_screen_effect_tests {
             unpainted.set_wall_paint(x, y, 15);
         }
         assert!(!inside_unbreakable_walls(&unpainted, 100, 100));
+    }
+}
+
+/// W4-d70: `MoonLordScreenShaderData` — the shake's target/strength half and
+/// the `GetMoonLordColoring` consumer (`MoonLordScreenShaderData.cs:20-96`,
+/// `Main.cs:26323-26332`). Written, not run (code-only lane).
+#[cfg(test)]
+mod w4_d70_moon_lord_shader_tests {
+    use super::*;
+
+    fn core(center: [f32; 2], ai0: f32, ai1: f32) -> MoonLordShaderNpc {
+        MoonLordShaderNpc { npc_type: 398, center, ai0, ai1 }
+    }
+    fn eye(center: [f32; 2], ai0: f32, ai1: f32) -> MoonLordShaderNpc {
+        MoonLordShaderNpc { npc_type: 400, center, ai0, ai1 }
+    }
+
+    /// `:26-43`: with no NPCs the anchor is Zero; a lone core anchors on its
+    /// centre (no eye weight, no despawn fade).
+    #[test]
+    fn the_anchor_is_zero_empty_and_the_core_when_alone() {
+        assert_eq!(moon_lord_target_position(&[]), [0.0, 0.0]);
+        let npcs = [core([1234.0, 5678.0], 0.0, 0.0)];
+        assert_eq!(moon_lord_target_position(&npcs), [1234.0, 5678.0]);
+    }
+
+    /// `:44-68`: a deathray eye (`ai[0] == 4`) at the attack-phase peak lerps
+    /// the anchor toward itself. `ai[1] = 90` lands in attack 1 (duration 90,
+    /// elapsed 90): rise `Remap(90, 0, 180, 0, 1) = 0.5`, fall
+    /// `Remap(90, 340, 360, 1, 0) = 1` → weight 0.5.
+    #[test]
+    fn a_deathray_eye_at_half_weight_pulls_the_anchor_halfway() {
+        let npcs = [core([0.0, 0.0], 0.0, 0.0), eye([1000.0, 0.0], 4.0, 90.0)];
+        let t = moon_lord_target_position(&npcs);
+        assert!((t[0] - 500.0).abs() < 1e-3, "{t:?}");
+        assert_eq!(t[1], 0.0);
+    }
+
+    /// `:44`: an eye NOT in the deathray phase (`ai[0] != 4`) contributes
+    /// nothing — the anchor stays on the core.
+    #[test]
+    fn a_non_deathray_eye_does_not_move_the_anchor() {
+        let npcs = [core([0.0, 0.0], 0.0, 0.0), eye([1000.0, 0.0], 1.0, 90.0)];
+        assert_eq!(moon_lord_target_position(&npcs), [0.0, 0.0]);
+    }
+
+    /// `:39-42` + `:75-78`: a core in the `-2` despawn fade lerps the anchor
+    /// back toward the core. `ai[1] = 57.5` → `Remap(57.5, 55, 60, 1, 0) = 0.5`.
+    /// The eye's attack-phase weight first pulls the anchor toward the eye,
+    /// then the despawn fade pulls it halfway back to the core.
+    #[test]
+    fn the_despawn_fade_pulls_the_anchor_back_to_the_core() {
+        let npcs = [core([0.0, 0.0], -2.0, 57.5), eye([1000.0, 0.0], 4.0, 434.0)];
+        // attack durations: 53+90+53+135+53 = 384; ai1=434 → elapsed 50 in
+        // attack 5 (200). rise Remap(50,0,180)=0.2778, fall=1 → weight 0.2778.
+        let t = moon_lord_target_position(&npcs);
+        // anchor = lerp(core, eye, 0.2778) = 277.8, then lerp(that, core, 0.5).
+        let w = 50.0 / 180.0;
+        let expect = 1000.0 * w * 0.5;
+        assert!((t[0] - expect).abs() < 1e-2, "{t:?} vs {expect}");
+    }
+
+    /// `:81-96`: the `aimAtPlayer` row aims at the scene centre with strength 1.
+    #[test]
+    fn the_aim_at_player_row_uses_the_scene_centre_and_full_strength() {
+        let (target, strength) = moon_lord_shader_apply(true, [777.0, 888.0], &[]);
+        assert_eq!(target, [777.0, 888.0]);
+        assert_eq!(strength, 1.0);
+    }
+
+    /// `:92`: the tracked row's strength fades by distance —
+    /// `Remap(dist, 4000, 8000, 1, 0)`. At the scene centre (dist 0) it is 1;
+    /// at 6000 px it is 0.5; at 8000+ it is 0.
+    #[test]
+    fn the_tracked_strength_fades_with_distance() {
+        let npcs = [core([0.0, 0.0], 0.0, 0.0)];
+        let (_, s0) = moon_lord_shader_apply(false, [0.0, 0.0], &npcs);
+        assert_eq!(s0, 1.0);
+        let (_, s1) = moon_lord_shader_apply(false, [6000.0, 0.0], &npcs);
+        assert!((s1 - 0.5).abs() < 1e-4, "{s1}");
+        let (_, s2) = moon_lord_shader_apply(false, [9000.0, 0.0], &npcs);
+        assert_eq!(s2, 0.0);
+    }
+
+    /// `Main.cs:26325`: `Color.Lerp(White, (183,255,255), strength)` — at 0 the
+    /// parts are white, at 1 the cyan `(183,255,255)`, halfway `(219,255,255)`.
+    #[test]
+    fn the_coloring_lerps_white_to_cyan() {
+        assert_eq!(moon_lord_coloring(0.0), [255, 255, 255]);
+        assert_eq!(moon_lord_coloring(1.0), [183, 255, 255]);
+        assert_eq!(moon_lord_coloring(0.5), [219, 255, 255]);
+    }
+
+    /// `NPC.cs:6986-7006`: the ten attack durations, verbatim.
+    #[test]
+    fn the_attack_duration_row_matches_initialize_moon_lord_attacks2() {
+        assert_eq!(
+            MOON_LORD_ATTACK_DURATIONS,
+            [53, 90, 53, 135, 53, 200, 53, 375, 53, 135]
+        );
     }
 }

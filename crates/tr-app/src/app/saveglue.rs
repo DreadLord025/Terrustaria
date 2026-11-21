@@ -366,6 +366,13 @@ impl App {
         // `WorldGen.cs:6678-6679`: both fast-forward flags drop.
         self.world.fast_forward_to_dawn = false;
         self.world.fast_forward_to_dusk = false;
+        // W4-d70: `Main.ClearVisualPostProcessEffects` (`Main.cs:52114-52252`,
+        // called at `:48909` on the return to `menuMode = 0`): every active
+        // scene filter deactivates. The port's board carries the M1 subset;
+        // the tower/monolith/MoonLord/test rows have no activation reader.
+        for id in tr_core::scene::FilterId::ALL {
+            self.filter_driver.board.deactivate(id);
+        }
         // `WorldGen.cs:6682`: `Main.menuMode = 0` — back to the main menu
         // (`Main.gameMenu` stays true; the port's `menu.is_some()` is that
         // flag, `frame.rs:256`).

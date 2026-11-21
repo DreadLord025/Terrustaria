@@ -215,7 +215,7 @@ equation, the tint pre-linearisation, the draw-call count or the atlas UV phase.
   `cull_mode: None` everywhere (`sprite.rs:345`). Winding only matters if a quad is
   built clockwise, which the port's own winding never is — low risk, but the cull
   state is not 1:1.
-- **D-7 — `MoonLordShake` filter inert (behavioural, medium).** **CLOSED 2026-11-13** (`S1-G-6-moon-lord-shake`): the tick driver (the pre-decrement intensity formula, `lunar.rs`) feeds `FilterId::MoonLordShake` (`EffectPriority.VeryHigh`, `ScreenEffectInitializer.cs:23`) → WGSL pass 10 (the phase-4 approximation — the compiled HLSL is content-side). The deathray/Core target tracking (`UpdateMoonLordIndex`) is unreachable in the filter's lifetime (no Moon Lord exists while the countdown runs) and the `LatestFilterStrength` consumer (`Main.cs:26325`, the death colour) is the death-colour system's follow-up. The original text follows. `Main.cs:64976-64984`
+- **D-7 — `MoonLordShake` filter inert (behavioural, medium).** **CLOSED 2026-11-13** (`S1-G-6-moon-lord-shake`): the tick driver (the pre-decrement intensity formula, `lunar.rs`) feeds `FilterId::MoonLordShake` (`EffectPriority.VeryHigh`, `ScreenEffectInitializer.cs:23`) → WGSL pass 10 (the phase-4 approximation — the compiled HLSL is content-side). **W4-d70 (2026-11-21) closed the residual `MoonLordScreenShaderData.Apply` half**: `UpdateMoonLordIndex` (the core/deathray-eye/despawn-fade anchor, `MoonLordScreenShaderData.cs:20-79`) and `LatestFilterStrength` (`:81-96`) now land in `tr_core::scene` (`moon_lord_target_position`/`moon_lord_shader_apply`); the shake's `build_params` arm feeds `UseTargetPosition` and publishes the strength, and the `GetMoonLordColoring` consumer (`Main.cs:26325`, the Moon Lord parts' cyan tint) rides `draw_npcs`. While the countdown runs no Moon Lord exists, so the anchor is Zero and the strength fades by its distance from the scene centre — computed now, not assumed. The original text follows. `Main.cs:64976-64984`
   activates the `MoonLordShake` scene filter during the Moonlord fight;
   `post.rs:147` maps it to pass index 0 (passthrough), so the screen shake never
   happens. The camera itself is unaffected in vanilla either (no camera-offset shake
@@ -261,19 +261,21 @@ equation, the tint pre-linearisation, the draw-call count or the atlas UV phase.
   because the camera zoom is ≤ 2, but a no-LOD guarantee must keep it that way
   (AGENTS.md's optimisation policy).
 - **D-16 — The full-screen overlays are drawn, two effect arms are not
-  (behavioural, low).** S1-E-16 added `crates/tr-app/src/render/screen_fx.rs`:
+  (behavioural, low).** **CLOSED W4-d70 (2026-11-21).** S1-E-16 added
+  `crates/tr-app/src/render/screen_fx.rs`:
   `ScreenDarkness.DrawBack`/`DrawFront`, `MoonlordDeathDrama.DrawWhite`/`DrawPieces`/
   `DrawExplosions` and `ScreenObstruction.Draw` land at the vanilla seams
   (`Main.cs:62217`, `:62322-62324`, `:63276-63277`), and the `MagicPixel` quads
   ride the `fx` range (the UI camera transform, before the map and the interface —
-  the same order as the C#). `DrawPaladinsShield` (`Main.cs:57196`) and
-  `DrawInfernoRings` (`:64275`) are **not** drawn: their gates are
-  `Player.hasPaladinShield` / `defendedByPaladin` / `inferno` plus the
-  `flameRingScale` / `flameRingRot` animation counters, none of which the port's
-  `Player` carries. Their sheets (`Extra_98`, `FlameRing`) load, so the draw arms
-  can be added without touching the asset pipeline. `DrawLensFlare` (`:62509`) is
-  the unported `NextHorizonRenderer`'s. Details in ANALYSIS "The screen effects
-  (S1-E-16)".
+  the same order as the C#). W4-d70 landed the remaining five draw rows:
+  `DrawPaladinsShield`/`DrawPaladinsShieldBoundary` (`Main.cs:57196-57275`),
+  `DrawPrettyStarSparkle` (`:35297-35313`), `DrawInfernoRings` (`:64275-64324`)
+  and `DrawLensFlare` (`NextHorizonRenderer.cs:363-533`), wired at the
+  `Main.cs:62316-62320` seam. `Player` now carries `defendedByPaladin`/`inferno`/
+  `flameRingScale`/`flameRingRot` (the buff-43/116 arms). Deviations: the paladin
+  peer loops no-op until `PlayerNet` carries team/shield state; the lens flare's
+  sun-occlusion mask + advanced-shadow offset are unported. Details in ANALYSIS
+  "The screen effects (S1-E-16)".
 
 ## Task seeds
 

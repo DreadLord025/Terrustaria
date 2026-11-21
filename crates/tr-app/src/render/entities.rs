@@ -2156,6 +2156,9 @@ pub(crate) fn draw_npcs(
     zoom: f32,
     screen: Vec2,
     behind_tiles: bool,
+    // W4-d70: `MoonLordScreenShaderData.LatestFilterStrength` — the
+    // `GetMoonLordColoring` (`Main.cs:26325`) input for the Moon Lord family.
+    latest_filter_strength: f32,
 ) -> u32 {
     let mut quads = 0;
     for npc in npcs {
@@ -3222,6 +3225,28 @@ pub(crate) fn draw_npcs(
             ]
         } else {
             base
+        };
+        // W4-d70: `Main.GetMoonLordColoring` (`Main.cs:26323-26332`) — the
+        // Moon Lord family (396/397/398/400) draws with `Color.Lerp(White,
+        // (183, 255, 255), LatestFilterStrength)` instead of the light colour
+        // (`Main.cs:24716/24775/24870/24958` pass it as the draw colour). The
+        // alpha fade (`NPC.GetAlpha`) still rides it.
+        let tint = if matches!(
+            n.kind,
+            NpcKind::MoonLordHead
+                | NpcKind::MoonLordHand
+                | NpcKind::MoonLordCore
+                | NpcKind::MoonLordFreeEye
+        ) {
+            let ml = tr_core::scene::moon_lord_coloring(latest_filter_strength);
+            [
+                ml[0] as f32 / 255.0 * fade,
+                ml[1] as f32 / 255.0 * fade,
+                ml[2] as f32 / 255.0 * fade,
+                fade,
+            ]
+        } else {
+            tint
         };
         // The Deerclops' sheet is a 5x5 grid, not a column: the cell
         // index in `npc.frame` decodes as column `cell / 5`, row

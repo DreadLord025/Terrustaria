@@ -64,7 +64,7 @@ surface.
 | Liquids: back water, front water, shimmer, waterfalls | PARTIAL | `render/liquids.rs::draw_waters`/`draw_liquids`/`draw_shimmer` (31/85/199), `tr-render/water_mask.rs` | Back-water/front-water split (`Main.cs:62196` vs `62298-62308`) collapses into one liquid pass plus a mask/distortion pass; waterfalls run before the light map (`frame.rs:833-876`, mirroring `Main.cs:63281` + one-frame-late `AddLight`). — **VERIFIED-DONE 2026-11-14 (S1-G-14):** the parity proven — the waterfall screenshot exists (`docs/screenshots/spout_noon.png` via the `TR_SPOUT` hooks), the AddLight one-frame-late behaviour matches the vanilla (ANALYSIS "the waterfall pass"), the mask/distortion shape is the port's documented equivalent. |
 | Entity draw order (NPCs/players/projectiles/items/gore/dust/rain/particles) | PARTIAL | `frame.rs` (1074-1196), `render/entities.rs::draw_player`/`draw_npcs` | Only a subset of the C# cache buckets exist: `DrawCacheNPCsMoonMoon`, `BehindNonSolidTiles`, `ProjsBehindNPCs`, `NPCProjectiles`, `ProjsOverPlayers/OverWiresUI` (`Main.cs:63271-63413`) have no named equivalents; particles are partially there (`rain`, `sand`, `minecart_sparks` at `frame.rs:1169-1177`) but `ParticleSystem_World_BehindPlayers/OverPlayers` (`Main.cs:62252-62261`) is MISSING. |
 | Screen effects (graveyard/noir/blood-moon/storm, heat & water distortion) | PARTIAL | `tr-render/src/post.rs::pass_index` (182), `post.wgsl` | Pass table mirrors vanilla `Filters.Scene` (`post.wgsl:1-9` comments claim 1:1 for the tint/noise subset; distortion passes are explicitly "not ported" for the compiled `FilterHeatDistortion`/`FilterWaterDistortion` HLSL). |
-| Overlays / full-screen darkening (`ScreenDarkness`, `ScreenObstruction`, `MoonlordDeathDrama`, `DrawPaladinsShield`, `DrawInfernoRings`, `DrawLensFlare`) | PARTIAL (S1-E-16) | `render/screen_fx.rs` (the five effects) + `tr-core/src/scene.rs` (the state machines) | `DrawBack`/`DrawFront`/`DrawWhite`/`DrawPieces`/`DrawExplosions`/`ScreenObstruction.Draw` land at `Main.cs:62217`/`62322-62324`/`63276-63277`. `DrawPaladinsShield` and `DrawInfernoRings` stay unwritten (their gates need `Player.hasPaladinShield`/`defendedByPaladin`/`inferno`/`flameRing*`, none ported); `DrawLensFlare` needs the unported `NextHorizonRenderer`. |
+| Overlays / full-screen darkening (`ScreenDarkness`, `ScreenObstruction`, `MoonlordDeathDrama`, `DrawPaladinsShield`, `DrawInfernoRings`, `DrawLensFlare`) | DONE (S1-E-16 + W4-d70) | `render/screen_fx.rs` (the effects) + `tr-core/src/scene.rs` (the state machines + `MoonLordScreenShaderData`) | `DrawBack`/`DrawFront`/`DrawWhite`/`DrawPieces`/`DrawExplosions`/`ScreenObstruction.Draw` land at `Main.cs:62217`/`62322-62324`/`63276-63277`. W4-d70 landed `DrawPaladinsShield`/`DrawPaladinsShieldBoundary`/`DrawPrettyStarSparkle`/`DrawInfernoRings`/`DrawLensFlare` at `Main.cs:62316-62320` (the `Player` flags + the four lens sheets); the `MoonLordScreenShaderData.Apply` target/strength half feeds the shake + the `GetMoonLordColoring` NPC tint. Deviations: the paladin peer loops no-op until `PlayerNet` carries team/shield; the lens flare's occlusion mask + shadow offset are unported. |
 | Capture mode (`CaptureManager`, `CaptureSettings`, `DrawCapture`, `Filters.Scene.CanCapture/EndCapture`) | MISSING | `render/debug.rs::capture_frame` (274) | The port only has a file-screenshot hook; `CaptureManager.Instance.DrawTick/Update/Draw` (`Main.cs:56673` capture, `61729`) has no equivalent. |
 | Zoom & view transforms (1.0–2.0) | PARTIAL | `frame.rs` (817, 953, 1046-1196) | `draw_cam = (camera * zoom).round() / zoom` (`frame.rs:817`) pins pixel snapping at any zoom; `zoom` is in the `WorldFrameKey` (`:953`). The C# value chain `ForcedMinimumZoom` × `clamp(GameZoomTarget,1,2)` with `SupportWideScreen` override (`Main.cs:61990-61999`) was **not located** in `world_sim/camera.rs` or `settings_ui` — range clamp unverified. |
 | `screen→world` math for UI/cursor | PARTIAL | `render/entities.rs::snap_to_screen_pub` (992), `draw_cam` | World-anchored snapping exists; `DoDraw_UpdateCameraPosition` (`Main.cs:62590`) is split between `world_sim/camera.rs` and `frame.rs` and was not compared line-by-line here (module 01 territory). |
@@ -105,15 +105,15 @@ entities ≥ water → UI, nor the zoom clamp, nor filter ordering vs `EndCaptur
   (`Main.cs:62249-62326`); the Rust order is `draw_tiles` → rain/sand/sparks → leaves →
   wires → player. No test or doc asserts equality; the ROADMAP row for entity ordering
   cannot be marked DONE on this evidence.
-- **~~Missing full-screen effects~~ (fixed by S1-E-16, 2026-11-16)** — `ScreenDarkness`
+- **~~Missing full-screen effects~~ (fixed by S1-E-16 + W4-d70)** — `ScreenDarkness`
   (`DrawBack` after the background overlays, `Main.cs:62217`; `DrawFront` at `:62322`),
   `MoonlordDeathDrama.DrawWhite`/`DrawPieces`/`DrawExplosions` (`:62323`, `:63276-63277`)
   and `ScreenObstruction.Draw` (`:62324`) now land in
-  `crates/tr-app/src/render/screen_fx.rs`. Still absent, and now recorded per-effect:
-  `DrawPaladinsShield` (`Main.cs:57196`) and `DrawInfernoRings` (`:64275`) gate on
-  `Player.hasPaladinShield`/`defendedByPaladin`/`inferno`/`flameRingScale`/`flameRingRot`,
-  which the port's `Player` does not carry; `DrawLensFlare` (`:62509`) belongs to the
-  unported `NextHorizonRenderer`. See `docs/ANALYSIS.md` "The screen effects (S1-E-16)".
+  `crates/tr-app/src/render/screen_fx.rs`. W4-d70 (2026-11-21) landed the remaining
+  five rows: `DrawPaladinsShield`/`DrawPaladinsShieldBoundary` (`Main.cs:57196-57275`),
+  `DrawPrettyStarSparkle` (`:35297-35313`), `DrawInfernoRings` (`:64275-64324`) and
+  `DrawLensFlare` (`NextHorizonRenderer.cs:363-533`), at the `:62316-62320` seam.
+  See `docs/ANALYSIS.md` "The screen effects (S1-E-16)".
 - **Capture mode missing (behavioural)** — no `CaptureManager`; anything keyed on
   `IsCapturing`/`SceneMetrics` suppression (`Main.cs:62518`) cannot work.
 - **Zoom clamp unverified (behavioural)** — policy requires 1.0–2.0 and

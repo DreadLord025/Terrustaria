@@ -325,6 +325,9 @@ pub(crate) fn draw_tiles(
     // weather-vane bob (`Main.cs:2237`). Ticked once per client update by
     // `App::animate_tiles_phase` (`Main.cs:17150`).
     tile_anim: &tr_core::drawdata_anim::TileAnimator,
+    // W4-d70: `MoonLordScreenShaderData.LatestFilterStrength` — the
+    // `GetMoonLordColoring` input threaded to the NPC pass.
+    latest_filter_strength: f32,
 ) -> TileDrawStats {
     let t_total = Instant::now();
     // `TileDrawing._rand` (`TileDrawing.cs:191`): the leaf-roll stream, pinned
@@ -576,6 +579,7 @@ pub(crate) fn draw_tiles(
         zoom,
         screen,
         true,
+        latest_filter_strength,
     );
 
     scratch.open.clear();
@@ -1197,6 +1201,7 @@ pub(crate) fn draw_tiles(
         zoom,
         screen,
         false,
+        latest_filter_strength,
     );
     draw_phase("player");
     if let Some(p) = player {

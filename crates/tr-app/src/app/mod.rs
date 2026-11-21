@@ -1126,6 +1126,12 @@ pub(crate) struct WorldFrameKey {
     /// accumulators: the networked entities drawn inside the cached world
     /// range. Zero in single-player (the offsets are zero and no peers).
     pub(crate) net_key: u32,
+    /// W4-d70: `MoonLordScreenShaderData.LatestFilterStrength` — the Moon Lord
+    /// parts' `GetMoonLordColoring` tint (`Main.cs:26325`) rides the cached
+    /// world range. Zero unless a Moon Lord part is present, so Moon-Lord-free
+    /// worlds keep the pre-wiring cache behaviour bit-for-bit (the tile_anim
+    /// key's convention).
+    pub(crate) moon_lord_strength: u32,
     pub(crate) world_revision: u64,
 }
 
@@ -1160,6 +1166,7 @@ mod frame_key {
             waterfall: 0,
             tile_anim: 0,
             net_key: 0,
+            moon_lord_strength: 0,
             world_revision: 0,
         };
         assert_ne!(key(1.2), key(1.0), "blind's GlobalBrightness drop must change the key");
@@ -1192,6 +1199,7 @@ mod frame_key {
             waterfall: 0,
             tile_anim,
             net_key: 0,
+            moon_lord_strength: 0,
             world_revision: 0,
         };
         let mut a = tr_core::drawdata_anim::TileAnimator::new();
@@ -1206,6 +1214,39 @@ mod frame_key {
         let before = a.anim_key();
         a.weather_vane_bobframe += 1;
         assert_ne!(before, a.anim_key(), "the weather-vane bob rides the key");
+    }
+
+    /// W4-d70 key-coverage witness: the Moon Lord parts' `GetMoonLordColoring`
+    /// tint (`Main.cs:26325`, `Color.Lerp(White, (183,255,255), strength)`)
+    /// rides the cached world range, so two frames that differ only in
+    /// `LatestFilterStrength` must not share a cached range. The key input is
+    /// the strength's bits, gated on a Moon Lord part being present (zero
+    /// otherwise — Moon-Lord-free worlds keep the pre-wiring cache behaviour).
+    #[test]
+    fn moon_lord_strength_changes_the_frame_key() {
+        let key = |strength: f32| WorldFrameKey {
+            cam_tile: [0, 0],
+            zoom: 0,
+            screen: [0, 0],
+            sky_light: [0, 0, 0],
+            hell_glow: 0,
+            light_params: 0,
+            light_mode: 0,
+            anim: 0,
+            player_key: 0,
+            npc_key: 0,
+            items_key: 0,
+            hand_key: 0,
+            light_generation: 0,
+            brightness: 0,
+            waterfall: 0,
+            tile_anim: 0,
+            net_key: 0,
+            moon_lord_strength: strength.to_bits(),
+            world_revision: 0,
+        };
+        assert_ne!(key(1.0), key(0.5), "a changed strength must change the key");
+        assert_eq!(key(1.0), key(1.0), "an unchanged strength must not");
     }
 }
 

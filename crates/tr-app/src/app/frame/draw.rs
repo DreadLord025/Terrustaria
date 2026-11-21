@@ -1038,6 +1038,24 @@ impl App {
                             }
                             h
                         },
+                        // W4-d70: the Moon Lord parts' `GetMoonLordColoring`
+                        // tint rides the cached world range; the strength only
+                        // rides the key while a part is present (the tile_anim
+                        // key's convention — Moon-Lord-free worlds keep the
+                        // pre-wiring cache behaviour bit-for-bit).
+                        moon_lord_strength: if npcs.iter().any(|n| {
+                            matches!(
+                                n.kind,
+                                crate::npc::NpcKind::MoonLordHead
+                                    | crate::npc::NpcKind::MoonLordHand
+                                    | crate::npc::NpcKind::MoonLordCore
+                                    | crate::npc::NpcKind::MoonLordFreeEye
+                            )
+                        }) {
+                            filter_driver.latest_filter_strength.to_bits()
+                        } else {
+                            0
+                        },
                         world_revision: world.revision,
                     };
                     let reuse_world = !crate::env::no_cache() && *world_key == Some(key);
@@ -1183,6 +1201,9 @@ impl App {
                             // S1-G-1f: the wired tile animator's rows/counters
                             // (`Main.tileFrame[kind]`, `TileDrawing.cs:4533`).
                             &self.tile_anim,
+                            // W4-d70: the Moon Lord parts' `GetMoonLordColoring`
+                            // input (`Main.cs:26325`).
+                            filter_driver.latest_filter_strength,
                         );
                         *world_key = Some(key);
                     }
@@ -1352,6 +1373,62 @@ impl App {
                         );
                     }
 
+                    // `Main.cs:62316-62317`: `DrawInfernoRings` then
+                    // `DrawPaladinsShield`, after the over-wire cached
+                    // projectiles (`:62315`) and before `DrawLensFlare`.
+                    // `FocusHelper.AllowPlayerToEmitEffects` (`FocusHelper.cs:29`)
+                    // is `!WorldUpdateStepper.DrawnThisUpdate` — the ring
+                    // animation advances only on a frame that did not step.
+                    if let Some(p) = player.as_mut() {
+                        crate::render::screen_fx::draw_inferno_rings(
+                            renderer,
+                            lookups,
+                            p,
+                            draw_cam,
+                            world_zoom,
+                            screen,
+                            !self.stepper.drawn_this_update,
+                        );
+                    }
+                    if let Some(p) = player.as_ref() {
+                        // The C# walks `Main.player[0..255]`; the port's
+                        // `PlayerNet` carries no team/shield/dead state, so the
+                        // peer loops no-op until the net layer carries them
+                        // (single-player has no peers either way).
+                        crate::render::screen_fx::draw_paladins_shield(
+                            renderer,
+                            lookups,
+                            p,
+                            &[],
+                            draw_cam,
+                            world_zoom,
+                            screen,
+                        );
+                    }
+                    // `Main.cs:62320`: `DrawLensFlare`, under the background
+                    // zoom (`PlayerInput.SetZoom_Background`). The
+                    // `ShouldDrawSurfaceBackground` gate (`Main.cs:59630-59642`)
+                    // and `HorizonHelper.SunVisibilityEnabled` (the sun-occlusion
+                    // pixel target, unported → assumed visible) gate the chain.
+                    {
+                        let remix = world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
+                        let drunk = world.seeds.contains(tr_core::seeds::SeedFlags::DRUNK);
+                        let map_fullscreen =
+                            settings.map_enabled && map.as_ref().is_some_and(|m| m.open);
+                        let should_draw_surface_bg = !remix && !(remix && drunk) && !map_fullscreen;
+                        crate::render::screen_fx::draw_lens_flare(
+                            renderer,
+                            lookups,
+                            world,
+                            draw_cam,
+                            bg_zoom,
+                            screen,
+                            self.atmo,
+                            rain.visual_alpha(),
+                            should_draw_surface_bg,
+                            true,
+                        );
+                    }
                     // `Main.cs:62322-62324`: `ScreenDarkness.DrawFront`,
                     // `MoonlordDeathDrama.DrawWhite` and `ScreenObstruction.Draw`
                     // close the world pass, after the projectiles (`:62251`) and

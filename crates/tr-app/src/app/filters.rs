@@ -121,6 +121,10 @@ pub(crate) struct SceneVisualInputs<'a> {
     pub(crate) bg_delay: i32,
     /// `Main.GlobalTimeWrappedHourly` (`ScreenShaderData.cs:146`).
     pub(crate) global_time: f32,
+    /// The NPC rows `MoonLordScreenShaderData.UpdateMoonLordIndex` reads
+    /// (`MoonLordScreenShaderData.cs:30-68`): the core (398) and deathray eyes
+    /// (400). Filled by `update_scene` from the live NPC list (W4-d70).
+    pub(crate) moon_lord_npcs: &'a [tr_core::scene::MoonLordShaderNpc],
 }
 
 /// The `ApplyVisuals` driver: filter board + storm shader state + the last
@@ -172,6 +176,12 @@ pub(crate) struct FilterDriver {
     pub(crate) moon_lord_shake_wanted: bool,
     /// MoonLordShake's uniform while its filter is visible.
     pub(crate) moon_lord_shake: Option<FilterParams>,
+    /// `MoonLordScreenShaderData.LatestFilterStrength`
+    /// (`MoonLordScreenShaderData.cs:10`, static ctor `:98-101` starts at 1):
+    /// the value `Main.GetMoonLordColoring` (`Main.cs:26325`) lerps the Moon
+    /// Lord's parts toward `(183, 255, 255)` with. Refreshed by the shake's
+    /// `Apply` each frame it runs (W4-d70).
+    pub(crate) latest_filter_strength: f32,
 }
 
 impl FilterDriver {
@@ -199,6 +209,9 @@ impl FilterDriver {
             moon_lord_shake_intensity: None,
             moon_lord_shake_wanted: false,
             moon_lord_shake: None,
+            // `MoonLordScreenShaderData.cs:98-101`: the static ctor starts
+            // `LatestFilterStrength` at 1.
+            latest_filter_strength: 1.0,
             water: None,
         };
         driver.sync_settings(&crate::settings::Settings::default());
@@ -515,13 +528,24 @@ impl FilterDriver {
         match id {
             FilterId::MoonLordShake => {
                 // S1-G-6: `UseIntensity` (the tick driver) over the
-                // `ScreenShaderData` default 1 (`:17`); `UseTargetPosition(
-                // Zero)` — the exact `UpdateMoonLordIndex` value while the
-                // filter is active, because no Moon Lord exists before the
-                // countdown lands (`MoonLordScreenShaderData.cs`).
+                // `ScreenShaderData` default 1 (`:17`).
                 params.pass_index = tr_render::PassId::MOON_LORD_SHAKE.0;
-                params.target_pos = [0.0, 0.0];
                 params.intensity = self.moon_lord_shake_intensity.unwrap_or(1.0);
+                // W4-d70: `MoonLordScreenShaderData.Apply`
+                // (`MoonLordScreenShaderData.cs:81-96`) — the `aimAtPlayer:
+                // false` row tracks the NPC anchor (`UpdateMoonLordIndex`) and
+                // publishes `LatestFilterStrength` (the `GetMoonLordColoring`
+                // input). While the countdown runs no Moon Lord exists, so the
+                // anchor is Zero and the strength fades by its distance from
+                // the scene centre — the S1-G-6 "unreachable target" note, now
+                // computed rather than assumed.
+                let (target, strength) = tr_core::scene::moon_lord_shader_apply(
+                    false,
+                    metrics.center,
+                    inputs.moon_lord_npcs,
+                );
+                params.target_pos = target;
+                self.latest_filter_strength = strength;
             }
             FilterId::Graveyard => {
                 // `SceneState.cs:107-114` (`:113`'s UseIntensity(1.2) is a
@@ -643,6 +667,7 @@ mod tests {
             bg_style: 0,
             bg_delay: 0,
             global_time: 12.5,
+            moon_lord_npcs: &[],
         }
     }
 

@@ -23588,16 +23588,47 @@ Deliberate deviations, recorded rather than guessed:
   `white_uv` quad (`push_fx_rect`). `MoonlordPiece.GetLight` averages the port's
   `LightMap` rather than `Lighting.GetColor` - the same tile colours, a
   different seam.
-* `DrawPaladinsShield` and `DrawInfernoRings` are **not** drawn: their gates are
-  `Player.hasPaladinShield` / `defendedByPaladin` / `inferno` and the
-  `flameRingScale` / `flameRingRot` animation state, none of which the port's
-  `Player` carries. The sheets (`Extra_98`, `FlameRing`) load so the draws can
-  be added without touching the asset pipeline.
-* The lens flare (`Main.DrawLensFlare`, `Main.cs:62509-62514`) is a
-  `NextHorizonRenderer` feature that the port does not have.
+* `DrawPaladinsShield` and `DrawInfernoRings` **landed W4-d70 (2026-11-21)**:
+  `Player` now carries `defendedByPaladin` / `inferno` / `flameRingScale` /
+  `flameRingRot` (the buff-43 / buff-116 grant arms, `Player.cs:11882-11885` /
+  `:10212-10213`, cleared by `ResetEffects` `:18776` / `:18489`; the halo
+  counters are NOT reset, exactly like the C# fields). `screen_fx.rs` ports
+  `DrawPaladinsShield` / `DrawPaladinsShieldBoundary` (`Main.cs:57196-57275`),
+  `DrawPrettyStarSparkle` (`:35297-35313`) and `DrawInfernoRings`
+  (`:64275-64324`), wired at the `Main.cs:62316-62317` seam (after the
+  over-wire cached projectiles, before `DrawLensFlare`). The ring animation
+  advances only while `FocusHelper.AllowPlayerToEmitEffects`
+  (`!WorldUpdateStepper.DrawnThisUpdate`). The paladin peer loops read a
+  `PaladinPeer` snapshot; the port's `PlayerNet` carries no team/shield/dead
+  state, so both loops no-op until the net layer carries them (single-player
+  has no peers either way — the C# skips `Main.myPlayer`).
+* The lens flare **landed W4-d70**: `screen_fx.rs::draw_lens_flare` ports
+  `NextHorizonRenderer.DrawLensFlare` (`NextHorizonRenderer.cs:363-386`) +
+  `DrawSunriseFlare` / `DrawSunsetFlare` (`:401-532`) + `LensFlareElement.Draw`
+  (`LensFlareElement.cs:28-50`), the four `Misc/Sunflare/Lens/*` sheets packed
+  by the static loader. Deviations: the `GameShaders.Misc["LensFlare"]`
+  sun-occlusion pixel mask (`HorizonHelper.SunVisibilityPixelTexture`) has no
+  port — the flare draws at full temporal intensity (`SunVisibilityEnabled`
+  assumed true); the `LensFlareElement` advanced-shadow offset
+  (`GetAdvancedShadow`, `:34-37`) has no port — `num` is 0; the
+  `sunScorchCounter` override (`AdjustIntensity`, `:392-397`) takes 0 (the
+  debuff has no source). The `ShouldDrawSurfaceBackground` gate
+  (`Main.cs:59630-59642`, remix/drunk seeds + fullscreen map) is honoured.
+* The `MoonLordScreenShaderData.Apply` half **landed W4-d70**: the S1-G-6 tick
+  driver fed the shake's `UseIntensity` but left `UpdateMoonLordIndex` /
+  `LatestFilterStrength` inert. `tr_core::scene::moon_lord_target_position` /
+  `moon_lord_shader_apply` (`MoonLordScreenShaderData.cs:20-96`) now compute
+  the world anchor (the core centre, the deathray-eye lerp, the `-2` despawn
+  fade) and the distance-faded strength; the shake's `build_params` arm feeds
+  `UseTargetPosition` and publishes `LatestFilterStrength`, which
+  `Main.GetMoonLordColoring` (`Main.cs:26323-26332`) lerps the Moon Lord parts
+  toward `(183, 255, 255)` with (the `draw_npcs` tint, threaded through
+  `draw_tiles`; the strength rides the G6 `WorldFrameKey` only while a part is
+  present). `Main.ClearVisualPostProcessEffects` (`Main.cs:52114-52252`)
+  deactivates the board on save-and-quit.
 * `FocusHelper.AllowPlayerToEmitEffects` (the `!WorldUpdateStepper.DrawnThisUpdate`
-  split between a drawn and a stepped frame) is unported, so an inferno-ring
-  animation would always advance - moot while the draw is unwritten.
+  split between a drawn and a stepped frame) is now honoured by the inferno
+  ring animation (W4-d70).
 
 ## S1-E-35 - weather control rows (deviation record)
 

@@ -1166,6 +1166,23 @@ pub struct Player {
     /// Paladin's/Frozen/Hero shields above 25% life (`:15348-15353`).
     /// The hurt-side team redirect (`:38190`) rides C-7.
     pub has_paladin_shield: bool,
+    /// `Player.defendedByPaladin` (`Player.cs:1406`, reset `:18776`): the
+    /// Paladin's Shield buff (43) arm (`:11882-11885`). The draw half is
+    /// `Main.DrawPaladinsShield`'s second loop (`Main.cs:57224-57233`).
+    pub defended_by_paladin: bool,
+    /// `Player.inferno` (`Player.cs:946`, reset `:18489`): the Inferno
+    /// Potion buff (116) flag arm (`:10212-10213`). The light half is
+    /// already fed by `player_lights.rs`; the draw half is
+    /// `Main.DrawInfernoRings` (`Main.cs:64275-64324`).
+    pub inferno: bool,
+    /// `Player.flameRingScale` (`Player.cs:950`, default 1f): the inferno
+    /// halo's breathing scale, advanced 0.004/draw and reset to 0.8 at 1
+    /// (`Main.cs:64290-64300`). Never reset by `ResetEffects` — it persists
+    /// across buff expiry exactly like the C# field.
+    pub flame_ring_scale: f32,
+    /// `Player.flameRingRot` (`Player.cs:948`): the halo rotation, advanced
+    /// 0.05/draw and wrapped at ±2π (`Main.cs:64301-64311`).
+    pub flame_ring_rot: f32,
     /// M5-SEED-2: `Main.vampireSeed` — the `vampirism` micro seed's
     /// `InitializeSecretSeeds` write (`WorldGen.cs:555-558`). `UpdateLifeRegen`'s
     /// OnFire row reads it (`Player.cs:18983-18992`: −100 instead of −8, and the
@@ -2667,6 +2684,12 @@ impl Player {
             no_knockback: false,
             fire_walk: false,
             has_paladin_shield: false,
+            // `Player.cs:1406`/`:946`/`:948-950` — the buff-granted flags
+            // start false; `flameRingScale`'s field initializer is 1f.
+            defended_by_paladin: false,
+            inferno: false,
+            flame_ring_scale: 1.0,
+            flame_ring_rot: 0.0,
             // M5-SEED-2: `Main.vampireSeed` (`WorldGen.cs:555-558`) — the
             // OnFire regen row's source (`Player.cs:18983-18992`).
             vampirism: world
@@ -4687,6 +4710,23 @@ impl Player {
         self.center()
     }
 
+    /// `Player.CanDefendWithPaladinsShield` (`Player.cs:38188-38195`):
+    /// active, alive, shield-bearing, on a non-zero team matching the
+    /// other player's, and above 25% of the effective life cap
+    /// (`statLife > statLifeMax2 * 0.25f`, strict >). The port's single
+    /// `max_hp` stands in for `statLifeMax2` (the `player_lights.rs`
+    /// half-life-gate precedent). `active` is true for the live player.
+    pub fn can_defend_with_paladins_shield(&self, other_player_team: i32) -> bool {
+        if !self.dead
+            && self.has_paladin_shield
+            && self.team > 0
+            && self.team == other_player_team
+        {
+            return self.hp as f32 > self.max_hp as f32 * 0.25;
+        }
+        false
+    }
+
     /// `Player.MountedTop` (`Player.cs:3349-3360`):
     /// `(position.X + width/2, position.Y + HeightOffsetHitboxCenter)`, or
     /// `Bottom.Y - HeightOffsetHitboxCenter` under reversed gravity. The port
@@ -5897,6 +5937,12 @@ impl Player {
         self.chilled = false;
         self.frozen = false;
         self.webbed = false;
+        // `Player.cs:18489` (`inferno = false`) and `:18776`
+        // (`defendedByPaladin = false`): the buff-116 / buff-43 arms below
+        // re-grant per tick. `flameRingScale`/`flameRingRot` are NOT reset
+        // (no ResetEffects writer exists — the halo animation persists).
+        self.inferno = false;
+        self.defended_by_paladin = false;
         // S1-P-i41 — the water-mount / Cursed flag clears of `ResetEffects`:
         // `canFloatInWater = false` (`Player.cs:18332`), `accFlipper = false`
         // (`:18361`), `noItems = false` / `cursed = false` (`:18687-18688`),
@@ -6724,6 +6770,17 @@ impl Player {
                     self.lava_vision = true;
                     self.fire_walk = true;
                 }
+                // W4-d70 — `:10212-10213`: the Inferno Potion (116) flag
+                // arm. The `AddLight` half (`:10215`) is already fed by
+                // `player_lights.rs::player_buff_lights` (same RGB, no
+                // double-feed); the NPC/PvP damage scan (`:10216-10264`)
+                // rides the buff-wiring lane (R15), not the screen-effect
+                // draw this flag gates (`Main.DrawInfernoRings`).
+                116 => self.inferno = true,
+                // W4-d70 — `:11882-11885`: the Paladin's Shield buff (43)
+                // grants `defendedByPaladin` (the `DrawPaladinsShield`
+                // second loop's gate, `Main.cs:57224`).
+                43 => self.defended_by_paladin = true,
                 _ => {}
             }
         }
