@@ -5,7 +5,8 @@
 > the 26d key (00:06:06), d21's add (02:40:39) is a loser → 162
 > (uncontested, the sequential 151-236 block). Executed by the d21 SEAL
 > round; the FINAL band table + the 1-210 ledger live in
-> `308-projectile-ai-201-210-final.md`. The `.rs` module-header cites
+> `340-projectile-ai-201-210-final.md` (renamed 308→340 per registry §9:
+> g13 KEEPS 308 §8.5). The `.rs` module-header cites
 > still say `26d-…` — the in-flight fold-2 lane owns those files; the
 > rename's code-comment sweep rides its commit (or the merge).
 

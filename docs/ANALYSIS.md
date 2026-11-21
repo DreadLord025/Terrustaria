@@ -39307,7 +39307,8 @@ blocks and hand arithmetic.
 ### SEAL addendum (2026-11-21, head `70fe977c3`, registry 308)
 
 The FINAL band table + the proj-AI-1-210-all-decades-CLOSED ledger live in
-`docs/research/308-projectile-ai-201-210-final.md`; the census renumbered
+`docs/research/340-projectile-ai-201-210-final.md` (renamed 308→340 per
+registry §9: g13 KEEPS 308 §8.5); the census renumbered
 26d → **162** (collision registry §6, d12 owns the 26d key).
 
 - **Folds 3+4 UNFOLDED** (`b8a4d1288` + `70fe977c3`): the
@@ -39345,7 +39346,7 @@ The FINAL band table + the proj-AI-1-210-all-decades-CLOSED ledger live in
   row + the aiStyle-208 arm live here (`9fa9e9ba`), the cue map entry
   lands at the merge hunk-disjoint (d21 ports no 1115 Kill cue; the
   d76 1020/1105/1084 cues compose the same way against d21's draw-only
-  Kill seams). Receipt: research/308 S2.
+  Kill seams). Receipt: research/340 S2.
 - **The ledger**: the C# aiStyle space is exactly 1..210 (`AI()` closes
   `:36803-36807`; 809 `this.aiStyle = N` writes, 210 distinct, max 210,
   zero 207 writes). All 21 decade lanes carry their band's machines;
@@ -39355,4 +39356,4 @@ The FINAL band table + the proj-AI-1-210-all-decades-CLOSED ledger live in
   merge-pending), the kind-gated 170/171/173/179/180 (scan artifacts,
   not gaps), and the 207 faithful no-op. CLOSED = census-complete +
   machine-ported + witnesses-written; NOT merged, NOT dispatch-live
-  everywhere, NOT run. The per-tip evidence table: research/308 S3.
+  everywhere, NOT run. The per-tip evidence table: research/340 S3.

@@ -1,6 +1,14 @@
-# 308 — W4-d21 FINAL: the projectile aiStyles 201-210 band table + the proj-AI-1-210-all-decades-CLOSED ledger
+# 340 - W4-d21 FINAL: the projectile aiStyles 201-210 band table + the proj-AI-1-210-all-decades-CLOSED ledger
 
-> Numbered **308** per the research-number collision registry
+> **Renumber chain: 308 → 340.** registry-150 §9 UNIFIED FINAL (W4-d54
+> tip `b243c7086`, §9.2 row 340): **g13 KEEPS 308** (§8.5 — g13's executed
+> 16:31 pre-§8 push wins); d21's `308-projectile-ai-201-210-final.md`
+> (`5a6ed468e`) contests that push → **d21 → 340**. This file is the
+> renamed `308-projectile-ai-201-210-final.md`; all clean refs repointed
+> (INDEX / ANALYSIS / PORT_MAP / anchors / the 162 census cross-ref).
+> The historical §7.4 pick narrative below is kept verbatim as evidence.
+>
+> Numbered **308** (at seal time) per the research-number collision registry
 > (`150-research-number-registry.md` §7.4, W4-d54 `0426245f2`: "Numbers
 > 308+ are FREE", live total 148 = 151–236 + 246–280 + 281–303 + 304–307).
 > Fresh all-tip sweep this round (2026-11-21 ~16:00, every
