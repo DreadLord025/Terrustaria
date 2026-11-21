@@ -1,19 +1,29 @@
-# 142 — The savings draw, two-way keep-one (W4-d122 × W4-g58)
+# 142 — The savings draw, keep-one (W4-d122 × W4-g58 × W4-g12) — FINAL
 
-Two branches ported `ItemSlot.DrawSavings` independently:
+Three branches ported `ItemSlot.DrawSavings` independently (the final
+phase adds g12c's receipt + the g58d happiness-latch receipt below):
 
 * **W4-d122** (`10420b96`, this branch): `crates/tr-app/src/ui/savings.rs`
   (428 lines) — BOTH `DrawMoney` arms (horizontal + vertical), the
   `CoinSlot.Savings[4]` machine in `ui/coin_slot.rs`, the `Coin_0..3` spin
   strips as `Lookups::coin_anim` + `coin_anim_uv` (with the C# `sizeLimit`
   clamp and a static-icon fallback), wired at the REFORGE call site
-  (`ui/mod.rs`, `(180, 258)`, horizontal).
+  (`ui/mod.rs`, `(180, 258)`, horizontal). The final phase adds the medal
+  arm, the shop-panel chrome, the count-text origin fix, the S1-H-9
+  `draw_slot` consumption and the hair-window price core — the SUPERSET.
 * **W4-g58** (`1328b118`, docs tail `0d683ec4`): `ui/savings.rs` (319 lines)
   — the VERTICAL arm only, the same `Savings[4]` machine, the spin strips
   as `Lookups::coin_strips` + `coin_strip_frame` (no clamp, no fallback),
   wired at the SHOP-PANEL call site through the new
   `ui/shop_happiness.rs` chrome (Shop label + NPCHappiness icon + P0
   percent).
+* **W4-g12** (`b467699f`, doc-sweep 5): `ui/savings.rs` (433 lines) — BOTH
+  `DrawMoney` arms, the `savings_entries[4]` + `update_savings` machine,
+  the `Coin_0..3` strips + `DrawItemCoin Frame(1,8)` cells, wired at the
+  SHOP-PANEL call (`Main.cs:41791`, 504/invBottom vertical, before the g58
+  chrome); the reforge/buy sites stay with their lanes, the custom-currency
+  route is the d122 follow-up, `GetAlpha` folds to White. A THIRD copy of
+  the same module — the keep-one below resolves all three.
 
 ## The C# caller census (ALL `ItemSlot.DrawSavings` call sites)
 
@@ -24,14 +34,15 @@ three callers, all in `Main`:
 | --- | --- | --- | --- | --- |
 | 1 | `Main.cs:41637` (reforge menu, `DrawInventory`) | `num51 + 130, invBottom` = (180, 258) | `horizontal: true` | inside `Main.reforgeItem.type > 0` (`:41584`), menu open (`InReforgeMenu`, `:41557`) |
 | 2 | `Main.cs:41791` (shop panel, `DrawInventory`) | `504, invBottom` = (504, 258) | vertical (default) | `npcShop > 0 && !PipsUseGrid` (`:41788`); between the Shop label (`:41790`) and the happiness icon (`:41792`) |
-| 3 | `Main.cs:43862` (`DrawHairWindow`) | `num18, num19 - 70` = `(screenWidth/2 − HairStyleBack.Width()/2 + 22 + 18, screenHeight/2 + 60 + 156 − 70)` | `horizontal: true` | `num11 > 0` (the hairstyle-change price, `:43860`) |
+| 3 | `Main.cs:43862` (`DrawHairWindow`) | `num18, num19 - 70` = `(screenWidth/2 − HairStyleBack.Width()/2 + 18, screenHeight/2 + 60 + 156 − 70)` = `(screenW/2 − backW/2 + 18, screenH/2 + 146)` | `horizontal: true` | `num11 > 0` (the hairstyle-change price, `:43860`) |
 
 **Both branches' call sites are REAL — the union is one module + all
 three call sites.** Caller 3's window (the Stylist's in-game hair window,
 `Main.hairWindow` → `DrawInterface_21_HairWindow`, `Main.cs:45726-45732`)
 is UNPORTED (the port's hair picker is char-creation only,
-`ui/char_creation.rs`), so caller 3 stays a recorded no-consumer until
-the hair window lands; the module's horizontal arm already covers its
+`ui/char_creation.rs`); the final phase ports its self-contained price +
+savings-position core (`ui/hair_window.rs`) and task-seeds the full window
+(§hair-window below). The module's horizontal arm already covers its
 shape (`horizontal: true`, price-gated).
 
 ## Arm-by-arm comparison vs the C#
@@ -235,3 +246,91 @@ rest/pulse/ctx43 — `coin_slot.rs`/`slot.rs`), and the hair-window price
 core (the price ladder + banker's rounding, the coin-text denomination
 walk, the savings position — `ui/hair_window.rs`). The shop-FULL census
 is doc-only (the per-case witnesses already pin the d122 rows).
+
+## FINAL receipts (the g58d happiness-latch lane + the g12c third copy)
+
+The final phase closes the register with the two sibling-lane receipts
+the keep-one decision must survive at merge.
+
+### g58d — the happiness-latch round (W4-g58, `3ac5432d`..`84db0ffb`)
+
+g58's later round ports the `currentShoppingSettings.PriceAdjustment`
+TALK-OPEN latch census: the latch has exactly ONE write site
+(`Player.SetTalkNPC`, `Player.cs:4383-4390`; the open chain
+`Main.cs:42939 HoverOverNPCs` ← `DrawMouseOver :45150` → `:43081
+SetTalkNPC(i)`), and SIX readers — the nurse heal cost
+(`GetNurseHealCost :40100`, `3ac5432d`), the reforge price
+(`Main.cs:41584-41591`, `13be13a6`), the tax-collector payout DIVIDE
+(`NPCChatText_DoTaxCollector :40180-40225`, `a027138d` — the happy
+collector pays MORE, the coins spawn at the player centre), the buy/sell
+lane (`Player.GetItemExpectedPrice :35382-35388`, cross-noted), the
+Angler rarity (`Player.cs:56306`), and **the hair price**
+(`Main.cs:43799`). The constants-off round (`f6c6007d`) lands the pets'
+housingCategory crowd filter + the ≤0.82 max-happiness achievement
+(`AchievementsHelper.cs:355-357`, the row-targeted `Complete()`); the
+nurse recompute resolves via `3ac5432d`; the portrait hop stays
+S1-E-10b-deferred.
+
+**Receipt for THIS register:** the hair-window price core
+(`ui/hair_window.rs::hair_price`) reads the SAME talk-open latch
+(`price_adjustment` param = `currentShoppingSettings.PriceAdjustment`),
+NOT a fresh mood — consistent with g58d's census (the hair price is its
+sixth reader). The savings DRAW itself reads no latch (the
+`_customCurrencyForSavings` medal latch is a separate `ItemSlot` static,
+already ported in the sixth round). **Merge cross-note:** g58d's
+`ui/shop_happiness.rs` carries the `happiness_button`/`npc_chat::
+draw_panel` report gate (its `ReportHappiness.Condition` slice) that
+d122's chrome port deliberately did NOT take (the sixth-round note); the
+eventual main merge keeps g58d's panel gate + d122's chrome (the two
+`shop_happiness::draw` bodies differ only in the savings-call signature).
+g58d's latch readers (nurse/reforge/tax) are its OWN lane — d122 ports
+none of them (the hair price is the only latch reader d122 touches, via
+the price core).
+
+### g12c — the third savings copy (W4-g12, `b467699f`)
+
+g12's doc-sweep 5 ported the savings pile independently (the intro's
+third bullet): both DrawMoney arms, the `savings_entries[4]` machine, the
+Coin_0..3 strips, the SHOP-PANEL call wired (504/invBottom vertical),
+`GetAlpha` folded to White, the custom-currency route left as the d122
+follow-up. It is a STRICT SUBSET of d122's final module:
+
+| Arm | g12c | d122 final | Verdict |
+| --- | --- | --- | --- |
+| DrawMoney arms | both | both | tie |
+| Savings machine | `savings_entries[4]` + `update_savings` | same (+ `update_custom`, the medal arm) | d122 superset |
+| Coin strips | `Coin_0..3` + `DrawItemCoin Frame(1,8)` | `coin_anim`/`coin_anim_uv` + the `sizeLimit` clamp + static fallback | d122 superset |
+| Count-text origin | `(0, LineSpacing)` FourWay (the frozen-scale bug, scale 1) | the scaled origin fix (`y + ls*0.75 − ls*scale`) | d122 (the sixth-round fix) |
+| Medal arm | absent (the d122 follow-up) | `draw_savings_medals` + `count_savings` + `update_custom` | d122 |
+| Call sites | shop-panel only | reforge + shop-panel + hair-price core | d122 superset |
+| GetAlpha | folds to White | White (coins alpha 0) | tie |
+| S1-H-9 consumption | absent | `draw_slot` consumes `UpdateDrawState` | d122 |
+
+**Keep-one verdict (three-way):** KEEP d122's `ui/savings.rs` +
+`ui/coin_slot.rs` (the superset — both arms, the clamp + fallback, the
+medal arm, the origin fix, the S1-H-9 consumption). DROP g12c's
+`savings.rs`/`coin_slot.rs` savings halves and g58b's vertical-only
+module at merge; KEEP g58b's `shop_happiness.rs` chrome (d122 already
+ported it onto its own signature) + g58d's panel gate. The
+`coin_anim`/`coin_anim_uv` names win over g12c's/g58b's strip names (pure
+rename); the `assets.rs` Coin_0..3 loaders are the same four files — keep
+one. g12c's shop-panel wiring (`app/frame/draw.rs`, `ui/mod.rs`) is the
+same call d122's chrome makes — keep d122's (it carries the medal latch +
+the currency param).
+
+### The final-phase landing summary (this branch, `task/W4-d122-shop-restock-npc`)
+
+* `34686466` — phase 1: the S1-H-9 `UpdateDrawState` follow-up
+  (`draw_slot` consumes the machine; the coin spin/jump/pulse/fade + the
+  dye dim; the shared `draw_item_coin`).
+* `77eb1f3e9` — phase 2: the shop-FULL census (all-25-NPCs, doc-only; the
+  d123/f39b/f41d lane ownership + the keep-one merge cross-notes).
+* `6150da427` — phase 3: the hair-window price core (`ui/hair_window.rs`)
+  + the task-seed (the full window needs the 213 PlayerHair textures).
+* the final docs commit — this register's FINAL receipts + the PORT_MAP
+  rows.
+
+All witnesses WRITTEN NOT RUN (code-only mode). The register is CLOSED:
+the savings draw is one module (d122's superset) + all three call sites
+(two wired, the hair price core ready), the S1-H-9 consumption landed,
+the shop census complete with the sibling-lane cross-notes.

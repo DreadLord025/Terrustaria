@@ -7333,6 +7333,13 @@ savings machine's clamped-count pulse).
 
 ## The savings keep-one round (W4-d122, sixth round)
 
+> **FINAL (the final phase):** the register is closed in
+> `docs/research/142-savings-keep-one.md` §FINAL-receipts — the three-way
+> keep-one (d122 superset × g58b vertical × g12c third copy), the g58d
+> happiness-latch receipt (the hair price is its sixth latch reader) and
+> the final-phase landing summary. The S1-H-9 follow-up + the shop-FULL
+> census + the hair-window price core sections follow below.
+
 The g58b branch (`1328b118`, W4-g58 D5) ported the SAME `ItemSlot.
 DrawSavings` independently. The two-way arm-by-arm comparison + the
 keep-one decision live in `docs/research/142-savings-keep-one.md`; the
