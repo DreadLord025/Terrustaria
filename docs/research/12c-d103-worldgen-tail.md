@@ -130,3 +130,229 @@ above).
   changes by design — it has no pin). `a == b` determinism asserts stay
   untouched; witnesses written NOT run (code-only lane, no cargo/tests).
 - ONE slice per commit+push; `anchors.txt` row per slice.
+
+## POST FINAL (2026-11-21, final phase — wiring/runtime/keep-one/matrix)
+
+### PF-1 — hardUpdateWorld WIRING verify: LIVE, every tick, gate = `:71501`
+
+The C# chain, re-read in ≤100-line windows:
+
+- `Main.cs:17800-1805`: the in-world branch (`!gameMenu || netMode == 2`)
+  wraps `UpdateWorld_WorldGenAndInvasion` in `SwapRandom("UpdateWorldGen")`.
+- `Main.cs:18099-18119`: the wrapper — `netMode == 1` returns (clients never
+  grow), else `WorldGen.UpdateWorld()` then `Main.UpdateInvasion()`. **No
+  tick-skip counter: every 60 Hz update.** (The dispatch's ":17900-region"
+  pointer lands on `UpdateWorld_NPCs` `:17898` — the hardUpdateWorld cadence
+  is NOT there; the call site is `:18108`.)
+- `WorldGen.cs:71495-71507`: `UpdateWorld`'s head — the
+  `isGeneratingOrLoadingWorld` early return, then
+  `hardModeWorldUpdates = Main.hardMode || (Main.remixWorld &&
+  Main.getGoodWorld && !Main.tenthAnniversaryWorld)` (`:71501`), the
+  `StopBiomeSpreadPower` flag (`:71502-71507`).
+- `WorldGen.cs:71536-71543`: `GetWorldUpdateRate()`; rate 0 returns; the
+  overground `3e-5·rate` picks (`:71568-71601`, ×1.5 raining) and the
+  underground `1.5e-5·rate` picks (`:71619-71622`; the remix `2.5e-5` dual
+  dispatch `:71605-71615` parks — seed lane).
+- `WorldGen.cs:72216-72218` (overground) / `:73252-73254` (underground):
+  `else if (Main.tile[i, j].nactive()) { WorldGen.hardUpdateWorld(i, j); … }`
+  — the ONLY two call sites (grep: `:69600` def + these two).
+- `WorldGen.cs:69600-69605`: the body's own gate —
+  `!hardModeWorldUpdates || inActive()` returns. So the arms run on ACTIVE
+  picks only, and the gate is **hardmode OR remix·getGood·!anniversary —
+  NOT hardmode-only** (a remix·getGood pre-hardmode world still spreads).
+
+The Rust chain (verified live, not just ported):
+
+- `app/frame/world.rs:627-644`: `update_world_frame` → the `step_allowed`
+  branch → `growth_phase(dt)` (`:643`) → `App::update_growth`
+  (`app/mod.rs:1552-1554`) → `world_sim/growth.rs::update_growth` (`:61`).
+- `world_sim/growth.rs:74`: `app.growth_step.tick(...)` — the
+  `FixedStepper::new(1.0/60.0, 8)` (`app/mod.rs:3994`) — every fixed step
+  calls `tr_core::growth::update_world` on the `UpdateWorldGen` stream
+  (`:83-93`).
+- `tr-core/growth.rs:926-998`: `update_world` runs the overground loop
+  (`:960-977`) → `update_world_overground_tile` and the underground loop
+  (`:979-996`) → `update_world_underground_tile`.
+- `tr-core/growth.rs:722-730` (overground, every ACTIVE pick ahead of the
+  type arms — the documented `else if` placement approximation) and
+  `:1733-1741` (underground, after the alch arm, on ACTIVE picks — the C#
+  `nactive()` else-if order) both call `spread::hard_update_world_gated`
+  with `hard_mode_world_updates(world)` (`:1004-1009` = the `:71501`
+  derivation verbatim).
+- `spread.rs:362-380`: the gated form's `:69602` gate + actuated skip.
+
+**VERDICT: WIRED.** The dispatcher call-sites are live in the UpdateWorld
+tick (60 Hz fixed step), every tick, gate = `hardMode || remix·getGood·
+!anniversary` (not hardmode-only). Two new dispatcher-level witnesses pin
+the wiring (the ebonstone/grass box corrupts through EACH dispatcher in
+hardmode and freezes pre-hardmode): `growth.rs::
+w4_d103_post_the_overground_dispatcher_runs_hard_update_world` +
+`…_underground_…` — written NOT run.
+
+**Residual deviation (pre-existing, documented at the call site)**:
+`world_sim/growth.rs:110-124` draws ONE extra port-only surrogate pick per
+growth step (`hard_update_world_gated` on a fresh random underground cell)
+— the C# has no such pick (hardUpdateWorld only runs on cells the rate
+loops chose). The DW-1.4 draw-count pin (`test_dw_1_4_growth_consumes_
+exactly_its_stream_prefix`) freezes it as port behaviour; removing it is a
+stream-shape change this lane does not make (the runtime-only pin policy).
+Recorded here as the one cadence deviation: the port runs the infection
+arms on (rate-loop picks + 1 surrogate) vs the C#'s rate-loop picks.
+
+### PF-2 — SmashAltar runtime census: hammer arm LIVE, chat WIRED (this phase), sound rides the kill table, wraith parks
+
+The ITEM-use chain (the census asked for the `ItemCheck` hammer-altar arm):
+
+- C# `Player.cs:45646-45704` (`ItemCheck_UseMiningTools_ActuallyUseMiningTool`):
+  `Main.tileHammer[26]` (`Main.cs:7204`) routes the altar to the hammer arm
+  (`:45665`); `sItem.hammer > 0` adds damage (`:45670`), `CanKillTile`
+  refusal zeroes (`:45671-45674`), the altar gate `type == 26 && (hammer <
+  80 || !hardMode)` zeroes + `Hurt(ByOther(4), statLife/2, -direction)`
+  (`:45675-45679`), `AddDamage >= 100` → `KillTile(x, y)` (`:45681-45684`).
+- C# `WorldGen.cs:49444-49449` (`KillTile`'s case 26): after the object
+  dies, `!generatingWorld && !TransformingWorld` → `SmashAltar(i, j)`.
+- Rust `world_sim/editing.rs::hammer_tile_hit` (`:1249-1329`): the whole
+  arm verbatim — the `can_kill_tile` zero (`:1260`), the altar refusal +
+  self-hurt (`:1270-1288`), the `>= 100` break (`:1290-1291`) →
+  `break_tile` (`:1304`, the kill cascade) → on the dead altar
+  `tr_core::ores::smash_altar(&mut app.world, &mut app.ore_tiers, altars,
+  rng)` on the **UpdatePlayers** stream (`:1307-1310`, the DW-1.1 pin),
+  `altars_smashed += 1` (`:1311`), `notify_progression_net(6)` =
+  `AchievementsHelper.NotifyProgressionEvent(6)` BEGONE_EVIL (`:49108`).
+  **The P6 seed arms ride this call** — `ores.rs::smash_altar` (`:239-362`)
+  is the full `:48927-49109` body (the drunk flips, the placed-ore band,
+  the remix inverted band, the anniversary strength, the OreRunner
+  batches). **WIRED, not just ported.**
+
+**Gap found + wired THIS phase — the ore-blessing chat.** The C# broadcasts
+`ChatHelper.BroadcastChatMessage(NetworkText.FromKey(Lang.misc[num7].Key),
+ChatColors.World)` at `:48969` (cobalt, key 12 / palladium +9 = 21),
+`:49002` (mythril 13 / orichalcum 22), `:49034` (adamantite 14 / titanium
+23). The port's smash seam had NO chat (`let _ = ore;`). Now
+`hammer_tile_hit` broadcasts `crate::lang::misc(key)` in `COLOR_WORLD`
+keyed on the PLACED ore (the drunk flips move the key with the ore — the
+C# reads `SavedOreTiers` AFTER the flips, same). Witness
+`w4_d103_post_the_smash_broadcasts_the_ore_blessing` — written NOT run.
+(The lang rows verified on disk: `Terraria.Localization.Content.en-US.
+Legacy.json` `LegacyMisc` 12/13/14/21/22/23 = the six "Your world has been
+blessed with …!" lines.)
+
+**Sound census (d77 co-lane)**: the altar-smash cue is the EXISTING
+`KillTile_PlaySounds` arm `WorldGen.cs:66524-66528` — `(type == 26 || type
+== 695) && frameX >= 54` → `SoundEngine.PlaySound(4, …)` (NPC_Killed_1),
+else the default Dig 0. The port's `kill_tile_sound`
+(`edit/kill.rs:2327`) carries the arm verbatim (witness
+`s1_e_21c_kill_tile_sound_table` `:4220-4222`), and `break_tile`
+(`editing.rs:5627-5638`) plays it for the hit cell BEFORE the smash seam —
+the C# order (`KillTile` plays at `:63558`, SmashAltar runs in the case-26
+tail). The smash itself draws NO extra sound (the C# `SmashAltar` body has
+no `PlaySound`). d77's tip (`d61e6362`) carries no altar rows — its scope
+is projectile/kill-tail cues; **the altar cue needs no new d77 work — it
+already rides the shared kill table. VERDICT: sound LIVE, co-lane closed.**
+
+**Wraith spawn (`:49078-49105`) — stays PARKED (NPC lane).** The C# arm:
+`netMode != 1`, the journey `SpawnRateSliderPerPlayerPower` disable gate
+(`:49082-49093`), `Player.FindClosest`, `Main.rand.Next(2) + 1` wraiths via
+`NPC.SpawnOnPlayer(player.whoAmI, 82)` (`:49100-49104`). The port has no
+`NpcKind::Wraith` (the roster's `from_u16` maps 82 → PrimeSaw — the
+port-local id space), no aiStyle-22 wraith machine (the Poltergeist/Drippler
+machines are type-specialised), and `SpawnOnPlayer`'s 200×30 scan
+(`NPC.cs:80570-80573`'s 82 band) is unported. The frame code ALREADY waits
+(`npc_findframe_b.rs::FindFrameKind::Wraith`, the `NPC.cs:74823-74884`
+case-48 group, `SetDefaults` `NPC.cs:9852-9878` read: 24×44, aiStyle 22,
+dmg 65, def 16, 160 HP, alpha 100, kb 0.7, value 500, NPCHit54/NPCDeath52,
+the remix ×1.2 scale arm). Wiring it needs the NPC lane's kind + AI +
+spawn-scan ports — out of this lane's scope (12c Part 2 "Not this lane"
+row stands). The journey spawn-disable power is also unported
+(`creative.rs` carries the registry, not the per-player disable state).
+
+### PF-3 — Convert-9/10 keep-one verdict: KEEP f25's `convert_chlorophyte_cell`
+
+Both ports read the SAME C# window — `WorldGen.cs:55665-55763` (the
+`Convert` switch's case 8/9/10), entered through the single-cell overload
+`:55085-55097` (the `InWorld(1)` + `!active && wall <= 0` head) and the
+`Convert_ActuallyConvertTile` writer `:56312-56327`.
+
+| arm | d103 `convert_purge_cell` (spread.rs:564, P8 slice, WIRED into hard_update_world_gated + chlorophyte_defense) | f25 `convert_chlorophyte_cell` (C5 `a6b21b72`, UNWIRED) |
+| --- | --- | --- |
+| type coverage | 9/10 only | **8/9/10** (the mud/jungle-grass → 211 arm too) |
+| head guard | `!active && wall == 0` ✓ | same ✓ |
+| tile rows 9 | 2/109/477/492→60, 0→59, 23/199/661/662→60, 25/203→1, 112/234→53, 398/399→397, 400/401→396 ✓ | identical ✓ |
+| tile rows 10 | the four infection grasses + the evil pairs ✓ | identical ✓ |
+| thorn kill | 24/32/201/205/352/636 `kill_tile(noItem:false)` ✓ | identical ✓ |
+| `Convert_ActuallyConvertTile` gate | **MISSING** — writes unconditionally (no `active && type != newType` diff gate) | **present** (`:56314`) |
+| tree cross-kill | **MISSING** | `try_kill_invalid_tree_above` (`:56317`) ✓ |
+| re-frame | `frame_x/frame_y = 0` bare reset (the old approximation) | `reframe_area(…, 1, false)` superset (the cleanse/d1 precedent) ✓ |
+| sized walk | none (the call sites are single-cell) | `convert_sized_chlorophyte` (the `:55067-55083` Manhattan<6 walk) ✓ |
+
+**VERDICT: KEEP f25 C5's `convert_chlorophyte_cell` + `convert_sized_
+chlorophyte`** — it is the verbatim `Convert_ActuallyConvertTile` consumer
+(the diff gate + the tree kill + the reframe), covers type 8 as well, and
+carries 2 witnesses. **DROP d103's `convert_purge_cell` at the merge** and
+rewire the two consumers onto f25's body:
+`hard_update_world_gated`'s purge pick (`spread.rs:447`, type 9) and
+`chlorophyte_defense` (`spread.rs:292`, type 10). The type-8 approximation
+`convert_cell(.., chlorophyte: true)` (`spread.rs:119-134`, the seeding
+arms `:411`/`:432`) is the SAME gap — rewire onto f25's type 8 too.
+Draw-neutral: none of the three C# arms draws RNG (the reframe's
+`frame_rng` is the separate framing stream), so the rewire cannot move the
+`UpdateWorldGen` stream — the P8 draw-count witnesses stay valid; the
+tile-state witnesses that assert the bare `frame_x = 0` reset (none do —
+they assert kinds) stay valid. The d103 branch keeps its wired body until
+the merge (this lane does not rewire onto an unmerged sibling — the
+keep-one decision is the merger's, per the 88 playbook convention).
+
+### PF-4 — research/12c final status + matrix-88/86 cross-refs
+
+**12c final status: the POST-pass family is EXHAUSTED and POST-FINAL
+verified.** P0 does not exist in 1.4.5.8; P1/P10/P12/P14 landed or stay by
+design; P2-P9 + P11 + P13 landed (commits `04637c12`/`23f55212`/
+`339d9f6d`/`014cf293`/`1c844cbb`); PF-1/PF-2 above close the wiring/runtime
+gaps; PF-3 publishes the keep-one verdict. Remaining parked arms (all
+out-of-lane, named owners): the wraith spawn + `SpawnOnPlayer` scan (NPC
+lane), the journey spawn-disable power (creative lane), the `SendData(7)`
+world-info re-broadcast on a new tier (`:49041`, net lane — the port's
+`netglue` has no world-info resend seam; the tiers round-trip through the
+save payload, `saveglue.rs:108-111`), the remix dual-dispatch growth loop
+(`:71605-71615`, seed lane d107).
+
+**Matrix cross-refs (read at the pushed tips):**
+
+- `research/88-worldgen-master-matrix.md` (g36 tip `6d46f6a5`): the 109-row
+  final pipeline table (§5) + the keep-one playbook. **d103's rows**: 55
+  Oasis, 58 Waterfalls, 60 Wall Variety, 61 Life Crystals, 62 Statues, 64
+  Surface Chests, 66 Water Chests, 71 Cave Walls — all **KEEP d103** (§4
+  single-owner table), matching this lane's landed 9/9 (the classic
+  passes, tip `8be04cb0` at the matrix's read). Row 73 Floating Island
+  Houses: **DROP d103** (g44 owns it) — consistent with 12c Part 1's
+  "g37 overlaps — merger reconciles" note; the DROP is surgical
+  (`island_houses.rs` + the islands ledger edits only, §6.2). **The
+  POST-pass family (P1-P14) has NO matrix rows — 88/86 scope is the
+  `VANILLA_CHAIN` pipeline only; the hardmode/growth functions are
+  runtime, outside the 109 registrations.** No status conflict: this
+  lane's tail slices never claimed a pipeline row.
+- `research/86-wg-passes-4-reconcile.md` (d104 tip, §6 addendum DONE):
+  counts **55 base + 50 landed + 3 gated + 1 UNLANDED (Final Cleanup) =
+  109**. d103's 9 classic rows sit in the 50 landed. The §6.3 Larva
+  adjudication (d105 owns the vanilla slot, g41's NTB larva is a seed
+  tail) and §6.4's 7→1 closure do not touch d103's rows. **Statuses
+  align**: 12c Part 1's landed/pending map agrees with 86 §4/§6 on every
+  d103 row; the only divergence is the island-houses ownership (12c
+  Part 1 says "merger reconciles", 88 §2.11 adjudicates g44 — this doc
+  adopts the 88 verdict, PF-4 above).
+- **Gap flag for the merger**: 88 §6.1 lists Random Gems / Moss Grass /
+  Final Cleanup as unlanded; 86 §6.4 (LATER, d105 tip `96f65cd6`) closed
+  Random Gems + Moss Grass — **88's gap list is stale by two rows**; the
+  authoritative count is 86's (1 unlanded: Final Cleanup). d103 owns none
+  of the three.
+
+### POST FINAL witnesses (written NOT run) + verification
+
+- `growth.rs::w4_d103_post_the_overground_dispatcher_runs_hard_update_world`
+  + `…_underground_…` (PF-1, the wiring pins).
+- `editing.rs::w4_d103_post_the_smash_broadcasts_the_ore_blessing` (PF-2).
+- Code-only lane: **no cargo/tests/rustfmt/graphify run**. Evidence = the
+  C# re-reads cited above (all ≤100-line windows) + the Rust call-chain
+  reads + the sibling-tip reads (`git show origin/<branch>:<path>`).
+- Pins unchanged (the chat line + the witnesses are runtime/test-only);
+  `a == b` untouched.
