@@ -39251,7 +39251,7 @@ The THIRD batch of `NPC.HitEffect`'s per-NPC gore/dust death arms
 flipped branch to the terminal 156 RedDevil `else` where the C# chain
 closes (`:89832-89834`). **The HitEffect gore table is now COMPLETE for
 the wave-C range**: 1441 numbered gore sites across 170 commits (first
-`21bcd2d5`, tip `1fb60ae39`; base `a725acb0`), ported into the
+`215bcd2d5`, tip `1fb60ae39`; base `a725acb0`), ported into the
 self-contained `crates/tr-app/src/npc_hit_effect_c.rs` (~15 660 lines,
 251 witness tests). Wave A (d55, sites 1-30, `:81660-81941`) and wave B
 (e5/g16/g17) claims were probed clean at start and left untouched; the
