@@ -39570,10 +39570,11 @@ this docs commit. The full tables live in
    audio.rs wholesale + d80's bank rows/test seams.
 4. **The sibling rewire is mechanical (§F4).** The exact per-site
    rewrite-table: g21 +21 (19 menu → `play_menu`, 2 Chat → DELETE, d79's
-   phase-7 seams win), g22 `250488c34` +12 (the RETIRE tip supersedes
-   sweep-4's `e0f811358` +3; 11 menu + the front-end seed Chat →
-   `play_single_voice`), g23 +6 (4 unique after the direction-B union),
-   e10 `432dd5ab1` +11 menu / −7 Roar / −1 cart fallback. Every added
+   phase-7 seams win), g22 `250488c34` +12 raw (9 prod + 3 test rigs;
+   the RETIRE tip supersedes sweep-4's `e0f811358` +3; the prod menu
+   sites + the front-end seed Chat → `play_single_voice`), g23 +6
+   (4 unique after the direction-B union), e10 `432dd5ab1` +10 prod
+   menu / −7 Roar / the cart-fallback rewrite. Every added
    site is a draw-free pool cue — the rewrites change instance-pool
    behaviour, never RNG. The three façade keep-one rulings: MaxMana
    (d79's pool path wins, e10's mana-blade expiry PRODUCER keeps +
@@ -39584,10 +39585,14 @@ this docs commit. The full tables live in
    variant-1 stand-in superseded). The g21 Destroyer `Roar_0` bare play
    is wrong twice — the int overload's default Style 1
    (`SoundEngine.cs:102`) means `Roar_1`; d79's `play_roar(1, …)` wins.
-5. **The exact bare census (§F2 tail).** Base `a725acb04`: 84 prod + 6
+5. **The exact bare census (§F2 tail).** Base `a725acb04`: 88 prod + 2
    test-rig = 90 sites; d79 HEAD: **0**. The per-tip prod/test splits
-   supersede sweep-4's filtered counts (g21 105+6, g22 94+7, g23 88+6,
-   e10 93+0, d80/f49 84+6, f12 85+6 — the +1 is the Hungry drain).
+   (the brace-depth `#[cfg(test)]` classification, every ambiguous site
+   hand-verified) supersede sweep-4's filtered counts: g21 109+2,
+   g22 96+5, g23 92+2, e10 91+2, d80/f49 88+2, f12 89+2 (the +1 is the
+   Hungry drain). The base's 6 `editing.rs` Roar plays are PROD (the
+   summon helpers live after the tests module); the 2 test sites are
+   the flow.rs Bug-17 hover witness's pair.
 
 **Witnesses (WRITTEN, NOT RUN — no compiler invoked).**
 `w4_d79_final_the_case_bank_pins_cover_the_in_band_surface` (audio.rs —

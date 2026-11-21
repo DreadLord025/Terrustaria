@@ -212,20 +212,28 @@ single-instance census stays closed (17 SINGLE_SLOT_CUES rows +
 witnessed (`w4_d79_final_the_case_bank_pins_cover_the_in_band_surface`,
 written not run).
 
-**Bare-play re-census (this phase, per-tip `git grep` + the per-file
-`mod tests` split — the exact figures supersede sweep-4's filter):**
+**Bare-play re-census (this phase, per-tip `git grep` + the brace-depth
+`#[cfg(test)]`-module classification, every ambiguous site hand-verified
+— the exact figures supersede sweep-4's filter):**
 
 | tip | prod sites | test-rig sites | total | Δ prod vs base |
 | --- | --- | --- | --- | --- |
-| base `a725acb04` | 84 | 6 | 90 | — |
-| **d79 HEAD** | **0** | **0** | **0** | **−84** |
-| g21 `7da02f439` | 105 | 6 | 111 | +21 |
-| g22 `250488c34` | 94 | 7 | 101 | +10 net (+12 added, −1 blanket tick, +1 test) |
-| g23 `945391e33` | 88 | 6 | 94 | +4 net (+6 added, −2) |
-| e10 `432dd5ab1` | 93 | 0 | 93 | +9 net prod (+11 added, −1 doors.rs Roar, −1 cart); the −7 Roar split is 6 TEST-rig summon-helper plays + 1 prod (the base's 6 test sites all rewired onto `play_roar`) |
-| d80 `075b954d2` | 84 | 6 | 90 | 0 |
-| f49 `6c0ee2aa2` | 84 | 6 | 90 | 0 |
-| f12 `ee67786ec` | 85 | 6 | 91 | +1 (the `play("hungry")` drain, F4) |
+| base `a725acb04` | 88 | 2 | 90 | — |
+| **d79 HEAD** | **0** | **0** | **0** | **−88** |
+| g21 `7da02f439` | 109 | 2 | 111 | +21 |
+| g22 `250488c34` | 96 | 5 | 101 | +8 net (+9 prod added, −1 blanket tick; +3 test rigs) |
+| g23 `945391e33` | 92 | 2 | 94 | +4 net (+6 added, −2) |
+| e10 `432dd5ab1` | 91 | 2 | 93 | +3 net (+10 prod menu added, −6 editing.rs Roar, −1 doors.rs Roar; the cart drain's `play_at` is a REWRITE of the base site, not an addition — the 7th Roar removal) |
+| d80 `075b954d2` | 88 | 2 | 90 | 0 |
+| f49 `6c0ee2aa2` | 88 | 2 | 90 | 0 |
+| f12 `ee67786ec` | 89 | 2 | 91 | +1 (the `play("hungry")` drain, F4) |
+
+The base's 2 test-rig sites are the `app/flow.rs` Bug-17 hover witness's
+two plays; the 6 `editing.rs` Roar plays at :16041-16558 are PROD
+(the summon-item helpers live after the tests module — the naive
+first-`mod tests` split miscounts them). g22's +3 test rigs are the
+doc-sweep witnesses (clicks.rs:3372, flow.rs:1789/:1967 — the latter two
+join the base Bug-17 pair's file).
 
 d79 HEAD has **0** `audio.play(`/`play_at(` sites — the only `.play()`
 left tree-wide is `tracked_sound.rs:191` `sink.play()` (the
@@ -329,7 +337,7 @@ draws). The g21 Grab/Coins click sites duplicate d79's phase-3/5
 rewires one-for-one (keep d79's `play_grab_sound(-1,-1, rngs.global())`
 / `play_single_voice` forms).
 
-### g22 `250488c34` — +12 (11 menu + 1 Chat; the RETIRE tip supersedes e0f811358's +3)
+### g22 `250488c34` — +12 raw (+9 prod, +3 test; the RETIRE tip supersedes e0f811358's +3)
 
 | site (g22 tip) | C# anchor | bare call | REWRITE |
 | --- | --- | --- | --- |
@@ -337,8 +345,8 @@ rewires one-for-one (keep d79's `play_grab_sound(-1,-1, rngs.global())`
 | clicks.rs:2843 | `:48849` backup cancel | `play("Menu_Close")` | `play_menu("Menu_Close")` |
 | clicks.rs:3372 | test rig (`doc_sweep_cancel_connect…`) | `play(cue.unwrap())` | `play_menu(cue.unwrap())` (test-only) |
 | flow.rs:466 | HSL slider drag cues | `d.audio.play("Menu_Tick")` | `d.audio.play_menu("Menu_Tick")` (FrontDraw seam) |
-| flow.rs:1067 | world-creator hover census | `play("Menu_Tick")` | `play_menu("Menu_Tick")` |
-| flow.rs:1789 | card cursor-moved | `play("Menu_Tick")` | `play_menu("Menu_Tick")` |
+| flow.rs:1067 | `UIVirtualKeyboard.cs:252/:286/:525/:499/:394` on-screen keys | `play("Menu_Tick")` | `play_menu("Menu_Tick")` |
+| flow.rs:1789 | test rig (`doc_sweep_creator_hover_edge…`) | `play("Menu_Tick")` | `play_menu("Menu_Tick")` (test-only) |
 | flow.rs:1967 | test rig (card-body enter) | `play("Menu_Tick")` | `play_menu("Menu_Tick")` (test-only) |
 | frame.rs:209 | `IngameOptions.cs:157-199/:421-436` update drain | `play(cue)` | `play_menu(cue)` — the cue is always a menu name (the ingame_options::update contract) |
 | loop.rs:278 | `:50794-50797` text-edit change | `play(cue)` (m.take_cue) | `play_menu(cue)` |
@@ -364,7 +372,7 @@ the cue name first, or route through `chest::play_menu_sound`).
 | chat.rs:117 | `:64635/:64641` NewText tail | `play(match id {…})` | `play_menu(match id {…})` (drain_new_text_cues) |
 | frame.rs:209, loop.rs:278/:294/:481 | shared with g22 (the union) | `play(cue)` | same as g22's rows — ONE rewrite after the direction-B merge |
 
-### e10 `432dd5ab1` — +11 menu, −7 Roar, ±1 cart (the wave past dc55322a7)
+### e10 `432dd5ab1` — +10 prod menu, −7 Roar (6 editing + 1 doors), the cart rewrite (the wave past dc55322a7)
 
 | site (e10 tip) | C# anchor | bare call | REWRITE |
 | --- | --- | --- | --- |
@@ -427,15 +435,22 @@ same `play_menu` rewrite.
   default-variant stand-in (`player.rs:4582`) is superseded by e10's
   picker (the merge keeps e10's drain).
 
-### The +33-bare ledger (the merger's checklist)
+### The added-bare ledger (the merger's checklist)
 
-g21 +21, g22 +12, g23 +6 (4 unique), e10 +11 = **50 raw added bare
-sites; 44 unique after the g22/g23 union and the g21-Chat dedupe** —
-every one a case-10/11/12 menu cue, the case-24 Chat trio, or the cart
-fallback. ZERO new drawing-case bare plays on any sibling tip (the
-pitch/pool contract holds tree-wide). After the rewrites above, the
-merged tree's bare-play count returns to **0** (the
-`tracked_sound.rs:191` Resume seam excepted).
+Raw added sites: g21 +21, g22 +12, g23 +6, e10 +10 (the cart `play_at`
+is a rewrite of the base site, not an addition) = **49**. Dedupe:
+−4 (the g23 rows shared with g22's drains: frame.rs:209,
+loop.rs:278/:294/:481) = **45 unique added sites**; of those, −2 (the
+g21 Chat pair — d79's phase-7 seams already play them, DELETE not
+rewire) = **43 rewire targets** (40 prod + 3 g22 doc-sweep test rigs).
+The 2 base Bug-17 flow.rs test plays are NOT additions (they ride every
+tip; d79's HEAD retired them with the hover path — the merged tree
+rewires them too if the sibling hover hunk survives). Every added site
+is a case-10/11/12 menu cue or the case-24 Chat trio. ZERO new
+drawing-case bare plays on any sibling tip (the pitch/pool contract
+holds tree-wide). After the rewrites above, the merged tree's bare-play
+count returns to **0** (the `tracked_sound.rs:191` Resume seam
+excepted).
 
 ## F5. Research FINAL — the residual register
 
