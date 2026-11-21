@@ -760,8 +760,10 @@ pub fn trail_497(
 /// draws (left operand first, `Utils.cs:1697-1700`), spun again by the
 /// velocity's rotation, then ONE type-58 dust (speeds vel×0.5, alpha 150,
 /// scale 1.2) whose velocity/position are overwritten from the spin vector.
-/// The `:23963` `Next(48)` GORE gate + body are d55/g16's — the wiring wave
-/// interleaves that draw AFTER this fn (it is the arm's next statement).
+/// The `:23963` `Next(48)` GORE gate + body are d55/g16's — W4-g64 FINAL:
+/// the gate draw now rides INSIDE the machine (`ai_falling_star`'s 503 arm
+/// rolls it immediately AFTER this fn — the e3 keep-one order, the row
+/// landed via the e3 `80d47a56` constants-copy).
 pub fn trail_503(
     pos: Vec2,
     w: i32,

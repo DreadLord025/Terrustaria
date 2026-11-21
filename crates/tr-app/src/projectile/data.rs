@@ -1146,6 +1146,15 @@ pub const SPARKLE_GUITAR: u16 = 856;
 /// `ProjectileID.StarCannonStar` (955, `ProjectileID.cs:2464`) — the Star
 /// Cannon's shot (aiStyle 5, `penetrate = -1`, `alpha = 50`).
 pub const STAR_CANNON_STAR: u16 = 955;
+/// `ProjectileID.StarWrath` (503, `ProjectileID.cs:1560`) — the Star Wrath's
+/// star (aiStyle 5, melee, `penetrate = 2`, `alpha = 255`, `tileCollide =
+/// false`, `extraUpdates = 1`, local immunity 15; `Projectile.cs:5743-5756`).
+/// W4-g64 FINAL (the e3 `80d47a56` constants-copy — the row byte-identical
+/// to the e3 coverage phase's port): unblocks this lane's `trail_503`
+/// wiring; the e3 `ai_falling_star_family` 503 half is the merge keep-one
+/// (the parity witness `w4_g64_keep_one_503_gore_gate_rides_after_the_emitter`
+/// pins the stream-exact twin).
+pub const STAR_WRATH: u16 = 503;
 /// `ProjectileID.LastPrism` (633) — the channel holder (aiStyle 75,
 /// 14x18, `penetrate = -1`, `tileCollide = false`).
 pub const LAST_PRISM: u16 = 633;
@@ -3904,6 +3913,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // aiStyle 5, `penetrate = -1`, `alpha = 50`, ranged (`light = 1f`
             // dropped).
             STAR_CANNON_STAR => (18.0, 18.0, 5, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 50, 1.0)),
+            // W4-g64 FINAL (the e3 80d47a56 constants-copy) —
+            // `Projectile.cs:5743-5756`: the Star Wrath star (503): 24x24,
+            // aiStyle 5, friendly, `penetrate = 2`, `alpha = 255`,
+            // `tileCollide = false`, melee, `extraUpdates = 1`, local
+            // immunity 15. The stock timeLeft 3600 (`:787`).
+            STAR_WRATH => (24.0, 24.0, 5, 2, TIME_LEFT_DEFAULT, 1, false, false, false, (true, 15, false, -1, 255, 1.0)),
             // The spear family (S1-P-i06, aiStyle 19 — `DefaultToSpear`
             // `Projectile.cs:10720-10730`: friendly, `penetrate = -1`,
             // `tileCollide = false`, melee, `ownerHitCheck`, `usesOwnerLight`,
@@ -4335,6 +4350,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | LIGHTS_BANE | TERRARIAN_BEAM
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
+                    // W4-g64 FINAL (the e3 80d47a56 constants-copy) — the
+                    // Star Wrath star sets `melee = true`
+                    // (`Projectile.cs:5752`).
+                    | STAR_WRATH
             ),
         ranged: matches!(
             kind,

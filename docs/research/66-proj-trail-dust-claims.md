@@ -50,7 +50,7 @@ blocks) are NOT trails; they stay with the general proj-site co-lanes
 | 465 | 88 | 32023, 32040 | — |
 | 466 | 88 | 32076, 32083 (stationary sparkle) | — |
 | 497 | 2 | 23413 | — |
-| 503 | 5 | 23959 | the :23963 Next(48) GORE gate (d55/g16) |
+| 503 | 5 | 23959 (WIRED — W4-g64 FINAL, the e3 `80d47a56` row constants-copy) | the :23963 Next(48) GORE gate (d55/g16 — the gate draw rides AFTER the spark in `ai_falling_star`) |
 | 504 | 2 | 23543 | — |
 | 509 | 20 | 25578 | — |
 | 533 | 65 | 29804 (dash ring), 30055 (spin ring) | — |
@@ -291,3 +291,28 @@ The cross-activation notes (the merge wave's inputs):
   g64 keep-one owed (the g64 ledger's "92" mentions are the 1092
   LunarHook kind — a different id). Adjudicated in ANALYSIS "The
   FINAL phase".
+
+## The FINAL phase activation (2026-11-21) — trail_503 NOW-WIRED
+
+The e3 `80d47a56` coverage-row commit rowed the 503 StarWrath
+(`Projectile.cs:5743-5756`) — this lane's `trail_503` was the unwired
+twin. W4-g64 FINAL copies the row CONSTANTS verbatim (the
+`STAR_WRATH` const + the `proj_data` 10-tuple + the melee flag-list
+entry — byte-identical to e3's port; the 1037/1049 twins stay e3's,
+no g64 emitter rides them) and ACTIVATES the emitter:
+`ai_falling_star` gains the 503 half (the `:23853-23856` star-family
+`Center.Y > ai[1]` head — NOT the 9's Bottom.Y latch; the shared
+`:23900-23913` alpha ramp; the `:23946-23948` velocity aim −π/2 with
+NO direction write; `trail_503` then the `:23963` Next(48) gore GATE
+draw — the e3 keep-one order). The dispatch's aiStyle-5 arm kind-gate
+widens to `STARFURY | STAR_CANNON_STAR | STAR_WRATH`. The 9/955
+halves keep their pre-existing arms + cited dust skips (the e3/f48
+keep-one lanes); the soundDelay hum (`:23881-23885`) stays d75's owed
+503 extension (the e3 cross-note). Merge keep-one: e3's
+`ai_falling_star_family` survives (the fuller family arm), this
+lane's 503 half + `trail_503` retire into it — the row is
+byte-identical, the draws stream-exact
+(`w4_g64_keep_one_503_gore_gate_rides_after_the_emitter` + the new
+`w4_g64_final_503_rowed_and_wired_gore_gate_after_the_spark`
+activation witness, WRITTEN NOT RUN). The unrowed list shrinks to 21
+(503 drops off).

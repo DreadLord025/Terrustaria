@@ -7169,15 +7169,36 @@ impl Projectile {
     // `UpdateProjectiles` stream stays untouched BY CONSTRUCTION.
 
     /// `AI()`'s aiStyle-5 falling-star arm (`Projectile.cs:23830-24099`): the
-    /// Starfury star 9 and the Star Cannon star 955. The 9's `tileCollide`
-    /// rides `Bottom.Y >= ai[1]` (`:23865-23868`); the 955 takes the generic
-    /// `ai[1]` latch (`:23871-23879`: the first non-solid tick arms
-    /// `tileCollide`). The 9's alpha ramps −15 to the 150/0 floor
-    /// (`:23900-23913`); the 955's generic alpha bounce (`:23928-23945`).
-    /// The rotation spins by `(|vx|+|vy|)·0.01·direction` (`:23952`). The
-    /// dust/gore rolls (`:23883/:23973/:23983/:24035/:24039`) are SKIPPED.
-    fn ai_falling_star(&mut self, world: &World) {
-        if self.kind == STARFURY {
+    /// Starfury star 9, the Star Cannon star 955 and — W4-g64 FINAL (the e3
+    /// `80d47a56` row constants-copy) — the Star Wrath star 503. The 503's
+    /// `tileCollide` rides `Center.Y > ai[1]` (`:23853-23856` — the star-family
+    /// head, NOT the 9's Bottom.Y latch); the 9 keeps `Bottom.Y >= ai[1]`
+    /// (`:23865-23868`); the 955 takes the generic `ai[1]` latch
+    /// (`:23871-23879`: the first non-solid tick arms `tileCollide`). The
+    /// 9/503's alpha ramps −15 to the 150/0 floor (`:23900-23913`); the 955's
+    /// generic alpha bounce (`:23928-23945`). The rotation spins by
+    /// `(|vx|+|vy|)·0.01·direction` (`:23952`) — the 503 instead aims along
+    /// the velocity −π/2 (`:23946-23948`, no direction write). The 503's
+    /// `trail_503` spark + the `:23963` Next(48) gore GATE draw ride the
+    /// stream (the body d55/g16's — the e3 keep-one order); the 9/955
+    /// dust/gore rolls (`:23973/:23983/:24035/:24039`) stay the cited skips
+    /// (the e3/f48 keep-one lanes), the soundDelay roll (`:23881-23885`) is
+    /// d75's owed 503 hum extension (the e3 cross-note).
+    fn ai_falling_star(
+        &mut self,
+        world: &World,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
+        if self.kind == STAR_WRATH {
+            // `:23845-23857` — the star-family head (the 723's manual
+            // fall-through gate is the cloak lane's, not this kind).
+            let (_, cy) = self.center();
+            if cy > self.ai[1] {
+                self.tile_collide = true; // `:23855`
+            }
+        } else if self.kind == STARFURY {
             // `:23865-23868` — `tileCollide = base.Bottom.Y >= this.ai[1]`.
             self.tile_collide = self.pos.y + self.h >= self.ai[1];
         } else {
@@ -7191,8 +7212,9 @@ impl Projectile {
                 self.tile_collide = true;
             }
         }
-        // `:23881-23885` — the soundDelay roll is SKIPPED (sound + RNG).
-        if self.kind == STARFURY {
+        // `:23881-23885` — the soundDelay roll is SKIPPED (sound + RNG; the
+        // 503 extension is d75's owed merge edit, the e3 cross-note).
+        if matches!(self.kind, STARFURY | STAR_WRATH) {
             // `:23900-23913` — alpha −15, floor 150 above the target / 0 at it.
             self.alpha -= 15;
             let floor = if self.pos.y + self.h * 0.5 >= self.ai[1] { 0 } else { 150 };
@@ -7216,14 +7238,27 @@ impl Projectile {
                 self.local_ai[0] = 1.0;
             }
         }
-        // `:23950-23953` — the spin (the 503/1037/1049 rotation arm is not
-        // these kinds). `base.direction` is the velocity-sign stand-in (the
-        // C# updates it after movement, `:17016-17026` +
-        // `AutomaticallyChangesDirection` `:17281-17288`, true for aiStyle 5).
-        self.direction = if self.vel.x < 0.0 { -1 } else { 1 };
-        self.rot += (self.vel.x.abs() + self.vel.y.abs()) * 0.01 * self.direction as f32;
+        if self.kind == STAR_WRATH {
+            // `:23946-23948` — the 503 aims along the velocity (−π/2); NO
+            // direction write on this arm (the C# updates it after movement
+            // — the pass's `AutomaticallyChangesDirection` tail).
+            self.rot = self.vel.y.atan2(self.vel.x) - std::f32::consts::FRAC_PI_2;
+            // `:23954-23962` — the spark, then the `:23963` gore GATE draw
+            // (the body is d55/g16's; the gate stays on the stream — the e3
+            // keep-one order, `w4_g64_keep_one_503_gore_gate_rides_after_the_emitter`).
+            crate::proj_trail_dust::trail_503(
+                self.pos, self.w as i32, self.h as i32, self.vel, rng, dust, dust_ctx, world,
+            );
+            let _ = rng.next_range(0, 48); // `:23963`
+        } else {
+            // `:23950-23953` — the spin. `base.direction` is the velocity-sign
+            // stand-in (the C# updates it after movement, `:17016-17026` +
+            // `AutomaticallyChangesDirection` `:17281-17288`, true for aiStyle 5).
+            self.direction = if self.vel.x < 0.0 { -1 } else { 1 };
+            self.rot += (self.vel.x.abs() + self.vel.y.abs()) * 0.01 * self.direction as f32;
+        }
         // The movement: `HandleMovement`'s default tile arm (`:19849-19853`)
-        // — the blocked hit kills. The 9's `tileCollide` is the latch above.
+        // — the blocked hit kills. The 9/503's `tileCollide` is the latch above.
         self.kill_step(world);
     }
 
@@ -17546,19 +17581,23 @@ impl ProjectilePool {
                         // (`Projectile.cs:23830-24099`): the falling-star
                         // family. The Holy Arrow's death spawn 92 rides the
                         // i17 slice; the Starfury star 9 + the Star Cannon
-                        // star 955 (S1-P-i22) ride the fuller i22 arm (the
-                        // tileCollide latches + the alpha ramps + the spin).
-                        // The other aiStyle-5 kinds (12/503/723-726/1037/
+                        // star 955 (S1-P-i22) + the Star Wrath star 503
+                        // (W4-g64 FINAL — the e3 80d47a56 row constants-copy,
+                        // `trail_503` ACTIVATED with the :23963 gore gate
+                        // AFTER it) ride the fuller i22 arm (the tileCollide
+                        // latches + the alpha ramps + the spin/aim).
+                        // The other aiStyle-5 kinds (12/723-726/1037/
                         // 1049/1133) have no rows yet — the arm stays
-                        // kind-gated so they keep the no-op fall-through.
+                        // kind-gated so they keep the no-op fall-through
+                        // (the e3/f48 keep-one lanes).
                         5 => {
                             if self.slots[i].kind == FALLING_STAR {
                                 crate::special_arrows::falling_star_step(
                                     &mut self.slots[i],
                                     world,
                                 );
-                            } else if matches!(self.slots[i].kind, STARFURY | STAR_CANNON_STAR) {
-                                self.slots[i].ai_falling_star(world);
+                            } else if matches!(self.slots[i].kind, STARFURY | STAR_CANNON_STAR | STAR_WRATH) {
+                                self.slots[i].ai_falling_star(world, rng, dust, dust_ctx);
                             }
                         }
                         // `AI()`'s `else if (this.aiStyle == 10)`
@@ -45689,5 +45728,87 @@ mod w4_g64_wiring_tests {
         for _ in 0..8 {
             assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000), "tail");
         }
+    }
+
+    /// W4-g64 FINAL — the 503 ACTIVATION (the e3 `80d47a56` row
+    /// constants-copy): the row lands verbatim (`Projectile.cs:5743-5756`),
+    /// the machine's 503 half runs the C# head/alpha/aim order, the spark
+    /// fires on the Next(16) pass and the `:23963` gore gate rides AFTER it
+    /// (the e3 keep-one order). The mirror reproduces the whole arm's draw
+    /// sequence on a twin stream — the records + tails match.
+    #[test]
+    fn w4_g64_final_503_rowed_and_wired_gore_gate_after_the_spark() {
+        // The row (the e3 constants-copy, byte-identical).
+        let d = proj_data(STAR_WRATH).expect("the 503 row");
+        assert_eq!((d.w, d.h), (24.0, 24.0));
+        assert_eq!(d.ai_style, 5);
+        assert_eq!(d.penetrate, 2, ":5749");
+        assert_eq!(d.alpha, 255, ":5750");
+        assert!(!d.tile_collide, ":5751");
+        assert!(d.melee, ":5752");
+        assert_eq!(d.extra_updates, 1, ":5753");
+        assert!(d.uses_local_immunity, ":5754");
+        assert_eq!(d.local_hit_cooldown, 15, ":5755");
+        assert_eq!(d.time_left, 3600, "the stock :787");
+        let w = World::new("g64final".into(), 200, 200);
+        let mk = || Projectile {
+            active: true,
+            kind: STAR_WRATH,
+            owner: 0,
+            pos: Vec2::new(1000.0, 900.0),
+            vel: Vec2::new(6.0, -2.0),
+            w: 24.0,
+            h: 24.0,
+            alpha: 255,
+            ai: [0.0, 2000.0, 0.0, 0.0], // the spawn floor below the star
+            tile_collide: false,
+            time_left: 3600,
+            ..Default::default()
+        };
+        // The machine tick: the head arms tileCollide (Center.Y 912 > ai[1]
+        // 2000 is FALSE — stays false above the floor), alpha 255 → 240
+        // (floor 150 above the target), the aim −π/2, the spark gate, the
+        // gore gate. The mirror runs the same draws in the C# order.
+        let (mut sd, sc) = scratch_dust(&w);
+        let mut p = mk();
+        let mut rng = tr_core::UnifiedRandom::new(503);
+        p.ai_falling_star(&w, &mut rng, &mut sd, &sc);
+        assert!(!p.tile_collide, "above the spawn floor (912 < 2000)");
+        assert_eq!(p.alpha, 240, "255 − 15, the 150 floor not reached");
+        assert_eq!(p.rot, (-2.0f32).atan2(6.0) - std::f32::consts::FRAC_PI_2, "the :23948 aim");
+        // The mirror: the emitter + the gore gate (the e3 order), on the
+        // PRE-move position (the C# draws before HandleMovement).
+        let mut mpool = tr_core::particles::DustPool::new();
+        let mut mirror = tr_core::UnifiedRandom::new(503);
+        crate::proj_trail_dust::trail_503(
+            Vec2::new(1000.0, 900.0), 24, 24, Vec2::new(6.0, -2.0),
+            &mut mirror, &mut mpool, &sc, &w,
+        );
+        let _ = mirror.next_range(0, 48);
+        for i in 0..6000 {
+            assert_eq!(sd.slot(i), mpool.slot(i), "slot {i}");
+        }
+        for _ in 0..8 {
+            assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000), "tail");
+        }
+        // Below the floor: the head arms tileCollide, the alpha floor drops
+        // to 0 (the C# `Center.Y >= ai[1]`).
+        let mut p2 = mk();
+        p2.ai[1] = 900.0; // Centre 912 >= 900
+        let mut rng2 = tr_core::UnifiedRandom::new(503);
+        let (mut sd2, sc2) = scratch_dust(&w);
+        p2.ai_falling_star(&w, &mut rng2, &mut sd2, &sc2);
+        assert!(p2.tile_collide, ":23855 — below the floor the star collides");
+        // The 9/955 twins keep their arms (the kind gate): the 955's generic
+        // latch + alpha bounce, no 503 draws.
+        let mut p3 = mk();
+        p3.kind = STAR_CANNON_STAR;
+        p3.alpha = 50;
+        let mut rng3 = tr_core::UnifiedRandom::new(955);
+        let (mut sd3, sc3) = scratch_dust(&w);
+        p3.ai_falling_star(&w, &mut rng3, &mut sd3, &sc3);
+        assert_eq!(p3.alpha, 75, "the 955's +25 bounce (50 → 75)");
+        assert_eq!(p3.ai[1], 1.0, "the generic latch armed (no solid tile)");
+        assert!((0..6000).all(|i| !sd3.slot(i).active), "the 955 draws no dust (the cited skip)");
     }
 }
