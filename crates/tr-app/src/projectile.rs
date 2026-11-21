@@ -17017,7 +17017,8 @@ impl ProjectilePool {
                             let dead = player.as_ref().is_some_and(|p| p.dead || p.cced());
                             let local = self.slots[i].owner == local_owner;
                             // `:52572` — the hook reads its owner's
-                            // `MountedCenter` (the port folds it to center).
+                            // `MountedCenter` (W4-d8 retire (1): LIVE —
+                            // the HeightOffset family rides the saddle).
                             let center = player
                                 .as_ref()
                                 .map(|p| {

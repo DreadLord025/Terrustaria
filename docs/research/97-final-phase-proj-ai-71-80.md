@@ -1,5 +1,11 @@
 # 97 — FINAL-PHASE lane 18 (proj AI 71-80): the drill split, the 434 verdict, the band census, the fountain-dust + 606-light cross-notes
 
+**STATUS: SEALED (2026-11-21, the retire round).** The (1)-(5) census below
+stands as landed; the RETIRE addendum at the tail closes the two owed
+writes ((1) SmoothSlope + the HeightOffset family PORTED, (2) the 434
+keep-one FINALIZED) and publishes the smooth-slope-family declaration.
+No item of this lane remains open on this branch.
+
 W4-d8 FINAL phase, branch `task/W4-d8-proj-ai-71-80` (continues the DONE
 `50dcaa75` doc-sweep). Code-only round — every witness is WRITTEN NOT RUN
 (no compiler on this lane); each expected value is hand-derived from the
@@ -13,7 +19,8 @@ Commits (this phase):
 | item | commit | scope |
 | --- | --- | --- |
 | (1) Drill ability half | `85e87499` | `DrillMountData`/`DrillBeam` + `UpdateDrill`/`AimAbility`/`UseAbility`/`UpdateEffects` gate + the 453 crosshair wiring + the player per-tick block + 2 witnesses |
-| (2)-(5) census | this doc | the 434 verdict, the band table, the g64/e6 cross-notes |
+| (2)-(5) census | `e9de7168` | the 434 verdict, the band table, the g64/e6 cross-notes |
+| retire (1)-(3) | this round | `Tile.SmoothSlope` + the HeightOffset family ported, the 434 keep-one FINAL, this SEAL + the smooth-slope-family declaration |
 
 ---
 
@@ -41,7 +48,9 @@ re-probes each against the CURRENT port:
 
 The NEW blocker the census surfaces: **`Tile.SmoothSlope`**
 (`Tile.cs:792-865`, called by `UseDrill` `:3119` after every block pick)
-is UNPORTED. The port has `edit::slope_tile`/`pound_tile`
+is UNPORTED. *(SUPERSEDED by the RETIRE addendum R1a — ported as
+`tr_core::edit::smooth_slope{,_one}`; the paragraph below is the
+final-phase census as it stood.)* The port has `edit::slope_tile`/`pound_tile`
 (`hammer.rs:80`/`:108`, the `WorldGen.SlopeTile`/`PoundTile` halves) but
 NOT the `Tile.SmoothSlope` neighbour-aware slope picker (the 4-neighbour
 `flag`/`flag3`/`flag4`/`flag5` bitmask → the slope/halfBrick switch
@@ -301,7 +310,8 @@ skip; the e6 light feed is pure, no draws).
 - The Drill `UseDrill` mining WRITE (`PickTile`/`PickWall`/
   `Tile.SmoothSlope`/altar `Hurt`/dust-230) + the `ItemCheck_HandleMount`
   press path — M2-MOUNT-4 (item (1), the split-contract above).
-  `Tile.SmoothSlope` (`Tile.cs:792-865`) is the new unported blocker.
+  `Tile.SmoothSlope` (`Tile.cs:792-865`) ~~is the new unported blocker~~
+  **PORTED in the retire round below — the blocker is CLOSED.**
 - The 434 `NewProjectile` ai-pin (`:10927-10931`) — no spawner exists
   (item (2), the legacy-keep verdict).
 - The fountain dust BODIES — g64's `trail_419..422` (item (4), the
@@ -312,3 +322,178 @@ skip; the e6 light feed is pure, no draws).
 - The Drill `outerRingRotation` (`Mount.cs:42`, the draw's ring spin
   `:3524-3533`/`:5811`) — carried in the payload, ticked by the unported
   draw seam (stays 0).
+
+---
+
+# RETIRE addendum (2026-11-21) — the SEAL: (1) SmoothSlope + HeightOffset PORTED, (2) the 434 keep-one FINAL, the smooth-slope-family declaration
+
+Code-only round — witnesses WRITTEN NOT RUN (6 new: 3 HeightOffset in
+`player.rs::w4_d8_height_offset_tests`, 3 SmoothSlope in
+`edit/hammer.rs::tests`). No compiler/tests invoked.
+
+## R1. The M2-MOUNT-4 owed writes — the census re-probe and the port
+
+The ledger pool's d8d SmoothSlope row asked: is the SmoothSlope
+mount-offset write still owed? The final-phase census named TWO distinct
+unported pieces under the one name — both are now closed on this branch:
+
+### R1a. `Tile.SmoothSlope` (`Tile.cs:792-865`) — PORTED
+
+`tr_core::edit::smooth_slope` + `smooth_slope_one`
+(`crates/tr-core/src/edit/hammer.rs`, re-exported from `edit.rs`): the
+neighbour-aware slope picker the Drill's `UseDrill` calls after every
+block pick (`Mount.cs:3119`, `applyToNeighbors: true, sync: true`).
+
+- The cascade (`:794-800`): right, left, below, above — each single-cell
+  — then the cell itself. Verbatim order.
+- The gate (`:802-805`): `edit::can_pound_tile` (the i31 port,
+  `WorldGen.cs:80695-80743`) + `SolidOrSlopedTile`
+  (`WorldGen.cs:69985-70023`, `includePlatforms: false`).
+- The mask (`:806-811`): `flag = !TileEmpty(x, y−1)` (`:69976-69983` —
+  absent OR actuated-off reads empty), `flag2 = !SolidOrSloped(above) &&
+  flag`, bits 3/2/1/0 = above/below/left/right.
+- The switch (`:814-845`): 10→slope 3, 9→slope 4 (BOTH vetoed by flag2
+  WITHOUT a write — the default arm does not run), 6→slope 1, 5→slope 2,
+  4→half-brick, default→re-solidify.
+- The `sync` arm (`:847-864`, NetMessage 17 sub-commands 23/7/14) is MP
+  transport — the port's edit seams queue their own tile-sync; the flag
+  stays with the caller's net seam (the `slope_tile` precedent).
+- Signature: `generating` threads like `slope_tile` (the C# reads the
+  global inside `CanPoundTile`; the drill passes false). **The g40 merge
+  keep-one dedupes onto THIS signature** (see R3).
+
+Witnesses (WRITTEN NOT RUN): `w4_d8_smooth_slope_maps_the_five_mask_arms`
+(the five arms + the default flatten), `w4_d8_smooth_slope_flag2_vetoes_
+the_top_arms_without_writing` (the torch-above veto on 9/10, the mask-8
+default, the actuated-above TileEmpty read), `w4_d8_smooth_slope_gates_
+and_cascades` (the chest-above refusal, the platform refusal, the
+neighbour-first cascade).
+
+### R1b. The Player mount HeightOffset family (`Player.cs:3237-3371`) — PORTED (the sim half)
+
+The mount-offset accessors the stale `mounted_center() == center()` fold
+hid. All five + `BaseHeight` + the two anchors are now LIVE on `Player`
+(`crates/tr-app/src/player.rs`):
+
+| C# property | port fn | fold |
+| --- | --- | --- |
+| `HeightOffsetVisual` `:3237-3251` | `height_offset_visual()` | `mount.player_offset()` (the frame-indexed `playerYOffsets`, 0 past `totalFrames`) |
+| `HeightOffsetHitboxCenter` `:3253-3267` | `height_offset_hitbox_center()` | `mount.player_offset_hitbox()` = `−PlayerOffset + heightBoost` |
+| `MountXOffset` `:3269-3279` | `mount_x_offset()` | the row's `playerXOffset` — 0 on EVERY 1.4.5.8 row (no `Mount.cs` assignment) |
+| `HeightOffsetBoost` `:3281-3295` | `height_offset_boost()` | the row's `heightBoost` (`Mount.cs:447`) |
+| `HeightMapOffset` `:3297-3311` | `height_map_offset()` | the row's `playerHeadOffset` (`Mount.cs:435-445`) |
+| `BaseHeight` `:3335` | `base_height()` | `height − HeightOffsetBoost` |
+| `MountedCenter` `:3337-3347` | `mounted_center()` | `position + (width/2, BaseHeight/2 + HeightOffsetHitboxCenter)` — LIVE |
+| `MountedTop` `:3349-3371` | `mounted_top()` | `(x + width/2, y + HeightOffsetHitboxCenter)` — LIVE, `gravDir = 1` |
+
+The `portableStoolInfo.IsInUse` arms fold to 0 (the stool is unported —
+f3's PLAYER-MOVE-FAMILY declaration defers it with the 65-seam). The
+setters (`MountedCenter`/`MountedTop` set) have NO C# caller in 1.4.5.8 —
+not ported (census: a full-decompile `MountedCenter =`/`MountedTop =`
+assignment scan finds none outside the property bodies).
+
+**The wiring (the live consumers):**
+
+- `mounted_center()`'s ~15 call sites (the flail chain anchor
+  `world_sim/projectiles.rs:191`, the spear anchor `:244`, the bobber
+  `:271`, the bow launch `bow_launch.rs:221`, the sentry sling
+  `projectile.rs:9142`, the baby-bird home `:13920`, the hook fire
+  `:17024`, the fishing seam `world_sim/editing.rs:2952`) now ride the
+  saddle anchor with ZERO call-site edits — the accessor was kept as its
+  own fn precisely so this port is one body. Unmounted: byte-identical
+  (`center()`). Mounted: the C# anchor (e.g. the Unicorn frame 0 rides
+  `y + 27`, not the grown box's `y + 38`).
+- `mounted_top()`'s two call sites (the Pigron/Turtle sentry arms
+  `projectile.rs:9377`/`:9386`) — same shape.
+- The thrust hitbox's `mountOffset` (`world_sim/editing.rs`
+  `thrust_stab_tick`, `Player.cs:42604`'s capture) now passes
+  `p.height_offset_hitbox_center()` instead of the pinned 0.
+- `rotated_relative_point` already read `mount.player_offset()` (the
+  `:4237` num2) — unchanged.
+
+Witnesses (WRITTEN NOT RUN): `w4_d8_the_unmounted_offsets_fold_to_zero`,
+`w4_d8_the_unicorn_offsets_ride_the_frame_and_boost` (the frame ladder,
+the past-totalFrames fold, the dismount restore),
+`w4_d8_the_scutlix_flat_offsets_cancel_the_boost`.
+
+**The DRAW half stays a task-seed (M2-DRAW / the mount draw layer):**
+`PlayerDrawSet.cs:342` (`Position.X += MountXOffset * direction` — inert,
+every row 0), `:428-429` (`mountOffSet = HeightOffsetVisual; Position.Y
+−= mountOffSet` — the WHOLE-BODY draw shift), `PlayerDrawLayers.cs:32/37`
+(the ±`mountOffSet/2` mount-strip trims), `PlayerDrawHeadSet.cs:155`
+(`Position.Y −= HeightMapOffset`), `PlayerDrawLayers.cs:3979` (`38 −
+HeightOffsetVisual`). The port's `render/player_layers.rs` builds from
+`origin` + the pinned `+31` mounted_y — moving those pixels rides the
+mount draw layer's own lane (a pixel-wide change needs the deterministic
+screenshot pair, not a code-only round). The accessors above are the
+draw layer's read seam — it wires them without re-deriving.
+
+### R1c. What M2-MOUNT-4 still owes (the refreshed split-contract)
+
+The `UseDrill` write (`Mount.cs:3059-3180`) now needs ONLY: the App-level
+`pick_tile_hit`/`wall_hammer_tick` seams, the altar `Hurt`
+(`PlayerDeathReason.ByOther(4)`, `statLife/2`), the dust-230 sparks (the
+`Next(2)` + `NextDouble` pair per pick), the `ItemCheck_HandleMount`
+press path (`Player.cs:52922-52950`) — and calls
+`tr_core::edit::smooth_slope(world, x, y, true, false, chest_gate)` after
+each block pick. The SmoothSlope blocker is CLOSED; the HeightOffset
+read seam is LIVE.
+
+## R2. The 434 keep-one — FINALIZED
+
+The (2) verdict stands and is now the lane's FINAL word: **KEEP d8's 434
+row + aiStyle-74 arm; no peer copy exists.** Re-probed at the retire
+round: `origin/main` carries NO `SCUTLIX_LASER_FRIENDLY` (grep exit 1),
+and the seven sibling lanes that could have armed the band (g1/g2/g3
+missing-AI, d7 61-70, d9 81-90, f19/f20 verify) carry NO 434 row or
+`ai_scutlix_laser` copy (per-tip `git grep -c`, all empty). The keep-one
+is trivially d8's:
+
+- KEEP: `projectile/data.rs:1753` (the row), `projectile_ai_misc.rs`
+  `ai_scutlix_laser` + `scutlix_laser_charge_latch` (the decay kill, the
+  latch, the numUpdates early-exits), `projectile.rs`'s damage refusal
+  (`:12448` form) + the on-hit numUpdates-0 + the blocked-move stick.
+- STAYS UNPORTED (the legacy-keep's own terms): the `NewProjectile`
+  ai-pin (`Projectile.cs:10927-10931`) — no spawner exists in 1.4.5.8;
+  the pin lands with a future 434 spawner (a mod lane). The MagicPixel
+  beam draw (`Main.cs:34603-34619`) — the draw layer's.
+- The 1.4 fire path is 606 (`SCUTLIX_LASER`, the DOC-SWEEP (3) port) —
+  a DIFFERENT kind, no dedupe against 434.
+
+## R3. The smooth-slope-family declaration (the merger-bible paragraph)
+
+**ONE play-path `Tile.SmoothSlope` lives in `tr_core::edit::hammer`
+(`smooth_slope`/`smooth_slope_one`, this branch); every worldgen lane
+copy dedupes onto it at merge.** The family census (a full-decompile
+`Tile.SmoothSlope` call scan, 10 sites):
+
+| C# caller | site | lane | merge instruction |
+| --- | --- | --- | --- |
+| `Mount.cs:3119` (UseDrill) | the drill pick | **d8 (this)** | calls `edit::smooth_slope(…, true, false, gate)` — the write half wires it |
+| `MarbleBiome.cs:150` (PlaceSlab) | marble slabs | g40 | g40's `biomes::tile_smooth_slope{,_one}` (b8310bb5b) is arm-identical (the five masks + the flag2 veto, witnessed d05a082c8); DROP it, call `edit::smooth_slope(…, true, true, \|_,_\| false)` — g40's `generating` context threads through the ported signature |
+| `GraniteBiome.cs:326` (CleanupTiles) | granite cleanup | g40 | same dedupe |
+| `DesertHive.cs:218` + `Actions.cs:619` (Modifiers.Smooth) | the entrances | g40 | g40's `desert_entrances.rs` already imports the biomes seams (7bb5332e5); repoint the import to `crate::edit::{smooth_slope, smooth_slope_one}` — the `applyToNeighbors: false` anthill tail maps to `smooth_slope_one` |
+| `WorldGen.cs:16586` (the sand smooth sweep) | worldgen | unclaimed on any pushed tip (f24/f25/d101/d102 carry no port) | the claimant calls `edit::smooth_slope_one(…, true, gate)` per sand cell — no new copy |
+| `TrackGenerator.cs:114/117` | the minecart track gen | unclaimed | same — two `smooth_slope` calls |
+| `DungeonUtils.cs:429/496` + `DungeonPillar.cs:160/209` | the dungeon pillars | unclaimed (no `smooth` hit in main's dungeon modules) | same — `smooth_slope_one`, `applyToNeighbors: false` |
+
+The g40 signature delta is ONE param: g40's copy pins `generating: true`
+inside; the canonical threads it. The masks, the veto, the TileEmpty read
+and the cascade order are byte-identical (both cite `Tile.cs:792-865`;
+the witnesses pin the same arms). No RNG anywhere in the family — the
+dedupe is stream-neutral. The `MarbleBiome.SmoothSlope` slab-mask picker
+(`MarbleBiome.cs:79-110`, g40's `biomes.rs:1346`) is a DIFFERENT function
+(the slab-state mask map, not the tile edit) — it stays g40's.
+
+## R4. The retire-round RNG + verification record
+
+Zero new draws: `Tile.SmoothSlope` is RNG-free (the C# body has no
+`rand`); the HeightOffset accessors are pure reads. The live
+`mounted_center` changes MOUNTED anchor values only (the C#-correct
+ones) — every unmounted witness stays byte-identical; the mounted
+witnesses that pin anchors re-derive through the same accessor
+(`s1_d_4b_3_the_backpack_carries_the_turret` reads
+`p.mounted_center()` itself). Verification: C# re-read line-by-line
+(`Tile.cs:792-865`, `WorldGen.cs:69976-70023`, `Player.cs:3237-3371`,
+`Mount.cs:400-447`), the peer-lane greps quoted above, hand-arithmetic on
+the 6 new witnesses. NO compiler invoked (code-only).

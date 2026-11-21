@@ -8084,7 +8084,9 @@ fn thrust_stab_tick(
         remaining,
         frame_w,
         scale,
-        0.0, // mountOffset — HeightOffsetHitboxCenter stands at 0
+        // mountOffset — HeightOffsetHitboxCenter (W4-d8 retire (1): LIVE,
+        // `Player.cs:42604` captures it before ItemCheck; 0 unmounted).
+        p.height_offset_hitbox_center(),
         i32::from(held.kind),
     );
     let Some(hitbox) = crate::player::thrust_melee_hitbox(

@@ -34,9 +34,12 @@
 //! `UseAbility` toggle + 453 spawn tuple (`:3314-3335`) and the
 //! `UpdateEffects` no-crosshair clear (`:5010-5015`). The mining WRITE
 //! (`UseDrill` `:3059-3180` — `PickTile`/`PickWall`/`Tile.SmoothSlope`/
-//! `Hurt`/dust) stays M2-MOUNT-4: `Tile.SmoothSlope` (`Tile.cs:792-865`) is
-//! unported and the writes are App-level seams (the split-contract doc,
-//! `docs/research/97`). The Santank (46) ability stays M2-MOUNT-4.
+//! `Hurt`/dust) stays M2-MOUNT-4: the writes are App-level seams (the
+//! split-contract doc, `docs/research/97`). W4-d8 RETIRE (1): the
+//! `Tile.SmoothSlope` blocker is CLOSED — `edit::smooth_slope{,_one}`
+//! (`Tile.cs:792-865`) landed in `tr-core/src/edit/hammer.rs`; the write
+//! half now only owes the App seams + the press wiring. The Santank (46)
+//! ability stays M2-MOUNT-4.
 
 use glam::Vec2;
 
@@ -3412,10 +3415,18 @@ impl MountState {
         row.idle.count != 0 && self.idle_time >= self.idle_time_next
     }
 
-    /// Test-only: the frame state the hover gates read.
+    /// S1-P-i05: the frame state the hover gates read.
     #[cfg(test)]
     pub(crate) fn test_set_frame_state(&mut self, state: i32) {
         self.frame_state = state;
+    }
+
+    /// Test-only: the animator frame the HeightOffset family reads
+    /// (`Mount.PlayerOffset` indexes `playerYOffsets[_frame]`, W4-d8 retire
+    /// (1)).
+    #[cfg(test)]
+    pub(crate) fn test_set_frame(&mut self, frame: i32) {
+        self.frame = frame;
     }
 
     /// Test-only: the flight budget value (`reset_flight_time` writes it too).

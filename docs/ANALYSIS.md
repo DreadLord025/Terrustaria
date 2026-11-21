@@ -7578,14 +7578,55 @@ mining payload splits along the Scutlix precedent's line (research/97 §1):
   `PickTile`/`PickWall` (the App-level `pick_tile_hit`/`wall_hammer_tick`
   seams), the altar `Hurt` (`PlayerDeathReason.ByOther(4)`, `statLife/2`),
   the dust-230 sparks, and **`Tile.SmoothSlope`** (`Tile.cs:792-865`, the
-  4-neighbour slope picker — UNPORTED, the new blocker; the port has
-  `WorldGen.SlopeTile`/`PoundTile` but not this). The `ItemCheck_HandleMount`
+  4-neighbour slope picker — ~~UNPORTED, the new blocker~~ **PORTED by the
+  W4-d8 retire round: `tr_core::edit::smooth_slope{,_one}`, see "The
+  SmoothSlope retire" below**). The `ItemCheck_HandleMount`
   press path (`Player.cs:52922-52950`, the `noItems`/`StartChanneling`/
   release-latch → 453 spawn) lands with the write. `use_ability_drill`
   already returns the spawn tuple ready for it.
 - **`outerRingRotation`** (`Mount.cs:42`) is carried in the payload but ticked
   by the unported draw seam (`UpdateFrame` `:3524-3533`, `Draw` `:5811`) — it
   stays 0 until the mount draw layer activates it.
+
+### The SmoothSlope retire (W4-d8 retire round, 2026-11-21)
+
+**Code-only mode** — witnesses WRITTEN NOT RUN (6 new). research/97 is
+SEALED with the retire addendum (the full family declaration lives there,
+R3). The two closes:
+
+- **`Tile.SmoothSlope` (`Tile.cs:792-865`) PORTED** as
+  `tr_core::edit::smooth_slope{,_one}` (`edit/hammer.rs`, the tile-edit
+  family home): the neighbour-first cascade, the `can_pound_tile` +
+  `SolidOrSlopedTile` gate, the 4-neighbour mask → the five slope/half
+  arms + the flag2 no-write veto + the default re-solidify. `generating`
+  threads like `slope_tile`; the `sync` net arm rides the caller's edit
+  seam. The worldgen lane copies (g40's `biomes::tile_smooth_slope`) are
+  arm-identical and DEDUPE onto this signature at the g40 ⨉ d8 merge —
+  ONE play-path SmoothSlope, the family table in research/97 R3. Zero
+  RNG. 3 witnesses (the mask arms, the flag2 veto + the actuated-above
+  TileEmpty read, the gate + cascade).
+- **The Player mount HeightOffset family (`Player.cs:3237-3371`) PORTED
+  (the sim half)**: `height_offset_visual`/`height_offset_hitbox_center`/
+  `height_offset_boost`/`height_map_offset`/`mount_x_offset`/
+  `base_height` + the LIVE `mounted_center`/`mounted_top` (the stale
+  `== center()` fold is gone; unmounted byte-identical, mounted rides the
+  saddle anchor — the Unicorn frame 0 centre is `y + 27`, not the grown
+  box's `y + 38`). The ~15 anchor consumers (flail/spear/bobber/bow/
+  sentry-sling/baby-bird/hook/fishing) needed ZERO call-site edits — the
+  accessor convention paid off. The thrust hitbox's `mountOffset`
+  (`world_sim/editing.rs`, `Player.cs:42604`) passes the live value. The
+  `portableStoolInfo` arms fold to 0 (f3's stool deferral); the
+  `MountedCenter`/`MountedTop` setters have no C# caller — not ported;
+  `MountXOffset` is 0 on every row (no `Mount.cs` playerXOffset
+  assignment). 3 witnesses. **The DRAW half is a recorded task-seed**
+  (the mount draw layer): `PlayerDrawSet.cs:342`/`:428-429` (the
+  whole-body `Position.Y −= mountOffSet` shift), `PlayerDrawLayers.cs:
+  32/37`/`:3979`, `PlayerDrawHeadSet.cs:155` — the render's pinned `+31`
+  mounted_y stays until that lane wires the accessors with its
+  deterministic screenshot pair. The stale "no mount height offsets"
+  fold notes elsewhere in this doc (the i05 draw note, the AI_158 note,
+  the bow-launch note) describe the DRAW-side pins, which stand; the SIM
+  accessors they name are now live.
 
 ## Projectile pool (M4-PROJ-1)
 
