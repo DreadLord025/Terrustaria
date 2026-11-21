@@ -1213,6 +1213,8 @@ e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
 | 364 | g16 | 364-proj-gore-family-final | DONE d716c6c9c |
 | 365 | e21 | 365-e21-wiring-tail-seal | DONE 2fb0a36ee |
 | 366 | g18 | 366-addlight-family-bible | DONE d460345f4 |
+| 367 | d54 | 367-merger-order-dag (Lead-assigned, in flight) | reserved |
+| 368 | f43 | 352-pet-arrival-family-final (88acb11c8, post-§9 self-pick into d1's executed 352) | NEW rename owed 352→368 |
 
 ### §9.3 — rules
 
@@ -1226,7 +1228,7 @@ e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
 
 All §9.2 rename rows are EXECUTED and pushed (verified per-lane reports +
 zero-stale greps). The registry race is CLOSED. Remaining number-claim rule:
-new docs ≥367 require a Lead assignment appended here; NO self-picks.
+new docs ≥369 require a Lead assignment appended here; NO self-picks.
 Orch note: d54's orch_dust*.rs modules carry the e4-reserved first-40 +
 union steps; the 24-arm router remainder (orch_dispatch.rs, d54j catalog)
 is in flight as a separate dispatch.
