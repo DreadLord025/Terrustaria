@@ -208,7 +208,14 @@ pub(crate) struct CloudField {
     pub rand: UnifiedRandom,
     /// `Cloud.lastCameraCenter` (`Cloud.cs:37`).
     last_camera_center: Option<Vec2>,
-    /// `Main.numClouds` (`Main.cs:1259`) — init 200 (`Main.cs:66840`).
+    /// `Main.numClouds` (`Main.cs:1259`) — init 200 (`Main.cs:66839-66840`
+    /// copies it to `numCloudsTemp`). The C# then re-rolls it
+    /// `Main.rand.Next(200)` at content load (`Main.cs:10876`); the port
+    /// keeps the ctor 200 — a documented init deviation (docs/research/117):
+    /// `weatherCounter` starts 0, so the FIRST `update_num_clouds` tick
+    /// fires the jump (`:59007-59031`) and overwrites `numClouds` with the
+    /// clamped temp before any in-world draw reads it; wiring the load-time
+    /// draw would shift the bare global stream every sibling witness pins.
     pub num_clouds: i32,
     /// `Main.numCloudsTemp` (`Main.cs:1261`).
     pub num_clouds_temp: i32,
@@ -1129,6 +1136,70 @@ mod tests {
         f.update_num_clouds(&mut rng, 1.0, 0.0);
         assert_eq!(f.num_clouds, 200);
         assert!(f.num_clouds_temp >= 200);
+    }
+
+    /// W4-g69 doc-sweep — the SPAWN-CADENCE verify: the whole
+    /// `Main.cs:58952-59036` tail replays draw-for-draw on an independent
+    /// stream, INCLUDING the `weatherCounter` jump (`:59007-59032`): the
+    /// 50/50 arm's `Next(250)`/`Next(100)` bump, the 0..200 clamp, the
+    /// `numClouds = numCloudsTemp` copy and the `Next(3600, 10800)` re-arm.
+    #[test]
+    fn w4_g69_the_weather_counter_jump_replays_the_full_cadence() {
+        let mut f = field();
+        f.num_clouds = 30;
+        f.num_clouds_temp = 60;
+        f.weather_counter = 1; // decrements to 0 -> the jump fires this tick
+        f.cloud_bg_active = 0.0;
+        let mut rng = UnifiedRandom::new(2026);
+        let mut r = rng.clone();
+        // The independent replay, in the C#'s draw order.
+        let mut temp = 60i32;
+        let mut clouds = 30i32;
+        if r.next_max(60) == 0 {
+            temp += r.next_range(-1, 2);
+        }
+        if (r.next_max(1000) as f32) < 50.0 * 0.0 {
+            temp += 1;
+        }
+        if (r.next_max(1300) as f32) < 25.0 * (1.0 - 0.0) {
+            temp -= 1;
+        }
+        if (r.next_max(1000) as f32) < 200.0 * 0.0 && temp < 100 {
+            temp += 1;
+        }
+        if (r.next_max(1000) as f32) < 50.0 * 0.0 {
+            temp += 1;
+        }
+        if temp > 66 && r.next_max(100) == 0 {
+            temp -= r.next_range(1, 3);
+        }
+        if temp < 50 && r.next_max(100) == 0 {
+            temp += r.next_range(1, 3);
+        }
+        if temp > 100 {
+            temp = 100; // cloudBGActive <= 0 && cloudAlpha == 0 (`:58980`)
+        }
+        if temp < -20 {
+            temp = -20;
+        }
+        // cloudAlpha 0: no surge loop (`:58988`).
+        // weatherCounter 1 -> 0: the jump (`:59012-59032`).
+        if r.next_max(2) == 0 {
+            if r.next_max(2) == 0 {
+                temp += r.next_max(250);
+            } else {
+                temp += r.next_max(100);
+            }
+        }
+        temp = temp.clamp(0, 200);
+        clouds = temp;
+        let counter = r.next_range(3600, 10800);
+        f.update_num_clouds(&mut rng, 0.0, 0.0);
+        assert_eq!(f.num_clouds_temp, temp);
+        assert_eq!(f.num_clouds, clouds, "the jump copies temp to numClouds");
+        assert_eq!(f.weather_counter, counter, "the 1-3 minute re-arm");
+        assert_eq!(rng.peek(), r.peek(), "the cadence consumed the replayed draws");
+        assert!((3600..10800).contains(&f.weather_counter));
     }
 
     #[test]
