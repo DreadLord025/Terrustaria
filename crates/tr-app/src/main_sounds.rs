@@ -364,6 +364,61 @@ pub fn clothes_colour_row_cue(row: i32) -> Option<u32> {
     }
 }
 
+/// The menuMode 17 hair-style screen's row cues (`Main.cs:49221-49266`):
+/// the forward cycle row (`selectedMenu == 0`) plays 12 (`:49245`), the
+/// back cycle row (`selectedMenu2 == 0`, the secondary/gamepad cursor)
+/// plays 12 (`:49254`), the Back row (`selectedMenu == 2` | flag5) plays
+/// 11 (`:49265`). The cycle itself is [`hair_cycle_legacy`]. `row` is the
+/// primary `selectedMenu`; `back_cycle` is the `selectedMenu2 == 0` read.
+pub fn hair_style_screen_cue(row: i32, back_cycle: bool) -> Option<u32> {
+    if row == 0 {
+        Some(12) // `:49245` — forward cycle
+    } else if back_cycle {
+        Some(12) // `:49254` — back cycle (selectedMenu2 == 0)
+    } else if row == 2 {
+        Some(11) // `:49265` — Back
+    } else {
+        None
+    }
+}
+
+/// The legacy colour-screen Back rows (`Main.cs:49268-49410`): menuModes
+/// 18/19/21/22/23/24 (the Eyes/Skin/Shirt/Undershirt/Pants/Shoes colour
+/// pickers) each play 11 on Back (`selectedMenu == 2` | flag5) and return
+/// to mode 2 (18/19) or mode 20 (21/22/23/24). The cue is the constant 11
+/// for every one — the census pin (the screens are unwired, superseded by
+/// the 888 HSL menu).
+pub fn colour_screen_back_cue() -> u32 {
+    11 // `:49289`/`:49313`/`:49337`/`:49361`/`:49385`/`:49409`
+}
+
+/// The menuMode -7 world-difficulty select's row cues (`Main.cs:
+/// 49473-49538`): the three difficulty rows (Classic/Expert/Master,
+/// `selectedMenu` 2/3/4) set `GameMode` and play 10 (`:49506`/`:49516`/
+/// `:49526`) then open mode 7 (or -71 when `SettingsUnlock_WorldEvil`);
+/// the Back row (`selectedMenu == 5` | flag5) plays 11 (`:49536`) and
+/// returns to mode 16. `row` is the C# `selectedMenu`.
+pub fn world_difficulty_row_cue(row: i32) -> Option<u32> {
+    match row {
+        2 | 3 | 4 => Some(10), // `:49506`/`:49516`/`:49526`
+        5 => Some(11),         // `:49536` — Back
+        _ => None,
+    }
+}
+
+/// The menuMode -71 world-evil select's row cues (`Main.cs:49541-49584`):
+/// the three evil rows (Corruption/Crimson/Random, `WorldGenParam_Evil`
+/// 0/1/-1) play 10 (`:49558`/`:49566`/`:49574`) then open mode 7; the Back
+/// row plays 11 (`:49582`) and returns to mode -7. The row indices are the
+/// C# `num16` walk (0/1/2 for the evils, 3 for Back).
+pub fn world_evil_row_cue(row: i32) -> Option<u32> {
+    match row {
+        0 | 1 | 2 => Some(10), // `:49558`/`:49566`/`:49574`
+        3 => Some(11),         // `:49582` — Back
+        _ => None,
+    }
+}
+
 /// `Main.DrawSettingButton`'s hover-enter cue (`Main.cs:45595-45616`): the
 /// pointer entering the label rect plays ONE sound 12 (`:45601`) on the
 /// `!mouseOver` edge, then latches `mouseOver = true`; leaving the rect
@@ -653,5 +708,49 @@ mod tests {
         assert_eq!(clothes_colour_row_cue(4), Some(12));
         assert_eq!(clothes_colour_row_cue(5), Some(11));
         assert_eq!(clothes_colour_row_cue(6), None);
+    }
+
+    // ---- hair-style screen + colour Backs + world creation (151-165) -----
+
+    #[test]
+    fn g22_the_hair_style_screen_cycles_tick_and_back_closes() {
+        // Forward cycle row 0 plays 12 (:49245).
+        assert_eq!(hair_style_screen_cue(0, false), Some(12));
+        // Back cycle (selectedMenu2 == 0) plays 12 (:49254).
+        assert_eq!(hair_style_screen_cue(1, true), Some(12));
+        // Back row 2 plays 11 (:49265).
+        assert_eq!(hair_style_screen_cue(2, false), Some(11));
+        // The forward row wins over the back-cycle read (the C# else-if).
+        assert_eq!(hair_style_screen_cue(0, true), Some(12));
+        assert_eq!(hair_style_screen_cue(1, false), None);
+    }
+
+    #[test]
+    fn g22_the_colour_screen_backs_all_close_with_eleven() {
+        // :49289/:49313/:49337/:49361/:49385/:49409 — every colour picker
+        // Back plays 11.
+        assert_eq!(colour_screen_back_cue(), 11);
+    }
+
+    #[test]
+    fn g22_the_world_difficulty_rows_cue_ten_and_back_eleven() {
+        // Classic/Expert/Master (rows 2/3/4) play 10 (:49506/:49516/:49526).
+        for row in 2..5 {
+            assert_eq!(world_difficulty_row_cue(row), Some(10));
+        }
+        // Back (row 5) plays 11 (:49536).
+        assert_eq!(world_difficulty_row_cue(5), Some(11));
+        assert_eq!(world_difficulty_row_cue(0), None);
+    }
+
+    #[test]
+    fn g22_the_world_evil_rows_cue_ten_and_back_eleven() {
+        // Corruption/Crimson/Random (rows 0/1/2) play 10 (:49558/:49566/:49574).
+        for row in 0..3 {
+            assert_eq!(world_evil_row_cue(row), Some(10));
+        }
+        // Back (row 3) plays 11 (:49582).
+        assert_eq!(world_evil_row_cue(3), Some(11));
+        assert_eq!(world_evil_row_cue(4), None);
     }
 }

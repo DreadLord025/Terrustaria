@@ -39436,3 +39436,43 @@ in the C# order (`:49075` then `:49076`). No gameplay stream touched.
 **Verification**: code-only — no cargo/rustc/rustfmt/tests/graphify invoked;
 3 `main_sounds` witnesses WRITTEN NOT RUN.
 
+## W4-g22 batch 5 (2026-11-21, code-only) — sites 151-165
+
+**Batch 5 (sites 151-165)** — the hair-style screen, the colour-picker Backs,
+and the legacy world-creation difficulty/evil rows (menuModes 17/18/19/21/22/
+23/24/-7/-71/5/40) land as pure census helpers behind witnesses (the 888
+`UIWorldCreation`/HSL screens superseded them; unwired, the `npc_ai_style59`
+precedent). The mode-5/40 confirm rows are ALREADY wired through the batch-2
+`Act::Out(ConfirmYes/ConfirmNo)` cue arms:
+
+| site | C# | port |
+| --- | --- | --- |
+| 151 `:49245` | mode-17 forward hair cycle 12 | `hair_style_screen_cue(0, _)` + `hair_cycle_legacy` (batch 3) |
+| 152 `:49254` | mode-17 back hair cycle 12 | `hair_style_screen_cue(_, true)` |
+| 153 `:49265` | mode-17 Back 11 | `hair_style_screen_cue(2, false)` |
+| 154 `:49289` | mode-18 (Eyes colour) Back 11 | `colour_screen_back_cue` |
+| 155 `:49313` | mode-19 (Skin colour) Back 11 | `colour_screen_back_cue` |
+| 156 `:49337` | mode-21 (Shirt colour) Back 11 | `colour_screen_back_cue` |
+| 157 `:49361` | mode-22 (Undershirt colour) Back 11 | `colour_screen_back_cue` |
+| 158 `:49385` | mode-23 (Pants colour) Back 11 | `colour_screen_back_cue` |
+| 159 `:49409` | mode-24 (Shoes colour) Back 11 | `colour_screen_back_cue` |
+| 160 `:49430` | mode-5 confirm Yes 10 | LANDED batch 2 — `Act::Out(ConfirmYes)` |
+| 161 `:49436` | mode-5 confirm No 11 | LANDED batch 2 — `Act::Out(ConfirmNo)` |
+| 162 `:49457` | mode-40 discard Yes 10 | LANDED batch 2 — `Act::Out(ConfirmYes)` |
+| 163 `:49463` | mode-40 discard No 11 | LANDED batch 2 — `Act::Out(ConfirmNo)` |
+| 164 `:49506` | mode -7 Classic difficulty 10 | `world_difficulty_row_cue(2)` |
+| 165 `:49516` | mode -7 Expert difficulty 10 | `world_difficulty_row_cue(3)` |
+
+**The pure helpers** (`main_sounds.rs`): `hair_style_screen_cue` (the mode-17
+forward/back cycle 12 + Back 11, the `selectedMenu2` secondary-cursor read),
+`colour_screen_back_cue` (the six colour-picker Backs all play 11),
+`world_difficulty_row_cue` (the mode -7 Classic/Expert/Master 10 + Back 11),
+`world_evil_row_cue` (the mode -71 Corruption/Crimson/Random 10 + Back 11 —
+lands ahead of its census rows 168-171, the helper is shared).
+
+**RNG**: every batch-5 site is draw-free (ids 10/11/12 int overload). No
+gameplay stream touched.
+
+**Verification**: code-only — no cargo/rustc/rustfmt/tests/graphify invoked;
+4 `main_sounds` witnesses WRITTEN NOT RUN.
+
