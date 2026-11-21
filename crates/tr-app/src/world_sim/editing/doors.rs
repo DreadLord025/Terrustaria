@@ -50,7 +50,16 @@ fn use_golem_altar(app: &mut App) -> bool {
                 if app.inventory[slot].count == 0 {
                     app.inventory[slot].kind = 0;
                 }
-                app.audio.play("Roar_0");
+                // W4-e10 — `Player.cs:32782`: `PlaySound(15,
+                // (int)position.X, (int)position.Y, 0)` — case 15 slot 0
+                // (the playing guard, no draws), at the player's
+                // TOP-LEFT, BEFORE `NPC.SpawnOnPlayer(245)` (`:32785`).
+                let (plx, ply) = app
+                    .player
+                    .as_ref()
+                    .map(|p| (p.x, p.y))
+                    .unwrap_or((0.0, 0.0));
+                app.audio.play_roar(0, plx, ply);
                 spawn_golem_on_altar(app);
                 break;
             }
@@ -374,6 +383,25 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             "Door_Closed" => {
                 app.audio
                     .play_door_sound(false, tx as f32 * TILE_PX, ty as f32 * TILE_PX, rng);
+            }
+            // W4-e10 — the dials' `SoundID.Item4` (`Player.cs:32642`/
+            // `:32652`) is a STYLE play at `base.position` (the player's
+            // TOP-LEFT, not the tile): the wave-A façade — the
+            // `GetRandomPitch` NextFloat audio-only, then case 2's one
+            // `Next(-6, 7) * 0.01` pitch draw on `UpdatePlayers` after
+            // the gate. The tile-corner `play_at` stand-in is retired.
+            "Item_4" => {
+                let (plx, ply) = app
+                    .player
+                    .as_ref()
+                    .map(|p| (p.x, p.y))
+                    .unwrap_or((0.0, 0.0));
+                if let Some(idx) = crate::soundid::SOUND_STYLES
+                    .iter()
+                    .position(|s| s.name == "Item4")
+                {
+                    app.audio.play_use_sound(idx as u16, plx, ply, 0.0, rng);
+                }
             }
             _ => {
                 app.audio
