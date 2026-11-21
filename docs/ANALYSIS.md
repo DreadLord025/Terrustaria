@@ -39244,3 +39244,42 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The NPC dust second batch FINAL (W4-e2 SEAL, 2026-11-21, code-only)
+
+research/285 (the window-coverage table, renumbered 64→285 per
+registry-150 — d64's `161c63898` wins key 64, e2's post-cutoff push
+self-adjudicates the first free ≥281 after a fresh all-tip sweep:
+281×8/282×3/283=f4 taken; the interim 284 pick lost to g52's executed
+push `0224fff80`, re-picked 285/286) + research/286 (the
+npc-dust-family bible: the 927+5 census re-counted direct-path —
+836 ND + 16 NDP + 75 NDD, HitEffect 629+2, windows 159/87/12/629/40 —
+matching d54's 131 §8.2; the per-window ownership map; the keep-one
+symbol list; the staged-emitter wiring obligations).
+
+- **Keep-one MUTUAL seal with f4** (its research/283 §1 at `26728bd87`
+  ↔ e2's 285 §5): the merger keeps f4's KingSlime trio / EterniaCrystal
+  trio / MoonLord storm+head+eye bodies; e2's inline duplicates DROP,
+  its named emitters + machine witnesses supplement. f4 b7 absorbed
+  the e2-b5 left-to-right f32 multiply order (`6e304b960`) + the
+  `(int)x >> 4` probes; the e2 seal fix `d5ae8725c` adopts f4's
+  widened-f32 fan angle (`(float)NextDouble() * 2πf`,
+  `NPC.cs:42221/:42872`, `Utils.cs:1665-1668`) — the last divergence
+  closed, both witnesses re-mirrored.
+- **Delivered:** b1-b6 (Twins, Skeletron/Brain/Golem-head/MoonLeach/
+  Dutchman/StardustCell wiring, style39/41, the pillar dissolve +
+  ambient family, the crystal/MoonLord second ports, the FAITHFUL
+  aiStyle-97 NebulaFloater machine with the `moon_despawn_kill` silent
+  kill + the `:81347` strike-hook latch, the KingSlime trio, 9 STAGED
+  gap sites :21562-39039 + 4 staged pillar-minion kinds, the
+  AncientDoom-523 attribution fix). The gap census closes 49/49 lines.
+- **Deviations kept:** the staged emitters are unwired by design (the
+  kinds/machines are unported — the wiring wave calls them at the C#
+  stream position, the `npc_ai_style9` precedent); the MartianTurret
+  ring rides c11's plan seam; the IceElemental :24862 AddLight half is
+  the light lane's cited skip.
+- Witness census at the seal tip: 21 emitter (`npc_dust.rs`) + 10
+  machine (`w4_e2_batch2/5_tests`) + 2 floater (in the
+  `s1_d_3_moonlord_rng_witnesses` module) — all WRITTEN NOT RUN; **no
+  cargo/rustc/rustfmt/tests/dotnet/graphify invoked** (code-only
+  mandate). Lane SEALED — nothing owed by e2.

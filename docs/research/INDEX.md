@@ -75,6 +75,8 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
+| 285 | NPC.cs dust-site window coverage (W4-e2 SEALED; renumbered 64→285 per registry-150 — d64 wins key 64, the interim 284 pick lost to g52's executed push; the AI/HitEffect/spawn lane table + the f4 keep-one overlap register, mutual seal receipt) | `285-npc-dust-window-coverage.md` | ✅ |
+| 286 | NPC dust family bible (W4-e2 seal: the 927+5 census re-count, the per-window ownership map d52/e2/f4/g61/g62/g59/g60, the keep-one symbol list, the staged-emitter wiring obligations) | `286-npc-dust-family-bible.md` | ✅ |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

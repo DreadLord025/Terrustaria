@@ -1,6 +1,6 @@
-# 64 — NPC.cs dust-site window coverage
+# 285 — NPC.cs dust-site window coverage (W4-e2 SEALED)
 
-> W4-e2 batch 6 · 2026-11-21 · code-only census. Which `Dust.NewDust*`
+> W4-e2 batch 6 + seal · 2026-11-21 · code-only census. Which `Dust.NewDust*`
 > windows in `decompiled/Terraria/NPC.cs` are claimed by which lane, at
 > the fetched branch tips. Companion to d54f's `131-dust-master-status.md`
 > (the Main/world-lane keep-one register); this doc is the **NPC.cs AI +
@@ -9,20 +9,45 @@
 > stream; "staged" = the body + RNG order are pinned in a pure emitter,
 > the machine wiring lands with a later wave; "plan" = a count/geometry
 > seam the dust lane fills.
+>
+> **Renumber 64 → 285 (registry-150 post-cutoff rule, one race):** key
+> 64 belongs to W4-d64 (`64-drawdata-cases-4.md`, first-add `161c63898`
+> 11-20T18:54:02 — the registry's §1 winner row); this doc's first push
+> (`bfc081305`, 11-21T10:48:45) came AFTER the registry's final sweep
+> (`38bfd1d22`, 10:22:14), so per the cutoff note the lane
+> self-adjudicates ≥281 after a fresh sweep. The first sweep found 281
+> taken EIGHT ways (d9/d30/g48/f39/c25/c9/d106/d125), 282 three ways
+> (g48/d125/f39), 283 = f4's executed `283-npc-dust-final.md`
+> (`26728bd87`), 298 = g63's family-final; the interim 284/285 pick was
+> RACED — the pre-push re-fetch caught g52's executed
+> `284-g52c-relay-host-arms-census.md` (`0224fff80`, 16:19:37; an
+> executed push beats the unpublished pick, the f4-281 precedent).
+> **285 = this coverage doc, 286 = the npc-dust-family bible** (both
+> zero-claimant at the final pre-push sweep, 285/286/287 probed). The
+> old key-64/284 citations in commit messages stay as history; the one
+> code ref (`npc_dust.rs` module banner) is repointed to 285.
 
-## 1. Lane tips (fetched 2026-11-21)
+## 1. Lane tips (seal re-fetch 2026-11-21; the batch-6 read in brackets)
 
-| Lane | Branch | Tip | Scope |
-| ---- | ------ | --- | ----- |
-| d52 | task/W4-d52-dust-sites-npc | `231b31555` | first-40 AI lane (Golem/EoC/caster/sphere) |
-| e2 | task/W4-e2-dust-sites-npc-2 | `9912498fc` | second batch (this doc's lane) |
-| f4 | task/W4-f4-dust-npc-3 | `bcf917437` | third batch + wave E gore |
-| g61 | task/W4-g61-npc-spawn-dust | `b5ff1803d` | spawn/teleport-in/transform visuals |
-| g62 | task/W4-g62-npc-hit-dust | `32af98b44` | HitEffect every-strike dust |
-| g59 | task/W4-g59-npc-death-effects-1 | `29c13d103` | HitEffect death halves (dust-only kinds) |
-| g60 | task/W4-g60-npc-death-effects-2 | `19431e385` | death-family gore/dust matrix |
-| f5 | task/W4-f5-dust-proj-3 | `d0619d8e9` | wave D classic-mob gore chain (853/853) |
-| f10 | task/W4-f10-gore-sites-3 | `05f40324e` | wave C HitEffect gore table |
+| Lane | Branch | Tip (seal) | Scope |
+| ---- | ------ | ---------- | ----- |
+| d52 | task/W4-d52-dust-sites-npc | `231b31555` (unchanged) | first-40 AI lane (Golem/EoC/caster/sphere) |
+| e2 | task/W4-e2-dust-sites-npc-2 | `d5ae8725c` [`9912498fc`] | second batch (this doc's lane) |
+| f4 | task/W4-f4-dust-npc-3 | `26728bd87` [`bcf917437`] | third batch + wave E gore — **SEALED**, research/283 |
+| g61 | task/W4-g61-npc-spawn-dust | `6e922fc60` [`b5ff1803d`] | spawn/teleport-in/transform visuals — SEAL + 238 renumber |
+| g62 | task/W4-g62-npc-hit-dust | `32af98b44` (unchanged) | HitEffect every-strike dust |
+| g59 | task/W4-g59-npc-death-effects-1 | `d277f782b` [`29c13d103`] | HitEffect death halves — ACTIVATIONS-2 b14-16 |
+| g60 | task/W4-g60-npc-death-effects-2 | `30fea0fe1` [`19431e385`] | death-family matrix — research/110 FINAL-FINAL |
+| f5 | task/W4-f5-dust-proj-3 | `b68eac297` [`d0619d8e9`] | wave D gore chain (853/853) — GORE SEAL research/111 |
+| f10 | task/W4-f10-gore-sites-3 | `012bdcec3` [`05f40324e`] | wave C HitEffect gore table (1441 sites, b170 COMPLETE) |
+
+The seal-round advances are all downstream of the batch-6 rows below:
+f4's b7 + SEAL absorbed the e2-b5 multiply order into its keep-one
+bodies (research/283 §1) and fixed both storm tile probes to
+`(int)x >> 4`; g61's SEAL renumbered its final doc 237→238; g59 added
+the 17-kind activation census; g60 published the f10-overrun
+DROP-HUNKS; f5 sealed the 4 hit-half gore wiring assignments; f10
+closed the gore chain at :89831. None changes a §2 row's ownership.
 
 ## 2. AI() dust windows (`NPC.cs:19344-44037` + the named machines)
 
@@ -82,8 +107,10 @@
 | --------- | ------- | --------- |
 | 44937-45879 | Empress of Light (AI_120) | `npc_ai_empress.rs` (empress lane, argument-draw seams) |
 | 46044-47437 | HallowBoss / bow-launch | `bow_launch.rs` / projectile lane |
-| 50268/50284 | Wyvern fade | `npc_ai_wyvern.rs` (wyvern lane) |
-| 50976-51026 | Wyvern 454-459/621-623 fade | `npc_ai_wyvern.rs` |
+| 50268/50284 | BloodSquid 619 day-flee burst (NOT Wyvern — f4 research/283 §2 correction; AI_005) | kind wave (619 unported; the hover family d22/f4-b5) |
+| 50692 | BloodSquid 619 hover unconditional arm (no Next(20) gate) | kind wave (f4-b5's gate models the bounce/else arms only) |
+| 50976 | leech 117 tunnel-entry 20×5 burst | **f4 b7 WIRED** (`e7ea8b24b`, the AI_006 seam's one live site) |
+| 50993/51015/51026 | CultistDragon 454-459 / BloodEel 621-623 fades | wyvern-lane census (`npc_ai_wyvern.rs`), kinds UNPORTED — dormant, cited (f4 research/283 §2) |
 | 51656+ worm tails | worm pass | f4 b4 seam + worm lane |
 | 55868-58807 | town / fighter ambient | town lane (c-series) |
 | 60349-63970 | misc AI (unicorn, pirate, DD2) | unicorn_b / pirate / DD2 lanes |
@@ -114,12 +141,31 @@
 | 90236-90263 alt-texture transitions | g61 | wired | `8d23e2985` |
 | Main.TeleportEffect styles 0-13 | g61 | wired | `6345f7b7b`/`8d23e2985` |
 
-## 5. Overlap register (merger-wave keep-one)
+## 5. Overlap register (merger-wave keep-one) — SEALED both sides
 
 These windows were ported independently by two lanes (the branch list
 is the claim record, but the :42873-44037 window was small enough that
 f4's third batch and e2's second batch both reached it). The merger
 takes ONE body per site; the witnesses supplement.
+
+**SEAL receipt (mutual):** f4's research/283 §1 (`26728bd87`) confirms
+this register verbatim and publishes the e2-side DROP list — the
+merger drops e2's inline KingSlime dust arms (`1cbbcb95d`), the
+EterniaCrystal trio + the MoonLord storm/fan/eye bodies (`31c91d90` +
+`6e304b960`); e2 KEEPS the named `king_slime_teleport_ring`/
+`king_slime_body_drip` emitters + all machine/emitter witnesses as
+supplements, re-mirrored onto f4's bodies. f4's b7 absorbed the e2-b5
+left-to-right f32 multiply order into its keep-one bodies and fixed
+BOTH storm tile probes to the C# `(int)x >> 4` (`Utils.cs:1807-1810`).
+The e2-side seal fix `d5ae8725c` closes the last divergence this side:
+the head/eye fan ANGLE now truncates the NextDouble to f32 BEFORE the
+2π multiply (`:42221`/`:42872`'s `(float)NextDouble() * ((float)PI*2f)`
+— f4's form), with f64 cos/sin over the f32 angle
+(`Utils.cs:1665-1668`); the e2-b5 f64-multiply form drifted sub-ulp.
+Both witnesses re-mirror the same order. With that, every overlap
+body is draw-equivalent at the tips (the remaining e2 `/16` probes
+differ from `>>4` only for negative coordinates — off-world either
+way, and the bodies drop at the merge regardless).
 
 | Sites | e2 commit | f4 commit | Keep-one note |
 | ----- | --------- | --------- | ------------- |
@@ -153,3 +199,39 @@ emitter is renamed `ancient_doom_rings`; the real Squidhead sites are
 
 Witnesses: 6 emitter + 2 KingSlime machine + 2 floater machine, all
 WRITTEN NOT RUN (code-only mode).
+
+## 7. e2 SEAL (this round — lane closed)
+
+**Delivered (batches 1-6 + seal):** 40+ sites across the second-batch
+window — b1 Twins + staged Skeletron/Brain (`1da18d196`), b2 the
+staged wiring + 4 inline machines (`2bfaa71a4`), b3 style39/41 ten
+sites (`98f3337e7`), b4 pillar ambient + dissolve ring/plume
+(`1ec45ba28`), b5p1 the pillar 6-burst + 241 tail (`0f0d7036e`), b5p2
+twenty sites incl. the crystal/MoonLord/floater machines
+(`31c91d902`), b5 fidelity + witness fixes (`6e304b960`/`970cd3495`),
+b6 KingSlime trio + faithful aiStyle-97 + 9 staged gap sites + the
+AncientDoom relabel (`1cbbcb95d`/`6c424595f`/`9912498fc`), seal fix
+`d5ae8725c`. Witness census at the seal tip: `npc_dust.rs` 21 emitter
+witnesses + `npc.rs` `w4_e2_batch2/5_tests` 10 machine witnesses + the
+`s1_d_3_moonlord_rng_witnesses` module's 2 floater witnesses (the
+module's other 6 are main-inherited S1-D-3 pins e2 re-derived) — all
+WRITTEN NOT RUN, no cargo/tests/rustfmt/graphify (code-only mandate).
+
+**Nothing owed by e2:** the overlap bodies drop at the merge per §5
+(f4 keeps); the 9 gap sites + the b5 staged kinds (SolarGoop 519,
+AncientLight 522, AncientDoom 523, SandElemental 541) stay STAGED with
+their witnesses — the wiring wave owns the machine arms (the
+`npc_ai_style9` solar-flare precedent); the MartianTurret plan seam
+(`npc_ai_style73.rs::turret_materialize_dust_plan`) composes with the
+staged `turret_materialize_ring` emitter. The floater fade-entry is
+WIRED faithful (no stand-in remains).
+
+**Cross-lane receipts:** d54 bible §8.2's NPC row (927+5) re-counted
+direct-path this round — 836 ND + 16 NDP + 75 NDD = 927, +5 CloneDust;
+the window split 159 (<50000) / 87 (50000-69999) / 12 (70000-81653) /
+629 (HitEffect 81654-89834, +2 Clone) / 40 (>89834) matches the bible
+exactly. The gap census :21562-39039 holds 49 ND-family lines, ALL
+claimed by the §2 rows: e2 b1/b2 Twins 6 + Skeletron 2 + Golem-head 2
++ Brain 1 + MoonLeach 2 + Dutchman 1, b3 style39/41 10, b6 staged 9;
+c4 style44 3, style56 1, frost-boss-b 1, style74 7, saucer style75 4
+- 49/49, zero unclaimed. Family bible: `286-npc-dust-family-bible.md`.

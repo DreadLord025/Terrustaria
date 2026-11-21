@@ -66,7 +66,7 @@
 //! Batch 6 (the :42873-44037 window's unclaimed tail — f4's third wave
 //! owns 44037+, the window holds ONLY the King Slime's three sites; the
 //! :21562-39039 gap census + the floater fade-entry follow in the next
-//! commits, see research/64):
+//! commits, see research/285, renumbered from 64 per registry-150):
 //! - 43251/43278/43365 — the King Slime's shrink 10×4 ring / grow-back
 //!   10×4 ring / every-tick body 4 (`:43249-43254`/`:43276-43281`/
 //!   `:43365-43367`, `update_king_slime` — WIRED, the live DustPool).
