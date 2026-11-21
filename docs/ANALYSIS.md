@@ -39282,6 +39282,8 @@ the caller after the pass (the `wants_*` sink precedent); the deferral is
 stream-neutral for every current consumer (only 213/268 are live, neither spawns
 children). A scripted-RNG witness pins each census order exactly; 38 `w4_d50_*`
 tests incl. a full-pool integration (pre_move + move + type_chain + tail).
+(The "38" figure is corrected at the retire: 34 `w4_d50_*` in this file —
+research/243 §7's machine-checked census.)
 
 **Deliberate deviations / drops (each cited at its arm):**
 
@@ -39401,4 +39403,22 @@ constants). The scripted RNG-census draw-ORDER pins were unaffected — the
 draws precede the tails — and stand verbatim; the child-spawn scale pins
 likewise (the spawns record the arm-time scale, before the tails). No RNG
 order changed anywhere; the stream-pinned witnesses are untouched.
+
+### The W4-d50 RETIRE FINAL (2026-11-21, research/243)
+
+The lane is RETIRED at `e84e6bd76` (+ the research/243 doc commit). The
+full receipt — the landed-work census, the pre_move-strip/type_chain-wire
+confirmations, the d54×g13 G3/G4 keep-one EXACT drop-hunks (d50's
+`dust_table.rs` is byte-identical to the merge-base `a725acb04`, blob
+`a0c5ce4d5` — NO contest; the merger takes g13's retire blob `300c2647a`,
+a strict superset of d54's `58305d0a8`: 98 insertions / 0 deletions), the
+flag-b/flag-c EXECUTED receipts, the g13 `dust_lights_b.rs` replay-retire
+keys re-pinned at the HEAD line numbers, and the dust-type-table family
+declaration — lives in `docs/research/243-d50-dust-type-table-final.md`
+(number 243 per the d54 registry-150: 237-242 taken at every origin tip,
+243 the first free). Witness-count correction: the phase-1 "38
+`w4_d50_*`" figure above is SUPERSEDED — the machine-checked count is 34
+in `dust_physics.rs` at every lane commit; the lane total is 37
+`w4_d50_*` + 1 `w4_g13_*` transplant = 38 witnesses, all WRITTEN NOT RUN
+(the compile window rides the merge-verify wave, research/131 §8.3.13).
 
