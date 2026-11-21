@@ -209,6 +209,22 @@
 //!   (-vx·0.2,-vy·0.2) — dust 15 alpha 100 scale 1.8 noLight noGravity
 //!   ×1.3, then dust 26 scale 0.9 noLight ×1.3.
 //! - 89150 — 289 (`:89144-89154`): ×30 dust 181, the 15-shape single.
+//! Batch 15 (the pillar/confetti/Pumpkin-Moon live arms):
+//! - 84693 — the lunar pillars 333-336 (`:84670-84694`): ×100 dust 4,
+//!   alpha 150, the per-type tint.
+//! - 84710 — 537 (`:84704-84711`): ×100 dust 32.
+//! - 84732 — the confetti slime (type 1, ai[1]==1345, `:84723-84741`):
+//!   the LIVE 10-dust burst (Next(139,143) type arg FIRST, scale
+//!   ×(1+Next(-30,31)·0.01), vel.X += Next(-50,51)·0.05) + the 5 gore
+//!   siblings' ARGUMENT/post-write draws (Next(276,283), Next(-20,21),
+//!   Next(-50,51) each — the bodies are d55's), BEFORE the gel loop.
+//! - 84782 — 352 (`:84776-84784`): ×100 dust 67 noGravity.
+//! - 84801 — 305-314 (`:84795-84802`): ×100 dust 194, scale 1.1.
+//! - 84823 — Pumpking 327 (`:84817-84824`): ×100 dust 189, scale 1.1.
+//! - 84844 — Mourning Wood 325 (`:84838-84845`): ×100 dust 191, 1.1.
+//! - 84873 — 344 (`:84867-84874`): ×100 dust 196.
+//! - 84898 — 326 (`:84892-84899`): ×100 dust 191, scale 1.1.
+//! - 84915 — 304 (`:84909-84916`): ×100 dust 189, scale 1.3.
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -253,6 +269,9 @@ pub struct HitDustSnapshot {
     /// `this.ai[3]` — the Mimic's chest-type selector (`NPC.cs:88769-
     /// 88776`: 2 → dust 10, 3 → dust 37, else 7).
     pub ai3: f32,
+    /// `this.ai[1]` — the confetti-slime gate (`NPC.cs:84723`: the
+    /// type-1 slime with ai[1] == 1345 bursts confetti BEFORE its gel).
+    pub ai1: f32,
 }
 
 impl HitDustSnapshot {
@@ -280,6 +299,7 @@ impl HitDustSnapshot {
             scale: n.scale,
             wet: n.wet,
             ai3: n.ai[3],
+            ai1: n.ai[1],
         }
     }
 }
@@ -396,10 +416,28 @@ pub fn replay_hit_dust(
         return;
     }
     match s.npc_type {
-        // `:84721-84749` — the slime family (1/16/71/244/535). The
-        // confetti-slime `ai[1] == 1345` prologue (`:84723-84742`) is a
-        // later batch (its Next(139,143)/jitter draws + gore pairs).
+        // `:84721-84749` — the slime family (1/16/71/244/535).
         1 | 16 | 71 | 244 | 535 => {
+            // `:84723-84741` — the confetti slime's burst rides BEFORE
+            // the gel loop (live num314 = 5 → 10 dusts + 5 gore siblings).
+            if s.npc_type == 1 && s.ai1 == 1345.0 {
+                for _ in 0..10 {
+                    // `:84732` — the Type argument draws FIRST.
+                    let t = rng.next_range(139, 143);
+                    let idx = live_dust(s, t, 0.0, -10.0, 0, Color::default(), 1.2, rng, dust, ctx, world);
+                    let d = dust.slot_mut(idx);
+                    d.scale *= 1.0 + rng.next_range(-30, 31) as f32 * 0.01; // `:84733`
+                    d.velocity.x += rng.next_range(-50, 51) as f32 * 0.05; // `:84734`
+                }
+                // `:84736-84741` — the 5 gore siblings: the ARGUMENT
+                // draw (Next(276,283)) + the two post-write draws ride
+                // here in order; the NewGore bodies are d55's.
+                for _ in 0..5 {
+                    let _ = rng.next_range(276, 283); // `:84738`
+                    let _ = rng.next_range(-20, 21); // `:84739`
+                    let _ = rng.next_range(-50, 51); // `:84740`
+                }
+            }
             // `:84745-84748` — ×100 dust 4, this.alpha, this.color.
             for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
                 live_dust(s, 4, dir, -1.0, s.alpha, s.color, 1.0, rng, dust, ctx, world);
@@ -1078,6 +1116,48 @@ pub fn replay_hit_dust(
                 d.velocity *= 1.3;
             }
         }
+        // `:84670-84694` — the lunar pillars: ×100 dust 4, alpha 150,
+        // the per-type tint (`:84672-84688`).
+        333..=336 => {
+            let tint = match s.npc_type {
+                333 => Color::new(73, 147, 221, 200),
+                334 => Color::new(24, 146, 79, 200),
+                335 => Color::new(194, 46, 50, 200),
+                _ => Color::new(228, 200, 1, 200),
+            };
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 4, dir, -1.0, 150, tint, 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:84704-84711` — 537: ×100 dust 32.
+        537 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 32, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:84776-84784` — 352: ×100 dust 67, noGravity.
+        352 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                let idx = live_dust(s, 67, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                dust.slot_mut(idx).no_gravity = true; // `:84783`
+            }
+        }
+        // `:84795-84916` — the Pumpkin/Frost Moon boss parts: ×100,
+        // alpha 0 default colour; 305-314 → 194 scale 1.1, 327 → 189
+        // scale 1.1, 325/326 → 191 scale 1.1, 344 → 196 scale 1, 304 →
+        // 189 scale 1.3.
+        305..=314 | 327 | 325 | 344 | 326 | 304 => {
+            let (t, sc) = match s.npc_type {
+                305..=314 => (194, 1.1),
+                327 => (189, 1.1),
+                325 | 326 => (191, 1.1),
+                344 => (196, 1.0),
+                _ => (189, 1.3), // 304
+            };
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, t, dir, -1.0, 0, Color::default(), sc, rng, dust, ctx, world);
+            }
+        }
         // `:89526-89548`/`:89690-89700` — the three spheres are handled
         // ABOVE the life gate (the every-strike arms); this match never
         // sees 25/33/30/665.
@@ -1127,6 +1207,7 @@ mod tests {
             scale: 1.0,
             wet: false,
             ai3: 0.0,
+            ai1: 0.0,
         }
     }
 
@@ -2189,5 +2270,96 @@ mod tests {
         let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
         assert_eq!(live.len(), 5);
         assert!(live.iter().all(|d| d.dust_type == 180 && d.scale == 1.4 && d.no_gravity));
+    }
+
+    /// W4-g62 batch 15 — the confetti slime's full draw sequence
+    /// (`NPC.cs:84730-84741`): 10 × (type arg + internals + 2 jitter
+    /// draws) then 5 × 3 gore-sibling draws, THEN the gel loop.
+    #[test]
+    fn w4_g62_the_confetti_burst_precedes_the_gel() {
+        let world = air();
+        let ctx = ctx();
+        let mut s = snap(1, 25, 25, 2.5); // gel ×100 → 10
+        s.ai1 = 1345.0;
+        s.color = Color::new(0, 80, 255, 100);
+        let mut rng = UnifiedRandom::new(149);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(149);
+        let mut twin = DustPool::new();
+        for _ in 0..10 {
+            let t = twin_rng.next_range(139, 143);
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, t,
+                0.0, -10.0, 0, Color::default(), 1.2,
+            );
+            let d = twin.slot_mut(idx);
+            d.scale *= 1.0 + twin_rng.next_range(-30, 31) as f32 * 0.01;
+            d.velocity.x += twin_rng.next_range(-50, 51) as f32 * 0.05;
+        }
+        for _ in 0..5 {
+            let _ = twin_rng.next_range(276, 283);
+            let _ = twin_rng.next_range(-20, 21);
+            let _ = twin_rng.next_range(-50, 51);
+        }
+        for _ in 0..10 {
+            twin.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 4,
+                1.0, -1.0, 0, Color::new(0, 80, 255, 100), 1.0,
+            );
+        }
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+        // A plain slime (ai1 != 1345) draws NO confetti/gore draws.
+        let plain = snap(1, 25, 25, 2.5);
+        let mut r2 = UnifiedRandom::new(149);
+        let mut p2 = DustPool::new();
+        replay_hit_dust(&plain, &mut r2, &mut p2, &ctx, &world);
+        let mut t2 = UnifiedRandom::new(149);
+        let mut q2 = DustPool::new();
+        for _ in 0..10 {
+            q2.new_dust(
+                &mut t2, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 4,
+                1.0, -1.0, 0, Color::default(), 1.0,
+            );
+        }
+        assert_eq!(r2, t2);
+        assert_eq!(p2.slots(), q2.slots());
+    }
+
+    /// W4-g62 batch 15 — the pillar tints and the moon-boss scale rows
+    /// (`NPC.cs:84693`/`:84801`/`:84823`/`:84844`/`:84873`/`:84898`/
+    /// `:84915`/`:84782`).
+    #[test]
+    fn w4_g62_the_pillar_tints_and_moon_scales() {
+        let world = air();
+        let ctx = ctx();
+        for (t, tint) in [
+            (333, Color::new(73, 147, 221, 200)),
+            (334, Color::new(24, 146, 79, 200)),
+            (335, Color::new(194, 46, 50, 200)),
+            (336, Color::new(228, 200, 1, 200)),
+        ] {
+            let s = snap(t, 100, 100, 5.0); // ×100 → 5
+            let mut r = UnifiedRandom::new(151);
+            let mut p = DustPool::new();
+            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 5, "type {t}");
+            assert!(live.iter().all(|d| d.dust_type == 4 && d.alpha == 150 && d.color == tint), "type {t}");
+        }
+        // (type, dust type) — the scale rides the pool's jitter × row.
+        for (t, dt) in [(305, 194), (327, 189), (325, 191), (344, 196), (326, 191), (304, 189), (352, 67), (537, 32)] {
+            let s = snap(t, 100, 100, 5.0);
+            let mut r = UnifiedRandom::new(151);
+            let mut p = DustPool::new();
+            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 5, "type {t}");
+            assert!(live.iter().all(|d| d.dust_type == dt), "type {t}");
+            if t == 352 {
+                assert!(live.iter().all(|d| d.no_gravity));
+            }
+        }
     }
 }
