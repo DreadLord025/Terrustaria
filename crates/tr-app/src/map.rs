@@ -701,6 +701,17 @@ impl WorldMap {
     /// every section of the world, as the C# does by walking
     /// `Main.sectionManager`'s draw queue. `pretty` selects
     /// `UnlockMapTilePretty` (the 11x11 Manhattan falloff) over the flat 255.
+    ///
+    /// **DEPRECATED-BY-UNION (W4-e18 retire, research/84 §4/§6.4):** this
+    /// bulk ceil-loop sweep is DEAD CODE on the live path — the `/map`
+    /// debug row arms the flags directly (`debug_panel.rs`, the verbatim
+    /// `ToolkitDebugCommands.cs:483-491` path) and the reveal rides the
+    /// section sweep. Zero callers outside tests. The union replaced the
+    /// body with the verbatim flag path (`unlock_map(&mut i32, bool)`:
+    /// `clear_map = true`; toggle `debug_unlock_map` 1/2 + `refresh_map`,
+    /// or 0 — no ceil loop). Kept here for the anchor row + the
+    /// whole-world reveal primitive until the fold; comments-only banner,
+    /// nothing deleted.
     pub fn unlock_map(&mut self, world: &World, pretty: bool) {
         let sx = (world.width as f32 / 200.0).ceil() as i32;
         let sy = (world.height as f32 / 150.0).ceil() as i32;

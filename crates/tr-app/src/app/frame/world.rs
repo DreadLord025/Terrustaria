@@ -579,6 +579,20 @@ impl App {
     /// `updateMap` consume arm (`:61886`) checks `!gamePaused`. The port's
     /// world branch implies the menu/gen gates; the staged `.map` upload
     /// (`load_map`) rides the `!Main.loadMap` gate (`:61863`).
+    ///
+    /// **DEPRECATED-BY-UNION (W4-e18 retire, research/84 §3/§8):** this
+    /// update-half driver shape is the retired dup-half. The union's
+    /// driver is `frame/world.rs::map_reveal_draw` (field-borrow
+    /// associated fn) called from `frame/draw.rs` on the **DoDraw** half
+    /// ahead of `WorldMap::prepare` (f46's placement salvage), with the
+    /// consume split into `map_reveal_consume_fields` carrying the paused
+    /// `ChangesQueued` else-arm fall-through (this fn's `if paused
+    /// { return }` skips that arm — the §3 deviation the union fixes).
+    /// The state-machine semantics below (load gate, refresh consume,
+    /// queue drain, slot nulling) are the union-kept e18 half. Do not
+    /// re-add an update-half driver call at the fold; the S1-B-8
+    /// orchestrator pin deliberately omits the driver. Comments-only
+    /// banner — nothing deleted, the fn stays live until the fold.
     pub(crate) fn map_reveal_driver(&mut self, paused: bool) {
         if !self.map.as_ref().is_some_and(|m| !m.load_map) {
             return;
@@ -635,6 +649,15 @@ impl App {
     /// `DrawToMap_Section` analog is the section rect's dirty push (the
     /// texture sync rides `prepare`); the budget is the C#'s wall-clock
     /// `TimeLogger` stopwatch, verbatim.
+    ///
+    /// **DEPRECATED-BY-UNION (W4-e18 retire, research/84 §3/§6):** the
+    /// dirty-rect push below is the retired dup-half — the union replaced
+    /// it with the real `DrawToMap_Section` port (`map.rs::section_pixels`
+    /// + `draw_to_map_section`, the `checkMap` ensure ahead of the walk)
+    /// and split the state half into `map_reveal_sweep_core`/`_fields`.
+    /// The walk/unlock/option-reset semantics here are the union-kept
+    /// e18 half. Comments-only banner — nothing deleted, live until the
+    /// fold.
     pub(crate) fn map_reveal_sweep(&mut self) {
         let start = std::time::Instant::now();
         let mut num3 = 0;

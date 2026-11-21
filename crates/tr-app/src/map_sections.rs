@@ -4,6 +4,15 @@
 //! map-draw machinery; the second half — the `ExportToMiniMap` reveal
 //! window — landed in `map.rs::WorldMap::update`).
 //!
+//! **DEPRECATED-BY-UNION (W4-e18 retire, research/84 §2/§8):** the merger
+//! keeps `task/W4-f46-minimap-reveal-2`'s union ONLY — this branch's copy
+//! is retired as fold-source, NOT as a type: the union adopted THIS
+//! `MapSections` verbatim (base `0bc3414d`, the §2 ruling — e18's type is
+//! the keeper, f46's `MapDrawQueue` was dropped) plus the `sections_left()`
+//! accessor salvage. Do not port or extend from this file; extend the
+//! union's copy. Nothing here is deleted — the file stays live on this
+//! branch until the fold (comments-only banner).
+//!
 //! The grid is `Main.maxTilesX / 200` x `Main.maxTilesY / 150`
 //! (`WorldGen.cs:7150`, integer division — NOT rounded up; the port's
 //! `net::sections_x/y` round up for the wire's coverage and are a different
