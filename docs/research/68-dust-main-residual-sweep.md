@@ -220,3 +220,30 @@ d54 `c89aea9f` (research/131 FINAL); g67 `30b39fceb` (the DrawDust cull
 - This doc + the ANALYSIS sweep section + the PORT_MAP/anchors/
   research-65 touch-ups. No other code touched; g11/g12/d50/f6's files
   are READ-ONLY probes (their lanes own the fixes flagged above).
+
+## 6. FINAL-FINAL (W4-g13 LIGHTS RETIRE, 2026-11-21) — the family verdict HOLDS
+
+The retire phase re-probed the sibling tips and closed the last
+port-shaped remainders; §5's COMPLETE verdict stands with the wiring
+column now CONTRACT-PUBLISHED, not open:
+
+- **G3/G4 keep-one landed** (`8fd62bd7`, research/70 §6): d54's
+  `1d16ef4e` landed the SAME 157/327 arms in the SAME `dust_table.rs`;
+  this branch retired its two staged seams into the d54-canonical
+  `get_alpha_with_globals` VERBATIM (strict-superset verified, the per-fn
+  dedupe table published for the d54i-bible). No tint gap, no duplicate.
+- **The DRAW-lane wiring is hunk-exact** (`44eb86de`, research/70 §7):
+  W1-W4 (the globals sample, the `draw_splashes` tint swap, the
+  `rngs.global()` thread, the generic-walk compose) — g67's cull+else-kill
+  (`2c452edd`, ancestor of `30b39fce`) composes as-is, g67-owns.
+- **d50 is dead-clean** (`f9566e5b`, research/69 §8): tip `2e243a2d`
+  pushed, no in-flight work; the resume owes the §4-6 strip/wiring/retire
+  contracts verbatim (the pre_move-35 arm re-read still present).
+- The `main_dust.rs` three-way union and the moon-lord double-feed fuse
+  (§5) are unchanged — merge mechanics, not porting.
+
+**FINAL-FINAL verdict for the d54f-131 master: the Main.cs / Dust.cs dust
+family is COMPLETE and RETIRED — spawn census zero-unclaimed, non-spawn
+machinery closed, 94/94 lights, tint table-complete with the G3/G4
+keep-one landed, every remainder a published wiring contract (research/69
+§4-6+8, research/70 §6-7). Nothing in this family needs porting again.**

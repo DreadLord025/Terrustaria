@@ -291,3 +291,26 @@ itself; 213's arm ignores the light) — neither type is 157/327 nor
 6/15/59-64, so the seam swap is a no-op for them; they fold into the
 generic walk (W4) when the draw lane lands it, not before. Until W1-W4
 land, no live code calls the seam — staged, zero behavioural delta.
+
+## 8. FINAL-FINAL (W4-g13 LIGHTS RETIRE, 2026-11-21) — the three-doc closure set RETIRED
+
+The retire phase closes the loop the FINAL declaration (§5) opened:
+
+- **G3/G4: CLOSED + KEEP-ONE LANDED** (§6, `8fd62bd7`) — the d54-canonical
+  seam is this branch's live shape; the dedupe table is the d54i-bible
+  merger's per-fn contract. The historical two-seam record (§2-3) is
+  superseded, not deleted.
+- **The wiring contract: PUBLISHED EXACT** (§7, `44eb86de`) — W1-W4 are
+  apply-ready hunks against g67 tip `30b39fce`; the cull+else-kill is
+  g67-owns and composes as-is.
+- **d50: DEAD-CLEAN, resume-ready** (research/69 §8, `f9566e5b`) — the
+  strip/wiring/retire contracts stand verbatim at `2e243a2d`.
+- research/68 §6 carries the family-level FINAL-FINAL verdict;
+  research/69 §9 the light-family one.
+
+**FINAL-FINAL for the d54f-131 master: G1 CLOSED (`a234107a`), G3/G4
+CLOSED + keep-one landed (`8fd62bd7`), G2 the d50×d130 resolve with the
+ONE-EDIT hunk published (d54 `84eb739b`), G5/G6 closure rows unchanged.
+The Dust.cs / Main.cs dust family has NO open port gap and NO unpublished
+wiring seam — every remainder is a mechanical apply of a published
+contract. This lane is RETIRED.**

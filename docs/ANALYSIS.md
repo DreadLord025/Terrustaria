@@ -39493,3 +39493,12 @@ the wiring contracts published as exact hunks (research/70 §6-8):
   2026-11-20 21:10:02 — the session is dead-clean (>12h idle), NOT
   dead-dirty; nothing to salvage. The pre_move-35 strip + the wiring are
   still owed (research/69 §4-6 contracts stand verbatim for the resume).
+
+**FINAL-FINAL (2026-11-21, the three-doc closure set retired).** The
+retire phase's own commits: keep-one `8fd62bd7`, wire-hunks `44eb86de`,
+d50 probe `f9566e5b`. research/68 §6 (family), research/69 §9 (lights),
+research/70 §8 (tint) carry the FINAL-FINAL verdicts: **the Dust.cs /
+Main.cs dust family is COMPLETE and RETIRED — no open port gap, no
+unpublished wiring seam; every remainder is a mechanical apply of a
+published contract (the d50 resume §4-6+8, the draw lane research/70 §7,
+the d54i-bible dedupe table research/70 §6).**

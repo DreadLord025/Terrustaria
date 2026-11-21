@@ -282,3 +282,21 @@ contracts, unchanged at this tip (re-read `pre_move` `dust_physics.rs:162-
 3. **The decrement retire** (§5): once the chain wires, `dust_lights.rs`'s
    compensating decrements (206 `:381`, 174 `:419`, 230 `:309`, 309/261)
    and this module's replays retire arm-by-arm.
+
+## 9. FINAL-FINAL (W4-g13 LIGHTS RETIRE, 2026-11-21) — the light family CLOSED + RETIRED
+
+The 94/94 closure (§7) holds at the retire tips; the two contract
+remainders are now probe-verified and hunk-published, not open questions:
+
+- The strip-contract (§4) re-verified at the SAME d50 tip `2e243a2d`
+  (§8): the pre_move-35 arm present, the 299-305 shrink/lift stays — the
+  resume applies the strip verbatim, no re-derivation owed.
+- The retire note (§5) stands arm-by-arm; the wiring wave's G2 seam has
+  its ONE-EDIT hunk published by d54 (`84eb739b`, research/131 §7.2a).
+- The G3/G4 tint keep-one (research/70 §6) and the DRAW-lane wire-hunks
+  (research/70 §7) close the light-adjacent draw column; the Main.cs
+  family verdict rides research/68 §6.
+
+**FINAL-FINAL: the dust-light family is 94/94 CLOSED and its contracts
+are retire-ready — the d50 resume is a mechanical apply of §4-6+8, the
+draw lane a mechanical apply of research/70 §7. No light porting remains.**
