@@ -1,5 +1,11 @@
-# 26f — Projectile aiStyles 21-30 band status (W4-d3, the OTHER styles)
+# 170 — Projectile aiStyles 21-30 band status (W4-d3, the OTHER styles)
 
+> Renumbered 26f → 170 per registry-150 (`150-research-number-registry.md`
+> §3: f20's `26f-projectile-ai001-overlays-round2.md` wins the key at
+> 05:13:47; d3's 09:28:41 loses) — executed at the W4-d3 SEAL, no external
+> refs at tip. The SEAL receipts + the boulder-family bible live in
+> `248-d3-boulder-family-seal.md`.
+>
 > Researched 2026-11-21 against the W4-d3 branch tip (`986ab27b`). C# cites
 > are `decompiled/Terraria/Projectile.cs` (stable); Rust cites are
 > `crates/tr-app/src/projectile.rs` at this revision. Companion to `26b`
