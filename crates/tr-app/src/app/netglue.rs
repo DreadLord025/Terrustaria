@@ -2492,11 +2492,13 @@ impl App {
                 // The 36 zone body is W4-c27's `PlayerZone` (its net.rs lane);
                 // 35/40/84/99/115/138 have no port wire yet — the decisions
                 // are recorded, the sends land with their bodies (ANALYSIS).
+                // The 55 BuffPvp body is also c27's lane (`PlayerBuffPvp`).
                 PlayerSend::Zone { .. }
                 | PlayerSend::Heal { .. }
                 | PlayerSend::TalkNpc { .. }
                 | PlayerSend::Stealth { .. }
                 | PlayerSend::MinionTarget { .. }
+                | PlayerSend::BuffPvp { .. }
                 | PlayerSend::InventorySynced => {}
             }
         }
@@ -5824,7 +5826,7 @@ mod message_family_tests {
         );
     }
 
-    // --- W4-c28: the player-state send cadence (the SWAP witnesses) ---------
+    // --- W4-c28: the residual send-trigger witnesses -------------------------
 
     use crate::app::net_player_sync::PlayerSend;
 

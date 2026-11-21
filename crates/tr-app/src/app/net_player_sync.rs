@@ -71,6 +71,12 @@ pub(crate) enum PlayerSend {
     /// `99 MinionRestTarget` / `115 MinionAttackTarget` (`Main.cs:17677-17684`)
     /// — unported bodies (M6-NET-5); the decision is recorded, no wire yet.
     MinionTarget { attack: bool },
+    /// `55 AddPlayerBuffPvP` (`Player.cs:5269-5275`, `NetMessage.cs:1041-1045`)
+    /// — the client's `AddBuff` remote-peer branch: a pvp buff aimed at a
+    /// non-local player. The body/apply/relay are W4-c27's lane
+    /// (`net.rs`'s `PlayerBuffPvp`); this intent carries the send DECISION
+    /// until that wire merges (the drain parks it, the c27 body lands it).
+    BuffPvp { player_id: u8, buff_type: u16, time: i32 },
     /// `138 ClientSyncedInventory` (`Main.cs:17697-17700`) — a bodyless ping.
     InventorySynced,
 }
@@ -202,6 +208,34 @@ pub(crate) fn zone_bytes(z: &tr_core::scene::Zones, shimmer: bool) -> (u8, u8, u
     }
     let z5 = u8::from(shimmer); // zone5 bit0 = ZoneShimmer (`Player.cs:3811`)
     (z1, z2, 0, z4, z5, 0)
+}
+
+/// `Player.AddBuff`'s netMode-1 remote-peer branch (`Player.cs:5269-5275`):
+/// on a client, a buff aimed at a NON-local player (`Main.myPlayer !=
+/// whoAmI`) returns WITHOUT applying locally — it sends `55 AddPlayerBuffPvP`
+/// ONLY when `Main.pvpBuff[type]` (`:5271-5274`), else drops the buff
+/// (`:5275`). Returns `Some(send)` for the pvp-buff 55, `Some(None)` for the
+/// non-pvp drop (both mean "do NOT apply locally"), and `None` for the
+/// local-player path (the caller runs the normal `BuffSlots::add_buff`).
+/// The 55 body is W4-c27's `PlayerBuffPvp`; the drain parks the intent until
+/// that wire merges.
+pub(crate) fn add_buff_remote_pvp(
+    net_mode: u8,
+    is_local: bool,
+    buff_type: i32,
+    time: i32,
+    target_id: u8,
+) -> Option<Option<PlayerSend>> {
+    if net_mode == 1 && !is_local {
+        // `:5271-5274` — the pvpBuff gate, then the 55; `:5275` the drop.
+        let send: Option<PlayerSend> = crate::buffs::is_pvp_buff(buff_type).then(|| PlayerSend::BuffPvp {
+            player_id: target_id,
+            buff_type: buff_type.clamp(0, u16::MAX as i32) as u16,
+            time,
+        });
+        return Some(send);
+    }
+    None
 }
 
 /// `Player.Hurt`'s client tail (`Player.cs:38369-38377`): netMode 1, local,
@@ -622,6 +656,27 @@ mod tests {
         heal_effect(20, false, 1, &mut out);
         heal_effect(20, true, 0, &mut out);
         assert!(out.is_empty());
+    }
+
+    // --- AddBuff's remote-peer 55 branch (Player.cs:5269-5275) ---
+
+    #[test]
+    fn the_remote_pvp_buff_sends_55_only_for_a_pvp_buff_on_a_non_local_target() {
+        // A pvp buff (Poisoned 20) aimed at a non-local player on a client:
+        // the 55 intent, no local apply.
+        let send = add_buff_remote_pvp(1, false, 20, 300, 3);
+        assert_eq!(
+            send,
+            Some(Some(PlayerSend::BuffPvp { player_id: 3, buff_type: 20, time: 300 }))
+        );
+        // A NON-pvp buff (Ironskin 5) on a non-local target: the remote
+        // branch still returns (drop), but no 55 — `Some(None)`.
+        assert_eq!(add_buff_remote_pvp(1, false, 5, 300, 3), Some(None));
+        // The LOCAL player: falls through to the normal apply (`None`).
+        assert_eq!(add_buff_remote_pvp(1, true, 20, 300, 0), None);
+        // SP / host: never the remote branch.
+        assert_eq!(add_buff_remote_pvp(0, false, 20, 300, 3), None);
+        assert_eq!(add_buff_remote_pvp(2, false, 20, 300, 3), None);
     }
 
     // --- the stealth edges (Player.cs:25841-25844 etc.) ---

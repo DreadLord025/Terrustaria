@@ -84,9 +84,9 @@ const VANITY_PET_IDS: [i32; 74] = [
 /// `Main.meleeBuff` — 8 entries, verbatim from `Main.cs:8961+` (the flask buffs).
 const MELEE_BUFF_IDS: [i32; 8] = [71, 73, 74, 75, 76, 77, 78, 79];
 
-/// `Main.pvpBuff` — 20 entries, verbatim from `Main.cs:8941+`. Only consulted by the
-/// multiplayer branch of `AddBuff` (`Player.cs:5269-5275`), which the single-player
-/// port does not reach yet; kept as data for M6-NET.
+/// `Main.pvpBuff` — 20 entries, verbatim from `Main.cs:8941+`. Consulted by
+/// the multiplayer remote-peer branch of `AddBuff` (`Player.cs:5269-5275`,
+/// the `55 AddPlayerBuffPvP` send — `net_player_sync::add_buff_remote_pvp`).
 const PVP_BUFF_IDS: [i32; 20] = [
     20, 24, 30, 31, 36, 39, 44, 69, 70, 103, 119, 120, 137, 320, 323, 324, 397, 398, 399, 400,
 ];
@@ -111,6 +111,11 @@ pub fn is_melee_buff(buff_type: i32) -> bool {
     in_set(&MELEE_BUFF_IDS, buff_type)
 }
 
+/// `Main.pvpBuff` (`Main.cs:8941+`) — the `Player.AddBuff` remote-peer
+/// branch's gate (`Player.cs:5271`, the `55 AddPlayerBuffPvP` send). The
+/// caller (`net_player_sync::add_buff_remote_pvp`) is a parked decision
+/// helper until the c27 55 wire merges, so the non-test build sees no live
+/// caller yet — the allow rides until then.
 #[allow(dead_code)]
 pub fn is_pvp_buff(buff_type: i32) -> bool {
     in_set(&PVP_BUFF_IDS, buff_type)
@@ -186,9 +191,12 @@ impl Default for BuffSlots {
 }
 
 impl BuffSlots {
-    /// `Player.AddBuff` (`Player.cs:5263-5295`). The `Main.netMode == 1` remote
-    /// branch (`:5269-5275`, msg 55 + `Main.pvpBuff`) is unreachable in the
-    /// single-player port — deviation recorded in ANALYSIS "Buff slots (M2-BUFF-1)".
+    /// `Player.AddBuff` (`Player.cs:5263-5295`) — the LOCAL apply path. The
+    /// `Main.netMode == 1` remote-peer branch (`:5269-5275`, msg 55 +
+    /// `Main.pvpBuff`) is the caller's gate (`net_player_sync::
+    /// add_buff_remote_pvp`): a non-local target never reaches this apply.
+    /// The port's `BuffSlots` has no whoAmI/netMode, so the remote gate lives
+    /// at the App layer (the `pending_hurt_net` convention).
     pub fn add_buff(&mut self, buff_type: i32, time: i32) {
         if self.buff_immune[buff_type as usize] {
             return;
