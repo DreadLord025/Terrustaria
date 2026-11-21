@@ -13421,6 +13421,14 @@ pub(crate) fn trailing_mode(kind: u16) -> i32 {
         GRADIENT_YOYO | BETSY_FIREBALL | GEM_BOLT_AMETHYST | GEM_BOLT_TOPAZ
         | GEM_BOLT_SAPPHIRE | GEM_BOLT_EMERALD | GEM_BOLT_RUBY | GEM_BOLT_DIAMOND
         | GEM_BOLT_AMBER => 2,
+        // W4-d18 tail — `ProjectileID.cs:521`'s mode-2 empress entries: the
+        // hostile prismatic bolt 873 + the lasting rainbow 872 (the S1-D-4
+        // module's documented trail rings) and the two friendly weapon
+        // variants 931/1039. The C# `TrailCacheLength` is 60/120/20/20
+        // (`ProjectileID.cs:522`) — the port's fixed 10-entry ring is the
+        // recorded trail-density deviation (ANALYSIS, the moon-lord precedent).
+        HALLOW_BOSS_RAINBOW_STREAK | HALLOW_BOSS_LASTING_RAINBOW
+        | FAIRY_QUEEN_MAGIC_ITEM_SHOT | CONSTELLATION_STAR => 2,
         // `:17140`'s mode 3 — the three aimed spells with a trail drawer.
         MAGIC_MISSILE | FLAMELASH | RAINBOW_ROD_BULLET => 3,
         _ => -1,
@@ -19708,6 +19716,35 @@ impl ProjectilePool {
                         65 => {
                             self.slots[i].ai_sharknado_bolt(world, player.as_deref());
                         }
+                        // W4-d18 tail — `AI()`'s `else if (this.aiStyle ==
+                        // 171)` (`Projectile.cs:36647-36650`) serves the
+                        // FRIENDLY weapon variants 931/1039 through their
+                        // own kind gate (`handles_fairy_weapon`): the
+                        // parameter overrides, the 238-tick dust burst,
+                        // the friendly FindTargetWithLineOfSight acquire
+                        // and the NPC homing + speed ramp. The movement
+                        // is the `:18592-18602` full-axis bounce on the
+                        // 4×4 collision box (`:20017-20021`), NOT the
+                        // hostile arm's free integrate. The gate sits
+                        // AHEAD of the hostile empress catch-arm below;
+                        // the two kind sets are disjoint.
+                        _ if crate::projectile_ai_empress::handles_fairy_weapon(self.slots[i].kind) => {
+                            crate::projectile_ai_empress::fairy_weapon_tick(
+                                &mut self.slots[i],
+                                i,
+                                world,
+                                &npcs[..],
+                                &self.local_immunity[i * 256..(i + 1) * 256],
+                                rng,
+                            );
+                            // HandleMovement's bounce arm + UpdatePosition
+                            // (`:18592-18602`/`:20445`), before the !active
+                            // return (`:17015`/`:17027`).
+                            crate::projectile_ai_empress::fairy_weapon_bounce(
+                                &mut self.slots[i],
+                                world,
+                            );
+                        }
                         // S1-D-4 empress proj — the Empress of Light's
                         // five projectile kinds (872/873/874/919/923,
                         // aiStyles 173/171/0/179/180 — none had an arm
@@ -23986,6 +24023,9 @@ mod tests {
             .filter(|&k| {
                 crate::projectile_frost_shots::handles(k)
                     || crate::projectile_ai_empress::handles(k)
+                    // W4-d18 tail: the friendly 931/1039 ride their own
+                    // `handles_fairy_weapon` catch-arm (style 171).
+                    || crate::projectile_ai_empress::handles_fairy_weapon(k)
             })
             .filter_map(|k| proj_data(k).map(|d| d.ai_style))
             .collect();
@@ -35348,6 +35388,11 @@ mod magic_ai_tests {
             GEM_BOLT_AMBER,
             GRADIENT_YOYO,
             BETSY_FIREBALL,
+            // W4-d18 tail: the empress mode-2 entries (`ProjectileID.cs:521`).
+            HALLOW_BOSS_RAINBOW_STREAK,
+            HALLOW_BOSS_LASTING_RAINBOW,
+            FAIRY_QUEEN_MAGIC_ITEM_SHOT,
+            CONSTELLATION_STAR,
         ] {
             assert_eq!(trailing_mode(kind), 2, "kind {kind} records the triple");
         }

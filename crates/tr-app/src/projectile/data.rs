@@ -803,6 +803,16 @@ pub const FAIRY_QUEEN_LANCE: u16 = 919;
 /// `ProjectileID.FairyQueenSunDance` (923, `ProjectileID.cs:2400`) — the
 /// boss-tethered sun-dance beam, aiStyle 180 (`Projectile.cs:8757-8770`).
 pub const FAIRY_QUEEN_SUN_DANCE: u16 = 923;
+/// `ProjectileID.FairyQueenMagicItemShot` (931, `ProjectileID.cs:2416`) —
+/// the Nightglow's homing prismatic bolt, aiStyle 171's FRIENDLY weapon
+/// variant (`Projectile.cs:8826-8841`, `AI_171` `:45451-45558`). W4-d18
+/// tail: the empress boundary left it unrowed; the friendly arm is
+/// `projectile_ai_empress::fairy_weapon_tick`.
+pub const FAIRY_QUEEN_MAGIC_ITEM_SHOT: u16 = 931;
+/// `ProjectileID.ConstellationStar` (1039, `ProjectileID.cs:2632`) — the
+/// Constellation whip's homing star, aiStyle 171's other FRIENDLY weapon
+/// variant (`Projectile.cs:9807-9820`). W4-d18 tail: same friendly arm.
+pub const CONSTELLATION_STAR: u16 = 1039;
 
 // ===== W4-d18: the aiStyle-174 multisegment pets =====
 // `AI_174_MultisegmentPet` (`Projectile.cs:45345-45427`) — the three
@@ -3887,6 +3897,25 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 30.0, 30.0, 180, -1, 180, 0, false, false, false,
                 (false, -2, false, -1, 255, 1.0),
             ),
+            // ===== W4-d18 tail: the aiStyle-171 FRIENDLY weapon variants =====
+            // `Projectile.cs:8826-8841` — the Nightglow bolt (931): 30x30,
+            // aiStyle 171, `alpha = 255`, `penetrate = 3`, friendly,
+            // `timeLeft = 240`, magic, `tileCollide = TRUE` (it BOUNCES —
+            // `HandleMovement` `:18592-18602`), `ignoreWater = true`,
+            // `extraUpdates = 1`, the local-immunity pair (true, 30).
+            FAIRY_QUEEN_MAGIC_ITEM_SHOT => (
+                30.0, 30.0, 171, 3, 240, 1, true, false, false,
+                (true, 30, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:9807-9820` — the Constellation star (1039): the
+            // identical 30x30/171/alpha255/friendly/240/tileCollide-true/
+            // ignoreWater/extraUpdates-1 block EXCEPT `penetrate` stays the
+            // stock 1 (`:774`) and the local cooldown is -1 (`:9819`). No
+            // damage-class flag (the C# arm sets none).
+            CONSTELLATION_STAR => (
+                30.0, 30.0, 171, 1, 240, 1, true, false, false,
+                (true, -1, false, -1, 255, 1.0),
+            ),
             // The Frost Moon family (S1-D-4, `ProjectileID.cs:1244-1258`):
             // the 345/346/348/349/350/351/352 rows are the S1-F-13c wiring
             // rows ABOVE (value-identical in both branches — deduped at
@@ -4309,6 +4338,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | FAIRY_QUEEN_LANCE
                     | FAIRY_QUEEN_SUN_DANCE
             )
+            // W4-d18 tail: the two aiStyle-171 weapon variants'
+            // `ignoreWater = true` (`Projectile.cs:8837`/`:9816`).
+            || matches!(kind, FAIRY_QUEEN_MAGIC_ITEM_SHOT | CONSTELLATION_STAR)
             // W4-d18: the multisegment pets' `ignoreWater = true`
             // (`Projectile.cs:8482`/`:8504`/`:8539`).
             || matches!(kind, EATER_OF_WORLDS_PET | DESTROYER_PET | LUNATIC_CULTIST_PET)
@@ -4438,6 +4470,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d18: the Weather Pain twister's `magic = true`
             // (`Projectile.cs:9175`).
                 | WEATHER_PAIN_SHOT
+            // W4-d18 tail: the Nightglow bolt's `magic = true`
+            // (`Projectile.cs:8835`); the Constellation star sets none.
+                | FAIRY_QUEEN_MAGIC_ITEM_SHOT
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the
