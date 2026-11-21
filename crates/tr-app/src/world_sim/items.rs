@@ -105,6 +105,16 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
         }
         return;
     }
+    // The splash drain's cull ctx + water style (doc-sweep lane 36,
+    // `WorldItem.cs:886-954`/`:965-1033`) — computed BEFORE the mutable
+    // field borrows (whole-`app` reads). `Main.waterStyle` is the live
+    // biome style the `Dust.dustWater()` arm reads (`Dust.cs:402-418`);
+    // the TR_WATER_STYLE pin caps at 14 like the draw pass
+    // (`app/frame/draw.rs:734-737`).
+    let splash_ctx = app.spawn_ctx();
+    let splash_water_style = crate::env::water_style()
+        .map(|n| n.min(14) as i32)
+        .unwrap_or_else(|| crate::biome::calculate_water_style(&app.world, app.camera) as i32);
     let world = &app.world;
     let player = &mut app.player;
     let items = &mut app.items;
@@ -114,6 +124,9 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
     // (the deposit walk borrows them; a whole-`equip` alias would collide).
     let coin_rows = &mut app.equip.coins;
     let audio = &mut app.audio;
+    // The splash arms draw `Main.rand` under the `UpdateItems` swap, so
+    // the RNG borrows stay per-call inside the step closure.
+    let dust = &mut app.dust;
     let mut voodoo: Option<(Vec2, u32)> = None;
     // The drops whose shimmer ramp crossed 0.9 this step (the post-pass apply).
     let mut shimmer_due: Vec<u32> = Vec::new();
@@ -674,6 +687,21 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             }
             let was_grabbed = drop.being_grabbed;
             drop.update(world, step);
+            // Doc-sweep lane 36 — the splash arms (`WorldItem.cs:886-954`
+            // entry / `:965-1033` exit) run INSIDE MoveInWorld in the C#;
+            // the port latches them in `update` and drains here, same tick,
+            // same slot order, BEFORE the visual-effects draws (`:436` runs
+            // after `:413`'s MoveInWorld). All draws ride `UpdateItems`.
+            if drop.splash_due.is_some() {
+                drop.splash(
+                    dust,
+                    &splash_ctx,
+                    world,
+                    audio,
+                    app.rngs.stream(crate::app::RngKey::UpdateItems),
+                    splash_water_style,
+                );
+            }
             // S1-E-5 — `WorldItem.UpdateItem_VisualEffects`'s rand/essScale
             // head (`WorldItem.cs:1206-1293`, `item_lights.rs`): the C# runs
             // it at `:436`, after the movement half, per live drop in
@@ -1222,12 +1250,14 @@ mod shimmer_tests {
     fn a_drop_in_shimmer_transforms_on_the_ninetieth_tick() {
         let mut app = shimmer_world();
         app.items.push(resting_drop(11, 3)); // Iron Ore → Tin Ore (the set)
-        // 90 ticks to cross 0.9 (`WorldItem.cs:528-535`).
-        // The ramp is the C#'s `+= 0.01f` accumulation, so the >0.9 crossing
-        // lands on the tick the accumulated f32 value passes 0.9 — the C# runs
-        // the same arithmetic (`WorldItem.cs:518-536`), so the tick count is
-        // identical there; the f32 undershoot at the 90th sum is the port's
-        // and the C#'s alike.
+        // Doc-sweep lane 36 re-pin (91 → 92): `UpdateShimmer` (`:403`) reads
+        // the PREVIOUS tick's `Entity.shimmerWet` — a fresh drop's flag is
+        // false, so tick 1 only PROBES (MoveInWorld `:875-877` sets it) and
+        // the ramp starts on tick 2. The old pre-update full-box re-probe
+        // started the ramp on tick 1 (the stale-by-design 91). The ramp
+        // itself is the C#'s `+= 0.01f` accumulation: the f32 undershoot at
+        // the 90th sum puts the >0.9 crossing on ramp-tick 91 = update-tick
+        // 92 (`WorldItem.cs:518-536`, the same arithmetic both sides).
         let mut ticks = 0;
         while !app.items[0].shimmered && ticks < 120 {
             update_items(&mut app, 1.0 / 60.0);
@@ -1236,7 +1266,7 @@ mod shimmer_tests {
         if std::env::var("SHIMMER_TRACE").is_ok() {
             eprintln!("transformed after {ticks} ticks");
         }
-        assert_eq!(ticks, 91, "the >0.9 crossing tick count");
+        assert_eq!(ticks, 92, "the >0.9 crossing tick count (one-tick probe lag)");
         let d = &app.items[0];
         assert!(d.shimmered, "the transform fired");
         assert_eq!(d.kind, 699); // Tin Ore

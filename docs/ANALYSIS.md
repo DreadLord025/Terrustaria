@@ -11755,12 +11755,17 @@ cooldown, the `ignoreAetheriumPlatforms: true` tile collision (`:1051`/`:1064`)
 (`:1067`). `UpdateShimmer` zeroes gravity by `&mut` (`:483`). `ItemDrop` gains
 `wet`/`honey_wet`/`lava_wet`/`wet_count`/`repulsion_brake`.
 
-Deviations: the splash dust/sound arms (`:879-1035`) are a cited skip — their
-`Next(6)` colour draws would shift the pinned `UpdateItems` stream witnesses
-(the visual lane owns them); the wet probe is the port's full-box stand-in (the
-C#'s inset `WetCollision` probe is the engine half); the repulsion pre-pass
-reads pre-tick velocities (the C# reads the live array mid-scan — the one-tick
-pool-pass lag, the documented convention).
+Deviations: the repulsion pre-pass reads pre-tick velocities (the C# reads the
+live array mid-scan — the one-tick pool-pass lag, the documented convention).
+The splash dust/sound arms and the full-box wet-probe stand-in were RETIRED by
+the doc-sweep (lane 36, `docs/research/121-doc-sweep-shimmer.md`): the probes
+are now the shared `WetCollision` centre-inset port + the full-box
+`LavaCollision` surface-drop port, the splash arms (`:886-954` entry /
+`:965-1033` exit) are ported verbatim as `ItemDrop::splash` (the items pass
+drains the `Splash` latch same-tick on the `UpdateItems` stream, before the
+visual-effects draws), and `UpdateShimmer` reads the PREVIOUS tick's sticky
+`shimmerWet` like the C# — the fresh-drop transform crossing re-pins 91 → 92
+(one-tick probe lag; the ramp arithmetic itself is unchanged).
 
 **ChlorophyteExtractinator residuals.** `tr-core/src/extract.rs` grows
 `chlorophyte_extractinator_consumable` (the three

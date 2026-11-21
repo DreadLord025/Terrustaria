@@ -872,6 +872,28 @@ pub(crate) const GRAB_DELAY_LOCAL: u8 = 0;
 /// the Guide Voodoo Doll alone).
 pub(crate) const GRAB_DELAY_ALL: u8 = 255;
 
+/// One armed liquid splash (`WorldItem.cs:886-954` entry / `:965-1033`
+/// exit, doc-sweep lane 36): the arm-time gate snapshot + the drop's
+/// position. The C# arms run inline inside `MoveInWorld`; the port latches
+/// them here and the items pass drains ([`ItemDrop::splash`]) right after
+/// the drop's update — same tick, same slot order, the `UpdateItems`
+/// stream. The gates are snapshotted because the `:1036-1041` dry clear
+/// runs before the drain (the exit arm reads the pre-clear sticky flags).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Splash {
+    /// The `:959` exit arm (vs the `:879` entry arm).
+    pub exit: bool,
+    /// Entry: the LOCAL `flag2` (`:886`, this tick's LavaCollision);
+    /// exit: the sticky `base.lavaWet` (`:965`).
+    pub lava: bool,
+    /// The sticky `base.shimmerWet` at arm time (`:888`/`:967`).
+    pub shimmer: bool,
+    /// The sticky `base.honeyWet` at arm time (`:915`/`:994`).
+    pub honey: bool,
+    /// `base.position` at arm time (the dust box + the sound anchor).
+    pub pos: Vec2,
+}
+
 #[derive(Clone, Debug)]
 pub struct ItemDrop {
     pub kind: u16,
@@ -889,9 +911,9 @@ pub struct ItemDrop {
     /// `Entity.shimmerWet` (`Entity.cs:28`) — the drop's box overlaps shimmer
     /// liquid this tick.
     pub shimmer_wet: bool,
-    /// `Entity.wet` — the liquid-overlap flag (the port's full-box probe
-    /// stand-in for `Collision.WetCollision`, `WorldItem.cs:870-956`);
-    /// the SpawnShimmeredItem modifier also writes it (`:635`).
+    /// `Entity.wet` — the liquid-overlap flag (`Collision.WetCollision`'s
+    /// inset probe, `WorldItem.cs:870-956`, doc-sweep lane 36); the
+    /// SpawnShimmeredItem modifier also writes it (`:635`).
     pub wet: bool,
     /// `Entity.honeyWet` (`WorldItem.cs:871-874`) — the honey gravity arm
     /// (`:386-391`).
@@ -900,9 +922,16 @@ pub struct ItemDrop {
     pub lava_wet: bool,
     /// `Entity.wetCount` (`WorldItem.cs:883-885`/`:1042-1045`): the
     /// 20-tick splash cooldown, decremented every update. The splash
-    /// dust/sound arms are the visual lane's (cited skip — the draws
-    /// would shift the pinned UpdateItems stream witnesses).
+    /// dust/sound arms (`:886-954`/`:965-1033`) are PORTED (doc-sweep
+    /// lane 36) — [`Self::splash`], drained by the items pass on the
+    /// `UpdateItems` stream at the C# call position.
     pub wet_count: i32,
+    /// The entry/exit splash latch (doc-sweep lane 36): `move_in_world`
+    /// arms it when `wetCount` resets to 20 (`WorldItem.cs:885` entry /
+    /// `:964` exit), snapshotting the arm-time gates + position; the items
+    /// pass spends it on [`Self::splash`] after the update (the C# runs the
+    /// arms inline — the drain is same-tick, pool-pass order, ANALYSIS 121).
+    pub splash_due: Option<Splash>,
     /// The shimmered-repulsion brake (`WorldItem.cs:789-862`'s `flag`):
     /// the per-tick scan pass ([`shimmered_repulsion`]) arms it, the
     /// movement half spends it on the extra `velocity.X *= 0.8f`.
@@ -961,6 +990,7 @@ impl ItemDrop {
             honey_wet: false,
             lava_wet: false,
             wet_count: 0,
+            splash_due: None,
             repulsion_brake: false,
             prefix,
             pos: Vec2::new(x, y),
@@ -998,35 +1028,26 @@ impl ItemDrop {
             .is_some_and(|t| tr_core::shimmer::tile_is_shimmer(t))
     }
 
-    /// The drop's 14x14 box overlapping shimmer liquid this tick — the port's
-    /// stand-in for the C#'s `Collision.shimmer` flag that
-    /// `WorldItem.Update`'s wet half sets (`WorldItem.cs:868-877`).
-    fn box_in_shimmer(&self, world: &World) -> bool {
-        self.box_in_liquid(world, |t| tr_core::shimmer::tile_is_shimmer(t))
+    /// `Collision.WetCollision(position, width, height)` (`WorldItem.cs:870`,
+    /// `Collision.cs:1572-1651`): the CENTRE-INSET probe — the box shrunk to
+    /// `min(10, width) × min(height/2, height)` (integer halves), the liquid
+    /// surface drop, the FIRST-cell-wins kind flags and the sloped-tile-under-
+    /// liquid arm. Returns `(wet, honey, shimmer)` — the `Collision.honey`/
+    /// `Collision.shimmer` statics the caller copies (`:871-877`). The shared
+    /// NPC-side port (`npc_ai_slime.rs::wet_collision`, W4-f47 phase 2) is the
+    /// engine half; doc-sweep lane 36 retired the full-box stand-in. For the
+    /// 14x14 drop box the probe is 10x7 at `(pos.x+2, pos.y+4)`.
+    pub fn wet_probe(&self, world: &World) -> (bool, bool, bool) {
+        crate::npc_ai_slime::wet_collision(world, self.pos.x, self.pos.y, SIZE as i32, SIZE as i32)
     }
 
-    /// `Collision.WetCollision(position, width, height)` (`WorldItem.cs:870`):
-    /// the drop's box overlaps any non-empty liquid cell. This is `base.wet`,
-    /// the gate on most `UpdateItem_VisualEffects` light arms.
-    pub fn box_is_wet(&self, world: &World) -> bool {
-        self.box_in_liquid(world, |t| t.liquid > 0)
-    }
-
-    fn box_in_liquid(&self, world: &World, hit: impl Fn(&tr_core::tile::Tile) -> bool) -> bool {
-        let x0 = (self.pos.x / tr_core::TILE_PX) as i32;
-        let x1 = ((self.pos.x + SIZE) / tr_core::TILE_PX) as i32;
-        let y0 = (self.pos.y / tr_core::TILE_PX) as i32;
-        let y1 = ((self.pos.y + SIZE) / tr_core::TILE_PX) as i32;
-        for ty in y0..=y1 {
-            for tx in x0..=x1 {
-                if let Some(t) = world.tile(tx, ty) {
-                    if hit(t) {
-                        return true;
-                    }
-                }
-            }
-        }
-        false
+    /// `Collision.LavaCollision(position, width, height)` (`WorldItem.cs:865`,
+    /// `Collision.cs:1653-1684`): the FULL-box probe (no inset) against the
+    /// liquid-surface-dropped lava cells — the shared player-side port
+    /// (`player.rs::lava_collision`). Doc-sweep lane 36 retired the cell-grid
+    /// stand-in (it ignored the surface drop).
+    pub fn lava_probe(&self, world: &World) -> bool {
+        crate::player::lava_collision(world, self.pos.x, self.pos.y, SIZE, SIZE)
     }
 
     /// Whether the last [`Self::update`]'s `UpdateShimmer` armed the transform
@@ -1223,10 +1244,11 @@ impl ItemDrop {
             self.on_conveyor = false;
             self.pos += self.vel; // ApplyMovement, wet false (`:1082`)
         } else {
-            // The shimmer probe feeds UpdateShimmer's ramp gate (the port's
-            // full-box stand-in; the C# reads the previous tick's
-            // Collision.shimmer — the one-tick probe lag is recorded).
-            self.shimmer_wet = self.box_in_shimmer(world);
+            // `UpdateShimmer` (`:403`) reads the PREVIOUS tick's
+            // `Entity.shimmerWet` — MoveInWorld's probe (`:875-877`) refreshes
+            // it later in this same update. The old pre-update full-box
+            // re-probe is retired (doc-sweep lane 36): the flag now carries
+            // across ticks exactly like the C# Entity field.
             self.update_shimmer(world, dt, &mut gravity);
             self.move_in_world(world, gravity, max_fall, &mut wet_vel);
         }
@@ -1238,8 +1260,9 @@ impl ItemDrop {
     }
 
     /// `WorldItem.MoveInWorld` (`WorldItem.cs:772-1072`, W4-f47): the
-    /// NoGravity / gravity-friction head, the conveyor bend, the wet probe
-    /// (the splash arms are the visual lane's cited skip), the
+    /// NoGravity / gravity-friction head, the conveyor bend, the wet probes
+    /// (the splash arms latch [`Splash`] for the items pass's drain —
+    /// doc-sweep lane 36), the
     /// `ignoreAetheriumPlatforms: true` tile collision, `ApplyMovement`
     /// (the wetVelocity integration) and the slope pass. `gravity` /
     /// `max_fall` / `wet_vel` come from `update`'s ladder (the shimmered
@@ -1282,28 +1305,52 @@ impl ItemDrop {
         );
         self.pos = Vec2::new(bp[0], bp[1]);
         self.vel = Vec2::new(bv[0], bv[1]);
-        // `:865-877` — the wet probe. The port's full-box stand-in sets the
-        // kind flags from the box overlap (the C#'s inset WetCollision probe
-        // is the engine half; the splash dust/sound arms `:879-1035` are the
-        // visual lane's — their Next(6) draws would shift the pinned
-        // UpdateItems stream witnesses, cited skip).
-        self.lava_wet = self.box_in_liquid(world, |t| {
-            t.liquid > 0 && t.liquid_kind() == tr_core::tile::LiquidKind::Lava
-        });
-        self.honey_wet = self.box_in_liquid(world, |t| {
-            t.liquid > 0 && t.liquid_kind() == tr_core::tile::LiquidKind::Honey
-        });
-        self.shimmer_wet = self.box_in_shimmer(world);
-        let now_wet = self.box_is_wet(world);
+        // `:865-877` — the probes (doc-sweep lane 36): LavaCollision is the
+        // FULL box against the surface-dropped lava cells (`:865`, sticky —
+        // only ever SET here); WetCollision is the centre-inset probe whose
+        // FIRST overlapping cell wins and sets the honey/shimmer statics
+        // (`:870-877`, also sticky). The full-box stand-ins are retired.
+        let lava_now = self.lava_probe(world);
+        if lava_now {
+            self.lava_wet = true; // :866-869
+        }
+        let (now_wet, honey, shimmer) = self.wet_probe(world);
+        if honey {
+            self.honey_wet = true; // :871-874
+        }
+        if shimmer {
+            self.shimmer_wet = true; // :875-878
+        }
         if now_wet {
             if !self.wet && self.wet_count == 0 {
-                self.wet_count = 20; // :883-885 (the splash arms skipped)
+                self.wet_count = 20; // :883-885
+                // `:886-954` — the entry splash: the lava gate reads THIS
+                // tick's flag2 (the LOCAL, `:886`), the shimmer/honey gates
+                // read the sticky Entity flags. The arms drain post-update
+                // on the UpdateItems stream ([`Self::splash`]).
+                self.splash_due = Some(Splash {
+                    exit: false,
+                    lava: lava_now,
+                    shimmer: self.shimmer_wet,
+                    honey: self.honey_wet,
+                    pos: self.pos,
+                });
             }
             self.wet = true; // :956
         } else if self.wet {
             self.wet = false; // :961
             if self.wet_count == 0 {
                 self.wet_count = 20; // :962-964
+                // `:965-1033` — the exit splash reads the STICKY flags
+                // (`:965` base.lavaWet) BEFORE the `:1036-1041` dry clear —
+                // the snapshot keeps them past the clear for the drain.
+                self.splash_due = Some(Splash {
+                    exit: true,
+                    lava: self.lava_wet,
+                    shimmer: self.shimmer_wet,
+                    honey: self.honey_wet,
+                    pos: self.pos,
+                });
             }
         }
         // `:1036-1045` — the dry clear + the wetCount decrement.
@@ -1357,6 +1404,97 @@ impl ItemDrop {
         );
         self.pos = Vec2::new(sc.pos[0], sc.pos[1]);
         self.vel = Vec2::new(sc.vel[0], sc.vel[1]);
+    }
+
+    /// The armed splash's dust + sound arms (`WorldItem.cs:886-954` entry /
+    /// `:965-1033` exit, doc-sweep lane 36 — the cited skip retired). The
+    /// items pass calls this right after [`Self::update`] with the
+    /// `UpdateItems` stream (`Main.cs:18024`'s swap — the C# arms draw
+    /// `Main.rand` inline inside `MoveInWorld`). Verbatim per-kind bodies:
+    /// * shimmer: 10x dust 308 at `(pos.X-6, pos.Y + height/2 - 8)` box
+    ///   `(width+12, 24)`, each `vy -= 4`, `vx *= 2.5`, `scale = 0.8`,
+    ///   `noGravity`, then ONE `Next(6)` colour pick (0 → (255,255,210),
+    ///   1 → (190,245,255), 2 → (255,150,255), default → (190,175,255));
+    ///   `PlaySound(19, x, y, 4)` entry (`:913`) / style 5 exit (`:992`).
+    /// * honey: 5x dust 152, `vy -= 1`, `vx *= 2.5`, `scale = 1.3`,
+    ///   `alpha = 100`, `noGravity`; `PlaySound(19, x, y)` (style 1).
+    /// * water: 10x `Dust.dustWater()` at the same box (exit: NO −8 on Y,
+    ///   `:1011`), `vy -= 4`, `vx *= 2.5`, `scale *= 0.8`, `alpha = 100`,
+    ///   `noGravity`; style-1 cue.
+    /// * lava: 5x dust 35, `vy -= 1.5`, `vx *= 2.5`, `scale = 1.3`,
+    ///   `alpha = 100`, `noGravity`; style-1 cue.
+    /// The per-dust `NewDust` draws (position pair, velocity pair, frame
+    /// `Next(3)`, scale `Next(-20,21)`, the pressure bands) ride the pool
+    /// port; the type-308/33/35/152 tweak chains run inside it. The colour
+    /// `Next(6)` draws AFTER the spawn — a culled spawn (sentinel) still
+    /// spends its colour draw, the C# writes into dust[6000] verbatim.
+    /// `water_style` is `Main.waterStyle` (the caller feeds the live
+    /// biome style); the sound draws ride the same stream AFTER the dust
+    /// loop (the case-19 pitch roll, `LegacySoundPlayer.cs:881-888`).
+    pub fn splash(
+        &mut self,
+        dust: &mut tr_core::particles::DustPool,
+        ctx: &tr_core::particles::SpawnCtx,
+        world: &World,
+        audio: &mut crate::audio::Audio,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+        water_style: i32,
+    ) {
+        let Some(s) = self.splash_due.take() else {
+            return;
+        };
+        use tr_core::particles::Color;
+        // The dust box anchor (`:892` etc.): height/2 is the INTEGER half
+        // (14/2 = 7); the exit water arm drops the −8 (`:1011`).
+        let half = SIZE as i32 / 2;
+        let (count, dtype, dy, scale_mul, scale_set, alpha, y_fix): (
+            i32, i32, f32, bool, f32, i32, f32,
+        ) = if s.lava {
+            (5, 35, -1.5, false, 1.3, 100, -8.0) // :944-953 / :1023-1032
+        } else if s.shimmer {
+            (10, 308, -4.0, false, 0.8, 0, -8.0) // :890-913 / :969-992
+        } else if s.honey {
+            (5, 152, -1.0, false, 1.3, 100, -8.0) // :917-926 / :996-1005
+        } else {
+            let y_fix = if s.exit { 0.0 } else { -8.0 }; // :1011 vs :932
+            (10, tr_core::particles::dust_water(water_style), -4.0, true, 0.8, 100, y_fix)
+        };
+        let anchor = Vec2::new(s.pos.x - 6.0, s.pos.y + half as f32 + y_fix);
+        for _ in 0..count {
+            let i = dust.new_dust(
+                rng, ctx, world, anchor, SIZE as i32 + 12, 24, dtype,
+                0.0, 0.0, 0, Color::default(), 1.0,
+            );
+            let d = dust.slot_mut(i);
+            d.velocity.y += dy;
+            d.velocity.x *= 2.5;
+            if scale_mul {
+                d.scale *= scale_set; // the water arm's `scale *= 0.8f`
+            } else {
+                d.scale = scale_set; // the others SET the scale
+            }
+            if alpha != 0 {
+                // The shimmer arm sets NO alpha (`:890-896`) — the C# leaves
+                // NewDust's default 0; the others write 100 explicitly.
+                d.alpha = alpha;
+            }
+            d.no_gravity = true;
+            if s.shimmer {
+                // `:897-911` / `:976-990` — the colour pick rides AFTER the
+                // spawn (one Next(6) per dust, sentinel included).
+                d.color = match rng.next_max(6) {
+                    0 => Color { r: 255, g: 255, b: 210, a: 255 },
+                    1 => Color { r: 190, g: 245, b: 255, a: 255 },
+                    2 => Color { r: 255, g: 150, b: 255, a: 255 },
+                    _ => Color { r: 190, g: 175, b: 255, a: 255 },
+                };
+            }
+        }
+        // The cue: shimmer entry style 4 (`:913`), exit style 5 (`:992`);
+        // every other arm the 3-arg overload's default style 1
+        // (`SoundEngine.cs:102`).
+        let style = if s.shimmer { if s.exit { 5 } else { 4 } } else { 1 };
+        audio.play_splash_sound(style, s.pos.x as i32 as f32, s.pos.y as i32 as f32, rng);
     }
 
     /// Draws the drop in world space. Vanilla has NO positional bob —
@@ -1762,6 +1900,208 @@ mod tests {
         ItemDrop::shimmered_repulsion(&mut far);
         assert_eq!(far[0].vel.x, 0.0);
         assert!(!far[0].repulsion_brake);
+    }
+
+    // -----------------------------------------------------------------
+    // Doc-sweep lane 36 — the faithful wet probes + the splash arms
+    // (WRITTEN NOT RUN, code-only)
+    // -----------------------------------------------------------------
+
+    /// `Collision.cs:1576-1587` — the item's WetCollision probe box is the
+    /// CENTRE-INSET 10x7 at (pos+2, pos+4), NOT the full 14x14 box: a
+    /// liquid cell that only the full box's edge overlaps leaves the drop
+    /// dry. A shimmer cell at tile (11, 10) spans x 176..192; the drop at
+    /// x = 163 has full-box right edge 177 (overlaps) but probe right edge
+    /// 163+2+10 = 175 (clear) — the old full-box stand-in read wet.
+    #[test]
+    fn w4_f47ds_the_wet_probe_is_the_centre_inset_box() {
+        let mut w = World::new("probe".into(), 32, 80);
+        let i = w.index(11, 10);
+        w.tiles[i].liquid = 255;
+        w.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Shimmer);
+        w.compute_column_surface();
+        w.compute_chunks();
+        // pos (163, 160): probe box x 165..175, y 164..171 — the cell
+        // x 176..192, y 160..160+0 (liquid 255 → surface drop (1/32)*2 =
+        // 0.0625, th 16) — no X overlap → dry.
+        let d = ItemDrop::new(2, 1, 0, 163.0, 160.0, 0.0, 0.0, 0.0);
+        assert_eq!(d.wet_probe(&w), (false, false, false));
+        // Shift 2 px right: probe x 167..177 overlaps 176..192 → wet +
+        // shimmer (the FIRST-cell-wins kind flag).
+        let d2 = ItemDrop::new(2, 1, 0, 165.0, 160.0, 0.0, 0.0, 0.0);
+        assert_eq!(d2.wet_probe(&w), (true, false, true));
+    }
+
+    /// `Collision.cs:1610-1612` — the liquid-surface drop: a quarter-full
+    /// cell (liquid 64) drops its surface by (256-64)/32*2 = 12 px, so the
+    /// probe box must reach BELOW y+12 to count. The old cell-grid
+    /// stand-in ignored the drop.
+    #[test]
+    fn w4_f47ds_the_wet_probe_respects_the_liquid_surface_drop() {
+        let mut w = World::new("surf".into(), 32, 80);
+        let i = w.index(10, 10);
+        w.tiles[i].liquid = 64; // surface at y 160+12 = 172, depth 4
+        w.compute_column_surface();
+        w.compute_chunks();
+        // Probe y 164..171 — entirely above the 172 surface → dry.
+        let d = ItemDrop::new(2, 1, 0, 160.0, 160.0, 0.0, 0.0, 0.0);
+        assert_eq!(d.wet_probe(&w).0, false);
+        // Probe y 168..175 overlaps 172..176 → wet.
+        let d2 = ItemDrop::new(2, 1, 0, 160.0, 164.0, 0.0, 0.0, 0.0);
+        assert_eq!(d2.wet_probe(&w).0, true);
+        // LavaCollision keeps the FULL box (no inset) but the same surface
+        // drop: pos (160, 158) box y 158..172 TOUCHES 172 — strict > fails.
+        let j = w.index(10, 10);
+        w.tiles[j].set_liquid_kind(tr_core::tile::LiquidKind::Lava);
+        let d3 = ItemDrop::new(2, 1, 0, 160.0, 158.0, 0.0, 0.0, 0.0);
+        assert!(!d3.lava_probe(&w), "the touching edge is not an overlap");
+        let d4 = ItemDrop::new(2, 1, 0, 160.0, 159.0, 0.0, 0.0, 0.0);
+        assert!(d4.lava_probe(&w), "box y 159..173 overlaps the 172 surface");
+    }
+
+    /// `WorldItem.cs:879-956` — the entry latch: a dry drop whose inset
+    /// probe finds shimmer arms wetCount 20 + the ENTRY splash (the sticky
+    /// shimmer flag gates the arm); the `:1042-1045` decrement runs the
+    /// same tick (20 → 19). The flags are STICKY (`:875-878` only sets).
+    #[test]
+    fn w4_f47ds_the_entry_splash_latches_with_the_sticky_flags() {
+        let mut w = World::new("entry".into(), 40, 80);
+        for x in 0..40 {
+            let i = w.index(x, 12);
+            w.tiles[i].liquid = 255;
+            w.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Shimmer);
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut d = ItemDrop::new(2, 1, 0, 30.0 * TILE_PX, 11.0 * TILE_PX, 0.0, 0.0, 0.0);
+        d.update(&w, 1.0 / 60.0);
+        assert!(d.wet && d.shimmer_wet);
+        assert_eq!(d.wet_count, 19, "20 armed, decremented same tick");
+        let s = d.splash_due.expect("the entry splash armed");
+        assert!(!s.exit && s.shimmer && !s.lava && !s.honey);
+        // The next tick: already wet → no second latch.
+        d.splash_due = None;
+        d.update(&w, 1.0 / 60.0);
+        assert!(d.splash_due.is_none(), "the entry fires once");
+    }
+
+    /// `WorldItem.cs:959-1041` — the exit latch snapshots the STICKY flags
+    /// BEFORE the `:1036-1041` dry clear: the drained splash still sees
+    /// shimmer even though the drop's flags read false afterwards.
+    #[test]
+    fn w4_f47ds_the_exit_splash_snapshots_the_pre_clear_flags() {
+        let w = World::new("exit".into(), 40, 80);
+        let mut d = ItemDrop::new(2, 1, 0, 30.0 * TILE_PX, 11.0 * TILE_PX, 0.0, 0.0, 0.0);
+        d.wet = true;
+        d.shimmer_wet = true;
+        d.update(&w, 1.0 / 60.0);
+        assert!(!d.wet && !d.shimmer_wet, "the dry clear ran");
+        let s = d.splash_due.expect("the exit splash armed");
+        assert!(s.exit && s.shimmer, "the snapshot keeps the pre-clear flag");
+        assert_eq!(d.wet_count, 19);
+    }
+
+    /// `WorldItem.cs:890-913` — the shimmer entry arm's draw census: 10
+    /// dust-308 spawns (6 draws each: pos pair, vel pair, frame Next(3),
+    /// scale Next(-20,21)) + 10 Next(6) colours + the style-4 cue's
+    /// Next(-20,1) pitch = 71 draws on the caller's stream; the per-dust
+    /// modifiers (vy −4 after the 308 tweak's +1, vx ×2.5 after its ×0.5,
+    /// scale SET 0.8, noGravity) and the four-colour switch land verbatim.
+    #[test]
+    fn w4_f47ds_the_shimmer_entry_splash_draws_71_and_colours_verbatim() {
+        let w = World::new("splash".into(), 40, 80);
+        let mut pool = tr_core::particles::DustPool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(1920.0, 1080.0),
+            max_dust_to_draw: 6000,
+            ..Default::default()
+        };
+        let mut audio = crate::audio::Audio::new(None);
+        let mut rng = tr_core::unified_random::UnifiedRandom::new(4242);
+        let mut d = ItemDrop::new(2, 1, 0, 300.0, 300.0, 0.0, 0.0, 0.0);
+        d.splash_due = Some(Splash {
+            exit: false,
+            lava: false,
+            shimmer: true,
+            honey: false,
+            pos: d.pos,
+        });
+        d.splash(&mut pool, &ctx, &w, &mut audio, &mut rng, 0);
+        assert!(d.splash_due.is_none(), "the latch spent");
+        // The twin: 10 x (6 NewDust draws + 1 colour) + 1 pitch.
+        let mut twin = tr_core::unified_random::UnifiedRandom::new(4242);
+        let mut colours = Vec::new();
+        for _ in 0..10 {
+            twin.next_max(22); // width+12-4 = 22
+            twin.next_max(20); // 24-4 = 20
+            twin.next_range(-20, 21);
+            twin.next_range(-20, 21);
+            twin.next_max(3);
+            twin.next_range(-20, 21);
+            colours.push(twin.next_max(6));
+        }
+        twin.next_range(-20, 1); // the style-4 pitch (`:881-885`)
+        assert_eq!(rng, twin, "71 draws exactly, in C# order");
+        // The dust modifiers: slot 0's scale SET 0.8 (not the roll), the
+        // colour from the first pick, noGravity, alpha untouched (0).
+        let d0 = pool.slot_mut(0);
+        assert_eq!(d0.dust_type, 308);
+        assert_eq!(d0.scale, 0.8);
+        assert!(d0.no_gravity);
+        assert_eq!(d0.alpha, 0, "the shimmer arm sets no alpha");
+        let expect = match colours[0] {
+            0 => (255u8, 255u8, 210u8),
+            1 => (190, 245, 255),
+            2 => (255, 150, 255),
+            _ => (190, 175, 255),
+        };
+        assert_eq!((d0.color.r, d0.color.g, d0.color.b), expect);
+    }
+
+    /// `WorldItem.cs:944-953` — the lava gate WINS over shimmer/honey (the
+    /// `!flag2` else): 5 dust-35, scale 1.3, alpha 100, vy −1.5 after the
+    /// type-35 tweak's −0.5 pin, the style-1 cue (one Next(-10,11)).
+    #[test]
+    fn w4_f47ds_the_lava_splash_wins_the_gate_and_draws_31() {
+        let w = World::new("lsplash".into(), 40, 80);
+        let mut pool = tr_core::particles::DustPool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(1920.0, 1080.0),
+            max_dust_to_draw: 6000,
+            ..Default::default()
+        };
+        let mut audio = crate::audio::Audio::new(None);
+        let mut rng = tr_core::unified_random::UnifiedRandom::new(7);
+        let mut d = ItemDrop::new(2, 1, 0, 300.0, 300.0, 0.0, 0.0, 0.0);
+        d.splash_due = Some(Splash {
+            exit: true,
+            lava: true,
+            shimmer: true, // the lava gate still wins
+            honey: true,
+            pos: d.pos,
+        });
+        d.splash(&mut pool, &ctx, &w, &mut audio, &mut rng, 0);
+        let mut twin = tr_core::unified_random::UnifiedRandom::new(7);
+        for _ in 0..5 {
+            twin.next_max(22);
+            twin.next_max(20);
+            twin.next_range(-20, 21);
+            twin.next_range(-20, 21);
+            twin.next_max(3);
+            twin.next_range(-20, 21);
+        }
+        twin.next_range(-10, 11); // the style-1 pitch (`:888`)
+        assert_eq!(rng, twin, "5x6 + 1 = 31 draws (no colour picks)");
+        let d0 = pool.slot_mut(0);
+        assert_eq!(d0.dust_type, 35);
+        assert_eq!(d0.scale, 1.3);
+        assert_eq!(d0.alpha, 100);
+        // vy: the roll, then the type-35 pin −0.5 (`Dust.cs:247`), then
+        // the arm's −1.5 — the pin is overwritten by the arm's += only in
+        // part: −0.5 + −1.5 = −2.0.
+        assert_eq!(d0.velocity.y, -2.0);
     }
 }
 
