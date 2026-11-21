@@ -1224,6 +1224,50 @@ mod tests {
         assert!(matches!(hit, TileInteraction::None));
     }
 
+    /// W4-f41 final sweep — the monolith's ITEM-USE placement half
+    /// (`Item.cs:33176-33188`: 3747 `createTile = 455`, consumable,
+    /// placeStyle 0; `TileObjectData.cs:4099-4101`: Style3x3 +
+    /// DrawYOffset 2 — origin (1, 2), the SWTSS+Table bottom anchor over
+    /// the width, `UsesCustomCanPlace` true with NO hook): the click at
+    /// the bottom-centre writes the 3x3 object through the registry
+    /// route, and every cell answers the right-click toggle. The break
+    /// records are the kill.rs witnesses' half.
+    #[test]
+    fn w4_f41_the_monolith_item_places_the_3x3_and_toggles() {
+        let mut w = object_world();
+        assert!(
+            tr_core::tileobject::routes_through_tile_object(455, 0),
+            "the CustomPlace route (TileObjectData.cs:3101/4101)"
+        );
+        // Clicking (11, 19) with origin (1, 2) → the object spans
+        // x 10..=12, y 17..=19 (the bottom-centre click, as vanilla).
+        assert!(place_item_tile(&mut w, 11, 19, 455, 0, 1));
+        for dy in 0..3i32 {
+            for dx in 0..3i32 {
+                let t = w.tile(10 + dx, 17 + dy).unwrap();
+                assert!(t.active(), "cell ({dx},{dy}) written");
+                assert_eq!(t.kind, 455);
+                assert_eq!(
+                    (t.frame_x, t.frame_y),
+                    ((dx * 18) as i16, (dy * 18) as i16),
+                    "the style-0 frames"
+                );
+            }
+        }
+        // Every cell of the placed object answers the toggle dispatch
+        // (`Player.cs:32278-32284`'s kind test).
+        let blocked = no_blocker as fn(i32, i32) -> bool;
+        assert!(matches!(
+            interact_at(&mut w, 12, 17, 1, &blocked),
+            TileInteraction::PartyMonolithToggle
+        ));
+        // A floating click (no solid floor under the object) is refused —
+        // the bottom anchor gate, and the world stays unchanged.
+        let mut w2 = object_world();
+        assert!(!place_item_tile(&mut w2, 11, 10, 455, 0, 1));
+        assert!(!w2.tile(11, 10).unwrap().active());
+    }
+
     #[test]
     fn the_chair_sit_decodes_the_seat() {
         // `PlayerSittingHelper.cs:163-182` + `:317-319`: the seat is the

@@ -12589,6 +12589,40 @@ mod tests {
         assert_eq!(app2.world.tile(12, 19).unwrap().frame_y, 126);
     }
 
+    /// W4-f41 final sweep — the monolith item 3747 through the full app
+    /// route (`Item.cs:33176-33188`: createTile 455, consumable; the
+    /// Style3x3 registry route, `TileObjectData.cs:4099-4101`): one item
+    /// consumed, the 3x3 written at the bottom-centre click, and the
+    /// right-click on any cell answers the party toggle. A refused
+    /// (floating) placement keeps the item.
+    #[test]
+    fn w4_f41_the_monolith_item_places_through_the_app_route() {
+        assert_eq!(registry::place_tile(3747), Some(455));
+        assert_eq!(registry::place_style(3747), 0);
+        assert!(!legacy_precheck_applies(455, 0), "the registry route");
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        app.inventory[app.selected] = slot(3747, 2);
+        assert!(use_tile_item(&mut app, 11, 19));
+        assert_eq!(app.inventory[app.selected].count, 1, "one consumed");
+        // The object spans x 10..=12, y 17..=19 (origin (1, 2)).
+        for dy in 0..3i32 {
+            for dx in 0..3i32 {
+                let t = app.world.tile(10 + dx, 17 + dy).unwrap();
+                assert!(t.active() && t.kind == 455, "cell ({dx},{dy})");
+            }
+        }
+        // The right-click seam: the placed monolith toggles the party.
+        assert!(crate::world_sim::editing::doors::interact_tile(&mut app, 11, 18));
+        assert!(app.world_events.manual_party, "the toggle armed");
+        // The floating placement refuses and keeps the item.
+        let mut app2 = flow_app(None, vec![], vec![]);
+        app2.world = object_world();
+        app2.inventory[app2.selected] = slot(3747, 1);
+        assert!(!use_tile_item(&mut app2, 11, 10));
+        assert_eq!(app2.inventory[app2.selected].count, 1, "kept");
+    }
+
     // ---- Phase 3 (M1.4-TO-4): drops + RNG streams ---------------------------
 
     /// A staged break rig: the world swapped in, a local player present (the
