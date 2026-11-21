@@ -117,6 +117,10 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
     let mut voodoo: Option<(Vec2, u32)> = None;
     // The drops whose shimmer ramp crossed 0.9 this step (the post-pass apply).
     let mut shimmer_due: Vec<u32> = Vec::new();
+    // The splash drain's `NewDust` inputs, snapshotted before the closure
+    // takes the field borrows (the `world_sim/player.rs:426` pattern — a
+    // whole-`app` method call inside would collide with `&mut app.items`).
+    let spawn_ctx = app.spawn_ctx();
     app.item_step.tick(dt.min(0.25), |step| {
         // --- `Player.GrabItems` (`Player.cs:34905-34976`, S1-P-i47) ---------
         // The C# runs it from `Player.Update` (`:27428`) BEFORE the item
@@ -689,7 +693,7 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             if let Some(splash) = drop.take_splash() {
                 item_splash(
                     &mut app.dust,
-                    &app.spawn_ctx(),
+                    &spawn_ctx,
                     world,
                     app.camera,
                     &mut app.audio,

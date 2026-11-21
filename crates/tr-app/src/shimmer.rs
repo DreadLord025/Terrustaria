@@ -225,7 +225,9 @@ pub(crate) fn set_decraft_flags(skeletron: bool, golem: bool) {
 }
 
 /// The world-evil wiring hook (the tests flip it; the app threads the
-/// persisted flag once it exists).
+/// persisted flag once it exists — the port persists no world-evil type yet,
+/// so the non-test build has no caller).
+#[allow(dead_code)]
 pub(crate) fn set_world_crimson(crimson: bool) {
     WORLD_CRIMSON.with(|c| c.set(crimson));
 }
