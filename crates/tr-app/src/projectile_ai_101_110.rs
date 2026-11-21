@@ -1339,10 +1339,15 @@ mod tests {
         n.max_hp = 40;
         n.hp = 40;
         let npcs = vec![n];
+        // The expected direction: the zombie's centre minus the trap's
+        // PRE-drift centre (the C# reads base.Center before the blend),
+        // normalized to 4. The drift added (0.002, 0.002) first.
+        let (nw, nh) = npcs[0].size();
+        let npc_c = Vec2::new(1100.0 + nw * 0.5, 1000.0 + nh * 0.5);
+        let trap_c = Vec2::new(1000.0 + 7.0, 1000.0 + 7.0);
+        let dir = (npc_c - trap_c).normalize() * 4.0;
         ai_spore_sac(&mut p, &npcs, Some((1000.0, 1000.0)), true, 5, 0);
-        // The drift added (0.002, 0.002) first; the homing blend pulls
-        // toward +X: vel = (drift*40 + (4,0))/41.
-        let want = (Vec2::new(0.002, 0.002) * 40.0 + Vec2::new(4.0, 0.0)) / 41.0;
+        let want = (Vec2::new(0.002, 0.002) * 40.0 + dir) / 41.0;
         assert!((p.vel - want).length() < 1e-4, "the 4/41 blend: {:?}", p.vel);
         // No chaseable: the drag.
         let mut p = proj(567);
