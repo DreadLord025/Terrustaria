@@ -586,6 +586,11 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            NpcKind::GemBunnyAmber => 652,
+            NpcKind::HellButterfly => 653,
+            NpcKind::Lavafly => 654,
+            NpcKind::MagmaSnail => 655,
+            NpcKind::TownBunny => 656,
             NpcKind::GemBunnyTopaz => 647,
             NpcKind::GemBunnySapphire => 648,
             NpcKind::GemBunnyEmerald => 649,
@@ -936,6 +941,11 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            652 => NpcKind::GemBunnyAmber,
+            653 => NpcKind::HellButterfly,
+            654 => NpcKind::Lavafly,
+            655 => NpcKind::MagmaSnail,
+            656 => NpcKind::TownBunny,
             647 => NpcKind::GemBunnyTopaz,
             648 => NpcKind::GemBunnySapphire,
             649 => NpcKind::GemBunnyEmerald,
@@ -991,6 +1001,7 @@ impl NpcKind {
                 | NpcKind::DyeTrader
                 | NpcKind::TownCat
                 | NpcKind::TownDog
+                | NpcKind::TownBunny
                 | NpcKind::PartyGirl
         )
     }
@@ -1171,6 +1182,7 @@ impl NpcKind {
                 | NpcKind::Painter
                 | NpcKind::TownCat
                 | NpcKind::TownDog
+                | NpcKind::TownBunny
                 | NpcKind::WitchDoctor
         )
     }
@@ -1201,6 +1213,7 @@ impl NpcKind {
                     | NpcKind::Wizard
                     | NpcKind::TownCat
                 | NpcKind::TownDog
+                    | NpcKind::TownBunny
                     | NpcKind::Mechanic
             )
     }
@@ -1842,6 +1855,11 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            NpcKind::GemBunnyAmber => "NPC_Hit_1",
+            NpcKind::HellButterfly => "NPC_Hit_1",
+            NpcKind::Lavafly => "NPC_Hit_1",
+            NpcKind::MagmaSnail => "NPC_Hit_1",
+            NpcKind::TownBunny => "NPC_Hit_1",
             NpcKind::GemBunnyTopaz => "NPC_Hit_1",
             NpcKind::GemBunnySapphire => "NPC_Hit_1",
             NpcKind::GemBunnyEmerald => "NPC_Hit_1",
@@ -2166,6 +2184,11 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            NpcKind::GemBunnyAmber => "NPC_Killed_1",
+            NpcKind::HellButterfly => "NPC_Killed_1",
+            NpcKind::Lavafly => "NPC_Killed_1",
+            NpcKind::MagmaSnail => "NPC_Killed_1",
+            NpcKind::TownBunny => "NPC_Killed_6",
             NpcKind::GemBunnyTopaz => "NPC_Killed_1",
             NpcKind::GemBunnySapphire => "NPC_Killed_1",
             NpcKind::GemBunnyEmerald => "NPC_Killed_1",
@@ -2286,6 +2309,10 @@ impl NpcKind {
             // aiStyle-49 AI head sets `noGravity = true` every tick
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
             NpcKind::AngryNimbus => true,
+            // W4-d43: the SetDefaults noGravity flyers (kb > 0) + the AI-head writers.
+            NpcKind::HellButterfly
+            | NpcKind::Lavafly
+            | NpcKind::MagmaSnail => true,
             // W4-d43: the SetDefaults noGravity flyers (kb > 0) + the AI-head writers.
             NpcKind::SporeBat => true,
             _ => false,
@@ -2539,6 +2566,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            NpcKind::GemBunnyAmber => 7,
+            NpcKind::HellButterfly => 65,
+            NpcKind::Lavafly => 64,
+            NpcKind::MagmaSnail => 67,
+            NpcKind::TownBunny => 7,
             NpcKind::GemBunnyTopaz => 7,
             NpcKind::GemBunnySapphire => 7,
             NpcKind::GemBunnyEmerald => 7,
@@ -3092,6 +3124,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            NpcKind::GemBunnyAmber => (18.0, 20.0),
+            NpcKind::HellButterfly => (10.0, 10.0),
+            NpcKind::Lavafly => (10.0, 10.0),
+            NpcKind::MagmaSnail => (14.0, 14.0),
+            NpcKind::TownBunny => (18.0, 20.0),
             NpcKind::GemBunnyTopaz => (18.0, 20.0),
             NpcKind::GemBunnySapphire => (18.0, 20.0),
             NpcKind::GemBunnyEmerald => (18.0, 20.0),
@@ -3188,6 +3225,11 @@ impl NpcKind {
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
             NpcKind::ForceBubble => 384,
+            NpcKind::GemBunnyAmber => 652,
+            NpcKind::HellButterfly => 653,
+            NpcKind::Lavafly => 654,
+            NpcKind::MagmaSnail => 655,
+            NpcKind::TownBunny => 656,
             NpcKind::GemBunnyTopaz => 647,
             NpcKind::GemBunnySapphire => 648,
             NpcKind::GemBunnyEmerald => 649,
@@ -3775,6 +3817,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            NpcKind::GemBunnyAmber => 5,
+            NpcKind::HellButterfly => 5,
+            NpcKind::Lavafly => 5,
+            NpcKind::MagmaSnail => 5,
+            NpcKind::TownBunny => 250,
             NpcKind::GemBunnyTopaz => 5,
             NpcKind::GemBunnySapphire => 5,
             NpcKind::GemBunnyEmerald => 5,
@@ -4159,6 +4206,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            NpcKind::GemBunnyAmber => 0,
+            NpcKind::HellButterfly => 0,
+            NpcKind::Lavafly => 0,
+            NpcKind::MagmaSnail => 0,
+            NpcKind::TownBunny => 10,
             NpcKind::GemBunnyTopaz => 0,
             NpcKind::GemBunnySapphire => 0,
             NpcKind::GemBunnyEmerald => 0,

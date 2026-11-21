@@ -3309,6 +3309,21 @@ pub(crate) fn draw_npcs(
             NpcKind::GemBunnyDiamond => {
                 pumpkin_moon_draw(assets.npc_sheet(651), npc_rows(651), n, w, h)
             }
+            NpcKind::GemBunnyAmber => {
+                pumpkin_moon_draw(assets.npc_sheet(652), npc_rows(652), n, w, h)
+            }
+            NpcKind::HellButterfly => {
+                pumpkin_moon_draw(assets.npc_sheet(653), npc_rows(653), n, w, h)
+            }
+            NpcKind::Lavafly => {
+                pumpkin_moon_draw(assets.npc_sheet(654), npc_rows(654), n, w, h)
+            }
+            NpcKind::MagmaSnail => {
+                pumpkin_moon_draw(assets.npc_sheet(655), npc_rows(655), n, w, h)
+            }
+            NpcKind::TownBunny => {
+                pumpkin_moon_draw(assets.npc_sheet(656), npc_rows(656), n, w, h)
+            }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
@@ -3465,6 +3480,8 @@ pub(crate) fn draw_npcs(
                     // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
                     | NpcKind::BlazingWheel
                     | NpcKind::SporeBat
+                    | NpcKind::HellButterfly
+                    | NpcKind::MagmaSnail
                     | NpcKind::DungeonSpirit
             )
         {
