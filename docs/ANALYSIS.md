@@ -39404,3 +39404,123 @@ in ≤100-line reads: `NPC.cs:20780-21379` (six windows),
 `:17190-17219`/`:79135-79164`, `Dust.cs:100-209`,
 `Utils.cs:1697-1700`/`:2459-2462`, `Entity.cs:185-214`,
 `NPC.cs:15699-15713`/`:17403-17417` (the R4 fold proof).
+
+### W4-g5 phases 4-6: the two unclaimed casters (RuneWizard 172, LibrarianSkeleton 693)
+
+**The exact aiStyle-8 census** (`NPC.cs` SetDefaults, the literal
+`this.aiStyle = 8` rows — 13 kinds): 24 FireImp (`:9083`), 29
+GoblinSorcerer (`:15690`), 32 DarkCaster (`:9125`), 45 Tim (`:9326`),
+172 RuneWizard (`:11158`), 281/282 RaggedCaster (`:12644`/`:12658`),
+283/284 Necromancer (`:12672`/`:12686`), 285/286 Diabolist
+(`:12700`/`:12714`), 533 DesertDjinn (`:14978`), 693 LibrarianSkeleton
+(`:17727`). The task brief's guesses were wrong: 25 BurningSphere /
+665 ChaosBallTim are aiStyle **9** (`:9097`/`:17407`), 273
+BlueArmoredBones / 279 HellArmoredBonesMace / 280 HellArmoredBonesSword
+are aiStyle **3** (`:12540`/`:12618`/`:12631`), 667 GoldenSlime is
+aiStyle **1** (`:17438`). In main: 5 kinds (24/29/32/45/533); the d38
+branch (pushed, unmerged) claims 281-286. The two UNCLAIMED missing
+kinds are **172 RuneWizard + 693 LibrarianSkeleton** — ported here
+(phases 4-5), merge-clean with d38 (which edits the same `npc_ai_bat`
+lines for 281-286).
+
+**The bolt-shoot census** (the task's "fireball 15? shadowflame 495?
+necro bone 116?" guesses): the casters' bolts are the **129 RuneBlast**
+(the 172's shadow beam, `NPC.cs:21271`) and the **1092
+LibrarianSkeletonBook** (the 693's book shot, `:21262`). The 15
+BallofFire / 495 ShadowFlameArrow / 116 SwordBeam are PLAYER weapons
+(`Item.cs` shoot rows), not caster bolts — the guesses were wrong. The
+281-286 dungeon casters' bolts (290 ShadowBeamHostile / 291
+InfernoHostileBolt / 293 LostSoulHostile) are the d38 branch's claim.
+
+**What landed** (phases 4-5, `feb78f10`/`96f07495`):
+* the full identity wiring (enum, to_u16/from_u16 — the RuneWizard's
+  vanilla 172 collides with DD2DarkMageT3's port-local 172, so it takes
+  port-local **354**; the LibrarianSkeleton's 693 is free — cs_id/net_id
+  172/693, size/aiStyle/lifeMax/damage/defense/value/kb, NPCHit2/
+  NPCDeath2, the {20,31} immunity, bestiary entries + portraits, own
+  NPC_172/NPC_693 sheets + draw arms, netglue hover seeds); the
+  exhaustive-match completions (to_u16/from_u16/ai_style/size/max_hp/
+  contact_damage/hit_sound/death_sound, defense/value/render_key/
+  update_kind_ai/find_frame, npc_seed, draw_npcs, portrait_data,
+  debuff_immune_ids); ALL_KINDS 270→272.
+* the 172 AI (the alpha ramp `:20844-20854`, the six 75-spaced triggers
+  `:21023-21030`, the shadow beam `:21264-21274` — the 129 at speed 10/
+  damage 40/timeLeft 300 with the two Next(-10,11) aim jitters, the
+  alpha dust `:21310-21325` — the Next(255) gate, 1 iteration or 2 at
+  alpha 255); the 129 row + the ai_frost_bolt 6-dust Next(4)/Next(5)
+  block + the timeLeft 300 drain override.
+* the 693 AI (the localAI clock `:20839-20842`/`:20994-21005`/
+  `:21106-21111`, the book teleport `AI_AttemptToFindTeleportSpotNearBooks`
+  `:19009-19085` + the SearchWall `:19087-19134`, the book shot
+  `AI_FindNearbyBook` `:62308-62364` / `:21248-21263` — the 1092 at
+  damage 13/ai0=0/ai1=45/ai2=target, the ai[0]-scaled light
+  `:21301-21308`); the 1092 row + the ai_librarian_book arm
+  (`:25392-25456`) + the 6×9 grid draw + the constant Centre light.
+
+**The RNG slot census** (the new kinds, per tick, in C# order):
+| Slot | C# site | 172 RuneWizard | 693 LibrarianSkeleton |
+| --- | --- | --- | --- |
+| book teleport | `:19020-19024` | — | Next(2) + 2/attempt ≤100 (the >125-tile bail draws 0) |
+| shoot | `:21268-21269` / `:21253-21260` | 2× Next(-10,11) | Next(bookCount) OR 2× NextFloat |
+| ambient | `:21319` / `:21301-21308` | Next(255) ×1 (×2 at alpha 255) | 0 (light only) |
+
+The 129's own slots (UpdateProjectiles): the dust block 6× (Next(4) +
+Next(5)) every tick. The 1092's own slots: the init Next(6)+Next(3) +
+6× two Next(-10,11); the home transition Next(6); the home tick Next(5)
+(+ two NextDouble + NextFloat + Next(3) on a zero); every tick Next(15).
+
+**Decisions recorded**:
+* **The find_frame spriteDirection snap** (`NPC.cs:77030-77039`): the
+  port's caster arm was missing the grounded snap; added for the whole
+  case-29/32/45/172/281-286/693 group (a faithful fix, the existing
+  casters gain it too).
+* **The 172/693 shoot recentre**: the port passes the C# NewProjectile
+  argument (the body centre / the book position) as the spawn point;
+  the drain's spawn_hostile takes it as the top-left (the C# recentres
+  to argument − projSize/2). This is the d38 casters' pre-existing
+  deviation — followed here for consistency.
+* **The 1092 draw alpha** (`Main.cs:34028-34031`): the colour is raw
+  white × `Remap(ai[1], 100, 120, 0, 1)` — the NPC's 45-tick hover reads
+  0, so the book is INVISIBLE until the player's own 100+ cast. Ported
+  faithfully (the 6×9 grid, the box-centre anchor, the cell-centre
+  origin). The book's constant Centre light (0.3, 0.25, 0.1) is a
+  per-tick AI-head AddLight, NOT the SetDefaults light — fed separately
+  in the frame pass.
+* **The 693 book teleport SearchWall oob**: the downward scan's
+  out-of-bounds continues the outer for (the C# `:19067-19070` reads
+  the SearchWall outOfBounds, NOT the horizontal scan's); the port
+  tracks it separately (the initial draft conflated the two — fixed).
+* **The 693 ai2=target fold**: the port's single player folds the 1092's
+  ai[2] target slot to 0 (the saucer-missile convention); the C#'s
+  `!player3.active` kill never fires (the session player is always
+  active).
+
+**The atlas headroom** (`tools/atlas_sim.js`, the skyline waste
+tie-break): the main set is 7713 px; the two NPC sheets (NPC_172
+40×210, NPC_693 40×168) + the four bolt sheets (Projectile_129 16×16,
+Projectile_290/291/293 1×1 placeholders, Projectile_1092 240×360) add
+51 px → **7764 px** against the 8192 strict-GPU bound — **428 px of
+headroom**. The sheets fit; no repack needed. (The 290/291/293 sheets
+are 1×1 placeholders — the C# draws them via ParticleOrchestrator
+trails, the render follow-up; the 129/1092 sheets are real.)
+
+**Witnesses** (written, NOT run — code-only): `npc.rs`
+`w4_g5_the_two_casters_setdefaults_rows` + `_find_frame_three_rows`;
+`npc_ai_bat.rs` the 172 alpha ramp / 75-spaced triggers / two-jitter
+shoot / Next(255) ambient, the 693 localAI clock / two-NextFloat book
+shot / >125-tile book-teleport bail; `npc_lights.rs` the 693 ai0-scaled
+light; `projectile.rs` `w4_g5_caster_bolt_tests` (the 129/1092 rows, the
+129 12-draw dust block, the 1092 15-draw init / hover-home transition /
+gore-gate home tick).
+
+**Verification**: no cargo/rustc/rustfmt/tests/graphify invoked
+(code-only). Every ported block re-read against the cited C# windows
+in ≤100-line reads: `NPC.cs:11154-11167`/`:17723-17735`/`:20817-21376`
+(the caster arm)/`:19009-19134` (the book teleport + SearchWall)/
+`:62308-62364` (the book search), `Projectile.cs:2180-2190`/`:10186-10194`/
+`:25392-25456`/`:26555-26674`, `Main.cs:33172-33200`/`:34028-34031`/
+`:67082-67154` (npcFrameCount)/`:8720` (projFrames[1092]),
+`NPCID.cs:7119-7125`/`:10060-10066`, `Utils.cs:1251-1269`/`:1344-1349`/
+`:1762-1765`/`:2053-2069`. The atlas headroom measured via
+`tools/atlas_sim.js` (the LZX-decoded real sheet dims, the skyline
+packer mirror).

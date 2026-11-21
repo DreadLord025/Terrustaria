@@ -44897,3 +44897,185 @@ mod w4_g5_djinn_curse_tests {
         assert_eq!(pool.slots()[slot].damage, 22);
     }
 }
+
+// ===== W4-g5: the 129 RuneBlast / 1092 LibrarianSkeletonBook witnesses
+// (WRITTEN NOT RUN — code-only mode). =====
+#[cfg(test)]
+mod w4_g5_caster_bolt_tests {
+    use super::*;
+
+    fn air() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    /// `Projectile.cs:2180-2190` — the 129 RuneBlast row: 14x14, aiStyle
+    /// 28, alpha 255, penetrate -1, tileCollide false, the stock 3600
+    /// life (the NPC's shoot overrides it to 300).
+    #[test]
+    fn w4_g5_the_rune_blast_row() {
+        let d = proj_data(RUNE_BLAST).expect("the 129 row");
+        assert_eq!((d.w, d.h), (14.0, 14.0));
+        assert_eq!(d.ai_style, 28);
+        assert_eq!(d.alpha, 255);
+        assert_eq!(d.penetrate, -1);
+        assert!(!d.tile_collide);
+        assert_eq!(d.time_left, 3600);
+        // The 129 keeps the stock 1 frame (no projFrames override).
+        assert_eq!(proj_frames(RUNE_BLAST), 1);
+    }
+
+    /// `Projectile.cs:10186-10194` — the 1092 book row: 16x16, aiStyle
+    /// 18, penetrate -1, timeLeft 420, the stock tileCollide true; the
+    /// 54-frame sheet (`Main.cs:8720`).
+    #[test]
+    fn w4_g5_the_librarian_book_row() {
+        let d = proj_data(LIBRARIAN_BOOK).expect("the 1092 row");
+        assert_eq!((d.w, d.h), (16.0, 16.0));
+        assert_eq!(d.ai_style, 18);
+        assert_eq!(d.penetrate, -1);
+        assert_eq!(d.time_left, 420);
+        assert!(d.tile_collide);
+        assert_eq!(proj_frames(LIBRARIAN_BOOK), 54);
+    }
+
+    /// `Projectile.cs:26638-26646` — the 129's dust block: 6 dust, each
+    /// with a Next(4) velocity scale + a Next(5) size scale (12 arm-level
+    /// draws per tick), BEFORE the first-tick Item28 cue.
+    #[test]
+    fn w4_g5_the_rune_blast_dust_block_draws_12_per_tick() {
+        let w = air();
+        let mut p = Projectile {
+            active: true,
+            kind: RUNE_BLAST,
+            owner: 0,
+            pos: Vec2::new(64.0, 64.0),
+            tile_collide: false,
+            ..Default::default()
+        };
+        let mut rng = UnifiedRandom::new(7);
+        let mut mirror = UnifiedRandom::new(7);
+        for _ in 0..6 {
+            let _ = mirror.next_range(0, 4);
+            let _ = mirror.next_range(0, 5);
+        }
+        p.ai_frost_bolt(&w, &mut rng);
+        assert_eq!(rng, mirror, "the 12 Next(4)/Next(5) draws");
+        assert_eq!(p.wants_sound, Some((2, 28, 64.0, 64.0, 0.0)), "the Item28 cue");
+        // The second tick: the dust block draws again, the cue latches.
+        p.wants_sound = None;
+        for _ in 0..6 {
+            let _ = mirror.next_range(0, 4);
+            let _ = mirror.next_range(0, 5);
+        }
+        p.ai_frost_bolt(&w, &mut rng);
+        assert_eq!(rng, mirror, "the dust block draws every tick");
+        assert_eq!(p.wants_sound, None, "one cue per life");
+    }
+
+    /// `Projectile.cs:25395-25406` — the 1092's init: the frame =
+    /// Next(6)*9 + Next(3), vel.Y = -3, ai[0] = 1, the 6-dust burst
+    /// (12 Next(-10,11) draws); the trailing Next(15) gate runs too.
+    #[test]
+    fn w4_g5_the_librarian_book_init_draws_15() {
+        let w = air();
+        let mut p = Projectile {
+            active: true,
+            kind: LIBRARIAN_BOOK,
+            owner: 0,
+            pos: Vec2::new(64.0, 64.0),
+            ai: [0.0, 45.0, 0.0, 0.0],
+            tile_collide: false,
+            ..Default::default()
+        };
+        let mut rng = UnifiedRandom::new(7);
+        let mut mirror = UnifiedRandom::new(7);
+        let f0 = mirror.next_range(0, 6);
+        let f1 = mirror.next_range(0, 3);
+        for _ in 0..6 {
+            let _ = mirror.next_range(-10, 11);
+            let _ = mirror.next_range(-10, 11);
+        }
+        let _ = mirror.next_range(0, 15); // the trailing dust gate
+        p.ai_librarian_book(&w, None, &mut rng);
+        assert_eq!(p.frame, f0 * 9 + f1, "the init frame");
+        assert_eq!(p.vel.y, -3.0, "the init lift");
+        assert_eq!(p.ai[0], 1.0, "the hover state");
+        assert_eq!(rng, mirror, "2 frame + 12 dust + 1 trailing = 15 draws");
+    }
+
+    /// `Projectile.cs:25407-25426` — the 1092's hover: vel.Y *= 0.95, the
+    /// post-decrement ai[1] countdown; at ai[1] = 0 the home fires (the
+    /// 9-speed SafeNormalize-One velocity + the frame/9*9+3+Next(6)
+    /// re-frame). The trailing Next(15) runs every tick.
+    #[test]
+    fn w4_g5_the_librarian_book_hover_and_home_transition() {
+        let w = air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 200.0;
+        player.y = 64.0;
+        let mut p = Projectile {
+            active: true,
+            kind: LIBRARIAN_BOOK,
+            owner: 0,
+            pos: Vec2::new(64.0, 64.0),
+            ai: [1.0, 0.0, 0.0, 0.0], // ai[1] = 0: the home fires this tick
+            frame: 10,
+            vel: Vec2::new(0.0, -1.0),
+            tile_collide: false,
+            ..Default::default()
+        };
+        let mut rng = UnifiedRandom::new(7);
+        let mut mirror = UnifiedRandom::new(7);
+        let f = mirror.next_range(0, 6); // the home re-frame
+        let _ = mirror.next_range(0, 15); // the trailing dust gate
+        p.ai_librarian_book(&w, Some(&player), &mut rng);
+        assert_eq!(p.ai[0], 2.0, "the home state");
+        assert_eq!(p.ai[1], -1.0, "the post-decrement");
+        assert_eq!(p.frame, 10 / 9 * 9 + 3 + f, "the home re-frame");
+        // The home velocity: the player is right of the book, so the
+        // normalized aim is ~(1, small) * 9.
+        assert!(p.vel.x > 0.0, "the home aims at the player");
+        assert!((p.vel.length() - 9.0).abs() < 1e-4, "the 9-speed home");
+        assert_eq!(rng, mirror, "the Next(6) re-frame + the Next(15) gate");
+    }
+
+    /// `Projectile.cs:25428-25445` — the 1092's home tick: the spin, the
+    /// Next(5) page-gore gate (on a zero: two NextDouble + one NextFloat
+    /// + one Next(3)), the trailing Next(15).
+    #[test]
+    fn w4_g5_the_librarian_book_home_gore_gate() {
+        let w = air();
+        let mut p = Projectile {
+            active: true,
+            kind: LIBRARIAN_BOOK,
+            owner: 0,
+            pos: Vec2::new(64.0, 64.0),
+            ai: [2.0, -1.0, 0.0, 0.0],
+            vel: Vec2::new(9.0, 0.0),
+            tile_collide: false,
+            ..Default::default()
+        };
+        // Find a seed whose Next(5) is 0 (the gore gate fires).
+        let mut seed = 0;
+        loop {
+            let mut probe = UnifiedRandom::new(seed);
+            if probe.next_range(0, 5) == 0 {
+                break;
+            }
+            seed += 1;
+        }
+        let mut rng = UnifiedRandom::new(seed);
+        let mut mirror = UnifiedRandom::new(seed);
+        let _ = mirror.next_range(0, 5); // the gore gate (0)
+        let _ = mirror.next_double(); // NextVector2Square X
+        let _ = mirror.next_double(); // NextVector2Square Y
+        let _ = mirror.next_float(); // the lift
+        let _ = mirror.next_range(0, 3); // SelectRandom
+        let _ = mirror.next_range(0, 15); // the trailing dust gate
+        let rot0 = p.rot;
+        p.ai_librarian_book(&w, None, &mut rng);
+        // The spin: vel.Length() * sign(vel.X) * 0.03 = 9 * 1 * 0.03.
+        assert!((p.rot - rot0 - 0.27).abs() < 1e-5, "the home spin");
+        assert_eq!(rng, mirror, "the gore gate + 4 gore draws + the trailing gate");
+    }
+}

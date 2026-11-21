@@ -24099,6 +24099,69 @@ mod tests {
         }
     }
 
+    /// W4-g5 — the two unclaimed aiStyle-8 casters' `SetDefaults` rows
+    /// (`NPC.cs:11154-11167` the RuneWizard, `:17723-17735` the
+    /// LibrarianSkeleton): size, aiStyle, lifeMax, damage, defense, value,
+    /// knockBackResist, sounds and the {20, 31} debuff immunity
+    /// (`NPCID.cs:7119`/`:10060`). WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_g5_the_two_casters_setdefaults_rows() {
+        // (kind, vanilla, protocol, w, h, ai, hp, dmg, def, value, kb)
+        let rows = [
+            (NpcKind::RuneWizard, 172u16, 354u16, 18.0, 40.0, 8u8, 600, 200, 30, 5000.0, 0.3f32),
+            (NpcKind::LibrarianSkeleton, 693, 693, 18.0, 40.0, 8, 70, 18, 2, 160.0, 0.6),
+        ];
+        for (kind, vanilla, protocol, w, h, ai, hp, dmg, def, value, kb) in rows {
+            assert_eq!(kind.to_u16(), protocol, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(protocol), Some(kind), "{kind:?} decode");
+            assert_eq!(kind.cs_id(), vanilla, "{kind:?} vanilla type");
+            assert_eq!(kind.net_id(), vanilla as i32, "{kind:?} net id");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_2"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_2"), "{kind:?} death");
+            // The {20, 31} immunity (Poisoned + Confused).
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[20], "{kind:?} immune to 20");
+            assert!(b.buff_immune[31], "{kind:?} immune to 31");
+            // The casters are grounded (no noGravity row) and visible at
+            // spawn (no alpha row — the 172's ramp starts at 0).
+            assert!(!kind.no_gravity(), "{kind:?} grounded");
+            assert_eq!(n.alpha, 0, "{kind:?} spawn alpha");
+        }
+    }
+
+    /// W4-g5 — the two casters ride the case-29/32/45/172/281-286/693
+    /// FindFrame arm (`NPC.cs:77019-77054`): row 0 standing, row 1 while
+    /// the windup (ai[1] > 0) runs, row 2 airborne; the grounded
+    /// spriteDirection snap. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_g5_the_two_casters_find_frame_three_rows() {
+        for kind in [NpcKind::RuneWizard, NpcKind::LibrarianSkeleton] {
+            let mut n = bare(kind);
+            n.vx = 0.0;
+            n.vy = 0.0;
+            n.facing = 1;
+            n.sprite_dir = -1;
+            n.cast_windup = 0;
+            n.find_frame();
+            assert_eq!(n.frame, 0, "{kind:?} standing row 0");
+            assert_eq!(n.sprite_dir, 1, "{kind:?} the grounded snap");
+            n.cast_windup = 10;
+            n.find_frame();
+            assert_eq!(n.frame, 1, "{kind:?} windup row 1");
+            n.vy = 2.0;
+            n.find_frame();
+            assert_eq!(n.frame, 2, "{kind:?} airborne row 2");
+        }
+    }
+
     /// The small-kinds wiring wave: the style axis claims 21/49/56/72, so
     /// the four kinds never reach `update_kind_ai`'s retired stand-in arms
     /// (the `unreachable!` markers). A full `update` tick steps each kind

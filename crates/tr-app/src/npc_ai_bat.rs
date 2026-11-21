@@ -1481,4 +1481,171 @@ mod tests {
         assert!(n.wants_djinn_curse.is_empty());
         assert_eq!(n.wants_sound.len(), 1, "the puff plays regardless");
     }
+
+    // ---- W4-g5 — the RuneWizard (172) / LibrarianSkeleton (693) witnesses
+    // (written, NOT run — code-only mode). Every constant pins to its C#
+    // literal (`NPC.cs:11154-11167`/`:17723-17735` SetDefaults,
+    // `:20844-21325` the caster arms). ----
+
+    /// `NPC.cs:20844-20854` — the 172's alpha ramp: alpha++ toward 255
+    /// every tick, a strike (justHit) resets it to 0.
+    #[test]
+    fn w4_g5_the_rune_wizard_alpha_ramps_and_a_strike_resets_it() {
+        let w = ground_air();
+        let p = player_at(100.0 * 16.0, 116.0 * 16.0);
+        let mut n = Npc::new(NpcKind::RuneWizard, 96.0 * 16.0, 120.0 * 16.0 - 40.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 10.0; // mid-cycle: no trigger, no teleport
+        let mut rng = UnifiedRandom::new(7);
+        assert_eq!(n.alpha, 0, "the SetDefaults default");
+        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        assert_eq!(n.alpha, 1, "alpha++ per tick");
+        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        assert_eq!(n.alpha, 2);
+        n.just_hit = true;
+        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        assert_eq!(n.alpha, 0, "the strike resets alpha to 0");
+    }
+
+    /// `NPC.cs:21023-21030` — the 172's six 75-spaced triggers wind the
+    /// 30-tick windup (the same-tick decrement reads 29).
+    #[test]
+    fn w4_g5_the_rune_wizard_triggers_every_75_ticks() {
+        let w = ground_air();
+        let p = player_at(100.0 * 16.0, 116.0 * 16.0);
+        let mut n = Npc::new(NpcKind::RuneWizard, 96.0 * 16.0, 120.0 * 16.0 - 40.0, 1, 0.0);
+        n.hp = n.max_hp;
+        let mut rng = UnifiedRandom::new(7);
+        for trigger in [75.0, 150.0, 225.0, 300.0, 375.0, 450.0] {
+            n.ai[0] = trigger - 1.0; // the ++ lands on the trigger
+            n.ai[1] = 0.0;
+            ai_style_8_step(&mut n, &w, &p, &mut rng);
+            assert_eq!(n.ai[0], trigger);
+            assert_eq!(n.ai[1], 29.0, "the {trigger} trigger winds 30 (minus the --)");
+        }
+        // A non-trigger tick does not wind.
+        n.ai[0] = 100.0;
+        n.ai[1] = 0.0;
+        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        assert_eq!(n.ai[1], 0.0, "101 is not a 75-spaced trigger");
+    }
+
+    /// `NPC.cs:21264-21274` — the 172's shadow beam: the 129 RuneBlast at
+    /// speed 10, damage 40, the two Next(-10,11) aim jitters (X then Y).
+    /// The spawn point is the body centre; the Item8 puff is SILENT.
+    #[test]
+    fn w4_g5_the_rune_wizard_shoot_draws_two_jitters_and_fires_the_129() {
+        let w = ground_air();
+        let p = player_at(100.0 * 16.0, 116.0 * 16.0);
+        let mut n = Npc::new(NpcKind::RuneWizard, 96.0 * 16.0, 120.0 * 16.0 - 40.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 10.0;
+        n.ai[1] = 26.0; // the -- lands 25 — the shoot tick
+        let mut rng = UnifiedRandom::new(7);
+        let mut mirror = UnifiedRandom::new(7);
+        let _ = mirror.next_range(-10, 11); // the X jitter
+        let _ = mirror.next_range(-10, 11); // the Y jitter
+        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        assert_eq!(n.wants_hostile_shot.len(), 1, "one 129 bolt");
+        let (kind, _, _, _, _, dmg) = n.wants_hostile_shot[0];
+        assert_eq!(kind, 129, "the RuneBlast");
+        assert_eq!(dmg, 40, "the shadow beam damage");
+        assert!(n.wants_sound.is_empty(), "the 172 is silent (type != 172 gate)");
+        // The two jitter draws ride the caller stream (the ambient
+        // Next(255) follows — the alpha is 1 after the ramp, 1 iteration).
+        let _ = mirror.next_max(255); // the ambient alpha-dust gate
+        assert_eq!(rng, mirror, "the two jitters + the ambient Next(255)");
+    }
+
+    /// `NPC.cs:21310-21325` — the 172's ambient alpha dust: 1 Next(255)
+    /// iteration below alpha 255, 2 at alpha 255.
+    #[test]
+    fn w4_g5_the_rune_wizard_ambient_draws_next255_per_iteration() {
+        let w = ground_air();
+        let p = player_at(100.0 * 16.0, 116.0 * 16.0);
+        let mut n = Npc::new(NpcKind::RuneWizard, 96.0 * 16.0, 120.0 * 16.0 - 40.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 10.0;
+        n.alpha = 100; // below 255: 1 iteration
+        let mut rng = UnifiedRandom::new(7);
+        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        let mut mirror = UnifiedRandom::new(7);
+        let _ = mirror.next_max(255); // 1 iteration
+        assert_eq!(rng, mirror, "1 Next(255) below alpha 255");
+        // At alpha 255: 2 iterations.
+        let mut n2 = Npc::new(NpcKind::RuneWizard, 96.0 * 16.0, 120.0 * 16.0 - 40.0, 1, 0.0);
+        n2.hp = n2.max_hp;
+        n2.ai[0] = 10.0;
+        n2.alpha = 254; // the ramp ++ lands 255: 2 iterations
+        let mut rng2 = UnifiedRandom::new(7);
+        ai_style_8_step(&mut n2, &w, &p, &mut rng2);
+        let mut mirror2 = UnifiedRandom::new(7);
+        let _ = mirror2.next_max(255);
+        let _ = mirror2.next_max(255);
+        assert_eq!(rng2, mirror2, "2 Next(255) at alpha 255");
+    }
+
+    /// `NPC.cs:20994-21005` + `:21106-21111` — the 693's localAI clock:
+    /// localAI[0]++ per tick, localAI[3] latches the facing past 1, the
+    /// teleport resets localAI[0]/[1]/[3].
+    #[test]
+    fn w4_g5_the_librarian_skeleton_localai_clock() {
+        let w = ground_air();
+        let p = player_at(100.0 * 16.0, 116.0 * 16.0);
+        let mut n = Npc::new(NpcKind::LibrarianSkeleton, 96.0 * 16.0, 120.0 * 16.0 - 40.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 10.0;
+        let mut rng = UnifiedRandom::new(7);
+        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        assert_eq!(n.local_ai[0], 1.0, "localAI[0]++");
+        assert_eq!(n.local_ai[3], 0.0, "the facing latch waits for > 1");
+        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        assert_eq!(n.local_ai[0], 2.0);
+        assert_eq!(n.local_ai[3], 1.0, "the facing latches past 1");
+    }
+
+    /// `NPC.cs:21248-21263` — the 693's book shot: the 1092 at damage 13,
+    /// ai0 = 0, ai1 = 45. With no books in the world, the fallback draws
+    /// two NextFloat (the NextVector2Circular angle + radius).
+    #[test]
+    fn w4_g5_the_librarian_skeleton_book_shot_fallback_draws_two_floats() {
+        let w = ground_air();
+        let p = player_at(100.0 * 16.0, 116.0 * 16.0);
+        let mut n = Npc::new(NpcKind::LibrarianSkeleton, 96.0 * 16.0, 120.0 * 16.0 - 40.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 10.0;
+        n.ai[1] = 26.0; // the -- lands 25 — the shoot tick
+        let mut rng = UnifiedRandom::new(7);
+        let mut mirror = UnifiedRandom::new(7);
+        let _ = mirror.next_float(); // the circular angle
+        let _ = mirror.next_float(); // the circular radius
+        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        assert_eq!(n.wants_hostile_shot_ai.len(), 1, "one 1092 book");
+        let shot = &n.wants_hostile_shot_ai[0];
+        assert_eq!(shot.kind, 1092, "the LibrarianSkeletonBook");
+        assert_eq!(shot.damage, 13, "the book damage");
+        assert_eq!(shot.ai0, 0.0);
+        assert_eq!(shot.ai1, 45.0, "the 45-tick hover");
+        assert_eq!(n.wants_sound.len(), 1, "the 693 plays the Item8 puff");
+        // The 693's ambient draws NOTHING (light only).
+        assert_eq!(rng, mirror, "the two NextFloat + no ambient draw");
+    }
+
+    /// `NPC.cs:19009-19085` — the 693's book teleport: the >125-tile
+    /// Euclidean bail draws NOTHING; a nearby dungeon-wall book tile is
+    /// found via the Next(2) direction seed + the X-then-Y pairs.
+    #[test]
+    fn w4_g5_the_librarian_skeleton_book_teleport_bail_and_search() {
+        let w = ground_air();
+        let p = player_at(100.0 * 16.0, 116.0 * 16.0);
+        let tp = TelefragPlayer::from_player(&p);
+        // The far bail: self at tile 10, target at tile 300 (>125 tiles).
+        let mut rng = UnifiedRandom::new(7);
+        let before = rng.clone();
+        let spot = attempt_find_teleport_spot_near_books(
+            &w, &mut rng, (10.0 * 16.0, 110.0 * 16.0), (300, 117), 30, &tp,
+        );
+        assert!(spot.is_none());
+        assert_eq!(rng, before, "the >125-tile bail consumes no draws");
+    }
 }
