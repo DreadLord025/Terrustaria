@@ -596,6 +596,47 @@ mod tests {
     }
 
     #[test]
+    fn w4_f12_final_g27_the_orb_set_is_exclusive_and_canonical() {
+        // The W4-f12 final g27 cross-verify (origin/task/W4-g27-orb-keep-one-prep
+        // tip 1cd7ac367): `buff_effects_orbs.rs` is BYTE-IDENTICAL between
+        // the two branches (`git diff HEAD origin/... -- buff_effects_orbs.rs`
+        // empty), so `apply_orb_arm`'s shape is still canonical — the d73
+        // arm core (adjusted-j double-delete quirk, Might stats before the
+        // gate) + the c17 ResetEffects zero-seeding + the c16/d74 request
+        // view. This witness pins the ROUTING exclusivity on our side: the
+        // 18 orb ids are exactly the six 3-id bands, none of them sits in
+        // an ownership set (so the chain reaches `is_orb_id`), and no
+        // non-orb id sneaks into the bands.
+        let orb_ids: Vec<i32> = (95..=100).chain(170..=181).collect();
+        assert_eq!(orb_ids.len(), 18);
+        for &b in &orb_ids {
+            assert!(is_orb_id(b), "orb {b} routes to apply_orb_arm");
+            assert!(!INLINE_OWNED.contains(&b), "orb {b} not inline-owned");
+            assert!(!ACCESSORY_OWNED.contains(&b), "orb {b} not accessory-owned");
+            assert!(!SUMMON_OWNED.contains(&b), "orb {b} not summon-owned");
+            assert!(!DEBUFF_DISPATCH.contains(&b), "orb {b} not debuff-dispatched");
+            assert!(!MISC_DISPATCH.contains(&b), "orb {b} not misc-dispatched");
+            // The d73 non-orb lane (192/321/396/62) never overlaps the orbs.
+            assert!(!matches!(b, 192 | 321 | 396 | 62));
+        }
+        // The bands' boundaries: the ids just outside are NOT orbs.
+        for b in [94, 101, 169, 182] {
+            assert!(!is_orb_id(b), "{b} is outside the orb bands");
+        }
+        // The nebula-twin contract (research/W4-f12-sweep-census.md): the
+        // ONE writer is `nebula_buffs` inside `apply_orb_arm` writing
+        // `OrbScanState.nebula_level_mana` (base 176); the f49 regen read
+        // side binds to that field at the merge — no second dispatch here.
+        let mut p = player();
+        let mut pool = ProjectilePool::default();
+        p.buffs.buff_type[0] = 177; // Nebula Mana tier 2
+        p.buffs.buff_time[0] = 3600;
+        run(&mut p, &mut pool);
+        assert_eq!(p.orb_scan.nebula_level_mana, 2, "level = 1 + 177 - 176");
+        assert_eq!(p.buffs.buff_type[0], 177, "no step-down above time 2");
+    }
+
+    #[test]
     fn w4_f12_nebula_life_steps_down_and_adds_regen() {
         // `:10448-10452` + `:12070-12079`: tier 2 at time 2 steps to tier 1,
         // re-arms at 480, +6 regen (the canonical module's arm core).

@@ -158,3 +158,27 @@ flag family (MISC_DISPATCH), Shine 11 / Archery 16 / Wet 103 / Regen 2
 `w4_f12_sweep_fed_tiers_grant_the_minion_halves`,
 `w4_f12_sweep_kite_stats_and_change_gated_sync`.
 `buff_frame_wiring.rs`: `w4_f12_sweep_stoned_dispatches_through_the_debuff_lane`.
+
+## The g27 cross-verify — final phase (2026-11-21)
+
+Re-checked against `origin/task/W4-g27-orb-keep-one-prep` tip **1cd7ac367**
+(the canonical-prep branch, unchanged since the sweep):
+
+* `git diff HEAD origin/task/W4-g27-orb-keep-one-prep --
+  crates/tr-app/src/buff_effects_orbs.rs` is **EMPTY** — the module is
+  byte-identical, so `apply_orb_arm`'s shape is still canonical: the d73
+  arm core (the adjusted-j double-delete quirk, the Might stats before the
+  gate), the c17 ResetEffects zero-seeding correction, the c16/d74
+  `orb_arm_requests` derived view. No drift to reconcile.
+* The wiring's `is_orb_id` covers exactly the 18 ids (the six 3-id bands
+  95-97/98-100/170-172/173-175/176-178/179-181); none sits in
+  INLINE_OWNED / ACCESSORY_OWNED / SUMMON_OWNED / DEBUFF_DISPATCH /
+  MISC_DISPATCH or the d73 non-orb match, so the chain reaches the orb
+  arm exclusively (witness
+  `w4_f12_final_g27_the_orb_set_is_exclusive_and_canonical`, written not
+  run).
+* The nebula-twin one-writer contract above stands unchanged: the single
+  `nebula_buffs` writer inside `apply_orb_arm` feeds
+  `OrbScanState.nebula_level_mana`; the f49 regen read side binds to that
+  field at the merge. The witness pins tier 2 at time 3600 → level 2, no
+  step-down (the `buffTime == 2` gate only).
