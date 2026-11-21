@@ -145,6 +145,7 @@
 //! | 594-596 | `:85893-85895` | the 628 Dandelion death: the first three gores (1205/1206/1206) |
 //! | 597 | `:85896` | the 628 Dandelion death: the 1207 tail |
 //! | 598-599 | `:85918-85919` | the 646-652 GemBunny death (2 gores, per-type offset (type-646)*2) |
+//! | 600 | `:85940` | the 639-645 GemSquirrel death (1 gore 1227+(type-639)) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -3877,6 +3878,34 @@ fn gem_bunny_death(
     gore.new_gore(rng, world, pos, vel, 1235 + num471, 1.0); // :85919
 }
 
+/// The 639-645 GemSquirrel death (`NPC.cs:85923-85940`, site 600): the
+/// 10-dust burst of type `num472` (86+(type-639) for type<645, else 138 for
+/// the Amber 645), then the single gore `1227 + (type-639)`. Scale defaults
+/// to 1.
+fn gem_squirrel_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:85923-85927` — num472 = 86+(type-639), or 138 for the Amber 645.
+    let num472 = if npc_type < 645 { 86 + (npc_type - 639) } else { 138 };
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, num472, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 1227 + (npc_type - 639), 1.0); // :85940
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -4345,6 +4374,10 @@ pub fn hit_effect_c(
     // `:85898-85920` — the 646-652 GemBunny arm (sites 598-599).
     if (646..=652).contains(&npc_type) && npc.hp <= 0 {
         gem_bunny_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85921-85941` — the 639-645 GemSquirrel arm (site 600).
+    if (639..=645).contains(&npc_type) && npc.hp <= 0 {
+        gem_squirrel_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -6868,6 +6901,21 @@ mod tests {
             gem_bunny_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
             let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
             assert_eq!(types, vec![1234 + off, 1235 + off], "bunny {ty}");
+        }
+    }
+
+    /// `NPC.cs:85940` — the GemSquirrel death: the single gore
+    /// 1227+(type-639); the Amber 645 uses dust 138.
+    #[test]
+    fn w4_f10_the_gem_squirrel_death_uses_the_per_type_offset() {
+        let w = air();
+        for ty in [639, 642, 645] {
+            let n = boss(100.0, 100.0, 30.0, 24.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(571);
+            gem_squirrel_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            assert_eq!(gore.slot(0).gore_type, 1227 + (ty - 639), "squirrel {ty}");
         }
     }
 
