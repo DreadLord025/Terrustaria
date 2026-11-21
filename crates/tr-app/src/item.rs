@@ -875,6 +875,27 @@ pub(crate) const GRAB_DELAY_LOCAL: u8 = 0;
 /// the Guide Voodoo Doll alone).
 pub(crate) const GRAB_DELAY_ALL: u8 = 255;
 
+/// One queued entry/exit splash burst (`WorldItem.cs:881-1035`): the drop
+/// detected the wet edge and armed `wetCount = 20`; the items pass drains
+/// this into the shared `DustPool` + the case-19 play on the `UpdateItems`
+/// stream (the g67 rain-splash contract). The kind picks the dust family:
+/// lava → 35 ×5, shimmer → 308 ×10 (the `Next(6)` colour switch), honey →
+/// 152 ×5, water → `dustWater()` ×10.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct ItemSplash {
+    /// The drop's top-left at the edge (the dust box anchors on
+    /// `position.X - 6`, `position.Y + height/2 - 8`; the water EXIT arm
+    /// drops the `- 8`, `:1011`).
+    pub pos: Vec2,
+    /// `true` = the exit edge (`:959-1035`), `false` = entry (`:881-958`).
+    pub exit: bool,
+    /// The kind flags AT the edge (post-probe, pre-clear): lava wins, then
+    /// shimmer, then honey, else water (`:886-940`/`:965-1019`).
+    pub lava: bool,
+    pub shimmer: bool,
+    pub honey: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct ItemDrop {
     pub kind: u16,
@@ -908,6 +929,16 @@ pub struct ItemDrop {
     /// set it; cleared only when `!wet` (`:1038`). The splash arms read it
     /// (`:886`/`:965`); lava keeps the air gravity pair (no C# arm).
     pub lava_wet: bool,
+    /// `Entity.wetCount` (`WorldItem.cs:883-1044`) — the splash cooldown: 20
+    /// on an entry/exit burst (`:885`/`:964`), 0 on the grabbed arm (`:428`),
+    /// decremented per update while > 0 (`:1042-1045`).
+    pub wet_count: i32,
+    /// The entry/exit splash the last [`Self::update`] queued
+    /// (`WorldItem.cs:881-1035`): the dust + sound need the `App` (the shared
+    /// `DustPool`, the `UpdateItems` stream, the audio), so the drop queues
+    /// the request and the items pass drains it — the g67 rain-splash /
+    /// `Player::take_splash_sound` pattern. `None` = no edge this tick.
+    pub(crate) pending_splash: Option<ItemSplash>,
     /// The natural roll's prefix (`Item.NewItem`'s `prefix` argument,
     /// `Item.cs:49730`); 0 = none.
     pub prefix: u16,
@@ -962,6 +993,8 @@ impl ItemDrop {
             wet: false,
             honey_wet: false,
             lava_wet: false,
+            wet_count: 0,
+            pending_splash: None,
             prefix,
             pos: Vec2::new(x, y),
             vel: Vec2::new(vx, vy),
@@ -972,6 +1005,12 @@ impl ItemDrop {
             being_grabbed: false,
             on_conveyor: false,
         }
+    }
+
+    /// Takes the queued entry/exit splash (the items pass drains it into the
+    /// shared `DustPool` + the case-19 play — the g67 rain-splash pattern).
+    pub(crate) fn take_splash(&mut self) -> Option<ItemSplash> {
+        self.pending_splash.take()
     }
 
     /// `WorldItem.ApplySpawnOwnership`'s `GrabDelayForLocalPlayer` /
@@ -1218,9 +1257,10 @@ impl ItemDrop {
         self.age += dt;
         if self.being_grabbed {
             // `UpdateItem`'s grabbed arm (`WorldItem.cs:425-435`): ALL the wet
-            // flags clear (`:427-431`) and `ApplyMovement` integrates at FULL
-            // velocity (`wet` false → `:1082`).
+            // flags + the cooldown clear (`:427-431`) and `ApplyMovement`
+            // integrates at FULL velocity (`wet` false → `:1082`).
             self.wet = false;
+            self.wet_count = 0;
             self.lava_wet = false;
             self.honey_wet = false;
             self.shimmer_wet = false;
@@ -1342,18 +1382,47 @@ impl ItemDrop {
         if shimmer_hit {
             self.shimmer_wet = true; // `:875-878`
         }
-        // `:879-958`/`:959-961` — the entry sets `wet`, the exit clears it
-        // (the splash dust arms ride these edges, deferred item 4).
+        // `:879-958`/`:959-1035` — the entry/exit edges. Each arms
+        // `wetCount = 20` when the cooldown is free and queues the splash
+        // burst (the dust family reads the kind flags AT the edge — the
+        // entry arm the freshly-set ones, the exit arm the OLD ones before
+        // the `!wet` tail clears them).
         if wet_hit {
-            self.wet = true;
+            if !self.wet {
+                if self.wet_count == 0 {
+                    self.wet_count = 20; // `:885`
+                    self.pending_splash = Some(ItemSplash {
+                        pos: self.pos,
+                        exit: false,
+                        lava: self.lava_wet,
+                        shimmer: self.shimmer_wet,
+                        honey: self.honey_wet,
+                    });
+                }
+                self.wet = true; // `:956`
+            }
         } else if self.wet {
-            self.wet = false;
+            self.wet = false; // `:961`
+            if self.wet_count == 0 {
+                self.wet_count = 20; // `:964`
+                self.pending_splash = Some(ItemSplash {
+                    pos: self.pos,
+                    exit: true,
+                    lava: self.lava_wet,
+                    shimmer: self.shimmer_wet,
+                    honey: self.honey_wet,
+                });
+            }
         }
         // `:1036-1041` — while dry, the kind flags clear.
         if !self.wet {
             self.lava_wet = false;
             self.honey_wet = false;
             self.shimmer_wet = false;
+        }
+        // `:1042-1045` — the cooldown ticks at the wet block's tail.
+        if self.wet_count > 0 {
+            self.wet_count -= 1;
         }
         let wet_now = self.wet;
         // `wetVelocity` (`:379-390`'s head value, `:1046-1066`'s refresh):

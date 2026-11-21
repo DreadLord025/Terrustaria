@@ -679,6 +679,24 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 drop.vel.x = items[i].vel.x;
             }
             drop.update(world, step);
+            // `MoveInWorld`'s entry/exit splash (`WorldItem.cs:881-1035`):
+            // the drop queued the edge; the burst drains HERE, inside the
+            // per-drop loop, BEFORE the flicker head below — the C# draws
+            // the dust + the case-19 play inside `MoveInWorld` (`:413`),
+            // ahead of `UpdateItem_VisualEffects` (`:436`), all on the
+            // `UpdateItems` stream (`Main.cs:18024`'s swap). The g67
+            // rain-splash contract: `DustPool::new_dust` + the post-writes.
+            if let Some(splash) = drop.take_splash() {
+                item_splash(
+                    &mut app.dust,
+                    &app.spawn_ctx(),
+                    world,
+                    app.camera,
+                    &mut app.audio,
+                    app.rngs.stream(crate::app::RngKey::UpdateItems),
+                    splash,
+                );
+            }
             // S1-E-5 — `WorldItem.UpdateItem_VisualEffects`'s rand/essScale
             // head (`WorldItem.cs:1206-1293`, `item_lights.rs`): the C# runs
             // it at `:436`, after the movement half, per live drop in
@@ -729,6 +747,95 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
     // The shimmer transforms apply in the list order (the C#'s single-item
     // `GetShimmered` per tick; a step fires at most one per drop).
     crate::shimmer::apply_due_transforms(app, &shimmer_due);
+}
+
+/// `WorldItem.MoveInWorld`'s entry/exit splash burst (`WorldItem.cs:881-1035`,
+/// W4-e19 deferred 4 — the g67 rain-splash contract): the dust family by the
+/// edge's kind flags (lava 35 ×5 → shimmer 308 ×10 with the `Next(6)` colour
+/// switch → honey 152 ×5 → water `dustWater()` ×10), each `Dust.NewDust` at
+/// `(pos.X - 6, pos.Y + height/2 - 8)` with the `width + 12 × 24` box (the
+/// water EXIT arm drops the `- 8`, `:1011`), then the per-family post-writes
+/// and the case-19 play (`SoundID.Splash`, style 4/5 for the shimmer
+/// entry/exit, the default 1 otherwise). All draws ride the `UpdateItems`
+/// stream — the C# runs inside `WorldItem.UpdateItem` under the
+/// `Main.cs:18024` swap. The dust rolls come FIRST (the C# plays the sound
+/// AFTER the loop); the play's own pitch draw follows the attenuation gate
+/// (`audio::play_splash_sound`).
+fn item_splash(
+    dust: &mut tr_core::particles::DustPool,
+    ctx: &tr_core::particles::SpawnCtx,
+    world: &tr_core::world::World,
+    camera: Vec2,
+    audio: &mut crate::audio::Audio,
+    rng: &mut UnifiedRandom,
+    splash: crate::item::ItemSplash,
+) {
+    use tr_core::particles::Color;
+    // The dust anchor (`:892` etc.): `position.X - 6f`,
+    // `position.Y + height/2 - 8f`; the water exit arm (`:1011`) has no `- 8`.
+    let size = crate::item::SIZE;
+    let water_exit = !splash.lava && !splash.shimmer && !splash.honey && splash.exit;
+    let y_off = if water_exit { size / 2.0 } else { size / 2.0 - 8.0 };
+    let anchor = Vec2::new(splash.pos.x - 6.0, splash.pos.y + y_off);
+    let (w, h) = (size as i32 + 12, 24);
+    // The family: (dust type, count, style). `Dust.dustWater()` reads the
+    // camera's water style (`Main.waterStyle`, the g67 seam).
+    let (ty, n, style) = if splash.lava {
+        (35, 5, 1) // `:944-953`/`:1023-1032`
+    } else if splash.shimmer {
+        (308, 10, if splash.exit { 5 } else { 4 }) // `:890-913`/`:969-992`
+    } else if splash.honey {
+        (152, 5, 1) // `:917-926`/`:996-1005`
+    } else {
+        let ws = crate::biome::calculate_water_style(world, camera) as i32;
+        (tr_core::particles::dust_water(ws), 10, 1) // `:930-939`/`:1009-1018`
+    };
+    for _ in 0..n {
+        let idx = dust.new_dust(
+            rng, ctx, world, anchor, w, h, ty, 0.0, 0.0, 0, Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        if ty == 35 {
+            // `:946-951` — vel.Y -= 1.5, vel.X *= 2.5, scale 1.3, alpha 100.
+            d.velocity.y -= 1.5;
+            d.velocity.x *= 2.5;
+            d.scale = 1.3;
+            d.alpha = 100;
+            d.no_gravity = true;
+        } else if ty == 308 {
+            // `:892-911` — vel.Y -= 4, vel.X *= 2.5, scale 0.8 (SET, not ×),
+            // noGravity, then the `Next(6)` four-colour switch.
+            d.velocity.y -= 4.0;
+            d.velocity.x *= 2.5;
+            d.scale = 0.8;
+            d.no_gravity = true;
+            d.color = match rng.next_max(6) {
+                0 => Color::new(255, 255, 210, 255),
+                1 => Color::new(190, 245, 255, 255),
+                2 => Color::new(255, 150, 255, 255),
+                _ => Color::new(190, 175, 255, 255),
+            };
+        } else if ty == 152 {
+            // `:919-924` — vel.Y-- (1.0), vel.X *= 2.5, scale 1.3, alpha 100.
+            d.velocity.y -= 1.0;
+            d.velocity.x *= 2.5;
+            d.scale = 1.3;
+            d.alpha = 100;
+            d.no_gravity = true;
+        } else {
+            // `:932-937` — vel.Y -= 4, vel.X *= 2.5, scale *= 0.8 (MULTIPLY),
+            // alpha 100, noGravity.
+            d.velocity.y -= 4.0;
+            d.velocity.x *= 2.5;
+            d.scale *= 0.8;
+            d.alpha = 100;
+            d.no_gravity = true;
+        }
+    }
+    // `:913`/`:926`/`:939`/`:953` — `SoundEngine.PlaySound(19, (int)x, (int)y
+    // [, style])`: the shimmer arms pass 4 (entry) / 5 (exit), the rest the
+    // default style 1. The play gates on attenuation BEFORE its pitch draw.
+    audio.play_splash_sound(style, splash.pos.x as i32 as f32, splash.pos.y as i32 as f32, rng);
 }
 
 /// Spawns the drop left by a broken tile, with a small random pop like
@@ -1484,6 +1591,123 @@ mod shimmer_tests {
         // `luck` is rebuilt by the luck pass, not the coin arm — the items
         // pass alone does not touch it (no UpdateLuck in update_items).
         assert_eq!(p.luck_state.luck, luck_before, "no eager RecalculateLuck");
+    }
+
+    /// W4-e19 deferred 4 — the entry splash (`WorldItem.cs:881-958`): a dry
+    /// drop falling into the shimmer pool arms `wetCount = 20` and bursts 10
+    /// dust 308 (the `Next(6)` colour switch) through the shared pool, all on
+    /// the `UpdateItems` stream. The camera parks at the pool so the spawn
+    /// cull passes.
+    #[test]
+    fn w4_e19_the_shimmer_entry_splash_bursts_10_dust_308() {
+        let mut app = shimmer_world();
+        // Above the pool (rows 18-19), dry, falling — parked at x = 30 tiles
+        // (outside the player's grab magnet).
+        app.items.push(ItemDrop::new(
+            2, 1, 0, 30.0 * TILE_PX, 16.0 * TILE_PX, 0.0, 2.0, 0.0,
+        ));
+        app.camera = Vec2::new(30.0 * TILE_PX, 18.0 * TILE_PX);
+        let mut entered = false;
+        for _ in 0..30 {
+            update_items(&mut app, 1.0 / 60.0);
+            if app.items[0].wet {
+                entered = true;
+                break;
+            }
+        }
+        assert!(entered, "the drop reached the pool");
+        let n308 = app.dust.slots().iter().filter(|d| d.active && d.dust_type == 308).count();
+        assert!(n308 >= 10, "the entry burst: {n308} dust 308");
+        // The cooldown armed 20 then decremented to 19 on the entry tick.
+        assert_eq!(app.items[0].wet_count, 19, "wetCount 20 - 1");
+        // The colours ride the four-colour switch only.
+        for d in app.dust.slots().iter().filter(|d| d.active && d.dust_type == 308) {
+            assert!(
+                matches!(
+                    (d.color.r, d.color.g, d.color.b),
+                    (255, 255, 210) | (190, 245, 255) | (255, 150, 255) | (190, 175, 255)
+                ),
+                "the Next(6) palette: {:?}",
+                d.color
+            );
+            assert!(d.no_gravity, "the splash dust floats");
+        }
+    }
+
+    /// The exit splash (`:959-1035`): a wet drop lifted out of the pool
+    /// bursts again once the cooldown expired — the shimmer exit arm reads
+    /// the OLD shimmerWet (still set at the edge) and plays style 5.
+    #[test]
+    fn w4_e19_the_shimmer_exit_splash_after_the_cooldown() {
+        let mut app = shimmer_world();
+        // Resting IN the pool (the entry burst fires on tick 1).
+        app.items.push(resting_drop(2, 1));
+        app.camera = Vec2::new(30.0 * TILE_PX, 18.0 * TILE_PX);
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items[0].wet, "the entry latched");
+        let after_entry = app.dust.slots().iter().filter(|d| d.active && d.dust_type == 308).count();
+        // Let the cooldown expire (20 ticks), then lift the drop dry.
+        for _ in 0..25 {
+            update_items(&mut app, 1.0 / 60.0);
+        }
+        assert_eq!(app.items[0].wet_count, 0, "the cooldown drained");
+        app.items[0].pos.y = 10.0 * TILE_PX; // high above the pool — dry
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(!app.items[0].wet, "the exit cleared wet");
+        let after_exit = app.dust.slots().iter().filter(|d| d.active && d.dust_type == 308).count();
+        assert!(after_exit > after_entry, "the exit burst added dust 308");
+        assert_eq!(app.items[0].wet_count, 19, "the exit re-armed the cooldown");
+    }
+
+    /// The cooldown suppresses re-entry churn (`:883`/`:962`): a drop that
+    /// exits and re-enters within 20 ticks bursts ONCE.
+    #[test]
+    fn w4_e19_the_wet_count_suppresses_the_second_burst() {
+        let mut app = shimmer_world();
+        app.items.push(resting_drop(2, 1));
+        app.camera = Vec2::new(30.0 * TILE_PX, 18.0 * TILE_PX);
+        update_items(&mut app, 1.0 / 60.0); // entry burst
+        let n0 = app.dust.slots().iter().filter(|d| d.active && d.dust_type == 308).count();
+        // Out and back in within the cooldown window.
+        app.items[0].pos.y = 10.0 * TILE_PX;
+        update_items(&mut app, 1.0 / 60.0); // exit edge, wetCount > 0 → no burst
+        app.items[0].pos.y = 19.0 * TILE_PX + 2.0;
+        update_items(&mut app, 1.0 / 60.0); // re-entry, wetCount > 0 → no burst
+        let n1 = app.dust.slots().iter().filter(|d| d.active && d.dust_type == 308).count();
+        assert_eq!(n1, n0, "the cooldown suppressed both edges");
+    }
+
+    /// The water entry arm (`:930-939`): 10 `dustWater()` dust with the
+    /// scale MULTIPLY (×0.8) and alpha 100 — the water family, not 308.
+    #[test]
+    fn w4_e19_the_water_entry_splash_uses_the_water_style_dust() {
+        let mut app = shimmer_world();
+        // Replace the shimmer pool with water.
+        for x in 0..40 {
+            for y in 18..=19 {
+                let j = app.world.index(x, y);
+                app.world.tiles[j].set_liquid_kind(tr_core::tile::LiquidKind::Water);
+            }
+        }
+        app.items.push(ItemDrop::new(
+            2, 1, 0, 30.0 * TILE_PX, 16.0 * TILE_PX, 0.0, 2.0, 0.0,
+        ));
+        app.camera = Vec2::new(30.0 * TILE_PX, 18.0 * TILE_PX);
+        for _ in 0..30 {
+            update_items(&mut app, 1.0 / 60.0);
+            if app.items[0].wet {
+                break;
+            }
+        }
+        assert!(app.items[0].wet, "the drop reached the water");
+        let ws = crate::biome::calculate_water_style(&app.world, app.camera) as i32;
+        let want = tr_core::particles::dust_water(ws);
+        let hits: Vec<_> = app.dust.slots().iter().filter(|d| d.active && d.dust_type == want).collect();
+        assert!(hits.len() >= 10, "the water burst: {} dust {want}", hits.len());
+        for d in hits {
+            assert_eq!(d.alpha, 100, "the water arm sets alpha 100");
+            assert!(d.no_gravity);
+        }
     }
 }
 
