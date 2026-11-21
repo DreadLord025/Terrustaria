@@ -39740,3 +39740,51 @@ HandleMovement / enchant sites stay the movement/enchant lanes'.
 wired call sites + the zero-row checks at the exact tips named); nothing
 compiled or run.
 
+## W4-g64 SEAL-VERIFY (2026-11-21, code-only) — the four seal items verified + the f50 adapter lift EXECUTED
+
+The seal verification at `3cdc6423`, published in
+`docs/research/196-proj-trail-dust-claims-g64.md` "SEAL-VERIFY". The
+receipts (all `git fetch` + `git show`/`git grep` at the current pushed
+tips, never merged):
+
+- **(1) The FINAL landing verified.** The 895/898/957 row tuple +
+  projFrames 6/16/12 re-read byte-equal against the MOVED d13 tip
+  `462c86097` (its activation 5/5 is a Player.cs-side buff-grant fix, no
+  trail-dust delta — keep-d13-superset stands). The 813 wind-up holds
+  `scale = self.scale` (`projectile.rs:3938`, the d13 fix adopted; the
+  C# `:33760-33782` re-read whole — NO `this.scale` write, only
+  `dust.scale` post-writes; both witnesses pinned 1.0). `trail_503`
+  WIRED with the e3 row byte-identical at the moved e3 tip (`data.rs`
+  e3 `:3858` vs HEAD `:3921`). The g63 tip `2ea3e7110` UNCHANGED; zero
+  281/174/176/CANNON_BUNNY `proj_data` arms on it AND HEAD (grep exit-1)
+  — UNWIRED stands. The union: 24 WIRED + 21 UNWIRED + 2 riders.
+- **(2) The clone_dust keep-one CONFIRMED both ways.** The e3 tip moved
+  `ac6392cf2` → `0b48616fa` (research/125 SEALED); its §(4) independently
+  confirms the byte-identical CODE ("take EITHER body verbatim; prefer
+  g64's doc-comments"). `git diff HEAD origin/task/W4-e3-dust-sites-proj-2
+  -- crates/tr-core/src/particles.rs` = three doc-comment hunks only.
+  ONE pool copy at merge.
+- **(3) The 608 keep-f50 + the BlastRng fold EXECUTED on this side.** The
+  f50 tip moved to `51eefdf84` (research/04 SEALED); its item (3) rules
+  "the ONE overlap BlastRng vs DustDraw arm-for-arm identical — merge
+  lifts the GoreRng impl onto DustDraw". The lift is DONE here: `DustDraw`
+  now carries `GoreRng` (`proj_trail_dust.rs`, the three shared
+  delegations + `next_float_direction` = `next_double() as f32 * 2.0 -
+  1.0`, the `Utils.cs:1203-1206` double-cast shape re-read). The
+  `BlastRng` DELETION is the f50-side merge instruction (zero `BlastRng`
+  CODE on this branch — only doc-comment mentions; f50's
+  `solar_flare_blast_bodies` swaps `BlastRng(rng)` → `DustDraw(rng)` and
+  drops the struct + its two impls). The 608 zero-row census re-verified
+  (grep exit-1); `solar_flare_blast_bodies` stays whole on f50 — the
+  hurt-reaction Kill-family burst is outside the ≥401 in-flight scope.
+- **(4) The research/196 SEALED receipt + the trail-dust-family bible
+  FINAL.** The three DISJOINT KEEP axes stand (g63 ≤400 / g64 ≥401 / e3
+  aiStyle-generic + the Kill_Bombs tail); the moved co-lane tips are
+  receipts, not re-openings.
+
+1 new witness `w4_g64_seal_gore_rng_lifted_onto_dust_draw_matches_the_concrete_stream`
+(the four GoreRng delegations interleaved on twin streams + the
+`new_gore` record/stream-tail parity through the lifted seam) — WRITTEN
+NOT RUN. Witness census **64** (47 `proj_trail_dust.rs` + 11
+`projectile.rs` + 6 pets124). No cargo/tests/rustfmt invoked (code-only).
+

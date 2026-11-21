@@ -55,7 +55,10 @@ use tr_core::World;
 /// with the machine's own behaviour rolls stays byte-identical. The wiring
 /// wave threads the machines' `&mut dyn DropRng` straight through; the
 /// witnesses keep their concrete `UnifiedRandom` streams (the inherent
-/// methods shadow the trait's, `next_double` included).
+/// methods shadow the trait's, `next_double` included). W4-g64 SEAL-VERIFY:
+/// the adapter ALSO carries `GoreRng` (the f50 `BlastRng` keep-one — the
+/// lifted impl below; at merge f50's `solar_flare_blast_bodies` rides this
+/// adapter and `BlastRng` is deleted on its branch).
 pub(crate) struct DustDraw<'a>(pub &'a mut dyn DropRng);
 
 impl DustRng for DustDraw<'_> {
@@ -67,6 +70,32 @@ impl DustRng for DustDraw<'_> {
     }
     fn next_float(&mut self) -> f32 {
         self.0.next_float()
+    }
+}
+
+/// W4-g64 SEAL-VERIFY — the f50 adapter keep-one EXECUTED on this side
+/// (the f50 `51eefdf84` HURT RETIRE receipt: `BlastRng`
+/// (`projectile_ai_misc.rs:599` on the f50 branch) is arm-for-arm the
+/// `DustDraw` shape plus the `GoreRng` half). The `GoreRng` impl is LIFTED
+/// onto `DustDraw` here; at merge the f50 `solar_flare_blast_bodies` swaps
+/// `BlastRng(rng)` for `DustDraw(rng)` and the `BlastRng` struct + its two
+/// impls are DELETED (the deletion lives on the f50 copy — the merge
+/// instruction, nothing to delete on this branch).
+impl tr_core::gore::GoreRng for DustDraw<'_> {
+    fn next_max(&mut self, max: i32) -> i32 {
+        self.0.next_range(0, max)
+    }
+    fn next_range(&mut self, min: i32, max: i32) -> i32 {
+        self.0.next_range(min, max)
+    }
+    fn next_float(&mut self) -> f32 {
+        self.0.next_float()
+    }
+    /// `Utils.NextFloatDirection` (`Utils.cs:1203-1206`):
+    /// `(float)NextDouble() * 2f - 1f` — the DOUBLE draw cast to f32
+    /// FIRST, then the float multiply (the f50 `BlastRng` shape verbatim).
+    fn next_float_direction(&mut self) -> f32 {
+        self.0.next_double() as f32 * 2.0 - 1.0
     }
 }
 
@@ -3827,14 +3856,17 @@ mod tests {
     }
 
     /// TRAIL-DUST RETIRE — the `clone_dust` genericisation keep-one (the e3
-    /// `ac6392cf` pool copy vs this lane's `853039bf`): the two ports' CODE
-    /// is byte-identical (trait, signatures, bodies — the diff is comment
-    /// wording only), so either lands at merge. This witness pins the seam
-    /// the co-lanes ride: the pool's `clone_dust` through `DustDraw` over
-    /// `&mut dyn DropRng` (the f50 `BlastRng` adapter is the SAME three
-    /// delegations, `6fc87fcbc`) lands the SAME records and the SAME stream
-    /// tail as the concrete `UnifiedRandom` path — `Dust.cs:263-286`, the
-    /// sentinel early return consumes no draws. WRITTEN NOT RUN.
+    /// `ac6392cf` pool copy vs this lane's `853039bf`; e3's RETIRE seal at
+    /// `0b48616fa` independently confirms — take either, prefer g64's docs):
+    /// the two ports' CODE is byte-identical (trait, signatures, bodies —
+    /// the diff is comment wording only), so either lands at merge. This
+    /// witness pins the seam the co-lanes ride: the pool's `clone_dust`
+    /// through `DustDraw` over `&mut dyn DropRng` (the f50 `BlastRng`
+    /// adapter was the SAME three delegations — the SEAL-VERIFY lift put
+    /// its `GoreRng` half onto `DustDraw`, `51eefdf84` receipt) lands the
+    /// SAME records and the SAME stream tail as the concrete `UnifiedRandom`
+    /// path — `Dust.cs:263-286`, the sentinel early return consumes no
+    /// draws. WRITTEN NOT RUN.
     #[test]
     fn w4_g64_retire_clone_dust_generic_seam_matches_the_concrete_stream() {
         let w = world();
@@ -3883,6 +3915,59 @@ mod tests {
         );
         for _ in 0..4 {
             assert_eq!(g1.next_max(1000), g2.next_max(1000), "guard consumed no draws");
+        }
+    }
+
+    /// W4-g64 SEAL-VERIFY — the f50 adapter keep-one: the `GoreRng` half
+    /// LIFTED onto `DustDraw` is arm-for-arm the f50 `BlastRng` shape
+    /// (`51eefdf84` receipt) and matches the concrete `UnifiedRandom`
+    /// `GoreRng` path draw-for-draw — the three shared delegations plus
+    /// `NextFloatDirection` (`Utils.cs:1203-1206`: the DOUBLE draw cast to
+    /// f32 first, then `* 2f - 1f`; a f64-first form drifts). The gore
+    /// spawn through the lifted seam lands the SAME record + stream tail
+    /// as the concrete path (`Gore.cs:1286-1462` — the `:1327-1328` kicks
+    /// ride the caller's stream). At merge f50's `solar_flare_blast_bodies`
+    /// swaps `BlastRng(rng)` → `DustDraw(rng)`; `BlastRng` is DELETED on
+    /// the f50 branch (nothing to delete here — zero `BlastRng` code on
+    /// this tip). WRITTEN NOT RUN.
+    #[test]
+    fn w4_g64_seal_gore_rng_lifted_onto_dust_draw_matches_the_concrete_stream() {
+        use tr_core::gore::{GorePool, GoreRng};
+        // The four delegations, interleaved on identical streams.
+        let mut concrete = UnifiedRandom::new(311);
+        let mut wire = UnifiedRandom::new(311);
+        {
+            let mut d = DustDraw(&mut wire);
+            for i in 1..=12 {
+                assert_eq!(concrete.next_max(7 * i), GoreRng::next_max(&mut d, 7 * i));
+                assert_eq!(
+                    concrete.next_range(-3 * i, 5 * i),
+                    GoreRng::next_range(&mut d, -3 * i, 5 * i)
+                );
+                assert_eq!(
+                    concrete.next_float().to_bits(),
+                    GoreRng::next_float(&mut d).to_bits()
+                );
+                assert_eq!(
+                    concrete.next_float_direction().to_bits(),
+                    GoreRng::next_float_direction(&mut d).to_bits(),
+                    "the double-cast NextFloatDirection, draw {i}"
+                );
+            }
+        }
+        // The gore spawn parity: the same record + the same stream tail.
+        let w = world();
+        let pos = Vec2::new(640.0, 480.0);
+        let mut cp = GorePool::new();
+        let mut wp = GorePool::new();
+        let mut c2 = UnifiedRandom::new(313);
+        let mut w2 = UnifiedRandom::new(313);
+        let a = cp.new_gore(&mut c2, &w, pos, Vec2::new(2.0, -3.0), 61, 1.0);
+        let b = wp.new_gore(&mut DustDraw(&mut w2), &w, pos, Vec2::new(2.0, -3.0), 61, 1.0);
+        assert_eq!(a, b);
+        assert_eq!(cp.slot(a), wp.slot(b), "the gore record through the lifted seam");
+        for _ in 0..16 {
+            assert_eq!(c2.next_range(0, 1000), w2.next_range(0, 1000), "stream tail");
         }
     }
 }

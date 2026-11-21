@@ -504,3 +504,100 @@ that feed the surviving e3/f48/d11 machines (the keep-one column). The
 Kill-family death sites stay g65's; the one-shot spawn-latch bursts stay
 d53/e3/f5's; the wet-entry / HandleMovement / enchant sites stay the
 movement/enchant lanes'. NO trail-dust site is unclaimed across the union.
+
+## SEAL-VERIFY (2026-11-21, code-only) — the four seal items re-verified + the adapter lift EXECUTED
+
+The lane's seal verification at `3cdc6423` (the FINAL 3/4 tip). All co-lane
+reads via `git fetch` + `git show` at the CURRENT pushed tips (never
+merged). Two co-lane tips MOVED since the RETIRE round — both moves are
+docs-only seals that independently confirm this lane's verdicts:
+
+- **e3 tip `ac6392cf2` → `0b48616fa`** (AI-inline RETIRE: research/125
+  SEALED). Its item (4) re-verifies the `clone_dust` keep-one BOTH ways:
+  "the function bodies are identical — the only delta is g64's three
+  doc-comment additions … take EITHER body verbatim; prefer g64's
+  doc-comments". `particles.rs` unchanged between the two e3 tips
+  (`git diff ac6392cf2 0b48616fa -- crates/tr-core/src/particles.rs` empty).
+- **f50 tip `6fc87fcbc`-line → `51eefdf84`** (HURT RETIRE: research/04
+  SEALED). Its item (3) is the g64-608 KEEP-YOURS receipt + the adapter
+  ruling: "the ONE overlap BlastRng vs DustDraw arm-for-arm identical —
+  merge lifts the GoreRng impl onto DustDraw".
+- **d13 tip `314fa6cd`-line → `462c86097`** (activation 5/5: the pet
+  item-use 3600 buff-grant fix — Player.cs-side, no trail-dust delta).
+  The 895/898/957 row tuple + projFrames re-read at the moved tip: still
+  byte-equal to this lane's three-kind arm (the d13 seven-kind arm is the
+  superset, keep-d13 at merge stands).
+- **g63 tip `2ea3e7110` UNCHANGED** (fresh fetch). Zero `281 =>`/`174 =>`/
+  `176 =>`/`CANNON_BUNNY =>` `proj_data` arms on the g63 tip AND HEAD
+  (grep exit-1 both) — the rows stay UNCLAIMED, the emitters UNWIRED.
+
+### (1) The g64e-trail-final landing — VERIFIED at `3cdc6423`
+
+- **d13 dup:** the 895/898/957 `proj_data` arm (`data.rs:3584-3586`,
+  `(20.0, 20.0, 124, -1, 18000, 0, false, false, false, RESET_STATE)`) is
+  value-identical to d13's seven-kind superset arm at the moved tip
+  `462c86097`; projFrames 6/16/12 match (`data.rs:4721-4723` vs d13
+  `:4745-4747`). Keep d13's superset at merge.
+- **813 three-way:** the g64 dust-wired `ai_vortex_ritual` survives
+  (d11/d13 gates-only retire); the d13 wind-up scale fix ADOPTED —
+  `projectile.rs:3938` `scale = self.scale` (NOT the old unconditional
+  0.0); the C# `:33760-33782` re-read whole confirms NO `this.scale`
+  write in the wind-up arm (only `dust.scale` post-writes); both 813
+  witnesses pinned 1.0 (`projectile.rs:45306`/`:45379`).
+- **trail_503 NOW-WIRED:** the e3 `80d47a568` row constants-copy verified
+  byte-identical at the moved e3 tip (e3 `data.rs:3858` vs HEAD `:3921`,
+  the `STAR_WRATH => (24.0, 24.0, 5, 2, TIME_LEFT_DEFAULT, 1, false,
+  false, false, (true, 15, false, -1, 255, 1.0))` tuple + the melee
+  flag-list entry); `ai_falling_star`'s 503 half calls `trail_503`
+  (`projectile.rs:7249`) then the `:23963` Next(48) gore gate; the
+  aiStyle-5 dispatch widened (`:17599`).
+- **g63d 281/174/176:** zero-row UNWIRED (the fresh grep census above);
+  the `old_position` latch stays golf-gated pending the merge's `:17013`
+  every-projectile widening.
+- **The union:** 24 WIRED + 21 cited-UNWIRED own-emitter kinds + the 2
+  spark riders 504/979 (the FINAL union-table above) — unchanged.
+
+### (2) The e3 clone_dust keep-one — CONFIRMED, keep-one (either body)
+
+The `git diff HEAD origin/task/W4-e3-dust-sites-proj-2 --
+crates/tr-core/src/particles.rs` at the moved tip is THREE doc-comment
+hunks only (`new_dust_perfect`/`new_dust_direct`/`clone_dust` — this
+lane's W4-g64 attribution lines). CODE byte-identical. The e3f seal
+(research/125 §(4), `0b48616fa`) independently confirms and prefers
+g64's doc-comments. The retire witness
+(`w4_g64_retire_clone_dust_generic_seam_matches_the_concrete_stream`)
+doc re-pinned to the moved tip. Keep ONE pool copy at merge.
+
+### (3) The f50 608 keep-f50 + the adapter lift — EXECUTED (this side)
+
+- **608 stays f50's:** zero `608`/`SOLAR_FLARE` hits in
+  `proj_trail_dust.rs` + `projectile.rs` re-verified (grep exit-1); the
+  f50 `solar_flare_blast_bodies` (`Projectile.cs:72183-72224` re-read
+  whole: 4× dust-31 + 30× dust-6 pairs + 10× dust-6 + 10× dust-31 + 2×
+  gore 61-63) stays whole on f50 — KEEP-F50.
+- **BlastRng ≡ DustDraw:** the f50 adapter's `DustRng` impl is
+  arm-for-arm `DustDraw`'s three delegations; its `GoreRng` impl adds
+  only `next_float_direction` = `self.0.next_double() as f32 * 2.0 -
+  1.0` (the C# `Utils.cs:1203-1206` double-cast shape re-read). The
+  `GoreRng` impl is now LIFTED onto `DustDraw`
+  (`proj_trail_dust.rs`, beside the `DustRng` impl). **The `BlastRng`
+  DELETION is the merge instruction on the f50 branch** (its
+  `solar_flare_blast_bodies` swaps `BlastRng(rng)` → `DustDraw(rng)`,
+  the struct + its two impls dropped — `projectile_ai_misc.rs:599-626`
+  at the f50 tip): zero `BlastRng` CODE exists on this branch (the
+  only mention was the retire witness's doc comment, re-pinned).
+- 1 new witness `w4_g64_seal_gore_rng_lifted_onto_dust_draw_matches_the_concrete_stream`
+  (the four delegations interleaved + the gore-spawn record/stream-tail
+  parity) — WRITTEN NOT RUN. Witness census: **64** (47
+  `proj_trail_dust.rs` + 11 `projectile.rs` + 6 pets124).
+
+### (4) This receipt + the family bible — FINAL
+
+The trail-dust-family declaration (the three DISJOINT KEEP axes: g63
+≤400 / g64 ≥401 / e3 aiStyle-generic + the Kill_Bombs tail) stands as
+the family bible; the moved co-lane tips are recorded above as
+receipts, not re-openings (the e3 seal's own convention). The lane is
+SEALED: no further g64 trail-dust work is owed; the merge wave owns the
+keep-one executions (the d13 superset row, the e3/f48/d11 surviving
+machines, the ONE pool copy, the f50 `BlastRng` deletion) + the witness
+compile/run.
