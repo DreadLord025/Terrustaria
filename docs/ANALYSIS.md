@@ -1257,6 +1257,26 @@ consumers (M1.4-BG-22)" below); the wind-gusts gap was closed by WEATHER-1 (the
 easing, already ported). Still first-pass: no lightning bolt geometry and no thunder
 audio вЂ” the flash rides WEATHER-1's tiered thunder chain, not a bolt mesh.
 
+**W4-g67 FINAL fn-census (2026-11-21)** — `Rain.cs` is 6 methods + 7 fields; the
+port covers every one: `ClearRain` → `clear_rain` (`rain.rs:325`, the packed-Vec
+`clear()` = deactivate-all), `MakeRain` → `spawn` (`:1052`), `GetRainFallVelocity`
+→ inlined at the spawn (`:1149`, live `wind*18, 14`) and the Eyebrella caller's
+`wind*3, 9` (`world_sim/player.rs:1403`), `Update` → `update_drops` (`:969`, all
+four arms: paused fold / menu `+2000` / remix `+100` / the combined
+solid‖below‖wet kill with the one `Next(100)` gate), `NewRainForced` →
+`new_rain_forced` (`:336`), `NewRain` → the spawn budget block (`:1084-1110`).
+Fields: `position/velocity/scale/rotation/type` ride `Drop`; `active` is the
+packed-Vec membership; **`alpha` is DEAD in the C#** — zero writers/readers
+outside the declaration (script census over `Rain.cs` + `Main.cs`), so its
+omission is faithful, not a gap. Two orchestration notes for the union: the C#
+spawns in `Main.Update` (`:17220-17223`, gated `FocusHelper.AllowRain &&
+cloudAlpha > 0`) and moves the drops in `DrawRain` (`:38819-38822`) — net
+spawn-then-move per cycle; d130's tick keeps that order (`spawn` then
+`update_drops`), g67's tick runs update-then-spawn (superseded — the union keeps
+d130's core wholesale, research/83 §3). The `spawn_acc` cadence and the
+budget-before-attempts early-out are the recorded g67 divergences (research/134
+"Deliberate divergences") — d130's float attempt loop is canonical.
+
 ## Biomes
 
 The generator has three surface biomes plus beaches. The forest fills the centre, the snow
