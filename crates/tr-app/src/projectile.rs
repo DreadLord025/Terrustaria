@@ -5507,22 +5507,29 @@ impl Projectile {
 
     /// `AI_003_Boomerang`'s generic arms (`Projectile.cs:39024-39341` the
     /// outbound, `:39365-39555` the return, `:39556-39638` the rotation tail)
-    /// for the ported kinds 6/52/113 + the Light Disc 106 (S1-P-i08). The OUT
+    /// for the ported kinds 6/52/113 + the Light Disc 106 (S1-P-i08) + the
+    /// 19-kind phaseblade set (S1-E-21h d75 part 6 — the head block, the
+    /// `phaseblade_outbound` fall/whoosh machine, the `ai[0] == 2` stuck
+    /// state and the 40/3 unremapped return seek; the 320/383 gravity arms
+    /// `:39109-39129` stay the 383's owed gate / the unrowed 320). The OUT
     /// state flies straight (`ai[1]++`; at `>= 30f` — the Light Disc 106 at
     /// `>= 45f` — the return state sets); there is NO outbound decel for
-    /// these kinds (the gravity/friction arms `:39041-39129` belong to the
-    /// unported phaseblades/320/383). The tile/bounds bounce lives in
+    /// the generic kinds. The tile/bounds bounce lives in
     /// `HandleMovement`'s aiStyle-3 arm (`:19512-19571`, the world-edge flag
     /// `:17900-17903`): the generic kinds reverse BOTH axes from
     /// `lastVelocity` and set `ai[0] = 1` unconditionally (`:19563-19568`);
     /// the 33/106/866 trio reverses per changed axis and does NOT arm the
     /// return (`:19550-19560`); both play the Dig thud (`PlaySound(0, …)`
-    /// `:19571`). The NPC-hit reverse (`:13068-13080`) rides `damage_pve`.
+    /// `:19571`); the phaseblades STICK instead (`ai[0] = 2`, no reversal,
+    /// no thud — the `:19375` arm ahead of the aiStyle-3 one). The NPC-hit
+    /// reverse (`:13068-13080`) rides `damage_pve`.
     /// The RETURN state disables tile collision, seeks the owner at the
-    /// speed 9 / accel 0.4 (the 106 at 16 / 1.2, `:39432-39436`) scaled by
+    /// speed 9 / accel 0.4 (the 106 at 16 / 1.2, `:39432-39436`; the
+    /// phaseblades at 40 / 3 with NO remap, `:39402-39407`) scaled by
     /// the `meleeSpeed` remap (`:39462-39475`: `Remap(1.5, 0, 1, 1,
     /// 1/meleeSpeed, clamped: false)` clamped to [1, 10]), kills past
-    /// 3000 px (`:39499-39502`) and on the owner-box catch
+    /// 3000 px (`:39499-39502`, the phaseblades never — they re-derive
+    /// `extraUpdates` instead, `:39482-39490`) and on the owner-box catch
     /// (`:39551-39554`, the PRE-movement truncated rects). The rotation
     /// tail: the 106 spins 0.3 (`:39556-39559`), every other non-phaseblade
     /// 0.4 (`:39635-39638`), both × `direction` — which tracks
@@ -5538,39 +5545,128 @@ impl Projectile {
         catch_allowed: bool,
     ) {
         // `AI_003_Boomerang`'s whoosh head (`Projectile.cs:38868-38891`,
-        // S1-E-21h): every kind but the Phaseblade family (unported) and
-        // 383 re-arms `soundDelay = 8` (× `extraUpdates + 1`) and plays
-        // `SoundID.Item7` at `base.position`. The 301 Stacked Discs'
-        // −0.33-pitch arm has no ported row — deferred. The cue fires on
-        // both flight legs while the cooldown is at 0, ahead of the state
-        // machine, exactly as the C# orders it. S1-E-21h d75 part 4 —
-        // the 383/phaseblade exclusions are now EXPLICIT (the owed-arm
-        // gates below serve those kinds cue-less at the head).
+        // S1-E-21h): every kind but the Phaseblade family and 383 re-arms
+        // `soundDelay = 8` (× `extraUpdates + 1`) and plays `SoundID.Item7`
+        // at `base.position`. The 301 Stacked Discs' −0.33-pitch arm has no
+        // ported row — deferred. The cue fires on both flight legs while
+        // the cooldown is at 0, ahead of the state machine, exactly as the
+        // C# orders it. S1-E-21h d75 part 4 — the 383/phaseblade exclusions
+        // are EXPLICIT; part 6 ports the phaseblade machine below (the
+        // family's whooshes ride `phaseblade_outbound` + the stuck/return
+        // arms, NOT this head).
         if self.sound_delay == 0 && self.kind != 383 && !is_a_phaseblade(self.kind) {
             self.sound_delay = 8 * (self.extra_updates as i32 + 1);
             self.wants_sound = Some((2, 7, self.pos.x, self.pos.y, 0.0));
+        }
+        // S1-E-21h d75 part 6 — the phaseblade head block
+        // (`Projectile.cs:38985-39023`): the out-of-world return arm
+        // (`ai[0] = 1` when the centre cell is >10 tiles outside the
+        // world), the living-owner `timeLeft < 5` keep-alive pin, the
+        // ±2π rotation wrap. The held-item release arm (`:39009-39013`,
+        // `HeldItem.shoot` + `controlUseItem`) rides the use-wiring lane —
+        // the port has no held-item snapshot here (recorded, ANALYSIS
+        // Part 6); the `GetPhaseColor` AddLight pair (`:39014-39022`) is
+        // the c19/e6 light lane's. Both `netUpdate` writes skip.
+        if is_a_phaseblade(self.kind) {
+            let cx = ((self.pos.x + self.w * 0.5) / 16.0) as i32;
+            let cy = ((self.pos.y + self.h * 0.5) / 16.0) as i32;
+            let in_world = cx >= 10
+                && cy >= 10
+                && cx < world.width as i32 - 10
+                && cy < world.height as i32 - 10;
+            if catch_allowed && self.ai[0] != 1.0 && !in_world {
+                self.ai[0] = 1.0;
+            }
+            if self.time_left < 5 && owner.is_some() {
+                self.time_left = 5;
+                if catch_allowed && self.ai[0] != 1.0 {
+                    self.ai[0] = 1.0;
+                }
+            }
+            if self.rot < std::f32::consts::PI * -2.0 {
+                self.rot += std::f32::consts::PI * 2.0;
+            }
+            if self.rot > std::f32::consts::PI * 2.0 {
+                self.rot -= std::f32::consts::PI * 2.0;
+            }
         }
         if self.ai[0] == 0.0 {
             // The outbound flight (`:39024-39034` + the generic tail
             // `:39335-39340`); the 106 Light Disc returns at 45 ticks
             // (`:39035-39040`).
             self.ai[1] += 1.0;
-            let limit = if self.kind == LIGHT_DISC { 45.0 } else { 30.0 };
-            if self.ai[1] >= limit {
-                self.ai[0] = 1.0;
-                self.ai[1] = 0.0;
+            if is_a_phaseblade(self.kind) {
+                self.phaseblade_outbound();
+            } else {
+                let limit = if self.kind == LIGHT_DISC { 45.0 } else { 30.0 };
+                if self.ai[1] >= limit {
+                    self.ai[0] = 1.0;
+                    self.ai[1] = 0.0;
+                }
+            }
+        } else if is_a_phaseblade(self.kind) && self.ai[0] == 2.0 {
+            // S1-E-21h d75 part 6 — the stuck-in-ground state
+            // (`Projectile.cs:39342-39363`): the upward-Y halving, the
+            // 2.335 rotation pin, X zeroed, Y++ per tick; the one-shot
+            // `localAI[1]` cue latch — the 1074 phaser plays Item182 and
+            // parks `localAI[0] = -1` (the return arm's cue selector),
+            // every other phaseblade plays Item15.
+            if self.vel.y < 0.0 {
+                self.vel.y *= 0.5;
+            }
+            self.rot = 2.335;
+            self.vel.x = 0.0;
+            self.vel.y += 1.0;
+            if self.local_ai[1] == 0.0 {
+                if self.kind == 1074 {
+                    self.local_ai[0] = -1.0;
+                    self.wants_sound = Some((2, 182, self.pos.x, self.pos.y, 0.0));
+                } else {
+                    self.wants_sound = Some((2, 15, self.pos.x, self.pos.y, 0.0));
+                }
+                self.local_ai[1] = 1.0;
             }
         } else {
             // The return (`:39365-39555`): `tileCollide = false`, the owner
             // seek with the ±2× crossing boost.
             self.tile_collide = false;
+            // S1-E-21h d75 part 6 — the phaseblade return head
+            // (`:39367-39397`): the direction pins toward the owner
+            // side, the rotation follows the velocity −2.335, and the
+            // one-shot `localAI[0] <= 0` cue plays Item182 −0.2 (the
+            // 1074 after a ground-stick), Item7 −0.5 (the 1074 fresh)
+            // or Item15 (every other phaseblade).
+            if is_a_phaseblade(self.kind) {
+                if let Some((ox, _)) = owner {
+                    self.direction = if self.pos.x + self.w * 0.5 < ox { -1 } else { 1 };
+                }
+                self.rot = self.vel.to_angle() - 2.335;
+                if self.local_ai[0] <= 0.0 {
+                    if self.kind == 1074 {
+                        if self.local_ai[0] < 0.0 {
+                            self.wants_sound = Some((2, 182, self.pos.x, self.pos.y, -0.2));
+                        } else {
+                            self.wants_sound = Some((2, 7, self.pos.x, self.pos.y, -0.5));
+                        }
+                    } else {
+                        self.wants_sound = Some((2, 15, self.pos.x, self.pos.y, 0.0));
+                    }
+                    self.local_ai[0] = 1.0;
+                }
+            }
             let Some((ox, oy)) = owner else {
                 return;
             };
             // The per-type speed/accel table (`:39399-39461`): the ported
             // kinds ride the defaults 9/0.4; the 106 overrides 16/1.2
             // (`:39432-39436`). The other rows are the unported specials.
-            let (mut speed, mut accel) = if self.kind == LIGHT_DISC {
+            // S1-E-21h d75 part 6 — the phaseblades seek at 40/3 and skip
+            // the meleeSpeed remap entirely (`:39402-39407`'s
+            // `flag3 = false`).
+            let phaseblade = is_a_phaseblade(self.kind);
+            let (mut speed, mut accel) = if phaseblade {
+                (40.0f32, 3.0f32)
+            } else if self.kind == LIGHT_DISC {
                 (16.0f32, 1.2f32)
             } else {
                 (9.0f32, 0.4f32)
@@ -5580,22 +5676,34 @@ impl Projectile {
             // `Remap(1.5f, 0f, 1f, 1f, 1f/meleeSpeed, clamped: false)` =
             // `Lerp(1, 1/meleeSpeed, 1.5)` (`Utils.cs:345-348`), clamped to
             // [1, 10].
-            let mut scale = 1.0 + (1.0 / melee_speed - 1.0) * 1.5;
-            if scale > 10.0 {
-                scale = 10.0;
+            if !phaseblade {
+                let mut scale = 1.0 + (1.0 / melee_speed - 1.0) * 1.5;
+                if scale > 10.0 {
+                    scale = 10.0;
+                }
+                if scale < 1.0 {
+                    scale = 1.0;
+                }
+                speed *= scale;
+                accel *= scale;
             }
-            if scale < 1.0 {
-                scale = 1.0;
-            }
-            speed *= scale;
-            accel *= scale;
             let cx = self.pos.x + self.w * 0.5;
             let cy = self.pos.y + self.h * 0.5;
             let mut dx = ox - cx;
             let mut dy = oy - cy;
             let dist = (dx * dx + dy * dy).sqrt();
-            // `:39499-39502`: the 3000 px cut-off kills the stray.
-            if dist > 3000.0 {
+            // `:39480-39502`: the phaseblades re-derive `extraUpdates`
+            // from the owner distance (`(int)(dist / 3000)`, the 1074
+            // +1, cap 20 — `:39482-39490`) and NEVER distance-kill; the
+            // 301 cuts at 6000 px (`:39492-39498`, unrowed), every other
+            // kind at 3000 px (`:39499-39502`).
+            if phaseblade {
+                let mut extra = (dist / 3000.0) as i32;
+                if self.kind == 1074 {
+                    extra += 1;
+                }
+                self.extra_updates = extra.min(20) as u32;
+            } else if dist > 3000.0 {
                 self.kill();
                 return;
             }
@@ -5679,6 +5787,34 @@ impl Projectile {
             hit_x |= self.pos.x <= 0.0 || self.pos.x + self.w >= world.width as f32 * 16.0;
             hit_y |= self.pos.y <= 0.0 || self.pos.y + self.h >= world.height as f32 * 16.0;
             if hit_x || hit_y {
+                if is_a_phaseblade(self.kind) {
+                    // S1-E-21h d75 part 6 — the phaseblade wall arm
+                    // (`Projectile.cs:19375-19511`, the else-if AHEAD of
+                    // the aiStyle-3 arm): `ai[0] = 2` (the stuck state),
+                    // NO velocity reversal, NO Dig thud. The blocked
+                    // components zero — `Collision.TileCollision`'s own
+                    // response (the port's `collides_rect` stand-in, the
+                    // M4-PROJ-3 deviation) — so a ground-stuck blade
+                    // holds position while the `ai[0] == 2` arm's Y++
+                    // re-blocks each tick. The arm's only other bodies
+                    // are the ground-landing dust rings (the 1074 15×
+                    // Next(2)/Next(10)/Next(300) census `:19382-19423`
+                    // and the 5× colour-dust census `:19466-19508`, both
+                    // gated `lastVelocity.X == velocity.X &&
+                    // lastVelocity.Y > 0`). The part-4 correction stands:
+                    // `:19392/:19401/:19468` are DUST lines, not sound.
+                    // The stuck state's own cue plays next tick through
+                    // the `ai[0] == 2` arm above.
+                    if hit_x {
+                        self.vel.x = 0.0;
+                    }
+                    if hit_y {
+                        self.vel.y = 0.0;
+                    }
+                    self.ai[0] = 2.0;
+                    self.pos += self.vel;
+                    return;
+                }
                 if self.kind == 383 {
                     // S1-E-21h d75 part 4 — the 383 Anchor's OWN arm
                     // (`Projectile.cs:19524-19532` + `:19563-19568`):
@@ -5747,6 +5883,125 @@ impl Projectile {
         if self.ai[0] != 1.0 {
             self.direction = if self.vel.x < 0.0 { -1 } else { 1 };
         }
+    }
+
+    /// S1-E-21h d75 part 6 — `AI_003_Boomerang`'s phaseblade outbound arm
+    /// (`Projectile.cs:39041-39108`): below 30 ticks the blade spins
+    /// `0.4 × direction` and whooshes (the 1074 phaser: Item7 −0.3 pitch,
+    /// `soundDelay = 11`, `:39094-39101`; every other phaseblade: Item15,
+    /// `soundDelay = 14`, `:39102-39106`). At `ai[1] >= 30` the fall
+    /// starts: `velocity.Y++` (16 cap), `velocity.X *= 0.96`; while still
+    /// rising the rotation eases toward 2.335 (direction +1) / −3.948
+    /// (direction −1) — the `(rot*4 + target)/5` short-way arm or the
+    /// `(rot*9 + target ± 2π)/10` wrap arm (`:39053-39071`); once falling
+    /// the spin returns and the falling whoosh plays (the 1074: Item7
+    /// pitch 0, `soundDelay = 9`, `:39076-39083`; else Item15,
+    /// `soundDelay = 14`, `:39084-39088`). The whoosh head's phaseblade
+    /// exclusion (`:38868`) keeps these the family's ONLY outbound cues.
+    fn phaseblade_outbound(&mut self) {
+        let d = self.direction as f32;
+        if self.ai[1] >= 30.0 {
+            self.vel.y += 1.0;
+            self.vel.x *= 0.96;
+            if self.vel.y > 16.0 {
+                self.vel.y = 16.0;
+            }
+            if self.vel.y > 0.0 {
+                if self.direction > 0 {
+                    self.rot = if self.rot <= 2.335 {
+                        (self.rot * 4.0 + 2.335) / 5.0
+                    } else {
+                        (self.rot * 9.0 + 2.335 + std::f32::consts::PI * 2.0) / 10.0
+                    };
+                } else if self.rot >= -3.948 {
+                    self.rot = (self.rot * 4.0 - 3.948) / 5.0;
+                } else {
+                    self.rot = (self.rot * 9.0 - 3.948 - std::f32::consts::PI * 2.0) / 10.0;
+                }
+            } else {
+                self.rot += 0.4 * d;
+                if self.kind == 1074 {
+                    if self.sound_delay == 0 {
+                        self.wants_sound = Some((2, 7, self.pos.x, self.pos.y, 0.0));
+                        self.sound_delay = 9;
+                    }
+                } else if self.sound_delay == 0 {
+                    self.wants_sound = Some((2, 15, self.pos.x, self.pos.y, 0.0));
+                    self.sound_delay = 14;
+                }
+            }
+        } else {
+            self.rot += 0.4 * d;
+            if self.kind == 1074 {
+                if self.sound_delay == 0 {
+                    self.wants_sound = Some((2, 7, self.pos.x, self.pos.y, -0.3));
+                    self.sound_delay = 11;
+                }
+            } else if self.sound_delay == 0 {
+                self.wants_sound = Some((2, 15, self.pos.x, self.pos.y, 0.0));
+                self.sound_delay = 14;
+            }
+        }
+    }
+
+    /// S1-E-21h d75 part 6 — the 1023 DeadCellsBarrel's owed bounce arm
+    /// (`Projectile.cs:18752-18781`, `HandleMovement`'s own arm AHEAD of
+    /// the generic aiStyle-1 response). The generic flight
+    /// ([`Projectile::ai_style1_flight`]) KILLS on a blocked probe (the
+    /// arrow convention, its only kill) — that death IS the C#'s
+    /// `velocity != lastVelocity` signal: undo it and run the bounce. The
+    /// blocked axes zero (`Collision.TileCollision`'s response, the port's
+    /// `collides_rect` stand-in), then reverse from `lastVelocity` with
+    /// the ±5 floor (X: |Δ| < 5 → ±5; Y: 0 < last < 5 → −5), latch
+    /// `localAI[1] = 1` (the ×1.33 damage flag, `:14557-14560`) and queue
+    /// the Dig thud at `base.position` on EVERY bounce (`:18780`, the
+    /// `flag13` gate — no latch). The row (`:9681-9692`) is unrowed — the
+    /// arm stays inert until d1's lane lands it (S1-P-i58, d3's SEAL
+    /// seed); the Kill cue (`:76868`, the trackable
+    /// `DeadCellsBarrelLauncherExplode` ×0.6) is the d77 kill-tail lane's.
+    fn barrel_bounce(&mut self, world: &World, last: Vec2, life: i32) {
+        if self.active || !self.tile_collide {
+            return;
+        }
+        let nx = self.pos.x + self.vel.x;
+        let ny = self.pos.y + self.vel.y;
+        let mut hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
+        let mut hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
+        hit_x |= self.pos.x <= 0.0 || self.pos.x + self.w >= world.width as f32 * 16.0;
+        hit_y |= self.pos.y <= 0.0 || self.pos.y + self.h >= world.height as f32 * 16.0;
+        self.active = true;
+        self.time_left = life;
+        if hit_x {
+            self.vel.x = 0.0;
+        }
+        if hit_y {
+            self.vel.y = 0.0;
+        }
+        let mut bounced = false;
+        if self.vel.x != last.x {
+            // `:18757`: |velocity.X − last.X| < 5.
+            let soft = (self.vel.x - last.x).abs() < 5.0;
+            self.vel.x = -last.x;
+            if soft {
+                self.vel.x = if self.vel.x < 0.0 { -5.0 } else { 5.0 };
+            }
+            self.local_ai[1] = 1.0;
+            bounced = true;
+        }
+        if self.vel.y != last.y {
+            let soft = last.y > 0.0 && last.y < 5.0;
+            self.vel.y = -last.y;
+            if soft {
+                self.vel.y = -5.0;
+            }
+            self.local_ai[1] = 1.0;
+            bounced = true;
+        }
+        if bounced {
+            self.wants_sound = Some((0, 0, self.pos.x, self.pos.y, 0.0));
+        }
+        // `UpdatePosition` (`:19858`) integrates the POST-bounce velocity.
+        self.pos += self.vel;
     }
 
     /// `AI_165_Whip()` (`Projectile.cs:47667-48270`) — the whip swing machine's
@@ -17239,6 +17494,37 @@ impl ProjectilePool {
                                     world,
                                 )
                             }
+                            // S1-E-21h d75 part 6 — the 1023 DeadCellsBarrel's
+                            // owed bounce latch (`Projectile.cs:18752-18781`,
+                            // `HandleMovement`'s own arm AHEAD of the generic
+                            // aiStyle-1 response): a changed axis reverses
+                            // from `lastVelocity` with the ±5 floor (X:
+                            // |Δ| < 5 → ±5; Y: 0 < last < 5 → −5),
+                            // `localAI[1] = 1` (the ×1.33 damage multiplier's
+                            // flag, `:14557-14560`) and ONE Dig thud at
+                            // `base.position` per blocked tick (`:18780`, the
+                            // `flag13` gate — no latch, the C# plays on EVERY
+                            // bounce). The row (`:9681-9692`: 26x26, aiStyle
+                            // 1, friendly ranged, timeLeft 180, alpha 255,
+                            // local −1) is unrowed on every pushed tip — the
+                            // arm stays inert until d1's lane lands it (the
+                            // owed-arm convention — the row + AI/movement
+                            // halves are d3's SEAL seed **S1-P-i58**,
+                            // research/248 §4; the 1023's Kill cue
+                            // `:76868` is the trackable
+                            // DeadCellsBarrelLauncherExplode ×0.6 — the d77
+                            // kill-tail lane's). The AI_001 flight half
+                            // (`:57162-57173` alpha-0 at ai[0] ≥ 6, the
+                            // 20-tick +0.25 fall) and the `:57620-57623`
+                            // rotation clamp ride that lane too — this arm
+                            // carries the bounce + cue only, then the
+                            // generic flight (the 383/465 owed-arm shape).
+                            1023 => {
+                                let last = old_velocity;
+                                let life = self.slots[i].time_left;
+                                self.slots[i].ai_arrow(world);
+                                self.slots[i].barrel_bounce(world, last, life);
+                            }
                             _ => self.slots[i].ai_arrow(world),
                         },
                         3 => {
@@ -23299,6 +23585,40 @@ impl ProjectilePool {
                 }
                 p.ai[0] = 1.0;
             }
+            // S1-E-21h d75 part 6 — the phaseblade stuck-state damage
+            // modifiers (`Projectile.cs:13306-13333`): the ground-stuck
+            // swing deals ×0.6 damage (the 46×46 large blades ×0.5 —
+            // 1065-1070/1072/1076), knockback ×0.6, and the direction
+            // pins toward the owner side. The C# truncates through
+            // `(int)((double)dmg * k)` on the POST-DamageVar `dmg` — the
+            // f64 multiply kept, the site below the yoyo doublings.
+            if is_a_phaseblade(self.slots[slot].kind) && self.slots[slot].ai[0] == 2.0 {
+                let k = self.slots[slot].kind;
+                let mult = if matches!(k, 1065..=1070 | 1072 | 1076) { 0.5 } else { 0.6 };
+                dmg = (dmg as f64 * mult) as i32;
+                kb *= 0.6;
+                if let Some((ox, _)) = owner {
+                    let (nw, _) = n.size();
+                    let ncx = n.x + nw * 0.5;
+                    self.slots[slot].direction = if ncx < ox { -1 } else { 1 };
+                }
+            }
+            // S1-E-21h d75 part 6 — the 261 BoulderOfEarth's slow-roll
+            // halving (`Projectile.cs:13568-13572`): below 3.5 px/tick
+            // the damage AND knockback halve (`dmg /= 2` int division,
+            // `num4 /= 2f`) on the POST-DamageVar `dmg`. The row
+            // (`:3452-3462`: 32x34, aiStyle 14, pen 6, magic, ignoreWater,
+            // extraUpdates 1) is unrowed on every pushed tip — the gate
+            // stays inert until d2's lane lands it (the owed-arm
+            // convention — the row + movement halves are the d75 SEAL
+            // seed **S1-P-i61**, ANALYSIS Part 6 / research/32). The 261's
+            // bounce cue (`:19643-19650`, the ±3 gate + the Dig at Center
+            // + `MakeBoulderOfEarthExplosion` `:20391`) and the Kill Dig
+            // (`:74424-74426`) ride that lane's movement half.
+            if self.slots[slot].kind == 261 && self.slots[slot].vel.length() < 3.5 {
+                dmg /= 2;
+                kb /= 2.0;
+            }
             // `:13579-13584` — `SpawnHitVisuals` + `StatusNPC` (the whip
             // debuffs, `ApplyWhipDebuffs` `:11727-11750`) and the tag
             // application run BEFORE `StrikeNPC` (`:13649`) in the C#. The
@@ -24621,6 +24941,348 @@ mod s1_e_21h_sound_tests {
         p.ai_ball_of_fire(&w);
         assert_eq!(p.rot, std::f32::consts::PI);
         assert_eq!((p.direction, p.sprite_direction), (-1, -1));
+    }
+
+    /// S1-E-21h d75 part 6 — the phaseblade outbound whoosh ladder
+    /// (`Projectile.cs:39091-39106`): below 30 ticks the blade spins
+    /// 0.4 × direction and plays Item15 at `base.position` with
+    /// `soundDelay = 14`; the 1074 phaser plays Item7 at −0.3 pitch with
+    /// `soundDelay = 11`. The whoosh head's exclusion (`:38868`) keeps
+    /// the generic Item7/8-re-arm OFF the family.
+    #[test]
+    fn s1_e_21h_d75_p6_the_phaseblade_outbound_whoosh_ladder() {
+        let w = air();
+        for (kind, style, pitch, delay) in
+            [(1059u16, 15i32, 0.0f32, 14i32), (1074, 7, -0.3, 11)]
+        {
+            let mut p = Projectile {
+                active: true,
+                kind,
+                owner: 0,
+                pos: Vec2::new(512.0, 512.0),
+                w: 38.0,
+                h: 38.0,
+                vel: Vec2::new(8.0, 0.0),
+                direction: 1,
+                time_left: 600,
+                tile_collide: false,
+                ..Default::default()
+            };
+            p.ai_boomerang(&w, Some((512.0, 512.0)), 1.0, true);
+            assert_eq!(p.wants_sound, Some((2, style, 512.0, 512.0, pitch)), "kind {kind}");
+            assert_eq!(p.sound_delay, delay, "kind {kind}");
+            assert_eq!(p.rot, 0.4, "kind {kind}: the 0.4 spin");
+            assert_eq!(p.ai[1], 1.0, "the outbound counter");
+            // The cooldown holds the cue; the spin keeps running.
+            p.wants_sound = None;
+            p.sound_delay = 1;
+            p.ai_boomerang(&w, Some((512.0, 512.0)), 1.0, true);
+            assert_eq!(p.wants_sound, None, "kind {kind}: the cooldown holds");
+            assert_eq!(p.rot, 0.8);
+        }
+    }
+
+    /// S1-E-21h d75 part 6 — the 30-tick fall arm
+    /// (`Projectile.cs:39043-39089`): `ai[1] >= 30` starts the fall
+    /// (`velocity.Y++`, X ×0.96, the 16 cap); while still rising the
+    /// rotation eases toward 2.335 (the short-way `(rot*4+t)/5` arm),
+    /// once falling the spin returns and the falling whoosh plays
+    /// (Item15 / `soundDelay = 14`; the 1074: Item7 pitch 0 / 9).
+    #[test]
+    fn s1_e_21h_d75_p6_the_phaseblade_fall_eases_then_whooshes() {
+        let w = air();
+        let mut p = Projectile {
+            active: true,
+            kind: 1059,
+            owner: 0,
+            pos: Vec2::new(512.0, 512.0),
+            w: 38.0,
+            h: 38.0,
+            vel: Vec2::new(10.0, -2.0),
+            direction: 1,
+            ai: [0.0, 29.0, 0.0, 0.0],
+            time_left: 600,
+            tile_collide: false,
+            ..Default::default()
+        };
+        p.ai_boomerang(&w, Some((512.0, 512.0)), 1.0, true);
+        // ai[1] hits 30: Y −2+1 = −1 (still rising), X 10×0.96 = 9.6.
+        assert_eq!(p.vel.y, -1.0);
+        assert_eq!(p.vel.x, 9.6);
+        // The ease: rot 0 ≤ 2.335 → (0*4 + 2.335)/5.
+        assert!((p.rot - 2.335 / 5.0).abs() < 1e-6);
+        assert_eq!(p.wants_sound, None, "the rising arm plays nothing");
+        // Next tick: Y −1+1 = 0 — still the ease arm (Y > 0 is strict).
+        p.ai_boomerang(&w, Some((512.0, 512.0)), 1.0, true);
+        assert_eq!(p.vel.y, 0.0);
+        assert_eq!(p.wants_sound, None);
+        // Third tick: Y 0+1 = 1 > 0 — the spin + the falling whoosh.
+        p.ai_boomerang(&w, Some((512.0, 512.0)), 1.0, true);
+        assert_eq!(p.vel.y, 1.0);
+        assert_eq!(p.wants_sound, Some((2, 15, p.pos.x, p.pos.y, 0.0)));
+        assert_eq!(p.sound_delay, 14);
+        // The 16 cap: a fast fall clamps.
+        p.vel.y = 16.5;
+        p.wants_sound = None;
+        p.sound_delay = 1;
+        p.ai_boomerang(&w, Some((512.0, 512.0)), 1.0, true);
+        assert_eq!(p.vel.y, 16.0, "the 16 cap");
+    }
+
+    /// S1-E-21h d75 part 6 — the wall arm sticks, it does NOT bounce
+    /// (`Projectile.cs:19375-19377`, the else-if ahead of the aiStyle-3
+    /// arm): `ai[0] = 2`, no reversal, no Dig thud; the next tick's
+    /// stuck arm plays the one-shot Item15 (`:39351-39362`) and pins
+    /// the rotation at 2.335 with X zeroed / Y++ per tick. The 1074
+    /// plays Item182 and parks `localAI[0] = -1` for the return cue.
+    #[test]
+    fn s1_e_21h_d75_p6_the_phaseblade_sticks_and_chimes_once() {
+        let mut w = air();
+        let i = w.index(33, 32);
+        w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        for (kind, style) in [(1059u16, 15i32), (1074, 182)] {
+            let mut p = Projectile {
+                active: true,
+                kind,
+                owner: 0,
+                // x 512 + 8 vel + 38 w = 558 > the tile's 528 left edge:
+                // X-blocked on the first move.
+                pos: Vec2::new(512.0, 512.0),
+                w: 38.0,
+                h: 38.0,
+                vel: Vec2::new(8.0, 0.0),
+                direction: 1,
+                time_left: 600,
+                tile_collide: true,
+                ..Default::default()
+            };
+            p.ai_boomerang(&w, Some((512.0, 512.0)), 1.0, true);
+            assert_eq!(p.ai[0], 2.0, "kind {kind}: the stick, not the return");
+            assert_eq!(p.vel.x, 0.0, "kind {kind}: the blocked X zeroes, no reverse");
+            // The outbound whoosh keeps the single intent slot on the
+            // stick tick (the wall arm itself plays NOTHING).
+            assert_eq!(p.wants_sound.map(|r| (r.0, r.1)), Some((2, if kind == 1074 { 7 } else { 15 })));
+            // The next tick: the stuck arm's one-shot cue.
+            p.wants_sound = None;
+            p.ai_boomerang(&w, Some((512.0, 512.0)), 1.0, true);
+            assert_eq!(p.wants_sound, Some((2, style, p.pos.x, p.pos.y, 0.0)), "kind {kind}");
+            assert_eq!(p.local_ai[1], 1.0, "kind {kind}: the latch");
+            assert_eq!(p.rot, 2.335, "kind {kind}: the rotation pin");
+            assert_eq!(p.vel.x, 0.0);
+            if kind == 1074 {
+                assert_eq!(p.local_ai[0], -1.0, "the return-cue selector");
+            }
+            // One cue per stick: the latch holds.
+            p.wants_sound = None;
+            p.ai_boomerang(&w, Some((512.0, 512.0)), 1.0, true);
+            assert_eq!(p.wants_sound, None, "kind {kind}: one cue per life");
+        }
+    }
+
+    /// S1-E-21h d75 part 6 — the return head (`Projectile.cs:39367-39397`):
+    /// the fresh return plays Item15 once (`localAI[0] <= 0` latch); the
+    /// 1074 plays Item7 −0.5 fresh or Item182 −0.2 after a ground-stick
+    /// (`localAI[0] = -1`). The seek runs at 40/3 with NO meleeSpeed
+    /// remap (`:39402-39407`), the extraUpdates re-derive from the owner
+    /// distance (`:39482-39490`, the 1074 +1) and the 3000-px kill never
+    /// fires for the family.
+    #[test]
+    fn s1_e_21h_d75_p6_the_phaseblade_return_cues_and_seek() {
+        let w = air();
+        for (kind, lai0, style, pitch) in
+            [(1059u16, 0.0f32, 15i32, 0.0f32), (1074, 0.0, 7, -0.5), (1074, -1.0, 182, -0.2)]
+        {
+            let mut p = Projectile {
+                active: true,
+                kind,
+                owner: 0,
+                pos: Vec2::new(512.0, 512.0),
+                w: 38.0,
+                h: 38.0,
+                vel: Vec2::new(8.0, 0.0),
+                ai: [1.0, 0.0, 0.0, 0.0],
+                local_ai: [lai0, 0.0, 0.0],
+                time_left: 600,
+                tile_collide: true,
+                ..Default::default()
+            };
+            // The owner 200 px right: dist ≈ 181 < 3000 — extraUpdates 0
+            // (the 1074: 1). meleeSpeed 2.0 would scale a generic kind's
+            // seek — the phaseblade's stays 40/3.
+            p.ai_boomerang(&w, Some((731.0, 531.0)), 2.0, true);
+            assert_eq!(p.wants_sound, Some((2, style, 512.0, 512.0, pitch)), "kind {kind} lai0 {lai0}");
+            assert_eq!(p.local_ai[0], 1.0, "the latch");
+            assert!(!p.tile_collide, "the return clears tileCollide");
+            assert_eq!(p.extra_updates, if kind == 1074 { 1 } else { 0 });
+            // The seek: dx = 200, dy = 0, dist 200 → target (40, 0);
+            // vel.x 8 < 40 → +3 (no remap: meleeSpeed 2.0 ignored).
+            assert_eq!(p.vel.x, 11.0, "kind {kind}: the 3 accel, unremapped");
+            assert_eq!(p.direction, 1, "the owner-side pin");
+            // One cue per return.
+            p.wants_sound = None;
+            p.ai_boomerang(&w, Some((731.0, 531.0)), 2.0, true);
+            assert_eq!(p.wants_sound, None, "kind {kind}: the latch holds");
+        }
+        // The distance kill never fires: a 4000-px owner keeps the blade
+        // alive and re-derives extraUpdates = 1 (the 1074: 2).
+        let mut q = Projectile {
+            active: true,
+            kind: 1074,
+            owner: 0,
+            pos: Vec2::new(64.0, 64.0),
+            w: 46.0,
+            h: 46.0,
+            vel: Vec2::ZERO,
+            ai: [1.0, 0.0, 0.0, 0.0],
+            local_ai: [1.0, 0.0, 0.0],
+            time_left: 600,
+            tile_collide: false,
+            ..Default::default()
+        };
+        q.ai_boomerang(&w, Some((4087.0, 87.0)), 1.0, true);
+        assert!(q.active, "no 3000-px kill for the family");
+        assert_eq!(q.extra_updates, 2, "(int)(4000/3000) + 1");
+    }
+
+    /// S1-E-21h d75 part 6 — the 1023 DeadCellsBarrel's owed bounce arm
+    /// (`Projectile.cs:18752-18781`): a hard X-block (|last| ≥ 5) reverses
+    /// at the same speed; a soft block floors to ±5; `localAI[1] = 1`
+    /// (the ×1.33 flag) and the Dig thud fire on EVERY bounce (no latch).
+    /// The row is unrowed — the helper is exercised on a hand-built slot
+    /// after the generic flight's block-kill (the owed-arm convention).
+    #[test]
+    fn s1_e_21h_d75_p6_the_barrel_bounce_floors_and_thuds() {
+        let mut w = air();
+        // A wall column at tile x=10 (px 160..176), rows 4..8.
+        for y in 4..8 {
+            let i = w.index(10, y);
+            w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        // The 26-box at x 130..156: the +8 step reaches 138..164 — blocked.
+        let mut p = Projectile {
+            active: true,
+            kind: 1023,
+            owner: 0,
+            pos: Vec2::new(130.0, 80.0),
+            w: 26.0,
+            h: 26.0,
+            vel: Vec2::new(8.0, 0.0),
+            tile_collide: true,
+            friendly: true,
+            time_left: 180,
+            ..Default::default()
+        };
+        let last = p.vel;
+        p.ai_arrow(&w); // the generic flight's block-kill
+        assert!(!p.active, "the arrow convention kills on the block");
+        p.barrel_bounce(&w, last, 180);
+        assert!(p.active, "the bounce, not the arrow kill");
+        assert_eq!(p.vel.x, -8.0, "the hard block reverses at speed");
+        assert_eq!(p.local_ai[1], 1.0, "the ×1.33 flag");
+        assert_eq!(p.wants_sound, Some((0, 0, 130.0, 80.0, 0.0)), "the Dig thud");
+        assert_eq!(p.time_left, 180, "the life restored");
+        // The soft floor: a 2-px/tick approach floors to −5.
+        let mut q = Projectile {
+            active: true,
+            kind: 1023,
+            owner: 0,
+            pos: Vec2::new(130.0, 80.0),
+            w: 26.0,
+            h: 26.0,
+            vel: Vec2::new(2.0, 0.0),
+            tile_collide: true,
+            friendly: true,
+            time_left: 180,
+            ..Default::default()
+        };
+        let last = q.vel;
+        q.ai_arrow(&w);
+        q.barrel_bounce(&w, last, 180);
+        assert!(q.active);
+        assert_eq!(q.vel.x, -5.0, "the soft floor");
+        // The Y half's floor (`:18766-18775`): 0 < last.Y < 5 → −5. A
+        // floor row at tile y=7 (px 112..128); the 26-box at y 90..116
+        // steps +3 → 93..119, blocked.
+        for x in 8..12 {
+            let i = w.index(x, 7);
+            w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        let mut r = Projectile {
+            active: true,
+            kind: 1023,
+            owner: 0,
+            pos: Vec2::new(130.0, 90.0),
+            w: 26.0,
+            h: 26.0,
+            vel: Vec2::new(0.0, 3.0),
+            tile_collide: true,
+            friendly: true,
+            time_left: 180,
+            ..Default::default()
+        };
+        let last = r.vel;
+        r.ai_arrow(&w);
+        r.barrel_bounce(&w, last, 180);
+        assert!(r.active);
+        assert_eq!(r.vel.y, -5.0, "the Y soft floor");
+    }
+
+    /// S1-E-21h d75 part 6 — the 261 BoulderOfEarth's owed slow-roll
+    /// halving (`Projectile.cs:13568-13572`): below 3.5 px/tick the
+    /// damage AND knockback halve. The row is unrowed — the gate is
+    /// exercised through a hand-built NPC strike (the owed-arm
+    /// convention); the bounce cue (`:19649`) + the Kill Dig (`:74426`)
+    /// ride d2's movement half (the task-seed). The scripted stream
+    /// pins DamageVar's ±15 % roll at 0 (the exact-damage witness).
+    #[test]
+    fn s1_e_21h_d75_p6_the_earth_boulder_halves_below_three_and_a_half() {
+        struct ZeroVar {
+            draws: Vec<(i32, i32)>,
+        }
+        impl tr_core::loot::DropRng for ZeroVar {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                self.draws.push((min, max));
+                if (min, max) == (-15, 16) { 0 } else { min }
+            }
+            fn next_float(&mut self) -> f32 {
+                0.5
+            }
+        }
+        let w = air();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn(261, 0, Vec2::new(100.0, 100.0), Vec2::new(2.0, 0.0), 100, 8.0, false)
+            .expect("the raw spawn");
+        let p = &mut pool.slots[slot];
+        p.w = 32.0;
+        p.h = 34.0;
+        p.friendly = true;
+        p.tile_collide = false;
+        p.penetrate = 6;
+        p.max_penetrate = 6;
+        let mut npc = Npc::new(NpcKind::Slime, 100.0, 100.0, 1, 0.0);
+        npc.hp = 1000;
+        npc.max_hp = 1000;
+        npc.defense_override = Some(0);
+        let hp0 = npc.hp;
+        let mut rng = ZeroVar { draws: Vec::new() };
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, Some((100.0, 100.0)), None, &mut rng);
+        // 100 / 2 = 50 (the slow-roll halving), DamageVar pinned at ×1.0.
+        assert_eq!(hp0 - npc.hp, 50, "the < 3.5 halving");
+        // At speed the full damage lands.
+        let mut npc2 = Npc::new(NpcKind::Slime, 100.0, 100.0, 1, 0.0);
+        npc2.hp = 1000;
+        npc2.max_hp = 1000;
+        npc2.defense_override = Some(0);
+        let p = &mut pool.slots[slot];
+        p.vel = Vec2::new(8.0, 0.0); // length 8 ≥ 3.5
+        p.penetrate = 6;
+        let hp1 = npc2.hp;
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc2), None, Some((100.0, 100.0)), None, &mut rng);
+        assert_eq!(hp1 - npc2.hp, 100, "no halving at speed");
     }
 
     /// S1-E-21h d75 — the turret's blocked-move pair (`:40249`/`:40256`):

@@ -370,6 +370,11 @@ const SFX_CUES: &[(&str, u32)] = &[
     // `SoundID.cs:1505`; `Sounds/Item_121.xnb` verified on disk). The
     // 465 row is unrowed — the bank closes the gap ahead of d9's port.
     ("Item_121", 2),
+    // S1-E-21h d75 part 6 — the 1074 White Phaser's swing cues
+    // (`Projectile.cs:39356`/`:39384`, `SoundID.Item182` =
+    // `LegacySoundStyle(2, 182)`, `SoundID.cs:1566`; `Sounds/Item_182.xnb`
+    // verified on disk).
+    ("Item_182", 2),
     // `SoundID.Roar` = 15 (`SoundID.cs`) — the boss-summon roar
     // (`Player.cs:43765`'s `SoundEngine.PlaySound(15, ...)`; the `Roar_0`
     // cue family).
