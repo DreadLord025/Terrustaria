@@ -39244,3 +39244,26 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## W4-d14 doc-sweep — the 672 state-1 dedServ velocity quirk (2026-11-21)
+
+DOC-SWEEP LANE 35 item 5 (`task/W4-d14-proj-ai-131-140`, report
+`docs/research/119-doc-sweep-proj-131.md`): the aiStyle-132 crystal-
+destruction marker's state-1 `velocity.Y` ramp is a **client-only write**
+in the C# — `Projectile.cs:36367-36371` places
+`base.velocity.Y = min(1, localAI[0]/150) * -0.25f` INSIDE the
+`if (!Main.dedServ)` block that also carries the two `Filters.Scene`
+activations/intensities. A dedicated server therefore never moves the
+marker during state 1; only state 2's unconditional `velocity.Y--`
+(`:36398`) integrates.
+
+The port's sim is the authoritative server shape, so `ai_elder_wins`
+(`projectile.rs`) keeps the dedServ behaviour: state 1 writes NO velocity
+(the whole `!dedServ` block — ramp + shaders — is skipped together, the
+shader layer having no pool counterpart anyway). The marker's visual
+rise on a client is a render-layer concern the port does not model; the
+state machine's timings (120/300/60/kill) and the state-2 fall are
+identical on both sides. Pinned by
+`the_states_advance_and_the_fall_integrates`
+(`projectile.rs`, `assert_eq!(p.vel.y, 0.0, "state 1 writes no velocity
+(dedServ)")`) — a verbatim source quirk, not a port deviation.

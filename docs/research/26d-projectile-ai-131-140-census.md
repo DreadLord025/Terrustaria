@@ -58,7 +58,14 @@ NPC 0 or dead on the index guard.
   dust/gore bodies: skipped; the plume/gore-gate/beam-dust draws stay.
 - 132's state-1 `velocity.Y` ramp sits INSIDE `!Main.dedServ`
   (`:36367-36371`) — the port keeps the server shape (no velocity write),
-  a verbatim source quirk.
+  a verbatim source quirk. Rationale: the ramp is a CLIENT-only visual
+  rise bundled with the two `Filters.Scene` writes; a dedicated server
+  never moves the marker in state 1 (only state 2's unconditional
+  `velocity.Y--` integrates). The sim is the authoritative server shape,
+  so the whole block skips together; pinned by
+  `the_states_advance_and_the_fall_integrates` (`projectile.rs`,
+  `vel.y == 0.0` through state 1). See ANALYSIS "W4-d14 doc-sweep — the
+  672 state-1 dedServ velocity quirk" and report 119 item 5.
 - 135's `KillTile_MakeTileDust` type table feeds only the skipped bodies;
   its exposed-solid path is rand-free (the genRand arms are worldgen-only
   tile kinds, unreachable in the stomp's gate).
