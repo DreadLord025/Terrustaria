@@ -886,10 +886,10 @@ fn pufferfish_death(
     }
 }
 
-/// The 366/367 scorpion death (`NPC.cs:86217-86243`): the 10x dust-203
-/// burst (the golden dust, NOT 5), then the per-kind triple — 366 Black
-/// Scorpion → 561/562/563 (`:86233-86235`, sites 113-115), 367 Scorpion →
-/// 564/565/566 (`:86239-86241`, next batch). All at position, scale 1f.
+/// The 366/367 scorpion death (`NPC.cs:86217-86243`, sites 113-118): the
+/// 10x dust-203 burst (the golden dust, NOT 5), then the per-kind triple
+/// — 366 Black Scorpion → 561/562/563 (`:86233-86235`), 367 Scorpion →
+/// 564/565/566 (`:86239-86241`). All at position, scale 1f.
 fn scorpion_death(
     npc: &Npc,
     npc_type: i32,
@@ -920,7 +920,85 @@ fn scorpion_death(
         gore.new_gore(rng, world, pos, vel, 561, 1.0); // :86233
         gore.new_gore(rng, world, pos, vel, 562, 1.0); // :86234
         gore.new_gore(rng, world, pos, vel, 563, 1.0); // :86235
+    } else {
+        gore.new_gore(rng, world, pos, vel, 564, 1.0); // :86239
+        gore.new_gore(rng, world, pos, vel, 565, 1.0); // :86240
+        gore.new_gore(rng, world, pos, vel, 566, 1.0); // :86241
     }
+}
+
+/// The 362-365 duck death (`NPC.cs:86244-86270`, sites 119-121 per pair):
+/// the 10x dust-5 burst, then the pair split — 362/363 → 555/556/557
+/// (`:86260-86262`), 364/365 white → 558/559/560 (`:86266-86268`). All at
+/// position, scale 1f.
+fn duck_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86254-86257` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    if npc_type == 362 || npc_type == 363 {
+        gore.new_gore(rng, world, pos, vel, 555, 1.0); // :86260
+        gore.new_gore(rng, world, pos, vel, 556, 1.0); // :86261
+        gore.new_gore(rng, world, pos, vel, 557, 1.0); // :86262
+    } else {
+        gore.new_gore(rng, world, pos, vel, 558, 1.0); // :86266
+        gore.new_gore(rng, world, pos, vel, 559, 1.0); // :86267
+        gore.new_gore(rng, world, pos, vel, 560, 1.0); // :86268
+    }
+}
+
+/// The 602/603 maggot death (`NPC.cs:86271-86290`, sites 122-123): the
+/// 10x dust-5 burst, then 1150/1151 at position, scale 1f. The C#
+/// re-checks `type == 602 || type == 603` inside the arm (`:86285`) —
+/// always true here, ported flat.
+fn maggot_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86281-86284` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 1150, 1.0); // :86287
+    gore.new_gore(rng, world, pos, vel, 1151, 1.0); // :86288
 }
 
 /// The 607 Pupfish death (`NPC.cs:86173-86189`, sites 105-106): the hit
@@ -1085,10 +1163,18 @@ pub fn hit_effect_d(
     else if npc_type == 688 {
         pufferfish_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:86217-86243` — the 366/367 scorpion arm; the 366 triple is live
-    // (sites 113-115), the 367 tail lands next batch.
+    // `:86217-86243` — the 366/367 scorpion arm, COMPLETE (sites
+    // 113-118).
     else if npc_type == 366 || npc_type == 367 {
         scorpion_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86244-86270` — the 362-365 duck arm (sites 119-121 per pair).
+    else if (362..=365).contains(&npc_type) {
+        duck_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86271-86290` — the 602/603 maggot arm (sites 122-123).
+    else if npc_type == 602 || npc_type == 603 {
+        maggot_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -1969,5 +2055,84 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the black scorpion mirrors the C# draws");
+    }
+
+    /// `NPC.cs:86239-86241` — the 367 Scorpion triple 564/565/566, same
+    /// dust-203 census.
+    #[test]
+    fn w4_f5d_the_scorpion_tail_spawns_the_second_triple() {
+        let w = air();
+        let n = mob(100.0, 100.0, 26.0, 20.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(131);
+        let _ = hit_effect_d(&n, 367, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![564, 565, 566]);
+        let mut twin = UnifiedRandom::new(131);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 26, 20);
+        }
+        for _ in 0..3 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the scorpion tail mirrors the C# draws");
+    }
+
+    /// `NPC.cs:86260-86268` — the duck pair split: 362/363 → 555/556/557,
+    /// 364/365 white → 558/559/560; the draw census pinned per kind.
+    #[test]
+    fn w4_f5d_the_duck_deaths_split_on_the_white_pair() {
+        let w = air();
+        let n = mob(100.0, 100.0, 26.0, 24.0);
+        for (kind, want) in [
+            (362, vec![555, 556, 557]),
+            (363, vec![555, 556, 557]),
+            (364, vec![558, 559, 560]),
+            (365, vec![558, 559, 560]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(137);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "duck {kind}");
+            let mut twin = UnifiedRandom::new(137);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 26, 24);
+            }
+            for _ in 0..3 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "duck {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86287-86288` — the maggot pair 1150/1151 after the 10x
+    /// dust-5 burst (both kinds share the row).
+    #[test]
+    fn w4_f5d_the_maggot_deaths_spawn_the_pair() {
+        let w = air();
+        let n = mob(100.0, 100.0, 22.0, 16.0);
+        for kind in [602, 603] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(139);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![1150, 1151], "maggot {kind}");
+            assert!(!gore.slot(2).active, "exactly two gores");
+            let mut twin = UnifiedRandom::new(139);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 22, 16);
+            }
+            for _ in 0..2 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "maggot {kind} mirrors the C# draws");
+        }
     }
 }
