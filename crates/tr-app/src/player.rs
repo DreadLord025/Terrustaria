@@ -12568,6 +12568,33 @@ mod tests {
         assert_eq!(p.accessory_life_regen_value(), 22);
     }
 
+    /// W4-f12 SEAL item 2 — the extra_regen SUM (:11492) is the merge-keep
+    /// form. f49's SEALED tree reads `extra_regen: self.accessory_life_regen`
+    /// only (their player.rs:11345); THIS tree sums the buff-fold
+    /// accumulator beside it (`accessory_life_regen + buff_life_regen`).
+    /// Their RT1 remainder item 4 rules the merge keeps the SUM — without
+    /// it the Nebula Life +6 (`:10451`) and every wave-fold regen add never
+    /// reaches the engine even with the LIFTED `update_survival` (the lift
+    /// makes the fold visible; the sum carries it). This witness drives
+    /// the read directly: accessory 2 (the Band) + buff-fold 6 (the Nebula
+    /// Life tier-1 add, simulated post-fold) = regen 8 on a fresh ramp
+    /// (life_regen_time 1 -> num3 0, no auras — the engine's own zero).
+    #[test]
+    fn w4_f12_seal_extra_regen_sums_the_accessory_and_buff_fold() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 49; // the Band of Regeneration: Item.lifeRegen 2
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.accessory_life_regen_value(), 2);
+        // The wiring's fold has landed (the LIFTED read sits after it).
+        p.buff_life_regen = 6;
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        assert_eq!(
+            p.regen.life_regen, 8,
+            "the :11492 SUM feeds both halves — an accessory-only read gives 2"
+        );
+    }
+
     /// M3-EQUIP-16 — the lava immunity budget.
     #[test]
     fn the_lava_charm_buys_immunity_ticks() {

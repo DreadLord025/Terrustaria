@@ -1,6 +1,13 @@
 # 28 — Buffs & debuffs (ids, application rules, effects, UI, sync)
 
 > Wave 3 · researched 2026-11-12 · sources: decompiled + crates + ROADMAP/ANALYSIS/PORT_MAP
+> **SEALED 2026-11-21 (W4-f12 seal)** — the buff family's FINAL record is
+> **`28g-buff-family-seal.md`** (the registry number: wave claims 28c/d/e/f
+> taken, the seal is 28g). The player-buff lane is closed there: the 270-id
+> UpdateBuffs census (set-diff EMPTY), the 400 static icons, the f49 bridge
+> contract, the Panic-63/ladder keep-one rulings and the buff-family bible.
+> This file's wave-3 seeds stay historical; the NPC-buff completion + net
+> sync seeds below remain OPEN (outside the sealed player-buff family).
 
 ## Scope
 

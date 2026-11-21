@@ -3386,6 +3386,54 @@ mod tests {
         assert_eq!(enumerate_item_icon_ids(&dir), Vec::<u16>::new());
     }
 
+    /// W4-f12 SEAL item 1 — the buff-icon enumeration is the atlas pack's
+    /// source (`enumerate_buff_icon_ids` → `Lookups.buff_icons`, the
+    /// `draw_buffs`/`DrawBuffIcon` reader, `Main.cs:43310-43315`): sorted,
+    /// deduped, non-`Buff_`/non-numeric ignored — the `test_DW_4_1` shape
+    /// for the `Buff_` prefix (`AssetInitializer.cs:420` loads one
+    /// `Images/Buff_<id>` per id; no frame metadata exists).
+    #[test]
+    fn w4_f12_seal_buff_icon_enumeration_sorted_deduped() {
+        let dir = std::env::temp_dir().join(format!("tr_buff_enum_{}", std::process::id()));
+        let images = dir.join("Images");
+        std::fs::create_dir_all(&images).unwrap();
+        for name in [
+            "Buff_20.xnb",
+            "Buff_2.xnb",
+            "Buff_5.xnb",
+            "Buff_5.xnb.bak",
+            "Item_3.xnb",
+            "Buff_x.xnb",
+        ] {
+            std::fs::write(images.join(name), b"x").unwrap();
+        }
+        assert_eq!(
+            enumerate_buff_icon_ids(&images),
+            vec![2, 5, 20],
+            "sorted ascending, non-Buff/non-numeric ignored"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// W4-f12 SEAL item 1 — the LANDED 400: the content junction carries
+    /// exactly the ids 1..=400 (`BuffID.cs:173-989`, `Count` :997 = 401),
+    /// and the atlas pack resolves every one. All 400 sheets are STATIC
+    /// single-frame (`DrawBuffIcon` :43315 draws the full sheet — the
+    /// closeout animation census retired the icon-cycle premise); the
+    /// 270-id UpdateBuffs set-diff is EMPTY (`tools/w4_f12_closeout_sweep.py`,
+    /// re-run at seal time). Written not run (code-only).
+    #[test]
+    fn w4_f12_seal_buff_icons_enumerate_the_full_400() {
+        let content = crate::app::find_content_dir()
+            .expect("assets/Content not found: the asset tests need the game content junction");
+        let ids = enumerate_buff_icon_ids(&content.join("Images"));
+        assert_eq!(ids, (1u16..=400).collect::<Vec<_>>(), "the full BuffID range");
+        let (_, lookups) = content_lookups();
+        for id in 1u16..=400 {
+            assert!(lookups.buff_icons.contains_key(&id), "icon {id} packs");
+        }
+    }
+
     #[test]
     fn test_DW_4_3_fallback_lookups_survive_without_item_sheets() {
         // An atlas carrying only the fallback sheets: `item_icons` must hold

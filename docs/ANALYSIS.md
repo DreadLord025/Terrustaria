@@ -22998,6 +22998,46 @@ Closeout witnesses (written not run):
 `w4_f12_closeout_regrant_is_refresh_except_the_two_additive_ids`
 (buffs.rs).
 
+## The BUFF SEAL (W4-f12 seal, 2026-11-21)
+
+The seal phase (`task/W4-f12-buff-effects`, from the wiring tip 22ce2a41f)
+closes the buff family — the FINAL record is research/**28g**
+(`28g-buff-family-seal.md`, the registry number; the buff-family bible +
+the owed merger-actions live there). The five seal items:
+
+1. **Landed**: the 270-id UpdateBuffs census re-run set-diff EMPTY
+   (`tools/w4_f12_closeout_sweep.py`), the 400 `Buff_<id>.xnb` icons
+   counted + packed (all static — `DrawBuffIcon` :43315 draws the full
+   sheet). 2 assets.rs witnesses.
+2. **The f49-mana-seal**: their R3 EXECUTED (8eb20d8b, SEALED tip
+   0d1f941af — the RETIRE monitor note is superseded, mutual per their
+   research/85 RT1). The bridge takes the STUB form — f12's `fold_orb`
+   calls their `fold_orb_nebula_bridge(mana, life, damage)` (3 ASSIGNs,
+   `:12072` shape) at the merge; the `extra_regen` SUM (this tree
+   player.rs:11492 `accessory_life_regen + buff_life_regen`) is the
+   merge-keep over their accessory-only read (:11345); their
+   `world_sim/items.rs` lands wholesale (this tree's is untouched vs
+   main). 2 witnesses (the 3-tier assign premise + the sum).
+3. **Panic-63 canonical**: the wiring's DEBUFF_DISPATCH arm
+   (`buff_effects.rs:149`) is the ONE reader; the f50 inline row
+   (:7165-7168 at their SEALED 51eefdf84, blob 156fc3fec unchanged) AND
+   the f48 THIRD copy (:6829-6834 at e5b66bb06) both drop, with the
+   rederive-ladder fold + the machines lift + the set-flag lifecycle
+   fix re-pinned to exact ranges (the seal doc's tables). 1 witness.
+4. **The owed merger-actions**: the 8-step checklist (wiring landing +
+   bridge one commit, items.rs wholesale, the sum, the d115/f50/f48
+   drops, the post-merge sweep + anchors verify).
+5. **Research FINAL**: registry 28g + the buff-family bible (every
+   member's C# home, canonical owner, ruling).
+
+Seal witnesses (written not run, code-only — no cargo/tests/rustfmt/
+graphify): `w4_f12_seal_buff_icon_enumeration_sorted_deduped` +
+`w4_f12_seal_buff_icons_enumerate_the_full_400` (assets.rs),
+`w4_f12_seal_bridge_scan_tiers_are_assign_shaped_for_the_f49_stub` +
+`w4_f12_seal_panic_63_and_the_ladder_keep_one_dispatch_owner`
+(buff_frame_wiring.rs),
+`w4_f12_seal_extra_regen_sums_the_accessory_and_buff_fold` (player.rs).
+
 ## Entity lights (S1-E-5, 2026-11-16)
 
 The C# funnels every `Lighting.AddLight` overload into
