@@ -75,6 +75,8 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
+| 12f | WorldGen passes, lane 6 (W4-d106: the d101–d105 remainder — Grass Wall/Settle Liquids Again/Tile Cleanup/Stalac/Remove Broken Traps/Final Cleanup, R1–R6 landed; witnesses written NOT run, pins stale-by-design) | `12f-worldgen-passes-6.md` | 🟡 R1–R6 COMPLETE |
+| 281 | W4-d106 WORLDGEN-6 RETIRE FINAL (the d102/d107 overlap census O1–O9, the g36 §6.4 compose + g41 stalactite-6-point d106-side drop-hunks, the e20 research-148 fidelity receipts, the sequential re-pin schedule, the family declaration; RENUMBERED 240→281 per registry-150 round 2) | `281-d106-worldgen-6-retire-final.md` | ✅ SEALED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

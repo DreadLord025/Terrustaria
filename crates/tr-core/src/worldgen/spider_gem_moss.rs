@@ -407,7 +407,7 @@ fn gem_cave(world: &mut World, rng: &mut Rng, x: i32, y: i32) {
 /// d106-double-validation trap — keeping both doubles the `Next(3)`
 /// mismatch draws). This branch keeps the caller-runs convention so the
 /// standalone witnesses stay self-consistent until the graft; the drop
-/// hunks are published in research-240 §2.
+/// hunks are published in research-281 §2.
 pub(crate) fn place_tight(
     world: &mut World,
     rng: &mut impl super::chest_stock::WorldGenRand,
@@ -447,7 +447,7 @@ fn place_unchecked_stalactite(
         // `Main.cs:7031`: 179/381/534/536/539/625/627/180/181/182/183). The
         // old local `MOSS_TILES`+`NEON_MOSS`+381 union lacked 627 (KryptonMoss
         // Brown); research-88 §3.2 point 5 / research-96 §3 dedupe executed
-        // here (research-240 §2).
+        // here (research-281 §2).
         let is_moss = td::TILE_MOSS.has(support);
         if spiders {
             // `:38334-38350` — the spider stalactite, always two tiles tall.

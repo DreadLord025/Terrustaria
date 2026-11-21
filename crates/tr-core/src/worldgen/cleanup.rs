@@ -737,7 +737,7 @@ fn clear_broken_traps_capped(
         // `WorldGen.isGeneratingOrLoadingWorld` (`:63546-63549`, set at
         // `:6612` for the whole generation) — at gen time the `true` here IS
         // the vanilla behaviour, no items spawn (e20 research-148 §3a,
-        // VERIFIED; receipt in research-240 §3).
+        // VERIFIED; receipt in research-281 §3).
         let tile = world.tile(x, y).copied().unwrap_or_default();
         if is_it_a_trap(&tile) && tile.kind != 105 {
             kill_tile(world, x, y, true);
@@ -2160,7 +2160,7 @@ fn shimmerator(world: &mut World, x: i32, y: i32, max_tile_count: i32) {
 /// copy DROPs per research-88 §2.1). The disc's two `NextDouble` jitter
 /// draws ride the THREADED Final Cleanup stream (the scatter's continuation,
 /// `final_cleanup`'s note). Gate keep-one: this local arm DROPs onto g36's
-/// `shimmer.rs::shimmer_clean_up` (research-88 §6.4, research-240 §2).
+/// `shimmer.rs::shimmer_clean_up` (research-88 §6.4, research-281 §2).
 fn shimmer_clean_up(world: &mut World, rng: &mut Rng, gv: &GenVars, opts: &GenOptions) {
     let Some((sx, sy)) = gv.shimmer_position else {
         return;
@@ -2376,7 +2376,7 @@ pub(crate) fn final_cleanup(world: &mut World, gv: &mut GenVars, streams: &mut S
     // gate g36's `shimmer.rs::shimmer_clean_up` is the surviving arm and
     // this local copy (plus `shimmerator` below) DROPs; the compose-hunk
     // moves the call to the tail of g41's `step_seed_finish` with the SAME
-    // threaded Rng stashed through GenVars (research-240 §2 publishes the
+    // threaded Rng stashed through GenVars (research-281 §2 publishes the
     // d106-side drop hunks). The merge sweep below rides the g47/g46-union
     // `LiquidSystem` surface at the graft (`set_gen_settle_context` +
     // `set_gen_shimmer_position` + a pub `gen_merge_sweep` wrapper).

@@ -1,13 +1,31 @@
-# 240 — W4-d106 WORLDGEN-6 RETIRE FINAL: overlap census + keep-one drop-hunks + the e20 fidelity receipts + the pin schedule + the family declaration
+# 281 — W4-d106 WORLDGEN-6 RETIRE FINAL: overlap census + keep-one drop-hunks + the e20 fidelity receipts + the pin schedule + the family declaration
 
 > **STATUS: RETIRE FINAL — 2026-11-21, branch
 > `task/W4-d106-worldgen-passes-6` (retire phase, base COMPLETE `4612ffc57`,
-> R1–R6 all landed).** Number per registry-150
-> (`origin/task/W4-d54-dust-sites-world:docs/research/150-research-number-registry.md`):
-> the assigned free block 151–236 is fully consumed; 237+ stay free — the
-> re-fetched tips now show 237 taken TWICE (`237-bestiary-ui-final.md` e23,
-> `237-f11-tail-fix.md` g48) and 238 THREE times (c8/d42/g61) and 239 (d42),
-> so this doc takes **240**, the first free number at this scan. Code-only:
+> R1–R6 all landed, retire commit `87ff33322`).**
+>
+> **RENUMBERED 240 → 281 (registry-150 round-2 self-adjudication, the SEAL
+> verify pass).** The original pick took **240** as "the first free number
+> at this scan" — but registry-150 round 2 (d54 tip `72226e500`, §4 winner
+> table + §6 instruction rows) had already awarded **240–243 to g58**
+> (executed self-rename 143→240 at 12:16:37, pushed `c9af393dd` 14:08:18 —
+> BEFORE this doc's 14:50 write), with d53's fresh 240 → **275** and c42's
+> fresh 240 → **280** already instructed. The round-2 rule: numbers
+> **237–243 are taken, 244–280 are assignments, 281+ are FREE**; new lanes
+> must take the next number ≥281 after a fresh registry read AND an
+> all-tip sweep (the post-sweep cutoff note makes this lane self-adjudicate).
+> Executed here: a fresh `git fetch --prune` + a **360-tip `git ls-tree`
+> sweep confirms 281–289 unclaimed at every tip** (the only ≥244 docs at
+> tips are g48's 244/245 winners and the executed renames 271/273); this
+> doc takes **281**, the first free number. All `research-240` refs on this
+> branch (cleanup.rs / spider_gem_moss.rs comments + witnesses, PORT_MAP
+> R4/R5/R6 rows, ANALYSIS retire notes, the 12f retire row) repoint to
+> **research-281** in the same commit; the content is unchanged.
+> Cross-lane number note: e20's research-**148** is instructed to rename
+> → **269** (registry round 2), g41's research-**96** → **255**, research-
+> **95** → **225** — this doc's citations name the docs by their CURRENT
+> pushed filenames and add the assigned numbers here once; after those
+> lanes execute their renames the citations resolve by slug. Code-only:
 > no cargo/tests/rustfmt/graphify; witnesses WRITTEN NOT RUN; C# read in
 > ≤100-line windows via direct junction paths. Tips read at this retire:
 > d102 `29e8859bd`, d107 `266729126`, g36 `a91bf92b7` (matrix-88
@@ -318,10 +336,74 @@ either executed on this branch (§2.3, §3b, the §2.2 stream fix) or
 published as an exact graft-time hunk with a named keeper (§1, §2.1,
 §2.2, §4). The gate executes; it does not re-adjudicate.
 
+## 6. SEAL-VERIFY receipt (the dispatched d106b verify pass, independent re-read)
+
+The dispatched verify pass re-derived the retire claims from source and
+tip objects AFTER `87ff33322` landed+pushed; findings:
+
+1. **§3b swap fix VERIFIED against C#** — `WorldGen.cs:26840-26914` re-read
+   whole: `Utils.Swap(ref t, ref t2)` at `:26856`, no `t2.Clear()` anywhere
+   in the loop; neighbours APPEND to `t2` (`:26891`/`:26896`/`:26901`/
+   `:26906`); the inner `num2 <= 0` break (`:26861-26864`) leaves `t`
+   non-empty; the outer `num <= 0` break (`:26852-26855`) precedes the
+   swap. The port's `clear_broken_traps_capped` body mirrors this exactly
+   (the removed `t2.clear()` was the only delta); the two cap witnesses
+   drive the same code path the vanilla 2000/2000 caps take.
+2. **§3a noItem receipt VERIFIED** — `:63517` signature re-read (defaults
+   `fail=false, effectOnly=false, noItem=false`); `:63546-63549` re-read
+   (`if (WorldGen.isGeneratingOrLoadingWorld) { noItem = true; }`). The
+   gen-time `kill_tile(..., true)` is vanilla; no fix needed, receipt at
+   the strip site stands.
+3. **§2.3 moss set VERIFIED by bit-decode** — the generated
+   `tiledata/sets.rs:44-48` `TILE_MOSS` bitmask decodes to exactly
+   {179, 381, 534, 536, 539, 625, 627, 180, 181, 182, 183} (word2 bits
+   51/52/53/54/55 = 179–183, word5 bit61 = 381, word8 bits 22/24/27 =
+   534/536/539, word9 bits 49/51 = 625/627) — the 11 `Main.cs:7031`
+   members incl. 627. The local `MOSS_TILES`/`NEON_MOSS` consts correctly
+   STAY (they are `set_moss` index tables + the neon scatter draw tables,
+   not membership sets; the remaining union read at the moss-biome Arm F
+   filter is c29/g41-owned residual code, identical on g41's tip — NOT
+   d106's to touch).
+4. **§2.1 drop-hunk line numbers VERIFIED** at the retire tip: the four
+   explicit-check blocks sit at `spider_gem_moss.rs:843-845`/`:861-863`/
+   `:876-878`/`:891-893` exactly as published; the caller-runs keep-one
+   note sits on `place_tight`'s doc.
+5. **§2.2 stream fix VERIFIED against the C# + the witness replay** —
+   `ShimmerCleanUp` `:34716-34763` re-read: the ellipse jitter at `:34753`
+   draws TWO `genRand.NextDouble()` per cell over the FULL 241×241 rect
+   (the jitter gate is OUTSIDE the radius-120 inner-disc gate), stretch
+   1.4 above / 1.2 below, radius 90 — the witness's `gates` replay matches
+   this shape cell-for-cell; `poo_scatter` draws exactly 2 range rolls per
+   successful pick on the all-dirt fixture (the 3000 valve never trips).
+   ONE `fc_rng` threads scatter → cleanup in `final_cleanup` (`:2349-2383`).
+6. **R1–R6 landing VERIFIED** — pipeline slots `:1409` grass wall (living
+   trees → trees), `:1418` settle liquids again (before cacti), `:1424`
+   tile cleanup (cacti → lihzahrd altar), `:1435` stalac (after water
+   plants), `:1440` remove broken traps, `:1446` final cleanup (before
+   world tail); the anchors rows 899–904 all present; both pins untouched
+   (`SEED42_512 = 124297949` `world_hash.rs:291`, `DEFAULT_WORLD =
+   3647283075` `:360`) with the per-pass stale-by-design notes on both.
+7. **Registry correction EXECUTED** — the 240→281 rename (the header
+   block): registry-150 round 2 (`72226e500`) awards 240 to g58; the
+   fresh 360-tip sweep found 281 free; every branch ref repointed.
+8. **Cross-lane facts re-confirmed at the verify fetch** — g36 tip
+   `a91bf92b7` (matrix-88 §6.4 compose-hunk + §3.2 six-point + §7 family
+   declaration read WHOLE), g41 tip `3c6da7a3f` (research-96 §3/§4 read
+   WHOLE — the 6-point FINAL matches §2.1/§2.3 here), e20 tip `46fdcfd8e`
+   (research-148 read WHOLE — items 3a/3b/3c/3d/3e all closed by §3),
+   g37 tip `81fd1e0d0` (the Final Cleanup contest, §1.3 — unchanged),
+   d102 tip `29e8859bd` / d107 tip `266729126` (the O1–O9 census inputs
+   unchanged). No sibling tip moved in a way that changes any §1–§5
+   verdict.
+
+**SEAL verdict: the retire is COMPLETE and CORRECT modulo the executed
+240→281 renumber. The lane is ready for the merge gate; the gate executes
+§1–§4, it does not re-adjudicate.**
+
 *Sources: C# direct reads `WorldGen.cs`
 :22121-22140/:22423-22492/:26840-26958/:34716-34815/:38303-38362/:63517-63576,
 `Tile.cs:249-259` (via the R5 port citations); sibling tips via
 `git show origin/task/W4-…` (no junction recursion, no other branch
-touched). Registry: research-150 @ d54. Matrix: research-88 @ g36
-`a91bf92b7`. Receipts: research-96 @ g41 `3c6da7a3f`, research-148/149 @
-e20 `46fdcfd8e`.*
+touched). Registry: research-150 @ d54 `72226e500` (round 2). Matrix:
+research-88 @ g36 `a91bf92b7`. Receipts: research-96 @ g41 `3c6da7a3f`,
+research-148/149 @ e20 `46fdcfd8e`.*
