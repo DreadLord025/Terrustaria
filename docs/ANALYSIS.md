@@ -39309,3 +39309,54 @@ written NOT run (palettes, extras/chests, furniture rows, banner/dither
 flags, tile/wall membership flags, the sub-style lookups, the style-0
 wall arm, the colour wrapper, the Crystal gate). **No cargo/rustc/
 rustfmt/tests/dotnet invoked.**
+
+## The convert-tables family seal (W4-c32-convert, 2026-11-21, code-only mode)
+
+**Scope.** The cross-lane SEAL over the `WorldGen.Convert` family from the
+c32 side — research/281 (`281-convert-tables-family-bible.md`, number taken
+per registry 150's ≥281 free block after a fresh 362-tip sweep). No
+game-logic change: 3 table-pin witnesses appended to `dungeon_styles.rs`
+(13 total on the branch) + the bible + row updates.
+
+**The three seals (each re-verified against the C# this round).**
+- **SEAL-1 (the c32 census):** `git log` shows exactly two commits —
+  `3d0f3c19c` (the tables + lookups + `DungeonColor` accessors, 10
+  witnesses) and `d27fb00ae` (docs + the pin note + the clone fix). NO
+  Convert cells, NO room bodies. `BiomeDungeonRoom.cs:139-310` re-read:
+  `BiomeRoom_FinishRoom`'s style switch (2/3/5/6 + the skipped corruption
+  4) feeds `BiomeRoom_GrassySurface`/`SandySurface`/`SnowySurface`, which
+  call `DungeonUtils.ChangeTileType` (`DungeonUtils.cs:1577-1590` — a
+  field write: active-true + slope-clear + kind/paint, NO tree kill, NO
+  re-frame) at :232/:236/:248/:252/:266/:270/:282/:286/:298/:307 — NOT
+  `WorldGen.Convert`. Their only Convert-family dependencies are f25's C1
+  `TileIsExposedToAir` (:230/:246) and C2 `BlockBelow…HardenedSand`
+  (:264/:280). The wiring round ports the DungeonUtils pair + calls the
+  f25 helpers (the bible §5 contract).
+- **SEAL-2 (f25's 15/16/18/19):** f25 closeout `9fc704a15` (tip
+  `d587b128d`) ports the four dungeon-biome cells
+  (`WorldGen.cs:56008-56231`) as `convert_biome_cell`/`convert_sized_biome`
+  — UNWIRED, ZERO C# call sites (re-grepped: no literal 15/16/18/19
+  Convert call anywhere; every `conversionType =` feed is 1/2/4; the
+  aiStyle-31 ladder tops out at 7). The c32 tables are NOT their consumer
+  — the room bodies bypass Convert (SEAL-1). The cells' output ids match
+  the table palettes (the 3rd witness pins the agreement); the
+  style-ordinal-vs-conversionType collision (Crystal Style 15 ≠ Convert
+  15, Snow Style 2 ≠ Convert 2) is pinned by the 2nd witness.
+- **SEAL-3 (g42's Convert(3)):** FOUR sites — `WorldGen.cs:2101/:2125/
+  :2129` (DoSurfaceIsMushrooms, gen-only, g42 G6/G7 `e2707f2d0`) +
+  `Projectile.cs:26834` (aiStyle 31 :26786-26886, the :26805-26808 ladder
+  maps proj 148 → type 3; Clentaminator 779 shoot 145 + DarkBlueSolution
+  783 shoot 3). g42 GROWTH SEAL `910cc9747` completed
+  `convert_sized_mushroom` (the same square + Manhattan-<6 walk, RNG-free
+  cell). Merger contract: ONE `3 =>` arm into f25's `ai_spray` match; this
+  branch's `ai_spray` keeps its type-0-only S1-D-4 form until the merges.
+
+**Determinism.** Tests + docs only — no RNG draw, no tile write, no
+pipeline change. BOTH world-hash pins unchanged, a == b untouched.
+
+**Verification.** Code-only: the C# windows re-read in ≤100-line slices
+(the Convert switch head/writers :55067-55097/:56287-56343, types
+2/3/5/6/8/9/11/12/13/14/15/16/17/18/19/20/21, the BiomeDungeonRoom bodies,
+the DungeonUtils pair, the style statics' ordinals); the f25/g42/d1/d103/
+d107 tips re-fetched and their bodies read. 3 witnesses written NOT run.
+**No cargo/rustc/rustfmt/tests/dotnet/graphify invoked.**

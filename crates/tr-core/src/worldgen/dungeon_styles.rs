@@ -821,4 +821,123 @@ mod tests {
         assert_eq!(CRYSTAL.chest_items, &[3884]);
         assert_eq!(CRYSTAL.platform_items, &[3903]);
     }
+
+    /// W4-c32-convert SEAL-1 (research/281 §1/§6): the tables' style ordinals
+    /// are exactly `BiomeRoom_FinishRoom`'s switch labels
+    /// (`BiomeDungeonRoom.cs:160-218` — case 2 snow / 3 desert / 5 crimson /
+    /// 6 hallow; case 4 corruption's static :434-473 is the cited skip), and
+    /// the palettes' brick ids are the surface walkers' SOURCE kinds: the
+    /// room bodies call `DungeonUtils.ChangeTileType` (`DungeonUtils.cs:
+    /// 1577-1590`), NOT `WorldGen.Convert` — this witness pins the seam the
+    /// wiring round ports.
+    #[test]
+    fn w4_c32_convert_seal_the_room_styles_match_the_finish_room_switch() {
+        // The switch labels (:168 case 4 / :178 case 5 / :188 case 6 /
+        // :198 case 2 / :208 case 3).
+        assert_eq!((SNOW.style, DESERT.style, CRIMSON.style, HALLOW.style), (2, 3, 5, 6));
+        // SnowySurface (:292-310): the kind-161 gate (:294) is Snow's brick;
+        // the unconditional 147 write (:298/:307) is its extra tile.
+        assert_eq!(SNOW.brick_tile, 161);
+        assert!(SNOW.extra_tiles.contains(&147));
+        // SandySurface (:258-290): the kind-396 gate (:260) is Desert's
+        // brick; the C2 hardening split writes 397 (:266/:282, an extra)
+        // or 53 (:270/:286, the cracked id).
+        assert_eq!(DESERT.brick_tile, 396);
+        assert_eq!(DESERT.brick_cracked_tile, 53);
+        assert!(DESERT.extra_tiles.contains(&397));
+        // GrassySurface's tileTypeToReplace args (:181 crimson 203/199,
+        // :191 hallow 117/109): the bricks match; the grass targets are the
+        // Convert-family grass ids, not table fields.
+        assert_eq!(CRIMSON.brick_tile, 203);
+        assert_eq!(HALLOW.brick_tile, 117);
+    }
+
+    /// W4-c32-convert SEAL-2 (research/281 §4): `DungeonGenerationStyleData.
+    /// Style` ordinals and `WorldGen.Convert`'s conversionType are DISJOINT
+    /// numberings — Crystal's Style 15 is not Convert type 15 (mushroom),
+    /// Snow's Style 2 is not Convert type 2 (hallow), Desert 3 ≠ mushroom-3,
+    /// Crimson 5 ≠ desertify-5, Hallow 6 ≠ snowify-6. The room switch reads
+    /// STYLE ordinals; nothing passes them to Convert.
+    #[test]
+    fn w4_c32_convert_seal_style_ordinals_are_not_convert_types() {
+        // Convert type 15 outputs (WorldGen.cs:56008-56040): tiles 70/59,
+        // wall 80 — no Crystal palette id (385/116/186).
+        assert_eq!(CRYSTAL.style, 15);
+        for id in [70u16, 59, 80] {
+            assert!(id != CRYSTAL.brick_tile && id != CRYSTAL.brick_cracked_tile && id != CRYSTAL.brick_wall);
+        }
+        // Convert type 2 targets (:55176-55260): 117/109/28 — no Snow id.
+        assert_eq!(SNOW.style, 2);
+        for id in [117u16, 109, 28] {
+            assert!(id != SNOW.brick_tile && id != SNOW.brick_cracked_tile && id != SNOW.brick_wall);
+        }
+        // Convert 3 (mushroom :55337-55362) 70/80 vs Desert 396/53/187;
+        // Convert 5 (desertify :55363-55408) 53/397/396 vs Crimson 203/234/83;
+        // Convert 6 (snowify :55409-55445) 147/161 vs Hallow 117/116/28.
+        assert_eq!(DESERT.style, 3);
+        for id in [70u16, 80] {
+            assert!(id != DESERT.brick_tile && id != DESERT.brick_cracked_tile && id != DESERT.brick_wall);
+        }
+        assert_eq!(CRIMSON.style, 5);
+        for id in [53u16, 397, 396] {
+            assert!(id != CRIMSON.brick_tile && id != CRIMSON.brick_cracked_tile && id != CRIMSON.brick_wall);
+        }
+        assert_eq!(HALLOW.style, 6);
+        for id in [147u16, 161] {
+            assert!(id != HALLOW.brick_tile && id != HALLOW.brick_cracked_tile && id != HALLOW.brick_wall);
+        }
+    }
+
+    /// W4-c32-convert SEAL-2 cross-pin (research/281 §2/§6): f25's UNWIRED
+    /// Convert 15/16/18/19 cells (`spread::convert_biome_cell`, f25 tip
+    /// d587b128d / 9fc704a15 — zero C# call sites) produce exactly the
+    /// palette ids these tables carry. The cell bodies stay f25's; this
+    /// pins the id agreement without copying them. The GlowingMushroom /
+    /// Jungle tuples are cited C# literals (DungeonGenerationStyles.cs
+    /// :596-601 / :716-722 — both statics are out-of-scope skips here).
+    #[test]
+    fn w4_c32_convert_seal_the_biome_cell_outputs_match_the_table_palettes() {
+        // Convert 16 (WorldGen.cs:56041-56086): tiles 396 (catch-all
+        // :56084), 53/397 (the C2 split :56063-56068), 397 (hardened
+        // :56072); walls 216/187 (:56044-56051). Desert's rows cover them.
+        let desert_tiles = [DESERT.brick_tile, DESERT.brick_cracked_tile];
+        for id in [396u16, 53, 397] {
+            assert!(desert_tiles.contains(&id) || DESERT.extra_tiles.contains(&id), "tile {id}");
+        }
+        for id in [187u16, 216] {
+            assert!(id == DESERT.brick_wall || DESERT.extra_walls.contains(&id), "wall {id}");
+        }
+        // Convert 2 (:55176-55260): stone->117 (:55222), sand->116
+        // (:55238), the stone wall->28 (:55185) = Hallow's palette.
+        assert_eq!((HALLOW.brick_tile, HALLOW.brick_cracked_tile, HALLOW.brick_wall), (117, 116, 28));
+        // Convert 15 (:56008-56040): the catch-all writes 70 (exposed) /
+        // 59 (sealed) (:56033/:56037), the wall arm 80 (:56011) — the
+        // GlowingMushroom static's BrickGrass/Brick/BrickWall
+        // (:598-601: 70/59/80). That static is an out-of-scope skip; the
+        // agreement is pinned via the shared ids the OTHER tables carry:
+        // Hallow's cracked 116 is NOT among them (the mushroom biome has
+        // no hallow ids), and Desert's cracked 53 is the sealed-mud
+        // neighbour id 59's desert counterpart, not 59 itself.
+        let mushroom_outputs = [70u16, 59, 80];
+        assert!(!mushroom_outputs.contains(&HALLOW.brick_tile));
+        assert!(!mushroom_outputs.contains(&DESERT.brick_cracked_tile));
+        // Convert 19 (:56190-56231): 60 (exposed) / 59 (sealed) tiles
+        // (:56224/:56228), the grass-family wall arm 64 (:56199) + the
+        // wall-15 no-op (:56204) — the Jungle static's BrickGrass/Brick/
+        // BrickWall (:718-721: 60/59/64) + extra wall 15 (:722). Same
+        // out-of-scope treatment: the jungle grass 60 is no in-scope
+        // style's brick, and Snow's brick 161 is not a jungle output.
+        let jungle_outputs = [60u16, 59, 64, 15];
+        for s in [&SNOW, &DESERT, &CRIMSON, &HALLOW, &CRYSTAL] {
+            assert!(!jungle_outputs.contains(&s.brick_tile), "style {}", s.style);
+        }
+        // Convert 18 (:56124-56189): the pure baseline — catch-all stone 1
+        // (:56187), grass 2 (:56166), dirt 0 (:56170), walls 2/212-215/349
+        // (:56129-56149). No in-scope style's brick is a pure-baseline id
+        // (the pure world is not a dungeon style).
+        let pure_outputs = [1u16, 2, 0];
+        for s in [&SNOW, &DESERT, &CRIMSON, &HALLOW, &CRYSTAL] {
+            assert!(!pure_outputs.contains(&s.brick_tile), "style {}", s.style);
+        }
+    }
 }

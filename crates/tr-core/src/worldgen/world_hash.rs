@@ -290,6 +290,13 @@ mod tests {
     // assertions stay green (the S1-K-2 wave B constants-off class). The
     // wiring round (the dual-dungeon list arms + the per-style feature
     // passes) re-pins when it lands.
+    // W4-c32-convert (2026-11-21, code-only): the convert-tables family
+    // SEAL (research/281) — tests + docs only (3 table-pin witnesses in
+    // dungeon_styles.rs; the BiomeDungeonRoom bodies use
+    // DungeonUtils.ChangeTileType NOT WorldGen.Convert, f25's Convert
+    // 15/16/18/19 cells stay zero-call-site UNWIRED on f25, g42's
+    // Convert(3) closes at four sites). No game-logic change: BOTH pins
+    // UNCHANGED, a == b untouched.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
