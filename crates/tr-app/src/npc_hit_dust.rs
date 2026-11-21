@@ -140,6 +140,18 @@
 //! DEFERRED: the Stardust Worm 402's oldPos trail (`:83579-83596`)
 //! needs the NPC oldPos ring the port does not carry yet — its arm
 //! lands with that field (documented in ANALYSIS).
+//! Batch 10 (the desert/misc live arms):
+//! - 83764/83767 — the sandwalker group 524-527 (`:83740-83773`): ×20
+//!   dust 5 + Next(4)==0 && child>0 → the per-type child (524 has NONE —
+//!   the gate draw still rides), the four post-writes.
+//! - 83809 — 528/529 (`:83797-83810`): ×20 dust 5, gate-free.
+//! - 83830 — 530/531 (`:83824-83831`): ×30 dust 250, alpha 100.
+//! - 83852 — Desert Spirit 532 (`:83846-83853`): ×50 dust 5, alpha 100.
+//! - 83873 — Desert Djinn 533 (`:83867-83876`): ×50 dust 27, (0,0),
+//!   alpha 50 scale 1.5, velocity ×2 + noGravity (the death fadeIn is
+//!   g60's).
+//! - 83895 — 460 (`:83889-83896`): ×100 dust 5.
+//! - 83917/83939 — 477/479 (`:83911-83940`): ×100 dust 237.
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -739,6 +751,71 @@ pub fn replay_hit_dust(
                     let idx = live_dust(s, 229, 0.0, 0.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
                     dust.slot_mut(idx).no_gravity = true;
                 }
+            }
+        }
+        // `:83740-83773` — the sandwalker group: ×20 dust 5 + the
+        // Next(4)==0 && child>0 gate. The gate draw rides for EVERY type
+        // (the `&&` short-circuits on the DRAW result, not before it);
+        // 524's child id is 0 → the draw happens, no spawn.
+        524..=527 => {
+            let child = match s.npc_type {
+                525 => 75,
+                526 => 170,
+                527 => 67,
+                _ => 0, // `:83742` — 524 has no child
+            };
+            for _ in 0..hit_count(s.dmg, s.life_max, 20.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                if rng.next_max(4) == 0 && child > 0 {
+                    let idx = live_dust(s, child, 0.0, 0.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                    let d = dust.slot_mut(idx);
+                    d.no_gravity = true;
+                    d.scale = 1.5;
+                    d.fade_in = 1.0;
+                    d.velocity *= 3.0;
+                }
+            }
+        }
+        // `:83797-83810` — 528/529: ×20 dust 5, no gate.
+        528 | 529 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 20.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:83824-83831` — the sand sharks 530/531: ×30 dust 250, alpha
+        // 100 (the ChildSafety re-type lives inside new_dust).
+        530 | 531 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 30.0) {
+                live_dust(s, 250, dir, -1.0, 100, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:83846-83853` — the Desert Spirit: ×50 dust 5, alpha 100.
+        532 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                live_dust(s, 5, dir, -1.0, 100, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:83867-83876` — the Desert Djinn: ×50 dust 27 at (0,0), alpha
+        // 50 scale 1.5, velocity ×2 + noGravity (the death half's fadeIn
+        // 1 is g60's — the LIVE arm writes none).
+        533 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                let idx = live_dust(s, 27, 0.0, 0.0, 50, Color::default(), 1.5, rng, dust, ctx, world);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 2.0; // `:83874`
+                d.no_gravity = true; // `:83875`
+            }
+        }
+        // `:83889-83896` — 460: ×100 dust 5.
+        460 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:83911-83940` — the tomb crawlers 477/479: ×100 dust 237.
+        477 | 479 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 237, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
             }
         }
         // `:89526-89548`/`:89690-89700` — the three spheres are handled
@@ -1613,6 +1690,93 @@ mod tests {
             }
             assert_eq!(rng, twin_rng, "type {t}");
             assert_eq!(dust.slots(), twin.slots(), "type {t}");
+        }
+    }
+
+    /// W4-g62 batch 10 — the sandwalker gate (`NPC.cs:83765`): the
+    /// Next(4) draws for 524 TOO (the `&& child > 0` short-circuits
+    /// AFTER the draw) — 524's stream carries the gate but no child.
+    #[test]
+    fn w4_g62_the_524_gate_draws_without_a_child() {
+        let world = air();
+        let ctx = ctx();
+        let s = snap(524, 100, 100, 50.0); // ×20 → 10
+        let mut rng = UnifiedRandom::new(103);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(103);
+        let mut twin = DustPool::new();
+        for _ in 0..10 {
+            twin.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 5,
+                1.0, -1.0, 0, Color::default(), 1.0,
+            );
+            let _ = twin_rng.next_max(4); // drawn, never spawns for 524
+        }
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+        assert!(dust.slots().iter().filter(|d| d.active).all(|d| d.dust_type == 5));
+        // 525's child (75) rides the same gate with the four writes.
+        let c = snap(525, 100, 100, 50.0);
+        let mut rng2 = UnifiedRandom::new(103);
+        let mut dust2 = DustPool::new();
+        replay_hit_dust(&c, &mut rng2, &mut dust2, &ctx, &world);
+        let mut twin_rng2 = UnifiedRandom::new(103);
+        let mut twin2 = DustPool::new();
+        for _ in 0..10 {
+            twin2.new_dust(
+                &mut twin_rng2, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 5,
+                1.0, -1.0, 0, Color::default(), 1.0,
+            );
+            if twin_rng2.next_max(4) == 0 {
+                let idx = twin2.new_dust(
+                    &mut twin_rng2, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 75,
+                    0.0, 0.0, 0, Color::default(), 1.0,
+                );
+                let d = twin2.slot_mut(idx);
+                d.no_gravity = true;
+                d.scale = 1.5;
+                d.fade_in = 1.0;
+                d.velocity *= 3.0;
+            }
+        }
+        assert_eq!(rng2, twin_rng2);
+        assert_eq!(dust2.slots(), twin2.slots());
+    }
+
+    /// W4-g62 batch 10 — the Djinn's live post-writes (`NPC.cs:83873-
+    /// 83875`): ×2 NOT the death ×2+fadeIn; the sharks' alpha-100 dust
+    /// 250 ×30; the tomb crawlers' dust 237 ×100.
+    #[test]
+    fn w4_g62_the_djinn_shark_and_crawler_rows() {
+        let world = air();
+        let ctx = ctx();
+        let dj = snap(533, 100, 100, 4.0); // ×50 → 2
+        let mut rng = UnifiedRandom::new(107);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&dj, &mut rng, &mut dust, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(107);
+        let mut twin = DustPool::new();
+        for _ in 0..2 {
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 27,
+                0.0, 0.0, 50, Color::default(), 1.5,
+            );
+            let d = twin.slot_mut(idx);
+            d.velocity *= 2.0;
+            d.no_gravity = true;
+        }
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+        for (t, dt, mult, alpha) in [(530, 250, 30.0, 100), (532, 5, 50.0, 100), (477, 237, 100.0, 0), (460, 5, 100.0, 0)] {
+            let s = snap(t, 100, 100, 10.0);
+            let want = hit_count(10.0, 100, mult);
+            let mut r = UnifiedRandom::new(109);
+            let mut p = DustPool::new();
+            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len() as u32, want, "type {t}");
+            assert!(live.iter().all(|d| d.dust_type == dt && d.alpha == alpha), "type {t}");
         }
     }
 }
