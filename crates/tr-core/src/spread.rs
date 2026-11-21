@@ -410,9 +410,10 @@ fn in_world(world: &World, x: i32, y: i32, fluff: i32) -> bool {
 /// `WorldGen.TileIsExposedToAir(x, y)` (`WorldGen.cs:54782-54800`, W4-f25
 /// helper C1): the 3x3 box around the cell holds an inactive tile, a
 /// non-solid tile or a platform — any of the three reads "exposed to air".
-/// The `InWorld(2)` gate refuses the border band. UNWIRED (the Convert
-/// 7/15/18/19 dirt arms `:55512`/`:56031`/`:56171`/`:56222` and the c32
-/// biome-dungeon rooms are its consumers; no executed step calls it).
+/// The `InWorld(2)` gate refuses the border band. WIRED through the C4
+/// type-7 purify cell's sand-family dirt arm (`:55512`, the only ported
+/// consumer); the Convert 15/18/19 dirt arms (`:56031`/`:56171`/`:56222`,
+/// unported types) and the c32 biome-dungeon rooms are the other C# callers.
 pub fn tile_is_exposed_to_air(world: &World, x: i32, y: i32) -> bool {
     // `:54784-54787`.
     if !in_world(world, x, y, 2) {
@@ -439,8 +440,9 @@ pub fn tile_is_exposed_to_air(world: &World, x: i32, y: i32) -> bool {
 /// (`WorldGen.cs:86562-86583`, W4-f25 helper C2): the cell BELOW is inactive
 /// or a non-solid kind — sand converting over such a floor hardens (397)
 /// instead of staying loose (53). The bottom row refuses (no cell below).
-/// UNWIRED (the Convert 5/16 sand arms `:55386`/`:56064` and
-/// `BiomeDungeonRoom.cs:264/:280` are its consumers).
+/// WIRED through the C4 type-5 desertify cell's sand arm (`:55386`, the only
+/// ported consumer); the Convert 16 sand arm (`:56064`, unported type) and
+/// `BiomeDungeonRoom.cs:264/:280` (c32's lane) are the other C# callers.
 pub fn block_below_makes_sand_convert_into_hardened_sand(
     world: &World,
     i: i32,
@@ -639,11 +641,14 @@ fn try_kill_invalid_tree_above(world: &mut World, x: i32, y: i32, new_floor: u16
 
 // ---------------------------------------------------------------------------
 // `WorldGen.Convert` — the hallow cell (W4-f25 helper C3, conversion type 2).
-// The consumers: SpreadGrass's 109 dispatch (`:75218`), DoHallowOnSurface
-// (`:1967-2011`), ConvertSkyIslands (`:24701`), initializeHardMode's hallow
-// runners (`:31630-31651`), the 146 Blue Solution spray / ChlorophyteBolt
-// death (`Projectile.cs:26803`/`:77635`). UNWIRED — the ported
-// `convert_cell_flavor(Hallow)` / `gerunner` maps stay as they are.
+// WIRING: the aiStyle-31 Clentaminator's 146 Blue Solution spray
+// (`projectile_ai_misc::ai_spray`), the holy-water death splash
+// (`projectile_ai_thrown::water_death`, `Projectile.cs:77635`) and
+// SpreadGrass's 109 dispatch (`growth/grass.rs`, `:75218`, tiles-only via
+// `convert_hallow_cell_halves`) call these cells. The gen-time consumers —
+// DoHallowOnSurface's map approximation (`micro_surface.rs`), GERunner /
+// initializeHardMode (d103's verbatim rewrite, pushed) and ConvertSkyIslands
+// (unported) — keep their own copies; the ChlorophyteBolt death is unported.
 
 /// `TileID.Sets.Conversion.Thorn` (`TileID.cs:95`). (d1's powder port carries
 /// the same constant on its branch; the merger dedupes.)
@@ -657,10 +662,8 @@ fn torch_convertible_default(style: i32) -> bool {
 
 /// `WorldGen.Convert(i, j, 2, size)` (`WorldGen.cs:55067-55083` walk +
 /// `:55176-55260` cell): the square walk with the Manhattan `< 6` gate, each
-/// cell through [`convert_hallow_cell`]. The C# overload's `tiles`/`walls`
-/// halves both run (the callers that pass `tiles: false`/`walls: false` are
-/// the wall/tile sweeps — they ride the cell fn's halves directly when their
-/// consumer lands).
+/// cell through [`convert_hallow_cell`] (both halves). The callers that pass
+/// `tiles: false`/`walls: false` ride [`convert_hallow_cell_halves`] directly.
 pub fn convert_sized_hallow(world: &mut World, i: i32, j: i32, size: i32) {
     for k in (i - size)..=(i + size) {
         for l in (j - size)..=(j + size) {
@@ -671,38 +674,56 @@ pub fn convert_sized_hallow(world: &mut World, i: i32, j: i32, size: i32) {
     }
 }
 
-/// `Convert`'s type-2 cell arm (`WorldGen.cs:55176-55260`): the wall chain
-/// (the flat Grass/Stone/HardenedSand/Sandstone/NewWall ladder → 70/28/219/
-/// 222/200-203, `:55179-55210`), then the torch → style 20 / moss-or-stone →
-/// 117 / golf grass → 492 / grass → 109 / ice → 164 / sand → 116 / hardened
-/// sand → 402 / sandstone → 403 / thorn-kill ladder in source order, then the
-/// INDEPENDENT mud arm (`:55256-55259`): a mud 59 cell with a hallow-grass
-/// 109 4-neighbour converts to dirt 0.
+/// `Convert`'s type-2 cell arm, both halves (`WorldGen.cs:55176-55260`) —
+/// the single-cell overload's default `tiles: true, walls: true`.
+pub fn convert_hallow_cell(world: &mut World, x: i32, y: i32) {
+    convert_hallow_cell_halves(world, x, y, true, true);
+}
+
+/// `Convert`'s type-2 single-cell overload (`WorldGen.cs:55085-55097` +
+/// `:55176-55260`): the `InWorld(1)` gate, then the wall chain (the flat
+/// Grass/Stone/HardenedSand/Sandstone/NewWall ladder → 70/28/219/222/200-203,
+/// `:55179-55210`, gated on `walls`), then the torch → style 20 / moss-or-
+/// stone → 117 / golf grass → 492 / grass → 109 / ice → 164 / sand → 116 /
+/// hardened sand → 402 / sandstone → 403 / thorn-kill ladder in source order
+/// and the INDEPENDENT mud arm (`:55256-55259`: a mud 59 cell with a hallow-
+/// grass 109 4-neighbour → dirt 0), both gated on `tiles` (the C#'s
+/// `if (!tiles) break;` at `:55212` sits before them).
 /// `Convert_ActuallyConvertTile`/`Wall`/`Torch` (`:56287-56343`) write only
 /// when the cell differs and re-frame — the port's `reframe_area` superset
 /// (the `convert_cleanse_cell` deviation). The genRand-free wall ladder takes
 /// `None` (type 2 draws nothing); the `RainbowSandAndBlackSandWalls` paint
 /// arms are the d1-documented skip.
-pub fn convert_hallow_cell(world: &mut World, x: i32, y: i32) {
+pub fn convert_hallow_cell_halves(world: &mut World, x: i32, y: i32, tiles: bool, walls: bool) {
+    // `:55087` — the InWorld(1) gate + the both-halves-off refusal.
+    if !in_world(world, x, y, 1) || (!tiles && !walls) {
+        return;
+    }
     let Some(t) = world.tile(x, y) else {
         return;
     };
     let (kind, wall, active) = (t.kind, t.wall, t.active());
-    // `:55087-55097` — the empty cell converts nothing.
+    // `:55094-55097` — the empty cell converts nothing.
     if !active && wall == 0 {
         return;
     }
     // The wall half (`:55177-55211`): the shared type-2 flat ladder.
-    if let Some(new_wall) =
-        crate::growth::convert_wall_by_case(wall, 2, y, world.world_surface, None)
-    {
-        // `Convert_ActuallyConvertWall` (`:56329-56343`): non-zero, different.
-        if wall != 0 && wall != new_wall {
-            if let Some(t) = world.tile_mut(x, y) {
-                t.wall = new_wall;
+    if walls {
+        if let Some(new_wall) =
+            crate::growth::convert_wall_by_case(wall, 2, y, world.world_surface, None)
+        {
+            // `Convert_ActuallyConvertWall` (`:56329-56343`): non-zero, different.
+            if wall != 0 && wall != new_wall {
+                if let Some(t) = world.tile_mut(x, y) {
+                    t.wall = new_wall;
+                }
+                crate::framing::reframe_area(world, x, y, 1, false);
             }
-            crate::framing::reframe_area(world, x, y, 1, false);
         }
+    }
+    // `:55212-55215` — the tiles-off break skips the whole tile half.
+    if !tiles {
+        return;
     }
     // The tile half (`:55216-55255`) — the else-if ladder in source order.
     if active && kind == 4 && torch_convertible_default(t.frame_y as i32 / 22) {
@@ -775,9 +796,11 @@ pub fn convert_hallow_cell(world: &mut World, x: i32, y: i32) {
 
 // ---------------------------------------------------------------------------
 // `WorldGen.Convert` — the spray cells (W4-f25 helper C4, conversion types
-// 5/6/7: desertify / snow / purify). The consumers: the aiStyle-31
-// Clentaminator's 1015 Sand / 1016 Snow / 1017 Purple Solution sprays
-// (`Projectile.cs:26813-26823`, the d4 dispatch). UNWIRED.
+// 5/6/7: desertify / snow / purify). WIRING: the aiStyle-31 Clentaminator's
+// 1015 Sand / 1016 Snow / 1017 Purple Solution sprays
+// (`projectile_ai_misc::ai_spray`, `Projectile.cs:26813-26823`) call
+// `convert_sized_spray`. The C1 air-exposure + C2 hardening-floor tests ride
+// the type-7/5 dirt/sand arms inside the cell (their only ported consumers).
 
 /// `WorldGen.Convert(i, j, conversionType, size)` for the spray types 5/6/7
 /// (`WorldGen.cs:55067-55083` walk): the square walk with the Manhattan

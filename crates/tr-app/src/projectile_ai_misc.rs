@@ -11,7 +11,9 @@
 //!   `WorldGen.Convert`, the 133 timeLeft cap, the ai[0] dust-scale ladder,
 //!   the 0.3·direction spin). The tile conversion is
 //!   `tr_core::spread::convert_cleanse` (`WorldGen.cs:55067-55083` +
-//!   the type-0 cell `:55527-55664`).
+//!   the type-0 cell `:55527-55664`), `convert_sized_hallow` (type 2,
+//!   `:55176-55260`) and `convert_sized_spray` (types 5/6/7,
+//!   `:55363-55526`) — the W4-f25 C3/C4 cells wired at the per-kind dispatch.
 //! - aiStyle 147: `AI_147_Celeb2Rocket` `:52881-53092`, `AI_147_Explosion`
 //!   `:53130-53399`, `CreateGroundExplosion` `:53401-53464`, the `Kill()`
 //!   resize-and-Damage arm `:73632-73645`, `GetCeleb2Color` `:52550-52563`.
@@ -68,7 +70,8 @@ use crate::projectile::{
 /// `AI()`'s aiStyle-31 arm (`Projectile.cs:26786-26886`) — the Clentaminator
 /// spray. Only the PureSpray 145 has a `proj_data` row (the 146-149 /
 /// 1015-1017 solutions are unrowed); the per-kind ladder is ported whole so
-/// the later rows land on a faithful arm.
+/// the later rows land on a faithful arm — the W4-f25 C3/C4 wiring arms the
+/// type-2/5/6/7 dispatch for them now.
 ///
 /// The dust-scale ladder (`:26845-26879`: the 7/3 threshold, the
 /// 0.2/0.4/0.6/0.8 fade steps, the flag13 ×1.2 and the `(int)(12·scale)`
@@ -81,7 +84,7 @@ pub(crate) fn ai_spray(p: &mut Projectile, world: &mut World, local_owner: u8) {
     // `:26789-26825` — the per-kind (dust type, conversion type) ladder.
     // The dust type feeds only the skipped dust; the conversion type is
     // the `WorldGen.Convert` argument.
-    let conversion = match p.kind {
+    let conversion: u8 = match p.kind {
         147 => 1,
         146 => 2,
         148 => 3,
@@ -92,14 +95,24 @@ pub(crate) fn ai_spray(p: &mut Projectile, world: &mut World, local_owner: u8) {
         _ => 0,
     };
     // `:26826-26835` — the owner-gated conversion: `Center.ToTileCoordinates`
-    // (the `(int)(X/16)` truncation), size 2 (3 for the solution). Only the
-    // type-0 cleanse cell is ported (`spread::convert_cleanse`); the other
-    // conversion types' cells are the unrowed kinds' follow-up.
-    if p.owner == local_owner && conversion == 0 {
+    // (the `(int)(X/16)` truncation), size 2 (3 for the solution).
+    // W4-f25 wiring: the C# runs `WorldGen.Convert(point2.X, point2.Y, num245,
+    // size)` for EVERY kind — the per-kind ladder above picks the type. The
+    // ported cells dispatch here: type 0 the cleanse (`spread::convert_cleanse`),
+    // type 2 the hallow (`spread::convert_sized_hallow`, C3), types 5/6/7 the
+    // desertify/snow/purify sprays (`spread::convert_sized_spray`, C4). Types
+    // 1/3/4 (the 147/148/149 solutions) ride d1's `convert_sized` / g42's
+    // mushroom cell on their branches — unrowed here, a no-op until they land.
+    if p.owner == local_owner {
         let tx = ((p.pos.x + p.w * 0.5) / 16.0) as i32;
         let ty = ((p.pos.y + p.h * 0.5) / 16.0) as i32;
         let size = if solution { 3 } else { 2 };
-        tr_core::spread::convert_cleanse(world, tx, ty, size);
+        match conversion {
+            0 => tr_core::spread::convert_cleanse(world, tx, ty, size),
+            2 => tr_core::spread::convert_sized_hallow(world, tx, ty, size),
+            5 | 6 | 7 => tr_core::spread::convert_sized_spray(world, tx, ty, conversion, size),
+            _ => {}
+        }
     }
     // `:26836-26839` — the 133-tick life cap (per sub-step).
     if p.time_left > 133 {
@@ -816,6 +829,65 @@ mod tests {
         p3.ai[1] = 1.0;
         ai_spray(&mut p3, &mut w3, 0);
         assert_eq!(w3.tile(103, 52).unwrap().kind, 2, "the size-3 disc");
+    }
+
+    /// W4-f25 wiring: the per-kind dispatch (`:26791-26834`) — the solution
+    /// kinds convert through their own cells. The 146-149/1015-1017 rows are
+    /// unrowed, so the slots are built field-by-field (the `proj` helper
+    /// needs a row). WRITTEN NOT RUN (code-only round).
+    #[test]
+    fn w4_f25_the_spray_dispatch_converts_each_solution_type() {
+        // A rowless spray slot at tile (100, 50), owner 0.
+        let spray = |kind: u16| {
+            let mut p = Projectile::default();
+            p.active = true;
+            p.kind = kind;
+            p.owner = 0;
+            p.pos = Vec2::new(100.0 * 16.0, 50.0 * 16.0);
+            p.w = 8.0;
+            p.h = 8.0;
+            p
+        };
+        // 146 Blue Solution — type 2 hallow (`:26801-26804`): the grass 2 →
+        // 109 and the stone 1 → 117 (the moss-or-stone row, C3).
+        let mut w = world();
+        put(&mut w, 100, 50, 2);
+        put(&mut w, 101, 50, 1);
+        ai_spray(&mut spray(146), &mut w, 0);
+        assert_eq!(w.tile(100, 50).unwrap().kind, 109, "the hallow grass");
+        assert_eq!(w.tile(101, 50).unwrap().kind, 117, "the pearlstone");
+        // 1015 Sand Solution — type 5 desertify (`:26813-26816`): the dirt 0
+        // over an inactive floor hardens to 397 (the C2 floor test), the
+        // stone 1 → 396 sandstone.
+        let mut w = world();
+        put(&mut w, 100, 50, 0); // (100, 51) stays inactive — the hardening floor
+        put(&mut w, 101, 50, 1);
+        ai_spray(&mut spray(1015), &mut w, 0);
+        assert_eq!(w.tile(100, 50).unwrap().kind, 397, "the hardened sand");
+        assert_eq!(w.tile(101, 50).unwrap().kind, 396, "the sandstone");
+        // 1016 Snow Solution — type 6 (`:26817-26820`): the grass 2 → 147.
+        let mut w = world();
+        put(&mut w, 100, 50, 2);
+        ai_spray(&mut spray(1016), &mut w, 0);
+        assert_eq!(w.tile(100, 50).unwrap().kind, 147, "the snow");
+        // 1017 Purple Solution — type 7 purify (`:26821-26824`): the
+        // ebonstone 25 → 1, the ebon sand 112 → 2 when exposed to air (the
+        // C1 test — the neighbours are inactive), the thorn 32 dies.
+        let mut w = world();
+        put(&mut w, 100, 50, 25);
+        put(&mut w, 101, 50, 112);
+        put(&mut w, 102, 50, 32);
+        ai_spray(&mut spray(1017), &mut w, 0);
+        assert_eq!(w.tile(100, 50).unwrap().kind, 1, "the purified stone");
+        assert_eq!(w.tile(101, 50).unwrap().kind, 2, "the exposed sand → grass");
+        assert!(!w.tile(102, 50).unwrap().active(), "the thorn kill");
+        // The owner gate covers EVERY type (`:26826`).
+        let mut w = world();
+        put(&mut w, 100, 50, 2);
+        let mut p = spray(1015);
+        p.owner = 1;
+        ai_spray(&mut p, &mut w, 0);
+        assert_eq!(w.tile(100, 50).unwrap().kind, 2, "the owner gate");
     }
 
     /// Style 193 (`:41339-41348`, `:41372`, `:41391`): the counter, the

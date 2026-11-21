@@ -122,3 +122,47 @@ dispatcher — g37/g38/d104 carry per-kind slices, `edit/place.rs` the arms).
 - ONE helper per commit+push; this ledger + an `anchors.txt` row per slice.
 - Code-only lane: no cargo/tests/graphify on this branch; witnesses written
   NOT run, per the S1-K-2-wave-B / d10x convention.
+
+## Wiring phase (consumers census + landed seams)
+
+The helper round closed unwired; this phase wires the C1-C8 cells at their
+**unclaimed** C# consumer positions (the pushed sibling claims re-read after
+`git fetch --prune`). One commit per consumer-family. All seams are
+**runtime-only** (no executed worldgen step calls them), so both world-hash
+pins stay unchanged; the `a == b` halves stay untouched.
+
+### The consumer census (C# call-sites → port seam → owner)
+
+| helper | C# consumers | port seam wired | owner verdict |
+| --- | --- | --- | --- |
+| C1 `TileIsExposedToAir` | Convert 7 `:55512`; 15/18/19 `:56031/:56171/:56222`; BiomeDungeonRoom | the C4 type-7 cell's sand arm (transitive) | types 15/18/19 unported; BiomeDungeonRoom = c32's lane |
+| C2 `BlockBelow…HardenedSand` | Convert 5 `:55386`; 16 `:56064`; BiomeDungeonRoom `:264/:280` | the C4 type-5 cell's sand arm (transitive) | type 16 unported; BiomeDungeonRoom = c32 |
+| C3 `Convert` type 2 | aiStyle-31 146 `:26803`; holy water `:77635`; SpreadGrass `:75218`; DoHallowOnSurface `:1967`; ConvertSkyIslands `:24701`; initializeHardMode `:31630`; GERunner | `ai_spray` + `water_death` + `spread_grass` (tiles-only) | GERunner/initializeHardMode = **d103 P2/P4 (pushed)**; ConvertSkyIslands unported; DoHallowOnSurface keeps its map approximation |
+| C4 `Convert` 5/6/7 | aiStyle-31 1015/1016/1017 `:26813-26823` | `ai_spray` per-kind dispatch | d4 marks style 31 "P" (ported), does not touch the file |
+| C5 `Convert` 8/9/10 | hardUpdateWorld `:69658/:69686/:69697`; ChlorophyteDefense `:69460` | **none — stays unwired** | **d103 P8 (pushed 014cf2937)** owns the verbatim hardUpdateWorld + its own `convert_purge_cell` |
+| C6 `IsTileATreeBranch/Root` | ConvertTreeAndGround `:54924+`; ConsideredSolidTileForAnchor `:53903` | C7 (transitive) | ConsideredSolidTileForAnchor/ValidateOrAttemptReorientingAnchor unported |
+| C7 `ConvertTreeAndGround` | TryConvertingOrKillingTreesAbove 596/616/5/323 `:54855-54896` | `try_kill_invalid_tree_above` (the Convert/clentaminator path) | unclaimed (d103 keeps the "documented skip"); growth/trees.rs copy = g17's lane |
+| C8 `GetTileMossColor` | TileFrameImportant case 184 `:85176-85202` (the ONLY caller — no Main lighting arm) | `edit/kill.rs::check_long_moss` (the Check* dispatch) | unclaimed in the pushed record (d109/d110 don't carry it; d105 owns PlaceTile-184 growth, not TileFrame) |
+
+### Landed wiring slices
+
+1. **Spray family (C3+C4, transitively C1+C2)** — `ai_spray`'s owner-gated
+   `WorldGen.Convert` dispatches type 2 → `convert_sized_hallow`, types 5/6/7
+   → `convert_sized_spray` beside the type-0 cleanse; `water_death`'s holy
+   arm → `convert_sized_hallow`; `spread_grass`'s 109 arm →
+   `convert_hallow_cell_halves(tiles, walls=false)` (the C3 cell gained the
+   C# single-cell overload's `tiles`/`walls` flags). The evil arms keep
+   `convert_cell_flavor` until d1's type-1/4 cells land.
+2. **Tree family (C7, transitively C6)** — `try_kill_invalid_tree_above`
+   grows the 596/616/5/323 `ConvertTreeAndGround` arms on the explicit
+   `frame_rng` stream (the C# `genRand == Main.rand`, the port's runtime
+   stand-in).
+3. **Moss family (C8)** — `edit/kill.rs::check_long_moss` ports
+   TileFrameImportant case 184 verbatim (the four-neighbour colour pick via
+   `get_tile_moss_color`, the `Next(3)*18` frameY roll on `frame_rng`, the
+   no-colour KillTile), dispatched from `square_tile_frame`; the 184 boot
+   static lands in `boot_statics`.
+
+**C5 stays unwired** — d103 P8 owns the verbatim hardUpdateWorld chlorophyte
+arms with its own `convert_purge_cell`; wiring the C5 cells there would
+collide. The C5 helpers remain available for that lane / the merger.

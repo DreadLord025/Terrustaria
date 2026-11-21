@@ -175,8 +175,9 @@ pub fn spread_grass(world: &mut World, i: i32, j: i32, dirt: u16, grass: u16) {
     // the conversion dispatch (`:75208-75221`): spreading a conversion grass
     // over a conversion-grass dirt converts the cell through the flavor's
     // map instead of the plain type write — corruption for 23/661, crimson
-    // for 199/662, hallow for 109. Everything else takes the plain write,
-    // preceded by the tree-invalidity kill.
+    // for 199/662, hallow for 109 (the W4-f25 C3 type-2 cell, tiles-only).
+    // Everything else takes the plain write, preceded by the tree-invalidity
+    // kill.
     let conversion_dirt = matches!(dirt, 2 | 23 | 199 | 109 | 477 | 492);
     if conversion_dirt && matches!(grass, 23 | 661) {
         crate::spread::convert_cell_flavor(
@@ -195,13 +196,10 @@ pub fn spread_grass(world: &mut World, i: i32, j: i32, dirt: u16, grass: u16) {
             false,
         );
     } else if conversion_dirt && grass == 109 {
-        crate::spread::convert_cell_flavor(
-            world,
-            i,
-            j,
-            crate::spread::ConversionFlavor::Hallow,
-            false,
-        );
+        // `:75216-75219` — `Convert(i, j, 2, tiles: true, walls: false)`:
+        // the W4-f25 C3 type-2 cell, tiles-only (the full ladder incl. the
+        // torch/golf/mud-adjacency rows the flavor map lacked).
+        crate::spread::convert_hallow_cell_halves(world, i, j, true, false);
     } else {
         kill_invalid_tree_above(world, i, j, grass);
         let idx = world.index(i, j);
@@ -1175,6 +1173,34 @@ mod tests {
         w.tiles[wall_idx].wall = 1;
         spread_grass(&mut w, 10, 20, 2, 23);
         assert_eq!(w.tile(11, 21).unwrap().wall, 1, "the walls stay (walls: false)");
+    }
+
+    /// W4-f25 wiring: the hallow dispatch (`:75216-75219`) rides the C3
+    /// type-2 cell tiles-only — the grass 2 → 109, the stone 1 neighbour is
+    /// NOT touched (the single-cell overload converts only (i, j)), and the
+    /// walls stay (`walls: false`). WRITTEN NOT RUN (code-only round).
+    #[test]
+    fn w4_f25_spread_grass_hallow_rides_the_c3_cell_tiles_only() {
+        let mut w = World::new("t".into(), 64, 64);
+        w.world_surface = 30.0;
+        let idx = w.index(10, 20);
+        w.tiles[idx] = Tile { kind: 2, flags: FLAG_ACTIVE, wall: 1, ..Default::default() };
+        // A stone neighbour with a stone wall — the cell fn must not reach it.
+        let n = w.index(11, 20);
+        w.tiles[n] = Tile { kind: 1, flags: FLAG_ACTIVE, wall: 1, ..Default::default() };
+        spread_grass(&mut w, 10, 20, 2, 109);
+        assert_eq!(w.tile(10, 20).unwrap().kind, 109, "the hallow grass");
+        assert_eq!(w.tile(10, 20).unwrap().wall, 1, "the wall stays (walls: false)");
+        assert_eq!(w.tile(11, 20).unwrap().kind, 1, "the neighbour is untouched");
+        // The torch row the flavor map lacked: a style-0 torch converts to
+        // style 20 (`:55216-55218`). The dirt arg is 4 so the `type == dirt`
+        // guard passes (the C# caller reads the cell's own type).
+        let mut w2 = World::new("t".into(), 64, 64);
+        w2.world_surface = 30.0;
+        let t = w2.index(10, 20);
+        w2.tiles[t] = Tile { kind: 4, flags: FLAG_ACTIVE, frame_y: 0, ..Default::default() };
+        spread_grass(&mut w2, 10, 20, 4, 109);
+        assert_eq!(w2.tile(10, 20).unwrap().frame_y, 20 * 22, "the torch → style 20");
     }
 
     /// DW-2.9: `MossConversion`'s map (`WorldGen.cs:71457-71503`) — the
