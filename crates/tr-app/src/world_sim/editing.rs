@@ -1672,6 +1672,11 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     if std::env::var("AMMO_TRACE").is_ok() {
         eprintln!("[trace-top] entered, screen={}x{}", screen.x, screen.y);
     }
+    // `Player.ItemCheck`'s FIRST statement (`Player.cs:42597`): the
+    // `pendingItemReuse` latch clears at the top of every tick — BEFORE the
+    // CCed early-return, so a CCed tick clears it too. The arm below re-sets
+    // it only on the animation-zero tick of a held non-autoReuse swing.
+    app.pending_item_reuse = false;
     // `Player.ItemCheck`'s `CCed` gate (`Player.cs:42598-42603` → `:3377-3387`:
     // frozen || webbed || stoned): the FIRST thing ItemCheck does — the early
     // return runs BEFORE the auto-reuse logic and every countdown, so a CCed
@@ -1779,6 +1784,12 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             }
         }
     }
+    // `Player.cs:42808`: the decrement arm runs only while the animation is
+    // live (`itemAnimation > 0`). The head autoReuse early-out already zeroed
+    // the plain-autoReuse items, so for those this is false and the
+    // `pendingItemReuse` arm below is skipped — exactly the C# (AutoReuseLogic
+    // zeroes `itemAnimation` at `:42894` before the `:42808` block).
+    let swing_was_running = app.swing > 0.0;
     app.swing = (app.swing - dt).max(0.0);
     // (Resync keep-one: the i19 per-anim-tick mana-regen-delay block is the
     // shared `ItemCheck_ApplyManaRegenDelay` head ABOVE — both lanes carried
@@ -1864,6 +1875,30 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         if held.count > 0 && (glove_arm || all_arm) {
             app.mine_released = true;
 
+        }
+    }
+    // `Player.cs:42819-42822`: the animation decremented to 0 with the use
+    // button held and the release latch forced (the autoReuse/glove/setting
+    // arms above, or a fresh press edge) arms `pendingItemReuse` — the fourth
+    // member of `UsingOrReusingItem` (`:4074`). The reuse lock must be clear
+    // (`reuseDelay == 0`). The C# runs this INSIDE the `itemAnimation > 0`
+    // block after `itemAnimation--`, so the pre-decrement `swing_was_running`
+    // gate keeps an idle tick (or a head-autoReuse-zeroed item) from arming it.
+    if swing_was_running
+        && app.swing <= 0.0
+        && app.reuse_delay <= 0.0
+        && app.mine_down
+        && app.mine_released
+    {
+        app.pending_item_reuse = true;
+    }
+    // `Player.cs:42824-42828`: the animation-zero tick with an aired-out held
+    // slot (`IsAir && type != 0` — the port's implicit-air `count == 0` with a
+    // live kind) clears the latch the arm above may have set.
+    if app.swing <= 0.0 {
+        let held = app.inventory[app.selected];
+        if held.count == 0 && held.kind != 0 {
+            app.pending_item_reuse = false;
         }
     }
     // `Player.ItemCheck`'s channel clear (`Player.cs:42787-42807`) runs
@@ -14464,6 +14499,46 @@ mod tests {
         }
         assert_eq!(ticks_of(app.swing), 0, "the hold ended");
         assert_eq!(app.reuse_delay, 0.0, "no second conversion");
+    }
+
+    /// W4-g55 — `pendingItemReuse`'s lifecycle (`Player.cs:42597` clear,
+    /// `:42819-42822` arm, `:42824-42828` air-out clear): a held non-autoReuse
+    /// swing's animation-zero tick arms the latch (the glove/setting force
+    /// supplies `releaseUseItem`); the next tick's head clears it. An idle
+    /// tick never arms it. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_g55_pending_item_reuse_arms_on_the_animation_zero_tick_and_clears_next() {
+        let mut app = shooter_app();
+        // The Wooden Sword (24): melee, NOT autoReuse, useAnimation 20. The
+        // Feral Claws' glove arm forces `releaseUseItem` every held tick.
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 24,
+            name: "Wooden Sword",
+            count: 1,
+            prefix: 0,
+        };
+        app.player.as_mut().unwrap().auto_reuse_glove = true;
+        app.mine_down = true;
+        app.mine_prev_down = true; // held, not a fresh press
+        app.reuse_delay = 0.0;
+        app.attack_cd = 0.0;
+        // The last animation tick: swing 1 -> 0 through the head decay.
+        app.swing = ONE_TICK_SECS;
+        app.swing_max = 20.0 * ONE_TICK_SECS;
+        app.item_time = 0.0;
+        let screen = app.screen_size().into();
+        update_editing(&mut app, ONE_TICK_SECS, screen);
+        assert_eq!(ticks_of(app.swing), 0, "the animation ended");
+        assert!(app.pending_item_reuse, "the animation-zero tick armed the latch");
+        // The next tick's head clears it (`:42597`); the swing is idle so the
+        // arm does not re-fire.
+        update_editing(&mut app, ONE_TICK_SECS, screen);
+        assert!(!app.pending_item_reuse, "the next tick's head cleared the latch");
+        // An idle hand (no swing running) never arms it.
+        app.swing = 0.0;
+        app.mine_down = true;
+        update_editing(&mut app, ONE_TICK_SECS, screen);
+        assert!(!app.pending_item_reuse, "an idle tick never arms the latch");
     }
 
     /// `ItemCheck_ApplyManaRegenDelay` (`Player.cs:42810-42813` →

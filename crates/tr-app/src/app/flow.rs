@@ -2153,6 +2153,7 @@ pub(crate) mod front_flow_tests {
             town_look_timer: 0.0,
             town_arrival: crate::town_arrival::ArrivalState::new(),
             reuse_delay: 0.0,
+            pending_item_reuse: false,
             window: None,
             gpu: None,
             renderer: None,

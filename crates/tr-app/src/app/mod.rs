@@ -331,6 +331,13 @@ pub(crate) struct App {
     /// `Player.reuseDelay` (`Player.cs:1444`): the post-swing reuse lock in
     /// seconds (`Item.reuseDelay` ticks, `Item.cs:317`); M3-ITEM-5.
     pub(crate) reuse_delay: f32,
+    /// `Player.pendingItemReuse` (`Player.cs:1460`): the fourth member of
+    /// `UsingOrReusingItem` (`:4068-4078`). Set when a non-autoReuse swing's
+    /// animation decrements to 0 with the use button held and the release
+    /// latch forced (`:42819-42822`), cleared at the top of the next
+    /// `ItemCheck` (`:42597`) or when the held slot airs out (`:42824-42828`).
+    /// The loadout-swap gate (`:5663`) reads it through `UsingOrReusingItem`.
+    pub(crate) pending_item_reuse: bool,
     /// `Main.Achievements` — the achievement registry (M6-ACH-1, the full
     /// 137-row initializer table with M6-ACH-2).
     pub(crate) achievements: achievements::AchievementManager,
@@ -1385,13 +1392,15 @@ impl App {
     /// (`:5673`) and `NetMessage.TrySendData(147)` (`:5674`, the
     /// `send_sync_loadout` MP push). `UsingOrReusingItem` (`:4068-4078`) is
     /// summarised from the port's swing/reuse/channel timers (`App.swing` =
-    /// itemAnimation > 0, `App.reuse_delay` = reuseDelay > 0, `Player.channel`);
-    /// the `pendingItemReuse` half lands with its own gate pass. The
-    /// `clientCloneLoadouts` (`:5670`) and particle (`:5675-5679`) tails are
-    /// the clone/visual systems'.
+    /// itemAnimation > 0, `App.reuse_delay` = reuseDelay > 0, `Player.channel`)
+    /// plus the `pendingItemReuse` latch (`App.pending_item_reuse`, `:4074` —
+    /// the fourth member, armed at the animation-zero tick of a held
+    /// non-autoReuse swing, `world_sim/editing.rs`). The `clientCloneLoadouts`
+    /// (`:5670`) and particle (`:5675-5679`) tails are the clone/visual systems'.
     pub(crate) fn try_switching_loadout(&mut self, index: usize) -> bool {
         let using_or_reusing = self.swing > 0.0
             || self.reuse_delay > 0.0
+            || self.pending_item_reuse
             || self.player.as_ref().is_some_and(|p| p.channel);
         let ok = match self.player.as_mut() {
             Some(p) => p.try_switching_loadout(
@@ -3894,6 +3903,7 @@ impl App {
             town_look_timer: 0.0,
             town_arrival: crate::town_arrival::ArrivalState::new(),
             reuse_delay: 0.0,
+            pending_item_reuse: false,
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
             // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on
             // (the `TR_INV` presence pattern). An open chest closes it

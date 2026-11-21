@@ -4181,6 +4181,26 @@ mod tests {
         assert!(!app.toggle_loadout_share(0, 0));
     }
 
+    /// W4-g55 — `UsingOrReusingItem`'s `pendingItemReuse` half (`Player.cs:4074`,
+    /// the `:5663` gate): a set latch refuses the loadout swap even with the
+    /// swing/reuse/channel timers clear; clearing it lets the swap run.
+    #[test]
+    fn w4_g55_pending_item_reuse_blocks_the_loadout_swap() {
+        let mut app = inv_app();
+        app.equip.armor[0] = slot(90, 1);
+        app.player.as_mut().unwrap().loadouts[1].armor[0] = slot(954, 1);
+        // The timers are clear, but the pendingItemReuse latch is set.
+        app.swing = 0.0;
+        app.reuse_delay = 0.0;
+        app.pending_item_reuse = true;
+        assert!(!app.try_switching_loadout(1), "the latch refuses the swap");
+        assert_eq!(app.player.as_ref().unwrap().current_loadout_index, 0);
+        // Clearing the latch lets the swap run.
+        app.pending_item_reuse = false;
+        assert!(app.try_switching_loadout(1));
+        assert_eq!(app.player.as_ref().unwrap().current_loadout_index, 1);
+    }
+
     /// M7-UI-2b — the coin (ctx 1) and ammo (ctx 2) rows became click
     /// surfaces. `Main.cs:41752-41782` draws them through `ItemSlot.Handle`,
     /// so a left click runs the shared action-0 move behind

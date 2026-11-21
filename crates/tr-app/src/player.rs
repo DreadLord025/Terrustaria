@@ -9052,10 +9052,10 @@ impl Player {
     /// pendingItemReuse). The index must differ from the current one and lie
     /// in `0..Loadouts.Length`. On success the current set swaps INTO its
     /// slot and the target set swaps OUT (`:5665-5666`), the index advances,
-    /// and the caller plays the 12 cue + `RecordLoadoutChange` (`:5672-5673`).
-    /// Returns `true` when the swap ran. The `clientCloneLoadouts` /
-    /// `TrySendData(147)` / particle tails (`:5670-5679`) are MP/visual and
-    /// stay with their systems (ANALYSIS).
+    /// and the caller runs the local tails (`clientCloneLoadouts`, the 12 cue,
+    /// `RecordLoadoutChange`, the `147` send, `:5670-5679`). Returns `true`
+    /// when the swap ran. The particle tail (`:5675-5679`) is the visual
+    /// system's (ANALYSIS).
     pub fn try_switching_loadout(
         &mut self,
         loadout_index: usize,
