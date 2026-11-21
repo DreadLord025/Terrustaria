@@ -33036,6 +33036,32 @@ Witness `w4_c4_the_fish_catch_census_matches_the_two_csharp_surfaces`
 (bug_net.rs) pins both surfaces + the release round-trip + the empty
 fishing-item-table scan. WRITTEN, NOT RUN (code-only).
 
+## The Pufferfish puff-flag fix (W4-c4 follow-up, 2026-11-21, code-only)
+
+The puff state machine (`NPC.cs:23498-23571`) was already ported verbatim
+in `npc_ai_style16.rs` (the justHit latch ai[2]=1/localAI[0]=180, the
+countdown deflate/re-arm at 120, the 0.98 damp + water-line hover + the
+early return that skips the rotation tail) and the `num46 += 10` anchor
+(`Main.cs:23115-23117`) landed in `render/entities.rs`. The DEFECT was the
+wiring seam: `update_swimmer` fed `Ai16Ctx.just_hit` the **`hurt_cd > 0`
+cooldown stand-in** (the S1-D-3 reconcile's note "the port has no one-tick
+flag"). The one-tick `Npc::just_hit` flag NOW exists (armed by `hurt` at
+`NPC.cs:81274`, cleared at the update tail `:90516` — the Hungry/Creeper
+wiring). The cooldown (~11 ticks) outlives the flag, so at the deflate
+boundary (`:23518-23521`, `if (this.justHit) ai[2]=1`) the stand-in
+**re-puffed the Pufferfish through the whole cooldown tail** — the W95
+Creeper defect class.
+
+**Fix:** `update_swimmer` now passes `just_hit: self.just_hit` (the
+one-tick flag), matching `ai_029_hungry_family`/`ai_055_creeper_family`.
+The `Ai16Ctx.just_hit` doc + the `update_swimmer` doc are corrected.
+Witness `w4_c4_the_pufferfish_puff_reads_the_one_tick_flag_not_the_cooldown`
+(npc.rs): the strike tick puffs (ai[2]=1, localAI[0]=180), the tail clears
+the flag while the cooldown stays positive, and at the deflate boundary
+(localAI[0]=1→0) the still-running cooldown does NOT re-puff (ai[2] stays
+0, re-arm 120). WRITTEN, NOT RUN (code-only). The style-16 module is this
+lane's (unclaimed by d37/d40 beyond the duplicate kind rows above).
+
 ## The firefly family (S1-D-3 aiStyle-64, 2026-11-18/19, code-only mode)
 
 **Task row.** ROADMAP `🟡 S1-D-3 aiStyle-64`; module

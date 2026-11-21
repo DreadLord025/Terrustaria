@@ -87,10 +87,12 @@ pub struct Ai16Ctx<'a> {
     /// `Main.player[target].wet` (`:23704`) — the candidate struct carries
     /// `dead` but not `wet`; the caller folds the session player's flag.
     pub player_wet: bool,
-    /// `NPC.justHit` (`:23502`/`:23518`) — the Pufferfish's puff latch. The
-    /// port's `Npc` has no `justHit` field yet (the strike path's `hurt_cd`
-    /// stand-in is a cooldown, not the one-tick flag) — the caller supplies
-    /// the flag at the wiring step.
+    /// `NPC.justHit` (`:23502`/`:23518`) — the Pufferfish's puff latch.
+    /// The ONE-TICK strike flag (`Npc::just_hit`, armed by `hurt` at
+    /// `NPC.cs:81274`, cleared at the update tail `:90516`) — NOT the
+    /// `hurt_cd` cooldown (the retired stand-in re-puffed through the
+    /// whole cooldown tail at the `:23518-23521` deflate boundary, the
+    /// W95 defect class; the W4-c4 follow-up wires the flag).
     pub just_hit: bool,
     /// `Main.EverLastingTicker` for the `targetSetFrame` stamp
     /// (`NPC.cs:77780`) — 0 until the ticker is plumbed (the S1-D-3p

@@ -18359,9 +18359,12 @@ impl Npc {
     /// avoid `ai[0]` writes, inline integration inside the AI). The
     /// wrapper owns the seams: this tick's `Entity.wet` (the `is_wet`
     /// pass), the session-player candidate slice + `player_wet`
-    /// (`Ai16Ctx`), the `justHit` flag (the port's established
-    /// `hurt_cd > 0` stand-in — only the unported Pufferfish 688 reads
-    /// it), and the no-gravity `UpdateCollision` integration
+    /// (`Ai16Ctx`), the `justHit` flag (the ONE-TICK `self.just_hit`
+    /// strike flag — `NPC.cs:81274`, cleared at the update tail `:90516`;
+    /// the retired `hurt_cd > 0` cooldown stand-in re-puffed the
+    /// Pufferfish through the whole cooldown tail, the W95 defect class
+    /// — only the Pufferfish 688 reads it), and the no-gravity
+    /// `UpdateCollision` integration
     /// (`integrate_flyer_collision`; `noGravity = true`,
     /// `SetDefaults` `:9462`/`:9505`/`:9611`). The bob phase now rides the
     /// C#'s own `ai[0]` (the `swim_phase` mirror is retired for the fish;
@@ -18378,11 +18381,16 @@ impl Npc {
         let ctx = crate::npc_ai_style16::Ai16Ctx {
             players: &players,
             player_wet: player.wet,
-            // `NPC.justHit` (`:23502`/`:23518`) — the port's strike path
-            // has no one-tick flag; `hurt_cd > 0` is the established
-            // stand-in (`world_sim/npcs.rs`'s fighter-idle wiring). The
-            // Pufferfish (688, W4-c4) is the only kind that reads it.
-            just_hit: self.hurt_cd > 0.0,
+            // `NPC.justHit` (`:23502`/`:23518`) — the ONE-TICK strike flag
+            // (`StrikeNPC_Inner`, `NPC.cs:81274`; cleared at the update
+            // tail `:90516`), NOT the `hurt_cd > 0` cooldown stand-in the
+            // S1-D-3 reconcile shipped. The cooldown (~11 ticks) would
+            // re-puff the Pufferfish on the deflate boundary
+            // (`:23518-23521`) for the whole cooldown tail — the W95
+            // Creeper defect class. The flag now exists (the
+            // Hungry/Creeper wiring); the Pufferfish (688, W4-c4) is the
+            // only aiStyle-16 kind that reads it.
+            just_hit: self.just_hit,
             // The ticker is not plumbed (0 — the `npc_ai_bat` convention).
             ticker: 0,
         };
@@ -24523,6 +24531,48 @@ mod tests {
             dry.find_frame();
         }
         assert_eq!(dry.frame, 5, "the dry flop's second band");
+    }
+
+    /// W4-c4 follow-up (the puff-flag fix): `update_swimmer` feeds the
+    /// ONE-TICK `self.just_hit` strike flag (`NPC.cs:81274`, cleared at
+    /// the update tail `:90516`) into `Ai16Ctx`, NOT the retired
+    /// `hurt_cd > 0` cooldown stand-in. The strike tick puffs
+    /// (`:23502-23507`: ai[2] = 1, localAI[0] = 180); at the deflate
+    /// boundary (`:23508-23524`) a still-running cooldown must NOT
+    /// re-puff (`:23518-23521` reads justHit, which the tail cleared) —
+    /// the W95 Creeper defect class. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c4_the_pufferfish_puff_reads_the_one_tick_flag_not_the_cooldown() {
+        let w = ground();
+        // The player parked far away (in-bounds — the 64×64 fixture) so
+        // the folded-in contact pass and the head TargetClosest cannot
+        // interfere; the pufferfish is a dry critter (the `:23701`
+        // exclusion — no chase, no ai[2] write outside the puff block).
+        let mut player = Player::spawn(&w);
+        player.x = 60.0 * TILE_PX;
+        player.y = 10.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::Pufferfish, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+        let mut rng = UnifiedRandom::new(7);
+        // The strike arms BOTH the cooldown and the one-tick flag
+        // (`hurt` → `NPC.cs:81274`; the pufferfish's 5 HP survives 1).
+        assert!(n.hurt(1, n.x - 5.0, 5.0, false, false));
+        assert!(n.just_hit, "the strike arms the one-tick flag");
+        assert!(n.hurt_cd > 0.0, "the strike arms the cooldown");
+        // The strike tick's AI reads the flag: the puff latch.
+        n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[2], 1.0, "the puff latch (:23503)");
+        assert_eq!(n.local_ai[0], 180.0, "the puff timer (:23504)");
+        assert!(!n.just_hit, "the update tail clears the flag (:90516)");
+        assert!(n.hurt_cd > 0.0, "the cooldown is still running");
+        // The deflate boundary: localAI[0] = 1 ticks to 0 → the puff
+        // deflates. The cooldown is STILL positive — the retired
+        // `hurt_cd > 0` stand-in would re-puff here (:23518-23521); the
+        // one-tick flag is false, so ai[2] stays 0.
+        n.local_ai[0] = 1.0;
+        n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[2], 0.0, "the deflate holds — no cooldown re-puff (:23514-23521)");
+        assert_eq!(n.local_ai[0], 120.0, "the re-arm (:23513)");
+        assert!(n.hurt_cd > 0.0, "the cooldown outlives the flag (the defect's window)");
     }
 
     /// The small-kinds wiring wave: the style axis claims 21/49/56/72, so
