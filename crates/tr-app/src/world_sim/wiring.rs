@@ -1358,14 +1358,17 @@ mod tests {
     fn dw_4_2_the_ceiling_spiky_ball_cap_counts_kind_185() {
         // `Wiring.cs:1945-1953`: the ceiling arm's cap counts live SpikyBallTrap
         // (185) projectiles within the rings; four near ones exhaust the 200
-        // base and block both identical requests.
+        // base and block both identical requests. The cap anchor is
+        // `(i*16+8, j*18+8)` = (168, 368) for the trap at (10, 20); the four
+        // 185s' CENTERS sit ~40 px below it (pos (161, 321+k) → center
+        // (168, 328+k), distance 40−k < 50, each −50).
         let mut app = app_with(137, 18, -7 * 18);
         for k in 0..4 {
             app.projectiles
                 .spawn_with_data(
                     crate::projectile::TRAP_SPIKY_BALL,
-                    168.0,
-                    296.0 + k as f32,
+                    161.0,
+                    321.0 + k as f32,
                     0.0,
                     0.0,
                     40,
@@ -1403,19 +1406,19 @@ mod tests {
         // F3 (`Wiring.cs:1819`/`:1950`): the cap measures from `(i*16+8,
         // j*18+8)` — the 18 is verbatim — against the projectile's Center
         // (`pos + half-box`), NOT the spawn point against `pos`. The trap at
-        // (10, 20): anchor (168, 368). Four 185s whose CENTERS sit ~45 px from
-        // the anchor (each −50) exhaust the 200 base and block both ceiling
-        // requests. Under the old spawn-point/pos reading the distance was
-        // ~67 px (−15 each, only −60 total) and the cap would NOT block — so
-        // this fixture discriminates the fix.
+        // (10, 20): cap anchor (168, 368), spawn point (168, 342). Four 185s
+        // at pos (161, 392+k) → CENTER (168, 399+k): the new reading measures
+        // |368 − (399+k)| = 31+k < 50 (each −50, count 0 → BLOCKED); the old
+        // spawn-point/pos reading measured hypot(7, 342−(392+k)) ≈ 50.5+ ≥ 50
+        // (each −15, count 140 → ALLOWED). So this fixture discriminates the
+        // fix: the verbatim anchor + Center reading blocks both requests.
         let mut app = app_with(137, 18, -7 * 18);
         for k in 0..4 {
-            // Center (168, 323+k): pos = center − (7, 7) for the 14×14 box.
             app.projectiles
                 .spawn_with_data(
                     crate::projectile::TRAP_SPIKY_BALL,
                     161.0,
-                    316.0 + k as f32,
+                    392.0 + k as f32,
                     0.0,
                     0.0,
                     40,
