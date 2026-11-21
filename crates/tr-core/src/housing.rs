@@ -15,15 +15,17 @@ pub const MAX_ROOM_SIZE: i32 = 100;
 /// `StartRoomCheck`'s small-room floor (`:6101-6105`).
 pub const MIN_ROOM_TILES: i32 = 60;
 
-/// `Main.wallHouse` (`Main.cs:10403-10470` + `:9741-9860`): the walls a
-/// house may be enclosed by.
+/// `Main.wallHouse` — the FULL table (`Main.cs:9741-9789`, `:10353-10577`,
+/// incl. the `for (num4 = 153; num4 < 167; num4++)` loop `:10367-10370`):
+/// the walls a house may be enclosed by. g44e dedupe (W4-d119): the room
+/// check's ±2 scan (`WorldGen.cs:6204`/`:6212`) and `SpawnTownNPC`'s
+/// canSpawn-arming pick (`:5411`) both read `Main.wallHouse` — the SAME
+/// 279-wall table the hammer/replacement gates read, so this delegates to
+/// the one landed copy [`crate::edit::wall_house`] (S1-P-i33) instead of
+/// the old narrower room-check subset (a recorded deviation, now closed:
+/// walls like 1/4..6/75..78/129..169/347..366 legitimately enclose rooms).
 pub fn is_house_wall(wall: u16) -> bool {
-    matches!(
-        wall,
-        23..=27 | 29..=39 | 41..=47 | 60 | 66..=68 | 72..=74 | 84 | 85 | 88..=93 | 100..=128
-            | 173 | 179 | 181 | 183 | 184 | 186 | 224..=227 | 231..=235 | 237..=241 | 245
-            | 312 | 313 | 315..=317 | 323..=346
-    )
+    crate::edit::wall_house(wall)
 }
 
 /// `TileID.Sets.HousingWalls` (`TileID.cs:603`): the tile kinds that count
@@ -722,6 +724,35 @@ mod tests {
             };
             w.tiles[i].flags |= FLAG_ACTIVE;
         }
+    }
+
+    /// g44e dedupe (W4-d119): `is_house_wall` IS the full `Main.wallHouse`
+    /// table — the walls the old room-check subset dropped (1/4..6/75..78/
+    /// 129..169/347..366, `Main.cs:10353-10422`/`:10471-10577`) now enclose
+    /// rooms, exactly like the C# `CheckRoom:6204`/`:6212` reads; the unsafe
+    /// walls stay out and the count is the i33-verified 279.
+    #[test]
+    fn the_house_wall_gate_is_the_full_main_table() {
+        for wall in [1, 4, 5, 6, 75, 78, 82, 129, 153, 166, 169, 172, 177, 242, 243, 347, 348, 351, 366] {
+            assert!(is_house_wall(wall), "wall {wall} is in Main.wallHouse");
+            assert_eq!(is_house_wall(wall), crate::edit::wall_house(wall));
+        }
+        for wall in [0, 2, 3, 7, 8, 9, 28, 40, 62, 94, 170, 178, 187, 244, 349, 350] {
+            assert!(!is_house_wall(wall), "wall {wall} is unsafe");
+        }
+        let count = (0..crate::edit::WALL_COUNT).filter(|&w| is_house_wall(w)).count();
+        assert_eq!(count, 279, "the same 279-member table, one copy");
+        // A room enclosed by a wall the old subset dropped (wood 4) scans —
+        // the ±2 gate reads the full table now.
+        let mut w = ground();
+        carve_room(&mut w, 50, 100, 12, 9, &[15, 14, 4, 10]);
+        for x in 50..62 {
+            for y in 100..109 {
+                let i = w.index(x, y);
+                w.tiles[i].wall = 4;
+            }
+        }
+        assert!(check_room(&w, 55, 105).is_ok(), "wood-wall room encloses");
     }
 
     #[test]

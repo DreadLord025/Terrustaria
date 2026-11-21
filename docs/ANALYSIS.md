@@ -7251,12 +7251,27 @@ Princess arms + the license chain, left for a wiring lane); g48 parked the
 | msg 60 apply | — | 0 | `MessageBuffer.cs:2695-2739` |
 
 Deviations:
-- **`TrySpawningTownNPC` UNWIRED**: the C# call sites are the growth
-  walkers' inactive-tile arms (`WorldGen.cs:72497`/`:73807`); the port's
-  walkers are pure `tr-core` world fns with no NPC seam. The gate + the
-  delay/period statics land verbatim (witnessed); the port's arrivals ride
-  the `UpdateTime_SpawnTownNPCs` consumer. Wiring needs a walker→app
-  callback seam (a follow-up, not invented here).
+- **`TrySpawningTownNPC` WIRED (escalation 1)**: the C# call sites are the
+  growth walkers' inactive-tile arms (`WorldGen.cs:72497`/`:73807`). The
+  gate rides the `tr_core::growth::TownSpawnWalker` seam (`_ts` walker
+  variants; `None` keeps every landed pure walk): the gate + its ONE
+  conditional `Next(4)` draw inline with the picks on `UpdateWorldGen`,
+  the fire pushes an `(x, y)` spawn-request intent (the
+  `take_statue_spawns` event-queue precedent) and the app drains the queue
+  at the `UpdateWorldGen` slot into the FULL `SpawnTownNPC` (`:74878`,
+  `canSpawnNewTownNPC: true`) — the inline call deferred because the pure
+  walkers have no NPC store. The `tileSolid[379]` window (`:74876-74879`)
+  needs no toggle: the generated `TILE_SOLID` base table carries 379 (the
+  `CheckSpawn` forced-view precedent). NO_HOBO(8) fires per
+  `Successful`/`RelocatedHomeless` after the borrow releases.
+- **g44e wall_house dedupe**: `housing::is_house_wall` (the identical
+  d118/d119 narrow-fn blob `2ecd7924`) now delegates to the ONE landed
+  full-table copy `edit::wall_house` (279 members, S1-P-i33) — the C#
+  `CheckRoom` ±2 scan (`:6204`/`:6212`) and `SpawnTownNPC`'s canSpawn pick
+  (`:5411`) read the SAME `Main.wallHouse` the hammer gates read; the old
+  narrower room-check subset was a recorded deviation, now closed (walls
+  1/4..6/75..78/129..169/347..366 legitimately enclose rooms). The d119
+  `town_spawn.rs` `:5411` gate becomes C#-correct for free.
 - **The homeless anchor tiles**: `Npc.home` conflates homeless + homeTile;
   the arrival's anchor feeds the immediate `QuickFindHome` and is not
   stored on a homeless NPC — later re-scans ride the 2 s look pass at the
@@ -9506,12 +9521,14 @@ conversion; a `PlaceTile`-faithful temple writer is the follow-up.
   bullet below). Parked arms: the 655 life-fruit
   kill (the NPC store), the
   444/396 moss and oyster arms (`PlayerLOS`/`AnchorValid`/
-  `CountNearBlocksTypes` have no ports), `TrySpawningTownNPC`, the
+  `CountNearBlocksTypes` have no ports), the
   net sides, the creative-power override on `AllowedToSpreadInfections` (the
   port passes the gate through `allowed_to_spread` instead), and
   the C#'s dual `genRand`/`Main.rand` streams (the port's per-consumer stream
   carries every draw вЂ” the dye head's `Main.rand.Next(2500)`/`Next(10000)`
-  now draw from it too).
+  now draw from it too). `TrySpawningTownNPC` rides the `TownSpawnWalker`
+  seam (the `_ts` variants, W4-d119 escalation 1 — the gate inline, the
+  spawn deferred to the app's `UpdateWorldGen`-slot drain).
 
 - **Abigail's flower** (`TryGrowingAbigailsFlower` `WorldGen.cs:73049-73073`,
   `HasValidGroundForAbigailsFlowerBelowSpot` `:73026-73046`,
