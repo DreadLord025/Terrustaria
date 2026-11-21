@@ -14480,6 +14480,14 @@ pub struct ProjectilePool {
     /// mid-damage-walk; the port defers the draws to the pass tail — the
     /// recorded deviation (ANALYSIS, S1-E-21c).
     pending_npc_hit_sounds: Vec<(&'static str, f32, f32)>,
+    /// W4-f32 — the projectile-side Lucky Coin proc's fully-rolled drops
+    /// (`Projectile.cs:13685-13697`): `(coin kind, npc centre x/y, vx, vy)`
+    /// per proc, the six rolls drawn inline on the `UpdateProjectiles`
+    /// stream; the world sim spawns the `ItemDrop` at the pass tail (the
+    /// pool cannot borrow `app.items` mid-walk — the `drain_mark_spawns`
+    /// convention). Stack is always 1 (the C# `Next(1, 11)` draw is spent
+    /// and discarded, `:13696`).
+    pending_lucky_coin_drops: Vec<(u16, f32, f32, f32, f32)>,
     /// S1-E-21h — the projectile-family cues the AI arms and the bomb kill
     /// path queued this tick: `(sound id, style, x, y, pitchOffset)` — the
     /// `SoundEngine.PlaySound` overload payload (`SoundEngine.cs:93-108`).
@@ -14912,6 +14920,7 @@ impl ProjectilePool {
             hook_blacklist: HashMap::new(),
             disco: [255, 0, 0],
             pending_npc_hit_sounds: Vec::new(),
+            pending_lucky_coin_drops: Vec::new(),
             pending_proj_sounds: Vec::new(),
             pending_channel_tracks: Vec::new(),
             spear_owner: None,
@@ -16127,6 +16136,22 @@ impl ProjectilePool {
     /// `UpdateProjectiles` stream (`Main.cs:17775`).
     pub fn drain_npc_hit_sounds(&mut self) -> Vec<(&'static str, f32, f32)> {
         std::mem::take(&mut self.pending_npc_hit_sounds)
+    }
+
+    /// W4-f32 — the projectile-side Lucky Coin proc intents
+    /// (`Projectile.cs:13685-13697`): `(coin kind, npc centre x, centre y,
+    /// vx, vy)` per proc — the world sim spawns the `ItemDrop` (stack 1,
+    /// prefix 0, the C#'s discarded `Next(1, 11)` already drawn inline).
+    pub fn drain_lucky_coin_drops(&mut self) -> Vec<(u16, f32, f32, f32, f32)> {
+        std::mem::take(&mut self.pending_lucky_coin_drops)
+    }
+
+    /// W4-f32 — the drain witness's intent injection (the mid-walk rolls are
+    /// pinned by `f32_lucky_coin_proj_tests`; the drain test seeds the queue
+    /// directly, the `set_disco` test-setter precedent).
+    #[cfg(test)]
+    pub(crate) fn push_lucky_coin_drop_for_test(&mut self, drop: (u16, f32, f32, f32, f32)) {
+        self.pending_lucky_coin_drops.push(drop);
     }
 
     /// S1-E-21h — the projectile-family cue intents the AI arms and the
@@ -23178,6 +23203,65 @@ impl ProjectilePool {
                 // at 6 — the 6th stick kills the oldest (lowest timeLeft).
                 if self.slots[slot].kind == BONE_JAVELIN {
                     self.kill_oldest_javelin(slot, idx as u16);
+                }
+                // W4-f32 — the projectile-side Lucky Coin proc
+                // (`Projectile.cs:13685-13697`, inside the `ownedBySomeone &
+                // flag8` block `:13673`, after the Horseman/756 arms and
+                // before the 999 bee / yoyo-spawn / whip-switch arms). The
+                // C# gate is `flag8 = !immortal`, NOT the strike result; in
+                // this PVE walk every NPC reaching the strike has hp > 0 and
+                // no melee hurt_cd gate, so `landed` is always true here —
+                // the placement inside the landed block is equivalent. The
+                // draw order matches: after StatusNPC's dart/flare/thrown
+                // debuffs (above), before the whip/yoyo arms (below).
+                // `(flag9 || npc.value > 0) && hasLuckyCoin && Next(5) == 0`
+                // → copper 71, upgraded to silver 72 on `Next(10) == 0` and
+                // gold 73 on `Next(100) == 0` (independent rolls, gold wins).
+                // `flag9` is the Target-Dummy debug override (`:12818-12821`,
+                // the 488 kind unported) — false here. Then the DISCARDED
+                // `Next(1, 11)` stack draw (`:13696` — the spawn is stack 1,
+                // the draw still consumes), then the explicit velocity
+                // `Next(10, 31) * 0.2 * num23` / `Next(-20, 1) * 0.2` at the
+                // NPC's centre, prefix 0. `num23` (`:13598-13628`) is the
+                // slot's direction with the owner-centre overrides for the
+                // monk-staff / bird / clay-pot kinds (697/699/707/708/759/
+                // 1118), aiStyles 15/188-191 and the WaterStream 22 (the full
+                // list verbatim; of the kinds only 759/1118/22 carry port
+                // rows). Six draws on the proc, one on the refusal; the drop
+                // spawns at the pass tail (the pool cannot borrow app.items
+                // mid-walk).
+                if owned_by_someone && !npc_immortal {
+                    let lucky = player.as_deref().is_some_and(|pl| pl.has_lucky_coin);
+                    if lucky && npcs[idx].value() > 0.0 && rng.next_range(0, 5) == 0 {
+                        let mut coin = 71u16;
+                        if rng.next_range(0, 10) == 0 {
+                            coin = 72;
+                        }
+                        if rng.next_range(0, 100) == 0 {
+                            coin = 73;
+                        }
+                        // `:13696` — `Main.rand.Next(1, 11)` discarded (stack 1).
+                        let _stack_draw = rng.next_range(1, 11);
+                        let p = &self.slots[slot];
+                        let mut num23 = p.direction;
+                        // The C# switch (`:13599-13609`) + the aiStyle arms
+                        // (`:13610-13616`) + the WaterStream 22 (`:13626-13628`).
+                        if matches!(p.kind, 697 | 699 | 707 | 708 | 759 | 1118 | 22)
+                            || matches!(proj_data(p.kind).map(|d| d.ai_style), Some(15 | 188..=191))
+                        {
+                            // The owner-centre override (`:13607`/`:13612`/
+                            // `:13616`); the orphan keeps the stock direction
+                            // (the port's owner-less convention).
+                            if let Some((ox, _)) = owner {
+                                let (ncx, _) = npcs[idx].center();
+                                num23 = if ox < ncx { 1 } else { -1 };
+                            }
+                        }
+                        let vx = rng.next_range(10, 31) as f32 * 0.2 * num23 as f32;
+                        let vy = rng.next_range(-20, 1) as f32 * 0.2;
+                        let (ncx, ncy) = npcs[idx].center();
+                        self.pending_lucky_coin_drops.push((coin, ncx, ncy, vx, vy));
+                    }
                 }
                 // `:13673` (`ownedBySomeone & flag8`) + `:13810` (`if (flag10)`):
                 // the whip per-type switch's gate. `flag8 = !immortal`
@@ -44382,5 +44466,181 @@ mod s1_p_i25_dragon_tests {
         let cy = d.pos.y + d.h * 0.5;
         assert!((cx - 412.0).abs() < 0.01, "the centre kept: {cx}");
         assert!((cy - 312.0).abs() < 0.01, "the centre kept: {cy}");
+    }
+}
+
+/// W4-f32 — the projectile-side Lucky Coin proc (`Projectile.cs:13685-13697`).
+/// WRITTEN NOT RUN (code-only mode). The six-draw census on the
+/// `UpdateProjectiles` stream: the `Next(5)` gate, the denomination pair
+/// (`Next(10)` silver / `Next(100)` gold, independent, gold wins), the
+/// DISCARDED `Next(1, 11)` stack draw (`:13696` — the spawn is stack 1), and
+/// the velocity pair `Next(10, 31)` / `Next(-20, 1)` — after the per-hit crit
+/// + DamageVar draws, before the post-strike arms. The drop itself spawns at
+/// the pass tail (`world_sim/projectiles.rs` drain) and draws nothing.
+#[cfg(test)]
+mod f32_lucky_coin_proj_tests {
+    use super::*;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    fn ground() -> World {
+        let mut w = World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Tile::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    /// The scripted stream: every `Next(min, max)` recorded as `(min, max)`,
+    /// rolls replay in order (the DodgeScript pattern). `next_float` is never
+    /// reached — the player's luck is 0, so DamageVar draws one integer only.
+    struct Script {
+        rolls: Vec<i32>,
+        draws: Vec<(i32, i32)>,
+    }
+    impl Script {
+        fn new(rolls: &[i32]) -> Self {
+            Self { rolls: rolls.to_vec(), draws: Vec::new() }
+        }
+    }
+    impl tr_core::loot::DropRng for Script {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            if self.rolls.is_empty() { return 0; }
+            self.rolls.remove(0)
+        }
+        fn next_float(&mut self) -> f32 {
+            panic!("the luck-0 proc census draws no floats");
+        }
+    }
+
+    /// A wooden arrow (ranged → ONE crit draw) on a high-hp slime's centre,
+    /// the Lucky Coin armed. Returns (world, pool, slot, npc, player).
+    fn rig() -> (World, ProjectilePool, usize, Npc, crate::player::Player) {
+        let w = ground();
+        let mut npc = Npc::spawn_slime(&w, 20).unwrap();
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        let mut pool = ProjectilePool::new();
+        let (ncx, ncy) = npc.center();
+        let slot = pool
+            .spawn_with_data_ai(WOODEN_ARROW, ncx - 5.0, ncy - 5.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut player = crate::player::Player::spawn(&w);
+        player.has_lucky_coin = true;
+        (w, pool, slot, npc, player)
+    }
+
+    #[test]
+    fn f32_the_lucky_coin_proc_draws_six_rolls_and_queues_the_silver() {
+        // Crit 99 (miss), DamageVar 0, gate 0 (proc), Next(10) 0 → silver 72,
+        // Next(100) 5 (no gold), the discarded stack 3, vx 20, vy -10.
+        let (w, mut pool, slot, mut npc, mut player) = rig();
+        let mut rng = Script::new(&[99, 0, 0, 0, 5, 3, 20, -10]);
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, Some(&mut player), &mut rng);
+        assert_eq!(
+            rng.draws,
+            vec![(1, 101), (-15, 16), (0, 5), (0, 10), (0, 100), (1, 11), (10, 31), (-20, 1)],
+            "the crit + DamageVar pair, then the proc's six rolls in C# order"
+        );
+        let drops = pool.drain_lucky_coin_drops();
+        assert_eq!(drops.len(), 1, "one proc");
+        let (coin, ncx, ncy, vx, vy) = drops[0];
+        assert_eq!(coin, 72, "the Next(10) upgrade lands silver");
+        let (ecx, ecy) = npc.center();
+        assert_eq!((ncx, ncy), (ecx, ecy), "the NPC's centre");
+        // The wooden arrow keeps the slot direction 1 (no num23 override).
+        assert!((vx - 4.0).abs() < 1e-5, "20 * 0.2 * 1: {vx}");
+        assert!((vy - -2.0).abs() < 1e-5, "-10 * 0.2: {vy}");
+        // The drain empties the queue (the pass-tail spawn consumes it).
+        assert!(pool.drain_lucky_coin_drops().is_empty());
+    }
+
+    #[test]
+    fn f32_the_gate_refusal_draws_exactly_one_roll() {
+        // The Next(5) gate rolls 1 → no proc, no further draws.
+        let (w, mut pool, slot, mut npc, mut player) = rig();
+        let mut rng = Script::new(&[99, 0, 1]);
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, Some(&mut player), &mut rng);
+        assert_eq!(rng.draws, vec![(1, 101), (-15, 16), (0, 5)]);
+        assert!(pool.drain_lucky_coin_drops().is_empty());
+    }
+
+    #[test]
+    fn f32_the_gold_upgrade_wins_over_silver() {
+        // Next(10) 0 → 72, then Next(100) 0 → 73 (independent rolls, gold
+        // wins — `:13688-13695`). vx 10, vy -20 (the range floors).
+        let (w, mut pool, slot, mut npc, mut player) = rig();
+        let mut rng = Script::new(&[99, 0, 0, 0, 0, 1, 10, -20]);
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, Some(&mut player), &mut rng);
+        let drops = pool.drain_lucky_coin_drops();
+        assert_eq!(drops.len(), 1);
+        let (coin, _, _, vx, vy) = drops[0];
+        assert_eq!(coin, 73, "gold wins");
+        assert!((vx - 2.0).abs() < 1e-5, "10 * 0.2: {vx}");
+        assert!((vy - -4.0).abs() < 1e-5, "-20 * 0.2: {vy}");
+    }
+
+    #[test]
+    fn f32_the_clay_pot_minion_overrides_num23_to_the_owner_side() {
+        // The 1118 (`:13606`) reads the OWNER-centre direction, not the
+        // slot's: the slot faces -1 but the owner (x 0) is LEFT of the NPC,
+        // so num23 = +1 and the coin flies right. The minion row carries no
+        // crit class flag → no crit draw; the tag gate draws nothing (no
+        // active tags).
+        let w = ground();
+        let mut npc = Npc::spawn_slime(&w, 20).unwrap();
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        let mut pool = ProjectilePool::new();
+        let (ncx, ncy) = npc.center();
+        let slot = pool
+            .spawn_with_data_ai(1118, ncx - 7.0, ncy - 11.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot].direction = -1;
+        let mut player = crate::player::Player::spawn(&w);
+        player.has_lucky_coin = true;
+        let mut rng = Script::new(&[0, 0, 5, 5, 3, 25, -5]);
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, Some((0.0, 0.0)), Some(&mut player), &mut rng);
+        assert_eq!(
+            rng.draws,
+            vec![(-15, 16), (0, 5), (0, 10), (0, 100), (1, 11), (10, 31), (-20, 1)],
+            "no crit draw (the minion row sets no class flag)"
+        );
+        let drops = pool.drain_lucky_coin_drops();
+        assert_eq!(drops.len(), 1);
+        let (coin, _, _, vx, vy) = drops[0];
+        assert_eq!(coin, 71, "both denomination rolls miss → copper");
+        assert!((vx - 5.0).abs() < 1e-5, "25 * 0.2 * +1 (the owner side): {vx}");
+        assert!((vy - -1.0).abs() < 1e-5, "-5 * 0.2: {vy}");
+    }
+
+    #[test]
+    fn f32_the_immortal_target_refuses_the_proc() {
+        // `flag8 = !targetNPC.immortal` (`:12815`) gates the whole
+        // `ownedBySomeone & flag8` block — the dummy draws no proc roll.
+        let (w, mut pool, slot, mut npc, mut player) = rig();
+        npc.immortal = true;
+        let mut rng = Script::new(&[99, 0]);
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, Some(&mut player), &mut rng);
+        assert_eq!(rng.draws, vec![(1, 101), (-15, 16)]);
+        assert!(pool.drain_lucky_coin_drops().is_empty());
+    }
+
+    #[test]
+    fn f32_without_the_lucky_coin_the_proc_draws_nothing() {
+        // `hasLuckyCoin` false → the `&&` chain short-circuits BEFORE the
+        // Next(5) gate (the C# operand order, `:13685`).
+        let (w, mut pool, slot, mut npc, mut player) = rig();
+        player.has_lucky_coin = false;
+        let mut rng = Script::new(&[99, 0]);
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, Some(&mut player), &mut rng);
+        assert_eq!(rng.draws, vec![(1, 101), (-15, 16)]);
+        assert!(pool.drain_lucky_coin_drops().is_empty());
     }
 }

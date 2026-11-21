@@ -450,6 +450,29 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     for (cue, x, y) in app.projectiles.drain_npc_hit_sounds() {
         app.audio.play_npc_hit_sound(cue, x, y, rng);
     }
+    // W4-f32 — the projectile-side Lucky Coin proc's drops
+    // (`Projectile.cs:13685-13697`): the six rolls (the Next(5) gate, the
+    // denomination pair, the DISCARDED Next(1, 11), the velocity pair) were
+    // drawn inline mid-walk on the `UpdateProjectiles` stream; the pool
+    // queued the fully-rolled drop (it cannot borrow app.items). The spawn
+    // itself draws NOTHING — the explicit velocity skips `Item.NewItem`'s
+    // spread draws (`Item.cs:49738-49740`) and prefix 0 draws nothing, so
+    // the pass-tail placement is stream-exact (the drain convention).
+    // Stack 1 (the C# discards its stack roll), `WorldItem.Center = center`
+    // centres the 14x14 box on the NPC (`Item.cs:49736`).
+    for (coin, ncx, ncy, vx, vy) in app.projectiles.drain_lucky_coin_drops() {
+        let drop = crate::item::ItemDrop::new(
+            coin,
+            1,
+            0,
+            ncx - crate::item::SIZE * 0.5,
+            ncy - crate::item::SIZE * 0.5,
+            vx,
+            vy,
+            0.0,
+        );
+        app.items.push(drop);
+    }
     // S1-E-21h — the projectile-family cue plays (the AI arms' first-tick
     // latches, the boomerang whoosh, the missile hum, the bomb blast): the
     // style play's case-2 draws ride the SAME `UpdateProjectiles` stream
@@ -1188,5 +1211,49 @@ mod s1_p_i09_yoyo_snapshot_tests {
         app.player.as_mut().unwrap().frozen = true;
         update_projectiles(&mut app, 1.0 / 60.0);
         assert_eq!(app.projectiles.slots()[0].ai[0], -1.0, "the CC releases");
+    }
+}
+
+/// W4-f32 — the projectile-side Lucky Coin proc's pass-tail drain
+/// (`Projectile.cs:13685-13697` → `drain_lucky_coin_drops`). WRITTEN NOT RUN
+/// (code-only mode). The six rolls ride the `UpdateProjectiles` stream
+/// inline mid-walk; the drain spawns the `ItemDrop` (stack 1, prefix 0, the
+/// explicit velocity) and draws NOTHING — the `UpdateItems` stream stays
+/// pristine (the explicit velocity skips `Item.NewItem`'s spread draws,
+/// `Item.cs:49738-49740`).
+#[cfg(test)]
+mod f32_lucky_coin_drain_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::app::RngKey;
+
+    #[test]
+    fn f32_the_lucky_coin_drain_spawns_the_drop_draw_free() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        // A pre-rolled proc intent (the pool's mid-walk rolls are pinned by
+        // `f32_lucky_coin_proj_tests`): silver 72 at (60, 40), vx 4, vy -2.
+        app.projectiles.push_lucky_coin_drop_for_test((72, 60.0, 40.0, 4.0, -2.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert_eq!(app.items.len(), 1, "the drain spawned the coin");
+        let coin = &app.items[0];
+        assert_eq!(coin.kind, 72);
+        assert_eq!(coin.count, 1, "stack 1 — the C# discards its Next(1, 11)");
+        assert_eq!(coin.prefix, 0);
+        // `WorldItem.Center = center` — the 14x14 box centred on the NPC.
+        assert!((coin.pos.x - (60.0 - crate::item::SIZE * 0.5)).abs() < 1e-5);
+        assert!((coin.pos.y - (40.0 - crate::item::SIZE * 0.5)).abs() < 1e-5);
+        assert!((coin.vel.x - 4.0).abs() < 1e-5);
+        assert!((coin.vel.y - -2.0).abs() < 1e-5);
+        assert_eq!(coin.phase, 0.0, "the explicit-velocity spawn draws no phase");
+        // The spawn drew nothing: the item stream is still the pristine seed.
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateItems),
+            tr_core::UnifiedRandom::new(0),
+            "the drain is draw-free"
+        );
+        // The queue emptied (a second tick spawns nothing new).
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert_eq!(app.items.len(), 1, "the drain consumed the intent");
     }
 }
