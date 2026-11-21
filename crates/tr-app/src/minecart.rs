@@ -3058,7 +3058,7 @@ mod tests {
         );
     }
 
-    /// M2-MOUNT-4 census (research/83 §3) — the Meowcart/track rattle's pitch
+    /// M2-MOUNT-4 census (research/371 §3) — the Meowcart/track rattle's pitch
     /// does NOT scale with speed. The Item55 cue is identical at every speed
     /// (same asset, same position — the cue carries no pitch term); the pitch
     /// is the FIXED case-2 window `-Next(-20, -11) * 0.02`

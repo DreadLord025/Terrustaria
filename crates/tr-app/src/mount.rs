@@ -25,7 +25,7 @@
 //! `ResetHeadPosition` (`:5283-5294`) and the auto-fire target scan
 //! (`UpdateEffects` case 9/46, `:4879-4947`, driven from
 //! `Player::update_mount_ability`). The Drill (8) arm stays unported — its
-//! `UseDrill` mining consumer is the mount lane's (research/83 §2 contract).
+//! `UseDrill` mining consumer is the mount lane's (research/371 §2 contract).
 //! The `AimAbility` eye-glow `Lighting.AddLight` heads are the light lane's.
 
 use glam::Vec2;
@@ -2912,7 +2912,7 @@ impl MountState {
 
     // --- M2-MOUNT-4: the Scutlix/Santank projectile-ability machine ---------
     // (`UseAbility` `Mount.cs:3254-3338` cases 9/46 + the aim/scan support;
-    // research/83 §1). The fire itself lives on `Player`
+    // research/371 §1). The fire itself lives on `Player`
     // (`update_mount_ability` — it needs the NPC list, the pool and the RNG).
 
     /// `Mount._frameExtra` — the Scutlix aim band (6-10) the eye table reads;
@@ -2952,7 +2952,7 @@ impl MountState {
     /// axis ratio wins); anything outside passes through. The half-extents:
     /// Scutlix X 45 / Y 54 (`:5303-5304` — `.X` is the X bound, `.Y` the Y),
     /// Santank X 23 / Y 2 (`:5307-5308`), Drill X 80 / Y 80 (`:5311-5312`,
-    /// unported — the contract, research/83 §2). Every other type returns
+    /// unported — the contract, research/371 §2). Every other type returns
     /// the position unchanged (`:5314-5315`).
     pub(crate) fn clamp_to_dead_zone(&self, center: Vec2, position: Vec2) -> Vec2 {
         let (num2, num) = match self.kind {
@@ -2991,7 +2991,7 @@ impl MountState {
     /// frame/facing changed). The eye-glow `Lighting.AddLight` heads
     /// (`:5394-5415`/`:5449-5459`) are the LIGHT lane's — dropped (the
     /// charge ratio accessor above keeps the seam discoverable). Case 8
-    /// (the Drill diode) is the unported contract (research/83 §2).
+    /// (the Drill diode) is the unported contract (research/371 §2).
     /// `facing`/`vx` are the player's direction and X velocity; the caller
     /// writes the returned facing back.
     pub(crate) fn aim_ability(

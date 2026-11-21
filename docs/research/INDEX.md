@@ -76,7 +76,7 @@ per `docs/superpowers` agreements).
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 82 | DOC-SWEEP lane 11: movement/tile sounds (W4-c14 continuation — the vanity-rocket producer + the 53/55/159 playing guards CLOSED; swim/landing/grapple/mount-loop census; code-only) | `82-doc-sweep-move-sounds.md` | ✅ |
-| 83 | Mount special-ability census (M2-MOUNT-4, W4-c14 - Scutlix+Santank PORTED; Drill/dash/stomp contracts; Meowcart speed-invariance; SEALED with the f6 mutual receipt, the M5-COMBAT-8 combat-seam owner contract, the 441/453 MP-scope correction + the family bible; code-only) | `83-mount-abilities-census.md` | ✅ SEALED |
+| 371 | Mount special-ability census (M2-MOUNT-4, W4-c14 - Scutlix+Santank PORTED; Drill/dash/stomp contracts; Meowcart speed-invariance; SEALED with the f6 mutual receipt, the M5-COMBAT-8 combat-seam owner contract, the 441/453 MP-scope correction + the family bible; code-only; renumbered 83→371 per registry §10 — slot 83 = d130 weather-reconcile) | `371-mount-abilities-census.md` | ✅ SEALED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

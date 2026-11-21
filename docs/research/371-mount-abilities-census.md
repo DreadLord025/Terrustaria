@@ -1,4 +1,9 @@
-# 83 — Mount special-ability census (M2-MOUNT-4, W4-c14 sound lane)
+# 371 — Mount special-ability census (M2-MOUNT-4, W4-c14 sound lane)
+
+> Renumbered 83 → 371 per registry §10 (round 5): slot 83 belongs to W4-d130's
+> weather-reconcile (04:12:25 < this doc's 10:33:58, pre-round-2 miss); the
+> 371–381 block is claim-time order, machine-checked unique/no-gaps/no-overlap.
+> Old `research/83` citations in chain history refer to this file.
 
 Status: **SEALED** (2026-11-21, W4-c14 lane close). CENSUS + the two projectile
 abilities PORTED (Scutlix 9 + Santank 46, commits `0e290cae3` facade /

@@ -219,14 +219,14 @@ all ported. There is NO mount ambient LOOP in `Mount.cs` (no
 `UpdateDrill` (`:3036-3057`) is pure beam-cooldown state — its sound is the
 aiStyle-20 projectile loop d80b ported. The Santank's two ability cues
 (`:3300`/`:3311`) ride `UseAbility` case 46 — **PORTED (W4-c14 M2-MOUNT-4,
-research/83)**: the Scutlix/Santank auto-fire machine is ported whole
+research/371)**: the Scutlix/Santank auto-fire machine is ported whole
 (`mount.rs` aim/dead-zone/scan + `Player::update_mount_ability`), the cues
 play through `play_mount_ability_sound` — the INT overload
 (`SoundEngine.cs:102`, NO `GetRandomPitch` draw), volumeScale 0.2 after the
 case-2 tweak (`LegacySoundPlayer.cs:1411`), one `Next(-6,7)*0.01` pitch roll
 on the `UpdatePlayers` stream. `Item_89` joined the SFX bank (the 88/90 gap).
 The Drill (8) ability stays unported (the `UseDrill` mining consumer is the
-mount lane's — research/83 §2 contract). **No mount ambient loop beyond d80b
+mount lane's — research/371 §2 contract). **No mount ambient loop beyond d80b
 exists to port.**
 
 ## 4. Other movement-window PlaySound sites (census completeness)
