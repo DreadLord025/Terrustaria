@@ -2243,26 +2243,29 @@ mod tests {
     }
 
     /// W4-f12 gap 3 — the full-seam werewolf chain: the Moon Charm (485)
-    /// arms `wolfAcc` (`Player.cs:15182-15189`), the `:25601-25604` night
-    /// grant adds buff 28, the wiring's wave-E status arm reads the LIVE
-    /// flag and grants the stat block (`:11895-11904`), then the `:25605`
-    /// clear rides AFTER the scan (the C# order). Day breaks: the buff dies.
+    /// arms `wolfAcc` (`Player.cs:15182-15189`), the wiring's wave-E status
+    /// arm reads the LIVE flag and grants the stat block (`:11895-11904`),
+    /// then the `:25601-25604` night grant (re-)arms buff 28 and the
+    /// `:25605` clear rides AFTER the scan (the C# order). Day breaks: the
+    /// buff dies.
     #[test]
     fn w4_f12_moon_charm_werewolf_chain_through_the_seam() {
         let mut app = ammo_app();
         app.world.day_time = false; // night
         app.equip.armor[3] = slot(485); // Moon Charm
-        // Tick 1: the equip pass arms wolfAcc, the night grant adds buff 28;
-        // the wiring reads the live flag and arms the werewolf effect.
+        // Tick 1: the wiring arms the werewolf effect from the live flag,
+        // then the night grant adds buff 28 (the grant runs after the scan
+        // in the port's seam order — the effect leads the buff by one tick,
+        // the C#'s steady state from tick 2 on).
         tick_ammo(&mut app);
         let p = app.player.as_ref().unwrap();
-        assert!(p.buffs.find_buff_index(28).is_some(), "the night grant (`:25603`)");
         assert!(p.were_wolf, "the wiring's status arm grants the effect (`:11898`)");
+        assert!(p.buffs.find_buff_index(28).is_some(), "the night grant (`:25603`)");
         assert!(!p.wolf_acc, "the `:25605` clear rides after the scan");
         assert_eq!(p.melee_crit, 4 + 2, "`:11899`");
         assert_eq!(p.stat_defense, 3, "`:11902`");
         // Tick 2: the buff persists (TimeLeftDoesNotDecrease), the effect
-        // re-arms from the re-granted flag.
+        // re-arms from the re-granted flag — the steady state.
         tick_ammo(&mut app);
         let p = app.player.as_ref().unwrap();
         assert!(p.buffs.find_buff_index(28).is_some(), "the buff stays pinned");
