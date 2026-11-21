@@ -327,6 +327,65 @@ pub fn info_page_scroll(view_position: f32, wheel: f32) -> f32 {
     view_position - wheel
 }
 
+/// `UIList.RecalculateChildren`' row stack (`UIList.cs:116-128`): each row
+/// sits at the running height, `ListPadding` between rows (a single row
+/// takes no padding, `:122`). Returns `(row_tops, total_height)` — the
+/// total is `UIList.GetTotalHeight` (`:63-66`), the scrollbar's
+/// `maxViewSize` (`UIList.UpdateScrollbar:130-137`).
+pub fn info_page_row_layout(heights: &[f32], list_padding: f32) -> (Vec<f32>, f32) {
+    let mut tops = Vec::with_capacity(heights.len());
+    let mut y = 0.0;
+    for (i, &h) in heights.iter().enumerate() {
+        tops.push(y);
+        let pad = if heights.len() == 1 { 0.0 } else { list_padding }; // `:122`
+        y += h + pad; // `:125`
+    }
+    (tops, y)
+}
+
+/// The info page's list view height — the page's inner height after the
+/// `(2, 4, 2, 4)` list padding (`UIBestiaryEntryInfoPage.cs:40-42`): the
+/// scrollbar's `viewSize` (`UIList.UpdateScrollbar` reads
+/// `GetInnerDimensions().Height`, `UIList.cs:134`).
+pub fn info_page_view_height(page: [f32; 4]) -> f32 {
+    page[3] - INFO_PAGE_LIST_PADDING[1] - INFO_PAGE_LIST_PADDING[3]
+}
+
+/// `UIScrollbar.SetView` (`UIScrollbar.cs:72-78`): the view clamps into
+/// `[0, maxViewSize]`, the position into `[0, maxViewSize - viewSize]`.
+/// Returns `(view, position)`.
+pub fn info_page_set_view(view: f32, max_view: f32, position: f32) -> (f32, f32) {
+    let view = view.clamp(0.0, max_view); // `:74`
+    let position = position.clamp(0.0, max_view - view); // `:75`
+    (view, position)
+}
+
+/// The info-page scrollbar's press (`UIScrollbar.LeftMouseDown`,
+/// `UIScrollbar.cs:126-143`) — the shared [`super::panel`] helpers over
+/// the page's bar rect. Returns `(new position, drag latch)`; `None` when
+/// the press is off the bar. The bar is always attached (`CheckScrollBar`
+/// forces `canScroll`, `:95`), so there is no detach gate here.
+pub fn info_page_scrollbar_press(
+    bar: [f32; 4],
+    view: f32,
+    max_view: f32,
+    position: f32,
+    mouse: Vec2,
+) -> Option<(f32, Option<f32>)> {
+    if !super::in_rect(mouse, bar) {
+        return None;
+    }
+    let handle = super::panel::scrollbar_handle_at(bar, view, max_view, position);
+    if super::in_rect(mouse, handle) {
+        Some((position, Some(mouse.y - handle[1]))) // `:134-135`
+    } else {
+        Some((
+            super::panel::scrollbar_jump_value(bar, view, max_view, handle[3], mouse.y),
+            None,
+        )) // `:137-141`
+    }
+}
+
 /// `CheckScrollBar` (`UIBestiaryEntryInfoPage.cs:90-109`): the attach/detach
 /// state machine — attached + !canScroll detaches (list width back to
 /// `(0, 1)`), detached + canScroll attaches (list width `(-20, 1)`). Note the
@@ -995,7 +1054,7 @@ pub fn draw_screen(
     // whether or not an entry is selected (`FillInfoForEntry(null)` empties
     // the list, `:492-495`).
     draw_grid(r, lookups, screen, tracker, ui, mouse);
-    draw_info_page(r, lookups, screen, tracker, selected, mouse);
+    draw_info_page(r, lookups, screen, tracker, selected, mouse, ui.info_scroll);
     super::bestiary_screen_draw::draw_top_strip(r, lookups, screen, ui, mouse);
     // The option grid overlays the bestiary space (`:401-415`).
     super::bestiary_screen_draw::draw_option_grid(r, lookups, screen, tracker, ui, mouse);
@@ -2209,6 +2268,125 @@ fn portrait_data(
     }
 }
 
+/// One info-page row (`AddInfoToList`'s `_list` items,
+/// `UIBestiaryEntryInfoPage.cs:128-163`): the category-ordered elements
+/// plus the `UIHorizontalSeparator` between groups. The port keeps the
+/// pre-existing row conventions for the nameplate/portrait/flavor/drop
+/// rows (documented); the stats block is the C#'s 2x2 grid + coin row.
+enum InfoRow {
+    /// `NamePlateInfoElement` — a 24 px row (`NamePlateInfoElement.cs:28`).
+    Nameplate,
+    /// `NPCPortraitInfoElement` — the 112 px card row (`:26`).
+    Portrait,
+    /// `FlavorTextBestiaryInfoElement` — the wrapped panel, height measured.
+    Flavor(String),
+    /// `NPCStatsReportInfoElement` — the 2x2 grid + coin row.
+    Stats,
+    /// `NPCKillCounterInfoElement` — the 30 px panel row (`:84`).
+    KillCounter(String),
+    /// `ItemDropBestiaryInfoElement` — one `UIBestiaryInfoItemLine`.
+    Drop { name: String, rate: String, locked: bool },
+    /// `UIHorizontalSeparator` (`:153-158`).
+    Separator,
+}
+
+/// The separator row's height — the port's 2 px convention (the C# uses
+/// the `Separator1` sheet's 4 px; the info page keeps the pre-existing
+/// flat-quad separator, a documented row convention).
+const INFO_SEPARATOR_H: f32 = 2.0;
+
+/// The flavor panel's wrapped height (`FlavorTextBestiaryInfoElement`'s
+/// `AddDynamicResize`, `:47-53`): the port's wrapped-lines convention —
+/// `lines * line_h + 8` (the C# adds `WrappedTextBottomPadding 20 * scale`
+/// instead; the port's tighter panel is the pre-existing convention).
+fn flavor_row_height(r: &SpriteRenderer, lookups: &Lookups, flavor: &str, panel_w: f32) -> f32 {
+    let lines = wrap_text(r, lookups, flavor, 0.8, panel_w - 8.0);
+    lines.len() as f32 * (text::line_height(lookups) * 0.8) + 8.0
+}
+
+/// `AddInfoToList`'s row build (`UIBestiaryEntryInfoPage.cs:128-163`):
+/// the category order Nameplate → Portrait → FlavorText → Stats →
+/// ItemsFromDrops, a separator after every non-empty group except the
+/// last (`:151-162`). The stats row's height is resolved here (the coin
+/// gate) and carried alongside.
+fn build_info_rows(
+    r: &SpriteRenderer,
+    lookups: &Lookups,
+    entry: &crate::bestiary::BestiaryEntryDef,
+    state: UnlockState,
+    tracker: &WorldBestiary,
+    content_w: f32,
+) -> Vec<(InfoRow, f32)> {
+    let mut groups: Vec<Vec<(InfoRow, f32)>> = Vec::new();
+    // 1. Nameplate — always produced (`NamePlateInfoElement.cs:19-31`).
+    groups.push(vec![(InfoRow::Nameplate, 24.0)]);
+    // 2. Portrait — always produced (`NPCPortraitInfoElement.cs:21-95`).
+    groups.push(vec![(InfoRow::Portrait, NPC_PORTRAIT_SIZE[1])]);
+    // 3. FlavorText — tier 2+ and the language row exists.
+    if let Some(flavor) = flavor_text(entry, state) {
+        let h = flavor_row_height(r, lookups, &flavor, content_w - 11.0);
+        groups.push(vec![(InfoRow::Flavor(flavor), h)]);
+    }
+    // 4. Stats — the block from tier 1, the kill counter when kills >= 1.
+    if state.known() {
+        let stats =
+            crate::npc::entry_stats(entry.kind, entry.variant.unwrap_or(SlimeVariant::Blue));
+        let mut g = vec![(InfoRow::Stats, stats_block_height(stats.value > 0.0))];
+        let (kills, _needed) = crate::bestiary::kill_progress(entry, &tracker.kills);
+        if let Some(count) = kill_counter_text(kills) {
+            g.push((InfoRow::KillCounter(count), 30.0));
+        }
+        groups.push(g);
+    }
+    // 5. ItemsFromDrops — tier 2+ (`ItemDropBestiaryInfoElement.cs:20-23`).
+    if state >= UnlockState::CanShowStats {
+        let rows = crate::loot_db::drop_rows(entry.net_id);
+        let mut g = Vec::new();
+        for row in &rows {
+            let name = crate::registry::name(row.item_id as u16);
+            let rate = drop_rate_text(state, row.drop_rate, row.stack_min, row.stack_max);
+            let locked = state < UnlockState::CanShowDropsWithoutDropRates;
+            let h = if locked { 32.0 } else { 22.0 };
+            g.push((InfoRow::Drop { name, rate, locked }, h));
+        }
+        if !g.is_empty() {
+            groups.push(g);
+        }
+    }
+    // Interleave the separators between groups, none after the last.
+    let mut out = Vec::new();
+    let n = groups.len();
+    for (i, g) in groups.into_iter().enumerate() {
+        out.extend(g);
+        if i + 1 < n {
+            out.push((InfoRow::Separator, INFO_SEPARATOR_H));
+        }
+    }
+    out
+}
+
+/// The info page's total content height — `UIList.GetTotalHeight`
+/// (`UIList.cs:63-66`) over the built rows, the scrollbar's `maxViewSize`.
+/// The wheel handler and the draw share this so the clamp matches.
+pub fn info_page_content_height(
+    r: &SpriteRenderer,
+    lookups: &Lookups,
+    screen: Vec2,
+    tracker: &WorldBestiary,
+    selected: Option<usize>,
+) -> f32 {
+    let Some(idx) = selected else {
+        return 0.0; // `FillInfoForEntry(null)` — the empty list.
+    };
+    let page = info_page_rect(&panel_rect(screen));
+    let content_w = page[2] - 4.0 - 20.0;
+    let entry = &crate::bestiary::ENTRIES[idx];
+    let state = crate::bestiary::unlock_state(entry, tracker);
+    let rows = build_info_rows(r, lookups, entry, state, tracker, content_w);
+    let heights: Vec<f32> = rows.iter().map(|(_, h)| *h).collect();
+    info_page_row_layout(&heights, INFO_PAGE_LIST_PADDING[4]).1
+}
+
 /// The info page (`UIBestiaryEntryInfoPage`) — the 230 px panel beside the
 /// grid (`info_page_rect`), border `(89, 116, 213)` / bg `(73, 94, 171)`
 /// (`:33-34`). `FillInfoForEntry(null)` empties the list (`:111-119`), so
@@ -2217,7 +2395,10 @@ fn portrait_data(
 /// ItemsFromDrops, a separator between groups (`:151-160`). The list's
 /// `(2, 4, 2, 4)` padding + `ListPadding 4` (`:40-45`) and the always-
 /// attached scrollbar's `-20` width (`CheckScrollBar:90-109`, the forced
-/// `canScroll = true`) set the content box.
+/// `canScroll = true`) set the content box. `scroll` is the scrollbar's
+/// `ViewPosition` — the rows ride `-_viewPosition` (`UIList.DrawSelf:181`)
+/// inside the list's `OverflowHidden` clip, and the thumb draws over the
+/// reserved 20 px column (W4-e23 remainder, the g53 scrollbar pattern).
 fn draw_info_page(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
@@ -2225,6 +2406,7 @@ fn draw_info_page(
     tracker: &WorldBestiary,
     selected: Option<usize>,
     mouse: Vec2,
+    scroll: f32,
 ) {
     let page = info_page_rect(&panel_rect(screen));
     // The panel body + border (`UIPanel.DrawSelf`, the ctor colours).
@@ -2238,121 +2420,129 @@ fn draw_info_page(
     let state = crate::bestiary::unlock_state(entry, tracker);
     // The list content box: padding (2, 4, 2, 4) + the scrollbar's -20 width.
     let content = [page[0] + 2.0, page[1] + 4.0, page[2] - 4.0 - 20.0, page[3] - 8.0];
-    let mut ty = content[1];
-    let sep = |r: &mut SpriteRenderer, ty: &mut f32| {
-        // `UIHorizontalSeparator`, `(89, 116, 213) * 0.9` (`:153-157`).
-        r.push_ui_sprite(
-            [content[0], *ty],
-            [content[2], 2.0],
-            r.white_uv(),
-            super::color::tint(super::color::mul([89, 116, 213, 255], 0.9)),
-        );
-        *ty += 2.0 + 4.0; // the separator + ListPadding
-    };
-
-    // 1. Nameplate (`NamePlateInfoElement.cs:19-31`): a 24 px row, the name
-    //    centred (`HAlign/VAlign 0.5`, `Top 2`), "???" below tier 1.
-    let shown_name = entry_hover_text(entry, state);
-    let nw = text::hud_text_width(r, lookups, &shown_name, 1.0);
-    text::hud_text(
-        r,
-        lookups,
-        content[0] + (content[2] - nw) * 0.5,
-        ty + 2.0 + (24.0 - text::line_height(lookups)) * 0.5,
-        1.0,
-        [1.0; 4],
-        &shown_name,
-    );
-    ty += 24.0 + 4.0;
-    sep(r, &mut ty);
-
-    // 2. Portrait (`NPCPortraitInfoElement.cs:21-95`): a 112 px row, the
-    //    193x112 card at `Left 4` (`:87`), the icon `isPortrait: true`.
-    let card = [content[0] + 4.0, ty, NPC_PORTRAIT_SIZE[0], NPC_PORTRAIT_SIZE[1]];
-    let inner = npc_portrait_inner(card);
-    r.push_clip(inner);
-    if let Some(back) = lookups.ui_bestiary_slot_back {
-        push_whole(r, lookups, &back, inner, [1.0; 4]);
-    }
-    if state.known() {
-        draw_portrait(r, lookups, entry, inner, true);
-    } else if let Some(locked) = lookups.ui_bestiary_locked {
-        let (lw, lh) = (locked.width as f32, locked.height as f32);
-        push_whole(
-            r,
-            lookups,
-            &locked,
-            [inner[0] + (inner[2] - lw) * 0.5, inner[1] + (inner[3] - lh) * 0.5, lw, lh],
-            [0.15; 4],
-        );
+    let rows = build_info_rows(r, lookups, entry, state, tracker, content[2]);
+    let heights: Vec<f32> = rows.iter().map(|(_, h)| *h).collect();
+    let (tops, total_h) = info_page_row_layout(&heights, INFO_PAGE_LIST_PADDING[4]);
+    let view_h = info_page_view_height(page);
+    let (view, pos) = info_page_set_view(view_h, total_h, scroll);
+    // The list's `OverflowHidden` scissor (`UIList.cs:59`) — the rows clip
+    // to the content box while they ride `-_viewPosition`.
+    r.push_clip(content);
+    for ((row, _), &top) in rows.iter().zip(tops.iter()) {
+        let ty = content[1] + top - pos;
+        draw_info_row(r, lookups, row, content, ty, entry, state, tracker, screen, mouse);
     }
     r.pop_clip();
-    if let Some(front) = lookups.ui_bestiary_portrait {
-        push_whole(r, lookups, &front, card, [1.0; 4]);
-    }
-    // The rarity stars (`CreateStarsContainer`, `:106-145`): the 5-star row
-    // at `Left 10, Top 6`, 10 px pitch, Light below the count / Dim above.
-    if state.known() {
-        draw_stars(r, lookups, [card[0] + 10.0, card[1] + 6.0], crate::bestiary_data::rarity_stars(entry));
-    }
-    ty += NPC_PORTRAIT_SIZE[1] + 4.0;
-    sep(r, &mut ty);
+    // The scrollbar thumb (`UIScrollbar.DrawSelf`, `UIScrollbar.cs:103-124`)
+    // over the reserved column — the shared g53 pattern. The bestiary's
+    // `UIScrollbar` is the default Blue theme (`UIBestiaryEntryInfoPage.cs:47`
+    // — `new UIScrollbar()`), so the track is `Images/UI/Scrollbar`.
+    let bar = info_page_scrollbar_rect(page, 20.0);
+    super::panel::draw_scrollbar_themed(r, lookups, bar, view, total_h, pos, false, lookups.ui_scrollbar_blue);
+}
 
-    // 3. FlavorText (`FlavorTextBestiaryInfoElement.cs:20-53`, tier 2+): the
-    //    wrapped 0.8 row in the (43, 56, 101) panel, `Width (-11, 1)`.
-    if let Some(flavor) = flavor_text(entry, state) {
-        let panel_w = content[2] - 11.0;
-        let lines = wrap_text(r, lookups, &flavor, 0.8, panel_w - 8.0);
-        let line_h = text::line_height(lookups) * 0.8;
-        let h = lines.len() as f32 * line_h + 8.0;
-        r.push_ui_sprite([content[0], ty], [panel_w, h], r.white_uv(), super::color::tint([43, 56, 101, 255]));
-        for (i, line) in lines.iter().enumerate() {
-            text::hud_text(r, lookups, content[0] + 4.0, ty + 4.0 + i as f32 * line_h, 0.8, [1.0; 4], line);
-        }
-        ty += h + 4.0;
-        sep(r, &mut ty);
-    }
-
-    // 4. Stats (`NPCStatsReportInfoElement.cs:57-256` + the kill counter):
-    //    the block from tier 1, values "???" until tier 2. The C# draws a
-    //    2x2 icon grid (HP/Attack left column, Knockback/Defense right)
-    //    plus a coin row when the value is positive — the port's vertical
-    //    `stat_row` list is replaced by that layout (W4-e23 remainder).
+/// One info-page row's draw at its scrolled top `ty`.
+fn draw_info_row(
+    r: &mut SpriteRenderer,
+    lookups: &Lookups,
+    row: &InfoRow,
+    content: [f32; 4],
+    ty: f32,
+    entry: &crate::bestiary::BestiaryEntryDef,
+    state: UnlockState,
+    tracker: &WorldBestiary,
+    screen: Vec2,
+    mouse: Vec2,
+) {
     let tx = content[0];
-    if state.known() {
-        let stats =
-            crate::npc::entry_stats(entry.kind, entry.variant.unwrap_or(SlimeVariant::Blue));
-        let known = state >= UnlockState::CanShowStats;
-        draw_stats_block(r, lookups, [tx, ty], content[2], &stats, known, screen, mouse);
-        ty += stats_block_height(stats.value > 0.0) + 4.0;
-        // The kill counter (`NPCKillCounterInfoElement.cs:24-88`): a 30 px
-        // row, the Stat_Panel panel right-aligned, the grave icon + count.
-        let (kills, _needed) = crate::bestiary::kill_progress(entry, &tracker.kills);
-        if let Some(count) = kill_counter_text(kills) {
-            draw_kill_counter(r, lookups, content, ty, &count, screen, mouse);
-            ty += 30.0 + 4.0; // the row height (`:84`) + ListPadding
+    match row {
+        InfoRow::Nameplate => {
+            // `NamePlateInfoElement.cs:19-31`: the name centred
+            // (`HAlign/VAlign 0.5`, `Top 2`), "???" below tier 1.
+            let shown_name = entry_hover_text(entry, state);
+            let nw = text::hud_text_width(r, lookups, &shown_name, 1.0);
+            text::hud_text(
+                r,
+                lookups,
+                content[0] + (content[2] - nw) * 0.5,
+                ty + 2.0 + (24.0 - text::line_height(lookups)) * 0.5,
+                1.0,
+                [1.0; 4],
+                &shown_name,
+            );
         }
-        sep(r, &mut ty);
-    }
-
-    // 5. ItemsFromDrops (`ItemDropBestiaryInfoElement.cs:17-29`, tier 2+):
-    //    below tier 3 the locked icon, tier 3 "???", tier 4 stack + rate.
-    if state >= UnlockState::CanShowStats {
-        let rows = crate::loot_db::drop_rows(entry.net_id);
-        for row in &rows {
-            let name = crate::registry::name(row.item_id as u16);
-            let rate = drop_rate_text(state, row.drop_rate, row.stack_min, row.stack_max);
-            if state >= UnlockState::CanShowDropsWithoutDropRates {
-                text::hud_text(r, lookups, tx, ty, 0.8, [1.0; 4], &format!("  {name} {rate}"));
-                ty += 22.0;
-            } else {
-                if let Some(locked) = lookups.ui_bestiary_locked {
-                    let lw = locked.width as f32 * 0.55;
-                    let lh = locked.height as f32 * 0.55;
-                    push_whole(r, lookups, &locked, [tx + (content[2] - lw) * 0.5, ty + (32.0 - lh) * 0.5, lw, lh], [1.0; 4]);
-                }
-                ty += 32.0;
+        InfoRow::Portrait => {
+            // `NPCPortraitInfoElement.cs:21-95`: the 193x112 card at
+            // `Left 4` (`:87`), the icon `isPortrait: true`.
+            let card = [content[0] + 4.0, ty, NPC_PORTRAIT_SIZE[0], NPC_PORTRAIT_SIZE[1]];
+            let inner = npc_portrait_inner(card);
+            r.push_clip(inner);
+            if let Some(back) = lookups.ui_bestiary_slot_back {
+                push_whole(r, lookups, &back, inner, [1.0; 4]);
             }
+            if state.known() {
+                draw_portrait(r, lookups, entry, inner, true);
+            } else if let Some(locked) = lookups.ui_bestiary_locked {
+                let (lw, lh) = (locked.width as f32, locked.height as f32);
+                push_whole(
+                    r,
+                    lookups,
+                    &locked,
+                    [inner[0] + (inner[2] - lw) * 0.5, inner[1] + (inner[3] - lh) * 0.5, lw, lh],
+                    [0.15; 4],
+                );
+            }
+            r.pop_clip();
+            if let Some(front) = lookups.ui_bestiary_portrait {
+                push_whole(r, lookups, &front, card, [1.0; 4]);
+            }
+            // The rarity stars (`CreateStarsContainer`, `:106-145`).
+            if state.known() {
+                draw_stars(r, lookups, [card[0] + 10.0, card[1] + 6.0], crate::bestiary_data::rarity_stars(entry));
+            }
+        }
+        InfoRow::Flavor(flavor) => {
+            // `FlavorTextBestiaryInfoElement.cs:20-53`: the wrapped 0.8 row
+            // in the (43, 56, 101) panel, `Width (-11, 1)`.
+            let panel_w = content[2] - 11.0;
+            let lines = wrap_text(r, lookups, flavor, 0.8, panel_w - 8.0);
+            let line_h = text::line_height(lookups) * 0.8;
+            let h = lines.len() as f32 * line_h + 8.0;
+            r.push_ui_sprite([content[0], ty], [panel_w, h], r.white_uv(), super::color::tint([43, 56, 101, 255]));
+            for (i, line) in lines.iter().enumerate() {
+                text::hud_text(r, lookups, content[0] + 4.0, ty + 4.0 + i as f32 * line_h, 0.8, [1.0; 4], line);
+            }
+        }
+        InfoRow::Stats => {
+            let stats =
+                crate::npc::entry_stats(entry.kind, entry.variant.unwrap_or(SlimeVariant::Blue));
+            let known = state >= UnlockState::CanShowStats;
+            draw_stats_block(r, lookups, [tx, ty], content[2], &stats, known, screen, mouse);
+        }
+        InfoRow::KillCounter(count) => {
+            draw_kill_counter(r, lookups, content, ty, count, screen, mouse);
+        }
+        InfoRow::Drop { name, rate, locked } => {
+            // `UIBestiaryInfoItemLine`: below tier 3 the locked icon,
+            // tier 3 "???", tier 4 stack + rate.
+            if *locked {
+                if let Some(locked_sheet) = lookups.ui_bestiary_locked {
+                    let lw = locked_sheet.width as f32 * 0.55;
+                    let lh = locked_sheet.height as f32 * 0.55;
+                    push_whole(r, lookups, &locked_sheet, [tx + (content[2] - lw) * 0.5, ty + (32.0 - lh) * 0.5, lw, lh], [1.0; 4]);
+                }
+            } else {
+                text::hud_text(r, lookups, tx, ty, 0.8, [1.0; 4], &format!("  {name} {rate}"));
+            }
+        }
+        InfoRow::Separator => {
+            // `UIHorizontalSeparator`, `(89, 116, 213) * 0.9` (`:153-157`).
+            r.push_ui_sprite(
+                [content[0], ty],
+                [content[2], INFO_SEPARATOR_H],
+                r.white_uv(),
+                super::color::tint(super::color::mul([89, 116, 213, 255], 0.9)),
+            );
         }
     }
 }
@@ -3466,6 +3656,63 @@ mod tests {
         // 100+206-8 = 298, so x = 103.
         let content = [100.0, 50.0, 206.0, 300.0];
         assert_eq!(kill_counter_panel_rect(content, 400.0), [103.0, 400.0, 195.0, 30.0]);
+    }
+
+    // ---- W4-e23 remainder: the info-page scrollbar thumb. Written in
+    // code-only mode — NOT RUN here.
+
+    #[test]
+    fn the_row_layout_stacks_with_list_padding() {
+        // `UIList.RecalculateChildren` (`UIList.cs:116-128`): each row at
+        // the running height, ListPadding between rows; a single row takes
+        // no padding (`:122`). The total is GetTotalHeight (`:63-66`).
+        let (tops, total) = info_page_row_layout(&[24.0, 112.0, 70.0], 4.0);
+        assert_eq!(tops, vec![0.0, 28.0, 144.0]);
+        assert_eq!(total, 24.0 + 4.0 + 112.0 + 4.0 + 70.0 + 4.0);
+        // One row: no trailing padding.
+        let (tops, total) = info_page_row_layout(&[24.0], 4.0);
+        assert_eq!(tops, vec![0.0]);
+        assert_eq!(total, 24.0);
+        // Empty list: zero height.
+        assert_eq!(info_page_row_layout(&[], 4.0), (vec![], 0.0));
+    }
+
+    #[test]
+    fn the_view_height_drops_the_list_padding() {
+        // The list's (2, 4, 2, 4) padding (`UIBestiaryEntryInfoPage.cs:40-42`):
+        // the view height is the page height - 8.
+        let page = [100.0, 50.0, 230.0, 400.0];
+        assert_eq!(info_page_view_height(page), 392.0);
+    }
+
+    #[test]
+    fn set_view_clamps_like_the_scrollbar() {
+        // `UIScrollbar.SetView` (`UIScrollbar.cs:72-78`): the view clamps
+        // into [0, max], the position into [0, max - view].
+        assert_eq!(info_page_set_view(500.0, 300.0, 100.0), (300.0, 0.0));
+        assert_eq!(info_page_set_view(100.0, 300.0, 500.0), (100.0, 200.0));
+        assert_eq!(info_page_set_view(100.0, 300.0, -5.0), (100.0, 0.0));
+        // A view taller than the content pins to the content, position 0.
+        assert_eq!(info_page_set_view(400.0, 300.0, 50.0), (300.0, 0.0));
+    }
+
+    #[test]
+    fn the_scrollbar_press_grabs_the_handle_or_jumps_the_track() {
+        // `UIScrollbar.LeftMouseDown` (`UIScrollbar.cs:126-143`). The bar
+        // at (304, 60) 20x380: inner y 65, inner h 370. With view 100,
+        // max 1000, pos 0 the handle sits at y 65-3 = 62, h 37+7 = 44.
+        let bar = [304.0, 60.0, 20.0, 380.0];
+        let handle = super::super::panel::scrollbar_handle_at(bar, 100.0, 1000.0, 0.0);
+        // A press inside the handle grabs it: position unchanged, the drag
+        // offset is mouse.y - handle.y.
+        let grab = info_page_scrollbar_press(bar, 100.0, 1000.0, 0.0, Vec2::new(310.0, handle[1] + 10.0));
+        assert_eq!(grab, Some((0.0, Some(10.0))));
+        // A press on the track (below the handle) jumps the view, no latch.
+        let jump = info_page_scrollbar_press(bar, 100.0, 1000.0, 0.0, Vec2::new(310.0, 300.0));
+        assert!(jump.is_some());
+        assert_eq!(jump.unwrap().1, None);
+        // Off the bar: no press.
+        assert_eq!(info_page_scrollbar_press(bar, 100.0, 1000.0, 0.0, Vec2::new(100.0, 300.0)), None);
     }
 }
 

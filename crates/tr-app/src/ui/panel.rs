@@ -274,11 +274,30 @@ pub fn draw_scrollbar(
     pos: f32,
     auto_hide: bool,
 ) {
+    draw_scrollbar_themed(r, lookups, rect, view, max_view, pos, auto_hide, lookups.ui_scrollbar);
+}
+
+/// [`draw_scrollbar`] with an explicit track sheet — the `UIScrollbar`
+/// ctor's `ColorTheme` (`UIScrollbar.cs:56-66`): the default **Blue** theme
+/// reads `Images/UI/Scrollbar`, the Cyan theme `Images/UI/Scrollbar2`. The
+/// bestiary info page's bar is `new UIScrollbar()` — Blue
+/// (`UIBestiaryEntryInfoPage.cs:47`); the crafting/creation bars are Cyan.
+/// The handle is `ScrollbarInner` either way (`:67`).
+pub fn draw_scrollbar_themed(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    rect: [f32; 4],
+    view: f32,
+    max_view: f32,
+    pos: f32,
+    auto_hide: bool,
+    track: Option<SheetRect>,
+) {
     if auto_hide && !scrollbar_can_scroll(view, max_view) {
         return;
     }
     let (bar, handle) = scrollbar_rects_at(rect, view, max_view, pos);
-    if let Some(sheet) = lookups.ui_scrollbar {
+    if let Some(sheet) = track {
         draw_scrollbar_bar(r, lookups, &sheet, bar, [1.0; 4]);
     }
     if let Some(sheet) = lookups.ui_scrollbar_inner {

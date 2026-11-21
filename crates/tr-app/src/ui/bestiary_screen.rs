@@ -61,6 +61,15 @@ pub struct BestiaryUi {
     /// (the env-driven `TR_BESTIARY` open and any future open path rebuild
     /// through the frame gate; the click-open calls `on_open` directly).
     pub opened: bool,
+    /// The info-page scrollbar's `ViewPosition`
+    /// (`UIBestiaryEntryInfoPage._scrollbar`, `UIScrollbar.cs:17`) — the
+    /// wheel's `UpdateScrollbar` (`:59-65`) and the thumb drag write it;
+    /// the draw clamps it through `SetView` (`UIScrollbar.cs:72-78`).
+    /// W4-e23 remainder (the scrollbar thumb).
+    pub info_scroll: f32,
+    /// The thumb drag's `_dragYOffset` (`UIScrollbar.cs:27`) — `Some` while
+    /// `_isDragging` (`:23`), cleared on the left release (`:145-149`).
+    pub info_scroll_drag: Option<f32>,
 }
 
 impl Default for BestiaryUi {
@@ -74,6 +83,8 @@ impl Default for BestiaryUi {
             sort_selected: -1, // `:18`
             search: WrappedSearchBar::new(&crate::lang::text("UI.PlayerNameSlot"), SearchTheme::Blue),
             opened: false,
+            info_scroll: 0.0,
+            info_scroll_drag: None,
         }
     }
 }

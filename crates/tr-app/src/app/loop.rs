@@ -344,9 +344,11 @@ impl ApplicationHandler for App {
                 // `UIBestiaryTest.ScrollWheel` (`:846-850`): the wheel goes
                 // to the info page's scrollbar while the screen is open
                 // (`_infoSpace.UpdateScrollbar`), never the hotbar. The
-                // port's info page has no scroll yet (the rows fit the
-                // documented stand-in) — the notch is consumed either way.
+                // notch is consumed either way (W4-e23 remainder: the
+                // info page now scrolls — `ViewPosition -= wheel`,
+                // `UIBestiaryEntryInfoPage.cs:59-65`).
                 if self.bestiary_open {
+                    self.scroll_bestiary_info(d);
                     return;
                 }
                 // `UIAchievementsMenu`'s list scroll (M6-ACH-2): the wheel
@@ -545,6 +547,10 @@ impl ApplicationHandler for App {
                             // clears `Main.blockMouse`, so the next press
                             // arms `controlUseItem` again.
                             self.block_mouse = false;
+                            // `UIScrollbar.LeftMouseUp` (`UIScrollbar.cs:145-149`):
+                            // the bestiary info-page thumb's drag latch clears
+                            // on release. W4-e23 remainder.
+                            self.bestiary_ui.info_scroll_drag = None;
                         }
                         self.mine_down = pressed;
                         if !pressed {

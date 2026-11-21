@@ -855,6 +855,9 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/CharCreation/Separator1",
         "UI/Scrollbar2",
         "UI/ScrollbarInner",
+        // W4-e23 remainder: the bestiary info page's Blue-theme scrollbar
+        // track (`UIScrollbar.cs:61` — the default `ColorTheme.Blue`).
+        "UI/Scrollbar",
         "UI/Craft",
         "UI/Craft_Toggle_0",
         "UI/Craft_Toggle_1",
@@ -2086,6 +2089,10 @@ pub struct Lookups {
     pub ui_separator: Option<tr_render::SheetRect>,
     /// `UI/Scrollbar2`: the cyan scrollbar track (`UIScrollbar.cs:64`).
     pub ui_scrollbar: Option<tr_render::SheetRect>,
+    /// `UI/Scrollbar`: the Blue-theme scrollbar track — the `UIScrollbar`
+    /// ctor default (`UIScrollbar.cs:61`), the bestiary info page's bar
+    /// (`UIBestiaryEntryInfoPage.cs:47`). W4-e23 remainder.
+    pub ui_scrollbar_blue: Option<tr_render::SheetRect>,
     /// `UI/ScrollbarInner`: the scrollbar handle (`UIScrollbar.cs:67`).
     pub ui_scrollbar_inner: Option<tr_render::SheetRect>,
     /// `UI/Craft`: the detail-area craft icon (`NewCraftingUI.cs:460`).
@@ -2480,6 +2487,7 @@ impl Lookups {
             ui_panel_border: atlas.sheet("UI/PanelBorder").copied(),
             ui_separator: atlas.sheet("UI/CharCreation/Separator1").copied(),
             ui_scrollbar: atlas.sheet("UI/Scrollbar2").copied(),
+            ui_scrollbar_blue: atlas.sheet("UI/Scrollbar").copied(),
             ui_scrollbar_inner: atlas.sheet("UI/ScrollbarInner").copied(),
             ui_craft_icon: atlas.sheet("UI/Craft").copied(),
             craft_toggles: std::array::from_fn(|i| {
