@@ -2171,6 +2171,31 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Force Bubble",
     },
+    // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+    BestiaryEntryDef {
+        credit_id: "CultistTablet",
+        net_id: 437,
+        kind: NpcKind::CultistTablet,
+        variant: None,
+        quick_unlock: false,
+        name: "Mysterious Tablet",
+    },
+    BestiaryEntryDef {
+        credit_id: "CultistDevote",
+        net_id: 438,
+        kind: NpcKind::CultistDevote,
+        variant: None,
+        quick_unlock: false,
+        name: "Lunatic Devotee",
+    },
+    BestiaryEntryDef {
+        credit_id: "CultistBossClone",
+        net_id: 440,
+        kind: NpcKind::CultistBossClone,
+        variant: None,
+        quick_unlock: false,
+        name: "Lunatic Cultist",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -2299,6 +2324,10 @@ pub fn try_entry_for_npc(
         NpcKind::ArmedZombiePincussion => NpcKind::PincushionZombie,
         NpcKind::ArmedZombieSlimed => NpcKind::SlimedZombie,
         NpcKind::ArmedZombieSwamp => NpcKind::SwampZombie,
+        // W4-d40: the bestiary credit folds (`ContentSamples.cs`;
+        // the Hide=true variants have no own entry).
+        NpcKind::ArmedZombieTwiggy => NpcKind::TwiggyZombie,
+        NpcKind::ArmedZombieCenx => NpcKind::FemaleZombie,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -2377,6 +2406,10 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         NpcKind::ArmedZombiePincussion => NpcKind::PincushionZombie,
         NpcKind::ArmedZombieSlimed => NpcKind::SlimedZombie,
         NpcKind::ArmedZombieSwamp => NpcKind::SwampZombie,
+        // W4-d40: the bestiary credit folds (`ContentSamples.cs`;
+        // the Hide=true variants have no own entry).
+        NpcKind::ArmedZombieTwiggy => NpcKind::TwiggyZombie,
+        NpcKind::ArmedZombieCenx => NpcKind::FemaleZombie,
         other => other,
     };
     ENTRIES

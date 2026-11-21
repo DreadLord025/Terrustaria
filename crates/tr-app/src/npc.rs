@@ -1086,6 +1086,22 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    // W4-d40 (NPCID 421-490 roster wave): ArmedZombieTwiggy, ArmedZombieCenx, CultistTablet, CultistDevote, CultistBossClone.
+    /// `NPCID.ArmedZombieTwiggy` (435): 18x40, aiStyle 3, dmg 16, def 4, 45 HP,
+    /// kb 0.55, value 70 (`NPC.cs` SetDefaults arm).
+    ArmedZombieTwiggy,
+    /// `NPCID.ArmedZombieCenx` (436): 18x40, aiStyle 3, dmg 12, def 4, 38 HP,
+    /// kb 0.6, value 65 (`NPC.cs` SetDefaults arm).
+    ArmedZombieCenx,
+    /// `NPCID.CultistTablet` (437): 54x54, aiStyle 83, dmg 0, def 0, 400 HP,
+    /// kb 0.0, value 0 (`NPC.cs` SetDefaults arm).
+    CultistTablet,
+    /// `NPCID.CultistDevote` (438): 22x40, aiStyle 83, dmg 0, def 0, 400 HP,
+    /// kb 0.0, value 0 (`NPC.cs` SetDefaults arm).
+    CultistDevote,
+    /// `NPCID.CultistBossClone` (440): 24x50, aiStyle 84, dmg 0, def 35, 10000 HP,
+    /// kb 0.0, value 0 (`NPC.cs` SetDefaults arm).
+    CultistBossClone,
     // W4-d40 (NPCID 421-490 roster wave): ArmedZombie, ArmedZombieEskimo, ArmedZombiePincussion, ArmedZombieSlimed, ArmedZombieSwamp.
     /// `NPCID.ArmedZombie` (430): 18x40, aiStyle 3, dmg 14, def 6, 45 HP,
     /// kb 0.5, value 60 (`NPC.cs` SetDefaults arm).
@@ -3049,6 +3065,8 @@ impl Npc {
             dont_take_damage: matches!(
                 kind,
                 NpcKind::PlanterasHook | NpcKind::MartianSaucerCore | NpcKind::BlazingWheel
+                // W4-d40: the tablet's `dontTakeDamage = true` row (`NPC.cs:14191`).
+                | NpcKind::CultistTablet
             ),
             // NPC.cs:6517,8520 — behindTiles defaults false; per-type SetDefaults sets true (e.g. 10355).
             behind_tiles: kind.behind_tiles(),
@@ -3057,7 +3075,8 @@ impl Npc {
             // case-345 family), `immortal`'s stock false, `friendly` the town
             // residents' `friendly = true` write (`NPC.cs:8983+`) plus the
             // Sleeping Angler's own arm (`:13798`).
-            chaseable: true,
+            // W4-d40: the `chaseable = false` SetDefaults rows (`NPC.cs:14193`/`:14210`/`:14245`).
+            chaseable: !matches!(kind, NpcKind::CultistTablet | NpcKind::CultistDevote | NpcKind::CultistBossClone),
             immortal: false,
             friendly: kind.is_town_resident()
                 || kind == NpcKind::SleepingAngler
@@ -3550,6 +3569,12 @@ impl Npc {
             NpcKind::ArmedZombiePincussion => 0.45,
             NpcKind::ArmedZombieSlimed => 0.55,
             NpcKind::ArmedZombieSwamp => 0.45,
+            // W4-d40: the SetDefaults knockBackResist rows (`NPC.cs`).
+            NpcKind::ArmedZombieTwiggy => 0.55,
+            NpcKind::ArmedZombieCenx => 0.6,
+            NpcKind::CultistTablet => 0.0,
+            NpcKind::CultistDevote => 0.0,
+            NpcKind::CultistBossClone => 0.0,
             NpcKind::DungeonSpirit => 0.2,
             _ => 0.4,
         }
@@ -3936,6 +3961,12 @@ impl Npc {
             NpcKind::ArmedZombiePincussion => 8,
             NpcKind::ArmedZombieSlimed => 6,
             NpcKind::ArmedZombieSwamp => 8,
+            // W4-d40: the SetDefaults defense rows (`NPC.cs`).
+            NpcKind::ArmedZombieTwiggy => 4,
+            NpcKind::ArmedZombieCenx => 4,
+            NpcKind::CultistTablet => 0,
+            NpcKind::CultistDevote => 0,
+            NpcKind::CultistBossClone => 35,
             NpcKind::DungeonSpirit => 30,
             NpcKind::Slime => unreachable!(),
         }
@@ -4314,6 +4345,12 @@ impl Npc {
             NpcKind::ArmedZombiePincussion => 65.0,
             NpcKind::ArmedZombieSlimed => 55.0,
             NpcKind::ArmedZombieSwamp => 80.0,
+            // W4-d40: the SetDefaults value rows (`NPC.cs`).
+            NpcKind::ArmedZombieTwiggy => 70.0,
+            NpcKind::ArmedZombieCenx => 65.0,
+            NpcKind::CultistTablet => 0.0,
+            NpcKind::CultistDevote => 0.0,
+            NpcKind::CultistBossClone => 0.0,
             NpcKind::DungeonSpirit => 500.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -6324,6 +6361,15 @@ impl Npc {
             | NpcKind::ArmedZombiePincussion
             | NpcKind::ArmedZombieSlimed
             | NpcKind::ArmedZombieSwamp => self.update_zombie(world, player, dt),
+            // W4-d40: ArmedZombieTwiggy, ArmedZombieCenx ride the family machine.
+            NpcKind::ArmedZombieTwiggy
+            | NpcKind::ArmedZombieCenx => self.update_zombie(world, player, dt),
+            // W4-d40: CultistTablet, CultistDevote - the aiStyle machine is UNWIRED
+            // (the style73 precedent); the kind arm keeps the match exhaustive.
+            NpcKind::CultistTablet
+            | NpcKind::CultistDevote => {}
+            // W4-d40: CultistBossClone ride the family machine.
+            NpcKind::CultistBossClone => self.update_lunatic_cultist(world, player, rng),
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
@@ -9033,6 +9079,40 @@ impl Npc {
                     return;
                 }
                 self.walker_frame();
+            }
+            NpcKind::ArmedZombieTwiggy
+            | NpcKind::ArmedZombieCenx => {
+                // `FindFrame` case 430-436 (`NPC.cs:70879-70951`): the ai[2]
+                // attack ladder wins first (rows 3/4/5/6 on the <5/<10/<15
+                // bands), else the case-3 walker strip over the 7-row sheet.
+                if self.ai[2] > 0.0 {
+                    self.frame = if self.ai[2] < 5.0 { 3 }
+                        else if self.ai[2] < 10.0 { 4 }
+                        else if self.ai[2] < 15.0 { 5 } else { 6 };
+                    return;
+                }
+                self.walker_frame();
+            }
+            NpcKind::CultistTablet => {
+                // `FindFrame` case 437 (`NPC.cs:71987-71997`): the 20-tick
+                // counter wraps, the row is (counter % 20) / 5 over 4 rows.
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 20.0 { self.frame_counter = 0.0; }
+                self.frame = (self.frame_counter as u32 % 20) / 5;
+            }
+            NpcKind::CultistDevote => {
+                // `FindFrame` case 438 (`NPC.cs:71998-72016`): the counter
+                // advances twice while ai[1] == 1, wraps at 49, the row is
+                // (counter % 49) / 7 folded 4..6 -> 6-row (the 4-row sheet).
+                self.frame_counter += 1.0;
+                if self.ai[1] == 1.0 { self.frame_counter += 1.0; }
+                if self.frame_counter >= 49.0 { self.frame_counter = 0.0; }
+                let mut n11 = (self.frame_counter as u32 % 49) / 7;
+                if n11 >= 4 { n11 = 6 - n11; }
+                self.frame = n11;
+            }
+            NpcKind::CultistBossClone => {
+                self.frame = 0;
             }
             NpcKind::DukeFishron => {
                 if self.ai[0] == 0.0 || self.ai[0] == 5.0 {
@@ -18662,6 +18742,12 @@ impl Npc {
             NpcKind::ArmedZombiePincussion => 432,
             NpcKind::ArmedZombieSlimed => 433,
             NpcKind::ArmedZombieSwamp => 434,
+            // W4-d40: the vanilla type ids (the G6 key stays injective).
+            NpcKind::ArmedZombieTwiggy => 435,
+            NpcKind::ArmedZombieCenx => 436,
+            NpcKind::CultistTablet => 437,
+            NpcKind::CultistDevote => 438,
+            NpcKind::CultistBossClone => 440,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -23731,7 +23817,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 275] = [
+    pub(super) const ALL_KINDS: [NpcKind; 280] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24010,6 +24096,12 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-d40: ArmedZombieTwiggy, ArmedZombieCenx, CultistTablet, CultistDevote, CultistBossClone.
+        NpcKind::ArmedZombieTwiggy,
+        NpcKind::ArmedZombieCenx,
+        NpcKind::CultistTablet,
+        NpcKind::CultistDevote,
+        NpcKind::CultistBossClone,
         // W4-d40: ArmedZombie, ArmedZombieEskimo, ArmedZombiePincussion, ArmedZombieSlimed, ArmedZombieSwamp.
         NpcKind::ArmedZombie,
         NpcKind::ArmedZombieEskimo,
@@ -27627,7 +27719,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            275,
+            280,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
@@ -33674,5 +33766,73 @@ mod w4_d40_armedzombie_armedzombieeskimo_tests {
         assert_eq!(crate::bestiary::entry_for_npc(NpcKind::ArmedZombiePincussion, SlimeVariant::Blue).kind, NpcKind::PincushionZombie);
         assert_eq!(crate::bestiary::entry_for_npc(NpcKind::ArmedZombieSlimed, SlimeVariant::Blue).kind, NpcKind::SlimedZombie);
         assert_eq!(crate::bestiary::entry_for_npc(NpcKind::ArmedZombieSwamp, SlimeVariant::Blue).kind, NpcKind::SwampZombie);
+    }
+}
+
+/// W4-d40 (NPCID 421-490 roster wave): the ArmedZombieTwiggy, ArmedZombieCenx, CultistTablet, CultistDevote, CultistBossClone
+/// `SetDefaults` rows pin against the C# through the port's piecewise
+/// tables (the small-kinds pin's shape). WRITTEN, NOT RUN (code-only).
+#[cfg(test)]
+mod w4_d40_armedzombietwiggy_armedzombiecenx_tests {
+    use super::*;
+
+    #[test]
+    fn w4_d40_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::ArmedZombieTwiggy, 435u16, 3u8, 18.0, 40.0, 16, 4, 45, 0.55f32, 70.0),
+            (NpcKind::ArmedZombieCenx, 436u16, 3u8, 18.0, 40.0, 12, 4, 38, 0.6f32, 65.0),
+            (NpcKind::CultistTablet, 437u16, 83u8, 54.0, 54.0, 0, 0, 400, 0.0f32, 0.0),
+            (NpcKind::CultistDevote, 438u16, 83u8, 22.0, 40.0, 0, 0, 400, 0.0f32, 0.0),
+            (NpcKind::CultistBossClone, 440u16, 84u8, 24.0, 50.0, 0, 35, 10000, 0.0f32, 0.0),
+        ];
+        for (kind, ty, ai, ww, hh, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (ww, hh), "{kind:?} size");
+            assert_eq!(shell.size(), (ww, hh), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+        }
+        // The HitSound/DeathSound rows (`NPC.cs` SetDefaults).
+        assert_eq!(NpcKind::ArmedZombieTwiggy.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::ArmedZombieTwiggy.death_sound(), Some("NPC_Killed_2"));
+        assert_eq!(NpcKind::ArmedZombieCenx.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::ArmedZombieCenx.death_sound(), Some("NPC_Killed_2"));
+        assert_eq!(NpcKind::CultistTablet.hit_sound(), Some("NPC_Hit_4"));
+        assert_eq!(NpcKind::CultistTablet.death_sound(), Some("NPC_Killed_14"));
+        assert_eq!(NpcKind::CultistDevote.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::CultistDevote.death_sound(), Some("NPC_Killed_1"));
+        assert_eq!(NpcKind::CultistBossClone.hit_sound(), Some("NPC_Hit_2"));
+        assert_eq!(NpcKind::CultistBossClone.death_sound(), Some("NPC_Killed_2"));
+        // The noGravity rows.
+        assert!(NpcKind::CultistTablet.no_gravity());
+        assert!(NpcKind::CultistBossClone.no_gravity());
+        // The protocol ids keep their vanilla slots (free in the space).
+        assert_eq!(NpcKind::ArmedZombieTwiggy.to_u16(), 435);
+        assert_eq!(NpcKind::from_u16(435), Some(NpcKind::ArmedZombieTwiggy));
+        assert_eq!(NpcKind::ArmedZombieCenx.to_u16(), 436);
+        assert_eq!(NpcKind::from_u16(436), Some(NpcKind::ArmedZombieCenx));
+        assert_eq!(NpcKind::CultistTablet.to_u16(), 437);
+        assert_eq!(NpcKind::from_u16(437), Some(NpcKind::CultistTablet));
+        assert_eq!(NpcKind::CultistDevote.to_u16(), 438);
+        assert_eq!(NpcKind::from_u16(438), Some(NpcKind::CultistDevote));
+        assert_eq!(NpcKind::CultistBossClone.to_u16(), 440);
+        assert_eq!(NpcKind::from_u16(440), Some(NpcKind::CultistBossClone));
+        // The bestiary credits (own entry or the credit-fold).
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::ArmedZombieTwiggy, SlimeVariant::Blue).kind, NpcKind::TwiggyZombie);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::ArmedZombieCenx, SlimeVariant::Blue).kind, NpcKind::FemaleZombie);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::CultistTablet, SlimeVariant::Blue).net_id, 437);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::CultistDevote, SlimeVariant::Blue).net_id, 438);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::CultistBossClone, SlimeVariant::Blue).net_id, 440);
+        assert!(Npc::new(NpcKind::CultistTablet, 0.0, 0.0, 1, 0.0).dont_take_damage);
+        assert!(!Npc::new(NpcKind::CultistTablet, 0.0, 0.0, 1, 0.0).chaseable);
+        assert!(!Npc::new(NpcKind::CultistDevote, 0.0, 0.0, 1, 0.0).chaseable);
+        assert!(!Npc::new(NpcKind::CultistBossClone, 0.0, 0.0, 1, 0.0).chaseable);
     }
 }

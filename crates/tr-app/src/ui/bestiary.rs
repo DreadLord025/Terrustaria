@@ -1600,6 +1600,12 @@ fn portrait_data(
         | (NpcKind::ArmedZombiePincussion, _)
         | (NpcKind::ArmedZombieSlimed, _)
         | (NpcKind::ArmedZombieSwamp, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        // W4-d40: the new kinds' portrait boxes (the SetDefaults w/h).
+        (NpcKind::ArmedZombieTwiggy, _)
+        | (NpcKind::ArmedZombieCenx, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::CultistTablet, _) => (sheet_i, 54.0, 54.0, 54.0, white),
+        (NpcKind::CultistDevote, _) => (sheet_i, 40.0, 22.0, 40.0, white),
+        (NpcKind::CultistBossClone, _) => (sheet_i, 50.0, 24.0, 50.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
     }
 }

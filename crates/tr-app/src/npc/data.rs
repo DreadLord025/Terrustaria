@@ -591,6 +591,12 @@ impl NpcKind {
             NpcKind::ArmedZombiePincussion => 432,
             NpcKind::ArmedZombieSlimed => 433,
             NpcKind::ArmedZombieSwamp => 434,
+            // W4-d40: ArmedZombieTwiggy, ArmedZombieCenx, CultistTablet, CultistDevote, CultistBossClone keep their vanilla ids (free in the protocol space).
+            NpcKind::ArmedZombieTwiggy => 435,
+            NpcKind::ArmedZombieCenx => 436,
+            NpcKind::CultistTablet => 437,
+            NpcKind::CultistDevote => 438,
+            NpcKind::CultistBossClone => 440,
             NpcKind::WyvernTail => 228,
         }
     }
@@ -927,6 +933,12 @@ impl NpcKind {
             432 => NpcKind::ArmedZombiePincussion,
             433 => NpcKind::ArmedZombieSlimed,
             434 => NpcKind::ArmedZombieSwamp,
+            // W4-d40: the vanilla ids (`to_u16` above).
+            435 => NpcKind::ArmedZombieTwiggy,
+            436 => NpcKind::ArmedZombieCenx,
+            437 => NpcKind::CultistTablet,
+            438 => NpcKind::CultistDevote,
+            440 => NpcKind::CultistBossClone,
             228 => NpcKind::WyvernTail,
             _ => return None,
         })
@@ -1806,6 +1818,12 @@ impl NpcKind {
             | NpcKind::ArmedZombiePincussion
             | NpcKind::ArmedZombieSlimed
             | NpcKind::ArmedZombieSwamp => "NPC_Hit_1",
+            // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
+            NpcKind::ArmedZombieTwiggy
+            | NpcKind::ArmedZombieCenx
+            | NpcKind::CultistDevote => "NPC_Hit_1",
+            NpcKind::CultistTablet => "NPC_Hit_4",
+            NpcKind::CultistBossClone => "NPC_Hit_2",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2116,6 +2134,12 @@ impl NpcKind {
             | NpcKind::ArmedZombiePincussion
             | NpcKind::ArmedZombieSlimed
             | NpcKind::ArmedZombieSwamp => "NPC_Killed_2",
+            // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
+            NpcKind::ArmedZombieTwiggy
+            | NpcKind::ArmedZombieCenx
+            | NpcKind::CultistBossClone => "NPC_Killed_2",
+            NpcKind::CultistTablet => "NPC_Killed_14",
+            NpcKind::CultistDevote => "NPC_Killed_1",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2223,6 +2247,9 @@ impl NpcKind {
             // The Angry Nimbus (250) — `SetDefaults` writes no flag, but the
             // aiStyle-49 AI head sets `noGravity = true` every tick
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
+            // W4-d40: the SetDefaults noGravity rows (`NPC.cs`).
+            NpcKind::CultistTablet
+            | NpcKind::CultistBossClone => true,
             NpcKind::AngryNimbus => true,
             _ => false,
         }
@@ -2480,6 +2507,12 @@ impl NpcKind {
             | NpcKind::ArmedZombiePincussion
             | NpcKind::ArmedZombieSlimed
             | NpcKind::ArmedZombieSwamp => 3,
+            // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
+            NpcKind::ArmedZombieTwiggy
+            | NpcKind::ArmedZombieCenx => 3,
+            NpcKind::CultistTablet
+            | NpcKind::CultistDevote => 83,
+            NpcKind::CultistBossClone => 84,
             NpcKind::DungeonSpirit => 56,
         }
     }
@@ -3016,6 +3049,12 @@ impl NpcKind {
             | NpcKind::ArmedZombiePincussion
             | NpcKind::ArmedZombieSlimed
             | NpcKind::ArmedZombieSwamp => (18.0, 40.0),
+            // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
+            NpcKind::ArmedZombieTwiggy
+            | NpcKind::ArmedZombieCenx => (18.0, 40.0),
+            NpcKind::CultistTablet => (54.0, 54.0),
+            NpcKind::CultistDevote => (22.0, 40.0),
+            NpcKind::CultistBossClone => (24.0, 50.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
         }
     }
@@ -3663,6 +3702,12 @@ impl NpcKind {
             NpcKind::ArmedZombiePincussion => 50,
             NpcKind::ArmedZombieSlimed => 40,
             NpcKind::ArmedZombieSwamp => 45,
+            // W4-d40: the SetDefaults lifeMax rows (`NPC.cs`).
+            NpcKind::ArmedZombieTwiggy => 45,
+            NpcKind::ArmedZombieCenx => 38,
+            NpcKind::CultistTablet => 400,
+            NpcKind::CultistDevote => 400,
+            NpcKind::CultistBossClone => 10000,
             NpcKind::DungeonSpirit => 200,
         }
     }
@@ -4033,6 +4078,12 @@ impl NpcKind {
             NpcKind::ArmedZombiePincussion => 16,
             NpcKind::ArmedZombieSlimed => 13,
             NpcKind::ArmedZombieSwamp => 13,
+            // W4-d40: the SetDefaults damage rows (`NPC.cs`).
+            NpcKind::ArmedZombieTwiggy => 16,
+            NpcKind::ArmedZombieCenx => 12,
+            NpcKind::CultistTablet => 0,
+            NpcKind::CultistDevote => 0,
+            NpcKind::CultistBossClone => 0,
             NpcKind::DungeonSpirit => 70,
         }
     }
