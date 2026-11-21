@@ -1265,6 +1265,14 @@ mod tests {
             &attempt_lava, &z, &empty, 4849, 2422, true, false, false, false, true, true, &mut s,
         );
         assert_eq!(r.local_ai1, 480.0, "the 3-count lava fallback");
+        // W4-c36 — `:20798-20801`: the lava-fishing achievement condition
+        // (`CanFishInLava && inLava`) rides the results.
+        assert!(r.lava_fishing_achievement);
+        let mut s = Script(vec![1], 0);
+        let r = set_fishing_check_results(
+            &attempt, &z, &empty, 4849, 2422, true, false, false, false, true, true, &mut s,
+        );
+        assert!(!r.lava_fishing_achievement, "a water pond fires nothing");
     }
 }
 
@@ -1968,6 +1976,10 @@ pub struct FishingResults {
     pub local_ai2: f32,
     /// A bite landed (item or enemy) — `netUpdate = true`.
     pub net_update: bool,
+    /// W4-c36 — `:20798-20801`: `fisher.CanFishInLava && fisher.inLava` fires
+    /// `HandleSpecialEvent(19)` → GO_LAVA_FISHING ("Do"). The pure fn reports
+    /// the condition; the caller completes the row.
+    pub lava_fishing_achievement: bool,
 }
 
 /// `SetFishingCheckResults` (`Projectile.cs:20739-20802`): the enemy roll,
@@ -2031,6 +2043,8 @@ pub fn set_fishing_check_results(
     if !flag && attempt.in_lava {
         out.local_ai1 += lava_fallback_ticks(is_lava_bait, attempt.can_fish_in_lava, acc_lava_fishing);
     }
+    // W4-c36 — `:20798-20801`: the lava-fishing achievement condition.
+    out.lava_fishing_achievement = attempt.can_fish_in_lava && attempt.in_lava;
     out
 }
 

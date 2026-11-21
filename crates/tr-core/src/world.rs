@@ -377,6 +377,11 @@ pub struct World {
     /// (a crimson heart = the Brain, a shadow orb = the Eater of Worlds)
     /// summons the boss (`:54294-54321`).
     pub shadow_orb_count: i32,
+    /// W4-c36 — `WorldGen.CheckOrb`'s achievement tail (`WorldGen.cs:54331`):
+    /// every completed orb/heart smash fires progression 7 (SMASHING_POPPET).
+    /// The core kill plan sets the flag; the app's break seam drains it into
+    /// the manager (the core carries no achievement system).
+    pub orb_smash_notify_pending: bool,
     /// `Main.invasionType` (`Main.cs:64455`): 1 = the Goblin Army.
     /// `DD2Event.Ongoing` (the Old One's Army) — the crystal summon
     /// raises it, the win/loss clears it.
@@ -726,6 +731,7 @@ impl World {
             altars_smashed: 0,
             shadow_orb_smashed: false,
             shadow_orb_count: 0,
+            orb_smash_notify_pending: false,
             downed_goblins: false,
             downed_frost: false,
             downed_pirates: false,

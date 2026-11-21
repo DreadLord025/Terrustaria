@@ -995,6 +995,16 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     );
     app.shop_mood = mood.multiplier;
     app.shop_npc = Some(idx);
+    // W4-c36 — `Player.SetTalkNPC`'s achievement gate (`Player.cs:4391-4394`):
+    // a housed, non-bound town NPC whose `PriceAdjustment <= 0.82f` fires
+    // HandleSpecialEvent(20) → TALK_TO_NPC_AT_MAX_HAPPINESS ("Do"). The
+    // port's shop-open is the talk seam; the mood multiplier is the
+    // PriceAdjustment stand-in (`ShopHelper.GetShoppingSettings`).
+    if app.npcs[idx].home.is_some() && mood.multiplier <= 0.82 {
+        let _ = app
+            .achievements
+            .complete_condition("TALK_TO_NPC_AT_MAX_HAPPINESS", "Do");
+    }
     if !same_shop {
         app.shop_sellback.clear();
     }

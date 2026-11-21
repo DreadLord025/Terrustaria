@@ -769,6 +769,10 @@ pub struct Projectile {
     /// S1-P-i35 — the pull's Duke Fishron spawn (`Player.cs:52403-52414`,
     /// `NPC.SpawnOnPlayer(plr, 370)`): the owner player id.
     pub wants_duke_spawn: bool,
+    /// W4-c36 — the lava-fishing achievement intent (`Projectile.cs:20798-
+    /// 20801`, `HandleSpecialEvent(19)` → GO_LAVA_FISHING "Do"): the world
+    /// sim drains it into the manager (the `wants_splash` pattern).
+    pub wants_lava_fishing_achievement: bool,
 }
 
 impl Default for Projectile {
@@ -855,6 +859,7 @@ impl Default for Projectile {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            wants_lava_fishing_achievement: false,
         }
     }
 }
@@ -15013,6 +15018,20 @@ impl ProjectilePool {
     /// the world sim plays each on the `UpdateProjectiles` stream.
     pub fn drain_splashes(&mut self) -> Vec<(i32, f32, f32)> {
         std::mem::take(&mut self.pending_splashes)
+    }
+
+    /// W4-c36 — the lava-fishing achievement drain (`Projectile.cs:20798-
+    /// 20801`): true when any bobber's `FishingCheck` fired the condition
+    /// this pass; the world sim completes GO_LAVA_FISHING's "Do".
+    pub fn drain_lava_fishing_achievement(&mut self) -> bool {
+        let mut fired = false;
+        for s in self.slots.iter_mut() {
+            if s.wants_lava_fishing_achievement {
+                s.wants_lava_fishing_achievement = false;
+                fired = true;
+            }
+        }
+        fired
     }
 
     /// S1-P-i35 — the bobber death hook's catch drain
@@ -30459,6 +30478,7 @@ mod phasmal_projectile_tests {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            wants_lava_fishing_achievement: false,
         }
     }
 
@@ -30868,6 +30888,7 @@ mod ritual_projectile_tests {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            wants_lava_fishing_achievement: false,
         }
     }
 

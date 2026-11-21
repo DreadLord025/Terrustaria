@@ -5645,6 +5645,11 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, false) else {
         return;
     };
+    // W4-c36 — `WorldGen.CheckOrb`'s tail (`WorldGen.cs:54331`): a completed
+    // orb/heart/mana-crystal smash fires progression 7 (SMASHING_POPPET).
+    if std::mem::take(&mut app.world.orb_smash_notify_pending) {
+        let _ = app.notify_progression_net(7);
+    }
     // `Chest.DestroyChest` (`Chest.cs:625-645`, called from
     // `CheckTileBreakability2_ShouldTileSurvive`, `WorldGen.cs:62506`/:62514):
     // a broken chest 21/467 (2 wide) or dresser 88 (3 wide) loses its store

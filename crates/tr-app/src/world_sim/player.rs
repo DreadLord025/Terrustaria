@@ -1650,6 +1650,18 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         if app.player.as_mut().is_some_and(|p| std::mem::take(&mut p.pending_lucky_break)) {
             let _ = app.achievements.complete_condition("LUCKY_BREAK", "Hit");
         }
+        // W4-c36 — `ArmorSetBonuses.Benefits.Bee` (`ArmorSetBonuses.cs:23-30`):
+        // the completed Bee set (2361/2362/2363) fires HandleSpecialEvent(3)
+        // → NOT_THE_BEES ("Use") while the Bee Gun 1121 swings
+        // (`itemAnimation > 0 && inventory[selectedItem].type == 1121`).
+        // The C# runs it inside `UpdateArmorSets` (`Player.cs:25685`); the
+        // port reads the same tick's post-update state here.
+        let bee_set = app.player.as_ref().is_some_and(|p| {
+            p.equipped[0] == 2361 && p.equipped[1] == 2362 && p.equipped[2] == 2363
+        });
+        if bee_set && app.swing > 0.0 && app.inventory[app.selected].kind == 1121 {
+            let _ = app.achievements.complete_condition("NOT_THE_BEES", "Use");
+        }
         if run_pixels > 0.0 {
             // `Player.cs:28233-28236` -> `AchievementsHelper.HandleRunning`
             // (`AchievementsHelper.cs:420-423`): grounded, unmounted running
