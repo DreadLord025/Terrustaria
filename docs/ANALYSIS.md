@@ -1346,6 +1346,14 @@ the g67 assertions drop. **A2** — re-pin g67's light-tile geometry witness
 `light_tile` closure; no code delta. g67's dup-halves carry
 DEPRECATED-BY-UNION banners (`5afdb38b`, comments-only); the unique
 eyebrella/umbrella/skyblock/drop-draw-fix content stays live as fold-source.
+The SEAL phase (2026-11-21) re-verified the d130 tip STILL `97ed44f5d`
+(d130f unlanded — the work-list stands, plus the c39 2-hunk graft), published
+the FINAL fold-source hash-list (R5 `f8c4b659c` / R6 `356a1ac0e` / R7
+`01ba6c7a9` / A2-only `7aaf66f00`), renamed the report 134 → 146 (f11 owns
+134 on origin; 145 double-claimed; d54 has no pushed research/150; 146 =
+max+1 provisional) and added the WEATHER-FAMILY bible (d130 canonical rain/
+snow + f39 slime-rain + c40 sandstorm one-way gate + g69 cloud draw +
+g68 wind/leaves single-owner + the c39 grafts) — all in research/146.
 
 ## Biomes
 

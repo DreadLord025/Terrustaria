@@ -44,6 +44,40 @@ c39 `rain.rs:1878`). **g67 folds: NONE of the c39 hunks** — they are c39's
 fold-source, listed here so the d130f work-list is complete in one place.
 The g67-unique folds are exactly R5/R6/R7 + A2 (hash-list below).
 
+## SEAL — the WEATHER-FAMILY bible (one paragraph, for the merger)
+
+The weather family unions as ONE composed lane with d130 canonical for the
+rain/snow core: **d130** (`task/W4-d130-weather-ambience`, tip `97ed44f5d` +
+the d130f folds) owns `Rain.cs` verbatim (fall/draw/splash, fixed-750-slot
+pool, `RainInputs`, the two-arm cloudAlpha ramp, the ambient tracks 28/45
+lifecycle) and `Main.snowing()` on the GLOBAL bare-`Main.rand` stream (F1
+adjudicated `099df89e`), with g67's four unique folds grafted in (R5/R6/R7/A2,
+hash-list above) and g67's rain.rs dropped wholesale; **f39**
+(`task/W4-f39-weather-slimerain`) owns the slime-rain event half
+(`StartSlimeRain`/`StopSlimeRain`, the slime clock, the sky-fall/kill-counter/
+menu-return lanes — d130 already re-shaped its `update_time` to f39's
+C#-faithful slot order at `cf4574e9`: the `:64846` surface gate, decay-before-
+rain, the once-sampled ladder flags, the `:64868-64871` lanterns-up StopRain
+arm, the `:64890` `!slimeRain` start gate — the mutual exclusion is witnessed
+both ways); **c40** (`task/W4-c40-sandstorm`) owns `Sandstorm.cs`
+(the wind-only severity machine + the flying-sand 268 emit) and the gate is
+ONE-WAY — `ZoneSandstorm` clears `ZoneRain` (`SceneMetrics.cs:698-703`), rain
+NEVER gates the storm (`Sandstorm.cs:32-77` reads only wind, d130 `703370e6`
+census); **g69** (`task/W4-g69-weather-clouds-parallax`) owns the cloud
+draw/parallax lane including `rain_dim_sky` (the XNA byte-truncate-FIRST
+convention, `98067533`) — the `cloudAlpha`/`cloudBG` VALUES it reads come from
+d130's rain state, g69 keeps its draw bodies; **g68**
+(`task/W4-g68-weather-wind-leaves`) owns the wind sim + leaf cadence
+(`UpdateLeafFrequency` band-for-band, `3ccd49e6`) — the LIVE `windSpeedCurrent`
+it integrates feeds d130's `GetRainFallVelocity` (`wind*18,14`) and g67's
+Eyebrella drip (`wind*3,9`) and c40's storm severity, so the wind flag has ONE
+owner (g68) with read-only consumers; and **c39**
+(`task/W4-c39-lantern-birthday`) touches the family only through the two
+owed graft hunks into d130's body (the `:64825-64831` storm-deck head clamp +
+the full `LanternsCanPersist` gate, c39 research/114 §13) — both verified
+STILL MISSING at the d130 tip at this seal. No two family branches own the
+same fn body; the only cross-branch writes are the enumerated grafts.
+
 ## SEAL — registry-150-wave check + the g67-drop-wholesale FINAL instruction
 
 **Registry sweep (2026-11-21, `git ls-tree` over EVERY origin branch's
