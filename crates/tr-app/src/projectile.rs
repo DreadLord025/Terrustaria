@@ -40930,12 +40930,13 @@ mod s1_d_4b_1_tests {
         assert_eq!(blast.local_hit_cooldown, -1);
     }
 
-    /// W4-d18 tail — the three residual armed-but-unrowed kinds' rows
-    /// (`SetDefaults` `:9127-9142` / `:9253-9269` / `:10303-10315`): the
-    /// friendly Insanity shadow 964 (187), the Volcano explosion 978 (189)
-    /// and the Foxsparks flames 1106 (193). Their arms already exist on
-    /// main (`ai_insanity_shadow` / `ai_volcano` / `ai_flamethrower`); these
-    /// rows let `spawn_with_data` accept them.
+    /// W4-d18 tail — the residual armed-but-unrowed kinds' rows
+    /// (`SetDefaults` `:9127-9142` / `:10303-10315`): the friendly Insanity
+    /// shadow 964 (187) and the Foxsparks flames 1106 (193). Their arms
+    /// already exist on main (`ai_insanity_shadow` / `ai_flamethrower`);
+    /// these rows let `spawn_with_data` accept them. PROJ-171 retire: the
+    /// 978 Volcano block is DROPPED (keep-d12c — d12c's 9e668d0f0 owns the
+    /// 978 row + `proj_frames[978] = 5`; the d19 verdict 6e80e4201).
     #[test]
     fn w4_d18_the_residual_rows_carry_the_csharp_set_defaults() {
         let d = proj_data(INSANITY_SHADOW_FRIENDLY).expect("964 row");
@@ -40946,14 +40947,10 @@ mod s1_d_4b_1_tests {
         assert_eq!(d.extra_updates, 1);
         assert_eq!(d.scale, 0.7);
         assert!(d.uses_local_immunity && d.local_hit_cooldown == -1);
-        let d = proj_data(VOLCANO).expect("978 row");
-        assert_eq!((d.w, d.h, d.ai_style), (160.0, 160.0, 189));
-        assert_eq!(d.penetrate, 3);
-        assert_eq!(d.time_left, 30, "the last timeLeft write wins (`:9268`)");
-        assert_eq!(d.alpha, 255);
-        assert!(!d.tile_collide && d.ignore_water);
-        assert!(d.uses_local_immunity && d.local_hit_cooldown == -1);
-        assert!(d.melee, "`melee = true` (`:9267`)");
+        // PROJ-171 retire (978 dup, keep-d12c): the 978 row is NOT here —
+        // d12c's 9e668d0f0 is the superset. The spawn declines until d12c
+        // merges (the row is the spawn's only gate).
+        assert!(proj_data(978).is_none(), "the 978 row rides d12c, not d18");
         let d = proj_data(FOXSPARKS_FLAMES).expect("1106 row");
         assert_eq!((d.w, d.h, d.ai_style), (6.0, 6.0, 193));
         assert_eq!(d.penetrate, 4);

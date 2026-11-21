@@ -63,6 +63,49 @@ The 85/1106 `localAI[0] >= 54` smoke-tail damage gate (`:12460-12467`) and
 the full `Damage_CanDealDamage` switch census landed 3783a2ad / 5e51c66e
 (ANALYSIS "W4-d18 Damage_CanDealDamage" holds the term-by-term table).
 
+## PROJ-171 RETIRE — the 978 dup drop-hunk (keep-d12c, EXACT publish)
+
+**Verdict (d19 6e80e4201, phase 2):** the 978 Volcano row is a d12c/d18 DUP,
+adjudicated **keep-d12c** — d12c's `9e668d0f0` (DOC-SWEEP item 7) is the
+superset: it ALONE adds `proj_frames[978] = 5` (`Main.cs:8493`, re-read
+verbatim: `Main.projFrames[978] = 5;`). The d18 copy (18916087b) lacks the
+frames row. The 189 dispatch arm (`ai_volcano`, main) serves both; the row
+is the spawn's only gate. **This branch DROPS its 978 copies** (the commit
+after 83600da0); the 964/1106 residuals stay. The 978 spawn declines here
+until d12c merges — merge-order, not coverage.
+
+**The EXACT drop-hunk (5 sites, for merger/d12c — drop d18's, keep d12c's):**
+
+* **D1 — `data.rs` const** (was `:825-828`): DROP
+  `/// ProjectileID.Volcano (978 ...) ...` doc + `pub const VOLCANO: u16 = 978;`.
+  d12c's const (its `:780-788` block, after `LIGHTS_BANE`) survives.
+* **D2 — `data.rs` row** (was `:3964-3973`): DROP the
+  `// Projectile.cs:9253-9269 — the Volcano explosion (978) ...` comment +
+  `VOLCANO => (160.0, 160.0, 189, 3, 30, 0, false, false, false,
+  (true, -1, false, -1, 255, 1.0)),` arm. d12c's row (its `:2977-2995`
+  block) is value-identical — keep it.
+* **D3 — `data.rs` ignoreWater overlay** (was `:4408-4411`): the d18 term
+  `|| matches!(kind, INSANITY_SHADOW_FRIENDLY | VOLCANO)` → EDIT to
+  `|| kind == INSANITY_SHADOW_FRIENDLY` (the 964 term STAYS — it is d18's
+  own residual, NOT a dup). d12c's separate `|| kind == VOLCANO` overlay
+  (its `:4373-4375`) survives. **Do NOT drop the whole matches! — the 964
+  half is d18-unique.**
+* **D4 — `data.rs` melee census** (was `:4482-4484`): DROP the
+  `// W4-d18 tail: the Volcano explosion's melee = true ...` comment +
+  `| VOLCANO` line. d12c's `| VOLCANO` (its `:4453-4455`) survives.
+* **D5 — `projectile.rs` witness** (was `:40949-40956`, the
+  `w4_d18_the_residual_rows_carry_the_csharp_set_defaults` test): DROP the
+  `let d = proj_data(VOLCANO).expect("978 row"); ... assert!(d.melee ...)`
+  block (8 lines); REPLACE with `assert!(proj_data(978).is_none(), ...)`.
+  The 964/1106 witness halves STAY. d12c's own 978 witness (its
+  `data.rs` tests, the `proj_frames(VOLCANO) == 5` pin) survives.
+
+**NOT dropped (d18-unique, keep):** the 964 InsanityShadowFriendly const +
+row + ignoreWater term + witness; the 1106 FoxsparksFlames const + row +
+witness; the `ai_volcano` arm (main's, serves 1125 + 978-once-d12c-lands).
+**No `proj_frames[978]` row was ever on d18** — that is the superset delta
+d12c owns; nothing to drop there.
+
 ## Verification
 
 Code-only: every SetDefaults block + AI body re-read at the cited windows;

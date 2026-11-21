@@ -822,10 +822,12 @@ pub const CONSTELLATION_STAR: u16 = 1039;
 /// the friendly Insanity shadow, aiStyle 187 (`Projectile.cs:9127-9142`,
 /// `AI_187_ShadowHand` `:42502-42591` — `ai_insanity_shadow`).
 pub const INSANITY_SHADOW_FRIENDLY: u16 = 964;
-/// `ProjectileID.Volcano` (978, `ProjectileID.cs:2510`) — the Volcano
-/// sword's explosion, aiStyle 189 (`Projectile.cs:9253-9269`,
-/// `AI_189_Volcano` `:42264-42371` — `ai_volcano`).
-pub const VOLCANO: u16 = 978;
+// PROJ-171 retire (978 dup, keep-d12c): the `VOLCANO` const + row + the
+// ignoreWater/melee overlay terms + the witness block that were here are
+// DROPPED — d12c's 9e668d0f0 is the adjudicated superset (it alone adds
+// `proj_frames[978] = 5`, `Main.cs:8493`; the d19 verdict 6e80e4201). The
+// 978 row rides d12c; this branch keeps only the 964/1106 residuals. The
+// exact drop-hunk is published in research/26h for the merger.
 /// `ProjectileID.PalworldMinionFoxsparksFlames` (1106,
 /// `ProjectileID.cs:2766`) — the Foxsparks flamethrower, aiStyle 193
 /// (`Projectile.cs:10303-10315`, `AI_193_Flamethrower` `:41337-41401` —
@@ -3961,16 +3963,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 40.0, 40.0, 187, 3, TIME_LEFT_DEFAULT, 1, false, false, false,
                 (true, -1, false, -1, 255, 0.7),
             ),
-            // `Projectile.cs:9253-9269` — the Volcano explosion (978):
-            // 160x160, aiStyle 189, friendly, `alpha = 255`,
-            // `ignoreWater = true`, `tileCollide = false`, `penetrate = 3`,
-            // local-immunity (true, -1), melee. `timeLeft = 60` then
-            // `timeLeft = 30` (`:9261`/`:9268`) — the LAST write wins (30).
-            // `ownerHitCheck` is damage-side (no port field).
-            VOLCANO => (
-                160.0, 160.0, 189, 3, 30, 0, false, false, false,
-                (true, -1, false, -1, 255, 1.0),
-            ),
+            // PROJ-171 retire (978 dup, keep-d12c): the `VOLCANO => (...)`
+            // row that sat here is DROPPED — d12c's 9e668d0f0 owns the 978
+            // row (the superset with `proj_frames[978] = 5`). The 964/1106
+            // residuals stay; the 978 spawn declines here until d12c merges.
             // `Projectile.cs:10303-10315` — the Foxsparks flames (1106):
             // 6x6, aiStyle 193, friendly, `alpha = 255`, `penetrate = 4`,
             // `extraUpdates = 2`, the ID-static pair (true, 15).
@@ -4405,10 +4401,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d18 tail: the two aiStyle-171 weapon variants'
             // `ignoreWater = true` (`Projectile.cs:8837`/`:9816`).
             || matches!(kind, FAIRY_QUEEN_MAGIC_ITEM_SHOT | CONSTELLATION_STAR)
-            // W4-d18 tail: the friendly Insanity shadow (`:9137`) and the
-            // Volcano explosion (`:9260`) set `ignoreWater = true`; the
-            // Foxsparks flames (1106) do NOT (`:10303-10315` has no line).
-            || matches!(kind, INSANITY_SHADOW_FRIENDLY | VOLCANO)
+            // W4-d18 tail: the friendly Insanity shadow (`:9137`) sets
+            // `ignoreWater = true`; the Foxsparks flames (1106) do NOT
+            // (`:10303-10315` has no line). PROJ-171 retire: the 978
+            // Volcano's `ignoreWater` term (`:9260`) is DROPPED with its
+            // row (keep-d12c — d12c's 9e668d0f0 owns the 978 overlay).
+            || kind == INSANITY_SHADOW_FRIENDLY
             // W4-d18: the multisegment pets' `ignoreWater = true`
             // (`Projectile.cs:8482`/`:8504`/`:8539`).
             || matches!(kind, EATER_OF_WORLDS_PET | DESTROYER_PET | LUNATIC_CULTIST_PET)
@@ -4479,9 +4477,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | LIGHTS_BANE | TERRARIAN_BEAM
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
-                    // W4-d18 tail: the Volcano explosion's `melee = true`
-                    // (`Projectile.cs:9267`).
-                    | VOLCANO
+                    // PROJ-171 retire: the 978 Volcano's `melee = true`
+                    // term (`Projectile.cs:9267`) is DROPPED with its row
+                    // (keep-d12c — d12c's 9e668d0f0 owns the 978 melee flag).
             ),
         ranged: matches!(
             kind,
