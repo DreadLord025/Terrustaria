@@ -638,3 +638,590 @@ id-map are reproducible from those tips (scripted extraction, zero-dup
 verified). Counts: 354 refs swept, 77 touched npc.rs/data.rs, 18 pushed
 kind-claimants, 280 distinct new kinds, 77 contested ids / 184 ports,
 49 duplicate ports, canonical max id 761.
+
+---
+
+# RECEIPTS — the verification round (supersedes E2-E6 counts where they conflict)
+
+Status: RESEARCH / RECEIPTS — still no code changes on this branch.
+Author lane: W4-d37 (executor, receipts phase). This round (a) answers
+the c9 × d37 359/360 challenge with source evidence, (b) receipts d37's
+ZERO-move, (c) re-reads every origin tip + local worktree (E6 refresh —
+five lanes moved since the E-census), (d) applies seven corrections
+(R1-R7) to the canonical plan, re-verifies it collision-free by script,
+and (e) publishes the per-lane renumber-INSTRUCTION tables (§E8) each
+shifting lane executes against its own tip.
+
+## R0. Tips re-read (this round; changes vs E0 in bold)
+
+| Lane | E0 tip | Receipts tip | Delta |
+|---|---|---|---|
+| c3 | `9ea0ee90` | **`9299046f7`** | docs/witness only — kinds unchanged (273 arms, bijection OK) |
+| c4 | `22cec16f` | **`17a241f6a`** | +dup-check verdicts `318e28709`, catch census, Pufferfish justHit fix — kinds unchanged (283 arms) |
+| c10 | `c48bbb1e` | **`9641e20db`** | sweep items 1-4 (BirdDroppings keep-one vs d20, TransformVisuals module, sound census) — kinds unchanged (278 arms); still dirty (style65/critter wiring + untracked `npc_ai_critter.rs`) |
+| d120 | `4b17a2cf` | **`c5e68a80`** | shop-index/chatter wiring — kinds unchanged (275 arms) |
+| d125 | `d8047a10` (+local `2dfe026d2`) | **`cd2b1b1e`** | the sheets phase AND the draw phase (`render/empress_draw.rs`, Extra_188 packed) are now PUSHED — E6's "push 2dfe026d2" action is DONE |
+| d33 | `dcb59b7f` + uncommitted | **`b08acf463`** | the dragonflies are PUSHED and GREW: `ba8b9b5c6` five colours 595-599 + `e71010d3c` Yellow 600/Gold 601 + `b08acf463` net-fold witness fix. 7 kinds, ALL_KINDS 277, aiStyle-114 axis fully wired. E6's d33 action DONE |
+| d39 | `8e4b87c9` + WIP | **`024c9877f`** | the squatter WIP was CHECKPOINTED VERBATIM and self-declared OFF-PLAN/SUPERSEDED (commit message cites 108 + research/125); working tree now carries the census-correct start (Butterfly at 781 in the dirty diff) |
+| f26/f27 | `63417edd`/`0b8e225d` | **`f1a0eaa9c`/`0e1874280`** | FindFrame-only still — zero data.rs delta |
+| d34/d35/d37/d38/d40/d42/g8/c6/c7/c8/c9/d23/e26 | as E0 | unchanged | d34 `5f3435a8`, d35 `6a2a155a` (dirty: atlas-repack docs+tools), d37 `bdd59afb`, d38 `6f9dd02d`, d40 `8fe1d6d3` (untracked atlas-sim scratch), d42 `9b22c091` clean, g8 `82c93cec` clean |
+
+Local-only probes (read-only `git -C`, no junction recursion):
+- **g10**: STILL base + uncommitted, and the pets are now TEN files dirty
+  (+ untracked `npc_findframe_pet.rs`): TownCat 637/TownDog 638/TownBunny
+  656/TownSlimeBlue 670/TownSlime{Green,Old,Purple,Rainbow,Red,Yellow}
+  678-683, vanilla-free cs==proto. Zero clash with the canonical plan
+  (scripted). E6 action stands: commit + push, no renumber.
+- **d41**: claim pushed, dirty `npc_buffs.rs` only (no kinds). Band
+  491-560 vanilla-free stands; skip c4's pushed 509.
+- **d43**: base, clean. 631-697 vanilla-free; skip g10's ten pets, d125's
+  636/661 (R4 makes those protocol==cs), c4's 688/692, c3's 694.
+- **d36**: claim pushed + untracked census doc
+  (`109-d36-npc-kinds-141-210-census.md`). Its claimed 731-780 band is
+  superseded twice over — see R7 (767-816).
+- No `d33b`/`d42b`/`g8b`/`c4b`/`d23b`/`c4c` branch or worktree exists on
+  this machine or origin (the Lead's names are the *successor phases* of
+  d33/d42/g8/c4/d23 — the tables below address the existing branches).
+
+Scripted re-census (git-show per tip, `to_u16`↔`from_u16` bijection +
+ALL_KINDS-set equality per lane): all 20 tips bijective, zero duplicate
+arms. ALL_KINDS declaration drift: **c9 `270` declared / 270 listed but
+the four snail kinds are MISSING from the array entirely** (worse than
+E4's "decl stale": the array omits Snail/GlowingSnail/MagmaSnail/
+Shimmerfly, so its round-trip test never walks them), d125 `270`/272,
+g8 `270`/304. d42's tip declares 321 correctly.
+
+## R1. The c9 × d37 359/360 adjudication — d37 KEEPS, c9 shifts (receipt)
+
+The Lead's question: c9's research/109 (§3, tip `2042d77f`) says
+359/360 are "squatted by d37 FlyingFish/FlyingSnake" while c9's
+Snail/GlowingSnail claim them "vanilla-free" — and c4's verdict
+(`318e28709`) already ruled keep-d37-359 for FlyingFish. Are the c9
+snails a DIFFERENT-kind-same-proto collision the E-plan missed?
+
+**The E-plan did NOT miss it.** E1 already carries the row
+`d37 × c9 | 2: 359/360 | HARD` and E3 shifts Snail 359→740,
+GlowingSnail 360→741 (MagmaSnail 655 keeps). The matrix covers it;
+no correction of the collision record is needed. What the c9 lane
+disputes is the *direction* — its 109 §3 guidance argues d37's band
+should move instead. That guidance is REJECTED, with evidence:
+
+1. **c9's "vanilla-free" premise is false for 359/360.** Vanilla-free
+   means *the protocol id is free AND equals the cs id*. c9's phase 1
+   `37baf0d1c` (01:08) picked "next free above 353" **against the landed
+   base only** — 109 §1 admits the scan predates the kinds-wave pushes;
+   d37's `750d8e44` (04:00) claimed the same corridor for FlyingFish/
+   FlyingSnake the same night. Neither lane saw the other; commit order
+   is NOT the tie-break (both are unlanded branch-only ids). Two lanes
+   picking the same corridor is exactly the d35×d40 pattern — the E2
+   principle decides.
+2. **The kinds-lane owns the corridor (E2 rule 1).** d37's 354-399 is
+   the contiguous, witness-pinned anchor band of a kinds-coverage lane;
+   c9 is a wiring lane (style-67) whose two contested kinds are
+   incidental census additions. E2 already weighed moving d37 (plans
+   a/b): 46 renumbers + a shattered anchor vs 2 renumbers on c9.
+3. **c9's renumber is FREE of its feared breakage — the invariant it
+   cites does not exist in the seam it fears.** 109 §4d warns "the f47
+   table keys would break" if c9 renumbers. Read the actual code:
+   `world_sim/npcs.rs:3554` (f47 tip `a2561d6d9`) calls
+   `resolve_npc_shimmer(app.npcs[i].kind.net_id() as u16, …)` — and
+   `net_id()` (`npc/data.rs:1186`) reads **`bestiary::ENTRIES.net_id`,
+   NOT `to_u16`** (the doc comment says exactly this: "**Not**
+   `NpcKind::to_u16` — that is the port's internal protocol id space").
+   The snails' ENTRIES rows carry net_id 359/360/655 (cs ids) and DO NOT
+   CHANGE under a protocol renumber. `SHIMMER_TRANSFORM_TO_NPC`
+   (359→677, 360→677, 655→677), `kind_from_net_id`, the catch/release
+   chain (`bug_net.rs` keys `cs_id()`), the shimmer-immunity set (keys
+   `cs_id`), `snail_light` — every seam c9 names is cs/net-keyed. Only
+   the two `to_u16`/`from_u16` arms move: 359→740, 360→741.
+4. **The c4 verdict composes.** c4's `318e28709` already conceded
+   FlyingFish to d37@359 ("KEEP d37's 359 + c4's world-sim wiring").
+   With c9's snails at 740/741 and c4's FlyingFish port dropped, proto
+   359/360 have exactly ONE owner each — the E3 table stands as written.
+
+**Receipt: c9 executes the two-arm shift (E8 c9 table); its 109 §3
+guidance items 1-2 are superseded by this section.** c9's 655/677 rows,
+all wiring, all witnesses keyed on cs/net ids stay untouched. The
+Snail/GlowingSnail protocol ids were never landed (branch-only), so the
+S1-F-1 freeze does not apply.
+
+## R2. The c4 verdict's CrimsonGoldfish exception (E3 correction)
+
+E3's drop table said `CrimsonGoldfish keep d40@465 drop c4@465`. The c4
+dup-check (`318e28709`, read in full this round) PROVED d40's row
+defective: kb 0.4 vs the C# no-row reset 1f (`NPC.cs:14483-14495`) and a
+missing `vanilla_type` extension that makes `update_swimmer` hit
+`unreachable!` at runtime. **Correction: keep c4's IMPLEMENTATION at the
+shared id 465, retire d40's duplicate row** (kind + kb arm + inline
+FindFrame; d40's band keeps every other id). The id does not move — 465
+stays inside d40's frozen corridor; only the surviving row's provenance
+flips. E8's d40 table carries the drop.
+
+Same-round composition check of c4's other verdicts: BloodFeeder
+keep-d37@373 and FlyingFish keep-d37@359 match E3 exactly. The fish five
+(581/587/592/607/615) "c4 stands" — under the FINAL plan d42's renumber
+lands its owned rows at exactly those ids (protocol==cs), so both
+verdicts agree on the wire; c4's duplicate ports drop per the E3
+kinds-lane rule and c4 keeps its style-16/44 wiring.
+
+## R3. d33's dragonflies are PUSHED — d42 drops seven more rows
+
+E0 saw d33's five dragonflies as uncommitted local work and gave d42
+ownership of cs 595-601 inside its 578-630 band. d33 has since pushed
+the FULL family (`b08acf463`): seven kinds 595-601 (Yellow 600 + Gold
+601 added), the aiStyle-114 axis arm, the Hide-fold credit census (five
+colours fold onto Red 599; Gold 601 keeps its own visible card), the
+catch/release chain 4334-4340, slots 181→183. d42's tip ports the same
+seven at 369-375 → its planned renumber would land them at 595-601 —
+a same-kind duplicate, not a wire collision.
+
+**Correction: canonical owner d33 (the fully-wired superset), d42 DROPS
+its seven dragonfly rows** (variant + to/from arms + ALL_KINDS + ENTRIES
++ stat arms; its BloodEel-style wiring is untouched — the dragonflies
+have none on d42). d42's renumber table shrinks 51→44 moves. d33 keeps
+595-601 vanilla-free, zero renumber. Final ids unchanged (595-601 were
+already the plan's values via d42's cs mapping).
+
+## R4. d125's EmpressOfLight 229 — the reserved-hole rule applies to it too
+
+E3 kept d125's EmpressOfLight@229 and moved only PrismaticLacewing
+237→742. But 229 is the Pirate's vanilla cs id, owned by d37's Pirate
+(proto 361, ENTRIES net_id 229) — the SAME reserved-cs-hole squat the c4
+verdict flagged for CorruptGoldfish/Arapaima (`NPCID.cs`: 229 Pirate,
+237 JungleCreeperWall, 241 BloodFeeder). The hole rule ("cs-owned,
+never reassign") cannot exempt d125 while condemning c4.
+
+**Correction: EmpressOfLight 229→636 — its OWN vanilla cs id**
+(`NPCID.cs:11949` HallowBoss=636; free in base protocol space, free in
+the canonical plan, below NPCID.Count). This RESTORES the vanilla-free
+invariant for d125's boss instead of parking it port-local; its ENTRIES
+net_id 636 and sheets NPC_636 already key the cs id, so (per R1's
+net_id-seam evidence) only the two protocol arms move. PrismaticLacewing
+237→742 stands (E3; 661 would also be free, but 742 keeps the small-lane
+block contiguous and the Lacewing's release chain is net-keyed either
+way — no invariant prefers 661).
+
+## R5. c4's Arapaima 237 — execute the flagged renumber
+
+The c4 verdict's secondary flag ("merge-wave action: renumber
+CorruptGoldfish/Arapaima to genuinely free port-local ids") is now
+scheduled, not just flagged: CorruptGoldfish drops to d34@277 (E3), and
+**Arapaima 237→762** (first free id above the canonical small-lane/g8
+block; cs 157 is base-owned BoundWizard so vanilla-free is impossible).
+Its style-16 wiring, sheet NPC_157 and ENTRIES net_id 157 are untouched.
+
+## R6. d120's town-NPC ids 241-244 squat d37-owned cs holes
+
+E3 kept d120@241-244 "vanilla-free" — but they are NOT: proto 241-244
+sit in the reserved hole 237-249, and those cs ids belong to d37's
+pushed kinds (241 BloodFeeder@373, 242 BloodJelly@374, 243 IceGolem@375,
+244 RainbowSlime@376 — ENTRIES rows verified on `bdd59afb`). d120's
+SantaClaus/Truffle/Steampunker/Cyborg have cs 142/160/178/209, all
+base-protocol-owned (proto==cs impossible). **Correction: 241→763,
+242→764, 243→765, 244→766.** BartenderUnconscious 245 already drops to
+d42@579 (E3; 245 is Golem's cs id — the drop clears the last hole-squat).
+The town wiring (shop indices, chatter, housing) is kind-keyed — the
+`c5e68a80` delta touched no id arms.
+
+## R7. Future-lane guidance re-pin (supersedes E4's guidance paragraph)
+
+The R4-R6 moves extend the canonical max from 761 to **766**. Re-pin:
+- d36 (141-210, ~50 kinds): port-local **767-816** (was 762-811).
+- d39 (351-420, 10 unclaimed per its pushed census research/125):
+  port-local **817-826** (was 812-821). Its dirty-tree Butterfly@781 is
+  OFF-PLAN again — re-pin to 817 when it resumes; the checkpointed
+  squatter WIP (355-359) stays discarded per E6.
+- d41: 491-560 vanilla-free (skip 521/541-545/547 per its claim; also
+  skip c4's pushed 509 GiantFlyingAntlion).
+- d43: 631-697 vanilla-free, skip g10's 637/638/656/670/678-683, d125's
+  636/661 (636 now proto-owned per R4), c4's 688/692, c3's 694.
+- g10/d33: keep cs==proto as pushed/local (zero clash, scripted).
+Grand-union max ≈ **826** ≪ i16::MAX; the round-trip test keeps guard.
+
+## R8. d37 ZERO-MOVE receipt (the Lead's item 2)
+
+Verified two ways:
+1. `git diff 750d8e44 bdd59afb --stat -- crates anchors.txt` → **EMPTY**
+   (the only delta on this branch since the port commit is
+   `docs/research/108-roster-master-reconcile.md` itself). Every to_u16/
+   from_u16/cs_id/ALL_KINDS/ENTRIES arm is byte-identical to the
+   witness-pinned port commit.
+2. The scripted final-plan check: all 46 d37 kinds have
+   `final == pushed` (354-399 contiguous, bijective, zero base clash,
+   zero clash with any other lane's FINAL ids). The canonical plan
+   moves 114 kinds across 12 lanes — **d37 contributes 0**. No
+   renumber-hunks are owed by this lane; the E8 d37 table is the
+   keep-receipt.
+
+Also received: d37's FlyingFish@359/FlyingSnake@360/Squid@358 are the
+canonical survivors of the c4/g8 duplicate ports (E3 + R1/R2); the
+dropped lanes keep their wiring keyed on these kinds (c4's style-44
+world-sim pre-pass, g8's axis arms).
+
+## R9. Final count pins (supersedes E4 where they conflict)
+
+Re-derived by script from the R0 tips + the corrected plan
+(`tools/_d37_receipts_*.py`, git-show extraction, reproducible):
+
+| Pin | E4 said | RECEIPTS value | Derivation |
+|---|---|---|---|
+| `ALL_KINDS` len | 550 | **550** | 270 base + 280 owned (336 ports − 56 drops; d33's +2 and the recounted dup set change E4's 329−49 arithmetic, same total) |
+| `to_u16`/`from_u16` arms | 550 | **550** each | bijection verified per lane; deny-unreachable guards the union |
+| `s1_f_3` coverage pin | 550 | **550** | covered + sentinel walk |
+| bestiary `ENTRIES` rows | 489 | **486** | 241 base + 245 owned new-kind rows (294 naive − 49 dup-credit rows); all 486 positive net ids DISTINCT (scripted). E4's 249 base was wrong — base has 241 (the §1 table's own value) |
+| owned kinds WITHOUT a new entry | 40 | **35** | the Hide folds/segments/no-entry fixtures (list in the census JSON); d33's five hidden colours DO carry own rows (catch chain), so E4's "4 dragonflies no-entry" overcounted |
+| `BESTIARY_NPC_SHEET_IDS` | ≤357 | **323 as-pushed deduped; 411 after gap close** | 181 + 180 naive adds − 38 slots on dropped dup ports = 323; + 88 real gaps (c4 5, c7 4, c8 1, d120 4, d40 37, d42 37) = 411. d35's 12 deferred sheets + 5 deliberate Hide folds (d33) are NOT gaps. d38's +35 landed; d33's +2 landed; d125's +2 landed |
+| `STATIC_SHEET_NAMES` NPC rows | 446 | **455** | base re-censused at **270** NPC_ rows on `a725acb0` (the §0/§1 "248" undercounted; scripted, zero dups) + 185 distinct new NPC_ names across the 20 tips |
+| `SFX_CUES` NPC hit/death cues | 103 | **103 unique** | 55 base + 71 naive adds → 103 distinct (naive append 126 rows; dedupe 23) |
+| max protocol id | 761 | **766** (grand union ≈826) | R4-R6 extend the small-lane block; i16-safe |
+| renumber count | 110 | **114 owned kinds move, 166 keep, 56 ports drop** | per-lane: d35 33, d42 44, g8 17, c10 4, d120 4, c8 3, c7 2, c9 2, d125 2, c4 1, d23 1, e26 1 |
+
+Stale ALL_KINDS declarations to fix at merge (re-censused): **c9 270
+declared AND 270 listed — the 4 snail kinds are absent from the array**
+(add them, then reconcile to 550), d125 270→272, g8 270→304. d42's tip
+is correct (321). The merge reconciles every decl to the 550 union.
+
+## E6-R. Resume-dispatch table — CURRENT statuses (supersedes E6)
+
+| Lane | Status now | Remaining action |
+|---|---|---|
+| d33 | **DONE** — 7 dragonflies pushed `b08acf463`, clean | none (R3: d42 drops its dups) |
+| d125 | **DONE** — sheets `2dfe026d2` + draw `cd2b1b1e3` pushed, clean | execute R4 renumber (229→636, 237→742) at merge |
+| d39 | census pushed; WIP checkpointed OFF-PLAN `024c9877f`; dirty tree starts Butterfly@781 | re-pin to **817-826** (R7); discard the checkpointed 355-359 blob at merge |
+| g10 | STILL LOCAL — 10 dirty files + untracked `npc_findframe_pet.rs`, base HEAD | commit + push the 10 pets (637/638/656/670/678-683, cs==proto, zero clash) |
+| d41 | claim pushed; dirty npc_buffs.rs (no kinds) | resume 491-560 vanilla-free (skip c4 509 + claim skips) |
+| d42 | **51 kinds pushed** `9b22c091`, clean | execute the E8 44-move renumber to 578-630 + 7 dragonfly drops (R3) |
+| d43 | base, clean | resume 631-697 vanilla-free (R7 skip list) |
+| d36 | claim pushed + untracked census doc | commit the census; band re-pinned **767-816** (R7) |
+| c10 | sweep pushed `9641e20db`; dirty style65/critter wiring + untracked npc_ai_critter.rs | commit + push wiring; execute E8 4-move + 4 drops |
+| c8 | tip unchanged; only untracked scratch tool | execute E8 3-move + 6 drops |
+| c3 | docs pushed `9299046f7`; dirty spawner.rs | let the lane finish; E8: 2 drops, WaterBoltMimic 694 keeps |
+| c4 | verdicts pushed `17a241f6a`; only untracked scratch | execute E8 1-move (Arapaima 762) + 8 drops; keep CrimsonGoldfish impl (R2) |
+| d40 | tip unchanged; untracked atlas-sim scratch | E8: 1 drop (CrimsonGoldfish row, R2); 37-slot gap rides the merge wave |
+| d35 | atlas-repack docs dirty on `6a2a155a` | let the lane finish; E8 33-move +269 renumber LAST (E7) |
+
+The Lead's "d33b-R4-active/d42b-active/g10-local" read: no `*b` branches
+exist — d33's successor phase IS `b08acf463` on the SAME branch (pushed,
+done), d42's active phase IS `9b22c091` (pushed, clean), g10 is local as
+E6 said. Statuses above are the origin-read truth.
+
+## E8. Per-lane renumber INSTRUCTIONS (the shifting lanes' work orders)
+
+Each shifting lane executes its table against ITS OWN tip: change the
+listed `to_u16` arms AND the mirrored `from_u16` arms (the bijection +
+deny-unreachable tests guard the splice), update the band's witness
+pins/comments that name the old protocol id, and DROP the listed
+duplicate ports (variant + to/from arms + ALL_KINDS row + ENTRIES row +
+stat arms; keep the canonical owner's row; the dropped lane's AI/draw/
+sound wiring stays, keyed on the canonical kind — E3's rule). `cs_id`,
+ENTRIES `net_id`, sheets, render keys and every cs/net-keyed seam DO NOT
+CHANGE (R1's seam evidence). No lane touches another lane's file.
+
+### c10 - 4 owned, 4 renumber, 4 drop
+
+| Kind | old `to_u16`/`from_u16` | new id | cs_id |
+|---|---|---|---|
+| Duck | 362 | **731** | 362 |
+| Duck2 | 363 | **732** | 363 |
+| DuckWhite | 364 | **733** | 364 |
+| DuckWhite2 | 365 | **734** | 365 |
+
+DROP duplicate ports (keep canonical owner's row+wiring):
+- Seagull: drop c10@602 -> keep d42@602 (renumbered from 376)
+- Seagull2: drop c10@603 -> keep d42@603 (renumbered from 377)
+- Grebe: drop c10@608 -> keep d42@608 (renumbered from 382)
+- Grebe2: drop c10@609 -> keep d42@609 (renumbered from 383)
+
+### c3 - 1 owned, 0 renumber, 2 drop
+
+DROP duplicate ports (keep canonical owner's row+wiring):
+- GiantCursedSkull: drop c3@289 -> keep d38@289
+- CursedSkull: drop c3@355 -> keep d34@267
+
+WaterBoltMimic 694 keeps (vanilla-free, `NPCID.cs:12065`).
+
+### c4 - 5 owned, 1 renumber, 8 drop
+
+| Kind | old `to_u16`/`from_u16` | new id | cs_id |
+|---|---|---|---|
+| Arapaima | 237 | **762** | 157 |
+
+Keep as pushed: CrimsonGoldfish@465 (R2: YOUR impl survives),
+GiantFlyingAntlion@509, Pufferfish@688, Orca@692.
+
+DROP duplicate ports (keep canonical owner's row+wiring):
+- CorruptGoldfish: drop c4@229 -> keep d34@277
+- BloodFeeder: drop c4@241 -> keep d37@373
+- FlyingFish: drop c4@354 -> keep d37@359
+- FlyingAntlion: drop c4@581 -> keep d42@581 (renumbered from 357)
+- EyeballFlyingFish: drop c4@587 -> keep d42@587 (renumbered from 363)
+- GoldGoldfish: drop c4@592 -> keep d42@592 (renumbered from 366)
+- Pupfish: drop c4@607 -> keep d42@607 (renumbered from 381)
+- Dolphin: drop c4@615 -> keep d42@615 (renumbered from 389)
+
+Your style-16/44 world-sim wiring, FindFrame helpers and sheets stay —
+the merge routes the canonical kinds through them (your own verdict's
+compose rule). The five dropped fish land at the SAME ids you pushed,
+so no wiring id ever changes.
+
+### c6 - 0 owned, 1 drop
+
+- PumpkingBlade: drop c6@328 -> keep d38@328 (the whole lane's kind
+  contribution dedupes; its style-59 wiring stays).
+
+### c7 - 4 owned, 2 renumber, 0 drop
+
+| Kind | old `to_u16`/`from_u16` | new id | cs_id |
+|---|---|---|---|
+| Firefly | 355 | **735** | 355 |
+| LightningBug | 358 | **736** | 358 |
+
+Keep as pushed: Lavafly@654, Shimmerfly@677 (canonical Shimmerfly owner;
+c9's duplicate drops to you). Your pooled `style == 64` sim arm subsumes
+c9's kind-gated arm at merge (c9's 109 §4e compose stands).
+
+### c8 - 3 owned, 3 renumber, 6 drop
+
+| Kind | old `to_u16`/`from_u16` | new id | cs_id |
+|---|---|---|---|
+| Worm | 357 | **737** | 357 |
+| TruffleWorm | 374 | **738** | 374 |
+| TruffleWormDigger | 375 | **739** | 375 |
+
+DROP duplicate ports (keep canonical owner's row+wiring):
+- GoldWorm: drop c8@448 -> keep d40@448
+- EnchantedNightcrawler: drop c8@484 -> keep d40@484
+- Grubby: drop c8@485 -> keep d40@485
+- Sluggy: drop c8@486 -> keep d40@486
+- Buggy: drop c8@487 -> keep d40@487
+- Maggot: drop c8@606 -> keep d42@606 (renumbered from 380)
+
+The TruffleWormDigger Transform chain + own ENTRIES row (net 375) stay;
+its slot is one of the 88 merge-wave gap closes (R9).
+
+### c9 - 3 owned, 2 renumber, 1 drop
+
+| Kind | old `to_u16`/`from_u16` | new id | cs_id |
+|---|---|---|---|
+| Snail | 359 | **740** | 359 |
+| GlowingSnail | 360 | **741** | 360 |
+
+Keep as pushed: MagmaSnail@655.
+
+DROP duplicate ports (keep canonical owner's row+wiring):
+- Shimmerfly: drop c9@677 -> keep c7@677
+
+R1 is your adjudication receipt: the f47/catch/light/immunity seams all
+key cs/net ids, which do not move. ALSO fix your ALL_KINDS array: the
+four kinds are missing from it entirely (R0) — add them (post-drop: the
+three snails) before the union reconcile.
+
+### d120 - 4 owned, 4 renumber, 1 drop
+
+| Kind | old `to_u16`/`from_u16` | new id | cs_id |
+|---|---|---|---|
+| SantaClaus | 241 | **763** | 142 |
+| Truffle | 242 | **764** | 160 |
+| Steampunker | 243 | **765** | 178 |
+| Cyborg | 244 | **766** | 209 |
+
+DROP duplicate ports (keep canonical owner's row+wiring):
+- BartenderUnconscious: drop d120@245 -> keep d42@579 (renumbered from 355)
+
+R6: 241-244 are d37-owned cs holes (BloodFeeder/BloodJelly/IceGolem/
+RainbowSlime); your town wiring is kind-keyed and untouched. Your four
+ENTRIES rows (net 142/160/178/209) need merge-wave slots (R9 gap list).
+
+### d125 - 2 owned, 2 renumber, 0 drop
+
+| Kind | old `to_u16`/`from_u16` | new id | cs_id |
+|---|---|---|---|
+| EmpressOfLight | 229 | **636** | 636 (via ENTRIES; cs_id rides the folded net row) |
+| PrismaticLacewing | 237 | **742** | 661 (same) |
+
+R4: 636 is your boss's OWN vanilla id — the move RESTORES protocol==cs.
+Sheets NPC_636/NPC_661, slots 183, empress_draw.rs: all net-keyed, all
+stay. Fix the stale ALL_KINDS decl 270→272 (R0).
+
+### d23 - 1 owned, 1 renumber, 5 drop
+
+| Kind | old `to_u16`/`from_u16` | new id | cs_id |
+|---|---|---|---|
+| AngryTrapper | 357 | **743** | 175 (via ENTRIES) |
+
+DROP duplicate ports (keep canonical owner's row+wiring):
+- FungiBulb: drop d23@259 -> keep d37@385
+- GiantFungiBulb: drop d23@260 -> keep d37@386
+- ManEater: drop d23@354 -> keep d34@269
+- Snatcher: drop d23@355 -> keep d34@276
+- Clinger: drop d23@356 -> keep d35@718 (renumbered from 449)
+
+Your style-9-14 axis arms stay (the d23/g9 unreachable-marker precedent
+for the kind-match arms).
+
+### d33 - 7 owned, 0 renumber, 0 drop (KEEP receipt)
+
+BlackDragonfly@595, BlueDragonfly@596, GreenDragonfly@597,
+OrangeDragonfly@598, RedDragonfly@599, YellowDragonfly@600,
+GoldDragonfly@601 — all keep, vanilla-free cs==proto. You are the
+canonical dragonfly owner (R3); d42 drops its seven duplicates.
+
+### d34 - 15 owned, 0 renumber, 0 drop (KEEP receipt)
+
+266-280 as pushed (`5f3435a8` phase 3). Canonical survivor of the
+CursedSkull/ManEater/Snatcher/CorruptGoldfish/Vulture/Demon/Harpy/
+BlueJellyfish duplicate ports.
+
+### d35 - 33 owned, 33 renumber, 0 drop (+269, order-preserving)
+
+| Kind | old | new | | Kind | old | new |
+|---|---|---|---|---|---|---|
+| GoblinScout | 429 | **698** | | SkeletonArcher | 454 | **723** |
+| Bird | 430 | **699** | | VileSpit | 455 | **724** |
+| Pixie | 431 | **700** | | TheHungryII | 456 | **725** |
+| ArmoredSkeleton | 432 | **701** | | ChaosElemental | 457 | **726** |
+| Mummy | 433 | **702** | | Slimer | 458 | **727** |
+| DarkMummy | 434 | **703** | | Gastropod | 459 | **728** |
+| LightMummy | 435 | **704** | | IlluminantBat | 460 | **729** |
+| Wraith | 436 | **705** | | PossessedArmor | 461 | **730** |
+| CursedHammer | 437 | **706** | | Clinger | 449 | **718** |
+| EnchantedSword | 438 | **707** | | AnglerFish | 450 | **719** |
+| Mimic | 439 | **708** | | GreenJellyfish | 451 | **720** |
+| Unicorn | 440 | **709** | | Werewolf | 452 | **721** |
+| GiantBat | 441 | **710** | | Clown | 453 | **722** |
+| Corruptor | 442 | **711** | | DiggerHead | 443 | **712** |
+| DiggerBody | 444 | **713** | | DiggerTail | 445 | **714** |
+| SeekerHead | 446 | **715** | | SeekerBody | 447 | **716** |
+| SeekerTail | 448 | **717** | | | | |
+
+Mechanical rule: every arm +269. Execute LAST against the final roster
+(E7); ENTRIES wholesale from the splice-repaired tip (§7 rule 3).
+
+### d37 - 46 owned, 0 renumber, 0 drop (KEEP receipt — R8)
+
+354-399 byte-identical to `750d8e44` (empty code diff verified). This
+lane owes no renumber-hunks.
+
+### d38 - 35 owned, 0 renumber, 0 drop (KEEP receipt)
+
+281-337 as pushed; portrait gap already closed (`6f9dd02d`).
+
+### d40 - 55 owned, 0 renumber, 1 drop
+
+430-488 keep, EXCEPT:
+- CrimsonGoldfish: drop d40@465 -> keep c4@465 (R2: your kb-0.4 row +
+  missing vanilla_type arm are the defects; c4's impl survives at the
+  same id inside your band).
+Your 37 portrait slots are the merge wave's gap close (R9).
+
+### d42 - 44 owned, 44 renumber, 7 drop (354-404 -> vanilla-free cs)
+
+Mechanical rule: **new id = the kind's own cs_id** (protocol==vanilla,
+the d38/d40 invariant your WIP message already deferred to). Exact arms:
+
+| Kind | old | new | | Kind | old | new |
+|---|---|---|---|---|---|---|
+| DD2LightningBug | 354 | **578** | | Rat | 384 | **610** |
+| BartenderUnconscious | 355 | **579** | | Owl | 385 | **611** |
+| WalkingAntlion | 356 | **580** | | WaterStrider | 386 | **612** |
+| FlyingAntlion | 357 | **581** | | GoldWaterStrider | 387 | **613** |
+| LarvaeAntlion | 358 | **582** | | ExplosiveBunny | 388 | **614** |
+| FairyCritterPink | 359 | **583** | | Dolphin | 389 | **615** |
+| FairyCritterGreen | 360 | **584** | | Turtle | 390 | **616** |
+| FairyCritterBlue | 361 | **585** | | TurtleJungle | 391 | **617** |
+| ZombieMerman | 362 | **586** | | BloodNautilus | 392 | **618** |
+| EyeballFlyingFish | 363 | **587** | | BloodSquid | 393 | **619** |
+| TorchZombie | 364 | **590** | | GoblinShark | 394 | **620** |
+| ArmedTorchZombie | 365 | **591** | | BloodEelHead | 395 | **621** |
+| GoldGoldfish | 366 | **592** | | BloodEelBody | 396 | **622** |
+| GoldGoldfishWalker | 367 | **593** | | BloodEelTail | 397 | **623** |
+| WindyBalloon | 368 | **594** | | Gnome | 398 | **624** |
+| Seagull | 376 | **602** | | SeaTurtle | 399 | **625** |
+| Seagull2 | 377 | **603** | | Seahorse | 400 | **626** |
+| LadyBug | 378 | **604** | | GoldSeahorse | 401 | **627** |
+| GoldLadyBug | 379 | **605** | | Dandelion | 402 | **628** |
+| Maggot | 380 | **606** | | IceMimic | 403 | **629** |
+| Pupfish | 381 | **607** | | BloodMummy | 404 | **630** |
+| Grebe | 382 | **608** | | Grebe2 | 383 | **609** |
+
+DROP duplicate ports (R3 — d33's pushed family is the canonical owner):
+- BlackDragonfly: drop d42@369 -> keep d33@595
+- BlueDragonfly: drop d42@370 -> keep d33@596
+- GreenDragonfly: drop d42@371 -> keep d33@597
+- OrangeDragonfly: drop d42@372 -> keep d33@598
+- RedDragonfly: drop d42@373 -> keep d33@599
+- YellowDragonfly: drop d42@374 -> keep d33@600
+- GoldDragonfly: drop d42@375 -> keep d33@601
+
+(The 588/589 holes in your new band: Golfer/SleepingGolfer — base owns
+those kinds at proto 163/164 with cs 588/589 (`NPCID.cs:11853/:11855`;
+arms verified on your own tip); the cs-reservation rule keeps 588/589
+out of your band. Keep the gaps.)
+Your 37 portrait slots + the Seagull2/Grebe2/GoldGoldfishWalker/
+ArmedTorchZombie folds ride the merge wave (R9).
+
+### e26 - 1 owned, 1 renumber, 3 drop
+
+| Kind | old `to_u16`/`from_u16` | new id | cs_id |
+|---|---|---|---|
+| Frog | 361 | **744** | 361 |
+
+DROP duplicate ports (keep canonical owner's row+wiring):
+- Duck: drop e26@362 -> keep c10@731 (renumbered from 362)
+- LadyBug: drop e26@604 -> keep d42@604 (renumbered from 378)
+- GoldLadyBug: drop e26@605 -> keep d42@605 (renumbered from 379)
+
+Your luck wiring is kind-keyed; the aiStyle-115 boundary stays yours.
+
+### g8 - 17 owned, 17 renumber, 17 drop (354-387 -> 745-761)
+
+| Kind | old | new | cs | | Kind | old | new | cs |
+|---|---|---|---|---|---|---|---|---|
+| PinkJellyfish | 356 | **745** | 64 | | LostGirl | 373 | **755** | 195 |
+| Antlion | 357 | **746** | 69 | | Nymph | 374 | **756** | 196 |
+| SpikeBall | 358 | **747** | 70 | | IceBat | 380 | **757** | 150 |
+| WallCreeper | 366 | **748** | 164 | | Lavabat | 381 | **758** | 151 |
+| WallCreeperWall | 367 | **749** | 165 | | GiantFlyingFox | 382 | **759** | 152 |
+| IceElemental | 368 | **750** | 169 | | VampireBat | 383 | **760** | 158 |
+| Herpling | 369 | **751** | 174 | | RedDevil | 387 | **761** | 156 |
+| Derpling | 370 | **752** | 177 | | CrimsonAxe | 371 | **753** | 179 |
+| FloatyGross | 372 | **754** | 182 | | | | | |
+
+DROP duplicate ports (keep canonical owner's row+wiring):
+- Vulture: drop g8@354 -> keep d34@278
+- BlueJellyfish: drop g8@355 -> keep d34@280
+- Pixie: drop g8@359 -> keep d35@700 (renumbered from 431)
+- Wraith: drop g8@360 -> keep d35@705 (renumbered from 436)
+- CursedHammer: drop g8@361 -> keep d35@706 (renumbered from 437)
+- EnchantedSword: drop g8@362 -> keep d35@707 (renumbered from 438)
+- Mimic: drop g8@363 -> keep d35@708 (renumbered from 439)
+- GreenJellyfish: drop g8@364 -> keep d35@720 (renumbered from 451)
+- Gastropod: drop g8@365 -> keep d35@728 (renumbered from 459)
+- CursedSkull: drop g8@375 -> keep d34@267
+- Demon: drop g8@376 -> keep d34@279
+- GiantBat: drop g8@377 -> keep d35@710 (renumbered from 441)
+- Slimer: drop g8@378 -> keep d35@727 (renumbered from 458)
+- IlluminantBat: drop g8@379 -> keep d35@729 (renumbered from 460)
+- FlyingSnake: drop g8@384 -> keep d37@360
+- Squid: drop g8@385 -> keep d37@358
+- Harpy: drop g8@386 -> keep d34@275
+
+Your 34 axis wirings ALL stay (the machine-wiring lane's whole point);
+only the 17 duplicate kind rows drop. Fix the stale ALL_KINDS decl
+270→304 (R0), then the union reconcile. Your 34 pushed portrait slots
+dedupe to the 17 owned kinds at merge (the other 17 sit on dropped
+ports; their canonical owners' slots land via the owners' lanes or the
+R9 gap/deferral lists — e.g. d35's Mimic/EnchantedSword/GreenJellyfish/
+Gastropod sheets are documented deferrals).
+
+### E8 witness
+
+Tables generated mechanically from the verified final plan
+(`tools/_d37_receipts_final.json` ← `_d37_receipts_plan.py` +
+`_d37_final_verify.py`): 280 owned kinds, 280 distinct final ids, zero
+clash with base's 270-id map, max 766; guidance bands 767-826 + g10/d33
+cs==proto verified free. 114 moves / 166 keeps / 56 drops. Every count
+in R9 re-derived by `_d37_receipts_counts.py` + `_d37_slot_account.py`
+from the R0 tips (git-show, no working-tree reads, no junction
+recursion). No code was changed on this branch; this extension is the
+deliverable.

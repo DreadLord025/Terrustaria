@@ -1,0 +1,2430 @@
+{
+ "drops": [
+  [
+   "Shimmerfly",
+   "c9",
+   677,
+   "c7"
+  ],
+  [
+   "CursedSkull",
+   "c3",
+   355,
+   "d34"
+  ],
+  [
+   "ManEater",
+   "d23",
+   354,
+   "d34"
+  ],
+  [
+   "Snatcher",
+   "d23",
+   355,
+   "d34"
+  ],
+  [
+   "CorruptGoldfish",
+   "c4",
+   229,
+   "d34"
+  ],
+  [
+   "Clinger",
+   "d23",
+   356,
+   "d35"
+  ],
+  [
+   "FlyingFish",
+   "c4",
+   354,
+   "d37"
+  ],
+  [
+   "BloodFeeder",
+   "c4",
+   241,
+   "d37"
+  ],
+  [
+   "FungiBulb",
+   "d23",
+   259,
+   "d37"
+  ],
+  [
+   "GiantFungiBulb",
+   "d23",
+   260,
+   "d37"
+  ],
+  [
+   "GiantCursedSkull",
+   "c3",
+   289,
+   "d38"
+  ],
+  [
+   "PumpkingBlade",
+   "c6",
+   328,
+   "d38"
+  ],
+  [
+   "GoldWorm",
+   "c8",
+   448,
+   "d40"
+  ],
+  [
+   "CrimsonGoldfish",
+   "d40",
+   465,
+   "c4"
+  ],
+  [
+   "EnchantedNightcrawler",
+   "c8",
+   484,
+   "d40"
+  ],
+  [
+   "Grubby",
+   "c8",
+   485,
+   "d40"
+  ],
+  [
+   "Sluggy",
+   "c8",
+   486,
+   "d40"
+  ],
+  [
+   "Buggy",
+   "c8",
+   487,
+   "d40"
+  ],
+  [
+   "BartenderUnconscious",
+   "d120",
+   245,
+   "d42"
+  ],
+  [
+   "FlyingAntlion",
+   "c4",
+   581,
+   "d42"
+  ],
+  [
+   "EyeballFlyingFish",
+   "c4",
+   587,
+   "d42"
+  ],
+  [
+   "GoldGoldfish",
+   "c4",
+   592,
+   "d42"
+  ],
+  [
+   "BlackDragonfly",
+   "d42",
+   369,
+   "d33"
+  ],
+  [
+   "BlueDragonfly",
+   "d42",
+   370,
+   "d33"
+  ],
+  [
+   "GreenDragonfly",
+   "d42",
+   371,
+   "d33"
+  ],
+  [
+   "OrangeDragonfly",
+   "d42",
+   372,
+   "d33"
+  ],
+  [
+   "RedDragonfly",
+   "d42",
+   373,
+   "d33"
+  ],
+  [
+   "YellowDragonfly",
+   "d42",
+   374,
+   "d33"
+  ],
+  [
+   "GoldDragonfly",
+   "d42",
+   375,
+   "d33"
+  ],
+  [
+   "Seagull",
+   "c10",
+   602,
+   "d42"
+  ],
+  [
+   "Seagull2",
+   "c10",
+   603,
+   "d42"
+  ],
+  [
+   "Maggot",
+   "c8",
+   606,
+   "d42"
+  ],
+  [
+   "Pupfish",
+   "c4",
+   607,
+   "d42"
+  ],
+  [
+   "Grebe",
+   "c10",
+   608,
+   "d42"
+  ],
+  [
+   "Grebe2",
+   "c10",
+   609,
+   "d42"
+  ],
+  [
+   "Dolphin",
+   "c4",
+   615,
+   "d42"
+  ],
+  [
+   "Duck",
+   "e26",
+   362,
+   "c10"
+  ],
+  [
+   "LadyBug",
+   "e26",
+   604,
+   "d42"
+  ],
+  [
+   "GoldLadyBug",
+   "e26",
+   605,
+   "d42"
+  ],
+  [
+   "Vulture",
+   "g8",
+   354,
+   "d34"
+  ],
+  [
+   "BlueJellyfish",
+   "g8",
+   355,
+   "d34"
+  ],
+  [
+   "Pixie",
+   "g8",
+   359,
+   "d35"
+  ],
+  [
+   "Wraith",
+   "g8",
+   360,
+   "d35"
+  ],
+  [
+   "CursedHammer",
+   "g8",
+   361,
+   "d35"
+  ],
+  [
+   "EnchantedSword",
+   "g8",
+   362,
+   "d35"
+  ],
+  [
+   "Mimic",
+   "g8",
+   363,
+   "d35"
+  ],
+  [
+   "GreenJellyfish",
+   "g8",
+   364,
+   "d35"
+  ],
+  [
+   "Gastropod",
+   "g8",
+   365,
+   "d35"
+  ],
+  [
+   "CursedSkull",
+   "g8",
+   375,
+   "d34"
+  ],
+  [
+   "Demon",
+   "g8",
+   376,
+   "d34"
+  ],
+  [
+   "GiantBat",
+   "g8",
+   377,
+   "d35"
+  ],
+  [
+   "Slimer",
+   "g8",
+   378,
+   "d35"
+  ],
+  [
+   "IlluminantBat",
+   "g8",
+   379,
+   "d35"
+  ],
+  [
+   "FlyingSnake",
+   "g8",
+   384,
+   "d37"
+  ],
+  [
+   "Squid",
+   "g8",
+   385,
+   "d37"
+  ],
+  [
+   "Harpy",
+   "g8",
+   386,
+   "d34"
+  ]
+ ],
+ "final": {
+  "AnglerFish": 719,
+  "AngryBones": 266,
+  "AngryBonesBig": 294,
+  "AngryBonesBigHelmet": 296,
+  "AngryBonesBigMuscle": 295,
+  "AngryTrapper": 743,
+  "AnomuraFungus": 383,
+  "Antlion": 746,
+  "Arapaima": 762,
+  "ArmedTorchZombie": 591,
+  "ArmedZombie": 430,
+  "ArmedZombieCenx": 436,
+  "ArmedZombieEskimo": 431,
+  "ArmedZombiePincussion": 432,
+  "ArmedZombieSlimed": 433,
+  "ArmedZombieSwamp": 434,
+  "ArmedZombieTwiggy": 435,
+  "ArmoredSkeleton": 701,
+  "BartenderUnconscious": 579,
+  "BigMimicCorruption": 473,
+  "BigMimicCrimson": 474,
+  "BigMimicHallow": 475,
+  "BigMimicJungle": 476,
+  "Bird": 699,
+  "BirdBlue": 297,
+  "BirdRed": 298,
+  "BlackDragonfly": 595,
+  "BlackRecluseWall": 370,
+  "BloodCrawler": 371,
+  "BloodCrawlerWall": 372,
+  "BloodEelBody": 622,
+  "BloodEelHead": 621,
+  "BloodEelTail": 623,
+  "BloodFeeder": 373,
+  "BloodJelly": 374,
+  "BloodMummy": 630,
+  "BloodNautilus": 618,
+  "BloodSquid": 619,
+  "BlueArmoredBones": 392,
+  "BlueArmoredBonesMace": 393,
+  "BlueArmoredBonesNoPants": 394,
+  "BlueArmoredBonesSword": 395,
+  "BlueDragonfly": 596,
+  "BlueJellyfish": 280,
+  "BoneLee": 287,
+  "BoneSerpentBody": 272,
+  "BoneSerpentHead": 271,
+  "BoneSerpentTail": 273,
+  "BoneThrowingSkeleton": 449,
+  "BoneThrowingSkeleton2": 450,
+  "BoneThrowingSkeleton3": 451,
+  "BoneThrowingSkeleton4": 452,
+  "Buggy": 487,
+  "Bunny": 270,
+  "BunnySlimed": 303,
+  "BunnyXmas": 337,
+  "Butcher": 460,
+  "ChaosElemental": 726,
+  "Clinger": 718,
+  "Clown": 722,
+  "CochinealBeetle": 354,
+  "CorruptBunny": 274,
+  "CorruptGoldfish": 277,
+  "Corruptor": 711,
+  "CreatureFromTheDeep": 461,
+  "CrimsonAxe": 753,
+  "CrimsonBunny": 464,
+  "CrimsonGoldfish": 465,
+  "CrimsonPenguin": 470,
+  "CultistBossClone": 440,
+  "CultistDevote": 438,
+  "CultistDragonBody1": 455,
+  "CultistDragonBody2": 456,
+  "CultistDragonBody3": 457,
+  "CultistDragonBody4": 458,
+  "CultistDragonHead": 454,
+  "CultistDragonTail": 459,
+  "CultistTablet": 437,
+  "CursedHammer": 706,
+  "CursedSkull": 267,
+  "CyanBeetle": 355,
+  "Cyborg": 766,
+  "DD2LightningBug": 578,
+  "Dandelion": 628,
+  "DarkMummy": 703,
+  "DeadlySphere": 467,
+  "Demon": 279,
+  "DemonEyeOwl": 317,
+  "DemonEyeSpaceship": 318,
+  "Derpling": 752,
+  "DiabolistRed": 285,
+  "DiabolistWhite": 286,
+  "DiggerBody": 713,
+  "DiggerHead": 712,
+  "DiggerTail": 714,
+  "Dolphin": 615,
+  "DrManFly": 468,
+  "Duck": 731,
+  "Duck2": 732,
+  "DuckWhite": 733,
+  "DuckWhite2": 734,
+  "EmpressOfLight": 636,
+  "EnchantedNightcrawler": 484,
+  "EnchantedSword": 707,
+  "ExplosiveBunny": 614,
+  "EyeballFlyingFish": 587,
+  "Eyezor": 377,
+  "FairyCritterBlue": 585,
+  "FairyCritterGreen": 584,
+  "FairyCritterPink": 583,
+  "Firefly": 735,
+  "FloatyGross": 754,
+  "FlyingAntlion": 581,
+  "FlyingFish": 359,
+  "FlyingSnake": 360,
+  "Fritz": 462,
+  "Frog": 744,
+  "FungiBulb": 385,
+  "FungoFish": 382,
+  "Gastropod": 728,
+  "Ghost": 316,
+  "GiantBat": 710,
+  "GiantCursedSkull": 289,
+  "GiantFlyingAntlion": 509,
+  "GiantFlyingFox": 759,
+  "GiantFungiBulb": 386,
+  "GlowingSnail": 741,
+  "Gnome": 624,
+  "GoblinScout": 698,
+  "GoblinShark": 620,
+  "GoldBird": 442,
+  "GoldBunny": 443,
+  "GoldButterfly": 444,
+  "GoldDragonfly": 601,
+  "GoldFrog": 445,
+  "GoldGoldfish": 592,
+  "GoldGoldfishWalker": 593,
+  "GoldGrasshopper": 446,
+  "GoldLadyBug": 605,
+  "GoldMouse": 447,
+  "GoldSeahorse": 627,
+  "GoldWaterStrider": 613,
+  "GoldWorm": 448,
+  "GoldfishWalker": 362,
+  "GraniteFlyer": 483,
+  "GraniteGolem": 482,
+  "Grebe": 608,
+  "Grebe2": 609,
+  "GreekSkeleton": 481,
+  "GreenDragonfly": 597,
+  "GreenJellyfish": 720,
+  "Grubby": 485,
+  "Harpy": 275,
+  "HellArmoredBones": 396,
+  "HellArmoredBonesMace": 398,
+  "HellArmoredBonesSpikeShield": 397,
+  "HellArmoredBonesSword": 399,
+  "Herpling": 751,
+  "HoppinJack": 304,
+  "HornetFatty": 363,
+  "HornetHoney": 364,
+  "HornetLeafy": 365,
+  "HornetSpikey": 366,
+  "HornetStingy": 367,
+  "IceBat": 757,
+  "IceElemental": 750,
+  "IceGolem": 375,
+  "IceMimic": 629,
+  "IchorSticker": 387,
+  "IlluminantBat": 729,
+  "JungleCreeper": 368,
+  "JungleCreeperWall": 369,
+  "LacBeetle": 356,
+  "LadyBug": 604,
+  "LarvaeAntlion": 582,
+  "Lavabat": 758,
+  "Lavafly": 654,
+  "LightMummy": 704,
+  "LightningBug": 736,
+  "LostGirl": 755,
+  "Maggot": 606,
+  "MagmaSnail": 655,
+  "ManEater": 269,
+  "Medusa": 480,
+  "Mimic": 708,
+  "Mothron": 477,
+  "MothronEgg": 478,
+  "MothronSpawn": 479,
+  "Mouse": 300,
+  "Mummy": 702,
+  "MushiLadybug": 384,
+  "Nailhead": 463,
+  "Necromancer": 283,
+  "NecromancerArmored": 284,
+  "Nymph": 756,
+  "OldMan": 268,
+  "OrangeDragonfly": 598,
+  "Orca": 692,
+  "Owl": 611,
+  "Paladin": 290,
+  "Parrot": 378,
+  "PinkJellyfish": 745,
+  "Pirate": 361,
+  "Pixie": 700,
+  "PossessedArmor": 730,
+  "PrismaticLacewing": 742,
+  "Psycho": 466,
+  "Pufferfish": 688,
+  "PumpkingBlade": 328,
+  "Pupfish": 607,
+  "RaggedCaster": 281,
+  "RaggedCasterOpenCoat": 282,
+  "RainbowSlime": 376,
+  "Rat": 610,
+  "Raven": 301,
+  "Reaper": 379,
+  "RedDevil": 761,
+  "RedDragonfly": 599,
+  "RustyArmoredBonesAxe": 388,
+  "RustyArmoredBonesFlail": 389,
+  "RustyArmoredBonesSword": 390,
+  "RustyArmoredBonesSwordNoArmor": 391,
+  "SantaClaus": 763,
+  "SeaSnail": 357,
+  "SeaTurtle": 625,
+  "Seagull": 602,
+  "Seagull2": 603,
+  "Seahorse": 626,
+  "SeekerBody": 716,
+  "SeekerHead": 715,
+  "SeekerTail": 717,
+  "ShadowFlameApparition": 472,
+  "Shimmerfly": 677,
+  "SkeletonAlien": 324,
+  "SkeletonArcher": 723,
+  "SkeletonAstonaut": 323,
+  "SkeletonCommando": 293,
+  "SkeletonMerchant": 453,
+  "SkeletonSniper": 291,
+  "SkeletonTopHat": 322,
+  "SlimeMasked": 302,
+  "SlimeRibbonGreen": 335,
+  "SlimeRibbonRed": 336,
+  "SlimeRibbonWhite": 333,
+  "SlimeRibbonYellow": 334,
+  "Slimer": 727,
+  "Sluggy": 486,
+  "Snail": 740,
+  "Snatcher": 276,
+  "SpikeBall": 747,
+  "Squid": 358,
+  "Squirrel": 299,
+  "Steampunker": 765,
+  "TacticalSkeleton": 292,
+  "TargetDummy": 488,
+  "TheHungryII": 725,
+  "ThePossessed": 469,
+  "TorchZombie": 590,
+  "Truffle": 764,
+  "TruffleWorm": 738,
+  "TruffleWormDigger": 739,
+  "Turtle": 616,
+  "TurtleJungle": 617,
+  "Unicorn": 709,
+  "VampireBat": 760,
+  "VileSpit": 724,
+  "Vulture": 278,
+  "WalkingAntlion": 580,
+  "WallCreeper": 748,
+  "WallCreeperWall": 749,
+  "WaterBoltMimic": 694,
+  "WaterStrider": 612,
+  "Werewolf": 721,
+  "WindyBalloon": 594,
+  "Worm": 737,
+  "Wraith": 705,
+  "YellowDragonfly": 600,
+  "ZombieMerman": 586,
+  "ZombieMushroom": 380,
+  "ZombieMushroomHat": 381
+ },
+ "moved": [
+  [
+   "Duck",
+   "c10",
+   362,
+   731
+  ],
+  [
+   "Duck2",
+   "c10",
+   363,
+   732
+  ],
+  [
+   "DuckWhite",
+   "c10",
+   364,
+   733
+  ],
+  [
+   "DuckWhite2",
+   "c10",
+   365,
+   734
+  ],
+  [
+   "Arapaima",
+   "c4",
+   237,
+   762
+  ],
+  [
+   "Firefly",
+   "c7",
+   355,
+   735
+  ],
+  [
+   "LightningBug",
+   "c7",
+   358,
+   736
+  ],
+  [
+   "Worm",
+   "c8",
+   357,
+   737
+  ],
+  [
+   "TruffleWorm",
+   "c8",
+   374,
+   738
+  ],
+  [
+   "TruffleWormDigger",
+   "c8",
+   375,
+   739
+  ],
+  [
+   "Snail",
+   "c9",
+   359,
+   740
+  ],
+  [
+   "GlowingSnail",
+   "c9",
+   360,
+   741
+  ],
+  [
+   "SantaClaus",
+   "d120",
+   241,
+   763
+  ],
+  [
+   "Truffle",
+   "d120",
+   242,
+   764
+  ],
+  [
+   "Steampunker",
+   "d120",
+   243,
+   765
+  ],
+  [
+   "Cyborg",
+   "d120",
+   244,
+   766
+  ],
+  [
+   "EmpressOfLight",
+   "d125",
+   229,
+   636
+  ],
+  [
+   "PrismaticLacewing",
+   "d125",
+   237,
+   742
+  ],
+  [
+   "AngryTrapper",
+   "d23",
+   357,
+   743
+  ],
+  [
+   "GoblinScout",
+   "d35",
+   429,
+   698
+  ],
+  [
+   "Bird",
+   "d35",
+   430,
+   699
+  ],
+  [
+   "Pixie",
+   "d35",
+   431,
+   700
+  ],
+  [
+   "ArmoredSkeleton",
+   "d35",
+   432,
+   701
+  ],
+  [
+   "Mummy",
+   "d35",
+   433,
+   702
+  ],
+  [
+   "DarkMummy",
+   "d35",
+   434,
+   703
+  ],
+  [
+   "LightMummy",
+   "d35",
+   435,
+   704
+  ],
+  [
+   "Wraith",
+   "d35",
+   436,
+   705
+  ],
+  [
+   "CursedHammer",
+   "d35",
+   437,
+   706
+  ],
+  [
+   "EnchantedSword",
+   "d35",
+   438,
+   707
+  ],
+  [
+   "Mimic",
+   "d35",
+   439,
+   708
+  ],
+  [
+   "Unicorn",
+   "d35",
+   440,
+   709
+  ],
+  [
+   "GiantBat",
+   "d35",
+   441,
+   710
+  ],
+  [
+   "Corruptor",
+   "d35",
+   442,
+   711
+  ],
+  [
+   "DiggerHead",
+   "d35",
+   443,
+   712
+  ],
+  [
+   "DiggerBody",
+   "d35",
+   444,
+   713
+  ],
+  [
+   "DiggerTail",
+   "d35",
+   445,
+   714
+  ],
+  [
+   "SeekerHead",
+   "d35",
+   446,
+   715
+  ],
+  [
+   "SeekerBody",
+   "d35",
+   447,
+   716
+  ],
+  [
+   "SeekerTail",
+   "d35",
+   448,
+   717
+  ],
+  [
+   "Clinger",
+   "d35",
+   449,
+   718
+  ],
+  [
+   "AnglerFish",
+   "d35",
+   450,
+   719
+  ],
+  [
+   "GreenJellyfish",
+   "d35",
+   451,
+   720
+  ],
+  [
+   "Werewolf",
+   "d35",
+   452,
+   721
+  ],
+  [
+   "Clown",
+   "d35",
+   453,
+   722
+  ],
+  [
+   "SkeletonArcher",
+   "d35",
+   454,
+   723
+  ],
+  [
+   "VileSpit",
+   "d35",
+   455,
+   724
+  ],
+  [
+   "TheHungryII",
+   "d35",
+   456,
+   725
+  ],
+  [
+   "ChaosElemental",
+   "d35",
+   457,
+   726
+  ],
+  [
+   "Slimer",
+   "d35",
+   458,
+   727
+  ],
+  [
+   "Gastropod",
+   "d35",
+   459,
+   728
+  ],
+  [
+   "IlluminantBat",
+   "d35",
+   460,
+   729
+  ],
+  [
+   "PossessedArmor",
+   "d35",
+   461,
+   730
+  ],
+  [
+   "DD2LightningBug",
+   "d42",
+   354,
+   578
+  ],
+  [
+   "BartenderUnconscious",
+   "d42",
+   355,
+   579
+  ],
+  [
+   "WalkingAntlion",
+   "d42",
+   356,
+   580
+  ],
+  [
+   "FlyingAntlion",
+   "d42",
+   357,
+   581
+  ],
+  [
+   "LarvaeAntlion",
+   "d42",
+   358,
+   582
+  ],
+  [
+   "FairyCritterPink",
+   "d42",
+   359,
+   583
+  ],
+  [
+   "FairyCritterGreen",
+   "d42",
+   360,
+   584
+  ],
+  [
+   "FairyCritterBlue",
+   "d42",
+   361,
+   585
+  ],
+  [
+   "ZombieMerman",
+   "d42",
+   362,
+   586
+  ],
+  [
+   "EyeballFlyingFish",
+   "d42",
+   363,
+   587
+  ],
+  [
+   "TorchZombie",
+   "d42",
+   364,
+   590
+  ],
+  [
+   "ArmedTorchZombie",
+   "d42",
+   365,
+   591
+  ],
+  [
+   "GoldGoldfish",
+   "d42",
+   366,
+   592
+  ],
+  [
+   "GoldGoldfishWalker",
+   "d42",
+   367,
+   593
+  ],
+  [
+   "WindyBalloon",
+   "d42",
+   368,
+   594
+  ],
+  [
+   "Seagull",
+   "d42",
+   376,
+   602
+  ],
+  [
+   "Seagull2",
+   "d42",
+   377,
+   603
+  ],
+  [
+   "LadyBug",
+   "d42",
+   378,
+   604
+  ],
+  [
+   "GoldLadyBug",
+   "d42",
+   379,
+   605
+  ],
+  [
+   "Maggot",
+   "d42",
+   380,
+   606
+  ],
+  [
+   "Pupfish",
+   "d42",
+   381,
+   607
+  ],
+  [
+   "Grebe",
+   "d42",
+   382,
+   608
+  ],
+  [
+   "Grebe2",
+   "d42",
+   383,
+   609
+  ],
+  [
+   "Rat",
+   "d42",
+   384,
+   610
+  ],
+  [
+   "Owl",
+   "d42",
+   385,
+   611
+  ],
+  [
+   "WaterStrider",
+   "d42",
+   386,
+   612
+  ],
+  [
+   "GoldWaterStrider",
+   "d42",
+   387,
+   613
+  ],
+  [
+   "ExplosiveBunny",
+   "d42",
+   388,
+   614
+  ],
+  [
+   "Dolphin",
+   "d42",
+   389,
+   615
+  ],
+  [
+   "Turtle",
+   "d42",
+   390,
+   616
+  ],
+  [
+   "TurtleJungle",
+   "d42",
+   391,
+   617
+  ],
+  [
+   "BloodNautilus",
+   "d42",
+   392,
+   618
+  ],
+  [
+   "BloodSquid",
+   "d42",
+   393,
+   619
+  ],
+  [
+   "GoblinShark",
+   "d42",
+   394,
+   620
+  ],
+  [
+   "BloodEelHead",
+   "d42",
+   395,
+   621
+  ],
+  [
+   "BloodEelBody",
+   "d42",
+   396,
+   622
+  ],
+  [
+   "BloodEelTail",
+   "d42",
+   397,
+   623
+  ],
+  [
+   "Gnome",
+   "d42",
+   398,
+   624
+  ],
+  [
+   "SeaTurtle",
+   "d42",
+   399,
+   625
+  ],
+  [
+   "Seahorse",
+   "d42",
+   400,
+   626
+  ],
+  [
+   "GoldSeahorse",
+   "d42",
+   401,
+   627
+  ],
+  [
+   "Dandelion",
+   "d42",
+   402,
+   628
+  ],
+  [
+   "IceMimic",
+   "d42",
+   403,
+   629
+  ],
+  [
+   "BloodMummy",
+   "d42",
+   404,
+   630
+  ],
+  [
+   "Frog",
+   "e26",
+   361,
+   744
+  ],
+  [
+   "PinkJellyfish",
+   "g8",
+   356,
+   745
+  ],
+  [
+   "Antlion",
+   "g8",
+   357,
+   746
+  ],
+  [
+   "SpikeBall",
+   "g8",
+   358,
+   747
+  ],
+  [
+   "WallCreeper",
+   "g8",
+   366,
+   748
+  ],
+  [
+   "WallCreeperWall",
+   "g8",
+   367,
+   749
+  ],
+  [
+   "IceElemental",
+   "g8",
+   368,
+   750
+  ],
+  [
+   "Herpling",
+   "g8",
+   369,
+   751
+  ],
+  [
+   "Derpling",
+   "g8",
+   370,
+   752
+  ],
+  [
+   "CrimsonAxe",
+   "g8",
+   371,
+   753
+  ],
+  [
+   "FloatyGross",
+   "g8",
+   372,
+   754
+  ],
+  [
+   "LostGirl",
+   "g8",
+   373,
+   755
+  ],
+  [
+   "Nymph",
+   "g8",
+   374,
+   756
+  ],
+  [
+   "IceBat",
+   "g8",
+   380,
+   757
+  ],
+  [
+   "Lavabat",
+   "g8",
+   381,
+   758
+  ],
+  [
+   "GiantFlyingFox",
+   "g8",
+   382,
+   759
+  ],
+  [
+   "VampireBat",
+   "g8",
+   383,
+   760
+  ],
+  [
+   "RedDevil",
+   "g8",
+   387,
+   761
+  ]
+ ],
+ "owners": {
+  "AnglerFish": [
+   "d35",
+   450
+  ],
+  "AngryBones": [
+   "d34",
+   266
+  ],
+  "AngryBonesBig": [
+   "d38",
+   294
+  ],
+  "AngryBonesBigHelmet": [
+   "d38",
+   296
+  ],
+  "AngryBonesBigMuscle": [
+   "d38",
+   295
+  ],
+  "AngryTrapper": [
+   "d23",
+   357
+  ],
+  "AnomuraFungus": [
+   "d37",
+   383
+  ],
+  "Antlion": [
+   "g8",
+   357
+  ],
+  "Arapaima": [
+   "c4",
+   237
+  ],
+  "ArmedTorchZombie": [
+   "d42",
+   365
+  ],
+  "ArmedZombie": [
+   "d40",
+   430
+  ],
+  "ArmedZombieCenx": [
+   "d40",
+   436
+  ],
+  "ArmedZombieEskimo": [
+   "d40",
+   431
+  ],
+  "ArmedZombiePincussion": [
+   "d40",
+   432
+  ],
+  "ArmedZombieSlimed": [
+   "d40",
+   433
+  ],
+  "ArmedZombieSwamp": [
+   "d40",
+   434
+  ],
+  "ArmedZombieTwiggy": [
+   "d40",
+   435
+  ],
+  "ArmoredSkeleton": [
+   "d35",
+   432
+  ],
+  "BartenderUnconscious": [
+   "d42",
+   355
+  ],
+  "BigMimicCorruption": [
+   "d40",
+   473
+  ],
+  "BigMimicCrimson": [
+   "d40",
+   474
+  ],
+  "BigMimicHallow": [
+   "d40",
+   475
+  ],
+  "BigMimicJungle": [
+   "d40",
+   476
+  ],
+  "Bird": [
+   "d35",
+   430
+  ],
+  "BirdBlue": [
+   "d38",
+   297
+  ],
+  "BirdRed": [
+   "d38",
+   298
+  ],
+  "BlackDragonfly": [
+   "d33",
+   595
+  ],
+  "BlackRecluseWall": [
+   "d37",
+   370
+  ],
+  "BloodCrawler": [
+   "d37",
+   371
+  ],
+  "BloodCrawlerWall": [
+   "d37",
+   372
+  ],
+  "BloodEelBody": [
+   "d42",
+   396
+  ],
+  "BloodEelHead": [
+   "d42",
+   395
+  ],
+  "BloodEelTail": [
+   "d42",
+   397
+  ],
+  "BloodFeeder": [
+   "d37",
+   373
+  ],
+  "BloodJelly": [
+   "d37",
+   374
+  ],
+  "BloodMummy": [
+   "d42",
+   404
+  ],
+  "BloodNautilus": [
+   "d42",
+   392
+  ],
+  "BloodSquid": [
+   "d42",
+   393
+  ],
+  "BlueArmoredBones": [
+   "d37",
+   392
+  ],
+  "BlueArmoredBonesMace": [
+   "d37",
+   393
+  ],
+  "BlueArmoredBonesNoPants": [
+   "d37",
+   394
+  ],
+  "BlueArmoredBonesSword": [
+   "d37",
+   395
+  ],
+  "BlueDragonfly": [
+   "d33",
+   596
+  ],
+  "BlueJellyfish": [
+   "d34",
+   280
+  ],
+  "BoneLee": [
+   "d38",
+   287
+  ],
+  "BoneSerpentBody": [
+   "d34",
+   272
+  ],
+  "BoneSerpentHead": [
+   "d34",
+   271
+  ],
+  "BoneSerpentTail": [
+   "d34",
+   273
+  ],
+  "BoneThrowingSkeleton": [
+   "d40",
+   449
+  ],
+  "BoneThrowingSkeleton2": [
+   "d40",
+   450
+  ],
+  "BoneThrowingSkeleton3": [
+   "d40",
+   451
+  ],
+  "BoneThrowingSkeleton4": [
+   "d40",
+   452
+  ],
+  "Buggy": [
+   "d40",
+   487
+  ],
+  "Bunny": [
+   "d34",
+   270
+  ],
+  "BunnySlimed": [
+   "d38",
+   303
+  ],
+  "BunnyXmas": [
+   "d38",
+   337
+  ],
+  "Butcher": [
+   "d40",
+   460
+  ],
+  "ChaosElemental": [
+   "d35",
+   457
+  ],
+  "Clinger": [
+   "d35",
+   449
+  ],
+  "Clown": [
+   "d35",
+   453
+  ],
+  "CochinealBeetle": [
+   "d37",
+   354
+  ],
+  "CorruptBunny": [
+   "d34",
+   274
+  ],
+  "CorruptGoldfish": [
+   "d34",
+   277
+  ],
+  "Corruptor": [
+   "d35",
+   442
+  ],
+  "CreatureFromTheDeep": [
+   "d40",
+   461
+  ],
+  "CrimsonAxe": [
+   "g8",
+   371
+  ],
+  "CrimsonBunny": [
+   "d40",
+   464
+  ],
+  "CrimsonGoldfish": [
+   "c4",
+   465
+  ],
+  "CrimsonPenguin": [
+   "d40",
+   470
+  ],
+  "CultistBossClone": [
+   "d40",
+   440
+  ],
+  "CultistDevote": [
+   "d40",
+   438
+  ],
+  "CultistDragonBody1": [
+   "d40",
+   455
+  ],
+  "CultistDragonBody2": [
+   "d40",
+   456
+  ],
+  "CultistDragonBody3": [
+   "d40",
+   457
+  ],
+  "CultistDragonBody4": [
+   "d40",
+   458
+  ],
+  "CultistDragonHead": [
+   "d40",
+   454
+  ],
+  "CultistDragonTail": [
+   "d40",
+   459
+  ],
+  "CultistTablet": [
+   "d40",
+   437
+  ],
+  "CursedHammer": [
+   "d35",
+   437
+  ],
+  "CursedSkull": [
+   "d34",
+   267
+  ],
+  "CyanBeetle": [
+   "d37",
+   355
+  ],
+  "Cyborg": [
+   "d120",
+   244
+  ],
+  "DD2LightningBug": [
+   "d42",
+   354
+  ],
+  "Dandelion": [
+   "d42",
+   402
+  ],
+  "DarkMummy": [
+   "d35",
+   434
+  ],
+  "DeadlySphere": [
+   "d40",
+   467
+  ],
+  "Demon": [
+   "d34",
+   279
+  ],
+  "DemonEyeOwl": [
+   "d38",
+   317
+  ],
+  "DemonEyeSpaceship": [
+   "d38",
+   318
+  ],
+  "Derpling": [
+   "g8",
+   370
+  ],
+  "DiabolistRed": [
+   "d38",
+   285
+  ],
+  "DiabolistWhite": [
+   "d38",
+   286
+  ],
+  "DiggerBody": [
+   "d35",
+   444
+  ],
+  "DiggerHead": [
+   "d35",
+   443
+  ],
+  "DiggerTail": [
+   "d35",
+   445
+  ],
+  "Dolphin": [
+   "d42",
+   389
+  ],
+  "DrManFly": [
+   "d40",
+   468
+  ],
+  "Duck": [
+   "c10",
+   362
+  ],
+  "Duck2": [
+   "c10",
+   363
+  ],
+  "DuckWhite": [
+   "c10",
+   364
+  ],
+  "DuckWhite2": [
+   "c10",
+   365
+  ],
+  "EmpressOfLight": [
+   "d125",
+   229
+  ],
+  "EnchantedNightcrawler": [
+   "d40",
+   484
+  ],
+  "EnchantedSword": [
+   "d35",
+   438
+  ],
+  "ExplosiveBunny": [
+   "d42",
+   388
+  ],
+  "EyeballFlyingFish": [
+   "d42",
+   363
+  ],
+  "Eyezor": [
+   "d37",
+   377
+  ],
+  "FairyCritterBlue": [
+   "d42",
+   361
+  ],
+  "FairyCritterGreen": [
+   "d42",
+   360
+  ],
+  "FairyCritterPink": [
+   "d42",
+   359
+  ],
+  "Firefly": [
+   "c7",
+   355
+  ],
+  "FloatyGross": [
+   "g8",
+   372
+  ],
+  "FlyingAntlion": [
+   "d42",
+   357
+  ],
+  "FlyingFish": [
+   "d37",
+   359
+  ],
+  "FlyingSnake": [
+   "d37",
+   360
+  ],
+  "Fritz": [
+   "d40",
+   462
+  ],
+  "Frog": [
+   "e26",
+   361
+  ],
+  "FungiBulb": [
+   "d37",
+   385
+  ],
+  "FungoFish": [
+   "d37",
+   382
+  ],
+  "Gastropod": [
+   "d35",
+   459
+  ],
+  "Ghost": [
+   "d38",
+   316
+  ],
+  "GiantBat": [
+   "d35",
+   441
+  ],
+  "GiantCursedSkull": [
+   "d38",
+   289
+  ],
+  "GiantFlyingAntlion": [
+   "c4",
+   509
+  ],
+  "GiantFlyingFox": [
+   "g8",
+   382
+  ],
+  "GiantFungiBulb": [
+   "d37",
+   386
+  ],
+  "GlowingSnail": [
+   "c9",
+   360
+  ],
+  "Gnome": [
+   "d42",
+   398
+  ],
+  "GoblinScout": [
+   "d35",
+   429
+  ],
+  "GoblinShark": [
+   "d42",
+   394
+  ],
+  "GoldBird": [
+   "d40",
+   442
+  ],
+  "GoldBunny": [
+   "d40",
+   443
+  ],
+  "GoldButterfly": [
+   "d40",
+   444
+  ],
+  "GoldDragonfly": [
+   "d33",
+   601
+  ],
+  "GoldFrog": [
+   "d40",
+   445
+  ],
+  "GoldGoldfish": [
+   "d42",
+   366
+  ],
+  "GoldGoldfishWalker": [
+   "d42",
+   367
+  ],
+  "GoldGrasshopper": [
+   "d40",
+   446
+  ],
+  "GoldLadyBug": [
+   "d42",
+   379
+  ],
+  "GoldMouse": [
+   "d40",
+   447
+  ],
+  "GoldSeahorse": [
+   "d42",
+   401
+  ],
+  "GoldWaterStrider": [
+   "d42",
+   387
+  ],
+  "GoldWorm": [
+   "d40",
+   448
+  ],
+  "GoldfishWalker": [
+   "d37",
+   362
+  ],
+  "GraniteFlyer": [
+   "d40",
+   483
+  ],
+  "GraniteGolem": [
+   "d40",
+   482
+  ],
+  "Grebe": [
+   "d42",
+   382
+  ],
+  "Grebe2": [
+   "d42",
+   383
+  ],
+  "GreekSkeleton": [
+   "d40",
+   481
+  ],
+  "GreenDragonfly": [
+   "d33",
+   597
+  ],
+  "GreenJellyfish": [
+   "d35",
+   451
+  ],
+  "Grubby": [
+   "d40",
+   485
+  ],
+  "Harpy": [
+   "d34",
+   275
+  ],
+  "HellArmoredBones": [
+   "d37",
+   396
+  ],
+  "HellArmoredBonesMace": [
+   "d37",
+   398
+  ],
+  "HellArmoredBonesSpikeShield": [
+   "d37",
+   397
+  ],
+  "HellArmoredBonesSword": [
+   "d37",
+   399
+  ],
+  "Herpling": [
+   "g8",
+   369
+  ],
+  "HoppinJack": [
+   "d38",
+   304
+  ],
+  "HornetFatty": [
+   "d37",
+   363
+  ],
+  "HornetHoney": [
+   "d37",
+   364
+  ],
+  "HornetLeafy": [
+   "d37",
+   365
+  ],
+  "HornetSpikey": [
+   "d37",
+   366
+  ],
+  "HornetStingy": [
+   "d37",
+   367
+  ],
+  "IceBat": [
+   "g8",
+   380
+  ],
+  "IceElemental": [
+   "g8",
+   368
+  ],
+  "IceGolem": [
+   "d37",
+   375
+  ],
+  "IceMimic": [
+   "d42",
+   403
+  ],
+  "IchorSticker": [
+   "d37",
+   387
+  ],
+  "IlluminantBat": [
+   "d35",
+   460
+  ],
+  "JungleCreeper": [
+   "d37",
+   368
+  ],
+  "JungleCreeperWall": [
+   "d37",
+   369
+  ],
+  "LacBeetle": [
+   "d37",
+   356
+  ],
+  "LadyBug": [
+   "d42",
+   378
+  ],
+  "LarvaeAntlion": [
+   "d42",
+   358
+  ],
+  "Lavabat": [
+   "g8",
+   381
+  ],
+  "Lavafly": [
+   "c7",
+   654
+  ],
+  "LightMummy": [
+   "d35",
+   435
+  ],
+  "LightningBug": [
+   "c7",
+   358
+  ],
+  "LostGirl": [
+   "g8",
+   373
+  ],
+  "Maggot": [
+   "d42",
+   380
+  ],
+  "MagmaSnail": [
+   "c9",
+   655
+  ],
+  "ManEater": [
+   "d34",
+   269
+  ],
+  "Medusa": [
+   "d40",
+   480
+  ],
+  "Mimic": [
+   "d35",
+   439
+  ],
+  "Mothron": [
+   "d40",
+   477
+  ],
+  "MothronEgg": [
+   "d40",
+   478
+  ],
+  "MothronSpawn": [
+   "d40",
+   479
+  ],
+  "Mouse": [
+   "d38",
+   300
+  ],
+  "Mummy": [
+   "d35",
+   433
+  ],
+  "MushiLadybug": [
+   "d37",
+   384
+  ],
+  "Nailhead": [
+   "d40",
+   463
+  ],
+  "Necromancer": [
+   "d38",
+   283
+  ],
+  "NecromancerArmored": [
+   "d38",
+   284
+  ],
+  "Nymph": [
+   "g8",
+   374
+  ],
+  "OldMan": [
+   "d34",
+   268
+  ],
+  "OrangeDragonfly": [
+   "d33",
+   598
+  ],
+  "Orca": [
+   "c4",
+   692
+  ],
+  "Owl": [
+   "d42",
+   385
+  ],
+  "Paladin": [
+   "d38",
+   290
+  ],
+  "Parrot": [
+   "d37",
+   378
+  ],
+  "PinkJellyfish": [
+   "g8",
+   356
+  ],
+  "Pirate": [
+   "d37",
+   361
+  ],
+  "Pixie": [
+   "d35",
+   431
+  ],
+  "PossessedArmor": [
+   "d35",
+   461
+  ],
+  "PrismaticLacewing": [
+   "d125",
+   237
+  ],
+  "Psycho": [
+   "d40",
+   466
+  ],
+  "Pufferfish": [
+   "c4",
+   688
+  ],
+  "PumpkingBlade": [
+   "d38",
+   328
+  ],
+  "Pupfish": [
+   "d42",
+   381
+  ],
+  "RaggedCaster": [
+   "d38",
+   281
+  ],
+  "RaggedCasterOpenCoat": [
+   "d38",
+   282
+  ],
+  "RainbowSlime": [
+   "d37",
+   376
+  ],
+  "Rat": [
+   "d42",
+   384
+  ],
+  "Raven": [
+   "d38",
+   301
+  ],
+  "Reaper": [
+   "d37",
+   379
+  ],
+  "RedDevil": [
+   "g8",
+   387
+  ],
+  "RedDragonfly": [
+   "d33",
+   599
+  ],
+  "RustyArmoredBonesAxe": [
+   "d37",
+   388
+  ],
+  "RustyArmoredBonesFlail": [
+   "d37",
+   389
+  ],
+  "RustyArmoredBonesSword": [
+   "d37",
+   390
+  ],
+  "RustyArmoredBonesSwordNoArmor": [
+   "d37",
+   391
+  ],
+  "SantaClaus": [
+   "d120",
+   241
+  ],
+  "SeaSnail": [
+   "d37",
+   357
+  ],
+  "SeaTurtle": [
+   "d42",
+   399
+  ],
+  "Seagull": [
+   "d42",
+   376
+  ],
+  "Seagull2": [
+   "d42",
+   377
+  ],
+  "Seahorse": [
+   "d42",
+   400
+  ],
+  "SeekerBody": [
+   "d35",
+   447
+  ],
+  "SeekerHead": [
+   "d35",
+   446
+  ],
+  "SeekerTail": [
+   "d35",
+   448
+  ],
+  "ShadowFlameApparition": [
+   "d40",
+   472
+  ],
+  "Shimmerfly": [
+   "c7",
+   677
+  ],
+  "SkeletonAlien": [
+   "d38",
+   324
+  ],
+  "SkeletonArcher": [
+   "d35",
+   454
+  ],
+  "SkeletonAstonaut": [
+   "d38",
+   323
+  ],
+  "SkeletonCommando": [
+   "d38",
+   293
+  ],
+  "SkeletonMerchant": [
+   "d40",
+   453
+  ],
+  "SkeletonSniper": [
+   "d38",
+   291
+  ],
+  "SkeletonTopHat": [
+   "d38",
+   322
+  ],
+  "SlimeMasked": [
+   "d38",
+   302
+  ],
+  "SlimeRibbonGreen": [
+   "d38",
+   335
+  ],
+  "SlimeRibbonRed": [
+   "d38",
+   336
+  ],
+  "SlimeRibbonWhite": [
+   "d38",
+   333
+  ],
+  "SlimeRibbonYellow": [
+   "d38",
+   334
+  ],
+  "Slimer": [
+   "d35",
+   458
+  ],
+  "Sluggy": [
+   "d40",
+   486
+  ],
+  "Snail": [
+   "c9",
+   359
+  ],
+  "Snatcher": [
+   "d34",
+   276
+  ],
+  "SpikeBall": [
+   "g8",
+   358
+  ],
+  "Squid": [
+   "d37",
+   358
+  ],
+  "Squirrel": [
+   "d38",
+   299
+  ],
+  "Steampunker": [
+   "d120",
+   243
+  ],
+  "TacticalSkeleton": [
+   "d38",
+   292
+  ],
+  "TargetDummy": [
+   "d40",
+   488
+  ],
+  "TheHungryII": [
+   "d35",
+   456
+  ],
+  "ThePossessed": [
+   "d40",
+   469
+  ],
+  "TorchZombie": [
+   "d42",
+   364
+  ],
+  "Truffle": [
+   "d120",
+   242
+  ],
+  "TruffleWorm": [
+   "c8",
+   374
+  ],
+  "TruffleWormDigger": [
+   "c8",
+   375
+  ],
+  "Turtle": [
+   "d42",
+   390
+  ],
+  "TurtleJungle": [
+   "d42",
+   391
+  ],
+  "Unicorn": [
+   "d35",
+   440
+  ],
+  "VampireBat": [
+   "g8",
+   383
+  ],
+  "VileSpit": [
+   "d35",
+   455
+  ],
+  "Vulture": [
+   "d34",
+   278
+  ],
+  "WalkingAntlion": [
+   "d42",
+   356
+  ],
+  "WallCreeper": [
+   "g8",
+   366
+  ],
+  "WallCreeperWall": [
+   "g8",
+   367
+  ],
+  "WaterBoltMimic": [
+   "c3",
+   694
+  ],
+  "WaterStrider": [
+   "d42",
+   386
+  ],
+  "Werewolf": [
+   "d35",
+   452
+  ],
+  "WindyBalloon": [
+   "d42",
+   368
+  ],
+  "Worm": [
+   "c8",
+   357
+  ],
+  "Wraith": [
+   "d35",
+   436
+  ],
+  "YellowDragonfly": [
+   "d33",
+   600
+  ],
+  "ZombieMerman": [
+   "d42",
+   362
+  ],
+  "ZombieMushroom": [
+   "d37",
+   380
+  ],
+  "ZombieMushroomHat": [
+   "d37",
+   381
+  ]
+ }
+}
