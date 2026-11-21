@@ -253,11 +253,12 @@ field order" rationale extended.
 
 > **Retire-pass banner:** the offsets below are the five-way (68-byte)
 > layout. In the UNIFIED head (§11.2) g70's forest stays 0..16; g72's cave
-> block inserts at 16..47; g71's surface moves 16..19 → 47..50; g69/d125
-> take 50/51; g87's pets move 19-21 → 52-54; g90's books move 22/23 →
-> 55/56; f45/c43's identity moves 24..68 → 57..101; d109's dense variants
-> append LAST at 101..101+W×H. The field ORDER inside every block is
-> unchanged; only the positions move.
+> block inserts at 16..47; g71's surface moves 16..19 → 47..50; g69's
+> crimson takes 50; g87's pets move 19-21 → 51-53 (vanilla write order:
+> pets `:1392-1394` precede downedEmpress `:1395`); d125's empress takes
+> 54; g90's books move 22/23 → 55/56; f45/c43's identity moves 24..68 →
+> 57..101; d109's dense variants append LAST at 101..101+W×H. The field
+> ORDER inside every block is unchanged; only the positions move.
 
 All offsets are from the START of the v18 block, i.e. the byte immediately
 after the v17 `downedFishron` u8. Every multi-byte field is little-endian
@@ -493,7 +494,7 @@ Per-layer, the surviving base first, then the folds:
    book2/satchel 2 + f45/c43 identity 44 + d109 dense LAST. Move every
    truncation constant to +101 (+ the dense term at the end-relative
    sites). VERSION stays 18, forward-only. The g71c union owner seats
-   every block per §11.2; g90's pair lands at 55/56, g87's pets at 52-54,
+   every block per §11.2; g90's pair lands at 55/56, g87's pets at 51-53,
    the identity block at 57..101.
 5. **Use arms / consumers** — keep **a6's `powerups.rs` machine** for the
    cluster EXCEPT 29/109/1291 (g88 keep-own, 103 §5a) and 5326 (g90 keep-own,
@@ -819,3 +820,98 @@ message still records "a6b research/138 STILL unpushed (a6 tip
 8ed96ee5)" — true at ITS probe; 138 is pushed now (`d7de8bd53` +
 `115ce655a`), and this §11 is the cross-receipt g88's 103 §9 checklist
 can point at.
+
+### 11.2 The 68-vs-97-byte union — the UNIFIED input (f44 FINAL aligned, delta published)
+
+**The Lead's question:** this doc's §5a published a 68-byte five-way union
+that EXCLUDED g72's 31-byte cave block, g69's 1-byte crimson and d125's
+1-byte downedEmpress (and d109's dense variants); the f44 FINAL
+(`bdd1cc79a`, research/132 §3-L3 — the "f44f-active consolidating" doc;
+no `f44f` ref exists, the FINAL docs ARE `bdd1cc79a` on
+`origin/task/W4-f44-save-plr-2`) seats them and publishes a **97-byte
+head**. Is the unified input 97 + g87's 3 = 100? **No — 101, and f44's
+own 97 is off by one.** The delta, with the arithmetic receipt:
+
+1. **f44's component sum is 98, not 97.** Its §3-L3 lists
+   `16+31+3+1+1+2+44` and calls it 97; the sum is **98**. Its own layout
+   table shows the slip: `[54..97] c43 identity block (… = 44 B)` seats a
+   44-byte block in a 43-byte span — the identity block actually ends at
+   **98**, and the dense variants start at 98, not 97. Every "97" in 132
+   §3-L3 (the head total, `v18_tail_len`, the truncation-constant moves,
+   the §5 back-compat row) carries the same off-by-one.
+2. **g87's 3-byte pet block is NOT in f44's claimant set.** 132 §3-L3
+   seats seven (g70/g72/g71/g69/d125/g90/c43) + d109 dense; its §3-L3
+   step 3 knows g87's `.wld` pet flips only as the a6/f45 dedup — the
+   `.trwld` pets never got a seat. This doc's §5a owns that claim
+   (g87 `dfbcaf94b`'s pushed 3-byte v18 tail). Seat: **between g69's
+   crimson and d125's empress** — the vanilla write order
+   `WorldFile.cs:1392-1394` (boughtCat/Dog/Bunny) precedes `:1395`
+   (downedEmpressOfLight), the same 92 §1 "least-surprising C# field
+   order" rule §5a already applied pets-before-books.
+3. **f45's identity block IS c43's** — one seat, not two. Verified at
+   both tips: c43 `076970809` `save.rs` writes
+   `generator_version u64 (:1225) → unique_id [u8;16] (:1226) →
+   world_id i32 (:1227) → creation_time i64 (:1250) → last_played i64
+   (:1251)`; f45 `6352d3840`'s block is byte-order-identical (c43 is in
+   f45's lineage, 132 §0 records it). 44 bytes once.
+
+**THE UNIFIED v18 INPUT — fixed head 101 bytes + W×H dense (the merger
+table, superseding §5a and correcting 132 §3-L3):**
+
+| Offset | Len | Field | Rust type | Owner block | C# anchor |
+| --- | --- | --- | --- | --- | --- |
+| 0..12 | 12 | `tree_x[0..3]` | 3×i32 LE | g70 forest | `WorldFile.cs:1253-1255` |
+| 12..16 | 4 | `forest_bg_styles[0..4]` (treeBG1..4) | 4×u8 | g70 forest | `:1318`/`:1377-1379` |
+| 16..28 | 12 | `cave_back_x[0..3]` | 3×i32 LE | g72 cave | `:1260-1262` |
+| 28..44 | 16 | `cave_back_style[0..4]` | 4×i32 LE | g72 cave | `:1263-1266` |
+| 44..47 | 3 | ice/jungle/hell back styles | 3×u8 | g72 cave | `:1267-1269` |
+| 47..50 | 3 | snow/desert/ocean bg styles | 3×u8 | g71 surface | `:1321`/`:1324`/`:1325` |
+| 50 | 1 | `crimson` | u8 | g69 | `:1281` |
+| 51 | 1 | `bought_cat` | u8 bool | **g87 pets** | `:1392` |
+| 52 | 1 | `bought_dog` | u8 bool | **g87 pets** | `:1393` |
+| 53 | 1 | `bought_bunny` | u8 bool | **g87 pets** | `:1394` |
+| 54 | 1 | `downed_empress_of_light` | u8 bool | d125 | `:1395` |
+| 55 | 1 | `combat_book_volume_two_was_used` | u8 bool | g90 books | `:1407` |
+| 56 | 1 | `peddlers_satchel_was_used` | u8 bool | g90 books | `:1408` |
+| 57..65 | 8 | `generator_version` | u64 LE | f45/c43 identity | `:1225` |
+| 65..81 | 16 | `unique_id` (GUID bytes) | [u8;16] | f45/c43 identity | `:1226` |
+| 81..85 | 4 | `world_id` | i32 LE | f45/c43 identity | `:1227` |
+| 85..93 | 8 | `creation_time` | i64 LE (ToBinary) | f45/c43 identity | `:1250` |
+| 93..101 | 8 | `last_played` | i64 LE (ToBinary) | f45/c43 identity | `:1251` |
+| 101..101+W×H | W×H | framing variants (dense) | u8/tile | d109, LAST | port-only (`Tile.cs:464-482` header2 bits) |
+
+**Head = 16+31+3+1+3+1+2+44 = 101. Total tail = 101 + width×height.**
+VERSION stays 18, forward-only (no released v18 — every claimant is
+unmerged task work; the nine single-claimant v18 shapes are EOF/garbage
+on the union reader, 132 §5's row stands with 97→101).
+
+**Claimant witnesses verified at the fetched origin tips** (direct
+`git show <tip>:crates/tr-core/src/save.rs` reads): g72 `4a75715ef`
+writes `cave_back_x[0..3]` i32×3 + `cave_back_style` i32×4 + the
+ice/jungle/hell u8 trio (its round-trip witness pins `cave_back_x[3]`
+NOT persisted — the port's array is 4-wide, the file carries 3); g69
+`20d0380f9` writes `u8::from(world.crimson)`; d125 `d8047a109` writes
+`u8::from(world.downed_empress_of_light)`; d109 `81894095e` writes the
+dense `width*height` variants block LAST; c43 `076970809` the identity
+quintet above. g70/g71/g90/g87/f45's blocks are §5a's rows verbatim.
+
+**Truncation-constant moves (the unified re-pin):** every lane's fixed
+addend goes to **101** (g70/g71's 16/3, g69/d125's 1, g90's 2, g87's 3,
+g72's 31, c43/f45's 44 — the per-lane site lists in §5a + 132 §3-L3 +
+64-add §3 + 135 §4 stay the site inventories, only the target number
+changes 97→101); the END-RELATIVE probes subtract `101 + width*height`
+(d109's dense term rides `v18_tail_len(width, height)` — the helper f44's
+map already names, with the corrected return). Every round-trip witness
+keeps its field assertions; only the tail lengths move.
+
+**The underworldBG seat stays OPEN** (132 §3-L3's flag, C# `:1376`): if
+g71c's roll-wire persists it, insert 1 byte in the surface group →
+**102-byte head**, re-pin once. The g71c/g72c roll keep-one adjudication
+(132 §3-L3 step 2) is untouched by this delta — it is a worldgen-roll
+question, not a layout one; the persistence trio stays g72c's pushed
+shape either way.
+
+**Merge action:** the g71c union owner takes THIS table (not §5a's 68,
+not 132's 97); f44's 132 §3-L3 needs the one-byte correction receipted
+here (flag to the f44 lane — a6 edits no foreign doc); g87's pets seat
+51-53, g90's pair 55/56, the identity block 57..101, d109 dense LAST.
