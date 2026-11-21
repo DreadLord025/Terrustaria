@@ -345,7 +345,11 @@ pins. All written-not-run until the gate.
    `reduced_max_liquids` (settings.rs), `pub fn square_tile_frame_record`,
    `fn update_world_tick`, `pub fn gen_settle_loop`, `pub fn
    take_pump_wakes`, `the_promotion_budget_is_the_post_sweep_active_count_clamped_to_the_buffer`,
-   `fn honey_falls_once_every_eleven_visits`, plus the union's own rows
+   `fn honey_falls_once_every_eleven_visits`, the retire rows
+   (`pub struct LiquidAnimClock`, `pub fn wave_mask`, `pub fn
+   has_full_water` — liquid_draw.rs; `fn
+   the_fall_arm_reads_the_live_post_reaction_level`, `mod
+   liquid_downarm_live` — liquid.rs), plus the union's own rows
    (`underworld_layer: i32`, `surface_rng`). A failed marker = a dropped
    surface: recover the arm, NEVER delete the row.
 6. **The runtime-inert gen-fields contract** (69 §contract, extended):
@@ -357,3 +361,212 @@ pins. All written-not-run until the gate.
    `app.liquid_tick` stays DEAD (no re-introduction).
 7. **`graphify update .`** on the merged branch, then the main merge per
    MAIN-RULES (ref-update, post-merge ancestor + symbol verification).
+
+## §13 — g45d co-lane FINAL reconcile (W4-g47 retire, 2026-11-21)
+
+> **SEAL STATUS (W4-g46 seal phase, 2026-11-21).** §13–§15 carried verbatim
+> from the g47 seal tip `ca76d68ee` per §15 Seal 2's docs-wholesale row.
+> The g46e delta fold they demand has EXECUTED on this branch: the code
+> rows landed as `a4d49b355` (the A9.2 rows 1-8 fold — the down-arm hunk
+> verbatim `2bbadd9bd`, the fall-arm comment-only upgrade, the shimmer
+> keep-ONE MERGED pin, the quickFall swap + honey dedupe, the render-gaps
+> ALL-CODE `a9dba7cf1` + the `bf5fc4ffb` flow.rs compile-rider, the buckets
+> module + wire + x15), the steps-6/7 hunk record as `db2322656`
+> (research/374, was 71 — registry §10.2 rename `4bcbdd645`). Kept verbatim
+> below as the reconcile/seal record of the g47 lane.
+
+Re-read against `origin/task/W4-g45-liquid-lava-honey-delays` tip
+**`6f5bd2a2d`** (the doc-sweep landing). The four post-`8e81814e` commits
+censused fn-by-fn against this branch's §10 owner table:
+
+| g45 commit | Surface | Owner verdict (FINAL) |
+| --- | --- | --- |
+| `fa96cf32a` | `Player.ItemCheck_UseBuckets` (`Player.cs:46318-46504`) + `editing/buckets.rs` (455 lines) + `PutItemInInventoryFromItemUsage` + the 5 splashes + 10 witnesses | **g45 owns it whole** — a Player/editing surface, NOT liquid.rs; zero overlap with the g47 base files. The graft takes the module + its `world_sim/editing.rs` wiring as-is; its `add_water(&mut World)` calls ride g45b's own signature ripple (§"Graft order" step 5). No g47 action. |
+| `c8908a55d` | the `LiquidCheck` down arm's LIVE post-burn reads (`:1286` gate + `:1303` merge-type reads AFTER the `:1280` burn) + 4 witnesses (`liquid_downarm_live`) | **ADOPTED onto the g47 base this retire phase** — the g47 canonical `liquid_check` had the same pre-kill-copy bug (the down snapshot taken at `:1274` before the burn). The re-read + `flag`-stays-pre-kill form landed verbatim; the 4 witnesses carried into g47's `liquid_downarm_live` module (fixture shape kept — the +6 embed is inert on the guard-free base, becomes the g45b precondition at the graft). **The g46 UNION has the SAME stale read** (`f57d7bacd`'s `liquid_check`: `down` copied before its `kill_tile`, gate reads the copy) — g46d's re-fold takes the g47 base form, which now carries the fix; the union's own copy is superseded, NOT re-merged. Dedupe at the graft: ONE `liquid_downarm_live` module (the g47 copy; g45's is byte-identical bar the module doc). |
+| `99a4f8ccf` | `shimmer_falls_every_visit_like_water` (the shimmer no-gate flow witness) | **DROPS at the union** — the g47 closeout's `shimmer_falls_every_visit_ungated` pins the same arm with the sharper zero-delay assertion (§11's pair-dedupe rule, one name kept: the g47 form). §11's count adjusts: the g45 shimmer-flow pin is a THIRD twin of the same pair, not a new pin. |
+| `8d581953b` | the fall arm's LIVE post-evaporation read (`own_now`, `:570-575`) + `the_fall_arm_moves_the_post_evaporation_level` | **ADOPTED onto the g47 base this retire phase** — the same `start.liquid` pre-read existed here; on this evap-free lane the live read is a no-op for pure falls but fixes the REACTION-consumption resurrection (the side merge zeroes the cell mid-visit, the fall must move the live 0). New g47 witness `the_fall_arm_reads_the_live_post_reaction_level` discriminates it without evap (lava+water side merge under quickSettle). The union ALREADY carries `own_now` (`f57d7bacd:832`) — the re-fold's base now matches it, zero delta. The g45 evap-form witness stays g45/union-owned (it needs the evap block; rides the graft, §11 row 1's convention). |
+| `6f5bd2a2d` | docs (research/104, the 69 ADDENDUM A1-A6, research/11, PORT_MAP, ANALYSIS, INDEX, anchors ×4) + the bucket witness rig fixes | **g45 owns its docs**; the 69 ADDENDUM's A1/A2 (the union dropped the g45b guards + fixtures) and A3 (the union's stale down-arm read — CONFIRMED still present at `f57d7bacd` this pass) fold into §8's re-fold obligations: the re-base onto the g47 tip now carries the down-arm fix natively, and step 5 still owns the guards. A6's graft order matches §12's. |
+
+**Net effect on §8/§12**: the g46d re-fold list is UNCHANGED (the two sim
+fixes now live on the g47 base the re-fold takes wholesale — they ride
+`dd66fa3a`'s successor tip automatically). The witness arithmetic against
+§11's 93 (which predates the four g45 doc-sweep commits — the union
+`f57d7bacd` 07:06 pre-dates `c8908a55d` 07:18 / `99a4f8ccf` 07:39 /
+`8d581953b` 07:51): +4 (the down-arm module — ONE copy, the g47 carry, the
+g45 original dedupes onto it), +1 (g45's evap-form fall witness, rides the
+graft), +1 (the g47 live-fall reaction pin), +0 (the g45 shimmer-flow twin
+DROPS onto the closeout's ungated pin) = **99 pins** in `liquid.rs`
+post-graft, plus the 2 wiring compose pins. All written-not-run.
+
+## §14 — FINAL-FINAL retire receipts (W4-g47, 2026-11-21, the branch retires here)
+
+The retire pass's four receipts, in order. Everything code-only: no
+cargo/tests/rustfmt run; every witness named is WRITTEN, NOT RUN.
+
+**Receipt 1 — the g46d re-base monitor (§8 re-verified).** Re-fetched
+`origin/task/W4-g46-liquid-evaporation`: tip is STILL **`f57d7bacd`**
+(2026-11-21 07:06:27 +0200, the graft-prep UNION — g46d has NOT landed).
+Symbol re-grep on the union blobs, zero hits confirmed per surface:
+`skip_count|update_world_tick|gen_settle_loop|tiles_ignore_water|shimmer_remove_water|reduced_max_liquids|take_pump_wakes`
+in union `liquid.rs` = 0; union `world_sim/liquids.rs` still walks
+`app.liquid_tick % 2` (`let liquid_tick = &mut app.liquid_tick; … if
+*liquid_tick % 2 == 0`); union `wiring.rs` `pump_wakes` = 0; union
+`app/mod.rs` still declares `liquid_tick: u32` and has no
+`settle_loaded_world` call. **§8 STANDS as written** — the re-fold is
+still g46d's obligation, now against this retire tip (below). One NEW
+finding folded into §8's shape note via §13: the union's `liquid_check`
+down arm carries the same pre-burn stale read the g45 doc-sweep fixed —
+the re-base onto the fixed g47 body resolves it without an arm merge.
+
+**Receipt 2 — the render-gaps closure (commit `a9dba7cf1`).** The four
+cited draw-side follow-ups each censused to a verdict (ANALYSIS "The
+liquid render-gaps closure"): `HasFullWater` ported unwired (its sole
+caller `Main.DrawBlack` `:58008` is dead under the default
+`DrawOwnBlacks=true`, `TileDrawingBase.cs:54` — the port's merged
+wall+black path IS that configuration); `GetVisibleLiquid` dead (zero
+callers, re-grepped both decompile trees); `SetWaveMaskData`'s data half
+ported (`wave_mask` + `VISCOSITY_MASK`, the strength table proven
+never-assigned — the GPU viscosity filter chain stays shader-infra
+scope, cited); the wind clock ported AND WIRED (`LiquidAnimClock` →
+`App::liquid_clock` → `draw_waters` + the G6 anim slot; the
+`anim_time*8`/`*0.5` derivations retired — the deliberate render-cadence
+fix, determinism held: pure (dt, wind) fn, `TR_WIND_FORCE` pins it).
+3 witnesses + 3 anchors rows. The sim gaps-list stays EMPTY (§10).
+
+**Receipt 3 — the g45d co-lane FINAL reconcile (commit `2bbadd9bd`).**
+§13's owner table is the FINAL per-fn verdict against g45 tip
+`6f5bd2a2d`: the two sim fixes ADOPTED onto this base (the fall arm's
+`own_now` + the down arm's post-burn re-read — both were base-body
+fidelity gaps, the union's stale down-arm copy superseded), the bucket
+module g45-owned whole, the shimmer-flow twin dropped, the docs
+g45-owned. 5 witnesses + 2 anchors rows. The §8 commit list is
+UNCHANGED; the re-fold base tip moves to this branch's retire tip.
+
+**Receipt 4 — the landing state.** The g47 branch retires at
+**`bf5fc4ffb`** (the §14 receipts commit `0823ec3dd` + the wiring
+completion: the `liquid_clock` field on the flow.rs front-end-boot App
+literal, the second full-App construction site — the compile-by-
+inspection census found no others). The merger's contract,
+FINAL: (a) g46d re-bases onto THIS tip per §8+§12 step 1 (re-fetch
+first — if g47's tip moved again, the successor wins); (b) graft steps
+5-7 per §12 (the g45b guards + the f25 DELETE-dedupe + the producer
+wiring); (c) re-pins per §11 as amended by §13 (99 liquid.rs pins + 2
+compose pins expected); (d) the gate command + the anchors canary per
+§12 steps 4-5 (the retire rows included); (e) the runtime-inert
+contract per §12 step 6 — plus the render-side addition: the
+`liquid_clock` is a pure (dt, wind) accumulator, draws no RNG, and
+liquid-free worlds keep the pre-wiring G6 cache behaviour bit-for-bit.
+No sim witness on this lane draws RNG beyond the pinned streams; the
+render-gaps closure adds none (the clock and the mask are RNG-free).
+
+## §15 — LIQUID SEAL (W4-g47, 2026-11-21: the g46e monitor, the delta-fold list, the down-arm receipt, the family bible)
+
+**Seal 1 — the g46e monitor (re-fold LANDED; §14 receipt 1 SUPERSEDED).**
+Fresh fetch: `origin/task/W4-g46-liquid-evaporation` tip is now
+**`9bc722e5f`** (2026-11-21 10:00:03 +0200). The re-fold landed as five
+commits: `e7626b72d` (step 1, base swap to g47 `95e9c1ef` wholesale),
+`f588d53c5` (step 2, g47c `d3a30ebf`), `16fd6ad78` (step 3, g45b
+`8e81814e` guards + the ~40 fixture widenings), `d95911ce1` (step 4, the
+four R-12-5 drivers), `9bc722e5f` (docs: 69 SUPERSEDED-BY-70 + the
+UNION-CONTRACT). **§8's driver-surface obligation is DISCHARGED** —
+symbol re-grep on the `9bc722e5` blobs: union `liquid.rs` carries
+`skip_count` (:114/:323/:440) + `update_world_tick` (:662), union
+`world_sim/liquids.rs` consumes it (:27, the `liquid_tick % 2` walk is
+GONE), union `wiring.rs` carries `pump_wakes`/`take_pump_wakes`
+(:261/:807), union `app/mod.rs` calls `settle_loaded_world` (:4116),
+`gen_settle_loop`/`reduced_max_liquids`/`shimmer_remove_water`/the
+guard module all present. BUT the re-fold's base snapshot is
+`dd66fa3a` (07:26:06) — it **PRE-DATES all seven g47 post-`dd66fa3a`
+commits** (`e420e351e` 08:36 → `776e64671` 10:20), and its carried
+research/70 is the 153-line `dd66fa3a` snapshot: **§8–§14 are absent
+from the union's doc**. The remaining obligation is the delta fold
+below, NOT a re-base.
+
+**Seal 2 — the delta-fold list for g46e (onto this seal tip; re-fetch
+first, the successor wins per §12 step 1).** Seven commits, code/doc
+split, hunks verified against the `9bc722e5` blobs this pass:
+
+| g47 commit | Kind | What g46e must fold |
+| --- | --- | --- |
+| `e420e351e` | docs | §8 (historical record — its re-fold list is now discharged; carry for the audit trail) |
+| `4c81731bc` | code+docs | `liquid.rs` +94: the 3 closeout witnesses. `honey_falls_once_every_eleven_visits` DEDUPES onto the union's `liquid_merge_cadence` form (:4470, already sentinel-riding — keep ONE, §11's rule); `shimmer_falls_every_visit_ungated` FOLD (+1, union zero hits); `quick_fall_bypasses_both_delay_gates` FOLD (replaces the union's lava-only `quick_fall_bypasses_the_delay_gate` :4489 — sharper both-kinds form, net 0). ANALYSIS full-fn census + the per-liquid verdicts |
+| `5c09a68b8` | docs+anchors | §9–§12 + the `honey_falls` anchors row (union anchors LACKS it) |
+| `a9dba7cf1` | **CODE** | the render-gaps closure, ALL of it: `liquid_draw.rs` +244 whole-file (`LiquidAnimClock`/`wave_mask`/`has_full_water`/`VISCOSITY_MASK` — union grep = 0 hits); `app/mod.rs` +7 (the `liquid_clock` field :856 + the `App::new` literal :3999 + the per-update tick); `render/liquids.rs` clock wiring (union STILL derives `anim_time * 8.0` :99/:206 + `* 0.5` :100 — the retired cadence); `render/tiles.rs` +6; `frame/draw.rs` +18/−3; anchors ×3; ANALYSIS + PORT_MAP rows |
+| `2bbadd9bd` | **CODE** | the two sim fixes: the down-arm post-burn re-read hunk (`@@ -1283,6 +1292,18 @@` — the `let down = world.tile(x, y + 1)…` re-read after `kill_tile`, `flag` stays the pre-kill read) — **the union is STALE, see Seal 3**; the fall arm's `own_now` is a ZERO code delta (union :1112 already reads live post-reaction; only the comment differs — take the base cite `:570-575` + the reaction case). `liquid_downarm_live` ×4 + `the_fall_arm_reads_the_live_post_reaction_level` ×1 FOLD (+5, ONE module copy); §13; anchors ×2 |
+| `bf5fc4ffb` | **CODE** | `flow.rs` +1: the `liquid_clock` field on the front-end-boot App literal (:2414; the union's literal :2410 lacks it). Compile-critical rider of `a9dba7cf1`'s `app/mod.rs` field — fold them together |
+| `0823ec3dd` + `776e64671` + this seal | docs | §14 + §15 (replace the union's 153-line 70 snapshot with this file wholesale) |
+
+**Seal 3 — the down-arm-live receipt (2bbadd9bd IS the fix-source).**
+Re-verified on `9bc722e5`'s `liquid_check`: the down arm copies
+`down` at :1414 BEFORE the `tileCut` burn (`kill_tile` :1422), then
+the merge gate (:1426) AND the merge-type reads (:1438-1441) all read
+the STALE pre-kill copy — the live post-burn re-read is **ABSENT**.
+The seven cut kinds outside `tileObsidianKill` (444/518/519/549/637/
+638/711) wrongly refuse the drain/merge on the union. g47 `2bbadd9bd`
+(the g45 `c8908a55` carry) is the fix-source: the re-read hunk + the
+4-pin `liquid_downarm_live` module fold verbatim; the union's copy is
+superseded, NOT arm-merged (§13's verdict stands, now against the
+re-folded tip). The fall arm needs NO code fold — union :1112's
+`own_now` matches the base behaviourally (its comment cites only the
+evap case; the base cite adds the reaction-consumption case).
+
+**Seal 4 — the pin matrix (99+2 projected → 109+2 sealed).** Measured
+this pass: old union `f57d7bacd` = 72 pins; re-folded union `9bc722e5`
+= **102** (72 + 30 new, ZERO dropped). Delta fold: +1 shimmer-ungated,
++1 fall-reaction, +4 downarm-live, quickFall swap net 0, honey dedupe
+net 0 → **108**; +1 g45 evap-form fall witness
+(`the_fall_arm_moves_the_post_evaporation_level`, rides the graft —
+union zero hits) → **109 `liquid.rs` pins + 2 compose pins**
+(`wiring.rs` wake-order asserts inside
+`the_pump_moves_water_and_adopts_the_type` :3945-3949 +
+`world_sim/wiring.rs` `r_12_5_the_pump_transfer_wakes_the_settle_and_the_water_flows`
+:670 — BOTH verified present on the union). Reconciliation vs §13's
+99: **+10 = the g45b AddWater-guard ×10 module**, which landed at
+re-fold step 3 (`16fd6ad78`) AHEAD of §12's graft step 5 — the 93/99
+projection counted those at the graft; the union carries them NOW.
+99 + 10 = 109. The anchors delta: the union LACKS all 6 g47
+closeout/retire rows (`honey_falls…`, `LiquidAnimClock`, `wave_mask`,
+`has_full_water`, `the_fall_arm_reads…`, `liquid_downarm_live`) —
+fold them with their commits; the §12 step-5 canary then runs whole.
+
+**Seal 5 — the LIQUID-FAMILY bible.** The liquid family lands as ONE
+union: **g46-union-canonical** (`9bc722e5f` + the Seal-2 delta fold
+onto this seal tip — the union `liquid.rs` is the merger's file, g45/
+g47 copies DROP) carrying **g47-machinery-source** (`776e64671` +
+seal: the skip/settle drivers, the force-settle family, the DelWater
+tail, the render-gaps closure + wind clock, the two sim fixes — all
+folded per Seal 2, none re-derived), **g45-buckets/deltas**
+(`fa96cf32a` buckets module g45-owned whole with its `world_sim/
+editing.rs` wiring; the guards + cadence + nudge + extra-wakes already
+union-side; the evap-form fall witness + the shimmer-flow twin drop
+per §13), and **f25-gen** (`84b90360`: step 6 DELETE-dedupes its
+private copies onto the base exports, step 7 arms the producer
+contexts; the gen-hash RE-DERIVE + the `edit_kills` drain-choice
+record stand, §11 row 1). Gate: `cargo test --workspace -- --skip
+migrates_version_2_kinds_to_item_ids` (judge ONLY by `test result: ok`
+lines), then the §12 step-5 anchors canary + the step-6 runtime-inert
+contract (+ the render-side addition: `liquid_clock` pure dt+wind,
+RNG-free, liquid-free worlds bit-identical). Expected: **109 liquid.rs
+pins + 2 compose pins** (§13's 99+2 as projected, +10 guards arrived
+early — Seal 4), all written-not-run until the gate. The g47 branch
+seals here; the successor-wins rule (§12 step 1) governs any later tip.
+
+> **SEAL execution receipt (W4-g46 seal phase, this docs-tail).** Seal 2's
+> code rows landed as `a4d49b355` (the g45 research/69 A9.2 rows 1-8 fold
+> onto the union — down-arm hunk verbatim + `liquid_downarm_live` ×4
+> sentinel-switched at :5491, the fall-arm comment-only upgrade +
+> `the_fall_arm_reads_the_live_post_reaction_level` at :3169, the shimmer
+> keep-ONE MERGED pin per A9.2 row 4 (the g47 section-15 ungated-only fold
+> superseded — BOTH assert families ride
+> `shimmer_falls_every_visit_ungated`), the quickFall swap + honey dedupe,
+> the render-gaps ALL-CODE + the flow.rs `liquid_clock` compile-rider
+> (:2414), the buckets module + x15). Seal 4's matrix RE-MEASURED on this
+> tip: **109** `#[test]` in `liquid.rs` + the 2 compose pins
+> (`wiring.rs:3922` / `world_sim/wiring.rs:670`) — the sealed expectation
+> holds. Seal 4's 6 anchors rows now ALL present (the closeout
+> `honey_falls…` row + the 5 retire rows, markers verified in the cited
+> files). The steps-6/7 hunk record + the family bible live in
+> research/374 (was 71 — the registry §10.2 rename `4bcbdd645`); the
+> `edit_kills` gen-tail drain choice DISCARD is recorded there (§7.3). The
+> f25 gen-hash RE-DERIVE obligation stands for the worldgen master merge.
+> All witnesses written-not-run until the gate.

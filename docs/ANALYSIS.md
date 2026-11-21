@@ -18776,6 +18776,123 @@ deduped); the lava six-visit pin is the union's
 `lava_falls_once_every_six_visits` (the g47 machinery it pins is
 identical).
 
+### The liquid render-gaps closure (W4-g47 retire, SEAL carry `a9dba7cf1` via `a4d49b355`)
+
+The FULL-FN census's four draw-side follow-ups, each re-censused against
+the source and closed (code-only — witnesses written, NOT run; the code
+landed on this union in the A9.2 rows 6+7 fold):
+
+- **`HasFullWater` (`LiquidRenderer.cs:799-813`)** — ported as
+  `liquid_draw::has_full_water` over the prepared records (visible +
+  non-surface = full water; out-of-area = the C# out-of-cache `true`).
+  The consumer census: its ONLY caller is `Main.DrawBlack`'s run-break
+  (`Main.cs:58008`), and `DrawBlack` early-returns whenever
+  `TileDrawingBase.DrawOwnBlacks` is true (`:57943`) — the static ctor
+  sets it true (`TileDrawingBase.cs:54`) and the only writer is the dev
+  A/B tooling (`TimeLogger.ABTestFlag`, `TimeLogger.cs:443-453/:712`).
+  The port's merged wall+black path in `render/tiles.rs` IS the
+  DrawOwnBlacks=true default path (per-cell blacks in
+  `DrawSingleTile`/`WallDrawing`), so the gate has NO runtime consumer
+  in the shipped configuration — the query is ported for surface
+  completeness, cited unwired. NOT a sim-merger blocker (unchanged).
+- **`GetVisibleLiquid` (`:815-829`)** — re-grepped `decompiled/` AND
+  `decompiled-libs/`: zero callers. Dead surface, cited-dropped (the
+  research/02 pipeline row's stand-in verdict stands).
+- **`SetWaveMaskData` (`:854-880`) + the viscosity chain** — the data
+  census: `WAVE_MASK_STRENGTH = new byte[5]` (`:891`) is NEVER assigned
+  anywhere in the decompile, so the mask's R/G/A strength channels are
+  all-zero in 1.4.5.8; the only live byte is `VISCOSITY_MASK`
+  (`:892` = {0, 200, 240, 0, 0}) on B. Ported as
+  `liquid_draw::{VISCOSITY_MASK, WAVE_MASK_STRENGTH, WaveMaskCell,
+  wave_mask}` — the `:499-549` fill over the records (the fill gate is
+  `HasVisibleLiquid`, wider than the sprite pass's `IsVisible`; the
+  above-copy `:529-531` runs in the same column-major order; the
+  slot-3/slot-4 rows are byte-identical so the no-solidity distinction
+  cannot change a byte). `LiquidDraw` grows
+  `is_solid`/`is_half_brick`/`has_visible_liquid` for the probes. The
+  GPU consumer (`WaterShaderData.StepLiquids`' viscosity-filter chain,
+  `WaterShaderData.cs:164-182`, WaveQuality >= 3) stays shader-infra
+  scope: the port's `water_mask.rs` coverage mask (M1.4-BG-18 phase 4)
+  is the WaterDistortion input the port models; the per-cell viscosity
+  FILTER is the remaining infra step, cited — the data half is now
+  ported and witnessed.
+- **The wind-driven `_frameState` (`Update`, `:831-847`)** — PORTED and
+  WIRED: `liquid_draw::LiquidAnimClock` (`wind*25 ± 6` frames/s body
+  clock, wind-independent 0.5 frames/s waterfall clock, the single
+  +16 negative wrap then `%16` — a west wind below -0.24 leaves a
+  NEGATIVE frame, `(int)` truncation kept), ticked once per client
+  update in the frame head beside the sway counters
+  (`Main.cs:17043`'s site), stored on `App::liquid_clock`. The two
+  integer frames feed `draw_waters`/`draw_liquids`/`draw_shimmer`
+  (the `src_x == 16` interior rows ride the waterfall frame —
+  `LiquidRenderer.cs:634-641` — the shimmer pass the body frame only,
+  `:697`) and ride the G6 key's existing `anim` slot packed
+  (body frame low byte — the two's-complement cast keeps -15..15
+  injective — waterfall frame byte 1), gated on `has_liquids` exactly
+  as before. The old `anim_time*8`/`anim_time*0.5` derivations are
+  retired: **deliberate behaviour change** (the render-cadence
+  deviation the census cited is fixed): calm air now animates liquid
+  at 6 fps (was 8), wind accelerates/reverses it. Determinism holds:
+  the clock is a pure function of (dt, windSpeedCurrent), both
+  already G6-keyed inputs (`TR_WIND_FORCE` pins it for A/B shots);
+  liquid-free worlds keep the old cache behaviour bit-for-bit.
+  `FocusHelper.PauseLiquidRenderer` (the unfocused pause) has no port
+  analogue — the port has no unfocused-update path. The compile-critical
+  rider rode with it: the `liquid_clock` field on the flow.rs
+  front-end-boot App literal (`bf5fc4ffb`, the second full-App
+  construction site — both App literals covered).
+
+New witnesses (written, NOT run — `liquid_draw::tests`):
+`the_wave_mask_carries_only_the_viscosity_channel` (the four kinds +
+the above-copy + the solid no-copy), `has_full_water_reads_the_visible_non_surface_records`
+(interior true / surface false / dry false / out-of-area true),
+`the_liquid_clock_is_wind_driven_and_wraps_at_sixteen` (calm 6 fps,
+storm 37, the negative west remainder, the wind-independent waterfall
+clock). 3 anchors rows carried (`LiquidAnimClock`, `wave_mask`,
+`has_full_water`).
+
+### The g45d co-lane carry (W4-g47 retire, SEAL carry `2bbadd9bd`/`8d581953`/`c8908a55` via `a4d49b355`)
+
+The g45 doc-sweep's two liquid.rs sim fixes adopted onto the g47 canonical
+base and folded onto this union (research/70 §13's FINAL owner table; both
+were real fidelity gaps in the base body, not lane-specific deltas):
+
+- **The fall arm's LIVE read** (`Liquid.cs:570-575`, g45 `8d581953`):
+  `update_tile`'s down transfer now reads `own_now` (the live cell) after
+  the reaction block, not the `:464` entry snapshot — the side/up merge
+  can zero the checking cell mid-visit and the old pre-read resurrected
+  the consumed units into the cell below. The union already carried
+  `own_now` — ZERO code delta, the comment upgrade only (the base cite
+  `:570-575` + the reaction-consumption case); the g46 evap case rides
+  the same live read.
+  Witness: `the_fall_arm_reads_the_live_post_reaction_level` (lava+water
+  side merge under quickSettle, the fall moves the live 0 —
+  `new_flow_fixture` sentinel, the `add_water(&mut w)` re-pin per the
+  A9 rider).
+- **The down arm's LIVE post-burn reads** (`Liquid.cs:1278-1306`, g45
+  `c8908a55`): `liquid_check` re-reads the cell after the `tileCut` burn
+  before the `:1286` gate + the `:1303` merge-type reads; `flag` stays
+  the pre-kill `:1274` read. The seven cut kinds outside
+  `tileObsidianKill` (444/518/519/549/637/638/711) now drain/merge like
+  the C#. The union carried the SAME stale read — the `2bbadd9bd` hunk
+  landed VERBATIM (the re-fold's stale copy superseded, NOT arm-merged).
+  Witnesses: the 4-pin `liquid_downarm_live` module carried verbatim
+  (ONE copy, sentinel-switched).
+
+The g45 bucket module (`fa96cf32a`, `editing/buckets.rs`) is a
+Player/editing surface — g45 owns it whole; the seal carried it with the
+`mod/use_buckets` pre-melee wire + `bucket_use_tests` restored to ×15
+(the 5 LIQUID-FINAL sponge/stack/bottomless witnesses the partial carry
+had dropped). The g45 shimmer-flow witness (`99a4f8ccf`) drops onto the
+closeout's `shimmer_falls_every_visit_ungated` — the keep-ONE MERGED form
+(the g47 shelf fixture + entry.delay==0 asserts AND the g45 cadence-trace
+asserts ride one pin, per the g45 research/69 A9.2 row 4). Post-fold
+count RE-MEASURED on this tip: **109 `liquid.rs` pins + 2 wiring compose
+pins** (research/70 §15 Seal 4's sealed expectation; §13's 99+2 as
+projected, +10 guards arrived early at re-fold step 3). All written,
+NOT run. 2 anchors rows carried (`the_fall_arm_reads…`,
+`liquid_downarm_live`).
+
 ## The Frost Legion machine (R-25-1, 2026-11-13)
 
 `NPC.AI()`'s aiStyle-38 block (`NPC.cs:28995-29145`) is ported 1:1 as
