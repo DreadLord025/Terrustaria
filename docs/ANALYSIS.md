@@ -36142,6 +36142,20 @@ Deliberate deviations:
   enclosing gates are kept: the `:77267` owner refusal + the `:77367`
   `!noDropItem` head gate the refund; the ai1==0 cue is UNGATED by both
   (it sits in Kill()'s dust chain ahead of `active = false`).
+  **G82e DRAIN RECEIPT (2026-11-21)**: the `spawn_item_drop_px` spawn
+  shape is the WRONG emit for this ladder — the C# calls pass
+  `prefix: 0` (Item.cs:511-513 returns before any draw) and no
+  velocity, so NewItem draws exactly TWO integers
+  (`Next(-30,31)*0.1` / `Next(-40,-15)*0.1`, Item.cs:49749-49750; none
+  of the kinds is ItemNoGravity, ItemID.cs:1320); the tile-loot
+  helper draws three floats + a natural-prefix roll + a rotation the
+  C# never makes. The merge takes d4's `pending_death_drops` queue +
+  two-integer-draw `UpdateItems` drain (the d4d FINAL-FINAL ruling,
+  d4 tip f1480dc0, drain source pinned at the SEAL-VERIFY commit
+  d7c3fbc02 — the ball's Vector2.Zero takes the HasValue arm, zero
+  draws, the zero_velocity flag; the stream deferral stays recorded) — g82's
+  queue/drain are the g82-side drop-hunks, the cue + gate shape
+  stays. Full re-read + tables: 26e-f "The g82e drain receipt".
 * **The coil census correction**: the ai1==0 Dig cue + the dust walks
   (`Projectile.cs:74615-74731`) live INSIDE `Kill()` (the enclosing
   body re-read: no function boundary between :70642 and :74615), NOT
@@ -36198,7 +36212,20 @@ Deliberate deviations:
   ROPE-FAMILY merger bible: `docs/research/26e-f-rope-union-final.md`.
   Exact drop-hunks, the row
   dedupe, the f3-pulley compose chain and the pool-wide TileKill census
-  + task seed: same doc.
+  + task seed: same doc. **G82e DRAIN RECEIPT (same day, SEALED
+  FINAL)**: the seal's drain delta is REVERSED on the shape axis —
+  d4's retire fix `954824d0` restored the `:77267`/`:77367` gates
+  (behaviourally identical to `coil_kill`), and the d4d FINAL-FINAL
+  (d4 tip `f1480dc0`) proved d4's two-integer-draw drain the faithful
+  `Item.NewItem` emit while g82's `spawn_item_drop_px` draws the
+  wrong tile-loot shape (re-verified against Item.cs:49727-49751 +
+  :511-513 + ItemID.cs:1320 this pass). FINAL split verdict: g82
+  `coil_step` CANONICAL machine, d4 death-hook queue + drain
+  CANONICAL emit (drain source d7c3fbc02 — the ball Vector2.Zero
+  fix); the g82-side drop-hunks (the queue/drain/witness/
+  doc-prose repoints) + the corrected rows 3/5/7/8 + the FINAL
+  merger bible: 26e-f "The g82e drain receipt". The refund bullet
+  above carries the deviation correction.
 * **The f3-pulley compose** (origin/task/W4-f3-dust-player-3 0b11548f):
   the pulley machine attaches to the SAME td::TILE_ROPE set the coil
   placement writes — place→attach→ride→coil-refund runs end-to-end on

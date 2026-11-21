@@ -260,7 +260,7 @@ Rust data row, so nothing spawns it).
 | 32 | inline: alpha ramp (26887) | — | M | n/a | |
 | 33 | inline: light + alpha fade (27049) | — | M | n/a | |
 | 34 | inline: rotation + ai[1] state (27136) | — | M | n/a | |
-| 35 | inline: the rope coils (27189-27291) — the 30-tick fall + the owner-gated 10-link placement walk (the "velocity 1.25 accelerate" label was a misread) | `projectile_rope_coil.rs::coil_step` (W4-g82, WIRED; FINAL keep-one canonical per 26e-f SEALED — d4 `cafec7222` union extras byte-identical copies, dedupe trivial, d4's machine + mis-gated refund wire the drop half) | done | behavioural | the refund :77572-77615 + the chain preview Main.cs:28499-28669 ride the same lane |
+| 35 | inline: the rope coils (27189-27291) — the 30-tick fall + the owner-gated 10-link placement walk (the "velocity 1.25 accelerate" label was a misread) | `projectile_rope_coil.rs::coil_step` (W4-g82, WIRED; FINAL keep-one canonical per 26e-f SEALED — d4 `cafec7222` union extras byte-identical copies, dedupe trivial, d4's machine the drop half; the g82e DRAIN RECEIPT splits the emit: d4's retire-fixed death-hook queue + two-integer-draw drain CANONICAL (the exact Item.NewItem pair; drain source d7c3fbc02, the ball Vector2.Zero zero-draw fix), g82's spawn_item_drop_px drain the wrong-shape drop half) | done | behavioural | the refund :77572-77615 + the chain preview Main.cs:28499-28669 ride the same lane |
 | 36 | inline: wet-kill + alpha fade (27292) | — | M | n/a | |
 | 37 | inline: boulder fall (27472) | — | M | n/a | |
 | 38 | inline: flame-jet trap (27500) | — | M | n/a | |

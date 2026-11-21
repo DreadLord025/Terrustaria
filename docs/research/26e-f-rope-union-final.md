@@ -26,6 +26,21 @@
 > wiring deltas all favour g82 against the re-read C#), the drop-hunks
 > table is UPDATED to `cafec7222` lines, and the ROPE-FAMILY merger
 > bible closes the lane.
+>
+> **DRAIN-RECEIPT addendum (2026-11-21, g82e — this commit):** the
+> g82d seal's drain delta above ("g82's drain survives") is REVERSED
+> on the SHAPE axis: d4's two-integer-draw drain is the faithful
+> `Item.NewItem` emit, g82's `spawn_item_drop_px` is the wrong
+> tile-loot shape — **d4's drain CANONICAL** per the d4d retire
+> re-adjudication (`26e-rope-coil-keep-one.md` FINAL-FINAL), with the
+> ball's zero-velocity fix LANDED at d4 tip `d7c3fbc02` (the
+> SEAL-VERIFY commit: the queue tuples carry `zero_velocity`, coil
+> `false` / ball `true` — `Projectile.cs:77622` passes `Vector2.Zero`,
+> the `Item.cs:49738-49741` HasValue arm draws NOTHING). The machine
+> verdict STANDS unchanged (g82 `coil_step`). The full re-read + the
+> corrected rows 7/8 + the g82-side drop-hunks + the FINAL merger
+> bible live in "The g82e drain receipt" below; the mutual receipt
+> pins the canonical drain source at `d7c3fbc02`.
 
 ## FINAL VERDICT: g82's `coil_step` is the CANONICAL style-35 machine
 
@@ -33,7 +48,8 @@
 (`coil_step`/`coil_proj_row`/`coil_rope_kind`/`is_rope_cell`/`is_coil` +
 the chain preview + `coil_death_drop` + `check_rope_usability`), the
 `35 =>` dispatch arm, the `data.rs` literal rows, the `coil_kill` death
-hook + `pending_coil_drops` drain, the usability gate in `use_tile_item`,
+hook's cue + gate shape (its queue/drain repointed to d4's — the g82e
+drain receipt below), the usability gate in `use_tile_item`,
 the chain sheets in `assets.rs`, the friendly pin, the PVP exemption,
 the style-35 `AutomaticallyChangesDirection` write, the wind-list 35.
 
@@ -45,12 +61,12 @@ its wiring; every row grep-verified at that tip):
 | --- | --- | --- | --- |
 | 1 | `crates/tr-app/src/projectile.rs` | `:11394-11522` | the `ai_rope_coil` fn + its doc comment (unchanged by the union push) |
 | 2 | `crates/tr-app/src/projectile.rs` | `:17812-17818` | the `35 => self.slots[i].ai_rope_coil(world, local_owner)` dispatch arm + its comment (was `:17792-17798`; a second `35 =>` would trip the `unreachable_patterns` deny anyway — S1-D-4c) |
-| 3 | `crates/tr-app/src/projectile/data.rs` | `:604-607` | the `ROPE_COIL`/`VINE_ROPE_COIL`/`SILK_ROPE_COIL`/`WEB_ROPE_COIL` consts — **consumers UPDATED**: after dropping rows 1/2/4/5/6/7 below the only survivors would be d4's extras module (`projectile_rope_coil.rs:49` import) which row 6 drops wholesale; g82's module owns its own `pub(crate)` consts (`projectile_rope_coil.rs:92-95`) |
+| 3 | `crates/tr-app/src/projectile/data.rs` | `:604-607` | the `ROPE_COIL`/`VINE_ROPE_COIL`/`SILK_ROPE_COIL`/`WEB_ROPE_COIL` consts — **consumers UPDATED**: after dropping rows 1/2/4/5/6 below the only survivors would be d4's extras module (`projectile_rope_coil.rs:49` import) which row 6 drops wholesale; g82's module owns its own `pub(crate)` consts (`projectile_rope_coil.rs:92-95`) |
 | 4 | `crates/tr-app/src/projectile/data.rs` | `:2326-2341` | the named-const row arm (the row-dedupe, below — unchanged) |
-| 5 | `crates/tr-app/src/projectile.rs` | `:26861-27111` | the four `the_rope_coil_*` witnesses (was `:26810-26939`; the placement witness now also carries the union refund-queue arms `:26965-27048` — drop those too, g82's death-hook witness covers cue+refund+owner-gate; the per-kind placement ladder salvage note below) |
+| 5 | `crates/tr-app/src/projectile.rs` | `:26888-26990` + `:27181-27206` *(f1480dc0 lines; at `d7c3fbc02` head +14 / tail +15 — the ball-witness assert grew a line between them: `:26902-27004` + `:27196-27221`)* | the four `the_rope_coil_*` MACHINE witnesses (was `:26810-26939`, then the whole `:26861-27111` span — that span's head is the FLAME-JET witness, a mis-pin; **CORRECTED by the g82e drain receipt**: the union refund-queue witness `w4_d4_union_the_coil_death_queues_the_refund_ladder` (`:26998-27075` at `f1480dc0` → `:27006-27089` at `d7c3fbc02`) and the ball-return witness (`:27081-27111` → `:27091-27126`) are KEEPS — the refund witness drives `pool.update` so the dispatch swap to `coil_step` needs no change, and it pins the canonical queue (its exact-tuple assert carries the `zero_velocity` flag `false` since `d7c3fbc02`); the per-kind placement ladder salvage note below) |
 | 6 | `crates/tr-app/src/projectile_rope_coil.rs` | whole file (`:1-331`) | **NEW at cafec722** — d4's extras module: `is_coil`/`coil_death_drop`/`CoilLink`/`coil_chain_sheets`/`coil_chain_segments`/`draw_coil_chain` are byte-compare-identical copies of g82's (modulo doc/visibility, see the re-read below); its 4 witnesses duplicate g82's minus the NaN pin + plus the is_coil gate rows (salvage below) |
-| 7 | `crates/tr-app/src/projectile.rs` | `:14751`, `:15166`, `:15266-15272`, `:20389-20419` | **NEW** — the `pending_death_drops` field + init + `drain_death_drops` + the death-hook refund arm. Drop the COIL half (`:20389-20409`); the beach-ball half (`:20410-20418`) is d4's own 155 machine — KEEP the hook arm; its queue/drain half keeps d4's field + `drain_death_drops` + the `UpdateItems` two-integer-draw drain loop (`world_sim/projectiles.rs:633-658` minus the coil comment, witness-pinned by `w4_d4_union_the_beach_ball_return_drains_on_the_items_stream`) — do NOT fold the ball onto g82's `spawn_item_drop_px` shape, that would silently change its pinned stream draws |
-| 8 | `crates/tr-app/src/world_sim/projectiles.rs` | `:620-632` (coil comment), `:775-846` (the coil-drain witness + `coil_app`) | **NEW** — d4's drain loop serves BOTH kinds: keep the loop for the ball (row 7), drop only the coil-ladder comment lines and the coil witness `w4_d4_union_the_coil_expiry_drains_the_refund_as_a_world_drop` (`:802-846`) — it pins the WRONG stream + gates for coils; g82's coil drain (`:600-618`) is the canonical one. Keep the ball witness (`:848-868`) |
+| 7 | `crates/tr-app/src/projectile.rs` | `:14751`, `:15166`, `:15266-15272`, `:20389-20419` *(cafec7222 lines)* | **NEW** — the `pending_death_drops` field + init + `drain_death_drops` + the death-hook refund arm. **CORRECTED by the g82e drain receipt: KEEP THE WHOLE HOOK BLOCK** (coil ladder + beach-ball arm + the retire-fixed `954824d0` gates/cue — behaviourally identical to g82's `coil_kill`, which is the g82-side drop now); its queue/drain half keeps d4's field + `drain_death_drops` + the two-integer-draw drain loop — the CANONICAL `Item.NewItem` emit for BOTH kinds (d4 tip `d7c3fbc02` lines: field `:14756`, init `:15171`, drain fn `:15277`, hook `:20396-20460`; the queue is the 5-tuple `(u16, i32, f32, f32, bool)` — the `zero_velocity` flag, coil push `:20445` `false`, ball push `:20457` `true`, the SEAL-VERIFY ball fix LANDED) |
+| 8 | `crates/tr-app/src/world_sim/projectiles.rs` | `:620-658` (drain + comment), `:775-868` (the two witnesses + `coil_app`) *(cafec7222 spans, corrected)* | **NEW** — **CORRECTED by the g82e drain receipt: KEEP THE WHOLE DRAIN + BOTH WITNESSES.** The seal dropped the coil witness as "WRONG stream + gates"; its gates were FIXED by `954824d0` and its stream pin (`UpdateItems`, two integer draws) is the canonical emit's recorded deviation — g82's `spawn_item_drop_px` drain is the wrong-shape half (the g82-side drop-hunks below). d4 tip `d7c3fbc02` lines: drain `:620-667` (the conditional scatter pair `:640-648` — `zero_velocity` true → (0,0), ZERO draws), witness module `:785-889`, coil witness `:812-856`, ball witness `:858-888` (pins (0,0) + EVERY stream pristine — the SEAL-VERIFY fix, the ball sub-delta CLOSED), `coil_app` `:802` |
 | 9 | `crates/tr-app/src/world_sim/editing.rs` | `:7193-7265`, `:7330-7337`, `:8289-8376` | **NEW** — d4's private `check_rope_usability` copy + its `use_tile_item` call + its 3 witnesses. The fn is byte-compare-identical to g82's `projectile_rope_coil.rs::check_rope_usability` modulo `pub(crate)`; g82's module copy + call site (`editing.rs:7204`) survive, d4's inline copy drops |
 | 10 | `docs/ANALYSIS.md` | `:39367-39453` ("The rope-coil lane extras (W4-d4 union)") | **NEW** — superseded by g82's "The rope-coil lane (W4-g82)" section + this doc; the item-row verifies `:39455-39480` (union items 4/5) are d4's OWN census — KEEP those paragraphs |
 
@@ -178,6 +194,9 @@ diverges — three deltas, each re-checked against the C# this pass:
    gates. g82's `coil_kill` keeps both (`projectile.rs:21206`, the
    cue correctly ungated ahead of them); d4's hook refunds foreign
    coils and `noDropItem` coils the C# never drops. g82 wins.
+   *(The gates half FIXED on d4 by the retire commit `954824d0` —
+   its hook now behaviourally identical to `coil_kill`; the g82e
+   receipt keeps d4's whole hook block for the canonical emit.)*
 2. **The drain stream + shape.** d4 drains on `UpdateItems`
    (`world_sim/projectiles.rs:637`) with a hand-built `ItemDrop`
    (two integer draws `:638-639`, prefix 0). The C# `RequestNewItem`
@@ -190,7 +209,12 @@ diverges — three deltas, each re-checked against the C# this pass:
    `spawn_item_drop_px` — the closer stream. (Both ports still draw
    g82's triplet-vs-pair shape through their helpers; the exact
    NewItem draw-shape audit rides the R-26-13 loot-seam task, NOT
-   this lane.) g82's drain survives.
+   this lane.) g82's drain survives. *(REVERSED on the shape axis by
+   the g82e drain receipt below — the seal weighed the STREAM (g82
+   closer) but not the DRAW SHAPE: `spawn_item_drop_px` draws the
+   tile-loot triplet + natural-prefix roll the ladder's `prefix: 0`
+   calls never make; d4's pair is the exact emit. d4's drain is
+   CANONICAL — `Item.cs:49749-49750` re-read.)*
 3. **The death-centre timing.** d4 `21f46f65d`+`cafec7222` pin the
    refund centre AFTER the dead-tick integrate (the pool's death hook
    reads `base.Center` post-`UpdatePosition`; the C# Kill captures it
@@ -214,7 +238,115 @@ list still lacks the coils; the item-row verifies (`b09b75bd0`/
 d4's own, KEEP.
 
 **FINAL verdict UNCHANGED: g82 canonical, stands.** The union push
-added copies + a mis-gated wire, not a better machine.
+added copies + a mis-gated wire, not a better machine. *(The gates
+half was then FIXED on d4 by the retire commit `954824d0`; the drain
+delta was REVERSED by the g82e receipt below — machine verdict
+unchanged, emit verdict d4.)*
+
+## The g82e drain receipt (2026-11-21, g82 tip `6e5f6b74` → this commit)
+
+> Input: the d4d retire lane's FINAL-FINAL re-adjudication (d4 tip
+> `f1480dc0b`, `26e-rope-coil-keep-one.md` at that tip — the per-fn
+> byte-compare + the drain diff + the ONE-branch merge instruction),
+> re-verified HERE against the C# and both ports' code, then UPDATED
+> against d4's SEAL-VERIFY commit `d7c3fbc02` (the ball-arm fix below —
+> the canonical drain source is now `d7c3fbc02`, not `f1480dc0`). The g82d seal
+> above ruled "g82's drain survives" on the STREAM axis alone (g82
+> drains on `UpdateProjectiles`, the closer stream); it explicitly
+> deferred the draw-shape audit ("Both ports still draw g82's
+> triplet-vs-pair shape through their helpers"). That premise is
+> FALSE — d4's drain does NOT draw the triplet: it hand-builds the
+> `ItemDrop` with the exact two integer draws. The shape axis decides
+> the emit, and it favours d4.
+
+**The C# re-read (verbatim, this pass):**
+
+* The ladder's eight calls (`Projectile.cs:77576/:77580/:77587/
+  :77591/:77598/:77602/:77609/:77613`) all pass `prefix: 0` and NO
+  velocity argument; the beach-ball return (`:77622`) passes
+  `prefix: 0` AND `Vector2.Zero`.
+* `Item.NewItem` (`Item.cs:49727-49751`): `item.Prefix(0)` returns
+  before ANY draw (`:511-513` — the `prefixWeWant == 0` head, ahead of
+  even `CanHavePrefixes`); the `velocity.HasValue` arm (`:49738-49741`)
+  fires ONLY for the ball (sets (0,0), draws nothing); none of
+  985/3005/3079/3080/965/2996/3077/3078/859 is in `ItemNoGravity`
+  (`ItemID.cs:1320` re-read: the set is 520/521/575/549/548/547/3453-
+  3459/3580/3581/4143), so the coil kinds take the scatter pair
+  `X = Next(-30,31)*0.1f`, `Y = Next(-40,-15)*0.1f` (`:49749-49750`) —
+  exactly TWO integer draws, no rotation, no prefix roll.
+* The draws run inside `Kill()` under the `UpdateProjectiles` swap
+  (`Main.cs:17775-17778`; `UpdateItems` is the NEXT using-block
+  `:17779-17782`).
+
+**The port re-read (both tips):**
+
+* d4 `world_sim/projectiles.rs:636-667` (tip `d7c3fbc02`, the
+  SEAL-VERIFY fix; the pre-fix drain sat at `:633-658` at `f1480dc0`):
+  `next_range(-30,31) as f32 * 0.1` / `next_range(-40,-15) as f32 *
+  0.1` on `UpdateItems`, `prefix: 0`, rotation 0, the 14×14 box
+  centred on the death centre — the EXACT coil emit, with the stream
+  deferral (`UpdateProjectiles` → `UpdateItems`, the bobber overflow's
+  recorded deviation) as its only departure. The ball sub-delta this
+  receipt first recorded as uncommitted is now LANDED: the queue is
+  the 5-tuple `(u16, i32, f32, f32, bool)` (`projectile.rs:14756`, the
+  `zero_velocity` flag — coil `false` at `:20445`, ball `true` at
+  `:20457`), the drain draws the pair ONLY when false (`:640-648`) —
+  the ball's `Vector2.Zero` (`Projectile.cs:77622`) takes the
+  `velocity.HasValue` arm (`Item.cs:49738-49741`), sets (0,0) and
+  draws NOTHING; the ball witness now pins (0,0) + every stream
+  pristine. The canonical drain source is `d7c3fbc02`.
+* g82 `world_sim/projectiles.rs:607-618` → `world_sim/items.rs:757-
+  785` `spawn_item_drop_px`: THREE `next_float` draws + a
+  `roll_prefix(kind, -1)` natural roll + `(r1*2-1)*1.4` /
+  `-2.2-r2*1.2` velocity + `r3*TAU` rotation, on `UpdateProjectiles`.
+  For these non-prefixable kinds the roll returns 0 without drawing
+  (`prefix.rs:514-517` — the `rollable_prefixes` None gate), so the
+  live defect is THREE float draws vs TWO integer draws, the wrong
+  velocity distribution (±1.4 uniform vs −3.0..3.0 tenths; −2.2..−3.4
+  vs −4.0..−1.6 tenths) and a rotation draw the C# never makes — the
+  tile-loot shape is wrong for a `RequestNewItem` refund regardless
+  of the prefix gate outcome.
+
+**Verdict: d4's death-hook queue + drain CANONICAL** (the d4d
+FINAL-FINAL ruling ADOPTED; the g82d seal's delta 2 REVERSED on the
+shape axis, its stream note kept as the recorded deviation). The
+machine verdict is untouched: g82 `coil_step` stays CANONICAL (the
+friendly pin + slot-direction write + integer anchor + PVP pair).
+
+**The g82-side drop-hunks (g82 tip `6e5f6b74`, grep-pinned this
+pass — the merge replaces these with d4's queue/drain):**
+
+| # | file | hunk | what |
+| --- | --- | --- | --- |
+| 1 | `crates/tr-app/src/world_sim/projectiles.rs` | `:600-618` | the `drain_coil_drops` → `spawn_item_drop_px` drain + its comment (the tile-loot shape — wrong draws/velocity/rotation for `RequestNewItem`); d4's `:620-667` drain at `d7c3fbc02` replaces it |
+| 2 | `crates/tr-app/src/projectile.rs` | `:14548` + `:14948` + `:21211` + `:21215-21222` | the `pending_coil_drops` field/init/push + `drain_coil_drops`; d4's `pending_death_drops` replaces them — the 5-tuple `(u16, i32, f32, f32, bool)` with `zero_velocity` at `d7c3fbc02` (`projectile.rs:14756`; g82's coil push repoints with `false` — the coil ladder never passes a velocity), `coil_kill`'s push repoints |
+| 3 | `crates/tr-app/src/projectile.rs` | `:25816-25857` (`w4_g82_the_kill_hook_queues_the_cue_and_the_refund`) | reads `drain_coil_drops` at `:25828/:25837/:25845/:25856` — repoint to `drain_death_drops` (assert the 5-tuple with `false` at `d7c3fbc02`) or retire in favour of d4's `w4_d4_retire_the_refund_gates_and_the_dig_cue` (`:27128-27194` at `d7c3fbc02`, the local/foreign/noDropItem/foreign-ball arms — g82's witness lacks the noDropItem arm) + the refund-queue witness (`:27006-27089` at `d7c3fbc02`, the ai1 ladder arms, the exact-tuple assert carries `false`) |
+| 4 | `crates/tr-app/src/projectile_rope_coil.rs` | `:45-49` (module doc) + `projectile.rs:21187-21194/:21215-21219` (the `coil_kill`/drain doc comments) | the "UpdateProjectiles-stream spawn" prose flips to d4's drain (the recorded `UpdateItems` deviation) |
+
+(g82's `coil_kill` cue + gate LOGIC stays — behaviourally identical
+to d4's retire-fixed hook; only the queue name + drain + doc prose
+change. The d4d FINAL-FINAL's own g82 drop table listed rows 1/2 at
+tip `187557f8e`; rows 3/4 are this receipt's completion — the seal
+commit `6e5f6b74` touched docs only, so the code lines are unmoved.)
+
+**The one-branch merge instruction** is the d4d FINAL-FINAL's five
+ordered steps (d4 `26e-rope-coil-keep-one.md`, FINAL-FINAL at
+`f1480dc0` + the SEAL-VERIFY corrections at `d7c3fbc02`), with
+this receipt's correction folded in: step 3 routes g82's refund
+through d4's `pending_death_drops` + the conditional
+two-integer-draw drain (the `zero_velocity` 5-tuples at `d7c3fbc02`:
+coil `false` → the scatter pair, ball `true` → (0,0) draw-free;
+KEEP d4's whole hook block — rows 7/8 above corrected — not just
+the ball half). The beach-ball 859 arm + its four witnesses stay
+d4-only, whole.
+
+**The g82-side ball arm: NONE (receipt-only).** g82's lane never
+ported the `:77620-77623` ball return — re-confirmed this pass: zero
+`beach_ball|BEACH_BALL` hits across g82's `crates/` (the 155 machine,
+the 859 item row, the return arm and all four ball witnesses are
+d4-only). The ball-arm defect (`Vector2.Zero` → zero scatter draws)
+has NO g82-side code counterpart — nothing to fix on this branch;
+the merge inherits the fixed ball arm wholesale from `d7c3fbc02`.
 
 ## Cross-receipt: the d4d retire lane reads THIS reversal
 
@@ -222,15 +354,56 @@ The d4d (d4-retire) lane's keep-one input is this doc's FINAL verdict,
 not d4's superseded `26e-rope-coil-keep-one.md` (whose KEEP-d4 ruling
 was premised on g82 being unwired at `de797f45`). Receipt for that
 lane: retire d4's `ai_rope_coil` + named-const rows + witnesses per
-the UPDATED drop-hunks table above (rows 1-10, `cafec7222` lines);
+the UPDATED drop-hunks table above (rows 1-10, `cafec7222` lines,
+the g82e corrections folded in);
 keep d4's wind-32 + styles 31-40-less-35 + the item-row verifies +
-the beach-ball refund half (whole on its own queue/drain, rows 7/8).
+the WHOLE retire-fixed death-hook block + its queue/drain (the
+canonical emit for the coil ladder AND the beach ball, rows 7/8).
 If d4d's retire
 already ran against `4fa74b3c7` lines, re-derive against `cafec7222`
 — the union push shifted the dispatch arm (+20 lines) and added the
 extras module/wiring this table now covers. No code on THIS branch
 changes for the retire: g82's lane is self-contained (own module,
-own consts, own queue names).
+own consts, own queue names). **CLOSED (g82e)**: the d4d retire ran
+and pushed (`954824d0` gates/cue fix → `ec3c6a88` band table →
+`f1480dc0` FINAL-FINAL re-adjudication); its machine verdict matched
+this doc, its drain verdict reversed this doc's seal delta 2 — the
+g82e drain receipt above ADOPTS that reversal, so the two lanes now
+read ONE verdict (g82 machine + d4 emit).
+
+## Mutual receipt: 26e ↔ 26e-f at `d7c3fbc02` (the ROPE bible FINAL pin)
+
+The two lanes' receipts now cross-read each other and agree on every
+axis:
+
+* **d4's `26e-rope-coil-keep-one.md`** (FINAL-FINAL `f1480dc0` +
+  SEAL-VERIFY receipt `d7c3fbc02`) reads THIS doc's g82-machine
+  verdict and confirms it in code (the friendly pin
+  `projectile_rope_coil.rs:196`, the slot-direction write
+  `projectile.rs:19866-19869`, the integer anchor `:247`, the PVP
+  exemption `:19920` — all g82-tip pins). Its drain verdict (d4
+  canonical) is the reversal THIS doc's g82e receipt adopted; its
+  SEAL-VERIFY correction (the ball's `Vector2.Zero` → `zero_velocity`
+  tuples, draw-free ball drain) is folded into the g82e receipt
+  above — no residual disagreement.
+* **THIS doc's g82e receipt** reads d4's SEAL-VERIFY commit
+  `d7c3fbc02` diff in full (the queue field/drain-fn/pushes/witness
+  touches in `projectile.rs`, the conditional drain + ball witness
+  in `world_sim/projectiles.rs`, the module-doc prose in
+  `projectile_rope_coil.rs`) and re-verified the fix against the C#
+  verbatim: `Projectile.cs:77622` passes `Vector2.Zero` as the 7th
+  arg (the 861 arm's `:77626` pattern), `Item.cs:49738-49741`'s
+  `velocity.HasValue` arm sets (0,0) and SKIPS the `:49749-49750`
+  scatter pair — the pre-fix drain's two-draw ball pin was the
+  FINAL-FINAL "coil/ball pass no velocity" misread. The fix is
+  correct; the drain source is pinned at `d7c3fbc02`.
+* **ROPE bible FINAL pin: the canonical drain source is
+  `d7c3fbc02`** (`origin/task/W4-d4-proj-ai-31-40`) — the merge takes
+  d4's `pending_death_drops`/`drain_death_drops` 5-tuples + the
+  conditional drain + the whole retire-fixed hook + all queue/drain/
+  ball witnesses FROM THAT COMMIT, not from `f1480dc0` (whose ball
+  arm still drew the pair). The machine source stays g82
+  (`6e5f6b74` + this receipt). The bible below carries the same pin.
 
 ## f3-pulley compose (origin/task/W4-f3-dust-player-3 `0b11548f`)
 
@@ -251,7 +424,8 @@ SAME `td::TILE_ROPE` set g82's placement writes — the attach gate is
    are non-solid so the hang box never collides (f3 `0b11548f` verified).
 4. **COIL-REFUND** — the coil's own death already paid `10-ai1` rope
    items back (or the coil item at ai1==0) through `coil_kill` →
-   `drain_coil_drops` → `spawn_item_drop_px` (g82, LIVE) — the ride
+   the death-drop queue → the two-integer-draw drain (g82's hook
+   shape LIVE; the merged emit is d4's drain per the g82e receipt) — the ride
    consumes nothing, the refund is placement-count-keyed only.
 
 Witness: `w4_g82_f3_compose_the_placed_column_attaches_and_refunds`
@@ -304,42 +478,55 @@ the palm/mushroom frame rolls need the genRand resolution the editing
 path already does. NOT a coil-only fix; do not wire it inside
 `coil_step`.
 
-## ROPE-FAMILY merger bible (one paragraph, the lane's whole truth)
+## ROPE-FAMILY merger bible (one paragraph, the lane's whole truth — FINAL, g82e drain receipt folded in)
 
-The rope family merges as: **g82 tip (`3173cc689` + this seal) is the
-CANONICAL coil lane** — keep `projectile_rope_coil.rs` whole (machine
-`coil_step` + rows reference + chain preview + `coil_death_drop` +
-`check_rope_usability`), the `35 =>` dispatch, the four literal
-`data.rs` rows (`:3979-3980`), `coil_kill`/`pending_coil_drops`/
-`drain_coil_drops` (the `:77267` owner + `:77367` noDropItem gates
-KEPT, the cue ungated, the `UpdateProjectiles` drain), the usability
-call in `use_tile_item`, the 7 chain sheets + `draw_with_hand` emit,
-the friendly pin + PVP exemption + style-35 direction write +
-`framing_rope`; **drop d4's machine half** (`ai_rope_coil`, the
-`35 =>` arm, the 4 consts + named row arm, the coil witnesses) **and
-d4's union-extras duplicates** (its `projectile_rope_coil.rs` copies,
-its private usability fn + call, its mis-gated refund hook + wrong-
-stream drain — the UPDATED ten-row table above, `cafec7222` lines;
-the dedupe is trivial because the pure fns are byte-identical copies
-of g82 `67c9a740`); **keep from d4** the wind-list **32** (merged
-list `2|8|24|28|29|32|35` — d4's beach-ball machine is its own), the
-beach-ball refund half (kept whole on d4's own queue + `UpdateItems`
-drain — rows 7/8, never folded onto g82's coil drain shape), the
-859/1156/190 row verifies, styles 31-40 less 35, and the death-centre
-timing deviation paragraph (pool-wide, both ports share it);
-**f3-pulley is disjoint** (player.rs vs projectile*/editing.rs/
-assets.rs — the place→attach→ride→coil-refund chain composes on the
-merged tree, witness `w4_g82_f3_compose_…` pins f3's exact predicates
-at `0b11548f`); **g83 vines stay out** (the pulley gate is
+The rope family merges as: **g82 tip (`6e5f6b74` + this receipt) is
+the CANONICAL coil lane MACHINE** — keep `projectile_rope_coil.rs`
+whole (machine `coil_step` + rows reference + chain preview +
+`coil_death_drop` + `check_rope_usability`), the `35 =>` dispatch,
+the four literal `data.rs` rows (`:3979-3980`), the `coil_kill`
+death-hook cue + gate shape (the `:77267` owner + `:77367`
+noDropItem gates KEPT, the cue ungated), the usability call in
+`use_tile_item`, the 7 chain sheets + `draw_with_hand` emit, the
+friendly pin + PVP exemption + style-35 direction write +
+`framing_rope`; **the refund EMIT is d4's** — replace g82's
+`pending_coil_drops`/`drain_coil_drops`/`spawn_item_drop_px` drain
+with d4's `pending_death_drops`/`drain_death_drops`/the
+two-integer-draw `UpdateItems` drain at `d7c3fbc02` (the exact
+`Item.NewItem` pair, `Item.cs:49749-49750`, `prefix: 0` draws
+nothing, the ball's `Vector2.Zero` → (0,0) zero draws via the
+`zero_velocity` flag; the stream
+deferral recorded; the g82-side drop-hunks in the drain receipt
+above — g82's tile-loot shape draws the wrong velocity/count/
+rotation), keep d4's WHOLE retire-fixed hook block (the coil ladder
++ the beach-ball 859 arm + its queue/drain + all its witnesses,
+rows 7/8 corrected); **drop d4's machine half** (`ai_rope_coil`,
+the `35 =>` arm, the 4 consts + named row arm, the four machine
+witnesses at `:26902-27004`/`:27196-27221` at `d7c3fbc02`) **and d4's union-extras
+duplicates** (its `projectile_rope_coil.rs` copies, its private
+usability fn + call — the UPDATED ten-row table above, `cafec7222`
+lines with the g82e corrections; the dedupe is trivial because the
+pure fns are byte-identical copies of g82 `67c9a740`); **keep from
+d4** the wind-list **32** (merged list `2|8|24|28|29|32|35` — d4's
+beach-ball machine is its own), the beach-ball refund half + its
+four witnesses (d4-only, whole), the 859/1156/190 row verifies,
+styles 31-40 less 35, and the death-centre timing deviation
+paragraph (pool-wide, both ports share it); **f3-pulley is
+disjoint** (player.rs vs projectile*/editing.rs/assets.rs — the
+place→attach→ride→coil-refund chain composes on the merged tree,
+witness `w4_g82_f3_compose_…` pins f3's exact predicates at
+`0b11548f`); **g83 vines stay out** (the pulley gate is
 `is_rope`+`tileRope`, never `IsVine`); salvage d4's four-kind
 placement loop + is_coil gate rows + NaN-quirk witness onto g82's
 module (rename `w4_d4_union_` → `w4_g82_`); the pool-wide cut-tile
 `TileKill` gap (7 census sites) is **R-26-13's seed**, NOT a merge
 blocker and NOT a coil-only fix; row-dedupe 171/475/505/506 keeps
-g82's literal arm (term-identical both-ported); after the merge run
-the deferred gate `cargo test --workspace -- --skip
-migrates_version_2_kinds_to_item_ids` — every lane witness was
-WRITTEN NOT RUN under the code-only constraint.
+g82's literal arm (term-identical both-ported); the merge order is
+the d4d FINAL-FINAL's five steps (d4 `26e-rope-coil-keep-one.md`,
+FINAL-FINAL `f1480dc0` + the SEAL-VERIFY drain-source pin
+`d7c3fbc02`); after the merge run the deferred gate `cargo test
+--workspace -- --skip migrates_version_2_kinds_to_item_ids` — every
+lane witness was WRITTEN NOT RUN under the code-only constraint.
 
 ## Witnesses (this final phase)
 
@@ -373,3 +560,38 @@ noDropItem block bounds, `:77572-77623` ladder + ball;
 `Main.cs:17775-17782` swap order; `Item.cs:49726-49766` NewItem
 draws/ownership). Every UPDATED table line grep-pinned at `cafec7222`.
 No cargo/rustc/tests/graphify invoked (code-only seal).
+
+**G82e DRAIN-RECEIPT verification (this commit):** the d4d FINAL-FINAL
+(d4 tip `f1480dc0b`, `26e-rope-coil-keep-one.md:167-362`) read in full
+and its drain diff RE-VERIFIED against the C# verbatim:
+`Projectile.cs:77565-77629` (the eight ladder calls' `prefix: 0` + no
+velocity, the ball's `Vector2.Zero`), `Item.cs:49700-49769` (the
+NewItem spawn body: `Prefix(prefix)` at `:49730`, the three velocity
+arms `:49738-49751`) + `Item.cs:490-534` (`Prefix(0)` returns at
+`:511-513` before any draw), `ItemID.cs:1320` (the ItemNoGravity set —
+none of the nine kinds on it), `Main.cs:17765-17789` (the swap order).
+Both ports' drains read at their tips: d4
+`world_sim/projectiles.rs:620-667` + the 5-tuple `zero_velocity` queue
+(`projectile.rs:14756/:15171/:15277`) + the retire-fixed hook
+(`:20396-20460`, coil push `:20445` `false` / ball push `:20457`
+`true`) + the retire witness (`:27128-27194`) + the
+refund-queue/ball witnesses (`:27006-27089`/`:27091-27126`) + the
+drain-contract witnesses (`world_sim/projectiles.rs:812-856`/
+`:858-888`, the ball pin (0,0) + every stream pristine) — all
+`git show d7c3fbc02:` pinned (the SEAL-VERIFY commit landed the ball
+`Vector2.Zero` fix this receipt first saw uncommitted; the pre-fix
+4-tuple spans at `f1480dc0` — drain `:633-658`, queue
+`:14751/:15166/:15270`, hook `:20389-20446` — were the first-pass
+pins); g82 `world_sim/projectiles.rs:600-618` +
+`world_sim/items.rs:749-785` (`spawn_item_drop_px`'s triplet +
+`roll_prefix(kind,-1)`) + `prefix.rs:509-520` (the None-gate no-draw
+return) + the `coil_kill` hook (`projectile.rs:21195-21213`) + its
+witness (`:25816-25857`). The g82-side drop-hunks table's every line
+grep-pinned at `6e5f6b74` (docs-only seal commit — code unmoved from
+`187557f8e`). Verdict: **g82 `coil_step` CANONICAL machine (unchanged),
+d4 death-hook queue + drain CANONICAL emit (the seal's delta 2
+reversed on the shape axis)**; rows 3/5/7/8 of the drop table
+corrected, the ROPE-FAMILY bible FINAL. No cargo/rustc/tests/
+rustfmt/graphify invoked (code-only receipt); the deferred gate stays
+the merge pass's `cargo test --workspace -- --skip
+migrates_version_2_kinds_to_item_ids`.
