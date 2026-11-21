@@ -2798,8 +2798,9 @@ pub(crate) fn boot_statics(world: &mut World) {
     // The water plants (`Main.cs:7366-7378`): the lily pad 518, the cattail
     // 519, the seaweed 549 and the sea oats 529 are frame-important, so the
     // framer keeps the frame rows their growth arms write (`GrowCatTail`
-    // `WorldGen.cs:58974-59082`, `GrowCheckSeaweed` `:58917`).
-    for kind in [518u16, 519, 529, 549] {
+    // `WorldGen.cs:58974-59082`, `GrowCheckSeaweed` `:58917`). The bamboo
+    // 571 joins with W4-c33's lily/cattail/bamboo arms (`Main.cs:7238`).
+    for kind in [518u16, 519, 529, 549, 571] {
         world.frame_important[kind as usize] = true;
     }
     // `Main.tileFrameImportant` boot statics for the M1.4-TO-4 families

@@ -250,6 +250,12 @@ mod tests {
     // (and the trySlope flatten touches the floor slopes), so this pin
     // moves by design wherever the scatter finds water. Stale-by-design;
     // the gate re-pins it (a == b stays).
+    // W4-c33 pass 4 (code-only): the Water Plants j-loop (the lily/cattail/
+    // bamboo arms) joins ahead of the seaweed walk on the SAME
+    // `pass_rng("Water Plants")` stream — the deferred draws now interleave
+    // with the seaweed rolls (the documented d103 deferral closes), and the
+    // 518/519/571 plants retype surface water cells. Stale-by-design; the
+    // gate re-pins it (a == b stays).
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -317,6 +323,15 @@ mod tests {
     // water cells directly; the flag5 loot pair (4425/4460) joins the
     // stocking hook. Stale-by-design; the re-pin is DEFERRED to the merge
     // gate. The a == b halves stay untouched.
+    // W4-c33 pass 4 (2026-11-21, code-only): the lily/cattail/bamboo arms
+    // of `LilypadsCattailsBambooAndSeaweed` (`WorldGen.cs:21988-22017` +
+    // `PlaceLilyPad` `:59086-59200`, `PlaceCatTail` `:58629-58742`,
+    // `GrowCatTail` `:58974-59084`, `PlaceBamboo` `:58391-58445`) join
+    // `ocean.rs::water_plants` ahead of the seaweed walk — the d103
+    // deferral closes, the deferred draws join the same stream in vanilla
+    // order, the 518/519/571 plants grow on the surface waters (the 571
+    // frame-important boot bit lands). Stale-by-design; the re-pin is
+    // DEFERRED to the merge gate. The a == b halves stay untouched.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
