@@ -2378,6 +2378,17 @@ pub struct KillSounds {
 /// mirrors the C# argument (`false` on the real break, `true` from the
 /// failure-tick callers, `Player.cs:39880`/`Projectile.cs:70219`).
 ///
+/// Call-site census (W4-g24 FINAL re-sweep): the C# has TWO —
+/// `KillTile` (`:63558`, gated `!dedServ && !isGeneratingOrLoadingWorld &&
+/// !gameMenu`) and `ReplaceTile` (`:62575`, the player tile-replacement
+/// arm, `Player.cs:39903`). The port drains the table at the break seam
+/// (`world_sim/editing.rs`, `fail: false`) and the zombie-bash fail seam
+/// (`world_sim/npcs.rs`, `fail: true`); the `ReplaceTile` surface itself
+/// is the recorded unported deviation (ANALYSIS "Liquid settlement" —
+/// the port takes the `KillTile` + forced-`PlaceTile` fallback, so the
+/// `:62575` call has no live port path; when `ReplaceTile` lands it
+/// reuses THIS table, no new cue work).
+///
 /// Deviation (research D3): the 147/224 arm rolls `genRand.Next(2)` between
 /// `Item48`/`Item49`; the port pins `Item_48` and draws nothing — audio-only
 /// variation with no state effect.
