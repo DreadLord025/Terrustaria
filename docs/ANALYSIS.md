@@ -39244,3 +39244,119 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The expert/master boss bag open trees (W4-f35, code-only mode)
+
+The census (`docs/research/65-expert-drop-trees-census.md`) splits the
+boss loot into two trees. The DEATH side — `NPC.NPCLoot`
+(`NPC.cs:78830-78899`) → `NPCLoot_DropItems` (`:78925-78937`) → the
+`ItemDropDatabase` boss registrations, where `ItemDropRule.BossBag`
+(`ItemDropRule.cs:10-13`) is a `DropBasedOnExpertMode(DropNothing,
+DropLocalPerClientAndResetsNPCMoneyTo0)` (the bag ONLY in expert, its
+`CommonCode` zeroes `npc.value`) and the master relics/pets ride
+`Conditions.IsMasterMode` — already runs through `tr_core::loot` +
+`loot_db_gen` (S1-E-14a, 1599 registrations). This task ports the OTHER
+half: what OPENING the bag grants.
+
+### The port (`crates/tr-app/src/boss_bags.rs`)
+
+`open_boss_bag(bag, env, rng, out)` ports `Player.OpenBossBag`
+(`Player.cs:7202-7883`) verbatim for all 19 openable bags (3318-3332,
+3860, 4782, 4957, 5111). The C# keeps two sequential switches
+(`:7206-7674` and `:7675-7743`); they are disjoint per type, so one
+match keeps the same per-bag order. The grant-less Ogre/Dark Mage bags
+(3861/3862, in `ItemID.Sets.BossBag` but with no case) run only the
+money tail. Every grant rides `quick_spawn` = `QuickSpawnItem`
+(`Player.cs:7170-7180`): the `stack > 0` gate, then `SetDefaults` →
+`Prefix(-1)` (the natural roll, `Item.cs:504-618`, on the SAME stream)
+→ the stack write — so a prefixable grant's prefix draws interleave
+between the bag's chance rolls (the loot-slot RNG order).
+
+The verbatim details kept: the EoW/BoC DISCARDED `num5`/`num6` draws
+(`:7257`/`:7287`, the stream advances though the value is never read);
+the master-mode ore/ingot bumps (EoW `Next(110,136)`/`Next(30,51)` vs
+classic `Next(80,111)`/`Next(20,41)`, BoC the same on 880/1329); the
+King Slime do-while re-picks the SECOND piece (`:7218-7222`) while the
+Queen Slime re-picks the FIRST (`:7664-7669`) — the asymmetry; the Moon
+Lord `Next(count)`+`RemoveAt` two-distinct-weapon bundle (`:7734-7740`)
+and the `HasItem(3384)` Portal Gun gate (`:7726`); the WoF Demon Heart
+gated `!extraAccessory` (`:7380`); the Fishron remix-seed option-6 swap
+(Aqua Scepter 157 vs Bubble Gun 2623, `:7560-7567`); the EoC ore stack
+is THREE `Next(21)+10` draws summed in argument order (`:7250`).
+
+`try_getting_dev_armor` (`Player.cs:7885-8026`) leads the hardmode bags
+(3325-3332, 3860, 4782 — NOT the Queen Slime/Deerclops): the
+`Next(tenthAnniversary ? 8 : 16) == 0` gate, then `Next(21)` picks one
+of the 21 dev sets, each piece its own `QuickSpawnItem`; sets 10/11
+carry the torch tails (3024×4 / 3599×4).
+
+### The money tail and the e25 boundary
+
+`bag_money` (`Player.cs:7833-7882`) builds a FRESH `NPC.SetDefaults(num9)`
+— whose `ScaleStats` tail (`NPC.cs:17856`) scales `value` by the
+difficulty money curve in expert/master (×2.5, e25's lane, UNWIRED).
+`BagEnv::value_multiplier` is that seam: the wiring passes 1.0 (the
+classic world the port models today), and the `(int)` truncation of
+`ScaleStats_ByDifficulty` (`NPC.cs:18176`) is kept. The base values are
+the classic `SetDefaults` table (the census; `Item.buyPrice(0,g)` =
+`g*10000`, `Item.cs:49417-49420`). Then the ±20 % spread, the 1/5, 1/10,
+1/15, 1/20 bonus chains, and the platinum/gold/silver/copper split —
+NO >50 shrink rolls here (unlike `NPCLoot_DropMoney`), the `(int)`
+truncations and the copper `< 1 → 1` floor verbatim. The zero-value
+bosses (Betsy/Ogre/Dark Mage) draw the 5 gates and mint nothing.
+
+### The wiring (`app/clicks.rs::open_boss_bag_click`)
+
+The `ItemSlot.RightClick` `OpenableBag` arm (`UI/ItemSlot.cs:1660-1667`)
+fires on the press edge (`Main.mouseRightRelease`) with an air cursor or
+one that cannot stack with the cell, BEFORE the `HasItemSwap` cycle
+(`:1668`). Only the `BossBag` subset has a ported opener — the
+crates/presents/herb bags fall through to the swap/split arms (the
+recorded gap). `TryOpenContainer` (`:1786-1804`) grants FIRST, then the
+bag stack decrements (`:1795-1799`), sound 7 (`:1800`), `stackSplit = 30`
+(`:1801`), `mouseRightRelease = false` (`:1802`). Every grant rides
+`GetOrDropItem(PickupItemFromWorld)` (`Player.cs:7187-7199`): the
+`Player.GetItem` fill (the coin rows + `DoCoins` per fill for coins, the
+`deposit_pickup` ammo/occupied/hotbar/reverse-empty walk for non-coins),
+the void vault as the last resort (`GetItemSettings.cs:57`'s
+`CanGoIntoVoidVault`), the overflow a world drop at the player's centre
+(`Item.RequestNewItem`, `:7198`, the prefix preserved — no fresh roll).
+The whole open is a UI click OUTSIDE every `SwapRandom` block, so the
+bag rolls AND the fill chimes ride `NamedRngs::global()` (the
+bare-`Main.rand` stand-in, the `quick_transfer_from_slot` precedent);
+every named stage stream stays pristine.
+
+### Deliberate deviations / out of scope
+
+- `master_mode`/`value_multiplier` stay classic (the World carries no
+  game mode — the recurring constants-off note: nurse `Main.cs:40086`,
+  spawner `NPC.cs:853`, dd2 `DD2Event.cs:1123`); the e25 scaling module
+  stays UNWIRED and untouched. The bag money reads the unscaled
+  `SetDefaults` value exactly like the C# classic path.
+- `crimson` stays false (the port persists no world-evil type, the
+  `shop.rs`/`loot.rs` `crimson_world` gap) — the EoC bag grants the
+  corruption ore/bar pair (56/59).
+- The crates/presents/herb-bag/goodie-bag openers (`OpenFishingCrate`,
+  `OpenPresent`, `OpenHerbBag`, …) are NOT ported — only the `BossBag`
+  subset of `ItemID.Sets.OpenableBag` has an opener; the rest fall
+  through to the swap/split arms (the recorded gap).
+- The death-side `DoDeathEvents_DropBossPotionsAndHearts`
+  (`NPC.cs:78945-79016`, the boss potion + 5-9 hearts + Badger's Hat)
+  and `NPCLoot_DropHeals`/`DropCommonLifeAndMana` (`:79098-79195`/
+  `:79531-79557`) are OUT of this task (the death-events lane).
+- The `GetItem` favorite guard reads the port's slot-positional
+  `favorite_slots` (the S1-P-i47 model); the `newAndShiny` flag and the
+  `PopupText`/achievement pickup hooks are the standing UI deviations.
+
+### Verification
+
+Code-only: every arm re-read against the cited C# windows; the seam
+call sites checked against the actual signatures by read/grep
+(`PrefixRandom`/`roll_prefix`, `deposit_pickup`, `carry_slots_mut`/
+`do_coins`, `void_vault_take`/`can_void_vault_accept`, `registry::get`/
+`name`/`max_stack`/`is_coin`/`coin_value`, `NamedRngs::global`/`stream`,
+`Player.extra_accessory`/`center`/`void_vault_enabled`/`banks`,
+`World.seeds`, `ItemSlot`/`EMPTY_SLOT`, `coin_slot.force_slot_state`).
+The witnesses (per-boss same-seed `UnifiedRandom` replays in
+`boss_bags.rs` + the 8 wiring witnesses in `clicks.rs`) are WRITTEN, NOT
+RUN — **no cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.
