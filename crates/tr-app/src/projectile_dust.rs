@@ -1629,6 +1629,169 @@ pub(crate) fn ai001_silver_bullet_drip_981(p: &Projectile, world: &World, d: &mu
     dust.velocity *= 0.2;
 }
 
+/// `:29238-29303` — the 1042 ShimmerGunStream's six-point dust-324 trail
+/// (aiStyle-60's `type == 1042` tail, STAGED — the row + machine are W4-d6's
+/// `projectile_ai_guns` side, dust-skipped there; the g63 doc-66 census row
+/// mis-lists these two sites under the 358 — the emitter census correction
+/// is in research/125). Per point: THREE independent Next(2) alpha+25
+/// gates, noGravity, vel×0.3 + vel×0.5, position = Centre − v·i/6, vel×0.2,
+/// then the Next(6) colour switch (3 named + default). The Next(4) extra
+/// dust takes scale 0.6, vel×0.5 + vel×0.5 and its OWN Next(6) colour pick
+/// — no alpha gates, no position rewrite (the C# asymmetry).
+pub(crate) fn style60_shimmer_gun_trail_1042(p: &Projectile, world: &World, d: &mut ProjDust) {
+    let (cx, cy) = p.center();
+    for i in 0..6 {
+        let off_x = p.vel.x / 6.0 * i as f32;
+        let off_y = p.vel.y / 6.0 * i as f32;
+        let idx = d.new_dust(
+            world,
+            p.pos + Vec2::splat(6.0),
+            p.w as i32 - 12,
+            p.h as i32 - 12,
+            324,
+            0.0,
+            0.0,
+            75,
+            Color::default(),
+            1.0,
+        );
+        let dust = d.pool.slot_mut(idx);
+        for _ in 0..3 {
+            if d.rng.next_range(0, 2) == 0 {
+                dust.alpha += 25;
+            }
+        }
+        dust.no_gravity = true;
+        dust.velocity *= 0.3;
+        dust.velocity += p.vel * 0.5;
+        dust.position = Vec2::new(cx - off_x, cy - off_y);
+        dust.velocity *= 0.2;
+        dust.color = shimmer_gun_color(d.rng.next_range(0, 6));
+    }
+    if d.rng.next_range(0, 4) == 0 {
+        let idx = d.new_dust(
+            world,
+            p.pos + Vec2::splat(6.0),
+            p.w as i32 - 12,
+            p.h as i32 - 12,
+            324,
+            0.0,
+            0.0,
+            75,
+            Color::default(),
+            0.6,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.velocity *= 0.5;
+        dust.velocity += p.vel * 0.5;
+        dust.color = shimmer_gun_color(d.rng.next_range(0, 6));
+    }
+}
+
+/// `:29265-29279`/`:29287-29301` — the 1042's Next(6) colour switch.
+fn shimmer_gun_color(pick: i32) -> Color {
+    match pick {
+        0 => Color::new(255, 255, 220, 255),
+        1 => Color::new(230, 255, 255, 255),
+        2 => Color::new(255, 210, 255, 255),
+        _ => Color::new(225, 210, 255, 255),
+    }
+}
+
+/// `:27867-27874` — the 227 CrystalLeafShot's first-tick 8× dust-157 burst
+/// (aiStyle-43, STAGED — the machine is W4-d5's `projectile_ai_style43`,
+/// UNWIRED, no row; its 8 kept call-site NextFloat draws are REPLACED by
+/// this emitter at the d5 merge, the g63 body-skip supersede convention).
+/// Per dust: internals, noGravity, vel×3, scale 1.5, then the POST-spawn
+/// `vel += base.vel * NextFloat()`. The caller owns the soundDelay latch.
+pub(crate) fn style43_crystal_leaf_burst_227(p: &Projectile, world: &World, d: &mut ProjDust) {
+    for _ in 0..8 {
+        let idx = d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            157,
+            0.0,
+            0.0,
+            0,
+            Color::default(),
+            1.0,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.no_gravity = true;
+        dust.velocity *= 3.0;
+        dust.scale = 1.5;
+        dust.velocity += p.vel * d.rng.next_float();
+    }
+}
+
+/// `:28832-28838` — the 321 FlamingJack's per-tick dust-6 head (aiStyle-55,
+/// STAGED — NO machine on any pushed tip; the row + the target-scan machine
+/// are the activating wave). The caller gates on the C#'s
+/// `ai[0] >= 0 && ai[0] < maxNPCs` window (`:28795`); the dust itself is
+/// unconditional inside it: the 8-px inset box, vel×0.5 + vel×0.5,
+/// noGravity, noLight, scale 1.4.
+pub(crate) fn style55_flaming_jack_head_321(p: &Projectile, world: &World, d: &mut ProjDust) {
+    let idx = d.new_dust(
+        world,
+        p.pos + Vec2::splat(8.0),
+        p.w as i32 - 16,
+        p.h as i32 - 16,
+        6,
+        0.0,
+        0.0,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let dust = d.pool.slot_mut(idx);
+    dust.velocity *= 0.5;
+    dust.velocity += p.vel * 0.5;
+    dust.no_gravity = true;
+    dust.no_light = true;
+    dust.scale = 1.4;
+}
+
+/// `:31011-31022`/`:31047-31058`/`:31141-31152`/`:31201-31209` — the 451
+/// InfluxWaver's four rotated-corner sparks (aiStyle-81, STAGED — the row +
+/// machine are W4-d9's `projectile_ai_style81`, dust-skipped there). ONE
+/// shape, four call sites: the SelectRandom(226,229) type pick, the
+/// (−32,32) offset rotated by the rotation, the 8×8 box at
+/// Centre + offset − (4,4), alpha 100, the given scale, vel×0.1, then
+/// noGravity — the two fade arms gate it on Next(6)!=0, the homing arm on
+/// an OUTER Next(3)==0 (the caller's gate, drawn before the pick), the
+/// strike arm writes it unconditionally. `gate_next6` selects the fade-arm
+/// gate; the homing/strike callers pass false and own their outer gates.
+pub(crate) fn style81_influx_spark_451(
+    p: &Projectile,
+    world: &World,
+    d: &mut ProjDust,
+    scale: f32,
+    gate_next6: bool,
+) {
+    let ty = select_random(d.rng, [226, 229]);
+    let (cx, cy) = p.center();
+    let offset = crate::bow_launch::rotated_by(Vec2::new(-32.0, 32.0), p.rot as f64);
+    let idx = d.new_dust(
+        world,
+        Vec2::new(cx, cy) + offset - Vec2::splat(4.0),
+        8,
+        8,
+        ty,
+        0.0,
+        0.0,
+        100,
+        Color::default(),
+        scale,
+    );
+    let dust = d.pool.slot_mut(idx);
+    dust.velocity *= 0.1;
+    if !gate_next6 || d.rng.next_range(0, 6) != 0 {
+        dust.no_gravity = true;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Witness tests-as-code — WRITTEN NOT RUN (code-only mode, W4-e3 batch 1).
 // Verified by re-reading the cited C# and mirroring every draw through the
@@ -3105,6 +3268,171 @@ mod tests {
             assert!(pool.slot(i).no_gravity);
             assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
         }
+    /// W4-e3 AI-inline window — `:29238-29303`: the 1042's 6×324 trail
+    /// (three alpha gates each, the Centre−v·i/6 position, the ×0.2 tail,
+    /// the Next(6) colour) + the Next(4) extra (scale 0.6, no alpha gates,
+    /// no position rewrite). Mirrored. WRITTEN NOT RUN.
+    #[test]
+    fn w4_e3_style60_shimmer_gun_1042_trail_mirror() {
+        let w = world();
+        let c = ctx();
+        let mut p = proj(1042);
+        p.w = 18.0;
+        p.h = 18.0;
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(41);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(41);
+        let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+        style60_shimmer_gun_trail_1042(&p, &w, &mut d);
+        let (cx, cy) = p.center();
+        let pick_color = |k: i32| match k {
+            0 => Color::new(255, 255, 220, 255),
+            1 => Color::new(230, 255, 255, 255),
+            2 => Color::new(255, 210, 255, 255),
+            _ => Color::new(225, 210, 255, 255),
+        };
+        for i in 0..6 {
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, p.pos + Vec2::splat(6.0), 6, 6, 324,
+                0.0, 0.0, 75, Color::default(), 1.0,
+            );
+            let md = mpool.slot_mut(idx);
+            for _ in 0..3 {
+                if mirror.next_range(0, 2) == 0 {
+                    md.alpha += 25;
+                }
+            }
+            md.no_gravity = true;
+            md.velocity *= 0.3;
+            md.velocity += p.vel * 0.5;
+            md.position = Vec2::new(cx - p.vel.x / 6.0 * i as f32, cy - p.vel.y / 6.0 * i as f32);
+            md.velocity *= 0.2;
+            md.color = pick_color(mirror.next_range(0, 6));
+        }
+        if mirror.next_range(0, 4) == 0 {
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, p.pos + Vec2::splat(6.0), 6, 6, 324,
+                0.0, 0.0, 75, Color::default(), 0.6,
+            );
+            let md = mpool.slot_mut(idx);
+            md.velocity *= 0.5;
+            md.velocity += p.vel * 0.5;
+            md.color = pick_color(mirror.next_range(0, 6));
+        }
+        let act = active(&pool);
+        assert!(act.len() >= 6);
+        assert_eq!(act.len(), active(&mpool).len());
+        for &i in &act {
+            assert_eq!(pool.slot(i).dust_type, 324);
+            assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+            assert_eq!(pool.slot(i).color, mpool.slot(i).color);
+            assert_eq!(pool.slot(i).alpha, mpool.slot(i).alpha);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e3 AI-inline window — `:27867-27874` (the 227's 8×157, the
+    /// POST-spawn NextFloat velocity blend) + `:28832-28838` (the 321's
+    /// inset dust-6, noLight, scale 1.4). Mirrored. WRITTEN NOT RUN.
+    #[test]
+    fn w4_e3_style43_burst227_and_style55_head321_mirror() {
+        let w = world();
+        let c = ctx();
+        let mut p = proj(227);
+        p.w = 14.0;
+        p.h = 14.0;
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(43);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(43);
+        let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+        style43_crystal_leaf_burst_227(&p, &w, &mut d);
+        for _ in 0..8 {
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, p.pos, 14, 14, 157,
+                0.0, 0.0, 0, Color::default(), 1.0,
+            );
+            let md = mpool.slot_mut(idx);
+            md.no_gravity = true;
+            md.velocity *= 3.0;
+            md.scale = 1.5;
+            md.velocity += p.vel * mirror.next_float();
+        }
+        assert_eq!(active(&pool).len(), 8);
+        for i in 0..8 {
+            assert_eq!(pool.slot(i).dust_type, 157);
+            assert_eq!(pool.slot(i).scale, 1.5);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+        // The 321 head: one dust, no explicit draws.
+        let mut q = proj(321);
+        q.w = 30.0;
+        q.h = 30.0;
+        let mut pool2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(44);
+        let mut mpool2 = DustPool::new();
+        let mut mirror2 = UnifiedRandom::new(44);
+        let mut d2 = ProjDust { pool: &mut pool2, ctx: &c, rng: &mut rng2 };
+        style55_flaming_jack_head_321(&q, &w, &mut d2);
+        let idx = mpool2.new_dust(
+            &mut mirror2, &c, &w, q.pos + Vec2::splat(8.0), 14, 14, 6,
+            0.0, 0.0, 0, Color::default(), 1.0,
+        );
+        let md = mpool2.slot_mut(idx);
+        md.velocity *= 0.5;
+        md.velocity += q.vel * 0.5;
+        md.no_gravity = true;
+        md.no_light = true;
+        md.scale = 1.4;
+        assert_eq!(active(&pool2).len(), 1);
+        assert!(pool2.slot(0).no_light);
+        assert_eq!(pool2.slot(0).scale, 1.4);
+        assert_eq!(pool2.slot(0).velocity, mpool2.slot(0).velocity);
+        assert_eq!(rng2.next_range(0, 1000), mirror2.next_range(0, 1000));
+    }
+
+    /// W4-e3 AI-inline window — `:31011-31209`: the 451's four spark sites
+    /// share ONE body (SelectRandom(226,229), the rotated (−32,32) corner,
+    /// vel×0.1); the fade arms draw the Next(6) noGravity gate, the strike
+    /// arm (gate_next6=false) writes it unconditionally. Mirrored across
+    /// three calls with distinct scales. WRITTEN NOT RUN.
+    #[test]
+    fn w4_e3_style81_influx_451_spark_shape_mirror() {
+        let w = world();
+        let c = ctx();
+        let mut p = proj(451);
+        p.rot = 0.7;
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(47);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(47);
+        for (scale, gate) in [(1.0f32, true), (0.6, true), (0.6, false)] {
+            let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+            style81_influx_spark_451(&p, &w, &mut d, scale, gate);
+            let ty = [226, 229][mirror.next_range(0, 2) as usize];
+            let (cx, cy) = p.center();
+            let off = crate::bow_launch::rotated_by(Vec2::new(-32.0, 32.0), p.rot as f64);
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, Vec2::new(cx, cy) + off - Vec2::splat(4.0),
+                8, 8, ty, 0.0, 0.0, 100, Color::default(), scale,
+            );
+            let md = mpool.slot_mut(idx);
+            md.velocity *= 0.1;
+            if !gate || mirror.next_range(0, 6) != 0 {
+                md.no_gravity = true;
+            }
+        }
+        assert_eq!(active(&pool).len(), 3);
+        for i in 0..3 {
+            assert!([226, 229].contains(&pool.slot(i).dust_type));
+            assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+            assert_eq!(pool.slot(i).no_gravity, mpool.slot(i).no_gravity);
+        }
+        assert!(pool.slot(2).no_gravity, "the strike arm writes noGravity unconditionally");
         assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
     }
 
