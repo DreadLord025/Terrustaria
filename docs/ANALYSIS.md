@@ -39273,14 +39273,43 @@ Recorded deviations:
 * **663 Princess**: the `:88411` second arm is dead code - the
   else-if chain's town arm (`:88046`) matches 663 first; only the
   25-dust smoke burst + four tombstone picks fire.
-* **402 oldPos trail**: the port's Npc carries no trail array; the
-  all-zero 10-slot stand-in draws each `Next(4)` gate until the first
-  `== 0` breaks (`NPC.cs:83611-83620`) - exactly the C#'s draws for
-  an untrailed corpse. The live trail is the wiring wave's.
+* **402 oldPos trail**: RESOLVED by the wiring wave - `Npc.old_pos`/
+  `old_rot` (`NPC.cs:6119-6121`) now carry the live 10-slot rings and
+  `Npc::update_trails` ports `UpdateNPC_UpdateTrails`'s mode-7 shift
+  (`NPC.cs:90863-90872`, called at `:90512` after `FindFrame`;
+  `NPCID.cs:10430` maps 402 -> 7). The feed's trail loop reads the
+  live ring: a `== 0` gate on a filled slot spawns TWO gated pairs AT
+  THE SLOT (`:83621-83630`); only a never-updated corpse still reads
+  all-zero (the gates draw until the first `== 0` breaks - the C#'s
+  fresh-NPC shape). The other kinds' TrailingMode arms stay unwired
+  (their rings stay zero; no reader yet).
+* **Keep-one census vs the d55/e5/f10 gore dispatchers** (the wiring
+  wave's overlap audit): the gore lanes re-run death DUST loops for
+  kinds this feed covers - d55's 668 (`deerclops_death`), e5's
+  551/552-554/555-557/561-563 (`dd2_death_dust`), f10's
+  558-560/564-577 DD2 band + 412-417/419/518/416 solar arms
+  (`death_dust_loop` + the pair loops). When those dispatchers claim
+  the strike/death slot the wiring MUST strip their dust loops for
+  exactly these kinds (keep g60's feed, keep the gore bodies); the
+  566/567 six `Next(2)` gates + the 576/577 `Next(5)` head pick are
+  ALREADY consumed by g60 - f10 re-draws them today, strip at wiring.
+  636/657/660/667 are NOT in g60's lane (gore-first / census-
+  ineligible): the e5 dispatch owns them whole (its 636
+  `empress_hit_dust_draws` count-plan must become a pool feed at its
+  wiring, not a second census). The e5 551 mirrored twin vs the f10
+  551 flipped arm ALSO overlap each other (the same
+  `spriteDirection == -1` branch) - keep one there too. 418 stays
+  c12's feed. The census table rides the feed call site
+  (`world_sim/npcs.rs`) + the module header.
 * **373 Sharkron2**: the wrapper maps the kind to 373 explicitly (the
   style71 adapter precedent - `cs_id`'s bestiary fallback folds it
   onto the Sharkron 372 row; the shared arm covers both).
 
 Verification: code-only - 17 stream-replay witnesses WRITTEN NOT RUN
 (each replays the cited draws on a pre-call RNG clone and asserts
-stream equality + the slot writes); no cargo/tests invoked.
+stream equality + the slot writes); no cargo/tests invoked. The
+wiring wave adds 5 more (also written not run): the mode-7 trail
+shift + the other-kinds no-shift (`npc.rs`), the live-ring trail
+spawn (`npc_death_dust.rs`), and the twin-app stream-parity pair
+through the LIVE `update_npcs` retain (the 552 burst delta + the
+Spore hp==0 edge, `world_sim/npcs.rs`).
