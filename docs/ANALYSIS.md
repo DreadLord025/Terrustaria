@@ -22336,6 +22336,105 @@ and the wiring owns the draws in C# order.
    fresh head has no interaction flags on the spawn tick); the wiring
    re-copies if it ever assembles later.
 
+## The NPCID 578-630 roster join (W4-d42, 2026-11-21 — code-only mode)
+
+The data-only `SetDefaults` join for the vanilla NPCID 578-630 band: the ten
+in-flight kinds 578-587 (the DD2 lightning bug, the unconscious bartender, the
+three antlions, the three fairy critters, the blood-moon merman + eye fish)
+completed, plus 41 new kinds 590-630 (the torch zombies, the gold critters, the
+dragonflies, the birds, the blood-moon sea trio, the gnome, the seahorses, the
+dandelion, the ice mimic, the blood mummy). 51 kinds, eleven 5-kind commits
+(batch 11 carries the lone 630). Branch `task/W4-d42-npc-kinds-561-630`, NOT
+merged. **Code-only mode: no compiler/tests/graphify invoked**; the eleven
+`w4_d42_bN_the_defaults_match_the_csharp_rows` witness tests in `npc.rs` are
+WRITTEN NOT RUN (the smallkinds shape — `(kind, vanilla, ai, w, h, dmg, def,
+life, kb, value)` through the `Npc::new` shell). A static Python checker
+(`d42_check.py` + `d42_final.py`) verifies every exhaustive `NpcKind` match
+carries an arm for all 321 roster kinds, the `to_u16`/`from_u16` bijection,
+`ALL_KINDS` == roster, the s1_f_3 count pin, the cs_id/net_id invariant, the
+fold resolution and the cue resolution — 0 errors.
+
+**Protocol vs vanilla ids** (the pirate renumber's precedent): the 51 kinds ride
+the port-local wire band **354-404** (`to_u16`/`from_u16`, one id per kind in
+vanilla order; 354 is the next free slot above the BlazingWheel's 353). The
+vanilla `NPC.type` rides `cs_id` (hand rows keep the TRUE id for EVERY kind,
+folded ones included — the AI arms read `cs_id`), `net_id` (the bestiary entry)
+and `render_key` (the vanilla ids 578-630 are all free render keys). The dirty
+583-587 enum/wire rows were lifted in batch 1 and re-armed in batch 2 so every
+commit keeps `decodable == ALL_KINDS.len()` and the exhaustive arms consistent
+(270 → 275 → 280 → … → 321).
+
+**Bestiary folds** (the SleepingGolfer precedent): the twelve `Hide = true` kinds
+fold ONLY in `entry_for_npc` — BartenderUnconscious→DD2Bartender (579→550),
+ArmedTorchZombie→TorchZombie (591→590), GoldGoldfishWalker→GoldGoldfish
+(593→592), Black/Blue/Green/Orange/YellowDragonfly→RedDragonfly (595-598/600→599),
+Seagull2→Seagull (603→602), Grebe2→Grebe (609→608), BloodEelBody/Tail→BloodEelHead
+(622/623→621). `try_entry_for_npc` does NOT fold them (returns None → the s1_f_3
+cs_id==net_id invariant exempts them, their hand rows keep the true id). The
+folded kinds keep their OWN draw sheets via `texture_net_id` hand rows (the
+ForceBubble precedent — the credit folds, the sheet does not); they have no
+`portrait_data` arm (the entry they render is the fold target's).
+
+**Deliberate deviations / deferrals** (the wyvern precedent):
+1. **Draw sheets deferred.** The atlas has ~71 px headroom (8121/8192); the 51
+   `NPC_<id>` sheets are NOT packed. The `draw_npcs` arms call
+   `generic_anchor(assets.npc_sheet(id), npc_rows(id), …)` — `npc_sheet` returns
+   None for an unpacked name, so the arm no-draws (the wyvern deferral). The
+   kinds are NOT added to `STATIC_SHEET_NAMES`/the sheet lists (the `npc_tex`
+   debug_assert would fire). `NPC_FRAME_COUNT` was already byte-identical to the
+   C# for all 697 ids — no change. The bestiary portraits use literal
+   SetDefaults-box sizes (the WyvernHead `(sheet_i, 32.0, …)` precedent); the
+   sheet index folds to 0 until the sheets land.
+2. **Unwired AI styles idle in place.** aiStyles 111-119 (the DD2 bug, the
+   fairies, the balloon, the dragonflies, the ladybugs, the water striders, the
+   dreadnautilus, the seahorses, the dandelion), 68 (the flying grebe/seagull),
+   24 (the owl), 66 (the maggot), 107 (the hemogoblin shark), 25-for-629 (the ice
+   mimic — the style axis claims only PresentMimic), 44 (the antlion swarmer /
+   eye fish — the machine is ported in `npc_ai_style44.rs` but UNWIRED) and 0
+   (the bound bartender) get `{}` idle stand-in arms with citations (the
+   MartianTurret/wyvern precedent). The noGravity/noTileCollide kinds (578, 618,
+   621-623) run the raw integration tail (`integrate_no_tile_collide`,
+   `NPC.cs:90494-90498`) so the spawn velocity carries (the style-56 arm's shape).
+3. **Wired families.** The aiStyle-3 walkers (580/582/586/590/591/624/630) ride
+   `update_zombie` → the C# ladder's own per-type arms (`npc_ai3_speeds.rs`:
+   580/582 the lerp machine, 586 the life-scaled cap, 591 the charge family,
+   624/630 the num107/half-life-rage arms); `ai3_walk_speed` pins the caps
+   (580 2.5, 582 2.25, 586 1.5 full-life base, 590/591 1.0, 624 2.5, 630 1.5).
+   The aiStyle-16 swimmers (592/607/615) ride `update_swimmer` + new
+   `vanilla_type` arms. The BloodSquid (619, aiStyle 5) is WIRED to
+   `ai_005_hover_family` via the new `HoverParams::BLOOD_SQUID` (num 6 / num2 0.1
+   `NPC.cs:50323-50327`, the flag4 bob family `:50446`, no flag5 double-add
+   `:50447`, tile collision with the 0.7 bounce `:50658`, the Aim tilt
+   `:50643-50646`).
+4. **FindFrame RNG stand-ins.** `find_frame` has no RNG seam, so the Owl's (611)
+   idle head-turn table (`NPC.cs:73687-73731`, `Main.rand.Next(80)`/`Next(3)`)
+   HOLDS row 0 and the WaterStrider's (612/613) row-0 idle gate
+   (`Main.rand.Next(180)`, `:69788`) keeps the counter running — both documented
+   in the arm; the blink cycles ride the frame-machine wiring wave. The
+   Dandelion's (628) `Main.WindForVisuals` reads fold to 0f (unported). Every
+   other FindFrame case is ported verbatim (the cites ride each arm).
+5. **IceMimic hardMode rows.** 629's `SetDefaults` writes the hardMode stats
+   (80/30/500/100000, `NPC.cs:17092-17097`) with a `!Main.hardMode` variant
+   (30/12/300/20000, `:17099-17105`). The port has no per-kind hardmode seam, so
+   the hardMode rows ship (the documented choice; the variant awaits the
+   difficulty wiring).
+6. **Blood Eel chain deferred.** The eel trio (621-623) is NOT added to
+   `is_worm`/`shares_carrier_life` (the chain wiring is a follow-up — the wyvern
+   membership choice); the segments hold row 0 (FindFrame has no case 621-623).
+   The spawner is untouched (data-only join). The pre-existing duplicate `value()`
+   arms on main (SolarCrawltipedeHead/StardustWormHead/SolarSpearman/VortexTower/
+   DD2LanePortal) are out of scope.
+7. **Fairy immunity gap.** The fairy critters' (583-585)
+   `ImmuneToAllBuffsThatAreNotWhips` mask loop is unmodelled (the port's
+   documented gap — they ride `&[]` in `debuff_immune_ids`); their
+   `ImmuneToWhips` rides `whip_immune` (the MartianSaucer precedent).
+
+**Sounds**: the `NPC_Hit_31/32` + `NPC_Killed_34/35/63` bank rows and the
+`dd2_lightning_bug_hurt_0/death_0` trackables joined `audio.rs` (the soundid
+style rows already existed); the hemogoblin shark rides the existing
+`dd2_drakin` trackables. The ExplosiveBunny's (614) `DeathSound = null`
+(`NPC.cs:16889`) rides the None fall-through.
+
 ## The Destroyer machine (aiStyle-37, S1-D-3, 2026-11-18 — code-only mode)
 
 `NPC.AI_037_Destroyer` (`NPC.cs:49756-50242`, dispatched at `:28991-28994`)
