@@ -1620,6 +1620,35 @@ underground-desert cavern style stays OURS (no separate desert arm in
 RUN (the five variants' style-0 + non-default rows + the g70/g71-owned-slot
 `None` verdicts).
 
+### The BG-FAMILY bible (W4-g72 retire — the one-paragraph family map)
+
+The background family is split across four lanes with ONE canonical owner
+per piece, adjudicated and receipted at the retire (research/64 §7, 64b,
+64c, 64d): **g72 (this branch) owns the CAVE canonical** —
+`worldgen/cave_bg.rs` is THE `RandomizeCaveBackgrounds` driver (g71's
+`fc76a48b3` adopted it verbatim and dropped its `bg_rolls` cave duplicate;
+the previous-value carry, `[i32;4]` shape and u8 tail decided it), plus the
+cavern/hell STYLE machine (`bg_styles.rs` pick + 22-case table + `ug_back`
+latch), the LIVE cross-fade overlays (`UgOld` + `ug_crossfade_tint`), the
+underworld DRAW stack (`underworld_bg.rs`, atlas-blocked pending d35's
+second page) and the `.wld`/`.trwld` 31-byte/net persistence trio; **g71
+owns the SURFACE rolls + tables** — `bg_rolls.rs`'s tree/surface/boot rolls
+(the composed `:11338→:11339→:11340→:11341` tail keeps our cave seat on the
+shared stream), the `setBG` style→ids expansion (`surface_bg_texture_ids`,
+which our five v16-owned surface variants already read LIVE), the
+snow/desert/ocean style bytes AND the FIRED underworld style byte (rolled +
+`.wld`-persisted; `.trwld` seat [58] of the 107-byte union, layout authority
+g71 research/92 §1-FULL.2); **g70 owns the FOREST set** — `tree_x` +
+`forest_bg_styles` (16 bytes, union offsets [0..16]) and the
+`SetForestBGSet` tables our style-0-pinned forest chain lifts to at the
+merge; **g69 owns the CRIMSON byte + consumers** — the 1-byte `crimson`
+flag (union [50], e19's duplicate drops) with its 5 wired feeds + 12
+deferred consumers censused in its research/117. The v18 `.trwld` union is
+**107-byte fixed head + d109 W×H dense LAST** (every lane's truncation
+constant moves to 107); the one OPEN cross-lane seam is d69's 10→14-arg
+`draw_background` append (research/64d §5: NOT consumed at the retire
+probe, owed on the d69 lane or at the merge).
+
 ## Sky and daylight
 
 `Main.SetBackColor` (day `0..54000`, night `0..32400`) is ported to `color_of_the_skies`:

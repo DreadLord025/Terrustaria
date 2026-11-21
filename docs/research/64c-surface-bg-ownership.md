@@ -1,5 +1,9 @@
 # 64c — the surface-bg draw ownership (W4-g72 closeout verification)
 
+> **SEALED (W4-g72 retire, 2026-11-21).** The ownership verdict stands;
+> the pin-lift is merge-side mechanical work for the g70/g71 lanes. The
+> BG-FAMILY bible (docs/ANALYSIS.md) summarises the family split.
+
 **Branch:** `task/W4-g72-bg-layers-3` (closeout). **Mode:** code-only.
 **Question (the Lead's item 3):** does our live cave-chain's SURFACE arm read
 the g71-shape style tables, or does it re-port/pin them? **Verdict: the five
