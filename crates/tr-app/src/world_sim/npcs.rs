@@ -4978,6 +4978,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 residents,
                 world_update_rate: rate,
                 bestiary_completion,
+                // `BirthdayParty.GenuineParty` (`Main.cs:65795`) — flag8's
+                // first term for the TownSlimeGreen 678 gate (W4-d119 seal).
+                // NOT `party_is_up`: a manual monolith party does not open it.
+                genuine_party: app.world_events.genuine_party,
             };
             // `WorldGen.IsThereASpawnablePrioritizedTownNPC`: every ladder arm
             // needs its room ready, and the port's rooms are found by the same

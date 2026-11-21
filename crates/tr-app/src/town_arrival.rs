@@ -4,9 +4,9 @@
 //! The vanilla checks every `7200 / WorldGen.GetWorldUpdateRate()` ticks
 //! (`:65548-65555`): it counts the live residents of each town type, clears
 //! `Main.townNPCCanSpawn`, sets one `canSpawn` entry per kind whose condition
-//! holds *and* which has no resident yet (`:65785-65955`), and then picks the
+//! holds *and* which has no resident yet (`:65800-65956`), and then picks the
 //! first entry of a fixed priority ladder into
-//! `WorldGen.prioritizedTownNPCType` (`:65957-66116`). The consumer
+//! `WorldGen.prioritizedTownNPCType` (`:65957-66114`). The consumer
 //! (`WorldGen.IsThereASpawnablePrioritizedTownNPC`, `WorldGen.cs:4880-4920`)
 //! walks the `canSpawn` table in type order and returns the first kind whose
 //! room is ready, preferring `prioritizedTownNPCType`.
@@ -187,10 +187,10 @@ pub(crate) struct ArrivalContext<'a> {
     pub(crate) equipped_dyes: &'a [ItemSlot],
     pub(crate) max_hp: i32,
     /// `Main.rand.Next(40) == 0` for the Party Girl's roll, evaluated once per
-    /// check like the C# (`Main.cs:65780-65784`).
+    /// check like the C# (`Main.cs:65785-65789`).
     pub(crate) party_roll: bool,
     /// `num40` — the live town-resident total, the `>= 8` / `>= 20` terms the
-    /// C# reads inline (`Main.cs:65929`, `:65785`).
+    /// C# reads inline (`Main.cs:65880`, `:65790`).
     pub(crate) residents: i32,
     /// `WorldGen.GetWorldUpdateRate()` (`WorldGen.cs:72020-72030`): the
     /// check interval is `7200 / rate` and a zero rate skips the whole
@@ -202,21 +202,25 @@ pub(crate) struct ArrivalContext<'a> {
     /// (`vampireSeed && !infectedSeed`) stays constants-off — the
     /// special-seed lane's claim (f43 census).
     pub(crate) bestiary_completion: f32,
+    /// `BirthdayParty.GenuineParty` (`Main.cs:65795`) — flag8's first term,
+    /// the TownSlimeGreen 678 gate (W4-d119 seal: the f41 census's remaining
+    /// tail). NOT `PartyIsUp` — a manual monolith party does not open it.
+    pub(crate) genuine_party: bool,
 }
 
-/// The `flag`/`flag2`… set of `Main.cs:65763-65799`, keyed by kind.
+/// The `flag`/`flag2`… set of `Main.cs:65772-65799`, keyed by kind.
 pub(crate) fn condition_holds(kind: NpcKind, ctx: &ArrivalContext<'_>) -> bool {
     let w = ctx.world;
     match kind {
-        // `num6 < 1` — the Guide is the unconditional one (`:65802`).
+        // `num6 < 1` — the Guide is the unconditional one (`:65800-65803`).
         NpcKind::Guide => true,
         NpcKind::Merchant => spawn_allowed_merchant(ctx.inventory),
         // `flag3 && num3 < 1 && num2 > 0`: the Nurse needs a resident
-        // Merchant as well as the life gate (`:65810`).
+        // Merchant as well as the life gate (`:65808-65811`).
         NpcKind::Nurse => spawn_allowed_nurse(ctx.max_hp),
         NpcKind::ArmsDealer => spawn_allowed_arms_dealer(ctx.inventory),
         // `num4 < 1` and any of the first three bosses (or the infected
-        // seed) (`:65814`).
+        // seed) (`:65816-65819`).
         NpcKind::Dryad => w.downed_eoc || w.downed_eow || w.downed_skeletron,
         // `flag5 && num2 > 0` — the Demolitionist also wants a Merchant.
         NpcKind::Demolitionist => spawn_allowed_demolitionist(ctx.inventory),
@@ -235,10 +239,10 @@ pub(crate) fn condition_holds(kind: NpcKind, ctx: &ArrivalContext<'_>) -> bool {
             // phase 2b, the f43 census's "known LANDED gap").
             spawn_allowed_dye_trader(ctx.inventory, ctx.equipped_dyes) && ctx.residents >= 4
         }
-        // `num40 >= 8` residents (`:65929`).
+        // `num40 >= 8` residents (`:65880-65883`).
         NpcKind::Painter => ctx.residents >= 8,
         // `flag7 = (rand.Next(40) == 0) && num40 >= 20`, with
-        // `unlockedPartyGirlSpawn` forcing the flag true (`:65785-65799`).
+        // `unlockedPartyGirlSpawn` forcing the flag true (`:65785-65794`).
         NpcKind::PartyGirl => {
             (ctx.party_roll && ctx.residents >= 20) || w.unlocked_party_girl
         }
@@ -252,6 +256,42 @@ pub(crate) fn condition_holds(kind: NpcKind, ctx: &ArrivalContext<'_>) -> bool {
         NpcKind::TravellingMerchant => false,
         _ => false,
     }
+}
+
+/// `flag8` (`Main.cs:65795-65799`): `BirthdayParty.GenuineParty`, forced true
+/// by `NPC.unlockedSlimeGreenSpawn`. The TownSlimeGreen 678 gate — the
+/// canSpawn arm (`:65916-65919`, `flag8 && num32 < 1`) and the ladder arm
+/// (`:66078-66081`, `((num42 == 0) & flag8) && num32 < 1`, the C#'s
+/// non-short-circuit `&`; both sides are pure so the shape is behaviourally
+/// identical to `&&`). ZERO draws.
+///
+/// f43 owns the verbatim twin inside its UNWIRED
+/// `town_arrival_pets::tail_can_spawn`/`pet_slime_princess_ladder_tail`
+/// (`TailFlags.genuine_party || TailFlags.unlocked_slime_green`, research/64
+/// census) — at the tail splice this local folds into f43's copy, ONE gate.
+/// The 678 resident count (`num32`) has no ported kind yet (the town-slime
+/// kinds are the d43 lane's), so the production gate cannot fire until that
+/// splice; the predicate is the f41 census's claimed remaining tail, landed
+/// here with its witnesses (the f41e party census × f43 arrival compose).
+#[allow(dead_code)] // fires in production at the d43-kind + f43-tail splice
+pub(crate) fn slime_green_flag8(genuine_party: bool, unlocked_slime_green: bool) -> bool {
+    genuine_party || unlocked_slime_green
+}
+
+/// The 678 canSpawn/ladder gate: `flag8 && num32 < 1`
+/// (`Main.cs:65916-65919`/`:66078-66081`). `count_678` is the live
+/// TownSlimeGreen resident count and `unlocked_slime_green` the
+/// `NPC.unlockedSlimeGreenSpawn` flag — the port's world carries neither yet
+/// (only the rainbow/red slime flags, `world.rs:303-307`; the f43 census's
+/// save-widening note), so the splice's production call passes `false, 0`
+/// until the save widens; `ctx.genuine_party` is already fed live.
+#[allow(dead_code)] // fires in production at the d43-kind + f43-tail splice
+pub(crate) fn slime_green_can_spawn(
+    ctx: &ArrivalContext<'_>,
+    unlocked_slime_green: bool,
+    count_678: i32,
+) -> bool {
+    slime_green_flag8(ctx.genuine_party, unlocked_slime_green) && count_678 < 1
 }
 
 /// `Main.UpdateTime_SpawnTownNPCs` (`Main.cs:65542-66116`).
@@ -287,22 +327,26 @@ pub(crate) fn update_time_spawn_town_npcs(
     let count = resident_counts(npcs);
     state.can_spawn = [false; LADDER.len()];
 
-    // `:65785-65955` — the canSpawn table. The C# sets an entry when the
+    // `:65800-65956` — the canSpawn table. The C# sets an entry when the
     // condition holds AND the kind has no resident yet.
     for (i, kind) in LADDER.iter().enumerate() {
         if count(*kind) < 1 && condition_holds(*kind, ctx) {
             state.can_spawn[i] = true;
         }
     }
-    // The two gates that also require another resident (`:65810`, `:65818`).
+    // The two gates that also require another resident (`:65808`, `:65820`).
     state.can_spawn[LADDER_POS_NURSE] &= count(NpcKind::Merchant) > 0;
     state.can_spawn[LADDER_POS_DEMOLITIONIST] &= count(NpcKind::Merchant) > 0;
-    // `:65927-65933` — the Princess at one of every other town type; the
+    // `:65944-65956` — the Princess at one of every other town type; the
     // full flag9 roster is the f43 lane's pushed claim
     // (`town_arrival_pets::princess_flag9`, UNWIRED); the unlock-only stub
     // stays until that splice. The Zoologist's bestiary term is wired above.
+    // `:65916-65919` — the TownSlimeGreen 678 flag8 arm has NO LADDER entry
+    // (no ported kind — d43's kinds lane); its gate lands as the pure
+    // `slime_green_can_spawn` above, fed `ctx.genuine_party`, folding into
+    // f43's `tail_can_spawn` row at the splice (ONE gate, research/304).
 
-    // `:65957-66116` — the priority ladder: the first eligible kind wins.
+    // `:65957-66114` — the priority ladder: the first eligible kind wins.
     for (i, kind) in LADDER.iter().enumerate() {
         if state.can_spawn[i] && rooms_ready(*kind) {
             state.prioritized = Some(*kind);
@@ -339,6 +383,7 @@ mod tests {
             residents: 1,
             world_update_rate: 1,
             bestiary_completion: 0.0,
+            genuine_party: false,
         }
     }
 
@@ -458,6 +503,7 @@ mod tests {
             residents: 1,
             world_update_rate: 1,
             bestiary_completion: 0.0,
+            genuine_party: false,
         };
         state.check_for_spawns = 7199;
         update_time_spawn_town_npcs(&mut state, &c, &npcs, &|_| false);
@@ -541,5 +587,57 @@ mod tests {
         state.check_for_spawns = 7199;
         update_time_spawn_town_npcs(&mut state, &c, &[], &|_| false);
         assert!(state.can_spawn(NpcKind::Zoologist), "10% bestiary opens her");
+    }
+
+    /// W4-d119 seal (the f41e census × f43 compose) — `Main.cs:65795-65799`:
+    /// flag8 = GenuineParty || unlockedSlimeGreenSpawn, the four-row truth
+    /// table; `:65916-65919`/`:66078-66081`: the 678 arm also needs num32 < 1.
+    /// ZERO draws — the gate never touches the party Next(40) slot.
+    #[test]
+    fn the_slime_green_flag8_gate_is_party_or_unlock_and_no_resident() {
+        // The flag8 truth table (`:65795-65799`).
+        assert!(!slime_green_flag8(false, false));
+        assert!(slime_green_flag8(true, false), "a genuine party opens it");
+        assert!(slime_green_flag8(false, true), "the unlock forces it true");
+        assert!(slime_green_flag8(true, true));
+        let world = World::new("t".into(), 50, 50);
+        let mut c = ctx(&world, &[]);
+        // No party, no unlock: closed even with zero residents.
+        assert!(!slime_green_can_spawn(&c, false, 0));
+        c.genuine_party = true;
+        assert!(slime_green_can_spawn(&c, false, 0));
+        // A resident Green slime closes it (`num32 < 1`).
+        assert!(!slime_green_can_spawn(&c, false, 1));
+        // The unlock term works without a party.
+        c.genuine_party = false;
+        assert!(slime_green_can_spawn(&c, true, 0));
+    }
+
+    /// The flag8 gate rides the SAME rate-aware check boundary as the party
+    /// Next(40) roll and draws NOTHING itself: the ctx field is a read, not a
+    /// roll — a check with genuine_party true leaves every LADDER arm exactly
+    /// as the party-less check did (678 has no LADDER entry until the d43
+    /// kinds + f43 tail splice; the PartyGirl flag7 gate is untouched).
+    #[test]
+    fn the_flag8_feed_changes_no_landed_ladder_arm() {
+        let world = World::new("t".into(), 50, 50);
+        let inv = [slot(71, 5000)];
+        let npcs = Vec::new();
+        let mut a = ArrivalState::new();
+        let mut b = ArrivalState::new();
+        let mut ca = ctx(&world, &inv);
+        ca.genuine_party = false;
+        let mut cb = ctx(&world, &inv);
+        cb.genuine_party = true;
+        a.check_for_spawns = 7199;
+        b.check_for_spawns = 7199;
+        let ra = update_time_spawn_town_npcs(&mut a, &ca, &npcs, &|_| true);
+        let rb = update_time_spawn_town_npcs(&mut b, &cb, &npcs, &|_| true);
+        assert_eq!(ra, rb, "the same ladder winner");
+        assert_eq!(a.can_spawn, b.can_spawn, "the same canSpawn table");
+        assert!(!a.can_spawn(NpcKind::PartyGirl), "flag7 stays its own gate");
+        // But the 678 predicate itself flips on the feed.
+        assert!(!slime_green_can_spawn(&ca, false, 0));
+        assert!(slime_green_can_spawn(&cb, false, 0));
     }
 }

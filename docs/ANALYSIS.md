@@ -7271,7 +7271,12 @@ Deviations:
   (`:5411`) read the SAME `Main.wallHouse` the hammer gates read; the old
   narrower room-check subset was a recorded deviation, now closed (walls
   1/4..6/75..78/129..169/347..366 legitimately enclose rooms). The d119
-  `town_spawn.rs` `:5411` gate becomes C#-correct for free.
+  `town_spawn.rs` `:5411` gate becomes C#-correct for free. The g44e §5
+  receipt is CONSUMED and MUTUAL: g44's SEAL-VERIFY `f688ab142` confirms
+  the d119 consumption at `dd8a2f764`; d118's own lane executes the SAME
+  ONE verbatim hunk on its own branch (tip `91db266ea` still narrow) —
+  NEVER take g44's housing.rs wholesale (d118 rewrote
+  `solid_tiles_in_box`); research/304 §3 carries both halves.
 - **The homeless anchor tiles**: `Npc.home` conflates homeless + homeTile;
   the arrival's anchor feeds the immediate `QuickFindHome` and is not
   stored on a homeless NPC — later re-scans ride the 2 s look pass at the
@@ -7285,6 +7290,10 @@ Deviations:
 - **The f43 tail splice stays open**: the pet/slime/Santa/Princess ladder
   arms are f43's pushed UNWIRED fns; this lane closes only the two
   unclaimed LANDED gaps (DyeTrader ≥4, Zoologist bestiary) and the cadence.
+  The 678-flag8 arm — the f41e census's named "remaining tail" — now has
+  its predicate landed (`slime_green_flag8`/`slime_green_can_spawn`, the
+  `ctx.genuine_party` production feed); the splice folds it into f43's
+  `TailFlags` twin, ONE gate (the seal section below + research/304 §4).
 
 Verification: code-only — every function re-read against the cited C#
 windows; the seams checked by read/grep (`kind_from_net_id`,
@@ -7293,6 +7302,57 @@ accessors, `creative_powers.time_rate`, `bestiary::completion_percent`,
 the `S2c::NpcHouse` codec + the framed `f[2]`/`f[3..]` decode precedent).
 12 new witness tests (`town_spawn.rs` 8, `town_arrival.rs` 2, `netglue.rs`
 2) + the dye-trader fixture repair are WRITTEN, NOT RUN — **no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.
+
+### The d119 seal (2026-11-21, code-only — the family bible + the 678-flag8 gate)
+
+The lane's SEAL close-out; the full merger map + receipts live in
+**research/304** (the housing-relocation-family bible; registry-number per
+research/150 round 3 `51a28d09e`: floor 304, fresh all-tip sweep — no doc
+≥304 at any tip).
+
+- **The 678-flag8 gate lands** (the f41e party census's remaining tail,
+  research/70 §8h `d118ff9d` / the PARTY SEAL `ef3a481a6` §9e): the C#
+  re-read `Main.cs:65795-65799` (`flag8 = BirthdayParty.GenuineParty`,
+  forced true by `NPC.unlockedSlimeGreenSpawn`), `:65916-65919` (the
+  canSpawn arm `flag8 && num32 < 1`) and `:66078-66081` (the ladder arm,
+  the non-short-circuit `&` on pure sides) ports as
+  `town_arrival.rs::slime_green_flag8` + `slime_green_can_spawn`;
+  `ArrivalContext.genuine_party` is fed in production from
+  `app.world_events.genuine_party` (`world_sim/npcs.rs`'s ctx build) —
+  NOT `party_is_up` (a manual monolith party does not open the gate;
+  `world_events.rs:61-62` folds the two, the C# reads `GenuineParty`
+  alone). ZERO draws. **Deviation (recorded, not invented)**: 678 has no
+  ported kind (d43's lane) and the world carries no
+  `unlockedSlimeGreenSpawn` field (only rainbow/red, `world.rs:303-307`),
+  so the gate is a landed predicate with witnesses, NOT a LADDER row —
+  production fire waits on the d43 kinds + the f43 tail splice, which
+  folds this local into f43's `TailFlags`-fed twin (ONE gate). The
+  compose: d119's `TownSpawnWalker` drain is type-agnostic — a prioritized
+  678 flows through the existing query→`SpawnTownNPC` path once the kind
+  exists; `is_town_pet(678)` (`town.rs:573-575`) already early-returns.
+  c41's claims stay spawner.rs-only (`72a93e062`, zero overlap).
+- **The g44e §5 receipt is MUTUAL-CLOSED on the d119×g44 edge**: this
+  lane consumed the ONE verbatim hunk at `dd8a2f764` (the delegation body
+  + the anchors `:904` marker + the own full-table witness); g44's
+  SEAL-VERIFY `f688ab142` (research/87 §SEAL-VERIFY item 3) confirms the
+  consumption at the live tips. d118 (`91db266ea`, narrow blob `2ecd7924e`
+  unchanged) executes the SAME hunk on its OWN branch — the d118/d119
+  housing.rs diff is exactly the hunk + d119's witness (2 hunks, verified
+  at the tips), so the second-lander keeps ONE copy; NEVER g44's
+  housing.rs wholesale (d118's `solid_tiles_in_box` rewrite + occupancy
+  fns are absent there).
+- **The walker seam + escalation 1 re-verified EXECUTED** (`171549649`):
+  `tr-core/growth.rs:101/:123` + `world_sim/growth.rs:121/:181` — g44's
+  seal-verify independently confirms the UNWIRED deviation closed.
+- The stale line cites in `town_arrival.rs`'s gate comments corrected to
+  the re-read windows (`:65800-65956` canSpawn, `:65957-66114` ladder,
+  `:65785-65794` flag7, `:65880-65883` Painter, `:65808`/`:65820` the
+  Merchant terms, `:65944-65956` flag9) — comment-only.
+
+Verification: code-only — the C# windows re-read ≤100 lines each; 2 new
+witnesses (`the_slime_green_flag8_gate_is_party_or_unlock_and_no_resident`,
+`the_flag8_feed_changes_no_landed_ladder_arm`) WRITTEN NOT RUN — **no
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.
 
 ## Zoologist/Princess (M4-TOWN-19)

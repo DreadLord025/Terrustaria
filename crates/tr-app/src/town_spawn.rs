@@ -138,7 +138,10 @@ fn worldgen_solid_tile(world: &World, x: i32, y: i32) -> bool {
 /// `Collision.SolidTiles(startX, endX, startY, endY)`
 /// (`Collision.cs:3455-3488`): the edge guards block, a null cell returns
 /// false, a cell blocks on `active && !inActive && tileSolid && !tileSolidTop`
-/// (the d118 verbatim shape, `housing::solid_tiles_in_box`'s twin).
+/// (the d118 verbatim shape, `housing::solid_tiles_in_box`'s twin — d118
+/// rewrote that fn at its tip, so the merge keeps d118's housing.rs copy and
+/// NEVER takes g44's housing.rs wholesale; research/87 RETIRE §5 blob census,
+/// consumed receipt in research/304 §3).
 fn collision_solid_tiles(world: &World, x0: i32, x1: i32, y0: i32, y1: i32) -> bool {
     if x0 < 0 || x1 >= world.width || y0 < 0 || y1 >= world.height - 40 {
         return true;
@@ -501,7 +504,11 @@ pub(crate) fn spawn_town_npc(
     chat: &mut crate::chat::ChatMonitor,
 ) -> TownNpcSpawnResult {
     // `:5411-5418`: the house-wall pick arms the sticky flag; a clear flag
-    // blocks.
+    // blocks. The C# reads `Main.wallHouse[wall]` DIRECTLY here — since the
+    // g44e dedupe `housing::is_house_wall` delegates to the ONE full-table
+    // `edit::wall_house` copy (research/87 RETIRE §5, EXECUTED dd8a2f764),
+    // so this call site is C#-correct with no local edit (the free :5411
+    // gain the retire receipt names).
     let wall = world.tile(x, y).map(|t| t.wall).unwrap_or(0);
     if tr_core::housing::is_house_wall(wall) {
         statics.wg_can_spawn = true;
