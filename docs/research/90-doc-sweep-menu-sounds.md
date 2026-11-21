@@ -290,3 +290,25 @@ recorded-unported with a citation. The only truly unwired menu cues
 are the recorded deviations (Steam/Workshop/Friends surfaces §9.1, the
 ResourcePacks Hint, the front-end size pick) and the census-only
 legacy preview screens whose 888 replacements carry the live cues.
+
+## MENU RETIRE close-out — lane 14 FINAL
+
+**The lane is RETIRED.** Final state of `task/W4-g22-sounds-main-2`:
+the 90/90 window (`e0f81135`) + the 57-site doc-sweep + the MENU-FINAL
+corrections (EquipArmor five-handler census, the three music arms
+72/75/89 + the title fade jump) + this retire census. All witnesses
+written, not run (code-only lane).
+
+**MERGER INSTRUCTION (the one paragraph to act on):** take THIS branch
+as the base; `git merge origin/task/W4-g23-sounds-main-3` (`945391e3`,
+4 commits) into it — direction B, the smaller fold; keep g22's side on
+every doc-sweep/MENU-FINAL hunk, take g23's 5 wired sites + the 75-row
+census + the two expectation fixes; reconcile the adjacent hunks per
+`91-g23-refold-g22-doc-sweep.md`'s compose map (both sides kept); the
+disjoint-queue contract (`pending_cue` activation / `pending_ticks`
+draw-chrome / `FrontDraw.audio` front cues) must survive. Full payload
+list, hot-file map and the g23d-wakes-up contingency:
+**`91-g23-branch-deprecated.md`**. g24 (`7ca8b087`) folds independently
+— zero menu overlap. After the fold: MAIN-RULES verification, ref-update
+merge to main, then delete both lane branches (each only after
+`git log main..<branch>` is empty).

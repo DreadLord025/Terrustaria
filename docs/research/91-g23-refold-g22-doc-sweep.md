@@ -1,5 +1,11 @@
 # 91 — g23 re-fold list: g22's post-e0f81135 doc-sweep (57 sites)
 
+> **MENU RETIRE supersession (2026-11-21):** g23d never pushed (tip still
+> `945391e3`). The fold DIRECTION flipped — g22 is now the canonical base
+> and g23's 4 commits fold into it. Read
+> `91-g23-branch-deprecated.md` FIRST; this list's per-commit hunks and
+> compose-check map still apply, in reverse (g22 = base, g23 = incoming).
+
 For the **g23d merger**. g23's union `945391e3` merged g22's `e0f81135`
 (the 90/90 window). g22 then advanced to **`09761544`** (+16 commits, the
 lane-14 doc-sweep, 57 sites, `docs/research/90-doc-sweep-menu-sounds.md`).
