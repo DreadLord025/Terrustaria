@@ -1,5 +1,14 @@
 # 131 — DUST CROSS-LANE MASTER STATUS (W4-d54 crosslane phase)
 
+**FINAL-STATUS (final-audit round, 2026-11-21): d54 residuals ZERO**
+(§6 — anchors/diff/prose re-verified); the owed-fold ledger §5 stands
+with row 3 now carrying the EXACT patch hunk (§7.1) and the 0-340
+coverage census + d50-lane gap-table published (§7.2). Tips re-read
+this round: e4/f6/d130/g73 UNCHANGED from §1 (verdicts stand); **g75
+ADVANCED** `2b9ed81f` → `41b64b04` (+4 commits: the :3858 spout wiring
+`a3093a66`, DELEGATED-STATUS docs `d441713d`, fold-list extension
+`17161648`/`41b64b04`) — §1/§2/§4/§5 g73e rows updated below.
+
 Code-only crosslane round, 2026-11-21, on `task/W4-d54-dust-sites-world`
 (union EXECUTED `c792cf37`, research/66 §6). This doc is the **per-file
 keep-one FINAL table** for the whole dust family, the merge-order
@@ -184,6 +193,19 @@ research/66). No cargo/tests invoked this round.
 | 7 | **The witness UNION compile+run** | the merge-verify wave (step 11) | every lane was code-only; ~330 witnesses WRITTEN NOT RUN. |
 
 ## 6. This branch's residuals (research/66 checklist-7 audit)
+
+**FINAL-STATUS: ZERO residuals on d54** (final-audit round re-verify,
+2026-11-21): all 11 anchors markers grep-verified present at the same
+lines as the crosslane round (world_dust.rs:256, world_dust_wall.rs:27,
+world_dust_tile.rs:32, world_dust_main.rs:238, orch_dust.rs:99,
+orch_dust_lightning.rs:198, orch_dust_boulder.rs:163,
+orch_dust_town.rs:419, worldgen_dust.rs:98, worldgen_dust_wall.rs:466,
+worldgen_dust_tile.rs:1511); no stale `make_tile_dust`-delegation prose
+left in anchors.txt/ANALYSIS.md (grep empty); `git diff
+origin/main..HEAD --name-only` = 24 files, ALL d54/g14 task scope (the
+8 dust modules + tr-core trio + editing/wiring seams + main.rs/lib.rs
+mod rows + docs/anchors). Checklist 1-3/7 EXECUTED, 4-5 cross-doc, 6
+merge-verify wave. Nothing owed on d54-owned files.
 
 Re-audited this round on `c792cf37`: all 11 d54/g14 anchors rows
 (899-909) carry markers that EXIST in the surviving files (verified

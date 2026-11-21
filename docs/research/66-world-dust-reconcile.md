@@ -1,8 +1,13 @@
 # 66 — World-dust RECONCILE (W4-d54 merger assist): arm diffs, KEEP/DROP, witness union
 
-Status: **EXECUTED on `task/W4-d54-dust-sites-world`** (union-exec round,
-2026-11-21 — see §6 below for the landed hashes and the per-step
-record). Originally a RECONCILE doc (code-only merge-assist round,
+Status: **FINAL — EXECUTED on `task/W4-d54-dust-sites-world`** (union-exec
+round + final-audit round, 2026-11-21 — §6 landed hashes; residuals ZERO
+per the final audit: all 11 anchors markers re-verified present at the
+audited tip, no stale pre-union prose left, the branch diff vs
+origin/main lists ONLY task files — 24 files, the main.rs/lib.rs mod
+rows included; checklist 1-3/7 EXECUTED here, 4-5 cross-doc stand, 6 is
+the merge-verify wave's; research/131 §6/§7 carry the final record).
+Originally a RECONCILE doc (code-only merge-assist round,
 2026-11-21). Seed: research/67's overlap note. Filename note: e4's
 branch carries a different doc at the same number
 (`66-dust-world-sites-2-claims.md`); the two coexist (distinct
