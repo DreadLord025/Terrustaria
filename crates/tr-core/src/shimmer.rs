@@ -347,6 +347,71 @@ mod tests {
         assert_eq!(shimmer_tables::SHIMMER_POST_MOONLORD.len(), 6);
     }
 
+    /// Doc-sweep lane 36 — the transform-table COMPLETENESS census: every
+    /// entry pair re-checked against the decompiled sets' heads/tails and
+    /// the family cycles (the mechanical 316/114-pair diff ran clean at
+    /// sweep time — this pins the load-bearing rows so a future extraction
+    /// drift fails by name). The COIN side is NOT a transform-table arm:
+    /// `GetShimmered`'s first branch (`WorldItem.cs:1697-1718`) reads
+    /// `ItemID.Sets.CommonCoin` (`ItemID.cs:1318`, {71,72,73,74}) and the
+    /// tier multipliers live in the chain (silver x100 / gold x10000 /
+    /// platinum floor-1 x1000000), NOT in `ShimmerTransformToItem` — the
+    /// coins have NO set entries (71-74 absent), so `transform_to_item`
+    /// returns 0 for them and the coin arm wins by order.
+    #[test]
+    fn w4_f47ds_the_transform_table_census_pins_the_family_rows() {
+        use shimmer_tables::SHIMMER_TRANSFORM_TO_ITEM as T;
+        let get = |k: u16| T.iter().find(|&&(a, _)| a == k).map(|&(_, b)| b);
+        // The ore cycle head/tail (`ItemID.cs:353`'s first 18 pairs).
+        assert_eq!(get(3460), Some(947));
+        assert_eq!(get(3), Some(2));
+        assert_eq!(get(9), Some(2));
+        // The gem cycle (182 -> 178 -> 179 -> 177 -> 180 -> 181 -> 133).
+        for (a, b) in [(182, 178), (178, 179), (179, 177), (177, 180), (180, 181), (181, 133)] {
+            assert_eq!(get(a), Some(b), "gem cycle {a}");
+        }
+        // The torch/campfire family: every torch kind -> 5353 (23 rows,
+        // the mechanical recount of `ItemID.cs:353`'s 8..5293 band).
+        let torch_rows = T.iter().filter(|&&(_, b)| b == 5353).count();
+        assert_eq!(torch_rows, 23, "the 5353 family's row count");
+        assert_eq!(get(8), Some(5353));
+        assert_eq!(get(5293), Some(5353));
+        // The evil-powder/purification pairs and the biome-solution family.
+        assert_eq!(get(67), Some(66));
+        assert_eq!(get(5127), Some(5128));
+        // The post-Moonlord relic pairs (the lock set's members all have
+        // transform rows — the lock gates them, not the table).
+        for k in shimmer_tables::SHIMMER_POST_MOONLORD {
+            assert!(get(*k).is_some(), "post-Moonlord {k} has a row");
+        }
+        // The tail pairs (the Extractinator junk / coin-grenade family).
+        assert_eq!(get(824), Some(5996));
+        assert_eq!(get(5997), Some(825));
+        assert_eq!(get(576), Some(6146));
+        // The COIN kinds are NOT in the set (the chain's CommonCoin arm).
+        for k in [71u16, 72, 73, 74] {
+            assert_eq!(get(k), None, "coin {k} rides the CommonCoin arm");
+            assert!(is_common_coin(k));
+        }
+        // The NPC set's load-bearing rows: the 17 ->676 slime/critter rows
+        // and the 82 ->677 critter rows (the mechanical recount of
+        // `NPCID.cs:10470` — the doc-sweep item-4 census).
+        let n676 = shimmer_tables::SHIMMER_TRANSFORM_TO_NPC
+            .iter()
+            .filter(|&&(_, b)| b == 676)
+            .count();
+        let n677 = shimmer_tables::SHIMMER_TRANSFORM_TO_NPC
+            .iter()
+            .filter(|&&(_, b)| b == 677)
+            .count();
+        assert_eq!(n676, 17, "the ->676 rows (NPCID.cs:10470)");
+        assert_eq!(n677, 82, "the ->677 rows");
+        assert_eq!(transform_to_npc(591), 449);
+        assert_eq!(transform_to_npc(436), 452);
+        assert_eq!(transform_to_npc(432), 450);
+        assert_eq!(transform_to_npc(435), 451);
+    }
+
     #[test]
     fn transform_to_item_prefers_the_set() {
         // `ItemID.cs:353`: the shimmer chain is the ORE CYCLE, not crafting —
