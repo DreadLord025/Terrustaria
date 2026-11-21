@@ -310,6 +310,34 @@ Traps, Final Cleanup.
 - **Hash notes**: both pins move BY DESIGN; deferred; `a == b` untouched.
 - **Verification**: code-only — witnesses written, not run.
 
+## B8 Spreading Grass — landing notes (this commit)
+
+- **Pass body** `WorldGen.cs:18237-18446`
+  (`GenPassNameID.SpreadingGrassOnSurfaceSunflowersEvilsOnSurfaceAndLavaCleanup`)
+  → `passes_b.rs::pass_spreading_grass`. The 50-margin surface sweep
+  (`:18242-18320`): the jungle-grass-60 3×3 mud/dirt spread (`:18252-18268`,
+  the above-active → 59 else 60), the stone/clay/ore 7×7 surface-tile pick
+  (`:18270-18317`, the 53-sticky + the 59/60/147/161/199/23 candidates, the
+  open-air-above flag, the infection 23/199 + jungle 59/60 overrides). The
+  per-column grass spread (`:18321-18353`): the `flag2` open-air gate, the
+  `worldSurfaceHigh` break, `SpreadGrass(num3, num4)` (dirt 0, grass 2).
+- **`spread_surface_grass`** = the generation-time `SpreadGrass(0, 2)` slice
+  (`:75146-75268`): the `InWorld(10)` + dirt-0 guard, the surface rule (grass 2
+  refuses at/below worldSurface), the 3×3 enclosure scan + lava exception, the
+  `CanBeClearedDuringGeneration` gate, the plain type-2 write, the bounded 3×3
+  recursion (`grassSpread < 1000`). The `SquareTileFrame` re-frame is the
+  port's documented deviation (the evil.rs slice precedent).
+- **Deviations**: the remix arms (`:18354-18443`, the surface grass / sunflower
+  / Convert / QuickWater sweeps) are special seeds — deferred; the notTheBees
+  gate (`:18239`) reads the classic flags. **No RNG** — the pass is tile-only.
+- **Pipeline**: `step!("spreading grass", …)` after `hellforge`, before
+  `beehives`; count 73→74; witness
+  `w4_g37_the_spreading_grass_step_follows_the_hellforge`; progress `Gen(37)`
+  (`:18241`).
+- **Hash notes**: both pins move BY DESIGN (the surface retypes); deferred;
+  `a == b` untouched.
+- **Verification**: code-only — witnesses written, not run.
+
 ## Landing ledger
 
 | pass | commit | status |
@@ -322,6 +350,6 @@ Traps, Final Cleanup.
 | B4 Cave Walls | ef7c9f76 | ported — witnesses written not run |
 | B5 Floating Island Houses | 3d74564e | ported — witnesses written not run |
 | B6 Quick Cleanup | b48a702b | ported — witnesses written not run |
-| B7 Hellforge | (this commit) | ported — witnesses written not run |
-| B8 Spreading Grass | — | pending |
+| B7 Hellforge | 454e43ba | ported — witnesses written not run |
+| B8 Spreading Grass | (this commit) | ported — witnesses written not run |
 | B9 Surface Ore and Stone | — | pending |

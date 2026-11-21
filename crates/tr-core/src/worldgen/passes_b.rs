@@ -2112,3 +2112,177 @@ pub(crate) fn pass_hellforge(world: &mut World, rng: &mut Rng) -> u32 {
     }
     placed
 }
+
+// --- B8: Spreading Grass -----------------------------------------------------
+
+/// `WorldGen.SpreadGrass(i, j, 0, 2)` (`WorldGen.cs:75146-75268`), the
+/// generation-time plain-grass slice the Spreading Grass pass's second arm
+/// calls. The `InWorld(10)` + dirt-0 guard, the surface rule (`j >=
+/// worldSurface && dirt == 0` refuses — grass 2 is not an infection grass),
+/// the 3×3 enclosure scan with the lava exception, the
+/// `CanBeClearedDuringGeneration` gate, the plain type-2 write (the
+/// `Conversion.Grass` dispatch is dead for dirt 0), and the bounded 3×3
+/// recursion (`grassSpread < 1000`). The `SquareTileFrame` re-frame is the
+/// port's documented deviation (the evil.rs slice precedent).
+fn spread_surface_grass(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    world_surface: f64,
+    grass_spread: &mut i32,
+) {
+    const DIRT: u16 = 0;
+    const GRASS: u16 = 2;
+    if !in_world(world, i, j, 10) {
+        return;
+    }
+    if !world.tile(i, j).is_some_and(|t| t.active() && t.kind == DIRT) {
+        return;
+    }
+    // `:75162-75165`: the surface rule (grass 2 takes the else-if).
+    if (j as f64) >= world_surface {
+        return;
+    }
+    // `:75166-75201`: the 3×3 enclosure scan.
+    let num2 = (i - 1).max(0);
+    let num3 = (i + 2).min(world.width);
+    let num4 = (j - 1).max(0);
+    let num5 = (j + 2).min(world.height);
+    let mut flag = true;
+    for k in num2..num3 {
+        for l in num4..num5 {
+            if let Some(t) = world.tile(k, l) {
+                if !t.active() || !td::TILE_SOLID.has(t.kind) {
+                    flag = false;
+                }
+                if t.liquid > 0 && t.liquid_kind() == crate::tile::LiquidKind::Lava {
+                    flag = true;
+                    break;
+                }
+            }
+        }
+    }
+    // `:75202-75205`: the gates (the flower-27 exclusions are infection-only).
+    if flag
+        || !world
+            .tile(i, j)
+            .is_some_and(|t| td::SET_CAN_BE_CLEARED_DURING_GENERATION.has(t.kind))
+    {
+        return;
+    }
+    // `:75220-75225`: the plain write (flag2 dead for dirt 0).
+    if let Some(t) = world.tile_mut(i, j) {
+        t.kind = GRASS;
+    }
+    // `:75231-75260`: the bounded 3×3 recursion.
+    for m in num2..num3 {
+        for n in num4..num5 {
+            if world.tile(m, n).is_some_and(|t| t.active() && t.kind == DIRT)
+                && *grass_spread < 1000
+            {
+                *grass_spread += 1;
+                spread_surface_grass(world, m, n, world_surface, grass_spread);
+                *grass_spread -= 1;
+            }
+        }
+    }
+}
+
+/// The `Spreading Grass` pass
+/// (`WorldGen.cs:18237-18446`,
+/// `GenPassNameID.SpreadingGrassOnSurfaceSunflowersEvilsOnSurfaceAndLavaCleanup`):
+/// the surface mud/ore → grass conversion sweep, then the per-column grass
+/// spread. The remix arms (`:18354-18443`) are special seeds — deferred. The
+/// notTheBees gate (`:18239`) reads the classic flags.
+pub(crate) fn pass_spreading_grass(
+    world: &mut World,
+    world_surface: f64,
+    surface_high: f64,
+    jungle_min_x: i32,
+    jungle_max_x: i32,
+) {
+    // `:18242-18320`: the mud/ore conversion sweep.
+    for i in 50..(world.width - 50) {
+        let mut j = 50;
+        while (j as f64) <= world_surface {
+            if world.tile(i, j).is_some_and(|t| t.active()) {
+                let kind = world.tile(i, j).map(|t| t.kind).unwrap_or(0);
+                if kind == 60 {
+                    // `:18252-18268`: the jungle-grass → mud/dirt 3×3 spread.
+                    for k in (i - 1)..=(i + 1) {
+                        for l in (j - 1)..=(j + 1) {
+                            if world.tile(k, l).is_some_and(|t| t.active() && t.kind == 0) {
+                                let above_active =
+                                    world.tile(k, l - 1).is_some_and(|t| t.active());
+                                if let Some(t) = world.tile_mut(k, l) {
+                                    t.kind = if above_active { 59 } else { 60 };
+                                }
+                            }
+                        }
+                    }
+                } else if kind == 1 || kind == 40 || td::SET_ORE.has(kind) {
+                    // `:18270-18317`: the stone/clay/ore → surface-tile pick.
+                    let mut flag = false;
+                    let mut num2: u16 = 0;
+                    for m in (i - 3)..=(i + 3) {
+                        for n in (j - 3)..=(j + 3) {
+                            if let Some(t) = world.tile(m, n) {
+                                if t.active() {
+                                    if t.kind == 53 || num2 == 53 {
+                                        num2 = 53;
+                                    } else if matches!(t.kind, 59 | 60 | 147 | 161 | 199 | 23) {
+                                        num2 = t.kind;
+                                    }
+                                } else if n < j && t.wall == 0 {
+                                    flag = true;
+                                }
+                            }
+                        }
+                    }
+                    if flag {
+                        // `:18298-18314`: the infection / jungle overrides.
+                        match num2 {
+                            23 | 199 => {
+                                if world.tile(i, j - 1).is_some_and(|t| t.active()) {
+                                    num2 = 0;
+                                }
+                            }
+                            59 | 60 => {
+                                if i >= jungle_min_x && i <= jungle_max_x {
+                                    let above_active =
+                                        world.tile(i, j - 1).is_some_and(|t| t.active());
+                                    num2 = if above_active { 59 } else { 60 };
+                                }
+                            }
+                            _ => {}
+                        }
+                        if let Some(t) = world.tile_mut(i, j) {
+                            t.kind = num2;
+                        }
+                    }
+                }
+            }
+            j += 1;
+        }
+    }
+    // `:18321-18353`: the per-column grass spread.
+    for num3 in 10..(world.width - 10) {
+        let mut flag2 = true;
+        let mut num4 = 0;
+        while (num4 as f64) < world_surface - 1.0 {
+            if world.tile(num3, num4).is_some_and(|t| t.active()) {
+                if flag2 && world.tile(num3, num4).is_some_and(|t| t.kind == 0) {
+                    let mut grass_spread = 0;
+                    spread_surface_grass(world, num3, num4, world_surface, &mut grass_spread);
+                }
+                if (num4 as f64) > surface_high {
+                    break;
+                }
+                flag2 = false;
+            } else if world.tile(num3, num4).map(|t| t.wall).unwrap_or(0) == 0 {
+                flag2 = true;
+            }
+            num4 += 1;
+        }
+    }
+}

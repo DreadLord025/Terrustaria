@@ -1326,6 +1326,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // before Spreading Grass (`:18237`) — W4-g37 B7. Own
     // `pass_rng("Hellforge")` stream.
     step!("hellforge", "Hellforge", step_hellforge),
+    // The vanilla Spreading Grass slot (`WorldGen.cs:18237`): after Hellforge
+    // (`:18187`), before Surface Ore and Stone (`:18447`) — W4-g37 B8. The
+    // pass draws no RNG (the grass spread is tile-only); the step keeps the
+    // vanilla slot for the chain witness.
+    step!("spreading grass", "Spreading Grass", step_spreading_grass),
     step!("beehives", "Hives", step_beehives),
     step!("hell forts", "", step_hell_forts),
     step!("lihzahrd temple", "Jungle Temple", step_temple),
@@ -2773,6 +2778,30 @@ fn step_hellforge(
     passes_b::pass_hellforge(world, &mut rng);
 }
 
+/// The vanilla Spreading Grass slot (`WorldGen.cs:18237-18446`) — W4-g37 B8:
+/// the surface mud/ore conversion + the per-column grass spread. The pass
+/// draws no RNG (the grass spread is tile-only).
+fn step_spreading_grass(
+    world: &mut World,
+    gv: &mut GenVars,
+    _streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    let surface_high = gv.layers().surface_high;
+    let jungle_min_x = gv.jungle_min_x;
+    let jungle_max_x = gv.jungle_max_x;
+    passes_b::pass_spreading_grass(
+        world,
+        world_surface,
+        surface_high,
+        jungle_min_x,
+        jungle_max_x,
+    );
+}
+
 fn step_slopes(
     world: &mut World,
     gv: &mut GenVars,
@@ -3366,8 +3395,10 @@ mod tests {
         // B5: + `floating island houses` (vanilla "Floating Island Houses",
         // `:17859`) after `floating islands`. B6: + `quick cleanup` (vanilla
         // "Quick Cleanup", `:17875`) after `floating island houses`. B7: +
-        // `hellforge` (vanilla "Hellforge", `:18187`) after `pots`.
-        assert_eq!(names.len(), 73);
+        // `hellforge` (vanilla "Hellforge", `:18187`) after `pots`. B8: +
+        // `spreading grass` (vanilla "Spreading Grass", `:18237`) after
+        // `hellforge`.
+        assert_eq!(names.len(), 74);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3440,6 +3471,9 @@ mod tests {
                 // W4-g37 B7: the vanilla Hellforge slot
                 // (`WorldGen.cs:18187`) follows Pots (`:17996`).
                 "hellforge",
+                // W4-g37 B8: the vanilla Spreading Grass slot
+                // (`WorldGen.cs:18237`) follows Hellforge (`:18187`).
+                "spreading grass",
                 "beehives",
                 "hell forts",
                 "lihzahrd temple",
@@ -3816,6 +3850,24 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Pots") < cpos("Hellforge"));
         assert!(cpos("Hellforge") < cpos("Spreading Grass"));
+    }
+
+    /// W4-g37 B8: `spreading grass` sits after `hellforge`, before `beehives`
+    /// (the vanilla SpreadingGrass anchor `WorldGen.cs:18237` follows
+    /// Hellforge `:18187`).
+    #[test]
+    fn w4_g37_the_spreading_grass_step_follows_the_hellforge() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("spreading grass"), pos("hellforge") + 1);
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Hellforge") < cpos("Spreading Grass"));
+        assert!(cpos("Spreading Grass") < cpos("Surface Ore and Stone"));
     }
 
     #[test]

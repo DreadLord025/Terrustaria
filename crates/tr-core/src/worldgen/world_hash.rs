@@ -278,6 +278,11 @@ mod tests {
     // (`WorldGen.cs:18187-18236`, `passes_b.rs::pass_hellforge`) lands after
     // `pots` — the width/200 hellforges place on the hell-fort walls on their
     // own stream, moving this pin BY DESIGN; deferred. a == b untouched.
+    // W4-g37 B8 (code-only): the Spreading Grass pass
+    // (`WorldGen.cs:18237-18446`, `passes_b.rs::pass_spreading_grass`) lands
+    // after `hellforge` — the surface mud/ore conversion + grass spread retype
+    // tiles (no RNG draw), moving this pin BY DESIGN; deferred. a == b
+    // untouched.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -338,6 +343,8 @@ mod tests {
     // the cleanup sweep moves this pin BY DESIGN; deferred.
     // W4-g37 B7 (code-only): the Hellforge pass (see SEED42_512 above) — the
     // hellforges move this pin BY DESIGN; deferred.
+    // W4-g37 B8 (code-only): the Spreading Grass pass (see SEED42_512 above) —
+    // the surface conversion moves this pin BY DESIGN; deferred.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
