@@ -19117,6 +19117,62 @@ D17 (no minimap alpha) is closed by this pass. Witnesses: 2 `map::tests::w4_e18_
 `app::w4_e18_minimap_key_tests::*` (held stepping + gates, press-edge cycle),
 written not run.
 
+### The fullscreen open/close arms + the Load catch + mapDelay + the draw head/tail (W4-e18 final sweep, 2026-11-21, code-only)
+
+Five more residuals landed the same sweep:
+
+1. **`TryOpeningFullscreenMap`** (`Player.cs:29103-29119`): the M-key open arm
+   (`app/loop.rs::try_open_fullscreen_map`) closes the inventory (`:29107`),
+   clears the talk-NPC latch + chat text (`:29109`, `SetTalkNPC(-1)`),
+   `PlaySound(10)` (`:29111`); scale 2.5 + `resetMapFull` ride `set_open(true)`
+   (`:29112-29115`). The close arms gain `PlaySound(11)` (`:24973` M-key,
+   `:4976` Escape). The inventory map-icon row (`Main.cs:41095-41120`) rides
+   the shared helper; the style icons play `PlaySound(12)` (`:41109/41114/41119`
+   — the stale "no UI cue loaded" comment retired, the cues ARE loaded).
+   `CloseSign(quiet)`/`npcChatCornerItem`/`MapPylonTile`/`buffString` have no
+   port state (the sign editor, the corner item, f29's pylon-click seam, the
+   buff hover string). Witnesses: 1 loop + 1 clicks.
+2. **`WorldMap.Load`'s catch arm** (`WorldMap.cs:217-230`): a corrupt-but-present
+   `.map` copies to `<path>.bad` (`:227`, overwrite) and clears the tiles
+   (`:229`, `this.Clear()`); the absent file takes `TryGetMapPath`'s early
+   return (`:184-188`) with neither side effect. `map.rs::load` splits the
+   `load_map_file` `Ok(false)` fold on `path.exists()`. The `Lighting.Clear()`
+   head (`:178`) rides the fresh-engine world load. Witness: 1 map.
+3. **The modern engine's `mapDelay` skip** (`LightingEngine.cs:82-89`):
+   `WorldMap::map_delay` (ctor 2, `Main.cs:66504`; world-load re-arm
+   `WorldGen.cs:6947` via `reset_map_delay` + `enter_loaded_world`) gates
+   `update`'s head — while > 0 the `MinimapUpdate` state decrements it INSTEAD
+   of exporting, before the `mapTime` countdown. The legacy engine keeps its
+   own copy (S1-E-19 wave B, `LegacyLighting.map_delay`). D22's `mapDelay` half
+   closed. Witness: 1 map; 5 existing witnesses re-pinned with `map_delay = 0`.
+4. **The fullscreen draw head's dialog/inventory close** (`Main.cs:62150-62153`):
+   `talkNPC >= 0 || sign >= 0 || (playerInventory && !CaptureManager.Active)` →
+   `ToggleInv`'s talk/inventory arms (`Player.cs:5005-5016`/`:5033-5056`), every
+   drawn frame BEFORE `DrawMap` (`:62155`). With the map already open the call
+   falls through the map-close first arm (`:4972-4978`, reached only when the
+   map is SHUT) to the talk/inventory writes, leaving the map open.
+   `frame/draw.rs::close_dialog_behind_fullmap`, wired at `draw_region`'s head
+   ahead of the pylon scan. The capture-active arm keeps the inventory; the
+   sign editor has no port state. Witness: 1 draw.
+5. **The fullscreen draw tail's chat pass** (`Main.cs:62160`): `DrawPlayerChat`
+   runs after `DrawMap` — the chat log + input strip draw over the map (the HUD
+   is suppressed, the chat is not). `ui::draw_chat` made pub + called at the
+   fullscreen branch tail. `DrawFPS` (`:62159`) rides `showFrameRate` (F10,
+   unported); `DrawPendingMouseText` (`:62161`) is the map's own `MouseText`
+   (`:56046-56049`). No new witness (the pass is the existing `draw_chat`).
+
+The remaining-census close (research/14 "W4-e18 final sweep"): the minimap zoom
+keys were the seed's one real gap (landed above); the map ping is verified
+f29/S1-L-4 (`handle_fullmap_ping` + the `PingMapLayer` pool + the net relay);
+the fullscreen pan inertia/friction is a PHANTOM (`grabMapX`/`grabMapY` are the
+only drag statics, `Main.cs:817-819` — the drag is the instantaneous per-frame
+cursor delta, `:55342-55359`; the only eased pan is `PanTargetMapFullscreen`'s
+`Vector2.Lerp(pos, end, 0.15)`, `:55361-55384`, f29's pylon-click recentre); the
+map icon LEGEND is a PHANTOM (confirmed — `Lang.BuildMapAtlas` is the hover-NAME
+lookup, not a drawn legend). One more unclaimed arm recorded as a seed: the
+Unity-potion teleport block (`Main.cs:55960-55975`, `:55998-56010`) — MP-client-
+only (`netMode == 1`), the netcode ladder's territory, f29's head-loop seam.
+
 ## The crafting focus + quantity (S1-H-7, 2026-11-13)
 
 `Main.HoverOverCraftingItemButton` (`Main.cs:42252-42305`) is ported into
