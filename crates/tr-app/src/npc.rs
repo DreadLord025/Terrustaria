@@ -1101,6 +1101,26 @@ pub enum NpcKind {
     /// port-local 781-804 band — vanilla 356 sits inside d37's pushed
     /// 354-399 protocol corridor).
     Butterfly,
+    /// `NPCID.ScorpionBlack` (366, `NPCID.cs:11409`) — the black desert
+    /// critter (`NPC.cs:13661-13672`, the 366/367 shared row): 26x18,
+    /// aiStyle 7, dmg 0, def 0, 5 HP, catchItem 2156. Protocol id 782
+    /// (research/108 §3's port-local band). The aiStyle-7 town-critter
+    /// machine (`npc_ai_town::town_npc_ai`) is UNWIRED for the critter
+    /// band — the kind arm holds the documented wander stand-in
+    /// (`update_guide`'s shape, the MartianTurret precedent).
+    ScorpionBlack,
+    /// `NPCID.Scorpion` (367, `NPCID.cs:11411`) — the brown desert
+    /// critter (the same `NPC.cs:13661-13672` row): 26x18, aiStyle 7,
+    /// dmg 0, def 0, 5 HP, catchItem 2157 (`2156 + type - 366`).
+    /// Protocol id 783.
+    Scorpion,
+    /// `NPCID.Grasshopper` (377, `NPCID.cs:11431`) — the surface hopper
+    /// (`NPC.cs:13811-13824`): 14x10, aiStyle 1, dmg 0, def 0, 5 HP,
+    /// friendly, catchItem 2740, slots 0.1. Protocol id 784. Rides the
+    /// aiStyle-1 hop stand-in (`update_slime`, the wave-A precedent —
+    /// the C#'s `AI_001_Slimes` has no 377 branch, the generic hop IS
+    /// the machine).
+    Grasshopper,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3547,7 +3567,12 @@ impl Npc {
             // W4-d39: the Butterfly writes NO knockBackResist row — the
             // `SetDefaults` head's 1f (`NPC.cs:8533`); the stock
             // `_ => 0.4` below never sees it (the BlazingWheel precedent).
-            NpcKind::Butterfly => 1.0,
+            // The scorpion pair + the grasshopper write none either
+            // (`NPC.cs:13661-13672`/`:13811-13824`).
+            NpcKind::Butterfly
+            | NpcKind::ScorpionBlack
+            | NpcKind::Scorpion
+            | NpcKind::Grasshopper => 1.0,
             _ => 0.4,
         }
     }
@@ -3929,8 +3954,12 @@ impl Npc {
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
             // W4-d39: the Butterfly's `defense = 0` row
-            // (`NPC.cs:13537`).
-            NpcKind::Butterfly => 0,
+            // (`NPC.cs:13537`); the scorpion pair `:13666`, the
+            // grasshopper `:13817`.
+            NpcKind::Butterfly
+            | NpcKind::ScorpionBlack
+            | NpcKind::Scorpion
+            | NpcKind::Grasshopper => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4304,8 +4333,12 @@ impl Npc {
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
             // W4-d39: the Butterfly writes no value row (the
-            // `SetDefaults` head's `value = 0f`, `NPC.cs:8544`).
-            NpcKind::Butterfly => 0.0,
+            // `SetDefaults` head's `value = 0f`, `NPC.cs:8544`); the
+            // scorpion pair + the grasshopper write none either.
+            NpcKind::Butterfly
+            | NpcKind::ScorpionBlack
+            | NpcKind::Scorpion
+            | NpcKind::Grasshopper => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6347,6 +6380,15 @@ impl Npc {
             NpcKind::Butterfly => {
                 unreachable!("aiStyle 65 rides the style axis (W4-d39)")
             }
+            // W4-d39: the scorpion pair's aiStyle 7 town-critter machine
+            // (`AI_007_TownEntities`, `NPC.cs:52907+`) is UNWIRED for the
+            // critter band — the wander stand-in holds (the MartianTurret
+            // precedent; `npc_ai_town::town_npc_ai` is the faithful
+            // module the wiring wave claims). The grasshopper's aiStyle 1
+            // hop rides the wave-A slime stand-in (the C#'s `AI_001_Slimes`
+            // carries no 377 branch — the generic hop IS the machine).
+            NpcKind::ScorpionBlack | NpcKind::Scorpion => self.update_guide(world, dt),
+            NpcKind::Grasshopper => self.update_slime(world, player, dt),
         }
     }
 
@@ -9056,6 +9098,47 @@ impl Npc {
                 }
                 // `:72770` — `(int)((float)(num*3) * (ai[2]-1f))` / num.
                 self.frame += (3.0 * (self.ai[2] - 1.0)) as u32;
+            }
+            // W4-d39 — `case 366 : case 367` (`NPC.cs:76820-76850`): the
+            // grounded ±1-only flip, the idle row-0 pin + counter reset,
+            // the |vx|+1 counter stepping rows at >6 over
+            // `Main.npcFrameCount[type]` = 4 (`Main.cs:67082`).
+            NpcKind::ScorpionBlack | NpcKind::Scorpion => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                }
+                if self.vx == 0.0 {
+                    self.frame = 0;
+                    self.frame_counter = 0.0;
+                } else {
+                    self.frame_counter += self.vx.abs() * 1.0;
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 6.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 4 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d39 — `case 377 : case 446` (`NPC.cs:70958-70982`): the
+            // airborne row-1 pin / grounded row 0, spriteDirection =
+            // direction. The `IsABestiaryIconDummy` branch (`:70960-
+            // 70972`) is the bestiary portrait's own 5-tick flap — the
+            // in-world arm never runs it (the portrait draws row 0).
+            NpcKind::Grasshopper => {
+                if self.vy != 0.0 {
+                    self.frame = 1;
+                } else {
+                    self.frame = 0;
+                }
+                self.sprite_dir = self.facing;
             }
             // `case 370` (`NPC.cs:72142-72236`): the boss's state-keyed
             // strip over `Main.npcFrameCount[370]` = 8 (`Main.cs:67121`).
@@ -18689,8 +18772,11 @@ impl Npc {
             NpcKind::WyvernTail => 228,
             // W4-d39: the Butterfly's vanilla render id (its own sheet;
             // 356 is unused by every arm above — the G6 key stays
-            // injective).
+            // injective). The scorpion pair + the grasshopper likewise.
             NpcKind::Butterfly => 356,
+            NpcKind::ScorpionBlack => 366,
+            NpcKind::Scorpion => 367,
+            NpcKind::Grasshopper => 377,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23759,7 +23845,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 271] = [
+    pub(super) const ALL_KINDS: [NpcKind; 274] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24040,6 +24126,9 @@ mod tests {
         NpcKind::WyvernTail,
         // W4-d39 (research/125): the band's first unclaimed kind.
         NpcKind::Butterfly,
+        NpcKind::ScorpionBlack,
+        NpcKind::Scorpion,
+        NpcKind::Grasshopper,
     ];
 
     #[test]
@@ -27651,8 +27740,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            271,
-            "every decodable kind resolves (the wire roster's size - 271 after W4-d39's Butterfly (research/125); 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
+            274,
+            "every decodable kind resolves (the wire roster's size - 274 after W4-d39's Butterfly/ScorpionBlack/Scorpion/Grasshopper (research/125); 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
             covered > 43,
@@ -31295,8 +31384,12 @@ mod s1_d_2_tests {
         (NpcKind::WyvernBody3, 6),
         (NpcKind::WyvernTail, 6),
         // W4-d39 (research/125) — the Butterfly's `SetDefaults` aiStyle
-        // row (`NPC.cs:13535`).
+        // row (`NPC.cs:13535`); the scorpion pair 7 (`:13665`), the
+        // grasshopper 1 (`:13815`).
         (NpcKind::Butterfly, 65),
+        (NpcKind::ScorpionBlack, 7),
+        (NpcKind::Scorpion, 7),
+        (NpcKind::Grasshopper, 1),
     ];
 
     #[test]
@@ -31983,6 +32076,156 @@ mod s1_d_2_tests {
         let mut m = Npc::new(NpcKind::DungeonSpirit, 100.0, 200.0, 1, 0.0);
         m.hp = 100;
         assert_ne!(key_butterfly, m.render_key(), "the kind term separates");
+    }
+
+    /// W4-d39 batch 2 — the scorpion pair + the grasshopper's
+    /// `SetDefaults` rows (`NPC.cs:13661-13672`/`:13811-13824`): size,
+    /// aiStyle, lifeMax 5, dmg/def/value 0, kb 1 (the head default),
+    /// NPCHit1/NPCDeath1, the `[31]` immunity, the port-local protocol
+    /// ids 782/783/784, the catch items 2156/2157/2740.
+    #[test]
+    fn w4_d39_the_scorpion_grasshopper_setdefaults_rows() {
+        // (kind, vanilla, proto, w, h, ai, catch)
+        let table = [
+            (NpcKind::ScorpionBlack, 366u16, 782u16, 26.0, 18.0, 7u8, 2156),
+            (NpcKind::Scorpion, 367, 783, 26.0, 18.0, 7, 2157),
+            (NpcKind::Grasshopper, 377, 784, 14.0, 10.0, 1, 2740),
+        ];
+        for (kind, vanilla, proto, w, h, ai, catch) in table {
+            assert_eq!(kind.cs_id(), vanilla, "{kind:?} vanilla type");
+            assert_eq!(kind.net_id(), vanilla as i32, "{kind:?} net id");
+            assert_eq!(kind.to_u16(), proto, "{kind:?} port-local protocol id");
+            assert_eq!(NpcKind::from_u16(proto), Some(kind), "{kind:?} decode");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), 5, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), 0, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), 0, "{kind:?} defense");
+            assert_eq!(n.value(), 0.0, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), 1.0, "{kind:?} kb head default");
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} death");
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[31], "{kind:?} Confused immune");
+            assert_eq!(
+                b.buff_immune.iter().filter(|x| **x).count(),
+                1,
+                "{kind:?} only [31]"
+            );
+            assert!(crate::bug_net::npc_catchable(vanilla as i32), "{kind:?} catchable");
+            assert!(n.friendly, "{kind:?} friendly (catchable)");
+            assert_eq!(
+                crate::bug_net::catch_item(vanilla as i32, 0.0),
+                catch,
+                "{kind:?} catch item"
+            );
+            // None of the three writes noGravity (the grounded critters).
+            assert!(!kind.no_gravity(), "{kind:?} grounded");
+        }
+    }
+
+    /// W4-d39 — the scorpion `FindFrame` case (`NPC.cs:76820-76850`):
+    /// the idle row-0 pin, the |vx|+1 counter's >6 step over 4 rows,
+    /// the grounded ±1-only flip (the air never writes it).
+    #[test]
+    fn w4_d39_the_scorpion_scuttles_four_rows() {
+        for kind in [NpcKind::ScorpionBlack, NpcKind::Scorpion] {
+            let mut n = bare(kind);
+            // Idle: row 0, counter 0.
+            n.frame = 3;
+            n.frame_counter = 5.0;
+            n.vx = 0.0;
+            n.vy = 0.0;
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (0, 0.0), "{kind:?} idle");
+            // Moving at vx 1: the counter adds 2/tick; the step at the
+            // 4th tick (8 > 6), the wrap after row 3.
+            n.vx = 1.0;
+            let mut rows = Vec::new();
+            for _ in 0..16 {
+                n.find_frame();
+                rows.push(n.frame);
+            }
+            assert_eq!(
+                rows,
+                [0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 0],
+                "{kind:?} the 4-tick scuttle"
+            );
+            // The grounded flip follows the facing; the air holds it.
+            n.facing = -1;
+            n.sprite_dir = 1;
+            n.vy = 0.0;
+            n.find_frame();
+            assert_eq!(n.sprite_dir, -1, "{kind:?} ground flip");
+            n.sprite_dir = 1;
+            n.vy = 2.0;
+            n.find_frame();
+            assert_eq!(n.sprite_dir, 1, "{kind:?} air holds the flip");
+        }
+    }
+
+    /// W4-d39 — the grasshopper `FindFrame` case (`NPC.cs:70958-70982`):
+    /// the airborne row-1 pin / grounded row 0, spriteDirection =
+    /// direction (the bestiary-dummy flap is the portrait's own).
+    #[test]
+    fn w4_d39_the_grasshopper_pins_the_air_row() {
+        let mut n = bare(NpcKind::Grasshopper);
+        n.facing = -1;
+        n.vy = 0.0;
+        n.find_frame();
+        assert_eq!(n.frame, 0, "grounded row 0");
+        assert_eq!(n.sprite_dir, -1, "spriteDirection = direction");
+        n.vy = -3.0;
+        n.find_frame();
+        assert_eq!(n.frame, 1, "airborne row 1");
+        n.vy = 2.0;
+        n.find_frame();
+        assert_eq!(n.frame, 1, "falling stays row 1");
+        n.vy = 0.0;
+        n.facing = 1;
+        n.find_frame();
+        assert_eq!((n.frame, n.sprite_dir), (0, 1), "the landing");
+    }
+
+    /// W4-d39 — the batch-2 bestiary entries: the scorpion pair both
+    /// display "Scorpion" (en-US NPCs.json:327-328), the grasshopper
+    /// its own name; the credits are the NPCID field names.
+    #[test]
+    fn w4_d39_the_batch2_bestiary_entries() {
+        let table = [
+            (NpcKind::ScorpionBlack, 366, "ScorpionBlack", "Scorpion"),
+            (NpcKind::Scorpion, 367, "Scorpion", "Scorpion"),
+            (NpcKind::Grasshopper, 377, "Grasshopper", "Grasshopper"),
+        ];
+        for (kind, net, credit, name) in table {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, net, "{kind:?} net id");
+            assert_eq!(e.credit_id, credit, "{kind:?} credit");
+            assert_eq!(e.name, name, "{kind:?} display name");
+            assert!(!e.quick_unlock, "{kind:?} not a boss");
+        }
+    }
+
+    /// W4-d39 — the batch-2 kinds step their machines without panicking
+    /// and keep their frames inside the sheet budgets (the scorpions
+    /// the wander stand-in, the grasshopper the slime hop).
+    #[test]
+    fn w4_d39_the_batch2_kinds_step_their_machines() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        for kind in [NpcKind::ScorpionBlack, NpcKind::Scorpion, NpcKind::Grasshopper] {
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            let hp = n.hp;
+            let rows = crate::render::entities::npc_rows(
+                crate::render::entities::texture_net_id(kind),
+            );
+            for _ in 0..120 {
+                n.update(&w, &mut player, 1.0 / 60.0);
+                assert!(n.frame < rows, "{kind:?} row {} of {rows}", n.frame);
+                assert!(n.hp <= hp, "{kind:?} hp grew");
+            }
+        }
     }
 
     // ---- S1-D-3z (zombie fighter audit) — the holiday zombie variants +

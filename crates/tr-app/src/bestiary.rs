@@ -2186,6 +2186,34 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Butterfly",
     },
+    // W4-d39 — the scorpion pair (366/367) + the grasshopper (377), the
+    // same automated Critter registration; the info rows are
+    // `BestiaryDatabaseNPCsPopulator.cs:1100`/`:1071`/`:902`. Both
+    // scorpions display "Scorpion" (en-US NPCs.json:327-328).
+    BestiaryEntryDef {
+        credit_id: "ScorpionBlack",
+        net_id: 366,
+        kind: NpcKind::ScorpionBlack,
+        variant: None,
+        quick_unlock: false,
+        name: "Scorpion",
+    },
+    BestiaryEntryDef {
+        credit_id: "Scorpion",
+        net_id: 367,
+        kind: NpcKind::Scorpion,
+        variant: None,
+        quick_unlock: false,
+        name: "Scorpion",
+    },
+    BestiaryEntryDef {
+        credit_id: "Grasshopper",
+        net_id: 377,
+        kind: NpcKind::Grasshopper,
+        variant: None,
+        quick_unlock: false,
+        name: "Grasshopper",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

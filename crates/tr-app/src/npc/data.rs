@@ -591,6 +591,9 @@ impl NpcKind {
             // vanilla 356 sits inside d37's pushed 354-399 protocol
             // band, so vanilla-free numbering is NOT available here.
             NpcKind::Butterfly => 781,
+            NpcKind::ScorpionBlack => 782,
+            NpcKind::Scorpion => 783,
+            NpcKind::Grasshopper => 784,
         }
     }
 
@@ -923,6 +926,9 @@ impl NpcKind {
             228 => NpcKind::WyvernTail,
             // W4-d39: the port-local 781+ band (`to_u16` above).
             781 => NpcKind::Butterfly,
+            782 => NpcKind::ScorpionBlack,
+            783 => NpcKind::Scorpion,
+            784 => NpcKind::Grasshopper,
             _ => return None,
         })
     }
@@ -1804,8 +1810,12 @@ impl NpcKind {
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
             // W4-d39: the Butterfly's `SoundID.NPCHit1` row
-            // (`NPC.cs:13539`).
-            NpcKind::Butterfly => "NPC_Hit_1",
+            // (`NPC.cs:13539`); the scorpion pair `:13669`, the
+            // grasshopper `:13819`.
+            NpcKind::Butterfly
+            | NpcKind::ScorpionBlack
+            | NpcKind::Scorpion
+            | NpcKind::Grasshopper => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2111,8 +2121,12 @@ impl NpcKind {
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
             // W4-d39: the Butterfly's `SoundID.NPCDeath1` row
-            // (`NPC.cs:13540`).
-            NpcKind::Butterfly => "NPC_Killed_1",
+            // (`NPC.cs:13540`); the scorpion pair `:13670`, the
+            // grasshopper `:13820`.
+            NpcKind::Butterfly
+            | NpcKind::ScorpionBlack
+            | NpcKind::Scorpion
+            | NpcKind::Grasshopper => "NPC_Killed_1",
             _ => return None,
         })
     }
@@ -2467,8 +2481,11 @@ impl NpcKind {
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
             // W4-d39: the Butterfly's `SetDefaults` row — 356 aiStyle 65
-            // (`NPC.cs:13535`).
+            // (`NPC.cs:13535`); the scorpion pair 7 (`:13665`), the
+            // grasshopper 1 (`:13815`).
             NpcKind::Butterfly => 65,
+            NpcKind::ScorpionBlack | NpcKind::Scorpion => 7,
+            NpcKind::Grasshopper => 1,
         }
     }
 
@@ -3000,8 +3017,11 @@ impl NpcKind {
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
             // W4-d39: the Butterfly's `SetDefaults` box — 356 10x10
-            // (`NPC.cs:13533-13534`).
+            // (`NPC.cs:13533-13534`); the scorpion pair 26x18
+            // (`:13663-13664`), the grasshopper 14x10 (`:13813-13814`).
             NpcKind::Butterfly => (10.0, 10.0),
+            NpcKind::ScorpionBlack | NpcKind::Scorpion => (26.0, 18.0),
+            NpcKind::Grasshopper => (14.0, 10.0),
         }
     }
 
@@ -3644,8 +3664,12 @@ impl NpcKind {
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
             // W4-d39: the Butterfly's `lifeMax = 5` row
-            // (`NPC.cs:13538`).
-            NpcKind::Butterfly => 5,
+            // (`NPC.cs:13538`); the scorpion pair `:13668`, the
+            // grasshopper `:13818`.
+            NpcKind::Butterfly
+            | NpcKind::ScorpionBlack
+            | NpcKind::Scorpion
+            | NpcKind::Grasshopper => 5,
         }
     }
 
@@ -4011,8 +4035,12 @@ impl NpcKind {
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
             // W4-d39: the Butterfly's `damage = 0` row
-            // (`NPC.cs:13536`).
-            NpcKind::Butterfly => 0,
+            // (`NPC.cs:13536`); the scorpion pair `:13665`, the
+            // grasshopper `:13816`.
+            NpcKind::Butterfly
+            | NpcKind::ScorpionBlack
+            | NpcKind::Scorpion
+            | NpcKind::Grasshopper => 0,
         }
     }
 }

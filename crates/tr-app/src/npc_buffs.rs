@@ -485,8 +485,13 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
         // W4-d39: the Butterfly's `{ 356, [31] }` row (`NPCID.cs:8164`
-        // — the single Confused immunity, the catchable-critter set).
-        NpcKind::Butterfly => &[31],
+        // — the single Confused immunity, the catchable-critter set);
+        // the scorpion pair `:8234`/`:8241`, the grasshopper `:8311`
+        // — all the same `[31]` row.
+        NpcKind::Butterfly
+        | NpcKind::ScorpionBlack
+        | NpcKind::Scorpion
+        | NpcKind::Grasshopper => &[31],
     }
 }
 

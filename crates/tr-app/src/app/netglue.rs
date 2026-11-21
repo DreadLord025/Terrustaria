@@ -3569,10 +3569,16 @@ fn npc_seed(
         // W4-d39 (research/125) — the Butterfly's net seed: the flyer
         // rides the hover ctor's open-air seed (the fishron hazards'
         // precedent — the noGravity machine takes over on the first
-        // tick).
+        // tick). The scorpion pair + the grasshopper plant their feet
+        // on the column surface (the wave-A walkers' shape).
         crate::npc::NpcKind::Butterfly => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        crate::npc::NpcKind::ScorpionBlack
+        | crate::npc::NpcKind::Scorpion
+        | crate::npc::NpcKind::Grasshopper => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
     })
 }

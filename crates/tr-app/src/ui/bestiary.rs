@@ -1606,6 +1606,21 @@ fn portrait_data(
                 .unwrap_or(10.0);
             (sheet_i, h, 10.0, h, white)
         }
+        // W4-d39 — the scorpion pair's 4-row strips + the grasshopper's
+        // 2-row strip (`Main.npcFrameCount[366/367]` = 4, `[377]` = 2;
+        // `Main.cs:67082`), the frame width the sheet's own.
+        (NpcKind::ScorpionBlack | NpcKind::Scorpion, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(18.0);
+            (sheet_i, h, 26.0, h, white)
+        }
+        (NpcKind::Grasshopper, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 14.0, h, white)
+        }
     }
 }
 

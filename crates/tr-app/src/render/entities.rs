@@ -1253,6 +1253,9 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
 /// `NpcAssets::npc_sheets` exactly like `SMALL_KIND_SHEETS`.
 pub(crate) const CRITTER_SHEETS: &[u32] = &[
     356, // the Butterfly
+    366, // the black Scorpion
+    367, // the brown Scorpion
+    377, // the Grasshopper
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -3187,6 +3190,17 @@ pub(crate) fn draw_npcs(
             // convention); the Butterfly rotates (the whitelist below).
             NpcKind::Butterfly => {
                 scaled_anchor(assets.npc_sheet(356), npc_rows(356), n, w, h)
+            }
+            // W4-d39 — the scorpion pair (4 rows) + the grasshopper
+            // (2 rows), unscaled (`SetDefaults` writes no scale row).
+            NpcKind::ScorpionBlack => {
+                pumpkin_moon_draw(assets.npc_sheet(366), npc_rows(366), n, w, h)
+            }
+            NpcKind::Scorpion => {
+                pumpkin_moon_draw(assets.npc_sheet(367), npc_rows(367), n, w, h)
+            }
+            NpcKind::Grasshopper => {
+                pumpkin_moon_draw(assets.npc_sheet(377), npc_rows(377), n, w, h)
             }
         };
         let Some(tex) = tex else {
