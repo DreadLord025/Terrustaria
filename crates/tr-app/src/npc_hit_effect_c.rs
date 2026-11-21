@@ -265,6 +265,7 @@
 //! | 1401-1405 | `:89520-89524` | the 24 FireImp death (45/46/46/47/47 ladder, type-6 dust) |
 //! | 1406-1414 | `:89597-89625` | the goblin block (per-type ladder + 111's 131) + 471 GoblinSummoner (distinct +20 pair) |
 //! | 1415-1422 | `:89651-89688` | the 472 ShadowFlameApparition (679/680) + 480 Medusa ladder + 185 SnowFlinx 240 |
+//! | 1423-1431 | `:89718-89757` | the hornet/moth block (205 quad, 176 pair, 70/1384/1385 + 71) + 43/56 ManEater 72 pair |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -8682,6 +8683,84 @@ fn snow_flinx_death(
     gore.new_gore(rng, world, pos, Vec2::new(npc.vx, npc.vy), 240, npc.scale); // :89688
 }
 
+/// The 42/176/205/231-235 hornet/moth block death (`NPC.cs:89712-89740`,
+/// sites 1423-1429): the 50-dust type-18 burst (SpeedX hitDirection, SpeedY
+/// -2, Alpha `this.alpha`, color `this.color` — the Color::default()
+/// stand-in — scale `this.scale`), then the per-type gores at position
+/// with `base.velocity` at `this.scale`: 205 Moth → 270/271/271/272 (the
+/// quad, then return); 176 MossHornet → 229/230 (then return); else the
+/// head num857 (70 default, 232 Honey → 1384, 234 Spikey → 1385) + 71.
+fn hornet_block_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 18, hit_direction, -2.0,
+            npc.alpha as i32, Color::default(), npc.scale,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    // `:89716-89722` — the 205 Moth quad.
+    if npc_type == 205 {
+        gore.new_gore(rng, world, pos, vel, 270, s); // :89718
+        gore.new_gore(rng, world, pos, vel, 271, s); // :89719
+        gore.new_gore(rng, world, pos, vel, 271, s); // :89720
+        gore.new_gore(rng, world, pos, vel, 272, s); // :89721
+        return;
+    }
+    // `:89724-89728` — the 176 MossHornet pair.
+    if npc_type == 176 {
+        gore.new_gore(rng, world, pos, vel, 229, s); // :89726
+        gore.new_gore(rng, world, pos, vel, 230, s); // :89727
+        return;
+    }
+    // `:89730-89740` — the head select + the 71.
+    let head = match npc_type {
+        232 => 1384,
+        234 => 1385,
+        _ => 70,
+    };
+    gore.new_gore(rng, world, pos, vel, head, s); // :89739
+    gore.new_gore(rng, world, pos, vel, 71, s); // :89740
+}
+
+/// The 43 ManEater / 56 Snatcher death (`NPC.cs:89752-89757`, sites
+/// 1430-1431): the 50-dust type-40 burst (SpeedX hitDirection, SpeedY -2,
+/// Alpha `this.alpha`, color `this.color` — the stand-in — scale 1.2),
+/// then TWO gores of type 72 at position with `base.velocity`. Scale
+/// defaults to 1.
+fn man_eater_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 40, hit_direction, -2.0,
+            npc.alpha as i32, Color::default(), 1.2,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 72, 1.0); // :89756
+    gore.new_gore(rng, world, pos, vel, 72, 1.0); // :89757
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -9745,6 +9824,17 @@ pub fn hit_effect_c(
     // `:89674-89689` — the 185 SnowFlinx arm (site 1422).
     if npc_type == 185 && npc.hp <= 0 {
         snow_flinx_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89702-89741` — the 42/176/205/231-235 hornet/moth block arm (sites
+    // 1423-1429).
+    if (npc_type == 42 || npc_type == 176 || npc_type == 205 || (231..=235).contains(&npc_type))
+        && npc.hp <= 0
+    {
+        hornet_block_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89742-89758` — the 43/56 ManEater/Snatcher arm (sites 1430-1431).
+    if (npc_type == 43 || npc_type == 56) && npc.hp <= 0 {
+        man_eater_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -15312,6 +15402,48 @@ mod tests {
         snow_flinx_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
         assert_eq!(gore.slot(0).gore_type, 240);
         assert_eq!(gore.slots().iter().filter(|g| g.active).count(), 1);
+    }
+
+    /// `NPC.cs:89718-89740` — the hornet/moth block: 205 → the 270/271/271/
+    /// 272 quad, 176 → the 229/230 pair, 232 → 1384+71, 234 → 1385+71,
+    /// else 70+71.
+    #[test]
+    fn w4_f10_the_hornet_block_death_uses_the_per_type_gores() {
+        let w = air();
+        let cases: [(i32, Vec<i32>); 5] = [
+            (205, vec![270, 271, 271, 272]),
+            (176, vec![229, 230]),
+            (232, vec![1384, 71]),
+            (234, vec![1385, 71]),
+            (42, vec![70, 71]),
+        ];
+        for (ty, gores) in cases {
+            let n = boss(100.0, 100.0, 30.0, 30.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(1553);
+            hornet_block_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..gores.len()].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, gores, "hornet {ty}");
+            let d = dust.slots().iter().find(|d| d.active).unwrap();
+            assert_eq!(d.dust_type, 18);
+        }
+    }
+
+    /// `NPC.cs:89756-89757` — the ManEater death: the 72 pair after the
+    /// type-40 burst.
+    #[test]
+    fn w4_f10_the_man_eater_death_spawns_the_72_pair() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1559);
+        man_eater_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![72, 72]);
+        let d = dust.slots().iter().find(|d| d.active).unwrap();
+        assert_eq!(d.dust_type, 40);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
