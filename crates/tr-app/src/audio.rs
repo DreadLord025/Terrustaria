@@ -143,6 +143,8 @@ const SFX_CUES: &[(&str, u32)] = &[
     // shellies' NPCHit38 (`:14686`) — the bank-gap close.
     ("NPC_Hit_33", 3),
     ("NPC_Hit_38", 3),
+    // W4-d41 — the salamanders' NPCHit50 (`NPC.cs:14699`).
+    ("NPC_Hit_50", 3),
     ("NPC_Killed_1", 4),
     ("NPC_Killed_2", 4),
     ("NPC_Killed_3", 4),
@@ -189,6 +191,8 @@ const SFX_CUES: &[(&str, u32)] = &[
     // shellies' NPCDeath41 (`:14687`) — the bank-gap close.
     ("NPC_Killed_36", 4),
     ("NPC_Killed_41", 4),
+    // W4-d41 — the salamanders' NPCDeath53 (`NPC.cs:14700`).
+    ("NPC_Killed_53", 4),
     // The NPC death family (the sound id 4, `LegacySoundPlayer.cs:676`): the
     // per-kind death cues (`NPC.DeathSound`, `NPC.cs:6477`).
     ("Double_Jump", 16),

@@ -1232,6 +1232,16 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_495",
         "NPC_496",
         "NPC_497",
+        // W4-d41 — the nine salamander colours (CAVERN_SHEETS).
+        "NPC_498",
+        "NPC_499",
+        "NPC_500",
+        "NPC_501",
+        "NPC_502",
+        "NPC_503",
+        "NPC_504",
+        "NPC_505",
+        "NPC_506",
         // The Pumpkin Moon wave family's sheets (`S1-F-13b` Phase 2): one per
         // kind — the Scarecrows (305-314) and the five named kinds
         // (315/325/326/327/329/330) — keyed by the vanilla net id in

@@ -1110,6 +1110,48 @@ pub enum NpcKind {
     /// group — identical stats). The bestiary credit folds onto 496
     /// (`ContentSamples.cs:1019`); the draw sheet stays NPC_497. W4-d41.
     GiantShelly2,
+    /// `NPCID.Salamander` (498, `NPCID.cs:11669`) — the cavern
+    /// salamander (`aiStyle 3`, `NPC.cs:14691-14703`): 24x44, dmg 18,
+    /// def 10, 65 HP, kb 0.45, value 120, NPCHit50/NPCDeath53. The
+    /// `AI_003_Fighters` SHOOTER block (`NPC.cs:59069-59801`, the
+    /// 498-506 terms): the 70-tick cadence, the 7-speed spit 572 at
+    /// 14 dmg, the 190-px engage range, the centre −8 aim anchor.
+    /// W4-d41.
+    Salamander,
+    /// `NPCID.Salamander2` (499, `NPCID.cs:11671`) — the second
+    /// salamander colour (`NPC.cs:14691-14703`'s `type >= 498 &&
+    /// <= 506` group — identical stats). The bestiary credit folds onto
+    /// 499 (`ContentSamples.cs:1021-1025`); the draw sheet stays
+    /// NPC_499. W4-d41.
+    Salamander2,
+    /// `NPCID.Salamander3` (500, `NPCID.cs:11673`) — the third
+    /// salamander colour (`NPC.cs:14691-14703`). The bestiary credit
+    /// folds onto 499; the draw sheet stays NPC_500. W4-d41.
+    Salamander3,
+    /// `NPCID.Salamander4` (501, `NPCID.cs:11675`) — the fourth
+    /// salamander colour (`NPC.cs:14691-14703`). The bestiary credit
+    /// folds onto 499; the draw sheet stays NPC_501. W4-d41.
+    Salamander4,
+    /// `NPCID.Salamander5` (502, `NPCID.cs:11677`) — the fifth
+    /// salamander colour (`NPC.cs:14691-14703`). The bestiary credit
+    /// folds onto 499; the draw sheet stays NPC_502. W4-d41.
+    Salamander5,
+    /// `NPCID.Salamander6` (503, `NPCID.cs:11679`) — the sixth
+    /// salamander colour (`NPC.cs:14691-14703`). The bestiary credit
+    /// folds onto 499; the draw sheet stays NPC_503. W4-d41.
+    Salamander6,
+    /// `NPCID.Salamander7` (504, `NPCID.cs:11681`) — the seventh
+    /// salamander colour (`NPC.cs:14691-14703`). The bestiary credit
+    /// folds onto 499; the draw sheet stays NPC_504. W4-d41.
+    Salamander7,
+    /// `NPCID.Salamander8` (505, `NPCID.cs:11683`) — the eighth
+    /// salamander colour (`NPC.cs:14691-14703`). The bestiary credit
+    /// folds onto 499; the draw sheet stays NPC_505. W4-d41.
+    Salamander8,
+    /// `NPCID.Salamander9` (506, `NPCID.cs:11685`) — the ninth
+    /// salamander colour (`NPC.cs:14691-14703`). The bestiary credit
+    /// folds onto 499; the draw sheet stays NPC_506. W4-d41.
+    Salamander9,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3565,6 +3607,16 @@ impl Npc {
             // 0.75 (`:14688`).
             NpcKind::Crawdad | NpcKind::Crawdad2 => 1.0,
             NpcKind::GiantShelly | NpcKind::GiantShelly2 => 0.75,
+            // W4-d41 — the salamanders' kb 0.45 (`NPC.cs:14701`).
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => 0.45,
             _ => 0.4,
         }
     }
@@ -3949,6 +4001,16 @@ impl Npc {
             // and the shellies' 12 (`:14684`).
             NpcKind::Crawdad | NpcKind::Crawdad2 => 6,
             NpcKind::GiantShelly | NpcKind::GiantShelly2 => 12,
+            // W4-d41 — the salamanders' defense 10 (`NPC.cs:14697`).
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => 10,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4325,6 +4387,16 @@ impl Npc {
             // (`NPC.cs:14676`/`:14689`).
             NpcKind::Crawdad | NpcKind::Crawdad2 => 120.0,
             NpcKind::GiantShelly | NpcKind::GiantShelly2 => 120.0,
+            // W4-d41 — the salamanders' value 120 copper (`NPC.cs:14702`).
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => 120.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -5906,6 +5978,21 @@ impl Npc {
             // damage) rides `npc_ai3_speeds::apply_ladder` through
             // `run_ai3_ladder` (the type reads cs_id 494/495).
             NpcKind::Crawdad | NpcKind::Crawdad2 => self.update_skeleton(world, player, dt),
+            // W4-d41 — the salamanders (498-506, aiStyle 3): the
+            // `AI_003_Fighters` SHOOTER block (`NPC.cs:59069-59801`, the
+            // 498-506 terms) — the 70-tick cadence, the 7-speed spit 572
+            // at 14 dmg, the 190-px engage range. The ladder DECLINES
+            // the type (`npc_ai3_speeds::shooter_excluded`), so the
+            // shooter's own 1f/0.07 walk (`:59717-59790`) runs instead.
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => self.update_salamander(world, player, rng),
             // The goblin army's fighters (aiStyle 3, NPC.cs:15644/15658/
             // :15714 cases 26/27/111): the walker arm. (S1-D-3b: the
             // shadowing `update_goblin` arm that kept Thief/Warrior/Peon
@@ -7369,6 +7456,55 @@ impl Npc {
                 } else {
                     self.frame_counter = 0.0;
                     self.frame = 7;
+                }
+            }
+            // W4-d41 — `case 498..506` (`NPC.cs:69849-69907`): the
+            // salamanders' grounded walk cycles rows 0..7 at the |vx|
+            // accumulator's >4 step (the wrap back to 0), the stop's
+            // ai[1] bands pin 8/9/8, the idle row 0, the air row 10.
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.ai[2] > 0.0 {
+                        self.sprite_dir = self.facing;
+                        self.frame = if self.ai[1] < 12.0 {
+                            8
+                        } else if self.ai[1] < 34.0 {
+                            9
+                        } else {
+                            8
+                        };
+                        self.frame_counter = 0.0;
+                        return;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        return;
+                    }
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter > 4.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 7 {
+                        self.frame = 0;
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 10;
                 }
             }
             // W4-d41 — `case 494 : case 495` (`NPC.cs:69657-69733`): the
@@ -11771,6 +11907,176 @@ impl Npc {
         // The stop state's X damp (`:59626`'s `velocity.X *= 0.9`).
         if self.ai[2] > 0.0 {
             self.vx *= 0.9;
+        }
+    }
+
+    /// W4-d41 — `AI_003_Fighters`'s shooter block (`NPC.cs:59069-59801`)
+    /// for the salamanders (498-506). The 70-tick cadence (`num162 = 70`
+    /// default, `:59098` — no 498-506 override), the half-cooldown fire
+    /// (`num163 = 35`, `:59184`), the 7-speed spit (`num164 = 7f`,
+    /// `:59275-59278`) from the centre −8 anchor (`:59300-59303`), the
+    /// `|dx| * Next(1,11) * 0.0025` arc (`:59340-59343`) + the
+    /// `Next(-40,41) * 0.3` per-axis jitter (`:59369-59373`), the 572
+    /// SalamanderSpit at 14 dmg (`:59452-59456`), the 190-px engage range
+    /// (`num179 = 190f`, `:59664-59667`) and the 1f/0.07/0.8 walk
+    /// (`:59717-59790`, no type override). The octant table
+    /// (`:59595-59617`/`:59689-59711`) pins ai[2] 1..5.
+    ///
+    /// Deviations (the martian shooter's convention): the player's
+    /// `stealth`/`itemAnimation` gate (`:59641`) is constants-off; the
+    /// confused reset (`:59197-59201`) reads the buff engine's Confused
+    /// (31) — the salamanders carry no immunity row, so it can fire; the
+    /// spit's OnFire-on-hit roll (`Projectile.cs:12189`) is a HIT-time
+    /// draw on the projectile's own tick (the player-debuff layer is
+    /// unported, ANALYSIS). The walk rides `walker_step` at the C#'s
+    /// shooter params (the ladder declines the type —
+    /// `npc_ai3_speeds::shooter_excluded`).
+    fn update_salamander(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        let (dx, dy) = (pcx - cx, pcy - cy);
+        // The octant table (the vanilla's `ai[2]` 1..5 rows).
+        let octant = |dx: f32, dy: f32| -> f32 {
+            if dy.abs() > dx.abs() * 2.0 {
+                if dy > 0.0 { 1.0 } else { 5.0 }
+            } else if dx.abs() > dy.abs() * 2.0 {
+                3.0
+            } else if dy > 0.0 {
+                2.0
+            } else {
+                4.0
+            }
+        };
+        // `:59086-59089` — the cooldown decays.
+        if self.ai[1] > 0.0 {
+            self.ai[1] -= 1.0;
+        }
+        // `:59091-59097` — justHit rests the cycle 30.
+        if self.hurt_cd > 0.0 {
+            self.ai[1] = 30.0;
+            self.ai[2] = 0.0;
+            self.net_update = true;
+        }
+        // `:59197-59201` — the confused reset.
+        if self.buffs.find_buff_index(31).is_some() {
+            self.ai[1] = 0.0;
+            self.ai[2] = 0.0;
+        }
+        if self.ai[2] > 0.0 {
+            // `:59204-59207` — TargetClosest while stopped (flag18 true).
+            let cand = crate::npc_target::session_candidate_for(player, self.kind);
+            crate::npc_target::target_closest(self, world, &[cand], true, 3, 0);
+            // `:59208` — the fire at the half-cooldown (35).
+            if self.ai[1] == 35.0 {
+                // `:59275-59278` — the 7-speed; `:59300-59303` — the
+                // centre −8 anchor.
+                let anchor_y = cy - 8.0;
+                let mut ax = pcx - cx;
+                // `:59340-59343` — the arc offset.
+                let mut ay = pcy - anchor_y - ax.abs() * (rng.next_range(1, 11) as f32 * 0.0025);
+                // `:59369-59373` — the per-axis jitter.
+                ax += rng.next_range(-40, 41) as f32 * 0.3;
+                ay += rng.next_range(-40, 41) as f32 * 0.3;
+                // `:59397-59401` — normalise to the 7 speed.
+                let len = (ax * ax + ay * ay).sqrt().max(0.001);
+                let inv = 7.0 / len;
+                self.net_update = true;
+                // `:59452-59456` + `:59592` — the 572 spit at 14 dmg.
+                self.wants_hostile_shot.push((
+                    crate::projectile::SALAMANDER_SPIT,
+                    cx,
+                    anchor_y,
+                    ax * inv,
+                    ay * inv,
+                    14,
+                ));
+                // `:59595-59617` — the post-fire octant.
+                self.ai[2] = octant(ax, ay);
+            }
+            // `:59619-59623` — the airborne / spent exit.
+            if self.vy != 0.0 || self.ai[1] <= 0.0 {
+                self.ai[2] = 0.0;
+                self.ai[1] = 0.0;
+            } else {
+                // `:59624-59628` — the stop's X damp + the sprite.
+                self.vx *= 0.9;
+                self.sprite_dir = self.facing;
+            }
+        } else {
+            // `:59634-59713` — the engage gate: grounded, the cooldown
+            // spent, the target alive, CanHit, the aim under 190 px.
+            if self.vy == 0.0
+                && self.ai[1] <= 0.0
+                && player.hp > 0
+                && crate::projectile::can_hit(
+                    world,
+                    self.x,
+                    self.y,
+                    w,
+                    h,
+                    player.x,
+                    player.y,
+                    crate::player::WIDTH,
+                    player.height,
+                )
+            {
+                // `:59647-59654` — the 10-speed normalised aim with the
+                // ±40 jitter (the distance check reads the jittered aim).
+                let mut ax = dx + rng.next_range(-40, 41) as f32;
+                let mut ay = dy - dx.abs() * 0.1 + rng.next_range(-40, 41) as f32;
+                let len = (ax * ax + ay * ay).sqrt().max(0.001);
+                // `:59664-59667` + `:59680` — the 190-px range.
+                if len < 190.0 {
+                    self.net_update = true;
+                    self.vx *= 0.5;
+                    let inv = 10.0 / len;
+                    ax *= inv;
+                    ay *= inv;
+                    self.ai[1] = 70.0;
+                    // `:59689-59711` — the entry octant.
+                    self.ai[2] = octant(ax, ay);
+                }
+            }
+        }
+        // `:59715-59790` — the walk while not stopped: the 1f cap, the
+        // 0.07 accel, the grounded over-cap ×0.8 brake. The port's
+        // `walker_step` carries the same shape at the shooter params.
+        if self.ai[2] <= 0.0 {
+            crate::npc_ai::walker_step(
+                self,
+                world,
+                pcx,
+                pcy,
+                crate::npc_ai::WalkerParams {
+                    speed: 1.0,
+                    jump: -6.2,
+                    aggro_x: 80.0 * TILE_PX,
+                    aggro_y: 40.0 * TILE_PX,
+                },
+                GRAVITY,
+                MAX_FALL,
+            );
+        } else {
+            // The stopped body still moves (the C#'s UpdateNPC integrates
+            // the damped vx + gravity every tick).
+            let nx = self.x + self.vx;
+            if !crate::player::collides_rect(world, nx, self.y, w, h) {
+                self.x = nx;
+            } else {
+                self.vx = 0.0;
+            }
+            self.vy = (self.vy + GRAVITY).min(MAX_FALL);
+            let ny = self.y + self.vy;
+            if !crate::player::collides_rect(world, self.x, ny, w, h) {
+                self.y = ny;
+                self.on_ground = false;
+            } else if self.vy > 0.0 {
+                let ty = ((ny + h) / TILE_PX).floor() as i32;
+                self.y = ty as f32 * TILE_PX - h;
+                self.vy = 0.0;
+                self.on_ground = true;
+            }
         }
     }
 
@@ -18782,6 +19088,18 @@ impl Npc {
             NpcKind::Crawdad2 => 495,
             NpcKind::GiantShelly => 496,
             NpcKind::GiantShelly2 => 497,
+            // W4-d41 — the nine salamanders' vanilla type ids (the same
+            // values `to_u16` rides) — unused by every arm above, so the
+            // G6 key stays injective.
+            NpcKind::Salamander => 498,
+            NpcKind::Salamander2 => 499,
+            NpcKind::Salamander3 => 500,
+            NpcKind::Salamander4 => 501,
+            NpcKind::Salamander5 => 502,
+            NpcKind::Salamander6 => 503,
+            NpcKind::Salamander7 => 504,
+            NpcKind::Salamander8 => 505,
+            NpcKind::Salamander9 => 506,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23850,7 +24168,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 274] = [
+    pub(super) const ALL_KINDS: [NpcKind; 283] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24134,6 +24452,16 @@ mod tests {
         NpcKind::Crawdad2,
         NpcKind::GiantShelly,
         NpcKind::GiantShelly2,
+        // W4-d41 — the nine salamander colours.
+        NpcKind::Salamander,
+        NpcKind::Salamander2,
+        NpcKind::Salamander3,
+        NpcKind::Salamander4,
+        NpcKind::Salamander5,
+        NpcKind::Salamander6,
+        NpcKind::Salamander7,
+        NpcKind::Salamander8,
+        NpcKind::Salamander9,
     ];
 
     #[test]
@@ -24403,6 +24731,155 @@ mod tests {
                 assert!(n.hp <= hp, "{kind:?} hp grew");
             }
         }
+    }
+
+    /// The salamanders' `SetDefaults` rows (`NPC.cs:14691-14703`'s
+    /// `type >= 498 && <= 506` group): 24x44, aiStyle 3, dmg 18, def 10,
+    /// 65 HP, kb 0.45, value 120, NPCHit50/NPCDeath53 — identical across
+    /// the nine colours.
+    #[test]
+    fn w4_d41_the_salamander_setdefaults_rows() {
+        let kinds = [
+            (NpcKind::Salamander, 498u16),
+            (NpcKind::Salamander2, 499),
+            (NpcKind::Salamander3, 500),
+            (NpcKind::Salamander4, 501),
+            (NpcKind::Salamander5, 502),
+            (NpcKind::Salamander6, 503),
+            (NpcKind::Salamander7, 504),
+            (NpcKind::Salamander8, 505),
+            (NpcKind::Salamander9, 506),
+        ];
+        for (kind, vanilla) in kinds {
+            assert_eq!(kind.size(), (24.0, 44.0), "{kind:?} size");
+            assert_eq!(kind.ai_style(), 3, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), 65, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), 18, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), 10, "{kind:?} defense");
+            assert_eq!(n.value(), 120.0, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), 0.45, "{kind:?} knockBackResist");
+            assert!(!kind.no_gravity(), "{kind:?} noGravity");
+            assert!(!kind.behind_tiles(), "{kind:?} behindTiles");
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_50"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_53"), "{kind:?} death");
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+            // The null immunity rows (`NPCID.cs:8944-8952`).
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(!b.buff_immune.iter().any(|x| *x), "{kind:?} null immunity");
+            // cs_id: 498 keeps its hand row; 499-506 fold onto 499's
+            // bestiary net id (the L-B cs_id==net_id invariant).
+            let cs = if vanilla == 498 { 498 } else { 499 };
+            assert_eq!(kind.cs_id(), cs, "{kind:?} cs_id");
+        }
+    }
+
+    /// The bestiary rows: ONE entry for the nine colours — the 499
+    /// `Salamander2` row (the redigit dictionary hides 498/500-506;
+    /// `ContentSamples.cs:1021-1025` folds ALL of 498-506 onto the 499
+    /// credit). The draw sheets stay the colours' own.
+    #[test]
+    fn w4_d41_the_salamanders_fold_onto_the_499_credit() {
+        let e = crate::bestiary::entry_for_npc(NpcKind::Salamander2, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 499);
+        assert_eq!(e.credit_id, "Salamander2");
+        assert_eq!(e.name, "Salamander");
+        for kind in [
+            NpcKind::Salamander,
+            NpcKind::Salamander3,
+            NpcKind::Salamander4,
+            NpcKind::Salamander5,
+            NpcKind::Salamander6,
+            NpcKind::Salamander7,
+            NpcKind::Salamander8,
+            NpcKind::Salamander9,
+        ] {
+            assert_eq!(
+                crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue).net_id,
+                499,
+                "{kind:?} folds onto 499"
+            );
+        }
+        // The DRAW sheets keep the colours' own ids; the row count is 11
+        // (`Main.npcFrameCount[498..506]`, `Main.cs:67082`).
+        for (kind, net) in [
+            (NpcKind::Salamander, 498u16),
+            (NpcKind::Salamander2, 499),
+            (NpcKind::Salamander3, 500),
+            (NpcKind::Salamander4, 501),
+            (NpcKind::Salamander5, 502),
+            (NpcKind::Salamander6, 503),
+            (NpcKind::Salamander7, 504),
+            (NpcKind::Salamander8, 505),
+            (NpcKind::Salamander9, 506),
+        ] {
+            assert_eq!(crate::render::entities::texture_net_id(kind), net);
+            assert_eq!(crate::render::entities::npc_rows(net), 11, "{kind:?} rows");
+        }
+    }
+
+    /// The salamanders' `FindFrame` case (`NPC.cs:69849-69907`): the
+    /// grounded walk cycles rows 0..7 at the >4 |vx| step, the stop's
+    /// ai[1] bands pin 8/9/8, the idle row 0, the air row 10.
+    #[test]
+    fn w4_d41_the_salamanders_find_frame_bands() {
+        let mut n = bare(NpcKind::Salamander);
+        // The stop bands.
+        n.ai[2] = 1.0;
+        for (ai1, want) in [(0.0, 8), (11.9, 8), (12.0, 9), (33.9, 9), (34.0, 8)] {
+            n.ai[1] = ai1;
+            n.find_frame();
+            assert_eq!(n.frame, want, "the stop band at ai[1] {ai1}");
+        }
+        n.ai[2] = 0.0;
+        // The idle.
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.frame = 5;
+        n.find_frame();
+        assert_eq!(n.frame, 0, "the idle row");
+        // The air.
+        n.vy = 1.0;
+        n.find_frame();
+        assert_eq!(n.frame, 10, "the air row");
+        n.vy = 0.0;
+        // The walk: 5 px/tick steps a row every tick (5 > 4), wrapping
+        // at 8 back to 0.
+        n.vx = 5.0;
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..9 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(&rows[..], &[1, 2, 3, 4, 5, 6, 7, 0, 1], "the 0..7 cycle");
+    }
+
+    /// The salamanders' shooter routing: the kind steps without
+    /// panicking, stays inside its 11-row strip, and keeps its
+    /// `SetDefaults` HP. The spit's data row pins the C# literals.
+    #[test]
+    fn w4_d41_the_salamanders_step_their_shooter() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::Salamander, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+        let hp = n.hp;
+        for _ in 0..120 {
+            n.update(&w, &mut player, 1.0 / 60.0);
+            assert!(n.frame < 11, "row {} of 11", n.frame);
+            assert!(n.hp <= hp, "hp grew");
+        }
+        // The spit's `SetDefaults` row (`Projectile.cs:6248-6257`).
+        let d = crate::projectile::proj_data(crate::projectile::SALAMANDER_SPIT)
+            .expect("the spit is registered");
+        assert_eq!((d.w, d.h), (10.0, 10.0));
+        assert_eq!(d.ai_style, 1);
+        assert_eq!(d.penetrate, -1);
+        assert_eq!(d.alpha, 255);
+        assert!(d.tile_collide);
+        assert_eq!(d.time_left, 3600);
     }
 
     /// The small-kinds wiring wave (S1-D-3-wire-smallkinds): the four wired
@@ -27968,8 +28445,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            274,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-d41's cavern crawdads/shellies four)"
+            283,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-d41's cavern crawdads/shellies four + the nine salamanders)"
         );
         assert!(
             covered > 43,

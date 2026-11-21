@@ -593,6 +593,17 @@ impl NpcKind {
             NpcKind::Crawdad2 => 495,
             NpcKind::GiantShelly => 496,
             NpcKind::GiantShelly2 => 497,
+            // W4-d41 — the nine salamander colours keep their vanilla ids
+            // (498-506 free in the wire space). `NPCID.cs:11669-11685`.
+            NpcKind::Salamander => 498,
+            NpcKind::Salamander2 => 499,
+            NpcKind::Salamander3 => 500,
+            NpcKind::Salamander4 => 501,
+            NpcKind::Salamander5 => 502,
+            NpcKind::Salamander6 => 503,
+            NpcKind::Salamander7 => 504,
+            NpcKind::Salamander8 => 505,
+            NpcKind::Salamander9 => 506,
         }
     }
 
@@ -928,6 +939,16 @@ impl NpcKind {
             495 => NpcKind::Crawdad2,
             496 => NpcKind::GiantShelly,
             497 => NpcKind::GiantShelly2,
+            // W4-d41 — the nine salamander colours (`to_u16` above).
+            498 => NpcKind::Salamander,
+            499 => NpcKind::Salamander2,
+            500 => NpcKind::Salamander3,
+            501 => NpcKind::Salamander4,
+            502 => NpcKind::Salamander5,
+            503 => NpcKind::Salamander6,
+            504 => NpcKind::Salamander7,
+            505 => NpcKind::Salamander8,
+            506 => NpcKind::Salamander9,
             _ => return None,
         })
     }
@@ -1811,6 +1832,17 @@ impl NpcKind {
             // (`NPC.cs:14674`) and the shellies' `NPCHit38` (`:14686`).
             NpcKind::Crawdad | NpcKind::Crawdad2 => "NPC_Hit_33",
             NpcKind::GiantShelly | NpcKind::GiantShelly2 => "NPC_Hit_38",
+            // W4-d41 — the salamanders' `SoundID.NPCHit50`
+            // (`NPC.cs:14699`).
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => "NPC_Hit_50",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2119,6 +2151,17 @@ impl NpcKind {
             // (`NPC.cs:14675`) and the shellies' `NPCDeath41` (`:14687`).
             NpcKind::Crawdad | NpcKind::Crawdad2 => "NPC_Killed_36",
             NpcKind::GiantShelly | NpcKind::GiantShelly2 => "NPC_Killed_41",
+            // W4-d41 — the salamanders' `SoundID.NPCDeath53`
+            // (`NPC.cs:14700`).
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => "NPC_Killed_53",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2480,6 +2523,16 @@ impl NpcKind {
             NpcKind::DungeonSpirit => 56,
             // W4-d41 — aiStyle 3, the crawdad pair (`NPC.cs:14670`).
             NpcKind::Crawdad | NpcKind::Crawdad2 => 3,
+            // W4-d41 — aiStyle 3, the nine salamanders (`NPC.cs:14695`).
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => 3,
             // W4-d41 — aiStyle 39, the shelly pair (`NPC.cs:14682`).
             NpcKind::GiantShelly | NpcKind::GiantShelly2 => 39,
         }
@@ -2595,6 +2648,15 @@ impl NpcKind {
             // the 1f default scale). The ladder's charge arm owns the
             // live walk; this row feeds the walker fallback + the pin.
             NpcKind::Crawdad | NpcKind::Crawdad2 => 1.0,
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => 1.0,
             _ => return None,
         })
     }
@@ -3021,6 +3083,16 @@ impl NpcKind {
             // (`NPC.cs:14668-14669`/`:14680-14681`).
             NpcKind::Crawdad | NpcKind::Crawdad2 => (28.0, 22.0),
             NpcKind::GiantShelly | NpcKind::GiantShelly2 => (28.0, 22.0),
+            // W4-d41 — the salamanders' 24x44 box (`NPC.cs:14693-14694`).
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => (24.0, 44.0),
         }
     }
 
@@ -3110,6 +3182,14 @@ impl NpcKind {
             // cs_id. The REAL draw types ride render_key/texture_net_id.
             NpcKind::Crawdad => 494,
             NpcKind::GiantShelly => 496,
+            // W4-d41 — the salamanders: 498 keeps its hand row; 499-506
+            // have NO hand row — they fold onto 499's bestiary net id
+            // (`ContentSamples.cs:1021-1025` maps ALL of 498-506 to the
+            // 499 credit), keeping s1_f_3's cs_id==net_id invariant.
+            // The shooter block's type gates read the 498..=506 RANGE,
+            // which 499 satisfies identically; the REAL draw types ride
+            // render_key/texture_net_id.
+            NpcKind::Salamander => 498,
             NpcKind::Goldfish => 55,
             NpcKind::Piranha => 58,
             NpcKind::Shark => 65,
@@ -3680,6 +3760,16 @@ impl NpcKind {
             // (`NPC.cs:14673`/`:14685`).
             NpcKind::Crawdad | NpcKind::Crawdad2 => 50,
             NpcKind::GiantShelly | NpcKind::GiantShelly2 => 50,
+            // W4-d41 — the salamanders' lifeMax 65 (`NPC.cs:14698`).
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => 65,
         }
     }
 
@@ -4048,6 +4138,16 @@ impl NpcKind {
             // and the shellies' 16 (`:14683`).
             NpcKind::Crawdad | NpcKind::Crawdad2 => 28,
             NpcKind::GiantShelly | NpcKind::GiantShelly2 => 16,
+            // W4-d41 — the salamanders' damage 18 (`NPC.cs:14696`).
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => 18,
         }
     }
 }

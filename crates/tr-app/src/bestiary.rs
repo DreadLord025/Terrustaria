@@ -651,6 +651,20 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Giant Shelly",
     },
+    // W4-d41 — the salamanders: ONE entry for the nine colours. The
+    // vanilla's automated populator registers 499 only (the redigit
+    // dictionary hides 498/500-506), and `ContentSamples.cs:1021-1025`
+    // folds ALL of 498-506 onto the 499 credit — the entry's kind is
+    // Salamander2 (net 499), every other colour folds onto it
+    // (`entry_for_npc`). The Caverns tag (`:1435-1443`).
+    BestiaryEntryDef {
+        credit_id: "Salamander2",
+        net_id: 499,
+        kind: NpcKind::Salamander2,
+        variant: None,
+        quick_unlock: false,
+        name: "Salamander",
+    },
     // The spheres: the Chaos Ball entry also covers Tim's ChaosBallTim
     // clone 665 (the port folds it — identical stats and name).
     BestiaryEntryDef {
@@ -2322,6 +2336,17 @@ pub fn try_entry_for_npc(
         // draw modifiers hide them (the redigit dictionary's `Hide=true`).
         NpcKind::Crawdad2 => NpcKind::Crawdad,
         NpcKind::GiantShelly2 => NpcKind::GiantShelly,
+        // W4-d41 — the salamander colours fold onto the 499 entry
+        // (`ContentSamples.cs:1021-1025`: ALL of 498-506 → the 499
+        // credit; the redigit dictionary hides 498/500-506).
+        NpcKind::Salamander
+        | NpcKind::Salamander3
+        | NpcKind::Salamander4
+        | NpcKind::Salamander5
+        | NpcKind::Salamander6
+        | NpcKind::Salamander7
+        | NpcKind::Salamander8
+        | NpcKind::Salamander9 => NpcKind::Salamander2,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -2398,6 +2423,16 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // dictionary's `Hide = true` keeps them out of the roster).
         NpcKind::Crawdad2 => NpcKind::Crawdad,
         NpcKind::GiantShelly2 => NpcKind::GiantShelly,
+        // W4-d41 — the salamander colours ride the 499 row
+        // (`ContentSamples.cs:1021-1025`'s credit fold).
+        NpcKind::Salamander
+        | NpcKind::Salamander3
+        | NpcKind::Salamander4
+        | NpcKind::Salamander5
+        | NpcKind::Salamander6
+        | NpcKind::Salamander7
+        | NpcKind::Salamander8
+        | NpcKind::Salamander9 => NpcKind::Salamander2,
         other => other,
     };
     ENTRIES

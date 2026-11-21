@@ -1614,6 +1614,24 @@ fn portrait_data(
                 .unwrap_or(22.0);
             (sheet_i, h, 28.0, h, white)
         }
+        // W4-d41 — the salamanders' portrait: the 11-row NPC_499 strip
+        // (the entry's own sheet; every colour folds onto it), the frame
+        // width the sheet's own. The other colours' arms exist for the
+        // match's exhaustiveness (the catalog only shows the 499 row).
+        (NpcKind::Salamander, _)
+        | (NpcKind::Salamander2, _)
+        | (NpcKind::Salamander3, _)
+        | (NpcKind::Salamander4, _)
+        | (NpcKind::Salamander5, _)
+        | (NpcKind::Salamander6, _)
+        | (NpcKind::Salamander7, _)
+        | (NpcKind::Salamander8, _)
+        | (NpcKind::Salamander9, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 11.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 24.0, h, white)
+        }
     }
 }
 

@@ -1120,6 +1120,18 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // fishron-hazard precedent.
         NpcKind::Crawdad2 => 495,
         NpcKind::GiantShelly2 => 497,
+        // W4-d41 — the salamander colours fold onto the 499 bestiary
+        // entry, but their DRAW sheets are their own NPC_<type> — the
+        // fishron-hazard precedent. (499 is the entry's own id, so
+        // Salamander2 rides the fallback.)
+        NpcKind::Salamander => 498,
+        NpcKind::Salamander3 => 500,
+        NpcKind::Salamander4 => 501,
+        NpcKind::Salamander5 => 502,
+        NpcKind::Salamander6 => 503,
+        NpcKind::Salamander7 => 504,
+        NpcKind::Salamander8 => 505,
+        NpcKind::Salamander9 => 506,
         _ => kind.net_id() as u16,
     }
 }
@@ -1259,7 +1271,11 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
 /// `NpcAssets::npc_sheets` exactly like `WAVE_A_SHEETS`. The 2-variants
 /// draw their OWN NPC_495/NPC_497 art (the bestiary credit folds onto the
 /// 1-variant, the draw sheet does not — `texture_net_id`).
-pub(crate) const CAVERN_SHEETS: &[u32] = &[494, 495, 496, 497];
+pub(crate) const CAVERN_SHEETS: &[u32] = &[
+    494, 495, 496, 497,
+    // W4-d41 — the nine salamander colours (498-506).
+    498, 499, 500, 501, 502, 503, 504, 505, 506,
+];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3189,6 +3205,22 @@ pub(crate) fn draw_npcs(
             // (`Main.cs:67082`: 494/495 eight frames, 496/497 twelve) with
             // the generic centred anchor — the wave-A shape.
             NpcKind::Crawdad | NpcKind::Crawdad2 | NpcKind::GiantShelly | NpcKind::GiantShelly2 => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d41 — the salamanders draw their OWN sheets
+            // (`CAVERN_SHEETS`) at the 11-row strip
+            // (`Main.npcFrameCount[498..506]` = 11, `Main.cs:67082`) with
+            // the generic centred anchor — the wave-A shape.
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => {
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }

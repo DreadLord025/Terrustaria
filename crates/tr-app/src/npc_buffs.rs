@@ -494,6 +494,17 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // SpecificallyImmuneTo: [31] }` (`NPCID.cs:8916-8943`) — the
         // Confused debuff, all four.
         NpcKind::Crawdad | NpcKind::Crawdad2 | NpcKind::GiantShelly | NpcKind::GiantShelly2 => &[31],
+        // W4-d41 — the salamanders: `{ 498..506, null }`
+        // (`NPCID.cs:8944-8952`) — no immunity rows, the C# else-branch.
+        NpcKind::Salamander
+        | NpcKind::Salamander2
+        | NpcKind::Salamander3
+        | NpcKind::Salamander4
+        | NpcKind::Salamander5
+        | NpcKind::Salamander6
+        | NpcKind::Salamander7
+        | NpcKind::Salamander8
+        | NpcKind::Salamander9 => &[],
     }
 }
 

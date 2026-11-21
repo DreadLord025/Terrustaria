@@ -3576,6 +3576,20 @@ fn npc_seed(
         | crate::npc::NpcKind::GiantShelly2 => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
+        // W4-d41 — the salamanders (aiStyle 3's shooter block): the
+        // ground walkers plant their feet (`NPC.cs:14691-14703` writes
+        // no noGravity/noTileCollide).
+        crate::npc::NpcKind::Salamander
+        | crate::npc::NpcKind::Salamander2
+        | crate::npc::NpcKind::Salamander3
+        | crate::npc::NpcKind::Salamander4
+        | crate::npc::NpcKind::Salamander5
+        | crate::npc::NpcKind::Salamander6
+        | crate::npc::NpcKind::Salamander7
+        | crate::npc::NpcKind::Salamander8
+        | crate::npc::NpcKind::Salamander9 => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
     })
 }
 

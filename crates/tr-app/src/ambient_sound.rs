@@ -655,6 +655,19 @@ pub fn fighter_walker_kind(kind: crate::npc::NpcKind) -> bool {
             // arms stay silent).
             | Crawdad
             | Crawdad2
+            // W4-d41 — the salamanders ride the same counter-only walker
+            // (the `:57072` flag8 list names 494-506; the `:57083-57118`
+            // flag10 switch freezes the counter while ai[2] > 0 — the
+            // shooter's stop state).
+            | Salamander
+            | Salamander2
+            | Salamander3
+            | Salamander4
+            | Salamander5
+            | Salamander6
+            | Salamander7
+            | Salamander8
+            | Salamander9
     )
 }
 
