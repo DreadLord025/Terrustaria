@@ -5,14 +5,14 @@
 //! were run on this branch; the witness tests below are written, not
 //! executed).
 //!
-//! **WIRED (W4-d25 STYLE-26 wiring):** the Unicorn (86) + the Wolf
-//! (155) kinds land with their `SetDefaults` rows and ride the axis'
-//! 26 arm through `npc.rs::ai_026_gallop_family` (the wet stamp, the
-//! session-player candidate, the gravity/collision tail +
-//! `unicorn_stuck_x` latch). The Tumbleweed (546) kind + its sim
-//! pre-pass (the wind/zone stamps + the sibling scan) land with the
-//! wiring's second commit; until then its 546-only ctx inputs read
-//! their defaults on the 86/155 paths (never read there).
+//! **WIRED (W4-d25 STYLE-26 wiring):** all three kinds land with their
+//! `SetDefaults` rows and ride the axis' 26 arm through
+//! `npc.rs::ai_026_gallop_family` (the wet stamp, the session-player
+//! candidate, the gravity/collision tail + `unicorn_stuck_x` latch).
+//! The Tumbleweed's 546-only ctx inputs (the wind/zone stamps + the
+//! same-type sibling scan) ride the sim pre-pass (`world_sim/npcs.rs`,
+//! the `twin_time_lefts` carrier convention); the 86/155 paths never
+//! read them.
 //!
 //! ## Family census (`SetDefaults` `aiStyle = 26` rows, whole-file grep)
 //!
@@ -43,11 +43,11 @@
 //!   (`npc.rs::update_stardust_spider_small` /
 //!   `update_nebula_beast`, M4-EVENT-9; their deviation notes ride
 //!   those fns). Census-noted, NOT re-ported here.
-//! The Unicorn/Wolf kinds are ported (the Unicorn rows mirror W4-d35
-//! batch C 6ed8c22f verbatim — protocol 440, the merge keep-one; the
-//! Wolf takes port-local 355). The Tumbleweed kind lands with the
-//! wiring's second commit. The fn stays pure, keyed on the vanilla
-//! type (`cs_id`), so the axis arm routes all three through one call.
+//! All three kinds are ported (the Unicorn rows mirror W4-d35 batch C
+//! 6ed8c22f verbatim — protocol 440, the merge keep-one; the Wolf takes
+//! port-local 355; the Tumbleweed keeps its vanilla 546). The fn stays
+//! pure, keyed on the vanilla type (`cs_id`), so the axis arm routes
+//! all three through one call.
 //!
 //! ## The machine (the shared core, verbatim)
 //!
@@ -104,7 +104,7 @@
 //! modules'). The fn takes no RNG parameter;
 //! `the_style26_arm_draws_no_rng` pins a `UnifiedRandom` state across
 //! every member's tick (written, not run).
-#![allow(dead_code)] // the GallopDefaults consts + the 546 ctx fields are read by the wiring's witnesses / the Tumbleweed commit
+#![allow(dead_code)] // the GallopDefaults consts are read by the module's census witnesses (the wiring reads the kind tables, not these consts)
 
 use crate::npc::Npc;
 use crate::npc_target::{target_closest, TargetCandidate};

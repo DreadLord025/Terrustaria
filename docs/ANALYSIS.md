@@ -24600,6 +24600,54 @@ the 500-tick frozen A/B draw-free). The frozen A/B parks the player deep
 underground so the contact pass (the only RNG draw on the 86/155 path —
 `damage_var`) never fires.
 
+**Commit 2: the Tumbleweed (546).** The kind keeps its vanilla protocol
+id 546 (free across the co-lanes — g10 carries only the `lang_tables`
+display name, no `NpcKind`). The `SetDefaults` rows (`NPC.cs:15972-15984`:
+30x30, dmg 30, def 6, 50 HP, kb 0.8, NPCHit11/NPCDeath15, value 100) +
+the `SpecificallyImmuneTo[31]` (Confused) row (`NPCID.cs:9169`) + the
+bestiary entry (credit "Tumbleweed", name "Angry Tumbler",
+`BestiaryDatabaseNPCsPopulator.cs:1292`'s Desert+Sandstorm tags, the
+en-US `NPCs.json:563` name). The axis' 26 arm routes it through the same
+`ai_026_gallop_family`.
+
+* **The sim pre-pass** (`world_sim/npcs.rs`, the `twin_time_lefts`
+  carrier convention): the 546-only ctx inputs ride per-tick stamps —
+  `Main.windSpeedTarget` (`app.wind.speed_target`, the walk cap
+  `:62703-62716`), the session player's `ZoneDesert` (`:62570`'s despawn
+  gate) + `ZoneSandstorm` (`:62709`'s wind gate) from `app.scene_metrics`,
+  and the same-type sibling scan (`:62382-62384`'s `Main.npc` loop,
+  `i != whoAmI && active && type == this.type`, the Manhattan `< width`
+  window read in-machine). The pre-pass collects the OTHER active 546
+  slots' positions in slot order (the one-tick lag the carrier
+  write-through family already carries, the style72 ForceBubble
+  precedent). RNG-free — no stream draws. The 86/155 paths never read
+  these; outside the sim they keep the ctor defaults (the module ctx
+  fixture). The sibling list is cloned out of `self` before the machine
+  takes it mutably (the Retinazer twin-list precedent).
+* **FindFrame**: the Tumbleweed has NO `case 546` (`NPC.cs:66684-77370`):
+  `Main.npcFrameCount[546]` = 1 (`Main.cs:67082`), the single frame never
+  advances (the ForceBubble row-0 precedent). The rotation rides the
+  machine's tail (`:62919-62923`, `rotation += vx * 0.05`,
+  `spriteDirection = -direction`) through the draw whitelist.
+* **The draw — sheet deferral**: NPC_546 is NOT packed (the full-set
+  bound with NPC_86/155 — the d35 precedent); `npc_sheet` returns None
+  and the draw skips. The draw arm is present (`generic_anchor` 1 row).
+* **The natural sandstorm spawn is a DOCUMENTED REMAINDER**: the C# arm
+  (`NPC.cs:3949-4018`) sits deep in the desert zone-chain else-if ladder
+  (after the eclipse/fairy/gnome/mud/temple/jungle/corrupt-devourer arms,
+  all unported) and has 10+ unported picks (61 Vulture / 69 Antlion /
+  541 SandElemental / 510 DuneSplicer / 542-545 WalkingAntlion /
+  78-80 Mummy / 630 BloodMummy / 580 FlyingAntlion / 581
+  GiantFlyingAntlion). Adding it partially would break the zone-chain
+  order; the whole desert zone-chain family rides its own wiring wave
+  (the c4 precedent added no spawn arms). The Tumbleweed is reachable via
+  the netglue seed + the debug spawn until then.
+
+3 more witnesses in `npc.rs::w4_d25_style26_wiring_tests` (the Tumbleweed
+live axis tick draw-free, the separation nudge, the desert despawn gate)
++ the SetDefaults round-trip extended to the Tumbleweed row. WRITTEN, NOT
+RUN — no compiler invoked.
+
 ## The frame phase split (S1-B-8)
 
 `app/frame.rs`'s single 2 110-line `frame()` became a phase-list orchestrator

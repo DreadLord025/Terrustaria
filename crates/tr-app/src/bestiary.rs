@@ -2191,6 +2191,18 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Wolf",
     },
+    // W4-d25 STYLE-26 wiring (commit 2): the Tumbleweed's row rides
+    // `BestiaryDatabaseNPCsPopulator.cs:1292` (Desert + Sandstorm tags)
+    // and the en-US `NPCs.json:563` name ("Angry Tumbler"; the credit id
+    // is `NPCID.Search.GetName(546)` = "Tumbleweed").
+    BestiaryEntryDef {
+        credit_id: "Tumbleweed",
+        net_id: 546,
+        kind: NpcKind::Tumbleweed,
+        variant: None,
+        quick_unlock: false,
+        name: "Angry Tumbler",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
