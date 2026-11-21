@@ -2163,6 +2163,56 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Dungeon Spirit",
     },
+    // W4-d38 b5 — BestiaryEntry.Enemy(302)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "SlimeMasked",
+        net_id: 302,
+        kind: NpcKind::SlimeMasked,
+        variant: None,
+        quick_unlock: false,
+        name: "Slime",
+    },
+    // W4-d38 b5 — BestiaryEntry.Critter(303)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "BunnySlimed",
+        net_id: 303,
+        kind: NpcKind::BunnySlimed,
+        variant: None,
+        quick_unlock: false,
+        name: "Bunny",
+    },
+    // W4-d38 b5 — BestiaryEntry.Enemy(304)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "HoppinJack",
+        net_id: 304,
+        kind: NpcKind::HoppinJack,
+        variant: None,
+        quick_unlock: false,
+        name: "Hoppin' Jack",
+    },
+    // W4-d38 b5 — BestiaryEntry.Enemy(316)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "Ghost",
+        net_id: 316,
+        kind: NpcKind::Ghost,
+        variant: None,
+        quick_unlock: false,
+        name: "Ghost",
+    },
+    // W4-d38 b5 — BestiaryEntry.Enemy(317)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "DemonEyeOwl",
+        net_id: 317,
+        kind: NpcKind::DemonEyeOwl,
+        variant: None,
+        quick_unlock: false,
+        name: "Demon Eye",
+    },
     // W4-d38 b4 — BestiaryEntry.Critter(297)
     // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
     BestiaryEntryDef {

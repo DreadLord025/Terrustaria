@@ -82,6 +82,7 @@ mod npc_ai_fighter_scan;
 mod npc_ai_drippler;
 mod npc_ai_dungeon_shooter;
 mod npc_ai_critter;
+mod npc_ai_ghost;
 mod npc_ai_poltergeist;
 mod npc_ai_pumpkin_boss;
 mod npc_ai_unicorn;
