@@ -93,10 +93,19 @@ pub struct HoverFlags {
     pub favorited: bool,
     /// `Item.social` — context 9/11's stamp (`ItemSlot.cs:3191-3193`).
     pub social: bool,
-    /// `Item.wornArmor` — context 8's stamp (`ItemSlot.cs:3188-3189`).
+    /// `Item.wornArmor` - context 8's stamp (`ItemSlot.cs:3188-3189`).
     pub worn_armor: bool,
-    /// `Item.BestiaryNotes` — the bestiary hover line's cache
-    /// (`UIBestiaryInfoItemLine.cs:155`); unported (see the module doc).
+    /// W4-f28 — `ItemSlot.GetSharedLoadoutItem`'s `sharedFromLoadout`
+    /// output (`ItemSlot.cs:2839-2846`, the 0-based loadout index): the
+    /// hovered air slot's shared item came from this loadout. The g55
+    /// loadout port fills it (`Player.get_effective_armor`'s
+    /// `Option<usize>`); until then `None` — the SharedFrom row
+    /// (`Main.cs:20641-20644`) stays unreachable (docs/ANALYSIS.md).
+    pub shared_from_loadout: Option<usize>,
+    /// `Item.BestiaryNotes` - the bestiary hover line's cache
+    /// (`UIBestiaryInfoItemLine.cs:155`); the e23 writer
+    /// (`ui::bestiary::bestiary_notes`) exists on its branch — the hover
+    /// WIRE fills this field when that port lands (docs/ANALYSIS.md).
     pub bestiary_notes: Option<&'static str>,
 }
 
@@ -107,6 +116,7 @@ impl Default for HoverFlags {
             favorited: false,
             social: false,
             worn_armor: false,
+            shared_from_loadout: None,
             bestiary_notes: None,
         }
     }
@@ -435,6 +445,11 @@ pub fn append_second_half(
     flags: HoverFlags,
     world: &TooltipWorld,
     player: Option<&crate::player::Player>,
+    // W4-f28 — the Journey research rows' inputs (`Main.cs:21318`): the
+    // character's difficulty (3 = Journey) and the session sacrifice
+    // tracker (the c24 App field; `None` until that port lands).
+    difficulty: u8,
+    research: Option<&crate::research::ResearchTracker>,
     lines: &mut Vec<(String, [f32; 4])>,
 ) -> Option<usize> {
     let white = [1.0, 1.0, 1.0, 1.0];
@@ -593,10 +608,25 @@ pub fn append_second_half(
             [255.0 / 255.0, 231.0 / 255.0, 69.0 / 255.0, 190.0 / 255.0],
         ));
     }
-    // `:21318-21333` — the Journey research rows: no session sacrifice
-    // tracker (module doc).
-    // `:21334-21342` — the bestiary notes: the only writer is the unported
-    // bestiary hover line; the field rides HoverFlags for that port.
+    // `:21318-21333` — the Journey research rows: the difficulty-3
+    // character's whitelisted-context sacrifice progress. The tracker
+    // rides `TooltipContext.research` (the c24 App field feeds it when
+    // that port lands — the W4-f28 contract, docs/ANALYSIS.md); the
+    // teammate-credit arm stays None (multiplayer state, unported).
+    if let Some(tracker) = research {
+        crate::research::research_tooltip_rows(
+            flags.context,
+            difficulty,
+            tracker,
+            kind,
+            None,
+            lines,
+        );
+    }
+    // `:21334-21342` — the bestiary notes: the e23 writer
+    // (`ui::bestiary::bestiary_notes`, `UIBestiaryInfoItemLine.cs:137-156`)
+    // exists on its branch; the hover WIRE fills `HoverFlags.bestiary_notes`
+    // when that port lands (the W4-f28 contract, docs/ANALYSIS.md).
     if let Some(notes) = flags.bestiary_notes {
         if !notes.trim().is_empty() {
             for line in notes.split('\n') {
@@ -1177,7 +1207,7 @@ mod w4_f28_tests {
         let mut lines = Vec::new();
         let logo = append_second_half(
             3262, def(3262), 0, def(3262).knock_back, false, true,
-            HoverFlags::default(), &TooltipWorld::STOCK, None, &mut lines,
+            HoverFlags::default(), &TooltipWorld::STOCK, None, 0, None, &mut lines,
         );
         assert_eq!(logo, Some(lines.len() - 1));
         let rows = item_tooltip_lines(1131, def(1131), TooltipContext::default());
@@ -1608,5 +1638,79 @@ mod w4_f28_tests {
         // the two arms).
         let c = tooltip_name_color(0, false, 3, &TooltipWorld::STOCK);
         assert_eq!(c, [1.0, 1.0, 1.0, 1.0]);
+    }
+
+    /// W4-f28 — the co-lane contracts (docs/ANALYSIS.md): the SharedFrom
+    /// loadout row (`Main.cs:20641-20644`, the g55 `GetSharedLoadoutItem`
+    /// output), the Journey research rows through the TooltipContext seam
+    /// (the c24 tracker), and the bestiary-notes rows through
+    /// `HoverFlags.bestiary_notes` (the e23 writer's `\n`-joined string,
+    /// `UIBestiaryInfoItemLine.cs:137-156`). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f28_the_co_lane_rows_ride_their_contract_fields() {
+        let _g = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_lang();
+        crate::lang::test_register_source(
+            "Terraria.Localization.Content.en-US.Game.json",
+            r#"{ "UI": { "ItemLoadoutSharedFrom": "Shared from loadout {0}",
+                         "ItemLoadoutShared": "Shared with other loadouts" } }"#,
+        );
+        crate::lang::test_register_source(
+            "Terraria.Localization.Content.en-US.Items.json",
+            r#"{ "CommonItemTooltip": {
+                    "CreativeSacrificeNeeded": "Research {0} more to unlock duplication" } }"#,
+        );
+        // The SharedFrom arm: the 0-based index prints 1-based, and it
+        // beats the favourited arm (the C#'s if/else-if order).
+        let flags = HoverFlags {
+            context: 8,
+            favorited: true,
+            shared_from_loadout: Some(1),
+            ..Default::default()
+        };
+        let ctx = TooltipContext { flags, ..Default::default() };
+        let rows = item_tooltip_lines(123, def(123), ctx);
+        let t = texts(&rows);
+        assert!(t.contains(&"Shared from loadout 2"), "{t:?}");
+        assert!(!t.contains(&"Shared with other loadouts"), "the SharedFrom arm wins");
+        // The Journey research rows through the context seam: a Journey
+        // character hovering the grid (context 0) with 40/100 torches.
+        let mut tracker = crate::research::ResearchTracker::default();
+        tracker.register_sacrifice(8, 40);
+        let flags = HoverFlags { context: 0, ..Default::default() };
+        let ctx = TooltipContext {
+            flags,
+            difficulty: 3,
+            research: Some(&tracker),
+            ..Default::default()
+        };
+        let rows = item_tooltip_lines(8, def(8), ctx);
+        let row = rows
+            .iter()
+            .find(|(t, _)| t == "Research 60 more to unlock duplication")
+            .expect("the research row");
+        assert_eq!(row.1, [1.0, 117.0 / 255.0, 181.0 / 255.0, 1.0]);
+        // No tracker (the pre-c24 default): no row.
+        let ctx = TooltipContext { flags, difficulty: 3, ..Default::default() };
+        let rows = item_tooltip_lines(8, def(8), ctx);
+        assert!(!texts(&rows).iter().any(|t| t.contains("Research")));
+        // The bestiary notes: the e23 writer's "\n"-joined string splits
+        // into one row per line, LAST (after the research rows).
+        let flags = HoverFlags {
+            bestiary_notes: Some("Expert only\nMaster only"),
+            ..Default::default()
+        };
+        let ctx = TooltipContext { flags, ..Default::default() };
+        let rows = item_tooltip_lines(8, def(8), ctx);
+        let t = texts(&rows);
+        let expert = t.iter().position(|x| *x == "Expert only").expect("the first note");
+        let master = t.iter().position(|x| *x == "Master only").expect("the second note");
+        assert_eq!(master, expert + 1);
+        assert_eq!(master, t.len() - 1, "the notes close the tooltip");
+        // Whitespace-only notes append nothing (`IsNullOrWhiteSpace`).
+        let flags = HoverFlags { bestiary_notes: Some("  \n "), ..Default::default() };
+        let ctx = TooltipContext { flags, ..Default::default() };
+        let rows = item_tooltip_lines(8, def(8), ctx);
+        assert!(!texts(&rows).iter().any(|t| t.trim().is_empty() && *t != " "));
     }
 }

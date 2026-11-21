@@ -246,6 +246,14 @@ pub struct TooltipContext<'a> {
     /// passes 0 (`DrawInterface_33_MouseText`, `:45419`); the stealthed-
     /// remote-player hover passes `player.difficulty` (`:42934`, unported).
     pub diff: u8,
+    /// W4-f28 — `Main.LocalPlayer.difficulty` (`Main.cs:21318`): 3 is the
+    /// Journey character, the research rows' gate. The c24 port's
+    /// `App.active_player_difficulty` feeds it; 0 (classic) until then.
+    pub difficulty: u8,
+    /// W4-f28 — the session sacrifice tracker (`Main.LocalPlayerCreativeTracker.
+    /// ItemSacrifices`, `Main.cs:21318`): the c24 App field feeds it;
+    /// `None` until that port lands (the research rows stay off).
+    pub research: Option<&'a crate::research::ResearchTracker>,
     /// W4-f28 — the shop price row's hover inputs
     /// (`Main.MouseText_DrawItemTooltip_AddShopLines`, `Main.cs:20448-20555`):
     /// `Some` while a shop is open (`Main.npcShop > 0`) — the row appends
@@ -270,6 +278,8 @@ impl Default for TooltipContext<'_> {
             show_loadout_share_hint: true,
             crafting_missing_reason: None,
             diff: 0,
+            difficulty: 0,
+            research: None,
             shop_lines: None,
         }
     }
@@ -354,13 +364,25 @@ pub fn item_tooltip_rows(
     // research/128 §5-e16.4). `flag` latches the loadout-share arm (it
     // suppresses the equipable row, `:20816`); `flag2` latches the
     // unfavourited shareable slot (the share-hint row at the tail,
-    // `:21312`). `GetSharedLoadoutItem` is unported (`ItemSlot.cs:3171-3174`
-    // — the SharedFrom arm unreachable), so the favourited arm prints
+    // `:21312`). `GetSharedLoadoutItem` (`ItemSlot.cs:2839-2846` →
+    // `GetEffectiveArmor`/`GetEffectiveDye`) rides the g55 loadout port —
+    // `ctx.flags.shared_from_loadout` carries its `sharedFromLoadout`
+    // output (the W4-f28 contract, docs/ANALYSIS.md); until that port
+    // lands the field is `None` and the favourited arm prints
     // `UI.ItemLoadoutShared` directly.
     let mut loadout_share_flag = false;
     let mut share_hint_flag = false;
     if ctx.flags.context >= 0 && tooltip_lines2::can_loadout_share_at(ctx.flags.context) {
-        if ctx.flags.favorited {
+        if let Some(from) = ctx.flags.shared_from_loadout {
+            // `:20641-20644` — the SharedFrom arm: the 1-based loadout index.
+            lines.push((
+                crate::lang::text_args(
+                    "UI.ItemLoadoutSharedFrom",
+                    &[(from + 1).to_string()],
+                ),
+                [1.0, 1.0, 1.0, 1.0],
+            ));
+        } else if ctx.flags.favorited {
             lines.push((
                 crate::lang::text("UI.ItemLoadoutShared"),
                 [1.0, 1.0, 1.0, 1.0],
@@ -632,6 +654,8 @@ pub fn item_tooltip_rows(
         ctx.flags,
         &ctx.world,
         ctx.player,
+        ctx.difficulty,
+        ctx.research,
         &mut lines,
     );
     // `Main.cs:20361-20362` — `AddShopLines` runs right after GetLinesInfo:
