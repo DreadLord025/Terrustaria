@@ -718,7 +718,20 @@ pub fn draw_hud(
     // bubble's hover pick reads the NPC list + player already passed above.
     talk_npc: Option<usize>,
     npc_chat_text: &str,
+    // `Main.hideUI` (`Main.cs:2085`): the F11 toggle stops the interface
+    // layer loop at layer 8 (`DrawInterface_8_CheckF11UIHideToggle`,
+    // `:46175-46183`). The emote/NPC-chat bubbles are layer 1_1
+    // (`:44730-44734`) — BEFORE the check — so they keep drawing.
+    hide_ui: bool,
 ) {
+    if hide_ui {
+        // The two layer-1_1 passes, then the layer-8 stop: nothing else of
+        // the interface draws (resources 25, inventory 27, hotbar 30, mouse
+        // text 33, cursor 36 all sit after the check).
+        emotes::draw(r, lookups, screen, emotes_state, player, camera, zoom, mouse_pos, pulse);
+        npc_chat::draw_bubble(r, lookups, npcs, player, camera, zoom, screen, mouse_pos, pulse);
+        return;
+    }
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
     // hotbar (30).

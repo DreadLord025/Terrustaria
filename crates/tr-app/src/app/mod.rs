@@ -844,6 +844,15 @@ pub(crate) struct App {
     /// crystal-wall flicker (`DoUpdate_AnimateCursorColors` in Main.cs).
     pub(crate) mouse_text_color: u8,
     pub(crate) mouse_text_color_dir: i8,
+    /// `Main.hideUI` (`Main.cs:2085`): the F11 screenshot-mode toggle
+    /// (`DoUpdate_F11_ToggleUI`, `:18402-18424`). While true the interface
+    /// layer loop stops at layer 8 (`DrawInterface_8_CheckF11UIHideToggle`,
+    /// `:46175-46183`) and the world-side chat bubbles / combat text skip
+    /// (`:62334`). The port gates the HUD draw + those two passes on it.
+    pub(crate) hide_ui: bool,
+    /// `Main.releaseUI` (`Main.cs:2087`): the F11 press latch — starts true
+    /// (the key starts released), drops while held, re-arms on release.
+    pub(crate) release_ui: bool,
     /// `Main.demonTorch` / `Main.demonTorchDir` (`DoUpdate_AnimateTileGlows`).
     pub(crate) demon_torch: f32,
     pub(crate) demon_torch_dir: f32,
@@ -1390,6 +1399,25 @@ impl App {
                 self.mouse_npc_index = -1;
                 self.mouse_npc_type = 0;
             }
+        }
+    }
+
+    /// `Main.DoUpdate_F11_ToggleUI` (`Main.cs:18402-18424`): the F11
+    /// screenshot-mode toggle. `releaseUI` is the press latch — the flip
+    /// fires only while it stands, then drops until the key releases. The
+    /// flip plays `SoundEngine.PlaySound(12)` (`:18416`). The C# runs the
+    /// pass on every update (menus included, `:17156`); the port routes it
+    /// through `world_key` (the in-world key arm) — the menu/front screens
+    /// own their keys, and `hideUI` only gates the in-world interface.
+    pub(crate) fn toggle_hide_ui(&mut self, f11_down: bool) {
+        if f11_down {
+            if self.release_ui {
+                self.hide_ui = !self.hide_ui;
+                self.audio.play("Menu_Tick");
+            }
+            self.release_ui = false;
+        } else {
+            self.release_ui = true;
         }
     }
 
@@ -3986,6 +4014,10 @@ impl App {
             // `Main.mouseTextColor` starts at 225 and drifts toward 255.
             mouse_text_color: 225,
             mouse_text_color_dir: 1,
+            // `Main.hideUI`/`releaseUI`'s static defaults (`Main.cs:2085-2087`:
+            // false / false — the first released-frame pass arms the latch).
+            hide_ui: false,
+            release_ui: false,
             // `Main.demonTorch = 1f; Main.demonTorchDir = 1` (Main.Initialize).
             demon_torch: 1.0,
             demon_torch_dir: 1.0,

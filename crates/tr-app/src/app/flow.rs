@@ -2405,6 +2405,8 @@ pub(crate) mod front_flow_tests {
             legacy_light: None,
             mouse_text_color: 225,
             mouse_text_color_dir: 1,
+            hide_ui: false,
+            release_ui: false,
             demon_torch: 1.0,
             demon_torch_dir: 1.0,
             disco: [255, 0, 0],

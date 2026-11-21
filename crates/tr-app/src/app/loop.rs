@@ -293,6 +293,11 @@ impl ApplicationHandler for App {
                         self.world_key(code);
                     } else {
                         self.keys.remove(&code);
+                        // `DoUpdate_F11_ToggleUI`'s else arm (`Main.cs:18420-18423`):
+                        // the released key re-arms the press latch.
+                        if code == KeyCode::F11 {
+                            self.release_ui = true;
+                        }
                         // The smart-cursor hold mode (`Player.cs:28835-28839`):
                         // releasing the key turns the wanted state off when the
                         // toggle mode (`Main.cSmartCursorModeIsToggleAndNotHold`,
@@ -748,6 +753,11 @@ impl App {
                 log::info!("light mode: {}", self.light_mode.label());
             }
             KeyCode::F9 => self.save_world(),
+            KeyCode::F11 => {
+                // `Main.DoUpdate_F11_ToggleUI` (`Main.cs:18402-18424`): the
+                // press latch flips `Main.hideUI` + plays sound 12.
+                self.toggle_hide_ui(true);
+            }
             _ if self.is_map_bound(crate::input_map::MapAction::Full, code) => {
                 // `Main.TryOpeningFullscreenMap` (`Player.cs:29105`) on
                 // `Main.cMapFull` (`Main.cs:67192`, default `M`): the key only
@@ -812,6 +822,33 @@ mod tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
     use crate::map::WorldMap;
+
+    /// W4-g53 doc-sweep — `Main.DoUpdate_F11_ToggleUI` (`Main.cs:18402-18424`):
+    /// the press latch flips `hideUI` once per press (never on held repeats),
+    /// plays sound 12, and re-arms on release. The static `releaseUI` starts
+    /// false (`Main.cs:2087`); the first released-frame pass arms it.
+    #[test]
+    fn g53_f11_flips_hide_ui_once_per_press_with_the_tick() {
+        let mut app = flow_app(None, vec![], vec![]);
+        assert!(!app.hide_ui);
+        // The first update with the key released arms the latch
+        // (`:18420-18423`).
+        app.toggle_hide_ui(false);
+        assert!(app.release_ui);
+        let played = app.audio.played_count();
+        // The press frame: flip + sound 12 (`:18408-18416`).
+        app.world_key(KeyCode::F11);
+        assert!(app.hide_ui, "the press flips hideUI on");
+        assert!(!app.release_ui, "the latch drops while held");
+        assert!(app.audio.played_count() > played, "PlaySound(12)");
+        // Held repeats (winit delivers them as presses): no second flip.
+        app.world_key(KeyCode::F11);
+        assert!(app.hide_ui, "held frames never re-flip");
+        // The release re-arms (`:18420-18423`); the next press flips back.
+        app.release_ui = true; // the window_event release arm's write
+        app.world_key(KeyCode::F11);
+        assert!(!app.hide_ui, "the next press flips hideUI off");
+    }
 
     /// A headless App with the map live and open (`M` while `mapEnabled`),
     /// ready for the world-key chain.
