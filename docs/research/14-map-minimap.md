@@ -121,11 +121,11 @@ full-screen zoom/pan view — with the colour of each tile derived from the orig
 | `MapHelper.LoadMapVersion2` | PORTED | `file.rs::read_map_prefix` (319), `decode_tiles` (410) | Header/seed/world-size validation, option-table remap, RLE body. |
 | `LoadMapVersion1` / `LoadMapVersionCompressed` / `DecompressChunk` | MISSING | — | Pre-2 formats never open (`MapHelper.cs:3347-3585`, `:3587-3747`); no error text for them. |
 | `WorldMap.Load` / `Save` / `TryGetMapPath` | PORTED | `map.rs::load_map_file` (622), `save_map_file` (597), `persist.rs:39` | `<world>.map` sidecar next to the `.trwld`; loaded at world start, written by `saveglue.rs:202-214`. |
-| `MapUpdateQueue` (area + tile queues) | PORTED | `map.rs::MapUpdateQueue` | W4-c35: `MapUpdateQueue.cs:21-108` complete — the 262144 budget with the flag-armed-before-cap drop, `ClampToWorld`'s independent edge clamps, `RangeFrame`'s inverted rect + `[start-1, end+1]` border-gated walk, the deterministic `UpdateTiles`-FIFO-then-`UpdateAreas`-column-major drain; net-5/10/20 enqueue hooks ride `netglue`, the drain rides `frame/world.rs::map_phase` (`Main.cs:61862`). |
-| `WorldMap.UnlockMapSection` / `UnlockMapTilePretty` | PORTED | `mod.rs::unlock_map_section` / `unlock_map_tile_pretty`, `map.rs::unlock_section` | `WorldMap.cs:109-174`: the 200x150 section clamped into the 40 inset, the 11x11 Manhattan falloff; W4-f46: the `DebugOptions.unlockMap` reveal rides the section-draw driver (`Main.cs:61873-61877`), the `/map` command arms the flags (`ToolkitDebugCommands.cs:480-494`). |
-| `WorldMap.ClearEdges` | PORTED | `mod.rs::clear_edges`, `map.rs::clear_edges` | `WorldMap.cs:260-285`: the 40-tile world border bands clear after a map load (`:210`). |
-| `WorldSections` map-draw queue + section-draw driver | PORTED | `sections.rs::MapDrawQueue`, `map.rs::draw_map_sections` | W4-f46: `WorldSections.cs:218-358` `GetNextMapDraw` spiral verbatim + `ClearMapDraw` (`:149-157`), the `maxTilesX/200 x maxTilesY/150` integer grid (`WorldGen.cs:7150`); the `Main.cs:61863-61899` driver — the 5 ms-budgeted walk, `DrawToMap_Section` (`MapRenderer.cs:306-355`), the `updateMap`/`refreshMap`/`clearMap` lifecycle (`MapRenderer.cs:128-201`), the `LightingEngine.cs:269` / `LegacyLighting.cs:432` `updateMap` arm. |
-| `MapRenderer.QueueChange` / refresh grid | PORTED (semantics) | `map.rs::push_dirty` / `dirty` / `prepare` | `MapRenderer.cs:288-304`: the port's `dirty` list is the change queue; the single world-sized texture stands in for the 5x2 render-target grid — equivalent output, different cost. W4-f46: the `clearMap`/`refreshMap` queue-clear + wipe ride `draw_to_map`. |
+| `MapUpdateQueue` (area + tile queues) | PORTED | `map.rs::MapUpdateQueue` | `MapUpdateQueue.cs:21-108` (W4-c35): the 262144 budget, `ClampToWorld` clamps, `RangeFrame`'s inverted rect + border-gated walk, the deterministic drain; net-5/10/20 hooks ride `netglue.rs`, the drain rides `frame/world.rs::map_phase`. |
+| `WorldMap.UnlockMapSection` / `UnlockMapTilePretty` | PORTED | `mod.rs::unlock_map_section`/`unlock_map_tile_pretty`, `map.rs::unlock_section`/`unlock_map` | `WorldMap.cs:109-174` (S1-L-3); the `DebugOptions.unlockMap` sweep driver landed W4-e18 (`frame/world.rs::map_reveal_sweep`, `Main.cs:61873-61883`). |
+| `WorldMap.ClearEdges` | PORTED | `mod.rs::clear_edges` | `WorldMap.cs:260-285` (S1-L-3): the 40-tile bands clear on `.map` load. |
+| `MapRenderer.QueueChange` / refresh grid | PORTED (semantics) | `map.rs::queue_change`/`changes_queued`/`draw_to_map_queues` | `MapRenderer.cs:288-304` (W4-e18): the 2048-per-target threshold arms `refreshMap`, the `refreshMap` no-op gate, the `DrawToMap` queue-clear; the port uploads through the dirty list instead of the 5x2 render-target grid — equivalent output, different cost. |
+| `WorldSections` / `Main.sectionManager` reveal sweep | PORTED | `map_sections.rs::MapSections`, `frame/world.rs::map_reveal_sweep`/`map_reveal_driver` | `WorldSections.cs:6-358` + `Main.cs:61863-61899` (W4-e18 first half): the truncating 200x150 grid, the player-centred spiral with cross-call resume, the 5 ms-budget sweep, the `DebugOptions.unlockMap` arm, the `refreshMap` → `ClearMapDraw` consume, the `updateMap` slot (`LightingEngine.cs:269` / `LegacyLighting.cs:432`), the `loadMap` staged-upload gate. |
 | `MapRenderer.CheckMapTargets` | PORTED (semantics) | `map.rs::prepare` (480, `uploaded`/`needs_full_upload`) | One texture per world instead of the target grid (`MapRenderer.cs:357-378`). |
 | `Main.DrawMap` fullscreen geometry | PORTED | `map.rs::map_scale_clamp` (20), `map_wheel_scale` (28), `map_key_scale` (33), `map_clamp_pos` (38), `map_drag_delta` (49), `map_full_quad` (88), `map_frame_rect` (107) | `Main.cs:55306-55431`, `55342-55359`, `55388-55412`. |
 | `Main.DrawMapFullscreenBackground` (`MapBG`) | PARTIAL | `map.rs::map_bg_index` (231) | Ported-later branch order, but the unevaluable zones take the `false` path: `ZoneDungeon`, `ZoneGlowshroom`, `ZoneCorrupt`, `ZoneCrimson`, `ZoneHallow`, `ZoneJungle`, `bloodMoon` (no doubling), `ZoneGraveyard` (`Main.cs:56342-56444`); ANALYSIS.md:1578-1582 admits it. |
@@ -284,8 +284,13 @@ Structural (already admitted in `docs/ANALYSIS.md` or the Rust "ruling" comments
   and only rebuilds when `MapTile.Equals` fails, a tile whose colour changed while its light is
   already high can also stay stale until the changed bit forces a rebuild.
 - **D15 — no `UnlockMapSection` / `UnlockMapTilePretty` / `DebugOptions.unlockMap`.** behavioural ·
-  *not admitted*. The debug "unlock map" reveal (`Main.cs:61873-61882`) and its near/full-bright
-  fade (`WorldMap.cs:140-174`) are absent.
+  *closed (S1-L-3 + W4-e18)*. The reveal primitives landed S1-L-3 (`mod.rs::unlock_map_section`/
+  `unlock_map_tile_pretty`, `WorldMap.cs:109-174`); W4-e18 first half landed the driver — the
+  `Main.cs:61871-61883` section sweep walks `MapSections::get_next_map_draw` under its 5 ms budget,
+  the `DebugOptions.unlockMap != 0 && SectionLoaded` arm reveals each section, and the exhausted
+  sweep zeroes the option unless a refresh is pending. The `/map` debug row now arms
+  `debug_unlock_map = 2` + `refresh_map` (`ToolkitDebugCommands.cs:486-487`) instead of walking
+  every section directly.
 - **D16 — `MapBG` unevaluable zones.** cosmetic · *admitted* (ANALYSIS.md:1578-1582). `ZoneDungeon`,
   `ZoneGlowshroom`, `ZoneCorrupt`, `ZoneCrimson`, `ZoneHallow`, `ZoneJungle`, `bloodMoon` and
   `ZoneGraveyard` all take the `false` path, so the fullscreen backdrop shows the wrong sheet in
@@ -366,3 +371,96 @@ behavioural and neither currently recorded in the roadmap or ANALYSIS.
 - **L — Legacy `.map` migration**: port `DecompressChunk` + `LoadMapVersion1` /
   `LoadMapVersionCompressed` (`MapHelper.cs:3325-3747`) so old sidecars upgrade to v326 instead of
   being rejected. Fixes D13.
+## W4-e18 residual census (2026-11-21, code-only, second half)
+
+Census of every remaining `MapRenderer.cs` / `WorldMap.cs` member and the
+fullscreen-map input block against this branch (base main `a725acb0`, e18 tip
+`e5b12711`), with the sibling claims read first: `origin/task/W4-e17-map-overlay-layers`
+does not exist on the remote (0 commits, nothing claimed);
+`origin/task/W4-f29-map-overlay-2` (tip `09f71b61`) claims the nine `Main.DrawMap`
+overlay pieces (pylon lines + click/pan state, boss/town heads, death markers,
+revenge coins, misc portals/golf, minimap heads, hover names) - none of them
+overlap this census.
+
+### Already covered on this branch (verified, no work)
+
+| Piece | C# | Port |
+| --- | --- | --- |
+| `QueueChange` + 2048 threshold + `ChangesQueued` | `MapRenderer.cs:288-304`, `:37-56` | `map.rs::queue_change`/`changes_queued` (W4-e18 first half) |
+| `DrawToMap` head queue-clear + `mapEnabled` gate | `:148-160`, `:130-133` | `draw_to_map_queues` + both consume arms gated (e5b12711) |
+| `DrawToMap_Section` | `:306-355` | `map_reveal_sweep`'s dirty-rect push (a19852bb) |
+| `DrawAreaToMap`/`DrawChangesToMap` walk | `:203-286` | the dirty-list upload in `prepare` - see deviation below |
+| `CheckMapTargets` | `:357-378` | `uploaded`/`needs_full_upload` (single texture, no content-lost) |
+| `MapRenderer.DrawMap` (target-grid blit) | `:380-448` | `map_full_quad`/`map_minimap_quad` one-texture quads |
+| `WorldMap.UpdateLighting/UpdateType/QueueUpdate` | `WorldMap.cs:49-107` | `tr-core map/mod.rs` free fns + `WorldMap` wrappers (S1-L-3) |
+| `UnlockMapSection/UnlockMapTilePretty` | `:109-174` | `unlock_map_section`/`unlock_map_tile_pretty` + the sweep arm (S1-L-3 + e18) |
+| `Load`/`TryGetMapPath`/`Save`/`ClearEdges` | `:176-285` | `load_map_file`/`save_map_file`/`persist::map_path`/`clear_edges` |
+| `WorldSections` grid + 5 ms sweep + driver | `WorldSections.cs`, `Main.cs:61863-61899` | `map_sections.rs` + `frame/world.rs` (354b50d2/a19852bb) |
+| Fullscreen zoom/pan/drag maths + wiring | `Main.cs:55342-55424`, `Player.cs:24774-24793`, `:24898-24908`, `:25190-25197` | `map_scale_clamp`/`map_wheel_scale`/`map_key_scale`/`map_clamp_pos`/`map_drag_delta` + `update_map_input`/`loop.rs` wheel - landed |
+| `MapTile` bitfield + `Create`/`WithLight`/`Clear`/`Equals` | `MapTile.cs:1-101` | `tr-core map/mod.rs::MapTile` (S1-L-*) |
+
+### Ported this pass (the residuals)
+
+1. **`Main.clearMap`/`mapReady`/`loadMapLock`/`loadMapLastX` statics** (`Main.cs:789-805`) -
+   `WorldMap` gains `clear_map`/`map_ready`/`load_map_lock`/`load_map_last_x`. The `DrawToMap`
+   tail (`MapRenderer.cs:196-199`) sets `map_ready`, zeroes `load_map_last_x`, lifts
+   `load_map` + `load_map_lock` inside `draw_to_map_queues`; the `.map` load arms
+   `clear_map`/`load_map`/`load_map_lock` (`WorldMap.cs:211-213`). The `clearMap` consume
+   (`MapRenderer.cs:161-173`, gated on `mapEnabled`) rides `prepare` as a full re-upload -
+   pixel-identical to clear-then-redraw on the single texture.
+2. **`Main.DrawMap`'s `mapReady` gate** (`Main.cs:55283`, `!mapEnabled || !mapReady`) -
+   both draw branches (`frame/draw.rs` minimap + fullscreen) now gate on `map_ready`;
+   nothing draws before the first completed `DrawToMap`.
+3. **`WorldMap.Clear`** (`WorldMap.cs:249-258`) - `WorldMap::clear` zeroes every tile.
+4. **`/clearmap` command** (`ToolkitDebugCommands.cs:497-503`) - the debug panel's World
+   tab gains row 13 "Clear Map": `clear_map = true; clear(); refresh_map = true`. The
+   `/map` row now also arms `clear_map` (`:483`, both toggle arms - previously missing).
+5. **The drag's `!CaptureManager.Instance.UsingMap` gate** (`Main.cs:55342`) -
+   `update_map_input` skips the whole drag block (position AND grab anchor untouched)
+   while the capture interface owns the map.
+
+### Deviations (recorded, deliberate)
+
+- **`DrawAreaToMap`/`DrawChangesToMap`'s `IsChanged` + run-merge walk is unmodelled.**
+  The C# gates each upload on `MapTile.IsChanged` (`MapRenderer.cs:215`/`:234`), consumes
+  the flag (`WorldMap.ConsumeUpdate`, `:250`/`:270`/`:280`) and merges equal adjacent
+  changed tiles into one `MagicPixel` rect (`:264-285`, column-first then row, bounded by
+  the target grid). The port's dirty list carries exactly the changed tiles and uploads
+  one texel each - identical pixels, different cost; the `IsChanged` bit is never consumed
+  (it only feeds the C#'s own redraw filter, and the `.map` writer never reads it). The
+  `maxMapUpdates = 250000` per-call budget (`Main.cs:66745`, `MapRenderer.cs:178-188`/
+  `:217`/`:236`) is unmodelled for the same reason - the port uploads everything dirty in
+  one frame; a single reveal window is <= 169x124 tiles, so the budget never binds in
+  practice outside the staged load, which the port completes in one bulk write.
+- **`loadMapLastX` stays 0** (the tail's reset value): the port's bulk write completes in
+  one frame, so the `WorldGen.cs:6823-6825` load-progress wait and the `Netplay.cs:506-508`
+  connect-status percentage have no intermediate states to report. The fields exist for
+  the record; the MP consumers are unported.
+- **`CheckMapTargets`' content-lost arm** (`MapRenderer.cs:365-374`, `refreshMap` +
+  `clearMap` on GPU content loss) stays unmodelled - the port has no render-target grid to
+  lose (D22, unchanged).
+
+### Verify-only / phantom rows
+
+- `WorldMap.Update(x, y, light)` (`WorldMap.cs:34-37`) and `SetTile` (`:39-42`): `Update`
+  has NO caller anywhere in the decompiled game (grep `\.Map\.Update\(` = 0 hits);
+  `SetTile`'s callers are all inside `MapHelper`'s three load formats - the port's
+  `decode_tiles` writes the flat array directly (the same store). Nothing to port.
+- `WorldMap.IsRevealed` (`:44-47`) - `tile_revealed` (cite-repair row, landed).
+- `Main.mapMinimapAlpha` fade (`Main.cs:55523-55532`) - still MISSING (D17), out of this
+  census's scope (config key, not MapRenderer/WorldMap machinery).
+- The world-clear map reset (`WorldGen.cs:6962-6985`: `Map.Clear()` gated on `mapReady`,
+  `clearMap = true; mapTime = 0; updateMap = null; mapReady = false; refreshMap = false`)
+  - the port's `swap_world` builds a fresh `App` with a fresh `WorldMap` (all fields at
+  their `Main` static defaults), which is the same end state; no incremental reset needed.
+- `PanTargetMapFullscreen` (`Main.cs:55361-55384`): the only producer that arms it is
+  `TeleportPylonsMapLayer.cs:105` - claimed by W4-f29 (its item 2, the pylon click/pan
+  state). Skipped here; the four `Player.cs` clear sites and the `resetMapFull` clear
+  (`Main.cs:55418`) ride that task's seam.
+
+Witnesses (written, not run - code-only): 3 `map::tests::w4_e18_*` (draw tail, load arms
+clear+lock, Clear zeroes), 2 `debug_panel` (the `/map` row's clearMap arm inside
+`s1_l_3_the_reveal_row_unlocks_the_map`,
+`w4_e18_the_clearmap_row_wipes_the_tiles_and_arms_the_refresh`), 1
+`app::w4_e18_map_drag_capture_tests` (UsingMap skips the whole drag block), plus the
+16-row World-tab count update (`s1_e_29_the_world_tab_keeps_its_sixteen_rows`).

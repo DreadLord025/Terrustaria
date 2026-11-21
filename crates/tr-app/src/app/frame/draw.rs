@@ -802,21 +802,21 @@ impl App {
                         );
                         // Consume the seam (ending its tile/counter borrows)
                         // before re-borrowing the map for the dirty push.
-                        // W4-f46: the seam's `Main.updateMap` rect
-                        // (`LegacyLighting.cs:432`) rides onto the map — the
-                        // section-draw driver's `updateMap` consumer
-                        // (`Main.cs:61886-61894`) reads it. The C# `try/catch`
-                        // abort leaves it untouched (`None` here).
-                        let (changed, update_map) = match export {
-                            Some(e) => (Some(e.changed), e.update_map),
-                            None => (None, None),
-                        };
-                        if let Some(m) = map.as_mut() {
-                            if let Some(changed) = changed {
+                        let consumed = export.map(|e| (e.changed, e.update_map));
+                        if let Some((changed, update_map)) = consumed {
+                            if let Some(m) = map.as_mut() {
+                                // The legacy export's changed tiles upload
+                                // directly (`LegacyLighting.cs:429` calls
+                                // `UpdateLighting`, NOT `QueueChange` — only
+                                // `MapUpdateQueue` queues, `:82`/`:97`); the
+                                // IsChanged bit rides the next DrawToMap walk.
                                 m.push_dirty(changed);
-                            }
-                            if let Some(rect) = update_map {
-                                m.update_map = Some(rect);
+                                // `LegacyLighting.cs:432`: `Main.updateMap =
+                                // rect` — the consume arm (`Main.cs:61886-61894`)
+                                // reads it next frame.
+                                if let Some(rect) = update_map {
+                                    m.update_map = Some(rect);
+                                }
                             }
                         }
                         engine.present_into(light);
@@ -1459,7 +1459,11 @@ impl App {
                         && !self.bestiary_open
                         && self.map_style == 1
                     {
-                        if let Some(m) = map.as_ref() {
+                        if let Some(m) = map.as_ref().filter(|m| m.map_ready) {
+                            // `Main.DrawMap`'s second gate (`Main.cs:55283`):
+                            // `!Main.mapEnabled || !Main.mapReady` — no map
+                            // pixels until the first `DrawToMap` completes
+                            // (`MapRenderer.cs:196`).
                             let pos = ui::minimap::draw_to_position(ui::minimap::minimap_origin_raw(
                                 screen, map_scale,
                             ));
@@ -1884,34 +1888,6 @@ impl App {
                             popup_goto = Some(name);
                         }
                     }
-                    // W4-f46: the section-draw driver (`Main.cs:61863-61899`,
-                    // the `DoDraw` tail after `MapUpdateQueue.Update`): the
-                    // 5 ms-budgeted spiral walk paints the map texture one
-                    // 200x150 section at a time (`WorldSections.GetNextMapDraw`
-                    // → `MapRenderer.DrawToMap_Section`), unlocking each while
-                    // `DebugOptions.unlockMap != 0`, then the `updateMap` /
-                    // `refreshMap` / `clearMap` flag lifecycle. The
-                    // `!Main.loadMap` / `!gameMenu` / `!generatingWorld` gates
-                    // (`:61863-61865`) are the in-world gate here (the map is
-                    // `Some` only in-world; the port loads synchronously).
-                    // `player_pos` is `Main.player[myPlayer].position` in world
-                    // PIXELS (`:61871`); `[0, 0]` without a player
-                    // (`TR_NOPLAYER` — the C# always has one).
-                    if menu.is_none() && front.is_none() {
-                        if let Some(m) = map.as_mut() {
-                            let player_pos = player
-                                .as_ref()
-                                .map_or([0.0, 0.0], |p| [p.x, p.y]);
-                            m.draw_map_sections(
-                                renderer,
-                                gpu,
-                                world,
-                                player_pos,
-                                self.game_paused,
-                                settings.map_enabled,
-                            );
-                        }
-                    }
                     // Task 6b: upload the revealed tiles into the world-sized map texture
                     // and clamp/recentre the fullscreen map. Vanilla centres the recentre
                     // and the minimap on the view centre (`Main.cs:55420-55421`,
@@ -1919,7 +1895,7 @@ impl App {
                     // is computed above, where the minimap branch consumes it.
                     if settings.map_enabled {
                         if let Some(m) = map.as_mut() {
-                            m.prepare(renderer, gpu, world, screen, view_center);
+                            m.prepare(renderer, gpu, world, screen, view_center, settings.map_enabled);
                         }
                     }
                     if let Some(map) = map.as_ref() {
@@ -1927,6 +1903,11 @@ impl App {
                             && menu.is_none()
                             && front.is_none()
                             && settings.map_enabled
+                            // `Main.DrawMap`'s second gate (`Main.cs:55283`):
+                            // `!Main.mapReady` returns before the fullscreen
+                            // branch too — no backdrop/frame until the first
+                            // `DrawToMap` completes (`MapRenderer.cs:196`).
+                            && map.map_ready
                         {
                             if map.open {
                                 // `Main.cs:55483`: the biome `MapBG` backdrop is

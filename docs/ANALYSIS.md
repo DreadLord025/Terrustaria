@@ -18987,6 +18987,91 @@ was the *caller* and the *throttle*:
   legacy-engine state the port has no equivalent of (it exports inline), so
   only the `mapTime` half is modelled.
 
+### The map section grid + reveal queue (W4-e18 first half, 2026-11-21, code-only)
+
+The second-half reveal window (above) landed without its driver: the C#'s
+`Main.cs:61863-61899` block walks `Main.sectionManager` — a `WorldSections`
+grid — under a 5 ms wall-clock budget, and nothing in the port constructed
+or walked it. This pass lands the whole first half:
+
+- **`map_sections.rs::MapSections`** ports `WorldSections.cs:6-358` verbatim:
+  the `maxTilesX / 200` × `maxTilesY / 150` grid (`WorldGen.cs:7150`, integer
+  division truncating — NOT the wire's round-up `net::sections_x/y`), the
+  four `BitsByte` flags (loaded/framed/mapDrawn/needsRefresh) in one byte per
+  section, `IterationState`'s off-grid `(-3200, -2400)` reset, and
+  `GetNextMapDraw`'s player-centred spiral with cross-call resume (`prevMap`),
+  the quadrant pick off the section midpoint, the leg-4 ring kick-off, the
+  full-lap fallback and the "Infinite loop" panic. `ClearMapDraw` refills the
+  budget and resets the spiral; `SetAllFramedSectionsAsNeedingRefresh` keeps
+  the C#'s no-dedupe double-count.
+- **The resident-world collapse**: the port keeps the whole world resident,
+  so the constructor arms every section loaded + framed — the state the C#
+  reaches via `SetAllSectionsLoaded` (`WorldGen.cs:6744`/`:6821`) plus the
+  framing walk's per-section `SetSectionFramed` (`WorldGen.cs:80363`).
+  `frameSectionsLeft` therefore sits at 0 (`SetSectionLoaded` counts each
+  first load, `SetSectionFramed` drains it back). The `TileLoaded` gate
+  (`WorldMap.cs:81`) now resolves through the real grid instead of the
+  always-true stand-in; single-player behaviour is unchanged because every
+  section is loaded.
+- **`frame/world.rs::map_reveal_sweep` / `map_reveal_driver`** port
+  `Main.cs:61863-61899`: the sweep runs while the stopwatch is under 5 ms and
+  `GetNextMapDraw` answers; the `DebugOptions.unlockMap != 0 && SectionLoaded`
+  arm reveals the section (`:61873-61876`), `DrawToMap_Section` re-uploads it
+  (the port pushes the clamped section rect dirty — the texture sync rides
+  `prepare`), and an exhausted sweep with no pending refresh zeroes the debug
+  option (`:61880-61883`). The sweep gates only on `!gameMenu &&
+  !generatingWorld` (`:61865`), so it runs OUTSIDE the port's pause gate; the
+  `updateMap` consume arm checks `!gamePaused` itself (`:61886`). The
+  `refreshMap` → `ClearMapDraw` consume rides INSIDE that arm, before the
+  draw (`:61888-61892`); the `else if ChangesQueued` fallback draws
+  `Rectangle.Empty` (`:61896-61898`).
+- **`WorldMap` gains the `Main` statics**: `update_map` (`Main.cs:799`,
+  armed by `ExportToMiniMap`'s `Main.updateMap = area`, `LightingEngine.cs:269`,
+  and by the legacy seam's `:432` rect), `refresh_map` (`:789`), `load_map`
+  (`:795`, the `.map` load's staged-upload gate, `WorldMap.cs:212`, cleared by
+  the bulk upload's `DrawToMap` tail, `MapRenderer.cs:198`), and the
+  `change_queues` (the 5×2 `MapRenderer.changeQueues`, `:33`/`:70-77`).
+  `queue_change` ports `MapRenderer.QueueChange` (`:288-304`): the
+  2048-per-target `ChangeRefreshThreshold` arms `refreshMap` instead of
+  adding the entry, and while armed every call is a no-op. The port uploads
+  through the single world-sized texture's dirty list, so the queues keep
+  only the threshold + clear semantics — equivalent output, different cost.
+- **The `/map` debug row now arms the queue**: `debug_unlock_map = 2` +
+  `refresh_map = true` (`ToolkitDebugCommands.cs:486-487`), and the sweep
+  reveals over the following frames instead of the old direct `unlock_map`
+  walk. The second click is the toggle-off arm (`:491`). `unlock_map` itself
+  stays (the canary row + a whole-world reveal primitive).
+
+Deliberate deviations: the 5 ms budget is the C#'s own wall-clock stopwatch
+(`TimeLogger.StartTimestamp`), so the sections-per-frame count is
+machine-dependent exactly like vanilla — no fixed-count stand-in. The
+`DrawToMap_Section` render-target blit is the dirty-rect push (one texture,
+not the 5×2 grid); the pixels are identical. ~~The `loadMapLock`/`loadMapLastX`
+staged-upload counters are unmodelled~~ **closed (W4-e18 residual census,
+2026-11-21)**: the four `Main` statics (`clearMap`/`mapReady`/`loadMapLock`/
+`loadMapLastX`, `Main.cs:789-805`) now live on `WorldMap`; the `DrawToMap` tail
+(`MapRenderer.cs:196-199`) sets `map_ready` + lifts the load pair, the load arms
+all three (`WorldMap.cs:211-213`), the `clearMap` consume (`:161-173`) rides
+`prepare` as a full re-upload, and `Main.DrawMap`'s `!mapReady` gate
+(`Main.cs:55283`) gates both draw branches. `loadMapLastX` stays 0 (the bulk
+write has no intermediate progress; the MP consumers `WorldGen.cs:6823-6825` /
+`Netplay.cs:506-508` are unported). The same pass landed `WorldMap.Clear`
+(`WorldMap.cs:249-258`), the `/clearmap` debug row
+(`ToolkitDebugCommands.cs:497-503`), the `/map` row's missing `clearMap = true`
+head (`:483`) and the drag's `!CaptureManager.Instance.UsingMap` gate
+(`Main.cs:55342`, the whole block skips — anchor untouched). Still unmodelled:
+the `IsChanged`/`ConsumeUpdate` + run-merge walk and the `maxMapUpdates` budget
+(`MapRenderer.cs:203-286`) — the dirty list carries exactly the changed tiles,
+identical pixels (see `docs/research/14-map-minimap.md` "W4-e18 residual
+census").
+Witnesses: 8 `map_sections::tests::w4_e18_*` (grid dims, first-draw centre,
+spiral coverage/exhaustion, restart-on-move, ClearMapDraw, refresh
+double-count, truncating TileLoaded, quadrant pick), 3 `map::tests::w4_e18_*`
+(update_map arming, QueueChange threshold, load gate), 6
+`frame/world.rs::w4_e18_reveal_driver_tests::*` (sweep reveal + option reset
+on the empty pass, pending-refresh hold, refresh consume, paused skip, load
+gate, mapEnabled drain gate) — all written not run (code-only mode).
+
 ## The crafting focus + quantity (S1-H-7, 2026-11-13)
 
 `Main.HoverOverCraftingItemButton` (`Main.cs:42252-42305`) is ported into

@@ -560,8 +560,119 @@ impl App {
     // refresh drains through `WorldMap.UpdateType`; the changed
     // tiles re-upload (`MapRenderer.QueueChange`'s analog).
     let changed = self.map_queue.update(&self.world, m);
+    // `MapUpdateQueue.UpdateTiles`/`UpdateAreas` (`MapUpdateQueue.cs:82`,
+    // `:97`): every changed tile queues through `MapRenderer.QueueChange`
+    // — the 2048-per-target threshold arms `refreshMap` (`:295-298`).
+    for (x, y) in &changed {
+        m.queue_change(*x, *y);
+    }
     m.push_dirty(changed);
                     }
+    }
+
+    /// `Main.cs:61863-61899` — the reveal queue's driver half, OUTSIDE the
+    /// pause gate: the C#'s sweep (`:61865`) gates only on `!gameMenu &&
+    /// !generatingWorld`, so it keeps walking while paused; only the
+    /// `updateMap` consume arm (`:61886`) checks `!gamePaused`. The port's
+    /// world branch implies the menu/gen gates; the staged `.map` upload
+    /// (`load_map`) rides the `!Main.loadMap` gate (`:61863`).
+    pub(crate) fn map_reveal_driver(&mut self, paused: bool) {
+        if !self.map.as_ref().is_some_and(|m| !m.load_map) {
+            return;
+        }
+        self.map_reveal_sweep();
+        if paused {
+            return; // `:61886`'s `!Main.gamePaused`
+        }
+        // `:61888-61892`: the `refreshMap` consume rides INSIDE the
+        // `updateMap.HasValue` arm, BEFORE the DrawToMap call — clear the
+        // flag, reset the section sweep, then draw. The C# runs these
+        // regardless of `mapEnabled` (the gate is inside DrawToMap).
+        let do_clear = self
+            .map
+            .as_ref()
+            .is_some_and(|m| m.update_map.is_some() && m.refresh_map);
+        if do_clear {
+            if let Some(m) = self.map.as_mut() {
+                m.refresh_map = false; // `:61890`
+            }
+            self.section_manager.clear_map_draw(); // `:61891`
+        }
+        // `MapRenderer.DrawToMap`'s first gate (`MapRenderer.cs:130-133`):
+        // `!Main.mapEnabled` returns before any queue work — the
+        // `updateMap` slot still nulls (`Main.cs:61894` runs after the
+        // call), but the change lists keep their entries.
+        let map_enabled = self.settings.map_enabled;
+        if let Some(m) = self.map.as_mut() {
+            if m.update_map.is_some() {
+                // `MapRenderer.DrawToMap(updateMap.Value)` (`:61893`):
+                // the port's texture sync rides the dirty list in
+                // `prepare`; the queue half clears the change lists and
+                // completes the staged upload (`MapRenderer.cs:148-160`,
+                // `:196-199`).
+                if map_enabled {
+                    m.draw_to_map_queues();
+                }
+                m.update_map = None; // `:61894`
+            } else if m.changes_queued() {
+                // `:61896-61898`: `DrawToMap(Rectangle.Empty)` — the
+                // queued changes draw without an area; same queue drain.
+                if map_enabled {
+                    m.draw_to_map_queues();
+                }
+            }
+        }
+    }
+
+    /// `Main.cs:61868-61884` — the 5 ms-budget section sweep: while the
+    /// stopwatch is under 5 ms and `GetNextMapDraw` answers, the debug
+    /// unlock arm (`DebugOptions.unlockMap != 0 && SectionLoaded`) reveals
+    /// the section and `DrawToMap_Section` uploads it; an exhausted sweep
+    /// with no pending refresh zeroes the debug option. The port's
+    /// `DrawToMap_Section` analog is the section rect's dirty push (the
+    /// texture sync rides `prepare`); the budget is the C#'s wall-clock
+    /// `TimeLogger` stopwatch, verbatim.
+    pub(crate) fn map_reveal_sweep(&mut self) {
+        let start = std::time::Instant::now();
+        let mut num3 = 0;
+        let pos = self
+            .player
+            .as_ref()
+            .map(|p| [p.x, p.y])
+            .unwrap_or([0.0, 0.0]);
+        while start.elapsed().as_secs_f64() * 1000.0 < 5.0 {
+            let Some((x, y)) = self.section_manager.get_next_map_draw(pos) else {
+                break;
+            };
+            // `:61873-61876`: `DebugOptions.unlockMap != 0 &&
+            // Main.sectionManager.SectionLoaded(x, y)`.
+            if self.debug_unlock_map != 0 && self.section_manager.section_loaded(x, y) {
+                if let Some(m) = self.map.as_mut() {
+                    m.unlock_section(&self.world, x, y, self.debug_unlock_map == 2);
+                }
+            }
+            // `MapRenderer.DrawToMap_Section(x, y)` (`:61877`,
+            // `MapRenderer.cs:306-355`): the section's 200x150 rect
+            // re-uploads — the port pushes the clamped rect dirty.
+            if let Some(m) = self.map.as_mut() {
+                let (x0, y0, x1, y1) =
+                    tr_core::map::section_rect(&self.world, x, y);
+                let mut rect = Vec::new();
+                for ty in y0..y1 {
+                    for tx in x0..x1 {
+                        rect.push((tx, ty));
+                    }
+                }
+                m.push_dirty(rect);
+            }
+            num3 += 1;
+        }
+        // `:61880-61883`: the exhausted sweep disarms the debug option
+        // unless a refresh is still pending.
+        let refresh = self.map.as_ref().is_some_and(|m| m.refresh_map);
+        if num3 == 0 && !refresh {
+            self.debug_unlock_map = 0;
+        }
     }
 
     /// The world-branch tail's camera walks (`Main.cs:17814-17815`, S1-B-4)
@@ -668,6 +779,10 @@ impl App {
         if !paused {
             self.map_phase(dt);
         }
+        // `Main.cs:61863-61899`: the reveal sweep runs even while paused
+        // (`:61865` gates only menu/gen); the consume arm takes the pause
+        // flag itself (`:61886`).
+        self.map_reveal_driver(paused);
         if step_allowed {
             self.camera_scene_tail(dt, screen);
         }
@@ -720,5 +835,152 @@ impl App {
             // out of reach.
             let menu_blood = self.menu.as_ref().map(|m| m.settings.blood);
             self.sync_child_safety(menu_blood);
+    }
+}
+
+#[cfg(test)]
+mod w4_e18_reveal_driver_tests {
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::app::App;
+    use crate::map::WorldMap;
+    use crate::map_sections::MapSections;
+
+    /// A 400x300 world → a 2x2 section grid (`WorldGen.cs:7150`), with the
+    /// map live and a player parked in section (0,0).
+    fn rig() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = tr_core::World::new("reveal".into(), 400, 300);
+        app.section_manager = MapSections::new(400, 300);
+        app.map = Some(WorldMap::new(&app.world));
+        let mut p = crate::player::Player::spawn(&app.world);
+        p.x = 50.0 * 16.0;
+        p.y = 50.0 * 16.0;
+        app.player = Some(p);
+        app
+    }
+
+    /// W4-e18 first half (written, not run — code-only): the sweep
+    /// (`Main.cs:61871-61879`) walks `GetNextMapDraw` and marks each section
+    /// drawn; with `DebugOptions.unlockMap != 0` it reveals every loaded
+    /// section (`:61873-61876`). The 2x2 grid exhausts in one 5 ms pass —
+    /// the option zeroes only on the NEXT pass, where `num3 == 0`
+    /// (`:61880-61883`): the frame that draws the last sections keeps it.
+    #[test]
+    fn w4_e18_the_sweep_walks_and_reveals_every_loaded_section() {
+        let mut app = rig();
+        app.debug_unlock_map = 1; // the flat-255 mode
+        app.map_reveal_sweep();
+        // All four sections drawn + revealed.
+        for y in 0..2 {
+            for x in 0..2 {
+                assert!(app.section_manager.map_section_drawn(x, y));
+            }
+        }
+        let m = app.map.as_ref().unwrap();
+        assert!(m.tiles.iter().any(|t| t.light > 0), "the unlock arm revealed");
+        // The pass that drew the last sections had num3 > 0 — the option
+        // stays armed until an empty pass (`:61880`).
+        assert_eq!(app.debug_unlock_map, 1);
+        app.map_reveal_sweep();
+        assert_eq!(app.debug_unlock_map, 0, "the empty pass zeroes it");
+    }
+
+    /// W4-e18 first half (written, not run — code-only): an EMPTY sweep pass
+    /// does NOT zero `DebugOptions.unlockMap` while a refresh is pending
+    /// (`:61880`'s `&& !Main.refreshMap`); clearing the refresh lets the
+    /// next empty pass zero it.
+    #[test]
+    fn w4_e18_a_pending_refresh_keeps_the_debug_option_armed() {
+        let mut app = rig();
+        app.debug_unlock_map = 2;
+        app.map_reveal_sweep(); // exhaust the 2x2 grid
+        app.map.as_mut().unwrap().refresh_map = true;
+        app.map_reveal_sweep(); // num3 == 0, but the refresh holds
+        assert_eq!(app.debug_unlock_map, 2, "the refresh holds the option");
+        app.map.as_mut().unwrap().refresh_map = false;
+        app.map_reveal_sweep();
+        assert_eq!(app.debug_unlock_map, 0, "no refresh → the empty pass zeroes");
+    }
+
+    /// W4-e18 first half (written, not run — code-only): the `updateMap`
+    /// consume (`Main.cs:61886-61894`) — with `refreshMap` armed it clears
+    /// the flag and resets the section sweep (`ClearMapDraw`, `:61890-61891`)
+    /// BEFORE the draw, then nulls `updateMap` (`:61894`). The reset refills
+    /// the budget so the next sweep re-walks from the player's section.
+    #[test]
+    fn w4_e18_the_refresh_consume_resets_the_sweep_and_nulls_update_map() {
+        let mut app = rig();
+        // Exhaust the sweep first so the reset is observable.
+        app.map_reveal_sweep();
+        assert!(app.section_manager.map_section_drawn(0, 0));
+        let m = app.map.as_mut().unwrap();
+        m.refresh_map = true;
+        m.update_map = Some([40, 40, 100, 60]);
+        app.map_reveal_driver(false);
+        let m = app.map.as_ref().unwrap();
+        assert!(!m.refresh_map, "`:61890`");
+        assert!(m.update_map.is_none(), "`:61894`");
+        // ClearMapDraw refilled the budget + cleared the drawn bits.
+        assert!(!app.section_manager.map_section_drawn(0, 0));
+    }
+
+    /// W4-e18 first half (written, not run — code-only): while paused the
+    /// sweep still runs (`:61865` gates only menu/gen) but the `updateMap`
+    /// consume is skipped (`:61886`'s `!Main.gamePaused`) — the slot stays
+    /// armed and `refreshMap` is not consumed.
+    #[test]
+    fn w4_e18_paused_skips_the_consume_but_not_the_sweep() {
+        let mut app = rig();
+        let m = app.map.as_mut().unwrap();
+        m.refresh_map = true;
+        m.update_map = Some([40, 40, 100, 60]);
+        app.map_reveal_driver(true);
+        // The sweep walked (sections drawn) ...
+        assert!(app.section_manager.map_section_drawn(0, 0));
+        // ... but the consume arm did not run.
+        let m = app.map.as_ref().unwrap();
+        assert!(m.refresh_map, "the paused consume is skipped");
+        assert!(m.update_map.is_some(), "the slot stays armed");
+    }
+
+    /// W4-e18 first half (written, not run — code-only): the staged `.map`
+    /// upload gate (`Main.cs:61863`'s `!Main.loadMap`) blocks the whole
+    /// driver while `load_map` is armed — no sweep, no consume.
+    #[test]
+    fn w4_e18_the_load_map_gate_blocks_the_driver() {
+        let mut app = rig();
+        let m = app.map.as_mut().unwrap();
+        m.load_map = true;
+        m.update_map = Some([40, 40, 100, 60]);
+        app.map_reveal_driver(false);
+        assert!(!app.section_manager.map_section_drawn(0, 0), "no sweep");
+        assert!(app.map.as_ref().unwrap().update_map.is_some(), "no consume");
+    }
+
+    /// W4-e18 first half (written, not run — code-only): `DrawToMap`'s first
+    /// gate is `Main.mapEnabled` (`MapRenderer.cs:130-133`). With the map
+    /// disabled the `refreshMap` consume still runs (`Main.cs:61888-61892`
+    /// sits OUTSIDE DrawToMap) and `updateMap` still nulls (`:61894` runs
+    /// after the call), but the change lists keep their entries — the
+    /// queue drain is skipped.
+    #[test]
+    fn w4_e18_map_disabled_skips_the_queue_drain_but_not_the_refresh_consume() {
+        let mut app = rig();
+        app.settings.map_enabled = false;
+        let m = app.map.as_mut().unwrap();
+        m.refresh_map = true;
+        m.update_map = Some([40, 40, 100, 60]);
+        m.queue_change(50, 50); // a pending change in target (0,0)
+        assert!(m.changes_queued());
+        app.map_reveal_driver(false);
+        let m = app.map.as_ref().unwrap();
+        assert!(!m.refresh_map, "the refresh consume runs regardless");
+        assert!(m.update_map.is_none(), "`:61894` nulls after the call");
+        assert!(m.changes_queued(), "the disabled DrawToMap keeps the lists");
+        // Enabling lets the next consume drain them.
+        app.settings.map_enabled = true;
+        app.map.as_mut().unwrap().update_map = Some([40, 40, 100, 60]);
+        app.map_reveal_driver(false);
+        assert!(!app.map.as_ref().unwrap().changes_queued());
     }
 }
