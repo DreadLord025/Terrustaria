@@ -328,11 +328,31 @@ impl WaterfallManager {
         }
     }
 
+    /// `WaterfallManager.FindWaterfalls`' view-rectangle head
+    /// (`WaterfallManager.cs:119-122`): the four `(int)` casts TRUNCATE toward
+    /// zero (C# `(int)` on a float, not a floor), and the `-1`/`+2` margins are
+    /// applied by [`Self::find_waterfalls`] itself — this returns the raw
+    /// `[num+1, num3+1, num2-2, num4-2]` so the existing scan keeps its
+    /// verbatim `view[0]-1-dist` / `view[2]+2+dist` / `view[3]+2+20` shape.
+    /// `position` is the raw unscaled `Main.screenPosition` (world pixels),
+    /// `width`/`height` the raw `Main.screenWidth`/`Height`.
+    pub fn scan_view(position: [f32; 2], width: f32, height: f32) -> [i32; 4] {
+        [
+            (position[0] / 16.0) as i32,
+            (position[1] / 16.0) as i32,
+            ((position[0] + width) / 16.0) as i32,
+            ((position[1] + height) / 16.0) as i32,
+        ]
+    }
+
     /// `WaterfallManager.FindWaterfalls`.
     ///
-    /// `view` is the visible tile rectangle `[x0, y0, x1, y1]` (inclusive). The
-    /// original works from `Main.screenPosition` / screen size; the caller derives
-    /// the same rectangle from the camera.
+    /// `view` is [`Self::scan_view`]'s truncating tile rectangle
+    /// `[x0, y0, x1, y1]`; the `-1`/`+2` margins and the `waterfallDist`/`+20`
+    /// pads (`WaterfallManager.cs:123-126`) are applied here verbatim.
+    /// `forced` is the call-site flag: `Main.instantBGTransitionCounter == 10`
+    /// at the draw-time call (`Main.cs:61841`) or the capture-time `true`
+    /// (`:56968`).
     pub fn find_waterfalls(&mut self, world: &World, view: [i32; 4], forced: bool) {
         self.find_waterfall_count += 1;
         if self.find_waterfall_count < 30 && !forced {
@@ -593,13 +613,15 @@ fn push_waterfall(list: &mut Vec<Waterfall>, x: i32, y: i32, kind: i32) {
 }
 
 /// Any of the three tiles around a half-brick spout holds `kind`, mirroring the
-/// original's `tile2.lava() || tile4.lava() || tile3.lava()` order. A free
-/// function replacing the `LiquidKindChecks` port artifact (the original has no
-/// such trait).
+/// original's `tile2.lava() || tile4.lava() || tile3.lava()` order
+/// (`WaterfallManager.cs:182/:186/:190`). The C# probes are PURE header-bit
+/// tests (`Tile.cs:345-348/:362-365/:379-382`: `(bTileHeader & 0x60) == kind`)
+/// — no liquid-amount check — so a stale kind flag on a drained (liquid == 0)
+/// tile still classifies the spout; the packed port reads the same flag bits
+/// through `liquid_kind()`. A free function replacing the `LiquidKindChecks`
+/// port artifact (the original has no such trait).
 fn any_liquid_kind(kind: LiquidKind, tiles: &[&Tile; 3]) -> bool {
-    tiles
-        .iter()
-        .any(|t| t.liquid > 0 && t.liquid_kind() == kind)
+    tiles.iter().any(|t| t.liquid_kind() == kind)
 }
 
 #[cfg(test)]
@@ -682,6 +704,68 @@ mod tests {
         let mut mgr = WaterfallManager::new();
         mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
         assert_eq!(mgr.entries(), vec![(12, 9, 11)]);
+    }
+
+    /// `WaterfallManager.cs:182` + `Tile.cs:345-348`: the kind probes are pure
+    /// header-bit tests — `tile2.lava()` never reads `liquid`. A drained
+    /// (liquid == 0) tile above the half brick with a stale lava flag still
+    /// classifies the spout as type 1 (the `liquid > 0` guard the first port
+    /// pass carried was an invention).
+    #[test]
+    fn a_stale_liquid_flag_classifies_without_any_liquid_amount() {
+        let mut w = world_with_air();
+        let mut brick = stone(1);
+        brick.flags |= FLAG_HALF_BRICK;
+        put(&mut w, 10, 10, brick);
+        // Above: liquid 0 (passes the `< 16` head gate) with a lava flag.
+        let mut stale = Tile::default();
+        stale.flags |= FLAG_LIQUID_LAVA;
+        put(&mut w, 10, 9, stale);
+        // Right: plain water > 160 supplies the spout condition; left is air.
+        put_liquid(&mut w, 11, 10, 200);
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        assert_eq!(mgr.entries(), vec![(10, 10, 1)]);
+    }
+
+    /// `WaterfallManager.cs:119-122`: the four `(int)` casts truncate toward
+    /// zero — a negative fractional tile coordinate goes to 0, not -1 (a
+    /// floor-based derivation would scan one tile wider on the left/top).
+    #[test]
+    fn the_scan_view_truncates_like_the_csharp_int_casts() {
+        // position (-8, -8), screen 640x480: the C# num = (int)(-8/16 - 1) =
+        // (int)(-1.5) = -1 (truncation, not floor's -2); num3 likewise. num2
+        // pre-margin = (int)(632/16) = 39, num4 = (int)(472/16) = 29. The
+        // -1/+2 margins live in find_waterfalls, so scan_view yields the raw
+        // truncations: [0, 0, 39, 29].
+        assert_eq!(
+            WaterfallManager::scan_view([-8.0, -8.0], 640.0, 480.0),
+            [0, 0, 39, 29]
+        );
+        // Exact-grid coordinates are unchanged by the truncation.
+        assert_eq!(
+            WaterfallManager::scan_view([160.0, 320.0], 640.0, 480.0),
+            [10, 20, 50, 50]
+        );
+    }
+
+    /// `Main.cs:61841`: `FindWaterfalls(instantBGTransitionCounter == 10)` —
+    /// the forced flag bypasses the 30-tick gate mid-window, exactly like the
+    /// load-time `forced: true` (`WaterfallManager.cs:110`).
+    #[test]
+    fn the_forced_flag_bypasses_the_thirty_tick_rescan_gate() {
+        let mut w = world_with_air();
+        put(&mut w, 12, 8, stone(196));
+        let mut mgr = WaterfallManager::new();
+        // One unforced call right after a scan: the counter is 1, so no scan.
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        let mut w2 = world_with_air();
+        put(&mut w2, 13, 8, stone(196));
+        mgr.find_waterfalls(&w2, [5, 5, 20, 20], false);
+        assert_eq!(mgr.entries(), vec![(12, 9, 11)], "the unforced call skipped");
+        // The forced call rescans immediately.
+        mgr.find_waterfalls(&w2, [5, 5, 20, 20], true);
+        assert_eq!(mgr.entries(), vec![(13, 9, 11)]);
     }
 
     #[test]

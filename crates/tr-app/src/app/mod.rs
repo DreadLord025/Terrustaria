@@ -3407,8 +3407,12 @@ impl App {
         // save-time snapshot — the rain event comes back, `cloudAlpha` :=
         // `maxRaining`. The triple rode the `.trwld` v14 block (S1-J-7).
         rain.restore_saved(world.raining, world.rain_time, world.max_raining);
-        let ambient_waterfall = (0.0, 0.0, 0.0);
-        let ambient_lavafall = (0.0, 0.0, 0.0);
+        // `Main.cs:67229-67234` world-load reset: X/Y = -1, Strength = 0 —
+        // the (strength, x, y) tuples start at the reset, not (0, 0, 0)
+        // (a 0-position triple would pass the `x == -1 || y == -1` 2D gate
+        // of `LegacySoundPlayer.cs:376` differently).
+        let ambient_waterfall = (0.0, -1.0, -1.0);
+        let ambient_lavafall = (0.0, -1.0, -1.0);
         let ambient_counter = 0.0f32;
         // `Main.atmo` starts at its surface value; recomputed per draw below.
         let atmo = 1.0_f32;
