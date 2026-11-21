@@ -517,3 +517,84 @@ RNG-free, liquid-free worlds bit-identical). Expected: **109 liquid.rs
 pins + 2 compose pins** (§13's 99+2 as projected, +10 guards arrived
 early — Seal 4), all written-not-run until the gate. The g47 branch
 seals here; the successor-wins rule (§12 step 1) governs any later tip.
+
+## §16 — SEAL-VERIFY receipt (W4-g47 monitor pass, 2026-11-21: graft NOT consumed, A9 adopted, bible FINAL)
+
+Code-only re-verification of the four seal obligations, fresh
+`git fetch origin --prune` this pass. No cargo/tests run; every claim
+below is a grep/rev-parse witness on the named blobs.
+
+**Verify 1 — the g47 seal LANDED.** Worktree HEAD =
+`origin/task/W4-g47-liquid-skip-settle` = **`ca76d68ee`**
+(`merge-base --is-ancestor` exit 0), working tree clean at pass start.
+§15 is published at :429-519 with all five seals (monitor, delta-fold
+list, down-arm receipt, pin matrix, family bible). This receipt is the
+first post-seal commit; the successor-wins rule (§12 step 1) makes THIS
+tip the g47-machinery-source reference.
+
+**Verify 2 — the g46e graft is NOT consumed.** Union tip STILL
+**`9bc722e5f`** (2026-11-21 10:00:03 +0200, unchanged since §15 Seal 1).
+Every A9.2 "union lacks" row re-grep-verified on the `9bc722e5` blobs
+THIS pass: the down arm copies `down` :1414 BEFORE `kill_tile` :1422,
+stale gate :1426, merge-type reads :1438-1441 — the `2bbadd9bd` re-read
+hunk (`@@ -1283,6 +1292,18 @@`, re-read line re-confirmed in that diff)
+is ABSENT; `liquid_downarm_live` / `the_fall_arm_reads_the_live_post_reaction_level`
+/ `the_fall_arm_moves_the_post_evaporation_level` / both shimmer twins /
+`shimmer_falls_every_visit_ungated` / `quick_fall_bypasses_both_delay_gates`
+grep = 0; `own_now` :1112 LIVE (zero code delta stands); `liquid_draw`
+symbols (`LiquidAnimClock`/`wave_mask`/`has_full_water`/`VISCOSITY_MASK`)
+grep = 0; `app/mod.rs` `liquid_clock` grep = 0 (`liquid_tick` also gone —
+the driver fold IS consumed); `render/liquids.rs` still `anim_time * 8.0`
+:99/:206 + `* 0.5` :100; `flow.rs` App literal :2134 has `liquid_step`
+:2413, NO `liquid_clock`; `editing/` tree = doors/sentry/wiring only
+(buckets absent); anchors: all 6 g47 closeout/retire markers grep = 0;
+carried research/70 is BYTE-IDENTICAL to the `dd66fa3a` snapshot (empty
+diff), §8-§15 absent. Union `liquid.rs` `#[test]` count re-measured =
+**102**; compose pins present (`wiring.rs`
+`the_pump_moves_water_and_adopts_the_type` :3922 + `world_sim/wiring.rs`
+`r_12_5_the_pump_transfer_wakes_the_settle_and_the_water_flows` :670);
+guards module :4900, honey pin :4470, lava-only quickFall :4489, cadence
+module :4395, `add_water` :565 `&mut World`, `liquid_check` :1347 — all
+as A9 measured. **Line-count reconciliation:** §15's "153-line" is the
+PHYSICAL line count (`@().Count`); A9's "137" is the NON-BLANK count
+(`Measure-Object -Line`) — same blob, the §8-§15 ABSENCE claim holds
+under both.
+
+**Verify 3 — g45 A9 is the ONE authoritative fold-list (ADOPTED).** g45
+tip moved `3eca9d8d1` → **`f95dcacc3`** (12:48:15 +0200): research/69 A9
+published, reconciled against this §15. Successor-wins: **A9.2 supersedes
+§15 Seal 2 where ⚠ flagged** — row 4 the shimmer keep-ONE **MERGED form**
+wins over §15's ungated-only fold (one pin, both assert families); row 2
+the `&mut w` re-pin rider applies to EVERY g47 closeout witness calling
+`add_water` (union :565 is `&mut World`), not just the shimmer twin;
+row 3 the evap-form fall witness is **g45-sourced** (g45 tip re-verified:
+`the_fall_arm_moves_the_post_evaporation_level` :2415,
+`shimmer_falls_every_visit_like_water` :2503, `mod liquid_downarm_live`
+:3167 all present); row 7 the `flow.rs` rider folds WITH row 6, never
+apart. A9.1 stands: the graft takes the `2bbadd9bd` hunk VERBATIM
+(byte-identical re-read line, adoption provenance kept). The pin
+expectation is UNCHANGED: **109 `liquid.rs` pins + 2 compose pins**
+(the merged shimmer is still one pin). **A9.4's g15 PUSH-OWED is
+DISCHARGED:** `origin/task/W4-g15-dust-item-sites` is NOW **`7981aa5bf`**
+(the local tip A9 probed as unpushed; `d43b490f3` `is-ancestor` of the
+remote exit 0) — the merger takes the remote tip directly; the 104
+§6c-compose contract was written against exactly this tip and holds
+unchanged.
+
+**Verify 4 — the SEALED-receipt + liquid-family bible are FINAL.** §15
+Seal 5, 69 A9.5 and 104 §7 (SEALED banner re-verified on `f95dcacc3`)
+agree on the one-paragraph landing: **g46-union-canonical** (`9bc722e5f`
++ the A9.2 fold) carrying **g47-machinery-source** (THIS receipt tip,
+successor-wins), **g45-buckets/deltas** (rows 1-4/8 g45 provenance;
+guards/cadence/nudge/extra-wakes/fixtures already union-side), and
+**f25-gen** (step 6 DELETE-dedupe + step 7 producer contexts + the
+gen-hash RE-DERIVE with the `edit_kills` drain-choice record, §11 row 1).
+Gate: `cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids`
+(judge ONLY by `test result: ok` lines) + the §12 step-5 anchors canary +
+the step-6 runtime-inert contract (+ the render addition: `liquid_clock`
+pure dt+wind, RNG-free, liquid-free worlds bit-identical). Expected
+**109 + 2** written-not-run. **The seal is NOT done until the down-arm
+hunk (A9.2 row 1) is in the union** — it is not, this pass. This receipt
+rides the docs-wholesale row (A9.2 row 9): the union's 137/153-line
+snapshot is replaced by THIS file at this tip. The g47 branch stays
+retired; the live monitor is 69 A9+ and this section.
