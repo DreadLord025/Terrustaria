@@ -9808,9 +9808,12 @@ Deviations:
 - **`PaintTheTemple`** (`:24529`) is celebrationmk10-only
   (`FinishTenthAnniversaryWorld` runs under `Main.tenthAnniversaryWorld`) вЂ”
   M5-SEED-1's scope, not a deviation here.
-- **The drunk/good/remix branches** (Г—3/Г—2 room counts, the drunk spike
-  second row, `placeTNTBarrel`'s twin) and the dualDungeons 232 variants are
-  M5-SEED-1/2's scope.
+- **The drunk/good/remix branches** (×3/×2 room counts, the drunk spike
+  second row, `placeTNTBarrel`'s twin) are M5-SEED-1/2's scope (the temple
+  seed branches landed W4-d108). The dualDungeons 232 variants: the trap
+  arms (`mayanTrap`'s `num17` swap + the `UnderworldLayer - 5` floor abort)
+  landed W4-g43 (below); the chest-side dualDungeons loot arms stay
+  M5-CHEST-gen's.
 - **The Golem-summon altar interaction** (Plantera gate) is M5-HARDFORCE /
   Golem-BOSC-19's; the traps fire through the wiring engine's case-137
   variants (the frameY selects the variant, the trap column's wires are
@@ -9836,6 +9839,101 @@ Deviations:
   `B39E064184AFA48F0DCA290C5A14A65711AE121BF203422FB56DBBBE2F13AC2A`,
   zoom 2.0 `B8EE063DECBB4BBF25A7D2349428075A16AA3279EE44F2B29827980B9ED57376`.
   The committed `temple_altar_z{1,2}{,_repeat}.png` are these re-takes.
+
+## The temple residuals (W4-g43)
+
+Code-only wave 2026-11-21 (`task/W4-g43-biome-jungle-temple`): the
+room-content / trap / altar placement residuals of the M5-TEMPLE port,
+re-verified line-by-line against the C# and fixed; no compiler invoked,
+the 9 witness tests WRITTEN NOT RUN. The drunk/FTW/remix seed branches
+(room counts, spike budgets, the placement search) are W4-d108's claimed
+scope — NOT re-landed here; the chest loot draws are M5-CHEST-gen's.
+
+- **The painting** (`place_painting`, `WorldGen.cs:44254-44292`): the old
+  port used `Place3x3`'s non-hanging branch (a 3×2 write, a solid-ceiling
+  anchor, `frameX = 54 * 88`). The C# routes 240 through **`Place3x3Wall`**
+  (`:59938-59941`): the 3×3 body at `(x-1, y-1)` must be empty AND walled
+  (`wall != 0`), the style folds by 36 into sheet rows, and the FULL 3×3 is
+  written — style 88 → row 2 / style 16: `frameX = 864/882/900`,
+  `frameY = 108/126/144`. The DW-3.3 frame pins re-derived.
+- **The trap colour draw** (`mayan_trap_horizontal`/`_vertical`,
+  `:8518-8530` / `:8590-8602`): the old port drew the colour ONLY when the
+  plate cell carried no wire. The C# draws `Next(3)` UNCONDITIONALLY, then
+  the `wire()/wire2()/wire3()` reads override the value — a pre-wired plate
+  still spends the draw. Both arms fixed; the stream shifts on every world
+  whose traps re-use a plate cell (the witnessed a==b pair pins the count).
+- **The trap/plate writes** (`place_trap_tile`/`place_plate_tile`): the
+  PlaceTile pre-branch `Tile.Clear(Tile | TilePaint | Slope)`
+  (`:59473-59476`, `Tile.cs:744-777`) runs on an INACTIVE cell BEFORE the
+  placement guards — the frames/paint/coating/slope clear even on a refused
+  plate placement. The 137 branch (`:59750-59755`) writes NO frameX: an
+  active overwrite keeps the stored frameX (the column runs' second write
+  keeps the first style's +18 flip — the old port zeroed it). The plate
+  rides `Place1x1` (`:45188-45234`): `SolidTile2` floor (not
+  `SolidTileAllowBottomSlope`), the mechanism-over-boulder guard ported
+  verbatim (135 is NOT in `IsAMechanism`, `TileID.cs:184` — the boulder term
+  short-circuits away; the trap caller's `CanGeneratePressurePlateAt` is
+  what refuses boulder floors, `:11040`), `InWorld(x, y, 2)`. Every
+  successful write carries the PlaceTile active
+  tail's `SquareTileFrame` (`:60255-60262`) — the port's draw-free
+  `square_tile_frame_gen` seam (the object support checks; the cosmetic
+  re-frame rides the end-of-gen `frame_world`).
+- **The pound gate** (`slope_tile_p2`, `CanPoundTile` `:80695-80743`): the
+  raw-type `TileID.Sets.Boulders` check, the gen-time 190/30 refusals and
+  the active `ForbidsSloping` anchor above (`:80745-80766`) join the
+  mechanism-kind list + `CanKillTile`.
+- **The plate gate** (`can_pressure_plate_at_p2`, `:11029-11048`): the
+  raw-type boulder floor + the echo wall 350 refusals land (the old port
+  collapsed them away on a "no boulders spawn" note — the raw-type read
+  fires on INACTIVE boulders too).
+- **The buried-chest placement** (`add_buried_chest`/`place_buried_chest`):
+  the `anyShimmer()` scan refusal (`:35906-35909`), the remix deep-centre
+  band (`:35945-35948`), the boulder join in the ±2 altar box
+  (`:35949-35959`, `TileID.Sets.Boulders` = 138/484/664/665/711-716) and
+  `PlaceChest`'s boulder-floor refusal FIRST (`:57816`, raw type of both
+  floor cells). The loot draws stay M5-CHEST-gen's — the placement itself
+  is draw-free on the classic path.
+- **The altar family**: `place_altar` carries the PlaceTile
+  `SquareTileFrame` tail; `brick_tile_at` carries the pre-Clear;
+  `altar_spot`'s success check reads `type == 237` WITHOUT the active gate
+  (`:33997`); the fallback's 5×3 clear is `active(false)` ONLY (`:34036` —
+  the old port wrote wall 87 through `carve_cell`); `square_frame_altar`
+  wires the real framer seam (was a no-op stub). `pass_lihzahrd_altar`
+  (`:21943-21972`) writes IN PLACE — the wall 87 / liquid / paint under the
+  altar stand (the old port replaced the whole Tile), and the base row
+  clears `halfBrick(false)` alongside `slope(0)` (`:21960-21961`).
+- **The trap seed arms**: `mayanTrap`'s actuallyNoTraps variation
+  (`:8351-8354`, `MicroSeedFlags::ACTUALLY_NO_TRAPS`) returns true
+  draw-free/write-free so the loop budget drains; the dualDungeons floor
+  abort (`:8356-8359`, `UnderworldLayer - 5` = `maxTilesY - 205`,
+  `Main.cs:2790`) and the `num17` 48→232 wall-reject swap (`:8442-8446`,
+  `MicroSeedFlags::DUAL_DUNGEONS`) land. The seed prunes the temple chain
+  (`:22504`), so the dual arms only matter to the dual-dungeon trap pass's
+  future reuse — ported verbatim with the cite. The `num2 == -1` arms
+  (`:8383-8390`) are dead code in the C# (num2 ∈ {0,1}) — cited, not
+  ported.
+- **The statue** (`place_statue`, `Place2xX` `:39663-39722`): the
+  style-34→349 redirect and the style/55 sheet fold stand verbatim (both
+  inert for styles 43-45). The workbench/table/chair citations corrected
+  to the real C# line ranges (`Place2x1` `:47368`, `Place1x2` `:46652`).
+- **The hashes**: the classic `SEED42_512` / `DEFAULT_WORLD` pins move BY
+  DESIGN (the painting frames, the SquareTileFrame tails' support-check
+  kills, the unconditional colour draw, the plate pre-Clears). No compiler
+  on this branch — the re-pin is DEFERRED to the merge gate; the `a == b`
+  determinism asserts and the whole-world witness
+  (`w4_g43_the_temple_worlds_are_deterministic`, classic + actuallyNoTraps
+  + dualDungeons on the 512 seed-42 world) guard the streams, and the
+  measured values ride the test log for the gate's re-derivation
+  (`world_hash.rs` notes).
+- **Witnesses** (temple.rs tests, written not run): the painting 36-fold +
+  wall/active gates with a==b, the unconditional colour draw (seed 1's
+  hand-derived stream: direction 0 / offset 0 / side 1 / colour 1 / column
+  3, the style roll short-circuited at distance 20), the actuallyNoTraps
+  draw-free arm, the dualDungeons refusal stream positions (2 draws vs the
+  classic 3) + the 300-tall floor abort, the altar in-place field
+  preservation + idempotence, the chest shimmer/boulder/remix gates, the
+  pound/plate raw-type gates, the trap frameX quirk + plate pre-Clear on
+  refusal, and the whole-world a==b triple.
 
 ## Polish passes (M1.4-WGEN-7)
 

@@ -238,6 +238,16 @@ mod tests {
     // S1-P-i33 (code-only): the wall-framing mask fix (see DEFAULT_WORLD
     // below) moves this pin too — glass & co. beside a wall change the
     // generated `wall_frame`. Stale-by-design; the gate re-pins it.
+    // W4-g43 (2026-11-21, code-only): the temple residuals round moves this
+    // pin BY DESIGN — the painting's Place3x3Wall frames (the 3×3 walled
+    // write, style 88 → 864-900/108-144), the trap/plate/altar/furniture
+    // SquareTileFrame tails (the support-check cascade can pop an
+    // unsupported object), the unconditional trap colour draw (the stream
+    // shifts wherever a plate cell re-uses a wire) and the plate pre-Clears
+    // all change the generated temple tiles. The re-pin is DEFERRED to the
+    // merge gate (no compiler on the branch); the a == b determinism
+    // asserts and the w4_g43 whole-world witness guard the streams, and the
+    // measured value rides that test's log for the gate's re-derivation.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -281,6 +291,11 @@ mod tests {
     // move BY DESIGN; the re-pin is DEFERRED to the merge gate (no compiler
     // on this branch). The `a == b` determinism assertion stays green — the
     // mask is a pure function of the tile/wall state, no RNG draw added.
+    // W4-g43 (2026-11-21, code-only): the temple residuals round (see the
+    // SEED42_512 note above) moves this pin too — the DEFAULT-sized world
+    // carries a full temple, so the painting frames, the SquareTileFrame
+    // tails and the trap draw-order shift all land here. Re-pin DEFERRED to
+    // the merge gate; a == b stays green (the changes are deterministic).
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
