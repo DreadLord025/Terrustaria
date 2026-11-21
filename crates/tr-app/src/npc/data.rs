@@ -586,6 +586,14 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-d34 kinds 1-70 coverage wave: the port-local 266..285 band
+            // (free in to_u16/from_u16 AND render_key; the vanilla types ride
+            // cs_id/net_id, NOT these protocol ids — the S1-F-1 separation).
+            NpcKind::AngryBones => 266,
+            NpcKind::CursedSkull => 267,
+            NpcKind::OldMan => 268,
+            NpcKind::ManEater => 269,
+            NpcKind::Bunny => 270,
         }
     }
 
@@ -916,6 +924,11 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            266 => NpcKind::AngryBones,
+            267 => NpcKind::CursedSkull,
+            268 => NpcKind::OldMan,
+            269 => NpcKind::ManEater,
+            270 => NpcKind::Bunny,
             _ => return None,
         })
     }
@@ -1156,6 +1169,13 @@ impl NpcKind {
                     | NpcKind::PartyGirl
                     | NpcKind::Wizard
                     | NpcKind::Mechanic
+            )
+    }
+                    | NpcKind::Wizard
+                    | NpcKind::Mechanic
+                    // W4-d34: the Old Man carries `townNPC = true`
+                    // (`NPC.cs:9199`) — `isLikeATownNPC` (`NPC.cs:6856`).
+                    | NpcKind::OldMan
             )
     }
 
@@ -1788,6 +1808,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Hit_1",
             NpcKind::AngryNimbus => "NPC_Hit_30",
             NpcKind::DungeonSpirit => "NPC_Hit_36",
+            // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults HitSound).
+            NpcKind::AngryBones => "NPC_Hit_2",   // :9116
+            NpcKind::CursedSkull => "NPC_Hit_2",  // :9158
+            NpcKind::OldMan => "NPC_Hit_1",       // :9207
+            NpcKind::ManEater => "NPC_Hit_1",     // :9303
+            NpcKind::Bunny => "NPC_Hit_1",        // :9344
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2092,6 +2118,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Killed_1",
             NpcKind::AngryNimbus => "NPC_Killed_33",
             NpcKind::DungeonSpirit => "NPC_Killed_39",
+            // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults DeathSound).
+            NpcKind::AngryBones => "NPC_Killed_2",   // :9117
+            NpcKind::CursedSkull => "NPC_Killed_2",  // :9159
+            NpcKind::OldMan => "NPC_Killed_1",       // :9208
+            NpcKind::ManEater => "NPC_Killed_1",     // :9305
+            NpcKind::Bunny => "NPC_Killed_1",        // :9345
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2200,6 +2232,10 @@ impl NpcKind {
             // aiStyle-49 AI head sets `noGravity = true` every tick
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
             NpcKind::AngryNimbus => true,
+            // W4-d34: the Cursed Skull's `noGravity = true` (`NPC.cs:9160`,
+            // kb 0.2 `:9163`). The ManEater (43) writes noGravity but kb 0
+            // (`:9304`) — the Y-pop selector never reaches it (leech precedent).
+            NpcKind::CursedSkull => true,
             _ => false,
         }
     }
@@ -2451,6 +2487,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults aiStyle rows).
+            NpcKind::AngryBones => 3,   // :9112
+            NpcKind::CursedSkull => 10, // :9154
+            NpcKind::OldMan => 7,       // :9203
+            NpcKind::ManEater => 13,    // :9299
+            NpcKind::Bunny => 7,        // :9340
         }
     }
 
@@ -2472,6 +2514,7 @@ impl NpcKind {
         Some(match self {
             NpcKind::Zombie => 1.0,             // the num107 default (`:58322`)
             NpcKind::Skeleton => 1.5,           // the num83 group (`:57606`)
+            NpcKind::AngryBones => 1.5,        // the num83 group (`:57606`)
             NpcKind::UndeadMiner => 1.0,        // the num107 default
             NpcKind::GoblinPeon => 1.5,         // the num83 group
             NpcKind::GoblinThief => 2.0,        // the cap-2 group (`:57554`)
@@ -2981,6 +3024,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults width/height).
+            NpcKind::AngryBones => (18.0, 40.0),  // :9110-9111
+            NpcKind::CursedSkull => (26.0, 28.0), // :9152-9153
+            NpcKind::OldMan => (18.0, 40.0),      // :9201-9202
+            NpcKind::ManEater => (30.0, 30.0),    // :9297-9298
+            NpcKind::Bunny => (18.0, 20.0),       // :9338-9339
         }
     }
 
@@ -3057,6 +3106,13 @@ impl NpcKind {
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
             NpcKind::ForceBubble => 384,
+            // W4-d34 kinds 1-70: the vanilla `NPC.type` rows (the AI arms'
+            // type gates + the statue caps read these, not the protocol ids).
+            NpcKind::AngryBones => 31,
+            NpcKind::CursedSkull => 34,
+            NpcKind::OldMan => 37,
+            NpcKind::ManEater => 43,
+            NpcKind::Bunny => 46,
             // `NPCID.DesertDjinn` (533)
             NpcKind::DesertDjinn => 533,
             NpcKind::Goldfish => 55,
@@ -3131,6 +3187,10 @@ impl NpcKind {
             NpcKind::GoblinArcher => 21,
             NpcKind::GoblinPeon | NpcKind::GoblinThief | NpcKind::GoblinWarrior => 16,
             NpcKind::Skeleton | NpcKind::UndeadMiner => 15,
+            // W4-d34: the Angry Bones (31) rides the humanoid-group case list
+            // (`NPC.cs:68552`) on its 15-row strip; the Old Man (37) on 21.
+            NpcKind::AngryBones => 15,
+            NpcKind::OldMan => 21,
             // The Zombie Elf trio (`S1-F-13c`): `FindFrame`'s humanoid-group
             // case list carries 338-340 (`NPC.cs:68603-68605`) on their
             // 15-frame strips (`Main.npcFrameCount[338..340]`, `Main.cs`).
@@ -3168,6 +3228,8 @@ impl NpcKind {
             | NpcKind::Stylist
             | NpcKind::Princess => 7,
             NpcKind::Angler | NpcKind::Mechanic => 9,
+            // W4-d34: the Old Man's `ExtraFramesCount[37] = 5` (`NPCID.cs:10464`).
+            NpcKind::OldMan => 5,
             _ => 0,
         }
     }
@@ -3622,6 +3684,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults lifeMax).
+            NpcKind::AngryBones => 80,   // :9115
+            NpcKind::CursedSkull => 40,  // :9157
+            NpcKind::OldMan => 250,      // :9206
+            NpcKind::ManEater => 110,    // :9302
+            NpcKind::Bunny => 5,         // :9343
         }
     }
 
@@ -3986,6 +4054,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults damage).
+            NpcKind::AngryBones => 26,   // :9113
+            NpcKind::CursedSkull => 35,  // :9155
+            NpcKind::OldMan => 10,       // :9204
+            NpcKind::ManEater => 34,     // :9300
+            NpcKind::Bunny => 0,         // :9341
         }
     }
 }

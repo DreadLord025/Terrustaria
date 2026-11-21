@@ -2163,6 +2163,48 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Dungeon Spirit",
     },
+    // W4-d34 kinds 1-70 coverage wave: the populator registers each by its
+    // vanilla net id (`BestiaryDatabaseNPCsPopulator.cs`'s automated pass).
+    BestiaryEntryDef {
+        credit_id: "AngryBones",
+        net_id: 31,
+        kind: NpcKind::AngryBones,
+        variant: None,
+        quick_unlock: false,
+        name: "Angry Bones",
+    },
+    BestiaryEntryDef {
+        credit_id: "CursedSkull",
+        net_id: 34,
+        kind: NpcKind::CursedSkull,
+        variant: None,
+        quick_unlock: false,
+        name: "Cursed Skull",
+    },
+    BestiaryEntryDef {
+        credit_id: "OldMan",
+        net_id: 37,
+        kind: NpcKind::OldMan,
+        variant: None,
+        quick_unlock: false,
+        name: "Old Man",
+    },
+    BestiaryEntryDef {
+        credit_id: "ManEater",
+        net_id: 43,
+        kind: NpcKind::ManEater,
+        variant: None,
+        quick_unlock: false,
+        name: "Man Eater",
+    },
+    BestiaryEntryDef {
+        credit_id: "Bunny",
+        net_id: 46,
+        kind: NpcKind::Bunny,
+        variant: None,
+        quick_unlock: false,
+        name: "Bunny",
+    },
     BestiaryEntryDef {
         credit_id: "ForceBubble",
         net_id: 384,

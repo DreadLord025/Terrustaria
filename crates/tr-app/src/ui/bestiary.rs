@@ -1595,6 +1595,28 @@ fn portrait_data(
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
+        // W4-d34 kinds 1-70: the portrait rests the kind's SetDefaults box /
+        // the sheet's own row height (the generic-anchor convention).
+        (NpcKind::AngryBones, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::CursedSkull, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(28.0);
+            (sheet_i, h, 26.0, h, white)
+        }
+        (NpcKind::OldMan, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::ManEater, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(30.0);
+            (sheet_i, h, 30.0, h, white)
+        }
+        (NpcKind::Bunny, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
     }
 }
 

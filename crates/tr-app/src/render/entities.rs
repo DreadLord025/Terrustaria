@@ -3170,6 +3170,24 @@ pub(crate) fn draw_npcs(
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
+            // W4-d34 kinds 1-70: each kind draws its own sheet at the
+            // SetFrameSize row height over Main.npcFrameCount[type], the
+            // generic centred anchor (the pumpkin arm's shape).
+            NpcKind::AngryBones => {
+                humanoid_draw(assets.npc_sheet(31), npc_rows(31), n, w, h)
+            }
+            NpcKind::CursedSkull => {
+                pumpkin_moon_draw(assets.npc_sheet(34), npc_rows(34), n, w, h)
+            }
+            NpcKind::OldMan => {
+                humanoid_draw(assets.npc_sheet(37), npc_rows(37), n, w, h)
+            }
+            NpcKind::ManEater => {
+                pumpkin_moon_draw(assets.npc_sheet(43), npc_rows(43), n, w, h)
+            }
+            NpcKind::Bunny => {
+                pumpkin_moon_draw(assets.npc_sheet(46), npc_rows(46), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3319,6 +3337,11 @@ pub(crate) fn draw_npcs(
                     // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
                     | NpcKind::BlazingWheel
                     | NpcKind::DungeonSpirit
+            )
+                    | NpcKind::BlazingWheel
+                    | NpcKind::DungeonSpirit
+                    // W4-d34: the Cursed Skull's aim rotation (`NPC.cs:21750-21766`).
+                    | NpcKind::CursedSkull
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

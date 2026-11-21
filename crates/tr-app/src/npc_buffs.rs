@@ -484,6 +484,12 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+        // W4-d34 kinds 1-70 (`NPCID.cs` DebuffImmunitySets).
+        NpcKind::AngryBones => &[20],          // :6266-6270
+        NpcKind::CursedSkull => &[20, 31],     // :6287-6291
+        NpcKind::OldMan => &[31],              // :6308-6312
+        NpcKind::ManEater => &[20, 31],        // :6350-6354
+        NpcKind::Bunny => &[31],               // :6371-6375
     }
 }
 

@@ -3566,6 +3566,17 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-d34 kinds 1-70: the walkers plant on the column surface; the
+        // Cursed Skull hovers (noTileCollide); the ManEater anchors in air.
+        crate::npc::NpcKind::AngryBones
+        | crate::npc::NpcKind::OldMan
+        | crate::npc::NpcKind::Bunny => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        crate::npc::NpcKind::CursedSkull | crate::npc::NpcKind::ManEater => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

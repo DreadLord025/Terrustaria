@@ -1086,6 +1086,30 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    /// `NPCID.AngryBones` (31) — the dungeon walker (`aiStyle 3`): 18x40,
+    /// dmg 26, def 8, 80 HP, kb 0.8, value 130, NPCHit2/NPCDeath2
+    /// (`NPC.cs:9108-9120`). The `num83` walk group (`NPC.cs:57606`).
+    AngryBones,
+    /// `NPCID.CursedSkull` (34) — the dungeon caster-skull (`aiStyle 10`):
+    /// 26x28, dmg 35, def 6, 40 HP, kb 0.2, value 150, npcSlots 0.75,
+    /// noGravity + noTileCollide, NPCHit2/NPCDeath2 (`NPC.cs:9150-9165`).
+    /// WIRED: the kind arm rides `npc_ai_style10::style10_ai`.
+    CursedSkull,
+    /// `NPCID.OldMan` (37) — the dungeon's town-flagged NPC (`aiStyle 7`):
+    /// 18x40, dmg 10, def 15, 250 HP, kb 0.5, townNPC + friendly,
+    /// NPCHit1/NPCDeath1 (`NPC.cs:9197-9210`). The town wander stand-in.
+    OldMan,
+    /// `NPCID.ManEater` (43) — the jungle's anchored biter (`aiStyle 13`):
+    /// 30x30, dmg 34, def 10, 110 HP, kb 0, value 350, noGravity +
+    /// noTileCollide, NPCHit1/NPCDeath1 (`NPC.cs:9293-9307`). The style-13
+    /// plant machine is UNWIRED (the wyvern precedent); the identity rows
+    /// and the FindFrame arm ship here.
+    ManEater,
+    /// `NPCID.Bunny` (46) — the surface critter (`aiStyle 7`): 18x20,
+    /// dmg 0, def 0, 5 HP, catchItem 2019, NPCHit1/NPCDeath1
+    /// (`NPC.cs:9336-9347`). The catchable arm spawns it friendly with the
+    /// 90-tick window (`bug_net::npc_catchable`).
+    Bunny,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3045,6 +3069,7 @@ impl Npc {
             immortal: false,
             friendly: kind.is_town_resident()
                 || kind == NpcKind::SleepingAngler
+                || kind == NpcKind::OldMan
                 // `NPC.SetDefaults`' catchable arm (`NPC.cs:17851-17855`):
                 // every `Main.npcCatchable` kind spawns friendly with the
                 // 90-tick window (S1-P-i36).
@@ -3529,6 +3554,13 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults knockBackResist; 46 the
+            // class default 1f `:8533`).
+            NpcKind::AngryBones => 0.8,   // :9118
+            NpcKind::CursedSkull => 0.2,  // :9163
+            NpcKind::OldMan => 0.5,       // :9209
+            NpcKind::ManEater => 0.0,     // :9304
+            NpcKind::Bunny => 1.0,
             _ => 0.4,
         }
     }
@@ -3909,6 +3941,12 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults defense).
+            NpcKind::AngryBones => 8,   // :9114
+            NpcKind::CursedSkull => 6,  // :9156
+            NpcKind::OldMan => 15,      // :9205
+            NpcKind::ManEater => 10,    // :9301
+            NpcKind::Bunny => 0,        // :9342
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4281,6 +4319,12 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults value; 37/46 write none).
+            NpcKind::AngryBones => 130.0,  // :9119
+            NpcKind::CursedSkull => 150.0, // :9162
+            NpcKind::OldMan => 0.0,
+            NpcKind::ManEater => 350.0,    // :9306
+            NpcKind::Bunny => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6287,6 +6331,15 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // W4-d34 kinds 1-70: the aiStyle-3 walker (Angry Bones) rides the
+            // skeleton family; the aiStyle-7 town/critter wander (Old Man,
+            // Bunny) rides the guide stand-in; the Cursed Skull rides the
+            // faithful aiStyle-10 machine; the ManEater's aiStyle-13 plant
+            // machine is UNWIRED (the wyvern precedent — identity rows ship).
+            NpcKind::AngryBones => self.update_skeleton(world, player, dt),
+            NpcKind::OldMan | NpcKind::Bunny => self.update_guide(world, dt),
+            NpcKind::CursedSkull => self.update_cursed_skull(world, player, rng),
+            NpcKind::ManEater => {}
         }
     }
 
@@ -6649,6 +6702,42 @@ impl Npc {
                 if self.frame >= 3 {
                     self.frame = 0;
                 }
+            }
+            // W4-d34: the Angry Bones / Old Man ride the humanoid-group walk
+            // (`NPC.cs:68552-68553`); the Cursed Skull's case 34 (`:77055-77066`)
+            // steps one row every 4 ticks over its 3-row strip; the ManEater's
+            // case 43 (`:74970-74994`) is the 3-row bite cycle; the Bunny's
+            // case 46 (`:76851-76904`) is the 7-row hop.
+            NpcKind::AngryBones | NpcKind::OldMan => {
+                self.humanoid_town_frame();
+            }
+            NpcKind::CursedSkull => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 4.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= crate::render::entities::npc_rows(34) {
+                    self.frame = 0;
+                }
+            }
+            NpcKind::ManEater => {
+                self.frame_counter += 1.0;
+                if self.frame_counter < 6.0 {
+                    self.frame = 0;
+                } else if self.frame_counter < 12.0 {
+                    self.frame = 1;
+                } else if self.frame_counter < 18.0 {
+                    self.frame = 2;
+                } else if self.frame_counter < 24.0 {
+                    self.frame = 1;
+                }
+                if self.frame_counter == 23.0 {
+                    self.frame_counter = 0.0;
+                }
+            }
+            NpcKind::Bunny => {
+                self.bunny_frame();
             }
             // The ForceBubble has NO `FindFrame` case (`NPC.cs:66684-
             // 77370` has no `case 384`; the post-switch tail is aiStyle-39
@@ -9335,6 +9424,61 @@ impl Npc {
         }
     }
 
+    /// W4-d34 — the Cursed Skull (34) through the faithful aiStyle-10
+    /// machine (`npc_ai_style10::style10_ai`, `NPC.cs:21572-21918`). The
+    /// step owns the whole C# state machine and ends with the noTileCollide
+    /// integration (`NPC.cs:92538-92540` + `:92605-92607`); the type-34 path
+    /// writes no knockBackResist / sound / spawn (the 289/694 tails only),
+    /// so the returned `Style10Out` is inert here. `justHit` rides the
+    /// strike flag; `netMode` folds 0 (single-player).
+    fn update_cursed_skull(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let _ = crate::npc_ai_style10::style10_ai(
+            self,
+            world,
+            player,
+            crate::npc_ai_style10::CURSED_SKULL,
+            self.just_hit,
+            0,
+            rng,
+        );
+    }
+
+    /// W4-d34 — `FindFrame`'s `case 46` bunny hop (`NPC.cs:76851-76904`):
+    /// grounded the sprite faces `direction`, the idle pins row 0, the walk
+    /// accumulator `|vx| + 1` steps one row every >6 over the 7-row strip
+    /// (`Main.npcFrameCount[46] = 7`); airborne row 4 rising / row 6 falling.
+    fn bunny_frame(&mut self) {
+        let rows = crate::render::entities::npc_rows(46);
+        if self.vy == 0.0 {
+            if self.facing == 1 {
+                self.sprite_dir = 1;
+            }
+            if self.facing == -1 {
+                self.sprite_dir = -1;
+            }
+            if self.vx == 0.0 {
+                self.frame = 0;
+                self.frame_counter = 0.0;
+            } else {
+                self.frame_counter += self.vx.abs();
+                self.frame_counter += 1.0;
+                if self.frame_counter > 6.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= rows {
+                    self.frame = 0;
+                }
+            }
+        } else if self.vy < 0.0 {
+            self.frame_counter = 0.0;
+            self.frame = 4;
+        } else {
+            self.frame_counter = 0.0;
+            self.frame = 6;
+        }
+    }
+
     /// Simplified `AI_015_KingSlime`: big hops toward the player, a teleport when the
     /// player escapes, and a burst of blue slimes when it lands. Minion spawning is
     /// reported through `spawn_minion` so the app can add them to its NPC list.
@@ -10046,7 +10190,7 @@ impl Npc {
     /// one-tile obstacles. The chase/doors/talk arms land with their
     /// systems.
     fn update_guide(&mut self, world: &World, _dt: f32) {
-        let (w, h) = NpcKind::Guide.size();
+        let (w, h) = self.kind.size();
         // The wander: a walking pace with the random turn every few
         // seconds (`ai[3]`'s idle timer shape).
         self.anim += 1.0;
@@ -18222,6 +18366,10 @@ impl Npc {
                     | NpcKind::BoundGoblin
                     | NpcKind::GoblinTinkerer
             ) {
+                    | NpcKind::GoblinTinkerer
+                    // W4-d34: the Old Man is friendly — never contact-damages.
+                    | NpcKind::OldMan
+            ) {
                 let base_dmg = if self.kind == NpcKind::Slime {
                     self.slime.stats().damage
                 } else {
@@ -18601,6 +18749,13 @@ impl Npc {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-d34 kinds 1-70: the port-local protocol band (injective; the
+            // vanilla 31/34/37/43/46 collide with the port's own ids above).
+            NpcKind::AngryBones => 266,
+            NpcKind::CursedSkull => 267,
+            NpcKind::OldMan => 268,
+            NpcKind::ManEater => 269,
+            NpcKind::Bunny => 270,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23669,7 +23824,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 270] = [
+    pub(super) const ALL_KINDS: [NpcKind; 275] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -23948,6 +24103,12 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-d34 kinds 1-70 coverage wave (phase 1).
+        NpcKind::AngryBones,
+        NpcKind::CursedSkull,
+        NpcKind::OldMan,
+        NpcKind::ManEater,
+        NpcKind::Bunny,
     ];
 
     #[test]
@@ -23994,6 +24155,61 @@ mod tests {
             ALL_KINDS.len(),
             "from_u16 decodes an id no kind encodes to"
         );
+    }
+
+    /// W4-d34 kinds 1-70 coverage wave (phase 1) — the five kinds'
+    /// `SetDefaults` rows pin against the C# (`NPC.cs:9108-9120` AngryBones,
+    /// `:9150-9165` CursedSkull, `:9197-9210` OldMan, `:9293-9307` ManEater,
+    /// `:9336-9347` Bunny), through the port's tables — the small-kinds pin's
+    /// shape. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d34_phase1_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::AngryBones, 31u16, 3u8, 18.0, 40.0, 26, 8, 80, 0.8f32, 130.0f32),
+            (NpcKind::CursedSkull, 34, 10, 26.0, 28.0, 35, 6, 40, 0.2, 150.0),
+            (NpcKind::OldMan, 37, 7, 18.0, 40.0, 10, 15, 250, 0.5, 0.0),
+            (NpcKind::ManEater, 43, 13, 30.0, 30.0, 34, 10, 110, 0.0, 350.0),
+            (NpcKind::Bunny, 46, 7, 18.0, 20.0, 0, 0, 5, 1.0, 0.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.net_id(), ty as i32, "{kind:?} net id");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The protocol ids ride the port-local 266..270 band (NOT the vanilla
+        // types — the S1-F-1 separation); the render hash is injective there.
+        assert_eq!(NpcKind::AngryBones.to_u16(), 266);
+        assert_eq!(NpcKind::CursedSkull.to_u16(), 267);
+        assert_eq!(NpcKind::OldMan.to_u16(), 268);
+        assert_eq!(NpcKind::ManEater.to_u16(), 269);
+        assert_eq!(NpcKind::Bunny.to_u16(), 270);
+        // The Cursed Skull's noGravity row (`NPC.cs:9160`); the ManEater writes
+        // noGravity but kb 0, so the strike-time selector keeps it out.
+        assert!(NpcKind::CursedSkull.no_gravity());
+        assert!(!NpcKind::ManEater.no_gravity());
+        // The Old Man is town-flagged + friendly (`NPC.cs:9199-9200`); the
+        // Bunny is catchable-friendly via `bug_net::npc_catchable` (46).
+        assert!(NpcKind::OldMan.is_town_npc_like());
+        assert!(NpcKind::OldMan.is_friendly());
+        let bunny = Npc::new(NpcKind::Bunny, 0.0, 0.0, 1, 0.0);
+        assert!(bunny.friendly, "the catchable bunny spawns friendly");
+        assert_eq!(bunny.catchable_immunity, 90, "the 90-tick catch window");
+        // The hit/death cues (`NPC.cs` SetDefaults HitSound/DeathSound).
+        assert_eq!(NpcKind::AngryBones.hit_sound(), Some("NPC_Hit_2"));
+        assert_eq!(NpcKind::AngryBones.death_sound(), Some("NPC_Killed_2"));
+        assert_eq!(NpcKind::Bunny.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::Bunny.death_sound(), Some("NPC_Killed_1"));
     }
 
     /// The small-kinds wiring wave (S1-D-3-wire-smallkinds): the four wired
@@ -27559,7 +27775,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            270,
+            275,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
