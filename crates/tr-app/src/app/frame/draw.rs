@@ -2190,13 +2190,14 @@ impl App {
                                 // the landed layer-walk draw order and folds the
                                 // new hovers into one line.
                                 let mut fs_hover: Option<String> = None;
-                                // `:55784-55785`: the cursor's map tile.
-                                let fs_tx = ((0.0 - map::map_origin(map.pos, map.scale, screen)[0]
-                                    + self.mouse_pos.x)
-                                    / map.scale) as i32;
-                                let fs_ty = ((0.0 - map::map_origin(map.pos, map.scale, screen)[1]
-                                    + self.mouse_pos.y)
-                                    / map.scale) as i32;
+                                // `:55784-55785`: the cursor's map tile —
+                                // `(int)((0 - num + mouseX) / num5 + num6)`,
+                                // `num6/num7 = 10` (`:55293-55294`).
+                                let fs_origin = map::map_origin(map.pos, map.scale, screen);
+                                let fs_tx =
+                                    ((0.0 - fs_origin[0] + self.mouse_pos.x) / map.scale + 10.0) as i32;
+                                let fs_ty =
+                                    ((0.0 - fs_origin[1] + self.mouse_pos.y) / map.scale + 10.0) as i32;
                                 // `:55787-55802`: the drawn-window gate. `num6/num7`
                                 // are 10, `num8 = maxTilesX-10`, `num9 = maxTilesY-19`
                                 // (`:55293-55296`); the `>= num8` / `>= num9` tests
