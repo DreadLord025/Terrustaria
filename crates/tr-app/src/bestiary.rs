@@ -2223,6 +2223,17 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Wolf",
     },
+    // W4-d36 E4b — own entry (the populator adds the Eclipse info at
+    // `BestiaryDatabaseNPCsPopulator.cs:1466`; the name rides
+    // `Lang.GetNPCNameValue`).
+    BestiaryEntryDef {
+        credit_id: "Frankenstein",
+        net_id: 162,
+        kind: NpcKind::Frankenstein,
+        variant: None,
+        quick_unlock: false,
+        name: "Frankenstein",
+    },
     // W4-d36 hover batch — own entries (no Hide folds; the populator adds
     // the Crimson/Jungle info at `BestiaryDatabaseNPCsPopulator.cs:611`/
     // `:1339`/`:1570`; the names ride `Lang.GetNPCNameValue`).

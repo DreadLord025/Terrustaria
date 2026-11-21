@@ -1,0 +1,260 @@
+diff --git a/crates/tr-app/src/ambient_sound.rs b/crates/tr-app/src/ambient_sound.rs
+index 546b0b9e4..a427e3675 100644
+--- a/crates/tr-app/src/ambient_sound.rs
++++ b/crates/tr-app/src/ambient_sound.rs
+@@ -649,6 +649,18 @@ pub fn fighter_walker_kind(kind: crate::npc::NpcKind) -> bool {
+             | Scarecrow9
+             | Scarecrow10
+             | Splinterling
++            // W4-d36 E4 batch 2 — the four fighters ride the same plain
++            // `update_skeleton` walker (the Swamp Thing's dwell pre-arm
++            // returns before it, but the counter still ticks), so their
++            // `ai[3]` is free for the idle counter. The moan arms:
++            // 162/167 are in the `:57340` 1000-roll list, 162 ALSO has
++            // its own `:57356` 500-roll (case 29 style 6); 163/166 are
++            // in NEITHER moan list — the gate keeps their draw shape
++            // exact (the rolls never fire for them).
++            | Frankenstein
++            | BlackRecluse
++            | SwampThing
++            | UndeadViking
+     )
+ }
+ 
+diff --git a/crates/tr-app/src/assets.rs b/crates/tr-app/src/assets.rs
+index 8ffc00106..dc986dd40 100644
+--- a/crates/tr-app/src/assets.rs
++++ b/crates/tr-app/src/assets.rs
+@@ -1284,6 +1284,14 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
+         "NPC_154",
+         // W4-d36 E4 — the Wolf's own strip.
+         "NPC_155",
++        // W4-d36 E4 batch 2 — the fighters' own strips (163 is the draw
++        // sheet; the bestiary fold row samples NPC_238, the wall
++        // crawler's credit art — `ContentSamples.cs:1036`).
++        "NPC_162",
++        "NPC_163",
++        "NPC_166",
++        "NPC_167",
++        "NPC_238",
+         // W4-d36 hover batch.
+         "NPC_173",
+         "NPC_176",
+@@ -1873,7 +1881,7 @@ pub struct AmbienceTex {
+ /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
+ /// of a hand-maintained table — that table had drifted twice (the
+ /// martian sheets' insert shifted the tower/shards rows again).
+-pub const BESTIARY_NPC_SHEET_IDS: [u16; 190] = [
++pub const BESTIARY_NPC_SHEET_IDS: [u16; 194] = [
+         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
+         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
+         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
+@@ -1914,6 +1922,9 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 190] = [
+         155,
+         // W4-d36 hover batch — ENTRIES order (173/176/205).
+         173, 176, 205,
++        // W4-d36 E4 batch 2 — ENTRIES order (162/238/166/167; the Black
++        // Recluse's row carries the 238 fold credit, `ContentSamples.cs:1036`).
++        162, 238, 166, 167,
+     ];
+ 
+ /// Precomputed texture information for every type present in the world.
+@@ -2691,6 +2702,14 @@ impl Lookups {
+                 atlas.sheet("NPC_173").copied(),
+                 atlas.sheet("NPC_176").copied(),
+                 atlas.sheet("NPC_205").copied(),
++                // W4-d36 E4 batch 2 — the parallel vec keeps the
++                // BESTIARY_NPC_SHEET_IDS order (162/238/166/167; the
++                // Black Recluse's portrait samples the 238 fold credit's
++                // art, the wall crawler — `ContentSamples.cs:1036`).
++                atlas.sheet("NPC_162").copied(),
++                atlas.sheet("NPC_238").copied(),
++                atlas.sheet("NPC_166").copied(),
++                atlas.sheet("NPC_167").copied(),
+             ],
+             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
+             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),
+diff --git a/crates/tr-app/src/audio.rs b/crates/tr-app/src/audio.rs
+index e576774d5..eb1e0e27a 100644
+--- a/crates/tr-app/src/audio.rs
++++ b/crates/tr-app/src/audio.rs
+@@ -142,6 +142,10 @@ const SFX_CUES: &[(&str, u32)] = &[
+     // W4-d36 census batch 0 — the tortoises' NPCHit24 (`NPC.cs:10939`/
+     // `:10954`); the `Sounds/NPC_Hit_24.xnb` asset ships with the content.
+     ("NPC_Hit_24", 3),
++    // W4-d36 E4 batch 2 — the Black Recluse's NPCHit29 (`NPC.cs:11038`,
++    // the spider cue); the `Sounds/NPC_Hit_29.xnb` asset ships with the
++    // content.
++    ("NPC_Hit_29", 3),
+     ("NPC_Killed_1", 4),
+     ("NPC_Killed_2", 4),
+     ("NPC_Killed_3", 4),
+@@ -169,6 +173,10 @@ const SFX_CUES: &[(&str, u32)] = &[
+     // W4-d36 census batch 0 — the tortoises' NPCDeath27 (`NPC.cs:10941`/
+     // `:10956`); the `Sounds/NPC_Killed_27.xnb` asset ships with the content.
+     ("NPC_Killed_27", 4),
++    // W4-d36 E4 batch 2 — the Black Recluse's NPCDeath32 (`NPC.cs:11039`,
++    // the spider death cue); the `Sounds/NPC_Killed_32.xnb` asset ships
++    // with the content.
++    ("NPC_Killed_32", 4),
+     // The small-kinds wiring wave (S1-D-3-wire-smallkinds): the Angry
+     // Nimbus' NPCDeath33 (`NPC.cs:12230`), the Dungeon Spirit's NPCDeath39
+     // (`:12748`) and the Force Bubble's NPCDeath45 (`:13890`) — the
+diff --git a/crates/tr-app/src/bestiary.rs b/crates/tr-app/src/bestiary.rs
+index 042e911d7..80e83417f 100644
+--- a/crates/tr-app/src/bestiary.rs
++++ b/crates/tr-app/src/bestiary.rs
+@@ -2250,6 +2250,50 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
+         quick_unlock: false,
+         name: "Moth",
+     },
++    // W4-d36 E4 batch 2 — the fighters' entries (appended last, the
++    // small-lane convention). The populator adds the Eclipse info to
++    // 162/166 (`BestiaryDatabaseNPCsPopulator.cs:1466`/`:1394`) and the
++    // UndergroundSnow info to 167 (`:1551`); the names ride
++    // `Lang.GetNPCNameValue`.
++    BestiaryEntryDef {
++        credit_id: "Frankenstein",
++        net_id: 162,
++        kind: NpcKind::Frankenstein,
++        variant: None,
++        quick_unlock: false,
++        name: "Frankenstein",
++    },
++    // 163 BlackRecluse is `Hide = true` (GetLeinforsEntries) and its
++    // credit folds onto 238 BlackRecluseWall (`ContentSamples.cs:1036`:
++    // `creditIds[163] = creditIds[238]`). d37's 238 kind is not on this
++    // branch, so the row is emitted at net 238 keyed on the wall
++    // crawler's credit (doc-109 §4's fold note; the populator attaches
++    // the SpiderNest info to 238, `:1555`). The DRAW sheet stays 163
++    // through `texture_net_id`'s own row (the Sharkron 372 precedent).
++    BestiaryEntryDef {
++        credit_id: "BlackRecluseWall",
++        net_id: 238,
++        kind: NpcKind::BlackRecluse,
++        variant: None,
++        quick_unlock: false,
++        name: "Black Recluse",
++    },
++    BestiaryEntryDef {
++        credit_id: "SwampThing",
++        net_id: 166,
++        kind: NpcKind::SwampThing,
++        variant: None,
++        quick_unlock: false,
++        name: "Swamp Thing",
++    },
++    BestiaryEntryDef {
++        credit_id: "UndeadViking",
++        net_id: 167,
++        kind: NpcKind::UndeadViking,
++        variant: None,
++        quick_unlock: false,
++        name: "Undead Viking",
++    },
+ ];
+ 
+ /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
+diff --git a/crates/tr-app/src/npc.rs b/crates/tr-app/src/npc.rs
+index 89eab0f05..3af996e9f 100644
+--- a/crates/tr-app/src/npc.rs
++++ b/crates/tr-app/src/npc.rs
+@@ -4742,8 +4742,10 @@ impl Npc {
+         #[deny(unreachable_patterns)]
+         match self.kind.ai_style() {
+             // `if (this.aiStyle == 5) { this.AI_005_EaterOfSouls(); return; }`
+-            // (`NPC.cs:20802-20806`).
+-            5 => self.ai_005_hover_family(world, player),
++            // (`NPC.cs:20802-20806`). The W4-d36 wet/stinger tails
++            // (`:50714-50812`) draw on the caller's `UpdateNPCs` stream
++            // (the Hornet 42's volley is the same seam's precedent).
++            5 => self.ai_005_hover_family(world, player, rng),
+             // `else if (this.aiStyle == 21)` (`NPC.cs:24615-24665`) — the
+             // BlazingWheel (72), the style's only user. The small-kinds
+             // wiring wave: the ricochet machine rides `npc_ai_style21`
+diff --git a/crates/tr-app/src/render/entities.rs b/crates/tr-app/src/render/entities.rs
+index 9f6c5572a..562cd1bd2 100644
+--- a/crates/tr-app/src/render/entities.rs
++++ b/crates/tr-app/src/render/entities.rs
+@@ -1120,6 +1120,11 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
+         // (the officer's shield overlay, `Main.cs:25773-25777`) — the
+         // fishron-hazard precedent. The turret has its own entry (387).
+         NpcKind::ForceBubble => 384,
++        // W4-d36 E4 batch 2: the Black Recluse's bestiary credit folds
++        // onto 238 BlackRecluseWall (`ContentSamples.cs:1036`, Hide=true),
++        // but its DRAW sheet is its own NPC_163 (the ground crawler's art)
++        // — the fishron-hazard precedent. The 238 wall form is d37's kind.
++        NpcKind::BlackRecluse => 163,
+         _ => kind.net_id() as u16,
+     }
+ }
+@@ -1259,8 +1264,9 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
+ /// atlas packing is the repack wave's (research/108 §5: the union
+ /// overflows 8192); the draw arms reference the sheets, absent ones
+ /// render nothing. Batch 0: 141/148/149/153/154; hover batch:
+-/// 173/176/205; E4: 155.
+-pub(crate) const D36_SHEETS: &[u32] = &[141, 148, 149, 153, 154, 155, 173, 176, 205];
++/// 173/176/205; E4: 155; E4 batch 2: 162/163/166/167 (163 is the DRAW
++/// sheet — the bestiary credit folds onto 238, `texture_net_id`'s row).
++pub(crate) const D36_SHEETS: &[u32] = &[141, 148, 149, 153, 154, 155, 173, 176, 205, 162, 163, 166, 167];
+ 
+ /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
+ /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
+@@ -3206,6 +3212,17 @@ pub(crate) fn draw_npcs(
+                 let ty = texture_net_id(n.kind);
+                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+             }
++            // W4-d36 E4 batch 2 draw — own sheets at npc_rows (162/167 =
++            // 15, 163 = 8, 166 = 13, `Main.cs:67082`), the generic anchor
++            // (the b0 convention). The Black Recluse's `texture_net_id`
++            // row keeps the 163 draw sheet under the 238 credit fold.
++            NpcKind::Frankenstein
++            | NpcKind::BlackRecluse
++            | NpcKind::SwampThing
++            | NpcKind::UndeadViking => {
++                let ty = texture_net_id(n.kind);
++                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
++            }
+         };
+         let Some(tex) = tex else {
+             continue;
+diff --git a/crates/tr-app/src/ui/bestiary.rs b/crates/tr-app/src/ui/bestiary.rs
+index 766564395..593bd93b6 100644
+--- a/crates/tr-app/src/ui/bestiary.rs
++++ b/crates/tr-app/src/ui/bestiary.rs
+@@ -1657,6 +1657,35 @@ fn portrait_data(
+                 .unwrap_or(40.0);
+             (sheet_i, h, 44.0, h, white)
+         }
++        // W4-d36 E4 batch 2 portraits — the sheet's frame height (the
++        // vanilla strips: 162/167 = 15 rows, the 238 fold credit = 4,
++        // 166 = 13, `Main.cs:67082`) with the padded box width (the b0
++        // convention). The Black Recluse's entry carries the 238 net id,
++        // so its portrait samples the wall crawler's 4-row strip.
++        (NpcKind::Frankenstein, _) => {
++            let h = entry_sheet(lookups, entry)
++                .map(|s| s.height as f32 / 15.0)
++                .unwrap_or(40.0);
++            (sheet_i, h, 22.0, h, white)
++        }
++        (NpcKind::BlackRecluse, _) => {
++            let h = entry_sheet(lookups, entry)
++                .map(|s| s.height as f32 / 4.0)
++                .unwrap_or(36.0);
++            (sheet_i, h, 40.0, h, white)
++        }
++        (NpcKind::SwampThing, _) => {
++            let h = entry_sheet(lookups, entry)
++                .map(|s| s.height as f32 / 13.0)
++                .unwrap_or(40.0);
++            (sheet_i, h, 22.0, h, white)
++        }
++        (NpcKind::UndeadViking, _) => {
++            let h = entry_sheet(lookups, entry)
++                .map(|s| s.height as f32 / 15.0)
++                .unwrap_or(40.0);
++            (sheet_i, h, 22.0, h, white)
++        }
+     }
+ }
+ 

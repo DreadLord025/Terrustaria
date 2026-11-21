@@ -598,6 +598,9 @@ impl NpcKind {
             NpcKind::IceTortoise => 771,
             // W4-d36 E4 — the Wolf (155) at the next R7-band slot.
             NpcKind::Wolf => 772,
+            // W4-d36 E4b — Frankenstein (162) at the next R7-band slot
+            // (159 Vampire is g8-claimed @762 — skipped, doc-250 §6.10).
+            NpcKind::Frankenstein => 773,
             // W4-d36 census batch 1 — the aiStyle-5 hover trio at their
             // R7-band slots (ascending vanilla order, the b0 convention).
             NpcKind::Crimera => 781,
@@ -943,6 +946,8 @@ impl NpcKind {
             771 => NpcKind::IceTortoise,
             // W4-d36 E4 — the Wolf's decode arm.
             772 => NpcKind::Wolf,
+            // W4-d36 E4b — Frankenstein's decode arm.
+            773 => NpcKind::Frankenstein,
             // W4-d36 census batch 1 — the hover trio's decode arms.
             781 => NpcKind::Crimera,
             782 => NpcKind::MossHornet,
@@ -1834,7 +1839,9 @@ impl NpcKind {
             | NpcKind::Penguin
             | NpcKind::PenguinBlack
             // W4-d36 E4: the Wolf's NPCHit1 (`NPC.cs:10969`).
-            | NpcKind::Wolf => "NPC_Hit_1",
+            | NpcKind::Wolf
+            // W4-d36 E4b: Frankenstein's NPCHit1 (`NPC.cs:15432`).
+            | NpcKind::Frankenstein => "NPC_Hit_1",
             NpcKind::GiantTortoise
             | NpcKind::IceTortoise => "NPC_Hit_24",
             // W4-d36 census batch 1: the hover trio's NPCHit1
@@ -2153,6 +2160,8 @@ impl NpcKind {
             | NpcKind::PenguinBlack
             // W4-d36 E4: the Wolf's NPCDeath1 (`NPC.cs:10970`).
             | NpcKind::Wolf => "NPC_Killed_1",
+            // W4-d36 E4b: Frankenstein's NPCDeath2 (`NPC.cs:15433`).
+            NpcKind::Frankenstein => "NPC_Killed_2",
             NpcKind::GiantTortoise
             | NpcKind::IceTortoise => "NPC_Killed_27",
             // W4-d36 census batch 1: the hover trio's NPCDeath1
@@ -2528,6 +2537,9 @@ impl NpcKind {
             // W4-d36 E4: the Wolf (155) aiStyle 26 (`NPC.cs:10965`) —
             // `AI_026_Unicorns`, the Horseman/Hellhound machine's own arm.
             NpcKind::Wolf => 26,
+            // W4-d36 E4b: Frankenstein (162) aiStyle 3 (`NPC.cs:15428`) —
+            // the walker family on the `npc_ai3_speeds` ladder's cap-2 row.
+            NpcKind::Frankenstein => 3,
             // W4-d36 census batch 1: 173/176/205 aiStyle 5
             // (`NPC.cs:11173`/`:11227`/`:11629`) — the style axis claims
             // them (`ai_005_hover_family`).
@@ -2593,6 +2605,9 @@ impl NpcKind {
             // W4-d36 E4 — the Wolf (155) rides the same aiStyle-26 chase
             // ceiling (`num10 = 6f`, `NPC.cs:62617`).
             NpcKind::Wolf => 6.0,
+            // W4-d36 E4b — Frankenstein (162) rides the cap-2 group
+            // (`NPC.cs:57554-57578`, the ladder's `:202` row).
+            NpcKind::Frankenstein => 2.0,
             // S1-D-3ff wave A — the `num107` group's per-type rows
             // (`AI_003_Fighters`, `NPC.cs:58324-58376`): the default 1f
             // (52/53/161 carry no override), 132 0.95f (`:58345-58348`),
@@ -3076,6 +3091,8 @@ impl NpcKind {
             | NpcKind::IceTortoise => (46.0, 32.0),
             // W4-d36 E4 (`NPC.cs:10963-10964`): the Wolf 46x30.
             NpcKind::Wolf => (46.0, 30.0),
+            // W4-d36 E4b (`NPC.cs:15426-15427`): Frankenstein 18x40.
+            NpcKind::Frankenstein => (18.0, 40.0),
             // W4-d36 census batch 1 (`NPC.cs:11171-11172`/`:11225-11226`/
             // `:11627-11628`): Crimera 30x30, Moss Hornet 34x32, Moth 40x40.
             NpcKind::Crimera => (30.0, 30.0),
@@ -3191,6 +3208,8 @@ impl NpcKind {
             NpcKind::IceTortoise => 154,
             // W4-d36 E4 (`NPCID.cs:2293`).
             NpcKind::Wolf => 155,
+            // W4-d36 E4b (`NPCID.cs:11001`).
+            NpcKind::Frankenstein => 162,
             // W4-d36 census batch 1 (`NPCID.cs:11023`/`:11029`/`:11087`).
             NpcKind::Crimera => 173,
             NpcKind::MossHornet => 176,
@@ -3243,6 +3262,10 @@ impl NpcKind {
             NpcKind::GoblinArcher => 21,
             NpcKind::GoblinPeon | NpcKind::GoblinThief | NpcKind::GoblinWarrior => 16,
             NpcKind::Skeleton | NpcKind::UndeadMiner => 15,
+            // W4-d36 E4b — Frankenstein rides `FindFrame`'s humanoid-group
+            // case list (`NPC.cs:68571`) on its 15-frame strip
+            // (`Main.npcFrameCount[162]`, `Main.cs:67082`).
+            NpcKind::Frankenstein => 15,
             // The Zombie Elf trio (`S1-F-13c`): `FindFrame`'s humanoid-group
             // case list carries 338-340 (`NPC.cs:68603-68605`) on their
             // 15-frame strips (`Main.npcFrameCount[338..340]`, `Main.cs`).
@@ -3747,6 +3770,8 @@ impl NpcKind {
             NpcKind::IceTortoise => 400,
             // W4-d36 E4 (`NPC.cs:10968`).
             NpcKind::Wolf => 300,
+            // W4-d36 E4b (`NPC.cs:15431`).
+            NpcKind::Frankenstein => 350,
             // W4-d36 census batch 1 (`NPC.cs:11176`/`:11230`/`:11632`).
             NpcKind::Crimera => 40,
             NpcKind::MossHornet => 220,
@@ -4124,6 +4149,8 @@ impl NpcKind {
             NpcKind::IceTortoise => 55,
             // W4-d36 E4 (`NPC.cs:10966`).
             NpcKind::Wolf => 65,
+            // W4-d36 E4b (`NPC.cs:15429`).
+            NpcKind::Frankenstein => 65,
             // W4-d36 census batch 1 (`NPC.cs:11174`/`:11228`/`:11630`).
             NpcKind::Crimera => 22,
             NpcKind::MossHornet => 70,

@@ -1636,6 +1636,15 @@ fn portrait_data(
                 .unwrap_or(30.0);
             (sheet_i, h, 50.0, h, white)
         }
+        // W4-d36 E4b portrait — Frankenstein's sheet frame height (the
+        // vanilla strip: 162 = 15 rows, `Main.cs:67082`) with the padded
+        // box width (the b0 convention).
+        (NpcKind::Frankenstein, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 22.0, h, white)
+        }
         // W4-d36 hover batch portraits — the sheet's frame height (the
         // vanilla strips: 173 = 2 rows, 176 = 2, 205 = 3, `Main.cs:67082`)
         // with the padded box width (the b0 convention).

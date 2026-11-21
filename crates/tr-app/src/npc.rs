@@ -1117,6 +1117,15 @@ pub enum NpcKind {
     /// The hit/death dust arm (`NPC.cs:87717-87737`) is the gore/dust
     /// wave's remainder.
     Wolf,
+    /// `NPCID.Frankenstein` (162) — W4-d36 E4b (`NPC.cs` SetDefaults case
+    /// 162, `:15424-15436`): 18x40, aiStyle 3, dmg 65, def 18, 350 HP,
+    /// kb 0.3, value 600, NPCHit1/NPCDeath2. WIRED: the aiStyle-3 walker
+    /// family (`update_skeleton` on the ladder's cap-2 group `:57554`).
+    /// FindFrame's humanoid-group case list (`:68571`) over the 15-row
+    /// strip (`Main.cs:67082`); the air rest is row 1 (162 is NOT in the
+    /// `:69647` row-0 override list). The moans (`:57340` 1000-roll +
+    /// `:57356` own 500-roll) are the ambient wave's remainder.
+    Frankenstein,
     // ---- W4-d36 hover batch (the in-flight stash's presets COMPLETED:
     // R7-band slots 781/782/793, ascending vanilla order).
     /// `NPCID.Crimera` (173) — W4-d36 (`NPC.cs` SetDefaults case 173,
@@ -3590,6 +3599,8 @@ impl Npc {
             | NpcKind::IceTortoise => 0.3,
             // W4-d36 E4 (`NPC.cs:10971`).
             NpcKind::Wolf => 0.3,
+            // W4-d36 E4b (`NPC.cs:15434`).
+            NpcKind::Frankenstein => 0.3,
             // W4-d36 hover batch (`NPC.cs:11180`/`:11232`/`:11634`):
             // Crimera/MossHornet 0.5, Moth 0.4.
             NpcKind::Crimera
@@ -3984,6 +3995,8 @@ impl Npc {
             NpcKind::IceTortoise => 28,
             // W4-d36 E4 (`NPC.cs:10967`).
             NpcKind::Wolf => 30,
+            // W4-d36 E4b (`NPC.cs:15430`).
+            NpcKind::Frankenstein => 18,
             // W4-d36 hover batch (`NPC.cs:11175`/`:11229`/`:11631`).
             NpcKind::Crimera => 8,
             NpcKind::MossHornet => 22,
@@ -4369,6 +4382,8 @@ impl Npc {
             NpcKind::IceTortoise => 450.0,
             // W4-d36 E4 (`NPC.cs:10972`).
             NpcKind::Wolf => 1000.0,
+            // W4-d36 E4b (`NPC.cs:15435`).
+            NpcKind::Frankenstein => 600.0,
             // W4-d36 hover batch (`NPC.cs:11181`/`:11234`/`:11636`).
             NpcKind::Crimera => 90.0,
             NpcKind::MossHornet => 600.0,
@@ -6295,6 +6310,12 @@ impl Npc {
             NpcKind::HeadlessHorseman | NpcKind::Hellhound | NpcKind::Wolf => {
                 crate::npc_ai_unicorn::unicorn_step(self, world, player, rng)
             }
+            // W4-d36 E4b — Frankenstein (162) rides the aiStyle-3 walker
+            // family on the ladder's cap-2 row (`npc_ai3_speeds`: the
+            // `:57554` group, `NPC.cs:57554-57578`) — the frost walkers'
+            // `update_skeleton` precedent. The moan rolls (`:57340`/
+            // `:57356`) are the ambient wave's remainder.
+            NpcKind::Frankenstein => self.update_skeleton(world, player, dt),
             // The Poltergeist (330): aiStyle 22's ghost dwell/dash/flee
             // machine (`NPC.cs:24666-25234`, the 330 branches) — S1-F-13b2
             // slice C. In 1.4.5.8 the 330 path carries no shot; its offence
@@ -8184,6 +8205,21 @@ impl Npc {
                 // The humanoid-group walk (the cave walkers ride the same
                 // town machine — 15 rows).
                 self.humanoid_town_frame();
+            }
+            // W4-d36 E4b — Frankenstein (162) rides `FindFrame`'s
+            // humanoid-group case list (`NPC.cs:68571`): the shared town
+            // walk grounded (idle row 0, the walk rows 2..14 on the
+            // |vx|*2+1 > 6 clock — the 15-row strip, `Main.cs:67082`);
+            // airborne the group rests row 1 (`:69642-69646`) — 162 is
+            // NOT in the `:69647` row-0 override list.
+            NpcKind::Frankenstein => {
+                if self.vy == 0.0 {
+                    self.sprite_dir = self.facing;
+                    self.humanoid_town_frame();
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 1;
+                }
             }
             // Case 49 — Cave Bat (`AI_014_Bats`): the plain flap over the
             // 5-frame strip (`Main.npcFrameCount[49] = 5`, `Main.cs:67082`).
@@ -18905,6 +18941,8 @@ impl Npc {
             NpcKind::Moth => 557,
             // W4-d36 E4 — the next fresh hash slot (injective).
             NpcKind::Wolf => 558,
+            // W4-d36 E4b — the next fresh hash slot (injective).
+            NpcKind::Frankenstein => 559,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23973,7 +24011,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 279] = [
+    pub(super) const ALL_KINDS: [NpcKind; 280] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24260,6 +24298,8 @@ mod tests {
         NpcKind::IceTortoise,
         // W4-d36 E4.
         NpcKind::Wolf,
+        // W4-d36 E4b.
+        NpcKind::Frankenstein,
         // W4-d36 hover batch.
         NpcKind::Crimera,
         NpcKind::MossHornet,
@@ -24591,6 +24631,67 @@ mod tests {
         b.find_frame();
         assert_eq!((b.frame, b.frame_counter), (1, 0.0), "the 6th tick advances");
         assert_eq!(b.sprite_dir, 1, "the sprite rides the facing (`:74333`)");
+    }
+
+    /// W4-d36 E4b — Frankenstein's `SetDefaults` row (`NPC.cs:15424-15436`)
+    /// + its humanoid-group FindFrame clock (`:68571`, the shared town
+    /// walk `:69515-69584`, the air rest `:69642-69646`) pin against the
+    /// C# through the port's tables (the Wolf pin's shape). The protocol
+    /// id rides the d37-R7 band slot 773. WRITTEN, NOT RUN (code-only).
+    #[test]
+    fn w4_d36_frankenstein_the_defaults_and_frame_clock_match_the_csharp() {
+        let kind = NpcKind::Frankenstein;
+        let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        assert_eq!(kind.cs_id(), 162, "vanilla type (`NPCID.cs:11001`)");
+        assert_eq!(kind.to_u16(), 773, "the R7-band slot");
+        assert_eq!(NpcKind::from_u16(773), Some(kind), "round-trip");
+        assert_eq!(kind.ai_style(), 3, "aiStyle (`:15428`)");
+        assert_eq!(kind.size(), (18.0, 40.0), "size (`:15426-15427`)");
+        assert_eq!(kind.contact_damage(), 65, "damage (`:15429`)");
+        assert_eq!(shell.defense(), 18, "defense (`:15430`)");
+        assert_eq!(kind.max_hp(), 350, "lifeMax (`:15431`)");
+        assert_eq!(shell.hp, 350, "spawn hp");
+        assert_eq!(shell.knock_back_resist(), 0.3, "kb (`:15434`)");
+        assert_eq!(shell.value(), 600.0, "value (`:15435`)");
+        assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "NPCHit1 (`:15432`)");
+        assert_eq!(kind.death_sound(), Some("NPC_Killed_2"), "NPCDeath2 (`:15433`)");
+        assert!(!kind.no_gravity(), "the case writes no noGravity row");
+        assert_eq!(kind.ai3_walk_speed(), Some(2.0), "the cap-2 group (`:57554`)");
+        // The 162 null-row (`NPCID.cs:7072`): no immunity.
+        assert!(
+            !shell.buffs.buff_immune.iter().any(|&b| b),
+            "162 null-row (`NPCID.cs:7072`) — no immunity"
+        );
+        assert_eq!(crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue).net_id, 162, "bestiary net_id");
+        assert_eq!(crate::render::entities::npc_rows(162), 15, "the 15-row strip (`Main.cs:67082`)");
+        assert_eq!(kind.humanoid_frame_count(), 15, "the walk band's strip");
+        // The humanoid-group clock: the standstill rests row 0
+        // (`:69515-69519`); the walk accrues |vx|*2+1 and advances at
+        // > 6 (`:69550-69580`), entering the band at row 2 (`:69572`);
+        // airborne rests row 1 — 162 is NOT in the `:69647` row-0 list.
+        let mut n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0), "the standstill rests row 0");
+        n.vy = 2.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0), "the air rest is row 1 (`:69645`)");
+        n.vy = 0.0;
+        n.vx = 1.0;
+        n.find_frame();
+        // 0 + 1*2+1 = 3 <= 6: the row enters the band at 2, clock holds.
+        assert_eq!((n.frame, n.frame_counter), (2, 3.0), "the walk enters at row 2");
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (2, 6.0), "the 6-clock tick holds");
+        n.find_frame();
+        // 6 + 3 = 9 > 6: the row advances, the clock resets.
+        assert_eq!((n.frame, n.frame_counter), (3, 0.0), "the >6 tick advances");
+        // The wrap: at row 14 the next advance wraps to row 2
+        // (`:69581-69584`, count 15 − ExtraFramesCount 0).
+        n.frame = 14;
+        n.frame_counter = 6.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (2, 0.0), "the band wraps 15 -> 2");
+        assert_eq!(n.sprite_dir, 1, "the sprite rides the facing (`:68649-68656`)");
     }
 
     /// The Dye Trader's shop (`case 12`): the four always rows, the moon-phase
@@ -28047,8 +28148,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            279,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d36 census batch 0's five + the hover batch's three + W4-d36 E4's Wolf, L-B gate)"
+            280,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d36 census batch 0's five + the hover batch's three + W4-d36 E4's Wolf + E4b's Frankenstein, L-B gate)"
         );
         assert!(
             covered > 43,
