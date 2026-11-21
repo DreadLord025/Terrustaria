@@ -94,13 +94,16 @@
 //!   `usesOwnerMeleeHitCD` / `stopsDealingDamageAfterPenetrateHits`
 //!   (190's rows), the 190 cone hitbox (`Colliding` `:15506-15524`);
 //! * the 1126 spore machine's CHILDREN — the 1128 cloud (aiStyle 92) and
-//!   the 1129 slam (aiStyle 209) — are OUTSIDE this census window and
-//!   their styles are unarmed. Their spawn intents ride out of the arm
+//!   the 1129 slam (aiStyle 209): the spawn intents ride out of the arm
 //!   ([`ClaymoreSpores`], the `wants_mark_spawn` pattern) and the dispatch
-//!   parks them on the slot; the child ROWS + the 92/209 machines are the
-//!   documented follow-up (the pool cannot spawn an unrowed kind). The
-//!   intent payloads and their RNG order are ported and witness-tested
-//!   here so the follow-up only adds the rows + the drain;
+//!   drains them at the arm's tail (`projectile_ai_clouds::
+//!   drain_claymore_spores` — the W4-d19 follow-up landed the 1128 row +
+//!   the aiStyle-92 machine + the drain; the 1129 row + the 209 arm are
+//!   W4-d21's claim on `task/W4-d21-proj-ai-201-210`, verified verbatim
+//!   against `AI_209_ChlorophyteClaymoreBladeSlam` `:69622-69631` — the
+//!   slam's data-seam spawn no-ops until that row merges, the documented
+//!   cross-branch contract). The intent payloads and their RNG order are
+//!   ported and witness-tested here;
 //! * `SelfHurtPlayers` (184): the `deadMansSweater` halving, the
 //!   gravestone player-index override and the `trapDebuffSource` write
 //!   have no port fields — the 949 is neither trap nor gravestone, so all
@@ -1476,6 +1479,49 @@ mod tests {
         ai_bad_torch_luck(&mut p, Some(&mut pl), 0, &mut rng);
         assert_eq!(p.ai[1], -2.0);
         assert!(p.tile_collide, "the else arm (`:42804`)");
+    }
+
+    /// W4-d19 follow-up — the 949 self-hurt IS dodgeable
+    /// (`SelfHurtPlayers` `:15050` passes `IsDamageDodgeable()`; the 949
+    /// is outside the exactly-9999 Moon Lord exemption `:15067`, so the
+    /// parameter is TRUE): the hurt rides the shared `Player::hurt` dodge
+    /// lane (`Player.cs:38214-38241` — sash → belt → brain → shadow).
+    /// A belt-armed owner rolls the 1/10 dodge BEFORE any damage lands;
+    /// the CensusRng's `next_range` returns min 0 → the dodge fires.
+    /// This is the torch-god EVENT integration contract (f33's event
+    /// machine — `Player.TorchAttack` `Player.cs:17813-17910` — spawns
+    /// the 949 with ai0 = the torch dust id / ai1 = the flight distance;
+    /// the arm + the dodge lane are the projectile side, landed here).
+    #[test]
+    fn w4_d19_the_torch_fireball_self_hurt_is_dodgeable() {
+        let w = world();
+        let mut pl = crate::player::Player::spawn(&w);
+        pl.black_belt = true;
+        pl.unlocked_biome_torches = false; // the self-hurt lane is armed
+        // The fireball ON the player (the hitbox overlap gate `:15028`).
+        let mut p = proj(949);
+        p.pos = Vec2::new(pl.x, pl.y);
+        p.damage = 40;
+        p.owner = 0;
+        let hp_before = pl.hp;
+        let mut rng = census();
+        ai_bad_torch_luck(&mut p, Some(&mut pl), 0, &mut rng);
+        // The DamageVar draw + the belt's Next(10) rode the stream; the
+        // dodge swallowed the hit (no HP loss, no hurt cooldown).
+        assert_eq!(pl.hp, hp_before, "the belt dodged the fireball");
+        assert!(rng.ranges.contains(&(0, 10)), "the belt's 1/10 roll");
+        // Without the belt the same overlap DOES hurt (the DamageVar
+        // draw is the only range draw before the four dust gates).
+        let mut pl2 = crate::player::Player::spawn(&w);
+        pl2.unlocked_biome_torches = false;
+        let mut q = proj(949);
+        q.pos = Vec2::new(pl2.x, pl2.y);
+        q.damage = 40;
+        q.owner = 0;
+        let hp2 = pl2.hp;
+        let mut rng2 = census();
+        ai_bad_torch_luck(&mut q, Some(&mut pl2), 0, &mut rng2);
+        assert!(pl2.hp < hp2, "the un-dodged fireball hurts");
     }
 
     /// Style 190's shared spine (`:41991-42018`, `:42222-42226`): the age,

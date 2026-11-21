@@ -769,13 +769,6 @@ pub struct Projectile {
     /// S1-P-i35 — the pull's Duke Fishron spawn (`Player.cs:52403-52414`,
     /// `NPC.SpawnOnPlayer(plr, 370)`): the owner player id.
     pub wants_duke_spawn: bool,
-    /// W4-d19 — the 1126 Chlorophyte Claymore's spore-machine child intents
-    /// (`AI_190_NightsEdge` `Projectile.cs:42078-42182`): the queued 1128
-    /// clouds and the optional 1129 slam. The child rows + the aiStyle-92/
-    /// 209 machines are the documented follow-up (`projectile_ai_sword_styles`
-    /// module doc) — the intents park here (the `wants_mark_spawn` pattern)
-    /// until the drain lands. `None` for every slot that bloomed nothing.
-    pub(crate) wants_claymore_spores: Option<crate::projectile_ai_sword_styles::ClaymoreSpores>,
 }
 
 impl Default for Projectile {
@@ -862,7 +855,6 @@ impl Default for Projectile {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
-            wants_claymore_spores: None,
         }
     }
 }
@@ -17381,6 +17373,28 @@ impl ProjectilePool {
                             );
                             self.slots[i].kill_step(world);
                         }
+                        // W4-d19 follow-up — aiStyle 92, the drifting
+                        // cloud family (the inline `AI()` arm
+                        // `Projectile.cs:32558-32820`): the 511-513 toxic
+                        // clouds, the 1007 gas trap, the 1128 spore child.
+                        // A POOL-side step — the mutual repulsion scans
+                        // write the OTHER cloud slots (`dragon_step`
+                        // shape); the 1007 gas buff reads the player +
+                        // the NPC vec.
+                        92 => {
+                            crate::projectile_ai_clouds::cloud_family_step(
+                                &mut self.slots,
+                                i,
+                                world,
+                                player.as_deref_mut(),
+                                npcs,
+                                rng,
+                            );
+                            // tileCollide false (`:32567`) — the free
+                            // integrate, even on the lifetime-kill tick
+                            // (`:17015` before the `!active` return).
+                            self.slots[i].kill_step(world);
+                        }
                         // aiStyle 184 — the Torch God's fireball (949,
                         // `AI_184_BadTorchLuck` `:42787-42822`): the
                         // owner-gated self-hurt, the cue, the ai[1] drain
@@ -17428,11 +17442,25 @@ impl ProjectilePool {
                                 local_owner,
                                 rng,
                             );
-                            // The 1128/1129 child rows + the 92/209 machines
-                            // are the documented follow-up (module doc) — the
-                            // intents park on the slot until the drain lands.
+                            // W4-d19 follow-up — the child drain landed:
+                            // the 1128 clouds spawn through the data seam
+                            // (the row + the aiStyle-92 arm are this
+                            // round's census); the 1129 slam spawns once
+                            // W4-d21's row merges (the documented
+                            // cross-branch contract — the seam no-ops
+                            // without the row). The C# spawns inline
+                            // mid-AI (`:41944`/`:41967`/`:42172`); the
+                            // port drains at the arm's tail on the same
+                            // tick (the spear sub-shot precedent — the
+                            // children's first AI runs next tick either
+                            // way, the slot scan already passed them).
                             if !spores.clouds.is_empty() || spores.slam.is_some() {
-                                self.slots[i].wants_claymore_spores = Some(spores);
+                                let owner_id = self.slots[i].owner;
+                                crate::projectile_ai_clouds::drain_claymore_spores(
+                                    self,
+                                    owner_id,
+                                    spores,
+                                );
                             }
                             self.slots[i].kill_step(world);
                         }
@@ -22758,6 +22786,17 @@ impl ProjectilePool {
             if p.kind == 443 && !p.friendly {
                 continue;
             }
+            // W4-d19 follow-up — `Damage_CanDealDamage`'s cloud-family
+            // terms (`Projectile.cs:12448`): the 1007 gas NEVER deals
+            // contact damage (its lane is the aiStyle-92 buff); the
+            // 511-513 toxic clouds and the 1128 spores refuse once
+            // `ai[1] >= 1` (the toxic hit counter `:13220`, the spore's
+            // sweep lifetime seed — the bloom clouds with ai1 = 0 hit).
+            if p.kind == 1007
+                || ((511..=513).contains(&p.kind) || p.kind == 1128) && p.ai[1] >= 1.0
+            {
+                continue;
+            }
             if refuses_friendly(n, p.kind, kill_guide, kill_clothier) {
                 continue;
             }
@@ -22936,6 +22975,35 @@ impl ProjectilePool {
             // and the yoyo doublings `:13389`, ABOVE the strike).
             if hellfire_clamp {
                 self.slots[slot].time_left = 1;
+            }
+            // W4-d19 follow-up — `Damage_PVE_Inner`'s toxic-cloud hit
+            // counter (`Projectile.cs:13218-13222`): every contact bumps
+            // `ai[1]` (the aiStyle-92 arm's triple-age +
+            // `Damage_CanDealDamage` refusal read it — one hit, then the
+            // cloud fades without dealing again). The C# site sits ABOVE
+            // the strike, so even a defence-zeroed hit counts.
+            if (511..=513).contains(&pkind) {
+                self.slots[slot].ai[1] += 1.0;
+                self.slots[slot].net_update = true;
+            }
+            // W4-d19 follow-up — `Damage_PVE_Inner`'s Soul Drain /
+            // Resonance Scepter direction arm (`Projectile.cs:13198-
+            // 13209`, the `(type == 476 || type == 950) && !npcProj`
+            // gate — the port has no npcProj, both kinds are player
+            // shots): the facing points from the OWNER's centre at the
+            // victim, and the strike's hit direction follows it (the
+            // C# `num23 = base.direction` at `:13598` reads the write).
+            // The port's `from_x` knockback origin takes the owner's
+            // centre so `strike_projectile`'s sign derivation matches.
+            // The PvP twin (`:14655-14666`) folds out — the single-
+            // player port's PvP lane refuses (the 185 module doc).
+            if matches!(pkind, SOUL_DRAIN | PRINCESS_WEAPON) {
+                if let Some((owner_cx, _)) = owner {
+                    let (npc_cx, _) = n.center();
+                    let dir = if npc_cx < owner_cx { -1 } else { 1 };
+                    self.slots[slot].direction = dir;
+                    from_x = owner_cx;
+                }
             }
             // `Damage_PVE_Inner`'s aiStyle-99 arm (`Projectile.cs:13256-
             // 13300`, S1-P-i09): the dropped twin squashes its velocity to
@@ -23211,6 +23279,13 @@ impl ProjectilePool {
                 // Ichor), called at `:13580` — BEFORE the tag application.
                 // The rolls ride the pass's `UpdateProjectiles` stream.
                 match self.slots[slot].kind {
+                    // W4-d19 follow-up — `StatusNPC`'s Soul Drain arm
+                    // (`Projectile.cs:11474-11477`): LifeDrain (151) for
+                    // 30 ticks, no roll. The debuff's heal-over-time is
+                    // the buff layer's follow-up (the 185 module doc).
+                    SOUL_DRAIN => {
+                        npcs[idx].buffs.add_buff(151, 30);
+                    }
                     267 => {
                         // `:11637-11644` — Next(3): 1/3 the 3600-tick
                         // Poisoned, else 1800.
@@ -24705,6 +24780,112 @@ mod tests {
             assert!(npc.hp < 10_000, "kind {kind} lands");
             assert_eq!(npc.immune[0], 5, "kind {kind}: the 5-tick per-type arm");
         }
+    }
+
+    /// W4-d19 follow-up — the 186 PrincessWeapon per-kind overlay census:
+    /// `Damage_PVE_Inner`'s `(type == 476 || type == 950) && !npcProj`
+    /// direction arm (`Projectile.cs:13198-13209`) points the shot's
+    /// facing from the OWNER's centre at the victim, and the strike's
+    /// knockback follows it (`num23 = base.direction`, `:13598`). The
+    /// 476's `StatusNPC` LifeDrain (151, 30) arm (`:11474-11477`) lands
+    /// with it. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d19_the_princess_and_soul_drain_face_from_the_owner() {
+        let w = ground();
+        for kind in [PRINCESS_WEAPON, SOUL_DRAIN] {
+            let mut pool = ProjectilePool::new();
+            let mut npc = one_npc(&w);
+            npc.hp = 10_000;
+            npc.max_hp = 10_000;
+            // The NPC LEFT of the owner centre (the owner stands at the
+            // spawn (20, 20) → centre ≈ (330, 341)); the shot overlaps
+            // the NPC but its OWN centre sits RIGHT of it — the stock
+            // facing would knock the wrong way without the overlay.
+            let owner_cx = 20.0 * TILE_PX + crate::player::WIDTH * 0.5;
+            npc.x = owner_cx - 60.0;
+            npc.y = 24.0 * TILE_PX;
+            let slot = pool
+                .spawn_with_data_ai(kind, npc.x - 40.0, npc.y, 0.0, 0.0, 50, 4.0, 0.0, 0.0)
+                .unwrap();
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            pool.damage_pve(
+                &w,
+                slot,
+                std::slice::from_mut(&mut npc),
+                None,
+                Some((owner_cx, 341.0)),
+                None,
+                &mut rng,
+            );
+            assert!(npc.hp < 10_000, "kind {kind} lands");
+            assert_eq!(
+                pool.slots()[slot].direction, -1,
+                "kind {kind}: the victim is left of the OWNER (`:13201-13208`)"
+            );
+            // The knockback pushes AWAY from the owner (leftward).
+            assert!(npc.vx <= 0.0, "kind {kind}: the hit direction follows the facing");
+            if kind == SOUL_DRAIN {
+                assert!(npc.buffs.has_buff(151), "the LifeDrain debuff (`:11476`)");
+            }
+        }
+    }
+
+    /// W4-d19 follow-up — `Damage_CanDealDamage`'s cloud terms
+    /// (`Projectile.cs:12448`): the 1007 gas never deals contact damage;
+    /// the 1128 sweep clouds (ai1 >= 1) refuse while the bloom clouds
+    /// (ai1 = 0) hit; the 511 toxic cloud hits ONCE (the `:13220` counter
+    /// bumps ai[1] pre-strike, the next walk refuses). WRITTEN NOT RUN.
+    #[test]
+    fn w4_d19_the_cloud_damage_gates_are_verbatim() {
+        let w = ground();
+        // The gas: an overlapping NPC takes NOTHING.
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        let slot = pool
+            .spawn_with_data_ai(1007, npc.x, npc.y, 0.0, 0.0, 50, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+        assert_eq!(npc.hp, 10_000, "the gas deals no contact damage");
+        // The 1128 sweep seed refuses; the bloom cloud hits.
+        for (ai1, hits) in [(90.0f32, false), (0.0, true)] {
+            let mut pool = ProjectilePool::new();
+            let mut npc = one_npc(&w);
+            npc.x = 20.0 * TILE_PX;
+            npc.y = 24.0 * TILE_PX;
+            npc.hp = 10_000;
+            npc.max_hp = 10_000;
+            let slot = pool
+                .spawn_with_data_ai(1128, npc.x, npc.y, 0.0, 0.0, 50, 0.0, 0.0, ai1)
+                .unwrap();
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+            assert_eq!(npc.hp < 10_000, hits, "1128 ai1={ai1}: the `:12448` gate");
+        }
+        // The toxic cloud: one hit, then the counter refuses the re-hit.
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        let slot = pool
+            .spawn_with_data_ai(511, npc.x, npc.y, 0.0, 0.0, 50, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+        assert!(npc.hp < 10_000, "the first toxic hit lands");
+        assert_eq!(pool.slots()[slot].ai[1], 1.0, "the hit counter (`:13220`)");
+        let hp_after = npc.hp;
+        // Clear the id-static stamp so ONLY the ai[1] gate can refuse
+        // (the group cooldown would block the re-hit too).
+        pool.id_static.clear();
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+        assert_eq!(npc.hp, hp_after, "the ai[1] >= 1 refusal (`:12448`)");
     }
 
     #[test]
@@ -30552,7 +30733,6 @@ mod phasmal_projectile_tests {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
-            wants_claymore_spores: None,
         }
     }
 
@@ -30962,7 +31142,6 @@ mod ritual_projectile_tests {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
-            wants_claymore_spores: None,
         }
     }
 

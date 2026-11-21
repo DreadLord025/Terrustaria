@@ -3735,6 +3735,31 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 16.0, 16.0, 190, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
                 (true, -1, false, -1, 0, 1.0),
             ),
+            // W4-d19 follow-up — the aiStyle-92 cloud family (the 1126
+            // spore machine's children + the style's other rows,
+            // `projectile_ai_clouds`).
+            // `Projectile.cs:5805-5816` / `:5817-5828` / `:5829-5840` —
+            // the Poison Staff's toxic clouds (511/512/513): 32x32 /
+            // 40x38 / 30x28, aiStyle 92, friendly, penetrate -1, scale
+            // 1.1, magic (the overlay), alpha 255,
+            // `UseGroupStaticImmunity(511)` (the identity overlay below).
+            // The stock `tileCollide = true` stands — the arm clears it
+            // on the first tick (`:32567`).
+            511 => (32.0, 32.0, 92, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, true, 10, 255, 1.1)),
+            512 => (40.0, 38.0, 92, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, true, 10, 255, 1.1)),
+            513 => (30.0, 28.0, 92, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, true, 10, 255, 1.1)),
+            // `Projectile.cs:9558-9569` — the Gas Trap's gas (1007):
+            // 50x50, aiStyle 92, hostile AND friendly (the port's
+            // friendly default stands; the contact damage is refused by
+            // `Damage_CanDealDamage` `:12448` — the gas buff is the
+            // lane), penetrate -1, scale 1.1, trap; `hide` has no port
+            // field (the draw seam).
+            1007 => (50.0, 50.0, 92, -1, TIME_LEFT_DEFAULT, 0, true, false, true, (false, -2, false, -1, 0, 1.1)),
+            // `Projectile.cs:10565-10579` — the Chlorophyte Claymore's
+            // spore cloud (1128): 30x30, aiStyle 92, tileCollide false,
+            // friendly, melee (the overlay), scale 1.1, penetrate -1,
+            // idStatic-30; `noEnchantmentVisuals` has no port field.
+            1128 => (30.0, 30.0, 92, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, true, 30, 0, 1.1)),
             // `Projectile.cs:939-948` — the Hook (13): 18x18.
             HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
             // `Projectile.cs:1141-1150` — the Ivy Whip (32): 18x18.
@@ -4209,9 +4234,17 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         },
         // `UseGroupStaticImmunity(181)` (`Projectile.cs:10676-10681`) — the
         // Bee Gun's bee 181 and giant bee 566 share the identity 181, so the
-        // id-static table keys both under one cooldown. Every other row keeps
-        // 0 = "use the kind" (the `:782` reset `immunityIdentity = type`).
-        immunity_identity: if matches!(kind, BEE | GIANT_BEE) { BEE } else { 0 },
+        // id-static table keys both under one cooldown. W4-d19: the toxic
+        // clouds 511/512/513 share 511 the same way (`:5814`/`:5826`/
+        // `:5838`). Every other row keeps 0 = "use the kind" (the `:782`
+        // reset `immunityIdentity = type`).
+        immunity_identity: if matches!(kind, BEE | GIANT_BEE) {
+            BEE
+        } else if matches!(kind, 511 | 512 | 513) {
+            511
+        } else {
+            0
+        },
         alpha,
         // the yoyo family's per-kind scale ladder (`DefaultToYoyo`); every
         // other row carries its own scale in the state group.
@@ -4394,6 +4427,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | FINAL_FRACTAL | TRUE_COPPER_SHORTSWORD
                     | NIGHTS_EDGE | EXCALIBUR | TRUE_EXCALIBUR | TERRA_BLADE_2
                     | HORSEMANS_BLADE | DEAD_CELLS_FLINT_SLASH | CHLOROPHYTE_CLAYMORE_BLADE
+                    // W4-d19 follow-up — the spore cloud's melee
+                    // (`Projectile.cs:10572`).
+                    | 1128
             ),
         ranged: matches!(
             kind,
@@ -4459,6 +4495,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 // W4-d19 — the Soul Drain (`:5516`) and the Resonance
                 // Scepter's blast (`:8962`).
                 | SOUL_DRAIN | PRINCESS_WEAPON
+                // W4-d19 follow-up — the toxic clouds' magic
+                // (`Projectile.cs:5813`/`:5825`/`:5837`).
+                | 511 | 512 | 513
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the
@@ -4806,6 +4845,10 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // arm's 5-tick frame machine (`Projectile.cs:23477-23486`) wraps at
         // it, back to frame 1.
         861 => 4,
+        // W4-d19 follow-up — the spore cloud's 5-frame sheet
+        // (`Main.cs:8726`): the aiStyle-92 first-tick roll
+        // (`Projectile.cs:32565`) picks the row.
+        1128 => 5,
         // The 909's 6-frame sheet (`Main.cs:8691`) — the arm's
         // `1 + rand.Next(6)` frame roll (`Projectile.cs:23268-23274`) pins
         // one of its rows.

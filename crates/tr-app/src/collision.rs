@@ -804,6 +804,65 @@ pub fn drown_collision(
     false
 }
 
+/// `Collision.IsWorldPointSolid` (`Collision.cs:1434-1491`) — the single-point
+/// solid probe the aiStyle-92 cloud wall-bounce reads (`Projectile.cs:32708`,
+/// `treatPlatformsAsNonSolid: true`). The tile gate is the `Main.tileSolid`
+/// read (the port's [`solid_kind`], the 192 leaf-block exception included);
+/// the platform arm refuses `TileID.Sets.Platforms` + the planter box 380.
+/// The point then tests against the tile's `blockType()` shape: full block,
+/// half brick (the bottom 8 px) or one of the four slope triangles.
+///
+/// Verbatim quirk kept: the slope arm's bounds guard (`:1470`) ANDs
+/// `pos.X < left` with `pos.X > right` — always false, so it never returns
+/// early; the `% 16` triangle tests run for every point in the cell (the
+/// C#'s float remainder, negative coordinates included).
+pub fn is_world_point_solid(
+    world: &World,
+    x: f32,
+    y: f32,
+    treat_platforms_as_non_solid: bool,
+) -> bool {
+    // `Utils.ToTileCoordinates` (`Utils.cs:1807-1810`): `(int)X >> 4` — the
+    // arithmetic shift floors negatives (unlike `/ 16`).
+    let px = (x as i32) >> 4;
+    let py = (y as i32) >> 4;
+    // `WorldGen.InWorld(point.X, point.Y, 1)` (`WorldGen.cs:9688-9695`).
+    if px < 1 || px >= world.width - 1 || py < 1 || py >= world.height - 1 {
+        return false;
+    }
+    let Some(t) = world.tile(px, py) else {
+        return false;
+    };
+    if !t.active() || t.inactive() || !solid_kind(t.kind) {
+        return false;
+    }
+    if treat_platforms_as_non_solid && t.kind > 0 && (td::SET_PLATFORMS.has(t.kind) || t.kind == 380)
+    {
+        return false;
+    }
+    let bx = (px * 16) as f32;
+    let by = (py * 16) as f32;
+    match block_type(t) {
+        // `:1453-1458` — the full block: the closed 16×16 cell.
+        0 => x >= bx && x <= bx + 16.0 && y >= by && y <= by + 16.0,
+        // `:1459-1464` — the half brick: the bottom 8 px only.
+        1 => x >= bx && x <= bx + 16.0 && y >= by + 8.0 && y <= by + 16.0,
+        // `:1465-1488` — the four slopes (`blockType` 2-5 = slope 1-4).
+        n @ 2..=5 => {
+            let num2 = x % 16.0;
+            let num3 = y % 16.0;
+            match n {
+                3 => num2 + num3 >= 16.0,
+                2 => num3 >= num2,
+                5 => num3 <= num2,
+                4 => num2 + num3 <= 16.0,
+                _ => false,
+            }
+        }
+        _ => false,
+    }
+}
+
 /// `Utils.FloatIntersect` (`Utils.cs:982-989`): the two boxes overlap. The
 /// C#'s comparisons are strict, so a touching edge still counts as an
 /// overlap.
