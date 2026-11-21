@@ -55,6 +55,18 @@ clicked cell; the skips collect only on a flip).
 
 ## 1. The merger hunks (c42c — cross-branch, NOT executable on f11)
 
+> **SUPERSEDE NOTE (retire phase, 2026-11-21)**: the c42 union-exec
+> item 6 (`6381b52d`, research/95 §10) landed the unification in the
+> OPPOSITE shape — ONE free-fn family with `forced` + `skips` (the
+> campfire also `drops`), the `Wiring` methods thin wrappers passing
+> `None`. §1a/§1b below are therefore SUPERSEDED: do NOT add the
+> method-side collectors or drop the c42 free fns. §1c's structural
+> closure holds on the c42 shape (the collector feeds `local_skips`,
+> discarded — no free-fn caller owns a flood skip set). The surviving
+> f11 unique is the forced-gate witness
+> `w4_f11_the_unified_light_family_honours_the_forced_state` — the
+> re-point contract is research/133 §7.3 (FINAL-FINAL).
+
 ### 1a. The eight non-campfire methods: add the skips out-collector
 
 f11's methods now carry `forced` but still insert into `self.skip`
