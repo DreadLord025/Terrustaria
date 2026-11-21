@@ -143,9 +143,14 @@ impl CaptureRenderer for GpuCaptureRenderer<'_> {
             }
         }
         // `Lighting.Initialize()` + four `LightTiles(area)` (`:56727-56732`):
-        // the port computes the chunk's light once into the shared map (the
-        // modern engine's single-pass equivalent; the legacy modes keep the
-        // frame's presented light — documented deviation).
+        // the four calls walk the modern engine's four-state cycle exactly
+        // once — Rebuild sets MinimapUpdate(0), then MinimapUpdate (map
+        // off → no-op) → ExportMetrics → Scan → Blur+Present
+        // (`LightingEngine.cs:76-113,237-244`). The visible light is ONE
+        // scan+blur of the area inflated 28 — the port's single
+        // `compute_into` (AREA_PADDING = 28) is truly equivalent
+        // (ANALYSIS "The four LightTiles calls"). The legacy modes keep
+        // the frame's presented light — documented deviation.
         let x0 = area.x.max(0);
         let y0 = area.y.max(0);
         let x1 = (area.x + area.width).min(self.cw.world.width - 1);
