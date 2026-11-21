@@ -1509,6 +1509,10 @@ impl App {
             // The overflow spawns a world drop at the player's centre
             // (`Item.RequestNewItem`, `Player.cs:7198`) — the port's pinned
             // velocity/phase triplet + the preserved prefix (no fresh roll).
+            // `Item.NewItem`'s `worldItem.Center = center` setter
+            // (`Entity.cs:56-59`) makes the box CENTRE on the player: the
+            // top-left pos is `center - SIZE/2` (the `spawn_player_drop`
+            // convention, `world_sim/items.rs`).
             if left > 0 {
                 let vx = (rng.next_float() * 2.0 - 1.0) * 1.2;
                 let vy = -1.5 - rng.next_float();
@@ -1517,8 +1521,8 @@ impl App {
                     g.item,
                     left,
                     g.prefix,
-                    center.0,
-                    center.1,
+                    center.0 - crate::item::SIZE * 0.5,
+                    center.1 - crate::item::SIZE * 0.5,
                     vx,
                     vy,
                     phase,
@@ -6364,8 +6368,11 @@ mod w4_f35_boss_bag_open_tests {
         app.handle_inventory_clicks();
         assert!(!app.items.is_empty(), "the overflow spawned world drops");
         for d in &app.items {
-            assert!((d.pos.x - cx).abs() < 1.0, "the drop spawns at the centre");
-            assert!((d.pos.y - cy).abs() < 1.0);
+            // `Item.NewItem`'s `worldItem.Center = center` (`Entity.cs:56-59`):
+            // the drop's box CENTRES on the player — pos = centre - SIZE/2.
+            let c = d.center();
+            assert!((c.x - cx).abs() < 0.01, "the drop centres on the player");
+            assert!((c.y - cy).abs() < 0.01);
         }
         // The Pwnhammer 367 always grants — it is among the overflow.
         assert!(app.items.iter().any(|d| d.kind == 367), "the Pwnhammer overflowed");
