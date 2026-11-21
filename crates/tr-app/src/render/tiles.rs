@@ -975,39 +975,46 @@ pub(crate) fn draw_tiles(
                             stats.quads += 1;
                         }
                     }
-                } else if matches!(tile.kind, 236 | 238 | 702) {
-                    // W4-g84: the Plantera bulb (238) and its Life Fruit
-                    // siblings (236 LifeFruit, 702 LifeFruitReplica) never
-                    // draw through `DrawSingleTile` — C# registers the 2×2
-                    // object's top-left as a MultiTileGrass special
-                    // (`TileDrawing.cs:606-613`, the shared `236/238/702`
-                    // arm) and `DrawMultiTileGrass`/`DrawMultiTileGrassInWind`
-                    // (`:8760-8764` size 2×2, `:8916-9032`) draw it about the
-                    // bottom-centre anchor with the default-arm factor
-                    // `num = 0.15`. The row-major loop draws each cell
-                    // inline with the same per-cell transform (the
+                } else if matches!(
+                    tile.kind,
+                    236 | 238 | 702 | 485 | 490 | 652 | 521 | 522 | 523 | 524 | 525 | 526
+                        | 527 | 530 | 651 | 705
+                ) {
+                    // W4-g84: the MultiTileGrass 2×2 / 3×2 family never draws
+                    // through `DrawSingleTile` — C# registers the object's
+                    // top-left as a MultiTileGrass special
+                    // (`TileDrawing.cs:606-687`) and
+                    // `DrawMultiTileGrass`/`DrawMultiTileGrassInWind`
+                    // (`:8760-8795`, `:8916-9032`) draw it about the
+                    // bottom-centre anchor. The row-major loop draws each
+                    // cell inline with the same per-cell transform (the
                     // sunflower's documented z-order approximation);
                     // `windCycle = 0` (underground / calm) degenerates to
-                    // the static draw. Only 238 animates (the landed
-                    // case-238 `addFrY = tileFrame * 36`,
-                    // `TileDrawing.cs:5441-5444`, `Main.cs:18709-18718`) and
-                    // carries `tileTop = 2`; 236/702 have no GetTileDrawData
-                    // case, so `dd.top = 0` and the pivot sits 2 px lower.
-                    let sw = crate::render::multi_tile_grass::bulb_sway(
-                        wind,
-                        world,
-                        tx,
-                        ty,
-                        tile.frame_x,
-                        tile.frame_y,
-                        dd.top,
-                        sunflower_wind_counter,
-                    );
+                    // the static draw. The 2×2 default-arm family
+                    // (236/238/702 bulb + Life Fruit, 485 antlion larva,
+                    // 490 weather vane, 652 echo detritus) takes `num = 0.15`;
+                    // the dragonfly jars 521-527 freeze (`num = 0`,
+                    // `flag = false`, `:8940-8949`); the 3×2 oasis/echo plants
+                    // 530/651/705 use the wider anchor (`:8769-8774`). Only
+                    // 238 animates a row (`:5441-5444`); 485/490's animation
+                    // rides the landed `drawdata_cases_b` arms.
+                    let sw = if matches!(tile.kind, 530 | 651 | 705) {
+                        crate::render::multi_tile_grass::grass_sway_3x2(
+                            wind, world, tx, ty, tile.frame_x, tile.frame_y, dd.top,
+                            sunflower_wind_counter,
+                        )
+                    } else {
+                        let freeze = matches!(tile.kind, 521..=527);
+                        crate::render::multi_tile_grass::grass_sway_2x2(
+                            wind, world, tx, ty, tile.frame_x, tile.frame_y, dd.top,
+                            sunflower_wind_counter, 0.15, freeze,
+                        )
+                    };
                     let (dw, dh) = (dd.width as f32, dd.height as f32);
                     // `tileLight = Lighting.GetColor(i, j)` (`:8975`) — the
                     // special pass applies NO `GetFinalLight` actuation
                     // ghost; `DrawTiles_GetLightOverride` (`:8977`,
-                    // `:6626-6629`) maps a Glow-coated bulb to White. The
+                    // `:6626-6629`) maps a Glow-coated cell to White. The
                     // vision-changer chain (`:8976`) is identity without
                     // the unported potions (the d56 lane).
                     let bulb_l = if tile.fullbright_block() {
@@ -1918,14 +1925,15 @@ mod tests {
         let body = &body[..body.find("#[cfg(test)]").unwrap()];
         let sunflower = body.find("} else if tile.kind == 27 {").expect("sunflower arm");
         let bulb = body
-            .find("} else if matches!(tile.kind, 236 | 238 | 702) {")
-            .expect("bulb arm");
+            .find("236 | 238 | 702 | 485 | 490 | 652")
+            .expect("MultiTileGrass family arm");
         let raised = body.find("} else if dd.top != 0").expect("generic raised arm");
-        assert!(sunflower < bulb && bulb < raised, "roster order 27 → 236/238/702 → generic");
+        assert!(sunflower < bulb && bulb < raised, "roster order 27 → MultiTileGrass family → generic");
         let arm = &body[bulb..raised];
         assert!(
-            arm.contains("multi_tile_grass::bulb_sway"),
-            "the bulb draws through the MultiTileGrass transform"
+            arm.contains("multi_tile_grass::grass_sway_2x2")
+                && arm.contains("multi_tile_grass::grass_sway_3x2"),
+            "the family draws through the MultiTileGrass transforms"
         );
         assert!(
             arm.contains("sunflower_wind_counter"),
@@ -1939,8 +1947,13 @@ mod tests {
             arm.contains("push_sprite_origin_rot_paint"),
             "the painted DrawNature call (:9000/:9024)"
         );
-        // Exactly one bulb-family dispatch site, covering all three siblings.
-        assert_eq!(body.matches("matches!(tile.kind, 236 | 238 | 702)").count(), 1);
+        // The 521-527 freeze rides the general 2x2 arm's `freeze` flag.
+        assert!(
+            arm.contains("521..=527") && arm.contains("freeze"),
+            "the dragonfly jars freeze (num = 0, flag = false, :8940-8949)"
+        );
+        // Exactly one family dispatch site.
+        assert_eq!(body.matches("236 | 238 | 702 | 485").count(), 1);
         assert_eq!(body.matches("tile.kind == 238").count(), 0);
     }
 

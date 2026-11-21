@@ -17,12 +17,14 @@
 //! through the normal `resolve_tile_frame` path; this module adds the wind
 //! transform that was missing.
 //!
-//! Scope: the 2×2 bulb family — 238 (Plantera bulb), 236 (Life Fruit) and
-//! 702 (Life Fruit Replica), the shared `TileDrawing.cs:606-613` /
-//! `:8760-8764` arms. Only 238 animates and carries `tileTop = 2`; 236/702
-//! have no `GetTileDrawData` case (`tileTop = 0`). The rest of the pass's
-//! roster (27 sunflower — landed per-cell; 233, 530, 651, 485…, 519 cattail)
-//! is the general-pass follow-up.
+//! Scope: the MultiTileGrass 2×2 / 3×2 family — the bulb family 236/238/702
+//! (the shared `TileDrawing.cs:606-613` / `:8760-8764` arms), the 2×2
+//! default-arm tiles 485/490/652, the frozen dragonfly jars 521-527
+//! (`:8940-8949`) and the 3×2 oasis/echo plants 530/651/705 (`:8769-8774`).
+//! Only 238 animates a row and carries `tileTop = 2` among the bulb family;
+//! 236/702 have no `GetTileDrawData` case (`tileTop = 0`). The remaining
+//! roster (27 sunflower — landed per-cell; 233 detritus, 489 pinwheel, 493
+//! golf flag, 519 cattail) is the general-pass follow-up.
 //!
 //! Deviations (ANALYSIS "The Plantera bulb wind draw (W4-g84)"):
 //! - the deferred special-point ordering is approximated inline (the
@@ -63,10 +65,11 @@ pub(crate) struct BulbSway {
     pub pivot: [f32; 2],
 }
 
-/// The wind transform of the bulb cell at `(tx, ty)` whose object's
-/// top-left is reconstructed from the frame grid: `frameX = 36*style +
-/// 18*col`, `frameY = 18*row` (`WorldGen.PlaceJunglePlant`,
-/// `WorldGen.cs:47834-47855` — the 236/238/702 arm writes `num3 = 0`).
+/// The bulb-family (236/238/702) specialization of [`grass_sway_2x2`] —
+/// the default 0.15 factor, no freeze. Kept as the witness-facing entry
+/// point for the original bulb tests; the dispatch calls the general
+/// function directly.
+#[cfg(test)]
 pub(crate) fn bulb_sway(
     wind: &Wind,
     world: &World,
@@ -77,6 +80,34 @@ pub(crate) fn bulb_sway(
     tile_top: i16,
     sunflower_wind_counter: f32,
 ) -> BulbSway {
+    grass_sway_2x2(
+        wind, world, tx, ty, frame_x, frame_y, tile_top,
+        sunflower_wind_counter, 0.15, false,
+    )
+}
+
+/// The general `DrawMultiTileGrassInWind` per-cell transform for the 2×2
+/// default-arm family (`TileDrawing.cs:8916-9032`): the bulb family
+/// 236/238/702, the antlion larva 485, the weather vane 490, the echo
+/// detritus 652 and the dragonfly jars 521-527. The object's top-left is
+/// reconstructed from the `Style2x2` frame grid (`frameX = 36*style +
+/// 18*col`, `frameY = 18*row`); `num` is the type's sway factor (the
+/// default arm's 0.15, `:8937-8939`) and `freeze` the 521-527 arm
+/// (`num = 0`, `flag = false`, `:8940-8949`) that pins the jars static.
+/// The 493 golf flag's wind-sign flip + ±6 px shift (`:8983-8997`) is NOT
+/// here — it lives in the dedicated 1×2 arm.
+pub(crate) fn grass_sway_2x2(
+    wind: &Wind,
+    world: &World,
+    tx: i32,
+    ty: i32,
+    frame_x: i16,
+    frame_y: i16,
+    tile_top: i16,
+    sunflower_wind_counter: f32,
+    num: f32,
+    freeze: bool,
+) -> BulbSway {
     let col = (frame_x.rem_euclid(36) / 18) as i32;
     let row = (frame_y / 18) as i32;
     let top_left_x = tx - col;
@@ -86,8 +117,9 @@ pub(crate) fn bulb_sway(
     // and |wind| 0.08..0.18 gates live inside `Wind::cycle`.
     let cycle = wind.cycle(top_left_x, top_left_y, sunflower_wind_counter);
     // `flag = InAPlaceWithWind(topLeftX, topLeftY, sizeX, sizeY)` (`:8924`)
-    // with the 2×2 window.
-    let in_wind = wind.in_a_place_with_wind(world, top_left_x, top_left_y, SIZE, SIZE);
+    // with the 2×2 window; the 521-527 arm forces it false (`:8948`).
+    let in_wind =
+        !freeze && wind.in_a_place_with_wind(world, top_left_x, top_left_y, SIZE, SIZE);
     // `num3 = 1 - (j - topLeftY + 1) / sizeY` (`:8964`), the 0-row guard
     // `num3 == 0 -> 0.1` (`:8965-8968`), and `!flag -> 0` (`:8969-8972`).
     let mut num3 = 1.0 - (row + 1) as f32 / SIZE as f32;
@@ -99,11 +131,48 @@ pub(crate) fn bulb_sway(
     }
     BulbSway {
         dy: cycle.abs() * 2.0 * num3,
-        // The default switch arm's `num = 0.15f` (`:8937-8939`) — 238 is
-        // neither the sunflower's 0.07 nor the 521-527 zero.
-        rot: cycle * 0.15 * num3,
+        rot: cycle * num * num3,
         pivot: [
             (top_left_x * 16 + SIZE * 8 - tx * 16) as f32,
+            (top_left_y * 16 + 16 * SIZE - ty * 16 - tile_top as i32) as f32,
+        ],
+    }
+}
+
+/// The 3×2 MultiTileGrass transform (`TileDrawing.cs:8769-8774`: 530 oasis
+/// plants, 651 echo detritus, 705 echo oasis — `sizeX = 3, sizeY = 2`). The
+/// frame grid is `Style3x2` (`frameX = 54*style + 18*col`, `frameY = 18*row`,
+/// `WorldGen.PlaceJunglePlant` `:47908-47932`); the bottom-centre anchor is
+/// `(topLeftX*16 + 24, topLeftY*16 + 32)`. All three take the default 0.15
+/// factor. The 530 biome-row shift rides `GetTileDrawData` (already landed).
+pub(crate) fn grass_sway_3x2(
+    wind: &Wind,
+    world: &World,
+    tx: i32,
+    ty: i32,
+    frame_x: i16,
+    frame_y: i16,
+    tile_top: i16,
+    sunflower_wind_counter: f32,
+) -> BulbSway {
+    let col = (frame_x.rem_euclid(54) / 18) as i32;
+    let row = (frame_y / 18) as i32;
+    let top_left_x = tx - col;
+    let top_left_y = ty - row;
+    let cycle = wind.cycle(top_left_x, top_left_y, sunflower_wind_counter);
+    let in_wind = wind.in_a_place_with_wind(world, top_left_x, top_left_y, 3, SIZE);
+    let mut num3 = 1.0 - (row + 1) as f32 / SIZE as f32;
+    if num3 == 0.0 {
+        num3 = 0.1;
+    }
+    if !in_wind {
+        num3 = 0.0;
+    }
+    BulbSway {
+        dy: cycle.abs() * 2.0 * num3,
+        rot: cycle * 0.15 * num3,
+        pivot: [
+            (top_left_x * 16 + 24 - tx * 16) as f32,
             (top_left_y * 16 + 16 * SIZE - ty * 16 - tile_top as i32) as f32,
         ],
     }
@@ -285,5 +354,71 @@ mod tests {
         let fruit_b = bulb_sway(&wind, &world, 10, 21, 0, 18, 0, 0.0);
         assert_eq!(bulb_b.pivot, [16.0, 14.0]);
         assert_eq!(fruit_b.pivot, [16.0, 16.0]);
+    }
+
+    // W4-g84 follow-up witness 6 — the 2×2 default-arm family (485 antlion
+    // larva, 490 weather vane, 652 echo detritus) shares the bulb's grid and
+    // 0.15 factor; all carry `tileTop = 2` (the GetTileDrawData cases
+    // `:4727-4818`, `:4693-4695`), so the pivot matches the 238 bulb exactly.
+    #[test]
+    fn w4_g84_two_by_two_family_matches_the_bulb_pivot() {
+        let wind = windy();
+        let world = bulb_world(10, 20, 0);
+        let bulb = grass_sway_2x2(&wind, &world, 10, 20, 0, 0, 2, 0.0, 0.15, false);
+        let larva = grass_sway_2x2(&wind, &world, 10, 20, 0, 0, 2, 0.0, 0.15, false);
+        assert_eq!(bulb.pivot, [16.0, 30.0]);
+        assert_eq!(larva.pivot, bulb.pivot);
+        assert_eq!(larva.rot, bulb.rot);
+        assert_eq!(larva.dy, bulb.dy);
+    }
+
+    // W4-g84 follow-up witness 7 — the dragonfly jars 521-527 freeze: the
+    // `num = 0`, `flag = false` arm (`:8940-8949`) zeroes num3 regardless of
+    // wind, so dy AND rot are 0 even in a live wind; the pivot survives (the
+    // static draw keeps the anchor geometry).
+    #[test]
+    fn w4_g84_dragonfly_jars_freeze() {
+        let wind = windy();
+        let world = bulb_world(10, 20, 0);
+        let cycle = wind.cycle(10, 20, 0.0);
+        assert!(cycle != 0.0, "the fixture wind must produce a live cycle");
+        let frozen = grass_sway_2x2(&wind, &world, 10, 20, 0, 0, 2, 0.0, 0.0, true);
+        assert_eq!((frozen.dy, frozen.rot), (0.0, 0.0));
+        assert_eq!(frozen.pivot, [16.0, 30.0]);
+        // Even with the 0.15 factor passed, `freeze` still forces num3 = 0.
+        let frozen2 = grass_sway_2x2(&wind, &world, 10, 20, 0, 0, 2, 0.0, 0.15, true);
+        assert_eq!((frozen2.dy, frozen2.rot), (0.0, 0.0));
+    }
+
+    // W4-g84 follow-up witness 8 — the 3×2 oasis/echo plants (530/651/705):
+    // the Style3x2 grid (`frameX = 54*style + 18*col`) reconstructs the same
+    // top-left from all three columns, and the bottom-centre anchor is
+    // `(tlx*16 + 24, tly*16 + 32)` — 8 px wider than the 2×2 family. The
+    // per-row num3 ladder (0.5 top, 0.1 bottom) and 0.15 factor match.
+    #[test]
+    fn w4_g84_three_by_two_anchor_is_wider() {
+        let wind = windy();
+        let mut w = empty_world();
+        for row in 0..2 {
+            for col in 0..3 {
+                let i = w.index(10 + col, 20 + row);
+                w.tiles[i].kind = 530;
+                w.tiles[i].flags = FLAG_ACTIVE;
+                w.tiles[i].frame_x = (18 * col) as i16;
+                w.tiles[i].frame_y = (18 * row) as i16;
+            }
+        }
+        w.compute_chunks();
+        let cycle = wind.cycle(10, 20, 0.0);
+        assert!(cycle != 0.0);
+        for col in 0..3_i32 {
+            let sw = grass_sway_3x2(&wind, &w, 10 + col, 20, (18 * col) as i16, 0, 2, 0.0);
+            assert_eq!(sw.pivot, [(24 - 16 * col) as f32, 30.0], "col {col}");
+            assert_eq!(sw.dy, cycle.abs() * 2.0 * 0.5);
+            assert_eq!(sw.rot, cycle * 0.15 * 0.5);
+        }
+        // A style-1 plant (frameX 54/72/90) still reconstructs the top-left.
+        let a = grass_sway_3x2(&wind, &w, 10, 20, 54, 0, 2, 0.0);
+        assert_eq!(a.pivot, [24.0, 30.0]);
     }
 }
