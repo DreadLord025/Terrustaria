@@ -405,6 +405,28 @@ pub(crate) fn water_mask_rects(draws: &[tr_core::liquid_draw::LiquidDraw]) -> Ve
         .collect()
 }
 
+/// `TileDrawing.DrawTile_LiquidBehindTile`'s refusal gate
+/// (`TileDrawing.cs:3858`): `!active() || inActive() || tileSolidTop[type]`
+/// — plus the port's solidity bail (`!tileSolid[type]`) and the
+/// `BlocksWaterDrawingBehindSelf && slope() == 0` arm. W4-g80: the
+/// `tileCache.inActive()` term was MISSING — an actuated block stands in
+/// liquid like air, so the behind-mask never draws for it (the C# refuses
+/// before the neighbour-liquid scan). The C#'s half-brick +
+/// `waterfallManager.CheckForWaterfall` clause stays a recorded deviation
+/// (the port has no waterfall probe here); `DebugOptions.hideWater` rides
+/// the caller's `env::no_liqbehind()` gate.
+fn liquid_behind_refused(tile: &tr_core::tile::Tile, blocks_behind: bool) -> bool {
+    // `TileDrawing.cs:3858` verbatim terms the port carries.
+    if !tile.active()
+        || tile.inactive()
+        || !td::TILE_SOLID.has(tile.kind)
+        || td::TILE_SOLID_TOP.has(tile.kind)
+    {
+        return true;
+    }
+    blocks_behind && tile.slope() == 0
+}
+
 /// `TileDrawing.DrawTile_LiquidBehindTile`: a block that stands in liquid gets the
 /// liquid drawn *behind* it, so the transparent parts of edge and slope frames show
 /// water instead of the parallax background.
@@ -428,14 +450,10 @@ pub(crate) fn draw_tile_liquid_behind(
         return 0;
     }
     let blocks_behind = BLOCKS_WATER_BEHIND.contains(&tile.kind);
-    // `!tileSolid[type] || tileSolidTop[type]` both bail out (line 4064).
-    if !tile.active() || !td::TILE_SOLID.has(tile.kind) || td::TILE_SOLID_TOP.has(tile.kind) {
+    if liquid_behind_refused(tile, blocks_behind) {
         return 0;
     }
     let slope = tile.slope();
-    if blocks_behind && slope == 0 {
-        return 0;
-    }
     let neighbor = |dx: i32, dy: i32| world.tile(tx + dx, ty + dy).copied().unwrap_or_default();
     let right = neighbor(1, 0);
     let left = neighbor(-1, 0);
@@ -713,5 +731,53 @@ mod tests {
         let empty = World::new("mask-dry".into(), 40, 40);
         let dry = tr_core::liquid_draw::build(&empty, 0, 0, 39, 39);
         assert!(water_mask_rects(&dry).is_empty());
+    }
+
+    // ---- W4-g80: the actuated draw lane — the behind-liquid refusal ----
+
+    /// W4-g80 witness — `DrawTile_LiquidBehindTile`'s refusal gate
+    /// (`TileDrawing.cs:3858`): the `tileCache.inActive()` term. An actuated
+    /// (framed-off) block never draws the behind-mask even when its
+    /// neighbours carry liquid — the C# refuses BEFORE the neighbour scan;
+    /// the pre-g80 port drew it (the term was MISSING).
+    #[test]
+    fn w4_g80_an_actuated_block_refuses_the_liquid_behind_draw() {
+        use tr_core::tile::{Tile, FLAG_ACTIVE, FLAG_INACTIVE};
+        // A sloped stone block: the plain gate passes (active, solid,
+        // not solidTop, slope != 0 so the BlocksWater arm is inert).
+        let mut t = Tile { kind: 1, flags: FLAG_ACTIVE, ..Default::default() };
+        t.set_slope(1);
+        assert!(!liquid_behind_refused(&t, false), "the sloped block draws");
+        // Actuated: refused, whatever the neighbours hold.
+        t.flags |= FLAG_INACTIVE;
+        assert!(liquid_behind_refused(&t, false), "TileDrawing.cs:3858 inActive()");
+        // The refusal is independent of the actuator bit — `inActive()` is
+        // the framed-off flag alone (`Tile.cs:606-608`); a tile can be
+        // inactive without an actuator (net/world state).
+        assert_eq!(t.flags & tr_core::tile::FLAG_ACTUATOR, 0);
+    }
+
+    /// W4-g80 witness — the gate's other `:3858` terms stay verbatim:
+    /// `!active()` refuses, `tileSolidTop` refuses, the port's
+    /// `!tileSolid` bail refuses, and `BlocksWaterDrawingBehindSelf`
+    /// refuses only while unsloped.
+    #[test]
+    fn w4_g80_the_liquid_behind_gate_keeps_its_other_terms() {
+        use tr_core::tile::{Tile, FLAG_ACTIVE};
+        // Inactive cell (`!active()`).
+        let air = Tile { kind: 1, ..Default::default() };
+        assert!(liquid_behind_refused(&air, false));
+        // A solidTop kind (19, the platform) refuses.
+        let plat = Tile { kind: 19, flags: FLAG_ACTIVE, ..Default::default() };
+        assert!(liquid_behind_refused(&plat, false));
+        // A non-solid kind (a torch, 4) refuses via the port's solidity bail.
+        let torch = Tile { kind: 4, flags: FLAG_ACTIVE, ..Default::default() };
+        assert!(liquid_behind_refused(&torch, false));
+        // BlocksWaterDrawingBehindSelf (54, the chest family stand-in):
+        // unsloped refuses, sloped passes (`:3858`'s `slope() == 0` clause).
+        let mut chest = Tile { kind: 54, flags: FLAG_ACTIVE, ..Default::default() };
+        assert!(liquid_behind_refused(&chest, true));
+        chest.set_slope(2);
+        assert!(!liquid_behind_refused(&chest, true));
     }
 }

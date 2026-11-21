@@ -111,12 +111,18 @@ render-target cache.
 | Static table | ~490 `case` labels, ≈376 tile ids (:4540-6044) | ~119 match arms, ≈113 tile ids (`draw_data.rs:129-1021`) | PARTIAL — ~30 % of ids; the rest fall to the 16×16 default by design (`drawdata.rs:1005-1007`, `:2072`). |
 | Animated rows | `Main.tileFrame[type]` advanced by the animator (`Main.AnimateTiles`, `Main.cs:18516-19304`) | `TileAnimator` (`drawdata_anim.rs`, S1-F-9b); production `tile_frame` still 0 until wired | PARTIAL — animator ported 2026-11-18 (16 tests), renderer wiring deferred. |
 | World probes in-table | palm biome 323 (:4670), dye plants 227 (:5063-5078), `GetTreeBiome`/`GetTreeVariant` (:1735/:1778) | `apply_world_corrections` :1200-1243 + `palm_tree_biome`/`palm_frame_y`/`cactus_type`/`dye_frame_x_offset`; **S1-F-9 wave A**: `tree_variant`/`tree_biome`/`tree_frame_x_offset` + case 5's static arm and correction (2026-11-18) | PARTIAL — tree probes PORTED (incl. the jungle underground variant 5). |
-| `DrawSingleTile` positional switch (:1020-1159) | `vector` nudges, `rectangle.Y` mutation, `finalColor` revisions, `skip` arms | `draw_dx/dy`, `src_y_shift`, `light_scale`, `src_alpha`, `skip_draw`, `no_width_adjust` + renderer arms `tiles.rs:800-867` | PORTED except parking list below. |
+| `DrawSingleTile` positional switch (:1020-1159) | `vector` nudges, `rectangle.Y` mutation, `finalColor` revisions, `skip` arms | `draw_dx/dy`, `src_y_shift`, `light_scale`, `src_alpha`, `skip_draw`, `no_width_adjust`, `disco_override` + renderer arms `tiles.rs:800-867` | PORTED except parking list below. |
 | Glow textures (`glowTexture`/`glowSourceRect`/`glowColor` out params) | per-case in `GetTileDrawData` :6049+ | `draw_tile_flames` :1409 | PARTIAL — the `Main.tileGlowMask` table arm is the only consumer; the per-case glow rects are gone. |
 
 **Parked inside the otherwise-ported positional switch** (ROADMAP TILE-DRAW-6, `done`):
-disco arms 160/692 (`Main.DiscoR/G/B`), tile 83's texture override, 323's frond-column
+tile 83's texture override, 323's frond-column
 `return` (no palm canopy pass — deviation, `drawdata.rs` deviation comment).
+**W4-g80 (2026-11-21)**: the disco arms 160/692 (`Main.DiscoR/G/B`) landed —
+`TileDrawData.disco_override` + `render/tiles.rs::disco_final_color` (the
+`finalColor` replacement with `Tile.actColor`'s double-0.4 byte truncation
+on actuated cells, `TileDrawing.cs:1078-1088`/`Tile.cs:272-280`), the
+`DontDrawTileSliced` gate on the sliced arm (160 in the set, `TileID.cs:482`)
+and the 692 GlowMask-341 dark-merge exemption (`Main.cs:10043`).
 
 ### C. Special-tile coverage — THE CENTREPIECE
 

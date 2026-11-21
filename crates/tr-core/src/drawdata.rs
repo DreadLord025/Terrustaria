@@ -62,6 +62,14 @@ pub struct TileDrawData {
     /// `case 129`'s `new Color(255, 255, 255, 100)` / `Color.Transparent`
     /// (`:1089-1092`): the source alpha of the flat draw (1.0 = opaque).
     pub src_alpha: f32,
+    /// `case 160/692`'s `finalColor = new Color(Main.DiscoR, Main.DiscoG,
+    /// Main.DiscoB, 255)` (`TileDrawing.cs:1078-1088`, W4-g80): the final
+    /// colour is the disco cycle, NOT the light — an actuated cell ghosts
+    /// the DISCO colour via `Tile.actColor` (`Tile.cs:272-280`, the double
+    /// 0.4 truncating multiply). The renderer draws the disco bytes and
+    /// skips both the light shade and the caller's `tileLight` ghost (the
+    /// override replaces `GetFinalLight` wholesale).
+    pub disco_override: bool,
     /// `TileID.Sets.DoNotAdjustDrawPositionBasedOnTileWidth` (711,
     /// `TileDrawing.cs:1011-1015`): the `(tileWidth - 16) / 2` centring is
     /// skipped, so the sprite hangs from the cell's left edge.
@@ -89,9 +97,21 @@ impl Default for TileDrawData {
             skip_draw: false,
             light_scale: 1.0,
             src_alpha: 1.0,
+            disco_override: false,
             no_width_adjust: false,
         }
     }
+}
+
+/// `Tile.actColor`'s `Color` overload (`Tile.cs:272-280`): an inactive
+/// (actuated) tile ghosts the colour — `new Color((byte)(0.4 * (double)R),
+/// (byte)(0.4 * (double)G), (byte)(0.4 * (double)B), A)` — a DOUBLE 0.4
+/// multiply truncated per channel, alpha preserved (W4-g80). The `Vector3`
+/// overload (`:282-288`) is the f32 `*= 0.4f` the light path already rides.
+#[inline]
+pub fn act_color_bytes(c: [u8; 4]) -> [u8; 4] {
+    let s = |x: u8| (0.4 * x as f64) as u8;
+    [s(c[0]), s(c[1]), s(c[2]), c[3]]
 }
 
 /// Per-type overrides of `TileDrawing.GetTileDrawData`.
@@ -1341,8 +1361,9 @@ impl TileDrawData {
         // The `DrawSingleTile` switch (`TileDrawing.cs:1020-1159`) — C# revises
         // the draw-local `vector`, the source rectangle's height and the final
         // colour per type. Every arm below is ported verbatim; the disco arms
-        // (160/692) and the texture override (83) stay parked (they need the
-        // `Main.DiscoR/G/B` triple and the per-tile sheet override).
+        // (160/692, W4-g80 — the `disco_override` flag, the renderer feeds the
+        // `Main.DiscoR/G/B` triple) landed; the texture override (83) stays
+        // parked (it needs the per-tile sheet override).
         let block_type = |world: &World, x: i32, y: i32| -> i16 {
             let Some(t) = world.tile(x, y) else {
                 return 0;
@@ -1403,6 +1424,20 @@ impl TileDrawData {
             // `case 51`/`case 697` — cobwebs (`:1078-1080`): half light.
             51 | 697 => {
                 self.light_scale = 0.5;
+            }
+            // `case 160`/`case 692` — RainbowBrick/RainbowMossBlock
+            // (`:1078-1088`, W4-g80): the final colour becomes the
+            // `Main.DiscoR/G/B` cycle (alpha 255), NOT the light; an
+            // actuated cell ghosts that colour through `Tile.actColor`
+            // (the `Color` overload, `Tile.cs:272-280` — a **double** 0.4
+            // multiply truncated per channel, alpha preserved). The
+            // override replaces `GetFinalLight`'s light entirely, so the
+            // ×0.4 ghost of `tileLight` must NOT ride on top: the caller
+            // passes the RAW light and this arm owns the whole tint.
+            // `light_scale`/`src_alpha` are neutral here (no other
+            // positional arm touches 160/692).
+            160 | 692 => {
+                self.disco_override = true;
             }
             // `case 129` — crystal shards (`:1088-1107`): 100/255 alpha, none
             // for the `frameX >= 324` columns (the big shards), and the 2 px
@@ -1473,6 +1508,7 @@ mod tests {
         skip_draw: false,
         light_scale: 1.0,
         src_alpha: 1.0,
+        disco_override: false,
         no_width_adjust: false,
     };
 
@@ -2957,5 +2993,53 @@ mod tests {
         );
         assert_eq!(dd(325, 0, 0, 0, 0, 0), DEFAULT); // no case
         assert_eq!(dd(655, 0, 0, 0, 0, 0), DEFAULT); // no case, not the 654 arm
+    }
+
+    // ---- W4-g80: the actuated draw lane — the disco arm + actColor ----
+
+    /// W4-g80 census witness 1 — `Tile.actColor`'s `Color` overload
+    /// (`Tile.cs:272-280`): the double 0.4 multiply truncates per channel
+    /// and preserves alpha. 255 → 102 (NOT 101: 0.4*255 = 102.0 exact in
+    /// f64), 100 → 40, 1 → 0 (0.4 truncates to 0), 3 → 1 (1.2 → 1).
+    #[test]
+    fn w4_g80_act_color_bytes_truncates_the_double_multiply() {
+        assert_eq!(act_color_bytes([255, 255, 255, 255]), [102, 102, 102, 255]);
+        assert_eq!(act_color_bytes([100, 50, 25, 77]), [40, 20, 10, 77]);
+        assert_eq!(act_color_bytes([1, 2, 3, 0]), [0, 0, 1, 0]);
+        // An ACTIVE tile passes through untouched (the `!inActive()` early
+        // return, `:274-277`) — the caller gates; the fn itself always
+        // ghosts, matching the overload's body past the guard.
+        assert_eq!(act_color_bytes([0, 0, 0, 255]), [0, 0, 0, 255]);
+    }
+
+    /// W4-g80 census witness 2 — the positional-switch disco arm
+    /// (`TileDrawing.cs:1078-1088`) marks EXACTLY the 160/692 pair
+    /// (RainbowBrick/RainbowMossBlock); the cobweb 51/697 arm keeps its
+    /// `light_scale = 0.5` and no disco flag; nothing else moves.
+    #[test]
+    fn w4_g80_the_disco_arm_marks_exactly_160_and_692() {
+        let w = World::new("g80".into(), 40, 40);
+        for kind in [160u16, 692] {
+            let mut d = draw_data(kind, 3, 4, 0, 0, 0, true);
+            d.apply_world_corrections(&w, kind, 3, 4, 0, 0, 0);
+            assert!(d.disco_override, "kind {kind}");
+            // No other field moves: the arm only replaces finalColor.
+            assert_eq!(
+                d,
+                TileDrawData { disco_override: true, ..Default::default() },
+                "kind {kind} keeps the default shape"
+            );
+        }
+        for kind in [0u16, 1, 51, 697, 129, 159, 161, 627, 628, 691, 693] {
+            let mut d = draw_data(kind, 3, 4, 0, 0, 0, true);
+            d.apply_world_corrections(&w, kind, 3, 4, 0, 0, 0);
+            assert!(!d.disco_override, "kind {kind} must not disco");
+        }
+        // The cobweb pair keeps its half-light arm, no disco flag.
+        for kind in [51u16, 697] {
+            let mut d = draw_data(kind, 3, 4, 0, 0, 0, true);
+            d.apply_world_corrections(&w, kind, 3, 4, 0, 0, 0);
+            assert_eq!(d.light_scale, 0.5);
+        }
     }
 }

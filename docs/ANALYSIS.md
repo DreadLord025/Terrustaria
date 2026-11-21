@@ -39244,3 +39244,101 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The actuator draw census and fixes (W4-g80, 2026-11-21)
+
+The actuated-tile DRAW lane: the grey-out/inactive ghost draw + the
+actuator icon overlay, censused against `TileDrawing.cs` / `Tile.cs` /
+`Main.DrawWires`. In-flight probe first: the wiring ARMS (c42/e20/e21,
+`HitWireSingle`/`SquareTileFrame` wakes) are separate lanes and untouched;
+the actuator ICON overlay (`Main.cs:58643-58658`, the `TextureAssets.
+Actuator` plate inside `DrawWires`) is owned by the pushed W4-g81 lane
+(6f046998 + 0017d32a — byte tints, the raw `Lighting.Brightness` mean gate,
+the outside-guard scope, the tile-423 rect); this lane does NOT duplicate
+it. The d56 `final_light` chain (5d80b38a, `tr-render::animated_tiles`,
+UNWIRED) was read: the actuated-fullbright-ghosts-102 order
+(`GetFinalLight` `:4376-4387` — fullbright repaints white, then the ghost
+still runs) is pinned there and stays that lane's to wire.
+
+**PORTED, verified (no change):** the flat/sized ghost grey-out —
+`tiles.rs`'s per-cell `l = raw_l * 0.4` on `FLAG_INACTIVE`
+(`Tile.actColor`'s Vector3 overload, `Tile.cs:282-288`) feeding every
+`finalColor` arm, and the per-slice ghost in `sliced_light`
+(`TileDrawing.cs:3578-3581`, S1-G-9's single-×0.4 keep-one). The
+`GetFinalLight` byte chain (`:4358-4389`) + `ShouldTileShine`/`Main.shine`
+are d56's UNWIRED port; the actuation arm's ORDER (ghost beats shine, the
+`else if` at `:4384`) is recorded there.
+
+**MISSING 1 — the disco arm's actuation ghost (`TileDrawing.cs:1078-1088`).**
+`case 160`/`case 692` (RainbowBrick/RainbowMossBlock): `finalColor = new
+Color(Main.DiscoR, Main.DiscoG, Main.DiscoB, 255)`, then `if (tileCache.
+inActive()) color = tileCache.actColor(color)` — the **Color** overload
+(`Tile.cs:272-280`), a DOUBLE 0.4 multiply truncated per channel
+(`(byte)(0.4 * (double)R)`), alpha PRESERVED (255 stays 255 — unlike the
+wire plate's `Color * float` which scales alpha). The port had the arm
+parked (`drawdata.rs`'s "disco arms stay parked" comment) — an actuated
+rainbow brick drew the ghosted LIGHT instead of the ghosted disco colour,
+and an active one drew light-tinted instead of the raw cycle. Ported:
+`TileDrawData.disco_override` (the positional-switch arm in
+`apply_world_corrections`), `drawdata::act_color_bytes` (the Color
+overload verbatim), `render/tiles.rs::disco_final_color` (the resolved
+instance tint) threaded through `push_lit`/`push_slope`/`push_half` — the
+arms that draw `drawData.finalColor`. The override REPLACES
+`GetFinalLight`'s colour wholesale: the caller's `tileLight` ghost must
+NOT ride on top (that would square the factor to 0.16), so the override
+branch precedes the shade and skips `light_scale`/`src_alpha` (other
+types' arms). The sliced arm never reads `finalColor` (per-slice
+`tileLight`, `:3578-3601`) — the C# behaves identically; 160 is in
+`DontDrawTileSliced` (`TileID.cs:482`) anyway, and the walk's sliced gate
+now reads `SET_DONT_DRAW_TILE_SLICED` (the set was generated but unread;
+the gate is the sliced twin of d59's `SET_DONT_DRAW_TILE_SLOPES` walk
+gate — it moves the set's other 17 kinds off the sliced path onto the
+flat draw exactly as the C# `flag` at `:1509` does; keep-one at merge if
+a sibling lands the same gate).
+
+**MISSING 2 — the behind-liquid actuated refusal (`TileDrawing.cs:3858`).**
+`DrawTile_LiquidBehindTile`'s gate carries `tileCache.inActive()`: an
+actuated block stands in liquid like air, the behind-mask never draws.
+The port's bail (`liquids.rs`) had `!active() || !tileSolid ||
+tileSolidTop` but NOT the inactive term — an actuated sloped block drew
+the water mask behind its ghost. Ported as `liquid_behind_refused` (the
+`:3858` terms the port carries, cited). The C#'s half-brick +
+`waterfallManager.CheckForWaterfall` clause stays a recorded deviation
+(no waterfall probe at this seam); `DebugOptions.hideWater` rides the
+caller's `env::no_liqbehind()`.
+
+**Dark-cell census (verified, one narrow fix):** the C# `!flag` return
+(`:1014-1017`) PRECEDES the positional switch, so a dark cell whose kind
+sets no `flag` arm draws black — the disco `finalColor` never runs there.
+692 carries GlowMask 341 (`Main.cs:10043`), so its `flag` (`:971`) is true
+even in the dark: the port's greedy dark-merge would have erased the
+disco sprite; the walk now exempts 692 (`glow_mask_tile`, the f15
+glow-record seam's static shadow until TILE-DRAW-2 wires the table). 160
+has NO mask/flame/IgnoreDrawLightConditions row (`TileID.cs:623` =
+{144, 300, 303, 306}) — a dark 160 cell draws black in the C# too, the
+merge is faithful, no exemption.
+
+**Kept deviations (recorded):** the per-mode `LightStyle::shade`
+transforms still ride the non-override arms (the d56/g81 byte-chain
+reconciliation is those lanes'); the `Main.tileGlowMask` table is
+unported (692's exemption is the one hard-coded row this lane needs); the
+sliced arm's `Main.shine` stays d56's; the minecart-track `colorTint`
+(`:3788`) stays out (the track draw is its own residual).
+
+**RNG:** the draw pass draws no random numbers — no stream touched. The
+disco colour is engine state (`App.disco`, `DoUpdate_AnimateDiscoRGB`),
+read-only here.
+
+**Verification: code-only mode — no cargo/rustc/rustfmt/tests/graphify
+invoked.** 8 witnesses WRITTEN, NOT RUN: `drawdata.rs` ×2 (the actColor
+double-truncation byte pins 255→102/100→40/1→0/3→1 + alpha preservation;
+the disco arm marks exactly 160/692 with the default shape, the cobweb
+51/697 half-light arm untouched, 11 neighbour kinds negative),
+`render/tiles.rs` ×4 (the disco final colour active/actuated/boot-state,
+the override-before-shade source-order pin + no double ghost, the
+DontDrawTileSliced membership 160∈/692∉ + the walk-gate pin, the 692
+dark-merge exemption pin), `render/liquids.rs` ×2 (the actuated refusal
+independent of the actuator bit; the gate's other :3858 terms — !active,
+solidTop 19, non-solid 4, BlocksWater 54 unsloped-only). Set memberships
+verified mechanically against the generated bitsets (TILE_SOLID/
+TILE_SOLID_TOP/SET_DONT_DRAW_TILE_SLICED word decode).
