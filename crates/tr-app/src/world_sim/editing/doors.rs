@@ -399,6 +399,50 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             app.world_key = None;
             return true;
         }
+        edit::TileInteraction::BuffStation { kind } => {
+            // W4-e10 — the buff-station family (`Player.cs:32594-32634`): the
+            // seven right-click buff tiles. Each arm sets `flag2 = true`,
+            // grants its buff for the fixed duration (`AddBuff`), THEN plays
+            // its `SoundID.ItemNN` style at `base.position` (the player's
+            // TOP-LEFT, not the tile). The buff→style pair is the C# chain's
+            // own (the style index is `soundid::SOUND_STYLES`' `ItemNN` row).
+            // The interaction runs in `Player.ItemCheck` — the `UpdatePlayers`
+            // stream (`Main.cs:17754`); the style façade's `GetRandomPitch`
+            // NextFloat is audio-only, the case-2 pitch draw rides the stream
+            // after the attenuation gate (the dial's Item4 seam, `:32642`).
+            let (buff, time, style_name) = match kind {
+                125 => (29, 108000, "Item4"),   // Crystal Ball — Clairvoyance
+                621 => (192, 7200, "Item2"),    // Slice of Cake — Sugar Rush
+                464 => (348, 108000, "Item4"),  // War Table
+                699 => (366, 108000, "Item179"),// Dead Cells Potion Station
+                377 => (159, 108000, "Item37"), // Sharpening Station
+                354 => (150, 108000, "Item4"),  // Bewitching Table
+                287 => (93, 108000, "Item149"), // Ammo Box
+                _ => unreachable!("the dispatch only yields the seven station kinds"),
+            };
+            let (plx, ply) = app
+                .player
+                .as_ref()
+                .map(|p| (p.x, p.y))
+                .unwrap_or((0.0, 0.0));
+            if let Some(p) = app.player.as_mut() {
+                p.buffs.add_buff(buff, time); // `:32597`/`:32603`/… the AddBuff
+            }
+            if let Some(idx) = crate::soundid::SOUND_STYLES
+                .iter()
+                .position(|s| s.name == style_name)
+            {
+                app.audio.play_use_sound(
+                    idx as u16,
+                    plx,
+                    ply,
+                    0.0,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            app.world_key = None;
+            return true;
+        }
         edit::TileInteraction::StationInteract { kind } => {
             // `Player.cs:33279-33284` (the `TileInteractionsUse` tail): the
             // clicked tile's filter lands in `CraftingUI._lastFilter` via
@@ -522,6 +566,10 @@ fn interaction_events(
         // mapping — no cue, no drops (the C# plays the craft-open sound 10
         // inside `OpenCloseFilter`'s non-quiet path, `NewCraftingUI.cs:894`).
         edit::TileInteraction::StationInteract { .. } => (None, Vec::new()),
+        // W4-e10 — the buff-station family is consumed in `interact_tile` ahead
+        // of this mapping (the buff grant + the `SoundID.ItemNN` style play run
+        // there, `Player.cs:32594-32634`); the arms kill no tiles, so no drops.
+        edit::TileInteraction::BuffStation { .. } => (None, Vec::new()),
         // M7-EXTRACT-1: the extractinator is NOT a click-edge interaction in
         // vanilla — `PlaceThing_ItemInExtractinator` runs inside the held-item
         // swing (`Player.cs:39591`, `:41665`), so the press edge falls through
@@ -1330,6 +1378,98 @@ mod tests {
                 .iter()
                 .all(|n| n.kind != NpcKind::Golem || n.hp == 0),
             "the hardmode gate refuses"
+        );
+    }
+
+    /// W4-e10 — the buff-station family (`Player.cs:32594-32634`): each of the
+    /// seven right-click buff tiles grants its buff for the fixed duration,
+    /// THEN plays its `SoundID.ItemNN` style at the player's TOP-LEFT — ONE
+    /// case-2 `Next(-6, 7)` pitch draw on `UpdatePlayers` after the gate (the
+    /// façade's `GetRandomPitch` NextFloat is audio-only). The buff→style pair
+    /// is the C# chain's own; the click is consumed whether or not the player
+    /// is present (`flag2 = true`).
+    #[test]
+    fn w4_e10_the_buff_stations_grant_and_play_one_case2_draw_each() {
+        // (tile kind, buff id, buff duration, style name) — the C# chain order.
+        let stations: [(u16, i32, i32, &str); 7] = [
+            (125, 29, 108000, "Item4"),    // Crystal Ball — Clairvoyance
+            (621, 192, 7200, "Item2"),     // Slice of Cake — Sugar Rush
+            (464, 348, 108000, "Item4"),   // War Table
+            (699, 366, 108000, "Item179"), // Dead Cells Potion Station
+            (377, 159, 108000, "Item37"),  // Sharpening Station
+            (354, 150, 108000, "Item4"),   // Bewitching Table
+            (287, 93, 108000, "Item149"),  // Ammo Box
+        ];
+        for (kind, buff, time, _style) in stations {
+            let mut w = object_world();
+            set_tile(&mut w, 10, 19, kind);
+            let mut app = flow_app(None, vec![], vec![]);
+            app.world = w;
+            let mut player = Player::spawn(&app.world);
+            player.x = 9.0 * TILE_PX;
+            player.y = 17.0 * TILE_PX;
+            app.player = Some(player);
+            app.audio.set_listener(crate::sound::Listener {
+                camera_center: (9.0 * TILE_PX, 17.0 * TILE_PX),
+                sound_volume: 1.0,
+                ambient_volume: 1.0,
+                quiet_ambient_sounds: false,
+                game_menu: false,
+                generating_or_loading: false,
+                server: false,
+            });
+            let mut mirror = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+            let _ = mirror.next_range(-6, 7); // the one case-2 pitch draw
+            let before = app.audio.played_count();
+            assert!(interact_tile(&mut app, 10, 19), "tile {kind} fires");
+            assert_eq!(app.audio.played_count(), before + 1, "tile {kind}'s chime");
+            assert_eq!(
+                *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                mirror,
+                "tile {kind}: the one case-2 pitch draw, nothing else"
+            );
+            let p = app.player.as_ref().unwrap();
+            let slot = p.buffs.find_buff_index(buff).expect("the buff granted");
+            assert_eq!(p.buffs.buff_time[slot], time, "tile {kind}'s duration");
+        }
+        // 699 also counts as a Bone Welder (`TileCountsAs` 699→13), but the
+        // buff arm wins the click BEFORE the crafting-station tail — the
+        // craft filter stays unset.
+        let mut w = object_world();
+        set_tile(&mut w, 10, 19, 699);
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        app.player = Some(Player::spawn(&app.world));
+        assert!(interact_tile(&mut app, 10, 19));
+        assert!(app.craft_filter.is_none(), "the buff arm wins over the station tail");
+        // The silent twin: volume 0 refuses the draw, but the buff still lands
+        // (the C# `AddBuff` runs before the play, `:32597` < `:32598`).
+        let mut w = object_world();
+        set_tile(&mut w, 10, 19, 125);
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        app.player = Some(Player::spawn(&app.world));
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (0.0, 0.0),
+            sound_volume: 0.0,
+            ambient_volume: 0.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        let rng_before = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        let before = app.audio.played_count();
+        assert!(interact_tile(&mut app, 10, 19));
+        assert_eq!(app.audio.played_count(), before, "volume 0 plays nothing");
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            rng_before,
+            "the gate refuses before the draw"
+        );
+        assert!(
+            app.player.as_ref().unwrap().buffs.find_buff_index(29).is_some(),
+            "the buff still lands at volume 0"
         );
     }
 }
