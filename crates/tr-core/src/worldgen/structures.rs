@@ -692,16 +692,106 @@ pub(crate) fn pass_hell_forts(
 /// host (`WorldGen.cs:60079-60083` routes it through `Place3x2`).
 pub(crate) const TILE_HELLFORGE: u16 = 77;
 
+/// `WorldGen.PlaceTile(i, j, 77)` (`WorldGen.cs:59342-60295`), the slice
+/// the Hellforge pass runs — the g37 B7 PlaceTile route grafted onto this
+/// lane's correctly-ordered pass (research/86 §6.2; g37 research/75 §2.7
+/// recommended the graft, its own slot ordering was the bug). The arms
+/// that bind for kind 77:
+/// - `:59345` the gen-time existing-488 veto;
+/// - `:59373` the entry gate `forced || EmptyTile || !tileSolid[77]` —
+///   `Main.tileSolid[77]` is FALSE (no `Main.cs` assignment; the port's
+///   generated `TILE_SOLID` bit 77 is 0), so the entry ALWAYS admits,
+///   even over an active solid cell (the Place3x2 body scan then
+///   refuses); `Collision.EmptyTile` reduces to `!active` at gen time;
+/// - `:59454-59471` the liquid gate — 77 is neither a torch nor in the
+///   refusal list, so liquid never vetoes;
+/// - `:59473-59476` the inactive-cell `Clear(Tile|TilePaint|Slope)`
+///   (`Tile.cs:744-790` — type/active/frames zeroed, paint + coatings +
+///   slope + halfBrick cleared; wall, liquid, wiring, actuator survive);
+/// - `:59477-59482` the `ResetsHalfBrickPlacementAttempt[77]` arm (the
+///   set is default-true, `TileID.cs:497` — 77 is NOT in the false
+///   list): an active non-frame-important cell loses halfBrick + frames
+///   even when the placement then fails;
+/// - `:60079-60083` the 77 dispatch → `Place3x2` + `SquareTileFrame`;
+/// - `:60255-60262` the tail: `TruncatesWalls[77]` is false
+///   (`TileID.cs:595`), the second `SquareTileFrame` runs, `result` =
+///   the centre cell ended active. The sound/dust block is gen-inert.
+/// Returns the C# `result`; the pass itself checks `type == 77`.
+fn place_tile_hellforge(world: &mut World, x: i32, y: i32) -> bool {
+    // `:59345`: during generation an existing fallen log blocks placement.
+    if world.tile(x, y).is_some_and(|t| t.active() && t.kind == 488) {
+        return false;
+    }
+    // `:59349` (`77 < TileID.Count`) and `:59354` (bounds).
+    if x < 0 || y < 0 || x >= world.width || y >= world.height {
+        return false;
+    }
+    let active_here = world.tile(x, y).is_some_and(|t| t.active());
+    // `:59373`: `forced(false) || EmptyTile || !tileSolid[77]` — the
+    // third disjunct always admits (77 is non-solid); ported verbatim.
+    let entry = !active_here || !crate::tiledata::TILE_SOLID.has(TILE_HELLFORGE);
+    if !entry {
+        return false;
+    }
+    // `:59375-59453`: the grass/moss/coral/drip guards — other kinds.
+    // `:59454-59471`: the liquid gate passes for 77 (see the doc).
+    if !active_here {
+        // `:59473-59476`: `Clear(Tile | TilePaint | Slope)`.
+        if let Some(t) = world.tile_mut(x, y) {
+            t.kind = 0;
+            t.flags &= !FLAG_ACTIVE;
+            t.frame_x = 0;
+            t.frame_y = 0;
+            t.set_paint(0);
+            t.flags &= !crate::tile::FLAG_FULLBRIGHT;
+            t.set_slope(0);
+            t.flags &= !crate::tile::FLAG_HALF_BRICK;
+        }
+        world.set_invisible_block(x, y, false);
+    } else if !world
+        .tile(x, y)
+        .is_some_and(|t| crate::tileobject::frame_important(t.kind))
+    {
+        // `:59477-59482`: `ResetsHalfBrickPlacementAttempt[77]` is true —
+        // an active non-frame-important cell loses halfBrick + frames.
+        if let Some(t) = world.tile_mut(x, y) {
+            t.flags &= !crate::tile::FLAG_HALF_BRICK;
+            t.frame_y = 0;
+            t.frame_x = 0;
+        }
+    }
+    // `:60079-60083`: the 77 dispatch — `Place3x2` + `SquareTileFrame`.
+    super::evil::place_3x2(world, x, y, TILE_HELLFORGE, 0);
+    crate::edit::square_tile_frame_gen(world, x, y);
+    // `:60255-60262`: the tail re-frame + result (`TruncatesWalls[77]`
+    // is false — no `SquareWallFrame`).
+    if world.tile(x, y).is_some_and(|t| t.active()) {
+        crate::edit::square_tile_frame_gen(world, x, y);
+        return true;
+    }
+    false
+}
+
 /// The `Hellforge` pass (`WorldGen.cs:18187-18234`, W4-d104 pass 30):
 /// `maxTilesX / 200` forges, each a retry loop — the `Next(1, maxTilesX)`
 /// column + the `Next(maxTilesY - 250, maxTilesY - 30)` row, the wall
 /// 13/14 (the hell-house brick walls) gate, the drop to the first active
 /// cell (`j < maxTilesY - 20` bound), then `PlaceTile(num3, j - 1, 77)`
-/// (the `Place3x2` route). The 10000-failure valve ends the retry. The
-/// C#'s `try/catch` covers the out-of-bounds reads — the port's
-/// bounds-checked `tile` reads stand in (a miss counts as a failure).
+/// (the full PlaceTile route — [`place_tile_hellforge`], the g37 B7
+/// graft). The 10000-failure valve ends the retry. The C#'s `try/catch`
+/// covers the out-of-bounds reads — the port's bounds-checked `tile`
+/// reads stand in (a miss counts as a failure). The slot stays AFTER
+/// `hell forts` (the wall-14 producer, `AddHellHouses` `:13840` inside
+/// Underworld `:13645`) — g37's before-hell-forts slot never fires
+/// (research/86 §1 B7 / §6.2).
 pub(crate) fn pass_hellforge(world: &mut World, rng: &mut super::Rng) -> u32 {
     let num = world.width / 200;
+    // The sub-vanilla guard (the g37 graft): the C#
+    // `Next(maxTilesY - 250, maxTilesY - 30)` band goes negative below
+    // height 250 (the C# throws); a zero count draws nothing.
+    if world.height <= 250 || num <= 0 {
+        return 0;
+    }
     let mut placed = 0u32;
     for _ in 0..num {
         let mut flag = false;
@@ -717,9 +807,10 @@ pub(crate) fn pass_hellforge(world: &mut World, rng: &mut super::Rng) -> u32 {
                     j += 1;
                 }
                 j -= 1;
-                // `PlaceTile(num3, j, 77)` — the `Place3x2` route
-                // (`:60079-60083`), style 0.
-                super::evil::place_3x2(world, num3, j, TILE_HELLFORGE, 0);
+                // `PlaceTile(num3, j, 77)` — the full route (the entry
+                // gate, the Clear arm, the halfBrick reset, the Place3x2
+                // dispatch + the SquareTileFrame calls).
+                place_tile_hellforge(world, num3, j);
                 if world.tile(num3, j).is_some_and(|t| t.kind == TILE_HELLFORGE) {
                     flag = true;
                     placed += 1;
@@ -1433,6 +1524,83 @@ mod tests {
             a.tiles.iter().any(|t| t.active() && t.kind == TILE_HELLFORGE),
             "the 77 tiles exist"
         );
+    }
+
+    /// W4-d104 pass 30 graft (research/86 §6.2): the PlaceTile-77 Clear
+    /// arm (`:59473-59476`) — an inactive seat carrying stale
+    /// frames/paint/coating/slope/halfBrick is cleared BEFORE the
+    /// Place3x2 write (the bare pre-graft route left them on the forge).
+    #[test]
+    fn w4_d104_30_the_placetile_clear_arm_cleans_the_seat() {
+        let mut w = World::new("hf".into(), 100, 100);
+        // A solid floor at row 61 under columns 49..52.
+        for x in 49..52 {
+            let i = w.index(x, 61);
+            w.tiles[i].kind = TILE_STONE;
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        // The seat (50, 60): inactive but carrying residue.
+        let i = w.index(50, 60);
+        w.tiles[i].kind = TILE_STONE;
+        w.tiles[i].frame_x = 99;
+        w.tiles[i].frame_y = 54;
+        w.tiles[i].set_paint(5);
+        w.tiles[i].set_slope(2);
+        w.tiles[i].flags |= crate::tile::FLAG_HALF_BRICK | crate::tile::FLAG_FULLBRIGHT;
+        w.set_invisible_block(50, 60, true);
+        assert!(place_tile_hellforge(&mut w, 50, 60), "the forge places");
+        let t = w.tile(50, 60).unwrap();
+        assert_eq!(t.kind, TILE_HELLFORGE);
+        assert_eq!(t.paint(), 0, "Clear zeroed the paint");
+        assert_eq!(t.slope(), 0, "Clear zeroed the slope");
+        assert!(!t.half_brick(), "Clear dropped the halfBrick");
+        assert!(!t.fullbright_block(), "Clear dropped the Glow coating");
+        assert!(!w.invisible_block(50, 60), "Clear dropped the Echo coating");
+        assert_eq!(t.frame_x, 18, "the Place3x2 centre frame (54*0 + 18)");
+        assert_eq!(t.frame_y, 18, "the Place3x2 bottom-row frame");
+    }
+
+    /// W4-d104 pass 30 graft: the `ResetsHalfBrickPlacementAttempt[77]`
+    /// arm (`:59477-59482`, the set is default-true — `TileID.cs:497`) —
+    /// an ACTIVE non-frame-important seat loses halfBrick + frames even
+    /// though the Place3x2 body scan then refuses the placement. The
+    /// entry gate itself always admits (`tileSolid[77]` is false). The
+    /// C# `result` is the centre-cell-active flag (`:60255-60262`), so
+    /// it reads TRUE here — the pass's own `type == 77` check is what
+    /// counts the failure.
+    #[test]
+    fn w4_d104_30_the_halfbrick_reset_fires_on_a_refused_seat() {
+        let mut w = World::new("hf".into(), 100, 100);
+        // An active half-bricked stone seat with a stale frame.
+        let i = w.index(50, 60);
+        w.tiles[i].kind = TILE_STONE;
+        w.tiles[i].flags |= FLAG_ACTIVE | crate::tile::FLAG_HALF_BRICK;
+        w.tiles[i].frame_x = 54;
+        w.tiles[i].frame_y = 18;
+        assert!(
+            place_tile_hellforge(&mut w, 50, 60),
+            "result = centre active (the stone seat stays active)"
+        );
+        let t = w.tile(50, 60).unwrap();
+        assert_eq!(t.kind, TILE_STONE, "the body scan refused the forge");
+        assert!(t.active());
+        assert!(!t.half_brick(), "the reset dropped the halfBrick");
+        assert_eq!(t.frame_x, 0, "the reset zeroed frameX");
+        assert_eq!(t.frame_y, 0, "the reset zeroed frameY");
+    }
+
+    /// W4-d104 pass 30 graft: the gen-time existing-488 veto (`:59345`)
+    /// refuses before any write.
+    #[test]
+    fn w4_d104_30_the_existing_log_vetoes() {
+        let mut w = World::new("hf".into(), 100, 100);
+        let i = w.index(50, 60);
+        w.tiles[i].kind = 488;
+        w.tiles[i].flags |= FLAG_ACTIVE | crate::tile::FLAG_HALF_BRICK;
+        assert!(!place_tile_hellforge(&mut w, 50, 60));
+        let t = w.tile(50, 60).unwrap();
+        assert_eq!(t.kind, 488, "the log stays");
+        assert!(t.half_brick(), "the veto ran before the reset arm");
     }
 
     /// W4-d104 pass 35: the pile scatters land decor on the cave floors

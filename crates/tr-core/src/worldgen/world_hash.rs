@@ -265,6 +265,16 @@ mod tests {
     // forts' wall-14 columns can host a forge, so this pin moves BY
     // DESIGN too — stale, the gate re-pins. The a == b halves stay
     // untouched.
+    // W4-d104 pass 30 graft (2026-11-21, code-only, research/86 §6.2):
+    // the bare `place_3x2` write becomes the full `PlaceTile(77)` route
+    // (the g37 B7 body grafted into this lane's correctly-ordered pass —
+    // the entry gate, the inactive-seat Clear arm, the
+    // ResetsHalfBrickPlacementAttempt reset, the two SquareTileFrame
+    // calls). The retry DRAW SCHEDULE is unchanged (the route draws no
+    // RNG); the tile bytes can move where a seat carried residue or a
+    // refused placement resets halfBrick/frames. This pin was ALREADY
+    // stale-by-design from the pass landing — the graft folds into the
+    // same deferred re-pin. The a == b halves stay untouched.
     // W4-d104 pass 31 (2026-11-21, code-only): the `Spreading Grass`
     // classic arm (`WorldGen.cs:18237-18351`) lands — the surface biome
     // retypes + the first-surface grass spread move the surface cells of
@@ -372,6 +382,11 @@ mod tests {
     // (above) moves this pin BY DESIGN — the default world's 21 forge
     // retries place 77 forges in the hell houses. Re-pin DEFERRED to the
     // merge gate; the a == b halves stay untouched.
+    // W4-d104 pass 30 graft (2026-11-21, code-only, research/86 §6.2):
+    // the full PlaceTile-77 route (above) replaces the bare Place3x2 —
+    // draw-schedule unchanged, tile bytes may move on residue seats /
+    // refused-placement resets. Folds into the SAME deferred re-pin;
+    // the a == b halves stay untouched.
     // W4-d104 pass 31 (2026-11-21, code-only): the `Spreading Grass`
     // classic arm (above) moves this pin BY DESIGN — the surface retypes
     // and the first-surface grass land across the default world. No RNG
