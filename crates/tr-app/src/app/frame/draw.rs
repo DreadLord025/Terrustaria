@@ -186,6 +186,10 @@ impl App {
             // (`TileDrawing.cs:8717`, `!Main.gamePaused`) — snapshotted before
             // the field destructuring (the pass borrows `entity_lights` mutably).
             let game_paused_for_specials = self.game_paused;
+            // W4-f6 wiring: the dust spawn ctx for the draw-side emitters
+            // (lava bubbles + pylon/void-lens) — snapshotted before the
+            // destructure (it reads camera/zoom, which the block borrows).
+            let draw_spawn_ctx = self.spawn_ctx();
             // The achievement popup's click target (`InGamePopups.cs:138`'s
             // `OpenAchievementsAndGoto`) — parked here because the goto
             // mutates `self` while the draw destructure holds its fields;
@@ -1187,7 +1191,7 @@ impl App {
                             // the pool/ctx (`LiquidRenderer._random`, :132).
                             &mut self.liquid_rand,
                             dust,
-                            &self.spawn_ctx(),
+                            &draw_spawn_ctx,
                         );
                         *world_key = Some(key);
                     }
@@ -1236,7 +1240,6 @@ impl App {
                         // W4-f6 wiring: the special-tile dust rolls — the
                         // pylon gates on the private `tile_draw_rand`, the
                         // void lens + the pylon spawn on the bare global.
-                        let special_ctx = self.spawn_ctx();
                         crate::render::pylons::draw_pylons_trophies_void(
                             renderer,
                             world,
@@ -1252,7 +1255,7 @@ impl App {
                             &mut self.tile_draw_rand,
                             self.rngs.global(),
                             dust,
-                            &special_ctx,
+                            &draw_spawn_ctx,
                         );
                     }
 
