@@ -132,6 +132,7 @@
 //! | 557-558 | `:85292-85293` | the 360 GlowingSnail hit/death (2 gores 549/550, same shape) |
 //! | 559 | `:85313` | the 655 MagmaSnail hit/death (1 gore 1256, same shape) |
 //! | 560 | `:85334` | the 154 IceTortoise death (1 gore 180, type-67 vel-scaled dust) |
+//! | 561 | `:85451` | the 121 Slimer death (1 gore 94 + alpha copy, NPC-81 spawn seam; 81 spawns babies, no gore) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -235,6 +236,13 @@ pub struct HitEffectOutcomeC {
     /// `Some((cx,cy))` = the Center; the per-spawn NextFloat draws + the
     /// projectile spawns are the wiring wave's.
     pub dutchman_death_shots: Option<(f32, f32)>,
+    /// The 121 Slimer's NPC-81 spawn seam (`NPC.cs:85447-85455`): on death
+    /// the Slimer spawns one CorruptSlime (81) at `(pos.X + width/2,
+    /// pos.Y + height)` with `SetDefaults(-2)` and the parent's velocity.
+    /// `Some((x,y))` = the spawn anchor; the NPC spawn + the netUpdate are
+    /// the wiring wave's. The 81 CorruptSlime's own baby-spawn seam
+    /// (`:85457-85474`, scale>=1) is likewise the wiring wave's (no gore).
+    pub slimer_spawn: Option<(f32, f32)>,
 }
 
 /// `Utils.RotatedBy` (`Utils.cs:1675-1684`), centre default (0,0): the
@@ -3488,6 +3496,45 @@ fn ice_tortoise_death(
     gore.new_gore(rng, world, pos, Vec2::new(npc.vx, npc.vy), 180, npc.scale); // :85334
 }
 
+/// The 121 Slimer death (`NPC.cs:85438-85455`, site 561): the 50-dust
+/// type-14 burst (SpeedX `hitDirection`, SpeedY 0, alpha/color from the NPC,
+/// velocity ×2 post-write), then the NPC-81 spawn seam (RETURNED) and the
+/// single gore 94 via `NewGoreDirect` with `alpha = this.alpha` post-write.
+/// The 81 CorruptSlime shares the dust burst but spawns baby slimes (no
+/// gore) — its seam is the wiring wave's.
+///
+/// `this.color` stand-in: the 81/121 slimes set NO color in `SetDefaults`
+/// (`NPC.cs:9838-9851` / `:10466`), so the dust color is `Color::default()`;
+/// `alpha` rides `npc.alpha` (55 in SetDefaults).
+fn slimer_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+    outcome: &mut HitEffectOutcomeC,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    let alpha = npc.alpha as i32;
+    // `:85438-85442` — the 50-dust type-14 burst (velocity x2).
+    for _ in 0..50 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 14, hit_direction, 0.0, alpha,
+            Color::default(), 1.0,
+        );
+        dust.slot_mut(idx).velocity *= 2.0;
+    }
+    // `:85447-85450` — the NPC-81 spawn seam (the anchor is the C#'s
+    // `(int)(pos.X + width/2), (int)(pos.Y + height)`).
+    outcome.slimer_spawn = Some((npc.x + w / 2.0, npc.y + h));
+    // `:85451` — the gore 94 + the alpha copy (NewGoreDirect == new_gore).
+    let idx = gore.new_gore(rng, world, pos, Vec2::new(npc.vx, npc.vy), 94, npc.scale);
+    gore.slot_mut(idx).alpha = alpha;
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -3903,6 +3950,12 @@ pub fn hit_effect_c(
     // `:85315-85336` — the 154 IceTortoise arm (site 560).
     if npc_type == 154 && npc.hp <= 0 {
         ice_tortoise_death(npc, dust, dust_ctx, gore, rng, world);
+    }
+    // `:85427-85477` — the 81/121 CorruptSlime/Slimer arm; only the 121
+    // Slimer spawns a gore (site 561) + the NPC-81 seam; the 81's baby
+    // spawn is the wiring wave's (no gore).
+    if npc_type == 121 && npc.hp <= 0 {
+        slimer_death(npc, dust, dust_ctx, gore, rng, world, hit_direction, &mut outcome);
     }
     outcome
 }
@@ -6229,6 +6282,26 @@ mod tests {
         // The dust carries noGravity and the velocity x0.2 post-write.
         let d = dust.slots().iter().find(|d| d.active).unwrap();
         assert!(d.no_gravity);
+    }
+
+    /// `NPC.cs:85451` — the Slimer death: the gore 94 with the alpha copy
+    /// (55), after the 50-dust type-14 velocity-x2 burst; the NPC-81 spawn
+    /// seam is returned.
+    #[test]
+    fn w4_f10_the_slimer_death_spawns_the_gore_and_returns_the_seam() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 30.0);
+        n.alpha = 55;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(491);
+        let mut out = HitEffectOutcomeC::default();
+        slimer_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0, &mut out);
+        assert_eq!(gore.slot(0).gore_type, 94);
+        assert_eq!(gore.slot(0).alpha, 55);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        // The spawn anchor = (pos.X + width/2, pos.Y + height) = (120,130).
+        assert_eq!(out.slimer_spawn, Some((120.0, 130.0)));
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
