@@ -848,19 +848,25 @@ pub fn restores_life_row(kind: u16, heal_life: i32) -> String {
 }
 
 /// The place/ammo/consumable ladder's gates (`Main.cs:20919-20936`):
-/// the placeable arm admits `PlaceTileOnAltUse`, the ammo row excludes
+/// the place gate is `createWall > 0 || createTile > -1 || type == 849`
+/// (the e16 `wall > 0` check, research/128 §2 row 16 — `wall.is_some()`
+/// would admit a `Some(0)` the C# refuses); inside it the row needs
+/// `PlaceTileOnAltUse[type] || consumable`. The ammo row excludes
 /// `notAmmo`, the consumable row excludes the extractinator-only family.
+fn places(d: &ItemDef, kind: u16) -> bool {
+    d.wall.map_or(false, |w| w > 0) || d.tile.is_some() || kind == 849
+}
+
 pub fn place_row_active(d: &ItemDef, kind: u16) -> bool {
-    (d.tile.is_some() || d.wall.is_some() || kind == 849)
-        && (place_tile_on_alt_use(kind) || d.consumable)
+    places(d, kind) && (place_tile_on_alt_use(kind) || d.consumable)
 }
 
 pub fn ammo_row_active(d: &ItemDef, kind: u16) -> bool {
-    !(d.tile.is_some() || d.wall.is_some() || kind == 849) && d.ammo > 0 && !d.not_ammo
+    !places(d, kind) && d.ammo > 0 && !d.not_ammo
 }
 
 pub fn consumable_row_active(d: &ItemDef, kind: u16) -> bool {
-    !(d.tile.is_some() || d.wall.is_some() || kind == 849)
+    !places(d, kind)
         && !(d.ammo > 0 && !d.not_ammo)
         && d.consumable
         && !d.extractinator_consumable
