@@ -14122,6 +14122,49 @@ mod tests {
     }
 
     #[test]
+    fn w4_f12_final_cancel_every_debuff_refuses_and_the_60_151_guards() {
+        // The W4-f12 final debuff-refusal census (`Main.cs:43373`):
+        // `!Main.debuff[b] && b != 60 && b != 151` gates the whole removal
+        // arm. The 76-id `Main.debuff` set (`Main.cs:8865-8940`,
+        // script-diffed against `buffs.rs::DEBUFF_IDS` — zero missing,
+        // zero extra) ALL refuse the right-click cancel, and the two
+        // non-debuff guards 60 (Petrified) / 151 (Webbed) refuse too.
+        // Every refused buff SURVIVES the attempt (the C# never enters
+        // the arm — no DelBuff, no sound).
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        const DEBUFFS: [i32; 76] = [
+            20, 21, 22, 23, 24, 25, 28, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 43, 44, 46, 47,
+            67, 68, 69, 70, 72, 80, 86, 87, 88, 89, 94, 103, 119, 120, 137, 144, 145, 146, 147,
+            148, 149, 153, 156, 157, 158, 160, 163, 164, 169, 183, 186, 189, 194, 195, 196, 197,
+            199, 203, 204, 215, 320, 321, 323, 324, 332, 333, 334, 344, 350, 353, 395, 397, 398,
+            399, 400,
+        ];
+        for &b in DEBUFFS.iter().chain([60, 151].iter()) {
+            assert!(crate::buffs::is_debuff(b) || b == 60 || b == 151, "id {b}");
+            p.buffs = crate::buffs::BuffSlots::default();
+            p.buffs.add_buff(b, 3600);
+            let slot = p.buffs.find_buff_index(b).unwrap();
+            assert!(
+                !p.try_removing_buff(&w, slot, b, [0, 0]),
+                "debuff/guard {b} must refuse the cancel"
+            );
+            assert_eq!(p.buffs.buff_type[slot], b, "the refused {b} survives");
+            assert_eq!(p.buffs.buff_time[slot], 3600, "its timer is untouched");
+        }
+        // The complement: a sample of NON-debuff ids across the range all
+        // cancel (the arm dels the slot and returns true for the MenuTick).
+        for b in [1, 5, 26, 48, 71, 101, 113, 147, 165, 206, 322, 383] {
+            assert!(!crate::buffs::is_debuff(b), "{b} is not a debuff");
+            p.buffs = crate::buffs::BuffSlots::default();
+            p.buffs.add_buff(b, 3600);
+            let slot = p.buffs.find_buff_index(b).unwrap();
+            assert!(p.try_removing_buff(&w, slot, b, [0, 0]), "{b} cancels");
+            assert_eq!(p.buffs.buff_type[slot], 0, "the slot cleared");
+        }
+    }
+
+    #[test]
     fn buff_removal_dismounts_the_mount_buff_without_del() {
         // `Main.cs:43376-43380`: the mount's own buff (`Mount.CheckBuff` =
         // `data.buff == b`) dismounts and clears the buff — no `DelBuff`.
