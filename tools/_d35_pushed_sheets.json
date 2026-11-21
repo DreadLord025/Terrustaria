@@ -7,7 +7,19 @@
   "NPC_602",
   "NPC_603",
   "NPC_608",
-  "NPC_609"
+  "NPC_609",
+  "NPC_357",
+  "NPC_442",
+  "NPC_443",
+  "NPC_444",
+  "NPC_445",
+  "NPC_446",
+  "NPC_447",
+  "NPC_448",
+  "NPC_484",
+  "NPC_485",
+  "NPC_486",
+  "NPC_487"
  ],
  "origin/task/W4-c24-journey-ui": [
   "UI/Creative/Journey_Toggle",
@@ -84,6 +96,11 @@
  ],
  "origin/task/W4-d122-shop-restock-npc": [
   "UI/NPCHappiness"
+ ],
+ "origin/task/W4-d125-empress-r7-drain": [
+  "NPC_636",
+  "NPC_661",
+  "Extra_188"
  ],
  "origin/task/W4-d127-birds-style24": [
   "WallOfFlesh",
@@ -169,6 +186,13 @@
   "NPC_116",
   "NPC_121",
   "NPC_137"
+ ],
+ "origin/task/W4-d36-npc-kinds-141-210": [
+  "NPC_141",
+  "NPC_148",
+  "NPC_149",
+  "NPC_153",
+  "NPC_154"
  ],
  "origin/task/W4-d37-npc-kinds-211-280": [
   "NPC_217",
@@ -259,13 +283,104 @@
   "NPC_356",
   "NPC_366",
   "NPC_367",
-  "NPC_377"
+  "NPC_377",
+  "NPC_378",
+  "NPC_379",
+  "NPC_380"
  ],
  "origin/task/W4-d41-npc-kinds-491-560": [
   "NPC_494",
   "NPC_495",
   "NPC_496",
-  "NPC_497"
+  "NPC_497",
+  "NPC_498",
+  "NPC_499",
+  "NPC_500",
+  "NPC_501",
+  "NPC_502",
+  "NPC_503",
+  "NPC_504",
+  "NPC_505",
+  "NPC_506",
+  "NPC_508",
+  "NPC_509",
+  "NPC_510",
+  "NPC_511",
+  "NPC_512",
+  "NPC_513",
+  "NPC_514",
+  "NPC_515",
+  "NPC_516",
+  "NPC_519"
+ ],
+ "origin/task/W4-d43-npc-kinds-631-697": [
+  "NPC_694",
+  "NPC_695",
+  "NPC_696",
+  "NPC_689",
+  "NPC_690",
+  "NPC_691",
+  "NPC_692",
+  "NPC_693",
+  "NPC_684",
+  "NPC_685",
+  "NPC_686",
+  "NPC_687",
+  "NPC_688",
+  "NPC_679",
+  "NPC_680",
+  "NPC_681",
+  "NPC_682",
+  "NPC_683",
+  "NPC_674",
+  "NPC_675",
+  "NPC_676",
+  "NPC_677",
+  "NPC_678",
+  "NPC_669",
+  "NPC_670",
+  "NPC_671",
+  "NPC_672",
+  "NPC_673",
+  "NPC_662",
+  "NPC_664",
+  "NPC_665",
+  "NPC_666",
+  "NPC_667",
+  "NPC_657",
+  "NPC_658",
+  "NPC_659",
+  "NPC_660",
+  "NPC_661",
+  "NPC_652",
+  "NPC_653",
+  "NPC_654",
+  "NPC_655",
+  "NPC_656",
+  "NPC_647",
+  "NPC_648",
+  "NPC_649",
+  "NPC_650",
+  "NPC_651",
+  "NPC_642",
+  "NPC_643",
+  "NPC_644",
+  "NPC_645",
+  "NPC_646",
+  "NPC_637",
+  "NPC_638",
+  "NPC_639",
+  "NPC_640",
+  "NPC_641",
+  "NPC_631",
+  "NPC_632",
+  "NPC_634",
+  "NPC_635",
+  "NPC_636"
+ ],
+ "origin/task/W4-d6-proj-ai-51-60": [
+  "Armor_Head_101",
+  "Armor_Head_156"
  ],
  "origin/task/W4-d70-moonlord-shake-screens": [
   "Misc/Sunflare/Lens/PointBlurry",
@@ -433,6 +548,18 @@
  "origin/task/W4-e18-minimap-reveal-queue": [
   "UI/Cursor_11"
  ],
+ "origin/task/W4-e19-liquid-quicksell-shimmer": [
+  "UI/Cursor_3",
+  "UI/Cursor_6",
+  "UI/Cursor_7",
+  "UI/Cursor_8",
+  "UI/Cursor_9",
+  "UI/Cursor_10"
+ ],
+ "origin/task/W4-e21-wiring-device-arms-3": [
+  "NPC_46",
+  "NPC_540"
+ ],
  "origin/task/W4-e23-bestiary-ui-grid": [
   "UI/Scrollbar",
   "UI/Bestiary/Button_Forward",
@@ -473,7 +600,16 @@
   "MapBG39",
   "MapBG40",
   "MapBG41",
-  "MapBG42"
+  "MapBG42",
+  "MapBGOverlay1",
+  "MapBGOverlay2",
+  "MapBGOverlay3",
+  "MapBGOverlay4",
+  "MapBGOverlay5",
+  "MapBGOverlay6",
+  "MapBGOverlay7",
+  "MapBGOverlay8",
+  "MapBGOverlay9"
  ],
  "origin/task/W4-e26-luck-system": [
   "NPC_361",
@@ -527,6 +663,28 @@
   "Glow_315",
   "Glow_329",
   "Glow_330"
+ ],
+ "origin/task/W4-f18-npc-kinds-verify-2": [
+  "NPC_355",
+  "NPC_356",
+  "NPC_357",
+  "NPC_358",
+  "NPC_359",
+  "NPC_360",
+  "NPC_361",
+  "NPC_362",
+  "NPC_363",
+  "NPC_364",
+  "NPC_365",
+  "NPC_366",
+  "NPC_367",
+  "NPC_374",
+  "NPC_375",
+  "NPC_377",
+  "NPC_378",
+  "NPC_379",
+  "NPC_380",
+  "NPC_430"
  ],
  "origin/task/W4-f22-ui-screens-4": [
   "Chat2"
@@ -672,6 +830,36 @@
  "origin/task/W4-f47-liquid-shimmer-2": [
   "NPC_676"
  ],
+ "origin/task/W4-f48-dodge-2": [
+  "Acc_Shield_1",
+  "Acc_Shield_2",
+  "Acc_Shield_3",
+  "Acc_Shield_4",
+  "Acc_Shield_5",
+  "Acc_Shield_6",
+  "Acc_Shield_7",
+  "Acc_Shield_8",
+  "Acc_Shield_9",
+  "Acc_Shield_10",
+  "Acc_Shield_11",
+  "Acc_Shield_12"
+ ],
+ "origin/task/W4-f50-hurt-reactions": [
+  "BeetleOrb"
+ ],
+ "origin/task/W4-g10-npc-kind-wire-3": [
+  "NPC_637",
+  "NPC_638",
+  "NPC_656",
+  "NPC_670",
+  "NPC_678",
+  "NPC_679",
+  "NPC_680",
+  "NPC_681",
+  "NPC_682",
+  "NPC_683",
+  "NPC_684"
+ ],
  "origin/task/W4-g12-dust-main-sites-2": [
   "Shroom_Tops",
   "Coin_0",
@@ -688,7 +876,11 @@
   "UI/ChestStack_3",
   "UI/Sort_0",
   "UI/Sort_1",
-  "UI/House_Banner"
+  "UI/House_Banner",
+  "Lock_0",
+  "Lock_1",
+  "UI/BlockReplace_0",
+  "Extra_211"
  ],
  "origin/task/W4-g5-npc-style7-caster-doc": [
   "NPC_172",
@@ -705,7 +897,8 @@
   "UI/Reforge_1"
  ],
  "origin/task/W4-g58-ui-shop-happiness": [
-  "UI/NPCHappiness"
+  "UI/NPCHappiness",
+  "TownNPCs/Portraits/Portrait_Window"
  ],
  "origin/task/W4-g70-bg-layers-1": [
   "Sun2",
@@ -755,7 +948,13 @@
   "NPC_226",
   "NPC_221",
   "NPC_48",
-  "NPC_156"
+  "NPC_156",
+  "NPC_159"
+ ],
+ "origin/task/W4-g81-wire-draw-overlay": [
+  "UI/InfoIcon_13",
+  "UI/BlockReplace_0",
+  "Extra_211"
  ],
  "origin/task/W4-g82-rope-coil-draw": [
   "Chain16",

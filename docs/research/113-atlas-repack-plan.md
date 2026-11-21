@@ -1,6 +1,6 @@
 # 113 — Atlas repack plan: the W4 union overflows the 8192 strict-GPU bound
 
-Status: ✅ RETIRED (measurement + merger contract complete: §1-6 the
+Status: ✅ SEALED (measurement + merger contract complete: §1-6 the
 union crisis + 2-page contract, §7-9 the BG-STYLE extension, §10 the
 NPC lazy-load census + the one-page lazy union, §11 the FINAL claimant
 cross-read + 490-name union, §12 the merger checklist + witness matrix;
@@ -8,7 +8,13 @@ cross-read + 490-name union, §12 the merger checklist + witness matrix;
 (port-side load-path census + the exact merger code plan), §14 the
 NEW-claimant delta since 490 (552-name union, worst case re-measured),
 §15 the FINAL acceptance budgets + GPU-limit check + VRAM min-spec,
-§16 the cross-receipts d38d/g72e/g31g).
+§16 the cross-receipts d38d/g72e/g31g; §17 the SEAL-VERIFY pass — the
+retire receipt re-verified at 1afd327b, the NEW claimants since 562
+(d42 NO-PACK 8382/d43 band/f29 equal-both-ways/e23 MapBGOverlay/g84/
+c8/c9 + g10 pets), the **707-name census union** re-measured (lazy ONE
+page 7256/7423/+Glow362 7447), and §17.5 the FINAL atlas-family bible —
+the 7-step lazy-load merger contract with the SEAL acceptance numbers.
+No further census pass is owed; the next atlas work is the merger).
 Branch: `task/W4-d35-npc-kinds-71-140` (ATLAS-REPACK phase + extension
 phase + FINAL phase + RETIRE phase). Base: `a725acb0` (wave-3 landing).
 Code-only mode:
@@ -37,7 +43,13 @@ the font-array VRAM is measured by `tools/_d35_font_vram.js` →
 `_d35_font_vram.json` (a full multi-frame LZX decompress of the five
 retail font XNBs + the `FontAtlas::build` shelf-pack replica, 4 BC2
 layers = 268.4 MB, page counts 159/159/159/160/160 matching the Rust
-pins).
+pins). The SEAL phase (§17) re-extracts once more (65 branches / 630
+pushed names + d42's 29 NO-PACK forecast = the 707-name census union)
+via `tools/_d35_seal_probe.py` / `_d35_seal_delta.py` /
+`_d35_seal_union.py` → `_d35_seal_union.json` and re-measures via
+`tools/_d35_seal_measure.js` → `_d35_seal_measure.json` (25 scenarios)
++ `_d35_seal_gpu.json`; the committed retire witnesses are preserved
+untouched.
 
 ## 1. The crisis, re-measured
 
@@ -1544,6 +1556,178 @@ the §15 budgets.** The merger executes §3 steps 1-7 + the Glow_362 admission
 + the g31 tile-pass folds (research/136 §10) + the g72 bg-roll wire
 (research/64 §6) as coordinated worklists.
 
+## 17. The SEAL-VERIFY pass (the retire receipt + the 707-name union + the FINAL bible)
+
+The seal re-fetch (`git fetch origin --prune` +
+`tools/_d35_pushed_extract.py` re-run, 2026-11-21, after the RETIRE tip
+`1afd327b9`) re-verifies the retire receipt, admits the NEW claimants
+since 562, re-measures the union, and closes the plan with the FINAL
+atlas-family bible (§17.5). Tools: `tools/_d35_seal_probe.py` (the named
+claimants at their tips), `_d35_seal_delta.py` (the delta since 562),
+`_d35_seal_union.py` → `_d35_seal_union.json` (the 707-name table with
+dims), `_d35_seal_measure.js` → `_d35_seal_measure.json` +
+`_d35_seal_gpu.json` (25 scenarios, verify() + double-run on every
+layout, boundary split recursed). The committed retire witnesses
+(`_d35_union_list.json` 562, `_d35_retire_measure.json` 24) are NOT
+overwritten — the seal witnesses are new files.
+
+### 17.1 The retire receipt: 1afd327b landed, every pin re-read
+
+`git log` on this branch confirms `1afd327b9` is the pushed tip
+(origin == local, working tree clean at read). The retire pins all
+re-verified against the committed files:
+
+| pin | where | verified |
+|---|---|---|
+| the step-7 implementation contract 7a-7e | §13.3 (NPC rows leave the eager pack / per-world pack arm / audit re-point / MAIN_PAGE_COUNT uniform / swap seam) | present, intact |
+| the 562-name union | `tools/_d35_union_list.json` = 562 rows, §14 | ✓ |
+| VRAM min-spec 2 GB | §15.4 (1 GB FAILS the realistic stack) | ✓ |
+| font array 268.4 MB | §15.3, `_d35_font_vram.json` (4 BC2 8192² layers) | ✓ |
+| lazy ONE page 7140 / worst 7305 | §14.3, `_d35_retire_measure.json` | ✓ |
+| Glow_362 +8 px (7305→7313) | §16.3, the `lazy-union-worst+Glow362` scenario | ✓ |
+
+### 17.2 The NEW claimants since 562 (the seal re-extraction)
+
+65 pushed branches / **630 pushed names** (was 54 / 504): +126 names,
+10 already forecast/deferred in the 562 union (d125's tip
+NPC_636/661/Extra_188 is now PUSHED at `7a0482302` — the local-tip
+dagger retires — plus NPC_430/442-447 now pushed by f18/c10), so
+**+116 genuinely-new pushed names, 0 gone** (Appendix C). The brief's
+named claimants at their CURRENT tips (`_d35_seal_probe.json`):
+
+| claimant | tip | sheet rows | verdict |
+|---|---|---|---|
+| **d42** (npc-kinds-561-630) | `bac408be0` | **0 rows — NO-PACK confirmed** | research/238 §3: the full runtime set (gore+font) skyline **8382 = +190 OVER** the 8192 bound (scenarios D/E; static-only 8021 pins 171 px headroom); §4 verdict None-skip, the sheets ride this plan's lazy wave. research/239 §4 declares the FINAL **32-kind band** (578-630 minus 8 ceded minus 11 keep-one-dropped); 580/630 are pushed by f42 and 619 by d11, the other **29 names are FORECAST rows** admitted to the census union exactly like d40's 56 (they ride the per-world NPC page under §10.6). |
+| **d43** (npc-kinds-631-697) | `0253bde90` | **+63 rows, 53 union-new** | the 631-697 band's sheets phase LANDED (13/13 batches); 10 rows already union-owned (c7/c9/d23/f47/g5 etc.). The big strips: NPC_657 360×1952 (707 kpx), NPC_696 384×1242 (480 kpx), NPC_692 136×992, NPC_631 60×1554. ALL are `NPC_<id>` rows → the lazy filter pulls them onto the per-world NPC page. |
+| **f29** (map-overlay-2) | `ff819421d` | **109 rows, ALL in the union — EQUAL both ways** | re-verified by set comparison: the 562-union rows owned e17/f29 number exactly 109 and equal f29's `a725acb0..tip` assets.rs additions (0 missing, 0 extra) — f29's own §11.3 receipt (research/140) reproduces at the seal. The rows are eager `NPC_Head_*`/UI names (60 heads + 40 boss heads + MapDeath + Extra_173/175/176 + Coin_0..3 + UI_quickicon1), NOT `NPC_<id>` kinds — the lazy filter keeps them (§10's regex is `^NPC_\d+$`). |
+| **e23** (bestiary-ui-grid) | `7a7779690` | **+9: MapBGOverlay1..9** (49 total, 40 already in) | the weather/event map overlays (115×65, 7.8 kpx each, 70.6 kpx total; sandstorm/rain/sun/moon/eclipse/blizzard/meteor/pumpkin-moon/frost-moon). e23's own measurement (research/237): skyline 7753→**7759** (+6 px) under 8192 on ITS branch. NEW union claims — admitted (Appendix C #88-96); non-NPC rows, they ride the lazy union page. |
+| **g84** (plantera-bulb-draw) | `e6c2dcd0d` | **2 rows, tip UNMOVED** | Extra_260/Glow_294 in the union since RETIRE (§14.2); the g31 keep-one (§16.3) stands. |
+| **c8** (style66-crawling-critters) | `7c2de9c06` | **9 rows, ALL in union** | NPC_357/374/375/448/484-487/606 — already packed by c8's earlier pushes (the 484-487 crawlers shared with d40's forecast, now also c10/f18). |
+| **c9** (style67-snails) | `2042d77f1` | **4 rows, ALL in union** | NPC_359/360/655/677 (655 shared c7, 677 c9-owned since the retire extraction). |
+
+The other arrivals (Appendix C owners): d41's band completion (+19:
+NPC_498-506/508-515/519), d36 (+5: 141/148/149/153/154), d39/f18
+(NPC_378-380), g8 (+NPC_159), e21 (+NPC_540), f48's dodge shields
+(Acc_Shield_1..12, the 44×1120 strips — 12 rows, 578 kpx), d6's
+Armor_Head_101/156, e19's cursors (UI/Cursor_3/6/7/8/9/10), g21/g81's
+Extra_211 + Lock_0/1 + UI/BlockReplace_0 + UI/InfoIcon_13, g58's
+Portrait_Window, f50's BeetleOrb.
+
+### 17.3 The in-union lanes (the brief's question 3)
+
+| lane | tip | in the 562-union? |
+|---|---|---|
+| **d38** (npc-kinds-281-350) | `9c0e3bc54` (moved from the retire receipt's `1ba0395c7`) | **YES — all 35 rows**, unchanged by the tip move (the probe re-diffed: same 35 names). The §16.1 obligations stand. |
+| **d40** (npc-kinds-421-490) | `8fe1d6d31` (UNMOVED, still data-only) | **YES via the 56-id FORECAST** — 0 pushed sheet rows; NPC_430/442-448/454-459/484-487 are now ALSO pushed by f18/c10/d9 (the forecast dagger retires for those, the census keeps one row per name). |
+| **g10** (npc-kind-wire-3, the pets) | `5dee28650` | **NO at 562 — 11 NEW rows** (NPC_637/638/656/670/678-684, the town pets incl. TownSlimeCopper 684), every one shared-owner with d43's band. Admitted at the seal (Appendix C); they ride the per-world NPC page (town-resident kinds, in the census superset post-merge). |
+| **g11** (dust-main-sites-1) | `2e978b279` | **YES trivially — 0 sheet rows**, pure dust wiring/retire docs (the research/116 s7 merger instruction). NO atlas claim. |
+
+### 17.4 The re-measured union: 707 names (`_d35_seal_measure.json`)
+
+The census union is **707 = 562 + 116 pushed-new + 29 d42-forecast**
+(0 dropped; total padded area **17.57 Mpx ≈ 2145 px** of bin width).
+The +116 split **80 NPC-band + 36 non-NPC** (the non-NPC 36 add only
+0.78 Mpx: 12 shields + 9 MapBGOverlay + 2 armor heads + 6 cursors +
+small UI/Extra/Lock rows); the d42 forecast adds 0.61 Mpx, all NPC.
+
+| scenario | sheets | area Mpx | bound | skyline | boundary pages | atlas MB |
+|---|---|---|---|---|---|---|
+| merged-407 base (re-witnessed) | 9904 | 74.72 | 9125 | 9478 | 8192 / 1298 | 311.0 |
+| merged-final-630 | 10170 | 80.03 | 9775 | 10232 | 8190 / 2135 | 338.3 |
+| + d42 forecast 29 | 10199 | 80.65 | 9849 | 10325 | 8156 / 2201 | 339.4 |
+| **+ d125 deferred 5 (WORST)** | 10204 | 81.82 | 9993 | 10424 | **8191 / 2377** | 346.3 |
+| **lazy union (630 − all NPC_)** | 9581 | 55.91 | 6829 | **7256** | **ONE page** | 237.8 |
+| **lazy union (worst − all NPC_)** | 9586 | 57.08 | 6972 | **7423** | **ONE page** | 243.2 |
+| lazy worst + Glow_362 | 9587 | 57.16 | 6982 | **7447** (+24) | ONE page | 244.0 |
+
+**The contracts hold**: eager worst 2 pages with **5815 px page-1
+headroom**; the lazy union stays **ONE page** (7256 px, 936 px headroom;
+worst 7423, 769 px; +Glow_362 7447, 745 px — the Glow_362 admission is
++24 px on the SEAL ordering, not the retire's +8: the skyline is
+order-chaotic (§1), the honest bound moves 6972→6982 = +10). The
+per-world NPC own pages are UNCHANGED at the census sets (fresh 1668 /
+long-lived 2152 / bestiary 2566 px); the post-merge augmented roster
+(retire-31 + the SEAL census-new kinds = 286 names) packs long-lived
+**481 sheets / 2728 px** and bestiary-opened **575 sheets / 3286 px** —
+still ONE own page each, ≥4900 px headroom. Realistic totals: **3 pages
+536.5-595 MB**; adversarial (worst bg 8135+2138): **4 pages 650.4-687.5
+MB**. The GPU-limit check re-runs green: every page ≤268.4 MB (max
+realistic 244.1, adversarial 266.6, eager page-0 at 268.4); full VRAM
+stack **932-990.5 MB realistic / 1045.9-1083 MB adversarial** (font
+268.4 + targets 127.1 unchanged) — **the 2 GB min-spec STANDS** (worst
+1083 MB, ~965 MB spare; 1 GB still FAILS).
+
+**Determinism**: 25 scenarios verify() + double-run; a full fresh
+cross-run re-run is semantically identical (0 diffs) and byte-identical
+(`_d35_seal_measure.json` SHA256
+`67C3F25D2496892916FB151E2E914C18294E25FB515F0E34D1F59EA53AAECEAF`);
+canonical-form cross-run SHA256
+`939BFD003E48797C6229A6B29F21604157AF6DE056432546D9EE6B51033AFA53`.
+Witness hashes: `_d35_seal_union.json`
+`BB5CBC3412F868CBEB9C9B51F5069BF790EBBE7389D69CAF2F704A0BF2D8FC39`,
+`_d35_seal_delta.json`
+`7FB7842F604BE1914B8330A36258BA9CA82A74628EE24120A1150078D7E91A90`,
+`_d35_pushed_sheets.json` (the 630-name re-extraction)
+`F1BA84D8E824089191605685D1A76AAE62D5E41AE4D74062CA1E1EACF79929D1`.
+
+### 17.5 The FINAL atlas-family bible (the 7-step lazy-load merger contract)
+
+This is the atlas merger's LAST WORD — the §12 checklist + §13.3 code
+plan re-affirmed with the SEAL acceptance numbers. The merger executes
+IN ORDER; each step's witness must pass before the next:
+
+1. **tr-render multi-page** (§3 step 1): `SheetRect.page`,
+   `Atlas.pages`, boundary-split `build_ref` (skyline-unbounded then
+   split at 8192, tail re-packs recursively), D2Array binding,
+   layer-range encoding, bake-at-push inset. Witness: the atlas.rs
+   2-page tests + `build_ref_matches_build_bit_for_bit` + the harness
+   `boundaryNPages` reproducing the Rust layout.
+2. **Lookups per-page rects** (§3 step 2): `page_heights`, per-page
+   `uv_rect`/`sheet_frame_uv`, `BgTex.page`; every uv site reads the
+   rect's page. Witness: the `content_lookups` family.
+3. **The mechanical sweep** (§3 step 3): `atlas_size` → `page_sizes`
+   forces every site; the packing audit asserts page membership for
+   every union name. Witness: compiler clean + audit.
+4. **Admit the deferred/forecast census** (§3 step 4, SEAL form): the
+   **707-name union** (`_d35_seal_union.json`) — d35's deferred 12,
+   d125's tip 3 + deferred 5, d40's forecast 56, **d42's forecast 29**
+   (the NO-PACK verdict, research/238), **Glow_362** (the g31 table-pass
+   load, §16.3 — couples with the `:971` gate at the bind). Every name
+   packed on SOME page; one rect per name (the dedupes stand: 289 d38,
+   328 d38, the Coin/keep-one rows).
+5. **Re-measure** (§3 step 5, SEAL budgets): every page ≤8192; the lazy
+   union ONE page ≤**7447** (worst+Glow_362; base 7256); the per-world
+   NPC/bg pages ≤2. The retire numbers (7140/7305/7313) are superseded
+   by the SEAL table (§17.4); the acceptance FORM is unchanged.
+6. **Per-world bg pages** (§8.4): the rolled-set loader arm, fresh
+   pages after the union, `MAIN_PAGE_COUNT` runtime uniform
+   (`atlas.pages.len()` at the `push_font_glyph` chokepoint,
+   `sprite.rs:1088` — REQUIRED). Witness: seed-42 7448 px + worst
+   8135+2138 reproduce; world-swap bit-stability. The g72 underworld
+   escape (§16.2): the 5 Underworld sheets draw as plain textures into
+   the d69 screenTarget family, NOT atlas pages.
+7. **Per-world NPC pages** (§13.3 7a-7e): the 269 `NPC_<id>` rows leave
+   `STATIC_SHEET_NAMES` → `npc_sheet_names_for_world` via
+   `texture_net_id` (NOT net_id); the per-world pack arm in
+   `build_atlas_inner` after the union; the `npc_tex` audit
+   (`entities.rs:444`) re-points to the world set; the bestiary
+   superset packs at world load (immutable-in-play, §13.4 — post-merge
+   575 sheets / 3286 px / one page); the swap seam re-packs the world
+   half only. **No draw-path change** — d38's by-name path (§16.1), the
+   `npc_sheets` map, the ~140 named fields, the bestiary `entry_sheet`
+   all stand. The `NPC_Head_*`/`NPC_Head_Boss_*` rows are NOT NPC kinds
+   — they stay eager (f29's §11.3 receipt).
+
+**Acceptance (FINAL)**: 3 pages realistic (~537-595 MB atlas) / 4
+adversarial (~650-688 MB); per-page ≤268.4 MB by construction; full
+VRAM 932-990.5 / 1045.9-1083 MB; **min-spec 2 GB VRAM,
+max_texture_dimension_2d ≥ 8192, ≥4 array layers** (a recommendation —
+wgpu exposes no total-VRAM limit; `log_atlas_diagnostics` should warn
+below it). Item/Projectile/Gore stay eager supersets (13.7 Mpx, E-4b).
+The G6 cache, the RNG streams, the fixed-step order are untouched
+throughout. **Status: SEALED — no further census pass is owed; the next
+atlas-family work is the merger itself.**
+
 ## Appendix A - the original 407-name union list (priority order: padded area desc)
 
 Legend: branch slugs omit the W4- prefix; dagger = d40 FORECAST (data-only branch, sheets phase pending); double-dagger = d35 DEFERRED (admitted by the repack). Generated by tools/_d35_union_table.py from the REAL .xnb dims. **This is the §1-9 measurement base (26 branches / 339 pushed + 56 forecast + 12 deferred). The FINAL 490-name list lives in `tools/_d35_union_table.md` (regenerated); the 83-name delta is Appendix B below.**
@@ -2140,3 +2324,164 @@ the per-world NPC page under the §10 lazy form, NOT the union.
 | 70 | `Chains_6` | 16×8 | 0.2 | g82-rope-coil-draw |
 | 71 | `Chains_7` | 16×8 | 0.2 | g82-rope-coil-draw |
 | 72 | `Chain16` | 8×8 | 0.1 | g82-rope-coil-draw |
+
+## Appendix C - the SEAL delta (145 new names, priority order: padded area desc)
+
+The §17.2 seal re-extraction delta: 65 pushed branches / 630 names
+(+126 vs the 504 retire base, 0 gone; 10 of the 126 were already
+forecast/deferred in the 562 union — d125's tip 3 now PUSHED + NPC_430/
+442-447 — so +116 genuinely-new pushed) PLUS d42's 29 FORECAST names
+(the research/238 NO-PACK verdict, marked FORECAST below), deduped
+against Appendix A + B + B-2 = the **707-name census union**. Generated
+by `tools/_d35_seal_union.py` → `_d35_seal_union.json` (the full table;
+the delta body `tools/_d35_seal_delta_table.md`). The NPC-band rows
+(109 of the 145) ride the per-world NPC page under the §10 lazy form,
+NOT the eager union; the 36 non-NPC rows ride the lazy union page.
+
+| # | name | w x h | padded kpx | owners |
+|---|---|---|---|---|
+| 1 | `NPC_657` | 360x1952 | 707.3 | d43-npc-kinds-631-697 |
+| 2 | `NPC_696` | 384x1242 | 480.2 | d43-npc-kinds-631-697 |
+| 3 | `NPC_620` | 102x1764 | 183.7 | d42 (FORECAST: NO-PACK, research/238) |
+| 4 | `NPC_692` | 136x992 | 137.2 | d43-npc-kinds-631-697 |
+| 5 | `NPC_631` | 60x1554 | 96.5 | d43-npc-kinds-631-697 |
+| 6 | `NPC_618` | 150x528 | 80.6 | d42 (FORECAST: NO-PACK, research/238) |
+| 7 | `NPC_638` | 70x1064 | 76.8 | d43-npc-kinds-631-697, g10-npc-kind-wire-3 |
+| 8 | `NPC_628` | 70x782 | 56.4 | d42 (FORECAST: NO-PACK, research/238) |
+| 9 | `NPC_586` | 60x840 | 52.2 | d42 (FORECAST: NO-PACK, research/238) |
+| 10 | `NPC_656` | 46x1080 | 51.9 | d43-npc-kinds-631-697, g10-npc-kind-wire-3 |
+| 11 | `Acc_Shield_10` | 44x1120 | 51.6 | f48-dodge-2 |
+| 12 | `Acc_Shield_11` | 44x1120 | 51.6 | f48-dodge-2 |
+| 13 | `Acc_Shield_5` | 44x1120 | 51.6 | f48-dodge-2 |
+| 14 | `Acc_Shield_9` | 44x1120 | 51.6 | f48-dodge-2 |
+| 15 | `NPC_637` | 44x1120 | 51.6 | d43-npc-kinds-631-697, g10-npc-kind-wire-3 |
+| 16 | `Acc_Shield_2` | 42x1120 | 49.4 | f48-dodge-2 |
+| 17 | `Acc_Shield_7` | 42x1120 | 49.4 | f48-dodge-2 |
+| 18 | `Acc_Shield_8` | 42x1120 | 49.4 | f48-dodge-2 |
+| 19 | `Acc_Shield_1` | 40x1120 | 47.1 | f48-dodge-2 |
+| 20 | `Acc_Shield_12` | 40x1120 | 47.1 | f48-dodge-2 |
+| 21 | `Acc_Shield_3` | 40x1120 | 47.1 | f48-dodge-2 |
+| 22 | `Acc_Shield_4` | 40x1120 | 47.1 | f48-dodge-2 |
+| 23 | `Acc_Shield_6` | 40x1120 | 47.1 | f48-dodge-2 |
+| 24 | `Armor_Head_101` | 40x1118 | 47.0 | d6-proj-ai-51-60 |
+| 25 | `Armor_Head_156` | 40x1118 | 47.0 | d6-proj-ai-51-60 |
+| 26 | `NPC_379` | 60x696 | 43.3 | d39-npc-kinds-351-420, f18-npc-kinds-verify-2 |
+| 27 | `NPC_380` | 60x696 | 43.3 | d39-npc-kinds-351-420, f18-npc-kinds-verify-2 |
+| 28 | `NPC_591` | 88x476 | 43.0 | d42 (FORECAST: NO-PACK, research/238) |
+| 29 | `NPC_684` | 72x532 | 39.5 | d43-npc-kinds-631-697, g10-npc-kind-wire-3 |
+| 30 | `NPC_635` | 40x896 | 37.7 | d43-npc-kinds-631-697 |
+| 31 | `NPC_159` | 40x840 | 35.4 | g8-npc-kind-wire-1 |
+| 32 | `NPC_632` | 36x800 | 30.5 | d43-npc-kinds-631-697 |
+| 33 | `NPC_683` | 46x616 | 29.7 | d43-npc-kinds-631-697, g10-npc-kind-wire-3 |
+| 34 | `NPC_153` | 72x384 | 28.6 | d36-npc-kinds-141-210 |
+| 35 | `NPC_154` | 72x384 | 28.6 | d36-npc-kinds-141-210 |
+| 36 | `NPC_678` | 44x616 | 28.4 | d43-npc-kinds-631-697, g10-npc-kind-wire-3 |
+| 37 | `NPC_680` | 46x588 | 28.3 | d43-npc-kinds-631-697, g10-npc-kind-wire-3 |
+| 38 | `NPC_498` | 40x594 | 25.0 | d41-npc-kinds-491-560 |
+| 39 | `NPC_499` | 40x594 | 25.0 | d41-npc-kinds-491-560 |
+| 40 | `NPC_500` | 40x594 | 25.0 | d41-npc-kinds-491-560 |
+| 41 | `NPC_501` | 40x594 | 25.0 | d41-npc-kinds-491-560 |
+| 42 | `NPC_502` | 40x594 | 25.0 | d41-npc-kinds-491-560 |
+| 43 | `NPC_503` | 40x594 | 25.0 | d41-npc-kinds-491-560 |
+| 44 | `NPC_504` | 40x594 | 25.0 | d41-npc-kinds-491-560 |
+| 45 | `NPC_505` | 40x594 | 25.0 | d41-npc-kinds-491-560 |
+| 46 | `NPC_506` | 40x594 | 25.0 | d41-npc-kinds-491-560 |
+| 47 | `NPC_679` | 38x616 | 24.7 | d43-npc-kinds-631-697, g10-npc-kind-wire-3 |
+| 48 | `NPC_611` | 40x520 | 21.9 | d42 (FORECAST: NO-PACK, research/238) |
+| 49 | `NPC_689` | 40x520 | 21.9 | d43-npc-kinds-631-697 |
+| 50 | `NPC_682` | 36x560 | 21.4 | d43-npc-kinds-631-697, g10-npc-kind-wire-3 |
+| 51 | `NPC_625` | 56x360 | 21.0 | d42 (FORECAST: NO-PACK, research/238) |
+| 52 | `NPC_508` | 84x240 | 20.8 | d41-npc-kinds-491-560 |
+| 53 | `NPC_594` | 256x76 | 20.1 | d42 (FORECAST: NO-PACK, research/238) |
+| 54 | `NPC_670` | 38x476 | 19.1 | d43-npc-kinds-631-697, g10-npc-kind-wire-3 |
+| 55 | `NPC_681` | 38x476 | 19.1 | d43-npc-kinds-631-697, g10-npc-kind-wire-3 |
+| 56 | `NPC_616` | 50x364 | 19.0 | d42 (FORECAST: NO-PACK, research/238) |
+| 57 | `NPC_617` | 50x364 | 19.0 | d42 (FORECAST: NO-PACK, research/238) |
+| 58 | `NPC_624` | 32x462 | 15.8 | d42 (FORECAST: NO-PACK, research/238) |
+| 59 | `NPC_660` | 90x168 | 15.6 | d43-npc-kinds-631-697 |
+| 60 | `NPC_148` | 28x504 | 15.2 | d36-npc-kinds-141-210 |
+| 61 | `NPC_149` | 28x504 | 15.2 | d36-npc-kinds-141-210 |
+| 62 | `NPC_540` | 48x280 | 14.1 | e21-wiring-device-arms-3 |
+| 63 | `NPC_614` | 48x280 | 14.1 | d42 (FORECAST: NO-PACK, research/238) |
+| 64 | `NPC_646` | 48x280 | 14.1 | d43-npc-kinds-631-697 |
+| 65 | `NPC_647` | 48x280 | 14.1 | d43-npc-kinds-631-697 |
+| 66 | `NPC_648` | 48x280 | 14.1 | d43-npc-kinds-631-697 |
+| 67 | `NPC_649` | 48x280 | 14.1 | d43-npc-kinds-631-697 |
+| 68 | `NPC_650` | 48x280 | 14.1 | d43-npc-kinds-631-697 |
+| 69 | `NPC_651` | 48x280 | 14.1 | d43-npc-kinds-631-697 |
+| 70 | `NPC_652` | 48x280 | 14.1 | d43-npc-kinds-631-697 |
+| 71 | `TownNPCs/Portraits/Portrait_Window` | 112x112 | 13.0 | g58-ui-shop-happiness |
+| 72 | `NPC_662` | 50x232 | 12.2 | d43-npc-kinds-631-697 |
+| 73 | `NPC_671` | 46x240 | 11.6 | d43-npc-kinds-631-697 |
+| 74 | `NPC_672` | 46x240 | 11.6 | d43-npc-kinds-631-697 |
+| 75 | `NPC_673` | 46x240 | 11.6 | d43-npc-kinds-631-697 |
+| 76 | `NPC_674` | 46x240 | 11.6 | d43-npc-kinds-631-697 |
+| 77 | `NPC_675` | 46x240 | 11.6 | d43-npc-kinds-631-697 |
+| 78 | `NPC_687` | 30x338 | 10.9 | d43-npc-kinds-631-697 |
+| 79 | `NPC_639` | 50x192 | 10.1 | d43-npc-kinds-631-697 |
+| 80 | `NPC_640` | 50x192 | 10.1 | d43-npc-kinds-631-697 |
+| 81 | `NPC_641` | 50x192 | 10.1 | d43-npc-kinds-631-697 |
+| 82 | `NPC_642` | 50x192 | 10.1 | d43-npc-kinds-631-697 |
+| 83 | `NPC_643` | 50x192 | 10.1 | d43-npc-kinds-631-697 |
+| 84 | `NPC_644` | 50x192 | 10.1 | d43-npc-kinds-631-697 |
+| 85 | `NPC_645` | 50x192 | 10.1 | d43-npc-kinds-631-697 |
+| 86 | `NPC_629` | 32x276 | 9.5 | d42 (FORECAST: NO-PACK, research/238) |
+| 87 | `NPC_578` | 48x160 | 8.1 | d42 (FORECAST: NO-PACK, research/238) |
+| 88 | `MapBGOverlay1` | 115x65 | 7.8 | e23-bestiary-ui-grid |
+| 89 | `MapBGOverlay2` | 115x65 | 7.8 | e23-bestiary-ui-grid |
+| 90 | `MapBGOverlay3` | 115x65 | 7.8 | e23-bestiary-ui-grid |
+| 91 | `MapBGOverlay4` | 115x65 | 7.8 | e23-bestiary-ui-grid |
+| 92 | `MapBGOverlay5` | 115x65 | 7.8 | e23-bestiary-ui-grid |
+| 93 | `MapBGOverlay6` | 115x65 | 7.8 | e23-bestiary-ui-grid |
+| 94 | `MapBGOverlay7` | 115x65 | 7.8 | e23-bestiary-ui-grid |
+| 95 | `MapBGOverlay8` | 115x65 | 7.8 | e23-bestiary-ui-grid |
+| 96 | `MapBGOverlay9` | 115x65 | 7.8 | e23-bestiary-ui-grid |
+| 97 | `NPC_634` | 44x160 | 7.5 | d43-npc-kinds-631-697 |
+| 98 | `NPC_141` | 60x108 | 6.8 | d36-npc-kinds-141-210 |
+| 99 | `NPC_590` | 38x144 | 5.8 | d42 (FORECAST: NO-PACK, research/238) |
+| 100 | `NPC_691` | 38x144 | 5.8 | d43-npc-kinds-631-697 |
+| 101 | `NPC_695` | 44x114 | 5.3 | d43-npc-kinds-631-697 |
+| 102 | `NPC_582` | 34x144 | 5.3 | d42 (FORECAST: NO-PACK, research/238) |
+| 103 | `NPC_593` | 25x180 | 4.9 | d42 (FORECAST: NO-PACK, research/238) |
+| 104 | `NPC_669` | 26x160 | 4.5 | d43-npc-kinds-631-697 |
+| 105 | `NPC_378` | 28x128 | 3.9 | d39-npc-kinds-351-420, f18-npc-kinds-verify-2 |
+| 106 | `NPC_658` | 48x64 | 3.3 | d43-npc-kinds-631-697 |
+| 107 | `NPC_659` | 48x64 | 3.3 | d43-npc-kinds-631-697 |
+| 108 | `NPC_686` | 40x76 | 3.3 | d43-npc-kinds-631-697 |
+| 109 | `NPC_621` | 38x74 | 3.0 | d42 (FORECAST: NO-PACK, research/238) |
+| 110 | `NPC_622` | 38x74 | 3.0 | d42 (FORECAST: NO-PACK, research/238) |
+| 111 | `NPC_623` | 38x74 | 3.0 | d42 (FORECAST: NO-PACK, research/238) |
+| 112 | `NPC_626` | 20x132 | 2.9 | d42 (FORECAST: NO-PACK, research/238) |
+| 113 | `NPC_627` | 20x132 | 2.9 | d42 (FORECAST: NO-PACK, research/238) |
+| 114 | `NPC_664` | 14x180 | 2.9 | d43-npc-kinds-631-697 |
+| 115 | `Extra_211` | 104x24 | 2.8 | g21-sounds-main-1, g81-wire-draw-overlay |
+| 116 | `NPC_510` | 50x48 | 2.6 | d41-npc-kinds-491-560 |
+| 117 | `NPC_511` | 50x48 | 2.6 | d41-npc-kinds-491-560 |
+| 118 | `NPC_512` | 50x48 | 2.6 | d41-npc-kinds-491-560 |
+| 119 | `NPC_583` | 24x96 | 2.5 | d42 (FORECAST: NO-PACK, research/238) |
+| 120 | `NPC_584` | 24x96 | 2.5 | d42 (FORECAST: NO-PACK, research/238) |
+| 121 | `NPC_585` | 24x96 | 2.5 | d42 (FORECAST: NO-PACK, research/238) |
+| 122 | `NPC_612` | 28x70 | 2.2 | d42 (FORECAST: NO-PACK, research/238) |
+| 123 | `NPC_613` | 28x70 | 2.2 | d42 (FORECAST: NO-PACK, research/238) |
+| 124 | `NPC_610` | 20x96 | 2.2 | d42 (FORECAST: NO-PACK, research/238) |
+| 125 | `BeetleOrb` | 26x68 | 2.0 | f50-hurt-reactions |
+| 126 | `NPC_653` | 24x72 | 1.9 | d43-npc-kinds-631-697 |
+| 127 | `NPC_667` | 32x52 | 1.8 | d43-npc-kinds-631-697 |
+| 128 | `UI/BlockReplace_0` | 72x22 | 1.8 | g21-sounds-main-1, g81-wire-draw-overlay |
+| 129 | `NPC_690` | 32x42 | 1.5 | d43-npc-kinds-631-697 |
+| 130 | `Lock_0` | 50x22 | 1.2 | g21-sounds-main-1 |
+| 131 | `Lock_1` | 50x22 | 1.2 | g21-sounds-main-1 |
+| 132 | `NPC_579` | 52x20 | 1.2 | d42 (FORECAST: NO-PACK, research/238) |
+| 133 | `NPC_519` | 30x30 | 1.0 | d41-npc-kinds-491-560 |
+| 134 | `NPC_685` | 32x28 | 1.0 | d43-npc-kinds-631-697 |
+| 135 | `NPC_513` | 26x32 | 1.0 | d41-npc-kinds-491-560 |
+| 136 | `NPC_514` | 26x32 | 1.0 | d41-npc-kinds-491-560 |
+| 137 | `NPC_515` | 26x32 | 1.0 | d41-npc-kinds-491-560 |
+| 138 | `UI/Cursor_10` | 22x22 | 0.6 | e19-liquid-quicksell-shimmer |
+| 139 | `UI/Cursor_8` | 22x22 | 0.6 | e19-liquid-quicksell-shimmer |
+| 140 | `UI/Cursor_9` | 22x22 | 0.6 | e19-liquid-quicksell-shimmer |
+| 141 | `UI/Cursor_3` | 20x20 | 0.5 | e19-liquid-quicksell-shimmer |
+| 142 | `UI/Cursor_6` | 20x20 | 0.5 | e19-liquid-quicksell-shimmer |
+| 143 | `UI/Cursor_7` | 20x20 | 0.5 | e19-liquid-quicksell-shimmer |
+| 144 | `UI/InfoIcon_13` | 18x18 | 0.4 | g81-wire-draw-overlay |
+| 145 | `NPC_665` | 16x16 | 0.3 | d43-npc-kinds-631-697 |

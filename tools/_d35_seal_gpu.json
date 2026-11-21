@@ -1,0 +1,208 @@
+{
+ "fontArrayMB": 268.4,
+ "fontLayers": 4,
+ "renderTargetsMB": 127.1,
+ "maxTextureDimension2d": 8192,
+ "perPageCapMB": 268.4,
+ "budgets": [
+  {
+   "scenario": "TOTAL-lazy630-fresh-seed42",
+   "totalPages": 3,
+   "atlasMB": 536.5,
+   "perPageMB": [
+    237.8,
+    244.1,
+    54.7
+   ],
+   "maxPageMB": 244.1,
+   "pageUnder8192": true,
+   "maxPageUnderCap": true,
+   "atlasPlusFontMB": 804.9,
+   "totalVRAMMB": 932
+  },
+  {
+   "scenario": "TOTAL-lazy630-longlived-seed42",
+   "totalPages": 3,
+   "atlasMB": 552.3,
+   "perPageMB": [
+    237.8,
+    244.1,
+    70.5
+   ],
+   "maxPageMB": 244.1,
+   "pageUnder8192": true,
+   "maxPageUnderCap": true,
+   "atlasPlusFontMB": 820.7,
+   "totalVRAMMB": 947.8
+  },
+  {
+   "scenario": "TOTAL-lazy630-bestiary-seed42",
+   "totalPages": 3,
+   "atlasMB": 565.9,
+   "perPageMB": [
+    237.8,
+    244.1,
+    84.1
+   ],
+   "maxPageMB": 244.1,
+   "pageUnder8192": true,
+   "maxPageUnderCap": true,
+   "atlasPlusFontMB": 834.3,
+   "totalVRAMMB": 961.4
+  },
+  {
+   "scenario": "TOTAL-lazyWorst-fresh-seed42",
+   "totalPages": 3,
+   "atlasMB": 541.9,
+   "perPageMB": [
+    243.2,
+    244.1,
+    54.7
+   ],
+   "maxPageMB": 244.1,
+   "pageUnder8192": true,
+   "maxPageUnderCap": true,
+   "atlasPlusFontMB": 810.3,
+   "totalVRAMMB": 937.4
+  },
+  {
+   "scenario": "TOTAL-lazyWorst-longlived-seed42",
+   "totalPages": 3,
+   "atlasMB": 557.8,
+   "perPageMB": [
+    243.2,
+    244.1,
+    70.5
+   ],
+   "maxPageMB": 244.1,
+   "pageUnder8192": true,
+   "maxPageUnderCap": true,
+   "atlasPlusFontMB": 826.2,
+   "totalVRAMMB": 953.3
+  },
+  {
+   "scenario": "TOTAL-lazyWorst-bestiary-seed42",
+   "totalPages": 3,
+   "atlasMB": 571.4,
+   "perPageMB": [
+    243.2,
+    244.1,
+    84.1
+   ],
+   "maxPageMB": 244.1,
+   "pageUnder8192": true,
+   "maxPageUnderCap": true,
+   "atlasPlusFontMB": 839.8,
+   "totalVRAMMB": 966.9
+  },
+  {
+   "scenario": "TOTAL-lazyWorst-longlived-worstbg",
+   "totalPages": 4,
+   "atlasMB": 650.4,
+   "perPageMB": [
+    243.2,
+    266.6,
+    70.1,
+    70.5
+   ],
+   "maxPageMB": 266.6,
+   "pageUnder8192": true,
+   "maxPageUnderCap": true,
+   "atlasPlusFontMB": 918.8,
+   "totalVRAMMB": 1045.9
+  },
+  {
+   "scenario": "TOTAL-lazyWorst-bestiary-worstbg",
+   "totalPages": 4,
+   "atlasMB": 663.9,
+   "perPageMB": [
+    243.2,
+    266.6,
+    70.1,
+    84.1
+   ],
+   "maxPageMB": 266.6,
+   "pageUnder8192": true,
+   "maxPageUnderCap": true,
+   "atlasPlusFontMB": 932.3,
+   "totalVRAMMB": 1059.4
+  },
+  {
+   "scenario": "TOTAL-lazyWorst-longlivedNEW-seed42",
+   "totalPages": 3,
+   "atlasMB": 576.7,
+   "perPageMB": [
+    243.2,
+    244.1,
+    89.4
+   ],
+   "maxPageMB": 244.1,
+   "pageUnder8192": true,
+   "maxPageUnderCap": true,
+   "atlasPlusFontMB": 845.1,
+   "totalVRAMMB": 972.2
+  },
+  {
+   "scenario": "TOTAL-lazyWorst-bestiaryNEW-seed42",
+   "totalPages": 3,
+   "atlasMB": 595,
+   "perPageMB": [
+    243.2,
+    244.1,
+    107.7
+   ],
+   "maxPageMB": 244.1,
+   "pageUnder8192": true,
+   "maxPageUnderCap": true,
+   "atlasPlusFontMB": 863.4,
+   "totalVRAMMB": 990.5
+  },
+  {
+   "scenario": "TOTAL-lazyWorst-bestiaryNEW-worstbg",
+   "totalPages": 4,
+   "atlasMB": 687.5,
+   "perPageMB": [
+    243.2,
+    266.6,
+    70.1,
+    107.7
+   ],
+   "maxPageMB": 266.6,
+   "pageUnder8192": true,
+   "maxPageUnderCap": true,
+   "atlasPlusFontMB": 955.9,
+   "totalVRAMMB": 1083
+  },
+  {
+   "scenario": "TOTAL-eager630-seed42",
+   "totalPages": 3,
+   "atlasMB": 582.4,
+   "perPageMB": [
+    268.4,
+    70,
+    244.1
+   ],
+   "maxPageMB": 268.4,
+   "pageUnder8192": true,
+   "maxPageUnderCap": true,
+   "atlasPlusFontMB": 850.8,
+   "totalVRAMMB": 977.9
+  },
+  {
+   "scenario": "TOTAL-eager630-worstbg",
+   "totalPages": 4,
+   "atlasMB": 675,
+   "perPageMB": [
+    268.4,
+    70,
+    266.6,
+    70.1
+   ],
+   "maxPageMB": 268.4,
+   "pageUnder8192": true,
+   "maxPageUnderCap": true,
+   "atlasPlusFontMB": 943.4,
+   "totalVRAMMB": 1070.5
+  }
+ ]
+}
