@@ -95,6 +95,8 @@
 //! | 404-408 | `:84100-84104` | the 462 Fritz death (5 gores 650/651/651/652/652) |
 //! | 409-411 | `:84122-84124` | the 379/438 Cultist Archer/Devote death (3 gores 900/901/901) |
 //! | 412-418+ | `:84153-84159` | the 439 Cultist Boss death (Next(1,4) bone loop + 4 fixed gores 902/903/901/901) |
+//! | 419-421+ | `:84175` | the 440 Cultist Boss Clone death (10-dust type-16 burst + Next(1,4) bone loop) |
+//! | 422-424+ | `:84202` | the 454-459 Cultist Dragon death (10-dust type-16 burst + Next(1,4) bone loop) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -2373,6 +2375,63 @@ fn cultist_boss_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 901, s); // :84159
 }
 
+/// The shared cultist type-16 death dust burst (`NPC.cs:84166-84171` /
+/// `:84193-84198`): `count` type-16 dusts (scale 1.5, velocity ×2,
+/// noGravity — the post-writes draw nothing).
+fn cultist_type16_dust(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    count: i32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..count {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 16, 0.0, 0.0, 0,
+            Color::default(), 1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+}
+
+/// The 440 Cultist Boss Clone death (`NPC.cs:84166-84177`, sites 419-421+):
+/// the 10-dust type-16 burst then the `Next(1,4)` bone-spatter loop (1-3
+/// gores of `Next(11,14)`). No fixed gores — the clone is just the spatter.
+fn cultist_clone_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    cultist_type16_dust(npc, dust, dust_ctx, rng, world, 10);
+    cultist_bone_spatter(npc, gore, rng, world, hit_direction);
+}
+
+/// The 454-459 Cultist Dragon death (`NPC.cs:84193-84204`, sites 422-424+):
+/// the 10-dust type-16 burst then the `Next(1,4)` bone-spatter loop. Same
+/// shape as the clone (the hit half differs — dmg-scaled type-16, the
+/// wiring wave's).
+fn cultist_dragon_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    cultist_type16_dust(npc, dust, dust_ctx, rng, world, 10);
+    cultist_bone_spatter(npc, gore, rng, world, hit_direction);
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -2639,6 +2698,14 @@ pub fn hit_effect_c(
     // loop's count is variable).
     if npc_type == 439 && npc.hp <= 0 {
         cultist_boss_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:84162-84179` — the 440 Cultist Boss Clone arm (sites 419-421+).
+    if npc_type == 440 && npc.hp <= 0 {
+        cultist_clone_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:84180-84206` — the 454-459 Cultist Dragon arm (sites 422-424+).
+    if (454..=459).contains(&npc_type) && npc.hp <= 0 {
+        cultist_dragon_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -4250,6 +4317,45 @@ mod tests {
         // The bone gores (if any) are 11-13 with velocity x0.8.
         for g in &gore.slots()[..n_active - 4] {
             assert!(matches!(g.gore_type, 11 | 12 | 13));
+        }
+    }
+
+    /// `NPC.cs:84175` / `:84202` — the Cultist Clone / Dragon deaths: the
+    /// 10-dust type-16 burst then the Next(1,4) bone loop (1-3 gores of
+    /// Next(11,14), velocity x0.8), no fixed gores. The twin replay pins the
+    /// count draw + per-bone type draw + kicks.
+    #[test]
+    fn w4_f10_the_cultist_clone_and_dragon_deaths_run_the_bone_loop() {
+        let w = air();
+        for f in [
+            cultist_clone_death as fn(&Npc, &mut DustPool, &SpawnCtx, &mut GorePool, &mut UnifiedRandom, &World, f32),
+            cultist_dragon_death,
+        ] {
+            let n = boss(100.0, 100.0, 40.0, 60.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(311);
+            f(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let mut twin = UnifiedRandom::new(311);
+            for _ in 0..10 {
+                let _px = twin.next_max(36);
+                let _py = twin.next_max(56);
+                let _vx = twin.next_range(-20, 21);
+                let _vy = twin.next_range(-20, 21);
+                let _row = twin.next_max(3);
+                let _scale = twin.next_range(-20, 21);
+            }
+            let count = twin.next_range(1, 4);
+            for _ in 0..count {
+                let _ty = twin.next_range(11, 14);
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "the clone/dragon death mirrors the C# draws");
+            // Every gore is a bone (11-13).
+            for g in gore.slots().iter().filter(|g| g.active) {
+                assert!(matches!(g.gore_type, 11 | 12 | 13));
+            }
         }
     }
 
