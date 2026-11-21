@@ -18477,9 +18477,10 @@ Documented gaps, all deliberate:
   (1290 `:14894`, 1578 `:15079`, 6187 `:14626`, clear `:18616`), the
   post-dodge grant in `hurt_inner` and the buff-63 `moveSpeed++` effect arm
   (`:10130-10133`, +1.0 on the base-1 multiplier, the Swiftness-3 wired
-  convention). The squire `setSquireT2` twin (`AddBuff(205, 300)`) rides
-  the DD2 hurt-buff wave (the flag + the buff-205 ballista arm exist; the
-  hurt grant is the missing row).
+  convention). The squire `setSquireT2` twin (`AddBuff(205, 300)`) landed
+  with the W4-f48 parry wave (see "The parry machine lands" below) - the
+  d123/f36 DD2 lanes carried no copy (censused), so `hurt_inner` holds the
+  one grant, right after the panic row.
 - **`brain_of_confusion_dodge_animation_counter`** has no render consumer
   (the S1-A-9 dead-slot convention) вЂ” carried for state parity.
 - **The contact/thorns restructure** (Phase 2, landed): the contact block runs
@@ -18502,13 +18503,95 @@ Documented gaps, all deliberate:
   `Player.cs:38197`) вЂ” a black belt eats spike, lava and fall damage
   (vanilla); the Paladin MP-only `dodgeable: false` site (`:38361`) is
   unreachable in the port.
-- **The contact-lane parry extension** (W4-f48 census): after an NPC hit,
-  `Update_NPCCollision` runs `GiveImmuneTimeForCollisionAttack(longInvince ?
+- **The contact-lane parry extension** (W4-f48 census, LANDED with the
+  W4-f48 parry wave): after an NPC hit, `Update_NPCCollision` runs
+  `GiveImmuneTimeForCollisionAttack(longInvince ?
   60 : 30)` + `AddBuff(198, 300)` under `flag3 = CanParryAgainst(...)`
-  (`Player.cs:31368/:31427-31431`) вЂ” the Tabi/Black-Belt parry machine and
-  the ParryDamageBuff (198) are unported families, so the Cross Necklace's
-  60/30 half has no consumer; its two ported halves (the accepted-hurt
-  80/40 window and the dodge pair's 120) land with the 554 equip arm.
+  (`Player.cs:31368/:31427-31431`) - the machine now lives on `Player`
+  and the contact lane wires it (`Npc::contact`); see "The parry machine
+  lands" below for the port shape + deviations. The Cross Necklace's
+  60/30 half has its consumer.
+
+### The parry machine lands (W4-f48 parry wave, 2026-11-21)
+
+The Squire/Brand-of-the-Inferno shield-parry family (1.4.5's `Player.cs`
+3122-3134/31437-31444/31706-31764 + the contact lane 31366-31431 + the
+melee consumer 44307-44312), censused OUT with the Cross Necklace commit
+(41323c7c), now lands. Code-only mode: 14 witnesses written not run.
+
+- **The machine on `Player`** (`player.rs`): `can_parry_against` (the
+  window + facing-side + moving + not-immune gates; BOTH centres ride
+  the C# `Rectangle` integer arithmetic — `(int)position.X + width/2`,
+  and `Math.Sign` answers 0 on an exact tie), `try_toggling_shield`
+  (raise arms window 1 ONLY cooldown-spent, lower locks 15 and returns
+  the `ApplyAttackCooldown(20)` request for the App-owned `attack_cd`),
+  `shield_raise_countdowns` (the cooldown's zero tick queues the MaxMana
+  cue + the dust anchor; the window pre-increments and clears past 20),
+  and `give_immune_time_for_collision_attack` verbatim (the
+  `_immuneStrikes` 3-cap within the 20-tick `_timeSinceLastImmuneGet`
+  window, the `!immune || immuneTime <= time` replace gate,
+  `immuneNoBlink = true`; the age counter climbs in `update_with_grapple`
+  at the `:24663-24667` slot, capped 10000).
+- **`hasRaisableShield`**: the port's registry carries no `shieldSlot`
+  field, so the `GrantArmorBenefits` `shieldSlot > 0` row
+  (`:13123-13126`) is the eleven-id list from `Item.SetDefaults`
+  (`Item.cs` :3250/:6039/:12218/:19122/:28645/:33727/:35509/:35515/
+  :47589/:47620/:47647 — 156/397/938/1613/3097/3810/3997/3998/6177/
+  6183/6188), folded in the same equipped-wearable loop as the defense
+  add; the held-4760/no-live-866 row (`:13075-13078`) rides
+  `update_equips`' tail on the pre-tick `held_item_kind` snapshot.
+  `ResetEffects` `:18611` clears per tick; `shieldRaised` + the two
+  timers have NO C# reset site and persist across ticks.
+- **The contact lane** (`npc.rs::contact`): the parry verdict runs
+  BEFORE the thorns arms (`:31368`), the parry reflect pins the
+  multiplier at 2 REGARDLESS of thorns sources (`num = 2f` `:31377` —
+  a bare shield parry reflects; the Cactus flat 15 still rides its own
+  arm), knockback 5 vs 10, `Hurt` skipped (`flag = false`), then the
+  60/30 window + `AddBuff(198, 300)` tail (`:31427-31431`). The
+  `StatusFromNPC` skip (`flag2`) is folded — the port carries that
+  debuff body elsewhere (the pre-existing `:31423` note).
+- **The melee x5 consumer** (`resolve_melee_strike`): the C# block
+  (`:44307-44312`) multiplies the PRE-`DamageVar` value after the crit
+  roll and before the Flymeal arm; the port folds the x5 onto `raw`
+  between the crit roll and `damage_var` — the draw order is untouched
+  (no new draws). The consumption clears BOTH the flag and the buff
+  (`ClearBuff(198)`), so later NPCs in the same swing get no second
+  boost. Melee-only (`sItem.melee` reads the registry row).
+- **The Hurt squire twin** (`hurt_inner`): `AddBuff(205, 300)` right
+  after the panic grant (`:38241-38244`), post-dodge, pre-defense. The
+  d123 (OOA loss/medals) and f36 (medal drops) lanes were censused for
+  a copy — neither carried one; this is the single grant. The buff-205
+  ballista-reload consumers already existed (`Projectile.cs:68563-68570`
+  port).
+- **The ShieldRaise wiring** (`world_sim/player.rs`, the `:28283` seam
+  after `dropItemCheck`/chest, before the editing pass): the general
+  check (`:31528`) uses the port's stand-ins — `selected != 58`,
+  `place_down` (controlUseTile), the previous tick's `mine_released`
+  latch (releaseUseItem — the C# writes it at ItemCheck's END),
+  `!mine_down`, `!inventory_open` (mouseInterface). DEVIATIONS:
+  `tileInteractionHappened`, `CaptureManager.Active`, the
+  `!mouseRightRelease || !HoveringAnInteractable` clause and
+  `LocalPlayerHasPendingInventoryActions` have no port machinery —
+  collapsed open; the `JustPressed.MouseRight` edge rides
+  `drop_right_edge` (the players-phase press-edge capture with the
+  slot-surface refusal folded). The drill-mount skip (`:28281`
+  `mount.Type != 8`) is keyed. The raise zeroes the App-owned
+  swing/item_time/reuse_delay (`:31754-31756`; `swing_max` stays —
+  the C# never clears itemAnimationMax there); the lower floors
+  `attack_cd` at 20/60 (max, not set).
+- **The zero-tick effects**: the MaxMana cue (legacy sound 25,
+  `LegacySoundPlayer` case 25 — Volume/Pan only, no draws; the bank row
+  joins `audio.rs`) plays at `base.Center`; the 10x dust-45 burst
+  (`:31725-31731`) drains on the `UpdatePlayers` stream — per dust the
+  `Next(10,16) * 0.1` scale ARGUMENT evaluates before `Dust.NewDust`'s
+  internal rolls (the C# argument order), then the
+  `noLight`/`noGravity`/`velocity *= 0.5` post-arms. The anchor is
+  `Center + (direction * 6 + (direction == -1 ? -10 : 0), -14)`.
+- **Out**: the shield draw layer (`:36481` body row 10 + `:36770`'s
+  accessory-shield carve) already reads `shield_raised` — the machine
+  now feeds it live. The `bitsByte22` net packing of `shieldRaised`
+  (`net.rs`) stays as-is (the field existed). The MP `shieldRaised`
+  mirror (`:31709-31713`) is unreachable single-player.
 
 ## The magic cuffs (S1-C-7 wave A, 2026-11-18)
 
