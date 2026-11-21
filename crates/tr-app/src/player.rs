@@ -12638,10 +12638,11 @@ mod tests {
     }
 
     /// W4-f12 gap 3 — the Moon Charm (485) arms `wolfAcc` (`Player.cs:
-    /// 15182-15189`) and the `:25601-25604` night grant re-arms buff 28; the
-    /// d71 werewolf EFFECT (the wave-E status arm) then grants the stat block
-    /// on the NEXT tick's buff scan. Neptune's Shell (497) does NOT arm
-    /// `wolfAcc` (`:15566-15573` is accMerman-only).
+    /// 15182-15189`) and the `:25601-25604` night grant re-arms buff 28. The
+    /// d71 werewolf EFFECT (the wave-E status arm) runs in the world_sim
+    /// wiring, so this witness drives `update_buff_frame` directly for the
+    /// stat block (the `Player::update` path owns the GRANT half only).
+    /// Neptune's Shell (497) does NOT arm `wolfAcc` (`:15566-15573`).
     #[test]
     fn w4_f12_moon_charm_grants_the_werewolf_at_night() {
         let mut w = World::new("t".into(), 64, 800);
@@ -12652,18 +12653,31 @@ mod tests {
         p.update(&w, PlayerInput::default());
         assert!(p.buffs.find_buff_index(28).is_some(), "the night grant (`:25603`)");
         assert!(!p.wolf_acc, "the flag clears after the grant (`:25605`)");
-        // Tick 2: the buff scan reads the live wolfAcc (re-armed by the equip
-        // pass) and grants the werewolf stat block (`:11895-11904`).
-        p.update(&w, PlayerInput::default());
+        // The wiring's status arm reads the live wolfAcc (re-armed by the
+        // equip pass) and grants the werewolf stat block (`:11895-11904`).
+        p.update(&w, PlayerInput::default()); // re-arm wolfAcc + the buff
+        let mut pool = crate::projectile::ProjectilePool::default();
+        static NO_SOLID: fn(i32, i32) -> bool = |_, _| false;
+        let inputs = crate::buff_frame_wiring::BuffFrameInputs {
+            day_time: false,
+            dont_starve: false,
+            remix: false,
+            solid3: &NO_SOLID,
+            held_item_type: 0,
+        };
+        crate::buff_frame_wiring::update_buff_frame(&mut p, &mut pool, &w, &inputs);
         assert!(p.were_wolf, "the werewolf effect arms");
         assert_eq!(p.melee_crit, 4 + 2, "`:11899`");
         assert_eq!(p.stat_defense, 3, "`:11902`");
         assert!((p.melee_damage - 1.051).abs() < 1e-4, "`:11900`");
         assert!((p.melee_speed_bonus - 0.051).abs() < 1e-4, "`:11901`");
         assert!((p.move_speed - 1.05).abs() < 1e-4, "`:11903`");
-        // Day breaks: the buff dies and the slot rescans (`:11905-11909`).
-        w.day_time = true;
-        p.update(&w, PlayerInput::default());
+        // Day breaks: the wiring's day gate deletes the buff (`:11905-11909`).
+        let day_inputs = crate::buff_frame_wiring::BuffFrameInputs {
+            day_time: true,
+            ..inputs
+        };
+        crate::buff_frame_wiring::update_buff_frame(&mut p, &mut pool, &w, &day_inputs);
         assert!(p.buffs.find_buff_index(28).is_none(), "the day gate deletes");
         assert!(!p.were_wolf);
     }
@@ -12684,7 +12698,7 @@ mod tests {
 
     /// W4-f12 gap 3 — the Moon Shell (861) and Celestial Shell (3110) arm
     /// BOTH accMerman and wolfAcc (`:15134-15143`/`:15402-15411`); dry at
-    /// night the werewolf grants (the merman gate is false while dry).
+    /// night the werewolf grant fires (the merman gate is false while dry).
     #[test]
     fn w4_f12_moon_and_celestial_shells_grant_the_werewolf_dry() {
         for kind in [861u16, 3110] {
@@ -12695,8 +12709,19 @@ mod tests {
             p.update(&w, PlayerInput::default());
             p.update(&w, PlayerInput::default());
             assert!(p.buffs.find_buff_index(28).is_some(), "{kind} grants at night");
-            assert!(p.were_wolf, "{kind} arms the werewolf");
             assert!(!p.merman, "dry: not merman");
+            // The wiring's status arm grants the werewolf effect.
+            let mut pool = crate::projectile::ProjectilePool::default();
+            static NO_SOLID: fn(i32, i32) -> bool = |_, _| false;
+            let inputs = crate::buff_frame_wiring::BuffFrameInputs {
+                day_time: false,
+                dont_starve: false,
+                remix: false,
+                solid3: &NO_SOLID,
+                held_item_type: 0,
+            };
+            crate::buff_frame_wiring::update_buff_frame(&mut p, &mut pool, &w, &inputs);
+            assert!(p.were_wolf, "{kind} arms the werewolf");
         }
     }
 
