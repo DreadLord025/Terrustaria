@@ -39266,8 +39266,10 @@ triggers/hats/bubbles; this lane took the items):
   were DROPPED in the union-exec (research/70 §5 drop 6 — the f34 route
   is the anchor-bearing superset); folding this lane's faithful pitched
   case-2 play (`play_npc_item_cue(2, …)`, the `Next(-6,7)*0.01` draw)
-  into the `StationBuff` arm is the recorded follow-up (§1f), not part
-  of the merge. **Census**: tile 457 (the
+  into the `StationBuff` arm was the recorded follow-up (§1f) —
+  **LANDED in the final sweep** (b4ca66e9, research/70 §8a): the 192 row
+  now plays the faithful pitched cue on the UpdatePlayers stream; the
+  other six rows keep the e28 unpitched stand-in. **Census**: tile 457 (the
   party present) has NO right-click arm in the C# chain, and item 3749 is
   NOT in `ItemID.Sets.OpenableBag` (`ItemID.cs:1384`) — the present is
   place/break-only; `OpenPresent` fires for 1869 alone
@@ -39326,3 +39328,34 @@ RUN (the 15 original minus the 2 dropped CakeSlice witnesses, plus f38's
 3 kept chain witnesses and d120's 2 pinned-draw witnesses RE-DERIVED to
 latch the row first per research/70 §4) — no cargo/rustc/tests/graphify
 invoked.
+
+### Final sweep (2026-11-21, research/70 §8)
+
+Six commits on top of the union (b4ca66e9, be4cb841, eec344ce, 73f4f4d4,
+9bab93f3, 5ab4a25d):
+
+- **§8a** f34's `StationBuff` keep-one + the single `192 =>` arm landed
+  here, the cake row's cue upgraded to the pitched case-2 play (the §1f
+  follow-up, its own noted change); f34's neighbour no-draw witness
+  re-derived (621 → the new pitched-roll witness), Item_149/Item_179
+  registered.
+- **§8b** the party-gift shop rows: `StockWhen::PartyUp`/`LanternsUp`/
+  `Day`, the Merchant's 5643 + the Party Girl's eleven-row gift block in
+  the C# num order + the 4702 lantern row, live `party_is_up`/
+  `lanterns_up` feeds at the shop-open seam; the 1449/4552 Always+Night
+  double-stock bug fixed to the C# if/else. Census: PartyBullet 1349 is
+  break/craft-only; ConfettiGun is 1000 (5089 = GlommerPetItem).
+- **§8c** the monolith 455 placement was ALREADY complete (item row +
+  D_455 Style3x3 def + the registry route); 2 end-to-end witnesses added,
+  nothing wired.
+- **§8d** the player-worn Party Hat: item 3732 headSlot 195 is a VANITY
+  head (no C# Player.partyHat field exists — the NPC hat family is
+  c39's); the hatHair ALT-hair-under-hat draw + the vanity-head feed
+  resolution (`Player.cs:35765`) + the gated G6 key input landed.
+- **§8e/§8f** the natural-start gates are ALL claimed (c39: anniversary
+  Next(7), can_npc_party, roster prune; f38: dawn/dusk broadcasts) —
+  census comments only, nothing ported; c39's research/114 does not
+  exist, its cake lane cross-read instead with keep-one DROP verdicts
+  recorded for the eventual merge.
+
+All final-sweep witnesses WRITTEN NOT RUN (code-only).
