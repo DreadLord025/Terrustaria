@@ -56,15 +56,31 @@
 //! precedent `projectile.rs:8543` — the port has no particle orchestration,
 //! `app/netmodules.rs:448`; their SETTINGS draws stay), `Collision.HitTiles`
 //! (effect-only dust, `Collision.cs:3103`), `Lighting.AddLight`/`CastLightOpen`
-//! and the sounds (parked on `wants_sound`; the id-3/4/42 cues the port's
-//! `play_proj_sound` façade does not serve drop at the drain — the
-//! sound-layer census).
+//! and the sounds (parked on `wants_sound`; the death cues push straight
+//! into `pending_proj_sounds`). SOUND LAYER (the W4-d3 SEAL, research/248
+//! §2): the id-3 `(3,29)` / id-4 `(4,6)` / id-42 `(42,274)` routes are
+//! SIBLING-CUED — d75 (`task/W4-d75-proj-sounds-1` `20b2cea61`) lands the
+//! drain arms (`play_npc_hit_sound`/`play_npc_death_style` + the
+//! `rainbow_boulder` trackable in `ITEM_CUSTOM_CUES`); on THIS branch
+//! alone they drop at the `play_proj_sound` façade. The 655's `(4,1)` is
+//! the int overload (`:75082` has no style arg) — d77's int route serves
+//! it at the union.
 //!
 //! GORE CENSUS (the directive's "rainbow-boulder gore"): the 1047 Kill arm
 //! (`:71192-71255`) spawns **zero** `Gore.NewGore` — the "rainbow shards"
 //! are dust 267/66 + RainbowRodHit particles, NOT gore. The boulder
 //! family's ONLY gore is the 1053 lava death's four gibs (`:74898-74913`,
 //! type `Next(61, 64)`, [`lava_death_gore`]).
+//!
+//! G65 COMPOSE (the W4-d3 SEAL, research/248 §3): g65's snapshot→drain
+//! death-dust lane (`projectile_death_dust.rs`, tip `b0842907c`) carries
+//! the SAME boulder-kind arms (the 99-family default incl. 1048, the
+//! 1053/1054/1055/1005/763 bursts, the 1047 half of its `1047 | 79`
+//! trail-ring). KEEP-ONE = THIS module at the union: these bodies run on
+//! the LIVE slot (the ×1.9/×1.6 corpse compounds, the 1053 resize/restore,
+//! the gore pool, the parks) which the snapshot cannot mutate; the draw
+//! orders agree, so the fold is RNG-neutral. g65's arms + their witnesses
+//! drop/re-pin; its 79 half stays.
 //!
 //! Documented deviations (ANALYSIS "The boulder family (W4-d3)"):
 //! * the wet flags probe at the arm head (the bobber tick-head convention,

@@ -75,6 +75,8 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
+| 170 | Projectile aiStyles 21-30 band status (W4-d3: every style armed, 25 the ported boulder family, the other nine verify-only + the effect-layer gap map; renumbered 26f→170 per registry-150) | `170-projectile-ai-21-30-band-status.md` | ✅ |
+| 248 | W4-d3 SEAL (the boulder-family bible + the five receipts: the landing wave, the d75 SIBLING-CUED sound layer, the g65 Kill-309 keep-one, the 1023/1081 stopped-short re-probe + seed S1-P-i58; number per registry-150, code-only) | `248-d3-boulder-family-seal.md` | ✅ SEAL |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

@@ -8951,7 +8951,11 @@ RNG census; the deliberate deviations:
   `Lighting.AddLight`/`CastLightOpen` and the sounds stay their layers (the
   AI cues park on `wants_sound`, the death cues push straight into
   `pending_proj_sounds`; the id-3/4/42 styles the `play_proj_sound` façade
-  does not serve drop at the drain). The dust-free callers (the witnesses,
+  does not serve drop at the drain ON THIS BRANCH — **SIBLING-CUED**: d75
+  `20b2cea61` lands the id-3 `(3,29)` / id-4 `(4,6)` style routes + the
+  `rainbow_boulder` trackable, audible after the merge; the SEAL receipt
+  + the id-4 style-vs-int overload split + the f1/d77 kill-map
+  double-play keep-one live in research/248 §2). The dust-free callers (the witnesses,
   the `update` scratch entry) keep the census behaviour: the bodies do not
   spawn and their internals do not draw — only the explicit gate draws ride
   the stream; the gore census path (type pick + kicks) stands when
@@ -8964,9 +8968,54 @@ RNG census; the deliberate deviations:
   `base.position` stationary via the `vector12 = base.position - vector`
   offset trick (`UpdatePosition` integrates once at the tail).
 
-CODE-ONLY MODE: the module's 16 witnesses are WRITTEN NOT RUN (no compiler
+CODE-ONLY MODE: the module's 25 witnesses are WRITTEN NOT RUN (no compiler
 invoked on this branch); every expected value is hand-derived from the cited
 C# lines.
+
+### The boulder-family SEAL (W4-d3, 2026-11-21, code-only mode)
+
+The SEAL wave (research/248, number per registry-150 — 248 first free at
+the all-tip scan) closes the task with five receipts; the full evidence +
+the family bible (C# anchor → port → owner per layer) live in
+`docs/research/248-d3-boulder-family-seal.md`. Summary:
+
+1. **The landing wave SEALED** — the bodies wave above + the 763 spike
+   latch (`:55518-55529`, `spike_spawn_dust`) / kill (`:75067-75078`,
+   `spike_kill_dust`) + the rainbow-gore NONEXISTENT census (the 1047
+   Kill arm has zero `Gore.NewGore`; the family's only gore is the 1053
+   lava four) + the 21-30 band status, renumbered **26f → 170** per
+   registry-150 §3 (f20's overlays doc wins the 26f key; no external
+   refs at tip — the PORT_MAP row repointed).
+2. **The d75 sound layer SIBLING-CUED** (tip `b59e3a874`, part 4
+   `20b2cea61`): d3 queues every bounce/death intent itself (the dig
+   closure `(0,0)`, the 1048 `(2,177)`, the rainbow `(42,274)`, the
+   1054 `(3,29)` / 1055 `(4,6)` deaths, the 655 int `(4,1)`); d75 lands
+   the drain's id-3/id-4 STYLE routes + the `rainbow_boulder` trackable
+   (`ITEM_CUSTOM_CUES`) + `NPC_Hit_29`. Constants copied, machines NOT
+   re-ported — the split is clean. The merger keeps BOTH id-4 overload
+   paths (d3's `(4,6)` is the style call — f1's "int facade" label a
+   misread, d75 part 5's correction) and DROPS the f1/d77c kill-map
+   boulder-kind arms (they would DOUBLE-PLAY d3's mid-Kill pushes).
+3. **The g65 Kill-309 compose = keep-one d3** (tip `b0842907c`): g65's
+   snapshot→drain arms for the 99-family default (incl. 1048), 1053,
+   1054, 1055, 1005, 763 and the 1047 half of its `1047 | 79` trail-ring
+   duplicate d3's LIVE-slot bodies (the corpse-velocity compounds, the
+   1053 resize/restore + gore pool + lava flood, the 763 spawn latch are
+   d3-unique state). Draw orders agree — the fold is RNG-neutral; g65's
+   arms drop/re-pin at the union, its 79 half stays (research/248 §3's
+   per-kind table).
+4. **1023/1081 — d3 stopped short** (d75's part-4/5 flag): neither is
+   aiStyle-25; they only neighbour the bounce ladder. The SEAL re-probe
+   retires half the flag: **1081 is NOW ROWED+CUED on d1** (wave 3c
+   `e47181798`, tip `212516a82` — AFTER d75's `e271b5bc8` probe; the
+   falling arm queues the `:19845` Dig itself). **1023 stays unrowed at
+   every tip** — its Kill dust (g65 b26), gore (g16 wave K) and
+   particles (d54 b7) are staged, the row + AI/movement halves are the
+   gap: task-seeded **S1-P-i58** (research/248 §4; i57 is d53's
+   wetVelocity seed).
+5. **Witnesses stay WRITTEN NOT RUN** — this SEAL is doc + comment-only
+   (the module doc's sound/g65 notes refreshed); no cargo/tests/rustfmt/
+   graphify invoked.
 
 ## Growth ticks (M7-GROWTH-1)
 
