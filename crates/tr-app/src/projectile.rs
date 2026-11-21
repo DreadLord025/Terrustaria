@@ -17588,6 +17588,30 @@ impl ProjectilePool {
                                 &npcs[..],
                             );
                         }
+                        // W4-g82 — `AI()`'s `else if (this.aiStyle == 35)`
+                        // (`Projectile.cs:27189-27291`): the rope coils
+                        // (171/475/505/506). The arm owns its integration
+                        // (tileCollide false — the free move on every
+                        // early return, the collision-adjusted move on
+                        // contact) and its Kill (`:27290`); the refund +
+                        // the ai1==0 cue ride the pool's death hook
+                        // (`coil_death_drop`, the d77 kill_tail_cue
+                        // pattern — both C# sites live INSIDE Kill()).
+                        // The cut-tile TileKill records are discarded
+                        // here — the `ai_ice_block`/`ai_dungeon_debris`
+                        // precedent (`:7598`/`:12766`'s `let _ =
+                        // kill_tile`): the cascade runs, the per-cell
+                        // drops stay unspawned (recorded deviation).
+                        35 => { let _ = crate::projectile_rope_coil::coil_step(&mut self.slots[i], world, local_owner); }
+                        // W4-g82 — the coils are tools, not weapons: the
+                        // C# `SetDefaults` reset leaves `friendly = false`
+                        // (`:788`) and neither coil arm sets it — the
+                        // port's Default carries friendly true, so the
+                        // arm pins it false every tick (the
+                        // `ai_dungeon_debris` precedent, `:12689`).
+                        // `hostile` stays false (`:764`), so neither
+                        // damage pass claims a coil (damage 0 anyway).
+                        // (The pin itself rides `coil_step`'s head.)
                         // aiStyle 36: the bees (181/566), the beenade's
                         // children (`Projectile.cs:27292-27471`). The arm owns
                         // its kill-on-tile integration. The i21 Bat Scepter's
@@ -19808,6 +19832,14 @@ impl ProjectilePool {
                         self.slots[i].direction =
                             if self.slots[i].vel.x < 0.0 { -1 } else { 1 };
                     }
+                    // W4-g82 — the coils take the same generic write:
+                    // aiStyle 35 is NOT in the exclusion list, so the
+                    // facing (the spin's sign, `:27201`) follows the
+                    // velocity every sub-step after the AI.
+                    if data.ai_style == 35 {
+                        self.slots[i].direction =
+                            if self.slots[i].vel.x < 0.0 { -1 } else { 1 };
+                    }
                     // The wind tail (`:16777-16781`) runs after the AI
                     // sub-steps, for the wind-eligible new arms only (the
                     // ported arrow/bomb/shuriken arms keep their pre-existing
@@ -19848,11 +19880,17 @@ impl ProjectilePool {
                 // C): its idle machine holds `friendly = false`
                 // (`Projectile.cs:61999-62002`) while the stock
                 // `hostile` stays false — an idle minion never hurts
-                // its owner.
+                // its owner. W4-g82: the rope coils are exempt the same
+                // way — `coil_step` pins friendly false (the `:788`
+                // reset; neither coil arm sets it) while the stock
+                // `hostile` stays false (`:764`), so `Damage_EVP`
+                // refuses (`:14775`) and a thrown coil never hurts its
+                // thrower.
                 if self.slots[i].active
                     && !self.slots[i].friendly
                     && !DUNGEON_DEBRIS.contains(&self.slots[i].kind)
                     && self.slots[i].kind != SLIME_MINION
+                    && !crate::projectile_rope_coil::is_coil(self.slots[i].kind)
                 {
                     self.damage_player(i, player.as_deref_mut(), rng);
                 }
@@ -25572,6 +25610,112 @@ mod frost_shot_tests {
         assert!(pool.slots()[timed].active, "frame 2: 3 - 2 = 1");
         step(&mut pool, &mut w);
         assert!(!pool.slots()[timed].active, "frame 3: 1 - 2 kills");
+    }
+}
+
+// W4-g82 — the aiStyle-35 dispatch wiring witnesses: the rows
+// (`projectile/data.rs`) + the `35 =>` arm (`update`'s match) + the
+// friendly pin / direction write / PVP exemption. The machine's own
+// maths witnesses live in `projectile_rope_coil.rs`. WRITTEN NOT RUN
+// (code-only mode).
+#[cfg(test)]
+mod w4_g82_coil_dispatch_tests {
+    use super::*;
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("coil".into(), 64, 200)
+    }
+
+    fn put_solid(w: &mut tr_core::World, x: i32, y: i32) {
+        use tr_core::tile::{FLAG_ACTIVE, Tile};
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind: 1,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    fn step(pool: &mut ProjectilePool, w: &mut tr_core::World) {
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+    }
+
+    // The four rows are verbatim `SetDefaults` (`Projectile.cs:2570-2578`
+    // / `:5496-5504`) and match the coil module's row fn; the kinds are
+    // spawnable (the atlas packs their sheets).
+    #[test]
+    fn w4_g82_the_coil_rows_are_live_and_spawnable() {
+        for k in [171u16, 475, 505, 506] {
+            let d = proj_data(k).expect("the coil row");
+            assert_eq!((d.w, d.h, d.ai_style, d.penetrate, d.time_left), (14.0, 14.0, 35, -1, 400));
+            assert!(!d.tile_collide);
+            assert_eq!(d.extra_updates, 0);
+            assert_eq!(d.alpha, 0);
+            assert_eq!(d.scale, 1.0);
+            assert!(spawnable_kinds().contains(&k));
+            let (w, h, ai, pen, life, tc) = crate::projectile_rope_coil::coil_proj_row(k).unwrap();
+            assert_eq!((d.w, d.h, d.ai_style as u16, d.penetrate, d.time_left, d.tile_collide), (w, h, ai, pen, life, tc));
+        }
+    }
+
+    // The dispatch arm runs the machine: the age counter advances, the
+    // friendly pin holds (the `:788` reset), the direction follows the
+    // velocity (the `AutomaticallyChangesDirection` write), and the
+    // landing places one rope link above the floor then kills
+    // (`Projectile.cs:27272-27290`). Contact geometry: pos.y 460 → box
+    // bottom 474, +vel 10 → 484 overlaps the floor top 480 → vy clamps
+    // to 6 (≠10 → contact); centre (320,467) → tile (20,29).
+    #[test]
+    fn w4_g82_the_35_arm_flies_places_and_kills() {
+        let mut w = world();
+        for x in 18..24 {
+            put_solid(&mut w, x, 30);
+        }
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(171, 0, 320.0 - 7.0, 460.0, 0.0, 10.0, 0, 0.0, 0.0, 0.0)
+            .unwrap();
+        assert_eq!(proj_data(pool.slots()[slot].kind).unwrap().ai_style, 35);
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert!(!p.active, "the Kill at :27290");
+        assert!(!p.friendly, "the :788 reset pin");
+        assert_eq!(p.ai[0], 1.0, "the dispatch arm ran the counter");
+        assert_eq!(p.ai[1], 1.0, "one link placed above the floor");
+        assert_eq!(p.direction, 1, "vx 0 → the else arm's +1");
+        let t = w.tile(20, 29).unwrap();
+        assert!(t.active() && t.kind == 213, "the rope link");
+    }
+
+    // A free-flying coil keeps its stock no-collide move and never places
+    // (the `!contacted` early return, `:27223-27226`); the spin rides
+    // (|vx|+|vy|)*direction*0.02 (`:27201`).
+    #[test]
+    fn w4_g82_the_free_flight_spins_and_never_places() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(475, 0, 300.0, 300.0, 3.0, 4.0, 0, 0.0, 0.0, 0.0)
+            .unwrap();
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert!(p.active);
+        assert_eq!(p.ai[0], 1.0);
+        assert_eq!(p.ai[1], 0.0);
+        assert!((p.rot - 0.14).abs() < 1e-6, "(3+4)*1*0.02");
+        assert!((p.pos.x - 303.0).abs() < 1e-6 && (p.pos.y - 304.0).abs() < 1e-6);
     }
 }
 

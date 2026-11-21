@@ -232,6 +232,14 @@ mod projectile_bobber;
 // thrust arm + its extension/retract curve and reach-ahead hitbox, plus the
 // small sub-shot arms (the spore/cloud/bolt/snowflake/flake the spears spawn).
 mod projectile_ai_spear;
+// W4-g82 — the rope-coil lane: the four coils' aiStyle-35 machine
+// (171/475/505/506, Projectile.cs:27189-27291), the DrawProjDirect chain
+// placement preview (Main.cs:28499-28669), the Kill refund ladder
+// (:77572-77615) + CheckRopeUsability (Player.cs:41506-41545). WIRED:
+// the 35 dispatch arm + rows (projectile.rs / projectile/data.rs), the
+// death-hook refund + ai1==0 cue (the d77 kill_tail_cue pattern), the
+// chain draw in draw_with_hand, the usability gate in use_tile_item.
+mod projectile_rope_coil;
 mod rain;
 // S1-P-i38: the recall / magic-mirror / ice-mirror / potion-of-return use
 // path — ItemCheck's spawn-recall arms (Player.cs:42976-42999 / :43107-43140 /

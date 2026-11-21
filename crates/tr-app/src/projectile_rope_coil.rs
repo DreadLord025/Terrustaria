@@ -169,6 +169,12 @@ fn is_rope_cell(world: &World, x: i32, y: i32) -> bool {
 /// geometry live in `UpdateProjectiles` (`:74615+`), not the AI.
 pub(crate) fn coil_step(p: &mut Projectile, world: &mut World, local_owner: u8) -> Vec<TileKill> {
     let mut kills = Vec::new();
+    // The `SetDefaults` reset's `friendly = false` (`:788` — neither coil
+    // arm sets it): the port's Projectile Default carries true, so the
+    // wired dispatch pins it here every tick (the `ai_dungeon_debris`
+    // precedent). `hostile` stays false (`:764`) — neither damage pass
+    // claims a coil.
+    p.friendly = false;
     // :27191-27200 — the age counter, then the 30-tick gravity gate.
     p.ai[0] += 1.0;
     if p.ai[0] > 30.0 {
