@@ -1444,11 +1444,13 @@ mod tests {
         core.hp = core.max_hp;
         core.uid = 7;
         let mut hand0 = Npc::new(NpcKind::MoonLordHand, 800.0, 400.0, 1, 0.0);
-        hand0.hp = hand0.max_hp;
+        // The parts' `lifeMax` is 0 (they die with the core, `NPC.cs`); give
+        // the fixture a survivable pool so the feed's `hp > 0` hand-find runs.
+        hand0.hp = 1000;
         hand0.ai[2] = 0.0;
         hand0.carrier_uid = 7;
         let mut hand1 = Npc::new(NpcKind::MoonLordHand, 1200.0, 400.0, 1, 0.0);
-        hand1.hp = hand1.max_hp;
+        hand1.hp = 1000;
         hand1.ai[2] = 1.0;
         hand1.carrier_uid = 7;
         let npcs = vec![core, hand0, hand1];
@@ -1496,16 +1498,20 @@ mod tests {
     #[test]
     fn w4_g13_the_retro_rect_machinery_feeds_the_two_gates() {
         let mut world = World::new("g13".into(), 64, 64);
-        // A full cell (liquid 255) with a full cell below, nothing above:
-        // below >= 245 → the else-if chain; above == 0, num11 == 0.03 < 1,
-        // above not solid → the five-cell scan; the below cell is full
-        // (>= 200) so flag2 stays true, above == 0 → rect_y stays 0.
-        world.tile_mut(20, 21).unwrap().liquid = 255;
+        // A full cell (liquid 255) in a full column: below >= 245 → the
+        // else-if chain; above == 0, num11 == 0.03 < 1, above not solid →
+        // the five-cell scan (k = 21..25); EVERY scanned cell must stay
+        // >= 200 (an empty cell's liquid 0 < 200 flips flag2), so fill all
+        // five; flag2 stays true, above == 0 → rect_y stays 0.
+        for k in 21..26 {
+            world.tile_mut(20, k).unwrap().liquid = 255;
+        }
         let (sy, ry) = retro_surface_rect(20, 20, 255, 0, 255, false, false, &world, false).unwrap();
         assert_eq!(ry, 0, "the full-column surface keeps rect_y 0");
         assert!((sy - (20.0 * 16.0 + 0.0)).abs() < 1e-3, "num11 truncates to 0");
-        // A cell with a shallow pocket below (liquid 100 < 200): the scan
-        // reads the WORLD tile, so set it; flag2 = false → rect_y 4.
+        // A cell with a shallow pocket below (liquid 100 < 200): the
+        // shallow-below arm takes it before the scan; above == 0, below > 0
+        // → the `:57701` waterline, rect_y 4.
         world.tile_mut(20, 21).unwrap().liquid = 100;
         let (_, ry2) = retro_surface_rect(20, 20, 255, 0, 100, false, false, &world, false).unwrap();
         assert_eq!(ry2, 4, "the shallow pocket below lifts rect_y to 4");
