@@ -56,6 +56,7 @@ pub mod tile_entities;
 pub mod torch;
 pub mod unified_random;
 pub mod tree;
+pub mod vine_checks;
 pub mod waterfall;
 pub mod wiring;
 pub mod wind;
