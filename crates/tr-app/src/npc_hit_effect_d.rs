@@ -3580,6 +3580,83 @@ fn zoologist_death(
     gore.new_gore(rng, world, Vec2::new(pos.x + 8.0, pos.y + 34.0), vel, leg2, 1.0); // :88021
 }
 
+/// The 368 Travelling Merchant death (`NPC.cs:88023-88045`, sites
+/// 531-535): the 50x dust-5 burst at (2.5·hd, −2.5), then the
+/// altTexture-gated head 567 (shimmer 1362, default-0 stand-in) +
+/// 568x2 at +20 Y + 569x2 at +34 Y (shimmer 1364/1365), scale 1f.
+fn travelling_merchant_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88033-88036` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:88037-88040` — the head, altTexture==0 stand-in (always taken).
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1362 } else { 567 }, 1.0); // :88039
+    let mid = if shimmer { 1364 } else { 568 };
+    let legs = if shimmer { 1365 } else { 569 };
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88041
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88042
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88043
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88044
+}
+
+/// The town-pet smoke death (`NPC.cs:88046-88075`, sites 536-539): the
+/// 369/376/663/IsTownPet/695/696 arm — the 25x dust-31 burst (×1.4,
+/// noLight, noGravity, alpha 100, scale 2), then FOUR `Next(61,64)`
+/// smoke gores at `Center - (24,24)` with zero velocity base, the post
+/// `scale = 1` + the ±1 quadrant nudges (+/+ then -/+ then +/- then
+/// -/-). The type argument draws BEFORE each NewGore.
+fn town_pet_smoke_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    _hit_direction: f32,
+) {
+    // `:88050-88056` — the 25x dust-31 burst.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..25 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 31, 0.0, 0.0, 100,
+            Color::default(), 2.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 1.4;
+        d.no_light = true;
+        d.no_gravity = true;
+    }
+    // `:88058-88073` — the four smoke gores.
+    let anchor = Vec2::new(npc.x + w / 2.0 - 24.0, npc.y + h / 2.0 - 24.0);
+    let nudges = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
+    for (dx, dy) in nudges {
+        let t = rng.next_range(61, 64);
+        let idx = gore.new_gore(rng, world, anchor, Vec2::ZERO, t, 1.0);
+        let g = gore.slot_mut(idx);
+        g.scale = 1.0;
+        g.velocity.x += dx;
+        g.velocity.y += dy;
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -4001,6 +4078,17 @@ pub fn hit_effect_d(
     // `:87985-88022` — the 633 Zoologist arm (sites 525-530).
     else if npc_type == 633 {
         zoologist_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88023-88045` — the 368 Travelling Merchant arm (sites 531-535).
+    else if npc_type == 368 {
+        travelling_merchant_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88046-88075` — the town-pet smoke arm (369/376/663/IsTownPet/
+    // 695/696, sites 536-539).
+    else if matches!(npc_type, 369 | 376 | 663 | 695 | 696)
+        || crate::npc_ai_town::is_town_pet(npc_type)
+    {
+        town_pet_smoke_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -7018,6 +7106,74 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "zoologist shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:88039-88044` — the Travelling Merchant ladder
+    /// 567/568x2/569x2 (shimmer 1362/1364x2/1365x2).
+    #[test]
+    fn w4_f5d_the_travelling_merchant_ladder() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (shimmer, want) in [
+            (false, vec![567, 568, 568, 569, 569]),
+            (true, vec![1362, 1364, 1364, 1365, 1365]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(563);
+            let _ = hit_effect_d(&n, 368, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "merchant shimmer={shimmer}");
+            let mut twin = UnifiedRandom::new(563);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "merchant shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:88058-88073` — the town-pet smoke: FOUR Next(61,64) gores
+    /// at Center-(24,24), zero velocity base + the pool kicks + the ±1
+    /// quadrant nudges, scale pinned to 1; the 25x dust-31 census first.
+    #[test]
+    fn w4_f5d_the_town_pet_smoke_nudges_the_quadrants() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 30.0);
+        for kind in [369, 637, 695] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(569);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+            for t in &types {
+                assert!((61..64).contains(t), "smoke type in range: {t}");
+            }
+            assert!(!gore.slot(4).active, "exactly four gores");
+            // Center-(24,24) = (91,91).
+            for i in 0..4 {
+                assert_eq!(gore.slot(i).position, Vec2::new(91.0, 91.0));
+                assert_eq!(gore.slot(i).scale, 1.0);
+            }
+            let mut twin = UnifiedRandom::new(569);
+            for _ in 0..25 {
+                twin_dust(&mut twin, 30, 30);
+            }
+            let nudges = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
+            for (i, (dx, dy)) in nudges.iter().enumerate() {
+                let t = twin.next_range(61, 64);
+                let ky = twin.next_range(10, 31) as f32 * 0.1;
+                let kx = twin.next_range(-20, 21) as f32 * 0.1;
+                assert_eq!(gore.slot(i).gore_type, t);
+                assert_eq!(gore.slot(i).velocity.x, kx + dx);
+                assert_eq!(gore.slot(i).velocity.y, -ky + dy);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "pet {kind} mirrors the C# draws");
         }
     }
 }
