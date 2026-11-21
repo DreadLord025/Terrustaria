@@ -30,6 +30,10 @@ pub use kill::{
     square_tile_frame_default, HerbEvent, KillSounds, ObjectDrop, PileLootEvent, PotEvent,
     SoundCue, TileKill, TreeDropEvent,
 };
+mod shift;
+// W4-c42 batch 2 — the wired trapdoor/tall-gate shifts (`WorldGen.cs:51447-
+// 51596`/`:51723-51775`), the `HitWireSingle` arms `Wiring.cs:1440-1460` call.
+pub use shift::{shift_tall_gate, shift_trapdoor};
 pub(crate) use kill::{
     remove_tile, solid_tile, solid_tile2, solid_tile_allow_bottom_slope, square_tile_frame_gen,
 };
@@ -708,6 +712,35 @@ pub fn open_door(
     direction: i32,
     drops: &mut Vec<ObjectDrop>,
 ) -> bool {
+    open_door_inner(world, i, j, direction, drops, false, &mut Vec::new())
+}
+
+/// The wired caller's seam (W4-c42, `Wiring.cs:1469-1488`): the same body,
+/// but the `Wiring.SkipWire` ×6 (`WorldGen.cs:37717-37725`, gated on
+/// `Main.netMode != 1 && Wiring.running`) is collected into `skips` — the
+/// caller (the wiring flood, `running == true`) inserts them into its skip
+/// set after the call (order-identical: the C# skips precede the writes and
+/// the trailing reframe reads no skip state).
+pub fn open_door_wired(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    direction: i32,
+    drops: &mut Vec<ObjectDrop>,
+    skips: &mut Vec<(i32, i32)>,
+) -> bool {
+    open_door_inner(world, i, j, direction, drops, true, skips)
+}
+
+fn open_door_inner(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    direction: i32,
+    drops: &mut Vec<ObjectDrop>,
+    collect_skips: bool,
+    skips: &mut Vec<(i32, i32)>,
+) -> bool {
     // The per-cell null-init guards (:37634-37644) are managed-Tile engine
     // noise; the port reads through `World::tile`'s `Option` instead.
     let Some(tile) = world.tile(i, j) else {
@@ -787,7 +820,16 @@ pub fn open_door(
             }
         }
     }
-    // `Wiring.SkipWire` ×6 (:37721-37729) — no wiring in the port.
+    // `Wiring.SkipWire` ×6 (:37721-37729) — the opened 2×3 block, gated on
+    // `Main.netMode != 1 && Wiring.running`; the wired caller collects them
+    // (`open_door_wired`), the interaction path has no running flood.
+    if collect_skips {
+        for dy in 0..3 {
+            for dx in 0..2 {
+                skips.push((num6 + dx, num + dy));
+            }
+        }
+    }
     let num8 = num4 % 36 * 54; // :37731 — the open door's style row
     // `SoundEngine.PlaySound(8, i*16, j*16)` (:37732) — app-side, via
     // `TileInteraction::DoorOpened`.

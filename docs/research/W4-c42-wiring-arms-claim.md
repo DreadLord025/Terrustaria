@@ -44,6 +44,26 @@ Batch plan (5 arms per commit):
    388/389 tall gate (3 arms + the `edit::shift_trapdoor`/`shift_tall_gate`
    ports).
 
+## Status (2026-11-21)
+
+- **Batch 1 LANDED** (`6b68736a`): 215 campfire (`toggle_camp_fire`), 4
+  torch, 130/131 stone blocks, 11 forced close (`edit::close_door_wired`);
+  the `door_cues` queue drains at every switch-click site on its stage
+  stream. 6 witnesses written not run.
+- **Batch 2 LANDED**: 10 open-door (the `rand_next(2)` direction roll +
+  unconditional retry, `edit::open_door_wired` collects the SkipWire ×6),
+  386/387 trapdoor (`edit::shift_trapdoor`, `WorldGen.cs:51447-51596` —
+  both styleX variants + the close branch with the paint cache and the
+  cut/drip sweep), 388/389 tall gate (`edit::shift_tall_gate`,
+  `WorldGen.cs:51723-51775` — the def decode always reads kind 388's
+  registry entry, the padding-free row walk kept verbatim).
+  `Wiring::can_kill_tile` went `pub(crate)` — the trapdoor close guard
+  reuses the flood's slice (the i34 keep-one). 9 witnesses written not run.
+- The `Collision.EmptyTile` entity half stays the always-free closure in
+  the wiring arms (tr-core has no entity store — the `smart_cursor.rs:312`
+  precedent); the app-side `cell_blocked` wiring is a follow-up seam, the
+  same shape `edit::close_door`'s interaction path uses.
+
 ## Explicitly NOT claimed here (later lanes' scope — do not touch)
 
 - **W4-e20 (wiring-device-arms-2)**: 21/467 Hopper (needs the WorldItem
