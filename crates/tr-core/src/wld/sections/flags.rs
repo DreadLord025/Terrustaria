@@ -294,7 +294,7 @@ pub fn write(w: &mut Writer, world: &World) {
 /// introduction version (`SaveWorldFlags:1238-1250` / `LoadWorldFlags:1981-2041`);
 /// the pre-267 zenith back-compat inference is the reader's job (`:2020`).
 fn write_world_flavour(w: &mut Writer, world: &World) {
-    w.i32(0); // Main.GameMode — no port concept
+    w.i32(world.game_mode); // Main.GameMode (W4-f45; the e25 scaling lane reads it)
     for (min_version, flag) in [
         (222, crate::seeds::SeedFlags::DRUNK),
         (227, crate::seeds::SeedFlags::FOR_THE_WORTHY),
@@ -352,7 +352,7 @@ fn write_downed_flags(w: &mut Writer, world: &World) {
 pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()> {
     // WorldFile.cs:1982-2012 — game mode and the nine flavour bools.
     if version >= 209 {
-        r.skip(4)?; // GameMode
+        world.game_mode = r.i32()?; // GameMode (W4-f45, `:1985`)
         for (min_version, flag) in [
             (222, crate::seeds::SeedFlags::DRUNK),
             (227, crate::seeds::SeedFlags::FOR_THE_WORTHY),
@@ -382,11 +382,15 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
             );
         }
     } else {
+        // WorldFile.cs:2029-2040 — the pre-209 game mode: a bool (expert) from
+        // 112, else classic; the v208 master byte upgrades it to 2.
         if version >= 112 {
-            r.skip(1)?; // GameMode as bool
+            world.game_mode = if r.u8()? != 0 { 1 } else { 0 };
+        } else {
+            world.game_mode = 0;
         }
-        if version == 208 {
-            r.skip(1)?;
+        if version == 208 && r.u8()? != 0 {
+            world.game_mode = 2;
         }
     }
     // WorldFile.cs:2042-2049 — the two creation-time longs.

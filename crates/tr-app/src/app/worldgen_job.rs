@@ -129,6 +129,8 @@ impl WorldGenJob {
             height,
             seed,
             crimson,
+            // `_optionDifficulty` (`UIWorldCreation.cs:129`): Main.GameMode.
+            game_mode: draft.difficulty as i32,
             flags,
             micro_flags,
         };

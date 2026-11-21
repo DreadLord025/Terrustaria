@@ -2049,8 +2049,9 @@ impl App {
             rock_layer: w.rock_layer as i16,
             world_id: 1,
             world_name: w.name.clone(),
-            // `Main.GameMode` — the port has no mode byte yet; classic is 0.
-            game_mode: 0,
+            // `Main.GameMode` (W4-f45): the world's difficulty byte
+            // (`NetMessage.cs:243`'s `(byte)Main.GameMode`).
+            game_mode: w.game_mode as u8,
             unique_id: [0; 16],
             // `Main.ActiveWorldFileData.WorldGeneratorVersion` — the port's
             // generator version lives in the world seed's place; the save

@@ -130,6 +130,13 @@ pub struct World {
     pub chunk_has: Vec<bool>,
     /// Generation seed (`0` for worlds loaded from the original `.wld` format).
     pub seed: u64,
+    /// `Main.GameMode` (`WorldFile.cs:1240` write / `:1985` read): the world's
+    /// difficulty — 0 Classic / 1 Expert / 2 Master / 3 Journey
+    /// (`GameModeID.cs:15-22`, `Main.IsJourneyMode` `:2634`). The expert/master
+    /// scaling lane (W4-e25) reads it; the creation draft's `_optionDifficulty`
+    /// (`UIWorldCreation.cs:129`) is its source. The `.wld` stores an i32 from
+    /// v209; below that a bool (expert) plus the v208 master byte (`:2029-2040`).
+    pub game_mode: i32,
     /// The classic secret-seed flags (`Main.drunkWorld` & friends — the
     /// `WorldGen.Reset()` set, `WorldGen.cs:11115-11123`): the world's
     /// special-world identity. Runtime readers (loot/fish/variant/wind
@@ -818,6 +825,9 @@ impl World {
             chunks_y: 0,
             chunk_has: Vec::new(),
             seed: 0,
+            // `Main.GameMode`'s classic default (`WorldFile.cs:2035`'s pre-112
+            // arm, `GameModeID.Normal`).
+            game_mode: 0,
             seeds: crate::seeds::SeedFlags::default(),
             micro_seeds: crate::seeds::MicroSeedFlags::default(),
             revision: 0,

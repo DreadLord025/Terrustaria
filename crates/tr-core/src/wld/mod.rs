@@ -1659,6 +1659,8 @@ mod tests {
     fn owned_world() -> World {
         let mut world = World::new("OwnedFields".into(), 300, 200);
         world.seed = 0xDEAD_BEEF;
+        // W4-f45: the game mode (Master) round-trips through the i32 head.
+        world.game_mode = 2;
         world.spawn_x = 71;
         world.spawn_y = 62;
         world.world_surface = 123.5;
@@ -1798,6 +1800,7 @@ mod tests {
     fn assert_owned_fields(want: &World, got: &World, context: &str) {
         assert_eq!(got.name, want.name, "{context}: name");
         assert_eq!(got.seed, want.seed, "{context}: seed");
+        assert_eq!(got.game_mode, want.game_mode, "{context}: GameMode");
         assert_eq!(
             (got.width, got.height),
             (want.width, want.height),
@@ -2139,7 +2142,7 @@ mod tests {
     fn expected_flags_block(world: &World) -> Vec<u8> {
         let mut b = Vec::new();
         let z = |b: &mut Vec<u8>, n: usize| b.resize(b.len() + n, 0);
-        b.extend_from_slice(&0i32.to_le_bytes()); // GameMode — unowned
+        b.extend_from_slice(&(world.game_mode).to_le_bytes()); // GameMode (W4-f45)
         z(&mut b, 9); // the nine world-flavour bools — unowned
         b.extend_from_slice(&(world.creation_time as u64).to_le_bytes());
         b.extend_from_slice(&(world.last_played as u64).to_le_bytes());
@@ -4321,6 +4324,69 @@ mod tests {
         assert!(w.unlocked_merchant_spawn, "unlockedMerchantSpawn reads from 251");
         assert!(w.unlocked_nurse_spawn, "unlockedNurseSpawn reads from 251");
         assert!(!w.unlocked_demolitionist_spawn, "the demo byte between stays 0");
+    }
+
+    /// W4-f45 — `Main.GameMode` lands at the flags block's first field and
+    /// follows the C# read gates: the i32 from 209 (`:1985`), the expert bool
+    /// from 112 (`:2031`), the v208 master byte (`:2037-2040`), classic below
+    /// 112 (`:2035`). Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_game_mode_lands_at_the_csharp_offsets_and_gates() {
+        // The flags block's start inside a synthetic file: the tail offset
+        // minus the owned prefix (world head + GameMode/seeds/times/moon +
+        // the tree/cave/back-style block + spawn/layers/time).
+        let flags_start = |data: &[u8], v: i32| {
+            let world = World::new("x".into(), 8, 6);
+            let head = cs_string("TileFixture").len()
+                + if v >= 179 { cs_string("12345").len() + 8 } else { 0 }
+                + if v >= 181 { 16 } else { 0 }
+                + 4 + 6 * 4; // world id + the six bounds/dims
+            tail_offset_in_synthetic(data, v)
+                - flags_tail_prefix(&world).len()
+                - head
+        };
+        // v326: the i32 head carries Master (2).
+        let mut data = fixture();
+        let at = flags_start(&data, VER);
+        data[at..at + 4].copy_from_slice(&2i32.to_le_bytes());
+        let w = parse(&data).expect("the patched fixture parses");
+        assert_eq!(w.game_mode, 2, "GameMode i32 at the flags head");
+        // v209: the i32 exists, Journey (3) reads.
+        let mut data = synthetic_file(209, &[2, 144], 160, 11);
+        let at = flags_start(&data, 209);
+        data[at..at + 4].copy_from_slice(&3i32.to_le_bytes());
+        let w = parse(&data).expect("v209 loads");
+        assert_eq!(w.game_mode, 3, "the i32 reads from 209");
+        // v208: the expert bool + the master byte. bool 1 + master 1 -> 2.
+        let mut data = synthetic_file(208, &[2, 144], 160, 11);
+        let at = flags_start(&data, 208);
+        data[at] = 1; // GameMode as bool (expert)
+        data[at + 1] = 1; // the v208 master byte
+        let w = parse(&data).expect("v208 loads");
+        assert_eq!(w.game_mode, 2, "the v208 master byte upgrades to 2");
+        // v208 with the master byte down stays expert (1).
+        let mut data = synthetic_file(208, &[2, 144], 160, 11);
+        let at = flags_start(&data, 208);
+        data[at] = 1;
+        let w = parse(&data).expect("v208 expert loads");
+        assert_eq!(w.game_mode, 1, "the expert bool reads from 112");
+        // v112: the expert bool alone.
+        let mut data = synthetic_file(112, &[2, 144], 160, 6);
+        let at = flags_start(&data, 112);
+        data[at] = 1;
+        let w = parse(&data).expect("v112 loads");
+        assert_eq!(w.game_mode, 1, "the expert bool reads from 112");
+        // v100 (< 112): no GameMode byte — classic.
+        let w = parse(&synthetic_file(100, &[2, 144], 160, 6)).expect("v100 loads");
+        assert_eq!(w.game_mode, 0, "below 112: classic");
+        // The writer's own block carries the owned world's Master at the head.
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let block = expected_flags_block(&world);
+        assert_eq!(&block[0..4], &2i32.to_le_bytes(), "GameMode at the block head");
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let flags_at = ptr1 - block.len();
+        assert_eq!(&buf[flags_at..flags_at + 4], &2i32.to_le_bytes());
     }
 
     // --- S1-A-7: the C#-generated world (real genRand) -----------------------

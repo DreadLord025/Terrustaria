@@ -770,6 +770,8 @@ pub fn create_world_in(worlds_dir: &Path, draft: &NewWorldDraft) -> anyhow::Resu
                 2 => true,
                 _ => tr_core::worldgen::roll_crimson(seed),
             },
+            // `_optionDifficulty` (`UIWorldCreation.cs:129`): Main.GameMode.
+            game_mode: draft.difficulty as i32,
             flags,
             micro_flags,
         },
