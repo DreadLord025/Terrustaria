@@ -1,8 +1,20 @@
-# 312 — The snail-family FINAL bible + the W4-c9 seal census
+# 349 — The snail-family FINAL bible + the W4-c9 seal census
 
 Status: FINAL / SEAL RECEIPT — W4-c9, branch `task/W4-c9-style67-snails`.
 
-> **REGISTRY-RENAME 281 → 312 (this round).** The seal commit `9252d6f31`
+> **REGISTRY-RENAME CHAIN 281 → 312 → 349 (this round: §8.7 FROZEN).**
+> The 312 self-pick below is SUPERSEDED: registry-150 **§8.7 AMENDMENT-3
+> (BATCH FROZEN)** at `origin/task/W4-d54` tip `9dddb32b4` assigns
+> **c9 → 349** — d106 KEEPS 312 (its §8.1 assignment stands), so c9's
+> 312 self-pick was contested and renumbered to 349. NO-SELF-PICKS is
+> now ENFORCED (any future self-pick outside the §8/§8.7 table is
+> INVALID; the free floor is 352+). The 281→312 banner below is kept
+> as the round-3 history receipt. All refs re-pointed to 349 (INDEX
+> row 349, ANALYSIS FINAL seal, PORT_MAP row 360, ROADMAP:424,
+> anchors.txt:903).
+
+> **REGISTRY-RENAME 281 → 312 (round 3 — historical, superseded by the
+> §8.7 chain banner above).** The seal commit `9252d6f31`
 > claimed 281 citing the registry's round-2 banner ("Numbers 281+ are
 > FREE") — but that banner is **SUPERSEDED by §7 (round 3)** in the same
 > registry file (`150-research-number-registry.md` at
@@ -359,4 +371,5 @@ C#-identical, verified both tips).
   (the §6b draw-order delta), the registry §7 round-3 re-read + the
   fresh all-ref 281+ sweep (281×10 / 282×3 taken, the 304 floor also
   contested ×2, 312 free at every ref) — the 281→312 rename receipt in
-  the header.
+  the header (later superseded: §8.7 FROZEN at `9dddb32b4` renumbers
+  c9 → 349, d106 keeps 312 — the 281→312→349 chain banner).

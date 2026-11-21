@@ -33048,9 +33048,10 @@ snails — the two shimmer lanes compose without double-transform.
 Witness `w4_c9_shimmer_immunity_write_keys_the_cs_type` WRITTEN NOT
 RUN.
 
-**FINAL seal (2026-11-21, research/312 — renamed from 281 per the
-registry-150 §7 round-3 block 281-303; the 304 floor is also contested,
-312 free at every ref).** The adjacent-critter-kinds
+**FINAL seal (2026-11-21, research/349 — rename chain 281→312→349:
+registry-150 §7 round-3 block 281-303 gave 312, then §8.7 AMENDMENT-3
+BATCH FROZEN (`9dddb32b4`) assigns c9→349 — d106 keeps 312).** The
+adjacent-critter-kinds
 half is complete: the five gold critters 442/443/445/446/447 all landed
 (wave 1 `c830aec3d`, wave 2 `49d4cfb61` — the GoldBunny/GoldFrog kinds,
 the critter_ai dispatch, the case-443/445 find_frame arms re-read
@@ -33068,7 +33069,7 @@ MagmaSnail find_frame arm DELEGATES to `npc_ai_style67::snail_find_frame`
 (one machine, the 180-combo equality grid). The E8 renumber order
 (Snail 359→740, GlowingSnail 360→741, the Shimmerfly row drops to c7)
 is receipted as merge-wave work, NOT executed on this lane. The full
-bible + receipts: `docs/research/312-snail-family-final.md`. The five
+bible + receipts: `docs/research/349-snail-family-final.md`. The five
 gold-critter dup drop-hunks (c9→c10, the d37-LV +3 extended by wave 2's
 443/445) are published as its §6 EXECUTE-prep — rows stay on-branch per
 the E8 dropped-lane rule; the critter-module keep-one reconciles the
