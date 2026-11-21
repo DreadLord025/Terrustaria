@@ -389,12 +389,21 @@ pub(crate) struct RisingVineSegment {
 /// * the anchor advances along `(rot - PI/2)` (`:9190`, not `+ PI/2`);
 /// * the glow out-params are discarded (`:9173` `out var _`) — the rising
 ///   strip draws NO glowmask.
+///
+/// `show_invisible` is the g31 keep-one delta (contract §1.2, wire phase 2
+/// seam 4): the caller's `Main.ShouldShowInvisibleBlocksAndWalls()` override
+/// rides the FULL `IsVisible` read (`TileDrawing.cs:1411-1432` — the platform
+/// row-48 + the 541/631 invisible-wiring arms always ride the flag), not the
+/// bare `invisible_block` probe. The interim fused-pass caller passes
+/// `false` (the pre-wire behaviour); the g31 drain binds its own
+/// `show_invisible` at the union merge.
 pub(crate) fn rising_vine_strip_segments(
     world: &World,
     wind: &Wind,
     vine_counter: f32,
     x: i32,
     start_y: i32,
+    show_invisible: bool,
 ) -> Vec<RisingVineSegment> {
     let mut out = Vec::new();
     // `vector = new Vector2(x * 16 + 8, startY * 16 + 16 + 2)` (`:9138`).
@@ -464,7 +473,9 @@ pub(crate) fn rising_vine_strip_segments(
             half,
             anchor,
             rot,
-            visible: !world.invisible_block(x, y),
+            // `IsVisible(tile)` (`:9185`) — the FULL read (the g31 keep-one
+            // delta): the platform row-48 / 541 / 631 arms ride the flag.
+            visible: is_visible(world, x, y, show_invisible),
             fullbright: tile.fullbright_block(),
             paint: tile.paint(),
             seam_top: above.is_some_and(|t| t.active() && is_reverse_vine_thread(t.kind)),
@@ -478,12 +489,34 @@ pub(crate) fn rising_vine_strip_segments(
     out
 }
 
+/// `TileDrawing.IsVisible` (`TileDrawing.cs:1411-1432`) — the g31 keep-one
+/// (contract §1.2): an Echo-coated block hides unless sight is granted
+/// (`show_invisible` = `Main.ShouldShowInvisibleBlocksAndWalls()`); the
+/// platform row-48 and the two invisible wiring tiles (541/631) always ride
+/// the flag. Byte-shape identical to the g31 union's `tile_drains::is_visible`
+/// (the family merge keep-ones one copy — the d56 `tr_render` bind).
+#[inline]
+pub(crate) fn is_visible(world: &World, x: i32, y: i32, show_invisible: bool) -> bool {
+    let Some(tile) = world.tile(x, y) else {
+        return true;
+    };
+    let mut flag = world.invisible_block(x, y);
+    match tile.kind {
+        19 if tile.frame_y / 18 == 48 => flag = true,
+        541 | 631 => flag = true,
+        _ => {}
+    }
+    !flag || show_invisible
+}
+
 /// `DrawReverseVines` (`TileDrawing.cs:8903-8914`): one `DrawRisingVineStrip`
 /// per registered reverse root, in registration (draw-area row-major) order.
 /// Returns the quad count. WIRED (W4-g83 wiring phase): `tiles.rs` calls this
 /// right after `draw_vines` (`PostDrawTiles` `DrawVines` → `DrawReverseVines`,
 /// `:429-430`); the g31-union rebind maps it onto the `ReverseVines` post step
-/// (`docs/research/123-vine-wire-contract.md` §1).
+/// (`docs/research/123-vine-wire-contract.md` §1). `show_invisible` threads
+/// the caller's sight override into the strip's `IsVisible` read (the g31
+/// keep-one delta, seam 4); the interim fused-pass caller passes `false`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_reverse_vines(
     r: &mut SpriteRenderer,
@@ -496,10 +529,12 @@ pub(crate) fn draw_reverse_vines(
     wind: &Wind,
     vine_counter: f32,
     roots: &[(i32, i32)],
+    show_invisible: bool,
 ) -> u32 {
     let mut quads = 0u32;
     for &(x, start_y) in roots {
-        let segments = rising_vine_strip_segments(world, wind, vine_counter, x, start_y);
+        let segments =
+            rising_vine_strip_segments(world, wind, vine_counter, x, start_y, show_invisible);
         for seg in segments {
             // `GetTileDrawTexture` null → `break` (`:9180-9184`); the port's
             // unframed-cell guard (`resolve_tile_frame`) is the same state.
@@ -871,7 +906,7 @@ mod tests {
     fn w4_g83_a_calm_rising_strip_climbs_straight_up() {
         let w = rising_vine_world();
         let wind = calm_wind();
-        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 30);
+        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 30, false);
         assert_eq!(segs.len(), 3);
         for (k, seg) in segs.iter().enumerate() {
             assert_eq!(seg.rot, 0.0);
@@ -899,7 +934,7 @@ mod tests {
             w.tiles[i].flags = FLAG_ACTIVE;
         }
         let wind = windy();
-        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 30);
+        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 30, false);
         assert_eq!(segs.len(), 10);
         let num3 = 0.2 + 0.8 * (0.5f32 / 1.2);
         let cycle = wind.cycle(10, 30, 0.0);
@@ -941,7 +976,7 @@ mod tests {
         wind.remix_world = true;
         wind.world_surface = 10.0; // the strip (y >= 28) is BELOW it
         assert!(wind.cycle(10, 30, 0.0) != 0.0, "remix below surface: cycle live");
-        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 30);
+        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 30, false);
         for seg in &segs {
             assert_eq!(seg.rot, 0.0, "rising exposure ignores remix → num2 = 0");
         }
@@ -963,7 +998,7 @@ mod tests {
         for _ in 0..5 {
             wind.wind_grid.update();
         }
-        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 30);
+        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 30, false);
         assert_eq!(segs.len(), 3);
         assert_eq!(segs[0].rot, 0.0, "y=30 unstamped");
         assert!((segs[1].rot - 0.02).abs() < 1e-6, "y=29: 0 - (-0.02)");
@@ -981,15 +1016,15 @@ mod tests {
         let i = w.index(10, 29);
         w.tiles[i].flags &= !FLAG_ACTIVE;
         let wind = calm_wind();
-        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 30);
+        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 30, false);
         assert_eq!(segs.len(), 1);
         // A foreign active tile breaks it too.
         w.tiles[i].flags |= FLAG_ACTIVE;
         w.tiles[i].kind = 0;
-        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 30);
+        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 30, false);
         assert_eq!(segs.len(), 1);
         // The top bound: a root at row 10 draws nothing (`num7 > 10`).
-        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 10);
+        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 10, false);
         assert!(segs.is_empty());
     }
 
@@ -1000,9 +1035,41 @@ mod tests {
         let mut w = rising_vine_world();
         w.set_invisible_block(10, 29, true);
         let wind = calm_wind();
-        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 30);
+        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 30, false);
         assert_eq!(segs.len(), 3);
         assert!(segs[0].visible && !segs[1].visible && segs[2].visible);
+    }
+
+    /// W4-g83 seam 4 (the g31 keep-one delta, contract §1.2): the strip's
+    /// `visible` field rides the FULL `IsVisible` (`TileDrawing.cs:1411-1432`)
+    /// — the caller's `show_invisible` override un-hides the Echo segment,
+    /// and the platform row-48 / 541 / 631 arms always ride the flag even
+    /// when the cell is not Echo-coated. (The 549 strip itself never holds
+    /// those kinds; the predicate is pinned directly — the same shape the
+    /// g31 union's `tile_drains::is_visible` carries.)
+    #[test]
+    fn w4_g83_the_rising_visible_reads_the_full_is_visible() {
+        let mut w = rising_vine_world();
+        w.set_invisible_block(10, 29, true);
+        let wind = calm_wind();
+        // show_invisible = true: the Echo segment draws too.
+        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 30, true);
+        assert!(segs.iter().all(|s| s.visible), "the sight override un-hides");
+        // The predicate's special arms (the g31 byte-shape): a platform on
+        // row 48 and the 541/631 wiring tiles ride the flag unconditionally.
+        let mut w2 = rising_vine_world();
+        let i = w2.index(10, 29);
+        w2.tiles[i].kind = 19;
+        w2.tiles[i].frame_y = 48 * 18;
+        assert!(!is_visible(&w2, 10, 29, false), "platform row 48 rides the flag");
+        assert!(is_visible(&w2, 10, 29, true), "the override grants sight");
+        for kind in [541u16, 631] {
+            w2.tiles[i].kind = kind;
+            assert!(!is_visible(&w2, 10, 29, false), "kind {kind} rides the flag");
+        }
+        // A plain 549 cell without the Echo coat is visible either way.
+        w2.tiles[i].kind = 549;
+        assert!(is_visible(&w2, 10, 29, false));
     }
 
     // The rising origin pivots at the sprite's BOTTOM-centre
@@ -1012,7 +1079,7 @@ mod tests {
     fn w4_g83_the_rising_origin_is_the_bottom_centre() {
         let w = rising_vine_world();
         let wind = calm_wind();
-        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 30);
+        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 30, false);
         let seg = &segs[0];
         let h = (seg.dd.height - seg.half as u16) as f32;
         let origin_y = (seg.half - seg.dd.top) as f32 + h;

@@ -396,3 +396,124 @@ draw-side only; no tick/framing behaviour changed).
 
 *Produced code-only: no cargo/rustc/tests/graphify invoked; every claim
 cites a direct file read or a `git show`/`git diff` of the named tip.*
+
+---
+
+## 9. Wire phase 2 — EXECUTED (the remaining seams, this branch)
+
+The four remaining seams landed on `task/W4-g83-vine-draw-residuals`
+(code-only, witnesses written not run):
+
+| Seam | Commit | What landed |
+|---|---|---|
+| §2 checks + rng threading | `885514e1d` | `check_underwater_plant` as the case-549 arm BEFORE the tree arms + `check_vines` as the non-solid `IsVine` arm after cactus-80 in `edit/kill.rs::square_tile_frame`; the gate admits vine kinds + 549 explicitly; the whole `kill_tile`/`square_tile_frame_*`/cascade family threads `&mut UnifiedRandom` (the caller's ACTIVE genRand — growth `UpdateWorldGen`, liquid `UpdateLiquid`, wiring `self.rand`, edit `UpdatePlayers`, npc `UpdateNpcs`, projectile `UpdateProjectiles`, net the bare global, worldgen a fresh `UnifiedRandom(world.seed)` stand-in); the port-only `frame_important[vine]` writes dropped (`plant_vine` + `grow_vine_arm`); `frame_world`'s cosmetic-only check-skip recorded (fn doc + ANALYSIS row below) |
+| §3 grow-tops + jungle-thorn | `2325528ce` | `grow_overground_vines` at `update_world_overground_tile`'s tail + `grow_underground_jungle_thorn` after `grow_vine_arm` + the dead overground-69 arm DELETED; both on the caller's `UpdateWorldGen` stream |
+| §4 thorn down-merge | `6b9a1d9fa` | the 4-line `grass_below`/`down = num` insertion in `framing.rs::frame_of_variant` after the own-slope match; `thorn_down_merge_frame` kept as the thin witness fixture delegating to `frame_of_variant` (the standalone re-port + private RULES copy dropped) |
+| §1.2 g31 keep-one deltas | (this commit) | `rising_vine_strip_segments` takes `show_invisible` and reads the FULL `IsVisible` (the `is_visible` helper added to `vines.rs`, byte-shape identical to the union's); `draw_reverse_vines` threads it; the fused-pass caller passes its `show_invisible_blocks` |
+
+### 9.1 The g31 keep-one FINAL hunk-pair (g31e d-hunk-prep reads this)
+
+The keep-one binds g31's `tile_drains.rs` onto g83's
+`vines.rs::rising_vine_strip_segments` (the strip maths is line-for-line the
+same `:9134-9193` port). After seam 4 the two REAL deltas of §1.2 are
+resolved as follows — **hunk A** lands on the g83 side (DONE, this branch),
+**hunk B** is the g31-side rebind script (apply at the union merge):
+
+**Hunk A — `crates/tr-app/src/render/vines.rs` (LANDED):**
+
+```rust
+// the signature gains the sight override (the g31 form):
+pub(crate) fn rising_vine_strip_segments(
+    world: &World,
+    wind: &Wind,
+    vine_counter: f32,
+    x: i32,
+    start_y: i32,
+    show_invisible: bool,           // <- NEW (g31's 6th param)
+) -> Vec<RisingVineSegment> {
+    ...
+    // the per-segment push reads the FULL IsVisible, not the bare probe:
+    visible: is_visible(world, x, y, show_invisible),   // was: !world.invisible_block(x, y)
+    ...
+}
+
+// the helper (byte-shape identical to g31's tile_drains::is_visible):
+#[inline]
+pub(crate) fn is_visible(world: &World, x: i32, y: i32, show_invisible: bool) -> bool {
+    let Some(tile) = world.tile(x, y) else { return true; };
+    let mut flag = world.invisible_block(x, y);
+    match tile.kind {
+        19 if tile.frame_y / 18 == 48 => flag = true,
+        541 | 631 => flag = true,
+        _ => {}
+    }
+    !flag || show_invisible
+}
+
+// draw_reverse_vines gains the same param and threads it:
+pub(crate) fn draw_reverse_vines(..., roots: &[(i32, i32)], show_invisible: bool) -> u32 {
+    ...
+    let segments =
+        rising_vine_strip_segments(world, wind, vine_counter, x, start_y, show_invisible);
+    ...
+}
+```
+
+The `RisingVineSegment` struct is UNCHANGED (g31's struct is field-identical;
+keep g83's — it carries the `seam_top` doc). The interim fused-pass caller
+(`tiles.rs`) passes its `show_invisible_blocks`; the 10 strip witnesses pass
+`false` (the pre-wire behaviour) + 1 new witness pins the full-IsVisible
+arms (`w4_g83_the_rising_visible_reads_the_full_is_visible`).
+
+**Hunk B — `crates/tr-app/src/render/tile_drains.rs` (the g31-side rebind,
+apply at the union merge):**
+
+```rust
+// 1. DELETE g31's rising_vine_strip (the whole fn, base :550-622) and its
+//    RisingVineSegment struct (:525-547) — keep-one: import g83's instead:
+use crate::render::vines::{rising_vine_strip_segments, RisingVineSegment};
+
+// 2. drain_reverse_vines keeps its signature, the body rebinds:
+pub(crate) fn drain_reverse_vines(
+    world: &World,
+    wind: &Wind,
+    vine_counter: f32,
+    show_invisible: bool,
+    points: &[(i32, i32)],
+    out: &mut Vec<RisingVineSegment>,
+) {
+    for &(x, y) in points {
+        out.extend(rising_vine_strip_segments(world, wind, vine_counter, x, y, show_invisible));
+    }
+}
+
+// 3. g31's is_visible (:178-191) stays for the OTHER drains (grass/pylons/
+//    trophies); the vines.rs copy is the same byte-shape — the family merge
+//    keep-ones one (the d56 tr_render bind, union §1.4). Until then both
+//    copies are identical, zero-conflict.
+// 4. g31's 2 strip witnesses (w4_g31_rising_vine_strip_walks_up /
+//    _breaks_on_non_thread) rebind to rising_vine_strip_segments (same
+//    args + the trailing `false`/`show_invisible`); their assertions are
+//    unchanged (the maths is the same port).
+// 5. drain_draw_data == g83's inline draw_data + half-brick probe (verified
+//    line-for-line) — no delta, the segments carry dd/half already.
+```
+
+The light seam (`DrainCellLight` → d56) is UNAFFECTED: g83's
+`draw_reverse_vines` stays the SPRITE tail (it owns `resolve_tile_frame` +
+the bottom-centre origin + the no-glowmask rule), fed by the drain segments;
+the `visible` field now carries the full-IsVisible result the d56 bind
+expects.
+
+### 9.2 Witness census after wire phase 2
+
+vines.rs 21 (20 + 1 full-IsVisible) + vine_checks.rs 17 + vine_growth.rs 16
++ tiles.rs 14 + kill.rs +2 (the dispatch conversion/kill + the seaweed
+caller-stream twin) + growth.rs +2 (the overground tail + the underground
+thorn / dead-arm pair) + framing.rs +1 (the down-merge fold + slope order +
+the four pairs) = **73 written not run** (g83's share: 10 + 17 + 16 + 2 + 2
++ 2 + 1 + 1 = 51). World-hash pins unchanged: the worldgen callers' new
+`UnifiedRandom(world.seed)` stand-ins are drawn ONLY by a seaweed tip
+re-roll (none exists in the pinned passes' framing rings — the temple
+furniture/altar, the FTW plant kills and the no-traps spikes frame no 549),
+and the xorshift pass streams are untouched.

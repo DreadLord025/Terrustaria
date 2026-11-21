@@ -1224,6 +1224,10 @@ pub(crate) fn draw_tiles(
             wind,
             vine_wind_counter,
             &reverse_vine_roots,
+            // W4-g83 seam 4: the sight override threads the caller's
+            // `show_invisible_blocks` (the g31 keep-one delta — the strip's
+            // IsVisible read now matches the union's full form).
+            show_invisible_blocks,
         );
     }
     // Main.cs:22320,63305 — normal NPC pass (non-behind-tiles).
