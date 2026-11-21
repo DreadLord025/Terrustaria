@@ -39244,3 +39244,59 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## W4-d6 residual — the light-toggle family keep-one (d6 5d81f2de vs e20 ee6df0f2 vs c42 6b68736a)
+
+Three branches touch the `Wiring.Toggle*` statics (`Wiring.cs:2800-3072`).
+Arm-by-arm census (C# re-read whole: `Wiring.cs:2800-3072` +
+`WorldGen.TryToggleLight` `WorldGen.cs:72970-73024`):
+
+| C# static | d6 free fn (`tr-core/src/wiring.rs`) | base `Wiring` method (pre-existing; e20 ee6df0f2 witnesses pin it) | c42 wire-lane arm |
+| --- | --- | --- | --- |
+| `ToggleHolidayLight` :2800-2815 | `toggle_holiday_light` :3318 — ±54, `forced==off` gate | :2609 — same flip, no forced param | — |
+| `ToggleHangingLantern` :2817-2841 | `toggle_hanging_lantern` :3302 — mod-2 anchor, ±18 ×2 cells | :2620 — same + `SkipWire` ×2 | — |
+| `Toggle2x2Light` :2843-2877 | `toggle_2x2_light` :3262 — single-`if` col wrap, ANCHOR `frameX>0`, ±36 ×4 | :2642 — same + `SkipWire` ×4 | — |
+| `ToggleLampPost` :2879-2901 | `toggle_lamp_post` :3285 — `j−frameY/18`, early-return gate, ±18 ×6 | :2669 — same + `SkipWire` ×6 | — |
+| `ToggleTorch` :2903-2918 | `toggle_torch` :3132 — ±66, `frameX>=66` OFF flag | ABSENT in base | case-4 inline ±66 (null forced ⇒ the gate always passes) |
+| `ToggleCandle` :2920-2933 | `toggle_candle` :3144 — ±18 ONE cell | :2688 — same | — |
+| `ToggleLamp` :2935-2961 | `toggle_lamp` :3158 — mod-3 anchor, clicked-cell flag, ±18 ×3 | :2695 — same + `SkipWire` ×3 | — |
+| `ToggleChandelier` :2963-2998 | `toggle_chandelier` :3175 — `%108` col wrap, ANCHOR `%108>0`, early-return gate, ±54 ×9 | :2711 — same + `SkipWire` ×9 | — |
+| `ToggleCampFire` :3000-3042 | `toggle_campfire` :3204 — `kind==215` gate, validate-kill (drops out-param), ANCHOR `frameY>=36`, ±36 frameY on active same-kind cells | ABSENT in base | `toggle_camp_fire` — `SET_CAMPFIRES.has` gate ({215}, `TileID.cs:616` — equivalent), validate → `actuation_drops`, `SkipWire` ×6 |
+| `ToggleFirePlace` :3044-3072 | `toggle_fireplace` :3240 — `%54/18`/`%36/18` anchor, ANCHOR `frameX>=54`, early-return gate, ±54 frameX ×6 | `toggle_fire_place` :2744 — same + `SkipWire` ×6 | — |
+| `TryToggleLight` dispatch `WorldGen.cs:72970-73024` | `try_toggle_light` :3338 — active gate, torch set {4} (`TileID.cs:615`), campfire set {215} (:616), the 10-arm switch, returns true even when the forced gate suppresses the flip | ABSENT | ABSENT |
+
+Every d6 free function was re-verified line-by-line against its C# static:
+the two gate forms (`!forced.HasValue || !forced.Value != flag` ≡
+`forced.is_none() || forced == Some(off)`; the early-return
+`forced.HasValue && !forced.Value == flag` ≡
+`forced.is_some() && forced != Some(off)`) are logically identical, the
+anchor decodes match (the single-`if` wraps in `Toggle2x2Light`/
+`ToggleChandelier` are the C#'s own, not `while` loops), and the OFF flags
+key on the same cell (clicked vs anchor) as the C#.
+
+**Keep-one recommendation: the d6 free-function family is the canonical
+superset — KEEP IT.** It is the only port of the `TryToggleLight` dispatch
+and of `ToggleTorch`/`ToggleCampFire` as forced-state statics; the base
+`Wiring` methods cover only 8 of the 10 statics and hard-code the wire
+lane's null-forced/`doSkipWires=true` call shape. The two lanes are NOT
+duplicates to delete blindly:
+
+* The base methods (e20's witnesses pin them, incl. the 2322af90 lantern
+  fixture fix — both cells share the lit state, the return trip keys on
+  the hit cell's `frameX`) carry the `SkipWire` flood bookkeeping the free
+  functions deliberately skip (every gun-stream caller passes
+  `skipWires: false`, `Projectile.cs:29080`/`:29110`). KEEP the methods +
+  the e20 witnesses for the `HitWireSingle` lane.
+* c42's case-4 torch arm and `toggle_camp_fire` duplicate the d6 statics'
+  maths for the wire lane. At merge, dedupe them onto the d6 free
+  functions with a skip-set parameter (the campfire drops ride
+  `actuation_drops` there, the free fn's `drops` out-param here — the
+  same `ObjectDrop` shape); until that refactor the two copies are
+  behaviour-identical under null forced state (verified above).
+* The d6 `toggle_campfire`'s literal `kind != 215` gate vs c42's
+  `SET_CAMPFIRES.has`: the set is exactly {215} (`TileID.cs:616`), so they
+  are equivalent today; prefer the set read at the dedupe.
+
+No behaviour change lands with this note — it is the merge-time keep-one
+record for the three branches (read from the pushed tips: e20 at 2322af90,
+c42 at 6b68736a, this branch at 5ae2978c).
