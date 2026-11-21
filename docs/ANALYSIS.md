@@ -39522,3 +39522,84 @@ re-reads (`Main.cs:40002-40020`, `Player.cs:56685-56732`/`:55996-56006`/
 `Item.cs:31001-31018`, `ItemID.cs:1324`, `LegacySoundPlayer.cs:56-150`/
 `:1369-1375`, `SoundID.cs:104`) + the sibling-tip `git grep`/`git diff`
 bare-play census against the `a725acb0` base.
+
+## The W4-d79 PITCH FINAL phase (2026-11-21, code-only mode)
+
+The final-phase census + merge-contract record, commits `2edd40547` +
+this docs commit. The full tables live in
+`docs/research/W4-d79-pitch-final.md`; the five verdicts:
+
+1. **The Nebula 3-WAY keep-one (§F1).** The d79 full-arm port, f49
+   `6c0ee2aa2`'s regen-engine twin and f12 `ee67786ec`'s g27-canonical
+   scan half are ONE C# lifecycle in three homes. The per-fn owner-table
+   rules: the pickup arm + `nebula_levelup` + the chained reset + the
+   12/5 pull stay **d79's**; the scan writer + the Life/Damage stat folds
+   move to **f12's** `buff_effects_orbs.rs::apply_orb_arm`/`fold_orb`
+   (the g27 keep-one canon — the d79 `update_buffs_nebula_scan` + helper
+   + the two fold arms DELETE, as do f49's three inline arms); the mana
+   reader keeps **f49's** `regen.rs` engine form (the counter is
+   `RegenState`'s, the d79 Player-method twin + field DELETE). f12's
+   closeout item 1 publishes the 2-line `fold_orb` bridge
+   (`p.nebula_level_mana = p.orb_scan.nebula_level_mana`, the `:12072`
+   ASSIGN) — it lands WITH the deletions in one merge commit (either
+   half alone is a behaviour bug: double-write or stranded reader). The
+   C#-position single-chain assembly: timer head → both resets → equips
+   → `update_buff_frame` (the scan + fold + bridge) → the LIFTED
+   `update_survival` (the `:25977`/`:25995` regen reads, now post-scan —
+   the lift also repairs f12's own `buff_life_regen` feed) → projectiles
+   → items (the pickup's same-tick hint). The positioned case-7 façade
+   keeps d79's `play_grab_sound` (the `:718-722` Stop-then-recreate;
+   f49's emit-only `play_grab_sound_at` is the D4-era shape — its two
+   call sites re-point). The witness re-targets are listed per-test.
+2. **The ALL-CASE census FINAL (§F2).** The `LegacySoundPlayer.cs`
+   switch surface script-diffed vs the port: all 43 in-band cases (0-42)
+   accounted — 41 ported (this tree or the siblings: case 20 FemaleHit →
+   e10, case 37 star-hit → g23), **case 39 Drip the one in-band gap**
+   (the gore pool's documented sound drop; the drop note's "no draws"
+   claim is corrected — the tile-hit arm `Gore.cs:953` draws one
+   `Next(2)` inside the call, the wet arm `:965` is draw-free). Six
+   out-of-band gaps (47-52 guitar / 53-62 drums / 63-64 research /
+   65 Queen Slime ambient / 66 cursed-flame ambient) are ALL
+   unported-CALLER E21 deferrals — no bare-play regression anywhere.
+   The 19-field single-instance census stays closed (sweep 3).
+3. **The d80 co-lane composes clean (§F3).** d80 `075b954d2`'s tracked
+   entity loops add ZERO bare plays; its `TrackedStyle::by_name` +
+   `test_keep_alive` seams extend the same `tracked_sound.rs` layer; the
+   `ActiveSound.Resume` `sink.play()` (`:191`) is the shared seam both
+   lanes keep (not a `PlaySound` case, no RNG). The merge keeps d79's
+   audio.rs wholesale + d80's bank rows/test seams.
+4. **The sibling rewire is mechanical (§F4).** The exact per-site
+   rewrite-table: g21 +21 (19 menu → `play_menu`, 2 Chat → DELETE, d79's
+   phase-7 seams win), g22 `250488c34` +12 (the RETIRE tip supersedes
+   sweep-4's `e0f811358` +3; 11 menu + the front-end seed Chat →
+   `play_single_voice`), g23 +6 (4 unique after the direction-B union),
+   e10 `432dd5ab1` +11 menu / −7 Roar / −1 cart fallback. Every added
+   site is a draw-free pool cue — the rewrites change instance-pool
+   behaviour, never RNG. The three façade keep-one rulings: MaxMana
+   (d79's pool path wins, e10's mana-blade expiry PRODUCER keeps +
+   re-points), Hungry (BOTH producers keep — the C# plays at the
+   UpdateBuffs expiry AND the drink re-entry; ONE façade, e10's
+   `play_voice_style("Hungry")`; f12's bare `play("hungry")` deletes),
+   the voice picker (e10's `hurt_voice` chain wholesale, d79's
+   variant-1 stand-in superseded). The g21 Destroyer `Roar_0` bare play
+   is wrong twice — the int overload's default Style 1
+   (`SoundEngine.cs:102`) means `Roar_1`; d79's `play_roar(1, …)` wins.
+5. **The exact bare census (§F2 tail).** Base `a725acb04`: 84 prod + 6
+   test-rig = 90 sites; d79 HEAD: **0**. The per-tip prod/test splits
+   supersede sweep-4's filtered counts (g21 105+6, g22 94+7, g23 88+6,
+   e10 93+0, d80/f49 84+6, f12 85+6 — the +1 is the Hungry drain).
+
+**Witnesses (WRITTEN, NOT RUN — no compiler invoked).**
+`w4_d79_final_the_case_bank_pins_cover_the_in_band_surface` (audio.rs —
+the per-case bank-id pins incl. the zombie-family rows, the 17-row pool
+table + its no-Stop trio, the two drawing cases' pool exclusion, the
+sibling-gap/drop refusals),
+`w4_d79_final_the_nebula_owner_table_holds_on_this_tree` (player.rs —
+the pre-merge contract: the scan's assign-derivation + time-2 step-down,
+the levelup sweep/climb, the per-6 mana pay + tier-0 wipe, the reset
+zero + the same-tick re-derive). Verification = the whole-block C#
+re-reads cited per census row (`LegacySoundPlayer.cs`'s three switches,
+`SoundEngine.cs:93-108`, `Gore.cs:940-968`, `Player.cs:12110-12140`/
+`:46506-46730`, `ItemSlot.cs:1280-1298`, `NPC.cs:45759`/`:50093`,
+`Projectile.cs:46925-46945`) + the per-tip `git diff`/`git grep`
+censuses with the per-file `mod tests` split.
