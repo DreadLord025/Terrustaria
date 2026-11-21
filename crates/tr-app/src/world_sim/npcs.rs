@@ -16962,7 +16962,12 @@ mod dd2_tier_tests {
     }
 
     /// `AI_107`'s 576/577 arm (`NPC.cs:63029-63122`): the ogre's chase
-    /// window latches at 300 ticks and the spit leaves on `num9` (36).
+    /// window latches at 300 ticks and the spit leaves on the DEFAULT
+    /// `num9 = num8/2 = 35` (`:62950-62951` — case 1 does not override it).
+    /// W4-d14 doc-sweep: the throw rides the AI_107 defaults — speed
+    /// `num10 = 11` (`:62952`), drop `num15 = 0.1` (`:62958`), the ±0.5
+    /// jitter (`:63904`) and the `vector5 * num18` launch offset
+    /// (`:63906`, `num18 = 1`) — NOT the drakin's 13/0.15.
     #[test]
     fn the_ogre_latches_its_chase_window_and_spits() {
         let mut n = Npc::new(NpcKind::DD2OgreT2, 150.0 * TILE_PX, 112.0 * TILE_PX, 1, 0.0);
@@ -16974,18 +16979,202 @@ mod dd2_tier_tests {
         player.y = 118.0 * TILE_PX;
         let mut rng = UnifiedRandom::new(7);
         let mut shot = None;
+        let mut throw_ai = 0.0;
+        // The throw reads the position at the START of its tick (before the
+        // walker tail moves the ogre), so keep the previous tick's position.
+        let (mut prev_x, mut prev_y) = (n.x, n.y);
         for _ in 0..400 {
             n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
             if let Some(s) = n.wants_hostile_shot.last().copied() {
                 shot = Some(s);
+                throw_ai = n.ai[0];
                 break;
             }
+            (prev_x, prev_y) = (n.x, n.y);
         }
         let s = shot.expect("the ogre throws");
         assert_eq!(s.0, 676, "the spit");
         // `:63103`'s `GetAttackDamage_ForProjectiles(40f, 30f)` — the port's
         // classic-damage convention takes the first value.
         assert_eq!(s.5, 40, "the spit's damage");
+        // The throw fires on the tick LEAVING `ai[0]` at `num9 = 35`.
+        assert_eq!(throw_ai, 35.0, "the default num9, not the pound's 36");
+        // The exact throw shape (`:63890-63906`): the muzzle is
+        // `Center + (direction * 30, -70)` (`:63110`), the aim carries the
+        // 0.1 ballistic drop and the 11 speed, the spawn point steps one
+        // PRE-jitter velocity along the aim, and the velocity itself adds
+        // only the ±0.5 `RandomVector2` jitter.
+        let (sx, sy) = (prev_x + 96.0 * 0.5 + 30.0, prev_y + 124.0 * 0.5 - 70.0);
+        let (pcx, pcy) = player.center();
+        let dx = pcx - sx;
+        let dy = pcy - sy - dx.abs() * 0.1;
+        let len = (dx * dx + dy * dy).sqrt();
+        let (vx0, vy0) = (dx / len * 11.0, dy / len * 11.0);
+        assert!(
+            (s.1 - (sx + vx0)).abs() < 1e-3 && (s.2 - (sy + vy0)).abs() < 1e-3,
+            "the launch offset is one pre-jitter velocity: ({}, {}) vs ({}, {})",
+            s.1,
+            s.2,
+            sx + vx0,
+            sy + vy0
+        );
+        assert!(
+            ((s.1 - sx).hypot(s.2 - sy) - 11.0).abs() < 1e-3,
+            "the throw speed is the default 11, not the drakin's 13"
+        );
+        assert!(
+            (-0.5..0.5).contains(&(s.3 - vx0)) && (-0.5..0.5).contains(&(s.4 - vy0)),
+            "the velocity adds only the ±0.5 jitter: ({}, {}) vs ({}, {})",
+            s.3,
+            s.4,
+            vx0,
+            vy0
+        );
+    }
+
+    /// `AI_107`'s pound (`NPC.cs:63085-63101`): case 2 overrides `num9 = 36`
+    /// and throws the 683 stomp from the `(-direction * 20, height/2 - 1)`
+    /// muzzle on the SAME default 11-speed/0.1-drop/jitter/launch-offset
+    /// shape. The hop (`:63914-63924`, `flag4`): at `num = 56` the ogre slams
+    /// `vy = -13`, and while airborne under `num2 = 41` the charge
+    /// fast-forwards to 41 — the throw still fires once it lands.
+    #[test]
+    fn the_ogre_pounds_the_683_and_hops_before_the_throw() {
+        let mut n = Npc::new(NpcKind::DD2OgreT2, 150.0 * TILE_PX, 112.0 * TILE_PX, 1, 0.0);
+        let world = fixture();
+        let mut player = Player::spawn(&world);
+        // ~120 px away: inside `num4 + 300` (430) with the chase window
+        // clear, so `ai[1] = 2` (the pound) picks; also inside the pound's
+        // own 250-px engage (`:63087`).
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = UnifiedRandom::new(7);
+        let mut shot = None;
+        let mut throw_ai = 0.0;
+        let mut hopped = false;
+        let mut stuck_at_41 = 0;
+        let (mut prev_x, mut prev_y) = (n.x, n.y);
+        for _ in 0..400 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            // The hop tick: the charge sits at `num = 56` and the slam's
+            // -13 has already taken the tail's +0.4 gravity.
+            if n.ai[0] == 56.0 && n.vy < -12.0 {
+                hopped = true;
+            }
+            // The airborne clamp (`:63916-63919`): the charge holds at 41
+            // while `vy != 0`, never dropping below 40.
+            if hopped && n.vy != 0.0 && n.ai[0] > 0.0 {
+                assert!(n.ai[0] >= 40.0, "the airborne clamp: {}", n.ai[0]);
+                if n.ai[0] == 41.0 {
+                    stuck_at_41 += 1;
+                }
+            }
+            if let Some(s) = n.wants_hostile_shot.last().copied() {
+                shot = Some(s);
+                throw_ai = n.ai[0];
+                break;
+            }
+            (prev_x, prev_y) = (n.x, n.y);
+        }
+        assert!(hopped, "the pound hops at num = 56");
+        assert!(stuck_at_41 >= 5, "the charge fast-forwards to 41 airborne");
+        let s = shot.expect("the ogre still throws after landing");
+        assert_eq!(s.0, 683, "the stomp");
+        assert_eq!(s.5, 60, "the pound's classic damage (`:63089`)");
+        assert_eq!(throw_ai, 36.0, "case 2's num9 = 36 (`:63090`)");
+        // The same default throw shape, from the pound's muzzle
+        // (`:63097`: `(-direction * 20, height/2 - 1)`).
+        let (sx, sy) = (prev_x + 96.0 * 0.5 - 20.0, prev_y + 124.0 * 0.5 + 61.0);
+        let (pcx, pcy) = player.center();
+        let dx = pcx - sx;
+        let dy = pcy - sy - dx.abs() * 0.1;
+        let len = (dx * dx + dy * dy).sqrt();
+        let (vx0, vy0) = (dx / len * 11.0, dy / len * 11.0);
+        assert!(
+            (s.1 - (sx + vx0)).abs() < 1e-3 && (s.2 - (sy + vy0)).abs() < 1e-3,
+            "the stomp rides the same launch offset: ({}, {}) vs ({}, {})",
+            s.1,
+            s.2,
+            sx + vx0,
+            sy + vy0
+        );
+        assert!(
+            ((s.1 - sx).hypot(s.2 - sy) - 11.0).abs() < 1e-3,
+            "the stomp's speed is 11 too"
+        );
+        assert!(
+            (-0.5..0.5).contains(&(s.3 - vx0)) && (-0.5..0.5).contains(&(s.4 - vy0)),
+            "the stomp gets the jitter as well: ({}, {}) vs ({}, {})",
+            s.3,
+            s.4,
+            vx0,
+            vy0
+        );
+    }
+
+    /// `AI_107`'s idle sub-state (`NPC.cs:63078-63084`): case 0 sets only
+    /// `num5 = 44` — `flag3` stays false, so the charge cycles WITHOUT ever
+    /// throwing. The chase window is held open (`localAI[0] > 0`) and the
+    /// target sits inside the 130-160 px band so `ai[1]` stays 0.
+    #[test]
+    fn the_ogres_idle_sub_state_charges_without_throwing() {
+        let mut n = Npc::new(NpcKind::DD2OgreT2, 150.0 * TILE_PX, 112.0 * TILE_PX, 1, 0.0);
+        // The 300-tick chase latch, held far open: the sub-state pick keeps
+        // the idle arm instead of converting to the pound.
+        n.caster_counter = 100_000;
+        let world = fixture();
+        let mut player = Player::spawn(&world);
+        // ~100 px from the ogre's centre: under `num4 = 130` so the 44-tick
+        // charge arms, but the held chase window keeps `ai[1] = 0`.
+        player.x = 150.0 * TILE_PX + 96.0 * 0.5 + 100.0 - 10.0;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = UnifiedRandom::new(7);
+        let mut armed = false;
+        for _ in 0..300 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            assert_eq!(n.ai[1], 0.0, "the idle sub-state holds");
+            assert!(
+                n.wants_hostile_shot.is_empty(),
+                "case 0 sets no flag3 — no throw"
+            );
+            if n.ai[0] > 0.0 {
+                armed = true;
+            }
+        }
+        assert!(armed, "the 44-tick charge still cycles");
+    }
+
+    /// The charge's arming gate (`NPC.cs:63857`): alongside the grounded
+    /// and reach terms it needs `Collision.CanHit(...) ||
+    /// Collision.CanHitLine(...)` — a solid wall between the ogre and the
+    /// target blocks BOTH walks, so the spit never arms even inside the
+    /// 1000-px engage.
+    #[test]
+    fn the_ogre_needs_line_of_sight_to_arm_its_throw() {
+        let mut n = Npc::new(NpcKind::DD2OgreT2, 150.0 * TILE_PX, 112.0 * TILE_PX, 1, 0.0);
+        let mut world = fixture();
+        // A 20-tile solid column at x = 170 between the ogre (centre tile
+        // ~153) and the player (tile ~190) — both LOS walks step onto it.
+        for y in 100..120 {
+            let i = world.index(170, y);
+            world.tiles[i] = tr_core::Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        let mut player = Player::spawn(&world);
+        player.x = 190.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = UnifiedRandom::new(7);
+        for _ in 0..400 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            assert!(
+                n.wants_hostile_shot.is_empty(),
+                "no throw through the wall"
+            );
+            assert!(n.ai[0] <= 0.0, "the charge never arms: {}", n.ai[0]);
+        }
     }
 
     /// `AI_107`'s 570/571 arm (`NPC.cs:63145-63195`): the drakin's 671

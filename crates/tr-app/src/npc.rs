@@ -15471,8 +15471,13 @@ impl Npc {
     }
 
     /// `AI_107`'s 576/577 arm (`NPC.cs:63029-63122`) — the ogres: the
-    /// chase/spit/pound sub-state machine with the 676/683 throws and the
-    /// hop.
+    /// chase/spit/pound sub-state machine. The 676 spit throws at the
+    /// default `num9 = 35` and the 683 pound at `num9 = 36`, both riding the
+    /// AI_107 default throw shape (`:63881-63913`): speed `num10 = 11`,
+    /// ballistic drop `num15 = 0.1`, the ±0.5 jitter and the one-velocity
+    /// launch offset. The pound's hop (`:63914-63924`) clamps an airborne
+    /// charge to `num2 = 41` and slams `vy = -13` at `num = 56`; the idle
+    /// sub-state never throws (`flag3` stays false).
     fn update_ogre(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
@@ -15496,9 +15501,20 @@ impl Npc {
             // `:63072`: the sub-2 state latches the 300-tick chase window.
             self.caster_counter = 300;
         }
-        // `:63076-63117`'s per-sub-state tuning: the charge length, the
-        // engage distance, the cooldown and the throw's own tuning.
-        let (tick, engage, cooldown, proj, dmg, hop, ox, oy) = match self.ai[1] as i32 {
+        // `:63076-63117`'s per-sub-state tuning: the charge length (`num5`),
+        // the engage distance (`num4`), the cooldown (`num6`), the throw kind
+        // (`num12`), the classic damage (`num11`), the hop (`num`/`num3`,
+        // `flag4`), the muzzle offset (`vector`) and the throw tick (`num9`).
+        // W4-d14 doc-sweep: the ogre case-2/case-1 blocks override ONLY
+        // `num5/num4/num6/num9/num/num2/num3/num11/num12/vector` — the throw
+        // speed `num10 = 11f` (`:62952`), the ballistic drop `num15 = 0.1f`
+        // (`:62958`), the jitter `num16 = 0.5f` (`:62960`), the count
+        // `num17 = 1` (`:62961`) and the launch offset `num18 = 1f`
+        // (`:62962`) keep the AI_107 DEFAULTS (the 13/0.15 the first pass
+        // used are the DRAKIN's `:63163-63168`, not the ogre's). Case 1 keeps
+        // the default `num9 = num8/2 = 35` (`:62950-62951`); case 2 sets
+        // `num9 = 36` (`:63090`). Case 0 sets no `flag3` → NO throw.
+        let (tick, engage, cooldown, proj, dmg, hop, ox, oy, throw_at) = match self.ai[1] as i32 {
             2 => (
                 90.0,
                 250.0,
@@ -15508,6 +15524,7 @@ impl Npc {
                 56.0,
                 -20.0 * self.facing as f32,
                 h * 0.5 - 1.0,
+                36.0,
             ),
             1 => (
                 90.0,
@@ -15518,14 +15535,44 @@ impl Npc {
                 0.0,
                 30.0 * self.facing as f32,
                 -70.0,
+                35.0,
             ),
-            _ => (44.0, 130.0, 60.0, 676u16, 40, 0.0, 0.0, 0.0),
+            // Case 0 (`:63078-63084`): `num5 = 44` only — `flag3` stays
+            // false, so the idle sub-state never throws.
+            _ => (44.0, 130.0, 60.0, 0u16, 0, 0.0, 0.0, 0.0, 0.0),
         };
         // The flag5 charge (`:63850-63880`): the countdown, the damping and
-        // the cooldown.
+        // the cooldown. The arming gate (`:63857`) needs the target in line
+        // of sight — `Collision.CanHit(...) || Collision.CanHitLine(...)`
+        // over the two boxes — alongside the grounded (`vy == 0`, `flag6`
+        // false for the ogre) and reach terms.
         if self.ai[0] < 0.0 {
             self.ai[0] += 1.0;
-        } else if self.ai[0] == 0.0 && self.vy == 0.0 && dist < engage {
+        } else if self.ai[0] == 0.0
+            && self.vy == 0.0
+            && dist < engage
+            && (crate::projectile::can_hit(
+                world,
+                self.x,
+                self.y,
+                w,
+                h,
+                player.x,
+                player.y,
+                crate::player::WIDTH,
+                player.height,
+            ) || crate::projectile::can_hit_line(
+                world,
+                self.x,
+                self.y,
+                w,
+                h,
+                player.x,
+                player.y,
+                crate::player::WIDTH,
+                player.height,
+            ))
+        {
             self.ai[0] = tick;
         }
         if self.ai[0] > 0.0 {
@@ -15535,36 +15582,48 @@ impl Npc {
                 self.ai[0] = -cooldown;
             }
         }
-        // `:63916-63920`'s hop: at `num = 56` the ogre slams up.
-        if hop > 0.0 && self.ai[0] == hop {
-            self.vy = -13.0;
-        }
-        // `:63888-63913`'s throw: at `num9 = 36` the projectile leaves from
-        // the offset. W4-d14: the 683 stomp is NOT aimed — the case-2 block
-        // (`:63085-63101`) keeps the stock `num18 = 1f` launch offset and
-        // `vector2 = null`, so the velocity is the 13-speed aim vector PLUS
-        // the `RandomVector2(-0.5, 0.5)` jitter (`:63904`, two NextDouble
-        // draws on the UpdateNPCs stream) and the spawn point steps one
-        // velocity-length along the aim (`:63906`). The 676 spit keeps the
-        // port's existing aimed shape.
-        if (proj == 676 || proj == 683) && self.ai[0] == 36.0 {
+        // `:63881-63913`'s throw (`flag3`, at `num9`) — the C# block runs
+        // BEFORE the hop below (`:63914`), so an airborne ogre at the 36
+        // window still throws before the clamp fast-forwards the charge.
+        // The aim from the muzzle (`Center + vector`) to the target, the
+        // ballistic drop `v.Y -= Abs(v.X) * num15` (0.1),
+        // `SafeNormalize(-UnitY) * num10` (11), then — `vector2 = null` for
+        // the ogre — the `RandomVector2(-0.5, 0.5)` jitter (`:63904`, two
+        // NextDouble draws on the UpdateNPCs stream) and the
+        // `vector5 * num18` launch offset (`:63906`, num18 = 1). BOTH the
+        // 683 stomp and the 676 spit ride this shape (`num17 = 1` loop).
+        if throw_at > 0.0 && self.ai[0] == throw_at {
             let (sx, sy) = (cx + ox, cy + oy);
-            let drop = (pcx - sx).abs() * 0.15;
-            let (dx, dy) = (pcx - sx, pcy - sy - drop);
-            let len = (dx * dx + dy * dy).sqrt().max(1.0);
-            let speed = 13.0;
-            let (mut vx, mut vy) = (dx / len * speed, dy / len * speed);
-            let (mut px, mut py) = (sx, sy);
-            if proj == 683 {
-                // `:63904` — `Utils.RandomVector2(Main.rand, -0.5, 0.5)`
-                // (Utils.cs:2431-2434: `(max-min)*NextDouble + min` per axis).
-                vx += rng.next_double() as f32 - 0.5;
-                vy += rng.next_double() as f32 - 0.5;
-                // `:63906` — `vector7 += vector5 * num18` (num18 = 1).
-                px += dx / len * speed;
-                py += dy / len * speed;
-            }
+            let (dx, dy) = (pcx - sx, pcy - sy - (pcx - sx).abs() * 0.1);
+            // `SafeNormalize(-Vector2.UnitY)` (`:63893`): a zero delta keeps
+            // the -Y default rather than collapsing to zero.
+            let (nx, ny) = if dx == 0.0 && dy == 0.0 {
+                (0.0, -1.0)
+            } else {
+                let len = (dx * dx + dy * dy).sqrt();
+                (dx / len, dy / len)
+            };
+            let speed = 11.0;
+            let (vx0, vy0) = (nx * speed, ny * speed);
+            // `:63904` — `Utils.RandomVector2(Main.rand, -0.5, 0.5)`
+            // (Utils.cs:2431-2434: `(max-min)*NextDouble + min` per axis).
+            let vx = vx0 + rng.next_double() as f32 - 0.5;
+            let vy = vy0 + rng.next_double() as f32 - 0.5;
+            // `:63906` — `vector7 += vector5 * num18` (num18 = 1).
+            let (px, py) = (sx + vx0, sy + vy0);
             self.wants_hostile_shot.push((proj, px, py, vx, vy, dmg));
+        }
+        // `:63914-63924`'s hop (case 2's `flag4` only): while airborne
+        // (`vy != 0`) under `num2 = 41` the charge fast-forwards to 41
+        // (`:63916-63919`), then at `num = 56` the ogre slams up `vy = -13`
+        // (`num3`, `:63920-63923`).
+        if hop > 0.0 && self.ai[0] > 0.0 {
+            if self.vy != 0.0 && self.ai[0] < 41.0 {
+                self.ai[0] = 41.0;
+            }
+            if self.ai[0] == hop {
+                self.vy = -13.0;
+            }
         }
         // The walker physics (the shared `AI_107` body's accel/friction):
         // `num23 = 1.0`, `num24 = 0.07`, `num25 = 0.8`.
