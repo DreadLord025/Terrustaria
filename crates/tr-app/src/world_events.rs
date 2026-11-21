@@ -164,6 +164,29 @@ pub(crate) fn check_morning_lanterns(ev: &mut WorldEvents) {
     }
 }
 
+/// `NPC.OnGameEventClearedForTheFirstTime`'s lantern half (`NPC.cs:78769-
+/// 78793`): a boss/event's FIRST clear arms the next night as a lantern
+/// night. The C# `SetEventFlagCleared(ref flag, id)` (`:78759-78766`) calls
+/// this only on the flag's false→true edge, so the caller passes `first` =
+/// "the downed flag was false before this kill". The switch sets
+/// `NextNightIsLanternNight = true` for the default arm and cases 10
+/// (Moon Lord) / 16/17/18 (the mech trio); ONLY cases 4 (Pumpking), 21
+/// (Everscream) and 22 (SantaNK1) — the moon-event bosses — skip it. The
+/// case-10 credits roll and the case-16/17/18 Plantera-bulb generation are
+/// separate systems (the bulb pass is unported; recorded). The port's
+/// `game_event_id` is the C# `gameEventId` the death arms already cite.
+pub(crate) fn on_game_event_cleared(ev: &mut WorldEvents, game_event_id: i32, first: bool) {
+    if !first {
+        return;
+    }
+    // `NPC.cs:78789-78792`: the three moon-event bosses never arm it.
+    if matches!(game_event_id, 4 | 21 | 22) {
+        return;
+    }
+    // The default arm + cases 10/16/17/18 all set the flag (`:78773-78788`).
+    ev.next_night_is_lantern_night = true;
+}
+
 /// `BirthdayParty.CheckNight` (`BirthdayParty.cs:37-51`): the genuine party
 /// clears at dusk (its celebrating roster with it) and the manual one
 /// expires, with the "everyone has gone home" broadcast — `Lang.misc[99]`
@@ -367,6 +390,38 @@ mod tests {
         ev3.manual_lanterns = true;
         check_morning_lanterns(&mut ev3);
         assert!(!ev3.manual_lanterns);
+    }
+
+    /// W4-f40 — `NPC.OnGameEventClearedForTheFirstTime`'s lantern half
+    /// (`NPC.cs:78769-78793`): the first clear of a boss/event arms the next
+    /// lantern night, EXCEPT the three moon-event bosses (cases 4/21/22),
+    /// and only on the flag's false→true edge (`SetEventFlagCleared`).
+    #[test]
+    fn w4_f40_the_first_event_clear_arms_the_next_lantern_night() {
+        // The default arm + the mech/Moon-Lord cases all set the flag.
+        for id in [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 23, 24, 25] {
+            let mut ev = WorldEvents::default();
+            on_game_event_cleared(&mut ev, id, true);
+            assert!(ev.next_night_is_lantern_night, "event {id} arms the night");
+        }
+        // The moon-event bosses (Pumpking 4 / Everscream 21 / SantaNK1 22)
+        // never arm it (`NPC.cs:78789-78792`).
+        for id in [4, 21, 22] {
+            let mut ev = WorldEvents::default();
+            on_game_event_cleared(&mut ev, id, true);
+            assert!(!ev.next_night_is_lantern_night, "event {id} skips the night");
+        }
+        // The repeat clear (the flag already true) is a no-op — the C#
+        // `SetEventFlagCleared` only calls on the false→true edge.
+        let mut ev = WorldEvents::default();
+        on_game_event_cleared(&mut ev, 13, false);
+        assert!(!ev.next_night_is_lantern_night, "no re-arm on a repeat clear");
+        // The armed flag survives a later moon-event boss death (the C#
+        // never clears it here — only `CheckNight`'s override consumes it).
+        let mut ev = WorldEvents::default();
+        on_game_event_cleared(&mut ev, 13, true);
+        on_game_event_cleared(&mut ev, 4, true);
+        assert!(ev.next_night_is_lantern_night, "the armed flag persists");
     }
 
     #[test]
