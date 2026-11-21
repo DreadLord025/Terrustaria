@@ -6862,6 +6862,18 @@ impl Projectile {
     /// The rotation spins by `(|vx|+|vy|)·0.01·direction` (`:23952`). The
     /// dust/gore rolls (`:23883/:23973/:23983/:24035/:24039`) are SKIPPED.
     fn ai_falling_star(&mut self, world: &World) {
+        // W4-d15 — the natural FallingStar 12's daylight kill
+        // (`Projectile.cs:23841-23844`): non-remix daylight + the 1000
+        // starfall damage. The C# has NO early return — the rest of the
+        // arm runs on the dead slot (the port's kill convention zeroes
+        // time_left; the writes below land on the dead slot too).
+        if self.kind == NATURAL_FALLING_STAR
+            && world.day_time
+            && !world.seeds.contains(tr_core::seeds::SeedFlags::REMIX)
+            && self.damage == 1000
+        {
+            self.kill();
+        }
         if self.kind == STARFURY {
             // `:23865-23868` — `tileCollide = base.Bottom.Y >= this.ai[1]`.
             self.tile_collide = self.pos.y + self.h >= self.ai[1];
@@ -6907,6 +6919,13 @@ impl Projectile {
         // `AutomaticallyChangesDirection` `:17281-17288`, true for aiStyle 5).
         self.direction = if self.vel.x < 0.0 { -1 } else { 1 };
         self.rot += (self.vel.x.abs() + self.vel.y.abs()) * 0.01 * self.direction as f32;
+        // W4-d15 — the 12/955 block's unconditional light 0.9
+        // (`Projectile.cs:23982`); the block's screen-gated gore/dust
+        // draws (`:23973-23986`) and the soundDelay roll (`:23883`) are
+        // the i22 arm's recorded layer skips (the 955 precedent).
+        if self.kind == NATURAL_FALLING_STAR {
+            self.light = 0.9;
+        }
         // The movement: `HandleMovement`'s default tile arm (`:19849-19853`)
         // — the blocked hit kills. The 9's `tileCollide` is the latch above.
         self.kill_step(world);
@@ -16962,16 +16981,23 @@ impl ProjectilePool {
                         // i17 slice; the Starfury star 9 + the Star Cannon
                         // star 955 (S1-P-i22) ride the fuller i22 arm (the
                         // tileCollide latches + the alpha ramps + the spin).
-                        // The other aiStyle-5 kinds (12/503/723-726/1037/
+                        // The other aiStyle-5 kinds (503/723-726/1037/
                         // 1049/1133) have no rows yet — the arm stays
                         // kind-gated so they keep the no-op fall-through.
+                        // W4-d15: the natural FallingStar 12 (the 148
+                        // spawner's shot) joins the i22 machine — the
+                        // generic latch/alpha/spin arms serve it (the
+                        // 955 precedent) plus its daylight kill.
                         5 => {
                             if self.slots[i].kind == FALLING_STAR {
                                 crate::special_arrows::falling_star_step(
                                     &mut self.slots[i],
                                     world,
                                 );
-                            } else if matches!(self.slots[i].kind, STARFURY | STAR_CANNON_STAR) {
+                            } else if matches!(
+                                self.slots[i].kind,
+                                STARFURY | STAR_CANNON_STAR | NATURAL_FALLING_STAR
+                            ) {
                                 self.slots[i].ai_falling_star(world);
                             }
                         }
@@ -17380,7 +17406,7 @@ impl ProjectilePool {
                                         s.damage,
                                         s.knock_back,
                                         0.0,
-                                        0.0,
+                                        s.ai1.unwrap_or(0.0),
                                     );
                                 }
                             }
@@ -17452,6 +17478,43 @@ impl ProjectilePool {
                             // HandleMovement after the AI (`:17015`); the
                             // row keeps tileCollide = false (`:7566`).
                             self.slots[i].kill_step(world);
+                        }
+                        // W4-d15 — aiStyle 148: the starfall spawner 720
+                        // (`AI_148_StarSpawner`, `Projectile.cs:53094-
+                        // 53128`): the daylight kill, the day-rate age,
+                        // the one-shot background-star fall census and
+                        // the 180-age FallingStar 12 spawn. The owner
+                        // snapshot rides `set_dd2_owner`; a `None` link
+                        // holds the slot.
+                        148 => {
+                            if let Some(o) = self.dd2_owner {
+                                let tick = crate::projectile_ai_dd2::ai_star_spawner(
+                                    &mut self.slots[i],
+                                    &o,
+                                    world,
+                                    local_owner,
+                                    rng,
+                                );
+                                let owner_id = self.slots[i].owner;
+                                for s in tick.shots {
+                                    // `NewProjectile` centres the box
+                                    // (`:10876-10877`).
+                                    let _ = self.spawn_with_data_ai_owned(
+                                        s.kind,
+                                        owner_id,
+                                        s.x - proj_data(s.kind).map_or(0.0, |d| d.w) * 0.5,
+                                        s.y - proj_data(s.kind).map_or(0.0, |d| d.h) * 0.5,
+                                        s.vx,
+                                        s.vy,
+                                        s.damage,
+                                        s.knock_back,
+                                        0.0,
+                                        s.ai1.unwrap_or(0.0),
+                                    );
+                                }
+                            }
+                            // aiStyle 148 is on `UpdatePosition`'s skip
+                            // list (`:20435`) — NO free integrate runs.
                         }
                         // aiStyle 147 — the Celebration Mk2 rockets
                         // (`AI_147_Celeb2Rocket` `:52881-53092`): the

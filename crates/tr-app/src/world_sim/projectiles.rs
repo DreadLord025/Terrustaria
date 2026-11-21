@@ -286,6 +286,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             pet_flag_dd2_gato: p.pet_flags[usize::from(crate::projectile::DD2_PET_GATO)],
             pet_flag_upbeat_star: p.pet_flags[usize::from(crate::projectile::UPBEAT_STAR)],
             pet_flag_axe_fairy: p.pet_flags[usize::from(crate::projectile::AXE_FAIRY_PET)],
+            player_pos: Vec2::new(p.x, p.y),
         }
     });
     app.projectiles.set_dd2_owner(dd2_owner);

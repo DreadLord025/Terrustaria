@@ -1208,6 +1208,14 @@ pub const DD2_APPRENTICE_STORM: u16 = 704;
 /// `ProjectileID.DD2Win` (713) — the DD2 victory banner, aiStyle 146
 /// (an empty AI body, `Projectile.cs:53960-53962`; the row `:7560-7571`).
 pub const DD2_VICTORY: u16 = 713;
+/// `ProjectileID.FallingStarSpawner` (720) — the natural starfall's
+/// spawner, aiStyle 148 (`Projectile.cs:7617-7625`); at age 180 it spawns
+/// the FallingStar 12 (`AI_148_StarSpawner` `:53094-53128`).
+pub const FALLING_STAR_SPAWNER: u16 = 720;
+/// `ProjectileID.FallingStar` (12) — the natural starfall's star,
+/// aiStyle 5 (`Projectile.cs:924-938`). Distinct from the HallowStar 92
+/// ([`FALLING_STAR`], the Holy Arrow's death spawn).
+pub const NATURAL_FALLING_STAR: u16 = 12;
 /// `ProjectileID.UpbeatStar` (764) — the Upbeat Star pet, aiStyle 144
 /// (`Projectile.cs:7866-7878`).
 pub const UPBEAT_STAR: u16 = 764;
@@ -1614,6 +1622,9 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         // S1-P-i35 — the glow bobbers 987-993 (`Projectile.cs:9430-9434`):
         // `light = 1f` (the 986 plain override keeps the stock 0).
         987..=993 => 1.0,
+        // W4-d15 — the natural FallingStar's `light = 1f`
+        // (`Projectile.cs:936`).
+        NATURAL_FALLING_STAR => 1.0,
         _ => 0.0,
     }
 }
@@ -4074,6 +4085,21 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             DD2_VICTORY => (
                 10.0, 10.0, 146, -1, 900, 0, false, false, false,
                 (false, -2, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:7617-7625`: the starfall spawner (720):
+            // 16x16, aiStyle 148, tileCollide false, penetrate -1,
+            // alpha 255, stock 3600 life.
+            FALLING_STAR_SPAWNER => (
+                16.0, 16.0, 148, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:924-938`: the natural FallingStar (12):
+            // 18x18, aiStyle 5, penetrate -1, alpha 50, light 1f, trap,
+            // stock tileCollide true / 3600 life. `hostile` on remix
+            // (`:929-932`) rides the spawn seam (no data field).
+            NATURAL_FALLING_STAR => (
+                18.0, 18.0, 5, -1, TIME_LEFT_DEFAULT, 0, true, false, true,
+                (false, -2, false, -1, 50, 1.0),
             ),
             _ => return None,
         };

@@ -78,7 +78,7 @@ use crate::bow_launch::rotated_by;
 use crate::projectile::{
     AXE_FAIRY_PET, DD2_APPRENTICE_STORM, DD2_PET_DRAGON, DD2_PET_GATO, DD2_PET_GHOST,
     MONK_STAFF_T2, MONK_STAFF_T2_GHAST, MONK_STAFF_T3_ALT, MONK_STAFF_T3_ALT_SHOT, Projectile,
-    UPBEAT_STAR, proj_frames, safe_normalize_or, solid_collision, solid_tile,
+    UPBEAT_STAR, proj_data, proj_frames, safe_normalize_or, solid_collision, solid_tile,
 };
 
 /// The owner state the 142/144/148 arms read off `Main.player[owner]`
@@ -117,6 +117,8 @@ pub(crate) struct Dd2Owner {
     pub pet_flag_dd2_gato: bool,
     pub pet_flag_upbeat_star: bool,
     pub pet_flag_axe_fairy: bool,
+    /// `player.position` — the 148 surface gate (`:53105`).
+    pub player_pos: Vec2,
 }
 
 /// One queued sub-shot spawn — `(x, y)` are the C# `NewProjectile`
@@ -131,6 +133,9 @@ pub(crate) struct Dd2Shot {
     pub vy: f32,
     pub damage: i32,
     pub knock_back: f32,
+    /// `NewProjectile`'s trailing `ai1` argument — the 148's `10f`
+    /// (`:53126`); `None` keeps 0.
+    pub ai1: Option<f32>,
 }
 
 /// What the 142/148 arms hand back to the dispatch (the `FlailTick`
@@ -945,6 +950,96 @@ pub(crate) fn ai_dd2_victory(_p: &mut Projectile) {
     // `:53960-53962` — `{ }`. No state writes, no draws.
 }
 
+/// `AI_148_StarSpawner` (`Projectile.cs:53094-53128`) — the falling-star
+/// spawner 720 (the natural starfall, `WorldGen.cs:71828-71856`). Daylight
+/// kills (non-remix); the age climbs by `Main.dayRate`; the one-shot
+/// `localAI[0]` latch rolls the BACKGROUND-star fall census when the
+/// local player is above the surface; at 180 the spawner steers toward
+/// `Main.player[ai[1]]` (the −1 sentinel and every inactive index read
+/// the default 20×42 box at (0,0) → centre (10, 21), the `Player` ctor),
+/// spawns the FallingStar 12 (damage 1000, knockback 10, ai1 = 10) and
+/// kills.
+///
+/// RNG: `Star.StarFall` (`Star.cs:63-84`) picks the nearest non-hidden
+/// non-falling background star and `Star.Fall()` (`:160-169`) rolls
+/// `Next(700,1001)` then `Next(-400,401)` — the port has no
+/// falling-background-star machine (`render/sky.rs`'s `StarSprite` has
+/// no fall state), so the draws stay on the stream as the census and the
+/// visual fall is the recorded skip. The pick itself draws nothing; the
+/// no-star case (an empty sky) draws nothing either — the port's sky
+/// always carries stars (`make_stars` seeds 200-400), so the census
+/// folds the found-star branch. `Star.Fall`'s secret-seed gate
+/// (`WorldGen.cs:429` — `anySecretSeedIsActive`) suppresses BOTH draws
+/// on a secret-seed world (the `starGame` half has no port state, folds
+/// false). The one-shot gate keeps the C#'s `Main.netMode != 2` form as
+/// single-player true.
+pub(crate) fn ai_star_spawner(
+    p: &mut Projectile,
+    o: &Dd2Owner,
+    world: &World,
+    local_owner: u8,
+    rng: &mut dyn DropRng,
+) -> Dd2Tick {
+    let mut tick = Dd2Tick::default();
+    // `:53096-53100` — daylight kills (the remix world keeps flying).
+    let remix = world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
+    if world.day_time && !remix {
+        kill(p);
+        return tick;
+    }
+    // `:53101` — the day-rate age climb.
+    p.ai[0] += world.day_rate() as f32;
+    // `:53102-53109` — the one-shot background-star fall census.
+    if p.local_ai[0] == 0.0 {
+        p.local_ai[0] = 1.0;
+        if (o.player_pos.y as f64) < world.world_surface * 16.0 {
+            // `Star.Fall` (`Star.cs:162-168`) — the secret-seed gate.
+            if world.seeds.sum() == 0 {
+                let _ = rng.next_range(700, 1001); // the fallSpeed.Y roll
+                let _ = rng.next_range(-400, 401); // the fallSpeed.X roll
+            }
+        }
+    }
+    // `:53110-53113` — the owner + 180-age gate.
+    if p.owner != local_owner || p.ai[0] < 180.0 {
+        return tick;
+    }
+    // `:53114-53125` — the steer: ×0.35 drag, then the sign toward the
+    // target player's centre X.
+    if p.ai[1] > -1.0 {
+        p.vel.x *= 0.35;
+        let target_x = if p.ai[1] as i32 == local_owner as i32 {
+            o.center.x
+        } else {
+            // The inactive slot's default box centre (`Player` ctor:
+            // width 20, height 42, position (0,0)).
+            10.0
+        };
+        let center_x = p.pos.x + p.w * 0.5;
+        if center_x < target_x {
+            p.vel.x = p.vel.x.abs();
+        } else {
+            p.vel.x = -p.vel.x.abs();
+        }
+    }
+    // `:53126-53127` — the FallingStar 12 spawn at position (NOT centre
+    // — the C# passes base.position.X/Y; the dispatch recentres on the
+    // row's half-box, so the request pre-adds it) and the kill.
+    let d = proj_data(crate::projectile::NATURAL_FALLING_STAR);
+    tick.shots.push(Dd2Shot {
+        kind: crate::projectile::NATURAL_FALLING_STAR,
+        x: p.pos.x + d.map_or(0.0, |d| d.w) * 0.5,
+        y: p.pos.y + d.map_or(0.0, |d| d.h) * 0.5,
+        vx: p.vel.x,
+        vy: p.vel.y,
+        damage: 1000,
+        knock_back: 10.0,
+        ai1: Some(10.0),
+    });
+    kill(p);
+    tick
+}
+
 // Witnesses (W4-d15 code-only round — WRITTEN NOT RUN).
 
 #[cfg(test)]
@@ -1083,6 +1178,7 @@ mod tests {
             pet_flag_dd2_gato: false,
             pet_flag_upbeat_star: false,
             pet_flag_axe_fairy: false,
+            player_pos: Vec2::new(1600.0, 800.0),
         }
     }
 
@@ -1593,5 +1689,105 @@ mod tests {
         ai_dd2_victory(&mut p);
         assert_eq!((p.pos, p.vel, p.ai, p.alpha, p.time_left), before,
             "the empty body writes nothing");
+    }
+
+    /// The 720/12 rows are verbatim `SetDefaults`
+    /// (`Projectile.cs:7617-7625`/`:924-938`).
+    #[test]
+    fn the_starfall_rows_are_verbatim() {
+        use crate::projectile::{FALLING_STAR_SPAWNER, NATURAL_FALLING_STAR};
+        let d = proj_data(FALLING_STAR_SPAWNER).expect("the 720 row");
+        assert_eq!((d.w, d.h, d.ai_style), (16.0, 16.0, 148), ":7619-7621");
+        assert!(!d.tile_collide, ":7622");
+        assert_eq!(d.penetrate, -1, ":7623");
+        assert_eq!(d.alpha, 255, ":7624");
+        let d = proj_data(NATURAL_FALLING_STAR).expect("the 12 row");
+        assert_eq!((d.w, d.h, d.ai_style), (18.0, 18.0, 5), ":926-928");
+        assert_eq!(d.penetrate, -1, ":934");
+        assert_eq!(d.alpha, 50, ":935");
+        assert_eq!(d.light, 1.0, ":936");
+        assert!(d.trap, ":937");
+        assert!(d.tile_collide, "the stock :775 stands");
+    }
+
+    /// Daylight kills the spawner (non-remix); night lets it live. The
+    /// one-shot latch rolls the Star.Fall census (700..1001 then
+    /// −400..401) when the player is above the surface; the age climbs
+    /// by dayRate.
+    #[test]
+    fn the_spawner_daylight_kill_and_the_fall_census() {
+        use crate::projectile::FALLING_STAR_SPAWNER;
+        let mut w = world();
+        w.day_time = true;
+        let o = owner(0, 0);
+        let mut p = proj(FALLING_STAR_SPAWNER);
+        let mut rng = census();
+        let tick = ai_star_spawner(&mut p, &o, &w, 0, &mut rng);
+        assert!(!p.active, ":53098");
+        assert!(tick.shots.is_empty());
+        assert!(rng.ranges.is_empty(), "the kill precedes the latch");
+        // Night: the latch fires once, the census draws in order.
+        w.day_time = false;
+        let mut p = proj(FALLING_STAR_SPAWNER);
+        let tick = ai_star_spawner(&mut p, &o, &w, 0, &mut rng);
+        assert!(p.active);
+        assert_eq!(p.local_ai[0], 1.0, ":53104");
+        assert_eq!(p.ai[0], w.day_rate() as f32, ":53101");
+        assert_eq!(rng.ranges, vec![(700, 1001), (-400, 401)], "Star.cs:166-167");
+        assert!(tick.shots.is_empty(), "under 180");
+        // The second tick: the latch holds, no more draws.
+        let n = rng.ranges.len();
+        ai_star_spawner(&mut p, &o, &w, 0, &mut rng);
+        assert_eq!(rng.ranges.len(), n, ":53102 — the one-shot");
+        // Below the surface: no census at all.
+        let mut deep_o = o;
+        deep_o.player_pos = Vec2::new(1600.0, w.world_surface as f32 * 16.0 + 100.0);
+        let mut p2 = proj(FALLING_STAR_SPAWNER);
+        let mut rng2 = census();
+        ai_star_spawner(&mut p2, &deep_o, &w, 0, &mut rng2);
+        assert!(rng2.ranges.is_empty(), ":53105");
+        assert_eq!(p2.local_ai[0], 1.0, "the latch still fires");
+    }
+
+    /// At 180 the spawner steers toward the target centre (the −1
+    /// sentinel reads the inactive slot's (10, 21) centre), spawns the
+    /// 12 at position with damage 1000 / kb 10 / ai1 10, and kills.
+    #[test]
+    fn the_spawner_steer_spawn_and_kill() {
+        use crate::projectile::{FALLING_STAR_SPAWNER, NATURAL_FALLING_STAR};
+        let mut w = world();
+        w.day_time = false;
+        let o = owner(0, 0);
+        let mut p = proj(FALLING_STAR_SPAWNER);
+        p.ai[0] = 179.0;
+        p.ai[1] = -1.0;
+        p.pos = Vec2::new(1600.0, 400.0);
+        p.vel = Vec2::new(4.0, 6.0);
+        let mut rng = census();
+        // Tick 1: the latch + the age to 180 (dayRate 1) — the spawn
+        // fires on the SAME tick (ai[0] >= 180 after the climb).
+        let tick = ai_star_spawner(&mut p, &o, &w, 0, &mut rng);
+        assert!(!p.active, ":53127");
+        assert_eq!(tick.shots.len(), 1, ":53126");
+        let s = tick.shots[0];
+        assert_eq!(s.kind, NATURAL_FALLING_STAR);
+        assert_eq!(s.damage, 1000);
+        assert_eq!(s.knock_back, 10.0);
+        assert_eq!(s.ai1, Some(10.0));
+        // The steer: centre X 1608 > the inactive target 10 → negative.
+        assert!((s.vx - -(4.0 * 0.35)).abs() < 1e-4, ":53116-53123");
+        assert_eq!(s.vy, 6.0);
+        // The request pre-adds the half-box (the dispatch recentres).
+        assert_eq!(s.x, 1600.0 + 9.0);
+        assert_eq!(s.y, 400.0 + 9.0);
+        // A local-player target to the RIGHT flips the sign positive.
+        let mut p2 = proj(FALLING_STAR_SPAWNER);
+        p2.ai[0] = 180.0;
+        p2.ai[1] = 0.0; // the local owner
+        p2.local_ai[0] = 1.0; // the latch already spent
+        p2.pos = Vec2::new(100.0, 400.0);
+        p2.vel = Vec2::new(4.0, 6.0);
+        let tick2 = ai_star_spawner(&mut p2, &o, &w, 0, &mut rng);
+        assert!(tick2.shots[0].vx > 0.0, "the owner centre 1600 is right");
     }
 }
