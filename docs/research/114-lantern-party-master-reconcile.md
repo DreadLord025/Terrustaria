@@ -665,3 +665,89 @@ arm needs the helper route at merge — the cross-receipt above; the Queen
 Slime waits on its kind), and the eclipse is a non-event. WRITTEN NOT RUN
 (no new code this phase — the census is a doc verdict over the exec's
 already-landed arms).
+
+---
+
+## 10. Wind/rain gates — COMPOSE-VERIFY FINAL against d130-landed (`560a02ea`)
+
+d130's weather lane LANDED (research/83 FINAL, tip `560a02ea`): the f39
+UpdateTime fold (surface gate, slime-clock-first, branch-entry sampling,
+the `:64890` three-flag gate) + its OWN `Wind::lanterns_up` freeze
+(`50c845e5`'s weather half). c39's `f5ae8fc0` gates re-verified against
+that landed state, window by window (≤100-line reads, both tips):
+
+### 10a. The wind freeze — ONE gate, two names, identical truth table
+
+| Aspect | C# (`Main.cs:58830-58860`) | c39 (`wind.rs`, this branch) | d130 landed (`wind.rs:202-213`) | Verdict |
+| --- | --- | --- | --- | --- |
+| drift before the gate | `:58832-58849` ease-toward-target runs FIRST | `update_rain:184-198` before the returns | `:185-200` before the returns | IDENTICAL |
+| creative/client/menu gate | `:58850-58854` | `if self.frozen { return; }` | `if self.frozen { return; }` (`:205`) | IDENTICAL |
+| lantern gate | `:58856-58859`, NESTED inside `!FreezeWindDirectionAndStrength` | was `frozen \|\| lantern_night` one return — **now split into two sequential returns** (this phase) | `if self.lanterns_up { return; }` (`:211`), own return | IDENTICAL behaviour; the split makes the merge a mechanical rename |
+| what the gate skips | `windCounter--` + the walk + the ±0.8 clamp (`:58860-58950`) | counter/walk/clamp after the returns | same | IDENTICAL |
+
+The C# nest and two sequential returns are the same truth table: either
+gate alone skips the walk; both together skip it once; the drift ran
+either way. **Executed this phase:** the `||` split + a new compose
+witness `w4_c39_the_creative_and_lantern_freezes_compose_like_the_csharp_
+nest` (creative+lantern drifts bit-identically to either alone, counter
+untouched, target unwalked). The existing
+`w4_c39_the_lantern_night_freezes_the_wind_walk` stays (the drift-survives
+arm). **Merge: keep ONE flag** — `lantern_night` (c39, the §1f/anchors
+name) or `lanterns_up` (d130) — f40 research/105 §4's mechanical-rename
+verdict; the feed line (`weather.rs:171` c39 / `:165` d130) keeps ONE
+write. c39 samples inside the tick closure (per-iteration), d130 at the
+tick head (per-frame): both read BEFORE the lantern walk can move the
+flag; at one tick per frame they are the same read; under backlog
+catch-up c39's is fresher (the C# reads live) — the merge may keep
+either, the gate values only flip at UpdateTime/boundaries.
+
+### 10b. The rain gates — signature re-pinned to d130's landed order
+
+d130's landed `Rain::update_time` takes `(…, player_luck, slime_rain,
+lanterns_up, next_night_lanterns)` — the f39 shape, slime FIRST. c39's
+`f5ae8fc0` had `(…, lanterns_up, next_night_lantern, slime_rain)`.
+**Executed this phase:** c39's signature + the `weather.rs` call + the
+three gate-specific witness call sites re-pinned to d130's order (the
+all-false call sites are order-agnostic, untouched); the gate LOGIC was
+already identical (the `:64868-64871` StopRain arm — c39's early return
+vs d130's if/else: the arm exits the ladder either way — and the
+`:64890` three-flag start-arm block, each gate draw-free). The two
+lantern witnesses (`w4_c39_the_lantern_night_stops_rain_and_blocks_the_
+start_arms`, `w4_c39_the_lantern_head_clamps_the_storm_deck_before_the_
+drain`) keep every assertion; d130's twins
+(`the_lanterns_up_arm_stops_the_rain_without_draining_or_rolling`,
+`the_64890_gate_flags_close_the_start_arms_before_any_roll`) are the same
+rigs — the union keeps ONE pair (either; the assertions match).
+
+### 10c. Cross-receipts to d130 (merge obligations, NOT c39 code)
+
+1. **The storm-deck clamp is MISSING from d130's landed body.** d130's
+   `update_time` (`:678-693`) goes forced-check → ladybug drain — no
+   `:64825-64831` head. c39's head clamp (`lanterns_up → cloud_bg = 0`,
+   before the drain, draw-free; the numClouds cap outcome-neutral at the
+   100 stand-in) is UNIQUE (f40 research/105 §3 KEEP c39). **The merge
+   must graft c39's head into d130's body** — dropping it loses the
+   lantern-night storm-deck clear.
+2. **The persistence gate:** d130's landed tick keeps the base
+   `lantern_can_persist = !world.day_time` (`weather.rs:286`); c39's full
+   `!day_time && lanterns_can_start(&LanternGates::from_world(...))`
+   (`weather.rs:236-239`, the `LanternNight.cs:42-48` gate) is the KEEP
+   per f40 §3 — the merged tick takes c39's gate line.
+3. **The slime-clock/entry-sample restructure is d130's KEEP** (its f39
+   fold: clock BEFORE the rain section under the `:64846` surface gate,
+   `was_raining`/flag entry samples, the roll inside the else-if arm).
+   c39's tick still carries the pre-fold clock position (after the event
+   walks, ungated) — the merge takes d130's body for that region; c39's
+   gate ARGS feed it unchanged (the re-pin above makes the call
+   compile-compatible). c39 does NOT duplicate the restructure here.
+4. **`StartSlimeRain`'s `:64744` gate** (remix refusal + exclusive
+   `<= 50.0` surface) is d130's landed fix; c39's `start_slime_rain`
+   still has the pre-fold `<= 0.0` check — d130's body wins at merge,
+   no c39 action (out of the lantern-gate scope).
+
+**Compose verdict: the c39 gates compose cleanly with d130-landed.** The
+wind freeze is one gate under two names (split + compose witness landed
+here); the rain signature is re-pinned to the landed order; the two
+KEEP-c39 pieces d130's body lacks (the head clamp, the full persistence
+gate) are cross-receipted for the merge. All witnesses WRITTEN NOT RUN
+(code-only).

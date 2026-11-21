@@ -192,11 +192,12 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
             // (the C# falls back to a fresh `Player()`).
             app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0),
             // W4-c39: the three `Main.cs:64868`/`:64890` gates —
-            // `LanternNight.LanternsUp` (the stop-rain arm + the start-arm
-            // block), `NextNightIsLanternNight` and `Main.slimeRain`.
+            // `Main.slimeRain`, `LanternNight.LanternsUp` (the stop-rain
+            // arm + the start-arm block) and `NextNightIsLanternNight`.
+            // d130's landed arg order (slime first).
+            world.slime_rain,
             lanterns_up,
             app.world_events.next_night_is_lantern_night,
-            world.slime_rain,
         );
         // (4) `Main.cs:64963-64966`: the event walks — CultistRitual
         // (the delay decay + the recheck window's AnyDanger arm),

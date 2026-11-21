@@ -200,8 +200,19 @@ impl Wind {
         // `if (Main.netMode == 1 || (Main.netMode != 2 && Main.gameMenu)) return;`
         // `if (!CreativePower...Enabled) { if (LanternNight.LanternsUp) return; ... }`
         // (`Main.cs:58850-58859`) — W4-c39: the lantern night is its own
-        // early return, distinct from the creative freeze.
-        if self.frozen || self.lantern_night {
+        // early return, distinct from the creative freeze. The C# nests
+        // the lantern check INSIDE the `!FreezeWindDirectionAndStrength`
+        // block — the port's two sequential returns (`frozen` first,
+        // `lantern_night` second) are behaviourally identical (either
+        // gate skips the walk + the ±0.8 clamp; the drift above ran).
+        // d130's landed `Wind::lanterns_up` (research/83, tip 560a02ea)
+        // splits the same pair the same way — the merge keeps ONE flag
+        // under ONE name (f40 research/105 §4's mechanical-rename
+        // verdict; research/114 §10).
+        if self.frozen {
+            return;
+        }
+        if self.lantern_night {
             return;
         }
 
@@ -841,6 +852,47 @@ mod tests {
             lantern.speed_current > 0.0,
             "the drift still eases towards the target"
         );
+    }
+
+    /// W4-c39 final phase (research/114 §10) — the compose-verify against
+    /// d130's landed gate (`560a02ea`, research/83): the C# nests the
+    /// lantern check INSIDE the creative block (`Main.cs:58854-58859`),
+    /// so creative-frozen AND lanterns-up must behave exactly like either
+    /// alone: the drift ran, the walk + clamp skipped. The port's two
+    /// sequential returns (`frozen` then `lantern_night`) compose to the
+    /// same truth table as d130's split — one flag survives the merge
+    /// under one name (f40 research/105 §4), the behaviour is pinned here.
+    #[test]
+    fn w4_c39_the_creative_and_lantern_freezes_compose_like_the_csharp_nest() {
+        let mut both = Wind::new(11);
+        let mut creative = Wind::new(11);
+        let mut lantern = Wind::new(11);
+        for w in [&mut both, &mut creative, &mut lantern] {
+            w.counter = 1;
+            w.speed_current = 0.0;
+            w.speed_target = 0.3;
+        }
+        both.frozen = true;
+        both.lantern_night = true;
+        creative.frozen = true;
+        lantern.lantern_night = true;
+        for w in [&mut both, &mut creative, &mut lantern] {
+            w.update_rain(0.0);
+        }
+        // All three: the drift eased identically, the walk never ran.
+        assert_eq!(both.counter, 1, "both gates: no decrement");
+        assert_eq!(
+            both.speed_current.to_bits(),
+            creative.speed_current.to_bits(),
+            "creative+lantern drifts exactly like creative alone"
+        );
+        assert_eq!(
+            both.speed_current.to_bits(),
+            lantern.speed_current.to_bits(),
+            "creative+lantern drifts exactly like lantern alone"
+        );
+        assert!(both.speed_current > 0.0, "the drift ran under both gates");
+        assert_eq!(both.speed_target, 0.3, "the target walk skipped");
     }
 
     #[test]

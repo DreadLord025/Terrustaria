@@ -649,10 +649,12 @@ impl Rain {
     /// the raining branch (`:64864-64888`), then the not-raining start arms
     /// (`:64890-64923`). The slime-rain block after them (`:64925-64949`) rides
     /// the weather tick. `FreezeRainPower` does not exist in the port;
-    /// `lanterns_up`/`next_night_lantern` are the W4-c39 lantern gates
-    /// (`LanternNight.LanternsUp`/`NextNightIsLanternNight`), `slime_rain` is
-    /// `Main.slimeRain`. There is no `Main.dayTime` gate on the start arms
-    /// (only the slime roll is day-gated).
+    /// `slime_rain`/`lanterns_up`/`next_night_lanterns` are `Main.slimeRain`
+    /// / `LanternNight.LanternsUp` / `NextNightIsLanternNight` sampled at
+    /// the branch entry by the caller (W4-c39 gates; the arg ORDER is
+    /// d130's landed f39 shape, research/83 — slime first, the merge
+    /// keeps one signature). There is no `Main.dayTime` gate on the start
+    /// arms (only the slime roll is day-gated).
     pub(crate) fn update_time(
         &mut self,
         day_rate: i32,
@@ -660,9 +662,9 @@ impl Rain {
         any_player_120: bool,
         remix_world: bool,
         player_luck: f32,
-        lanterns_up: bool,
-        next_night_lantern: bool,
         slime_rain: bool,
+        lanterns_up: bool,
+        next_night_lanterns: bool,
     ) {
         // TR_RAIN pin / TR_NO_WEATHER: port-only scheduler switches — the pin
         // overrides the state machine exactly as the retired session schedule was
@@ -692,9 +694,11 @@ impl Rain {
         if self.raining {
             // `Main.cs:64864-64888` — the drain and the strength-change roll.
             // W4-c39: `:64868-64871` — the lantern night stops the rain
-            // outright (`Main.StopRain()`), no drain, no roll.
+            // outright (`Main.StopRain()`), no drain, no roll. The C#
+            // if/else shape (d130's landed form) — the arm exits the
+            // ladder either way, so the early return is equivalent.
             if lanterns_up {
-                self.stop_rain();
+                self.stop_rain(); // `:64870`
                 return;
             }
             self.rain_time -= day_rate; // `:64874`
@@ -708,7 +712,7 @@ impl Rain {
                     self.change_rain(); // `:64882-64885`
                 }
             }
-        } else if !slime_rain && !lanterns_up && !next_night_lantern {
+        } else if !slime_rain && !lanterns_up && !next_night_lanterns {
             // `Main.cs:64890-64923`: `!slimeRain && !LanternsUp &&
             // !NextNightIsLanternNight` — W4-c39 wires all three gates.
             let num2 = 86400 / if day_rate == 0 { 1 } else { day_rate }; // `:64892`
@@ -1846,7 +1850,7 @@ mod tests {
         rain.target = 0.8;
         rain.rain_time = 500;
         let state = rain.rng;
-        rain.update_time(1, &w, true, false, 0.0, true, false, false);
+        rain.update_time(1, &w, true, false, 0.0, false, true, false);
         assert!(!rain.is_raining(), "the lantern night stops the rain");
         assert_eq!(rain.max_raining(), 0.0);
         assert_eq!(rain.rain_time, 0, "StopRain pins rainTime to 0");
@@ -1859,13 +1863,13 @@ mod tests {
         let fire = (1..8_000_000u64)
             .find(|&s| StreamReplay::new(s).next_u64() % 496_800 == 0)
             .expect("a 496800 seed exists");
-        for (lanterns, next_night, slime) in
-            [(true, false, false), (false, true, false), (false, false, true)]
+        for (slime, lanterns, next_night) in
+            [(false, true, false), (false, false, true), (true, false, false)]
         {
             let mut gated = Rain::with_forced(fire, None, false);
             let before = gated.rng;
-            gated.update_time(1, &w, true, false, 0.0, lanterns, next_night, slime);
-            assert!(!gated.is_raining(), "gate ({lanterns},{next_night},{slime}) blocks");
+            gated.update_time(1, &w, true, false, 0.0, slime, lanterns, next_night);
+            assert!(!gated.is_raining(), "gate ({slime},{lanterns},{next_night}) blocks");
             assert_eq!(gated.rng, before, "no start roll under the gate");
         }
     }
@@ -1882,7 +1886,7 @@ mod tests {
         rain.cloud_bg = 0.8;
         rain.lady_bug_rain_boost = 100;
         let state = rain.rng;
-        rain.update_time(1, &w, true, false, 0.0, true, false, false);
+        rain.update_time(1, &w, true, false, 0.0, false, true, false);
         assert_eq!(rain.cloud_bg(), 0.0, "the lantern head clears the deck");
         assert_eq!(rain.lady_bug_rain_boost, 99, "the drain still runs");
         assert_eq!(rain.rng, state, "the clamp draws nothing");
