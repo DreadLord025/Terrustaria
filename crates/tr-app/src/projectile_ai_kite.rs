@@ -128,9 +128,10 @@ pub(crate) fn ai_wire_kite(
     p.vel = Vec2::ZERO;
     // `:35746-35823` — the two L-walk tile scans are dead reads in the
     // C# (module doc); not ported.
-    // `:35825-35832` — the owner writes.
-    let dir = (owner.vel_x as i32).signum();
-    if owner.vel_x != 0.0 && dir != 0 {
+    // `:35825-35832` — the owner writes. `Math.Sign(float)` is the float
+    // sign (-1/0/+1 on the RAW value, NOT the int-truncated one — a 0.5
+    // velocity still flips the facing).
+    if owner.vel_x != 0.0 {
         tick.facing = Some(if owner.vel_x > 0.0 { 1 } else { -1 });
     }
     tick.held_proj = true;
@@ -265,12 +266,16 @@ mod tests {
 
     #[test]
     fn the_velocity_sign_flips_the_facing() {
-        // `:35825-35829`: ChangeDir(Sign(velocity.X)) when non-zero.
+        // `:35825-35829`: ChangeDir(Sign(velocity.X)) when non-zero — the
+        // FLOAT sign, so a sub-1 velocity still flips.
         let mut p = kite(155.0, 315.0);
         let mut o = owner(true);
         o.vel_x = -3.0;
         let tick = ai_wire_kite(&mut p, o, Vec2::new(160.0, 320.0), false);
         assert_eq!(tick.facing, Some(-1));
+        o.vel_x = 0.5;
+        let tick = ai_wire_kite(&mut p, o, Vec2::new(160.0, 320.0), false);
+        assert_eq!(tick.facing, Some(1), "Math.Sign(0.5f) = 1");
         o.vel_x = 0.0;
         let tick = ai_wire_kite(&mut p, o, Vec2::new(160.0, 320.0), false);
         assert_eq!(tick.facing, None, "a standing player keeps the facing");

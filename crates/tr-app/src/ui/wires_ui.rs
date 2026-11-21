@@ -625,12 +625,14 @@ mod tests {
 
     #[test]
     fn the_badge_offsets_are_the_diamond_and_the_scaled_cross() {
-        // `WiresUI.cs:643-682`.
+        // `WiresUI.cs:643-682`. The 0.7 scale is f32: 12*0.7 = 8.3999996.
         assert_eq!(WiresRadial::badge_offset(0, true), Vec2::new(-12.0, 0.0));
         assert_eq!(WiresRadial::badge_offset(1, true), Vec2::new(-6.0, 12.0));
         assert_eq!(WiresRadial::badge_offset(5, true), Vec2::ZERO);
-        assert_eq!(WiresRadial::badge_offset(0, false), Vec2::new(0.0, -8.4));
-        assert_eq!(WiresRadial::badge_offset(2, false), Vec2::new(0.0, 8.4));
+        let o = WiresRadial::badge_offset(0, false);
+        assert!((o.y + 8.4).abs() < 1e-5, "y {}", o.y);
+        let o = WiresRadial::badge_offset(2, false);
+        assert!((o.y - 8.4).abs() < 1e-5, "y {}", o.y);
     }
 
     #[test]
@@ -657,7 +659,10 @@ mod tests {
         };
         w.line_update(true, true, &inp);
         assert!((w.line_opacity - 0.05).abs() < 1e-6);
-        for _ in 0..14 {
+        // 13 more steps: 0.10 .. 0.65, then the 14th snaps 0.65 → 0.75
+        // (the remainder 0.05 is NOT < 0.05, so the step lands 0.70 and
+        // the snap pulls it to 0.75 — the C#'s double-step quirk).
+        for _ in 0..13 {
             w.line_update(true, true, &inp);
         }
         assert!((w.line_opacity - 0.75).abs() < 1e-6, "got {}", w.line_opacity);

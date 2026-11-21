@@ -331,9 +331,9 @@ mod tests {
     fn the_multi_channel_mix_walks_the_running_count() {
         // Red+Blue+Green: num246 2→3→4. After Red (191,63,63); Blue at
         // 1/3: (127.33→127, 42, 127.66→127); Green at 1/4: (95.25→95,
-        // 106.5→106, 95.25→95).
+        // 42+(255-42)*0.25 = 95.25→95, 127+(0-127)*0.25 = 95.25→95).
         let (c47, _) = ghost_colors(mode::RED | mode::BLUE | mode::GREEN);
-        assert_eq!(c47, [95, 106, 95, 255]);
+        assert_eq!(c47, [95, 95, 95, 255]);
     }
 
     #[test]
