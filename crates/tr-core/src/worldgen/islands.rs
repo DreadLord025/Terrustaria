@@ -22,16 +22,24 @@
 //! the door-side flip, the ground scan, the style-9 door, the chest cycle
 //! (S1-A-4), the wall-21 windows, the table/chairs/banners.
 //!
-//! Deferred (ANALYSIS): the drunk snow/desert island variants + their
-//! fountain/palm house arms, the remix/getGood style tables, the skyblock
-//! worldgen terrain (the SKYBLOCK bit gates the clear window + the deny
-//! gate only), `SquareTileFrame` after the house writes (the chain's
-//! framing passes run later — the temple precedent).
+//! The drunk snow/desert variant islands (`SnowCloudIsland`
+//! `:77346-77737` / `DesertCloudIsland` `:77739-78130` — one shared port,
+//! the bodies are line-identical bar four constants) and the full
+//! remix/getGood/anniversary style tables (`:13090-13103` + the
+//! `IslandHouse` door/furniture/window/banner switches) land with the
+//! fountain (`:79377-79392`) and palm (`:79462-79483`) house arms.
+//!
+//! Deferred (ANALYSIS): the skyblock worldgen terrain (f24 owns
+//! `GenerateSkyBlockWorld`; the island-side skyblock arms — the `/42`
+//! budget, the fixed y line, the clear window, the deny gate — are
+//! here), `SquareTileFrame` after the house writes (the chain's framing
+//! passes run later — the temple precedent).
 
 use super::pipeline::GenVars;
 use super::structures::place_chest;
 use crate::seeds::{MicroSeedFlags, SeedFlags};
 use crate::tile::{FLAG_ACTIVE, FLAG_HALF_BRICK, Tile};
+use crate::tiledata as td;
 use crate::world::World;
 
 pub(crate) const TILE_CLOUD: u16 = 189;
@@ -165,6 +173,455 @@ fn build_island(world: &mut World, cx: i32, cy: i32, radius: i32, lake: bool, rn
     flood_cloud_walls(world, cx, cy, radius);
 }
 
+/// `WorldGen.SolidTile` (`WorldGen.cs:70111-70131`) — the variant-blob
+/// predicate: active, solid, NOT solid-top, no half/slope/actuation
+/// (the `WillWaterPlacedHereStayPut` floor test).
+fn solid_block(world: &World, x: i32, y: i32) -> bool {
+    world.tile(x, y).is_some_and(|t| {
+        t.active()
+            && !t.inactive()
+            && td::TILE_SOLID.has(t.kind)
+            && !td::TILE_SOLID_TOP.has(t.kind)
+            && !t.half_brick()
+            && t.slope() == 0
+    })
+}
+
+/// `WorldGen.WillWaterPlacedHereStayPut` (`WorldGen.cs:78530-78537`):
+/// the cell below AND both side cells are solid non-top tiles or already
+/// hold full liquid.
+fn will_water_placed_here_stay_put(world: &World, x: i32, y: i32) -> bool {
+    let held = |px: i32, py: i32| {
+        solid_block(world, px, py) || world.tile(px, py).is_some_and(|t| t.liquid == 255)
+    };
+    held(x, y + 1) && held(x - 1, y) && held(x + 1, y)
+}
+
+/// `SecretSeed.surfaceIsInSpace`'s cloud-clear column strip
+/// (`WorldGen.cs:77405-77423` / `:77798-77816`): under
+/// surfaceIsInSpace && !errorWorld every cloud tile above the ragged
+/// surface line deactivates before the ring writes.
+fn surface_in_space_clear(world: &mut World, active: bool, k: i32, cap: f64) {
+    if !active {
+        return;
+    }
+    let cap = cap as i32;
+    for l in 0..=cap {
+        if let Some(t) = world.tile_mut(k, l) {
+            if td::SET_CLOUDS.has(t.kind) {
+                t.flags &= !FLAG_ACTIVE;
+            }
+        }
+    }
+}
+
+/// The shared drift step of both ring walks (`:77456-77473` etc.):
+/// the centre moves, the x-drift accumulates `Next(-20,21)*0.05` clamped
+/// to ±1, the y-drift pins to −0.2 past either bound (the C# writes
+/// −0.2 on BOTH arms — kept verbatim).
+fn drift(v: &mut (f64, f64), dv: &mut (f64, f64), rng: &mut super::Rng) {
+    v.0 += dv.0;
+    v.1 += dv.1;
+    dv.0 += rng.range(-20, 21) as f64 * 0.05;
+    if dv.0 > 1.0 {
+        dv.0 = 1.0;
+    }
+    if dv.0 < -1.0 {
+        dv.0 = -1.0;
+    }
+    if dv.1 > 0.2 {
+        dv.1 = -0.2;
+    }
+    if dv.1 < -0.2 {
+        dv.1 = -0.2;
+    }
+}
+
+/// The variant island's first ring walk (`SnowCloudIsland`
+/// `:77348-77474` / `DesertCloudIsland` `:77741-77867`): the
+/// `Next(100,150)` budget shrinking by `Next(4)` per ring over
+/// `Next(20,30)` rings, the ragged per-column surface line, the drifting
+/// ellipse (`|dx|, 3|dy|` vs `num2 * 0.4`) writing cloud 189, tracking
+/// the body bounds. Returns `(min_x, max_x, min_y, max_y)`.
+fn variant_body_ring(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    space_clear: bool,
+    rng: &mut super::Rng,
+) -> (i32, i32, i32, i32) {
+    let mut num = rng.range(100, 150) as f64;
+    let mut num3 = rng.range(20, 30);
+    let (mut num4, mut num5, mut num6, mut num7) = (i, i, j, j);
+    let mut v = (i as f64, j as f64);
+    let mut dv = (rng.range(-20, 21) as f64 * 0.2, 0.0);
+    while dv.0 > -2.0 && dv.0 < 2.0 {
+        dv.0 = rng.range(-20, 21) as f64 * 0.2;
+    }
+    dv.1 = rng.range(-20, -10) as f64 * 0.02;
+    while num > 0.0 && num3 > 0 {
+        num -= rng.range(0, 4) as f64;
+        num3 -= 1;
+        let num8 = ((v.0 - num * 0.5) as i32).max(0);
+        let num9 = ((v.0 + num * 0.5) as i32).min(world.width);
+        let num10 = ((v.1 - num * 0.5) as i32).max(0);
+        let num11 = ((v.1 + num * 0.5) as i32).min(world.height);
+        let num2 = num * rng.range(80, 120) as f64 * 0.01;
+        let mut num12 = v.1 + 1.0;
+        for k in num8..num9 {
+            if rng.range(0, 2) == 0 {
+                num12 += rng.range(-1, 2) as f64;
+            }
+            num12 = num12.clamp(v.1, v.1 + 2.0);
+            surface_in_space_clear(world, space_clear, k, num12.clamp(num10 as f64, num11 as f64));
+            for m in num10..num11 {
+                if m as f64 <= num12 {
+                    continue;
+                }
+                let dx = (k as f64 - v.0).abs();
+                let dy = (m as f64 - v.1).abs() * 3.0;
+                if (dx * dx + dy * dy).sqrt() < num2 * 0.4 {
+                    num4 = num4.min(k);
+                    num5 = num5.max(k);
+                    num6 = num6.min(m);
+                    num7 = num7.max(m);
+                    // `:77450-77452`: RAW active + type 189 (no liquid/
+                    // slope reset); SquareTileFrame rides the chain-
+                    // framing deviation.
+                    if let Some(t) = world.tile_mut(k, m) {
+                        t.flags |= FLAG_ACTIVE;
+                        t.kind = TILE_CLOUD;
+                    }
+                }
+            }
+        }
+        drift(&mut v, &mut dv, rng);
+    }
+    (num4, num5, num6, num7)
+}
+
+/// The variant island's underside blob loop (`:77476-77507` /
+/// `:77869-77900`): blobs of `Next(4,8)` radius hanging below the body,
+/// 1-in-4 taking the variant kind (snow cloud 460 / rain cloud 196).
+/// The C# `for` increment reads `num17` only AFTER the first body pass
+/// assigned it — the port's while-loop keeps that order (no primed
+/// draw).
+#[allow(clippy::too_many_arguments)]
+fn variant_underside_blobs(
+    world: &mut World,
+    bounds: (i32, i32, i32, i32),
+    blob_kind: u16,
+    rng: &mut super::Rng,
+) {
+    let (num4, num5, num6, num7) = bounds;
+    let mut num17 = 0; // assigned by the body before the step reads it
+    let mut n = num4 + rng.range(0, 5);
+    while n < num5 {
+        let mut num16 = num7;
+        while super::temple::in_world(world, n, num16, 15)
+            && !world.tile(n, num16).is_some_and(|t| t.active())
+        {
+            num16 -= 1;
+        }
+        num16 += rng.range(-3, 4);
+        num17 = rng.range(4, 8);
+        let num18 = if rng.range(0, 4) == 0 { blob_kind } else { TILE_CLOUD };
+        for num19 in (n - num17)..=(n + num17) {
+            for num20 in (num16 - num17)..=(num16 + num17) {
+                if num20 <= num6 {
+                    continue;
+                }
+                let dx = (num19 - n).abs() as f64;
+                let dy = (num20 - num16).abs() as f64 * 2.0;
+                if (dx * dx + dy * dy).sqrt() < (num17 + rng.range(0, 2)) as f64 {
+                    // The blob writes are RAW (`:77500-77502`): active +
+                    // type, no liquid/slope reset (unlike the body ring).
+                    if let Some(t) = world.tile_mut(num19, num20) {
+                        t.flags |= FLAG_ACTIVE;
+                        t.kind = num18;
+                    }
+                }
+            }
+        }
+        n += rng.range(num17, (num17 as f64 * 1.5) as i32);
+    }
+}
+
+/// The variant island's second ring walk (`:77508-77591` /
+/// `:77901-77984`): a `Next(80,95)` budget over `Next(10,15)` rings
+/// centred on the body's TOP row, RETYPING cloud 189 cells inside the
+/// ellipse to the surface kind (snow 147 / sand 53).
+fn variant_surface_ring(
+    world: &mut World,
+    i: i32,
+    top: i32,
+    surface_kind: u16,
+    rng: &mut super::Rng,
+) {
+    let mut num = rng.range(80, 95) as f64;
+    let mut num3 = rng.range(10, 15);
+    let mut v = (i as f64, top as f64);
+    let mut dv = (rng.range(-20, 21) as f64 * 0.2, 0.0);
+    while dv.0 > -2.0 && dv.0 < 2.0 {
+        dv.0 = rng.range(-20, 21) as f64 * 0.2;
+    }
+    dv.1 = rng.range(-20, -10) as f64 * 0.02;
+    while num > 0.0 && num3 > 0 {
+        num -= rng.range(0, 4) as f64;
+        num3 -= 1;
+        let num8 = ((v.0 - num * 0.5) as i32).max(0);
+        let num9 = ((v.0 + num * 0.5) as i32).min(world.width);
+        let num10 = (top - 1).max(0);
+        let num11 = ((v.1 + num * 0.5) as i32).min(world.height);
+        let num2 = num * rng.range(80, 120) as f64 * 0.01;
+        let mut num23 = v.1 + 1.0;
+        for num24 in num8..num9 {
+            if rng.range(0, 2) == 0 {
+                num23 += rng.range(-1, 2) as f64;
+            }
+            num23 = num23.clamp(v.1, v.1 + 2.0);
+            for num25 in num10..num11 {
+                if num25 as f64 <= num23 {
+                    continue;
+                }
+                let dx = (num24 as f64 - v.0).abs();
+                let dy = (num25 as f64 - v.1).abs() * 3.0;
+                if (dx * dx + dy * dy).sqrt() < num2 * 0.4
+                    && world.tile(num24, num25).is_some_and(|t| t.kind == TILE_CLOUD)
+                {
+                    let idx = world.index(num24, num25);
+                    world.tiles[idx].kind = surface_kind;
+                }
+            }
+        }
+        drift(&mut v, &mut dv, rng);
+    }
+}
+
+/// The variant island's surface-pocket loop (`:77592-77629` /
+/// `:77985-78022`): scan for surface-kind columns, punch cloud-189
+/// pockets of `Next(2,5)` radius into them. The C#'s `continue` on an
+/// exhausted scan re-tests the outer `while (num28 < num5)` and exits —
+/// the port's `break` is the same hop.
+fn variant_surface_pockets(
+    world: &mut World,
+    bounds: (i32, i32, i32, i32),
+    surface_kind: u16,
+    rng: &mut super::Rng,
+) {
+    let (num4, num5, num6, num7) = bounds;
+    let mut num28 = num4 + rng.range(0, 5);
+    while num28 < num5 {
+        let mut num29 = num7;
+        while num28 < num5
+            && !world
+                .tile(num28, num29)
+                .is_some_and(|t| t.active() && t.kind == surface_kind)
+        {
+            num29 -= 1;
+            if num29 < num6 {
+                num29 = num7;
+                num28 += rng.range(1, 4);
+            }
+        }
+        if num28 >= num5 {
+            break; // `:77605-77608`: the C# continue re-tests the outer while
+        }
+        num29 += rng.range(0, 4);
+        let num30 = rng.range(2, 5);
+        for num32 in (num28 - num30)..=(num28 + num30) {
+            for num33 in (num29 - num30)..=(num29 + num30) {
+                if num33 <= num6 {
+                    continue;
+                }
+                let dx = (num32 - num28).abs() as f64;
+                let dy = (num33 - num29).abs() as f64 * 2.0;
+                if (dx * dx + dy * dy).sqrt() < num30 as f64 {
+                    if let Some(t) = world.tile_mut(num32, num33) {
+                        t.kind = TILE_CLOUD; // `:77622` sets type only
+                    }
+                }
+            }
+        }
+        num28 += rng.range(num30, (num30 as f64 * 1.5) as i32);
+    }
+}
+
+/// The variant island's per-column water pass (`:77652-77696` /
+/// `:78045-78089`): find each column's top surface row, 1-in-10 carve a
+/// `Next(1,3)`-wide 2/3-row pool, 1-in-5 wet the surface cell.
+fn variant_column_water(
+    world: &mut World,
+    bounds: (i32, i32, i32, i32),
+    rng: &mut super::Rng,
+) {
+    let (num4, num5, num6, num7) = bounds;
+    for num40 in num4..=num5 {
+        // `:77655`: scan down from num6-10 for the first active row
+        // below. The C# scan is unbounded (it always lands on terrain);
+        // the port stops at the world floor (the sub-vanilla valve).
+        let mut num41 = num6 - 10;
+        while num41 + 1 < world.height
+            && !world.tile(num40, num41 + 1).is_some_and(|t| t.active())
+        {
+            num41 += 1;
+        }
+        if num41 >= num7
+            || !world.tile(num40, num41 + 1).is_some_and(|t| t.kind == TILE_CLOUD)
+        {
+            continue;
+        }
+        if rng.range(0, 10) == 0 {
+            let num42 = rng.range(1, 3);
+            for num43 in (num40 - num42)..=(num40 + num42) {
+                // `:77667-77673`: the top row.
+                if world.tile(num43, num41).is_some_and(|t| t.kind == TILE_CLOUD)
+                    && will_water_placed_here_stay_put(world, num43, num41)
+                {
+                    if let Some(t) = world.tile_mut(num43, num41) {
+                        t.flags &= !FLAG_ACTIVE;
+                        t.liquid = 255;
+                        t.set_liquid_kind(crate::tile::LiquidKind::Water);
+                    }
+                }
+                // `:77674-77680`: the second row.
+                if world.tile(num43, num41 + 1).is_some_and(|t| t.kind == TILE_CLOUD)
+                    && will_water_placed_here_stay_put(world, num43, num41 + 1)
+                {
+                    if let Some(t) = world.tile_mut(num43, num41 + 1) {
+                        t.flags &= !FLAG_ACTIVE;
+                        t.liquid = 255;
+                        t.set_liquid_kind(crate::tile::LiquidKind::Water);
+                    }
+                }
+                // `:77681-77687`: the third row, the inner columns only.
+                if num43 > num40 - num42
+                    && num43 < num40 + 2
+                    && world.tile(num43, num41 + 2).is_some_and(|t| t.kind == TILE_CLOUD)
+                    && will_water_placed_here_stay_put(world, num43, num41 + 2)
+                {
+                    if let Some(t) = world.tile_mut(num43, num41 + 2) {
+                        t.flags &= !FLAG_ACTIVE;
+                        t.liquid = 255;
+                        t.set_liquid_kind(crate::tile::LiquidKind::Water);
+                    }
+                }
+            }
+        }
+        if rng.range(0, 5) == 0 && will_water_placed_here_stay_put(world, num40, num41) {
+            if let Some(t) = world.tile_mut(num40, num41) {
+                t.liquid = 255;
+            }
+        }
+        if let Some(t) = world.tile_mut(num40, num41) {
+            t.set_liquid_kind(crate::tile::LiquidKind::Water);
+        }
+    }
+}
+
+/// The variant island's satellite puffs (`:77697-77736` /
+/// `:78090-78129`): `Next(4)`+1 small clouds above the body, 50/50 the
+/// variant kind, each with a water cell on its top surface.
+fn variant_satellites(
+    world: &mut World,
+    bounds: (i32, i32, i32, i32),
+    puff_kind: u16,
+    rng: &mut super::Rng,
+) {
+    let (num4, num5, num6, _num7) = bounds;
+    let num44 = rng.range(0, 4);
+    for _num45 in 0..=num44 {
+        let num46 = rng.range(num4 - 5, num5 + 5);
+        let num47 = num6 - rng.range(20, 40);
+        let num48 = rng.range(4, 8);
+        let num49 = if rng.range(0, 2) == 0 { puff_kind } else { TILE_CLOUD };
+        for num50 in (num46 - num48)..=(num46 + num48) {
+            for num51 in (num47 - num48)..=(num47 + num48) {
+                let dx = (num50 - num46).abs() as f64;
+                let dy = (num51 - num47).abs() as f64 * 2.0;
+                if (dx * dx + dy * dy).sqrt() < (num48 + rng.range(-1, 2)) as f64 {
+                    // `:77716-77718`: RAW active + type.
+                    if let Some(t) = world.tile_mut(num50, num51) {
+                        t.flags |= FLAG_ACTIVE;
+                        t.kind = num49;
+                    }
+                }
+            }
+        }
+        for num54 in (num46 - num48 + 2)..=(num46 + num48 - 2) {
+            let mut num55 = num47 - num48;
+            while num55 < world.height
+                && !world.tile(num54, num55).is_some_and(|t| t.active())
+            {
+                num55 += 1;
+            }
+            if will_water_placed_here_stay_put(world, num54, num55) {
+                if let Some(t) = world.tile_mut(num54, num55) {
+                    t.flags &= !FLAG_ACTIVE;
+                    t.liquid = 255;
+                    t.set_liquid_kind(crate::tile::LiquidKind::Water);
+                }
+            }
+        }
+    }
+}
+
+/// `SnowCloudIsland` (`WorldGen.cs:77346-77737`) / `DesertCloudIsland`
+/// (`:77739-78130`), verbatim: the two bodies are line-identical except
+/// four constants — the underside/satellite kind (460 snow cloud vs 196
+/// rain cloud) and the surface kind (147 snow vs 53 sand). One port,
+/// `snow` selects the pair. The wall-73 flood rides the shared
+/// `flood_cloud_walls` (the C# bounds `num4..num5 × num6..num7 ±20` are
+/// the body bbox; the port's disc-radius box is the compact shape's
+/// equivalent — recorded). Returns the body bbox for the flood.
+fn variant_cloud_island(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    snow: bool,
+    space_clear: bool,
+    rng: &mut super::Rng,
+) {
+    let (blob_kind, surface_kind) = if snow { (460u16, 147u16) } else { (196, 53) };
+    let bounds = variant_body_ring(world, i, j, space_clear, rng);
+    variant_underside_blobs(world, bounds, blob_kind, rng);
+    variant_surface_ring(world, i, bounds.2, surface_kind, rng);
+    variant_surface_pockets(world, bounds, surface_kind, rng);
+    // `:77630-77651`: the wall-73 flood over the body bbox ±20.
+    flood_cloud_walls_bbox(world, bounds);
+    variant_column_water(world, bounds, rng);
+    variant_satellites(world, bounds, blob_kind, rng);
+}
+
+/// The wall-73 flood at the variant body's bbox (`:77630-77651` /
+/// `:78023-78044`) — the same 3×3 test as `flood_cloud_walls`, the C#
+/// bbox bounds instead of the compact disc's radius box.
+fn flood_cloud_walls_bbox(world: &mut World, bounds: (i32, i32, i32, i32)) {
+    let (num4, num5, num6, num7) = bounds;
+    for x in (num4 - 20)..=(num5 + 20) {
+        for y in (num6 - 20)..=(num7 + 20) {
+            if x < 1 || y < 1 || x >= world.width - 1 || y >= world.height - 1 {
+                continue;
+            }
+            let mut clear = true;
+            for nx in (x - 1)..=(x + 1) {
+                for ny in (y - 1)..=(y + 1) {
+                    let ok = world.tile(nx, ny).is_some_and(|t| {
+                        t.active() && (t.wall == 0 || t.wall == WALL_CLOUD)
+                    });
+                    if !ok {
+                        clear = false;
+                    }
+                }
+            }
+            if clear {
+                let i = world.index(x, y);
+                world.tiles[i].wall = WALL_CLOUD;
+            }
+        }
+    }
+}
+
 /// `SecretSeed.Variations.errorWorldAdjustment` (`WorldGen.cs:329-336`):
 /// `< 1` active seeds → 4, else `(int)(value * ((count + 3) / 4))` — the
 /// C#'s INTEGER division inside the cast.
@@ -243,6 +700,7 @@ pub(crate) fn pass_floating_islands(
     gv: &mut GenVars,
     rng: &mut super::Rng,
     surface_low: f64,
+    crimson: bool,
 ) -> i32 {
     // `:12929`: the deny gates.
     if deny_floating_islands(world) || no_surface_no_floating_islands(world) {
@@ -405,30 +863,76 @@ pub(crate) fn pass_floating_islands(
                     flag3 = true;
                 }
             }
-            // `:13066-13106`: the body. The drunk snow/desert variants and
-            // the remix/getGood num10 style table are deferred (the module
-            // doc) — the classic arm is style 0 + the compact disc.
-            let num10 = 0;
-            // The compact disc's radius draw (the M1.4-WGEN-4 stand-in for
-            // `CloudIsland`/`CloudLake`'s `Next(100,150)` ring budget).
-            let radius = rng.range(40, 61);
+            // `:13066-13106`: the body. The drunk (non-remix) world rolls
+            // snow 3 / desert 1 variant islands (`:13075-13087`); the
+            // classic/remix arm runs CloudIsland with the num10 style
+            // table (`:13090-13103`).
+            let mut num10 = 0;
+            let drunk = world.seeds.contains(SeedFlags::DRUNK);
+            let remix = world.seeds.contains(SeedFlags::REMIX);
+            let anniversary = world.seeds.contains(SeedFlags::TENTH_ANNIVERSARY);
+            let get_good = world.seeds.contains(SeedFlags::FOR_THE_WORTHY);
+            let not_the_bees = world.seeds.contains(SeedFlags::NOT_THE_BEES);
+            let space_clear = world
+                .micro_seeds
+                .contains(MicroSeedFlags::SURFACE_IS_IN_SPACE)
+                && !error;
             if flag3 {
                 flag = true;
+                // The compact disc's radius draw (the M1.4-WGEN-4
+                // stand-in for `CloudLake`'s `Next(100,150)` ring
+                // budget).
+                let radius = rng.range(40, 61);
                 build_island(world, num7, num11, radius, true, rng);
+                gv.sky_lake.push(true);
+                gv.island_house_y.push(num11 - radius / 2);
             } else {
-                build_island(world, num7, num11, radius, false, rng);
+                gv.sky_lake.push(false);
+                if drunk && !remix {
+                    // `:13077-13086`: the Next(2) snow/desert split — the
+                    // VERBATIM variant bodies (their own ring budgets).
+                    if rng.range(0, 2) == 0 {
+                        num10 = 3;
+                        variant_cloud_island(world, num7, num11, true, space_clear, rng);
+                    } else {
+                        num10 = 1;
+                        variant_cloud_island(world, num7, num11, false, space_clear, rng);
+                    }
+                    // The variant disc hangs down from j like the C#
+                    // CloudIsland — the ledger keeps num11 verbatim.
+                    gv.island_house_y.push(num11);
+                } else {
+                    // `:13090-13103`: the num10 style table, verbatim.
+                    if remix && drunk && (!anniversary || get_good) {
+                        num10 = if gv.crimson_left && num7 < world.width / 2 {
+                            5
+                        } else if gv.crimson_left || num7 <= world.width / 2 {
+                            4
+                        } else {
+                            5
+                        };
+                    } else if !not_the_bees || remix {
+                        if get_good || (remix && !anniversary) {
+                            num10 = if !crimson { 4 } else { 5 };
+                        } else if anniversary {
+                            num10 = 6;
+                        }
+                    }
+                    let radius = rng.range(40, 61);
+                    build_island(world, num7, num11, radius, false, rng);
+                    gv.island_house_y.push(num11 - radius / 2);
+                }
             }
-            // `:13069`/`:13074` + `:13108-13112`: the ledger writes. The C#
-            // stores `num11` — the disc TOP (CloudIsland hangs down from j,
-            // `:78224`'s `m > num13 ≈ j`). The port's compact disc is
-            // CENTERED at num11 (the M1.4-WGEN-4 shape), so its top sits at
-            // `num11 - radius/2`; the ledger stores that row so the verbatim
-            // IslandHouse ground scan (`j-15`, `:79238`) reaches the grass
-            // cap exactly as the C#'s reaches its disc top.
-            let disc_top = num11 - radius / 2;
-            gv.sky_lake.push(flag3);
+            // `:13069`/`:13074` + `:13108-13112`: the ledger writes. The
+            // C# stores `num11` — the disc TOP (CloudIsland hangs down
+            // from j, `:78224`'s `m > num13 ≈ j`). The port's compact
+            // disc is CENTERED at num11 (the M1.4-WGEN-4 shape), so its
+            // top sits at `num11 - radius/2`; the ledger stores that row
+            // so the verbatim IslandHouse ground scan (`j-15`, `:79238`)
+            // reaches the grass cap exactly as the C#'s reaches its disc
+            // top. The VERBATIM variant bodies hang from num11 like the
+            // C# — their ledger keeps num11 (the y push above).
             gv.island_house_x.push(num7);
-            gv.island_house_y.push(disc_top);
             gv.island_style.push(num10);
             gv.num_island_houses += 1;
             num2 += 1;
@@ -447,9 +951,9 @@ pub(crate) fn pass_floating_islands(
 
 // --- the FloatingIslandHouses pass (`:17859-17874`) → IslandHouse ---------
 
-/// The `IslandHouse` furniture writes — the `PlaceTile` arms the classic
-/// house uses, each with its C# gate. `SquareTileFrame` is the
-/// chain-framing deviation (the module doc).
+/// The `IslandHouse` furniture writes — the `PlaceTile` arms the house
+/// uses, each with its C# gate. `SquareTileFrame` is the chain-framing
+/// deviation (the module doc).
 mod furniture {
     use super::*;
     use crate::tiledata as td;
@@ -524,9 +1028,12 @@ mod furniture {
     }
 
     /// `Place3x2`'s default path (`WorldGen.cs:52066-52195`) — the table
-    /// 14: the 3×2 body empty, the floor `SolidTile2` under all three
-    /// columns, `frameX = 54 * style + col * 18`, `frameY = row * 18`.
-    pub(super) fn place_table(world: &mut World, x: i32, y: i32, style: i32) -> bool {
+    /// 14 / the corrupt table 469 (`PlaceTile` case 469 → Place3x2,
+    /// `:60000-60003`): the 3×2 body empty, the floor `SolidTile2` under
+    /// all three columns, `frameX = 54 * style + col * 18`,
+    /// `frameY = row * 18`. The 14/25 campfire-style offset and the
+    /// boulder/pile vetoes never fire on the house's styles (7/5/2).
+    pub(super) fn place_table(world: &mut World, x: i32, y: i32, kind: u16, style: i32) -> bool {
         if x < 5 || x > world.width - 5 || y < 5 || y > world.height - 5 {
             return false;
         }
@@ -550,7 +1057,7 @@ mod furniture {
                     world,
                     x - 1 + col,
                     y - 1 + row,
-                    14,
+                    kind,
                     (54 * style + col * 18) as i16,
                     (row * 18) as i16,
                 );
@@ -571,30 +1078,105 @@ mod furniture {
         }
         true
     }
+
+    /// `Place2xX` (`WorldGen.cs:39663-39722`) for the fountain 207
+    /// (`num3 = 4`, `:39684-39687`): the 2×4 body empty, the floor
+    /// `SolidTile2` under both columns, `frameX = 36*style + col*18`,
+    /// `frameY = row*18`. The 105/104 statue/clock arms stay with their
+    /// callers (the temple precedent).
+    pub(super) fn place_fountain(world: &mut World, x: i32, y: i32, style: i32) -> bool {
+        let num3 = 4;
+        let mut ok = true;
+        for row in (y - num3 + 1)..(y + 1) {
+            for col in x..(x + 2) {
+                if world.tile(col, row).is_some_and(|t| t.active()) {
+                    ok = false;
+                }
+            }
+        }
+        if !solid2(world, x, y + 1) || !solid2(world, x + 1, y + 1) {
+            ok = false;
+        }
+        if !ok {
+            return false;
+        }
+        for row in 0..num3 {
+            for col in 0..2 {
+                put(
+                    world,
+                    x + col,
+                    y - num3 + 1 + row,
+                    207,
+                    (36 * style + col * 18) as i16,
+                    (row * 18) as i16,
+                );
+            }
+        }
+        true
+    }
+
+    /// `SwitchFountain` (`WorldGen.cs:51150-51197`): walk the frame back
+    /// to the fountain's top-left cell, then flip `frameY` by ±72 over
+    /// the 2×4 body (the on/off state). The `Wiring.running` SkipWire
+    /// tail + `NetMessage` never fire during worldgen.
+    pub(super) fn switch_fountain(world: &mut World, i: i32, j: i32) {
+        let Some(anchor) = world.tile(i, j) else {
+            return;
+        };
+        let mut num3 = anchor.frame_x / 18;
+        while num3 >= 2 {
+            num3 -= 2;
+        }
+        let mut num4 = anchor.frame_y / 18;
+        if num4 >= 4 {
+            num4 -= 4;
+        }
+        let (num, num2) = (i - num3 as i32, j - num4 as i32);
+        for k in num..(num + 2) {
+            for l in num2..(num2 + 4) {
+                if let Some(t) = world.tile_mut(k, l) {
+                    if t.active() && t.kind == 207 {
+                        if t.frame_y < 72 {
+                            t.frame_y += 72;
+                        } else {
+                            t.frame_y -= 72;
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
-/// `IslandHouse` (`WorldGen.cs:79203-79484`), the classic arm: the
-/// dungeon-wall abort, the door-side flip + the size rolls, the ground
-/// scan, the sunplate shell + the disc-wall interior, the door carve +
-/// the style-9 door, the opposite wall column, the chest (the S1-A-4
-/// cycle), the wall-21 windows, the table/chairs/banners. The drunk
-/// fountain/palm arms and the remix furniture variants are deferred
-/// (the module doc). The chest placement rides the port's
-/// `place_chest` + `stock_placed_chest` seam (the `AddBuriedChest`
-/// floor-scan is the compact stand-in — the house floor is already
-/// carved at `num13`, the C# scan's first solid row).
+/// `IslandHouse` (`WorldGen.cs:79203-79484`), ALL arms: the dungeon-wall
+/// abort, the drunk crimson-half split (`:79217-79220`), the door-side
+/// flip + the size rolls, the ground scan, the sunplate shell + the
+/// disc-wall interior, the door carve + the remix 5/38 / classic 9 door
+/// (`:79323-79337`), the opposite wall column, the chest (the S1-A-4
+/// cycle), the fountain scatter + SwitchFountain (islandStyle > 0,
+/// `:79377-79392`), the window strips + banners under the classic /
+/// anniversary-not-getGood gate, the remix evil-flavour table/chairs
+/// (`:79421-79435`), the style-1 palms (`:79462-79483`). The chest
+/// placement rides the port's `place_chest` + `stock_placed_chest` seam
+/// (the `AddBuriedChest` floor-scan is the compact stand-in — the house
+/// floor is already carved at `num13`, the C# scan's first solid row).
 #[allow(clippy::too_many_arguments)]
 fn island_house(
     world: &mut World,
     i: i32,
     j: i32,
-    _island_style: i32,
+    island_style: i32,
     rng: &mut super::Rng,
     mut stock: Option<&mut super::chest_stock::ChestStockHook<'_>>,
     get_good: bool,
+    drunk: bool,
+    remix: bool,
+    anniversary: bool,
+    crimson: bool,
+    crimson_left: bool,
     sky_count: &mut u32,
 ) {
-    // `:79206-79216`: the ±30 dungeon-wall abort (`Main.wallDungeon` +
+    // `:79205-79216`: the ±30 dungeon-wall abort (`Main.wallDungeon` +
     // the temple wall 87 + the evil walls 3/83).
     for k in (i - 30)..=(i + 30) {
         for l in (j - 30)..=(j + 30) {
@@ -608,6 +1190,13 @@ fn island_house(
                 }
             }
         }
+    }
+    // `:79217-79220`: the drunk half-split evil flavour — the remix
+    // furniture arms read it.
+    let mut flag = crimson;
+    if drunk {
+        flag = (crimson_left && i < world.width / 2)
+            || (!crimson_left && i > world.width / 2);
     }
     // `:79224-79230`: the door-side flip + the size rolls (draw order).
     let num2 = if rng.range(0, 2) == 0 { -1 } else { 1 };
@@ -685,8 +1274,9 @@ fn island_house(
             }
         }
     }
-    // `:79315-79337`: the door carve (5 wide, 3 tall) + the style-9 door
-    // (the remix variants deferred).
+    // `:79315-79337`: the door carve (5 wide, 3 tall) + the door — the
+    // remix (!anniversary || getGood) arm splits crimson 5 / corrupt 38
+    // (`:79323-79332`), else the classic 9 (`:79336`).
     let mut num12 = i + (num3 + 1) * num2;
     let num13 = vy;
     for n in (num12 - 2)..=(num12 + 2) {
@@ -698,7 +1288,12 @@ fn island_house(
             world.tiles[idx].flags &= !FLAG_ACTIVE;
         }
     }
-    furniture::place_tile_door(world, num12, num13, 9, rng);
+    let door_style = if remix && (!anniversary || get_good) {
+        if flag { 5 } else { 38 }
+    } else {
+        9
+    };
+    furniture::place_tile_door(world, num12, num13, door_style, rng);
     // `:79338-79347`: the opposite wall column.
     num12 = i + (num3 + 1) * -num2 - num2;
     for y in iy0..=(iy1 + 1) {
@@ -762,38 +1357,67 @@ fn island_house(
             );
         }
     }
-    // `:79377-79392`: the drunk fountain arm — deferred (island_style is
-    // always 0 on the classic path; the module doc).
+    // `:79377-79392`: the fountain scatter (islandStyle > 0 — the drunk
+    // snow 3 / desert 1 islands and the remix/getGood styles 4/5/6): the
+    // 100000-attempt search, the first 50000 refuse sunplate cells, then
+    // Place2xX(207, islandStyle) + SwitchFountain on the first landing.
+    if island_style > 0 {
+        for num17 in 0..100000 {
+            let num18 = i + rng.range(-50, 51);
+            let num19 = num13 + rng.range(0, 21);
+            let cell = world.tile(num18, num19);
+            let kind_here = cell.map_or(0, |t| t.kind);
+            let active_here = cell.is_some_and(|t| t.active());
+            if (num17 >= 50000 || kind_here != TILE_SUNPLATE) && !active_here {
+                furniture::place_fountain(world, num18, num19, island_style);
+                if world.tile(num18, num19).is_some_and(|t| t.active()) {
+                    furniture::switch_fountain(world, num18, num19);
+                    break;
+                }
+            }
+        }
+    }
     // `:79394`: the counter increments once per house, after the place.
     *sky_count += 1;
-    // `:79395-79419`: the wall-21 window strips (the classic arm — the
-    // remix gate reads false).
-    let num20 = i - num3 / 2 + 1;
-    let num21 = i + num3 / 2 - 1;
-    let num22 = if num3 > 10 { 2 } else { 1 };
-    let num23 = (iy0 + iy1) / 2 - 1;
-    for n in (num20 - num22)..=(num20 + num22) {
-        for y in (num23 - 1)..=(num23 + 1) {
-            if n >= 0 && y >= 0 && n < world.width && y < world.height {
-                let idx = world.index(n, y);
-                world.tiles[idx].wall = WALL_GLASS;
+    // `:79395-79419`: the wall-21 window strips — the classic /
+    // anniversary-without-getGood arm (`:79395`).
+    if !remix || (anniversary && !get_good) {
+        let num20 = i - num3 / 2 + 1;
+        let num21 = i + num3 / 2 - 1;
+        let num22 = if num3 > 10 { 2 } else { 1 };
+        let num23 = (iy0 + iy1) / 2 - 1;
+        for n in (num20 - num22)..=(num20 + num22) {
+            for y in (num23 - 1)..=(num23 + 1) {
+                if n >= 0 && y >= 0 && n < world.width && y < world.height {
+                    let idx = world.index(n, y);
+                    world.tiles[idx].wall = WALL_GLASS;
+                }
+            }
+        }
+        for n in (num21 - num22)..=(num21 + num22) {
+            for y in (num23 - 1)..=(num23 + 1) {
+                if n >= 0 && y >= 0 && n < world.width && y < world.height {
+                    let idx = world.index(n, y);
+                    world.tiles[idx].wall = WALL_GLASS;
+                }
             }
         }
     }
-    for n in (num21 - num22)..=(num21 + num22) {
-        for y in (num23 - 1)..=(num23 + 1) {
-            if n >= 0 && y >= 0 && n < world.width && y < world.height {
-                let idx = world.index(n, y);
-                world.tiles[idx].wall = WALL_GLASS;
-            }
-        }
-    }
-    // `:79420-79443`: the table + the two chairs (the classic arm), the
-    // left chair's frameX flip (`:79442-79443`).
+    // `:79420-79443`: the table + the two chairs — the remix
+    // (!anniversary || getGood) arm takes crimson table 14 style 5 +
+    // chairs 15 style 8, else the corrupt table 469 style 2 + chairs 38
+    // (`:79421-79435`); the classic arm keeps 14/7 + 15/10
+    // (`:79438-79440`).
     let num28 = i + (num3 / 2 + 1) * -num2;
-    furniture::place_table(world, num28, iy1 - 1, 7);
-    furniture::place_chair(world, num28 - 2, iy1 - 1, 10);
-    furniture::place_chair(world, num28 + 2, iy1 - 1, 10);
+    let (table_kind, table_style, chair_style) =
+        if remix && (!anniversary || get_good) {
+            if flag { (14u16, 5, 8) } else { (469, 2, 38) }
+        } else {
+            (14, 7, 10)
+        };
+    furniture::place_table(world, num28, iy1 - 1, table_kind, table_style);
+    furniture::place_chair(world, num28 - 2, iy1 - 1, chair_style);
+    furniture::place_chair(world, num28 + 2, iy1 - 1, chair_style);
     // `:79442-79443`: the left chair's frameX flip — UNCONDITIONAL in the
     // C# (it adds 18 to whatever sits at the two cells, even a failed
     // chair place).
@@ -804,13 +1428,34 @@ fn island_house(
             world.tiles[idx].frame_x += 18;
         }
     }
-    // `:79444-79461`: the three banners (`Next(7,10)` styles) — the two
-    // ceiling corners + the door-side top corner.
-    super::dungeon_features::place_banner(world, ix0 + 1, iy0, 91, rng.range(7, 10));
-    super::dungeon_features::place_banner(world, ix1 - 1, iy0, 91, rng.range(7, 10));
-    let (bx, by) = if num2 > 0 { (ix0, iy0 + 1) } else { (ix1, iy0 + 1) };
-    super::dungeon_features::place_banner(world, bx, by, 91, rng.range(7, 10));
-    // `:79462-79483`: the drunk palm arm — deferred (island_style 1).
+    // `:79444-79461`: the three banners (`Next(7,10)` styles) — the same
+    // classic / anniversary gate as the windows (`:79444`).
+    if !remix || (anniversary && !get_good) {
+        super::dungeon_features::place_banner(world, ix0 + 1, iy0, 91, rng.range(7, 10));
+        super::dungeon_features::place_banner(world, ix1 - 1, iy0, 91, rng.range(7, 10));
+        let (bx, by) = if num2 > 0 { (ix0, iy0 + 1) } else { (ix1, iy0 + 1) };
+        super::dungeon_features::place_banner(world, bx, by, 91, rng.range(7, 10));
+    }
+    // `:79462-79483`: the desert island's palms (islandStyle == 1): the
+    // Next(3,6) budget, the 100000-attempt scatter, TryGrowingTreeByType
+    // (323) = GrowPalmTree(x, y+1, 0, false) — the shared ocean port.
+    if island_style != 1 {
+        return;
+    }
+    let mut num29 = rng.range(3, 6);
+    for _num30 in 0..100000 {
+        let num31 = i + rng.range(-50, 51);
+        let num32 = num13 + rng.range(-10, 21);
+        if !world.tile(num31, num32).is_some_and(|t| t.active()) {
+            super::ocean::grow_palm_tree(world, num31, num32 + 1, 0, false, rng);
+            if world.tile(num31, num32).is_some_and(|t| t.active()) {
+                num29 -= 1;
+            }
+        }
+        if num29 <= 0 {
+            break;
+        }
+    }
 }
 
 /// The `FloatingIslandHouses` pass (`WorldGen.cs:17859-17874`): a house
@@ -818,17 +1463,24 @@ fn island_house(
 /// `Skyblock.denyFloatingIslands` gate (`:17861`) matches. The ledger
 /// rides a snapshot (the C# reads the GenVars statics while `IslandHouse`
 /// mutates only `skyIslandHouseCount` — the port's `&mut GenVars` carries
-/// that counter back the same way).
+/// that counter back the same way). The seed flags ride the world
+/// (`Reset` `:11115-11123`) + the caller's crimson (`WorldGen.crimson`,
+/// the `opts.crimson` twin).
 pub(crate) fn pass_floating_island_houses(
     world: &mut World,
     gv: &mut GenVars,
     rng: &mut super::Rng,
     mut stock: Option<&mut super::chest_stock::ChestStockHook<'_>>,
-    get_good: bool,
+    crimson: bool,
 ) {
     if deny_floating_islands(world) {
         return;
     }
+    let get_good = world.seeds.contains(SeedFlags::FOR_THE_WORTHY);
+    let drunk = world.seeds.contains(SeedFlags::DRUNK);
+    let remix = world.seeds.contains(SeedFlags::REMIX);
+    let anniversary = world.seeds.contains(SeedFlags::TENTH_ANNIVERSARY);
+    let crimson_left = gv.crimson_left;
     let count = gv.num_island_houses as usize;
     let ledger: Vec<(i32, i32, i32, bool)> = (0..count)
         .map(|idx| {
@@ -853,6 +1505,11 @@ pub(crate) fn pass_floating_island_houses(
             rng,
             stock.as_deref_mut(),
             get_good,
+            drunk,
+            remix,
+            anniversary,
+            crimson,
+            crimson_left,
             &mut gv.sky_island_house_count,
         );
     }
@@ -925,7 +1582,7 @@ mod tests {
             let mut w = sky_world(width, 1200, 520);
             let mut gv = gv_with_lakes(width);
             let placed =
-                pass_floating_islands(&mut w, &mut gv, &mut Rng(42), 520.0);
+                pass_floating_islands(&mut w, &mut gv, &mut Rng(42), 520.0, false);
             assert_eq!(placed as usize, dry + lakes, "width {width}");
             assert_eq!(gv.sky_lake.len(), dry + lakes);
             // The FIRST `num` islands are dry, the tail `skyLakes` lakes.
@@ -944,7 +1601,7 @@ mod tests {
         w.micro_seeds |= MicroSeedFlags::ERROR_WORLD;
         assert_eq!(error_world_adjustment(1.0, &w), 1);
         let mut gv = gv_with_lakes(4200);
-        pass_floating_islands(&mut w, &mut gv, &mut Rng(7), 520.0);
+        pass_floating_islands(&mut w, &mut gv, &mut Rng(7), 520.0, false);
         // 9 dry + 1 lake attempted; the deep y re-roll may bury some, but
         // every placed island past index 8 is a lake (the num2 >= 9 tail).
         assert!(gv.sky_lake.len() >= 2, "the tripled count places islands");
@@ -961,7 +1618,7 @@ mod tests {
     fn the_spawn_exclusion_keeps_the_anchors_out() {
         let mut w = sky_world(4200, 1200, 520);
         let mut gv = gv_with_lakes(4200);
-        pass_floating_islands(&mut w, &mut gv, &mut Rng(42), 520.0);
+        pass_floating_islands(&mut w, &mut gv, &mut Rng(42), 520.0, false);
         assert!(!gv.island_house_x.is_empty());
         for x in &gv.island_house_x {
             assert!(
@@ -978,7 +1635,7 @@ mod tests {
     fn the_anchor_spacing_is_strict() {
         let mut w = sky_world(4200, 1200, 520);
         let mut gv = gv_with_lakes(4200);
-        pass_floating_islands(&mut w, &mut gv, &mut Rng(99), 520.0);
+        pass_floating_islands(&mut w, &mut gv, &mut Rng(99), 520.0, false);
         for a in 0..gv.island_house_x.len() {
             for b in (a + 1)..gv.island_house_x.len() {
                 let d = (gv.island_house_x[a] - gv.island_house_x[b]).abs();
@@ -996,7 +1653,7 @@ mod tests {
         let mut w = sky_world(4200, 1200, 520);
         w.micro_seeds |= MicroSeedFlags::EXTRA_FLOATING_ISLANDS;
         let mut gv = gv_with_lakes(4200);
-        pass_floating_islands(&mut w, &mut gv, &mut Rng(42), 520.0);
+        pass_floating_islands(&mut w, &mut gv, &mut Rng(42), 520.0, false);
         assert_eq!(gv.sky_lakes, 10, "the 10x arm multiplies skyLakes");
         assert!(gv.island_house_x.len() > 6, "the discs keep placing");
         assert_eq!(gv.num_island_houses, 6, "the cap is num3 * 2");
@@ -1013,14 +1670,14 @@ mod tests {
             6
         );
         let mut gv2 = gv_with_lakes(4200);
-        pass_floating_islands(&mut crowded, &mut gv2, &mut Rng(42), 520.0);
+        pass_floating_islands(&mut crowded, &mut gv2, &mut Rng(42), 520.0, false);
         assert_eq!(gv2.sky_lakes, 2, "the reduced 2x arm");
 
         let mut skyblock = sky_world(4200, 1200, 520);
         skyblock.micro_seeds |= MicroSeedFlags::EXTRA_FLOATING_ISLANDS;
         skyblock.seeds |= SeedFlags::SKYBLOCK;
         let mut gv3 = gv_with_lakes(4200);
-        pass_floating_islands(&mut skyblock, &mut gv3, &mut Rng(42), 520.0);
+        pass_floating_islands(&mut skyblock, &mut gv3, &mut Rng(42), 520.0, false);
         assert_eq!(gv3.sky_lakes, 1, "the skyblock passthrough keeps 1");
         // The unmultiplied 3+1 attempt budget — the ±150/±75 clear window
         // may reject sites, so the placed count is at most 4.
@@ -1037,14 +1694,14 @@ mod tests {
         let mut gv = gv_with_lakes(4200);
         let mut rng = Rng(42);
         let before = rng.0;
-        assert_eq!(pass_floating_islands(&mut w, &mut gv, &mut rng, 520.0), 0);
+        assert_eq!(pass_floating_islands(&mut w, &mut gv, &mut rng, 520.0, false), 0);
         assert_eq!(rng.0, before, "the gated pass draws nothing");
 
         let mut sb = sky_world(4200, 1200, 520);
         sb.seeds |= SeedFlags::SKYBLOCK;
         let mut gv2 = gv_with_lakes(4200);
         assert_eq!(
-            pass_floating_islands(&mut sb, &mut gv2, &mut Rng(42), 520.0),
+            pass_floating_islands(&mut sb, &mut gv2, &mut Rng(42), 520.0, false),
             0,
             "skyblock without extra denies the islands"
         );
@@ -1052,7 +1709,7 @@ mod tests {
         let mut deep = sky_world(4200, 1200, 520);
         deep.micro_seeds |= MicroSeedFlags::NO_SURFACE | MicroSeedFlags::EXTRA_FLOATING_ISLANDS;
         let mut gv3 = gv_with_lakes(4200);
-        pass_floating_islands(&mut deep, &mut gv3, &mut Rng(42), 520.0);
+        pass_floating_islands(&mut deep, &mut gv3, &mut Rng(42), 520.0, false);
         assert!(!gv3.island_house_y.is_empty(), "noSurface+extra runs");
         // The deep roll `Next(200, UnderworldLayer - 200)` = Next(200, 800).
         for y in &gv3.island_house_y {
@@ -1119,6 +1776,7 @@ mod tests {
     #[test]
     fn the_get_good_world_takes_chest_style_2() {
         let mut w = sky_world(4200, 1200, 520);
+        w.seeds |= SeedFlags::FOR_THE_WORTHY;
         let mut gv = GenVars::default();
         build_island(&mut w, 1000, 200, 50, false, &mut Rng(5));
         house_ground(&mut w, 1000, 205);
@@ -1135,7 +1793,7 @@ mod tests {
                 styles.push(ev.chest_style);
                 Vec::new()
             };
-            pass_floating_island_houses(&mut w, &mut gv, &mut Rng(11), Some(&mut hook), true);
+            pass_floating_island_houses(&mut w, &mut gv, &mut Rng(11), Some(&mut hook), false);
         }
         assert_eq!(styles, vec![2]);
     }
@@ -1172,7 +1830,7 @@ mod tests {
                     w.micro_seeds |= MicroSeedFlags::EXTRA_FLOATING_ISLANDS;
                 }
                 let mut gv = gv_with_lakes(4200);
-                pass_floating_islands(&mut w, &mut gv, &mut Rng(42), 520.0);
+                pass_floating_islands(&mut w, &mut gv, &mut Rng(42), 520.0, false);
                 pass_floating_island_houses(&mut w, &mut gv, &mut Rng(42), None, false);
                 super::super::world_hash::world_hash(&w)
             };
@@ -1180,5 +1838,264 @@ mod tests {
             let b = run();
             assert_eq!(a, b, "extra={extra}: the island passes must be deterministic");
         }
+    }
+
+    /// The drunk variant split (`:13075-13087`): a drunk (non-remix)
+    /// world's dry islands carry style 3 (snow) or 1 (desert) — never 0
+    /// — and the variant bodies write their surface kinds (snow 147 /
+    /// sand 53) plus the variant blob kinds (snow cloud 460 / rain
+    /// cloud 196). The ledger y keeps `num11` (the bodies hang down).
+    #[test]
+    fn the_drunk_world_splits_snow_and_desert_islands() {
+        let mut w = sky_world(4200, 1200, 520);
+        w.seeds |= SeedFlags::DRUNK;
+        let mut gv = gv_with_lakes(4200);
+        pass_floating_islands(&mut w, &mut gv, &mut Rng(42), 520.0, false);
+        let dry_styles: Vec<i32> = gv
+            .island_style
+            .iter()
+            .zip(&gv.sky_lake)
+            .filter(|(_, lake)| !**lake)
+            .map(|(s, _)| *s)
+            .collect();
+        assert!(!dry_styles.is_empty(), "the drunk world places dry islands");
+        assert!(
+            dry_styles.iter().all(|s| *s == 3 || *s == 1),
+            "every dry island is snow 3 or desert 1: {dry_styles:?}"
+        );
+        assert!(count_kind(&w, 147) > 0 || count_kind(&w, 53) > 0, "the variant surfaces");
+        assert!(count_kind(&w, 460) > 0 || count_kind(&w, 196) > 0, "the variant blobs");
+        // The drunk+remix world takes the CloudIsland style-table arm
+        // instead (the `!remix` gate, `:13075`).
+        let mut wr = sky_world(4200, 1200, 520);
+        wr.seeds |= SeedFlags::DRUNK | SeedFlags::REMIX;
+        let mut gvr = gv_with_lakes(4200);
+        gvr.crimson_left = false;
+        pass_floating_islands(&mut wr, &mut gvr, &mut Rng(42), 520.0, false);
+        for (s, lake) in gvr.island_style.iter().zip(&gvr.sky_lake) {
+            if !lake {
+                assert!(*s == 4 || *s == 5, "the drunk+remix split is 4/5: {s}");
+            }
+        }
+    }
+
+    /// The num10 style table (`:13090-13103`): getGood alone → 4
+    /// (corruption) / 5 (crimson); anniversary alone → 6; notTheBees
+    /// alone → 0; remix alone → 4/5; remix+anniversary (no getGood) →
+    /// the anniversary 6 falls through the inner gates.
+    #[test]
+    fn the_num10_style_table_arms() {
+        let cases: [(u16, bool, &[i32]); 5] = [
+            (SeedFlags::FOR_THE_WORTHY, false, &[4]),
+            (SeedFlags::FOR_THE_WORTHY, true, &[5]),
+            (SeedFlags::TENTH_ANNIVERSARY, false, &[6]),
+            (SeedFlags::NOT_THE_BEES, false, &[0]),
+            (SeedFlags::REMIX, true, &[5]),
+        ];
+        for (seed, crimson, expected) in cases {
+            let mut w = sky_world(4200, 1200, 520);
+            w.seeds |= seed;
+            let mut gv = gv_with_lakes(4200);
+            pass_floating_islands(&mut w, &mut gv, &mut Rng(42), 520.0, crimson);
+            let dry: Vec<i32> = gv
+                .island_style
+                .iter()
+                .zip(&gv.sky_lake)
+                .filter(|(_, lake)| !**lake)
+                .map(|(s, _)| *s)
+                .collect();
+            assert!(!dry.is_empty(), "seed {seed} places dry islands");
+            for s in dry {
+                assert!(expected.contains(&s), "seed {seed} crimson {crimson}: style {s}");
+            }
+        }
+        // remix + anniversary without getGood (no drunk): the inner
+        // `getGood || (remix && !anniversary)` gate reads false, the
+        // `else if anniversary` arm fires → num10 = 6 (`:13100-13103`).
+        let mut w = sky_world(4200, 1200, 520);
+        w.seeds |= SeedFlags::REMIX | SeedFlags::TENTH_ANNIVERSARY;
+        let mut gv = gv_with_lakes(4200);
+        pass_floating_islands(&mut w, &mut gv, &mut Rng(42), 520.0, false);
+        for (s, lake) in gv.island_style.iter().zip(&gv.sky_lake) {
+            if !lake {
+                assert_eq!(*s, 6, "remix+anniversary takes the anniversary 6");
+            }
+        }
+    }
+
+    /// The fountain arm (`:79377-79392`): a style-3 island house places
+    /// a fountain 207 (the 2×4 body, style 3 → frameX 108/126) and
+    /// SwitchFountain flips its frameY +72 (the ON state).
+    #[test]
+    fn the_variant_island_house_places_a_switched_fountain() {
+        let mut w = sky_world(4200, 1200, 520);
+        let mut gv = GenVars::default();
+        build_island(&mut w, 1000, 200, 50, false, &mut Rng(5));
+        house_ground(&mut w, 1000, 205);
+        gv.island_house_x.push(1000);
+        gv.island_house_y.push(200);
+        gv.island_style.push(3);
+        gv.sky_lake.push(false);
+        gv.num_island_houses = 1;
+        pass_floating_island_houses(&mut w, &mut gv, &mut Rng(11), None, false);
+        let fountain_cells: Vec<_> = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 207)
+            .collect();
+        assert_eq!(fountain_cells.len(), 8, "the 2×4 fountain body");
+        assert!(
+            fountain_cells.iter().all(|t| t.frame_y >= 72),
+            "SwitchFountain flipped the body ON (+72)"
+        );
+        assert!(
+            fountain_cells.iter().all(|t| t.frame_x == 108 || t.frame_x == 126),
+            "style 3 → frameX 36*3 (+18)"
+        );
+    }
+
+    /// The palm arm (`:79462-79483`): a style-1 (desert) island house
+    /// grows palms 323 over the sand surface — the Next(3,6) budget.
+    #[test]
+    fn the_desert_island_house_grows_palms() {
+        let mut w = sky_world(4200, 1200, 520);
+        let mut gv = GenVars::default();
+        build_island(&mut w, 1000, 200, 50, false, &mut Rng(5));
+        house_ground(&mut w, 1000, 205);
+        // A sand strip around the house for the palm ground test
+        // (`GrowPalmTree` accepts 53/234/116/112, `:27148`).
+        for x in 940..=1060 {
+            let i = w.index(x, 205);
+            w.tiles[i].kind = 53;
+        }
+        // Clear the sky above the sand flanks (the trunk clearance box
+        // is ±1 × up to 20 rows, `:27157`) — the compact disc's body
+        // would otherwise block every palm inside the house band.
+        for x in 940..=1060 {
+            for y in 160..205 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile::default();
+            }
+        }
+        gv.island_house_x.push(1000);
+        gv.island_house_y.push(200);
+        gv.island_style.push(1);
+        gv.sky_lake.push(false);
+        gv.num_island_houses = 1;
+        pass_floating_island_houses(&mut w, &mut gv, &mut Rng(11), None, false);
+        let palms = count_kind(&w, 323);
+        assert!(palms > 0, "the desert island grows palms ({palms})");
+        // The fountain also fires (style 1 > 0).
+        assert!(count_kind(&w, 207) == 8, "the style-1 fountain too");
+    }
+
+    /// The remix furniture switch (`:79323-79332`, `:79421-79435`): a
+    /// remix world without anniversary takes the evil-flavour door
+    /// (crimson 5 / corrupt 38), the crimson table 14 style 5 + chairs
+    /// 15 style 8 or the corrupt table 469 style 2 + chairs 38, and
+    /// SKIPS the windows + banners (`:79395`/`:79444`). The drunk
+    /// half-split (`:79217-79220`) picks the side by anchor x.
+    #[test]
+    fn the_remix_house_takes_the_evil_flavour_furniture() {
+        // Corruption side (crimson=false): table 469 style 2, chairs 38.
+        let mut w = sky_world(4200, 1200, 520);
+        w.seeds |= SeedFlags::REMIX;
+        let mut gv = GenVars::default();
+        build_island(&mut w, 1000, 200, 50, false, &mut Rng(5));
+        house_ground(&mut w, 1000, 205);
+        gv.island_house_x.push(1000);
+        gv.island_house_y.push(200);
+        gv.island_style.push(0); // style 0 skips the fountain scatter (furniture-only witness)
+        gv.sky_lake.push(false);
+        gv.num_island_houses = 1;
+        pass_floating_island_houses(&mut w, &mut gv, &mut Rng(11), None, false);
+        assert!(count_kind(&w, 469) == 6, "the corrupt table 469 (3×2)");
+        assert!(count_kind(&w, 14) == 0, "no classic table");
+        let chairs: Vec<_> = w.tiles.iter().filter(|t| t.active() && t.kind == 15).collect();
+        assert!(!chairs.is_empty(), "the chairs land");
+        // Style 38 → frameY base 40*38 = 1520 (+18 bottom, +18 the flip
+        // is frameX not frameY).
+        assert!(chairs.iter().all(|t| t.frame_y == 1520 || t.frame_y == 1538));
+        // No glass windows / banners on the remix arm.
+        assert_eq!(w.tiles.iter().filter(|t| t.wall == WALL_GLASS).count(), 0);
+        assert_eq!(count_kind(&w, 91), 0, "no banners on the remix arm");
+
+        // Crimson side (crimson=true): table 14 style 5, chairs 8.
+        let mut wc = sky_world(4200, 1200, 520);
+        wc.seeds |= SeedFlags::REMIX;
+        let mut gvc = GenVars::default();
+        build_island(&mut wc, 1000, 200, 50, false, &mut Rng(5));
+        house_ground(&mut wc, 1000, 205);
+        gvc.island_house_x.push(1000);
+        gvc.island_house_y.push(200);
+        gvc.island_style.push(0); // furniture-only witness (no fountain scatter)
+        gvc.sky_lake.push(false);
+        gvc.num_island_houses = 1;
+        pass_floating_island_houses(&mut wc, &mut gvc, &mut Rng(11), None, true);
+        assert!(count_kind(&wc, 469) == 0, "no corrupt table on the crimson side");
+        let tables: Vec<_> = wc.tiles.iter().filter(|t| t.active() && t.kind == 14).collect();
+        assert_eq!(tables.len(), 6, "the crimson table 14 (3×2)");
+        assert!(tables.iter().all(|t| (270..=306).contains(&(t.frame_x as i32))));
+        let chairs: Vec<_> = wc.tiles.iter().filter(|t| t.active() && t.kind == 15).collect();
+        assert!(chairs.iter().all(|t| t.frame_y == 320 || t.frame_y == 338));
+    }
+
+    /// The drunk half-split (`:79217-79220`) + the anniversary override:
+    /// a drunk+remix world picks the evil flavour by the crimsonLeft
+    /// half; anniversary WITHOUT getGood restores the classic furniture
+    /// (`:79323`/`:79421` read `!anniversary || getGood` false).
+    #[test]
+    fn the_drunk_half_split_and_the_anniversary_override() {
+        // drunk+remix, crimsonLeft=true: the LEFT half is crimson.
+        let mut w = sky_world(4200, 1200, 520);
+        w.seeds |= SeedFlags::DRUNK | SeedFlags::REMIX;
+        let mut gv = GenVars::default();
+        gv.crimson_left = true;
+        build_island(&mut w, 1000, 200, 50, false, &mut Rng(5));
+        house_ground(&mut w, 1000, 205);
+        gv.island_house_x.push(1000); // < 2100 → the crimson half
+        gv.island_house_y.push(200);
+        gv.island_style.push(0); // furniture-only witness
+        gv.sky_lake.push(false);
+        gv.num_island_houses = 1;
+        // crimson=false overall — the drunk split overrides it.
+        pass_floating_island_houses(&mut w, &mut gv, &mut Rng(11), None, false);
+        assert!(count_kind(&w, 14) == 6, "the left half takes the crimson table");
+        assert!(count_kind(&w, 469) == 0);
+
+        // remix+anniversary without getGood: the classic furniture arm.
+        let mut wa = sky_world(4200, 1200, 520);
+        wa.seeds |= SeedFlags::REMIX | SeedFlags::TENTH_ANNIVERSARY;
+        let mut gva = GenVars::default();
+        build_island(&mut wa, 1000, 200, 50, false, &mut Rng(5));
+        house_ground(&mut wa, 1000, 205);
+        gva.island_house_x.push(1000);
+        gva.island_house_y.push(200);
+        gva.island_style.push(0);
+        gva.sky_lake.push(false);
+        gva.num_island_houses = 1;
+        pass_floating_island_houses(&mut wa, &mut gva, &mut Rng(11), None, false);
+        assert!(count_kind(&wa, 14) == 6, "the anniversary keeps table 14");
+        let chairs: Vec<_> = wa.tiles.iter().filter(|t| t.active() && t.kind == 15).collect();
+        assert!(chairs.iter().all(|t| t.frame_y == 400 || t.frame_y == 418), "style 10");
+        assert!(wa.tiles.iter().any(|t| t.wall == WALL_GLASS), "the windows return");
+        assert!(count_kind(&wa, 91) > 0, "the banners return");
+    }
+
+    /// The variant bodies' `a == b` witness: the drunk world's verbatim
+    /// SnowCloudIsland/DesertCloudIsland walks (the ring budgets, the
+    /// drift draws, the blob/pocket/water/satellite chains) replay
+    /// byte-identically, with the houses' fountain/palm arms included.
+    #[test]
+    fn the_drunk_variant_passes_are_reproducible_for_a_seed() {
+        let run = || {
+            let mut w = sky_world(4200, 1200, 520);
+            w.seeds |= SeedFlags::DRUNK;
+            let mut gv = gv_with_lakes(4200);
+            pass_floating_islands(&mut w, &mut gv, &mut Rng(7), 520.0, false);
+            pass_floating_island_houses(&mut w, &mut gv, &mut Rng(7), None, false);
+            super::super::world_hash::world_hash(&w)
+        };
+        assert_eq!(run(), run(), "the drunk variant passes must be deterministic");
     }
 }

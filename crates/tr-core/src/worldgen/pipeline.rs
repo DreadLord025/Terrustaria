@@ -2586,7 +2586,7 @@ fn step_floating_islands(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    _opts: &GenOptions,
+    opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
@@ -2599,6 +2599,7 @@ fn step_floating_islands(
         gv,
         &mut streams.pass_rng("Floating Islands"),
         surface_low,
+        opts.crimson,
     );
 }
 
@@ -2620,7 +2621,7 @@ fn step_floating_island_houses(
         gv,
         &mut streams.pass_rng("Floating Island Houses"),
         streams.chest_stock.as_deref_mut(),
-        opts.flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY),
+        opts.crimson,
     );
 }
 
