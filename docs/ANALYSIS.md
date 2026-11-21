@@ -1061,9 +1061,10 @@ non-solid and solid tile passes (`Main.DoDraw_Waterfalls`).
   the baked-at-creation deviation is retired). `App::ambient_lava` carries
   the `Main.ambientLava*` triple at the `Main.cs:67235-67236` load reset:
   its only writer is the RETRO `oldDrawWater` scan (`:57615-57634`/
-  `:57932-57936`, `!Lighting.NotRetro` only), which the port's
-  `LiquidRenderer` path never runs — so the pooled-lava contribution is
-  structurally zero, exactly like a non-retro original. All three App
+  `:57932-57936`, `!Lighting.NotRetro` only) — see the closeout UPDATE
+  below: the scan is ported and rides the retro modes; in Color/White the
+  pooled-lava contribution is structurally zero, exactly like a non-retro
+  original. All three App
   triples initialise at the load reset (-1, -1, 0), not (0, 0, 0).
   Witnesses: `the_waterfall_loop_truncates_and_pans_against_the_1920_view`,
   `an_out_of_range_position_keeps_the_live_loop_untouched`,
@@ -1071,6 +1072,10 @@ non-solid and solid tile passes (`Main.DoDraw_Waterfalls`).
   `the_lavafall_arm_picks_the_nearer_position_and_sums_strength`,
   `the_menu_mutes_and_the_shimmer_factor_scales_the_loop`,
   `the_liquid_loop_pan_gains_update_the_live_source` (written, not run).
+  UPDATE (W4-g73 closeout): the retro `oldDrawWater` scan is now PORTED
+  (`tr_core::retro_water::ambient_lava_scan`, fed on Retro/Trippy frames)
+  — the pooled-lava contribution is live in the retro modes and stays
+  structurally zero in Color/White, exactly like the original.
 - `GetAlpha`'s wall gate (`WaterfallManager.cs:1037`) is ported in full:
   `wall != 0 && (showInvisible || (wall != 318 && !tile.invisibleWall()))` — any wall
   dims while invisible sight is on; wall 318 and Echo-coated walls never dim
@@ -1134,9 +1139,9 @@ non-solid and solid tile passes (`Main.DoDraw_Waterfalls`).
   with a slightly dimmed backdrop under the sparkle. `Main.DrawTileInWater` (the
   tile-518 submerged redraw) is not ported: the generator never places tile 518.
 - Not ported: the `HorizonClouds`-style shader tint of `NextHorizonRenderer.CloudsEnd`
-  for falls, the retro-only `oldDrawWater` `Main.ambientLava(X/Y/Strength)` scan
-  (the triple's field + load reset are ported — see the ambience-consumers bullet;
-  the scan itself only runs under `!Lighting.NotRetro`, which the port never enters),
+  for falls, the retro `oldDrawWater` liquid DRAW halves (the ambient-lava SCAN
+  is ported as of the W4-g73 closeout — `tr_core::retro_water`, see the
+  ambience-consumers bullet; the retro liquid pixels still draw the modern way),
   the `player.lavaOpacity` factor and the storm/rare cloud type branches.
   `TR_NO_WATERFALL=1` skips the walk for A/B screenshots; `TR_SPOUT=x,y` stamps a
   half-brick spout with liquid and a clear drop (`TR_SPOUT_KIND=<0..3>` sets the
@@ -1150,6 +1155,98 @@ counters, emitted geometry, empty `anim_key`); the lake view at `TR_CAM=2240,360
 spout at `TR_SPOUT=100,25`, `TR_CAM=100,32`, zoom 2 вЂ” the column samples the raw
 `Waterfall_0` colours (`147,177,253` / `50,107,197` / `9,61,191`), i.e. a full-brightness
 tint, as `GetAlpha` requires above `worldSurface`.
+
+### W4-g73 FALLS CLOSEOUT (2026-11-21, code-only)
+
+The closeout phase on the canonical branch (`82ae8b96`'s union contract) —
+five items, each re-verified against the cited C# windows:
+
+1. **g75d final-sweep re-fetch**: `origin/task/W4-g75-honeyfall-draw` still
+   sits at `e30ad7ba` — nothing past the folded tip, no new commits to fold
+   (`git log e30ad7ba..origin/task/W4-g75-honeyfall-draw` is empty). The
+   contract's merge-time check stays armed for the merger.
+2. **The per-fountain-type frame tables are COMPLETE in the union.** Census
+   re-read: the three "fountain" tiles are the clouds — `TileID.RainCloud`
+   196 → waterfall type 11 (`WaterfallManager.cs:204-219`), `SnowCloud` 460
+   → type 22 (`:220-235`), `LavaCloud` 717 → type 26 (`:236-251`); the
+   WaterFountain tile is 207 (a different system, see item 3). Their frame
+   rows: `UpdateFrame`'s rain counters (fg every tick, bg every 3rd
+   descending, `:279-296`), lava-rain counters (fg on counter 1+3, bg every
+   4th descending, `:297-314`), snow counter (fg every 4th ascending,
+   `:315-322`) — all verbatim in `WaterfallManager::update_tick`; the draw
+   arm's even-column +3/+2 leads and the two-sheet draws (11 draws textures
+   12+11, 22 draws texture 22 only, 26 draws 27+26 with the fixed
+   `Color(255,255,255,127)` tint, 0.9/0.4 scales and per-cell `AddLight`)
+   were already ported (`waterfall/draw.rs`'s rain arm + `rain_frames`).
+   The gap was WITNESSES: 4 new ones in `waterfall/mod.rs`
+   (`the_fountain_frame_counters_ride_their_own_rates`,
+   `lava_cloud_tile_717_drops_below`,
+   `lava_fountain_draws_two_white_sheets_and_lights_every_cell`,
+   `rain_fountain_draws_two_lit_sheets_with_the_even_column_lead`).
+3. **The waterfall TILE-side chain — chain-status documented.** Two
+   distinct chains share the "fountain" name; NEITHER ends in a waterfall
+   quad:
+   * **FireworkFountain (tile 338 → proj 419-422)**: place ✓ (item 2738
+     `tile: Some(338)`, the generated `D_338` def — 1x2, bottom anchor);
+     wire trip ✓ (`wiring.rs::firework_fountain`, `Wiring.cs:1522-1546` —
+     `CheckMech(30)`, the `419 + Next(4)` roll, the `ai0/ai1` anchor, the
+     app-side `fountain_anchored` dedupe); player right-click ✗ (the
+     `Player.cs:32355-32377` tile-interaction arm is unported); proj spawn
+     ✗ DROPPED — `spawn_device_kind` gates on `proj_data(kind)` and the
+     419-422 family has no `SetDefaults` rows (`Projectile.cs:11033-11048`
+     timeLeft 600 + the aiStyle-73 dust fountains `:30480-30560+` are
+     unported, the recorded `world_sim/wiring.rs` roster note); waterfall
+     draw — NOT DOWNSTREAM: aiStyle 73 emits Dust 219/221/222 only, it
+     never feeds `WaterfallManager`. End-to-end status: **place → switch
+     work; spawn drops at the documented proj-data gap; no waterfall
+     involvement by design.** The projectile family belongs to the
+     projectile lane, not this one.
+   * **WaterFountain (tile 207 → SwitchFountain)**: wire trip ✓
+     (`wiring.rs::switch_fountain`, `WorldGen.cs:51150-51198` — the 2x4
+     frameY ±72 flip; new witness
+     `the_water_fountain_trip_flips_the_2x4_body_frame`); the flowing
+     frame feeds `SceneMetrics.ActiveFountainColor` ✓ (`scene.rs:648-662`,
+     witnesses in `scene_scan.rs`); the water-style consumer ✗ — the
+     port's `biome::calculate_water_style` does not read
+     `active_fountain_color` (the `Main.cs:57390-57393` head arm), so the
+     fountain's water recolour does not reach the liquid/waterfall passes
+     yet. End-to-end status: **place → switch → scene metric work; the
+     water-style head arm is the remaining gap** (a biome-lane item).
+4. **StopWaterfallAmbienceAudio claimed from g24's deferral.** g24's tip
+   (`4c410bd1`, `task/W4-g24-sounds-worldgen`) records the 34/35 stops as
+   deferred ("no port caller"); the port DOES have the caller —
+   `saveglue::save_and_quit` (`WorldGen.SaveAndQuit` `:6701-6704`). New
+   `Audio::stop_waterfall_ambience` routes both channels through
+   `set_liquid_loop(ch, 0.0)`'s stop arm (the (-1, -1) sentinel takes
+   `LegacySoundPlayer.cs:1257`/`:1287`'s stop branch outright), called
+   after the Menu_Close 11 in the C# order. `JustQuit` (`:6627-6632`)
+   stays unported — its only C# caller is the debug chat command
+   (`ToolkitDebugCommands.cs:235`). The menu-mode mute
+   (`frame.rs`'s `game_menu` listener flag) still covers the general
+   menu case; this is the IMMEDIATE stop the C# does at quit time.
+   Witness `the_quit_stop_kills_both_liquid_loop_channels` + anchors row.
+5. **The retro `oldDrawWater` ambient-lava writer is now PORTED** (was the
+   documented-unported item). The scan is small (`Main.cs:57615-57634` +
+   the `:57932-57936` store) and has a live consumer
+   (`liquid_loop_update`'s lavafall pick/sum), so it landed as
+   `tr_core::retro_water::ambient_lava_scan`: the 192-px offScreenRange
+   view with the four `(int)` casts and 5-tile clamps, the raw
+   `nactive && tileSolid && !tileSolidTop` covered test (NO half-brick /
+   slope terms — unlike `WorldGen.SolidTile`), the `Brightness > 0 || bg`
+   gate (`Lighting.cs:118-122`), the radial `1 - dist/(width*0.75)` sum
+   inside the 2x-screen box, the per-axis nearest trackers INCLUDING the
+   `num3 = num13` Y quirk verbatim (`:57632`), and the `!drewLava` store
+   gate. The frame's legacy-light tail runs it on Retro/Trippy only
+   (`Lighting.NotRetro` false, `Lighting.cs:63-73`) into
+   `App::ambient_lava`; the LiquidRenderer DRAW halves of `oldDrawWater`
+   stay unported (the port draws liquids the modern way in every mode —
+   the retro liquid PIXELS remain a documented deviation, but the
+   ambience triple is now faithful in retro). Non-retro modes never
+   write, exactly like the original. 3 witnesses + anchors row.
+
+Closeout witnesses: 9 new (4 frame-table + 1 quit-stop + 3 retro-scan +
+1 SwitchFountain), all WRITTEN NOT RUN — no cargo/rustc/rustfmt/tests/
+graphify invoked. Lane total 43 + 9 = 52.
 
 
 ## Wind sway and tree leaves (TILE-DRAW-3)

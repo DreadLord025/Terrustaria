@@ -27,6 +27,8 @@ commits on the g75 branch after `e30ad7ba`, they must be folded HERE (or
 re-derived here) before the family merge — the merger still takes only
 this branch. Nothing on g75 after `e30ad7ba` is known to this fold; check
 `git log e30ad7ba..origin/task/W4-g75-honeyfall-draw` at merge time.
+**Closeout re-check (2026-11-21)**: the g75d final sweep was re-fetched —
+the g75 tip is STILL `e30ad7ba`, the range is empty, nothing to fold.
 
 ## Why THIS branch is canonical (the final-fold audit)
 
@@ -65,7 +67,7 @@ The g73 source-detection uniques (absent from `e30ad7ba` entirely):
 | pure header-bit kind probes — `any_liquid_kind` drops the invented `liquid > 0` guard | `Tile.cs:345-348/:362-365/:379-382`, `WaterfallManager.cs:182/:186/:190` | kept; g75's shimmer-witness comment corrected to match |
 | `instantBGTransitionCounter == 10` forced rescan (`app.bg_instant`) + the Spawn writes | `Main.cs:61841`, `Player.cs:37569`, `Main.cs:62559` | kept (`world_sim/liquids.rs`, `world_sim/player.rs`, `recall_teleport.rs`) |
 | `App::ambient_lava` triple at the load reset; all three App triples init (-1, -1, 0) not (0, 0, 0) | `Main.cs:2213-2217`/`:67229-67236` | kept (`app/mod.rs`, `app/flow.rs` test fixture) |
-| the retro-only `oldDrawWater` ambientLava scan stays unported (LiquidRenderer path never runs it) | `Main.cs:57615-57634`/`:57932-57936` | kept as a documented deviation |
+| the retro-only `oldDrawWater` ambientLava scan stays unported (LiquidRenderer path never runs it) | `Main.cs:57615-57634`/`:57932-57936` | SUPERSEDED by the closeout: the scan is PORTED (`tr_core::retro_water::ambient_lava_scan`, Retro/Trippy frames feed `App::ambient_lava`); the retro liquid DRAW halves stay unported |
 
 Everything the g75 union carries that g73's `155b56ba` lacked is folded in
 verbatim (the `9bbc3e1d` resolutions survive unchanged): the latch-form
@@ -144,9 +146,10 @@ pure header-bit tests).
     pan, the slider/quiet/menu/shimmer scaling) →
     `audio.rs::set_liquid_loop` (live re-pan via shared atomic gains;
     `2^-0.2`/`2^0` pitch on the RE-VOLUME arm only, create arms keep the
-    default rate). The retro-only `oldDrawWater` ambientLava scan stays
-    unported (`App::ambient_lava` rides the load reset — structurally the
-    same as a non-retro original).
+    default rate). The retro-only `oldDrawWater` ambientLava scan is
+    PORTED as of the closeout (`tr_core::retro_water`, Retro/Trippy
+    frames); in Color/White `App::ambient_lava` rides the load reset —
+    structurally the same as a non-retro original.
 12. **Source detection**: `scan_view`'s four truncating `(int)` casts
     (`:119-122`, margins inside `find_waterfalls`), the pure header-bit
     kind probes (no liquid-amount guard), the `instantBGTransitionCounter
@@ -224,6 +227,29 @@ Live re-pan (`crates/tr-app/src/audio.rs`, 1):
 Plus the pre-existing suite (`try_sparkling_grants_deterministically_for_
 a_seed`, the 600-frame determinism test comparing BOTH scans, the
 spout-detection/lava-kind/tile-196/frame-counter/quad-emission tests, etc.).
+
+### The 9 CLOSEOUT witnesses (W4-g73 closeout, 2026-11-21 — written, NOT run)
+
+Frame tables (`crates/tr-core/src/waterfall/mod.rs`, 4):
+`the_fountain_frame_counters_ride_their_own_rates`,
+`lava_cloud_tile_717_drops_below`,
+`lava_fountain_draws_two_white_sheets_and_lights_every_cell`,
+`rain_fountain_draws_two_lit_sheets_with_the_even_column_lead`.
+
+Quit stop (`crates/tr-app/src/audio.rs`, 1):
+`the_quit_stop_kills_both_liquid_loop_channels`.
+
+Retro scan (`crates/tr-core/src/retro_water.rs`, 3):
+`one_lit_lava_cell_sums_full_strength_at_the_screen_centre`,
+`the_y_slot_keeps_the_num3_equals_num13_quirk`,
+`the_dry_covered_unlit_and_drew_lava_gates_skip`.
+
+Tile chain (`crates/tr-core/src/wiring.rs`, 1):
+`the_water_fountain_trip_flips_the_2x4_body_frame`.
+
+Lane total: 43 + 9 = 52. The closeout's chain-status census (the 338/207
+fountain chains, the g75d re-fetch, the g24 stop claim) is recorded in
+ANALYSIS "W4-g73 FALLS CLOSEOUT".
 
 ## Verification the merger must run (this lane was code-only)
 
