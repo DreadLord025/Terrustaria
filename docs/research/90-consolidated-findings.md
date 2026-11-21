@@ -79,7 +79,8 @@ Overall verdict is derived from the file's own status table (the `Status` column
 | 41 | Render pipeline vs the C# graphics layer | **PARTIAL** | One blend state for the whole frame; the atlas merges textures vanilla keeps separate | 15 | 9 | 278 / 27 583 |
 | 42 | Save/load (IO) + Stage-2 compression hooks | **PARTIAL** | The `.wld` tile section drops the four wire bits — data loss on a `.wld` round trip | 8 | 12 | 281 / 25 256 |
 
-**Totals:** 39 modules reviewed · 483 deviation/risks rows · 371 task seeds.
+**Totals:** 39 modules reviewed · 483 deviation/risks rows · 372 task seeds
+(+R-24-11, the W4-g85 retire-phase day-ladder seed).
 
 ---
 
@@ -270,7 +271,7 @@ refer to the research file (`docs/research/NN-*.md`).
 | R-36-14 | The OOA's invasion id — set `invasion_type = 3` (`DD2Event.cs:47`) and route the progress through `invasion_progress_icon = 3` | 36 | S | behavioural (UI) | — | 36-cinematics-film.md:207 |
 | R-36-15 | Replace the `DD2Event.Ongoing` stub (`dd2.rs:17-19`) with the world's real flag and re-enable the sentry-persistence gate | 36 | S | behavioural (low) | — | 36-cinematics-film.md:210 |
 
-### (d) missing subsystems — 51 seeds
+### (d) missing subsystems - 52 seeds
 
 | id | One-line title | Module | Size | Severity | Dependencies | Source |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -325,6 +326,7 @@ refer to the research file (`docs/research/NN-*.md`).
 | R-14-9 | Legacy `.map` migration — `DecompressChunk` + `LoadMapVersion1` / `LoadMapVersionCompressed` | 14 | L | behavioural (medium) | — | 14-map-minimap.md:347 |
 | R-36-2 | Port the film framework verbatim into `crates/tr-core/src/cinematics.rs` (`Film.cs:1-144` + `FrameEvent.cs` + `FrameEventData.cs` + `CinematicManager.cs:1-41`) + a `Main.cs:16789`-equivalent hook | 36 | S | behavioural (dead-code parity) | — | 36-cinematics-film.md:173 |
 | R-36-3 | Port `DSTFilm` (`DSTFilm.cs:1-177`): the `Main.hideUI` toggle, the `Player.isControlledByFilm` flag + the `Player.cs:24765` gate, the Deerclops/Chester spawns, the DST shader item 5113 | 36 | S | behavioural (dead-code parity) | R-36-1 | 36-cinematics-film.md:177 |
+| R-24-11 | Port the day-surface spawn ladder (`NPC.cs:4202-4501`, 16 draw-bearing rungs — the W4-g85 §7.2 draw table VERBATIM is the contract) into `spawner.rs:1155-1160`'s day fallthrough, incl. the Goblin Scout rung 11 (`:4478`: static gate → `Next(15)` always → conditional `Next(7)` only while `!downedGoblins && shadowOrbSmashed` → 73); UNCLAIMED re-verified across all 356 W4 tips (g61c-done/f42b-active carry no scout content) | 24 | M | behavioural (high — a scout-only insert desyncs the ladder stream) | W4-d35 (the 73 kind), the W4-g85 merge (the case-31-gated flag) | W4-g85-orb-draw.md §7.2 + §9.3 |
 
 ### (e) data / coverage gaps (includes doc-truth and verification work) — 63 seeds
 

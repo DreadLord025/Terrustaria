@@ -764,3 +764,44 @@ the crate/present/misc/heal chains) — disjoint from the summon lane.
 The g85 poll's `World.orb_smash_crimson`/`orb_smash_chat_count` fields
 (`world.rs:380-397`, defaults `:759-760`) come with g85's `check_orb`
 per §9.1 — f35 carries neither field, so no field conflict.
+
+### 9.3 The Goblin Scout contract — re-verified UNCLAIMED, final task-seed
+
+**The claim census re-run at the CURRENT tips** (the §7.2 read was the
+first wiring round). `git grep -il "scout"` over
+`crates/tr-app/src/spawner.rs` (NOTE: the file lives at
+`crates/tr-app/src/spawner.rs`, NOT `world_sim/`) across **all 356
+pushed `task/W4-*` branches: ZERO hits.** The named lanes at their
+latest tips: g61c `b5ff1803d` (DONE — the spawn/teleport dust visuals,
+no ladder content), f42b `75f055fcf` (ACTIVE — phase 3 ports the
+sandstorm/underground-desert arm `NPC.cs:3949-4018` +
+`Spawning_SandstoneCheck`, a DIFFERENT zone arm; its rung-9
+sandstone-check neighbour does NOT reach the day-surface scout rung),
+c38 `4d8644738`, c40 `29af285f9`, c41 `72a93e062`, c6, f32 `c05ef86f7`,
+g17 `a790e88d7` — all re-grepped, none carries scout/4478 content.
+**The scout is STILL UNCLAIMED** → the §7.2 contract stands as
+published (rung 11, `Next(15)` always after the static gate, the
+conditional `Next(7)` only while `!downedGoblins && shadowOrbSmashed`,
+`SpawnNPC(...,73)`) and this lane seeds the FINAL task.
+
+**The kind dependency is IN FLIGHT, not missing:** d35's tip
+`e5558b0a9` carries `NpcKind::GoblinScout` (`npc.rs:1089-1092`, the
+`NPC.cs:9732-9746` data row) + the bestiary/netglue/lang rows — the
+spawner-lane owner gates the rung's wiring on d35's merge (or writes
+against the kind with a merge-order note, the c36 NOTIFY-SYNC
+convention).
+
+**FINAL TASK-SEED (registered as R-24-11 in research/90 §2(d)):** port
+the day-surface ladder `NPC.cs:4202-4501` (16 rungs, the §7.2 draw
+table VERBATIM — the per-rung draw positions are the contract; rungs
+1/2/4/5/6/7/9 draw BEFORE their right-terms) into
+`crates/tr-app/src/spawner.rs:1155-1160` (the day fallthrough to
+`spawn_basic_slime`), the scout rung reading
+`ctx.world.shadow_orb_smashed` (the g85 case-31-gated flag) +
+`ctx.world.downed_goblins` + `SeedFlags::REMIX`; enclosing gates
+surface/day/!graveyard/!invaders per §7.2. Size M (the ladder is ~15
+draw-bearing rungs, NOT a one-arm port); dep d35 (the 73 kind) + the
+g85 merge (the flag's four-case census); source
+`W4-g85-orb-draw.md` §7.2 + §9.3. The g85 lane wires NOTHING here —
+the stream-fidelity rule (every preceding rung's draw) makes a
+scout-only insertion a desync; the contract is the deliverable.
