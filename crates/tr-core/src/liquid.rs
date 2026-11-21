@@ -2375,6 +2375,34 @@ mod liquid_merge_cadence {
             assert_eq!(w.tiles[w.index(11, 10)].liquid, 0, "the pool consumed");
         }
     }
+
+    /// W4-g45 doc-sweep — the liquid-side shimmer flow census (e19/f47 own
+    /// the item-side shimmer physics; this pins the engine half). The
+    /// shimmer arm (`Liquid.cs:542-545`) runs `ShimmerCheck` and falls
+    /// through with NO delay gate — only lava (`:483-491`) and honey
+    /// (`:514-522`) throttle. Shimmer therefore falls every visit like
+    /// water, but the fall's `skipLiquid` mark (`:586-587`) costs one visit
+    /// per step (`:1096-1104`): the same one-tile-per-two-passes cadence
+    /// `water_falls_per_csharp` pins. Written, NOT run (code-only mode).
+    #[test]
+    fn shimmer_falls_every_visit_like_water() {
+        let mut w = shaft(5, 120, 30, 2);
+        put_as(&mut w, 8, 6, 255, 3);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&mut w, 8, 6);
+        // The lava column would still sit at y=6 after ten visits (its
+        // first fall lands on visit 6, the second on 19); honey's first
+        // fall is visit 11. Shimmer is at y=11 — five falls in ten visits.
+        run(&mut sys, &mut w, 10);
+        assert_eq!(w.tiles[w.index(8, 6)].liquid, 0, "the source drained");
+        assert_eq!(w.tiles[w.index(8, 11)].liquid, 255, "five falls in ten visits");
+        assert_eq!(w.tiles[w.index(8, 16)].liquid, 0, "no ungated every-visit flow");
+        assert_eq!(
+            kind_code(w.tiles[w.index(8, 11)].liquid_kind()),
+            3,
+            "the shimmer type rides the fall"
+        );
+    }
 }
 
 /// W4-g45 phase 1 — the `Liquid.DelWater` retirement machinery
