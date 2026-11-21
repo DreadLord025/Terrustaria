@@ -234,6 +234,20 @@ impl GolfState {
         Some(live)
     }
 
+    /// `GolfState.GetLastHitBall()` (`GolfState.cs:96-109`) for the draw
+    /// side: `Main.DrawMapIcons_LastGolfballHit` (`Main.cs:56515-56539`)
+    /// calls the parameterless form, which re-validates the stored
+    /// reference against the live pool. The caller resolves the live slot
+    /// by `who_am_i` (the `update_golf_state` convention) and hands it in;
+    /// the four guards run here. `None` = the C# null answer.
+    pub fn last_hit_ball_for_draw(
+        &self,
+        live_ball: Option<&GolfBall>,
+        my_player: i32,
+    ) -> Option<GolfBall> {
+        self.get_last_hit_ball(live_ball, my_player).copied()
+    }
+
     /// `:111-133`. `held_item_type`/`held_item_shoot` are the local player's
     /// held item (`Main.LocalPlayer.HeldItem`), and `my_player` is
     /// `Main.myPlayer`.
