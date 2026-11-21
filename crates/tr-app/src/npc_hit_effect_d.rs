@@ -5213,6 +5213,30 @@ fn santa_nk1_death(
     mech_quadrant_smoke(npc, gore, rng, world);
 }
 
+/// The 127 Skeletron Prime death (`NPC.cs:89396-89431`, sites 803-808):
+/// the two gores 149/150 at position FIRST, then the 10x/5x mech smoke
+/// burst, then the four quadrant smoke gores, scale 1f.
+fn skeletron_prime_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    _hit_direction: f32,
+) {
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:89400-89401` — the two gores BEFORE the dust.
+    for t in [149, 150] {
+        gore.new_gore(rng, world, pos, vel, t, 1.0);
+    }
+    // `:89402-89414` — the 10x dust-31 + 5x paired dust-6 census.
+    mech_smoke_burst(npc, dust, dust_ctx, rng, world, 10, 5);
+    // `:89415-89430` — the four quadrant smoke gores.
+    mech_quadrant_smoke(npc, gore, rng, world);
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -5839,6 +5863,10 @@ pub fn hit_effect_d(
     // `:89355-89395` — the 346 Santa-NK1 arm (sites 793-802).
     else if npc_type == 346 {
         santa_nk1_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89396-89431` — the 127 Skeletron Prime arm (sites 803-808).
+    else if npc_type == 127 {
+        skeletron_prime_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -10115,5 +10143,41 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the santa nk1 mirrors the C# draws");
+    }
+
+    /// `NPC.cs:89400-89430` — the Skeletron Prime: two 149/150 BEFORE
+    /// the 10x/5x census, then the four quadrants.
+    #[test]
+    fn w4_f5d_the_skeletron_prime_two_then_four_quadrants() {
+        let w = air();
+        let n = mob(100.0, 100.0, 60.0, 60.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(824);
+        let _ = hit_effect_d(&n, 127, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(&types[..2], &[149, 150]);
+        for t in &types[2..] {
+            assert!((61..64).contains(t), "smoke type in range: {t}");
+        }
+        assert!(!gore.slot(6).active, "exactly six gores");
+        let mut twin = UnifiedRandom::new(824);
+        for _ in 0..2 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        for _ in 0..10 {
+            twin_dust(&mut twin, 60, 60);
+        }
+        for _ in 0..5 {
+            twin_dust(&mut twin, 60, 60);
+            twin_dust(&mut twin, 60, 60);
+        }
+        for _ in 0..4 {
+            let _t = twin.next_range(61, 64);
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the skeletron prime mirrors the C# draws");
     }
 }
