@@ -229,6 +229,14 @@ pub mod id {
     /// (`MessageID.cs:240`, `NetMessage.cs:1432-1435`,
     /// `MessageBuffer.cs:3841-3854`, client→host only).
     pub const CRYSTAL_INVASION_START: u8 = 113;
+    /// `114 CrystalInvasionWipeAllTheThingsss` (W4-g50, S1-I-4): no body
+    /// (`MessageID.cs:242`, `DD2Event.cs:636`'s host broadcast,
+    /// `MessageBuffer.cs:3855-3860`, host→client only).
+    pub const CRYSTAL_INVASION_WIPE: u8 = 114;
+    /// `116 CrystalInvasionSendWaitTime` (W4-g50, S1-I-4): one raw `(int)`
+    /// (`MessageID.cs:246`, `NetMessage.cs:1436-1438`,
+    /// `MessageBuffer.cs:3861-3866`, host→client only).
+    pub const CRYSTAL_INVASION_WAIT: u8 = 116;
     pub const PLAYER_STATE: u8 = 13; // NetMessage.cs:446-513 / MessageBuffer.cs:952-1059
     pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
@@ -2342,6 +2350,16 @@ pub struct CrystalInvasionStart {
     pub y: i16,
 }
 
+/// `msg 116 CrystalInvasionSendWaitTime`'s body (`NetMessage.cs:1436-1438`):
+/// one raw `(int)` — `DD2Event._timeLeftUntilSpawningBegins`
+/// (`DD2Event.SetEnemySpawningOnHold`, `DD2Event.cs:947-950`, host-only
+/// send). The client stores `TimeLeftBetweenWaves`
+/// (`MessageBuffer.cs:3861-3866`). Server→client only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CrystalInvasionWait {
+    pub time_left: i32,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -2700,6 +2718,12 @@ pub enum S2c {
     /// `112 SpecialFX` - a tree-grow / fairy effect burst
     /// (`NetMessage.cs:1424-1431`; `MessageBuffer.cs:3815-3840`; W4-g50).
     SpecialFx(SpecialFx),
+    /// `114 CrystalInvasionWipeAllTheThingsss` - the DD2 entity wipe
+    /// (`DD2Event.cs:636`; `MessageBuffer.cs:3855-3860`; W4-g50). No body.
+    CrystalInvasionWipe,
+    /// `116 CrystalInvasionSendWaitTime` - the wave-break countdown
+    /// (`DD2Event.cs:947-950`; `MessageBuffer.cs:3861-3866`; W4-g50).
+    CrystalInvasionWait(CrystalInvasionWait),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -3299,6 +3323,8 @@ impl S2c {
             Self::WiredCannonShot(_) => id::WIRED_CANNON_SHOT,
             Self::MassWireOperationPay(_) => id::MASS_WIRE_OPERATION_PAY,
             Self::SpecialFx(_) => id::SPECIAL_FX,
+            Self::CrystalInvasionWipe => id::CRYSTAL_INVASION_WIPE,
+            Self::CrystalInvasionWait(_) => id::CRYSTAL_INVASION_WAIT,
         }
     }
 
@@ -3552,6 +3578,10 @@ impl S2c {
                 .u8(f.b4)
                 .i16(f.s5)
                 .u8(f.b6),
+            // No writer arm — bodyless (`DD2Event.cs:636` SendData(114)).
+            Self::CrystalInvasionWipe => w,
+            // `NetMessage.cs:1436-1438`: the raw (int) countdown.
+            Self::CrystalInvasionWait(t) => w.i32(t.time_left),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -3922,6 +3952,12 @@ impl S2c {
                 b4: r.u8()?,
                 s5: r.i16()?,
                 b6: r.u8()?,
+            }),
+            // `MessageBuffer.cs:3855-3860` — no body.
+            id::CRYSTAL_INVASION_WIPE => Self::CrystalInvasionWipe,
+            // `MessageBuffer.cs:3864` — the raw (int) countdown.
+            id::CRYSTAL_INVASION_WAIT => Self::CrystalInvasionWait(CrystalInvasionWait {
+                time_left: r.i32()?,
             }),
             _ => return None,
         })
@@ -6940,6 +6976,33 @@ mod tests {
         match C2s::decode(frame[2], &mut NetReader::new(&frame[3..])).expect("decode") {
             C2s::CrystalInvasionStart(d) => assert_eq!(d, c),
             other => panic!("expected 113, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `114 CrystalInvasionWipeAllTheThingsss` (`DD2Event.cs:636`): no body
+    /// — a bare 3-byte frame. Host→client only (`MessageBuffer.cs:3855-3860`).
+    #[test]
+    fn w4_g50_crystal_invasion_wipe_is_a_bare_frame() {
+        let f = S2c::CrystalInvasionWipe.encode();
+        assert_eq!(f[2], 114);
+        assert_eq!(f.len(), 3, "id 114 has no body");
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::CrystalInvasionWipe => {}
+            other => panic!("expected 114, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `116 CrystalInvasionSendWaitTime` (`NetMessage.cs:1436-1438`): one
+    /// raw int. Host→client only (`MessageBuffer.cs:3861-3866`).
+    #[test]
+    fn w4_g50_crystal_invasion_wait_round_trips() {
+        let t = CrystalInvasionWait { time_left: 1800 };
+        let f = S2c::CrystalInvasionWait(t).encode();
+        assert_eq!(f[2], 116);
+        assert_eq!(&f[3..], &1800i32.to_le_bytes());
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::CrystalInvasionWait(d) => assert_eq!(d, t),
+            other => panic!("expected 116, got {:?}", other.msg_id()),
         }
     }
 }

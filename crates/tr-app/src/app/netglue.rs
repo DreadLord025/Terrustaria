@@ -2802,6 +2802,40 @@ impl App {
                 2 => self.fairy_effects(Vec2::new(f.x as f32, f.y as f32), f.s5 as i32),
                 _ => {}
             },
+            // `case 114` — the DD2 entity wipe (W4-g50,
+            // `MessageBuffer.cs:3855-3860` → `DD2Event.WipeEntities`,
+            // `DD2Event.cs:629-638`): the three sweeps (towers, hostiles,
+            // energy crystals in the open chests). The client's NPC copy is
+            // the slot-keyed `net_npcs` store (the 23/54 convention), so the
+            // hostile sweep retires those slots; the turret + chest sweeps
+            // ride the shared helper's pools.
+            S2c::CrystalInvasionWipe => {
+                // `ClearAllTowersInGame` + `ClearAllDD2EnergyCrystalsInChests`
+                // (the projectile pool + the open chests are the client's own).
+                crate::world_sim::npcs::wipe_dd2_entities(self);
+                // `ClearAllDD2HostilesInGame` (`:651-664`) over the net store.
+                let doomed: Vec<u32> = self
+                    .net_npcs
+                    .iter()
+                    .filter(|(_, n)| {
+                        crate::world_sim::npcs::dd2_pool_id(n.kind)
+                            .is_some_and(tr_core::dd2::belongs_to_ooa)
+                    })
+                    .map(|(slot, _)| *slot)
+                    .collect();
+                for slot in doomed {
+                    self.net_npcs.remove(&slot);
+                    self.net_npc_gen.remove(&slot);
+                }
+                self.net_npcs_dirty = true;
+            }
+            // `case 116` — the wave-break countdown (W4-g50,
+            // `MessageBuffer.cs:3861-3866`): `DD2Event.TimeLeftBetweenWaves
+            // = ReadInt32()` — the client-side timer the crystal's overhead
+            // display and the skip-wait gate read.
+            S2c::CrystalInvasionWait(t) => {
+                self.world.dd2_time_left_between_waves = t.time_left;
+            }
             // `151` — the slot is gone.
             S2c::ItemDead { slot } => {
                 self.net_items.remove(&slot);
@@ -7412,5 +7446,49 @@ mod message_family_tests {
                 .any(|n| n.kind == crate::npc::NpcKind::DD2EterniaCrystal && n.hp > 0),
             "the crystal spawned"
         );
+    }
+
+    /// `case 114` (`MessageBuffer.cs:3855-3860`, `DD2Event.cs:629-638`): the
+    /// wipe clears the DD2 hostiles from the client's store.
+    #[test]
+    fn w4_g50_the_114_wipe_clears_the_dd2_hostiles() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // Seed a DD2 hostile (a goblin, 552) on the client via the 23 path.
+        let mut goblin = crate::npc::Npc::new(crate::npc::NpcKind::DD2GoblinT1, 100.0, 100.0, 1, 0.0);
+        goblin.hp = goblin.max_hp;
+        host_app.npcs.push(goblin);
+        pump(&mut host_app, &mut client_app, 15);
+        assert!(
+            client_app
+                .net_npcs
+                .values()
+                .any(|n| n.kind == crate::npc::NpcKind::DD2GoblinT1),
+            "the goblin synced"
+        );
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::CrystalInvasionWipe);
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        assert!(
+            !client_app
+                .net_npcs
+                .values()
+                .any(|n| n.kind == crate::npc::NpcKind::DD2GoblinT1),
+            "the wipe cleared the goblin"
+        );
+    }
+
+    /// `case 116` (`MessageBuffer.cs:3861-3866`): the countdown lands on the
+    /// world's client-side timer.
+    #[test]
+    fn w4_g50_the_116_wait_time_stores_the_countdown() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::CrystalInvasionWait(net::CrystalInvasionWait {
+                time_left: 1800,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        assert_eq!(client_app.world.dd2_time_left_between_waves, 1800);
     }
 }
