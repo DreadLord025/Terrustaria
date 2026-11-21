@@ -39557,3 +39557,60 @@ the per-kind 10-dust census incl the shimmer `Next(6)`, the post-fields +
 `dustWater(7)` → 103, the exit-water box asymmetry, the queue half) —
 WRITTEN NOT RUN, **no cargo/rustc/rustfmt/tests/dotnet/graphify invoked**
 (user directive).
+
+### The wetVelocity census (W4-d53 FINAL item 3 — the proj-side movement arm)
+
+The Lead's question: e19's item-side `wetVelocity` blend landed
+(`a849b310d`/`939e45dc8` — `WorldItem.ApplyMovement` integrates a wet drop at
+the liquid fraction while `TileCollision` runs full-velocity, the blocked-axis
+residual refreshes full, `WorldItem.cs:379-396/1046-1084`); f47's
+`8d11597b4` re-derived the capture-at-head lag. Is the PROJECTILE side
+(`Projectile.cs:16765` capture → `:17612-17655` the wet drag → `:20439-20446`
+`UpdatePosition`'s `base.wet ? wetVelocity : velocity` integrate) a separate
+arm, and is it missing? **Census verdict: PARTIALLY PORTED — the generic
+integrate is a real movement-lane gap, NOT this dust lane's window.**
+
+Ported today (the wet drag + scaled integrate):
+
+* **The flail family** (aiStyle 15) — `flail_move` + `flail_wet_factor`
+  (`projectile.rs`, S1-P-i07 fix 9): water ×0.5 / honey ×0.25 / shimmer
+  ×0.375, the blocked-axis full-value restore approximated as
+  probe-full-then-scale-the-displacement (the family's recorded mid-tile
+  liquid idiom). Witness `s1_p_i07_the_wet_move_halves_the_advance`.
+* **The d3 boulder family** (aiStyle 25, pushed `2d01693ca`) —
+  `projectile_ai_boulder::boulder_movement`'s `p.wet` arm ports
+  `:17612-17655` VERBATIM (the factor pick, the full-velocity
+  `tile_collision`, the `wet_vel = vel * factor` with the per-changed-axis
+  full restore) and `UpdatePosition`'s `p.pos += if p.wet { wet_vel } else
+  { p.vel }` (`:20439-20446`). The hoik loop's dry path mirrors `:17702-17845`.
+
+NOT ported (the gap — every one integrates the FULL velocity while wet):
+
+* **The generic `kill_step`** (`projectile.rs`, the `HandleMovement` default
+  arm `:19849-19853` + `UpdatePosition` stand-in): ~54 call sites across the
+  dispatch (the thrown family's tail, the bobber's cast/reel integrate, the
+  magic/summon families' movement). No `wet` read, no factor.
+* **`ai_style1_flight`** (the generic arrow/bullet flight) and the
+  `special_arrows` bounce integrate (`p.pos += p.vel`, the dry-arm
+  assumption recorded at `special_arrows.rs:371-380` — correct for a DRY
+  arrow, wrong for one flying through water).
+* **The per-arm free moves** (~42 `self.pos += self.vel` sites: the yoyo
+  `:3468`, the boomerang, the spear `:5393`, the minions, the golf balls'
+  engine, the hooks' `UpdatePosition` mirrors in `grapple.rs`).
+* **The aiStyle-15 `AI_015_HandleMovementCollision` wetVelocity refresh**
+  (`:43715`, `wetVelocity = base.velocity` on the bounce) — the flail's
+  bounce handler runs but its wet integrate reads the factor fresh each
+  tick (the mid-tile idiom), not the C#'s captured-then-refreshed local.
+
+**Why it is a separate arm:** the wet drag lives in `HandleMovement`
+(`:17469+`), the movement lane's window — d53's claim is the dust SITES
+(`:16851-22297`) plus the wet-machine host it needed for the splash edges.
+The wet machine (batch 4) now writes the authoritative `wet`/`honeyWet`/
+`shimmerWet` flags the drag reads, so the movement arm's input is ready;
+the arm itself (a `wet_velocity` helper + the `kill_step`/free-move
+integrate swap, the `flail_wet_factor` keep-one) is the follow-up. The
+one-tick position lead (the port integrates inside the AI dispatch, the
+wet block runs post-AI) compounds here: a wet shot's FIRST wet tick still
+steps full velocity, the C# steps it scaled — the same lag family the
+bobber's `probe_wet` documents. RNG-neutral (no draws in the drag), so the
+gap is a physics deviation, not a stream one.

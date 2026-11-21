@@ -46,7 +46,15 @@
 //!   the window; the port's arms integrate movement inside the AI dispatch
 //!   (the `kill_step`-in-arm convention), so the wet block runs AFTER the
 //!   tick's move — a one-tick position lead for the splash box, the recorded
-//!   queue→drain deviation family (ANALYSIS).
+//!   queue→drain deviation family (ANALYSIS). W4-d53 FINAL census: the
+//!   item-side wetVelocity blend landed (e19 `a849b310d`/`939e45dc8`, f47
+//!   `8d11597b4` — WorldItem's ApplyMovement); the PROJECTILE side is
+//!   PORTED for the flail (`flail_wet_factor`, S1-P-i07) and the d3 boulder
+//!   family (`boulder_movement`'s wet arm, `2d01693ca`), but the GENERIC
+//!   integrate (`kill_step` + `ai_style1_flight` + the per-arm free moves)
+//!   still steps the FULL velocity while wet — a separate movement-lane
+//!   arm, censused in ANALYSIS "The wetVelocity census" (not this lane's
+//!   window; the wet machine's flags are its input, now authoritative).
 //! * The two pre-AI wet substitutes stay as documented read-lag feeds: the
 //!   bobber's head `probe_wet` (the i35 one-tick-lag deviation) and the
 //!   aiStyle-16 dispatch's centre-cell `wet` write (the i16 stand-in). This
