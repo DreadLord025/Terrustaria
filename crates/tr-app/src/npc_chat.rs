@@ -818,12 +818,14 @@ fn golfer(ctx: &mut ChatContext) -> String {
 
 /// 633 — the Zoologist (`NPC.cs:94311-94316`).
 fn zoologist(ctx: &mut ChatContext) -> String {
-    // `NPC.ShouldBestiaryGirlBeLycantrope` (`NPC.cs:93753-93764`).
-    let lycantrope = if !ctx.blood_moon || ctx.day_time {
-        ctx.moon_phase == 0 && !ctx.day_time
-    } else {
-        true
-    };
+    // `NPC.ShouldBestiaryGirlBeLycantrope` (`NPC.cs:93753-93764`) — the
+    // shared derivation the happiness report's `Transformed` suffix reads
+    // (`happiness.rs`, `ShopHelper.cs:191-194`).
+    let lycantrope = crate::happiness::should_bestiary_girl_be_lycantrope(
+        ctx.blood_moon,
+        ctx.day_time,
+        ctx.moon_phase,
+    );
     if lycantrope {
         return chatter(ctx, "BestiaryGirlLycantropeChatter");
     }

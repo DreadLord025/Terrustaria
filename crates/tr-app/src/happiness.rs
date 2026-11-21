@@ -551,12 +551,36 @@ pub fn can_show_homeless_text(npc: Option<&crate::npc::Npc>) -> bool {
     }
 }
 
+/// `NPC.ShouldBestiaryGirlBeLycantrope` (`NPC.cs:93753-93764`): the
+/// Zoologist's shapeshift form — a blood-moon night, or a full-moon
+/// (`moonPhase == 0`) night. `UpdateAltTexture` (`NPC.cs:90225-90227`)
+/// writes `altTexture = 2` exactly on this predicate, so the report's
+/// `Transformed` suffix (`ShopHelper.cs:191-194`) reads it directly — no
+/// alt-texture field needed. The `npc_chat.rs` Zoologist arm inlines the
+/// same gate (`:822-826`); this is the shared derivation.
+pub fn should_bestiary_girl_be_lycantrope(blood_moon: bool, day_time: bool, moon_phase: u8) -> bool {
+    if !blood_moon || day_time {
+        moon_phase == 0 && !day_time
+    } else {
+        true
+    }
+}
+
 /// `ShopHelper.AddHappinessReportText` (`ShopHelper.cs:188-196`): the
-/// category is `TownNPCMood_{NPCID.Search.GetName(netID)}` (the Zoologist's
-/// `altTexture == 2` shapeshift suffix `:191-194` is constants-off — no
-/// alt-texture state ported); each row PREPENDS
+/// category is `TownNPCMood_{NPCID.Search.GetName(netID)}`, plus the
+/// `Transformed` suffix when the talked NPC is the Zoologist (633) in her
+/// shapeshift form (`:191-194`: `type == 633 && altTexture == 2` — the
+/// caller derives the form through [`should_bestiary_girl_be_lycantrope`],
+/// the predicate `UpdateAltTexture` writes `altTexture = 2` on,
+/// `NPC.cs:90225-90227`); each row PREPENDS
 /// `Language.GetTextValueWith(category.key, substitutes) + " "`.
-fn prepend_report(report: &mut String, kind: NpcKind, key: &str, args: &[(&str, String)]) {
+fn prepend_report(
+    report: &mut String,
+    kind: NpcKind,
+    transformed: bool,
+    key: &str,
+    args: &[(&str, String)],
+) {
     let Some(name) = crate::lang_tables::NPC_ID
         .iter()
         .find(|(id, _)| *id == kind.cs_id() as i32)
@@ -564,11 +588,17 @@ fn prepend_report(report: &mut String, kind: NpcKind, key: &str, args: &[(&str, 
     else {
         return;
     };
+    // `:191-194` — the Zoologist's shapeshift category suffix.
+    let suffix = if kind == NpcKind::Zoologist && transformed {
+        "Transformed"
+    } else {
+        ""
+    };
     let subs: Vec<(&str, tr_core::localization::Substitution)> = args
         .iter()
         .map(|(k, v)| (*k, tr_core::localization::Substitution::Text(v.clone())))
         .collect();
-    let line = crate::lang::text_format_with(&format!("TownNPCMood_{name}.{key}"), &subs);
+    let line = crate::lang::text_format_with(&format!("TownNPCMood_{name}{suffix}.{key}"), &subs);
     // `string.Concat(str1: text, str0: report, str2: " ")` — text FIRST.
     *report = format!("{line}{report} ");
 }
@@ -584,27 +614,39 @@ fn biome_name(key: &str) -> String {
 /// biome (`IsPlayerInEvilBiomes` `:353-356` passes `BiomeName`); the
 /// LikePrincess row uses the `LikeNPC_Princess` key
 /// (`AllPersonalitiesModifier.cs:37-40` → `ShopHelper.cs:252-259`).
-pub fn happiness_report(kind: NpcKind, flags: &[MoodFlag], all_npcs: &[crate::npc::Npc]) -> String {
+pub fn happiness_report(
+    kind: NpcKind,
+    transformed: bool,
+    flags: &[MoodFlag],
+    all_npcs: &[crate::npc::Npc],
+) -> String {
     let mut report = String::new();
     for flag in flags {
         match flag {
-            MoodFlag::NoHome => prepend_report(&mut report, kind, "NoHome", &[]),
-            MoodFlag::FarFromHome => prepend_report(&mut report, kind, "FarFromHome", &[]),
+            MoodFlag::NoHome => prepend_report(&mut report, kind, transformed, "NoHome", &[]),
+            MoodFlag::FarFromHome => {
+                prepend_report(&mut report, kind, transformed, "FarFromHome", &[])
+            }
             MoodFlag::HateBiomeEvil => {
                 // The name-less legacy marker — no BiomeName substitute
                 // (the mood pass emits `HateBiomeNamed` instead).
-                prepend_report(&mut report, kind, "HateBiome", &[]);
+                prepend_report(&mut report, kind, transformed, "HateBiome", &[]);
             }
             MoodFlag::HateBiomeNamed(biome) => prepend_report(
                 &mut report,
                 kind,
+                transformed,
                 "HateBiome",
                 &[("BiomeName", biome_name(biome_name_key(*biome)))],
             ),
-            MoodFlag::DislikeCrowded => prepend_report(&mut report, kind, "DislikeCrowded", &[]),
-            MoodFlag::HateCrowded => prepend_report(&mut report, kind, "HateCrowded", &[]),
-            MoodFlag::LoveSpace => prepend_report(&mut report, kind, "LoveSpace", &[]),
-            MoodFlag::Content => prepend_report(&mut report, kind, "Content", &[]),
+            MoodFlag::DislikeCrowded => {
+                prepend_report(&mut report, kind, transformed, "DislikeCrowded", &[])
+            }
+            MoodFlag::HateCrowded => {
+                prepend_report(&mut report, kind, transformed, "HateCrowded", &[])
+            }
+            MoodFlag::LoveSpace => prepend_report(&mut report, kind, transformed, "LoveSpace", &[]),
+            MoodFlag::Content => prepend_report(&mut report, kind, transformed, "Content", &[]),
             MoodFlag::BiomeAffection(level, biome) => {
                 let key = match level {
                     AffectionLevel::Love => "LoveBiome",
@@ -615,6 +657,7 @@ pub fn happiness_report(kind: NpcKind, flags: &[MoodFlag], all_npcs: &[crate::np
                 prepend_report(
                     &mut report,
                     kind,
+                    transformed,
                     key,
                     &[("BiomeName", biome_name(biome_name_key(*biome)))],
                 );
@@ -639,6 +682,7 @@ pub fn happiness_report(kind: NpcKind, flags: &[MoodFlag], all_npcs: &[crate::np
                 prepend_report(
                     &mut report,
                     kind,
+                    transformed,
                     key,
                     &[("NPCName", npc_full_name(all_npcs, name_kind))],
                 );
@@ -651,7 +695,10 @@ pub fn happiness_report(kind: NpcKind, flags: &[MoodFlag], all_npcs: &[crate::np
 /// `ShopHelper.GetShoppingSettings` (`ShopHelper.cs:49-62`) — the
 /// `Player.SetTalkNPC` companion (`Player.cs:4389`): the mood pass plus the
 /// report string. `process_mood`'s flags carry the call order; the report
-/// folds them through `AddHappinessReportText`'s prepend.
+/// folds them through `AddHappinessReportText`'s prepend. The Zoologist's
+/// `Transformed` category suffix reads her shapeshift form off the world
+/// clock (`ShouldBestiaryGirlBeLycantrope`, the predicate `UpdateAltTexture`
+/// writes `altTexture = 2` on — `NPC.cs:90225-90227`).
 pub fn shopping_settings(
     world: &World,
     all_npcs: &[crate::npc::Npc],
@@ -660,9 +707,11 @@ pub fn shopping_settings(
     raining: bool,
 ) -> ShoppingSettings {
     let mood = process_mood(world, all_npcs, npc, player_center, raining);
+    let transformed =
+        should_bestiary_girl_be_lycantrope(world.blood_moon, world.day_time, world.moon_phase);
     ShoppingSettings {
         price_adjustment: mood.multiplier,
-        happiness_report: happiness_report(npc.kind, &mood.flags, all_npcs),
+        happiness_report: happiness_report(npc.kind, transformed, &mood.flags, all_npcs),
     }
 }
 
@@ -1100,7 +1149,7 @@ mod tests {
                 MoodFlag::LoveSpace,
                 MoodFlag::BiomeAffection(AffectionLevel::Like, BiomeKind::Forest),
             ];
-            let report = happiness_report(NpcKind::Guide, &flags, &[]);
+            let report = happiness_report(NpcKind::Guide, false, &flags, &[]);
             let like = crate::lang::text_format_with(
                 "TownNPCMood_Guide.LikeBiome",
                 &[(
@@ -1125,14 +1174,14 @@ mod tests {
             clothier.hp = clothier.max_hp;
             clothier.given_name = "Isaac".into();
             let flags = [MoodFlag::NpcAffection(AffectionLevel::Like, NpcKind::Clothier)];
-            let report = happiness_report(NpcKind::Guide, &flags, &[clothier]);
+            let report = happiness_report(NpcKind::Guide, false, &flags, &[clothier]);
             let full = crate::lang::text_args(
                 "Game.NPCTitle",
                 &["Isaac".to_string(), crate::lang::npc_name(54)],
             );
             assert!(report.contains(&full), "the given-name title: {report}");
             // No resident → the type name alone.
-            let bare = happiness_report(NpcKind::Guide, &flags, &[]);
+            let bare = happiness_report(NpcKind::Guide, false, &flags, &[]);
             assert!(bare.contains(&crate::lang::npc_name(54)));
             assert!(!bare.contains("Isaac"));
         }
@@ -1144,7 +1193,7 @@ mod tests {
             let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
             crate::lang::init(tr_core::localization::GameCulture::English);
             let flags = [MoodFlag::NpcAffection(AffectionLevel::Like, NpcKind::Princess)];
-            let report = happiness_report(NpcKind::Guide, &flags, &[]);
+            let report = happiness_report(NpcKind::Guide, false, &flags, &[]);
             let expected = crate::lang::text_format_with(
                 "TownNPCMood_Guide.LikeNPC_Princess",
                 &[(
@@ -1168,6 +1217,57 @@ mod tests {
             tm.home = None;
             assert!(!can_show_homeless_text(Some(&tm)), "368 excluded (`:94836`)");
             assert!(!can_show_homeless_text(None), "npcIndex < 0 (`:94831`)");
+        }
+
+        /// `ShouldBestiaryGirlBeLycantrope` (`NPC.cs:93753-93764`): the
+        /// shapeshift form — a blood-moon night, or a full-moon night; the
+        /// day and the other moon phases are human. `UpdateAltTexture`
+        /// (`:90225-90227`) writes `altTexture = 2` exactly here.
+        #[test]
+        fn the_lycantrope_predicate() {
+            // A blood-moon night transforms regardless of the moon phase.
+            assert!(should_bestiary_girl_be_lycantrope(true, false, 3));
+            // A blood moon by day does NOT (the `|| dayTime` arm).
+            assert!(!should_bestiary_girl_be_lycantrope(true, true, 0));
+            // A full-moon night (phase 0) transforms.
+            assert!(should_bestiary_girl_be_lycantrope(false, false, 0));
+            // The other phases by night stay human.
+            assert!(!should_bestiary_girl_be_lycantrope(false, false, 4));
+            // Full moon by day stays human.
+            assert!(!should_bestiary_girl_be_lycantrope(false, true, 0));
+        }
+
+        /// `AddHappinessReportText`'s `Transformed` suffix (`ShopHelper.cs:
+        /// 191-194`): the Zoologist (633) in her shapeshift form reads the
+        /// `TownNPCMood_BestiaryGirlTransformed` category; human reads
+        /// `TownNPCMood_BestiaryGirl`. Other kinds never take the suffix.
+        #[test]
+        fn the_zoologist_transformed_suffix() {
+            let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+            crate::lang::init(tr_core::localization::GameCulture::English);
+            let flags = [MoodFlag::Content];
+            // Human form — the plain category.
+            let human = happiness_report(NpcKind::Zoologist, false, &flags, &[]);
+            assert_eq!(
+                human,
+                format!("{} ", crate::lang::text("TownNPCMood_BestiaryGirl.Content"))
+            );
+            // Shapeshift form — the Transformed category ("Rrrr... feel fine.").
+            let wolf = happiness_report(NpcKind::Zoologist, true, &flags, &[]);
+            assert_eq!(
+                wolf,
+                format!(
+                    "{} ",
+                    crate::lang::text("TownNPCMood_BestiaryGirlTransformed.Content")
+                )
+            );
+            assert_ne!(human, wolf, "the two forms read different rows");
+            // A non-Zoologist never takes the suffix even when the flag is set.
+            let guide = happiness_report(NpcKind::Guide, true, &flags, &[]);
+            assert_eq!(
+                guide,
+                format!("{} ", crate::lang::text("TownNPCMood_Guide.Content"))
+            );
         }
     }
 }
