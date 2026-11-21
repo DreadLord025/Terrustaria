@@ -3851,13 +3851,15 @@ mod tests {
     /// Spawn Point / Grass Wall pair (`WorldGen.cs:19460` / `:19589`, the
     /// siblings' ranges) and before Sunflowers (`:19898`) / Planting Trees
     /// (`:19940`). The port's tree family stands in for the unexecuted
-    /// Spawn Point / Grass Wall / Sunflowers slots, so the step lands at the
-    /// head of the family, immediately before `trees`.
+    /// Spawn Point / Grass Wall slots, so the step lands at the head of
+    /// the family, immediately before `sunflowers` (#38 inserted between
+    /// `guide` and `trees`).
     #[test]
     fn w4_d105_the_guide_step_sits_before_the_trees() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        assert_eq!(pos("guide") + 1, pos("trees"));
+        assert_eq!(pos("guide") + 1, pos("sunflowers"));
+        assert!(pos("guide") < pos("trees"));
         assert_eq!(names[pos("guide") - 1], "living trees");
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
@@ -3892,16 +3894,18 @@ mod tests {
     }
 
     /// W4-d105 lane 5 (#39): `herbs` sits immediately after `trees` and
-    /// before `surface flora` — the vanilla Planting Trees
-    /// (`WorldGen.cs:19940`) → Herbs (`:19964`) → Dye Plants (`:19981`) →
-    /// Webs And Honey (`:19995`) → Weeds (`:20064`) chain (the port's
-    /// `surface flora` stands in for the Weeds slot).
+    /// before `dye plants` (#40 inserted between `herbs` and `surface
+    /// flora`) — the vanilla Planting Trees (`WorldGen.cs:19940`) → Herbs
+    /// (`:19964`) → Dye Plants (`:19981`) → Webs And Honey (`:19995`) →
+    /// Weeds (`:20064`) chain (the port's `surface flora` stands in for
+    /// the Weeds slot).
     #[test]
     fn w4_d105_the_herbs_step_sits_after_the_trees() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("herbs"), pos("trees") + 1);
-        assert_eq!(pos("herbs") + 1, pos("surface flora"));
+        assert_eq!(pos("herbs") + 1, pos("dye plants"));
+        assert!(pos("herbs") < pos("surface flora"));
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
             .filter(|p| p.gate.is_empty())

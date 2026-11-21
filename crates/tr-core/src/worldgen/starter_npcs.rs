@@ -32,6 +32,12 @@
 //! - The tenth-anniversary first spawn's home is `Main.spawnTileX/Y`
 //!   (`:19709-19710`) while every later spawn homes at its own adjusted
 //!   floor position — kept verbatim.
+//! - The App materialisation decodes the netID through `kind_from_net_id`
+//!   (the bestiary rows); the kinds the bestiary does not carry yet (the
+//!   Steampunker 178, the white bunny 656, the purple/rainbow slimes
+//!   680/681) skip gracefully — the ledger still records them, and they
+//!   land when the bestiary gains the rows. The classic Guide 22 and the
+//!   seven main seed-arm kinds (17/20/38/124/208/441/663) all decode.
 
 use super::GenOptions;
 use crate::seeds::{MicroSeedFlags, SeedFlags};
