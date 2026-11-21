@@ -113,6 +113,10 @@ pub struct Rain {
     /// `Main.rainTime`: ticks left in the current event (`Main.cs:64874` drains it
     /// by `dayRate` per world tick); 0 outside an event.
     rain_time: i32,
+    /// `FreezeRainPower.Enabled` (`CreativePowers.cs:1507-1538`): the world
+    /// tick copies the power in per step (`Main.cs:64866`/`:64893` read the
+    /// manager live; the port snapshots like the other cross-system inputs).
+    freeze_rain: bool,
     /// `Main.ladyBugRainBoost` (`Main.cs:64833-64836`): the ladybug-death rain
     /// window, drained by `dayRate` per tick and gating the third start arm
     /// (`Main.cs:64920`). The setter side (M4 ladybug deaths) is not ported — the
@@ -247,6 +251,7 @@ impl Rain {
             target: 0.0,
             raining: false,
             rain_time: 0,
+            freeze_rain: false,
             lady_bug_rain_boost: 0,
             calm: start_calm,
             wind,
@@ -290,6 +295,33 @@ impl Rain {
     /// `Main.rainTime`: ticks left in the event (`Main.cs:64874` drains it).
     pub(crate) fn rain_time(&self) -> i32 {
         self.rain_time
+    }
+
+    /// `Main.cloudAlpha` — the RAW visible intensity (the rain slider's
+    /// `GetSliderValueInner` reads it verbatim, `CreativePowers.cs:1332-1335`;
+    /// [`Self::visual_alpha`] is the sky-tint clamp, a different consumer).
+    pub fn cloud_alpha(&self) -> f32 {
+        self.intensity
+    }
+
+    /// The world tick's per-step copy of `FreezeRainPower.Enabled`
+    /// (`Main.cs:64866`/`:64893` read the manager live).
+    pub(crate) fn set_freeze_rain(&mut self, frozen: bool) {
+        self.freeze_rain = frozen;
+    }
+
+    /// `ModifyRainPower.UpdateInfoFromSliderValueCache`
+    /// (`CreativePowers.cs:1320-1330`): cache 0 → `StopRain(instant: true)`,
+    /// else `StartRain(instant: true, strengthOverride: cache)`. The full
+    /// `StartRain` ladder still rolls (`Main.cs:64676-64723`) — the override
+    /// only replaces `ChangeRain`'s strength draw; `instant` snaps
+    /// `cloudAlpha := maxRaining` (`:64736-64739`).
+    pub(crate) fn set_rain_power(&mut self, cache: f32, world: &World, remix_world: bool, player_luck: f32) {
+        if cache == 0.0 {
+            self.stop_rain_instant(); // `:1324`
+        } else {
+            self.start_rain_with(world, remix_world, player_luck, true, Some(cache)); // `:1328`
+        }
     }
 
     /// S1-P-i35 — `Main.ladyBugRainBoost += NPC.ladyBugRainTime` clamped at
@@ -676,25 +708,27 @@ impl Rain {
             return;
         }
         if self.raining {
-            // `Main.cs:64864-64888` — the drain and the strength-change roll.
-            self.rain_time -= day_rate; // `:64874`
-            if day_rate > 0 {
-                // `:64875` — always true today (`day_rate()` is 60|1); the gate is
-                // the C# shape.
-                let num = 86400 / day_rate / 24; // `:64877`
-                if self.rain_time <= 0 {
-                    self.stop_rain(); // `:64880`
-                } else if self.range(0, (num * 2) as u32) == 0 {
-                    self.change_rain(); // `:64882-64885`
+            // `Main.cs:64864-64888` — the drain and the strength-change roll,
+            // the whole block behind `!FreezeRainPower.Enabled` (`:64866`).
+            if !self.freeze_rain {
+                self.rain_time -= day_rate; // `:64874`
+                if day_rate > 0 {
+                    // `:64875` — always true today (`day_rate()` is 60|1); the gate is
+                    // the C# shape.
+                    let num = 86400 / day_rate / 24; // `:64877`
+                    if self.rain_time <= 0 {
+                        self.stop_rain(); // `:64880`
+                    } else if self.range(0, (num * 2) as u32) == 0 {
+                        self.change_rain(); // `:64882-64885`
+                    }
                 }
             }
         } else {
             // `Main.cs:64890-64923`: `!slimeRain && !LanternsUp &&
             // !NextNightIsLanternNight` — all port-absent.
             let num2 = 86400 / if day_rate == 0 { 1 } else { day_rate }; // `:64892`
-            // `:64893`: `!FreezeRainPower.Enabled && Main.dayRate != 0` — the
-            // freeze power is port-absent.
-            let mut flag = day_rate != 0;
+            // `:64893`: `!FreezeRainPower.Enabled && Main.dayRate != 0`.
+            let mut flag = !self.freeze_rain && day_rate != 0;
             if flag && !any_player_120 {
                 // `:64894-64909`: the 255-player `statLifeMax >= 120` scan; the
                 // port has one player and the tick computes the bool.
@@ -718,11 +752,25 @@ impl Rain {
     }
 
     /// `Main.StartRain` (`Main.cs:64659-64727`). The `instant`/`strengthOverride`
-    /// params default to the C# values (the port's callers never pass them) and
+    /// params default to the C# values (the scheduler's callers never pass
+    /// them; the rain power's slider does — `CreativePowers.cs:1328`) and
     /// `IsRainingForever` has no save field — both cited inline. `player_luck`
     /// is `GetPlayerWithHighestLuck().luck` (`Player.cs:18213-18229` — the
     /// port's single player; a fresh `Player()` with luck 0 when none).
     pub(crate) fn start_rain(&mut self, world: &World, remix_world: bool, player_luck: f32) {
+        self.start_rain_with(world, remix_world, player_luck, false, None);
+    }
+
+    /// The parameterised `StartRain(instant, strengthOverride)` — the rain
+    /// power's `UpdateInfoFromSliderValueCache` arm (`CreativePowers.cs:1328`).
+    pub(crate) fn start_rain_with(
+        &mut self,
+        world: &World,
+        remix_world: bool,
+        player_luck: f32,
+        instant: bool,
+        strength_override: Option<f32>,
+    ) {
         // `Main.cs:64661`.
         if !remix_world && world.world_surface > 50.0 && !self.raining {
             // `Main.cs:64663-64667`: `range = 25`; the tenth-anniversary 5 needs
@@ -783,17 +831,27 @@ impl Rain {
         // `Main.cs:64720-64723`: `IsRainingForever` has no save field — the
         // assignment always runs (the C# gate is skipped, cited).
         self.rain_time = (num4 as f32 * num5) as i32; // `:64722` `(int)((float)num4 * num5)`
-        self.change_rain(); // `:64724` — `ChangeRain(instant, strengthOverride)` defaults
+        self.change_rain_with(instant, strength_override); // `:64724`
         self.raining = true; // `:64725`
     }
 
     /// `Main.ChangeRain` (`Main.cs:64728-64740`). The `instant`/`strengthOverride`
-    /// params default to the C# values (the port's callers never pass them);
-    /// `numClouds` reads the static cloud-field stand-in and `cloudBGActive >= 1f`
-    /// the `cloudBGAlpha` stand-in — the live cloud system (`Main.cs:58952-59036`)
-    /// is unported.
+    /// params default to the C# values (the scheduler's callers never pass
+    /// them); `numClouds` reads the static cloud-field stand-in and
+    /// `cloudBGActive >= 1f` the `cloudBGAlpha` stand-in — the live cloud
+    /// system (`Main.cs:58952-59036`) is unported.
     fn change_rain(&mut self) {
-        let val = if self.cloud_bg >= 1.0 || NUM_CLOUDS_STAND_IN > 150 {
+        self.change_rain_with(false, None);
+    }
+
+    /// The parameterised `ChangeRain(instant, strengthOverride)` — the rain
+    /// power's slider passes its cache as the override (`CreativePowers.cs:1328`
+    /// → `Main.cs:64730`'s `strengthOverride.HasValue` arm, which consumes NO
+    /// strength draws).
+    fn change_rain_with(&mut self, instant: bool, strength_override: Option<f32>) {
+        let val = if let Some(v) = strength_override {
+            v // `:64730`: the override replaces the whole band ladder
+        } else if self.cloud_bg >= 1.0 || NUM_CLOUDS_STAND_IN > 150 {
             // `Main.cs:64730` band 1: `Next(40,91)` / `Next(20,91)` ×0.01.
             if self.range(0, 3) != 0 {
                 self.range(40, 91) as f32 * 0.01
@@ -818,23 +876,37 @@ impl Rain {
         // `Main.cs:64731-64734`: the `IsRainingForever` `max(val, 0.1f)` floor —
         // no save field, skipped (cited).
         self.target = val; // `:64735` `Main.maxRaining = val`
-        // `:64736-64739`: the `instant` arm snaps `cloudAlpha` — the port's
-        // callers never pass it (default false) and the visual ramps own
-        // `cloudAlpha`.
+        // `:64736-64739`: the `instant` arm snaps `cloudAlpha := maxRaining`
+        // (the rain power's slider passes it; the scheduler's callers use the
+        // default false and the visual ramps own `cloudAlpha`).
+        if instant {
+            self.intensity = self.target;
+        }
     }
 
     /// `Main.StopRain` (`Main.cs:64644-64658`): the event clears and `cloudAlpha`
     /// decays through the visual ramp (`Main.cs:61928-61937`'s not-raining arm —
-    /// `target` 0). The `instant` default false is the ported arm;
+    /// `target` 0). The `instant` default false is the scheduler's arm;
     /// `IsRainingForever` has no save field.
     pub(crate) fn stop_rain(&mut self) {
+        self.stop_rain_with(false);
+    }
+
+    /// `StopRain(instant: true)` — the rain power's cache-0 arm
+    /// (`CreativePowers.cs:1324`): `cloudAlpha := maxRaining` (0) at once.
+    pub(crate) fn stop_rain_instant(&mut self) {
+        self.stop_rain_with(true);
+    }
+
+    fn stop_rain_with(&mut self, instant: bool) {
         self.rain_time = 0; // `:64648`
         self.raining = false; // `:64649`
         self.target = 0.0; // `:64650` `Main.maxRaining = 0f`
         // `:64651` `Main.coinRain = 0` — never stored (see `start_rain`).
-        // `:64652-64655`: the `instant` arm would snap `cloudAlpha` to 0 — the
-        // port's callers use the default and the ramp decays the visible
-        // intensity.
+        // `:64652-64655`: the `instant` arm snaps `cloudAlpha` to `maxRaining`.
+        if instant {
+            self.intensity = self.target;
+        }
     }
 
     /// Takes a batch of `WaterfallManager.TrySparkling` spawns (world pixels).
