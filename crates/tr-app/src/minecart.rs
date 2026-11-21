@@ -1310,33 +1310,43 @@ pub(crate) fn minecart_bumper_sound(
 /// `right` (0→8, 1→0x10, 2→0x20); a dead-end side (−1) contributes 0. With
 /// fewer than 2 neighbour tracks the mask must match exactly; otherwise it
 /// must be a non-zero subset. `None` when no frame fits (the C# null array).
-fn track_switch_options(mask: u32) -> Option<Vec<i32>> {
-    let neighbour_count = mask.count_ones();
-    let mut options = Vec::new();
-    for (frame, data) in TRACK_FRAMES.iter().enumerate() {
-        let mut frame_mask = 0u32;
-        match data.left_connection {
-            0 => frame_mask |= 1,
-            1 => frame_mask |= 2,
-            2 => frame_mask |= 4,
-            _ => {}
-        }
-        match data.right_connection {
-            0 => frame_mask |= 8,
-            1 => frame_mask |= 0x10,
-            2 => frame_mask |= 0x20,
-            _ => {}
-        }
-        let fits = if neighbour_count < 2 {
-            mask == frame_mask
-        } else {
-            frame_mask != 0 && (mask & frame_mask) == frame_mask
-        };
-        if fits {
-            options.push(frame as i32);
-        }
-    }
-    if options.is_empty() { None } else { Some(options) }
+/// Built ONCE for all 64 masks (the C# `Initialize` loop; the W4-f11 OnceLock
+/// shape merged per research-71 §3b.2 — output identical, no per-hit Vec).
+fn track_switch_options(mask: u32) -> Option<&'static [i32]> {
+    static OPTIONS: std::sync::OnceLock<Vec<Option<Vec<i32>>>> = std::sync::OnceLock::new();
+    OPTIONS.get_or_init(|| {
+        (0..64u32)
+            .map(|mask| {
+                let neighbour_count = mask.count_ones();
+                let mut options = Vec::new();
+                for (frame, data) in TRACK_FRAMES.iter().enumerate() {
+                    let mut frame_mask = 0u32;
+                    match data.left_connection {
+                        0 => frame_mask |= 1,
+                        1 => frame_mask |= 2,
+                        2 => frame_mask |= 4,
+                        _ => {}
+                    }
+                    match data.right_connection {
+                        0 => frame_mask |= 8,
+                        1 => frame_mask |= 0x10,
+                        2 => frame_mask |= 0x20,
+                        _ => {}
+                    }
+                    let fits = if neighbour_count < 2 {
+                        mask == frame_mask
+                    } else {
+                        frame_mask != 0 && (mask & frame_mask) == frame_mask
+                    };
+                    if fits {
+                        options.push(frame as i32);
+                    }
+                }
+                if options.is_empty() { None } else { Some(options) }
+            })
+            .collect()
+    })[mask as usize]
+        .as_deref()
 }
 
 /// `Minecart.GetNearbyTilesSetLookupIndex` (`Minecart.cs:1170-1198`): the
