@@ -1623,6 +1623,50 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // advances MARATHON_MEDALIST's `Move` float accumulator.
             let _ = app.achievements.notify_custom_float("Move", run_pixels);
         }
+        // `Player.UpdateArmorSets`' local-player achievement tail
+        // (`Player.cs:25686-25704`, the `i == Main.myPlayer` block): the
+        // effective armor slots (vanity 10/11/12 over the functional 0/1/2,
+        // `GetEffectiveArmor` — the port has no loadouts, so `equipped[slot]`
+        // IS the effective kind) drive two per-tick progression checks.
+        // TRAINING_DAY (40, `:25695-25698`) reads `NPC.combatBookWasUsed &&
+        // combatBookVolumeTwoWasUsed`; the port carries only the first book
+        // flag (`world.combat_book_was_used`) and the volume-two use is
+        // unported, so that check stays cited-unwired (the second flag never
+        // sets). CheckResearchAchievement (45, `:25703`) rides the research
+        // family — see `research::check_research_achievement` (the live
+        // sacrifice UI is unported, so the tracker never edits in play).
+        {
+            let slot_id = |slot: usize, pick: fn(&crate::registry::ItemDef) -> i16| -> i32 {
+                crate::registry::get(p.equipped[slot]).map_or(-1, |d| pick(d) as i32)
+            };
+            // `:25688-25690` — head/body/legs: the vanity slot's id when it
+            // carries one (`>= 0`), else the functional slot's.
+            let head_v = slot_id(10, |d| d.head_slot);
+            let num21 = if head_v >= 0 { head_v } else { slot_id(0, |d| d.head_slot) };
+            let body_v = slot_id(11, |d| d.body_slot);
+            let num22 = if body_v >= 0 { body_v } else { slot_id(1, |d| d.body_slot) };
+            let legs_v = slot_id(12, |d| d.leg_slot);
+            let num23 = if legs_v >= 0 { legs_v } else { slot_id(2, |d| d.leg_slot) };
+            // ON_FLEEK (38, `:25691-25694`): Sunglasses (head slot 12) worn in
+            // daylight, no rain, not a remix world, above the surface, inside
+            // the day window `time in [3600, 50400]`.
+            let remix = app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
+            if num21 == 12
+                && !remix
+                && !app.rain.is_raining()
+                && app.world.day_time
+                && app.world.time >= 3600.0
+                && app.world.time <= 50400.0
+                && (p.y as f64) < app.world.world_surface * 16.0
+            {
+                let _ = app.notify_progression_net(38);
+            }
+            // MINI_ME (41, `:25699-25702`): the full Moon Lord vanity set —
+            // the mask (head 187), the body (249) and the legs (217).
+            if num21 == 187 && num22 == 249 && num23 == 217 {
+                let _ = app.notify_progression_net(41);
+            }
+        }
         // `RemoveAllGrapplingHooks` (`Player.cs:33562-33574`): the jump-off
         // kills every aiStyle-7 slot this player owns, clears the owner's
         // refused-tile set and drops the registration — the pool helper carries
@@ -3331,5 +3375,83 @@ mod tests {
             mana_now >= mana_before + 50,
             "the second drink restored 50: {mana_before} -> {mana_now}"
         );
+    }
+
+    // ---- W4-f30: the per-tick armor achievement tail (38 / 41) ------------
+
+    /// A rig for `UpdateArmorSets`' local-player tail (`Player.cs:25686-25704`):
+    /// a standing player above the surface, day clock inside the ON_FLEEK
+    /// window, no rain. The equipped kinds ride `app.equip.armor` (the tick
+    /// snapshots them into `p.equipped`).
+    fn armor_tail_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = World::new("armor-tail".into(), 64, 200);
+        app.world.compute_column_surface();
+        app.world.day_time = true;
+        app.world.time = 10000.0; // inside [3600, 50400]
+        let mut p = Player::spawn(&app.world);
+        p.y = 100.0; // above world_surface * 16 (200 * 0.25 * 16 = 800)
+        app.player = Some(p);
+        app
+    }
+
+    fn wear(app: &mut App, slot: usize, kind: u16) {
+        app.equip.armor[slot] = crate::item::ItemSlot { kind, name: "", count: 1, prefix: 0 };
+    }
+
+    fn row_completed(app: &App, name: &str) -> bool {
+        app.achievements.list.iter().find(|a| a.name == name).unwrap().completed
+    }
+
+    /// ON_FLEEK (38, `Player.cs:25691-25694`): Sunglasses (head slot 12) in
+    /// the day window above the surface fires; rain / night / below-surface
+    /// each refuse.
+    #[test]
+    fn f30_on_fleet_needs_sunglasses_in_the_day_window() {
+        let mut app = armor_tail_app();
+        wear(&mut app, 0, 237); // Sunglasses, head_slot 12
+        tick_ammo(&mut app);
+        assert!(row_completed(&app, "ON_FLEEK"), "the day-window sunglasses fire 38");
+
+        // Rain refuses.
+        let mut rainy = armor_tail_app();
+        wear(&mut rainy, 0, 237);
+        rainy.rain.set_raining_for_test(true);
+        tick_ammo(&mut rainy);
+        assert!(!row_completed(&rainy, "ON_FLEEK"), "rain refuses");
+
+        // Night refuses.
+        let mut night = armor_tail_app();
+        wear(&mut night, 0, 237);
+        night.world.day_time = false;
+        tick_ammo(&mut night);
+        assert!(!row_completed(&night, "ON_FLEEK"), "night refuses");
+
+        // Below the surface refuses.
+        let mut deep = armor_tail_app();
+        wear(&mut deep, 0, 237);
+        deep.player.as_mut().unwrap().y = 5000.0;
+        tick_ammo(&mut deep);
+        assert!(!row_completed(&deep, "ON_FLEEK"), "below the surface refuses");
+    }
+
+    /// MINI_ME (41, `Player.cs:25699-25702`): the full Moon Lord vanity set
+    /// (mask head 187 / body 249 / legs 217) fires; a missing piece refuses.
+    /// The vanity slots 10/11/12 carry the set (the effective-armor fold).
+    #[test]
+    fn f30_mini_me_needs_the_full_moon_lord_set() {
+        let mut app = armor_tail_app();
+        wear(&mut app, 10, 3373); // Boss Mask Moonlord, head_slot 187
+        wear(&mut app, 11, 5515); // Moon Lord Body, body_slot 249
+        wear(&mut app, 12, 5001); // Moon Lord Legs, leg_slot 217
+        tick_ammo(&mut app);
+        assert!(row_completed(&app, "MINI_ME"), "the full set fires 41");
+
+        // A missing leg piece refuses.
+        let mut partial = armor_tail_app();
+        wear(&mut partial, 10, 3373);
+        wear(&mut partial, 11, 5515);
+        tick_ammo(&mut partial);
+        assert!(!row_completed(&partial, "MINI_ME"), "two of three refuses");
     }
 }

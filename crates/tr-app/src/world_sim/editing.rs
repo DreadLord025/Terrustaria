@@ -3838,6 +3838,14 @@ fn fire_non_ammo_shot(
             app.projectiles.set_armor_penetration(slot, arpen);
             app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
         }
+        // SPICY_LICKS (progression 37, `Player.cs:46603`): the Sparkle
+        // Guitar's chord fires `NotifyProgressionEvent(37)` on the use. The
+        // C# gates the chord on the mouse-release edge (or the animation
+        // start); the port's shot seam is the use stand-in, so the notify
+        // rides the successful note spawn. The Axe 1305 (`:46574`) and the
+        // Carbon/Ivy guitars 4057/4372 (`:46588`) have no ported chord-use
+        // arm — their 37 sites stay cited-unwired (the census).
+        let _ = app.notify_progression_net(37);
     } else if held.kind == 1308 {
         // S1-P-i22 — `Player.cs:48115-48134` - the Poison Staff's volley:
         // 3 fangs, 4 on a Next(3)==0 roll; each spreads by
@@ -15669,6 +15677,22 @@ mod tests {
         assert!((ctrl - aim).length() <= 24.0 + 1e-3, "the control point jitter");
     }
 
+    /// W4-f30 — SPICY_LICKS (progression 37, `Player.cs:46603`): the Sparkle
+    /// Guitar's use fires the progression. The port's shot seam is the use
+    /// stand-in, so one fired note completes the row.
+    #[test]
+    fn f30_the_sparkle_guitar_use_fires_spicy_licks() {
+        let mut app = staff_app(4715, "Sparkle Guitar");
+        fire_once(&mut app);
+        let row = app
+            .achievements
+            .list
+            .iter()
+            .find(|a| a.name == "SPICY_LICKS")
+            .unwrap();
+        assert!(row.completed, "the guitar use fires progression 37");
+    }
+
     /// S1-P-i25 round 2 — `WorldGen.SolidTile2` (`WorldGen.cs:70492-70509`):
     /// an active solid flat block is solid; a half-brick, an actuated-off tile
     /// and a sloped block are not. Gate-merge: the i26 `sentry` module's
@@ -15986,6 +16010,9 @@ pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
         .unwrap_or((0.0, 0.0));
     let xt = ((px / TILE_PX) as i32).clamp(2, app.world.width - 3);
     let yt = ((py / TILE_PX) as i32).clamp(2, app.world.height - 3);
+    // The 544 arm pushes both eyes itself (with per-eye MechaMayhem bookends);
+    // the flag tells the shared tail the spawn already happened.
+    let mut boss_handled = false;
     let boss = match item {
         70 => {
             let mut h = Npc::spawn_worm_head(&app.world, xt, yt, NpcKind::EaterOfWorldsHead);
@@ -16008,15 +16035,33 @@ pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
         }
         // The mech trio (`:43838-43876`): the Eye spawns BOTH eyes
         // (SpawnOnPlayer(125) + SpawnOnPlayer(126)); the Worm rides the
-        // 80-budget chain; the Skull lands as the Prime. The port pushes
-        // the pair through the one returned boss + the direct list push.
+        // 80-budget chain; the Skull lands as the Prime. The 544 arm runs the
+        // MechaMayhem bookends PER EYE in the C# order — Clear/Start(125),
+        // then Clear/Start(126) (`NPC.SpawnBoss` `NPC.cs:80664-80685` called
+        // twice, `Player.cs:43811-43812`) — and pushes both eyes here; the
+        // shared tail below skips its own bookends for 544.
         544 => {
             let mut a = Npc::new(NpcKind::Retinazer, px, py, 1, 0.0);
             a.hp = a.max_hp;
             let mut b = Npc::new(NpcKind::Spazmatism, px, py, 1, 0.0);
             b.hp = b.max_hp;
+            // SpawnOnPlayer(125): Clear before, push, Start after.
+            let ids: Vec<i32> = app.npcs.iter().filter(|n| n.hp > 0).map(|n| n.kind.net_id()).collect();
+            app.achievements.mecha_mayhem_clear(ids.into_iter());
             app.npcs.push(a);
-            Some(b)
+            let ids: Vec<i32> = app.npcs.iter().filter(|n| n.hp > 0).map(|n| n.kind.net_id()).collect();
+            app.achievements.mecha_mayhem_start(ids.into_iter());
+            // SpawnOnPlayer(126): Clear before, push, Start after.
+            let ids: Vec<i32> = app.npcs.iter().filter(|n| n.hp > 0).map(|n| n.kind.net_id()).collect();
+            app.achievements.mecha_mayhem_clear(ids.into_iter());
+            app.npcs.push(b);
+            let ids: Vec<i32> = app.npcs.iter().filter(|n| n.hp > 0).map(|n| n.kind.net_id()).collect();
+            app.achievements.mecha_mayhem_start(ids.into_iter());
+            // Both eyes are pushed and the per-eye bookends ran; the shared
+            // tail must NOT push again or re-run the bookends. `boss_handled`
+            // carries that, and `None` keeps the refusal return from tripping.
+            boss_handled = true;
+            None
         }
         556 => {
             let mut h = Npc::spawn_worm_head(&app.world, xt, yt, NpcKind::TheDestroyer);
@@ -16035,15 +16080,35 @@ pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
             Some(b)
         }
     };
-    let Some(boss) = boss else {
+    // The 544 arm already pushed both eyes (with per-eye bookends) and set
+    // `boss_handled`; every other arm returns its boss for the shared push.
+    if !boss_handled && boss.is_none() {
         return false;
-    };
+    }
+    // `NPC.SpawnBoss`'s MechaMayhem bookends (`NPC.cs:80664-80685`): a mech
+    // type (127/134) runs `MechaMayhem_Clear` BEFORE the spawn and
+    // `MechaMayhem_Start` AFTER it. The 544 arm ran its own per-eye bookends
+    // above (the two `SpawnOnPlayer` calls, `Player.cs:43811-43812`), so the
+    // shared tail skips them there. The scan reads the living roster.
+    let is_mech = matches!(item, 556 | 557);
+    if is_mech {
+        let ids: Vec<i32> = app.npcs.iter().filter(|n| n.hp > 0).map(|n| n.kind.net_id()).collect();
+        app.achievements.mecha_mayhem_clear(ids.into_iter());
+    }
     app.audio.play("Roar_0");
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
     }
-    app.npcs.push(boss);
+    if let Some(boss) = boss {
+        app.npcs.push(boss);
+    }
+    // `MechaMayhem_Start` AFTER the spawn (`NPC.cs:80682-80685`): the scan now
+    // includes the new boss. `mayhemOK` arms only with all three families.
+    if is_mech {
+        let ids: Vec<i32> = app.npcs.iter().filter(|n| n.hp > 0).map(|n| n.kind.net_id()).collect();
+        app.achievements.mecha_mayhem_start(ids.into_iter());
+    }
     // `ApplyItemTime(sItem)` (`Player.cs:43759` etc.): the summon re-arms the
     // ACTION cadence only — the swing keeps running. The PREFIXED instance
     // value (`Item.cs:578`), read off the pre-consume slot.
@@ -16442,6 +16507,33 @@ mod loot_summon_tests {
                 .any(|n| n.kind == NpcKind::SkeletronPrime && n.hp > 0)
         );
     }
+
+    /// W4-f30 — the summon seam's MechaMayhem bookends (`NPC.SpawnBoss`
+    /// `NPC.cs:80664-80685`): summoning all three mech families arms
+    /// `mayhemOK` (the last Start sees Prime + Destroyer + both Twins alive).
+    #[test]
+    fn f30_the_mech_summons_arm_mecha_mayhem() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 64.0;
+        player.y = 64.0;
+        app.player = Some(player);
+        app.world.day_time = false;
+        assert!(!app.achievements.mecha_mayhem.ok, "no run before any summon");
+        // The Eye (both Twins).
+        app.inventory[app.selected] = ItemSlot { kind: 544, name: "Mechanical Eye".into(), count: 1, prefix: 0 };
+        assert!(use_boss_summon_item(&mut app));
+        assert!(!app.achievements.mecha_mayhem.ok, "the Twins alone do not arm it");
+        // The Worm (Destroyer).
+        app.inventory[app.selected] = ItemSlot { kind: 556, name: "Mechanical Worm".into(), count: 1, prefix: 0 };
+        assert!(use_boss_summon_item(&mut app));
+        assert!(!app.achievements.mecha_mayhem.ok, "still no Prime");
+        // The Skull (Prime) — the last Start sees all three families.
+        app.inventory[app.selected] = ItemSlot { kind: 557, name: "Mechanical Skull".into(), count: 1, prefix: 0 };
+        assert!(use_boss_summon_item(&mut app));
+        assert!(app.achievements.mecha_mayhem.ok, "all three families arm the run");
+    }
+
     #[test]
     fn the_battle_standard_gates_and_sizing() {
         // `Main.CanStartInvasion` (`Main.cs:64414-64432`): the 200-life
