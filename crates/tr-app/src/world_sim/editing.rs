@@ -3031,7 +3031,18 @@ fn fire_non_ammo_shot(
     // so it escapes the `dir != ZERO` gate (the facing fallback below).
     let boomerang_use = def.use_style == 1
         && crate::projectile::proj_data(proj).is_some_and(|d| d.ai_style == 3);
-    if dir == Vec2::ZERO && !boomerang_use {
+    // W4-f40 DOC-SWEEP — the Release Doves (4682) / Release Lantern (4702)
+    // (`Item.cs:38555-38562`/`:38644-38651`, `DefaultToThrownWeapon`
+    // `:48455-48466` + the `ranged = false`/`noUseGraphic` overrides): the
+    // C# carries NO per-item `ItemCheck_Shoot` arm for them — they ride the
+    // generic tail (`Player.cs:49437`) at the EXACT
+    // `RotatedRelativePoint(MountedCenter)` (`:47196`, no `+dir*10` lead),
+    // and the zero-aim fallback (`:47291-47296`) fires them at the facing
+    // like the boomerangs. The aiStyle-166 flight/visual is the d17 lane's
+    // claim (the 851/855 `proj_data` rows land with it — until then the
+    // spawn seam no-ops and only the launch decision + consume run here).
+    let release_use = matches!(held.kind, 4682 | 4702);
+    if dir == Vec2::ZERO && !boomerang_use && !release_use {
         return false;
     }
     let class = def.class;
@@ -3081,7 +3092,7 @@ fn fire_non_ammo_shot(
     // (`:47196`) = the player center with no rotation/mount/sleep offsets;
     // the `+ dir * 10` the generic port arm carries is its own recorded
     // deviation (M4-PROJ-3), NOT the C# — the boomerang variant drops it.
-    let mut spawn = if boomerang_use {
+    let mut spawn = if boomerang_use || release_use {
         Vec2::new(pcx, pcy)
     } else if held.kind == 2611 || held.kind == 5526 {
         Vec2::new(pcx, pcy) + dir * 10.0 + dir
@@ -3151,7 +3162,7 @@ fn fire_non_ammo_shot(
     // `num4 *= num6` scale — the shot flies at the facing
     // × the shootSpeed (the NaN arm is unreachable through
     // `normalize_or_zero`).
-    let shot = if dir == Vec2::ZERO && boomerang_use {
+    let shot = if dir == Vec2::ZERO && (boomerang_use || release_use) {
         Vec2::new(boomerang_facing as f32 * shot_speed, 0.0)
     } else {
         Vec2::new(dir.x * shot_speed, dir.y * shot_speed)
@@ -3164,7 +3175,11 @@ fn fire_non_ammo_shot(
     // in `damage_pve` (`Projectile.cs:12883-12917`, S1-P-i11). The facing
     // flip (`ChangeDir` `:47202-47224`) writes through a short mutable
     // re-borrow (the shared read borrow is parked for the arm).
-    if boomerang_use {
+    // W4-f40 DOC-SWEEP: the Release Doves/Lantern ride the SAME exact-center
+    // arm (the C# generic tail, no lead, `NewProjectile`'s half-box subtract
+    // `Projectile.cs:10876-10877`); the `ChangeDir` flip runs for them too
+    // (`flag` is true — only the Void Vault 3611 skips it, `:47197-47201`).
+    if boomerang_use || release_use {
         if let Some(pl) = app.player.as_mut() {
             pl.facing = boomerang_facing;
         }
@@ -16680,7 +16695,7 @@ mod use_loop_tests {
     use crate::world_sim::editing::limit_point_to_player_reachable_area;
     use glam::Vec2;
 
-    fn app_with_staff(kind: u16) -> crate::app::App {
+    pub(super) fn app_with_staff(kind: u16) -> crate::app::App {
         // A real staged world (the 8×8 `flow_app` default is too small — the
         // reach gate and the `LimitPointToPlayerReachableArea` clamp misbehave
         // on it): 64 wide, a solid floor at row 300, the player + camera near
@@ -18452,6 +18467,122 @@ mod s1_p_i08_throw_tests {
         assert_eq!(p.mana, 50);
         assert!(p.buffs.find_buff_index(94).is_some(), "ManaSickness 94");
         assert_eq!(app.inventory[app.selected].count, 2);
+    }
+}
+
+/// W4-f40 DOC-SWEEP — the Release Doves (4682) / Release Lantern (4702) USE
+/// arm (`Item.cs:38555-38562`/`:38644-38651`: `DefaultToThrownWeapon`
+/// `:48455-48466` — useStyle 1, useTime/useAnimation 25, shoot 851/855,
+/// shootSpeed 4, consumable, `ranged = false`, `noUseGraphic`). The C#
+/// carries no per-item `ItemCheck_Shoot` arm — the generic tail
+/// (`Player.cs:49437`) at the exact `RotatedRelativePoint(MountedCenter)`
+/// with the zero-aim facing fallback (`:47291-47296`), then the
+/// `ItemCheck` consumable arm (`:43280-43326`: no ranged roll chain, always
+/// consume, the stack-empty `itemTime = itemAnimation` latch). The
+/// aiStyle-166 flight + the 851/855 `proj_data` rows are the d17 lane's
+/// claim — on THIS branch the spawn seam no-ops (no rows), so the
+/// witnesses pin the launch decision + the consume; the exact-center
+/// spawn assertion rides the rows' landing (recorded in the doc).
+/// Code-only mode: WRITTEN NOT RUN.
+#[cfg(test)]
+mod w4_f40_release_tests {
+    use super::*;
+
+    /// The release rig: the item held, the cursor 80 px right of the player
+    /// centre (the +x aim). `app_with_staff`'s layout with the cursor moved.
+    fn release_app(kind: u16, count: u32) -> App {
+        let mut app = super::use_loop_tests::app_with_staff(kind);
+        app.inventory[app.selected].count = count;
+        let (sw, sh) = app.screen_size();
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        let off = (Vec2::new(cx, cy) - app.camera) * app.zoom;
+        app.mouse_pos = Vec2::new(sw * 0.5 + off.x + 80.0, sh * 0.5 + off.y);
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        app
+    }
+
+    fn fire(app: &mut App) {
+        let (sw, sh) = app.screen_size();
+        update_editing(app, 1.0 / 60.0, Vec2::new(sw, sh));
+    }
+
+    /// The press launches: the swing arms (useAnimation 25) and the stack
+    /// decrements — the generic tail fires even while the 851/855 rows are
+    /// absent (the spawn seam no-ops, the launch decision + consume run).
+    #[test]
+    fn w4_f40_the_release_press_arms_the_swing_and_consumes() {
+        for kind in [4682u16, 4702] {
+            let mut app = release_app(kind, 3);
+            fire(&mut app);
+            assert!(app.swing > 0.0, "{kind}: the swing arms on the press");
+            assert_eq!(
+                app.inventory[app.selected].count, 2,
+                "{kind}: the consumable arm decrements (`Player.cs:43317-43320`)"
+            );
+        }
+    }
+
+    /// The stack-empty latch: the last lantern's consume pins
+    /// `itemTime = itemAnimation` (`Player.cs:43321-43324`) so the empty
+    /// slot cannot re-fire. The port's `item_time` rides the swing it armed.
+    #[test]
+    fn w4_f40_the_last_release_latches_the_item_time() {
+        let mut app = release_app(4702, 1);
+        fire(&mut app);
+        assert_eq!(app.inventory[app.selected].count, 0, "the stack drains");
+        assert!(app.swing > 0.0, "the swing still runs");
+        assert!(
+            (app.item_time - app.swing).abs() < 1e-6,
+            "itemTime = itemAnimation on the empty stack: {} vs {}",
+            app.item_time,
+            app.swing
+        );
+    }
+
+    /// The zero-aim fallback: the cursor ON the player centre still fires
+    /// (`Player.cs:47291-47296` — `num4 = direction, num5 = 0`), the
+    /// facing flips to the aim side, and the stack consumes. The old
+    /// generic gate refused the zero aim for the non-boomerang kinds.
+    #[test]
+    fn w4_f40_the_zero_aim_release_still_fires_at_the_facing() {
+        let mut app = release_app(4702, 2);
+        let (sw, sh) = app.screen_size();
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        let off = (Vec2::new(cx, cy) - app.camera) * app.zoom;
+        app.mouse_pos = Vec2::new(sw * 0.5 + off.x, sh * 0.5 + off.y);
+        fire(&mut app);
+        assert!(app.swing > 0.0, "the zero-aim press fires");
+        assert_eq!(app.inventory[app.selected].count, 1, "the consume runs");
+        // The `ChangeDir` flip (`:47213-47223`): the zero aim's dot is 0,
+        // the `num > 0` test fails, so the facing goes −1.
+        assert_eq!(app.player.as_ref().unwrap().facing, -1, "the zero-aim flip");
+    }
+
+    /// The release items carry NO ranged flag (`Item.cs:38560`/`:38649`
+    /// override `DefaultToThrownWeapon`'s `ranged = true`), so the
+    /// consumable arm skips the four not-consume rolls — the UpdatePlayers
+    /// stream spends ZERO draws on the whole use (the ammo-cost flags up
+    /// would roll for a ranged consumable; here they never run).
+    #[test]
+    fn w4_f40_the_release_consume_spends_no_rng_draw() {
+        let mut app = release_app(4702, 3);
+        {
+            let p = app.player.as_mut().unwrap();
+            p.huntress_ammo_cost90 = true;
+            p.chloro_ammo_cost80 = true;
+            p.ammo_cost80 = true;
+            p.ammo_cost75 = true;
+        }
+        let seed = 0x4702;
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed);
+        fire(&mut app);
+        assert_eq!(app.inventory[app.selected].count, 2, "always consume");
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone(),
+            tr_core::UnifiedRandom::new(seed),
+            "no not-consume roll: the release items are not ranged"
+        );
     }
 }
 
