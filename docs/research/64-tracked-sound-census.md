@@ -70,14 +70,23 @@ the attenuation gate (`LegacySoundPlayer.cs:390-436` precedes `:516`).
 | 23 | Sizzle follow | `Player.cs:28599-28603` | — | — | every tick: `Volume = lerp; Position = Center` | 0 |
 | 24 | Sizzle counter | `Player.cs:28582-28589` | — | `sunScorchCounter` | `Clamp(counter + (burning ? 1 : -num), 0, 300)`, `num = 6` (dead: 2 + burning cleared); `lerp = GetLerpValue(0,120,counter,clamped)` | 0 |
 
-Deferred (owning AI unported, the layer is ready):
+Deferred (the layer is ready; the owning systems are unported):
 
 | Site | C# anchor | Why deferred |
 | --- | --- | --- |
-| RC car engine loop | `Projectile.cs:38253-38267` | the RC-car AI (volume/pitch remap machine) has no port arm |
-| Jim's Drone loop | `Projectile.cs:40983-40997` | the 1020 drone AI has no port arm (id-table row only) |
-| DD2 projectile one-shots (towers, phoenix, book staff…) | `Projectile.cs:54717`/`:55776`/`:68465`/… | ride their owning projectile-AI waves (W4-d75..77 census) |
 | ParticleOrchestrator tracked plays | `ParticleOrchestrator.cs:1888`/`:2123`/`:2427` | the particle system is unported |
+
+Landed in the deferred-item round (phases 7-10, below): the RC car engine
+loop (`Projectile.cs:38253-38267`/`:38285-38299`), Jim's Drone loop
+(`:40983-40997`), the DD2 projectile one-shots (the HEAD-rowed arms: 686
+Betsy fireball shot/impact, 131 Flameburst, 134 Ballista, 137 Lightning
+Aura zap, 138 Explosive Trap, 133 Dark Mage summon marker, 187 Shadow
+Hand ghastly glaive, 675 Dark Mage attack, plus the NEW 706 Phantom
+Phoenix / 709 Sky Dragon's Fury aiStyle-1 arms) and the
+`VampireSeedSunlightExposure` flag-granter (`Player.cs:28672-28719`).
+The remaining DD2 one-shot riders whose arms live only on sibling waves
+(the 711 Betsy's Wrath impact, the d15/c12 book-staff shots) stay deferred
+until those waves merge.
 
 ## Conditions (the looped plays' stop gates)
 
@@ -122,8 +131,10 @@ Deferred (owning AI unported, the layer is ready):
 
 ## Landing status (W4-d80, 2026-11-21)
 
-All 24 census sites landed across five phases on
-`task/W4-d80-tracked-sound-layer` (code-only mode — tests written NOT run):
+All 24 census sites landed across five phases, plus the four deferred
+items (the vampire granter, the DD2 one-shots, the RC-car and Jim's-drone
+engine loops) in phases 7-10, on `task/W4-d80-tracked-sound-layer`
+(code-only mode — tests written NOT run):
 
 * **Phase 2** (`fb945c08`): sites 1-3 — the drill/chainsaw cadence cues +
   the Laser Drill 445's Item132/23 (`Projectile::wants_sound`, the
@@ -148,9 +159,52 @@ All 24 census sites landed across five phases on
   `world_sim/player.rs::update_sizzle_audio` owns the play/follow. The
   `VampireSizzleTracker` condition folds to a shared atomic mirroring
   `vampireSeed && counter > 0`.
+* **Phase 7** (`08edc542`): the deferred `VampireSeedSunlightExposure`
+  flag-granter (`Player.cs:28672-28719`) —
+  `Player::vampire_seed_sunlight_exposure(world, raining)` wired before
+  `tick_sun_scorch` (the `UpdateSunScorch` `:28632` order): the
+  seed/surface/day/dry/eclipse/graveyard/glowshroom gate chain, the
+  any-liquid wet refusal (`WetCollision` `:27749`/`:27850`), the umbrella
+  946/4707 refusal + bat-mount-56 cancel, the 15-tile upward wall scan.
+  Folds: `MoonLordSkyIntensity` unported → vacuous;
+  `ShouldShowInvisibleBlocksAndWalls = false` (the framing.rs precedent);
+  `Main.raining` = the live `Rain::is_raining()` (world.raining is the
+  SAVE-ONLY mirror). `Zones.graveyard` added (`SceneMetrics.cs:679`);
+  `stray::solid_tile3` widened pub. The post-120-counter scorch combat
+  effects stay deferred.
+* **Phase 8** (`c10fda59`): the DD2 projectile one-shots.
+  `ProjTrackedCue` gained `OneShot`/`KillOneShot`/`GlobalOneShot`/
+  `HandlePlayFollow`; the drain applies the fire-and-forget plays and the
+  handle-store-and-follow dance (`GetActiveSound == null` →
+  `SlotId.Invalid`). Wired: 686 shot (`:56509`) + Kill impact (`:71637`),
+  131 Flameburst handle (`:68465-68475`), 134 Ballista (`:68615`), 137 zap
+  (`:68905`, the `Colliding`-137 scan gate + the `Utils.Rect.Distance`
+  port), 138 global explode (`:69362`), 133 summon marker (`:36441`), 187
+  ghastly-glaive handle (`:42506-42518`), 675 Dark Mage attack (`:56466`).
+  NEW 706 Phantom Phoenix (`:55767-55863`) + 709 Sky Dragon's Fury
+  (`:54696-54725`) aiStyle-1 arms + rows + projFrames (the resting-counter
+  straight flight, the wet kill, the frame machines). 31 DD2 cue assets
+  joined `TRACKED_CUES`.
+* **Phase 9** (`a916224d`): the RC-car engine loop.
+  `ProjTrackedCue::EngineLoop` (the ensure-play into `localAI[2]` + the
+  per-tick `Volume`/`Position`/`Pitch` follow); the aiStyle-205 arm ported
+  verbatim from the W4-d21 census (`projectile_ai_rc_drone.rs`) + the 1105
+  row + `rc_car_move` (the `correctSlopeCollision` dispatch move) +
+  projFrames 7. The envelope (`:38254-38266`/`:38286-38298`: the steer-age
+  ramp × the engine-speed floor) queues the cue at both sound sites; the
+  death hook flips the shared atomic (the RC car has NO explicit `Kill()`
+  stop, `:70855-70864`).
+* **Phase 10** (`af8e33f4`): Jim's-drone engine loop.
+  `ProjTrackedCue::EngineLoopStop` (the drone `Kill()` explicit `Stop()`,
+  `:70863` — no `localAI[2]` zero write, contrast the bomb fuse); the
+  aiStyle-195 arm ported verbatim from the W4-d20 census (`ai_jims_drone`
+  + the speed-gated `drone_move` bounce, `:18057-18067`) + the 1020 row.
+  The same envelope queues `EngineLoop(JimsDrone)` at `:40984-40997`; the
+  death hook flips the atomic AND queues the explicit stop.
 
 The RNG contract holds: every tracked play draws ONLY the two audio-only
 statics (`style_random`/`sound_style_random`); the witnesses pin the
 gameplay streams pristine. The deviations (the shared-atomic condition
-folds, the wither/kobold cadence folds, the unported burning granter) are
-recorded in ANALYSIS "The tracked-sound entity loops (W4-d80)".
+folds, the wither/kobold cadence folds, the engine-loop condition fold,
+the granter's vacuous/unported gates) are recorded in ANALYSIS "The
+tracked-sound entity loops (W4-d80)".

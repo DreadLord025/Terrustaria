@@ -2511,7 +2511,8 @@ Deviations (deliberate):
 ### The tracked-sound entity loops (W4-d80)
 
 The per-entity tracked-sound call sites the S1-E-23 layer left unwired now ride
-it (the census: `docs/research/64-tracked-sound-census.md`). Five families:
+it (the census: `docs/research/64-tracked-sound-census.md`). Five families,
+plus the deferred-item round (phases 7-10):
 
 * **The drill/chainsaw held-tool loops** (`Projectile.cs:25510-25522`) + the
   Laser Drill 445's own cue (`:66246-66250`): legacy case-2 item plays on a
@@ -2535,6 +2536,27 @@ it (the census: `docs/research/64-tracked-sound-census.md`). Five families:
   (`UpdateDead` `:17079`) paths; the play/follow rides
   `world_sim/player.rs::update_sizzle_audio`, the handle in
   `Player.sizzle_audio_handle`.
+* **The vampire burning flag's granter** (`VampireSeedSunlightExposure`,
+  `Player.cs:28672-28719`, phase 7): `Player::vampire_seed_sunlight_exposure`
+  wired before `tick_sun_scorch` (the `UpdateSunScorch` `:28632` order) — the
+  seed/surface/day/dry/eclipse/graveyard/glowshroom gate chain, the any-liquid
+  wet refusal, the umbrella/bat-mount refusals and the 15-tile upward wall
+  scan. `Zones.graveyard` added (`SceneMetrics.cs:679`).
+* **The DD2 projectile one-shots** (phase 8): `ProjTrackedCue` gained
+  `OneShot`/`KillOneShot`/`GlobalOneShot`/`HandlePlayFollow`; the drain applies
+  the fire-and-forget plays and the handle-store-and-follow dance
+  (`GetActiveSound == null` → `SlotId.Invalid`). The NEW 706 Phantom Phoenix /
+  709 Sky Dragon's Fury aiStyle-1 arms (`projectile_ai_dd2_shots.rs`) rest
+  their flight counter (`flag3 = false`) and fly straight; the 706's wet kill
+  reads the centre-cell liquid stand-in (the `flail_in_liquid` idiom).
+* **The RC-car / Jim's-drone engine loops** (phases 9-10,
+  `projectile_ai_rc_drone.rs`): the full aiStyle-205/195 machines ported
+  verbatim from the W4-d21/W4-d20 census waves; the shared volume/pitch
+  envelope (`Projectile.cs:38254-38266`/`:38286-38298`/`:40984-40996`) queues
+  `ProjTrackedCue::EngineLoop` every tick — the ensure plays the loop into
+  `localAI[2]`, the follow re-points `Volume`/`Position`/`Pitch`. The drone's
+  `Kill()` also queues `EngineLoopStop` (`:70863`); the RC car's does not
+  (`:70855-70864`).
 
 **RNG contract (the census' core claim):** NO tracked play draws `Main.rand`.
 Every `PlayTrackedSound`/`PlayTrackedLoopedSound` consumes exactly two
@@ -2578,11 +2600,31 @@ Deliberate deviations (the census folds):
   `Main.player[owner].inventory[selectedItem].pick`, `Projectile.cs:25512`);
   the held tool IS the channel item while the drill lives.
 * **The vampire burning flag's granter** (`VampireSeedSunlightExposure`,
-  `Player.cs:28672-28719`) stays unported — the flag stays false in play, so
-  the counter decays; the sizzle machinery is complete and the Molten-gate
-  test seam drives the flag. The `sun_scorch_counter` field now exists (the
-  `filters.rs` `SUN_SCORCH_COUNTER` const stays 0 — the heat-distortion
-  branch's read is a separate seam).
+  `Player.cs:28672-28719`) landed in phase 7 with three gate folds:
+  `MoonLordSkyIntensity` is unported → the moon-lord gate is vacuous;
+  `ShouldShowInvisibleBlocksAndWalls` folds false (the framing.rs precedent —
+  the echo-invisible wall check never opens); `base.wet` reads the any-liquid
+  union (`WetCollision` `:27749`/`:27850`) and `Main.raining` reads the live
+  `Rain::is_raining()` (`world.raining` is the SAVE-ONLY mirror). The
+  post-120-counter scorch combat effects (the `:28720+` burn damage) stay
+  deferred. The `sun_scorch_counter` field now exists (the `filters.rs`
+  `SUN_SCORCH_COUNTER` const stays 0 — the heat-distortion branch's read is a
+  separate seam).
+* **The engine-loop condition fold** (phases 9-10): the RC-car / drone loops'
+  `ProjectileAudioTracker` reads `active && type == expectedType` — the slot's
+  death flips the shared atomic false (the bomb-fuse `fuse_alive` field is
+  reused; a slot is a bomb OR an engine, never both). The drone ALSO has the
+  explicit `Kill()` stop (`:70863`, no `localAI[2]` zero write — contrast the
+  bomb fuse's `:70677`); the RC car's loop dies via the atomic alone. The
+  ensure's null test is the pool lookup PLUS the playing state (a
+  stopped-but-not-reaped slot re-plays, matching `GetActiveSound`'s C#
+  semantics for the engine sites' `== null` gate).
+* **The DD2 one-shot arms' dust/light skips** (phase 8): the 706's three dust
+  bursts (`:55778-55788`/`:55801-55835`/`:55849-55858`), the `PlotTileLine`
+  and both kinds' `Lighting.AddLight` are skipped (no dust/light layers in
+  the pool — the slice-B/C precedent); the 706's rotation tail uses the
+  velocity-sign stand-in for `base.direction` (the generic aiStyle-1 flight
+  keeps the spawn direction).
 
 ### The item-use sound wave (S1-E-21-itemuse)
 
