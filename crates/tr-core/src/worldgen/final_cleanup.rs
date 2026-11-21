@@ -642,12 +642,13 @@ mod tests {
         let mut rng = Rng(42);
         pass_final_cleanup(&mut w, 200.0, 400.0, false, false, false, false, false, &mut rng);
         // The drop starts at 101 and writes 10 cells (101..110); the seat
-        // at 111 hardens to 397 on exhaustion. The column pass then
-        // re-visits its own writes top-down (the C# does too): each dropped
-        // 53 cell now sits over an active 53 (non-solid for the fc
-        // predicate), takes the drop branch again, num2 lands on the 397
-        // seat and the `:22206-22210` arm de-slopes it — the 53 kinds
-        // survive the second visit. Only the exhaustion seat is 397.
+        // at 111 hardens to 397 on exhaustion. The column pass re-visits
+        // its own writes top-down (the C# does too), but each dropped 53
+        // cell now sits over an active 53 — a SOLID floor for the fc
+        // predicate — so the outer `!solid_tile_fc(i, j+1)` gate refuses
+        // the arm and the drop rows keep their 53. Only the exhaustion
+        // seat is 397; the source cell at 100 keeps its 53 (the drop
+        // branch never retypes the source — the C# quirk, kept).
         assert_eq!(w.tile(500, 100).unwrap().kind, 53, "the source stays sand");
         for y in 101..111 {
             assert_eq!(w.tile(500, y).unwrap().kind, 53, "the drop row {y}");
