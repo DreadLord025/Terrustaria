@@ -92,3 +92,70 @@ tracking arms. Porting the tracker alone would be dead code (no pan consumer);
 porting the pan consumer is the camera lane's scope (it must land spectate +
 drone + golf together to keep the `:62722-62745` priority order). The
 `CheckSection` half is MP-only. **Task seed T1** below.
+
+---
+
+## Item 2 — Flint `itemLocation.Y` jitter: draw-side vs location model (aiStyle 198)
+
+**C# source.** `AI_198_Flint` (`Projectile.cs:52238-52315`), charge phase
+(`ai[0] == 0`, `:52280-52314`):
+
+```
+player.itemAnimationMax = useAnimation;          // :52307
+player.SetDummyItemTime(num5);                   // :52308
+player.itemLocation.Y += Main.rand.Next(2);      // :52309  ← the jitter
+if (Main.rand.Next(10) == 0) { ...dust 228... }  // :52310-52313
+```
+
+The jitter is **one `Main.rand.Next(2)` draw per charge tick** added to
+`player.itemLocation.Y`. `itemLocation` (`Player.cs:1500`) is the held-item
+draw anchor, recomputed every frame by `ItemCheck_ApplyHoldStyle`
+(`Player.cs:50240`, the per-hold-style arms `:50279-50516` set
+`itemLocation.X/.Y` from `position`/`MountedCenter`/`heldItemFrame`).
+
+**Location-model census — is it gameplay or draw?** The readers of
+`itemLocation` split cleanly:
+
+- **Draw / light / dust** (the overwhelming majority): the hold-style placement
+  itself (`:50279+`), `ItemCheck_EmitUseVisuals` dust/light (`:49904-50092`),
+  the torch light (`:44916`), the melee-swing arc location (`:44751`).
+- **Melee hitbox** (`ItemCheck_GetMeleeHitbox`, `Player.cs:45099-45126`): builds
+  `itemRectangle` from `(int)itemLocation.X/.Y` (`:45102`/`:45126`). BUT its
+  caller is gated `!sItem.noMelee` (`Player.cs:43648`:
+  `((sItem.damage >= 0 && sItem.type > 0 && !sItem.noMelee) || ...)`) — and the
+  **Dead Cells Flint item 5462 is `noMelee = true`** (`Item.cs:43095`). So the
+  flint's `itemLocation` **never feeds a melee hitbox**; its damage rides the
+  1043 slash / 1041 spikes the arm spawns, not the held-item rectangle.
+- The bee-glove arm (`:43635`) reads it only for item 1124 (not the flint).
+
+Therefore the `itemLocation.Y += Next(2)` jitter is **purely a draw-side
+wobble** of the held flint sprite during the charge — it shifts no collision,
+no spawn point (the slash spawns at `player.MountedCenter`, `:52254`, not
+`itemLocation`), no damage. The only gameplay-observable effect is the **RNG
+draw itself** on the `UpdateProjectiles` stream.
+
+**Port status.** `projectile_ai_misc.rs::ai_flint` (`:1386`) keeps the draw and
+documents the skip precisely:
+
+- `:1376-1378` doc: "The `itemLocation.Y += Next(2)` jitter (`:52309`) keeps its
+  draw on the stream; the draw-side item location is unmodelled (the thrust
+  placement recomputes it each frame — a documented skip)."
+- `:1478-1480`: `// itemLocation.Y += Next(2) — the draw stays; the location is
+  draw-side (unmodelled).` then `let _ = rng.next_range(0, 2);` — **the draw is
+  consumed**, preserving stream order ahead of the `Next(10)` dust gate
+  (`:1482`) and the dust's three floats (`:1483-1485`).
+
+The port has no persistent `player.itemLocation` field; the melee-swing draw
+recomputes the anchor per frame (`melee_swing.rs:10` "render-side arc math
+(`item_rotation`/`item_location`...)", `player.rs:410` `item_location: [f32; 2]`
+is a draw-local). This matches the C# semantics: the jitter is a transient
+draw offset that `ItemCheck_ApplyHoldStyle` overwrites next frame.
+
+**Verdict — correctly skipped, draw kept.** The lane's note ("your draw kept —
+location model census") is confirmed: the RNG draw is preserved (determinism
+intact), the visual wobble is the documented draw-side skip, and the location
+model census proves **no gameplay consumer** for the flint (`noMelee`). No gap,
+no port needed. The only future consumer would be a held-item draw layer that
+renders the flint sprite at `itemLocation` — at which point the +0/+1 px wobble
+becomes visible and the (already-consumed) draw can feed it. **No task seed**
+(cosmetic, blocked on the held-item draw layer).
