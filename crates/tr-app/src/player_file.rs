@@ -181,9 +181,15 @@ pub struct PlayerFile {
     /// gate 125) — the Demon Heart's sixth accessory slot. The verify-sweep
     /// rides it (it used to be read-dropped / written fresh).
     pub extra_accessory: bool,
-    /// `Player.unlockedBiomeTorches` / `UsingBiomeTorches`
-    /// (`Serialize:54777-54778` / `Deserialize:55241-55242`, gate 229).
+    /// `Player.unlockedBiomeTorches` (`Serialize:54777` /
+    /// `Deserialize:55241`, gate 229) — the Torch God's Favor permanent.
     pub unlocked_biome_torches: bool,
+    /// The `:54778` / `:55242` bool — the `UsingBiomeTorches` PROPERTY, not
+    /// a field: the read lands on the setter (`Player.cs:3960-3963`,
+    /// `builderAccStatus[11] = !value`), the getter recomputes
+    /// `unlocked && builderAccStatus[11] == 0` (`:3954-3958`). This field is
+    /// the file-verbatim byte; the effective state rides
+    /// `builder_acc_status[11]` (the final re-diff fix).
     pub using_biome_torches: bool,
     /// `Player.ateArtisanBread` (`Serialize:54779` /
     /// `Deserialize:55243-55246`, gate 256 inside the 229 block).
@@ -737,7 +743,15 @@ fn read_player_fields(
     tail.extra_accessory = r.boolean().ok_or(PlayerFileError::Truncated("extra"))?; // gate 125
     if version >= 229 {
         tail.unlocked_biome_torches = r.boolean().ok_or(PlayerFileError::Truncated("bt1"))?;
+        // `:55242` reads into the UsingBiomeTorches SETTER
+        // (`Player.cs:3960-3963`): `builderAccStatus[11] = !value` — the
+        // bool has no field of its own. The raw byte still rides
+        // `using_biome_torches` (file-verbatim transport); the live state
+        // is slot 11. The builder-array read (`:55635-55653`, count 12 at
+        // >= 230) runs LATER and overwrites slot 11 from the file — the
+        // C# order; below 230 the setter's value stands (final re-diff).
         tail.using_biome_torches = r.boolean().ok_or(PlayerFileError::Truncated("bt2"))?;
+        tail.builder_acc_status[11] = i32::from(!tail.using_biome_torches);
         if version >= 256 {
             tail.ate_artisan_bread = r.boolean().ok_or(PlayerFileError::Truncated("bread"))?;
         }
@@ -1561,7 +1575,10 @@ fn read_legacy_port_subset(
         powers: CreativePowersSave::default(),
         angler_quests_finished: 0,
         dpad_bindings: [-1; 4],
-        builder_acc_status: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        // The subset never wrote the builder array; the ctor default
+        // stands, EXCEPT slot 11 which the :55242-equivalent bool's SETTER
+        // owns (`Player.cs:3960-3963`, the full walk's fix rides here too).
+        builder_acc_status: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, i32::from(!using_biome_torches)],
         bartender_quest_log: 0,
         dead: false,
         respawn_timer: 0,
@@ -1590,9 +1607,13 @@ pub struct PlayerFileWrite {
     pub team: u8,
     /// `Player.extraAccessory` (`:54776`), default false (ctor `:56076`).
     pub extra_accessory: bool,
-    /// `Player.unlockedBiomeTorches` / `UsingBiomeTorches`
-    /// (`:54777-54778`), default false.
+    /// `Player.unlockedBiomeTorches` (`:54777`), default false.
     pub unlocked_biome_torches: bool,
+    /// The raw `:54778` byte. The writer IGNORES it — the C# writes the
+    /// `UsingBiomeTorches` GETTER (`unlocked && builderAccStatus[11] == 0`,
+    /// `Player.cs:3954-3958`); drive the toggle through
+    /// `builder_acc_status[11]` (0 = using, 1 = disabled). Kept for the
+    /// f33-lane fold's field-shape parity; a reader's file-verbatim carry.
     pub using_biome_torches: bool,
     /// `Player.ateArtisanBread` (`:54779`), default false (ctor `:56077`).
     pub ate_artisan_bread: bool,
@@ -1845,7 +1866,11 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     // dead slot (`:54780`) stays the hardcoded `false` the C# writes.
     w.boolean(file.extra_accessory); // `:54776` (ctor `:56076`)
     w.boolean(file.unlocked_biome_torches); // `:54777`
-    w.boolean(file.using_biome_torches); // `:54778`
+    // `:54778` writes the UsingBiomeTorches GETTER (`Player.cs:3954-3958`):
+    // `unlocked && builderAccStatus[11] == 0` — NOT the raw bool field.
+    // A locked character writes false even when slot 11 is 0 (the ctor
+    // state); an unlocked+disabled one (slot 11 == 1) writes false too.
+    w.boolean(file.unlocked_biome_torches && file.builder_acc_status[11] == 0); // `:54778`
     w.boolean(file.ate_artisan_bread); // `:54779` (ctor `:56077`)
     w.boolean(false); // `:54780` the hardcoded `false` (the dead 324 slot)
     for used in file.used_upgrades {
@@ -3821,7 +3846,12 @@ mod tests {
         assert_eq!(plain[2758], 1);
         let file = read_player_bytes(&plain).unwrap();
         assert!(file.extra_accessory);
-        assert!(file.unlocked_biome_torches && file.using_biome_torches);
+        // The :55242 read lands on the UsingBiomeTorches SETTER
+        // (`Player.cs:3960-3963`): builderAccStatus[11] = !value — the bool
+        // byte does NOT ride a field of its own. The getter (:3954-3958)
+        // recomputes unlocked && builderAccStatus[11] == 0.
+        assert!(file.unlocked_biome_torches);
+        assert_eq!(file.builder_acc_status[11], 0, "true maps to slot 0");
         assert!(file.ate_artisan_bread);
         assert_eq!(file.used_upgrades, [true, false, true, false, true, true]);
         assert!(file.downed_dd2_any_difficulty);
@@ -3835,6 +3865,65 @@ mod tests {
         assert_eq!(fresh.used_upgrades, [false; 6]);
         assert_eq!((fresh.tax_money, fresh.deaths_pve, fresh.deaths_pvp), (0, 0, 0));
         assert_eq!(fresh.last_saved_binary, 0);
+    }
+
+    /// The final re-diff fix — `UsingBiomeTorches` is a PROPERTY over
+    /// `builderAccStatus[11]` (`Player.cs:3950-3963`), not a persisted field.
+    /// WRITE (`:54778`): the getter `unlocked && builderAccStatus[11] == 0`
+    /// — a locked character writes false even at the ctor's slot-11 == 0;
+    /// an unlocked+disabled character (slot 11 == 1) writes false. READ
+    /// (`:55242`): the setter `builderAccStatus[11] = !value`; the later
+    /// builder-array read (`:55635-55653`) overwrites slot 11 from the file
+    /// at >= 230 — the C# order. The raw `using_biome_torches` field is the
+    /// file-verbatim byte only.
+    #[test]
+    fn the_using_biome_torches_byte_is_the_slot11_property() {
+        // 1. Locked + ctor slot 0: the getter is FALSE (the old writer
+        //    would have written the raw bool verbatim — here it must not).
+        let locked = PlayerFileWrite {
+            unlocked_biome_torches: false,
+            using_biome_torches: true, // the raw field is IGNORED by the writer
+            ..sample()
+        };
+        let plain = serialize_plaintext(&locked);
+        assert_eq!(&plain[67..69], &[0, 0], "locked writes false at :54778");
+        // 2. Unlocked + slot 11 == 0 (using): the getter is TRUE.
+        let using = PlayerFileWrite {
+            unlocked_biome_torches: true,
+            ..sample()
+        };
+        let plain = serialize_plaintext(&using);
+        assert_eq!(&plain[67..69], &[1, 1]);
+        // builderAccStatus[11] sits at 2792 + 11*4 = 2836 (research/99 row
+        // 55); slot 0 = 1 (the ctor ruler toggle), slot 11 = 0 here.
+        assert_eq!(i32::from_le_bytes(plain[2836..2840].try_into().unwrap()), 0);
+        // 3. Unlocked + slot 11 == 1 (disabled): the getter is FALSE while
+        //    the unlock bool stays TRUE — the pair decouples.
+        let disabled = PlayerFileWrite {
+            unlocked_biome_torches: true,
+            builder_acc_status: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            ..sample()
+        };
+        let plain = serialize_plaintext(&disabled);
+        assert_eq!(&plain[67..69], &[1, 0]);
+        assert_eq!(i32::from_le_bytes(plain[2836..2840].try_into().unwrap()), 1);
+        // The read restores the disabled state through the builder array
+        // (the >= 230 overwrite) AND the raw byte rides verbatim.
+        let file = read_player_bytes(&plain).unwrap();
+        assert!(file.unlocked_biome_torches);
+        assert!(!file.using_biome_torches, "the raw :54778 byte");
+        assert_eq!(file.builder_acc_status[11], 1, "the file's slot 11 wins");
+        // 4. The using file reads back with slot 11 == 0 and re-writes
+        //    byte-identical (the property round-trip closes).
+        let file = read_player_bytes(&serialize_plaintext(&using)).unwrap();
+        assert!(file.using_biome_torches && file.builder_acc_status[11] == 0);
+        let rewrite = PlayerFileWrite {
+            unlocked_biome_torches: file.unlocked_biome_torches,
+            using_biome_torches: file.using_biome_torches,
+            builder_acc_status: file.builder_acc_status,
+            ..sample()
+        };
+        assert_eq!(serialize_plaintext(&rewrite)[67..69], [1, 1]);
     }
 
     /// The playtime i64 is gated >= 138 (`Deserialize:55150-55157`): a
