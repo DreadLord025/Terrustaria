@@ -1048,6 +1048,10 @@ impl App {
                             }
                             h
                         },
+                        // W4-g12: `DrawGoreBehind`'s drip quads draw inside
+                        // the cached range — 0 while no drip slot draws
+                        // (the waterfall convention).
+                        back_gore: WorldFrameKey::back_gore_key(gore),
                         world_revision: world.revision,
                     };
                     let reuse_world = !crate::env::no_cache() && *world_key == Some(key);
@@ -1196,6 +1200,9 @@ impl App {
                             // W4-g12: the live `Main.martianLight` bounce
                             // (`_martianGlow`, `TileDrawing.cs:498-499`).
                             self.martian_light,
+                            // W4-g12: `DrawGoreBehind`'s pool (the
+                            // behind-tiles drip rows, `Main.cs:21842`).
+                            gore,
                         );
                         *world_key = Some(key);
                     }

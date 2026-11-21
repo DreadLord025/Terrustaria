@@ -350,6 +350,10 @@ pub(crate) fn draw_tiles(
     // C#, no event gate; the glow record rides unused until the glow pass
     // binds it (TILE-DRAW-2), but the value is now the live one.
     martian_light: f32,
+    // W4-g12 doc-sweep: the gore pool for `DrawGoreBehind`
+    // (`Main.cs:21842-21871`) — the drip rows outside frames 7..=9 draw
+    // in the behind-tiles slot of this pass (the `:56934-56940` site).
+    gore_pool: &tr_core::gore::GorePool,
 ) -> TileDrawStats {
     let t_total = Instant::now();
     // `TileDrawing._rand` (`TileDrawing.cs:191`): the leaf-roll stream, pinned
@@ -586,6 +590,19 @@ pub(crate) fn draw_tiles(
             }
         }
     }
+
+    // W4-g12 doc-sweep: `Main.DrawGoreBehind` (`Main.cs:21842-21871`,
+    // capture site `:56934-56940`) — the drip rows outside frames 7..=9
+    // draw after the walls and BEFORE the behind-tiles NPCs, under the
+    // tile layer. The C# gate is the `Main.drawBackGore` latch the front
+    // `DrawGore` walk sets (`:21885`); `draw_behind`'s own walk gate is
+    // the same pool predicate, so the latch needs no port state. These
+    // quads ride the G6-CACHED world range, so the drip state rides the
+    // key (`WorldFrameKey::back_gore`, the waterfall convention: 0 while
+    // no drip slot draws — ANALYSIS "The back gore pass (W4-g12)").
+    stats.quads += crate::render::gore::draw_behind(
+        gore_pool, r, lookups, light, style, anim_time,
+    );
 
     // Main.cs:22320,56951,63390 — behind-tiles NPCs draw before the tile layer
     // so they appear inside/behind solid tiles (worms, WoF segments).

@@ -1133,7 +1133,43 @@ pub(crate) struct WorldFrameKey {
     /// accumulators: the networked entities drawn inside the cached world
     /// range. Zero in single-player (the offsets are zero and no peers).
     pub(crate) net_key: u32,
+    /// W4-g12: `DrawGoreBehind`'s drip slots draw inside the cached world
+    /// range (the behind-tiles seam), so their state rides the key — a
+    /// hash of every `draws_in_back` slot's position/frame/alpha/scale/
+    /// rotation/type. Zero while no drip slot draws (the waterfall
+    /// convention: gore-free frames keep the pre-wiring cache behaviour).
+    pub(crate) back_gore: u64,
     pub(crate) world_revision: u64,
+}
+
+impl WorldFrameKey {
+    /// The `back_gore` input: one hash over the drip slots the behind
+    /// pass draws (`Main.cs:21846-21854`'s gate), every field its quad
+    /// reads. Order is the pool walk order (slot index ascending).
+    pub(crate) fn back_gore_key(pool: &tr_core::gore::GorePool) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        let mut any = false;
+        for i in 0..tr_core::gore::GORE_SLOTS {
+            let g = pool.slot(i);
+            if !crate::render::gore::draws_in_back(g) {
+                continue;
+            }
+            any = true;
+            i.hash(&mut h);
+            g.gore_type.hash(&mut h);
+            g.position.x.to_bits().hash(&mut h);
+            g.position.y.to_bits().hash(&mut h);
+            g.rotation.to_bits().hash(&mut h);
+            g.scale.to_bits().hash(&mut h);
+            g.alpha.hash(&mut h);
+            g.frame.current_column.hash(&mut h);
+            g.frame.current_row.hash(&mut h);
+            g.frame.column_count.hash(&mut h);
+            g.frame.row_count.hash(&mut h);
+        }
+        if any { h.finish() } else { 0 }
+    }
 }
 
 #[cfg(test)]
@@ -1167,6 +1203,7 @@ mod frame_key {
             waterfall: 0,
             tile_anim: 0,
             net_key: 0,
+            back_gore: 0,
             world_revision: 0,
         };
         assert_ne!(key(1.2), key(1.0), "blind's GlobalBrightness drop must change the key");
@@ -1199,6 +1236,7 @@ mod frame_key {
             waterfall: 0,
             tile_anim,
             net_key: 0,
+            back_gore: 0,
             world_revision: 0,
         };
         let mut a = tr_core::drawdata_anim::TileAnimator::new();
@@ -1213,6 +1251,35 @@ mod frame_key {
         let before = a.anim_key();
         a.weather_vane_bobframe += 1;
         assert_ne!(before, a.anim_key(), "the weather-vane bob rides the key");
+    }
+
+    /// W4-g12 key-coverage witness: `DrawGoreBehind`'s drip quads draw
+    /// inside the cached world range, so a drip's motion/frame/alpha must
+    /// change `back_gore`; a gore-free pool keeps the key at 0 (the
+    /// waterfall convention — the pre-wiring cache behaviour survives).
+    #[test]
+    fn w4_g12_back_gore_state_changes_the_frame_key() {
+        let mut pool = tr_core::gore::GorePool::new();
+        assert_eq!(WorldFrameKey::back_gore_key(&pool), 0, "no gores, no key");
+        // A hanging drip (type 706, row 3 — outside the fall frames).
+        let g = pool.slot_mut(0);
+        g.active = true;
+        g.gore_type = 706;
+        g.frame = tr_core::gore::SpriteFrame::new(1, 15);
+        g.frame.current_row = 3;
+        g.position = glam::Vec2::new(100.0, 200.0);
+        let k0 = WorldFrameKey::back_gore_key(&pool);
+        assert_ne!(k0, 0, "a live drip rides the key");
+        // Motion changes it.
+        pool.slot_mut(0).position.x += 1.0;
+        let k1 = WorldFrameKey::back_gore_key(&pool);
+        assert_ne!(k0, k1, "drip motion must invalidate the cached range");
+        // The frame advance changes it.
+        pool.slot_mut(0).frame.current_row = 4;
+        assert_ne!(k1, WorldFrameKey::back_gore_key(&pool));
+        // The fall frames (7..=9) leave the behind pass — back to 0.
+        pool.slot_mut(0).frame.current_row = 8;
+        assert_eq!(WorldFrameKey::back_gore_key(&pool), 0, "fall frames draw in front");
     }
 }
 

@@ -39387,3 +39387,42 @@ records are not drawn yet, so the value cannot change any cached pixel
 (the f15 bind must add it to the key or the glow pass when it lands).
 3 witnesses WRITTEN NOT RUN (the first-tick clamp/flip, the bottom
 clamp, the 100..250 byte span over a full bounce).
+
+## The back gore pass (W4-g12 doc-sweep)
+
+`render/gore.rs`'s module header listed `DrawGoreBehind`
+(`Main.cs:21842-21871`) as a documented drop ("the back pass needs the
+tile-batch seam"). The seam exists — the tile pass's behind-tiles slot
+(before `draw_npcs(behindTiles: true)`, the `:56934-56951` capture
+order: walls → WoF → back gore → behind-tiles NPCs → tiles). Ported:
+
+* `gore.rs::draws_in_back` (`:21846-21854`): the exact complement of
+  the front gate over the drip rows — active, type > 0, `IsDrip`, and
+  the frame row OUTSIDE 7..=9. A live drip draws in exactly one pass.
+* `gore.rs::draw_behind` (`:21855-21870`): the same source-rect-centre
+  light sample + `GetAlpha` tint as the front pass, through
+  `plan_quad_inner`'s `behind` arm — the framed `-2f` lift is kept
+  (`:21862`), the type-1217 `+4f` nudge is NOT (the front pass's
+  `:21893-21896` has no twin here), the unframed arm has no lift
+  (`:21867`). The quads push into the WORLD range in world pixels
+  (camera/zoom/screen collapsed; the G6 GPU transform applies), so
+  they sit under the tile layer exactly like the C# capture order.
+* The `Main.drawBackGore` latch needs no port static: the front walk
+  sets it iff any slot passes `draws_in_back` over the same pool state
+  the behind walk reads, so the predicate IS the latch (the C#
+  re-latches `true` after the capture draw, `:56939`, and the direct
+  path consumes it at `:63421` — both reduce to "any drip slot").
+* **G6 key**: the drip quads ride the CACHED world range, so their
+  state rides the key — `WorldFrameKey::back_gore`
+  (`back_gore_key`: a hash over every behind-drawing slot's index/
+  type/position/rotation/scale/alpha/frame). Zero while no drip draws
+  (the waterfall convention: gore-free frames keep the pre-wiring
+  cache behaviour bit-for-bit).
+
+Deviation: the direct-screen path (`:63275`) draws the back gore AFTER
+the whole tile draw in C#'s `drawToScreen` mode; the port has one fused
+pass and keeps the capture-path position for both (the standing
+fused-pass z-order approximation, same class as the pylon passes).
+4 witnesses WRITTEN NOT RUN (the gate complement over all 15 rows, the
+lift-kept/nudge-dropped geometry twin, the world-range seam source
+scan, the key-coverage motion/frame/fall-frame transitions).
