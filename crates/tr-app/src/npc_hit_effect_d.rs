@@ -1923,6 +1923,94 @@ fn gingerbread_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 502, s); // :86866
 }
 
+/// The 338-340 Zombie Elf death (`NPC.cs:86868-86897`, sites 273-276):
+/// the 50x dust-5 burst at (2.5·hd, −2.5), then the per-variant head
+/// (338 → 494 `:86884`, 339 → 495 `:86888`, 340 → 496 `:86892` — three
+/// independent ifs, one fires) + the SHARED tail 497/498 at +20 Y and
+/// 499 at +34 Y (`:86894-86896`), `this.scale` carried.
+fn zombie_elf_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86878-86881` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    // `:86882-86893` — the per-variant head.
+    let head = match npc_type {
+        338 => 494, // :86884
+        339 => 495, // :86888
+        _ => 496,   // :86892
+    };
+    gore.new_gore(rng, world, pos, vel, head, s);
+    // `:86894-86896` — the shared tail.
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 497, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 498, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 499, s);
+}
+
+/// The 343 Yeti death (`NPC.cs:86898-86916`, sites 277-280): the 50x
+/// dust-5 burst at (2.5·hd, −2.5), then 503 at position, 504/505 at
+/// +20 Y, 506 at +34 Y, `this.scale` carried.
+fn yeti_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86908-86911` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 503, s); // :86912
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 504, s); // :86913
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 505, s); // :86914
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 506, s); // :86915
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -2154,6 +2242,14 @@ pub fn hit_effect_d(
     // `:86848-86867` — the 342 Gingerbread Man arm (sites 268-272).
     else if npc_type == 342 {
         gingerbread_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86868-86897` — the 338-340 Zombie Elf arm (sites 273-276).
+    else if (338..=340).contains(&npc_type) {
+        zombie_elf_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86898-86916` — the 343 Yeti arm (sites 277-280).
+    else if npc_type == 343 {
+        yeti_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -3812,5 +3908,59 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the gingerbread man mirrors the C# draws");
+    }
+
+    /// `NPC.cs:86884-86896` — the Zombie Elf head+tail: 338→494, 339→495,
+    /// 340→496, then the SHARED 497/498 at +20 Y + 499 at +34 Y.
+    #[test]
+    fn w4_f5d_the_zombie_elf_heads_share_the_tail() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, head) in [(338, 494), (339, 495), (340, 496)] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(269);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![head, 497, 498, 499], "zombie elf {kind}");
+            assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+            assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+            assert!(!gore.slot(4).active, "exactly four gores");
+            let mut twin = UnifiedRandom::new(269);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..4 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "zombie elf {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86912-86915` — the Yeti four: 503 at pos, 504/505 at
+    /// +20 Y, 506 at +34 Y, this.scale carried.
+    #[test]
+    fn w4_f5d_the_yeti_spawns_the_four() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 40.0, 50.0);
+        n.scale = 1.15;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(271);
+        let _ = hit_effect_d(&n, 343, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![503, 504, 505, 506]);
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+        assert_eq!(gore.slot(0).scale, 1.15);
+        let mut twin = UnifiedRandom::new(271);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 40, 50);
+        }
+        for _ in 0..4 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the yeti mirrors the C# draws");
     }
 }
