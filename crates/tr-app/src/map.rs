@@ -948,7 +948,21 @@ impl WorldMap {
     /// at world load). Returns `false` when the file is absent or does not match
     /// this world. The whole map texture is re-uploaded on the next `prepare`.
     pub fn load(&mut self, world: &World, path: &std::path::Path) -> bool {
+        // `WorldMap.Load`'s `Lighting.Clear()` head (`WorldMap.cs:178`) is the
+        // lighting engine's reset — the port's world-load path builds a fresh
+        // engine, so there is nothing to clear here.
         if !load_map_file(world, &mut self.tiles, path).unwrap_or(false) {
+            // `WorldMap.Load`'s catch arm (`WorldMap.cs:217-230`): a CORRUPT
+            // file (present but unreadable/truncated/foreign) is copied to
+            // `<path>.bad` and the map is cleared. The absent-file arm
+            // (`TryGetMapPath` false, `:184-188`) returns BEFORE the try —
+            // no `.bad` copy, no clear. The port's `load_map_file` folds
+            // both into `Ok(false)`; the file's existence splits them.
+            if path.exists() {
+                let bad = path.with_extension("map.bad");
+                let _ = std::fs::copy(path, &bad); // `:227` (overwrite: true)
+                self.clear(); // `:229` — `this.Clear()`
+            }
             return false;
         }
         // `WorldMap.Load`'s edge clear (`WorldMap.cs:210`): the 40-tile
@@ -1345,6 +1359,36 @@ mod tests {
         let mut fresh = WorldMap::new(&world);
         assert!(!fresh.load(&world, std::path::Path::new("does-not-exist.map")));
         assert!(!fresh.needs_full_upload);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// W4-e18 final sweep (written, not run - code-only): `WorldMap.Load`'s
+    /// catch arm (`WorldMap.cs:217-230`) — a corrupt-but-present `.map` is
+    /// copied to `<path>.bad` (`:227`) and the tiles are cleared (`:229`);
+    /// an ABSENT file takes the `TryGetMapPath` early return (`:184-188`)
+    /// with neither side effect.
+    #[test]
+    fn w4_e18_a_corrupt_map_is_copied_to_bad_and_cleared() {
+        let world = test_world();
+        let dir = unique_dir("badmap");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("w.map");
+        // A truncated file: present, but the prefix read fails.
+        std::fs::write(&path, [0u8; 6]).unwrap();
+        let mut wm = WorldMap::new(&world);
+        // Seed a revealed tile so the clear is observable.
+        wm.tiles[0] = MapTile::create(1, 255, 0);
+        assert!(!wm.load(&world, &path));
+        assert!(dir.join("w.map.bad").exists(), "the .bad copy (:227)");
+        assert_eq!(wm.tiles[0], MapTile::default(), "Clear() (:229)");
+        assert!(!wm.needs_full_upload, "the catch arm does not arm the upload");
+        // The absent file: no .bad copy, no clear.
+        let mut fresh = WorldMap::new(&world);
+        fresh.tiles[0] = MapTile::create(1, 255, 0);
+        let absent = dir.join("absent.map");
+        assert!(!fresh.load(&world, &absent));
+        assert!(!dir.join("absent.map.bad").exists(), "no copy for an absent file");
+        assert_eq!(fresh.tiles[0], MapTile::create(1, 255, 0), "no clear");
         std::fs::remove_dir_all(&dir).ok();
     }
 
