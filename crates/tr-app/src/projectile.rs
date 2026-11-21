@@ -2810,15 +2810,29 @@ impl Projectile {
             // `:23520-23556` — the spark family: the fade-out kill inside
             // the `ai[0] > 3f` window (`ai[0] - 20f >= 40f` = tick 60, the
             // kill does NOT return — the gravity tail still runs) and the
-            // `+0.1f`/`0.99` fall past tick 20. The dust window's 10×/40-tick
-            // fade ramps and the `Next(100)` gate are SKIPPED — no dust
-            // layer, the roll goes with them.
+            // `+0.1f`/`0.99` fall past tick 20. W4-e3: the dust window's
+            // 10×/40-tick fade ramps and the `Next(100)` gate spawn through
+            // the seam.
             504 | 954 | 979 => {
                 self.alpha = 255;
                 self.ai[0] += 1.0;
                 if self.ai[0] > 3.0 {
-                    if self.ai[0] > 20.0 && self.ai[0] - 20.0 >= 40.0 {
-                        self.kill();
+                    // `:23526-23540` — the fade ramp: 100 base, the 40-tick
+                    // fade-out past 20, the 10×/tick ramp through 10.
+                    let mut num19 = 100;
+                    if self.ai[0] > 20.0 {
+                        let num21 = self.ai[0] - 20.0;
+                        num19 = (100.0 * (1.0 - num21 / 40.0)) as i32;
+                        if num21 >= 40.0 {
+                            self.kill();
+                        }
+                    }
+                    if self.ai[0] <= 10.0 {
+                        num19 = self.ai[0] as i32 * 10;
+                    }
+                    // `:23541-23549` — the dust gate + the centre-blended puff.
+                    if d.rng.next_range(0, 100) < num19 {
+                        crate::projectile_dust::style2_spark_dust(self, world, &mut d);
                     }
                 }
                 if self.ai[0] >= 20.0 {
@@ -2881,10 +2895,13 @@ impl Projectile {
                     self.vel.x *= 0.99;
                 }
             }
-            // `:23610-23631` — the fading, `pi/4`-oriented arm (the four
-            // trail dust are SKIPPED — they roll nothing). The C# arm owns
-            // no `ai[0]` counter.
+            // `:23610-23631` — the fading, `pi/4`-oriented arm (W4-e3: the
+            // four trail dust-184 spawn through the seam while
+            // `alpha <= 200`). The C# arm owns no `ai[0]` counter.
             306 => {
+                if self.alpha <= 200 {
+                    crate::projectile_dust::style2_trail_306(self, world, &mut d);
+                }
                 self.alpha = (self.alpha - 50).max(0);
                 self.rot = self.vel.y.atan2(self.vel.x) + 0.785;
             }
@@ -2933,10 +2950,12 @@ impl Projectile {
                 }
             }
         }
-        // `:23681-23684` — the fall clamp (the type-54 dust roll is SKIPPED).
+        // `:23681-23684` — the fall clamp.
         if self.vel.y > 32.0 {
             self.vel.y = 32.0;
         }
+        // `:23685-23688` — the type-54 tail's dust-40 (the `Next(20)` gate).
+        crate::projectile_dust::style2_tail_54(self, world, &mut d);
         // `:19849-19853` — the movement chain's default arm.
         self.kill_step(world);
     }
@@ -2954,7 +2973,21 @@ impl Projectile {
     /// resolves through `Projectile.NewProjectile`'s seam, or `None`.
     /// `tileCollide = false` (`:874-884`) is the row's own field: the vine
     /// grows straight through walls.
-    fn ai_style4(&mut self, rng: &mut dyn tr_core::loot::DropRng) -> Option<(u16, f32, f32, f32)> {
+    ///
+    /// W4-e3 — the fade-out's `alpha < 170 && alpha + 5 >= 170` crossing
+    /// burst (`:23784-23812`) spawns through the `projectile_dust` seam.
+    fn ai_style4(
+        &mut self,
+        world: &World,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) -> Option<(u16, f32, f32, f32)> {
+        let mut d = crate::projectile_dust::ProjDust {
+            pool: dust,
+            ctx: dust_ctx,
+            rng: &mut *rng,
+        };
         // `:23706` — the orientation.
         self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
         let nettle = matches!(self.kind, NETTLE_BURST_RIGHT | NETTLE_BURST_LEFT | NETTLE_BURST_END);
@@ -3013,6 +3046,12 @@ impl Projectile {
                 }
             }
         } else {
+            // `:23784-23812` — the fade-out's 170-crossing dust burst (the
+            // Nettle 8× dust-7, the 493/494 8× dust-Next(68,71), the
+            // Vilethorn 3× dust-18 + 1× dust-14).
+            if self.alpha < 170 && self.alpha + 5 >= 170 {
+                crate::projectile_dust::style4_fade_burst(self, world, &mut d);
+            }
             // `:23813-23824` — the fade-out: the Nettle Burst +3, the
             // Vilethorn +5 (the 493/494 +4 is unported); `:23825-23828` the
             // `alpha >= 255` kill.
@@ -17598,7 +17637,7 @@ impl ProjectilePool {
                         // `:23694-23828` — the Vilethorn chain: the arm hands
                         // its segment spawn back to the pool, so it is a
                         // pool-side step like the magnet sphere's.
-                        4 => self.vilethorn_step(i, rng),
+                        4 => self.vilethorn_step(i, world, rng, dust, dust_ctx),
                         // (Resync keep-one: the aiStyle-5 falling stars ride
                         // main's kind-gated i17 arm above — extended there
                         // with the i22 Starfury 9 / Star Cannon 955 rows.)
@@ -21463,8 +21502,15 @@ impl ProjectilePool {
     /// hands back rides `Projectile.NewProjectile`'s seam
     /// (`:23737-23741`) — the child kind, its one-velocity-step-ahead centre
     /// and its `ai[1] + 1f` depth.
-    fn vilethorn_step(&mut self, slot: usize, rng: &mut dyn tr_core::loot::DropRng) {
-        let Some((kind, x, y, ai1)) = self.slots[slot].ai_style4(rng) else {
+    fn vilethorn_step(
+        &mut self,
+        slot: usize,
+        world: &World,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
+        let Some((kind, x, y, ai1)) = self.slots[slot].ai_style4(world, rng, dust, dust_ctx) else {
             return;
         };
         let (owner, damage, knock_back, vel) = {
@@ -41058,8 +41104,11 @@ mod s1_d_4b_8_tests {
 
     /// `:23520-23556` — the spark family: alpha pinned at 255, the fade-out
     /// kill at tick 60 (the kill does not return — the gravity tail runs),
-    /// the +0.1/0.99 fall past tick 20. The dust window's `Next(100)` roll
-    /// is skipped with the dust.
+    /// the +0.1/0.99 fall past tick 20. W4-e3: the dust window draws its
+    /// `Next(100)` gate every tick past `ai[0] > 3` (56 gates over 59 ticks)
+    /// plus the taken puff's pool internals — the trajectory asserts hold
+    /// unchanged; the gate census is mirrored in `projectile_dust`'s
+    /// `w4_e3_b2_spark_dust_blends_and_rides_the_type_tweak`.
     #[test]
     fn s1_d_4b_8_the_spark_fades_out_at_sixty() {
         let w = world();
@@ -41072,7 +41121,7 @@ mod s1_d_4b_8_tests {
             }
             assert!(p.active, "kind {kind}: alive at 59");
             assert_eq!(p.alpha, 255);
-            assert_eq!(rng.ranges, 0, "kind {kind}: the dust roll is skipped");
+            assert!(rng.ranges >= 56, "kind {kind}: one Next(100) gate per tick past 3");
             tick(&mut p, &w, &mut rng);
             assert!(!p.active, "kind {kind}: the tick-60 kill");
             assert!(p.vel.y > 0.0, "kind {kind}: the gravity tail still ran");

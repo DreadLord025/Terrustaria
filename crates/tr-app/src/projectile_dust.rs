@@ -278,6 +278,164 @@ pub(crate) fn style2_trail_497(p: &Projectile, world: &World, d: &mut ProjDust) 
     dust.velocity -= p.vel * 0.1;
 }
 // ---------------------------------------------------------------------------
+// Batch 2 — the spark window, the 306 trail, the 54 tail (aiStyle 2 tail)
+// and the aiStyle-4 Vilethorn fade (`Projectile.cs:23541-23812`).
+// ---------------------------------------------------------------------------
+
+/// `:23541-23549` — the 504/954/979 spark family's dust window: the
+/// `Next(100) < num19` gate (the caller computed the fade ramp), then the
+/// dust-6 (or the 979's dust-135) with the centre blend, `noGravity`, ×2
+/// velocity, ×1.6 scale and the +vel add.
+pub(crate) fn style2_spark_dust(p: &Projectile, world: &World, d: &mut ProjDust) {
+    let dust_type = if p.kind != 979 { 6 } else { 135 };
+    let idx = d.new_dust(
+        world,
+        p.pos,
+        p.w as i32,
+        p.h as i32,
+        dust_type,
+        0.0,
+        0.0,
+        150,
+        Color::default(),
+        1.0,
+    );
+    let (cx, cy) = p.center();
+    let dust = d.pool.slot_mut(idx);
+    dust.position = (dust.position + Vec2::new(cx, cy)) / 2.0;
+    dust.no_gravity = true;
+    dust.velocity *= 2.0;
+    dust.scale *= 1.6;
+    dust.velocity += p.vel;
+}
+
+/// `:23614-23623` — the 306 Ichor Dart's four trail dust-184: each sits at
+/// `centre − vel/4·i`, zero velocity, scale 0.7. The caller gates on
+/// `alpha <= 200`.
+pub(crate) fn style2_trail_306(p: &Projectile, world: &World, d: &mut ProjDust) {
+    let (cx, cy) = p.center();
+    for i in 0..4 {
+        let num26 = p.vel.x / 4.0 * i as f32;
+        let num27 = p.vel.y / 4.0 * i as f32;
+        let idx = d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            184,
+            0.0,
+            0.0,
+            0,
+            Color::default(),
+            1.0,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.position.x = cx - num26;
+        dust.position.y = cy - num27;
+        dust.velocity *= 0.0;
+        dust.scale = 0.7;
+    }
+}
+
+/// `:23685-23688` — the type-54 Poisoned Knife's tail: the `Next(20)` gate,
+/// then the dust-40 puff (×0.1 velocity, scale 0.75, no post-arms).
+pub(crate) fn style2_tail_54(p: &Projectile, world: &World, d: &mut ProjDust) {
+    if p.kind == 54 && d.rng.next_range(0, 20) == 0 {
+        d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            40,
+            p.vel.x * 0.1,
+            p.vel.y * 0.1,
+            0,
+            Color::default(),
+            0.75,
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// aiStyle 4 — the Vilethorn fade (`Projectile.cs:23784-23812`).
+// ---------------------------------------------------------------------------
+
+/// `:23784-23812` — the fade-out's `alpha < 170 && alpha + 5 >= 170` crossing
+/// burst: the 150-152 Nettle Burst's 8 dust-7 (×0.025 velocity, alpha 200,
+/// scale 1.3, noGravity, ×0.5), the 493/494's 8 dust-`Next(68,71)` (same
+/// shape), or the Vilethorn's 3 dust-18 + 1 dust-14. The caller gates on the
+/// crossing; the 493/494 rows are unported (the arm keeps the shape).
+pub(crate) fn style4_fade_burst(p: &Projectile, world: &World, d: &mut ProjDust) {
+    let nettle = matches!(p.kind, 150 | 151 | 152);
+    if nettle {
+        for _ in 0..8 {
+            let idx = d.new_dust(
+                world,
+                p.pos,
+                p.w as i32,
+                p.h as i32,
+                7,
+                p.vel.x * 0.025,
+                p.vel.y * 0.025,
+                200,
+                Color::default(),
+                1.3,
+            );
+            let dust = d.pool.slot_mut(idx);
+            dust.no_gravity = true;
+            dust.velocity *= 0.5;
+        }
+    } else if matches!(p.kind, 493 | 494) {
+        for _ in 0..8 {
+            // `:23799` — the type arg draws Next(68,71) BEFORE NewDust runs.
+            let dust_type = d.rng.next_range(68, 71);
+            let idx = d.new_dust(
+                world,
+                p.pos,
+                p.w as i32,
+                p.h as i32,
+                dust_type,
+                p.vel.x * 0.025,
+                p.vel.y * 0.025,
+                200,
+                Color::default(),
+                1.3,
+            );
+            let dust = d.pool.slot_mut(idx);
+            dust.no_gravity = true;
+            dust.velocity *= 0.5;
+        }
+    } else {
+        for _ in 0..3 {
+            d.new_dust(
+                world,
+                p.pos,
+                p.w as i32,
+                p.h as i32,
+                18,
+                p.vel.x * 0.025,
+                p.vel.y * 0.025,
+                170,
+                Color::default(),
+                1.2,
+            );
+        }
+        d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            14,
+            0.0,
+            0.0,
+            170,
+            Color::default(),
+            1.1,
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Witness tests-as-code — WRITTEN NOT RUN (code-only mode, W4-e3 batch 1).
 // Verified by re-reading the cited C# and mirroring every draw through the
 // same pool call on a twin stream; run with
@@ -526,4 +684,172 @@ mod tests {
             "no pool internals were drawn"
         );
     }
+
+    /// W4-e3 batch 2 — `:23541-23549`: the spark window's dust-6 (the 979's
+    /// dust-135) with the centre blend, ×2 velocity, ×1.6 scale, +vel. The
+    /// dust-6/135 per-type tweak (`Dust.cs:214-219`) rolls ONE extra range
+    /// and rewrites velocity.Y / ×0.3 X / ×0.7 scale BEFORE the post-arms —
+    /// mirrored record-for-record.
+    #[test]
+    fn w4_e3_b2_spark_dust_blends_and_rides_the_type_tweak() {
+        let w = world();
+        let c = ctx();
+        for kind in [504u16, 979] {
+            let p = proj(kind);
+            let mut pool = DustPool::new();
+            let mut rng = UnifiedRandom::new(61);
+            let mut mpool = DustPool::new();
+            let mut mirror = UnifiedRandom::new(61);
+            let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+            style2_spark_dust(&p, &w, &mut d);
+            let dust_type = if kind != 979 { 6 } else { 135 };
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, p.pos, 10, 10, dust_type,
+                0.0, 0.0, 150, Color::default(), 1.0,
+            );
+            let (cx, cy) = p.center();
+            let md = mpool.slot_mut(idx);
+            md.position = (md.position + Vec2::new(cx, cy)) / 2.0;
+            md.no_gravity = true;
+            md.velocity *= 2.0;
+            md.scale *= 1.6;
+            md.velocity += p.vel;
+            assert_eq!(active(&pool).len(), 1, "kind {kind}");
+            assert_eq!(pool.slot(0).position, mpool.slot(0).position);
+            assert_eq!(pool.slot(0).velocity, mpool.slot(0).velocity);
+            assert_eq!(pool.slot(0).scale, mpool.slot(0).scale);
+            assert_eq!(pool.slot(0).dust_type, dust_type);
+            assert!(pool.slot(0).no_gravity);
+            assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+        }
+    }
+
+    /// W4-e3 batch 2 — `:23614-23623`: the 306 trail's four dust-184 sit at
+    /// centre − vel/4·i with zero velocity and scale 0.7 (the post-writes
+    /// overwrite the jittered positions exactly). Mirrored.
+    #[test]
+    fn w4_e3_b2_trail306_pins_the_four_positions() {
+        let w = world();
+        let c = ctx();
+        let p = proj(306);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(71);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(71);
+        let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+        style2_trail_306(&p, &w, &mut d);
+        let (cx, cy) = p.center();
+        for i in 0..4 {
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, p.pos, 10, 10, 184,
+                0.0, 0.0, 0, Color::default(), 1.0,
+            );
+            let md = mpool.slot_mut(idx);
+            md.position.x = cx - p.vel.x / 4.0 * i as f32;
+            md.position.y = cy - p.vel.y / 4.0 * i as f32;
+            md.velocity *= 0.0;
+            md.scale = 0.7;
+        }
+        assert_eq!(active(&pool).len(), 4);
+        for i in 0..4 {
+            assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+            assert_eq!(pool.slot(i).velocity, Vec2::ZERO);
+            assert_eq!(pool.slot(i).scale, 0.7);
+            assert_eq!(pool.slot(i).dust_type, 184);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e3 batch 2 — `:23685-23688`: the 54 tail's Next(20) gate draws
+    /// every tick the 54 flies; a passed gate spawns one dust-40 with the
+    /// ×0.1 velocity and scale 0.75. Mirrored over 40 ticks.
+    #[test]
+    fn w4_e3_b2_tail54_gates_every_tick() {
+        let w = world();
+        let c = ctx();
+        let p = proj(54);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(81);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(81);
+        for _ in 0..40 {
+            let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+            style2_tail_54(&p, &w, &mut d);
+            if mirror.next_range(0, 20) == 0 {
+                mpool.new_dust(
+                    &mut mirror, &c, &w, p.pos, 10, 10, 40,
+                    p.vel.x * 0.1, p.vel.y * 0.1, 0, Color::default(), 0.75,
+                );
+            }
+        }
+        let act = active(&pool);
+        assert_eq!(act.len(), active(&mpool).len());
+        assert!(!act.is_empty(), "seed 81 passes the 1-in-20 gate in 40 ticks");
+        for &i in &act {
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+            assert_eq!(pool.slot(i).scale, mpool.slot(i).scale);
+            assert_eq!(pool.slot(i).dust_type, 40);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e3 batch 2 — `:23784-23812`: the Vilethorn crossing burst is
+    /// 3× dust-18 + 1× dust-14 (the else arm); the Nettle 150-152 arm is
+    /// 8× dust-7 noGravity ×0.5. Mirrored; the 493/494 arm's per-dust
+    /// Next(68,71) type draw rides BEFORE the pool internals.
+    #[test]
+    fn w4_e3_b2_fade_burst_shapes_per_kind() {
+        let w = world();
+        let c = ctx();
+        // The Vilethorn else arm: 3 dust-18 + 1 dust-14.
+        let p = proj(7);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(91);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(91);
+        let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+        style4_fade_burst(&p, &w, &mut d);
+        for _ in 0..3 {
+            mpool.new_dust(
+                &mut mirror, &c, &w, p.pos, 10, 10, 18,
+                p.vel.x * 0.025, p.vel.y * 0.025, 170, Color::default(), 1.2,
+            );
+        }
+        mpool.new_dust(
+            &mut mirror, &c, &w, p.pos, 10, 10, 14,
+            0.0, 0.0, 170, Color::default(), 1.1,
+        );
+        assert_eq!(active(&pool).len(), 4);
+        for i in 0..4 {
+            assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+            assert_eq!(pool.slot(i).dust_type, mpool.slot(i).dust_type);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+        // The Nettle arm: 8 dust-7, noGravity, ×0.5 velocity.
+        let n = proj(150);
+        let mut npool = DustPool::new();
+        let mut nrng = UnifiedRandom::new(91);
+        let mut nd = ProjDust { pool: &mut npool, ctx: &c, rng: &mut nrng };
+        style4_fade_burst(&n, &w, &mut nd);
+        assert_eq!(active(&npool).len(), 8);
+        for i in 0..8 {
+            assert_eq!(npool.slot(i).dust_type, 7);
+            assert!(npool.slot(i).no_gravity);
+        }
+        // The 493/494 arm: 8 dusts, each type drawn Next(68,71) first.
+        let s = proj(493);
+        let mut spool = DustPool::new();
+        let mut srng = UnifiedRandom::new(91);
+        let mut smirror = UnifiedRandom::new(91);
+        let mut sd = ProjDust { pool: &mut spool, ctx: &c, rng: &mut srng };
+        style4_fade_burst(&s, &w, &mut sd);
+        assert_eq!(active(&spool).len(), 8);
+        for i in 0..8 {
+            let t = smirror.next_range(68, 71);
+            assert_eq!(spool.slot(i).dust_type, t, "the type arg precedes the internals");
+            assert!(spool.slot(i).no_gravity);
+        }
+    }
+
 }
