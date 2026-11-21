@@ -2080,9 +2080,12 @@ fn moss_zombie_death(
 /// 452), 320 Superman Zombie → 454/455/456x2 (`:87084-87087`, sites
 /// 337-340, the FOUR shape), 321 Pixie Zombie → 457/458x2/459x2
 /// (`:87092-87096`, sites 341-345), 223 Raincoat Zombie →
-/// 309/310x2/311x2 (`:87101-87105`, sites 346-350); the 132/186/189/251
-/// head-switch + shared tail lands next batch. The hit-half 186/632
-/// Next(5) gore gates (`:86945-86952`) are g62's lane.
+/// 309/310x2/311x2 (`:87101-87105`, sites 346-350); the head switch
+/// (132→154, 186/432→241, 189/435→246, 251→372, generic→3, the slimed
+/// 187/433 NO head) + the SHARED 4/4/5/5 tail (`:87108-87131`, sites
+/// 351-359, scale 1f — no this.scale); the 186 extras (`:87132-87139`)
+/// land next batch. The hit-half 186/632 Next(5) gore gates
+/// (`:86945-86952`) are g62's lane.
 fn zombie_arm_death(
     npc: &Npc,
     npc_type: i32,
@@ -2263,6 +2266,27 @@ fn zombie_arm_death(
         gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 311, s); // :87105
         return;
     }
+    // `:87108-87131` — the head switch + the SHARED 4/4/5/5 tail (no
+    // early return; the 186 extras follow in the next batch's window).
+    // NOTE these gores take NO this.scale (default 1f).
+    if npc_type == 132 {
+        gore.new_gore(rng, world, pos, vel, 154, 1.0); // :87110
+    } else if npc_type == 186 || npc_type == 432 {
+        gore.new_gore(rng, world, pos, vel, 241, 1.0); // :87114
+    } else if npc_type == 189 || npc_type == 435 {
+        gore.new_gore(rng, world, pos, vel, 246, 1.0); // :87118
+    } else if npc_type == 251 {
+        gore.new_gore(rng, world, pos, vel, 372, 1.0); // :87122
+    } else if npc_type != 187 && npc_type != 433 {
+        // `:87124-87127` — the generic head; the slimed zombies have NO
+        // head gore (their census is the tinted burst only).
+        gore.new_gore(rng, world, pos, vel, 3, 1.0); // :87126
+    }
+    // `:87128-87131` — the shared tail, scale 1f.
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 4, 1.0); // :87128
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 4, 1.0); // :87129
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 5, 1.0); // :87130
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 5, 1.0); // :87131
 }
 
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
@@ -2511,8 +2535,9 @@ pub fn hit_effect_d(
     }
     // `:86937-...` — the giant zombie arm (430-436/590/591/3/52/53/536/
     // 104/109/331/332/132/161/162/186-189/200/223/251/319-321/632); the
-    // 104/632/331/332/109/161/162/188/200/319/320/321/223 branches are
-    // live (sites 286-350), the head-switch tail lands later.
+    // 104/632/331/332/109/161/162/188/200/319/320/321/223 branches + the
+    // head-switch/shared-tail are live (sites 286-359); the 186 extras
+    // land later.
     else if matches!(npc_type, 430..=436 | 590 | 591 | 3 | 52 | 53 | 536 | 104 | 109 | 331 | 332 | 132 | 161 | 162 | 186 | 187 | 188 | 189 | 200 | 223 | 251 | 319 | 320 | 321 | 632)
     {
         zombie_arm_death(
@@ -4518,6 +4543,52 @@ mod tests {
                 twin_dust(&mut twin, 30, 44);
             }
             for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "zombie {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87110-87131` — the head switch + shared tail: 132→154,
+    /// 186→241, 189→246, 251→372, generic 3→3, the slimed 187 NO head;
+    /// all followed by 4/4 at +20 Y + 5/5 at +34 Y, scale 1f.
+    #[test]
+    fn w4_f5d_the_zombie_head_switch_and_shared_tail() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, want) in [
+            (132, vec![154, 4, 4, 5, 5]),
+            (186, vec![241, 4, 4, 5, 5]),
+            (189, vec![246, 4, 4, 5, 5]),
+            (251, vec![372, 4, 4, 5, 5]),
+            (3, vec![3, 4, 4, 5, 5]),
+            (187, vec![4, 4, 5, 5]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(353);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "zombie {kind}");
+            for i in 0..want.len() {
+                assert_eq!(gore.slot(i).scale, 1.0, "the tail takes no this.scale");
+            }
+            let mut twin = UnifiedRandom::new(353);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            if kind == 187 {
+                for _ in 0..25 {
+                    twin_dust(&mut twin, 30, 24);
+                }
+            }
+            for _ in 0..want.len() {
                 let _ky = twin.next_range(10, 31);
                 let _kx = twin.next_range(-20, 21);
             }
