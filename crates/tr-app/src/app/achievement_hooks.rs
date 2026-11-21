@@ -566,4 +566,33 @@ mod tests {
         let second = app.notify_progression_net(40);
         assert_eq!(second, None, "a completed row never re-fires");
     }
+
+    /// W4-c36 NOTIFY-SYNC (2) — NEW_DIGS's consumer half: the registry row
+    /// is a single `Progression(43)` (`AchievementInitializer.cs:423-425`);
+    /// f47's live seam (`a2561d6d9`, `world_sim/npcs.rs:6367`) fires
+    /// `notify_progression_net(43)` when the state-25 emergence completes
+    /// with the flipped variation 1 (`NPC.cs:53271-53274`). The notify
+    /// completes the row; a second completion (another town NPC's
+    /// emergence in a later tick) is idempotent. WRITTEN NOT RUN
+    /// (code-only mode).
+    #[test]
+    fn w4_c36_new_digs_fires_on_progression_forty_three() {
+        use crate::achievements::CondKind;
+        let mut app = app_with_player();
+        let row = app
+            .achievements
+            .list
+            .iter()
+            .find(|a| a.name == "NEW_DIGS")
+            .expect("the registry row");
+        assert_eq!(row.conditions.len(), 1);
+        assert!(matches!(row.conditions[0].kind, CondKind::ProgressionEvent(43)));
+        assert!(!done(&app, "NEW_DIGS"));
+        // f47's post-pass latch drain shape.
+        let first = app.notify_progression_net(43);
+        assert_eq!(first, Some("NEW_DIGS"));
+        assert!(done(&app, "NEW_DIGS"));
+        // A second town NPC's emergence never re-fires the row.
+        assert_eq!(app.notify_progression_net(43), None);
+    }
 }

@@ -378,7 +378,7 @@ gap list, after c36+f30):**
 | GRAVE_MISTAKE | 36 | `Player.cs:20473`/`:38836` | striking gravestones + MP teammate deaths (f30 cited) |
 | FORTUNE_FAVORS_THE_BOULD | 39 | `Main.cs:61828` | rainbow boulder draw (f30 cited) |
 | TRAINING_DAY | 40 | `Player.cs:25697` | ~~combat book vol. 2 use 5336 (f30 cited)~~ **g90b WIRES it live** (`0316b4446`, tip `b3b82d071`) — see the NOTIFY-SYNC keep-one below |
-| NEW_DIGS | 43 | `NPC.cs:53273` | town shimmer transform (f30 cited) |
+| NEW_DIGS | 43 | `NPC.cs:53273` | ~~town shimmer transform (f30 cited)~~ **f47 WIRES it live** (`6f126bd9e`, tip `a2561d6d9`) — see NOTIFY-SYNC (2) |
 | MY_PEOPLE_NEED_ME | 44 | `Player.cs:24076` | remix top-world death (f30 cited) |
 | TRASH_COMPACTOR | 45 | `AchievementsHelper.cs:396` | Journey sacrifice UI (f30 PREP) |
 | INTERDIMENSIONAL_RECYCLING | 46 | `Main.cs:40294` | Dryad Joja-cola gift (f30 cited) |
@@ -428,7 +428,7 @@ branches exist.
 | GRAVE_MISTAKE | 36 | none — `death.rs` tombstones are the falling visual, not striking projectiles | no | `Player.cs:20473`/`:38836` unowned |
 | FORTUNE_FAVORS_THE_BOULD | 39 | none (all-tip grep: no rainbow-boulder music counter) | no | `Main.cs:61828` unowned |
 | TRAINING_DAY | 40 | ~~a6 `8ed96ee5d` … fires NO notify 40~~ **SUPERSEDED — g90b `b3b82d071` WIRES 40 LIVE**: `world_sim/player.rs:1625-1627` (`drop_backlog` tail) reads `combat_book_was_used && combat_book_volume_two_was_used` → `notify_progression_net(40)` every tick the pair stands (`Player.cs:25695-25698`, idempotent — `notify_with` skips completed rows). g90's lane-7 `0316b4446` ports `use_combat_book` 4382/5336 itself (`editing.rs`, both world flags). **f12 `61724db38` has NO 40 wire** (grep: only the `achievements_data.rs` row + the `npc_ai_town` ladder's flag READS — no notify). **c36's owed armor-tail wire is RETIRED** (keep-one: g90b-live) | no | NONE — g90b owns it; at the a6×g90 merge keep ONE `use_combat_book` (both write the same flags; g90's carries the notify's producers) and ONE notify site (g90's `:1625`); f30's cited comment (`world_sim/player.rs:1631-1635`) retires with it |
-| NEW_DIGS | 43 | **f47 `507a0da5c` ports AI_007's shimmer state 25 completion + sets `out.shimmer_town_progression`** (`npc_ai_town.rs:1821`) — but NO consumer fires 43 | no | after f47 merge: the npcs-pass drain of `shimmer_town_progression` → `notify_progression_net(43)` (`NPC.cs:53273`) |
+| NEW_DIGS | 43 | ~~f47 `507a0da5c` … NO consumer fires 43~~ **SUPERSEDED — f47 `a2561d6d9` WIRES 43 LIVE**: doc-sweep `6f126bd9e` adds `npc_ai_town::town_shimmer_step` (the state-25 emergence machine at the NPC's slot turn, INSTEAD of the dry walk — the C# `:53277` return) + the post-pass latch drain `if shimmer_progression43 { let _ = app.notify_progression_net(43); }` in `world_sim/npcs.rs` (`update_npcs` tail, ahead of the GetShimmered drain). The `TownOutputs.shimmer_town_progression` field (`npc_ai_town.rs:735`, set at `:1831` on the flipped-variation-1 completion, returned by `town_shimmer_step` at `:1966`) IS consumed on f47's own tip | no | NONE on f47's seam — the b3 merge folds it into the adapter's `TownOutputs` drain (f47's research/121 MERGE CONTRACT: keep ONE driver); the exact 2-hunk fold for b3 is published in NOTIFY-SYNC (2) below |
 | MY_PEOPLE_NEED_ME | 44 | none — no lane ports `BordersMovement`'s remix top-world kill | no | `Player.cs:24076` unowned |
 | TRASH_COMPACTOR | 45 | **c24 `e2e50a427` ports the Journey UI + the `register_sacrifice` consumer** (`journey_clicks.rs`) — no notify 45; f30 `f8cef8cb8` has the PREP (`LastEditId` + `count_fully_researched` + `check_research_achievement`) | no | after c24+f30 merge: the sacrifice click → `check_research_achievement` → 45 (`AchievementsHelper.cs:387-399`); the enter-world forced call (`Player.cs:325`) + the per-tick `:25703` |
 | INTERDIMENSIONAL_RECYCLING | 46 | none — `npc_chat.rs` has the cola REMINDER line only; no gift path (all-tip grep negative) | no | `Main.cs:40294` unowned |
@@ -491,7 +491,7 @@ reserved tail, no double-wire:
 | --- | --- | --- |
 | 31, 33, 34, 35, 36, 39, 44, 46 | CITED (same missing systems) | f30's citation stands; c36 does not re-cite |
 | 40 | CITED (vol-2 flag never sets) | **RETIRED — g90b-live** (`b3b82d071`: g90 ports BOTH book uses + the `world_sim/player.rs:1625` notify itself). f30's cited comment retires at merge; c36 owes nothing (the earlier "armor-tail wire is f30's seam" note is superseded — f30's tip `f8cef8cb8` still CITES 40, g90's tip WIRES it) |
-| 43 | CITED (state 25 skip) | **f47 ports the transform + flag** — the drain wire lands with f47's merge |
+| 43 | CITED (state 25 skip) | **RETIRED — f47-live** (`a2561d6d9`: `6f126bd9e` wires the emergence seam + the post-pass `notify_progression_net(43)` itself). f30's citation retires at merge; c36 owes nothing — the b3 adapter fold is f47's published contract (NOTIFY-SYNC (2)) |
 | 45 | PREP (`check_research_achievement`) | **c24 ports the consumer** — the click wire joins f30's prep at merge |
 | 37 partial (1305/4057/4372) | CITED (4715 wired by f30) | unowned — the instruments use system has no lane |
 | 18, 24, "Hit", "Do"×5, 17/26, 29 | outside f30's tail | c36 (this list) |
@@ -540,6 +540,92 @@ a6 `8ed96ee5d`, d43 `a725acb04` (= main, zero commits). Main unchanged
   40 site. Witness: `w4_c36_training_day_keeps_one_notify_forty_site`
   (the registry row is one `Progression(40)`; one notify completes;
   the re-notify returns None — the every-tick shape is safe).
+
+### (2) NEW_DIGS 43 — f47's tip MOVED: the drain is LIVE on f47, not owed
+
+The re-probe read f47 at `507a0da5c` (field set, no consumer). The tip is
+now **`a2561d6d9`** — doc-sweep 36 `6f126bd9e` wired the whole seam:
+
+- `npc_ai_town::town_shimmer_step` (`npc_ai_town.rs:1865-1967`): the
+  state-25 emergence machine for a living town-like NPC at `ai[0]==25`,
+  on the caller's UpdateNpcs stream; drains `ShimmerFx` (EntityLights +
+  NewDustPerfect 309) and RETURNS `out.shimmer_town_progression`.
+- `world_sim/npcs.rs`: the slot loop runs it INSTEAD of the dry walk
+  (`shimmer25` gate at `:4640`), latches `shimmer_progression43`
+  (`:4438`/`:4652`), and the post-pass drain fires
+  `notify_progression_net(43)` (`:6367-6369`, ahead of the GetShimmered
+  drain) — `NPC.cs:53273`'s flipped-variation-1 completion.
+- The field shape (constants-copy contract): `TownOutputs`
+  (`npc_ai_town.rs:711`) gains `pub shimmer_fx: Vec<ShimmerFx>` +
+  `pub shimmer_town_progression: bool` (`:735`); `TownEnv` gains
+  `pub time_for_visual_effects: f64` (`:639`); the completion writer is
+  `out.shimmer_town_progression = true; // :53273` (`:1831`, inside the
+  `ai[1] >= 75 && shimmerTransparency <= 0 && netMode != 1` arm, gated
+  on the flipped `townNpcVariationIndex == 1`).
+
+**c36 verdict: no c36 wire owed** — f47's seam is self-contained. The
+only open edge is the **b3 co-lane merge** (`96a5d88f0`'s adapter still
+folds `shimmering: false` at `npc.rs:10186` and drops the outputs at
+`npc.rs:10209` `let _ = out;`). f47's research/121 MERGE CONTRACT keeps
+ONE driver. The exact 2-hunk drain for the b3 lane (apply on b3's tip
+AFTER f47's `npc_ai_town.rs` lands — the field is NOT on b3's base, so
+these hunks are constants-copy, not a c36 commit):
+
+**Hunk 1 — `crates/tr-app/src/npc.rs`, the adapter's dropped drain
+(b3 `:10208-10209`), replace:**
+
+```rust
+        // The out drain is phase 2's (see the fn doc); the draws ran.
+        let _ = out;
+```
+
+**with:**
+
+```rust
+        // W4-f47 doc-sweep 36 (NOTIFY-SYNC keep-one) — the TownOutputs
+        // drain: the state-25 completion's progression 43
+        // (`AchievementsHelper.NotifyProgressionEvent(43)`,
+        // `NPC.cs:53273`) latches on the NPC (the adapter cannot borrow
+        // the App); the npcs-pass tail fires the notify. The shimmer_fx
+        // visuals stay f47's town_shimmer_step seam (ONE driver — the
+        // pre-pass owns the dust/lights; this drain only carries the
+        // achievement flag, so no double-draw).
+        if out.shimmer_town_progression {
+            self.wants_shimmer_town_progression = true;
+        }
+```
+
+(plus the `Npc` field `pub wants_shimmer_town_progression: bool` beside
+`town_door_close` (`npc.rs:1334`) + the ctor `false` (`:2993`) — the
+`wants_door_bash` intent pattern.)
+
+**Hunk 2 — `crates/tr-app/src/world_sim/npcs.rs`, the post-pass tail
+(b3 `:4684`'s `switch_sends` block, before it), insert:**
+
+```rust
+    // W4-f47 doc-sweep 36 (NOTIFY-SYNC keep-one) — the state-25
+    // completion's progression 43 (`NPC.cs:53273`): the b3 adapter
+    // latched it on the NPC; the notify needs the app wholesale, so it
+    // credits here (RNG-free). ONE site: if f47's town_shimmer_step
+    // pre-pass survives the merge instead, this drain reads ITS latch
+    // (`shimmer_progression43`) and the adapter hunk is dropped — never
+    // both (the notify is idempotent, but the contract is keep-one).
+    let mut shimmer43 = false;
+    for n in app.npcs.iter_mut() {
+        if n.wants_shimmer_town_progression {
+            n.wants_shimmer_town_progression = false;
+            shimmer43 = true;
+        }
+    }
+    if shimmer43 {
+        let _ = app.notify_progression_net(43);
+    }
+```
+
+The adapter's `shimmering: false` fold (`npc.rs:10186`) MUST become the
+live buff-353 flag (`npc.shimmering`) in the same merge — f47's seam
+already reads it. Witness (this branch, the consumer half):
+`w4_c36_new_digs_fires_on_progression_forty_three`.
 
 ## Task seeds
 
