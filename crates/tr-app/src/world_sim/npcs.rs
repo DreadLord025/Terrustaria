@@ -77,9 +77,20 @@ pub(crate) const TAX_CAP: i32 = 250_000;
 /// Collector's right-click pays the accrued tax purse out in coins — the
 /// platinum→gold→silver→copper split at the player's centre, then the
 /// purse empties. The happiness adjustment scales the payout
-/// (`:40184`); the port's town NPCs carry the plain 1.0.
+/// (`:40184`); the port's town NPCs carry the plain 1.0 (the latch divide
+/// + the player-centre origin are W4-g58's `a027138d8` hunk — this lane
+/// adds only the dialog tail). The paid arm answers
+/// `Lang.dialog(Main.rand.Next(380, 384))` (`:40217`) AFTER the coin
+/// split, BEFORE the purse zero (`:40218`); the empty purse answers
+/// `Next(390, 401)` (`:40222`). Both draws ride the bare-`Main.rand`
+/// stand-in — the click runs outside every swap (S1-A-11 §4). The
+/// portrait hop (`:40224`) is g58's.
 pub(crate) fn tax_collector_payout(app: &mut App, npc_idx: usize) -> bool {
     if app.world.tax_money <= 0 {
+        // `:40220-40223` — the empty-purse refusal: one of the eleven
+        // "come back later" lines.
+        let roll = app.rngs.global().next_range(390, 401);
+        app.npc_chat_text = crate::lang::dialog(roll);
         return true;
     }
     let mut num = app.world.tax_money;
@@ -114,6 +125,9 @@ pub(crate) fn tax_collector_payout(app: &mut App, npc_idx: usize) -> bool {
             Vec2::new(px, py),
         );
     }
+    // `:40217` — the paid line draws AFTER the split, BEFORE the zero.
+    let roll = app.rngs.global().next_range(380, 384);
+    app.npc_chat_text = crate::lang::dialog(roll);
     app.world.tax_money = 0;
     true
 }
@@ -7524,6 +7538,38 @@ mod tests {
         assert!(kinds.contains(&72), "three silver coins");
         assert!(kinds.contains(&71), "the coppers");
         assert!(app.items.len() > before, "the drops spawn");
+    }
+
+    /// W4-f37 doc-sweep — the payout dialog tail (`Main.cs:40217`/
+    /// `:40222`): the paid arm draws `Next(380, 384)` on the bare-
+    /// `Main.rand` stand-in AFTER the coin split, the empty purse draws
+    /// `Next(390, 401)`; the coin-spawn draws ride UpdatePlayers and never
+    /// touch the global stream.
+    #[test]
+    fn the_tax_payout_answers_the_dialog_rolls() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut t = Npc::new(NpcKind::TaxCollector, 32.0, 100.0, 1, 0.0);
+        t.hp = t.max_hp;
+        let idx = app.npcs.len();
+        app.npcs.push(t);
+        // The paid arm: one Next(380, 384) on the global stream.
+        app.world.tax_money = 200;
+        let mut twin = app.rngs.global().clone();
+        let roll = twin.next_range(380, 384);
+        assert!(tax_collector_payout(&mut app, idx));
+        assert_eq!(app.npc_chat_text, crate::lang::dialog(roll));
+        assert_eq!(*app.rngs.global(), twin, "one global draw spent");
+        assert_eq!(app.world.tax_money, 0);
+        // The empty purse: one Next(390, 401), no coin spawns.
+        let items = app.items.len();
+        let mut twin = app.rngs.global().clone();
+        let roll = twin.next_range(390, 401);
+        assert!(tax_collector_payout(&mut app, idx));
+        assert_eq!(app.npc_chat_text, crate::lang::dialog(roll));
+        assert_eq!(*app.rngs.global(), twin, "one global draw spent");
+        assert_eq!(app.items.len(), items, "no coins on the refusal");
     }
 
     /// `Player.CollectTaxes` (`Player.cs:24129-24155`) + the pump
