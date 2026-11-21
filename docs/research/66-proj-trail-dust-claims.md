@@ -120,6 +120,18 @@ lands.
   velocity += v); the 356 per-tick 5×175 ring (the velocity-offset
   points); the 385 post-10 6×172 ring (the NextDouble + Next(3,8)
   argument pair per dust, the rotated box-edge point, noLight).
+- batch 4: 399 — the rowed molotov (style 68). The `alpha == 0` fire
+  dust (flag34 = type 399): the (4,−8) spin point (X −4 on direction
+  −1) rotated by the rotation, one dust 6 at Center + spin − (5,5),
+  scale 1.5, noGravity, velocity×0.25 + Normalize(spin) rotated by
+  −π/2·direction. The 669's flag35 two-dust block + the 387/388/533
+  twins' SelectRandom(226,228,75) rings are kinds > 400 (W4-g64's —
+  the :29804/:30055 blocks sit under the type-533 gate). The rowed
+  kinds with NO per-kind dust ≤400 are censused closed: 48 (the
+  thrown-knife arm draws nothing), 76/78 (the note trio shares 77's
+  arm), 156/157 (the beams ride the shared pulse), 131 (the spore is
+  RNG-free), 181/316 (the bee/bat hunt draws nothing), 387/388 (the
+  twins' dust is the 533 gate).
 - (following batches recorded in their commit messages + this table)
 
 Kinds with NO ported `proj_data` row keep their dust arm UNWIRED (the

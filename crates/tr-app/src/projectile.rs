@@ -17985,6 +17985,9 @@ impl ProjectilePool {
                             crate::projectile_ai_thrown::molotov_step(
                                 &mut self.slots[i],
                                 world,
+                                rng,
+                                dust,
+                                dust_ctx,
                             );
                         }
                         // aiStyle 113: the Bone javelin (598)

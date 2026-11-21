@@ -1278,6 +1278,50 @@ pub(crate) fn sharknado_bolt_ring(
 }
 
 // ---------------------------------------------------------------------------
+// aiStyle 68 — the Molotov cocktail (`Projectile.cs:30166-30238`).
+// ---------------------------------------------------------------------------
+
+/// Site 30202 — the Molotov 399's `alpha == 0` fire dust
+/// (`Projectile.cs:30189-30207`, flag34 = type 399): the (4,−8) spin
+/// point (X −4 when direction == −1) rotated by the rotation, one
+/// dust 6 at `Center + spin − (5,5)`, box 4×4, scale 1.5, noGravity;
+/// velocity = velocity×0.25 + Normalize(spin), then rotated by
+/// −π/2·direction. No gate draws (the alpha==0 window is the gate,
+/// the machine checks it). The 669's flag35 two-dust block is kind
+/// > 400 — W4-g64's.
+pub(crate) fn molotov_fire_dust(
+    p: &TrailSlot,
+    rotation: f32,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    // `:30193-30199` — the spin point.
+    let mut spin = Vec2::new(4.0, -8.0);
+    if p.direction == -1 {
+        spin.x = -4.0;
+    }
+    let spin = crate::projectile::rotate(spin, rotation);
+    // `:30202` — the spawn at Center + spin − (5,5).
+    let idx = dust.new_dust(
+        &mut DustDraw(rng), ctx, world,
+        p.center() + spin - Vec2::splat(5.0), 4, 4,
+        6, 0.0, 0.0, 0, Color::default(), 1.0,
+    );
+    let d = dust.slot_mut(idx);
+    d.scale = 1.5; // `:30203`
+    d.no_gravity = true; // `:30204`
+    // `:30205` — velocity×0.25 + Normalize(spin).
+    d.velocity = d.velocity * 0.25 + spin.normalize_or_zero();
+    // `:30206` — the −π/2·direction rotation.
+    d.velocity = crate::projectile::rotate(
+        d.velocity,
+        -std::f32::consts::FRAC_PI_2 * p.direction as f32,
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Witnesses — WRITTEN NOT RUN (code-only mode). Each mirrors the C#
 // draw sequence on a recording stream + a scratch pool with the
 // permissive ctx (the npc.rs `dust_ctx` convention), so the pool never
@@ -1724,5 +1768,27 @@ mod tests {
         assert!(dust.slots()[..6].iter().all(|d| d.dust_type == 172 && d.no_gravity && d.no_light));
         let speed_draws: Vec<_> = rng.ranges.iter().filter(|r| **r == (3, 8)).collect();
         assert_eq!(speed_draws.len(), 6, "one Next(3,8) per dust");
+    }
+
+    /// W4-g63 — the 399 molotov fire dust: one dust 6 at the rotated
+    /// spin point, scale 1.5, noGravity; no gate draws (the alpha==0
+    /// window is the machine's gate).
+    #[test]
+    fn w4_g63_the_molotov_fire_dust() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(4.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        molotov_fire_dust(&p, 0.0, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 1);
+        let d = dust.slot(0);
+        assert_eq!(d.dust_type, 6);
+        assert!(d.no_gravity);
+        assert!((d.scale - 1.5).abs() < 1e-6);
+        // The spin point (4,-8) rotated by 0 → the spawn at
+        // Center + (4,-8) - (5,5) = (108-1, 108-13) = (107, 95).
+        assert!((d.position.x - 107.0).abs() < 1.0);
+        assert!((d.position.y - 95.0).abs() < 1.0);
     }
 }
