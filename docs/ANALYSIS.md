@@ -39251,22 +39251,34 @@ The three unclaimed party-furniture slices land (c39 owns the event
 triggers/hats/bubbles; this lane took the items):
 
 - **The right-click arms** (`Player.cs:32278-32284`/`:32600-32605`):
-  `edit::interact_at` gains `PartyMonolithToggle` (455) and `CakeSlice`
-  (621) kind-literal arms ahead of the registry lookup (the dials/banks
-  shape — both defs carry `Interaction::None`). The app arms ride
+  `edit::interact_at` gains the `PartyMonolithToggle` (455) kind-literal
+  arm ahead of the registry lookup (the dials/banks shape — the def
+  carries `Interaction::None`). The app arm rides
   `world_sim/editing/doors.rs::interact_tile`: the monolith plays the
   case-28 mech cue on the UpdatePlayers stream (the switch-click path's
   one `Next(-10,11)*0.01` behind the playing guard) then flips
   `manual_party` with the THROW_A_PARTY up-edge (the wiring drain's
-  identical body); the cake grants SugarRush 192 for 7200 ticks + Item2
-  at the player centre (one `Next(-6,7)*0.01`). **Census**: tile 457 (the
+  identical body). The cake's 621 right-click (SugarRush 192/7200 + the
+  Item2 cue) rides **W4-f34's `StationBuff` route** — the seven-row kind
+  match `621 => Some((192, 7_200))` + the shared `add_buff`-then-cue app
+  arm (the unpitched e28 stand-in is f34's recorded deviation). This
+  lane's `CakeSlice` variant/dispatch/app arms and their two witnesses
+  were DROPPED in the union-exec (research/70 §5 drop 6 — the f34 route
+  is the anchor-bearing superset); folding this lane's faithful pitched
+  case-2 play (`play_npc_item_cue(2, …)`, the `Next(-6,7)*0.01` draw)
+  into the `StationBuff` arm is the recorded follow-up (§1f), not part
+  of the merge. **Census**: tile 457 (the
   party present) has NO right-click arm in the C# chain, and item 3749 is
   NOT in `ItemID.Sets.OpenableBag` (`ItemID.cs:1384`) — the present is
   place/break-only; `OpenPresent` fires for 1869 alone
   (`ItemSlot.cs:1852-1855`).
 - **SugarRush** (`Player.cs:9935-9939`): `pickSpeed -= 0.2` (the port's
   positive-bonus convention, the Mining-104 precedent) +
-  `moveSpeed += 0.2` per live slot, rebased every tick.
+  `moveSpeed += 0.2` per live slot, rebased every tick. The union keeps
+  **W4-f34's byte-identical `192 =>` arm** (two arms in one match would
+  not compile — research/70 §5 drop 5); this lane's rebase/expiry
+  witness (`w4_f41_sugar_rush_speeds_the_pick_and_the_run`) stays in the
+  union beside f34's verbatim-arm witness (disjoint aspects, §4).
 - **The break records**: 455 joins `check_3x3_bottom`'s dispatch (the
   `:53114` support group via the `:85526` gate; drop `case 455` → 3747
   `:53224`); 621 joins the renamed `check_2x2` (the `:85796` group; drop
@@ -39277,21 +39289,40 @@ triggers/hats/bubbles; this lane took the items):
   `:52328` floor gate, drop 3749 `:52395`, the 4x4 tail ring via
   `region_ring`. The candelabra/sink slice keeps its deferred-pop
   convention (ring: None) — recorded.
-- **The freeCake gift chain**: `NPC.freeCake` rides `WorldEvents`
+- **The freeCake gift chain** (the reconciled union form, research/70 §3
+  — EXECUTED on this branch): `NPC.freeCake` rides `WorldEvents`
   (field-placement deviation — its writers are all party-machine sites:
   `NaturalAttempt` `:106` arms, StartNight `Main.cs:65222` and clearWorld
-  `WorldGen.cs:6945` clear). `Npc.next_dialogue_free_cake` stands in for
+  `WorldGen.cs:6945` clear). **f38's `Npc.next_dialogue`** stands in for
   the one-row `ConditionalDialogue` registry (`Init` `:124` registers
-  FreeCakeDialogue(208) alone); `CheckDialogue`'s
-  `(GameUpdateCount + whoAmI) % 10` poll + between-poll condition-fall
-  clear (`NPC.cs:90519-90532`) runs in `update_npcs`; `GetChat`'s head
-  (`:93768-93771`) in `talk_to_npc` gifts ONE SliceOfCake 3750
-  prefix-free (`SetDefaults(3750)` + `QuickSpawnItem(GiftRecieved)` —
-  the `slot_for_pickup` fill with the `GetOrDropItem` overflow at the
-  player centre) and answers `PartyGirlSpecialText.Cake<Next(1,4)>` on
-  the bare-Main.rand stand-in. The `NetMessage.SendData(51)` NPC-effect
-  broadcast is the net lane's.
+  FreeCakeDialogue(208) alone); the `check_dialogue`/`pending_dialogue`/
+  `conditions_met` helpers (`npc_chat.rs`) carry `CheckDialogue`'s
+  `(GameUpdateCount + whoAmI) % 10` replace-on-poll + between-poll
+  condition-fall clear (`NPC.cs:90519-90532`), called per-NPC from
+  `update_npcs` behind the **`hp > 0` CALLER gate** (f41's alive check
+  moved to the caller — `UpdateNPC` never runs for a corpse; the
+  predicate itself stays freeCake-only). The talk seam
+  (`talk_to_npc`) drains the gift's side effects **BEFORE** the text
+  draw (d120/f41 order — `ConditionalDialogue.cs:60-65` gifts at `:64`
+  THEN draws at `:65`): `free_cake = false`, ONE SliceOfCake 3750
+  prefix-free via a single `slot_for_pickup` (`count += 1`;
+  `SetDefaults(3750)` + `QuickSpawnItem(GiftRecieved)`), the
+  `GetOrDropItem` overflow dropping at the player centre on
+  `rngs.global()` behind `if let Some(p)` (no invented fallback site);
+  **then** `get_chat`'s head (`:93768-93771`, inside `get_chat` ahead of
+  the ladder) answers `PartyGirlSpecialText.Cake<Next(1,4)>` on the same
+  bare-Main.rand stand-in (the talk sits outside every SwapRandom stage,
+  S1-A-10); **then** the latch clears — the C# leaves `nextDialogue`
+  until the next poll tick; the early clear is unobservable (the
+  same-NPC re-talk declines `:43077`) and recorded (§3 latch-clear
+  note). The `NetMessage.SendData(51)` NPC-effect broadcast is the net
+  lane's. The merger grafts this chain onto d120's canonical `GetChat`
+  ladder body + f38's naming/broadcast layer + f34's `StationBuff`
+  route (research/70 §2 KEEP sheet).
 
 Verification: code-only — every arm re-read against the cited C# windows
-in ≤100-line reads; 15 witness tests WRITTEN NOT RUN — no
-cargo/rustc/tests/graphify invoked.
+in ≤100-line reads; the union-exec witness set is 18 tests WRITTEN NOT
+RUN (the 15 original minus the 2 dropped CakeSlice witnesses, plus f38's
+3 kept chain witnesses and d120's 2 pinned-draw witnesses RE-DERIVED to
+latch the row first per research/70 §4) — no cargo/rustc/tests/graphify
+invoked.

@@ -366,3 +366,71 @@ invoked**. Evidence: every C# window cited above re-read directly
 `LegacyMisc.99` + `PartyGirlSpecialText.Cake1..3` from the en-US JSON).
 Every port claim read from the lane diffs (`git diff <base>..<tip>`) and
 `git show <tip>:<file>` — no working-tree code was modified by this note.
+
+---
+
+## 7. EXECUTED — the f41 union-exec (branch `task/W4-f41-birthday-party-2`)
+
+The §3 recipe + the f41-scoped §5 drops are EXECUTED on this branch
+(commits `0ab54f5e` phase 1 chain, `1449fdd5` phase 2 drops). What landed:
+
+1. **§3 step 1** — f38's `Npc.next_dialogue` field (+ init),
+   `check_dialogue`/`pending_dialogue`/`conditions_met`, the `get_chat`
+   head + `cake_chat`, verbatim (one comment corrected: `cake_chat`'s
+   doc now states the side effects run BEFORE the text draw — f38's
+   "drains them after" wording described the dropped ordering).
+2. **§3 step 2** — the `update_npcs` poll loop is f38's call shape with
+   the body gated `if n.hp > 0` (f41's alive gate moved to the caller;
+   the predicate stays freeCake-only).
+3. **§3 step 3** — `talk_to_npc`: after `app.talk_npc = Some(i)`,
+   `if app.npcs[i].next_dialogue { app.world_events.free_cake = false;
+   ONE 3750 via single slot_for_pickup (d120's bare += 1 form), overflow
+   drop at the player centre on rngs.global() behind if let Some(p) }` —
+   then the normal ctx build + `get_chat` (the head draws the Cake text
+   on the same global stream) — then `app.npcs[i].next_dialogue = false`
+   (the recorded early-clear timing note). f41's early-return arm and
+   d120's collapse shape are gone.
+4. **§5 drops 1/2/5/6 executed** — the `next_dialogue_free_cake` field,
+   the inline poll block, the duplicate `192 =>` player.rs arm, and the
+   whole `CakeSlice` route (edit.rs variant + dispatch, doors.rs app +
+   interaction_events arms, app/mod.rs TR_TOGGLE arm) are removed; the
+   two CakeSlice witnesses dropped; the pitched-cue follow-up recorded
+   in-code at the doors.rs seam (§1f).
+5. **§5 anchor re-point executed** — `anchors.txt` row now reads
+   `crates/tr-app/src/world_sim/npcs.rs|crate::npc_chat::check_dialogue`
+   (same feature text, updated to the reconciled chain). Never deleted.
+6. **§4 witness union on this branch (18 WRITTEN NOT RUN)** — f38's 3
+   chain witnesses kept verbatim (`the_dialogue_probe_walks_the_ten_tick_cadence`,
+   `the_pending_cake_dialogue_wins_over_the_ladder`,
+   `the_talk_action_hands_over_the_cake_and_clears_the_condition`);
+   f41's 2 renamed to `next_dialogue`
+   (`w4_f41_the_party_girl_gifts_the_cake_once`,
+   `w4_f41_the_dialogue_poll_latches_and_clears` — doc updated to the
+   caller gate); d120's 2 **RE-DERIVED**
+   (`the_party_girl_gifts_the_cake_then_draws_the_text`,
+   `a_full_inventory_overflows_the_cake_to_a_world_drop` — each now
+   latches `pg.next_dialogue = true` before the talk; ALL pinned-draw
+   asserts kept: seed-0 `Next(1,4)` text, the triplet-then-text overflow
+   order, prefix 0, the centre+(1,0) spawn pos). The remaining 11 f41
+   witnesses (SugarRush rebase/expiry, flag-arm, dusk, monolith ×2,
+   break records ×6) untouched.
+
+**Merger's remaining scope** (NOT executable on this branch — the
+sibling lanes' code is not here): d120's canonical `GetChat` ladder body
++ live-feed ctx + lang helpers (§1j), f38's naming/broadcast layer +
+keyed dusk farewell (§1i, drops 7/8), f34's `StationBuff` route + the
+single 192 arm (§1e/§1f), one copy of the three `free_cake` writer sites
+(drop 9 — this branch's copies are line-equivalent to d120's; keep
+d120's wording). This branch KEEPS its monolith + break records
+wholesale (§1g/§1h). Post-union witness expectation: this branch's 18 +
+f38's naming/broadcast/extended-s1_f_14 witnesses + d120's 13 census
+witnesses + `dusk_clears_the_free_cake_latch` + f34's buff/station/honey
+witnesses.
+
+Verification (code-only): no cargo/rustc/tests/graphify invoked; the
+chain re-read against `ConditionalDialogue.cs:58-66` +
+`NPC.cs:90519-90532`/`:93768-93771` via the §6 evidence; every folded
+piece read from `git diff a725acb0..7f647fda` / `..6381e43e` and
+`git show <tip>:<file>` before the edit; `git grep` confirms zero
+remaining `next_dialogue_free_cake` / `CakeSlice` references in
+`crates/` and the re-pointed anchor marker present.
