@@ -321,6 +321,17 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_83", 2),
     ("Item_84", 2),
     ("Item_85", 2),
+    // S1-E-21h f1 final phase — the 1037/1049 Kill arm's Item89
+    // (`Projectile.cs:73868`, cue-first before the 192×scale recentre;
+    // the rows ride e3's pushed tip `1d26efa9`, the arm is inert until
+    // the merge; the `.xnb` asset verified on disk).
+    ("Item_89", 2),
+    // S1-E-21h f1 final phase — the 1054 SpiderBoulder's NPCHit29
+    // (`Projectile.cs:74867`, `SoundID.NPCHit29 = (3, 29)`,
+    // `SoundID.cs:1285` — case 3's 20..54 ×0.5 arm + one pitch draw;
+    // the row rides d3's pushed tip `2d01693c`, the arm is inert until
+    // the merge; the `.xnb` asset verified on disk).
+    ("NPC_Hit_29", 3),
     ("Item_88", 2),
     ("Item_90", 2),
     ("Item_92", 2),
@@ -476,6 +487,13 @@ pub(crate) const NPC_CUSTOM_CUES: &[&str] = &[
     // S1-E-21g — the EoW head's dig rumble (`SoundID.EOWDiggin`,
     // `SoundID.cs:1763`'s `CreateTrackable("eow_dig")`, one variation).
     "eow_dig",
+    // S1-E-21h f1 final phase — the 1047 RainbowBoulder's Kill cue
+    // (`Projectile.cs:71194`, `SoundID.RainbowBoulder =
+    // CreateTrackable("rainbow_boulder")`, `SoundID.cs:1709`, one
+    // variation; the row rides d3's pushed tip `2d01693c`, the cue is
+    // inert until the merge; `Sounds/Custom/rainbow_boulder.xnb`
+    // verified on disk).
+    "rainbow_boulder",
 ];
 
 /// The `Sounds/Custom/` trackable cues the liquid-merge events play
@@ -1302,6 +1320,11 @@ impl Audio {
         let (x, y) = (x.trunc(), y.trunc());
         let cue = match style_num {
             1 => "NPC_Hit_1",
+            // S1-E-21h f1 final phase — the 1054 SpiderBoulder's Kill
+            // play (`Projectile.cs:74867`, `PlaySound(SoundID.NPCHit29,
+            // x, y)` — the int overload, NO NextFloat; case 3's 20..54
+            // ×0.5 volume arm + one `Next(-10, 11)` pitch, `:646-672`).
+            29 => "NPC_Hit_29",
             _ => return None,
         };
         let style = npc_sound_style(cue, "NPC_Hit_", 3)?;
@@ -1425,6 +1448,11 @@ impl Audio {
         // Center via `:83-85`) — truncate here.
         let (x, y) = (x.trunc(), y.trunc());
         let cue = match style_num {
+            // S1-E-21h f1 final phase — the 655 arm's default-Style
+            // NPCDeath play (`Projectile.cs:75082`, `PlaySound(4, x, y)` —
+            // the int overload's Style default 1); the row rides d3's
+            // pushed tip `2d01693c`, the cue is inert until the merge.
+            1 => "NPC_Killed_1",
             6 => "NPC_Killed_6",
             // S1-E-21h f1 owed-arm phase — the Stardust jellyfish 539's
             // death cry (`Projectile.cs:72571`, `PlaySound(4, pos, 7)`); the
@@ -2069,6 +2097,20 @@ impl Audio {
             13 => return self.play_wall_break_sound((13, 0), x, y, rng),
             4 => return self.play_npc_death_int(style, x, y, rng),
             _ => {}
+        }
+        // S1-E-21h f1 final phase — the queue's extended int/trackable
+        // routes (the second owed wave): id 3 style 29 (the 1054
+        // SpiderBoulder's `PlaySound(SoundID.NPCHit29, x, y)`,
+        // `Projectile.cs:74867` — the int overload, case 3's ×0.5 arm +
+        // one pitch draw) and id 42 style 274 (the 1047 RainbowBoulder's
+        // `PlaySound(SoundID.RainbowBoulder, base.Center)`, `:71194` —
+        // the one-variation trackable, case 42, NO gameplay draw). Both
+        // rows ride d3's pushed tip; the cues are inert until the merge.
+        if id == 3 && style == 29 {
+            return self.play_npc_hit_int(29, x, y, rng);
+        }
+        if id == 42 && style == 274 {
+            return self.play_npc_hit_sound("rainbow_boulder", x, y, rng);
         }
         if id != 2 {
             return None;
@@ -4045,6 +4087,73 @@ mod tests {
             Some("NPC_Killed_7")
         );
         assert_eq!(rng.peek(), witness.peek(), "the int arm ignores the scale");
+    }
+
+    /// S1-E-21h f1 FINAL phase — the second owed wave's façade routes:
+    /// the 1054 SpiderBoulder's NPCHit29 (`Projectile.cs:74867`, the int
+    /// overload — NO NextFloat, case 3's 20..54 ×0.5 arm + ONE
+    /// `Next(-10, 11)` pitch after the gate, `LegacySoundPlayer.cs:646-
+    /// 672`), the 1047 RainbowBoulder's case-42 trackable (`:71194`,
+    /// `SoundID.cs:1709` — one variation, NO gameplay draw) and the 655
+    /// BeeHive's default-Style NPCDeath1 (`:75082`, case 4's one pitch).
+    /// Written, NOT run — code-only mode.
+    #[test]
+    fn s1_e_21h_f1_final_the_second_owed_wave_routes_resolve() {
+        use tr_core::unified_random::UnifiedRandom;
+        // The bank rows exist.
+        assert!(SFX_CUES.contains(&("NPC_Hit_29", 3)));
+        assert!(SFX_CUES.contains(&("Item_89", 2)));
+        assert!(NPC_CUSTOM_CUES.contains(&"rainbow_boulder"));
+        // NPCHit29: exactly one case-3 pitch draw, no NextFloat.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(
+            audio.play_proj_sound((3, 29), 0.0, 0.0, 0.0, &mut rng),
+            Some("NPC_Hit_29")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one case-3 pitch, no NextFloat");
+        // RainbowBoulder: the case-42 trackable draws NOTHING.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_proj_sound((42, 274), 0.0, 0.0, 0.0, &mut rng),
+            Some("rainbow_boulder")
+        );
+        assert_eq!(rng.peek(), peek, "the trackable play is draw-free");
+        // NPCDeath1 (the BeeHive's default Style): one case-4 pitch.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(
+            audio.play_proj_sound((4, 1), 0.0, 0.0, 0.0, &mut rng),
+            Some("NPC_Killed_1")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one case-4 pitch");
+        // Item89 (the 1037/1049 cue): the case-2 one-draw contract.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-6, 7);
+        assert_eq!(
+            audio.play_proj_sound((2, 89), 0.0, 0.0, 0.0, &mut rng),
+            Some("Item_89")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one case-2 pitch");
+        // Muted: every route refuses before its draws.
+        let mut audio = Audio::new(None);
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        for (id, style) in [(3u16, 29i32), (42, 274), (4, 1), (2, 89)] {
+            let mut rng = UnifiedRandom::new(7);
+            let peek = rng.peek();
+            assert_eq!(audio.play_proj_sound((id, style), 0.0, 0.0, 0.0, &mut rng), None);
+            assert_eq!(rng.peek(), peek, "({id},{style}) muted is draw-free");
+        }
     }
 
     /// S1-E-21 wave C — the NPC death play's RNG contract

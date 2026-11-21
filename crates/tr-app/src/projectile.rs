@@ -21564,6 +21564,119 @@ impl ProjectilePool {
             // rides d11's pushed tip e0395afc, `Projectile.cs:6258-6269`:
             // 4x4, aiStyle 1.
             576 => Some((2, 10, x, y, 0.0)),
+            // S1-E-21h f1 FINAL phase — the second owed wave: the part-6
+            // "still rowless everywhere" kinds whose rows landed on the
+            // sibling tips AFTER the part-6 sweep (the final re-census
+            // below; every arm INERT until the merge lands its row, the
+            // owed-phase convention — NUMERIC literals, the rows are NOT
+            // re-ported). All cue-first / pre-resize plays except the
+            // 931/1039's Center.
+            // `:71152` — the 931 FairyQueenMagicItemShot / 1039
+            // ConstellationStar's Item10 at `base.Center` (the play
+            // precedes the trail-dust census; the rows ride d18's pushed
+            // tip `18916087`, data.rs:3924/:3933).
+            931 | 1039 => Some((2, 10, x + p.w * 0.5, y + p.h * 0.5, 0.0)),
+            // `:71194` — the 1047 RainbowBoulder's trackable cue at
+            // `base.Center` (`SoundID.RainbowBoulder = (42, 274)`,
+            // `SoundID.cs:1709` — case 42, one variation, NO gameplay
+            // draw; the play precedes the trail census; the row rides
+            // d3's pushed tip `2d01693c`, data.rs:3389, `RAINBOW_BOULDER`).
+            1047 => Some((42, 274, x + p.w * 0.5, y + p.h * 0.5, 0.0)),
+            // `:73259` — the 523 ToxicBubble's Item54 pop (the play
+            // precedes the 25-dust ring; the row rides d10's pushed tip
+            // `1f0b60e9`, data.rs:1771, `TOXIC_BUBBLE`).
+            523 => Some((2, 54, x, y, 0.0)),
+            // `:73868` — the 1037 MeteorWhipMeteor / 1049
+            // MeteorStormMeteor's Item89 CUE-FIRST (the play precedes the
+            // 192×scale recentre `:73869-73873`; the rows ride e3's pushed
+            // tip `1d26efa9`, data.rs:3863/:3869).
+            1037 | 1049 => Some((2, 89, x, y, 0.0)),
+            // `:74754` — the 1124 BoneShard's Dig thud (the play precedes
+            // the 5-dust census; the row rides d78's pushed tip `cbae0aa3`,
+            // data.rs:3302, `BONE_SHARD`: 6x6, aiStyle 1).
+            1124 => Some((0, 0, x, y, 0.0)),
+            // `:74859` — the 1048 Poulder's Item16 (the `!projPet`
+            // boulder chain's int-position play; the row rides d3's
+            // pushed tip `2d01693c`, data.rs:3392, `POULDER`: 31x31,
+            // aiStyle 25).
+            1048 => Some((2, 16, x, y, 0.0)),
+            // `:74863` — the 1053 LavaBoulder's Item14 (the boulder
+            // chain's int-position play; the row rides d3's tip,
+            // data.rs:3368-3371, `LAVA_BOULDER` in the shared block).
+            1053 => Some((2, 14, x, y, 0.0)),
+            // `:74867` — the 1054 SpiderBoulder's NPCHit29 play
+            // (`PlaySound(SoundID.NPCHit29, x, y)` — the int facade,
+            // `SoundID.NPCHit29 = (3, 29)`, `SoundID.cs:1285`; the row
+            // rides d3's tip, data.rs:3372, `SPIDER_BOULDER`: timeLeft
+            // 300).
+            1054 => Some((3, 29, x, y, 0.0)),
+            // `:74871` — the 1055 Ghoulder's NPCDeath style-6 play
+            // (`PlaySound(SoundID.NPCDeath6, x, y)` — the int facade,
+            // `SoundID.NPCDeath6 = (4, 6)`; the row rides d3's tip,
+            // data.rs:3373, `GHOULDER`: timeLeft 900).
+            1055 => Some((4, 6, x, y, 0.0)),
+            // `:74875` — the boulder chain's else Dig thud: 99 Boulder /
+            // 727 RollingCactus / 1013 BouncyBoulder / 1014
+            // LifeCrystalBoulder / 1021 MoonBoulder / 1057
+            // BoulderThatSpawnsPet (the rows ride d3's tip, data.rs:3368-
+            // 3381 — the shared 31×31 aiStyle-25 block + the MoonBoulder
+            // arm; every member of the C#'s 11-kind list except the
+            // NPCHit29/Item14/NPCDeath6 kinds below is rowed there).
+            99 | 727 | 1013 | 1014 | 1021 | 1057 => Some((0, 0, x, y, 0.0)),
+            // `:74972` — the 1005 MiniBoulder's Dig thud (the play precedes
+            // the dust + velocity×1.6 census; the row rides d3's tip,
+            // data.rs:3376, `MINI_BOULDER`: 15x15, aiStyle 25).
+            1005 => Some((0, 0, x, y, 0.0)),
+            // `:75082` — the 655 BeeHive's NPCDeath play
+            // (`PlaySound(4, x, y)` — the int overload's Style default 1;
+            // the row rides d3's tip, data.rs:3384, `BEE_HIVE`: 31x31,
+            // aiStyle 25).
+            655 => Some((4, 1, x, y, 0.0)),
+            // `:75163` — the 723 ManaCloakStar's Item10 (the play precedes
+            // the dust/gore censuses + the owner-gated 4143 drop; the row
+            // rides f48's pushed tip `69d499c6`, data.rs:3871-3875, the
+            // cloak-star block).
+            723 => Some((2, 10, x, y, 0.0)),
+            // `:75187` — the cloak family's else Item10: 724 BeeCloakStar
+            // / 725 StarVeilStar / 726 StarCloakStar / 1133 SnakeCloakStar
+            // (the same f48 block; the still-rowless 907 sibling — its
+            // `:75183` Item27 arm — stays out, the PART-arm convention).
+            724 | 725 | 726 | 1133 => Some((2, 10, x, y, 0.0)),
+            // `:75331` — the 128 FrostBlastHostile's Item27 (the frost-bolt
+            // family arm's newly-rowed sibling; the row rides g8's pushed
+            // tip `82c93cec`, data.rs:3216, `FROST_BLAST_HOSTILE`: 14x14,
+            // aiStyle 28).
+            128 => Some((2, 27, x, y, 0.0)),
+            // `:75683` — the 12 natural FallingStar's Item10 (the star
+            // arm's unrowed sibling at part 6; the row rides d15's pushed
+            // tip `60731d50`, data.rs:4117, `NATURAL_FALLING_STAR`).
+            12 => Some((2, 10, x, y, 0.0)),
+            // `:76136` — the 321 FlamingJack's Item10 (the ball-of-fire
+            // arm's unrowed sibling at part 6; the row rides d6's pushed
+            // tip `451cace1`, data.rs:2846, `FLAMING_JACK`: 30x30,
+            // aiStyle 55).
+            321 => Some((2, 10, x, y, 0.0)),
+            // `:76180` — the 31 falling SandBall's Dig thud (the 42's
+            // unrowed sibling at part 6; the row rides f42's pushed tip
+            // `75f055fc`, data.rs:3996 — g8's tip `82c93cec` data.rs:3209
+            // carries the same row, keep-one at merge).
+            31 => Some((0, 0, x, y, 0.0)),
+            // `:76268` — the 584 NurseSyringeHeal's Dig thud (the row
+            // rides d11's pushed tip `eae7b509`, data.rs:2566,
+            // `NURSE_SYRINGE_HEAL`).
+            584 => Some((0, 0, x, y, 0.0)),
+            // `:76345` — the 514 NailFriendly's Item14 (the play precedes
+            // the dust census; the row rides d10's tip, data.rs:1757,
+            // `NAIL_FRIENDLY`).
+            514 => Some((2, 14, x, y, 0.0)),
+            // `:76946`/`:76989` — the 246 Stynger bolt / 249
+            // StyngerShrapnel's Item14 (cue-first; the rows ride d78's
+            // tip, data.rs:3822/:3830, `STYNGER`/`STYNGER_SHRAPNEL`).
+            246 | 249 => Some((2, 14, x, y, 0.0)),
+            // `:75683` — the 503 StarWrath star's Item10 (the star arm's
+            // newly-rowed sibling; the row rides e3's tip, data.rs:3858,
+            // `STAR_WRATH`: 24x24, aiStyle 5).
+            503 => Some((2, 10, x, y, 0.0)),
             _ => None,
         };
         if let Some((id, style, x, y, pitch)) = cue {
@@ -24510,6 +24623,116 @@ mod s1_e_21h_sound_tests {
         };
         pool.kill_sound_cue(0, false);
         assert!(pool.drain_proj_sounds().is_empty(), "706 is unrowed — no cue");
+    }
+
+    /// S1-E-21h f1 FINAL phase — the second owed wave's cue table: the
+    /// part-6 rowless kinds whose rows landed on the sibling tips AFTER
+    /// the part-6 sweep (d3/d6/d10/d11/d15/d18/d78/e3/f42/f48/g8 — the
+    /// final re-census, ANALYSIS part 7). The slots are CONSTRUCTED
+    /// directly (the base table has no rows — the arms are INERT until
+    /// the merge lands the siblings' rows); the boxes ride the cited
+    /// rows. The 931/1039/1047 play at Center, the rest at the pre-resize
+    /// top-left. Written, NOT run — code-only mode.
+    #[test]
+    fn s1_e_21h_f1_final_the_second_owed_wave_queues_its_payloads() {
+        let mut pool = ProjectilePool::new();
+        // (kind, w, h, id, style, centre?) — boxes from the pushed rows:
+        // 931/1039 d18 data.rs:3924/:3933, 1047/1048/1053/1054/1055/99/
+        // 727/1013/1014/1021/1057/1005/655 d3 data.rs:3368-3392, 523/514
+        // d10 data.rs:1771/:1757, 1037/1049 e3 data.rs:3863/:3869 (24x24),
+        // 1124 d78 data.rs:3302 (6x6), 723-726/1133 f48 data.rs:3871
+        // (24x24), 128 g8 data.rs:3216 (14x14), 12 d15 data.rs:4117,
+        // 321 d6 data.rs:2846 (30x30), 31 f42 data.rs:3996 (10x10), 584
+        // d11 data.rs:2566, 246/249 d78 data.rs:3822/:3830, 503 e3
+        // data.rs:3858 (24x24).
+        let cases: [(u16, f32, f32, u16, i32, bool); 28] = [
+            (931, 30.0, 30.0, 2, 10, true),
+            (1039, 30.0, 30.0, 2, 10, true),
+            (1047, 31.0, 31.0, 42, 274, true),
+            (523, 32.0, 32.0, 2, 54, false),
+            (1037, 24.0, 24.0, 2, 89, false),
+            (1049, 24.0, 24.0, 2, 89, false),
+            (1124, 6.0, 6.0, 0, 0, false),
+            (1048, 31.0, 31.0, 2, 16, false),
+            (1053, 31.0, 31.0, 2, 14, false),
+            (1054, 31.0, 31.0, 3, 29, false),
+            (1055, 31.0, 31.0, 4, 6, false),
+            (99, 31.0, 31.0, 0, 0, false),
+            (727, 31.0, 31.0, 0, 0, false),
+            (1013, 31.0, 31.0, 0, 0, false),
+            (1014, 31.0, 31.0, 0, 0, false),
+            (1021, 31.0, 31.0, 0, 0, false),
+            (1057, 31.0, 31.0, 0, 0, false),
+            (1005, 15.0, 15.0, 0, 0, false),
+            (655, 31.0, 31.0, 4, 1, false),
+            (723, 24.0, 24.0, 2, 10, false),
+            (724, 24.0, 24.0, 2, 10, false),
+            (725, 24.0, 24.0, 2, 10, false),
+            (726, 24.0, 24.0, 2, 10, false),
+            (1133, 24.0, 24.0, 2, 10, false),
+            (128, 14.0, 14.0, 2, 27, false),
+            (12, 18.0, 18.0, 2, 10, false),
+            (321, 30.0, 30.0, 2, 10, false),
+            (31, 10.0, 10.0, 0, 0, false),
+        ];
+        for (kind, w, h, id, style, centre) in cases {
+            pool.slots_mut()[0] = Projectile {
+                active: true,
+                kind,
+                owner: 0,
+                pos: Vec2::new(64.0, 64.0),
+                w,
+                h,
+                ..Default::default()
+            };
+            pool.kill_sound_cue(0, false);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "kind {kind}: one owed death cue");
+            let (qx, qy) = if centre {
+                (64.0 + w * 0.5, 64.0 + h * 0.5)
+            } else {
+                (64.0, 64.0)
+            };
+            assert_eq!(queued[0], (id, style, qx, qy, 0.0, 1.0), "kind {kind}'s payload");
+            assert!(pool.drain_proj_sounds().is_empty(), "the drain empties");
+        }
+        // The second batch's tail kinds (the same construction shape).
+        for (kind, w, h, id, style) in [
+            (584u16, 10.0, 10.0, 0u16, 0i32),
+            (514, 10.0, 10.0, 2, 14),
+            (246, 10.0, 10.0, 2, 14),
+            (249, 12.0, 12.0, 2, 14),
+            (503, 24.0, 24.0, 2, 10),
+        ] {
+            pool.slots_mut()[0] = Projectile {
+                active: true,
+                kind,
+                owner: 0,
+                pos: Vec2::new(64.0, 64.0),
+                w,
+                h,
+                ..Default::default()
+            };
+            pool.kill_sound_cue(0, false);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued, vec![(id, style, 64.0, 64.0, 0.0, 1.0)], "kind {kind}");
+        }
+        // The still-rowless siblings stay OUT (the PART-arm convention):
+        // the 907 cloak sibling (its :75183 Item27 arm) and the 706
+        // FlameBurst sibling ride cue-less.
+        for kind in [907u16, 706] {
+            pool.slots_mut()[0] = Projectile {
+                active: true,
+                kind,
+                owner: 0,
+                pos: Vec2::new(64.0, 64.0),
+                w: 16.0,
+                h: 16.0,
+                ..Default::default()
+            };
+            pool.kill_sound_cue(0, false);
+            assert!(pool.drain_proj_sounds().is_empty(), "kind {kind} is rowless");
+        }
     }
 }
 
