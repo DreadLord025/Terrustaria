@@ -14545,11 +14545,18 @@ powers/research вЂ” each needs its own scope.
   FIRES (S1-E-18p29) and the S1-F-15 denominator bug is FIXED — the residual
   gate is the town/critter provider fold (c37); nurse `Pay`
   (`Main.cs:40110`) landed via S1-E-18-nurse-pay; IT_CAN_TALK 18 (no Truffle
-  kind 160), REAL_ESTATE_AGENT 17 partial (missing 178/229/209/160 — 107 and
-  550 ARE ported), DUNGEON_HEIST 19 / BIG_BOOTY 20 landed via
+  kind 160 ON THIS BASE — the NOTIFY-SYNC update: the kind IS on d120
+  `4b17a2cf1`, the arrival notify hunk published in research/30),
+  REAL_ESTATE_AGENT 17 partial (missing 178/229/209/160 on this base — 107 and
+  550 ARE ported; NOTIFY-SYNC: all four now on d120/d37 tips, the roster
+  activates at their merge), DUNGEON_HEIST 19 / BIG_BOOTY 20 landed via
   S1-E-18b-chest-progress; most other progression/CustomFlag rows lack
   owning systems. `tile_drop` returns `None` for altar 26 (C# empty drop group)
-  to avoid leaking the Journey altar item.
+  to avoid leaking the Journey altar item. **NOTIFY-SYNC (W4-c36, second
+  pass 2026-11-21):** TRAINING_DAY 40 + NEW_DIGS 43 are WIRED LIVE on
+  g90b `b3b82d071` / f47 `a2561d6d9` — c36's owed rows retired (the
+  keep-one contracts + the published b3/d20b/d120 hunks live in
+  research/30 NOTIFY-SYNC (1)-(4)).
 - **Notify sites, first batch (W4-c36, 2026-11-21).** The row-targeted
   `AchievementManager::complete_condition(row, cond)` primitive ports
   `GetCondition(row, conditionName).Complete()` (`AchievementManager.cs:220-227`,

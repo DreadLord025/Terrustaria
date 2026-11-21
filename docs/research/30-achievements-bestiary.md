@@ -450,6 +450,18 @@ their owning system + the exact notify seam identified on pushed tips** —
 c36 wires them the moment those lanes land in main (the next sync's
 re-probe). The other 16 stay cited.
 
+**NOTIFY-SYNC refresh (2026-11-21, second pass — the tips moved):**
+40 and 43 are now WIRED LIVE on their owning tips (g90b `b3b82d071`,
+f47 `a2561d6d9`) — c36's owed rows RETIRED, nothing to wire at merge
+(the keep-one contracts: NOTIFY-SYNC (1)/(2)). TO_INFINITY's exact
+4-hunk kill-arm is published for d20b (NOTIFY-SYNC (3)); 18's Truffle
+kind landed on d120 and its arrival hunk is published (NOTIFY-SYNC (4)).
+45 stays the c24+f30 merge join. **Revised net: 0 of 20 wireable
+in-tree; 2 rows (40/43) fully covered on sibling tips, 3 rows
+(TO_INFINITY/18/45) carry exact published hunks or merge joins; the
+roster 17 activates at the d120/d37 merge (4 kinds landed), 26 waits
+for the slime kinds (unported on every tip).**
+
 ### (2) The 29 / S1-F-15 tier-bug census — VERIFIED FIXED, no bug to fix
 
 - Progression 29 = **BOOK_WORM** (`AchievementInitializer.cs:378-380`,
@@ -515,6 +527,13 @@ will need the one-line rebase at c37's merge, no semantic conflict (the
 gate predicate is identical).
 
 ## W4-c36 NOTIFY-SYNC — the keep-one refresh (2026-11-21, second pass)
+
+Witnesses (WRITTEN NOT RUN, code-only — the consumer halves of the four
+published contracts, `app/achievement_hooks.rs`):
+`w4_c36_training_day_keeps_one_notify_forty_site`,
+`w4_c36_new_digs_fires_on_progression_forty_three`,
+`w4_c36_to_infinity_completes_on_the_do_flag`,
+`w4_c36_it_can_talk_fires_on_progression_eighteen`.
 
 Tips read this pass: g90 `b3b82d071`, f12 `61724db38`, f47 `a2561d6d9`
 (moved past the re-probe's `507a0da5c`), d20 `13de9ccf6`, d120 `4b17a2cf1`,
@@ -808,7 +827,7 @@ neither is on this base; the hunk lands with their merge. The stale
 
 - ~~**S** — Model `NPCKilledCondition.CreateMany` faithfully~~ — **done (S1-E-18)**.
 - ~~**S** — Call `achievements::save` from the autosave/F9 pass~~ — **done (S1-E-18)** (save on completion + `save_world`, path-bound bootstrap).
-- **M** — Continue wiring notify sites for progression/custom rows as owning systems land (remaining: the 20-row gap list, re-probed below — every owning system is still branch-only; 17 partial, 18; 19/20 + nurse `Pay` landed). Partially done (S1-E-18). Dep: owning systems merging to main.
+- **M** — Continue wiring notify sites for progression/custom rows as owning systems land (remaining: the 20-row gap list, re-probed below — every owning system is still branch-only; 17 partial, 18; 19/20 + nurse `Pay` landed). Partially done (S1-E-18). Dep: owning systems merging to main. **NOTIFY-SYNC: 40/43 retired (g90b/f47 wire them live), TO_INFINITY + 18 hunks published, the roster's 4 town kinds landed on d120/d37.**
 - ~~**S** — Make `kills_needed_for` fall back to
   `ItemID_Sets_DefaultKillsForBannerNeeded` (50) instead of 0, and pin it with a
   regression test that a fresh tracker leaves a non-quick entry at
