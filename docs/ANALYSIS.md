@@ -31087,6 +31087,55 @@ portraits and the netglue bare seed. The wiring:
   integration pins and the digger worm-pass pin
   (`world_sim/npcs.rs::w4_c8_*`).
 
+### W4-c8 FINAL phase (2026-11-21, code-only — research/143)
+
+- **The SIGHT-provider CROSS-LANE contract**: `is_critter_entry`
+  generalized from the nine-kind list to the GENERIC
+  `counts_as_a_critter(kind)` gate (`NPC.cs:6887-6897` — the kind's
+  `SetDefaults` `max_hp <= 5 && contact_damage() == 0` + the
+  `cs_id != 594/686` exclusions). The other critter lanes (c7 fireflies
+  355/358/654/677, c9 snails 359/360/655, c10 waterfowl
+  362-365/602/603/608/609, e26 Frog 361 / LadyBug 604 / GoldLadyBug 605,
+  c4 Goldfish 55 / GoldGoldfish 592 / GoldGoldfishWalker 593) are ALL
+  5-HP/0-dmg in the C# — auto-covered by the scan AND the dispatch once
+  rowed, NO per-lane provider wiring. The Goldfish 55's sweep-recorded
+  c4 follow-up is CLOSED (its C# provider IS the critter one — the
+  freeze lifted); the DD2LanePortal 549 is the one exclusion (raw gate
+  passes but Hide=true `NPCID.cs:4910-4915` — the populator's
+  `GetExclusions` never registers it, the kill provider stands).
+- **The gold set SET-COMPLETE**: the 14-member `GoldCrittersCollection`
+  (`NPCID.cs:10121-10125`) matches verbatim; the provider arm is now
+  the full 13-row `GOLD_PEER_TABLE`
+  (`BestiaryDatabaseNPCsPopulator.cs:703-716` — 593 is collection-only,
+  the 539 squirrel the one two-peer row {299, 538}); the dispatch keys
+  on `net_id ∈ table` so a merged lane's gold row needs no edit.
+- **The digger COMPOSE on the d22-upgraded worm-head machine**
+  (`b24977d99`, audit T1b): the faithful three-arm accel steer
+  (`:52112-52199`), the velocity-sign air stumble (`:51925-51973`) and
+  the dig-mode latch (`:52202-52224` — 375 NOT on the type list)
+  transplanted into `worm_head_step`; the 375 FLEE inversion moved to
+  the C# position (`:51861-51865`, after the tile snap before BOTH
+  branches — the air arm's num48 steer flees too, the compose's one
+  semantic delta). The digger's first-tick flee is −0.165 (the accel),
+  not the −6 snap; the corruption-escape/far-player/digs-and-stumbles
+  witnesses re-derived per d22. DEVIATION closed: the pre-compose
+  velocity-snap stand-in is gone from this branch.
+- **The crawler SHEETS census** (the d35 lazy-load contract,
+  research/113 §10 at `e5558b0a9`): the C# loads NPC sheets per DRAW
+  (`LoadNPC` `Main.cs:59084` ← `SetFrameSize` `NPC.cs:66663`), never on
+  spawn — the port's eager `STATIC_SHEET_NAMES` pack stays the
+  documented superset (the E-4b precedent) until the §10.6 step-7
+  per-world NPC page lands. All nine sheets are in the d35 FINAL
+  490-name union (357/606/374/375 owned c8; 448/484-487 the d40
+  forecast); real dims measured via the pinned LZX harness (17,424
+  padded px total, every height divides by its `npcFrameCount` row).
+  The d35 `_d35_npc_census.json` predates the c8 landing — re-run the
+  extraction on the merged base (research/143 §4 cross-note).
+- Witnesses WRITTEN NOT RUN: `w4_c8_final_*` (bestiary.rs ×2,
+  world_sim/npcs.rs ×1, render/entities.rs ×1), `w4_c8_compose_*` ×2
+  (the d22 carries), the re-pinned digger flee witness. Full register +
+  merge notes: `docs/research/143-c8-crawler-final-census.md`.
+
 ## The aiStyle-9 sphere family (S1-D-3 aiStyle-9, 2026-11-18, code-only mode)
 
 `NPC.AI()`'s `if (this.aiStyle == 9)` arm (`NPC.cs:21377-21571`) now rides
