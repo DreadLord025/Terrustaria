@@ -1,11 +1,25 @@
 # 83 — Weather reconcile: the g11-side addendum (snowing keep-one)
 
-**STATUS (union-exec phase): F1-F7 PUBLISHED as exact patch-hunks (§-patch
-below) — d130 applies them mechanically on ITS branch (it owns execution,
-tip `ec1d73c7` at publication; its `snow.rs` unchanged since `50c845e5`).
-g11's own `main_dust.rs::snowing` + `SnowingEnv` retire at the MERGE
-(keep-one); this branch's snow witnesses stay until the merger drops the
-body. The teleport half is research/116 — EXECUTED on this branch.**
+**STATUS: FINAL (g11 final phase, d130 tip `560a02ea` re-read).** d130
+executed the keep-one on ITS branch (union-exec `88cfbf38`/`ec1d73c7`,
+final-phase `85250712`/`5289d055`/`85b2a09c`/`703370e6`/`cf4574e9`, docs
+`560a02ea`): it folded the g11 details F2 (HiDef 4096) + F3 (in-body pause
+gate) + the census wording (`85250712`, its §4), kept F4's real counter
+and the 76 AI/tails/draw, and **KEPT its own splitmix stream — F1 NOT
+APPLIED** (its §4: "the per-consumer splitmix stream … the WEATHER-2
+convention decision of §2 stands"; F5's int loop also not taken — its
+float loop stays). The §-patch F1 hunks below are therefore
+**REFUTED-AS-APPLIED**, not refuted-as-maths: the §-adjudication section
+(below the patch) re-derives the `:17238` scope from the C# and confirms
+the g11 pre-swap/global claim is the faithful reading; d130's §2
+explicitly delegates the slot choice to the merger ("a stream-convention
+decision, not a maths one"), so F1 stays the published RECOMMENDATION
+the merger may still take. g11's own `main_dust.rs::snowing` +
+`SnowingEnv` + consts are **marked DEPRECATED in-code** (the module doc
+RETIRE-NOTE + the fn doc) — the merger drops them for d130's `snow.rs`;
+this branch keeps the body + its four witnesses compiling until then
+(the witnesses migrate per F7). The teleport half is research/116 —
+EXECUTED + FINAL on this branch.
 
 W4-g11 reconcile phase, code-only. This is the **g11 branch's addendum** to the
 d130 reconcile doc (`docs/research/83-weather-reconcile.md` at `50c845e5` on
@@ -922,3 +936,69 @@ blocks re-derive the g11 body (`73545f0b`, this branch's
 d130 fixture constants. The F7e mirrors' cull/tile-gate branches were
 walked by hand for the fixture's roll ranges (no execution — WRITTEN NOT
 RUN, the merge-verify wave executes).
+
+## §-adjudication — the `:17238` SwapRandom scope (g11 final phase, d130 tip `560a02ea`)
+
+The task brief flagged the snow-stream question as an ACTIVE
+adjudication: the g11 F1 claim (the bare `Main.rand` / `NamedRngs::global`
+slot) vs d130's kept per-consumer splitmix. Re-derived from the C# at the
+1.4.5.8 lines, call-chain first:
+
+1. `Main.Update(GameTime)` (`Main.cs:16774`) calls `this.DoUpdate(ref
+   gameTime)` (`:16788`) — no `SwapRandom` anywhere in `Update`.
+2. `DoUpdate` (`:16828-17292`) runs `Main.snowing()` at **`:17238`**
+   (inside the `netMode != 2` try/catch `:17234-17246`), then
+   `Sandstorm.EmitDust()` `:17247`. The FIRST `SwapRandom` in the whole
+   `DoUpdate` body is at **`:17732`** — inside `DoUpdateInWorld`
+   (`:17726`), which `DoUpdate` calls LATER at `:17280` (behind
+   `ShouldUpdateEntities() && WorldUpdateStepper.ShouldUpdateWorld()`).
+   Every other swap (`:17749-17809`, `:17887`) sits inside that method
+   or its callees. `grep SwapRandom` over `:16828-17725` returns NOTHING.
+3. `Main.SwapRandom(key)` (`:3204-3215`) returns `RandomSwap.Swap(value)`
+   — an `IDisposable` that RESTORES the previous `Main.rand` on dispose.
+   So even the `UpdateTime` swap (`:17795`, the `UpdateWeather` chain
+   `:17230` runs BEFORE snowing but inside the earlier per-pass scopes)
+   cannot leak: at `:17238` `Main.rand` is the bare static
+   (`:1292`, seeded `:5194`/`:6463`), the same stream the draw path and
+   every pre-swap consumer rolls.
+
+**Verdict: the g11 pre-swap claim STANDS as the faithful C# reading.**
+`:17238` draws on the bare `Main.rand`; the port's bare-stream slot is
+`NamedRngs::global()` (the S1-A-10 contract; g13's draw-path sites and
+the pre-swap chest-eat cues already ride it). d130's kept splitmix is a
+DOCUMENTED DEVIATION (its WEATHER-2 per-consumer convention), not a
+scope correction — its own §2 says "if the merger prefers g11's
+`NamedRngs::global` slot instead, that is a stream-convention decision,
+not a maths one". d130's final-phase commits did NOT re-trace the scope
+(its §4 keeps the stream with the §2 delegation intact); nothing in its
+tip refutes the `:17238` pre-swap maths.
+
+**Disposition (aligned, not re-litigated):**
+* F1 stays PUBLISHED as the recommendation (the hunks above apply
+  mechanically if the merger takes the global slot). It is marked
+  REFUTED-AS-APPLIED in the status header only in the sense that d130
+  chose not to apply it — the merger owns the decision per d130 §2.
+* F2/F3 landed on d130 (`85250712`): `snow.rs:43` `MAX_SCREEN_W = 4096.0`,
+  `SnowInputs.game_paused` + the in-body disjunct (`snow.rs:125`),
+  `update_scene` feeds `app.game_paused` — verified by reading the tip.
+* F4 was already d130's shape (the `snow_dust: i32` param read once per
+  call, `snow.rs:112`/`:149`); F5 (the int loop) NOT taken — d130 keeps
+  its float `attempt` loop (`snow.rs:144-146`), observation-equal per
+  §1's table (exact ≤ 2^24), no action owed.
+* F6/F7 (env re-point + witness migration) are the MERGER's work at the
+  keep-one drop — g11's `scene_scan.rs:407-434` block re-points at
+  `crate::snow::SnowInputs`, the four g11 snow witnesses port per F7.
+* g11's body is marked DEPRECATED in-code this phase (`main_dust.rs`
+  module doc RETIRE-NOTE + the `snowing` fn doc); the branch keeps
+  compiling — no removal, no witness loss before the merger's drop.
+* The g13 sweep's "still-owed g11 snowing budget-hoist" (research/68 §1,
+  d54 research/66 §4.3) resolves the same way: the hoist is F4, d130's
+  surviving body already reads the counter once per call; g11's
+  per-attempt `live_type` census retires WITH the deprecated body at the
+  merge — no separate g11b fix is owed on this branch.
+
+Verification: code-only. The scope walk re-read `Main.cs:16774-16800`,
+`:16828-16887`, `:17170-17292`, `:17726-17810`, `:3204-3215`, `:1292`,
+`:5194`, `:6463` directly; the d130 tip's `snow.rs` re-read at
+`560a02ea` (the splitmix struct `:75-101` alive, `rand01`/`next_int`
+draw sites `:155-235`, `MAX_SCREEN_W` `:43`, `game_paused` `:53`/`:125`).

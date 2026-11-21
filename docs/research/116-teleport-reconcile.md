@@ -1,7 +1,9 @@
 # 116 — TeleportEffect reconcile: the 4-way union plan (W4-g11)
 
-**STATUS: EXECUTED** (union-exec phase, commits `56afc0c0` + `8540a8ad` on
-this branch). The keep-one landed: g61's widest-11 body adapted per-hunk
+**STATUS: EXECUTED + FINAL PHASE** (union-exec commits `56afc0c0` +
+`8540a8ad`, docs `9a9ac1fd`; final phase: the g61b co-lane cross-verify +
+the fade PRE-AI re-slot + the statue style-14 latch + the main_dust.rs
+filename union-plan — §5/§6 below). The keep-one landed: g61's widest-11 body adapted per-hunk
 into `crates/tr-app/src/teleport_dust.rs` (`TeleportDustEnv` = g61's
 `SpawnVisualsEnv` minus the gore pool; the canonical `ui::color::hsl_to_rgb`;
 sounds at the C# position via the callback; the style-10 spawned-slot clone
@@ -10,16 +12,18 @@ App-level dispatcher (RefCell-shared pass stream — the `CellRng` `DustRng`
 adapter — the Audio façade resolves `(2,n)`/`(19,0)` mid-switch), and ALL
 six wiring gaps are closed (the execution record is §4 below). The three
 pool helpers took g61's `DustRng` generalisation (`particles.rs`,
-behaviour-identical). `update_npc_teleport_visuals` is WIRED at the
-`UpdateNPC` tail (`world_sim/npcs.rs`, `NPC.cs:90322`, the `UpdateNPCs`
-stream, the g11 `Npc` fields). g61's env-level `npc_teleport` driver is
+behaviour-identical). `update_npc_teleport_visuals` is WIRED **PRE-AI** in
+the `UpdateNPC` slot preamble (`world_sim/npcs.rs`, `NPC.cs:90322` —
+before `AI()` `:90423`; the g61b seam-4 order fold, §5), on the
+`UpdateNPCs` stream, the g11 `Npc` fields, fed the `anim_time*60 %
+216000` `timeForVisualEffects` stand-in. g61's env-level `npc_teleport` driver is
 retired (the App-level replay supersedes it). **Merger drops** (§3 retire
 list, restated for the merge): g12's three `main_dust_b.rs::
 teleport_effect_case10/11/13` fns + their 4 witnesses (the bone-arm/Moon-Lord
 halves stay g12's), d54's `world_dust_main.rs::teleport_effect` +
 `hsl_to_rgb_bytes` + `portal_color` + `next_vector2_from_rectangle` + their 7
 teleport witnesses + `hsl_and_portal_colors` (the snowing half is research/83's
-scope). The witness union (33 adapted + 3 new gap witnesses) is WRITTEN NOT
+scope). The witness union (33 adapted + 3 gap + 2 final-phase) is WRITTEN NOT
 RUN (code-only).
 
 W4-g11 reconcile phase, code-only. `Main.TeleportEffect`
@@ -104,8 +108,10 @@ g11 is the only wired arm; its seam shape is the union's wiring contract:
   16670`) stays the W4-e1 dust lane's; `NPC.UpdateNPC_TeleportVisuals`
   (`NPC.cs:92194-92241`, styles 0/4/12/13 + the shared −0.005 tail) is
   ported by g61 (`update_npc_teleport_visuals`, the style-12 witness gate
-  unconditional per `a9628928`) — UNWIRED; the union drains it at the
-  `UpdateNPC` tail (`NPC.cs:90322`) on the `UpdateNPCs` stream.
+  unconditional per `a9628928`) — UNWIRED; the union drains it PRE-AI in
+  the `UpdateNPC` slot preamble (`NPC.cs:90322` — before `AI()` `:90423`;
+  the final-phase §5 fold of g61b's seam-4 position) on the `UpdateNPCs`
+  stream.
 * The recall/mirror cluster (`recall_teleport.rs`) calls `Player.Spawn`,
   NOT `Teleport` — outside this reconcile (g11's module doc note stands).
 
@@ -274,6 +280,10 @@ Commits on `task/W4-g11-dust-main-sites-1`:
   stream with the shared dust pool/ctx; `timeForVisualEffects` passes
   0.0 (the sim-clock stand-in, cited — style 12 has no live producer;
   at rest the fade draws nothing, existing streams untouched).
+  **SUPERSEDED by the final-phase §5 fold**: the C# `:90322` runs PRE-AI
+  (`AI()` is `:90423`), so the tail placement was a stream-order
+  deviation on any slot with a live grant; the fade now sits in the
+  slot preamble and takes the `anim_time*60 % 216000` clock.
 * **Witness union (33 adapted + 3 new, ALL WRITTEN NOT RUN):** g11's 12
   (7 style-port + 5 wiring in `main_dust.rs`, re-pinned to the
   dispatcher signature — the style-4 colour oracle now the canonical
@@ -314,3 +324,110 @@ the lane directive). Every adapted hunk was diffed against its source
 (`Player.cs:37414-37496`, `NPC.cs:81035-81058`/`:90290-90334`,
 `Main.cs:57465-57489`). The witnesses are WRITTEN NOT RUN — the
 merge-verify wave executes them.
+
+## 5. Final phase — the g61b co-lane cross-verify + the two seam folds
+
+g61's branch ADVANCED past the `a9628928` the union-exec adapted:
+`origin/task/W4-g61-npc-spawn-dust` is still `a96289284`, but the LOCAL
+`task/W4-g61-npc-spawn-dust` tip is `5852697a6` (+5 wiring-seam commits:
+`1eedb9a3` seam 1 fields/callback, `b4e40449` seam 2 bug-net poof,
+`31baa315` seam 3 statue/lamp poofs, `c289d64f` seam 4 NPC.Teleport call
+sites + fade driver, `5852697a` seam 5 Transform tail). The brief's
+"env-driver retired per 116" resolves to g61's OWN keep-one note
+(`1eedb9a3`: "supersedes g11 main_dust styles 0-5/7 at merge" — the
+inverse direction of §3's keep-one; both branches agree the g61 BODY
+survives, and this branch's `teleport_dust.rs` is the adapted copy).
+
+**Spawn-dust dup census (g61b's five seams vs this branch):**
+
+| g61b seam | site | this branch | verdict |
+| --- | --- | --- | --- |
+| 1 `1eedb9a3` | `Npc` teleport fields + ctor zero-init; `play_sound` carries the caller's stream | g11's OWN fields (`npc.rs:1256-1263`, `teleport_style_id` naming) + the dispatcher's RefCell stream | NO DUP — same fields semantically; merger keeps ONE field set (g11's names, §2) + ONE callback shape (the dispatcher's) |
+| 2 `b4e40449` | bug-net catch poof (`bug_net.rs`, `NPC.cs:79883`/`:79912`, UpdatePlayers stream) | not ported here (g61's lane) | NO DUP — g61's poof family stays g61's (§4 merger-drops note); the catch seam never calls `TeleportEffect` (the frog's style-13 `NPC.Teleport` at `:79880` is the SEPARATE arm — when g61b's lane lands it must ride `main_dust::npc_teleport` on the caller's pass, not its own driver) |
+| 3 `31baa315` | statue/lamp poofs (`StatueSpawn::Poof`, `tr-core/wiring.rs` + the app drain) | not ported here | NO DUP — poof ≠ teleport; the `StatueSpawn::Teleport` variant is disjoint from `Poof` |
+| 4 `c289d64f` | statue style 14 + pad style 0 through g61's `npc_teleport_wiring` (immediate, `app.wiring.rand_mut()` stream); fade PRE-AI with `tfv = anim_time*60 % 216000` | pad style 0 already rides the g11 replay queue (`wiring.rs:345`, `UpdateWorldGen` key); statue style 14 was a BARE move (no grants) — **GAP FOUND + CLOSED this phase**; the fade was at the post-AI tail with tfv 0.0 — **ORDER DEVIATION FOUND + CLOSED this phase** | DUP RISK on the pad loop if both merges land both wirings — the merger keeps the g11 QUEUE replay (canonical §2) and drops g61b's `npc_teleport_wiring` helper with its env-level driver. The statue + fade folds landed HERE (below) so g61b's seam-4 semantics are already in the surviving shape |
+| 5 `5852697a` | Transform tail (`wants_transform_visuals`, gore pool through `update_rng_dust`) | not ported here | NO DUP — transform ≠ teleport; g61's lane |
+
+**Fold A — the fade PRE-AI re-slot (`world_sim/npcs.rs`).** The C#
+`UpdateNPC` order (re-read `:90274-90423`): `UpdateAltTexture` `:90313`
+→ `UpdateNPC_CastLights` `:90320` → **`UpdateNPC_TeleportVisuals`
+`:90322`** → `UpdateNPC_CritterSounds` `:90323` → the look-for-home
+decay `:90324-90327` → … → **`AI()` `:90423`**. The union-exec placed
+the fade after the AI's draws (the port's per-slot tail) — a
+stream-order deviation whenever a slot holds a live grant (the fade's
+`Next(100)` gate + dust internals would land AFTER the AI's draws
+instead of before). The final phase moves the drain into the slot
+preamble (the `n.slot = i` block, ahead of the WoF presence mirror),
+gates it on `teleport_time > 0.0` (the head gate draws nothing anyway —
+the guard keeps the zero-grant common case borrow-free), and feeds
+`time_for_visuals = (app.anim_time as f64 * 60.0) % 216000.0` captured
+once per `update_npcs` call before the field borrows (g61b `c289d64f`'s
+stand-in shape, the `frame/draw.rs:374` convention). The port's
+critter-sound/look-for-home emissions stay at their recorded tail
+positions (their own cited deviations) — only the fade moves, because
+only the fade draws RNG that the AI's draws must follow. New witness
+`w4_g11_the_fade_clears_style13_pre_ai_in_one_tick` (the style-13
+instant clear lands on the first tick, the cleared grant is a head-gate
+no-op). WRITTEN NOT RUN.
+
+**Fold B — the statue style-14 latch (`world_sim/wiring.rs`).**
+`Wiring.cs:2437`/`:2465` call `NPC.Teleport(pos, 14)` — the g11 arm
+moved the rolled NPC directly, skipping the `:81052-81053` grants. The
+final phase queues an `NpcTeleportReq { style: 14, key: UpdateWorldGen }`
+through the SAME post-step replay drain as the pads: style 14 has no
+`TeleportEffect` arm (zero dust — the wiring stream spends only the
+roster roll), the move lands at the same `(x - w/2, y - h - 1)`, and
+`teleport_time = 1.0` / `teleport_style_id = 14` latch for the fade
+(which draws nothing for style 14 — the `_ => {}` arm — but the shared
+−0.005 tail decays the grant, the C# shape). The existing
+`dw_4_4_the_teleport_statue_moves_only_the_rolled_npc` witness gains the
+latch assertions + the zero-dust census. WRITTEN NOT RUN.
+
+**Audio helper note:** g61b's `Audio::play_teleport_cue` (`c289d64f`,
+the `(2,n)`/`(19,0)` façade match) is the same resolution this branch's
+dispatcher closure already carries inline — the merger may hoist it
+into the named helper (g61b's shape) with zero behaviour change; no
+dup risk (one call path either way).
+
+## 6. Final phase — the main_dust.rs FILENAME-collision union-plan (g11 × g13, for d54f-131)
+
+Both branches CREATE `crates/tr-app/src/main_dust.rs` (g13's research/68
+§1 confirmed the collision; its merge-mechanics notes stand). Tips
+re-read: g11 this branch (the union-exec dispatcher + the deprecated
+snowing), g13 `origin/task/W4-g13-dust-main-sites-3` at `441f6120f`
+(the `5ea44967` sweep + the `a234107a`/`441f6120` second-chain-lights
+commits — those touch `dust_lights_b.rs`/`draw.rs`, NOT `main_dust.rs`;
+the file is byte-identical to `5ea44967`'s). **Union = ONE file**, the
+per-fn keep table:
+
+| fn / item | g11 side | g13 side | KEEP at merge |
+| --- | --- | --- | --- |
+| module doc | the sites-1-8 + dispatcher + RNG-slot + retire-note prose | the sites-17-23 + draw-path RNG + wiring prose | UNION both prose blocks (the RNG sections agree: bare `Main.rand` → `rngs.global()` for the draw path; g11's teleport pass-key section is disjoint) |
+| `snowing` + `SnowingEnv` + `MAX_SCREEN_W`/`SNOW_TILE_MAX` | DEPRECATED (research/83) | — | **DROP** (d130's `snow.rs` survives; the `scene_scan` block re-points per 83 F6) |
+| `teleport_effect` (App dispatcher) + `CellRng` + `EffectRect` | the surviving seam | — | **KEEP g11** |
+| `player_teleport`/`npc_teleport` + `PlayerTeleportReq`/`NpcTeleportReq` | the replays (+ the statue-14 queue fold) | — | **KEEP g11** |
+| `to_rotation`/`math_sign`/`tentacle_tip_position`/`moon_lord_tentacle_tip_puff` | — | sites 17 + the tip maths | **KEEP g13** |
+| `AlePlayerView`/`tavernkeep_ale_sparkle` | — | sites 18/19 | **KEEP g13** |
+| `world_item_sparkle`/`light_color_bytes`/`item_sparkle_feed` | — | site 20 + the feed | **KEEP g13** |
+| `liquid_surface_sparkle`/`lava_bubble_pair`/`retro_surface_rect`/`retro_liquid_dust_feed` | — | sites 21-23 + the retro feed | **KEEP g13** |
+| `moon_lord_tentacle_feed`/`tavernkeep_ale_feed` | — | the draw-call feeds | **KEEP g13** (the Moon-Lord feed FUSES with g12's `moon_lord_core_dust` into ONE caller pass — g13 research/68's double-feed flag; both dead under `flag8` today) |
+| `capture_snow_cull` | — | the DrawCapture cull (`1af79847`) | **KEEP g13** (RNG-free; reads live type-76 — d130's flakes are its input at the union, no code change) |
+| `mod main_dust;` in `main.rs` | after `map_layers` (:63) | after `render` (:260) | ONE declaration (either spot; g11's is earlier — keep it, drop g13's) |
+| imports | `crate::app::{App, RngKey}` + the pool trio | `crate::bow_launch::rotated_by`, `crate::npc::{Npc, NpcKind}`, `crate::npc_ai_style64::rect_distance` + the same pool trio | UNION both sets (the pool trio dedupes; `Npc` is already g11-side via the replays) |
+| `tests` helpers | `rig(seed) -> App`, `live(&App)`, `stream_of`, `default_block`, `item_pitch`, `snow_rig`, `player_rig`, `union_rig`, `mirror_block` | `rig() -> (DustPool, World, SpawnCtx)`, `live(&DustPool)`, `mirror_default`, `mirror_type6`, `mirror_type35`, `ale_player`, `cull_rig` | **RENAME g13's pair** (`rig`→`pool_rig`, `live`→`pool_live` — g13 research/68's own note); the rest are name-disjoint. g11's four snow witnesses DROP with the body (migrate per 83 F7); g13's 20 witnesses KEEP verbatim |
+| `#![allow(dead_code)]` | module-level (the staged entry points) | item-level on `capture_snow_cull` only | KEEP the module-level allow until the capture seam wires; g13's item-level allow becomes redundant (harmless) |
+
+Witness census at the union: g11's 26 surviving `main_dust.rs` witnesses
+(30 minus the 4 snow) + the pad/statue wiring witnesses + g13's 20 +
+`teleport_dust.rs`'s 8 — all WRITTEN NOT RUN, the merge-verify wave
+executes. d54's `world_dust_main.rs` keeps its OWN filename (no
+collision with the union file); its teleport + snowing halves drop per
+§3/83, the world-site bodies stay d54's.
+
+Final-phase verification: code-only (no cargo/tests/rustfmt/graphify).
+The fade order re-read `NPC.cs:90274-90423` directly; the statue call
+sites re-read `Wiring.cs:2437`/`:2465`; the g13 file diffed
+`git diff 5ea44967 441f6120 -- crates/tr-app/src/main_dust.rs` (empty);
+the g61b seams read as full diffs (`git show 1eedb9a3/b4e40449/
+31baa315/c289d64f/5852697a`). The two new/extended witnesses are
+WRITTEN NOT RUN.

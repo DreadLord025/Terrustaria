@@ -39318,10 +39318,16 @@ style-9 `lastTeleportPylonStyleUsed` latch; the STORED `App.water_style`
 inline recompute; the style-8 double Item6 cue + the replay-owned camera
 transition (style 1 → delay 10; the pad's inline arm retired); the inline
 grant dedupe (the replay owns `Player.cs:37490-37491`). The NPC per-tick
-fade (`update_npc_teleport_visuals`, the g11 `Npc` fields) is WIRED at the
-`UpdateNPC` tail (`NPC.cs:90322`, UpdateNPCs stream;
-`timeForVisualEffects` = 0.0 stand-in cited — style 12 has no live
-producer, at rest the fade draws nothing). The `Player.UpdateTeleportVisuals`
+fade (`update_npc_teleport_visuals`, the g11 `Npc` fields) is WIRED
+**PRE-AI** in the `UpdateNPC` slot preamble (`NPC.cs:90322` — after the
+cast lights `:90320`, BEFORE `AI()` `:90423`; the g61b seam-4 order fold,
+research/116 §5 — the earlier post-AI tail placement was a stream-order
+deviation on any slot with a live grant), UpdateNPCs stream;
+`timeForVisualEffects` = the `anim_time*60 % 216000` stand-in (g61b
+`c289d64f`'s shape, the `frame/draw.rs:374` convention). The statue
+teleport (`Wiring.cs:2437`/`:2465`, style 14) rides the SAME replay queue
+as the pads (research/116 §5 fold B — zero dust, the grants latch for
+the fade's −0.005 decay tail). The `Player.UpdateTeleportVisuals`
 decay stays the W4-e1 lane's. Deliberate drops (cited): the remaining
 `Player.Teleport` head/tail arms (funkytown/environment-immunity fields,
 PressurePlateHelper ×2, netOffset/spectate/wall-scan, mapTime/maxQ/
@@ -39332,3 +39338,21 @@ each its own lane, research/116 §4). Merger drops: g12's three staged
 published as exact patch-hunks for d130's own-branch execution). Witness
 union: 33 adapted (g11 12 + g61 9 + g12 4 + d54 8) + 3 new gap witnesses,
 ALL WRITTEN NOT RUN (code-only).
+
+Final phase (research/116 §5/§6, research/83 §-adjudication): the g61b
+co-lane (`5852697a`, +5 wiring seams over `a9628928`) cross-verified —
+no spawn-dust dup with the teleport dispatcher (its poof/mimic/transform
+families are disjoint lanes); its seam-4 semantics folded into the
+surviving shapes (the fade PRE-AI re-slot + the statue style-14 queue
+latch, above). The snow-stream adjudication: the `:17238` pre-swap claim
+STANDS (the C# scope walk — `DoUpdate` `:16828` has no `SwapRandom`
+before `:17732`'s `DoUpdateInWorld`); d130's tip `560a02ea` kept its
+splitmix by its own §2 merger-delegation, so F1 stays the published
+recommendation, F2/F3 landed on d130 (`85250712`), and g11's
+`main_dust.rs::snowing` + `SnowingEnv` are marked DEPRECATED in-code
+(the merger drops them for d130's `snow.rs`; the branch keeps
+compiling). The main_dust.rs g11×g13 filename union-plan (ONE file, the
+per-fn keep table, the g13 test-helper rename, the Moon-Lord feed fuse)
+is research/116 §6 — the merger's worklist for d54f-131. Two new/extended
+witnesses (the style-13 pre-AI clear, the statue latch census) WRITTEN
+NOT RUN.
