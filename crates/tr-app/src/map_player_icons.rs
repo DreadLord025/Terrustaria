@@ -448,8 +448,11 @@ fn draw_golf_marker(
 /// coin tier picks the sheet — `< 100` copper, `< 10000` silver,
 /// `>= 1000000` platinum, else gold (`:262`; the `MapDeath` assignment at
 /// `:261` is dead) — frame `(1, 8)` row 0, centred at `drawScale`, White.
-/// The clip is the transformed (UNFLOORED) position's `ToPoint`; the
-/// hover is `Utils.CenteredRectangle`. Returns the hover answer.
+/// The sheet is `TextureAssets.Coin[tier]`, the 1x8 ANIMATION strip
+/// (`AssetInitializer.cs:369`), NOT the `Item_71..74` inventory icon —
+/// W4-f29 fix F4 (research/140 §3). The clip is the transformed
+/// (UNFLOORED) position's `ToPoint`; the hover is `Utils.CenteredRectangle`.
+/// Returns the hover answer.
 pub(crate) fn draw_revenge_map_icon(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -479,7 +482,9 @@ pub(crate) fn draw_revenge_map_icon(
     } else {
         2
     };
-    let Some(sheet) = lookups.coins[tier] else {
+    // `TextureAssets.Coin[tier]` — the animation strip, not Item_71..74
+    // (`CoinLossRevengeSystem.cs:262`, W4-f29 fix F4).
+    let Some(sheet) = lookups.coin_anim[tier] else {
         return false;
     };
     // `value.Frame(1, 8)` — the first of the 8 animation rows.
@@ -559,10 +564,11 @@ pub(crate) fn draw_revenge_mouse_over(
     for i in 0..4usize {
         let num = split[3 - i].min(999);
         let v = [base[0] + (24 * i) as f32 + 45.0, base[1] + 50.0];
-        // `CoinSlot.DrawItemCoin` (`CoinSlot.cs:240-253`): frame 0 of the
-        // 8-row coin strip, centred, scale 1 (the 1024 size limit never
-        // bites a 16px coin).
-        if let Some(sheet) = lookups.coins[3 - i] {
+        // `CoinSlot.DrawItemCoin` (`CoinSlot.cs:240-253`):
+        // `TextureAssets.Coin[coinType - 71]`, frame 0 of the 8-row strip,
+        // centred, scale 1 (the 1024 size limit never bites a 16px coin).
+        // W4-f29 fix F4: the animation strip, not the Item_71..74 icon.
+        if let Some(sheet) = lookups.coin_anim[3 - i] {
             let fh = sheet.height / 8;
             let uv = lookups.health_bar_uv(&sheet, 0, 0, sheet.width, fh);
             r.push_ui_sprite(

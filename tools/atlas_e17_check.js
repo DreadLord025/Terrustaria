@@ -1,5 +1,7 @@
 // W4-e17 atlas measurement: the boss-head set + MapDeath + Extra_173/175/176
 // additions vs the branch's baseline, through the landed skyline packer.
+// W4-f29 F4: the Coin_0..3 animation strips join the additions
+// (research/140 §5 — re-measure after the coin block lands).
 // Reuses tools/atlas_sim.js's decoder/packer by monkey-loading it with a
 // stubbed main (the sim's own main needs a branch that is not fetched here).
 'use strict';
@@ -20,7 +22,7 @@ m.paths = Module._nodeModulePaths(path.dirname(simPath));
 m._compile(src, simPath);
 const sim = m.exports;
 
-const extra = ['MapDeath', 'Extra_173', 'Extra_175', 'Extra_176'];
+const extra = ['MapDeath', 'Extra_173', 'Extra_175', 'Extra_176', 'Coin_0', 'Coin_1', 'Coin_2', 'Coin_3'];
 for (let i = 0; i < 40; i++) if (i !== 7) extra.push('NPC_Head_Boss_' + i);
 
 function measure(label, sheets) {

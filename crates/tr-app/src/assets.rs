@@ -935,6 +935,14 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_173",
         "Extra_175",
         "Extra_176",
+        // W4-f29 fix F4 (research/140 §3): the revenge map markers draw the
+        // 1x8 `Coin_<n>` ANIMATION strips (`TextureAssets.Coin[0..4]`,
+        // `AssetInitializer.cs:369`), NOT the `Item_71..74` inventory icons
+        // (`CoinLossRevengeSystem.cs:262`, `CoinSlot.cs:242`).
+        "Coin_0",
+        "Coin_1",
+        "Coin_2",
+        "Coin_3",
         "UI/Cursor_0",
         "UI/Cursor_1",
         "Mana",
@@ -2074,8 +2082,15 @@ pub struct Lookups {
     /// `Main.DrawGore` source (`Main.cs:21873-21907`). Includes the leaf
     /// gores 910/911 (they also ride `leaf_gores` for the foliage pass).
     pub gore_sheets: std::collections::HashMap<u16, tr_render::SheetRect>,
-    /// `Item_71..74`: copper/silver/gold/platinum coin sprites.
+    /// `Item_71..74`: copper/silver/gold/platinum coin sprites — the
+    /// INVENTORY icons; the revenge map markers draw [`Self::coin_anim`].
     pub coins: [Option<tr_render::SheetRect>; 4],
+    /// `TextureAssets.Coin[0..4]` (`AssetInitializer.cs:369`): the 1x8 coin
+    /// ANIMATION strips the revenge map markers draw
+    /// (`CoinLossRevengeSystem.cs:262-264`, `CoinSlot.cs:242`) — distinct
+    /// from the `Item_71..74` inventory icons in [`Self::coins`].
+    /// W4-f29 fix F4 (research/140 §3).
+    pub coin_anim: [Option<tr_render::SheetRect>; 4],
     /// Vanilla HUD textures (`Images/Inventory_Back`, `Heart`, ...).
     pub ui_back: Option<tr_render::SheetRect>,
     /// `Inventory_Back14`: the yellow frame of the selected hotbar slot.
@@ -2499,6 +2514,8 @@ impl Lookups {
                 })
                 .collect(),
             coins: [71, 72, 73, 74].map(|i| atlas.sheet(&format!("Item_{i}")).copied()),
+            // W4-f29 fix F4: the revenge markers' 1x8 animation strips.
+            coin_anim: [0, 1, 2, 3].map(|i| atlas.sheet(&format!("Coin_{i}")).copied()),
             ui_back: atlas.sheet("Inventory_Back").copied(),
             ui_back_sel: atlas.sheet("Inventory_Back14").copied(),
             ui_back_hotbar: atlas.sheet("Inventory_Back9").copied(),
@@ -3828,6 +3845,26 @@ mod tests {
         assert!(lookups.npc_heads[54].is_some(), "the shimmered Princess head");
         assert!(lookups.black_tile.is_some(), "Black_Tile for the pylon lines");
         assert!(lookups.ui_quickicon1.is_some(), "the notification quickicon");
+        // W4-f29 fix F4 (research/140 §5): the revenge markers' Coin_0..3
+        // animation strips pack, each an 8-row strip (`value.Frame(1, 8)`,
+        // `CoinLossRevengeSystem.cs:263`).
+        for (i, sheet) in lookups.coin_anim.iter().enumerate() {
+            let sheet = sheet.unwrap_or_else(|| panic!("Coin_{i}"));
+            assert_eq!(sheet.height % 8, 0, "Coin_{i} is an 8-row strip");
+        }
+        // The death marker + the misc portals/golf ring (f29's pack rows).
+        assert!(lookups.map_death.is_some(), "MapDeath");
+        assert!(lookups.extra_173.is_some(), "the exit portal");
+        assert!(lookups.extra_175.is_some(), "the home portal");
+        assert!(lookups.extra_176.is_some(), "the golf ring");
+        // The town heads the map draws beyond the housing page's set
+        // (f29's pack rows; e17's full 0..80 range is the superset).
+        for head in [12usize, 13, 16, 18, 19, 26] {
+            assert!(
+                lookups.npc_heads[head].is_some(),
+                "NPC_Head_{head} (the map town heads)"
+            );
+        }
     }
 
     #[test]
