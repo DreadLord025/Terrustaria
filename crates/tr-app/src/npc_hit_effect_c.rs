@@ -85,6 +85,8 @@
 //! | 358-361 | `:83861-83864` | the 532 Desert Beast death (4 gores 888-891, alpha-100 type-5 dust) |
 //! | 362-366 | `:83904-83908` | the 460 Butcher death (5 gores 643/645/644/646/646) |
 //! | 367-371 | `:83926-83930` | the 477 Mothron death (5 gores 687-691, type-237 dust) |
+//! | 372-374 | `:83948-83950` | the 479 Mothron Spawn death (3 gores 681-683, type-237 dust) |
+//! | 375-378 | `:83969-83972` | the 478 Mothron Egg death (4 gores, Next(2) dust + Next(3) type draws) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -2066,6 +2068,67 @@ fn mothron_death(
     gore.new_gore(rng, world, pos, vel, 691, s); // :83930
 }
 
+/// The 479 Mothron Spawn death (`NPC.cs:83944-83950`, sites 372-374): the
+/// 50-dust type-237 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 3 gores 681/682/683 at position.
+fn mothron_spawn_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:83944-83947` — the 50-dust type-237 burst.
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 237, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 681, s); // :83948
+    gore.new_gore(rng, world, pos, vel, 682, s); // :83949
+    gore.new_gore(rng, world, pos, vel, 683, s); // :83950
+}
+
+/// The 478 Mothron Egg death (`NPC.cs:83965-83972`, sites 375-378): the
+/// 50-dust burst of type `237 + Next(2)` (the type draw fires per dust,
+/// SpeedX `2.5*hitDirection`, SpeedY -2.5), then the 4 gores 684/685/686 and
+/// `684 + Next(3)` (the last gore's type draw fires before its spawn).
+fn mothron_egg_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:83965-83968` — the 50-dust burst, type 237 + Next(2).
+    for _ in 0..50 {
+        let ty = 237 + rng.next_max(2);
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, ty, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 684, s); // :83969
+    gore.new_gore(rng, world, pos, vel, 685, s); // :83970
+    gore.new_gore(rng, world, pos, vel, 686, s); // :83971
+    // `:83972` — the type draw fires before the spawn.
+    let ty = 684 + rng.next_max(3);
+    gore.new_gore(rng, world, pos, vel, ty, s);
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -2290,6 +2353,14 @@ pub fn hit_effect_c(
     // `:83911-83932` — the 477 Mothron arm (sites 367-371).
     if npc_type == 477 && npc.hp <= 0 {
         mothron_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:83933-83952` — the 479 Mothron Spawn arm (sites 372-374).
+    if npc_type == 479 && npc.hp <= 0 {
+        mothron_spawn_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:83953-83974` — the 478 Mothron Egg arm (sites 375-378).
+    if npc_type == 478 && npc.hp <= 0 {
+        mothron_egg_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -3706,6 +3777,61 @@ mod tests {
         for i in 0..5 {
             assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
         }
+    }
+
+    /// `NPC.cs:83948-83950` — the Mothron Spawn death: the 3 gores 681-683
+    /// at position, after the 50-dust type-237 burst.
+    #[test]
+    fn w4_f10_the_mothron_spawn_death_spawns_the_three_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 36.0, 36.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(263);
+        mothron_spawn_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![681, 682, 683]);
+        for i in 0..3 {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
+        }
+    }
+
+    /// `NPC.cs:83967-83972` — the Mothron Egg death: the dust type draw
+    /// (237+Next(2)) fires per dust, and the last gore's type draw
+    /// (684+Next(3)) fires before its spawn. The twin replay pins both.
+    #[test]
+    fn w4_f10_the_mothron_egg_death_draws_the_dust_and_gore_types() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 40.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(269);
+        mothron_egg_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        // The first three gores are fixed; the fourth is 684-686.
+        assert_eq!(gore.slot(0).gore_type, 684);
+        assert_eq!(gore.slot(1).gore_type, 685);
+        assert_eq!(gore.slot(2).gore_type, 686);
+        assert!(matches!(gore.slot(3).gore_type, 684 | 685 | 686));
+        // The twin: 50 x (Next(2) type draw + 6-draw census), then 3 gores'
+        // kicks, then Next(3) + the fourth gore's kicks.
+        let mut twin = UnifiedRandom::new(269);
+        for _ in 0..50 {
+            let _ty = twin.next_max(2);
+            let _px = twin.next_max(36);
+            let _py = twin.next_max(36);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+        }
+        for _ in 0..3 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        let _gty = twin.next_max(3);
+        let _ky = twin.next_range(10, 31);
+        let _kx = twin.next_range(-20, 21);
+        assert_eq!(rng.peek(), twin.peek(), "the egg death mirrors the C# draws");
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
