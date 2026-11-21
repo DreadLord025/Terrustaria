@@ -938,9 +938,11 @@ fn ground_movement(p: &mut Projectile, world: &World, owner_bottom: f32, rng: &m
         // a blocked move only STOPS the minion (the `pirate_movement`
         // precedent). No kill, no extra step.
     }
-    // `UpdatePosition` (`:20445`) - the dry integrate (the wet branch
-    // folds dry, module doc; the slope pass is deferred).
-    p.pos += p.vel;
+    // `UpdatePosition` (`:20439-20446`) - `wet ? wetVelocity : velocity`.
+    // S1-P-i57: the wet branch rides `wet_velocity` (the `:17612-17655`
+    // factor on the POST-collision velocity — the collision pass above
+    // already resolved `p.vel`; the slope pass is deferred).
+    p.pos += crate::projectile_wet::wet_velocity(p, world);
 }
 
 /// The follow-up slices' map of the remaining block - every per-type

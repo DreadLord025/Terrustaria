@@ -257,7 +257,11 @@ pub(crate) fn step(p: &mut Projectile, world: &World, npcs: &[Npc]) {
                 crate::player::collides_rect(world, p.pos.x + last.x, p.pos.y, p.w, p.h);
             let hit_y =
                 crate::player::collides_rect(world, p.pos.x, p.pos.y + last.y, p.w, p.h);
-            p.pos += p.vel;
+            // S1-P-i57 swap point 3 (the default-arm half) — `:19851`'s last
+            // step + `:19858`'s `UpdatePosition`: wet adds `wetVelocity`
+            // (`:20441` via `wet_velocity` — the `:17612-17655` drag), dry
+            // `velocity`; the kill still fires on the port's own probe.
+            p.pos += crate::projectile_wet::wet_velocity(p, world);
             if hit_x || hit_y {
                 p.kill_time_left = p.time_left;
                 p.active = false;
@@ -325,7 +329,9 @@ fn chlorophyte_move(p: &mut Projectile, world: &World, npcs: &[Npc]) {
     let hit_x = crate::player::collides_rect(world, p.pos.x + last.x, p.pos.y, p.w, p.h);
     let hit_y = crate::player::collides_rect(world, p.pos.x, p.pos.y + last.y, p.w, p.h);
     if !hit_x && !hit_y {
-        p.pos += p.vel;
+        // S1-P-i57 — the unblocked move rides `:20441`'s wet swap
+        // (`wet_velocity`: the `:17612-17655` drag while wet).
+        p.pos += crate::projectile_wet::wet_velocity(p, world);
         return;
     }
     // `:18541-18550` — the bounce counter, the first-bounce damage cut,
@@ -340,6 +346,13 @@ fn chlorophyte_move(p: &mut Projectile, world: &World, npcs: &[Npc]) {
         p.time_left = 0;
         return;
     }
+    // S1-P-i57 swap point 3 (the bounce half) — the C# wet arm (`:17612-
+    // 17655`) computes `wetVelocity` from the POST-`TileCollision` velocity
+    // BEFORE the `:18551-18560` bounce chain rewrites it, so the capture
+    // happens HERE (the pre-reversal slot state; `wet_velocity` also applies
+    // the collision rewrite the port's probe stands in for). The dry arm
+    // integrates the post-bounce velocity below (`:20445`).
+    let wet_step = crate::projectile_wet::wet_velocity(p, world);
     // `:18551-18552` — the full reversal (the C# writes `0f - last`, not
     // a per-axis conditional — both axes flip unconditionally).
     p.vel = -last;
@@ -369,15 +382,14 @@ fn chlorophyte_move(p: &mut Projectile, world: &World, npcs: &[Npc]) {
         p.vel = dir * speed;
     }
     // `UpdatePosition(wetVelocity)` (`:19858` → `:20433-20446`) runs
-    // UNCONDITIONALLY after the collision chain. Its DRY arm (`:20443-
-    // 20445`, `!base.wet`) integrates `base.velocity` — the POST-bounce
-    // reversed/retargeted velocity, NOT the pre-collision `wetVelocity`
-    // (that is only read on the `base.wet` arm `:20439-20441`, and an
-    // arrow in open air is dry). So the bounce tick steps the NEW
-    // (reversed/retargeted) direction immediately. The port's `p.vel`
-    // already holds that velocity (the reversal + retarget above), so the
-    // integration is `p.pos += p.vel`.
-    p.pos += p.vel;
+    // UNCONDITIONALLY after the collision chain: `base.wet ? wetVelocity :
+    // velocity` (`:20439-20446`). The DRY arm (`:20445`) integrates
+    // `base.velocity` — the POST-bounce reversed/retargeted velocity, so
+    // the bounce tick steps the NEW direction immediately. The WET arm
+    // (`:20441`) integrates the PRE-bounce capture taken above (the
+    // `:17612-17655` dragged `wetVelocity` — the chain's reversal never
+    // feeds it; only the aiStyle-15 flail refreshes it, `:43715`).
+    p.pos += if p.wet { wet_step } else { p.vel };
 }
 
 // ---------------------------------------------------------------------------
@@ -648,12 +660,14 @@ pub(crate) fn falling_star_step(p: &mut Projectile, world: &World) {
     p.light = 0.9;
     // Movement: the star keeps the generic `HandleMovement` default —
     // free fall until tileCollide arms, then kill-on-contact
-    // (`:19843-19855`).
+    // (`:19843-19855`). S1-P-i57 swap point 3 (the star half): the last
+    // step rides `:20441`'s wet swap (`wet_velocity` — the `:17612-17655`
+    // drag while wet; the kill still fires on the port's own probe).
     if p.tile_collide {
         let last = p.vel;
         let hit_x = crate::player::collides_rect(world, p.pos.x + last.x, p.pos.y, p.w, p.h);
         let hit_y = crate::player::collides_rect(world, p.pos.x, p.pos.y + last.y, p.w, p.h);
-        p.pos += p.vel;
+        p.pos += crate::projectile_wet::wet_velocity(p, world);
         if hit_x || hit_y {
             p.kill_time_left = p.time_left;
             p.active = false;

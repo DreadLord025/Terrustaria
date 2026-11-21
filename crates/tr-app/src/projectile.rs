@@ -3465,7 +3465,10 @@ impl Projectile {
             );
             self.vel = Vec2::new(tc.vel[0], tc.vel[1]);
         }
-        self.pos += self.vel;
+        // S1-P-i57 — `:20441`'s wet swap on the yoyo integrate (the
+        // `wet_velocity` helper: the `:17612-17655` drag while wet; the
+        // dry arm byte-identical).
+        self.pos += crate::projectile_wet::wet_velocity(self, world);
         tick
     }
 
@@ -3543,14 +3546,15 @@ impl Projectile {
             );
             self.vel = Vec2::new(tc.vel[0], tc.vel[1]);
         }
-        self.pos += self.vel;
+        // S1-P-i57 — `:20441`'s wet swap on the beam integrate.
+        self.pos += crate::projectile_wet::wet_velocity(self, world);
     }
 
     /// `AI()`'s aiStyle-82 block (`Projectile.cs:31214-31321`) — the
     /// PhantasmalEye: the three-leg drift ladder (45 → 90 → homing) with
     /// the per-leg rotation drift, the 14-px homing speed over the 0.6
     /// lerp, the Y-floor of 6, the aging-accel ramp and the 30-px kill.
-    fn ai_phasmal_eye(&mut self, npcs: &[Npc], player: (f32, f32)) {
+    fn ai_phasmal_eye(&mut self, world: &World, npcs: &[Npc], player: (f32, f32)) {
         // `:31216-31220`'s alpha ramp.
         self.alpha = (self.alpha - 40).max(0);
         match self.ai[0] as i32 {
@@ -3598,7 +3602,9 @@ impl Projectile {
         }
         // `:31320`'s rotation.
         self.rot = self.vel.to_angle() + std::f32::consts::FRAC_PI_2;
-        self.pos += self.vel;
+        // S1-P-i57 — `:20441`'s wet swap on the eye integrate (the row keeps
+        // `tileCollide = true`, so the `:17612-17655` drag applies while wet).
+        self.pos += crate::projectile_wet::wet_velocity(self, world);
     }
 
     /// `:31231-31241`'s shared drift: the `velocity.X` rotation off the
@@ -3617,7 +3623,7 @@ impl Projectile {
     /// `AI()`'s aiStyle-83 block (`Projectile.cs:31322-31376`) — the
     /// PhantasmalSphere: the alpha/scale ramp, the host position lock
     /// while `ai[0] < 30`, and the detached decay + 2-frame animation.
-    fn ai_phasmal_sphere(&mut self, npcs: &[Npc]) {
+    fn ai_phasmal_sphere(&mut self, world: &World, npcs: &[Npc]) {
         self.alpha = (self.alpha - 6).max(0);
         self.scale = 1.0 - self.alpha as f32 / 255.0;
         if self.ai[0] == -1.0 {
@@ -3645,7 +3651,9 @@ impl Projectile {
                 self.local_ai[1] = 1.0 - self.local_ai[1];
             }
         }
-        self.pos += self.vel;
+        // S1-P-i57 — `:20441`'s wet swap (the row's `tileCollide = false`
+        // keeps it un-scaled; dry byte-identical).
+        self.pos += crate::projectile_wet::wet_velocity(self, world);
     }
 
     /// `AI()`'s aiStyle-84 block's PhantasmalDeathray arm
@@ -3730,7 +3738,7 @@ impl Projectile {
     /// MoonLeech: the outbound leg at the 16-px cap that applies the
     /// buff 145 (840/960) at the 20-px contact, and the return leg that
     /// dies at the head.
-    fn ai_moon_leech(&mut self, npcs: &[Npc], player: &mut crate::player::Player) {
+    fn ai_moon_leech(&mut self, world: &World, npcs: &[Npc], player: &mut crate::player::Player) {
         let host_idx = (self.ai[0].abs() as usize).saturating_sub(1);
         let host = npcs.get(host_idx);
         // `:31768-31772`'s host kill (only the Moon Lord head hosts).
@@ -3777,7 +3785,9 @@ impl Projectile {
                 self.active = false;
             }
         }
-        self.pos += self.vel;
+        // S1-P-i57 — `:20441`'s wet swap (the row's `tileCollide = false`
+        // keeps it un-scaled; dry byte-identical).
+        self.pos += crate::projectile_wet::wet_velocity(self, world);
     }
 
     /// `AI()`'s aiStyle-108 block (`Projectile.cs:33679-33988`) — the
@@ -3879,7 +3889,10 @@ impl Projectile {
         }
         if self.local_ai[1] < 1.0 {
             self.local_ai[1] += 2.0;
-            self.pos += self.vel;
+            // S1-P-i57 — `:20441`'s wet swap on the bolt's step (the
+            // `wet_velocity` helper; the row's `tileCollide` state gates
+            // the drag, dry byte-identical).
+            self.pos += crate::projectile_wet::wet_velocity(self, world);
             // `:32308`'s tile-hit stop.
             let tx = (self.pos.x / TILE_PX) as i32;
             let ty = (self.pos.y / TILE_PX) as i32;
@@ -3947,7 +3960,7 @@ impl Projectile {
     /// `AI()`'s aiStyle-102 block's 574 arm (`Projectile.cs:33250-33299`) —
     /// the Nebula Eye: the host-locked position drag with the 0.15/0.075
     /// homing accel over the 6-px clamp, the 180-tick release.
-    fn ai_nebula_eye(&mut self, npcs: &[Npc], player: (f32, f32)) {
+    fn ai_nebula_eye(&mut self, world: &World, npcs: &[Npc], player: (f32, f32)) {
         let host_idx = self.host_by_kind(npcs, NpcKind::NebulaFloater).unwrap_or(usize::MAX);
         let alive = npcs
             .get(host_idx)
@@ -3969,14 +3982,16 @@ impl Projectile {
         } else {
             self.ai[0] = 180.0;
         }
-        self.pos += self.vel;
+        // S1-P-i57 — `:20441`'s wet swap (the row's `tileCollide = false`
+        // keeps it un-scaled; dry byte-identical).
+        self.pos += crate::projectile_wet::wet_velocity(self, world);
     }
 
     /// `AI()`'s aiStyle-122 block (`Projectile.cs:34896-34931`) — the
     /// TowerDamageBolt: the host-homing 5-px bolt that dies when the host
     /// dies (the port's callers pass the shield-hitting tower through
     /// `ai[0]`).
-    fn ai_tower_damage_bolt(&mut self, npcs: &[Npc]) -> bool {
+    fn ai_tower_damage_bolt(&mut self, world: &World, npcs: &[Npc]) -> bool {
         let host = npcs.get(self.ai[0] as usize);
         let alive = host.map(|h| h.hp > 0).unwrap_or(false);
         if !alive {
@@ -3990,7 +4005,9 @@ impl Projectile {
         let (dx, dy) = (hcx - self.pos.x, hcy - self.pos.y);
         let d = (dx * dx + dy * dy).sqrt().max(0.001);
         self.vel = Vec2::new(dx / d * 5.0, dy / d * 5.0);
-        self.pos += self.vel;
+        // S1-P-i57 — `:20441`'s wet swap (the row's `tileCollide = false`
+        // keeps it un-scaled; dry byte-identical).
+        self.pos += crate::projectile_wet::wet_velocity(self, world);
         // `:34917-34925`'s contact kill (the shield spend rides the caller).
         if let Some(h) = host {
             let (hw, hh) = h.size();
@@ -4125,8 +4142,16 @@ impl Projectile {
                 // 0.99-scaled step into the tile, then the flight falls to the
                 // normalised pre-collision direction at 0.0001 px per tick.
                 UNHOLY_TRIDENT => {
+                    // S1-P-i57: the ×0.99 stop-step keeps the FULL velocity
+                    // — the C# `:18081` writes `position += velocity * 0.99f`
+                    // inside the blocked-move chain (AI-time, the pre-wet
+                    // `:16765` capture), NOT `wetVelocity`; the wet integrate
+                    // (`UpdatePosition` `:20441`) then adds the dragged
+                    // velocity. The port folds both into this one step: the
+                    // 0.99 stop-step stays, the wet add rides `wet_velocity`.
                     self.pos += self.vel * 0.99;
                     self.vel = safe_normalize(last) * 0.0001;
+                    self.pos += crate::projectile_wet::wet_velocity(self, world);
                     return;
                 }
                 // `:19803-19827` — the Sword Beam reflects full-axis for three
@@ -4152,7 +4177,10 @@ impl Projectile {
                         if hit_y {
                             self.vel.y = -last.y;
                         }
-                        self.pos += self.vel;
+                        // S1-P-i57 — `:20441`'s wet swap on the reflect step
+                        // (`wet_velocity`: the `:17612-17655` drag wet, the
+                        // POST-reflect velocity dry — byte-identical).
+                        self.pos += crate::projectile_wet::wet_velocity(self, world);
                         return;
                     }
                 }
@@ -4588,7 +4616,9 @@ impl Projectile {
                 self.vel.y = -last.y;
             }
         }
-        self.pos += self.vel;
+        // S1-P-i57 — `:20441`'s wet swap (`wet_velocity`: the `:17612-17655`
+        // drag wet, the POST-bounce velocity dry — byte-identical).
+        self.pos += crate::projectile_wet::wet_velocity(self, world);
     }
 
     /// The C# caster families' steering blend —
@@ -4627,7 +4657,7 @@ impl Projectile {
     /// verbatim — no `+ 1`, unlike the typhoon/arcanum locks). The row's
     /// `tileCollide = false` makes `HandleMovement`'s half a plain
     /// integration.
-    fn ai_spectre_wrath(&mut self, npcs: &[Npc], rng: &mut dyn tr_core::loot::DropRng) {
+    fn ai_spectre_wrath(&mut self, world: &World, npcs: &[Npc], rng: &mut dyn tr_core::loot::DropRng) {
         // `:28940-28941` — the hostile window counter (the row's
         // `extraUpdates = 3` runs the arm four times per update).
         self.ai[1] += 1.0;
@@ -4683,8 +4713,9 @@ impl Projectile {
             }
         }
         // The five-dust ring (`:28992-28996`) — SKIPPED (no dust layer, no
-        // rolls to consume).
-        self.pos += self.vel;
+        // rolls to consume). S1-P-i57 — `:20441`'s wet swap (the row's
+        // `tileCollide = false` keeps it un-scaled; dry byte-identical).
+        self.pos += crate::projectile_wet::wet_velocity(self, world);
     }
 
     /// `AI()`'s aiStyle-118 block (`Projectile.cs:34638-34807`) — the Nebula
@@ -4854,7 +4885,9 @@ impl Projectile {
                 self.vel.y = -last.y * 0.35;
             }
         }
-        self.pos += self.vel;
+        // S1-P-i57 — `:20441`'s wet swap (`wet_velocity`: the `:17612-17655`
+        // drag wet, the POST-bounce velocity dry — byte-identical).
+        self.pos += crate::projectile_wet::wet_velocity(self, world);
         spawn
     }
 
@@ -4875,7 +4908,7 @@ impl Projectile {
     /// matches the C#'s per-tick movement exactly, but the first tick
     /// carries one tick of follow slack where the C# reads the parent's
     /// already-warm ring.
-    fn ai_nebula_arm(&mut self, parent: Option<(Vec2, Vec2)>, rng: &mut dyn tr_core::loot::DropRng) {
+    fn ai_nebula_arm(&mut self, world: &World, parent: Option<(Vec2, Vec2)>, rng: &mut dyn tr_core::loot::DropRng) {
         // The 618 constants (`:34817-34822`): the parent type 617, the 420
         // window, the 0.15 per-axis accel. The C#'s `flag62`/`flag63` arms are
         // the decompiler's always-false locals — folded.
@@ -4953,8 +4986,9 @@ impl Projectile {
         }
         self.alpha = 255;
         // `HandleMovement`'s half for the tileCollide-false kind: the plain
-        // integration after the AI body.
-        self.pos += self.vel;
+        // integration after the AI body. S1-P-i57 — `:20441`'s wet swap
+        // (the `:17476` gate keeps it un-scaled; dry byte-identical).
+        self.pos += crate::projectile_wet::wet_velocity(self, world);
     }
 
     /// `AI()`'s aiStyle-75 block's Last Prism arm (`Projectile.cs:66539-66637`)
@@ -4968,6 +5002,7 @@ impl Projectile {
     /// `!player.noItems` gate has no port field (`:4364`'s fold).
     fn ai_last_prism(
         &mut self,
+        world: &World,
         owner: Option<(f32, f32)>,
         mut player: Option<&mut crate::player::Player>,
     ) -> Option<PrismLasers> {
@@ -5098,8 +5133,10 @@ impl Projectile {
         // `Projectile.UpdatePosition` (`Projectile.cs:20433-20438`): the
         // holder's aiStyle 75 is not in the skip list, so the generic
         // `position += velocity` rides every tick (the aiStyle-84 lasers
-        // are skipped there — their position is AI-set).
-        self.pos += self.vel;
+        // are skipped there — their position is AI-set). S1-P-i57 —
+        // `:20441`'s wet swap (the row's `tileCollide = false` keeps it
+        // un-scaled; dry byte-identical).
+        self.pos += crate::projectile_wet::wet_velocity(self, world);
         spawn
     }
 
@@ -5390,7 +5427,9 @@ impl Projectile {
         if self.vel.y > 16.0 {
             self.vel.y = 16.0;
         }
-        self.pos += self.vel;
+        // S1-P-i57 — `:20441`'s wet swap (`wet_velocity`: the `:17612-17655`
+        // drag wet, the full velocity dry — byte-identical).
+        self.pos += crate::projectile_wet::wet_velocity(self, world);
     }
 
     /// `AI_003_Boomerang`'s generic arms (`Projectile.cs:39024-39341` the
@@ -5601,10 +5640,12 @@ impl Projectile {
                     self.vel = -self.vel;
                     self.ai[0] = 1.0;
                 }
-                // `UpdatePosition` (`:19858` → `:20445`) integrates the
+                // `UpdatePosition` (`:19858` → `:20439-20446`) integrates the
                 // POST-bounce velocity on the bounce tick — the boomerang
                 // steps away from the wall the same tick it reverses.
-                self.pos += self.vel;
+                // S1-P-i57: `wet_velocity` (the `:20441` wet swap — the
+                // POST-bounce velocity dry, byte-identical).
+                self.pos += crate::projectile_wet::wet_velocity(self, world);
                 // `:19571`: `SoundEngine.PlaySound(0, (int)X, (int)Y)` — the
                 // int-id Dig thud (case 0's `Next(3)` + pitch rolls ride the
                 // drain's stream). The single intent slot keeps the whoosh
@@ -5613,8 +5654,9 @@ impl Projectile {
                     self.wants_sound = Some((0, 0, self.pos.x, self.pos.y, 0.0));
                 }
             } else {
-                self.pos.x = nx;
-                self.pos.y = ny;
+                // S1-P-i57 — `:20441`'s wet swap on the unblocked move
+                // (`wet_velocity`: the `:17612-17655` drag wet).
+                self.pos += crate::projectile_wet::wet_velocity(self, world);
             }
         } else {
             self.pos += self.vel;
@@ -6132,6 +6174,16 @@ impl Projectile {
     /// `shimmerWet`/plain-wet, and lava sets `lavaWet` but the plain wet
     /// halving still applies; the port's mid-tile idiom folds lava into the
     /// water factor, recorded in ANALYSIS).
+    ///
+    /// S1-P-i57 KEEP-ONE: this mid-tile-probe variant is the flail's landed
+    /// arm (S1-P-i07, the `:6114` integrate the RETIRE census counts PORTED).
+    /// The generic `projectile_wet::wet_factor` is the ONE shared flag-read
+    /// pick the movement funnels adopt; the flail keeps its own probe idiom
+    /// (the recorded pre-AI read-lag stand-in) — NOT a second factor table,
+    /// the three constants are byte-identical. The `:43715` bounce refresh
+    /// (`wetVelocity = base.velocity` on a wet bounce) rides the captured-
+    /// local shape in the generic helper; the flail's per-tick re-probe is
+    /// the recorded approximation of it (the mid-tile idiom deviation).
     fn flail_wet_factor(&self, world: &World) -> Option<f32> {
         let cx = (self.pos.x + self.w * 0.5) / tr_core::TILE_PX;
         let cy = (self.pos.y + self.h * 0.5) / tr_core::TILE_PX;
@@ -6472,6 +6524,9 @@ impl Projectile {
         }
         // The tile collision (the aiStyle-16 arm of the `Update` movement,
         // `:19737-19762`): the bounce at −0.4 (the dynamite another ×0.8).
+        // S1-P-i57: the unblocked axes' step rides `wet_velocity` (the
+        // `:20441` wet swap — the `:17612-17655` drag wet; the blocked axis
+        // keeps the port's no-step bounce stand-in, the dry deviation).
         if self.tile_collide {
             let nx = self.pos.x + self.vel.x;
             let ny = self.pos.y + self.vel.y;
@@ -6479,14 +6534,17 @@ impl Projectile {
             let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
             if hit_x {
                 self.vel.x = -self.vel.x * damp;
-            } else {
-                self.pos.x = nx;
             }
             let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
             if hit_y {
                 self.vel.y = -self.vel.y * damp;
-            } else {
-                self.pos.y = ny;
+            }
+            let step = crate::projectile_wet::wet_velocity(self, world);
+            if !hit_x {
+                self.pos.x += step.x;
+            }
+            if !hit_y {
+                self.pos.y += step.y;
             }
         } else {
             self.pos += self.vel;
@@ -6737,7 +6795,9 @@ impl Projectile {
         // only past 0.7), then the straight/homing families' contact kill
         // (`velocity *= 0; alpha = 255; timeLeft = 3`, `:19773-19778`).
         // The port's tile-model stand-in probes the destination box per
-        // axis (the `ai_bomb` precedent).
+        // axis (the `ai_bomb` precedent). S1-P-i57: the unblocked axes'
+        // step rides `wet_velocity` (the `:20441` wet swap — the drag wet;
+        // the blocked axis keeps the no-step bounce stand-in).
         if self.tile_collide {
             let nx = self.pos.x + self.vel.x;
             let ny = self.pos.y + self.vel.y;
@@ -6747,8 +6807,6 @@ impl Projectile {
             if hit_x {
                 self.vel.x = -self.vel.x * 0.4;
                 contact = true;
-            } else {
-                self.pos.x = nx;
             }
             if hit_y {
                 if self.vel.y > 0.7 {
@@ -6757,8 +6815,13 @@ impl Projectile {
                     self.vel.y = 0.0;
                 }
                 contact = true;
-            } else {
-                self.pos.y = ny;
+            }
+            let step = crate::projectile_wet::wet_velocity(self, world);
+            if !hit_x {
+                self.pos.x += step.x;
+            }
+            if !hit_y {
+                self.pos.y += step.y;
             }
             // `:19773-19778` — the straight/homing rocket contact: the
             // zero-velocity fuse (the grenades/mines keep bouncing).
@@ -6810,8 +6873,12 @@ impl Projectile {
                 self.active = false;
                 self.time_left = 0;
             } else {
-                self.pos.x = nx;
-                self.pos.y = ny;
+                // S1-P-i57 swap point 2 — `:20441`'s `wet ? wetVelocity :
+                // velocity`: the unblocked move integrates the dragged
+                // velocity while wet (`:17612-17655` via `wet_velocity`),
+                // the full velocity dry. Both arms of the blocked test are
+                // this ONE swap point (the hit arm kills without a step).
+                self.pos += crate::projectile_wet::wet_velocity(self, world);
             }
         } else {
             self.pos += self.vel;
@@ -7011,8 +7078,9 @@ impl Projectile {
                 self.vel.y = -self.vel.y;
             }
             if !hit_x && !hit_y {
-                self.pos.x = nx;
-                self.pos.y = ny;
+                // S1-P-i57 — `:20441`'s wet swap on the unblocked move
+                // (`wet_velocity`: the `:17612-17655` drag wet).
+                self.pos += crate::projectile_wet::wet_velocity(self, world);
             }
         } else {
             self.pos += self.vel;
@@ -7451,8 +7519,10 @@ impl Projectile {
                 };
                 if self.ai[0] >= limit {
                     // `:19591-19595`: the last bounce carries the velocity
-                    // into the wall and kills.
-                    self.pos += self.vel;
+                    // into the wall and kills. S1-P-i57: the step rides
+                    // `wet_velocity` (`:20441` — the `:17612-17655` drag wet,
+                    // the full velocity dry).
+                    self.pos += crate::projectile_wet::wet_velocity(self, world);
                     self.active = false;
                     self.time_left = 0;
                     return;
@@ -7473,8 +7543,9 @@ impl Projectile {
                 }
             }
         }
-        // `UpdatePosition` (`:20468`).
-        self.pos += self.vel;
+        // `UpdatePosition` (`:20439-20446`). S1-P-i57: `wet_velocity` — the
+        // `:20441` wet swap (the POST-bounce velocity dry, byte-identical).
+        self.pos += crate::projectile_wet::wet_velocity(self, world);
     }
 
     /// `AI()`'s aiStyle-18 arm (`Projectile.cs:25367-25476`): the DemonScythe
@@ -8385,8 +8456,9 @@ impl Projectile {
         let hit_x = crate::player::collides_rect(world, self.pos.x + last.x, self.pos.y, self.w, self.h);
         let hit_y = crate::player::collides_rect(world, self.pos.x, self.pos.y + last.y, self.w, self.h);
         if !(hit_x || hit_y) {
-            // `UpdatePosition` (`:20445`): the free move.
-            self.pos += self.vel;
+            // `UpdatePosition` (`:20439-20446`): the unblocked move. S1-P-i57:
+            // `wet_velocity` — the `:17612-17655` drag wet, full velocity dry.
+            self.pos += crate::projectile_wet::wet_velocity(self, world);
             return;
         }
         // `Collision.TileCollision`'s resolution zeroes the blocked axis
@@ -8435,8 +8507,9 @@ impl Projectile {
             // oldPos trail reset (`:18032-18038`) has no slot state.
             // `:18052-18055`: a spent budget kills on the bounce tick — the
             // C# still runs `UpdatePosition` first (`:19858`), which the
-            // `pos += vel` below mirrors.
-            self.pos += self.vel;
+            // integrate below mirrors. S1-P-i57: `wet_velocity` (the
+            // `:20441` wet swap — the POST-bounce velocity dry).
+            self.pos += crate::projectile_wet::wet_velocity(self, world);
             if !survive {
                 self.active = false;
                 self.time_left = 0;
@@ -8447,10 +8520,13 @@ impl Projectile {
             // `:18040-18046`: the bypass — the resolved velocity ×0.99 (the
             // blocked axis already zeroed), then the old direction pinned at
             // 0.0001. The C#'s `flag7 = true` keeps the bolt alive and its
-            // `flag8 = false` skips the HitTiles/sound pair.
+            // `flag8 = false` skips the HitTiles/sound pair. S1-P-i57: the
+            // ×0.99 bypass step keeps the FULL velocity (`:18042` writes
+            // `velocity`, not `wetVelocity`); the `UpdatePosition` add rides
+            // `wet_velocity` (`:20441`).
             self.pos += self.vel * 0.99;
             self.vel = safe_normalize(last) * 0.0001;
-            self.pos += self.vel;
+            self.pos += crate::projectile_wet::wet_velocity(self, world);
             return;
         }
         // The collision chain's default (`:19849-19853`): one last step into
@@ -8621,7 +8697,11 @@ impl Projectile {
                 self.pos.y += self.vel.y;
                 self.vel.y = -last.y;
             }
-            self.pos += self.vel;
+            // S1-P-i57 — `:20441`'s wet swap on the post-reflect integrate
+            // (`wet_velocity`: the `:17612-17655` drag wet; the `:18865/18870`
+            // blocked-axis extra steps above keep the FULL velocity — the
+            // C# writes `base.velocity`, not `wetVelocity`).
+            self.pos += crate::projectile_wet::wet_velocity(self, world);
             return;
         }
         self.kill_step(world);
@@ -9046,7 +9126,9 @@ impl Projectile {
             false,
         );
         self.vel = Vec2::new(tc.vel[0], tc.vel[1]);
-        self.pos += self.vel;
+        // S1-P-i57 — `:20441`'s wet swap (`wet_velocity`: the `:17612-17655`
+        // drag on the POST-collision velocity wet, full velocity dry).
+        self.pos += crate::projectile_wet::wet_velocity(self, world);
     }
 
     /// `HandleMovement`'s blocked-move arm for the aiStyle-197 ceiling/hover
@@ -9068,7 +9150,9 @@ impl Projectile {
             true,
         );
         self.vel = Vec2::new(tc.vel[0], tc.vel[1]);
-        self.pos += self.vel;
+        // S1-P-i57 — `:20441`'s wet swap (`wet_velocity`: the `:17612-17655`
+        // drag on the POST-collision velocity wet, full velocity dry).
+        self.pos += crate::projectile_wet::wet_velocity(self, world);
         // `:40250` - the stuck latch, reached only from the blocked arm and
         // only while the AI has not already latched (`:18639`, `ai[0] == 0`
         // is checked before the call, so the latch is one-shot per stuck run).
@@ -9111,7 +9195,9 @@ impl Projectile {
             false,
         );
         self.vel = Vec2::new(tc.vel[0], tc.vel[1]);
-        self.pos += self.vel;
+        // S1-P-i57 — `:20441`'s wet swap (`wet_velocity`: the `:17612-17655`
+        // drag on the POST-collision velocity wet, full velocity dry).
+        self.pos += crate::projectile_wet::wet_velocity(self, world);
         if self.vel != before {
             self.vel = Vec2::ZERO;
         }
@@ -10134,16 +10220,17 @@ impl Projectile {
     /// axis, `Collision.cs:299-330`), so a dying projectile's exact death pixel
     /// can differ by the swept span while the kill does not.
     ///
-    /// W4-d53 RETIRE wetVelocity refine: the FREE-move branch (`tileCollide =
-    /// false`) is wet-faithful AS-IS — the C# wet-factor block (`:17612-17655`)
-    /// is gated inside `if (tileCollide)` (`:17476`), so a non-colliding wet slot
-    /// integrates the un-scaled `:16765` capture (`UpdatePosition` `:20439-
-    /// 20446`), NOT a dragged velocity; `pos += vel` matches (the capture-lag
-    /// deviation aside). The wet DRAG lives on the tile-collision path's
-    /// blocked/bounce integrate, which this stand-in approximates as kill-on-
-    /// contact — the movement-lane follow-up owns it via the shared
-    /// `projectile_wet::wet_factor` pick (ANALYSIS "The wetVelocity R-seed
-    /// refine"). No wet read is owed HERE.
+    /// W4-d53 S1-P-i57 (the wetVelocity movement port, R-244-1): the FREE-move
+    /// branch (`tileCollide = false`) stays `pos += vel` — the C# wet-factor
+    /// block (`:17612-17655`) is gated inside `if (tileCollide)` (`:17476`), so
+    /// a non-colliding wet slot integrates the un-scaled `:16765` capture
+    /// (`UpdatePosition` `:20439-20446`), NOT a dragged velocity (the capture-
+    /// lag deviation aside). The BLOCKED branch's last step swaps to
+    /// `projectile_wet::wet_velocity` (`wet ? wetVelocity : velocity`,
+    /// `:20441`): the full-velocity `TileCollision` + the ×0.375/0.25/0.5
+    /// drag + the per-changed-axis restore (`:17612-17655`), the kill still
+    /// firing on the port's own probe. The 54 callers funnel through this ONE
+    /// swap point. RNG-neutral (the drag has no draws).
     fn kill_step(&mut self, world: &World) {
         if !self.tile_collide {
             self.pos += self.vel;
@@ -10153,7 +10240,9 @@ impl Projectile {
         let ny = self.pos.y + self.vel.y;
         let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
         let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
-        self.pos += self.vel;
+        // `:19851`'s last step + `:19858`'s `UpdatePosition` folded into the
+        // one integrate — wet adds `wetVelocity`, dry `velocity` (`:20441`).
+        self.pos += crate::projectile_wet::wet_velocity(self, world);
         if hit_x || hit_y {
             self.kill_time_left = self.time_left;
             self.active = false;
@@ -11587,7 +11676,9 @@ impl Projectile {
             true,
         );
         self.vel = Vec2::new(tc.vel[0], tc.vel[1]);
-        self.pos += self.vel;
+        // S1-P-i57 — `:20441`'s wet swap (`wet_velocity`: the `:17612-17655`
+        // drag on the POST-collision velocity wet, full velocity dry).
+        self.pos += crate::projectile_wet::wet_velocity(self, world);
     }
 
     /// `AI_067_FreakingPirates` (`Projectile.cs:49121-51201`) — the aiStyle-67
@@ -12477,8 +12568,11 @@ impl Projectile {
             );
             self.vel = Vec2::new(tc.vel[0], tc.vel[1]);
         }
-        // `UpdatePosition` (`:20445`) — the dry integrate.
-        self.pos += self.vel;
+        // `UpdatePosition` (`:20439-20446`) — `wet ? wetVelocity : velocity`.
+        // S1-P-i57: the wet arm rides `wet_velocity` (the `:17612-17655`
+        // factor on the POST-collision velocity — the collision pass above
+        // resolved `self.vel`; dry byte-identical).
+        self.pos += crate::projectile_wet::wet_velocity(self, world);
     }
 
     /// `Projectile.Minion_FindTargetInRange` (`Projectile.cs:48990-49027`) —
@@ -17174,9 +17268,12 @@ impl ProjectilePool {
                                 );
                                 // `UpdatePosition` (`:20445`) — the 344 is not
                                 // in the skip list; `tileCollide = false` so the
-                                // free move integrates the velocity.
-                                let vel = self.slots[i].vel;
-                                self.slots[i].pos += vel;
+                                // free move integrates the velocity. S1-P-i57
+                                // swap point 5: the integrate rides `wet_velocity`
+                                // (`:20441`'s wet swap; the free arm un-scaled,
+                                // the `:17476` gate — dry byte-identical).
+                                let p = &mut self.slots[i];
+                                p.pos += crate::projectile_wet::wet_velocity(p, world);
                             }
                             // S1-P-i16 — the dart guns' ammo projectiles
                             // (267/477/478/479) + the Electrosphere bolt
@@ -17704,8 +17801,11 @@ impl ProjectilePool {
                             // `manualDirectionChange = true` (`:6713`)
                             // suppresses the velocity-sign facing rewrite
                             // (`AutomaticallyChangesDirection`, `:17283`).
-                            let v = self.slots[i].vel;
-                    self.slots[i].pos += v;
+                            // S1-P-i57 swap point 5: the free integrate rides
+                            // `wet_velocity` (the `:17476` gate keeps it
+                            // un-scaled; dry byte-identical).
+                            let p = &mut self.slots[i];
+                            p.pos += crate::projectile_wet::wet_velocity(p, world);
                         }
                         // S1-P-i25/i56 — `AI()`'s `else if (this.aiStyle == 121)`
                         // (`Projectile.cs:34892-34895`) ->
@@ -17730,8 +17830,11 @@ impl ProjectilePool {
                                 rng,
                                 local_owner,
                             );
-                            let v = self.slots[i].vel;
-                            self.slots[i].pos += v;
+                            // S1-P-i57 swap point 5: the free integrate rides
+                            // `wet_velocity` (the `:17476` gate keeps it
+                            // un-scaled; dry byte-identical).
+                            let p = &mut self.slots[i];
+                            p.pos += crate::projectile_wet::wet_velocity(p, world);
                         }
                         // The carve-out of the arm-signature doc block above:
                         // aiStyle 22 writes tiles, so it reborrows `world`
@@ -17807,7 +17910,7 @@ impl ProjectilePool {
                         // The Spectre Wrath (`:28938-28993`): the hostile
                         // window, the uniform re-pick (one rng draw) and the
                         // (v*29+d)/30 blend.
-                        59 => self.slots[i].ai_spectre_wrath(&npcs[..], rng),
+                        59 => self.slots[i].ai_spectre_wrath(world, &npcs[..], rng),
                         // The aiStyle-157 Deerclops ice spike
                         // (`:51358-51477`): the opacity ramp, the scale and
                         // the 20-tick life.
@@ -17831,7 +17934,7 @@ impl ProjectilePool {
                         // (the row's `tileCollide = false`, `:4419`).
                         58 => {
                             if self.slots[i].kind == SANTA_PRESENT {
-                                crate::projectile_ai_frostmoon::present(&mut self.slots[i]);
+                                crate::projectile_ai_frostmoon::present(&mut self.slots[i], world);
                             }
                         }
                         // `:23694-23828` — the Vilethorn chain: the arm hands
@@ -17867,7 +17970,7 @@ impl ProjectilePool {
                         // draw-skipping `ai_electrosphere` copy (same C#
                         // body; the dust census stays on UpdateProjectiles).
                         77 => {
-                            crate::projectile_ai_darts::sphere_pulse(&mut self.slots[i], rng);
+                            crate::projectile_ai_darts::sphere_pulse(&mut self.slots[i], rng, world);
                         }
                         // The aiStyle-79 Saucer deathray (`:30791-30910`):
                         // the owner check and the beam that hangs from the
@@ -18034,7 +18137,7 @@ impl ProjectilePool {
                         }
                         119 => {
                             let parent = self.nebula_parent(self.slots[i].ai[1]);
-                            self.slots[i].ai_nebula_arm(parent, rng);
+                            self.slots[i].ai_nebula_arm(world, parent, rng);
                         }
                         // The Last Prism holder (`:66539-66637`): the channel
                         // gate, the mana pay and the per-tick damage re-read
@@ -18047,7 +18150,7 @@ impl ProjectilePool {
                             // Prism 633; its charge machine spawns the orb 459
                             // and the beam 461 (the pool-side step).
                             if self.slots[i].kind == CHARGED_BLASTER_CANNON {
-                                self.charged_blaster_step(i, owner, player.as_deref_mut());
+                                self.charged_blaster_step(i, owner, player.as_deref_mut(), world);
                             // S1-P-i29 — the Laser Drill's beam (445) shares
                             // aiStyle 75 with the Last Prism holder (633) but
                             // runs `AI_075`'s 445 arm (`Projectile.cs:66244-
@@ -18061,7 +18164,7 @@ impl ProjectilePool {
                             } else {
                                 let spawn =
                                     self.slots[i]
-                                        .ai_last_prism(owner, player.as_deref_mut());
+                                        .ai_last_prism(world, owner, player.as_deref_mut());
                                 if let Some(s) = spawn {
                                     let owner_id = self.slots[i].owner;
                                     let key = self.key_of(i) as u32;
@@ -18147,9 +18250,9 @@ impl ProjectilePool {
                             // (`Player.FindClosest`'s single-player stand-in).
                             let player = owner.unwrap_or((0.0, 0.0));
                             let npcs = &npcs[..];
-                            self.slots[i].ai_phasmal_eye(npcs, player)
+                            self.slots[i].ai_phasmal_eye(world, npcs, player)
                         }
-                        83 => self.slots[i].ai_phasmal_sphere(&npcs[..]),
+                        83 => self.slots[i].ai_phasmal_sphere(world, &npcs[..]),
                         // The aiStyle-84 laser family, split by kind: the
                         // Last Prism beam (632) resolves its holder through
                         // the slot key (`prism_parent`'s `TryGetActive`
@@ -18202,20 +18305,22 @@ impl ProjectilePool {
                                 // `HandleMovement`: `tileCollide = false`
                                 // (`:6912`) — `UpdatePosition` integrates
                                 // the unit heading (`:19858`/`:20445`).
-                                let vel = self.slots[i].vel;
-                                self.slots[i].pos += vel;
+                                // S1-P-i57 swap point 5: `wet_velocity` (the
+                                // `:17476` gate keeps it un-scaled).
+                                let p = &mut self.slots[i];
+                                p.pos += crate::projectile_wet::wet_velocity(p, world);
                             }
                             _ => self.slots[i].ai_phasmal_deathray(&*world, &npcs[..]),
                         },
                         85 => {
                             if let Some(p) = player.as_deref_mut() {
-                                self.slots[i].ai_moon_leech(&npcs[..], p);
+                                self.slots[i].ai_moon_leech(world, &npcs[..], p);
                             }
                         }
                         102 => {
                             let player = owner.unwrap_or((0.0, 0.0));
                             let npcs = &npcs[..];
-                            self.slots[i].ai_nebula_eye(npcs, player)
+                            self.slots[i].ai_nebula_eye(world, npcs, player)
                         }
                         103 => {
                             let npcs = &npcs[..];
@@ -18225,7 +18330,7 @@ impl ProjectilePool {
                             // `:34927-34929`'s homing run, then the contact's
                             // shield spend — `Projectile.Kill()`'s type-629
                             // block (`Projectile.cs:72944-72979`), read whole.
-                            let hit = self.slots[i].ai_tower_damage_bolt(&npcs[..]);
+                            let hit = self.slots[i].ai_tower_damage_bolt(world, &npcs[..]);
                             if hit {
                                 self.slots[i].active = false;
                                 // B-6d: `ai[0]` is the HOST NPC INDEX, not a
@@ -19138,9 +19243,11 @@ impl ProjectilePool {
                             // `position += velocity` runs
                             // (`:19858`/`:20445`); the arm pins the
                             // velocity to zero, so the sentry holds.
+                            // S1-P-i57 swap point 5: `wet_velocity` (the
+                            // `:17476` gate keeps it un-scaled).
                             if self.slots[i].active {
-                                let vel = self.slots[i].vel;
-                                self.slots[i].pos += vel;
+                                let p = &mut self.slots[i];
+                                p.pos += crate::projectile_wet::wet_velocity(p, world);
                             }
                         }
                         112 => {
@@ -19161,10 +19268,12 @@ impl ProjectilePool {
                             }
                             // `HandleMovement`: `tileCollide = false`
                             // (`:6948`) — `UpdatePosition` integrates the
-                            // pinned-zero velocity.
+                            // pinned-zero velocity. S1-P-i57 swap point 5:
+                            // `wet_velocity` (the `:17476` gate keeps it
+                            // un-scaled).
                             if self.slots[i].active {
-                                let vel = self.slots[i].vel;
-                                self.slots[i].pos += vel;
+                                let p = &mut self.slots[i];
+                                p.pos += crate::projectile_wet::wet_velocity(p, world);
                             }
                         }
                         134 => {
@@ -19693,9 +19802,10 @@ impl ProjectilePool {
                                 // `HandleMovement`: `tileCollide = false`, so
                                 // only `UpdatePosition`'s `position += velocity`
                                 // runs (`:19858`/`:20445`) — the blast's velocity
-                                // is zero.
-                                let vel = self.slots[i].vel;
-                                self.slots[i].pos += vel;
+                                // is zero. S1-P-i57 swap point 5: `wet_velocity`
+                                // (the `:17476` gate keeps it un-scaled).
+                                let p = &mut self.slots[i];
+                                p.pos += crate::projectile_wet::wet_velocity(p, world);
                             }
                         }
                         // S1-D-5: the duplicate `115 => ai_yoyo_beam` arm
@@ -19724,12 +19834,13 @@ impl ProjectilePool {
                             // `position += velocity` runs OUTSIDE the AI, once
                             // per update — aiStyle 62 is not in the skip list, so
                             // the minion integrates even when the AI arm
-                            // returned early (the dash). The wet-velocity branch
-                            // and the slope-correction block (`:20444+`, the
-                            // `aiStyle == 62` fall case included) stay unported —
-                            // ANALYSIS.
-                            let vel = self.slots[i].vel;
-                            self.slots[i].pos += vel;
+                            // returned early (the dash). S1-P-i57 swap point 5:
+                            // the wet branch (`:20439-20441`) now rides
+                            // `wet_velocity`; the slope-correction block
+                            // (`:20444+`, the `aiStyle == 62` fall case
+                            // included) stays unported — ANALYSIS.
+                            let p = &mut self.slots[i];
+                            p.pos += crate::projectile_wet::wet_velocity(p, world);
                             if let Some(s) = shot {
                                 let (x, y, damage, kb, owner) = {
                                     let p = &self.slots[i];
@@ -19778,11 +19889,13 @@ impl ProjectilePool {
                             // (`:19858`/`:20433-20446`): aiStyle 66 is not in
                             // the skip list, so `position += velocity` runs
                             // every sub-step, including the dash early-returns.
-                            // The slope-correction block (`:20447-20474`, the
-                            // 387/388/533 fall cases) and the 533's bounce
-                            // (`:18173-18205`) stay unported — ANALYSIS.
-                            let vel = self.slots[i].vel;
-                            self.slots[i].pos += vel;
+                            // S1-P-i57 swap point 5: the wet branch rides
+                            // `wet_velocity`; the slope-correction block
+                            // (`:20447-20474`, the 387/388/533 fall cases) and
+                            // the 533's bounce (`:18173-18205`) stay unported —
+                            // ANALYSIS.
+                            let p = &mut self.slots[i];
+                            p.pos += crate::projectile_wet::wet_velocity(p, world);
                             if let Some(s) = shot {
                                 let (x, y, damage, kb, owner) = {
                                     let p = &self.slots[i];
@@ -19826,8 +19939,10 @@ impl ProjectilePool {
                         54 => {
                             let (sep, _queue) = self.slots[i].minion_separation(&self.slots, i);
                             self.slots[i].ai_raven(world, sep, player.as_deref_mut(), npcs);
-                            let vel = self.slots[i].vel;
-                            self.slots[i].pos += vel;
+                            // S1-P-i57 swap point 5: `wet_velocity` (the
+                            // `:17476` free-move gate keeps it un-scaled).
+                            let p = &mut self.slots[i];
+                            p.pos += crate::projectile_wet::wet_velocity(p, world);
                         }
                         // S1-D-5: the duplicate `99 => { ai_yoyo ... }` arm
                         // that sat here was unreachable behind the live one
@@ -20163,12 +20278,16 @@ impl ProjectilePool {
                 // `AI_010`'s tile-fall mode (`ai[0] == 1f`): `velocity.Y +=
                 // 0.41f` per tick, the position integrates the velocity (the
                 // generic `position += velocity` of `Update`), and the
-                // landing places the tile back.
+                // landing places the tile back. S1-P-i57 swap point 5:
+                // `wet_velocity` — aiStyle 10 runs its own `TileCollision`
+                // chain (`:17592-17610`) and never writes `wetVelocity`, so
+                // the helper's `:17592` exemption keeps the un-scaled
+                // capture (wet AND dry byte-identical here).
                 if self.slots[i].falling_tile.is_some() {
                     self.slots[i].vel.y =
                         (self.slots[i].vel.y + tr_core::falling::TILE_FALL_GRAVITY).min(10.0);
-                    let vel = self.slots[i].vel;
-                    self.slots[i].pos += vel;
+                    let p = &mut self.slots[i];
+                    p.pos += crate::projectile_wet::wet_velocity(p, world);
                 }
                 // W4-d53 batch 4 — the generic wet machine (`Projectile.cs:
                 // 16786-17007`), at the C# position: post-AI/wind, pre-
@@ -21067,6 +21186,7 @@ impl ProjectilePool {
         slot: usize,
         owner: Option<(f32, f32)>,
         mut player: Option<&mut crate::player::Player>,
+        world: &World,
     ) {
         // `:66362` — `ai[0] += GetSlowMagicUseRate()` (1f, no ManaV2).
         self.slots[slot].ai[0] += 1.0;
@@ -21229,9 +21349,11 @@ impl ProjectilePool {
             }
         }
         // The movement: `tileCollide = false` (`:5311`) — UpdatePosition
-        // (`ai_last_prism`'s tail convention, `:20433-20438`).
-        let vel = self.slots[slot].vel;
-        self.slots[slot].pos += vel;
+        // (`ai_last_prism`'s tail convention, `:20433-20438`). S1-P-i57 swap
+        // point 5 (the charged-blaster mirror): `wet_velocity` — the free-
+        // move gate keeps it un-scaled (dry byte-identical).
+        let p = &mut self.slots[slot];
+        p.pos += crate::projectile_wet::wet_velocity(p, world);
     }
 
     /// S1-P-i17 — `Kill()`'s special-arrow arms (the death-hook block):
@@ -30924,20 +31046,21 @@ mod phasmal_projectile_tests {
         // `AI_082`'s ladder: the 45-tick first leg, the 90-tick second leg,
         // then the homing (14 px over the 0.6 lerp).
         let npcs: Vec<Npc> = Vec::new();
+        let world = surface_world();
         let mut p = spawn(PHANTASMAL_EYE, 100.0, 100.0);
         p.ai[1] = 0.05; // `:41704`'s spawn drift offset.
         for _ in 0..45 {
-            p.ai_phasmal_eye(&npcs, (400.0, 400.0));
+            p.ai_phasmal_eye(&world, &npcs, (400.0, 400.0));
         }
         assert_eq!(p.ai[0], 1.0, "the first leg hands off at 45");
         assert!(p.ai[1].abs() > 0.0, "the drift offset survives");
         for _ in 0..90 {
-            p.ai_phasmal_eye(&npcs, (400.0, 400.0));
+            p.ai_phasmal_eye(&world, &npcs, (400.0, 400.0));
         }
         assert_eq!(p.ai[0], 2.0, "the homing leg opens at 90");
         let before = p.pos;
         for _ in 0..60 {
-            p.ai_phasmal_eye(&npcs, (900.0, 900.0));
+            p.ai_phasmal_eye(&world, &npcs, (900.0, 900.0));
         }
         let moved = (p.pos - before).length();
         assert!(moved > 100.0, "the eye homes: {} px", moved);
@@ -30948,9 +31071,10 @@ mod phasmal_projectile_tests {
     fn the_eye_dies_at_thirty_pixels() {
         // `:31269-31273`'s kill radius.
         let npcs: Vec<Npc> = Vec::new();
+        let world = surface_world();
         let mut p = spawn(PHANTASMAL_EYE, 100.0, 100.0);
         p.ai[0] = 2.0;
-        p.ai_phasmal_eye(&npcs, (110.0, 110.0));
+        p.ai_phasmal_eye(&world, &npcs, (110.0, 110.0));
         assert!(!p.active, "the eye pops at 14 px");
     }
 
@@ -30958,16 +31082,17 @@ mod phasmal_projectile_tests {
     fn the_sphere_locks_to_the_host_then_detaches() {
         // `AI_083`'s host lock while `ai[0] < 30`, then the decay.
         let npcs: Vec<Npc> = Vec::new();
+        let world = surface_world();
         let mut p = spawn(PHANTASMAL_SPHERE, 100.0, 100.0);
         p.vel = Vec2::new(2.0, 2.0);
         for _ in 0..10 {
-            p.ai_phasmal_sphere(&npcs);
+            p.ai_phasmal_sphere(&world, &npcs);
         }
         assert_eq!(p.ai[0], 10.0, "the lock's counter");
         assert!((p.alpha - 195).abs() <= 6, "the alpha ramp: {}", p.alpha);
         // The release frame flips the extra updates.
         p.ai[0] = -1.0;
-        p.ai_phasmal_sphere(&npcs);
+        p.ai_phasmal_sphere(&world, &npcs);
         assert_eq!(p.extra_updates, 1, "the release frame");
     }
 
@@ -31006,7 +31131,7 @@ mod phasmal_projectile_tests {
         let mut p = spawn(MOON_LEECH, 110.0, 100.0);
         p.ai[0] = 1.0; // The outbound leg.
         for t in 0..20 {
-            p.ai_moon_leech(&npcs, &mut player);
+            p.ai_moon_leech(&world, &npcs, &mut player);
         }
         // The buff's own latch (`:31798`'s `localAI[1] = 1f`) is the
         // machine's applied marker — the port's `find_buff_index` reads the
@@ -31049,7 +31174,7 @@ mod phasmal_projectile_tests {
         let mut p = spawn(TOWER_DAMAGE_BOLT, 360.0, 235.0);
         p.ai[0] = 0.0; // The tower's index.
         p.damage = 30;
-        let hit = p.ai_tower_damage_bolt(&npcs);
+        let hit = p.ai_tower_damage_bolt(&world, &npcs);
         assert!(hit, "the bolt lands on the tower");
         let _ = world;
     }
@@ -34993,7 +35118,8 @@ mod magic_ai_tests {
         pool.slots_mut()[child].local_ai[2] = 1.0;
         let nan = Vec2::new(f32::NAN, f32::NAN);
         let mut rng = tr_core::tile_light::FastRandom::new(7);
-        pool.slots_mut()[child].ai_nebula_arm(Some((nan, nan)), &mut rng);
+        let w = world();
+        pool.slots_mut()[child].ai_nebula_arm(&w, Some((nan, nan)), &mut rng);
         assert!(
             !pool.slots()[child].active,
             "the NaN shift kills (`:34848-34852`)"

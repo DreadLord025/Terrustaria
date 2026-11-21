@@ -110,7 +110,12 @@ pub(crate) fn javelin_friendly_step(p: &mut Projectile, world: &World) {
 /// The kill-on-tile movement stand-in (`HandleMovement`'s default arm
 /// `Projectile.cs:19849-19853`, the `ai_style1_flight`/`kill_step` shape):
 /// integrate one step, die on a solid tile. `tileCollide=false` slots
-/// integrate freely (the stuck javelin).
+/// integrate freely (the stuck javelin). S1-P-i57 swap point 4 — the 3
+/// callers (`javelin_friendly_step`, `bone_javelin_step`, `bee_step`) funnel
+/// through this ONE integrate: the unblocked
+/// step swaps to `wet ? wetVelocity : velocity` (`:20441` via
+/// `projectile_wet::wet_velocity` — the `:17612-17655` drag while wet, the
+/// full velocity dry; the free branch stays un-scaled, the `:17476` gate).
 fn kill_step(p: &mut Projectile, world: &World) {
     if !p.tile_collide {
         p.pos += p.vel;
@@ -125,8 +130,7 @@ fn kill_step(p: &mut Projectile, world: &World) {
         p.active = false;
         p.time_left = 0;
     } else {
-        p.pos.x = nx;
-        p.pos.y = ny;
+        p.pos += crate::projectile_wet::wet_velocity(p, world);
     }
 }
 
@@ -187,8 +191,9 @@ pub(crate) fn molotov_step(p: &mut Projectile, world: &World) {
             p.alpha = 255;
             p.time_left = 3;
         } else {
-            p.pos.x = nx;
-            p.pos.y = ny;
+            // S1-P-i57 — `:20441`'s wet swap on the unblocked aiStyle-68
+            // move (`wet_velocity`: the `:17612-17655` drag while wet).
+            p.pos += crate::projectile_wet::wet_velocity(p, world);
         }
     } else {
         p.pos += p.vel;

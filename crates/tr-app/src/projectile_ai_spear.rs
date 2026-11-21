@@ -354,7 +354,10 @@ pub(crate) fn ai_spears(
         }
         lance = true;
     }
-    // `:45880` — the extension offset along the aim.
+    // `:45880` — the extension offset along the aim. S1-P-i57: this is an
+    // AI-internal step (`AI_019_Spears` runs inside `AI()`, BEFORE the wet
+    // machine) — it keeps the full velocity × offset; only `UpdatePosition`'s
+    // integrate reads `wetVelocity` (not a swap site, the wisp-snap precedent).
     let offset = spear_offset(p.kind, item_animation, item_animation_max);
     p.pos += p.vel * offset;
     let pc = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);

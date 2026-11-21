@@ -39897,6 +39897,71 @@ scope: the ~42 free moves drop out of the owed pool, leaving the
 tile-collision path). RNG-neutral (the drag has no draws). Witnesses
 WRITTEN NOT RUN (code-only — no cargo/rustc/rustfmt/tests/graphify).
 
+### The wetVelocity movement port ACTIVATED (W4-d53 S1-P-i57, R-244-1, code-only)
+
+The S1-P-i57 follow-up landed: the `wet_velocity` helper + the 5-funnel
+integrate swap + the skip-list gate + the flail keep-one. **The helper**
+(`projectile_wet::wet_velocity`, PURE — returns the displacement vector,
+no slot writes, no draws): dry (`wet_factor` `None`) OR skip-listed OR
+`tileCollide=false` OR the `:17590` latch / aiStyle-10 exemption → `p.vel`
+untouched (byte-identical to the pre-port integrate); else the
+`:17612-17655` wet arm's VALUE — the full-velocity `TileCollision` then
+`wet_drag` (scale by the factor, restore each CHANGED axis to its full
+post-collision value, the d3 boulder reference). The `wet_factor` pick is
+now ACTIVATED (the `#[allow(dead_code)]` dropped — the funnels call it).
+
+**The 5 swap points + the satellites (74 integrate sites, 16 files):**
+(1) `kill_step` (projectile.rs, the 54 callers funnel through its ONE
+blocked-branch integrate); (2) `ai_style1_flight` (the unblocked arm);
+(3) `special_arrows` (the default-arm last step + the chlorophyte bounce —
+the `wet_step` captured PRE-reversal, the C# `:17612` before `:18551` —
+and the falling-star arm); (4) the thrown twin (projectile_ai_thrown.rs
+`kill_step`, the 3 callers javelin/bone-javelin/bee + the molotov
+unblocked arm); (5) the 12 dispatch mirrors + the hook mirror (grapple.rs)
++ the charged-blaster mirror. The satellite blocked-test arms (ai001_a/b/c
+`finish_flight`, ai026_a/b/c, darts, frostmoon, light_items, moonlord,
+frost_shots, special_bullets) swap their unblocked/bounce integrates; the
+no-world arms (ai_phasmal_eye/sphere, ai_moon_leech, ai_nebula_eye/arm,
+ai_tower_damage_bolt, ai_spectre_wrath, ai_last_prism) gained a `world`
+param threaded from the dispatch + their test callers.
+
+**The gates:** `update_position_skips` (`:20435` verbatim — aiStyles
+4/38/84/148, the 7-ai[0]==2 / 440/449/606-ai[1]==1 / 93-ai[0]<0 latches,
+the 540/756/818/856/961/1041/1125/933/1100 kinds, IsAGolfBall 721+739-752)
+EXEMPTS those kinds from the drag (they keep full-velocity movement while
+wet, their engines own the position — the golf engine + the aiStyle-4 vine
+fold). The `:17476` free-move gate keeps the ~42 free moves un-scaled (the
+R-seed refine: ALREADY faithful). The `:17590` latch gate (440/449/606
+ai[1]==1 / 466 localAI[1]==1 / 580/640 localAI[1]>0) + the aiStyle-10 arm
+(`:17592`, its own TileCollision chain, never writes wetVelocity) exempt
+too. The AI-internal steps (the wisp snap `:59892`, the hoik step loops,
+the vile-spit `:23732`, the spear offset `:45880`) keep full velocity —
+they run inside `AI()` BEFORE the wet machine, NOT `UpdatePosition` swap
+sites.
+
+**The flail KEEP-ONE:** `flail_wet_factor` (the mid-tile probe, S1-P-i07)
+stays as landed — the `:6114` integrate the RETIRE census counts PORTED.
+The three constants are byte-identical to `wet_factor`; the probe idiom is
+the recorded pre-AI read-lag stand-in, NOT a second factor table. The
+`:43715` bounce refresh (`wetVelocity = velocity` on a wet bounce) rides
+the captured-local shape in the generic helper; the flail's per-tick
+re-probe is the recorded approximation (the mid-tile idiom deviation).
+The dead `AI_015_HandleMovementCollision_Old` (`:44171`/`:44201`, no
+caller — grep finds only the definition) is cited dead, not owed.
+
+**Folds (recorded):** the `flag6` fall-through pair folds `true` (the
+boulder precedent); the `:17656-17698` wet slope pass + `GetCollisionParams`'
+per-kind box overrides stay with the dry arms' existing folds; the C# wet
+arm's `base.velocity` rewrite is the stand-ins' concern (the helper returns
+only the integrate vector, the d3 full port owns its own rewrite).
+
+**RNG-neutral:** the helper takes no rng and the drag has no draws — a
+same-seed dry/wet A/B differs ONLY in the integrate vector (a physics
+deviation, not a stream one). **8 witnesses WRITTEN NOT RUN** (the A/B
+same-seed shape): dry baseline / water-honey-shimmer factors / free-move
+gate / skip-list / latch+aiStyle10 / blocked-axis restore / RNG-neutral
+purity+idempotence. Code-only — no cargo/rustc/rustfmt/tests/graphify.
+
 ### The e3 AI-inline-40 coverage-table compose (W4-d53 RETIRE item 3)
 
 The d53-side compose of e3's AI-inline-40 coverage (e3 tip `0b48616fa`,
