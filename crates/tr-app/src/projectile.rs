@@ -17684,14 +17684,16 @@ impl ProjectilePool {
                         // and the spin.
                         23 => self.slots[i].ai_eye_fire(world),
                         // S1-P-i28 — the thrown-consumable flight arms.
-                        // aiStyle 68: the Molotov cocktail (399)
-                        // (`Projectile.cs:30166-30239` + the movement-68
-                        // collision `:19780-19786`). The arm owns its
-                        // integration (the stop-and-prime collision).
+                        // aiStyle 68: the Molotov cocktail (399) AND the Ale
+                        // (669, W4-d7 F4) (`Projectile.cs:30166-30239` + the
+                        // movement-68 collision `:19780-19786`). The arm owns
+                        // its integration (the stop-and-prime collision); the
+                        // Ale's `flag35` dust draws ride the pass stream.
                         68 => {
                             crate::projectile_ai_thrown::molotov_step(
                                 &mut self.slots[i],
                                 world,
+                                rng,
                             );
                         }
                         // aiStyle 113: the Bone javelin (598)
@@ -20166,6 +20168,18 @@ impl ProjectilePool {
                 // bursts spawn through the pool (the arm cannot see the slot
                 // array); the water conversion writes tiles directly.
                 self.thrown_consumable_death(i, world, player.as_deref(), rng);
+                // W4-d7 wiring (F4) — `Kill()`'s Ale arm
+                // (`Projectile.cs:71952-71985`): the sound 13 + dust census +
+                // Resize(144) + Tipsy grants + the Damage() box walk. C# body
+                // order: the 669 arm (:71952) precedes the 405 bubble (:72849).
+                self.ale_death(
+                    i,
+                    npcs,
+                    doll_flags(player.as_deref()),
+                    player.as_deref_mut(),
+                    rng,
+                    luck,
+                );
                 // W4-d7 wiring — `Kill()`'s 379/377 dust census
                 // (`Projectile.cs:75522-75532`): 5× dust 171, each ONE
                 // `Next(1,10)` scale draw (the bodies skipped). The 377
@@ -20566,6 +20580,76 @@ impl ProjectilePool {
                 }
             }
         }
+    }
+
+    /// W4-d7 wiring (F4) — `Kill()`'s Ale arm (`Projectile.cs:71952-71985`):
+    /// the sound 13 cue, the 12× dust 4 (no call-site draws) + 80×2 dust 4
+    /// (each ONE `Next(10,71)` / `Next(10,41)` velocity draw — kept, bodies
+    /// skipped), the `Resize(144,144)`, the Tipsy (25) 3659-tick grant to the
+    /// local player + every intersecting town NPC, then the `Damage()` box
+    /// walk. Kind-gated to the 669; one-shot per death (a dead slot never
+    /// returns to `active` — the `celeb2_death` precedent). The `Resize`
+    /// (`:22353-22359`) snaps the position to the centre, resizes, then
+    /// re-centres — the net effect is the box recentred on the old centre.
+    fn ale_death(
+        &mut self,
+        slot: usize,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        mut player: Option<&mut crate::player::Player>,
+        rng: &mut dyn DropRng,
+        luck: f32,
+    ) {
+        if self.slots[slot].kind != ALE {
+            return;
+        }
+        // `:71954` — sound 13 at the (int) position (the int overload).
+        let (px, py) = {
+            let p = &self.slots[slot];
+            (p.pos.x, p.pos.y)
+        };
+        self.pending_proj_sounds.push((13, 0, px, py, 0.0));
+        // `:71955-71966` — the dust census (the bodies skipped, the 160
+        // velocity draws kept).
+        crate::projectile_ai_thrown::ale_death_draws(rng);
+        // `:71967-71968` — `Resize(144, 144)` about the centre.
+        {
+            let p = &mut self.slots[slot];
+            let cx = p.pos.x + p.w * 0.5;
+            let cy = p.pos.y + p.h * 0.5;
+            p.w = 144.0;
+            p.h = 144.0;
+            p.pos = Vec2::new(cx - 72.0, cy - 72.0);
+        }
+        // `:71969-71973` — the local player's Tipsy grant on a box intersect.
+        let (rx, ry, rw, rh) = {
+            let p = &self.slots[slot];
+            (p.pos.x, p.pos.y, p.w, p.h)
+        };
+        if let Some(pl) = player.as_deref_mut() {
+            if !pl.dead
+                && rx < pl.x + crate::player::WIDTH
+                && rx + rw > pl.x
+                && ry < pl.y + pl.height
+                && ry + rh > pl.y
+            {
+                pl.buffs.add_buff(25, 3659);
+            }
+        }
+        // `:71974-71983` — every intersecting town NPC's Tipsy grant (the
+        // `Main.netMode != 1` gate folds true — the port is the host).
+        for n in npcs.iter_mut() {
+            if n.hp <= 0 || !n.kind.is_town_npc_like() {
+                continue;
+            }
+            let (nw, nh) = n.size();
+            if rx < n.x + nw && rx + rw > n.x && ry < n.y + nh && ry + rh > n.y {
+                n.buffs.add_buff(25, 3659);
+            }
+        }
+        // `:71984` — `Damage()`: the box walk through the resized box (the
+        // celeb2_death / gem_bolt_aoe precedent).
+        self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
     }
 
     /// `Projectile.DoRainbowCrystalStaffExplosion`
@@ -23264,6 +23348,26 @@ impl ProjectilePool {
                 if proj_data(self.slots[slot].kind).map_or(0, |d| d.ai_style) == 69 {
                     crate::projectile_ai_style69::flairon_hit_latch(&mut self.slots[slot]);
                 }
+                // W4-d7 wiring (F4) — `Damage_PVE_Inner`'s type-669 arm
+                // (`Projectile.cs:13135-13148`): the Ale's hit decays damage
+                // ×0.8 (`(int)((double)damage * 0.8)`), fuses `timeLeft = 1`
+                // and points `direction` from the OWNER centre vs the victim.
+                // It sits in the `:13051` else-if chain AFTER the aiStyle-16
+                // arm, so the generic 68 fuse (`:13149-13163`) never runs for
+                // 669. The arm runs PRE-strike in C#; the strike reads the
+                // local `dmg` (computed from the pre-decay value), so this hit
+                // keeps full damage and the NEXT hit reads the decayed store
+                // (the moon-lord/shadowbeam precedent). The owner centre is
+                // the `owner` arg (the local player's centre).
+                if self.slots[slot].kind == ALE {
+                    let p = &mut self.slots[slot];
+                    p.damage = (p.damage as f64 * 0.8) as i32;
+                    p.time_left = 1;
+                    let (nw, _) = npcs[idx].size();
+                    let npc_cx = npcs[idx].x + nw * 0.5;
+                    let owner_cx = owner.map_or(p.pos.x + p.w * 0.5, |(x, _)| x);
+                    p.direction = if npc_cx < owner_cx { -1 } else { 1 };
+                }
                 // S1-P-i16 — `StatusNPC`'s dart debuffs
                 // (`Projectile.cs:11635-11645` the 267 Poison Dart,
                 // `:11482-11489` the 478/480 Cursed Flames + the 479
@@ -23605,7 +23709,14 @@ impl ProjectilePool {
         // (`Player.cs:38396-38400`, S1-C-7 wave B).
         // The single-hit kill below runs after `Hurt` regardless of the
         // dodge (the C# `Damage()`'s kill block follows the `Hurt` arm).
-        player.hurt_with_source(p.damage, cx, rng, p.is_damage_dodgeable(), p.kind);
+        let landed = player.hurt_with_source(p.damage, cx, rng, p.is_damage_dodgeable(), p.kind);
+        // W4-d7 wiring (F4) — `StatusPlayer`'s Ale arm
+        // (`Projectile.cs:11798-11801`/`:12142-12145`): a landed, non-fatal
+        // hit rolls the 1/20 Tipsy (the C# `Hurt(...) > 0 && !dead` gate,
+        // `:14868-14870`/`:15050-15052`).
+        if landed && !player.dead {
+            crate::projectile_ai_thrown::ale_status_player(p, player, rng);
+        }
         self.slots[slot].active = false;
         self.slots[slot].time_left = 0;
     }

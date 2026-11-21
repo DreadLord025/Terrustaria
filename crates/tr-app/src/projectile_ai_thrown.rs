@@ -72,7 +72,7 @@ use tr_core::World;
 
 use crate::npc::Npc;
 use crate::projectile::{
-    can_hit, chaseable, Projectile, BEE, BEENADE, BLOOD_WATER, BONE_JAVELIN, GIANT_BEE,
+    can_hit, chaseable, Projectile, ALE, BEE, BEENADE, BLOOD_WATER, BONE_JAVELIN, GIANT_BEE,
     GRENADE, HOLY_WATER, MOLOTOV_COCKTAIL, MOLOTOV_FIRE_1, MOLOTOV_FIRE_2, MOLOTOV_FIRE_3,
     POISONED_KNIFE, STICKY_GRENADE, UNHOLY_WATER,
 };
@@ -131,13 +131,19 @@ fn kill_step(p: &mut Projectile, world: &World) {
 }
 
 /// `AI()`'s aiStyle-68 arm (`Projectile.cs:30166-30239`) for the molotov
-/// cocktail (399), then the `HandleMovement`-68 collision
-/// (`:19780-19786`). The 669 Ale-Throwing-Glove dust branch (`flag35`) is a
-/// different kind and stays out. Zero RNG (the `alpha==0` dust `:30191-30207`
-/// is skipped whole, its draws with it).
-pub(crate) fn molotov_step(p: &mut Projectile, world: &World) {
+/// cocktail (399) AND the Ale (669, W4-d7 F4), then the `HandleMovement`-68
+/// collision (`:19780-19786`). The two kinds share the spin/fade/gravity/prime
+/// flight; only the `alpha == 0` dust window differs: the 399's single fire
+/// dust (`flag34`, `:30191-30207`) draws NOTHING at the call site (skipped
+/// whole), while the 669's `flag35` branch (`:30209-30220`) draws THREE per
+/// dust × 2 dusts — the `NextFloat` lerp, the `NextFloat` scale and the
+/// `SelectRandom` colour pick (`Next(2)`) — kept on the stream (the bodies
+/// skipped). The wet prime (`:30235-30238`) folds dry (no liquid-wet flag).
+pub(crate) fn molotov_step(p: &mut Projectile, world: &World, rng: &mut dyn DropRng) {
     // `:30168` — `rotation += 0.25 * direction`.
     p.rot += 0.25 * p.direction as f32;
+    // `:30169-30170` — the kind flags.
+    let flag35 = p.kind == ALE;
     // `:30171` — `ai[0]++`.
     p.ai[0] += 1.0;
     // `:30172-30179` — from `ai[0] >= 3`: `alpha -= 40`, clamp 0.
@@ -155,8 +161,18 @@ pub(crate) fn molotov_step(p: &mut Projectile, world: &World) {
         }
         p.vel.x *= 0.99;
     }
-    // `:30189-30221` — the `alpha == 0` dust window (399's single fire dust,
-    // `:30191-30207`) is SKIPPED (no dust layer, its draws with it).
+    // `:30189-30221` — the `alpha == 0` dust window. The 399's fire dust
+    // (`flag34`, `:30191-30207`) draws nothing at the call site — skipped.
+    if p.alpha == 0 && flag35 {
+        // `:30209-30220` — the Ale's 2× dust 4: per dust the `NextFloat` lerp
+        // (`:30213`), the `NextFloat` scale (`:30215`) and the `SelectRandom`
+        // colour pick (`Next(2)`, `:30218`) — three kept draws, bodies skipped.
+        for _ in 0..2 {
+            let _ = rng.next_float(); // the Lerp(-8, 8) offset
+            let _ = rng.next_float(); // the 0.8 - NextFloat*0.2 scale
+            let _ = rng.next_range(0, 2); // SelectRandom(white, gold)
+        }
+    }
     // `:30222` — `spriteDirection = direction`.
     p.sprite_direction = p.direction;
     // `:30223-30234` — `timeLeft <= 3`: the prime — `tileCollide=false`,
@@ -386,6 +402,12 @@ pub(crate) fn bee_step(p: &mut Projectile, world: &World, npcs: &[Npc]) {
 /// stick pin, `:11335`) — the pool sets the pin BEFORE this call (the
 /// `:13210-13217` stick runs ahead of `StatusNPC`).
 pub(crate) fn thrown_on_hit(p: &Projectile, npc: &mut Npc, npc_idx: u16, rng: &mut dyn DropRng) {
+    // `:11314-11317` — the Ale (669): 1/20 Tipsy (31) for `60 * Next(2,6)`
+    // ticks (W4-d7 F4). The `Next(20)` gate draws FIRST; the duration draw
+    // only on a hit.
+    if p.kind == ALE && rng.next_range(0, 20) == 0 {
+        npc.buffs.add_buff(31, 60 * rng.next_range(2, 6));
+    }
     // `:11628-11634` — the poisoned knife (54): 1/2 Poisoned 600.
     if p.kind == POISONED_KNIFE && rng.next_range(0, 2) == 0 {
         npc.buffs.add_buff(20, 600);
@@ -399,6 +421,17 @@ pub(crate) fn thrown_on_hit(p: &Projectile, npc: &mut Npc, npc_idx: u16, rng: &m
     // this NPC (`ai[1] == i`).
     if p.kind == BONE_JAVELIN && p.ai[1] == npc_idx as f32 {
         npc.buffs.add_buff(169, 900);
+    }
+}
+
+/// `StatusPlayer`'s Ale arm (`Projectile.cs:11798-11801` / `:12142-12145`,
+/// W4-d7 F4): the 669's player-contact hit rolls 1/20 Tipsy (31) for
+/// `60 * Next(2,6)` ticks — the `Next(20)` gate draws FIRST, the duration only
+/// on a hit. Called from the pool's `damage_player` lane on a landed hurt
+/// (the C# `Hurt(...) > 0 && !dead` gate, `:14868-14870`/`:15050-15052`).
+pub(crate) fn ale_status_player(p: &Projectile, player: &mut crate::player::Player, rng: &mut dyn DropRng) {
+    if p.kind == ALE && rng.next_range(0, 20) == 0 {
+        player.buffs.add_buff(31, 60 * rng.next_range(2, 6));
     }
 }
 
@@ -551,6 +584,20 @@ pub(crate) fn molotov_death(p: &Projectile, rng: &mut dyn DropRng) -> Vec<FireSp
     out
 }
 
+/// `Kill()`'s Ale arm (`Projectile.cs:71952-71985`), the kept dust draws: the
+/// 12× dust 4 (`:71956-71959`) draw NOTHING at the call site (the
+/// `NewDustDirect` internals go with the dust pool); the 80×2 dust 4
+/// (`:71960-71966`) each draw ONE velocity scale — `Next(10,71)` for the first
+/// (`:71964`), `Next(10,41)` for the second (`:71965`) — 160 kept draws, bodies
+/// skipped. The sound 13 cue, the `Resize(144,144)`, the Tipsy grants and the
+/// `Damage()` walk ride the pool's death hook ([`ProjectilePool`]).
+pub(crate) fn ale_death_draws(rng: &mut dyn DropRng) {
+    for _ in 0..80 {
+        let _ = rng.next_range(10, 71); // `:71964` — dust33.velocity *= Next(10,71)*0.1
+        let _ = rng.next_range(10, 41); // `:71965` — the second dust's Next(10,41)*0.1
+    }
+}
+
 // =====================================================================
 // Witness tests — WRITTEN, NOT RUN (code-only mode: no cargo/rustc).
 // Every expected value below is hand-derived from the cited C# lines.
@@ -624,20 +671,21 @@ mod tests {
     #[test]
     fn s1_p_i28_molotov_fade_and_gravity() {
         let w = empty_world();
+        let mut rng = tr_core::UnifiedRandom::new(68);
         let mut p = proj(MOLOTOV_COCKTAIL);
         p.pos = Vec2::new(500.0, 500.0);
         p.vel = Vec2::new(4.0, 0.0);
         p.direction = 1;
         // alpha starts 255; tick 1/2 no fade (ai[0] < 3), tick 3 fades 40.
-        molotov_step(&mut p, &w);
+        molotov_step(&mut p, &w, &mut rng);
         assert_eq!(p.alpha, 255, "ai[0]=1 < 3, no fade");
-        molotov_step(&mut p, &w);
+        molotov_step(&mut p, &w, &mut rng);
         assert_eq!(p.alpha, 255, "ai[0]=2 < 3, no fade");
-        molotov_step(&mut p, &w);
+        molotov_step(&mut p, &w, &mut rng);
         assert_eq!(p.alpha, 215, "ai[0]=3 fades 40");
         assert!((p.rot - 0.75).abs() < 1e-6, "3 ticks of 0.25 spin");
         for _ in 0..12 {
-            molotov_step(&mut p, &w);
+            molotov_step(&mut p, &w, &mut rng);
         }
         // ai[0]=15 now: gravity armed.
         assert!(p.vel.y > 0.0, "tick 15 adds 0.2 gravity");
@@ -648,10 +696,11 @@ mod tests {
     #[test]
     fn s1_p_i28_molotov_primes_at_low_timeleft() {
         let w = empty_world();
+        let mut rng = tr_core::UnifiedRandom::new(68);
         let mut p = proj(MOLOTOV_COCKTAIL);
         p.pos = Vec2::new(500.0, 500.0);
         p.time_left = 3;
-        molotov_step(&mut p, &w);
+        molotov_step(&mut p, &w, &mut rng);
         assert_eq!(p.w, 80.0);
         assert_eq!(p.h, 80.0);
         assert_eq!(p.knock_back, 8.0);
@@ -898,5 +947,86 @@ mod tests {
         assert_eq!(jav.penetrate, 3);
         assert_eq!((jav.w, jav.h), (16.0, 16.0));
         assert!(crate::projectile_ai_thrown::covers_ai001(507));
+    }
+
+    /// W4-d7 F4 — the Ale's `flag35` dust window draws THREE per dust × 2
+    /// dusts when `alpha == 0` (`Projectile.cs:30209-30220`): the NextFloat
+    /// lerp, the NextFloat scale, the SelectRandom Next(2). The 399 draws
+    /// nothing there.
+    #[test]
+    fn w4_d7_f4_ale_dust_window_draws_six() {
+        let w = empty_world();
+        let mut p = proj(ALE);
+        p.pos = Vec2::new(500.0, 500.0);
+        p.alpha = 0; // the dust window is open
+        p.ai[0] = 20.0; // past the fade, no further alpha change
+        let mut rng = tr_core::UnifiedRandom::new(669);
+        let mut oracle = tr_core::UnifiedRandom::new(669);
+        molotov_step(&mut p, &w, &mut rng);
+        // Two dusts × (NextFloat, NextFloat, Next(2)).
+        for _ in 0..2 {
+            let _ = oracle.next_float();
+            let _ = oracle.next_float();
+            let _ = oracle.next_range(0, 2);
+        }
+        assert_eq!(rng.next_range(0, 1), oracle.next_range(0, 1), "exactly six draws");
+        // The 399 draws nothing in the same window.
+        let mut m = proj(MOLOTOV_COCKTAIL);
+        m.pos = Vec2::new(500.0, 500.0);
+        m.alpha = 0;
+        m.ai[0] = 20.0;
+        let mut rng2 = tr_core::UnifiedRandom::new(1);
+        let mut control = tr_core::UnifiedRandom::new(1);
+        molotov_step(&mut m, &w, &mut rng2);
+        assert_eq!(rng2.next_range(0, 1), control.next_range(0, 1), "399 zero draws");
+    }
+
+    /// W4-d7 F4 — the Ale's Tipsy roll: Next(20) gate FIRST, then 60*Next(2,6)
+    /// only on a hit (`Projectile.cs:11314-11317`).
+    #[test]
+    fn w4_d7_f4_ale_tipsy_roll() {
+        let p = proj(ALE);
+        let mut n = Npc::new(crate::npc::NpcKind::Zombie, 0.0, 0.0, 0, 0.0);
+        // gate 0 → Tipsy, duration Next(2,6)=3 → 180 ticks.
+        let mut rng = ScriptRng::with_rolls(&[0, 3]);
+        thrown_on_hit(&p, &mut n, 0, &mut rng);
+        assert_eq!(rng.draws, vec![(0, 20), (2, 6)]);
+        assert!(n.buffs.find_buff_index(31).is_some(), "gate 0 applies Tipsy");
+        // gate 1 → no Tipsy, no duration draw.
+        let mut n2 = Npc::new(crate::npc::NpcKind::Zombie, 0.0, 0.0, 0, 0.0);
+        let mut rng2 = ScriptRng::with_rolls(&[1]);
+        thrown_on_hit(&p, &mut n2, 0, &mut rng2);
+        assert_eq!(rng2.draws, vec![(0, 20)]);
+        assert!(n2.buffs.find_buff_index(31).is_none(), "gate 1 saves");
+    }
+
+    /// W4-d7 F4 — the Ale death census: 80× (Next(10,71), Next(10,41)) = 160
+    /// draws (`Projectile.cs:71960-71966`); the 12× dust draw nothing.
+    #[test]
+    fn w4_d7_f4_ale_death_draw_census() {
+        let mut rolls = Vec::new();
+        for _ in 0..80 {
+            rolls.extend_from_slice(&[10, 10]);
+        }
+        let mut rng = ScriptRng::with_rolls(&rolls);
+        ale_death_draws(&mut rng);
+        assert_eq!(rng.draws.len(), 160);
+        assert_eq!(rng.draws[0], (10, 71));
+        assert_eq!(rng.draws[1], (10, 41));
+        assert_eq!(rng.draws[158], (10, 71));
+        assert_eq!(rng.draws[159], (10, 41));
+    }
+
+    /// W4-d7 F4 — the Ale row matches SetDefaults (`Projectile.cs:7163-7173`).
+    #[test]
+    fn w4_d7_f4_ale_row_matches_setdefaults() {
+        let ale = proj_data(ALE).expect("the Ale row");
+        assert_eq!(ale.ai_style, 68);
+        assert_eq!((ale.w, ale.h), (14.0, 14.0));
+        assert_eq!(ale.penetrate, -1);
+        assert_eq!(ale.alpha, 255);
+        assert!(ale.melee);
+        assert_eq!(ale.time_left, 3600);
+        assert!(ale.tile_collide);
     }
 }

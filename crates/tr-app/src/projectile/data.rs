@@ -111,6 +111,11 @@ pub const BOUNCY_GRENADE: u16 = 517;
 /// bursts into the three greek fires on death (`Projectile.cs:4801-4811`,
 /// `:73921-73951`).
 pub const MOLOTOV_COCKTAIL: u16 = 399;
+/// `ProjectileID.Ale` (669) — the Ale Throwing Glove's (item 3821) thrown
+/// mug, aiStyle 68 (`Projectile.cs:7163-7173`), W4-d7 wiring (F4). Shares the
+/// molotov's spin/fade/gravity/prime flight; its own `flag35` dust branch,
+/// Tipsy debuff and death burst differ.
+pub const ALE: u16 = 669;
 /// `ProjectileID.MolotovFire` (400) — the molotov's first ground-fire child,
 /// aiStyle 14 (`Projectile.cs:4812-4835`).
 pub const MOLOTOV_FIRE_1: u16 = 400;
@@ -1756,6 +1761,22 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 14.0,
                 68,
                 1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // W4-d7 wiring (F4) — `Projectile.cs:7163-7173` (669 Ale): 14x14,
+            // aiStyle 68, friendly, `alpha = 255`, melee (the overlay below),
+            // `noEnchantmentVisuals` (no port field — dropped), `penetrate =
+            // -1`. The stock `timeLeft = 3600` / tileCollide true.
+            ALE => (
+                14.0,
+                14.0,
+                68,
+                -1,
                 TIME_LEFT_DEFAULT,
                 0,
                 true,
@@ -4275,6 +4296,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // W4-d7 wiring — the Flairon recall head's `melee = true`
                     // (`Projectile.cs:4855`).
                     | FLAIRON_HEAD
+                    // W4-d7 wiring (F4) — the Ale's `melee = true`
+                    // (`Projectile.cs:7170`).
+                    | ALE
             ),
         ranged: matches!(
             kind,
