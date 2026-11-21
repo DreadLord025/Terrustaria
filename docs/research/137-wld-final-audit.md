@@ -1,5 +1,16 @@
 # 137 — WLD FINAL: the full SaveWorldFlags/LoadWorldFlags walk audit (W4-f45)
 
+> **SEALED (WLD SEAL).** The WLD lane closes at `d2a8276a2` — **the wld
+> family:** f45 owns the `.wld` base (header + the full flags walk; this
+> audit, incl. the 4 VERSION-gate fixes `2e13cfafc`/`ad153feb3`), g71 owns
+> the live setBG seats 0/3/6/7/9/10-12 on top (its research/92 §1-FULL is
+> THE `.trwld` v18 107-byte union authority, receipted by g88 103 / f44 132
+> / g72 64a+64b), g90's booster `.wld` halves are byte-identical carriers
+> that keep-one onto f45's (§2; the `.trwld` divergence rides the g71
+> union), and the D5-107 middle order (g88 103 L3-ARBITER `d09d7e10a`,
+> g71 §1-SEAL.5 at `b27474a44`: four of five L3 dependents agree) governs
+> the dense tail — no byte fight remains anywhere in the family.
+
 **Branch:** `task/W4-f45-wld-header-2` (final phase; base `6352d3840`, gate-census
 `2e13cfafc`, boundary fixup `ad153feb3`). **Mode:** code-only — no
 cargo/tests/rustfmt/graphify invoked; witnesses WRITTEN NOT RUN. **Scope:** the
@@ -230,7 +241,8 @@ vs use/net (g90) vs stat consumer (g89b).
 
 ## 3. The g71 v18-union cross-read — boundary note
 
-**Read:** `origin/task/W4-g71-bg-layers-2` tip `e2d085ae4`,
+**Read:** `origin/task/W4-g71-bg-layers-2` tip `e2d085ae4` (re-read at the
+SEAL RECEIPT tip `b27474a44`, §3.1),
 `docs/research/92-doc-sweep-bg.md` (SEALED; §1-FULL is THE `.trwld` v18
 union-layout authority, receipted by g88 103 / f44 132 / g72 64a+64b).
 
@@ -243,6 +255,15 @@ block: g71 owns setBG(9) underworld + setBG(10-12) treeBG2-4 (f45 writes 0 /
 skips). g71's §1-SEAL.2 compose table already audited THIS branch at
 `6352d3840` and noted the then-unpushed gate census `2e13cfafc` as orthogonal
 ("load-gate fixes, no bg-byte interaction") — **cross-verified, agree**.
+**Compose receipt (g71 `b27474a44` §1-SEAL.3):** re-read at both heads —
+g71's live hunks (flags.rs `:101-108`/`:461-468` + `:185-189`/`:574`/`:577`/
+`:580-582`) supersede f45's zeros (`:103`/`:106`/`:109`/`:110` + `:203-206`)
+and skip-reads (`:494`/`:497`/`:500`/`:659`/`:662`); wire widths
+byte-identical, ownership-only, **ZERO `.wld` offset moves**; the gate
+fixes remain orthogonal (§7 rule 5). §1-SEAL.3 noted f45 had **no read
+published** at `6352d3840` and the receipt was OWED to f45 — **this
+document IS that read; the debt is closed here** (f45 agrees with the
+compose: disjoint seats, dedup keep-one, g70 conflation flagged §3.3).
 
 ### 3.2 The shared fields — byte-identical wire, shape dedups
 
@@ -269,7 +290,15 @@ all. **f45 and g71 both carry the correct separate `tree_style: [i32;4]`**
 (g71's world.rs doc explicitly notes "Distinct from `forest_bg_styles` … the
 C# keeps them as two separate arrays"). At merge: f45/g71's `treeStyle`
 write/read wins; g70's conflation must be corrected (its `forest_bg_styles`
-still owns the setBG 0/10-12 seats — those hunks are fine).
+still owns the setBG 0/10-12 seats — those hunks are fine). **FLAG — ONE
+fix-hunk pair at merge (g70 `752655914` flags.rs, re-read):** the write
+loop `:45-46` (`for s in world.forest_bg_styles { w.i32(s as i32); //
+treeStyle`) and the read loop `:385-386` (`*s = r.i32()? as u8; //
+treeStyle`) must re-point at the merged `tree_style: [i32;4]` — the C#
+slots are `writer.Write(Main.treeStyle[0..3])` (`WorldFile.cs:1256-1259`)
+/ `Main.treeStyle[i] = reader.ReadInt32()` (`:2054-2057`), re-verified
+here. That is the WHOLE correction: two loops, no seat/offset moves; g70's
+setBG hunks (`:103`/`:189-191` write, `:458`/`:575` read) stay untouched.
 
 ### 3.4 The gen-roll keep-one — f45 Ph6's copies defer
 
@@ -480,6 +509,8 @@ named tips. The compile window runs the witnesses.
    g90's flags.rs hunks drop (strict subset).
 2. **Correct g70's treeStyle conflation** (§3.3) — keep f45/g71's separate
    `tree_style` field; g70's `forest_bg_styles` keeps only the setBG seats.
+   The correction is ONE fix-hunk pair: g70 flags.rs `:45-46` (write) +
+   `:385-386` (read) re-point at `tree_style`; nothing else moves.
 3. **Drop f45 Ph6's two roll fns** for the g71/g72 canonical seats (§3.4);
    re-point the Ph6 roll witness.
 4. **The `.trwld` v18 union** per g71 §1-FULL (107-byte head + dense LAST);
