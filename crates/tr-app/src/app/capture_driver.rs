@@ -275,6 +275,11 @@ impl App {
             clouds: &self.clouds,
             counter: self.game_update_count,
             mouse_text_color: self.mouse_text_color,
+            // W4-g72 closeout delta 64d §2: the live scene metrics + the
+            // App's cavern-style latch (the C# DrawCapture reads the live
+            // statics).
+            metrics: &self.scene_metrics,
+            ug_back: &mut self.ug_back,
         };
         // The `captureEntities` arms' inputs (`Main.cs:56876-57017`): the
         // live entity state at the chunk render. The held item mirrors the

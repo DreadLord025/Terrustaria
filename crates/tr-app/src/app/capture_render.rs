@@ -64,6 +64,14 @@ pub(crate) struct CaptureWorld<'a> {
     pub counter: u32,
     /// `Main.mouseTextColor` — the Mushroom glow's pulse.
     pub mouse_text_color: u8,
+    /// `Main.SceneMetrics` — the g72e 14-arg `draw_background`'s style-pick
+    /// input (W4-g72 closeout delta 64d §2; the capture reads the live
+    /// frame's scan like the C# `DrawCapture` reads the statics).
+    pub metrics: &'a tr_core::scene::SceneMetrics,
+    /// `Main.undergroundBackground` latch — the capture threads the App's
+    /// live state (the C# `DrawCapture` re-runs `DrawBackground` with the
+    /// live statics, delta 64d §2 — no fresh-local approximation needed).
+    pub ug_back: &'a mut crate::render::bg_styles::UgBackState,
 }
 
 /// The GPU capture renderer — `Main.DrawCapture` through the family. Owns
@@ -390,9 +398,15 @@ fn render_capture_layer(
                 // `DrawBackground()` (`Main.cs:56924`): the underground
                 // backdrop under the surface chains.
                 let mut hell_bottom = 0.0;
+                // W4-g72 closeout delta 64d §2: the 10→14-arg append —
+                // the `TR_SHOW_INVISIBLE` env pin (the bg wall gate reads
+                // the same pin as the tile flag), the frame's scene
+                // metrics, the App's live cavern-style latch, and the
+                // unwired shimmer ramp at 0.0 (draw.rs feeds 0.0 too).
                 crate::render::bg::draw_background(
                     renderer, layer_cam, 1.0, layer_screen, cw.world,
                     cw.sky, cw.light, 0.0, cw.anim_time, &mut hell_bottom,
+                    crate::env::show_invisible(), cw.metrics, cw.ug_back, 0.0,
                 );
                 renderer.render_back(gpu, view, layer_cam.to_array(), 1.0, cw.anim_time, None);
                 renderer.restore_back(parked);

@@ -2208,6 +2208,11 @@ impl App {
                                 remote: &remote_vec,
                                 edit_target: *edit_target,
                                 leaf_spawns: &mut leaf_spawns,
+                                // W4-g72 closeout delta 64d §2: the frame's
+                                // scene metrics + the App's cavern-style
+                                // latch for the 14-arg draw_background.
+                                metrics: &self.scene_metrics,
+                                ug_back: &mut self.ug_back,
                             };
                             // The skyTarget gate (`Main.cs:62021-62027`):
                             // `CanCapture || ForegroundSunlightEffects` (the

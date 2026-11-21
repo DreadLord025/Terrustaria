@@ -77,6 +77,15 @@ pub(crate) struct LayerFrame<'a> {
     pub remote: &'a [crate::net::PlayerNet],
     pub edit_target: Option<(i32, i32)>,
     pub leaf_spawns: &'a mut Vec<crate::render::foliage::LeafSpawn>,
+    /// `Main.SceneMetrics` — the g72e 14-arg `draw_background`'s style-pick
+    /// input (W4-g72 closeout delta 64d §2). `show_invisible_blocks` above
+    /// is the TILE-pass flag; the bg call reads `env::show_invisible()`
+    /// directly, the same pin.
+    pub metrics: &'a tr_core::scene::SceneMetrics,
+    /// `Main.undergroundBackground` latch (`Main.cs:52823-52841`), carried
+    /// across frames on the App like `hellBlackBoxBottom` — the layer
+    /// callback threads it (delta 64d §2).
+    pub ug_back: &'a mut crate::render::bg_styles::UgBackState,
 }
 
 /// `Main.RenderToTargets` (`Main.cs:57277-57327`) EXECUTED with the App's
@@ -423,10 +432,16 @@ fn render_one_layer(
             // App; the layer callback's own black-box line starts fresh
             // (the box consumes the previous magma pass of THIS target).
             let mut hell_bottom = 0.0;
+            // W4-g72 closeout delta 64d §2: the 10→14-arg append — the
+            // `TR_SHOW_INVISIBLE` env pin (NOT `show_invisible_blocks`,
+            // which is the tile-pass flag but rides the same pin), the
+            // frame's scene metrics, the App's live cavern-style latch,
+            // and the unwired shimmer ramp at 0.0 (draw.rs feeds 0.0 too).
             crate::render::bg::draw_background(
                 renderer, layer_cam, 1.0, layer_screen, frame.world,
                 frame.sky, frame.light, frame.cave_parallax, frame.anim_time,
                 &mut hell_bottom,
+                crate::env::show_invisible(), frame.metrics, frame.ug_back, 0.0,
             );
             renderer.render_back(gpu, view, layer_cam.to_array(), 1.0, frame.anim_time, None);
             renderer.restore_back(parked_back);

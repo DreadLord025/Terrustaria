@@ -2480,6 +2480,11 @@ pub(crate) mod front_flow_tests {
             summon_shot: false,
             world_key: None,
             hell_black_box_bottom: 0.0,
+            ug_back: crate::render::bg_styles::UgBackState {
+                style: 0,
+                old_style: 0,
+                transition: 0.0,
+            },
         }
     }
 

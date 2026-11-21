@@ -25130,6 +25130,55 @@ Semantic assumptions g72b makes that the current consumers satisfy:
 No signature drift; the lanes compose. If g72c advances the executor
 signature, re-run this table against the new tip.
 
+### The g72e draw_background 10→14-arg delta — CONSUMED (S1-G-13 consumers closeout, 2026-11-21)
+
+The g72 retire closeout published `docs/research/64d-d69-capture-delta.md`
+(on `origin/task/W4-g72-bg-layers-3`): the seven `bg_target.rs` seams above
+STILL MATCH (re-verified there at this lane's tip `79f914fdb`; re-confirmed
+here — `LayerCamera` `targets.rs:120-124`, `offscreen_range: i32` `:48`,
+`layer_composite_position` 6-arg `:499-506`, `sky_target_active` 6-bool
+`:525-531`, `SceneLayer::Background`/`BackgroundSwap` `:309-316`,
+`position()`/`.size()` `:155`/`:167`, `BgTex` `render/mod.rs:32` +
+`push_screen` `render/bg.rs:1054`), but g72's `draw_background` grew four
+tail args (their `bg.rs:468-497` at `6cb4e933f`). The mechanical append is
+now landed on BOTH callbacks:
+
+- `capture_render.rs` Background arm: `…, &mut hell_bottom,
+  crate::env::show_invisible(), cw.metrics, cw.ug_back, 0.0` —
+  `CaptureWorld` gained `metrics: &'a tr_core::scene::SceneMetrics` +
+  `ug_back: &'a mut bg_styles::UgBackState`, threaded from
+  `capture_driver.rs` (`&self.scene_metrics`, `&mut self.ug_back`). The
+  LIVE App latch is threaded, NOT the fresh-local option 64d §2 offers —
+  the C# `DrawCapture` re-runs `DrawBackground` with the live statics, so
+  no cross-fade approximation is needed.
+- `layer_targets.rs` Background arm: `…, &mut hell_bottom,
+  crate::env::show_invisible(), frame.metrics, frame.ug_back, 0.0` —
+  `LayerFrame` gained the same two fields, threaded from
+  `frame/draw.rs`'s gated construction. `frame.show_invisible_blocks`
+  stays the TILE-pass flag (64d §5's misread warning); the bg arg reads
+  the env pin directly — same pin, distinct seams.
+- The App gained `ug_back: crate::render::bg_styles::UgBackState`
+  (`Main.undergroundBackground`/`oldUndergroundBackground`/
+  `ugBackTransition`, `Main.cs:52823-52841`), carried across frames like
+  `hell_black_box_bottom`; both App constructors initialise
+  `{ style: 0, old_style: 0, transition: 0.0 }` (g72's shape verbatim).
+- `shimmer_alpha` is 0.0 at both sites — the port's shimmer ramp is
+  unwired; the live frame feeds 0.0 too (64d §2 row 14).
+
+**Merge-composition note:** this lane's own `render/bg.rs` still carries
+the 10-arg merge-base `draw_background`, and `bg_styles.rs`
+(`UgBackState`) exists only on the g72 branch — the append + the field
+threading compile against g72's 14-arg signature AT THE MERGE (64d §5:
+"on the d69 lane or at the merge, whichever composes first"). The third
+`draw_background` call site, the FUSED `render/sky.rs:943` inside
+`draw_sky`, is NOT touched here: g72's branch already threads the three
+tail args through their `draw_sky` (their `sky.rs` call passes `metrics,
+ug_back, shimmer_alpha`), so that call site reconciles with THEIR
+`draw_sky` at the merge — this lane's `draw_surface_bg` extraction never
+calls it (64d §3). Code-only closeout: witnesses WRITTEN NOT RUN (no
+cargo on this resume); the anchors row below canaries the capture-side
+append.
+
 ### The DrawCapture entity arms (S1-G-13 consumers census, 2026-11-21)
 
 Full census of the `captureEntities` arms (`Main.cs:56876-57017`) and the
