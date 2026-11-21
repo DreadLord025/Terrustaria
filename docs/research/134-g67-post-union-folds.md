@@ -1,15 +1,48 @@
-# 134 — W4-g67 post-union fold-list (for W4-d130f)
+# 146 — W4-g67 post-union fold-list (for W4-d130f)
 
-**STATUS: FINAL-FINAL / RETIRED — R1–R4/R6-partial EXECUTED BY d130 `16a792d5`;
-R5/R6-caller/R7 + the 2-hunk fold-addendum OPEN for d130f** (code-only,
-`task/W4-g67-weather-rain-splash`, fold-source tip `e777b3e2` + the retire
-commits `9159c15a` (this re-check) / `5afdb38b` (the rain.rs
-DEPRECATED-BY-UNION banners, comments-only)). The g67 branch is DONE — no
-further rain.rs code lands here; the dup-halves carry per-fn banners, the
-uniques (R5 threshold read, the Eyebrella/umbrella player lanes, the A2
-witness) stay live as the d130f fold-source. Merger: g67's `rain.rs` drops
-WHOLESALE EXCEPT those folded hunks — see KEEP-d130-CANONICAL FINAL-FINAL
-below.
+*(was numbered 134 — RENAMED at the seal phase: origin registry sweep found
+f11's `134-light-family-unification.md` already claims 134; 145 is
+double-claimed (c10 waterfowl + g89 rod-teleport); d54 has NOT pushed a
+research/150. 146 = max-on-origin 145 + 1, unclaimed by any pushed branch —
+the provisional assignment, re-verify at merge. Full registry evidence in
+the seal section below.)*
+
+**STATUS: FINAL-FINAL / RETIRED / SEALED — R1–R4/R6-partial EXECUTED BY d130
+`16a792d5`; R5/R6-caller/R7 + the 2-hunk fold-addendum + the c39 2-hunk graft
+OPEN for d130f** (code-only, `task/W4-g67-weather-rain-splash`, fold-source
+tip `e777b3e2` + the retire commits `9159c15a` (re-check) / `5afdb38b` (the
+rain.rs DEPRECATED-BY-UNION banners, comments-only) + the seal commits
+recorded below). The g67 branch is DONE — no further rain.rs code lands
+here; the dup-halves carry per-fn banners, the uniques (R5 threshold read,
+the Eyebrella/umbrella player lanes, the A2 witness) stay live as the d130f
+fold-source. Merger: g67's `rain.rs` drops WHOLESALE EXCEPT those folded
+hunks — see KEEP-d130-CANONICAL FINAL-FINAL below and the SEAL section (the
+FINAL hash-list + the g67-drop-wholesale FINAL instruction).
+
+## SEAL — d130f-monitor (g67 seal phase, 2026-11-21, d130 tip STILL `97ed44f5d`)
+
+Re-fetched (`git fetch origin --prune`): `origin/task/W4-d130-weather-ambience`
+tip is STILL `97ed44f5d` (09:05:15) — **d130f has NOT landed anything**. The
+d130f-active work-list therefore STANDS, re-verified per-hunk against the
+tip's actual file bodies (`git show origin/task/W4-d130-weather-ambience:<path>`):
+
+| d130f obligation | d130-tip `97ed44f5d` evidence (seal re-read) | verdict |
+| --- | --- | --- |
+| R5 skyblock threshold | `rain.rs:1088` still `let snow_threshold = tr_core::scene::thresholds::SNOW_TILE_NORMAL as f32;`, gap comment `:1083-1086` intact | **OPEN → d130f** |
+| R6 Eyebrella caller | `player.rs` + `world_sim/player.rs` grep: no `eyebrella`/`5101` arm (the R4 seam `new_rain_forced` `rain.rs:1132` waits `#[allow(dead_code)]`) | **OPEN → d130f** |
+| R7 umbrella | both player files grep: no `umbrella_hold` arm | **OPEN → d130f** |
+| A1 tint alpha | `rain_tint` `rain.rs:1297` + witness intact — NO code owed (keep verbatim; g67's alpha-255 assertions drop) | **NO-OP, keep d130's** |
+| A2 light-tile witness | `draw`'s `light_tile` closure `rain.rs:1250` still has no dedicated geometry witness | **OPEN → d130f** |
+| c39 graft hunk 1 — storm-deck clamp | `update_time` (`rain.rs:696`) goes forced/calm-check → ladybug drain (`:64833-64836`) → surface gate — NO `:64825-64831` head (`lanterns_up → cloud_bg = 0`); grep `cloud_bg = 0` finds nothing in the fn | **OPEN → d130f** |
+| c39 graft hunk 2 — LanternsCanPersist | `weather.rs:292` still `let lantern_can_persist = !world.day_time;` — the full `!dayTime && LanternsCanStart()` gate missing | **OPEN → d130f** |
+
+The c39 graft spec is **c39 research/114 §13** (`8e0946ff`, retire phase 2 —
+the EXACT 2-hunk patch quoted old/new: `rain.rs` head clamp after d130's
+`:712`, `weather.rs:292` full persistence gate + the one-word visibility
+rider; witness `w4_c39_the_lantern_head_clamps_the_storm_deck_before_the_drain`,
+c39 `rain.rs:1878`). **g67 folds: NONE of the c39 hunks** — they are c39's
+fold-source, listed here so the d130f work-list is complete in one place.
+The g67-unique folds are exactly R5/R6/R7 + A2 (hash-list below).
 
 ## Fold-monitor re-check (g67 retire phase, 2026-11-21, tip `97ed44f5`)
 
