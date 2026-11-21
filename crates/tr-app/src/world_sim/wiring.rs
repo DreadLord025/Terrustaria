@@ -354,6 +354,17 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                 app.rngs.stream(crate::app::RngKey::UpdateWorldGen),
             );
         }
+        // W4-f11 — the hopper (21/467) and extractinator (219/642) arms: the
+        // engine resolved the anchor + CheckMech(60); the chest-store lookup,
+        // the locked/in-use gates and the item walk run app-side
+        // (`world_sim/wiring_devices.rs`). The extractinator's roll + spawn
+        // ride the wiring stream (the S1-L-6c contract).
+        for (num, num2) in app.wiring.take_hopper_requests() {
+            crate::world_sim::wiring_devices::run_hopper(app, num, num2);
+        }
+        for (num, num2, kind) in app.wiring.take_extractinator_requests() {
+            crate::world_sim::wiring_devices::run_extractinator(app, num, num2, kind);
+        }
     });
     for _ in 0..party_credits {
         let _ = app.notify_progression_net(25);
@@ -1066,5 +1077,95 @@ mod tests {
             .iter()
             .filter(|p| p.active)
             .any(|p| (419..=422).contains(&p.kind) && p.ai[0] == x && p.ai[1] == y)
+    }
+
+    /// W4-f11 — the hopper drain (`Wiring.Hopper`, `Wiring.cs:2638-2678`): a
+    /// drop inside the 192×192 grab rect enters the chest at the anchor. The
+    /// engine queues the request on the wire hit; the app walk moves the item.
+    #[test]
+    fn w4_f11_the_hopper_sucks_a_nearby_drop_into_the_chest() {
+        let mut app = app_with(21, 0, 0);
+        // The chest store entry at the device anchor (10, 20).
+        app.world_chests.push(crate::world_sim::wiring_devices::test_chest(
+            10,
+            20,
+            vec![],
+        ));
+        // A dirt drop (kind 2) at the chest centre — inside the grab rect.
+        app.items.push(crate::item::ItemDrop::new(
+            2,
+            5,
+            0,
+            10.0 * 16.0 + 16.0,
+            20.0 * 16.0 + 16.0,
+            0.0,
+            0.0,
+            0.0,
+        ));
+        trip_and_tick(&mut app);
+        assert!(app.items.is_empty(), "the drop was consumed");
+        let chest = &app.world_chests[0];
+        assert!(
+            chest.slots.iter().any(|s| s.kind == 2 && s.count == 5),
+            "the dirt entered the chest"
+        );
+    }
+
+    /// W4-f11 — the hopper's locked gate (`Wiring.cs:2651`): a locked chest
+    /// (the golden frames) refuses the grab; the drop stays.
+    #[test]
+    fn w4_f11_a_locked_chest_refuses_the_hopper() {
+        let mut app = app_with(21, 72, 0); // frameX 72 = a locked golden chest
+        app.world_chests.push(crate::world_sim::wiring_devices::test_chest(
+            10,
+            20,
+            vec![],
+        ));
+        app.items.push(crate::item::ItemDrop::new(
+            2,
+            5,
+            0,
+            10.0 * 16.0 + 16.0,
+            20.0 * 16.0 + 16.0,
+            0.0,
+            0.0,
+            0.0,
+        ));
+        trip_and_tick(&mut app);
+        assert_eq!(app.items.len(), 1, "the locked chest kept the drop out");
+        assert!(app.world_chests[0].slots.iter().all(|s| s.count == 0));
+    }
+
+    /// W4-f11 — the extractinator drain (`Wiring.Extractinator`,
+    /// `Wiring.cs:2554-2584`): a silt input (mode 0) in the nearby chest rolls
+    /// an output and consumes one. The roll is deterministic per wiring seed.
+    #[test]
+    fn w4_f11_the_extractinator_rolls_a_chest_input() {
+        let mut app = app_with(219, 0, 0);
+        app.wiring.seed_rand(0x5EED);
+        // A chest within the ±2..+5 scan of the anchor (10, 20) — at (10, 22).
+        let silt = crate::item::ItemSlot {
+            kind: 424, // SiltBlock, ExtractinatorMode 0
+            name: crate::registry::name(424),
+            count: 3,
+            prefix: 0,
+        };
+        app.world_chests
+            .push(crate::world_sim::wiring_devices::test_chest(10, 22, vec![silt]));
+        // The chest tile must exist for the IsLocked gate (a non-locked kind).
+        let ci = app.world.index(10, 22);
+        app.world.tiles[ci] = Tile {
+            kind: 21,
+            ..Default::default()
+        };
+        app.world.tiles[ci].flags |= FLAG_ACTIVE;
+        trip_and_tick(&mut app);
+        // One input consumed (3 → 2) and an output spawned (the roll's
+        // itemType > 0 arm; the mode-0 chain always yields something on the
+        // first non-air slot unless every gate misses — the seed pins it).
+        let chest = &app.world_chests[0];
+        let consumed = chest.slots.iter().any(|s| s.kind == 424 && s.count == 2)
+            || chest.slots.iter().all(|s| s.kind != 424);
+        assert!(consumed || !app.items.is_empty(), "the roll ran");
     }
 }

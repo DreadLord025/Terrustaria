@@ -26,3 +26,4 @@ pub(crate) mod tile_entities;
 pub(crate) mod step;
 pub(crate) mod weather;
 pub(crate) mod wiring;
+pub(crate) mod wiring_devices;

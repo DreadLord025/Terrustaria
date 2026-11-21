@@ -306,6 +306,20 @@ pub struct Wiring {
     /// 749`). The draw rides the CALLER's stream (the wiring tick's
     /// `UpdateWorldGen` swap), so the app drains these like `switch_clicks`.
     door_sounds: Vec<(bool, i32, i32)>,
+    /// The hopper activation requests of the W4-f11 arms (`HitWireSingle`'s
+    /// cases 21/467, `Wiring.cs:1986-1989` → `Hopper` `:2638-2678`): the
+    /// engine resolves the 2×2 anchor + the `CheckMech(60)` cooldown and
+    /// queues `(anchor_x, anchor_y)`; the app layer runs the chest lookup,
+    /// the locked/in-use gates and the 400-item grab walk (the chest store
+    /// and the item pool live app-side).
+    hopper_requests: Vec<(i32, i32)>,
+    /// The extractinator activation requests of the W4-f11 arms
+    /// (`HitWireSingle`'s cases 219/642, `Wiring.cs:1990-1993` →
+    /// `Extractinator` `:2554-2584`): the engine resolves the 3×3 anchor +
+    /// the `CheckMech(60)` cooldown and queues `(anchor_x, anchor_y, kind)`;
+    /// the app layer runs `TryFindChestForExtractinator`, the in-use gate and
+    /// the reverse slot walk with the `RollExtractinatorDrop` roll.
+    extractinator_requests: Vec<(i32, i32, u16)>,
 }
 
 /// A device shot request: one `Projectile.NewProjectile` call from the device
@@ -790,6 +804,20 @@ impl Wiring {
     /// `Main.rand`, never the wiring stand-in).
     pub fn take_door_sounds(&mut self) -> Vec<(bool, i32, i32)> {
         std::mem::take(&mut self.door_sounds)
+    }
+
+    /// Drains the hopper activation requests (the cases 21/467): the 2×2
+    /// anchor + `CheckMech(60)` resolved engine-side, the chest/item walk
+    /// app-side (`Wiring.Hopper`, `Wiring.cs:2638-2678`).
+    pub fn take_hopper_requests(&mut self) -> Vec<(i32, i32)> {
+        std::mem::take(&mut self.hopper_requests)
+    }
+
+    /// Drains the extractinator activation requests (the cases 219/642): the
+    /// 3×3 anchor + `CheckMech(60)` resolved engine-side, the chest find +
+    /// roll app-side (`Wiring.Extractinator`, `Wiring.cs:2554-2584`).
+    pub fn take_extractinator_requests(&mut self) -> Vec<(i32, i32, u16)> {
+        std::mem::take(&mut self.extractinator_requests)
     }
 
     /// Drains the trap emission requests (the case-137 trap family).
@@ -2728,6 +2756,38 @@ impl Wiring {
                 self.skip.extend(skips);
                 if shifted {
                     self.door_sounds.push((true, i * 16 + 16, j * 16 + 16));
+                }
+            }
+            // The hoppers (21/467, `Wiring.cs:1986-1989` → `Hopper`
+            // `:2638-2678`): the 2×2 anchor (`frameX % 36 != 0` → x−1,
+            // `frameY % 36 != 0` → y−1), `CheckMech(60)`, then the chest
+            // lookup + the 400-item grab walk. The chest store and the item
+            // pool live app-side, so the engine queues the anchor request
+            // after the cooldown passes (the locked/in-use gates run there).
+            21 | 467 => {
+                let mut num = i;
+                let mut num2 = j;
+                if tile_frame_x % 36 != 0 {
+                    num -= 1;
+                }
+                if tile_frame_y % 36 != 0 {
+                    num2 -= 1;
+                }
+                if self.check_mech(num, num2, 60) {
+                    self.hopper_requests.push((num, num2));
+                }
+            }
+            // The extractinators (219/642, `Wiring.cs:1990-1993` →
+            // `Extractinator` `:2554-2584`): the 3×3 anchor (`frameX % 54 /
+            // 18`, `frameY % 54 / 18`), `CheckMech(60)`, then
+            // `TryFindChestForExtractinator` + the reverse slot walk with the
+            // `RollExtractinatorDrop` roll. The chest store lives app-side, so
+            // the engine queues the anchor + kind request after the cooldown.
+            219 | 642 => {
+                let num = i - (i32::from(tile_frame_x) % 54) / 18;
+                let num2 = j - (i32::from(tile_frame_y) % 54) / 18;
+                if self.check_mech(num, num2, 60) {
+                    self.extractinator_requests.push((num, num2, kind));
                 }
             }
             // The weighted pressure-plate's big frame shift (506, `:2503-
@@ -6606,6 +6666,99 @@ mod w4_f11_door_gate_tests {
             .count();
         assert_eq!(open_count, 2, "the 2×1 open trapdoor was written");
         assert_eq!(wiring.take_door_sounds().len(), 1, "the shift cue");
+    }
+}
+
+#[cfg(test)]
+mod w4_f11_hopper_extract_tests {
+    //! W4-f11 — the HitWireSingle remainder arms, batch 3 (engine half): the
+    //! hoppers 21/467 (`Wiring.cs:1986-1989` → `Hopper` `:2638-2678`) and the
+    //! extractinators 219/642 (`:1990-1993` → `Extractinator` `:2554-2584`).
+    //! The engine resolves the anchor + `CheckMech(60)` and queues the
+    //! request; the chest/item walk is app-side (`world_sim/wiring_devices.rs`).
+    //! Witnesses WRITTEN NOT RUN (code-only mode).
+
+    use super::*;
+    use crate::tile::{Tile, FLAG_ACTIVE};
+
+    fn world() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    fn put(w: &mut World, x: i32, y: i32, kind: u16, frame_x: i16, frame_y: i16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind,
+            frame_x,
+            frame_y,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    /// The hopper anchor (`Wiring.cs:2643-2650`): `frameX % 36 != 0` → x−1,
+    /// `frameY % 36 != 0` → y−1. A non-anchor cell resolves the 2×2 top-left.
+    #[test]
+    fn w4_f11_the_hopper_resolves_its_2x2_anchor() {
+        let mut w = world();
+        // The 2×2 chest at (10, 20)..(11, 21); hit the bottom-right cell
+        // (frameX 18, frameY 18) — both mod-36 non-zero → anchor (10, 20).
+        put(&mut w, 11, 21, 21, 18, 18);
+        let mut wiring = Wiring::new();
+        wiring.hit_wire_single(&mut w, 11, 21);
+        let reqs = wiring.take_hopper_requests();
+        assert_eq!(reqs, vec![(10, 20)], "the anchor resolved to the top-left");
+    }
+
+    /// The hopper cooldown (`Wiring.cs:2651`): `CheckMech(60)` blocks an
+    /// immediate re-hit.
+    #[test]
+    fn w4_f11_the_hopper_cooldown_gates_the_rehit() {
+        let mut w = world();
+        put(&mut w, 10, 20, 21, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.hit_wire_single(&mut w, 10, 20);
+        assert_eq!(wiring.take_hopper_requests().len(), 1);
+        wiring.hit_wire_single(&mut w, 10, 20);
+        assert!(wiring.take_hopper_requests().is_empty(), "the cooldown blocked");
+        for _ in 0..60 {
+            wiring.update(&mut w);
+        }
+        wiring.hit_wire_single(&mut w, 10, 20);
+        assert_eq!(wiring.take_hopper_requests().len(), 1, "after the cooldown");
+    }
+
+    /// The extractinator anchor (`Wiring.cs:2557-2560`): `frameX % 54 / 18`,
+    /// `frameY % 54 / 18` → the 3×3 top-left; the kind rides the request.
+    #[test]
+    fn w4_f11_the_extractinator_resolves_its_3x3_anchor_and_kind() {
+        let mut w = world();
+        // The 3×3 extractinator at (10, 20)..(12, 22); hit the centre cell
+        // (frameX 18, frameY 18) → anchor (10, 20).
+        put(&mut w, 11, 21, 219, 18, 18);
+        let mut wiring = Wiring::new();
+        wiring.hit_wire_single(&mut w, 11, 21);
+        assert_eq!(
+            wiring.take_extractinator_requests(),
+            vec![(10, 20, 219)],
+            "the anchor + kind"
+        );
+        // The chlorophyte variant (642) rides its own kind.
+        put(&mut w, 20, 20, 642, 0, 0);
+        wiring.hit_wire_single(&mut w, 20, 20);
+        assert_eq!(wiring.take_extractinator_requests(), vec![(20, 20, 642)]);
+    }
+
+    /// The extractinator cooldown (`Wiring.cs:2561`): `CheckMech(60)`.
+    #[test]
+    fn w4_f11_the_extractinator_cooldown_gates_the_rehit() {
+        let mut w = world();
+        put(&mut w, 10, 20, 219, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.hit_wire_single(&mut w, 10, 20);
+        assert_eq!(wiring.take_extractinator_requests().len(), 1);
+        wiring.hit_wire_single(&mut w, 10, 20);
+        assert!(wiring.take_extractinator_requests().is_empty());
     }
 }
 
