@@ -1187,6 +1187,68 @@ impl App {
                         *world_key = Some(key);
                     }
 
+                    // W4-g13 — the Main.cs dust-site draw-call feeds (batch 3,
+                    // sites 17-23). They roll the bare `Main.rand` slot
+                    // (`rngs.global()`) and spawn into the dust pool, so they
+                    // ride the per-frame world-effect range OUTSIDE the G6
+                    // cached world pass (the rain/sand/gore dust precedent) —
+                    // the C# runs them inside DrawNPCDirect / DrawNPCExtras /
+                    // DrawItem / oldDrawWater, but the port fuses those into
+                    // the cached `draw_tiles`, so the spawns are lifted here in
+                    // the C# relative order. `FocusHelper.Allow*` is
+                    // `!DrawnThisUpdate` (the mark now sets AFTER draw_region,
+                    // so it reads clear through the draw on a stepping frame).
+                    {
+                        let allow_effects = !self.stepper.drawn_this_update;
+                        let dust_ctx = crate::app::spawn_ctx_from(
+                            menu.is_some() || front.is_some(),
+                            self.game_paused,
+                            draw_cam,
+                            screen,
+                            world_zoom,
+                            self.gfx_quality.max_dust_to_draw,
+                        );
+                        let rng = self.rngs.global();
+                        // Sites 21-23 (bg pass) — `DrawWaters(isBackground:true)`
+                        // precedes the tile/NPC/item draws (`Main.cs:62192`).
+                        // Retro/Trippy only (`!Lighting.NotRetro`, `:57519`).
+                        let retro = matches!(
+                            *light_mode,
+                            tr_core::lighting::LightMode::Retro
+                                | tr_core::lighting::LightMode::Trippy
+                        );
+                        let mut drew_lava = false; // `Main.drewLava` reset per DrawWaters (`:57472`)
+                        if retro {
+                            crate::main_dust::retro_liquid_dust_feed(
+                                world, light, style.brightness, draw_cam, screen, world_zoom,
+                                true, allow_effects, &mut drew_lava, rng, dust, &dust_ctx,
+                            );
+                        }
+                        // Site 17 — the Moon Lord core tentacle-tip puff
+                        // (`DrawNPCDirect`'s type-398 arm, the dead flag8 latch).
+                        crate::main_dust::moon_lord_tentacle_feed(npcs, rng, dust, &dust_ctx, world);
+                        // Sites 18/19 — the Tavernkeep ale-toss sparkle
+                        // (`DrawNPCExtras`' 550 arm, `!beforeDraw`).
+                        crate::main_dust::tavernkeep_ale_feed(
+                            npcs, player.as_ref(), rng, dust, &dust_ctx, world,
+                        );
+                        // Site 20 — the world-item coin/heart sparkle
+                        // (`DrawItems` → `DrawItem`, `Main.cs:62278`).
+                        crate::main_dust::item_sparkle_feed(
+                            items, allow_effects, style.brightness, light, rng, dust, &dust_ctx,
+                            world,
+                        );
+                        // Sites 21-23 (fg pass) — `DrawWaters()` after the
+                        // entities (`Main.cs:62300`); a fresh drewLava reset.
+                        if retro {
+                            let mut drew_lava_fg = false;
+                            crate::main_dust::retro_liquid_dust_feed(
+                                world, light, style.brightness, draw_cam, screen, world_zoom,
+                                false, allow_effects, &mut drew_lava_fg, rng, dust, &dust_ctx,
+                            );
+                        }
+                    }
+
                     // S1-G-1 wave C: the tile-crack overlay
                     // (`Main.DrawTileCracks`, `Main.cs:61533-61626`; the
                     // solid-layer sites `TileDrawing.cs:732-733`). It rides

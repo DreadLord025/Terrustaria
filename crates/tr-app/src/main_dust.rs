@@ -48,22 +48,33 @@
 //! merged to main) — guards, cull, pressure bands, default block, ChildSafety
 //! and the per-type tweaks all ride `new_dust`/`new_dust_direct` verbatim.
 //! `Dust.lavaBubbles` (`Dust.cs:14`) is read here as `pool.lava_bubbles`;
-//! its per-tick reset/increment (`Dust.cs:427/475`) is the d50 phase-2
-//! physics chain's lane (`tr_core::dust_physics`, in flight) — this module
-//! only reads the gate.
+//! its per-tick reset (`Dust.cs:427`) and increment (`:475`, every live
+//! type-35 slot) now ride `DustPool::update_dust` (the wiring wave landed
+//! the increment — it was the d50 phase-2 lane's remainder).
 //!
-//! UNWIRED (the d60 precedent): the draw-call seams (`DrawNPCDirect`'s
-//! type-398 arm, `DrawNPCExtras`' 550 arm, `DrawItem`, the retro
-//! `oldDrawWater` path — the port's liquid draw is the `LiquidRenderer`
-//! record path, `render/liquids.rs`, so the retro sites wait on the retro
-//! lighting seam) are the wiring wave's. CODE-ONLY MODE: no compiler
-//! invoked; the witnesses below are WRITTEN, NOT RUN.
+//! ## Wiring (the draw-call wave, landed)
+//!
+//! The feeds below run from `app/frame/draw.rs::draw_region`, OUTSIDE the
+//! G6-cached world pass (the rain/sand/gore dust precedent — the spawns
+//! mutate the pool, so they cannot live inside the cached range), in the
+//! C# relative order: the retro bg pass → the Moon Lord core arm → the
+//! Tavernkeep ale arm → the item sparkle → the retro fg pass. Each rolls
+//! the bare `Main.rand` slot (`rngs.global()`). The retro sites gate on
+//! `LightMode::Retro | Trippy` (`!Lighting.NotRetro`, `Main.cs:57519`); the
+//! port's liquid SPRITE draw stays on the `LiquidRenderer` record path
+//! (`render/liquids.rs`) — the retro feed walks the same tile range and
+//! runs ONLY the dust gates. `FocusHelper.Allow*` is `!DrawnThisUpdate`;
+//! the mark sets AFTER `draw_region` (`Main.cs:62478`, the end-of-Draw
+//! position), so it reads clear through the draw on a stepping frame.
+//! CODE-ONLY MODE: no compiler invoked; the witnesses below are WRITTEN,
+//! NOT RUN.
 
 use glam::Vec2;
 use tr_core::particles::{Color, DustPool, SpawnCtx};
 use tr_core::{UnifiedRandom, World};
 
 use crate::bow_launch::rotated_by;
+use crate::npc::{Npc, NpcKind};
 use crate::npc_ai_style64::rect_distance;
 
 /// `Utils.ToRotation` (`Utils.cs:1655-1658`) — `Atan2` in double, cast to
@@ -454,6 +465,369 @@ pub(crate) fn lava_bubble_pair(
         }
         d.no_gravity = true; // `:57801`
     }
+}
+
+// =====================================================================
+// Wiring seams (the draw-call wave). Each feed runs on the DRAW path and
+// rolls the bare `Main.rand` slot (`rngs.global()`); the pure emitters
+// above stay `&mut UnifiedRandom`-generic so the witnesses pin a seed.
+// =====================================================================
+
+/// `Lighting.GetColor(x, y)` (`Lighting.cs:216-242`) as XNA bytes: the raw
+/// engine colour times `GlobalBrightness * 255`, truncated then clamped to
+/// 255 per channel (the C# clamps AFTER the multiply, so a >1 channel lands
+/// at 255, not a wrap). The light map stores the RAW engine colour (the
+/// `shade` brightness multiply is a draw-side step), so the brightness is
+/// applied here — `style.brightness` is `GlobalBrightness` (1.2, or 1.0
+/// under the Darkness debuff, `Lighting.cs:108-116`).
+pub(crate) fn light_color_bytes(light: &tr_core::lighting::LightMap, brightness: f32, x: i32, y: i32) -> (u8, u8, u8) {
+    let c = light.get(x, y);
+    let num = brightness * 255.0;
+    let byte = |v: f32| ((v * num) as i32).min(255).max(0) as u8;
+    (byte(c[0]), byte(c[1]), byte(c[2]))
+}
+
+/// Site 20's draw-call feed — `Main.DrawItems` (`Main.cs:38790-38798`) walks
+/// the 400 item slots and calls `DrawItem` per live drop; the sparkle gate
+/// (`:38637-38666`) is [`world_item_sparkle`]. The port's `items` vec is the
+/// live-drop list in slot order (the dead are culled), so the walk is the
+/// same order. `allow_effects` is `FocusHelper.AllowWorldItemsToEmitEffects`
+/// (`!DrawnThisUpdate`, `FocusHelper.cs:31`). The light colour is
+/// `Lighting.GetColor(item.Center.ToTileCoordinates())` (`:38619`).
+///
+/// The spawn box is the C#'s `item.width/height` = 16 (`WorldItem.cs:138`
+/// sets `base.width = base.height = 16`); the port's physics box is
+/// `item::SIZE` (14), so the dust box uses the C# 16, not the physics size —
+/// the default block's `Next(width-4)` draw count depends on it.
+pub(crate) fn item_sparkle_feed(
+    items: &[crate::item::ItemDrop],
+    allow_effects: bool,
+    brightness: f32,
+    light: &tr_core::lighting::LightMap,
+    rng: &mut UnifiedRandom,
+    pool: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for it in items {
+        // `:38604` — `!item.active || item.IsAir`: the port's list holds only
+        // live, non-air drops (kind 0 / count 0 never enter it).
+        let (cx, cy) = (it.center().x, it.center().y);
+        let (r, _, _) = light_color_bytes(
+            light,
+            brightness,
+            (cx / tr_core::TILE_PX) as i32,
+            (cy / tr_core::TILE_PX) as i32,
+        );
+        world_item_sparkle(
+            allow_effects,
+            it.kind as i32,
+            crate::registry::is_coin(it.kind),
+            it.pos,
+            16, // `WorldItem.cs:138` — the C# item box, not the 14-px physics box
+            16,
+            it.vel,
+            r,
+            rng,
+            pool,
+            ctx,
+            world,
+        );
+    }
+}
+
+/// Site 17's draw-call feed — the type-398 Moon Lord core arm of
+/// `DrawNPCDirect` (`Main.cs:24701-24764`). The arm loops the two sides
+/// (`num136` 0/1), finds the matching 397 hand (`ai[2] == num136 &&
+/// ai[3] == core.whoAmI`, `:24724`), and — behind the DEAD `flag8` latch
+/// (`bool flag8 = false`, `:24703`, never set) — spawns the tentacle-tip
+/// puff (`:24756`). The port's hand→core link is `carrier_uid` (the C#'s
+/// `ai[3] = whoAmI`, `NPC.cs:41227`); the side is `ai[2]` (0/1). The whole
+/// cluster is dead in the C#, so this feed spawns nothing and draws nothing
+/// — it exists so the fourth site is wired whole (the g12/g13 boundary
+/// splits the cluster by line order). `flag8` is passed verbatim as `false`.
+pub(crate) fn moon_lord_tentacle_feed(
+    npcs: &[Npc],
+    rng: &mut UnifiedRandom,
+    pool: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for core in npcs {
+        if core.kind != NpcKind::MoonLordCore || core.hp <= 0 {
+            continue;
+        }
+        let (ccx, ccy) = core.center();
+        let core_center = Vec2::new(ccx, ccy);
+        // `:24717` — the two-side loop. `flag9 = num136 == 0`; the side
+        // vector's X is -1 for side 0, +1 for side 1 (`:24720`).
+        for side in 0..2 {
+            let side_x = if side == 0 { -1.0 } else { 1.0 };
+            // `:24722-24729` — the matching hand: type 397, `ai[2] == side`,
+            // linked to this core (`ai[3] == whoAmI` → `carrier_uid`).
+            let hand = npcs.iter().find(|n| {
+                n.kind == NpcKind::MoonLordHand
+                    && n.hp > 0
+                    && n.ai[2] == side as f32
+                    && n.carrier_uid == core.uid
+            });
+            let Some(hand) = hand else { continue };
+            let (hcx, hcy) = hand.center();
+            let tip = tentacle_tip_position(core_center, Vec2::new(hcx, hcy), side_x);
+            // `:24754-24757` — the dead `flag8` gate, verbatim.
+            moon_lord_tentacle_tip_puff(false, tip, rng, pool, ctx, world);
+        }
+    }
+}
+
+/// Sites 18/19's draw-call feed — the type-550 Tavernkeep `ai[0] == 18` arm
+/// of `DrawNPCExtras` (`Main.cs:27353-27397`, `!beforeDraw` only). The C#
+/// runs it once per drawn NPC in the over-tiles pass; the port walks the
+/// live NPC list in slot order. `localAI[3]` is the edge latch the emitter
+/// reads and writes — it lives on the NPC (`npc.local_ai[3]`), so the feed
+/// takes `&mut [Npc]`. The talked-to player is `Main.player[(int)ai[2]]`
+/// (`:27365-27368`); the port has one session player (slot 0), so a non-zero
+/// index finds no player and the emitter leaves the latch untouched.
+pub(crate) fn tavernkeep_ale_feed(
+    npcs: &mut [Npc],
+    player: Option<&crate::player::Player>,
+    rng: &mut UnifiedRandom,
+    pool: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for n in npcs.iter_mut() {
+        // `:27353` — the kind + state gate; `:27355-27358` — `!beforeDraw`
+        // (this feed IS the after-draw pass, so the gate is satisfied).
+        if n.kind != NpcKind::DD2Bartender || n.hp <= 0 || n.ai[0] != 18.0 {
+            continue;
+        }
+        let (ncx, ncy) = n.center();
+        let npc_center = Vec2::new(ncx, ncy);
+        let player_idx = n.ai[2] as i32;
+        // `:27368` — `Main.player[num18]`. The port's single player is slot 0.
+        let view = player.filter(|_| player_idx == 0).map(|p| {
+            let (pcx, pcy) = p.center();
+            AlePlayerView {
+                held_item: p.held_item_kind as i32,
+                direction: p.facing,
+                hitbox: (p.x as i32, p.y as i32, p.width as i32, p.height as i32),
+                center: Vec2::new(pcx, pcy),
+            }
+        });
+        let new_latch = tavernkeep_ale_sparkle(
+            npc_center,
+            n.sprite_dir,
+            player_idx,
+            n.local_ai[3],
+            view,
+            rng,
+            pool,
+            ctx,
+            world,
+        );
+        n.local_ai[3] = new_latch;
+    }
+}
+
+/// The retro liquid-surface rect machinery (`oldDrawWater`,
+/// `Main.cs:57668-57746`): the waterline `vector2.Y` and the draw rect's
+/// `value.Y` the two dust gates read (`value.Y < 4` for the surface sparkle,
+/// `value.Y == 0` for the lava surface bubble). `num11 = (256 - liquid)/32f`
+/// is the cell's surface depth; `above`/`below` are the neighbour liquid
+/// bytes, `above_solid` the `nactive && tileSolid && !tileSolidTop` test on
+/// the cell above. The C# draws the rect too, but the port's liquid draw is
+/// the `LiquidRenderer` record path — only the dust-gate inputs are needed
+/// here, so this returns `(surface_y, rect_y)` without the sprite.
+///
+/// The branch order is the C#'s verbatim (`:57671-57746`): the shallow-below
+/// arm (with its four sub-cases), the deep-above arm, the full-cell-above-solid
+/// arm, then the five-cell scan below. `bg` only matters in the shallow-below
+/// `< 200` sub-case (the background pass skips it, `:57686-57689`).
+fn retro_surface_rect(
+    j: i32,
+    i: i32,
+    liquid: u8,
+    above: u8,
+    below: u8,
+    above_solid: bool,
+    below_solid: bool,
+    world: &World,
+    bg: bool,
+) -> Option<(f32, i32)> {
+    let num11 = (256.0 - liquid as f32) / 32.0;
+    // `:57668-57669` — the default waterline + rect.
+    let mut surface_y = i as f32 * 16.0 + (num11 as i32) as f32 * 2.0;
+    let mut rect_y = 0;
+    // `:57671` — the below cell is not a full solid liquid block.
+    if below < 245 && !below_solid {
+        let num17 = (256.0 - below as f32) / 32.0;
+        // `:57674-57682` — the opacity clamp (draw-side, not a dust input).
+        if below < 200 {
+            // `:57686-57689` — the background pass skips the shallow-below cell.
+            if bg {
+                return None;
+            }
+            if above > 0 {
+                // `:57690-57694` — the C# writes `above > 0 && above > 0`
+                // (a duplicated read); the `else if (above > 0)` at `:57695`
+                // is therefore DEAD. Kept as the single live condition.
+                rect_y = 4;
+            } else if below > 0 {
+                // `:57701-57705`.
+                surface_y =
+                    i as f32 * 16.0 + (num11 as i32) as f32 * 2.0 + (num17 as i32) as f32 * 2.0;
+                rect_y = 4;
+            } else {
+                // `:57706-57710` — the isolated droplet.
+                let num18 = num11 / 2.0;
+                surface_y = i as f32 * 16.0
+                    + (num18 as i32) as f32 * 2.0
+                    + (num17 as i32) as f32 * 2.0;
+                rect_y = 4;
+            }
+        } else {
+            // `:57712-57716` — the below cell is deep (>= 200).
+            rect_y = 4;
+        }
+    } else if above > 32 {
+        // `:57718-57721`.
+        rect_y = 4;
+    } else if num11 < 1.0 && above_solid {
+        // `:57722-57726` — a full cell under a solid ceiling.
+        surface_y = i as f32 * 16.0;
+        rect_y = 4;
+    } else {
+        // `:57727-57746` — the five-cell scan below for a shallow pocket.
+        let mut flag2 = true;
+        for k in (i + 1)..(i + 6) {
+            let t = world.tile(j, k).copied().unwrap_or_default();
+            let k_solid = t.active()
+                && !t.inactive()
+                && tr_core::tiledata::TILE_SOLID.has(t.kind)
+                && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind);
+            if k_solid {
+                break;
+            }
+            if t.liquid < 200 {
+                flag2 = false;
+                break;
+            }
+        }
+        if !flag2 {
+            // `:57737-57741`.
+            rect_y = 4;
+        } else if above > 0 {
+            // `:57742-57745`.
+            rect_y = 2;
+        }
+    }
+    Some((surface_y, rect_y))
+}
+
+/// Sites 21-23's draw-call feed — the retro `oldDrawWater` dust sites
+/// (`Main.cs:57747-57803`), reached only when `!Lighting.NotRetro` (Retro /
+/// Trippy, `Main.cs:57519-57522`). The port's liquid draw is the
+/// `LiquidRenderer` record path, so this feed walks the same screen tile
+/// range the C# does and runs ONLY the dust gates (the sprite draw stays on
+/// the record path). `drew_lava` is the C#'s `Main.drewLava` latch
+/// (`:57472` reset per `DrawWaters`, `:57938` set at the pass end): the lava
+/// cells draw once per frame, on the first pass that reaches them.
+///
+/// The walk order is the C#'s row-major (`i` outer, `j` inner, `:57593-57595`);
+/// the RNG draws ride the bare `Main.rand` slot in that order. `bg` selects
+/// the background pass (the brightness gate is bypassed, `:57601`, and the
+/// shallow-below cells skip, `:57686`). `allow_misc` is
+/// `FocusHelper.AllowMiscDustEffects` (`!DrawnThisUpdate`).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn retro_liquid_dust_feed(
+    world: &World,
+    light: &tr_core::lighting::LightMap,
+    brightness: f32,
+    camera: Vec2,
+    screen: Vec2,
+    zoom: f32,
+    bg: bool,
+    allow_misc: bool,
+    drew_lava: &mut bool,
+    rng: &mut UnifiedRandom,
+    pool: &mut DustPool,
+    ctx: &SpawnCtx,
+) {
+    // `:57573-57592` — the screen tile range. The port renders the unpadded
+    // viewport (offScreenRange cancels out of the draw positions, the bg.rs
+    // precedent), so the range is the view's world-px extent / 16 with the
+    // C#'s -1/+2 (x) and -1/+5 (y) margins, clamped to the 5-tile world edge.
+    let half = screen * 0.5 / zoom;
+    let top_left = camera - half;
+    let mut num7 = (top_left.x / 16.0 - 1.0) as i32;
+    let mut num8 = ((top_left.x + screen.x / zoom) / 16.0) as i32 + 2;
+    let mut num9 = (top_left.y / 16.0 - 1.0) as i32;
+    let mut num10 = ((top_left.y + screen.y / zoom) / 16.0) as i32 + 5;
+    num7 = num7.max(5);
+    num8 = num8.min(world.width - 5);
+    num9 = num9.max(5);
+    num10 = num10.min(world.height - 5);
+    // `:57593-57595` — row-major, the C#'s `i` outer / `j` inner.
+    for i in num9..(num10 + 4) {
+        for j in (num7 - 2)..(num8 + 2) {
+            let Some(t) = world.tile(j, i).copied() else { continue };
+            // `:57601` — the liquid / solid / brightness pre-gate.
+            let nactive_solid = t.active()
+                && !t.inactive()
+                && tr_core::tiledata::TILE_SOLID.has(t.kind)
+                && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind);
+            let lit = {
+                let c = light.get(j, i);
+                brightness * (c[0] + c[1] + c[2]) / 3.0 > 0.0
+            };
+            if t.liquid == 0 || nactive_solid || !(lit || bg) {
+                continue;
+            }
+            let color = light_color_bytes(light, brightness, j, i);
+            let num11 = (256.0 - t.liquid as f32) / 32.0;
+            let kind = t.liquid_kind();
+            // `:57609-57653` — the lava/honey/shimmer style + the drewLava gate.
+            // The lava arm (`:57611`) and the style gate (`:57650`) both skip
+            // lava/honey once lava drew; the union is `(lava || honey) && drew`.
+            let is_lava = kind == tr_core::tile::LiquidKind::Lava;
+            let is_honey = kind == tr_core::tile::LiquidKind::Honey;
+            if (is_lava || is_honey) && *drew_lava {
+                continue;
+            }
+            // The neighbour facts for the rect machinery.
+            let above_t = world.tile(j, i - 1).copied().unwrap_or_default();
+            let below_t = world.tile(j, i + 1).copied().unwrap_or_default();
+            let solid_of = |t: tr_core::tile::Tile| {
+                t.active()
+                    && !t.inactive()
+                    && tr_core::tiledata::TILE_SOLID.has(t.kind)
+                    && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+            };
+            let Some((surface_y, rect_y)) = retro_surface_rect(
+                j,
+                i,
+                t.liquid,
+                above_t.liquid,
+                below_t.liquid,
+                solid_of(above_t),
+                solid_of(below_t),
+                world,
+                bg,
+            ) else {
+                continue;
+            };
+            // `:57747-57769` — site 21, the surface sparkle (every liquid kind).
+            liquid_surface_sparkle(j, surface_y, rect_y, color, is_honey, rng, pool, ctx, world);
+            // `:57778-57803` — sites 22/23, the lava-bubble pair (lava only).
+            if is_lava {
+                lava_bubble_pair(j, i, num11, rect_y, t.liquid, allow_misc, rng, pool, ctx, world);
+            }
+        }
+    }
+    // `:57938` — the pass-end latch: lava drew (or the pass ran), so a later
+    // pass this frame skips the lava cells.
+    *drew_lava = true;
 }
 
 #[cfg(test)]
@@ -1014,5 +1388,124 @@ mod tests {
         lava_bubble_pair(20, 20, 3.5, 4, 255, true, &mut rng, &mut pool, &ctx, &world);
         assert!(live(&pool).is_empty());
         assert_eq!(rng, UnifiedRandom::new(0x5EED));
+    }
+
+    // ------------------------------------------------ wiring witnesses --
+
+    /// The item-sparkle feed walks the drop list in slot order and rolls the
+    /// bare stream exactly as the per-drop `world_item_sparkle` calls do —
+    /// the feed's stream state equals a hand-walked mirror over the same
+    /// drops (the stream-parity contract: the feed adds no draws of its own).
+    #[test]
+    fn w4_g13_the_item_feed_walks_the_drops_in_order_on_the_bare_stream() {
+        let (mut pool, world, ctx) = rig();
+        // A lit world so the light gate passes: compute a light map over the
+        // drops' tiles (the surface sky seeds them).
+        let light = tr_core::lighting::LightMap::compute(
+            &world, 0, 0, 63, 63, &tr_core::lighting::LightParams::default(),
+        );
+        let brightness = tr_core::lighting::GLOBAL_BRIGHTNESS;
+        // Two coins + a heart, all at lit surface tiles.
+        let drops = vec![
+            crate::item::ItemDrop::new(71, 1, 0, 100.0, 100.0, 0.0, 0.0, 0.0),
+            crate::item::ItemDrop::new(58, 1, 0, 200.0, 100.0, 0.0, 0.0, 0.0),
+            crate::item::ItemDrop::new(73, 1, 0, 300.0, 100.0, 0.0, 0.0, 0.0),
+        ];
+        let mut rng = UnifiedRandom::new(0x5EED);
+        item_sparkle_feed(&drops, true, brightness, &light, &mut rng, &mut pool, &ctx, &world);
+        // The mirror: the same per-drop calls, same order, same stream.
+        let (mut pool2, _, _) = rig();
+        let mut m = UnifiedRandom::new(0x5EED);
+        for it in &drops {
+            let (cx, cy) = (it.center().x, it.center().y);
+            let (r, _, _) = light_color_bytes(
+                &light, brightness,
+                (cx / tr_core::TILE_PX) as i32, (cy / tr_core::TILE_PX) as i32,
+            );
+            world_item_sparkle(
+                true, it.kind as i32, crate::registry::is_coin(it.kind),
+                it.pos, 16, 16, it.vel, r, &mut m, &mut pool2, &ctx, &world,
+            );
+        }
+        assert_eq!(rng, m, "the feed adds no draws beyond the per-drop calls");
+        assert_eq!(live(&pool).len(), live(&pool2).len());
+    }
+
+    /// The Moon Lord feed is a DEAD arm: the flag8 latch is false, so even a
+    /// living core with both linked hands spawns nothing and draws nothing.
+    #[test]
+    fn w4_g13_the_moon_lord_feed_is_dead_and_draws_nothing() {
+        let (mut pool, world, ctx) = rig();
+        let mut core = Npc::new(NpcKind::MoonLordCore, 1000.0, 500.0, 1, 0.0);
+        core.hp = core.max_hp;
+        core.uid = 7;
+        let mut hand0 = Npc::new(NpcKind::MoonLordHand, 800.0, 400.0, 1, 0.0);
+        hand0.hp = hand0.max_hp;
+        hand0.ai[2] = 0.0;
+        hand0.carrier_uid = 7;
+        let mut hand1 = Npc::new(NpcKind::MoonLordHand, 1200.0, 400.0, 1, 0.0);
+        hand1.hp = hand1.max_hp;
+        hand1.ai[2] = 1.0;
+        hand1.carrier_uid = 7;
+        let npcs = vec![core, hand0, hand1];
+        let mut rng = UnifiedRandom::new(0x5EED);
+        moon_lord_tentacle_feed(&npcs, &mut rng, &mut pool, &ctx, &world);
+        assert!(live(&pool).is_empty(), "the dead flag8 arm never spawns");
+        assert_eq!(rng, UnifiedRandom::new(0x5EED), "zero draws");
+    }
+
+    /// The ale feed writes the latch onto the NPC and bursts only on the
+    /// 0→1 edge; a re-entry with the latch already 1 draws nothing. The
+    /// stream parity: the feed's draws equal the emitter's own burst census.
+    #[test]
+    fn w4_g13_the_ale_feed_latches_the_npc_and_bursts_on_the_edge() {
+        let (mut pool, world, ctx) = rig();
+        let mut n = Npc::new(NpcKind::DD2Bartender, 300.0, 300.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 18.0;
+        n.ai[2] = 0.0; // talks to player 0
+        n.sprite_dir = 1;
+        let mut p = crate::player::Player::spawn(&world);
+        p.x = 270.0;
+        p.y = 300.0;
+        p.held_item_kind = 353; // Ale
+        p.facing = 1; // faces the NPC to the right
+        let mut npcs = vec![n];
+        let mut rng = UnifiedRandom::new(0x5EED);
+        tavernkeep_ale_feed(&mut npcs, Some(&p), &mut rng, &mut pool, &ctx, &world);
+        assert_eq!(npcs[0].local_ai[3], 1.0, "the latch edges to 1");
+        assert_eq!(live(&pool).len(), 60, "the 30x2 burst");
+        // Re-entry: latch already 1, no burst, no draws.
+        let before = rng.clone();
+        let count = live(&pool).len();
+        tavernkeep_ale_feed(&mut npcs, Some(&p), &mut rng, &mut pool, &ctx, &world);
+        assert_eq!(npcs[0].local_ai[3], 1.0);
+        assert_eq!(live(&pool).len(), count, "no second burst on the held latch");
+        assert_eq!(rng, before, "the held-latch re-entry draws nothing");
+    }
+
+    /// The retro feed's rect machinery: a full liquid cell with a full cell
+    /// below and nothing above lands `rect_y == 0` (the surface), so the
+    /// lava surface-bubble gate (`value.Y == 0`) is reachable; a cell with a
+    /// shallow pocket below lands `rect_y == 4` (the sparkle gate's `< 4`
+    /// fails, the bubble gate's `== 0` fails). Pins the two gate inputs.
+    #[test]
+    fn w4_g13_the_retro_rect_machinery_feeds_the_two_gates() {
+        let mut world = World::new("g13".into(), 64, 64);
+        // A full cell (liquid 255) with a full cell below, nothing above:
+        // below >= 245 → the else-if chain; above == 0, num11 == 0.03 < 1,
+        // above not solid → the five-cell scan; the below cell is full
+        // (>= 200) so flag2 stays true, above == 0 → rect_y stays 0.
+        world.tile_mut(20, 21).unwrap().liquid = 255;
+        let (sy, ry) = retro_surface_rect(20, 20, 255, 0, 255, false, false, &world, false).unwrap();
+        assert_eq!(ry, 0, "the full-column surface keeps rect_y 0");
+        assert!((sy - (20.0 * 16.0 + 0.0)).abs() < 1e-3, "num11 truncates to 0");
+        // A cell with a shallow pocket below (liquid 100 < 200): the scan
+        // reads the WORLD tile, so set it; flag2 = false → rect_y 4.
+        world.tile_mut(20, 21).unwrap().liquid = 100;
+        let (_, ry2) = retro_surface_rect(20, 20, 255, 0, 100, false, false, &world, false).unwrap();
+        assert_eq!(ry2, 4, "the shallow pocket below lifts rect_y to 4");
+        // The background pass skips the shallow-below cell entirely.
+        assert!(retro_surface_rect(20, 20, 255, 0, 100, false, false, &world, true).is_none());
     }
 }
