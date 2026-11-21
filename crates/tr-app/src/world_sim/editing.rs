@@ -108,6 +108,49 @@ fn sparkle_guitar_targets(center: Vec2, npcs: &[Npc]) -> Vec<usize> {
     out
 }
 
+/// `FinalFractalHelper.GetRandomProfileIndex` (`Graphics/FinalFractalHelper.cs:78-88`):
+/// the Zenith's per-shot illusion pick — one `Next(21)` over the profile
+/// keys; a 4956 hit re-rolls ONCE over the remaining 20 (the C# removes the
+/// drawn index and draws `Next(20)`). The key order is the static-ctor
+/// dictionary's insertion order (`:128-214`), verbatim.
+pub const FRACTAL_PROFILE_KEYS: [u16; 21] = [
+    65, 1123, 46, 121, 190, 368, 674, 273, 675, 2880, 989, 1826, 3063, 3065, 757, 155, 795,
+    3018, 4144, 3507, 4956,
+];
+
+/// The pick itself — `rng` spends one `Next(21)`, plus a `Next(20)` only on
+/// a 4956 draw (the short-circuit shape, the ai055 lunge-roll precedent).
+pub fn random_fractal_profile(rng: &mut UnifiedRandom) -> u16 {
+    let mut list: Vec<u16> = FRACTAL_PROFILE_KEYS.to_vec();
+    let mut index = rng.next_range(0, list.len() as i32) as usize;
+    if list[index] == 4956 {
+        list.remove(index);
+        index = rng.next_range(0, list.len() as i32) as usize;
+    }
+    list[index]
+}
+
+/// `Player.GetZenithTarget` (`Player.cs:46645-46669`): the nearest chaseable
+/// NPC STRICTLY inside `maxDistance` of the search centre (`!(num2 <= num3)`
+/// — the tie keeps the earlier slot). Returns the index into `npcs` (the
+/// scan order is the C#'s `Main.npc` walk).
+fn zenith_target(center: Vec2, max_distance: f32, npcs: &[Npc]) -> Option<usize> {
+    let mut best: Option<usize> = None;
+    let mut best_dist = max_distance;
+    for (i, n) in npcs.iter().enumerate() {
+        if !n.can_be_chased_by() {
+            continue;
+        }
+        let (ncx, ncy) = n.center();
+        let d = ((ncx - center.x).powi(2) + (ncy - center.y).powi(2)).sqrt();
+        if !(best_dist <= d) {
+            best = Some(i);
+            best_dist = d;
+        }
+    }
+    best
+}
+
 /// `AmmoID.Arrow` (40) and `AmmoID.Stake` (1836) (`ID/AmmoID.cs:161`, `:174`) —
 /// the two categories `AmmoID.Sets.IsArrow` covers (`:115`), the gate the
 /// `magicQuiver` knockback arm reads (`Player.cs:53547`).
@@ -3112,6 +3155,97 @@ fn fire_non_ammo_shot(
     } else {
         fx_dmg as f32 * p.weapon_damage_multiplier(class)
     };
+    // The spawn-stamp reads + the `UpdatePlayers` stream, hoisted above the
+    // per-item arms (the Zenith launch rolls its profile + ai0 here). The
+    // crit does NOT roll at throw time (the resync spawn-crit conversion,
+    // M1 canonical): the C# rolls it PER HIT inside `Damage_PVE_Inner`
+    // (`Projectile.cs:12883-12917`); the generic tail (`Player.cs:49437`)
+    // carries NO roll. `ApplyStatsFromSource`'s prefix arpen + the Revolver
+    // charge bonus ride every spawn (`:11128-11132`).
+    let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+    let arpen = held_fx.map_or(0, |s| s.armor_penetration);
+    let revolver_bonus = if held.kind == 2269 {
+        p.revolver_crit_chance_bonus
+    } else {
+        0
+    };
+    // W4-d17 DOC-SWEEP — the Zenith pair's launch arm (`Player.cs:48691-
+    // 48730`) spawns at `pointPosition` (the rotated mount anchor, NOT the
+    // generic `+dir*10` tail); the velocity is `(target − MountedCenter)/2`,
+    // ai0 = Next(-100,101), ai1 = the profile index. The C# `return`s.
+    if held.kind == 4956 || held.kind == 5669 {
+        let zenith_anchor = Vec2::new(pcx, pcy);
+        // `:48693` — the shot ordinal: `(itemAnimationMax − itemAnimation)
+        // / itemTime`. The port derives the integer counts off the 60 Hz
+        // timers (the volley-window convention). `ApplyItemTime` re-armed
+        // `itemTime = useTime` at the shot head (`:47185-47194`) — the
+        // PREFIXED useTime, NOT the swing fallback (`shooter_use_time_secs`
+        // falls back to swing_secs when useTime is 0, which would zero the
+        // ordinal on the press tick). The press-tick shot fires BEFORE this
+        // arm's swing re-arm, so the first shot reads swing_max == 0 →
+        // ordinal 0 (the C#'s `itemAnimation == itemAnimationMax` at the
+        // use start, `:4444`).
+        let anim_max = ticks_of(app.swing_max);
+        let anim_left = ticks_of(app.swing);
+        let use_time = crate::prefix::prefixed_stats(held.kind, held.prefix)
+            .map(|s| s.use_time)
+            .unwrap_or(registry::get(held.kind).map_or(0, |d| d.use_time as i32));
+        let ordinal = if use_time > 0 { (anim_max - anim_left) / use_time } else { 0 };
+        // `:48695-48707` — the profile: the Zenith rolls
+        // GetRandomProfileIndex (shot 0 forced to 4956, the Zenith itself);
+        // the True Copper Shortsword is always the 3507 copper profile.
+        let mut profile: u16 = 4956;
+        if held.kind == 4956 {
+            profile = random_fractal_profile(loot_rng);
+            if ordinal == 0 {
+                profile = 4956;
+            }
+        }
+        if held.kind == 5669 {
+            profile = 3507;
+        }
+        // `:48708-48709` — the cursor clamped to the reachable area.
+        let target =
+            limit_point_to_player_reachable_area(zenith_anchor, world_pos, &app.world);
+        // `:48710` — the aim vector from the MOUNTED centre.
+        let (mcx, mcy) = p.mounted_center();
+        let mut aim_vec = target - Vec2::new(mcx, mcy);
+        // `:48711-48727` — shots 1/2 retarget the nearest chaseable NPC
+        // within 400 px; a miss (or shot 2) scatters ±150 px.
+        if ordinal == 1 || ordinal == 2 {
+            let found = zenith_target(target, 400.0, &app.npcs);
+            if let Some(idx) = found {
+                let (ncx, ncy) = app.npcs[idx].center();
+                aim_vec = Vec2::new(ncx, ncy) - Vec2::new(mcx, mcy);
+            }
+            let scatter = ordinal == 2 || (ordinal == 1 && found.is_none());
+            if scatter {
+                aim_vec += next_vector2_circular(loot_rng, 150.0, 150.0);
+            }
+        }
+        // `:48728` — the spawn: velocity = aim/2, ai0 = Next(-100,101),
+        // ai1 = the profile. `NewProjectile` centres the box on the point.
+        let ai0 = loot_rng.next_range(-100, 101) as f32;
+        let vel = aim_vec / 2.0;
+        let (fw, fh) = crate::projectile::proj_data(proj)
+            .map_or((0.0, 0.0), |d| (d.w, d.h));
+        let slot = app.projectiles.spawn_with_data_ai(
+            proj,
+            zenith_anchor.x - fw * 0.5,
+            zenith_anchor.y - fh * 0.5,
+            vel.x,
+            vel.y,
+            raw as i32,
+            fx_kb,
+            ai0,
+            profile as f32,
+        );
+        if let Some(slot) = slot {
+            app.projectiles.set_armor_penetration(slot, arpen);
+            app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+        }
+        return true;
+    }
     // The i28 consumable tail's flag reads snapshotted here — the shared
     // `p` read borrow must END before the mutable re-borrows below (the
     // boomerang facing flip, the Spider cycle write, the whip helper's
@@ -3123,23 +3257,6 @@ fn fire_non_ammo_shot(
         p.ammo_cost80,
         p.ammo_cost75,
     );
-    // The crit does NOT roll at throw time (the resync spawn-crit conversion,
-    // M1 canonical): the C# rolls it PER HIT inside `Damage_PVE_Inner`
-    // (`Projectile.cs:12883-12917`) on the `UpdateProjectiles` stream; the
-    // generic `ItemCheck_Shoot` tail (`Player.cs:49437`) carries NO roll. The
-    // spawn carries the class flags (`proj_data`) + the `ApplyStatsFromSource`
-    // stamps below (`:11128-11132`: the prefix arpen + the Revolver charge
-    // bonus); the throw's `UpdatePlayers` stream spends no crit draw (the
-    // Nebula Blaze pre-pass is the first draw of the generic shot). The
-    // summon/minion/sentry rows carry no class flags — they never crit
-    // (the i25/i26 census obligation, now structural).
-    let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-    let arpen = held_fx.map_or(0, |s| s.armor_penetration);
-    let revolver_bonus = if held.kind == 2269 {
-        p.revolver_crit_chance_bonus
-    } else {
-        0
-    };
     // `Player.cs:47119-47130` - the Nebula Blaze's pre-pass: a
     // 20% roll upgrades the bolt (634→635) at triple damage —
     // `Damage *= 3` on the weapon-damage int (`:42653`'s
@@ -18753,6 +18870,45 @@ mod s1_p_i08_throw_tests {
             (s.ai[1] - 1.0 / 1.2).abs() < 1e-5,
             "ai1 carries the inverted multiplier for the 1127 stretch"
         );
+    }
+
+    /// W4-d17 doc-sweep 168/182 — `GetRandomProfileIndex`
+    /// (`FinalFractalHelper.cs:78-88`): one `Next(21)` over the insertion-
+    /// order keys; a 4956 draw removes it and re-rolls `Next(20)` — the
+    /// returned profile is NEVER 4956 from the re-roll, and the stream
+    /// spends exactly one draw on a non-4956 hit, two on a 4956 hit.
+    #[test]
+    fn w4_d17_the_fractal_profile_rerolls_the_zenith_key() {
+        assert_eq!(FRACTAL_PROFILE_KEYS.len(), 21);
+        assert_eq!(FRACTAL_PROFILE_KEYS[20], 4956, "the Zenith key is last");
+        // A seed whose first Next(21) lands a non-4956 key: one draw only.
+        let mut found_single = false;
+        let mut found_double = false;
+        for seed in 1i32..400 {
+            let mut probe = tr_core::UnifiedRandom::new(seed);
+            let first = probe.next_range(0, 21);
+            let mut rng = tr_core::UnifiedRandom::new(seed);
+            let pick = random_fractal_profile(&mut rng);
+            if first != 20 {
+                assert_eq!(pick, FRACTAL_PROFILE_KEYS[first as usize]);
+                // The stream state matches ONE Next(21) draw.
+                let mut one = tr_core::UnifiedRandom::new(seed);
+                one.next_range(0, 21);
+                assert_eq!(rng, one, "seed {seed}: one draw on a non-4956 hit");
+                found_single = true;
+            } else {
+                assert_ne!(pick, 4956, "the re-roll never returns the Zenith key");
+                let mut two = tr_core::UnifiedRandom::new(seed);
+                two.next_range(0, 21);
+                two.next_range(0, 20);
+                assert_eq!(rng, two, "seed {seed}: two draws on a 4956 hit");
+                found_double = true;
+            }
+            if found_single && found_double {
+                break;
+            }
+        }
+        assert!(found_single && found_double, "both arms exercised");
     }
 }
 
