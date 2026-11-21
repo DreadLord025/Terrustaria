@@ -101,6 +101,16 @@ pub enum Page {
     ConfirmDiscard,
     /// menuMode 3000 (`Main.cs:49693`): the credits' single Back row.
     Credits,
+    /// W4-g22 DOC-SWEEP — menuMode 200 (`Main.cs:48827-48861`): the
+    /// world-load failure WITH a `.bak` (`WorldGen.playWorldCallBack`,
+    /// `WorldGen.cs:6782-6785`) — "Load failed!" header, "Load Backup"
+    /// and "Cancel" rows.
+    LoadFailedBackup,
+    /// W4-g22 DOC-SWEEP — menuMode 201 (`Main.cs:48862-48880`): the
+    /// world-load failure WITHOUT a `.bak` (`WorldGen.cs:6786-6789`) —
+    /// "Load failed!" header, the non-clickable "No backup found" row
+    /// (`array[1] = true`, `:48867`) and "Back".
+    LoadFailedNoBackup,
 }
 
 /// `num2` / `num4` / `array7` of one screen.
@@ -169,6 +179,13 @@ impl Page {
             // menuMode 3000 (`Main.cs:49693-49698`): `num2 = 500`,
             // `array7[0] = 0.9f`.
             Page::Credits => Layout { y0: 500.0, row: 52.0, scale: 0.9 },
+            // menuModes 200/201 (`Main.cs:48829-48834`, `:48864-48870`):
+            // `num2 -= 30` over the 250 default -> 220, `num4 = 80` keeps;
+            // the second row sits at `array4[1]` 70 (200) / -30 (201), the
+            // third at `array4[2] = 50`.
+            Page::LoadFailedBackup | Page::LoadFailedNoBackup => {
+                Layout { y0: 220.0, row: 80.0, scale: 1.0 }
+            }
         }
     }
 }
@@ -305,6 +322,11 @@ pub struct Menu {
     pub server_lobby: bool,
     pub error: Option<String>,
     pub connecting: bool,
+    /// W4-g22 DOC-SWEEP — the failed world's path, parked by the load
+    /// failure (`Main.worldPathName` at `WorldGen.playWorldCallBack`'s
+    /// 200/201 hop, `WorldGen.cs:6782-6789`); the Load Backup row's
+    /// `.bad`/`.bak` moves read it (`Main.cs:48841-48842`).
+    pub load_failed_path: Option<std::path::PathBuf>,
     pub name: String,
     /// The confirm pages' target: the parked player/world name on 5/9
     /// (`Main.PlayerList[Main.selectedPlayer].Player.name` /
@@ -410,6 +432,7 @@ impl Menu {
             server_lobby: false,
             error: None,
             connecting: false,
+            load_failed_path: None,
             name,
             confirm_name: None,
             confirm_index: 0,
@@ -484,6 +507,9 @@ impl Menu {
             "30" => Page::HostPassword,
             "31" => Page::JoinPassword,
             "889" => Page::ServerSettings,
+            // W4-g22 DOC-SWEEP — the load-failure pages, screenshotable.
+            "200" => Page::LoadFailedBackup,
+            "201" => Page::LoadFailedNoBackup,
             _ => return None,
         })
     }
@@ -529,6 +555,19 @@ impl Menu {
     pub fn open_credits(settings: Settings) -> Self {
         let mut me = Self::new(settings, String::new());
         me.page = Page::Credits;
+        me
+    }
+
+    /// W4-g22 DOC-SWEEP — menuModes 200/201 (`Main.cs:48827-48880`): the
+    /// world-load failure page, opened by the swap's Err arm the way
+    /// `WorldGen.playWorldCallBack` sets `menuMode` after the double
+    /// `LoadWorld` retry fails (`WorldGen.cs:6766-6790`). `has_backup` is
+    /// the `.bak` probe (`WorldGen.worldBackup`, `:6772-6779`); the path
+    /// parks for the Load Backup row's file moves.
+    pub fn open_load_failed(settings: Settings, path: std::path::PathBuf, has_backup: bool) -> Self {
+        let mut me = Self::new(settings, String::new());
+        me.page = if has_backup { Page::LoadFailedBackup } else { Page::LoadFailedNoBackup };
+        me.load_failed_path = Some(path);
         me
     }
 
@@ -3279,6 +3318,39 @@ mod tests {
         // Once the overlay clears, the page's own semantics return.
         m.connecting = false;
         assert!(matches!(m.key(winit::keyboard::KeyCode::Escape), Action::None));
+    }
+
+    /// W4-g22 DOC-SWEEP witness — the 200/201 pages' rows and cues:
+    /// 200's Load Backup queues NOTHING (the App's `.bak` probe owns the
+    /// 10/11, `Main.cs:48843`/`:48849`), its Cancel queues 11 (`:48857`);
+    /// 201's "No backup found" row is a non-clickable heading and its Back
+    /// queues 11 (`:48876`); Escape rides the same rows (`| flag5`).
+    #[test]
+    fn doc_sweep_load_failed_pages_queue_their_own_cues() {
+        let mut m = menu(Page::LoadFailedBackup);
+        let items = m.items();
+        assert_eq!(items.len(), 3);
+        assert!(items[0].header, "the Load failed! header");
+        assert_eq!(items[1].y, 70.0);
+        assert_eq!(items[2].y, 50.0);
+        assert!(matches!(m.activate(1), Action::LoadBackup));
+        assert_eq!(m.take_cue(), None, "the App probe owns the cue");
+        assert!(matches!(m.activate(2), Action::CancelLoadFailed));
+        assert_eq!(m.take_cue(), Some("Menu_Close")); // `:48857`
+        assert!(matches!(m.key(winit::keyboard::KeyCode::Escape), Action::CancelLoadFailed));
+        assert_eq!(m.take_cue(), Some("Menu_Close"));
+        // 201: the middle row is dead, Back plays 11.
+        let mut m = menu(Page::LoadFailedNoBackup);
+        let items = m.items();
+        assert!(items[1].header, "No backup found is array[1] = true");
+        assert_eq!(items[1].y, -30.0);
+        assert!(matches!(m.activate(1), Action::None));
+        assert_eq!(m.take_cue(), None);
+        assert!(matches!(m.activate(2), Action::CancelLoadFailed));
+        assert_eq!(m.take_cue(), Some("Menu_Close")); // `:48876`
+        // The layouts: num2 -= 30 -> 220 over the 250 default.
+        assert_eq!(Page::LoadFailedBackup.layout().y0, 220.0);
+        assert_eq!(Page::LoadFailedNoBackup.layout().y0, 220.0);
     }
 
     #[test]

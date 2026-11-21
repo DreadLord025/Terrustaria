@@ -398,6 +398,26 @@ impl App {
                     // vanilla's `LoadWorld` failure keeps `Main.gameMenu`).
                     log::warn!("world load failed: {e:#}");
                     self.front_hint = Some(format!("world load failed: {e:#}"));
+                    // W4-g22 DOC-SWEEP — `WorldGen.playWorldCallBack`'s
+                    // failure hop (`WorldGen.cs:6766-6790`): after the
+                    // double `LoadWorld` retry fails, the `.bak` probe
+                    // picks menuMode 200 (backup) / 201 (none). The port's
+                    // single `load_world` attempt is the retry stand-in
+                    // (documented); the probe is the same `.bak` sidecar
+                    // existence (`:6772`). The page's rows carry the
+                    // 10/11 cues (`Main.cs:48843-48876`).
+                    let has_backup = {
+                        let mut bak = path.as_os_str().to_os_string();
+                        bak.push(".bak");
+                        std::path::Path::new(&bak).exists()
+                    };
+                    self.front = None;
+                    self.park_menu();
+                    self.menu = Some(menu::Menu::open_load_failed(
+                        self.settings.clone(),
+                        path.clone(),
+                        has_backup,
+                    ));
                 }
             }
         }

@@ -37,6 +37,15 @@ pub enum Action {
     /// `Netplay.Disconnect = true` + the socket close, `menuMode = 0`,
     /// `netMode = 0`. The 11 (`:48621`/`:48822`) rides `pending_cue`.
     CancelConnect,
+    /// W4-g22 DOC-SWEEP — menuMode 200's "Load Backup" row
+    /// (`Main.cs:48837-48853`): the `.bak` probe decides — restore + 10 +
+    /// `WorldGen.playWorld` (`:48843-48845`) or 11 + menuMode 0
+    /// (`:48849-48851`). The App owns the file moves.
+    LoadBackup,
+    /// W4-g22 DOC-SWEEP — menuMode 200's Cancel / 201's Back
+    /// (`Main.cs:48854-48860`, `:48873-48879`): 11 + menuMode 0 +
+    /// netMode 0. The `flag5` OR rides the same branch.
+    CancelLoadFailed,
 }
 
 /// One settings row. Every variant is a `Main`/`ItemSlot` field the screens toggle.
@@ -137,6 +146,9 @@ impl Menu {
             // menuMode 3000's Back row (`flag5` included) returns to
             // menuMode 0 (`Main.cs:49700-49703`).
             Page::Credits => Some(Page::Main),
+            // W4-g22 DOC-SWEEP — 200/201 walk no parent: the gamepad Back
+            // ORs into the Cancel/Back row (the `activate(2)` arm above).
+            Page::LoadFailedBackup | Page::LoadFailedNoBackup => None,
         }
     }
 
@@ -284,6 +296,18 @@ impl Menu {
                 // No row carries it — the connecting-overlay guard above
                 // `activate` produces it (W4-g22 DOC-SWEEP).
                 Action::CancelConnect => Action::CancelConnect,
+                // W4-g22 DOC-SWEEP — menuMode 200's Load Backup
+                // (`Main.cs:48837-48853`): the cue is per-branch (10 when
+                // the `.bak` exists, 11 when it does not) and the App
+                // owns the probe + the file moves, so the row queues
+                // NOTHING here — the App plays after the probe.
+                Action::LoadBackup => Action::LoadBackup,
+                // W4-g22 DOC-SWEEP — 200's Cancel / 201's Back play 11
+                // (`:48857`/`:48876`) before menuMode 0.
+                Action::CancelLoadFailed => {
+                    self.pending_cue = Some("Menu_Close");
+                    Action::CancelLoadFailed
+                }
             },
             Act::Toggle(toggle) => {
                 // W4-g22 — every settings toggle row plays 12 before the
@@ -580,6 +604,12 @@ impl Menu {
                     self.page,
                     Page::ConfirmDeletePlayer | Page::ConfirmDeleteWorld | Page::ConfirmDiscard
                 ) {
+                    return self.activate(2);
+                }
+                // W4-g22 DOC-SWEEP — 200/201's gamepad Back ORs into the
+                // Cancel/Back row (`Main.cs:48854`/`:48873`'s `| flag5`),
+                // the third row on both pages.
+                if matches!(self.page, Page::LoadFailedBackup | Page::LoadFailedNoBackup) {
                     return self.activate(2);
                 }
                 if let Some(parent) = Self::parent(self.page) {
