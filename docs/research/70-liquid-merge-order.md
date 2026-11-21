@@ -132,3 +132,22 @@ bodies wholesale.
    average.
 4. `graphify update .` on the merged branch (code-shape change), then the
    main merge per MAIN-RULES.
+
+## R-12-5 settle drivers addendum (g47 continuation, 2026-11-21)
+
+The recorded remainder ("full Settle Liquids drivers remain R-12-5") landed
+on this branch in four per-driver commits, all code-only (witnesses written,
+NOT run):
+
+| Driver | Commit | Scope |
+| --- | --- | --- |
+| runtime pump | `3dbbe3ef` | `LiquidSystem::update_world_tick` = `WorldGen.cs:71526-71534` verbatim (skipCount on the Liquid statics' home, `ReInit` :85 resets); `world_sim/liquids.rs` consumes it, the app `liquid_tick` divider REMOVED (never reset on world swap — a phase deviation the port fixes); the `SwapRandom("UpdateLiquid")` seam stays the caller's `edit_kills` drain |
+| buffer arm | `d9445fc4` | census re-verify of the g45b-landed promotion loop (`Liquid.cs:1120-1130`): budget = min(post-sweep numLiquid, buffer), unconditional `DelBuffer(0)` even on an `AddWater` refusal; 2 new witnesses |
+| f25 gen split | `4288657c` | f25's export surface carried onto the g47 machinery (step 6's carry-over list: `tiles_ignore_water`/`world_gen_tiles_ignore_water` + the `gen_ignore_water` `kind_solid` fold/`set_bubble_solid`/`num_liquid_total`/`clear_pending_liquid`/`liquid_reaction_check`) + the shared `gen_settle_loop` (`:16158-16206` verbatim, Part-2 twin classic-identical); f25's `set_generating` maps onto `set_gen_settle_context`; its "no RNG draws" claim holds only for its discard-only `end_pass` — the g47 kills ride `edit_kills`, the world-hash RE-DERIVE obligation above stands |
+| e21 pumps | `ae688401` | the `XferWater` `SquareTileFrame` wakes (`Wiring.cs:512/:516/:521` → `WorldGen.cs:81344-81346` `AddWater`) were unported — pump-teleported liquid never joined the settle lists; `Wiring::take_pump_wakes` + the app `wake_around(r=1)` drain compose the pump with the settle pump |
+
+The g46c graft order above is unchanged: step 6's dedupe now finds the
+export surface ALREADY on the g47 base (delete f25's private copies, call
+these); step 7's producer wiring still owns the context arming. The
+witness stream-pins (the g45/g46 `Next(30)` nudge contract) are untouched —
+no nudge code lives on this branch and none of the four drivers draws RNG.

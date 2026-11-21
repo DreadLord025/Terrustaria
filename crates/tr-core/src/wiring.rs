@@ -1857,8 +1857,11 @@ impl Wiring {
     /// its liquid into the type-matched out-pump tiles (an empty out tile
     /// adopts the in type), capped at 255; the in tile's liquid is RE-READ
     /// after each out transfer (`:506`) so the remainder flows into the next
-    /// out tile; the port's liquid sim reads the tiles next tick (the C#'s
-    /// `SquareTileFrame` wake).
+    /// out tile. The post-transfer `SquareTileFrame` wakes (`:512`/`:516`/
+    /// `:521`) queue into [`Self::pump_wakes`] — the app wiring tick drains
+    /// them into `LiquidSystem::wake_around`, the `TileFrame` → `AddWater`
+    /// chain (`WorldGen.cs:81344-81346`) that joins the teleported liquid
+    /// to the settle lists (R-12-5 driver 4).
     fn xfer_water(&mut self, world: &mut World) {
         for &(inx, iny) in &self.in_pumps {
             if !world.tile_active(inx, iny) {
