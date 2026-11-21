@@ -5634,6 +5634,68 @@ fn angry_trapper_death(
     gore.new_gore(rng, world, pos, vel, 228, 1.0); // :89774
 }
 
+/// The 48 Harpy death (`NPC.cs:89776-89792`, sites 847-848): the 50x
+/// dust-5 burst at (2·hd, −2), then 80/81 at position, scale 1f.
+fn harpy_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89786-89789` — the 50x dust-5 burst.
+    death_dust_loop(npc, dust, dust_ctx, rng, world, 5, hit_direction, 50, 0, Color::default(), 1.0);
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 80, 1.0); // :89790
+    gore.new_gore(rng, world, pos, vel, 81, 1.0); // :89791
+}
+
+/// The 62/66 Demon/Voodoo Demon death (`NPC.cs:89793-89810`, sites
+/// 849-851): the 50x dust-5 burst at (2·hd, −2), then 93/94/94 at
+/// position, scale 1f.
+fn demon_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89803-89806` — the 50x dust-5 burst.
+    death_dust_loop(npc, dust, dust_ctx, rng, world, 5, hit_direction, 50, 0, Color::default(), 1.0);
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 93, 1.0); // :89807
+    gore.new_gore(rng, world, pos, vel, 94, 1.0); // :89808
+    gore.new_gore(rng, world, pos, vel, 94, 1.0); // :89809
+}
+
+/// The 156 tail (`NPC.cs:89811-89832`, sites 851-853): the else-arm's
+/// else-arm's `type != 156` early-return is the dispatcher's fallthrough
+/// (every other type already matched an arm); the 50x dust-5 burst at
+/// (2·hd, −2), then 184/185/185 at position, scale 1f.
+fn type_156_tail_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89825-89828` — the 50x dust-5 burst.
+    death_dust_loop(npc, dust, dust_ctx, rng, world, 5, hit_direction, 50, 0, Color::default(), 1.0);
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 184, 1.0); // :89829
+    gore.new_gore(rng, world, pos, vel, 185, 1.0); // :89830
+    gore.new_gore(rng, world, pos, vel, 185, 1.0); // :89831
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -6317,6 +6379,20 @@ pub fn hit_effect_d(
     // `:89759-89775` — the 175 Angry Trapper arm (sites 845-846).
     else if npc_type == 175 {
         angry_trapper_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89776-89792` — the 48 Harpy arm (sites 847-848).
+    else if npc_type == 48 {
+        harpy_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89793-89810` — the 62/66 Demon/Voodoo Demon arm (sites 849-850).
+    else if npc_type == 62 || npc_type == 66 {
+        demon_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89811-89832` — the 156 tail (sites 851-853); the else-arm's
+    // `type != 156` early-return is this fallthrough (every other type
+    // matched an arm above; the unmatched types draw nothing).
+    else if npc_type == 156 {
+        type_156_tail_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -10938,5 +11014,58 @@ mod tests {
             }
             assert_eq!(rng.peek(), twin.peek(), "trapper {kind} mirrors the C# draws");
         }
+    }
+
+    /// `NPC.cs:89790-89791` / `:89807-89809` / `:89829-89831` — the Harpy
+    /// 80/81, the Demon 93/94/94 and the 156 tail 184/185/185 after the
+    /// 50x dust-5 burst; an unmatched type draws nothing (the else-arm's
+    /// early-return).
+    #[test]
+    fn w4_f5d_the_harpy_demon_and_the_156_tail() {
+        for (kind, want) in [
+            (48, vec![80, 81]),
+            (62, vec![93, 94, 94]),
+            (66, vec![93, 94, 94]),
+            (156, vec![184, 185, 185]),
+        ] {
+            let w = air();
+            let n = mob(100.0, 100.0, 30.0, 44.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(881);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "tail {kind}");
+            for (i, _) in want.iter().enumerate() {
+                assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0), "tail {kind} gore {i}");
+                assert_eq!(gore.slot(i).scale, 1.0, "tail {kind} gore {i} scale 1f");
+            }
+            let mut twin = UnifiedRandom::new(881);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "tail {kind} mirrors the C# draws");
+        }
+        // The else-arm's `type != 156` early-return: an unmatched type
+        // draws nothing at all.
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(883);
+        let _ = hit_effect_d(&n, 1, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        assert!(!gore.slot(0).active, "no gore for the unmatched type");
+        assert!(!dust.slots()[0].active, "no dust for the unmatched type");
+        let twin = UnifiedRandom::new(883);
+        assert_eq!(rng.peek(), twin.peek(), "the unmatched type draws nothing");
     }
 }
