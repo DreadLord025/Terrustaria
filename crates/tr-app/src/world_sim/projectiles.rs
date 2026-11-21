@@ -1575,6 +1575,36 @@ mod w4_d80_dd2_one_shot_tests {
             assert_eq!(style.max_tracked_instances, 0, "{name} uncapped");
         }
     }
+
+    /// W4-d80 final — the bank-only rows resolve too (the producers stay
+    /// deferred): the 711 Betsy's Wrath impact shares the 686 impact's
+    /// three assets at volume 0.4 (`Projectile.cs:71641`, `SoundID.cs:1675`
+    /// — `DD2_BetsyFireballImpact.WithVolume(0.4f)`); the
+    /// ParticleOrchestrator plays (`ParticleOrchestrator.cs:1888`/`:2123`/
+    /// `:2427`) — the Monk Staff ground impact (3 variations, both the
+    /// flint spike burst and the down-dash explosion) and the mushroom-boi
+    /// explosion (one variation, 0.15 volume, behind the `Next(2)` coin).
+    #[test]
+    fn w4_d80_final_the_bank_only_styles_resolve() {
+        let wrath = crate::tracked_sound::TrackedStyle::by_name("DD2_BetsysWrathImpact")
+            .expect("DD2_BetsysWrathImpact");
+        assert_eq!(wrath.cue, "dd2_betsy_fireball_impact", "the shared assets");
+        assert_eq!(wrath.variations, 3);
+        assert!((wrath.volume - 0.4).abs() < 1e-6, "the 0.4 volume");
+        let impact = crate::tracked_sound::TrackedStyle::by_name("DD2_BetsyFireballImpact")
+            .expect("DD2_BetsyFireballImpact");
+        assert_eq!(wrath.cue, impact.cue, "the SAME family as the 686 impact");
+        assert!((impact.volume - 1.0).abs() < 1e-6, "the 686 keeps volume 1");
+        let staff = crate::tracked_sound::TrackedStyle::by_name("DD2_MonkStaffGroundImpact")
+            .expect("DD2_MonkStaffGroundImpact");
+        assert_eq!(staff.cue, "dd2_monk_staff_ground_impact");
+        assert_eq!(staff.variations, 3);
+        let mush = crate::tracked_sound::TrackedStyle::by_name("DeadCellsMushroomExplode")
+            .expect("DeadCellsMushroomExplode");
+        assert_eq!(mush.cue, "deadcells_mushroom_explode");
+        assert_eq!(mush.variations, 1);
+        assert!((mush.volume - 0.15).abs() < 1e-6, "the 0.15 volume");
+    }
 }
 
 /// W4-d80 — the RC-car / Jim's-drone engine loops (research/64 deferred):

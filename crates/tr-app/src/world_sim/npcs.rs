@@ -18745,5 +18745,195 @@ mod w4_d80_tracked_npc_tests {
             assert_eq!(style.max_tracked_instances, 0, "{name} is uncapped");
         }
     }
+
+    /// W4-d80 final — the riders round's headless rig: EVERY variation of
+    /// each new family seeded (the `random_sound` pick draws 0..n, a
+    /// missing asset folds the play to `SlotId::INVALID`).
+    fn riders_rig() -> (crate::audio::Audio, Npc) {
+        let mut audio = crate::audio::Audio::new(None);
+        for cue in [
+            "dd2_win_scene",
+            "dd2_betsy_flying_circle_attack",
+            "dd2_betsy_scream",
+            "dd2_ogre_attack_0",
+            "dd2_ogre_attack_1",
+            "dd2_ogre_attack_2",
+            "dd2_ogre_ground_pound",
+            "dd2_ogre_spit",
+            "dd2_drakin_shot_0",
+            "dd2_drakin_shot_1",
+            "dd2_drakin_shot_2",
+            "dd2_drakin_breath_in_0",
+            "dd2_drakin_breath_in_1",
+            "dd2_drakin_breath_in_2",
+            "dd2_javelin_throwers_attack_0",
+            "dd2_javelin_throwers_attack_1",
+            "dd2_javelin_throwers_attack_2",
+            "dd2_goblin_bomber_throw_0",
+            "dd2_goblin_bomber_throw_1",
+            "dd2_goblin_bomber_throw_2",
+            "dd2_etherian_portal_spawn_enemy_0",
+            "dd2_etherian_portal_spawn_enemy_1",
+            "dd2_etherian_portal_spawn_enemy_2",
+            "dd2_wyvern_dive_down_0",
+            "dd2_wyvern_dive_down_1",
+            "dd2_wyvern_dive_down_2",
+            "dd2_wyvern_scream_0",
+            "dd2_wyvern_scream_1",
+            "dd2_wyvern_scream_2",
+            "dd2_kobold_flyer_charge_scream_0",
+            "dd2_kobold_flyer_charge_scream_1",
+            "dd2_kobold_flyer_charge_scream_2",
+            "dd2_kobold_ignite",
+            "dd2_kobold_ignite_loop",
+            "dd2_dark_mage_summon_skeleton_0",
+            "dd2_dark_mage_summon_skeleton_1",
+            "dd2_dark_mage_summon_skeleton_2",
+            "dd2_dark_mage_cast_heal_0",
+            "dd2_dark_mage_cast_heal_1",
+            "dd2_dark_mage_cast_heal_2",
+        ] {
+            audio.test_seed_tracked_cue(cue);
+        }
+        let n = Npc::new(NpcKind::DD2Betsy, 96.0, 96.0, 1, 0.0);
+        (audio, n)
+    }
+
+    /// The riders' RNG contract: every new intent — the one-shots, the
+    /// wyvern pair (both scream arms), the glider charge + the ignite-loop
+    /// ensure/follow — leaves the gameplay stream pristine; the two
+    /// audio-only statics move on the plays.
+    #[test]
+    fn w4_d80_final_the_riders_drain_is_gameplay_draw_free() {
+        let (mut audio, mut n) = riders_rig();
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        let (style_before, pitch_before) = audio.test_audio_streams();
+        for cue in [
+            NpcSoundCue::CrystalWinScene,
+            NpcSoundCue::BetsyCircleAttack,
+            NpcSoundCue::BetsyDashScream,
+            NpcSoundCue::OgreAttack,
+            NpcSoundCue::OgreGroundPound,
+            NpcSoundCue::OgreSpit,
+            NpcSoundCue::DrakinShot,
+            NpcSoundCue::DrakinBreathIn,
+            NpcSoundCue::JavelinAttack,
+            NpcSoundCue::GoblinBomberThrow,
+            NpcSoundCue::PortalSpawnEnemy,
+            NpcSoundCue::WyvernDiveDown { scream: true },
+            NpcSoundCue::WyvernDiveDown { scream: false },
+            NpcSoundCue::KoboldFlyerCharge,
+            NpcSoundCue::KoboldFlyerIgniteLoopEnsureFollow,
+            NpcSoundCue::DarkMageSummonSkeleton,
+            NpcSoundCue::DarkMageCastHeal,
+        ] {
+            n.wants_sound.push(NpcSoundRequest { cue, x: 100.0, y: 100.0 });
+        }
+        drain(&mut audio, &mut n, &mut rng);
+        assert_eq!(rng.peek(), peek, "zero Main.rand draws on the riders path");
+        let (style_after, pitch_after) = audio.test_audio_streams();
+        assert_ne!(style_after, style_before, "the variation picks moved");
+        assert_ne!(pitch_after, pitch_before, "the pitch rolls moved");
+    }
+
+    /// The wyvern's launch pair (`NPC.cs:65610-65614`): the dive-down
+    /// handle lands in `local_ai[1]`; the scream payload gates the second
+    /// play into `local_ai[2]` (the machine rolled the `Next(5)` — the
+    /// drain only plays, in the C#'s order).
+    #[test]
+    fn w4_d80_final_wyvern_launch_pair_stores_both_handles() {
+        let (mut audio, mut n) = riders_rig();
+        let mut rng = UnifiedRandom::new(7);
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::WyvernDiveDown { scream: true }, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        let dive = SlotId::from_float(n.local_ai[1]);
+        let scream = SlotId::from_float(n.local_ai[2]);
+        assert!(dive.is_active() && scream.is_active(), "both handles live");
+        assert_ne!(dive, scream, "distinct slots");
+        // The no-scream arm leaves `local_ai[2]` untouched.
+        let (mut audio2, mut n2) = riders_rig();
+        n2.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::WyvernDiveDown { scream: false }, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio2, &mut n2, &mut rng);
+        assert!(SlotId::from_float(n2.local_ai[1]).is_active());
+        assert_eq!(n2.local_ai[2], 0.0, "no scream: the slot stays unwritten");
+    }
+
+    /// The glider's charge + ignite loop (`NPC.cs:65618-65619`/
+    /// `:65634-65645`): the charge scream lands in `local_ai[1]` (the
+    /// ignite one-shot's handle is discarded); the dive's ensure plays
+    /// the loop into `local_ai[2]` once, then follows the live handle.
+    #[test]
+    fn w4_d80_final_glider_charge_and_ignite_loop_ensure_follow() {
+        let (mut audio, mut n) = riders_rig();
+        let mut rng = UnifiedRandom::new(7);
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::KoboldFlyerCharge, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        let charge = SlotId::from_float(n.local_ai[1]);
+        assert!(charge.is_active(), "the charge scream stored");
+        assert_eq!(n.local_ai[2], 0.0, "the ignite one-shot discards its handle");
+        // The dive's first ensure tick plays the loop into `local_ai[2]`.
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::KoboldFlyerIgniteLoopEnsureFollow, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        let loop_id = SlotId::from_float(n.local_ai[2]);
+        assert!(loop_id.is_active(), "the ignite loop ensured");
+        audio.test_keep_tracked_alive(loop_id);
+        // The follow tick: no re-play, the position re-points.
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::KoboldFlyerIgniteLoopEnsureFollow, x: 400.0, y: 500.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        assert_eq!(SlotId::from_float(n.local_ai[2]), loop_id, "no re-play while live");
+        assert_eq!(audio.get_active_sound(loop_id).unwrap().position, (400.0, 500.0));
+        // A reaped handle re-plays (the C# null arm).
+        if let Some(s) = audio.get_active_sound_mut(loop_id) {
+            s.set_test_keep_alive(false);
+        }
+        audio.update_tracked(false);
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::KoboldFlyerIgniteLoopEnsureFollow, x: 600.0, y: 700.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        let replayed = SlotId::from_float(n.local_ai[2]);
+        assert!(replayed.is_active() && replayed != loop_id, "the dead loop re-played");
+    }
+
+    /// The riders' bank rows: every new cue resolves its style in the
+    /// generated table (the `by_name` lookup cannot silently miss).
+    #[test]
+    fn w4_d80_final_the_rider_tracked_styles_resolve() {
+        use crate::tracked_sound::TrackedStyle;
+        for (name, cue, variations) in [
+            ("DD2_WinScene", "dd2_win_scene", 1u32),
+            ("DD2_BetsyFlyingCircleAttack", "dd2_betsy_flying_circle_attack", 1),
+            ("DD2_BetsyScream", "dd2_betsy_scream", 1),
+            ("DD2_OgreAttack", "dd2_ogre_attack", 3),
+            ("DD2_OgreGroundPound", "dd2_ogre_ground_pound", 1),
+            ("DD2_OgreSpit", "dd2_ogre_spit", 1),
+            ("DD2_DrakinShot", "dd2_drakin_shot", 3),
+            ("DD2_DrakinBreathIn", "dd2_drakin_breath_in", 3),
+            ("DD2_JavelinThrowersAttack", "dd2_javelin_throwers_attack", 3),
+            ("DD2_GoblinBomberThrow", "dd2_goblin_bomber_throw", 3),
+            ("DD2_EtherianPortalSpawnEnemy", "dd2_etherian_portal_spawn_enemy", 3),
+            ("DD2_WyvernDiveDown", "dd2_wyvern_dive_down", 3),
+            ("DD2_WyvernScream", "dd2_wyvern_scream", 3),
+            ("DD2_KoboldFlyerChargeScream", "dd2_kobold_flyer_charge_scream", 3),
+            ("DD2_DarkMageSummonSkeleton", "dd2_dark_mage_summon_skeleton", 3),
+            ("DD2_DarkMageCastHeal", "dd2_dark_mage_cast_heal", 3),
+        ] {
+            let style = TrackedStyle::by_name(name).unwrap_or_else(|| panic!("{name}"));
+            assert_eq!(style.cue, cue, "{name}'s asset");
+            assert_eq!(style.variations, variations, "{name}'s variations");
+            assert_eq!(style.max_tracked_instances, 0, "{name} is uncapped");
+        }
+    }
 }
 

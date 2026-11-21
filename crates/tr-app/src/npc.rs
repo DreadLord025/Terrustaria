@@ -15835,6 +15835,18 @@ impl Npc {
         // The alpha fade + the `Next(maxValue3)` dust draws are the port's
         // standing dust deviation (skipped, no draw) — only the counter
         // rides, exactly the goblin/skeleton materialize convention.
+        // W4-d80 final — `:63762-63766`: the materialize's 30-tick portal
+        // cue (`DD2_EtherianPortalSpawnEnemy`), read BEFORE the increment
+        // (the C# order — the walker's ramp is the tail, unlike the
+        // flyer's alpha-gated one). A tracked one-shot, zero draws.
+        if self.caster_counter == 30 {
+            let (w, h) = self.size();
+            self.wants_sound.push(NpcSoundRequest {
+                cue: NpcSoundCue::PortalSpawnEnemy,
+                x: self.x + w * 0.5,
+                y: self.y + h * 0.5,
+            });
+        }
         if self.caster_counter < 60 {
             self.caster_counter += 1;
         }
@@ -16147,6 +16159,20 @@ impl Npc {
     }
 
     fn update_dd2_skeleton(&mut self, world: &World, player: &Player) {
+        // W4-d80 final — `:63762-63766`: the flag29 materialize's 30-tick
+        // portal cue (`DD2_EtherianPortalSpawnEnemy`), read BEFORE the
+        // increment (the C# order). A tracked one-shot, zero draws. The
+        // goblin/bomber/javelin arms' `localAI[3]` ramp is unported (the
+        // wave-ramp stand-in reads a counter the App owns), so their
+        // flag29 cue folds away with it (research/64 final).
+        if self.caster_counter == 30 {
+            let (w, h) = self.size();
+            self.wants_sound.push(NpcSoundRequest {
+                cue: NpcSoundCue::PortalSpawnEnemy,
+                x: self.x + w * 0.5,
+                y: self.y + h * 0.5,
+            });
+        }
         self.caster_counter += 1;
         // The walk rides the harness (the vanilla walks the materializing
         // skeleton too — the fade is cosmetic).
@@ -28391,6 +28417,249 @@ mod dark_mage_tests {
         player.x = 900.0;
         mage.update_dark_mage(&w, &player, &mut UnifiedRandom::new(0));
         assert_eq!(mage.ai[0], 97.0, "the in-reach round armed");
+    }
+}
+
+/// W4-d80 final — the DD2 riders census round (research/64 final): the
+/// machine-side queue placements for the remaining AI_107/108/109/110
+/// tracked one-shots and handle plays. WRITTEN NOT RUN (code-only mode).
+#[cfg(test)]
+mod w4_d80_final_rider_tests {
+    use super::*;
+
+    fn rig(kind: NpcKind) -> (tr_core::World, Player, Npc) {
+        let w = tr_core::World::new("t".into(), 256, 128);
+        let mut player = Player::spawn(&w);
+        player.x = 2000.0;
+        player.y = 600.0;
+        let n = Npc::new(kind, 600.0, 600.0, 1, 0.0);
+        (w, player, n)
+    }
+
+    fn has_cue(n: &Npc, cue: NpcSoundCue) -> bool {
+        n.wants_sound.iter().any(|r| r.cue == cue)
+    }
+
+    /// Betsy's circle/dash one-shots (`NPC.cs:62109`/`:62136`): the
+    /// `ai[1] == 1` ticks queue the cues BEFORE the increments; the
+    /// neighbouring ticks stay silent.
+    #[test]
+    fn w4_d80_final_betsy_circle_and_dash_scream_ticks() {
+        let (w, player, mut n) = rig(NpcKind::DD2Betsy);
+        n.ai[0] = 5.0;
+        n.ai[1] = 1.0;
+        n.update_betsy(&w, &player, &mut UnifiedRandom::new(7));
+        assert!(has_cue(&n, NpcSoundCue::BetsyCircleAttack), ":62109");
+        assert_eq!(n.ai[1], 2.0, "the cue fired before the ++ai[1]");
+        n.wants_sound.clear();
+        n.ai[1] = 2.0;
+        n.update_betsy(&w, &player, &mut UnifiedRandom::new(7));
+        assert!(!has_cue(&n, NpcSoundCue::BetsyCircleAttack), "only the == 1 tick");
+        // The dash entry (`:62136`).
+        n.wants_sound.clear();
+        n.ai[0] = 6.0;
+        n.ai[1] = 1.0;
+        n.update_betsy(&w, &player, &mut UnifiedRandom::new(7));
+        assert!(has_cue(&n, NpcSoundCue::BetsyDashScream), ":62136");
+        n.wants_sound.clear();
+        n.ai[1] = 2.0;
+        n.update_betsy(&w, &player, &mut UnifiedRandom::new(7));
+        assert!(!has_cue(&n, NpcSoundCue::BetsyDashScream), "only the == 1 tick");
+    }
+
+    /// The ogre's per-sub-state sound ticks (`NPC.cs:63082`/`:63100`/
+    /// `:63114`): the switch reads `ai[0]` BEFORE the flag5 decrement.
+    #[test]
+    fn w4_d80_final_ogre_attack_pound_spit_ticks() {
+        let (w, player, mut n) = rig(NpcKind::DD2OgreT2);
+        for (sub, countdown, cue) in [
+            (0.0, 40.0, NpcSoundCue::OgreAttack),
+            (2.0, 40.0, NpcSoundCue::OgreGroundPound),
+            (1.0, 80.0, NpcSoundCue::OgreSpit),
+        ] {
+            n.wants_sound.clear();
+            n.ai[1] = sub;
+            n.ai[0] = countdown;
+            n.caster_counter = if sub == 2.0 { 300 } else { 0 };
+            n.update_ogre(&w, &player, &mut UnifiedRandom::new(7));
+            assert!(has_cue(&n, cue), "sub {sub} at {countdown}");
+            assert_eq!(n.ai[0], countdown - 1.0, "the decrement ran after the read");
+        }
+        // A non-sound tick stays silent.
+        n.wants_sound.clear();
+        n.ai[1] = 0.0;
+        n.ai[0] = 39.0;
+        n.update_ogre(&w, &player, &mut UnifiedRandom::new(7));
+        assert!(!has_cue(&n, NpcSoundCue::OgreAttack));
+    }
+
+    /// The drakin's engage/burst ticks (`NPC.cs:63187`/`:63183`): the
+    /// engage's `ai[1] = 60` and the BreathIn cue ride the SAME tick (the
+    /// port's one-tick cadence fold, research/64 final); the burst's
+    /// `ai[1] == 40` plays the shot cue before the decrement.
+    #[test]
+    fn w4_d80_final_drakin_breath_in_and_shot_ticks() {
+        let (w, mut player, mut n) = rig(NpcKind::DD2DrakinT2);
+        player.x = 900.0; // inside the 600-px engage gate
+        player.y = 600.0;
+        n.update_drakin(&w, &player, &mut UnifiedRandom::new(7));
+        assert!(has_cue(&n, NpcSoundCue::DrakinBreathIn), "the engage tick");
+        assert_eq!(n.ai[1], 59.0, "the decrement ran after the cue");
+        // The burst's 40-tick.
+        n.wants_sound.clear();
+        n.ai[1] = 40.0;
+        n.update_drakin(&w, &player, &mut UnifiedRandom::new(7));
+        assert!(has_cue(&n, NpcSoundCue::DrakinShot), ":63183");
+        assert_eq!(n.ai[1], 39.0);
+    }
+
+    /// The javelin/bomber throw cues (`NPC.cs:63441`/`:63535`): the cue
+    /// queues BEFORE the throw resolves (the switch runs ahead of the
+    /// flag12 fire block).
+    #[test]
+    fn w4_d80_final_javelin_and_bomber_throw_cues_precede_the_throw() {
+        let (w, player, mut n) = rig(NpcKind::DD2JavelinT1);
+        n.ai[1] = 81.0;
+        n.update_dd2_thrower(&w, &player, &mut UnifiedRandom::new(7));
+        assert!(has_cue(&n, NpcSoundCue::JavelinAttack), ":63441");
+        assert_eq!(n.wants_hostile_shot[0].0, 662, "the spear still fires");
+        let (w, player, mut b) = rig(NpcKind::DD2GoblinBomberT1);
+        b.ai[1] = 17.0;
+        b.update_dd2_bomber(&w, &player, &mut UnifiedRandom::new(7));
+        assert!(has_cue(&b, NpcSoundCue::GoblinBomberThrow), ":63535");
+        assert_eq!(b.wants_hostile_shot[0].0, 681, "the bomb still lobs");
+    }
+
+    /// The Dark Mage's summon/heal windows (`NPC.cs:65842`/`:65860`):
+    /// AI_109 decrements FIRST, so the `== 80`/`== 126` reads land after
+    /// the decrement (contrast AI_107's switch).
+    #[test]
+    fn w4_d80_final_dark_mage_summon_and_heal_windows() {
+        let (w, player, mut n) = rig(NpcKind::DD2DarkMage);
+        n.caster_counter = 60;
+        n.ai[0] = 81.0;
+        n.ai[1] = 2.0;
+        n.update_dark_mage(&w, &player, &mut UnifiedRandom::new(7));
+        assert!(has_cue(&n, NpcSoundCue::DarkMageSummonSkeleton), ":65842");
+        assert_eq!(n.ai[0], 80.0, "the decrement ran before the read");
+        n.wants_sound.clear();
+        n.ai[0] = 127.0;
+        n.ai[1] = 1.0;
+        n.update_dark_mage(&w, &player, &mut UnifiedRandom::new(7));
+        assert!(has_cue(&n, NpcSoundCue::DarkMageCastHeal), ":65860");
+        assert_eq!(n.ai[0], 126.0);
+    }
+
+    /// The portal materialize cue (`NPC.cs:63765`/`:65482`/`:65934`):
+    /// the mage/walker/skeleton read `== 30` BEFORE the increment; the
+    /// flyer's alpha-gated ramp increments first, so its `== 31` read is
+    /// the same tick (the one-tick counter fold).
+    #[test]
+    fn w4_d80_final_portal_spawn_enemy_materialize_ticks() {
+        let (w, player, mut mage) = rig(NpcKind::DD2DarkMage);
+        mage.caster_counter = 30;
+        mage.update_dark_mage(&w, &player, &mut UnifiedRandom::new(7));
+        assert!(has_cue(&mage, NpcSoundCue::PortalSpawnEnemy), ":65934");
+        assert_eq!(mage.caster_counter, 31);
+        let (w, player, mut walker) = rig(NpcKind::DD2KoboldWalkerT2);
+        walker.caster_counter = 30;
+        walker.update_dd2_kobold_walker(&w, &player, 1.0 / 60.0);
+        assert!(has_cue(&walker, NpcSoundCue::PortalSpawnEnemy), ":63765");
+        assert_eq!(walker.caster_counter, 31);
+        let (w, player, mut sk) = rig(NpcKind::DD2SkeletonT1);
+        sk.caster_counter = 30;
+        sk.update_dd2_skeleton(&w, &player);
+        assert!(has_cue(&sk, NpcSoundCue::PortalSpawnEnemy), ":63765 (skeleton)");
+        assert_eq!(sk.caster_counter, 31);
+        let (w, player, mut flyer) = rig(NpcKind::DD2WyvernT1);
+        flyer.alpha = 255;
+        flyer.caster_counter = 30;
+        flyer.update_diving_flyer(&w, &player, &mut UnifiedRandom::new(7));
+        assert!(has_cue(&flyer, NpcSoundCue::PortalSpawnEnemy), ":65482");
+        assert_eq!(flyer.caster_counter, 31, "the alpha ramp incremented first");
+    }
+
+    /// The wyvern's launch pair (`NPC.cs:65610-65614`): the `Next(5)`
+    /// scream roll rides the MACHINE stream (before the dive jitter's two
+    /// `Next(-3, 4)` draws); the glider's charge (`:65618-65619`) draws NO
+    /// `Next(5)` — only the jitter pair.
+    #[test]
+    fn w4_d80_final_wyvern_scream_roll_rides_the_machine_stream() {
+        let (w, player, mut n) = rig(NpcKind::DD2WyvernT1);
+        n.ai[0] = 1.0;
+        n.ai[1] = 19.0; // the 20-tick wind-up's launch tick
+        let mut rng = UnifiedRandom::new(42);
+        n.update_diving_flyer(&w, &player, &mut rng);
+        let mut witness = UnifiedRandom::new(42);
+        let scream = witness.next_max(5) == 0;
+        let _jx = witness.next_range(-3, 4);
+        let _jy = witness.next_range(-3, 4);
+        assert_eq!(rng, witness, "the roll + the jitter pair, in the C# order");
+        assert_eq!(
+            n.wants_sound.last().unwrap().cue,
+            NpcSoundCue::WyvernDiveDown { scream },
+            "the payload carries the machine's roll"
+        );
+        // The glider: no Next(5), only the jitter pair.
+        let (w, player, mut g) = rig(NpcKind::DD2KoboldFlyerT2);
+        g.ai[0] = 1.0;
+        g.ai[1] = 29.0; // the 30-tick wind-up's launch tick
+        let mut grng = UnifiedRandom::new(42);
+        g.update_diving_flyer(&w, &player, &mut grng);
+        let mut gwitness = UnifiedRandom::new(42);
+        let _jx = gwitness.next_range(-3, 4);
+        let _jy = gwitness.next_range(-3, 4);
+        assert_eq!(grng, gwitness, "the glider draws no scream roll");
+        assert_eq!(
+            g.wants_sound.last().unwrap().cue,
+            NpcSoundCue::KoboldFlyerCharge
+        );
+    }
+
+    /// The glider's dive ignite-loop gate (`NPC.cs:65634-65645`): the
+    /// `ai[1] >= 20` ensure-or-follow queues BEFORE the `ai[1]++`; the
+    /// wyvern has no loop there.
+    #[test]
+    fn w4_d80_final_glider_ignite_loop_gate_and_wyvern_absence() {
+        let (w, player, mut g) = rig(NpcKind::DD2KoboldFlyerT2);
+        g.ai[0] = 2.0;
+        g.ai[1] = 19.0;
+        g.update_diving_flyer(&w, &player, &mut UnifiedRandom::new(7));
+        assert!(
+            !has_cue(&g, NpcSoundCue::KoboldFlyerIgniteLoopEnsureFollow),
+            "the 19-tick stays silent (the read precedes the ++)"
+        );
+        g.wants_sound.clear();
+        g.ai[1] = 20.0;
+        g.update_diving_flyer(&w, &player, &mut UnifiedRandom::new(7));
+        assert!(
+            has_cue(&g, NpcSoundCue::KoboldFlyerIgniteLoopEnsureFollow),
+            "the 20-tick ensures"
+        );
+        let (w, player, mut v) = rig(NpcKind::DD2WyvernT1);
+        v.ai[0] = 2.0;
+        v.ai[1] = 25.0;
+        v.vx = 8.0; // past the min-speed exit
+        v.update_diving_flyer(&w, &player, &mut UnifiedRandom::new(7));
+        assert!(
+            !has_cue(&v, NpcSoundCue::KoboldFlyerIgniteLoopEnsureFollow),
+            "the wyvern has no ignite loop"
+        );
+    }
+
+    /// The crystal's win-scene cue (`NPC.cs:40764`): the `ai[0] == 3` tick
+    /// plays BEFORE the `ai[0]++`; the neighbouring ticks stay silent.
+    #[test]
+    fn w4_d80_final_crystal_win_scene_queues_before_the_increment() {
+        let (w, player, mut n) = rig(NpcKind::DD2EterniaCrystal);
+        n.ai[1] = 2.0;
+        n.ai[0] = 3.0;
+        n.update_eternia_crystal(&w, &player);
+        assert!(has_cue(&n, NpcSoundCue::CrystalWinScene), ":40764");
+        assert_eq!(n.ai[0], 4.0, "the cue fired before the ai[0]++");
+        n.wants_sound.clear();
+        n.update_eternia_crystal(&w, &player);
+        assert!(!has_cue(&n, NpcSoundCue::CrystalWinScene), "only the == 3 tick");
     }
 }
 

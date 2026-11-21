@@ -74,7 +74,7 @@ Deferred (the layer is ready; the owning systems are unported):
 
 | Site | C# anchor | Why deferred |
 | --- | --- | --- |
-| ParticleOrchestrator tracked plays | `ParticleOrchestrator.cs:1888`/`:2123`/`:2427` | the particle system is unported |
+| ParticleOrchestrator tracked plays | `ParticleOrchestrator.cs:1888`/`:2123`/`:2427` | the particle system is unported — the four cue assets ARE banked (`TRACKED_CUES`, W4-d80 final: `dd2_monk_staff_ground_impact_0..2` rides BOTH the flint spike burst and the down-dash explosion, `deadcells_mushroom_explode` the one-variation 0.15-volume cue behind the `Next(2)` coin); the producers stay deferred |
 
 Landed in the deferred-item round (phases 7-10, below): the RC car engine
 loop (`Projectile.cs:38253-38267`/`:38285-38299`), Jim's Drone loop
@@ -86,7 +86,27 @@ Phoenix / 709 Sky Dragon's Fury aiStyle-1 arms) and the
 `VampireSeedSunlightExposure` flag-granter (`Player.cs:28672-28719`).
 The remaining DD2 one-shot riders whose arms live only on sibling waves
 (the 711 Betsy's Wrath impact, the d15/c12 book-staff shots) stay deferred
-until those waves merge.
+until those waves merge — the 711's three impact assets are ALREADY banked
+(the 686 impact's family; `DD2_BetsysWrathImpact = DD2_BetsyFireballImpact
+.WithVolume(0.4f)`, `SoundID.cs:1675`), so the sibling wave only owes the
+style row + the `Kill()` arm (`Projectile.cs:71641`), no new bank rows.
+
+Landed in the FINAL riders round (phase 12, below): the remaining
+AI_107/108/109/110 tracked one-shots and handle plays whose machines ARE
+ported — Betsy's circle-attack (`NPC.cs:62109`) / dash-scream (`:62136`),
+the ogre's attack/pound/spit (`:63082`/`:63100`/`:63114`), the drakin's
+shot/breath-in (`:63183`/`:63187`), the javelin thrower's attack
+(`:63441`), the goblin bomber's throw (`:63535`), the portal materialize
+cue (`:63765` kobold-walker/skeleton, `:65482` flyer, `:65934` Dark Mage),
+the wyvern's dive-down + the 1-in-5 scream (`:65610-65614`), the kobold
+glider's charge scream + ignite one-shot (`:65618-65619`) and the dive's
+ignite-loop ensure-or-follow (`:65634-65645`), the Dark Mage's
+summon/heal-cast windows (`:65842`/`:65860`) and the crystal's win scene
+(`:40764`). The 620 GoblinShark's drakin peers (`:63648`/`:63652`) have no
+ported kind — deferred with it. The goblin/bomber/javelin arms' flag29
+materialize cue folds away with their unported `localAI[3]` ramp (the
+wave-ramp stand-in reads a counter the App owns; only the
+kobold-walker/skeleton/mage/flyer ramps are machine-local).
 
 ## Conditions (the looped plays' stop gates)
 
@@ -133,8 +153,9 @@ until those waves merge.
 
 All 24 census sites landed across five phases, plus the four deferred
 items (the vampire granter, the DD2 one-shots, the RC-car and Jim's-drone
-engine loops) in phases 7-10, on `task/W4-d80-tracked-sound-layer`
-(code-only mode — tests written NOT run):
+engine loops) in phases 7-10 and the FINAL riders round (the remaining
+AI_107/108/109/110 one-shots + handle plays) in phase 12, on
+`task/W4-d80-tracked-sound-layer` (code-only mode — tests written NOT run):
 
 * **Phase 2** (`fb945c08`): sites 1-3 — the drill/chainsaw cadence cues +
   the Laser Drill 445's Item132/23 (`Projectile::wants_sound`, the
@@ -201,6 +222,21 @@ engine loops) in phases 7-10, on `task/W4-d80-tracked-sound-layer`
   + the speed-gated `drone_move` bounce, `:18057-18067`) + the 1020 row.
   The same envelope queues `EngineLoop(JimsDrone)` at `:40984-40997`; the
   death hook flips the atomic AND queues the explicit stop.
+* **Phase 12** (`ea9b0454` + the completion): the FINAL riders round —
+  the 17 remaining `NpcSoundCue` tracked arms above + the sim drain arms
+  (`apply_npc_tracked_cue`), the machines queue them at the C#'s exact
+  read order (the wyvern's `Next(5)` scream roll rides the MACHINE stream
+  and travels as the cue payload — the drain only plays; the ogre/drakin
+  switches read BEFORE their decrements, AI_109 reads AFTER its
+  decrement). The flyer's materialize cue reads `caster_counter == 31`
+  (the alpha-gated ramp increments first — the same tick as the C#'s
+  `== 30` pre-increment read, the standing flyer alpha deviation). The
+  kobold-walker + skeleton gain the `== 30` pre-increment portal cue
+  (their ramps are machine-local); the goblin/bomber/javelin flag29 cue
+  folds with their unported ramp. 38 rider cue assets joined
+  `TRACKED_CUES` + 4 bank-only ParticleOrchestrator rows (the 711
+  impact needs none — the 686 family is already banked). 15 witnesses
+  WRITTEN NOT RUN (code-only).
 
 The RNG contract holds: every tracked play draws ONLY the two audio-only
 statics (`style_random`/`sound_style_random`); the witnesses pin the

@@ -2625,6 +2625,33 @@ Deliberate deviations (the census folds):
   the pool — the slice-B/C precedent); the 706's rotation tail uses the
   velocity-sign stand-in for `base.direction` (the generic aiStyle-1 flight
   keeps the spawn direction).
+* **The FINAL riders round's folds** (phase 12, the remaining
+  AI_107/108/109/110 one-shots + handle plays — Betsy circle/dash, the
+  ogre/drakin/javelin/bomber ticks, the portal materialize, the wyvern
+  pair, the glider charge + ignite loop, the Dark Mage windows, the
+  crystal win scene): the wyvern's `Next(5)` scream roll is a GAMEPLAY
+  draw in the C# (`NPC.cs:65611`, `Main.rand`) — it rides the machine's
+  stream at the C#'s position (before the dive jitter) and travels as the
+  `WyvernDiveDown { scream }` payload; the drain only plays, so the play
+  order stays the C#'s and the drain itself stays draw-free. The drakin's
+  `ai[0] > 0` posture gate (the 1-5 octant, `:64092-64103`) is unported —
+  it folds to the burst window (`ai[1] > 0`; the posture only lives inside
+  a burst), and the port's engage+decrement ride the SAME tick (the
+  existing cadence stand-in), so the cues fire one tick earlier than the
+  C#'s next-tick switch read — the same one-tick fold the fire cadence
+  already carries. The flyer's materialize cue reads `caster_counter ==
+  31` (the alpha-gated ramp increments first — the same tick as the C#'s
+  `localAI[0] == 30` pre-increment read, `:65480-65483`; the standing
+  flyer alpha deviation, 22/tick not 5). The goblin/bomber/javelin arms'
+  flag29 materialize cue (`:63765`) folds away with their unported
+  `localAI[3]` ramp (the wave-ramp stand-in reads a counter the App owns);
+  the kobold-walker/skeleton/mage ramps ARE machine-local and carry the
+  cue. The 620 GoblinShark's drakin peers (`:63648`/`:63652`) have no
+  ported kind — deferred with it. The 711 Betsy's Wrath impact
+  (`Projectile.cs:71641`) and the ParticleOrchestrator plays
+  (`ParticleOrchestrator.cs:1888`/`:2123`/`:2427`) stay producer-deferred;
+  their cue assets are banked (the 711 shares the 686 impact's family at
+  volume 0.4, `SoundID.cs:1675`).
 
 ### The item-use sound wave (S1-E-21-itemuse)
 
