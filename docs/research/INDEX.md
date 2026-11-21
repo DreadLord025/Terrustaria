@@ -75,6 +75,7 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
+| 285 | W4-e21 wiring-tail family SEAL (the five receipts at the pushed tips: the HitWireSingle census 66/66 ZERO-unclaimed + the bunny-statue pair 46/540 ported; the c42 wiring seal 2910a720 re-pick-compile-blocker-FIXED + the e20/c42/e21 ownership split; the bunny keep-one vs d34@270 (d37-E8 KEEP CONSUMED) + the 229/237 collision-free proof (f18's 237 drops per d39 §6c); the boulder aiStyle-25 rows d3-owned PUSHED + the two-arm keep-one with the seam's latent 15.5px anchor defect; the research-149 devices bible consumed; code-only, witnesses WRITTEN NOT RUN) | `285-e21-wiring-tail-seal.md` | ✅ SEALED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

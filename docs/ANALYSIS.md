@@ -7959,12 +7959,44 @@ four co-lanes at the e21 tip: the S1-L-6 baseline arms are in every lane;
 bible, research-149); the torch/campfire/slab/doors/trapdoors/tall-gates are
 f11's originals folded into c42's union-exec; the 144/421/422 wakes +
 actuator guard, 235/226 `downedPlantBoss` and the 506 shared validator are
-c42's `de176ccd` fix round; the pump `XferWater` gate, the monolith
+c42's `de176ccdd` fix round; the pump `XferWater` gate, the monolith
 nine-kinds gate, the grate 546/557 wakes and the boulder-statue 99 seam are
 e21's (`12fb1a2e`). **No still-unclaimed arm remains.** The boulder
 aiStyle-25 projectile family rows are d3's (`task/W4-d3-proj-ai-21-30`,
-census 26b — the pushed branch is census-only, the rows are in flight in
-its worktree); e21's boulder-statue seam auto-spawns once they land.
+census 26b) — **the SEAL re-probe found them PUSHED** (`241cbae09` the
+rows, `40f8cbe3d` the dispatch/death/contact wiring, `affd7fa90` the
+world-sim drains + its own `StatueSpawn::Boulder` arm, tip `5ff9fe983`):
+the earlier "census-only, rows in flight" reading is superseded. e21's
+boulder-statue seam auto-spawns once they land; the two arms are a
+merge-time keep-one (research/285 §4 — d3's direct-spawn arm subtracts
+the 31×31 half-box per `Projectile.cs:10876-10877`, e21's device-shot
+seam passes the C# centre anchor straight to `spawn_with_data_ai`,
+whose `pos` is the top-left — the merger keeps d3's arm or applies the
+half-box lift to the seam).
+
+### The wiring tail family SEAL (W4-e21, research/285)
+
+The e21 lane is SEALED — no further rounds. The five seal receipts
+(research/285 carries the full evidence): (1) the HitWireSingle census
+is 66/66 claimed with ZERO unclaimed arms and the bunny statue's pair
+46/540 is ported (`178a6d37f`); (2) the c42 wiring seal (`2910a720`,
+research/240→280 per registry-150 §6.3) re-picked the compile blocker
+FIXED on-branch — e20 owns 314/hoppers/extractinators/trap-fixes, c42
+owns doors/torch/campfire/slab + 144/421/422/235/226/506, e21's four
+fixes ride `12fb1a2e`; (3) the bunny 46/540 pair: e21 ported it for the wiring consumer
+(`178a6d37f`), but the roster canon is d34's band-1-70 `Bunny`@270
+(the d37-E8 KEEP receipt, CONSUMED 15/15 at 266-280) — d39 (351-420)
+and c8 (style-66 crawlers) carry no bunny kind, so the keep-one is
+e21's `Bunny` row dropping to d34@270 at merge (e21's `PartyBunny`@540
+is unique — no other lane ports it; the wiring arm, FindFrame hop and
+party pick re-key onto the canonical kinds per the E3 rule). The
+vanilla-46 collision is already resolved on e21's side by the
+WallOfFlesh-renumbered 229/237 protocol slots (the wyvern precedent); (4) the boulder aiStyle-25 rows are d3's and PUSHED —
+e21's `12fb1a2e` seam auto-spawns when they merge (the keep-one note
+above); (5) the research-149 devices-family bible (e20 `46fdcfd8e`)
+is the ownership map this seal consumes. The merger executes the
+gate-command; this lane never did (code-only, witnesses WRITTEN NOT
+RUN).
 
 ## Falling blocks (M7-FALL-1)
 
