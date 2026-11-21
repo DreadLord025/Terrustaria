@@ -171,24 +171,27 @@ impl DrainCellLight for PlainLight {
 }
 
 // ---------------------------------------------------------------------------
-// IsVisible — TileDrawing.cs:1411-1432 (re-ported; pylons.rs keeps a private
-// copy, the family merge keep-ones one).
+// IsVisible — TileDrawing.cs:1411-1432. KEEP-ONE EXECUTED (research/136 §4
+// correction): the standalone survivor is d60's shape PROMOTED to
+// `tr_render::tile_visibility::is_visible` (primitive params — tr-render has
+// no tr-core dep); this wrapper is the g31 rebind (world read + delegate).
+// d56's gate / d60's battery rebind onto the same fn at the family merge.
 // ---------------------------------------------------------------------------
 
 /// `TileDrawing.IsVisible` (`TileDrawing.cs:1411-1432`): an Echo-coated block
 /// hides unless sight is granted; platforms on row 48 and the two invisible
-/// wiring tiles (541/631) always ride the flag.
+/// wiring tiles (541/631) always ride the flag. Thin wrapper over the
+/// promoted keep-one (`tr_render::tile_visibility`).
 pub(crate) fn is_visible(world: &World, x: i32, y: i32, show_invisible: bool) -> bool {
     let Some(tile) = world.tile(x, y) else {
         return true;
     };
-    let mut flag = world.invisible_block(x, y);
-    match tile.kind {
-        19 if tile.frame_y / 18 == 48 => flag = true,
-        541 | 631 => flag = true,
-        _ => {}
-    }
-    !flag || show_invisible
+    tr_render::tile_visibility::is_visible(
+        tile.kind,
+        tile.frame_y,
+        world.invisible_block(x, y),
+        show_invisible,
+    )
 }
 
 // ---------------------------------------------------------------------------
