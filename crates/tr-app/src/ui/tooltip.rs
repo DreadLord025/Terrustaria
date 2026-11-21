@@ -214,7 +214,7 @@ pub struct TooltipContext<'a> {
     /// damage row (`Main.cs:20669`).
     pub has_coin_gun: bool,
     /// `Main.npcShop > 0` (`Main.cs:20818`): the shop's equipable row swaps
-    /// to `Lang.tip[60]` for the Pocket Mirror 854 / Peddler's Satchel 3035.
+    /// to `Lang.tip[60]` for the Discount Card 854 / Greedy Ring 3035.
     pub shop_open: bool,
     /// `NPC.downedPlantBoss` (`Main.cs:20961`): the biome keys' first
     /// tooltip line stays cursed until Plantera falls.
@@ -1643,7 +1643,8 @@ mod tests {
     fn w4_e16_the_coin_damage_row_needs_the_coin_gun() {
         let coin = crate::registry::get(71).expect("the copper coin row");
         let rows = item_tooltip_lines(71, coin, TooltipContext::default());
-        let dmg = crate::lang::tip(55);
+        // The coin is RANGED class (`itemdata.rs`) — the tip[3] suffix.
+        let dmg = crate::lang::tip(3);
         assert!(
             !rows.iter().any(|(t, _)| t.ends_with(&dmg)),
             "no damage row without the Coin Gun: {rows:?}"
