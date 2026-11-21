@@ -76,6 +76,7 @@ per `docs/superpowers` agreements).
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 64 | Echo-coating tile/wall draw census & port (W4-g78: the sight chain + IsVisible/wall/black-coverage residuals; code-only) | `64-tile-echo-draw-census.md` | ✅ |
+| 76 | DOC-SWEEP lane 4 sight-mechanics census & port (W4-g78: the 4 potion sight flags + the SpelunkerProjectileHelper + the Hunter NPC-tint chain PORTED-UNWIRED; the 657 use/break + goggles slot-split census; code-only) | `76-doc-sweep-sight.md` | ✅ |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

@@ -39322,3 +39322,64 @@ fixed-step order and the `WorldFrameKey` contents are unchanged.
 Verification: code-only — every arm re-read against the cited windows; 11
 witness tests WRITTEN, NOT RUN (`scene.rs` 4, `player.rs` 3, `vines.rs` 1,
 `tiles.rs` 2 source-scans, `bg.rs` 1 extended).
+
+## The remaining sight-mechanics (W4-g78 DOC-SWEEP lane 4)
+
+The four potion sight-buffs and the two Echo-sight items beyond the g78
+echo-coating chain (research/64). Census: research/76. Two pure modules land
+PORTED-UNWIRED here; the rest is recorded for the co-lane merges.
+
+* **SpelunkerProjectileHelper** (`SpelunkerProjectileHelper.cs:6-67`) lands
+  as `tr-app/src/spelunker_helper.rs` — the 473 Spelunker Glowstick's
+  ore-spot dust layer (distinct from the tile vision floors). The 10-tick
+  dedupe-clear cadence, the per-position/per-tile HashSets, the ±30 window
+  clamped to `Rectangle(2,2,maxTilesX-2,maxTilesY-2)`, the
+  `!(Length()>30f)` radius gate, the `_tilesChecked.Add && Next(4)==0`
+  short-circuit (a repeat tile rolls NOTHING), the 204 dust request
+  (fadeIn 0.75, vel×0.1, noLight) on the caller's DropRng. UNWIRED: the 473
+  head's `AddSpotToCheck` call (the distance gate `screenWidth+30*16`
+  stays with the caller per C#) + the `PreUpdateAllProjectiles` cadence
+  are the wiring merge. `Main.IsTileSpelunkable` re-inlined verbatim (the
+  49-row table + the 185/186 windows) — d56's tr-render copy + d9/d13's
+  inline copies are the keep-one targets at the merges.
+* **The Hunter NPC-tint chain** (`NPC.GetNPCColorTintedByBuffs`
+  `NPC.cs:91024-91141` + `buffColor` `:90986-90993`) lands as
+  `tr-app/src/npc_hunter_tint.rs` — the 14-arm compounding debuff tint
+  chain whose last arm is the Hunter floor (friendly 50/255/50, hostile
+  255/50/50, the `detectCreature && lifeMax>1` gate). The
+  `drippingSparkleSlime` arm's NON-accumulator direct multiply and the
+  ichor REPLACE are kept 1:1; `buffColor` truncates toward zero (the f32
+  rounding kept: 200·0.65f32 rounds to 130.0f, 255·0.45f32 → 114). KEEP-ONE:
+  `AppearsFriendlyToHunterPotion` (the 689 override) stays f47's
+  `shimmer::appears_friendly_to_hunter_potion` — this module takes its
+  result as `hunter_friendly`. UNWIRED: the `render/entities.rs`
+  consumer + the `DoDraw_WallsTilesNPCs` draw-order swap
+  (`Main.cs:63290-63299`) are the npc-kind/style lanes' merge.
+* **The vision floors** (Dangersense/Spelunker/BiomeSight,
+  `TileDrawing.cs:897-963`/`:8481-8552`) are d56's
+  `tr_render::animated_tiles` (UNWIRED) — the `render/tiles.rs` consumer
+  is the d56 wiring merge; the four flags are live (find_treasure/
+  biome_sight/detect_creature in player.rs; f12 wires danger_sense). NOT
+  re-ported here.
+* **The Echo Monolith (657/5345)**: placement routes through TileObject
+  (`D_657` UsesCustomCanPlace, verified + witnessed); the right-click use
+  arm (`Player.cs:32271-32277` → `SwitchMonolith` + Mech-28) and the
+  `Check2xX` break check (drop 5345 at the origin cell) are MISSING — the
+  `interact_at`/`doors.rs` and `check_object` seams are contested
+  (wiring-device + break-check lanes). The wired `switch_monolith`
+  already exists (e21 fixes its kind-match).
+* **Spectre Goggles (4409)**: the grant is FUNCTIONAL-ONLY
+  (`ApplyEquipFunctional` case 4409); `ApplyEquipVanity` has no 4409
+  case and `RefreshInfoAccsFromItemType` no 4409 row — a vanity-worn
+  goggles grants NOTHING (the mirror of the 5345 monolith's vanity-only
+  grant). The g78 port matches; witnessed. The faceSlot 14 cosmetic is
+  unmodelled (the port's ItemDef has no face_slot).
+
+RNG: the two new modules draw only through the caller's stream (the
+spelunker Next(4) per new tile; the tint chain ZERO). Both UNWIRED — zero
+pixel delta until their consumers wire. No WorldFrameKey / fixed-step
+change.
+
+Verification: code-only — every arm re-read against the cited windows; 14
+witness tests WRITTEN, NOT RUN (spelunker_helper 6, npc_hunter_tint 6,
+player.rs 1, edit/place.rs 1).
