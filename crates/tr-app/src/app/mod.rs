@@ -5001,6 +5001,9 @@ pub(crate) fn terrstaria_world() -> Result<PathBuf> {
         // The gen-time chest loot rides the save's native v7 section (S1-A-4).
         let side = save::WorldSide {
             chests: world.chests.clone(),
+            // W4-g38 C5: the gen-time starter town NPCs ride the save's
+            // native section (the SpawnStarterNPCs pass).
+            npcs: world.starter_npcs.clone(),
             ..Default::default()
         };
         save::save(&path, &world, &side)?;

@@ -1359,6 +1359,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // C4. Replaces the compact spawn the world tail used to compute; the
     // pass draws only its own `pass_rng("Spawn Point")` stream.
     step!("spawn point", "Spawn Point", step_spawn_point),
+    // The vanilla Guide slot (`WorldGen.cs:19685`, SpawnStarterNPCs): after
+    // Spawn Point (`:19460`, C4) and before Sunflowers (`:19898`, this
+    // lane's C6) — W4-g38 C5. The pass writes the starter roster
+    // (`world.starter_npcs`) + the owned rescue flags; no tiles, no draws.
+    step!("guide", "Guide", step_guide),
     // The vanilla slot (`WorldGen.cs:20941-20973`): the Micro Biomes
     // pass's thin-ice block runs FIRST among the port's grouped micro
     // steps — after the dead-man's-chest block (`:20922`, unported) and
@@ -2450,6 +2455,21 @@ fn step_spawn_point(
         &mut streams.pass_rng("Spawn Point"),
         opts,
     );
+}
+
+/// The vanilla Guide slot (`WorldGen.cs:19685-19897`, SpawnStarterNPCs) —
+/// W4-g38 C5: the starter town NPC at the spawn point (the classic Guide,
+/// the seed substitutes). Writes `world.starter_npcs` + the owned rescue
+/// flags; no tiles, no RNG draws, no stream.
+fn step_guide(
+    world: &mut World,
+    _gv: &mut GenVars,
+    _streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    super::starter_npcs::pass_starter_npcs(world, opts);
 }
 
 fn step_campsites(
@@ -3596,7 +3616,9 @@ mod tests {
         // `traps`.
         // W4-g38 C4: + `spawn point` (vanilla "Spawn Point",
         // `WorldGen.cs:19460`) after `piles`.
-        assert_eq!(names.len(), 70);
+        // W4-g38 C5: + `guide` (vanilla "Guide", `WorldGen.cs:19685`) after
+        // `spawn point`.
+        assert_eq!(names.len(), 71);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3675,6 +3697,7 @@ mod tests {
                 "traps",
                 "piles",
                 "spawn point",
+                "guide",
                 "thin ice",
                 "campsites",
                 "spike pits",
@@ -3893,7 +3916,7 @@ mod tests {
     fn s1_k_2c_the_thin_ice_step_precedes_the_micro_group() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        assert_eq!(pos("thin ice"), pos("spawn point") + 1);
+        assert_eq!(pos("thin ice"), pos("guide") + 1);
         assert_eq!(pos("thin ice") + 1, pos("campsites"));
         assert!(pos("thin ice") < pos("sword shrines"));
         assert!(pos("thin ice") < pos("mahogany trees"));
@@ -3976,7 +3999,7 @@ mod tests {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("spawn point"), pos("piles") + 1);
-        assert_eq!(pos("spawn point") + 1, pos("thin ice"));
+        assert_eq!(pos("spawn point") + 1, pos("guide"));
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -3986,6 +4009,27 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Piles") < cpos("Spawn Point"));
         assert!(cpos("Traps") < cpos("Spawn Point"));
+    }
+
+    /// W4-g38 C5: `guide` sits after `spawn point` and before the grouped
+    /// micro family — the vanilla chain's relative order Spawn Point
+    /// (`WorldGen.cs:19460`) → Guide (`:19685`) → Sunflowers (`:19898`, C6)
+    /// puts the pass ahead of the micro group.
+    #[test]
+    fn w4_g38_c5_the_guide_step_sits_after_the_spawn_point() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("guide"), pos("spawn point") + 1);
+        assert_eq!(pos("guide") + 1, pos("thin ice"));
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Spawn Point") < cpos("Guide"));
+        assert!(cpos("Guide") < cpos("Sunflowers"));
     }
 
     // --- W4-g38 C4: the Spawn Point pass unit witnesses ---------------------

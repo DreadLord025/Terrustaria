@@ -280,6 +280,11 @@ mod tests {
     // fresh stream. a == b stays green. (Secret-seed worlds that DO consume
     // the spawn — noSurface force-clear, the ≥4-secret spike rings — move
     // by design; no pin covers them.)
+    // W4-g38 C5 (2026-11-21, code-only): the `Guide` pass
+    // (`SpawnStarterNPCs`, `WorldGen.cs:19685-19897`) lands after
+    // `spawn point`. This pin is EXPECTED UNCHANGED: the pass writes only
+    // the starter-NPC roster (`world.starter_npcs`, not hashed) + the owned
+    // rescue flags — no tiles, no RNG draws. a == b stays green.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -352,6 +357,9 @@ mod tests {
     // (the world hash covers tile fields only; the spawn is not hashed).
     // The compact height-map anchor the world tail used retired into the
     // faithful pass. a == b stays green (own fresh stream).
+    // W4-g38 C5 (2026-11-21, code-only): the Guide pass (see SEED42_512
+    // above) — the roster + flags are not hashed and the pass draws
+    // nothing, so this pin is EXPECTED UNCHANGED. a == b stays green.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

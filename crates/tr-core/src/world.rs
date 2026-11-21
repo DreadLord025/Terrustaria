@@ -584,6 +584,20 @@ pub struct World {
     /// empty list simply means "no chest placed yet". The App's runtime
     /// store materialises from these at `enter_loaded_world`.
     pub chests: Vec<crate::save::ChestRecord>,
+    /// The gen-time starter town NPCs (`GenPassNameID.SpawnStarterNPCs`,
+    /// `WorldGen.cs:19685-19897`) — W4-g38 C5. The vanilla spawns the Guide
+    /// (or the seed's substitute) into `Main.npc` at the spawn point during
+    /// generation; the port records the roster here (the `NpcRecord` save
+    /// shape, the port's internal kind ids) so a freshly generated world
+    /// carries its starter NPC and the save persists it. A classic world
+    /// gets one homeless Guide at the spawn; the seed arms substitute the
+    /// Dryad / Zoologist / Tax Collector / Mechanic / Merchant /
+    /// Demolitionist / Party Girl, and the tenth-anniversary arm adds the
+    /// birthday party. The App materialises live NPCs from these at load
+    /// (the `sections.native.npcs` path), replacing the old hardcoded
+    /// Guide-spawn fallback. Empty = no starter placed (a `.wld` load's
+    /// roster comes from the file instead).
+    pub starter_npcs: Vec<crate::save::NpcRecord>,
 
     // --- world identity / file metadata (S1-J-2, `IO/WorldFile.cs`) ---------
     /// `Main.ActiveWorldFileData.WorldGeneratorVersion` (`WorldFile.cs:1225`).
@@ -624,6 +638,7 @@ impl World {
             frame_important: Vec::new(),
             ore_tiers: crate::ores::SavedOreTiers::new(),
             chests: Vec::new(),
+            starter_npcs: Vec::new(),
             spawn_y: height / 4,
             bed_spawn: None,
             spawn_x: width / 2,

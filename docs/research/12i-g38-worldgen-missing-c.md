@@ -78,8 +78,8 @@ reassigns; the merger reconciles per `12h`.
 | C1 Place Fallen Log | 8c9b7b60 | landed (code-only, witnesses written NOT run) |
 | C2 Traps | 9a4deba8 | landed (code-only, witnesses written NOT run) |
 | C3 Piles | 53b57024 | landed (code-only, witnesses written NOT run) |
-| C4 Spawn Point | (this commit) | landed (code-only, witnesses written NOT run) |
-| C5 Guide | — | pending |
+| C4 Spawn Point | 4eab35b3 | landed (code-only, witnesses written NOT run) |
+| C5 Guide | (this commit) | landed (code-only, witnesses written NOT run) |
 | C6 Sunflowers | — | pending |
 | C7 Herbs | — | pending |
 | C8 Dye Plants | — | pending |
@@ -230,3 +230,38 @@ pipeline positional witness `w4_g38_c4_the_spawn_point_step_sits_after_the_piles
 the step-count/name-list tests updated 69→70. `SurfaceMap.spawn_center`
 gains `#[allow(dead_code)]` (no step reads it now; the height-map's own
 layout maths still uses the local).
+
+## C5 landing note (2026-11-21)
+
+C5 ports `WorldGen.cs:19685-19897` (the SpawnStarterNPCs pass, the vanilla
+"Guide" chain row) verbatim into the new `worldgen/starter_npcs.rs`
+(`pass_starter_npcs` + `starter_record`). Slot: after `spawn point`, before
+`thin ice` (the vanilla `:19685` slot between Spawn Point `:19460` and
+Sunflowers `:19898`). The port has no gen-time `Main.npc` array — the pass
+records the roster into the new `World.starter_npcs` field (the
+`save::NpcRecord` shape, the port's internal kind ids: Guide 5, Dryad 35,
+TaxCollector 162, Mechanic 158, Merchant 34, Demolitionist 38, PartyGirl
+168), which rides the save's native section (the three gen-save sites in
+`app/mod.rs`, `app/worldgen_job.rs`, `ui/world_creation.rs` now copy it)
+and materialises at load through the existing `sections.native.npcs` path
+— replacing the App's hardcoded Guide fallback for fresh worlds (the
+fallback stays for pre-v10 saves). Position: the `NewNPC` Bottom anchor
+(`NPC.cs:80770`) minus the 18×40 town twin's half-width/height. The chain
+order is verbatim (tenth → infected → vampire → remix → drunk+dontStarve →
+bees&&!dontStarve → getGood → drunk → classic Guide); the owned flags
+(`saved_tax_collector`, `saved_mech`, `unlocked_party_girl`) are set.
+Deferred (documented in the module note): the tenth-anniversary
+birthday-party arm (BirthdayParty runtime state + unported kinds 178/453/
+656/680/681 + the GetAdjustedFloorPosition floor adjust `:24175-24229`),
+the vampire-seed arm (no port vampire seed), the GivenName roll
+(`NPC.cs:80839-80856`/`:7281-7325` — no language table in the worldgen
+layer; empty name = the kind's static name, no RNG draw stands in), the
+infected variation index (NpcRecord carries none) and the unowned
+unlockedMerchant/Demolitionist flags. The pass writes no tiles and draws
+no RNG. Hash pins: BOTH expected UNCHANGED (the roster + flags are not
+hashed). `a == b` halves untouched. Witnesses: 3 unit tests in
+`starter_npcs.rs` (the classic homeless-Guide record + position, the seed
+substitutions + flags + combo-arm precedence, the infected Dryad + the
+deferred tenth arm) + the pipeline positional witness
+`w4_g38_c5_the_guide_step_sits_after_the_spawn_point`; the
+step-count/name-list tests updated 70→71.
