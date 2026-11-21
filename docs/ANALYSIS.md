@@ -40012,3 +40012,108 @@ written not run; every vector hand-re-derived against line-for-line
 C# transcriptions (the f32 product rounding checked: 3 × 1.1f rounds
 to 3.3f, the accumulator boundaries sit far from the step edges).
 
+## W4-f26 FindFrame extra wave 7f (slice 7f, 2026-11-21, code-only mode)
+
+The NEXT 5 TRULY-unclaimed case ids after the 7e slice —
+**531/532/534/535/536** — landed as pure machines in
+`crates/tr-app/src/npc_findframe_extra7f.rs` (the 7e module + seam
+shape copied). The census: 117 unclaimed after the pushed 7e tip
+`9c2b0a84`'s 5 claims − this slice's 5 = **112 unclaimed** (the full
+re-probe in `docs/research/68-findframe-census-addendum-7f.md` — the
+f27 tip `0e187428` carries NO "slice 10" claim band in its ANALYSIS
+and its extra7/8/9 modules carry no 531-536 arm; 533 DesertDjinn is
+port-covered, the S1-E-5 `npc.rs:8086` arm — EXCLUDED; the d41 tip
+`4ed22f0b` still CLAIM-only; the d42 tip ADVANCED to `9b22c091`, the
+578-630 roster docs — grep ZERO for the five; d40 stops at 490).
+
+Per-case notes (the C# bodies read line-for-line):
+
+* **531 DesertScorpionWall** (the 165/237/238/240/531 wall group
+  `NPC.cs:73112-73145`, label `:73116`; 165 WallCreeperWall
+  d46-self-wired, 237/238/240 f27-WIRED(g7) per the d44 master
+  wire-status table — only 531 was open). The accumulator adds
+  `(|vx| + |vy|) * num194` EVERY tick (`:73123` — no grounded/air
+  split, no idle branch) with the **531-ONLY `num194 = 0.4` override**
+  (`:73119-73122`; the co-members keep the 0.5 default). The
+  <6/<12/<18/<24 bands pin rows 0/1/2/3; the else (`:73140-73143`)
+  zeroes the counter WITHOUT writing the row — the vanilla quirk:
+  the row HOLDS 3 for that tick, then the cycle restarts at row 0
+  (the extra-3 Moth precedent). No sprite/rotation write. The
+  530 → 531 wall transform (`:58892-58899`) rides the AI, NOT
+  FindFrame (the 7e note).
+* **532 DesertBeast** (the 508/532/580/582 walking-antlion group
+  `:70067-70103`, label `:70068`) — the 7c-deferred id, the machine
+  copied VERBATIM from the 7c GiantWalkingAntlion (the 7e ghoul
+  ONE-group precedent). The air pins row 1 WITHOUT touching the
+  counter; the idle pins row 0, counter untouched too; the sprite
+  copies are SIGN-GATED (`:70081-70088` — direction AND vx must
+  agree); the walk lifts row < 2 to 2, accumulates `1 + |vx| / 2`,
+  the > 6 step wraps at row >= count back to 2 — the **8-row count**
+  (`Main.cs:67137` entry 3) widens the walk strip to rows 2..7 (the
+  7c 508's 6-row sheet walks 2..5).
+* **534 DemonTaxCollector** (the humanoid-group case list `:68615` →
+  the shared fighter walk `:68647-69655`) with the ONE per-type
+  override: the walk stride **`num108 = 12`** (`:69528-69531` — the
+  > 12 step, not the group's > 6; the f27 Fritz `num108 = 9` inline
+  precedent — the wave-B helper hard-codes > 6, so the override
+  lands as a verbatim inline copy). NOT `isLikeATownNPC` (aiStyle 3,
+  `:15813-15828`, no townNPC), so `num57` = 0 and the wrap runs at
+  the FULL 8-row count; not a town slime (`NPCID.cs:10119`'s set =
+  670/678-684), so `num109` = row 2; not the 140/489 idle-row-1 pair;
+  not in the `:69647` air pin list — the group's air tail pins row 1.
+  The accumulator is the group's `|vx| * 2` THEN `++` (`:69552-69553`
+  — not the 489 variant). The ai[0] pose zones (`:68662-69488`, with
+  their chat-bubble/emote draws) are the documented skip (the f27
+  extra-8 SkeletonMerchant precedent — the zones never fire for a
+  non-town fighter).
+* **535 SlimeSpiked** (the slime strip group `:70818` →
+  `:70828-70845`) — the num2-fed counter copied VERBATIM from the
+  extra-3 SpikedJungleSlime machine (the wave-A slime keep-one): the
+  `num2` motion class (`NPC.cs:66696-66704`) doubles the counter
+  while moving/airborne and triples it while attacking; the >= 8
+  stride walks the FULL 2-row sheet wrapping to 0. The 302/304
+  spriteDirection snap (`:70824-70827`) is the town slimes' — 535
+  writes no flip. 537 SandSlime rides a later slice.
+* **536 TheBride** (the zombie walker group `:76344` →
+  `:76347-76390`) — the machine copied VERBATIM from wave A's
+  `zombie_walk_frame` (the S1-D-3z holiday-zombie precedent): the
+  grounded ±1 flip (0 leaves the sprite alone), the air OR
+  turn-around pin (moving against the facing) zeroes the counter and
+  pins row 2, the stand zeroes both to row 0, the walk accumulates
+  `|vx|` with NO +1 and the <8/<16/<24/<32 bands pick rows 0/1/2/1;
+  the final else (`:76387-76390`) zeroes the counter WITHOUT writing
+  the row — the lap HOLDS row 1 for that tick.
+
+RNG + world reads: ZERO across all five arms (mechanical grep over
+`:73112-73145` + `:70067-70103` + `:69489-69585` + `:70828-70845` +
+`:76347-76390` for `Main.rand`/`Framing`/`Main.tile`/`ai[`/`localAI`
+= no match; the humanoid group's pose zones are the documented skip
+above). `FrameInput` carries vx/vy + `ai_action` (the slime group's
+num2 class — the wave-A shape); `direction` rides `FrameInput` (the
+extra3/wave-A shape — this wave's copies are ±1/sign-gated, never
+unconditional).
+
+Frame counts counted entry-by-entry off `Main.cs:67082` (`:67137`'s
+530-539 row: 531 = 4 entry 2, 532 = 8 entry 3, 534 = 8 entry 5,
+535 = 2 entry 6, 536 = 3 entry 7) and re-diffed against
+`render/entities.rs::NPC_FRAME_COUNT` — all 697 slots agree, ZERO
+mismatches (a mechanical text-parse diff, not a test run).
+
+Verification (code-only): 11 module witnesses written not run — the
+frame-count table cross-check, the wall-scorpion band cycle + the
+else-row-hold quirk (the pinned cadence uses vx 2.5: 2.5f × 0.4f
+rounds to EXACTLY 1.0f, so the 6/12/18/24 band edges are exact in
+both the f32 port and the C# double accumulator — a vx-3 cadence
+would drift an ulp at the tick-20 edge), the beast walk + 8-row wrap
+edge + counter-HELD air/idle pins + sign-gate mismatch, the tax
+collector's > 12 stride + wrap edge + idle/air pins, the spiked
+slime's num2 feed (idle 8 / moving 4 / attack 3 ticks a step), the
+bride walk bands + lap-hold quirk + air/turn/stand pins, the
+seam-exactness witness and the 5-kind 27-combo **40-tick** strip
+sweep (widened from the 7e 10: the wall scorpion's 24-tick band
+cycle + the bride's 11-tick lap need the longer window). The Python
+replay (`tools/_f26_7f_replay.py` — the pinned vectors + the
+135-combo sweep) and the JS sweep twin (`tools/_f26_7f_sweep.js`)
+written not run; every vector hand-re-derived against line-for-line
+C# transcriptions.
+
