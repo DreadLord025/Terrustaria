@@ -1269,9 +1269,11 @@ mod frame_key {
             src.contains("app.cage_anim.warm_up(&mut tr_core::UnifiedRandom::new(world_seed as i32))"),
             "App::new warms up on a fresh world-seed clone"
         );
+        // Built at runtime so this witness's own source does not match.
+        let live_form = format!("warm_up({}.rngs.global())", "app");
+        let live_form_self = format!("warm_up({}.rngs.global())", "self");
         assert!(
-            !src.contains("warm_up(app.rngs.global())")
-                && !src.contains("warm_up(self.rngs.global())"),
+            !src.contains(&live_form) && !src.contains(&live_form_self),
             "the live global stream is never consumed by the warm-up (g33 form dropped)"
         );
         let flow = include_str!("flow.rs");
@@ -1286,8 +1288,10 @@ mod frame_key {
             .split("pub(crate) fn is_client")
             .next()
             .expect("the hook ends before is_client");
+        // The STATEMENT forms — the hook's comment names the dropped call.
         assert!(
-            !enter.contains("cage_anim.reset()") && !enter.contains("cage_anim.warm_up"),
+            !enter.contains("self.cage_anim.reset();")
+                && !enter.contains("self.cage_anim.warm_up("),
             "no per-world cage reset or warm-up (:8387-8395 covers tileFrame only)"
         );
         assert!(enter.contains("self.tile_anim.reset();"), "the tileFrame reset stays");
