@@ -76,6 +76,7 @@ per `docs/superpowers` agreements).
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 240 | Happiness final round (W4-g58: the buy/sell latch repoint + the report-UI census COMPLETE + the savings 3-way call-site census 142-input + the portrait-hop state port; code-only; renumbered 143→240 per registry-150, 143 stays with c4) | `240-happiness-final.md` | ✅ |
+| 241 | f37 latch-repoint hunks (W4-g58 retire: the five exact `shop_mood` → `shopping_settings.price_adjustment` hunks against f37 tip `908482d52` for the f37 lane/merger; prerequisite + apply-order + not-repointed census; code-only) | `241-f37-latch-repoint-hunks.md` | ✅ |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
