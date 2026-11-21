@@ -370,11 +370,13 @@ fn salamander_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 18.0), vel, 759 + num459, 1.0); // :85795
 }
 
-/// The bat family death (`NPC.cs:85797-85841`): the 15x dust-5 burst,
-/// then the per-kind gore(s) at position, scale 1f. The arm's sub-branches
-/// land in source order: 51 Jungle Bat → 83 (`:85813`), 93 Giant Bat → 107
-/// (`:85817`), 150 Ice Bat → 164/165 (`:85821-85822`), 152 Giant Flying
-/// Fox → 175/176/176 (`:85826-85828`); the 226/49 tail lands next batch.
+/// The bat family death (`NPC.cs:85797-85841`, sites 16-27): the 15x
+/// dust-5 burst, then the per-kind gore(s) at position, scale 1f. The
+/// arm's sub-branches in source order: 51 Jungle Bat → 83 (`:85813`),
+/// 93 Giant Bat → 107 (`:85817`), 150 Ice Bat → 164/165 (`:85821-85822`),
+/// 152 Giant Flying Fox → 175/176/176 (`:85826-85828`), 226 Flying Snake
+/// → 317/318/318/319 (`:85832-85835`), the 49 Cave Bat fallthrough → 82
+/// (`:85839`).
 fn bat_family_death(
     npc: &Npc,
     npc_type: i32,
@@ -412,7 +414,116 @@ fn bat_family_death(
         gore.new_gore(rng, world, pos, vel, 175, 1.0); // :85826
         gore.new_gore(rng, world, pos, vel, 176, 1.0); // :85827
         gore.new_gore(rng, world, pos, vel, 176, 1.0); // :85828
+    } else if npc_type == 226 {
+        gore.new_gore(rng, world, pos, vel, 317, 1.0); // :85832
+        gore.new_gore(rng, world, pos, vel, 318, 1.0); // :85833
+        gore.new_gore(rng, world, pos, vel, 318, 1.0); // :85834
+        gore.new_gore(rng, world, pos, vel, 319, 1.0); // :85835
+    } else {
+        // `:85837-85840` — the 49 Cave Bat fallthrough.
+        gore.new_gore(rng, world, pos, vel, 82, 1.0); // :85839
     }
+}
+
+/// The 611/689 Owl death (`NPC.cs:85842-85859`, sites 28-30): the 15x
+/// dust-5 burst, then 1164/1164/1165 at position, scale 1f. The 689 is
+/// the Owl Mimic (`NPCID.cs:12055`) — same gore row.
+fn owl_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:85852-85855` — the 15x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        15,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 1164, 1.0); // :85856
+    gore.new_gore(rng, world, pos, vel, 1164, 1.0); // :85857
+    gore.new_gore(rng, world, pos, vel, 1165, 1.0); // :85858
+}
+
+/// The 624 Gnome death (`NPC.cs:85860-85878`, sites 31-34): the 10x dust-5
+/// burst (the count drops to 10 here), then 1190/1191/1192/1193 at
+/// position, scale 1f.
+fn gnome_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:85870-85873` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 1190, 1.0); // :85874
+    gore.new_gore(rng, world, pos, vel, 1191, 1.0); // :85875
+    gore.new_gore(rng, world, pos, vel, 1192, 1.0); // :85876
+    gore.new_gore(rng, world, pos, vel, 1193, 1.0); // :85877
+}
+
+/// The 628 Dandelion death (`NPC.cs:85879-85897`, sites 35-38): the 10x
+/// dust-3 burst (type 3, the leaf puff — NOT 5), then
+/// 1205/1206/1206/1207 at position, scale 1f.
+fn dandelion_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:85889-85892` — the 10x dust-3 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        3,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 1205, 1.0); // :85893
+    gore.new_gore(rng, world, pos, vel, 1206, 1.0); // :85894
+    gore.new_gore(rng, world, pos, vel, 1206, 1.0); // :85895
+    gore.new_gore(rng, world, pos, vel, 1207, 1.0); // :85896
 }
 
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
@@ -461,11 +572,22 @@ pub fn hit_effect_d(
     else if (498..=506).contains(&npc_type) {
         salamander_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:85797-85841` — the bat family arm (49/51/93/150/152/226); the
-    // 51/93/150/152 sub-branches are live (sites 16-22), the 226/49 tail
-    // lands next batch.
+    // `:85797-85841` — the bat family arm (49/51/93/150/152/226, sites
+    // 16-27, all six sub-branches).
     else if matches!(npc_type, 49 | 51 | 93 | 150 | 152 | 226) {
         bat_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85842-85859` — the 611/689 Owl arm (sites 28-30).
+    else if npc_type == 611 || npc_type == 689 {
+        owl_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85860-85878` — the 624 Gnome arm (sites 31-34).
+    else if npc_type == 624 {
+        gnome_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85879-85897` — the 628 Dandelion arm (sites 35-38).
+    else if npc_type == 628 {
+        dandelion_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -770,5 +892,110 @@ mod tests {
             }
             assert_eq!(rng.peek(), twin.peek(), "bat kind {kind} mirrors the C# draws");
         }
+    }
+
+    /// `NPC.cs:85832-85839` — the bat tail: 226 Flying Snake
+    /// 317/318/318/319, the 49 Cave Bat fallthrough 82.
+    #[test]
+    fn w4_f5d_the_bat_tail_spawns_the_snake_and_cave_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 26.0);
+        for (kind, want) in [(226, vec![317, 318, 318, 319]), (49, vec![82])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(41);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "bat kind {kind}");
+            let mut twin = UnifiedRandom::new(41);
+            for _ in 0..15 {
+                twin_dust(&mut twin, 30, 26);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "bat kind {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:85856-85858` — the Owl/Owl Mimic death: 1164/1164/1165
+    /// after the 15x dust-5 burst; both kinds share the row.
+    #[test]
+    fn w4_f5d_the_owl_deaths_spawn_the_triple() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 26.0);
+        for kind in [611, 689] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(43);
+            let _ = hit_effect_d(&n, kind, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![1164, 1164, 1165], "owl kind {kind}");
+            assert!(!gore.slot(3).active, "exactly three gores");
+            let mut twin = UnifiedRandom::new(43);
+            for _ in 0..15 {
+                twin_dust(&mut twin, 30, 26);
+            }
+            for _ in 0..3 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "owl kind {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:85874-85877` — the Gnome death: the count drops to 10 dust
+    /// (not 15), then 1190/1191/1192/1193.
+    #[test]
+    fn w4_f5d_the_gnome_death_drops_the_dust_count_to_ten() {
+        let w = air();
+        let n = mob(100.0, 100.0, 26.0, 32.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(47);
+        let _ = hit_effect_d(&n, 624, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1190, 1191, 1192, 1193]);
+        assert!(!gore.slot(4).active, "exactly four gores");
+        let mut twin = UnifiedRandom::new(47);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 26, 32);
+        }
+        for _ in 0..4 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the gnome death mirrors the C# draws");
+    }
+
+    /// `NPC.cs:85893-85896` — the Dandelion death: 10x dust-3 (the leaf
+    /// puff, NOT dust-5), then 1205/1206/1206/1207.
+    #[test]
+    fn w4_f5d_the_dandelion_death_puffs_dust_three() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 34.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(53);
+        let _ = hit_effect_d(&n, 628, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1205, 1206, 1206, 1207]);
+        let leaf = dust.slots().iter().find(|d| d.active).unwrap();
+        assert_eq!(leaf.dust_type, 3, "the dandelion puffs type 3");
+        let mut twin = UnifiedRandom::new(53);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 30, 34);
+        }
+        for _ in 0..4 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the dandelion death mirrors the C# draws");
     }
 }
