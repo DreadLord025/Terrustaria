@@ -1274,6 +1274,15 @@ impl Rain {
     /// Draw in the always-rebuilt world-effect range (screen space, under the
     /// map batches and the interface), so the cached world instance range (G6)
     /// is unaffected by the moving drops.
+    ///
+    /// `Main.DrawRain` (`Main.cs:38800-38826`): the 2×40 frame at `type * 4`
+    /// (`:38812`), the `GetColor((int)(pos+4f) >> 4)` light sample ×0.85 with
+    /// the shimmer `*(1 - shimmerAlpha)` byte chain (`:38813-38817`), rotation
+    /// about the top-left (`Vector2.Zero` origin, `:38806/:38818` — the WGSL
+    /// rotates about the quad's top-left, `sprite.wgsl:92-97`). The C#'s
+    /// per-drop `Update` inside the draw loop (`:38819-38822`, gated
+    /// `FocusHelper.AllowRain`) rides the port's 60 Hz weather tick instead
+    /// (the recorded draw-cadence fold).
     pub fn draw(
         &self,
         r: &mut SpriteRenderer,
@@ -1282,6 +1291,7 @@ impl Rain {
         camera: Vec2,
         zoom: f32,
         screen: Vec2,
+        shimmer_alpha: f32,
     ) {
         // The splash dust draws through the pool's own `DrawDust` entry
         // (`draw_splashes`, the W4-g67 seam) — the drops/snow/flash still gate
@@ -1306,12 +1316,22 @@ impl Rain {
             let Some(uv) = lookups.rain_uv(d.kind) else {
                 continue;
             };
-            let c = light_at(light, d.pos);
+            // `:38813`: the light sample is the tile containing `pos + 4` —
+            // `(int)(pos.X + 4f) >> 4`, NOT `light_at`'s bare `pos/16` (that
+            // helper is the DUST convention, `:38968`'s `(pos+4)/16`; the two
+            // differ by one tile in the 12..15 px band of each cell).
+            let (lx, ly) = rain_light_tile(d.pos);
+            let c = light.get(lx, ly);
+            // `:38813-38817`: the XNA byte chain — GetColor truncates
+            // `light * 255` per channel (alpha 255), `* 0.85f` byte-casts,
+            // then `shimmerAlpha > 0` multiplies by `1 - shimmerAlpha` with
+            // another byte cast (the d130 `rain_tint` shape, re-pinned here).
+            let tint = rain_drop_tint(c, shimmer_alpha);
             r.push_fx_sprite_rot(
                 to_screen(d.pos),
                 [DROP_W * d.scale * zoom, DROP_H * d.scale * zoom],
                 uv,
-                [c[0] * 0.85, c[1] * 0.85, c[2] * 0.85, 1.0],
+                tint,
                 d.rot,
             );
         }
@@ -1555,6 +1575,40 @@ pub(crate) fn dust_in_cull_rect(position: Vec2, rect: (i32, i32, i32, i32)) -> b
     let sx = position.x as i32;
     let sy = position.y as i32;
     rx < sx + 4 && sx < rx + rw && ry < sy + 4 && sy < ry + rh
+}
+
+/// `Main.DrawRain`'s light-sample tile (`Main.cs:38813`):
+/// `Lighting.GetColor((int)(rain.position.X + 4f) >> 4, (int)(…Y + 4f) >> 4)` —
+/// the tile containing `pos + 4`, arithmetic-shifted. Differs from the dust
+/// convention (`:38968`'s `(pos+4)/16`, [`light_at`]) in the 12..15 px band of
+/// each cell, where the `+4` crosses the tile edge.
+pub(crate) fn rain_light_tile(p: Vec2) -> (i32, i32) {
+    (((p.x + 4.0) as i32) >> 4, ((p.y + 4.0) as i32) >> 4)
+}
+
+/// `Main.DrawRain`'s colour chain (`Main.cs:38813-38817`) as XNA bytes:
+/// `Lighting.GetColor` truncates `light * 255` per channel and clamps at 255
+/// (`Lighting.cs:224-240`, alpha 255), `* 0.85f` byte-casts every channel,
+/// then `shimmerAlpha > 0` multiplies by `1 - shimmerAlpha` with another byte
+/// cast. Returns the normalised `[f32; 4]` the sprite pipeline consumes.
+/// (The d130 `rain_tint` shape — the union keeps one copy.)
+pub(crate) fn rain_drop_tint(light: [f32; 3], shimmer_alpha: f32) -> [f32; 4] {
+    let byte = |v: f32| (v.min(255.0) as i32) as u8;
+    let c = [
+        byte(light[0] * 255.0),
+        byte(light[1] * 255.0),
+        byte(light[2] * 255.0),
+        255u8,
+    ];
+    let mut out = [0.0; 4];
+    for k in 0..4 {
+        let mut b = (c[k] as f32 * 0.85) as i32 as u8;
+        if shimmer_alpha > 0.0 {
+            b = (b as f32 * (1.0 - shimmer_alpha)) as i32 as u8;
+        }
+        out[k] = b as f32 / 255.0;
+    }
+    out
 }
 
 /// `Lighting.GetColor` for a world-space point, clamped to the computed light rect.
@@ -3146,5 +3200,50 @@ mod tests {
         rain.gfx_quality = 1.0;
         rain.spawn(&normal, camera, screen, 1.0, 0.0, 1.0, 300, true, DropSimInputs::default());
         assert_eq!(rain.drop_count(), 26, "300 tiles barely suppress on a normal world");
+    }
+
+    // ---- W4-g67 FINAL: the DrawRain render census (Main.cs:38800-38826) ----
+
+    /// The light-sample tile is `(int)(pos + 4f) >> 4` (`:38813`), NOT the
+    /// dust convention's bare `pos/16`: in the 12..15 px band of a cell the
+    /// `+4` crosses into the NEXT tile. Pure geometry, WRITTEN NOT RUN.
+    #[test]
+    fn w4_g67_draw_rain_light_tile_is_pos_plus_four_shifted() {
+        // Cell interior: pos 16*3+2 = 50 → (50+4)>>4 = 3 (same tile).
+        assert_eq!(rain_light_tile(Vec2::new(50.0, 50.0)), (3, 3));
+        // The 12..15 band: pos 16*3+12 = 60 → (60+4)>>4 = 4 (NEXT tile —
+        // the old light_at(pos) read tile 3 here, one tile early).
+        assert_eq!(rain_light_tile(Vec2::new(60.0, 60.0)), (4, 4));
+        // The exact edge: pos 63.9 → (int)67.9 = 67 >> 4 = 4.
+        assert_eq!(rain_light_tile(Vec2::new(63.9, 63.9)), (4, 4));
+        // Negative coords truncate toward zero then arithmetic-shift:
+        // pos -1 → (int)3 = 3 >> 4 = 0; pos -5 → (int)(-1) = -1 >> 4 = -1.
+        assert_eq!(rain_light_tile(Vec2::new(-1.0, -1.0)), (0, 0));
+        assert_eq!(rain_light_tile(Vec2::new(-5.0, -5.0)), (-1, -1));
+    }
+
+    /// The tint is the XNA byte chain (`:38813-38817`): GetColor truncates
+    /// `light*255` (alpha 255), `*0.85f` byte-casts, shimmer `*(1-a)` casts
+    /// again. Full light → 216/255 (255*0.85 = 216.75 → 216), NOT the f32
+    /// 0.85 the old draw fed the pipeline. WRITTEN NOT RUN.
+    #[test]
+    fn w4_g67_draw_rain_tint_is_the_xna_byte_chain() {
+        let full = rain_drop_tint([1.0, 1.0, 1.0], 0.0);
+        let b = 216.0 / 255.0;
+        assert_eq!(full, [b, b, b, 1.0]);
+        // Half light: (int)(0.5*255) = 127 → (int)(127*0.85) = 107.
+        let half = rain_drop_tint([0.5, 0.5, 0.5], 0.0);
+        assert_eq!(half[0], 107.0 / 255.0);
+        assert_eq!(half[3], 1.0, "alpha stays 255 — the C# never dims it");
+        // Shimmer 0.5: 216 → (int)(216*0.5) = 108.
+        let shim = rain_drop_tint([1.0, 1.0, 1.0], 0.5);
+        assert_eq!(shim[0], 108.0 / 255.0);
+        // Shimmer 0 is the no-op arm (no second cast).
+        assert_eq!(rain_drop_tint([0.5, 0.5, 0.5], 0.0), half);
+        // Overbright light clamps at 255 before the 0.85 (Lighting.cs:228-239).
+        assert_eq!(rain_drop_tint([2.0, 2.0, 2.0], 0.0), full);
+        // Full dark → black (the drop draws invisibly; DrawRain has NO
+        // black-kill arm — only DrawDust does, :39015-39017).
+        assert_eq!(rain_drop_tint([0.0; 3], 0.0), [0.0, 0.0, 0.0, 1.0]);
     }
 }

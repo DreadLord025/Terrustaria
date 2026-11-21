@@ -1235,8 +1235,18 @@ the shell, the patch tunnels).
 falls at `(windSpeedCurrent * 18, 14)` px/tick, and dies on solid or wet collision or below
 the view, spawning the water `Dust` frame with 10 % of its velocity. `SetBackColor`'s
 `1 - cloudAlpha * 0.9 * atmo` multiplies the sky colour, which also dims surface sunlight
-via `ApplyColorOfTheSkiesToTiles`. Drops are drawn with the `Rain` texture's 2x40 frames,
-rotated by `atan2(vx, -vy)`, tinted by `Lighting.GetColor` * 0.85.
+via `ApplyColorOfTheSkiesToTiles`. Drops are drawn with the `Rain` texture's 2x40 frames
+(`frame.X = type * 4`, `Main.cs:38812`), rotated by `atan2(vx, -vy)` about the top-left
+(`Vector2.Zero` origin, `:38806/:38818` — the WGSL quad rotates about its top-left),
+tinted by the `Lighting.GetColor((int)(pos+4f) >> 4)` sample (`:38813` — the tile
+containing `pos+4`, one tile later than the dust convention in each cell's 12..15 px
+band) through the XNA byte chain `*0.85` then shimmer `*(1-shimmerAlpha)`
+(`rain_drop_tint`, the d130 `rain_tint` shape; W4-g67 final render census — the earlier
+f32 `light_at(pos)*0.85` tint was two deviations: the wrong sample tile and no byte
+casts / no shimmer arm). `DrawRain` has NO cull rect and NO black-kill (unlike
+`DrawDust`); the per-drop `Update` inside the draw loop (`:38819-38822`,
+`FocusHelper.AllowRain`-gated) rides the port's 60 Hz weather tick (the recorded
+draw-cadence fold).
 
 Storms add two pieces from `Main.DrawSurfaceBG`/`Main.SpawnStormLightning`: the
 `cloudBG` layers (`Background_112/113`, scale 1.65/1.85, parallax 0.09/0.12) fade in with a
