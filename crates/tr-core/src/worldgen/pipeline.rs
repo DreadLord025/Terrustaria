@@ -1423,6 +1423,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // Planting Trees (`:19940`), before Dye Plants (`:19981`) — W4-d105
     // lane 5. The `PlantAlch` draws ride `pass_rng("Herbs")`.
     step!("herbs", "Herbs", step_herbs),
+    // The vanilla Dye Plants slot (`WorldGen.cs:19981`): immediately after
+    // Herbs (`:19964`), before Webs And Honey (`:19995`) — W4-d105 lane 5.
+    // The plantDye picks + the three tails' draws ride
+    // `pass_rng("Dye Plants")`.
+    step!("dye plants", "Dye Plants", step_dye_plants),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
     // The vanilla Water Plants slot (`WorldGen.cs:21973`): after the
@@ -2331,6 +2336,36 @@ fn step_herbs(
     );
 }
 
+/// `Dye Plants` (`WorldGen.cs:19981-19994`, `GenPassNameID.DyePlants`) —
+/// the per-column `plantDye` attempts + `MatureTheHerbPlants` +
+/// `GrowGlowTulips` + `PlaceChilletEggs`. The
+/// `Skyblock.denyAllGeneration` gate (`:19983`) rides the adapter; every
+/// draw rides `pass_rng("Dye Plants")`.
+fn step_dye_plants(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if skyblock_deny_all_generation(opts) {
+        return;
+    }
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    let remix = opts.flags.contains(crate::seeds::SeedFlags::REMIX);
+    surface::pass_dye_plants(
+        world,
+        world_surface,
+        rock_layer,
+        remix,
+        &mut streams.pass_rng("Dye Plants"),
+    );
+}
+
 /// `Webs And Honey` (`WorldGen.cs:19995`) — the wall-keyed sweep that hangs
 /// cobweb in the spider caves and honeyed speleothems in the hives.
 fn step_webs_and_honey(
@@ -2930,6 +2965,12 @@ pub(crate) fn boot_statics(world: &mut World) {
     world.frame_important[82] = true;
     world.frame_important[83] = true;
     world.frame_important[84] = true;
+    // The dye plant 227 (`Main.cs:7394`), the glow tulip 656 (`:7748`) and
+    // the chillet egg 752 (`:9810`) — W4-d105 lane 5's Dye Plants pass
+    // writes their style frames; the framer keeps them.
+    world.frame_important[227] = true;
+    world.frame_important[656] = true;
+    world.frame_important[752] = true;
     world.frame_important[185] = true;
     world.frame_important[186] = true;
     world.frame_important[187] = true;
@@ -3283,8 +3324,10 @@ mod tests {
         // W4-d105 lane 5: + `guide` (vanilla "Guide", `WorldGen.cs:19685`)
         // between `living trees` and `trees`, + `sunflowers` (vanilla
         // "Sunflowers", `:19898`) between `guide` and `trees`, + `herbs`
-        // (vanilla "Herbs", `:19964`) between `trees` and `surface flora`.
-        assert_eq!(names.len(), 69);
+        // (vanilla "Herbs", `:19964`) between `trees` and `surface flora`,
+        // + `dye plants` (vanilla "Dye Plants", `:19981`) between `herbs`
+        // and `surface flora`.
+        assert_eq!(names.len(), 70);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3379,6 +3422,7 @@ mod tests {
                 "sunflowers",
                 "trees",
                 "herbs",
+                "dye plants",
                 "surface flora",
                 "cacti",
                 "lihzahrd altar",
@@ -3650,6 +3694,27 @@ mod tests {
         assert!(cpos("Planting Trees") < cpos("Herbs"));
         assert!(cpos("Herbs") < cpos("Dye Plants"));
         assert!(cpos("Herbs") < cpos("Weeds"));
+    }
+
+    /// W4-d105 lane 5 (#40): `dye plants` sits immediately after `herbs`
+    /// and before `surface flora` — the vanilla Herbs (`WorldGen.cs:19964`)
+    /// → Dye Plants (`:19981`) → Webs And Honey (`:19995`) → Weeds
+    /// (`:20064`) chain.
+    #[test]
+    fn w4_d105_the_dye_plants_step_sits_after_the_herbs() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("dye plants"), pos("herbs") + 1);
+        assert_eq!(pos("dye plants") + 1, pos("surface flora"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Herbs") < cpos("Dye Plants"));
+        assert!(cpos("Dye Plants") < cpos("Webs And Honey"));
+        assert!(cpos("Dye Plants") < cpos("Weeds"));
     }
 
     #[test]

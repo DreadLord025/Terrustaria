@@ -252,7 +252,11 @@ mod tests {
     // grass tops (the band attempts + the PlaceSunflower style draws), so
     // both pins move by design from that commit on. #39 Herbs plants tile
     // 82 (the PlantAlch attempts, `WorldGen.cs:45901-45938`) — both pins
-    // move again by design.
+    // move again by design. #40 Dye Plants writes tile 227 (the plantDye
+    // attempts), matures the herbs (82 → 83 → 84) and plants the glow
+    // tulips 656 + the chillet eggs 752 (`WorldGen.cs:19981-19994` +
+    // `:71286-71455` / `:45748-45775` / `:45622-45678`) — both pins move
+    // again by design.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its

@@ -139,6 +139,9 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "sunflowers" => PassMessage::Gen(39),
         // WorldGen.cs:19973 (AlchemyHerbs).
         "herbs" => PassMessage::Gen(41),
+        // WorldGen.cs:19981-19994 (DyePlants) sets no progress.Message —
+        // only progress.Set(1.0) — so the step carries none (the C# keeps
+        // the previous pass's message).
         // WorldGen.cs:20068.
         "surface flora" => PassMessage::Gen(42),
         // WorldGen.cs:21314.

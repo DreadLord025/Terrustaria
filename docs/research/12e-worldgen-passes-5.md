@@ -74,7 +74,15 @@ Jungle `:20813` are already executed steps; #46 Settle Liquids Again
       `edit::place_alch`); step `herbs` between `trees` and
       `surface flora`; witness
       `w4_d105_the_herbs_step_sits_after_the_trees` + 3 unit tests.
-- [ ] 40 Dye Plants
+- [x] 40 Dye Plants — `surface.rs::pass_dye_plants` + `plant_dye` +
+      `place_dye` + `mature_the_herb_plants` + `grow_glow_tulips` +
+      `place_chillet_eggs` (`:19981-19994` + `plantDye` `:71286-71455` +
+      `PlaceDye` `:53988-54064` + `MatureTheHerbPlants` `:45748-45775` +
+      `GrowGlowTulips` `:45622-45650` + `PlaceChilletEggs` `:45652-45678`
+      + `Place2x2` `:51330-51423`); step `dye plants` between `herbs` and
+      `surface flora`; witness
+      `w4_d105_the_dye_plants_step_sits_after_the_herbs` + 5 unit tests;
+      the 227/656/752 frame-important boot statics land.
 - [ ] 41 Flowers
 - [ ] 42 Mushrooms
 - [ ] 43 Random Gems

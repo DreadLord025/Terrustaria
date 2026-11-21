@@ -596,6 +596,584 @@ fn place_suitable_herb_here(world: &mut World, x: i32, y: i32) {
     }
 }
 
+/// `DyePlants` (`WorldGen.cs:19981-19994`): one `plantDye` attempt per
+/// column (`Next(100, maxTilesX - 100)`, `Next(100, UnderworldLayer)`),
+/// then `MatureTheHerbPlants`, `GrowGlowTulips`, `PlaceChilletEggs` — the
+/// four tails in the C#'s call order, all on the pass's stream.
+pub(crate) fn pass_dye_plants(
+    world: &mut World,
+    world_surface: f64,
+    rock_layer: f64,
+    remix: bool,
+    rng: &mut Rng,
+) {
+    // `Main.UnderworldLayer` = `maxTilesY - 200` (`Main.cs:2790`).
+    let underworld_layer = world.height - 200;
+    // The sub-vanilla guard: both bands must be non-empty (the C# throws;
+    // the port skips the loop before any draw — the wave B convention).
+    if world.width > 200 && underworld_layer > 100 {
+        for _ in 0..world.width {
+            let x = rng.range(100, world.width - 100);
+            let y = rng.range(100, underworld_layer);
+            plant_dye(world, x, y, world_surface, underworld_layer, remix, rng);
+        }
+    }
+    mature_the_herb_plants(world, rock_layer, rng);
+    grow_glow_tulips(world, world_surface, remix, rng);
+    place_chillet_eggs(world, rock_layer, remix, rng);
+}
+
+/// The dye-plant neighbour gate (`plantDye`'s three scans,
+/// `WorldGen.cs:71304-71313` / `:71388-71397` / `:71441-71450`): any active
+/// tile 227 in the box bails. The classic arm (`exoticPlant` false) only
+/// counts the pre-strange styles (`frameX < 272`); the box is half-open
+/// `[x - radius, x + radius)` for the first two scans, the third uses the
+/// unclamped bounds.
+fn dye_nearby(world: &World, x: i32, y: i32, radius: i32, clamp: bool) -> bool {
+    let (x0, x1, y0, y1) = if clamp {
+        (
+            (x - radius).clamp(1, world.width - 2),
+            (x + radius).clamp(1, world.width - 2),
+            (y - radius).clamp(1, world.height - 2),
+            (y + radius).clamp(1, world.height - 2),
+        )
+    } else {
+        (x - radius, x + radius, y - radius, y + radius)
+    };
+    for i in x0..x1 {
+        for j in y0..y1 {
+            if world
+                .tile(i, j)
+                .is_some_and(|t| t.active() && t.kind == 227 && t.frame_x < 272)
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// The above-cell plant gate (`:71298` / `:71382`): free, or one of the
+/// cut plants (3/51/61/73/74/184).
+fn dye_above_ok(world: &World, x: i32, y: i32) -> bool {
+    match world.tile(x, y) {
+        None => false,
+        Some(t) => !t.active() || matches!(t.kind, 3 | 51 | 61 | 73 | 74 | 184),
+    }
+}
+
+/// `WorldGen.plantDye` (`WorldGen.cs:71286-71455`, the classic
+/// `exoticPlant = false` arm — the pass never calls the exotic one): the
+/// surface band, the underground band and the hanging-dirt tail. The
+/// `PlaceTile` liquid gate (`:59454-59471` — 227 is NOT in the refusal
+/// list) passes every liquid cell, so the port's `place_dye` carries the
+/// per-style liquid rules only.
+///
+/// This is the GEN-TIME port (the worldgen pass's xorshift `Rng` + the
+/// explicit `world_surface`/`underworld_layer` anchors + the remix bypass).
+/// The runtime growth twin (`growth::decorations::plant_dye`/`place_dye`)
+/// reads `world.world_surface` and draws from `UnifiedRandom` — the
+/// `UpdateWorld` stream — so the two cannot share a body without a stream
+/// seam; the behaviour (the soil dispatch, the style picks, the density
+/// boxes) is the same C# function, ported per caller like the other
+/// gen/runtime pairs.
+fn plant_dye(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    world_surface: f64,
+    underworld_layer: i32,
+    remix: bool,
+    rng: &mut Rng,
+) {
+    // `:71289-71292` — the active + 95-border gate.
+    let Some(kind) = world.tile(x, y).filter(|t| t.active()).map(|t| t.kind) else {
+        return;
+    };
+    if x < 95 || x > world.width - 95 || y < 95 || y > world.height - 95 {
+        return;
+    }
+    let radius = 90;
+    // `:71298-71377` — the surface band.
+    if ((y as f64) < world_surface || remix) && dye_above_ok(world, x, y - 1) {
+        if dye_nearby(world, x, y, radius, true) {
+            return;
+        }
+        if kind == 2 || kind == 109 {
+            // `:71329-71336` — the grass pick: 1/4 orange (4), else green (3).
+            let style = if rng.range(0, 4) == 0 { 4 } else { 3 };
+            place_dye(world, x, y - 1, style);
+        } else if kind == 60 {
+            // `:71340-71347` — the jungle pick: 1/2 teal (2), else orange (4).
+            let style = if rng.range(0, 2) == 0 { 2 } else { 4 };
+            place_dye(world, x, y - 1, style);
+        } else if kind == 53
+            && world.tile(x, y - 1).is_some_and(|t| t.liquid == u8::MAX)
+            && world.tile(x, y - 2).is_some_and(|t| t.liquid == u8::MAX)
+        {
+            // `:71349-71352` — the submerged sand: teal (2).
+            place_dye(world, x, y - 1, 2);
+        } else if kind == 80
+            && !world.tile(x - 1, y - 1).is_some_and(|t| t.active())
+            && !world.tile(x + 1, y - 1).is_some_and(|t| t.active())
+        {
+            // `:71353-71376` — the cactus arm: no evil altar/tube (112/234)
+            // in the 11×21 box, then lime (6). The C#'s try/catch folds to
+            // the port's bounds-safe reads.
+            let mut clear = true;
+            for m in x - 5..=x + 5 {
+                for n in y - 5..=y + 15 {
+                    if world
+                        .tile(m, n)
+                        .is_some_and(|t| t.active() && (t.kind == 112 || t.kind == 234))
+                    {
+                        clear = false;
+                    }
+                }
+            }
+            if clear {
+                place_dye(world, x, y - 1, 6);
+            }
+        }
+    }
+    // `:71378-71381` — the underground gate.
+    if ((y as f64) < world_surface && !remix) || y >= underworld_layer {
+        return;
+    }
+    // `:71382-71436` — the underground band.
+    if dye_above_ok(world, x, y - 1) {
+        if dye_nearby(world, x, y, radius, true) {
+            return;
+        }
+        if kind == 60 {
+            // `:71408-71419` — the jungle pick: 1/2 teal (2), else 1/2
+            // plain (0), else red (1). The second roll draws only when the
+            // first fails (the C# else-if).
+            if rng.range(0, 2) == 0 {
+                place_dye(world, x, y - 1, 2);
+            } else if rng.range(0, 2) == 0 {
+                place_dye(world, x, y - 1, 0);
+            } else {
+                place_dye(world, x, y - 1, 1);
+            }
+        } else if kind == 0 || kind == 1 || kind == 59 {
+            // `:71423-71430` — the dirt/stone/mud pick: 1/2 plain (0), else
+            // red (1).
+            let style = if rng.range(0, 2) == 0 { 0 } else { 1 };
+            place_dye(world, x, y - 1, style);
+        } else if world.tile(x, y - 1).is_some_and(|t| t.liquid == u8::MAX)
+            && world.tile(x, y - 2).is_some_and(|t| t.liquid == u8::MAX)
+        {
+            // `:71432-71435` — the submerged cell: blue (5).
+            place_dye(world, x, y - 1, 5);
+        }
+    }
+    // `:71437-71454` — the hanging-dirt tail.
+    if world.tile(x, y + 1).is_some_and(|t| t.active()) {
+        return;
+    }
+    if dye_nearby(world, x, y, radius, false) {
+        return;
+    }
+    if kind == 0 {
+        place_dye(world, x, y + 1, 7);
+    }
+}
+
+/// `WorldGen.PlaceDye` (`WorldGen.cs:53988-54064`): the per-style support
+/// and liquid rules, then the write — `type 227, active, halfBrick false,
+/// slope 0, frameY 0, frameX 34 * style`. The classic styles only (0-7;
+/// the strange 8-11 are the exotic arm's).
+fn place_dye(world: &mut World, x: i32, y: i32, style: i32) {
+    // `:53991-53994` — both neighbours must exist.
+    let (Some(above), Some(below)) = (world.tile(x, y - 1).copied(), world.tile(x, y + 1).copied())
+    else {
+        return;
+    };
+    let cell = match world.tile(x, y).copied() {
+        Some(t) => t,
+        None => return,
+    };
+    let mut ok = false;
+    if style == 7 {
+        // `:53995-54005` — the hanging arm: the below cell free or a cut
+        // plant, the above cell solid, the below cell inactive.
+        if below.active() && !matches!(below.kind, 3 | 51 | 697 | 61 | 703 | 73 | 74 | 184) {
+            return;
+        }
+        if crate::edit::solid_tile(world, x, y - 1) && !below.active() {
+            ok = true;
+        }
+    } else {
+        // `:54008-54011` — the above cell free or a cut plant.
+        if above.active() && !matches!(above.kind, 3 | 51 | 697 | 61 | 703 | 73 | 74 | 184) {
+            return;
+        }
+        if style == 6 {
+            // `:54012-54018` — the cactus seat: a flat cactus below with
+            // free sides.
+            if crate::tileobject::nactive(&below)
+                && below.kind == 80
+                && !world.tile(x - 1, y + 1).is_some_and(|t| t.active())
+                && !world.tile(x + 1, y + 1).is_some_and(|t| t.active())
+            {
+                ok = true;
+            }
+        } else if crate::edit::solid_tile(world, x, y + 1) && !above.active() {
+            // `:54019-54053` — the floor seat + the per-style liquid rules.
+            match style {
+                5 => {
+                    // Full water only (no lava/honey/shimmer).
+                    if cell.liquid == u8::MAX
+                        && cell.liquid_kind() == crate::tile::LiquidKind::Water
+                    {
+                        ok = true;
+                    }
+                }
+                _ => {
+                    if cell.liquid == 0 {
+                        if style == 3 || style == 4 {
+                            // The wall-less requirement.
+                            if cell.wall == 0 {
+                                ok = true;
+                            }
+                        } else {
+                            ok = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if ok {
+        // `:54055-54063` — the write.
+        if let Some(t) = world.tile_mut(x, y) {
+            t.kind = 227;
+            t.flags |= FLAG_ACTIVE;
+            t.flags &= !crate::tile::FLAG_HALF_BRICK;
+            t.set_slope(0);
+            t.frame_y = 0;
+            t.frame_x = (34 * style) as i16;
+        }
+        // `PlaceTile`'s tail `SquareTileFrame` (`:60044`).
+        crate::edit::square_tile_frame_gen(world, x, y);
+    }
+}
+
+/// `WorldGen.MatureTheHerbPlants` (`WorldGen.cs:45748-45775`): the
+/// full-world sweep — below the rock layer, a free dry cell above mud/dirt
+/// solid floor grows a blinkroot (82, frameX 36) at 1/25; every herb cell
+/// (the type test reads inactive cells too) matures 82 → 83 at 1/3, then
+/// the blinkroot 36 → 84 at 1/2 and the fireblossom 108 → 84 at 1/3.
+fn mature_the_herb_plants(world: &mut World, rock_layer: f64, rng: &mut Rng) {
+    for i in 10..world.width - 10 {
+        for j in 10..world.height - 10 {
+            // `:45754-45760` — the wild blinkroot arm. The floor's type test
+            // reads the cell even when inactive; `SolidTile` gates it.
+            let floor_kind = world.tile(i, j + 1).map(|t| t.kind);
+            if (j as f64) > rock_layer
+                && matches!(floor_kind, Some(59) | Some(0))
+                && crate::edit::solid_tile(world, i, j + 1)
+                && !world.tile(i, j).is_some_and(|t| t.active())
+                && world.tile(i, j).is_some_and(|t| t.liquid == 0)
+                && rng.range(0, 25) == 0
+            {
+                if let Some(t) = world.tile_mut(i, j) {
+                    t.flags |= FLAG_ACTIVE;
+                    t.kind = 82;
+                    t.frame_x = 36;
+                    t.frame_y = 0;
+                }
+            }
+            // `:45761-45772` — the maturation arms. The C# reads `.type`
+            // with no active gate; the port matches it.
+            let herb = world.tile(i, j).map(|t| (t.kind, t.frame_x));
+            if let Some((82, fx)) = herb {
+                if rng.range(0, 3) == 0 {
+                    if let Some(t) = world.tile_mut(i, j) {
+                        t.kind = 83;
+                    }
+                    if fx == 36 && rng.range(0, 2) == 0 {
+                        if let Some(t) = world.tile_mut(i, j) {
+                            t.kind = 84;
+                        }
+                    }
+                    if fx == 108 && rng.range(0, 3) == 0 {
+                        if let Some(t) = world.tile_mut(i, j) {
+                            t.kind = 84;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// `TileID.Sets.Conversion.Grass` (`TileID.cs:86`): 2/23/199/109/477/492.
+/// The generated tables carry no `SET_CONVERSION_GRASS` (the grass family
+/// is the `SET_GRASS`/`SET_GRASS_SPECIAL` pair plus the golf grasses); the
+/// literal set is the chillet/tulip ground gate's read.
+const CONVERSION_GRASS: [u16; 6] = [2, 23, 199, 109, 477, 492];
+
+/// `WorldGen.HasValidGroundForGlowTulipBelowSpot` /
+/// `HasValidGroundForChilletEggBelowSpot` (`WorldGen.cs:73096-73117` /
+/// `:45725-45746` — the two bodies are identical): the floor cell must be
+/// active, one of the dirt/mushroom/ash/mud/hive kinds, the conversion
+/// grass/stone families or a moss, and `SolidTileAllowBottomSlope`.
+fn valid_ground_below(world: &World, x: i32, y: i32) -> bool {
+    // `InWorld(x, y, 2)`.
+    if x < 2 || y < 2 || x >= world.width - 2 || y >= world.height - 2 {
+        return false;
+    }
+    let Some(floor) = world.tile(x, y + 1) else {
+        return false;
+    };
+    if !floor.active() {
+        return false;
+    }
+    let kind = floor.kind;
+    if kind != 0
+        && kind != 70
+        && kind != 633
+        && kind != 59
+        && kind != 225
+        && !CONVERSION_GRASS.contains(&kind)
+        && !crate::tiledata::SET_CONVERSION_STONE.has(kind)
+        && !crate::tiledata::TILE_MOSS.has(kind)
+    {
+        return false;
+    }
+    crate::edit::solid_tile_allow_bottom_slope(world, x, y + 1)
+}
+
+/// `WorldGen.NoNearbyGlowTulips` (`WorldGen.cs:73144-73162`): no active
+/// 656 in the ±120 box (clamped to the 10-border).
+fn no_nearby_glow_tulips(world: &World, x: i32, y: i32) -> bool {
+    let x0 = (x - 120).clamp(10, world.width - 11);
+    let x1 = (x + 120).clamp(10, world.width - 11);
+    let y0 = (y - 120).clamp(10, world.height - 11);
+    let y1 = (y + 120).clamp(10, world.height - 11);
+    for i in x0..=x1 {
+        for j in y0..=y1 {
+            if world.tile(i, j).is_some_and(|t| t.active() && t.kind == 656) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// `WorldGen.NoNearbyChilletEggs` (`WorldGen.cs:45680-45698`): no active
+/// 752 in the ±20 box (clamped to the 10-border).
+fn no_nearby_chillet_eggs(world: &World, x: i32, y: i32) -> bool {
+    let x0 = (x - 20).clamp(10, world.width - 11);
+    let x1 = (x + 20).clamp(10, world.width - 11);
+    let y0 = (y - 20).clamp(10, world.height - 11);
+    let y1 = (y + 20).clamp(10, world.height - 11);
+    for i in x0..=x1 {
+        for j in y0..=y1 {
+            if world.tile(i, j).is_some_and(|t| t.active() && t.kind == 752) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// `WorldGen.TryGrowingGlowTulip` (`WorldGen.cs:73119-73142`): five jitter
+/// attempts (`Next(max(10, x-10), min(width-10, x+10))` per axis), each
+/// gated on the ground + the neighbour box, then `PlaceTile(656)` — the
+/// glow-tulip arm (`:59495-59506`): a free/cut/breakable cell above valid
+/// ground writes active 656, frames 0, slope 0, no half brick. The liquid
+/// gate (`:59468`) refuses any liquid cell before the arm.
+fn try_growing_glow_tulip(world: &mut World, x: i32, y: i32, rng: &mut Rng) -> bool {
+    for _ in 0..5 {
+        let nx = rng.range((x - 10).max(10), (x + 10).min(world.width - 10));
+        let ny = rng.range((y - 10).max(10), (y + 10).min(world.height - 10));
+        if !valid_ground_below(world, nx, ny) || !no_nearby_glow_tulips(world, nx, ny) {
+            continue;
+        }
+        // The PlaceTile liquid gate + the 656 arm.
+        let Some(cell) = world.tile(nx, ny).copied() else {
+            continue;
+        };
+        if cell.liquid > 0 {
+            continue;
+        }
+        if (!cell.active()
+            || crate::tileobject::tile_cut(cell.kind)
+            || crate::tileobject::breakable_when_placing(cell.kind))
+            && valid_ground_below(world, nx, ny)
+        {
+            if let Some(t) = world.tile_mut(nx, ny) {
+                t.flags |= FLAG_ACTIVE;
+                t.kind = 656;
+                t.flags &= !crate::tile::FLAG_HALF_BRICK;
+                t.set_slope(0);
+                t.frame_x = 0;
+                t.frame_y = 0;
+            }
+        }
+        if world.tile(nx, ny).is_some_and(|t| t.active() && t.kind == 656) {
+            return true;
+        }
+    }
+    false
+}
+
+/// `WorldGen.GrowGlowTulips` (`WorldGen.cs:45622-45650`): 2/4/6 tulips by
+/// world size, the 10000-attempt budget — the second half of the quota
+/// prefers the right band (`width-300..width-100`) once 75% of the budget
+/// is spent or a 1/2 roll passes; the y band is `worldSurface..height-200`
+/// (remix `..height-350`).
+fn grow_glow_tulips(world: &mut World, world_surface: f64, remix: bool, rng: &mut Rng) {
+    // `GetWorldSize` (`:6559-6570`): 0 ≤ 4200, 1 ≤ 6400, 2 above.
+    let size = if world.width <= 4200 {
+        0
+    } else if world.width <= 6400 {
+        1
+    } else {
+        2
+    };
+    let quota = match size {
+        1 => 4,
+        2 => 6,
+        _ => 2,
+    };
+    let mut placed = 0;
+    let mut budget = 10000;
+    let budget_floor = (10000.0 * 0.75) as i32;
+    let y_hi = world.height - if remix { 350 } else { 200 };
+    while placed < quota {
+        budget -= 1;
+        if budget <= 0 {
+            break;
+        }
+        // The x-band pick: the ternary's condition draws `Next(2)` only
+        // when the first half is already placed AND the budget is above
+        // the floor (the C# `||` short-circuits).
+        let right = placed >= quota / 2 && (budget <= budget_floor || rng.range(0, 2) != 0);
+        // The sub-vanilla band collapse: the C# throws AFTER the x draw;
+        // the port draws then stops (the consumed draws stay consumed).
+        if world.width <= 400 {
+            break;
+        }
+        let x = if right {
+            rng.range(world.width - 300, world.width - 100)
+        } else {
+            rng.range(100, 300)
+        };
+        let y_lo = world_surface as i32;
+        if y_hi <= y_lo {
+            break;
+        }
+        let y = rng.range(y_lo, y_hi);
+        if try_growing_glow_tulip(world, x, y, rng) {
+            placed += 1;
+        }
+    }
+}
+
+/// `WorldGen.TryPlacingChilletEgg` (`WorldGen.cs:45700-45723`): five jitter
+/// attempts, each gated on the ground + the neighbour box, then
+/// `PlaceTile(752)` — the `Place2x2` arm (`:60196-60197` →
+/// `:51330-51423`): the 2×2 clear box on a solid/table floor, the frames
+/// `k*18` / `style*36 + l*18`.
+fn try_placing_chillet_egg(world: &mut World, x: i32, y: i32, rng: &mut Rng) -> bool {
+    for _ in 0..5 {
+        let nx = rng.range((x - 10).max(10), (x + 10).min(world.width - 10));
+        let ny = rng.range((y - 10).max(10), (y + 10).min(world.height - 10));
+        if !valid_ground_below(world, nx, ny) || !no_nearby_chillet_eggs(world, nx, ny) {
+            continue;
+        }
+        place_2x2(world, nx, ny, 752, 0);
+        if world.tile(nx, ny).is_some_and(|t| t.active() && t.kind == 752) {
+            return true;
+        }
+    }
+    false
+}
+
+/// `WorldGen.Place2x2` (`WorldGen.cs:51330-51423`, the default floor arm —
+/// the 752 chillet egg's route): the 5-border gate, the 2×2 clear box
+/// (`x-1..x+1`, `y-1..y+1`), the two floor cells `nactive` and
+/// (`SolidTile2` or `tileTable`), then the four writes at `(x-1+k, y-1+l)`
+/// with `frameX k*18`, `frameY style*36 + l*18`.
+fn place_2x2(world: &mut World, x: i32, y: i32, kind: u16, style: i32) {
+    // `:51336-51339` — the border gate.
+    if x < 5 || x > world.width - 5 || y < 5 || y > world.height - 5 {
+        return;
+    }
+    // `:51349-51383` — the clear box + the floor seats.
+    for i in x - 1..x + 1 {
+        for j in y - 1..y + 1 {
+            if world.tile(i, j).is_some_and(|t| t.active()) {
+                return;
+            }
+        }
+        let Some(floor) = world.tile(i, y + 1) else {
+            return;
+        };
+        if !crate::tileobject::nactive(floor)
+            || (!crate::edit::solid_tile2(world, i, y + 1)
+                && !crate::tileobject::is_tile_table(floor.kind))
+        {
+            return;
+        }
+    }
+    // `:51409-51422` — the writes.
+    for k in 0..2 {
+        for l in 0..2 {
+            if let Some(t) = world.tile_mut(x - 1 + k, y - 1 + l) {
+                t.flags |= FLAG_ACTIVE;
+                t.frame_x = (k * 18) as i16;
+                t.frame_y = (style * 36 + l * 18) as i16;
+                t.kind = kind;
+            }
+        }
+    }
+}
+
+/// `WorldGen.PlaceChilletEggs` (`WorldGen.cs:45652-45678`): 6/9/12 eggs by
+/// world size (the small world's 6 — the C# switch's `_` arm), the
+/// 10000-attempt budget, the x band `100..width-100`, the y band
+/// `rockLayer..height-200` (remix `..height-350`).
+fn place_chillet_eggs(world: &mut World, rock_layer: f64, remix: bool, rng: &mut Rng) {
+    let size = if world.width <= 4200 {
+        0
+    } else if world.width <= 6400 {
+        1
+    } else {
+        2
+    };
+    let quota = match size {
+        1 => 9,
+        2 => 12,
+        _ => 6,
+    };
+    let mut placed = 0;
+    let mut budget = 10000;
+    let y_hi = world.height - if remix { 350 } else { 200 };
+    while placed < quota {
+        budget -= 1;
+        if budget <= 0 {
+            break;
+        }
+        let y_lo = rock_layer as i32;
+        if world.width <= 200 {
+            break;
+        }
+        let x = rng.range(100, world.width - 100);
+        if y_hi <= y_lo {
+            break;
+        }
+        let y = rng.range(y_lo, y_hi);
+        if try_placing_chillet_egg(world, x, y, rng) {
+            placed += 1;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -760,5 +1338,108 @@ mod tests {
         assert!(!w.tile(100, 49).unwrap().active(), "the beach sand refuses");
         let inland = w.tile(500, 49).unwrap();
         assert!(inland.active() && inland.kind == 82 && inland.frame_x == 72);
+    }
+
+    /// `PlaceDye` (`WorldGen.cs:53988-54064`): the grass style 3 needs a
+    /// wall-less cell; the write is frameX 34*style, frameY 0.
+    #[test]
+    fn place_dye_writes_the_style_frame() {
+        let mut w = grass_world(200, 200, 100);
+        // The cell above the grass at (100, 99): free, no wall, dry.
+        place_dye(&mut w, 100, 99, 3);
+        let t = w.tile(100, 99).unwrap();
+        assert!(t.active() && t.kind == 227);
+        assert_eq!(t.frame_x, 34 * 3);
+        assert_eq!(t.frame_y, 0);
+        // A walled cell refuses style 3 (no draw, no write).
+        let i = w.index(110, 99);
+        w.tiles[i].wall = 2;
+        place_dye(&mut w, 110, 99, 3);
+        assert!(!w.tile(110, 99).unwrap().active());
+        // Style 0 accepts the wall.
+        place_dye(&mut w, 110, 99, 0);
+        assert!(w.tile(110, 99).is_some_and(|t| t.active() && t.kind == 227));
+    }
+
+    /// The hanging style 7 (`:53995-54005`): a solid ceiling above, free
+    /// below — the write lands under the dirt overhang.
+    #[test]
+    fn place_dye_style_7_hangs_from_a_ceiling() {
+        let mut w = grass_world(200, 200, 100);
+        // A dirt ceiling at (100, 50), air below.
+        let i = w.index(100, 50);
+        w.tiles[i].kind = 0;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        place_dye(&mut w, 100, 51, 7);
+        let t = w.tile(100, 51).unwrap();
+        assert!(t.active() && t.kind == 227 && t.frame_x == 34 * 7);
+    }
+
+    /// `MatureTheHerbPlants` (`:45748-45775`): the 82 → 83 maturation and
+    /// the blinkroot 36 → 84 bloom fire on their rolls; a fireblossom 108
+    /// blooms at 1/3.
+    #[test]
+    fn mature_the_herb_plants_blooms_the_herbs() {
+        let mut w = grass_world(100, 100, 50);
+        // An 82 blinkroot (frameX 36) at (50, 40) — above the rock layer.
+        let i = w.index(50, 40);
+        w.tiles[i].kind = 82;
+        w.tiles[i].frame_x = 36;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        // Sweep seeds until the 1/3 + 1/2 both hit (the bloom).
+        let mut bloomed = false;
+        for seed in 0..40u32 {
+            let mut w2 = w.clone();
+            let mut rng = Rng::from_seed(seed);
+            mature_the_herb_plants(&mut w2, 10.0, &mut rng);
+            if w2.tile(50, 40).is_some_and(|t| t.kind == 84) {
+                bloomed = true;
+                break;
+            }
+        }
+        assert!(bloomed, "a seed blooms the blinkroot");
+    }
+
+    /// `Place2x2` (`:51330-51423`): the chillet egg's 2×2 write on a solid
+    /// floor — frames k*18 / l*18, the clear-box gate.
+    #[test]
+    fn place_2x2_writes_the_chillet_egg() {
+        let mut w = grass_world(200, 200, 100);
+        place_2x2(&mut w, 100, 99, 752, 0);
+        for k in 0..2 {
+            for l in 0..2 {
+                let t = w.tile(99 + k, 98 + l).unwrap();
+                assert!(t.active() && t.kind == 752);
+                assert_eq!(t.frame_x, (k * 18) as i16);
+                assert_eq!(t.frame_y, (l * 18) as i16);
+            }
+        }
+        // An occupied box refuses.
+        let i = w.index(120, 98);
+        w.tiles[i].kind = 1;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        place_2x2(&mut w, 120, 99, 752, 0);
+        assert!(!w.tile(119, 98).is_some_and(|t| t.kind == 752));
+    }
+
+    /// The full pass (`:19981-19994`): dye plants land on the grass, the
+    /// herb maturation runs, and the glow tulips / chillet eggs place on
+    /// the valid ground.
+    #[test]
+    fn the_dye_plants_pass_dresses_the_world() {
+        let mut w = grass_world(4200, 1200, 300);
+        let mut rng = Rng::from_seed(11);
+        pass_dye_plants(&mut w, 350.0, 600.0, false, &mut rng);
+        let dye = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 227)
+            .count();
+        assert!(dye > 0, "the dye plants planted ({dye})");
+        // Every dye frame is a 34-multiple (the style columns).
+        for t in w.tiles.iter().filter(|t| t.active() && t.kind == 227) {
+            assert_eq!(t.frame_x % 34, 0, "the dye style frame");
+            assert_eq!(t.frame_y, 0);
+        }
     }
 }
