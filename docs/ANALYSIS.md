@@ -39299,13 +39299,15 @@ for the trail width and replays the `StripDust` gate (`:39-53`).
   `usesOwnerMeleeHitCD` / `stopsDealingDamageAfterPenetrateHits` (190's
   rows), the 190 cone hitbox (`Colliding` `:15506-15524`).
 - **The 1126 spore machine's CHILDREN** — the 1128 cloud (aiStyle 92) and
-  the 1129 slam (aiStyle 209) — are OUTSIDE this census window and their
-  styles are unarmed. Their spawn intents ride out of the arm
-  (`ClaymoreSpores`, the `wants_mark_spawn` pattern) and park on the slot's
-  `wants_claymore_spores` field; the child ROWS + the 92/209 machines + the
-  drain are the documented follow-up (the pool cannot spawn an unrowed
-  kind). The intent payloads and their RNG order are ported and
-  witness-tested here so the follow-up only adds the rows + the drain.
+  the 1129 slam (aiStyle 209). The spawn intents ride out of the arm
+  (`ClaymoreSpores`, the `wants_mark_spawn` pattern). **The W4-d19
+  follow-up round landed the drain** (see "W4-d19 spore children" below):
+  the 1128 row + the aiStyle-92 machine + the dispatch drain; the 1129
+  row + the 209 arm are W4-d21's claim (`task/W4-d21-proj-ai-201-210`,
+  `ai_claymore_blade_slam` verified verbatim against `:69622-69631`) —
+  the slam's data-seam spawn no-ops until that row merges (the documented
+  cross-branch contract). The intent payloads and their RNG order are
+  ported and witness-tested here.
 - `SelfHurtPlayers` (184): the `deadMansSweater` halving, the gravestone
   player-index override and the `trapDebuffSource` write have no port
   fields — the 949 is neither trap nor gravestone, so all three folds are
@@ -39332,3 +39334,103 @@ hurt`, `regen::check_mana`, `registry::item`, `collision::tile_dust_amount`,
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The census pin
 (`s1_d_4c_every_rowed_style_has_exactly_one_live_arm`) stays satisfied:
 each of the six new styles has exactly one 24-space dispatch arm.
+
+## W4-d19 spore children — the aiStyle-92 cloud family + the 1126 drain (code-only)
+
+**Task.** The W4-d19 sword-styles round parked the 1126 Chlorophyte
+Claymore's spore children (`wants_claymore_spores`). This round lands
+them: the aiStyle-92 machine (`projectile_ai_clouds.rs`), the five
+`SetDefaults` rows the style owns, the dispatch arm, the child drain, and
+the damage-walk slices the new kinds need. **No compiler invoked**
+(code-only wave); the witnesses are WRITTEN, NOT RUN.
+
+**Census (verified against each `SetDefaults` arm + the inline `AI()`
+arm `Projectile.cs:32558-32820`).** aiStyle 92's FIVE rows: 511/512/513
+ToxicCloud (`:5805-5840` — the Poison Staff's magic clouds,
+`UseGroupStaticImmunity(511)` → idStatic-10, identity 511), 1007 GasTrap
+(`:9558-9569` — hostile + friendly + trap + hide), 1128
+ChlorophyteClaymoreSporeCloud (`:10565-10579` — melee, idStatic-30).
+aiStyle 209's ONLY row is 1129 (`:10580-10596`) — **W4-d21's claim**:
+`ai_claymore_blade_slam` on `task/W4-d21-proj-ai-201-210` (9fa9e9ba) was
+re-read against `AI_209_ChlorophyteClaymoreBladeSlam` `:69622-69631` and
+is verbatim (the ai[1]/ai[2] box resize, the ai[0] age, the >20 kill,
+zero draws) — it serves the 1129 slam. The drain spawns the 1129 through
+`spawn_with_data_ai_owned` + `set_ai2(96)`; until d21's row merges the
+seam returns `None` and the slam is dropped (the clouds still bloom) —
+the documented cross-branch contract, no duplicate row/arm here.
+
+**The machine.** The whole inline arm: the three kind flags, the 1128
+first-tick `Next(projFrames[1128]=5)` frame roll (the style's ONLY draw,
+`Main.cs:8726`), the triple-age on `ai[1] >= 1`, the per-kind lifetime
+caps (260 stock / 80 gas / the 1128's ai[1] seed or 220), the per-kind
+scale/opacity curves (the 1007's 1→6 growth + clamped double-remap fade,
+the 1128's 0.25→1.1 bloom + box shrink + 0.01 float-up, the toxic fade),
+the whoAmI-seeded rotation, the per-kind drag (zero / ×0.97 / ×0.96), the
+two mutual-repulsion scans (the toxic 0.005 lerp push, the 1128
+overlap-depth push — both write the OTHER slots, so the arm is a
+pool-side step, the `dragon_step` shape), the wall-bounce ladder
+(`Collision.IsWorldPointSolid` — ported whole into `collision.rs`,
+including the `:1470` always-false slope bounds guard quirk), and the
+1007 gas buff (the 15-tick cadence, the 180 px radius ramp, Poisoned 20
+for 2940 on the player + every non-immune NPC).
+
+**The drain.** The 190 dispatch arm now resolves `ClaymoreSpores` at the
+arm's tail (`drain_claymore_spores`): the clouds spawn as 1128 CENTRED
+(`NewProjectile` `:10876-10877`) with the lifetime seed in ai[1]; the
+slam as 1129 with ai1 = 128 / ai2 = 96. The parked `wants_claymore_spores`
+field is RETIRED (the drain is synchronous — the spear sub-shot
+precedent: the children's first AI runs next tick either way, the slot
+scan already passed them).
+
+**The damage-walk slices** (`damage_pve`):
+- `Damage_CanDealDamage` (`:12448`): the 1007 never deals contact damage;
+  the 511-513 / 1128 refuse once `ai[1] >= 1` (the sweep clouds are
+  visual-only — the C# verbatim: the sweep seed doubles as the
+  hit-acceleration flag AND the damage refusal; only the bloom clouds
+  with ai1 = 0 hit).
+- The 511-513 hit counter (`:13218-13222`): every contact bumps `ai[1]`
+  pre-strike (one hit, then the triple-age fade).
+- The 476/950 direction arm (`:13198-13209`, the 186 PrincessWeapon
+  per-kind overlay census): the facing points from the OWNER's centre at
+  the victim; the port's `from_x` knockback origin takes the owner centre
+  so the strike's sign derivation matches. The PvP twin (`:14655-14666`)
+  folds out (the single-player PvP refusal).
+- `StatusNPC`'s 476 arm (`:11474-11477`): LifeDrain (151) for 30 ticks,
+  no roll (the heal-over-time is the buff layer's follow-up).
+
+**The 184 BadTorchLuck torch-god event contract (f33).** The event
+machine is `Player.TorchAttack` (`Player.cs:17813-17910`, driven by
+`TryRecalculatingTorchLuck` `:17731-17738` under `happyFunTorchTime`):
+every 21 ticks it picks a lit torch, snuffs it (`frameX += 66`), and
+spawns the 949 with **ai0 = the torch's `TorchID.Dust` id, ai1 = the
+distance to the player**, velocity 8 toward the player, damage
+`40 × HostileProjectileDamageMultiplier`. **The f33 branch
+(`task/W4-f33-torch-god-favor`) is NOT on origin** (verified by
+`git ls-remote` — only `task/W4-e27-torch-luck-biome` exists, the
+biome-matching lane, no event machine). The projectile side is landed
+and event-ready: the 949 row + the 184 arm read exactly those ai slots
+(the dust type + the flight-distance drain), and the self-hurt
+(`SelfHurtPlayers` `:15025-15062`) passes `dodgeable: true` into the
+shared `Player::hurt` dodge lane (`Player.cs:38214-38241` — sash → belt
+→ brain → shadow; the 949 is outside the exactly-9999 Moon Lord
+exemption `:15067`). When f33's event lands it only needs the spawn call
+(`spawn_with_data_ai_owned(949, owner, x, y, vx, vy, dmg, 1.0, dust_id,
+distance)`) — no projectile-side change. The dodge integration is
+witness-tested (`w4_d19_the_torch_fireball_self_hurt_is_dodgeable`).
+
+**Documented deviations.** The 1007 `hide` flag (no port field, the draw
+seam); the GasTrap particle broadcast (the particle layer's skip, no
+explicit draw); `ApplyBuffTo`'s `trap && deadMansSweater` halving (the
+sweater has no port field — the 949 self-hurt precedent); the bounce
+ladder's zero-delta `Normalize()` uses the house safe-normalize (the
+yoyo dropped-twin precedent); the `Main.netMode` gates fold to
+single-player.
+
+**Verification.** Code-only: the arm re-read against `:32558-32820`
+whole; `IsWorldPointSolid` against `Collision.cs:1434-1491`; the rows
+against their `SetDefaults` arms; d21's 209 arm against `:69622-69631`.
+10 new witnesses (7 in `projectile_ai_clouds`, 2 in `projectile.rs`'s
+damage-walk module, 1 dodge witness in `projectile_ai_sword_styles`)
+are WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/graphify
+invoked**. The census pin stays satisfied: aiStyle 92 has exactly one
+24-space dispatch arm; 209 stays d21's.
