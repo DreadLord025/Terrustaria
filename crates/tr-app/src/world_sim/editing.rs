@@ -7710,15 +7710,48 @@ fn resolve_melee_strike(
                         .as_ref()
                         .map(|p| p.weapon_damage_multiplier(class))
                         .unwrap_or(1.0);
-                // `if (nPC.isLikeATownNPC && sItem.type == 3351) dmg = 1;`
-                // (`Player.cs:44300-44304`): the Tax Collector's cane is a
-                // one-damage slap on the town (it showers coins on mobs,
-                // `:44362-44371` — the item drop rides the M3 item system).
-                let raw = if n.kind.is_town_npc_like() && held.kind == 3351 {
-                    1.0
+                // `Player.GetWeaponDamage`'s int truncation + the `5E-06f`
+                // epsilon (`Player.cs:53421-53429`): `ItemCheck`'s
+                // `weaponDamage` (`:42653`) is the INT the melee scan passes
+                // as `originalDamage` (`:43681`). The f32 product used to
+                // ride straight into DamageVar — the truncation point is
+                // the C#'s own (the whip path's `whip_weapon_damage` twin).
+                // The `damage <= 0` early return keeps the negative value
+                // unmodified (`:53424-53427`).
+                let weapon_damage = held_fx
+                    .map_or(registry::damage(held.kind), |s| s.damage)
+                    .max(0);
+                let mult = app
+                    .player
+                    .as_ref()
+                    .map(|p| p.weapon_damage_multiplier(class))
+                    .unwrap_or(1.0);
+                let mut dmg = if weapon_damage <= 0 {
+                    weapon_damage
                 } else {
-                    raw
+                    (weapon_damage as f32 * mult + 5e-6) as i32
                 };
+                // `int dmg = this.ApplyRapidAttackBonus(originalDamage,
+                // sItem.type, !nPC.immortal)` (`Player.cs:44291`): the
+                // rapid-attack weapons ({2608 Falcon Blade, 3349 Dye
+                // Trader's Scimitar, 672 Cutlass}, `ItemID.cs:344`) scale by
+                // the PRE-charge `min(bonus, 0.5)` and charge +0.12 (capped
+                // 0.62) per landed hit on a mortal NPC — the target dummy
+                // (`immortal`, `NPC.cs:6259`) never charges. The tooltip's
+                // read-only half (`Main.cs:20675`) reads the same field.
+                let immortal = n.immortal;
+                if let Some(p) = app.player.as_mut() {
+                    dmg = p.apply_rapid_attack_bonus(dmg, held.kind, !immortal);
+                }
+                // `if (nPC.isLikeATownNPC && sItem.type == 3351) dmg = 1;`
+                // (`Player.cs:44292-44295`): the Tax Collector's cane is a
+                // one-damage slap on the town (it showers coins on mobs,
+                // `:44367-44375` — the item drop rides the M3 item system).
+                // AFTER the rapid-attack arm, the C#'s own order.
+                if n.kind.is_town_npc_like() && held.kind == 3351 {
+                    dmg = 1;
+                }
+                let raw = dmg as f32;
                 // `Main.DamageVar(dmg, this.luck)` — the player-dealt roll
                 // passes the raw value (`ProcessHitAgainstNPC`,
                 // `Player.cs:44342`; damage taken negates it, `:31387`).
@@ -8901,6 +8934,59 @@ mod tests {
         // The miss tick still ran the cooldown decrement (`:43664`) —
         // the sweep took the stab arm, it did not bail at the wind-up.
         assert!(app.npcs[0].hp > 0, "nothing was struck");
+    }
+
+    /// W4-f28 — the rapid-attack use-site grant (`Player.cs:44291`,
+    /// `ApplyRapidAttackBonus(originalDamage, sItem.type, !nPC.immortal)`):
+    /// the Falcon Blade 2608's landed melee hit charges +0.12 (the PRE-charge
+    /// scale applies to THIS hit's damage), the immortal target dummy never
+    /// charges, and a non-member weapon leaves the field at 0. The charge
+    /// feeds the tooltip's damage row (`Main.cs:20675`, the read-only half).
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_f28_the_melee_hit_charges_the_rapid_attack_bonus() {
+        // The Falcon Blade rig: the melee_app shape with 2608 held.
+        let mut app = melee_app();
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 2608,
+            name: "Falcon Blade",
+            count: 1,
+            prefix: 0,
+        };
+        mine_frames(&mut app, 1);
+        assert!(
+            app.npcs[0].hp < app.npcs[0].max_hp,
+            "the falcon blade hit lands"
+        );
+        let bonus = app.player.as_ref().unwrap().rapid_attack_bonus;
+        assert!((bonus - 0.12).abs() < 1e-6, "one landed hit charges +0.12: {bonus}");
+
+        // The immortal target dummy: the hit lands, the bonus stays 0
+        // (`!nPC.immortal` is false — `Player.cs:44291`).
+        let mut dummy = melee_app();
+        dummy.inventory[dummy.selected] = crate::item::ItemSlot {
+            kind: 2608,
+            name: "Falcon Blade",
+            count: 1,
+            prefix: 0,
+        };
+        dummy.npcs[0].immortal = true;
+        mine_frames(&mut dummy, 1);
+        assert_eq!(
+            dummy.player.as_ref().unwrap().rapid_attack_bonus,
+            0.0,
+            "the immortal dummy never charges"
+        );
+
+        // A non-member weapon (the Iron Pickaxe, the rig's stock) passes
+        // through the set guard — no charge.
+        let mut pick = melee_app();
+        mine_frames(&mut pick, 1);
+        assert_eq!(
+            pick.player.as_ref().unwrap().rapid_attack_bonus,
+            0.0,
+            "the pickaxe is not a RapidAttackBonusDamage member"
+        );
     }
 
     #[test]
