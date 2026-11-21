@@ -39309,9 +39309,22 @@ re-verified FIRST: both are already on main (`npc.rs::contact` /
   combat text drains BEFORE the retaliate block on every lane (the C#
   `:38382` < `:38401` order); the hit-dust/football/golf drains follow.
 - **The paladin team share** (`:38338-38368`) is single-player-
-  unreachable (`defendedByPaladin` needs a second team player); the
-  `CanDefendWithPaladinsShield` gate (`:38188-38195`) has no port
-  caller. NOT ported (the research/04 row stays MISSING for MP).
+  unreachable (`defendedByPaladin` needs a second team player; the
+  `m != whoAmI` scan finds no peer in SP) — NOT ported, documented at the
+  `hurt_inner` seam. FUTURE-WIRE (MP): the `PlayerNet.team`/`dead` fields
+  + `PlayerNet::paladin_shield()` landed on `task/W4-d70-moonlord-shake-
+  screens` `ee4905939` (the `DrawPaladinsShield` peer loops,
+  `Main.cs:57205-57231`, fed by 12 PlayerSpawn / 45 TeamChange / the 13
+  PlayerState port extension); the hurt-side redirect additionally needs
+  the remote players' live `statLife`/`statLifeMax2` + a peer `Hurt` path
+  (the port does not simulate remote equips/life — the d70 deviation), so
+  the share stays deferred until the MP player-sim lands. The
+  `defendedByPaladin` buff-43 flag is ported (`buff_effects_misc.rs`);
+  `CanDefendWithPaladinsShield` (`:38188-38195`) = active && !dead &&
+  hasPaladinShield && team > 0 && team == otherTeam && life > 25% max;
+  `PaladinsShieldRange` = 800 (`:57100`); the `TeamDamageShare` set =
+  {General, BossNoCheese} (`ImmunityCooldownID.cs:51`). The research/04
+  row stays MISSING for MP.
 - **The frost/bone armor dust keys** (`:38538-38547`) — **PORTED**
   (deviation 4). `apply_armor_sound_and_dust_changes`
   (`Player.cs:38167-38186`) derives the `bone_armor`/`frost_armor` flags

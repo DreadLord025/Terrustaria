@@ -4993,6 +4993,28 @@ impl Player {
             }
             self.beetle_counter = 0.0;
         }
+        // W4-f50 deviation 5 — the paladin team share (`Player.cs:38338-
+        // 38368`) is SINGLE-PLAYER-UNREACHABLE and stays unported here. The
+        // gate: `defendedByPaladin && TeamDamageShare[cooldownCounter] &&
+        // num2 >= 4 && Damage < 9999`; the block scans the 255 players for
+        // the nearest OTHER `CanDefendWithPaladinsShield(this.team)` peer
+        // (`:38188-38195`: active && !dead && hasPaladinShield && team > 0
+        // && team == otherTeam && life > 25% max), cuts `num2` to
+        // `(int)(num2 * 0.75)` and redirects `(int)(num2 * 0.25)` to that
+        // peer via `Hurt(ByOther(20), .., PaladinsShield, dodgeable: false)`
+        // when it is the local player within `PaladinsShieldRange` (800,
+        // `:57100`). In single-player the only player is `whoAmI ==
+        // Main.myPlayer`, so the `m != whoAmI` scan finds no peer and the
+        // block no-ops. FUTURE-WIRE (MP): the `PlayerNet.team`/`dead` fields
+        // + `PlayerNet::paladin_shield()` landed on `task/W4-d70-moonlord-
+        // shake-screens` `ee4905939` (the DrawPaladinsShield peer loops,
+        // `Main.cs:57205-57231`); the hurt-side redirect needs the remote
+        // players' live `statLife`/`statLifeMax2` + a `Hurt` path on the
+        // peer (the port does not simulate remote equips/life — the d70
+        // deviation), so the share stays deferred until the MP player-sim
+        // lands. The `defendedByPaladin` buff-43 flag is ported
+        // (`buff_effects_misc.rs:675`); the `TeamDamageShare` set =
+        // {General, BossNoCheese} (`ImmunityCooldownID.cs:51`).
         // `Player.cs:38378-38381`: the `num2 < 1 -> 1` floor. The endurance
         // truncation can drive a hit to 0; the C# lifts it back to 1 (which
         // also selects the 20-tick immunity window below, not 40).
