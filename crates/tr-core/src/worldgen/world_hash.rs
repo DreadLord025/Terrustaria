@@ -299,6 +299,8 @@ mod tests {
     // ports (`spread::tile_is_exposed_to_air` etc., the `12g-f25-worldgen-
     // helpers.md` ledger C1-C8) are UNWIRED — no executed step calls them,
     // so BOTH pins are untouched by that round (the g39 H1-H15 precedent).
+    // The CLOSEOUT's ConvertSkyIslands is gen-time but anniversary-only (see
+    // the DEFAULT_WORLD note) — this pin is untouched by it too.
     // W4-f25 WIRING phase (code-only): the C3/C4 spray cells land at the
     // Clentaminator/holy-water/SpreadGrass consumers, the C7 tree conversion
     // at `try_kill_invalid_tree_above`, the C8 moss colour pick at
@@ -306,6 +308,13 @@ mod tests {
     // worldgen step calls them), so both pins stay unchanged. The 184 boot
     // static is a `frame_important` flag, not a hashed tile field. C5 stays
     // unwired (d103 P8 owns the hardUpdateWorld chlorophyte arms).
+    // W4-f25 CLOSEOUT (2026-11-21, code-only): ConvertSkyIslands lands at the
+    // FinishTenthAnniversaryWorld call (`finish_seeds.rs::convert_sky_islands`)
+    // — a GEN-TIME seam, but the anniversary pass only runs on the
+    // tenthAnniversary seed; neither pinned world (SEED42_512 / DEFAULT_WORLD)
+    // sets it, so both pins stay unchanged. The solution-spray rows
+    // (146-149/1015-1017) and the Convert 15/16/18/19 dungeon-biome cells are
+    // runtime / unwired respectively — no executed classic step calls them.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

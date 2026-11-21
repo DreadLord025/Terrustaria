@@ -1,7 +1,8 @@
-# 12g (helpers) — W4-f25: the WorldGen helper census, round 2
+# 12g (helpers) — W4-f25: the WorldGen helper census, round 2 — **FINAL**
 
 > Wave 4 · lane `task/W4-f25-worldgen-passes-8` @ 0ed1f3cf (Settle Liquids landed)
-> · claimed 2026-11-21. The pass ledger lives in `12g-f25-settle-liquids.md`;
+> · claimed 2026-11-21 · **CLOSED 2026-11-21 @ 9fc704a15 + the final-ledger
+> commit**. The pass ledger lives in `12g-f25-settle-liquids.md`;
 > with the classic-pass census exhausted this lane takes the **missing
 > WorldGen.cs helper functions**, the g39 H1-H15 precedent (its `12j` doc).
 > Code-only mode: C# read in ≤100-line windows, ONE helper per commit+push,
@@ -291,3 +292,101 @@ desert), `:56124-56189` (18 pure), `:56190-56231` (19 jungle) as
   16/18 unions.
 - Both pins unchanged (no executed step calls them), a == b untouched.
   5 witnesses written not run.
+
+## FINAL — the round is closed (2026-11-21)
+
+### The full commit ledger (origin/main..HEAD, 20 commits)
+
+| phase | commits | scope |
+| --- | --- | --- |
+| census + orphan claim | fd0985287 | Settle Liquids = the ONE classic unexecuted pass |
+| Settle Liquids pass | 0ed1f3cfa | WorldGen.cs:16132-16210, both pins move BY DESIGN (re-pin deferred to the gate) |
+| helper claim | 057d9ce17 | the C1-C8 census |
+| C1-C8 helpers | 59fb188b6 / 8e3eb894b / 6c5dcea11 / 0e6bee9ef / a6b21b728 / b53ebbc03 / f9c3dba7e / 6e9ae957e | the eight verbatim ports, UNWIRED |
+| helpers ledger close | 803093b16 | the C1-C8 landing notes |
+| wiring (spray family) | cffdc1c70 | ai_spray / water_death / spread_grass -> C3/C4 |
+| wiring (tree family) | e76c077d3 | try_kill_invalid_tree_above -> C7 (C6 transitive) |
+| wiring (moss family) | b004f4f1b | check_long_moss case 184 -> C8 + the 184 boot static |
+| closeout 1/5 | f0fe0f388 | ConvertSkyIslands (the g44 cross-note) |
+| closeout 2/5 | 5e83d3ecb | the seven solution-spray rows + the solutions census |
+| closeout 3/5 | 84b903607 | the powder census (d1 owns the machine, docs-only) |
+| closeout 4/5 | 9fc704a15 | Convert 15/16/18/19 (the dungeon-biome cells, the c32 cross-note) |
+| closeout 5/5 | (this commit) | the FINAL ledger + the closeout pin notes |
+
+### The Convert-type coverage map (the whole switch, :55098-56284)
+
+| type | cell | owner | state |
+| --- | --- | --- | --- |
+| 0 cleanse | convert_cleanse_cell | f25 (S1-D-4 slice) | landed, wired (ai_spray 145) |
+| 1 corruption | d1 convert_powder_cell | d1 (78dc52720) | landed on d1, unmerged |
+| 2 hallow | convert_hallow_cell (C3) | f25 | landed, wired (ai_spray 146 / holy water / spread_grass / ConvertSkyIslands) |
+| 3 mushroom | g42 convert_cell_mushroom | g42 (e2707f2d) | landed on g42, unmerged |
+| 4 crimson | d1 convert_powder_cell | d1 | landed on d1, unmerged |
+| 5/6/7 sprays | convert_spray_cell (C4) | f25 | landed, wired (ai_spray 1015/1016/1017) |
+| 8/9/10 chlorophyte | convert_chlorophyte_cell (C5) | f25 | landed, UNWIRED (d103 P8 owns hardUpdateWorld) |
+| 11 purify | d1 convert_powder_cell | d1 | landed on d1, unmerged |
+| 12/13/14 evil-II/paint | — | unclaimed | zero C# call sites (the claim-time census) |
+| 15/16/18/19 dungeon-biome | convert_biome_cell | f25 (closeout) | landed, UNWIRED (zero C# call sites) |
+| 17 snow-II | — | unclaimed | zero C# call sites |
+| 20 temple | — | unclaimed | zero C# call sites |
+| 21 dungeon | — | c32/d107 seam | reads GenVars.CurrentDungeonGenVars |
+
+### The helper coverage (C1-C8 + the closeout)
+
+- C1 TileIsExposedToAir / C2 BlockBelow...HardenedSand: wired through the
+  C4 type-7/5 cells AND the closeout's 15/16/18/19 cells; the c32
+  BiomeDungeonRoom bodies are the remaining C# consumers (c32's lane).
+- C3/C4: wired at every unclaimed consumer (the spray family + the
+  ConvertSkyIslands gen-time call).
+- C5: stays unwired (d103 P8).
+- C6/C7: wired at try_kill_invalid_tree_above (the Convert/clentaminator
+  path); the growth/trees.rs kill-only copy is g17's lane.
+- C8: wired at check_long_moss (the TileFrame case-184 dispatch).
+
+### The deviations register (the whole round)
+
+1. The re-frame is the port's reframe_area superset (the
+   convert_cleanse_cell documented deviation) — every Convert cell.
+2. The genRand wall rolls take None (the convert_cleanse_cell / d1
+   precedent — no runtime genRand stream); C7 takes the explicit caller
+   stream; ConvertSkyIslands takes a fresh world-seeded UnifiedRandom
+   (the start_in_hardmode precedent).
+3. The RainbowSandAndBlackSandWalls paint arms + the NetMessage tails are
+   the d1-documented skips (a mode the port does not generate / MP-only).
+4. The C7 trunk-walk fixed-y-1 quirk kept (:54924); the type-2 mud arm
+   reads the SNAPSHOT 59 against the LIVE 109 neighbours.
+5. The 15/19 catch-alls re-read the LIVE tile (the C# ref Tile semantics).
+6. The type-18 wall chain's else-if fall-through is load-bearing (a wall
+   at its union/NewWall target falls to 349).
+
+### The pin state
+
+- SEED42_512 / DEFAULT_WORLD: the Settle Liquids pass moves BOTH by
+  design (the re-pin is deferred to the merge gate — no compiler on this
+  branch). The helper round, the wiring phase and the closeout leave both
+  unchanged (the helpers are unwired, the wiring is runtime-only, the
+  ConvertSkyIslands gen-time call is anniversary-only and neither pinned
+  world sets that seed). The a == b determinism halves are untouched
+  throughout.
+
+### The witness count
+
+19 (helpers) + 3 (spray wiring) + 3 (tree wiring) + 5 (moss wiring) +
+3 (ConvertSkyIslands) + 2 (solutions) + 5 (Convert 15/16/18/19) =
+**40 witnesses WRITTEN NOT RUN** (code-only; no cargo/rustc/rustfmt/
+tests/dotnet/graphify invoked on this branch). Every expected value is
+hand-derived from the cited C# windows (read in <=100-line slices).
+
+### The merger's hand-off
+
+- d1's CONV_THORN duplicate dedupes onto the C3 constant (the note is on
+  d1's branch); the convert_wall_by_case 1/4/11 arms are shared.
+- d103 P8's convert_purge_cell vs the C5 cells: the merger picks the
+  verbatim hardUpdateWorld arms (d103) — the C5 helpers remain available.
+- g44's finish_seeds.rs module note ("ConvertSkyIslands not ported") is
+  superseded by f0fe0f388 — the merger keeps the f25 body.
+- c32's BiomeDungeonRoom bodies (when they land) call the f25 C1/C2
+  helpers + DungeonUtils.ChangeTileType; the Convert 15/16/18/19 cells
+  stay unwired (zero C# call sites).
+- The seven solution-spray rows (5e83d3ecb) complete the ai_spray
+  dispatch; 147/148/149 stay no-ops until d1/g42 merge.
