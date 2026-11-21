@@ -228,13 +228,29 @@ impl LiquidSystem {
         }
     }
 
-    /// `Liquid.AddWater`: queues one cell if it holds liquid and no entry owns it.
-    pub fn add_water(&mut self, world: &World, x: i32, y: i32) {
+    /// `Liquid.AddWater` (`Liquid.cs:1160-1207`): queues one cell if it holds
+    /// liquid and no entry owns it, then kills a liquid-death object standing
+    /// in the cell. `&mut World` because the death kill (`WorldGen.KillTile`,
+    /// `:1201`) runs INLINE — the C# kills before `AddWater` returns, so the
+    /// cascade's tile edits are visible to the rest of the caller's visit.
+    pub fn add_water(&mut self, world: &mut World, x: i32, y: i32) {
         if x < 0 || y < 0 || x >= self.width || y >= self.height || self.is_checking(x, y) {
             return;
         }
-        let Some(t) = world.tile(x, y) else { return };
-        if t.liquid == 0 || self.tile_is_solid(t) {
+        // `Liquid.cs:1163` — the 5-tile world-border exclusion: the outer
+        // five rows/columns never join the active list (vanilla worlds are
+        // >= 1200 tiles wide/tall, so the band is pure margin).
+        if x < 5 || y < 5 || x >= self.width - 5 || y >= self.height - 5 {
+            return;
+        }
+        let Some(t) = world.tile(x, y).copied() else {
+            return;
+        };
+        // `Liquid.cs:1163` — `nactive() && tileSolid[type] && type != 546 &&
+        // !tileSolidTop[type]`: the grate 546 is exempt EVEN outside the pass
+        // (the stock `Main.tileSolid[546] = true`, `Main.cs:10124`); the
+        // pass-scoped boulder/bubble toggles ride `tile_is_solid` (S1-L-14).
+        if t.liquid == 0 || (self.tile_is_solid(&t) && t.kind != 546) {
             return;
         }
         // `Liquid.cs:1167-1171` — the active list is full: overflow into the
@@ -257,11 +273,35 @@ impl LiquidSystem {
             kill: 0,
             delay: 0,
         });
+        // `Liquid.cs:1183-1206` — the submerged-object death check. An
+        // inactive tile (or a generating/loading world) returns right after
+        // the queue; otherwise lava reads `CheckLavaDeath`, every other
+        // liquid — water, honey AND shimmer — reads `CheckWaterDeath`
+        // (there is no shimmer-specific AddWater: the one function serves
+        // all four kinds). The Tile overloads resolve the def from the
+        // cell's frames (`TileObjectData.cs:5083-5119`, W4-e11's seam);
+        // a death kills the tile INLINE (`WorldGen.KillTile(x, y)`, the
+        // default noItem=false — the drops ride the discarded TileKill
+        // record, the engine-pure deviation like liquid_check's burns).
+        // The MP `NetSendLiquid`/`SendData(17)` arms are unported.
+        if !t.active() || self.generating {
+            return;
+        }
+        let dies = if t.liquid_kind() == LiquidKind::Lava {
+            crate::tileobject::check_lava_death(&t)
+        } else {
+            crate::tileobject::check_water_death(&t)
+        };
+        if dies {
+            crate::edit::kill_tile(world, x, y, false);
+            // The cell keeps its liquid (`remove_tile` preserves it), so
+            // the queued entry settles on as the C#'s does.
+        }
     }
 
     /// Queues every liquid cell in a square around an edit, so breaking or placing a
     /// block that borders a pool starts the flow without scanning the whole world.
-    pub fn wake_around(&mut self, world: &World, cx: i32, cy: i32, r: i32) {
+    pub fn wake_around(&mut self, world: &mut World, cx: i32, cy: i32, r: i32) {
         for y in (cy - r).max(0)..=(cy + r).min(self.height - 1) {
             for x in (cx - r).max(0)..=(cx + r).min(self.width - 1) {
                 self.add_water(world, x, y);
@@ -534,7 +574,7 @@ impl LiquidSystem {
         true
     }
 
-    fn refill_from_buffer(&mut self, world: &World) {
+    fn refill_from_buffer(&mut self, world: &mut World) {
         // `Liquid.cs:1120-1130` — `curMaxLiquid - (curMaxLiquid - numLiquid)`
         // is `numLiquid`: promote up to the active count, capped by the
         // buffer. Each promotion clears the buffer entry's `checkingLiquid`
@@ -542,10 +582,12 @@ impl LiquidSystem {
         // `:1177`); `DelBuffer(0)` swap-removes the slot (`LiquidBuffer.cs:22-27`).
         let limit = self.active.len();
         let mut promoted = 0;
-        while promoted < limit
-            && !self.buffer.is_empty()
-            && self.active.len() < self.cur_max_liquid - 1
-        {
+        // The C# `for num9 < num8` runs unconditionally (`num8 =
+        // min(numLiquid, numLiquidBuffer)` pinned BEFORE the loop): an
+        // `AddWater` that overflows straight back into the buffer still
+        // consumes one promotion slot — the extra cap check the port used
+        // to run here let it promote more than `num8` in that case.
+        while promoted < limit && !self.buffer.is_empty() {
             let (x, y) = self.buffer[0];
             self.set_checking(x, y, false);
             self.add_water(world, x, y);
@@ -1272,30 +1314,32 @@ mod tests {
         // S1-L-14 (`Liquid.cs:69-73`/`:986`/`:1157`): the runtime pass lifts
         // the grate 546's solidity (`Main.tileSolid[546] = !ignoreSolids`,
         // the stock `true` at `Main.cs:10124`), so water above a grate
-        // lands under it.
-        let mut w = World::new("liquid".into(), 9, 11);
-        // A grate shelf at y=5, water above it at y=4.
-        for x in 3..6 {
-            let i = w.index(x, 5);
+        // lands under it. W4-g45: the fixture is widened past AddWater's
+        // 5-tile border (`:1163`) — the shelf moves to y=11, the water to
+        // y=10, the wake cell to (10,10).
+        let mut w = World::new("liquid".into(), 21, 23);
+        // A grate shelf at y=11, water above it at y=10.
+        for x in 9..12 {
+            let i = w.index(x, 11);
             w.tiles[i] = Tile { kind: 546, ..Default::default() };
             w.tiles[i].flags |= FLAG_ACTIVE;
-            let j = w.index(x, 4);
+            let j = w.index(x, 10);
             w.tiles[j].liquid = 255;
-            w.mark_chunk(x, 4);
+            w.mark_chunk(x, 10);
         }
         w.frame_important = vec![false; td::TILE_COUNT];
         w.compute_column_surface();
         w.compute_chunks();
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 4, 4);
+        sys.add_water(&mut w, 10, 10);
         // The water delay gate moves a cell every ~6 ticks (`Liquid.cs:484`).
         for _ in 0..40 {
             sys.update(&mut w);
         }
-        let above: i32 = (3..6).map(|x| w.tiles[w.index(x, 4)].liquid as i32).sum();
+        let above: i32 = (9..12).map(|x| w.tiles[w.index(x, 10)].liquid as i32).sum();
         let mut below: i64 = 0;
-        for x in 0..9 {
-            for y in 6..11 {
+        for x in 0..21 {
+            for y in 12..23 {
                 below += w.tiles[w.index(x, y)].liquid as i64;
             }
         }
@@ -1309,26 +1353,27 @@ mod tests {
         // S1-L-14 (`Liquid.cs:451` vs `Main.cs:17753`): the bubble 379 is
         // solid for the liquid pass itself — the water above it stays put —
         // and `clear_bubble_for_entities` returns the stock non-solid state
-        // for the entity half of the tick.
-        let mut w = World::new("liquid".into(), 9, 11);
-        for x in 3..6 {
-            let i = w.index(x, 5);
+        // for the entity half of the tick. W4-g45: the fixture is widened
+        // past AddWater's 5-tile border (shelf y=11, water y=10).
+        let mut w = World::new("liquid".into(), 21, 23);
+        for x in 9..12 {
+            let i = w.index(x, 11);
             w.tiles[i] = Tile { kind: 379, ..Default::default() };
             w.tiles[i].flags |= FLAG_ACTIVE;
-            let j = w.index(x, 4);
+            let j = w.index(x, 10);
             w.tiles[j].liquid = 255;
-            w.mark_chunk(x, 4);
+            w.mark_chunk(x, 10);
         }
         w.frame_important = vec![false; td::TILE_COUNT];
         w.compute_column_surface();
         w.compute_chunks();
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 4, 4);
+        sys.add_water(&mut w, 10, 10);
         for _ in 0..8 {
             sys.update(&mut w);
         }
-        let above: i32 = (3..6).map(|x| w.tiles[w.index(x, 4)].liquid as i32).sum();
-        let below: i32 = (3..6).map(|x| w.tiles[w.index(x, 6)].liquid as i32).sum();
+        let above: i32 = (9..12).map(|x| w.tiles[w.index(x, 10)].liquid as i32).sum();
+        let below: i32 = (9..12).map(|x| w.tiles[w.index(x, 12)].liquid as i32).sum();
         assert!(below == 0, "the bubble held the water ({below} passed)");
         assert!(above > 0, "the water stayed above ({above})");
         // The pass tail keeps the bubble solid — `Main.cs:17753` clears it
@@ -1341,27 +1386,28 @@ mod tests {
     fn the_boulder_loses_solidity_for_the_pass() {
         // S1-L-14 (`WorldGen.SetBoulderSolidity`, `WorldGen.cs:11009-11019`,
         // via `Liquid.tilesIgnoreWater`): the boulder 138 does not hold the
-        // water during the pass.
-        let mut w = World::new("liquid".into(), 9, 11);
-        for x in 3..6 {
-            let i = w.index(x, 5);
+        // water during the pass. W4-g45: the fixture is widened past
+        // AddWater's 5-tile border (shelf y=11, water y=10).
+        let mut w = World::new("liquid".into(), 21, 23);
+        for x in 9..12 {
+            let i = w.index(x, 11);
             w.tiles[i] = Tile { kind: 138, ..Default::default() };
             w.tiles[i].flags |= FLAG_ACTIVE;
-            let j = w.index(x, 4);
+            let j = w.index(x, 10);
             w.tiles[j].liquid = 255;
-            w.mark_chunk(x, 4);
+            w.mark_chunk(x, 10);
         }
         w.frame_important = vec![false; td::TILE_COUNT];
         w.compute_column_surface();
         w.compute_chunks();
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 4, 4);
+        sys.add_water(&mut w, 10, 10);
         for _ in 0..40 {
             sys.update(&mut w);
         }
         let mut below: i64 = 0;
-        for x in 0..9 {
-            for y in 6..11 {
+        for x in 0..21 {
+            for y in 12..23 {
                 below += w.tiles[w.index(x, y)].liquid as i64;
             }
         }
@@ -1370,9 +1416,14 @@ mod tests {
     }
 
     fn basin(width: i32, wall_y: i32) -> World {
-        let mut w = World::new("liquid".into(), width, wall_y + 3);
-        for x in 0..width {
-            for y in wall_y..wall_y + 3 {
+        // W4-g45 AddWater border guard (`Liquid.cs:1163`): the scene is
+        // embedded at a (+6,+6) offset in a world 12 wider / 12 taller, so
+        // every liquid cell clears the 5-tile world-border exclusion. The
+        // floor rows move to `wall_y+6..=wall_y+8`; callers shift their
+        // coordinates by (+6,+6).
+        let mut w = World::new("liquid".into(), width + 12, wall_y + 12);
+        for x in 0..width + 12 {
+            for y in wall_y + 6..wall_y + 9 {
                 let i = w.index(x, y);
                 w.tiles[i] = Tile {
                     kind: 1,
@@ -1382,6 +1433,18 @@ mod tests {
             }
         }
         w.frame_important = vec![false; td::TILE_COUNT];
+        // Containment walls at the scene's left/right edge (x=5 and
+        // x=width+6): the original 9-wide basin relied on the world edge to
+        // hold the pool; embedded in a wider world the same job needs solid
+        // walls. `open`/`same` read a solid wall exactly like the
+        // out-of-world `None` (both refuse the row arms).
+        for y in 0..wall_y + 12 {
+            for x in [5, width + 6] {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
         w.compute_column_surface();
         w.compute_chunks();
         w
@@ -1415,30 +1478,31 @@ mod tests {
         // `Liquid.cs:1249-1330`: the lava cell's check pools the
         // different-type side/up neighbours (zeroing them) and at
         // `num >= 24` lands tile 56 on the lava cell — both liquids
-        // consumed.
+        // consumed. W4-g45: the basin scene is embedded at (+6,+6) past
+        // AddWater's 5-tile border.
         let mut w = basin(9, 8);
-        put_as(&mut w, 4, 4, 30, 1);
-        put_as(&mut w, 5, 4, 30, 0);
+        put_as(&mut w, 10, 10, 30, 1);
+        put_as(&mut w, 11, 10, 30, 0);
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 4, 4);
-        sys.add_water(&w, 5, 4);
+        sys.add_water(&mut w, 10, 10);
+        sys.add_water(&mut w, 11, 10);
         run(&mut sys, &mut w, 1);
-        assert_eq!(w.tile(4, 4).unwrap().kind, 56, "the lava cell became obsidian");
-        assert_eq!(w.tile(4, 4).unwrap().liquid, 0);
-        assert_eq!(w.tile(5, 4).unwrap().liquid, 0, "the pooled water is consumed");
+        assert_eq!(w.tile(10, 10).unwrap().kind, 56, "the lava cell became obsidian");
+        assert_eq!(w.tile(10, 10).unwrap().liquid, 0);
+        assert_eq!(w.tile(11, 10).unwrap().liquid, 0, "the pooled water is consumed");
     }
 
     #[test]
     fn water_and_honey_merge_into_a_honey_block() {
         let mut w = basin(9, 8);
-        put_as(&mut w, 4, 4, 30, 2);
-        put_as(&mut w, 5, 4, 30, 0);
+        put_as(&mut w, 10, 10, 30, 2);
+        put_as(&mut w, 11, 10, 30, 0);
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 4, 4);
-        sys.add_water(&w, 5, 4);
+        sys.add_water(&mut w, 10, 10);
+        sys.add_water(&mut w, 11, 10);
         run(&mut sys, &mut w, 1);
-        assert_eq!(w.tile(4, 4).unwrap().kind, 229);
-        assert_eq!(w.tile(5, 4).unwrap().liquid, 0);
+        assert_eq!(w.tile(10, 10).unwrap().kind, 229);
+        assert_eq!(w.tile(11, 10).unwrap().liquid, 0);
     }
 
     #[test]
@@ -1447,28 +1511,28 @@ mod tests {
         // merge tile is not `tileObsidianKill`, so the lava cell's own check
         // afterwards finds an active non-kill tile and refuses — one merge.
         let mut w = basin(9, 8);
-        put_as(&mut w, 4, 4, 30, 2);
-        put_as(&mut w, 5, 4, 30, 1);
+        put_as(&mut w, 10, 10, 30, 2);
+        put_as(&mut w, 11, 10, 30, 1);
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 4, 4);
-        sys.add_water(&w, 5, 4);
+        sys.add_water(&mut w, 10, 10);
+        sys.add_water(&mut w, 11, 10);
         run(&mut sys, &mut w, 1);
-        assert_eq!(w.tile(4, 4).unwrap().kind, 230);
-        assert_eq!(w.tile(5, 4).unwrap().liquid, 0);
-        assert_eq!(w.tile(5, 4).unwrap().kind, 0, "no second merge tile");
+        assert_eq!(w.tile(10, 10).unwrap().kind, 230);
+        assert_eq!(w.tile(11, 10).unwrap().liquid, 0);
+        assert_eq!(w.tile(11, 10).unwrap().kind, 0, "no second merge tile");
     }
 
     #[test]
     fn shimmer_consumes_the_water_into_a_shimmer_block() {
         let mut w = basin(9, 8);
-        put_as(&mut w, 4, 4, 30, 3);
-        put_as(&mut w, 5, 4, 30, 0);
+        put_as(&mut w, 10, 10, 30, 3);
+        put_as(&mut w, 11, 10, 30, 0);
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 4, 4);
-        sys.add_water(&w, 5, 4);
+        sys.add_water(&mut w, 10, 10);
+        sys.add_water(&mut w, 11, 10);
         run(&mut sys, &mut w, 1);
-        assert_eq!(w.tile(4, 4).unwrap().kind, 659);
-        assert_eq!(w.tile(5, 4).unwrap().liquid, 0);
+        assert_eq!(w.tile(10, 10).unwrap().kind, 659);
+        assert_eq!(w.tile(11, 10).unwrap().liquid, 0);
     }
 
     #[test]
@@ -1478,15 +1542,15 @@ mod tests {
         // keeps its liquid; the lava flow then sits in the delay gate
         // (`:484-490`).
         let mut w = basin(9, 8);
-        put_as(&mut w, 4, 4, 30, 1);
-        put_as(&mut w, 5, 4, 20, 0);
+        put_as(&mut w, 10, 10, 30, 1);
+        put_as(&mut w, 11, 10, 20, 0);
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 4, 4);
-        sys.add_water(&w, 5, 4);
+        sys.add_water(&mut w, 10, 10);
+        sys.add_water(&mut w, 11, 10);
         run(&mut sys, &mut w, 1);
-        assert_eq!(w.tile(4, 4).unwrap().kind, 0, "no obsidian");
-        assert_eq!(w.tile(4, 4).unwrap().liquid, 30, "the lava stays");
-        assert_eq!(w.tile(5, 4).unwrap().liquid, 0, "the pool is consumed");
+        assert_eq!(w.tile(10, 10).unwrap().kind, 0, "no obsidian");
+        assert_eq!(w.tile(10, 10).unwrap().liquid, 30, "the lava stays");
+        assert_eq!(w.tile(11, 10).unwrap().liquid, 0, "the pool is consumed");
     }
 
     #[test]
@@ -1495,15 +1559,15 @@ mod tests {
         // cell below holds a different liquid >= 24 → the merge lands at
         // `(x, y+1)`.
         let mut w = basin(9, 8);
-        put_as(&mut w, 4, 4, 30, 1);
-        put_as(&mut w, 4, 5, 30, 0);
+        put_as(&mut w, 10, 10, 30, 1);
+        put_as(&mut w, 10, 11, 30, 0);
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 4, 4);
-        sys.add_water(&w, 4, 5);
+        sys.add_water(&mut w, 10, 10);
+        sys.add_water(&mut w, 10, 11);
         run(&mut sys, &mut w, 1);
-        assert_eq!(w.tile(4, 5).unwrap().kind, 56);
-        assert_eq!(w.tile(4, 4).unwrap().liquid, 0);
-        assert_eq!(w.tile(4, 5).unwrap().liquid, 0);
+        assert_eq!(w.tile(10, 11).unwrap().kind, 56);
+        assert_eq!(w.tile(10, 10).unwrap().liquid, 0);
+        assert_eq!(w.tile(10, 11).unwrap().liquid, 0);
     }
 
     #[test]
@@ -1511,19 +1575,19 @@ mod tests {
         // `Liquid.cs:1305-1312`: a non-water liquid burns the `tileCut`
         // plant below before the merge gate reads it.
         let mut w = basin(9, 8);
-        let i = w.index(4, 5);
+        let i = w.index(10, 11);
         w.tiles[i] = Tile {
             kind: 3,
             ..Default::default()
         };
         w.tiles[i].flags |= FLAG_ACTIVE;
         w.tiles[i].liquid = 30;
-        put_as(&mut w, 4, 4, 30, 1);
+        put_as(&mut w, 10, 10, 30, 1);
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 4, 4);
+        sys.add_water(&mut w, 10, 10);
         run(&mut sys, &mut w, 1);
-        assert_eq!(w.tile(4, 5).unwrap().kind, 56, "the plant burned, the merge landed");
-        assert_eq!(w.tile(4, 4).unwrap().liquid, 0);
+        assert_eq!(w.tile(10, 11).unwrap().kind, 56, "the plant burned, the merge landed");
+        assert_eq!(w.tile(10, 10).unwrap().liquid, 0);
     }
 
     #[test]
@@ -1563,16 +1627,17 @@ mod tests {
     fn the_container_flag_forces_the_down_merge() {
         // `Liquid.cs:1304` + `:1314`: a container (chest 21 / shell pile 467
         // / bed 88) above lets the merge proceed into an active
-        // non-`tileObsidianKill` cell — stone here.
+        // non-`tileObsidianKill` cell — stone here. W4-g45: the scene rides
+        // the embedded basin coordinates (+6,+6).
         let mut w = basin(9, 8);
-        let chest = w.index(4, 4);
+        let chest = w.index(10, 10);
         w.tiles[chest] = Tile {
             kind: 21,
             ..Default::default()
         };
         w.tiles[chest].flags |= FLAG_ACTIVE;
         w.tiles[chest].liquid = 30;
-        let stone = w.index(4, 5);
+        let stone = w.index(10, 11);
         w.tiles[stone] = Tile {
             kind: 1,
             ..Default::default()
@@ -1581,9 +1646,9 @@ mod tests {
         w.tiles[stone].liquid = 30;
         set_kind(&mut w.tiles[stone], 1);
         let mut sys = LiquidSystem::new(&w);
-        sys.liquid_check(&mut w, 4, 4, 0, false);
-        assert_eq!(w.tile(4, 5).unwrap().kind, 56, "the stone cell was merged into");
-        assert_eq!(w.tile(4, 4).unwrap().liquid, 0);
+        sys.liquid_check(&mut w, 10, 10, 0, false);
+        assert_eq!(w.tile(10, 11).unwrap().kind, 56, "the stone cell was merged into");
+        assert_eq!(w.tile(10, 10).unwrap().liquid, 0);
     }
 
     #[test]
@@ -1591,17 +1656,17 @@ mod tests {
         // `Liquid.cs:1345-1347`: the runtime branch plays
         // `PlayLiquidChangeSound(liquidChangeType, x, y)` — the same
         // container-merge fixture as above reports
-        // `(LavaWater, 4, 5)` once, then the queue drains empty; the
+        // `(LavaWater, 10, 11)` once, then the queue drains empty; the
         // generation arm (`:1333`'s strip branch) queues nothing.
         let mut w = basin(9, 8);
-        let chest = w.index(4, 4);
+        let chest = w.index(10, 10);
         w.tiles[chest] = Tile {
             kind: 21,
             ..Default::default()
         };
         w.tiles[chest].flags |= FLAG_ACTIVE;
         w.tiles[chest].liquid = 30;
-        let stone = w.index(4, 5);
+        let stone = w.index(10, 11);
         w.tiles[stone] = Tile {
             kind: 1,
             ..Default::default()
@@ -1610,10 +1675,10 @@ mod tests {
         w.tiles[stone].liquid = 30;
         set_kind(&mut w.tiles[stone], 1);
         let mut sys = LiquidSystem::new(&w);
-        sys.liquid_check(&mut w, 4, 4, 0, false);
+        sys.liquid_check(&mut w, 10, 10, 0, false);
         assert_eq!(
             sys.drain_merge_events(),
-            vec![(TileChangeType::LavaWater, 4, 5)],
+            vec![(TileChangeType::LavaWater, 10, 11)],
             "the live merge reports its liquid-change sound"
         );
         assert!(sys.drain_merge_events().is_empty(), "drained");
@@ -1622,7 +1687,7 @@ mod tests {
         // (`Liquid.cs:1345`'s gate) — the same merge queues nothing.
         let mut sys = LiquidSystem::new(&w);
         sys.generating = true;
-        sys.liquid_check(&mut w, 4, 4, 0, false);
+        sys.liquid_check(&mut w, 10, 10, 0, false);
         assert!(
             sys.drain_merge_events().is_empty(),
             "generation never queues a liquid-change sound"
@@ -1632,17 +1697,17 @@ mod tests {
     #[test]
     fn water_falls_and_fills_the_pit_bottom() {
         let mut w = basin(9, 8);
-        put(&mut w, 4, 4, 255);
+        put(&mut w, 10, 10, 255);
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 4, 4);
+        sys.add_water(&mut w, 10, 10);
         run(&mut sys, &mut w, 400);
         assert_eq!(
-            w.tile(4, 8).unwrap().liquid,
+            w.tile(10, 14).unwrap().liquid,
             0,
             "water must not enter the stone floor"
         );
-        for x in 0..9 {
-            let l = w.tile(x, 7).unwrap().liquid;
+        for x in 6..15 {
+            let l = w.tile(x, 13).unwrap().liquid;
             assert!(l > 20 && l < 40, "row level x{x} = {l}");
         }
         assert!(
@@ -1655,14 +1720,14 @@ mod tests {
     #[test]
     fn pool_levels_out_and_settles() {
         let mut w = basin(11, 6);
-        for x in 3..=7 {
-            put(&mut w, x, 5, 200);
+        for x in 9..=13 {
+            put(&mut w, x, 11, 200);
         }
         let mut sys = LiquidSystem::new(&w);
-        sys.wake_around(&w, 5, 5, 4);
+        sys.wake_around(&mut w, 11, 11, 4);
         run(&mut sys, &mut w, 400);
-        let levels: Vec<i32> = (0..11)
-            .map(|x| w.tile(x, 5).unwrap().liquid as i32)
+        let levels: Vec<i32> = (6..17)
+            .map(|x| w.tile(x, 11).unwrap().liquid as i32)
             .collect();
         let max = *levels.iter().max().unwrap();
         let min = *levels.iter().filter(|&&v| v > 0).min().unwrap();
@@ -1677,9 +1742,9 @@ mod tests {
     #[test]
     fn stone_walls_block_the_spread() {
         let mut w = basin(9, 6);
-        put(&mut w, 4, 5, 255);
-        for y in 2..6 {
-            let i = w.index(5, y);
+        put(&mut w, 10, 11, 255);
+        for y in 8..12 {
+            let i = w.index(11, y);
             w.tiles[i] = Tile {
                 kind: 1,
                 ..Default::default()
@@ -1687,11 +1752,11 @@ mod tests {
             w.tiles[i].flags |= FLAG_ACTIVE;
         }
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 4, 5);
+        sys.add_water(&mut w, 10, 11);
         run(&mut sys, &mut w, 300);
-        for y in 2..6 {
+        for y in 8..12 {
             assert_eq!(
-                w.tile(6, y).unwrap().liquid,
+                w.tile(12, y).unwrap().liquid,
                 0,
                 "leaked through the wall at y{y}"
             );
@@ -1700,9 +1765,11 @@ mod tests {
 
     #[test]
     fn a_gap_in_the_dam_drains_into_the_lower_chamber() {
-        let mut w = World::new("dam".into(), 20, 12);
-        for x in 0..20 {
-            for y in 8..12 {
+        // W4-g45: the 20x12 dam scene is embedded at (+6,+6) in a 32x24
+        // world so every liquid cell clears AddWater's 5-tile border.
+        let mut w = World::new("dam".into(), 32, 24);
+        for x in 6..26 {
+            for y in 14..18 {
                 let i = w.index(x, y);
                 w.tiles[i] = Tile {
                     kind: 1,
@@ -1712,36 +1779,46 @@ mod tests {
             }
         }
         // Right chamber floor is two tiles lower.
-        for x in 11..20 {
-            for y in 8..10 {
+        for x in 17..26 {
+            for y in 14..16 {
                 let i = w.index(x, y);
                 w.tiles[i] = Tile::default();
             }
         }
-        for y in 3..8 {
-            let i = w.index(10, y);
+        for y in 9..14 {
+            let i = w.index(16, y);
             w.tiles[i] = Tile {
                 kind: 1,
                 ..Default::default()
             };
             w.tiles[i].flags |= FLAG_ACTIVE;
         }
-        for x in 0..10 {
-            put(&mut w, x, 7, 255);
+        for x in 6..16 {
+            put(&mut w, x, 13, 255);
+        }
+        // Containment walls where the original world edges stood (x=-1 /
+        // x=20 → solid x=5 / x=26): a solid wall reads `open == false`
+        // exactly like the out-of-world None did.
+        for y in 0..24 {
+            for x in [5, 26] {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
         }
         w.frame_important = vec![false; td::TILE_COUNT];
         w.compute_column_surface();
         w.compute_chunks();
         let before = total(&w);
 
-        let hole = w.index(10, 7);
+        let hole = w.index(16, 13);
         w.tiles[hole] = Tile::default();
         let mut sys = LiquidSystem::new(&w);
-        sys.wake_around(&w, 10, 7, 4);
+        sys.wake_around(&mut w, 16, 13, 4);
         run(&mut sys, &mut w, 1200);
 
-        let right: i64 = (11..20)
-            .flat_map(|x| [9, 10].map(|y| w.tile(x, y).unwrap().liquid as i64))
+        let right: i64 = (17..26)
+            .flat_map(|x| [15, 16].map(|y| w.tile(x, y).unwrap().liquid as i64))
             .sum();
         assert!(right > 1500, "right chamber only got {right}");
         assert!(
@@ -1755,28 +1832,29 @@ mod tests {
     #[test]
     fn add_water_deduplicates_tiles() {
         let mut w = basin(6, 4);
-        put(&mut w, 2, 3, 100);
+        put(&mut w, 8, 9, 100);
         let mut sys = LiquidSystem::new(&w);
         for _ in 0..5 {
-            sys.add_water(&w, 2, 3);
+            sys.add_water(&mut w, 8, 9);
         }
         assert_eq!(sys.active_len(), 1);
-        sys.add_water(&w, 2, 2);
+        sys.add_water(&mut w, 8, 8);
         assert_eq!(sys.active_len(), 1, "dry cells are not queued");
     }
 
     /// A full-width row of equal levels is static: every `update_tile` walk returns
     /// an unchanged cell, so `kill` grows by exactly one per walk and the entry
     /// retires once `kill` reaches the threshold. That turns the *window* into a
-    /// directly observable quantity.
+    /// directly observable quantity. W4-g45: the row sits at y=11 inside the
+    /// embedded basin (the 5-tile border cleared on both axes).
     fn static_row(width: i32) -> (World, LiquidSystem) {
         let mut w = basin(width, 6);
-        for x in 0..width {
-            put(&mut w, x, 5, 100);
+        for x in 6..width + 6 {
+            put(&mut w, x, 11, 100);
         }
         let mut sys = LiquidSystem::new(&w);
-        for x in 0..width {
-            sys.add_water(&w, x, 5);
+        for x in 6..width + 6 {
+            sys.add_water(&mut w, x, 11);
         }
         (w, sys)
     }
@@ -1826,15 +1904,15 @@ mod tests {
         // `Liquid`'s solid tests read `nactive()` (`Liquid.cs:171/:236/:457`
         // — `active && !inActive`): an actuated basin floor seeps.
         let mut w = basin(9, 8);
-        let i = w.index(4, 8);
+        let i = w.index(10, 14);
         w.tiles[i].flags |= crate::tile::FLAG_INACTIVE;
         w.frame_important = vec![false; td::TILE_COUNT];
-        put(&mut w, 4, 4, 255);
+        put(&mut w, 10, 10, 255);
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 4, 4);
+        sys.add_water(&mut w, 10, 10);
         run(&mut sys, &mut w, 400);
         assert!(
-            w.tile(4, 8).unwrap().liquid > 0,
+            w.tile(10, 14).unwrap().liquid > 0,
             "water entered the actuated floor tile"
         );
     }
@@ -1884,7 +1962,7 @@ mod liquid_sim {
         w.compute_column_surface();
         w.compute_chunks();
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 30, 50);
+        sys.add_water(&mut w, 30, 50);
         for _ in 0..10 {
             sys.update(&mut w);
         }
@@ -1916,7 +1994,7 @@ mod liquid_sim {
         w.compute_column_surface();
         w.compute_chunks();
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 31, 69);
+        sys.add_water(&mut w, 31, 69);
         for _ in 0..12 {
             sys.update(&mut w);
         }
@@ -1962,8 +2040,8 @@ mod liquid_sim {
         w.compute_column_surface();
         w.compute_chunks();
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 30, 69);
-        sys.add_water(&w, 31, 69);
+        sys.add_water(&mut w, 30, 69);
+        sys.add_water(&mut w, 31, 69);
         for _ in 0..12 {
             sys.update(&mut w);
         }
@@ -1995,7 +2073,7 @@ mod liquid_sim {
         w.compute_column_surface();
         w.compute_chunks();
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 30, 40);
+        sys.add_water(&mut w, 30, 40);
         let total = |w: &World| -> i32 {
             (0..64)
                 .map(|x| {
@@ -2027,7 +2105,7 @@ mod liquid_sim {
         w2.compute_column_surface();
         w2.compute_chunks();
         let mut sys2 = LiquidSystem::new(&w2);
-        sys2.add_water(&w2, 31, 69);
+        sys2.add_water(&mut w2, 31, 69);
         let row_total = |w: &World| -> i32 {
             (0..64)
                 .map(|x| {
@@ -2065,11 +2143,14 @@ mod liquid_merge_cadence {
     use crate::tile::FLAG_ACTIVE;
 
     /// A stone floor row at `floor_y` (the `basin` fixture shape, tall
-    /// enough for the underworld band when `height >= 200`).
+    /// enough for the underworld band when `height >= 200`). W4-g45: the
+    /// scene is embedded at a (+6,+6) offset — the world is 12 wider / 12
+    /// taller and the floor moves to `floor_y+6`, so every liquid cell
+    /// clears AddWater's 5-tile border (`Liquid.cs:1163`).
     fn floor_world(width: i32, height: i32, floor_y: i32) -> World {
-        let mut w = World::new("cadence".into(), width, height);
-        for x in 0..width {
-            let i = w.index(x, floor_y);
+        let mut w = World::new("cadence".into(), width + 12, height + 12);
+        for x in 0..width + 12 {
+            let i = w.index(x, floor_y + 6);
             w.tiles[i] = Tile { kind: 1, ..Default::default() };
             w.tiles[i].flags |= FLAG_ACTIVE;
         }
@@ -2080,11 +2161,12 @@ mod liquid_merge_cadence {
     }
 
     /// A one-wide walled shaft: only the down arm can run, so a falling
-    /// column's position is a direct cadence clock.
+    /// column's position is a direct cadence clock. The walls fence the row
+    /// arms exactly like the world edge did before the border widening.
     fn shaft(width: i32, height: i32, floor_y: i32, cx: i32) -> World {
         let mut w = floor_world(width, height, floor_y);
-        for y in 0..floor_y {
-            for x in [cx - 1, cx + 1] {
+        for y in 0..floor_y + 6 {
+            for x in [cx + 5, cx + 7] {
                 let i = w.index(x, y);
                 w.tiles[i] = Tile { kind: 1, ..Default::default() };
                 w.tiles[i].flags |= FLAG_ACTIVE;
@@ -2114,20 +2196,20 @@ mod liquid_merge_cadence {
         // (five throttle visits), then resets `delay = 0` and flows — one
         // down-transfer per six visits. A short active list is re-walked
         // every update (`:1077-1082`), so 12 updates = 12 visits = exactly
-        // two falls: the column sits at y = 2, not y = 12 (an ungated flow).
+        // two falls: the column sits at y = 8, not y = 18 (an ungated flow).
         let mut w = shaft(5, 120, 30, 2);
-        put_as(&mut w, 2, 0, 255, 1);
+        put_as(&mut w, 8, 6, 255, 1);
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 2, 0);
+        sys.add_water(&mut w, 8, 6);
         run(&mut sys, &mut w, 12);
-        assert_eq!(w.tiles[w.index(2, 2)].liquid, 255, "two falls in twelve visits");
-        assert_eq!(w.tiles[w.index(2, 12)].liquid, 0, "no ungated flow");
-        // The next fall lands on visit 19: visit 6's fall marks (2,1)
+        assert_eq!(w.tiles[w.index(8, 8)].liquid, 255, "two falls in twelve visits");
+        assert_eq!(w.tiles[w.index(8, 18)].liquid, 0, "no ungated flow");
+        // The next fall lands on visit 19: visit 6's fall marks (8,7)
         // skipLiquid (`:586-587`), so visit 7 only clears the flag
         // (`:1096-1104`); visits 8-13 throttle, visit 14 flows, visits
         // 15-18 throttle, visit 19 flows.
         run(&mut sys, &mut w, 7);
-        assert_eq!(w.tiles[w.index(2, 3)].liquid, 255, "the third fall on visit 19");
+        assert_eq!(w.tiles[w.index(8, 9)].liquid, 255, "the third fall on visit 19");
     }
 
     #[test]
@@ -2136,17 +2218,17 @@ mod liquid_merge_cadence {
         // so the first fall lands on the eleventh visit and the second on
         // the twenty-second.
         let mut w = shaft(5, 120, 30, 2);
-        put_as(&mut w, 2, 0, 255, 2);
+        put_as(&mut w, 8, 6, 255, 2);
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 2, 0);
+        sys.add_water(&mut w, 8, 6);
         run(&mut sys, &mut w, 10);
-        assert_eq!(w.tiles[w.index(2, 0)].liquid, 255, "ten throttled visits");
+        assert_eq!(w.tiles[w.index(8, 6)].liquid, 255, "ten throttled visits");
         run(&mut sys, &mut w, 1);
-        assert_eq!(w.tiles[w.index(2, 1)].liquid, 255, "the first fall on visit 11");
+        assert_eq!(w.tiles[w.index(8, 7)].liquid, 255, "the first fall on visit 11");
         // Visit 12 clears the fall's skipLiquid flag (`:1096-1104`),
         // visits 13-22 throttle, visit 23 flows — the second fall.
         run(&mut sys, &mut w, 12);
-        assert_eq!(w.tiles[w.index(2, 2)].liquid, 255, "the second fall on visit 23");
+        assert_eq!(w.tiles[w.index(8, 8)].liquid, 255, "the second fall on visit 23");
     }
 
     #[test]
@@ -2157,12 +2239,12 @@ mod liquid_merge_cadence {
         // loop also clears the fall's skipLiquid flag right after the
         // update (`:1089`), so no visit is lost to it.
         let mut w = shaft(5, 120, 30, 2);
-        put_as(&mut w, 2, 0, 255, 1);
+        put_as(&mut w, 8, 6, 255, 1);
         let mut sys = LiquidSystem::new(&w);
         sys.quick_fall = true;
-        sys.add_water(&w, 2, 0);
+        sys.add_water(&mut w, 8, 6);
         run(&mut sys, &mut w, 12);
-        assert_eq!(w.tiles[w.index(2, 12)].liquid, 255, "quickFall flows every visit");
+        assert_eq!(w.tiles[w.index(8, 18)].liquid, 255, "quickFall flows every visit");
     }
 
     #[test]
@@ -2171,28 +2253,28 @@ mod liquid_merge_cadence {
         // the merge lands on the very first visit even though the flow
         // would be throttled for five more.
         let mut w = floor_world(9, 120, 8);
-        put_as(&mut w, 4, 4, 30, 1);
-        put_as(&mut w, 5, 4, 30, 0);
+        put_as(&mut w, 10, 10, 30, 1);
+        put_as(&mut w, 11, 10, 30, 0);
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 4, 4);
+        sys.add_water(&mut w, 10, 10);
         run(&mut sys, &mut w, 1);
-        assert_eq!(w.tiles[w.index(4, 4)].kind, 56, "the merge ignores the delay");
+        assert_eq!(w.tiles[w.index(10, 10)].kind, 56, "the merge ignores the delay");
     }
 
     #[test]
     fn water_evaporates_two_per_visit_below_the_underworld_layer() {
         // `Liquid.cs:466-474`: below `UnderworldLayer` (= height - 200,
-        // `Main.cs:2790`) water loses min(2, liquid) per visit. A 400-tall
-        // world puts the layer at 200; the cell at y = 300 sits in a
-        // one-wide shaft, so only evaporation runs (no fall, no row arm).
+        // `Main.cs:2790`) water loses min(2, liquid) per visit. The widened
+        // 412-tall world puts the layer at 212; the cell at y = 306 sits in
+        // a one-wide shaft, so only evaporation runs (no fall, no row arm).
         let mut w = shaft(5, 400, 350, 2);
-        put_as(&mut w, 2, 300, 100, 0);
+        put_as(&mut w, 8, 306, 100, 0);
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 2, 300);
+        sys.add_water(&mut w, 8, 306);
         run(&mut sys, &mut w, 1);
-        assert_eq!(w.tiles[w.index(2, 300)].liquid, 98, "two units per visit");
+        assert_eq!(w.tiles[w.index(8, 306)].liquid, 98, "two units per visit");
         run(&mut sys, &mut w, 49);
-        assert_eq!(w.tiles[w.index(2, 300)].liquid, 0, "fifty visits drain it dry");
+        assert_eq!(w.tiles[w.index(8, 306)].liquid, 0, "fifty visits drain it dry");
         assert_eq!(sys.active_len(), 0, "the zero kill retires the entry (`:475`)");
     }
 
@@ -2202,31 +2284,33 @@ mod liquid_merge_cadence {
         // keep every unit below the layer (the honey/lava columns also sit
         // in their delay gates, so nothing moves at all).
         let mut w = floor_world(12, 400, 301);
-        put_as(&mut w, 3, 300, 100, 1);
-        put_as(&mut w, 6, 300, 100, 2);
-        put_as(&mut w, 9, 300, 100, 3);
+        put_as(&mut w, 9, 306, 100, 1);
+        put_as(&mut w, 12, 306, 100, 2);
+        put_as(&mut w, 15, 306, 100, 3);
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 3, 300);
-        sys.add_water(&w, 6, 300);
-        sys.add_water(&w, 9, 300);
+        sys.add_water(&mut w, 9, 306);
+        sys.add_water(&mut w, 12, 306);
+        sys.add_water(&mut w, 15, 306);
         run(&mut sys, &mut w, 30);
-        assert_eq!(w.tiles[w.index(3, 300)].liquid, 100, "lava keeps its mass");
-        assert_eq!(w.tiles[w.index(6, 300)].liquid, 100, "honey keeps its mass");
-        assert_eq!(w.tiles[w.index(9, 300)].liquid, 100, "shimmer keeps its mass");
+        assert_eq!(w.tiles[w.index(9, 306)].liquid, 100, "lava keeps its mass");
+        assert_eq!(w.tiles[w.index(12, 306)].liquid, 100, "honey keeps its mass");
+        assert_eq!(w.tiles[w.index(15, 306)].liquid, 100, "shimmer keeps its mass");
     }
 
     #[test]
     fn water_at_the_underworld_layer_row_does_not_evaporate() {
         // `Liquid.cs:466` is a strict `y > UnderworldLayer`: the layer row
-        // itself (y = 200 in a 400-tall world) keeps its water. The floor
-        // at y = 201 pins the cell, and the stone walls at x = 3/5 fence
-        // the row arms, so only the evaporation gate is tested.
-        let mut w = shaft(9, 400, 201, 4);
-        put_as(&mut w, 4, 200, 100, 0);
+        // itself (y = 212 in the widened 412-tall world) keeps its water.
+        // The floor at y = 213 pins the cell (the shaft call's floor_y is
+        // re-pinned 207 so the +6 embed lands the floor one row below the
+        // layer), and the stone walls fence the row arms, so only the
+        // evaporation gate is tested.
+        let mut w = shaft(9, 400, 207, 4);
+        put_as(&mut w, 10, 212, 100, 0);
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 4, 200);
+        sys.add_water(&mut w, 10, 212);
         run(&mut sys, &mut w, 5);
-        assert_eq!(w.tiles[w.index(4, 200)].liquid, 100, "the layer row is exempt");
+        assert_eq!(w.tiles[w.index(10, 212)].liquid, 100, "the layer row is exempt");
     }
 
     #[test]
@@ -2235,14 +2319,14 @@ mod liquid_merge_cadence {
         // zeroes the checking cell AND re-types it water (`liquidType(0)`)
         // — no merge tile; the liquid below survives untouched.
         let mut w = floor_world(9, 120, 8);
-        put_as(&mut w, 4, 4, 20, 1);
-        put_as(&mut w, 4, 5, 30, 0);
+        put_as(&mut w, 10, 10, 20, 1);
+        put_as(&mut w, 10, 11, 30, 0);
         let mut sys = LiquidSystem::new(&w);
-        sys.liquid_check(&mut w, 4, 4, 1, false);
-        assert_eq!(w.tiles[w.index(4, 4)].liquid, 0, "the sub-24 cell drained");
-        assert_eq!(kind_code(w.tiles[w.index(4, 4)].liquid_kind()), 0, "re-typed water");
-        assert_eq!(w.tiles[w.index(4, 5)].liquid, 30, "the pool below survives");
-        assert_eq!(w.tiles[w.index(4, 5)].kind, 0, "no merge tile");
+        sys.liquid_check(&mut w, 10, 10, 1, false);
+        assert_eq!(w.tiles[w.index(10, 10)].liquid, 0, "the sub-24 cell drained");
+        assert_eq!(kind_code(w.tiles[w.index(10, 10)].liquid_kind()), 0, "re-typed water");
+        assert_eq!(w.tiles[w.index(10, 11)].liquid, 30, "the pool below survives");
+        assert_eq!(w.tiles[w.index(10, 11)].kind, 0, "no merge tile");
         assert!(sys.drain_merge_events().is_empty(), "the drain is silent");
     }
 
@@ -2251,17 +2335,17 @@ mod liquid_merge_cadence {
         // `Liquid.cs:1278`'s `thisLiquidType != 0` gate: water does not
         // burn the cut plant below; the sub-24 drain still runs.
         let mut w = floor_world(9, 120, 8);
-        let plant = w.index(4, 5);
+        let plant = w.index(10, 11);
         w.tiles[plant] = Tile { kind: 3, ..Default::default() };
         w.tiles[plant].flags |= FLAG_ACTIVE;
         w.tiles[plant].liquid = 30;
         set_kind(&mut w.tiles[plant], 1);
-        put_as(&mut w, 4, 4, 20, 0);
+        put_as(&mut w, 10, 10, 20, 0);
         let mut sys = LiquidSystem::new(&w);
-        sys.liquid_check(&mut w, 4, 4, 0, false);
+        sys.liquid_check(&mut w, 10, 10, 0, false);
         assert_eq!(w.tiles[plant].kind, 3, "the plant survives water");
         assert!(w.tiles[plant].active(), "still active");
-        assert_eq!(w.tiles[w.index(4, 4)].liquid, 0, "the drain ran");
+        assert_eq!(w.tiles[w.index(10, 10)].liquid, 0, "the drain ran");
     }
 
     #[test]
@@ -2271,13 +2355,13 @@ mod liquid_merge_cadence {
         // rows), consuming the pooled neighbour.
         for other in [1u8, 2] {
             let mut w = floor_world(9, 120, 8);
-            put_as(&mut w, 4, 4, 30, 3);
-            put_as(&mut w, 5, 4, 30, other);
+            put_as(&mut w, 10, 10, 30, 3);
+            put_as(&mut w, 11, 10, 30, other);
             let mut sys = LiquidSystem::new(&w);
-            sys.add_water(&w, 4, 4);
+            sys.add_water(&mut w, 10, 10);
             run(&mut sys, &mut w, 1);
-            assert_eq!(w.tiles[w.index(4, 4)].kind, 659, "shimmer + {other} -> 659");
-            assert_eq!(w.tiles[w.index(5, 4)].liquid, 0, "the pool consumed");
+            assert_eq!(w.tiles[w.index(10, 10)].kind, 659, "shimmer + {other} -> 659");
+            assert_eq!(w.tiles[w.index(11, 10)].liquid, 0, "the pool consumed");
         }
     }
 }
@@ -2295,10 +2379,12 @@ mod liquid_delwater {
     use super::*;
     use crate::tile::FLAG_ACTIVE;
 
+    /// W4-g45 round 2: the scene is embedded at (+6,+6) (world +12/+12,
+    /// floor at `floor_y+6`) so every cell clears AddWater's 5-tile border.
     fn floor_world(width: i32, height: i32, floor_y: i32) -> World {
-        let mut w = World::new("delwater".into(), width, height);
-        for x in 0..width {
-            let i = w.index(x, floor_y);
+        let mut w = World::new("delwater".into(), width + 12, height + 12);
+        for x in 0..width + 12 {
+            let i = w.index(x, floor_y + 6);
             w.tiles[i] = Tile { kind: 1, ..Default::default() };
             w.tiles[i].flags |= FLAG_ACTIVE;
         }
@@ -2333,20 +2419,20 @@ mod liquid_delwater {
         // delay 0 and kill 0. The reverse sweep retires slot 0 and swaps the
         // surviving slot 1 into it — carrying slot 0's delay 4, not its own 0.
         let mut w = floor_world(15, 120, 30);
-        put_as(&mut w, 6, 7, 1, 1);
-        put_as(&mut w, 8, 4, 100, 0);
+        put_as(&mut w, 12, 13, 1, 1);
+        put_as(&mut w, 14, 10, 100, 0);
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 6, 7);
-        sys.add_water(&w, 8, 4);
+        sys.add_water(&mut w, 12, 13);
+        sys.add_water(&mut w, 14, 10);
         sys.active[0].delay = 4;
         sys.active[0].kill = KILL_PASSES;
         sys.active[1].delay = 0;
         sys.active[1].kill = 0;
         sys.end_pass(&mut w);
         assert_eq!(sys.active_len(), 1, "the film retired, the column survived");
-        assert_eq!(sys.active[0].x, 8, "the survivor's coordinates");
+        assert_eq!(sys.active[0].x, 14, "the survivor's coordinates");
         assert_eq!(sys.active[0].delay, 4, "the survivor inherited the slot's delay");
-        assert_eq!(w.tiles[w.index(6, 7)].liquid, 0, "the film dried (`:1481`)");
+        assert_eq!(w.tiles[w.index(12, 13)].liquid, 0, "the film dried (`:1481`)");
     }
 
     #[test]
@@ -2355,12 +2441,12 @@ mod liquid_delwater {
         // up to 255 before DelWater reads it. A full cell on the solid floor
         // (below solid → no keep-alive) then retires, keeping its 255.
         let mut w = floor_world(15, 120, 8);
-        put_as(&mut w, 7, 7, 254, 0);
+        put_as(&mut w, 13, 13, 254, 0);
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 7, 7);
+        sys.add_water(&mut w, 13, 13);
         sys.active[0].kill = KILL_PASSES;
         sys.end_pass(&mut w);
-        assert_eq!(w.tiles[w.index(7, 7)].liquid, 255, "the 254 promoted to 255");
+        assert_eq!(w.tiles[w.index(13, 13)].liquid, 255, "the 254 promoted to 255");
         assert_eq!(sys.active_len(), 0, "the full cell retired");
     }
 
@@ -2369,9 +2455,9 @@ mod liquid_delwater {
         // `Liquid.cs:1506-1510`: a >=20 cell with an open, non-full below and
         // an open here resets kill to 0 and stays.
         let mut w = floor_world(15, 120, 30);
-        put_as(&mut w, 7, 4, 100, 0);
+        put_as(&mut w, 13, 10, 100, 0);
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 7, 4);
+        sys.add_water(&mut w, 13, 10);
         sys.active[0].kill = KILL_PASSES;
         sys.end_pass(&mut w);
         assert_eq!(sys.active_len(), 1, "the draining cell stays alive");
@@ -2385,33 +2471,38 @@ mod liquid_delwater {
         // family (60/70/661/662) to 59. Interior coordinates keep the
         // SquareTileFrame 5-tile margin clear.
         let mut w = floor_world(17, 120, 8);
-        put_as(&mut w, 8, 7, 255, 1);
-        put_tile(&mut w, 7, 7, 2);
-        put_tile(&mut w, 9, 7, 2);
-        put_tile(&mut w, 8, 6, 109);
-        put_tile(&mut w, 8, 8, 60); // mud in the ring -> 59
+        put_as(&mut w, 14, 13, 255, 1);
+        put_tile(&mut w, 13, 13, 2);
+        put_tile(&mut w, 15, 13, 2);
+        put_tile(&mut w, 14, 12, 109);
+        put_tile(&mut w, 14, 14, 60); // mud in the ring -> 59
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 8, 7);
+        sys.add_water(&mut w, 14, 13);
         sys.active[0].kill = KILL_PASSES;
         sys.end_pass(&mut w);
-        assert_eq!(w.tiles[w.index(7, 7)].kind, 0, "grass -> dirt");
-        assert_eq!(w.tiles[w.index(9, 7)].kind, 0, "grass -> dirt");
-        assert_eq!(w.tiles[w.index(8, 6)].kind, 0, "jungle grass -> dirt");
-        assert_eq!(w.tiles[w.index(8, 8)].kind, 59, "the ring mud -> 59");
+        assert_eq!(w.tiles[w.index(13, 13)].kind, 0, "grass -> dirt");
+        assert_eq!(w.tiles[w.index(15, 13)].kind, 0, "grass -> dirt");
+        assert_eq!(w.tiles[w.index(14, 12)].kind, 0, "jungle grass -> dirt");
+        assert_eq!(w.tiles[w.index(14, 14)].kind, 59, "the ring mud -> 59");
     }
 
     #[test]
     fn the_alch_tail_kills_an_unsupported_herb() {
         // `Liquid.cs:1580-1583`: a retired cell holding an alch herb (82/83/
-        // 84) runs CheckAlch — a Daybloom on stone (not grass) pops.
+        // 84) runs CheckAlch — a Daybloom on stone (not grass) pops. W4-g45:
+        // the herb stands on a STONE PILLAR (no open below), so DelWater's
+        // >=20 keep-alive (`:1506`, `!nactive || !solid || solidTop` on the
+        // cell itself) cannot rescue it — in the widened floor world an
+        // open cell below would keep it alive and the tail never ran.
         let mut w = floor_world(17, 120, 8);
-        put_tile(&mut w, 8, 6, 82);
-        put_as(&mut w, 8, 6, 255, 0);
+        put_tile(&mut w, 14, 13, 1); // the pillar the herb stands on
+        put_tile(&mut w, 14, 12, 82);
+        put_as(&mut w, 14, 12, 255, 0);
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 8, 6);
+        sys.add_water(&mut w, 14, 12);
         sys.active[0].kill = KILL_PASSES;
         sys.end_pass(&mut w);
-        assert!(!w.tiles[w.index(8, 6)].active(), "the unsupported herb died");
+        assert!(!w.tiles[w.index(14, 12)].active(), "the unsupported herb died");
     }
 
     #[test]
@@ -2421,18 +2512,18 @@ mod liquid_delwater {
         // ground walk must find a grass family (dirt-grass 2 here → frame row
         // 0); the empty cell below the pad takes it.
         let mut w = floor_world(17, 120, 8);
-        put_tile(&mut w, 8, 6, 518);
-        put_tile(&mut w, 8, 8, 2); // dirt-grass ground for the frame walk
+        put_tile(&mut w, 14, 12, 518);
+        put_tile(&mut w, 14, 14, 2); // dirt-grass ground for the frame walk
         let mut sys = LiquidSystem::new(&w);
         // The pad holds no liquid; add_water refuses it, so seed the entry
         // directly (the C# reaches DelWater through a kill sweep on a cell
         // that once held liquid).
-        sys.active.push(Entry { x: 8, y: 6, kill: KILL_PASSES, delay: 0 });
-        sys.set_checking(8, 6, true);
+        sys.active.push(Entry { x: 14, y: 12, kill: KILL_PASSES, delay: 0 });
+        sys.set_checking(14, 12, true);
         sys.end_pass(&mut w);
-        assert!(!w.tiles[w.index(8, 6)].active(), "the source pad deactivated");
-        assert_eq!(w.tiles[w.index(8, 7)].kind, 518, "the pad sank into (8,7)");
-        assert!(w.tiles[w.index(8, 7)].active(), "the destination is active");
+        assert!(!w.tiles[w.index(14, 12)].active(), "the source pad deactivated");
+        assert_eq!(w.tiles[w.index(14, 13)].kind, 518, "the pad sank into (14,13)");
+        assert!(w.tiles[w.index(14, 13)].active(), "the destination is active");
     }
 
     #[test]
@@ -2443,23 +2534,23 @@ mod liquid_delwater {
         // promotion count is the live active count (`num8 = numLiquid`), so a
         // survivor must remain after the sweep for the buffer to drain.
         let mut w = floor_world(15, 120, 30);
-        put_as(&mut w, 5, 4, 100, 0); // survivor: open below, keep-alive
-        put_as(&mut w, 6, 7, 1, 0); // film: retires in the sweep
-        put_as(&mut w, 8, 7, 100, 0); // overflow: buffered
+        put_as(&mut w, 11, 10, 100, 0); // survivor: open below, keep-alive
+        put_as(&mut w, 12, 13, 1, 0); // film: retires in the sweep
+        put_as(&mut w, 14, 13, 100, 0); // overflow: buffered
         let mut sys = LiquidSystem::new(&w);
         sys.cur_max_liquid = 3; // active cap = 2
-        sys.add_water(&w, 5, 4);
-        sys.add_water(&w, 6, 7);
-        sys.add_water(&w, 8, 7);
+        sys.add_water(&mut w, 11, 10);
+        sys.add_water(&mut w, 12, 13);
+        sys.add_water(&mut w, 14, 13);
         assert_eq!(sys.active_len(), 2, "two cells fit the active cap");
         assert_eq!(sys.buffered_len(), 1, "the third cell overflowed");
-        assert!(sys.is_checking(8, 7), "the buffered cell is checking");
+        assert!(sys.is_checking(14, 13), "the buffered cell is checking");
         sys.active[1].kill = KILL_PASSES; // the film retires
         sys.end_pass(&mut w);
         assert_eq!(sys.buffered_len(), 0, "the buffer drained");
         assert_eq!(sys.active_len(), 2, "survivor + promoted cell");
-        assert!(sys.is_checking(8, 7), "the promoted cell is checking again");
-        let promoted = sys.active.iter().find(|e| e.x == 8).expect("promoted");
+        assert!(sys.is_checking(14, 13), "the promoted cell is checking again");
+        let promoted = sys.active.iter().find(|e| e.x == 14).expect("promoted");
         assert_eq!(promoted.delay, 0, "AddWater re-queued with delay 0");
     }
 
@@ -2471,9 +2562,9 @@ mod liquid_delwater {
         // sweep leaves it; only the force-clear (stuck up, keep-alive
         // disabled) drains it.
         let mut w = floor_world(15, 120, 30);
-        put_as(&mut w, 7, 4, 100, 0);
+        put_as(&mut w, 13, 10, 100, 0);
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 7, 4);
+        sys.add_water(&mut w, 13, 10);
         sys.stuck_amount = 1;
         sys.stuck_count = 9_999;
         sys.end_pass(&mut w);
@@ -2493,10 +2584,12 @@ mod liquid_nudge_wakes {
     use super::*;
     use crate::tile::FLAG_ACTIVE;
 
+    /// W4-g45 round 2: the scene is embedded at (+6,+6) (world +12/+12,
+    /// floor at `floor_y+6`) so every cell clears AddWater's 5-tile border.
     fn floor_world(width: i32, height: i32, floor_y: i32) -> World {
-        let mut w = World::new("nudge".into(), width, height);
-        for x in 0..width {
-            let i = w.index(x, floor_y);
+        let mut w = World::new("nudge".into(), width + 12, height + 12);
+        for x in 0..width + 12 {
+            let i = w.index(x, floor_y + 6);
             w.tiles[i] = Tile { kind: 1, ..Default::default() };
             w.tiles[i].flags |= FLAG_ACTIVE;
         }
@@ -2521,13 +2614,13 @@ mod liquid_nudge_wakes {
         // 254 row promotes. Three equal 254 cells average to 254.
         let mut w = floor_world(15, 120, 8);
         w.frame_rng = crate::unified_random::UnifiedRandom::new(35);
-        put_as(&mut w, 6, 7, 254, 0);
-        put_as(&mut w, 7, 7, 254, 0);
-        put_as(&mut w, 8, 7, 254, 0);
+        put_as(&mut w, 12, 13, 254, 0);
+        put_as(&mut w, 13, 13, 254, 0);
+        put_as(&mut w, 14, 13, 254, 0);
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 7, 7);
+        sys.add_water(&mut w, 13, 13);
         sys.update(&mut w);
-        assert_eq!(w.tiles[w.index(7, 7)].liquid, 255, "the zero draw promoted 254");
+        assert_eq!(w.tiles[w.index(13, 13)].liquid, 255, "the zero draw promoted 254");
     }
 
     #[test]
@@ -2536,13 +2629,13 @@ mod liquid_nudge_wakes {
         // stays 254 — the nudge only fires on a zero.
         let mut w = floor_world(15, 120, 8);
         w.frame_rng = crate::unified_random::UnifiedRandom::new(0);
-        put_as(&mut w, 6, 7, 254, 0);
-        put_as(&mut w, 7, 7, 254, 0);
-        put_as(&mut w, 8, 7, 254, 0);
+        put_as(&mut w, 12, 13, 254, 0);
+        put_as(&mut w, 13, 13, 254, 0);
+        put_as(&mut w, 14, 13, 254, 0);
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 7, 7);
+        sys.add_water(&mut w, 13, 13);
         sys.update(&mut w);
-        assert_eq!(w.tiles[w.index(7, 7)].liquid, 254, "the nonzero draw kept 254");
+        assert_eq!(w.tiles[w.index(13, 13)].liquid, 254, "the nonzero draw kept 254");
     }
 
     #[test]
@@ -2552,12 +2645,12 @@ mod liquid_nudge_wakes {
         // stream untouched; a 254 settle advances it by exactly one draw.
         let mut w = floor_world(15, 120, 8);
         w.frame_rng = crate::unified_random::UnifiedRandom::new(0);
-        put_as(&mut w, 6, 7, 100, 0);
-        put_as(&mut w, 7, 7, 100, 0);
-        put_as(&mut w, 8, 7, 100, 0);
+        put_as(&mut w, 12, 13, 100, 0);
+        put_as(&mut w, 13, 13, 100, 0);
+        put_as(&mut w, 14, 13, 100, 0);
         let before = w.frame_rng.peek();
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 7, 7);
+        sys.add_water(&mut w, 13, 13);
         sys.update(&mut w);
         assert_eq!(w.frame_rng.peek(), before, "a non-254 settle drew nothing");
     }
@@ -2572,16 +2665,309 @@ mod liquid_nudge_wakes {
         // extra wake pulls the right neighbour into the list — without it the
         // neighbour stays unqueued (`set_level` saw no change).
         let mut w = floor_world(15, 120, 8);
-        put_as(&mut w, 7, 7, 20, 0);
-        put_as(&mut w, 8, 7, 10, 0);
+        put_as(&mut w, 13, 13, 20, 0);
+        put_as(&mut w, 14, 13, 10, 0);
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 7, 7);
+        sys.add_water(&mut w, 13, 13);
         assert_eq!(sys.active_len(), 1, "only the centre is queued");
-        assert!(!sys.is_checking(8, 7), "the right neighbour starts unqueued");
+        assert!(!sys.is_checking(14, 13), "the right neighbour starts unqueued");
         sys.update(&mut w);
         // The 3-arm average (0 + 10 + 20)/3 = 10 differs from the centre's 20;
         // the right neighbour already held 10, so only the extra wake queues it.
-        assert!(sys.is_checking(8, 7), "the extra wake re-queued the neighbour");
+        assert!(sys.is_checking(14, 13), "the extra wake re-queued the neighbour");
+    }
+}
+
+/// W4-g45 round 2 — the `Liquid.AddWater` death-guards (`Liquid.cs:1163`,
+/// `:1183-1206`): the 5-tile world-border exclusion, the `type != 546`
+/// carve-out, and the `CheckWaterDeath`/`CheckLavaDeath` → `KillTile` of a
+/// submerged object (the Tile overloads, `TileObjectData.cs:5083-5119` —
+/// W4-e11's symbols, wired here per its commit's "the Liquid.cs:1190
+/// settlement kill wiring is the liquid task's seam"). There is NO
+/// shimmer-specific AddWater: honey and shimmer ride the `CheckWaterDeath`
+/// else-arm, lava rides `CheckLavaDeath`. The fixtures are embedded past
+/// the border (the g47 co-lane's documented precondition). Written, NOT
+/// run (code-only mode).
+#[cfg(test)]
+mod liquid_addwater_guards {
+    use super::*;
+    use crate::tile::FLAG_ACTIVE;
+
+    /// A 32x24 world with a stone floor at y=18 — every probe cell sits
+    /// inside the 5-tile border (x/y in 5..27 / 5..19).
+    fn guarded_world() -> World {
+        let mut w = World::new("addwater".into(), 32, 24);
+        for x in 0..32 {
+            let i = w.index(x, 18);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.frame_important = vec![false; td::TILE_COUNT];
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn wet(w: &mut World, x: i32, y: i32, amount: u8, kind: u8) {
+        let i = w.index(x, y);
+        w.tiles[i].liquid = amount;
+        set_kind(&mut w.tiles[i], kind);
+        w.mark_chunk(x, y);
+    }
+
+    fn object(w: &mut World, x: i32, y: i32, kind: u16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile { kind, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.mark_chunk(x, y);
+    }
+
+    #[test]
+    fn the_five_tile_border_refuses_the_outer_band() {
+        // `Liquid.cs:1163`: `x >= maxTilesX - 5 || y >= maxTilesY - 5 ||
+        // x < 5 || y < 5` returns before the queue — all four sides.
+        let mut w = guarded_world();
+        for (x, y) in [(4, 10), (27, 10), (10, 4), (10, 19)] {
+            wet(&mut w, x, y, 100, 0);
+        }
+        let mut sys = LiquidSystem::new(&w);
+        for (x, y) in [(4, 10), (27, 10), (10, 4), (10, 19)] {
+            sys.add_water(&mut w, x, y);
+        }
+        assert_eq!(sys.active_len(), 0, "the border band never queues");
+        // The first interior cell on each axis queues (the guard is `< 5`
+        // / `>= size - 5`, so 5 and size-6 pass).
+        for (x, y) in [(5, 10), (26, 10), (10, 5), (10, 18)] {
+            wet(&mut w, x, y, 100, 0);
+            sys.add_water(&mut w, x, y);
+        }
+        assert_eq!(sys.active_len(), 4, "the inner edge of the band queues");
+    }
+
+    #[test]
+    fn the_grate_546_is_carved_out_of_the_solid_refusal() {
+        // `Liquid.cs:1163`'s `tile.type != 546`: an active solid grate WITH
+        // liquid queues even outside the pass (stock `tileSolid[546] =
+        // true`, `Main.cs:10124`); a plain solid stone cell does not.
+        let mut w = guarded_world();
+        object(&mut w, 10, 10, 546);
+        wet(&mut w, 10, 10, 100, 0);
+        object(&mut w, 12, 10, 1);
+        wet(&mut w, 12, 10, 100, 0);
+        let mut sys = LiquidSystem::new(&w);
+        assert!(!sys.ignore_solids, "outside the pass the grate is stock-solid");
+        sys.add_water(&mut w, 10, 10);
+        sys.add_water(&mut w, 12, 10);
+        assert_eq!(sys.active_len(), 1, "the grate queues, the stone refuses");
+        assert!(sys.is_checking(10, 10));
+        assert!(!sys.is_checking(12, 10));
+    }
+
+    #[test]
+    fn water_kills_a_submerged_torch() {
+        // `Liquid.cs:1195-1201`: the else-arm `CheckWaterDeath(tile)` —
+        // torch 4 resolves to its own def (`water_death: true`,
+        // `uses_global_liquid_checks: false`, registry D_4), so the
+        // submerged torch dies INLINE and keeps its liquid.
+        let mut w = guarded_world();
+        object(&mut w, 10, 10, 4);
+        wet(&mut w, 10, 10, 100, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&mut w, 10, 10);
+        assert!(!w.tiles[w.index(10, 10)].active(), "the torch died");
+        assert_eq!(w.tiles[w.index(10, 10)].liquid, 100, "the liquid survives the kill");
+        assert_eq!(sys.active_len(), 1, "the cell is queued before the death check");
+    }
+
+    #[test]
+    fn the_death_arms_read_different_flags() {
+        // `Liquid.cs:1188-1198`: the lava arm reads `CheckLavaDeath`, the
+        // else-arm `CheckWaterDeath` — DIFFERENT flags on the same cell.
+        // Torch 4 style 0 (registry D_4: `water_death: true`, `lava_death:
+        // true`) dies in both; the water-torch sub-tile 8 at frameY 176
+        // (D_4_S8_A3: both false — the frame decode flips the flags on the
+        // SAME kind) survives both.
+        for (frame_y, liquid, dies) in
+            [(0i16, 0u8, true), (0, 1, true), (176, 0, false), (176, 1, false)]
+        {
+            let mut w = guarded_world();
+            object(&mut w, 10, 10, 4);
+            w.tiles[w.index(10, 10)].frame_y = frame_y;
+            wet(&mut w, 10, 10, 100, liquid);
+            let mut sys = LiquidSystem::new(&w);
+            sys.add_water(&mut w, 10, 10);
+            assert_eq!(
+                !w.tiles[w.index(10, 10)].active(),
+                dies,
+                "torch frameY {frame_y} in liquid {liquid}: dies = {dies}"
+            );
+        }
+        // The global-table fallback (`TileObjectData.cs:5090-5093`): plant
+        // 3 is a natural object (`uses_global_liquid_checks: true`), so the
+        // arms read `Main.tileWaterDeath` (no 3) / `Main.tileLavaDeath`
+        // (has 3): survives water, dies in lava — the two arms diverge on
+        // one kind through the GLOBAL tables, not a def.
+        for (liquid, dies) in [(0u8, false), (1, true)] {
+            let mut w = guarded_world();
+            object(&mut w, 10, 10, 3);
+            wet(&mut w, 10, 10, 100, liquid);
+            let mut sys = LiquidSystem::new(&w);
+            sys.add_water(&mut w, 10, 10);
+            assert_eq!(
+                !w.tiles[w.index(10, 10)].active(),
+                dies,
+                "plant 3 in liquid {liquid}: dies = {dies}"
+            );
+        }
+        // The def WINS over the global table: pile 372 (D_372:
+        // `water_death: false`, non-global, no sub-tiles/alternates)
+        // survives water even though `Main.tileWaterDeath` has 372 — the
+        // resolved-def arm answers before the fallback
+        // (`TileObjectData.cs:5090-5094`, the d114 discriminator kind).
+        let mut w = guarded_world();
+        object(&mut w, 10, 10, 372);
+        wet(&mut w, 10, 10, 100, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&mut w, 10, 10);
+        assert!(w.tiles[w.index(10, 10)].active(), "the def's false beats the global true");
+    }
+
+    #[test]
+    fn honey_and_shimmer_ride_the_water_death_arm() {
+        // `Liquid.cs:1188-1198`: only `tile.lava()` takes the lava arm —
+        // honey (2) and shimmer (3) both fall to `CheckWaterDeath`. The
+        // torch's `water_death: true` kills it under either kind.
+        for kind in [2u8, 3] {
+            let mut w = guarded_world();
+            object(&mut w, 10, 10, 4);
+            wet(&mut w, 10, 10, 100, kind);
+            let mut sys = LiquidSystem::new(&w);
+            sys.add_water(&mut w, 10, 10);
+            assert!(
+                !w.tiles[w.index(10, 10)].active(),
+                "kind {kind} killed the torch through CheckWaterDeath"
+            );
+        }
+    }
+
+    #[test]
+    fn an_open_water_cell_survives_and_queues() {
+        // `Liquid.cs:1183-1186`: `!tile.active()` returns right after the
+        // queue — no death check reads an empty cell.
+        let mut w = guarded_world();
+        wet(&mut w, 10, 10, 100, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&mut w, 10, 10);
+        assert_eq!(sys.active_len(), 1);
+        assert!(!w.tiles[w.index(10, 10)].active(), "still an open cell");
+        assert_eq!(w.tiles[w.index(10, 10)].liquid, 100);
+    }
+
+    #[test]
+    fn generation_queues_without_the_death_check() {
+        // `Liquid.cs:1183`'s `WorldGen.isGeneratingOrLoadingWorld`: during
+        // generation the queue lands but the kill never runs.
+        let mut w = guarded_world();
+        object(&mut w, 10, 10, 4);
+        wet(&mut w, 10, 10, 100, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.generating = true;
+        sys.add_water(&mut w, 10, 10);
+        assert_eq!(sys.active_len(), 1, "the cell queued");
+        assert!(w.tiles[w.index(10, 10)].active(), "generation never kills");
+    }
+
+    #[test]
+    fn the_promotion_runs_the_death_check_too() {
+        // `Liquid.cs:1127-1128`: the cycle-end promotion calls AddWater —
+        // so a buffered torch cell dies when it promotes, exactly like a
+        // direct wake. Cap 2: one survivor + one film; the sweep retires
+        // the film, freeing the slot the torch promotes into.
+        let mut w = guarded_world();
+        wet(&mut w, 8, 10, 100, 0); // survivor: open below, keep-alive
+        wet(&mut w, 9, 10, 1, 0); // film: the sweep dries + retires it
+        object(&mut w, 10, 10, 4);
+        wet(&mut w, 10, 10, 100, 0); // overflow: buffered
+        let mut sys = LiquidSystem::new(&w);
+        sys.cur_max_liquid = 3; // active cap = 2
+        sys.add_water(&mut w, 8, 10);
+        sys.add_water(&mut w, 9, 10);
+        sys.add_water(&mut w, 10, 10);
+        assert_eq!(sys.buffered_len(), 1, "the torch overflowed");
+        assert!(w.tiles[w.index(10, 10)].active(), "buffering never kills");
+        sys.active[1].kill = KILL_PASSES; // the film retires in the sweep
+        sys.end_pass(&mut w);
+        assert_eq!(sys.buffered_len(), 0, "the buffer drained");
+        assert!(!w.tiles[w.index(10, 10)].active(), "the promotion's AddWater killed the torch");
+        assert_eq!(w.tiles[w.index(10, 10)].liquid, 100, "the liquid survives");
+        assert_eq!(sys.active_len(), 2, "survivor + the promoted torch entry");
+        // The C# AddWater queues BEFORE the kill and never removes the
+        // entry — the killed cell's entry stays queued this cycle (the
+        // next sweep's solid-kill retires it).
+        assert!(
+            sys.active.iter().any(|e| e.x == 10 && e.y == 10),
+            "the killed cell's entry stays queued this cycle"
+        );
+    }
+
+    #[test]
+    fn the_promotion_count_is_pinned_before_the_loop() {
+        // `Liquid.cs:1120-1129`: `num8 = min(numLiquid, numLiquidBuffer)`
+        // is pinned BEFORE the loop and the loop runs unconditionally.
+        // A buffered cell that went DRY while buffered is refused by
+        // AddWater (`:1163`'s `liquid == 0`), but its promotion slot still
+        // runs: `DelBuffer(0)` swap-removes it and the tail takes slot 0.
+        // Cap 1: one survivor + buffered [A(dry), B]. num8 = min(1, 2) = 1:
+        // A's slot clears its checking bit, AddWater refuses the dry cell,
+        // DelBuffer swaps B into slot 0 → buffer [B]. The port's old extra
+        // `active.len() < cap` loop guard skipped the whole loop at the
+        // cap and left the dead A buffered with its checking bit set.
+        let mut w = guarded_world();
+        wet(&mut w, 8, 10, 100, 0); // survivor: keep-alive
+        wet(&mut w, 10, 10, 100, 0); // A: buffered, then goes dry
+        wet(&mut w, 12, 10, 100, 0); // B: stays buffered
+        let mut sys = LiquidSystem::new(&w);
+        sys.cur_max_liquid = 2; // active cap = 1
+        sys.add_water(&mut w, 8, 10);
+        sys.add_water(&mut w, 10, 10);
+        sys.add_water(&mut w, 12, 10);
+        assert_eq!(sys.active_len(), 1);
+        assert_eq!(sys.buffered_len(), 2);
+        w.tiles[w.index(10, 10)].liquid = 0; // A dries while buffered
+        sys.end_pass(&mut w);
+        assert_eq!(sys.active_len(), 1, "the dry cell never queues");
+        assert_eq!(sys.buffer, vec![(12, 10)], "DelBuffer swapped B into slot 0");
+        assert!(!sys.is_checking(10, 10), "A's promotion cleared its checking bit");
+        assert!(sys.is_checking(12, 10), "B stays marked");
+    }
+
+    #[test]
+    fn add_water_and_the_death_check_draw_no_rng() {
+        // RNG census: AddWater itself draws NOTHING — the border/solid
+        // gates, the queue and the death check are RNG-free. The kill
+        // cascade's framing re-rolls ride `World.frame_rng` (the genRand
+        // stand-in, `WorldGen.cs:81705-81709`) only where the C# rolls:
+        // `reframe_area`'s centre reset needs an ACTIVE centre, and the
+        // killed cell is inactive — an isolated torch death in an empty
+        // neighbourhood consumes no draw. (A cascade that kills or
+        // re-frames further cells advances the stream exactly as the
+        // DelWater witnesses pin.)
+        let mut w = guarded_world();
+        w.frame_rng = crate::unified_random::UnifiedRandom::new(42);
+        wet(&mut w, 8, 10, 100, 0);
+        let before = w.frame_rng.peek();
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&mut w, 8, 10);
+        assert_eq!(w.frame_rng.peek(), before, "a plain wake draws nothing");
+        object(&mut w, 10, 10, 4);
+        wet(&mut w, 10, 10, 100, 0);
+        sys.add_water(&mut w, 10, 10);
+        assert!(!w.tiles[w.index(10, 10)].active(), "the torch died");
+        assert_eq!(
+            w.frame_rng.peek(),
+            before,
+            "the isolated death's reframe has no active centre to re-roll"
+        );
     }
 }
 

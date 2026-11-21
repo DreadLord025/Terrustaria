@@ -1931,7 +1931,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         let placed = edit::place_tile(&mut app.world, x, y, kind);
         if placed {
             app.queue_map_ring(x, y);
-            app.liquids.wake_around(&app.world, x, y, 3);
+            app.liquids.wake_around(&mut app.world, x, y, 3);
             app.world_key = None;
         }
     }
@@ -5729,7 +5729,7 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
         );
     }
     app.request_edit(tx, ty, 0, 0);
-    app.liquids.wake_around(&app.world, tx, ty, 3);
+    app.liquids.wake_around(&mut app.world, tx, ty, 3);
     // `PressurePlateHelper.DestroyPlate` (`WorldGen.cs:65327`, case 428 of
     // `KillTile_GetItemDrops`): a pressed weighted plate that is broken fires
     // its switch once so the device releases. The pick break runs in
@@ -6947,7 +6947,7 @@ pub(crate) fn spawn_force_clear_area(app: &mut App, floor_x: i32, floor_y: i32) 
                     }
                 }
                 app.request_edit(i, j, 0, 0);
-                app.liquids.wake_around(&app.world, i, j, 3);
+                app.liquids.wake_around(&mut app.world, i, j, 3);
                 app.world_key = None;
             }
         }
@@ -7541,7 +7541,7 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
     if matches!(kind, 20 | 590 | 595 | 615) {
         let _ = app.achievements.notify_custom_int("Do", 1);
     }
-    app.liquids.wake_around(&app.world, tx, ty, 3);
+    app.liquids.wake_around(&mut app.world, tx, ty, 3);
     // The placement cue: `tr_core::edit::place_tile_sound` is the
     // `WorldGen.PlaceTile` tail switch (`WorldGen.cs:60263-60282` — 127 →
     // Item30, 314 → Item52, 330-333 → Coins, default Dig); the
