@@ -633,9 +633,9 @@ impl DustPool {
     /// `Dust.NewDustPerfect` (`Dust.cs:54-63`): a `NewDust` with a 0×0 box,
     /// then the position (and velocity) are overwritten exactly. Note the C#
     /// writes into whatever slot `NewDust` returned — the sentinel included.
-    pub fn new_dust_perfect(
+    pub fn new_dust_perfect<R: DustRng>(
         &mut self,
-        rng: &mut UnifiedRandom,
+        rng: &mut R,
         ctx: &SpawnCtx,
         world: &World,
         position: Vec2,
@@ -659,9 +659,9 @@ impl DustPool {
     /// `Dust.NewDustDirect` (`Dust.cs:65-73`): a `NewDust` whose NaN velocity
     /// is zeroed (`Vector2.HasNaNs`).
     #[allow(clippy::too_many_arguments)]
-    pub fn new_dust_direct(
+    pub fn new_dust_direct<R: DustRng>(
         &mut self,
-        rng: &mut UnifiedRandom,
+        rng: &mut R,
         ctx: &SpawnCtx,
         world: &World,
         position: Vec2,
