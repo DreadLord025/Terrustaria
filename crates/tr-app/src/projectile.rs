@@ -24065,8 +24065,13 @@ mod tests {
         // 700-line four-machine port inside the fix round. The Stardust
         // Dragon chain (121) WAS ported at the gate (`dragon_step`) — its
         // deferral collided with the same pin and the machine is one
-        // self-contained family.
-        const UNARMED_ROWED: [u8; 4] = [156, 164, 169, 206];
+        // self-contained family. W4-d15's wiring round adds 140: the 707
+        // row (the Monk Staff T3's normal swing, `Projectile.cs:7474-7490`)
+        // lands so the 3858's use arm spawns, but `AI_140_MonkStaffT1`
+        // (`:69416+`) is OUTSIDE the 141-150 slice — the free integrate
+        // holds the slot until the 140 port lands (the same row-keep
+        // decision as the four minion styles above).
+        const UNARMED_ROWED: [u8; 5] = [140, 156, 164, 169, 206];
         // S1-F-13c: the Frost Moon bosses' seven hostile-shot kinds ride the
         // KIND-gated `projectile_frost_shots::handles` arm ahead of the
         // aiStyle dispatch — their styles are armed there, not in the
