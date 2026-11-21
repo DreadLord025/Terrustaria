@@ -628,6 +628,25 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Desert Djinn",
     },
+    // W4-g5 — the two unclaimed aiStyle-8 casters (`BestiaryEntry.Enemy`,
+    // the automated populator `BestiaryDatabaseNPCsPopulator.cs:851-868`;
+    // the display names ride `Lang.GetNPCName`, en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "RuneWizard",
+        net_id: 172,
+        kind: NpcKind::RuneWizard,
+        variant: None,
+        quick_unlock: false,
+        name: "Rune Wizard",
+    },
+    BestiaryEntryDef {
+        credit_id: "LibrarianSkeleton",
+        net_id: 693,
+        kind: NpcKind::LibrarianSkeleton,
+        variant: None,
+        quick_unlock: false,
+        name: "Librarian Skeleton",
+    },
     // The spheres: the Chaos Ball entry also covers Tim's ChaosBallTim
     // clone 665 (the port folds it — identical stats and name).
     BestiaryEntryDef {

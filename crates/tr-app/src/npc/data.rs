@@ -586,6 +586,12 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-g5 — the two unclaimed aiStyle-8 casters. The RuneWizard's
+            // vanilla 172 collides with DD2DarkMageT3's port-local 172, so
+            // it takes the next-free port-local 354 (the BlazingWheel
+            // precedent); the LibrarianSkeleton's 693 is free (vanilla).
+            NpcKind::RuneWizard => 354,
+            NpcKind::LibrarianSkeleton => 693,
         }
     }
 
@@ -916,6 +922,9 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            // W4-g5 — the two unclaimed aiStyle-8 casters (`to_u16` above).
+            354 => NpcKind::RuneWizard,
+            693 => NpcKind::LibrarianSkeleton,
             _ => return None,
         })
     }
@@ -1796,6 +1805,9 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            // W4-g5 — the two casters' `HitSound` rows: `SoundID.NPCHit2`
+            // (`NPC.cs:11162`/`:17729`).
+            NpcKind::RuneWizard | NpcKind::LibrarianSkeleton => "NPC_Hit_2",
             _ => return None,
         })
     }
@@ -2100,6 +2112,9 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            // W4-g5 — the two casters' `DeathSound` rows: `SoundID.NPCDeath2`
+            // (`NPC.cs:11163`/`:17730`).
+            NpcKind::RuneWizard | NpcKind::LibrarianSkeleton => "NPC_Killed_2",
             _ => return None,
         })
     }
@@ -2295,8 +2310,9 @@ impl NpcKind {
             NpcKind::Clothier | NpcKind::TravellingMerchant | NpcKind::Angler | NpcKind::Stylist | NpcKind::TaxCollector |
             NpcKind::Golfer | NpcKind::Zoologist | NpcKind::Princess | NpcKind::DyeTrader | NpcKind::PartyGirl |
             NpcKind::Wizard | NpcKind::Mechanic | NpcKind::GoblinTinkerer => 7,
-            // aiStyle 8 - NPC.cs:9083, :9125, :9326, :14978, :15690
-            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => 8,
+            // aiStyle 8 - NPC.cs:9083, :9125, :9326, :11158, :14978, :15690, :17727
+            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn
+            | NpcKind::RuneWizard | NpcKind::LibrarianSkeleton => 8,
             // aiStyle 9 - NPC.cs:9097, :9139, :15703
             NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => 9,
             // aiStyle 11 - NPC.cs:9170
@@ -2981,6 +2997,9 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-g5 — the two casters' `SetDefaults` boxes: 172 18x40
+            // (`NPC.cs:11156-11157`), 693 18x40 (`:17725-17726`).
+            NpcKind::RuneWizard | NpcKind::LibrarianSkeleton => (18.0, 40.0),
         }
     }
 
@@ -3622,6 +3641,10 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-g5 — the two casters' `lifeMax` rows: 172 600
+            // (`NPC.cs:11161`), 693 70 (`:17728`).
+            NpcKind::RuneWizard => 600,
+            NpcKind::LibrarianSkeleton => 70,
         }
     }
 
@@ -3986,6 +4009,10 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-g5 — the two casters' `damage` rows: 172 200
+            // (`NPC.cs:11159`), 693 18 (`:17727`).
+            NpcKind::RuneWizard => 200,
+            NpcKind::LibrarianSkeleton => 18,
         }
     }
 }

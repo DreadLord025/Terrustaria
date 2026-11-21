@@ -449,6 +449,20 @@ pub enum NpcKind {
     /// value 1200; emits light at `base.Top` with colour (0.6, 0.6, 0.3) —
     /// `Lighting.AddLight(base.Top, 0.6f, 0.6f, 0.3f)`, `NPC.cs:21360`).
     DesertDjinn,
+    /// `NPCID.RuneWizard` (172) — the hardmode cavern caster (`aiStyle 8`,
+    /// `NPC.cs:11154-11167`: 18x40, 600 HP, damage 200, defense 30, kb 0.3,
+    /// value 5000, rarity 4). The alpha ramp (`NPC.cs:20844-20854`) fades
+    /// it out over 255 ticks; a strike resets alpha to 0. Fires the 129
+    /// RuneBlast (`NPC.cs:21264-21274`). The protocol id is port-local 354
+    /// (the vanilla 172 collides with DD2DarkMageT3's port-local slot).
+    RuneWizard,
+    /// `NPCID.LibrarianSkeleton` (693) — the dungeon book caster (`aiStyle
+    /// 8`, `NPC.cs:17723-17735`: 18x40, 70 HP, damage 18, defense 2, kb 0.6,
+    /// value 160, npcSlots 2). The localAI clock (`NPC.cs:20839-20842`/
+    /// `:20994-21005`/`:21106-21111`) drives the book teleport
+    /// (`AI_AttemptToFindTeleportSpotNearBooks`, `:19009-19085`) and the
+    /// 1092 book shot (`AI_FindNearbyBook`, `:62308-62364` / `:21248-21263`).
+    LibrarianSkeleton,
     /// `NPCID.ChaosBall` (30) — the caster's sphere (`aiStyle 9`, 16x16,
     /// 1 HP, `noGravity`/`noTileCollide`). Tim's `ChaosBallTim` clone 665
     /// folds here (identical stats and name, `NPC.cs:17398`).
@@ -3536,6 +3550,10 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            // W4-g5 — the two casters' `knockBackResist` rows: 172 0.3
+            // (`NPC.cs:11164`), 693 0.6 (`:17731`).
+            NpcKind::RuneWizard => 0.3,
+            NpcKind::LibrarianSkeleton => 0.6,
             _ => 0.4,
         }
     }
@@ -3916,6 +3934,10 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            // W4-g5 — the two casters' `defense` rows: 172 30
+            // (`NPC.cs:11160`), 693 2 (`:17728`).
+            NpcKind::RuneWizard => 30,
+            NpcKind::LibrarianSkeleton => 2,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4288,6 +4310,10 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            // W4-g5 — the two casters' `value` rows (copper): 172 5000
+            // (`NPC.cs:11165`), 693 160 (`:17732`).
+            NpcKind::RuneWizard => 5000.0,
+            NpcKind::LibrarianSkeleton => 160.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6117,7 +6143,8 @@ impl Npc {
                 unreachable!("aiStyle 5 rides the style axis (S1-D-2)")
             }
             // The leeches ride the worm pass (aiStyle 6 — the chain move).
-            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => {
+            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn
+            | NpcKind::RuneWizard | NpcKind::LibrarianSkeleton => {
                 self.update_caster(world, player, rng)
             }
             // S1-D-3: the aiStyle-9 sphere family (25/30+665/33) rides the
@@ -8070,7 +8097,19 @@ impl Npc {
             // is the cast windup (`ai[1] > 0`), row 2 airborne. The Dark
             // Caster's Skeletron pose (`localAI[3]`, `:77050-77053`) rides
             // the skeleton-head work.
-            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster => {
+            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster
+            | NpcKind::RuneWizard | NpcKind::LibrarianSkeleton => {
+                // `NPC.cs:77030-77039`: the grounded spriteDirection snap
+                // (the C# snaps it for the whole case 29/32/45/172/281-286/
+                // 693 group; the port's caster arm was missing it).
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                }
                 self.frame = if self.vy != 0.0 {
                     2
                 } else if self.cast_windup > 0 {
@@ -18608,6 +18647,12 @@ impl Npc {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-g5 — the two casters: the RuneWizard's render key rides
+            // its port-local protocol id 354 (the BlazingWheel precedent —
+            // the vanilla 172 is DD2DarkMageT3's key above); the
+            // LibrarianSkeleton's 693 is free (vanilla).
+            NpcKind::RuneWizard => 354,
+            NpcKind::LibrarianSkeleton => 693,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23676,7 +23721,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 270] = [
+    pub(super) const ALL_KINDS: [NpcKind; 272] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -23955,6 +24000,9 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-g5 — the two unclaimed aiStyle-8 casters.
+        NpcKind::RuneWizard,
+        NpcKind::LibrarianSkeleton,
     ];
 
     #[test]
@@ -27566,8 +27614,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            270,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
+            272,
+            "every decodable kind resolves (the wire roster's size - 272 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-g5's two casters, L-B gate)"
         );
         assert!(
             covered > 43,
@@ -31171,6 +31219,9 @@ mod s1_d_2_tests {
         (NpcKind::Tim, 8),
         (NpcKind::DarkCaster, 8),
         (NpcKind::FireImp, 8),
+        // W4-g5 — the two unclaimed aiStyle-8 casters (`NPC.cs:11158`/`:17727`).
+        (NpcKind::RuneWizard, 8),
+        (NpcKind::LibrarianSkeleton, 8),
         (NpcKind::ChaosBall, 9),
         (NpcKind::BurningSphere, 9),
         (NpcKind::WaterSphere, 9),

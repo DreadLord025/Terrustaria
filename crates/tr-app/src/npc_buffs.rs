@@ -484,6 +484,10 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+        // W4-g5 — the two casters' `SpecificallyImmuneTo` rows: {20, 31}
+        // (`NPCID.cs:7119-7125` the RuneWizard, `:10060-10066` the
+        // LibrarianSkeleton).
+        NpcKind::RuneWizard | NpcKind::LibrarianSkeleton => &[20, 31],
     }
 }
 
