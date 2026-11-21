@@ -1998,6 +1998,15 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     if crate::recall_teleport::recall_item_check(app, prev_mine_released && !prev_mine_down) {
         return;
     }
+    // W4-a6 — the permanent power-up consumables (`ItemCheck_UseLifeCrystal`
+    // / `UseManaCrystal` and the sibling `Use*` arms, `Player.cs:45192-45423`):
+    // the same mid-swing `ItemTimeIsZero && itemAnimation > 0` shape as the
+    // boss spawners below. The machine starts the swing on the press edge and
+    // grants when `item_time` reads zero inside the running swing; a started
+    // use consumes the tick like the boss arms.
+    if crate::powerups::powerup_item_check(app, prev_mine_released && !prev_mine_down) {
+        return;
+    }
     // The boss spawners (`Player.ItemCheck_UseBossSpawners`,
     // `Player.cs:43751-43900`) and the event items (`ItemCheck_UseEventItems`,
     // `:43921-44055`) fire MID-SWING: their gate is `ItemTimeIsZero &&

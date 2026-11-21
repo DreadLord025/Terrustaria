@@ -175,6 +175,10 @@ mod melee_on_hit;
 mod player;
 mod player_file;
 mod potions;
+// W4-a6: the permanent power-up consumables — ItemCheck_UseLifeCrystal /
+// UseManaCrystal (Player.cs:45274-45320) + the sibling Use* arms
+// (:45192-45423). Wired into update_editing beside the boss-spawner block.
+mod powerups;
 mod prefix;
 pub(crate) mod prefix_id;
 pub(crate) mod projectile_id;

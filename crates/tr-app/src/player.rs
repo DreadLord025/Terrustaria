@@ -1283,6 +1283,13 @@ pub struct Player {
     pub potion_of_return_home_position: Option<(f32, f32)>,
     pub hp: i32,
     pub max_hp: i32,
+    /// `Player.statLifeMax` (`Player.cs:1924`): the PERMANENT life cap — the
+    /// character file's `lifeMax` (`:55221`, clamped to 500) and the Life
+    /// Crystal's +20 (`:45306-45320`) / Life Fruit's +5 (`:45290-45304`)
+    /// use-grants. The crystal/fruit gates read THIS base (not the effective
+    /// `max_hp`), mirroring `mana_max_base`'s shape (`:1931`). A new character
+    /// starts at 100 (`UICharacterCreation.cs`; `Player.Initialize` `:56074`).
+    pub life_max_base: i32,
     /// `Player.statMana` / `Player.statManaMax` (`Player.cs:1930-1932`). A new
     /// character starts at `20/20` (`UICharacterCreation.cs:1721`; the default max
     /// is also 20 in `Player.Initialize`, `Player.cs:56075`).
@@ -2718,6 +2725,7 @@ impl Player {
             potion_of_return_home_position: None,
             hp: 100,
             max_hp: 100,
+            life_max_base: 100,
             armor_penetration: 0,
             melee_armor_penetration: 0,
             lava_time: 0,
