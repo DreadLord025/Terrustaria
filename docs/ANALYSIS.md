@@ -39498,9 +39498,10 @@ ticks-since-start).
 
 **2026-11-21, `task/W4-g61-npc-spawn-dust`, the final-phase commits
 (keep-one fix `e6fcb643`, crimson + census `df15960a`, then this
-section's commits). The full record: `docs/research/237-g61-spawn-
-family-final.md` (FINAL, the research/150 registry's first free
-number).** Three closures + the spawn-family declaration:
+section's commits + the seal commit). The full record: `docs/research/238-g61-spawn-
+family-final.md` (FINAL + SEALED; renumbered 237→238 at the seal — the e23
+`237-bestiary-ui-final.md` first-push win per the research/150 registry).**
+Three closures + the spawn-family declaration:
 
 ### 1. The NightKey crimson pick — LIVE (`World.crimson`, the g69 field)
 
@@ -39597,3 +39598,24 @@ The g61 lane owns the SPAWN-time visual family, now fully adjudicated:
 diffed against `20d0380f` (verbatim), the d40/g8/d36/e26/d43/c10 tips
 re-read from origin. The new/updated witnesses are WRITTEN NOT RUN
 (no cargo/tests/rustfmt/graphify per the lane directive).
+
+**SEAL (2026-11-21, research/238):** the lane is CLOSED — the record
+renumbered 237→238 (the registry-150 first-pushed-wins rule: e23's
+`237-bestiary-ui-final.md` first-add `7a7779690` 10:53:03 beats this
+lane's `fd406ecba` 12:12:59; g48's `237-f11-tail-fix.md` 12:15:09 loses
+later still — the 361-ref seal scan finds exactly these three 237+
+claimants). Seal-phase receipts folded into research/238: the **g11
+mutual receipt** (its dust-retire tip `2e978b279` cross-verifies the
+g61 seam-6 key-summon NO-DUP + records the seam-4/statue-latch folds —
+both directions agree g11 `teleport_dust.rs` canonical); the **d40
+seal re-read** (tip `8fe1d6d31`, the band complete at ALL_KINDS 326 —
+the 473-476 AUTO verdict holds, the **478 Hide-no-ENTRIES-row fix
+published for d40** with the g8 VampireBat precedent
+`bestiary.rs:2353-2354`/`:2420-2426`, the 479 drain arm stays the
+c10-research/149 §2.4 d40 wiring step); **687 nowhere re-confirmed**
+(d43 tip `a725acb04` = bare main, no kind commits); the **c10 census-dup
+contract** stands mutual against its SEALED research/149
+(`5fcc68ae6` — keep g61's full pool-writing body, c10's five census
+witnesses transfer/re-point, its anchors row repointed not deleted).
+The §6 merge checklist in research/238 is the lane's complete
+hand-off; no further g61 commits are planned.
