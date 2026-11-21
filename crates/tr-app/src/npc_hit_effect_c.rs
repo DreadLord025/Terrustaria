@@ -202,6 +202,7 @@
 //! | 938-944 | `:87114-87138` | the zombie fall-through: 186/432 PincushionZombie (head 241 + tails + 242 + Next(2)-gated 242) |
 //! | 945-948 | `:87128-87131` | the zombie fall-through: 187/433 SlimedZombie (headless, 25-dust blue burst + shared tails) |
 //! | 949-951 | `:87158-87162` | the 83/84/179 cursed weapon death (3 gores 61, Next(-2,3) velocity x0.5) |
+//! | 952-960 | `:87199-87207` | the 262 Plantera death (9 random-position gores 381-387) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -5368,6 +5369,43 @@ fn cursed_weapon_death(
     }
 }
 
+/// The 262 Plantera death (`NPC.cs:87186-87207`, sites 952-960): the
+/// 150-dust type-167 burst (SpeedX `2*hitDirection`, SpeedY -2 — the 265
+/// branch is dead code inside the 262/263/264 gate), then 9 random-position
+/// gores at `this.scale`: 381/382/383/384/385/386/386/387/387, each at
+/// `position + (Next(width), Next(height))` (the two position draws fire
+/// before the spawn).
+fn plantera_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:87186-87195` — the 150-dust type-167 burst.
+    for _ in 0..150 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 167, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let wi = w as i32;
+    let hi = h as i32;
+    // `:87199-87207` — the 9 random-position gores.
+    let types = [381, 382, 383, 384, 385, 386, 386, 387, 387];
+    for &ty in &types {
+        let px = pos.x + rng.next_max(wi) as f32;
+        let py = pos.y + rng.next_max(hi) as f32;
+        gore.new_gore(rng, world, Vec2::new(px, py), vel, ty, s);
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -6020,6 +6058,11 @@ pub fn hit_effect_c(
     // `:87141-87164` — the 83/84/179 cursed weapon arm (sites 949-951).
     if (npc_type == 83 || npc_type == 84 || npc_type == 179) && npc.hp <= 0 {
         cursed_weapon_death(npc, dust, dust_ctx, gore, rng, world);
+    }
+    // `:87165-87219` — the 262/263/264 Plantera arm; this commit owns the
+    // 262 Plantera (sites 952-960); the 263/264 land with the next batch.
+    if npc_type == 262 && npc.hp <= 0 {
+        plantera_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -9562,6 +9605,39 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the cursed weapon mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87199-87207` — the Plantera death: the 9 random-position
+    /// gores 381/382/383/384/385/386/386/387/387, each drawing
+    /// Next(width)+Next(height) before the spawn. The twin replay pins the
+    /// per-gore position draws + kicks.
+    #[test]
+    fn w4_f10_the_plantera_death_draws_the_positions() {
+        let w = air();
+        let n = boss(100.0, 100.0, 60.0, 60.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(881);
+        plantera_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..9].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![381, 382, 383, 384, 385, 386, 386, 387, 387]);
+        // The twin: 150 type-167 dusts, then 9 x (Next(60) + Next(60) + 2 kicks).
+        let mut twin = UnifiedRandom::new(881);
+        for _ in 0..150 {
+            let _px = twin.next_max(56);
+            let _py = twin.next_max(56);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+        }
+        for _ in 0..9 {
+            let _px = twin.next_max(60);
+            let _py = twin.next_max(60);
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the plantera mirrors the C# draws");
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
