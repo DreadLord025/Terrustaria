@@ -1135,6 +1135,12 @@ pub struct Player {
     /// bed-sleep state; the bottom is snapped to the bed anchor and the pose
     /// rotates through `full_rotation`.
     pub sleeping: bool,
+    /// `Player.petting` (`Player.cs:2904`, `PlayerPettingInfo`) — the
+    /// pet-the-animal state (W4-g10 lane 3 FINAL): the target slot/type,
+    /// the bottom snap offset, the small-pet flag. The interaction machine
+    /// lives in `player_petting.rs`; the per-tick stop gates ride
+    /// `update_petting_animal` beside the sitting/sleeping updates.
+    pub petting: crate::player_petting::PettingInfo,
     /// `PlayerSleepingHelper.timeSleeping` (`:17`): the fully-asleep counter
     /// — `>= 120` (`TimeToFullyFallAsleep`, `:11`) arms the clock's ×5
     /// (`World::day_rate`).
@@ -1923,6 +1929,23 @@ pub struct Player {
     /// position.Y)` — the case-42 trackable façade draws its NextFloat on
     /// the audio-only stream (the `pending_flap_sound` convention).
     pending_chillet_sound: Option<(f32, f32)>,
+    /// W4-g10 FINAL — the Chillemt mounts' PETTING joy cue
+    /// (`Player.PetMount` `Player.cs:33352-33355`, `SoundEngine.PlaySound(
+    /// SoundID.PalChilletJoy, base.Center)` for mount types 62-65):
+    /// `(position.X, position.Y)` — the same case-42 trackable façade as
+    /// the equip cue, a DIFFERENT asset (`pal_chillet_joy`,
+    /// `SoundID.cs:1717`). The `pet_mount` call queues it (the interaction
+    /// runs on the click lane, the drain plays it on the player pass).
+    pending_petting_joy_sound: Option<(f32, f32)>,
+    /// W4-g10 FINAL — the `PET_THE_PET` achievement request
+    /// (`AchievementsHelper.HandleSpecialEvent(player, 21)` →
+    /// `GetCondition("PET_THE_PET", "Do").Complete()`,
+    /// `AchievementsHelper.cs:358-360`): queued by `pet_animal`/`pet_mount`
+    /// on a fresh latch, drained by the interaction caller through the
+    /// row-targeted `complete_condition("PET_THE_PET", "Do")` (a6's
+    /// dispatch, research/138 §3 keep-one — NOT `notify_custom("Do")`,
+    /// which would complete every Do-flag row).
+    pending_pet_achievement: bool,
     /// S1-P-i41 — the QuickMount no-space ladder's `SoundEngine.PlaySound(0,
     /// (int)position.X, (int)position.Y)` (`Player.cs:6057`): `(x, y)` — the
     /// case-0 Dig play draws its variation + pitch on the `UpdatePlayers`
@@ -2659,6 +2682,7 @@ impl Player {
             in_water: false,
             sitting: false,
             sleeping: false,
+            petting: crate::player_petting::PettingInfo::default(),
             sleep_time: 0,
             sleeping_style: 0,
             offset_for_seat: (0.0, 0.0),
@@ -2878,6 +2902,8 @@ impl Player {
             pending_retaliate: None,
             pending_dismount: false,
             pending_chillet_sound: None,
+            pending_petting_joy_sound: None,
+            pending_pet_achievement: false,
             pending_no_space_sound: None,
             pending_no_space_teleport: false,
             pending_force_clear: None,
@@ -3126,8 +3152,9 @@ impl Player {
             self.stop_sleeping();
             return;
         }
-        // `player.StopVanityActions()` (`:172`): SitUp + StopSleeping (+ the
-        // petting stop — not ported).
+        // `player.StopVanityActions()` (`:172`): StopPettingAnimal + SitUp +
+        // StopSleeping (W4-g10 FINAL: the petting stop is live).
+        self.stop_petting_animal();
         self.sit_up();
         self.stop_sleeping();
         self.grappling_active = false;
@@ -3367,6 +3394,35 @@ impl Player {
     /// (`Mount.cs:6285`) — `(position.X, position.Y)` = `mountedPlayer.Center`.
     pub(crate) fn take_chillet_sound(&mut self) -> Option<(f32, f32)> {
         self.pending_chillet_sound.take()
+    }
+
+    /// W4-g10 FINAL — takes the Chillemt petting joy cue
+    /// (`Player.cs:33354`, `SoundID.PalChilletJoy`) — `(position.X,
+    /// position.Y)` = the player's centre at the pet-mount click.
+    pub(crate) fn take_petting_joy_sound(&mut self) -> Option<(f32, f32)> {
+        self.pending_petting_joy_sound.take()
+    }
+
+    /// W4-g10 FINAL — takes the `PET_THE_PET` achievement request
+    /// (`AchievementsHelper.cs:358-360`): the drain calls the row-targeted
+    /// `complete_condition("PET_THE_PET", "Do")`.
+    pub(crate) fn take_pet_achievement(&mut self) -> bool {
+        std::mem::take(&mut self.pending_pet_achievement)
+    }
+
+    /// W4-g10 FINAL — `Player.PetMount` (`Player.cs:33339-33356`) + the joy
+    /// queue: the machine latches/stops the petting state (and queues the
+    /// `PET_THE_PET` request); on a fresh Chillemt pet (types 62-65) the
+    /// centre queues the PalChilletJoy play. The caller drains
+    /// `take_pet_achievement` through `complete_condition("PET_THE_PET",
+    /// "Do")` (a6's row-targeted dispatch).
+    pub fn pet_mount_click(&mut self, mount_id: i32) {
+        let info = crate::player_petting::PettingInfo::from_mount(mount_id, false);
+        let joy = self.pet_mount(info);
+        if joy && self.petting.is_petting {
+            let (cx, cy) = self.center();
+            self.pending_petting_joy_sound = Some((cx, cy));
+        }
     }
 
     /// S1-P-i41 — takes the QuickMount no-space tink (`Player.cs:6057`) —
@@ -3666,7 +3722,8 @@ impl Player {
         self.height = HEIGHT;
         self.width = WIDTH;
         // `Player.Spawn`'s `StopVanityActions` (`Player.cs:37556`): the
-        // revive clears the sit/sleep state.
+        // revive clears the petting/sit/sleep state (W4-g10 FINAL).
+        self.stop_petting_animal();
         self.sit_up();
         self.stop_sleeping();
     }
@@ -5623,7 +5680,7 @@ impl Player {
     /// deterministically — nothing else).
     pub fn update(&mut self, world: &World, input: PlayerInput) {
         let mut scratch = tr_core::UnifiedRandom::default();
-        self.update_with_grapple(world, input, &[], false, false, false, None, &mut scratch)
+        self.update_with_grapple(world, input, &[], false, false, false, None, &mut scratch, &[], None)
     }
 
     /// The full tick with the optional grappling pull (`GrappleMovement`):
@@ -5651,6 +5708,11 @@ impl Player {
         // named stream; the dodge rolls and the lava `Hurt` inside the tick
         // draw from it (S1-A-10 — no new persistent stream).
         rng: &mut dyn tr_core::loot::DropRng,
+        // W4-g10 FINAL — `UpdatePettingAnimal` (`Player.cs:26124`)'s inputs:
+        // the live NPC roster (the target liveness/type check) and the App's
+        // talk latch (`talkNPC`, None = -1). The tests pass empty/None.
+        npcs: &[Npc],
+        talk_npc: Option<usize>,
     ) {
         // `Player.grappling[0] != -1` is rebuilt per tick by the attached
         // hook's AI (`Player.cs:28300` + `Projectile.cs:52860-52864`) — the
@@ -5761,6 +5823,12 @@ impl Player {
             self.control_up = self.control_right;
             self.control_down = flag3;
         }
+        // `Player.UpdatePettingAnimal` (`Player.cs:26124`) runs BEFORE the
+        // sitting/sleeping updates (`:26125-26126`), after the controls land
+        // — the petting stop gates read this tick's control flags (W4-g10
+        // FINAL; the machine lives in `player_petting.rs`, the NPC roster +
+        // talk latch are the App's, so the call rides the world-sim seam).
+        self.update_petting_animal(npcs, talk_npc);
         // `PlayerSittingHelper.UpdateSitting` (`Player.cs:26125`) and
         // `PlayerSleepingHelper.UpdateState` (`:26126`): the stand-up/wake
         // gates run after the controls land, before the movement applies.
@@ -8260,6 +8328,19 @@ impl Player {
     /// holdStyle 5/6 arms gate on `!pulley`; `can_visually_hold` gates the
     /// whole chain (`Player.cs:50271`).
     fn apply_hold_composite_arms(&mut self, held: &FrameInputs) {
+        // `Player.cs:50243-50269` — the petting pat arm runs BEFORE the
+        // CanVisuallyHoldItem gate (W4-g10 FINAL): the back arm pats on the
+        // 14-tick miscCounter cycle while petting, even when the held item
+        // is hidden (holdStyles 4/5/6 refuse the visual hold while petting).
+        if self.petting.is_petting {
+            self.composite_back = crate::player_petting::petting_back_arm(
+                self.misc_counter,
+                self.mount.is_active(),
+                self.mount.kind(),
+                self.petting.is_pet_small,
+                self.facing,
+            );
+        }
         if !held.can_visually_hold || held.swing_active {
             return;
         }
@@ -9110,9 +9191,10 @@ impl Player {
     /// `Mount.Dismount` (`Mount.cs:6142-6194`) via the player: the buff clear
     /// (`:6150`), the transformation mounts' `noItems` restore (`:6152-6155`),
     /// the cart flip/boost clears (`:6156-6160`), the full-rotation reset
-    /// (`:6161-6162`) and the 20×42 hitbox restore (`:6176-6193`).
+    /// (`:6161-6162`), the mount-petting stop (`:6163-6166`, W4-g10 FINAL)
+    /// and the 20×42 hitbox restore (`:6176-6193`).
     /// `ignore_effect` stands in for the spawn dust (`:6167-6170` — no dust
-    /// system yet). The petting stop (`:6163-6166`) has no port counterpart.
+    /// system yet).
     pub fn dismount(&mut self, world: &World, ignore_effect: bool) -> bool {
         // `:6148` — `bool cart = this.Cart` is read BEFORE the state clears
         // (`Mount.Cart` = `Minecart && _active`, `Mount.cs:530-540`).
@@ -9140,6 +9222,12 @@ impl Player {
         // `:6161-6162` — the dismount clears the full rotation.
         self.full_rotation = 0.0;
         self.full_rotation_origin = (0.0, 0.0);
+        // `:6163-6166` — petting the MOUNT itself stops on the dismount
+        // (petting an NPC while riding keeps going — the `petting.mount`
+        // gate; W4-g10 FINAL).
+        if self.petting.is_petting && self.petting.mount {
+            self.stop_petting_animal();
+        }
         // `:6176-6193`: the restore — the 20x42 box from the bottom center;
         // on failure the Y patch accepts the overlap (the collision step
         // resolves it next tick, as in the original). The resize goes through
@@ -9453,7 +9541,9 @@ impl Player {
             self.release_grappling_hooks = true;
             self.grappling_active = false;
         }
-        // `:37424` — `StopVanityActions` (the petting stop is unported).
+        // `:37424` — `StopVanityActions` (W4-g10 FINAL: the petting stop is
+        // live, `Player.cs:33458-33463`).
+        self.stop_petting_animal();
         self.sit_up();
         self.stop_sleeping();
         // `:37425-37431` — the shimmering / shimmerWet strip. The port has no
@@ -10142,8 +10232,9 @@ impl Player {
             return;
         }
         // `:22619` — `StopVanityActions` (`Player.cs:33458-33463`): stop the
-        // petting animal (unported), sit up and stop sleeping. The port carries
-        // sitting/sleeping, so both run; petting has no field.
+        // petting animal, sit up and stop sleeping (W4-g10 FINAL: all three
+        // live).
+        self.stop_petting_animal();
         self.sit_up();
         self.stop_sleeping();
         // `:22620-22623` — a mount not in the `MountID.Sets.CanUseHooks` set
@@ -14236,6 +14327,8 @@ mod tests {
             false,
             None,
             &mut tr_core::UnifiedRandom::default(),
+            &[],
+            None,
         );
         // The pull toward the hook: dx +, dy -.
         assert!(p.vx > 0.0 && p.vy < 0.0, "pulling toward the hook");
@@ -14270,6 +14363,8 @@ mod tests {
             false,
             None,
             &mut tr_core::UnifiedRandom::default(),
+            &[],
+            None,
         );
         assert!(!p.mount.is_active(), "the mount dismounted");
     }
@@ -14294,6 +14389,8 @@ mod tests {
             false,
             None,
             &mut tr_core::UnifiedRandom::default(),
+            &[],
+            None,
         );
         assert!(p.mount.is_active(), "the mount stays mounted");
     }
@@ -14317,6 +14414,8 @@ mod tests {
                 false,
                 None,
                 &mut tr_core::UnifiedRandom::default(),
+                &[],
+                None,
             );
             // GrappleMovement refreshes the origin BEFORE the position
             // integrates — one row behind the current position, like the
@@ -14357,6 +14456,8 @@ mod tests {
             false,
             None,
             &mut tr_core::UnifiedRandom::default(),
+            &[],
+            None,
         );
         assert!(!p.grappling_active, "detached");
         assert!(p.vy < 0.0, "the full jump impulse: vy={}", p.vy);
@@ -14387,6 +14488,8 @@ mod tests {
             false,
             None,
             &mut tr_core::UnifiedRandom::default(),
+            &[],
+            None,
         );
         assert!(!p.grappling_active, "detached");
         // The nudge path (`velocity.Y += 0.01f`) does NOT grant the jump
@@ -14413,6 +14516,8 @@ mod tests {
             false,
             None,
             &mut tr_core::UnifiedRandom::default(),
+            &[],
+            None,
         );
         assert!(p.going_down_with_grapple, "the pull points down");
     }
@@ -14434,6 +14539,8 @@ mod tests {
             &[(crate::projectile::HOOK, below, 0.0)],
             false, false, false, None,
             &mut tr_core::UnifiedRandom::default(),
+            &[],
+            None,
         );
         assert!(p.going_down_with_grapple, "the down pull sets it");
         // Now an UP pull: the per-tick reset clears it, the up pull does not re-set.
@@ -14444,6 +14551,8 @@ mod tests {
             &[(crate::projectile::HOOK, above, 0.0)],
             false, false, false, None,
             &mut tr_core::UnifiedRandom::default(),
+            &[],
+            None,
         );
         assert!(!p.going_down_with_grapple, "the up pull leaves it cleared");
     }
@@ -14468,6 +14577,8 @@ mod tests {
             grapple,
             false, false, false, None,
             &mut tr_core::UnifiedRandom::default(),
+            &[],
+            None,
         );
         assert!(p.vy < 0.0, "UP held grants the jump impulse: vy={}", p.vy);
         assert!(p.release_grappling_hooks, "the jump-off detaches");
@@ -14508,6 +14619,8 @@ mod tests {
             &[(crate::projectile::HOOK, center, 0.0)],
             false, false, false, None,
             &mut tr_core::UnifiedRandom::default(),
+            &[],
+            None,
         );
         assert!(!p.sitting, "the grapple sits the player up");
         assert!(!p.sleeping, "the grapple wakes the player");
@@ -14546,6 +14659,8 @@ mod tests {
                 grapple,
                 false, false, false, None,
                 &mut tr_core::UnifiedRandom::default(),
+                &[],
+                None,
             );
         }
         assert!(p.going_down_with_grapple, "the pull points down");
@@ -18504,6 +18619,8 @@ mod tests {
             false,
             None,
             &mut tr_core::UnifiedRandom::default(),
+            &[],
+            None,
         );
         assert!(p.mount_fishron_special_counter > 0.0);
         // The full tick leaves the mount in its air frame; the `+13.5` arm

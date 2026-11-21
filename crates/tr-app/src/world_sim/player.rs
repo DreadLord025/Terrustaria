@@ -995,8 +995,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // mounts hold nothing (`MountID.Sets.DontHoldItems`,
             // `MountID.cs:46`) and the umbrella hold (4) is off while
             // mounted, roped or airborne (`Player.cs:50209-50224`).
+            // W4-g10 FINAL: the petting gates are live — holdStyles 4/5/6
+            // hide the item while petting (`:50204`/`:50225-50232`).
             let mounted_blocks_hold = p.mount.is_active() && matches!(p.mount.kind(), 55 | 56 | 61);
+            let petting_blocks_hold = p.petting.is_petting && matches!(hold_style, 4 | 5 | 6);
             let can_visually_hold = !mounted_blocks_hold
+                && !petting_blocks_hold
                 && (hold_style != 4 || (!p.pulley && p.vy == 0.0 && !p.mount.is_active()));
             // The hooks' centroid relative to the body centre
             // (`Player.cs:36497-36503`): the C# averages ONLY the registered
@@ -1113,6 +1117,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 app.rain.is_raining(),
                 Some(&app.wind),
                 rng,
+                // W4-g10 FINAL — `UpdatePettingAnimal`'s roster + talk latch.
+                &app.npcs,
+                app.talk_npc,
             );
             // `Player.cs:28274-28275`: the switch-tile bridge — the player's
             // box reaching a pressure plate trips the wiring (the C#'s call
@@ -1531,6 +1538,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // stream (the `play_chillet_sound` contract).
             if let Some((sx, sy)) = p.take_chillet_sound() {
                 app.audio.play_chillet_sound(sx, sy);
+            }
+            // W4-g10 FINAL — the Chillemt petting joy cue (`Player.cs:33354`):
+            // the same case-42 façade, the `pal_chillet_joy` asset.
+            if let Some((sx, sy)) = p.take_petting_joy_sound() {
+                app.audio.play_petting_joy_sound(sx, sy);
             }
             // S1-P-i41 — the QuickMount no-space tink (`Player.cs:6057`):
             // case 0's Dig variation + pitch draws ride the `UpdatePlayers`

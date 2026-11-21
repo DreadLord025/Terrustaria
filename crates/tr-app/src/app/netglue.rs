@@ -411,6 +411,9 @@ impl App {
                 entry.body_frame = ps.body_frame;
                 entry.hp = ps.hp;
                 entry.max_hp = ps.max_hp;
+                // W4-g10 FINAL — `MessageBuffer.cs:1043-1044`.
+                entry.petting = ps.flags_c.get(4);
+                entry.pet_small = ps.flags_c.get(5);
                 let mut relay = ps.clone();
                 relay.player_id = id as u8;
                 // The C# never echoes a snapshot back to its sender
@@ -1432,6 +1435,9 @@ impl App {
                 entry.body_frame = ps.body_frame;
                 entry.hp = ps.hp;
                 entry.max_hp = ps.max_hp;
+                // W4-g10 FINAL — `MessageBuffer.cs:1043-1044`.
+                entry.petting = ps.flags_c.get(4);
+                entry.pet_small = ps.flags_c.get(5);
             }
             S2c::Time { time, day } => {
                 self.world.time = time;
@@ -2641,6 +2647,8 @@ impl App {
             on_ground: p.on_ground,
             leg_frame: p.leg_frame,
             body_frame: p.body_frame,
+            petting: p.petting.is_petting,
+            pet_small: p.petting.is_pet_small,
             ..Default::default()
         };
         // The ambience spawn relay (`AmbienceServer.SpawnForPlayer`): the
@@ -2889,11 +2897,16 @@ impl App {
         flags_a.set(6, p.facing > 0);
         let mut flags_b = net::BitsByte::new();
         flags_b.set(2, p.vx != 0.0 || p.vy != 0.0);
+        // W4-g10 FINAL — bitsByte23[4]/[5]: petting/petSmall
+        // (`NetMessage.cs:475-476`).
+        let mut flags_c = net::BitsByte::new();
+        flags_c.set(4, p.petting);
+        flags_c.set(5, p.pet_small);
         net::PlayerState {
             player_id: p.id as u8,
             flags_a,
             flags_b,
-            flags_c: net::BitsByte::new(),
+            flags_c,
             flags_d: net::BitsByte::new(),
             selected_item: p.selected as u8,
             x: p.x,
