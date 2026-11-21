@@ -1211,6 +1211,45 @@ pub struct Player {
     pub pulley_dir: u8,
     /// `Player.shieldRaised` (`Player.cs:36481`): body row 10.
     pub shield_raised: bool,
+    /// `Player.hasRaisableShield` (`Player.cs:3128`): any equipped wearable
+    /// with `shieldSlot > 0` (`GrantArmorBenefits` `:13123-13126`) or the
+    /// held Bouncing Shield 4760 with no live 866 (`UpdateEquips`
+    /// `:13075-13078`). `ResetEffects` `:18611` clears it per tick.
+    pub has_raisable_shield: bool,
+    /// `Player.shieldParryTimeLeft` (`Player.cs:3132`): the 20-tick parry
+    /// window (`SHIELD_PARRY_DURATION` `:3122`). `TryTogglingShield`
+    /// (`:31750-31753`) arms 1 on the raise (only with the cooldown spent);
+    /// `ItemCheck_ManageRightClickFeatures_ShieldRaise` (`:31734-31737`)
+    /// pre-increments it and clears past 20.
+    pub shield_parry_time_left: i32,
+    /// `Player.shield_parry_cooldown` (`Player.cs:3134`): the 15-tick lock
+    /// `TryTogglingShield` arms on the lower (`:31760`); the ShieldRaise
+    /// head counts it down (`:31719-31733`) and the zero tick plays the
+    /// MaxMana cue (legacy 25) + the 10x dust-45 burst.
+    pub shield_parry_cooldown: i32,
+    /// `Player.parryDamageBuff` (`Player.cs:2422`): buff 198's flag
+    /// (`UpdateBuffs` `:11855-11858`). The contact-lane parry grants the
+    /// buff (`:31430`); the next melee strike ×5s and consumes it
+    /// (`ProcessHitAgainstNPC` `:44307-44312`). `ResetEffects` `:18698`.
+    pub parry_damage_buff: bool,
+    /// The ShieldRaise zero-cooldown tick's MaxMana cue request (legacy
+    /// sound 25, `Player.cs:31724`) — the `pending_mana_effect` convention:
+    /// the tick queues it, the world-sim drain plays it at `base.Center`.
+    pending_parry_ready_sound: bool,
+    /// The ShieldRaise zero-cooldown tick's 10x dust-45 burst
+    /// (`Player.cs:31725-31731`) — the fully-formed spawn request (the
+    /// centre anchor + the `direction` offset); the drain rolls the
+    /// `Next(10,16) * 0.1` scale per dust on the `UpdatePlayers` stream.
+    pending_parry_ready_dust: Option<(f32, f32)>,
+    /// `Player._timeSinceLastImmuneGet` (`Player.cs:1432`): counts up once
+    /// per `Player.Update` tick (`:24663-24667`, capped at 10000);
+    /// `GiveImmuneTimeForCollisionAttack` (`:20496-20504`) resets it to 0.
+    time_since_last_immune_get: i32,
+    /// `Player._immuneStrikes` (`Player.cs:1434`): consecutive close-together
+    /// collision-immunity grants — `GiveImmuneTimeForCollisionAttack`
+    /// increments it within the 20-tick window (else resets to 1) and
+    /// refuses the grant at 3 (`:20496-20505`).
+    immune_strikes: i32,
     /// `Player.sliding` (`Player.cs`): the slope/ice slide pose (body row 3 in
     /// the air). No port source sets it yet, so the arm is coded but
     /// unreachable.
@@ -2656,6 +2695,14 @@ impl Player {
             pulley: false,
             pulley_dir: 0,
             shield_raised: false,
+            has_raisable_shield: false,
+            shield_parry_time_left: 0,
+            shield_parry_cooldown: 0,
+            parry_damage_buff: false,
+            pending_parry_ready_sound: false,
+            pending_parry_ready_dust: None,
+            time_since_last_immune_get: 10000,
+            immune_strikes: 0,
             sliding: false,
             sand_storm: false,
             carpet_frame: -1,
@@ -4220,6 +4267,110 @@ impl Player {
         self.hurt_cd = time as f32 / 60.0;
     }
 
+    /// `Player.CanParryAgainst` (`Player.cs:31437-31444`), verbatim: the
+    /// parry window is live, the enemy centre lies on the facing side
+    /// (`Math.Sign(enemyRect.Center.X - blockingPlayerRect.Center.X) ==
+    /// direction`), the enemy is moving, and the player is NOT already
+    /// immune. Both centres ride the C# `Rectangle` integer arithmetic —
+    /// the caller truncates the positions (`(int)position.X`) and halves
+    /// the int widths; `Math.Sign` answers 0 on an exact tie.
+    pub fn can_parry_against(&self, enemy_center_x: i32, enemy_vx: f32, enemy_vy: f32) -> bool {
+        let player_center_x = self.x as i32 + self.width as i32 / 2;
+        let d = enemy_center_x - player_center_x;
+        let sign = if d > 0 { 1 } else if d < 0 { -1 } else { 0 };
+        if self.shield_parry_time_left > 0
+            && sign == self.facing
+            && (enemy_vx != 0.0 || enemy_vy != 0.0)
+        {
+            return !self.immune;
+        }
+        false
+    }
+
+    /// `Player.GiveImmuneTimeForCollisionAttack` (`Player.cs:20494-20511`),
+    /// verbatim: the strike counter climbs while grants land within 20
+    /// ticks of each other (else resets to 1); at 3 strikes the grant is
+    /// refused; otherwise the window lands only if not already immune or
+    /// the new window is at least as long. `immuneNoBlink = true` rides
+    /// with it (no blink flash on collision i-frames). The port's
+    /// `hurt_cd` carries the window in seconds (the collapsed lane).
+    pub(crate) fn give_immune_time_for_collision_attack(&mut self, time: i32) {
+        if self.time_since_last_immune_get <= 20 {
+            self.immune_strikes += 1;
+        } else {
+            self.immune_strikes = 1;
+        }
+        self.time_since_last_immune_get = 0;
+        if self.immune_strikes < 3 && (!self.immune || self.immune_time <= time) {
+            self.immune = true;
+            self.immune_no_blink = true;
+            self.immune_time = time;
+            self.hurt_cd = time as f32 / 60.0;
+        }
+    }
+
+    /// `Player.TryTogglingShield` (`Player.cs:31741-31764`), minus the
+    /// `ApplyAttackCooldown(20)` write (the port's `attack_cd` lives on the
+    /// App — the ShieldRaise caller folds the max there): the raise arms
+    /// the 20-tick parry window ONLY with the cooldown spent and zeroes
+    /// the use timers; the lower locks 15 ticks and clears the window.
+    /// Returns the attack-cooldown request (20 on the lower, 0 otherwise)
+    /// so the caller can `attack_cd = max(attack_cd, req / 60)`.
+    pub(crate) fn try_toggling_shield(&mut self, should_guard: bool) -> i32 {
+        if should_guard == self.shield_raised {
+            return 0;
+        }
+        self.shield_raised = should_guard;
+        if self.shield_raised {
+            if self.shield_parry_cooldown == 0 {
+                self.shield_parry_time_left = 1;
+            }
+            // `:31754-31756` — itemAnimation/itemTime/reuseDelay zero;
+            // the App-owned timers clear in the caller.
+            0
+        } else {
+            self.shield_parry_cooldown = 15;
+            self.shield_parry_time_left = 0;
+            20 // `ApplyAttackCooldown(20)` (`:31762`, `:44433-44439`).
+        }
+    }
+
+    /// The ShieldRaise per-tick countdowns (`Player.cs:31719-31737`): the
+    /// cooldown decrements and its zero tick queues the MaxMana cue + the
+    /// 10x dust-45 burst at the shield-side anchor; the parry window
+    /// pre-increments and clears past `SHIELD_PARRY_DURATION` (20).
+    /// `SoundEngine.PlaySound(25, base.Center)` (`:31724`) queues for the
+    /// world-sim drain (the `pending_mana_effect` convention); the dust
+    /// anchor is `Center + (direction * 6 + (direction == -1 ? -10 : 0),
+    /// -14)` (`:31727`).
+    pub(crate) fn shield_raise_countdowns(&mut self) {
+        if self.shield_parry_cooldown > 0 {
+            self.shield_parry_cooldown -= 1;
+            if self.shield_parry_cooldown == 0 {
+                self.pending_parry_ready_sound = true;
+                let (cx, cy) = self.center();
+                let dx = self.facing as f32 * 6.0 + if self.facing == -1 { -10.0 } else { 0.0 };
+                self.pending_parry_ready_dust = Some((cx + dx, cy - 14.0));
+            }
+        }
+        if self.shield_parry_time_left > 0 {
+            self.shield_parry_time_left += 1;
+            if self.shield_parry_time_left > 20 {
+                self.shield_parry_time_left = 0;
+            }
+        }
+    }
+
+    /// Takes the ShieldRaise ready-cue request (`Player.cs:31724`).
+    pub(crate) fn take_parry_ready_sound(&mut self) -> bool {
+        std::mem::replace(&mut self.pending_parry_ready_sound, false)
+    }
+
+    /// Takes the ShieldRaise ready-burst anchor (`Player.cs:31725-31731`).
+    pub(crate) fn take_parry_ready_dust(&mut self) -> Option<(f32, f32)> {
+        self.pending_parry_ready_dust.take()
+    }
+
     /// `Player.ShadowDodge` (`Player.cs:38023-38042`) minus the NetMessage:
     /// the 120/80 immunity, buff 59 deleted by the same single-pass `for` with
     /// `DelBuff`'s compaction (`:38030-38040`), the Hallowed set-bonus
@@ -4939,6 +5090,17 @@ impl Player {
         if self.has_lucky_coin {
             self.luck_state.equipment_based_luck_bonus += 0.05;
 
+        }
+        // `UpdateEquips`' held-Bouncing-Shield row (`Player.cs:13075-13078`):
+        // `HeldItem.type == 4760 && ownedProjectileCounts[866] < 1` arms
+        // `hasRaisableShield` — the shield in hand IS raisable until its
+        // thrown projectile is live. `held_item_kind` is the pre-tick
+        // snapshot (`world_sim/player.rs`), the recount ran at the
+        // `UpdateProjectileCaches` seam.
+        if self.held_item_kind == 4760
+            && self.owned_projectile_counts.get(866).copied().unwrap_or(0) < 1
+        {
+            self.has_raisable_shield = true;
         }
         // `Player.UpdateEquips`' tail (`Player.cs:13097-13100`):
         // `mount.UpdateAfterEquips(this)` — the Velociraptor's selective-fly
@@ -5738,6 +5900,13 @@ impl Player {
         if self.time_since_last_dash_started >= 300 {
             self.time_since_last_dash_started = 300;
         }
+        // `Player.cs:24663-24667`: the collision-immunity age counter ticks
+        // and caps at 10000 — `GiveImmuneTimeForCollisionAttack`
+        // (`:20496-20504`) reads the 20-tick window and resets it on grant.
+        self.time_since_last_immune_get += 1;
+        if self.time_since_last_immune_get >= 10000 {
+            self.time_since_last_immune_get = 10000;
+        }
         // `Player.cs:24761-24764`: every resting tick recovers 2 hover
         // fatigue — the read is the PREVIOUS tick's velocity (the head runs
         // before this tick's movement).
@@ -6213,6 +6382,14 @@ impl Player {
         self.long_invince = false;
         // `:18616`: `panic = false` — the necklace rows re-arm (W4-f48).
         self.panic = false;
+        // `ResetEffects`' parry-machine clears (W4-f48 parry wave):
+        // `hasRaisableShield = false` (`:18611`) — the shield-slot rows and
+        // the held-4760 arm re-derive; `parryDamageBuff = false` (`:18698`)
+        // — the buff-198 scan re-arms. `shieldRaised`/the two parry timers
+        // are NOT reset here (no C# reset site — they persist across ticks
+        // through the ShieldRaise machine).
+        self.has_raisable_shield = false;
+        self.parry_damage_buff = false;
         if self.brain_of_confusion_dodge_animation_counter > 0 {
             self.brain_of_confusion_dodge_animation_counter -= 1;
         }
@@ -6246,6 +6423,21 @@ impl Player {
             }
             if let Some(def) = crate::registry::get(kind) {
                 self.stat_defense += def.defense as i32;
+            }
+            // `GrantArmorBenefits`' `shieldSlot > 0` row (`Player.cs:
+            // 13123-13126`): any equipped shield arms `hasRaisableShield`.
+            // The port's registry carries no `shieldSlot` field — the
+            // eleven `Item.SetDefaults` rows are the id list (`Item.cs`
+            // :3250/:6039/:12218/:19122/:28645/:33727/:35509/:35515/
+            // :47589/:47620/:47647): Cobalt 156, Obsidian 397, Paladin's
+            // 938, Ankh 1613, EoC 3097, Squire 3810, Frozen 3997, Hero
+            // 3998, Royal Guard Harness 6177, Silver 6183, Restoration
+            // 6188.
+            if matches!(
+                kind,
+                156 | 397 | 938 | 1613 | 3097 | 3810 | 3997 | 3998 | 6177 | 6183 | 6188
+            ) {
+                self.has_raisable_shield = true;
             }
             // The piece's own damage/crit/speed row (`GrantArmorBenefits`'
             // `switch (armorPiece.type)`, `Player.cs:13126-13950`).
@@ -6722,6 +6914,9 @@ impl Player {
                 // `:11843-11846` — buff 205 (Ballista Panic): the Ballista's
                 // reload caps (`Projectile.cs:68563-68570`).
                 205 => self.ballista_panic = true,
+                // `:11855-11858` — buff 198 (ParryDamageBuff): the contact
+                // parry's ×5 next-melee flag (`:44307-44312` consumes it).
+                198 => self.parry_damage_buff = true,
                 // `:10276-10280`: buff 120 (Stinky) — the `talkNPC = -1`
                 // dialogue half is not ported; the luck −0.25 flag is.
                 120 => self.luck_state.stinky = true,
@@ -15575,6 +15770,178 @@ mod tests {
         p.update(&w, PlayerInput::default());
         assert!(p.buffs.find_buff_index(63).is_none());
         assert!((p.move_speed - 1.0).abs() < 1e-6, "the speed folds back");
+    }
+
+    #[test]
+    fn w4_f48_parry_can_parry_against_reads_window_facing_motion_and_immunity() {
+        // `CanParryAgainst` (`Player.cs:31437-31444`): all four gates —
+        // the live window, the enemy centre on the facing side, a moving
+        // enemy, and NOT already immune.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.facing = 1;
+        let cx = p.x as i32 + p.width as i32 / 2;
+        // No window: never a parry.
+        assert!(!p.can_parry_against(cx + 30, 1.0, 0.0));
+        p.shield_parry_time_left = 1;
+        assert!(p.can_parry_against(cx + 30, 1.0, 0.0), "facing + moving + window");
+        // Behind the player: `Math.Sign` mismatch.
+        assert!(!p.can_parry_against(cx - 30, 1.0, 0.0));
+        // Exactly centred: `Math.Sign(0) == 0 != direction`.
+        assert!(!p.can_parry_against(cx, 1.0, 0.0));
+        // A stationary enemy never parries (velocity == Vector2.Zero).
+        assert!(!p.can_parry_against(cx + 30, 0.0, 0.0));
+        // Vertical-only motion counts (velocity != Zero).
+        assert!(p.can_parry_against(cx + 30, 0.0, -2.0));
+        // Already immune: the parry refuses (the i-frames own the hit).
+        p.immune = true;
+        assert!(!p.can_parry_against(cx + 30, 1.0, 0.0));
+    }
+
+    #[test]
+    fn w4_f48_parry_try_toggling_shield_arms_and_locks_the_windows() {
+        // `TryTogglingShield` (`Player.cs:31741-31764`): the raise arms
+        // window 1 ONLY with the cooldown spent; the lower locks 15,
+        // clears the window and requests `ApplyAttackCooldown(20)`; a
+        // same-state call is a no-op.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert_eq!(p.try_toggling_shield(true), 0);
+        assert!(p.shield_raised);
+        assert_eq!(p.shield_parry_time_left, 1);
+        // Idempotent: re-raising changes nothing.
+        p.shield_parry_time_left = 7;
+        assert_eq!(p.try_toggling_shield(true), 0);
+        assert_eq!(p.shield_parry_time_left, 7, "the no-op keeps the window");
+        // The lower: cooldown 15, window cleared, attack-cooldown 20.
+        assert_eq!(p.try_toggling_shield(false), 20);
+        assert!(!p.shield_raised);
+        assert_eq!(p.shield_parry_cooldown, 15);
+        assert_eq!(p.shield_parry_time_left, 0);
+        // A raise DURING the cooldown arms no window.
+        assert_eq!(p.try_toggling_shield(true), 0);
+        assert_eq!(p.shield_parry_time_left, 0, "the cooldown blocks the window");
+    }
+
+    #[test]
+    fn w4_f48_parry_the_shield_raise_countdowns_tick_the_two_windows() {
+        // `ItemCheck_ManageRightClickFeatures_ShieldRaise` (`Player.cs:
+        // 31719-31737`): the cooldown decrements to 0 (cue + dust queued
+        // on the zero tick), the window pre-increments and clears past 20.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.facing = -1;
+        p.try_toggling_shield(true); // window 1
+        p.try_toggling_shield(false); // cooldown 15, window 0
+        p.try_toggling_shield(true); // raised, cooldown 15, window stays 0
+        for _ in 0..14 {
+            p.shield_raise_countdowns();
+        }
+        assert_eq!(p.shield_parry_cooldown, 1);
+        assert!(!p.take_parry_ready_sound(), "no cue before the zero tick");
+        p.shield_raise_countdowns(); // the zero tick
+        assert_eq!(p.shield_parry_cooldown, 0);
+        assert!(p.take_parry_ready_sound(), "the MaxMana cue queues");
+        let (dx, dy) = p.take_parry_ready_dust().expect("the burst anchor");
+        let (cx, cy) = p.center();
+        // direction -1: `direction * 6 + (-10)` = -16, y -14.
+        assert!((dx - (cx - 16.0)).abs() < 1e-4);
+        assert!((dy - (cy - 14.0)).abs() < 1e-4);
+        // The window: 1 → 2 … → 20 → 0 (20 ticks live, `> 20` clears).
+        p.shield_parry_time_left = 1;
+        for _ in 0..19 {
+            p.shield_raise_countdowns();
+        }
+        assert_eq!(p.shield_parry_time_left, 20);
+        p.shield_raise_countdowns();
+        assert_eq!(p.shield_parry_time_left, 0, "past SHIELD_PARRY_DURATION");
+    }
+
+    #[test]
+    fn w4_f48_parry_give_immune_time_counts_strikes_and_refuses_the_third() {
+        // `GiveImmuneTimeForCollisionAttack` (`Player.cs:20494-20511`):
+        // grants within 20 ticks climb the strike counter; the third is
+        // refused; a longer window replaces a shorter one; a gap > 20
+        // resets the counter.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.immune = false;
+        p.immune_time = 0;
+        p.time_since_last_immune_get = 10000;
+        p.give_immune_time_for_collision_attack(30);
+        assert!(p.immune && p.immune_no_blink);
+        assert_eq!(p.immune_time, 30);
+        assert_eq!(p.immune_strikes, 1);
+        // Second grant inside the window: a LONGER window replaces.
+        p.give_immune_time_for_collision_attack(60);
+        assert_eq!(p.immune_time, 60);
+        assert_eq!(p.immune_strikes, 2);
+        // Third: refused outright (the anti-cheese cap).
+        p.give_immune_time_for_collision_attack(60);
+        assert_eq!(p.immune_strikes, 3);
+        assert_eq!(p.immune_time, 60, "the third grant lands nothing");
+        // A shorter window never shrinks a live one.
+        p.immune_strikes = 0;
+        p.give_immune_time_for_collision_attack(30);
+        assert_eq!(p.immune_time, 60, "!immune || immuneTime <= time");
+        // The age counter: > 20 ticks resets the strikes to 1.
+        p.time_since_last_immune_get = 21;
+        p.immune = false;
+        p.give_immune_time_for_collision_attack(30);
+        assert_eq!(p.immune_strikes, 1, "the gap resets the counter");
+        assert_eq!(p.immune_time, 30);
+        // The per-tick age climb + 10000 cap (`:24663-24667`).
+        p.time_since_last_immune_get = 9999;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.time_since_last_immune_get, 10000, "the cap holds");
+    }
+
+    #[test]
+    fn w4_f48_parry_the_shield_slots_and_held_4760_arm_raisable() {
+        // `GrantArmorBenefits` `shieldSlot > 0` (`Player.cs:13123-13126`)
+        // + the held-Bouncing-Shield row (`:13075-13078`); `ResetEffects`
+        // `:18611` clears per tick.
+        for kind in [156u16, 397, 938, 1613, 3097, 3810, 3997, 3998, 6177, 6183, 6188] {
+            let p = player_with_accessory(kind);
+            assert!(p.has_raisable_shield, "shield {kind} arms raisable");
+        }
+        // A non-shield accessory does not.
+        let p = player_with_accessory(554);
+        assert!(!p.has_raisable_shield);
+        // The held 4760 with no live 866 projectile.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.held_item_kind = 4760;
+        p.update(&w, PlayerInput::default());
+        assert!(p.has_raisable_shield, "the shield in hand is raisable");
+        // A live thrown shield (866) blocks it. The standalone `update`
+        // zeroes the recount inputs (`ResetProjectileCaches`), so the
+        // blocked branch drives the equip fold directly on a live count
+        // (the sim's `UpdateProjectileCaches` seam supplies it).
+        p.has_raisable_shield = false;
+        p.owned_projectile_counts[866] = 1;
+        p.update_equips();
+        assert!(!p.has_raisable_shield, "the thrown shield is out");
+        // The clear re-folds without any source.
+        p.held_item_kind = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.has_raisable_shield);
+    }
+
+    #[test]
+    fn w4_f48_parry_buff_198_arms_the_damage_flag_and_clears() {
+        // `UpdateBuffs` `:11855-11858` sets `parryDamageBuff`; the
+        // `ResetEffects` `:18698` clear re-folds per tick.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(198, 300);
+        p.update(&w, PlayerInput::default());
+        assert!(p.parry_damage_buff, "buff 198 arms the flag");
+        let i = p.buffs.find_buff_index(198).unwrap();
+        p.buffs.buff_time[i] = 1;
+        p.update(&w, PlayerInput::default()); // ticks to 0, purged
+        p.update(&w, PlayerInput::default());
+        assert!(!p.parry_damage_buff, "the expiry folds the flag back");
     }
 
     #[test]
