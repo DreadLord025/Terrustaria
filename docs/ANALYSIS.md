@@ -39521,3 +39521,77 @@ lens's `Extra_93` mask glow when the smart cursor selects them. The
 trophy pass has no selection arm (the C# `DrawMasterTrophies` has none).
 Witness: `tile_outlines.rs`
 `w4_g86_the_selection_mode_follows_the_highlight_area` (0/1/2 + hideUI).
+
+### The altar-26 SUMMON-USE chain — census (W4-g86 altar-draw lane)
+
+The lane name "altar-draw" raised the question: do boss-summon items USE
+at the altar (tile 26), and is there an outline-highlight → summon-use
+feedback gap? The census answers NO on both — the chain is already landed
+and there is no tile-26 use gate to wire:
+
+* **Boss-summon items have NO altar proximity gate.**
+  `ItemCheck_UseBossSpawners` (`Player.cs:43751-43919`) gates each item on
+  `ItemTimeIsZero && itemAnimation > 0` + the item-id list +
+  `SummonItemCheck` (`:42162-42174`, the item's own boss not already
+  alive) + a per-item biome/clock gate (43/544/556/557 night, 70
+  ZoneCorrupt, 1331 ZoneCrimson, 4988 ZoneHallow, 5120 ZoneSnow; 560/1133
+  ungated). NONE reads tile 26 or any altar proximity. The port's
+  `use_boss_summon_item` (`editing.rs:15967`) + `use_suspicious_looking_eye`
+  (`:16218`) carry exactly these gates — already landed (the wave-3
+  magic+summon lane). The altar 26's role is a CRAFTING station
+  (`Recipe.TileUsedInRecipes[26]`, the boss-summon recipes), NOT a use
+  proximity gate — that is why it feeds the outline list (the recipe-station
+  arm) but has no summon-use interaction.
+* **The altar summon-use that DOES exist is tile 237 (LihzahrdAltar) +
+  Power Cell 1293**, not tile 26: `TileInteractionsUse`'s `type == 237`
+  arm (`Player.cs:32760-32792`) — `!NPC.AnyNPCs(245) && hardMode &&
+  downedPlantBoss`, the 58-slot inventory scan consumes one 1293, the roar
+  (15) + `NPC.SpawnOnPlayer(245)`. Ported verbatim at
+  `editing/doors.rs::use_golem_altar` (`:37-60`) + `spawn_golem_on_altar`
+  (`:71-127`, the `NPC.cs:80475-80531` altar-origin scan), wired through
+  `interact_tile` (`:181-187`) at the `editing.rs:4630` right-click seam.
+  The smart-interact FEED already gates tile 237 on `HasItem(1293)`
+  (`FillPotentialTargetTiles` `:453-457`, the port's `has_1293` arm), so
+  the altar outlines only when the player holds a Power Cell — the
+  outline-highlight → summon-use pairing is complete.
+* **Tile 26's only right-click feedback is the hover cursor icon**
+  (`TileInteractionsMouseOver` `:34524-34536`): `noThrow = 2`,
+  `cursorItemIconEnabled = true`, `cursorItemIconID = 6135` (demon, frame
+  column 0) / `6136` (crimson, column ≥ 1) — the `frameX/18` column decode
+  (`num41 > 2` subtract-3 loop). Tile 237's hover icon is 1293
+  (`:34309-34314`). The whole `cursorItemIcon*` system (170 write sites in
+  Player.cs, the `DrawCursor` icon draw) is UNPORTED — a separate large
+  system, out of this lane's scope. The outline (the smart-cursor
+  highlight) IS ported and is the altar's selection feedback; the cursor
+  icon is a distinct, deferred overlay. NO gap to wire in the summon-use
+  chain itself.
+* **f35 co-lane read** (`task/W4-f35-expert-drop-trees`, tip `06ac4b480`):
+  the expert/master boss-BAG open trees (`boss_bags::open_boss_bag` +
+  `clicks::open_boss_bag_click`, the 19 bag grant tables) — ZERO
+  summon-use / altar claims, no overlap with this lane. The bag-open is
+  the inventory right-click on a boss bag item, not a tile interaction.
+
+### Gamepad arms — PARKED (W4-g86, per convention)
+
+No gamepad UI in the port, so every gamepad-gated arm is parked (false
+input), documented at its site:
+* `Player.SmartInteractLookup`'s `UILinkPointNavigator.InUse ||
+  (PlayerInput.UsingGamepad && Main.HoveringOverAnNPC)` selected-clear
+  (`Player.cs:17377-17380`) — the port never clears the selected list
+  here (the gamepad/navigator state is false).
+* `ShowGamepadHints` in the lookup gate (`:17381`) and
+  `DemandOnlyZeroDistanceTargets = ShowGamepadHints && !SmartCursorIsUsed`
+  (`:17389`) — false, so the lookup gates on `SmartCursorIsUsed` alone and
+  every provider runs its full-interaction arm.
+* The tile provider's strict zero-distance arm
+  (`TileSmartInteractCandidateProvider.cs:339-347`): `num3/num4` fed by
+  `flag3` (`:303-307`, the mouse-tile-in-object test), the
+  `strictSettings: true` Reuse + the `SmartInteractShowingFake` win
+  (`:44-47`). The port computes `_flag3` (kept for the citation) but never
+  builds the strict candidate.
+* The NPC/proj providers' `DemandOnlyZeroDistanceTargets && !flag`
+  refusals (`NPCSmartInteractCandidateProvider.cs:67-70`,
+  `ProjectileSmartInteractCandidateProvider.cs:68-71`).
+* `Main.SmartInteractShowingFake` has no port consumer (the fake-highlight
+  draw is gamepad-only). The field is carried on `SmartInteractState` for
+  layout fidelity, always false.
