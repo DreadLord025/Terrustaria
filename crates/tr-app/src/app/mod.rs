@@ -2937,6 +2937,11 @@ impl App {
                         p.y = saved.y;
                     }
                     p.hp = saved.hp.clamp(1, p.max_hp);
+                    // W4-g90: the permanent artisan-loaf unlock rides the
+                    // sidecar's v7 line (`Player.ateArtisanBread`,
+                    // `Player.cs:2048`; vanilla persists it in the `.plr`,
+                    // `:54779`/`:55245`). Older sidecars load false.
+                    p.ate_artisan_bread = saved.ate_artisan_bread;
                     coins = saved.coins;
                     armor_kinds = saved.armor;
                     dye_kinds = saved.dye;

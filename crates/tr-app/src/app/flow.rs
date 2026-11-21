@@ -2528,6 +2528,7 @@ pub(crate) mod front_flow_tests {
                 life_max: 100,
                 mana: 20,
                 mana_max: 20,
+                ate_artisan_bread: false,
                 hair_color: [215, 90, 55],
                 skin_color: [255, 125, 90],
                 eye_color: [105, 90, 75],

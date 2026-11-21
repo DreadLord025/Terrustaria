@@ -964,6 +964,17 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             .contains(tr_core::seeds::MicroSeedFlags::WORLD_IS_INFECTED),
         crimson_world: false, // the port persists no world-evil type (see `shop.rs`)
         travel_stock: app.world.travel_shop,
+        // W4-g90 — the Skeleton Merchant's gates (`Chest.cs:2958`'s
+        // `!ateArtisanBread`, `:2822-2831`'s remix swap, `:2887`'s clock).
+        ate_artisan_bread: app
+            .player
+            .as_ref()
+            .is_some_and(|p| p.ate_artisan_bread),
+        remix_world: app
+            .world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::REMIX),
+        time: app.world.time,
     };
     let inv_ids: Vec<u16> = app
         .inventory

@@ -64,6 +64,17 @@ pub struct ShopFlags {
     /// per-visit stock (`Chest.SetupTravelShop`), captured at the open
     /// like the vanilla's `SetupShop(19)` reads it live.
     pub travel_stock: [u16; 40],
+    /// `Main.player[Main.myPlayer].ateArtisanBread` (`Chest.cs:2958`):
+    /// the Skeleton Merchant's Artisan Loaf row (5326) hides once the
+    /// local player ate one — the permanent unlock (W4-g90).
+    pub ate_artisan_bread: bool,
+    /// `Main.remixWorld` (`Chest.cs:2822-2831`): the Skeleton Merchant's
+    /// phase-2 row swaps the Glowstick (3069) for the Magic Mirror (517).
+    pub remix_world: bool,
+    /// `Main.time` (`Chest.cs:2887`): the Skeleton Merchant's early-hours
+    /// gate — `((time % 60.0) * 60.0) * 6.0 <= 10800.0` (verbatim; the
+    /// first 30 ticks of every minute) sells the Ale (3004) over the Torch.
+    pub time: f64,
 }
 
 impl Default for ShopFlags {
@@ -95,6 +106,9 @@ impl Default for ShopFlags {
             infected_seed: false,
             crimson_world: false,
             travel_stock: [0; 40],
+            ate_artisan_bread: false,
+            remix_world: false,
+            time: 0.0,
         }
     }
 }
@@ -124,6 +138,8 @@ impl ShopFlags {
             infected_seed: world
                 .micro_seeds
                 .contains(tr_core::seeds::MicroSeedFlags::WORLD_IS_INFECTED),
+            remix_world: world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+            time: world.time,
             ..Self::default()
         }
     }
@@ -233,6 +249,45 @@ pub enum StockWhen {
     /// row (`Chest.cs:3169`/`:3186`/`:3202`/`:3207`/`:3223`/`:3228`/
     /// `:3233`), so each row names its own threshold + operator.
     GolfScore(i32, bool),
+    /// Exactly one moon phase (`Chest.cs:2812-2856`'s Skeleton Merchant
+    /// per-phase rows).
+    MoonPhaseEq(u8),
+    /// One moon phase in a NON-remix world (`Chest.cs:2822-2826`).
+    MoonPhaseEqNotRemix(u8),
+    /// One moon phase in a remix world (`Chest.cs:2827-2831`).
+    MoonPhaseEqRemix(u8),
+    /// `(!dayTime || moonPhase == 0) && HasItem(930)` (`Chest.cs:2872-2880`).
+    NightOrMoon0HasBoots,
+    /// `Main.hardMode && Main.bloodMoon` (`Chest.cs:2947-2951`).
+    HardModeBloodMoon,
+    /// The even moon phases (`Chest.cs:2857`).
+    MoonPhaseEven,
+    /// The odd phases in hardmode (`Chest.cs:2867`).
+    MoonPhaseOddHard,
+    /// `!Main.dayTime || Main.moonPhase == 0` (`Chest.cs:2872`).
+    NightOrMoon0,
+    /// `Main.dayTime && Main.moonPhase != 0` (`Chest.cs:2882`).
+    DayNotMoon0,
+    /// `Main.time % 60.0 * 60.0 * 6.0 <= 10800.0` (`Chest.cs:2887`) —
+    /// verbatim `((time % 60) * 60) * 6`: the first 30 ticks of every
+    /// minute sell the Ale 3004, the rest the Torch 8.
+    EarlyHours,
+    /// The inverse of [`StockWhen::EarlyHours`] (`Chest.cs:2891-2894`).
+    LateHours,
+    /// `moonPhase == 0 || 1 || 4 || 5` (`Chest.cs:2896`) — the
+    /// Glowstick/Flare pair's first half (3003 over 40).
+    MoonPhase0145,
+    /// The inverse of [`StockWhen::MoonPhase0145`] (`Chest.cs:2900-2903`).
+    MoonPhase2367,
+    /// `moonPhase % 4` picks one of four rows (`Chest.cs:2905-2920`'s
+    /// 3310/3313/3312/3311 quad — the parameter is the remainder).
+    MoonPhaseMod4(u8),
+    /// `moonPhase == 1 || 2` / `3 || 5` / `6 || 7` (`Chest.cs:2921-2932`'s
+    /// 5640/5641/5642 trio — the parameter names the row: 0/1/2).
+    MoonPhaseTrio(u8),
+    /// `!ateArtisanBread && moonPhase >= 3 && moonPhase <= 5`
+    /// (`Chest.cs:2958`, W4-g90) — the Artisan Loaf 5326 hides once eaten.
+    ArtisanLoafWindow,
 }
 
 /// `Chest.SetupShop`'s stock list for one shop index. The port carries the
@@ -611,6 +666,56 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(4660, StockWhen::GolfPainting(2)),
             row(4661, StockWhen::GolfPainting(3)),
         ],
+        // The Skeleton Merchant (`Chest.cs:2811-2962`, shop index 20 —
+        // `NPCInteractions.cs:507`'s `Shop(453, 20)`): the per-moon-phase
+        // rows, the time-of-day pair and the progression tail, in the
+        // C#'s `num` order. The remix phase-2 swap and the artisan-loaf
+        // gate ride the ShopFlags (W4-g90).
+        20 => {
+            let mut rows = vec![
+                row(284, StockWhen::MoonPhaseEq(0)), // `:2812-2816`
+                row(946, StockWhen::MoonPhaseEq(1)), // `:2817-2821`
+                row(3069, StockWhen::MoonPhaseEqNotRemix(2)), // `:2822-2826`
+                row(517, StockWhen::MoonPhaseEqRemix(2)), // `:2827-2831`
+                row(4341, StockWhen::MoonPhaseEq(3)), // `:2832-2836`
+                row(285, StockWhen::MoonPhaseEq(4)), // `:2837-2841`
+                row(953, StockWhen::MoonPhaseEq(5)), // `:2842-2846`
+                row(3068, StockWhen::MoonPhaseEq(6)), // `:2847-2851`
+                row(3084, StockWhen::MoonPhaseEq(7)), // `:2852-2856`
+                row(3001, StockWhen::MoonPhaseEven), // `:2857-2861`
+                row(28, StockWhen::MoonPhaseOdd),    // `:2862-2866`
+                row(188, StockWhen::MoonPhaseOddHard), // `:2867-2871`
+                row(3002, StockWhen::NightOrMoon0),  // `:2872-2875`
+            ];
+            // `:2876-2880` — the Flower Boots carrier row, INSIDE the
+            // night-or-moon-0 block (`HasItem(930)`).
+            rows.push(row(5377, StockWhen::NightOrMoon0HasBoots));
+            rows.extend([
+                row(282, StockWhen::DayNotMoon0), // `:2882-2886`
+                row(3004, StockWhen::EarlyHours), // `:2887-2890`
+                row(8, StockWhen::LateHours),     // `:2891-2895`
+                row(3003, StockWhen::MoonPhase0145), // `:2896-2899`
+                row(40, StockWhen::MoonPhase2367), // `:2900-2904`
+                row(3310, StockWhen::MoonPhaseMod4(0)), // `:2905-2908`
+                row(3313, StockWhen::MoonPhaseMod4(1)), // `:2909-2912`
+                row(3312, StockWhen::MoonPhaseMod4(2)), // `:2913-2916`
+                row(3311, StockWhen::MoonPhaseMod4(3)), // `:2917-2920`
+                row(5640, StockWhen::MoonPhaseTrio(0)), // `:2921-2924`
+                row(5641, StockWhen::MoonPhaseTrio(1)), // `:2925-2928`
+                row(5642, StockWhen::MoonPhaseTrio(2)), // `:2929-2932`
+                row(166, StockWhen::Always),      // `:2933-2934`
+                row(965, StockWhen::Always),      // `:2935-2936`
+                row(3316, StockWhen::HardMode),   // `:2937-2939`
+                row(3334, StockWhen::HardMode),   // `:2940-2941`
+                row(5540, StockWhen::DownedMechAny), // `:2942-2946`
+                row(3258, StockWhen::HardModeBloodMoon), // `:2947-2951`
+                row(3043, StockWhen::MoonPhaseNight0), // `:2953-2957`
+                // `:2958-2961` — the Artisan Loaf: the permanent unlock's
+                // only stock consumer (`!ateArtisanBread && 3 <= phase <= 5`).
+                row(5326, StockWhen::ArtisanLoafWindow),
+            ]);
+            rows
+        }
         // The Travelling Merchant (`Chest.cs:2791-2810`): the stock is
         // NOT a fixed row list — it rides the 40 `Main.travelShop` slots
         // the visit roll generated (`Chest.SetupTravelShop`).
@@ -1312,6 +1417,36 @@ pub fn resolve_stock_entries_moon(
                     flags.golfer_score > min
                 }
             }
+            // The Skeleton Merchant's gates (`Chest.cs:2811-2962`, W4-g90).
+            StockWhen::MoonPhaseEq(n) => moon_phase == n as u32,
+            StockWhen::MoonPhaseEqNotRemix(n) => moon_phase == n as u32 && !flags.remix_world,
+            StockWhen::MoonPhaseEqRemix(n) => moon_phase == n as u32 && flags.remix_world,
+            StockWhen::MoonPhaseEven => moon_phase % 2 == 0,
+            StockWhen::MoonPhaseOddHard => moon_phase % 2 == 1 && flags.hard_mode,
+            StockWhen::NightOrMoon0 => flags.night || moon_phase == 0,
+            StockWhen::NightOrMoon0HasBoots => {
+                (flags.night || moon_phase == 0) && inventory_ids.contains(&930)
+            }
+            StockWhen::DayNotMoon0 => !flags.night && moon_phase != 0,
+            // `Main.time % 60.0 * 60.0 * 6.0 <= 10800.0` (`:2887`) —
+            // VERBATIM: `%` binds tighter than `*`, so the expression is
+            // `((time % 60.0) * 60.0) * 6.0`, NOT `time % 21600`. The
+            // first 30 ticks of every minute sell the Ale, the rest the
+            // Torch — the odd vanilla cadence is kept as written.
+            StockWhen::EarlyHours => (flags.time % 60.0) * 60.0 * 6.0 <= 10800.0,
+            StockWhen::LateHours => !((flags.time % 60.0) * 60.0 * 6.0 <= 10800.0),
+            StockWhen::MoonPhase0145 => matches!(moon_phase, 0 | 1 | 4 | 5),
+            StockWhen::MoonPhase2367 => !matches!(moon_phase, 0 | 1 | 4 | 5),
+            StockWhen::MoonPhaseMod4(n) => moon_phase % 4 == n as u32,
+            StockWhen::MoonPhaseTrio(n) => match n {
+                0 => matches!(moon_phase, 1 | 2),
+                1 => matches!(moon_phase, 3 | 5),
+                _ => matches!(moon_phase, 6 | 7),
+            },
+            StockWhen::HardModeBloodMoon => flags.hard_mode && flags.blood_moon,
+            StockWhen::ArtisanLoafWindow => {
+                !flags.ate_artisan_bread && (3..=5).contains(&moon_phase)
+            }
         })
         .collect()
 }
@@ -1749,6 +1884,79 @@ mod tests {
         // The PlayerHasItem rows need the scan hit.
         let without = resolve_stock(1, &flags, &[]);
         assert!(!without.contains(&931));
+    }
+
+    /// W4-g90 — the Skeleton Merchant's Artisan Loaf row (`Chest.cs:2958-
+    /// 2961`): the 5326 appears only in moon phases 3..=5 while the local
+    /// player has NOT eaten one; the permanent flag hides it forever after.
+    #[test]
+    fn w4_g90_the_skeleton_merchant_loaf_gates_on_phase_and_the_flag() {
+        for phase in 0..8u32 {
+            let stock = resolve_stock_moon(20, &ShopFlags::default(), &[], phase);
+            let in_window = (3..=5).contains(&phase);
+            assert_eq!(
+                stock.contains(&5326),
+                in_window,
+                "phase {phase}: the loaf window is 3..=5"
+            );
+            // Once eaten, no phase sells it again.
+            let eaten = ShopFlags {
+                ate_artisan_bread: true,
+                ..Default::default()
+            };
+            let stock = resolve_stock_moon(20, &eaten, &[], phase);
+            assert!(!stock.contains(&5326), "phase {phase}: eaten hides the loaf");
+        }
+    }
+
+    /// W4-g90 — the Skeleton Merchant's phase rows (`Chest.cs:2811-2962`):
+    /// the per-phase head row, the remix phase-2 swap, the parity pair, the
+    /// hardmode tail and the always-on 166/965, in the C#'s order.
+    #[test]
+    fn w4_g90_the_skeleton_merchant_phase_rows() {
+        // Phase 4 (day, classic): the Aglet 285 head, the even-parity
+        // Spelunker Glowstick 3001, the day-not-moon-0 Water Walking Boots
+        // 282, the mod-4 Cloud 3310, no trio row, 166/965 always.
+        let stock = resolve_stock_moon(20, &ShopFlags::default(), &[], 4);
+        assert_eq!(stock[0], 285, "the phase-4 head (`:2837-2841`)");
+        assert!(stock.contains(&3001) && !stock.contains(&28));
+        assert!(stock.contains(&282) && !stock.contains(&3002));
+        assert!(stock.contains(&3310) && !stock.contains(&3311));
+        assert!(!stock.contains(&5640) && !stock.contains(&5641) && !stock.contains(&5642));
+        assert!(stock.contains(&166) && stock.contains(&965));
+        assert!(!stock.contains(&3316), "the hardmode tail stays out");
+        // Phase 2 remix swaps the Glowstick 3069 for the Magic Mirror 517
+        // (`:2822-2831`); classic keeps 3069.
+        let classic = resolve_stock_moon(20, &ShopFlags::default(), &[], 2);
+        assert!(classic.contains(&3069) && !classic.contains(&517));
+        let remix = ShopFlags { remix_world: true, ..Default::default() };
+        let swapped = resolve_stock_moon(20, &remix, &[], 2);
+        assert!(swapped.contains(&517) && !swapped.contains(&3069));
+        // Phase 3 night hardmode + a mech down + blood moon: the 4341 head,
+        // the odd-parity 28 + the 188, the 3002 (+5377 with the boots), the
+        // 5641 trio, the 3316/3334/5540/3258 tail — and the loaf window.
+        let hm = ShopFlags {
+            hard_mode: true,
+            night: true,
+            blood_moon: true,
+            downed_mech_any: true,
+            ..Default::default()
+        };
+        let stock = resolve_stock_moon(20, &hm, &[930], 3);
+        for id in [4341, 28, 188, 3002, 5377, 5641, 3316, 3334, 5540, 3258, 5326] {
+            assert!(stock.contains(&id), "the phase-3 hardmode row {id} missing");
+        }
+        // The Flower Boots row needs the carrier (`:2876-2880`).
+        let without = resolve_stock_moon(20, &hm, &[], 3);
+        assert!(without.contains(&3002) && !without.contains(&5377));
+        // The early-hours pair (`:2887-2895`): time 0 sells the Ale 3004,
+        // time 31 the Torch 8 — `((time % 60) * 60) * 6 <= 10800` verbatim.
+        let early = ShopFlags { time: 0.0, ..Default::default() };
+        let late = ShopFlags { time: 31.0, ..Default::default() };
+        let e = resolve_stock_moon(20, &early, &[], 4);
+        let l = resolve_stock_moon(20, &late, &[], 4);
+        assert!(e.contains(&3004) && !e.contains(&8));
+        assert!(l.contains(&8) && !l.contains(&3004));
     }
 
     #[test]

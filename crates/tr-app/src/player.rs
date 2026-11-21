@@ -1100,9 +1100,14 @@ pub struct Player {
     /// `HasItem(4131)`): refreshed per tick beside the other scans.
     pub void_vault_enabled: bool,
     /// `Player.ateArtisanBread` (`Player.cs:2048`): the artisan loaf's
-    /// +4-tile crafting reach (`Player.AdjTiles`, `:35671`). The item that
-    /// sets it (5326, `Player.cs:45218-45221`) has no ported use effect yet,
-    /// so the flag stays false in play — the reach formula reads it.
+    /// +4-tile crafting reach (`Player.AdjTiles`, `:35671`). PERMANENT —
+    /// set once by the 5326 use (`ItemCheck_UseArtisanLoaf`,
+    /// `Player.cs:45218-45221`, W4-g90: `editing.rs::use_artisan_loaf`),
+    /// never cleared by `ResetEffects`; persisted in the `.plr`
+    /// (`Player.cs:54779`/`:55245`) and the `.trplayer` v7 line. The other
+    /// consumer is the Skeleton Merchant's stock gate (`Chest.cs:2958` —
+    /// the 5326 row hides once eaten); the reforge roll
+    /// (`Main.cs:41902-41933`) does NOT read this flag in 1.4.5.8.
     pub ate_artisan_bread: bool,
     /// `Player.unlockedBiomeTorches` (`Player.cs:2046`): the Torch God's
     /// biome torches — the gate on the `needTorchGodsFavor` recipes

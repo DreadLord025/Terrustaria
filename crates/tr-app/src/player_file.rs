@@ -110,6 +110,11 @@ pub struct PlayerFile {
     pub undershirt_color: [u8; 3],
     pub pants_color: [u8; 3],
     pub shoe_color: [u8; 3],
+    /// `Player.ateArtisanBread` (`Player.cs:2048`): the artisan loaf's
+    /// permanent +4 crafting reach — read at release >= 256
+    /// (`Deserialize`, `Player.cs:55243-55246`); older files load false
+    /// (the ctor default, `:56077`). W4-g90.
+    pub ate_artisan_bread: bool,
     /// The 58 inventory slots as `(id, stack, prefix)`; `id == 0` = empty.
     pub inventory: [(i32, i32, u8); 58],
     /// `Item.favorited`'s per-slot bits for the inventory — bit `i` is
@@ -325,11 +330,14 @@ fn read_player_fields(
     mana = mana.min(400); // `:55231-55234`
     // The unlock/seed bools (`:55235-55262`).
     let _extra = r.boolean().ok_or(PlayerFileError::Truncated("extra"))?; // gate 125
+    // `ateArtisanBread` (`:55245`, gate 256 inside the 229 block) — W4-g90
+    // models it; below 256 the ctor default false stands (`:56077`).
+    let mut ate_artisan_bread = false;
     if version >= 229 {
         r.boolean().ok_or(PlayerFileError::Truncated("bt1"))?;
         r.boolean().ok_or(PlayerFileError::Truncated("bt2"))?;
         if version >= 256 {
-            r.boolean().ok_or(PlayerFileError::Truncated("bread"))?;
+            ate_artisan_bread = r.boolean().ok_or(PlayerFileError::Truncated("bread"))?;
         }
         if version >= 324 {
             r.boolean().ok_or(PlayerFileError::Truncated("extra324"))?; // `:55247-55250`
@@ -431,6 +439,7 @@ fn read_player_fields(
             life_max,
             mana,
             mana_max,
+            ate_artisan_bread,
             colors,
             inventory,
             inv_favorites,
@@ -490,6 +499,7 @@ fn read_player_fields(
             life_max,
             mana,
             mana_max,
+            ate_artisan_bread,
             colors,
             inventory,
             inv_favorites,
@@ -642,6 +652,7 @@ fn read_player_fields(
         life_max,
         mana,
         mana_max,
+        ate_artisan_bread,
         colors,
         inventory,
         inv_favorites,
@@ -662,6 +673,7 @@ fn finish_player_file(
     life_max: i32,
     mana: i32,
     mana_max: i32,
+    ate_artisan_bread: bool,
     colors: [[u8; 3]; 7],
     inventory: [(i32, i32, u8); 58],
     inv_favorites: u64,
@@ -678,6 +690,7 @@ fn finish_player_file(
         life_max,
         mana,
         mana_max,
+        ate_artisan_bread,
         hair_color: colors[0],
         skin_color: colors[1],
         eye_color: colors[2],
@@ -725,9 +738,15 @@ fn read_legacy_port_subset(
     mana_max = mana_max.min(200);
     mana = mana.min(400);
     // extraAccessory, biome-torch pair, artisan bread, six unlocks, dd2 —
-    // the 11 bools the old subset writer emitted (no 324 dead slot).
-    for _ in 0..11 {
-        r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
+    // the 11 bools the old subset writer emitted (no 324 dead slot). The
+    // bread is the 4th (index 3) — W4-g90 models it (the old writer always
+    // emitted false, so legacy files load false).
+    let mut ate_artisan_bread = false;
+    for i in 0..11 {
+        let b = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
+        if i == 3 {
+            ate_artisan_bread = b;
+        }
     }
     let _tax = r.i32().ok_or(PlayerFileError::Truncated("tax"))?;
     let _pve = r.i32().ok_or(PlayerFileError::Truncated("pve"))?;
@@ -773,6 +792,7 @@ fn read_legacy_port_subset(
         life_max,
         mana,
         mana_max,
+        ate_artisan_bread,
         hair_color: colors[0],
         skin_color: colors[1],
         eye_color: colors[2],
@@ -799,6 +819,9 @@ pub struct PlayerFileWrite {
     pub life_max: i32,
     pub mana: i32,
     pub mana_max: i32,
+    /// `Player.ateArtisanBread` (`Player.cs:2048`) — written at `:54779`
+    /// (W4-g90). A fresh character carries false (the ctor, `:56077`).
+    pub ate_artisan_bread: bool,
     pub hair_color: [u8; 3],
     pub skin_color: [u8; 3],
     pub eye_color: [u8; 3],
@@ -866,7 +889,7 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     w.boolean(false); // `:54776` extraAccessory (ctor `:56076`)
     w.boolean(false); // `:54777` unlockedBiomeTorches
     w.boolean(false); // `:54778` UsingBiomeTorches (unlocked=false -> false)
-    w.boolean(false); // `:54779` ateArtisanBread (ctor `:56077`)
+    w.boolean(file.ate_artisan_bread); // `:54779` ateArtisanBread (ctor `:56077`) — W4-g90
     w.boolean(false); // `:54780` the hardcoded `false` (the dead 324 slot)
     w.boolean(false); // `:54781` usedAegisCrystal (ctor `:56078`)
     w.boolean(false); // `:54782` usedAegisFruit (`:56079`)
@@ -1138,6 +1161,7 @@ mod tests {
             life_max: 100,
             mana: 20,
             mana_max: 20,
+            ate_artisan_bread: false,
             hair_color: [215, 90, 55],
             skin_color: [255, 125, 90],
             eye_color: [105, 90, 75],
@@ -1441,6 +1465,7 @@ mod tests {
             life_max: 100,
             mana: 20,
             mana_max: 20,
+            ate_artisan_bread: false, // the harness player never ate one
             hair_color: [215, 90, 55],
             skin_color: [255, 125, 90],
             eye_color: [105, 90, 75],
@@ -1482,6 +1507,24 @@ mod tests {
         assert_eq!(read.name, "Golden");
         assert_eq!(read.inventory[3], (2, 50, 0));
         assert_eq!(read.inv_favorites, 1 << 3);
+    }
+
+    /// W4-g90: `ateArtisanBread` round-trips through the release-326
+    /// sections — the write at `:54779`, the read at `:55245` (gate 256).
+    /// The permanent 5326 unlock survives a `.plr` save/load.
+    #[test]
+    fn the_artisan_bread_bool_survives_a_save_and_a_load() {
+        let written = PlayerFileWrite {
+            ate_artisan_bread: true,
+            ..sample()
+        };
+        let bytes = write_player_bytes(&written);
+        let file = read_player_bytes(&cbc_decrypt(&bytes)).expect("the bread file must read");
+        assert!(file.ate_artisan_bread, "the flag at `:55245` reads back");
+        // The default sample carries false (the ctor, `:56077`).
+        let plain = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample())))
+            .expect("the plain file must read");
+        assert!(!plain.ate_artisan_bread);
     }
 
     /// PKCS7 itself: the pad is 1..16 bytes of value n, and an aligned

@@ -575,6 +575,11 @@ pub struct PlayerNet {
     /// has open, fed by `80 SyncPlayerChestIndex`
     /// (`MessageBuffer.cs:3216-3227`). `None` = closed (`-1`), the `Default`.
     pub chest: Option<i16>,
+    /// `Player.ateArtisanBread` — fed by `4 PlayerInfo`'s bitsByte17 bit 6
+    /// (`MessageBuffer.cs:355`, W4-g90). The peer's own shop gate reads it
+    /// locally in the C# (`Chest.cs:2958` reads `Main.myPlayer`); the port
+    /// carries it for parity with the wire.
+    pub ate_artisan_bread: bool,
 }
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four
@@ -3414,6 +3419,9 @@ pub struct Slot {
     pub sections: Vec<bool>,
     /// The grid width the latch is sized for (0 = not allocated yet).
     pub sections_w: i32,
+    /// `Main.player[id].ateArtisanBread` — the server's copy, fed by
+    /// `4 PlayerInfo`'s bitsByte34 bit 6 (`MessageBuffer.cs:355`, W4-g90).
+    pub ate_artisan_bread: bool,
 }
 
 type Slots = Arc<Mutex<HashMap<u32, Slot>>>;
@@ -3484,6 +3492,7 @@ impl Server {
                         inventory: HashMap::new(),
                         sections: Vec::new(),
                         sections_w: 0,
+                        ate_artisan_bread: false,
                     },
                 );
                 let Ok(mut reader) = stream.try_clone() else {
@@ -3581,6 +3590,25 @@ impl Server {
                 c.name = name;
             }
         }
+    }
+
+    /// The server's `Main.player[id].ateArtisanBread` write
+    /// (`MessageBuffer.cs:355`, W4-g90).
+    pub fn set_slot_artisan_bread(&self, id: u32, v: bool) {
+        if let Ok(mut s) = self.slots.lock() {
+            if let Some(c) = s.get_mut(&id) {
+                c.ate_artisan_bread = v;
+            }
+        }
+    }
+
+    /// The server's copy of the peer's artisan-bread flag.
+    pub fn slot_artisan_bread(&self, id: u32) -> bool {
+        self.slots
+            .lock()
+            .ok()
+            .and_then(|s| s.get(&id).map(|c| c.ate_artisan_bread))
+            .unwrap_or(false)
     }
 
     /// Stores one peer inventory slot — `Main.player[id].inventory[slot]`

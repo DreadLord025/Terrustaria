@@ -301,6 +301,10 @@ impl App {
                     return;
                 }
                 server.set_slot_name(id, pi.name.clone());
+                // `player18.ateArtisanBread = bitsByte34[6]`
+                // (`MessageBuffer.cs:355`, W4-g90) — the server keeps its
+                // own copy of the permanent unlock.
+                server.set_slot_artisan_bread(id, pi.flags3.get(6));
                 log::info!("slot {id} announced as {}", pi.name);
             }
             // `case 5` — one inventory slot (`MessageBuffer.cs:399-462`).
@@ -1107,10 +1111,13 @@ impl App {
         // The host is a player too (its slot is 0): the display names ride
         // `4 PlayerInfo`, which msg 13 lacks.
         if !self.player_name.is_empty() {
-            server.send(
-                id,
-                &S2c::PlayerInfo(net::PlayerInfo::with_name(0, &self.player_name)),
+            let mut pi = net::PlayerInfo::with_name(0, &self.player_name);
+            // `bitsByte17[6]` (`NetMessage.cs:195`, W4-g90).
+            pi.flags3.set(
+                6,
+                self.player.as_ref().is_some_and(|p| p.ate_artisan_bread),
             );
+            server.send(id, &S2c::PlayerInfo(pi));
         }
         let name = server.slot_name(id);
         let (px, py) = self.net_peer_spawn_pos();
@@ -1335,6 +1342,8 @@ impl App {
                         });
                     if let Some(p) = self.remote_players.get_mut(&peer) {
                         p.name = pi.name.clone();
+                        // `bitsByte34[6]` (`MessageBuffer.cs:355`, W4-g90).
+                        p.ate_artisan_bread = pi.flags3.get(6);
                     }
                 }
             }
@@ -1867,10 +1876,15 @@ impl App {
     /// `6 WorldRequest`.
     fn client_send_identity(&self, client: &net::Client) {
         let me = self.local_id as u8;
-        client.send(&C2s::PlayerInfo(net::PlayerInfo::with_name(
-            me,
-            &self.player_name,
-        )));
+        let mut pi = net::PlayerInfo::with_name(me, &self.player_name);
+        // `bitsByte17[6] = ateArtisanBread` (`NetMessage.cs:195`, W4-g90):
+        // the permanent artisan-loaf unlock rides the identity push — the
+        // use's `SendData(4)` (`Player.cs:45222`) re-announces it.
+        pi.flags3.set(
+            6,
+            self.player.as_ref().is_some_and(|p| p.ate_artisan_bread),
+        );
+        client.send(&C2s::PlayerInfo(pi));
         // The health (`Main.cs`'s 16 in the same push).
         let (hp, max_hp) = self
             .player

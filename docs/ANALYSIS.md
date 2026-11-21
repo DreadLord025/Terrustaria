@@ -19045,10 +19045,27 @@ Deviations:
   the cursor's content (`craft.rs::result_fits_next`) вЂ” the observable
   quantity matches the C#'s (a prefixable recipe crafts once), but the player
   never holds the crafted item on the cursor.
-- **The artisan loaf's effect is not ported.** The flag
-  `Player.ateArtisanBread` rides the player and the reach reads it, but the
-  item that sets it (5326, `Player.cs:45218-45221`) has no ported use effect,
-  so the +4 is unreachable in play.
+- ~~**The artisan loaf's effect is not ported.**~~ — **DONE (W4-g90)**: the
+  5326 use is ported (`editing.rs::use_artisan_loaf`,
+  `Player.ItemCheck_UseArtisanLoaf`, `Player.cs:45216-45224`): the once-only
+  `ateArtisanBread` set (`Player.cs:2048`, permanent — no `ResetEffects`
+  clear), `ApplyItemTime` and the generic consumable consume
+  (`:43280-43326`). The +4 reach (`craft.rs::tile_reach`, `:35671`) is now
+  reachable in play. Persistence: the `.plr` bool (`Serialize:54779` /
+  `Deserialize:55245`, gate 256) and the `.trplayer` sidecar's v7 line
+  (older sidecars load false). The Skeleton Merchant's stock gate
+  (`Chest.cs:2958` — the loaf hides once eaten) rides the ported shop
+  index 20 (`shop.rs`); the net sync is `PlayerInfo`'s flags3 bit 6
+  (`NetMessage.cs:195` / `MessageBuffer.cs:355`). **The task brief's
+  "reforge quality tier +1" consumer does not exist in 1.4.5.8**: a
+  full-source grep of `ateArtisanBread` finds exactly four consumers —
+  the crafting reach (`Player.cs:35671`), the Skeleton Merchant gate
+  (`Chest.cs:2958`), the net pair and the save pair; the reforge roll
+  (`Main.ReforgeItemInReforgeSlot`, `Main.cs:41902-41933` →
+  `Item.Prefix(-2)`, `Item.cs:504-618`) never reads the flag. The i45
+  reforge path stays verbatim (no tier bump invented — the golden rule).
+  The loaf's own acquisition (the Skeleton Merchant's spawn/AI) is still
+  unported; the stock rows resolve once his shop opens.
 - **The Torch God's unlock is not ported.** `player.unlockedBiomeTorches`
   (`Player.cs:2046`) rides the player and the gate reads it, but the unlock
   itself (the Torch God's dialogue) is unported, so the two gated recipes stay

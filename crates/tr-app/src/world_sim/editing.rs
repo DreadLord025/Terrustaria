@@ -2355,6 +2355,16 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // `UndoSlowMagicUse` half (`Player.cs:51946-51948`/`:51954-51966`,
         // folded into `potions::use_potion_item` — the i37 coordination
         // note's deferred i19 fold).)
+        // W4-g90 — the Artisan Loaf 5326 (`Player.ItemCheck_UseArtisanLoaf`,
+        // `Player.cs:45216-45224`, called at `:43601`): the permanent
+        // +4-tile crafting-reach unlock. The C# gate is `itemAnimation > 0
+        // && !ateArtisanBread && ItemTimeIsZero` — the port folds the
+        // mid-swing window onto the press tick like the food/drink arms
+        // above (the `ItemTimeIsZero` half rides `attack_cd`/`reuse_delay`
+        // in `use_press_edge`).
+        if held.kind == 5326 && use_artisan_loaf(app) {
+            return;
+        }
     }
     // The held item's prefixed stats (`Item.Prefix`'s application on a
     // fresh item, recomputed — see prefix.rs): the swing pacing, the mana
@@ -15919,6 +15929,44 @@ mod tests {
     }
 }
 
+/// `Player.ItemCheck_UseArtisanLoaf` (`Player.cs:45216-45224`): the 5326
+/// use — `ApplyItemTime`, then the PERMANENT `ateArtisanBread = true`
+/// (`Player.cs:2048`; the ctor default false, `:56077`; never cleared by
+/// `ResetEffects`). The `!ateArtisanBread` half of the gate refuses a
+/// second loaf: no re-arm, no consume. The `NetMessage.SendData(4)` sync
+/// (`:45222`) rides the port's identity push (`client_send_identity`'s
+/// `flags3` bit 6, `NetMessage.cs:195`). The consumable decrement is the
+/// generic `ItemCheck` tail (`:43280-43326`, `item.consumable`), folded
+/// onto this tick like the food arm's; the empty slot clears (the port's
+/// food-arm shape). The +4 reach the flag feeds is already the C#'s
+/// formula (`craft.rs::tile_reach`, `Player.cs:35671`).
+pub(crate) fn use_artisan_loaf(app: &mut App) -> bool {
+    let held = app.inventory[app.selected];
+    if held.kind != 5326 || held.count == 0 {
+        return false;
+    }
+    // `!this.ateArtisanBread` (`Player.cs:45218`): already eaten — the use
+    // is refused outright (the C# leaves the stack and the timers alone).
+    if app.player.as_ref().is_none_or(|p| p.ate_artisan_bread) {
+        return false;
+    }
+    let Some(p) = app.player.as_mut() else {
+        return false;
+    };
+    p.ate_artisan_bread = true; // `:45221`
+    // `ApplyItemTime(sItem)` (`:45220`) — the port's use-start seam arms the
+    // animation + the action cadence together (the food arm's fold).
+    start_use_timers(app, held);
+    app.item_time = crate::item::use_time_secs(5326);
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    true
+}
+
 /// `Player.ItemCheck_UseBossSpawners`'s eye arm (`Player.cs:43759-43771`):
 /// the night gate, the roar (`SoundEngine.PlaySound(15, ...)`, `SoundID.Roar`
 /// = 15), then `NPC.SpawnOnPlayer(onWhichPlayer, 4)`. The
@@ -18452,6 +18500,69 @@ mod s1_p_i08_throw_tests {
         assert_eq!(p.mana, 50);
         assert!(p.buffs.find_buff_index(94).is_some(), "ManaSickness 94");
         assert_eq!(app.inventory[app.selected].count, 2);
+    }
+
+    // ---- W4-g90: the Artisan Loaf's permanent unlock -----------------------
+    // WRITTEN NOT RUN (code-only mode). `ItemCheck_UseArtisanLoaf`
+    // (`Player.cs:45216-45224`): the 5326 use sets `ateArtisanBread` ONCE —
+    // the `!ateArtisanBread` gate refuses every later loaf, the stack pays
+    // one through the generic consumable tail (`:43280-43326`), and the
+    // flag is permanent (no `ResetEffects` clear — `Player.cs:2048`).
+
+    /// The press consumes ONE loaf, raises the flag and re-arms the action
+    /// cadence at the item's useTime 17 (`Item.cs`'s ArtisanLoaf row).
+    #[test]
+    fn w4_g90_the_artisan_loaf_use_sets_the_permanent_flag() {
+        let mut app = potion_press_app(5326, 2);
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN); // idle: edge armed
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        assert!(
+            app.player.as_ref().unwrap().ate_artisan_bread,
+            "the flag rises (`Player.cs:45221`)"
+        );
+        assert_eq!(app.inventory[app.selected].count, 1, "one consumed");
+        assert!(
+            (app.item_time - 17.0 / 60.0).abs() < 1e-6,
+            "ApplyItemTime re-armed useTime 17 (`Player.cs:45220`)"
+        );
+    }
+
+    /// The `!ateArtisanBread` gate (`Player.cs:45218`): a second press with
+    /// the flag already raised refuses — no consume, no timer re-arm.
+    #[test]
+    fn w4_g90_a_second_loaf_is_refused() {
+        let mut app = potion_press_app(5326, 3);
+        app.player.as_mut().unwrap().ate_artisan_bread = true;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        assert_eq!(app.inventory[app.selected].count, 3, "the stack untouched");
+        assert!(app.player.as_ref().unwrap().ate_artisan_bread);
+    }
+
+    /// Holding LMB eats ONE loaf, not the stack (the press edge, the i37
+    /// shape): the second tick's gate sees the raised flag and refuses.
+    #[test]
+    fn w4_g90_holding_lmb_eats_one_loaf_only() {
+        let mut app = potion_press_app(5326, 5);
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        app.mine_down = true;
+        for _ in 0..120 {
+            update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        }
+        assert_eq!(app.inventory[app.selected].count, 4, "ONE loaf per press");
+        assert!(app.player.as_ref().unwrap().ate_artisan_bread);
+    }
+
+    /// The +4 reach the flag feeds (`craft.rs::tile_reach`,
+    /// `Player.cs:35671`) — the use is the only in-play setter now.
+    #[test]
+    fn w4_g90_the_eaten_loaf_widens_the_crafting_reach() {
+        let base = crate::craft::tile_reach(false, false, false, false);
+        let eaten = crate::craft::tile_reach(false, false, false, true);
+        assert_eq!(eaten.0 - base.0, 4, "+4 X (`TB = 4`)");
+        assert_eq!(eaten.1 - base.1, 4, "+4 Y");
     }
 }
 

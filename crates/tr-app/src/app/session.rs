@@ -252,6 +252,7 @@ fn save_created_character(draft: &ui::char_creation::NewPlayerDraft, favorites: 
         life_max: 100, // `:1924`
         mana: 20,      // `Player.cs:56075`
         mana_max: 20,  // `:56075`
+        ate_artisan_bread: false, // the ctor default (`Player.cs:56077`)
         hair_color: rgb(draft.hair_color),
         skin_color: rgb(draft.skin_color),
         eye_color: rgb(draft.eye_color),

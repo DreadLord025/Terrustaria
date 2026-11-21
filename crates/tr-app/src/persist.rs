@@ -27,6 +27,12 @@ pub struct SavedPlayer {
     /// with none. Vanilla keeps the same pairs in world-file section 11
     /// (`NPCKillsTracker.Save`, M6-SAVE-1's scope).
     pub kills: Vec<(String, i32)>,
+    /// `Player.ateArtisanBread` (`Player.cs:2048`) — version 7 (W4-g90);
+    /// older files load false (the ctor default, `Player.cs:56077`). The
+    /// vanilla persists it in the `.plr` (`Serialize:54779`,
+    /// `Deserialize:55245`); the port's live-session sidecar carries it so
+    /// the permanent unlock survives a `.trwld` reload.
+    pub ate_artisan_bread: bool,
 }
 
 pub fn player_path(world: &Path) -> PathBuf {
@@ -49,7 +55,10 @@ pub fn save(
     dye: &[u16; 10],
     kills: &[(String, i32)],
 ) -> std::io::Result<()> {
-    let mut s = format!("6\n{} {} {}\n", player.x, player.y, player.hp);
+    // Version 7 (W4-g90): the artisan-bread flag line after the dye kinds
+    // (`Player.ateArtisanBread`, `Player.cs:2048` — the permanent 5326
+    // unlock, saved at `:54779` in the vanilla `.plr`).
+    let mut s = format!("7\n{} {} {}\n", player.x, player.y, player.hp);
     for (kind, count) in inventory {
         s.push_str(&format!("{kind} {count} "));
     }
@@ -69,6 +78,8 @@ pub fn save(
         s.push_str(&format!("{kind} "));
     }
     s.push_str("\n");
+    // Version 7: the artisan-bread flag (0/1) on its own line.
+    s.push_str(if player.ate_artisan_bread { "1\n" } else { "0\n" });
     std::fs::write(player_path(world), s)
 }
 
@@ -78,9 +89,10 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     let version = lines.next()?.trim();
     let migrate = match version {
         // Version 4 adds the equipped armor line; 5 the bestiary kills; 6 the
-        // dye kinds; 3 stores vanilla `ItemID`s; 1 and 2 stored the ad-hoc
-        // tile/wall/weapon/coin ranges and are converted on load.
-        "3" | "4" | "5" | "6" => false,
+        // dye kinds; 7 the artisan-bread flag; 3 stores vanilla `ItemID`s;
+        // 1 and 2 stored the ad-hoc tile/wall/weapon/coin ranges and are
+        // converted on load.
+        "3" | "4" | "5" | "6" | "7" => false,
         "1" | "2" => true,
         _ => return None,
     };
@@ -107,7 +119,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         .unwrap_or(0);
     // The armor line is version 4+; older files load with every slot empty.
     let mut armor = [0u16; 3];
-    if version == "4" || version == "5" || version == "6" {
+    if matches!(version, "4" | "5" | "6" | "7") {
         let mut armor_line = lines.next()?.split_whitespace();
         for slot in &mut armor {
             *slot = armor_line.next()?.parse().ok()?;
@@ -115,7 +127,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     }
     // Version 5 adds the bestiary kill pairs.
     let mut kills = Vec::new();
-    if version == "5" || version == "6" {
+    if matches!(version, "5" | "6" | "7") {
         let kill_line = lines.next()?;
         let mut parts = kill_line.split_whitespace();
         let count: usize = parts.next().and_then(|c| c.parse().ok()).unwrap_or(0);
@@ -130,11 +142,18 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     // Version 6 adds the dye slot kinds; older files load with every slot
     // empty.
     let mut dye = [0u16; 10];
-    if version == "6" {
+    if matches!(version, "6" | "7") {
         let dye_line = lines.next()?;
         for (slot, kind) in dye.iter_mut().zip(dye_line.split_whitespace()) {
             *slot = kind.parse().ok()?;
         }
+    }
+    // Version 7 adds the artisan-bread flag; older files load false (the
+    // ctor default, `Player.cs:56077`).
+    let mut ate_artisan_bread = false;
+    if version == "7" {
+        let flag_line = lines.next()?;
+        ate_artisan_bread = flag_line.trim() == "1";
     }
     Some(SavedPlayer {
         x,
@@ -145,6 +164,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         armor,
         dye,
         kills,
+        ate_artisan_bread,
     })
 }
 
@@ -188,6 +208,44 @@ mod tests {
         assert_eq!(s.inventory[49], (0, 0));
         assert_eq!(s.armor, [89, 80, 76]);
         assert_eq!(s.dye, dye);
+        assert!(!s.ate_artisan_bread, "the fresh player never ate one");
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// W4-g90: the v7 artisan-bread line round-trips — the permanent 5326
+    /// unlock (`Player.ateArtisanBread`, `Player.cs:2048`) survives the
+    /// sidecar save/load.
+    #[test]
+    fn the_artisan_bread_flag_round_trips() {
+        let world = World::new("t".into(), 32, 32);
+        let mut p = Player::spawn(&world);
+        p.ate_artisan_bread = true;
+        let dir = crate::test_world_helpers::test_scratch("persist-bread");
+        let path = dir.join("tr-persist-bread.trwld");
+        save(&path, &p, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[]).unwrap();
+        let s = load(&path).expect("v7 sidecar");
+        assert!(s.ate_artisan_bread, "the flag survives the round trip");
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// W4-g90: a v6 sidecar (no bread line) loads false — the ctor default
+    /// (`Player.cs:56077`), the same version-gate shape as the dye line.
+    #[test]
+    fn version_6_loads_with_no_bread() {
+        let dir = crate::test_world_helpers::test_scratch("persist-v6-bread");
+        let path = dir.join("tr-persist-v6.trwld");
+        let mut line = String::from("6\n1.0 2.0 100\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n89 80 76\n1 (BlueSlime 7) \n");
+        for _ in 0..10 {
+            line.push_str("0 ");
+        }
+        line.push('\n');
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("v6 sidecar");
+        assert!(!s.ate_artisan_bread);
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
