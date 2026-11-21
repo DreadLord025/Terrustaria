@@ -7083,6 +7083,37 @@ lane's (c41/f43's town-spawn surgery or d42's kind lane) — this
 census is the cross-note for whichever lands it. NO spawn code in
 d120 (the directive's scope: census + cross-note).
 
+**The d36 collision keep-one note (for the d37c matrix)** — the
+SantaClaus 142 / Truffle 160 / Steampunker 178 kinds: d120's claim
+(dad8db3d9, 2026-11-21 05:48 +0200, pushed) PREDATES d36's claim
+(65e481f96, 06:03 +0200, an EMPTY commit — no files, no census doc).
+d36's band claim (141-210, port-local proto 731-780 per research/108)
+covers the three types, but d120's kinds A commit (2891b0bd8, 06:27)
+already carries the verbatim SetDefaults rows + protocol band 241-243
++ bestiary/town-flag/frame/netglue joins + the witnesses. KEEP-ONE:
+**d120's rows are the landed truth** (claimed first, code pushed);
+d36 must SKIP 142/160/178 in its census (like its own c4b-157 /
+d23b-175 skips) and renumber its remaining ~47 kinds into 731+
+without the three. The Cyborg 209 is ALSO d120's (241-245 band) —
+d36's band ends at 210, so 209 is inside it too: skip it as well.
+The BartenderUnconscious 579 is outside d36's band (no collision).
+Protocol-space note: d120's 241-245 band is free in
+`to_u16`/`from_u16`/`render_key` on main + every pushed sibling (the
+claim doc's census — no `=> 241..245` arm exists on any of them);
+research/108's §3 plan (d37's reconcile, 05:31) predates d120's
+claim and lists 237-249 among the base roster's "reserved holes —
+cs-owned, never reassign". The matrix must RESOLVE that tension:
+d120's five kinds sit in that hole (241-245) with the claim-first
+right (dad8db3d9 05:48 < d36's 06:03 empty claim; the kinds code
+2891b0bd8/e4e400629 pushed). The keep-one resolution: add the d120
+block (5 kinds, proto 241-245, cs 142/160/178/209/579) to the union
+plan's "keep untouched" list and strike 241-245 from the reserved
+holes (237-240/246-249 stay reserved). If the matrix instead holds
+the holes sacred, d120's band renumbers to the 731+ port-local
+corridor AHEAD of d36's block (the d35 renumber precedent — five
+`to_u16`/`from_u16` arms + the witness pins, cs_id/net_id unchanged);
+either way the KINDS stay d120's, only the protocol ids move.
+
 ## Town chatter UI (S1-E-10b, 2026-11-18, code-only mode)
 
 `crates/tr-app/src/ui/npc_chat.rs` ports the UI half of the town chatter вЂ”

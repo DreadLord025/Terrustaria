@@ -29,3 +29,14 @@ deferred (the ~73-px atlas headroom, the wyvern/d35 precedent).
 AI: the town-wander stand-in (update_guide) for 142/160/178/209; the
 bound still-stand for 579 (aiStyle 0). Deviations: docs/ANALYSIS.md
 "W4-d120 kind census + the remaining GetChat arms".
+
+## Final-phase addendum (2026-11-21, the d36 collision)
+
+d36 pushed its band claim (65e481f96, 06:03 +0200 — an EMPTY commit)
+AFTER this claim (05:48). Its 141-210 band covers 142/160/178/209.
+KEEP-ONE: this lane's kinds are the landed truth (claim-first + code
+pushed 2891b0bd8/e4e400629); d36 skips the four types. The
+research/108 reserved-hole tension (237-249 "cs-owned") + the
+renumber fallback are recorded in docs/ANALYSIS.md "W4-d120 final
+census" — the d37c matrix resolves the protocol ids, the KINDS stay
+here either way.
