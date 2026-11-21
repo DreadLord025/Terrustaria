@@ -57,9 +57,10 @@
 //!   74677` for 475/505/506, `:74679-74731` for 171 — 4 dust per segment
 //!   past `ai[1]`, types 3/30/239/129) are SKIPPED with the dust layer;
 //!   they draw ZERO state (the `ai_style2` precedent). The `ai[1] == 0`
-//!   sound cue (`:74617-74620`/`:74681-74684`, SoundID.Item1 = the port's
-//!   cue 0) is WIRED at `coil_kill` (the death hook — both sites live
-//!   inside `Kill()`, ahead of `active = false`).
+//!   sound cue (`:74617-74620`/`:74681-74684`, the int overload's legacy
+//!   id 0 = Dig — the port's `(0, 0)` cue, the d77 map's thud shape) is
+//!   WIRED at `coil_kill` (the death hook — both sites live inside
+//!   `Kill()`, ahead of `active = false`).
 //! * `NetMessage.SendData(17, …)` after each KillTile/PlaceTile
 //!   (`:27269`/`:27277`) is the net layer's seam — skipped (single-player).
 //! * `WorldGen.IsTileLoaded` (`Player.cs:41530-41537`) is always true in
