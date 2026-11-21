@@ -859,9 +859,11 @@ mod s1_e_6_tests {
         // Below the floor (negative num4): both clamp.
         assert_eq!(breath_bubble_visual(0, 2, 20), (30, 0.75));
         // The lava flames share the helper with per = lavaMax/10 (420 → 42):
-        // a half-drained budget's 5th flame is full, the 6th half.
+        // a half-drained budget's 5th flame is full, the 6th empty (num4 = 0).
         assert_eq!(breath_bubble_visual(210, 5, 42), (255, 1.0));
-        assert_eq!(breath_bubble_visual(210, 6, 42), (142, 0.875));
+        assert_eq!(breath_bubble_visual(210, 6, 42), (30, 0.75));
+        // A quarter into the 6th flame: num4 = 0.25 → grey 86, scale 0.8125.
+        assert_eq!(breath_bubble_visual(220, 6, 42), (86, 0.8125));
     }
 
     /// W4-c46 — the breath meter's anchor walk (`Main.cs:43421-43438`): the
