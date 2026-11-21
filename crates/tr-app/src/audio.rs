@@ -3391,6 +3391,39 @@ mod tests {
         assert!(matches!(m.new_music, 4 | 31));
     }
 
+    /// W4-e19 aether census — the ZoneShimmer music gate (`Main.cs:12666-12669`,
+    /// `MusicID.Aether = 91`, `MusicID.cs:200`): the shimmer zone beats the
+    /// town/sandstorm/underworld/biome tail but loses to the eclipse and the
+    /// boss scan. The TOW ladder's 72 (`:11951-11953`) waits for the drunk-world
+    /// swap (`Main.cs:11055-11074`, unported — the port always runs the normal
+    /// ladder, ANALYSIS W4-e19 aether).
+    #[test]
+    fn w4_e19_the_aether_zone_picks_track_91_in_ladder_order() {
+        let mut m = system();
+        let mut e = env(true);
+        e.shimmer = true;
+        e.sandstorm = true;
+        e.underworld = true;
+        e.underground = true;
+        e.jungle = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 91, "the aether beats the tail");
+        // The eclipse outranks it (`:12644` before `:12666`).
+        let mut m = system();
+        let mut e = env(true);
+        e.shimmer = true;
+        e.eclipse = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 27);
+        // The boss scan outranks everything (`:12560`).
+        let mut m = system();
+        let mut e = env(true);
+        e.shimmer = true;
+        e.boss_music = Some(93);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 93);
+    }
+
     #[test]
     fn the_surface_tail_blood_rain_and_wind() {
         // Night: blood moon 2 over rain 19 over night 3 (`:12968-12979`).

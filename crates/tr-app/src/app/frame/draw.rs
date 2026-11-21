@@ -375,10 +375,14 @@ impl App {
                         time: clock_time as f32,
                         day_time: is_day,
                         raining: rain.is_raining(),
-                        // `Main.shimmerDarken` / `Main.liquidAlpha[13]`: shimmer is not
-                        // simulated yet, so both stay at their neutral value.
                         // `Main.shimmerDarken` (SceneState.UpdateShimmer ramps).
                         shimmer_darken: scene_state.shimmer_darken,
+                        // `Main.liquidAlpha[13]` (TileLightScanner.cs:3160-3166):
+                        // the shimmer blue boost. NOTE: in the decompile NO writer
+                        // ever raises liquidAlpha[13] (the DrawWaters ramp skips
+                        // style 14, the capture loop only writes 0..=10) — the
+                        // C# arm is dead code; the port keeps the 0 feed (the
+                        // census deviation, ANALYSIS W4-e19 aether).
                         shimmer_alpha: 0.0,
                         // `Main.sundialCooldown`/`Main.moondialCooldown`
                         // (`Main.cs:2161`/`:2165`): the scanner and the glow pass
@@ -1085,6 +1089,10 @@ impl App {
                         bg_alpha_far,
                         light,
                         hell_black_box_bottom,
+                        // `Main.shimmerAlpha` (W4-e19 aether arm): the live
+                        // SceneState ramp — 1 skips the underground backdrop
+                        // + the natural stars, >0 dims them.
+                        scene_state.shimmer_alpha,
                         &self.ambience.entities,
                         lookups,
                         sky_tint,

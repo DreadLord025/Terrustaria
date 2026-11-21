@@ -763,8 +763,11 @@ Deliberate deviations, all invisible in the current content set:
   ticked yet; `LightParams::cage_mode` is zeroed, which selects the dim cage colour.
 - `new Color(230,230,230,0).MultiplyRGBA(hsl) * 0.4f` (type 620) is reproduced with the
   XNA byte multiply (`>> 8`) and byte truncation, which can differ from XNA by one LSB.
-- The `Main.liquidAlpha[13]` blue boost needs `shimmer_alpha`, which the app still passes
-  as 0 (the shimmer biome does not exist yet).
+- The `Main.liquidAlpha[13]` blue boost (`TileLightScanner.cs:3160-3166`) stays at 0:
+  the W4-e19 aether census found NO C# writer ever raises `liquidAlpha[13]` — the
+  `DrawWaters` ramp (`Main.cs:57476-57489`) skips style 14 (`IsLiquidStyleWater`,
+  `:57456-57463`) and the capture loop (`:56701-56707`) only writes 0..=10 — so the
+  C# arm is dead code and the 0 feed is faithful, not a gap.
 - `Main.time` is `f32` here (the original is `double`); the affected comparisons
   (`time > 40500`, `time < 16200`) are exact at these magnitudes.
 - `demonTorch`, `DiscoR/G/B` and `mouseTextColor` advance once per *rendered* frame rather
@@ -11802,6 +11805,57 @@ code-only — witnesses WRITTEN NOT RUN):
 The ramp-tick witness re-pinned to a 90..=93 band: the faithful surface offset
 starts the resting drop's ramp one tick later than the old naive probe (the
 91-tick ramp arithmetic is unchanged).
+
+### W4-e19 final — the AETHER biome census (the zone's music/bg seams)
+
+The C# "Aether" is `SceneMetrics.ZoneShimmer` — there is no separate ZoneAether
+field. Census (code-only, witnesses WRITTEN NOT RUN):
+
+- **The metric** (`SceneMetrics.cs:594`/`:252`/`:704-705`/`:921`):
+  `ShimmerTileCount = _liquidCounts[3]` (the shimmer LIQUID cells in the scan
+  window, not aetherium tiles), threshold 300, the depth window
+  `worldSurface + 84 < TileCenter.Y < maxTilesY - 396`, `!ZoneDungeon`.
+  ALREADY PORTED verbatim (`tr-core/scene.rs:795-800`, the
+  `scene_scan.rs:177-179` liquid count) — nothing to port.
+- **The music gate** (`Main.cs:12666-12669`): `ZoneShimmer → newMusic = 91`
+  (`MusicID.Aether`, `MusicID.cs:200`), after the eclipse, before the town/
+  sandstorm/underworld tail. ALREADY PORTED (`audio.rs:2708-2712`, fed by
+  `frame/world.rs:194`); a ladder-order witness added. The TOW ladder's 72
+  (`:11951-11953`) waits for the drunk-world swap (`Main.cs:11055-11074`) —
+  unported, the port always runs the normal ladder (deviation: the 72 arm is
+  unreachable until the swap lands).
+- **The bg arm** (`Main.cs:52800-52805`): `shimmerAlpha == 1` skips the whole
+  underground backdrop; `> 0` zeroes `ugBackTransition`. PORTED here (the
+  unclaimed small): `draw_background` takes the live `scene_state.shimmer_alpha`
+  and returns at 1. The port pins `undergroundBackground` 0 so the transition
+  zeroing is a no-op; g72's live `UgBackState` merge must zero its transition
+  on this arm (cross-note, research/146).
+- **The star dim** (`Main.cs:62086-62089`/`:63107-63110`): the natural star
+  field skips at alpha 1 and dims by `1 - alpha` otherwise (the i%3 channel
+  lerp at `:63090-63102` multiplies by `(1f - num * 0f)` = 1 — a decompile
+  no-op). PORTED here (the unclaimed small, g69d-star co-lane cross-note).
+  The ARTIFICIAL star pass (`:62199-62206`, the aether's coloured starfield
+  over the black backdrop) + the underground star UPDATE arm
+  (`:17256-17274`, the `Next(numStars)`/`Next(90)` fall roll) stay g69d's
+  claim — they need the star fall/respawn machine the port's static
+  `make_stars` field does not have.
+- **The monolith terms** (`SceneState.cs:285-289`): the ramp flag is
+  `ShimmerMonolithState == 1 || ZoneShimmer || shimmerMonolithShader ||
+  (player.shimmering && UndergroundForShimmering)`, and state 2 forces it
+  false. PORTED here (the unclaimed small): `SceneState::update_shimmer`
+  reads the already-scanned `shimmer_monolith_state` (tile 658 `frameY/54`,
+  `scene.rs:682`); the equipped-5347 shader term reads false (ApplyShader
+  unported — the accessory seam is M2's). Witness: state 1 ramps without the
+  zone, state 2 suppresses the zone, state 0 keeps the zone trigger.
+- **The liquidAlpha[13] blue boost** (`TileLightScanner.cs:3160-3166`): DEAD
+  CODE in the C# — no writer ever raises index 13 (the DrawWaters ramp skips
+  style 14, the capture loop writes 0..=10 only). The port's 0 feed is
+  faithful; the old "shimmer biome does not exist yet" ANALYSIS note retired.
+- **The black backdrop** (`Main.cs:62184-62187`): a `Black * shimmerAlpha`
+  full-screen quad after the world draw. UNCLAIMED but render-layer — the
+  port's `DrawBlack` coverage is folded into the tile pass's dark-cell merge
+  (`tiles.rs:769-798`); the aether quad needs a screen-fx seam
+  (`screen_fx.rs`) — deferred to the g72/g69d merge lane (research/146).
 ## Ocean passes fidelity (M5-OCEAN)
 
 The full ocean family landed 2026-11-08 (branch `M5-OCEAN`, commits
