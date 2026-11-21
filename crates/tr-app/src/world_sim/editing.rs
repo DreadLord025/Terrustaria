@@ -536,10 +536,14 @@ fn item_use_visuals_tick(app: &mut App) {
         .item_icon(held.kind)
         .map_or((def.width as f32, def.height as f32), |(_, w, h)| (w, h));
     // The rect: useStyle 1 through the swing placement + hitbox ports,
-    // useStyle 3 through the thrust pair. The other styles park.
+    // useStyle 3 through the thrust pair. The other styles park. The
+    // `item_location`/`item_rotation` the swung-path dust arms (121/795-802)
+    // read ride alongside (the placement's loc/rotation, `Player.cs:44750`).
+    let mut item_location = [0.0f32; 2];
+    let mut item_rotation = 0.0f32;
     let rect: Option<(i32, i32, i32, i32)> = match def.use_style {
         1 => {
-            let (loc, _) = crate::melee_swing::swing_item_placement(
+            let (loc, rot) = crate::melee_swing::swing_item_placement(
                 i32::from(held.kind),
                 anim,
                 anim_max,
@@ -552,6 +556,8 @@ fn item_use_visuals_tick(app: &mut App) {
                 frame_h,
                 0.0,
             );
+            item_location = loc;
+            item_rotation = rot;
             let r = crate::melee_swing::melee_hitbox(
                 i32::from(held.kind),
                 anim,
@@ -567,7 +573,7 @@ fn item_use_visuals_tick(app: &mut App) {
         }
         3 => {
             let remaining = app.swing / app.swing_max.max(f32::EPSILON);
-            let (loc, _) = crate::player::thrust_item_placement(
+            let (loc, rot) = crate::player::thrust_item_placement(
                 p.x,
                 p.y,
                 crate::player::WIDTH,
@@ -578,6 +584,8 @@ fn item_use_visuals_tick(app: &mut App) {
                 0.0,
                 i32::from(held.kind),
             );
+            item_location = loc;
+            item_rotation = rot;
             crate::player::thrust_melee_hitbox(
                 loc,
                 frame_w,
@@ -627,6 +635,35 @@ fn item_use_visuals_tick(app: &mut App) {
                 vx: p.vx,
                 vy: p.vy,
             };
+            // W4-g17 wiring wave 2 — the dust-only arms' snapshot (the same
+            // rect + the swung-path inputs + the melee enchant flags).
+            let dust_state = crate::player_dust_use::ItemUseDustState {
+                rect_x: rx as f32,
+                rect_y: ry as f32,
+                rect_w: rw,
+                rect_h: rh,
+                direction: p.facing,
+                vx: p.vx,
+                vy: p.vy,
+                item_rotation,
+                item_location,
+                item_scale: scale,
+                grav_dir: 1.0,
+                melee_enchant: p.melee_enchant,
+                frost_burn: p.frost_burn,
+                magma_stone: p.magma_stone,
+                melee: def.melee,
+            };
+            // `:44756-44795` — the dust-only arms BEFORE the 65/3065 gores.
+            crate::player_dust_use::item_use_dust_pre(
+                held.kind,
+                &dust_state,
+                &mut app.dust,
+                &spawn_ctx,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                &app.world,
+            );
+            // `:44796-44817` — the gore lane's 65/3065 arms.
             let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
             match held.kind {
                 65 => crate::player_gore_d::item65_use_gore(
@@ -635,20 +672,22 @@ fn item_use_visuals_tick(app: &mut App) {
                 3065 => crate::player_gore_d::item3065_use_gore(
                     &state, &mut app.gore, &mut app.dust, &spawn_ctx, rng, &app.world,
                 ),
-                1304 => crate::player_gore_d::item1304_use_gore(
-                    &state,
-                    &mut app.gore,
-                    rng,
-                    &app.world,
-                    app.gore.child_safety.disabled,
-                ),
                 _ => {}
             }
-            // `:44901-45008` — the meleeEnchant ladder's 7 arm (the
+            // `:44818-44987` — the dust-only arms AFTER 65/3065, BEFORE the
+            // enchant-7/1304 gores (the 190/213/121/.../367 arms + frostBurn
+            // + the meleeEnchant 1-6 rows).
+            crate::player_dust_use::item_use_dust_post(
+                held.kind,
+                &dust_state,
+                &mut app.dust,
+                &spawn_ctx,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                &app.world,
+            );
+            // `:44988-45008` — the meleeEnchant ladder's 7 arm (the
             // Confetti Flask): `melee && !noMelee && !noUseGraphic &&
-            // meleeEnchant == 7`. The other enchant rows are dust-only
-            // (the dust lane's) — their gates draw too in the C#, but
-            // the port's enchant-7-only slice documents the remainder.
+            // meleeEnchant == 7`.
             if def.melee && p.melee_enchant == 7 {
                 crate::player_gore_d::enchant7_use_gore(
                     &state,
@@ -659,6 +698,25 @@ fn item_use_visuals_tick(app: &mut App) {
                     &app.world,
                 );
             }
+            // `:45024-45027` — the gore lane's 1304 ChildSafety arm.
+            if held.kind == 1304 {
+                crate::player_gore_d::item1304_use_gore(
+                    &state,
+                    &mut app.gore,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &app.world,
+                    app.gore.child_safety.disabled,
+                );
+            }
+            // `:45009-45023` — the dust-only TAIL (the meleeEnchant-8 row +
+            // magmaStone), after the enchant-7/1304 gores.
+            crate::player_dust_use::item_use_dust_tail(
+                &dust_state,
+                &mut app.dust,
+                &spawn_ctx,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                &app.world,
+            );
         }
     }
     // `:51099-51125` — the useStyle-5 lantern mote (4262): the
@@ -9118,6 +9176,61 @@ mod tests {
                 "the idle drain drew nothing"
             );
         }
+    }
+
+    /// W4-g17 wiring wave 2 — the dust-only item arms (`Player.cs:
+    /// 44756-45023`): the Terra Blade (723) swing runs the Next(2) type-64
+    /// gate every animation tick; a hit spawns a noGravity type-64 dust.
+    /// Over 200 swings at least one lands. The witness drives the drain
+    /// through update_editing (the camera is on the player — the cull).
+    #[test]
+    fn w4_g17_the_terra_blade_swing_spawns_the_type64_dust() {
+        let mut app = melee_app();
+        app.inventory[app.selected] = slot(723, 1);
+        app.npcs.clear();
+        app.mine_down = false;
+        for _ in 0..200 {
+            start_use_timers(&mut app, app.inventory[app.selected]);
+            while app.swing > 0.0 {
+                update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+            }
+        }
+        let d64 = app
+            .dust
+            .slots()
+            .iter()
+            .filter(|d| d.active && d.dust_type == 64)
+            .count();
+        assert!(d64 > 0, "the Next(2) type-64 gate fired over 200 swings");
+        // Every type-64 dust from this arm is noGravity (`:44794`).
+        assert!(
+            app.dust.slots().iter().filter(|d| d.active && d.dust_type == 64).all(|d| d.no_gravity),
+            "the type-64 dust is noGravity"
+        );
+    }
+
+    /// W4-g17 wiring wave 2 — the Night's Edge (273) swing runs the always
+    /// type-27 dust (melee speed, noGravity, vel/2) every animation tick +
+    /// the Next(5) type-14 gate. The type-27 dust spawns unconditionally.
+    #[test]
+    fn w4_g17_the_nights_edge_swing_spawns_the_type27_dust() {
+        let mut app = melee_app();
+        app.inventory[app.selected] = slot(273, 1);
+        app.npcs.clear();
+        app.mine_down = false;
+        start_use_timers(&mut app, app.inventory[app.selected]);
+        let mut ticks = 0;
+        while app.swing > 0.0 && ticks < 40 {
+            update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+            ticks += 1;
+        }
+        let d27 = app
+            .dust
+            .slots()
+            .iter()
+            .filter(|d| d.active && d.dust_type == 27)
+            .count();
+        assert!(d27 > 0, "the always type-27 dust spawned, got {d27} over {ticks} ticks");
     }
 
     fn melee_app() -> App {

@@ -284,6 +284,11 @@ mod player_gore_d;
 // ladder + use-style-5 lantern mote (Player.cs:45048-51125); completes
 // the Player.cs census (32 sites). ItemCheck dispatch deferred.
 mod player_gore_e;
+// W4-g17 wiring wave 2 (code-only): the ItemCheck_EmitUseVisuals dust-only
+// item arms (Player.cs:44756-45023) — the 989/2880/44-46/273/723/190/213/
+// 121/122/155/676/3063/3823/724/795-802/367 arms + the frostBurn/magmaStone/
+// meleeEnchant-1-6/8 tails; the co-lane census confirmed them unclaimed.
+mod player_dust_use;
 // W4-g17 (code-only): the world-side Gore.NewGore sites, wave A — the
 // TreeGrowFX trunk/leaf column + ash shake (WorldGen.cs:29600-29672)
 // and the Check3x3 larva burst (:53230-53257); the TreeGrowFXCheck /

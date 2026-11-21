@@ -39476,8 +39476,9 @@ POST-write snapshots ride the state structs.
   unported. The `MessageBuffer.cs:3828` net arm is g50's (see below).
 * The `ItemCheck_EmitUseVisuals` dust-only item arms
   (989/2880/44-46/273/723/190/213/…) and the other meleeEnchant rows
-  stay the dust lane's; the other use styles' rect resolutions park
-  with the item lane.
+  are WIRED in wiring wave 2 (`player_dust_use.rs`, see "The gore wiring
+  wave 2"); the other use styles' rect resolutions park with the item
+  lane.
 * The `noMelee`/`noUseGraphic` item fields are unported — every
   registered row stands noMelee-false (the itemdata stand-in), so the
   EmitUseVisuals gate folds to `damage >= 0` plus the bug-net trio.
@@ -39570,6 +39571,26 @@ growth/axe dispatches share the one burst fn. The `ShakeTree` `netMode == 2`
 `SendData(112)` (`:63410-63413`) is the server send (single-player port
 drops it, the pool convention).
 
-**5. The dust-only ItemCheck arms — WIRED** (see "The ItemCheck dust-only
-arms" below). g66/e3/d51/e1/f3/g15 do NOT claim them (only the `bug_net.rs`
-zero-draw comment + `buff_effects_accessory.rs`'s "not ported yet" note).
+**5. The dust-only ItemCheck arms — WIRED** (`player_dust_use.rs`,
+`Player.cs:44756-45023`). g66/e3/d51/e1/f3/g15 do NOT claim them (only the
+`bug_net.rs` zero-draw comment + `buff_effects_accessory.rs`'s "not ported
+yet" note). The port adds the full dust-only arm set: the 989 (Next(5)
+type-15/57/58), 2880 (Next(2) SelectRandom 226/229), 44/45/103/104/46
+(Next(15) type-14), 273/675 (Next(5) type-14 + always type-27), 723
+(Next(2) type-64), 190/213/5295 (always type-40/3), 121 (2× swung-path
+type-6 perfect), 122/217 (always type-6), 155 (always type-172), 676
+(Next(3) type-67), 3063 (always type-66 + hslToRgb colour), 3823 (always
+type-6 direct), 724 (Next(5) type-67), 795-802 (2× swung-path type-5 +
+Next(20) type-115), 367 (Next(3) type-57 + Next(4) type-43) arms + the
+frostBurn (Next(2) type-135), meleeEnchant 1-6/8 rows, and magmaStone
+(Next(3)!=0 type-6) tails. `item_use_visuals_tick` runs them in three
+halves (`item_use_dust_pre`/`_post`/`_tail`) interleaved with the gore
+lane's 65/3065/enchant-7/1304 arms in the exact C# order, all gates ALWAYS
+draw on `UpdatePlayers`. The swung-path arms read
+`melee_swing::point_on_swung_item_path` (the placement's loc/rotation now
+captured). The 3063 colour uses the byte-exact `ui::color::hsl_to_rgb`.
+Stand-ins: the `noUseGraphic`/`noMelee` fields fold to `sItem.melee` (the
+`player_gore_d` convention); the `:44913-44917` phase-color AddLight +
+`:45028-45045` mount-62-65 AddLight/type-306 are the light/mount lanes'
+(skipped). 2 witnesses (the Terra Blade type-64 + the Night's Edge
+always-type-27, written not run).
