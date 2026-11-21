@@ -33159,6 +33159,60 @@ guards the whole map. Mechanically verified on the working tree: 283
 `npc/data.rs`, `world_sim/npcs.rs`, `render/entities.rs`, anchors.txt,
 PORT_MAP, ROADMAP re-pointed. WRITTEN, NOT RUN (code-only).
 
+## The FINAL style-44/16 band table (W4-c4 lane close, 2026-11-21, code-only)
+
+The lane's complete status after the renumber execution + the all-tips
+census (`tools/_w4c4_proto_census.js`, 354 tips). "Merge action" is the
+contract the merger/d40b/d42b lanes execute; every row's AI/FindFrame/
+draw implementation in c4 is the keeper unless noted.
+
+### aiStyle 44 — the flying swimmers (4 kinds, phases 1-2 DONE `5c4c8311`/`377660223`)
+
+| Kind | cs_id | c4 proto (final) | Pushed rival | Merge action |
+|---|---|---|---|---|
+| FlyingFish | 224 | **359** (was 354) | d37 FlyingFish 359 + CochinealBeetle 354; d23/d42/g8 also claim 354 | c4 ADOPTED 359 (`91293a3d2`) — identical-arm dedupe; keep c4's world-sim pre-pass wiring, drop d37's solo `update_flying_fish` wrapper |
+| GiantFlyingAntlion | 509 | **509** | none (d41 claim-only, 270 base arms) | STANDS |
+| FlyingAntlion | 581 | **581** | d42 FlyingAntlion **357** (pushed `9b22c091a`) | dup-kind: keep d42's 357, retire c4's 581 row AT MERGE; c4's `style44_find_frame` + the 581 `num46=-6` nudge are the keepers |
+| EyeballFlyingFish | 587 | **587** | d42 EyeballFlyingFish **363** | dup-kind: keep d42's 363, retire c4's 587 row AT MERGE; c4's 587 materialize pre-pass (the shared-pool dust) is the keeper |
+
+### aiStyle 16 — the fish family (9 new kinds, phases 3-4 DONE `22cec16f7`; base 55/58/65 behaviour-frozen)
+
+| Kind | cs_id | c4 proto (final) | Pushed rival | Merge action |
+|---|---|---|---|---|
+| CorruptGoldfish | 57 | **405** (was 229) | d125 EmpressOfLight 229 (the hole is HARD-claimed now) | renumber EXECUTED `91293a3d2`; STANDS at 405 |
+| Arapaima | 157 | **406** (was 237) | d125 PrismaticLacewing 237 | renumber EXECUTED; STANDS at 406 |
+| BloodFeeder | 241 | 241 (until merge) | d37 BloodFeeder **373**; d120 SantaClaus 241 | keep d37's 373, RETIRE c4's 241 row at merge (the dup-check verdict; the row stays on-branch so c4's exhaustive matches compile) |
+| CrimsonGoldfish | 465 | **465** | d40 CrimsonGoldfish 465 (kb-0.4 + vanilla_type-missing defects) | KEEP c4, RETIRE d40's row — the exact drop-lines: **research/143** |
+| GoldGoldfish | 592 | 592 (until merge) | d42 GoldGoldfish **366** | dup-kind: keep d42's 366, retire c4's 592 row at merge; c4's `style16_find_frame` + catchItem 4274 wiring are the keepers |
+| Pupfish | 607 | 607 (until merge) | d42 Pupfish **381** | dup-kind: keep d42's 381, retire c4's 607 row; catchItem 4373 keeper |
+| Dolphin | 615 | 615 (until merge) | d42 Dolphin **389** | dup-kind: keep d42's 389, retire c4's 615 row; the leap-tilt + idle-timer RNG census keeper |
+| Pufferfish | 688 | **688** | none (d43 tip == base) | STANDS; the puff-flag fix (`17a241f6a`) + catchItem 5511 |
+| Orca | 692 | **692** | none | STANDS; the NPC_692 sheet atlas-deferred (136×992, the full-set overflow 8226) — the census-input for d35e: **research/144** |
+
+### The lane's skipped/deferred surfaces (unchanged)
+
+- AnglerFish 102: the d35 lane (proto 450 on its tip, the 108 §3
+  renumber target 698+); the walker twins GoldfishWalker 230 /
+  GoldGoldfishWalker 593: aiStyle 7 (d37 ports 230 at 362, d42 ports
+  593 at 367 — the town-walker lane, not this one).
+- The rain transform (`NPC.cs:92883-92915`) + the evil conversion
+  (`:91941-91951`): the aiStyle-7 lane's follow-up.
+- The 581 afterglow draw arm, the ambient sound rolls, the death
+  gore/dust, the platform fall-through: the module header's cited
+  skips (the style-44 census).
+- The Orca draw + bestiary portrait: deferred until the d35e repack
+  admits NPC_692 (the Some/None seam already handles it — no code
+  change beyond the sheet admission + the portrait slot).
+
+**Witness register (all WRITTEN, NOT RUN — code-only):** the style-44
+module's 15 + the 2 wiring witnesses (`npc.rs` axis claim + flap
+cadence, now with the 359 protocol pin; `world_sim/npcs.rs` separation
++ materialize), the style-16 defaults pin (405/406) + the strip-walk +
+the routing pin + the Arapaima/Dolphin/Pufferfish/Orca FindFrame
+witnesses (`npc_ai_style16.rs`), the catch-census witness
+(`bug_net.rs`), the puff-flag witness (`npc.rs`). The round-trip
+bijection test guards the whole 283-kind map.
+
 ## The firefly family (S1-D-3 aiStyle-64, 2026-11-18/19, code-only mode)
 
 **Task row.** ROADMAP `🟡 S1-D-3 aiStyle-64`; module
