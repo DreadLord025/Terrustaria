@@ -23581,6 +23581,13 @@ impl ProjectilePool {
             return;
         }
         let cx = p.pos.x + p.w * 0.5;
+        // W4-d125: `Damage_EVP`'s `ImmunityCooldownID` switch
+        // (`Projectile.cs:14780-14797`): the 452/454/455/462 group + the
+        // 871/872/873/874/919/923/924 empress group ride BossNoCheese.
+        // The `:14799` gate — `!player.immune || num != General` — means
+        // the BossNoCheese shots land THROUGH the General i-frames (their
+        // own `hurtCooldowns[1]` window gates them, not `immune`).
+        let boss_no_cheese = matches!(p.kind, 452 | 454 | 455 | 462 | 871 | 872 | 873 | 874 | 919 | 923 | 924);
         // `Projectile.cs:14862-14870` — `bool dodgeable =
         // this.IsDamageDodgeable();` feeds the player's `Hurt(.., dodgeable)`
         // with `Crit: false` and `PlayerDeathReason.ByProjectile` — the port
@@ -23588,7 +23595,15 @@ impl ProjectilePool {
         // (`Player.cs:38396-38400`, S1-C-7 wave B).
         // The single-hit kill below runs after `Hurt` regardless of the
         // dodge (the C# `Damage()`'s kill block follows the `Hurt` arm).
-        player.hurt_with_source(p.damage, cx, rng, p.is_damage_dodgeable(), p.kind);
+        if boss_no_cheese {
+            player.hurt_inner_cooldown(
+                p.damage, cx, true, rng, p.is_damage_dodgeable(),
+                false, Some(p.kind), true,
+                crate::player::COOLDOWN_BOSS_NO_CHEESE,
+            );
+        } else {
+            player.hurt_with_source(p.damage, cx, rng, p.is_damage_dodgeable(), p.kind);
+        }
         self.slots[slot].active = false;
         self.slots[slot].time_left = 0;
     }
@@ -24665,6 +24680,51 @@ mod tests {
         );
         assert_eq!(p.old_rot[0], 42.0, "the rotation ring");
         assert_eq!(p.trail_extra_rot.as_ref().unwrap()[0], 9.0);
+    }
+
+    /// W4-d125 BossNoCheese phase: the empress projectile group
+    /// (`Projectile.cs:14788-14796` — 871/872/873/874/919/923/924) rides
+    /// its OWN cooldown counter, landing THROUGH the General i-frames.
+    #[test]
+    fn w4_d125_the_empress_shots_ride_boss_no_cheese() {
+        let w = ground();
+        let mut player = crate::player::Player::spawn(&w);
+        let (pcx, pcy) = player.center();
+        let mut pool = ProjectilePool::new();
+        // The 874 Death Aurora: a hostile shot on the player's centre.
+        let slot = pool
+            .spawn_hostile_ai_owned(
+                HALLOW_BOSS_DEATH_AURORA, 0,
+                Vec2::new(pcx - 15.0, pcy - 15.0),
+                Vec2::ZERO, 60, 0.0, 0.0, 0.0,
+            )
+            .expect("the aurora spawns");
+        // Arm the General i-frames — the BossNoCheese shot ignores them.
+        player.immune = true;
+        player.immune_time = 40;
+        player.hurt_cd = 40.0 / 60.0;
+        let hp0 = player.hp;
+        let mut rng = tr_core::UnifiedRandom::new(3);
+        pool.damage_player(slot, Some(&mut player), &mut rng);
+        assert!(player.hp < hp0, "the aurora lands through General i-frames");
+        assert!(
+            player.hurt_cooldowns[crate::player::COOLDOWN_BOSS_NO_CHEESE as usize] > 0,
+            "the hit arms its own counter"
+        );
+        assert!(player.immune, "the General flag stays armed");
+        // A second aurora inside the BossNoCheese window refuses (the
+        // counter gates it), but the slot still dies (the single-hit kill).
+        let slot2 = pool
+            .spawn_hostile_ai_owned(
+                HALLOW_BOSS_DEATH_AURORA, 0,
+                Vec2::new(pcx - 15.0, pcy - 15.0),
+                Vec2::ZERO, 60, 0.0, 0.0, 0.0,
+            )
+            .expect("the second aurora spawns");
+        let hp1 = player.hp;
+        pool.damage_player(slot2, Some(&mut player), &mut rng);
+        assert_eq!(player.hp, hp1, "the BossNoCheese window blocks the repeat");
+        assert!(!pool.slots()[slot2].active, "the single-hit kill still fires");
     }
 
     /// The shielded NPC refuses the shot — `Damage_PVE`'s outer gate

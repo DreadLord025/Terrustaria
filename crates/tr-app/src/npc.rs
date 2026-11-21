@@ -18455,6 +18455,25 @@ impl Npc {
         if player.creative_god_mode {
             return;
         }
+        // W4-d125: `Update_NPCCollision`'s `specialHitSetter` switch
+        // (`Player.cs:31332-31349`): the Moon Lord parts (396/397/398/400/
+        // 401) + the Empress (636) ride the BossNoCheese counter; the 636
+        // arm ALSO skips contact entirely while `ai[0]` is 0 (materialize)
+        // or 10 (transform) — `:31344-31347`'s `continue`. The kind match
+        // IS the membership (the port's `cs_id` is the render-key space,
+        // not the vanilla type — the Moon Lord arms ride 396..401 there).
+        let boss_no_cheese = matches!(
+            self.kind,
+            NpcKind::MoonLordHead
+                | NpcKind::MoonLordHand
+                | NpcKind::MoonLordCore
+                | NpcKind::MoonLordFreeEye
+                | NpcKind::MoonLordLeechBlob
+                | NpcKind::EmpressOfLight
+        );
+        if self.kind == NpcKind::EmpressOfLight && (self.ai[0] == 0.0 || self.ai[0] == 10.0) {
+            return;
+        }
         let (w, h) = self.size();
         if self.x < player.x + crate::player::WIDTH
             && self.x + w > player.x
@@ -18535,12 +18554,18 @@ impl Npc {
                 } else {
                     0
                 };
-                // `Player.cs:31390` — `flag4 = !this.immune`: the PRE-hit
-                // immunity gates the thorns arms (`:31397-31418`), so a
-                // contact that dodges (`Hurt` runs after, `:31423`) still
-                // reflects. The port's `hurt_cd <= 0` is the `!immune`
-                // stand-in (the collapsed General cooldown, M4-HAZARD-1).
-                let pre_hit_not_immune = player.hurt_cd <= 0.0;
+                // `Player.cs:31392-31396` — `flag4 = !this.immune`, or
+                // `hurtCooldowns[specialHitSetter] == 0` on the BossNoCheese
+                // lane (W4-d125). The PRE-hit immunity gates the thorns arms
+                // (`:31397-31418`), so a contact that dodges (`Hurt` runs
+                // after, `:31423`) still reflects. The port's `hurt_cd <= 0`
+                // is the `!immune` stand-in (the collapsed General cooldown,
+                // M4-HAZARD-1).
+                let pre_hit_not_immune = if boss_no_cheese {
+                    player.hurt_cooldowns[crate::player::COOLDOWN_BOSS_NO_CHEESE as usize] == 0
+                } else {
+                    player.hurt_cd <= 0.0
+                };
                 // `Player.cs:31397-31410`: the contact bounces the thorns
                 // back — `thorns` scales the NPC's own damage (2x on the
                 // Turtle set), the Cactus set adds its flat 15.
@@ -18563,12 +18588,22 @@ impl Npc {
                     }
                 }
                 // `Player.cs:31423` — `Hurt(damageSource: ByNPC(i), Damage:
-                // num3, hitDirection: num2, .., dodgeable:
+                // num3, hitDirection: num2, .., cooldownCounter:
+                // specialHitSetter, dodgeable:
                 // Main.npc[i].IsDamageDodgeable())`; the `> 0 && !dead` tail
                 // gates `StatusFromNPC`, whose debuff body the port carries
-                // elsewhere (unchanged).
+                // elsewhere (unchanged). W4-d125: the BossNoCheese group
+                // rides its own counter (the `hurt_inner_cooldown` seam).
                 if dmg > 0 {
-                    player.hurt(dmg, cx, rng, self.is_damage_dodgeable());
+                    if boss_no_cheese {
+                        player.hurt_inner_cooldown(
+                            dmg, cx, true, rng, self.is_damage_dodgeable(),
+                            false, None, true,
+                            crate::player::COOLDOWN_BOSS_NO_CHEESE,
+                        );
+                    } else {
+                        player.hurt(dmg, cx, rng, self.is_damage_dodgeable());
+                    }
                 }
             }
         }

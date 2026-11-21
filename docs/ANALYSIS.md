@@ -35932,6 +35932,49 @@ Witnesses: `the_d125_strips_divide_into_their_vanilla_rows`
 (render/entities.rs) + `the_d125_portraits_ride_the_real_sheet_dims`
 (ui/bestiary.rs) — WRITTEN NOT RUN.
 
+### The d125 BossNoCheese phase (2026-11-21 — code-only mode)
+
+Remainder 4: the BossNoCheese immunity group. **The census correction**:
+there is NO `NPCID.Sets.BossNoCheese` — the group is the
+`ImmunityCooldownID.BossNoCheese` COUNTER (index 1,
+`ImmunityCooldownID.cs:76`), assigned per-type at two consumer sites:
+* `Player.Update_NPCCollision` (`Player.cs:31332-31349`): the Moon Lord
+  parts 396/397/398/400/401 + the Empress 636 ride the counter; the 636
+  arm ALSO skips contact entirely while `ai[0]` is 0 (materialize) or 10
+  (transform) — `:31344-31347`'s `continue`.
+* `Projectile.Damage_EVP` (`Projectile.cs:14780-14797`): the 452/454/455/
+  462 group + the 871/872/873/874/919/923/924 empress group.
+
+The semantics (`Player.cs:38208` + `:38391-38394`): a BossNoCheese hit
+reads/writes its OWN `hurtCooldowns[1]` window, NOT the General `immune`
+flag — so the boss's hits land THROUGH the cross-dodge i-frames a normal
+hit arms (the "no cheese" name), and their window does not block other
+lanes. The `:14799`/`:31350` gates (`!immune || num != General`) are the
+read side; `UpdateImmunity`'s tail (`:18887-18893`) decrements every
+positive counter once per tick.
+
+**What landed**: `Player.hurt_cooldowns: [i32; 6]` (the
+`ImmunityCooldownID.Count` array, `Player.cs:3160`); the
+`hurt_inner_cooldown(.., cooldown_counter)` seam (the `Hurt`
+`cooldownCounter` parameter, default −1 = General) — the General lane
+keeps the collapsed `immune`/`hurt_cd` shape byte-identical, the
+BossNoCheese lane reads/writes `hurt_cooldowns[1]`; `update_immunity`'s
+per-counter decrement tail; the `COOLDOWN_GENERAL`/`COOLDOWN_BOSS_NO_CHEESE`
+constants. `npc.rs::contact` gains the `specialHitSetter` kind-match (the
+Moon Lord parts + the Empress), the 636 ai[0] 0/10 skip, the
+BossNoCheese-aware thorns gate (`flag4`, `:31392-31396`) and the
+counter-routed `Hurt`. `projectile.rs::damage_player` gains the
+`Damage_EVP` kind-match + the counter-routed hurt. The non-boss lanes
+stay byte-identical (no blanket `immune` early-return added — the bypass
+rides the counter routing alone). Witnesses:
+`the_empress_contact_rides_boss_no_cheese` +
+`the_moon_lord_parts_share_the_group` (world_sim/npcs.rs) +
+`w4_d125_the_empress_shots_ride_boss_no_cheese` (projectile.rs) —
+WRITTEN NOT RUN. The `GetMeleeCollisionData` per-type hitbox/multiplier
+arms (`NPC.cs:94952+`, the 400 `npcRect = default` + the ogre/troll
+special setters) stay the M4-NPC contact row — the BossNoCheese COUNTER
+is the group's ported core.
+
 ### The d125 hitbox phase (2026-11-21 — code-only mode)
 
 Remainder 3: the 919/923/872 `Colliding` special-case hitboxes

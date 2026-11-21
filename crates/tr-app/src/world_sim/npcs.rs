@@ -18735,4 +18735,77 @@ mod empress_wiring_tests {
         let other = Npc::new(NpcKind::DukeFishron, 0.0, 0.0, 1, 0.0);
         assert!(!crate::projectile_ai_empress::npc_ref(&other).is_empress);
     }
+
+    /// W4-d125 BossNoCheese phase: the 636 contact rides its OWN cooldown
+    /// counter (`Player.cs:31342-31348` + `:31423`'s `cooldownCounter:
+    /// specialHitSetter`). The materialize/transform `ai[0]` 0/10 skip, the
+    /// General-i-frame bypass, and the per-counter window all hold.
+    #[test]
+    fn the_empress_contact_rides_boss_no_cheese() {
+        let w = air();
+        let mut p = session(&w, 1000.0, 900.0);
+        let mut boss = Npc::new(NpcKind::EmpressOfLight, 1000.0, 900.0, 1, 0.0);
+        boss.hp = boss.max_hp;
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        // ai[0] = 0 (materialize): the contact skips entirely (:31344).
+        boss.ai[0] = 0.0;
+        let hp0 = p.hp;
+        boss.contact(&mut p, &mut rng);
+        assert_eq!(p.hp, hp0, "the materialize skip");
+        // ai[0] = 10 (transform): same skip.
+        boss.ai[0] = 10.0;
+        boss.contact(&mut p, &mut rng);
+        assert_eq!(p.hp, hp0, "the transform skip");
+        // ai[0] = 2 (live): the hit lands THROUGH the General i-frames.
+        boss.ai[0] = 2.0;
+        p.immune = true; // the General lane is armed — BossNoCheese ignores it
+        p.immune_time = 40;
+        p.hurt_cd = 40.0 / 60.0;
+        boss.contact(&mut p, &mut rng);
+        assert!(p.hp < hp0, "the BossNoCheese hit bypasses General i-frames");
+        assert!(
+            p.hurt_cooldowns[crate::player::COOLDOWN_BOSS_NO_CHEESE as usize] > 0,
+            "the hit arms its OWN counter"
+        );
+        // The General flag stays armed (the BossNoCheese window does not
+        // touch it) — a second contact inside the window refuses.
+        let hp1 = p.hp;
+        boss.contact(&mut p, &mut rng);
+        assert_eq!(p.hp, hp1, "the BossNoCheese window blocks the repeat");
+        // The counter decrements once per tick (UpdateImmunity's tail).
+        let cd = p.hurt_cooldowns[crate::player::COOLDOWN_BOSS_NO_CHEESE as usize];
+        p.update_immunity();
+        assert_eq!(
+            p.hurt_cooldowns[crate::player::COOLDOWN_BOSS_NO_CHEESE as usize],
+            cd - 1,
+            "the per-counter decrement"
+        );
+    }
+
+    /// W4-d125 BossNoCheese phase: the Moon Lord parts share the group
+    /// (`Player.cs:31335-31341` — 396/397/398/400/401), but WITHOUT the
+    /// 636's ai[0] skip. The FreeEye (400) is the group's contact-damage
+    /// member (60, `NPC.cs`'s case 400); the head/hand/core/leech carry 0
+    /// contact damage (their hits ride the projectile lane).
+    #[test]
+    fn the_moon_lord_parts_share_the_group() {
+        let w = air();
+        let mut p = session(&w, 1000.0, 900.0);
+        let mut n = Npc::new(NpcKind::MoonLordFreeEye, 1000.0, 900.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 0.0; // no skip for the Moon Lord group
+        p.immune = true;
+        p.immune_time = 40;
+        p.hurt_cd = 1.0;
+        let hp0 = p.hp;
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        n.contact(&mut p, &mut rng);
+        assert!(p.hp < hp0, "the FreeEye's group hit bypasses General");
+        assert!(
+            p.hurt_cooldowns[crate::player::COOLDOWN_BOSS_NO_CHEESE as usize] > 0,
+            "the hit arms the BossNoCheese counter"
+        );
+        // The General flag stays armed — the group's window is separate.
+        assert!(p.immune, "the General lane is untouched");
+    }
 }
