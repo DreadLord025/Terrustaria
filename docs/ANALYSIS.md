@@ -39318,3 +39318,107 @@ junction recursion): the kind gates, the position reads (`base.position` vs
 PART arms' rowed-kind gating. The 4 new `s1_e_21h_f1_*` witness tests (2 pool
 cue-table, 1 audio façade/bank, 1 pass-stream) are WRITTEN, NOT RUN — **no
 compiler invoked**.
+
+## The projectile sound wave, part 5 (S1-E-21h f1, 2026-11-21, code-only mode)
+
+**The fifth batch's line-order range.** The 43-site `Kill()` tail
+(`:76252`-`:78505`, the part-4 deferral) is 54 `SoundEngine.PlaySound` calls
+across 43 arms (the rocket families play an Item62/Item14 pair per arm).
+**d77** (`task/W4-d77-proj-sounds-3`) cherry-picks 11 of them (its in-flight
+probe `tools_tmp_d77sel.txt`: `:76310`/`:76379`/`:76433`/`:76470`/`:77178`/
+`:77371`/`:78092`/`:78218`/`:78331`/`:78386`/`:78505` — the 41/306/183/aiStyle-34/
+371/736-738 arms, the plain-rocket 133/136 Item62, the scarab-773 arm's dead
+794/797 clause, the two landed bomb blasts and the 1088 acorn). **f1** (this
+branch) ports the **28 UNCLAIMED rowed-kind sites** that remain, in two seams:
+
+### The port (commit `684d284b`, 28 sites)
+
+**12 per-kind Kill-tail sites** (`:76283`-`:77153`, the `!projPet` chain's rowed
+kinds) ride `kill_sound_cue` at the death hook — every arm plays at the
+PRE-resize `base.position` (none resizes ahead of its play), so the hook's read
+is exact: the Water Bolt 27 (`:76283` Item10), the Demon Sickle/Scythe 44/45
+(`:76300` Item10), the three water bottles 69/70/621 (`:77018`/`:77033`/`:77048`
+id-13 Shatter), the Unholy Trident pair 114/115 (`:77077`/`:77063` Item10), the
+Sword/Enchanted/Terra/Light/Night beams 116/173/132/156/157 (`:77094`/`:77107`/
+`:77124`/`:77138`/`:77153` Item10).
+
+**16 rocket-family sites** (`:77737`-`:78150`, `Kill_Bombs_DoUsualKillCode`,
+aiStyle 16) ride `rocket_kill_census` — NOT the death hook, which runs AFTER
+`explode_rocket`'s `PrepareBombToBlow` resize + the family resize and so cannot
+read the C# play point. The cue queues at each arm's exact play position:
+- wet/lava/honey 784-792/805-807 (`:77737`/`:77741`, `:77781`/`:77785`,
+  `:77820`/`:77824`): Item62 for the II kinds 785/788/791, Item14 otherwise —
+  AFTER `Resize(22, 22)`, at the post-resize `base.position`.
+- dry 799/800/801/810 (`:77859`/`:77863`): Item62 for 800 (the C# names 800,
+  NOT 799 — the pre-port "62 for 799" comment was wrong), Item14 otherwise —
+  post-`Resize(22)` `base.position`.
+- Mini Nuke 793-798/808/809 (`:77897`/`:77901`): Item62 for 794/797, Item14
+  otherwise — at `base.Center` BEFORE `Resize(50, 50)` (the centre is
+  resize-invariant).
+- cluster shrapnel 779/783/862/863 (`:77983`): Item62 for ALL four — post-
+  `Resize(22)` `base.position`.
+- cluster rockets 776-782/803/804 (`:78025`/`:78029`): Item62 for 777/781,
+  Item14 otherwise — post-`Resize(22)` `base.position`, queued BEFORE the
+  owner-gated shard ring (`:78023` precedes the `:78063` owner gate).
+- plain rockets 133-138/338/339 (`:78096`): Item14 at the post-
+  `PrepareBombToBlow` top-left BEFORE the 22×22 recentre. The Item62 sibling
+  (`:78092`, kinds 133/136) is d77's pick — the port gates those two kinds OUT
+  so the cue stays kind-disjoint from d77's selection.
+- Rocket III/IV 139-144/340/341 (`:78146`/`:78150`): Item62 for 139, Item14
+  otherwise — at the post-`PrepareBombToBlow` top-left BEFORE the 80×80
+  recentre. (d77's `:78218` pick is the scarab-773 arm's dead 794/797 clause,
+  NOT this arm — 773 is unrowed, so that clause never fires in the port.)
+
+The cues push DIRECTLY into `pending_proj_sounds` (the golf `tick.sounds`
+seam): `rocket_kill_census` runs inside `explode_rocket`, AFTER the AI
+dispatch's `wants_sound` forwarding, so a slot-parked intent would never be
+forwarded. The drain plays them at the pass tail on the `UpdateProjectiles`
+stream (`Main.cs:17775`), attenuation BEFORE the case draws. The rocket cue
+fires once per death (the `detonated` latch → `explode_rocket` →
+`rocket_kill_census`, then the slot deactivates).
+
+Bank: `Item_62` joins `SFX_CUES` (the `.xnb` asset verified on disk); Item10/
+Item14/Shatter were already registered.
+
+### The g2 rowless-rows cross-check (the 63 NONE sites)
+
+The part-4 batch deferred 63 NONE-unrowed sites. Cross-checked against
+`origin/task/W4-g2-proj-ai-missing-b` (pushed tip `d0708e3b`): **that tip is
+CENSUS-ONLY — zero `proj_data` rows landed there**, so NO now-rowed kind's cue
+is armable from g2 on this branch's base (`a725acb0`). The g2 census's verdict
+stands: every missing tail aiStyle is CLAIMED d11-d21, the style space ends at
+210, and the rowless kinds stay rowless on main.
+
+A wider sweep of EVERY branch tip that touches `projectile/data.rs` since
+`a725acb0` found 16 of the 63 NONE kinds gained rows on OTHER in-flight
+branches (and g2's UNPUSHED local commits `af472214`/`ee857a36`/`8d3cdcb1`):
+171/475/505/506 (d4 rope coils), 229 (g2-local Partisan orb), 410 (d8), 590/608
+(d12), 596 (d11/g5/f42 Desert Djinn), 728/729/761/762 (d16 SuperStar/paper
+airplanes), 949 (d19), 1115 (d21), 1120 (a9). These rows are NOT on this
+branch's base, so their cues CANNOT be armed here without pulling unmerged
+work — they are RECORDED as owed to the merge owner (the same UNARMED_ROWED
+reconciliation the g2 census owes for the eight in-flight styles). Several of
+those branches already self-arm their death cues (g5's `djinn_curse_kill`
+`:72482`, d12's 608 `:72182`, g2-local's 229 `:74452`), so the merge must
+de-duplicate against this batch's `kill_sound_cue` table, not double-arm.
+
+**Deviations (deliberate, recorded):** the dust/gore BODIES stay skipped with
+their layers (the module's RNG note) — the cue itself is draw-free at the queue
+site, its case draw rides the drain. The C# plays inline mid-`Kill()`; the
+port's batch drain moves the draw to the pass tail (the same recorded deviation
+as parts 1-4 — relative order among the tick's sound draws is preserved, the
+interleaving with gameplay draws is not). The rocket cue's position is read at
+the C# play point inside `rocket_kill_census` (the death hook is too late —
+after the resizes); this is the one structural difference from the per-kind
+cues. The remaining unrowed fifth-batch arms (21/471/532/1111, 583/584, 514,
+1023, 312, 246/249, 370/371, 936, 1077, 910/911, 588) and d77's 11 picks are the
+recorded deferrals.
+
+**Verification.** Code-only: every ported cue re-read against its C# window
+(≤100-line windows, direct-path reads through the `decompiled/` junction — no
+junction recursion): the kind gates, the position reads (`base.position` vs
+`base.Center`, pre- vs post-resize), the play-before/after-resize order, the
+`Resize` semantics (`Projectile.cs:22353-22359` — position→old centre→resize→
+recentre), the d77 exclusion gates. The 4 new `s1_e_21h_f1_b5_*` witness tests
+(2 pool cue-table, 1 audio bank, 1 pass-stream) are WRITTEN, NOT RUN — **no
+compiler invoked**.
