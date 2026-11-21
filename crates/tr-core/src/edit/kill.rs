@@ -231,6 +231,15 @@ pub(crate) fn square_tile_frame_gen(world: &mut World, x: i32, y: i32) {
 /// `TileFrame` walk whose `Check*` chain may pop the tile's object, the
 /// produced drops handed to the app layer.
 pub fn square_tile_frame_default(world: &mut World, x: i32, y: i32) -> Vec<ObjectDrop> {
+    square_tile_frame_record(world, x, y).object_drops
+}
+
+/// The same `SquareTileFrame` walk, returning the WHOLE kill record — the
+/// `Liquid.DelWater` tail's reframe arms (`Liquid.cs:1544`/`:1553`/`:1592`)
+/// need the cascade's pots/herbs/piles too, not just the object drops
+/// (W4-g46's seam, adopted by the g47 keep-one — research/69 row 1: the
+/// g47 `square_tile_frame_default` call discarded the loot).
+pub fn square_tile_frame_record(world: &mut World, x: i32, y: i32) -> TileKill {
     let mut destroy_object = false;
     let mut kill = TileKill {
         kind: world.tile(x, y).map(|t| t.kind).unwrap_or(0),
@@ -238,7 +247,7 @@ pub fn square_tile_frame_default(world: &mut World, x: i32, y: i32) -> Vec<Objec
     };
     square_tile_frame(world, x, y, false, &mut destroy_object, &mut kill);
     after_edit(world, x, y);
-    kill.object_drops
+    kill
 }
 
 /// The body of `KillTile` plus the shared `WorldGen.destroyObject` flag

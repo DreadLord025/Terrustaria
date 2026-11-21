@@ -3398,7 +3398,13 @@ impl App {
         // it (`rain.rs:524-592`, `wind.rs:294-329`). The world's own flag set
         // is the source, so a remix world's rain starts like vanilla.
         wind.remix_world = world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
-        let liquids_sim = LiquidSystem::new(&world);
+        let mut liquids_sim = LiquidSystem::new(&world);
+        // `Main.Setting_UseReducedMaxLiquids` (`slowliquids=1`, applied to
+        // the settings in `main.rs`): the flag rides the liquid system so
+        // `ReInit`'s 5000 cap (`Liquid.cs:98-101`), the pass-head quickFall
+        // OR-arm (`:1057-1060`) and the gfx budgets (`Main.cs:17080-17083`/
+        // `:17108-17111`) all read it. False (stock) changes nothing.
+        liquids_sim.set_reduced_max_liquids(settings.reduced_max_liquids);
         let mut rain = Rain::new(world_seed);
         // `SetOngoingToTemps` (`WorldFile.cs:159-162`): the load applies the
         // save-time snapshot — the rain event comes back, `cloudAlpha` :=

@@ -26,6 +26,52 @@ pub const CYCLES: usize = 10;
 const KILL_PASSES: u16 = 8;
 const KILL_DEAD: u16 = 999;
 
+/// The `SettleWaterAt` dungeon re-type carry (`Liquid.cs:188-191`) — the
+/// liquid module's view of `GenVars.dungeonGenVars`
+/// (`DungeonUtils.InAnyPotentialDungeonBounds`, `DungeonUtils.cs:2095-2108`:
+/// per-entry OUTER `ContainsWithFluff(x, y, 0)` = `Contains`;
+/// `IsConsideredDungeonWall(wall, allDungeons: true)`, `:1894-1915`: the
+/// base `Main.wallDungeon` set ∪ each entry's `isDungeonWall` extension).
+///
+/// The producer side is the f24/c30 lane: `create_potential_dungeon_bounds`
+/// (`dungeon_genvars.rs`, `DungeonUtils.cs:2067-2087`) computes the rects;
+/// the merger converts each `DualDungeonSetup.dungeons[i].outer` hitbox to
+/// a `(left, top, right, bottom)` half-open row here (XNA `Right`/`Bottom`
+/// exclusive), plus that dungeon's wall-set extension
+/// (`DungeonCrawler.cs:155-181` — the style quads' `BrickWallType` +
+/// `ExtraWallTypes` over the cloned `Main.wallDungeon`; on a classic world
+/// `isDungeonWall == Main.wallDungeon`, so the extension is empty).
+#[derive(Clone, Debug, Default)]
+pub struct GenDungeonContext {
+    /// One outer potential-bounds hitbox per `GenVars.dungeonGenVars`
+    /// entry: `(left, top, right, bottom)`, half-open (`Contains` is
+    /// `left <= x < right && top <= y < bottom`). Empty = the C# empty
+    /// list — `InAnyPotentialDungeonBounds` is false everywhere.
+    pub outer_bounds: Vec<(i32, i32, i32, i32)>,
+    /// The union of the per-entry `isDungeonWall` extensions BEYOND
+    /// `Main.wallDungeon` (the dual-dungeon style walls). The base set
+    /// rides `dungeon_features::is_dungeon_wall`.
+    pub extra_dungeon_walls: Vec<u16>,
+}
+
+impl GenDungeonContext {
+    /// `DungeonUtils.InAnyPotentialDungeonBounds(x, y)` (`:2089-2108`) —
+    /// fluff 0 / inner false: any entry's outer hitbox contains the cell.
+    fn in_any_bounds(&self, x: i32, y: i32) -> bool {
+        self.outer_bounds
+            .iter()
+            .any(|&(l, t, r, b)| l <= x && x < r && t <= y && y < b)
+    }
+
+    /// `DungeonUtils.IsConsideredDungeonWall(wall, allDungeons: true)`
+    /// (`:1894-1915`) — the base `Main.wallDungeon` set (`wall > 0` guard
+    /// included) or any entry's extension.
+    fn is_dungeon_wall(&self, wall: u16) -> bool {
+        crate::worldgen::dungeon_features::is_dungeon_wall(wall)
+            || self.extra_dungeon_walls.contains(&wall)
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 struct Entry {
     x: i32,
@@ -73,6 +119,12 @@ pub struct LiquidSystem {
     /// from it (`:1056-1063`). The gfx-quality pass reads it for the
     /// full-window / single-cycle override (`Main.cs:17105-17113`).
     quick_settle: bool,
+    /// `Main.Setting_UseReducedMaxLiquids` (`Main.cs:1665`) — the
+    /// `slowliquids=1` launch flag. Caps `curMaxLiquid` at 5000 (`ReInit`
+    /// `Liquid.cs:98-101`, the gfx pair `Main.cs:17080-17083`/`:17108-17111`)
+    /// and ORs `numLiquid > 2000` into the `quickFall` derivation
+    /// (`Liquid.cs:1057-1060`). Default false = stock behaviour.
+    reduced_max_liquids: bool,
     /// `WorldGen.remixWorldGen` — the desert-strip arm's gate
     /// (`Liquid.cs:1447`); the R-12-5 plumbing owns it, `false` at runtime.
     remix_world_gen: bool,
@@ -83,12 +135,13 @@ pub struct LiquidSystem {
     generating: bool,
     /// `WorldGen.generatingWorld` — the STRICT generation flag (true only
     /// during worldgen, false during the world-LOAD settle). It gates the
-    /// `SettleWaterAt` dungeon re-type arm (`Liquid.cs:188`), which the
+    /// `SettleWaterAt` dungeon re-type arm (`Liquid.cs:188`) and
+    /// `ShimmerRemoveWater` (`WorldGen.cs:34825`), neither of which the
     /// load settle (`isGeneratingOrLoadingWorld` true, `generatingWorld`
-    /// false) must NOT run. Distinct from [`Self::generating`] above; the
-    /// dungeon arm itself is a recorded no-op (no ported
-    /// `InAnyPotentialDungeonBounds`), so the flag rides for R-12-5.
-    #[allow(dead_code)] // read by the dungeon arm when R-12-5 ports its predicates
+    /// false) may run. Distinct from [`Self::generating`] above. The
+    /// predicates themselves live in [`GenDungeonContext`] (the f24/c30
+    /// bounds carry) — an un-armed context keeps the arm a no-op, exactly
+    /// like the C# empty `GenVars.dungeonGenVars` list.
     generating_world: bool,
     /// `GenVars.waterLine` (`GenVars.cs:62`) — the classic re-type boundary:
     /// a settled drop landing BELOW it becomes lava (`Liquid.cs:184-187`).
@@ -100,6 +153,19 @@ pub struct LiquidSystem {
     /// (`Liquid.cs:182`); read only while [`Self::generating`] and
     /// [`Self::remix_world_gen`] are up.
     gen_lava_line: i32,
+    /// `GenVars.shimmerPosition` (`GenVars.cs:282`) — the g36-A1 GenVars
+    /// slot (`worldgen/pipeline.rs` `shimmer_position`, written by the
+    /// Shimmer step at the `WorldGen.cs:15241` seam). `QuickWater`'s
+    /// `ShimmerRemoveWater` arms read it (`Liquid.cs:108`/`:138`). `None`
+    /// mirrors the C# `Vector2D.Zero` reset (`WorldGen.cs:7039`) — an
+    /// un-placed shimmer makes the removal circle a corner no-op.
+    gen_shimmer_position: Option<(i32, i32)>,
+    /// The `SettleWaterAt` dungeon re-type predicates (`Liquid.cs:188-191`):
+    /// `DungeonUtils.InAnyPotentialDungeonBounds` + `IsConsideredDungeonWall
+    /// (wall, allDungeons: true)` over the f24/c30 potential-bounds carry.
+    /// `None` = no `GenVars.dungeonGenVars` entries (the C# empty list —
+    /// the arm is dead), so the runtime/load settle stays a no-op.
+    gen_dungeon: Option<GenDungeonContext>,
     /// `Liquid.stuckCount` (`Liquid.cs:21`): consecutive full cycles whose
     /// active count stayed within ±50 of `stuck_amount` (`:1131-1148`).
     stuck_count: i32,
@@ -198,6 +264,24 @@ impl LiquidSystem {
         self.cur_max_liquid = cur_max_liquid.max(1);
     }
 
+    /// `Main.Setting_UseReducedMaxLiquids` (`Main.cs:1665`) — the
+    /// `slowliquids=1` command-line flag (`Main.cs:5079-5083`, reset false
+    /// at `static Main()` `:67008`; no config.json key). It caps
+    /// `curMaxLiquid` at 5000 in `ReInit` (`Liquid.cs:98-101`) and the
+    /// gfx-quality pair (`Main.cs:17080-17083`/`:17108-17111`), and ORs
+    /// `numLiquid > 2000` into the pass-head `quickFall` derivation
+    /// (`:1057-1060`). False keeps every arm byte-identical to stock.
+    pub fn set_reduced_max_liquids(&mut self, reduced: bool) {
+        self.reduced_max_liquids = reduced;
+    }
+
+    /// `Main.Setting_UseReducedMaxLiquids` — the gfx-quality pass reads it
+    /// for the `2500 + 2500 * gfxQuality` budget (`Main.cs:17080-17083`)
+    /// and the quickSettle override's flat 5000 (`:17108-17111`).
+    pub fn reduced_max_liquids(&self) -> bool {
+        self.reduced_max_liquids
+    }
+
     /// `Liquid.quickSettle` (`Liquid.cs:35`) — the bulk-settle mode the
     /// world-load settle (`WorldFile.cs:738`/`:760`) and the worldgen
     /// settle loops (`WorldGen.cs:16160`/`:16206`, `:21267`/`:21305`)
@@ -222,6 +306,15 @@ impl LiquidSystem {
         self.stuck_amount = 0;
         self.cycles = CYCLES;
         self.cur_max_liquid = MAX_ACTIVE;
+        // `Liquid.cs:98-101` — the reduced-liquids cap rides ReInit itself,
+        // so the load settle (which never sees the gfx block) starts on it.
+        if self.reduced_max_liquids {
+            self.cur_max_liquid = 5000;
+        }
+        // The gen-context fields (`generating`/`generating_world`/
+        // `gen_water_line`/`gen_shimmer_position`/`gen_dungeon`) are NOT
+        // touched — the C# ReInit (`:83-102`) never resets the WorldGen /
+        // GenVars statics; the load/gen drivers own their own arming.
         self.active.clear();
         self.checking.iter_mut().for_each(|w| *w = 0);
         self.skip.iter_mut().for_each(|w| *w = 0);
@@ -327,6 +420,7 @@ impl LiquidSystem {
             dirty: false,
             quick_fall: false,
             quick_settle: false,
+            reduced_max_liquids: false,
             generating: false,
             generating_world: false,
             // The load-settle pin (`WorldFile.cs:734`): `waterLine =
@@ -335,6 +429,8 @@ impl LiquidSystem {
             // (R-12-5); the runtime never reads them (`generating` is down).
             gen_water_line: world.height,
             gen_lava_line: 0,
+            gen_shimmer_position: None,
+            gen_dungeon: None,
             stuck_count: 0,
             stuck_amount: 0,
             stuck: false,
@@ -523,9 +619,10 @@ impl LiquidSystem {
             return;
         }
         // `Liquid.cs:1056-1068` — the pass head derives `quickFall` from
-        // `quickSettle` every call. (The `Setting_UseReducedMaxLiquids`
-        // `numLiquid > 2000` OR-arm lands with the reduced-liquids field.)
-        self.quick_fall = self.quick_settle;
+        // `quickSettle` every call; `Setting_UseReducedMaxLiquids` ORs in
+        // the `numLiquid > 2000` overload arm (`:1057-1060`).
+        self.quick_fall =
+            self.quick_settle || (self.reduced_max_liquids && self.active.len() > 2000);
         // `Liquid.cs:1069-1106`: the window is a fixed `curMaxLiquid / cycles`
         // stride and the `numLiquid` clamp re-walks the *whole* list whenever it is
         // shorter than one stride, so a small active list is simulated every call
@@ -651,15 +748,19 @@ impl LiquidSystem {
     /// the lava reaction tail (the grass conversions + `HoneyCheck` /
     /// `ShimmerCheck`), the swap-remove and the herb / lily-pad checks.
     ///
-    /// KEEP-ONE (W4-g47 vs W4-g45, ANALYSIS): this body is canonical — the
-    /// `Check*` kills ride `edit_kills` (g45's `check_alch_tile`/
-    /// `check_lily_pad` wrappers execute the kill but discard the drop
-    /// record, losing the herb/lily-pad loot), and the swap-remove lives in
-    /// one body the sweep and the stuck self-clear share (g45 splits it into
-    /// `retire_sweep`; the two shapes are equivalent). Adopted from g45: the
-    /// edge-safe sub-2 probe, the live side re-reads (`:1519-1528` reads the
-    /// tile references AFTER the drain), the explicit lily-pad arm order,
-    /// and the grass ring's chunk-dirty marking.
+    /// KEEP-ONE (W4-g47 vs W4-g45/g46, ANALYSIS + research/69): this body is
+    /// canonical — the `Check*` kills ride `edit_kills` (g45's
+    /// `check_alch_tile`/`check_lily_pad` wrappers execute the kill but
+    /// discard the drop record, losing the herb/lily-pad loot), and the
+    /// swap-remove lives in one body the sweep and the stuck self-clear
+    /// share (g45 splits it into `retire_sweep`; the two shapes are
+    /// equivalent). Adopted from g45: the edge-safe sub-2 probe, the live
+    /// side re-reads (`:1519-1528` reads the tile references AFTER the
+    /// drain), the explicit lily-pad arm order, and the grass ring's
+    /// chunk-dirty marking. Adopted from g46 (research/69 row 1): the
+    /// `square_tile_frame_record` loot seam on the grass-ring / lily
+    /// reframe arms (g46's `retire_kills` queue dedupes onto `edit_kills`
+    /// — one queue, one app drain); the g46c graft keeps THIS body.
     fn del_water(&mut self, world: &mut World, l: usize) {
         let (x, y) = (self.active[l].x, self.active[l].y);
         let i = world.index(x, y);
@@ -750,12 +851,18 @@ impl LiquidSystem {
                             // `after_edit` reframes but does not mark).
                             world.mark_chunk(gx, gy);
                             self.dirty = true;
-                            crate::edit::square_tile_frame_default(world, gx, gy);
+                            // g46's record seam (research/69 row 1): the
+                            // reframe cascade's pots/herbs/piles ride
+                            // `edit_kills` — `square_tile_frame_default`
+                            // would discard them.
+                            self.edit_kills
+                                .push(crate::edit::square_tile_frame_record(world, gx, gy));
                         } else if matches!(t.kind, 60 | 70 | 661 | 662) {
                             world.tiles[j].kind = 59;
                             world.mark_chunk(gx, gy);
                             self.dirty = true;
-                            crate::edit::square_tile_frame_default(world, gx, gy);
+                            self.edit_kills
+                                .push(crate::edit::square_tile_frame_record(world, gx, gy));
                         }
                     }
                 }
@@ -800,7 +907,10 @@ impl LiquidSystem {
                 let below = world.tile(x, y + 1).copied().unwrap_or_default();
                 let above = world.tile(x, y - 1).copied().unwrap_or_default();
                 if below.liquid < 255 || above.liquid > 0 {
-                    crate::edit::square_tile_frame_default(world, x, y);
+                    // The reframe arm's cascade records ride the same seam
+                    // (g46's `square_tile_frame_record`, research/69).
+                    self.edit_kills
+                        .push(crate::edit::square_tile_frame_record(world, x, y));
                 } else if let Some(kill) =
                     crate::edit::check_lily_pad(world, x, y, |k| self.kind_solid(k))
                 {
@@ -1522,22 +1632,46 @@ impl LiquidSystem {
         self.gen_lava_line = lava_line;
     }
 
+    /// `GenVars.shimmerPosition` (`GenVars.cs:282`) — the gen settle
+    /// driver copies the g36-A1 GenVars slot here (`gv.shimmer_position`,
+    /// the `WorldGen.cs:15241` Shimmer-step write) before its `QuickWater`
+    /// calls, so the `ShimmerRemoveWater` arms (`Liquid.cs:108`/`:138`)
+    /// read the placed position. `None` = the C# `Vector2D.Zero` reset
+    /// (`WorldGen.cs:7039`) — a corner no-op. The runtime/load settle
+    /// never arms it (`generating_world` stays down regardless).
+    pub fn set_gen_shimmer_position(&mut self, pos: Option<(i32, i32)>) {
+        self.gen_shimmer_position = pos;
+    }
+
+    /// The `SettleWaterAt` dungeon re-type carry — the gen settle driver
+    /// converts the f24/c30 `DualDungeonSetup` outer hitboxes + style-wall
+    /// extensions into a [`GenDungeonContext`] (the `GenVars.dungeonGenVars`
+    /// stand-in). `None` keeps the arm dead (the C# empty list). Read only
+    /// while `generating_world` is up (`Liquid.cs:188`).
+    pub fn set_gen_dungeon_context(&mut self, ctx: Option<GenDungeonContext>) {
+        self.gen_dungeon = ctx;
+    }
+
     /// `Liquid.QuickWater` (`Liquid.cs:104-148`) — the bulk "settle this
     /// rectangle": walk the rows bottom-up and settle every wet cell.
     /// `verbose` is the progress-display parameter (no port consumer).
     ///
-    /// The outer generation arms are inert in the port, each for a recorded
-    /// reason (ANALYSIS W4-g47): `ShimmerRemoveWater` (`:108`/`:138`) early-
-    /// returns unless `generatingWorld` (`WorldGen.cs:34825`) and reads
-    /// `GenVars.shimmerPosition`, which the compact pipeline never places;
-    /// the noTraps `SetBoulderSolidity` swap (`:109-112`/`:139-142`) is
-    /// subsumed by the pass-scoped `tilesIgnoreWater(true)` (`:115`) the port
-    /// already raises (the same nine boulder kinds, [`BOULDER_SOLIDS`]);
-    /// `LiquidInteractionsCleanup` (`:144-147`) is `generatingWorld &&
-    /// !skyblock`-gated and strips the gen merge tiles 56/659 — it rides the
-    /// unported gen settle driver. The runtime/panic/load settle runs the
-    /// solid core below.
+    /// The `ShimmerRemoveWater` arms (`:106-108`/`:136-138`) run before
+    /// and after the sweep — `generatingWorld`-gated inside the helper
+    /// (`WorldGen.cs:34825`), reading [`Self::gen_shimmer_position`] (the
+    /// g36-A1 GenVars slot). The remaining generation arms stay inert for
+    /// recorded reasons (ANALYSIS W4-g47): the noTraps `SetBoulderSolidity`
+    /// swap (`:109-112`/`:139-142`) is subsumed by the pass-scoped
+    /// `tilesIgnoreWater(true)` (`:115`) the port already raises (the same
+    /// nine boulder kinds, [`BOULDER_SOLIDS`]); `LiquidInteractionsCleanup`
+    /// (`:144-147`) is `generatingWorld && !skyblock`-gated and strips the
+    /// gen merge tiles 56/659 — it rides the gen settle driver (f25's
+    /// `settle_liquids.rs` carries it). The runtime/panic/load settle runs
+    /// the solid core below (the shimmer arms early-return, the load
+    /// context keeps `generating_world` down).
     pub fn quick_water(&mut self, world: &mut World, min_y: i32, max_y: i32) {
+        // `:106-113` — the pre-sweep generation arm.
+        self.shimmer_remove_water(world);
         self.bubble_solid = true;
         self.ignore_solids = true;
         let min_y = if min_y == -1 { 3 } else { min_y };
@@ -1550,6 +1684,8 @@ impl LiquidSystem {
             }
         }
         self.ignore_solids = false;
+        // `:136-143` — the post-sweep generation arm.
+        self.shimmer_remove_water(world);
     }
 
     /// `Liquid.SettleWaterAt` (`Liquid.cs:150-289`) — drain one cell's
@@ -1557,13 +1693,15 @@ impl LiquidSystem {
     /// repeating until the mass is placed. The generation-only re-type arm
     /// (`:178-192`) runs while [`Self::generating`] is up: a dropped water
     /// cell landing below `GenVars.waterLine` (classic) or the remix band
-    /// re-types to lava; the dungeon arm (`generatingWorld`-gated) is a
-    /// recorded no-op (no ported `InAnyPotentialDungeonBounds`). The runtime
-    /// settle keeps `generating` down (arm inert); the world-LOAD settle arms
-    /// `generating` but pins `gen_water_line = maxTilesY` (`WorldFile.cs:734`),
-    /// so the classic boundary never fires — both keep the origin's type.
-    /// The landing cell's merge checks run through the three
-    /// `AttemptToMove*` helpers.
+    /// re-types to lava; the dungeon arm (`generatingWorld`-gated) re-types
+    /// back to water inside the f24/c30 potential bounds behind a dungeon
+    /// wall ([`Self::set_gen_dungeon_context`]; an un-armed context keeps
+    /// it dead). The runtime settle keeps `generating` down (arm inert);
+    /// the world-LOAD settle arms `generating` but pins
+    /// `gen_water_line = maxTilesY` (`WorldFile.cs:734`) and keeps
+    /// `generating_world` down, so both re-type arms stay inert — the load
+    /// keeps the origin's type. The landing cell's merge checks run
+    /// through the three `AttemptToMove*` helpers.
     fn settle_water_at(&mut self, world: &mut World, origin_x: i32, origin_y: i32) {
         self.ignore_solids = true;
         let Some(origin) = world.tile(origin_x, origin_y).copied() else {
@@ -1626,10 +1764,24 @@ impl LiquidSystem {
                     // `:184-187` — the classic waterLine boundary.
                     kind = 1;
                 }
-                // `:188-191` — the dungeon re-type back to water is gated on
-                // `generatingWorld` AND `InAnyPotentialDungeonBounds` +
-                // `IsConsideredDungeonWall`; neither predicate is ported
-                // (ANALYSIS W4-g47), so the arm is a recorded no-op.
+                // `:188-191` — the dungeon re-type back to water, gated on
+                // the STRICT `generatingWorld` AND
+                // `InAnyPotentialDungeonBounds(num, num2)` AND
+                // `IsConsideredDungeonWall(tile.wall, allDungeons: true)`.
+                // `tile` is the ORIGIN reference (`:152`), so the wall read
+                // is the origin cell's — f25's gen-local copy reads the
+                // landing cell instead (a deviation the merger reconciles
+                // onto this form). The predicates ride the f24/c30
+                // potential-bounds carry ([`GenDungeonContext`]); an
+                // un-armed context is the C# empty `dungeonGenVars` list —
+                // the arm stays dead.
+                if self.generating_world {
+                    if let Some(ctx) = &self.gen_dungeon {
+                        if ctx.in_any_bounds(x, y) && ctx.is_dungeon_wall(origin.wall) {
+                            kind = 0;
+                        }
+                    }
+                }
             }
             // `:193-272` — the row spread: alternate left/right from the
             // landing column, topping up same-type non-full cells below
@@ -1765,6 +1917,50 @@ impl LiquidSystem {
                     self.shimmer_check(world, nx, ny);
                 }
                 return;
+            }
+        }
+    }
+
+    /// `WorldGen.ShimmerRemoveWater` (`WorldGen.cs:34823-34851`) — inside
+    /// the 150-radius circle around `GenVars.shimmerPosition` (rows
+    /// `sy-150..=sy+75`, columns `sx±150`, the truncated `Math.Sqrt` <
+    /// 150 distance test), every NON-shimmer liquid zeroes and every
+    /// tombstone 162 deactivates. STRICT `generatingWorld`-gated (`:34825`)
+    /// — the load settle never runs it. The position rides
+    /// [`Self::gen_shimmer_position`], the g36-A1 GenVars slot
+    /// (`pipeline.rs` `gv.shimmer_position`, the `WorldGen.cs:15241`
+    /// write); `None` mirrors the C# `Vector2D.Zero` reset
+    /// (`WorldGen.cs:7039`) — the circle sits at the top-left corner,
+    /// off-world for every real shimmer placement, a no-op.
+    fn shimmer_remove_water(&mut self, world: &mut World) {
+        if !self.generating_world {
+            return;
+        }
+        let Some((sx, sy)) = self.gen_shimmer_position else {
+            return;
+        };
+        let num = 150;
+        for i in (sy - num)..=(sy + num / 2) {
+            for j in (sx - num)..=(sx + num) {
+                // `WorldGen.InWorld(j, i)` (`WorldGen.cs:9688-9695`).
+                if j < 0 || i < 0 || j >= self.width || i >= self.height {
+                    continue;
+                }
+                let dx = (j - sx).abs() as f64;
+                let dy = (i - sy).abs() as f64;
+                if (dx * dx + dy * dy).sqrt() < num as f64 {
+                    let idx = world.index(j, i);
+                    if world.tiles[idx].liquid_kind() != LiquidKind::Shimmer
+                        && world.tiles[idx].liquid != 0
+                    {
+                        world.tiles[idx].liquid = 0;
+                        world.mark_chunk(j, i);
+                    }
+                    if world.tiles[idx].kind == 162 && world.tiles[idx].active() {
+                        world.tiles[idx].flags &= !crate::tile::FLAG_ACTIVE;
+                        world.mark_chunk(j, i);
+                    }
+                }
             }
         }
     }
@@ -3466,6 +3662,147 @@ mod liquid_settle_wiring {
         sys.del_water(&mut w, 0);
         assert_eq!(w.tiles[g].kind, 0, "the grass ring converted to dirt");
         assert!(sys.dirty, "the ring write dirtied the pass (g45's marking)");
+    }
+
+    #[test]
+    fn reduced_max_liquids_caps_reinit_at_5000() {
+        // `Liquid.cs:98-101`: ReInit's `curMaxLiquid = maxLiquid` is
+        // overridden to 5000 under `Setting_UseReducedMaxLiquids`; the
+        // stock flag keeps the full window.
+        let w = shaft(9, 60, 50, 4);
+        let mut sys = LiquidSystem::new(&w);
+        sys.set_reduced_max_liquids(true);
+        sys.re_init();
+        assert_eq!(sys.cur_max_liquid(), 5000, ":100 caps the window");
+        sys.set_reduced_max_liquids(false);
+        sys.re_init();
+        assert_eq!(sys.cur_max_liquid(), MAX_ACTIVE, "stock keeps maxLiquid");
+    }
+
+    #[test]
+    fn reduced_max_liquids_ors_numliquid_over_2000_into_quick_fall() {
+        // `Liquid.cs:1057-1060`: the pass-head flag is
+        // `quickSettle || (reduced && numLiquid > 2000)`. The fixture
+        // stages the active count directly (2001 empty entries — the
+        // derivation reads only the count before the window walk).
+        let mut w = shaft(9, 60, 50, 4);
+        let mut sys = LiquidSystem::new(&w);
+        sys.set_cycles(1);
+        sys.set_cur_max_liquid(MAX_ACTIVE);
+        sys.active = (0..2001)
+            .map(|_| Entry { x: 4, y: 10, kill: KILL_DEAD, delay: 0 })
+            .collect();
+        sys.set_reduced_max_liquids(true);
+        sys.update(&mut w);
+        assert!(sys.quick_fall, ":1059 the >2000 overload arm fires");
+        // Without the flag the same count keeps quickFall down.
+        sys.set_reduced_max_liquids(false);
+        sys.active = (0..2001)
+            .map(|_| Entry { x: 4, y: 10, kill: KILL_DEAD, delay: 0 })
+            .collect();
+        sys.update(&mut w);
+        assert!(!sys.quick_fall, "stock derives quickFall from quickSettle only");
+    }
+
+    #[test]
+    fn the_gen_settle_dungeon_arm_retypes_lava_back_to_water() {
+        // `Liquid.cs:188-191`: a gen-settle drop re-typed to lava below the
+        // waterLine flips BACK to water when the landing cell sits inside
+        // a potential-dungeon outer bounds AND the ORIGIN cell's wall is a
+        // dungeon wall (the C# `tile` reference is the origin, `:152`).
+        let mut w = shaft(9, 60, 50, 4);
+        w.tiles[w.index(4, 10)].wall = 7; // the origin's dungeon wall
+        put_as(&mut w, 4, 10, 200, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.set_gen_settle_context(20, 30, false); // waterLine 20 < landing 49
+        sys.set_gen_dungeon_context(Some(GenDungeonContext {
+            outer_bounds: vec![(0, 40, 9, 55)], // covers the landing (4,49)
+            extra_dungeon_walls: vec![],
+        }));
+        sys.quick_water(&mut w, -1, -1);
+        assert_eq!(w.tiles[w.index(4, 49)].liquid, 200, "the mass landed");
+        assert_eq!(
+            w.tiles[w.index(4, 49)].liquid_kind(),
+            LiquidKind::Water,
+            ":190 the dungeon arm re-types back to water"
+        );
+    }
+
+    #[test]
+    fn the_dungeon_arm_needs_bounds_and_wall_and_stays_dead_unarmed() {
+        // The three gates (`Liquid.cs:188`): no context (the C# empty
+        // dungeonGenVars list), out-of-bounds landing, or a non-dungeon
+        // origin wall each keep the lava re-type.
+        for (bounds, wall) in [
+            (None, 7u16),                       // no GenVars entries
+            (Some((0, 0, 9, 20)), 7),           // landing (4,49) outside
+            (Some((0, 40, 9, 55)), 0),          // origin has no wall
+        ] {
+            let mut w = shaft(9, 60, 50, 4);
+            w.tiles[w.index(4, 10)].wall = wall;
+            put_as(&mut w, 4, 10, 200, 0);
+            let mut sys = LiquidSystem::new(&w);
+            sys.set_gen_settle_context(20, 30, false);
+            sys.set_gen_dungeon_context(bounds.map(|(l, t, r, b)| GenDungeonContext {
+                outer_bounds: vec![(l, t, r, b)],
+                extra_dungeon_walls: vec![],
+            }));
+            sys.quick_water(&mut w, -1, -1);
+            assert_eq!(
+                w.tiles[w.index(4, 49)].liquid_kind(),
+                LiquidKind::Lava,
+                "the arm stayed dead (bounds {bounds:?}, wall {wall})"
+            );
+        }
+    }
+
+    #[test]
+    fn shimmer_remove_water_clears_the_circle_but_keeps_shimmer() {
+        // `WorldGen.cs:34829-34850`: inside the 150-radius circle around
+        // the placed shimmer, non-shimmer liquid zeroes and tombstone 162
+        // deactivates; shimmer liquid survives; outside the circle nothing
+        // moves. The position rides the g36-A1 GenVars slot.
+        let mut w = World::new("shimmer_rw".into(), 400, 400);
+        w.frame_important = vec![false; td::TILE_COUNT];
+        w.compute_column_surface();
+        w.compute_chunks();
+        put_as(&mut w, 200, 200, 100, 0); // at the centre: water dies
+        put_as(&mut w, 210, 200, 100, 3); // shimmer survives
+        put_as(&mut w, 200, 280, 100, 0); // dy 80 > 75 row bound: outside
+        put_as(&mut w, 360, 200, 100, 0); // dx 160 > 150: outside
+        let tomb = w.index(205, 200);
+        w.tiles[tomb] = Tile { kind: 162, ..Default::default() };
+        w.tiles[tomb].flags |= FLAG_ACTIVE;
+        let mut sys = LiquidSystem::new(&w);
+        sys.set_gen_settle_context(0, 0, false); // generating_world up
+        sys.set_gen_shimmer_position(Some((200, 200)));
+        sys.shimmer_remove_water(&mut w);
+        assert_eq!(w.tiles[w.index(200, 200)].liquid, 0, "the centre water died");
+        assert_eq!(w.tiles[w.index(210, 200)].liquid, 100, ":34840 shimmer keeps its liquid");
+        assert_eq!(w.tiles[w.index(200, 280)].liquid, 100, "below the +75 row bound");
+        assert_eq!(w.tiles[w.index(360, 200)].liquid, 100, "outside the 150 radius");
+        assert!(!w.tiles[tomb].active(), ":34846 the tombstone deactivated");
+    }
+
+    #[test]
+    fn shimmer_remove_water_is_dead_on_load_and_without_a_position() {
+        // `WorldGen.cs:34825-34828`: the STRICT generatingWorld gate — the
+        // load settle (generating up, generating_world down) never runs
+        // it; a None position (the Vector2D.Zero reset, `:7039`) no-ops.
+        let mut w = World::new("shimmer_dead".into(), 400, 400);
+        w.frame_important = vec![false; td::TILE_COUNT];
+        w.compute_column_surface();
+        w.compute_chunks();
+        put_as(&mut w, 200, 200, 100, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.generating = true; // the load context, generating_world down
+        sys.set_gen_shimmer_position(Some((200, 200)));
+        sys.shimmer_remove_water(&mut w);
+        assert_eq!(w.tiles[w.index(200, 200)].liquid, 100, "load never removes");
+        sys.set_gen_settle_context(0, 0, false); // now generating_world up
+        sys.set_gen_shimmer_position(None);
+        sys.shimmer_remove_water(&mut w);
+        assert_eq!(w.tiles[w.index(200, 200)].liquid, 100, "no position, no removal");
     }
 }
 
