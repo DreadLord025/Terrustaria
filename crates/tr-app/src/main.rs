@@ -20,6 +20,7 @@ mod biome;
 mod boss_bags;
 mod fishing_crates;
 mod misc_bags;
+mod npc_death_heals;
 mod presents;
 mod buff_effects;
 mod buff_effects_misc;
