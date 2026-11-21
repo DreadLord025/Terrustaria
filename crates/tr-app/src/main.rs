@@ -159,6 +159,12 @@ mod npc_ai_style71;
 mod npc_target;
 mod npc_ai_style21;
 mod npc_buffs;
+// W4-g78 DOC-SWEEP lane 4: NPC.GetNPCColorTintedByBuffs (NPC.cs:91024-91141)
+// + buffColor (:90986-90993) - the debuff tint chain whose last arm is the
+// Hunter-potion floor. PORTED-UNWIRED: the render/entities.rs consumer is
+// contested by the npc-kind/style lanes; the friendly predicate stays
+// f47's shimmer::appears_friendly_to_hunter_potion (keep-one, research/76).
+mod npc_hunter_tint;
 mod npc_findframe_a;
 mod npc_findframe_b;
 mod persist;
