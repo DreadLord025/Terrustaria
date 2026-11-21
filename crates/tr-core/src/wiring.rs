@@ -2434,7 +2434,7 @@ impl Wiring {
             // `:3000-3042`): the 3×2 anchor from `frameX % 54 / 18` /
             // `frameY % 36 / 18`, the active+same-kind validation, then the
             // frameY ±36 keyed on the anchor's `frameY >= 36`.
-            215 => self.toggle_camp_fire(world, i, j, tile_frame_x, tile_frame_y),
+            215 => self.toggle_camp_fire(world, i, j),
             // The active stone block (130 → 131, `Wiring.cs:1423-1432`):
             // the above-cell gate — `Main.tile[i, j-1] != null &&
             // (!above.active() || !PreventsActuationUnder[above.type]) &&
@@ -2643,15 +2643,13 @@ impl Wiring {
             }
             // The torch family (`TileID.Sets.Torches` = {4}, `TileID.cs:615`;
             // `Wiring.cs:1575-1579` → `ToggleTorch` `:2903-2918`): the cell's
-            // frameX ±66 (the lit/unlit sheet halves). The C# evaluates the
-            // set test after case 235's switch and before case 429's.
-            4 => {
-                let f = world.tile_frame_x(i, j);
-                if f < 66 {
-                    world.set_tile_frame_x(i, j, f + 66);
-                } else {
-                    world.set_tile_frame_x(i, j, f - 66);
-                }
+            // frameX ±66 (the lit/unlit sheet halves). f11's set-guard form
+            // is the C# shape (research/95 §4); the body is the unified
+            // forced-state free fn (`None` at the wire site — the gate
+            // always passes). The C# evaluates the set test after case
+            // 235's switch and before case 429's.
+            k if crate::tiledata::SET_TORCHES.has(k) => {
+                toggle_torch(world, i, j, None);
             }
             // The wire bulb (429, `:1583-1613`): `frameX` steps by the
             // colour's bit — red +18/−18, green +36, blue +72, yellow +144 —
@@ -2690,9 +2688,9 @@ impl Wiring {
                 }
             }
             // The fireplace (405, `:3044-3072`).
-            405 => self.toggle_fire_place(world, i, j, tile_frame_x, tile_frame_y),
+            405 => self.toggle_fire_place(world, i, j),
             // The holiday light (149 → `ToggleHolidayLight`, `:2800-2815`).
-            149 => self.toggle_holiday_light(world, i, j, tile_frame_x),
+            149 => self.toggle_holiday_light(world, i, j),
             // The pixel box frame shift (244, `:1618-1640`): the 3×2 anchor,
             // frameX ±54 by the anchor's frameX, SkipWire 3×2.
             244 => {
@@ -2744,21 +2742,21 @@ impl Wiring {
                 }
             }
             // The hanging lantern (42 → `ToggleHangingLantern`, `:2817-2842`).
-            42 => self.toggle_hanging_lantern(world, i, j, tile_frame_x, tile_frame_y),
+            42 => self.toggle_hanging_lantern(world, i, j),
             // The lamp (93 → `ToggleLamp`, `:2935-2962`).
-            93 => self.toggle_lamp(world, i, j, tile_frame_x, tile_frame_y),
+            93 => self.toggle_lamp(world, i, j),
             // The 2×2 light family (95/100/126/173/564 → `Toggle2x2Light`,
             // `:2843-2878`).
             95 | 100 | 126 | 173 | 564 => {
-                self.toggle_2x2_light(world, i, j, tile_frame_x, tile_frame_y)
+                self.toggle_2x2_light(world, i, j)
             }
             // The chandelier (34 → `ToggleChandelier`, `:2963-2999`).
-            34 => self.toggle_chandelier(world, i, j, tile_frame_x, tile_frame_y),
+            34 => self.toggle_chandelier(world, i, j),
             // The candle family (33/49/174/372/646 → `ToggleCandle`,
             // `:2920-2934`).
-            33 | 49 | 174 | 372 | 646 => self.toggle_candle(world, i, j, tile_frame_x),
+            33 | 49 | 174 | 372 | 646 => self.toggle_candle(world, i, j),
             // The lamp post (92 → `ToggleLampPost`, `:2879-2902`).
-            92 => self.toggle_lamp_post(world, i, j, tile_frame_x, tile_frame_y),
+            92 => self.toggle_lamp_post(world, i, j),
             // The music boxes (35/139 → `WorldGen.SwitchMB`, `:50958-50988`).
             35 | 139 => self.switch_mb(world, i, j, tile_frame_x, tile_frame_y),
             // The fountains (207 → `WorldGen.SwitchFountain`, `:51150-51193`).
@@ -2824,208 +2822,74 @@ impl Wiring {
         }
     }
 
-    /// `Wiring.ToggleHolidayLight` (`Wiring.cs:2800-2815`): the frameX ±54.
-    fn toggle_holiday_light(&mut self, world: &mut World, i: i32, j: i32, frame_x: i16) {
-        let f = world.tile_frame_x(i, j);
-        if i32::from(frame_x) < 54 {
-            world.set_tile_frame_x(i, j, f + 54);
-        } else {
-            world.set_tile_frame_x(i, j, f - 54);
-        }
+    // ---- The Toggle* wire-path wrappers (research/95 §4 unification):
+    // ---- each delegates to the ONE forced-state free-fn family below
+    // ---- (`forced: None` — the wire site passes null, `Wiring.cs:998`),
+    // ---- collecting the family's `doSkipWires` cells into `self.skip`
+    // ---- (the wire path's `doSkipWires = true`, `:999`). The bodies were
+    // ---- the base methods; d6's forced halves merged into the free fns.
+
+    /// `Wiring.ToggleHolidayLight` (`Wiring.cs:2800-2815`): no SkipWire.
+    fn toggle_holiday_light(&mut self, world: &mut World, i: i32, j: i32) {
+        toggle_holiday_light(world, i, j, None);
     }
 
-    /// `Wiring.ToggleHangingLantern` (`Wiring.cs:2817-2842`): the 2-tall
-    /// sprite's frameX ±18, SkipWire on both cells.
-    fn toggle_hanging_lantern(
-        &mut self,
-        world: &mut World,
-        i: i32,
-        j: i32,
-        frame_x: i16,
-        frame_y: i16,
-    ) {
-        let mut num = i32::from(frame_y / 18);
-        while num >= 2 {
-            num -= 2;
-        }
-        let num2 = j - num;
-        let num3: i32 = if frame_x > 0 { -18 } else { 18 };
-        world.set_tile_frame_x(i, num2, world.tile_frame_x(i, num2) + num3);
-        world.set_tile_frame_x(i, num2 + 1, world.tile_frame_x(i, num2 + 1) + num3);
-        self.skip.insert((i, num2));
-        self.skip.insert((i, num2 + 1));
+    /// `Wiring.ToggleHangingLantern` (`Wiring.cs:2817-2842`).
+    fn toggle_hanging_lantern(&mut self, world: &mut World, i: i32, j: i32) {
+        let mut skips = Vec::new();
+        toggle_hanging_lantern(world, i, j, None, Some(&mut skips));
+        self.skip.extend(skips);
     }
 
-    /// `Wiring.Toggle2x2Light` (`Wiring.cs:2843-2878`): the 2×2 sprite's
-    /// frameX ±36 around its anchor, SkipWire 2×2.
-    fn toggle_2x2_light(
-        &mut self,
-        world: &mut World,
-        i: i32,
-        j: i32,
-        frame_x: i16,
-        frame_y: i16,
-    ) {
-        let mut num = i32::from(frame_y / 18);
-        while num >= 2 {
-            num -= 2;
-        }
-        let num = j - num;
-        let mut num2 = i32::from(frame_x / 18);
-        if num2 > 1 {
-            num2 -= 2;
-        }
-        let num2 = i - num2;
-        let num3: i32 = if world.tile_frame_x(num2, num) > 0 { -36 } else { 36 };
-        for x in num2..num2 + 2 {
-            for y in num..num + 2 {
-                world.set_tile_frame_x(x, y, world.tile_frame_x(x, y) + num3);
-                self.skip.insert((x, y)); // `Wiring.SkipWire` (`:2870-2873`)
-            }
-        }
+    /// `Wiring.Toggle2x2Light` (`Wiring.cs:2843-2878`).
+    fn toggle_2x2_light(&mut self, world: &mut World, i: i32, j: i32) {
+        let mut skips = Vec::new();
+        toggle_2x2_light(world, i, j, None, Some(&mut skips));
+        self.skip.extend(skips);
     }
 
-    /// `Wiring.ToggleLampPost` (`Wiring.cs:2879-2902`): the 6-tall lamp's
-    /// frameX ±18 down its column, SkipWire per cell.
-    fn toggle_lamp_post(
-        &mut self,
-        world: &mut World,
-        i: i32,
-        j: i32,
-        frame_x: i16,
-        frame_y: i16,
-    ) {
-        let num = j - i32::from(frame_y / 18);
-        let num2: i32 = if frame_x > 0 { -18 } else { 18 };
-        for k in num..num + 6 {
-            world.set_tile_frame_x(i, k, world.tile_frame_x(i, k) + num2);
-            self.skip.insert((i, k)); // `Wiring.SkipWire` (`:2895-2898`)
-        }
+    /// `Wiring.ToggleLampPost` (`Wiring.cs:2879-2902`).
+    fn toggle_lamp_post(&mut self, world: &mut World, i: i32, j: i32) {
+        let mut skips = Vec::new();
+        toggle_lamp_post(world, i, j, None, Some(&mut skips));
+        self.skip.extend(skips);
     }
 
-    /// `Wiring.ToggleCandle` (`Wiring.cs:2920-2934`): the cell's frameX ±18.
-    fn toggle_candle(&mut self, world: &mut World, i: i32, j: i32, frame_x: i16) {
-        let num: i32 = if frame_x > 0 { -18 } else { 18 };
-        world.set_tile_frame_x(i, j, world.tile_frame_x(i, j) + num);
+    /// `Wiring.ToggleCandle` (`Wiring.cs:2920-2934`): no SkipWire.
+    fn toggle_candle(&mut self, world: &mut World, i: i32, j: i32) {
+        toggle_candle(world, i, j, None);
     }
 
-    /// `Wiring.ToggleLamp` (`Wiring.cs:2935-2962`): the 3-tall sprite's
-    /// frameX ±18, SkipWire on the three cells.
-    fn toggle_lamp(&mut self, world: &mut World, i: i32, j: i32, frame_x: i16, frame_y: i16) {
-        let mut num = i32::from(frame_y / 18);
-        while num >= 3 {
-            num -= 3;
-        }
-        let num = j - num;
-        let num2: i32 = if frame_x > 0 { -18 } else { 18 };
-        for y in num..num + 3 {
-            world.set_tile_frame_x(i, y, world.tile_frame_x(i, y) + num2);
-            self.skip.insert((i, y)); // `Wiring.SkipWire` (`:2952-2955`)
-        }
+    /// `Wiring.ToggleLamp` (`Wiring.cs:2935-2962`).
+    fn toggle_lamp(&mut self, world: &mut World, i: i32, j: i32) {
+        let mut skips = Vec::new();
+        toggle_lamp(world, i, j, None, Some(&mut skips));
+        self.skip.extend(skips);
     }
 
-    /// `Wiring.ToggleChandelier` (`Wiring.cs:2963-2999`): the 3×3 sprite's
-    /// frameX ±54 around its anchor (`frameX % 108` picks the lit state),
-    /// SkipWire 3×3.
-    fn toggle_chandelier(
-        &mut self,
-        world: &mut World,
-        i: i32,
-        j: i32,
-        frame_x: i16,
-        frame_y: i16,
-    ) {
-        let mut num = i32::from(frame_y / 18);
-        while num >= 3 {
-            num -= 3;
-        }
-        let num2 = j - num;
-        let mut num3 = i32::from(frame_x % 108 / 18);
-        if num3 > 2 {
-            num3 -= 3;
-        }
-        let num3 = i - num3;
-        let num4: i32 = if world.tile_frame_x(num3, num2) % 108 > 0 {
-            -54
-        } else {
-            54
-        };
-        for x in num3..num3 + 3 {
-            for y in num2..num2 + 3 {
-                world.set_tile_frame_x(x, y, world.tile_frame_x(x, y) + num4);
-                self.skip.insert((x, y)); // `Wiring.SkipWire` (`:2988-2991`)
-            }
-        }
+    /// `Wiring.ToggleChandelier` (`Wiring.cs:2963-2999`).
+    fn toggle_chandelier(&mut self, world: &mut World, i: i32, j: i32) {
+        let mut skips = Vec::new();
+        toggle_chandelier(world, i, j, None, Some(&mut skips));
+        self.skip.extend(skips);
     }
 
     /// `Wiring.ToggleCampFire` (`Wiring.cs:3000-3042`, the caller
-    /// `:1418-1421` gated on `TileID.Sets.Campfires` = {215}): the 3×2
-    /// sprite's frameY ±36 around its anchor, keyed on the anchor's
-    /// `frameY >= 36`; the active+same-kind validation kills a broken
-    /// body (drops collected), SkipWire 3×2, and only active same-kind
-    /// cells shift (`:3034-3038`). The `forcedStateWhereTrueIsOn`
-    /// parameter is null at the wire call site — the gate always passes.
-    fn toggle_camp_fire(
-        &mut self,
-        world: &mut World,
-        i: i32,
-        j: i32,
-        frame_x: i16,
-        frame_y: i16,
-    ) {
-        if !crate::tiledata::SET_CAMPFIRES.has(world.tile(i, j).map_or(0, |t| t.kind)) {
-            return; // `:3002-3005`
-        }
-        let num3 = i32::from(frame_x % 54 / 18);
-        let num4 = i32::from(frame_y % 36 / 18);
-        let (num5, num6) = (i - num3, j - num4);
-        // `WorldGen.ValidateTileSquareIsActiveAndOfType(num5, num6, 3, 2,
-        // type)` (`:3012-3015`): the shared validator.
+    /// `:1418-1421` gated on `TileID.Sets.Campfires`): the validate-kill
+    /// drops queue into `actuation_drops` (the port's cascade seam).
+    fn toggle_camp_fire(&mut self, world: &mut World, i: i32, j: i32) {
+        let mut skips = Vec::new();
         let mut drops = Vec::new();
-        let kind = world.tile(i, j).map_or(0, |t| t.kind);
-        if !crate::edit::validate_tile_square(world, num5, num6, 3, 2, kind, &mut drops) {
-            self.actuation_drops.extend(drops);
-            return;
-        }
-        let num7: i32 = if world.tile_frame_y(num5, num6) >= 36 { -36 } else { 36 };
-        for k in num5..num5 + 3 {
-            for l in num6..num6 + 2 {
-                self.skip.insert((k, l)); // `Wiring.SkipWire` (`:3030-3033`)
-                if world
-                    .tile(k, l)
-                    .is_some_and(|t| t.active() && t.kind == kind)
-                {
-                    let f = world.tile_frame_y(k, l);
-                    world.set_tile_frame_y(k, l, f + num7);
-                }
-            }
-        }
+        toggle_campfire(world, i, j, None, Some(&mut skips), &mut drops);
+        self.skip.extend(skips);
+        self.actuation_drops.extend(drops);
     }
 
-    /// `Wiring.ToggleFirePlace` (`Wiring.cs:3044-3072`): the 3×2 sprite's
-    /// frameX ±54 around its anchor, SkipWire 3×2.
-    fn toggle_fire_place(
-        &mut self,
-        world: &mut World,
-        i: i32,
-        j: i32,
-        frame_x: i16,
-        frame_y: i16,
-    ) {
-        let num = i32::from(frame_x % 54 / 18);
-        let num2 = i32::from(frame_y % 36 / 18);
-        let (num3, num4) = (i - num, j - num2);
-        let num5: i32 = if world.tile_frame_x(num3, num4) >= 54 {
-            -54
-        } else {
-            54
-        };
-        for x in num3..num3 + 3 {
-            for y in num4..num4 + 2 {
-                self.skip.insert((x, y)); // `Wiring.SkipWire` (`:3060-3063`)
-                world.set_tile_frame_x(x, y, world.tile_frame_x(x, y) + num5);
-            }
-        }
+    /// `Wiring.ToggleFirePlace` (`Wiring.cs:3044-3072`).
+    fn toggle_fire_place(&mut self, world: &mut World, i: i32, j: i32) {
+        let mut skips = Vec::new();
+        toggle_fireplace(world, i, j, None, Some(&mut skips));
+        self.skip.extend(skips);
     }
 
     /// `WorldGen.SwitchMB` (`WorldGen.cs:50958-50988`): the music box's 2×2
@@ -3374,6 +3238,448 @@ fn dx_y_to_dir(dx: i32, dy: i32) -> u8 {
         (1, 0) => 2,
         (-1, 0) => 3,
         _ => 0,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The light-toggle family (`WorldGen.TryToggleLight` `WorldGen.cs:72970-73024`
+// → the `Wiring.Toggle*` statics `Wiring.cs:2800-3072`) — the research/95 §4
+// UNIFICATION (W4-c42 union-exec): the base `Wiring` methods (SkipWire-
+// complete, no forced state) and d6's free fns (forced-complete, no SkipWire)
+// were two halves of each C# static; these are the ONE family serving both
+// callers. `forced` is the C# `bool? forcedStateWhereTrueIsOn` (the
+// `!HasValue || !Value != off` gate, verified equivalent to
+// `forced.is_none() || forced == Some(off)`); `skips` is the `doSkipWires`
+// out-collector — the `Wiring` method wrappers pass `Some` and insert into
+// `self.skip` (the wire path's `doSkipWires = true`, `Wiring.cs:999`),
+// `try_toggle_light` passes the caller's `skip_wires`. The
+// `NetMessage.SendTileSquare` tails are MP-only, unported.
+
+/// `Wiring.ToggleTorch` (`Wiring.cs:2903-2918`): the ±66 frameX flip; the
+/// OFF state is `frameX >= 66`. No SkipWire (the C# static has none).
+fn toggle_torch(world: &mut World, x: i32, y: i32, forced: Option<bool>) {
+    let Some(t) = world.tile(x, y) else { return };
+    let off = t.frame_x >= 66;
+    if forced.is_none() || forced == Some(off) {
+        if let Some(t) = world.tile_mut(x, y) {
+            t.frame_x += if t.frame_x < 66 { 66 } else { -66 };
+        }
+    }
+}
+
+/// `Wiring.ToggleCandle` (`Wiring.cs:2920-2933`): the ±18 frameX flip on
+/// ONE cell (the C# writes only the clicked cell); OFF is `frameX > 0`.
+fn toggle_candle(world: &mut World, x: i32, y: i32, forced: Option<bool>) {
+    let Some(t) = world.tile(x, y) else { return };
+    let off = t.frame_x > 0;
+    let delta: i16 = if off { -18 } else { 18 };
+    if forced.is_none() || forced == Some(off) {
+        if let Some(t) = world.tile_mut(x, y) {
+            t.frame_x += delta;
+        }
+    }
+}
+
+/// `Wiring.ToggleLamp` (`Wiring.cs:2935-2961`): the 1×3 floor lamp — the
+/// `frameY / 18` mod-3 anchor decode, the ±18 flip on all three cells;
+/// OFF is the clicked cell's `frameX > 0`. SkipWire ×3 (`:2952-2955`).
+fn toggle_lamp(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    forced: Option<bool>,
+    skips: Option<&mut Vec<(i32, i32)>>,
+) {
+    let Some(t) = world.tile(x, y) else { return };
+    let top = y - (t.frame_y as i32 / 18) % 3;
+    let off = t.frame_x > 0;
+    let delta: i16 = if off { -18 } else { 18 };
+    if forced.is_none() || forced == Some(off) {
+        for k in top..top + 3 {
+            if let Some(t) = world.tile_mut(x, k) {
+                t.frame_x += delta;
+            }
+        }
+        if let Some(skips) = skips {
+            for k in top..top + 3 {
+                skips.push((x, k));
+            }
+        }
+    }
+}
+
+/// `Wiring.ToggleChandelier` (`Wiring.cs:2963-2998`): the 3×3 chandelier —
+/// the mod-3 row/column anchor, the ±54 flip keyed on the ANCHOR's
+/// `frameX % 108 > 0`; the early-return gate form. SkipWire 3×3
+/// (`:2988-2991`, per cell after its write).
+fn toggle_chandelier(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    forced: Option<bool>,
+    skips: Option<&mut Vec<(i32, i32)>>,
+) {
+    let Some(t) = world.tile(x, y) else { return };
+    let top = y - (t.frame_y as i32 / 18) % 3;
+    let mut col = t.frame_x as i32 % 108 / 18;
+    if col > 2 {
+        col -= 3;
+    }
+    let left = x - col;
+    let Some(a) = world.tile(left, top) else { return };
+    let off = a.frame_x % 108 > 0;
+    if forced.is_some() && forced != Some(off) {
+        return;
+    }
+    let delta: i16 = if off { -54 } else { 54 };
+    let mut skips = skips;
+    for k in left..left + 3 {
+        for l in top..top + 3 {
+            if let Some(t) = world.tile_mut(k, l) {
+                t.frame_x += delta;
+            }
+            if let Some(skips) = skips.as_mut() {
+                skips.push((k, l));
+            }
+        }
+    }
+}
+
+/// `Wiring.ToggleCampFire` (`Wiring.cs:3000-3042`): the 3×2 campfire — the
+/// `TileID.Sets.Campfires` gate, the `% 54 / 18` / `% 36 / 18` anchor, the
+/// `ValidateTileSquareIsActiveAndOfType` gate (a mismatched square kills
+/// its matching cells — the drops ride `drops` out to the caller), the
+/// ±36 frameY flip on the ACTIVE SAME-KIND cells keyed on the anchor's
+/// `frameY >= 36`; the early-return forced gate sits AFTER the validate
+/// (`:3016-3020`). SkipWire 3×2 (`:3030-3033`, per cell BEFORE its write).
+fn toggle_campfire(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    forced: Option<bool>,
+    skips: Option<&mut Vec<(i32, i32)>>,
+    drops: &mut Vec<crate::edit::ObjectDrop>,
+) {
+    let Some(t) = world.tile(x, y) else { return };
+    let kind = t.kind;
+    if !crate::tiledata::SET_CAMPFIRES.has(kind) {
+        return; // `:3002-3005`
+    }
+    let left = x - (t.frame_x as i32 % 54 / 18);
+    let top = y - (t.frame_y as i32 % 36 / 18);
+    if !crate::edit::validate_tile_square(world, left, top, 3, 2, kind, drops) {
+        return; // `:3012-3015`
+    }
+    let Some(a) = world.tile(left, top) else { return };
+    let off = a.frame_y >= 36;
+    if forced.is_some() && forced != Some(off) {
+        return;
+    }
+    let delta: i16 = if off { -36 } else { 36 };
+    let mut skips = skips;
+    for k in left..left + 3 {
+        for l in top..top + 2 {
+            if let Some(skips) = skips.as_mut() {
+                skips.push((k, l));
+            }
+            if let Some(t) = world.tile_mut(k, l) {
+                if t.active() && t.kind == kind {
+                    t.frame_y += delta;
+                }
+            }
+        }
+    }
+}
+
+/// `Wiring.ToggleFirePlace` (`Wiring.cs:3044-3072`): the 3×2 fireplace —
+/// the anchor decode, the ±54 frameX flip on all six cells keyed on the
+/// anchor's `frameX >= 54`; the early-return gate form. SkipWire 3×2
+/// (`:3060-3063`, per cell BEFORE its write).
+fn toggle_fireplace(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    forced: Option<bool>,
+    skips: Option<&mut Vec<(i32, i32)>>,
+) {
+    let Some(t) = world.tile(x, y) else { return };
+    let left = x - t.frame_x as i32 % 54 / 18;
+    let top = y - t.frame_y as i32 % 36 / 18;
+    let Some(a) = world.tile(left, top) else { return };
+    let off = a.frame_x >= 54;
+    if forced.is_some() && forced != Some(off) {
+        return;
+    }
+    let delta: i16 = if off { -54 } else { 54 };
+    let mut skips = skips;
+    for k in left..left + 3 {
+        for l in top..top + 2 {
+            if let Some(skips) = skips.as_mut() {
+                skips.push((k, l));
+            }
+            if let Some(t) = world.tile_mut(k, l) {
+                t.frame_x += delta;
+            }
+        }
+    }
+}
+
+/// `Wiring.Toggle2x2Light` (`Wiring.cs:2843-2877`): the 2×2 lights
+/// (95/100/126/173/564) — the mod-2 anchor, the ±36 frameX flip on the
+/// four cells keyed on the anchor's `frameX > 0`. SkipWire 2×2
+/// (`:2870-2873`).
+fn toggle_2x2_light(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    forced: Option<bool>,
+    skips: Option<&mut Vec<(i32, i32)>>,
+) {
+    let Some(t) = world.tile(x, y) else { return };
+    let top = y - (t.frame_y as i32 / 18) % 2;
+    let mut col = t.frame_x as i32 / 18;
+    if col > 1 {
+        col -= 2;
+    }
+    let left = x - col;
+    let Some(a) = world.tile(left, top) else { return };
+    let off = a.frame_x > 0;
+    let delta: i16 = if off { -36 } else { 36 };
+    if forced.is_none() || forced == Some(off) {
+        for (k, l) in [(left, top), (left + 1, top), (left, top + 1), (left + 1, top + 1)] {
+            if let Some(t) = world.tile_mut(k, l) {
+                t.frame_x += delta;
+            }
+        }
+        if let Some(skips) = skips {
+            for cell in [(left, top), (left + 1, top), (left, top + 1), (left + 1, top + 1)] {
+                skips.push(cell);
+            }
+        }
+    }
+}
+
+/// `Wiring.ToggleLampPost` (`Wiring.cs:2879-2901`): the 1×6 lamp post —
+/// `j - frameY / 18` top, the ±18 flip on all six cells; the early-return
+/// gate form. SkipWire per cell (`:2895-2898`, after its write).
+fn toggle_lamp_post(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    forced: Option<bool>,
+    skips: Option<&mut Vec<(i32, i32)>>,
+) {
+    let Some(t) = world.tile(x, y) else { return };
+    let top = y - t.frame_y as i32 / 18;
+    let off = t.frame_x > 0;
+    let delta: i16 = if off { -18 } else { 18 };
+    if forced.is_some() && forced != Some(off) {
+        return;
+    }
+    let mut skips = skips;
+    for k in top..top + 6 {
+        if let Some(t) = world.tile_mut(x, k) {
+            t.frame_x += delta;
+        }
+        if let Some(skips) = skips.as_mut() {
+            skips.push((x, k));
+        }
+    }
+}
+
+/// `Wiring.ToggleHangingLantern` (`Wiring.cs:2817-2841`): the 1×2 lantern
+/// — the mod-2 row anchor, the ±18 flip on both cells. SkipWire ×2
+/// (`:2833-2836`).
+fn toggle_hanging_lantern(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    forced: Option<bool>,
+    skips: Option<&mut Vec<(i32, i32)>>,
+) {
+    let Some(t) = world.tile(x, y) else { return };
+    let top = y - (t.frame_y as i32 / 18) % 2;
+    let off = t.frame_x > 0;
+    let delta: i16 = if off { -18 } else { 18 };
+    if forced.is_none() || forced == Some(off) {
+        for k in top..top + 2 {
+            if let Some(t) = world.tile_mut(x, k) {
+                t.frame_x += delta;
+            }
+        }
+        if let Some(skips) = skips {
+            skips.push((x, top));
+            skips.push((x, top + 1));
+        }
+    }
+}
+
+/// `Wiring.ToggleHolidayLight` (`Wiring.cs:2800-2815`): the ±54 frameX
+/// flip; OFF is `frameX >= 54`. No SkipWire (the C# static has none).
+fn toggle_holiday_light(world: &mut World, x: i32, y: i32, forced: Option<bool>) {
+    let Some(t) = world.tile(x, y) else { return };
+    let off = t.frame_x >= 54;
+    if forced.is_none() || forced == Some(off) {
+        if let Some(t) = world.tile_mut(x, y) {
+            t.frame_x += if t.frame_x < 54 { 54 } else { -54 };
+        }
+    }
+}
+
+/// `WorldGen.TryToggleLight` (`WorldGen.cs:72970-73024`): the light-source
+/// dispatch — inactive cells refuse; the torch set (`TileID.Sets.Torches`
+/// = {4}, `TileID.cs:615`), the campfire set ({215}, `:616`), then the
+/// kind switch (the candles 33/49/174/372/646, the fireplace 405, the 2×2
+/// lights 95/100/126/173/564, the lamp post 92, the chandelier 34, the
+/// floor lamp 93, the hanging lantern 42, the holiday light 149). Returns
+/// whether a toggle family ran. `drops` collects the campfire validate's
+/// mismatch kills (the caller spawns them). d6's unique dispatch, kept
+/// and re-pointed at the unified family (research/95 §4): `skip_wires`
+/// now feeds the family's skips out-collector — the collected cells are
+/// discarded here because no free-fn caller owns a flood skip set (the
+/// gun streams pass false; a future wired caller drains the vec — the
+/// §8.5 seam is structurally closed, only the sink is pending).
+pub fn try_toggle_light(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    forced: Option<bool>,
+    skip_wires: bool,
+    drops: &mut Vec<crate::edit::ObjectDrop>,
+) -> bool {
+    let Some(t) = world.tile(x, y) else { return false };
+    if !t.active() {
+        return false;
+    }
+    let mut local_skips = Vec::new();
+    let sink = if skip_wires { Some(&mut local_skips) } else { None };
+    let kind = t.kind;
+    if crate::tiledata::SET_TORCHES.has(kind) {
+        toggle_torch(world, x, y, forced);
+        return true;
+    }
+    if crate::tiledata::SET_CAMPFIRES.has(kind) {
+        toggle_campfire(world, x, y, forced, sink, drops);
+        return true;
+    }
+    // Each arm moves `sink` — the arms are exclusive (one family runs).
+    match kind {
+        33 | 49 | 174 | 372 | 646 => toggle_candle(world, x, y, forced),
+        405 => toggle_fireplace(world, x, y, forced, sink),
+        95 | 100 | 126 | 173 | 564 => toggle_2x2_light(world, x, y, forced, sink),
+        92 => toggle_lamp_post(world, x, y, forced, sink),
+        34 => toggle_chandelier(world, x, y, forced, sink),
+        93 => toggle_lamp(world, x, y, forced, sink),
+        42 => toggle_hanging_lantern(world, x, y, forced, sink),
+        149 => toggle_holiday_light(world, x, y, forced),
+        _ => return false,
+    }
+    true
+}
+
+
+/// W4-d6 witnesses for the light-toggle family — WRITTEN NOT RUN
+/// (code-only mode). Every expected value is hand-derived from the cited
+/// `Wiring.cs` lines. Kept through the research/95 §4 unification (the
+/// forced-gate pins are d6-unique; the wiring-path skip sets are pinned by
+/// the e20 light-family witnesses in `s1_l6_tests`).
+#[cfg(test)]
+mod light_toggle_tests {
+    use super::*;
+    use crate::tile::{Tile, FLAG_ACTIVE};
+
+    fn world() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    fn put(w: &mut World, x: i32, y: i32, kind: u16, fx: i16, fy: i16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile { kind, frame_x: fx, frame_y: fy, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    #[test]
+    fn w4_d6_the_torch_flip_is_66_and_the_forced_state_gates() {
+        // `Wiring.cs:2903-2918`: OFF is frameX >= 66; forced Some(false)
+        // flips a lit torch (off=false, forced==off) and leaves an OFF one.
+        let mut w = world();
+        let mut drops = Vec::new();
+        put(&mut w, 10, 10, 4, 0, 0);
+        assert!(try_toggle_light(&mut w, 10, 10, Some(false), false, &mut drops));
+        assert_eq!(w.tile(10, 10).unwrap().frame_x, 66);
+        let _ = try_toggle_light(&mut w, 10, 10, Some(false), false, &mut drops);
+        assert_eq!(w.tile(10, 10).unwrap().frame_x, 66, "already off — no flip");
+        let _ = try_toggle_light(&mut w, 10, 10, Some(true), false, &mut drops);
+        assert_eq!(w.tile(10, 10).unwrap().frame_x, 0, "forced ON re-lights");
+        // An inactive cell refuses (`WorldGen.cs:72973`).
+        let i = w.index(10, 10);
+        w.tiles[i].flags &= !FLAG_ACTIVE;
+        assert!(!try_toggle_light(&mut w, 10, 10, None, false, &mut drops));
+        // A non-light kind refuses.
+        put(&mut w, 11, 10, 1, 0, 0);
+        assert!(!try_toggle_light(&mut w, 11, 10, None, false, &mut drops));
+    }
+
+    #[test]
+    fn w4_d6_the_lamp_flips_all_three_cells_from_the_mod3_anchor() {
+        // `Wiring.cs:2935-2961`: the clicked cell's frameY/18 mod 3 anchors
+        // the 1×3; the ±18 flip lands on all three.
+        let mut w = world();
+        let mut drops = Vec::new();
+        for k in 0..3 {
+            put(&mut w, 12, 10 + k, 93, 0, (k * 18) as i16);
+        }
+        // Click the BOTTOM cell (frameY 36 → 36/18 = 2, mod 3 = 2 → top 10).
+        let _ = try_toggle_light(&mut w, 12, 12, Some(false), false, &mut drops);
+        for k in 0..3 {
+            assert_eq!(w.tile(12, 10 + k).unwrap().frame_x, 18, "cell {k}");
+        }
+    }
+
+    #[test]
+    fn w4_d6_the_chandelier_flips_the_3x3_by_the_anchor_mod108() {
+        // `Wiring.cs:2963-2998`: the ±54 flip keyed on the anchor's
+        // frameX % 108 > 0.
+        let mut w = world();
+        let mut drops = Vec::new();
+        for dx in 0..3 {
+            for dy in 0..3 {
+                put(&mut w, 20 + dx, 20 + dy, 34, (dx * 18) as i16, (dy * 18) as i16);
+            }
+        }
+        // Click the bottom-right cell: frameY 36 → top 20; frameX 36 →
+        // 36%108/18 = 2 → left 20.
+        let _ = try_toggle_light(&mut w, 22, 22, Some(false), false, &mut drops);
+        for dx in 0..3 {
+            for dy in 0..3 {
+                assert_eq!(w.tile(20 + dx, 20 + dy).unwrap().frame_x, (dx * 18 + 54) as i16);
+            }
+        }
+    }
+
+    #[test]
+    fn w4_d6_the_campfire_flips_framey_and_a_broken_square_kills() {
+        // `Wiring.cs:3000-3042`: the 3×2 anchor, the ±36 frameY flip; the
+        // validate gate kills the matching cells of a mismatched square.
+        let mut w = world();
+        let mut drops = Vec::new();
+        for dx in 0..3 {
+            for dy in 0..2 {
+                put(&mut w, 30 + dx, 30 + dy, 215, (dx * 18) as i16, (dy * 18) as i16);
+            }
+        }
+        let _ = try_toggle_light(&mut w, 31, 31, Some(false), false, &mut drops);
+        for dx in 0..3 {
+            for dy in 0..2 {
+                assert_eq!(w.tile(30 + dx, 30 + dy).unwrap().frame_y, (dy * 18 + 36) as i16);
+            }
+        }
+        assert!(drops.is_empty(), "a valid square drops nothing");
+        // Break one cell: the next toggle's validate kills the rest.
+        let i = w.index(30, 30);
+        w.tiles[i].flags &= !FLAG_ACTIVE;
+        let _ = try_toggle_light(&mut w, 31, 31, Some(true), false, &mut drops);
+        assert!(!w.tile(31, 30).unwrap().active(), "the mismatch kills");
     }
 }
 
@@ -6389,6 +6695,29 @@ mod w4_c42_batch1_tests {
             assert!(wiring.skip.contains(&(10, 17 + row)), "hinge row {row} skipped");
         }
         assert_eq!(wiring.take_door_cues(), vec![(false, 11 * 16, 18 * 16)]);
+    }
+
+    /// The f11-unique actuator-precedence pin (research/95 §4 witness
+    /// union: `w4_f11_an_actuated_torch_actuates_instead_of_toggling`,
+    /// kept — the ActuateForced-refusal interaction). `Wiring.cs:1002-
+    /// 1009`: an actuated tile runs `ActuateForced` first; a non-solid
+    /// kind refuses the actuation and the device arm still runs (the C#
+    /// fall-through). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f11_an_actuated_torch_actuates_instead_of_toggling() {
+        let mut w = world();
+        put(&mut w, 10, 20, 4, 0, 0);
+        let i = w.index(10, 20);
+        w.tiles[i].flags |= crate::tile::FLAG_ACTUATOR;
+        let mut wiring = Wiring::new();
+        wiring.hit_wire_single(&mut w, 10, 20);
+        // The torch is not solid — ActuateForced refuses, the tile stays
+        // active and the torch arm still toggles.
+        assert_eq!(
+            w.tile_frame_x(10, 20),
+            66,
+            "the non-solid actuator refused, the toggle ran"
+        );
     }
 }
 
