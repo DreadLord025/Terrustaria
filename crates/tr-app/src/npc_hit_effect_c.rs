@@ -263,6 +263,7 @@
 //! | 1389-1394 | `:89400-89427` | the 127 SkeletronPrime death (149/150 heads + the full 4-quadrant explosion) |
 //! | 1395-1400 | `:89437-89464` | the 128-131 Prime-limb death (147/148 heads + the full 4-quadrant explosion) |
 //! | 1401-1405 | `:89520-89524` | the 24 FireImp death (45/46/46/47/47 ladder, type-6 dust) |
+//! | 1406-1414 | `:89597-89625` | the goblin block (per-type ladder + 111's 131) + 471 GoblinSummoner (distinct +20 pair) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -8511,6 +8512,87 @@ fn fire_imp_death(
     gore.new_gore(rng, world, low, vel, 47, 1.0); // :89524
 }
 
+/// The 26/27/28/29/73/111 goblin-block death (`NPC.cs:89560-89605`, sites
+/// 1406-1409): the 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY
+/// -2.5), then the per-type ladder at `this.scale` — head num840, mid
+/// num841×2 at +20, tail num842×2 at +34. The triple selects: 111 Archer →
+/// 623/624/625, 26 Peon → 626/627/628, 73 Scout → 629/630/631, 27 Thief →
+/// 632/633/634, 28 Warrior → 635/636/637, else (29 Sorcerer) → 48/49/50.
+/// The 111 ALSO spawns a 131 at +34 BEFORE the tail pair (`:89600-89603`).
+fn goblin_block_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    // `:89564-89596` — the per-type triple select (the C# if-chain order).
+    let (head, mid_ty, tail) = match npc_type {
+        111 => (623, 624, 625),
+        26 => (626, 627, 628),
+        73 => (629, 630, 631),
+        27 => (632, 633, 634),
+        28 => (635, 636, 637),
+        _ => (48, 49, 50), // 29 GoblinSorcerer
+    };
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    gore.new_gore(rng, world, pos, vel, head, s); // :89597
+    gore.new_gore(rng, world, mid, vel, mid_ty, s); // :89598
+    gore.new_gore(rng, world, mid, vel, mid_ty, s); // :89599
+    // `:89600-89603` — the 111-only 131 extra BEFORE the tail pair.
+    if npc_type == 111 {
+        gore.new_gore(rng, world, low, vel, 131, s); // :89602
+    }
+    gore.new_gore(rng, world, low, vel, tail, s); // :89604
+    gore.new_gore(rng, world, low, vel, tail, s); // :89605
+}
+
+/// The 471 GoblinSummoner death (`NPC.cs:89617-89625`, sites 1410-1414):
+/// the 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then
+/// the 5-gore ladder at `this.scale` — 675 head, the DISTINCT +20 pair
+/// 676/677, 678/678 at +34.
+fn goblin_summoner_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    gore.new_gore(rng, world, pos, vel, 675, s); // :89621
+    gore.new_gore(rng, world, mid, vel, 676, s); // :89622
+    gore.new_gore(rng, world, mid, vel, 677, s); // :89623
+    gore.new_gore(rng, world, low, vel, 678, s); // :89624
+    gore.new_gore(rng, world, low, vel, 678, s); // :89625
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -9550,6 +9632,18 @@ pub fn hit_effect_c(
     // `:89503-89525` — the 24 FireImp arm (sites 1401-1405).
     if npc_type == 24 && npc.hp <= 0 {
         fire_imp_death(npc, dust, dust_ctx, gore, rng, world);
+    }
+    // `:89550-89606` — the 26/27/28/29/73/111 goblin-block arm (sites
+    // 1406-1409).
+    if (npc_type == 26 || npc_type == 27 || npc_type == 28 || npc_type == 29
+        || npc_type == 73 || npc_type == 111)
+        && npc.hp <= 0
+    {
+        goblin_block_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89607-89626` — the 471 GoblinSummoner arm (sites 1410-1414).
+    if npc_type == 471 && npc.hp <= 0 {
+        goblin_summoner_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -15020,6 +15114,44 @@ mod tests {
         let d = dust.slots().iter().find(|d| d.active).unwrap();
         assert_eq!(d.dust_type, 6);
         assert!(d.no_gravity);
+    }
+
+    /// `NPC.cs:89597-89605` — the goblin-block death: the per-type triple
+    /// ladder; the 111 Archer inserts the 131 at +34 BEFORE the tail pair.
+    #[test]
+    fn w4_f10_the_goblin_block_death_uses_the_per_type_triple() {
+        let w = air();
+        let cases: [(i32, Vec<i32>); 6] = [
+            (111, vec![623, 624, 624, 131, 625, 625]),
+            (26, vec![626, 627, 627, 628, 628]),
+            (73, vec![629, 630, 630, 631, 631]),
+            (27, vec![632, 633, 633, 634, 634]),
+            (28, vec![635, 636, 636, 637, 637]),
+            (29, vec![48, 49, 49, 50, 50]),
+        ];
+        for (ty, gores) in cases {
+            let n = boss(100.0, 100.0, 40.0, 56.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(1511);
+            goblin_block_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..gores.len()].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, gores, "goblin {ty}");
+        }
+    }
+
+    /// `NPC.cs:89621-89625` — the GoblinSummoner death: the 675 head, the
+    /// DISTINCT +20 pair 676/677, the 678/678 tail.
+    #[test]
+    fn w4_f10_the_goblin_summoner_death_spawns_the_distinct_pair() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1523);
+        goblin_summoner_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![675, 676, 677, 678, 678]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
