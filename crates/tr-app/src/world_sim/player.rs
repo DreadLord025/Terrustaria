@@ -1465,6 +1465,37 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     &b,
                 );
             }
+            // W4-e1 batch 2 — the Lawn Mower puff (20320), the wall-cling puff
+            // (21654/21678/21729/21790/21826) and the DoubleJumpVisuals arm
+            // (21901/21915/21934/21941/21962/21989/22005/22014). Same
+            // disjoint-field borrow pattern; C# site order.
+            if let Some(b) = p.take_mow_lawn_dust() {
+                crate::player_dust2::mow_lawn_puff(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            if let Some(b) = p.take_wall_cling_dust() {
+                crate::player_dust2::wall_cling_puff(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            if let Some(b) = p.take_double_jump_visual_dust() {
+                crate::player_dust2::double_jump_visuals(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
             // `Player.ManaEffect` (`Player.cs:4531-4538`): the cuffs' restore
             // spawns `CombatText.NewText(playerRect, HealMana, amount)` at the
             // hurt position (`:4533`); the NetMessage 43 send (`:4534-4537`)

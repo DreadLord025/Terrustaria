@@ -476,6 +476,282 @@ pub(crate) fn rotate_about(v: Vec2, radians: f64, center: Vec2) -> Vec2 {
     center + Vec2::new(d.x * num - d.y * num2, d.x * num2 + d.y * num)
 }
 
+// ---------------------------------------------------------------------------
+// Site 20320 — `Player.MowTheLawn` (`:20301-20346`): the Lawn Mower (4049)
+// swing puff. The host gates the swing and computes the lerp anchor; the
+// drain replays the single `NewDustDirect`.
+// ---------------------------------------------------------------------------
+
+/// The MowTheLawn puff snapshot: the lerp endpoints + the swing phase. The
+/// host computes `vector` (the mounted-center + direction*38 anchor) and the
+/// two lerp ends; `num` is `(1 - itemAnimation/itemAnimationMax)*2`.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct MowLawnDust {
+    /// `vector + (direction*-16, -4)` — the lerp start.
+    pub a: Vec2,
+    /// `vector + (direction*-6, -4)` — the lerp end.
+    pub b: Vec2,
+    /// `num = (1 - itemAnimation/itemAnimationMax)*2`; the lerp t is
+    /// `num < 1 ? 1-num : num-1`.
+    pub num: f32,
+}
+
+/// `:20320-20327` — one type-31 `NewDustDirect`, box 0×0 at the lerp point,
+/// speed (0, −0.25), alpha 127; then scale 0.9, position −(4,4), the
+/// velocity.Y>0 flip, velocity *= 0.25.
+pub(crate) fn mow_lawn_puff(
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+    b: &MowLawnDust,
+) {
+    let t = if b.num < 1.0 { 1.0 - b.num } else { b.num - 1.0 };
+    let pos = b.a.lerp(b.b, t);
+    let idx = dust.new_dust_direct(
+        rng, ctx, world, pos, 0, 0, 31, 0.0, -0.25, 127, Color::default(), 1.0,
+    );
+    let d = dust.slot_mut(idx);
+    d.scale = 0.9;
+    d.position -= Vec2::new(4.0, 4.0);
+    if d.velocity.y > 0.0 {
+        d.velocity.y *= -1.0;
+    }
+    d.velocity *= 0.25;
+}
+
+// ---------------------------------------------------------------------------
+// Sites 21654 / 21678 / 21729 / 21790 / 21826 — the wall-cling puffs
+// (`Player.WallClimbMovement` `:21607-21748`, `WallslideMovement`
+// `:21750-21840`). All five share the SAME box/post-chain; the host machines
+// pick the position/velocity and queue one snapshot per fired puff.
+// ---------------------------------------------------------------------------
+
+/// One wall-cling puff snapshot: the box origin + the slide direction + the
+/// mount-55 half-scale flag. The post-chain (`:21655-21670` et al.): the
+/// `slideDir < 0` X−10 nudge, `velocity *= 0.1`, `scale *= 1.2`, `noGravity`,
+/// and the mount-55 `scale *= 0.5`. The `gravDir == -1` Y−12 nudge folds away
+/// (gravDir 1). No explicit argument draws.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct WallClingDust {
+    pub x: f32,
+    pub y: f32,
+    pub slide_dir: i32,
+    /// `flag` — mount.Type == 55 (the Rat): the half-scale + the solid-probe
+    /// gate the host already applied.
+    pub mount55: bool,
+}
+
+/// The shared wall-cling puff: type 31, box 8×8, then the post-chain.
+pub(crate) fn wall_cling_puff(
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+    b: &WallClingDust,
+) {
+    let idx = nd(
+        rng, dust, ctx, world, Vec2::new(b.x, b.y), 8, 8, 31,
+        0.0, 0.0, 0, Color::default(), 1.0,
+    );
+    let d = dust.slot_mut(idx);
+    if b.slide_dir < 0 {
+        d.position.x -= 10.0;
+    }
+    d.velocity *= 0.1;
+    d.scale *= 1.2;
+    d.no_gravity = true;
+    if b.mount55 {
+        d.scale *= 0.5;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Sites 21901 / 21915 / 21934 / 21941 / 21962 / 21989 / 22005 / 22014 —
+// `Player.DoubleJumpVisuals` (`:21892-22021`). The per-tick extra-jump visual
+// chain; the host gates each arm on the performing-jump lifecycle and queues
+// one snapshot per fired arm.
+// ---------------------------------------------------------------------------
+
+/// The DoubleJumpVisuals snapshot: the box/velocity/jump counter at the C#
+/// read moment + the performing arm. `jump` is `Player.jump` (the hold-boost
+/// counter) — the Sandstorm scale and the Sail count read it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct DoubleJumpVisualDust {
+    pub kind: crate::player::ExtraJump,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub vx: f32,
+    pub vy: f32,
+    pub jump: i32,
+    /// The Sandstorm gore sibling's gate (`:21920`, `miscCounter % 3 == 0`):
+    /// when true the `Next(220,223)` argument draw rides the stream (the gore
+    /// body is W4-d55's). The host computes it from `misc_counter`.
+    pub sandstorm_gore_gate: bool,
+}
+
+/// `:21894-22020` — the per-arm visual. The host already gated the arm; this
+/// replays its `Dust.NewDust` chain. Cloud/Fart are single puffs with the
+/// velocity overwrite; Sandstorm ×3 with the jump-scaled fadeIn; Unicorn one
+/// rolled-type puff; Sail ×1/2; Blizzard 2+3+3.
+pub(crate) fn double_jump_visuals(
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+    b: &DoubleJumpVisualDust,
+) {
+    use crate::player::ExtraJump;
+    let pos = Vec2::new(b.x, b.y);
+    let (w, h) = (b.width as i32, b.height as i32);
+    match b.kind {
+        // `:21894-21904` — Cloud: one type-16 puff, box (width+8)×4 at
+        // (x−4, y+height), speed (−vx*0.5, vy*0.5), alpha 100, scale 1.5;
+        // then velocity.X = vX*0.5 − vx*0.1, velocity.Y = vY*0.5 − vy*0.3.
+        ExtraJump::Cloud => {
+            let idx = nd(
+                rng, dust, ctx, world, Vec2::new(b.x - 4.0, b.y + b.height),
+                w + 8, 4, 16, -b.vx * 0.5, b.vy * 0.5, 100, Color::default(), 1.5,
+            );
+            let d = dust.slot_mut(idx);
+            d.velocity.x = d.velocity.x * 0.5 - b.vx * 0.1;
+            d.velocity.y = d.velocity.y * 0.5 - b.vy * 0.3;
+        }
+        // `:21905-21926` — Sandstorm: 3 type-124 puffs, box width×32 at
+        // (x, y+height/2), speed (vx*0.3, vy*0.3), alpha 150, scale num4;
+        // then velocity *= 0.5*num4, fadeIn = 1.5*num4. num4 = (jump/75+1)/2.
+        // The gore sibling (`:21922`) is W4-d55's — its argument draws are
+        // consumed here in order (the miscCounter%3 gate + Next(220,223)).
+        ExtraJump::Sandstorm => {
+            let num4 = (b.jump as f32 / 75.0 + 1.0) / 2.0;
+            for _ in 0..3 {
+                let idx = nd(
+                    rng, dust, ctx, world, Vec2::new(b.x, b.y + (h / 2) as f32),
+                    w, 32, 124, b.vx * 0.3, b.vy * 0.3, 150, Color::default(), num4,
+                );
+                let d = dust.slot_mut(idx);
+                d.velocity *= 0.5 * num4;
+                d.fade_in = 1.5 * num4;
+            }
+            // `:21919` — sandStorm = true is the host's pose flag (no draw).
+            // `:21920-21925` — the gore sibling: when the miscCounter%3 gate
+            // fires, the Next(220,223) argument draw rides the stream (the
+            // gore body + its post-writes are d55's).
+            if b.sandstorm_gore_gate {
+                let _ = rng.next_range(220, 223);
+            }
+        }
+        // `:21927-21938` — Fart: one type-188 puff, the Cloud box/speed, then
+        // the Cloud velocity overwrite AND velocity *= 0.5.
+        ExtraJump::Fart => {
+            let idx = nd(
+                rng, dust, ctx, world, Vec2::new(b.x - 4.0, b.y + b.height),
+                w + 8, 4, 188, -b.vx * 0.5, b.vy * 0.5, 100, Color::default(), 1.5,
+            );
+            let d = dust.slot_mut(idx);
+            d.velocity.x = d.velocity.x * 0.5 - b.vx * 0.1;
+            d.velocity.y = d.velocity.y * 0.5 - b.vy * 0.3;
+            d.velocity *= 0.5;
+        }
+        // `:21939-21947` — Unicorn: one puff, type SelectRandom(176,177,179)
+        // (the argument draw BEFORE the internals), box width×height at
+        // position; then velocity = 0, noGravity, scale = 0.5+NextFloat*0.8,
+        // fadeIn = 1+NextFloat*2.
+        ExtraJump::Unicorn => {
+            let ty = [176, 177, 179][rng.next_max(3) as usize];
+            let idx = nd(
+                rng, dust, ctx, world, pos, w, h, ty,
+                0.0, 0.0, 0, Color::default(), 1.0,
+            );
+            let d = dust.slot_mut(idx);
+            d.velocity = Vec2::ZERO;
+            d.no_gravity = true;
+            d.scale = 0.5 + rng.next_float() * 0.8;
+            d.fade_in = 1.0 + rng.next_float() * 2.0;
+        }
+        // `:21948-21977` — Sail: num9 = 1 (jump<=0) or 2 (jump>0) type-253
+        // puffs, box width×12 at (x, y+height−6), speed (vx*0.3, vy*0.3),
+        // alpha 100, scale 1.5; then scale += Next(-5,3)*0.1, the jump<=0
+        // scale*0.8 ELSE velocity -= velocity/5, noGravity, then the DEAD
+        // vector draws Next(-100,101)×2 + Next(81) (normalised/scaled, never
+        // read — the draws still ride the stream).
+        ExtraJump::Sail => {
+            let num9 = if b.jump > 0 { 2 } else { 1 };
+            for _ in 0..num9 {
+                let idx = nd(
+                    rng, dust, ctx, world, Vec2::new(b.x, b.y + b.height - 6.0),
+                    w, 12, 253, b.vx * 0.3, b.vy * 0.3, 100, Color::default(), 1.5,
+                );
+                let d = dust.slot_mut(idx);
+                d.scale += rng.next_range(-5, 3) as f32 * 0.1;
+                if b.jump <= 0 {
+                    d.scale *= 0.8;
+                } else {
+                    d.velocity -= Vec2::new(b.vx, b.vy) / 5.0;
+                }
+                d.no_gravity = true;
+                let _ = rng.next_range(-100, 101);
+                let _ = rng.next_range(-100, 101);
+                let _ = rng.next_max(81);
+            }
+        }
+        // `:21978-22020` — Blizzard: 2 type-76 puffs (velocity*0.1, ±velocity
+        // *0.03, −velocity*0.1, noGravity, noLight), then 3 with fadeIn 1.5 /
+        // velocity*0.6 / +velocity*0.8, then 3 with −velocity*0.8. Box
+        // width×12 at (x, y+height−6), speed (vx*0.3, vy*0.3).
+        ExtraJump::Blizzard => {
+            let anchor = Vec2::new(b.x, b.y + b.height - 6.0);
+            let vel = Vec2::new(b.vx, b.vy);
+            for k in 0..2 {
+                let idx = nd(
+                    rng, dust, ctx, world, anchor, w, 12, 76,
+                    b.vx * 0.3, b.vy * 0.3, 0, Color::default(), 1.0,
+                );
+                let d = dust.slot_mut(idx);
+                d.velocity *= 0.1;
+                if k == 0 {
+                    d.velocity += vel * 0.03;
+                } else {
+                    d.velocity -= vel * 0.03;
+                }
+                d.velocity -= vel * 0.1;
+                d.no_gravity = true;
+                d.no_light = true;
+            }
+            for _ in 0..3 {
+                let idx = nd(
+                    rng, dust, ctx, world, anchor, w, 12, 76,
+                    b.vx * 0.3, b.vy * 0.3, 0, Color::default(), 1.0,
+                );
+                let d = dust.slot_mut(idx);
+                d.fade_in = 1.5;
+                d.velocity *= 0.6;
+                d.velocity += vel * 0.8;
+                d.no_gravity = true;
+                d.no_light = true;
+            }
+            for _ in 0..3 {
+                let idx = nd(
+                    rng, dust, ctx, world, anchor, w, 12, 76,
+                    b.vx * 0.3, b.vy * 0.3, 0, Color::default(), 1.0,
+                );
+                let d = dust.slot_mut(idx);
+                d.fade_in = 1.5;
+                d.velocity *= 0.6;
+                d.velocity -= vel * 0.8;
+                d.no_gravity = true;
+                d.no_light = true;
+            }
+        }
+        // The mount jumps (Santank/Goat/Basilisk) have NO DoubleJumpVisuals
+        // arm (`:21892-22021` only covers Cloud/Sandstorm/Fart/Unicorn/Sail/
+        // Blizzard) — their visuals are the jump-chain burst (d51's lane).
+        ExtraJump::Santank | ExtraJump::WallOfFleshGoat | ExtraJump::Basilisk => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -768,5 +1044,225 @@ mod tests {
             assert!(pool.slot(i).no_gravity);
         }
         assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e1 site 20320 — the Lawn Mower puff: one type-31 NewDustDirect at
+    /// the lerp point, scale 0.9, position −(4,4), the velocity.Y>0 flip,
+    /// velocity ×0.25. The lerp t folds num<1 → 1−num.
+    #[test]
+    fn w4_e1_mow_lawn_puff_lerp_and_shape() {
+        let w = world();
+        let c = ctx();
+        let b = MowLawnDust {
+            a: Vec2::new(100.0, 200.0),
+            b: Vec2::new(110.0, 200.0),
+            num: 0.5, // t = 1−0.5 = 0.5 → lerp midpoint (105, 200)
+        };
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(31);
+        mow_lawn_puff(&mut rng, &mut pool, &c, &w, &b);
+        assert_eq!(active(&pool).len(), 1);
+        let d = pool.slot(0);
+        assert_eq!(d.dust_type, 31);
+        assert_eq!(d.scale, 0.9);
+        assert_eq!(d.alpha, 127);
+        // The 0×0 box clamps to 5×5 in NewDust; position = lerp + Next(1)+4.
+        // After the −(4,4) post-write the anchor is near (105, 200).
+        assert!(d.position.x >= 101.0 && d.position.x <= 110.0);
+    }
+
+    /// W4-e1 sites 21654/21790 — the wall-cling puff: type 31, box 8×8, the
+    /// slideDir<0 X−10 nudge, velocity×0.1, scale×1.2, noGravity, and the
+    /// mount-55 half-scale. Mirrors the pool internals (no argument draws).
+    #[test]
+    fn w4_e1_wall_cling_puff_nudge_and_scale() {
+        let w = world();
+        let c = ctx();
+        let b = WallClingDust { x: 500.0, y: 500.0, slide_dir: -1, mount55: true };
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(37);
+        wall_cling_puff(&mut rng, &mut pool, &c, &w, &b);
+        assert_eq!(active(&pool).len(), 1);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(37);
+        let idx = mpool.new_dust(
+            &mut mirror, &c, &w, Vec2::new(500.0, 500.0), 8, 8, 31,
+            0.0, 0.0, 0, Color::default(), 1.0,
+        );
+        let md = mpool.slot_mut(idx);
+        md.position.x -= 10.0;
+        md.velocity *= 0.1;
+        md.scale *= 1.2;
+        md.no_gravity = true;
+        md.scale *= 0.5;
+        assert_eq!(pool.slot(0).position, mpool.slot(0).position);
+        assert_eq!(pool.slot(0).velocity, mpool.slot(0).velocity);
+        assert_eq!(pool.slot(0).scale, mpool.slot(0).scale);
+        assert!(pool.slot(0).no_gravity);
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e1 site 21901 — the Cloud visual: one type-16 puff with the velocity
+    /// overwrite (vX*0.5 − vx*0.1, vY*0.5 − vy*0.3). Mirrors the internals.
+    #[test]
+    fn w4_e1_double_jump_cloud_velocity_overwrite() {
+        let w = world();
+        let c = ctx();
+        let b = DoubleJumpVisualDust {
+            kind: crate::player::ExtraJump::Cloud,
+            x: 300.0, y: 300.0, width: 20.0, height: 40.0,
+            vx: 2.0, vy: -4.0, jump: 10, sandstorm_gore_gate: false,
+        };
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(41);
+        double_jump_visuals(&mut rng, &mut pool, &c, &w, &b);
+        assert_eq!(active(&pool).len(), 1);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(41);
+        let idx = mpool.new_dust(
+            &mut mirror, &c, &w, Vec2::new(296.0, 340.0), 28, 4, 16,
+            -1.0, -2.0, 100, Color::default(), 1.5,
+        );
+        let md = mpool.slot_mut(idx);
+        md.velocity.x = md.velocity.x * 0.5 - 2.0 * 0.1;
+        md.velocity.y = md.velocity.y * 0.5 - (-4.0) * 0.3;
+        assert_eq!(pool.slot(0).velocity, mpool.slot(0).velocity);
+        assert_eq!(pool.slot(0).dust_type, 16);
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e1 site 21915 — the Sandstorm visual: 3 type-124 puffs with the
+    /// jump-scaled num4, plus the gore-gate Next(220,223) argument draw when
+    /// the miscCounter%3 gate fires. The mirror consumes the gore draw last.
+    #[test]
+    fn w4_e1_double_jump_sandstorm_scale_and_gore_gate() {
+        let w = world();
+        let c = ctx();
+        let b = DoubleJumpVisualDust {
+            kind: crate::player::ExtraJump::Sandstorm,
+            x: 300.0, y: 300.0, width: 20.0, height: 40.0,
+            vx: 1.0, vy: -3.0, jump: 75, sandstorm_gore_gate: true,
+        };
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(43);
+        double_jump_visuals(&mut rng, &mut pool, &c, &w, &b);
+        assert_eq!(active(&pool).len(), 3);
+        // num4 = (75/75+1)/2 = 1.0.
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(43);
+        for _ in 0..3 {
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, Vec2::new(300.0, 320.0), 20, 32, 124,
+                0.3, -0.9, 150, Color::default(), 1.0,
+            );
+            let md = mpool.slot_mut(idx);
+            md.velocity *= 0.5;
+            md.fade_in = 1.5;
+        }
+        let _ = mirror.next_range(220, 223); // the gore argument draw
+        for i in 0..3 {
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+            assert_eq!(pool.slot(i).fade_in, 1.5);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e1 site 21941 — the Unicorn visual: the SelectRandom(176,177,179)
+    /// argument draw BEFORE the internals, then zero velocity, noGravity,
+    /// scale 0.5+NextFloat*0.8, fadeIn 1+NextFloat*2.
+    #[test]
+    fn w4_e1_double_jump_unicorn_argument_order() {
+        let w = world();
+        let c = ctx();
+        let b = DoubleJumpVisualDust {
+            kind: crate::player::ExtraJump::Unicorn,
+            x: 300.0, y: 300.0, width: 20.0, height: 40.0,
+            vx: 0.0, vy: -2.0, jump: 5, sandstorm_gore_gate: false,
+        };
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(47);
+        double_jump_visuals(&mut rng, &mut pool, &c, &w, &b);
+        assert_eq!(active(&pool).len(), 1);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(47);
+        let ty = [176, 177, 179][mirror.next_max(3) as usize];
+        let idx = mpool.new_dust(
+            &mut mirror, &c, &w, Vec2::new(300.0, 300.0), 20, 40, ty,
+            0.0, 0.0, 0, Color::default(), 1.0,
+        );
+        let md = mpool.slot_mut(idx);
+        md.velocity = Vec2::ZERO;
+        md.no_gravity = true;
+        md.scale = 0.5 + mirror.next_float() * 0.8;
+        md.fade_in = 1.0 + mirror.next_float() * 2.0;
+        assert_eq!(pool.slot(0).dust_type, ty);
+        assert_eq!(pool.slot(0).scale, mpool.slot(0).scale);
+        assert_eq!(pool.slot(0).fade_in, mpool.slot(0).fade_in);
+        assert_eq!(pool.slot(0).velocity, Vec2::ZERO);
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e1 site 21962 — the Sail visual: jump>0 → 2 puffs, the scale jitter
+    /// + velocity−velocity/5, then the DEAD vector draws (3 per puff). The
+    /// mirror consumes the dead draws so the stream stays aligned.
+    #[test]
+    fn w4_e1_double_jump_sail_dead_vector_draws() {
+        let w = world();
+        let c = ctx();
+        let b = DoubleJumpVisualDust {
+            kind: crate::player::ExtraJump::Sail,
+            x: 300.0, y: 300.0, width: 20.0, height: 40.0,
+            vx: 1.0, vy: -2.0, jump: 5, sandstorm_gore_gate: false,
+        };
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(53);
+        double_jump_visuals(&mut rng, &mut pool, &c, &w, &b);
+        assert_eq!(active(&pool).len(), 2, "jump>0 → 2 puffs");
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(53);
+        for _ in 0..2 {
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, Vec2::new(300.0, 334.0), 20, 12, 253,
+                0.3, -0.6, 100, Color::default(), 1.5,
+            );
+            let md = mpool.slot_mut(idx);
+            md.scale += mirror.next_range(-5, 3) as f32 * 0.1;
+            md.velocity -= Vec2::new(1.0, -2.0) / 5.0;
+            md.no_gravity = true;
+            let _ = mirror.next_range(-100, 101);
+            let _ = mirror.next_range(-100, 101);
+            let _ = mirror.next_max(81);
+        }
+        for i in 0..2 {
+            assert_eq!(pool.slot(i).scale, mpool.slot(i).scale);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e1 sites 21989/22005/22014 — the Blizzard visual: 2+3+3 type-76
+    /// puffs (8 total), the ±velocity*0.03 / +0.8 / −0.8 arms, noLight.
+    #[test]
+    fn w4_e1_double_jump_blizzard_eight_puffs() {
+        let w = world();
+        let c = ctx();
+        let b = DoubleJumpVisualDust {
+            kind: crate::player::ExtraJump::Blizzard,
+            x: 300.0, y: 300.0, width: 20.0, height: 40.0,
+            vx: 1.0, vy: -2.0, jump: 5, sandstorm_gore_gate: false,
+        };
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(59);
+        double_jump_visuals(&mut rng, &mut pool, &c, &w, &b);
+        assert_eq!(active(&pool).len(), 8, "2+3+3");
+        for i in 0..8 {
+            assert_eq!(pool.slot(i).dust_type, 76);
+            assert!(pool.slot(i).no_light);
+            assert!(pool.slot(i).no_gravity);
+        }
+        // The first two puffs: velocity*0.1 ± vel*0.03 − vel*0.1.
+        // The +0.8 group (indices 2..5) has fadeIn 1.5.
+        assert_eq!(pool.slot(2).fade_in, 1.5);
+        assert_eq!(pool.slot(5).fade_in, 1.5);
     }
 }

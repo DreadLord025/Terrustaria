@@ -304,6 +304,23 @@ pub fn offsets_player_headgear_y(row: usize) -> f32 {
     }
 }
 
+/// `WorldGen.SolidTile(i, j)` (`WorldGen.cs:70111-70132`): an active, fully
+/// solid tile — not a solid-top, not a half brick, no slope, not inactive.
+/// Out-of-world reads `false` (the C# catch arm). The wall-cling machines
+/// (`WallClimbMovement`/`WallslideMovement`, W4-e1) probe it; the house style
+/// keeps one private copy per module (grapple.rs/bug_net.rs's twins).
+fn solid_tile(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    t.active()
+        && tr_core::tiledata::TILE_SOLID.has(t.kind)
+        && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+        && !t.half_brick()
+        && t.slope() == 0
+        && !t.inactive()
+}
+
 /// `Player.cs:47371-47378`: the shooting styles' `itemRotation` —
 /// `atan2(aimY * direction, aimX * direction) - fullRotation`. The port keeps
 /// the aim as an angle, so the mirrored `atan2` is the angle + PI when the
@@ -2011,6 +2028,12 @@ pub struct Player {
     pending_shiny_sparkle_dust: Option<crate::player_dust2::ShinySparkleDust>,
     pending_crimson_heal_dust: Option<crate::player_dust2::CrimsonHealDust>,
     pending_mana_full_dust: Option<crate::player_dust2::ManaFullDust>,
+    /// W4-e1 batch 2 — the Lawn Mower swing puff (20320), the wall-cling puffs
+    /// (21654/21678/21729/21790/21826, at most one per tick) and the
+    /// DoubleJumpVisuals arm (21901/21915/21934/21941/21962/21989/22005/22014).
+    pending_mow_lawn_dust: Option<crate::player_dust2::MowLawnDust>,
+    pending_wall_cling_dust: Option<crate::player_dust2::WallClingDust>,
+    pending_double_jump_visual_dust: Option<crate::player_dust2::DoubleJumpVisualDust>,
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
@@ -2959,6 +2982,9 @@ impl Player {
             pending_shiny_sparkle_dust: None,
             pending_crimson_heal_dust: None,
             pending_mana_full_dust: None,
+            pending_mow_lawn_dust: None,
+            pending_wall_cling_dust: None,
+            pending_double_jump_visual_dust: None,
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
@@ -3571,6 +3597,17 @@ impl Player {
     }
     pub(crate) fn take_mana_full_dust(&mut self) -> Option<crate::player_dust2::ManaFullDust> {
         self.pending_mana_full_dust.take()
+    }
+    pub(crate) fn take_mow_lawn_dust(&mut self) -> Option<crate::player_dust2::MowLawnDust> {
+        self.pending_mow_lawn_dust.take()
+    }
+    pub(crate) fn take_wall_cling_dust(&mut self) -> Option<crate::player_dust2::WallClingDust> {
+        self.pending_wall_cling_dust.take()
+    }
+    pub(crate) fn take_double_jump_visual_dust(
+        &mut self,
+    ) -> Option<crate::player_dust2::DoubleJumpVisualDust> {
+        self.pending_double_jump_visual_dust.take()
     }
 
     /// `PlayerSittingHelper.UpdateSitting` (`PlayerSittingHelper.cs:50-87`):
@@ -7326,6 +7363,13 @@ impl Player {
             // table; M2-MOUNT-3 bridges them).
             self.update_mount(world, raining, wind);
             self.horizontal_movement(input);
+            // W4-e1 — `Player.cs:20176-20179`: the Lawn Mower (4049) swing
+            // puff fires at the HorizontalMovement tail (the mount-collision
+            // block). The swing phase reads the frame inputs the world_sim
+            // seam fed before the tick.
+            if self.held_item_kind == 4049 {
+                self.mow_the_lawn(self.frame_inputs.swing_anim, self.frame_inputs.swing_anim_max);
+            }
         }
         // `Player.cs:19637-19641` (`UpdateJumpHeight`'s tail): Dazed (160)
         // divides the jump statics — height /5, speed /2 — after the sticky
@@ -7458,11 +7502,28 @@ impl Player {
         if !grappling {
             self.dash_movement(world, input);
         }
+        // W4-e1 — `Player.cs:26753-26767`: the jump==0 visual cancel, then the
+        // wall-cling machines (WallClimbMovement for the Rat mount, else
+        // WallslideMovement), then DoubleJumpVisuals. The C# order sits right
+        // after DashMovement and before the flight section.
+        if self.jump == 0 {
+            self.cancel_all_jump_visual_effects();
+        }
+        if self.mount.is_active() && self.mount.kind() == 55 {
+            self.wall_climb_movement(world, gravity);
+        } else {
+            self.wallslide_movement(world, gravity);
+        }
+        self.double_jump_visuals();
         // `Player.cs:26799-26812`: while CCed the mount dismounts and the
         // plain gravity takes over (the port's CC input zeroing and the
         // flight gate below already cover the rest of that branch).
         if !grappling && self.cced() && self.mount.is_active() {
             self.try_dismount(world);
+        }
+        // W4-e1 — `:26811`: the CCed arm cancels the jump visuals too.
+        if self.cced() {
+            self.cancel_all_jump_visual_effects();
         }
 
         // `Player.Update` → `GrappleMovement` (`Main` call order `:27653`,
@@ -9822,6 +9883,264 @@ impl Player {
         }
     }
 
+    /// W4-e1 — `Player.CancelAllJumpVisualEffects` (`Player.cs:36649-36662`):
+    /// the performing-jump visual flags clear. The port's single
+    /// `performing_jump` Option stands in for the six `isPerformingJump_*`
+    /// bools; `includeDownDash` is the Dead-Cells dash (unported, always
+    /// false). Called at `:26755` (jump==0), `:26811` (CCed), `:26135`
+    /// (pulley) and `:36493` (grappling).
+    fn cancel_all_jump_visual_effects(&mut self) {
+        self.performing_jump = None;
+    }
+
+    /// W4-e1 — `Player.WallClimbMovement` (`Player.cs:21607-21748`, sites
+    /// 21654/21678/21729): the Rat mount's (55) wall-cling. The spiked-boots
+    /// >=2 arm climbs up (controlUp, vy=−3) / down (controlDown, vy=4) / holds
+    /// (vy=−gravity+1e-5); the else arm slides (vy −2/4/0.5). Each fired puff
+    /// queues the shared wall-cling snapshot. `gravDir` folds to 1.
+    fn wall_climb_movement(&mut self, world: &World, gravity: f32) {
+        let mount55 = self.mount.is_active() && self.mount.kind() == 55;
+        if !mount55 {
+            return;
+        }
+        self.sliding = false;
+        if self.slide_dir == 0
+            || ((!self.control_left || self.slide_dir != -1)
+                && (!self.control_right || self.slide_dir != 1))
+        {
+            return;
+        }
+        // `:21619-21634` — the wall probe at the slide edge.
+        let mut num = self.x;
+        if self.slide_dir == 1 {
+            num += self.width;
+        }
+        num += self.slide_dir as f32;
+        let num2 = self.y + self.height + 1.0;
+        let wall = solid_tile(world, (num / TILE_PX) as i32, (num2 / TILE_PX) as i32);
+        let flag3 = self.control_up; // gravDir 1
+        let flag4 = self.control_down;
+        // The puff box origin (`:21654`): the slide-edge centre.
+        let puff_x = self.x + (self.width as i32 / 2) as f32
+            + ((self.width as i32 / 2 - 4) * self.slide_dir) as f32;
+        let puff_y = self.y + (self.height as i32 / 2) as f32
+            + (self.height as i32 / 2 - 4) as f32;
+        let queue_puff = |p: &mut Player| {
+            p.pending_wall_cling_dust = Some(crate::player_dust2::WallClingDust {
+                x: puff_x,
+                y: puff_y,
+                slide_dir: p.slide_dir,
+                mount55: true,
+            });
+        };
+        if self.spiked_boots >= 2 {
+            // `:21639` — the climb gate.
+            if !wall
+                || (!(flag3 | flag4) && !(self.vy > 0.0) && !(self.vy < gravity))
+            {
+                return;
+            }
+            let mut num3 = gravity;
+            if self.slow_fall {
+                num3 = if !self.trying_to_hover_up() { gravity / 3.0 } else { gravity / 10.0 };
+            }
+            self.fall_start = (self.y / TILE_PX) as i32;
+            if flag3 {
+                self.vy = -3.0;
+                // `:21652` — the mount-55 solid probe ahead of the climb.
+                if !mount55 || !self.climb_probe_solid(world) {
+                    queue_puff(self);
+                }
+            } else if flag4 {
+                self.vy = 4.0;
+                if !mount55 || !self.climb_probe_solid(world) {
+                    queue_puff(self);
+                }
+            } else {
+                self.vy = -num3 + 1e-5;
+            }
+            self.sliding = true;
+        } else {
+            // `:21709` — the slide gate (the 0.5 threshold).
+            if !wall || (!(flag3 | flag4) && !(self.vy > 0.5) && !(self.vy < -0.5)) {
+                return;
+            }
+            self.fall_start = (self.y / TILE_PX) as i32;
+            if self.control_up {
+                self.vy = -2.0;
+            } else if self.control_down {
+                self.vy = 4.0;
+            } else {
+                self.vy = 0.5;
+            }
+            self.sliding = true;
+            if !mount55 || !self.climb_probe_solid(world) {
+                queue_puff(self);
+            }
+        }
+    }
+
+    /// W4-e1 — the wall-climb ahead probe (`:21652`/`:21676`/`:21727`):
+    /// `SolidTile((Center + (0,vy).SafeNormalize(0)*10).ToTileCoordinates())`.
+    fn climb_probe_solid(&self, world: &World) -> bool {
+        let (cx, cy) = self.center();
+        let dir = Vec2::new(0.0, self.vy);
+        let n = if dir.length() > 0.0 { dir / dir.length() } else { Vec2::ZERO };
+        let probe = Vec2::new(cx, cy) + n * 10.0;
+        solid_tile(world, (probe.x / TILE_PX) as i32, (probe.y / TILE_PX) as i32)
+    }
+
+    /// W4-e1 — `Player.WallslideMovement` (`Player.cs:21750-21840`, sites
+    /// 21790/21826): the spiked-boots wall-slide (no mount). The >=2 arm
+    /// slides down on controlDown (vy=4, puff); the else arm slides on
+    /// vy>0.5 (vy 4/0.5, puff). `gravDir` folds to 1.
+    fn wallslide_movement(&mut self, world: &World, gravity: f32) {
+        self.sliding = false;
+        if self.slide_dir == 0
+            || self.spiked_boots <= 0
+            || self.mount.is_active()
+            || ((!self.control_left || self.slide_dir != -1)
+                && (!self.control_right || self.slide_dir != 1))
+        {
+            return;
+        }
+        // `:21757-21774` — the two-tile wall probe.
+        let mut num = self.x;
+        if self.slide_dir == 1 {
+            num += self.width;
+        }
+        num += self.slide_dir as f32;
+        let num2 = self.y + self.height + 1.0;
+        let tx = (num / TILE_PX) as i32;
+        let ty = (num2 / TILE_PX) as i32;
+        let wall = solid_tile(world, tx, ty) && solid_tile(world, tx, ty - 1);
+        let puff_x = self.x + (self.width as i32 / 2) as f32
+            + ((self.width as i32 / 2 - 4) * self.slide_dir) as f32;
+        let puff_y = self.y + (self.height as i32 / 2) as f32
+            + (self.height as i32 / 2 - 4) as f32;
+        let queue_puff = |p: &mut Player| {
+            p.pending_wall_cling_dust = Some(crate::player_dust2::WallClingDust {
+                x: puff_x,
+                y: puff_y,
+                slide_dir: p.slide_dir,
+                mount55: false,
+            });
+        };
+        if self.spiked_boots >= 2 {
+            // `:21777` — the slide gate.
+            if !wall || (!(self.vy > 0.0) && !(self.vy < gravity)) {
+                return;
+            }
+            let mut num3 = gravity;
+            if self.slow_fall {
+                num3 = if !self.trying_to_hover_up() { gravity / 3.0 } else { gravity / 10.0 };
+            }
+            self.fall_start = (self.y / TILE_PX) as i32;
+            if self.control_down {
+                self.vy = 4.0;
+                queue_puff(self);
+            } else {
+                self.vy = -num3 + 1e-5;
+            }
+            self.sliding = true;
+        } else if (wall && self.vy > 0.5) || self.vy < -0.5 {
+            // `:21814` — the single-boot slide.
+            self.fall_start = (self.y / TILE_PX) as i32;
+            if self.control_down {
+                self.vy = 4.0;
+            } else {
+                self.vy = 0.5;
+            }
+            self.sliding = true;
+            queue_puff(self);
+        }
+    }
+
+    /// W4-e1 — `Player.DoubleJumpVisuals` (`Player.cs:21892-22021`, sites
+    /// 21901/21915/21934/21941/21962/21989/22005/22014): the per-tick
+    /// extra-jump visual chain. Each arm gates on its performing flag + the
+    /// option grant + the can-jump-again clear + the ascent velocity; the
+    /// fired arm queues its snapshot. The mount jumps have no arm here.
+    fn double_jump_visuals(&mut self) {
+        let Some(kind) = self.performing_jump else {
+            return;
+        };
+        let i = kind.index();
+        // The shared gate: performing && hasOption && !canJumpAgain && the
+        // ascent velocity (Sail uses the <1 threshold, the rest <0).
+        let ascent = if kind == ExtraJump::Sail { self.vy < 1.0 } else { self.vy < 0.0 };
+        if !self.has_jump_options[i] || self.can_jump_again[i] || !ascent {
+            return;
+        }
+        // The mount jumps (Santank/Goat/Basilisk) have no DoubleJumpVisuals
+        // arm — their visuals are the jump-chain burst (d51's lane).
+        if matches!(kind, ExtraJump::Santank | ExtraJump::WallOfFleshGoat | ExtraJump::Basilisk) {
+            return;
+        }
+        self.pending_double_jump_visual_dust =
+            Some(crate::player_dust2::DoubleJumpVisualDust {
+                kind,
+                x: self.x,
+                y: self.y,
+                width: self.width,
+                height: self.height,
+                vx: self.vx,
+                vy: self.vy,
+                jump: self.jump,
+                sandstorm_gore_gate: self.misc_counter % 3 == 0,
+            });
+        // `:21919` — the Sandstorm pose flag.
+        if kind == ExtraJump::Sandstorm {
+            self.sand_storm = true;
+        }
+    }
+
+    /// W4-e1 — `Player.MowTheLawn` (`Player.cs:20301-20346`, site 20320): the
+    /// Lawn Mower (4049) swing puff. The host gates the swing (miscCounter%2,
+    /// grounded, no grapple, itemAnimation>=1) and computes the lerp anchor;
+    /// the drain replays the single NewDustDirect. The NPC-collision +
+    /// tile-cut halves (`:20328-20345`) are the combat/editing lanes'.
+    fn mow_the_lawn(&mut self, swing_anim: f32, swing_anim_max: f32) {
+        // `:20303` — `itemAnimation < 1` is the INTEGER tick count; the port's
+        // swing timer is seconds, so convert (the `ticks_of` convention).
+        let anim_ticks = (swing_anim * 60.0).round() as i32;
+        if self.misc_counter % 2 != 0
+            || self.vy != 0.0
+            || self.grappling_active
+            || anim_ticks < 1
+        {
+            return;
+        }
+        // `:20307` — the mounted-center + direction*38 anchor.
+        let (mcx, mcy) = self.mounted_center();
+        let mut vector = Vec2::new(
+            mcx + self.facing as f32 * 38.0,
+            mcy + (self.height / 2.0 + 4.0),
+        );
+        // `:20308-20318` — the mount offsets (DontHoldItems / type 54).
+        if self.mount.is_active() {
+            let kind = self.mount.kind();
+            if crate::mount::dont_hold_items(kind) {
+                return;
+            }
+            if kind == 54 {
+                vector += Vec2::new(4.0 * self.facing as f32, 0.0);
+            }
+        }
+        // `:20319` — the swing phase.
+        let num = if swing_anim_max > 0.0 {
+            (1.0 - swing_anim / swing_anim_max) * 2.0
+        } else {
+            0.0
+        };
+        let d = self.facing as f32;
+        self.pending_mow_lawn_dust = Some(crate::player_dust2::MowLawnDust {
+            a: vector + Vec2::new(d * -16.0, -4.0),
+            b: vector + Vec2::new(d * -6.0, -4.0),
+            num,
+        });
+    }
+
     /// `Player.Teleport` (`Player.cs:37414-37496`) — the movement-relevant
     /// core: `RemoveAllGrapplingHooks` (style != 10), `StopVanityActions`,
     /// the shimmer strip, the position write, the fall-origin reset and the
@@ -10543,6 +10862,9 @@ impl Player {
         // sitting/sleeping, so both run; petting has no field.
         self.sit_up();
         self.stop_sleeping();
+        // W4-e1 — `:36493` (PlayerFrame's grappling arm): the jump visuals
+        // cancel while hooked.
+        self.cancel_all_jump_visual_effects();
         // `:22620-22623` — a mount not in the `MountID.Sets.CanUseHooks` set
         // ({54, 57-60}) dismounts while the hooks are out.
         if self.mount.is_active() && !crate::mount::can_use_hooks(self.mount.kind()) {
