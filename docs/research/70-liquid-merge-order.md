@@ -151,3 +151,209 @@ export surface ALREADY on the g47 base (delete f25's private copies, call
 these); step 7's producer wiring still owns the context arming. The
 witness stream-pins (the g45/g46 `Next(30)` nudge contract) are untouched —
 no nudge code lives on this branch and none of the four drivers draws RNG.
+
+## §8 — g46d re-fold obligation (the union tip post-dates NOTHING; the drivers post-date IT)
+
+> **SEAL STATUS (W4-g46 seal phase, 2026-11-21).** This section was written
+> against the stale graft-prep union `f57d7bacd`. The g46d re-fold it demands
+> has since EXECUTED on this branch in research/70's order — the RE-FOLD
+> landing record (research/69 §"UNION-CONTRACT — FINAL", ANALYSIS "The g46c
+> RE-FOLD landing record") lists the four steps `e7626b72`/`f588d53c`/
+> `16fd6ad7`/`d95911ce` that re-based onto g47 `95e9c1ef`→`d3a30ebf`→`8e81814e`
+> guards→the R-12-5 drivers. Every "missing surface" row below is now ON the
+> union; the §8 obligation is discharged. The g47 closeout (`5c09a68b`) then
+> added the three per-liquid witnesses + the §10 census + the render
+> gaps-list, carried by this seal. Kept verbatim below as the merge order of
+> record.
+
+Status re-read 2026-11-21 against `origin/task/W4-g46-liquid-evaporation`
+tip **`f57d7bacd`** ("W4-g46 graft-prep: UNION liquid.rs", 07:06 +0200).
+The union's own landing record (research/69 §"Graft-prep landing record")
+names its structural base as **g47 `cfe5f1c9`** — the phase-4 tip, BEFORE
+the settle wiring, the final-phase surfaces and the four R-12-5 drivers.
+The g47 branch has since advanced to **`dd66fa3a`**; the union is therefore
+**stale by eleven commits** and g46d (the active re-fold on that branch)
+MUST carry the delta. Verified by symbol grep on `f57d7bacd`'s blobs —
+every surface below has **zero hits** in the union:
+
+| Missing surface (g47 `dd66fa3a`) | Union evidence | Carrying commit |
+| --- | --- | --- |
+| `LiquidSystem::update_world_tick` + `skip_count` (the `WorldGen.cs:71526-71534` runtime pump) | union `liquid.rs` has no `skip_count`; union `world_sim/liquids.rs` still walks `app.liquid_tick % 2` and union `app/mod.rs` still declares `liquid_tick` (the divider g47 REMOVED — its C# home is the Liquid statics, `ReInit` :85 resets it) | `3dbbe3ef1` |
+| the buffer-arm witnesses (budget growth + unconditional DelBuffer) | union `liquid_settle` lacks both names | `d9445fc4f` |
+| `gen_settle_loop` + the f25 export surface: `tiles_ignore_water`, `world_gen_tiles_ignore_water` (+ the `gen_ignore_water` `kind_solid` fold), `set_bubble_solid`, `num_liquid_total`, `clear_pending_liquid`, `liquid_reaction_check` | zero grep hits in union `liquid.rs`; the union `kind_solid` has no door/leaf carve-out | `4288657ce` |
+| `Wiring::take_pump_wakes` + `pump_wakes` (the `XferWater` `SquareTileFrame` wakes, `Wiring.cs:512/:516/:521`) + the app `wake_around(r=1)` drain | zero hits in union `wiring.rs` / `world_sim/wiring.rs` — pump-teleported liquid never joins the settle lists on the union | `ae6884017` |
+| `set_gen_settle_context`/`set_gen_shimmer_position`/`set_gen_dungeon_context` + `GenDungeonContext` + the `settle_water_at` gen re-type arm (`Liquid.cs:178-192`, ORIGIN-wall read) | union `settle_water_at` has NO re-type block (its `remix_world_gen` reads are the `lava_check` desert gate only) | `551c1e7ba` + `d3a30ebf2` |
+| `shimmer_remove_water` (both `QuickWater` arms, `WorldGen.cs:34823-34851`) | zero hits in union `liquid.rs` | `d3a30ebf2` |
+| `reduced_max_liquids` (settings field + `slowliquids=1` launch arm + `ReInit` 5000 cap + gfx 2500+2500q/flat-5000 override + the pass-head `numLiquid > 2000` quickFall OR-arm) | zero hits in union `settings.rs`/`liquid.rs`/`gfx_quality.rs` (the union pass head is `quick_fall = quick_settle` only, its own comment admits the OR-arm "lands with the reduced-liquids field") | `d3a30ebf2` |
+| the WIRED load hook (`App::new` settle + `TR_NO_SETTLE`/`TR_POOL`/`TR_SPOUT` staging, `saveglue`) | union `app/mod.rs` has no `settle_loaded_world` call; union `saveglue.rs` unchanged from base — the union's `settle_loaded_world` is the UNWIRED phase-3 form | `551c1e7ba` (+ `95e9c1eff` witness shaft wall) |
+
+**Exact commit list g46d must re-fold** (code, in order): `551c1e7ba`,
+`95e9c1eff`, `d3a30ebf2`, `3dbbe3ef1`, `d9445fc4f`, `4288657ce`,
+`ae6884017`. Doc re-fold alongside: `ba6946530`, `d222af697`, `fdeb897ca`,
+`dd66fa3aa` (ANALYSIS/PORT_MAP/research-70/anchors — research/70 never
+existed on the union's tree, its base predates `fdeb897ca`; carry it over,
+this file is the merge order of record).
+
+**Shape of the re-fold**: do NOT merge arm-by-arm. Re-base onto g47
+`dd66fa3a`'s `liquid.rs` + `edit.rs` + `edit/kill.rs` +
+`world_sim/editing.rs` + the app consumers (`app/mod.rs`, `settings.rs`,
+`main.rs`, `env.rs`, `app/netglue.rs`, `app/saveglue.rs`,
+`world_sim/liquids.rs`, `world_sim/gfx_quality.rs`, `world_sim/wiring.rs`,
+`wiring.rs`) and re-apply ONLY the union's own deltas: the g46 evap block
++ `underworld_layer` + `new_flow_fixture` sentinel, the `surface_rng`
+Next(30) nudge, the g45 7/5-neighbour extra wakes, and the witness union.
+Naming keep-one: the queue is **`edit_kills`** (g47 name; the union's
+`retire_kills`/`drain_retire_kills`/`resolve_liquid_retire_kills` rename
+back), and `edit/kill.rs` keeps the g47 `check_alch`/`check_lily_pad`
+(closure `kind_solid`) form — the union took the g46 `check_alch_tile`
+form whose `del_water` tail callers do not exist on the g47 body. The
+union's `del_water` is NOT the canonical one: research/70's base verdict
+(g47 `del_water` wholesale, `d3a30ebf` loot seam) still stands; the union
+re-derived the same seam under its own queue name, so the re-fold is a
+rename + re-base, not a behaviour merge.
+
+**Witness carry**: the union's 72 pins are 49 shared + 23 union-only; the
+g47 tip carries 20 pins the union lacks (the driver/final-phase/wiring
+suites — `the_update_world_driver_runs_the_pass_every_second_tick`,
+`re_init_resets_the_driver_divider`, the two promotion-budget pins, the
+two load-settle wiring pins, the four gen re-type/dungeon pins, the two
+shimmer-remove pins, the two reduced-liquids pins, the two gen-driver
+export pins, the two `gen_settle_loop` pins,
+`world_gen_tiles_ignore_water_lifts_the_door_family`,
+`clear_pending_liquid_drops_both_lists_and_their_checking_bits`,
+`delwater_sub2_dry_at_the_world_edge_does_not_panic`,
+`delwater_lava_grass_ring_converts_and_dirties_the_pass`). The re-fold
+takes BOTH sets (keep-one dedupe per §11's final table); the wiring-side
+compose pins (`wiring::tests::the_pump_moves_water_and_adopts_the_type`
+extended + `world_sim::wiring::tests::r_12_5_the_pump_transfer_wakes_the_settle_and_the_water_flows`)
+ride `ae6884017` and must survive too.
+
+## §9 — The drivers addendum (what the four R-12-5 commits changed for the merger)
+
+The §"R-12-5 settle drivers addendum" table above stands; its merger
+consequences, restated as obligations:
+
+1. **Step 1's base swap now targets `dd66fa3a`**, not `d222af69` — the
+   base file list grows by `world_sim/liquids.rs` (the driver consumer),
+   `world_sim/wiring.rs` (the wake drain), `wiring.rs` (the wake queue)
+   and the `liquid.rs` driver/export surfaces. `app.liquid_tick` is GONE
+   on the base — a graft that re-introduces it re-creates the phase
+   deviation the driver port fixed (the divider never reset on swap).
+2. **Step 6's dedupe is now a DELETE, not a carry**: the export surface
+   (`tiles_ignore_water`/`world_gen_tiles_ignore_water`/`set_bubble_solid`/
+   `num_liquid_total`/`clear_pending_liquid`/`liquid_reaction_check`) and
+   the shared `gen_settle_loop` are ON the base. f25's private copies
+   delete; its module calls the LiquidSystem methods. f25's
+   `set_generating(remix)` maps onto `set_gen_settle_context` (the fuller
+   strict-flag context — same classic result).
+3. **Step 7's producer wiring is unchanged** (the context arming stays
+   the gen driver's job) with one addition: the gen driver drains or
+   discards `edit_kills` at the pass tail — on the g47 machinery the
+   DelWater grass-ring/lily kills FIRE during gen (f25's discard-only
+   `end_pass` never produced them), so the world-hash RE-DERIVE
+   obligation is real, not hypothetical.
+4. **The e21 compose is base machinery now**: any lane that ports pump
+   behaviour must route through `pump_wakes` → `wake_around(r=1)`; a
+   direct grid mutation without the wake leaves the liquid inert (the
+   sim walks its ACTIVE list). The three wake sites fire in the C# call
+   order (`:512` out, `:516` emptied-in, `:521` in-tail — the emptied arm
+   queues twice).
+5. **No driver draws RNG** — the `Next(30)` nudge stream-pins are
+   untouched by the driver carry; the only new RNG seam is the caller's
+   `RngKey::UpdateLiquid` kill resolution (already the g47 shape).
+
+## §10 — Liquid.cs full-fn census verdict (the gaps-list is EMPTY for the sim)
+
+The closeout census (ANALYSIS "The Liquid.cs FULL-FN final census")
+script-diffed all 24 `Liquid.cs` members + both `LiquidBuffer.cs` fns
+against the port at this tip. **Every sim fn is ported**; the only
+non-ported members are MP (`NetSendLiquid`, the broadcast tails, the MP
+cycle scaling), UI (`UpdateProgressDisplay`) and dev tooling
+(`AddGameplaySnapshotComponents`) — all cited out-of-scope. "LiquidEdge"
+does not exist in the decompile (the edge surface is
+`LiquidRenderer.InternalPrepareDraw` Pass-4, ported in `liquid_draw.rs`);
+the waterfall-source family is ported in `waterfall/`. The two g46-owned
+`Update` arms (evap `:466-474`, nudge `:892-895`) and the g45b `AddWater`
+guards (`:1163`/`:1183-1206`) are the ONLY sim deltas left, and both are
+graft steps (2/3/5), not gaps. The per-liquid settle arms (honey 1-in-11,
+shimmer ungated, lava 1-in-6, the exclusive wake cascade, the quickFall
+bypass) are verified arm-for-arm — the drivers are kind-agnostic by
+design, exactly like the C#. Render-side follow-ups (HasFullWater /
+GetVisibleLiquid / SetWaveMaskData / the wind-driven frameState) are
+cited in ANALYSIS and do NOT block this merger.
+
+## §11 — FINAL witness re-pin table (supersedes the table above where they differ)
+
+| Pin / witness | Final disposition |
+| --- | --- |
+| f25 `world_hash.rs` SEED42_512 / DEFAULT_WORLD + `the_pass_is_deterministic` | RE-DERIVE after the graft (the DelWater kills now fire during gen + the swap-remove buffer + the origin-wall fix). Pick the gen-side `edit_kills` drain choice (resolve vs discard), RECORD it, re-derive both pins. Do not silence |
+| g45 nudge ×3 | RE-PIN onto `surface_rng` (seed-35/seed-0 values change); the union already carries the re-pinned forms (`liquid_nudge_wakes`) — keep the union's |
+| g45 evap ×3 | DROP `water_evaporates_two_per_visit_below_the_underworld_layer`; the layer-row boundary RE-PIN + g46's four are IN the union — keep |
+| g46 `the_retire_sweep_splices_backwards_and_the_lily_tail_runs_on_drained_cells` | RE-RUN against the g47 splice-inside-`del_water` shape (in the union; rename its queue reads to `edit_kills`) |
+| g45 DelWater fixture pairs (ring/alch/lily/buffer/stuck) | UNION per 69's table (g47 names, g45's sharper assertions merged); loot assertions re-point at `edit_kills`; the union carries them — the re-fold renames, not re-derives |
+| g45b AddWater guard ×10 | RE-RUN as-is except the inline-death witness (assert the queued `TileKill`); the `&mut World` ripple is g45b's own |
+| save/load round-trip pins | HOLD (dry fixtures, dry settle is a byte/RNG no-op — witnessed); WET-world pins re-derive against the settled state |
+| `liquid_sim::mass_conserved` + the flow pins | the `new_flow_fixture` sentinel convention (g46) — every flow witness uses it after the evap graft. The closeout's three new per-liquid witnesses (`honey_falls_once_every_eleven_visits`, `shimmer_falls_every_visit_ungated`, `quick_fall_bypasses_both_delay_gates`) use `LiquidSystem::new` on 120-tall worlds — SAFE pre-graft (no evap block on this lane) and safe for the honey/shimmer/lava kinds post-graft (the evap arm is water-only, `:466` `liquidType() == 0`); still SWITCH them to `new_flow_fixture` at the graft for convention uniformity (g46's rule: every flow witness rides the sentinel) |
+| g47 final-phase ×8 (`d3a30ebf`) + settle-wiring ×2 (`551c1e7b`/`95e9c1ef`) | RUN as written — they test the base surfaces directly |
+| g47 driver pins ×8 (`3dbbe3ef` ×2, `d9445fc4` ×2, `4288657c` ×4) + the 2 edge/grass-ring pins | RUN as written — the union LACKS all of these (§8's list); the re-fold carries them |
+| e21 compose pins ×2 (`wiring.rs` extended + `world_sim/wiring.rs`) | RUN as written — the union lacks the wake queue entirely |
+| union-only pins (evap ×5, stream ×1, cadence ×4, down-arm ×3, delwater ×5, buffer/stuck ×2, nudge ×3, extra-wake ×1 = 23) | KEEP the union's forms; the cadence four overlap the closeout's honey/quickFall twins — keep ONE of each pair (the union's `lava_falls_once_every_six_visits` is unique, keep; `honey_falls_once_every_eleven_visits` + `quick_fall_bypasses_the_delay_gate` dedupe onto the closeout's fixture forms or vice versa — same assertions, pick one name) |
+
+Post-graft expected count: 72 (union) + 20 (g47-only) + 3 (closeout) −
+the honey/quickFall pair dedupes (2) − the g45 evap drop (already out of
+the union) = **93 pins** in `liquid.rs`, plus the 2 wiring-side compose
+pins. All written-not-run until the gate.
+
+> **SEAL execution note (W4-g46 seal phase).** The §11 dispositions above
+> are now carried on this branch: the closeout trio landed with the
+> sentinel switch (`shimmer_falls_every_visit_ungated` on
+> `new_flow_fixture`, re-pinned +6 past the AddWater border) and the
+> honey/quickFall pair dedupes (the union's
+> `honey_falls_once_every_eleven_visits` kept; `quick_fall_bypasses_the_delay_gate`
+> widened to the lava+honey twins under the closeout name
+> `quick_fall_bypasses_both_delay_gates`). The g45 doc-sweep delta
+> (`6f5bd2a2`) added the down-arm LIVE post-burn re-read (`c8908a55`,
+> `liquid_downarm_live` ×4), the fall-arm post-evap witness
+> (`the_fall_arm_moves_the_post_evaporation_level`), the shimmer-flow pin
+> (`shimmer_falls_every_visit_like_water`) and the bucket module — all
+> carried by this seal. The union `liquid.rs` now holds **109** `#[test]`
+> fns (the 102 RE-FOLD pins + the 3 closeout + the 4 g45 doc-sweep).
+
+## §12 — FINAL gate command + landing checklist (the merger runs this, in order)
+
+1. **Re-fold** (§8): g46d re-bases the union onto g47 `dd66fa3a` (or its
+   successor tip — re-fetch first), re-applies the evap/nudge/extra-wake
+   deltas + the witness union, renames `retire_kills` → `edit_kills`
+   throughout, keeps the g47 `check_alch`/`check_lily_pad` closure form.
+2. **Graft steps 5-7** (§"Graft order"): the g45b AddWater guards with
+   the `edit_kills` loot upgrade + the `&mut World` ripple; the f25 gen
+   module dedupe (DELETE the private copies, call the base exports);
+   the f24/c30/g36 producer wiring.
+3. **Re-pins** (§11): the f25 gen-hash RE-DERIVE (record the drain
+   choice), the sentinel switch on the closeout witnesses, the pair
+   dedupes.
+4. **The gate command** (judge ONLY by the `test result: ok` lines —
+   cargo may exit 1 on success in this project):
+
+   ```
+   cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids
+   ```
+
+5. **The anchors canary** — every g47 row survives: `fn del_water`,
+   `fn quick_water`, `settle_loaded_world` (app/mod.rs), `fn
+   shimmer_remove_water`, `struct GenDungeonContext`,
+   `reduced_max_liquids` (settings.rs), `pub fn square_tile_frame_record`,
+   `fn update_world_tick`, `pub fn gen_settle_loop`, `pub fn
+   take_pump_wakes`, `the_promotion_budget_is_the_post_sweep_active_count_clamped_to_the_buffer`,
+   `fn honey_falls_once_every_eleven_visits`, plus the union's own rows
+   (`underworld_layer: i32`, `surface_rng`). A failed marker = a dropped
+   surface: recover the arm, NEVER delete the row.
+6. **The runtime-inert gen-fields contract** (69 §contract, extended):
+   `generating`/`generating_world`/`gen_ignore_water`/`quick_settle`
+   default false; the gen context setters are called ONLY by the gen
+   driver; the load driver arms `generating` but never `generating_world`;
+   `underworld_layer` is runtime-faithful (NOT gen-gated); `surface_rng`
+   advances only on a 254 average; `skip_count` resets in `re_init`;
+   `app.liquid_tick` stays DEAD (no re-introduction).
+7. **`graphify update .`** on the merged branch, then the main merge per
+   MAIN-RULES (ref-update, post-merge ancestor + symbol verification).

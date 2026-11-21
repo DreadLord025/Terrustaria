@@ -18670,6 +18670,112 @@ load driver arms `generating` but never `generating_world`;
 `underworld_layer` is runtime-faithful; `surface_rng` advances only on a
 254 average.
 
+### The Liquid.cs FULL-FN final census (W4-g47 closeout, SEAL carry `4c81731b`)
+
+The whole decompiled `Liquid.cs` function list (24 members, script-diffed
+against the port's fn list at `dd66fa3a` + the closeout) — the final
+per-fn verdict, nothing left unaccounted:
+
+| C# fn (`Liquid.cs`) | Port home | Verdict |
+| --- | --- | --- |
+| statics + static ctor (`:15-55`/`:1669-1677`) | `LiquidSystem` fields + `MAX_ACTIVE`/`MAX_BUFFER`/`CYCLES` consts | PORTED (instance-per-world instead of statics — the ReInit contract) |
+| `NetSendLiquid` (`:57-67`) + `_netChangeSet`/`_swapNetChangeSet` + the `UpdateLiquid` broadcast tail (`:1151-1156`) | — | OUT OF SCOPE (MP; census deviation 9/10, single-player target) |
+| `tilesIgnoreWater` (`:69-73`) | `tiles_ignore_water` + the `kind_solid` grate/boulder fold | PORTED (`4288657c` export; the pass wraps itself `:986`/`:1157`) |
+| `worldGenTilesIgnoreWater` (`:75-81`) | `world_gen_tiles_ignore_water` + the `gen_ignore_water` `kind_solid` fold | PORTED (`4288657c`) |
+| `ReInit` (`:83-102`) | `re_init` (incl the reduced-liquids 5000 cap) | PORTED |
+| `QuickWater` (`:104-148`) | `quick_water` + `shimmer_remove_water` | PORTED; the `verbose` progress arm + the noTraps boulder swap + `LiquidInteractionsCleanup` ride f25's gen module (cited-dropped here: the boulder swap is subsumed by the pass-scoped ignore, the cleanup is f25's `:23755` carry) |
+| `SettleWaterAt` (`:150-289`) | `settle_water_at` (gen re-type + dungeon arm + ORIGIN wall) | PORTED |
+| `AttemptToMoveHoney/Lava/Shimmer` (`:291-433`) | `attempt_to_move_honey/lava/shimmer` | PORTED (left/right/up/down order, the had-type XOR gate) |
+| `UpdateProgressDisplay` (`:435-447`) | — | UI-ONLY (the `Main.statusText` gen loading bar; no tile effect, no RNG — the port's loader owns its own progress text) |
+| `Update` (`:449-964`) | `update_tile` (+ the fall/row/kill arms) | PORTED — the evap block (`:466-474`) and the Next(30) nudge (`:892-895`) are ON the union (the g46 graft steps 2/3, `e7626b72`); the g45 doc-sweep's LIVE reads (fall `own_now`, down-arm post-burn re-read) sealed onto it |
+| `StartPanic` (`:966-981`) | `start_panic` | PORTED |
+| `UpdateLiquid` (`:983-1158`) | `update` + `end_pass` | PORTED except the MP cycle scaling (`:987-1004`), the MP section-reset (`:1038-1051`), the `Misc.WaterSettled` console line (`:1034`) and the net broadcast (`:1151-1156`) — all MP/console, cited-dropped |
+| `AddWater` (`:1160-1207`) | `add_water` | PORTED — the `:1163` 5-tile border exclusion + `type != 546` carve-out and the `:1183-1206` inline water/lava-death check are ON the union (g45b's guards, `16fd6ad7`, with the `edit_kills` loot upgrade; research/70 step 5) |
+| `UndergroundDesertCheck` (`:1209-1223`) | `underground_desert_check` | PORTED |
+| `LiquidCheck` (`:1225-1309`) | `liquid_check` (the `create_merge_tiles_during_gen` param carried) | PORTED; the down arm's LIVE post-burn reads sealed (`c8908a55` carry); the `WorldGen.cs:22480` gen finalize-sweep CALLER is f25's lane (the fn is here, the gen driver calls it) |
+| `LiquidOverwriteStrip` (`:1311-1323`) | `liquid_overwrite_strip` | PORTED |
+| `CreateLiquidMergeTile` (`:1325-1373`) | `create_liquid_merge_tile` | PORTED with the cited `ReplaceTile` fallback (`KillTile` + forced `PlaceTile`, ANALYSIS above) |
+| `GetLiquidMergeTypes` (`:1375-1443`) | `get_liquid_merge_types` + `get_liquid_change_type` | PORTED |
+| `LavaCheck`/`HoneyCheck`/`ShimmerCheck` (`:1445-1468`) | `lava_check`/`honey_check`/`shimmer_check` | PORTED (the lava desert strip rides `generating && !remix && !dual_dungeons`) |
+| `DelWater` (`:1470-1599`) | `del_water` (canonical, keep-one) | PORTED (the g46 evap-adjacent drained-type `mark_chunk` rides the union re-fold) |
+| `AddGameplaySnapshotComponents` (`:1601-1667`) | — | OUT OF SCOPE (the `StateSnapshot` dev/rollback tooling; no gameplay effect) |
+| instance fields `x/y/kill/delay` (`:45-51`) | `Entry` | PORTED |
+
+`LiquidBuffer.cs` (both fns, `:11-27`): PORTED inside `add_water`/
+`end_pass` (the `maxLiquidBuffer-2` cap, the checking mark, the
+swap-remove promotion — the buffer-arm census, R-12-5 driver 2).
+
+**"LiquidEdge" does not exist** — a full-tree grep of `decompiled/` and
+`decompiled-libs/` finds zero hits. The liquid EDGE surface is
+`LiquidRenderer.InternalPrepareDraw`'s Pass-4 edge flags
+(`LiquidRenderer.cs:161-613`), ported in `liquid_draw.rs`
+(`has_left/right/top/bottom_edge` + the wall levels, the `Cache` struct ≈
+`LiquidCache`/`LiquidDrawCache`). The waterfall-source family
+(`WaterfallManager.cs`: `CheckForWaterfall` `:95`, `FindWaterfalls`
+`:107`, `UpdateFrame` `:257`, both `DrawWaterfall` overloads,
+`StylizeColor`/`GetAlpha`/`TrySparkling`/`AddLight`, `Draw` `:1118`) is
+ported in `waterfall/mod.rs` + `waterfall/draw.rs` (the A4 landing,
+witnessed). **Gaps-list (LiquidRenderer.cs, render-side, NOT liquid.rs
+scope)**: `HasFullWater` (`:799-813`, the `Main.DrawBlack` `:58008`
+background-coverage gate — the port's black-merge in `render/tiles.rs`
+keys on light-zero + wall coverage, no liquid probe), `GetVisibleLiquid`
+(`:815-829`, zero C# callers found in the decompile — dead surface),
+`SetWaveMaskData` (`:854-880`, the `WaterShaderData.cs:166` viscosity
+mask chain — the port's `water_mask.rs` renders its own mask from the
+liquid rects, no per-cell viscosity read), and the wind-driven
+`_frameState` (`Update` `:831-847`: `windSpeedCurrent*25 ± 6` — the port's
+`anim_time*8` clock is wind-INDEPENDENT, a render-cadence deviation).
+All four are draw-side follow-ups, cited here, none blocks the liquid
+SIM merger.
+
+### The honey/shimmer settle specifics (W4-g47 closeout per-liquid census, SEAL carry)
+
+The drivers are NOT water-centric — the per-liquid arms verified against
+`Liquid.Update` (`Liquid.cs:480-566`) arm-for-arm:
+
+- **lava**: `LavaCheck` EVERY visit (`:482`, before the gate), then the
+  `delay < 5` throttle (`:485-490`) — one fall per SIX visits (five
+  throttled + one flow), reset to 0. Port: `update_tile`'s lava arm.
+- **honey**: non-lava cells wake their lava neighbours first (`:495-510`),
+  then `HoneyCheck` EVERY visit (`:513`), then the `delay < 10` throttle
+  (`:516-521`) — one fall per ELEVEN visits. Port: the honey arm.
+- **shimmer**: non-lava/non-honey cells wake their honey neighbours
+  (`:526-541`), then `ShimmerCheck` (`:544`) with **NO delay gate at all**
+  — the C# arm has no `delay++`/return; shimmer flows at the water
+  cadence (one tile per two passes via the down-arm `skipLiquid` pair).
+  Port: the shimmer arm — same shape, no gate. The `delay` field stays 0.
+- **water**: the else-arm wakes shimmer neighbours (`:548-563`), ungated.
+- The neighbour-wake cascade is per-kind EXCLUSIVE (a lava cell never
+  wakes lava neighbours; a honey cell wakes lava but not honey; a shimmer
+  cell wakes lava+honey but not shimmer) — the port's nested else-chain
+  mirrors it exactly.
+- `quickFall` bypasses BOTH gates (`:1083-1090` forces `delay = 10`
+  pre-Update — above both thresholds); the reduced-liquids
+  `numLiquid > 2000` OR-arm feeds the same bypass for all four kinds.
+- The settle drivers (`update_world_tick`, `gen_settle_loop`,
+  `settle_loaded_world`, the panic drain) are kind-agnostic by design —
+  the C# drivers never branch on liquid type; the per-kind behaviour
+  lives entirely in `Update`/`DelWater`/the checks, all ported.
+- The `DelWater` reaction tail is per-kind too (`:1529-1569`): lava →
+  `LavaCheck` + the grass ring, honey → `HoneyCheck` only, shimmer →
+  `ShimmerCheck` only; the port reads the LIVE cell kind post-drain,
+  same arms.
+- The e21 pump transfer is type-locked (`Wiring.cs:501` `b2 == b`) for
+  ALL four kinds — an empty out tile adopts the in type (`:497-499`),
+  including honey/shimmer; the port's `xfer_water` carries the same
+  lock + adoption + the three wakes per transfer regardless of kind.
+
+Closeout witnesses (written, NOT run — SEAL-carried with the §11
+dispositions): `shimmer_falls_every_visit_ungated` (the no-gate proof +
+the zero-delay pin, `liquid_sim`, sentinel-switched + border-re-pinned),
+`quick_fall_bypasses_both_delay_gates` (the lava+honey twins — the
+union's lava-only pin widened under the closeout name,
+`liquid_merge_cadence`). The honey 1-in-11 pin keeps the union's
+`honey_falls_once_every_eleven_visits` (same assertions, the pair
+deduped); the lava six-visit pin is the union's
+`lava_falls_once_every_six_visits` (the g47 machinery it pins is
+identical).
+
 ## The Frost Legion machine (R-25-1, 2026-11-13)
 
 `NPC.AI()`'s aiStyle-38 block (`NPC.cs:28995-29145`) is ported 1:1 as
