@@ -39674,10 +39674,11 @@ The retire round closes the band: **10/10 styles armed, 16/16 kinds
 rowed** (+ the 344 aiStyle-1 spawn rider), boundaries closed both ends
 (the 50 tail `Projectile.cs:28401` / the 61 head `:29310`). The full
 census table, the spawn-source ledger and the witness register live in
-`docs/research/330-projectile-ai-51-60-band-bible.md` (registry-150 §9
-UNIFIED FINAL assignment, §9.2 row 330 — chain 247→330; the 247 self-pick
-superseded, d10's EXECUTED 247 reservation wins). Four
-adjudications land with the seal:
+`docs/research/330-projectile-ai-51-60-band-bible.md` (registry-150 §8
+FINAL assignment: the seal's 247 self-pick lost to d10's executed
+reservation `72431e61f` 16:05:28; the §8 FINAL re-order d16→327/g68→328/
+c3→329/**d6→330** — the rename executed this round, all refs updated).
+The adjudications:
 
 1. **The 601 row-shape fix** (`388530671`, the d18 `dd7b1b0a` finding
    executed): 601 is `PortalGunBolt` (`ProjectileID.cs:1756`), the
@@ -39709,19 +39710,49 @@ adjudications land with the seal:
    published in research/330 §4 for the g65 lane/merger; the merger
    MUST execute the drop (a double 50-dust burst is a visible + stream
    regression). The `projectile_gun_splash.rs` module doc carries the
-   adjudication.
-3. **ShimmerImmunity × f47: COMPOSE, no dup.** The f47 tip `18fe75f2e`
-   READS `buff_immune[353]` (npc_buffs.rs:700 the scan's immune branch,
-   npc.rs:5082 the wet-contact guard) but never WRITES it from the kind
-   — zero `ShimmerImmunity` hits in its tree. The d6 residual-9
-   `for_kind` write IS the missing writer; the two halves are different
-   functions of the same file, a clean union. Keep both sides whole
-   (research/330 §5).
+   adjudication. RE-PINNED at the moved g65 tip `37ec2f3aa` (research/330
+   §4a): the three hunks are byte-identical, and the g65 lane's own FINAL
+   (346 §2b) ADOPTED the verdict — the keep-one is now MUTUAL.
+3. **ShimmerImmunity × f47: COMPOSE, no dup — PLUS the c9 third-writer
+   KEEP-ONE (this round's find).** The f47 tip (re-verified at the moved
+   `057f44a68`) READS `buff_immune[353]` (npc_buffs.rs:694-705 the scan's
+   immune branch, npc.rs:5078-5083 the ramp) but never WRITES it from the
+   kind — zero `ShimmerImmunity` hits in its tree. The d6 residual-9
+   `for_kind` write feeds it; the two halves are different functions of
+   the same file, a clean union (research/330 §5). HOWEVER **W4-c9
+   (`2042d77f1`, 07:13:30 — 3 h before d6's `e2561efe1`) ports the SAME
+   `NPC.cs:17838` write** (`shimmer_immune(cs_id)`, its npc_buffs.rs:505
+   + the for_kind line :586, the range-compressed verbatim 131-id set).
+   Two for_kind 353-writes conflict in the same function tail; the sets
+   are semantically identical (hand-checked, zero drift). **KEEP c9
+   (first-claim), DROP d6's const + write at merge** — the exact S1-S3
+   drop/fold hunks in research/330 §5a (the d6 set-gate witness folds
+   onto c9's fn; the gun-contact witness is writer-agnostic and stays;
+   the anchors row re-points to `fn shimmer_immune`).
 4. **The two residual keep-one notes stand** (the light-toggle family:
    d6 free-fn canonical superset, the base methods + e20 witnesses stay
    for the wire lane, c42 dedupes at merge; the style-56 dup: the c6
    kill_step signature + the d6 friendly-hold composition, all five
    shared sites listed above).
+5. **The d53-wet / g64-trail disjointness PINNED to exact line ranges**
+   (research/330 §8): the d6 ghostHurt/vampireHeal/ghostHeal fns
+   (`projectile.rs:16753-16913`) + the PVE-walk call block
+   (`:23759-23808`) + the three intent queues vs d53's `wet_block`
+   (`projectile_wet.rs:131-246`, the dispatch `:20184-20230` at its tip
+   `c0dc7d37f`) vs g64's `trail_406` (`proj_trail_dust.rs:134-205` at
+   `3e581c8ce`) — three disjoint C# regions (`:12012-13825` damage /
+   `:16786-17007` wet / `:29197-29233` AI dust), zero shared lines, zero
+   cross-lane symbol hits (git grep at both tips). The pool-struct
+   inserts are append-adjacent, mechanically resolvable.
+6. **The dust-lane trail ACTIVATION contract** (research/330 §9): the
+   g63 heal-orb trails (`vampire_heal_trail`/`spirit_heal_trail`) + the
+   g63/g64/e3 gun trails (358/406/1042) are UNWIRED at their tips (the
+   rows are d6's); the d6 draw-count census stubs
+   (`projectile_ai_guns.rs:225-251`, `ai_heal_orb`'s `:4709` skip) are
+   the exact drop-in replacement targets. The explicit-gate order is
+   identical; the emitter wiring RESTORES the NewDust internals (the
+   documented skip), and the d6 recording-rng index pins fold into the
+   co-lane mirror witnesses at the wiring. No d6 code change owed.
 
 Witnesses: 1 new row-shape pin
 (`w4_d6_retire_the_601_row_is_the_portal_bolt_not_cannon_ammo`,

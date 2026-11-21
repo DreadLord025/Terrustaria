@@ -151,6 +151,12 @@ impl Default for NpcBuffs {
 /// immune flag (`NPC.cs:17838`) reads it; the ShimmerGun's NPC contact
 /// (`Projectile.cs:29039`) and the shimmer wet contact
 /// (`NPC.cs:93073`) both ride `AddBuff`'s immune guard.
+/// RETIRE KEEP-ONE (research/330 §5a): W4-c9's `shimmer_immune(cs_id)`
+/// (`2042d77f1`, 3 h earlier) ports the SAME :17838 write with the
+/// set-exact range-compressed predicate — c9 WINS first-claim; this
+/// const + the `for_kind` write below DROP at merge (the S1–S3 hunks),
+/// the set-gate witness folds onto c9's fn. f47's flag READS compose
+/// with either writer unchanged.
 const SHIMMER_IMMUNITY: &[u16] = &[
     637, 638, 656, 670, 684, 678, 679, 680, 681, 682, 683, 356, 669, 676, 244, 677, 594, 667,
     662, 5, 115, 116, 139, 245, 247, 248, 246, 249, 344, 325, 50, 535, 657, 658, 659, 660, 668,
