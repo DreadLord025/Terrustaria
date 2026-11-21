@@ -1524,7 +1524,7 @@ impl GorePool {
                             let position = self.slots[num].position;
                             for _ in 0..5 {
                                 pool.new_dust(
-                                    &mut DustFromGore(rng),
+                                    &mut DustFromGore(&mut *rng),
                                     ctx,
                                     world,
                                     position,
