@@ -119,3 +119,38 @@ Deferred (owning AI unported, the layer is ready):
    `Main.player[owner].inventory[selectedItem].pick`,
    `Projectile.cs:25512`); the held tool IS the channel item while the
    drill lives.
+
+## Landing status (W4-d80, 2026-11-21)
+
+All 24 census sites landed across five phases on
+`task/W4-d80-tracked-sound-layer` (code-only mode — tests written NOT run):
+
+* **Phase 2** (`fb945c08`): sites 1-3 — the drill/chainsaw cadence cues +
+  the Laser Drill 445's Item132/23 (`Projectile::wants_sound`, the
+  `soundDelay` re-arms, the cue before the channel gate).
+* **Phase 3** (`4d28b70d`): sites 4-19 — the DD2 NPC loops. `NpcSoundCue`
+  gained the tracked arms; `world_sim/npcs.rs::apply_npc_tracked_cue`
+  applies them and writes the `SlotId` floats back into `Npc.local_ai`.
+  `TrackedStyle::by_name` resolves the styles through `soundid.rs`. The
+  kobold's `localAI[3]` spawn-in counter now ramps 0 → 60 (`NPC.cs:63769`)
+  so the `== 0` handle-reset fires once (fold 3's inert ensure-or-follow
+  stays verbatim).
+* **Phase 4** (`1f859218`): sites 20-21 — the bomb fuse.
+  `ProjTrackedCue`/`wants_tracked`/`fuse_alive` +
+  `world_sim/projectiles.rs::apply_proj_tracked_cue`; the
+  `ProjectileAudioTracker` condition folds to a shared `Arc<AtomicBool>`
+  the death stop flips false (fold 4). `is_bomb_with_fuse` ports the
+  verbatim `ProjectileID.cs:424` set.
+* **Phase 5** (`84cbb1ff`): sites 22-24 — the vampire sizzle.
+  `Player.sun_scorch_counter`/`sizzle_audio_handle`/`sizzle_alive` +
+  `tick_sun_scorch`/`sun_scorch_lerp`; the counter ticks on BOTH the live
+  (`UpdateSunScorch` `:25634`) and dead (`UpdateDead` `:17079`) paths;
+  `world_sim/player.rs::update_sizzle_audio` owns the play/follow. The
+  `VampireSizzleTracker` condition folds to a shared atomic mirroring
+  `vampireSeed && counter > 0`.
+
+The RNG contract holds: every tracked play draws ONLY the two audio-only
+statics (`style_random`/`sound_style_random`); the witnesses pin the
+gameplay streams pristine. The deviations (the shared-atomic condition
+folds, the wither/kobold cadence folds, the unported burning granter) are
+recorded in ANALYSIS "The tracked-sound entity loops (W4-d80)".

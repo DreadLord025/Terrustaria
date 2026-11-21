@@ -2508,6 +2508,82 @@ Deviations (deliberate):
 * The blizzard emitter's menu behaviour is the C#'s: `SceneState.Update` does not run in
   the menu, so the loops hold their last volume (the vanilla instance also keeps playing).
 
+### The tracked-sound entity loops (W4-d80)
+
+The per-entity tracked-sound call sites the S1-E-23 layer left unwired now ride
+it (the census: `docs/research/64-tracked-sound-census.md`). Five families:
+
+* **The drill/chainsaw held-tool loops** (`Projectile.cs:25510-25522`) + the
+  Laser Drill 445's own cue (`:66246-66250`): legacy case-2 item plays on a
+  `soundDelay` cadence (Item190/15, Item189/20, Item132/23), queued through
+  `Projectile::wants_sound` BEFORE the channel gate. Their one `Main.rand`
+  pitch draw rides the `UpdateProjectiles` stream after the attenuation gate.
+* **The DD2 NPC loops** — Betsy's wind attack / flame breath
+  (`NPC.cs:61980-62305`), the lane portal's open / idle / fade / stop
+  (`:40979-41044`), the kobold's ignite / loops / explode (`:63198-63274`),
+  the wither beast's aura pulse (`:63362-63388`): the AI machines queue
+  `NpcSoundCue` tracked arms (the `wants_sound` convention); the sim drain
+  (`world_sim/npcs.rs::apply_npc_tracked_cue`) applies them against the pool
+  and writes the `SlotId` floats back into `Npc.local_ai` (the C# `localAI`
+  dance). `TrackedStyle::by_name` resolves the styles through the generated
+  `soundid.rs` table.
+* **The bomb fuse** (`Projectile.cs:46917-46921` ensure + `:70673-70677` Kill
+  stop): `ProjTrackedCue` queue → `world_sim/projectiles.rs::apply_proj_tracked_cue`,
+  the handle in `Projectile.local_ai[2]`.
+* **The vampire sizzle** (`Player.cs:28580-28604`): the `sun_scorch_counter`
+  ramp ticks on BOTH the live (`UpdateSunScorch` `:25634`) and dead
+  (`UpdateDead` `:17079`) paths; the play/follow rides
+  `world_sim/player.rs::update_sizzle_audio`, the handle in
+  `Player.sizzle_audio_handle`.
+
+**RNG contract (the census' core claim):** NO tracked play draws `Main.rand`.
+Every `PlayTrackedSound`/`PlayTrackedLoopedSound` consumes exactly two
+AUDIO-ONLY static streams — the variation pick (`LegacySoundStyle.Random`,
+drawn only when `Variations != 1`) and the always-drawn `GetRandomPitch`
+NextFloat (`SoundStyle._random`). The port's stand-ins are
+`Audio::style_random` / `Audio::sound_style_random` (both seeded 1, S1-E-23).
+The witnesses pin that a tracked play leaves every gameplay `RngKey` stream
+pristine.
+
+Deliberate deviations (the census folds):
+
+* **The looped-play conditions fold to shared atomics.** The C#'s
+  `ProjectileAudioTracker` (`ProjectileAudioTracker.cs:15-27`: `!gameMenu &&
+  active && type == expectedType`) and `VampireSizzleTracker`
+  (`VampireSizzleTracker.cs:12-19`: `!gameMenu && vampireSeed &&
+  sunScorchCounter > 0`) read live entity state; the pool cannot hand a live
+  projectile/player reference to a `Send` closure, so each loop's condition
+  reads a shared `Arc<AtomicBool>` the owning system refreshes per tick (the
+  bomb's death/detonation flips it false; the sizzle's mirror tracks the
+  seed + counter). The `gameMenu` term folds with the focus/pause gate that
+  freezes the pool. The bomb fuse's trailing `GetActiveSound` read
+  (`:46920`) is dead — dropped.
+* **The DD2 "loops" are plain tracked plays** of loop-named assets in the C#
+  — NOT `PlayTrackedLoopedSound`; they play out once and the ensure-arm
+  re-plays them when the slot died. The port keeps that exactly (no
+  `IsLooped`, no condition). The bomb fuse and the sizzle ARE
+  `PlayTrackedLoopedSound` (the shared-atomic conditions above).
+* **The wither-beast aura ensure-or-follow** fires on every aura-active tick
+  in the port (the `ai[0] != 0` branch) instead of the C#'s single `ai[0]==1`
+  charge tick — the ensure gate makes the overlap identical while the pulse
+  lives; the re-play cadence after it dies is the fold.
+* **The kobold `ai[0]==0 && ai[1]==1` ensure-or-follow state is unreachable**
+  in the port's folded walker (the `ai[0]==1 → ai[1]=2` latch is immediate,
+  S1-D-3) — the block is ported verbatim and stays inert. The kobold's
+  `localAI[3]` spawn-in counter (`caster_counter`) now ramps 0 → 60
+  (`NPC.cs:63769`) so the `== 0` handle-reset fires once; the alpha fade +
+  the `Next(maxValue3)` dust draws stay the standing dust deviation.
+* **The drill cadence reads the owner's held item through the port's
+  `channel_item` snapshot** (the C# reads
+  `Main.player[owner].inventory[selectedItem].pick`, `Projectile.cs:25512`);
+  the held tool IS the channel item while the drill lives.
+* **The vampire burning flag's granter** (`VampireSeedSunlightExposure`,
+  `Player.cs:28672-28719`) stays unported — the flag stays false in play, so
+  the counter decays; the sizzle machinery is complete and the Molten-gate
+  test seam drives the flag. The `sun_scorch_counter` field now exists (the
+  `filters.rs` `SUN_SCORCH_COUNTER` const stays 0 — the heat-distortion
+  branch's read is a separate seam).
+
 ### The item-use sound wave (S1-E-21-itemuse)
 
 `Player.ItemCheck_StartActualUse` (`Player.cs:51681-51698`) plays `sItem.UseSound`
