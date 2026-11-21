@@ -20180,24 +20180,16 @@ impl ProjectilePool {
             );
         } else if matches!(kind, 167..=170) {
             // `:76464-76674` — the aiStyle-34 fireworks burst: the sound
-            // (Item14, the cue skip), the per-variant dust census. The
-            // remote owner's timeLeft = 60 (`:76466-76469`) is the
-            // local-only pool's no-op.
-            if kind == 169 {
-                // `:76548-76551` — the star burst's four draws.
-                let _ = rng.next_float(); // the rotation (`NextDouble`)
-                let _ = rng.next_range(5, 9); // the spoke count
-                let _ = rng.next_range(12, 17); // the speed
-                let _ = rng.next_range(3, 7); // the inner speed
-                // The dust loops draw nothing explicit (`:76553-76605`).
-            } else if kind == 170 {
-                // `:76609-76673` — the 400-dust loop: one `Next(3)` gate
-                // per dust (`:76668`).
-                for _ in 0..400 {
-                    let _ = rng.next_range(0, 3);
-                }
-            }
-            // 167/168's dust loops (`:76473-76544`) draw nothing explicit.
+            // (Item14, the cue skip). The dust BODIES and every explicit
+            // draw (the 169's NextDouble + Next(5,9)/Next(12,17)/Next(3,7),
+            // the 170's 400 Next(3) gates) moved to the W4-g65 death-dust
+            // drain (`projectile_death_dust.rs`, the ring batch) — the old
+            // draw census here was DEDUPED onto it (the keep-one rule: the
+            // drain runs the real bodies + the same draws on the same
+            // stream). The remote owner's timeLeft = 60 (`:76466-76469`)
+            // is the local-only pool's no-op; the 192×192 resize + Damage
+            // (`:76857-76864`) stay unported state (the pool's PVE walk
+            // already ran on the dying box — recorded).
         }
     }
 

@@ -39441,3 +39441,85 @@ module gains `trail_pair`/`trail_pair_oldpos`/`rotate_vec` helpers. The 114 gate
 + 173 type pick draw per iteration; the rest are internals-only. Witnesses: the
 trail pair counts (27×2), the 114 alpha-0 gate, the 173 pick set, the 157/343
 single trails, the 408/385 bursts — WRITTEN NOT RUN.
+
+### Batch 11 (10 kinds, the firework/star RINGS `:71490-76855` + `:74817`)
+
+The deferred big circular bursts. 167 (400× dust-130 ring kicks, speed
+4/8/12/16 by band, damp 0.5, scale 1.3/noGravity), 168 (400× dust-131, speed
+2×(i/100)→10→13, >200 kicks ×1.25/×0.75, i>100 scale/noGravity), 169 (the
+star: NextDouble heading + Next(5,9) spokes + Next(12,17)/Next(3,7) speeds,
+TWO 2-side×20-step Lerp spoke passes (second at half speed) of dust-133 +
+100 dust-132 ring-kick tail), 170 (400× dust-133/134 by band, per-dust
+Next(3) gate → scale 1.3/noGravity), 415 (NextDouble + Next(5,9) spokes +
+Next(10,15)×0.66/Next(4,7)/2, heading rotates every 30th particle INCLUDING
+i=0, 30×spokes dust-130 + 100 ring kicks), 416 (the spiral: Next(3,6)×2
+spokes + Next(2) sign, base rotates every 20th, working vector by
+τ/(20×spokes)×sign×3 otherwise, scale-flag alternates), 417 (TWO NextDouble
+angles + TWO NextDouble radii, 150× dust-132/133 by band, own-velocity
+Normalize×speed with the >50/>100 axis-squash + rotate), 418 (Next(5,12)
+spokes, 2-side×15-step SmoothStep spoke passes of dust-134 + 120 ring kicks
+damp 0.2), 1024 (12× dust-306 Direct, scale 0.8+NextFloat×1.7 BEFORE, vel =
+SafeNormalize(vel).RotatedBy(τ×i/12)×8×(0.1+NextFloat×1.2) AFTER, colour
+Lerp(White,(140,234,180),i/10)), 873 (20× dust-267 NewDustPerfect ring,
+heading = vel.ToRotation() + i×τ/20, i%4/i%2 speed/scale bands, colour
+Lerp(AI_171_GetColor,White,NextFloat×0.4)). The module gains
+`rotated_by`/`to_rotation`/`lerp_f32`/`smooth_step_f32`/`smooth_step_vec`/
+`ring_kick` helpers. **The i16 firework draw census is DEDUPED onto this
+batch** (`projectile.rs::dart_electro_firework_kill`'s 169 four draws + 170
+400 gates removed — the drain runs the real bodies + the same draws on the
+same stream; the 192×192 resize + Damage `:76857-76864` stay unported
+state, recorded). The 873 enrage gate reads `ShouldEmpressBeEnraged`
+(`NPC.cs:45925-45951`): non-remix = `world.day_time`; the remix arm scans
+for a live 636 and the port has NO live Empress (the `npc_ai_empress`
+wiring remainder), so the scan finds none → not enraged (recorded).
+Witnesses: the 167/168/170 counts/bands, the 169 spoke-count formula, the
+415/416/418 counts, the 417 150-count/bands + determinism, the 1024 colour,
+the 873 centre/scale bands — WRITTEN NOT RUN.
+
+### The re-census (all Kill dust arms vs the 104 + d12 + i17/i18 + g16)
+
+A full re-grep of `Projectile.cs:70642-77262` for `Dust.NewDust*` sites,
+cross-referenced against the 104 landed arms, the d12 explosion family
+(`9152b259`: the aiStyle-117 tick-1 census `:34502-34636` + the 608 Solar
+Counter Kill `:72177-72225`), the i17/i18 main-landed special-arrow/bullet
+deaths (`special_arrows.rs`/`projectile_special_bullets.rs`), the g16 gore
+census (165 sites, gore-only — the dust beside a gore site is NOT g16's),
+and the in-tree draw-census hooks (`celeb2_death`/`celeb2_explosion` for
+715-718, `fairy_queen_death_draws` for 932, `rainbow_crystal_explosion_draws`
+for 644, `gem_bolt_aoe` for the gem bolts, `dart_electro_firework_kill` for
+442/478/167-170). The remaining UNCLAIMED dust arms (the exact list, by
+C# line): the head-block 1098/1123 (`:70749`), 1020/1105 (`:70855`), 1085
+(`:70902`), 1080 (`:70926`), 1084 (`:70956`), 949 (`:70976`), 985 (`:70996`),
+1038 (`:71043`), 1116 (`:71052`), 1036 (`:71068`), 756 (`:71077`), 961
+(`:71088`), 962 (`:71099`); the fairy-queen/rainbow trails 931/1039
+(`:71149`), 1047 (`:71192`), 79 (`:71257`), 16 (`:71329`), 34 (`:71409`);
+the queen-slime/sparkle 1012 (`:71524`), 920 (`:71551`), 921 (`:71560`), 926
+(`:71569`), 937 (`:71578`), 818 (`:71587`), 856 (`:71598`); the DD2 710
+(`:71652`), 711 (`:71680`), 662/685 (`:71780`), 680 (`:71800`), 664/666/668/
+706 (`:71821`), 681 (`:71902`), 669 (`:71952`), 634/635 (`:71995`), 645
+(`:72094`), 636 (`:72126`), 614 (`:72146`), 661 (`:72226`), 617 (`:72278`);
+the nebula 620/618 (`:72394`), 619 (`:72418`); 601 (`:72454`), 596
+(`:72470`), 659 (`:72503`), 539 (`:72565`), 585 (`:72599`), 590 (`:72614`),
+587 (`:72641`), 676 (`:72737`), 686 (`:72781`), 405 (`:72849`), 501
+(`:72874`), 410 (`:72919`), 452 (`:72987`), 454 (`:73014`), 467 (`:73046`),
+468 (`:73093`), 485 (`:73140`), 484 (`:73149`), 483 (`:73159`), 523
+(`:73257`), 521 (`:73292`), 459/709 (`:73338`), 639/640 (`:73431`), 682
+(`:73492`), 449 (`:73573`), 448 (`:73603`), 616 (`:73646`), 502 (`:73675`),
+868/869/996 (`:73705`), 836 (`:73729`), 1092 (`:73738`), 424-426 (`:73819`),
+1037/1049 (`:73862`), 399 (`:73921`), 358 (`:74029`), 406 (`:74063`), 1042
+(`:74099`), 323 (`:74182`), 589 (`:74204`), 311 (`:74283`), 316 (`:74293`),
+1097 (`:74311`), 270/837 (`:74348`), 229 (`:74450`), 178 (`:74565`), 289
+(`:74590`), 475/505/506 (`:74615`), 171 (`:74679`), 117 (`:74734`), 166
+(`:74760`), 99/1013/727/1014/1021/1048/1053/1054/1055/1057 (`:74841`), 1005
+(`:74970`), 1078 (`:74983`), 772 (`:75037`), 763 (`:75067`), 655 (`:75080`),
+728 (`:75125`), 723/724/725/726/907/1133 (`:75159`), 91/92 (`:75212`), 89
+(`:75250`), 969 (`:75298`), 1120 (`:75374`), 121-126/597 (`:75425`), 1115
+(`:75500`), 379/377 (`:75522`), 80 (`:75533`), 477/479 (`:75585`), 474
+(`:75600`), 172 (`:75608`), 9/12/503/955 (`:75681`), 281 (`:75749`), 162
+(`:75804`), 240 (`:75855`), 282 (`:75899`), 660 (`:76067`), 712 (`:76096`),
+638 (`:76119`), 411-414 (`:76187`), 583 (`:76258`), 584 (`:76266`), 41
+(`:76308`), 514 (`:76343`), 183 (`:76431`), 1023 (`:76866`), 312 (`:76890`),
+246 (`:76944`), 249 (`:76987`), 69 (`:77016`), 70 (`:77031`), 621
+(`:77046`), 370 (`:77161`), 371 (`:77176`), 936 (`:77193`). The
+gore-adjacent arms (a gore draw sits BETWEEN dust draws) stay deferred to
+the gore-census companion; the pure-dust arms port in the batches below.

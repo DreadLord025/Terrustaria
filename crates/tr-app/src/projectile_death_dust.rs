@@ -85,6 +85,69 @@ fn rotate_vec(v: Vec2, angle: f32) -> Vec2 {
     Vec2::new(v.x * c - v.y * s, v.x * s + v.y * c)
 }
 
+/// `Utils.RotatedBy(radians)` (`Utils.cs:1675-1684`, centre = 0): the cos/sin
+/// run in DOUBLE of the widened float angle, cast back to f32, then the f32
+/// component multiply-add — the firework rings' per-spoke spin (the
+/// `projectile_ai_empress::rotated_by` precision order, distinct from the
+/// f32-native [`rotate_vec`] the 385 arm keeps).
+fn rotated_by(v: Vec2, angle: f32) -> Vec2 {
+    let c = (angle as f64).cos() as f32;
+    let s = (angle as f64).sin() as f32;
+    Vec2::new(v.x * c - v.y * s, v.x * s + v.y * c)
+}
+
+/// `Vector2.ToRotation` (`Utils.cs:1655-1658`): `(float)Math.Atan2(Y, X)`.
+fn to_rotation(v: Vec2) -> f32 {
+    (v.y as f64).atan2(v.x as f64) as f32
+}
+
+/// `MathHelper.Lerp(a, b, t)` (scalar): `a + (b - a) * t`, f32 order.
+fn lerp_f32(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
+
+/// `MathHelper.SmoothStep(v1, v2, t)` — the zero-tangent Hermite
+/// `(2v1-2v2)t³ + (3v2-3v1)t² + v1` with the clamped amount and the
+/// near-zero/one guards (the `projectile_ai_empress::smooth_step` form).
+fn smooth_step_f32(v1: f32, v2: f32, t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    let t3 = t * t * t;
+    let t2 = t * t;
+    if t.abs() <= f32::from_bits(1) {
+        return v1;
+    }
+    if t == 1.0 {
+        return v2;
+    }
+    (2.0 * v1 - 2.0 * v2) * t3 + (3.0 * v2 - 3.0 * v1) * t2 + v1
+}
+
+/// `Vector2.SmoothStep` — the per-component [`smooth_step_f32`] (the 418
+/// firework's spoke blend).
+fn smooth_step_vec(a: Vec2, b: Vec2, t: f32) -> Vec2 {
+    Vec2::new(smooth_step_f32(a.x, b.x, t), smooth_step_f32(a.y, b.y, t))
+}
+
+/// The firework rings' shared velocity kick (`:76489-76500` et al.): read the
+/// dust's OWN post-spawn velocity, guard an exactly-zero vector to `(1, 0)`,
+/// rescale it to `speed` (the `speed / sqrt(x²+y²)` factor), apply the per-axis
+/// `xmul`/`ymul` (left-associated f32, the C#'s `x * factor * 1.25f`), then
+/// `velocity *= damp` and add the rescaled vector. The 167/168/169-tail/170/
+/// 415-tail/418-tail shape.
+fn ring_kick(d: &mut tr_core::particles::Dust, speed: f32, damp: f32, xmul: f32, ymul: f32) {
+    let mut x = d.velocity.x;
+    let mut y = d.velocity.y;
+    if x == 0.0 && y == 0.0 {
+        x = 1.0;
+    }
+    let f = speed / (x * x + y * y).sqrt();
+    let sx = x * f * xmul;
+    let sy = y * f * ymul;
+    d.velocity *= damp;
+    d.velocity.x += sx;
+    d.velocity.y += sy;
+}
+
 /// The trail-position dust PAIR (`:77064-77073`): for `i in start..end`, two
 /// dust of `dust_type` at `pos − oldVel×(30/i)` box 8×8 speed oldVel alpha
 /// `alpha`, scale `scale_a` (noGravity when `ng_a`, vel×`mul_a`) + scale
@@ -1048,6 +1111,318 @@ fn death_bursts(
                 d.velocity = v50;
             }
         }
+        // `:76471-76503` — the 167 Red Rocket: 400× dust-130 6×6 alpha 100,
+        // the ring kick at speed 4/8/12/16 by the <100/<200/<300 bands,
+        // damp 0.5, scale 1.3 + noGravity. No explicit draw.
+        167 => {
+            for i in 0..400 {
+                let speed = if i < 100 { 4.0 } else if i < 200 { 8.0 } else if i < 300 { 12.0 } else { 16.0 };
+                let idx = dust.new_dust(rng, ctx, world, s.pos, 6, 6, 130, 0.0, 0.0, 100, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                ring_kick(d, speed, 0.5, 1.0, 1.0);
+                d.scale = 1.3;
+                d.no_gravity = true;
+            }
+        }
+        // `:76505-76544` — the 168 Green Rocket: 400× dust-131, speed
+        // 2×(i/100) then 10 (>100) then 13 (>250); the >200 band kicks
+        // (×1.25, ×0.75); only i>100 gets scale 1.3 + noGravity. No draw.
+        168 => {
+            for i in 0..400 {
+                let mut speed = 2.0 * (i as f32 / 100.0);
+                if i > 100 {
+                    speed = 10.0;
+                }
+                if i > 250 {
+                    speed = 13.0;
+                }
+                let (xm, ym) = if i <= 200 { (1.0, 1.0) } else { (1.25, 0.75) };
+                let idx = dust.new_dust(rng, ctx, world, s.pos, 6, 6, 131, 0.0, 0.0, 100, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                ring_kick(d, speed, 0.5, xm, ym);
+                if i > 100 {
+                    d.scale = 1.3;
+                    d.no_gravity = true;
+                }
+            }
+        }
+        // `:76546-76605` — the 169 Blue Rocket star: one NextDouble heading +
+        // Next(5,9) spokes + Next(12,17) speed + Next(3,7) inner speed, then
+        // TWO spoke passes (2 sides × 20 lerp steps each, the second pass at
+        // half speed), each step a dust-133 scale 1.3 vel×0.1 noGravity +
+        // Lerp(spoke,side,t)×Lerp(speed,inner,t); then 100× dust-132 ring
+        // kicks at the outer speed. (The i16 draw census is deduped onto
+        // this arm — the pool hook no longer rolls the four draws.)
+        169 => {
+            let tau = std::f32::consts::PI * 2.0;
+            let mut heading = rotation_vector(rng.next_double() as f32 * tau);
+            let spokes = rng.next_range(5, 9) as f32;
+            let speed = rng.next_range(12, 17) as f32;
+            let inner = rng.next_range(3, 7) as f32;
+            for pass in 0..2 {
+                let half = if pass == 0 { 1.0 } else { 0.5 };
+                for _ in 0..spokes as i32 {
+                    for side in 0..2 {
+                        let sign = if side == 0 { 1.0 } else { -1.0 };
+                        let edge = rotated_by(heading, sign * tau / (spokes * 2.0));
+                        for step in 0..20 {
+                            let t = step as f32 / 20.0;
+                            let dir = lerp_vec(heading, edge, t);
+                            let mag = lerp_f32(speed, inner, t) * half;
+                            let idx = dust.new_dust(rng, ctx, world, s.pos, 6, 6, 133, 0.0, 0.0, 100, Color::default(), 1.3);
+                            let d = dust.slot_mut(idx);
+                            d.velocity *= 0.1;
+                            d.no_gravity = true;
+                            d.velocity += dir * mag;
+                        }
+                    }
+                    heading = rotated_by(heading, tau / spokes);
+                }
+            }
+            for _ in 0..100 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, 6, 6, 132, 0.0, 0.0, 100, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                ring_kick(d, speed, 0.5, 1.0, 1.0);
+                d.scale = 1.3;
+                d.no_gravity = true;
+            }
+        }
+        // `:76607-76673` — the 170 Yellow Rocket: 400× dust, type/speed by
+        // the >100/>200/>300 bands (133/16, 134/11, 133/8, 134/5), the kick
+        // axis-squash alternates ×0.7 per band, damp 0.5; per dust a Next(3)
+        // gate ≠0 → scale 1.3 + noGravity. (The i16 400-gate census is
+        // deduped onto this arm.)
+        170 => {
+            for i in 0..400 {
+                let (dust_type, speed, xm, ym) = if i > 300 {
+                    (134, 5.0, 0.7, 1.0)
+                } else if i > 200 {
+                    (133, 8.0, 1.0, 0.7)
+                } else if i > 100 {
+                    (134, 11.0, 0.7, 1.0)
+                } else {
+                    (133, 16.0, 1.0, 0.7)
+                };
+                let idx = dust.new_dust(rng, ctx, world, s.pos, 6, 6, dust_type, 0.0, 0.0, 100, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                ring_kick(d, speed, 0.5, xm, ym);
+                if rng.next_max(3) != 0 {
+                    d.scale = 1.3;
+                    d.no_gravity = true;
+                }
+            }
+        }
+        // `:76675-76717` — the 415 Red Firework: NextDouble heading +
+        // Next(5,9) spokes + Next(10,15)×0.66 outer + Next(4,7)/2 inner; the
+        // heading rotates EVERY 30th particle (i%30==0, INCLUDING i=0), each
+        // a dust-130 vel×0.1 + heading×Lerp(inner,outer,(i%30)/30) scale 1.3
+        // noGravity; then 100 ring kicks (i<30 at (inner+outer)/2).
+        415 => {
+            let tau = std::f32::consts::PI * 2.0;
+            let mut heading = rotation_vector(rng.next_double() as f32 * tau);
+            let spokes = rng.next_range(5, 9) as f32;
+            let outer = rng.next_range(10, 15) as f32 * 0.66;
+            let inner = rng.next_range(4, 7) as f32 / 2.0;
+            let count = (30.0 * spokes) as i32;
+            for i in 0..count {
+                if i % 30 == 0 {
+                    heading = rotated_by(heading, tau / spokes);
+                }
+                let mag = lerp_f32(inner, outer, (i % 30) as f32 / 30.0);
+                let idx = dust.new_dust(rng, ctx, world, s.pos, 6, 6, 130, 0.0, 0.0, 100, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 0.1;
+                d.velocity += heading * mag;
+                d.scale = 1.3;
+                d.no_gravity = true;
+            }
+            for i in 0..100 {
+                let speed = if i < 30 { (inner + outer) / 2.0 } else { outer };
+                let idx = dust.new_dust(rng, ctx, world, s.pos, 6, 6, 130, 0.0, 0.0, 100, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                ring_kick(d, speed, 0.5, 1.0, 1.0);
+                d.scale = 1.3;
+                d.no_gravity = true;
+            }
+        }
+        // `:76719-76748` — the 416 Green Firework spiral: NextDouble heading
+        // + Next(3,6)×2 spokes + Next(2) sign; every 20th particle rotates
+        // the BASE by sign×(τ/spokes) and flips the scale flag, the rest
+        // rotate the WORKING vector by (τ/(20×spokes))×sign×3; each a
+        // dust-131 scale 1.4 vel×0.1 + dir×Lerp(1,8,(i%20)/20), flag →
+        // scale 0.9, noGravity.
+        416 => {
+            let tau = std::f32::consts::PI * 2.0;
+            let mut work = rotation_vector(rng.next_double() as f32 * tau);
+            let mut base = work;
+            let spokes = (rng.next_range(3, 6) * 2) as f32;
+            let sign = if rng.next_max(2) == 0 { 1.0 } else { -1.0 };
+            let mut flag = true;
+            let count = (20.0 * spokes) as i32;
+            for i in 0..count {
+                if i % 20 == 0 {
+                    base = rotated_by(base, sign * (tau / spokes));
+                    work = base;
+                    flag = !flag;
+                } else {
+                    work = rotated_by(work, tau / (20.0 * spokes) * sign * 3.0);
+                }
+                let mag = lerp_f32(1.0, 8.0, (i % 20) as f32 / 20.0);
+                let idx = dust.new_dust(rng, ctx, world, s.pos, 6, 6, 131, 0.0, 0.0, 100, Color::default(), 1.4);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 0.1;
+                d.velocity += work * mag;
+                if flag {
+                    d.scale = 0.9;
+                }
+                d.no_gravity = true;
+            }
+        }
+        // `:76750-76802` — the 417 Blue Firework: TWO NextDouble angles +
+        // TWO NextDouble radii (4+NextDouble×3 each); 150× dust, type/speed
+        // by the >50/>100 bands (132/max, 133/r2, 132/r1); the dust's own
+        // velocity Normalize()×speed, >100 squashes X×0.5 + rotates by
+        // angle1, >50 squashes Y×0.5 + rotates by angle2; vel×0.2 + kick,
+        // scale 1.3 + noGravity (the i<=200 gate always passes).
+        417 => {
+            let tau = std::f32::consts::PI * 2.0;
+            let angle1 = rng.next_double() as f32 * tau;
+            let angle2 = rng.next_double() as f32 * tau;
+            let r1 = 4.0 + rng.next_double() as f32 * 3.0;
+            let r2 = 4.0 + rng.next_double() as f32 * 3.0;
+            let rmax = r1.max(r2);
+            for i in 0..150 {
+                let (dust_type, speed) = if i > 100 {
+                    (132, r1)
+                } else if i > 50 {
+                    (133, r2)
+                } else {
+                    (132, rmax)
+                };
+                let idx = dust.new_dust(rng, ctx, world, s.pos, 6, 6, dust_type, 0.0, 0.0, 100, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                let mut kick = safe_normalize(d.velocity) * speed;
+                if i > 100 {
+                    kick.x *= 0.5;
+                    kick = rotated_by(kick, angle1);
+                } else if i > 50 {
+                    kick.y *= 0.5;
+                    kick = rotated_by(kick, angle2);
+                }
+                d.velocity *= 0.2;
+                d.velocity += kick;
+                d.scale = 1.3;
+                d.no_gravity = true;
+            }
+        }
+        // `:76804-76855` — the 418 Yellow Firework: NextDouble heading +
+        // Next(5,12) spokes + Next(9,14)×0.66 outer + Next(2,4)×0.66 inner;
+        // 2 sides × 15 SmoothStep steps per spoke (dust-134 scale 1.3,
+        // vel×0.1 noGravity + SmoothStep(spoke,side,t)×SmoothStep(outer,
+        // inner,t)); then 120 ring kicks damp 0.2 (i<80: dust-133 at
+        // inner−0.5, else dust-131 at outer).
+        418 => {
+            let tau = std::f32::consts::PI * 2.0;
+            let mut heading = rotation_vector(rng.next_double() as f32 * tau);
+            let spokes = rng.next_range(5, 12) as f32;
+            let outer = rng.next_range(9, 14) as f32 * 0.66;
+            let inner = rng.next_range(2, 4) as f32 * 0.66;
+            for _ in 0..spokes as i32 {
+                for side in 0..2 {
+                    let sign = if side == 0 { 1.0 } else { -1.0 };
+                    let edge = rotated_by(heading, sign * tau / (spokes * 2.0));
+                    for step in 0..15 {
+                        let t = step as f32 / 15.0;
+                        let dir = smooth_step_vec(heading, edge, t);
+                        let mag = smooth_step_f32(outer, inner, t);
+                        let idx = dust.new_dust(rng, ctx, world, s.pos, 6, 6, 134, 0.0, 0.0, 100, Color::default(), 1.3);
+                        let d = dust.slot_mut(idx);
+                        d.velocity *= 0.1;
+                        d.no_gravity = true;
+                        d.velocity += dir * mag;
+                    }
+                }
+                heading = rotated_by(heading, tau / spokes);
+            }
+            for i in 0..120 {
+                let (dust_type, speed) = if i < 80 { (133, inner - 0.5) } else { (131, outer) };
+                let idx = dust.new_dust(rng, ctx, world, s.pos, 6, 6, dust_type, 0.0, 0.0, 100, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                ring_kick(d, speed, 0.2, 1.0, 1.0);
+                d.scale = 1.3;
+                d.no_gravity = true;
+            }
+        }
+        // `:74817-74826` — the 1024 Sparkle ring: 12× dust-306 (Direct),
+        // scale 0.8+NextFloat×1.7 BEFORE the spawn, colour Transparent;
+        // velocity = SafeNormalize(vel,Zero).RotatedBy(τ×i/12)×8×(0.1+
+        // NextFloat×1.2) AFTER, colour Lerp(White,(140,234,180),i/10),
+        // noGravity. Two explicit floats per dust (scale then speed).
+        1024 => {
+            let tau = std::f32::consts::PI * 2.0;
+            let dir = safe_normalize(s.vel);
+            for i in 0..12 {
+                let scale = 0.8 + rng.next_float() * 1.7;
+                let idx = dust.new_dust_direct(rng, ctx, world, s.pos, s.w, s.h, 306, 0.0, 0.0, 0, Color::TRANSPARENT, scale);
+                let d = dust.slot_mut(idx);
+                let angle = tau * i as f32 / 12.0;
+                d.velocity = rotated_by(dir, angle) * 8.0 * (0.1 + rng.next_float() * 1.2);
+                d.color = lerp_color(Color::WHITE, Color::new(140, 234, 180, 255), i as f32 / 10.0);
+                d.no_gravity = true;
+            }
+        }
+        // `:71490-71520` — the 873 Prismatic Bolt ring: 20× dust-267
+        // NewDustPerfect at Center, fadeIn 1/noGravity/alpha 100, colour
+        // Lerp(AI_171_GetColor, White, NextFloat×0.4); the spoke heading
+        // starts at vel.ToRotation() and climbs τ/20 per dust; i%4==0 →
+        // vel = heading×3.2 scale 2.3, i%2==0 → ×1.8/1.9, else ×1/1.6;
+        // vel += baseVel×NextFloat×0.5. Two explicit floats per dust.
+        // AI_171_GetColor (`:45560-45567`): the enrage gate reads
+        // ShouldEmpressBeEnraged — non-remix = Main.dayTime; the remix arm
+        // scans for a live 636, and the port has NO live Empress (the
+        // npc_ai_empress wiring remainder), so the scan finds none and the
+        // sticky latch stays false → NOT enraged (recorded). Enraged:
+        // Lerp(White, OurFavoriteColor, GetLerpValue(0,60,(int)time)) ×
+        // Opacity; else hslToRgb((ai[1]+0.5)%1, 1, 0.5) × Opacity.
+        873 => {
+            let tau = std::f32::consts::PI * 2.0;
+            let opacity = 1.0 - s.alpha as f32 / 255.0;
+            let remix = world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
+            let enraged = !remix && world.day_time;
+            let base_color = if enraged {
+                let t = crate::projectile::get_lerp_value(0.0, 60.0, world.time as i32 as f32);
+                let c = lerp_color(Color::WHITE, Color::new(255, 231, 69, 255), t);
+                let m = crate::ui::color::mul([c.r, c.g, c.b, c.a], opacity);
+                Color::new(m[0], m[1], m[2], m[3])
+            } else {
+                let h = (s.ai1 + 0.5) % 1.0;
+                let c = crate::ui::color::hsl_to_rgb(h as f64, 1.0, 0.5, 255);
+                let m = crate::ui::color::mul(c, opacity);
+                Color::new(m[0], m[1], m[2], m[3])
+            };
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let mut heading = to_rotation(s.vel);
+            for i in 0..20 {
+                let idx = dust.new_dust_perfect(rng, ctx, world, center, 267, None, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.fade_in = 1.0;
+                d.no_gravity = true;
+                d.alpha = 100;
+                d.color = lerp_color(base_color, Color::WHITE, rng.next_float() * 0.4);
+                if i % 4 == 0 {
+                    d.velocity = rotation_vector(heading) * 3.2;
+                    d.scale = 2.3;
+                } else if i % 2 == 0 {
+                    d.velocity = rotation_vector(heading) * 1.8;
+                    d.scale = 1.9;
+                } else {
+                    d.velocity = rotation_vector(heading);
+                    d.scale = 1.6;
+                }
+                heading += tau / 20.0;
+                d.velocity += s.vel * rng.next_float() * 0.5;
+            }
+        }
         _ => {}
     }
 }
@@ -1935,5 +2310,156 @@ mod tests {
         let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
         assert_eq!(active.len(), 36);
         assert!(active.iter().all(|d| d.dust_type == 172 && d.no_gravity && d.no_light));
+    }
+
+    /// The 167/168/170 400-dust rings: exact counts, the type bands and the
+    /// post-spawn scale/noGravity writes. The 170's Next(3) gate rides AFTER
+    /// each spawn — the stream advances by the internals + 400 gates.
+    #[test]
+    fn w4_g65_the_167_168_170_rings() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(167)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 400);
+        assert!(active.iter().all(|d| d.dust_type == 130 && d.no_gravity && d.scale == 1.3));
+        let mut dust = DustPool::new();
+        drain(&[snap(168)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 400);
+        assert!(active.iter().all(|d| d.dust_type == 131));
+        // i <= 100 keeps the default block's scale and gravity.
+        assert_eq!(active.iter().filter(|d| d.no_gravity).count(), 299);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(7);
+        drain(&[snap(170)], &mut dust, &mut rng, &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 400);
+        assert!(active.iter().all(|d| matches!(d.dust_type, 133 | 134)));
+        // The band boundaries: dust 0..=100 type 133, 101..=200 type 134,
+        // 201..=300 type 133, 301..=399 type 134.
+        assert_eq!(active[0].dust_type, 133);
+        assert_eq!(active[101].dust_type, 134);
+        assert_eq!(active[201].dust_type, 133);
+        assert_eq!(active[301].dust_type, 134);
+    }
+
+    /// The 169 star: 2 spoke passes × spokes × 2 sides × 20 steps of
+    /// dust-133 + 100 dust-132 tail; the four head draws ride BEFORE the
+    /// spawns. Count = 80×spokes + 100 with spokes = Next(5,9).
+    #[test]
+    fn w4_g65_the_169_star_ring() {
+        let w = world();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(7);
+        // Replay the four head draws to learn the spoke count.
+        let mut probe = UnifiedRandom::new(7);
+        let _ = probe.next_double();
+        let spokes = probe.next_range(5, 9);
+        drain(&[snap(169)], &mut dust, &mut rng, &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), (80 * spokes + 100) as usize);
+        let spokes_dust = active.iter().filter(|d| d.dust_type == 133).count();
+        assert_eq!(spokes_dust, (80 * spokes) as usize);
+        assert!(active.iter().filter(|d| d.dust_type == 133).all(|d| d.no_gravity));
+        let tail: Vec<_> = active.iter().filter(|d| d.dust_type == 132).collect();
+        assert_eq!(tail.len(), 100);
+        assert!(tail.iter().all(|d| d.no_gravity && d.scale == 1.3));
+    }
+
+    /// The 415/416/418 fireworks: 415 = 30×spokes + 100 dust-130; 416 =
+    /// 20×spokes dust-131 (spokes = 2×Next(3,6)); 418 = 30×spokes dust-134
+    /// + 80 dust-133 + 40 dust-131. All noGravity.
+    #[test]
+    fn w4_g65_the_415_416_418_fireworks() {
+        let w = world();
+        for kind in [415u16, 416, 418] {
+            let mut probe = UnifiedRandom::new(7);
+            let _ = probe.next_double();
+            let spokes = match kind {
+                415 => probe.next_range(5, 9),
+                416 => probe.next_range(3, 6) * 2,
+                _ => probe.next_range(5, 12),
+            };
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            match kind {
+                415 => {
+                    assert_eq!(active.len(), (30 * spokes + 100) as usize);
+                    assert!(active.iter().all(|d| d.dust_type == 130 && d.no_gravity));
+                }
+                416 => {
+                    assert_eq!(active.len(), (20 * spokes) as usize);
+                    assert!(active.iter().all(|d| d.dust_type == 131 && d.no_gravity));
+                }
+                _ => {
+                    assert_eq!(active.len(), (30 * spokes + 120) as usize);
+                    assert_eq!(active.iter().filter(|d| d.dust_type == 134).count(), (30 * spokes) as usize);
+                    assert_eq!(active.iter().filter(|d| d.dust_type == 133).count(), 80);
+                    assert_eq!(active.iter().filter(|d| d.dust_type == 131).count(), 40);
+                    assert!(active.iter().all(|d| d.no_gravity));
+                }
+            }
+        }
+    }
+
+    /// The 417: exactly 150 dust, the >50/>100 type bands (132/133/132),
+    /// four NextDouble head draws, all scale 1.3 + noGravity.
+    #[test]
+    fn w4_g65_the_417_firework() {
+        let w = world();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(7);
+        drain(&[snap(417)], &mut dust, &mut rng, &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 150);
+        assert_eq!(active[0].dust_type, 132);
+        assert_eq!(active[51].dust_type, 133);
+        assert_eq!(active[101].dust_type, 132);
+        assert!(active.iter().all(|d| d.no_gravity && d.scale == 1.3));
+        // Determinism: a second identical run is byte-equal (the four
+        // NextDouble head draws + the 150 spawns replay identically).
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(7);
+        drain(&[snap(417)], &mut dust2, &mut rng2, &ctx(), &w);
+        assert_eq!(dust.slots(), dust2.slots());
+        assert_eq!(rng, rng2);
+    }
+
+    /// The 1024 sparkle ring: 12 dust-306, all noGravity, two explicit
+    /// floats per dust (scale BEFORE the spawn, speed AFTER).
+    #[test]
+    fn w4_g65_the_1024_sparkle_ring() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(1024)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 12);
+        assert!(active.iter().all(|d| d.dust_type == 306 && d.no_gravity));
+        // The colour lerp at i=0 is White exactly (t=0).
+        assert_eq!(active[0].color, Color::WHITE);
+    }
+
+    /// The 873 prismatic ring: 20 dust-267 at the corpse centre, fadeIn 1,
+    /// alpha 100, noGravity; the i%4 spokes are the 3.2-speed 2.3-scale
+    /// ones; night (non-remix) → the hsl colour arm, no enrage.
+    #[test]
+    fn w4_g65_the_873_prismatic_ring() {
+        let w = world();
+        let mut s = snap(873);
+        s.ai1 = 0.25;
+        let mut dust = DustPool::new();
+        drain(&[s], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 20);
+        assert!(active.iter().all(|d| d.dust_type == 267 && d.no_gravity && d.alpha == 100 && d.fade_in == 1.0));
+        assert_eq!(active.iter().filter(|d| d.scale == 2.3).count(), 5);
+        assert_eq!(active.iter().filter(|d| d.scale == 1.9).count(), 5);
+        assert_eq!(active.iter().filter(|d| d.scale == 1.6).count(), 10);
+        // The centre: every dust sits exactly at the corpse centre
+        // (NewDustPerfect overwrites the position).
+        let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+        assert!(active.iter().all(|d| d.position == center));
     }
 }
