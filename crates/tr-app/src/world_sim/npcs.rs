@@ -5350,6 +5350,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         let Some(value_zeroed) = spawn_loot(app, &npc) else {
             continue;
         };
+        // `DoDeathEvents_SummonDungeonSpirit` (`NPC.cs:79064-79078`, the
+        // `:79200` call inside DoDeathEvents — AFTER DropItems, BEFORE
+        // DropMoney/DropHeals): a post-Plantera hardmode dungeon kill
+        // (lifeMax > 100, not the spirit itself, value > 0, has a player
+        // target, the target in ZoneDungeon) rolls RollLuck(13) (expert 9)
+        // and, on a hit over a dungeon wall, spawns the Dungeon Spirit 288.
+        summon_dungeon_spirit(app, &npc);
         spawn_coins(app, &npc, value_zeroed);
         spawn_heals(app, &npc);
     }
@@ -7193,6 +7200,55 @@ fn spawn_coins(app: &mut App, npc: &Npc, value_zeroed: bool) {
             phase,
         ));
     }
+}
+
+/// `NPC.DoDeathEvents_SummonDungeonSpirit` (`NPC.cs:79064-79078`): the
+/// post-Plantera hardmode dungeon kill spawns the Dungeon Spirit 288. The
+/// gate: `lifeMax > 100 && type != 288 && value > 0 && HasPlayerTarget &&
+/// hardMode && downedPlantBoss && Main.player[target].ZoneDungeon`, then
+/// `closestPlayer.RollLuck(13)` (expert 9) `== 0` AND the death tile's wall
+/// is a dungeon wall (`Main.wallDungeon`, walls 7/8/9/94-99). The spawn is
+/// `NPC.NewNPC` at the NPC's centre. The RollLuck draw rides the UpdateNPCs
+/// stream (the death path's swap); the wall read is the death tile.
+fn summon_dungeon_spirit(app: &mut App, npc: &Npc) {
+    let net_id = crate::bestiary::entry_for_npc(npc.kind, npc.slime).net_id;
+    // `Main.player[target].ZoneDungeon` — the port's single player carries
+    // the render-side zone flag (the scene metrics seam, the HookCtx
+    // precedent `:1564`).
+    let target_in_dungeon = npc.target >= 0
+        && npc.target < 255
+        && app.scene_metrics.zone_dungeon;
+    if !(npc.max_hp > 100
+        && net_id != 288
+        && npc.value() > 0.0
+        && target_in_dungeon
+        && app.world.hard_mode
+        && app.world.downed_plant_boss)
+    {
+        return;
+    }
+    // `Main.expertMode` — the port models the classic world (the e25
+    // constants-off note), so the range is 13.
+    let range = 13;
+    let luck = app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0);
+    let rng = app.rngs.stream(RngKey::UpdateNpcs);
+    if tr_core::loot::roll_luck(rng, luck, range) != 0 {
+        return;
+    }
+    // `Main.wallDungeon[Main.tile[(int)Center.X / 16, (int)Center.Y / 16].wall]`
+    // (`Main.cs:10598-10606`): walls 7/8/9/94-99.
+    let (cx, cy) = npc.center();
+    let tx = (cx as i32) / 16;
+    let ty = (cy as i32) / 16;
+    let wall = app.world.tile(tx, ty).map(|t| t.wall).unwrap_or(0);
+    if !matches!(wall, 7 | 8 | 9 | 94 | 95 | 96 | 97 | 98 | 99) {
+        return;
+    }
+    // `NPC.NewNPC(GetSpawnSource_NPCHurt(), (int)Center.X, (int)Center.Y, 288)`
+    // — the spirit at the death centre.
+    let mut spirit = Npc::new(NpcKind::DungeonSpirit, cx, cy, 1, 0.0);
+    spirit.hp = spirit.max_hp;
+    app.npcs.push(spirit);
 }
 
 /// W4-f35 — the death HEAL feed through [`crate::npc_death_heals`]:
@@ -17755,6 +17811,67 @@ mod dw3_tests {
                 .iter()
                 .any(|m| m.color == crate::chat::COLOR_BOSS_OR_EVENT),
             "a non-boss death announces nothing"
+        );
+    }
+
+    /// W4-f35 LOOT FINAL: `DoDeathEvents_SummonDungeonSpirit`
+    /// (`NPC.cs:79064-79078`) — a post-Plantera hardmode dungeon kill over a
+    /// dungeon wall rolls RollLuck(13) and spawns the Dungeon Spirit 288 on
+    /// a hit; the gate refuses pre-Plantera / non-dungeon / the spirit
+    /// itself / a no-wall tile. The RollLuck draw rides UpdateNPCs.
+    #[test]
+    fn w4_f35_dungeon_spirit_summon_gates_and_spawns() {
+        let mut a = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        a.world = crate::test_world_helpers::ground();
+        a.world.compute_column_surface();
+        a.player = Some(crate::player::Player::spawn(&a.world));
+        // A valuable hardmode mob with a player target, in the dungeon zone.
+        let mut mob = Npc::new(NpcKind::Skeleton, 30.0 * 16.0, 4.0 * 16.0, 1, 0.0);
+        mob.max_hp = 200; // lifeMax > 100
+        mob.target = 0;
+        a.world.hard_mode = true;
+        a.world.downed_plant_boss = true;
+        a.scene_metrics.zone_dungeon = true;
+        // A dungeon wall (7) under the death centre.
+        let (cx, cy) = mob.center();
+        let (tx, ty) = ((cx as i32) / 16, (cy as i32) / 16);
+        let i = a.world.index(tx, ty);
+        a.world.tiles[i].wall = 7;
+
+        // Pre-Plantera: refused, no draw.
+        a.world.downed_plant_boss = false;
+        let pristine = UnifiedRandom::new(a.world.seed as i32);
+        summon_dungeon_spirit(&mut a, &mob);
+        assert!(
+            !a.npcs.iter().any(|n| n.kind == NpcKind::DungeonSpirit),
+            "pre-Plantera refuses"
+        );
+        assert_eq!(*a.rngs.stream(RngKey::UpdateNpcs), pristine, "no draw");
+
+        // Post-Plantera over a dungeon wall: the RollLuck(13) draws. Scan
+        // seeds for a hit (RollLuck(13)==0 at luck 0 = Next(13)==0) and pin
+        // the spirit spawn; a miss leaves the pool unchanged.
+        a.world.downed_plant_boss = true;
+        let mut spawned = false;
+        for seed in 1..200i32 {
+            a.npcs.clear();
+            a.rngs = crate::app::rng::NamedRngs::new(seed);
+            summon_dungeon_spirit(&mut a, &mob);
+            if a.npcs.iter().any(|n| n.kind == NpcKind::DungeonSpirit) {
+                spawned = true;
+                break;
+            }
+        }
+        assert!(spawned, "a RollLuck(13) hit spawns the Dungeon Spirit");
+
+        // A non-dungeon wall: the RollLuck still draws but no spirit spawns.
+        a.world.tiles[i].wall = 0;
+        a.npcs.clear();
+        a.rngs = crate::app::rng::NamedRngs::new(1);
+        summon_dungeon_spirit(&mut a, &mob);
+        assert!(
+            !a.npcs.iter().any(|n| n.kind == NpcKind::DungeonSpirit),
+            "a non-dungeon wall spawns nothing"
         );
     }
 
