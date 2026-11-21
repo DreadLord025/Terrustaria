@@ -4236,10 +4236,13 @@ fn squid_snail_death(
 
 /// The skeleton-family arm's death (`NPC.cs:88527-88640`): the 20x
 /// dust-26 burst at (2.5·hd, −2.5), then the per-kind sub-branch +
-/// early return, `this.scale` carried throughout. The live branch:
+/// early return, `this.scale` carried throughout. The live branches:
 /// 167 Undead Viking → 213/214 + 43x2 at +20 Y + 212x2 at +34 Y
-/// (`:88543-88548`, sites 648-653); the 197/481/201/202/203/322-324
-/// branches + the generic tail land in later batches.
+/// (`:88543-88548`, sites 648-653), 197 Armored Viking → 257 + 43x2 +
+/// 212x2 (`:88553-88557`, sites 654-658), 481 Greek Skeleton →
+/// 695/696x2/697x2 (`:88562-88566`, sites 659-663); the
+/// 201/202/203/322-324 branches + the generic tail land in later
+/// batches.
 fn skeleton_family_death(
     npc: &Npc,
     npc_type: i32,
@@ -4271,6 +4274,24 @@ fn skeleton_family_death(
         gore.new_gore(rng, world, p20, vel, 43, s); // :88546
         gore.new_gore(rng, world, p34, vel, 212, s); // :88547
         gore.new_gore(rng, world, p34, vel, 212, s); // :88548
+        return;
+    }
+    if npc_type == 197 {
+        // `:88551-88559` — the Armored Viking five + return.
+        gore.new_gore(rng, world, pos, vel, 257, s); // :88553
+        gore.new_gore(rng, world, p20, vel, 43, s); // :88554
+        gore.new_gore(rng, world, p20, vel, 43, s); // :88555
+        gore.new_gore(rng, world, p34, vel, 212, s); // :88556
+        gore.new_gore(rng, world, p34, vel, 212, s); // :88557
+        return;
+    }
+    if npc_type == 481 {
+        // `:88560-88568` — the Greek Skeleton five + return.
+        gore.new_gore(rng, world, pos, vel, 695, s); // :88562
+        gore.new_gore(rng, world, p20, vel, 696, s); // :88563
+        gore.new_gore(rng, world, p20, vel, 696, s); // :88564
+        gore.new_gore(rng, world, p34, vel, 697, s); // :88565
+        gore.new_gore(rng, world, p34, vel, 697, s); // :88566
         return;
     }
 }
@@ -4788,7 +4809,7 @@ pub fn hit_effect_d(
     }
     // `:88527-88640` — the skeleton-family arm (21/31/294-296/32/44/45/
     // 77/110/167/197/201-203/287/291-293/322-324/481/449-452/693); the
-    // 167 Undead Viking branch is live (sites 648-653), the rest land
+    // 167/197/481 branches are live (sites 648-663), the rest land
     // later.
     else if matches!(npc_type, 21 | 31 | 294 | 295 | 296 | 32 | 44 | 45 | 77 | 110 | 167 | 197 | 201 | 202 | 203 | 287 | 291 | 292 | 293 | 322 | 323 | 324 | 481 | 449 | 450 | 451 | 452 | 693)
     {
@@ -8321,5 +8342,34 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the undead viking mirrors the C# draws");
+    }
+
+    /// `NPC.cs:88553-88566` — the Armored Viking five 257/43x2/212x2 and
+    /// the Greek Skeleton five 695/696x2/697x2.
+    #[test]
+    fn w4_f5d_the_armored_viking_and_greek_skeleton_fives() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, want) in [
+            (197, vec![257, 43, 43, 212, 212]),
+            (481, vec![695, 696, 696, 697, 697]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(653);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "skeleton {kind}");
+            assert!(!gore.slot(5).active, "exactly five gores");
+            let mut twin = UnifiedRandom::new(653);
+            for _ in 0..20 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "skeleton {kind} mirrors the C# draws");
+        }
     }
 }
