@@ -19108,6 +19108,40 @@ both branches (the shared character-load seam, 132 §4). The FINAL-FINAL
 steps) is 132 §8. Docs-only retire — no code change, golden parity
 untouched.
 
+**W4-f44 SEAL (2026-11-21, this commit): 132 SEALED — the persist-family
+bible final + the hydration port.** Three receipts closed: (1) **the
+132↔92 convergence** — g71 `f2d8c2c67`'s research/92 §1-FULL (the
+13-branch claimant registry) independently derived the SAME 107-byte
+head; the byte-order comparison found identical claimant sets/block
+internals but differing flag-group offsets (theirs keeps 64a's 53-byte
+prefix — books at 51..53; ours placed underworld before crimson).
+Adjudicated **C#-write-order definitive** (`WorldFile.cs:1281` crimson <
+`:1347-1351` moon-boss < `:1376` underworld < `:1392-1394` pets < `:1395`
+empress < `:1407-1408` books): the FINAL-SEAL layout is crimson 50 /
+moon-boss 51..56 / underworld 56 / pets 57..60 / empress 60 / books
+61..63 / identity 63..107 / dense LAST — forward-only-free, mutual
+receipt published (92 §1-FULL the registry of record, 132 §3-L3 the
+layout of record). (2) **the g88h seal** (`6a829a0e8`): its 100-byte
+step-10 arithmetic (computed against our pre-RETIRE 97-slip doc) is
+superseded by the 107 table; its `dh`-line DROP verdict (138-FINAL
+§10.4 — the v11 reader tolerates the sentinel lossy-not-corrupt) wins as
+the merger DEFAULT, our §2e line-17-at-v12 fold stays the CONDITIONAL
+seat (only if in-session carriers are needed before the exit-save);
+DD2 keeps its v12 token-7 reservation under the default. (3) **the
+hydration hunk CLOSED** (the e10c receipt): the census found it small
+(the reader modelled every field; only the apply-side was missing) —
+`CharPlay` now parks the card's `.plr` (`Main.SelectPlayer`,
+`Main.cs:66208-66216`), `swap_world` carries it across the `App::new`
+reset, `Player::hydrate_from_file` applies the stats/unlock family
+(the torch pair through the slot-11 setter + the C#-order array copy)/
+six used-upgrades (five new sibling fields at the g90b spots)/pearl luck
+mirror/super-cart BitsByte/voice pair (e10's i32 live width)/counters;
+the file name + favourites land; the sidecar restore runs SECOND and
+wins (132 §2c live). The exit-save is the one remaining shared
+remainder. 3 witnesses written not run (code-only); golden `.plr`
+parity untouched — no codec change, the `None` park keeps every
+boot/screenshot path byte-identical.
+
 ## The world-format contract (S1-J-8)
 
 **Decision: the two-format split stays, as a documented contract.** The port

@@ -326,6 +326,18 @@ gained a sidecar co-carrier (g87's `dh` line, 132 §2e) — the L1 halves
 here are unchanged and need no fold. The byte layout of this table is
 untouched by the retire pass.
 
+**SEAL-phase postscript (research/132 SEALED):** the reader now has a
+live-Player APPLY side — `Player::hydrate_from_file` (the character-load
+hydration, 132 §4's e10c receipt): `CharPlay` parks the card's `.plr`,
+`App::new` reads + hydrates BEFORE the sidecar restore (which wins
+second). Every row this table models feeds the hydration's scope (the
+stats, rows 18-25's unlock family, rows 64/67-68's cart/voice pair, the
+counters); the inventory/bank/loadout payloads stay the App-level
+restore's scope until the exit-save lane lands. The g87 `dh` co-carrier
+is DEFAULT-DROP at the merge (132 §2f's g88h receipt — the L1 rows +
+the hydration are the carrier). The byte layout of this table is
+untouched by the seal pass (no codec change).
+
 ## 6. Witnesses (written, code-only — not run)
 
 New: `the_unlock_and_counter_header_fields_round_trip` (the G7 block, byte

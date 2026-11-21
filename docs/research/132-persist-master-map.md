@@ -1,15 +1,19 @@
 # 132 — The persist MASTER MAP: three layers, one owner per field
 
-**Status: FINAL-FINAL — THE PERSIST MERGER-BIBLE (retire phase).** Written
+**Status: SEALED — THE PERSIST-FAMILY BIBLE FINAL (seal phase).** Written
 by W4-f44 crosspersist (branch `task/W4-f44-save-plr-2`, base `180b7430`
 audit DONE + the `d331ea7c` timestamp residual fix), closed by the FINAL
-phase (`63204f85` slot-11 property fix), re-opened and closed again by the
-RETIRE phase (this update): the L3 union is extended to **TEN claimants /
-a 107-byte fixed head** (§3-L3 — the old "97" carried an arithmetic slip,
-corrected below), the g88f v11 + 138-pushed receipts are seated (§2d/§3-L2),
-the g87 `dh` sentinel line is folded (§2e), and the e10 voice-write
-keep-one is final (§4). This doc sits ABOVE the per-layer contracts and is
-the **single entry point** for the persist merge:
+phase (`63204f85` slot-11 property fix), re-opened and closed by the
+RETIRE phase (`d35876af9`), and SEALED by this phase: (1) the 132↔92
+convergence receipt — g71 `f2d8c2c67`'s independently-derived 107-byte
+union byte-order-compared, the offsets adjudicated C#-write-order
+definitive, the FINAL-SEAL layout published (§3-L3); (2) the g88h seal
+receipt — `6a829a0e8`'s 100-byte step-10 superseded, the `dh` line
+adjudicated DEFAULT-DROP with §2e as the conditional seat (§2f);
+(3) the character-load hydration hunk CLOSED by the code port — the
+e10c receipt (§4), the exit-save the one remaining shared remainder.
+This doc sits ABOVE the per-layer contracts and is the **single entry
+point** for the persist merge:
 
 | Layer | Canonical contract | Where it lives at merge time |
 | --- | --- | --- |
@@ -44,7 +48,7 @@ been superseded):
 | `origin/task/W4-f45-wld-header-2` (+c43 `076970809` in lineage) | `6352d3840` | `.wld` header/flags second half OWNED (13 phases — the flags merge base per 138 §5); **c43's `.trwld` v18 44-byte identity tail** (generator version/GUID/worldId/CreationTime/LastPlayed) + the `.plr` `.bak`/revision-carry/UtcNow envelope — the L1 envelope co-lane |
 | `origin/task/W4-g55-ui-loadout-save` | `cde865fc2` | `.plr` loadout family + `.trplayer` v7 loadout block (folded into g88's superset) |
 | `origin/task/W4-e10-player-sounds-wave` | **`432dd5ab1`** over `693e3850a` (the voice-picker + persistence docs) | **voice-write LANDED** (the char-creation picker + the draft→`.plr` threading + its own i32 transport diff) — the keep-one vs THIS branch's u8 transport is §4; the live-Player hydration hunk is CLOSED by this branch's SEAL-phase port (§4's e10c receipt) |
-| this branch | `bdd1cc79a` (FINAL docs over `63204f85` slot-11 property fix) | `.plr` complete (research/99) + the timestamp fix + the UsingBiomeTorches property seam; `.trplayer` stays main's **v6**; `.trwld` stays **v17** |
+| this branch | `5c8bbb160` (SEAL 3, the hydration port) over `d35876af9` (RETIRE) / `63204f85` (slot-11 property fix) | `.plr` complete (research/99) + the timestamp fix + the UsingBiomeTorches property seam + **the character-load hydration LIVE** (§4's e10c receipt); `.trplayer` stays main's **v6**; `.trwld` stays **v17** |
 
 ---
 
@@ -1115,7 +1119,7 @@ rustfmt/graphify per the lane constraint. The golden `.plr` parity
 is untouched (no codec change — the port is apply-side only; the
 `None` park keeps every existing boot/screenshot path byte-identical).
 
-## 8. The FINAL-FINAL merger persist-checklist (THE merger-bible — all
+## 8. The SEALED merger persist-checklist (THE persist-family bible — all
 recognition rules, all claimants, all dedup steps, in order)
 
 **Order: L1 → L2 → L3** (§3's rationale). Every step below is a
@@ -1124,9 +1128,13 @@ merger executes, it does not re-decide.
 
 ### Step 1 — L1 `.plr` (`player_file.rs`)
 
-1. Take THIS branch's `player_file.rs` whole (`bdd1cc79a` lineage: the
+1. Take THIS branch's `player_file.rs` whole (`5c8bbb160` lineage: the
    71-row research/99 walk, G1-G7, the three shim depths, the
-   timestamp fix, the slot-11 property fix).
+   timestamp fix, the slot-11 property fix) + the hydration port
+   (`Player::hydrate_from_file` + the `CharPlay` park + the `App::new`
+   apply — §4's e10c receipt; the g-lanes' live `Player.used_*`
+   declarations dedup onto the five sibling fields at the same
+   spots).
 2. Fold g55's loadout semantics onto the `LoadoutData` transport
    (byte-identical, rows 65-66).
 3. Dedup g89's 3 + g90's 5 named unlock bools onto `used_upgrades[6]`
@@ -1145,7 +1153,10 @@ merger executes, it does not re-decide.
    diff (the u8 transport here is the base), KEEP the picker + draft
    fields + session threading (`as u8` cast), dedup its save_list.rs
    fixture literals + its round-trip witness onto
-   `the_voice_pair_round_trips_clamps_and_derives`.
+   `the_voice_pair_round_trips_clamps_and_derives`; its player.rs
+   voice-field declaration hunk dedups onto the hydration port's
+   pair (same i32/f32 shapes, same ctor defaults); its consumers
+   (the voice trees + the pitch remap + `voice_override`) land as-is.
 7. Keep the timestamp helpers whole; every lane's `last_saved_binary:
    0` session literal → `utc_now_binary()` (fixtures stay 0).
 8. g87's `.plr` half needs NO fold (rows 18/64 already ride).
