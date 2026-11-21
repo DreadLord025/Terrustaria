@@ -2163,6 +2163,56 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Dungeon Spirit",
     },
+    // W4-d38 b7 — BestiaryEntry.Enemy(333)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "SlimeRibbonWhite",
+        net_id: 333,
+        kind: NpcKind::SlimeRibbonWhite,
+        variant: None,
+        quick_unlock: false,
+        name: "Slime",
+    },
+    // W4-d38 b7 — BestiaryEntry.Enemy(334)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "SlimeRibbonYellow",
+        net_id: 334,
+        kind: NpcKind::SlimeRibbonYellow,
+        variant: None,
+        quick_unlock: false,
+        name: "Slime",
+    },
+    // W4-d38 b7 — BestiaryEntry.Enemy(335)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "SlimeRibbonGreen",
+        net_id: 335,
+        kind: NpcKind::SlimeRibbonGreen,
+        variant: None,
+        quick_unlock: false,
+        name: "Slime",
+    },
+    // W4-d38 b7 — BestiaryEntry.Enemy(336)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "SlimeRibbonRed",
+        net_id: 336,
+        kind: NpcKind::SlimeRibbonRed,
+        variant: None,
+        quick_unlock: false,
+        name: "Slime",
+    },
+    // W4-d38 b7 — BestiaryEntry.Critter(337)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "BunnyXmas",
+        net_id: 337,
+        kind: NpcKind::BunnyXmas,
+        variant: None,
+        quick_unlock: false,
+        name: "Bunny",
+    },
     // W4-d38 b6 — BestiaryEntry.Enemy(318)
     // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
     BestiaryEntryDef {

@@ -520,6 +520,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(D38_B4_SHEETS)
             .chain(D38_B5_SHEETS)
             .chain(D38_B6_SHEETS)
+            .chain(D38_B7_SHEETS)
             .chain(SMALL_KIND_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
@@ -1240,6 +1241,11 @@ pub(crate) const SNOW_SHEETS: &[u32] = &[
 /// The Queen Bee's volley minions' sheets (S1-D-3 W-3): `NPC_210`/`NPC_211`,
 /// keyed by the vanilla net id in `NpcAssets::npc_sheets` like the families.
 pub(crate) const BEE_SHEETS: &[u32] = &[210, 211];
+
+/// W4-d38 b7 — the batch's own sheets (the vanilla's TextureAssets.Npc[type]),
+/// keyed by the vanilla net id in NpcAssets::npc_sheets.
+pub(crate) const D38_B7_SHEETS: &[u32] = &[333, 334, 335, 336, 337];
+
 
 /// W4-d38 b6 — the batch's own sheets (the vanilla's TextureAssets.Npc[type]),
 /// keyed by the vanilla net id in NpcAssets::npc_sheets.
@@ -3204,6 +3210,31 @@ pub(crate) fn draw_npcs(
             }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
+            }
+            // W4-d38 b7 — own NPC_333 sheet, generic centred anchor.
+            NpcKind::SlimeRibbonWhite => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b7 — own NPC_334 sheet, generic centred anchor.
+            NpcKind::SlimeRibbonYellow => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b7 — own NPC_335 sheet, generic centred anchor.
+            NpcKind::SlimeRibbonGreen => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b7 — own NPC_336 sheet, generic centred anchor.
+            NpcKind::SlimeRibbonRed => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b7 — own NPC_337 sheet, generic centred anchor.
+            NpcKind::BunnyXmas => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
             // W4-d38 b6 — own NPC_318 sheet, generic centred anchor.
             NpcKind::DemonEyeSpaceship => {

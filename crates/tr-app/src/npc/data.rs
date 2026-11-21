@@ -570,6 +570,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 353,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
+            // W4-d38 b7 — vanilla ids kept (free protocol slots).
+            NpcKind::SlimeRibbonWhite => 333,
+            NpcKind::SlimeRibbonYellow => 334,
+            NpcKind::SlimeRibbonGreen => 335,
+            NpcKind::SlimeRibbonRed => 336,
+            NpcKind::BunnyXmas => 337,
             // W4-d38 b6 — vanilla ids kept (free protocol slots).
             NpcKind::DemonEyeSpaceship => 318,
             NpcKind::SkeletonTopHat => 322,
@@ -943,6 +949,12 @@ impl NpcKind {
             353 => NpcKind::BlazingWheel,
             250 => NpcKind::AngryNimbus,
             288 => NpcKind::DungeonSpirit,
+            // W4-d38 b7 — decode at the vanilla ids.
+            333 => NpcKind::SlimeRibbonWhite,
+            334 => NpcKind::SlimeRibbonYellow,
+            335 => NpcKind::SlimeRibbonGreen,
+            336 => NpcKind::SlimeRibbonRed,
+            337 => NpcKind::BunnyXmas,
             // W4-d38 b6 — decode at the vanilla ids.
             318 => NpcKind::DemonEyeSpaceship,
             322 => NpcKind::SkeletonTopHat,
@@ -1860,6 +1872,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Hit_1",
             NpcKind::AngryNimbus => "NPC_Hit_30",
             NpcKind::DungeonSpirit => "NPC_Hit_36",
+            // W4-d38 b7 — SetDefaults HitSound rows.
+            NpcKind::SlimeRibbonWhite => "NPC_Hit_1",
+            NpcKind::SlimeRibbonYellow => "NPC_Hit_1",
+            NpcKind::SlimeRibbonGreen => "NPC_Hit_1",
+            NpcKind::SlimeRibbonRed => "NPC_Hit_1",
+            NpcKind::BunnyXmas => "NPC_Hit_1",
             // W4-d38 b6 — SetDefaults HitSound rows.
             NpcKind::DemonEyeSpaceship => "NPC_Hit_1",
             NpcKind::SkeletonTopHat => "NPC_Hit_2",
@@ -2200,6 +2218,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Killed_1",
             NpcKind::AngryNimbus => "NPC_Killed_33",
             NpcKind::DungeonSpirit => "NPC_Killed_39",
+            // W4-d38 b7 — SetDefaults DeathSound rows.
+            NpcKind::SlimeRibbonWhite => "NPC_Killed_1",
+            NpcKind::SlimeRibbonYellow => "NPC_Killed_1",
+            NpcKind::SlimeRibbonGreen => "NPC_Killed_1",
+            NpcKind::SlimeRibbonRed => "NPC_Killed_1",
+            NpcKind::BunnyXmas => "NPC_Killed_1",
             // W4-d38 b6 — SetDefaults DeathSound rows.
             NpcKind::DemonEyeSpaceship => "NPC_Killed_1",
             NpcKind::SkeletonTopHat => "NPC_Killed_2",
@@ -2601,6 +2625,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // W4-d38 b7 — SetDefaults aiStyle rows.
+            NpcKind::SlimeRibbonWhite => 1,
+            NpcKind::SlimeRibbonYellow => 1,
+            NpcKind::SlimeRibbonGreen => 1,
+            NpcKind::SlimeRibbonRed => 1,
+            NpcKind::BunnyXmas => 7,
             // W4-d38 b6 — SetDefaults aiStyle rows.
             NpcKind::DemonEyeSpaceship => 2,
             NpcKind::SkeletonTopHat => 3,
@@ -3181,6 +3211,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-d38 b7 — SetDefaults width/height rows.
+            NpcKind::SlimeRibbonWhite => (24.0, 18.0),
+            NpcKind::SlimeRibbonYellow => (24.0, 18.0),
+            NpcKind::SlimeRibbonGreen => (24.0, 18.0),
+            NpcKind::SlimeRibbonRed => (24.0, 18.0),
+            NpcKind::BunnyXmas => (18.0, 20.0),
             // W4-d38 b6 — SetDefaults width/height rows.
             NpcKind::DemonEyeSpaceship => (30.0, 32.0),
             NpcKind::SkeletonTopHat => (18.0, 40.0),
@@ -3868,6 +3904,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-d38 b7 — SetDefaults lifeMax rows.
+            NpcKind::SlimeRibbonWhite => 25,
+            NpcKind::SlimeRibbonYellow => 23,
+            NpcKind::SlimeRibbonGreen => 29,
+            NpcKind::SlimeRibbonRed => 22,
+            NpcKind::BunnyXmas => 5,
             // W4-d38 b6 — SetDefaults lifeMax rows.
             NpcKind::DemonEyeSpaceship => 60,
             NpcKind::SkeletonTopHat => 115,
@@ -4268,6 +4310,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-d38 b7 — SetDefaults damage rows.
+            NpcKind::SlimeRibbonWhite => 7,
+            NpcKind::SlimeRibbonYellow => 6,
+            NpcKind::SlimeRibbonGreen => 8,
+            NpcKind::SlimeRibbonRed => 5,
+            NpcKind::BunnyXmas => 0,
             // W4-d38 b6 — SetDefaults damage rows.
             NpcKind::DemonEyeSpaceship => 20,
             NpcKind::SkeletonTopHat => 23,

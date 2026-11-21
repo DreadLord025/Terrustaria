@@ -1017,6 +1017,17 @@ pub enum NpcKind {
     /// def 14, 50 HP, kb 0.6, NPCHit19/NPCDeath22, value 150. The
     /// aiStyle-22 machine's 490 branches ride `npc_ai_drippler.rs`.
     Drippler,
+    // W4-d38 b7 — the kinds of this batch (vanilla ids, SetDefaults verbatim).
+    /// `NPCID.SlimeRibbonWhite` (333) — `NPC.cs` SetDefaults: 24x18, aiStyle 1, dmg 7, def 2, 25 HP, kb 1.0, value 25.
+    SlimeRibbonWhite,
+    /// `NPCID.SlimeRibbonYellow` (334) — `NPC.cs` SetDefaults: 24x18, aiStyle 1, dmg 6, def 2, 23 HP, kb 1.0, value 25; scale 0.9.
+    SlimeRibbonYellow,
+    /// `NPCID.SlimeRibbonGreen` (335) — `NPC.cs` SetDefaults: 24x18, aiStyle 1, dmg 8, def 3, 29 HP, kb 1.0, value 25; scale 1.05.
+    SlimeRibbonGreen,
+    /// `NPCID.SlimeRibbonRed` (336) — `NPC.cs` SetDefaults: 24x18, aiStyle 1, dmg 5, def 1, 22 HP, kb 1.0, value 25; scale 0.85.
+    SlimeRibbonRed,
+    /// `NPCID.BunnyXmas` (337) — `NPC.cs` SetDefaults: 18x20, aiStyle 7, dmg 0, def 0, 5 HP, kb 1.0, value 0; catchItem 2019.
+    BunnyXmas,
     // W4-d38 b6 — the kinds of this batch (vanilla ids, SetDefaults verbatim).
     /// `NPCID.DemonEyeSpaceship` (318) — `NPC.cs` SetDefaults: 30x32, aiStyle 2, dmg 20, def 4, 60 HP, kb 0.65, value 100.
     DemonEyeSpaceship,
@@ -3020,7 +3031,8 @@ impl Npc {
                 // the small-kinds wiring wave).
                 // W4-d38 b5 — the SetDefaults scale rows.
                 // W4-d38 b6 — the SetDefaults scale rows.
-                .unwrap_or(if kind == NpcKind::SkeletonAlien { 1.05 } else if kind == NpcKind::HoppinJack { 1.1 } else if kind == NpcKind::BlazingWheel { 1.2 } else { 1.0 }),
+                // W4-d38 b7 — the SetDefaults scale rows.
+                .unwrap_or(if kind == NpcKind::SlimeRibbonYellow { 0.9 } else if kind == NpcKind::SlimeRibbonGreen { 1.05 } else if kind == NpcKind::SlimeRibbonRed { 0.85 } else if kind == NpcKind::SkeletonAlien { 1.05 } else if kind == NpcKind::HoppinJack { 1.1 } else if kind == NpcKind::BlazingWheel { 1.2 } else { 1.0 }),
             net_offset: Vec2::ZERO,
             burn: 0.0,
             wants_minion: false,
@@ -3601,6 +3613,12 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            // W4-d38 b7 — SetDefaults knockBackResist rows.
+            NpcKind::SlimeRibbonWhite => 1.0,
+            NpcKind::SlimeRibbonYellow => 1.0,
+            NpcKind::SlimeRibbonGreen => 1.0,
+            NpcKind::SlimeRibbonRed => 1.0,
+            NpcKind::BunnyXmas => 1.0,
             // W4-d38 b6 — SetDefaults knockBackResist rows.
             NpcKind::DemonEyeSpaceship => 0.65,
             NpcKind::SkeletonTopHat => 0.65,
@@ -4017,6 +4035,12 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            // W4-d38 b7 — SetDefaults defense rows.
+            NpcKind::SlimeRibbonWhite => 2,
+            NpcKind::SlimeRibbonYellow => 2,
+            NpcKind::SlimeRibbonGreen => 3,
+            NpcKind::SlimeRibbonRed => 1,
+            NpcKind::BunnyXmas => 0,
             // W4-d38 b6 — SetDefaults defense rows.
             NpcKind::DemonEyeSpaceship => 4,
             NpcKind::SkeletonTopHat => 0,
@@ -4425,6 +4449,12 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            // W4-d38 b7 — SetDefaults value rows (copper).
+            NpcKind::SlimeRibbonWhite => 25.0,
+            NpcKind::SlimeRibbonYellow => 25.0,
+            NpcKind::SlimeRibbonGreen => 25.0,
+            NpcKind::SlimeRibbonRed => 25.0,
+            NpcKind::BunnyXmas => 0.0,
             // W4-d38 b6 — SetDefaults value rows (copper).
             NpcKind::DemonEyeSpaceship => 100.0,
             NpcKind::SkeletonTopHat => 130.0,
@@ -6467,6 +6497,16 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // W4-d38 b7 — aiStyle 1.
+            NpcKind::SlimeRibbonWhite => self.update_slime(world, player, dt),
+            // W4-d38 b7 — aiStyle 1.
+            NpcKind::SlimeRibbonYellow => self.update_slime(world, player, dt),
+            // W4-d38 b7 — aiStyle 1.
+            NpcKind::SlimeRibbonGreen => self.update_slime(world, player, dt),
+            // W4-d38 b7 — aiStyle 1.
+            NpcKind::SlimeRibbonRed => self.update_slime(world, player, dt),
+            // W4-d38 b7 — aiStyle 7.
+            NpcKind::BunnyXmas => self.update_critter(world, player, rng),
             // W4-d38 b6 — aiStyle 2.
             NpcKind::DemonEyeSpaceship => self.update_eye(world, player, dt),
             // W4-d38 b6 — aiStyle 3, num107 default NPC.cs:58322.
@@ -9210,6 +9250,65 @@ impl Npc {
             // pinned forever (the style70/71 modules' FRAME_ROW consts).
             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
                 self.frame = 1;
+            }
+            // W4-d38 b7 — case 333-336 (NPC.cs:70801-70846): the slime hop strip,
+            // the num2 motion class doubling/tripling the counter.
+            NpcKind::SlimeRibbonWhite => {
+                let num2 = if self.ai_action == 0 {
+                    if self.vy < 0.0 { 2 } else if self.vy > 0.0 { 3 }
+                    else if self.vx != 0.0 { 1 } else { 0 }
+                } else if self.ai_action == 1 { 4 } else { 0 };
+                self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
+                if self.frame_counter >= 8.0 { self.frame += 1; self.frame_counter = 0.0; }
+                if self.frame >= self.rows() { self.frame = 0; }
+            }
+            // W4-d38 b7 — case 333-336 (NPC.cs:70801-70846): the slime hop strip,
+            // the num2 motion class doubling/tripling the counter.
+            NpcKind::SlimeRibbonYellow => {
+                let num2 = if self.ai_action == 0 {
+                    if self.vy < 0.0 { 2 } else if self.vy > 0.0 { 3 }
+                    else if self.vx != 0.0 { 1 } else { 0 }
+                } else if self.ai_action == 1 { 4 } else { 0 };
+                self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
+                if self.frame_counter >= 8.0 { self.frame += 1; self.frame_counter = 0.0; }
+                if self.frame >= self.rows() { self.frame = 0; }
+            }
+            // W4-d38 b7 — case 333-336 (NPC.cs:70801-70846): the slime hop strip,
+            // the num2 motion class doubling/tripling the counter.
+            NpcKind::SlimeRibbonGreen => {
+                let num2 = if self.ai_action == 0 {
+                    if self.vy < 0.0 { 2 } else if self.vy > 0.0 { 3 }
+                    else if self.vx != 0.0 { 1 } else { 0 }
+                } else if self.ai_action == 1 { 4 } else { 0 };
+                self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
+                if self.frame_counter >= 8.0 { self.frame += 1; self.frame_counter = 0.0; }
+                if self.frame >= self.rows() { self.frame = 0; }
+            }
+            // W4-d38 b7 — case 333-336 (NPC.cs:70801-70846): the slime hop strip,
+            // the num2 motion class doubling/tripling the counter.
+            NpcKind::SlimeRibbonRed => {
+                let num2 = if self.ai_action == 0 {
+                    if self.vy < 0.0 { 2 } else if self.vy > 0.0 { 3 }
+                    else if self.vx != 0.0 { 1 } else { 0 }
+                } else if self.ai_action == 1 { 4 } else { 0 };
+                self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
+                if self.frame_counter >= 8.0 { self.frame += 1; self.frame_counter = 0.0; }
+                if self.frame >= self.rows() { self.frame = 0; }
+            }
+            // W4-d38 b7 — case 303/337 (NPC.cs:76853-76904): the grounded flip, the
+            // |vx|+1 walk over count rows, the air rows 4 (rise)/6 (fall).
+            NpcKind::BunnyXmas => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                    if self.vx == 0.0 { self.frame = 0; self.frame_counter = 0.0; }
+                    else {
+                        self.frame_counter += self.vx.abs() + 1.0;
+                        if self.frame_counter > 6.0 { self.frame += 1; self.frame_counter = 0.0; }
+                        if self.frame >= self.rows() { self.frame = 0; }
+                    }
+                } else if self.vy < 0.0 { self.frame_counter = 0.0; self.frame = 4; }
+                else { self.frame_counter = 0.0; self.frame = 6; }
             }
             // W4-d38 b6 — case 317/318 (NPC.cs:74019-74058): the vx-sign flip +
             // atan2 rotation (+3.14 left), the 8-tick flap over 2 rows.
@@ -19416,6 +19515,12 @@ impl Npc {
             NpcKind::BlazingWheel => 353,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
+            // W4-d38 b7 — vanilla types (G6 key injective).
+            NpcKind::SlimeRibbonWhite => 333,
+            NpcKind::SlimeRibbonYellow => 334,
+            NpcKind::SlimeRibbonGreen => 335,
+            NpcKind::SlimeRibbonRed => 336,
+            NpcKind::BunnyXmas => 337,
             // W4-d38 b6 — vanilla types (G6 key injective).
             NpcKind::DemonEyeSpaceship => 318,
             NpcKind::SkeletonTopHat => 322,
@@ -24530,7 +24635,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 300] = [
+    pub(super) const ALL_KINDS: [NpcKind; 305] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24780,6 +24885,12 @@ mod tests {
         // S1-D-3z — the blood-moon pair.
         NpcKind::BloodZombie,
         NpcKind::Drippler,
+        // W4-d38 b7.
+        NpcKind::SlimeRibbonWhite,
+        NpcKind::SlimeRibbonYellow,
+        NpcKind::SlimeRibbonGreen,
+        NpcKind::SlimeRibbonRed,
+        NpcKind::BunnyXmas,
         // W4-d38 b6.
         NpcKind::DemonEyeSpaceship,
         NpcKind::SkeletonTopHat,
@@ -28456,7 +28567,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            300,
+            305,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
@@ -32084,6 +32195,12 @@ mod s1_d_2_tests {
         // S1-D-3z — the blood-moon pair (`NPC.cs:14609`/`:14623`).
         (NpcKind::BloodZombie, 3),
         (NpcKind::Drippler, 22),
+        // W4-d38 b7.
+        (NpcKind::SlimeRibbonWhite, 1),
+        (NpcKind::SlimeRibbonYellow, 1),
+        (NpcKind::SlimeRibbonGreen, 1),
+        (NpcKind::SlimeRibbonRed, 1),
+        (NpcKind::BunnyXmas, 7),
         // W4-d38 b6.
         (NpcKind::DemonEyeSpaceship, 2),
         (NpcKind::SkeletonTopHat, 3),
@@ -34936,5 +35053,70 @@ mod s1_f_13d_tests {
         b.find_frame();
         assert_eq!(b.frame, 0, "the blade holds row 0");
         assert_eq!(b.frame_counter, 0.0);
+    }
+
+    // ---- W4-d38 b7 — SlimeRibbonWhite 333, SlimeRibbonYellow 334,
+    // SlimeRibbonGreen 335, SlimeRibbonRed 336, BunnyXmas 337.
+    // Tests-as-code, WRITTEN NOT RUN. ----
+
+    /// The batch's `SetDefaults` rows (`NPC.cs:13230-13279` the ribbon slimes,
+    /// `:9336-9347` the BunnyXmas's shared bunny arm). The ribbon scales:
+    /// 334 0.9, 335 1.05, 336 0.85 (333 none).
+    #[test]
+    fn w4_d38_b7_the_setdefaults_rows() {
+        let table = [
+            (NpcKind::SlimeRibbonWhite, 333u16, 24.0, 18.0, 1u8, 25, 7, 2, 25.0, 1.0, 1.0),
+            (NpcKind::SlimeRibbonYellow, 334, 24.0, 18.0, 1, 23, 6, 2, 25.0, 1.0, 0.9),
+            (NpcKind::SlimeRibbonGreen, 335, 24.0, 18.0, 1, 29, 8, 3, 25.0, 1.0, 1.05),
+            (NpcKind::SlimeRibbonRed, 336, 24.0, 18.0, 1, 22, 5, 1, 25.0, 1.0, 0.85),
+            (NpcKind::BunnyXmas, 337, 18.0, 20.0, 7, 5, 0, 0, 0.0, 1.0, 1.0),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb, scale) in table {
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+            assert_eq!(kind.cs_id(), vanilla, "{kind:?} vanilla type");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(n.scale, scale, "{kind:?} scale");
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} death");
+        }
+        // The ribbon slimes {20}, the BunnyXmas {31} (`NPCID.cs:8026-8054`).
+        for kind in [NpcKind::SlimeRibbonWhite, NpcKind::SlimeRibbonYellow,
+                     NpcKind::SlimeRibbonGreen, NpcKind::SlimeRibbonRed] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[20] && !b.buff_immune[31], "{kind:?} immunity");
+        }
+        let bx = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::BunnyXmas);
+        assert!(bx.buff_immune[31] && !bx.buff_immune[20]);
+        // The BunnyXmas is catchable (catchItem 2019, the shared bunny arm).
+        assert!(crate::bug_net::npc_catchable(337));
+    }
+
+    /// The ribbon slimes ride the plain slime FindFrame (`NPC.cs:70801-70846`,
+    /// NO 302/304 spriteDirection snap); the BunnyXmas the bunny arm
+    /// (`:76853-76904`, the rise-4/fall-6 air rows).
+    #[test]
+    fn w4_d38_b7_the_ribbon_and_bunny_frames() {
+        let mut s = bare(NpcKind::SlimeRibbonWhite);
+        s.facing = -1;
+        s.sprite_dir = 1;
+        s.vx = 0.0;
+        s.vy = 0.0;
+        s.find_frame();
+        assert_eq!(s.sprite_dir, 1, "the plain slime arm keeps the sprite");
+        let mut b = bare(NpcKind::BunnyXmas);
+        b.vy = -2.0;
+        b.find_frame();
+        assert_eq!(b.frame, 4, "the bunny rise row 4");
+        b.vy = 2.0;
+        b.find_frame();
+        assert_eq!(b.frame, 6, "the bunny fall row 6");
     }
 }

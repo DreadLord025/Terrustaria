@@ -484,6 +484,13 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+        // W4-d38 b7 — SpecificallyImmuneTo {20}.
+        NpcKind::SlimeRibbonWhite
+        | NpcKind::SlimeRibbonYellow
+        | NpcKind::SlimeRibbonGreen
+        | NpcKind::SlimeRibbonRed => &[20],
+        // W4-d38 b7 — SpecificallyImmuneTo {31}.
+        NpcKind::BunnyXmas => &[31],
         // W4-d38 b6 — null DebuffImmunitySets row.
         NpcKind::DemonEyeSpaceship => &[],
         // W4-d38 b6 — SpecificallyImmuneTo {20}.
