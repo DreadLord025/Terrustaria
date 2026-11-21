@@ -1255,12 +1255,13 @@ impl Rain {
                 (p.y - camera.y) * zoom + screen.y * 0.5,
             ]
         };
-        // `:38813`: `Lighting.GetColor((int)(pos.X + 4f) >> 4, ...)`.
+        // `:38813`: `Lighting.GetColor((int)(pos.X + 4f) >> 4, ...)` — the
+        // tile containing `pos + 4`, NOT the dust convention's bare `pos/16`
+        // (g67d `7aaf66f0`'s census re-pin: the two differ in each cell's
+        // 12..15 px band).
         let light_tile = |p: Vec2| {
-            light.get(
-                ((p.x + 4.0) as i32) >> 4,
-                ((p.y + 4.0) as i32) >> 4,
-            )
+            let (lx, ly) = rain_light_tile(p);
+            light.get(lx, ly)
         };
         for d in &self.drops {
             if !d.active {
@@ -1296,6 +1297,17 @@ impl Rain {
             );
         }
     }
+}
+
+/// `Main.DrawRain`'s light-sample tile (`Main.cs:38813`):
+/// `Lighting.GetColor((int)(rain.position.X + 4f) >> 4, (int)(…Y + 4f) >> 4)` —
+/// the tile containing `pos + 4`, arithmetic-shifted. Differs from the dust
+/// convention (`:38968`'s `(pos+4)/16`, [`light_at`]) in the 12..15 px band of
+/// each cell, where the `+4` crosses the tile edge. (g67d `7aaf66f0`'s
+/// `rain_light_tile`, extracted so the draw closure and the witness share it —
+/// the d130 retire compose; the semantics were already in the inline closure.)
+pub(crate) fn rain_light_tile(p: Vec2) -> (i32, i32) {
+    (((p.x + 4.0) as i32) >> 4, ((p.y + 4.0) as i32) >> 4)
 }
 
 /// `Main.DrawRain`'s colour chain (`Main.cs:38813-38817`) as XNA bytes:
@@ -3404,5 +3416,26 @@ mod tests {
             normal.update(&w, &i, 1.0 / 60.0, None);
         }
         assert!(normal.drop_count() > 0, "300 tiles barely suppress on a normal world");
+    }
+
+    /// W4-g67d witness (final phase 3, `7aaf66f0`) — the DrawRain light-sample
+    /// tile is `(int)(pos + 4f) >> 4` (`Main.cs:38813`), NOT the dust
+    /// convention's bare `pos/16`: in the 12..15 px band of a cell the `+4`
+    /// crosses into the NEXT tile. The d130 draw carried the semantics inline
+    /// since `ea4863d9`; this pins the extracted helper both share.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_g67d_draw_rain_light_tile_is_pos_plus_four_shifted() {
+        // Cell interior: pos 16*3+2 = 50 → (50+4)>>4 = 3 (same tile).
+        assert_eq!(rain_light_tile(Vec2::new(50.0, 50.0)), (3, 3));
+        // The 12..15 band: pos 16*3+12 = 60 → (60+4)>>4 = 4 (NEXT tile —
+        // a bare pos/16 read tile 3 here, one tile early).
+        assert_eq!(rain_light_tile(Vec2::new(60.0, 60.0)), (4, 4));
+        // The exact edge: pos 63.9 → (int)67.9 = 67 >> 4 = 4.
+        assert_eq!(rain_light_tile(Vec2::new(63.9, 63.9)), (4, 4));
+        // Negative coords truncate toward zero then arithmetic-shift:
+        // pos -1 → (int)3 = 3 >> 4 = 0; pos -5 → (int)(-1) = -1 >> 4 = -1.
+        assert_eq!(rain_light_tile(Vec2::new(-1.0, -1.0)), (0, 0));
+        assert_eq!(rain_light_tile(Vec2::new(-5.0, -5.0)), (-1, -1));
     }
 }

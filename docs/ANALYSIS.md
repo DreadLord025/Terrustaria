@@ -1236,7 +1236,12 @@ attempt rolls the x-window then the y (`:54-55`), shapes them with the player ve
 and the `windSpeedCurrent * 15 * 40` lead (`:50-57`), clamps to the world edges and
 gates on open sky (`!SolidTile && wall <= 0`, `:84`); `NewRain` then budgets the FIRST
 inactive slot within `maxRain * cloudAlpha` scaled by gfxQuality (< 0.9), the snow-tile
-suppression `(1 - (count/1500)^2)` and `atmo^9` (0 below 0.4) (`:166-207`), and rolls the
+suppression `(1 - (count/threshold)^2)` — the threshold is the skyblock-aware
+`SceneMetrics.SnowTileThreshold` (300 when `WorldGen.Skyblock.lowTiles`, else 1500,
+`SceneMetrics.cs:154-163`; the g67 R5 `f8c4b659` fold — `World.skyblock_low_tiles` is
+censused at load/gen by `World::scan_skyblock_low_tiles`, `WorldGen.cs:3210-3218`/
+`:3238-3265`, and rides `RainInputs.skyblock_low_tiles`) — and `atmo^9` (0 below 0.4)
+(`:166-207`), and rolls the
 scale (`1 + Next(-20,21)*0.01`) then the `waterStyle*3 + Next(3)` frame. The fall velocity
 is the LIVE `(windSpeedCurrent * 18, 14) * scale` (`GetRainFallVelocity`, `:91-94`) — the
 old frozen seed-time wind snapshot + sine term is retired. `Rain.Update` (`:96-133`)
@@ -1311,6 +1316,32 @@ below for the lane's own deviations. (d) `NewRain`'s depth factor (`Rain.cs:174-
 the C# (a bare `Math.Max` statement) — ported as a note, no effect. Still first-pass: no
 lightning bolt geometry and no thunder audio — the flash rides WEATHER-1's tiered
 thunder chain, not a bolt mesh.
+
+**Retire-phase co-lane compose (2026-11-21, research/83 §8).** Against
+origin/task/W4-f39 tip `bd5a5a24a` (Phase B, the season/date gates) the
+weather-touching residuals composed onto d130's canonical bodies
+(`22371b4f`): (1) the MUSIC ladder's Slime Rain track-48 arm
+(`Main.cs:12200` `flag24` + `:12654-12657` — `!ZoneGraveyard &&
+(!bloodMoon || dayTime)` + the surface band), between the eclipse 27 and
+the shimmer 91 (`MusicEnv.slime_rain` fed from `World.slime_rain`);
+(2) `StartRain`'s anniversary coin-rain range 25→5 on
+`tenthAnniversaryWorld && !getGoodWorld` (`Main.cs:64663-64667` — the
+luck-0 DRAW COUNT is unchanged, only the denominator); (3)
+`AmbienceServer.ResetSpawnTime`'s anniversary post-divide `/2`
+(`AmbienceServer.cs:133-136` — same `Next(600,7200)` draw, no extra);
+(4) the menu-return `StopSlimeRain` (`Main.cs:48216-48219`) in
+`save_and_quit` AFTER the save — the saved world keeps the live event,
+the menu state carries the `-Next(3024,6048)*100` cooldown on the bare
+global stream; (5) `slime_rain_roll`'s `WorldGen.Skyblock.lowTiles` `/5`
+arm (`Main.cs:64931-64934`, inside the pre-King `/2` half) ACTIVATED —
+f39's tip documented it false (its stand-in never set), the g67 R5 census
+now fills `World.skyblock_low_tiles`. The UpdateTime tick-shapes
+(`update_time`'s sampled-flag ladder, the `:64846` surface gate, the
+clock-before-rain order, `start_slime_rain`'s remix + `<= 50` gates)
+compose-verified EQUAL to f39's tip — no change. f39's season/date lane
+(`tr-core/season.rs`, the `.trwld` v18 downeds, the shop/spawner/loot
+consumers) does NOT overlap d130's files beyond the four gates above —
+the merger keeps f39's bodies for it.
 
 ## Biomes
 
@@ -19989,6 +20020,63 @@ inactive mount; repointed to the Drill (8, a ported row, `Mount.cs:
 1273-1341`). Added the clone-mirror RNG-purity witness above (the 4th
 sim witness). The landed module code (`24a2331d`) audited CORRECT
 against the census — no module change.
+
+## The Eyebrella drip + the umbrella slow-fall (W4-g67 R6/R7 folds, d130 retire phase, 2026-11-21)
+
+Two g67 follow-up player-lane arms folded onto d130 (research/134 R6/R7,
+commits `356a1ac0`/`01ba6c7a`, retire commit `df28ea1a`):
+
+* **R6 — the Eyebrella drip** (`Player.cs:13083-13087` + `:14308-14331`).
+  The `UpdateEquips` tail: head armor slot 0 OR vanity head slot 10 wearing
+  5101 fires `DoEyebrellaRainEffect` and arms `eyebrellaCloud`
+  (`ResetEffects` clears it, `:18461`). The drip ports verbatim: the
+  `netMode==2 || dedServ || mapFullscreen || !FocusHelper.AllowRain` gates
+  fold to `allow_rain` (the caller derives `window_focused && !game_paused
+  && !map_open` — `FocusHelper.cs:57` `AllowRain => GameplayActive`), the
+  `Next(4) != 0` cadence is the LAST short-circuit term (the gates refuse
+  before any draw), the mount head offset + the Velociraptor-54
+  `(-14,0)*Directions` extra, the `MountedCenter - (0, height/2) +
+  ((-0.5+NextFloat())*(width+18), -30)` window, the `InWorld` +
+  `!SolidTile3` (`WorldGen.cs:70474-70485`) + `liquid <= 0` tile gate. The
+  cadence + window draws ride the player's `UpdatePlayers` stream (the C#
+  `Main.rand` inside `Player.Update`); the position QUEUES
+  (`pending_eyebrella_rain`, the sticky-dust convention) and
+  `world_sim/player.rs` drains into `Rain::new_rain_forced` (the g67b seam,
+  the `dead_code` allow lifted) with the live `windSpeedCurrent*3, 9`
+  velocity — the scale + frame draws ride Rain's own stream. The d130
+  adaptation: `new_rain_forced` takes `&RainInputs` (g67 read `&World` +
+  `camera` directly), so the drain gathers the gfx/water-style inputs like
+  `update_rain` does. `GetEffectiveArmor`'s loadout-sharing fallback
+  (`:5690-5710`) has no port (no loadouts) — the slot itself. The
+  `eyebrellaCloud` draw layer (`PlayerDrawLayers.cs:4033`) stays a render
+  seam (the flag is armed/cleared, no cloud sprite yet).
+* **R7 — the umbrella held-item arm** (`Player.ItemCheck_ApplyHoldStyle`,
+  `Player.cs:50476-50498`). The Umbrella (946) / Tragic Umbrella (4707) —
+  the only holdStyle-2 items — at rest (`itemAnimation == 0`) and
+  `!pulley` cap the fall at 2 px/tick unless `controlDown`
+  (`:50494-50497`) and refresh `fallStart` every tick (`:50481-50484`,
+  `flag = !isDisplayDollOrInanimate` — always true for a real player, so
+  umbrella-rest nullifies fall damage). Ported as
+  `Player::umbrella_hold_slow_fall`, called at the `ItemCheck` position in
+  `update_with_grapple` (after the border clamps — `ItemCheck` `:42846` at
+  `:28285`, after `BordersMovement` `:28278`). The `CanVisuallyHoldItem`
+  gate (`:50271`) blocks the `DontHoldItems` mounts {55,56,61}
+  (`Mount.cs:6572-6579`) through `frame_inputs.can_visually_hold`; the
+  `gravDir == -1` mirror (`:50485-50493`) has no ported gravity flip. The
+  draw half — `hold_item_placement`'s style-2 arm in
+  `render/player_layers.rs` — overrides to the overhead placement
+  `position + (width/2 - 16*dir, 22)`, rotation 0 (`:50478-50480`) for the
+  pair; the generic beside-the-head quarter-turn (`:50499-50509`) is kept
+  for any other style-2 item. The useStyle-3 thrust nudge + melee hitbox
+  were already ported (S1-P-i05 above) — no overlap.
+
+**Witnesses (WRITTEN NOT RUN, code-only):** 3 Eyebrella arms (the cadence +
+window + gate-before-draw, the SolidTile3/wet refusal, the head/vanity slot
+arm + ResetEffects clear), 1 umbrella sim arm (the 2 px cap + controlDown
+release + swing/rope/non-umbrella refusals + the rise untouched), 1 render
+arm (the overhead placement both facings + the generic fallback). 12
+`update_with_grapple` test call sites re-pinned (`allow_rain: true`), the
+production tick derives the gate.
 
 ## The draw phase order (S1-B-7, 2026-11-14)
 
@@ -39412,10 +39500,17 @@ pool's walk, g67's compacted kill order adapted).
 * `Rain.ClearRain` (`Rain.cs:22-28`) is wired into `save_and_quit` at the
   `WorldGen.cs:6672` slot (g67b `5c9398ea` fold): visual-only, the event
   triple (`raining`/`rainTime`/`maxRaining`) is untouched. `NewRainForced`
-  (`Rain.cs:135-164`) lands as the Eyebrella seam (the
-  `Player.cs:14308-14331` caller is unported — `#[allow(dead_code)]`).
+  (`Rain.cs:135-164`) lands as the Eyebrella seam — the
+  `Player.cs:14308-14331` caller IS NOW PORTED (g67 R6 `356a1ac0` fold,
+  research/134, retire phase `df28ea1a`: the `UpdateEquips` arm + the
+  `world_sim/player.rs` drain, the `dead_code` allow lifted).
   The skyblock `SnowTileThreshold` arm (`SceneMetrics.cs:154-163`, 300
-  low-tiles) is a cited gap — the port tracks no `World.skyblock_low_tiles`.
+  low-tiles) IS NOW PORTED (g67 R5 `f8c4b659` fold, retire phase `10ee539d`):
+  `World.skyblock_low_tiles` + `World::scan_skyblock_low_tiles` (the
+  `WorldGen.cs:3210-3218`/`:3238-3265` census at load + gen completion),
+  `scene::snow_tile_threshold`/`desert_tile_threshold`, the `_at` zone arms,
+  and `RainInputs.skyblock_low_tiles` feeds `new_rain`'s snow suppression —
+  the cited gap is closed.
 * The water-surface ripple wording of the task row maps to the splash dust
   itself: the C# `QueueRipple` family (`WaterShaderData.cs:445-467`) has NO
   rain caller — its callers are Gore.cs:967 (drips), the player/NPC/projectile
@@ -39451,3 +39546,19 @@ NOT taken: g67's `spawn_acc` fractional-rate cadence — d130's per-tick
 float attempt loop is the C# `for (i < num)` ceil-attempts shape. 4 new
 `w4_g67_*` witnesses (menu-arm census, forced-budget 375 cap,
 clear+IsItRaining semantics, cull-rect geometry) WRITTEN NOT RUN.
+
+**RETIRE-PHASE UPDATE (research/83 §8, 2026-11-21).** The "research/134 does
+NOT exist" claim above is SUPERSEDED: g67 pushed `30b39fce` (the 134 file)
+plus three follow-up code commits (`f8c4b659` skyblock / `356a1ac0` Eyebrella
+/ `01ba6c7a` umbrella) and a five-commit final phase (`d0ebe7f0` monitor,
+`a7f92746` fn-census, `7aaf66f0` DrawRain render census, `0dfb1922`
+blizzard/sandstorm/wind-slant census, `e777b3e2` 134-FINAL + the
+KEEP-d130-CANONICAL refresh) — origin tip `e777b3e2c`. The retire phase
+folds R5/R6/R7 (`10ee539d`/`df28ea1a`), verifies R1–R4 already landed by
+`16a792d5`, and compose-verifies g67d's DrawRain re-pin (the light tile +
+XNA byte chain were already canonical here since `ea4863d9`; the
+`rain_light_tile` helper is now extracted + witnessed, `rain_tint` keeps
+d130's name per the union keep-one). g67d's blizzard census CONFIRMS d130's
+`crate::snow` (the `:13092` raining branch) as canonical — g67's `snow_mode`
+gate stays retired; its wind-slant + sandstorm findings match the §5
+cross-note. The full per-item receipt is research/83 §8.

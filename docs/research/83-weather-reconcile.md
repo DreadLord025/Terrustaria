@@ -1,6 +1,13 @@
 # 83 — Weather reconcile (W4-d130 merger assist + conflict resolution)
 
-**STATUS: EXECUTED + FINAL PHASE LANDED** (union-exec commit `88cfbf38`;
+**STATUS: RETIRED — FINAL-FINAL (§8, 2026-11-21).** All folds executed:
+R1–R4 via `16a792d5`, R5 via `10ee539da`, R6/R7 via `df28ea1ac`, the f39
+co-lane compose via `22371b4fe`; g67d's final-phase censuses composed
+(the `rain_light_tile` extract + witness). research/134 EXISTS on g67 now
+(tip `e777b3e2c`) — §7's absence note is superseded, the per-item receipt
+is §8.2. **The merger keeps THIS branch wholesale for rain + snow + the
+weather tick** (§8.5, the 134-FINAL KEEP-d130-CANONICAL instruction).
+Earlier status: EXECUTED + FINAL PHASE LANDED (union-exec commit `88cfbf38`;
 final-phase commits `85250712` g11 snow fold §4, `5289d055` rain ambience,
 `85b2a09c` intensity ramps, `703370e6` sandstorm cross-note §5, `cf4574e9`
 f39 slime-rain fold §6 — all on this branch). §1's gate
@@ -429,3 +436,111 @@ record the reconcile.
 
 Commits: the fix + this doc land on `task/W4-d130-weather-ambience` on top of
 `393000e6` (hashes in the branch log / the report back to the Lead).
+
+## 8. FINAL-FINAL — the retire phase (ALL FOLDS EXECUTED, 2026-11-21)
+
+**STATUS: RETIRED.** Every fold-list item from g67 (research/134 R1–R7),
+g67d (the g67 final-phase render/blizzard censuses) and the f39 co-lane is
+either EXECUTED on this branch or verified-present. This section is the
+per-item receipt; the d130-canonical declaration is restated at the end.
+
+### 8.1 The g67 tip moved — research/134 EXISTS now
+
+§7's "research/134 does NOT exist on the g67 branch" was true at the g67b
+fold (`16a792d5`, g67 tip `112d1b203`). g67 has since pushed (re-fetched
+2026-11-21, origin tip **`e777b3e2c`**):
+
+| commit | content |
+| --- | --- |
+| `f8c4b659c` | skyblock low-tiles: `World.skyblock_low_tiles` + the snow-threshold arm (R5) |
+| `356a1ac0e` | Eyebrella: the `UpdateEquips` drip caller + `eyebrellaCloud` (R6) |
+| `01ba6c7a9` | umbrella held-item arm: the 2 px/tick slow-fall + overhead placement (R7) |
+| `30b39fceb` | research/134 published — the post-union fold-list for d130d/e |
+| `d0ebe7f07` | final phase 1: fold-monitor re-check (d130 tip was still `560a02ea`, R1–R7 all OPEN then) |
+| `a7f927464` | final phase 2: Rain.cs FINAL fn-census — 6/6 methods + 7/7 fields; the `alpha` field is dead in the C# (no port gap) |
+| `7aaf66f00` | final phase 3: DrawRain render census — `rain_light_tile` + `rain_drop_tint` (the XNA byte chain + shimmer) |
+| `0dfb19229` | final phase 4: blizzard/sandstorm visual-overlap + wind-slant census (docs-only) |
+| `e777b3e2c` | final phase 5: research/134 FINAL + the KEEP-d130-CANONICAL refresh |
+
+### 8.2 Per-item receipt vs the 134 fold-list (R1–R7)
+
+| item | 134 says | d130 state | receipt |
+| --- | --- | --- | --- |
+| R1 `IsItRaining` consumers (5 feeds) | fold `is_it_raining()` + the ambience/music/quiet-sky/lightning feeds | **ALREADY FOLDED** by `16a792d5` (the g67b fold pre-empted the 134 list — same semantics, derived from `5c9398ea`/`112d1b20` directly) | verified at the retire tip: `rain.rs:316` `is_it_raining`, `frame/world.rs:192/:259/:503`, `netmodules.rs:486`, `weather.rs:116` — all read the cloud, not the event flag. The quiet-sky feed reads `!is_it_raining()` (≡ `cloudAlpha == 0`, the 134 `visual_alpha() == 0` form is observation-equal for the non-negative ramp) |
+| R2 `ClearRain` on save-and-quit | deactivate all 750 slots at `WorldGen.cs:6672` | **ALREADY FOLDED** by `16a792d5` | `rain.rs:325` `clear_rain` (fixed-slot deactivation), `saveglue.rs:366` — before `save_world` (the C# order: ClearRain `:6672` precedes SaveWorld `:6675`; the event triple is untouched so the save still snapshots the live event) |
+| R3 DrawDust cull rect + else-kill | the ±1000/±1050 wide box, strict-< 4×4, else-DEACTIVATE | **ALREADY FOLDED** by `16a792d5` | `rain.rs` `splash_cull_rect`/`dust_in_cull_rect` + the kill in `draw_splashes` AND `snow.rs::draw` (the same loop covers 76); the `w4_g67_drawdust_cull_rect_is_the_wide_box_with_an_else_kill` witness pins the edges |
+| R4 `NewRainForced` seam | fixed-slot scan, gfx-cut budget, `maxRain` sentinel | **ALREADY FOLDED** by `16a792d5` (as `#[allow(dead_code)]` — the caller was R6) | `rain.rs` `new_rain_forced(&RainInputs, pos, vel)`; the retire phase lifted the allow (R6's drain is the production writer); the 375-cap witness present |
+| R5 skyblock snow-threshold | `World.skyblock_low_tiles` + scan + `snow_tile_threshold` + the NewRain arm | **FOLDED THIS PHASE** — `10ee539da` | `world.rs` field + `scan_skyblock_low_tiles` (40-margin census, f32 fraction < 0.1 AND SKYBLOCK), load (`app/mod.rs`) + both gen entries; `scene.rs` 300-constants + getters + `_at` variants + the zone arms; `scene_scan.rs` copies the flag; **d130 adaptation**: `new_rain` reads `RainInputs.skyblock_low_tiles` (the gathered-inputs seam) instead of g67's direct `world` read. 3 witnesses adapted |
+| R6 Eyebrella caller + `eyebrellaCloud` | `do_eyebrella_rain_effect` + the UpdateEquips arm + the drain (needs R4) | **FOLDED THIS PHASE** — `df28ea1ac` | `player.rs` field + pending queue + the verbatim `:14308-14331` port + the `:13083-13087` arm + the `:18461` reset; `update_with_grapple` gains `allow_rain` (12 test sites re-pinned true, production derives `window_focused && !game_paused && !map_open`); `world_sim/player.rs` drains into `new_rain_forced` with live `wind*3, 9` through a gathered `RainInputs`. 3 witnesses adapted |
+| R7 umbrella held-item arm | `umbrella_hold_slow_fall` + the render overhead override | **FOLDED THIS PHASE** — `df28ea1ac` | `player.rs::umbrella_hold_slow_fall` at the ItemCheck position (after the border clamps), `render/player_layers.rs` style-2 override (946/4707 → overhead, rotation 0; the generic quarter-turn kept). 2 witnesses adapted |
+
+The 134 "Deliberate divergences" all stand: the float attempt-loop cadence
+(d130's, NOT g67's `spawn_acc`), the fixed-750-slot storage, and — updated —
+the `gameMenu` kill-only arm is NOW PORTED on d130 (`16a792d5` folded it IN,
+superseding the 134's "d130 folds it out" note; the residual-drop menu tick
+is carried for shape behind `RainInputs.game_menu`).
+
+### 8.3 g67d (the g67 final phase) — fold-or-compose receipts
+
+* **`a7f92746` fn-census (docs-only)**: 6/6 methods + 7/7 fields — d130's
+  rain.rs covers MakeRain/NewRain/NewRainForced/ClearRain/Update/
+  GetRainFallVelocity; the dead `alpha` field needs no port. Compose-note
+  only, no code.
+* **`7aaf66f0` DrawRain render census**: the two residuals it closed on g67
+  (the `(pos+4)>>4` light tile, the XNA byte chain + shimmer) were ALREADY
+  canonical on d130 since `ea4863d9` (the inline `light_tile` closure +
+  `rain_tint`). **COMPOSED**: `rain_light_tile` extracted as a named helper
+  (the draw closure and the new witness share it) + the
+  `w4_g67d_draw_rain_light_tile_is_pos_plus_four_shifted` witness; the tint
+  keeps d130's `rain_tint` name (the 134-FINAL keep-one instruction — g67's
+  `rain_drop_tint` copy drops). The draw caller already passes
+  `scene_state.shimmer_alpha`. DrawRain has NO cull rect / NO black-kill —
+  d130's drop draw has neither (verified). The per-drop in-draw `Update`
+  cadence fold is the recorded 60 Hz deviation (unchanged).
+* **`0dfb1922` blizzard/sandstorm/wind-slant census (docs-only)**:
+  CONFIRMS d130 canonical — vanilla MakeRain has NO biome gate (the snow
+  suppression shrinks the budget, `Main.snowing()` runs its own gates and
+  branches on `Main.raining` `:13092`); d130's `crate::snow` carries that
+  branch verbatim, g67's `snow_mode` replaces-drops gate stays retired
+  (§2). The one-way ZoneSandstorm→ZoneRain gate matches §5. The wind-slant
+  IS `atan2(vx,-vy)` over the live wind at spawn — both ports faithful, no
+  draw-angle term. Compose-note only, no code.
+* **`e777b3e2` 134-FINAL + KEEP-d130-CANONICAL**: the instruction restated
+  below (§8.5).
+
+### 8.4 f39 co-lane compose (origin tip `bd5a5a24a`)
+
+Executed in `22371b4fe` — the full receipt in ANALYSIS "Rain and weather"
+(retire-phase co-lane compose paragraph): the music track-48 arm
+(`Main.cs:12654-12657`), the anniversary `StartRain` range 5
+(`:64663-64667`), the `ResetSpawnTime` `/2` (`AmbienceServer.cs:133-136`),
+the menu-return `StopSlimeRain` (`:48216-48219`) and the `slime_rain_roll`
+lowTiles `/5` arm (`:64931-64934`, activated by the R5 census). The
+UpdateTime tick-shapes compose-verified EQUAL (the sampled-flag ladder,
+the surface gate, the clock-before-rain order, the StartSlimeRain gates —
+d130's `cf4574e9` fold and f39's `c4d9937a5` are the same port). f39's
+SlimeSky spawn bodies (`npcs_w4_f39*.rs`), kill-counter lane and season/date
+module (`tr-core/season.rs`, Phase B) do not overlap d130's files — the
+merger keeps f39's bodies for those; the four gates above are the only
+cross-boundary hunks and they are now on BOTH branches with identical
+semantics.
+
+### 8.5 The d130-canonical declaration (FINAL)
+
+**The merger keeps `task/W4-d130-weather-ambience` wholesale for the rain
+core, the snow lane and the weather tick.** g67's `rain.rs` drops wholesale
+(134-FINAL's own instruction, `e777b3e2`): its compacted-Vec storage, its
+`spawn_acc` cadence, its `snow_mode` gate, its `rain_light_tile`/
+`rain_drop_tint` copies (d130 carries the same semantics under
+`rain_light_tile`/`rain_tint`), its `DropSimInputs` seam (d130's
+`RainInputs` superset covers it). Every semantic residual R1–R7 is now ON
+this branch (R1–R4 via `16a792d5`, R5 via `10ee539da`, R6/R7 via
+`df28ea1ac`); g67d's censuses are compose-notes with zero open code gaps;
+the f39 boundary hunks are composed (`22371b4fe`). The snow-stream
+adjudication (§7, g11 F1) stands: `crate::snow` on the GLOBAL bare stream.
+**No weather-lane fold remains open.**
+
+Retire-phase commits (this branch, on top of `97ed44f5d`):
+`10ee539da` (R5) → `df28ea1ac` (R6+R7) → `22371b4fe` (f39 compose) →
+this docs commit. All witnesses WRITTEN NOT RUN (code-only mode — no
+cargo/tests/rustfmt/graphify invoked, per the task directive).
