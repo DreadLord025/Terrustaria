@@ -39244,3 +39244,121 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The void vault UI (W4-g56, task/W4-g56-ui-void-vault, 2026-11-21, code-only mode)
+
+The missing Void Bag/Void Vault UI half per the C#: the Void Lens projectile
+(734) + its open/close interaction, and the context-32 vault grid fidelity.
+The backend (bank4, `void_vault_take`, the pickup-to-vault routing) was already
+landed (S1-P-i43/i47/i50). Commits: `273814c5` (phase 1 - the lens),
+`6727fb9a` (phase 2 - the ctx-32 grid), `21d01fa0` (phase 2b - the Cofveve
+probe), `d364a2f4` (phase 2c - the emptied-cell favorite clear).
+
+### What landed
+
+* **The lens projectile** (`projectile/data.rs` + `projectile.rs`): the
+  `SetDefaults` 734 row (`Projectile.cs:7726-7735` - 30x24, aiStyle 154,
+  timeLeft 10800, alpha 255, penetrate 1), `projFrames[734] = 8`
+  (`Main.cs:8504`), the `AI_154_VoidLens` dispatch arm
+  (`Projectile.cs:52154-52196`): the same-owner/same-kind sibling cull (the
+  lower-timeLeft slot dies, `:52170`/`:52173`), the x0.94 decay, direction 1,
+  the 5-tick frame machine, the Opacity fade-in through the setter's
+  `(int)Clamp((1-v)*255, 0, 255)` truncation (`:540-550`); the free
+  `HandleMovement` integrate runs even on the culled tick (Update's `:17015`
+  precedes the `!active` return). The `damage_player` exemption (the lens is
+  friendly, no self-hit) and the `draw_with_hand` early-return.
+* **The draw-time interaction** (`void_lens.rs`): the C# fires
+  `TryInteractingWithVoidLens` inside `DrawProjDirect` (`Main.cs:27924`), so
+  the port runs `void_lens::update_selection(app)` at `frame/draw.rs`'s head
+  (gated `!game_paused && menu.is_none() && front.is_none()`), storing the
+  per-slot modes on `App.void_lens_selection`; the projectile draw loop reads
+  them for the type-734 arm. The gate chain is `:37675-37695` verbatim: the
+  range probe (`IsProjectileInteractableAndInInteractionRange` - the hitbox
+  closest point, tile-truncated, inside the live `tile_interaction_reach`
+  bounds), the world-mouse hitbox hover (the `(int)` truncation),
+  `!lastMouseInterface`. The hover arms `noThrow = 2` (`:37696-37702`); the
+  right press (`place_down && !place_prev_down`) toggles: close on the re-click
+  (Item130), else stackSplit 600 / chest -5 / chestX-Y off the lens CENTRE /
+  the tracker latch / `SetTalkNPC(-1)` + `SetNPCShopIndex(0)` + the crafting
+  close / the inventory open / Item130 (`:37707-37735`). The press consume is
+  `app.ui_right_press = false` only - `place_prev_down` stays editing.rs's
+  per-tick job.
+* **The tracker** (`void_lens.rs::LensTracker` + `tick_tracker`): the packed
+  `ProjectileKey` bits (`ProjectileKey.cs:27-32` - spawner 8 | index 10 << 8 |
+  generation 14 << 18), `try_get_active` re-validates active+generation+kind.
+  `Player.void_lens_chest` latches on open; `chest::tick_open`'s head runs
+  `tick_tracker` (`Player.cs:31051-31073`): the dead/absent lens or the
+  out-of-range closest point force-closes with Item130, the live arm re-seeds
+  chestX/Y each tick, and the `tracked_open` gate skips the tile-range close
+  (the C# `flag` return `:31074-31077`). The `chest != -5`/`== -1` clears
+  (`:31023-31026`/`:31095`) + the `UpdateDead` clear.
+* **`lastMouseInterface`** (`App.last_mouse_interface` +
+  `App::mouse_interface_now()`): the `Main.cs:61811-61812` latch recomputed at
+  the interface-draw tail from the hover surfaces (grid/coin/ammo/trash/shop
+  cells, the bank cells + buttons, the whole chest panel rect
+  `ChestUI.cs:364-367`, the minimap hover).
+* **The lens draw** (`render/pylons.rs`): the `DrawToDrawData` body
+  (`VoidLensHelper.cs:77-104`) extracted into `void_lens_sprites_at`, shared
+  by the tile pass (S1-G-1 wave D) and the new projectile ctor
+  (`draw_void_lens_projectile` - Center / Opacity / frame); the
+  `AddLight(0.4, 0.2, 0.9)` (`VoidLensHelper.cs:34-38`) feeds the EntityLights
+  pair in the draw's proj-light loop (one frame late, the tile-lens
+  convention).
+* **The ctx-32 grid** (`ui/inventory.rs` + `ui/slot.rs` + `assets.rs`): the
+  vault draws context 32 (`ChestUI.cs:356-359`), `Inventory_Back2` for
+  contexts 4 AND 32 (`ItemSlot.cs:2218-2221`), the favorited cell swaps to
+  `Inventory_Back19` (`:2155-2158`; the gold frame stands in on a content-less
+  build). `Player.vault_favorites: [bool; 40]`, the Alt+left toggle (the
+  cursor-3 arm over the bank cell, `canFavoriteAt[32]`, sound 12), LootAll
+  parks the favorited slots then restores them (`ChestUI.cs:451`), the bank
+  Sort row id 4 (`bank_button_at` 0..5, `ItemSorting.SortChest`), the ctx-32
+  right-click `HasItemSwap` cycle (4131 <-> 5325) + `SwapEquip` ladder ahead
+  of the paced pickup split, the emptied-cell favorite clear (phase 2c).
+* **The Cofveve probe** (`item.rs::item_space`'s 7th param `vault_favorite`):
+  `ItemSpaceForCofveve` reads the vault slot's OWN favorited flag
+  (`Player.cs:39212`), threaded at `chest::inventory_has_room_for` +
+  `world_sim/items.rs`'s pull gate; the other callers pass `|_| false`.
+
+### Deliberate deviations / recorded skips
+
+1. **The vault favorites are runtime-only.** The persist sidecar
+   (`persist.rs`) saves no banks at all; `player_file.rs`'s bank4 favorited
+   bools are read-and-dropped (the S1-J-5 byte-shape writer emits them at
+   fresh-ctor defaults). `Player.vault_favorites` therefore does not survive
+   a save/load round-trip - the same gap the bank contents already have.
+2. **The smart-cursor/gamepad selection arms** (`Main.SmartCursorIsUsed` /
+   `SmartInteractProj` / `PlayerInput.UsingGamepad`) are unported - the
+   selection mode is always 0, so the `Extra_93` glow never draws from the
+   mouse path (the C# mouse path answers 0 too; mode 1/2 need the smart
+   cursor). The `selection_glow_color` helper carries both modes for the
+   future wiring.
+3. **`Player.cursorItemIcon*`** (the 4131 icon over the cursor,
+   `:37699-37701`) has no port surface - the `noThrow = 2` half lands.
+4. **The lens dust rolls** (`VoidLensHelper.Update`'s dust half) stay skipped
+   - the S1-G-1 wave-D RNG-order rule (the dust draws would perturb the
+   UpdateProjectiles stream).
+5. **`ItemSlot.SetGlowForChest`** (the glow-array resize on open) - the port's
+   glow system does not carry it (the `ui/chest.rs` module doc's same skip).
+6. **`disableVoidBag`** (the net-slot lock, `:37718`) has no port mechanic -
+   the vault always opens (the tr-core edit.rs note).
+7. **The cursor-favorite carry stays slot-positional** (research/20 §4): a
+   favorited stack picked onto the cursor does not carry its star into the
+   destination cell (the C# `retainFavoriteOnMoveAt` table covers the
+   movement, the port's grid model is positional); the vault's own
+   emptied-cell clear + the LootAll park/restore are the ported halves.
+8. **The gravDir -1 mouse mirror** (`ReverseGravitySupport(MouseScreen)`,
+   `:37686`) has no port - the world mouse point is the plain camera map.
+9. **The bank-tile open path does NOT clear the trackers** - only the dresser
+   default arm does (`Player.cs:32903-32904`); an earlier draft's 491-clear in
+   editing.rs was reverted as unfaithful. A tile-vault open relies on
+   `tick_tracker`'s default-tracker None answer.
+
+### Verification
+
+Code-only mode: NO cargo/rustc/tests invoked. 17 witness tests WRITTEN NOT
+RUN - `projectile.rs` 3 (the row, the AI decay/frames/fade, the sibling cull),
+`void_lens.rs` 6 (the key pack, the toggle, the gates, the tracker death/range
+close, the other-container clears, the range clamp), `clicks.rs` 6 (LootAll
+favorite skip, the Alt-toggle, the Sort row, the Void Bag cycle, the
+right-click equip, the emptied-cell clear), `slot.rs` 1 (the Back19 swap),
+`item.rs` 1 (the Cofveve favorite probe).
