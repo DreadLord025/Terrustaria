@@ -1,11 +1,17 @@
-# 243 — W4-f24 room-content RETIRE: the FINAL + the room-content-family declaration
+# 337 — W4-f24 room-content RETIRE: the FINAL + the room-content-family declaration
 
+> **RENUMBER 243→337** per registry-150 §9 UNIFIED FINAL (d54 tip b243c7086,
+> §9.2 row 337): g58 WINS the 243 key (g58-WINS-243; d13→336, f24→337).
+> Chain: 243 (self-pick, this lane) → **337** (§9 assignment).
 > Lane `task/W4-f24-worldgen-passes-7` @ base a725acb0 · retire round 2026-11-21.
-> Number **243** per the d54 research/150 registry (151–236 consumed; 237
-> double-claimed e23/g48, 238 triple-claimed c8/d42/g61, 239 d42; 240/241/242
-> claimed by g58's LOCAL retire commits cdfe3d108/30bb6e2b1/d0f6275a5 — a
-> fresh sweep of every remote tip AND local branch finds 243–249 free, f24
-> takes 243, the first free number). Parent ledger: `12k-f24-worldgen-gated.md`.
+> Chain-history of the original 243 pick (SUPERSEDED by §9): number 243 was
+> self-picked per the d54 research/150 registry's then-current sweep (151–236
+> consumed; 237 double-claimed e23/g48, 238 triple-claimed c8/d42/g61, 239
+> d42; 240/241/242 claimed by g58's LOCAL retire commits
+> cdfe3d108/30bb6e2b1/d0f6275a5 — 243 looked first-free at every remote tip
+> AND local branch). g58's 243-seal-verification.md contests and WINS 243;
+> this doc rides the §9 assignment 337.
+> Parent ledger: `12k-f24-worldgen-gated.md`.
 > Code-only: no cargo/tests/rustfmt/graphify; witnesses WRITTEN NOT RUN.
 > C# read in ≤100-line windows; all cites `decompiled/Terraria/…` (1.4.5.8).
 
@@ -232,9 +238,11 @@ family work is the wiring round's, seeded above.
 - The R3/R3b ports re-read against those windows; the witness tangents
   re-derived from `SetTangents`' single-line arm; the g43/c30 tips probed
   from origin (fc5bdd806 is g43's LOCAL tip, 9f53f18a0 the pushed one).
-- The number-243 pick: a fresh `git ls-tree docs/research/` sweep of every
-  remote tip AND local branch (243–249 free everywhere; 240–242 held by
-  g58's local retire commits).
+- The original number-243 pick (chain-history, superseded — see the §9
+  renumber banner): a fresh `git ls-tree docs/research/` sweep of every
+  remote tip AND local branch (243–249 looked free; 240–242 held by
+  g58's local retire commits). g58 WINS 243; this doc is now **337** per
+  registry-150 §9.2.
 - No cargo/rustc/tests/rustfmt/graphify invoked (code-only mandate). All
   witnesses WRITTEN NOT RUN; the merge gate measures the drunk/noSurface
   seed constants and re-pins the drunk shell row. Both classic hash pins
@@ -248,7 +256,7 @@ family work is the wiring round's, seeded above.
 | --- | --- | --- |
 | R3 spike scan-row arms + 3 witnesses + anchor | 9ee1477b | landed (flag-gated, both pins unchanged) |
 | R3b legacy drunk wall re-roll + witness re-pin + anchor | 7e02e61e | landed (flag-gated, both pins unchanged) |
-| this FINAL (243) + the family declaration + doc rows | (this commit) | landed |
+| this FINAL (243→337 per §9) + the family declaration + doc rows | 706b155c4 | landed |
 
 Prior lane ledger: `12k-f24-worldgen-gated.md` (B1–B6 + A1–A4, 11 commits)
 + R1 e0733c86 + R2 dc9fff21 + the fix round 9f2276d5.

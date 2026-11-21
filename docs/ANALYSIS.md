@@ -39247,7 +39247,8 @@ click buffers; the player tick applies).
 
 ## Dungeon room-content RETIRE (W4-f24, code-only)
 
-The f24 room-content lane is CLOSED (research/243, the FINAL + the
+The f24 room-content lane is CLOSED (research/337, renumbered 243→337 per
+registry-150 §9 — g58 WINS 243; the FINAL + the
 room-content-family declaration). The dispatch's "skyblock room-content"
 scope is adjudicated NONE: `Skyblock.denyAllGeneration =>
 WorldGen.skyblockWorldGen` (`WorldGen.cs:3131`) gates every dungeon

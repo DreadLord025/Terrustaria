@@ -176,9 +176,10 @@ helpers onto the sibling passes' call sites (Beaches `:14894`, Life Crystals
 The lane's room-content scope is CLOSED: R1 (e0733c86) + R2 (dc9fff21) +
 R3 (9ee1477b, the drunk/noSurface spike scan-row arms) + R3b (7e02e61e,
 the legacy drunk wall re-roll). The FINAL + the room-content-family
-declaration live in **`243-f24-room-content-final.md`** (number 243 per
-registry-150: 237–239 multi-claimed, 240–242 g58-local, 243 the first free
-at every tip). Key verdicts: the skyblock room-content scope is NONE
+declaration live in **`337-f24-room-content-final.md`** (renumbered 243→337
+per registry-150 §9 UNIFIED FINAL, g58 WINS 243 — d13→336, f24→337; the
+original 243 self-pick saw 237–239 multi-claimed, 240–242 g58-local, 243
+first-free at every tip, superseded). Key verdicts: the skyblock room-content scope is NONE
 (denyAllGeneration prunes the whole dungeon chain); the SetTangents
 witness tangents verified 1:1; g43's temple work DISJOINT (keep both);
 **c30's dither-snake lane is a full duplicate — f24 B1–B6 is the keep-one
