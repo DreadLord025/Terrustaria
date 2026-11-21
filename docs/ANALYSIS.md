@@ -39435,3 +39435,90 @@ the Umbrella's tinted type-4 census, the Painter/Witch Doctor's 50-count.
 
 **Lane total: 32 witnesses WRITTEN NOT RUN across 7 commits (code-only
 mode — no cargo/rustc/tests invoked).**
+
+### W4-g59 DOC-SWEEP (batches 8-10): the d35 row-gated activations
+
+W4-d35's 33-kind SetDefaults wave (`eb0f1005`, branch `task/W4-d35-npc-
+kinds-71-140`, kinds 73-140) landed kind rows inside this lane's UNWIRED
+remainder. The sweep re-derived the census (`g59_death_order.json`, the
+`g59_order.py` dust-first walk) and cross-checked d35's pushed `cs_id`
+roster: **24 of the 33 d35 kinds intersect the unwired clean set** —
+73/75/77/78/79/80/82/83/84/85/86/93/94/95/96/97/98/99/100/101/103/110/
+122/140. 120/137 were ALREADY wired (batch 1's illuminant arm + batch 5's
+— their arms fire once d35's rows merge). The 7 d35 kinds NOT activated
+are census rejects: 74/102 (gore-first `:85942`), 104/109 (the zombie
+arm's NewNPC `:86937`), 116 (NewNPC `:87410`), 121 (NewNPC `:85427`), and
+112 VileSpit — its whole-arm burst (`:85395-85408`) fires on EVERY hit,
+so g62 owns it (`npc_hit_dust.rs`, the `:85399` site), not this death lane.
+
+**Batch 8 (10 kinds):** 73 GoblinScout (`:89560`, 50× type-5 goblin arm),
+75 Pixie (`:85527-85531`, 50× type-55 alpha 200 vel×2, dust-only), 77/110
+ArmoredSkeleton/SkeletonArcher (`:88537`, 20× type-26), 78/79/80 the mummy
+trio (`:88946-88951`, 20× type-31 scale 1.5 vel×2 noGravity), 82 Wraith
+(`:88971-88976`, 20× type-54 alpha 50), 83/84 CursedHammer/EnchantedSword
+(`:87152-87163`, 20× type-31 + the SECOND gore-ARGUMENT tail).
+
+**Batch 9 (10 kinds):** 85 Mimic (`:88768-88788`, 20× ai[3]-selected
+7/10/37 — the selector is a field read), 86 Unicorn (`:87705`, 50×
+type-5), 93 GiantBat (`:85807`, 15× type-5 bat arm), 94 Corruptor
+(`:87512`, 50× type-18 alpha/color/scale), 95/96/97 the digger trio
+(`:87616`, 10× type-5 2.5×dir), 98/99/100 the seeker trio (`:87583`, 50×
+type-18). The 96/97/99/100 segments ride d35's Hide-fold net ids (96/97→
+95, 99/100→98) per the d35 plan — their `cs_id` falls through to the
+head's bestiary id, but the death feed matches the RAW C# type the
+`HitEffect` arm reads, so the arms fire on the segment's own type.
+
+**Batch 10 (4 kinds):** 101 Clinger (`:87547`, 50× type-18), 103
+GreenJellyfish (`:85554-85557`, 25× type-4 tinted (70,225,140,100) — the
+shared 63/64/103 arm's own color row; the census's nested `:85541`
+color-selection row reads dust=0, an artifact of the `g59_order.py`
+per-arm dust>0 filter, NOT a second death arm — re-checked against the
+C#; 63/64 stay row-gated), 122 Gastropod (`:85509-85513`, 50× type-72
+alpha 200 vel×1.5, dust-only), 140 PossessedArmor (`:89085-89090`, 20×
+type-54 alpha 50, a death-only `life <= 0` gate with no hit half).
+
+**The 83/84 gore-ARGUMENT tail** (the second after the Wyvern's): each of
+the 3 gores draws a `Next(-2, 3)` x/y velocity pair (`:87158`/`:87160`/
+`:87162`) — 6 draws consumed in C# order here, the `NewGore` bodies +
+kicks stay d55's (the g63 gore-sibling rule). Every other batch-8-10 tail
+draws NO arguments (verified: constant types / `this.type` arithmetic /
+hitDirection / ai-field reads).
+
+**The EoW alpha-255 fade window is NOW PORTED** (the batch-2 stand-in
+retired): the ctor carries `alpha = 255` for 13/14/15 (`NPC.cs:8921`/
+`:8941`/`:8961`), and the worm pass gains `eow_spawn_fade` (`AI_006`'s
+tail `:52251-52271`): the 14/15 gate on the leader's `alpha < 85`, the 2×
+type-14 alpha-100 scale-2 noGravity/noLight fade dust while `alpha > 0 &&
+life > 0`, the movement-gated (`(position - oldPosition).Length() > 2f`)
+`alpha -= 42` floor 0. The two EoW split `Transform` sites re-stamp 255
+(the `SetDefaults` reset). The death feed's type-18 trio reads the LIVE
+alpha (255 → 0 over the fade, then the steady-state 0). **Citation
+correction:** the module doc's old `:50998` reference was the
+CultistDragon (454-459) arm — the EoW's own fade is `:52251-52271`
+(re-derived in the sweep; the `:50998`/`:51018` `alpha -= 42` sites are
+the CultistDragon/BloodEel families, the Destroyer's is `:49806`).
+
+**`last_hit_dir` 3-way KEEP-ONE** (c12/g60/g59): the SAME `pub
+last_hit_dir: i32` field is staged independently on `task/W4-c12-style74-
+martian-drone`, `task/W4-g60-npc-death-effects-2`, and this lane — one
+declaration at `npc.rs` with the same three recording seams (hurt/
+hurt_from_projectile/strike_pooled) + the c12 bubble-fuse reset; the merge
+keeps ONE, every feed reads it, none re-records it elsewhere.
+
+**The lane's remainder after the sweep:** 83 of the 173 dust-first clean
+kinds stay row-gated UNWIRED (the worm segments 8/9/11/12/14/15, the
+casters 31/37/39-41/43, the frost/martian/dd2 families, the 195-206/209/
+217-221/226/229 bands). 88 kinds / 90 C# types are now wired across 10
+batches.
+
+13 witnesses WRITTEN NOT RUN (code-only): the mummy/wraith shapes, the
+cursed pair's gore-velocity ladder, the Pixie's type-55 twin-pool, the
+goblin scout/skeleton pair counts, the Mimic's ai[3] selector, the
+digger/seeker/corruptor arms, the Clinger's alpha/scale read, the
+Gastropod's type-72 twin-pool, the Possessed Armor's type-54 census, the
+Green Jellyfish's tinted type-4 census; plus 3 EoW fade witnesses (the
+movement-gated 42-step, the follower leader-alpha gate, the floor-at-0).
+
+**Lane total: 45 witnesses WRITTEN NOT RUN (code-only mode — no
+cargo/rustc/tests invoked): 32 across batches 1-7, 10 across the DOC-SWEEP
+kind batches 8-10, 3 with the EoW fade port.**

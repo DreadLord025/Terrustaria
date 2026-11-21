@@ -5096,15 +5096,17 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         app.world.report_frost_moon_kill(npc.kind.to_u16());
         app.world.report_pumpkin_moon_kill(npc.kind.to_u16());
         // W4-g59 — the death DUST feed: the kind's `HitEffect` death-half
-        // burst (`npc_death_dust.rs`, batches 1-7: every dust-first clean
-        // kind the port's kind set carries). BEFORE the death cue: the C#
+        // burst (`npc_death_dust.rs`, batches 1-10: every dust-first clean
+        // kind the port's kind set carries + the 24 d35 row-gated
+        // activations of the DOC-SWEEP). BEFORE the death cue: the C#
         // runs HitEffect at `:81488`, ahead of checkDead's DeathSound
         // (`:81561` → `:78186`). The draws ride the UpdateNPCs stream —
         // the S1-E-21c batched-death deviation (the death-cue precedent
         // below). Kinds outside the match draw nothing; the gore BODIES
         // stay d55's (the feed consumes only the gore ARGUMENT draws the
-        // C# interleaves — the Wyvern's count/type rolls, the g63 rule;
-        // d55's wiring must not re-consume them).
+        // C# interleaves — the Wyvern's count/type rolls + the cursed
+        // pair's velocity pairs, the g63 rule; d55's wiring must not
+        // re-consume them).
         {
             let ctx = app.spawn_ctx();
             let rng = app.rngs.stream(RngKey::UpdateNpcs);
