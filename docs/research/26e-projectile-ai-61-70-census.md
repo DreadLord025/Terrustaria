@@ -69,6 +69,9 @@
   `lastVy > 1`) is folded into the dispatch's `kill_step` kill-on-tile
   stand-in — the recorded M4-PROJ movement deviation shape. The bobber's
   reel state (`tileCollide = false`) integrates freely, faithful.
+  **LANDED (W4-d7 F1)**: `bobber_movement` + `bobber_bounce` replace the
+  stand-in (the dry TileCollision + the hoik loop + the `Next(3)` prologue
+  draw + the 0.3 bounce, NO Kill); ANALYSIS "The fishing rod use chain".
 - **F2 (styles 62/66)** — `UpdatePosition`'s slope-correction block
   (`:20447-20474`, the 62 fall case + the 317/387/388/533/759/1098 type
   list) and the 533's blocked-move bounce (`:18173-18205`) stay unported —

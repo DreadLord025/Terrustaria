@@ -8877,6 +8877,24 @@ skipped for the unported kinds (the 682 pull still raises
 catch fill uses the port's `slot_for_pickup` seam and the overflow drop
 rides the pinned velocity-triplet-then-prefix order (`spawn_item_drop_px`).
 
+**W4-d7 F1 (the movement-61 bounce, WIRED)**: `HandleMovement`'s aiStyle-61
+arm (`Projectile.cs:19615-19625`) replaces the dispatch's `kill_step`
+kill-on-tile stand-in with `bobber_movement` (`projectile.rs`) +
+`bobber_bounce` (`projectile_bobber.rs`): the dry `TileCollision` pass
+(`flag6 = true` — no bobber is `projPet`), the hoik step loop above the
+14-px clamp (the dry cast caps at 15.9 so it IS reachable), the blocked-move
+`Next(3)` tile-cut prologue draw (`:17948`, kept — the bobber's damage 0
+skips the cut body), then the 0.3-damped per-axis reflect (`vx = lastVx *
+-0.3` on an X-block; `vy = lastVy * -0.3` on a Y-block only when `lastVy >
+1`) — NO Kill. The bobbers reach `:19615` through the `:18398`
+`!correctSlopeCollision` branch + the `:18635` else (they match no type arm
+in either chain). The reel state (`tileCollide = false`, `:53714`) still
+integrates freely. Deviations: the wet-branch `wetVelocity` damping
+(`:17612-17699`, the 0.375/0.25/0.5 scales) folds to the plain velocity (the
+standing wet-velocity deviation); the slope passes + `SwitchTiles` plate
+presses + the tile-cut bodies skip (the `pirate_movement` precedent). 1
+witness WRITTEN NOT RUN (`w4_d7_f1_the_bobber_bounce_reflects_at_03`).
+
 ## Growth ticks (M7-GROWTH-1)
 
 `WorldGen.UpdateWorld`'s rate-driven tile picks (`WorldGen.cs:71540-71632`)

@@ -10616,6 +10616,108 @@ impl Projectile {
         self.pos += self.vel;
     }
 
+    /// `HandleMovement`'s half for the fishing bobbers (aiStyle 61, W4-d7
+    /// F1): `flag6 = true` (no bobber is `projPet` — `Main.cs:8728-8846` sets
+    /// none of 360-366/381/382/760/775/986-993 — and none rides the `:17504-
+    /// 17582` switch), the dry `Collision.TileCollision` pass (the hoik step
+    /// loop above the 14-px clamp — the dry cast caps at 15.9 so the loop IS
+    /// reachable; the wet branch `:17612-17699` takes the single pass, its
+    /// `wetVelocity` damping folded out — the standing wet-velocity
+    /// deviation), then the blocked-move chain: the `Next(3)` tile-cut
+    /// prologue draw (`:17948` — evaluated FIRST in the `&&`, the bobber's
+    /// `damage = 0` skips the cut body but the draw stays), the aiStyle-61
+    /// arm ([`crate::projectile_bobber::bobber_bounce`], `:19615-19625` —
+    /// the 0.3-damped per-axis reflect, NO Kill), then `UpdatePosition`'s
+    /// integrate. The bobbers reach `:19615` through the `:18398`
+    /// `!correctSlopeCollision` branch and the `:18635` else (they match no
+    /// type arm in either chain). SKIPPED (ANALYSIS, the `pirate_movement`
+    /// precedent): the slope passes, the `SwitchTiles` plate presses, the
+    /// tile-cut bodies (`:17910-17947`, damage 0).
+    fn bobber_movement(&mut self, world: &World, rng: &mut dyn DropRng) {
+        if !self.tile_collide {
+            // `:17476`'s gate — the reel state (`:53714`) integrates freely.
+            self.pos += self.vel;
+            return;
+        }
+        let last_velocity = self.vel;
+        // `:17702-17710` — the step size clamp (min(14,14) → 14).
+        let num2 = (self.w.min(self.h) as i32).clamp(3, 16) as f32;
+        if !self.wet && self.vel.length() > num2 {
+            // `:17711-17846` — the hoik step loop (the `pirate_movement`
+            // shape; the inner slope passes fold out).
+            let tc = crate::collision::tile_collision(
+                world,
+                [self.pos.x, self.pos.y],
+                [self.vel.x, self.vel.y],
+                self.w,
+                self.h,
+                true,
+                true,
+            );
+            let mut num3 = self.vel.length();
+            let mut vector8 = safe_normalize(self.vel);
+            if tc.vel[1] == 0.0 {
+                vector8.y = 0.0;
+            }
+            let mut zero = Vec2::ZERO;
+            let mut num5 = 0;
+            while num3 > 0.0 {
+                num5 += 1;
+                if num5 > 300 {
+                    break;
+                }
+                let num6 = num3.min(num2);
+                num3 -= num6;
+                let step_vel = vector8 * num6;
+                let tc = crate::collision::tile_collision(
+                    world,
+                    [self.pos.x, self.pos.y],
+                    [step_vel.x, step_vel.y],
+                    self.w,
+                    self.h,
+                    true,
+                    true,
+                );
+                let vector10 = Vec2::new(tc.vel[0], tc.vel[1]);
+                self.pos += vector10;
+                self.vel = vector10;
+                zero += self.vel;
+            }
+            self.vel = zero;
+            // `:17795-17802` — the last-velocity snap.
+            if (self.vel.x - last_velocity.x).abs() < 0.0001 {
+                self.vel.x = last_velocity.x;
+            }
+            if (self.vel.y - last_velocity.y).abs() < 0.0001 {
+                self.vel.y = last_velocity.y;
+            }
+        } else {
+            // `:17849` (dry, slow) / `:17645` (wet) — the single pass.
+            let tc = crate::collision::tile_collision(
+                world,
+                [self.pos.x, self.pos.y],
+                [self.vel.x, self.vel.y],
+                self.w,
+                self.h,
+                true,
+                true,
+            );
+            self.vel = Vec2::new(tc.vel[0], tc.vel[1]);
+        }
+        // `:17896-17898` + `:17904` — a changed velocity enters the
+        // blocked-move chain.
+        if self.vel != last_velocity {
+            // `:17948` — the `Next(3)` prologue draw stays (the cut body
+            // skips: the bobber's damage is 0).
+            let _ = rng.next_range(0, 3);
+            // `:19615-19625` — the aiStyle-61 bounce.
+            crate::projectile_bobber::bobber_bounce(self, last_velocity);
+        }
+        // `UpdatePosition` (`:20445`) — the integrate (the wet-velocity
+        // damping folded, the module doc).
+        self.pos += self.vel;
+    }
+
     /// `AI()`'s aiStyle-133 block (`Projectile.cs:36435-36498`) — the Dark
     /// Mage raise marker (673) and the heal mark (674).
     ///
@@ -20262,9 +20364,9 @@ impl ProjectilePool {
                         // 382/760/775/986-993). The flight/bite machine lives
                         // in `projectile_bobber.rs`; the player/world reads
                         // ride the per-tick `bobber_inputs` snapshot. The arm
-                        // computes the wet/dry velocity; the `kill_step` below
-                        // integrates it (the `HandleMovement` default arm,
-                        // `:19851` — tileCollide true in cast, false in reel).
+                        // computes the wet/dry velocity; `bobber_movement`
+                        // below integrates it (W4-d7 F1 — the aiStyle-61
+                        // bounce, tileCollide true in cast, false in reel).
                         61 => {
                             let inputs = self.bobber_inputs.unwrap_or_default();
                             let alive = crate::projectile_bobber::bobber_step(
@@ -20275,11 +20377,13 @@ impl ProjectilePool {
                                 rng,
                             );
                             if alive {
-                                // `HandleMovement`'s default integrate
-                                // (`Projectile.cs:19851`): the bobber's
-                                // tileCollide is true in the cast state, false
-                                // in the reel state — the kill-on-tile probe.
-                                self.slots[i].kill_step(world);
+                                // W4-d7 F1 — `HandleMovement`'s aiStyle-61
+                                // arm (`Projectile.cs:19615-19625`): the
+                                // 0.3-damped bounce replaces the kill_step
+                                // kill-on-tile stand-in (the F5 precedent).
+                                // The reel state's `tileCollide = false`
+                                // (`:53714`) still integrates freely.
+                                self.slots[i].bobber_movement(world, rng);
                                 if let Some(req) = self.slots[i].wants_splash.take() {
                                     self.pending_splashes.push(req);
                                 }

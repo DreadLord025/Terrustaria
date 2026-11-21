@@ -509,6 +509,22 @@ pub(crate) fn handles(kind: u16) -> bool {
     BOBBER_KINDS.contains(&kind)
 }
 
+/// `HandleMovement`'s aiStyle-61 blocked-move arm (`Projectile.cs:19615-19625`,
+/// W4-d7 F1): a blocked X reflects at 0.3 (`velocity.X = lastVelocity.X *
+/// -0.3`); a blocked Y reflects at 0.3 ONLY when `lastVelocity.Y > 1` (a slow
+/// rise/fall just stops). NO `Kill()` — the bobber bounces off the tile, it
+/// does not die on contact (the `kill_step` kill-on-tile stand-in this
+/// replaces). The wiring caller invokes it when the collision pass changed
+/// the velocity, with the pre-collision velocity.
+pub(crate) fn bobber_bounce(p: &mut Projectile, last_vel: glam::Vec2) {
+    if p.vel.x != last_vel.x {
+        p.vel.x = last_vel.x * -0.3;
+    }
+    if p.vel.y != last_vel.y && last_vel.y > 1.0 {
+        p.vel.y = last_vel.y * -0.3;
+    }
+}
+
 // --- S1-P-i35 witnesses (WRITTEN NOT RUN — code-only mode) -----------------
 #[cfg(test)]
 mod tests {
@@ -646,5 +662,35 @@ mod tests {
             }
         }
         assert!(fired, "the bite timer crossed 660 and FishingCheck ran");
+    }
+
+    /// W4-d7 F1 — the aiStyle-61 bounce (`:19615-19625`): a blocked X
+    /// reflects at 0.3; a blocked Y reflects at 0.3 only when
+    /// `lastVelocity.Y > 1`; NO Kill. The caller passes the pre-collision
+    /// velocity and the post-collision velocity already on the slot.
+    #[test]
+    fn w4_d7_f1_the_bobber_bounce_reflects_at_03() {
+        // Both axes blocked, fast fall: both reflect at 0.3.
+        let mut p = bobber(100.0, 100.0);
+        let last = glam::Vec2::new(4.0, 6.0);
+        p.vel = glam::Vec2::ZERO; // the collision stopped both axes
+        bobber_bounce(&mut p, last);
+        assert!((p.vel.x - -1.2).abs() < 1e-6, "4 * -0.3");
+        assert!((p.vel.y - -1.8).abs() < 1e-6, "6 * -0.3 (lastY > 1)");
+        assert!(p.active, "the bounce does NOT kill");
+        // A slow fall (lastY <= 1): the Y stays stopped, no reflect.
+        let mut p2 = bobber(100.0, 100.0);
+        let last2 = glam::Vec2::new(4.0, 0.5);
+        p2.vel = glam::Vec2::ZERO;
+        bobber_bounce(&mut p2, last2);
+        assert!((p2.vel.x - -1.2).abs() < 1e-6, "the X still reflects");
+        assert_eq!(p2.vel.y, 0.0, "lastY 0.5 <= 1 — the Y stays stopped");
+        // An unblocked axis is untouched.
+        let mut p3 = bobber(100.0, 100.0);
+        let last3 = glam::Vec2::new(4.0, 6.0);
+        p3.vel = glam::Vec2::new(4.0, 0.0); // only Y blocked
+        bobber_bounce(&mut p3, last3);
+        assert_eq!(p3.vel.x, 4.0, "the unblocked X holds");
+        assert!((p3.vel.y - -1.8).abs() < 1e-6, "the blocked Y reflects");
     }
 }
