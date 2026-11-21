@@ -39442,3 +39442,127 @@ air/idle pins, the blue/hell count-variant wrap witness, the 15-kind
 exact-slice seam sweep. Frame counts cross-checked entry-by-entry:
 `Main.cs:67082`'s 697-entry initializer vs
 `render/entities.rs::NPC_FRAME_COUNT` — all 15 agree.
+## W4-f26 FindFrame extra wave 6 (slice 6, 2026-11-21, code-only mode)
+
+`crates/tr-app/src/npc_findframe_extra6.rs` — the NEXT 15 unclaimed
+missing `NPC.FindFrame` case ids (`NPC.cs:66684-77370`), continuing
+the SAME f26 branch after extra-5 (`73150c56`). The census re-derived
+mechanically from the pushed branches: every C# top-level `case`
+label of the switch on `this.type` (`NPC.cs:66705`, two-tab indent —
+the nested switches' labels excluded) = **602 ids**; the port's
+`npc.rs::find_frame` match arms (270 kinds) mapped through the
+`cs_id` hand rows (`npc/data.rs:2992`) + the bestiary net ids + the
+wave-A/B module rosters cover 248 of them (the folded segment families
+— the Destroyer body 135, the Golem heads 246/249, the Fishron hazards
+371/373 — resolve through their own `find_frame` arms, NOT their
+bestiary folds, the f27 census note); the d44-d49 claims subtract 75
+more — **279 remain** (the e13 base, re-confirmed). Minus the
+e13/e14-declared 30 (121..232), f26's 15 + 15 (182..219, 254..277) and
+f27's 15 (233..244 + 251..253) — the overlaps dedupe — **219
+unclaimed**. This wave owns the first 15 from 278 up: **278/279/280/
+281/282/283/284/285/286/287/290/291/292/293/295**. The 278..305 band
+skips the port-covered 288 (the `npc.rs` DungeonSpirit arm `:6643`),
+289/294/296 (wave-B's GiantCursedSkull/AngryBonesBig/AngryBonesBigHelmet)
+and 305 (the `npc.rs` Scarecrow1 arm). The f27 co-lane takes the 306+
+band (its pushed `origin/task/W4-f27-findframe-extra-4` claim read —
+wave 4 owns 233..253, nothing above); the in-band remainder 297..304
+(the birds 297/298, the critters 299/300, the Raven 301, the town
+slimes 302/304, the BunnySlimed 303) rides a later slice.
+
+| id | kind | C# case | rows (`Main.cs`) |
+| --- | --- | --- | --- |
+| 278 | HellArmoredBonesSpikeShield | `:75834` (the 269..280 group) | 15 (`:67111`) |
+| 279 | HellArmoredBonesMace | `:75835` (the same group) | 15 (`:67111`) |
+| 280 | HellArmoredBonesSword | `:75836` (the same group) | 15 (`:67112`) |
+| 281 | RaggedCaster | `:77023` (the caster pose group) | 3 (`:67112`) |
+| 282 | RaggedCasterOpenCoat | `:77024` (the same group) | 3 (`:67112`) |
+| 283 | Necromancer | `:77025` (the same group) | 3 (`:67112`) |
+| 284 | NecromancerArmored | `:77026` (the same group) | 3 (`:67112`) |
+| 285 | DiabolistRed | `:77027` (the same group) | 3 (`:67112`) |
+| 286 | DiabolistWhite | `:77028` (the same group) | 3 (`:67112`) |
+| 287 | BoneLee | `:68590` (the humanoid group) | 16 (`:67112`) |
+| 290 | Paladin | `:75963-76016` | 12 (`:67113`) |
+| 291 | SkeletonSniper | `:76139` (the draw group) | 21 (`:67113`) |
+| 292 | TacticalSkeleton | `:76140` (the same group) | 21 (`:67113`) |
+| 293 | SkeletonCommando | `:76021` (the archer group) | 20 (`:67113`) |
+| 295 | AngryBonesBigMuscle | `:68592` (the humanoid group) | 15 (`:67113`) |
+
+Shape (the f27 `npc_findframe_extra4.rs` precedent): the kinds are
+NOT in `NpcKind` yet (the roster waves own them), so the machines
+land as pure fns over `FrameState`/`FrameInput` with
+`find_frame_kind_extra6` as the vanilla-id wiring seam; the bridge is
+the wiring round (no `npc.rs` hook this wave — the f26/f27 shape,
+zero conflict surface with the in-flight g6/g7 wire hooks). **No
+RNG**: none of the 15 arms draws `Main.rand` — verified mechanically
+per arm (a `Main.rand`/`.Next(`/`rotation` grep over all eight cited
+body ranges returned ZERO); none writes `rotation` (the field is not
+even in `FrameState`); the `FrameInput` carries vx/vy/direction + the
+`ai` slots (the casters' `ai[1]` windup, the Paladin/sniper/commando
+`ai[2]` poses).
+
+Per-case notes (all verbatim, row-index convention — `num` cancels):
+
+* **278/279/280 the Hell Armored Bones** (the group `:75825-75882`,
+  the 269..280 case list — the slice-5 nine are the SAME machine,
+  keep-one at the merge): the grounded ±1 flip; the grounded idle
+  snaps row 0 + zeroes the counter — the `type == 140` row-1 branch
+  (`:75849-75853`) is DEAD inside this case list and is not carried;
+  the walk lifts any row < 2 to 2 FIRST, then accumulates `|vx| * 2`
+  PLUS 1, the > 6 counter steps a row, wrapping at
+  `Main.npcFrameCount[type]` = 15 back to row 2; the air branch
+  zeroes the counter and pins row 0.
+* **281..286 the six casters** (the pose group `:77020-77054`, shared
+  with 32/45/172/693 — the port's GoblinSorcerer/Tim/DarkCaster arm
+  `npc.rs:8066-8078` is the same machine, keep-one): the grounded ±1
+  flip; the row snaps to 0 EVERY tick (`:77041`), then the air lifts
+  to row 2 ELSE the `ai[1] > 0` cast windup lifts to row 1 (the air
+  wins over the windup). The `type == 32 && localAI[3] == 1` +3-row
+  bank (`:77050-77053`) is DEAD inside this case list (32 is the
+  DarkCaster, its own label) and is not carried. The counter is
+  NEVER touched.
+* **287 the Bone Lee / 295 the Angry Bones Big Muscle** (the humanoid
+  group `:68590`/`:68592` → the shared fighter walk `:68647-69655`)
+  via the wave-B `humanoid_fighter_frame` keep-one delegate (the
+  extra-3 SnowFlinx/Nymph precedent): both SetDefaults arms
+  (`:12724-12737`/`:12838-12850`) set aiStyle 3, no townNPC, so
+  `num57` = 0 and the walk wraps at the FULL count (287 = 16 — the
+  ONE 16-row humanoid sheet in this slice, 295 = 15); neither is a
+  town slime (`num108` = 6, `num109` = row 2); the airborne pin list
+  (`:69647`) carries 295 (row 0, with wave-B's 294/296) but NOT 287
+  (the group's row 1); neither is the 140/489 idle-row-1 pair.
+* **290 the Paladin** (`:75963-76016`): the `ai[2] > 0` hammer pose
+  picks row 11 / 10 / 9 off the `ai[1]` < 10 / < 20 bands and BREAKS
+  with the counter UNTOUCHED; the idle snaps row 0; the walk lifts
+  to 2, accumulates `|vx| * 1` — NO +1 (`:76000`, unlike the
+  bones/humanoid walkers) — and wraps at the STRICT `frame.Y >
+  num * 8` (`:76006-76009` — row 9 wraps to 2, NOT the sheet's full
+  12 rows: rows 9..11 are the hammer poses); the air pins row 1.
+* **291/292 the Sniper/Tactical** (`:76139-76178`): the `ai[2] > 0`
+  draw pose copies `direction` UNCONDITIONALLY (0 included) and pins
+  row `(int)ai[2] - 1` with the counter zeroed — the fractional-edge
+  negative row the row-index port cannot carry is saturated at 0
+  (the ElfArcher 350 precedent, `npc.rs:8896-8900`); the walk lifts
+  any row < 7 to 7, accumulates `|vx| * 3.3`, the > 6 counter steps
+  a row, wrapping at the FULL 21 rows back to 7 (rows 0..6 are the
+  aim/draw poses); the air zeroes the counter and pins row 6.
+* **293 the Commando** (the archer group `:76017-76059`, shared with
+  110/214/215/216): the SAME machine as wave-B's SkeletonArcher
+  (110) / IcyMerman (206) arms (`npc_findframe_b.rs:434-463`) — the
+  keep-one delegate; both sheets are 20 rows (`Main.cs:67095` entry
+  110 = `Main.cs:67113` entry 293, asserted in the witness), so the
+  wave-B arm's internal count is exactly this kind's. The shot pose
+  pins row `(int)ai[2]` with NO -1 (unlike 291/292), the walk climbs
+  rows 6..19 at `|vx| * 3`, the air holds row 0.
+
+Witnesses: 11 tests WRITTEN NOT RUN (code-only mode) — the
+frame-count table cross-check (all 15), the Hell bones stride-from-2
++ 15-wrap replay + air/idle pins + direction-0 flip gate, the caster
+pose ladder + counter-hold, the Bone Lee 16-row walk + slow-walk
+accumulator + air-row-1/idle-row-0, the Paladin hammer ladder +
+strict-8 wrap + no-+1 accumulator, the sniper draw pose + saturate +
+21-row walk + air-row-6, the commando delegate count-agreement +
+no-−1 pose + 20-row walk, the Big Muscle air-pin-0 + 15-row wrap, and
+the exact-slice seam sweep (the covered 288/289/294/296/305 stay
+`None`). Frame counts cross-checked entry-by-entry: `Main.cs:67082`'s
+697-entry initializer vs `render/entities.rs::NPC_FRAME_COUNT` — all
+15 agree.
