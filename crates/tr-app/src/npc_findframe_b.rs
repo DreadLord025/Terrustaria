@@ -605,7 +605,7 @@ pub fn find_frame_b(kind: FindFrameKind, s: &mut FrameState, i: &FrameInput) {
 /// aiStyle-3 fighters (their turn counter leaves `ai[0]` at 0/1,
 /// `NPC.cs:57381-57397`) and are not carried — the `humanoid_town_frame`
 /// precedent in `npc.rs`.
-fn humanoid_fighter_frame(
+pub(crate) fn humanoid_fighter_frame(
     s: &mut FrameState,
     i: &FrameInput,
     count: u32,
