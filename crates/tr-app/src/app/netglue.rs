@@ -349,14 +349,47 @@ impl App {
                     self.host_stream_sections(server, id, sx, sy);
                 }
             }
-            // `case 12` — the player spawned in: the slot is complete and the
-            // join bundle goes out (`MessageBuffer.cs:925-929`,
-            // `SyncConnectedPlayer` `NetMessage.cs:2806-2822`).
+            // `case 12` — the player spawned in (`MessageBuffer.cs:901-950`).
+            // The reader stores the spawn fields on the sender's player copy
+            // (`:903-914`), latches `dead` when `respawnTimer > 0` (`:915-918`)
+            // and runs `Spawn(context)` (`:920` — the port's remote copy is a
+            // snapshot store; the position lands via `Spawn_SetPosition`,
+            // `Player.cs:37987-37991`). The first spawn (State 3) completes the
+            // slot and sends the join bundle (`:925-929`); every spawn relays
+            // `12` to the others (`:936` first / `:948` after).
             C2s::PlayerSpawn(s) => {
-                if server.state(id) == slot_state::SPAWN_REQUESTED {
+                let first = server.state(id) == slot_state::SPAWN_REQUESTED;
+                if first {
                     server.set_state(id, slot_state::IN_WORLD);
                     self.host_slot_join_complete(server, id, s);
                 }
+                // `:903-918` — the field writes (the host forces the id to the
+                // sender, `:904-907`).
+                let entry = self.remote_players.entry(id).or_default();
+                entry.id = id;
+                entry.spawn_x = s.x;
+                entry.spawn_y = s.y;
+                entry.respawn_timer = s.respawn_timer;
+                entry.deaths_pve = s.deaths_pve;
+                entry.deaths_pvp = s.deaths_pvp;
+                entry.team = s.team;
+                entry.dead = s.respawn_timer > 0;
+                if entry.name.is_empty() {
+                    entry.name = server.slot_name(id);
+                }
+                // `Spawn_SetPosition` (`Player.cs:37987-37991`): feet at the
+                // spawn cell, centred on it.
+                entry.x = s.x as f32 * TILE_PX + 8.0 - player::WIDTH * 0.5;
+                entry.y = s.y as f32 * TILE_PX - player::HEIGHT;
+                entry.vx = 0.0;
+                entry.vy = 0.0;
+                // `:37648` — `Spawn` clears the talk latch.
+                entry.talk_npc = None;
+                // `:936`/`:948` — the spawn relay carries the context byte.
+                server.broadcast_except(
+                    &S2c::PlayerSpawn(net::PlayerSpawn { player_id: id as u8, ..s }),
+                    id,
+                );
             }
             // `case 154` — the server echoes the probe straight back
             // (`MessageBuffer.cs:4419-4423`); the port's relay is the same
@@ -1965,14 +1998,38 @@ impl App {
                     }
                 }
             }
-            // S1-I-1 wave B (W4-d89): `11 TileFrameSection` — the client
-            // would run `WorldGen.SectionTileFrame(startX, startY, endX,
-            // endY)` (`MessageBuffer.cs:895-899`, `WorldGen.cs:80343`);
-            // the port's framing pass is not net-wired yet and no C# site
-            // sends 11 (deprecated, `MessageID.cs:29-30`) — parked for
-            // S1-I-4. `15 Unknown15` is the reader's ignore group
+            // `case 11` — the deprecated re-frame request
+            // (`MessageBuffer.cs:895-899`): the client runs
+            // `WorldGen.SectionTileFrame` over the section rectangle
+            // (`WorldGen.cs:80343-80366`). No C# site sends it any more
+            // (`MessageID.cs:29-30`), the reader arm is 1:1 (W4-g48).
+            S2c::TileFrameSection(t) => {
+                // `:80345` — the map-time burst; `:80347` — the widened
+                // rectangle queues for the map refresh.
+                if let Some(m) = self.map.as_mut() {
+                    m.arm_map_time_burst();
+                    let (x0, y0, x1, y1) = (
+                        (t.start_x as i32 * 200).clamp(1, self.world.width - 2),
+                        (t.start_y as i32 * 150).clamp(1, self.world.height - 2),
+                        ((t.end_x as i32 + 1) * 200).min(self.world.width - 2),
+                        ((t.end_y as i32 + 1) * 150).min(self.world.height - 2),
+                    );
+                    self.map_queue
+                        .add_area(m, x0 - 2, y0 - 2, x1 - x0 + 4, y1 - y0 + 4);
+                }
+                tr_core::framing::section_tile_frame(
+                    &mut self.world,
+                    t.start_x as i32,
+                    t.start_y as i32,
+                    t.end_x as i32,
+                    t.end_y as i32,
+                );
+                self.world.revision = self.world.revision.wrapping_add(1);
+                self.world_key = None;
+            }
+            // `15 Unknown15` is the reader's ignore group
             // (`MessageBuffer.cs:4483-4490`): accepted, nothing to do.
-            S2c::TileFrameSection(_) | S2c::Unknown15 => {}
+            S2c::Unknown15 => {}
             // `case 81` — a peer's heal number (S1-I-1 wave I,
             // `MessageBuffer.cs:3227-3233`): the floats truncate to the
             // Rectangle's ints (width/height 0), the RGB bytes gain alpha
@@ -2048,13 +2105,49 @@ impl App {
             // arm (the mass operation is unported) for S1-I-4.
             S2c::MassWireOperationPay(_) => {}
 
+            // `case 12` on a client — a peer spawned (`MessageBuffer.cs:901-
+            // 950`): the same field writes as the host arm (`:908-918`), then
+            // `Spawn(context)` repositions the peer (`Player.cs:37621-37641`:
+            // `Spawn_SetPosition`, velocity/netOffset zeroed). The local echo
+            // never arrives (the host relays with `ignoreClient = sender`).
+            S2c::PlayerSpawn(s) => {
+                let peer = s.player_id as u32;
+                if peer == self.local_id {
+                    return;
+                }
+                let (px, py) = self.net_peer_spawn_pos();
+                let entry = self
+                    .remote_players
+                    .entry(peer)
+                    .or_insert_with(|| net::PlayerNet {
+                        id: peer,
+                        name: format!("Player {}", s.player_id),
+                        x: px,
+                        y: py,
+                        ..Default::default()
+                    });
+                entry.spawn_x = s.x;
+                entry.spawn_y = s.y;
+                entry.respawn_timer = s.respawn_timer;
+                entry.deaths_pve = s.deaths_pve;
+                entry.deaths_pvp = s.deaths_pvp;
+                entry.team = s.team;
+                entry.dead = s.respawn_timer > 0; // `:915-918`
+                // `Spawn_SetPosition` (`Player.cs:37987-37991`) + the
+                // `netOffset`/velocity resets (`:37638-37641`).
+                entry.x = s.x as f32 * TILE_PX + 8.0 - player::WIDTH * 0.5;
+                entry.y = s.y as f32 * TILE_PX - player::HEIGHT;
+                entry.vx = 0.0;
+                entry.vy = 0.0;
+                entry.off_x = 0.0;
+                entry.off_y = 0.0;
+                entry.talk_npc = None; // `:37648` — `SetTalkNPC(-1)`
+            }
             // W4-d96 (S1-I-1 player-family first half): bodies + codecs in
-            // `net.rs`; the client read sites (`MessageBuffer.cs:901-951`,
-            // `:2160-2177`, `:2178-2201`, `:2256-2270`, `:2271-2289`,
-            // `:2307-2324`) land with the send-path pass (S1-I-4) — nothing
-            // sends them yet.
-            S2c::PlayerSpawn(_)
-            | S2c::PlayerHeal(_)
+            // `net.rs`; the client read sites (`MessageBuffer.cs:2160-2177`,
+            // `:2178-2201`, `:2256-2270`, `:2271-2289`, `:2307-2324`) land
+            // with the send-path pass (S1-I-4) — nothing sends them yet.
+            S2c::PlayerHeal(_)
             | S2c::TalkNpc(_)
             | S2c::PlayerZone(_)
             | S2c::ItemAnim(_)
@@ -3847,7 +3940,7 @@ mod handshake_tests {
     use crate::app::flow::front_flow_tests::flow_app;
     use crate::ui::save_list::{PlayerEntry, WorldEntry};
 
-    fn apps() -> (App, App) {
+    pub(super) fn apps() -> (App, App) {
         (
             flow_app(None, Vec::<PlayerEntry>::new(), Vec::<WorldEntry>::new()),
             flow_app(None, Vec::<PlayerEntry>::new(), Vec::<WorldEntry>::new()),
@@ -3859,7 +3952,7 @@ mod handshake_tests {
     /// between polls: without a yield the reader/writer threads never get
     /// scheduled on a loaded core, so the deadline — not a round count —
     /// makes the handshake tests load-independent.
-    fn drive_to(host: &mut App, client: &mut App, goal: i32) {
+    pub(super) fn drive_to(host: &mut App, client: &mut App, goal: i32) {
         // env-gated exit trace
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while client.net_state != goal
@@ -5778,5 +5871,138 @@ mod message_family_tests {
             count,
             "the join snapshot's module-4 body applies"
         );
+    }
+}
+
+/// W4-g48 (S1-I-4 apply arms, lane 1 — MessageBuffer ids 1-40): the parked
+/// wave-A/B/I dispatcher arms wired in the C# `GetData` case order. Each
+/// witness drives the real loopback pair (`in_world_pair`) and pins the
+/// applied state against the C# reader (`MessageBuffer.cs`).
+#[cfg(test)]
+mod g48_apply_tests {
+    use super::*;
+    use crate::app::netglue::handshake_tests::{drive_to, in_world_pair};
+
+    /// `case 11` (`MessageBuffer.cs:895-899`): the client runs
+    /// `WorldGen.SectionTileFrame` — the section's tiles re-roll their frame
+    /// variants (`WorldGen.cs:80348-80358`, reset EVERY cell) and the world
+    /// revision bumps so the render caches invalidate.
+    #[test]
+    fn g48_11_tile_frame_section_reframes_the_clients_section() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // A dirt patch inside section (0, 0): the join stream framed it with
+        // stored variants; the 11 re-roll must produce valid frames again.
+        for x in 2..8 {
+            for y in 2..4 {
+                let i = client_app.world.index(x, y);
+                client_app.world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                client_app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        let rev = client_app.world.revision;
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::TileFrameSection(net::TileFrameSection {
+                start_x: 0,
+                start_y: 0,
+                end_x: 0,
+                end_y: 0,
+            }));
+        }
+        let mut applied = false;
+        for _ in 0..60 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            applied = client_app.world.revision != rev;
+            if applied {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(applied, "the 11 arm re-framed and bumped the revision");
+        // Every dirt cell in the patch carries a framed sprite (the merge
+        // rectangle resolves) and a stored 0..=2 variant.
+        for x in 2..8 {
+            for y in 2..4 {
+                let idx = client_app.world.index(x, y);
+                let t = client_app.world.tiles[idx];
+                assert!(t.frame_x >= 0 && t.frame_y >= 0, "framed ({x},{y})");
+                assert!(client_app.world.frame_number(idx) <= 2);
+            }
+        }
+    }
+
+    /// `case 12` (`MessageBuffer.cs:901-950`): a client's respawn stores the
+    /// spawn fields on the host's peer copy (`:908-918`), latches `dead` from
+    /// `respawnTimer > 0` and relays the body to the other peers (`:948`);
+    /// the receiving client repositions the peer via `Spawn_SetPosition`
+    /// (`Player.cs:37987-37991`).
+    #[test]
+    fn g48_12_player_spawn_stores_fields_and_relays_the_respawn() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // A second peer so the relay has a receiver besides the host.
+        let mut second = crate::app::flow::front_flow_tests::flow_app(
+            None,
+            Vec::<crate::ui::save_list::PlayerEntry>::new(),
+            Vec::<crate::ui::save_list::WorldEntry>::new(),
+        );
+        second.player_name = "second".into();
+        let addr = match &host_app.net {
+            NetRole::Host(server) => server.addr().to_string(),
+            _ => unreachable!(),
+        };
+        second.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        second.join_target = Some((addr, String::new()));
+        drive_to(&mut host_app, &mut second, net::client_state::IN_WORLD);
+        // The first client respawns at (30, 3) with a live respawn timer.
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::PlayerSpawn(net::PlayerSpawn {
+                player_id: client_app.local_id as u8,
+                x: 30,
+                y: 3,
+                respawn_timer: 120,
+                deaths_pve: 2,
+                deaths_pvp: 1,
+                team: 3,
+                spawn_context: 2, // ReviveFromDeath
+            }));
+        }
+        let mut landed = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            second.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            second.poll_net();
+            landed = second
+                .remote_players
+                .get(&(client_app.local_id))
+                .is_some_and(|p| p.respawn_timer == 120);
+            if landed {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(landed, "the 12 relay reached the second peer");
+        let peer_id = client_app.local_id;
+        let host_peer = &host_app.remote_players[&peer_id];
+        assert_eq!((host_peer.spawn_x, host_peer.spawn_y), (30, 3));
+        assert_eq!((host_peer.deaths_pve, host_peer.deaths_pvp), (2, 1));
+        assert_eq!(host_peer.team, 3);
+        assert!(host_peer.dead, "respawnTimer > 0 latches dead (:915-918)");
+        let second_peer = &second.remote_players[&peer_id];
+        assert_eq!((second_peer.spawn_x, second_peer.spawn_y), (30, 3));
+        assert!(second_peer.dead);
+        // `Spawn_SetPosition`: centred on the cell, feet at its top.
+        let want_x = 30.0 * TILE_PX + 8.0 - player::WIDTH * 0.5;
+        let want_y = 3.0 * TILE_PX - player::HEIGHT;
+        assert!((second_peer.x - want_x).abs() < 0.01);
+        assert!((second_peer.y - want_y).abs() < 0.01);
+        assert_eq!(second_peer.off_x, 0.0, "Spawn zeroes netOffset (:37638)");
     }
 }

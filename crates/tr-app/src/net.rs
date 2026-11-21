@@ -702,6 +702,31 @@ pub struct PlayerNet {
     /// has open, fed by `80 SyncPlayerChestIndex`
     /// (`MessageBuffer.cs:3216-3227`). `None` = closed (`-1`), the `Default`.
     pub chest: Option<i16>,
+    /// `Player.hostile` — fed by `30 TogglePVP` (`MessageBuffer.cs:1859`).
+    pub hostile: bool,
+    /// `Player.team` — fed by `12 PlayerSpawn` (`MessageBuffer.cs:914`); the
+    /// PVP chat line's colour keys on it (`:1864`, `Main.teamColor`).
+    pub team: u8,
+    /// `Player.SpawnX/SpawnY` — fed by `12` (`MessageBuffer.cs:909-910`).
+    pub spawn_x: i16,
+    pub spawn_y: i16,
+    /// `Player.respawnTimer` / the death counters (`MessageBuffer.cs:911-913`).
+    pub respawn_timer: i32,
+    pub deaths_pve: i16,
+    pub deaths_pvp: i16,
+    /// `Player.dead` — the `12` reader latches it when `respawnTimer > 0`
+    /// (`MessageBuffer.cs:915-918`); the `16` reader derives it from
+    /// `statLife <= 0` (`:1111`).
+    pub dead: bool,
+    /// `Player.zone1..zone5` — fed by `36 SyncPlayerZone`
+    /// (`MessageBuffer.cs:2187-2191`); `zone5` bit 0 is the faeling edge.
+    pub zones: [u8; 5],
+    /// `Player.townNPCs` (`MessageBuffer.cs:2192`).
+    pub town_npcs: u8,
+    /// `Player.talkNPC` — fed by `40 SyncTalkNPC`
+    /// (`MessageBuffer.cs:2264`); `-1` = not talking, the C# field default.
+    /// `None` is the port's `-1` (the `Default`).
+    pub talk_npc: Option<i16>,
 }
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four

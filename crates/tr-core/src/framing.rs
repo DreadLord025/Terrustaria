@@ -1313,6 +1313,81 @@ pub fn reframe_area(world: &mut World, cx: i32, cy: i32, radius: i32, reset: boo
     }
 }
 
+/// `WorldGen.SectionTileFrame(startX, startY, endXInclusive, endYInclusive)`
+/// (`WorldGen.cs:80343-80366`) — the `11 TileFrameSection` reader's apply
+/// (`MessageBuffer.cs:895-899`). `GetSectionBounds` (`:80368-80398`) maps the
+/// section rectangle to tile bounds (200x150 sections, clamped to
+/// `1..=maxTiles-2`), then EVERY cell in the one-tile-widened rectangle runs
+/// `Reframe(i, j, resetFrame: true)` (`:80348-80358`, `:80330-80341` =
+/// `TileFrame(reset, noBreak)` + `WallFrame(reset)`): each tile re-rolls its
+/// variant from the framing stream (the `reframe_area` centre-roll mechanics,
+/// applied per cell). The `Main.mapTime` burst + `MapUpdateQueue.Add` and the
+/// `sectionManager.SetSectionFramed` latch are app-side (the caller queues the
+/// map rect; the port has no section-framed latch — its framing is incremental).
+pub fn section_tile_frame(
+    world: &mut World,
+    section_start_x: i32,
+    section_start_y: i32,
+    section_end_x: i32,
+    section_end_y: i32,
+) {
+    // `GetSectionBounds` (`:80370-80397`), verbatim clamps.
+    let mut x0 = section_start_x * 200;
+    let mut x1 = (section_end_x + 1) * 200;
+    let mut y0 = section_start_y * 150;
+    let mut y1 = (section_end_y + 1) * 150;
+    x0 = x0.clamp(1, world.width - 2);
+    y0 = y0.clamp(1, world.height - 2);
+    x1 = x1.min(world.width - 2);
+    y1 = y1.min(world.height - 2);
+    let important = world.frame_important.clone();
+    let mut tiles = Vec::new();
+    let mut walls = Vec::new();
+    let mut torches = Vec::new();
+    // `:80348-80358` — the widened rectangle, column-major, reset EVERY cell.
+    for x in (x0 - 1)..(x1 + 1) {
+        for y in (y0 - 1)..(y1 + 1) {
+            let Some(t) = world.tile(x, y) else {
+                continue;
+            };
+            let idx = world.index(x, y);
+            let (active, kind, wall) = (t.active(), t.kind, t.wall);
+            if active && !important.get(kind as usize).copied().unwrap_or(false) {
+                let rolled = world.frame_rng.next_range(0, 3) as usize;
+                world.set_frame_number(idx, rolled as u8);
+                if let Some(f) = frame_of_variant(world, x, y, rolled) {
+                    tiles.push((x, y, f));
+                }
+            }
+            if active && td::SET_TORCHES.has(kind) {
+                torches.push((x, y));
+            }
+            if wall != 0 {
+                let rolled = wall_reset_roll(&mut world.frame_rng, wall);
+                if let Some(((col, row), effective)) = wall_frame_of_variant(world, x, y, rolled) {
+                    world.set_wall_frame_number(idx, effective as u8);
+                    walls.push((x, y, (col, row)));
+                }
+            }
+        }
+    }
+    for (x, y, (fx, fy)) in tiles {
+        let idx = world.index(x, y);
+        let t = &mut world.tiles[idx];
+        t.frame_x = fx;
+        t.frame_y = fy;
+    }
+    for (x, y, (col, row)) in walls {
+        let idx = world.index(x, y);
+        let t = &mut world.tiles[idx];
+        t.set_wall_frame(col, t.wall_row());
+        t.set_wall_frame(t.wall_col(), row);
+    }
+    for (x, y) in torches {
+        crate::torch::check_torch(world, x, y);
+    }
+}
+
 /// Port of `Framing.WallFrame`: picks the 36 px cell for every wall.
 #[allow(clippy::needless_range_loop)] // `x` also indexes the world, not just `row`
 pub fn frame_walls(world: &mut World) -> usize {
