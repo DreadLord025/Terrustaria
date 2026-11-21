@@ -39356,3 +39356,58 @@ vs `base.Center`, the whip curve's `getActualCollisionPoints = false`), the
 462 draw slot pinned by a `Seq` witness, the golf Item1 position fix pinned
 against `player.Center`. The new `s1_e_21h_d76_*` witnesses are WRITTEN, NOT
 RUN — **no compiler invoked**.
+
+### The d76 DOC-SWEEP (lane 9, the projectile-sound residuals)
+
+The d76 deferred list's four residual families, closed on the same branch
+(commits `fe205fc9` / `dd90f162`; the full census in
+`docs/research/80-doc-sweep-proj-sounds.md`):
+
+**The volumeScale port.** The proj-sound queue payload widens to the
+6-tuple `(id, style, x, y, pitchOffset, volumeScale)` (`wants_sound` /
+`pending_proj_sounds` / `drain_proj_sounds` + the golf cue tuples).
+`Audio::play_use_sound_scaled` / `npc_hit_play` / `npc_death_play` apply
+the call's volumeScale POST-tweak (`LegacySoundPlayer.cs:1411`); the
+attenuation gate reads the UNSCALED `style.volume`. The Corrupt Whip's
+×0.6 tip cue (`:47720`) and the Lights Bane slash's `0.15 * ai[0]`
+(`:42237`) ride it — the d76 "post-gate-scale deferred" note is superseded
+for these two sites. The scale draws NOTHING (a volume-only term); the
+witness pins the draw-count parity with the volume-1 twins. Every other
+cue passes `1.0`.
+
+**The Kill()-tail non-bomb cue map.** The d76 range's last four
+`PlaySound` sites (`:70865` Jim's Drone/RC Car 1020/1105 Item62, `:70904`
+Pretty Mirror 1085 Item106, `:70936` Bird Droppings 1080 Item177, `:70958`
+Torch God helper 1084 Item10) are in-range and unclaimed by d77 (its map
+starts at `:71112`). A new `ProjectilePool::kill_tail_cue` (the d77
+death-hook shape, kinds disjoint) queues them at the PRE-hook position;
+the five kinds row (`projectile/data.rs`, the 1084/1105 values kept
+identical to d21's for a conflict-free merge), `Item_62` joins the bank,
+and the four unarmed styles (195/200/202/205) join the `UNARMED_ROWED`
+census. The 1080 stinky-buff / 1085 bad-luck state writes are the
+cue-first deferrals (the cue precedes both); the dust/gore censuses stay
+skipped.
+
+**The now-rowed kinds.** Cross-checked against the pushed d18/d19/d21
+tips: 984/933/1100/949 (d19) and 918 (d18) are rowed AND cue-armed by
+those lanes (no d76 action). The only now-rowed unclaimed cues were the
+five Kill()-tail kinds (ported above). 864 Smolstar (`:45778`, inside the
+unported aiStyle-169 machine) and the 75/102 hostile bombs
+(`:46941`/`:47131`, unrowed + non-id-2/unported-arm) stay deferred — the
+arm is the prerequisite. The rest of the d76 DEFERRED kind list is
+unrowed by all three sibling lanes (grep-verified).
+
+**The dead `_Old` arms.** Verified truly dead by zero-caller grep:
+`AI_009_MagicMissiles_Old` (`:43427`, only caller `:43199` gated
+`type == 491`, 491 unrowed; its `:43589`/`:43606` cues dead — 79/16 take
+the NEW `AI_009` path, the 16's live whoosh is the landed `:43361-43367`
+cue), `AI_015_HandleMovementCollision_Old` (`:44171`, ZERO callers —
+`:19323` calls the NEW `:43655`; its `:44197` Dig cue dead), and
+`AI_015_Flails_Old` (`:44205`, ZERO callers, bonus find). The port carries
+none of them — nothing to remove; the d76 classification was correct.
+
+**Verification.** Code-only: the C# re-reads, the sibling-claim
+cross-checks, the zero-caller greps, the `Item_62` asset on disk. The two
+new `s1_e_21h_d76_sweep_*` witnesses + the updated queue-tuple / whip-tip
+/ Lights Bane asserts are WRITTEN, NOT RUN — **no compiler invoked**.
+Anchors rows: `play_use_sound_scaled`, `kill_tail_cue`.
