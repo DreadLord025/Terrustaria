@@ -842,12 +842,17 @@ impl App {
                 ); // `:2649`
             }
             // `case 76` — the quest/golf counts (`MessageBuffer.cs:3164-3182`):
-            // the host forces the subject to the sender (`:3169-3172`),
-            // stores both ints (`:3173-3175`) and relays to the OTHERS
-            // (`:3176-3179`, `ignoreClient = whoAmI`). The port's host is
-            // never `Main.myPlayer`, so the `:3167` own-echo skip is a
-            // client-only gate (the S2c arm below). W4-f21b.
+            // the own-echo gate (`:3167`, `num187 != Main.myPlayer ||
+            // Main.ServerSideCharacter`) runs BEFORE the force — a frame
+            // naming the host's own slot is dropped on a listen host (the
+            // port never SSCs). Then the host forces the subject to the
+            // sender (`:3169-3172`), stores both ints (`:3173-3175`) and
+            // relays to the OTHERS (`:3176-3179`, `ignoreClient = whoAmI`).
+            // W4-f21b.
             C2s::QuestsCountSync(q) => {
+                if q.player_id as u32 == self.local_id {
+                    return; // `:3167` — own echo, no SSC escape.
+                }
                 let peer = self.remote_players.entry(id).or_default();
                 peer.angler_quests_finished = q.angler_quests_finished; // `:3174`
                 peer.golfer_score = q.golfer_score; // `:3175`
@@ -5533,6 +5538,62 @@ mod message_family_tests {
             !client_app.remote_players.contains_key(&(me as u32)),
             "the own echo (:3167) never stores a self record"
         );
+        let peer = client_app
+            .remote_players
+            .get(&0)
+            .expect("the host peer record");
+        assert_eq!(peer.angler_quests_finished, 5, ":3174");
+        assert_eq!(peer.golfer_score, 77, ":3175");
+    }
+
+    /// W4-f21b — `76`'s HOST own-echo gate (`MessageBuffer.cs:3167` runs
+    /// BEFORE the `:3169` force): a frame naming the host's own slot 0 is
+    /// dropped whole — no store, no relay. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f21b_quests_count_sync_host_drops_own_slot_echo() {
+        let (mut host_app, mut client_app) = apps();
+        let server = net::Server::start(0, String::new()).unwrap();
+        let addr = server.addr().to_string();
+        host_app.net = NetRole::Host(server);
+        host_app.player_name = "host".into();
+        client_app.player_name = "client".into();
+        client_app.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        client_app.join_target = Some((addr.clone(), String::new()));
+        let mut second = flow_app(None, Vec::<PlayerEntry>::new(), Vec::<WorldEntry>::new());
+        second.player_name = "second".into();
+        second.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        second.join_target = Some((addr, String::new()));
+        drive_to(&mut host_app, &mut client_app, net::client_state::IN_WORLD);
+        drive_to(&mut host_app, &mut second, net::client_state::IN_WORLD);
+        if let NetRole::Client(c) = &client_app.net {
+            c.send(&C2s::QuestsCountSync(net::QuestsCountSync {
+                player_id: 0, // the host's own slot — :3167 drops it
+                angler_quests_finished: 7,
+                golfer_score: 7,
+            }));
+        }
+        for _ in 0..30 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            second.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            second.poll_net();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        let sender = client_app.local_id;
+        let p = host_app
+            .remote_players
+            .get(&sender)
+            .expect("the sender's peer record");
+        assert_eq!(p.angler_quests_finished, 0, "the echo never stored");
+        let relayed = second
+            .remote_players
+            .get(&sender)
+            .is_some_and(|p| p.angler_quests_finished != 0);
+        assert!(!relayed, "the echo never relayed");
+    }
+
     /// W4-f21b — `58 InstrumentSound`'s host half
     /// (`MessageBuffer.cs:2642-2650`): the id is forced to the sender and
     /// the pitch relays to the OTHERS; no host-side sound. WRITTEN NOT RUN
