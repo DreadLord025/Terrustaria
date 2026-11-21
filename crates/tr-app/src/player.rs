@@ -4239,11 +4239,13 @@ impl Player {
         self.hurt_cd = time as f32 / 60.0;
     }
 
-    /// `Player.ShadowDodge` (`Player.cs:38023-38042`) minus the NetMessage:
-    /// the 120/80 immunity, buff 59 deleted by the same single-pass `for` with
-    /// `DelBuff`'s compaction (`:38030-38040`), the Hallowed set-bonus
-    /// cooldown armed (`PutHallowedArmorSetBonusOnCooldown` `:38037-38039` —
-    /// it keeps the 30 s buff-59 cycle from re-granting).
+    /// `Player.ShadowDodge` (`Player.cs:38023-38044`): the 120/80 immunity,
+    /// buff 59 deleted by the same single-pass `for` with `DelBuff`'s
+    /// compaction (`:38030-38036`), the Hallowed set-bonus cooldown armed
+    /// (`PutHallowedArmorSetBonusOnCooldown` `:38041-38044` — it keeps the
+    /// 30 s buff-59 cycle from re-granting). The `SendData(62, .., 2f)` tail
+    /// (`:38038`) queues at the `Hurt` caller (`hurt_inner`'s shadow arm) —
+    /// the 62 reader shares this handler and never re-sends (W4-c27/W4-d115).
     fn do_shadow_dodge(&mut self) {
         self.set_immune_time_for_all_types(if self.long_invince { 120 } else { 80 });
         for i in 0..crate::buffs::MAX_BUFFS {
@@ -4431,6 +4433,13 @@ impl Player {
             }
             if self.shadow_dodge {
                 self.do_shadow_dodge();
+                // `Player.ShadowDodge`'s tail (`Player.cs:38038`):
+                // `NetMessage.SendData(62, -1, -1, null, whoAmI, 2f)` — the
+                // `whoAmI != Main.myPlayer` early-return (`:38026-38029`)
+                // folds to the local player here; the queue drains in the
+                // net tick. The 62 reader shares the handler and never
+                // re-sends (W4-c27/W4-d115).
+                self.pending_dodge_sends.push(2);
                 return false;
             }
         }
@@ -19277,6 +19286,29 @@ mod tests {
         assert_eq!(p.buffs.find_buff_index(59), None, "buff 59 deleted");
         assert_eq!(p.shadow_dodge_timer, 1800);
         assert!((p.hurt_cd - 80.0 / 60.0).abs() < 1e-4);
+    }
+
+    /// W4-d115 — the ShadowDodge queues the `62 SyncDodge` kind-2 send
+    /// (`Player.cs:38038`); the dodge is deterministic (no roll) and the
+    /// reader's kind-2 apply never re-sends.
+    #[test]
+    fn w4_d115_shadow_dodge_queues_the_kind_2_send_without_a_roll() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(59, 1800);
+        p.update(&w, PlayerInput::default());
+        assert!(p.shadow_dodge);
+        let mut rng = DodgeRng::with_rolls(&[]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the shadow dodge");
+        assert!(rng.draws.is_empty(), "the shadow dodge draws nothing");
+        assert_eq!(p.take_dodge_sends(), vec![2], "kind 2 = ShadowDodge (:38038)");
+        assert!(p.take_dodge_sends().is_empty(), "the take is one-shot");
+        // The reader's kind-2 apply runs the handler, queues no send.
+        expire_dodge_window(&mut p);
+        p.apply_net_dodge(2);
+        assert!(p.immune);
+        assert_eq!(p.shadow_dodge_timer, 1800);
+        assert!(p.take_dodge_sends().is_empty(), "the net-apply never re-sends");
     }
 
     #[test]
