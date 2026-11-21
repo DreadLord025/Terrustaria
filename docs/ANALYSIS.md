@@ -23295,6 +23295,33 @@ contributions, 2 audit-landed, 7 absent** — 502 (`:24307`), 1092 (`:25394`),
 465/466 (`:31998`/`:32049`), 731 (`:37821`), the phaseblades
 (`:39020`/`:39021`), 756 (`:51492`), all still unrowed on every pushed lane.
 12 new witnesses written not run (42 total).
+
+**Round 4 — the 7-absent re-probe + SEAL (2026-11-21, `538369d63`).**
+Three of the seven are NOW ROWED on pushed lanes and their arms activate
+in `proj_lights_a` (the rows stay the lanes' to merge, keep-one): the
+**502 Meowmere** (site 4, `:24307` — W4-d75 `b59e3a874`/`d328fad8c`, the
+`:5732-5742` row; d75 records the disco AddLight as ITS skipped effect,
+this feed owns it), the **1092 LibrarianSkeletonBook** (site 7, `:25394`
+— W4-g5 `96f074959`, row + `ai_librarian_book` wired; the light precedes
+the ai[0] rand frame pick, unconditional), the **466
+CultistBossLightningOrbArc** (site 16, `:32049` — W4-d53 `c0dc7d37f` tip,
+row `6d09fe617`, `:5392-5403`; the 466 AI branch stays unported there —
+the light is unconditional after `frameCounter++`, reads none of the
+machine, the alpha-255 spawn does not gate it). The feed gains a `disco:
+[u8; 3]` parameter — the draw-pass `App::disco` snapshot the 502's
+`(0.5 + Disco/255)/2` tail reads (the 79 ProjLight `LightParams::disco`
+precedent; still pure, no stream moves). **The 4 still-absent are task
+seeds with row citations** (research/189's round-4 table): 465 (d75's
+`:31943` Item121 latch ARMED but the `:5382-5390` row rows-only owed),
+731 (`:7694-7704`), the 19-kind phaseblade set (`:10006-10058`; the
+colour census `Item.cs:49053-49168` — the 1101/1102 MultiLerp cycle needs
+the `UpdateMiscCounter` 300-wrap, unported; the 1074 lights NOTHING),
+756 (`:7793-7806`). **Round-4 accounting: 61 ported sites (57 feed + 4
+sim) / 67 light contributions, 2 audit-landed, 4 absent.** 3 new
+witnesses written not run (45 total). The compose receipts (e6 disjoint
+keep-one, d13's PET-light-67 zero-site census consumed, g18 disjoint) +
+the addlight-proj-family bible close the lane — research/189
+(ex-65, renumbered per registry-150) SEALED.
 ### The Player family (S1-E-5, 2026-11-18, code-only mode)
 
 `crates/tr-app/src/player_lights.rs::player_lights` ports **32 of Player.cs's
