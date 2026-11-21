@@ -782,6 +782,11 @@ pub(crate) fn ai_bubble(p: &mut Projectile, rng: &mut dyn DropRng) {
 /// burst draws one shared `NextDouble` speed-scale + nine per-dust
 /// `NextDouble` scale + `Next(-2, 3)` jitter pairs. The dust BODIES skip;
 /// the `Dust.NewDust` internal rolls go with the dust pool.
+///
+/// W4-d8 DOC-SWEEP deviation (1): the jet-speed computation is GAMEPLAY
+/// math, not a dust body — the port now computes `num569` and every jet
+/// vector ([`fountain_jet`]) in the C#'s order; only the dust slots
+/// themselves (position/scale/colour writes) stay with the g-lanes.
 pub(crate) fn ai_fountain(p: &mut Projectile, world: &World, rng: &mut dyn DropRng) {
     // `:30482-30489` — the tile anchor: `ai[0]`/`ai[1]` name the fountain
     // tile; a missing / inactive / non-338 tile kills the projectile.
@@ -797,52 +802,59 @@ pub(crate) fn ai_fountain(p: &mut Projectile, world: &World, rng: &mut dyn DropR
         return;
     }
     // `:30490-30495` — the jet speed `num569 = 2f`, scaled by
-    // `timeLeft / 60f` below 1, feeds ONLY the skipped dust bodies (the
-    // jet vector's magnitude) — no slot state, so the computation folds
-    // out with the dust layer (the module's RNG note keeps the draws).
+    // `timeLeft / 60f` below 1. The float division + compare are the C#'s
+    // exactly (`num570 < 1f`); the product feeds every jet vector below.
+    let mut jet_speed = 2.0f32;
+    let life_scale = p.time_left as f32 / 60.0;
+    if life_scale < 1.0 {
+        jet_speed *= life_scale;
+    }
     // The per-kind dust choreographies. Each two-dust loop draws, in the
     // C#'s order: a `NextDouble` speed-scale + a `NextDouble` rotation
     // (the jet vector, `:30500`), the red 420 / rainbow 422 `Next(5)`
     // colour pick (`:30522`/`:30590`), a `NextDouble` dust scale
     // (`:30503`) and a `Next(-2, 3)` position jitter (`:30509`). The dust
     // BODIES skip; the `Dust.NewDust` internal rolls go with the dust pool
-    // (the module's RNG note).
+    // (the module's RNG note). The jet vectors are COMPUTED (the sweep's
+    // gameplay-math port); their consumers are the skipped dust slots.
     match p.kind {
         419 => {
             // `:30496-30515` — the yellow: two dust-222, the ±π/2 rotation.
             for _ in 0..2 {
-                let _ = rng.next_double(); // the jet speed scale
-                let _ = rng.next_double(); // the jet rotation
-                let _ = rng.next_double(); // the dust scale
-                let _ = rng.next_range(-2, 3); // the position jitter
+                let _jet = fountain_jet(jet_speed, 1.5701111111162866, rng);
+                let _ = rng.next_double(); // the dust scale (`:30503`)
+                let _ = rng.next_range(-2, 3); // the position jitter (`:30509`)
             }
         }
         420 => {
             // `:30516-30541` — the red: two dust-219 (1-in-5 dust-222).
             for _ in 0..2 {
-                let _ = rng.next_double(); // the jet speed scale
-                let _ = rng.next_double(); // the jet rotation
-                let _ = rng.next_range(0, 5); // the colour pick
-                let _ = rng.next_double(); // the dust scale
-                let _ = rng.next_range(-2, 3); // the position jitter
+                let _jet = fountain_jet(jet_speed, 1.5701111111162866, rng);
+                let _ = rng.next_range(0, 5); // the colour pick (`:30522`)
+                let _ = rng.next_double(); // the dust scale (`:30528`)
+                let _ = rng.next_range(-2, 3); // the position jitter (`:30534`)
             }
         }
         421 => {
             // `:30542-30582` — the blue: two dust-221 (the ±π/4 rotation),
             // then the timeLeft%10 burst's nine dust-222.
             for _ in 0..2 {
-                let _ = rng.next_double(); // the jet speed scale
-                let _ = rng.next_double(); // the jet rotation
-                let _ = rng.next_double(); // the dust scale
-                let _ = rng.next_range(-2, 3); // the position jitter
+                let _jet = fountain_jet(jet_speed, 0.7851111111131433, rng);
+                let _ = rng.next_double(); // the dust scale (`:30549`)
+                let _ = rng.next_range(-2, 3); // the position jitter (`:30555`)
             }
             if p.time_left % 10 == 0 {
                 // `:30563` — the burst's shared speed scale.
-                let _ = rng.next_double();
-                for _ in 0..9 {
+                let burst_scale = 0.85 + rng.next_double() as f32 * 0.2;
+                for spoke in 0..9 {
+                    // `:30566` — the deterministic spoke fan:
+                    // `((spoke - 4) / 5f, -num569 * num578)`.
+                    let _jet = Vec2::new(
+                        (spoke - 4) as f32 / 5.0,
+                        (0.0 - jet_speed) * burst_scale,
+                    );
                     // `:30569`/`:30575` — per burst dust: the scale draw +
-                    // the position jitter (the velocity is the
-                    // deterministic spoke fan).
+                    // the position jitter.
                     let _ = rng.next_double();
                     let _ = rng.next_range(-2, 3);
                 }
@@ -851,11 +863,10 @@ pub(crate) fn ai_fountain(p: &mut Projectile, world: &World, rng: &mut dyn DropR
         422 => {
             // `:30583-30603` — the rainbow: two dust-(219 + Next(5)).
             for _ in 0..2 {
-                let _ = rng.next_double(); // the jet speed scale
-                let _ = rng.next_double(); // the jet rotation
-                let _ = rng.next_range(0, 5); // the colour offset
-                let _ = rng.next_double(); // the dust scale
-                let _ = rng.next_range(-2, 3); // the position jitter
+                let _jet = fountain_jet(jet_speed, 1.5701111111162866, rng);
+                let _ = rng.next_range(0, 5); // the colour offset (`:30590`)
+                let _ = rng.next_double(); // the dust scale (`:30592`)
+                let _ = rng.next_range(-2, 3); // the position jitter (`:30598`)
             }
         }
         _ => {}
@@ -863,6 +874,21 @@ pub(crate) fn ai_fountain(p: &mut Projectile, world: &World, rng: &mut dyn DropR
     // The movement: the row keeps `tileCollide = true`, but the fountain
     // sits still (velocity 0) on its anchor tile — the dispatch's
     // `kill_step` integrates the zero velocity (no move, no kill).
+}
+
+/// The fountain's per-dust jet vector — `(new Vector2(0f, 0f - num569) *
+/// (0.85f + (float)Main.rand.NextDouble() * 0.2f)).RotatedBy((Main.rand.
+/// NextDouble() - 0.5) * half_turn)` (`Projectile.cs:30500`/`:30520`/
+/// `:30546`/`:30589`). TWO draws in the C#'s order: the speed scale first,
+/// then the rotation. The rotation is `Utils.RotatedBy`'s float-cos/sin
+/// spin (`Utils.cs:1675-1684`, the [`crate::bow_launch::rotated_by`]
+/// port). `half_turn` is the C# float literal widened to f64: π/2
+/// (1.5701111111162866) for the yellow/red/rainbow, π/4
+/// (0.7851111111131433) for the blue.
+pub(crate) fn fountain_jet(jet_speed: f32, half_turn: f64, rng: &mut dyn DropRng) -> Vec2 {
+    let scale = 0.85 + rng.next_double() as f32 * 0.2;
+    let angle = (rng.next_double() - 0.5) * half_turn;
+    crate::bow_launch::rotated_by(Vec2::new(0.0, 0.0 - jet_speed) * scale, angle)
 }
 
 /// `AI()`'s aiStyle-74 arm (`Projectile.cs:30605-30616`) — the Scutlix
@@ -1638,6 +1664,65 @@ mod tests {
         ai_fountain(&mut blue2, &w, &mut rng4);
         assert_eq!(rng4.doubles, 6, "no burst off the %10 tick");
         assert_eq!(rng4.ranges.len(), 2, "only the two loop jitters");
+    }
+
+    /// W4-d8 DOC-SWEEP (1) — the jet-speed math (`:30490-30495` +
+    /// [`fountain_jet`]): `num569 = 2f` scales by `timeLeft / 60f` below 1;
+    /// the jet vector is `(0, -num569) × (0.85 + NextDouble × 0.2)` spun by
+    /// `(NextDouble − 0.5) × half_turn`. CensusRng's doubles return 0.0, so
+    /// the scale pins 0.85 and the angle −half_turn/2 (−π/4 for the
+    /// yellow's π/2 literal, −π/8 for the blue's π/4) — the float-cos/sin
+    /// spin of `Utils.RotatedBy`.
+    #[test]
+    fn w4_d8_the_fountain_jet_speed_math() {
+        let mut rng = census();
+        // The full-speed jet (timeLeft ≥ 60): num569 = 2, scale 0.85 →
+        // (0, -1.7) spun by -0.7851111111131433 rad (the C# π/2 literal
+        // widened, × (0 - 0.5)). cos/sin are the f32 casts of the f64.
+        let jet = fountain_jet(2.0, 1.5701111111162866, &mut rng);
+        let a = -0.7851111111131433f64;
+        let (c, s) = (a.cos() as f32, a.sin() as f32);
+        // RotatedBy((0, -1.7)): x = 0*c - (-1.7)*s = 1.7*s (negative),
+        // y = 0*s + (-1.7)*c = -1.7*c.
+        assert!((jet.x - 1.7 * s).abs() < 1e-6, "the spun X (`:30500`)");
+        assert!((jet.y - (-1.7 * c)).abs() < 1e-6, "the spun Y (`:30500`)");
+        assert_eq!(rng.doubles, 2, "the speed scale + the rotation draw");
+        // The blue's π/4 literal: the angle halves again (-0.3921111111165716).
+        let mut rng2 = census();
+        let jet_b = fountain_jet(2.0, 0.7851111111131433, &mut rng2);
+        let ab = -0.3921111111165716f64;
+        let (cb, sb) = (ab.cos() as f32, ab.sin() as f32);
+        assert!((jet_b.x - 1.7 * sb).abs() < 1e-6, "the blue's spun X (`:30546`)");
+        assert!((jet_b.y - (-1.7 * cb)).abs() < 1e-6, "the blue's spun Y");
+        // The life-scaled speed: timeLeft 30 → num570 = 0.5 < 1 →
+        // num569 = 2 * 0.5 = 1.0; the jet magnitude halves (scale 0.85).
+        let mut p = proj(419);
+        p.ai[0] = 100.0;
+        p.ai[1] = 50.0;
+        p.time_left = 30;
+        let mut w = world();
+        put(&mut w, 100, 50, 338);
+        let mut rng3 = census();
+        ai_fountain(&mut p, &w, &mut rng3);
+        assert!(p.active, "the anchor holds");
+        // The census count is unchanged by the math port (the draws were
+        // already kept): two dusts × 3 doubles + 2 jitters.
+        assert_eq!(rng3.doubles, 6, "the math port keeps the draw census");
+        assert_eq!(rng3.ranges, vec![(-2, 3), (-2, 3)], "the jitters");
+        // The scaled jet itself: (0, -1.0 * 0.85) spun by -π/4.
+        let mut rng4 = census();
+        let jet_s = fountain_jet(1.0, 1.5701111111162866, &mut rng4);
+        assert!((jet_s.x - 0.85 * s).abs() < 1e-6, "the life-scaled X");
+        assert!((jet_s.y - (-0.85 * c)).abs() < 1e-6, "the life-scaled Y");
+        // The boundary: timeLeft 60 → num570 = 1.0, NOT < 1 → no scale.
+        let mut p60 = proj(419);
+        p60.ai[0] = 100.0;
+        p60.ai[1] = 50.0;
+        p60.time_left = 60;
+        let mut rng5 = census();
+        ai_fountain(&mut p60, &w, &mut rng5);
+        assert!(p60.active);
+        assert_eq!(rng5.doubles, 6, "the boundary tick still draws");
     }
 
     /// Style 74 (`:30605-30616` + `:17079-17086`): the charge latch seeds
