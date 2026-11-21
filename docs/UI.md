@@ -237,7 +237,12 @@ Submit/Cancel, and the 50-key `UITextPanel` grid whose origin `(542, 282)` is an
 fit — 10·48 + 9·4 = 516 and 5·37 + 4·4 = 201 fill the panel inner exactly. The grid
 layer is kept behind `TR_VK_GRID=1`. Rename caps: 20 characters for players, 27 for
 worlds (`Click_SetName`, `UIWorldCreation.cs:693`); `allowEmpty` differs per caller
-(Create passes `false`).
+(Create passes `false`). The card Rename buttons' Submit WRITES (W4-f22): the
+character rename splices the `.plr` name field (`player_file::rename_player_file`,
+`PlayerFileData.Rename`) and the world rename splices the `.trwld` header
+(`save_list::rename_world`, `WorldGen.RenameWorldCallBack`); the session stand-in
+renames in memory, a failed write notices through `front_hint` — ANALYSIS "The card
+renames (W4-f22)".
 
 ### Credits and legacy confirms (`menu/`)
 

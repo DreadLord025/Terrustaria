@@ -325,23 +325,23 @@ written in ROADMAP/ANALYSIS/PORT_MAP.
    `menuMode == 1000000` page). `card_hit`/`elements` still offer the Play
    button for an invalid/mismatched card, as the C# does — the click is what
    rejects.
-2. **`ANALYSIS.md:2120-2124` is stale** — it still says "No `.plr`
-   reader/writer… Create records the session draft instead of writing a
-   character file", while `list_players` reads real `.plr`s
-   (`save_list.rs:291`) and `save_created_character` writes one
-   (`session.rs:141-176`). Severity: doc drift (behavioural risk: a future
-   agent re-ports a reader). Not admitted. The same stale sentence survives in
-   `flow.rs:73`'s `KeyboardTail::Rename` doc and in the user-visible rename
-   notice `app/mod.rs:1482` ("no save-file writer") — the writer exists, what
-   is missing is a *read-modify-write* of a loaded player.
-3. **`PORT_MAP.md:180` is stale** — "partial (no `.plr` reader; metadata
-   stand-ins)" while the reader is live and the port writes players.
-   Severity: doc drift. Not admitted.
-4. **Rename writes nothing.** `KeyboardTail::Rename` only sets `front_hint`
-   (`mod.rs:1481-1484`), whereas `UICharacterListItem.RenameButtonClick` →
-   `GameContents.PlayerRename` rewrites the `.plr` and `Main.LoadPlayers`
-   re-lists (`Main.cs:49431`'s reopen). Severity: behavioural. Admitted
-   (ANALYSIS's P6 list implies it via §9.4, but not stated verbatim).
+2. ~~**`ANALYSIS.md:2120-2124` is stale**~~ **Closed (W4-f22 + S1-J-5)** — the
+   "No `.plr` reader/writer" bullet now records the live reader/writer and the
+   rename read-modify-write; `flow.rs`'s `KeyboardTail::Rename` doc and the
+   user-visible notice are gone (the rename writes, see deviation 4).
+3. ~~**`PORT_MAP.md:180` is stale**~~ **Closed (W4-f22)** — the save_list row
+   now reads "metadata stand-ins; the `.plr` reader/writer are live", and a
+   new row maps the rename chain (`PlayerFileData.Rename`/`WorldFileData.Rename`
+   -> `rename_player_file`/`rename_world`/the keyboard tails).
+4. ~~**Rename writes nothing.**~~ **Fixed (W4-f22, research/19 M1).**
+   `KeyboardTail::Rename` runs `player_file::rename_player_file` (the `.plr`
+   name-field splice + `.bak`, `PlayerFileData.cs:207-214` +
+   `InternalSavePlayerFile:54730-54733`) and the new `KeyboardTail::WorldRename`
+   runs `save_list::rename_world` (the `.trwld` header splice,
+   `WorldGen.RenameWorldCallBack:6727-6753`); both re-list through the reopen.
+   `KeyboardSession.rename_index` carries `this._data`. ANALYSIS "The card
+   renames (W4-f22)" records the four deviations (stem kept, session arm,
+   front_hint failure notice, synchronous mode-10).
 5. **World metadata stand-ins**: no GameMode (every entry Classic →
    `CanWorldBeJoinedByActivePlayer`'s Journey gate is vacuous, `save_list.rs:426-433`),
    favourites are a `<world>.trfav` sidecar (`Main.LocalFavoriteData` has no
@@ -444,10 +444,9 @@ written in ROADMAP/ANALYSIS/PORT_MAP.
 
 S — small (single file / one table)
 
-- **S1. Fix the three stale doc claims** — ANALYSIS `:2120-2124` (the `.plr`
-  reader/writer), PORT_MAP `:180` ("partial, no `.plr` reader"), and
-  `flow.rs:73`'s + `mod.rs:1482`'s "no save-file writer" notices (the writer
-  exists; the gap is the rename read-modify-write). Docs-only, no behaviour.
+- ~~**S1. Fix the three stale doc claims**~~ **DONE (W4-f22)** — the ANALYSIS
+  P6 bullet, the PORT_MAP save_list row and the `flow.rs`/`mod.rs` notices are
+  corrected alongside M1's landing (the rename writes now).
 - ~~**S2. Gate Play on validity.**~~ **DONE 2026-11-13** (`S1-H-10`):
   `world_select::rejection_key` + `flow.rs::world_play_click` reproduce
   `IsValid` + `TryMovingToRejectionMenuIfNeeded` (`UIWorldListItem.cs:362`,
@@ -465,10 +464,12 @@ S — small (single file / one table)
 
 M — medium
 
-- **M1. `.plr` rename read-modify-write** — read the card's `.plr` through
-  `player_file::read_player_file`, rewrite the name, re-list; replaces the
-  "Renaming is not ported yet" notice (`mod.rs:1481-1484`) and closes
-  deviation 4. Depends on S1's wording.
+- ~~**M1. `.plr` rename read-modify-write**~~ **DONE (W4-f22, code-only)** —
+  `player_file::rename_player_file` (the name-field splice + `.bak`),
+  `save_list::rename_world` (the world twin), `KeyboardTail::WorldRename` +
+  `KeyboardSession.rename_index`, `app/session.rs::rename_player_entry`/
+  `rename_world_entry`; closes deviation 4. ANALYSIS "The card renames
+  (W4-f22)"; 11 witnesses written not run.
 - **M2. The creator's Randomize/Copy/Paste arms** — port
   `Click_RandomizePlayer` (`UICharacterCreation.cs:1545-1657`) and the
   clipboard pair (`GetPlayerTemplateValues` `:2006-2021`) behind a clipboard

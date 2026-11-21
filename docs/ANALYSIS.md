@@ -3030,11 +3030,12 @@ keyboard, credits вЂ” commits `02182dc..043e11c`) is ported at the source
 geometry; the screens, coordinates and flow are in `docs/UI.md` в†’
 "Front-end screens (P6)". The deviations and stand-ins:
 
-* **No `.plr` reader/writer** (spec В§9.4). Characters are the implicit
-  session entry plus optional `TR_FAKE_CHARS` fakes; Create records the
-  session draft instead of writing a character file. The `.plr` directory
-  scan stays so a future reader slots into the same shape (`Main.cs:4007`);
-  a scanned `.plr` is skipped like `Player.GetFileData`'s null return.
+* ~~**No `.plr` reader/writer** (spec §9.4).~~ **Closed (S1-J-3/S1-J-5 +
+  W4-f22).** The `.plr` reader/writer are live (`player_file.rs`, release 326,
+  the full `Serialize`), the listing reads real files, Create writes one, and
+  the card renames read-modify-write it (W4-f22, research/19 M1 — see "The
+  card renames" below). The session stand-in plus optional `TR_FAKE_CHARS`
+  fakes remain alongside the disk cards.
 * **World metadata stand-ins.** Favourites are a `<world>.trfav` marker file
   (`Main.LocalFavoriteData` has no port); creation time is the file's mtime;
   the world writer stores no `GameMode`, so every real entry reads Classic
@@ -3099,6 +3100,48 @@ geometry; the screens, coordinates and flow are in `docs/UI.md` в†’
 * **`Color` multiplication wraps, not saturates** (`color.rs`'s pinned
   convention, re-pinned by the Task 8b review): `DarkGray * 1.2` =
   `[202, 202, 202, 50]` вЂ” the ghosted Master-difficulty bunny preview.
+
+### The card renames (W4-f22, research/19 M1)
+
+The select screens' Rename buttons now WRITE. `KeyboardTail::Rename` (the
+character card) and the new `KeyboardTail::WorldRename` (the world card) run
+`OnFinishedSettingName` (`UICharacterListItem.cs:208-214`,
+`UIWorldListItem.cs:427-432`) instead of the historical "Renaming is not
+ported yet" notice; `KeyboardSession.rename_index` carries the clicked card
+(`this._data`), so the submit writes THAT entry, not a name search.
+
+- **Character** — `player_file::rename_player_file` is `PlayerFileData.Rename`
+  (`IO/PlayerFileData.cs:207-214`) as a read-modify-write: the vanilla mutates
+  the live `Player.name` and re-serializes the whole player; the port models
+  only the card state, so it decrypts the `.plr`, replaces ONLY `Serialize`'s
+  first field (`Player.cs:54752`, offset 24 = release 4 + FileMetadata 20),
+  keeps every other byte (the unmodelled tail is NOT re-defaulted), and
+  re-encrypts with the write-side PKCS7 envelope. The `.bak` copy is
+  `InternalSavePlayerFile:54730-54733`. The load gate runs first
+  (`Player.GetFileData`'s null-skip, `:55862-55881`).
+- **World** — `save_list::rename_world` is `WorldGen.RenameWorldCallBack`
+  (`WorldGen.cs:6727-6753`: load, `Main.worldName = newName`, save) as the
+  `.trwld` header-name splice (`save.rs:230-232`'s u32-length + UTF-8 field at
+  offset 20); the tile body and the v7+ side sections ride through unchanged.
+  The callback's sound 10 (`GetRenameCallback`, `WorldFileData.cs:473`) plays
+  after the submit cue, then the `menuMode = 6` reopen re-lists.
+- **Deviations**: (1) the world file keeps its stem — the vanilla
+  `GetWorldPathFromName` move belongs to the cloud path (`WorldFileData.cs:433`),
+  and `RenameWorldCallBack` itself rewrites the loaded file in place; (2) the
+  session stand-in IS the live player, so its rename lands on
+  `player_name`/`session_draft` (`PlayerFileData.cs:209-212`'s `Player.name`
+  write) and survives the re-list; a `TR_FAKE_CHARS` fake renames in memory
+  only and the re-list rebuilds it (the fake-erase shape); (3) a failed write
+  keeps the old name and surfaces `front_hint` — the vanilla
+  `FancyErrorPrinter` dialog has no port; (4) the `menuMode = 10` saving
+  pass-through is synchronous (the port's saves are inline).
+- Witnesses (written, not run — code-only): `player_file::tests` (4: the
+  rename + `.bak` + untouched-fields round-trip, the byte-splice invariant,
+  the garbage refusal, the multibyte 7-bit-length name), `save_list::tests`
+  (3: the header rewrite + re-list + full-parse survival, the splice
+  invariant, the invalid/missing refusal), `flow::front_flow_tests` (the
+  rename-click session shape, the submit seam, the world rename click +
+  submit end-to-end).
 
 ## UIElement framework (M7-UI-1, 2026-11-08)
 
