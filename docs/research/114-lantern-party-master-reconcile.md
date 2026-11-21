@@ -1136,3 +1136,42 @@ hunk applies at merge against c39's helper). The v18 union side is
 already aligned: d125's empress byte is seated in BOTH f44's and g71's
 heads and at §8 `[100]` — the §12 correction does not touch it.
 WRITTEN NOT RUN (code-only).
+
+---
+
+## 16. FINAL-FINAL — the retire close (this branch is DONE)
+
+The §11 checklist re-sealed at retire with the §12–§15 receipts folded
+in. Per-item final state:
+
+| # | §11 item | Retire delta |
+| --- | --- | --- |
+| 1–5 | the sibling KEEP pieces (f40 sky / reset order, d55 gore wire, f34 cake route, d120/f38 chatter) | UNCHANGED — merge-scope, no c39 action |
+| 6 | TRWLD v18 union | **§12**: f44 (`bdd1cc79a`, 97-head) and g71 (`f08e8d41e`, 21-head) FINALs read — BOTH diverge; CORRECTION-input published (missing quintet 5 B + licenses 3 B in both; f44's own 97/98 off-by-one; identity-order divergence). §8's 106-byte head STANDS — the authoritative c39 input, unchanged |
+| 7 | Empress death arm | **§15**: d125 (`d8047a109`) re-read — direct write confirmed at `npcs.rs:5174-5176`; the EXACT helper-route hunk published (was_down + `on_game_event_cleared(ev,23,!was_down)`), merge order + witness receipt recorded. Discharged-as-hunk |
+| 8 | QueenSlime | **§14**: re-probed — d43 tip `a725acb04` is the wave-3 base (0 commits, 657 NOT rowed); d33's `npc_ai_style121.rs` machine exists UNWIRED. Task-seed **d43r** published with the READY death-arm hunk (id 24). NO event-wire hunk possible today |
+| 9 | d130 weather compose | **§13**: d130 (`97ed44f5d`) re-read — both KEEP-c39 pieces still missing from its body; the EXACT 2-hunk graft published (rain.rs head clamp after `:712`; weather.rs `:292` full persistence gate + the one-word visibility rider). d130's KEEP regions untouched |
+| 10 | Anchors | **RE-VERIFIED on this retire tip** — all 7 markers resolve: `event_skies.rs:285` (`fn update_party`), `party_hat.rs:235` (`fn hat_draw`), `world_events.rs:301` (`fn update_time_party`), `world_events.rs:227` (`tenth_anniversary`), `wind.rs:82` (`pub lantern_night`), `projectile.rs:7013` (`fn ai_dove`), `draw.rs:580` (`RELEASE_LANTERN`). No row names a dropped piece |
+
+### Retire-phase commits (this branch)
+
+| Hash | Phase |
+| --- | --- |
+| `06131de6` | retire 1 — §12 the 106-union BROADCAST read-back + CORRECTION-input (f44/g71 diverge) |
+| `8e0946ff` | retire 2 — §13 the EXACT 2-hunk d130f graft |
+| `ee48bd8f` | retire 3 — §14 QueenSlime-24 re-probe + task-seed d43r |
+| `cc9773be` | retire 4 — §15 the Empress-23-route receipt (d125b hunk) |
+| (this commit) | retire 5 — §16 FINAL-FINAL close + the 7-anchor re-verification |
+
+### The retire verdict
+
+**c39 is RETIRED.** Every obligation is either landed on this branch
+(the exec + final phases, `b5ab90db`…`4f72847e`) or published as an
+exact, evidence-cited hunk/seed for its owner (§13 d130f, §14 d43r,
+§15 d125b) or as the authoritative union input with its correction
+(§8 + §12). No code changed in the retire phases — all five commits
+are research/114 doc-only; the code tip's behaviour is exactly
+`4f72847e`'s. All witnesses across all phases WRITTEN NOT RUN — the
+code-only lane contract held: no cargo/rustc/tests/rustfmt/graphify
+invoked in any phase. The merger's entry point is §11 (the checklist)
+with §12–§15 as the live cross-lane receipts.
