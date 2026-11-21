@@ -133,8 +133,9 @@ pub(crate) enum KeyboardTail {
     /// world draft, the creation screen returns.
     WorldName,
     /// `OpenSeedInputMenu`'s submit (`:702-708` -> `OnFinishedSettingSeed`,
-    /// `:817-831` minus the secret-seed paths): the trimmed seed lands in the
-    /// draft, the creation screen returns.
+    /// `:817-898`): the trimmed seed lands in the draft, the classic-option
+    /// select + micro-seed enable arms run (W4-d85; the ring particles stay
+    /// unported), the creation screen (or Advanced tab) returns.
     WorldSeed,
     /// `Click_NamingAndCreating` with an empty name (`UIWorldCreation.cs:
     /// 710-719`): the name lands, then `FinishCreatingWorld` runs.

@@ -886,9 +886,9 @@ pub fn seed_value(name: &str, seed_text: &str) -> u64 {
 /// `WorldGenerationOptions.GetOptionFromSeedText`'s UI half
 /// (`UIWorldCreation.cs:829-842` `OnFinishedSettingSeed` → `SelectOption` +
 /// `SecretSeed.CheckInputForSecretSeed`): the draft's seed text resolves the
-/// classic secret-seed flags. The port has no `WorldGenerationOptions` UI
-/// state (the Advanced tab and the option ring are documented deviations),
-/// but the *resolution* itself is pure (`tr_core::seeds`), so the created
+/// classic secret-seed flags. W4-d85 ports the `WorldGenerationOptions` UI
+/// state (the Advanced tab); the option ring stays a documented deviation.
+/// The *resolution* itself is pure (`tr_core::seeds`), so the created
 /// world carries the flags a vanilla world would — the worldgen branches and
 /// the runtime condition readers both key off them. The 38 BCrypt micro
 /// seeds arrive with M5-SEED-2.
@@ -1288,7 +1288,7 @@ fn hover_description(l: &Layout, mouse: Vec2) -> String {
     }
     if in_rect(mouse, l.seed_button) {
         // UI.WorldCreationSeedMenuDescription — the Advanced tab's entry
-        // point; the tab itself is out of scope (plan Uncertainty 4).
+        // point (the tab is ported by W4-d85).
         return crate::lang::text("UI.WorldCreationSeedMenuDescription");
     }
     crate::lang::text("UI.WorldDescriptionDefault") // UI.WorldDescriptionDefault
