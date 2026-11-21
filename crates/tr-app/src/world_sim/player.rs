@@ -571,6 +571,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         if app.mine_released {
             p.actuation_rod_lock = false;
         }
+        // `Player.cs:18798-18800` (W4-f11): the mass-wire operation cooldown
+        // ticks down beside the rod lock in `ResetEffects`.
+        if p.wire_operations_cooldown > 0 {
+            p.wire_operations_cooldown -= 1;
+        }
         // `Player.ResetEffects`' journey block, re-run every tick: the godmode
         // flag (`:18789` clears, `:25493-25497` sets) and the far-placement
         // tile-range toggle (`:18815-18828`).

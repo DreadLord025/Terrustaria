@@ -875,6 +875,11 @@ pub(crate) struct App {
     /// pads (`Wiring.cs`).
     pub(crate) wiring: tr_core::wiring::Wiring,
     pub(crate) wiring_step: FixedStepper,
+    /// `WiresUI.Settings.ToolMode` (`WiresUI.cs:23`): the multi-wrench's
+    /// channel bitfield (`multi_tool_mode`). The static ctor starts at
+    /// `MultiToolMode.Red` (`WiresUI.cs:94`); the WiresRadial UI owns the
+    /// setting (unported — the field keeps the default until it lands).
+    pub(crate) wire_tool_mode: u8,
     /// The tile-entity update pass (`TileEntity.PerformUpdates` — the
     /// logic sensors' per-tick scan, M7-TE-2).
     pub(crate) te_step: FixedStepper,
@@ -2315,6 +2320,11 @@ impl App {
         if let Some(engine) = self.legacy_light.as_mut() {
             engine.reset_map_delay();
         }
+        // `WorldGen.clearWorld`'s `Wiring.ClearAll()` (`WorldGen.cs:6959`,
+        // the `WorldFile.cs:1977`/`:3455` load sites): the mech queue and the
+        // pump queues empty on every world load — no armed timer or device
+        // cooldown crosses worlds (W4-f11 lifecycle census).
+        self.wiring.clear_all();
     }
 
     pub(crate) fn is_client(&self) -> bool {
@@ -3989,6 +3999,7 @@ impl App {
             tile_anim: tr_core::drawdata_anim::TileAnimator::new(),
             tile_anim_step: FixedStepper::new(1.0 / 60.0, 8),
             wiring: tr_core::wiring::Wiring::new(),
+            wire_tool_mode: tr_core::smart_cursor::multi_tool_mode::RED,
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
             te_step: FixedStepper::new(1.0 / 60.0, 8),
             growth_step: FixedStepper::new(1.0 / 60.0, 8),

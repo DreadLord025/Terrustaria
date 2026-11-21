@@ -21,12 +21,12 @@ pub(crate) const WIRE_ITEM: u16 = 530;
 pub(crate) const ACTUATOR_ITEM: u16 = 849;
 
 /// The wiring tools of `Player.ItemCheck_UseWiringTools`
-/// (`Player.cs:46749-46920`) — the wrench family, the cutter and the
-/// actuator.
+/// (`Player.cs:46749-46920`) — the wrench family, the cutter, the actuator
+/// and (W4-f11) the Multicolor Wrench's single-cell mass operation.
 ///
-/// The Multicolor Wrench (3625) is not in this set: the multi-tool needs
-/// the `WiresUI` tool modes (`Player.cs:46903-46918`) and the mass wire
-/// operation (`Wiring.MassWireOperation`, `Wiring.cs:419-453`).
+/// The Grand Design (3611) drag rides projectile 651
+/// (`Projectile.cs:72053-72066`) — the projectile family is unported, so
+/// only the 3625 click arm (`Player.cs:46903-46918`) lands here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum WiringTool {
     /// The wrench family: 509 red, 850 blue, 851 green, 3612 yellow.
@@ -37,6 +37,8 @@ pub(crate) enum WiringTool {
     Actuator,
     /// 3620 — the Actuation Rod.
     ActuationRod,
+    /// 3625 — the Multicolor Wrench (`Player.cs:46903-46918`).
+    MulticolorWrench,
 }
 
 /// The tool kind → its action (`ItemID`, `ID/ItemID.cs:2701-2743/:3381-3385/
@@ -51,6 +53,7 @@ fn wiring_tool(kind: u16) -> Option<WiringTool> {
         510 => WiringTool::Cut,
         849 => WiringTool::Actuator,
         3620 => WiringTool::ActuationRod,
+        3625 => WiringTool::MulticolorWrench,
         _ => return None,
     })
 }
@@ -179,6 +182,29 @@ pub(crate) fn use_wiring_tool(app: &mut App, tx: i32, ty: i32) -> bool {
             // `Player.cs:46897`: the lock remembers the state the tile had
             // before the actuation.
             p.actuation_rod_lock_setting = inactive;
+            true
+        }
+        WiringTool::MulticolorWrench => {
+            // `Player.cs:46903-46918` (W4-f11): the single-cell mass
+            // operation. The `CanUseItem` throttle (`:52075-52078`) refuses
+            // 3611/3625 while `wireOperationsCooldown` stands — no positive
+            // setter exists in 1.4.5.8, but the gate keeps the shape.
+            if app
+                .player
+                .as_ref()
+                .is_some_and(|p| p.wire_operations_cooldown > 0)
+            {
+                return false;
+            }
+            // `Settings.ToolMode &= ~MultiToolMode.Actuator` (`:46908`) — the
+            // wrench never places actuators; the bit is stripped for the
+            // operation and restored after (`:46917`). The port passes the
+            // masked mode straight through (no global to restore).
+            let mode = app.wire_tool_mode & !tr_core::smart_cursor::multi_tool_mode::ACTUATOR;
+            // `ApplyItemTime(sItem)` (`:46906`) rides the caller's plain
+            // wiring-tool cadence (`editing.rs:5262-5273` — the wrench's
+            // 5-tick useTime, `Item.cs:32673`), like the other arms.
+            crate::world_sim::wiring_devices::mass_wire_operation(app, (tx, ty), (tx, ty), mode);
             true
         }
         WiringTool::Actuator => {
@@ -457,5 +483,68 @@ mod tests {
         app.world.downed_golem = true;
         assert!(use_wiring_tool(&mut app, 10, 19));
         assert!(app.world.wires.get(10, 19, tr_core::wiring::WireColor::Red));
+    }
+
+    /// W4-f11 — the Multicolor Wrench (3625, `Player.cs:46903-46918`): the
+    /// single-cell mass operation places the ToolMode channels (Actuator
+    /// stripped, `:46908`) and bills the wire stock. The default ToolMode
+    /// is Red (`WiresUI.cs:94`).
+    #[test]
+    fn the_multicolor_wrench_places_the_tool_mode_channels() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.inventory[app.selected] = slot(3625, 1);
+        app.inventory[10] = slot(WIRE_ITEM, 5);
+        // The Actuator bit is stripped even when set (`:46908`).
+        app.wire_tool_mode = tr_core::smart_cursor::multi_tool_mode::RED
+            | tr_core::smart_cursor::multi_tool_mode::ACTUATOR;
+        assert!(use_wiring_tool(&mut app, 10, 19));
+        assert!(
+            app.world.wires.get(10, 19, tr_core::wiring::WireColor::Red),
+            "the red channel placed"
+        );
+        assert!(
+            app.world.tile(10, 19).unwrap().flags & tr_core::tile::FLAG_ACTUATOR == 0,
+            "the actuator bit was stripped"
+        );
+        assert_eq!(app.inventory[10].count, 4, "one wire billed");
+        // The tool itself is never consumed.
+        assert_eq!(app.inventory[app.selected].kind, 3625);
+    }
+
+    /// W4-f11 — the wrench's cut mode (`ToolMode & Cutter`): the cell's
+    /// wires come off and the cached kills drop at the player's centre
+    /// (`Item.DropCache`, `Wiring.cs:3325-3326`), never billed.
+    #[test]
+    fn the_multicolor_wrench_cut_drops_the_cached_kills() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.inventory[app.selected] = slot(3625, 1);
+        app.world.wires.set(10, 19, tr_core::wiring::WireColor::Red, true);
+        app.wire_tool_mode = tr_core::smart_cursor::multi_tool_mode::RED
+            | tr_core::smart_cursor::multi_tool_mode::CUTTER;
+        assert!(use_wiring_tool(&mut app, 10, 19));
+        assert!(!app.world.wires.get(10, 19, tr_core::wiring::WireColor::Red));
+        assert!(
+            app.items.iter().any(|d| d.kind == WIRE_ITEM),
+            "the cached wire kill dropped"
+        );
+    }
+
+    /// W4-f11 — the `wireOperationsCooldown` gate (`Player.cs:52075-52078`):
+    /// a standing cooldown refuses the 3625 use outright.
+    #[test]
+    fn the_wire_operations_cooldown_refuses_the_wrench() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        let mut p = crate::player::Player::spawn(&app.world);
+        p.wire_operations_cooldown = 3;
+        app.player = Some(p);
+        app.inventory[app.selected] = slot(3625, 1);
+        app.inventory[10] = slot(WIRE_ITEM, 5);
+        assert!(!use_wiring_tool(&mut app, 10, 19));
+        assert!(!app.world.wires.get(10, 19, tr_core::wiring::WireColor::Red));
     }
 }

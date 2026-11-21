@@ -2417,6 +2417,7 @@ pub(crate) mod front_flow_tests {
             tile_anim: tr_core::drawdata_anim::TileAnimator::new(),
             tile_anim_step: FixedStepper::new(1.0 / 60.0, 8),
             wiring: tr_core::wiring::Wiring::new(),
+            wire_tool_mode: tr_core::smart_cursor::multi_tool_mode::RED,
             golf_state: tr_core::golf_state::GolfState::new(),
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
             te_step: FixedStepper::new(1.0 / 60.0, 8),
