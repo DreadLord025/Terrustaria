@@ -674,6 +674,16 @@ const MAX_FALL: f32 = 7.0;
 const FRICTION_X: f32 = 0.95;
 const FRICTION_EPSILON: f32 = 0.1;
 
+/// `ItemID.Sets.ItemNoGravity` (`ItemID.cs:1320`):
+/// `CreateBoolSet(520, 521, 575, 549, 548, 547, 3453, 3454, 3455, 3456,
+/// 3457, 3458, 3459, 3580, 3581, 4143)` — the souls/essences/nebula/fragments
+/// that float instead of falling. `WorldItem.MoveInWorld`'s no-gravity arm
+/// (`WorldItem.cs:774-786`): both axes damp ×0.95 with the 0.1 rest snap,
+/// NO gravity, NO fall cap. W4-g15 lane 5.
+const ITEM_NO_GRAVITY: &[u16] = &[
+    520, 521, 575, 549, 548, 547, 3453, 3454, 3455, 3456, 3457, 3458, 3459, 3580, 3581, 4143,
+];
+
 /// The accessory flags `GetItemGrabRange`/`GrabItems` read
 /// (`Player.cs:35133-35151`/`:34943-34963`). The Gold Ring's `gold_ring`
 /// flag is live (S1-P-i50); the Mana Magnet family landed in S1-P-i52
@@ -1249,15 +1259,31 @@ impl ItemDrop {
     }
 
     /// The non-grabbed movement half: `MoveInWorld`'s gravity/friction head
-    /// (`WorldItem.cs:849-864`) and the tile-collision pass.
+    /// (`WorldItem.cs:774-864`) and the tile-collision pass.
     fn move_in_world(&mut self, world: &World) {
-        // `WorldItem.cs:363-364` — the air gravity and the fall cap.
-        self.vel.y = (self.vel.y + GRAVITY).min(MAX_FALL);
-        // `WorldItem.cs:854-860` — the friction and the `0.1` rest snap, both
-        // applied BEFORE the collision pass (`MoveInWorld`'s order).
-        self.vel.x *= FRICTION_X;
-        if self.vel.x.abs() < FRICTION_EPSILON {
-            self.vel.x = 0.0;
+        // `WorldItem.cs:774-786` — the ItemNoGravity arm (W4-g15 lane 5): a
+        // non-shimmered soul/essence/nebula/fragment damps BOTH axes ×0.95
+        // with the 0.1 rest snap, no gravity, no fall cap. The C# gates on
+        // `!shimmered && ItemNoGravity[type]`; the shimmered case never
+        // reaches here (update routes it to the float branch).
+        if !self.shimmered && ITEM_NO_GRAVITY.contains(&self.kind) {
+            self.vel.x *= FRICTION_X;
+            if self.vel.x.abs() < FRICTION_EPSILON {
+                self.vel.x = 0.0;
+            }
+            self.vel.y *= FRICTION_X;
+            if self.vel.y.abs() < FRICTION_EPSILON {
+                self.vel.y = 0.0;
+            }
+        } else {
+            // `WorldItem.cs:363-364` — the air gravity and the fall cap.
+            self.vel.y = (self.vel.y + GRAVITY).min(MAX_FALL);
+            // `WorldItem.cs:854-860` — the friction and the `0.1` rest snap,
+            // both applied BEFORE the collision pass (`MoveInWorld`'s order).
+            self.vel.x *= FRICTION_X;
+            if self.vel.x.abs() < FRICTION_EPSILON {
+                self.vel.x = 0.0;
+            }
         }
         // `WorldItem.cs:864`: the belt contacts bend the velocity before the
         // AABB pass. The C# stores the bool in `item.onConveyor`, which
@@ -2241,6 +2267,41 @@ mod s1_p_i47_tests {
         drops[0].shimmer_time = 0.0;
         assert!(ItemDrop::combine_nearby(&mut drops, 0, true).is_empty());
         assert_eq!(drops[0].count, 5, "the reserved drop kept its stack");
+    }
+
+    /// W4-g15 lane 5 — `MoveInWorld`'s ItemNoGravity arm (`WorldItem.cs:774-
+    /// 786`): a soul/essence/nebula/fragment (the 16-kind set, `ItemID.cs:1320`)
+    /// damps BOTH axes ×0.95 with the 0.1 rest snap, no gravity, no fall cap.
+    /// A normal drop keeps the 0.1 gravity + 7 cap. The shimmered case routes
+    /// to the float branch (never here).
+    #[test]
+    fn w4_g15_the_no_gravity_kinds_damp_both_axes_without_falling() {
+        let mut w = World::new("float".into(), 32, 32);
+        w.compute_column_surface();
+        w.compute_chunks();
+        // A Soul of Light (520) with a diagonal velocity: both axes ×0.95,
+        // no gravity added.
+        let mut d = ItemDrop::new(520, 1, 0, 100.0, 100.0, 2.0, 3.0, 0.0);
+        d.update(&w, 1.0 / 60.0);
+        assert!((d.vel.x - 2.0 * 0.95).abs() < 1e-6, "X damped, got {}", d.vel.x);
+        assert!((d.vel.y - 3.0 * 0.95).abs() < 1e-6, "Y damped (no gravity), got {}", d.vel.y);
+        // The rest snap: a small velocity snaps to 0 on both axes.
+        let mut d = ItemDrop::new(521, 1, 0, 100.0, 100.0, 0.05, -0.05, 0.0);
+        d.update(&w, 1.0 / 60.0);
+        assert_eq!(d.vel, Vec2::ZERO, "the 0.1 rest snap on both axes");
+        // A normal drop (dirt 2) keeps gravity: Y += 0.1 then the cap.
+        let mut d = ItemDrop::new(2, 1, 0, 100.0, 100.0, 2.0, 3.0, 0.0);
+        d.update(&w, 1.0 / 60.0);
+        assert!((d.vel.x - 2.0 * 0.95).abs() < 1e-6);
+        assert!((d.vel.y - (3.0 + 0.1)).abs() < 1e-6, "gravity added, got {}", d.vel.y);
+        // The fall cap: a fast-falling normal drop caps at 7.
+        let mut d = ItemDrop::new(2, 1, 0, 100.0, 100.0, 0.0, 20.0, 0.0);
+        d.update(&w, 1.0 / 60.0);
+        assert_eq!(d.vel.y, 7.0, "the fall cap");
+        // A no-gravity kind does NOT cap (it damps): 20 × 0.95 = 19.
+        let mut d = ItemDrop::new(4143, 1, 0, 100.0, 100.0, 0.0, 20.0, 0.0);
+        d.update(&w, 1.0 / 60.0);
+        assert!((d.vel.y - 19.0).abs() < 1e-6, "no cap on the float kinds");
     }
 
     /// `WorldItem.UpdateItem`'s grabbed arm (`:425-435` → `ApplyMovement`
