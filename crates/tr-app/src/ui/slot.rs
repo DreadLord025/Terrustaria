@@ -266,29 +266,46 @@ fn hud_item_text_shadowed(
     hud_item_text(r, lookups, x, y, scale, color, text);
 }
 
-/// `ItemSlot.DrawItemIcon` (`ItemSlot.cs:2848-2881`) with `sizeLimit = 32`
-/// (`ItemSlot.cs:2515`): the item's own texture centred on `center`, its longest
-/// side clamped to 32 px before the inventory scale
-/// (`DrawItem_GetColorAndScale`, `ItemSlot.cs:2966-2975`), tinted by
+/// The item's own icon rect — `Item_<id>` first, the plain 16 px sheet as
+/// the fallback (the `draw_item_icon` lookup, shared with the cursor
+/// interact-icon pass, `Main.DrawInterface_40_InteractItemIcon`).
+pub(crate) fn item_icon_rect(
+    lookups: &assets::Lookups,
+    kind: u16,
+) -> Option<([f32; 4], f32, f32)> {
+    match lookups.item_icon(kind) {
+        Some(v) => Some(v),
+        None => lookups.plain_tex(kind).map(|t| (t.uv, 16.0, 16.0)),
+    }
+}
+
+/// `DrawItem_GetColorAndScale`'s size clamp (`ItemSlot.cs:2966-2970`): the
+/// longest side over `size_limit` scales by `size_limit / longest`, under it
+/// stays 1. The slot draws pass 32 (`ItemSlot.cs:2515`), the cursor icon pass
+/// 9999 (`Main.cs:45092` — effectively no clamp).
+pub(crate) fn icon_size_limit_scale(w: f32, h: f32, size_limit: f32) -> f32 {
+    let longest = w.max(h);
+    if longest > size_limit { size_limit / longest } else { 1.0 }
+}
+
+/// `ItemSlot.DrawItemIcon` (`ItemSlot.cs:2848-2881`): the item's own texture
+/// centred on `center`, its longest side clamped to `size_limit` px before
+/// the inventory scale ([`icon_size_limit_scale`]), tinted by
 /// `item.GetAlpha(environmentColor)` (`ItemSlot.cs:2876`).
-fn draw_item_icon(
+pub(crate) fn draw_item_icon(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
     item: &ItemSlot,
     center: (f32, f32),
     scale: f32,
     tint: [f32; 4],
+    size_limit: f32,
 ) {
-    let (uv, iw, ih) = match lookups.item_icon(item.kind) {
+    let (uv, iw, ih) = match item_icon_rect(lookups, item.kind) {
         Some(v) => v,
-        None => match lookups.plain_tex(item.kind) {
-            Some(t) => (t.uv, 16.0, 16.0),
-            None => return,
-        },
+        None => return,
     };
-    let longest = iw.max(ih);
-    let limit = if longest > 32.0 { 32.0 / longest } else { 1.0 };
-    let s = scale * limit;
+    let s = scale * icon_size_limit_scale(iw, ih, size_limit);
     let (w, h) = (iw * s, ih * s);
     r.push_ui_sprite([center.0 - w * 0.5, center.1 - h * 0.5], [w, h], uv, tint);
 }
@@ -433,7 +450,7 @@ fn draw_slot_flagged(
     } else {
         // `ItemSlot.cs:2513-2515`: the item icon (coins/ammo too), tinted by
         // `item.GetAlpha(lightColor)` (`ItemSlot.cs:2876,2970`).
-        draw_item_icon(r, lookups, item, center, scale, light_color);
+        draw_item_icon(r, lookups, item, center, scale, light_color, 32.0);
         // `ItemSlot.cs:2703-2712`: the stack count, context != 37, tinted by
         // `color` (= `lightColor`; `drawState.stackTextScale` is 1 outside the
         // coin-jump animation, `CoinSlot.cs:316-322`).
@@ -772,5 +789,21 @@ mod tests {
         assert_eq!(pick(1, true).map(|r| r.x), Some(10));
         assert_eq!(pick(5, true).map(|r| r.x), Some(10));
         assert_eq!(pick(0, false).map(|r| r.x), Some(9), "unfavorited hotbar row");
+    }
+
+    /// W4-g79 — `DrawItem_GetColorAndScale`'s clamp (`ItemSlot.cs:2966-2975`):
+    /// the longest side over `sizeLimit` scales by `sizeLimit / longest`,
+    /// under it stays 1. The slot draws pass 32 (`ItemSlot.cs:2515`), the
+    /// cursor icon pass 9999 (`Main.cs:45092` — effectively no clamp).
+    #[test]
+    fn w4_g79_the_icon_size_limit_clamps_only_the_longer_side() {
+        // A 40x24 icon at the 32 limit: 32/40 = 0.8 (the width is longest).
+        assert!((icon_size_limit_scale(40.0, 24.0, 32.0) - 0.8).abs() < 1e-6);
+        // A 24x40 icon: 32/40 = 0.8 (the height is longest).
+        assert!((icon_size_limit_scale(24.0, 40.0, 32.0) - 0.8).abs() < 1e-6);
+        // A 24x24 icon stays 1.
+        assert_eq!(icon_size_limit_scale(24.0, 24.0, 32.0), 1.0);
+        // The 9999 cursor limit never clamps a real icon.
+        assert_eq!(icon_size_limit_scale(40.0, 40.0, 9999.0), 1.0);
     }
 }

@@ -19,6 +19,7 @@ pub mod crafting;
 pub mod cursor;
 pub mod ingame_options;
 pub mod housing;
+pub(crate) mod interact_icon;
 pub mod inventory;
 pub mod keyboard;
 pub mod minimap;
@@ -716,6 +717,10 @@ pub fn draw_hud(
     // bubble's hover pick reads the NPC list + player already passed above.
     talk_npc: Option<usize>,
     npc_chat_text: &str,
+    // W4-g79 — the cursor interact-icon pass
+    // (`DrawInterface_40_InteractItemIcon`, `Main.cs:45038-45115`): the
+    // world the biome-torch/campfire hold-style conversions read.
+    world: &tr_core::world::World,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -1107,6 +1112,25 @@ pub fn draw_hud(
             );
         }
     }
+
+    // W4-g79 — `DrawInterface_40_InteractItemIcon` (`Main.cs:45038-45115`),
+    // interface layer 40 after the mouse-item layer 38 (`:44899-44913`):
+    // the held tool's cursor icon while a tile-interaction gate arms
+    // `cursorItemIconEnabled` (the paint-tool gates), plus the paint
+    // preview riding it (`TryGetAmmo`'s brush/roller arm through
+    // `item::paint_tool_preview`).
+    interact_icon::draw(
+        r,
+        lookups,
+        inventory,
+        equip,
+        selected,
+        player,
+        world,
+        mouse_item,
+        [mouse_pos.x, mouse_pos.y],
+        pulse.cursor_scale,
+    );
 
     // Boss bar: `BigProgressBarHelper.DrawFancyBar` (`BigProgressBarHelper.cs:25-57`,
     // the 4-arg overload via `CommonBossBigProgressBar`) — the 456x22 bar at the

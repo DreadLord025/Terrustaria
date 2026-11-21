@@ -1780,6 +1780,9 @@ impl App {
                             // draws while the talk latch holds.
                             self.talk_npc,
                             &self.npc_chat_text,
+                            // W4-g79 — the cursor interact-icon pass's world
+                            // (the biome hold-style conversions).
+                            world,
                         );
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after
