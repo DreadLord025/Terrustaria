@@ -346,6 +346,13 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
         // `:37727` / `CloseDoor` `:31908` / `ShiftTrapdoor` / `ShiftTallGate`):
         // the case-8/9 pitch draw rides the same `UpdateWorldGen` swap as the
         // switch clicks (the wiring tick's stage).
+        // DEPRECATED-BY-UNION (research/95 §1): this SINGLE drain site is the
+        // f11 half — c42's drain-site union (netglue ×3, chest.rs,
+        // editing/doors.rs, npcs.rs, player.rs ×3, projectiles.rs ×2,
+        // world_sim/wiring.rs — each on ITS stage's stream) is the superset
+        // and wins: cues queued by trips started from other stages would
+        // play on the wrong stream or linger here. One queue (door_cues ≡
+        // door_sounds, name either). Research/133 §3/§4b-c.
         for (open, px, py) in app.wiring.take_door_sounds() {
             app.audio.play_door_sound(
                 open,

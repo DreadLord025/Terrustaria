@@ -3,6 +3,19 @@
 //! (`:1170-1198`), `FrameTrack` (`:943-1168`) and `FlipSwitchTrack`
 //! (`:1296-1319`).
 //!
+//! **DEPRECATED-BY-UNION (research/95 §6 + research/71 §1-2, EXECUTED on
+//! e20 `cf0b8f9c`)**: this WHOLE module is the f11 duplicate half — the
+//! merger drops it for e20's `TRACK_FRAMES` superset + `flip_switch_track`/
+//! `frame_track_pound` (assert-on-front-absent; this module's `.max(0)`
+//! clamp silently diverges) and the `CheckMech(5)` → `switch_track_flips`
+//! request seam. The OnceLock cache shape (`track_switch_options`) already
+//! merged into e20 (`6336e3b4`) over the e20 table; the table/cooldown
+//! witnesses were rebased there (`5272cd52`). Kept, NOT deleted (the
+//! pushed-history consumers); the `frame_track` non-pound branch + `flag4`/
+//! `KillTile(fail)` half is the hammer-placement follow-up salvage note
+//! (95 §8.8), not wiring code. See `docs/research/133-f11-unique-folds.md`
+//! §4b.
+//!
 //! W4-f11 ports the slice the wiring switch-track arm (`Wiring.cs:1744-1749`,
 //! tile 314) needs: `FlipSwitchTrack` and the `FrameTrack(pound: true, mute:
 //! true)` it calls. The tables are hand-transcribed from `Initialize`'s

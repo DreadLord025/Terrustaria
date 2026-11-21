@@ -2796,6 +2796,11 @@ impl Wiring {
             // `ShiftTallGate(closing: type == 389)` — the open gate (389)
             // closes, the closed (388) opens. The case-8 cue queues on
             // success (`WorldGen.cs:51762`).
+            // DEPRECATED-BY-UNION (research/95 §3): the cue below sits at
+            // the HIT cell (wrong Y for non-top hits) and the f11
+            // `edit::shift_tall_gate` body has no alternate-0 def decode —
+            // c42's `edit/shift.rs` body + in-body cue win at merge
+            // (research/133 §4c). The closing-decode/roll order is a tie.
             388 | 389 => {
                 let mut drops = Vec::new();
                 let mut skips = Vec::new();
@@ -3059,6 +3064,13 @@ impl Wiring {
     /// `:51594` the final refusal) queue here. The port folds the shift's
     /// sound sites into one cue per attempt outcome: a successful shift plays
     /// case 8 at the anchor, the all-refused path plays case 9 at the hit cell.
+    ///
+    /// **DEPRECATED-BY-UNION (research/95 §2)**: the cue fold below is wrong
+    /// on position (anchor vs hit cell), on the styleX1/close Y and on the
+    /// double-thud count (the C# queues TWO thuds on a full wiring refusal);
+    /// c42's in-body cues at the C# sites win, this fold drops with the f11
+    /// `edit::shift_trapdoor` body. The true-then-false call order itself is
+    /// a tie (identical in c42). Research/133 §4c.
     fn wire_trapdoor(&mut self, world: &mut World, i: i32, j: i32) {
         let no_blocker = |_: i32, _: i32| false;
         let mut drops = Vec::new();
@@ -3095,6 +3107,12 @@ impl Wiring {
     /// (`forcedStateWhereTrueIsOn` null, `doSkipWires` true): the 3×2 anchor
     /// validation, the anchor-frameY ±36 flip, SkipWire over the body and the
     /// per-cell active+kind gate before the write.
+    ///
+    /// **KEEP-ONE-BY-UNION (research/95 §4)**: line-for-line the same
+    /// semantics as c42's `toggle_camp_fire` — the merger keeps ONE body
+    /// (either) and adds d6's forced-state gate for the `TryToggleLight`
+    /// caller; never three copies (c42/f11 methods + d6 free fn).
+    /// Research/133 §4d.
     fn toggle_campfire(&mut self, world: &mut World, i: i32, j: i32, frame_x: i16, frame_y: i16) {
         let kind = world.tile(i, j).map(|t| t.kind).unwrap_or(0);
         // `:3002-3005` — the set gate (the caller already matched it).

@@ -2,6 +2,20 @@
 //! (`Wiring.cs:2638-2678`) and `Wiring.Extractinator` (`:2554-2584`), the
 //! W4-f11 remainder arms (`HitWireSingle`'s cases 21/467 and 219/642).
 //!
+//! **DEPRECATED-BY-UNION (research/95 §5 → research/71, EXECUTED on e20
+//! `cf0b8f9c`)**: the hopper/extractinator halves of this file (`run_hopper`,
+//! `run_extractinator`, the `try_*` chest helpers, `coins_split`,
+//! `test_chest` + their witnesses) are the f11 duplicate halves — the
+//! merger drops them for e20's `hopper_pull`/`extractinator_roll` bodies.
+//! The f11 must-merge wins are ALREADY merged on e20 (PlaySound(7)
+//! `f167082e`, the grab/locked/coins_split witnesses `b0d0836f`+`5272cd52`);
+//! nothing left to salvage here. **The mass-wire append at the file tail
+//! (`can_do_wire_stuff_here_world`/`consume_one`/`mass_wire_operation` +
+//! its two witnesses) is f11-UNIQUE and KEEPS** — the 109/110 apply-side,
+//! research/133 §2d; if it moves when this file shrinks, re-point the
+//! anchors.txt row in the same commit. Kept, NOT deleted (the pushed-history
+//! consumers). See `docs/research/133-f11-unique-folds.md` §4a.
+//!
 //! The engine (`tr-core::wiring`) resolves the device anchor + the
 //! `CheckMech(60)` cooldown and queues the request; this module runs the
 //! chest-store lookup, the locked/in-use gates and the item walk — the

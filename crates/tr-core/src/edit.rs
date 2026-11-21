@@ -979,6 +979,14 @@ pub(crate) fn top_left_and_styles(
 /// the `Wiring.running`-gated SkipWire cells (the caller passes `Some` only
 /// while running). Returns the C# bool. The `SoundEngine.PlaySound(8/9)`
 /// sites are app-side (the door cue family).
+///
+/// **DEPRECATED-BY-UNION (research/95 §2)**: this f11 body drops for c42's
+/// `edit/shift.rs` body at merge (paint + fullbright coating — this copy
+/// loses the `UseBlockColors` coating half, `WorldGen.cs:51574`/`:51581` —
+/// in-body cues at the C# sites incl. the double-thud refusal, `touch()`).
+/// The `only_close_or_open` param and the `top_left_and_styles` pub(crate)
+/// placement are the f11 KEEP halves the canonical body adopts (95 §2;
+/// research/133 §3/§4c). Kept, NOT deleted (the pushed-history consumers).
 pub fn shift_trapdoor(
     world: &mut World,
     x: i32,
@@ -1115,6 +1123,15 @@ pub fn shift_trapdoor(
 /// 388, `coordinate_heights [18,16,16,16,18]`); the anchor row resolves from
 /// the frameY through the coordinate heights. `cell_blocked` is the entity
 /// gate; `wire_skips` collects the running-gated SkipWire column.
+///
+/// **DEPRECATED-BY-UNION (research/95 §3)**: this f11 body drops for c42's
+/// `edit/shift.rs` body at merge — this copy does NO style/alternate def
+/// lookup (c42's `get_tile_data(def_for_tile(388), style, 0)` alternate-0
+/// decode wins over this no-lookup and g4's alternate-1) and the arm-level
+/// cue sits at the HIT cell (wrong Y for non-top hits; c42 queues in-body
+/// at the adjusted top, `:51762`). The radius-3 reframe here is the tight
+/// superset (a tie with c42's radius 4; g4's radius 2 is the fidelity gap).
+/// Kept, NOT deleted (the pushed-history consumers). Research/133 §4c.
 pub fn shift_tall_gate(
     world: &mut World,
     x: i32,
