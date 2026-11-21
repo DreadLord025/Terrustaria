@@ -258,6 +258,7 @@
 //! | 1355-1359 | `:89185-89192` | the 35/68 SkeletronHead/DungeonGuardian death (RedHat 1398/1399/1400 or normal 54/55) |
 //! | 1360-1367 | `:89197-89207` | the 36 SkeletronHand death (RedHat 1401/1402x3 or normal 56/57x3) |
 //! | 1368-1372 | `:89290-89318` | the 134-136 Destroyer death (head 156 + 50%-gated quadrant burst) + probe-drop seam |
+//! | 1373-1378 | `:89328-89349` | the 347 ElfCopter death (524-527 heads + the diagonal 2-gore explosion) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -8288,23 +8289,54 @@ fn destroyer_death(
     rng: &mut UnifiedRandom,
     world: &World,
 ) {
-    let (w, h) = npc.size();
     let pos = Vec2::new(npc.x, npc.y);
     gore.new_gore(rng, world, pos, Vec2::new(npc.vx, npc.vy), 156, 1.0); // :89290
     // `:89291` — the coin gate.
     if rng.next_max(2) != 0 {
         return;
     }
-    // `:89293-89297` — the 10-dust type-31 burst.
-    for _ in 0..10 {
+    // `:89293-89321` — the shared explosion tail (10 dusts, 5 pairs, the
+    // full four quadrants).
+    mech_explosion_tail(
+        npc,
+        10,
+        5,
+        &[(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)],
+        dust,
+        dust_ctx,
+        gore,
+        rng,
+        world,
+    );
+}
+
+/// The shared mech-explosion tail (`NPC.cs:89293-89321` and the 347/346
+/// repeats): `dust31` type-31 dusts (Alpha 100, scale 1.5, velocity ×1.4),
+/// then `pairs` iterations of the PAIRED type-6 burst (scale 2.5 noGravity
+/// ×5, then scale 1.5 ×3 — both Alpha 100), then one `Next(61, 64)` gore
+/// per quadrant at position (Zero velocity), each `velocity *= 0.4` FIRST
+/// then the ±1 post-writes. Scale defaults to 1.
+fn mech_explosion_tail(
+    npc: &Npc,
+    dust31: usize,
+    pairs: usize,
+    quadrants: &[(f32, f32)],
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..dust31 {
         let idx = dust.new_dust(
             rng, dust_ctx, world, pos, w as i32, h as i32, 31, 0.0, 0.0, 100,
             Color::default(), 1.5,
         );
         dust.slot_mut(idx).velocity *= 1.4;
     }
-    // `:89298-89305` — the 5 paired type-6 dusts.
-    for _ in 0..5 {
+    for _ in 0..pairs {
         let idx = dust.new_dust(
             rng, dust_ctx, world, pos, w as i32, h as i32, 6, 0.0, 0.0, 100,
             Color::default(), 2.5,
@@ -8318,9 +8350,7 @@ fn destroyer_death(
         );
         dust.slot_mut(idx2).velocity *= 3.0;
     }
-    // `:89306-89321` — the four quadrant gores.
-    let quadrants: [(f32, f32); 4] = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
-    for (dx, dy) in quadrants {
+    for &(dx, dy) in quadrants {
         let ty = rng.next_range(61, 64);
         let idx = gore.new_gore(rng, world, pos, Vec2::ZERO, ty, 1.0);
         let g = gore.slot_mut(idx);
@@ -8328,6 +8358,30 @@ fn destroyer_death(
         g.velocity.x += dx;
         g.velocity.y += dy;
     }
+}
+
+/// The 347 ElfCopter death (`NPC.cs:89328-89352`, sites 1373-1378): the
+/// four heads 524/525/526/527 at position with `base.velocity` FIRST, then
+/// the explosion tail — 7 type-31 dusts, 4 type-6 pairs, and TWO diagonal
+/// quadrant gores (+X/+Y then −X/−Y — NOT the full four). Scale defaults
+/// to 1.
+fn elf_copter_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 524, 1.0); // :89328
+    gore.new_gore(rng, world, pos, vel, 525, 1.0); // :89329
+    gore.new_gore(rng, world, pos, vel, 526, 1.0); // :89330
+    gore.new_gore(rng, world, pos, vel, 527, 1.0); // :89331
+    mech_explosion_tail(
+        npc, 7, 4, &[(1.0, 1.0), (-1.0, -1.0)], dust, dust_ctx, gore, rng, world,
+    );
 }
 
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
@@ -9349,6 +9403,10 @@ pub fn hit_effect_c(
         if npc.hp <= 0 {
             destroyer_death(npc, dust, dust_ctx, gore, rng, world);
         }
+    }
+    // `:89324-89354` — the 347 ElfCopter arm (sites 1373-1378).
+    if npc_type == 347 && npc.hp <= 0 {
+        elf_copter_death(npc, dust, dust_ctx, gore, rng, world);
     }
     outcome
 }
@@ -14696,6 +14754,54 @@ mod tests {
             assert_eq!(active, 1);
         }
         assert_eq!(rng.peek(), twin.peek(), "the destroyer mirrors the C# draws");
+    }
+
+    /// `NPC.cs:89328-89352` — the ElfCopter death: the 524-527 heads then
+    /// the DIAGONAL two-quadrant explosion (+X/+Y, −X/−Y only).
+    #[test]
+    fn w4_f10_the_elf_copter_death_spawns_the_diagonal_pair() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1483);
+        elf_copter_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![524, 525, 526, 527]);
+        assert_eq!(gore.slots().iter().filter(|g| g.active).count(), 6);
+        // The twin: 4 head kicks, 7 type-31 dusts, 4 type-6 pairs (7 draws
+        // each), then 2 gores x (type draw + 2 kicks).
+        let mut twin = UnifiedRandom::new(1483);
+        for _ in 0..4 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        for _ in 0..7 {
+            let _px = twin.next_max(30 - 4);
+            let _py = twin.next_max(30 - 4);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+        }
+        for _ in 0..8 {
+            let _px = twin.next_max(30 - 4);
+            let _py = twin.next_max(30 - 4);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+            let _tweak = twin.next_range(-10, 6);
+        }
+        for (i, (dx, dy)) in [(1.0, 1.0), (-1.0, -1.0)].iter().enumerate() {
+            let ty = twin.next_range(61, 64);
+            assert_eq!(gore.slot(i + 4).gore_type, ty);
+            let ky = twin.next_range(10, 31) as f32 * 0.1;
+            let kx = twin.next_range(-20, 21) as f32 * 0.1;
+            assert_eq!(gore.slot(i + 4).velocity.x, kx * 0.4 + dx);
+            assert_eq!(gore.slot(i + 4).velocity.y, -ky * 0.4 + dy);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the elf copter mirrors the C# draws");
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
