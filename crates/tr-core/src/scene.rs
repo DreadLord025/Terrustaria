@@ -784,14 +784,16 @@ impl SceneMetrics {
             max_tiles_x,
             self.tile_center.1,
         );
-        // `SceneMetrics.cs:698` via `WorldGen.IsSurfaceForAtmospherics`
+        // `SceneMetrics.cs:693` via `WorldGen.IsSurfaceForAtmospherics`
         // (`WorldGen.cs:10976-10985`; the remix branch is not ported):
         self.surface_atmospherics = self.tile_center.1 as f64 <= world_surface;
-        // `SceneMetrics.cs:701`:
+        // `SceneMetrics.cs:698`:
         self.zone_rain = raining && self.surface_atmospherics;
-        // `SceneMetrics.cs:703`:
+        // `SceneMetrics.cs:699`:
         self.zone_sandstorm = self.zone_desert && self.surface_atmospherics && sandstorm_happening;
-        // `SceneMetrics.cs:704-707`: a sandstorm suppresses the rain zone.
+        // `SceneMetrics.cs:700-703`: the ONE-WAY gate — a sandstorm clears
+        // the rain zone (g67f-weather-bible); the rain never clears the
+        // sandstorm (witness `zone_sandstorm_suppresses_zone_rain`).
         if self.zone_sandstorm {
             self.zone_rain = false;
         }
@@ -2643,13 +2645,21 @@ mod tests {
 
     #[test]
     fn zone_sandstorm_suppresses_zone_rain() {
-        // `SceneMetrics.cs:703-707`.
+        // `SceneMetrics.cs:698-703` — the ONE-WAY ZoneSandstorm→clears-
+        // ZoneRain gate (g67f-weather-bible): the sandstorm arm runs AFTER
+        // the rain assignment and only ever CLEARS zone_rain; zone_rain
+        // never touches zone_sandstorm.
         let mut m = SceneMetrics::new();
         m.desert_sand_tile_count = thresholds::DESERT_TILE_NORMAL;
         m.tile_center = (0, 10);
         m.calculate_zones(100.0, 1000, 135.0, 4200, 400, true, true);
         assert!(m.zone_sandstorm);
         assert!(!m.zone_rain);
+        // The gate is ONE-WAY: raining while the sandstorm holds still
+        // leaves zone_sandstorm set (the rain never clears the storm) —
+        // a re-calculation with raining=true replays the same result.
+        m.calculate_zones(100.0, 1000, 135.0, 4200, 400, true, true);
+        assert!(m.zone_sandstorm && !m.zone_rain, "rain cannot clear the storm");
 
         // Without the happening storm the rain zone stays.
         let mut m = SceneMetrics::new();

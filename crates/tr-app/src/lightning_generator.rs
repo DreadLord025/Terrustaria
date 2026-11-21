@@ -38,6 +38,11 @@
 //!
 //! `CalcRotations`/`SmoothRotations` (`:206-241`) are draw-side only
 //! (`calcRotations` is false on every sim path here) — not ported.
+//!
+//! UNWIRED per the `npc_ai_sand_elemental` precedent: the only sim callers
+//! are `storm_lightning.rs`'s spawn gates; the 1091 AI + the tick drain
+//! are the wiring follow-up (c40-deferred-to-f42 contract).
+#![allow(dead_code)] // wiring deferred — the storm-bolt spawn lane lands with the 1091 AI
 
 use glam::Vec2;
 use tr_core::World;
@@ -438,14 +443,16 @@ mod tests {
     }
 
     /// `PickLayerToReroll` (`:183-194`): chance 0.5, r = 0.5 hits layer 0
-    /// (0.5 >= 1-0.5); r = 0.25 → 0.25/0.5 = 0.5 hits layer 1; r = 0.1 →
-    /// 0.2 → 0.4 hits layer 2; r = 0.01 walks all four and misses.
+    /// (0.5 >= 1-0.5); r = 0.25 → 0.5 hits layer 1; r = 0.2 → 0.4 → 0.8
+    /// hits layer 2; r = 0.1 → 0.2 → 0.4 → 0.8 hits layer 3; r = 0.01
+    /// walks all four (0.01/0.02/0.04/0.08) and misses.
     #[test]
     fn w4_c40_the_layer_pick_walks_the_geometric_bands() {
         let g = LightningGenerator::storm_lightning();
         assert_eq!(g.pick_layer_to_reroll(0.5, 0.5), Some(0));
         assert_eq!(g.pick_layer_to_reroll(0.25, 0.5), Some(1));
-        assert_eq!(g.pick_layer_to_reroll(0.1, 0.5), Some(2));
+        assert_eq!(g.pick_layer_to_reroll(0.2, 0.5), Some(2));
+        assert_eq!(g.pick_layer_to_reroll(0.1, 0.5), Some(3));
         assert_eq!(g.pick_layer_to_reroll(0.01, 0.5), None);
         // The high pick mirrors: r = 0.5 → low 0 → high 3.
         assert_eq!(g.pick_high_layer_to_reroll(0.5, 0.5), Some(3));
@@ -485,8 +492,8 @@ mod tests {
         w.tiles[idx].flags &= !tr_core::tile::FLAG_ACTIVE;
         w.tiles[idx].liquid = 128;
         assert!(g.tile_collision(&w, pos));
-        // A thin liquid (16): surface 16*239/255 = 15, 8 > 15 is false →
-        // the point stays above the surface, no collision.
+        // A thin liquid (16): surface 16*239/255 = 14 (integer division),
+        // 8 > 14 is false → the point stays above the surface, no collision.
         w.tiles[idx].liquid = 16;
         assert!(!g.tile_collision(&w, pos));
         // A fuller liquid (200): surface 16*55/255 = 3, 8 > 3 → collision.

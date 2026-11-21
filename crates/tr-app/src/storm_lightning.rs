@@ -37,9 +37,12 @@
 //! are PRIVATE (not this stream — `lightning_generator.rs`).
 //!
 //! The 1091 projectile AI (aiStyle 203) + the `Kill()` strike are the
-//! `projectile_storm_lightning` module; this module only spawns the
-//! request (the pool seam). The bolt VISUAL (the particle orchestrator)
-//! is the render lane — not drawn here.
+//! wiring follow-up (a `projectile_storm_lightning` module + the
+//! `weather.rs` tick drain under `RngKey::UpdateWorldGen`); this module
+//! only spawns the request (the pool seam). The bolt VISUAL (the particle
+//! orchestrator) is the render lane — not drawn here. UNWIRED per the
+//! `npc_ai_sand_elemental` precedent (c40-deferred-to-f42 contract).
+#![allow(dead_code)] // wiring deferred — the 1091 AI + the UpdateWorldGen tick drain are the follow-up
 
 use glam::Vec2;
 use tr_core::tiledata as td;
@@ -319,12 +322,22 @@ fn try_spawn_bolt_at(
 /// tile line from the tile centre up the rain fall velocity for 85 tiles;
 /// a solid tile on the line shelters the spot.
 fn is_safe_from_rain(world: &World, start_x: i32, start_y: i32, wind: f32) -> bool {
-    // `Rain.GetRainFallVelocity()` (`Rain.cs:91-94`): (wind*18, 14).
+    // `Rain.GetRainFallVelocity()` (`Rain.cs:91-94`): (wind*18, 14) — the
+    // float velocity, normalized in FLOAT (`Utils.cs:1837-1844`), THEN
+    // widened to the Vector2D line (`:72962`'s `.ToVector2D()`).
     let fall = Vec2::new(wind * 18.0, 14.0);
     // `-fall.SafeNormalize((0,1))` — the up-rain direction.
     let dir = -safe_normalize(fall, Vec2::Y);
-    let start = Vec2::new(start_x as f32 * 16.0 + 8.0, start_y as f32 * 16.0 + 8.0);
-    let end = start + dir * 16.0 * 85.0;
+    // `:72963`: `new Vector2D(startX, startY) * 16.0 + Vector2D.One * 8.0`
+    // — the line runs in DOUBLE (the `:72966` Vector2D PlotTileLine).
+    let start = (
+        start_x as f64 * 16.0 + 8.0,
+        start_y as f64 * 16.0 + 8.0,
+    );
+    let end = (
+        start.0 + dir.x as f64 * 16.0 * 85.0,
+        start.1 + dir.y as f64 * 16.0 * 85.0,
+    );
     // `Utils.PlotTileLine(start, end, 4, CheckStopForSolids)` — the result
     // is `DelegateMethods.CheckResultOut`, set true when a solid is hit.
     let mut hit = false;
@@ -352,18 +365,28 @@ fn is_safe_from_rain(world: &World, start_x: i32, start_y: i32, wind: f32) -> bo
 }
 
 /// `Utils.PlotTileLine` (`Utils.cs:2337-2350`): the Bresenham centre line
-/// with the half-width perpendicular offset band. `plot` returns false to
-/// abort (the C# `TileActionAttempt` convention).
-fn plot_tile_line(start: Vec2, end: Vec2, width: f32, plot: &mut dyn FnMut(i32, i32) -> bool) -> bool {
-    let half = (width / 2.0) as f64;
-    let delta = end - start;
-    let unit = delta / delta.length();
-    // The perpendicular offset (−unit.Y, unit.X) * half.
-    let perp = Vec2::new(-unit.y, unit.x) * half as f32;
-    let p_min = to_tile(start - perp);
-    let p_max = to_tile(start + perp);
-    let p_start = to_tile(start);
-    let p_end = to_tile(end);
+/// with the half-width perpendicular offset band — the C# overload is
+/// `Vector2D` (double) throughout: the unit vector, the perpendicular
+/// offset and the four `ToTileCoordinates` truncations all run in f64.
+/// `plot` returns false to abort (the C# `TileActionAttempt` convention).
+fn plot_tile_line(
+    start: (f64, f64),
+    end: (f64, f64),
+    width: f64,
+    plot: &mut dyn FnMut(i32, i32) -> bool,
+) -> bool {
+    let half = width / 2.0;
+    let delta = (end.0 - start.0, end.1 - start.1);
+    let len = (delta.0 * delta.0 + delta.1 * delta.1).sqrt();
+    let unit = (delta.0 / len, delta.1 / len);
+    // The perpendicular offset (−unit.Y, unit.X) * half (`:2342`).
+    let perp = (-unit.1 * half, unit.0 * half);
+    // `Vector2D.ToTileCoordinates` (`Utils.cs:1812-1815`): `(int)v >> 4`.
+    let to_tile_d = |v: (f64, f64)| ((v.0 as i32) >> 4, (v.1 as i32) >> 4);
+    let p_min = to_tile_d((start.0 - perp.0, start.1 - perp.1));
+    let p_max = to_tile_d((start.0 + perp.0, start.1 + perp.1));
+    let p_start = to_tile_d(start);
+    let p_end = to_tile_d(end);
     let min_off = (p_min.0 - p_start.0, p_min.1 - p_start.1);
     let max_off = (p_max.0 - p_start.0, p_max.1 - p_start.1);
     plot_line(p_start.0, p_start.1, p_end.0, p_end.1, true, &mut |x, y| {
@@ -435,7 +458,8 @@ fn plot_line(
 }
 
 /// `WorldUtils.ClampToWorld` (`WorldBuilding/WorldUtils.cs:9-14`): clamp
-/// each edge to `[fluff, maxTiles - fluff]`, rebuild the rect.
+/// each EDGE to `[fluff, maxTiles - fluff]`, rebuild the rect — an edge
+/// already inside the band stays put (no translation).
 fn clamp_to_world(rect: (i32, i32, i32, i32), world: &World, fluff: i32) -> (i32, i32, i32, i32) {
     let (x, y, w, h) = rect;
     let (right, bottom) = (x + w, y + h);
@@ -502,7 +526,7 @@ mod tests {
         let w = air();
         let p = player(Vec2::new(3200.0, 3200.0));
         let mut rng = UnifiedRandom::new(42);
-        let pristine = rng;
+        let pristine = rng.clone();
         // noLightning alone: suppressed.
         let mut i = inputs(true);
         i.no_lightning = true;
@@ -585,9 +609,12 @@ mod tests {
     #[test]
     fn w4_c40_the_view_rect_clamps_to_the_world_fluff() {
         let w = air(); // 400×400
-        // A rect centred near the top-left corner, fluff 10.
+        // A rect straddling the top-left corner, fluff 10: left/top clamp
+        // UP to 10, but right = -50+120 = 70 and bottom = -50+74 = 24 are
+        // already inside [10, 390] and stay put (`WorldUtils.cs:11-13`
+        // clamps each EDGE, it does not translate the rect).
         let r = clamp_to_world((-50, -50, 120, 74), &w, 10);
-        assert_eq!(r, (10, 10, 110, 64), "left/top clamp to 10");
+        assert_eq!(r, (10, 10, 60, 14), "left/top clamp to 10; right/bottom stay");
         // A rect fully inside stays put.
         let r = clamp_to_world((100, 100, 120, 74), &w, 10);
         assert_eq!(r, (100, 100, 120, 74));

@@ -39380,3 +39380,73 @@ from `sets.rs` — sand={53,112,116,234}, corrupt∋112, crimson∋234,
 hallow∋116). The witnesses (scene.rs 3, stray.rs 2, spawner.rs 5,
 player.rs 8, npc_ai_sand_elemental.rs 8) are WRITTEN, NOT RUN — **no
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.
+
+### The storm-bolt lane (W4-c40c, resume of the frozen in-flight work)
+
+The admitted "(L) bolt geometry" lane (research/78 item 4) — the
+damaging strike behind `rain.rs::thunder_step`'s flash+thunder:
+
+- **`lightning_generator.rs`** — `LightningGenerator.cs:9-326` whole:
+  the `StormLightning` static preset (`:285-304`), `Generate`'s
+  UnitY-rotation source point (`:64-76`), the `GenerateBolt` layered
+  random walk (`:78-162`: the layer reroll accumulators, the
+  perpendicular-deviation steering, the fork block whose `:134`
+  `NextFloat` draws UNCONDITIONALLY before the `bolts != null` test —
+  state-bearing even on the `CanHitTarget` path), `TileCollision`
+  (`:164-181`, the `(int)pos.Y % 16 > 16*(255-liquid)/255` liquid-surface
+  dip), the geometric `PickLayerToReroll`/`PickHighLayerToReroll`
+  (`:183-204`), `CanHitTarget` (`:243-246`) + `GenerateMainBoltPath`
+  (`:248-251`, the `Array.Resize(i+1)` truncation ported). The bolt owns
+  a PRIVATE `LCG32Random` per call (`LCG32Random.cs:34-43` — the f64
+  `NextDouble` the steering needs; the Aqua-Scepter bounce copy in
+  projectile.rs only reads NextFloat, so this is a documented second
+  copy, not a refactor). `CalcRotations`/`SmoothRotations` are draw-side
+  (`calcRotations:false` on both sim paths) — not ported.
+- **`storm_lightning.rs`** — `WorldGen.SpawnStormLightning`
+  (`WorldGen.cs:71864-71922`): the seed gates, the AnyDanger ×1.5 /
+  moreLightning ÷2 interval, the 255-slot safe-spot rects (the 24×24
+  CenteredRectangle + the ±5.75-clamped velocity lead union), the
+  per-player `Next(num3)` strike roll (sleeping ×2, fishing pole ×2,
+  the ZoneRain && !ZoneSnow && afkCounter<10800 gate);
+  `SpawnStormLightningNearPlayer` (`:71924-71962`, the MaxWorldViewSize/32
+  view rect ClampToWorld(10), the 400-attempt scan — 350 attractor-only
+  then 50 solid-or-liquid, the upward attractor walk, the liquid-above
+  gate); `IsLightningAttractor` (`:71964-71975`, nactive &&
+  (GetsCheckedForLeaves ∥ AttractsStormLightning) — both sets verified
+  against `TileID.cs:490`/`:624`'s factory lists);
+  `TrySpawnLightningBolt` (`:71977-72018`, the IsSafeFromRain shelter
+  gate, the safe-spot contains, the 800-px nearby-1091 scan with the
+  ref-skip break, the `Next(MaxFloatInt+1)` seed, the liquid surface
+  offset, the CanHitTarget gate, the 1091/500-dmg spawn request);
+  `IsSafeFromRain` (`:72960-72968`) over the `Vector2D` `PlotTileLine`
+  (`Utils.cs:2337-2350`, width 4, the f64 unit/perpendicular/truncation
+  math) + `PlotLine` (`:2238-2292`, the jump:false double-plot) +
+  `CheckStopForSolids` (`DelegateMethods.cs:743-759`).
+- **RNG contract**: every sim draw is `Main.rand` under the
+  `UpdateWorldGen` swap (`Main.cs:17802` → `WorldGen.UpdateWorld` →
+  `:71535`); the wiring caller binds `RngKey::UpdateWorldGen`. The
+  geometry's LCG draws are PRIVATE (seeded from the spawn seed, never
+  the named stream).
+- **Wiring deferred** (the c40-deferred-to-f42 contract, the
+  `npc_ai_sand_elemental` precedent): both modules are registered
+  UNWIRED (`#![allow(dead_code)]`); the 1091 aiStyle-203 projectile AI +
+  the `Kill()` strike + the tick drain that feeds the pool are the
+  wiring follow-up. The bolt VISUAL (ParticleOrchestrator) is the
+  render lane.
+- **Resume fixes** (vs the frozen 10:27 WIP): the `ClampToWorld`
+  witness's expectation corrected to `(10,10,60,14)` — the C# clamps
+  each EDGE (`WorldUtils.cs:11-13`), it does not translate the rect
+  (right=70/bottom=24 are inside [10,390] and stay); `IsSafeFromRain`/
+  `PlotTileLine` widened from f32 to the C#'s `Vector2D` f64 line math
+  (the direction still normalizes in FLOAT first — `:72962` normalizes
+  the float velocity, THEN `.ToVector2D()`).
+- **The g67f one-way gate re-pinned**: `SceneMetrics.cs:698-703`
+  (`ZoneRain = raining && SurfaceAtmospherics; ZoneSandstorm = ...;
+  if (ZoneSandstorm) ZoneRain = false`) was already landed in
+  `scene.rs::calculate_zones` — the citations were off by 3 lines
+  (`:701/:703/:704-707`), corrected; the witness gains the one-way
+  replay arm (raining while the storm holds never clears the storm).
+  Sandstorm stays WIND-ONLY in-lane: the push chain above is the sim
+  consumer; no rain/visual coupling added (f42 owns the visuals).
+- 10 witnesses (5 geometry, 5 spawn) WRITTEN NOT RUN — code-only, no
+  cargo/tests/rustfmt/graphify invoked.

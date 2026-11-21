@@ -196,6 +196,22 @@ The brief asked "strike mechanic?". There are TWO distinct chains:
    projectile AI — a large visual+sim lane, **out of a doc-sweep's scope and
    already admitted**. Recorded here so the next sweep does not re-flag it.
 
+   **UPDATE (W4-c40c, the freeze-resume round)**: the SIM halves are now
+   PORTED as UNWIRED modules — `lightning_generator.rs`
+   (`LightningGenerator.cs:9-326`, the private-LCG bolt walk +
+   `CanHitTarget`/`GenerateMainBoltPath`) and `storm_lightning.rs`
+   (`WorldGen.cs:71864-72018` + `IsSafeFromRain` `:72960-72968`, the strike
+   roll → attractor scan → shelter/safe-spot/nearby-bolt gates → the
+   1091/500-dmg spawn request). The 1091 aiStyle-203 AI + the
+   `UpdateWorldGen` tick drain are the wiring follow-up; the bolt VISUAL
+   stays the render lane. 10 witnesses WRITTEN NOT RUN. ANALYSIS "The
+   storm-bolt lane (W4-c40c…)". The g67f one-way
+   ZoneSandstorm→clears-ZoneRain gate (`SceneMetrics.cs:698-703`) was
+   already landed in `scene.rs::calculate_zones` — re-pinned citations +
+   the one-way replay witness arm this round; the sandstorm stays
+   wind-only in-lane (the push chain is the sim consumer, f42 owns the
+   visuals per the c40-deferred-to-f42 contract).
+
 ## Item 5 — Wind mill / pinwheel tile animation: LANDED + WIRED + WITNESSED
 
 There is no "Windmill" tile in 1.4.5.8; the wind-animated tiles are
