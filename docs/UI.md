@@ -679,7 +679,8 @@ difficulty slider.
   powers, the spawn-rate cache, the session difficulty + name) rides
   `swap_world`'s `App::new` reset (`app/mod.rs`); the per-world powers
   re-load from the new world's section. The family FINAL + the
-  JOURNEY-SEAL receipts: `docs/research/308-journey-family-final.md`.
+  JOURNEY-SEAL receipts: `docs/research/344-journey-family-final.md`
+  (renumber chain 308→344 per registry-150 §8.7 FROZEN).
 
 Deviations (docs/ANALYSIS.md): the `ByCreativeSortingId` middle sort step
 falls through to alphabetical (no generated group table); the

@@ -39427,9 +39427,10 @@ tests are WRITTEN, NOT RUN.** Deliberate deviations:
   Witness `w4_c24_the_character_journey_state_rides_the_world_swap`
   (the carry, the per-world FreezeTime re-load, the forced-check
   non-fire on a 2-row tracker).
-- **The family FINAL**: `docs/research/308-journey-family-final.md`
-  (registry 308 per research/150 §7.4 "308+ FREE" + a fresh all-object
-  sweep max 298) — the full C#→port→commit map, the four JOURNEY-SEAL
+- **The family FINAL**: `docs/research/344-journey-family-final.md`
+  (registry **344** per research/150 §8.7 FROZEN table — renumber chain
+  308→344; the original §7.4 "308+ FREE" self-pick + the all-object
+  sweep max 298 are superseded, g13 KEEPS 308) — the full C#→port→commit map, the four JOURNEY-SEAL
   receipts (c24c landed `face9df72`; f30b TRASH_COMPACTOR inert→ACTIVE
   through the sacrifice producer + the save/load + the version-gated
   check; e10c/f44g hydration landed on the f44/e10 lanes `5c8bbb160`/

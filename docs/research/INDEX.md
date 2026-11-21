@@ -75,7 +75,7 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
-| 308 | The Journey family FINAL (W4-c24: the research/duplication/powers UI + sim wiring, the tracker save, c24c's sacrifice tooltip row + TRASH_COMPACTOR + growth rate, the swap carry; the JOURNEY-SEAL receipts + the merger keep-one table; registry 308 per research/150 §7.4 "308+ FREE") | `308-journey-family-final.md` | ✅ FINAL (code-only) |
+| 344 | The Journey family FINAL (W4-c24: the research/duplication/powers UI + sim wiring, the tracker save, c24c's sacrifice tooltip row + TRASH_COMPACTOR + growth rate, the swap carry; the JOURNEY-SEAL receipts + the merger keep-one table; registry **344** per research/150 §8.7 FROZEN table — renumber chain 308→344, the 308 self-pick SUPERSEDED, g13 KEEPS 308) | `344-journey-family-final.md` | ✅ FINAL (code-only) |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

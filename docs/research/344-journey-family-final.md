@@ -1,11 +1,19 @@
-# 308 — The Journey family FINAL (W4-c24, code-only) + the JOURNEY-SEAL receipts
+# 344 — The Journey family FINAL (W4-c24, code-only) + the JOURNEY-SEAL receipts
 
-Registry number: **308** — research/150 §7.4 declares **308+ FREE** (the
-round-3 extension consumed 304-307); a fresh sweep at write time confirms:
-`git rev-list --objects --all -- docs/research/` maxes at **298** (280-283
-+ 298 above the round-3 block), and the on-disk Desktop worktrees max at
+**Renumber chain: 308 → 344** (MICRO RENAME, §8.7 AMENDMENT 3 FROZEN table,
+`150-research-number-registry.md` at `origin/task/W4-d54` `9dddb32b4`:
+`c24 | 308-journey-family-final | 935c47617 16:43:22 | **344**`). The
+308 self-pick below is SUPERSEDED — §8.5's g13 KEEPS 308 (d21→340 §8.6,
+g65→346 §8.7); this doc is 344. No content change beyond the
+header/banner/refs; the FINAL body stands as written at `935c47617`.
+
+**Registry take (historical, superseded by the chain above):** 308.
+research/150 §7.4 declared **308+ FREE** (the
+round-3 extension consumed 304-307); a fresh sweep at write time confirmed:
+`git rev-list --objects --all -- docs/research/` maxed at **298** (280-283
++ 298 above the round-3 block), and the on-disk Desktop worktrees maxed at
 **280** (g56 274-void-family-bible, f21 276, f45 279, g61 273, g50 271).
-No ref, no worktree carries 308. Claimed by W4-c24's final resume
+No ref, no worktree carried 308 at write time. Claimed by W4-c24's final resume
 (`task/W4-c24-journey-ui`).
 
 Status: **FINAL for the single-player Journey family.** Every C# surface
