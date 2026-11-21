@@ -23160,11 +23160,17 @@ code-only mode).
   builderAccStatus[11] == 0`: the port reads `p.unlocked_biome_torches`
   (without the Torch God unlock the plain torch stays plain) and folds the
   builder toggle to 0 (on). `happyFunTorchTime` folds to false (no field).
+  **(W4-f33 update: the conversion callers read the `using_biome_torches()`
+  PROPERTY now — the toggle slot is live state, the 5043 use arms it; the
+  toggle CLICK stays unported. `happyFunTorchTime` has a field now, the
+  held-torch light gate reads it.)**
 * `BiomeTorchHoldStyle` (`:40291-40346`): the `ZoneShimmer` (`:40297`),
   `ZoneLihzhardTemple` (`:40305`), `ZoneUndergroundDesert` and remix-world
   desert arms (`:40337-40344`) read fields the port's `Zones` does not carry
   and are skipped **in place**; the dungeon arm (`:40301`, before the
   underworld one) and the surface-desert half land.
+  **(W4-f33 update: ALL arms live — the temple + remix landed at S1-P-i42,
+  the shimmer + underground-desert flags ride the `Zones` snapshot now.)**
 * The `ItemCheck` gate `!JustDroppedAnItem && IsAllowedToHoldItems`
   (`:42847`) folds to true (neither flag ported); `ApplyItemPositionOffsetFromMount`
   folds to zero (no mount offsets); 4952's `petting.isPetting` gate folds
@@ -36978,12 +36984,39 @@ Census first; the WRONGs fixed verbatim with C# cites.
 via `BiomeTorchPlaceStyle` (`:40236-40289`). The hold-light family already read
 the unlock (`player_lights.rs::biome_torch_hold_style`); the placement half was
 absent. **Fix**: `world_sim/editing.rs::biome_torch_place_style` + the
-`place_tile` conversion. The ZoneShimmer / ZoneUndergroundDesert arms read
-unported `Zones` fields — skipped in place; the temple (`Zones.temple`) and
-remix (`SeedFlags::REMIX`) arms ARE ported, the remaining arms keep their
-C# order (the player_lights precedent). The hold-style half also regained its
-dropped `ZoneLihzhardTemple` and remix-desert arms (`player_lights.rs`,
+`place_tile` conversion. The temple (`Zones.temple`) and remix
+(`SeedFlags::REMIX`) arms ARE ported, the remaining arms keep their C# order
+(the player_lights precedent). The hold-style half also regained its dropped
+`ZoneLihzhardTemple` and remix-desert arms (`player_lights.rs`,
 `Player.cs:40305-40308`/`:40341-40344`).
+**W4-f33 update — ALL twelve arms live now.** The ZoneShimmer /
+ZoneUndergroundDesert arms were skipped while the `Zones` SNAPSHOT dropped the
+flags — but `SceneMetrics` carried `zone_shimmer`/`zone_underground_desert` all
+along (`scene.rs:87`/`:152`); the skip was a copy gap, not an unported system.
+The snapshot carries both now (`scene.rs::zones`), the shimmer arm returns the
+Aether torch FIRST (23 place / 5353 hold, `:40240`/`:40297`) and the desert arm
+ORs the underground-desert zone into the surface gate (`:40280`/`:40337`).
+Both conversion gates read the `UsingBiomeTorches` PROPERTY
+(`p.using_biome_torches()` — the unlock AND `builderAccStatus[11] == 0`,
+`Player.cs:3950-3959`), not the raw unlock flag; the builder-toggle CLICK
+(`Main.cs:42532-42585`) stays unported, so the slot holds the ctor's 0 (on) in
+play. The 5043 use arms both halves (`:45231-45232`). Witnesses: the full
+arm table + order pins + the placement frameY route (`editing.rs`
+`w4_f33_the_place_style_arms…`/`…place_route…`/`…plain_torch_only`), the hold
+arm ids + the toggle gate (`player_lights.rs`). The d6 aiStyle-60 Shimmer
+stream's conversion (`Projectile.cs:29142`, `useWithoutTorchGodsFavor: true`)
+calls the same `pub(crate)` body — the visibility matches d6's `5d81f2de`.
+**Campfire family — the documented follow-up.** `BiomeCampfirePlaceStyle` /
+`BiomeCampfireHoldStyle` (`Player.cs:40348-40401`/`:40403-40460`, the 966 item
+→ tile 215) are a SEPARATE conversion family with its own arm order (shimmer
+15, glowshroom 14, temple 13, dungeon 7, underworld 2, hallow 12, corrupt 10,
+crimson 11, snow 3, jungle 13, desert 8) — the torch gate (`tileToCreate == 4`)
+never touches it; the campfire placement rides the TileObject route
+(`D_215`, `uses_custom_can_place`) and the conversion is unported (the
+`FigureOutWhatToPlace` preview half `:43426-43429` likewise). The tile-replacement
+path's conversion (`PlaceThing_TryReplacingTiles` `:39895-39902` /
+`PlaceThing_ValidTileForReplacement` `:39919-39926`) is unported with
+`WorldGen.ReplaceTile` itself (`liquid.rs:709`'s recorded gap).
 
 **Glowstick throw — the rows + AI were absent, now ported.** The six glowstick
 kinds (50/53/473/515/870/1089) had NO `proj_data` rows, so
@@ -37076,7 +37109,9 @@ never reads localAI[2]).
   `AddLight` lands; the flood-fill writes the light map directly).
 - The torch `checkingLiquid()` gate half folds to false (no checking bit).
 - The biome-torch ZoneShimmer/ZoneUndergroundDesert arms fold (unported
-  `Zones` fields); the temple + remix arms are ported.
+  `Zones` fields); the temple + remix arms are ported. **(W4-f33: RESTORED —
+  the `Zones` snapshot carries both flags now, all twelve arms live; see
+  "Biome-torch place style" above.)**
 - The flare's `StatusPlayer` mirror (`Projectile.cs:11983-11997`) is NOT wired:
   its only call sites are `Damage_EVP` (hostile shots — the flares are
   friendly), `SelfHurtPlayers` (bombs/bad-torch only) and `Damage_PVP` uses
@@ -39408,6 +39443,23 @@ Deliberate folds/deviations:
   `start_swing_extras` (`:51681-51698`); its case-2 pitch draw rides the
   `UpdatePlayers` stream. The grant itself draws NOTHING (witnessed: every
   RngKey pristine with the audio muted).
+- **The net sync** (`:45240-45241`): `SendData(4)`'s biome-torch trio rides
+  the `4 PlayerInfo` bitsByte16 bits 0/1/2 (`NetMessage.cs:182-184` /
+  `MessageBuffer.cs:343-345`) — the identity push (`client_send_identity`),
+  the host's join-bundle relay and the server slot copy
+  (`Server::set_slot_torch_flags`) all carry it; the remote snapshot
+  (`PlayerNet`) reads it back. The port has no per-use `SendData(4)` seam —
+  the flags are state, the next identity sync re-announces them (recorded
+  fold). `SendData(51, …, 5f)` is the new `C2s::MiscDataSync` (msg 51, the
+  (player, kind) byte pair): a CLIENT's kind-5 request registers the 664
+  kill on the server (`MessageBuffer.cs:2514-2520`'s `netMode == 2` arm) +
+  the kill-count broadcast; the HOST + single-player register locally in
+  the use arm (the bestiary is per-world content,
+  `BestiaryUnlocksTracker : IPersistentPerWorldContent` — the host IS the
+  server the C# client requests). The other msg-51 kinds (Skeletron 1, the
+  roars 2, the sundial 3, the mimic smoke 4, the moondial 6) stay no-ops
+  (their systems unported). Witnesses: the msg-51 pair + the bitsByte16
+  trio round-trips (`net.rs`).
 
 The `happyFunTorchTime` consumers (the event flag now exists,
 `torch_god.happy_fun_torch_time`):
@@ -39438,3 +39490,28 @@ silence, the dead/CCed gate; `player_file.rs` 1: the .plr pair round-trip;
 `player_lights.rs` 1: the event kills the held-torch light;
 `render/player_layers.rs` 1: the draw-hide; `audio.rs` 1: the track-101
 ladder order; `player.rs` 1: the torch-hold body-row drop).
+
+### The achievement census — GAIN_TORCH_GODS_FAVOR is a USE flag, not a progression
+
+The brief's "f30 progression-45?" question resolves at census: the f30 tail
+(`origin/task/W4-f30-achievement-notify-2`, research/30) covers progression
+ids 21/33-46 — id 45 is TRASH_COMPACTOR (`CheckResearchAchievement`), and
+**no progression id names the torch row**. `GAIN_TORCH_GODS_FAVOR` is
+`CustomFlagCondition.Create("Use")` (`AchievementInitializer.cs:360-362`,
+the registry's one `Category::None` row, icon 109). Its ONLY notify site in
+the whole C# is the 5043 use's `HandleSpecialEvent(this, 24)`
+(`Player.cs:45233` → `AchievementsHelper.cs:367-369`'s
+`GetCondition("GAIN_TORCH_GODS_FAVOR", "Use").Complete()`).
+
+**The event-end grant fires NO achievement.** `TorchAttack`'s survival arm
+(`Player.cs:17870-17873`) drops the 5043 item and nothing else — no
+`HandleSpecialEvent`, no `NotifyProgressionEvent`; the item PICKUP is not a
+condition either (the row is a Use flag, not `ItemPickupCondition(5043)`).
+So the achievement completes when the player USES the favor, not when they
+survive the event — the port's `torch_god.rs` event-end correctly stays
+silent, and the use arm's `handle_special_event(24)` is the one wire.
+Witnesses: `achievements.rs::w4_f33_the_torch_god_row_is_a_use_flag_not_a_progression`
+(the row's condition shape + no progression id completes it) and
+`w4_f33_special_event_24_completes_only_the_torch_row` (the named complete
+leaves the other eight "Use" rows open, queues the completion event once,
+the second 24 is a no-op).

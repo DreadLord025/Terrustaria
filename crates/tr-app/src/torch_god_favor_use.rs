@@ -117,15 +117,32 @@ fn run_favor_arm(app: &mut App, held: ItemSlot) -> bool {
     let _ = app.achievements.handle_special_event(24);
     // `:45234-45239` — the single-player bestiary kill credit: a fresh
     // `SetDefaults(664)` NPC's "TorchGod" row. `Main.netMode == 0` is the
-    // port's `NetRole::Off`; a host/client skips it (the C# gate).
-    if matches!(app.net, crate::app::NetRole::Off) {
+    // port's `NetRole::Off`. A HOST also registers locally: the bestiary is
+    // per-WORLD content (`BestiaryUnlocksTracker : IPersistentPerWorldContent`),
+    // the host's own use is the server-side register the C# client's
+    // `SendData(51)` requests (`MessageBuffer.cs:2514-2520`'s `netMode == 2`
+    // arm) — the port's host IS that server. A CLIENT skips the local
+    // register and sends the `51` request below (the C# `netMode == 1`
+    // path: the server's bestiary gets the credit, the client's own tracker
+    // learns it through the kill-count broadcast).
+    if !matches!(app.net, crate::app::NetRole::Client(_)) {
         app.bestiary.kills.register_kill("TorchGod");
         // `NPCKillsTracker.SetKillCountDirectly`'s new-key hook
         // (`NPCKillsTracker.cs:46-49`): the 100% completion check. The
         // net-aware App seam (a host broadcasts the `98` wire).
         let _ = app.try_grant_bestiary_100_net();
+        // `NPCKillsTracker.RegisterKill`'s `netMode == 2` broadcast half
+        // (`NPCKillsTracker.cs:29-32`): the host fans the new count out.
+        app.broadcast_bestiary_kill(664, app.bestiary.kills.get_kill_count("TorchGod"));
     }
-    // `:45240-45241` — SendData(4) / SendData(51, …, 5f): net-only.
+    // `:45240` — SendData(4): the identity re-push carries the biome-torch
+    // trio (bitsByte16 bits 0/1/2, `NetMessage.cs:182-184`) — the port's
+    // `client_send_identity` reads the live flags on every push; the use's
+    // re-announce rides the next identity sync (the port has no per-use
+    // SendData(4) seam — the flags are state, not an event, recorded fold).
+    // `:45241` — SendData(51, …, 5f): a CLIENT asks the server to register
+    // the 664 kill (`MessageBuffer.cs:2514-2520`).
+    app.send_torch_god_bestiary_request();
     // `:43280-43326` — the generic consumable tail: ApplyItemTime just ran
     // (itemTime == itemTimeMax), so the stack pays one; the 0-stack re-arms
     // itemTime = itemAnimation (`:43323`) then airs out (the TurnToAir fold).

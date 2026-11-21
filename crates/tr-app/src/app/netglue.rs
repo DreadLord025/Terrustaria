@@ -246,6 +246,24 @@ impl App {
                     id,
                 ); // `:2478`
             }
+            // `case 51` — MiscDataSync (`MessageBuffer.cs:2482-2530`). The
+            // server overrides the player byte to the sender's slot
+            // (`:2485-2488`); kind 5 registers the Torch God's 664 bestiary
+            // kill (`:2514-2520` — the 5043 use's `SendData(51, …, 5f)`,
+            // `Player.cs:45241`, W4-f33). The other kinds' systems
+            // (Skeletron 1, the roars 2, the sundial 3, the mimic smoke 4,
+            // the moondial 6) are unported — no-ops like the C#'s missing
+            // arms on a client.
+            C2s::MiscDataSync { kind, .. } => {
+                if kind == 5 {
+                    self.bestiary.kills.register_kill("TorchGod");
+                    let _ = self.try_grant_bestiary_100_net();
+                    self.broadcast_bestiary_kill(
+                        664,
+                        self.bestiary.kills.get_kill_count("TorchGod"),
+                    );
+                }
+            }
             // `case 1` — the version literal (`MessageBuffer.cs:199-214`).
             C2s::Connect(version) => {
                 if server.state(id) != slot_state::FRESH {
@@ -301,6 +319,16 @@ impl App {
                     return;
                 }
                 server.set_slot_name(id, pi.name.clone());
+                // `player18.UsingBiomeTorches/happyFunTorchTime/
+                // unlockedBiomeTorches = bitsByte33[0..2]`
+                // (`MessageBuffer.cs:343-345`, W4-f33) — the server keeps
+                // its own copy of the biome-torch trio.
+                server.set_slot_torch_flags(
+                    id,
+                    pi.flags2.get(0),
+                    pi.flags2.get(1),
+                    pi.flags2.get(2),
+                );
                 log::info!("slot {id} announced as {}", pi.name);
             }
             // `case 5` — one inventory slot (`MessageBuffer.cs:399-462`).
@@ -1097,20 +1125,27 @@ impl App {
             if p.id != id {
                 server.send(id, &S2c::PlayerState(Box::new(self.player_state_of(p))));
                 if !p.name.is_empty() {
-                    server.send(
-                        id,
-                        &S2c::PlayerInfo(net::PlayerInfo::with_name(p.id as u8, &p.name)),
-                    );
+                    let mut pi = net::PlayerInfo::with_name(p.id as u8, &p.name);
+                    // The peer's biome-torch trio rides the relayed identity
+                    // (`NetMessage.cs:182-184`, W4-f33).
+                    pi.flags2.set(0, p.using_biome_torches);
+                    pi.flags2.set(1, p.happy_fun_torch_time);
+                    pi.flags2.set(2, p.unlocked_biome_torches);
+                    server.send(id, &S2c::PlayerInfo(pi));
                 }
             }
         }
         // The host is a player too (its slot is 0): the display names ride
         // `4 PlayerInfo`, which msg 13 lacks.
         if !self.player_name.is_empty() {
-            server.send(
-                id,
-                &S2c::PlayerInfo(net::PlayerInfo::with_name(0, &self.player_name)),
-            );
+            let mut pi = net::PlayerInfo::with_name(0, &self.player_name);
+            // `bitsByte16[0..2]` (`NetMessage.cs:182-184`, W4-f33).
+            if let Some(p) = self.player.as_ref() {
+                pi.flags2.set(0, p.using_biome_torches());
+                pi.flags2.set(1, p.torch_god.happy_fun_torch_time);
+                pi.flags2.set(2, p.unlocked_biome_torches);
+            }
+            server.send(id, &S2c::PlayerInfo(pi));
         }
         let name = server.slot_name(id);
         let (px, py) = self.net_peer_spawn_pos();
@@ -1335,6 +1370,11 @@ impl App {
                         });
                     if let Some(p) = self.remote_players.get_mut(&peer) {
                         p.name = pi.name.clone();
+                        // `bitsByte33[0..2]` (`MessageBuffer.cs:343-345`,
+                        // W4-f33): the peer's biome-torch trio.
+                        p.using_biome_torches = pi.flags2.get(0);
+                        p.happy_fun_torch_time = pi.flags2.get(1);
+                        p.unlocked_biome_torches = pi.flags2.get(2);
                     }
                 }
             }
@@ -1867,10 +1907,17 @@ impl App {
     /// `6 WorldRequest`.
     fn client_send_identity(&self, client: &net::Client) {
         let me = self.local_id as u8;
-        client.send(&C2s::PlayerInfo(net::PlayerInfo::with_name(
-            me,
-            &self.player_name,
-        )));
+        let mut pi = net::PlayerInfo::with_name(me, &self.player_name);
+        // `bitsByte16` (`NetMessage.cs:182-184`, W4-f33): bit 0
+        // UsingBiomeTorches, bit 1 happyFunTorchTime, bit 2
+        // unlockedBiomeTorches — the 5043 use's `SendData(4)`
+        // (`Player.cs:45240`) re-announces the pair through this push.
+        if let Some(p) = self.player.as_ref() {
+            pi.flags2.set(0, p.using_biome_torches());
+            pi.flags2.set(1, p.torch_god.happy_fun_torch_time);
+            pi.flags2.set(2, p.unlocked_biome_torches);
+        }
+        client.send(&C2s::PlayerInfo(pi));
         // The health (`Main.cs`'s 16 in the same push).
         let (hp, max_hp) = self
             .player
@@ -2949,6 +2996,21 @@ impl App {
     pub(crate) fn send_switch_outcome(&self, outcome: &crate::collision::SwitchOutcome) {
         for (x, y) in &outcome.switches {
             self.send_hit_switch(*x, *y);
+        }
+    }
+
+    /// The 5043 use's `NetMessage.SendData(51, -1, -1, null, whoAmI, 5f)`
+    /// (`Player.cs:45241`, W4-f33): a CLIENT asks the server to register the
+    /// Torch God's 664 bestiary kill (`MessageBuffer.cs:2514-2520`'s
+    /// `netMode == 2` arm). The host + single-player register locally in the
+    /// use arm itself (the bestiary is per-world content, the host IS the
+    /// server) — this seam only carries the client request.
+    pub(crate) fn send_torch_god_bestiary_request(&self) {
+        if let NetRole::Client(client) = &self.net {
+            client.send(&C2s::MiscDataSync {
+                player_id: self.local_id as u8,
+                kind: 5,
+            });
         }
     }
 
