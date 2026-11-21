@@ -44,6 +44,11 @@ pub struct SpawnFlags {
     pub zone_dungeon: bool,
     /// `NPC.downedBoss3` (Skeletron defeated).
     pub downed_boss3: bool,
+    /// `Spawner.hardDungeon` (`NPC.cs:380`): `NPC.downedPlantBoss &&
+    /// Main.hardMode` — the hardmode-dungeon roster's gate (the 289 Giant
+    /// Cursed Skull roll `:2683-2687` included). Plantera-gated, NOT just
+    /// hardmode.
+    pub hard_dungeon: bool,
     pub zone_sandstorm: bool,
     pub zone_underground_desert: bool,
     pub zone_jungle: bool,
@@ -1082,6 +1087,25 @@ fn spawn_npc_at(
         // vanilla's remaining water arms — the sand-crab/beach chains —
         // map to the port's closest kinds there).
     }
+    // ---- the dungeon band (`NPC.cs:2626-2793`, the zone chain's
+    // `else if (this.ZoneDungeon)` arm) ---- W4-c3 gaps 2+3: the 694
+    // Water Bolt Mimic's book-find spawn + the 289 Giant Cursed Skull's
+    // hardmode roll + the 34 Cursed Skull's 1/7 roll. The arm sits AFTER
+    // the water ladder (`:2217-2322`'s terminal water block) and the
+    // bound-NPC rolls (`:2084-2095` — the port keeps those in the
+    // deep-cavern section below, the recorded fold) and BEFORE the
+    // surface/moon ladders. The unmodelled pre-dungeon arms (the wall-244
+    // spider/gnome/critter chain `:1584-1655`, the bartender/spider/
+    // underground-desert/golfer specials `:1656-1695`, the evil-water
+    // hardmode arms `:1763-1774`, the beach/angler chains, the granite/
+    // marble scan's two `SetSpawnFlagsForChosenTile` draws `:1076-1077`
+    // and the surface tile-switch critter arms `:2323-2624`) are the
+    // documented consume-skip deviation: on a dungeon spawn tile they
+    // consume nothing here, exactly as the port's other unmodelled
+    // branches do (ANALYSIS "the dungeon band").
+    if ctx.flags.zone_dungeon {
+        return spawn_dungeon_band(ctx, rng, x, y / 16);
+    }
     if surface {
         // ---- the moon-event roster ladders (`NPC.cs:2804-3548`) ---- the
         // C#'s `!Main.dayTime && (snowMoon || pumpkinMoon)` arms sit in the
@@ -1996,6 +2020,186 @@ fn spawn_martian_probe(x: i32, y: i32) -> Option<Npc> {
     Some(n)
 }
 
+/// W4-c3 gaps 2+3 — the dungeon band (`Spawner.SpawnAnNPC`'s
+/// `else if (this.ZoneDungeon)` arm, `NPC.cs:2626-2793`). The wall-colour
+/// pick (`num40`), the pre-Skeletron Guardian, the bound Mechanic, the
+/// hardmode roster (the 289 Giant Cursed Skull included), the 71/70/72/34/32
+/// rolls and the 694 Water Bolt Mimic's book-find. The unported kinds
+/// (287 BoneLee, 293/291/292/290 the hardmode skeletons, 281-286 the
+/// ragged/necro/diabolist casters, 269-280 the armored bones, 693 the
+/// Librarian Skeleton, 294-296 the big angry bones, the -13/-14/31 angry
+/// bones) consume their rolls and spawn nothing — the port's
+/// consume-and-return-None shape (the Wyvern arm's precedent). The 70
+/// SpikeBall's `NearSpikeBall` uniqueness scan and the 72 BlazingWheel's
+/// `AnyNPCs` are unmodelled (the port's spawn path does not carry them);
+/// the rolls still draw. `RollLuck` runs as the plain `Next(n)` (the
+/// spawner's documented luck fold).
+fn spawn_dungeon_band(ctx: &SpawnContext, rng: &mut UnifiedRandom, x: i32, y: i32) -> Option<Npc> {
+    // `:2628-2642`: the wall-colour pick. The slab walls (94/96/98) set
+    // num40 = 1, the tile walls (95/97/99) set num40 = 2 (the tile check
+    // runs second and wins a mixed pair); the 1/7 RollLuck re-rolls it.
+    let wall = ctx.world.tile(x, y).map(|t| t.wall).unwrap_or(0);
+    let wall2 = ctx.world.tile(x, y - 1).map(|t| t.wall).unwrap_or(0);
+    let mut num40 = 0;
+    if matches!(wall, 94 | 96 | 98) || matches!(wall2, 94 | 96 | 98) {
+        num40 = 1;
+    }
+    if matches!(wall, 95 | 97 | 99) || matches!(wall2, 95 | 97 | 99) {
+        num40 = 2;
+    }
+    if rng.next_max(7) == 0 {
+        num40 = rng.next_max(3);
+    }
+    // `:2643-2652`: the pre-Skeletron Guardian (68). The port has no
+    // DungeonGuardian kind — the arm consumes nothing (the flag gate
+    // short-circuits before any roll) and returns None.
+    if !ctx.flags.downed_boss3 {
+        return None;
+    }
+    // `:2653-2657`: the bound Mechanic (123). The port's `bound_mech_ok`
+    // carries the downedBoss3 + !savedMech + !AnyNPCs(123) guards; the
+    // `!waterTile` gate is the band's dry-tile precondition (the water
+    // ladder above already returned on a wet tile), and the depth band
+    // rides `below_deep_dungeon`.
+    if ctx.bound_mech_ok && ctx.below_deep_dungeon && rng.next_max(5) == 0 {
+        return Npc::spawn_cave_walker(ctx.world, x, NpcKind::BoundMechanic);
+    }
+    // `:2658-2719`: the hardmode roster (`hardDungeon = downedPlantBoss &&
+    // hardMode`, `:380`). Every kind here is unported except the 289 — the
+    // rolls draw in the C#'s order and the unported outcomes spawn nothing.
+    if ctx.flags.hard_dungeon {
+        if rng.next_max(30) == 0 {
+            return None; // 287 BoneLee
+        }
+        if num40 == 0 && rng.next_max(15) == 0 {
+            return None; // 293 SkeletonCommando
+        }
+        if num40 == 1 && rng.next_max(15) == 0 {
+            return None; // 291 SkeletonSniper
+        }
+        if num40 == 2 && rng.next_max(15) == 0 {
+            return None; // 292 TacticalSkeleton
+        }
+        if num40 == 0 && rng.next_max(35) == 0 {
+            return None; // 290 Paladin (the AnyNPCs gate is unmodelled)
+        }
+        // `:2683-2687`: the 289 Giant Cursed Skull — the slab/tile walls
+        // (num40 1/2), the 1/30 roll. Plantera-gated via hard_dungeon.
+        if (num40 == 1 || num40 == 2) && rng.next_max(30) == 0 {
+            return Npc::spawn_hover(ctx.world, x, y, NpcKind::GiantCursedSkull);
+        }
+        if rng.next_max(20) == 0 {
+            let _ = rng.next_max(2); // the 281-286 caster pick
+            return None;
+        }
+        if rng.next_max(3) != 0 {
+            let _ = rng.next_max(4); // the 269-280 armored-bones pick
+            return None;
+        }
+    }
+    // `:2720-2724`: the 71 Dungeon Slime (1/35).
+    if rng.next_max(35) == 0 {
+        return Npc::spawn_caster(ctx.world, x, y, NpcKind::DungeonSlime);
+    }
+    // `:2725-2729`: the 70 SpikeBall (num40 1, 1/3) — unported, the roll
+    // draws (the NearSpikeBall scan is unmodelled).
+    if num40 == 1 && rng.next_max(3) == 0 {
+        return None;
+    }
+    // `:2730-2734`: the 72 BlazingWheel (num40 2, 1/5).
+    if num40 == 2 && rng.next_max(5) == 0 {
+        return Npc::spawn_hover(ctx.world, x, y, NpcKind::BlazingWheel);
+    }
+    // `:2735-2739`: the 34 Cursed Skull (num40 0, 1/7).
+    if num40 == 0 && rng.next_max(7) == 0 {
+        return Npc::spawn_hover(ctx.world, x, y, NpcKind::CursedSkull);
+    }
+    // `:2740-2744`: the 32 Dark Caster (1/7).
+    if rng.next_max(7) == 0 {
+        return Npc::spawn_caster(ctx.world, x, y, NpcKind::DarkCaster);
+    }
+    // `:2745-2763`: the book-find. The 1/8 roll spawns the 694 Water Bolt
+    // Mimic at the closest book (ai3 = 3, the closed book); the else 1/10
+    // roll spawns the 693 Librarian Skeleton (unported). The num43 roll
+    // (`:2764`) draws AFTER the book-find regardless.
+    let mut flag13 = false;
+    if rng.next_max(8) == 0 {
+        if let Some((bx, by)) = find_nearby_book(ctx, x, y) {
+            let mut n = Npc::new(
+                NpcKind::WaterBoltMimic,
+                bx as f32 * TILE_PX + 8.0 - 22.0,
+                by as f32 * TILE_PX - 44.0,
+                1,
+                0.0,
+            );
+            n.hp = n.max_hp;
+            n.ai[3] = 3.0; // the closed book (`:2751`'s ai3 arg)
+            return Some(n);
+        }
+    } else if rng.next_max(10) == 0 {
+        if find_nearby_book(ctx, x, y).is_some() {
+            flag13 = true; // the 693 Librarian Skeleton (unported)
+        }
+    }
+    let num43 = rng.next_max(5);
+    if flag13 {
+        return None;
+    }
+    // `:2769-2780`: the 294/295/296 big angry bones (unported).
+    if num43 < 3 {
+        return None;
+    }
+    // `:2781-2792`: the -14/-13/31 angry-bones tail (unported).
+    if rng.next_max(4) == 0 {
+        return None;
+    }
+    if rng.next_max(5) == 0 {
+        return None;
+    }
+    None
+}
+
+/// `NPC.AI_FindNearbyBook` (`NPC.cs:62308-62364`) with `closestBook: true,
+/// checkPlayerScreenRanges: true` — the 32x32 scan centred 16 tiles up-left
+/// of the spawn tile, the closest active book tile (type 50) that passes
+/// the on-screen check. The C#'s `closestBook` path keeps a running minimum
+/// (no `_nearbyBooks` array write, no `Main.rand` draw); the distance is
+/// `Vector2.Distance` from the scan's top-left corner. Returns the book's
+/// tile coordinates, or None when no book qualifies.
+fn find_nearby_book(ctx: &SpawnContext, x: i32, y: i32) -> Option<(i32, i32)> {
+    let sx = x - 16;
+    let sy = y - 16;
+    let x0 = sx.max(0);
+    let x1 = (sx + 32).min(ctx.world.width);
+    let y0 = sy.max(0);
+    let y1 = (sy + 32).min(ctx.world.height);
+    let mut best: Option<(i32, i32)> = None;
+    let mut best_d = f32::MAX;
+    for ty in y0..y1 {
+        for tx in x0..x1 {
+            let Some(t) = ctx.world.tile(tx, ty) else {
+                continue;
+            };
+            if !t.active() || t.kind != 50 {
+                continue;
+            }
+            // `checkPlayerScreenRanges`: the book tile must pass the
+            // on-screen check (the same rect the spawn scan uses).
+            if !check_not_spawning_on_screen(ctx, &SpawnArea { left: 0, right: 0, top: 0, bottom: 0 }, tx, ty) {
+                continue;
+            }
+            let dx = (tx - sx) as f32;
+            let dy = (ty - sy) as f32;
+            let d = (dx * dx + dy * dy).sqrt();
+            if d < best_d {
+                best_d = d;
+                best = Some((tx, ty));
+            }
+        }
+    }
+    best
+}
+
 fn spawn_basic_slime(
     ctx: &SpawnContext,
     rng: &mut UnifiedRandom,
@@ -2586,6 +2790,151 @@ mod tests {
         c.flags.downed_boss3 = true;
         let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
         assert_eq!(r.spawn_rate, 180);
+    }
+
+    /// W4-c3 gaps 2+3 — the dungeon band's spawn witnesses. The band is a
+    /// pure roll ladder over the wall-colour pick; these pin the three
+    /// style-10 kinds' arms (the 289 hardmode roll, the 34 1/7 roll, the
+    /// 694 book-find) and the Plantera gate. WRITTEN, NOT RUN (code-only).
+    /// A dungeon world: a solid blue-brick floor (tile 41) at row 340, the
+    /// slab wall 94 behind the spawn column, the player far off-screen.
+    fn dungeon_world() -> World {
+        let mut w = World::new("t".into(), 400, 700);
+        for x in 0..400 {
+            for y in 340..700 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 41,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.world_surface = 310.0;
+        w.rock_layer = 320.0;
+        w.compute_column_surface();
+        // The slab wall behind the spawn column (num40 = 1).
+        for y in 300..340 {
+            let i = w.index(210, y);
+            w.tiles[i].wall = 94;
+        }
+        w
+    }
+
+    fn dungeon_ctx(w: &World, hard: bool) -> SpawnContext<'_> {
+        let mut c = ctx(w, 330.0 * 16.0, false);
+        c.flags.zone_dungeon = true;
+        c.flags.downed_boss3 = true;
+        c.flags.hard_dungeon = hard;
+        c.bound_mech_ok = false;
+        c
+    }
+
+    #[test]
+    fn w4_c3_the_giant_skull_needs_hard_dungeon_and_a_slab_wall() {
+        // `NPC.cs:2683-2687`: hardDungeon && (num40 1/2) && Next(30) == 0.
+        // Without hard_dungeon the 289 never comes out; with it, a sweep
+        // finds it. The wall is the slab 94 (num40 = 1).
+        let w = dungeon_world();
+        let mut saw = false;
+        for seed in 1..4000u64 {
+            let c = dungeon_ctx(&w, true);
+            if let Some(n) = spawn_npc_at(&c, &mut UnifiedRandom::new(seed as i32), 210, 340 * 16, false, false, false) {
+                if n.kind == NpcKind::GiantCursedSkull {
+                    saw = true;
+                    break;
+                }
+            }
+        }
+        assert!(saw, "the hardmode dungeon sweep never rolled the 289");
+        // The Plantera gate: hard_dungeon off -> no 289 however many rolls.
+        let mut saw_off = false;
+        for seed in 1..4000u64 {
+            let c = dungeon_ctx(&w, false);
+            if let Some(n) = spawn_npc_at(&c, &mut UnifiedRandom::new(seed as i32), 210, 340 * 16, false, false, false) {
+                if n.kind == NpcKind::GiantCursedSkull {
+                    saw_off = true;
+                    break;
+                }
+            }
+        }
+        assert!(!saw_off, "no hard_dungeon, no 289 (the Plantera gate)");
+    }
+
+    #[test]
+    fn w4_c3_the_cursed_skull_needs_the_default_wall() {
+        // `NPC.cs:2735-2739`: num40 == 0 && Next(7) == 0. The default wall
+        // (no slab/tile) keeps num40 = 0 unless the 1/7 re-roll hits.
+        let mut w = dungeon_world();
+        for y in 300..340 {
+            let i = w.index(210, y);
+            w.tiles[i].wall = 0; // the default wall -> num40 = 0
+        }
+        let mut saw = false;
+        for seed in 1..4000u64 {
+            let c = dungeon_ctx(&w, false);
+            if let Some(n) = spawn_npc_at(&c, &mut UnifiedRandom::new(seed as i32), 210, 340 * 16, false, false, false) {
+                if n.kind == NpcKind::CursedSkull {
+                    saw = true;
+                    break;
+                }
+            }
+        }
+        assert!(saw, "the default-wall dungeon sweep never rolled the 34");
+    }
+
+    #[test]
+    fn w4_c3_the_water_bolt_mimic_spawns_at_the_closest_book_closed() {
+        // `NPC.cs:2745-2753`: Next(8) == 0 -> AI_FindNearbyBook (closest,
+        // on-screen-gated) -> SpawnNPC(bookX*16+8, bookY*16, 694, ai3=3).
+        // A book tile (50) in the scan rect, off-screen; the mimic lands
+        // at the book with ai[3] = 3 (the closed book).
+        let mut w = dungeon_world();
+        // The book at (215, 330): inside the 32x32 scan centred (194, 324),
+        // off-screen (the player is at (0, 330*16), the book at x=215 is
+        // far right). The scan's closest-book pick takes it.
+        let i = w.index(215, 330);
+        w.tiles[i] = Tile { kind: 50, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let mut found = None;
+        for seed in 1..6000u64 {
+            let mut c = dungeon_ctx(&w, false);
+            // The player far left so the book at x=215 passes the on-screen
+            // check (the spawn-screen rect is centred on the player).
+            c.player_center = (0.0, 330.0 * 16.0);
+            c.player_pos = (0.0, 330.0 * 16.0);
+            if let Some(n) = spawn_npc_at(&c, &mut UnifiedRandom::new(seed as i32), 210, 340 * 16, false, false, false) {
+                if n.kind == NpcKind::WaterBoltMimic {
+                    found = Some(n);
+                    break;
+                }
+            }
+        }
+        let n = found.expect("the book-find sweep never rolled the 694");
+        assert_eq!(n.ai[3], 3.0, "the closed-book spawn arg (:2751)");
+        // Bottom = (bookX*16+8, bookY*16): x = 215*16+8 - 44/2, y = 330*16 - 44.
+        assert_eq!(n.x, 215.0 * 16.0 + 8.0 - 22.0);
+        assert_eq!(n.y, 330.0 * 16.0 - 44.0);
+    }
+
+    #[test]
+    fn w4_c3_the_dungeon_band_is_terminal_and_deterministic() {
+        // The band returns inside every arm (the C#'s return-per-arm shape);
+        // the same seed replays the same outcome. The pre-Skeletron Guardian
+        // arm consumes nothing and returns None.
+        let w = dungeon_world();
+        for seed in 1..200u64 {
+            let c = dungeon_ctx(&w, true);
+            let a = spawn_npc_at(&c, &mut UnifiedRandom::new(seed as i32), 210, 340 * 16, false, false, false);
+            let b = spawn_npc_at(&c, &mut UnifiedRandom::new(seed as i32), 210, 340 * 16, false, false, false);
+            assert_eq!(a.map(|n| (n.kind, n.x.to_bits(), n.ai[3])), b.map(|n| (n.kind, n.x.to_bits(), n.ai[3])), "seed {seed}");
+        }
+        // Pre-Skeletron: the Guardian arm (68, unported) returns None.
+        let mut c = dungeon_ctx(&w, false);
+        c.flags.downed_boss3 = false;
+        for seed in 1..200u64 {
+            assert!(spawn_npc_at(&c, &mut UnifiedRandom::new(seed as i32), 210, 340 * 16, false, false, false).is_none(), "the Guardian arm spawns nothing (seed {seed})");
+        }
     }
 
     #[test]
