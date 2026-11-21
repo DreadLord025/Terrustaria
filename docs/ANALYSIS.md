@@ -39684,3 +39684,29 @@ the e1b merge it can be upgraded to call the real `coil_rope_kind` /
 WRITTEN NOT RUN (code-only). The continuation added 3 new fns + reworked the
 carpet refusal witness to equip a wing tier. No behaviour change beyond the
 union shadow-read already recorded in `0e332c61`.
+
+### The retire pass (2026-11-21, code-only) — item 1: the release_down init fix
+
+**Branch probe:** `origin/task/W4-i27` does NOT exist — the i27 lane
+(`723ac493`, S1-P-i27 minion target-command) is already IN `origin/main`
+(`git merge-base --is-ancestor 723ac493a origin/main` → 0; main tip
+`a725acb0` "Land wave-3 magic+summon lane … S1-P-i19-i27/i56"). No lane branch
+to hand the fix to, so the fix lands HERE (this branch carries the same field)
+and this note is the merger record.
+
+**The one-line fix (published):** `Player.releaseDown` (`Player.cs:1780`) has
+NO initializer — the C# bool default is `false`, exactly the `releaseUp`
+(`:1756`) mismatch `100730dd` fixed. The i27 port seeded `release_down: true`
+(`723ac493`). This branch's spawn (`player.rs` ctor, the `release_up: false`
+sibling row) now reads `release_down: false`. The refresh writer is unchanged:
+`releaseDown = !controlDown` (`:27636`, the port's
+`update_minion_rest_command` tail) — one idle tick arms the latch.
+
+**Behaviour delta (C#-faithful):** the VERY FIRST down press of a fresh
+player is swallowed — `flag5 = controlDown && releaseDown` (`:25037`) reads
+the un-armed latch, so no window arm on tick 1; the C# behaves the same. The
+i27 window witness (`s1_p_i27_the_double_tap_window_and_the_hold_counter`)
+gains one leading idle tick so its first press arms the window as before. The
+other i27/f3 witnesses call `key_double_tap_down` directly — unaffected. One
+new witness `w4_f3_the_down_release_latch_spawns_false` pins the spawn default
++ the arm/clear refresh. WRITTEN NOT RUN (code-only).

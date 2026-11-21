@@ -1949,9 +1949,11 @@ pub struct Player {
     /// down-key hold counter. S1-P-i27: the Stardust/Forbidden set-bonus
     /// rest-target clear fires at holdTime >= 60 (`KeyHoldDown(0, ..)`).
     hold_down_timer: i32,
-    /// `Player.releaseDown` (`Player.cs:25037`) — the down-key release latch
-    /// (true while the key is up). The double-tap edge is
-    /// `controlDown && releaseDown` (`Utils.JustBecameTrue`).
+    /// `Player.releaseDown` (`Player.cs:1780`, refreshed `:27636`) — the
+    /// down-key release latch (true while the key is up). The double-tap edge
+    /// is `controlDown && releaseDown` (`:25037`). The C# field has NO
+    /// initializer — the default is `false`; the first refresh arms it on an
+    /// unheld key (the `release_up` sibling's `:1756` mismatch, W4-f3 retire).
     release_down: bool,
     /// `Player.releaseUp` (`Player.cs:1756`) — the up-key release latch (true
     /// while the key is up), recomputed by `UpdateControlHolds`
@@ -3186,7 +3188,10 @@ impl Player {
             down_prev: false,
             double_tap_down_timer: 0,
             hold_down_timer: 0,
-            release_down: true,
+            // `:1780` — no C# initializer, the bool default is false (the
+            // i27 lane's `true` seed was the same mismatch e011d3da fixed on
+            // `release_up`; one-line keep-one fix, W4-f3 retire).
+            release_down: false,
             // `:1756` — no C# initializer, the bool default is false.
             release_up: false,
             has_jump_options: [false; 9],
@@ -23477,6 +23482,10 @@ mod s1_p_i27_tests {
         let tick = |p: &mut Player, down: bool| {
             p.update_minion_rest_command(&w, mouse, down, false);
         };
+        // `:1780` — releaseDown spawns FALSE (no C# initializer): the very
+        // first down press of a fresh player is swallowed (flag5 reads the
+        // un-armed latch); one idle tick arms it via the `:27636` refresh.
+        tick(&mut p, false);
         // Press 1: arms the window, no aim yet.
         tick(&mut p, true);
         assert!(!p.has_minion_rest_target(), "the first press only arms");
@@ -24287,5 +24296,23 @@ mod w4_f3_carpet_tests {
         p.control_up = true;
         let edge = p.control_up && p.release_up;
         assert!(edge, "controlUp && releaseUp is the press edge (:25041)");
+    }
+
+    /// W4-f3 retire — the `releaseDown` sibling (`Player.cs:1780`, refreshed
+    /// `:27636`): NO C# initializer, the spawn default is false (the i27
+    /// lane's `true` seed was the same mismatch the `release_up` fix pinned).
+    /// The first down press of a fresh player reads an un-armed latch.
+    #[test]
+    fn w4_f3_the_down_release_latch_spawns_false() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert!(!p.release_down, "the spawn default is false (:1780, no initializer)");
+        // The first press is swallowed: flag5 = controlDown && releaseDown.
+        assert!(!(true && p.release_down), "the fresh press edge is false (:25037)");
+        // One unheld refresh arms the latch (`:27636` releaseDown = !controlDown).
+        p.update_minion_rest_command(&w, Vec2::ZERO, false, false);
+        assert!(p.release_down, "an unheld key arms the latch (:27636)");
+        p.update_minion_rest_command(&w, Vec2::ZERO, true, false);
+        assert!(!p.release_down, "holding down clears it (:27636)");
     }
 }
