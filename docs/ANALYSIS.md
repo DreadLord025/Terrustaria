@@ -18342,6 +18342,21 @@ the charge/payout ride it directly and the no-room restore folds out. The
 (`MouseText_DrawItemTooltip_AddShopLines`, `Main.cs:20448+`) are the chrome
 follow-up — `display_price_row` stays pinned by its golden vectors.
 
+W4-e19 round 3 quicksell census (code-only): the C# has NO quicksell-to-void-
+bag and NO trash-can sell — `Player.SellItem`'s only two call sites are the
+cursor-10 shift-sell (`ItemSlot.cs:854`) and the shop-cell action-4
+(`:1225`), both ported (`sell_slot_click`/`shop_slot_click`); the trash is a
+plain context-6 slot (the death `DropItems` airs it, `:54304`, ported in
+`death.rs`), and the void bag is a storage fallback, not a sell surface. The
+price math is complete: `sell_payout` = `GetItemExpectedPrice`'s selling ÷5
+min-1 × stack + the `min(memo, stack)` buy-price refund (`:35184-35195`),
+`get_item_expected_price` verbatim (`:35359-35398`, the f32 discount
+truncation + the banker's adjustment rounding + the buyOnce ÷5 clamp); the
+coin kinds 71-74 refuse the sell cursor (`GetSellOrTrash:204-207`). Two
+end-to-end COIN witnesses added (buy→shift-quicksell nets zero through the
+memo refund + the memo consumed by `AddItemToShop`'s `Remove`; the
+un-memo'd stack pays the fifth and re-stocks buyOnce) — WRITTEN NOT RUN.
+
 ## The wet statics rebase (R-03-1, 2026-11-13)
 
 `Player.cs:24380-24437` is ported 1:1 as `player.rs::wet_gravity_and_cap`
