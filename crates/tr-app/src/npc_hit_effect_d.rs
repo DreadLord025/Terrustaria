@@ -4160,6 +4160,44 @@ fn cyborg_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88446
 }
 
+/// The 212-216 pirate crew death (`NPC.cs:88448-88502`): the 50x dust-5
+/// burst at (2.5·hd, −2.5), then the per-kind ladder, scale 1f, NO
+/// shimmer (the invasion pirates have no town variants). The live
+/// kinds: 212 Deckhand → 336/337x2/338x2 (`:88464-88468`, sites
+/// 620-624), 213 Corsair → 339/340x2/341x2 (`:88472-88476`, sites
+/// 625-629); the 214/215/216 tails land next batch.
+fn pirate_crew_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88458-88461` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let (head, mid, legs) = match npc_type {
+        212 => (336, 337, 338), // :88464-88468
+        213 => (339, 340, 341), // :88472-88476
+        _ => return,            // the 214/215/216 tails land next batch
+    };
+    gore.new_gore(rng, world, pos, vel, head, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0);
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -4661,6 +4699,11 @@ pub fn hit_effect_d(
     // `:88428-88447` — the 209 Cyborg arm (sites 615-619).
     else if npc_type == 209 {
         cyborg_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88448-88502` — the 212-216 pirate crew arm; the 212/213 ladders
+    // are live (sites 620-629), the 214/215/216 tails land next batch.
+    else if (212..=216).contains(&npc_type) {
+        pirate_crew_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -8055,6 +8098,34 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "town {kind} shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:88464-88476` — the pirate crew ladders: 212 Deckhand
+    /// 336/337x2/338x2, 213 Corsair 339/340x2/341x2 (no shimmer).
+    #[test]
+    fn w4_f5d_the_pirate_crew_ladders() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, want) in [
+            (212, vec![336, 337, 337, 338, 338]),
+            (213, vec![339, 340, 340, 341, 341]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(619);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "pirate {kind}");
+            let mut twin = UnifiedRandom::new(619);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "pirate {kind} mirrors the C# draws");
         }
     }
 }
