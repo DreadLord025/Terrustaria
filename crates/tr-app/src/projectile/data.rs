@@ -1121,6 +1121,13 @@ pub const SHORTSWORD_STAB_LAST: u16 = 945;
 /// Oiled-397 on-hit grant is `StatusNPC` `:11721-11724`.
 pub const CHLOROPHYTE_SABER_STAB: u16 = 1127;
 
+/// W4-d17 — `ProjectileID.WhiteTigerPounce` (818, `ProjectileID.cs:2190`) —
+/// the Storm Tiger staff's pounce (aiStyle 162, `AI_162_TigerPounce`
+/// `Projectile.cs:46701-46768`, the dispatch `:36611-36614`). The spawn is
+/// the tiger's state-4 chain (`AI_164`'s sibling machine, `:49096-49115`):
+/// `ai[0]` the negative chain delay, `ai[1]` the arc's tick budget.
+pub const WHITE_TIGER_POUNCE: u16 = 818;
+
 /// W4-d17 — the aiStyle-161 kind set (the `DefaultToShortsword` callers:
 /// `Projectile.cs:7921`/`:8145`/`:8917`/`:10559`). The `Colliding` stab arm
 /// (`:15955`) and the `ownerHitCheck` gate (`:12637`) key on it.
@@ -3874,6 +3881,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `DefaultToShortsword` + `usesLocalNPCImmunity` /
             // `localNPCHitCooldown = -1`.
             CHLOROPHYTE_SABER_STAB => (18.0, 18.0, 161, -1, TIME_LEFT_DEFAULT, 1, false, false, false, (true, -1, false, -1, 0, 1.0)),
+            // W4-d17 — `Projectile.cs:8005-8018` — the White Tiger Pounce
+            // (818): 132x132, aiStyle 162, `alpha = 255`,
+            // `tileCollide = false`, `ignoreWater`, `penetrate = -1`,
+            // `extraUpdates = 3`, the LOCAL pair (−1). The stock 3600 life.
+            // `UpdatePosition`'s skip list names 818 (`:20435`) — the
+            // CatmullRom arc IS the position (the dispatch folds the skip).
+            WHITE_TIGER_POUNCE => (132.0, 132.0, 162, -1, TIME_LEFT_DEFAULT, 3, false, false, false, (true, -1, false, -1, 255, 1.0)),
             // The spear family (S1-P-i06, aiStyle 19 — `DefaultToSpear`
             // `Projectile.cs:10720-10730`: friendly, `penetrate = -1`,
             // `tileCollide = false`, melee, `ownerHitCheck`, `usesOwnerLight`,
@@ -4254,7 +4268,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == HIGH_VELOCITY_BULLET
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
-            || kind == GOLF_CLUB_HELPER,
+            || kind == GOLF_CLUB_HELPER
+            // W4-d17 — `Projectile.cs:8013`: the White Tiger Pounce (818)
+            // sets `ignoreWater = true`.
+            || kind == WHITE_TIGER_POUNCE,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).

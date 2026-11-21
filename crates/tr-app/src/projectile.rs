@@ -13421,6 +13421,9 @@ pub(crate) fn trailing_mode(kind: u16) -> i32 {
         GRADIENT_YOYO | BETSY_FIREBALL | GEM_BOLT_AMETHYST | GEM_BOLT_TOPAZ
         | GEM_BOLT_SAPPHIRE | GEM_BOLT_EMERALD | GEM_BOLT_RUBY | GEM_BOLT_DIAMOND
         | GEM_BOLT_AMBER => 2,
+        // W4-d17 — `ProjectileID.cs:521`'s `818, 2` entry: the White Tiger
+        // Pounce's mode-2 ring (positions + rotations + sprite directions).
+        WHITE_TIGER_POUNCE => 2,
         // `:17140`'s mode 3 — the three aimed spells with a trail drawer.
         MAGIC_MISSILE | FLAMELASH | RAINBOW_ROD_BULLET => 3,
         _ => -1,
@@ -17575,6 +17578,23 @@ impl ProjectilePool {
                             self.slots[i].direction =
                                 if self.slots[i].vel.x < 0.0 { -1 } else { 1 };
                         }
+                        // W4-d17 — `AI()`'s `else if (this.aiStyle == 162)`
+                        // (`Projectile.cs:36611-36614`) -> `AI_162_TigerPounce`
+                        // (`:46701-46768`): the White Tiger Pounce (818), the
+                        // style's ONLY row. The CatmullRom arc IS the position
+                        // — 818 is on `UpdatePosition`'s skip list (`:20435`),
+                        // so NO integrate runs after the AI (the 856 guitar
+                        // precedent).
+                        162 => {
+                            self.tiger_pounce_step(i, rng);
+                            // `AutomaticallyChangesDirection` (`:17281-17288`):
+                            // the row leaves `manualDirectionChange` false, so
+                            // the direction still follows velocity.X's sign
+                            // (`:17016-17026` runs regardless of the
+                            // UpdatePosition skip).
+                            self.slots[i].direction =
+                                if self.slots[i].vel.x < 0.0 { -1 } else { 1 };
+                        }
                         // S1-P-i16 — the aiStyle-34 fireworks rockets
                         // (`AI()` `Projectile.cs:27136-27188`): the
                         // velocity-pointing rotation + the ai[1] launch
@@ -20020,6 +20040,17 @@ impl ProjectilePool {
                     }
                 }
                 self.spawn_inferno_blast(i);
+                // W4-d17 — `Kill()`'s 818 arms (`Projectile.cs:71587-71596`
+                // + `:71631-71634`): the pounce's death runs the two
+                // 3-iteration 278-dust rings (the bodies skip, the 30
+                // explicit NextFloat call-site draws stay — per iteration
+                // the square-position pair, the rotated velocity's random
+                // half-turn + radius floats, and the colour lerp float),
+                // then re-runs `Damage()` at the completed arc (`ai[0] >= 1`
+                // passes the `:12448` refusal — the pounce's ONLY landing
+                // window). The death hook fires once per death (the pool's
+                // `!active` transition), the C#'s Kill-once shape.
+                self.tiger_pounce_kill(i, npcs, doll_flags(player.as_deref()), rng, luck);
                 // S1-P-i21 — `Kill()`'s type-237 arm (`:74535-74538`): the
                 // moving cloud's death spawns the raining cloud 238.
                 self.spawn_rain_cloud(i);
@@ -21547,6 +21578,135 @@ impl ProjectilePool {
         }
     }
 
+    /// W4-d17 — `AI_162_TigerPounce` (`Projectile.cs:46701-46768`, the
+    /// dispatch `:36611-36614`): the White Tiger Pounce (818), the style's
+    /// ONLY row (`:8005-8018`). The negative `ai[0]` is the chain's stagger
+    /// delay (the tiger's state-4 spawn writes `(0 − num4)·4`, `:49110`);
+    /// the first live tick snapshots the centre into `localAI[0]/[1]` and
+    /// the CatmullRom arc walks `ai[0]` from 0 to 1 in `1/ai[1]` steps
+    /// (`ai[1] < 1` re-arms 60). The arc's control points sag by
+    /// `distance·1.5` on Y and over-shoot the ends by ±0.1.
+    ///
+    /// RNG (the first live tick ONLY, `:46737-46762`): two `Next(19)` dust
+    /// gates (num3 = 0, 0.5); a taken gate draws the position's
+    /// `NextVector2Square` pair + the velocity's `NextVector2Circular` pair
+    /// (4 floats, `Utils.cs:1251-1268`) then the DISCARDED `Next(5)`
+    /// (`:46747` — the C# rolls it and drops it, kept). Then one `Next(2)`
+    /// gate (`:46754`); the taken branch's `Dust.NewDust` body skips with
+    /// its internals. Every later tick draws NOTHING.
+    ///
+    /// Movement: 818 is on `UpdatePosition`'s skip list (`:20435`) — the
+    /// arc IS the position, the dispatch adds NO integrate. The opacity
+    /// climbs 0.1/tick to 1 (`:46724-46727`); the rotation spins
+    /// `sign(velocity.X)·−0.2` (`:46728-46730`).
+    fn tiger_pounce_step(&mut self, i: usize, rng: &mut dyn tr_core::loot::DropRng) {
+        let p = &mut self.slots[i];
+        // `:46703-46708` — the stagger delay: opacity 0, count up, return.
+        if p.ai[0] < 0.0 {
+            p.alpha = alpha_of(0.0);
+            p.ai[0] += 1.0;
+            return;
+        }
+        // `:46709-46717` — the first-tick latch (the C#'s `flag` is true
+        // unconditionally at `:46710` — the `flag = true` inside the
+        // frameCounter block is a verbatim redundancy; the dust census
+        // below runs EVERY live tick, not just the first).
+        let mut flag = true;
+        if p.frame_counter == 0 {
+            p.frame_counter = 1;
+            let (cx, cy) = p.center();
+            p.local_ai[0] = cx;
+            p.local_ai[1] = cy;
+            flag = true;
+        }
+        // `:46718-46723` — the arc's four control points.
+        let vector = Vec2::new(p.local_ai[0], p.local_ai[1]);
+        let vector2 = vector + p.vel;
+        let y = vector.distance(vector2) * 1.5;
+        let num = 0.1;
+        let value = vector.lerp(vector2, 0.0 - num) + Vec2::new(0.0, y);
+        let value2 = vector.lerp(vector2, 1.0 + num) + Vec2::new(0.0, y);
+        // `:46724-46727` — the opacity climb.
+        if opacity_of(p.alpha) < 1.0 {
+            p.alpha = alpha_of(opacity_of(p.alpha) + 0.1);
+        }
+        // `:46728-46730` — the spin + the sprite facing. `Math.Sign(float)`
+        // yields 0 for 0 (the `csign` helper).
+        let num2 = csign(vector2.x - vector.x) as i32;
+        p.rot += num2 as f32 * -0.2;
+        p.sprite_direction = num2;
+        // `:46731-46735` — the arc budget + the progress step.
+        if p.ai[1] < 1.0 {
+            p.ai[1] = 60.0;
+        }
+        p.ai[0] += 1.0 / p.ai[1];
+        // `:46736` — the CatmullRom position at the clamped progress.
+        let vector3 = catmull_rom(value, vector, vector2, value2, p.ai[0].clamp(0.0, 1.0));
+        if flag {
+            // `:46739-46753` — the two 278-dust gates. The bodies skip; the
+            // explicit call-site draws stay (module doc).
+            for _ in 0..2 {
+                if rng.next_range(0, 19) == 0 {
+                    let _ = rng.next_float(); // NextVector2Square X (`:46744`)
+                    let _ = rng.next_float(); // NextVector2Square Y
+                    let _ = rng.next_float(); // NextVector2Circular angle
+                    let _ = rng.next_float(); // NextVector2Circular radius
+                    let _ = rng.next_range(0, 5); // the discarded Next(5) (`:46747`)
+                }
+            }
+            // `:46754-46761` — the 269-dust gate; the NewDust body + its
+            // internals skip with the dust pool.
+            if rng.next_range(0, 2) == 0 {
+                // the body skip — no call-site draws inside NewDust stay
+            }
+        }
+        // `:46763` — the arc IS the centre.
+        p.pos = vector3 - Vec2::new(p.w * 0.5, p.h * 0.5);
+        // `:46764-46767` — the end-of-arc kill.
+        if p.ai[0] >= 1.0 {
+            p.kill_time_left = p.time_left;
+            p.active = false;
+            p.time_left = 0;
+        }
+    }
+
+    /// W4-d17 — `Kill()`'s 818 arms (`Projectile.cs:71587-71596` +
+    /// `:71631-71634`): the White Tiger Pounce's death dust census + the
+    /// re-`Damage()`. The two rings each iterate `num = 0, 0.34, 0.68`
+    /// (three steps of the `< 1f` float loop); per iteration the explicit
+    /// call-site draws are the position's `NextVector2Square` pair (2
+    /// floats), the velocity's `NextFloat` half-turn + `NextFloat` radius
+    /// (2), and the colour's `Color.Lerp` `NextFloat` (1) — FIVE per
+    /// iteration, THIRTY across both rings. The `NewDustPerfect` internals
+    /// go with the dust pool (the misc-module G3 standard). The re-Damage
+    /// rides the boxed walk (the 132x132 box is the C#'s `Damage_GetHitbox`
+    /// rect); the gem-count multiplier reads the base 1.5 there (the boxed
+    /// seam's no-player convention, recorded).
+    fn tiger_pounce_kill(
+        &mut self,
+        slot: usize,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        rng: &mut dyn DropRng,
+        luck: f32,
+    ) {
+        if self.slots[slot].kind != WHITE_TIGER_POUNCE {
+            return;
+        }
+        // `:71589-71596` — the two rings, five explicit floats each step.
+        for _ in 0..2 {
+            for _ in 0..3 {
+                let _ = rng.next_float(); // NextVector2Square X
+                let _ = rng.next_float(); // NextVector2Square Y
+                let _ = rng.next_float(); // the velocity's random half-turn
+                let _ = rng.next_float(); // the velocity's radius
+                let _ = rng.next_float(); // the colour lerp
+            }
+        }
+        // `:71631-71634` — `this.Damage()` at the completed arc.
+        self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+    }
+
     fn magnet_sphere_step(&mut self, slot: usize, world: &World, npcs: &[Npc]) {
         self.magnet_sphere_dedupe(slot);
         if self.slots[slot].owner != 0 {
@@ -22822,6 +22982,13 @@ impl ProjectilePool {
             if refuses_friendly(n, p.kind, kill_guide, kill_clothier) {
                 continue;
             }
+            // W4-d17 — `Damage_CanDealDamage`'s 818 arm (`Projectile.cs:
+            // 12448`): `(type == 818 && ai[0] < 1)` refuses the hit — the
+            // pounce deals nothing until its arc completes (the Kill
+            // re-Damage at `ai[0] >= 1` is the only landing window).
+            if p.kind == WHITE_TIGER_POUNCE && p.ai[0] < 1.0 {
+                continue;
+            }
             // `Damage_PVE_Inner`'s `!this.friendly` refusal (`:12611`): the
             // dungeon-debris trio is stock `friendly = false`/`hostile = false`
             // (`SetDefaults` `:788`/`:764`), so it damages no NPC — the arm
@@ -22994,6 +23161,19 @@ impl ProjectilePool {
             // set the slot flag directly. The tag's forced crit wins.
             let (mut dmg, mut hit_crit) =
                 self.tag_damage_for(slot, idx as u16, damage, crit, player.as_deref(), rng);
+            // W4-d17 — `Damage_PVE_Inner`'s 818 arm (`Projectile.cs:12861-
+            // 12864`): the pounce's damage scales `1.5 + 0.4·max(0,
+            // ownedProjectileCounts[831] − 1)` — the gem count beyond the
+            // first. The (int) truncation is the C#'s; the arm runs on
+            // `num6` AFTER the specific multiplier, BEFORE DamageVar.
+            if self.slots[slot].kind == WHITE_TIGER_POUNCE {
+                let gems = player
+                    .as_deref()
+                    .map(|pl| pl.owned_projectile_counts[831])
+                    .unwrap_or(0);
+                let mult = 1.5 + (gems - 1).max(0) as f32 * 0.4;
+                dmg = (dmg as f32 * mult) as i32;
+            }
             // `:12934-12937`: the Eye-of-Cthulhu yoyo's homing dash (1130)
             // never crits.
             if self.slots[slot].kind == EYE_OF_CTHULHU_DASH {
@@ -23537,7 +23717,17 @@ impl ProjectilePool {
             }
             // Projectile.cs:12938, NPC.cs:81189,81239 — the boxed Damage() walk
             // applies DamageVar and defense/crit like the plain PVE pass.
-            let dmg = tr_core::damage::damage_var(rng, damage as f32, luck);
+            // W4-d17 — the 818 gem-count multiplier (`:12861-12864`) rides
+            // the boxed walk too (the Kill re-Damage is the pounce's ONLY
+            // landing window). The boxed seam carries no player reference —
+            // the gem count reads 0, so the multiplier is the base 1.5 (the
+            // class-crits-read-0 convention, recorded).
+            let dmg = if self.slots[slot].kind == WHITE_TIGER_POUNCE {
+                (damage as f32 * 1.5) as i32
+            } else {
+                damage
+            };
+            let dmg = tr_core::damage::damage_var(rng, dmg as f32, luck);
             let strike_dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), crit);
             // `:13580` — `StatusNPC` before `StrikeNPC` (S1-P-i18): the 286
             // burst's box walk carries no per-type debuff of its own, but the
@@ -44722,5 +44912,174 @@ mod w4_d17_rapier_stab_tests {
         let cues = pool.drain_proj_sounds();
         assert_eq!(cues.len(), 1, "one Item1 whoosh this tick");
         assert_eq!((cues[0].0, cues[0].1), (2, 1), "SoundID.Item1, style 1");
+    }
+}
+
+#[cfg(test)]
+mod w4_d17_tiger_pounce_tests {
+    //! W4-d17 — the aiStyle-162 machine (`AI_162_TigerPounce`,
+    //! `Projectile.cs:46701-46768`, the dispatch `:36611-36614`): the White
+    //! Tiger Pounce (818). WRITTEN NOT RUN (code-only mode).
+    use super::*;
+
+    fn world() -> World {
+        World::new("t".into(), 256, 128)
+    }
+
+    /// The scripted stream: every gate returns `max - 1` (the 19/2 gates
+    /// MISS), the floats count.
+    struct CensusRng {
+        draws: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl tr_core::loot::DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            max - 1
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.5
+        }
+    }
+
+    /// A gate stream that TAKES every roll (min) — the taken-branch census.
+    struct TakeRng {
+        draws: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl tr_core::loot::DropRng for TakeRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.5
+        }
+    }
+
+    fn tick(pool: &mut ProjectilePool, w: &mut World, rng: &mut dyn DropRng) {
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            rng,
+            0,
+            false,
+        );
+    }
+
+    /// Witness 1 — the row + the stagger delay + the arc's first tick
+    /// (`:8005-8018`, `:46703-46736`): the 132x132 box, aiStyle 162,
+    /// extraUpdates 3, alpha 255, local −1. A pounce spawned at ai0 = −4
+    /// spends its first tick's four sub-steps counting up (opacity 0 each);
+    /// the NEXT tick's first sub-step latches the centre into localAI and
+    /// steps the arc by 1/ai1. The arc IS the position (no integrate). The
+    /// missed-gate census: two Next(19) + one Next(2) per live sub-step.
+    #[test]
+    fn w4_d17_the_pounce_staggers_then_walks_the_arc() {
+        let d = proj_data(WHITE_TIGER_POUNCE).unwrap();
+        assert_eq!((d.w, d.h, d.ai_style, d.penetrate), (132.0, 132.0, 162, -1));
+        assert_eq!((d.extra_updates, d.alpha, d.tile_collide), (3, 255, false));
+        assert!(d.ignore_water, ":8013");
+        assert!(d.uses_local_immunity && d.local_hit_cooldown == -1, ":8016-8017");
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        // Centre (400, 300): pos = (400−66, 300−66) = (334, 234).
+        let slot = pool
+            .spawn_with_data_ai_owned(
+                WHITE_TIGER_POUNCE, 0, 334.0, 234.0, 10.0, 0.0, 40, 0.0, -4.0, 20.0,
+            )
+            .unwrap();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut rng);
+        let s = &pool.slots()[slot];
+        assert_eq!(s.ai[0], 0.0, "four sub-steps of stagger (:46706)");
+        assert_eq!(s.alpha, 255, "opacity 0 (:46705)");
+        assert_eq!(s.pos, Vec2::new(334.0, 234.0), "the delay skips the arc");
+        assert!(rng.draws.is_empty(), "the delay draws NOTHING");
+        tick(&mut pool, &mut w, &mut rng);
+        let s = &pool.slots()[slot];
+        // Four live sub-steps: ai0 = 4/20 = 0.2; the latch captured (400,300).
+        assert_eq!(s.local_ai[0], 400.0);
+        assert_eq!(s.local_ai[1], 300.0);
+        assert_eq!(s.frame_counter, 1, "the first-tick latch (:46713)");
+        assert!((s.ai[0] - 0.2).abs() < 1e-6, "4 x 1/20 (:46735)");
+        // The arc at t = 0.2 between (400,300) and (410,300) with the
+        // distance·1.5 = 15 sag: CatmullRom(value, vector, vector2, value2).
+        // value = lerp(-0.1) + (0,15) = (399, 315); value2 = (411, 315).
+        // The port's catmull_rom at 0.2 → x = 402, y = 300 + 15·(the sag
+        // blend). Pin the X (the sag is symmetric, the Y rides the curve).
+        let cx = s.pos.x + 66.0;
+        assert!((cx - 402.0).abs() < 0.01, "the arc X at t=0.2: {cx}");
+        // No integrate: the centre is the arc, not arc + velocity.
+        assert!(cx < 410.0, "the UpdatePosition skip (:20435)");
+        // The missed-gate census: 3 gates x 4 sub-steps, no floats.
+        assert_eq!(rng.draws.len(), 12, "2x Next(19) + Next(2) per sub-step");
+        assert!(rng.draws.iter().all(|&(a, b)| (a, b) == (0, 19) || (a, b) == (0, 2)));
+        assert_eq!(rng.floats, 0, "the missed gates draw no floats");
+    }
+
+    /// Witness 2 — the taken-gate census + the end-of-arc kill + the death
+    /// re-Damage (`:46739-46767`, `:71587-71634`): a taken Next(19) draws
+    /// four floats + the discarded Next(5); the taken Next(2) draws nothing
+    /// extra (the NewDust internals skip). At ai0 >= 1 the pounce dies and
+    /// the Kill hook spends the 30-float death census, then the boxed
+    /// re-Damage lands on an NPC in the 132x132 box at the base 1.5
+    /// multiplier (the boxed no-player convention).
+    #[test]
+    fn w4_d17_the_pounce_kill_spends_thirty_floats_and_re_damages() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        // ai1 = 4: the arc completes in 4 live sub-steps (one tick).
+        let slot = pool
+            .spawn_with_data_ai_owned(
+                WHITE_TIGER_POUNCE, 0, 334.0, 234.0, 10.0, 0.0, 40, 0.0, 0.0, 4.0,
+            )
+            .unwrap();
+        // An NPC at the arc's end (centre ~ (410, 300)): the 132x132 box
+        // covers it. hp 1000, defense 0.
+        let mut npc = Npc::new(NpcKind::Zombie, 400.0, 290.0, 1, 0.0);
+        npc.hp = 1000;
+        npc.max_hp = 1000;
+        npc.defense_override = Some(0);
+        let mut npcs = vec![npc];
+        let mut rng = TakeRng { draws: Vec::new(), floats: 0 };
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
+        let s = &pool.slots()[slot];
+        assert!(!s.active, "ai0 1 >= 1 kills (:46764-46767)");
+        assert_eq!(s.time_left, 0);
+        // The live-tick census: per sub-step 2 taken Next(19) (4 floats +
+        // Next(5) each) + 1 taken Next(2). 4 sub-steps → 8x Next(19),
+        // 4x Next(2), 8x Next(5), 32 floats. The death census adds 30.
+        let n19 = rng.draws.iter().filter(|&&(a, b)| (a, b) == (0, 19)).count();
+        let n5 = rng.draws.iter().filter(|&&(a, b)| (a, b) == (0, 5)).count();
+        let n2 = rng.draws.iter().filter(|&&(a, b)| (a, b) == (0, 2)).count();
+        assert_eq!((n19, n5, n2), (8, 8, 4), "the taken-gate census");
+        // 32 live floats + 30 death floats + the re-Damage's DamageVar /
+        // crit rolls (the boxed walk's own stream draws).
+        assert!(rng.floats >= 62, "32 live + 30 death floats: {}", rng.floats);
+        // The re-Damage landed: 40 · 1.5 = 60 base, DamageVar ±15% then
+        // defense 0 — the NPC took a hit in [51, 69].
+        assert!(npcs[0].hp < 1000, "the Kill re-Damage landed (:71631-71634)");
+        assert!((1000 - npcs[0].hp) >= 51 && (1000 - npcs[0].hp) <= 69,
+            "the base 1.5 multiplier + DamageVar: {}", 1000 - npcs[0].hp);
     }
 }
