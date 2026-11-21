@@ -34526,17 +34526,17 @@ the pushed sibling tips (hashes are the sibling commit that landed the arm;
 | --- | --- | --- | --- |
 | `:14385-14393` | snapping-stone trio | none (the accessory seam) | STILL DEFERRED |
 | `:16871-16994` | liquid splash family | none (the generic wet block, d53's skip) | STILL DEFERRED |
-| `:18209` | 37-style star (502) | no row on any branch | STILL DEFERRED |
+| `:18209` | 37-style star (502) | no row on any branch (part-4 re-probe: d1 `e271b5bc8` style-8 machine verify-only, 502 unrowed) — the owed bounce gate ARMED HERE (part 4) | STILL DEFERRED (row) / CUE ARMED HERE |
 | `:18292` | (unlisted) 1024 Item10 | d12 `719ffb76c` rows 1024, `kill_step` move — NO `:18292` cue | SIBLING GAP (merge owner) |
 | `:18411` | dropped-yoyo Dig | the `-2` state needs M3-EQUIP-3's magicString (flag never set) | STILL DEFERRED |
-| `:18780/:18959/:18978/:18994/:19067/:19090/:19178/:19241/:19270/:19845` | bounce Digs (1023/1053-family/1055/1021/1013/727/1054/1048/655/1081) | no rows on any branch | STILL DEFERRED |
+| `:18780/:18959/:18978/:18994/:19067/:19090/:19178/:19241/:19270/:19845` | bounce Digs (1023/1053-family/1055/1021/1013/727/1054/1048/655/1081) | part-4 re-probe: d3 `2d01693ca` rows+arms the boulder family (99/727/1013/1014/1053/1054/1055/1057/1005/1021/655/1047/1048/763) — every bounce cue QUEUED (`bounce_ladder`'s dig closure + the 1048 Item177); 1023/1081 still unrowed | SIBLING-CUED (boulders, d3) / STILL DEFERRED (1023/1081) |
 | `:19373` | (unlisted) aiStyle-39 Dig | d4 `5771c1f0` piranha 190 sets `tile_collide=false` — the bounce never runs | SIBLING GAP (merge owner) |
-| `:19531` | phaseblade/383 explosion | no 383/phaseblade row | STILL DEFERRED |
-| `:19649` | 261 earth boulder | no row | STILL DEFERRED |
-| `:20104` | Rainbow Boulder | no row (trackable) | STILL DEFERRED |
+| `:19531` | phaseblade/383 explosion | no 383/phaseblade row (part-4 re-probe stands) — the 383 owed explosion gate ARMED HERE (part 4) | STILL DEFERRED (row) / CUE ARMED HERE (383) |
+| `:19649` | 261 earth boulder | no row (part-4 re-probe: d2 `f430ccf83` style-14 census — the flail-machine is aiStyle 15, NOT 14; 261 unrowed) | STILL DEFERRED |
+| `:20104` | Rainbow Boulder | d3 `2d01693ca` — `rainbow_check_bounce` queues `(42,274)` on the hard bounce; the bank row + the id-42 route landed HERE (part 4) | SIBLING-CUED (audible after merge) |
 | `:22149` | super-star (151) | d16 `a03fbcbd4` — cue `(2,9)` | SIBLING-CUED |
 | `:22263/:22268/:22277` | super-star slash (152) | d16 `939816d43` — cues `(2,1)`/`(2,9)` | SIBLING-CUED |
-| `:24506` | 288 hostile golden shower | no 288 row | STILL DEFERRED |
+| `:24506` | 288 hostile golden shower | no 288 row (part-4 re-probe stands; the style-12 machine is in THIS tree) — the owed first-tick Item17 gate ARMED HERE (part 4) | STILL DEFERRED (row) / CUE ARMED HERE |
 | `:24781` | Golem Fist (262) | d2 `15e5448a9` — cue `(2,14)` | SIBLING-CUED |
 | `:25166/:25280` | style-14 second-gate dead code | dead in C# (part-2 re-derivation) | DEAD CODE |
 | `:25357` | aiStyle-17 sign placement | d2 `61c47ed79` — cue `(0,0)` at tile×16 | SIBLING-CUED |
@@ -34548,7 +34548,7 @@ the pushed sibling tips (hashes are the sibling commit that landed the arm;
 | `:28329` | 291 hostile inferno | g2 `8d3cdcb16` — cue `(2,20)` | SIBLING-CUED |
 | `:31504` | (CENSUS GAP) 455 zombie-voice | THIS BRANCH part 3 — cue `(29,104)` | PORTED HERE |
 | `:31832` | cultist ice-mist (464) | d9 `eb1f19b60` — cue `(2,120)` | SIBLING-CUED |
-| `:31943` | cultist lightning (465) | no 465 row on any branch | STILL DEFERRED |
+| `:31943` | cultist lightning (465) | no 465 row on any branch (part-4 re-probe: d9 `667e1f0c2` rows 464/490/578/580, NOT 465; the style-88 machine is in THIS tree) — the owed first-tick Item121 gate ARMED HERE (part 4) | STILL DEFERRED (row) / CUE ARMED HERE |
 | `:32290` | 490 ritual (style 89) | d9 `a9035b6fd` — cue `(2,123)` | SIBLING-CUED |
 | `:34504/:34539` | 117 explosion family | d12 `f0150a695` — cue `(2,14)` (612/953/978/624; 1044 silent) | SIBLING-CUED |
 | `:35524` | Glommer (957) | d13 `69edd7fc4` — arm landed, GlommerBounce TRACKABLE deferred | SIBLING GAP (trackable) |
@@ -34558,11 +34558,11 @@ the pushed sibling tips (hashes are the sibling commit that landed the arm;
 | `:36940/:36961` | Glacier Fang (208) | d21 `20fe4b3ed` — arm landed, sound body SKIPPED | SIBLING GAP (sound skip) |
 | `:38108` | RC car (205) | d21 `20fe4b3ed` — tracked-loop sound SKIPPED | SIBLING GAP (sound skip) |
 | `:38517/:38531/:38535/:38682` | Digtoise (204) | d21 `20fe4b3ed` — arm landed, sound bodies SKIPPED | SIBLING GAP (sound skip) |
-| `:39080-39393` | phaseblade whoosh family | no phaseblade row | STILL DEFERRED |
+| `:39080-39393` | phaseblade whoosh family | no phaseblade row (part-4 re-probe: d1 `e271b5bc8` style-3 census verify-only — the 1059-1076/1101/1102 rows unported on EVERY pushed tip) | STILL DEFERRED |
 | `:39786` | storm lightning (203) | d21 `20fe4b3ed` — sound body SKIPPED | SIBLING GAP (sound skip) |
 | `:39931` | torch god (202) | d21 `20fe4b3ed` — Item8 cue SKIPPED | SIBLING GAP (sound skip) |
 | `:40481` | petal (196) | d20 `f4e660a20` — cue `(2,17)` | SIBLING-CUED |
-| `:41369` | Foxparks flame (1106) | no 1106 row | STILL DEFERRED |
+| `:41369` | Foxparks flame (1106) | d18 `18916087b` rows 1106 (6x6, aiStyle 193, pen 4, extraUpdates 2, ID-static 15); the sound gate was SKIPPED on d18/d20 — ARMED HERE (part 4, the `(2,-34)` named-row marker + the by-name façade) | SIBLING GAP → CUE ARMED HERE |
 | `:41656` | True Night's Edge (191) | d20 `2b2b71a71` — cue `(2,8)` (973 first tick) | SIBLING-CUED |
 | `:41968` | True Night's Edge spore (191) | d19 `a4185f898` — cue `(2,167)` at spawnPosition | SIBLING-CUED |
 
@@ -34592,6 +34592,161 @@ playing guard, the one pitch draw), the `Zombie_104.xnb` asset confirmed on
 disk. Every sibling verdict cited to a pushed commit hash + the queued tuple
 read from the branch source. No cargo/rustc/tests/graphify invoked — the 3
 new witnesses are WRITTEN, NOT RUN.
+
+### Part 4 (d75, 2026-11-21, code-only mode) — the STILL-DEFERRED re-probe
+
+`task/W4-d75-proj-sounds-1`, part 4. The Lead's directive: re-fetch d3 +
+all d-lane tips and re-probe the part-3 STILL-DEFERRED list
+(502/288/465/1106/383/261/RainbowBoulder/phaseblades). **d3's boulder
+family landed AFTER the part-3 census** (`f9d2759e8` AI arm → `241cbae09`
+rows → `40f8cbe3d` dispatch/death hooks → `affd7fa90` drains →
+`2d01693ca` the PreventSpam gate; tip `2d01693ca`). The re-probe scanned
+EVERY pushed `origin/task/W4-*` tip (354 branches) for the eight kinds'
+`proj_data` rows and constants.
+
+**The re-probe verdicts (per kind).**
+
+- **The boulder family (d3, NOW ROWED + CUED).** The 13 kinds' rows ride
+  `241cbae09` (`projectile/data.rs`: the shared 31x31 trap block, the
+  1054's 300 / the 1055's 900 timeLeft, the 1021 hostile-only ×3, the
+  1047 friendly-only ignoreWater, the 763 spike). d3's
+  `projectile_ai_boulder::bounce_ladder` queues EVERY first-120 bounce
+  cue itself — the `dig` closure parks `(0,0,pos,0)` for
+  `:18959/:18978/:18994/:19067/:19090/:19178/:19270` and the 1048 arm
+  parks `(2,177,pos,0)` for `:19241`; `rainbow_check_bounce` parks
+  `(42,274,pos,0)` for `:20104`; `boulder_kill` pushes the death cues
+  (`:74857-74876`: the 1048 Item16, the 1053 Item14, the 1054 NPCHit29
+  `(3,29)`, the 1055 NPCDeath6 `(4,6)`, the rest the Dig) and the 1047
+  death `(42,274)` at Center. **Constants copied, machines NOT re-ported**
+  — this branch's half is the SOUND LAYER those intents need: the
+  `rainbow_boulder` trackable joins `ITEM_CUSTOM_CUES` (the part-2
+  id-42 drain route already serves it), `NPC_Hit_29` joins `SFX_CUES`,
+  the drain gains the id-3 arm (→ wave C's `play_npc_hit_sound`, the
+  style overload's audio-only GetRandomPitch + case 3's one pitch draw)
+  and the id-4 arm (→ `play_npc_death_style`, whose style table gains
+  the 6 row). The 1023 DeadCellsBarrel / 1081 MudBallPlayer bounce Digs
+  (`:18780`/`:19845`) stay STILL DEFERRED — unrowed on every tip.
+- **502 Meowmere (`:18209`, aiStyle 8).** d1's tip `e271b5bc8` is the
+  style-1..10 census: style 8 verify-only (`ai_ball_of_fire`), the 502
+  row UNPORTED (the arm's own doc: "the 502 velocity rotation has no
+  ported row"). The Lead's `:18231` is the dust-ring line — the sound
+  site is `:18209`. **The owed bounce gate ARMED HERE**: the kind-first
+  502 arm ahead of the style-8 arm in `ai_ball_of_fire`'s blocked-move
+  block (the C# chain order `:18206` before `:19573`): the clamp-1..5
+  `ai[0]` bump THEN `PlaySound(37, x, y, 5 + ai[0])` (the intent
+  `(37, 6..10, pos, 0)`), the fifth bounce steps into the wall and kills,
+  else the blocked axes reverse. The drain gains the id-37 arm →
+  `Audio::play_star_chime` + `sound::star_chime_case37`
+  (`LegacySoundPlayer.cs:1326-1336`: the `Next(57,59)` slot pick FIRST,
+  the `Style×0.05` volume, then the `Next(-40,41)*0.01` pitch — TWO
+  gameplay draws, the int overload draws no GetRandomPitch; the
+  starGame ×0.15 arm folds off, the case-38 precedent). `Item_57`/
+  `Item_58` join the bank. The hue dust ring (`:18226-18237`) and the
+  owner-gated Damage resize (`:18238-18253`) are the row-porter's half.
+- **261 BoulderOfEarth (`:19649`, aiStyle 14).** The Lead's flail
+  question resolved: the flail machine is aiStyle **15**
+  (`AI_015_Flails`), NOT 14 — d2's tip `f430ccf83` rows the style-14
+  spear/spiky-ball/glowstick families, the 261 row UNPORTED on every
+  tip. The `:19649` Dig rides `HandleMovement`'s style-14 block
+  (`:19643`'s ±3 velocity gate + `MakeBoulderOfEarthExplosion`
+  `:20391`), a machine this tree's `ai_spear` does not model (the port's
+  style-14 movement is the tile-kill scan). STILL DEFERRED — no owed
+  gate possible without the movement half (the row-porter owns both).
+- **288 GoldenShowerHostile (`:24506`, aiStyle 12).** Unrowed on every
+  tip; the style-12 machine IS in this tree (`ai_aqua_scepter` →
+  `ai_golden_shower`). **The owed first-tick gate ARMED HERE**: the
+  `localAI[0] == 0` Item17 play-then-latch at the arm's TOP
+  (`:24503-24507`, ahead of the 280/288 shared block), and the shared
+  block now serves both kinds (`:24508`) with the 288's `ai[0] = 4`
+  arc latch (`:24515-24517`). `Item_17` was already banked (part 1).
+- **465 CultistBossLightningOrb (`:31943`, aiStyle 88).** d9's tip
+  `667e1f0c2` rows 464/490/578/580 — NOT 465. The style-88 dispatch IS
+  in this tree (the 580's `ai_vortex_bolt`). **The owed first-tick gate
+  ARMED HERE**: `cultist_lightning_latch` at the dispatch head — the
+  Item121 play at `base.position` THEN the `localAI[1] = 1` latch
+  (`:31939-31945`), kind-gated so the 580 stays cue-less. `Item_121`
+  joins the bank. The orb's alpha/life machine (`:31946-31990`) is the
+  row-porter's half.
+- **1106 FoxparksFlames (`:41369`, aiStyle 193).** d18's tip `18916087b`
+  NOW ROWS the 1106 (6x6, pen 4, extraUpdates 2, ID-static 15) and
+  carries the style-193 dispatch + `ai_flamethrower` (the same S1-D-4
+  machine this tree owns) with the sound gate SKIPPED — d20's tip
+  `13de9ccf6` carries the same skip. **ARMED HERE**: `ai_flamethrower`
+  gains the `who_am_i`
+  parameter (the dispatch's slot index — the C# `base.whoAmI`) and the
+  `soundDelay == 0 && whoAmI % 3 == 0` gate (`:41366-41370`): the −1
+  latch + the FoxparksFlame play at `base.Center`. **The named-row
+  marker `(2, -34)`**: `SoundID.FoxparksFlame` is `(2, 34)
+  .WithVolume(0.15f)` (`SoundID.cs:1725`) — the SAME tuple as Item34
+  (volume 1.0), which d76's Nebula Blaze latch queues as plain +34; the
+  negative sentinel keeps the two apart (the dash-roar −1 precedent)
+  and the drain routes −34 to `Audio::play_foxparks_flame` (the by-name
+  row pin, the `play_chillet_sound` precedent — one audio-only
+  GetRandomPitch + one case-2 gameplay pitch).
+- **383 Anchor (`:19531`, aiStyle 3).** Unrowed on every tip (the
+  phaseblade set's neighbour); the aiStyle-3 machine IS in this tree
+  (`ai_boomerang`). **The owed explosion gate ARMED HERE**: the 383's
+  own arm in the blocked-move block — at `ai[1] >= 10` the
+  `localAI[0] = 300` latch + the Item14 play at the PRE-move position,
+  the return arms (`ai[0] = 1`) WITHOUT reversing the axes (`:19564`'s
+  `type != 383`); below 10 only the tail's Dig thud. The whoosh head's
+  383/phaseblade exclusions (`:38868`) are now EXPLICIT (they were
+  implicit — no rowed kind hit them). The single-intent fold keeps the
+  Item14 over the tail thud (recorded).
+- **The phaseblades (`:39080-39393` + the `:19375` bounce arm).** d1's
+  style-3 census is verify-only; the 1059-1076/1101/1102 rows are
+  UNPORTED on every pushed tip (the full 354-branch scan). The Lead's
+  `:19392/:19401/:19468` are the bounce arm's DUST lines — the arm
+  carries NO PlaySound at all; the whoosh family's sites
+  (`:39080/:39086/:39098/:39104/:39312/:39356/:39360/:39384/:39388/
+  :39393`) ride `AI_003_Boomerang`'s unported phaseblade machine.
+  STILL DEFERRED — no cue can arm without the rows + the machine.
+
+**Deviations (deliberate, recorded).**
+- The owed gates (502/288/465/383/1106) are KIND-GATED arms on machines
+  this tree already owns; the rows stay on their lanes (or unported) —
+  `spawn_with_data`'s row guard keeps every gate inert until the merge
+  (the f1 owed-arm convention). The 502/383 gates carry their movement
+  halves (the bounce reversal / the no-reverse return) because the C#
+  sound sites sit INSIDE those movement arms — a cue-only gate would
+  misplace the play position.
+- The `(2, -34)` marker is a port-only sentinel (the C# has one tuple
+  space per overload); the drain's route table is the seam. d76's
+  6-tuple `wants_sound` widening (its own tip) merges independently —
+  the −34 style value survives the widening (the fifth/sixth slots are
+  pitch/volume, not style).
+- The 383 explosion's `HitTilesInACircle` and the 502's dust ring/Damage
+  resize are skipped effects (the pool's standing dust/effect census);
+  their EXPLICIT draws belong to the row-porter's arm completion.
+- The star chime's starGame ×0.15 volume arm folds off (the seed is
+  unported — the case-38 coin precedent, ANALYSIS S1-E-21f).
+
+Bank: `rainbow_boulder` joins `ITEM_CUSTOM_CUES`; `NPC_Hit_29`,
+`Item_57`, `Item_58`, `Item_121` join `SFX_CUES` (all four `.xnb`
+verified on disk; the `rainbow_boulder.xnb` too). Every other style the
+batch names was already registered (`Item_14/16/17/34/177`,
+`NPC_Killed_6`).
+
+Witnesses (9 new `s1_e_21h_d75_p4_*`, WRITTEN NOT RUN): the Meowmere
+five-bounce chime ladder + the fifth-bounce kill, the Anchor's
+ten-tick explosion gate + the no-reverse return + the below-10 thud,
+the cultist lightning's one-cue latch + the 580 negative, the hostile
+golden shower's Item17 latch + the tick-one arc + the 280 negative, the
+Foxparks flame's %3 gate + the −1 latch + the 85 negative, the rainbow
+trackable's draw-free drain, the star chime's two-draw order, the
+FoxparksFlame named-row volume pin, and the drain routes' stream
+contract (the (42,274)/(2,−34)/(3,29)/(4,6)/(37,style) intents through
+a rowed carrier — muted refusal draw-free, one/two draws per case).
+
+**Verification.** Code-only: every owed gate re-read against its C#
+block (the kind-first chain orders, the play-then-latch statement
+orders, the `:19564` no-reverse exclusion, the `:24508` shared block,
+the `:41366` %3 gate), the case-37/3/4/42 draw contracts against
+`LegacySoundPlayer.cs`, the d3 cue tuples against the pushed
+`projectile_ai_boulder.rs`/`boulder_kill` source (read via `git show`,
+constants NOT machines), the five new bank assets confirmed on disk.
+No cargo/rustc/tests/rustfmt/graphify invoked — the 9 witnesses are
+WRITTEN, NOT RUN.
 
 ## The lunar/DD2 small WRONGs (B-6d, 2026-11-19, code-only mode)
 
