@@ -4084,6 +4084,34 @@ impl App {
         app.sandstorm.time_left = app.world.sandstorm_time_left;
         app.sandstorm.severity = app.world.sandstorm_severity;
         app.sandstorm.intended_severity = app.world.sandstorm_intended_severity;
+        // The world-load liquid settle (`IO/WorldFile.cs:733-764`): the C#
+        // runs `QuickWater` + `WaterCheck` + the `quickSettle` drain + a final
+        // `WaterCheck` right after the sections load, before the world goes
+        // live. The port's [`App::new`] is the shared boot + `swap_world`
+        // construction (the `Main.LoadWorld` tail), so the settle rides here
+        // — a swapped world settles exactly as a booted one. `frame_rng` is
+        // already caller-pinned by `load_world` (`world.seed_frame_rng`), so
+        // the settle's `SquareTileFrame` reset rolls draw the same stream the
+        // framing passes seeded; a DRY world consumes zero draws and mutates
+        // zero tiles, leaving every save/load round-trip pin unmoved (the
+        // re-pin obligation for wet worlds is recorded in ANALYSIS, W4-g47).
+        // The merge cues are discarded (the C# `PlayLiquidChangeSound` gate
+        // `!isGeneratingOrLoadingWorld` is false during load); the retirement
+        // / liquid-death kills resolve into item drops through the same seam
+        // the live liquid tick uses.
+        //
+        // The liquid-staging screenshot fixtures (`TR_POOL` fills a settled
+        // rectangle, `TR_SPOUT` builds a suspended fall) stage liquid the C#
+        // load settle would drain — the vanilla captures them mid-flow on the
+        // live tick instead. They opt out here so the verified S1-G-14 pairs
+        // keep their pixels; `TR_NO_SETTLE` is the general A/B escape hatch.
+        let staging = crate::env::pool_rect().is_some() || crate::env::spout_xy().is_some();
+        if !crate::env::no_settle() && !staging {
+            app.liquids.settle_loaded_world(&mut app.world);
+            let _ = app.liquids.drain_merge_events();
+            let load_kills = app.liquids.drain_edit_kills();
+            world_sim::editing::resolve_liquid_edit_kills(&mut app, load_kills);
+        }
         // `TR_UI=<screen>`: preset the front-end flow state for screenshots (the
         // `TR_PAGE` pattern — the plan Task 5 hook table).
         if let Some(preset) = tr_ui.as_deref().and_then(tr_ui_preset) {

@@ -1011,6 +1011,14 @@ pin_bool! {
 }
 
 pin_bool! {
+    /// `TR_NO_SETTLE`: skips the world-load liquid settle
+    /// (`WorldFile.cs:733-764`, W4-g47) — the A/B escape hatch for the
+    /// save/load round-trip pins and the liquid-staging captures.
+    no_settle,
+    "TR_NO_SETTLE"
+}
+
+pin_bool! {
     /// `TR_NO_WIND`: disables the sway counters (the walk itself stays).
     no_wind,
     "TR_NO_WIND"
