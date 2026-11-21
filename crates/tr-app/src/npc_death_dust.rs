@@ -1,5 +1,5 @@
 //! W4-g59 — the NPC death DUST lane: `NPC.HitEffect`'s per-kind death-half
-//! dust bursts (`life <= 0`), kinds 1-230, batches 1-3 (30 kinds).
+//! dust bursts (`life <= 0`), kinds 1-230, batches 1-4 (40 kinds).
 //!
 //! `HitEffect` runs inside `StrikeNPC_Inner` (`NPC.cs:81488`), BEFORE
 //! `checkDead` (`:81561` → `:78040`); the port batches deaths into the NPC
@@ -47,6 +47,23 @@
 //! per-kind ladder, the goblin type ladder `:89564-89596` and the
 //! Skeletron RedHat gate `:89181-89208` are constant data / ai-field
 //! reads), so the dust loop is again the whole census.
+//!
+//! ## Scope — batch 4 (the bat/shark/piranha families + the hornet)
+//!
+//! | C# type(s) | port kind(s) | death arm | shape |
+//! | --- | --- | --- | --- |
+//! | 38/54 | Demolitionist/Clothier | `:88335`/`:88252` | 50× type-5, 2.5×dir/-2.5 |
+//! | 42 | Hornet | `:89712-89715` | 50× type-18 alpha/color/scale, dir |
+//! | 44/45 | UndeadMiner/Tim | `:88537-88540` | 20× type-26, 2.5×dir/-2.5 |
+//! | 49/51 | CaveBat/JungleBat | `:85807-85810` | 15× type-5, 2×dir/-2 |
+//! | 58 | Piranha | `:86381-86384` | 10× type-5, 2×dir/-2 |
+//! | 65 | Shark | `:86740-86743` | 75× type-5, 2×dir/-2 |
+//! | 66 | VoodooDemon | `:89803-89806` | 50× type-5, 2×dir/-2 |
+//!
+//! The batch-4 gore tails draw NO arguments (verified: the hornet's
+//! 205/176 ladder, the bat per-kind gores, the piranha/shark/voodoo
+//! ladders are all constant data). Shared-arm siblings outside the port's
+//! kind set (47/57, 62, 176/205/231-235, 542-545/692) stay cited skips.
 //!
 //! The census (the full 1-230 walk, 173 dust-first clean kinds) and the
 //! batch split live in docs/ANALYSIS.md "The NPC death dust table (W4-g59)".
@@ -315,6 +332,78 @@ pub fn death_dust(
             for _ in 0..150 {
                 dust.new_dust(
                     rng, ctx, world, pos, w, h, 26, 2.5 * dir, -2.5, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // ---- batch 4 (the bat/shark/piranha families + the hornet).
+        // `NPC.cs:88335-88338` / `:88252-88255` — the Demolitionist (38) /
+        // Clothier (54): 50 type-5 puffs at 2.5×dir/-2.5.
+        38 | 54 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.5 * dir, -2.5, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:89712-89715` — the Hornet (42): 50 type-18 puffs at
+        // `this.alpha`/`this.color`/`this.scale`, SpeedX = dir (the 176/
+        // 205/231-235 siblings are other lanes' kinds).
+        42 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 18, dir, -2.0,
+                    npc.alpha as i32, Color::default(), npc.scale,
+                );
+            }
+        }
+        // `NPC.cs:88537-88540` — the Undead Miner (44) / Tim (45): 20
+        // type-26 bone puffs (the big skeleton arm, batch 3's shape).
+        44 | 45 => {
+            for _ in 0..20 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 26, 2.5 * dir, -2.5, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:85807-85810` — the Cave Bat (49) / Jungle Bat (51): 15
+        // type-5 puffs at 2×dir/-2 (the bat arm's dust head).
+        49 | 51 => {
+            for _ in 0..15 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.0 * dir, -2.0, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:86381-86384` — the Piranha (58): 10 type-5 puffs at
+        // 2×dir/-2 (the 47/57 siblings are unported kinds).
+        58 => {
+            for _ in 0..10 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.0 * dir, -2.0, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:86740-86743` — the Shark (65): 75 type-5 puffs at
+        // 2×dir/-2 (the 542-545/692 siblings are other lanes' kinds).
+        65 => {
+            for _ in 0..75 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.0 * dir, -2.0, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:89803-89806` — the Voodoo Demon (66): 50 type-5 puffs
+        // at 2×dir/-2 (the 62 sibling is an unported kind).
+        66 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.0 * dir, -2.0, 0,
                     Color::default(), 1.0,
                 );
             }
@@ -802,5 +891,72 @@ mod tests {
         let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
         assert_eq!(live.len(), 50);
         assert!(live.iter().all(|d| d.dust_type == 5));
+    }
+
+    /// `NPC.cs:85807-85810` — the bat pair (49/51): 15 type-5 puffs at
+    /// 2×dir/-2; both ids share the bat arm's dust head.
+    #[test]
+    fn w4_g59_the_bat_pair_draws_fifteen() {
+        let w = air();
+        let n = corpse(NpcKind::CaveBat);
+        let mut states = Vec::new();
+        for ty in [49, 51] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(67);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 15);
+            assert!(live.iter().all(|d| d.dust_type == 5));
+            states.push(rng.peek());
+        }
+        assert!(states.windows(2).all(|p| p[0] == p[1]));
+    }
+
+    /// `NPC.cs:86740-86743` — the Shark: 75 type-5 puffs at 2×dir/-2
+    /// (the 75-count arm, the largest type-5 burst).
+    #[test]
+    fn w4_g59_the_shark_death_draws_seventy_five() {
+        let w = air();
+        let n = corpse(NpcKind::Shark);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(71);
+        assert!(death_dust(&n, 65, &mut dust, &ctx(), &mut rng, &w));
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 75);
+        assert!(live.iter().all(|d| d.dust_type == 5));
+    }
+
+    /// `NPC.cs:89712-89715` — the Hornet: 50 type-18 puffs at
+    /// `this.alpha`/`this.scale`, SpeedX = dir (the type-18 shape, batch
+    /// 2's trio census on a new kind).
+    #[test]
+    fn w4_g59_the_hornet_death_draws_fifty_type_eighteens() {
+        let w = air();
+        let n = corpse(NpcKind::Hornet);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(73);
+        assert!(death_dust(&n, 42, &mut dust, &ctx(), &mut rng, &w));
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 50);
+        assert!(live.iter().all(|d| d.dust_type == 18));
+    }
+
+    /// `NPC.cs:86381-86384` / `:89803-89806` — the Piranha (10) and
+    /// Voodoo Demon (50): the 2×dir/-2 type-5 shape at two counts.
+    #[test]
+    fn w4_g59_the_piranha_and_voodoo_counts() {
+        let w = air();
+        for (kind, ty, count, seed) in [
+            (NpcKind::Piranha, 58, 10usize, 79),
+            (NpcKind::VoodooDemon, 66, 50, 83),
+        ] {
+            let n = corpse(kind);
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(seed);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), count);
+            assert!(live.iter().all(|d| d.dust_type == 5));
+        }
     }
 }

@@ -39355,3 +39355,23 @@ NewGore bodies stay d55's.
 6 witnesses WRITTEN NOT RUN (code-only): the skeleton pair's 20-bone
 census, the Fire Imp twin-pool ember replay, the goblin quartet's shared
 census, the Skeletron pair's 150-bone census, the Guide's 50-count.
+
+### W4-g59 batch 4 (the bat/shark/piranha families + the hornet, 10 kinds)
+
+38 Demolitionist / 54 Clothier (`:88335`/`:88252`, 50× type-5
+2.5×dir/-2.5), 42 Hornet (`:89712-89715`, 50× type-18 at
+`this.alpha`/`this.color`/`this.scale`, SpeedX = dir), 44 UndeadMiner /
+45 Tim (`:88537-88540`, 20× type-26 — the big skeleton arm), 49 CaveBat /
+51 JungleBat (`:85807-85810`, 15× type-5 2×dir/-2), 58 Piranha
+(`:86381-86384`, 10× type-5), 65 Shark (`:86740-86743`, 75× type-5 — the
+largest type-5 burst), 66 VoodooDemon (`:89803-89806`, 50× type-5).
+
+The batch-4 gore tails draw NO arguments (verified by scan: the hornet's
+205/176 ladder, the bat per-kind gores, the piranha/shark/voodoo ladders
+are constant data). Shared-arm siblings outside the port's kind set
+(47/57, 62, 176/205/231-235, 542-545/692) stay cited skips — the 231-235
+band is g60's.
+
+5 witnesses WRITTEN NOT RUN (code-only): the bat pair's 15-count, the
+Shark's 75-count, the Hornet's type-18 census, the Piranha/Voodoo
+two-count check.
