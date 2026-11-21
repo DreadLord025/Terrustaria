@@ -39296,3 +39296,39 @@ Deliberate deviations / drops (all cited in the module):
   (`main_dust.rs::tests`, `world_sim/wiring.rs::tests`) mirror every draw
   sequence with full-stream equality. WRITTEN NOT RUN — no cargo/rustc
   invoked (code-only).
+
+### The TeleportEffect union-exec (research/116 EXECUTED, 2026-11-21)
+
+The 4-way keep-one landed on this branch (`56afc0c0` + `8540a8ad`): the
+surviving body is g61's widest-11 (`crates/tr-app/src/teleport_dust.rs`,
+adapted per-hunk from `a9628928` — `TeleportDustEnv` drops the gore pool,
+the canonical `ui::color::hsl_to_rgb`, sounds at the C# position via the
+callback, the style-10 spawned-slot clone guard, the pylon style 9);
+`main_dust::teleport_effect` is the App-level dispatcher (the pass stream
+rides a `RefCell<UnifiedRandom>` shared between the `CellRng` `DustRng`
+adapter and the Audio-façade closure — observation-identical to the C#'s
+one `Main.rand`; the advanced state writes back after the body). The g11
+seven arm bodies + `nd`/`nd_full`/`nd_direct`/`item_cue`/`portal_color`
+are retired. All six research/116 gaps closed: the Queen-Slime hook rides
+`teleport_style(…, 10)` drained at the projectile pass tail
+(UpdateProjectiles), the Shellphone/no-space 11 fires through the
+player-tick drain; `otherPosition` on both legs of both replays; the
+style-9 `lastTeleportPylonStyleUsed` latch; the STORED `App.water_style`
+(written at `DrawWaters` `Main.cs:57475` in `frame/draw.rs`) replaces the
+inline recompute; the style-8 double Item6 cue + the replay-owned camera
+transition (style 1 → delay 10; the pad's inline arm retired); the inline
+grant dedupe (the replay owns `Player.cs:37490-37491`). The NPC per-tick
+fade (`update_npc_teleport_visuals`, the g11 `Npc` fields) is WIRED at the
+`UpdateNPC` tail (`NPC.cs:90322`, UpdateNPCs stream;
+`timeForVisualEffects` = 0.0 stand-in cited — style 12 has no live
+producer, at rest the fade draws nothing). The `Player.UpdateTeleportVisuals`
+decay stays the W4-e1 lane's. Deliberate drops (cited): the remaining
+`Player.Teleport` head/tail arms (funkytown/environment-immunity fields,
+PressurePlateHelper ×2, netOffset/spectate/wall-scan, mapTime/maxQ/
+renderNow, style-4 portalPhysicsFlag/gravity, advanced/social shadows —
+each its own lane, research/116 §4). Merger drops: g12's three staged
+`teleport_effect_case*` fns + 4 witnesses, d54's ten-style body + helpers
++ 8 witnesses (the snowing halves → research/83, whose F1-F7 are
+published as exact patch-hunks for d130's own-branch execution). Witness
+union: 33 adapted (g11 12 + g61 9 + g12 4 + d54 8) + 3 new gap witnesses,
+ALL WRITTEN NOT RUN (code-only).

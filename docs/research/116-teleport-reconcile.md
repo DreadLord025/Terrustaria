@@ -1,5 +1,27 @@
 # 116 — TeleportEffect reconcile: the 4-way union plan (W4-g11)
 
+**STATUS: EXECUTED** (union-exec phase, commits `56afc0c0` + `8540a8ad` on
+this branch). The keep-one landed: g61's widest-11 body adapted per-hunk
+into `crates/tr-app/src/teleport_dust.rs` (`TeleportDustEnv` = g61's
+`SpawnVisualsEnv` minus the gore pool; the canonical `ui::color::hsl_to_rgb`;
+sounds at the C# position via the callback; the style-10 spawned-slot clone
+guard; the pylon style 9), `main_dust::teleport_effect` survives as the
+App-level dispatcher (RefCell-shared pass stream — the `CellRng` `DustRng`
+adapter — the Audio façade resolves `(2,n)`/`(19,0)` mid-switch), and ALL
+six wiring gaps are closed (the execution record is §4 below). The three
+pool helpers took g61's `DustRng` generalisation (`particles.rs`,
+behaviour-identical). `update_npc_teleport_visuals` is WIRED at the
+`UpdateNPC` tail (`world_sim/npcs.rs`, `NPC.cs:90322`, the `UpdateNPCs`
+stream, the g11 `Npc` fields). g61's env-level `npc_teleport` driver is
+retired (the App-level replay supersedes it). **Merger drops** (§3 retire
+list, restated for the merge): g12's three `main_dust_b.rs::
+teleport_effect_case10/11/13` fns + their 4 witnesses (the bone-arm/Moon-Lord
+halves stay g12's), d54's `world_dust_main.rs::teleport_effect` +
+`hsl_to_rgb_bytes` + `portal_color` + `next_vector2_from_rectangle` + their 7
+teleport witnesses + `hsl_and_portal_colors` (the snowing half is research/83's
+scope). The witness union (33 adapted + 3 new gap witnesses) is WRITTEN NOT
+RUN (code-only).
+
 W4-g11 reconcile phase, code-only. `Main.TeleportEffect`
 (`Main.cs:13233-13464`) was ported by FOUR lanes; this doc is the per-style
 comparison + the wiring-pattern record + the keep-one union plan. Every claim
@@ -183,3 +205,112 @@ diffing the four port bodies (`git show 36602419`/`a9628928`/`48343a4c`/
 `world_sim/wiring.rs:303-371`, `main_dust.rs:505-605`,
 `projectile.rs:17049-17066`. The union plan is a merger worklist, WRITTEN
 NOT APPLIED; no other lane's code was touched.
+
+## 4. Execution record (union-exec phase)
+
+Commits on `task/W4-g11-dust-main-sites-1`:
+
+* `56afc0c0` — union 1/3: `teleport_dust.rs` (the g61 body adapted
+  per-hunk from `a9628928`; `TeleportDustEnv` drops the gore pool — no
+  teleport arm spawns gores; `update_npc_teleport_visuals` re-signed to
+  `&mut Npc` reading the g11 fields, g61's `(f32, i32, i32)` triple
+  retired). `particles.rs`: the three helpers (`new_dust_perfect`/
+  `new_dust_direct`/`clone_dust`) take g61's `<R: DustRng>` generalisation
+  verbatim. `App.water_style` added (the `Main.waterStyle` static,
+  `Main.cs:1105`), written at the C# position (`frame/draw.rs`'s
+  `DrawWaters` block, `:57475`) — gap 4's stored-static seam.
+* `8540a8ad` — union 2/3: the dispatcher + the gap closures + the wiring
+  + the witness union. Per gap:
+  1. **Reachable-caller arms** — the Queen-Slime hook
+     (`projectile.rs:17051-17073`) now calls
+     `p.teleport_style(target.x, target.y, 10)` (the `p.teleport`
+     movement stand-in retired); the projectile pass tail
+     (`world_sim/projectiles.rs`, after `take_spear_hold`) drains the
+     queued pair through `main_dust::player_teleport` on
+     `RngKey::UpdateProjectiles` (`Main.cs:17775` — the C# `Teleport`
+     executes inside the projectile pass). The Shellphone/no-space
+     style-11 path already queued (`player.rs:9477`/`:9586`); its drain
+     (`world_sim/player.rs`) now fires 50 Perfect dust through the
+     dispatcher instead of falling through. Census of the other C#
+     `Teleport` callers: styles 12/14 (`Player.cs:28867`,
+     `NPC.cs:53266`, `Wiring.cs:2437`/`:2465`) have no dust arm — the
+     dispatcher's fall-through is faithful; style 13's frog caller
+     (`NPC.cs:79880`) rides the NPC pass when its lane lands (the arm
+     is live in the dispatcher today).
+  2. **`otherPosition`** — both replays pass it on both legs: Entry =
+     `Vec2::new(new_x, new_y)` (`Player.cs:37444`/`NPC.cs:81044`), Exit =
+     the OLD position (`:37489`/`:81051`). The req structs already carry
+     old/new — no field addition needed; the g61 driver's legs are
+     preserved in the App-level replay.
+  3. **Style-9 pylon `extraInfo2`** — `Player.last_teleport_pylon_style_used`
+     added (`player.rs`), `queue_teleport_effect` latches `extraInfo`
+     into it and reads it back for style 9 (`Player.cs:37437-37441`);
+     the Exit leg reads the latched value via the existing `extra_info`
+     hand-off shape (style 9's Exit `extraInfo2` = the same latch —
+     `:37489` reads `extraInfo2` unchanged after the head).
+  4. **`water_style`** — the dispatcher reads `app.water_style` (the
+     stored static); the inline `calculate_water_style` recompute is
+     gone.
+  5. **Head/tail arms** — the style-8 double Item6 (`:37450-37453`, TWO
+     case-2 pitch draws old-then-new on the pass stream) and the
+     myPlayer camera transition (`:37456-37463`, style 1 →
+     `lerpSpeedupDelay = 10` else 0) are IN the replay; the wiring pad's
+     inline transition retired (one C#-position arm serves both
+     callers). The remaining head/tail arms stay cited skips:
+     `_funkytownAchievementCheckCooldown`/`environmentBuffImmunityTimer`
+     (fields unported), `PressurePlateHelper` ×2 / `netOffset` /
+     `SetOrRequestSpectating` / `DoUnbreakableWallScan` (unported
+     systems), `mapTime`/`maxQ`/`renderNow` (map-refresh lane), style-4
+     `portalPhysicsFlag`/`gravity` (portal physics lane),
+     `ResetAdvancedShadows`/`UpdateSocialShadow`/Bleh fixer (the
+     `prev_x/prev_y` write stands in).
+  6. **Double grants** — `teleport_style_with_extra` no longer writes
+     `teleport_time`/`teleport_style_id` inline; the replay owns the
+     `:37490-37491` write. The queue captures the PRE-move mult, so the
+     effect counts are unchanged; the drain runs the same tick.
+* **Wiring** — `update_npc_teleport_visuals` at the `UpdateNPC` per-slot
+  tail (`world_sim/npcs.rs`, after `black_slime_darkness_touch`, before
+  the look-for-home decay — `NPC.cs:90322`'s slot), on the `UpdateNPCs`
+  stream with the shared dust pool/ctx; `timeForVisualEffects` passes
+  0.0 (the sim-clock stand-in, cited — style 12 has no live producer;
+  at rest the fade draws nothing, existing streams untouched).
+* **Witness union (33 adapted + 3 new, ALL WRITTEN NOT RUN):** g11's 12
+  (7 style-port + 5 wiring in `main_dust.rs`, re-pinned to the
+  dispatcher signature — the style-4 colour oracle now the canonical
+  `ui::color::hsl_to_rgb`, the style-5 rig pins the stored static, the
+  boundary witness INVERTED to `w4_g11_the_no_arm_styles_stay_untouched`
+  [6/8/12 silent, 9/10/11/13 fire] — plus the pad integration witness
+  `wiring.rs:1005` re-pinned to the replay-owned camera arm); g61's 9 (8
+  in `teleport_dust.rs` under `w4_g11u_*` — the `RecordingRng` adapted
+  without the `GoreRng` impl — plus
+  `w4_g11_npc_teleport_style4_two_sided_burst_and_latch` in
+  `main_dust.rs`, the driver witness re-rigged to the App replay + the
+  `Npc` fields); g12's 4 (`w4_g11u_g12_case10/11/13_*` in `main_dust.rs`,
+  same oracles, the dispatcher rig); d54's 8 (`w4_g11u_d54_*` — 7 style
+  draw-census mirrors + the colour oracle re-pinned to
+  `ui::color::hsl_to_rgb`). NEW gap witnesses:
+  `w4_g11_style_9_carries_the_pylon_style` (gap 3),
+  `w4_g11_style_8_plays_the_double_cue` (gap 5),
+  `w4_g11_the_replay_arms_the_camera_delay` (gap 5); the queue witness
+  re-pins the gap-6 dedupe (no inline grant).
+* **Merger drops (this branch keeps its seams; the drops are the
+  merge's):** g12 `main_dust_b.rs`'s three `teleport_effect_case*` fns +
+  their 4 witnesses (sites 12-16 bone-arm/Moon-Lord stay); d54
+  `world_dust_main.rs`'s `teleport_effect` + `hsl_to_rgb_bytes` +
+  `portal_color` + `next_vector2_from_rectangle` + the 7 teleport
+  witnesses + `hsl_and_portal_colors` (the snowing half → research/83);
+  g61's `npc_spawn_visuals.rs` teleport family supersedes at ITS merge
+  (this branch's `teleport_dust.rs` is the surviving copy — the merger
+  keeps ONE; g61's poof/mimic/transform/alt-texture halves + their 8
+  witnesses stay g61's). d54's latent-10 note retires with its body.
+  The snowing keep-one (research/83 §-patch) is d130's execution on ITS
+  branch — F1-F7 published as exact patch-hunks there.
+
+Execution verification: code-only (no cargo/tests/rustfmt/graphify per
+the lane directive). Every adapted hunk was diffed against its source
+(`git show origin/task/W4-g61-npc-spawn-dust:…` at `a9628928`,
+`origin/task/W4-g12-dust-main-sites-2` at `665cd1e8`,
+`origin/task/W4-d54-dust-sites-world` at `c89aea9f`) and the C# re-read
+(`Player.cs:37414-37496`, `NPC.cs:81035-81058`/`:90290-90334`,
+`Main.cs:57465-57489`). The witnesses are WRITTEN NOT RUN — the
+merge-verify wave executes them.

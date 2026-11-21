@@ -75,8 +75,8 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
-| 83 | Weather reconcile, g11 addendum (snowing keep-one: d130 base + 7 exact g11 folds — global stream / HiDef 4096 / in-body pause gate / counter budget; the maxScreenW correction to d130's table; unions with d130 50c845e5's 83) | `83-weather-reconcile.md` | reconcile doc |
-| 116 | TeleportEffect 4-way union plan (g11 wired 0-5/7 vs g61 widest-11 vs d54 latent-10 vs g12 staged-10/11/13: per-style table, Entry-OLD->Exit-NEW queue canonical, 6 wiring gaps, keep-one = g61 body + g11 seams) | `116-teleport-reconcile.md` | reconcile doc |
+| 83 | Weather reconcile, g11 addendum (snowing keep-one: d130 base + 7 exact g11 folds — global stream / HiDef 4096 / in-body pause gate / counter budget; the maxScreenW correction to d130's table; unions with d130 50c845e5's 83; §-patch: F1-F7 as EXACT patch-hunks for d130's mechanical application at ec1d73c7) | `83-weather-reconcile.md` | F1-F7 PUBLISHED (d130 executes) |
+| 116 | TeleportEffect 4-way union (g11 wired 0-5/7 vs g61 widest-11 vs d54 latent-10 vs g12 staged-10/11/13: per-style table, Entry-OLD->Exit-NEW queue canonical, 6 wiring gaps, keep-one = g61 body + g11 seams) — EXECUTED 56afc0c0+8540a8ad: teleport_dust.rs body + App dispatcher, all 6 gaps closed, visuals decay WIRED, 33+3 witnesses; g12/d54 drops are the merger's | `116-teleport-reconcile.md` | EXECUTED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
