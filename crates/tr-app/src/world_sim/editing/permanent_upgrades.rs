@@ -39,9 +39,11 @@
 //! (!petBoughtFlag || NPC.AnyNPCs(npcType))`. The first purchase always passes
 //! (`!petBoughtFlag`); a re-use only passes while the pet is alive (the
 //! exchange). The port ships no TownCat/Dog/Bunny NPC kinds nor the
-//! `TownNPCProfiles` variation table, so `NPC.AnyNPCs` is always false (a
-//! re-use refuses) and the exchange's `RerollVariation` folds to the fail
-//! branch — the unlock (first purchase) is the live path (ANALYSIS deviation).
+//! `TownNPCProfiles` variation table, so the LIVE `AnyNPCs` scan never
+//! answers today (a re-use refuses) and the exchange's `RerollVariation`
+//! folds to the `Misc.PetExchangeFail` line — the unlock (first purchase) is
+//! the live path (ANALYSIS deviation; a6 `d46221b2`'s scan + `!bought` guard
+//! shape, research/143).
 //!
 //! ## Persistence
 //!
@@ -55,8 +57,10 @@
 //!   `bought_*` flags are WORLD globals (`.wld`/`.trwld`, never the sidecar).
 //!
 //! RNG: the Demon Heart + Pet Licenses draw NOTHING. The Minecart Powerup's
-//! `QuickSpawnItem` rolls the Mech's prefix on the `UpdateItems` stream (the
-//! bobber-catch drain's convention, `world_sim/projectiles.rs:569`). The
+//! `QuickSpawnItem` rolls the Mech's `Prefix(-1)` on the use's `UpdatePlayers`
+//! swap (`Item.cs:528`'s `Main.rand`, the a6 `bb36e6ee` shape) — the Mech is
+//! in no prefixable set, so the roll draws nothing; the per-slot pickup
+//! chimes draw only when audible (the witnesses mute the listener). The
 //! `NetMessage.SendData(4/7)` sync tails have no single-player port.
 
 use crate::app::App;
@@ -112,14 +116,34 @@ fn consume_one(app: &mut App) {
     }
 }
 
+/// `Player.ItemCheck_CheckCanUse_Inner`'s Demon Heart refusal
+/// (`Player.cs:52051-52054`): `extraAccessory || !Main.expertMode` refuses
+/// the use START — no swing, no UseSound, no consume. The W4-a6 fold-input
+/// adjudication (research/143): a6 `ea478936`'s `use_start_refused` is the
+/// faithful half the grant gate alone misses — `ItemCheck_TryStartUse`
+/// (`:52021-52023`) runs CheckCanUse BEFORE StartActualUse, so a used heart
+/// or a classic world never even swings. The crystal/fruit caps gate the
+/// GRANT, not the start (the C# has no cap leg here); only 3335 refuses.
+fn use_start_refused(app: &App, kind: u16) -> bool {
+    if kind == DEMON_HEART {
+        return app
+            .player
+            .as_ref()
+            .is_some_and(|p| p.extra_accessory || !p.buffs.expert_mode);
+    }
+    false
+}
+
 /// The permanent-upgrade `ItemCheck` machine — g88's
 /// `life_fruit::permanent_upgrade_item_check` shape (inlined for branch
 /// self-containment; the merge dedupes onto the shared helper). The use
 /// START (`ItemCheck_StartActualUse` → `ApplyItemAnimation` + the item's
 /// UseSound, `:51680-51698`) on the `controlUseItem && releaseUseItem &&
-/// itemAnimation == 0` edge (`:42733`); the grant on the first action tick
-/// inside the animation (`ItemTimeIsZero`, `StartActualUse` leaves
-/// `itemTime` 0). `grant` is the item's `ItemCheck_Use*` gate + body.
+/// itemAnimation == 0` edge (`:42733`), gated by `ItemCheck_TryStartUse` →
+/// `ItemCheck_CheckCanUse_Inner` (`:52021-52023`, the Demon Heart refusal
+/// above); the grant on the first action tick inside the animation
+/// (`ItemTimeIsZero`, `StartActualUse` leaves `itemTime` 0). `grant` is the
+/// item's `ItemCheck_Use*` gate + body.
 fn permanent_upgrade_item_check(
     app: &mut App,
     press_edge: bool,
@@ -146,12 +170,22 @@ fn permanent_upgrade_item_check(
     }
     // The press edge (`:42733`): useStyle 4 (HoldUp) ≠ 0, autoReuse false.
     if app.mine_down && !app.inventory_open && press_edge {
+        // `ItemCheck_TryStartUse` (`:52021-52023`) → CheckCanUse_Inner
+        // (`:52051-52054`): the used/non-expert Demon Heart refuses the
+        // START — no swing, no sound (the a6 fold-input delta).
+        if use_start_refused(app, kind) {
+            return false;
+        }
         // ItemCheck_StartActualUse → ApplyItemAnimation + the item's
         // UseSound (`:51680-51698`, the shared start_swing_extras seam).
         app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
         app.swing = app.swing_max;
         start_swing_extras(app, held.kind);
         app.attack_cd = app.swing_max;
+        // `ApplyItemAnimation`'s tail (`:4496`): reuseDelay = the PREFIXED
+        // instance value (both stock items carry 0 — the a6 machine's arm).
+        app.reuse_delay = crate::prefix::prefixed_stats(held.kind, held.prefix)
+            .map_or(0.0, |s| s.reuse_delay as f32 * ONE_TICK_SECS);
         // StartActualUse leaves itemTime 0 → the grant fires THIS tick.
         app.item_time = 0.0;
         grant(app, held);
@@ -232,43 +266,81 @@ pub(crate) fn minecart_powerup_item_check(app: &mut App, press_edge: bool) -> bo
 }
 
 /// `Player.QuickSpawnItem(source, item, stack)` (`Player.cs:7170-7199`) →
-/// `GetOrDropItem`: the item fills the owner's inventory first (`GetItem`'s
-/// slot walk), the overflow drops at the player centre. The prefix rolls on
-/// the `UpdateItems` stream (the bobber-catch drain's convention,
-/// `world_sim/projectiles.rs:569`); the C# rolls it at spawn (`Prefix(-1)`,
-/// `:7176`) and `GetItem` keeps it — the port's overflow-only draw is the
-/// recorded order deviation.
+/// `GetOrDropItem(item, GetItemSettings.PickupItemFromWorld)` (`:7187-7199`):
+/// `GetItem`'s FULL deposit walk (`:39330-39399` — the shared
+/// `item::deposit_pickup`, per-slot chime + `NotifyItemPickup`), the void
+/// vault as the LAST resort (`:39395-39398`, `PickupItemFromWorld`'s
+/// `CanGoIntoVoidVault: true`, `GetItemSettings.cs:57`), and the overflow
+/// spawns a world drop at `base.Center` with the prefix PRESERVED
+/// (`Item.RequestNewItem`, `:7196-7199` — no fresh roll; the reforge-return
+/// overflow precedent's velocity/phase triplet). The a6 `bb36e6ee`
+/// fold-input shape (research/143): the C# rolls `Prefix(-1)` ONCE on the
+/// fresh instance (`:7176`) under the use's `UpdatePlayers` swap
+/// (`Item.cs:528`'s `Main.rand`) — the Minecart Mech is in NO prefixable set
+/// (`rollable_prefixes` → None: not a weapon, `accessory: false`), so the
+/// roll draws NOTHING and the stream choice is census-identical.
+/// `newAndShiny`/`enemyGrabDelayTime` are UI/MP-only (the SP
+/// `ApplySpawnOwnership` arm is a no-op, `WorldItem.cs:296-305`).
 fn quick_spawn_item(app: &mut App, kind: u16, stack: u32) {
     if stack == 0 {
         return;
     }
+    let (vault_enabled, center) = app
+        .player
+        .as_ref()
+        .map(|p| (p.void_vault_enabled, p.center()))
+        .unwrap_or((false, (0.0, 0.0)));
+    // `Item.Prefix(-1)` on the fresh instance (`:7176`) — `Main.rand` is the
+    // use's UpdatePlayers swap; non-prefixable kinds draw nothing.
     let prefix =
-        crate::prefix::roll_prefix(kind, -1, app.rngs.stream(crate::app::RngKey::UpdateItems));
-    let max_stack = registry::max_stack(kind);
-    let mut pending = stack;
-    while pending > 0 {
-        let Some(slot) = crate::item::slot_for_pickup(&mut app.inventory, kind, prefix) else {
-            break;
-        };
-        let room = max_stack.saturating_sub(app.inventory[slot].count);
-        if room == 0 {
-            break;
-        }
-        let take = pending.min(room);
-        app.inventory[slot].count += take;
-        pending -= take;
+        crate::prefix::roll_prefix(kind, -1, app.rngs.stream(crate::app::RngKey::UpdatePlayers));
+    let inventory = &mut app.inventory;
+    let ammo = &mut app.equip.ammo;
+    let audio = &mut app.audio;
+    let achievements = &mut app.achievements;
+    let rngs = &mut app.rngs;
+    let favorite_slots = &app.favorite_slots;
+    let favorite = |i: usize| favorite_slots.contains(&i);
+    let mut remaining = crate::item::deposit_pickup(
+        inventory,
+        ammo,
+        kind,
+        prefix,
+        stack,
+        favorite,
+        &mut |moved| {
+            // One chime + one notify per accepted slot (`:39491`/`:39505`,
+            // the `world_sim/items.rs` pickup convention).
+            audio.play_pickup_sound(false, rngs.stream(crate::app::RngKey::UpdatePlayers));
+            let _ = moved;
+            let _ = achievements.notify(crate::achievements::CondKind::ItemPickup(kind));
+        },
+    );
+    // The void vault is GetItem's LAST resort (`:39395-39398`).
+    if remaining > 0 && vault_enabled && crate::bank::can_void_vault_accept(kind) {
+        let taken = crate::bank::void_vault_take(
+            &mut app.player.as_mut().unwrap().banks[3],
+            kind,
+            prefix,
+            remaining,
+            registry::max_stack(kind),
+            false,
+            audio,
+            rngs.stream(crate::app::RngKey::UpdatePlayers),
+        );
+        remaining -= taken;
     }
-    if pending > 0 {
-        if let Some(p) = app.player.as_ref() {
-            let (cx, cy) = p.center();
-            crate::world_sim::items::spawn_item_drop_px(
-                &mut app.items,
-                app.rngs.stream(crate::app::RngKey::UpdateItems),
-                kind,
-                pending,
-                glam::Vec2::new(cx, cy),
-            );
-        }
+    // `GetOrDropItem`'s overflow leg (`:7196-7199`): the remainder becomes a
+    // world drop at `base.Center`, prefix preserved (no fresh roll — the
+    // port's pinned velocity/phase triplet on the UpdatePlayers stream).
+    if remaining > 0 {
+        let rng = rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let vx = (rng.next_float() * 2.0 - 1.0) * 1.2;
+        let vy = -1.5 - rng.next_float();
+        let phase = rng.next_float() * std::f32::consts::TAU;
+        app.items.push(crate::item::ItemDrop::new(
+            kind, remaining, prefix, center.0, center.1, vx, vy, phase,
+        ));
     }
 }
 
@@ -282,8 +354,15 @@ fn try_use_pet_license(app: &mut App, held: ItemSlot, npc_type: i32, key: &str) 
         638 => app.world.bought_dog,
         _ => app.world.bought_bunny,
     };
-    // `NPC.AnyNPCs(npcType)` — no town-pet kinds shipped, always false.
-    let any_npcs = false;
+    // `NPC.AnyNPCs(npcType)` (`NPC.cs:89873-89883`): active && type match.
+    // No ported kind carries these net ids today, so the scan never answers
+    // — kept LIVE for the shape (a6 `d46221b2`'s arm, research/143): when a
+    // town-pet kind lands, the exchange gate starts answering without a
+    // re-edit here.
+    let any_npcs = app
+        .npcs
+        .iter()
+        .any(|n| n.hp > 0 && n.kind.net_id() == npc_type);
     // `:45440`: ItemTimeIsZero + (!bought || AnyNPCs). The caller owns the
     // outer `itemAnimation > 0` half (`:45354`).
     if ticks_of(app.item_time) != 0 || (bought && !any_npcs) {
@@ -292,16 +371,28 @@ fn try_use_pet_license(app: &mut App, held: ItemSlot, npc_type: i32, key: &str) 
     // `:45442`: ApplyItemTime(sItem).
     app.item_time = use_time_secs(held);
     // `NPC.UnlockOrExchangePet`'s `!petBoughtFlag` arm (`NPC.cs:80904-80909`):
-    // raise the flag + broadcast the license text. (The exchange arms
-    // `:80910-80917` need a live pet + the variation profile — unported; the
-    // `NetMessage.TrySendData(7)` world sync `:80908` has no SP port.)
-    match npc_type {
-        637 => app.world.bought_cat = true,
-        638 => app.world.bought_dog = true,
-        _ => app.world.bought_bunny = true,
+    // raise the flag + broadcast the license text ONCE. The exchange arms
+    // (`:80910-80917`, the bought && AnyNPCs pass) need the variation profile
+    // — unported, they fold to the `Misc.PetExchangeFail` line WITHOUT a
+    // re-raise or a license re-print (a6 `d46221b2`'s `!bought` guard,
+    // research/143). The `NetMessage.TrySendData(7)` sync `:80908` has no SP
+    // port.
+    if !bought {
+        match npc_type {
+            637 => app.world.bought_cat = true,
+            638 => app.world.bought_dog = true,
+            _ => app.world.bought_bunny = true,
+        }
+        app.chat
+            .new_text(crate::lang::text(key), crate::chat::COLOR_WORLD);
+    } else {
+        // `RerollVariationForNPCType` (`:80910`) — no TownNPCProfiles in the
+        // port, always false → the fail line (`:80914-80917`).
+        app.chat.new_text(
+            crate::lang::text("Misc.PetExchangeFail"),
+            crate::chat::COLOR_WORLD,
+        );
     }
-    app.chat
-        .new_text(crate::lang::text(key), crate::chat::COLOR_WORLD);
     // `:43280-43326`: the generic consumable tail — one per use.
     consume_one(app);
     true
@@ -422,8 +513,9 @@ mod tests {
             "ApplyItemTime re-arms useTime 30"
         );
         assert_eq!(app.inventory[app.selected].count, 1, "one consumed");
-        // A second use refuses — the flag is already set (`!extraAccessory`).
-        // Drain the swing + cadence, then re-press: the grant gate refuses.
+        // A second use refuses — the flag is already set (`:52051`'s
+        // `extraAccessory` CheckCanUse leg now refuses the START itself).
+        // Drain the swing + cadence, then re-press: no swing, no consume.
         for _ in 0..40 {
             tick_demon(&mut app);
         }
@@ -431,21 +523,30 @@ mod tests {
         app.item_time = 0.0;
         app.attack_cd = 0.0;
         press(&mut app);
-        demon_heart_item_check(&mut app, true);
+        assert!(
+            !demon_heart_item_check(&mut app, true),
+            "the used heart refuses the start (`:52051`)"
+        );
         assert_eq!(
             app.inventory[app.selected].count, 1,
             "the re-use is refused (once ever)"
         );
     }
 
-    /// `:45194`: in CLASSIC mode (no expert) the Demon Heart refuses — the
-    /// `Main.expertMode` gate holds, the stack stays intact.
+    /// `:52051-52054`: in CLASSIC mode (no expert) the Demon Heart refuses
+    /// the use START — `ItemCheck_TryStartUse`'s CheckCanUse leg shuts the
+    /// whole use: no swing, no consume, the stack stays intact (the a6
+    /// fold-input shape; the grant gate alone used to leave a free swing).
     #[test]
     fn w4_g87_the_demon_heart_refuses_in_classic_mode() {
         let mut app = rig(DEMON_HEART, 2, false);
         press(&mut app);
-        // The machine starts the swing, but the grant gate (`!expert`) refuses.
-        demon_heart_item_check(&mut app, true);
+        // The START refuses (`:52051` `!Main.expertMode`): no animation.
+        assert!(
+            !demon_heart_item_check(&mut app, true),
+            "the CheckCanUse refusal blocks the start"
+        );
+        assert_eq!(ticks_of(app.swing), 0, "no swing on a refused start");
         assert!(
             !app.player.as_ref().unwrap().extra_accessory,
             "classic stays locked"
@@ -453,9 +554,26 @@ mod tests {
         assert_eq!(app.inventory[app.selected].count, 2, "the refusal is free");
     }
 
+    /// `:52051`: a USED heart (`extraAccessory` already true) refuses the
+    /// start too — the second half of the CheckCanUse gate (a6's
+    /// `a_second_demon_heart_refuses` twin, research/143).
+    #[test]
+    fn w4_g87_a_used_demon_heart_refuses_the_start() {
+        let mut app = rig(DEMON_HEART, 2, true);
+        app.player.as_mut().unwrap().extra_accessory = true;
+        press(&mut app);
+        assert!(
+            !demon_heart_item_check(&mut app, true),
+            "the used heart refuses the start (`:52051`)"
+        );
+        assert_eq!(ticks_of(app.swing), 0, "no swing");
+        assert_eq!(app.inventory[app.selected].count, 2, "no consume");
+    }
+
     /// `:45204-45212`: the Minecart Powerup unlocks the Super Cart AND spawns
     /// the Minecart Mech (3353) into the inventory; a second use still spawns
-    /// a Mech (no flag gate on the use, `:45204`).
+    /// a Mech (no flag gate on the use, `:45204` — BOTH lanes agree, the
+    /// census's "flag-gate" reading is wrong, research/143).
     #[test]
     fn w4_g87_the_minecart_powerup_unlocks_the_cart_and_spawns_the_mech() {
         let mut app = rig(MINECART_POWERUP, 2, false);
@@ -475,11 +593,38 @@ mod tests {
         );
         assert_eq!(app.inventory[app.selected].count, 1, "one powerup consumed");
         // The Mech (3353) landed in the inventory (QuickSpawnItem → GetItem).
-        assert!(
+        let mech_count = |app: &App| -> u32 {
             app.inventory
                 .iter()
-                .any(|s| s.kind == MINECART_MECH && s.count >= 1),
-            "the Minecart Mech spawned (`:45212`)"
+                .filter(|s| s.kind == MINECART_MECH)
+                .map(|s| s.count)
+                .sum()
+        };
+        assert_eq!(mech_count(&app), 1, "the Minecart Mech spawned (`:45212`)");
+        // The RE-USE: drain the swing + cadence, re-press — the flag is
+        // already set but `:45204` has no flag gate, so a SECOND Mech spawns
+        // and the last powerup pays (`:43317`).
+        for _ in 0..40 {
+            app.swing = (app.swing - ONE_TICK_SECS).max(0.0);
+            app.item_time = (app.item_time - ONE_TICK_SECS).max(0.0);
+            minecart_powerup_item_check(&mut app, false);
+        }
+        app.swing = 0.0;
+        app.item_time = 0.0;
+        app.attack_cd = 0.0;
+        press(&mut app);
+        assert!(
+            minecart_powerup_item_check(&mut app, true),
+            "the re-use STARTS (no flag gate)"
+        );
+        assert_eq!(
+            mech_count(&app),
+            2,
+            "a re-use still spawns a Mech (`:45212`)"
+        );
+        assert_eq!(
+            app.inventory[app.selected].count, 0,
+            "the last powerup consumed"
         );
     }
 
@@ -537,10 +682,35 @@ mod tests {
         assert!(!bunny.world.bought_dog, "the dog flag stays false");
     }
 
+    /// `NPC.AnyNPCs(npcType)` (`NPC.cs:89873-89883`) matches the NET ID, not
+    /// mere liveness: a resident non-pet NPC does not open the exchange gate
+    /// (a6 `d46221b2`'s live-scan shape). The positive exchange path needs a
+    /// TownCat/Dog/Bunny kind (637/638/656) — unshipped, unwitnessable until
+    /// the town-pet lane lands; the scan answers then without a re-edit.
+    #[test]
+    fn w4_g87_a_resident_non_pet_does_not_open_the_exchange() {
+        let mut app = rig(LICENSE_CAT, 2, false);
+        app.world.bought_cat = true; // the license was already used
+        let mut npc = crate::npc::Npc::new(crate::npc::NpcKind::Slime, 32.0, 32.0, 1, 0.4);
+        npc.hp = 10;
+        npc.max_hp = 10;
+        app.npcs.push(npc);
+        press(&mut app);
+        // The start runs (no CheckCanUse leg for licenses), the grant
+        // refuses: bought && !AnyNPCs(637).
+        pet_license_item_check(&mut app, true);
+        assert_eq!(
+            app.inventory[app.selected].count, 2,
+            "a slime is not the cat — the exchange refuses, nothing consumed"
+        );
+        assert_eq!(ticks_of(app.item_time), 0, "no ApplyItemTime on refusal");
+    }
+
     /// RNG census: the Demon Heart + Pet License uses draw NOTHING on the
     /// UpdatePlayers stream (the C# arms make no rand call; the muted sound
-    /// draws nothing either). The Minecart Powerup's Mech prefix roll rides
-    /// UpdateItems, NOT UpdatePlayers.
+    /// draws nothing either). The Minecart Powerup's Mech `Prefix(-1)` rides
+    /// UpdatePlayers (the use's swap) but the Mech is NON-prefixable, so it
+    /// draws nothing either — and the muted pickup chime draws nothing.
     #[test]
     fn w4_g87_the_demon_heart_and_license_draw_no_updateplayers() {
         let mut app = rig(DEMON_HEART, 1, true);
@@ -561,6 +731,16 @@ mod tests {
             lic.rngs.stream(crate::app::RngKey::UpdatePlayers).clone(),
             tr_core::UnifiedRandom::new(0x687),
             "the license use draws nothing on UpdatePlayers"
+        );
+
+        let mut cart = rig(MINECART_POWERUP, 1, false);
+        *cart.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(0x687);
+        press(&mut cart);
+        minecart_powerup_item_check(&mut cart, true);
+        assert_eq!(
+            cart.rngs.stream(crate::app::RngKey::UpdatePlayers).clone(),
+            tr_core::UnifiedRandom::new(0x687),
+            "the non-prefixable Mech + the muted chime draw nothing"
         );
     }
 }
