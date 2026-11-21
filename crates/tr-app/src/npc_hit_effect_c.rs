@@ -107,6 +107,9 @@
 //! | 451-453 | `:84420-84422` | the 387 MartianTurret death (3 gores 603/603/604, type-226 scale-0.5 dust) |
 //! | 454-458 | `:84443-84447` | the 520 MartianWalker death (5 gores 851/852/848/849/850, +80 Y tail) |
 //! | 459-461 | `:84465-84467` | the 389 GigaZapper death (3 gores 904/905/906, type-227 dust) |
+//! | 462-463 | `:84498-84499` | the 388 MartianDrone death (2 gores 605/606, ai[0]==3 rotation-vector velocity) |
+//! | 464-465 | `:84530-84531` | the 399 MartianProbe death (2 gores 898/899, same rotation-vector shape) |
+//! | 466-468 | `:84549-84551` | the 391 Scutlix death (3 gores 607/608/609, width/2 X offset) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -2736,6 +2739,114 @@ fn giga_zapper_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 906, s); // :84467
 }
 
+/// `Utils.ToRotationVector2` (`Utils.cs:1665-1668`): `((float)cos(f),
+/// (float)sin(f))` — the f64 trig over the f32 angle.
+fn to_rotation_vector2(f: f32) -> Vec2 {
+    Vec2::new((f as f64).cos() as f32, (f as f64).sin() as f32)
+}
+
+/// The shared MartianDrone/Probe death velocity (`NPC.cs:84488-84497` /
+/// `:84520-84529`): `base.velocity`, but when `ai[0] == 3` it becomes
+/// `rotation.ToRotationVector2()` (X flipped when `spriteDirection == 1`)
+/// ×5. No draws — the velocity is data.
+fn martian_drone_velocity(npc: &Npc) -> Vec2 {
+    let mut v = Vec2::new(npc.vx, npc.vy);
+    if npc.ai[0] == 3.0 {
+        v = to_rotation_vector2(npc.rotation);
+        if npc.sprite_dir == 1 {
+            v.x *= -1.0;
+        }
+        v *= 5.0;
+    }
+    v
+}
+
+/// The 388 MartianDrone death (`NPC.cs:84483-84499`, sites 462-463): the
+/// 10-dust type-226 burst (SpeedX `-2.5*hitDirection`, SpeedY -2.5, scale
+/// 0.5 post-write), then the 2 gores 605/606 at `Center - (10,10)` with the
+/// [`martian_drone_velocity`].
+fn martian_drone_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:84483-84487` — the 10-dust type-226 burst (scale 0.5).
+    for _ in 0..10 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 226, -2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+        dust.slot_mut(idx).scale = 0.5;
+    }
+    let v = martian_drone_velocity(npc);
+    let anchor = center(npc) - Vec2::new(10.0, 10.0);
+    let s = npc.scale;
+    gore.new_gore(rng, world, anchor, v, 605, s); // :84498
+    gore.new_gore(rng, world, anchor, v, 606, s); // :84499
+}
+
+/// The 399 MartianProbe death (`NPC.cs:84515-84531`, sites 464-465): the
+/// 10-dust type-226 burst (scale 0.5), then the 2 gores 898/899 at
+/// `Center - (10,10)` with the same [`martian_drone_velocity`].
+fn martian_probe_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 226, -2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+        dust.slot_mut(idx).scale = 0.5;
+    }
+    let v = martian_drone_velocity(npc);
+    let anchor = center(npc) - Vec2::new(10.0, 10.0);
+    let s = npc.scale;
+    gore.new_gore(rng, world, anchor, v, 898, s); // :84530
+    gore.new_gore(rng, world, anchor, v, 899, s); // :84531
+}
+
+/// The 391 Scutlix death (`NPC.cs:84545-84551`, sites 466-468): the 30-dust
+/// type-227 burst, then the 3 gores 607/608 at `position + UnitX*width/2`
+/// (the C# `base.width / 2f` is a FLOAT division) and 609 at +20 Y.
+fn scutlix_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..30 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 227, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let half = Vec2::new(w / 2.0, 0.0);
+    gore.new_gore(rng, world, pos + half, vel, 607, s); // :84549
+    gore.new_gore(rng, world, pos + half, vel, 608, s); // :84550
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 609, s); // :84551
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -3051,6 +3162,18 @@ pub fn hit_effect_c(
     // `:84450-84469` — the 389 GigaZapper arm (sites 459-461).
     if npc_type == 389 && npc.hp <= 0 {
         giga_zapper_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:84470-84501` — the 388 MartianDrone arm (sites 462-463).
+    if npc_type == 388 && npc.hp <= 0 {
+        martian_drone_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:84502-84533` — the 399 MartianProbe arm (sites 464-465).
+    if npc_type == 399 && npc.hp <= 0 {
+        martian_probe_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:84534-84553` — the 391 Scutlix arm (sites 466-468).
+    if npc_type == 391 && npc.hp <= 0 {
+        scutlix_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -4865,6 +4988,84 @@ mod tests {
         let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
         assert_eq!(types, vec![904, 905, 906]);
         assert_eq!(gore.slot(2).position, Vec2::new(100.0, 134.0));
+    }
+
+    /// `NPC.cs:84488-84499` — the MartianDrone death: the 2 gores 605/606
+    /// at Center-(10,10); the velocity is base.velocity normally, but
+    /// rotation.ToRotationVector2()*5 (X flipped on spriteDirection==1)
+    /// when ai[0]==3.
+    #[test]
+    fn w4_f10_the_martian_drone_death_uses_the_rotation_velocity() {
+        let w = air();
+        // Normal: velocity = base.velocity.
+        let mut n = boss(100.0, 100.0, 40.0, 40.0);
+        n.vx = 2.0;
+        n.vy = 1.0;
+        n.ai[0] = 0.0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(367);
+        martian_drone_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        assert_eq!(gore.slot(0).gore_type, 605);
+        assert_eq!(gore.slot(1).gore_type, 606);
+        // Center-(10,10) = (110,110).
+        assert_eq!(gore.slot(0).position, Vec2::new(110.0, 110.0));
+        // ai[0]==3: velocity = rotation vector *5 (rotation 0 -> (5,0)).
+        let mut n2 = boss(100.0, 100.0, 40.0, 40.0);
+        n2.ai[0] = 3.0;
+        n2.rotation = 0.0;
+        n2.sprite_dir = -1;
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(367);
+        martian_drone_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        // The X term is 5 +/- the kick; the Y term is the kick only.
+        assert!((gore2.slot(0).velocity.x - 5.0).abs() <= 2.0);
+        // spriteDirection==1 flips X.
+        let mut n3 = boss(100.0, 100.0, 40.0, 40.0);
+        n3.ai[0] = 3.0;
+        n3.rotation = 0.0;
+        n3.sprite_dir = 1;
+        let mut gore3 = GorePool::new();
+        let mut dust3 = DustPool::new();
+        let mut rng3 = UnifiedRandom::new(367);
+        martian_drone_death(&n3, &mut dust3, &ctx(), &mut gore3, &mut rng3, &w, 1.0);
+        assert!((gore3.slot(0).velocity.x + 5.0).abs() <= 2.0);
+    }
+
+    /// `NPC.cs:84530-84531` — the MartianProbe death: the 2 gores 898/899
+    /// at Center-(10,10), same rotation-velocity shape as the drone.
+    #[test]
+    fn w4_f10_the_martian_probe_death_spawns_the_two_gores() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 30.0, 30.0);
+        n.ai[0] = 0.0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(373);
+        martian_probe_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        assert_eq!(gore.slot(0).gore_type, 898);
+        assert_eq!(gore.slot(1).gore_type, 899);
+        // Center-(10,10) = (105,105).
+        assert_eq!(gore.slot(0).position, Vec2::new(105.0, 105.0));
+    }
+
+    /// `NPC.cs:84549-84551` — the Scutlix death: the 3 gores 607/608 at
+    /// position+width/2 (float division) and 609 at +20 Y.
+    #[test]
+    fn w4_f10_the_scutlix_death_offsets_by_half_width() {
+        let w = air();
+        let n = boss(100.0, 100.0, 50.0, 40.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(379);
+        scutlix_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![607, 608, 609]);
+        // width/2 = 25 -> (125,100).
+        assert_eq!(gore.slot(0).position, Vec2::new(125.0, 100.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(125.0, 100.0));
+        assert_eq!(gore.slot(2).position, Vec2::new(100.0, 120.0));
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
