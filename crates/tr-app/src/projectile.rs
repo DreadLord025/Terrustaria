@@ -14749,6 +14749,12 @@ pub struct ProjectilePool {
     /// heal)` per qualifying 304 hit, drained into
     /// `spawn_with_data_ai_owned(VAMPIRE_HEAL, ...)`. Draw-free.
     pending_vampire_orbs: Vec<(u8, f32, f32, f32, f32)>,
+    /// W4-d6 residual 8 — the gun streams' `Kill()` splash-dust snapshots
+    /// (`Projectile.cs:74029-74147`): the death hook writes the velocity
+    /// base and queues the corpse; the world-sim pass drains them onto
+    /// the real `DustPool` on the `UpdateProjectiles` stream (the g65
+    /// gallop-dust queue→drain convention).
+    pending_gun_splashes: Vec<crate::projectile_gun_splash::GunSplash>,
     /// S1-P-i55 — the golf family's per-tick context
     /// (`Main.LocalGolfState` + `Main.MouseWorld` + the mouse-right pair +
     /// the player snapshot the aiStyle-150 arm reads). The world-sim pass
@@ -15152,6 +15158,7 @@ impl ProjectilePool {
             pending_heal_orbs: Vec::new(),
             pending_wraths: Vec::new(),
             pending_vampire_orbs: Vec::new(),
+            pending_gun_splashes: Vec::new(),
             golf_ctx: None,
             golf_effects: Vec::new(),
         }
@@ -15277,6 +15284,13 @@ impl ProjectilePool {
     /// 304 hit; the world sim spawns each as a 305 centred on the victim.
     pub fn drain_vampire_orbs(&mut self) -> Vec<(u8, f32, f32, f32, f32)> {
         std::mem::take(&mut self.pending_vampire_orbs)
+    }
+
+    /// W4-d6 residual 8 — the gun streams' Kill-splash snapshot drain
+    /// (`Projectile.cs:74029-74147`): the world sim feeds each to
+    /// `projectile_gun_splash::drain` on the live dust pool + stream.
+    pub fn drain_gun_splashes(&mut self) -> Vec<crate::projectile_gun_splash::GunSplash> {
+        std::mem::take(&mut self.pending_gun_splashes)
     }
 
     /// S1-P-i35 — `Player.RemoveAllFishingBobbers` (`Player.cs:33576-33585`):
@@ -20508,16 +20522,38 @@ impl ProjectilePool {
                 // ABOVE the 478 flame's `:75578`; the fireworks aiStyle-34
                 // arm `:76464` follows both).
                 self.dart_electro_firework_kill(i, rng, local_owner);
-                // W4-d6 — `Kill()`'s gun-stream dust census
-                // (`Projectile.cs:74029-74147`: the 358's 50× dust 211, the
-                // 406's 40× dust 4, the 1042's 50× dust 324 + colour picks).
-                // The C# body order puts these ABOVE the :75212 Holy star
-                // arm inside special_arrow_kill below.
-                crate::projectile_ai_guns::gun_stream_death_draws(
-                    &mut self.slots[i],
-                    old_velocity,
-                    rng,
-                );
+                // W4-d6 residual 8 — `Kill()`'s gun-stream splash dust
+                // (`Projectile.cs:74029-74147`: the 358's 50× dust 211,
+                // the 406's 40× dust 4, the 1042's 50× dust 324 +
+                // colour picks). The C# body order puts these ABOVE
+                // the :75212 Holy star arm inside special_arrow_kill
+                // below. The velocity write (`velocity =
+                // oldVelocity·0.2`, the scale death reading the
+                // ×5-kicked velocity through the `scale <= 0` marker)
+                // stays HERE; the dust bodies + their draws ride the
+                // snapshot out to the pass-tail drain (the g65
+                // gallop-dust convention — the pool cannot borrow the
+                // App's DustPool). The out-of-world guard's direct
+                // deactivate skips Kill() entirely in the C# (the
+                // `:16696` return) — the shared `!died_out_of_world`
+                // gate above already excludes it; this arm keeps the
+                // census body position.
+                if !died_out_of_world
+                    && matches!(self.slots[i].kind, WATER_GUN | SLIME_GUN | SHIMMER_GUN_STREAM)
+                {
+                    let p = &mut self.slots[i];
+                    let base = if p.scale <= 0.0 { p.vel } else { old_velocity };
+                    p.vel = base * 0.2;
+                    self.pending_gun_splashes.push(crate::projectile_gun_splash::GunSplash {
+                        kind: p.kind,
+                        pos: p.pos,
+                        w: p.w,
+                        h: p.h,
+                        old_vel: old_velocity,
+                        vel: p.vel,
+                        scale_dead: p.scale <= 0.0,
+                    });
+                }
                 // S1-P-i17 — `Kill()`'s special-arrow arms, in the C#'s
                 // body order: the Hellfire blast (`:76308-76341`, the
                 // resize + box Damage), the Holy Arrow's star / the

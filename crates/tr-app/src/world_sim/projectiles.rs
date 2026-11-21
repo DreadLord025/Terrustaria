@@ -677,6 +677,23 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             ai1,
         );
     }
+    // W4-d6 residual 8 — the gun streams' Kill-splash dust
+    // (`Projectile.cs:74029-74147`): the death hook snapshotted the dying
+    // 358/406/1042 corpses (the velocity base already written); the drain
+    // emits the 50/40/50 dusts on the LIVE DustPool, the explicit gates +
+    // the `new_dust` internals on the `UpdateProjectiles` stream in C#
+    // order (the g65 gallop-dust pass-tail convention).
+    let gun_splashes = app.projectiles.drain_gun_splashes();
+    if !gun_splashes.is_empty() {
+        let ctx = app.spawn_ctx();
+        crate::projectile_gun_splash::drain(
+            gun_splashes,
+            &mut app.dust,
+            app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
+            &ctx,
+            &app.world,
+        );
+    }
     // S1-P-i55 — the golf arms' queued effects, drained at the pass tail
     // (the `drain_mark_spawns` shape — the pool cannot borrow the App).
     // The C# plays the sounds / trips the wiring mid-walk; the port's

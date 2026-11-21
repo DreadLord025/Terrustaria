@@ -30,16 +30,18 @@
 //!   the listed styles TRUE (`SetFactory.cs:97-109`).
 //! - the `Kill()` dust arms (`:74029-74147`): the 358's 50× dust 211, the
 //!   406's 40× dust 4 and the 1042's 50× dust 324 — each reads
-//!   `oldVelocity * 0.2f` as its velocity base.
+//!   `oldVelocity * 0.2f` as its velocity base. W4-d6 residual 8 ported
+//!   the bodies in `projectile_gun_splash.rs` (the death hook snapshots,
+//!   the pass-tail drain emits on the live DustPool); this module keeps
+//!   only the AI arm.
 //!
 //! RNG contract (the `UpdateProjectiles` stream): every EXPLICIT
 //! `Main.rand` draw stays in the C#'s order; the `Dust.NewDust` bodies and
 //! their internal rolls go with the dust pool (the `projectile_ai_misc`
 //! convention). Per tick while armed: the 358/406 draw 6×3 `Next(2)` alpha
 //! gates + one `Next(4)` extra-dust gate; the 1042 adds a `Next(6)` colour
-//! pick per dust and on the taken extra gate. Per death: the 358/406 draw
-//! 50/40 × [4 `Next(2)` + `Next(-100,101)` + 2 `Next(-50,51)`]; the 1042
-//! adds a `Next(6)` per dust.
+//! pick per dust and on the taken extra gate. (The per-DEATH draws moved
+//! to `projectile_gun_splash.rs` with the bodies — residual 8.)
 //!
 //! Movement: the rows keep `tileCollide = true`; `HandleMovement`'s
 //! generic arm collides through the 1×1 `GetCollisionParams` box and the
@@ -47,7 +49,8 @@
 //! The port's stand-in is the destination-box probe on that 1×1 box (the
 //! `kill_step` shape, the swept-span deviation documented there).
 //!
-//! Deliberate skips (ANALYSIS): the dust bodies, `NetMessage.SendData(66)`-
+//! Deliberate skips (ANALYSIS): the per-tick TRAIL dust bodies (the g64
+//! lane's — the draws stay here), `NetMessage.SendData(66)`-
 //! shaped MP tails, `ApplyBuffTo`'s `trap && deadMansSweater` halving
 //! (`:12393-12396` — the rows carry `trap = false`, so the branch is dead
 //! for them anyway), the `NPCID.Sets.ShimmerTownTransform` gate (flag24 is
@@ -266,38 +269,13 @@ pub(crate) fn gun_stream(
     drops
 }
 
-/// The `Kill()` dust census (`Projectile.cs:74029-74147`) — the 358's 50×
-/// dust 211 (`:74029-74062`), the 406's 40× dust 4 (`:74063-74098`) and the
-/// 1042's 50× dust 324 (`:74099-74147`). Each arm first writes
-/// `velocity = oldVelocity * 0.2f`; on the SCALE death the C# latched
-/// `oldVelocity = velocity` AFTER the ×5 kick (`:28999-29000`), so the
-/// kicked velocity is the base — the `scale <= 0` marker distinguishes it
-/// from every other death path (only this arm decays the scale).
-/// `old_velocity` is the pool's sub-step-start capture (`:16766`).
-pub(crate) fn gun_stream_death_draws(p: &mut Projectile, old_velocity: Vec2, rng: &mut dyn DropRng) {
-    let (count, shimmer) = match p.kind {
-        WATER_GUN => (50, false),
-        SLIME_GUN => (40, false),
-        SHIMMER_GUN_STREAM => (50, true),
-        _ => return,
-    };
-    let base = if p.scale <= 0.0 { p.vel } else { old_velocity };
-    p.vel = base * 0.2;
-    for _ in 0..count {
-        // The 3 alpha `Next(2)` gates + the scale/noGravity `Next(2)` pick.
-        for _ in 0..4 {
-            let _ = rng.next_range(0, 2);
-        }
-        // The velocity jitter: `Next(-100, 101)` then 2× `Next(-50, 51)`.
-        let _ = rng.next_range(-100, 101);
-        let _ = rng.next_range(-50, 51);
-        let _ = rng.next_range(-50, 51);
-        if shimmer {
-            // The 1042's `Next(6)` colour pick (`:74131`).
-            let _ = rng.next_range(0, 6);
-        }
-    }
-}
+/// (W4-d6 residual 8: the `Kill()` dust census stub that sat here —
+/// `gun_stream_death_draws` — is REPLACED by the real port in
+/// `projectile_gun_splash.rs`: the death hook snapshots the corpse, the
+/// pass-tail drain emits the 50/40/50 dusts on the live `DustPool` with
+/// the explicit gates + the `new_dust` internals in C# order. The
+/// velocity-base contract (the scale death's kicked velocity) moved to
+/// the hook unchanged.)
 
 // =====================================================================
 // Witness tests — WRITTEN, NOT RUN (code-only mode: no cargo/rustc).
@@ -497,31 +475,9 @@ mod tests {
         assert_eq!(rng.ranges[25], (0, 6), "the taken gate's colour");
     }
 
-    #[test]
-    fn w4_d6_the_death_dust_census_counts_and_orders() {
-        // `:74029-74147`: the 358 draws 50 × 7, the 406 40 × 7, the 1042
-        // 50 × 8 (the colour pick). The velocity base is oldVelocity·0.2
-        // — or the ×5-kicked velocity on the scale death.
-        let mut rng = CensusRng { ranges: Vec::new() };
-        let mut p = proj(WATER_GUN);
-        gun_stream_death_draws(&mut p, Vec2::new(4.0, 0.0), &mut rng);
-        assert_eq!(rng.ranges.len(), 50 * 7);
-        assert_eq!(rng.ranges[4], (-100, 101), "the jitter after the 4 gates");
-        assert_eq!(p.vel.x, 0.8, "oldVelocity * 0.2");
-        // The scale death reads the KICKED velocity (`:28999-29000`).
-        let mut rng = CensusRng { ranges: Vec::new() };
-        let mut p = proj(SLIME_GUN);
-        p.scale = -0.005;
-        p.vel = Vec2::new(10.0, 0.0);
-        gun_stream_death_draws(&mut p, Vec2::new(2.0, 0.0), &mut rng);
-        assert_eq!(rng.ranges.len(), 40 * 7);
-        assert_eq!(p.vel.x, 2.0, "the kicked 10 × 0.2, not the old 2 × 0.2");
-        let mut rng = CensusRng { ranges: Vec::new() };
-        let mut p = proj(SHIMMER_GUN_STREAM);
-        gun_stream_death_draws(&mut p, Vec2::ZERO, &mut rng);
-        assert_eq!(rng.ranges.len(), 50 * 8);
-        assert_eq!(rng.ranges[7], (0, 6), "the colour pick closes each dust");
-    }
+    // (W4-d6 residual 8: the death-dust census witness that sat here is
+    // REPLACED by `projectile_gun_splash.rs`'s real-pool mirrors — the
+    // stub it pinned no longer exists.)
 
     #[test]
     fn w4_d6_the_1x1_collision_probe_kills_on_contact() {

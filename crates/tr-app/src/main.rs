@@ -184,6 +184,7 @@ mod projectile;
 mod projectile_ai001_b;
 mod projectile_ai_frostmoon;
 mod projectile_ai_guns;
+mod projectile_gun_splash;
 mod projectile_ai_moonlord;
 
 

@@ -39579,3 +39579,46 @@ contact heals and kills. The soul flies out of the fixture world so
 exactly one hit lands (the id-static 10-tick window would otherwise
 re-hit). WRITTEN NOT RUN (code-only):
 `w4_d6_the_hit_intent_drains_into_a_flying_orb_that_heals_on_contact`.
+
+## W4-d6 residual 8 — the gun-splash Kill dust (358/406/1042, ported)
+
+**The claim read (co-lanes).** The g65 death-dust lane
+(`task/W4-g65-proj-death-dust`, tip 7f0dc8649) ports UNCLAIMED `Kill()`
+arms in 10-kind batches; its batch-6 line range (`:73952-74333`) spans
+these three sites but its kind list skips 358/406/1042 (they were d6's
+census — the `gun_stream_death_draws` draw-count stub). The d53 wet-block
+lane (fa7b331d3) owns the Update wet machine's entry/exit splashes
+(`:16851-16987`); the g64 trail lane (77616a7d6) owns the per-tick AI
+dust (`:29158-29303`, the draws stay in `projectile_ai_guns.rs`). All
+three ranges are disjoint from `:74029-74147` — the Kill bodies were
+unclaimed, and this slice ports them.
+
+**The port** (`projectile_gun_splash.rs`, the g65 queue→drain seam): the
+death hook (inside the `!died_out_of_world` gate, at the census body
+position above `special_arrow_kill`) writes the velocity base
+(`velocity = oldVelocity·0.2`; the scale death reads the ×5-kicked
+velocity through the `scale <= 0` marker — only the style-60 arm decays
+the scale) and snapshots the corpse into `pending_gun_splashes`. The
+pass-tail drain emits onto the real `DustPool::new_dust` on the live
+`UpdateProjectiles` stream: the 358's 50× dust 211 (alpha 75, scale 1.2),
+the 406's 40× dust 4 (alpha 175, scale 1.6, colour (0,80,255,100)), the
+1042's 50× dust 324 (alpha 75, scale 1.25, the ×0.8 velocity add + the
+`Next(6)` palette LAST). Per dust: the internals (6 draws on the
+empty-pool path), 3× `Next(2)` alpha +25 gates, the `Next(2)`
+scale-0.6/0.8-vs-noGravity pick, `Next(-100,101)` the ×(1+0.01·roll)
+velocity scale, 2× `Next(-50,51)` the ±0.015 kicks, the position
+overwrite to the centre; the 1042 adds the colour pick (0 →
+(255,255,220), 1 → (230,255,255), 2 → (255,210,255), default →
+(225,210,255)). The old draw-count stub + its witness are REPLACED (the
+real mirrors pin the same counts plus the bodies).
+
+Recorded deviation: the pass-tail draw placement (the g65/gallop
+convention — the C# rolls mid-Kill, the port defers to the tail;
+stream-neutral per consumer, the total draw count unchanged).
+
+Witnesses (WRITTEN NOT RUN, code-only): the 358 full-stream twin mirror
+(`w4_d6_the_water_gun_kill_burst_mirrors_the_csharp_draws`), the 406
+colour + the 1042 palette/×0.8/draw-count
+(`w4_d6_the_slime_and_shimmer_bursts_carry_their_colours`), the
+scale-death kicked base (`w4_d6_the_scale_death_burst_reads_the_kicked_
+base`), the unclaimed-kind inertness (`w4_d6_other_kinds_stay_inert`).
