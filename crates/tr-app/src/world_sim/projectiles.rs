@@ -557,6 +557,29 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     for (style, x, y) in app.projectiles.drain_splashes() {
         app.audio.play_splash_sound(style, x, y, rng);
     }
+    // W4-d10 — the Coin Portal's gold-coin fountain (`Projectile.cs:32932-
+    // 32933`): `Item.NewItem` of the Gold Coin 73 (stack 1, prefix 0) at
+    // the truncated centre with the arm's EXPLICIT velocity — the
+    // RotatedByRandom pair + the NextFloat speed already drew on the
+    // `UpdateProjectiles` stream inside the AI; the explicit-velocity arm
+    // (`Item.cs:49738-49741`) skips the scatter pair and prefix 0 rolls
+    // nothing, so this drain is stream-neutral. The 14×14 item box centres
+    // on the spawn point (`WorldItem.Center = center`, `Item.cs:49736`).
+    for (x, y, vx, vy) in app.projectiles.drain_coin_drops() {
+        app.items.push(crate::item::ItemDrop::new(
+            73,
+            1,
+            0,
+            x - crate::item::SIZE * 0.5,
+            y - crate::item::SIZE * 0.5,
+            vx,
+            vy,
+            0.0,
+        ));
+        if app.items.len() > 300 {
+            app.items.remove(0);
+        }
+    }
     // S1-P-i35 — the bobber death hook's catch drain (`Projectile.cs:71986-
     // 71994` → `GiveItemToPlayer` → `QuickSpawnItem` → `GetOrDropItem`): the
     // item fills the owner's inventory first (`Player.GetItem`'s slot walk),

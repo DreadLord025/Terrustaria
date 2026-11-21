@@ -769,6 +769,17 @@ pub struct Projectile {
     /// S1-P-i35 — the pull's Duke Fishron spawn (`Player.cs:52403-52414`,
     /// `NPC.SpawnOnPlayer(plr, 370)`): the owner player id.
     pub wants_duke_spawn: bool,
+    /// W4-d10 — the aiStyle-94 Coin Portal's gold-coin drop request
+    /// (`Projectile.cs:32932-32933`: `Item.NewItem(GetItemSource_FromThis(),
+    /// (int)Center.X, (int)Center.Y, 0, 0, 73)` + the explicit
+    /// `UnitY.RotatedByRandom(2π) * (3,2) * (NextFloat*0.5+0.5) - UnitY`
+    /// velocity). The pool cannot borrow the item vec, so the request rides
+    /// out to the world-sim pass (`wants_mark_spawn` pattern): `(x, y, vx,
+    /// vy)` — the drop's centre and the arm's already-drawn velocity; the
+    /// pass builds the `ItemDrop` with NO further draws (the explicit
+    /// velocity skips `Item.NewItem`'s scatter pair, `Item.cs:49738-49741`,
+    /// and `prefix: 0` rolls nothing).
+    pub(crate) wants_coin_drop: Option<(f32, f32, f32, f32)>,
 }
 
 impl Default for Projectile {
@@ -855,6 +866,7 @@ impl Default for Projectile {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            wants_coin_drop: None,
         }
     }
 }
@@ -16115,6 +16127,21 @@ impl ProjectilePool {
         out
     }
 
+    /// W4-d10 — the aiStyle-94 Coin Portal's gold-coin drops
+    /// (`Projectile.cs:32932-32933`): `(x, y, vx, vy)` per fountain tick —
+    /// the centre + the arm's already-drawn explicit velocity. The pass
+    /// builds the `ItemDrop` (kind 73, stack 1, prefix 0) with NO further
+    /// draws (`Item.NewItem`'s explicit-velocity arm, `Item.cs:49738`).
+    pub fn drain_coin_drops(&mut self) -> Vec<(f32, f32, f32, f32)> {
+        let mut out = Vec::new();
+        for p in self.slots.iter_mut() {
+            if let Some(req) = p.wants_coin_drop.take() {
+                out.push(req);
+            }
+        }
+        out
+    }
+
     /// The aiStyle-64 cloud's next-segment spawn
     /// (`Projectile.cs:29496`): (owner, kind, damage, knock_back, x, y,
     /// vx, vy, ai1) — the sim re-spawns the same cloud kind with ai0 = 10.
@@ -18050,6 +18077,17 @@ impl ProjectilePool {
                         93 => {
                             crate::projectile_ai_91_100::ai_nail(&mut self.slots[i], npcs, rng);
                             crate::projectile_ai_91_100::nail_move(&mut self.slots[i], world);
+                        }
+                        // W4-d10 — `AI()`'s `else if (this.aiStyle == 94)`
+                        // (`Projectile.cs:32883-32963`): the Coin Gun's
+                        // portal (518) — the frame machine, the five-phase
+                        // age machine, the coin fountain (the drop request
+                        // rides `wants_coin_drop`), the tail dust gate.
+                        // tileCollide false (`:5886`) — the free integrate.
+                        94 => {
+                            crate::projectile_ai_91_100::ai_coin_portal(&mut self.slots[i], rng);
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
                         }
                         165 => {
                             // `AI_165_Whip` (`:47667-48270`): the swing
@@ -30556,6 +30594,7 @@ mod phasmal_projectile_tests {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            wants_coin_drop: None,
         }
     }
 
@@ -30965,6 +31004,7 @@ mod ritual_projectile_tests {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            wants_coin_drop: None,
         }
     }
 

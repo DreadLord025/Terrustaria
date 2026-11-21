@@ -674,6 +674,96 @@ pub(crate) fn nail_kill(p: &mut Projectile, rng: &mut dyn DropRng, local_owner: 
     true
 }
 
+/// `AI()`'s aiStyle-94 arm (`Projectile.cs:32883-32963`) — the Coin Gun's
+/// portal (518). The 4-tick frame machine (wraps at `projFrames[518]` = 4,
+/// `Main.cs:8486`), the five-phase age machine: 0-40 the fade-in (alpha
+/// −5 floor 0, the 0.85 decay, the tick-40 `Next(3)` cadence pick
+/// 10/15/30), 41-60 the hold (velocity zero), 61-210 the coin fountain
+/// (every `ai[1]` ticks one gold coin 73 with the explicit
+/// `RotatedByRandom(2π)` velocity — TWO NextDouble + one NextFloat, the
+/// drop request rides `wants_coin_drop`), 211+ the fade-out (scale
+/// −1/30, alpha +15, the 240 kill). The tail dust gate (`Next(3)` +
+/// the taken branch's `RotatedByRandom(2π)` pair) runs every tick; the
+/// `Lighting.AddLight` (`:32962`) is the light-layer skip.
+pub(crate) fn ai_coin_portal(p: &mut Projectile, rng: &mut dyn DropRng) {
+    // `:32885-32892` — the frame machine.
+    p.frame_counter += 1;
+    if p.frame_counter >= 4 {
+        p.frame_counter = 0;
+        p.frame += 1;
+        if p.frame >= proj_frames(p.kind) as i32 {
+            p.frame = 0;
+        }
+    }
+    // `:32893-32952` — the age machine.
+    p.ai[0] += 1.0;
+    if p.ai[0] <= 40.0 {
+        p.alpha -= 5;
+        if p.alpha < 0 {
+            p.alpha = 0;
+        }
+        p.vel *= 0.85;
+        if p.ai[0] == 40.0 {
+            p.net_update = true;
+            // `:32905-32916` — the cadence pick.
+            match rng.next_range(0, 3) {
+                0 => p.ai[1] = 10.0,
+                1 => p.ai[1] = 15.0,
+                2 => p.ai[1] = 30.0,
+                _ => {}
+            }
+        }
+    } else if p.ai[0] <= 60.0 {
+        p.vel = Vec2::ZERO;
+        if p.ai[0] == 60.0 {
+            p.net_update = true;
+        }
+    } else if p.ai[0] <= 210.0 {
+        // `:32929-32934` — the coin fountain (`netMode != 1` folds open).
+        p.local_ai[0] += 1.0;
+        if p.local_ai[0] >= p.ai[1] {
+            p.local_ai[0] = 0.0;
+            // `Item.NewItem(..., (int)Center.X, (int)Center.Y, 0, 0, 73)`
+            // — the 0×0 box's centre is the truncated slot centre
+            // (`Item.cs:49651`). The explicit velocity:
+            // `UnitY.RotatedByRandom(2π) * (3,2) * (NextFloat*0.5+0.5)
+            //  - UnitY` — TWO NextDouble (the rotation) then ONE NextFloat
+            // (the speed), the C#'s left-to-right operand order.
+            let (cx, cy) = p.center();
+            let a = rng.next_float() as f64 * std::f64::consts::TAU
+                - rng.next_float() as f64 * std::f64::consts::TAU;
+            let speed = rng.next_float() * 0.5 + 0.5;
+            let v = crate::projectile::rotate(Vec2::Y, a as f32)
+                * Vec2::new(3.0, 2.0)
+                * speed
+                - Vec2::Y;
+            p.wants_coin_drop = Some((cx as i32 as f32, cy as i32 as f32, v.x, v.y));
+        }
+        if p.ai[0] == 210.0 {
+            p.net_update = true;
+        }
+    } else {
+        // `:32940-32952` — the fade-out.
+        p.scale -= 1.0 / 30.0;
+        p.alpha += 15;
+        if p.ai[0] == 239.0 {
+            p.net_update = true;
+        }
+        if p.ai[0] == 240.0 {
+            p.kill_time_left = p.time_left;
+            p.active = false;
+            p.time_left = 0;
+        }
+    }
+    // `:32953-32961` — the tail dust gate: the Next(3) ALWAYS draws; the
+    // taken branch's RotatedByRandom(2π) pair draws too (the dust body
+    // and its position/velocity writes are the dust-layer skip).
+    if p.alpha < 90 && rng.next_range(0, 3) == 0 {
+        let _ = (rng.next_float(), rng.next_float()); // RotatedByRandom
+    }
+    // `:32962` — Lighting.AddLight: the light-layer skip (module doc).
+}
+
 // Witnesses (W4-d10 code-only round — WRITTEN NOT RUN).
 
 #[cfg(test)]
@@ -1056,5 +1146,80 @@ mod tests {
         q.owner = 1;
         assert!(!nail_kill(&mut q, &mut rng, 0));
         assert_eq!(q.w, 10.0);
+    }
+
+    /// The 518 row (`Projectile.cs:5879-5888`): 32×32, aiStyle 94, alpha
+    /// 255, tileCollide false, ignoreWater, netImportant, the stock
+    /// penetrate 1; the 4-frame sheet (`Main.cs:8486`).
+    #[test]
+    fn w4_d10_s94_the_portal_row_is_verbatim() {
+        let d = proj_data(518).unwrap();
+        assert_eq!((d.w, d.h), (32.0, 32.0));
+        assert_eq!(d.ai_style, 94);
+        assert_eq!(d.alpha, 255);
+        assert!(!d.tile_collide);
+        assert!(d.ignore_water);
+        assert!(d.net_important);
+        assert_eq!(d.penetrate, 1);
+        assert_eq!(crate::projectile::proj_frames(518), 4);
+    }
+
+    /// The five-phase machine (`:32893-32952`): the fade-in decays 0.85,
+    /// tick 40 draws ONE Next(3) for the cadence (CensusRng min → 10), the
+    /// hold zeroes the velocity, the fountain drops a coin every ai[1]
+    /// ticks with the 3-draw velocity, the 240 kill.
+    #[test]
+    fn w4_d10_s94_the_portal_phases_and_fountain() {
+        let mut p = proj(518);
+        p.vel = Vec2::new(4.0, 0.0);
+        let mut rng = CensusRng::default();
+        for _ in 0..40 {
+            ai_coin_portal(&mut p, &mut rng);
+        }
+        assert_eq!(p.ai[0], 40.0);
+        assert_eq!(p.alpha, 55, "255 - 5*40");
+        assert!((p.vel.x - 4.0 * 0.85f32.powi(40)).abs() < 1e-4);
+        assert_eq!(rng.ranges, vec![(0, 3)], "the tick-40 cadence pick");
+        assert_eq!(p.ai[1], 10.0, "CensusRng min → case 0");
+        assert_eq!(p.frame, 0, "40 ticks / 4 = 10 wraps");
+        // The hold: 41-60 zeroes the velocity.
+        ai_coin_portal(&mut p, &mut rng);
+        assert_eq!(p.vel, Vec2::ZERO);
+        // The fountain: tick 61 starts the counter; the 10th tick drops.
+        for _ in 0..9 {
+            ai_coin_portal(&mut p, &mut rng);
+        }
+        assert!(p.wants_coin_drop.is_none(), "9 ticks < the 10 cadence");
+        ai_coin_portal(&mut p, &mut rng);
+        let (x, y, vx, vy) = p.wants_coin_drop.expect("the 10th tick drops");
+        assert_eq!((x, y), (1616.0, 816.0), "the truncated centre");
+        // CensusRng floats are 0: angle 0, speed 0.5 → UnitY*(3,2)*0.5 - Y.
+        assert!((vx - 0.0).abs() < 1e-6 && (vy - (1.0 - 1.0)).abs() < 1e-6);
+        assert_eq!(rng.floats, 3, "TWO rotation + ONE speed");
+        // The 240 kill: the scale shrinks 1/30 per tick past 210.
+        p.ai[0] = 239.0;
+        p.wants_coin_drop = None;
+        ai_coin_portal(&mut p, &mut rng);
+        assert!(!p.active);
+        assert_eq!(p.time_left, 0);
+        assert!(p.scale < 1.0);
+    }
+
+    /// The tail dust gate (`:32953-32961`): alpha < 90 draws Next(3) every
+    /// tick; the taken branch adds the RotatedByRandom pair. alpha >= 90
+    /// draws nothing.
+    #[test]
+    fn w4_d10_s94_the_tail_dust_gate_draws_in_order() {
+        let mut p = proj(518);
+        p.ai[0] = 100.0; // the hold phase — no other draws
+        p.alpha = 200;
+        let mut rng = CensusRng::default();
+        ai_coin_portal(&mut p, &mut rng);
+        assert!(rng.ranges.is_empty() && rng.floats == 0, "alpha >= 90 skips");
+        p.alpha = 80;
+        ai_coin_portal(&mut p, &mut rng);
+        // CensusRng: Next(3) → 0 (taken) + the 2-float rotation pair.
+        assert_eq!(rng.ranges, vec![(0, 3)]);
+        assert_eq!(rng.floats, 2);
     }
 }

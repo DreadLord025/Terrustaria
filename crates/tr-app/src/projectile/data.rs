@@ -728,6 +728,9 @@ pub const SPORE_CLOUD: u16 = 1128;
 /// `ProjectileID.NailFriendly` (514, `ProjectileID.cs:1582`) — the Nail
 /// Gun's nail, aiStyle 93 (`Projectile.cs:5841-5850`). W4-d10.
 pub const NAIL_FRIENDLY: u16 = 514;
+/// `ProjectileID.CoinPortal` (518, `ProjectileID.cs:1590`) — the Coin
+/// Gun's portal, aiStyle 94 (`Projectile.cs:5879-5888`). W4-d10.
+pub const COIN_PORTAL: u16 = 518;
 /// `ProjectileID.LeafBlower` (`Projectile.cs:2937-2945`): the Leaf Blower's
 /// 14x14 petal, aiStyle 40 (`AI_040_LeafBlower` `:38003-38082`).
 pub const LEAF_BLOWER: u16 = 206;
@@ -1694,6 +1697,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // collision box (`:19962`).
             NAIL_FRIENDLY => (
                 10.0, 10.0, 93, 3, TIME_LEFT_DEFAULT, 0, true, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // W4-d10 — the Coin Gun's portal (`Projectile.cs:5879-5888`):
+            // 32×32, aiStyle 94, alpha 255, tileCollide false, ignoreWater;
+            // the stock penetrate 1 / timeLeft 3600. No damage-class flag.
+            COIN_PORTAL => (
+                32.0, 32.0, 94, 1, TIME_LEFT_DEFAULT, 0, false, false, false,
                 (false, -2, false, -1, 255, 1.0),
             ),
             // `Projectile.cs:1310-1316` — the throwing knife (48): 12x12, aiStyle
@@ -4190,6 +4200,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // S1-P-i21: the Nimbus Rod's two clouds set `netImportant`
             // (`Projectile.cs:3186`/`:3194`); the rain drop 239 keeps false.
             || matches!(kind, RAIN_CLOUD_MOVING | RAIN_CLOUD_RAINING)
+            // W4-d10 — the Coin Portal sets `netImportant` (`:5881`).
+            || kind == COIN_PORTAL
             // S1-P-i35 — the bobber family sets `netImportant` itself
             // (`Projectile.cs:4514`/`:9428`).
             || BOBBER_KINDS.contains(&kind)
@@ -4264,6 +4276,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (`Projectile.cs:3195`); the moving cloud 237 and the drop 239
             // keep the stock false.
             || kind == RAIN_CLOUD_RAINING
+            // W4-d10 — the Coin Portal sets `ignoreWater` (`:5887`).
+            || kind == COIN_PORTAL
             // S1-D-4: the Empress family's five arms all set `ignoreWater`
             // (`Projectile.cs:8365`/`:8378`/`:8414`/`:8725`/`:8768`).
             || matches!(
