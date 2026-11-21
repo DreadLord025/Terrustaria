@@ -4,19 +4,24 @@
 //! small versioned text file. Loading validates that the saved position is not inside a
 //! solid tile.
 //!
-//! ## The FINAL superset contract (W4-g88 fold — g89/g89b/g89c/g90/g55)
+//! ## The FINAL superset contract (W4-g88 fold — g89/g89b/g89c/g90/g55/g90b/a6)
 //!
-//! Six lane writers collided on the post-dye block: g89 (`920014cb`,
+//! Eight lanes touched the post-dye block (seven writers + a6's
+//! use-arm-only lane): g89 (`920014cb`,
 //! v7 aegis flag), g88 (`f1eb9b60`, v7 life pair), g90 (`1f1b88f0`, v7
 //! bread flag), g55 (`cde865fc`, v7 loadout block), g89b (`9bf03ede`,
 //! v8 aegis+gummy unlock pair), g89c (`78766306`, v9 aegis+gummy+ambrosia
-//! unlock triple). The reconciled SUPERSET (this branch's writer) is
-//! version **9**, g89c's unlock-line shape kept:
+//! unlock triple), g90b (`e76ee133`, v7 bread + five one-token shimmer
+//! flag lines) and a6 (`f23385e5`, the six shimmer use arms — no sidecar
+//! writer; its pearl flag rides `LuckState`). The reconciled SUPERSET
+//! (this branch's writer) is version **10**, the unlock line widened to
+//! SIX tokens (the crystal fold — g90b's flags, research/122 §3):
 //!
-//! 1. the unlock line — `usedAegisFruit usedGummyWorm usedAmbrosia` 0/1
-//!    (g89c's position, THREE tokens; token 4+ RESERVED for galaxy-pearl/
-//!    arcane-crystal/aegis-crystal/DD2 — the crystal lane appends them as
-//!    tokens 4/5/6 at v10 per g89d's research/122 addendum),
+//! 1. the unlock line — `usedAegisFruit usedGummyWorm usedAmbrosia
+//!    usedAegisCrystal usedArcaneCrystal usedGalaxyPearl` 0/1 (tokens
+//!    1-3 g89c's fruit-first positions kept; tokens 4/5/6 the crystal
+//!    trio in the vanilla `.plr` relative order `Player.cs:54781`/
+//!    `:54783`/`:54784`; token 7 RESERVED for DD2),
 //! 2. the life-maxima pair — `statLifeMax statLifeMax2` (TWO tokens),
 //! 3. the mana-maxima pair — `statManaMax statManaMax2` (TWO tokens),
 //! 4. the artisan-bread flag line — `ateArtisanBread` 0/1 (ONE token,
@@ -26,10 +31,12 @@
 //! 6. three stored-set lines — each 20 armor kinds + 10 dye kinds +
 //!    10 hide flags + the set's 30-bit share word (41 tokens each).
 //!
-//! The reader tolerates every predecessor. v8/v9: the FIRST post-dye
-//! line is positionally the unlock line (g89b/g89c's contract; 1, 2 or 3
-//! tokens read — a v7 one-token line loads worm/ambrosia false, a v8
-//! two-token line loads ambrosia false — the rest reserved); the
+//! The reader tolerates every predecessor. v8/v9/v10: the FIRST post-dye
+//! line is positionally the unlock line (g89b/g89c's contract; 1-6
+//! tokens read — a v7 one-token line loads worm/ambrosia/crystals false,
+//! a v8 two-token line loads ambrosia/crystals false, a v9 three-token
+//! line loads the crystal trio false — the v10 back-read; token 7+
+//! reserved); the
 //! remaining lines dispatch on TOKEN COUNT/SHAPE
 //! — a one-token line is the bread flag, the first two-token line the
 //! life pair, the second the mana pair, the two-token line directly
@@ -38,7 +45,12 @@
 //! is the aegis flag, the SECOND the bread flag; pairs/loadouts as above.
 //! So every single-lane v7, g89b's v8, g89c's v9, the partial supersets
 //! and this full superset all load; missing pieces keep their fresh
-//! defaults. Any merge of the lanes keeps this reader (the superset).
+//! defaults. g90b's v7 bread+five-flag-line block loads with a bounded
+//! misread (the v7 walk maps the first one-token line to aegis and every
+//! later one to bread — last wins — so the crystal trio keeps false;
+//! research/103 §3's ambiguity table; the superset writer emits all six
+//! flags positionally so the ambiguity ends at the fold). Any merge of
+//! the lanes keeps this reader (the superset).
 //! Full layout + token reservations + back-compat matrix:
 //! `docs/research/103-persist-v7-layout.md` (+ g89d's v9/v10 addendum,
 //! `docs/research/122-persist-v9-addendum.md`).
@@ -79,6 +91,27 @@ pub struct SavedPlayer {
     /// (`:12861-12866` — `pickSpeed -= 0.05f; tileSpeed += 0.05f;
     /// wallSpeed += 0.05f`).
     pub used_ambrosia: bool,
+    /// `Player.usedAegisCrystal` (`Player.cs:852`, save `:54781` / load
+    /// `:55255`) — version 10 of the sidecar (the crystal fold: g90b
+    /// `e76ee133`'s flag, a6 `f23385e5`'s 5337 use arm), the FOURTH
+    /// token on the unlock line (the vanilla `.plr` relative order among
+    /// the crystal trio). The permanent +0.2 life-regen ramp
+    /// (`:19113-19116`). Older files load false (ctor `:56078`).
+    pub used_aegis_crystal: bool,
+    /// `Player.usedArcaneCrystal` (`Player.cs:856`, save `:54783` / load
+    /// `:55257`) — version 10 (g90b/a6), the FIFTH token on the unlock
+    /// line. The permanent mana-regen rows (`:19430-19433` delay −0.05 +
+    /// `:19453-19456` regen +statManaMax2/50). Older files load false
+    /// (ctor `:56080`).
+    pub used_arcane_crystal: bool,
+    /// `Player.usedGalaxyPearl` (`Player.cs:858`, save `:54784` / load
+    /// `:55258`) — version 10 (g90b/a6), the SIXTH token on the unlock
+    /// line. The permanent +0.03 luck (`:29142-29145`). g90b's shape
+    /// kept: the Player field is the persistence owner; `update_luck`
+    /// mirrors it into `LuckState.used_galaxy_pearl` (a6's use arm sets
+    /// the LuckState field directly — the merger reconciles per
+    /// research/138). Older files load false (ctor `:56081`).
+    pub used_galaxy_pearl: bool,
     /// `Player.ateArtisanBread` (`Player.cs:2048`) — version 7 (W4-g90,
     /// folded into the superset as the FOURTH post-dye line); older files
     /// load false (the ctor default, `Player.cs:56077`). The vanilla
@@ -155,11 +188,13 @@ pub fn save(
     kills: &[(String, i32)],
     equip_share_flags: u32,
 ) -> std::io::Result<()> {
-    // Version 9 SUPERSET (the module header's contract): g89c's unlock
-    // line first (`usedAegisFruit usedGummyWorm usedAmbrosia`,
-    // `Player.cs:54782`/`:54785`/`:54786`), then the pairs, the bread
-    // flag and the loadout block.
-    let mut s = format!("9\n{} {} {}\n", player.x, player.y, player.hp);
+    // Version 10 SUPERSET (the module header's contract): the unlock
+    // line first (`usedAegisFruit usedGummyWorm usedAmbrosia
+    // usedAegisCrystal usedArcaneCrystal usedGalaxyPearl`,
+    // `Player.cs:54782`/`:54785`/`:54786` + the crystal trio
+    // `:54781`/`:54783`/`:54784` in the vanilla relative order), then
+    // the pairs, the bread flag and the loadout block.
+    let mut s = format!("10\n{} {} {}\n", player.x, player.y, player.hp);
     for (kind, count) in inventory {
         s.push_str(&format!("{kind} {count} "));
     }
@@ -179,20 +214,24 @@ pub fn save(
         s.push_str(&format!("{kind} "));
     }
     s.push_str("\n");
-    // Version 9 SUPERSET (the module header's contract, the
-    // g88⨉g89⨉g89b⨉g89c⨉g90⨉g55 fold): the unlock line FIRST (g89c's
-    // post-dye position, `usedAegisFruit usedGummyWorm usedAmbrosia`,
-    // `Player.cs:54782`/`:54785`/`:54786`; token 4+ reserved — the
-    // crystal tokens 4/5/6 land at v10 per research/122), then the
+    // Version 10 SUPERSET (the module header's contract, the
+    // g88⨉g89⨉g89b⨉g89c⨉g90⨉g55⨉g90b⨉a6 fold): the unlock line FIRST
+    // (g89c's fruit-first tokens 1-3 kept, `Player.cs:54782`/`:54785`/
+    // `:54786`; the crystal trio appends as tokens 4/5/6 in the vanilla
+    // `.plr` relative order `:54781`/`:54783`/`:54784` — the v10 bump
+    // per research/122 §3; token 7 reserved for DD2), then the
     // life pair (`statLifeMax statLifeMax2`, `:54773`), then the mana pair
     // (`statManaMax statManaMax2`, `:54775`), then the artisan-bread flag
     // (`Player.ateArtisanBread`, `:54779`, W4-g90). Vanilla rides them all
     // in the .plr; the port's live-session sidecar appends them after dye.
     s.push_str(&format!(
-        "{} {} {}\n",
+        "{} {} {} {} {} {}\n",
         u8::from(player.used_aegis_fruit),
         u8::from(player.used_gummy_worm),
-        u8::from(player.used_ambrosia)
+        u8::from(player.used_ambrosia),
+        u8::from(player.used_aegis_crystal),
+        u8::from(player.used_arcane_crystal),
+        u8::from(player.used_galaxy_pearl)
     ));
     s.push_str(&format!("{} {}\n", player.life_max_base, player.max_hp));
     s.push_str(&format!("{} {}\n", player.mana_max_base, player.mana_max));
@@ -227,10 +266,11 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         // dye kinds; 7 the SUPERSET post-dye block (the module header's
         // contract — W4-g88 ⨉ W4-g89 ⨉ W4-g90 ⨉ W4-g55); 8 the g89b
         // unlock line (aegis + gummy, `9bf03ede`) atop the same block;
-        // 9 the g89c ambrosia token (`78766306`) on that line; 3 stores
-        // vanilla `ItemID`s; 1 and 2 stored the ad-hoc tile/wall/weapon/
-        // coin ranges and are converted on load.
-        "3" | "4" | "5" | "6" | "7" | "8" | "9" => false,
+        // 9 the g89c ambrosia token (`78766306`) on that line; 10 the
+        // crystal trio (g90b `e76ee133` / a6 `f23385e5`) as tokens 4/5/6;
+        // 3 stores vanilla `ItemID`s; 1 and 2 stored the ad-hoc
+        // tile/wall/weapon/coin ranges and are converted on load.
+        "3" | "4" | "5" | "6" | "7" | "8" | "9" | "10" => false,
         "1" | "2" => true,
         _ => return None,
     };
@@ -257,7 +297,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         .unwrap_or(0);
     // The armor line is version 4+; older files load with every slot empty.
     let mut armor = [0u16; 3];
-    if matches!(version, "4" | "5" | "6" | "7" | "8" | "9") {
+    if matches!(version, "4" | "5" | "6" | "7" | "8" | "9" | "10") {
         let mut armor_line = lines.next()?.split_whitespace();
         for slot in &mut armor {
             *slot = armor_line.next()?.parse().ok()?;
@@ -265,7 +305,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     }
     // Version 5 adds the bestiary kill pairs.
     let mut kills = Vec::new();
-    if matches!(version, "5" | "6" | "7" | "8" | "9") {
+    if matches!(version, "5" | "6" | "7" | "8" | "9" | "10") {
         let kill_line = lines.next()?;
         let mut parts = kill_line.split_whitespace();
         let count: usize = parts.next().and_then(|c| c.parse().ok()).unwrap_or(0);
@@ -280,19 +320,22 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     // Version 6 adds the dye slot kinds; older files load with every slot
     // empty.
     let mut dye = [0u16; 10];
-    if matches!(version, "6" | "7" | "8" | "9") {
+    if matches!(version, "6" | "7" | "8" | "9" | "10") {
         let dye_line = lines.next()?;
         for (slot, kind) in dye.iter_mut().zip(dye_line.split_whitespace()) {
             *slot = kind.parse().ok()?;
         }
     }
-    // Version 7/8/9 SUPERSET (the module header's contract).
-    // v8/v9 (the current writer, g89c's shape kept): the FIRST post-dye
-    // line is POSITIONALLY the unlock line — token 1 the aegis flag
-    // (`Player.cs:55256`), token 2 the gummy worm (`:55259`), token 3
-    // the ambrosia (`:55260`); a one/two-token line still reads (g89b's
-    // v7 / g89c's v8 back-reads — missing tokens keep false), tokens 4+
-    // are RESERVED (the crystal tokens 4/5/6 at v10, research/122) and
+    // Version 7/8/9/10 SUPERSET (the module header's contract).
+    // v8/v9/v10 (the current writer, the crystal fold): the FIRST
+    // post-dye line is POSITIONALLY the unlock line — token 1 the aegis
+    // flag (`Player.cs:55256`), token 2 the gummy worm (`:55259`), token
+    // 3 the ambrosia (`:55260`), token 4 the aegis crystal (`:55255`),
+    // token 5 the arcane crystal (`:55257`), token 6 the galaxy pearl
+    // (`:55258`); short lines back-read (a v7 one-token line loads
+    // worm/ambrosia/crystals false, a v8 two-token line loads
+    // ambrosia/crystals false, a v9 three-token line loads the crystal
+    // trio false — the v10 back-read), token 7+ is RESERVED (DD2) and
     // skipped. The remaining lines dispatch on TOKEN COUNT/SHAPE as
     // below.
     // v7 (the tolerant predecessor walk): the FIRST one-token line is the
@@ -315,21 +358,24 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     let mut used_aegis_fruit = false;
     let mut used_gummy_worm = false;
     let mut used_ambrosia = false;
+    let mut used_aegis_crystal = false;
+    let mut used_arcane_crystal = false;
+    let mut used_galaxy_pearl = false;
     let mut ate_artisan_bread = false;
     let mut current_loadout_index = 0usize;
     let mut loadouts = [crate::loadout::EquipmentLoadout::default(); 3];
     let mut equip_share_flags = 0u32;
-    if matches!(version, "7" | "8" | "9") {
+    if matches!(version, "7" | "8" | "9" | "10") {
         // One stored-set line: ARMOR + DYE + HIDE kinds/flags + the word.
         const SET_TOKENS: usize = crate::inv::ARMOR + crate::inv::DYE + crate::loadout::HIDE + 1;
         let mut post: Vec<Vec<&str>> = lines
             .map(|l| l.split_whitespace().collect::<Vec<_>>())
             .collect();
-        // v8/v9: consume the unlock line positionally (g89b/g89c's
-        // contract). Its tokens 4+ are reserved future unlock flags
-        // (the crystal lane's v10 tokens 4/5/6, research/122) — skip them.
+        // v8/v9/v10: consume the unlock line positionally
+        // (g89b/g89c's contract, widened at v10). Its token 7+ is a
+        // reserved future unlock flag (DD2) — skip it.
         let v7_flags = version == "7";
-        if matches!(version, "8" | "9") {
+        if matches!(version, "8" | "9" | "10") {
             while post.first().is_some_and(|t| t.is_empty()) {
                 post.remove(0);
             }
@@ -337,6 +383,13 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
                 used_aegis_fruit = unlock.first().is_some_and(|t| *t == "1");
                 used_gummy_worm = unlock.get(1).is_some_and(|t| *t == "1");
                 used_ambrosia = unlock.get(2).is_some_and(|t| *t == "1");
+                // The v10 crystal trio (g90b/a6): tokens 4/5/6 in the
+                // vanilla `.plr` relative order (`:54781`/`:54783`/
+                // `:54784`). A v9 three-token line back-reads all three
+                // false (research/122 §3.1/§4.4).
+                used_aegis_crystal = unlock.get(3).is_some_and(|t| *t == "1");
+                used_arcane_crystal = unlock.get(4).is_some_and(|t| *t == "1");
+                used_galaxy_pearl = unlock.get(5).is_some_and(|t| *t == "1");
                 post.remove(0);
             }
         }
@@ -404,6 +457,9 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         used_aegis_fruit,
         used_gummy_worm,
         used_ambrosia,
+        used_aegis_crystal,
+        used_arcane_crystal,
+        used_galaxy_pearl,
         ate_artisan_bread,
         current_loadout_index,
         loadouts,
@@ -437,6 +493,10 @@ mod tests {
         p.used_aegis_fruit = true;
         p.used_gummy_worm = true;
         p.used_ambrosia = true;
+        // The v10 crystal trio (g90b/a6): all three unlocked.
+        p.used_aegis_crystal = true;
+        p.used_arcane_crystal = true;
+        p.used_galaxy_pearl = true;
         p.ate_artisan_bread = true;
         let dir = crate::test_world_helpers::test_scratch("persist-player-state");
         let path = dir.join("tr-persist-test.trwld");
@@ -467,6 +527,9 @@ mod tests {
         assert!(s.used_aegis_fruit, "the g89 flag at its post-dye position");
         assert!(s.used_gummy_worm, "the g89b token on the unlock line");
         assert!(s.used_ambrosia, "the g89c token on the unlock line");
+        assert!(s.used_aegis_crystal, "the v10 token 4 on the unlock line");
+        assert!(s.used_arcane_crystal, "the v10 token 5 on the unlock line");
+        assert!(s.used_galaxy_pearl, "the v10 token 6 on the unlock line");
         assert!(s.ate_artisan_bread, "the g90 flag after the mana pair");
         assert_eq!(s.inventory[0], (2, 12));
         assert_eq!(s.inventory[3], (12, 1));
@@ -511,6 +574,9 @@ mod tests {
         assert!(!s.used_aegis_fruit, "pre-v7 files carry no unlock");
         assert!(!s.used_gummy_worm, "pre-v8 files carry no worm unlock");
         assert!(!s.used_ambrosia, "pre-v9 files carry no ambrosia unlock");
+        assert!(!s.used_aegis_crystal, "pre-v10 files carry no crystal unlock");
+        assert!(!s.used_arcane_crystal, "pre-v10 files carry no arcane unlock");
+        assert!(!s.used_galaxy_pearl, "pre-v10 files carry no pearl unlock");
         assert!(!s.ate_artisan_bread, "pre-v7 files carry no loaf unlock");
         crate::test_world_helpers::remove_scratch(&dir);
     }
@@ -539,6 +605,9 @@ mod tests {
         assert!(!s.used_aegis_fruit);
         assert!(!s.used_gummy_worm);
         assert!(!s.used_ambrosia);
+        assert!(!s.used_aegis_crystal);
+        assert!(!s.used_arcane_crystal);
+        assert!(!s.used_galaxy_pearl);
         assert!(!s.ate_artisan_bread, "v6 loads false — the ctor default");
         crate::test_world_helpers::remove_scratch(&dir);
     }
@@ -671,8 +740,8 @@ mod tests {
     }
 
     /// The FULL superset round-trip: all post-dye lines survive a
-    /// save/load, in the contract order (v9 unlock line, life pair, mana
-    /// pair, bread flag, loadout index + 3 stored sets).
+    /// save/load, in the contract order (v10 six-token unlock line, life
+    /// pair, mana pair, bread flag, loadout index + 3 stored sets).
     #[test]
     fn the_superset_round_trips_the_full_block() {
         let world = World::new("t".into(), 32, 32);
@@ -680,6 +749,9 @@ mod tests {
         p.used_aegis_fruit = true;
         p.used_gummy_worm = true;
         p.used_ambrosia = true;
+        p.used_aegis_crystal = true;
+        p.used_arcane_crystal = true;
+        p.used_galaxy_pearl = true;
         p.life_max_base = 420;
         p.max_hp = 420;
         p.mana_max_base = 60;
@@ -687,18 +759,24 @@ mod tests {
         p.ate_artisan_bread = true;
         p.current_loadout_index = 1;
         p.loadouts[2].armor[0] = loadout_item(90);
-        let dir = crate::test_world_helpers::test_scratch("persist-v9-superset");
-        let path = dir.join("tr-persist-v9-superset.trwld");
+        let dir = crate::test_world_helpers::test_scratch("persist-v10-superset");
+        let path = dir.join("tr-persist-v10-superset.trwld");
         save(&path, &p, [(0, 0); 50], 0, [0; 3], &[0; 10], &[], 1 << 5).unwrap();
         let text = std::fs::read_to_string(player_path(&path)).unwrap();
-        assert!(text.starts_with("9\n"), "the superset writer emits v9");
+        assert!(text.starts_with("10\n"), "the superset writer emits v10");
         let post_dye: Vec<&str> = text.lines().skip(7).collect();
         assert_eq!(post_dye.len(), 8, "unlock/life/mana/bread/index + 3 sets");
-        assert_eq!(&post_dye[..5], ["1 1 1", "420 420", "60 80", "1", "1 32"]);
-        let s = load(&path).expect("the superset v9 sidecar");
+        assert_eq!(
+            &post_dye[..5],
+            ["1 1 1 1 1 1", "420 420", "60 80", "1", "1 32"]
+        );
+        let s = load(&path).expect("the superset v10 sidecar");
         assert!(s.used_aegis_fruit);
         assert!(s.used_gummy_worm);
         assert!(s.used_ambrosia);
+        assert!(s.used_aegis_crystal);
+        assert!(s.used_arcane_crystal);
+        assert!(s.used_galaxy_pearl);
         assert_eq!(s.life_max, Some((420, 420)));
         assert_eq!(s.mana_max, Some((60, 80)));
         assert!(s.ate_artisan_bread);
@@ -760,16 +838,15 @@ mod tests {
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
-    /// The reservation witness: unlock-line tokens 4+ are RESERVED
-    /// (pearl/arcane/crystal/DD2 — the layout doc's token map; the
-    /// crystal tokens 4/5/6 land at v10 per research/122) and skipped,
-    /// never misparsed as maxima pairs; the block behind them still
-    /// reads. Token 3 is now LIVE (g89c's ambrosia).
+    /// The reservation witness: unlock-line token 7+ is RESERVED (DD2 —
+    /// the layout doc's token map) and skipped, never misparsed as maxima
+    /// pairs; the block behind it still reads. Tokens 4-6 are now LIVE
+    /// (the v10 crystal trio — g90b/a6).
     #[test]
     fn reserved_unlock_tokens_are_skipped() {
-        let dir = crate::test_world_helpers::test_scratch("persist-v9-reserved");
-        let path = dir.join("tr-persist-v9-reserved.trwld");
-        let mut line = String::from("9\n1.0 2.0 420\n");
+        let dir = crate::test_world_helpers::test_scratch("persist-v10-reserved");
+        let path = dir.join("tr-persist-v10-reserved.trwld");
+        let mut line = String::from("10\n1.0 2.0 420\n");
         for _ in 0..50 {
             line.push_str("0 0 ");
         }
@@ -780,10 +857,13 @@ mod tests {
         // A future writer's unlock line: 7 tokens (the full vanilla set).
         line.push_str("\n1 1 1 1 1 1 1\n420 420\n60 80\n1\n");
         std::fs::write(player_path(&path), line).unwrap();
-        let s = load(&path).expect("v9 sidecar");
+        let s = load(&path).expect("v10 sidecar");
         assert!(s.used_aegis_fruit);
         assert!(s.used_gummy_worm);
         assert!(s.used_ambrosia, "token 3 reads — the g89c fold");
+        assert!(s.used_aegis_crystal, "token 4 reads — the v10 crystal fold");
+        assert!(s.used_arcane_crystal, "token 5 reads");
+        assert!(s.used_galaxy_pearl, "token 6 reads");
         assert_eq!(s.life_max, Some((420, 420)), "the pairs read past the line");
         assert_eq!(s.mana_max, Some((60, 80)));
         assert!(s.ate_artisan_bread);
@@ -878,6 +958,135 @@ mod tests {
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
+    /// The v10 fold witness: this branch's OWN pre-v10 superset (the v9
+    /// writer — the three-token unlock line + pairs + bread + loadout
+    /// block) still loads under the v10 reader: the unlock back-read
+    /// keeps the crystal trio false, everything behind it reads
+    /// unchanged (research/122 §3.1/§4.4's 3-token v9 back-read).
+    #[test]
+    fn the_v9_superset_still_loads_without_the_crystals() {
+        let dir = crate::test_world_helpers::test_scratch("persist-v9-superset-back");
+        let path = dir.join("tr-persist-v9-superset-back.trwld");
+        let mut line = String::from("9\n1.0 2.0 420\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n0 0 0\n0 \n");
+        for _ in 0..10 {
+            line.push_str("0 ");
+        }
+        line.push_str("\n1 1 1\n420 420\n60 80\n1\n1 32\n");
+        for _ in 0..3 {
+            for _ in 0..41 {
+                line.push_str("0 ");
+            }
+            line.push('\n');
+        }
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("the pre-v10 superset sidecar");
+        assert!(s.used_aegis_fruit && s.used_gummy_worm && s.used_ambrosia);
+        assert!(!s.used_aegis_crystal, "the v9 line carries no token 4");
+        assert!(!s.used_arcane_crystal, "no token 5");
+        assert!(!s.used_galaxy_pearl, "no token 6");
+        assert_eq!(s.life_max, Some((420, 420)));
+        assert_eq!(s.mana_max, Some((60, 80)));
+        assert!(s.ate_artisan_bread);
+        assert_eq!(s.current_loadout_index, 1);
+        assert_eq!(s.equip_share_flags, 32);
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// The v10 fold witness: a v9 THREE-token unlock line under version
+    /// 10 (the back-read shape) still reads fruit + worm + ambrosia; the
+    /// crystal trio keeps false.
+    #[test]
+    fn a_three_token_unlock_line_reads_under_v10() {
+        let dir = crate::test_world_helpers::test_scratch("persist-v10-3tok");
+        let path = dir.join("tr-persist-v10-3tok.trwld");
+        let mut line = String::from("10\n1.0 2.0 100\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n0 0 0\n0 \n");
+        for _ in 0..10 {
+            line.push_str("0 ");
+        }
+        line.push_str("\n1 1 1\n");
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("v10 sidecar");
+        assert!(
+            s.used_aegis_fruit && s.used_gummy_worm && s.used_ambrosia,
+            "the v9 tokens read"
+        );
+        assert!(!s.used_aegis_crystal, "no fourth token — the crystal absent");
+        assert!(!s.used_arcane_crystal);
+        assert!(!s.used_galaxy_pearl);
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// The v10 fold witness: a SIX-token unlock line under version 10
+    /// reads all six flags positionally — the crystal trio in the
+    /// vanilla `.plr` relative order (token 4 aegis-crystal `:54781`,
+    /// token 5 arcane `:54783`, token 6 pearl `:54784`).
+    #[test]
+    fn the_six_token_unlock_line_reads_under_v10() {
+        let dir = crate::test_world_helpers::test_scratch("persist-v10-6tok");
+        let path = dir.join("tr-persist-v10-6tok.trwld");
+        let mut line = String::from("10\n1.0 2.0 100\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n0 0 0\n0 \n");
+        for _ in 0..10 {
+            line.push_str("0 ");
+        }
+        // Only the crystal trio eaten: tokens 4/5/6 set, 1-3 clear.
+        line.push_str("\n0 0 0 1 1 1\n");
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("v10 sidecar");
+        assert!(!s.used_aegis_fruit && !s.used_gummy_worm && !s.used_ambrosia);
+        assert!(s.used_aegis_crystal, "token 4 — the aegis crystal");
+        assert!(s.used_arcane_crystal, "token 5 — the arcane crystal");
+        assert!(s.used_galaxy_pearl, "token 6 — the galaxy pearl");
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// The v10 fold witness: g90b's OWN v7 block (`e76ee133`'s writer —
+    /// the bread line then five one-token shimmer flag lines in the
+    /// `.plr` order crystal/arcane/pearl/gummy/ambrosia) loads with the
+    /// bounded lone-flag misread: the v7 walk maps the FIRST one-token
+    /// line to aegis and EVERY later one to bread (last wins), so the
+    /// bread half ends at the ambrosia line's value and the crystal
+    /// trio keeps false. The superset writer emits all six positionally
+    /// (v10), so the ambiguity only affects pre-fold files
+    /// (research/103 §3's ambiguity table).
+    #[test]
+    fn g90bs_bread_plus_flags_v7_loads_with_the_bounded_misread() {
+        let dir = crate::test_world_helpers::test_scratch("persist-v7-g90b");
+        let path = dir.join("tr-persist-v7-g90b.trwld");
+        let mut line = String::from("7\n1.0 2.0 100\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n0 0 0\n0 \n");
+        for _ in 0..10 {
+            line.push_str("0 ");
+        }
+        // g90b's block: bread=1, then crystal=1, arcane=0, pearl=1,
+        // gummy=0, ambrosia=1 (each its own line).
+        line.push_str("\n1\n1\n0\n1\n0\n1\n");
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("g90b's v7 sidecar");
+        assert!(s.used_aegis_fruit, "the bread line reads slot 1 (aegis)");
+        assert!(s.ate_artisan_bread, "the LAST one-token line wins (ambrosia=1)");
+        assert!(!s.used_aegis_crystal, "no positional v7 crystal read");
+        assert!(!s.used_arcane_crystal);
+        assert!(!s.used_galaxy_pearl);
+        assert!(!s.used_gummy_worm, "the v7 walk has no worm slot");
+        assert!(!s.used_ambrosia, "nor an ambrosia slot");
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
     /// W4-g90 fold: the artisan-bread flag round-trips alone (the fresh
     /// player never ate one; the flag survives, everything else defaults).
     #[test]
@@ -888,12 +1097,12 @@ mod tests {
         let dir = crate::test_world_helpers::test_scratch("persist-bread");
         let path = dir.join("tr-persist-bread.trwld");
         save(&path, &p, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[], 0).unwrap();
-        let s = load(&path).expect("v9 sidecar");
+        let s = load(&path).expect("v10 sidecar");
         assert!(s.ate_artisan_bread, "the flag survives the round trip");
         assert!(!s.used_aegis_fruit, "the aegis slot stays clear");
         let fresh = Player::spawn(&world);
         save(&path, &fresh, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[], 0).unwrap();
-        assert!(!load(&path).expect("v9 sidecar").ate_artisan_bread);
+        assert!(!load(&path).expect("v10 sidecar").ate_artisan_bread);
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
@@ -913,7 +1122,7 @@ mod tests {
         let path = dir.join("tr-persist-loadout.trwld");
         let inv = [(0u16, 0u32); 50];
         save(&path, &p, inv, 0, [0, 0, 0], &[0; 10], &[], 1 << 5).unwrap();
-        let s = load(&path).expect("v9 sidecar");
+        let s = load(&path).expect("v10 sidecar");
         assert_eq!(s.current_loadout_index, 1);
         assert_eq!(s.equip_share_flags, 1 << 5);
         assert_eq!(s.loadouts[2].armor[0].kind, 90);

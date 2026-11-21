@@ -2977,6 +2977,19 @@ impl App {
                     // `:12861-12866` stays g89c's). Older sidecars load
                     // false.
                     p.used_ambrosia = saved.used_ambrosia;
+                    // W4-g88 v10 fold (the crystal tokens 4/5/6, g90b
+                    // `e76ee133` / a6 `f23385e5`): the Aegis Crystal
+                    // (`Player.cs:55255`, the +0.2 life-regen ramp
+                    // `:19113-19116`), the Arcane Crystal (`:55257`, the
+                    // mana rows `:19430-19433`/`:19453-19456`) and the
+                    // Galaxy Pearl (`:55258`, the +0.03 luck
+                    // `:29142-29145` — `update_luck` mirrors the flag
+                    // into `LuckState`). The consumers stay g90b/a6's;
+                    // this branch restores the carriers. Older sidecars
+                    // (v9 three-token lines) load all three false.
+                    p.used_aegis_crystal = saved.used_aegis_crystal;
+                    p.used_arcane_crystal = saved.used_arcane_crystal;
+                    p.used_galaxy_pearl = saved.used_galaxy_pearl;
                     // W4-g90 fold: the permanent artisan-loaf unlock rides
                     // the superset's FOURTH post-dye line
                     // (`Player.ateArtisanBread`, `Player.cs:2048`; vanilla

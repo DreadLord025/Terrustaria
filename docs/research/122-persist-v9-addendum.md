@@ -171,3 +171,54 @@ section records how the superset satisfies it.
   `reserved_unlock_tokens_are_skipped` (7-token line under v9: tokens
   1-3 live, 4+ skipped) and the updated full-block round-trip asserting
   the `9\n` header + the `1 1 1` unlock line.
+
+---
+
+## 7. The v10 crystal fold receipt (W4-g88 superset branch)
+
+Appended by the g88 v10 fold atop `6998a4ec` (the v9 superset lineage
+§6). The g89 text above (§§1-6) is kept VERBATIM; this section records
+how the superset satisfies §3's v10 step now that the crystal lane has
+landed.
+
+- **§3.1 is satisfied — the crystal tokens landed as tokens 4/5/6.**
+  g90b `e76ee133` (`origin/task/W4-g90-artisan-bread-use`) landed the
+  four Player flags + consumers + the `.plr` 260+ halves; a6 `f23385e5`
+  (`origin/task/W4-a6-crystals-powerups`) landed ALL six use arms
+  (`powerups::use_shimmer_permanent`) + the regen/luck/booster
+  consumers with no sidecar writer. The superset writer bumps **v10**:
+  the unlock line is now `aegis worm ambrosia aegisCrystal arcaneCrystal
+  galaxyPearl` — the first three UNCHANGED (g89c's fruit-first order),
+  the crystal trio appended in the vanilla relative order verified
+  against `Player.cs:54776-54787` (`:54781` crystal → `:54783` arcane →
+  `:54784` pearl). The fruit-first deviation §3.1 records stands; the
+  pre-v10 reservation map's pearl-first listing is corrected (the
+  tokens were RESERVED, never written — no back-compat cost).
+- **§3's reader rules kept**: the line-8 token-count back-read extends
+  one step — a v9 three-token line loads the crystal trio false
+  (witnesses `a_three_token_unlock_line_reads_under_v10`,
+  `the_v9_superset_still_loads_without_the_crystals`); the v7
+  token-COUNT walk is unchanged (g90b's bread+five-flag-line v7 block
+  loads with the bounded lone-flag misread, witness
+  `g90bs_bread_plus_flags_v7_loads_with_the_bounded_misread` —
+  research/103 §3's ambiguity table); missing lines keep fresh
+  defaults; the `app/mod.rs` restore order stays maxima-before-hp-clamp
+  with the three new flag restores beside the aegis/gummy/ambrosia
+  triple.
+- **§4.4's crystal step done**: the carriers are
+  `Player.used_aegis_crystal`/`used_arcane_crystal`/`used_galaxy_pearl`
+  at g90b's exact declaration spots (after `used_ambrosia`); the pearl
+  persistence owner is the Player field with g90b's `update_luck`
+  mirror into `LuckState.used_galaxy_pearl` (a6's use arm writes the
+  LuckState field directly — the merger reconciles per research/138,
+  unpushed at fold time; research/103 §5a records the keep-own
+  adjudication: g88 keeps its `life_fruit.rs`/`crystals.rs` arms, the
+  merger drops a6's three dups per 138).
+- **§5's anchors**: g89's use-arm rows stay g89's; the `.plr` halves
+  stay g90b's (`player_file.rs` untouched by this fold); the world-flag
+  boundary stands (g90b `bb78974a`'s `.trwld` v18 two-byte tail carries
+  the book-two/satchel world flags, never line 8).
+- **research/135/138 cross-refs**: the brief's g90c fold-input
+  (research/135) and a6b reconcile (research/138) were NOT pushed on
+  either lane's tip at fold time (verified `git ls-tree`); this receipt
+  proceeds on the landed code shapes and flags both for the merger.

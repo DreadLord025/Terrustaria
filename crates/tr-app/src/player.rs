@@ -2171,6 +2171,36 @@ pub struct Player {
     /// and the use arm are the W4-g89c lane's — this branch only carries
     /// the flag through save/load.
     pub used_ambrosia: bool,
+    /// `Player.usedAegisCrystal` (`Player.cs:852`): the 5337 Aegis Crystal
+    /// permanent life-regen ramp +0.2/tick (`ItemCheck_UseShimmerPermanentItems`
+    /// `:45387-45392`, `UpdateLifeRegen` `:19113-19116`). NOT cleared by
+    /// ResetEffects — a permanent unlock (ctor `:56078` false, save `:54781` /
+    /// load `:55255`; W4-g90 `e76ee133`'s declaration spot).
+    /// W4-g88 v10-fold note: the field rides HERE for the superset sidecar
+    /// round-trip (unlock-line token 4); the +0.2 regen row and the 5337
+    /// use arm are the g90b/a6 lanes' — this branch only carries the flag
+    /// through save/load (research/103 §5, the carrier precedent).
+    pub used_aegis_crystal: bool,
+    /// `Player.usedArcaneCrystal` (`Player.cs:856`): the 5339 Arcane Crystal
+    /// permanent mana-regen boost (`:45399-45404`; `UpdateManaRegen`
+    /// `:19430-19433` delay −0.05 + `:19453-19456` regen +statManaMax2/50).
+    /// NOT cleared by ResetEffects (ctor `:56080`, save `:54783` / load
+    /// `:55257`; W4-g90 `e76ee133`'s declaration spot).
+    /// W4-g88 v10-fold note: carried for the sidecar round-trip only
+    /// (unlock-line token 5); the mana rows and the 5339 use arm stay
+    /// g90b/a6's scope.
+    pub used_arcane_crystal: bool,
+    /// `Player.usedGalaxyPearl` (`Player.cs:858`): the 5340 Galaxy Pearl
+    /// permanent +0.03 luck (`:45405-45410`, `RecalculateLuck`
+    /// `:29142-29145`). NOT cleared by ResetEffects (ctor `:56081`, save
+    /// `:54784` / load `:55258`; W4-g90 `e76ee133`'s declaration spot).
+    /// The consumer lives in `LuckState.used_galaxy_pearl`; `update_luck`
+    /// mirrors this field into it every tick (the persistence owner is
+    /// here — g90b's shape kept; a6's use arm sets the LuckState field
+    /// directly, the merger reconciles per research/138).
+    /// W4-g88 v10-fold note: carried for the sidecar round-trip
+    /// (unlock-line token 6) + the mirror; the 5340 use arm stays a6's.
+    pub used_galaxy_pearl: bool,
     /// (Gate merge i35 ⨉ i41: `can_float_in_water` and `no_items` are
     /// declared ONCE, with the mount block above — the i35 duplicates
     /// folded into them; the fishing float bonus / bobber kill gate read
@@ -2978,6 +3008,9 @@ impl Player {
             used_gummy_worm: false,
             used_aegis_fruit: false, // `Player.cs:56079`
             used_ambrosia: false,    // `Player.cs:56083`
+            used_aegis_crystal: false, // `Player.cs:56078` (g90b's spot)
+            used_arcane_crystal: false, // `:56080`
+            used_galaxy_pearl: false, // `:56081`
             acc_sentry_backpack: false,
             acc_sentry_backpack_grab_cooldown: 0,
             ballista_panic: false,
@@ -10629,6 +10662,13 @@ impl Player {
             self.zones,
         );
         self.luck_state.update_broken_mirror_decay(day_rate);
+        // W4-g88 v10 fold (g90b `e76ee133`'s mirror) — the Galaxy Pearl:
+        // `RecalculateLuck` (`Player.cs:29142-29145`) reads the player-file
+        // flag directly; the port's consumer lives in
+        // `LuckState.used_galaxy_pearl`, so the persistence owner
+        // (`Player.used_galaxy_pearl`, the sidecar's token 6) seeds it
+        // before every recalculation.
+        self.luck_state.used_galaxy_pearl = self.used_galaxy_pearl;
         self.luck_state.recalculate_luck();
     }
 
@@ -11962,6 +12002,23 @@ fn collides_filtered(world: &World, x: f32, y: f32, w: f32, h: f32, ignore_slope
 #[cfg(test)]
 
 mod tests {
+    /// W4-g88 v10 fold (g90b `e76ee133`'s mirror) — the Galaxy Pearl:
+    /// `update_luck` seeds `LuckState.used_galaxy_pearl` from the
+    /// player-file flag before `RecalculateLuck` (`Player.cs:29142-
+    /// 29145`), so the +0.03 lands. The persistence owner is the Player
+    /// field (the sidecar's token 6); the 5340 use arm stays a6's.
+    #[test]
+    fn w4_g88_v10_the_galaxy_pearl_feeds_the_luck_recalculation() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update_luck(&w);
+        assert!(p.luck().abs() < 1e-6, "the neutral state stays 0");
+        p.used_galaxy_pearl = true;
+        p.update_luck(&w);
+        assert!(p.luck_state.used_galaxy_pearl, "the mirror seeds the state");
+        assert!((p.luck() - 0.03).abs() < 1e-6, "the +0.03 term (`:29144`)");
+    }
+
     #[test]
     fn dye_cache_mirrors_update_dyes() {
         let mut p = Player::spawn(&World::new("t".into(), 64, 800));

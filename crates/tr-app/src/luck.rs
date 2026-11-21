@@ -72,8 +72,12 @@ pub struct LuckState {
     /// lucky-coin adds (`:13050-13069`); no accessory layer yet, so it stays 0.
     pub equipment_based_luck_bonus: f32,
     /// `Player.usedGalaxyPearl` (`Player.cs:858`) — the C# persists it to the
-    /// player file (`:54784/:55258`); the port has no player-file writer, so
-    /// it stays the default (deviation recorded in ANALYSIS).
+    /// player file (`:54784/:55258`). W4-g88 v10 fold: the persistence owner
+    /// is `Player.used_galaxy_pearl` (the sidecar unlock line's token 6,
+    /// g90b `e76ee133`'s shape); `update_luck` mirrors it here before every
+    /// recalculation (`:29142-29145`). The 5340 use arm is a6's
+    /// (`powerups::use_shimmer_permanent` sets this field directly — the
+    /// merger reconciles per research/138).
     pub used_galaxy_pearl: bool,
     /// `LanternNight.LanternsUp` (`LanternNight.cs:17-27`) — no lantern-night
     /// system in the port (M4-EVENT-4); the all-false gate, like `rain.rs`.
