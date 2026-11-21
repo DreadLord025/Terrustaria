@@ -1308,9 +1308,31 @@ fn hammer_tile_hit(
                 let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                 tr_core::ores::smash_altar(&mut app.world, &mut app.ore_tiers, altars, rng)
             };
+            // `WorldGen.SmashAltar`'s ore-blessing broadcast (`WorldGen.cs:
+            // 48969`/`:49002`/`:49034`): `ChatHelper.BroadcastChatMessage(
+            // NetworkText.FromKey(Lang.misc[num7].Key), ChatColors.World)`.
+            // The key rides the PLACED ore — 12/13/14 the classic trio
+            // (Cobalt/Mythril/Adamantite), +9 = 21/22/23 the alternates
+            // (Palladium/Orichalcum/Titanium, `:48964-48966`/`:48997-48999`/
+            // `:49029-49031`). The C# broadcasts inside SmashAltar before the
+            // OreRunner batches; the port's `smash_altar` returns the placed
+            // ore, so the line lands here (the chat-log order is unchanged).
+            let blessing = match ore {
+                107 => 12,
+                221 => 21,
+                108 => 13,
+                222 => 22,
+                111 => 14,
+                223 => 23,
+                _ => 12,
+            };
+            crate::chat::broadcast_death_text(
+                &mut app.chat,
+                &crate::lang::misc(blessing),
+                crate::chat::COLOR_WORLD,
+            );
             app.world.altars_smashed = altars + 1;
             let _ = app.notify_progression_net(6);
-            let _ = ore;
             app.world_key = None;
         }
     }
@@ -11488,6 +11510,43 @@ mod tests {
             pristine,
             "the altar smash never draws UpdateWorldGen"
         );
+    }
+
+    /// W4-d103 POST FINAL item 2: the smash broadcasts the ore-blessing line
+    /// (`WorldGen.cs:48969`/`:49002`/`:49034` — `Lang.misc[12..14]` classic,
+    /// `[21..23]` the alternates) in the World color, exactly once per smash,
+    /// keyed on the PLACED ore (the drunk flips move the key with the ore).
+    #[test]
+    fn w4_d103_post_the_smash_broadcasts_the_ore_blessing() {
+        let mut w = World::new("t".into(), 420, 800);
+        let i = w.index(30, 260);
+        w.tiles[i] = Tile {
+            kind: 26,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.compute_column_surface();
+        let mut app = mining_app(w, 30, 260);
+        app.world.hard_mode = true;
+        app.inventory[app.selected].kind = 367; // the Pwnhammer (hammer 80)
+        let chat_before = app.chat.messages.len();
+        mine_frames(&mut app, 30);
+        assert_eq!(app.world.altars_smashed, 1, "the smash ran");
+        assert_eq!(
+            app.chat.messages.len(),
+            chat_before + 1,
+            "exactly one blessing line per smash"
+        );
+        let line = app.chat.messages.last().unwrap();
+        // The first smash is tier 0: Cobalt 107 (misc 12) or Palladium 221
+        // (misc 21) — the 50/50 roll decides, the key rides the placed ore.
+        let key = match app.ore_tiers.cobalt {
+            107 => 12,
+            221 => 21,
+            other => panic!("tier 0 placed {other}, not 107/221"),
+        };
+        assert_eq!(line.text, crate::lang::misc(key));
+        assert_eq!(line.color, crate::chat::COLOR_WORLD);
     }
 
     // ---- S1-P-i31: the hammer interaction --------------------------------

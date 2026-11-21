@@ -235,6 +235,10 @@ impl Default for SavedOreTiers {
 /// in-default-arm flip — the C#'s asymmetry kept verbatim); the remix world
 /// draws the y from the inverted band (`:49056-49067`); the anniversary
 /// world widens the strength roll to `Next(5, 11 + num4)` (`:49069-49071`).
+/// The ore-blessing chat (`:48969`/`:49002`/`:49034`, `Lang.misc[12..14]`
+/// classic / `[21..23]` alternates, ChatColors.World) rides the app seam —
+/// `world_sim/editing.rs::hammer_tile_hit` broadcasts on the returned ore
+/// (the core has no chat/lang store; the W4-d103 POST FINAL wiring).
 /// The wraith spawn (`:49078-49105`) parks — no `NPC.SpawnOnPlayer` port.
 pub fn smash_altar(
     world: &mut World,
