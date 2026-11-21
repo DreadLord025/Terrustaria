@@ -236,6 +236,11 @@ impl App {
     ///
     /// Yields `(screen, m_h)` — both are consumed deep in the draw half.
     fn frame_shared_setup(&mut self, dt: f32) -> (Vec2, f32) {
+        // The fullscreen map's pylon marker click reads the left-press edge
+        // in the DRAW (`TeleportPylonsMapLayer.cs:83`), which runs after the
+        // click cluster consumes `ui_left_press` — snapshot it here, before
+        // `update_world_frame`'s `in_world_click_cluster` clears it.
+        self.map_left_press = self.ui_left_press;
         let screen = self
             .gpu
             .as_ref()

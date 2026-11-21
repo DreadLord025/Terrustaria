@@ -2317,6 +2317,7 @@ pub(crate) mod front_flow_tests {
             mouse_npc_type: -1,
             ui_left_press: false,
             ui_right_press: false,
+            map_left_press: false,
             ui_right_release: false,
             control_throw: false,
             drop_right_edge: false,

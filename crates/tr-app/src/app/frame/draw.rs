@@ -1503,7 +1503,7 @@ impl App {
                                     map_fullscreen: false,
                                     pylon_tile: m.pylon_tile,
                                     screen,
-                                    left_press: self.ui_left_press,
+                                    left_press: self.map_left_press,
                                 },
                                 [0.0, 0.0],
                                 ui::minimap::minimap_origin_raw(screen, map_scale),
@@ -2146,7 +2146,7 @@ impl App {
                             // `Main.cs:55363`: a held left press cancels the
                             // offscreen-pylon pan (sampled before `prepare`
                             // runs the lerp).
-                            m.pan_cancel_press = self.mine_down && self.ui_left_press;
+                            m.pan_cancel_press = self.mine_down && self.map_left_press;
                             m.prepare(renderer, gpu, world, screen, view_center);
                         }
                     }
@@ -2294,7 +2294,7 @@ impl App {
                                         map_fullscreen: true,
                                         pylon_tile: map.pylon_tile,
                                         screen,
-                                        left_press: self.ui_left_press,
+                                        left_press: self.map_left_press,
                                     },
                                     [0.0, 0.0],
                                     map_offset,
