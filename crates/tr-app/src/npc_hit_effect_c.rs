@@ -151,6 +151,7 @@
 //! | 621-629 | `:86010-86024` | the critter family: blue macaw 672, toucan 673, yellow cockatiel 674 |
 //! | 630-638 | `:86028-86054` | the critter family: gray cockatiel 675, squirrel 299/538, mouse 300, rat 610, seahorse 626, anglerfish 102 |
 //! | 639-646 | `:86058-86075` | the critter family: flying fish 224, eyeball flying fish 587, turtle 616 |
+//! | 647-654 | `:86079-86089` | the critter family: jungle turtle 617, sea turtle 625 (completes the block) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -3911,12 +3912,14 @@ fn gem_squirrel_death(
     gore.new_gore(rng, world, pos, vel, 1227 + (npc_type - 639), 1.0); // :85940
 }
 
-/// The critter family death (`NPC.cs:85942-86090`): the 10-dust type-5
-/// burst (SpeedX `2*hitDirection`, SpeedY -2), then the per-type gore list
-/// at position. This commit ports the bunny group (46/303/337/540 → 76/77,
+/// The critter family death (`NPC.cs:85942-86090`, sites 601-654): the
+/// 10-dust type-5 burst (SpeedX `2*hitDirection`, SpeedY -2), then the
+/// per-type gore list at position. The bunny group (46/303/337/540 → 76/77,
 /// the 303 adds a 10-dust type-193 burst, the 540 adds 926), the crab 67
-/// (95/95/96) and the goldfish 55/230 (553/554). The remaining critter
-/// types land with the next batches. Scale defaults to 1.
+/// (95/95/96), the goldfish 55/230 (553/554), the dolphin 615, the birds,
+/// the macaws/toucan/cockatiels (head at position + wings at Center±4), the
+/// single-gore critters, the flying fish (587 adds an extra 50-dust burst)
+/// and the turtles. Scale defaults to 1.
 fn critter_family_death(
     npc: &Npc,
     npc_type: i32,
@@ -4068,6 +4071,20 @@ fn critter_family_death(
         gore.new_gore(rng, world, pos, vel, 1167, 1.0); // :86073
         gore.new_gore(rng, world, pos, vel, 1168, 1.0); // :86074
         gore.new_gore(rng, world, pos, vel, 1168, 1.0); // :86075
+    }
+    // `:86077-86083` — the jungle turtle 617.
+    else if npc_type == 617 {
+        gore.new_gore(rng, world, pos, vel, 1169, 1.0); // :86079
+        gore.new_gore(rng, world, pos, vel, 1170, 1.0); // :86080
+        gore.new_gore(rng, world, pos, vel, 1171, 1.0); // :86081
+        gore.new_gore(rng, world, pos, vel, 1171, 1.0); // :86082
+    }
+    // `:86084-86090` — the sea turtle 625.
+    else if npc_type == 625 {
+        gore.new_gore(rng, world, pos, vel, 1194, 1.0); // :86086
+        gore.new_gore(rng, world, pos, vel, 1195, 1.0); // :86087
+        gore.new_gore(rng, world, pos, vel, 1196, 1.0); // :86088
+        gore.new_gore(rng, world, pos, vel, 1196, 1.0); // :86089
     }
 }
 
@@ -4544,18 +4561,17 @@ pub fn hit_effect_c(
     if (639..=645).contains(&npc_type) && npc.hp <= 0 {
         gem_squirrel_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:85942-86091` — the critter family arm; the bunny group / crab /
-    // goldfish (sites 601-610) + dolphin / bird / birds / scarlet macaw
-    // (sites 611-620) + blue macaw / toucan / yellow cockatiel (sites
-    // 621-629) + gray cockatiel / squirrels / mouse / rat / seahorse /
-    // anglerfish (sites 630-638) + flying fish / eyeball flying fish /
-    // turtle (sites 639-646); the rest lands with the next batches.
+    // `:85942-86091` — the critter family arm, COMPLETE (sites 601-654):
+    // the bunny group / crab / goldfish, dolphin / bird / birds / macaws /
+    // toucan / cockatiels, squirrels / mouse / rat / seahorse / anglerfish,
+    // flying fish / eyeball flying fish / turtles.
     if (npc_type == 46 || npc_type == 303 || npc_type == 337 || npc_type == 540 || npc_type == 67
         || npc_type == 55 || npc_type == 230 || npc_type == 615 || npc_type == 74
         || npc_type == 297 || npc_type == 298 || npc_type == 671 || npc_type == 672
         || npc_type == 673 || npc_type == 674 || npc_type == 675 || npc_type == 299
         || npc_type == 538 || npc_type == 300 || npc_type == 610 || npc_type == 626
-        || npc_type == 102 || npc_type == 224 || npc_type == 587 || npc_type == 616)
+        || npc_type == 102 || npc_type == 224 || npc_type == 587 || npc_type == 616
+        || npc_type == 617 || npc_type == 625)
         && npc.hp <= 0
     {
         critter_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
@@ -7246,6 +7262,22 @@ mod tests {
         critter_family_death(&n, 616, &mut dust3, &ctx(), &mut gore3, &mut rng3, &w, 1.0);
         let types3: Vec<i32> = gore3.slots()[..4].iter().map(|g| g.gore_type).collect();
         assert_eq!(types3, vec![1166, 1167, 1168, 1168]);
+    }
+
+    /// `NPC.cs:86079-86089` — the jungle turtle 617 (1169/1170/1171/1171)
+    /// and sea turtle 625 (1194/1195/1196/1196).
+    #[test]
+    fn w4_f10_the_critter_family_jungle_sea_turtle() {
+        let w = air();
+        for (ty, gores) in [(617, [1169, 1170, 1171, 1171]), (625, [1194, 1195, 1196, 1196])] {
+            let n = boss(100.0, 100.0, 40.0, 30.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(607);
+            critter_family_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, gores, "turtle {ty}");
+        }
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
