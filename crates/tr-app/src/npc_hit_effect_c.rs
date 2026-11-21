@@ -139,6 +139,7 @@
 //! | 571-572 | `:85757-85758` | the 494/495 Crawdad death (2 gores, per-type offset (type-494)*2) |
 //! | 573 | `:85775` | the 496/497 GiantShelly death (1 gore 739+(type-496)) |
 //! | 574-576 | `:85793-85795` | the 498-506 Salamander death (3 gores, per-type offset type-498) |
+//! | 577-586 | `:85813-85839` | the bat family 49/51/93/150/152/226 death (per-type gore lists) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -3719,6 +3720,46 @@ fn salamander_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 18.0), vel, 759 + num459, 1.0); // :85795
 }
 
+/// The bat family death (`NPC.cs:85807-85840`, sites 577-586): the 15-dust
+/// type-5 burst (SpeedX `2*hitDirection`, SpeedY -2), then the per-type
+/// gore list at position — 51 JungleBat → [83], 93 GiantBat → [107],
+/// 150 IceBat → [164,165], 152 GiantFlyingFox → [175,176,176], 226
+/// FlyingSnake → [317,318,318,319], and the `else` (49 CaveBat) → [82].
+/// Scale defaults to 1.
+fn bat_family_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:85807-85810` — the 15-dust type-5 burst.
+    for _ in 0..15 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    // `:85811-85840` — the per-type gore list.
+    let gores: &[i32] = match npc_type {
+        51 => &[83],
+        93 => &[107],
+        150 => &[164, 165],
+        152 => &[175, 176, 176],
+        226 => &[317, 318, 318, 319],
+        _ => &[82], // 49 CaveBat (the else arm)
+    };
+    let vel = Vec2::new(npc.vx, npc.vy);
+    for &ty in gores {
+        gore.new_gore(rng, world, pos, vel, ty, 1.0);
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -4164,6 +4205,13 @@ pub fn hit_effect_c(
     // `:85778-85796` — the 498-506 Salamander arm (sites 574-576).
     if (498..=506).contains(&npc_type) && npc.hp <= 0 {
         salamander_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85797-85841` — the bat family arm (sites 577-586).
+    if (npc_type == 49 || npc_type == 51 || npc_type == 93 || npc_type == 150 || npc_type == 152
+        || npc_type == 226)
+        && npc.hp <= 0
+    {
+        bat_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -6601,6 +6649,34 @@ mod tests {
             assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
             assert_eq!(gore.slot(1).position, Vec2::new(100.0, 116.0));
             assert_eq!(gore.slot(2).position, Vec2::new(100.0, 118.0));
+        }
+    }
+
+    /// `NPC.cs:85813-85839` — the bat family death: the per-type gore lists
+    /// (51→[83], 93→[107], 150→[164,165], 152→[175,176,176],
+    /// 226→[317,318,318,319], 49→[82]).
+    #[test]
+    fn w4_f10_the_bat_family_death_uses_the_per_type_list() {
+        let w = air();
+        let cases: [(i32, &[i32]); 6] = [
+            (49, &[82]),
+            (51, &[83]),
+            (93, &[107]),
+            (150, &[164, 165]),
+            (152, &[175, 176, 176]),
+            (226, &[317, 318, 318, 319]),
+        ];
+        for (ty, gores) in cases {
+            let n = boss(100.0, 100.0, 36.0, 30.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(541);
+            bat_family_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..gores.len()].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, gores, "bat {ty}");
+            for i in 0..gores.len() {
+                assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
+            }
         }
     }
 
