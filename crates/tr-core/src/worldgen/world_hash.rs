@@ -261,6 +261,11 @@ mod tests {
     // lands after `living trees` — the wall-244 fill behind the living
     // wood crosses moves this pin BY DESIGN (RNG-free, no ledger shift);
     // deferred to the gate.
+    // W4-g36 A6 (code-only): the Wall Variety pass
+    // (`WorldGen.cs:16697-16754`, `micro_finish.rs::pass_wall_variety`)
+    // lands after `slopes` — the cave-wall variety fill (196/204/208/212
+    // families) moves this pin BY DESIGN on every world with air pockets;
+    // deferred to the gate.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -319,6 +324,10 @@ mod tests {
     // W4-g36 A4 (code-only): the Wood Tree Walls pass (see SEED42_512
     // above) — the wall-244 fill moves this pin BY DESIGN; deferred.
     // RNG-free; the `a == b` halves stay untouched.
+    // W4-g36 A6 (code-only): the Wall Variety pass (see SEED42_512 above)
+    // — the cave-wall fill moves this pin BY DESIGN; deferred. Own
+    // `pass_rng("Wall Variety")` stream; the shimmer-safety re-roll reads
+    // the A1 centre (a cross-pass GenVars read, no shared-stream draw).
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

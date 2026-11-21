@@ -86,7 +86,7 @@ Waterfalls :16610 (d103 landed), Statues :16853 (g37's B1).
 | A1 Shimmer | 702e1e75 | landed (code-only; sub-vanilla width guard — SEED42_512 unchanged; DEFAULT_WORLD re-pin deferred to the gate) |
 | A2 Clean Up Dirt | 7260a9aa | landed (code-only; both pins move by design — re-pin deferred to the gate) |
 | A3 Dirt Rock Wall Runner | 7005940a | landed (code-only; both pins move by design — re-pin deferred to the gate) |
-| A4 Wood Tree Walls | (this commit) | landed (code-only; RNG-free; both pins move by design — re-pin deferred to the gate) |
+| A4 Wood Tree Walls | aa3ee000 | landed (code-only; RNG-free; both pins move by design — re-pin deferred to the gate) |
 | A5 Settle Liquids | fd098528 (f25) | yielded — f25's earlier orphan claim wins |
-| A6 Wall Variety | — | pending |
+| A6 Wall Variety | (this commit) | landed (code-only; both pins move by design — re-pin deferred to the gate) |
 | A7 Life Crystals | — | pending |

@@ -1406,6 +1406,12 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("remove water", "Remove Water From Sand", step_remove_water),
     step!("shell piles", "Shell Piles", step_shell_piles),
     step!("slopes", "Smooth World", step_slopes),
+    // The vanilla Wall Variety slot (`WorldGen.cs:16697`): after Smooth
+    // World (`:16419`) / Waterfalls (`:16610`, d103) / Ice (`:16667`, the
+    // port's fragile ice stands in earlier), before Life Crystals
+    // (`:16755`, W4-g36 A7) — W4-g36 A6. Own `pass_rng("Wall Variety")`
+    // stream; reads the Shimmer pass's published centre.
+    step!("wall variety", "Wall Variety", step_wall_variety),
     step!("living trees", "Living Trees", step_living_trees),
     // The vanilla Wood Tree Walls slot (`WorldGen.cs:15717`): immediately
     // after Living Trees (`:15476`), before Altars (`:15750`) — W4-g36
@@ -2704,6 +2710,35 @@ fn step_slopes(
     surface::apply_slopes(world, width, heights);
 }
 
+/// The vanilla Wall Variety slot (`WorldGen.cs:16697-16754`) — W4-g36
+/// A6: the cave-wall variety fill on the pass's own stream. The
+/// `Skyblock.denyAllGeneration` gate (`:16699`) lives here; the shimmer
+/// safety distance reads the Shimmer pass's published centre.
+fn step_wall_variety(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // `!Skyblock.denyAllGeneration` (`:16699`).
+    if opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let layers = *gv.layers();
+    let remix = opts.flags.contains(crate::seeds::SeedFlags::REMIX);
+    micro_finish::pass_wall_variety(
+        world,
+        layers.world_surface,
+        layers.rock_layer,
+        gv.lava_line,
+        gv.shimmer_position,
+        remix,
+        &mut streams.pass_rng("Wall Variety"),
+    );
+}
+
 fn step_living_trees(
     world: &mut World,
     gv: &mut GenVars,
@@ -3297,7 +3332,9 @@ mod tests {
         // Runner", `WorldGen.cs:15461`) after `clean up dirt`.
         // W4-g36 A4: + `wood tree walls` (vanilla "Wood Tree Walls",
         // `WorldGen.cs:15717`) between `living trees` and `trees`.
-        assert_eq!(names.len(), 70);
+        // W4-g36 A6: + `wall variety` (vanilla "Wall Variety",
+        // `WorldGen.cs:16697`) between `slopes` and `living trees`.
+        assert_eq!(names.len(), 71);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3390,6 +3427,7 @@ mod tests {
                 "remove water",
                 "shell piles",
                 "slopes",
+                "wall variety",
                 "living trees",
                 "wood tree walls",
                 "trees",
@@ -3648,6 +3686,28 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Living Trees") < cpos("Wood Tree Walls"));
         assert!(cpos("Wood Tree Walls") < cpos("Altars"));
+    }
+
+    /// W4-g36 A6: `wall variety` sits after `slopes` (Smooth World
+    /// `WorldGen.cs:16419`) and before `living trees` — the vanilla chain
+    /// Smooth World (`:16419`) → Waterfalls (`:16610`) → Ice (`:16667`) →
+    /// Wall Variety (`:16697`) → Life Crystals (`:16755`) puts it ahead
+    /// of the Living Trees slot (`:15476`) in the port's grouped order.
+    #[test]
+    fn w4_g36_a6_the_wall_variety_step_sits_after_the_slopes() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("wall variety"), pos("slopes") + 1);
+        assert_eq!(names[pos("wall variety") + 1], "living trees");
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Smooth World") < cpos("Wall Variety"));
+        assert!(cpos("Wall Variety") < cpos("Life Crystals"));
     }
 
     #[test]

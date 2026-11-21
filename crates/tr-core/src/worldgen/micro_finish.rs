@@ -657,9 +657,346 @@ pub(crate) fn pass_dirt_rock_wall_runner(
     }
 }
 
+// --- Wall Variety (W4-g36 A6) --------------------------------------------------
+
+/// `WorldGen.RandomWorldPoint(top, right, bottom, left)`
+/// (`WorldGen.cs:27111-27114`): `Next(left, maxTilesX - right)` then
+/// `Next(top, maxTilesY - bottom)` — X first, Y second.
+fn random_world_point(
+    world: &World,
+    rng: &mut super::Rng,
+    top: i32,
+    right: i32,
+    bottom: i32,
+    left: i32,
+) -> (i32, i32) {
+    let x = rng.range(left, world.width - right);
+    let y = rng.range(top, world.height - bottom);
+    (x, y)
+}
+
+/// `Modifiers.IsNotSolid` (`Modifiers.cs:573-583`): `!active ||
+/// !SolidOrSlopedTile(x, y)` — the flood-fill's passable-cell gate.
+/// `SolidOrSlopedTile` (`WorldGen.cs:69985-70009`) is active + tileSolid +
+/// !tileSolidTop + !inActive (slopes/half-bricks pass).
+fn is_not_solid(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    let solid_or_sloped = t.active()
+        && crate::tiledata::TILE_SOLID.has(t.kind)
+        && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
+        && !t.inactive();
+    !t.active() || !solid_or_sloped
+}
+
+/// `Modifiers.IsTouching(useDiagonals: true, ids)` (`Modifiers.cs:278-321`):
+/// any of the 8 neighbours active with a kind in `ids`. The DIRECTIONS
+/// order is N, E, W, S, NE, NW, SW, SE (`:315-319`).
+fn is_touching(world: &World, x: i32, y: i32, ids: &[u16]) -> bool {
+    const DIRS: [(i32, i32); 8] = [
+        (0, -1), (1, 0), (-1, 0), (0, 1), (-1, -1), (1, -1), (-1, 1), (1, 1),
+    ];
+    for (dx, dy) in DIRS {
+        if let Some(t) = world.tile(x + dx, y + dy) {
+            if t.active() && ids.contains(&t.kind) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// `ShapeFloodFill(1000).Perform` (`ShapeFloodFill.cs:17-58`) over the
+/// `IsNotSolid → Blank.Output(shapeData) → ContinueWrapper(...)` chain:
+/// the BFS collects every reachable non-solid cell (relative to the
+/// origin, deduped, insertion order — the `ShapeData` HashSet the C#
+/// `OuterOutline` iterates) and flags `foundInvalidTile` when a collected
+/// cell touches the invalid kinds. Returns `(cells, found_invalid,
+/// completed)` — `completed` is the C# `queue.Count == 0` result the
+/// `flag2` gate reads (`:16740`'s `& flag2`).
+///
+/// The ContinueWrapper (`Actions.cs:12-26`) always returns true, so every
+/// non-solid cell is collected and fans out regardless of the inner
+/// IsTouching result; the inner chain only sets `foundInvalidTile`. The
+/// non-jungle arm's two IsTouching modifiers are chained — the first
+/// (with 60) gates the second (without 60), so a cell touching ONLY mud
+/// (60) passes the first but fails the second and sets nothing; the
+/// jungle arm's single IsTouching (without 60) is the same effective
+/// predicate. Both reduce to "touches {147,161,396,397,70,191}".
+fn flood_fill_wall_variety(
+    world: &World,
+    origin: (i32, i32),
+    max_actions: i32,
+) -> (Vec<(i32, i32)>, bool, bool) {
+    const INVALID: [u16; 6] = [147, 161, 396, 397, 70, 191];
+    let mut queue: std::collections::VecDeque<(i32, i32)> = std::collections::VecDeque::new();
+    let mut visited: HashSet<(i32, i32)> = HashSet::new();
+    let mut cells: Vec<(i32, i32)> = Vec::new();
+    let mut found_invalid = false;
+    queue.push_back(origin);
+    let mut budget = max_actions;
+    while !queue.is_empty() && budget > 0 {
+        let p = queue.pop_front().unwrap();
+        if visited.contains(&p) {
+            continue;
+        }
+        // UnitApply → the IsNotSolid gate (`:16731`/`:16735`).
+        if !is_not_solid(world, p.0, p.1) {
+            continue;
+        }
+        visited.insert(p);
+        budget -= 1;
+        // Blank.Output(shapeData): record relative to the origin.
+        cells.push((p.0 - origin.0, p.1 - origin.1));
+        // The ContinueWrapper's inner IsTouching chain sets the flag.
+        if is_touching(world, p.0, p.1, &INVALID) {
+            found_invalid = true;
+        }
+        // The 4-way fan with the C#'s bounds (`:30-45`).
+        if p.0 + 1 < world.width - 1 {
+            queue.push_back((p.0 + 1, p.1));
+        }
+        if p.0 - 1 >= 1 {
+            queue.push_back((p.0 - 1, p.1));
+        }
+        if p.1 + 1 < world.height - 1 {
+            queue.push_back((p.0, p.1 + 1));
+        }
+        if p.1 - 1 >= 1 {
+            queue.push_back((p.0, p.1 - 1));
+        }
+    }
+    // The C# tail drain (`:48-56`): pop until an unvisited point is found
+    // (re-enqueue it, break); `completed = queue.Count == 0`.
+    while let Some(item) = queue.pop_front() {
+        if !visited.contains(&item) {
+            queue.push_back(item);
+            break;
+        }
+    }
+    (cells, found_invalid, queue.is_empty())
+}
+
+/// `ModShapes.OuterOutline(data, useDiagonals: true, useInterior: true)`
+/// (`ModShapes.cs:28-71`) + `SkipWalls(87, 86, 244)` + `PlaceWall(num4)`:
+/// for each collected cell (relative to the flood origin), place the wall
+/// on the cell itself (useInterior) and on every 8-neighbour NOT in the
+/// collected set, unless the target's wall is 87/86/244. The outline is
+/// rebuilt around `place_origin` (the anchor tile, one row below the
+/// flood origin). `PlaceWall`'s `SquareWallFrame` is deferred per the
+/// port's plain-write convention (`evil.rs::place_evil_wall`).
+fn place_wall_variety_outline(
+    world: &mut World,
+    cells: &[(i32, i32)],
+    place_origin: (i32, i32),
+    wall: u16,
+) {
+    const OFFSETS: [(i32, i32); 8] = [
+        (1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1),
+    ];
+    let set: HashSet<(i32, i32)> = cells.iter().copied().collect();
+    let mut place = |x: i32, y: i32| {
+        if let Some(t) = world.tile_mut(x, y) {
+            if !matches!(t.wall, 87 | 86 | 244) {
+                t.wall = wall;
+            }
+        }
+    };
+    for &(cx, cy) in cells {
+        // useInterior: the cell itself, re-based to the place origin
+        // (`ModShapes.cs:48`: `datum.X + origin.X`).
+        place(cx + place_origin.0, cy + place_origin.1);
+        // The outline: neighbours not in the collected set
+        // (`ModShapes.cs:52-58`).
+        for (ox, oy) in OFFSETS {
+            if !set.contains(&(cx + ox, cy + oy)) {
+                place(cx + ox + place_origin.0, cy + oy + place_origin.1);
+            }
+        }
+    }
+}
+
+/// The Wall Variety pass (`GenPassNameID.CaveWallVariety`,
+/// `WorldGen.cs:16697-16754`): the cave-wall variety fill — `num =
+/// (int)(300 * (width*height / 5040000))` successful placements, each a
+/// random world point (shimmer-safety re-rolled) whose anchor tile is
+/// mud (60 → wall 204+Next(4)) or wall-less stone (1 → the rock-layer /
+/// lava-line wall band), flood-filling the air pocket above and walling
+/// its outline when the pocket is >50 cells, completed, and touches no
+/// invalid kind. The `Skyblock.denyAllGeneration` gate is the caller's.
+/// Own `pass_rng("Wall Variety")` stream.
+pub(crate) fn pass_wall_variety(
+    world: &mut World,
+    world_surface: f64,
+    rock_layer: f64,
+    lava_line: i32,
+    shimmer_position: Option<(i32, i32)>,
+    remix: bool,
+    rng: &mut super::Rng,
+) {
+    let mut num = (300.0 * ((world.width * world.height) as f64 / 5040000.0)) as i32;
+    let num2 = num;
+    let mut budget = 100000i32;
+    // The shimmer-safety distance (`WorldGen.cs:86915`).
+    let safety = super::shimmer::SHIMMER_SAFETY_DISTANCE;
+    while num > 0 && budget > 0 {
+        // The point + the shimmer-safety re-roll (`:16709-16713`).
+        let mut point = random_world_point(world, rng, world_surface as i32, 2, 190, 2);
+        if let Some((sx, sy)) = shimmer_position {
+            while ((point.0 - sx) as f64).hypot((point.1 - sy) as f64) < safety {
+                point = random_world_point(world, rng, world_surface as i32, 2, 190, 2);
+            }
+        }
+        let tile = world.tile(point.0, point.1).copied().unwrap_or_default();
+        let tile2 = world.tile(point.0, point.1 - 1).copied();
+        if !tile.active() {
+            continue;
+        }
+        let is_mud = tile.kind == 60;
+        // The wall pick (`:16718-16727`).
+        let wall: u16 = if is_mud {
+            204 + rng.range(0, 4) as u16
+        } else if tile.kind == 1 && tile2.map_or(0, |t| t.wall) == 0 {
+            if remix {
+                if point.1 as f64 > rock_layer {
+                    196 + rng.range(0, 4) as u16
+                } else if point.1 <= lava_line || rng.range(0, 2) != 0 {
+                    212 + rng.range(0, 4) as u16
+                } else {
+                    208 + rng.range(0, 4) as u16
+                }
+            } else if (point.1 as f64) < rock_layer {
+                196 + rng.range(0, 4) as u16
+            } else if point.1 >= lava_line {
+                208 + rng.range(0, 4) as u16
+            } else {
+                212 + rng.range(0, 4) as u16
+            }
+        } else {
+            0
+        };
+        if wall == 0 || tile2.is_some_and(|t| t.active()) {
+            continue;
+        }
+        // The flood fill above the anchor (`:16731-16739`).
+        let flood_origin = (point.0, point.1 - 1);
+        let (cells, found_invalid, completed) = flood_fill_wall_variety(world, flood_origin, 1000);
+        // `:16740` — `(Count > 50) & flag2` (non-short-circuit) `&& !found`.
+        if (cells.len() > 50) & completed && !found_invalid {
+            place_wall_variety_outline(world, &cells, point, wall);
+            num -= 1;
+        } else {
+            budget -= 1;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// W4-g36 A6: the flood fill collects the connected air pocket and
+    /// flags an invalid-kind touch; a solid cell blocks the fan.
+    #[test]
+    fn a6_the_flood_fill_collects_air_and_flags_invalid_touches() {
+        use crate::tile::Tile;
+        let mut w = World::new("wv".into(), 60, 60);
+        // A 5x5 air pocket at (20..25, 20..25), surrounded by stone.
+        for x in 15..30 {
+            for y in 15..30 {
+                let idx = w.index(x, y);
+                w.tiles[idx] = Tile::default();
+                if !(20..25).contains(&x) || !(20..25).contains(&y) {
+                    w.tiles[idx].kind = 1;
+                    w.tiles[idx].flags |= crate::tile::FLAG_ACTIVE;
+                }
+            }
+        }
+        let (cells, found, completed) = flood_fill_wall_variety(&w, (22, 22), 1000);
+        assert_eq!(cells.len(), 25, "the 5x5 pocket");
+        assert!(!found, "no invalid kinds");
+        assert!(completed, "the pocket is fully drained");
+        // An ice tile (161) beside the pocket flags invalid.
+        let idx = w.index(19, 22);
+        w.tiles[idx].kind = 161;
+        w.tiles[idx].flags |= crate::tile::FLAG_ACTIVE;
+        let (_, found, _) = flood_fill_wall_variety(&w, (22, 22), 1000);
+        assert!(found, "the ice touch flags invalid");
+    }
+
+    /// W4-g36 A6: the outline walls the pocket's rim (and interior) but
+    /// skips the protected walls 87/86/244.
+    #[test]
+    fn a6_the_outline_walls_the_rim_and_skips_protected_walls() {
+        use crate::tile::Tile;
+        let mut w = World::new("wv".into(), 60, 60);
+        for x in 15..30 {
+            for y in 15..30 {
+                let idx = w.index(x, y);
+                w.tiles[idx] = Tile::default();
+                if !(20..25).contains(&x) || !(20..25).contains(&y) {
+                    w.tiles[idx].kind = 1;
+                    w.tiles[idx].flags |= crate::tile::FLAG_ACTIVE;
+                }
+            }
+        }
+        // A protected living-wood wall (244) on one rim cell.
+        w.tiles[w.index(19, 22)].wall = 244;
+        let (cells, _, _) = flood_fill_wall_variety(&w, (22, 22), 1000);
+        place_wall_variety_outline(&mut w, &cells, (22, 23), 204);
+        // The rim cell left of the pocket gets the wall (the outline is
+        // re-based one row down — the place origin is the anchor tile).
+        assert_eq!(w.tile(19, 22).unwrap().wall, 244, "protected stays");
+        assert_eq!(w.tile(19, 23).unwrap().wall, 204, "the re-based rim");
+        // The interior (useInterior) is walled too.
+        assert_eq!(w.tile(22, 23).unwrap().wall, 204);
+    }
+
+    /// W4-g36 A6: the pass is deterministic (a == b) and walls a large
+    /// cavern's rim. The hand-built world carries one 80×70 air cavern in
+    /// the stone band, so a placement inside it succeeds well within the
+    /// 100000-failure budget (the C# loop's own cap).
+    #[test]
+    fn a6_the_pass_replays() {
+        use crate::tile::Tile;
+        let build = || {
+            let mut w = World::new("wv".into(), 400, 400);
+            // Stone below row 60.
+            for x in 0..400 {
+                for y in 60..400 {
+                    let idx = w.index(x, y);
+                    w.tiles[idx] = Tile::default();
+                    w.tiles[idx].kind = 1;
+                    w.tiles[idx].flags |= crate::tile::FLAG_ACTIVE;
+                }
+            }
+            // A grid of bounded air caverns (each 12x12 = 144 cells > 50,
+            // no invalid kinds) so a placement succeeds well within the
+            // 100000-failure budget regardless of the seed.
+            for cx in (60..340).step_by(40) {
+                for cy in (80..190).step_by(30) {
+                    for x in cx..(cx + 12) {
+                        for y in cy..(cy + 12) {
+                            w.tiles[w.index(x, y)] = Tile::default();
+                        }
+                    }
+                }
+            }
+            w
+        };
+        let mut a = build();
+        let mut b = build();
+        pass_wall_variety(&mut a, 60.0, 100.0, 150, None, false, &mut super::super::Rng(42));
+        pass_wall_variety(&mut b, 60.0, 100.0, 150, None, false, &mut super::super::Rng(42));
+        assert_eq!(a.tiles, b.tiles, "a == b");
+        // The pass walls the cavern rim (the stone band's wall pick is
+        // 196/208/212 + Next(4)).
+        assert!(
+            a.tiles.iter().any(|t| matches!(t.wall, 196..=215)),
+            "the pass must wall the cavern"
+        );
+    }
 
     /// W4-g36 A3: the runner converts the wall-2 pocket around its origin
     /// to 59 and leaves other walls alone; the pass replays a == b.
