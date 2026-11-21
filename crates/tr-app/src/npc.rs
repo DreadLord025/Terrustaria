@@ -6541,8 +6541,12 @@ impl Npc {
             // aiStyle-65 axis' `lacewing_step`.
             NpcKind::EmpressOfLight => self.ai_120_empress(world, player, rng),
             NpcKind::PrismaticLacewing => {
-                crate::npc_ai_lacewing::lacewing_step(self, world, player, &[], rng);
-                self.integrate_flyer_collision(world);
+                let out = crate::npc_ai_lacewing::lacewing_step(self, world, player, &[], rng);
+                if out.deactivate {
+                    self.encourage_despawn(0);
+                } else {
+                    self.integrate_flyer_collision(world);
+                }
             }
         }
     }

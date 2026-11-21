@@ -35823,6 +35823,90 @@ will call once `NpcKind::EmpressOfLight` lands. The remainder: the roster row
 `update_kind_ai` wiring + the five projectile AIs + the `IsDamageDodgeable`
 636 arm (`npc.rs:3402-3403` notes it) + the `OurFavoriteColor` enrage tint
 (render-side). 28 witness tests WRITTEN NOT RUN — **no compiler invoked**.
+
+### The empress wiring (W4-d125, 2026-11-21, code-only mode)
+
+`task/W4-d125-empress-r7-drain` closed the wiring remainder above (the
+brief's "AI_088" is a mislabel — no `AI_088` exists in `NPC.cs`; the census
++ the C# pin the machine as `AI_120_HallowBoss`, aiStyle 120). **No compiler
+invoked; the new witnesses are WRITTEN NOT RUN.**
+
+* **The roster rows**: `NpcKind::EmpressOfLight` (636) +
+  `NpcKind::PrismaticLacewing` (661) — protocol ids 229/237 (the next-free
+  band above the wyvern 223-228), the vanilla types ride the bestiary
+  entries (`HallowBoss`/`EmpressButterfly`, the `NPCID.Search.GetName`
+  keys). Every exhaustive table got its row: `to_u16`/`from_u16`,
+  `ai_style` (120/65), `size` (100×100 / 10×10), `max_hp` (70000/5),
+  `contact_damage` (80/0), `defense` (50/0), `value` (250000/0),
+  `knock_back_resist` (0/1 — 661 writes no kb row, the class default 1f
+  `NPC.cs:8533`), `no_gravity` (661 — kb>0 so the Y-pop selector reaches
+  it; 636 is kb 0, no row needed), the hit/death sounds
+  (`NPCHit1`/`NPCDeath65` + `NPCHit1`/`NPCDeath1`), the ctor's
+  boss/dontTakeDamage/alpha-255 rows, `npc_buffs` (`SpecificallyImmuneTo
+  = {31}` Confused for BOTH — `NPCID.cs:9749-9755`/`:9923-9929`), the
+  revenge `BOSS_KINDS` gate, `FindFrame` (case 636's phase-2 row pin
+  `NPC.cs:67022-67024`; case 661's 7-tick bands + the `vx*0.3` tilt
+  `:72742-72771`), the render draw/portrait arms (the NPC_636/NPC_661
+  sheets are DEFERRED — the ~71-px atlas headroom, the wyvern precedent;
+  `npc_sheet` returns None and the draw skips until the repack) and the
+  netglue hover seeds.
+* **The aiStyle-120 axis arm** (`npc.rs::ai_120_empress`, the fishron
+  adapter's shape): the live fields ride `EmpressState`/`EmpressEnv` and
+  back; every draw stays on the caller's `UpdateNPCs` stream in the
+  module's documented order. The `TargetClosest` requests resolve AHEAD
+  of the step (the fishron pre-resolution fold — RNG-free, one session
+  player); the projectile requests drain through `wants_hostile_shot_ai`
+  (the `proj_data` centre→top-left shift) and the sim's ai-shot drain
+  spawns the five kinds with `Owner: Main.myPlayer`
+  (`spawn_hostile_ai_owned`, the fishron-bolt precedent). The case-13
+  despawn maps to `EncourageDespawn(0)` (no death events).
+* **The daytime one-shot**: the machine's 9999 rows ride
+  `damage_override`; `IsDamageDodgeable`'s 636 arm
+  (`!ShouldEmpressBeEnraged()`, `NPC.cs:78752-78753`) rides a per-tick
+  adapter stamp (`empress_dodgeable`) recomputed on the POST-integration
+  position — the `&self` accessor cannot reach the World state, and the
+  contact pass runs after the AI (the C#'s read order). The loot fold
+  (`spawn_loot`'s `empress_enraged`) reads the dead clone's `ai[3]` 2|3 —
+  the Terraprisma 5005 gate (`Conditions.EmpressOfLightIsGenuinelyEnraged`).
+* **The `empressRageMode` static** is a World field (`NPC.cs:6599`): the
+  sim's tick-head pass runs the `Main.cs:17922-17924` clear (remix + no
+  live 636), the adapter's `empress_rage_mode_out` mirror writes back at
+  the tick tail (the WoF statics convention).
+* **The Prismatic Lacewing** (`npc_ai_lacewing.rs`, NEW): the 661 branch
+  of `AI_065_Butterflies` (`NPC.cs:44896-45110`) whole — the release/
+  vanish gate (`num4` 50→60 outside the Hallow, the ±1 `ToDirectionInt`
+  walk, the `ai[2] >= 60` deactivation with NO death events), the
+  INVERTED-range Opacity ramp, the `dontTakeDamage = ai[2] >= num4/2`
+  INTEGER gate, the shared tail (the scale latch, the re-aim ladder, the
+  60:1 blend, the 3-down/30-up probes, the 10-tick separation push cap
+  16, the collideX ×−0.2 bounce). RNG: the `Next(5)` dust gate always
+  drawn while `ai[2] > 0` (17 draws on a hit), the scale/re-aim ladders
+  in C# order. The sim runs the machine at the critter's slot turn with
+  the threat slice (the sibling scan the solo axis cannot see — the
+  DungeonSpirit pre-pass precedent); the axis' kind-gated 65 arm is the
+  solo/test route. 661 is noGravity but NOT noTileCollide — the
+  `UpdateCollision` flyer integration, not the raw add.
+* **The release gate fix**: `bug_net::release_npc` resolves 661 through
+  the new bestiary row (the roster-gap return was the census's MISSING
+  release gate — a released Lacewing spawned nothing). The death chain
+  (`DoDeathEvents` case 661, `NPC.cs:79493-79502`): a player-interacted
+  death (`AnyInteractions`' SP/host split) with no live 636 spawns the
+  Empress at `centre+(0,-200)+NextVector2Circular(50,50)` (the TWO draws
+  at the death site on `UpdateNPCs`), `SpawnBoss`'s Bottom anchor +
+  `timeLeft *= 20` + the HasAwoken broadcast; case 636's death raises
+  `downedEmpressOfLight` (the .wld flags byte at tail 2024 is OWNED now —
+  the golden fixture's divergence set is unchanged, the byte was already
+  walked; the .trwld rides a NEW v18 tail byte, the v17 fishron shape).
+* **The projectile-side remainders closed**: `npc_ref.is_empress` reads
+  the live kind (the sun-dance snap fires); `Damage_CanDealDamage`'s
+  919/923 `localAI[0] <= 60` telegraph invuln (`Projectile.cs:12448`)
+  gates `damage_player` before the hitbox test (a refused hit keeps the
+  slot live). STILL OPEN (the S1-D-4 doc's list): the BossNoCheese
+  immunity group, the 919 line / 923 beam / 872 trail-ring hitboxes, the
+  trail/draw work, the `OurFavoriteColor` enrage tint.
+* **Witnesses**: 7 in `npc_ai_lacewing.rs`, 9 in `world_sim/npcs.rs`'s
+  `empress_wiring_tests`, 1 in `projectile.rs` (the telegraph), the v18
+  save round-trip + the wld tail-2024 patch — all WRITTEN NOT RUN.
 ## The waterfowl family (S1-D-3 aiStyle-68, task/S1-D-3-aistyle68, 2026-11-19, code-only mode)
 
 `crates/tr-app/src/npc_ai_style68.rs` ports `NPC.AI()`'s
