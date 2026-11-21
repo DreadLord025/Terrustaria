@@ -36216,6 +36216,50 @@ helm +0.1 (`:13852-13855`) and Stardust body/legs +0.15
 reads `owner.whipRangeMultiplier` (`Projectile.cs:48301`) instead of
 the pinned 1f.
 
+## W4-f50 HURT RETIRE (2026-11-21) — the receipts + the seal
+
+The retire pass on `task/W4-f50-hurt-reactions` (DONE tip 18eeb4f44,
+code-only — receipts + docs, no code change; the drop-hunks are merger
+instructions, both-halves-one-commit like f12's f49 bridge). Full record:
+`docs/research/W4-f50-closeout.md`; the hurt-family bible:
+`docs/research/04-player-combat.md` "RETIRE — SEALED".
+
+- **Panic-63 + rederive-ladder (f12 ledger owed-merger-action):** census
+  over every `origin/task/*` branch — the arms exist on f12 (canonical
+  dispatch), f48 (a THIRD copy, new finding) and f50 only; main carries
+  neither. f12's drop-hunks (ruled at the OLD f50 tip ff56e6e51) re-pinned
+  at 18eeb4f44: the inline 63 row `player.rs:7165-7168`, the whole
+  `rederive_beetle_solar_buffs` :4726-4828 + call :4642, the wrapper/call
+  doc rewords :4631-4640/:7599-7606, the :7607 post-scan lift, the
+  :6352-6354 flag-lifecycle fix + f12's OrbContext stub, the two witness
+  retargets :16199-16215/:16342-16379. NOT landed here (deleting the sole
+  reader/writer pre-merge would strand this branch's own witnesses).
+  NEW: f48 69d499c6b carries the same panic family (grants :4514-4531,
+  field/equip/clear, inline 63 row :6809-6814) — ruled f50-canonical hurt
+  head, f48's copies drop, its dodge block + DD2 205 grant stay.
+- **f3-stealth mutual receipt:** f3 tip 75f3f7347's PLAYER-MOVE-FAMILY
+  declaration names stealth f3-canonical (`update_stealth` :9856-9976 +
+  the 1f spawn). f50's hurt write :4907 composes 1:1 (same value, same
+  post-dodge site, verified at both blobs) — drop f50's write + the 0.0
+  spawn :3024 at merge; the invis strip + the joint witness stay f50's.
+- **g64-608 keep-yours:** g64 tip 625c449e0 re-censused — NO 608 row
+  (every `\b608\b` hit is a line-number coincidence). f50's
+  `solar_flare_blast_bodies` + the census oracle stay whole; the ONE
+  overlap is the adapter — `BlastRng`'s DustRng impl is arm-for-arm
+  g64's `DustDraw`; merge lifts f50's GoreRng impl onto `DustDraw` and
+  deletes `BlastRng` (stream-identical).
+- **d70-paladin future-wire:** d70 a7620eec3 carries `PlayerNet.team`
+  :580 / `dead` :585 / `paladin_shield()` :603-612 (ee4905939 ancestor).
+  The MP task seed (closeout Receipt 4) specs the remaining inputs: the
+  remote live life sim, a peer Hurt path with the PaladinsShield
+  cooldown counter, the :38338 gate + 0.75/0.25 split + the 800-range
+  redirect, the PaladinsShieldHit particle fold. SP-unreachable FINAL
+  stands.
+- **research/04 SEALED:** the hurt-family bible (every reaction → C# →
+  port → owner → ruling) seals the hurt rows; the non-hurt M5-COMBAT
+  seeds (projectile chain, ranged split, death reason, contact var)
+  stay open. INDEX row 04 ✅.
+
 **AI_062's target search (the census items 6a-d).** (a) The aim split:
 the Tempest/UFO/Cell branch aims at `position + Size * (0.5, 0.5)` with
 `Y = 0` ONLY for the UFO 423 (`Projectile.cs:65335-65339`), distances
