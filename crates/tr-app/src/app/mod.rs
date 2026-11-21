@@ -1216,6 +1216,50 @@ mod frame_key {
         a.weather_vane_bobframe += 1;
         assert_ne!(before, a.anim_key(), "the weather-vane bob rides the key");
     }
+
+    /// W4-d127 re-verify — the `wof_key` bit-pack (`frame/draw.rs`'s
+    /// `WorldFrameKey.wof_key`, `Main.DrawWoF`'s draw inputs) is injective
+    /// over the reachable band range. The four fields occupy disjoint bit
+    /// ranges: clock [0,8), band top [8,24), band bottom [24,40), tongue
+    /// [40,41). While a wall lives the bands are always valid (the first
+    /// `style27_step` initialises them before any draw; the clamps hold them
+    /// in `[underworld+10, +80]*16`, max `2400*16 = 38400 < 2^16`), so the
+    /// sign-extended `as i64 as u64` shift never sees a negative and the
+    /// fields never overlap. This pins the pack's layout: two states that
+    /// differ in ANY one field produce different keys, and the max band
+    /// value still fits its 16-bit field without spilling into the tongue.
+    #[test]
+    fn wof_key_field_layout_is_injective_over_the_band_range() {
+        // The pack, verbatim from frame/draw.rs (the wall-present branch).
+        let pack = |clock: i32, top: i32, bottom: i32, tongue: bool| -> u64 {
+            (clock as u64)
+                | ((top as i64 as u64) << 8)
+                | ((bottom as i64 as u64) << 24)
+                | ((tongue as u64) << 40)
+        };
+        // The largest reachable band pixel value (Large world 2400 rows).
+        let max_band = 2400 * 16; // 38400 < 65536 = 2^16
+        assert!(max_band < (1 << 16), "the band fits its 16-bit field");
+        // Each field alone changes the key (disjoint ranges).
+        let base = pack(0, 1000, 2000, false);
+        assert_ne!(base, pack(1, 1000, 2000, false), "the clock rides bits [0,8)");
+        assert_ne!(base, pack(0, 1001, 2000, false), "the top rides bits [8,24)");
+        assert_ne!(base, pack(0, 1000, 2001, false), "the bottom rides bits [24,40)");
+        assert_ne!(base, pack(0, 1000, 2000, true), "the tongue rides bit 40");
+        // The max band value does not spill into the tongue bit.
+        let hi = pack(17, max_band, max_band, false);
+        assert_eq!(hi >> 40, 0, "no band bit reaches the tongue field");
+        // The clock wraps at 18 (the mouth clock's range), never reaching
+        // the band top's bit 8.
+        assert!(pack(17, 0, 0, false) < (1 << 8), "the clock stays below bit 8");
+        // A full-range sweep: distinct (top, bottom) pairs stay distinct.
+        let mut seen = std::collections::HashSet::new();
+        for top in [0, 160, 1600, 16000, max_band] {
+            for bottom in [0, 160, 1600, 16000, max_band] {
+                assert!(seen.insert(pack(0, top, bottom, false)), "({top},{bottom}) aliases");
+            }
+        }
+    }
 }
 
 /// `TR_POSE=sit|sleep` — writes the furniture beside the world spawn and

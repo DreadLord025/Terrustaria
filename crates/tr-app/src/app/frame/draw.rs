@@ -1054,6 +1054,20 @@ impl App {
                                 (scratch.wof_draw_frame_index + 1) % 18
                             };
                             let tongue = player.as_ref().is_some_and(|p| p.tongued && !p.dead);
+                            // W4-d127 re-verify (by inspection): the four fields
+                            // occupy disjoint bit ranges — clock [0,8), band top
+                            // [8,24), band bottom [24,40), tongue [40,41). The
+                            // band statics are i32 but ALWAYS valid while a wall
+                            // lives: the first style27_step initialises them
+                            // (ease_band's -1 -> target branch) in the update
+                            // half, which runs ahead of this draw half, and the
+                            // clamps hold them in [underworld+10, +80]*16 (max
+                            // 2400*16 = 38400 < 2^16). So the sign-extended
+                            // `as i64 as u64` shift never sees a negative and the
+                            // fields never overlap — the pack is injective over
+                            // reachable states (the wof_key_field_layout witness
+                            // pins it). The clock is the NEXT value draw_tiles
+                            // ticks to, so the key matches the drawn frame.
                             (next_idx as u64)
                                 | ((world.wof_draw_top as i64 as u64) << 8)
                                 | ((world.wof_draw_bottom as i64 as u64) << 24)

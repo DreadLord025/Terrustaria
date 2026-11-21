@@ -14103,6 +14103,52 @@ mod worm_tests {
         );
     }
 
+    /// W4-d127 re-verify — the `Option<&mut DustPool>` REBORROW shape
+    /// (`update_worms_ctx`'s `mut dust` param + `dust.as_deref_mut()` inside
+    /// the init `while` loop) keeps the pool alive across iterations: two
+    /// leech heads initialised in ONE pass each burst 20 dust into the SAME
+    /// pool (40 total), and the caller still owns the pool afterwards. A
+    /// consuming `if let Some(dust) = dust` would move the `Option` on the
+    /// first head and fail to compile / drop the second burst; `as_deref_mut`
+    /// reborrows `&mut DustPool` per iteration instead. This pins that the
+    /// reborrow (not a move) is what the loop runs.
+    #[test]
+    fn the_dust_reborrow_survives_two_leech_heads_in_one_pass() {
+        let world = World::new("t".into(), 64, 800);
+        let dust_ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(8000.0, 8000.0),
+            max_dust_to_draw: 6000,
+        };
+        let mut head_a = Npc::new(NpcKind::LeechHead, 160.0, 160.0, 1, 0.0);
+        head_a.hp = head_a.max_hp;
+        head_a.vx = 8.0;
+        let mut head_b = Npc::new(NpcKind::LeechHead, 400.0, 160.0, 1, 0.0);
+        head_b.hp = head_b.max_hp;
+        head_b.vx = 8.0;
+        let mut npcs = vec![head_a, head_b];
+        let mut rng = UnifiedRandom::new(11);
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut next_id = 1u32;
+        update_worms_ctx(
+            &world,
+            None,
+            &mut npcs,
+            &mut rng,
+            &mut next_id,
+            Some(&mut dust),
+            &dust_ctx,
+        );
+        assert_eq!(npcs[0].local_ai[1], 1.0, "head A latched");
+        assert_eq!(npcs[1].local_ai[1], 1.0, "head B latched (the loop reached it)");
+        // Both bursts landed in the one pool the caller still owns.
+        let live = dust.slots().iter().filter(|d| d.active).count();
+        assert_eq!(live, 40, "two 20-dust bursts share the reborrowed pool");
+    }
+
     #[test]
     fn the_head_rotates_to_its_velocity_plus_pi_over_two() {
         // `NPC.cs:52201`: every head, every tick,
