@@ -25,7 +25,7 @@ pub(crate) use doors::{bed_spawn_valid, check_bed_spawn};
 mod sentry;
 // W4-d16 — the kite items' use-path (the IsAKite 24): the LMB launch, the
 // RMB channel arm/release, the holdStyle hack + the use refusals.
-mod kites;
+pub(crate) mod kites;
 
 /// One 60 Hz tick in seconds — the fixed step the swing/item timers are paced
 /// against (`Player.Update`'s tick, `frame.rs`'s `FixedStepper::new(1.0 / 60.0)`).

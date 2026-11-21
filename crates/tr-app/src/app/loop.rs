@@ -416,6 +416,12 @@ impl ApplicationHandler for App {
                         if self.selection.select(self.selected, target, false) {
                             self.audio.play("Menu_Tick");
                         }
+                        // `Select`'s afk resets (`Player.cs:515-516`,
+                        // W4-d16 residual 8).
+                        if let Some(p) = self.player.as_mut() {
+                            p.afk_counter = 0;
+                            p.afk_counter_for_kiting = 0;
+                        }
                     }
                 }
             }
@@ -674,6 +680,11 @@ impl App {
     fn hotbar_digit(&mut self, slot: usize) {
         if self.selection.select(self.selected, slot, false) {
             self.audio.play("Menu_Tick");
+        }
+        // `Select`'s afk resets (`Player.cs:515-516`, W4-d16 residual 8).
+        if let Some(p) = self.player.as_mut() {
+            p.afk_counter = 0;
+            p.afk_counter_for_kiting = 0;
         }
     }
 

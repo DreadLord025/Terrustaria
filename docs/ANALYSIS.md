@@ -39276,9 +39276,34 @@ the item-use path, the draw and the census pins.
     `TryInterruptingItemUsage` (`Player.cs:24162-24245`) +
     `Projectile.Interrupt` (`:22179-22188`) have NO caller in the
     decompiled tree (census) — the hotbar-switch kill rides the AI's
-    held-shoot mismatch gate (`:48431`) instead. The afk auto-kite
-    (`PickItemSelectionOverride` `:17421-17424`) keeps the hotbar.rs:67
-    afkCounter skip.
+    held-shoot mismatch gate (`:48431`) instead.
+- **The afk auto-kite LANDED (residual 8)** — the hotbar.rs:67 afkCounter
+  skip is closed: `Player.afk_counter`/`afk_counter_for_kiting`
+  (`Player.cs:991-992`) + `selected_kite` (`:1464`, the ResetEffects −1
+  clear `:18432`). The counter tail (`:25497-25514`:
+  `IsConsideredStandingStill` `:3323-3333` — both |v| < 0.05 — +
+  `itemAnimation == 0 || IsAKite[HeldItem]` + the six !control gates;
+  the mouse-item / sitting / sleeping kiting-only zeros) runs in
+  `update_player` AFTER the `:25218` selection update and BEFORE the
+  movement tick (the C# reads the previous tick's velocity). The
+  `selectedKite` scan (`RefreshAutoKitingFromItemTypeAndSlot`
+  `:12843-12849` — held first `:12898`, then the 0..57 walk `:12905`;
+  the port's 50-grid, coins/ammo never kites) re-pins per tick. The
+  override (`PickItemSelectionOverride` `:17421-17428`): past
+  `AFKTimeNeededForAutoKiting` = 3600 (`:57104`) with a pinned slot and
+  no `noItems`, the selection switches to the kite slot and — while
+  `holdStyle == 0` (the pool-derived `kite_hold_out`) — forces
+  `controlUseItem = releaseUseItem = true` (the `mine_down` +
+  released-edge pair). SmartSelectLookup keeps priority (`:17417`);
+  the mouse-item slot-58 arm (`:17412-17416`) stays unported. The
+  resets: `Select` (`:515-516`, the three request sites), the
+  fully-reeled kite kill (`Projectile.cs:48597-48598`, BOTH counters),
+  the live bobber tick (`:53685`, kiting only). Skips:
+  `isOperatingAnotherEntity`/`spectating` (no port fields — the
+  single-player defaults pass), petting (no port field), the
+  `HandleSpectatingControls` clamp (`:17087`, spectating unported),
+  the plain counter's worm-spawn consumer (`AFKTimeNeededForNoWormSpawns`
+  = 300 — the field rides for the resets).
 - **The kite string DRAW** (`kite_string.rs` + `Projectile::draw_kite`):
   `Main.DrawKite` (`Main.cs:37134-37569`), the `DrawProjDirect`
   aiStyle-160 arm (`:28054-28058`). The pure geometry (the per-kind tail

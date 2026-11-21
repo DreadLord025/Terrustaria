@@ -22,9 +22,13 @@
 //! precedent); `TryInterruptingItemUsage` (`Player.cs:24162-24245`) +
 //! `Projectile.Interrupt` (`:22179-22188`) have NO caller in the
 //! decompiled tree (census — the hotbar-switch kill rides the AI's
-//! held-shoot mismatch gate instead); the afk auto-kite
-//! (`PickItemSelectionOverride` `:17421-17424`) keeps the hotbar.rs:67
-//! afkCounter skip. CODE-ONLY MODE: the witnesses are WRITTEN NOT RUN.
+//! held-shoot mismatch gate instead). W4-d16 residual 8 LANDED the afk
+//! auto-kite: the `afkCounter`/`afkCounterForKiting` fields
+//! (`Player.cs:991-992`), the standing-still counter (`:25497-25514`),
+//! the `selectedKite` scan (`RefreshAutoKitingFromItemTypeAndSlot`
+//! `:12843-12849`) and the `PickItemSelectionOverride` afk arm
+//! (`:17421-17428` — the 3600-tick gate, the holdStyle-0 use-button
+//! force). CODE-ONLY MODE: the witnesses are WRITTEN NOT RUN.
 
 use glam::Vec2;
 
@@ -130,6 +134,118 @@ pub(super) fn kite_channel_arm(app: &mut App, held: ItemSlot, hold_out: bool) ->
     p.channel_index_expected = 0;
     p.channel_shoot = 0;
     true
+}
+
+/// `Player.AFKTimeNeededForAutoKiting` (`Player.cs:994`, the
+/// `Initialize`/static assignment `:57104`): 3600 ticks = one minute.
+pub(crate) const AFK_TIME_NEEDED_FOR_AUTO_KITING: i32 = 3600;
+
+/// `Player.IsConsideredStandingStill` (`Player.cs:3323-3333`): both
+/// velocity components under 0.05 in magnitude.
+pub(crate) fn is_considered_standing_still(vx: f32, vy: f32) -> bool {
+    vx.abs() < 0.05 && vy.abs() < 0.05
+}
+
+/// `Player.Update`'s afk-counter tail (`Player.cs:25497-25514`, W4-d16
+/// residual 8): the standing-still + idle-animation (or held-kite) +
+/// no-control gate bumps BOTH counters, else both zero; the local
+/// player's carried mouse item zeroes the kiting counter (`:25507-25510`),
+/// and petting/sitting/sleeping zero it too (`:25511-25514` — petting has
+/// no port field, the sitting/sleeping pair stands). `item_animation` is
+/// the tick count (the `ticks_of` convention); `control_torch` the
+/// LeftShift smart-select key. Runs at the `update_player` seam AFTER
+/// the movement tick (the C# tail reads the post-movement velocity).
+pub(crate) fn afk_counter_tick(
+    app: &mut App,
+    item_animation: i32,
+    control_torch: bool,
+) {
+    let Some(p) = app.player.as_mut() else {
+        return;
+    };
+    let held = app.inventory[app.selected];
+    let held_is_kite = held.count > 0 && is_kite(held.kind);
+    let still = is_considered_standing_still(p.vx, p.vy)
+        && (item_animation == 0 || held_is_kite)
+        && !p.control_up
+        && !p.control_down
+        && !p.control_left
+        && !p.control_right
+        && !p.control_jump
+        && !control_torch;
+    if still {
+        p.afk_counter += 1;
+        p.afk_counter_for_kiting += 1;
+    } else {
+        p.afk_counter = 0;
+        p.afk_counter_for_kiting = 0;
+    }
+    // `:25507-25510` — the local player's carried mouse item.
+    if app.mouse_item.count > 0 {
+        p.afk_counter_for_kiting = 0;
+    }
+    // `:25511-25514` — petting (no port field) / sitting / sleeping.
+    if p.sitting || p.sleeping {
+        p.afk_counter_for_kiting = 0;
+    }
+}
+
+/// `Player.UpdateEquips`' kite scan (`Player.cs:12898` + `:12900-12905`
+/// → `RefreshAutoKitingFromItemTypeAndSlot` `:12843-12849`): the FIRST
+/// kite slot wins — the held item first, then the 0..57 inventory walk
+/// (the port's 50-grid; coins/ammo 50..57 are never kites). The C#
+/// `ResetEffects` clears `selectedKite = -1` (`:18432`) ahead of the
+/// scan; the port's reset lives in the `Player::update` ResetEffects
+/// block, so this only pins. `selected_kite <= -1` keeps the first pin.
+pub(crate) fn refresh_selected_kite(app: &mut App) {
+    let Some(p) = app.player.as_mut() else {
+        return;
+    };
+    let held = app.inventory[app.selected];
+    if p.selected_kite <= -1 && held.count > 0 && is_kite(held.kind) {
+        p.selected_kite = app.selected as i32;
+    }
+    for (j, slot) in app.inventory.iter().enumerate() {
+        if p.selected_kite > -1 {
+            break;
+        }
+        if slot.count > 0 && is_kite(slot.kind) {
+            p.selected_kite = j as i32;
+        }
+    }
+}
+
+/// `PickItemSelectionOverride`'s afk auto-kite arm (`Player.cs:17421-17428`,
+/// W4-d16 residual 8): past the 3600-tick gate with a pinned kite slot,
+/// no `noItems` lock (the `isOperatingAnotherEntity`/`spectating` halves
+/// have no port fields — the single-player defaults pass), the override
+/// selects the kite slot and — while no kite is out (`holdStyle == 0`,
+/// the pool-derived `kite_hold_out`) — forces `controlUseItem =
+/// releaseUseItem = true` (the port's `mine_down` + the released-edge
+/// pair, the `OnSelectionChanged` convention). Returns the override slot.
+/// The C# runs the mouse-item arm (`:17412-17416`, slot 58 — unported)
+/// and `SmartSelectLookup` (`:17417`) FIRST; the caller keeps that order.
+pub(crate) fn afk_auto_kite_override(app: &mut App) -> Option<usize> {
+    let gate = {
+        let Some(p) = app.player.as_ref() else {
+            return None;
+        };
+        p.afk_counter_for_kiting >= AFK_TIME_NEEDED_FOR_AUTO_KITING
+            && p.selected_kite >= 0
+            && !p.no_items
+    };
+    if !gate {
+        return None;
+    }
+    let slot = app.player.as_ref().unwrap().selected_kite as usize;
+    let held = app.inventory.get(slot).copied()?;
+    // `:17424-17427` — the use-button force only while holdStyle 0.
+    if !kite_hold_out(app, held) {
+        app.mine_down = true;
+        app.mine_released = true;
+        app.mine_prev_down = false;
+    }
+    Some(slot)
 }
 
 /// The LMB launch (`ItemCheck_Shoot`'s generic tail `Player.cs:49437` —
@@ -355,5 +471,149 @@ mod w4_d16_kite_use_tests {
             super::super::update_editing(&mut app, 1.0 / 60.0, screen);
         }
         assert_eq!(count(&app), 1, "the held button never re-launches");
+    }
+
+    /// Residual 8 — the afk-counter gate (`Player.cs:25497-25514`): the
+    /// standing-still + idle + no-control tick bumps both counters; any
+    /// control, motion or (non-kite) swing zeroes them; a held KITE keeps
+    /// counting through its swing (`IsAKite[HeldItem]`); the carried
+    /// mouse item and sitting/sleeping zero the kiting counter only.
+    #[test]
+    fn w4_d16_kite_the_afk_counter_gate() {
+        let mut app = kite_app(4367);
+        {
+            let p = app.player.as_mut().unwrap();
+            p.vx = 0.0;
+            p.vy = 0.0;
+        }
+        afk_counter_tick(&mut app, 0, false);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!((p.afk_counter, p.afk_counter_for_kiting), (1, 1));
+        // The motion refusal (`IsConsideredStandingStill`, `:3327-3329`).
+        app.player.as_mut().unwrap().vx = 0.05;
+        afk_counter_tick(&mut app, 0, false);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!((p.afk_counter, p.afk_counter_for_kiting), (0, 0), "0.05 is NOT < 0.05");
+        app.player.as_mut().unwrap().vx = 0.0;
+        // The control refusals (`:25497`'s !control chain).
+        app.player.as_mut().unwrap().control_jump = true;
+        afk_counter_tick(&mut app, 0, false);
+        assert_eq!(app.player.as_ref().unwrap().afk_counter, 0);
+        app.player.as_mut().unwrap().control_jump = false;
+        afk_counter_tick(&mut app, 0, true);
+        assert_eq!(app.player.as_ref().unwrap().afk_counter, 0, "controlTorch refuses");
+        // The swing refusal — EXCEPT the held kite (`IsAKite[HeldItem]`).
+        afk_counter_tick(&mut app, 5, false);
+        assert_eq!(app.player.as_ref().unwrap().afk_counter, 1, "the held kite counts through the swing");
+        app.inventory[app.selected] = ItemSlot { kind: 1, name: "", count: 1, prefix: 0 };
+        afk_counter_tick(&mut app, 5, false);
+        assert_eq!(app.player.as_ref().unwrap().afk_counter, 0, "the pickaxe swing refuses");
+        app.inventory[app.selected] = ItemSlot { kind: 4367, name: "", count: 1, prefix: 0 };
+        // The mouse-item zero (`:25507-25510`) — kiting only.
+        afk_counter_tick(&mut app, 0, false);
+        app.mouse_item = ItemSlot { kind: 1, name: "", count: 1, prefix: 0 };
+        afk_counter_tick(&mut app, 0, false);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!((p.afk_counter, p.afk_counter_for_kiting), (2, 0));
+        app.mouse_item = crate::item::EMPTY_SLOT;
+        // The sitting zero (`:25511-25514`).
+        app.player.as_mut().unwrap().sitting = true;
+        afk_counter_tick(&mut app, 0, false);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!((p.afk_counter, p.afk_counter_for_kiting), (3, 0));
+    }
+
+    /// Residual 8 — the selectedKite scan (`RefreshAutoKitingFromItemTypeAndSlot`
+    /// `Player.cs:12843-12849`): the held item wins first (`:12898`), then
+    /// the lowest inventory slot (`:12905`); the −1 clear is ResetEffects'
+    /// (`:18432`, the Player::update block).
+    #[test]
+    fn w4_d16_kite_the_selected_kite_scan() {
+        let mut app = kite_app(4367);
+        app.player.as_mut().unwrap().selected_kite = -1;
+        refresh_selected_kite(&mut app);
+        assert_eq!(app.player.as_ref().unwrap().selected_kite, app.selected as i32, "the held kite");
+        // The held pickaxe: the scan finds the inventory kite.
+        let mut app2 = kite_app(1);
+        app2.inventory[7] = ItemSlot { kind: 4379, name: "", count: 1, prefix: 0 };
+        app2.inventory[3] = ItemSlot { kind: 4367, name: "", count: 1, prefix: 0 };
+        app2.player.as_mut().unwrap().selected_kite = -1;
+        refresh_selected_kite(&mut app2);
+        assert_eq!(app2.player.as_ref().unwrap().selected_kite, 3, "the FIRST kite slot");
+        // No kite anywhere: stays −1.
+        let mut app3 = kite_app(1);
+        app3.player.as_mut().unwrap().selected_kite = -1;
+        refresh_selected_kite(&mut app3);
+        assert_eq!(app3.player.as_ref().unwrap().selected_kite, -1);
+    }
+
+    /// Residual 8 — the afk auto-kite override (`PickItemSelectionOverride`
+    /// `Player.cs:17421-17428`): the 3600 gate + the pinned slot select;
+    /// holdStyle 0 forces the use button (the press-edge pair), a live
+    /// kite (holdStyle 1) keeps the button untouched; the noItems lock
+    /// refuses.
+    #[test]
+    fn w4_d16_kite_the_afk_auto_kite_override() {
+        let mut app = kite_app(4367);
+        {
+            let p = app.player.as_mut().unwrap();
+            p.selected_kite = app.selected as i32;
+            p.afk_counter_for_kiting = AFK_TIME_NEEDED_FOR_AUTO_KITING - 1;
+        }
+        assert_eq!(afk_auto_kite_override(&mut app), None, "one tick short");
+        app.player.as_mut().unwrap().afk_counter_for_kiting = AFK_TIME_NEEDED_FOR_AUTO_KITING;
+        app.mine_down = false;
+        assert_eq!(afk_auto_kite_override(&mut app), Some(app.selected), "the gate fires");
+        assert!(app.mine_down && app.mine_released && !app.mine_prev_down, "the use-button force");
+        // A live kite (holdStyle 1): the override selects but never forces.
+        app.projectiles.spawn_with_data_ai_owned(766, 0, 500.0, 4000.0, 0.0, 0.0, -1, 0.0, 0.0, 0.0);
+        app.mine_down = false;
+        app.mine_released = false;
+        assert_eq!(afk_auto_kite_override(&mut app), Some(app.selected));
+        assert!(!app.mine_down, "holdStyle 1 keeps the button");
+        // The noItems refusal.
+        app.player.as_mut().unwrap().no_items = true;
+        assert_eq!(afk_auto_kite_override(&mut app), None);
+        // The unpinned slot refuses.
+        app.player.as_mut().unwrap().no_items = false;
+        app.player.as_mut().unwrap().selected_kite = -1;
+        assert_eq!(afk_auto_kite_override(&mut app), None);
+    }
+
+    /// Residual 8 — the fully-reeled kite kill zeroes both afk counters
+    /// (`Projectile.cs:48597-48598`): the auto-kite re-arms only after
+    /// another afk minute.
+    #[test]
+    fn w4_d16_kite_the_reeled_kill_zeroes_the_afk_counters() {
+        let w = World::new("t".into(), 300, 200);
+        let mut pl = crate::player::Player::spawn(&w);
+        pl.afk_counter = 500;
+        pl.afk_counter_for_kiting = AFK_TIME_NEEDED_FOR_AUTO_KITING;
+        let mut p = crate::projectile::Projectile::default();
+        p.active = true;
+        p.kind = 766;
+        p.owner = 0;
+        p.w = 4.0;
+        p.h = 4.0;
+        p.tile_collide = true;
+        p.ai[0] = 4.0; // the fully-reeled string
+        p.local_ai[2] = 4.0;
+        let (pcx, pcy) = pl.center();
+        // Beyond the 4-px string: the reel snap fires, num10 == num kills.
+        p.pos = Vec2::new(pcx - 2.0, pcy - 100.0 - 2.0);
+        let ctx = crate::projectile_ai_kites::KiteContext {
+            selected_shoot: 766, item_animation: 0, control_use_item: false,
+        };
+        struct NoRng;
+        impl tr_core::loot::DropRng for NoRng {
+            fn next_range(&mut self, min: i32, _max: i32) -> i32 { min }
+            fn next_float(&mut self) -> f32 { 0.0 }
+        }
+        crate::projectile_ai_kites::kite_step(
+            &mut p, &w, Some(&mut pl), &ctx, (0.0, 0.0, 0.0, 0.0),
+            &mut NoRng, 0, 3, 3,
+        );
+        assert!(!p.active, "the fully-reeled kill");
+        assert_eq!((pl.afk_counter, pl.afk_counter_for_kiting), (0, 0), "the afk resets");
     }
 }

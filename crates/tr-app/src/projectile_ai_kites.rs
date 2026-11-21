@@ -346,6 +346,11 @@ fn kite_logic(
         }
         p.vel.x += vector2.x * 0.2;
         if num10 == num && local {
+            // `:48597-48598` — the fully-reeled kill zeroes BOTH afk
+            // counters (W4-d16 residual 8 — the auto-kite re-arms after
+            // another afk minute, not instantly).
+            pl.afk_counter = 0;
+            pl.afk_counter_for_kiting = 0;
             kill(p);
             return;
         }

@@ -20107,6 +20107,16 @@ impl ProjectilePool {
                                 rng,
                             );
                             if alive {
+                                // `:53685` — the live bobber zeroes the
+                                // owner's kiting afk counter every tick
+                                // (W4-d16 residual 8; the kill gates above
+                                // returned already, the C# reset sits
+                                // behind them).
+                                if self.slots[i].owner == local_owner {
+                                    if let Some(pl) = player.as_deref_mut() {
+                                        pl.afk_counter_for_kiting = 0;
+                                    }
+                                }
                                 // `HandleMovement`'s default integrate
                                 // (`Projectile.cs:19851`): the bobber's
                                 // tileCollide is true in the cast state, false

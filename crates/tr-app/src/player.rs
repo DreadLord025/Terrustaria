@@ -935,6 +935,25 @@ pub struct Player {
     /// exemption (`ItemCheck_CheckCanUse_Inner` `:52140-52148`) and
     /// `Dismount`'s restore (`Mount.cs:6152-6155`) read it.
     pub no_items: bool,
+    /// `Player.afkCounter` / `afkCounterForKiting` (`Player.cs:991-992`,
+    /// W4-d16 residual 8): the standing-still counters the `Player.Update`
+    /// tail bumps (`:25497-25506` — `IsConsideredStandingStill &&
+    /// (itemAnimation == 0 || IsAKite[HeldItem]) && !controlUp/Down/Left/
+    /// Right/Jump/Torch`). The kiting counter feeds the afk auto-kite
+    /// override (`PickItemSelectionOverride` `:17421-17428`, the
+    /// `AFKTimeNeededForAutoKiting` = 3600 cap `:57104`); the plain
+    /// counter's worm-spawn consumer (`AFKTimeNeededForNoWormSpawns` =
+    /// 300, `:57102`) is unported but the field rides for the resets
+    /// (`Select` `:515-516`, the fully-reeled kite kill
+    /// `Projectile.cs:48597-48598`).
+    pub afk_counter: i32,
+    pub afk_counter_for_kiting: i32,
+    /// `Player.selectedKite` (`Player.cs:1464`): the FIRST inventory slot
+    /// holding a kite item, refreshed by `UpdateEquips`'
+    /// `RefreshAutoKitingFromItemTypeAndSlot` (`:12843-12849` — the held
+    /// item first `:12898`, then the 0..57 scan `:12905`); `ResetEffects`
+    /// clears to −1 (`:18432`). The afk auto-kite override selects it.
+    pub selected_kite: i32,
     /// `Player.cursed` (`Player.cs:2334`): the Cursed (23) flag pair
     /// (`:11734`); `ResetEffects` clears (`:18688`).
     pub cursed: bool,
@@ -2962,6 +2981,9 @@ impl Player {
             silence: false,
             dazed: false,
             no_items: false,
+            afk_counter: 0,
+            afk_counter_for_kiting: 0,
+            selected_kite: -1,
             cursed: false,
             empress_brooch: false,
             ignore_water: false,
@@ -5910,6 +5932,10 @@ impl Player {
         self.cursed = false;
         // `Player.cs:18455`: `empressBrooch = false`.
         self.empress_brooch = false;
+        // `Player.cs:18432`: `selectedKite = -1` — the UpdateEquips scan
+        // (`RefreshAutoKitingFromItemTypeAndSlot`, `:12843-12849`) re-pins
+        // it per tick (the world-sim's afk worker, W4-d16 residual 8).
+        self.selected_kite = -1;
         self.spiked_boots = 0;
         self.ignore_water = false;
         self.lava_vision = false;

@@ -1845,6 +1845,13 @@ impl App {
                     if self.selection.select(self.selected, slot, false) {
                         self.audio.play("Menu_Tick"); // `Select`, `:506`
                     }
+                    // `Select`'s afk resets (`Player.cs:515-516`, W4-d16
+                    // residual 8) — past the air refusal, every request
+                    // zeroes both counters.
+                    if let Some(p) = self.player.as_mut() {
+                        p.afk_counter = 0;
+                        p.afk_counter_for_kiting = 0;
+                    }
                 }
             }
             return;
