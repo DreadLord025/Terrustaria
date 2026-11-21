@@ -640,6 +640,14 @@ pub struct Projectile {
     /// vec. B-6d: a Vec, not an Option — the 579 spawns TWO VortexAliens
     /// and the single Option overwrote the first.
     pub wants_mark_spawn: Vec<(u16, f32, f32, f32, f32)>,
+    /// W4-d9 wiring — the aiStyle-89 ritual's 300-tick dragon/squid spawn
+    /// (`Projectile.cs:32346-32356`): the (vanilla npc_type 454/521,
+    /// centre X, centre Y) request the world_sim resolves into the NPC
+    /// vec, THEN writes the returned NPC index back into the marker's
+    /// `ai[1]` (the C#'s `this.ai[1] = NPC.NewNPC(...)`, `:32350`/`:32354`
+    /// — the host-validity arm reads it). Separate from `wants_mark_spawn`
+    /// so the AI_103 mark drain keeps its verbatim shape.
+    pub wants_ritual_npc_spawn: Option<(u16, f32, f32)>,
     /// The 578's 580 spawn (`Projectile.cs:33838-33841`): the (x, y,
     /// vx, vy, ai0) payload the world_sim resolves into the pool.
     pub wants_ritual_bolt: Option<(f32, f32, f32, f32, f32)>,
@@ -826,6 +834,7 @@ impl Default for Projectile {
             bonus_tag_damage: 0,
             armor_penetration: 0,
             wants_mark_spawn: Vec::new(),
+            wants_ritual_npc_spawn: None,
             wants_ritual_bolt: None,
             wants_shark_spawn: None,
             wants_cloud_segment: None,
@@ -16110,6 +16119,21 @@ impl ProjectilePool {
         out
     }
 
+    /// W4-d9 wiring — the aiStyle-89 ritual's 300-tick dragon/squid spawn
+    /// (`Projectile.cs:32346-32356`): the (slot, vanilla npc_type, centre
+    /// X, centre Y) requests the world_sim resolves into the NPC vec. The
+    /// slot rides along so the sim can write the returned NPC index back
+    /// into the marker's `ai[1]` (the C#'s `this.ai[1] = NPC.NewNPC(...)`).
+    pub fn drain_ritual_npc_spawns(&mut self) -> Vec<(usize, u16, f32, f32)> {
+        let mut out = Vec::new();
+        for (i, p) in self.slots.iter_mut().enumerate() {
+            if let Some((npc_type, x, y)) = p.wants_ritual_npc_spawn.take() {
+                out.push((i, npc_type, x, y));
+            }
+        }
+        out
+    }
+
     /// `AI_108`'s 578 bolt spawn (`Projectile.cs:33838-33841`): the lightning
     /// marker resolves into a `VORTEX_RITUAL_BOLT` (580) with the marker's
     /// owner/damage/knockBack and the aim payload `(x, y, vx, vy, ai0)`.
@@ -17961,8 +17985,9 @@ impl ProjectilePool {
                         // dust bursts (draws consumed), the 300-tick
                         // dragon/squid spawn request, the 320-tick kill, the
                         // host-validity kill. The spawn carries the vanilla
-                        // 454/521; the drain skips them until the summon
-                        // kinds land (the module doc's deviation).
+                        // 454/521; the drain resolves them through
+                        // kind_from_net_id and writes the NPC index back
+                        // into ai[1] (the W4-d9 wiring).
                         89 => {
                             let any_dragon =
                                 npcs.iter().any(|n| n.hp > 0 && n.kind.net_id() == 454);
@@ -30579,6 +30604,7 @@ mod phasmal_projectile_tests {
             net_update: false,
             ignore_water: false,
             wants_mark_spawn: Vec::new(),
+            wants_ritual_npc_spawn: None,
             wants_ritual_bolt: None,
             wants_shark_spawn: None,
             wants_cloud_segment: None,
@@ -30988,6 +31014,7 @@ mod ritual_projectile_tests {
             net_update: false,
             ignore_water: false,
             wants_mark_spawn: Vec::new(),
+            wants_ritual_npc_spawn: None,
             wants_ritual_bolt: None,
             wants_shark_spawn: None,
             wants_cloud_segment: None,

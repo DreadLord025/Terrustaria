@@ -515,6 +515,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(DESTROYER_SHEETS)
             .chain(FISHRON_SHEETS)
             .chain(SMALL_KIND_SHEETS)
+            .chain(CULTIST_DRAGON_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1113,6 +1114,16 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // (the officer's shield overlay, `Main.cs:25773-25777`) — the
         // fishron-hazard precedent. The turret has its own entry (387).
         NpcKind::ForceBubble => 384,
+        // W4-d9 wiring (d40 rows): the dragon segments' bestiary credits
+        // fold onto the head (`entry_for_npc`), but their DRAW sheets are
+        // their own `TextureAssets.Npc[type]` (455-459) — the fishron-
+        // hazard precedent. The head 454 + the squidhead 521 keep their
+        // own net ids (no hand row needed).
+        NpcKind::CultistDragonBody1 => 455,
+        NpcKind::CultistDragonBody2 => 456,
+        NpcKind::CultistDragonBody3 => 457,
+        NpcKind::CultistDragonBody4 => 458,
+        NpcKind::CultistDragonTail => 459,
         _ => kind.net_id() as u16,
     }
 }
@@ -1245,6 +1256,16 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     250, // the Angry Nimbus
     288, // the Dungeon Spirit
     384, // the Force Bubble
+];
+
+/// W4-d9 wiring (the d40 dragon rows): the Phantasm Dragon's chain + the
+/// 521 squidhead draw their own sheets (`TextureAssets.Npc[type]`), keyed
+/// by the vanilla net id in [`NpcAssets::npc_sheet`] like the families.
+pub(crate) const CULTIST_DRAGON_SHEETS: &[u32] = &[
+    454, // the Phantasm Dragon head
+    455, 456, 457, 458, // the four body segments
+    459, // the tail
+    521, // the Ancient Vision (the squidhead)
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -2140,6 +2161,10 @@ fn npc_health_bar_scale(kind: NpcKind) -> f32 {
         | DukeFishron
         // `Main.cs:45911-45914` — `if (type == 87) scale = 1.5f`.
         | WyvernHead
+        // W4-d9 wiring: `Main.cs:45915-45918` — `if (type == 510 || type
+        // == 454 || type == 621) scale = 1.5f` (the 454 dragon head; the
+        // 510/621 worm heads have no port kind).
+        | CultistDragonHead
         | AncientCultist => 1.5,
         _ => 1.0,
     }
@@ -3169,6 +3194,22 @@ pub(crate) fn draw_npcs(
             }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
+            }
+            // W4-d9 wiring (d40 rows): the Phantasm Dragon's chain draws
+            // its own sheets (`CULTIST_DRAGON_SHEETS`) at the vanilla row
+            // counts (`Main.npcFrameCount` 454 = 3, 455-459 = 1) with the
+            // generic centred anchor — the small-kinds shape. The 521
+            // squidhead's 4-row strip (`npcFrameCount[521]` = 4) rides the
+            // same arm.
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2
+            | NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail
+            | NpcKind::AncientCultistSquidhead => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
         };
         let Some(tex) = tex else {

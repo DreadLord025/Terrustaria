@@ -484,6 +484,19 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+        // W4-d9 wiring (d40 rows): the dragon family's
+        // `ImmuneToAllBuffsThatAreNotWhips` rows carry NO
+        // `SpecificallyImmuneTo` list (the &[] mask gap, `NPCID.cs`'s
+        // DebuffImmunitySets) — the null-row else-branch, no immunity.
+        NpcKind::CultistDragonHead
+        | NpcKind::CultistDragonBody1
+        | NpcKind::CultistDragonBody2
+        | NpcKind::CultistDragonBody3
+        | NpcKind::CultistDragonBody4
+        | NpcKind::CultistDragonTail => &[],
+        // W4-d9 wiring: the 521 squidhead's 14-id `SpecificallyImmuneTo`
+        // row (`NPCID.cs:9040-9048`).
+        NpcKind::AncientCultistSquidhead => &[20, 24, 31, 39, 44, 69, 70, 395, 153, 189, 203, 204, 323, 324],
     }
 }
 

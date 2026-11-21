@@ -17,21 +17,18 @@
 //! * `:32362-32381` — the host-validity kill: `ai[1]==-1` dies at alpha 255;
 //!   else the host NPC must be active and type 439/454/521.
 //!
-//! The dragon/squid spawn rides `p.wants_mark_spawn` (the pool's NPC-vec
-//! drain, the `AI_103` precedent), carrying the VANILLA id 454/521 verbatim
-//! (`:32350`/`:32354`). The C# stores the returned NPC index into `ai[1]`;
-//! the port's drain resolves the index (the wiring's job — the request
-//! carries the spawn, the `ai[1]` write-back lands with the drain).
+//! The dragon/squid spawn rides `p.wants_ritual_npc_spawn` (the pool's
+//! NPC-vec drain, the `AI_103` precedent), carrying the VANILLA id 454/521
+//! verbatim (`:32350`/`:32354`). The C# stores the returned NPC index into
+//! `ai[1]`; the port's drain resolves the index (the wiring's job — the
+//! request carries the spawn, the `ai[1]` write-back lands with the drain).
 //!
-//! Documented deviation (W4-d9, code-only): the dragon head (vanilla 454)
-//! and the squidhead (521) have NO port `NpcKind` yet — the cultist
-//! machine's census records the summons as unported wiring-round
-//! obligations (`npc_ai_cultist.rs:81-88`). The pool's `drain_mark_spawns`
-//! resolves ids through `NpcKind::from_u16` (the CS ids) with a Slime
-//! fallback, so a raw 454/521 would misresolve; the drain gains an explicit
-//! vanilla-id skip (`world_sim/projectiles.rs`, the `drain_shark_spawns`
-//! `_ => continue` precedent) until the summon kinds land. The request
-//! shape stays verbatim so the wiring round only adds the kinds.
+//! W4-d9 WIRING: the dragon head (vanilla 454, the d40 7a88c61c/45dbafc3
+//! rows) and the squidhead (521, ported from `NPC.cs:15768-15779`) now have
+//! port `NpcKind`s. The pool's `drain_ritual_npc_spawns` resolves the ids
+//! through `kind_from_net_id` (the bestiary NET-id space, the
+//! `spawn_shimmer_release` precedent) and writes the spawned NPC's index
+//! back into the marker's `ai[1]` — the host-validity arm below reads it.
 //!
 //! Movement: the marker is stationary (the C# `UpdatePosition` adds the
 //! zero velocity); the dispatch runs the generic `kill_step` (tileCollide
@@ -70,7 +67,7 @@ fn center(p: &Projectile) -> Vec2 {
 /// `AI()`'s aiStyle-89 arm (`Projectile.cs:32262-32386`). `npcs` is the live
 /// NPC list (the host-validity read), `any_dragon` is `NPC.AnyNPCs(454)`,
 /// `rng` the `UpdateProjectiles` stream. The dragon/squid spawn rides
-/// `p.wants_mark_spawn`.
+/// `p.wants_ritual_npc_spawn`.
 pub(crate) fn ai_cultist_ritual(
     p: &mut Projectile,
     npcs: &[Npc],
@@ -116,9 +113,9 @@ pub(crate) fn ai_cultist_ritual(
         let c = center(p);
         // NPC.NewNPC's Bottom = (X, Y) (`NPC.cs:80770`); the dragon head
         // (454) if none alive, else the squidhead (521). The spawn rides
-        // wants_mark_spawn (the pool's NPC-vec drain).
+        // wants_ritual_npc_spawn (the pool's NPC-vec drain).
         let npc_type = if !any_dragon { 454u16 } else { 521u16 };
-        p.wants_mark_spawn.push((npc_type, c.x, c.y, 0.0, 0.0));
+        p.wants_ritual_npc_spawn = Some((npc_type, c.x, c.y));
         // The C# stores the returned NPC index into ai[1]; the port's
         // drain resolves the index (the wiring's job — the request carries
         // the spawn, the ai[1] write-back lands with the drain).
@@ -214,8 +211,8 @@ mod tests {
         for _ in 0..300 {
             ai_cultist_ritual(&mut p, &npcs, false, &mut rng);
         }
-        assert_eq!(p.wants_mark_spawn.len(), 1, "the 300-tick spawn");
-        assert_eq!(p.wants_mark_spawn[0].0, 454, "the dragon head");
+        let req = p.wants_ritual_npc_spawn.expect("the 300-tick spawn");
+        assert_eq!(req.0, 454, "the dragon head");
         for _ in 0..20 {
             ai_cultist_ritual(&mut p, &npcs, false, &mut rng);
         }
@@ -232,7 +229,7 @@ mod tests {
         for _ in 0..300 {
             ai_cultist_ritual(&mut p, &npcs, true, &mut rng);
         }
-        assert_eq!(p.wants_mark_spawn[0].0, 521, "the squidhead");
+        assert_eq!(p.wants_ritual_npc_spawn.expect("the 300-tick spawn").0, 521, "the squidhead");
     }
 
     /// The host-validity kill: a dead host kills the marker.
