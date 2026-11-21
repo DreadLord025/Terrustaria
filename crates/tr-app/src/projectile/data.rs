@@ -1174,6 +1174,13 @@ pub const GOLF_BALL: u16 = 721;
 /// false, ignoreWater, penetrate -1, hide (`Projectile.cs:7636-7645`).
 /// S1-P-i55.
 pub const GOLF_CLUB_HELPER: u16 = 722;
+/// `ProjectileID.StardewJumino` (995) — the dryad's Stardew animation
+/// (`Projectile.cs:9446-9457`): 240x104, aiStyle 192, friendly, penetrate
+/// -1, tileCollide false, ignoreWater, netImportant, `timeLeft *= 5`.
+/// Spawned by `NPC.HaveDryadDoStardewAnimation` (`NPC.cs:19226`, W4-g51
+/// id-144). The AI_192 frame machine + the Stardew draw are the animation
+/// lane's.
+pub const STARDEW_JUMINO: u16 = 995;
 
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
@@ -3969,6 +3976,16 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             GOLF_CLUB_HELPER => {
                 (2.0, 2.0, 150, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
             }
+            // `Projectile.cs:9446-9457` — the Stardew Jumino animation
+            // (995): 240x104, aiStyle 192, friendly, penetrate -1,
+            // tileCollide false, ignoreWater (the overlay), netImportant
+            // (the overlay), `timeLeft *= 5` (3600 -> 18000). The dryad's
+            // `HaveDryadDoStardewAnimation` spawns it (`NPC.cs:19226`,
+            // W4-g51 id-144); the AI_192 frame machine + the Stardew draw
+            // (`Main.cs:28170-28173`) are the animation lane's.
+            STARDEW_JUMINO => {
+                (240.0, 104.0, 192, -1, 5 * TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
+            }
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -4134,7 +4151,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             )
             // S1-P-i55 — `Projectile.cs:7628`: the golf balls (721 + the 14
             // dyed twins) set `netImportant = true` themselves.
-            || matches!(kind, GOLF_BALL | 739..=752),
+            || matches!(kind, GOLF_BALL | 739..=752)
+            // W4-g51 id-144 — `Projectile.cs:9448`: the Stardew Jumino
+            // animation sets `netImportant = true`.
+            || kind == STARDEW_JUMINO,
         ignore_water: ((minion || sentry)
             && !matches!(
                 kind,
@@ -4211,7 +4231,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == HIGH_VELOCITY_BULLET
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
-            || kind == GOLF_CLUB_HELPER,
+            || kind == GOLF_CLUB_HELPER
+            // W4-g51 id-144 — `Projectile.cs:9455`: the Stardew Jumino
+            // animation sets `ignoreWater = true`.
+            || kind == STARDEW_JUMINO,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).

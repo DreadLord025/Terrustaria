@@ -112,7 +112,7 @@ impl Default for ProjSync {
 /// The `(short)` casts are C# unchecked truncations — Rust `as i16` matches.
 /// `bannerIdToRespondTo` (`:790-793`) has no pool field yet (the banner
 /// response is unported); it rides as 0 until that lands.
-fn state_of(pool: &ProjectilePool, slot: usize) -> net::ProjectileState {
+pub(crate) fn state_of(pool: &ProjectilePool, slot: usize) -> net::ProjectileState {
     let p = &pool.slots()[slot];
     net::ProjectileState {
         key: pool.key_of(slot),

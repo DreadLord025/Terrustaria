@@ -498,6 +498,14 @@ pub(crate) struct App {
     /// subtracts the pending sum from the wire life (`GetPendingDamage`,
     /// `:90715-90727`, `MessageBuffer.cs:1668-1676`). W4-g51 id-162.
     pub(crate) net_pending_damages: Vec<crate::app::net_npc_sync::PendingDamage>,
+    /// `Player.tileEntityAnchor` (`Player.cs:2912`,
+    /// `DataStructures/PlayerInteractionAnchor.cs`) for every player slot —
+    /// the `122 RequestTileEntityInteraction` Set/Clear store
+    /// (`MessageBuffer.cs:3942-3977`). Keyed by player id →
+    /// `(interactEntityID, X, Y)`; absent = `Clear()` (-1). The host's
+    /// `TileEntity.IsOccupied` scan (`TileEntity.cs:221-234`) reads it.
+    /// W4-g51 FINAL id-122.
+    pub(crate) net_te_anchors: HashMap<u8, (i32, i32, i32)>,
     /// S1-I-4d: the per-NPC `netSpam` throttle state keyed by the stable
     /// `Npc.uid` (`NPC.cs:6133-6149`). The C# keeps it on the NPC; the port's
     /// Vec compacts on death, so the state rides the uid, not the index.
@@ -3851,6 +3859,7 @@ impl App {
             net_npcs: HashMap::new(),
             net_npcs_dirty: false,
             net_pending_damages: Vec::new(),
+            net_te_anchors: HashMap::new(),
             net_npc_states: HashMap::new(),
             net_npc_outbox: Vec::new(),
             net_npc_despawns: Vec::new(),

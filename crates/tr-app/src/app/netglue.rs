@@ -1092,12 +1092,577 @@ impl App {
                 // — the empty configured token refuses every claim.
                 self.remote_players.entry(id).or_default().host = false;
             }
+            // `case 87` — a client placed a tile entity (W4-g50 codec,
+            // `MessageBuffer.cs:3294-3305`): the in-world + free-cell gate
+            // (`:3300`), then `TileEntity.PlaceEntityNet` →
+            // `NetPlaceEntityAttempt` (`TileEntityType.cs:17-20`): place and
+            // answer with the `86` sharing broadcast. W4-g51 FINAL lift.
+            C2s::TileEntityPlacement(p) => {
+                let (x, y) = (p.x as i32, p.y as i32);
+                // `WorldGen.InWorld(x8, y8)` — the port's tile lookup bounds.
+                if self.world.tile(x, y).is_none() {
+                    return;
+                }
+                if self.world.tile_entities.get_at(p.x, p.y).is_some() {
+                    return; // `!TileEntity.TryGetAt<TileEntity>(x8, y8, …)`
+                }
+                let Some(kind) = tr_core::tile_entities::TeKind::from_id(p.kind) else {
+                    return; // `InvalidEntityID` (`TileEntitiesManager.cs:59`)
+                };
+                // The pylon's own `NetPlaceEntityAttempt`
+                // (`TETeleportationPylon.cs:13-27`): an untyped frame or a
+                // duplicate type rejects with `KillTile` + a `17` relay.
+                if kind == tr_core::tile_entities::TeKind::TeleportationPylon {
+                    let style = self
+                        .world
+                        .tile(x, y)
+                        .map(|t| t.frame_x as i32 / 54)
+                        .unwrap_or(-1);
+                    let pylon_type = tr_core::pylons::PylonType::from_tile_style(style);
+                    let duplicate = pylon_type.is_some_and(|pt| {
+                        tr_core::pylons::scan_pylons(&self.world)
+                            .iter()
+                            .any(|info| info.pylon_type == pt)
+                    });
+                    if pylon_type.is_none() || duplicate {
+                        crate::world_sim::editing::break_tile(self, x, y);
+                        server.broadcast(&S2c::Edit {
+                            x,
+                            y,
+                            kind: 0, // `KillTile`'s fail=false break
+                            tile: 0,
+                        });
+                        return;
+                    }
+                }
+                // `TileEntityType<T>.Place` — the ValidTile gate + the books.
+                let Some(id) = self.world.tile_entities.place(&self.world, kind, p.x, p.y)
+                else {
+                    return;
+                };
+                self.broadcast_tile_entity(server, id);
+            }
+            // `case 89/123/133/149` — the TryPlacing quadruplet: one shared
+            // body (f21's byte-equality pin), the per-kind `TryPlacing`
+            // (`TEItemFrame.cs:69-86` / `TEWeaponsRack.cs:135-152` /
+            // `TEFoodPlatter.cs:70-87` / `TEDeadCellsDisplayJar.cs:69-86`):
+            // no entity at the cell drops the item back; a held entity drops
+            // its old contents first, then takes the new item and shares the
+            // entity with an `86`. Host-only (`netMode != 2` breaks). The
+            // `Item.DefaultAssignNewItemsToPlayer(whoAmI)` scope routes the
+            // refused-placement drop's ownership to the sender. W4-g51 FINAL.
+            C2s::ItemFrameTryPlacing(p) => {
+                self.host_try_placing(server, id, tr_core::tile_entities::TeKind::ItemFrame, p);
+            }
+            C2s::WeaponsRackTryPlacing(p) => {
+                self.host_try_placing(server, id, tr_core::tile_entities::TeKind::WeaponsRack, p);
+            }
+            C2s::FoodPlatterTryPlacing(p) => {
+                self.host_try_placing(server, id, tr_core::tile_entities::TeKind::FoodPlatter, p);
+            }
+            C2s::DeadCellsJarTryPlacing(p) => {
+                self.host_try_placing(
+                    server,
+                    id,
+                    tr_core::tile_entities::TeKind::DeadCellsDisplayJar,
+                    p,
+                );
+            }
+            // `case 121` (`MessageBuffer.cs:3920-3941`): force the player to
+            // the sender (`:3923-3926`), read the entity id + itemIndex +
+            // command, apply `ReadData`/`ReadDummySync` to the doll, then
+            // relay to the OTHERS (`:3936-3939`, `ignoreClient = num248`).
+            // The relay re-derives the tail from the LIVE doll
+            // (`NetMessage.cs:1465-1472`), so the port re-reads the store.
+            // W4-g51 FINAL.
+            C2s::DisplayDollSync(mut d) => {
+                d.player_id = id as u8; // `:3925`
+                let applied = self.apply_doll_sync(d);
+                if applied {
+                    // The relay carries the doll's CURRENT slot/pose (the
+                    // C# writer reads the entity again, `:1465-1467`).
+                    let relay = self.doll_sync_relay(d);
+                    server.broadcast_except(&S2c::DisplayDollSync(relay), id);
+                }
+            }
+            // `case 122` (`MessageBuffer.cs:3942-3977`): force the player to
+            // the sender (`:3946-3949`). -1 clears the anchor + relays
+            // (`:3952-3957`); otherwise the `IsOccupied` + `TryGet` gate
+            // (`:3958`) sets the anchor + relays (`:3960-3961`). A refused
+            // (occupied / missing) entity sends NOTHING. W4-g51 FINAL.
+            C2s::TileEntityInteraction(mut t) => {
+                t.player_id = id as u8; // `:3948`
+                if t.entity_id == -1 {
+                    self.net_te_anchors.remove(&(id as u8)); // `Clear()`
+                    server.broadcast(&S2c::TileEntityInteraction(t)); // `:3955`
+                    return;
+                }
+                // `TileEntity.IsOccupied` (`TileEntity.cs:221-234`): any
+                // active non-dead player already anchored to this id refuses.
+                let occupied = self.net_te_anchors.iter().any(|(slot, (eid, _, _))| {
+                    *eid == t.entity_id && self.net_player_slot_active(*slot)
+                });
+                let entity = if t.entity_id >= 0 {
+                    self.world.tile_entities.get_by_id(t.entity_id as u32)
+                } else {
+                    None
+                };
+                if !occupied {
+                    if let Some(e) = entity {
+                        // `Set(id, Position.X, Position.Y)` (`:3960`).
+                        self.net_te_anchors
+                            .insert(id as u8, (t.entity_id, e.x as i32, e.y as i32));
+                        server.broadcast(&S2c::TileEntityInteraction(t)); // `:3961`
+                    }
+                }
+            }
+            // `case 124` (`MessageBuffer.cs:3995-4022`): force the player to
+            // the sender (`:3998-4001`), unfold the dye flag (`:4004-4009`),
+            // the `TryGet<TEHatRack>` + `slot >= 2` refusal reads int+byte
+            // and breaks (`:4010-4015`), else `ReadItem` + relay to the
+            // OTHERS (`:4016-4020`, `ignoreClient = num180`). W4-g51 FINAL.
+            C2s::HatRackItemSync(mut h) => {
+                h.player_id = id as u8; // `:4000`
+                let dye = h.is_dye();
+                let slot = h.slot_index();
+                let ok = h.entity_id >= 0
+                    && slot < 2
+                    && self
+                        .world
+                        .tile_entities
+                        .get_by_id(h.entity_id as u32)
+                        .is_some_and(|e| {
+                            e.kind == tr_core::tile_entities::TeKind::HatRack
+                        });
+                if !ok {
+                    return; // `:4010-4015` — the refusal consumes the tail
+                }
+                self.apply_hat_rack_item(h.entity_id as u32, slot, dye, h.item);
+                // The relay re-folds the dye flag (`NetMessage.cs:1492-1496`)
+                // and re-reads the live slot (`:1500-1503`).
+                let relay = self.hat_rack_relay(h);
+                server.broadcast_except(&S2c::HatRackItemSync(relay), id);
+            }
+            // `case 144` (`MessageBuffer.cs:4304-4309`, host-only, bodyless):
+            // `NPC.HaveDryadDoStardewAnimation` (`NPC.cs:19184-19229`).
+            // W4-g51 FINAL.
+            C2s::RequestQuestEffect => {
+                self.host_dryad_stardew(server);
+            }
+            // `case 156` (`MessageBuffer.cs:4439-4449`, host-only): the
+            // Point16 lookup + `TELeashedEntityAnchorWithItem.InsertItem`
+            // (`TELeashedEntityAnchorWithItem.cs:32-36`): store the itemType,
+            // respawn the leashed entity. The port's kite/critter anchors
+            // keep `TeData::Anchor`; the `RespawnLeashedEntity` half is the
+            // unported LeashedEntity system (M7-TE-2), so the store is the
+            // observable state. W4-g51 FINAL.
+            C2s::LeashedAnchorPlaceItem(p) => {
+                let Some(e) = self.world.tile_entities.get_at_mut(p.x, p.y) else {
+                    return; // `TryGetAt` fails
+                };
+                if !matches!(
+                    e.kind,
+                    tr_core::tile_entities::TeKind::KiteAnchor
+                        | tr_core::tile_entities::TeKind::CritterAnchor
+                ) {
+                    return; // `TryGetAt<TELeashedEntityAnchorWithItem>` type gate
+                }
+                // `InsertItem`: `this.itemType = itemType` (`:34`).
+                e.data = tr_core::tile_entities::TeData::Anchor(p.item_type as i32);
+                // `base.RespawnLeashedEntity()` (`:35`) — the LeashedEntity
+                // despawn/respawn is M7-TE-2; the itemType store lands live.
+            }
         }
     }
 
     /// The join bundle when a slot reaches `IN_WORLD` (the port's
     /// `SyncConnectedPlayer`, `NetMessage.cs:2806-2822`): the newcomer learns
     // the peers, the peers learn the newcomer.
+
+    /// The `86 TileEntitySharing` broadcast for one live entity
+    /// (`NetMessage.cs:1216-1225`): the id, the presence bool, then the
+    /// `networkSend: true` record. A tombstoned id broadcasts the removal
+    /// shape (the C# `TryGet` fails → `flag2 = false`). W4-g50 seam, lifted
+    /// for the W4-g51 TE apply arms.
+    fn broadcast_tile_entity(&self, server: &net::Server, id: u32) {
+        let record = match self.world.tile_entities.get_by_id(id) {
+            Some(e)
+                if self
+                    .world
+                    .tile_entities
+                    .get_at(e.x, e.y)
+                    .is_some_and(|live| live.id == id) =>
+            {
+                let mut w = tr_core::binio::Writer::new();
+                e.write_net(&mut w);
+                w.into_inner()
+            }
+            _ => Vec::new(),
+        };
+        server.broadcast(&S2c::TileEntitySharing(net::TileEntitySharing {
+            id: id as i32,
+            record,
+        }));
+    }
+
+    /// `TileEntity.IsOccupied`'s `player.active && !player.dead` term
+    /// (`TileEntity.cs:227`) for one slot: the host's own player (slot 0) or
+    /// a remote peer with live hp. The port's `remote_players` entries are
+    /// the active peers; hp ≤ 0 reads dead (`Player.dead = statLife <= 0`,
+    /// `MessageBuffer.cs:1111`). W4-g51 FINAL id-122.
+    fn net_player_slot_active(&self, slot: u8) -> bool {
+        if slot == 0 {
+            return self.player.as_ref().is_some_and(|p| !p.dead);
+        }
+        self.remote_players
+            .get(&(slot as u32))
+            .is_some_and(|p| p.hp > 0)
+    }
+
+    /// The TryPlacing quadruplet's shared host body (89/123/133/149 —
+    /// `TEItemFrame.TryPlacing` `TEItemFrame.cs:69-86` and its three twins,
+    /// the only differences are the `RangeFrame` rectangle and the
+    /// `DropItem` box). No entity at the cell drops the item back
+    /// (`Item.NewItem`, exact prefix); a held entity drops its old contents
+    /// first (`DropItem`, count 1), then takes the new item and shares the
+    /// entity with an `86`. W4-g51 FINAL.
+    fn host_try_placing(
+        &mut self,
+        server: &net::Server,
+        sender: u32,
+        kind: tr_core::tile_entities::TeKind,
+        p: net::TryPlacingItem,
+    ) {
+        let (x, y) = (p.x as i32, p.y as i32);
+        // `WorldGen.RangeFrame(x, y, x+N, y+N)` — the framing refresh rides
+        // the port's edit chain; the entity books are the state the message
+        // changes (the g50 89 precedent).
+        let entity = self
+            .world
+            .tile_entities
+            .get_at(p.x, p.y)
+            .filter(|e| e.kind == kind)
+            .map(|e| e.id);
+        let Some(entity_id) = entity else {
+            // `Item.NewItem(… type, stack, … prefix)` — the refused
+            // placement drops the item at the cell with the exact prefix
+            // (`Item.cs:49730`'s `Prefix(exact)` applies it directly, no
+            // fresh roll). The `DefaultAssignNewItemsToPlayer(whoAmI)`
+            // scope routes the ownership to the sender (the 100-tick
+            // grab-delay lock, `Item.cs:49757-49760`).
+            let mut drop = item::ItemDrop::new(
+                p.kind.max(0) as u16,
+                (p.stack.max(0) as u32).max(1),
+                p.prefix as u16,
+                x as f32 * TILE_PX,
+                y as f32 * TILE_PX,
+                0.0,
+                0.0,
+                0.0,
+            );
+            // The spawn scatter rides the port's pinned triplet on the bare
+            // stream (the message handler runs outside every swap,
+            // S1-E-21i — the g50 89 precedent).
+            let rng = self.rngs.global();
+            drop.vel = Vec2::new(
+                (rng.next_float() * 2.0 - 1.0) * 1.4,
+                -2.2 - rng.next_float() * 1.2,
+            );
+            drop.phase = rng.next_float() * std::f32::consts::TAU;
+            drop.apply_grab_delay(sender as u8);
+            self.items.push(drop);
+            return;
+        };
+        // `result.item.stack > 0` → `DropItem`: the old contents drop at the
+        // entity's cell (count 1, the C# `DropItem` passes no stack —
+        // `Item.NewItem`'s default), keeping the stored prefix.
+        if let Some(Some(old)) = self.world.tile_entities.item(entity_id).copied() {
+            if old.stack > 0 {
+                let mut drop = item::ItemDrop::new(
+                    old.kind,
+                    1,
+                    old.prefix as u16,
+                    x as f32 * TILE_PX,
+                    y as f32 * TILE_PX,
+                    0.0,
+                    0.0,
+                    0.0,
+                );
+                let rng = self.rngs.global();
+                drop.vel = Vec2::new(
+                    (rng.next_float() * 2.0 - 1.0) * 1.4,
+                    -2.2 - rng.next_float() * 1.2,
+                );
+                drop.phase = rng.next_float() * std::f32::consts::TAU;
+                drop.apply_grab_delay(sender as u8);
+                self.items.push(drop);
+            }
+        }
+        // `result.item = new Item(); SetDefaults(type); Prefix(prefix);
+        // stack = stack` — the exact prefix applies directly (the wire byte
+        // is the rolled id, not a -1 natural-roll marker).
+        self.world.tile_entities.set_item(
+            entity_id,
+            Some(tr_core::tile_entities::TeItem {
+                kind: p.kind.max(0) as u16,
+                prefix: p.prefix,
+                stack: p.stack.max(0) as u16,
+            }),
+        );
+        // `NetMessage.SendData(86, -1, -1, null, result.ID, x, y)`.
+        self.broadcast_tile_entity(server, entity_id);
+    }
+
+    /// `TEDisplayDoll.ReadData` (`TEDisplayDoll.cs:802-822`) + `ReadItem`
+    /// (`:766-778`) / `ReadPose` (`:846-849`): command 2 sets the pose byte;
+    /// commands 0/1/3 write one slot of the equip/dye/misc array (the
+    /// `itemIndex < collection.Length` gate). The no-entity / wrong-kind
+    /// path is `ReadDummySync` (`:835-844`): consume and discard, NO relay
+    /// (`MessageBuffer.cs:3930-3934`). Returns whether the relay fires.
+    /// W4-g51 FINAL id-121.
+    fn apply_doll_sync(&mut self, d: net::DisplayDollSync) -> bool {
+        if d.entity_id < 0 {
+            return false; // `TryGet` fails → ReadDummySync, no relay
+        }
+        let Some(e) = self.world.tile_entities.by_id_mut(d.entity_id as u32) else {
+            return false;
+        };
+        if e.kind != tr_core::tile_entities::TeKind::DisplayDoll {
+            return false; // `TryGet<TEDisplayDoll>`'s `as T` type gate
+        }
+        let tr_core::tile_entities::TeData::DisplayDoll {
+            equip,
+            dye,
+            misc,
+            pose,
+        } = &mut e.data
+        else {
+            return false;
+        };
+        let idx = d.item_index as usize;
+        if d.command == 2 {
+            // `ReadPose`: `this._pose = reader.ReadByte()` (`:846-849`).
+            if let net::DollSyncData::Pose(p) = d.data {
+                *pose = p;
+            }
+            return true;
+        }
+        // `ReadData`'s collection select (`:812-820`): command 1 → dyes,
+        // command 3 → misc, EVERY OTHER command (0 and unknowns) → equip —
+        // the C# has no default arm, the fall-through is `_equip`.
+        let net::DollSyncData::Item(it) = d.data else {
+            return true; // the tail was consumed; nothing to store
+        };
+        // `ReadItem`: SetDefaults(type); stack = stack; Prefix — the port
+        // stores the triple; an air triple clears the slot (the C#
+        // `new Item()` fallback).
+        let slot = if it.is_air() {
+            None
+        } else {
+            Some(tr_core::tile_entities::TeItem {
+                kind: it.kind.max(0) as u16,
+                prefix: it.prefix,
+                stack: it.stack.max(0) as u16,
+            })
+        };
+        // The `itemIndex < collection.Length` gate (`:771`): the equip/dye
+        // arrays hold 9, misc holds 1. An out-of-range index reads the tail
+        // but writes nothing.
+        match d.command {
+            1 if idx < 9 => dye[idx] = slot,
+            3 if idx < 1 => *misc = slot,
+            1 | 3 => {}
+            _ if idx < 9 => equip[idx] = slot,
+            _ => {}
+        }
+        true
+    }
+
+    /// The `121` relay body (`NetMessage.cs:1458-1474`): the writer re-reads
+    /// the LIVE doll's slot/pose (`WriteData`, `:1465-1467`), so the relay
+    /// carries the store's current value, not the inbound frame's. The
+    /// no-entity fallback is `WriteDummySync` (`:1471`). W4-g51 FINAL.
+    fn doll_sync_relay(&self, d: net::DisplayDollSync) -> net::DisplayDollSync {
+        let mut out = d;
+        let entity = if d.entity_id >= 0 {
+            self.world.tile_entities.get_by_id(d.entity_id as u32)
+        } else {
+            None
+        };
+        let doll = entity.and_then(|e| match &e.data {
+            tr_core::tile_entities::TeData::DisplayDoll {
+                equip,
+                dye,
+                misc,
+                pose,
+            } => Some((equip, dye, misc, *pose)),
+            _ => None,
+        });
+        let Some((equip, dye, misc, pose)) = doll else {
+            out.data = net::DollSyncData::Dummy;
+            return out;
+        };
+        let idx = d.item_index as usize;
+        out.data = if d.command == 2 {
+            net::DollSyncData::Pose(pose)
+        } else {
+            let slot = match d.command {
+                1 => dye.get(idx).copied().flatten(),
+                3 => {
+                    if idx == 0 {
+                        *misc
+                    } else {
+                        None
+                    }
+                }
+                _ => equip.get(idx).copied().flatten(),
+            };
+            net::DollSyncData::Item(slot.map_or(net::TeItem::default(), |it| net::TeItem {
+                kind: it.kind as i16,
+                prefix: it.prefix,
+                stack: it.stack as i16,
+            }))
+        };
+        out
+    }
+
+    /// `TEHatRack.ReadItem` (`TEHatRack.cs:390-403`): SetDefaults(type);
+    /// stack = stack; Prefix into `_items[slot]` or `_dyes[slot]`. The port
+    /// stores the triple; an air triple clears the slot. W4-g51 FINAL id-124.
+    fn apply_hat_rack_item(&mut self, entity_id: u32, slot: u8, dye: bool, it: net::TeItem) {
+        let Some(e) = self.world.tile_entities.by_id_mut(entity_id) else {
+            return;
+        };
+        let tr_core::tile_entities::TeData::HatRack(items, dyes) = &mut e.data else {
+            return;
+        };
+        let value = if it.is_air() {
+            None
+        } else {
+            Some(tr_core::tile_entities::TeItem {
+                kind: it.kind.max(0) as u16,
+                prefix: it.prefix,
+                stack: it.stack.max(0) as u16,
+            })
+        };
+        let arr = if dye { dyes } else { items };
+        if (slot as usize) < arr.len() {
+            arr[slot as usize] = value;
+        }
+    }
+
+    /// The `124` relay body (`NetMessage.cs:1489-1508`): the writer re-folds
+    /// the dye flag into the slot (`num4 += 2`, `:1492-1496`) and re-reads
+    /// the LIVE slot (`WriteItem`, `:1500-1503`). W4-g51 FINAL.
+    fn hat_rack_relay(&self, h: net::HatRackItemSync) -> net::HatRackItemSync {
+        let mut out = h;
+        let idx = h.slot_index() as usize;
+        let entity = if h.entity_id >= 0 {
+            self.world.tile_entities.get_by_id(h.entity_id as u32)
+        } else {
+            None
+        };
+        let slot = entity.and_then(|e| match &e.data {
+            tr_core::tile_entities::TeData::HatRack(items, dyes) => {
+                let arr = if h.is_dye() { dyes } else { items };
+                arr.get(idx).copied().flatten()
+            }
+            _ => None,
+        });
+        out.item = slot.map_or(net::TeItem::default(), |it| net::TeItem {
+            kind: it.kind as i16,
+            prefix: it.prefix,
+            stack: it.stack as i16,
+        });
+        out
+    }
+
+    /// `NPC.HaveDryadDoStardewAnimation` (`NPC.cs:19184-19229`): the FIRST
+    /// active type-20 dryad gets the Stardew ai writes (`localAI[2]=480`,
+    /// `ai[0]=24`, `ai[1]=480`, `ai[2]=0`, `localAI[3]=0`, `netUpdate=true`,
+    /// `direction=1`, `spriteDirection=1`), then the 995 Jumino projectile
+    /// spawns at the ground-probe point. The probe: `Bottom + (100, 0)` →
+    /// tile coords, `Y = Clamp(Y-10, 10, maxTilesY-10)`, scan down 15 rows
+    /// for the first solid tile; if it is the FIRST row the spawn uses the
+    /// dryad's own bottom, else the probe tile's world coords `(8, 0)`; the
+    /// spawn point is that + `(0, -52)`. W4-g51 FINAL id-144.
+    fn host_dryad_stardew(&mut self, server: &net::Server) {
+        let Some(slot) = self
+            .npcs
+            .iter()
+            .position(|n| n.hp > 0 && n.kind == crate::npc::NpcKind::Dryad)
+        else {
+            return; // no active dryad — the loop finds nothing
+        };
+        let (nw, nh) = self.npcs[slot].size();
+        let bottom = (
+            self.npcs[slot].x + nw * 0.5,
+            self.npcs[slot].y + nh,
+        );
+        // The ai writes (`:19193-19200`).
+        {
+            let n = &mut self.npcs[slot];
+            n.local_ai[2] = 480.0;
+            n.ai[0] = 24.0;
+            n.ai[1] = 480.0;
+            n.ai[2] = 0.0;
+            n.local_ai[3] = 0.0;
+            n.net_update = true;
+            n.facing = 1;
+            n.sprite_dir = 1;
+        }
+        // The ground probe (`:19201-19225`).
+        let vector = (bottom.0 + 100.0, bottom.1);
+        let mut px = (vector.0 / TILE_PX) as i32;
+        let mut py = (vector.1 / TILE_PX) as i32;
+        py = (py - 10).clamp(10, self.world.height - 10);
+        let start_y = py;
+        let mut first_row_solid = false;
+        for j in start_y..start_y + 15 {
+            py = j;
+            let solid = self
+                .world
+                .tile(px, j)
+                .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind));
+            if solid {
+                if j == start_y {
+                    first_row_solid = true;
+                }
+                break;
+            }
+        }
+        // `p.ToWorldCoordinates(8, 0)` = `(px*16+8, py*16)`; the first-row
+        // solid uses the dryad's own bottom instead (`:19222-19225`).
+        let base = if first_row_solid {
+            vector
+        } else {
+            (px as f32 * TILE_PX + 8.0, py as f32 * TILE_PX)
+        };
+        let spawn = (base.0, base.1 - 52.0);
+        // `Projectile.NewProjectile(…, 995, 0, 0f, Main.myPlayer)`
+        // (`:19226`): the host's own player owns it (slot 0). The 995 row
+        // (`Projectile.cs:9446-9457`): 240×104, aiStyle 192, friendly,
+        // penetrate -1, tileCollide false, ignoreWater, timeLeft *= 5.
+        let owner = 0u8;
+        if let Some(ps) = self.projectiles.spawn_with_data_owned(
+            995,
+            owner,
+            spawn.0,
+            spawn.1,
+            0.0,
+            0.0,
+            0,
+            0.0,
+            0.0,
+            0.0,
+        ) {
+            // The `27` spawn broadcast (`Projectile.cs:11096`): the host
+            // owns the shot, so it streams to every client. The dryad's
+            // ai writes ride the `23` cadence (`net_update = true`).
+            let st = crate::app::net_proj_sync::state_of(&self.projectiles, ps);
+            server.broadcast(&S2c::Projectile(Box::new(st)));
+        }
+    }
 
     /// Streams the world to a spawning client as `10 TileBlock` sections —
     /// the C#'s join-time box (`MessageBuffer.cs:692-811`): 5 sections wide
@@ -1479,6 +2044,23 @@ impl App {
                 },
             );
         }
+        // `MessageBuffer.cs:930-935` — the State-3→10 join arm's
+        // `DoesPlayerSlotCountAsAHost` push: the flag is computed from the
+        // peer's remote address (`NetMessage.cs:2876-2883`, loopback =
+        // same machine), stored host-side, and pushed as `139` ONLY when
+        // true (`:932-934`'s gate). W4-g51 FINAL id-139 (the g52c master
+        // input: the host-authority flag's join source).
+        let counts_as_host = server.slot_counts_as_host(id);
+        self.remote_players.entry(id).or_default().counts_as_host = counts_as_host;
+        if counts_as_host {
+            server.send(
+                id,
+                &S2c::CountsAsHost(net::CountsAsHost {
+                    player_id: id as u8,
+                    counts_as_host: true,
+                }),
+            );
+        }
         log::info!("slot {id} fully joined");
     }
 
@@ -1486,6 +2068,10 @@ impl App {
     /// disconnect arm + `SyncOnePlayer`'s inactive broadcast).
     fn host_slot_left(&mut self, server: &net::Server, id: u32) {
         let was_in_world = self.remote_players.remove(&id).is_some();
+        // The leaving peer's interaction anchor clears (`Player.Disconnect`
+        // → `tileEntityAnchor.Clear`, `Player.cs:5041`); the `IsOccupied`
+        // scan must not see a ghost. W4-g51 FINAL id-122.
+        self.net_te_anchors.remove(&(id as u8));
         if was_in_world {
             server.broadcast(&S2c::Left { id });
             log::info!("slot {id} left");
@@ -2437,9 +3023,11 @@ impl App {
                 }
             }
             // `case 139` (`MessageBuffer.cs:4230-4237`): the client stores
-            // `Main.countsAsHostForGameplay[id]`. The port keeps it on the
-            // peer snapshot (the creative-power authority consumer is
-            // unported). W4-g51 f21.
+            // `Main.countsAsHostForGameplay[id]` — a GLOBAL per-slot array,
+            // so the join push names the receiving client's OWN slot. The
+            // port keeps it on the peer snapshot (the creative-power
+            // authority consumer is unported); the local slot's flag is the
+            // g52c master input the host-authority gates read. W4-g51 FINAL.
             S2c::CountsAsHost(c) => {
                 self.remote_players
                     .entry(c.player_id as u32)
@@ -2505,6 +3093,94 @@ impl App {
                 if let Some(d) = self.net_items.get_mut(&p.slot) {
                     d.pos = Vec2::new(p.x, p.y);
                     self.net_items_dirty = true;
+                }
+            }
+            // `case 86` — one tile entity's create/update/removal (W4-g50
+            // codec, `MessageBuffer.cs:3272-3293`): absent removes by id;
+            // present reads the networkSend record and re-adds it under the
+            // leading id (`TileEntity.Add`, `:3288-3290`). The TryPlacing
+            // quadruplet's answer + the 87 placement's answer. W4-g51 FINAL.
+            S2c::TileEntitySharing(t) => {
+                if t.record.is_empty() {
+                    // `TileEntity.TryGet<TileEntity>(num114, …)` → `Remove`.
+                    if t.id >= 0 {
+                        self.world.tile_entities.remove_by_id(t.id as u32);
+                        self.world_key = None;
+                    }
+                    return;
+                }
+                let mut r = tr_core::binio::Reader::new(&t.record);
+                let Some(mut entity) = tr_core::tile_entities::TileEntity::read_net(&mut r)
+                else {
+                    return; // the C# throws on a corrupt record; the port drops it
+                };
+                entity.id = t.id.max(0) as u32;
+                if self.world.tile_entities.add_net(entity) {
+                    self.world_key = None;
+                }
+            }
+            // `case 121`'s client half (`MessageBuffer.cs:3930-3935`):
+            // `ReadData`/`ReadDummySync` on the doll store (no relay — the
+            // client never re-sends). W4-g51 FINAL.
+            S2c::DisplayDollSync(d) => {
+                self.apply_doll_sync(d);
+            }
+            // `case 122`'s client half (`MessageBuffer.cs:3964-3975`): -1
+            // clears the anchor; otherwise `TryGet` + `SetInteractionAnchor`
+            // (`TileEntity.cs:289-313`): chest = -1, SetTalkNPC(-1), the
+            // local-player UI tail, then `tileEntityAnchor.Set`. W4-g51 FINAL.
+            S2c::TileEntityInteraction(t) => {
+                if t.entity_id == -1 {
+                    self.net_te_anchors.remove(&t.player_id); // `Clear()`
+                    return;
+                }
+                if t.entity_id < 0 {
+                    return;
+                }
+                let Some(e) = self.world.tile_entities.get_by_id(t.entity_id as u32) else {
+                    return; // `TryGet` fails
+                };
+                let (ex, ey) = (e.x as i32, e.y as i32);
+                // `SetInteractionAnchor` (`TileEntity.cs:289-313`): the
+                // subject's chest closes + the talk NPC clears; the
+                // local-player half opens the inventory + the 10/12 cue.
+                if t.player_id as u32 == self.local_id {
+                    if let Some(p) = self.player.as_mut() {
+                        p.chest = -1; // `:291`
+                    }
+                    self.close_shop(); // the shop is the talk-NPC's UI half
+                    self.talk_npc = None; // `:292` — `SetTalkNPC(-1)`
+                    self.npc_chat_text.clear();
+                    let was_clear = !self.net_te_anchors.contains_key(&t.player_id);
+                    // `IngameUIWindows.CloseAll(quiet)` + `playerInventory =
+                    // true` (`:296-297`); the port's inventory-open latch.
+                    self.inventory_open = true;
+                    // `:303-310` — sound 12 when an anchor was already set,
+                    // sound 10 on a fresh open.
+                    crate::chest::play_menu_sound(self, if was_clear { 10 } else { 12 });
+                } else if let Some(p) = self.remote_players.get_mut(&(t.player_id as u32)) {
+                    p.chest = None; // the peer's chest closes
+                }
+                // `player.tileEntityAnchor.Set(id, x, y)` (`:312`).
+                self.net_te_anchors
+                    .insert(t.player_id, (t.entity_id, ex, ey));
+            }
+            // `case 124`'s client half (`MessageBuffer.cs:4004-4016`): unfold
+            // the dye flag, the `TryGet<TEHatRack>` + `slot >= 2` refusal,
+            // else `ReadItem`. W4-g51 FINAL.
+            S2c::HatRackItemSync(h) => {
+                let dye = h.is_dye();
+                let slot = h.slot_index();
+                if h.entity_id < 0 || slot >= 2 {
+                    return; // `:4010-4015`
+                }
+                let ok = self
+                    .world
+                    .tile_entities
+                    .get_by_id(h.entity_id as u32)
+                    .is_some_and(|e| e.kind == tr_core::tile_entities::TeKind::HatRack);
+                if ok {
+                    self.apply_hat_rack_item(h.entity_id as u32, slot, dye, h.item);
                 }
             }
         }
@@ -6729,6 +7405,390 @@ mod message_family_tests {
         let d = client_app.net_items.get(&3).unwrap();
         assert_eq!((d.pos.x, d.pos.y), (123.0, 456.0));
         assert_eq!((d.vel.x, d.vel.y), (1.0, 2.0), "the velocity is untouched");
+    }
+
+    // ---- W4-g51 FINAL: the 8 BIG apply arms' witnesses ----
+    // WRITTEN NOT RUN (code-only lane).
+
+    /// The TE witnesses need a world big enough for the anchor cells + the
+    /// dryad probe's `Clamp(Y-10, 10, maxTilesY-10)`; the `in_world_pair`
+    /// flow world is 8x8. Resize BOTH sides to 64x64 with a dirt surface row
+    /// at y=40 (the host's tile writes + the client's mirror stay in step).
+    fn te_world_pair() -> (App, App) {
+        let (mut host_app, mut client_app) = in_world_pair();
+        for app in [&mut host_app, &mut client_app] {
+            app.world = tr_core::World::new("te".into(), 64, 64);
+            app.world.column_surface = vec![40; 64];
+            for x in 0..64 {
+                let i = app.world.index(x, 40);
+                app.world.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        (host_app, client_app)
+    }
+
+    /// The TryPlacing quadruplet's host apply: a held rack drops its old
+    /// contents, takes the new item, and answers with an `86` the client
+    /// stores; a refused placement (no entity) drops the item back.
+    /// `TEWeaponsRack.TryPlacing` (`TEWeaponsRack.cs:135-152`).
+    #[test]
+    fn w4_g51_the_try_placing_quadruplet_stores_and_shares() {
+        let (mut host_app, mut client_app) = te_world_pair();
+        // A weapon-rack anchor tile (471, frameY 0, frameX % 54 == 0).
+        let (x, y) = (30i16, 39i16);
+        let i = host_app.world.index(x as i32, y as i32);
+        host_app.world.tiles[i] = tr_core::Tile {
+            kind: 471,
+            ..Default::default()
+        };
+        host_app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let rack_id = host_app
+            .world
+            .tile_entities
+            .place(&host_app.world.clone(), tr_core::tile_entities::TeKind::WeaponsRack, x, y)
+            .expect("the rack anchor is valid");
+        // Seed an old item so the DropItem half fires.
+        host_app.world.tile_entities.set_item(
+            rack_id,
+            Some(tr_core::tile_entities::TeItem { kind: 9, prefix: 0, stack: 1 }),
+        );
+        let items_before = host_app.items.len();
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::WeaponsRackTryPlacing(net::TryPlacingItem {
+                x,
+                y,
+                kind: 29,
+                prefix: 81,
+                stack: 1,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        // The host's rack now holds the new item (exact prefix).
+        assert_eq!(
+            host_app.world.tile_entities.item(rack_id).copied().flatten(),
+            Some(tr_core::tile_entities::TeItem { kind: 29, prefix: 81, stack: 1 })
+        );
+        // The old contents dropped (count 1, the stored prefix).
+        assert_eq!(host_app.items.len(), items_before + 1);
+        assert_eq!(host_app.items[items_before].kind, 9);
+        // The client's `86` store landed the rack with the new item.
+        let client_rack = client_app.world.tile_entities.get_at(x, y).expect("the 86 landed");
+        assert_eq!(client_rack.kind, tr_core::tile_entities::TeKind::WeaponsRack);
+        assert_eq!(
+            client_app.world.tile_entities.item(client_rack.id).copied().flatten(),
+            Some(tr_core::tile_entities::TeItem { kind: 29, prefix: 81, stack: 1 })
+        );
+        // A refused placement (no entity at the cell) drops the item back.
+        let items_before = host_app.items.len();
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::FoodPlatterTryPlacing(net::TryPlacingItem {
+                x: 60,
+                y: 3,
+                kind: 4009,
+                prefix: 0,
+                stack: 1,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert_eq!(host_app.items.len(), items_before + 1, "the refused placement drops");
+        assert_eq!(host_app.items[items_before].kind, 4009);
+    }
+
+    /// `121` doll sync: the host applies the equip-slot write + relays; the
+    /// client's doll store takes it. The pose command rides the same path.
+    /// `TEDisplayDoll.ReadData` (`TEDisplayDoll.cs:802-822`).
+    #[test]
+    fn w4_g51_the_doll_sync_stores_and_relays() {
+        let (mut host_app, mut client_app) = te_world_pair();
+        // A display-doll anchor tile (470, frameY 0, frameX % 36 == 0).
+        let (x, y) = (32i16, 39i16);
+        let i = host_app.world.index(x as i32, y as i32);
+        host_app.world.tiles[i] = tr_core::Tile {
+            kind: 470,
+            ..Default::default()
+        };
+        host_app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let doll_id = host_app
+            .world
+            .tile_entities
+            .place(&host_app.world.clone(), tr_core::tile_entities::TeKind::DisplayDoll, x, y)
+            .expect("the doll anchor is valid");
+        // Mirror the doll onto the client so the relay has a target.
+        client_app
+            .world
+            .tile_entities
+            .load_entity(tr_core::tile_entities::TeKind::DisplayDoll, x, y, {
+                tr_core::tile_entities::TeData::DisplayDoll {
+                    equip: [None; 9],
+                    dye: [None; 9],
+                    misc: None,
+                    pose: 0,
+                }
+            });
+        let client_doll_id = client_app.world.tile_entities.get_at(x, y).unwrap().id;
+        // Equip slot 2 takes item 100 (prefix 81).
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::DisplayDollSync(net::DisplayDollSync {
+                player_id: 0,
+                entity_id: doll_id as i32,
+                item_index: 2,
+                command: 0,
+                data: net::DollSyncData::Item(net::TeItem { kind: 100, prefix: 81, stack: 1 }),
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        // The host's doll equip[2] holds the item.
+        let host_doll = host_app.world.tile_entities.get_by_id(doll_id).unwrap();
+        if let tr_core::tile_entities::TeData::DisplayDoll { equip, .. } = &host_doll.data {
+            assert_eq!(
+                equip[2],
+                Some(tr_core::tile_entities::TeItem { kind: 100, prefix: 81, stack: 1 })
+            );
+        } else {
+            panic!("the host doll payload");
+        }
+        // The client's doll took the relay (its own id).
+        let client_doll = client_app.world.tile_entities.get_by_id(client_doll_id).unwrap();
+        if let tr_core::tile_entities::TeData::DisplayDoll { equip, .. } = &client_doll.data {
+            assert_eq!(
+                equip[2],
+                Some(tr_core::tile_entities::TeItem { kind: 100, prefix: 81, stack: 1 })
+            );
+        } else {
+            panic!("the client doll payload");
+        }
+        // The pose command (2) sets the pose byte on both sides.
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::DisplayDollSync(net::DisplayDollSync {
+                player_id: 0,
+                entity_id: doll_id as i32,
+                item_index: 0,
+                command: 2,
+                data: net::DollSyncData::Pose(7),
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        let pose_of = |app: &App, id: u32| match &app.world.tile_entities.get_by_id(id).unwrap().data {
+            tr_core::tile_entities::TeData::DisplayDoll { pose, .. } => *pose,
+            _ => panic!("doll payload"),
+        };
+        assert_eq!(pose_of(&host_app, doll_id), 7);
+        assert_eq!(pose_of(&client_app, client_doll_id), 7);
+    }
+
+    /// `122` interaction: the host sets the anchor + relays; an occupied
+    /// entity is refused (no relay); -1 clears. `TileEntity.IsOccupied`
+    /// (`TileEntity.cs:221-234`) + `SetInteractionAnchor` (`:289-313`).
+    #[test]
+    fn w4_g51_the_te_interaction_sets_clears_and_refuses_occupied() {
+        let (mut host_app, mut client_app) = te_world_pair();
+        let (x, y) = (30i16, 39i16);
+        let i = host_app.world.index(x as i32, y as i32);
+        host_app.world.tiles[i] = tr_core::Tile { kind: 471, ..Default::default() };
+        host_app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let rack_id = host_app
+            .world
+            .tile_entities
+            .place(&host_app.world.clone(), tr_core::tile_entities::TeKind::WeaponsRack, x, y)
+            .expect("valid");
+        client_app
+            .world
+            .tile_entities
+            .load_entity(tr_core::tile_entities::TeKind::WeaponsRack, x, y, tr_core::tile_entities::TeData::Item(None));
+        // The peer (slot 1) is alive — `IsOccupied`'s `!dead` term reads hp.
+        host_app.remote_players.entry(1).or_default().hp = 100;
+        // The client (slot 1) opens the interaction.
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TileEntityInteraction(net::TileEntityInteraction {
+                entity_id: rack_id as i32,
+                player_id: 0,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        // The host's anchor store holds (id, x, y) for slot 1.
+        assert_eq!(
+            host_app.net_te_anchors.get(&1),
+            Some(&(rack_id as i32, x as i32, y as i32))
+        );
+        // The client's own anchor set (the relay named slot 1 = local).
+        assert_eq!(
+            client_app.net_te_anchors.get(&1),
+            Some(&(rack_id as i32, x as i32, y as i32))
+        );
+        // The host (slot 0) is now refused — the entity is occupied.
+        let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+        if let NetRole::Host(server) = &role {
+            host_app.host_event(
+                server,
+                net::ServerEvent::Frame {
+                    id: 0,
+                    msg: C2s::TileEntityInteraction(net::TileEntityInteraction {
+                        entity_id: rack_id as i32,
+                        player_id: 0,
+                    }),
+                },
+            );
+        }
+        host_app.net = role;
+        assert!(!host_app.net_te_anchors.contains_key(&0), "occupied refuses");
+        // -1 clears the client's anchor.
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TileEntityInteraction(net::TileEntityInteraction {
+                entity_id: -1,
+                player_id: 0,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(!host_app.net_te_anchors.contains_key(&1), "the clear landed");
+        assert!(!client_app.net_te_anchors.contains_key(&1));
+    }
+
+    /// `124` hat-rack sync: the dye fold routes to the dye array; the host
+    /// applies + relays; the client's store takes it. `TEHatRack.ReadItem`
+    /// (`TEHatRack.cs:390-403`).
+    #[test]
+    fn w4_g51_the_hat_rack_sync_folds_the_dye_and_relays() {
+        let (mut host_app, mut client_app) = te_world_pair();
+        let (x, y) = (34i16, 39i16);
+        let i = host_app.world.index(x as i32, y as i32);
+        host_app.world.tiles[i] = tr_core::Tile { kind: 475, ..Default::default() };
+        host_app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let rack_id = host_app
+            .world
+            .tile_entities
+            .place(&host_app.world.clone(), tr_core::tile_entities::TeKind::HatRack, x, y)
+            .expect("valid");
+        client_app.world.tile_entities.load_entity(
+            tr_core::tile_entities::TeKind::HatRack,
+            x,
+            y,
+            tr_core::tile_entities::TeData::HatRack([None, None], [None, None]),
+        );
+        let client_rack_id = client_app.world.tile_entities.get_at(x, y).unwrap().id;
+        // wire slot 2 = dye slot 0 (the +2 fold).
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::HatRackItemSync(net::HatRackItemSync {
+                player_id: 0,
+                entity_id: rack_id as i32,
+                wire_slot: 2,
+                item: net::TeItem { kind: 3454, prefix: 0, stack: 1 },
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        let dyes_of = |app: &App, id: u32| match &app.world.tile_entities.get_by_id(id).unwrap().data {
+            tr_core::tile_entities::TeData::HatRack(_, dyes) => dyes[0],
+            _ => panic!("hat rack payload"),
+        };
+        assert_eq!(
+            dyes_of(&host_app, rack_id),
+            Some(tr_core::tile_entities::TeItem { kind: 3454, prefix: 0, stack: 1 })
+        );
+        assert_eq!(
+            dyes_of(&client_app, client_rack_id),
+            Some(tr_core::tile_entities::TeItem { kind: 3454, prefix: 0, stack: 1 })
+        );
+    }
+
+    /// `144` dryad Stardew: the host writes the dryad's ai + spawns the 995
+    /// Jumino projectile, which streams to the client. The ground probe
+    /// picks the dryad's own bottom when the first scanned row is solid.
+    /// `NPC.HaveDryadDoStardewAnimation` (`NPC.cs:19184-19229`).
+    #[test]
+    fn w4_g51_the_dryad_stardew_writes_the_ai_and_spawns_the_jumino() {
+        let (mut host_app, mut client_app) = te_world_pair();
+        // A dryad standing on the dirt row (y=40 is the surface; the NPC's
+        // bottom rests at y=40*16=640, so top = 640 - 40 = 600). The probe
+        // Bottom+(100,0) = (109, 640) → tile (6, 40), Y=Clamp(30,10,54)=30;
+        // the first solid row is y=40 (not the first scanned row 30), so the
+        // spawn uses the probe tile's world coords (6*16+8, 40*16)=(104,640)
+        // + (0,-52) = (104, 588).
+        let mut dryad = crate::npc::Npc::new(crate::npc::NpcKind::Dryad, 100.0, 600.0, 1, 0.0);
+        dryad.hp = dryad.max_hp;
+        host_app.npcs.push(dryad);
+        let jumino_before = host_app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 995)
+            .count();
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::RequestQuestEffect);
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        // The dryad's ai writes landed.
+        let d = host_app.npcs.iter().find(|n| n.kind == crate::npc::NpcKind::Dryad).unwrap();
+        assert_eq!(d.ai[0], 24.0);
+        assert_eq!(d.ai[1], 480.0);
+        assert_eq!(d.local_ai[2], 480.0);
+        assert_eq!(d.facing, 1);
+        assert_eq!(d.sprite_dir, 1);
+        // The 995 spawned on the host.
+        let jumino_after = host_app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 995)
+            .count();
+        assert_eq!(jumino_after, jumino_before + 1, "the Jumino spawned");
+        // The client received the 995 via the 27 broadcast.
+        let client_jumino = client_app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 995)
+            .count();
+        assert!(client_jumino >= 1, "the 27 streamed the Jumino");
+    }
+
+    /// `156` leashed-anchor place: the host stores the itemType on the
+    /// kite/critter anchor (`TELeashedEntityAnchorWithItem.InsertItem`,
+    /// `TELeashedEntityAnchorWithItem.cs:32-36`); the respawn half is M7-TE-2.
+    #[test]
+    fn w4_g51_the_leashed_anchor_stores_the_item_type() {
+        let (mut host_app, mut client_app) = te_world_pair();
+        // A kite anchor (tile 723, any frame).
+        let (x, y) = (36i16, 39i16);
+        let i = host_app.world.index(x as i32, y as i32);
+        host_app.world.tiles[i] = tr_core::Tile { kind: 723, ..Default::default() };
+        host_app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let anchor_id = host_app
+            .world
+            .tile_entities
+            .place(&host_app.world.clone(), tr_core::tile_entities::TeKind::KiteAnchor, x, y)
+            .expect("valid");
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::LeashedAnchorPlaceItem(net::LeashedAnchorPlaceItem {
+                x,
+                y,
+                item_type: 3034,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert_eq!(
+            host_app.world.tile_entities.get_by_id(anchor_id).unwrap().data,
+            tr_core::tile_entities::TeData::Anchor(3034)
+        );
+    }
+
+    /// `139` CountsAsHost join push (the g52c master input): a loopback peer
+    /// counts as a host (`NetMessage.DoesPlayerSlotCountAsAHost`,
+    /// `NetMessage.cs:2876-2883`), so the join bundle pushes the flag and the
+    /// client stores it on its own slot.
+    #[test]
+    fn w4_g51_the_counts_as_host_join_push_lands_for_a_loopback_peer() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // The test pair connects over loopback, so the peer counts as host.
+        // The join push already ran in in_world_pair; the host's peer record
+        // carries the flag and the client stored it on its own slot (1).
+        assert!(
+            host_app.remote_players.get(&1).unwrap().counts_as_host,
+            "the loopback peer counts as host"
+        );
+        assert!(
+            client_app.remote_players.get(&1).unwrap().counts_as_host,
+            "the client stored its own slot's flag"
+        );
     }
 
     /// `AchievementsHelper.NotifyProgressionEvent` (`:227-237`): the host's

@@ -228,9 +228,9 @@ pub mod id {
 
     // ---- W4-g51 f21 cross-check: the SMALL apply arms lifted from the
     // W4-f21 tail census (origin/task/W4-f21-net-ids-verify-tail 5274a097).
-    // The bodyless/ignore/small-store ids whose apply is self-contained; the
-    // BIG ones (the TE families 121/122/123/124/133/149/156, the dryad 144)
-    // stay apply-owner-needed (the ANALYSIS status table).
+    // The bodyless/ignore/small-store ids whose apply is self-contained.
+    // The BIG ones (the TE families 121/122/123/124/133/149/156, the dryad
+    // 144) landed in the FINAL phase below (the ANALYSIS status table).
     /// `129 FinishedConnectingToServer` (`MessageID.cs:272`) — NO writer
     /// case: `TrySendData(129, whoAmI)` (`MessageBuffer.cs:937`, the
     /// State-3→10 join arm) writes a bare frame. The reader is client-only
@@ -288,6 +288,72 @@ pub mod id {
     /// join push when `Netplay.HostToken` is set (`MessageBuffer.cs:275`).
     /// Gate-whitelisted pre-spawn (`:165`). C2s-only.
     pub const HOST_TOKEN: u8 = 161;
+
+    // ---- W4-g51 FINAL: the 8 BIG apply-owner-needed ids' codecs, lifted
+    // from origin/task/W4-f21-net-ids-verify-tail 5274a097 (the TE families
+    // + the dryad). The g50 86/87 seams (write_net/read_net/add_net) ride
+    // tr-core; the consumers land in netglue (the TE store is the consumer
+    // now — the draw halves stay d57-TE-render / M7-TE-2).
+
+    /// `86 TileEntitySharing` (W4-g50, S1-I-4): `(int)` id + `(bool)`
+    /// present + the `networkSend: true` record (`NetMessage.cs:1216-1225`,
+    /// reader `MessageBuffer.cs:3272-3293`). Lifted for the g51 TE apply
+    /// arms — the TryPlacing quadruplet answers with it.
+    pub const TILE_ENTITY_SHARING: u8 = 86;
+    /// `87 TileEntityPlacement` (W4-g50, S1-I-4): `(short)x, (short)y,
+    /// (byte)` entity type (`NetMessage.cs:1227-1231`, reader
+    /// `MessageBuffer.cs:3294-3305`). Lifted for the g51 TE apply arms.
+    pub const TILE_ENTITY_PLACEMENT: u8 = 87;
+    /// `89 ItemFrameTryPlacing` (W4-g50, S1-I-4): the TryPlacing body
+    /// (`NetMessage.cs:1297-1306`, reader `MessageBuffer.cs:3377-3393`).
+    /// The 123/133/149 twins share it byte-for-byte (f21's byte-equality
+    /// pin). Lifted for the g51 TryPlacing quadruplet.
+    pub const ITEM_FRAME_TRY_PLACING: u8 = 89;
+    /// `121 TEDisplayDollDataSync` (`MessageID.cs:256`) — writer
+    /// `NetMessage.cs:1458-1474` (byte player + int entityId + byte
+    /// itemIndex + byte command + `WriteData`/`WriteDummySync`), reader
+    /// `MessageBuffer.cs:3920-3941` (host id-force + relay; client
+    /// `ReadData`). Both directions. W4-g51 FINAL.
+    pub const TE_DISPLAY_DOLL_SYNC: u8 = 121;
+    /// `122 RequestTileEntityInteraction` (`MessageID.cs:258`) — writer
+    /// `NetMessage.cs:1475-1478` (int entityId + byte player; -1 clears),
+    /// reader `MessageBuffer.cs:3942-3977` (host IsOccupied gate + relay;
+    /// client Set/Clear anchor). Both directions. W4-g51 FINAL.
+    pub const TE_INTERACTION_REQUEST: u8 = 122;
+    /// `123 WeaponsRackTryPlacing` (`MessageID.cs:260`) — the exact 89
+    /// body (`NetMessage.cs:1479-1488`, reader `MessageBuffer.cs:3978-3994`,
+    /// host-only `TEWeaponsRack.TryPlacing`). Client send:
+    /// `TEWeaponsRack.cs:212`. C2s-only. W4-g51 FINAL.
+    pub const WEAPONS_RACK_TRY_PLACING: u8 = 123;
+    /// `124 TEHatRackItemSync` (`MessageID.cs:262`) — writer
+    /// `NetMessage.cs:1489-1508` (byte player + int entityId + byte slot
+    /// with the DYE +2 fold, then `TEHatRack.WriteItem` — STACK BEFORE
+    /// PREFIX), reader `MessageBuffer.cs:3995-4022` (host id-force +
+    /// relay; client `ReadItem`). Both directions. W4-g51 FINAL.
+    pub const TE_HAT_RACK_ITEM_SYNC: u8 = 124;
+    /// `133 FoodPlatterTryPlacing` (`MessageID.cs:280`) — the exact 89
+    /// body (`NetMessage.cs:1545-1554`, reader `MessageBuffer.cs:4147-4163`,
+    /// host-only `TEFoodPlatter.TryPlacing`). Client send:
+    /// `TEFoodPlatter.cs:133`. C2s-only. W4-g51 FINAL.
+    pub const FOOD_PLATTER_TRY_PLACING: u8 = 133;
+    /// `144 RequestQuestEffect` (`MessageID.cs:302`) — NO writer case:
+    /// `SendData(144)` writes a bare frame (`Main.cs:40287`, the Stardew
+    /// dryad bit). Reader `MessageBuffer.cs:4304-4309`: host-only
+    /// `NPC.HaveDryadDoStardewAnimation` (`NPC.cs:19184-19229`). C2s-only,
+    /// bodyless. W4-g51 FINAL.
+    pub const REQUEST_QUEST_EFFECT: u8 = 144;
+    /// `149 DeadCellsDisplayJarTryPlacing` (`MessageID.cs:312`) — the exact
+    /// 89 body (`NetMessage.cs:1629-1638`, reader
+    /// `MessageBuffer.cs:4344-4360`, host-only
+    /// `TEDeadCellsDisplayJar.TryPlacing`). Client send:
+    /// `TEDeadCellsDisplayJar.cs:150`. C2s-only. W4-g51 FINAL.
+    pub const DEAD_CELLS_JAR_TRY_PLACING: u8 = 149;
+    /// `156 TELeashedEntityAnchorPlaceItem` (`MessageID.cs:326`) — writer
+    /// `NetMessage.cs:1654-1658` (three shorts: x, y, itemType), reader
+    /// `MessageBuffer.cs:4439-4449` (host-only `Point16` lookup +
+    /// `InsertItem`). Client sends: `TELeashedEntityAnchorWithItem.cs:60`,
+    /// `TEKiteAnchor.cs:66`. C2s-only. W4-g51 FINAL.
+    pub const LEASHED_ANCHOR_PLACE_ITEM: u8 = 156;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -1925,6 +1991,196 @@ pub struct ItemPosition {
     pub y: f32,
 }
 
+// ---- W4-g51 FINAL: the TE-family bodies (f21 codecs lifted) ----
+
+/// One `(short)type + (byte)prefix + (short)stack` item triple — the shape
+/// every tile-entity `WriteExtraData` uses for a non-air slot
+/// (`TEItemFrame.cs:42-44` and its five twins). The TryPlacing quadruplet's
+/// wire item; the doll/hat-rack `WriteItem` order is STACK BEFORE PREFIX
+/// (`write_slot`/`read_slot` below). W4-g51 FINAL (f21's `TeItem`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TeItem {
+    pub kind: i16,
+    pub prefix: u8,
+    pub stack: i16,
+}
+
+impl TeItem {
+    /// The `WriteExtraData` triple order: `(short)type + (byte)prefix +
+    /// (short)stack` (`TEItemFrame.cs:42-44` and its twins).
+    fn write_to(self, w: NetWriter) -> NetWriter {
+        w.i16(self.kind).u8(self.prefix).i16(self.stack)
+    }
+    fn read_from(r: &mut NetReader) -> Option<Self> {
+        Some(Self {
+            kind: r.i16()?,
+            prefix: r.u8()?,
+            stack: r.i16()?,
+        })
+    }
+    /// The `WriteItem` single-slot order: `(ushort)type + (ushort)stack +
+    /// (byte)prefix` — STACK BEFORE PREFIX, unlike the extra-data triple
+    /// (`TEDisplayDoll.cs:758-764`, `TEHatRack.cs:378-388`; the readers
+    /// `:766-770` / `:390-394` match).
+    fn write_slot(self, w: NetWriter) -> NetWriter {
+        w.u16(self.kind as u16).u16(self.stack as u16).u8(self.prefix)
+    }
+    fn read_slot(r: &mut NetReader) -> Option<Self> {
+        Some(Self {
+            kind: r.u16()? as i16,
+            stack: r.u16()? as i16,
+            prefix: r.u8()?,
+        })
+    }
+    /// C#'s `IsAir` (`Item.cs:385-394`): `type <= 0 || stack <= 0`.
+    pub fn is_air(self) -> bool {
+        self.kind <= 0 || self.stack <= 0
+    }
+}
+
+/// `msg 89 ItemFrameTryPlacing`'s body (`NetMessage.cs:1297-1306`): the
+/// tile as two `(short)`s, the held item's `(short)` type, its prefix
+/// byte, and the `(short)` stack (`number5` — always 1 at the send site,
+/// `TEItemFrame.cs:150`). The player/slot indices (`number4`/`number3`)
+/// select the item on the WRITER side only; they never ride the wire.
+/// The 123 WeaponsRack / 133 FoodPlatter / 149 DeadCellsJar twins share
+/// this exact shape (`NetMessage.cs:1479-1488`/`:1545-1554`/`:1629-1638`)
+/// — f21's byte-equality pin. W4-g51 FINAL.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TryPlacingItem {
+    pub x: i16,
+    pub y: i16,
+    pub kind: i16,
+    pub prefix: u8,
+    pub stack: i16,
+}
+
+/// `msg 86 TileEntitySharing`'s body (`NetMessage.cs:1216-1225`, W4-g50):
+/// `(int)number` (the entity id), `(bool)` present (`TileEntity.TryGet`),
+/// then — when present — `TileEntity.Write(writer, result3, networkSend:
+/// true)`: the type byte, the position shorts and the extra data, NO id
+/// (`TileEntity.cs:188-197`'s network half). The reader removes the entity
+/// when absent and re-adds it under the leading id when present
+/// (`MessageBuffer.cs:3272-3293`). The record rides as raw bytes — the
+/// per-kind shape is `tr_core::tile_entities::TileEntity::read_net`.
+/// Lifted for the W4-g51 TE apply arms.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TileEntitySharing {
+    pub id: i32,
+    /// The `networkSend: true` record (type byte + position + extra data);
+    /// empty when `present` is false.
+    pub record: Vec<u8>,
+}
+
+/// `msg 87 TileEntityPlacement`'s body (`NetMessage.cs:1227-1231`, W4-g50):
+/// `(short)number` x, `(short)number2` y, `(byte)number3` the entity type
+/// (`TileEntitiesManager.RegisterAll` order, 0..=10). The host places the
+/// entity when the cell is in-world and free, then answers with the `86`
+/// sharing broadcast (`MessageBuffer.cs:3294-3305`,
+/// `TileEntityType.cs:17-20`). Lifted for the W4-g51 TE apply arms.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TileEntityPlacement {
+    pub x: i16,
+    pub y: i16,
+    pub kind: u8,
+}
+
+/// The doll-sync tail (`TEDisplayDoll.WriteData`, `TEDisplayDoll.cs:780-800`
+/// / `WriteDummySync` `:824-833`): command 2 carries the pose byte;
+/// commands 0/1/3 carry one item triple from the equip/dye/misc array.
+/// The no-entity fallback (`Dummy`) writes a zero pose byte for command 2
+/// and `int 0 + byte 0` otherwise — the SAME byte widths as the real
+/// shapes (1, and 4+1 = 2+1+2 = 5), so a dummy frame decodes cleanly as
+/// `Pose(0)` / an air `TeItem` and the C# reader's `ReadDummySync`
+/// (`:835-844`) likewise just consumes and discards. `Dummy` is therefore
+/// a writer-side variant; decode always yields the real-doll shapes.
+/// W4-g51 FINAL (f21's `DollSyncData`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DollSyncData {
+    /// command 2 — the pose byte (`ReadPose`, `:846-849`).
+    Pose(u8),
+    /// commands 0 (equip) / 1 (dyes) / 3 (misc) — one item triple.
+    Item(TeItem),
+    /// The no-entity fallback (`WriteDummySync`): command 2 → one zero
+    /// byte; else `int 0 + byte 0`. Writer-side only (see above).
+    Dummy,
+}
+
+/// `msg 121 TEDisplayDollDataSync`'s body (`NetMessage.cs:1458-1474`):
+/// `(byte)player + int entityId + (byte)itemIndex + (byte)command`, then
+/// the doll's `WriteData(itemIndex, command)` when the entity exists,
+/// else `WriteDummySync`. The reader (`MessageBuffer.cs:3920-3941`)
+/// forces the player id to the sender on the host and relays.
+/// W4-g51 FINAL.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DisplayDollSync {
+    pub player_id: u8,
+    pub entity_id: i32,
+    pub item_index: u8,
+    /// 0 equip, 1 dyes, 2 pose, 3 misc (`TEDisplayDoll.cs:782-798`).
+    pub command: u8,
+    pub data: DollSyncData,
+}
+
+/// `msg 122 RequestTileEntityInteraction`'s body
+/// (`NetMessage.cs:1475-1478`): the entity `int` id (`-1` = clear the
+/// anchor) and the player byte. The host
+/// (`MessageBuffer.cs:3942-3977`) forces the player to the sender,
+/// refuses an occupied entity (`TileEntity.IsOccupied`) and relays; the
+/// client clears or sets the interaction anchor. W4-g51 FINAL.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TileEntityInteraction {
+    /// `-1` clears the anchor (`MessageBuffer.cs:3952-3956`).
+    pub entity_id: i32,
+    pub player_id: u8,
+}
+
+/// `msg 124 TEHatRackItemSync`'s body (`NetMessage.cs:1489-1508`):
+/// `(byte)player + int entityId + (byte)slot`, where the writer FOLDS the
+/// dye flag into the slot (`num4 += 2` when `number4 == 1f`, `:1492-1496`)
+/// and the reader UNFOLDS it (`>= 2` → dye, `-2`,
+/// `MessageBuffer.cs:4005-4009`). The tail is `TEHatRack.WriteItem`
+/// (`TEHatRack.cs:378-388`: ushort type + ushort stack + byte prefix) or
+/// the no-entity `int 0 + byte 0` fallback (`:1505-1506`) — again
+/// byte-width-identical (5), so the fallback decodes as an air slot.
+/// W4-g51 FINAL.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HatRackItemSync {
+    pub player_id: u8,
+    pub entity_id: i32,
+    /// The WIRE slot byte: 0/1 items, 2/3 dyes (the +2 fold).
+    pub wire_slot: u8,
+    pub item: TeItem,
+}
+
+impl HatRackItemSync {
+    /// The reader's unfold (`MessageBuffer.cs:4005-4009`): `>= 2` is a
+    /// dye slot, the index is `wire_slot - 2`.
+    pub fn is_dye(&self) -> bool {
+        self.wire_slot >= 2
+    }
+    pub fn slot_index(&self) -> u8 {
+        if self.wire_slot >= 2 {
+            self.wire_slot - 2
+        } else {
+            self.wire_slot
+        }
+    }
+}
+
+/// `msg 156 TELeashedEntityAnchorPlaceItem`'s body
+/// (`NetMessage.cs:1654-1658`): three `(short)`s — the anchor tile x, y
+/// and the item type. The reader (`MessageBuffer.cs:4439-4449`) builds
+/// the `Point16(x, y)`, looks up the `TELeashedEntityAnchorWithItem` and
+/// calls `InsertItem(itemType)` (which respawns the leashed entity,
+/// `TELeashedEntityAnchorWithItem.cs:32-36`). W4-g51 FINAL.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LeashedAnchorPlaceItem {
+    pub x: i16,
+    pub y: i16,
+    pub item_type: i16,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -2094,6 +2350,42 @@ pub enum C2s {
     /// `:4471-4476`). Gate-whitelisted pre-spawn (`:165`). C2s-only.
     /// W4-g51 f21.
     HostToken(String),
+    // ---- W4-g51 FINAL: the TE families + the dryad (f21 codecs) ----
+    /// `87 TileEntityPlacement` — a client placed a tile entity
+    /// (`MessageBuffer.cs:3294-3305`, host-only). W4-g50 codec lifted.
+    TileEntityPlacement(TileEntityPlacement),
+    /// `89 ItemFrameTryPlacing` — a client placed an item into a frame
+    /// (`MessageBuffer.cs:3377-3393`, host-only). W4-g50 codec lifted;
+    /// the 123/133/149 twins share the body.
+    ItemFrameTryPlacing(TryPlacingItem),
+    /// `121 TEDisplayDollDataSync` — a client changed a display-doll slot
+    /// or pose (`MessageBuffer.cs:3920-3941`). Both directions. W4-g51.
+    DisplayDollSync(DisplayDollSync),
+    /// `122 RequestTileEntityInteraction` — a client opened/closed a
+    /// tile-entity interaction (`MessageBuffer.cs:3942-3977`). Both
+    /// directions. W4-g51.
+    TileEntityInteraction(TileEntityInteraction),
+    /// `123 WeaponsRackTryPlacing` — a client placed an item on a weapon
+    /// rack (`MessageBuffer.cs:3978-3994`, host-only). C2s-only. W4-g51.
+    WeaponsRackTryPlacing(TryPlacingItem),
+    /// `124 TEHatRackItemSync` — a client changed a hat-rack slot/dye
+    /// (`MessageBuffer.cs:3995-4022`). Both directions. W4-g51.
+    HatRackItemSync(HatRackItemSync),
+    /// `133 FoodPlatterTryPlacing` — a client placed food on a platter
+    /// (`MessageBuffer.cs:4147-4163`, host-only). C2s-only. W4-g51.
+    FoodPlatterTryPlacing(TryPlacingItem),
+    /// `144 RequestQuestEffect` — the client's Stardew-dryad ask,
+    /// bodyless (`MessageBuffer.cs:4304-4309`, host-only). C2s-only.
+    /// W4-g51.
+    RequestQuestEffect,
+    /// `149 DeadCellsDisplayJarTryPlacing` — a client placed an item in
+    /// a Dead Cells display jar (`MessageBuffer.cs:4344-4360`, host-only).
+    /// C2s-only. W4-g51.
+    DeadCellsJarTryPlacing(TryPlacingItem),
+    /// `156 TELeashedEntityAnchorPlaceItem` — a client placed an item on
+    /// a kite/critter anchor (`MessageBuffer.cs:4439-4449`, host-only).
+    /// C2s-only. W4-g51.
+    LeashedAnchorPlaceItem(LeashedAnchorPlaceItem),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2276,6 +2568,21 @@ pub enum S2c {
     /// (`WorldItem.cs:1864`; client-only reader
     /// `MessageBuffer.cs:4463-4470`). S2c-only. W4-g51 f21.
     ItemPosition(ItemPosition),
+    // ---- W4-g51 FINAL: the TE-family relays + sharing (f21/g50 codecs) ----
+    /// `86 TileEntitySharing` — one entity's create/update/removal
+    /// (`MessageBuffer.cs:3272-3293`, client-only). The TryPlacing
+    /// quadruplet's answer + the 87 placement's answer. W4-g50 codec
+    /// lifted.
+    TileEntitySharing(TileEntitySharing),
+    /// `121 TEDisplayDollDataSync` — the host's doll relay
+    /// (`MessageBuffer.cs:3938`). Both directions. W4-g51.
+    DisplayDollSync(DisplayDollSync),
+    /// `122 RequestTileEntityInteraction` — the host's anchor relay
+    /// (`MessageBuffer.cs:3955`/`:3961`). Both directions. W4-g51.
+    TileEntityInteraction(TileEntityInteraction),
+    /// `124 TEHatRackItemSync` — the host's hat-rack relay
+    /// (`MessageBuffer.cs:4019`). Both directions. W4-g51.
+    HatRackItemSync(HatRackItemSync),
     /// `162 DamageNPCAck` - the host's ack of a `28` strike, no body
     /// (`MessageBuffer.cs:1768-1771` sends, `:1819-1824` pops
     /// `NPC.pendingDamages[0]`).
@@ -2382,6 +2689,16 @@ impl C2s {
             Self::ClientSyncedInventory => id::CLIENT_SYNCED_INVENTORY,
             Self::ItemUseSound { .. } => id::ITEM_USE_SOUND,
             Self::HostToken(_) => id::HOST_TOKEN,
+            Self::TileEntityPlacement(_) => id::TILE_ENTITY_PLACEMENT,
+            Self::ItemFrameTryPlacing(_) => id::ITEM_FRAME_TRY_PLACING,
+            Self::DisplayDollSync(_) => id::TE_DISPLAY_DOLL_SYNC,
+            Self::TileEntityInteraction(_) => id::TE_INTERACTION_REQUEST,
+            Self::WeaponsRackTryPlacing(_) => id::WEAPONS_RACK_TRY_PLACING,
+            Self::HatRackItemSync(_) => id::TE_HAT_RACK_ITEM_SYNC,
+            Self::FoodPlatterTryPlacing(_) => id::FOOD_PLATTER_TRY_PLACING,
+            Self::RequestQuestEffect => id::REQUEST_QUEST_EFFECT,
+            Self::DeadCellsJarTryPlacing(_) => id::DEAD_CELLS_JAR_TRY_PLACING,
+            Self::LeashedAnchorPlaceItem(_) => id::LEASHED_ANCHOR_PLACE_ITEM,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2492,6 +2809,40 @@ impl C2s {
             Self::ItemUseSound { player_id } => w.u8(*player_id),
             // `NetMessage.cs:1673-1675`: a plain string.
             Self::HostToken(t) => w.str(t),
+            // `NetMessage.cs:1227-1231`: short x, short y, byte type.
+            Self::TileEntityPlacement(p) => w.i16(p.x).i16(p.y).u8(p.kind),
+            // `NetMessage.cs:1297-1306` — the TryPlacing body (the 123/133/
+            // 149 twins are byte-identical, f21's pin).
+            Self::ItemFrameTryPlacing(p) => {
+                w.i16(p.x).i16(p.y).i16(p.kind).u8(p.prefix).i16(p.stack)
+            }
+            // `NetMessage.cs:1458-1474`: (byte)player + int id +
+            // (byte)itemIndex + (byte)command + WriteData/WriteDummySync.
+            Self::DisplayDollSync(d) => write_doll_sync(d, w),
+            // `NetMessage.cs:1475-1478`: int entityId + (byte)player.
+            Self::TileEntityInteraction(t) => w.i32(t.entity_id).u8(t.player_id),
+            // `NetMessage.cs:1479-1488` — the exact 89 body under id 123.
+            Self::WeaponsRackTryPlacing(p) => {
+                w.i16(p.x).i16(p.y).i16(p.kind).u8(p.prefix).i16(p.stack)
+            }
+            // `NetMessage.cs:1489-1508`: (byte)player + int id + the
+            // already-folded wire slot + WriteItem (or the air fallback,
+            // which is the same 5 bytes as an air TeItem slot).
+            Self::HatRackItemSync(h) => h
+                .item
+                .write_slot(w.u8(h.player_id).i32(h.entity_id).u8(h.wire_slot)),
+            // `NetMessage.cs:1545-1554` — the exact 89 body under id 133.
+            Self::FoodPlatterTryPlacing(p) => {
+                w.i16(p.x).i16(p.y).i16(p.kind).u8(p.prefix).i16(p.stack)
+            }
+            // No writer case for 144 — `SendData(144)` writes a bare frame.
+            Self::RequestQuestEffect => w,
+            // `NetMessage.cs:1629-1638` — the exact 89 body under id 149.
+            Self::DeadCellsJarTryPlacing(p) => {
+                w.i16(p.x).i16(p.y).i16(p.kind).u8(p.prefix).i16(p.stack)
+            }
+            // `NetMessage.cs:1654-1658`: three (short)s.
+            Self::LeashedAnchorPlaceItem(p) => w.i16(p.x).i16(p.y).i16(p.item_type),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2687,6 +3038,72 @@ impl C2s {
             },
             // `MessageBuffer.cs:4473`: a plain string.
             id::HOST_TOKEN => Self::HostToken(r.str()?),
+            // `MessageBuffer.cs:3297-3299`: short x, short y, byte type.
+            id::TILE_ENTITY_PLACEMENT => Self::TileEntityPlacement(TileEntityPlacement {
+                x: r.i16()?,
+                y: r.i16()?,
+                kind: r.u8()?,
+            }),
+            // `MessageBuffer.cs:3383-3387`: two ReadInt16 + ReadInt16 type
+            // + ReadByte prefix + ReadInt16 stack.
+            id::ITEM_FRAME_TRY_PLACING => Self::ItemFrameTryPlacing(TryPlacingItem {
+                x: r.i16()?,
+                y: r.i16()?,
+                kind: r.i16()?,
+                prefix: r.u8()?,
+                stack: r.i16()?,
+            }),
+            // `MessageBuffer.cs:3922-3935` — the shared doll read.
+            id::TE_DISPLAY_DOLL_SYNC => Self::DisplayDollSync(read_doll_sync(r)?),
+            // `MessageBuffer.cs:3944-3945`: ReadInt32 + ReadByte.
+            id::TE_INTERACTION_REQUEST => Self::TileEntityInteraction(TileEntityInteraction {
+                entity_id: r.i32()?,
+                player_id: r.u8()?,
+            }),
+            // `MessageBuffer.cs:3984-3988` — the exact 89 read under 123.
+            id::WEAPONS_RACK_TRY_PLACING => Self::WeaponsRackTryPlacing(TryPlacingItem {
+                x: r.i16()?,
+                y: r.i16()?,
+                kind: r.i16()?,
+                prefix: r.u8()?,
+                stack: r.i16()?,
+            }),
+            // `MessageBuffer.cs:3997-4016`: byte + int + byte slot; the
+            // dye unfold + the >= 2 refusal are the apply arm's — the
+            // codec keeps the wire slot verbatim and reads the 5-byte
+            // tail either way (the refusal path reads int+byte, the same
+            // width as ReadItem's ushort+ushort+byte).
+            id::TE_HAT_RACK_ITEM_SYNC => Self::HatRackItemSync(HatRackItemSync {
+                player_id: r.u8()?,
+                entity_id: r.i32()?,
+                wire_slot: r.u8()?,
+                item: TeItem::read_slot(r)?,
+            }),
+            // `MessageBuffer.cs:4153-4157` — the exact 89 read under 133.
+            id::FOOD_PLATTER_TRY_PLACING => Self::FoodPlatterTryPlacing(TryPlacingItem {
+                x: r.i16()?,
+                y: r.i16()?,
+                kind: r.i16()?,
+                prefix: r.u8()?,
+                stack: r.i16()?,
+            }),
+            // `MessageBuffer.cs:4304-4309`: the host reads NOTHING.
+            id::REQUEST_QUEST_EFFECT => Self::RequestQuestEffect,
+            // `MessageBuffer.cs:4350-4354` — the exact 89 read under 149.
+            id::DEAD_CELLS_JAR_TRY_PLACING => Self::DeadCellsJarTryPlacing(TryPlacingItem {
+                x: r.i16()?,
+                y: r.i16()?,
+                kind: r.i16()?,
+                prefix: r.u8()?,
+                stack: r.i16()?,
+            }),
+            // `MessageBuffer.cs:4442-4443`: two ReadInt16 (the Point16) +
+            // ReadInt16 itemType.
+            id::LEASHED_ANCHOR_PLACE_ITEM => Self::LeashedAnchorPlaceItem(LeashedAnchorPlaceItem {
+                x: r.i16()?,
+                y: r.i16()?,
+                item_type: r.i16()?,
+            }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -2796,6 +3213,53 @@ fn read_player_chest(r: &mut NetReader) -> Option<PlayerChest> {
     })
 }
 
+/// `121`'s shared writer (`NetMessage.cs:1458-1474`): the header then the
+/// command-keyed tail — `TEDisplayDoll.WriteData` (`TEDisplayDoll.cs:780-800`)
+/// for a real doll, `WriteDummySync` (`:824-833`) for the fallback.
+/// W4-g51 FINAL (f21's `write_doll_sync`).
+fn write_doll_sync(d: &DisplayDollSync, w: NetWriter) -> NetWriter {
+    let w = w
+        .u8(d.player_id)
+        .i32(d.entity_id)
+        .u8(d.item_index)
+        .u8(d.command);
+    match d.data {
+        DollSyncData::Pose(p) => w.u8(p),
+        DollSyncData::Item(i) => i.write_slot(w),
+        DollSyncData::Dummy => {
+            if d.command == 2 {
+                w.u8(0)
+            } else {
+                w.i32(0).u8(0)
+            }
+        }
+    }
+}
+
+/// `121`'s shared reader (`MessageBuffer.cs:3922-3935` →
+/// `TEDisplayDoll.ReadData` `:802-822` / `ReadDummySync` `:835-844`): the
+/// command byte keys the tail; the dummy shapes are byte-width-identical
+/// to the real ones, so both decode as the real shapes (see
+/// [`DollSyncData`]). W4-g51 FINAL (f21's `read_doll_sync`).
+fn read_doll_sync(r: &mut NetReader) -> Option<DisplayDollSync> {
+    let player_id = r.u8()?;
+    let entity_id = r.i32()?;
+    let item_index = r.u8()?;
+    let command = r.u8()?;
+    let data = if command == 2 {
+        DollSyncData::Pose(r.u8()?)
+    } else {
+        DollSyncData::Item(TeItem::read_slot(r)?)
+    };
+    Some(DisplayDollSync {
+        player_id,
+        entity_id,
+        item_index,
+        command,
+        data,
+    })
+}
+
 impl S2c {
     pub fn msg_id(&self) -> u8 {
         match self {
@@ -2862,6 +3326,10 @@ impl S2c {
             Self::ShimmerAction(_) => id::SHIMMER_ACTIONS,
             Self::ItemUseSound { .. } => id::ITEM_USE_SOUND,
             Self::ItemPosition(_) => id::ITEM_POSITION,
+            Self::TileEntitySharing(_) => id::TILE_ENTITY_SHARING,
+            Self::DisplayDollSync(_) => id::TE_DISPLAY_DOLL_SYNC,
+            Self::TileEntityInteraction(_) => id::TE_INTERACTION_REQUEST,
+            Self::HatRackItemSync(_) => id::TE_HAT_RACK_ITEM_SYNC,
             Self::NpcStrikeAck => id::NPC_STRIKE_ACK,
         }
     }
@@ -3068,6 +3536,22 @@ impl S2c {
             Self::ItemUseSound { player_id } => w.u8(*player_id),
             // `NetMessage.cs:1666-1672`: (short)slot + Vector2 position.
             Self::ItemPosition(p) => w.i16(p.slot).f32(p.x).f32(p.y),
+            // `NetMessage.cs:1216-1225` — int id, bool present, then the
+            // networkSend record when present (the raw bytes carry it).
+            Self::TileEntitySharing(t) => {
+                let w = w.i32(t.id).bool(!t.record.is_empty());
+                w.raw(&t.record)
+            }
+            // `NetMessage.cs:1458-1474` — the shared doll writer (the relay
+            // re-derives the tail from the live doll, `MessageBuffer.cs:3938`).
+            Self::DisplayDollSync(d) => write_doll_sync(d, w),
+            // `NetMessage.cs:1475-1478`: int entityId + (byte)player.
+            Self::TileEntityInteraction(t) => w.i32(t.entity_id).u8(t.player_id),
+            // `NetMessage.cs:1489-1508` — the folded slot + WriteItem (the
+            // relay re-folds the dye flag, `MessageBuffer.cs:4019`).
+            Self::HatRackItemSync(h) => h
+                .item
+                .write_slot(w.u8(h.player_id).i32(h.entity_id).u8(h.wire_slot)),
             // `SendData` has no case 162 — the bare id is the whole frame.
             Self::NpcStrikeAck => w,
             // Returned early above; unreachable through the builder chain.
@@ -3371,6 +3855,30 @@ impl S2c {
                 slot: r.i16()?,
                 x: r.f32()?,
                 y: r.f32()?,
+            }),
+            // `MessageBuffer.cs:3278-3291`: int id, bool present; the
+            // networkSend record rides the rest of the body when present.
+            id::TILE_ENTITY_SHARING => {
+                let id = r.i32()?;
+                let present = r.bool()?;
+                let record = if present { r.rest()?.to_vec() } else { Vec::new() };
+                Self::TileEntitySharing(TileEntitySharing { id, record })
+            }
+            // `MessageBuffer.cs:3922-3935` — the shared doll read.
+            id::TE_DISPLAY_DOLL_SYNC => Self::DisplayDollSync(read_doll_sync(r)?),
+            // `MessageBuffer.cs:3944-3945`: ReadInt32 + ReadByte.
+            id::TE_INTERACTION_REQUEST => Self::TileEntityInteraction(TileEntityInteraction {
+                entity_id: r.i32()?,
+                player_id: r.u8()?,
+            }),
+            // `MessageBuffer.cs:3997-4016`: byte + int + byte slot + the
+            // 5-byte WriteItem tail (the refusal path reads int+byte, the
+            // same width).
+            id::TE_HAT_RACK_ITEM_SYNC => Self::HatRackItemSync(HatRackItemSync {
+                player_id: r.u8()?,
+                entity_id: r.i32()?,
+                wire_slot: r.u8()?,
+                item: TeItem::read_slot(r)?,
             }),
             // `MessageBuffer.cs:1819-1824`: no body.
             id::NPC_STRIKE_ACK => Self::NpcStrikeAck,
@@ -4235,6 +4743,10 @@ pub struct Slot {
     pub sections: Vec<bool>,
     /// The grid width the latch is sized for (0 = not allocated yet).
     pub sections_w: i32,
+    /// The peer's remote IP (`Netplay.Clients[id].Socket.GetRemoteAddress()`,
+    /// `NetMessage.cs:2880`'s `DoesPlayerSlotCountAsAHost` input). `None`
+    /// until the accept records it. W4-g51 FINAL id-139.
+    pub peer_ip: Option<std::net::IpAddr>,
 }
 
 type Slots = Arc<Mutex<HashMap<u32, Slot>>>;
@@ -4291,6 +4803,9 @@ impl Server {
                 }
                 let id = next_id;
                 next_id += 1;
+                // The peer's remote IP — `DoesPlayerSlotCountAsAHost`'s
+                // `IsLocalHost` input (`NetMessage.cs:2880`, W4-g51 id-139).
+                let peer_ip = stream.peer_addr().ok().map(|a| a.ip());
                 let outbox = Arc::new(Outbox::new());
                 clients_accept
                     .lock()
@@ -4305,6 +4820,7 @@ impl Server {
                         inventory: HashMap::new(),
                         sections: Vec::new(),
                         sections_w: 0,
+                        peer_ip,
                     },
                 );
                 let Ok(mut reader) = stream.try_clone() else {
@@ -4402,6 +4918,25 @@ impl Server {
                 c.name = name;
             }
         }
+    }
+
+    /// `NetMessage.DoesPlayerSlotCountAsAHost` (`NetMessage.cs:2876-2883`):
+    /// `State == 10 && Socket.GetRemoteAddress().IsLocalHost()`. The C#
+    /// `TcpAddress.IsLocalHost` is `Address.Equals(IPAddress.Loopback)`
+    /// (`Net/TcpAddress.cs:23-26`) — exactly IPv4 127.0.0.1 (NOT the IPv6
+    /// loopback, NOT the whole 127/8 block). W4-g51 FINAL id-139.
+    pub fn slot_counts_as_host(&self, id: u32) -> bool {
+        self.slots
+            .lock()
+            .ok()
+            .and_then(|s| {
+                s.get(&id).map(|c| {
+                    c.state == slot_state::IN_WORLD
+                        && c.peer_ip
+                            == Some(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST))
+                })
+            })
+            .unwrap_or(false)
     }
 
     /// Stores one peer inventory slot — `Main.player[id].inventory[slot]`
@@ -5761,6 +6296,301 @@ mod tests {
                 C2s::HostToken(d) => assert_eq!(d, token),
                 other => panic!("expected 161, got {:?}", other.msg_id()),
             }
+        }
+    }
+
+    // ---- W4-g51 FINAL: the 8 BIG ids' codec witnesses (f21 lifts) ----
+    // WRITTEN NOT RUN (code-only lane).
+
+    /// The TryPlacing quadruplet (89/123/133/149) shares ONE body — f21's
+    /// byte-equality pin: the four ids encode the SAME bytes for the same
+    /// `TryPlacingItem` (`NetMessage.cs:1297-1306`/`:1479-1488`/`:1545-1554`/
+    /// `:1629-1638`). The 89/123/133/149 readers are byte-identical too.
+    #[test]
+    fn w4_g51_try_placing_quadruplet_is_byte_equal() {
+        let p = TryPlacingItem {
+            x: 120,
+            y: 240,
+            kind: 29,
+            prefix: 81,
+            stack: 1,
+        };
+        let mut body = Vec::new();
+        body.extend_from_slice(&120i16.to_le_bytes());
+        body.extend_from_slice(&240i16.to_le_bytes());
+        body.extend_from_slice(&29i16.to_le_bytes());
+        body.push(81);
+        body.extend_from_slice(&1i16.to_le_bytes());
+        let frames = [
+            C2s::ItemFrameTryPlacing(p).encode(),
+            C2s::WeaponsRackTryPlacing(p).encode(),
+            C2s::FoodPlatterTryPlacing(p).encode(),
+            C2s::DeadCellsJarTryPlacing(p).encode(),
+        ];
+        let ids = [89u8, 123, 133, 149];
+        for (f, id) in frames.iter().zip(ids) {
+            assert_eq!(f[2], id);
+            assert_eq!(&f[3..], &body, "id {id} shares the 89 body");
+        }
+        // Each reader decodes its own id back to the same body.
+        assert!(matches!(
+            C2s::decode(123, &mut NetReader::new(&body)).unwrap(),
+            C2s::WeaponsRackTryPlacing(d) if d == p
+        ));
+        assert!(matches!(
+            C2s::decode(133, &mut NetReader::new(&body)).unwrap(),
+            C2s::FoodPlatterTryPlacing(d) if d == p
+        ));
+        assert!(matches!(
+            C2s::decode(149, &mut NetReader::new(&body)).unwrap(),
+            C2s::DeadCellsJarTryPlacing(d) if d == p
+        ));
+    }
+
+    /// `121 TEDisplayDollDataSync`: the command-keyed tail — command 2 is
+    /// the pose byte, commands 0/1/3 are the STACK-BEFORE-PREFIX slot triple
+    /// (`TEDisplayDoll.cs:758-764`). The dummy fallback is byte-width-
+    /// identical, so it decodes as the real shape (`DollSyncData::Dummy` is
+    /// writer-side only). Both directions.
+    #[test]
+    fn w4_g51_display_doll_sync_round_trips() {
+        // command 2 (pose): header + one pose byte.
+        let pose = DisplayDollSync {
+            player_id: 3,
+            entity_id: 77,
+            item_index: 0,
+            command: 2,
+            data: DollSyncData::Pose(5),
+        };
+        let f = C2s::DisplayDollSync(pose).encode();
+        assert_eq!(f[2], 121);
+        // byte player + int id + byte idx + byte cmd + byte pose = 8 bytes.
+        assert_eq!(f.len(), 3 + 1 + 4 + 1 + 1 + 1);
+        assert_eq!(f[3], 3);
+        assert_eq!(&f[4..8], &77i32.to_le_bytes());
+        assert_eq!(f[10], 2);
+        assert_eq!(f[11], 5);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).unwrap() {
+            C2s::DisplayDollSync(d) => assert_eq!(d, pose),
+            other => panic!("expected 121, got {:?}", other.msg_id()),
+        }
+        // command 0 (equip slot): the WriteItem order type+stack+prefix.
+        let item = DisplayDollSync {
+            player_id: 3,
+            entity_id: 77,
+            item_index: 4,
+            command: 0,
+            data: DollSyncData::Item(TeItem {
+                kind: 100,
+                prefix: 81,
+                stack: 1,
+            }),
+        };
+        let f = S2c::DisplayDollSync(item).encode();
+        assert_eq!(f[2], 121);
+        // header 7 + ushort type + ushort stack + byte prefix = 12 bytes.
+        assert_eq!(f.len(), 3 + 7 + 5);
+        assert_eq!(&f[10..12], &100u16.to_le_bytes());
+        assert_eq!(&f[12..14], &1u16.to_le_bytes());
+        assert_eq!(f[14], 81);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).unwrap() {
+            S2c::DisplayDollSync(d) => assert_eq!(d, item),
+            other => panic!("expected 121, got {:?}", other.msg_id()),
+        }
+        // The dummy fallback (command 0): int 0 + byte 0 — decodes as an
+        // air slot (the byte widths match WriteItem).
+        let dummy = DisplayDollSync {
+            player_id: 0,
+            entity_id: -1,
+            item_index: 0,
+            command: 0,
+            data: DollSyncData::Dummy,
+        };
+        let f = C2s::DisplayDollSync(dummy).encode();
+        assert_eq!(f.len(), 3 + 7 + 5);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).unwrap() {
+            C2s::DisplayDollSync(d) => {
+                assert!(matches!(d.data, DollSyncData::Item(it) if it.is_air()));
+            }
+            other => panic!("expected 121, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `122 RequestTileEntityInteraction`: int entityId + byte player; -1
+    /// clears. Both directions (`NetMessage.cs:1475-1478`).
+    #[test]
+    fn w4_g51_te_interaction_round_trips() {
+        for entity_id in [42i32, -1] {
+            let t = TileEntityInteraction {
+                entity_id,
+                player_id: 2,
+            };
+            let mut body = Vec::new();
+            body.extend_from_slice(&entity_id.to_le_bytes());
+            body.push(2);
+            let c = C2s::TileEntityInteraction(t).encode();
+            assert_eq!(c[2], 122);
+            assert_eq!(&c[3..], &body);
+            match C2s::decode(c[2], &mut NetReader::new(&c[3..])).unwrap() {
+                C2s::TileEntityInteraction(d) => assert_eq!(d, t),
+                other => panic!("expected 122, got {:?}", other.msg_id()),
+            }
+            let f = S2c::TileEntityInteraction(t).encode();
+            assert_eq!(f[2], 122);
+            assert_eq!(&f[3..], &body);
+            match S2c::decode(f[2], &mut NetReader::new(&f[3..])).unwrap() {
+                S2c::TileEntityInteraction(d) => assert_eq!(d, t),
+                other => panic!("expected 122, got {:?}", other.msg_id()),
+            }
+        }
+    }
+
+    /// `124 TEHatRackItemSync`: the +2 dye fold/unfold + the STACK-BEFORE-
+    /// PREFIX WriteItem tail (`NetMessage.cs:1489-1508`,
+    /// `MessageBuffer.cs:4005-4009`). Both directions.
+    #[test]
+    fn w4_g51_hat_rack_item_sync_round_trips_and_folds() {
+        // wire slot 3 = dye slot 1 (the +2 fold).
+        let h = HatRackItemSync {
+            player_id: 1,
+            entity_id: 9,
+            wire_slot: 3,
+            item: TeItem {
+                kind: 3454,
+                prefix: 0,
+                stack: 1,
+            },
+        };
+        assert!(h.is_dye());
+        assert_eq!(h.slot_index(), 1);
+        let f = C2s::HatRackItemSync(h).encode();
+        assert_eq!(f[2], 124);
+        // byte player + int id + byte slot + ushort type + ushort stack +
+        // byte prefix = 1+4+1+5 = 11 bytes.
+        assert_eq!(f.len(), 3 + 11);
+        assert_eq!(f[3], 1);
+        assert_eq!(&f[4..8], &9i32.to_le_bytes());
+        assert_eq!(f[8], 3);
+        assert_eq!(&f[9..11], &3454u16.to_le_bytes());
+        assert_eq!(&f[11..13], &1u16.to_le_bytes());
+        assert_eq!(f[13], 0);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).unwrap() {
+            C2s::HatRackItemSync(d) => assert_eq!(d, h),
+            other => panic!("expected 124, got {:?}", other.msg_id()),
+        }
+        // wire slot 0 = item slot 0 (no fold).
+        let item = HatRackItemSync {
+            wire_slot: 0,
+            ..h
+        };
+        assert!(!item.is_dye());
+        assert_eq!(item.slot_index(), 0);
+        let f = S2c::HatRackItemSync(item).encode();
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).unwrap() {
+            S2c::HatRackItemSync(d) => assert_eq!(d, item),
+            other => panic!("expected 124, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `144 RequestQuestEffect` is bodyless (NO writer case, the host reads
+    /// nothing — `MessageBuffer.cs:4304-4309`). C2s-only.
+    #[test]
+    fn w4_g51_request_quest_effect_is_bodyless() {
+        let f = C2s::RequestQuestEffect.encode();
+        assert_eq!(f.len(), 3, "the bare 3-byte frame");
+        assert_eq!(f[2], 144);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).unwrap() {
+            C2s::RequestQuestEffect => {}
+            other => panic!("expected 144, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `156 TELeashedEntityAnchorPlaceItem`: three shorts x/y/itemType
+    /// (`NetMessage.cs:1654-1658`). C2s-only.
+    #[test]
+    fn w4_g51_leashed_anchor_place_item_round_trips() {
+        let p = LeashedAnchorPlaceItem {
+            x: 50,
+            y: 60,
+            item_type: 3034,
+        };
+        let mut body = Vec::new();
+        body.extend_from_slice(&50i16.to_le_bytes());
+        body.extend_from_slice(&60i16.to_le_bytes());
+        body.extend_from_slice(&3034i16.to_le_bytes());
+        let f = C2s::LeashedAnchorPlaceItem(p).encode();
+        assert_eq!(f[2], 156);
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).unwrap() {
+            C2s::LeashedAnchorPlaceItem(d) => assert_eq!(d, p),
+            other => panic!("expected 156, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `86 TileEntitySharing`: int id + bool present + the networkSend
+    /// record; the absent shape carries no record (`NetMessage.cs:1216-1225`,
+    /// `MessageBuffer.cs:3278-3291`). S2c-only.
+    #[test]
+    fn w4_g51_tile_entity_sharing_round_trips() {
+        // A live item-frame record: type 1 + x + y + the raw triple.
+        let e = tr_core::tile_entities::TileEntity {
+            id: 0,
+            x: 10,
+            y: 20,
+            kind: tr_core::tile_entities::TeKind::ItemFrame,
+            data: tr_core::tile_entities::TeData::Item(Some(tr_core::tile_entities::TeItem {
+                kind: 29,
+                prefix: 81,
+                stack: 1,
+            })),
+        };
+        let mut w = tr_core::binio::Writer::new();
+        e.write_net(&mut w);
+        let record = w.into_inner();
+        let t = TileEntitySharing {
+            id: 5,
+            record: record.clone(),
+        };
+        let f = S2c::TileEntitySharing(t.clone()).encode();
+        assert_eq!(f[2], 86);
+        assert_eq!(&f[3..7], &5i32.to_le_bytes());
+        assert_eq!(f[7], 1); // present
+        assert_eq!(&f[8..], &record);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).unwrap() {
+            S2c::TileEntitySharing(d) => assert_eq!(d, t),
+            other => panic!("expected 86, got {:?}", other.msg_id()),
+        }
+        // The removal shape: present false, no record.
+        let gone = TileEntitySharing {
+            id: 5,
+            record: Vec::new(),
+        };
+        let f = S2c::TileEntitySharing(gone.clone()).encode();
+        assert_eq!(f.len(), 3 + 4 + 1);
+        assert_eq!(f[7], 0);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).unwrap() {
+            S2c::TileEntitySharing(d) => assert_eq!(d, gone),
+            other => panic!("expected 86, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `87 TileEntityPlacement`: short x + short y + byte type
+    /// (`NetMessage.cs:1227-1231`). C2s-only.
+    #[test]
+    fn w4_g51_tile_entity_placement_round_trips() {
+        let p = TileEntityPlacement {
+            x: 10,
+            y: 20,
+            kind: 1,
+        };
+        let f = C2s::TileEntityPlacement(p).encode();
+        assert_eq!(f[2], 87);
+        assert_eq!(&f[3..5], &10i16.to_le_bytes());
+        assert_eq!(&f[5..7], &20i16.to_le_bytes());
+        assert_eq!(f[7], 1);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).unwrap() {
+            C2s::TileEntityPlacement(d) => assert_eq!(d, p),
+            other => panic!("expected 87, got {:?}", other.msg_id()),
         }
     }
 
