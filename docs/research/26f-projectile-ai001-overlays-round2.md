@@ -149,17 +149,43 @@ the alias, this round's resolves it).
   no dedupe owed. This is the d7 unwired-module precedent applied to the
   overlay axis: the gate is kind-disjoint, the witnesses hand-build the
   rows, so the port is merge-safe and verifiable now.
-- **F3 (the 709 Kill-hook half is now due).** The 709's `Kill()`
-  (`:54722`) triggers the death hook `:73338-73389` — the 459/709 shared
-  dust/gore burst PLUS the 709-only `:73372-73388` half (the owner-gated
-  1110 SkyDragonsFuryElectrosphere circle spawn + the 80-px sibling pull,
-  with `timeLeft = 30 * Next(2,6)` and the tracked DD2_SkyDragonsFuryCircle
-  cue). The g1 Kill-hook census (`26d-projectile-kill-hooks-census.md`)
-  explicitly DEFERRED this half "with its AI arm" (1110 unrowed). Slice E
-  lands the AI arm, so the death hook is now the g1 lane's due work —
-  1110 needs a row + arm + the hook together (the F3 "row+arm together"
-  pattern). The 1110 spawn draws RNG (`Next(2,6)`), so it is NOT RNG-free
-  and stays out of slice E (the module takes no rng). Recorded for g1.
+- **F3 (the 709 Kill-hook half — PORTED this round, the 709-only half).**
+  The 709's `Kill()` (`:54722`) triggers the death hook `:73338-73389` —
+  the 459/709 shared dust/gore burst PLUS the 709-only `:73372-73388`
+  half (the owner-gated 1110 SkyDragonsFuryElectrosphere circle spawn +
+  the 80-px sibling pull, with `timeLeft = 30 * Next(2,6)` and the
+  tracked DD2_SkyDragonsFuryCircle cue). The g1 Kill-hook census
+  (`26d-projectile-kill-hooks-census.md`) explicitly DEFERRED this half
+  "with its AI arm" (1110 unrowed); the verify round re-read the g1 tip
+  (`origin/task/W4-g1-proj-ai-missing-a` @ `5bd68ce2`) and found it
+  census-only — the half is still deferred there — so THIS lane ports
+  the 709-ONLY half + the 1110 row/arm together (the F3 "row+arm
+  together" pattern). Landed: the 1110 row (`data.rs`, the verbatim
+  `SetDefaults` slice `:10340-10352` — 80×80 aiStyle 77 melee
+  ignoreWater alpha 255 penetrate −1 + the `NewProjectileSetup` 300-tick
+  seed `:11065-11068` + the 4-frame sheet `Main.cs:8559`); the row
+  activates the EXISTING aiStyle-77 `sphere_pulse` arm (the 443 sibling)
+  — no new AI arm owed. The hook (`projectile.rs`
+  `sky_dragons_fury_kill`, seated in the death-hook chain before the
+  gem/442 arms — kind-disjoint, order unobservable): the owner gate
+  (`:73372`), the 80×80 box sibling pull-in (`ai[1] = 1` + the
+  centre-minus-circle-centre / 5 velocity + netUpdate, `:73374-73383`),
+  the corpse-flag-lift spawn at the centre with the shot's damage / 0
+  knockback (`:73384`), and `timeLeft = 30 * Next(2,6)` (`:73386`) — the
+  ONE explicit draw, riding the pool's rng AFTER the spawn (the C#
+  order), which is why it lives in `projectile.rs`, not the RNG-free
+  slice-E module. The tracked cue (`:73387`) folds inert (S1-E-23, the
+  d15 dd2 precedent); `localAI[0] = 0` folds the sound-volume slot read
+  (`:30673-30686`, the sound-layer skip). Riders widened for the new
+  kind: the friendly-refusal gate (`443 | 1110`, the aiStyle-77 pull-in
+  latch) and the immune = 8 arm (`:14008-14011`) in BOTH damage walks.
+  The 459/709 SHARED burst (`:73338-73371`: the scale≥1 resize + Damage
+  + the dust/gore rings) stays the g1 lane's claim — its `26d` lists
+  459 among the six functional hooks. The 709 row itself lives on d15
+  (row-gated inert here — the hook fires only for a 709 corpse, and no
+  709 spawns until d15 merges); the witnesses hand-build the 709 slot.
+  4 witnesses (`w4_f20_f3_*` in `s1_p_i22_magic_guns_tomes_tests`),
+  WRITTEN NOT RUN.
 - **F4 (the 88 extraUpdates cap — FINALIZED, inert).** The port's
   `ai_style1_rider` adds `.min(15.0)` to the 88's `extraUpdates =
   (int)ai[0]` remap (`:6775`) that the C# (`:54025`) lacks. Census
@@ -237,7 +263,12 @@ witness tests are WRITTEN NOT RUN — every expected value hand-derived
 from the cited C# lines (derivations in the test doc-comments; the rows
 hand-built, the d7 unwired precedent). A follow-up build must run
 `cargo test -p tr-app projectile_ai001_e` before the merge, AND re-run it
-after c11/d11/d15 merge (the arms activate then). The census tables were
+after c11/d11/d15 merge (the arms activate then). The verify-round ports
+(F6/F7/F3) are likewise WRITTEN NOT RUN — the follow-up build must also
+run `cargo test -p tr-app` filtered to `w4_f20_f*`,
+`projectile_harpy_charm`, and the ai001/darts/moonlord/special_arrows
+modules (the F7 tail widened every aiStyle-1 flight-body signature, so
+the fixtures across those modules moved too). The census tables were
 derived by direct file reads + a mechanical `proj_data` parse of every
 pushed branch (no junction recursion): the row diff, the AI_001
 type-branch scan, and the riders match against the landed gates.

@@ -13696,6 +13696,15 @@ const AI_STYLE_1_RIDERS: [u16; 5] = [
     BULLET_SNOWMAN,
 ];
 
+/// W4-f20 F3 — `ProjectileID.MonkStaffT3AltShot` (709): the Sky Dragon's
+/// Fury alt-shot. The kind const lives module-private in
+/// `projectile_ai001_e` (the d15 row-gated inertness — no `data.rs` const
+/// until the d15 merge); the Kill hook needs the id here, so it carries
+/// its own local const (the same value, the same row-gated inertness: the
+/// hook only fires for a 709 slot, and `proj_data(709)` is None until d15
+/// merges, so no 709 spawns on this branch).
+const MONK_STAFF_T3_ALT_SHOT_KIND: u16 = 709;
+
 /// `Projectile.ShouldUseWindPhysics`'s style list (`Projectile.cs:22110-22132`).
 /// The styles whose arms this port has are 2 (the thrown family, whose own
 /// branch head applies the same term), 8/24/28 (Phase 3), 29 (Phase 4a's gem
@@ -20089,6 +20098,18 @@ impl ProjectilePool {
                     }
                 }
                 self.spawn_inferno_blast(i);
+                // W4-f20 F3 — `Kill()`'s 709 half of the 459/709 arm
+                // (`Projectile.cs:73372-73388`): the Sky Dragon's Fury
+                // alt-shot's death pulls in the nearby 1110 circles and
+                // spawns a fresh one. The 459 half (`:73338-73371`, the
+                // resize + Damage + dust/gore burst) is the g1 Kill-hook
+                // lane's claim (its census `26d` lists 459 among the six
+                // functional hooks) — this lane ports ONLY the 709-only
+                // half + the 1110 row/arm (the F3 "row+arm together"
+                // pattern). The arm sits at `:73338`, BEFORE the gem arm
+                // `:75425` and the 442 arm `:73528` — kind-disjoint, so the
+                // order between them is unobservable.
+                self.sky_dragons_fury_kill(i, rng, local_owner);
                 // S1-P-i21 — `Kill()`'s type-237 arm (`:74535-74538`): the
                 // moving cloud's death spawns the raining cloud 238.
                 self.spawn_rain_cloud(i);
@@ -20208,6 +20229,93 @@ impl ProjectilePool {
                     self.slots[s].time_left -= tl_delta;
                 }
             }
+        }
+    }
+
+    /// W4-f20 F3 — `Kill()`'s 709-only half of the 459/709 arm
+    /// (`Projectile.cs:73372-73388`): the Sky Dragon's Fury alt-shot's death
+    /// pulls in the nearby own 1110 circles (`ai[1] = 1`, the velocity pull
+    /// toward the corpse centre / 5, `netUpdate`) and spawns a fresh circle
+    /// at the centre with the shot's damage / 0 knockback, `timeLeft =
+    /// 30 * Next(2,6)` (the ONE explicit draw — the RNG-bearing half the
+    /// slice-E module could not carry). The tracked
+    /// `DD2_SkyDragonsFuryCircle` cue (`:73387`) folds inert (the pool has
+    /// no tracked-sound layer, S1-E-23 — the d15 dd2 precedent); the
+    /// `localAI[0]` slot-id write rides 0 (the aiStyle-77 arm's sound-volume
+    /// decay reads it, `:30673-30686`, itself the sound-layer skip).
+    ///
+    /// The 459/709 SHARED burst (`:73338-73371`: the scale≥1 resize + Damage
+    /// + the 3/7 dust-31 ring + the 10/30 dust-226 ring + the 0/2 gore rows)
+    /// is the g1 Kill-hook lane's claim (its census `26d` lists 459 among
+    /// the six functional hooks) — NOT ported here. This lane ports ONLY
+    /// the 709-only half + the 1110 row/arm (the F3 "row+arm together"
+    /// pattern; the g1 tip `5bd68ce2` is census-only, the half still
+    /// deferred there).
+    ///
+    /// The corpse-flag lift (the 442 `dart_electro_firework_kill`
+    /// precedent): the C# `Kill()` runs the arm while the shot is STILL
+    /// active (`active = false` lands at `:77262`, after), so
+    /// `GetNextSlot` skips the dying slot — the circle takes the NEXT free
+    /// slot, not the shot's own.
+    fn sky_dragons_fury_kill(&mut self, slot: usize, rng: &mut dyn DropRng, local_owner: u8) {
+        let p = &self.slots[slot];
+        if p.kind != MONK_STAFF_T3_ALT_SHOT_KIND {
+            return;
+        }
+        // `:73372` — the owner gate (`Main.myPlayer == this.owner`).
+        if p.owner != local_owner {
+            return;
+        }
+        let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        let (damage, owner) = (p.damage, p.owner);
+        // `:73374-73383` — the pull-in: every own 1110 whose box intersects
+        // the 80×80 centre box gets `ai[1] = 1` + the velocity pull +
+        // `netUpdate`. The C# `getRect().Intersects(value6)` is the strict
+        // rectangle overlap (the 442 pull-in's `hit` shape).
+        for j in 0..MAX_PROJECTILES {
+            if j == slot {
+                continue;
+            }
+            let q = &mut self.slots[j];
+            if q.active && q.owner == owner && q.kind == SKY_DRAGONS_FURY_ELECTROSPHERE {
+                let hit = q.pos.x < center.x + 40.0
+                    && q.pos.x + q.w > center.x - 40.0
+                    && q.pos.y < center.y + 40.0
+                    && q.pos.y + q.h > center.y - 40.0;
+                if hit {
+                    q.ai[1] = 1.0;
+                    let qc = Vec2::new(q.pos.x + q.w * 0.5, q.pos.y + q.h * 0.5);
+                    q.vel = (center - qc) / 5.0;
+                    q.net_update = true;
+                }
+            }
+        }
+        // `:73384-73387` — the fresh circle spawn. The 1110's 80×80 half-box
+        // subtracts (the C# takes the centre). The corpse-flag lift keeps
+        // the dying shot's slot out of the free-slot scan.
+        self.slots[slot].active = true;
+        let spawned = self.spawn_with_data_ai_owned(
+            SKY_DRAGONS_FURY_ELECTROSPHERE,
+            owner,
+            center.x - 40.0,
+            center.y - 40.0,
+            0.0,
+            0.0,
+            damage,
+            0.0,
+            0.0,
+            0.0,
+        );
+        self.slots[slot].active = false;
+        if let Some(s) = spawned {
+            // `:73386` — `timeLeft = 30 * Main.rand.Next(2, 6)`: the ONE
+            // explicit draw (60/90/120/150). It rides the pass's
+            // `UpdateProjectiles` stream AFTER the spawn (the C# order).
+            let life = 30 * rng.next_range(2, 6);
+            self.slots[s].time_left = life;
+            // `:73387` — the tracked-sound slot-id write folds to 0 (the
+            // sound-layer skip, S1-E-23); the aiStyle-77 arm reads it.
+            self.slots[s].local_ai[0] = 0.0;
         }
     }
 
@@ -22777,8 +22885,11 @@ impl ProjectilePool {
             // flips `friendly = false`, so a sphere being reeled back to its
             // bolt deals no NPC damage (`Damage_PVE_Inner`'s `!friendly`
             // refusal `:12611`). The fresh sphere spawns friendly (the
-            // `:788` default) and hits normally.
-            if p.kind == 443 && !p.friendly {
+            // `:788` default) and hits normally. W4-f20 F3: the 1110 Sky
+            // Dragon's Fury circle shares the aiStyle-77 arm + the same
+            // pull-in latch (the 709's Kill sets `ai[1] = 1` on the nearby
+            // circles, `:73379`), so the gate carries it too.
+            if matches!(p.kind, 443 | SKY_DRAGONS_FURY_ELECTROSPHERE) && !p.friendly {
                 continue;
             }
             if refuses_friendly(n, p.kind, kill_guide, kill_clothier) {
@@ -23196,6 +23307,10 @@ impl ProjectilePool {
             } else if p.kind == MAGIC_MISSILE {
                 // `:14032-14035` — the Magic Missile (16): 8 ticks.
                 npcs[idx].immune[owner_idx] = 8;
+            } else if matches!(p.kind, ELECTROSPHERE | SKY_DRAGONS_FURY_ELECTROSPHERE) {
+                // `:14008-14011` — the Electrosphere 443 / Sky Dragon's Fury
+                // circle 1110: 8 ticks (W4-f20 F3).
+                npcs[idx].immune[owner_idx] = 8;
             } else if p.kind == TYPHOON {
                 // `:14036-14039` — the Razorblade Typhoon (409): 6 ticks.
                 npcs[idx].immune[owner_idx] = 6;
@@ -23511,6 +23626,8 @@ impl ProjectilePool {
                 npcs[idx].immune[owner] = 5; // `:14016-14023`
             } else if p.kind == MAGIC_MISSILE {
                 npcs[idx].immune[owner] = 8; // `:14032-14035`
+            } else if matches!(p.kind, ELECTROSPHERE | SKY_DRAGONS_FURY_ELECTROSPHERE) {
+                npcs[idx].immune[owner] = 8; // `:14008-14011` (W4-f20 F3)
             } else if p.kind == TYPHOON {
                 npcs[idx].immune[owner] = 6; // `:14036-14039`
             } else if uses_local && p.local_hit_cooldown != -2 {
@@ -43317,6 +43434,157 @@ mod s1_p_i22_magic_guns_tomes_tests {
         assert!(p.local_ai[1] > 0.0, "the start X snapshot");
         assert!(p.local_ai[2] > 0.0, "the start Y snapshot");
         assert_eq!(p.alpha, 255, "the aiStyle-48 alpha write (`:28240`)");
+    }
+
+    /// W4-f20 F3 — the 1110 row carries the verbatim `SetDefaults` slice
+    /// (`Projectile.cs:10340-10352`) + the 300-tick `NewProjectileSetup`
+    /// seed (`:11065-11068`) + the 4-frame sheet (`Main.cs:8559`).
+    #[test]
+    fn w4_f20_f3_the_1110_row_is_verbatim() {
+        let d = proj_data(SKY_DRAGONS_FURY_ELECTROSPHERE).expect("the 1110 row");
+        assert_eq!((d.w, d.h), (80.0, 80.0), "`:10342-10343`");
+        assert_eq!(d.ai_style, 77, "`:10344`");
+        assert_eq!(d.penetrate, -1, "`:10351`");
+        assert_eq!(d.time_left, 300, "the `:11067` seed");
+        assert_eq!(d.extra_updates, 0);
+        assert!(!d.tile_collide, "`:10350`");
+        assert!(d.ignore_water, "`:10349`");
+        assert_eq!(d.alpha, 255, "`:10346`");
+        assert_eq!(d.scale, 1.0, "`:10347`");
+        assert!(d.melee, "`:10348`");
+        assert_eq!(proj_frames(SKY_DRAGONS_FURY_ELECTROSPHERE), 4, "`Main.cs:8559`");
+        // The 443 sibling shares the sheet + the aiStyle-77 arm.
+        assert_eq!(proj_frames(ELECTROSPHERE), 4, "`Main.cs:8536`");
+    }
+
+    /// W4-f20 F3 — the 709 Kill hook spawns the 1110 circle at the corpse
+    /// centre with the shot's damage / 0 knockback, `timeLeft = 30 *
+    /// Next(2,6)` (`Projectile.cs:73384-73386`). The 709 row lives on d15
+    /// (row-gated inert here), so the witness hand-builds the 709 slot (the
+    /// d7 unwired precedent) and drives the hook directly.
+    #[test]
+    fn w4_f20_f3_the_709_kill_spawns_the_circle_with_the_rng_life() {
+        let mut pool = ProjectilePool::new();
+        // A hand-built 709 corpse at centre (400, 300), damage 50, owner 0.
+        let slot = {
+            let p = &mut pool.slots_mut()[0];
+            p.active = false; // the corpse (the hook runs on the !active transition)
+            p.kind = MONK_STAFF_T3_ALT_SHOT_KIND;
+            p.owner = 0;
+            p.pos = Vec2::new(400.0 - 6.0, 300.0 - 6.0);
+            p.w = 12.0;
+            p.h = 12.0;
+            p.damage = 50;
+            0
+        };
+        // A scripted stream: Next(2,6) returns 4 → timeLeft 120.
+        struct LifeRng;
+        impl DropRng for LifeRng {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                assert_eq!((min, max), (2, 6), "`:73386` — the one draw");
+                4
+            }
+            fn next_float(&mut self) -> f32 {
+                0.0
+            }
+        }
+        let mut rng = LifeRng;
+        pool.sky_dragons_fury_kill(slot, &mut rng, 0);
+        let circle = pool
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == SKY_DRAGONS_FURY_ELECTROSPHERE)
+            .expect("the death spawns the circle");
+        assert_eq!(circle.damage, 50, "the shot's damage (`:73384`)");
+        assert_eq!(circle.knock_back, 0.0, "knockback 0 (`:73384`)");
+        assert_eq!(circle.owner, 0, "the owner preserved");
+        assert_eq!(circle.time_left, 120, "30 * Next(2,6)=4 (`:73386`)");
+        // The spawn takes the centre (the 80×80 half-box subtracts).
+        assert_eq!(circle.pos, Vec2::new(400.0 - 40.0, 300.0 - 40.0));
+        assert_eq!(circle.vel, Vec2::ZERO, "the spawn velocity 0 (`:73384`)");
+    }
+
+    /// W4-f20 F3 — the pull-in: every own 1110 whose box intersects the
+    /// 80×80 centre box gets `ai[1] = 1` + the velocity pull toward the
+    /// corpse centre / 5 + `netUpdate` (`Projectile.cs:73374-73383`). A
+    /// circle outside the box, or another owner's, is untouched.
+    #[test]
+    fn w4_f20_f3_the_709_kill_pulls_in_the_nearby_circles() {
+        let mut pool = ProjectilePool::new();
+        // The 709 corpse at centre (400, 300).
+        {
+            let p = &mut pool.slots_mut()[0];
+            p.active = false;
+            p.kind = MONK_STAFF_T3_ALT_SHOT_KIND;
+            p.owner = 0;
+            p.pos = Vec2::new(394.0, 294.0);
+            p.w = 12.0;
+            p.h = 12.0;
+            p.damage = 50;
+        }
+        // A nearby own circle at centre (430, 300) — inside the 80×80 box.
+        let near = pool
+            .spawn_with_data_ai_owned(SKY_DRAGONS_FURY_ELECTROSPHERE, 0, 430.0 - 40.0, 300.0 - 40.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .unwrap();
+        // A far own circle at centre (600, 300) — outside the box.
+        let far = pool
+            .spawn_with_data_ai_owned(SKY_DRAGONS_FURY_ELECTROSPHERE, 0, 600.0 - 40.0, 300.0 - 40.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .unwrap();
+        // Another owner's circle inside the box — untouched.
+        let other = pool
+            .spawn_with_data_ai_owned(SKY_DRAGONS_FURY_ELECTROSPHERE, 1, 420.0 - 40.0, 300.0 - 40.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .unwrap();
+        struct LifeRng;
+        impl DropRng for LifeRng {
+            fn next_range(&mut self, _min: i32, _max: i32) -> i32 {
+                2
+            }
+            fn next_float(&mut self) -> f32 {
+                0.0
+            }
+        }
+        let mut rng = LifeRng;
+        pool.sky_dragons_fury_kill(0, &mut rng, 0);
+        let n = &pool.slots()[near];
+        assert_eq!(n.ai[1], 1.0, "`:73379` — the pull-in latch");
+        // The pull: (corpse centre - circle centre) / 5 = ((400-430)/5, 0).
+        assert_eq!(n.vel, Vec2::new(-6.0, 0.0), "`:73380` — the velocity pull");
+        assert!(n.net_update, "`:73381`");
+        assert_eq!(pool.slots()[far].ai[1], 0.0, "the far circle is untouched");
+        assert_eq!(pool.slots()[far].vel, Vec2::ZERO);
+        assert_eq!(pool.slots()[other].ai[1], 0.0, "the other owner's circle is untouched");
+    }
+
+    /// W4-f20 F3 — the owner gate: a remote-owned 709 spawns no circle
+    /// (`Main.myPlayer == this.owner`, `Projectile.cs:73372`).
+    #[test]
+    fn w4_f20_f3_a_remote_owned_709_spawns_no_circle() {
+        let mut pool = ProjectilePool::new();
+        {
+            let p = &mut pool.slots_mut()[0];
+            p.active = false;
+            p.kind = MONK_STAFF_T3_ALT_SHOT_KIND;
+            p.owner = 1; // remote
+            p.pos = Vec2::new(394.0, 294.0);
+            p.w = 12.0;
+            p.h = 12.0;
+            p.damage = 50;
+        }
+        struct NoDrawRng;
+        impl DropRng for NoDrawRng {
+            fn next_range(&mut self, _min: i32, _max: i32) -> i32 {
+                panic!("the owner gate skips the spawn — no draw");
+            }
+            fn next_float(&mut self) -> f32 {
+                0.0
+            }
+        }
+        let mut rng = NoDrawRng;
+        pool.sky_dragons_fury_kill(0, &mut rng, 0);
+        assert!(
+            !pool.slots().iter().any(|p| p.active && p.kind == SKY_DRAGONS_FURY_ELECTROSPHERE),
+            "the remote owner spawns nothing"
+        );
     }
 }
 
