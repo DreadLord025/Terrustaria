@@ -594,6 +594,17 @@ pub const TRAP_SPEAR: u16 = 186;
 /// spawns the 188 FlamesTrap children). W4-d4 landed the row with the
 /// `ai_flame_jet` arm.
 pub const FLAMETHROWER_TRAP: u16 = 187;
+/// The rope coils (aiStyle 35 — the `AI()` arm `Projectile.cs:27189-27291`):
+/// the Rope Coil 171 (`ProjectileID.cs:896`), the Vine Rope Coil 475
+/// (`:1504`), the Silk Rope Coil 505 (`:1564`) and the Web Rope Coil 506
+/// (`:1566`). Every row is 14×14, `penetrate = -1`, `tileCollide = false`,
+/// `timeLeft = 400` (`Projectile.cs:2570-2578` for 171/505/506,
+/// `:5496-5504` for 475); the AI's placement walk drops the per-kind rope
+/// tile (213/353/365/366). W4-d4.
+pub const ROPE_COIL: u16 = 171;
+pub const VINE_ROPE_COIL: u16 = 475;
+pub const SILK_ROPE_COIL: u16 = 505;
+pub const WEB_ROPE_COIL: u16 = 506;
 /// The Venom Dart Trap's projectile (the C# `VenomDartTrap = 980`,
 /// `Projectile.cs:9330-9339`; the WIRE-1 legacy named it TRAP_SPIKY).
 pub const TRAP_VENOM_DART: u16 = 980;
@@ -2297,6 +2308,22 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 true,
                 (false, -2, false, -1, 255, 1.0),
+            ),
+            // `:2570-2578` (171/505/506) / `:5496-5504` (475) — the rope
+            // coils: 14x14, aiStyle **35**, penetrate -1, tileCollide
+            // false, timeLeft 400. The stock friendly false (`:788`) —
+            // the coils damage nothing; the placement walk is the payload.
+            ROPE_COIL | VINE_ROPE_COIL | SILK_ROPE_COIL | WEB_ROPE_COIL => (
+                14.0,
+                14.0,
+                35,
+                -1,
+                400,
+                0,
+                false,
+                false,
+                false,
+                RESET_STATE,
             ),
             // The wiring.device arms (M7-WIRE-2): the explosives 141's
             // explosion (`Projectile.cs:1953-1965` — aiStyle 16, 260×260,

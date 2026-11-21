@@ -11391,6 +11391,136 @@ impl Projectile {
         }
     }
 
+    /// `AI()`'s aiStyle-35 arm (`Projectile.cs:27189-27291`) — the rope
+    /// coils (171/475/505/506, rows `:2570-2578`/`:5496-5504`). W4-d4.
+    ///
+    /// The head (`:27191-27201`) runs for EVERY owner: `ai[0]++`, at >30
+    /// the 0.2 gravity + ×0.985 X drag + 14 Y clamp, the
+    /// (|vx|+|vy|)·direction·0.02 spin. The placement half (`:27202-27290`)
+    /// is owner-gated (`owner != Main.myPlayer → return`): the
+    /// `TileCollision(fallThrough: true, fall2: true)` probe or the
+    /// bottomSlope snap arms the walk, which drops up to 10 rope tiles
+    /// (213/353/365/366 per kind) down the column — the `IsRope` skip, the
+    /// 314/platform toggle, the tileCut/165 clear — then kills.
+    ///
+    /// Movement: the row keeps `tileCollide = false` (`:2576`) and aiStyle
+    /// 35 is not on `UpdatePosition`'s skip list (`:20435`), so the free
+    /// integrate runs every sub-step — including the placement tick (the
+    /// arm already added the collision-adjusted velocity at `:27242`; the
+    /// C# `UpdatePosition` adds `base.velocity` on top, faithful). The
+    /// `direction` spin reads the velocity-sign stand-in (the module-doc
+    /// convention — `AutomaticallyChangesDirection` is true for 35).
+    fn ai_rope_coil(&mut self, world: &mut World, local_owner: u8) {
+        // `:27191-27200` — the counter + the 30-tick fall.
+        self.ai[0] += 1.0;
+        if self.ai[0] > 30.0 {
+            self.vel.y += 0.2;
+            self.vel.x *= 0.985;
+            if self.vel.y > 14.0 {
+                self.vel.y = 14.0;
+            }
+        }
+        // `:27201` — the spin (`direction` = the velocity-sign stand-in).
+        let direction = if self.vel.x < 0.0 { -1.0 } else { 1.0 };
+        self.rot += (self.vel.x.abs() + self.vel.y.abs()) * direction * 0.02;
+        // `:27202-27205` — the owner gate: a foreign coil flies on, the
+        // placement never runs (the integrate below still moves it).
+        if self.owner != local_owner {
+            let v = self.vel;
+            self.pos += v;
+            return;
+        }
+        // `:27206-27222` — the collision probe / bottomSlope snap.
+        let tc = crate::collision::tile_collision(
+            world,
+            [self.pos.x, self.pos.y],
+            [self.vel.x, self.vel.y],
+            self.w,
+            self.h,
+            true,
+            true,
+        );
+        let adjusted = Vec2::new(tc.vel[0], tc.vel[1]);
+        let mut hit = adjusted != self.vel;
+        if !hit {
+            // `:27214-27215` — `(int)(Center.X + velocity.X) / 16`: the
+            // centre-plus-velocity sum truncates BEFORE the /16.
+            let tx = (self.pos.x + self.w * 0.5 + self.vel.x) as i32 / 16;
+            let ty = (self.pos.y + self.h * 0.5 + self.vel.y) as i32 / 16;
+            if world
+                .tile(tx, ty)
+                .is_some_and(|t| t.active() && t.bottom_slope())
+            {
+                hit = true;
+                self.pos.y = (ty * 16 + 16 + 8) as f32;
+                self.pos.x = (tx * 16 + 8) as f32;
+            }
+        }
+        if !hit {
+            // `:27223-27226` — no contact: the free integrate only.
+            let v = self.vel;
+            self.pos += v;
+            return;
+        }
+        // `:27227-27239` — the per-kind rope tile.
+        let rope_kind: u16 = match self.kind {
+            475 => 353,
+            506 => 366,
+            505 => 365,
+            _ => 213,
+        };
+        // `:27240-27242` — the walk anchor (the centre cell) + the
+        // collision-adjusted step. The C# casts the centre SUM to int
+        // BEFORE the /16 (`(int)(position.X + width/2) / 16`).
+        let tx = (self.pos.x + (self.w / 2.0)) as i32 / 16;
+        let mut ty = (self.pos.y + (self.h / 2.0)) as i32 / 16;
+        self.pos += adjusted;
+        // `:27243-27250` — the 10-tile budget; the `IsRope` skip walks past
+        // an existing rope column first.
+        let mut budget = 10;
+        if world.tile(tx, ty).is_none() {
+            let v = self.vel;
+            self.pos += v;
+            return;
+        }
+        while crate::render::ropes::is_rope(world, tx, ty).0 {
+            ty += 1;
+        }
+        // `:27251-27289` — the placement walk. The `NetMessage.SendData`
+        // pairs (`:27269`/`:27277`) are the MP relay's — skipped.
+        let mut platform_toggle = false;
+        while budget > 0 {
+            let Some(t) = world.tile(tx, ty).copied() else {
+                break;
+            };
+            let mut placed = false;
+            if t.active() {
+                if t.kind == 314 || tr_core::tiledata::SET_PLATFORMS.has(t.kind) {
+                    platform_toggle = !platform_toggle;
+                } else if tr_core::tileobject::tile_cut(t.kind) || t.kind == 165 {
+                    platform_toggle = false;
+                    let _ = tr_core::edit::kill_tile(world, tx, ty, false);
+                }
+            }
+            if !world.tile(tx, ty).is_some_and(|t| t.active()) {
+                platform_toggle = false;
+                placed = true;
+                let _ = tr_core::edit::place_tile(world, tx, ty, rope_kind);
+                self.ai[1] += 1.0;
+            } else if !platform_toggle {
+                budget = 0;
+            }
+            if placed {
+                budget -= 1;
+            }
+            ty += 1;
+        }
+        // `:27290` — the placement kills the coil.
+        self.kill();
+        let v = self.vel;
+        self.pos += v;
+    }
+
     /// `AI_158_BabyBird` (`Projectile.cs:48757-48928`) — the buff-216 baby bird
     /// (759, the style's only kind): the perch keep-alive, the 6-tick 5-frame
     /// walk, the 800-px target hunt with the intersect/close/far/all-home
@@ -13759,10 +13889,11 @@ const AI_STYLE_1_RIDERS: [u16; 5] = [
 /// The styles whose arms this port has are 2 (the thrown family, whose own
 /// branch head applies the same term), 8/24/28 (Phase 3), 29 (Phase 4a's gem
 /// bolts) and the styles that already had ported arms (1 the arrows, 16 the
-/// bombs) keep their pre-existing no-wind behaviour; the rest (10/14/…) port
-/// in a later phase or not at all.
+/// bombs) keep their pre-existing no-wind behaviour; W4-d4 adds 35 (the rope
+/// coils, `:22126`) with its arm; the rest (10/14/…) port in a later phase or
+/// not at all.
 fn uses_wind_physics(ai_style: u8) -> bool {
-    matches!(ai_style, 2 | 8 | 24 | 28 | 29)
+    matches!(ai_style, 2 | 8 | 24 | 28 | 29 | 35)
 }
 
 /// `Terraria.Utilities.LCG32Random` (`Utilities/LCG32Random.cs:5-44`) — the
@@ -17624,6 +17755,13 @@ impl ProjectilePool {
                         // `wants_dart_spawns`. NO movement: aiStyle 38 is
                         // on `UpdatePosition`'s skip list (`:20435`).
                         38 => self.slots[i].ai_flame_jet(local_owner),
+                        // W4-d4 — `AI()`'s `else if (this.aiStyle == 35)`
+                        // (`Projectile.cs:27189-27291`): the rope coils
+                        // (171/475/505/506). The placement walk writes
+                        // tiles, so the arm reborrows `world` mutably (the
+                        // ai_ice_block carve-out); it owns its integration
+                        // (tileCollide false, `:2576`).
+                        35 => self.slots[i].ai_rope_coil(world, local_owner),
                         // S1-P-i16 — the aiStyle-77 Electrosphere sphere
                         // (`AI()` `:30671-30761`): the fade/pulse/frame
                         // machine + the dust draws; the arm owns its
@@ -26053,6 +26191,137 @@ mod arrow_tests {
             p.wants_dart_spawns.is_empty(),
             "the 188 spawn is owner-gated (`:27507`)"
         );
+    }
+
+    /// W4-d4 — the aiStyle-35 rope coils (`Projectile.cs:27189-27291`):
+    /// the four rows, the 30-tick fall head, and the owner-gated placement
+    /// walk that drops the per-kind rope tile and kills the coil.
+    #[test]
+    fn the_rope_coil_rows_carry_style_35() {
+        for kind in [ROPE_COIL, VINE_ROPE_COIL, SILK_ROPE_COIL, WEB_ROPE_COIL] {
+            let d = proj_data(kind).unwrap_or_else(|| panic!("kind {kind} lost its row"));
+            assert_eq!((d.w, d.h), (14.0, 14.0), "kind {kind} (`:2572-2573`)");
+            assert_eq!(d.ai_style, 35, "kind {kind} (`:2574`)");
+            assert_eq!(d.penetrate, -1, "kind {kind} (`:2575`)");
+            assert!(!d.tile_collide, "kind {kind} (`:2576`)");
+            assert_eq!(d.time_left, 400, "kind {kind} (`:2577`)");
+        }
+    }
+
+    /// The fall head (`:27191-27201`): ai[0] counts; from the 31st tick
+    /// the 0.2 gravity + ×0.985 X drag run, the Y clamps at 14, and the
+    /// spin reads (|vx|+|vy|)·direction·0.02. The coil flies in open air
+    /// high above the world's surface so no placement contact intervenes.
+    #[test]
+    fn the_rope_coil_falls_after_30_ticks() {
+        let mut p = Projectile {
+            active: true,
+            kind: ROPE_COIL,
+            owner: 0,
+            pos: Vec2::new(1600.0, 100.0),
+            vel: Vec2::new(4.0, 0.0),
+            w: 14.0,
+            h: 14.0,
+            tile_collide: false,
+            ..Default::default()
+        };
+        let mut w = World::new("t".into(), 300, 200);
+        for _ in 0..30 {
+            p.ai_rope_coil(&mut w, 0);
+        }
+        assert_eq!(p.ai[0], 30.0, "the counter (`:27191`)");
+        assert_eq!(p.vel, Vec2::new(4.0, 0.0), "no fall before the 31st tick");
+        let rot_before = p.rot;
+        p.ai_rope_coil(&mut w, 0);
+        assert_eq!(p.ai[0], 31.0);
+        assert!((p.vel.x - 4.0 * 0.985).abs() < 1e-6, "the ×0.985 drag (`:27195`)");
+        assert!((p.vel.y - 0.2).abs() < 1e-6, "the 0.2 gravity (`:27194`)");
+        // The 31st tick's spin increment: (|3.94| + |0.2|) · 1 · 0.02
+        // (the first 30 ticks spun (4+0)·0.02 each — the delta isolates
+        // the fall tick's own term).
+        assert!(
+            (p.rot - rot_before - (3.94 + 0.2) * 0.02).abs() < 1e-5,
+            "the (|vx|+|vy|)·direction·0.02 spin (`:27201`)"
+        );
+    }
+
+    /// The placement walk (`:27206-27290`): a coil falling onto a floor
+    /// places its rope tile in the empty cell above the contact and dies;
+    /// the per-kind ladder picks 213/353/365/366.
+    #[test]
+    fn the_rope_coil_places_its_rope_and_dies() {
+        fn rig(kind: u16) -> (Projectile, World) {
+            let mut w = World::new("t".into(), 64, 64);
+            // A floor at row 20 under the coil's column (x = 160..174).
+            for x in 8..14 {
+                let i = w.index(x, 20);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+            // The coil at (160, 296): centre (167, 303), one 4-px step
+            // from the row-20 floor top (320) — 296 + 14 + 4 = 314 < 320,
+            // so the FIRST tick flies; the second (300 + 14 + 4 = 318)
+            // still clears; the third (304 + 14 + 4 = 322) contacts.
+            let p = Projectile {
+                active: true,
+                kind,
+                owner: 0,
+                pos: Vec2::new(160.0, 296.0),
+                vel: Vec2::new(0.0, 4.0),
+                w: 14.0,
+                h: 14.0,
+                tile_collide: false,
+                ..Default::default()
+            };
+            (p, w)
+        }
+        for (kind, rope) in [
+            (ROPE_COIL, 213u16),
+            (VINE_ROPE_COIL, 353),
+            (SILK_ROPE_COIL, 365),
+            (WEB_ROPE_COIL, 366),
+        ] {
+            let (mut p, mut w) = rig(kind);
+            // Ticks 1-2 fly free; tick 3's TileCollision blocks the Y.
+            p.ai_rope_coil(&mut w, 0);
+            p.ai_rope_coil(&mut w, 0);
+            assert!(p.active, "kind {kind}: still falling");
+            p.ai_rope_coil(&mut w, 0);
+            assert!(!p.active, "kind {kind}: the placement kills (`:27290`)");
+            assert_eq!(p.ai[1], 1.0, "kind {kind}: one rope placed (`:27278`)");
+            // The walk anchor: the centre cell at contact — x = 10, the
+            // row above the floor (19) took the rope.
+            let placed = w.tile(10, 19).expect("the placed cell");
+            assert!(placed.active(), "kind {kind}: the rope is active");
+            assert_eq!(placed.kind, rope, "kind {kind}: the per-kind rope (`:27227-27239`)");
+        }
+    }
+
+    /// The owner gate (`:27202-27205`): a foreign coil flies through the
+    /// contact without placing or dying.
+    #[test]
+    fn the_rope_coil_placement_is_owner_gated() {
+        let mut w = World::new("t".into(), 64, 64);
+        for x in 8..14 {
+            let i = w.index(x, 20);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut p = Projectile {
+            active: true,
+            kind: ROPE_COIL,
+            owner: 1,
+            pos: Vec2::new(160.0, 304.0),
+            vel: Vec2::new(0.0, 4.0),
+            w: 14.0,
+            h: 14.0,
+            tile_collide: false,
+            ..Default::default()
+        };
+        p.ai_rope_coil(&mut w, 0);
+        assert!(p.active, "the foreign coil never places (`:27202-27205`)");
+        assert_eq!(p.ai[1], 0.0);
+        assert!(w.tile(10, 19).is_none_or(|t| !t.active()), "no rope placed");
     }
 }
 
