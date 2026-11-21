@@ -6,10 +6,15 @@
 //! `TreeGrowFXCheck` channel (`world_sim::growth` drains
 //! `tree::tree_grow_fx_check` → [`tree_grow_fx`] on the
 //! `UpdateWorldGen` stream) and the axe fail tick's `ShakeTree` arm
-//! (`axe_tile_hit` → `tree::shake_tree_fx` → [`tree_grow_fx`] with
-//! hitTree: true on the `UpdatePlayers` stream). The
-//! `MessageBuffer.cs:3828` net arm drops (single-player port); the
-//! ShakeTree loot ladder stays the loot lane's (documented).
+//! (`axe_tile_hit` → `tree::shake_tree_resolve` → the loot ladder
+//! `shake_loot::shake_tree_loot` → `tree::shake_tree_fx_at` →
+//! [`tree_grow_fx`] with hitTree: true on the `UpdatePlayers` stream).
+//! The `MessageBuffer.cs:3828` net arm (msg 112 SpecialFX kind 1) is
+//! g50's (`origin/task/W4-g50-net-apply-arms-3`, `netglue.rs` `S2c::SpecialFx`
+//! → its own `tree_grow_fx` + ash + fairy) — KEEP-ONE at merge: g50's net
+//! apply + this lane's growth/axe dispatches share the one burst fn (this
+//! module's is the single-player twin). The ShakeTree loot ladder is
+//! WIRED (wiring wave 2, `world_sim/editing/shake_loot.rs`).
 //!
 //! ## Scope — this module's sites (source order)
 //!

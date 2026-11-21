@@ -143,6 +143,14 @@ pub struct SandstormGoreState {
 /// type `Next(220,223)`, scale `num4 = (jump/75 + 1)/2`, the velocity
 /// OVERWRITE `playerVel * 0.3 * num4`, alpha 100. The caller owns the
 /// `isPerformingJump` gate and the `sandStorm = true` flag.
+///
+/// KEEP-ONE CONTRACT (W4-g17 wiring wave 2): this fn is the UNWIRED twin
+/// of f42's live drain (`origin/task/W4-f42-sandstorm-2` `4bf7b2e88`:
+/// `Player.pending_sandstorm_jump` + the `world_sim/player.rs` drain that
+/// spawns the 3 type-124 dusts + the %3 220-222 gore on `UpdatePlayers`).
+/// c40 (`bdd039802`) deferred the visuals to f42 with the RNG slot
+/// recorded. At merge f42's drain survives; this fn retires (the
+/// `npc_ai_style73` unwired-module precedent). Do NOT double-feed.
 pub fn sandstorm_jump_gore(
     state: &SandstormGoreState,
     gore: &mut GorePool,
