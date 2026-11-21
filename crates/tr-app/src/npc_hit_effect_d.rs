@@ -5261,6 +5261,42 @@ fn skeletron_prime_limb_death(
     mech_quadrant_smoke(npc, gore, rng, world);
 }
 
+/// The 24 Fire Imp death (`NPC.cs:89503-89525`, sites 815-819): the 50x
+/// dust-6 census (velocity args = base.velocity, alpha 100, scale 2.5,
+/// post noGravity + ×2), then 45 at position, TWO 46 at Y+20, TWO 47 at
+/// Y+34 — scale 1f (the C# passes no `this.scale`).
+fn fire_imp_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    _hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:89514-89519` — the 50x dust-6 census.
+    for _ in 0..50 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 6, vel.x, vel.y, 100,
+            Color::default(), 2.5,
+        );
+        {
+            let d = dust.slot_mut(idx);
+            d.no_gravity = true;
+            d.velocity *= 2.0;
+        }
+    }
+    // `:89520-89524` — the head/torso/legs ladder, scale 1f.
+    gore.new_gore(rng, world, pos, vel, 45, 1.0); // :89520
+    gore.new_gore(rng, world, pos + Vec2::new(0.0, 20.0), vel, 46, 1.0); // :89521
+    gore.new_gore(rng, world, pos + Vec2::new(0.0, 20.0), vel, 46, 1.0); // :89522
+    gore.new_gore(rng, world, pos + Vec2::new(0.0, 34.0), vel, 47, 1.0); // :89523
+    gore.new_gore(rng, world, pos + Vec2::new(0.0, 34.0), vel, 47, 1.0); // :89524
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -5896,6 +5932,18 @@ pub fn hit_effect_d(
     else if (128..=131).contains(&npc_type) {
         skeletron_prime_limb_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
+    // `:89470-89502` — the 23 Meteor Head arm: NO gore sites (the 50x
+    // Next(2)-gated dust-25/6 census + the 50x dust-6 census are the dust
+    // lanes'; recorded, not ported).
+    // `:89503-89525` — the 24 Fire Imp arm (sites 815-819).
+    else if npc_type == 24 {
+        fire_imp_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89526-89537` — the 25 Burning Sphere arm: NO gore sites (the
+    // ungated 20x paired dust-6 census + the Item10 cue are the dust/c13
+    // lanes'; recorded, not ported).
+    // `:89538-89549` — the 33 Water Sphere arm: NO gore sites (the ungated
+    // 20x paired dust-172 census + the Item10 cue; recorded, not ported).
     outcome
 }
 
@@ -10253,5 +10301,35 @@ mod tests {
             }
             assert_eq!(rng.peek(), twin.peek(), "limb {kind} mirrors the C# draws");
         }
+    }
+
+    /// `NPC.cs:89514-89524` — the Fire Imp: the 50x dust-6 census (7 draws
+    /// each), then 45 / 46+46 at Y+20 / 47+47 at Y+34, scale 1f.
+    #[test]
+    fn w4_f5d_the_fire_imp_ladder_rides_the_offsets() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        n.vx = 1.5;
+        n.vy = -0.5;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(827);
+        let _ = hit_effect_d(&n, 24, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![45, 46, 46, 47, 47]);
+        let offsets = [0.0, 20.0, 20.0, 34.0, 34.0];
+        for (i, dy) in offsets.iter().enumerate() {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0 + dy), "gore {i}");
+        }
+        assert!(!gore.slot(5).active, "exactly five gores");
+        let mut twin = UnifiedRandom::new(827);
+        for _ in 0..50 {
+            twin_dust6(&mut twin, 30, 44);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the fire imp mirrors the C# draws");
     }
 }
