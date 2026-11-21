@@ -734,7 +734,7 @@ pub struct Projectile {
     pub bonus_crit_chance: i32,
     /// S1-P-i16 — one slot's queued child-spawn requests for the pool's
     /// post-AI drain: `(kind, x, y, vx, vy, damage, knock_back, ai0, ai1,
-    /// time_left_delta)`. The dart split machines (the Ichor Dart's fan
+    /// time_left_delta, ai2)`. The dart split machines (the Ichor Dart's fan
     /// `Projectile.cs:57332-57348`, the Cursed Dart's flame drops
     /// `:57351-57362`) and the cluster rockets' shrapnel ring
     /// (`Kill_Bombs_DoUsualKillCode` `:78063-78086`) spawn mid-iteration in
@@ -742,7 +742,11 @@ pub struct Projectile {
     /// requests here (`wants_mark_spawn` pattern) and the dispatch resolves
     /// them after the sub-steps. `time_left_delta` is subtracted from the
     /// spawned row's `timeLeft` (the cluster ring's `-= Next(30)`, `:78084`).
-    pub(crate) wants_dart_spawns: Vec<(u16, f32, f32, f32, f32, i32, f32, f32, f32, i32)>,
+    /// W4-d20 — `ai2` rides the C# `NewProjectile`'s third ai argument
+    /// (the flint release slash's scale 1, `Projectile.cs:52254`; the
+    /// aiStyle-190 arm reads `scale *= ai[2]` `:42222` — a dropped ai2
+    /// collapsed the slash's scale to 0).
+    pub(crate) wants_dart_spawns: Vec<(u16, f32, f32, f32, f32, i32, f32, f32, f32, i32, f32)>,
     // S1-P-i35 — the fishing bobber's liquid flags (`Projectile.cs:376-382`,
     // reset false `:756-760`). The generic `Update` wet block
     // (`:16790-17007`) writes them AFTER the AI; the port's bobber arm
@@ -17478,14 +17482,13 @@ impl ProjectilePool {
                                     local_owner,
                                     rng,
                                 );
-                                // The 1043 release slash (ai2 = 1 rides the
-                                // dart-spawn seam's ai1 slot — the 190 arm
-                                // reads ai[1]; ai2 is the slash's scale, set
-                                // at the spawn below).
-                                if let Some((x, y, vx, vy, dmg, kb, ai0, ai1, _ai2)) = tick.wants_slash {
+                                // The 1043 release slash: ai0 = dir·gravDir,
+                                // ai1 = 6 (the 190 arm's lifetime envelope),
+                                // ai2 = 1 (the scale — `:42222` reads it).
+                                if let Some((x, y, vx, vy, dmg, kb, ai0, ai1, ai2)) = tick.wants_slash {
                                     self.slots[i].wants_dart_spawns.push((
                                         crate::projectile::DEAD_CELLS_FLINT_SLASH,
-                                        x - 8.0, y - 8.0, vx, vy, dmg, kb, ai0, ai1, 0,
+                                        x - 8.0, y - 8.0, vx, vy, dmg, kb, ai0, ai1, 0, ai2,
                                     ));
                                 }
                                 // The 1041 ground spikes.
@@ -17494,7 +17497,7 @@ impl ProjectilePool {
                                         crate::projectile::DEAD_CELLS_FLINT_SHOT,
                                         x - 16.0, y - 16.0, vx, vy,
                                         self.slots[i].damage, self.slots[i].knock_back,
-                                        ai0, ai1, 0,
+                                        ai0, ai1, 0, 0.0,
                                     ));
                                 }
                                 // The player-side writes.
@@ -20266,11 +20269,17 @@ impl ProjectilePool {
             // pattern): resolve them after the sub-steps, in order.
             let requests = std::mem::take(&mut self.slots[i].wants_dart_spawns);
             let owner = self.slots[i].owner;
-            for (kind, x, y, vx, vy, damage, kb, ai0, ai1, tl_delta) in requests {
+            for (kind, x, y, vx, vy, damage, kb, ai0, ai1, tl_delta, ai2) in requests {
                 if let Some(s) = self.spawn_with_data_ai_owned(
                     kind, owner, x, y, vx, vy, damage, kb, ai0, ai1,
                 ) {
                     self.slots[s].time_left -= tl_delta;
+                    // W4-d20 — the C# `NewProjectile`'s ai2 argument
+                    // (`Projectile.cs:10923`); the spawn seam carries
+                    // ai0/ai1 only, so the third ai rides this write.
+                    if ai2 != 0.0 {
+                        self.slots[s].ai[2] = ai2;
+                    }
                 }
             }
         }
@@ -22501,6 +22510,7 @@ impl ProjectilePool {
                     0.0,
                     0.0,
                     delta,
+                    0.0,
                 ));
                 t += 1.0f32 / 6.0f32;
             }

@@ -2955,6 +2955,65 @@ mod tests {
         assert_eq!(pool.slots()[s].ai[1], 1.0, "the charge counter advanced");
     }
 
+    /// W4-d20 T5-canary — the 1043 flint slash is the 190/198 cross-lane
+    /// merge canary: d20's 198 arm spawns it (`:52254`, ai0=dir·gravDir,
+    /// ai1=6, ai2=1) but its aiStyle-190 AI is d19's. This witness pins the
+    /// SPAWN payload end-to-end through the dart-drain (the ai2=1 scale
+    /// survives — `:42222` `scale *= ai[2]` would collapse to 0 if the
+    /// drain dropped it). A lossy merge that drops the 198 spawner leaves
+    /// no 1043; one that drops the 1043 row leaves the spawn inert. Both
+    /// must land for the slash to fly.
+    #[test]
+    fn w4_d20_t5_the_flint_slash_canary_spawns_with_the_scale() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut pl = crate::player::Player::spawn(&w);
+        pl.channel = false; // released → the slash spawns
+        pl.held_item_kind = 5451;
+        let ctx = crate::projectile_ai_golf::GolfContext {
+            golf_state: tr_core::golf_state::GolfState::default(),
+            mouse_world: Vec2::new(1700.0, 800.0),
+            mouse_right: false,
+            mouse_right_release: false,
+            player: flint_player(false),
+            player_name: String::new(),
+            golfer_score: 0,
+        };
+        pool.set_golf_context(ctx);
+        let s = pool.spawn_with_data(1040, 1600.0, 800.0, 0.0, 0.0, 50, 5.0).unwrap();
+        pool.slots_mut()[s].direction = 1;
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            Some(&mut pl),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            false,
+        );
+        // The 1043 slash spawned (the drain resolved the request).
+        let slash = pool
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == crate::projectile::DEAD_CELLS_FLINT_SLASH)
+            .expect("the 198 arm spawned the 1043 slash");
+        assert_eq!(slash.damage, 89, "(int)(50 * 1.78) = 89");
+        assert_eq!(slash.vel, Vec2::new(1.0, 0.0), "velocity (direction, 0)");
+        assert_eq!(slash.ai[0], 1.0, "ai0 = direction * gravDir");
+        assert_eq!(slash.ai[1], 6.0, "ai1 = 6 (the 190 lifetime envelope)");
+        assert_eq!(slash.ai[2], 1.0, "ai2 = 1 — the scale survives the drain");
+        // The row is the d19 twin (16x16 aiStyle 190 pen 2) — the merge
+        // keep-one pin: both branches carry the identical tuple.
+        let row = proj_data(crate::projectile::DEAD_CELLS_FLINT_SLASH).unwrap();
+        assert_eq!(row.ai_style, 190);
+        assert_eq!((row.w, row.h), (16.0, 16.0));
+        assert_eq!(row.penetrate, 2);
+    }
+
     // ---- W4-d20 aiStyle 191 (TrueNightsEdge) — WRITTEN NOT RUN ----
 
     /// The two rows carry the census slice (`Projectile.cs:9315-9329` /
