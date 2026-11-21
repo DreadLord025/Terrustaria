@@ -10186,6 +10186,192 @@ impl Projectile {
         }
     }
 
+    /// `Projectile.Shimmer()` (`Projectile.cs:22361-22516`) — the shimmer-liquid
+    /// interaction the generic `Update` wet block runs at `:17009-17012`
+    /// (`if (base.shimmerWet) this.Shimmer()`), AFTER the AI and BEFORE
+    /// `HandleMovement` (`:17015`). W4-g2 ports the method VERBATIM as a
+    /// STAGED helper: its only caller is the generic wet block
+    /// (`:16790-17007`), which is UNPORTED (d53's cited skip — "lands with the
+    /// generic wet subsystem"; only the bobber's aiStyle-61 `probe_wet` writes
+    /// `shimmer_wet` today, the i35 one-tick-lag deviation). The helper is
+    /// therefore UNWIRED in the dispatch — the wet-subsystem round drops the
+    /// `:17011` call in at the pre-`HandleMovement` seam. The witnesses drive
+    /// it directly (setting `shimmer_wet`), the e3 STAGED-emitter precedent.
+    ///
+    /// The port's `hostile` proxy is `!friendly` (the hostile shots ride
+    /// `friendly = false`, `:22765`); the C# `hostile` is a distinct field, but
+    /// every rowed kind that reaches a Shimmer arm is friendly, so the proxy
+    /// is exact for the ported set. RNG-neutral: no draws (the 936 rainbow-slime
+    /// spawn's `NPC.NewNPC` is a world write, not a rand roll — and 936 is
+    /// rowless, so the arm never fires). The 936 arm's `NetMessage.SendData(7)`
+    /// + `WorldGen.CheckAchievement` are the net/achievement layers (skipped).
+    #[allow(dead_code)] // STAGED: the :17011 caller lands with the generic wet block
+    fn shimmer(&mut self, world: &World) {
+        let style = proj_data(self.kind).map_or(255, |d| d.ai_style);
+        // `:22363-22366` — the refusal gate: hostile non-25/17 shots, the
+        // aiStyle-99 `ai[0] == -1` ghost, the aiStyle-15 `ai[0] == 2|4` flail
+        // states. The port's hostile proxy is `!friendly`.
+        if (!self.friendly && style != 25 && style != 17)
+            || (style == 99 && self.ai[0] == -1.0)
+            || (style == 15 && (self.ai[0] == 2.0 || self.ai[0] == 4.0))
+        {
+            return;
+        }
+        // `:22367-22371` — the 502 disco ball: -0.4 Y, -5 life. Rowless.
+        if self.kind == 502 {
+            self.vel.y -= 0.4;
+            self.time_left -= 5;
+        }
+        // `:22372-22379` — the 469/181/566 float: -0.2 Y; the 469 kills when
+        // it rises (vy < 0). The 181/566 bees share the arm.
+        else if matches!(self.kind, 469 | 181 | 566) {
+            self.vel.y -= 0.2;
+            if self.kind == 469 && self.vel.y < 0.0 {
+                self.kill();
+            }
+        }
+        // `:22380-22383` — the arrow-family float: -0.4 Y (the 819 Blood Arrow,
+        // the 117/474/225/103/2/82/120/172/41/91/278/5/639/631/495/4/282/1/81
+        // arrows + the 2 wooden arrow).
+        else if matches!(
+            self.kind,
+            819 | 117 | 474 | 225 | 103 | 2 | 82 | 120 | 172 | 41 | 91 | 278 | 5 | 639 | 631
+                | 495 | 4 | 282 | 1 | 81
+        ) {
+            self.vel.y -= 0.4;
+        }
+        // `:22384-22402` — the phaseblades: the `ai[0] == 1` swing refuses;
+        // else reset ai[0..1], the -0.5 Y (with the >16 x0.9 pre-damp, the
+        // >-11 gate), the x1.1 X clamped to [-14, 14].
+        else if is_a_phaseblade(self.kind) {
+            if self.ai[0] == 1.0 {
+                return;
+            }
+            self.ai[1] = 0.0;
+            self.ai[0] = 0.0;
+            if self.vel.y > -11.0 {
+                if self.vel.y > 16.0 {
+                    self.vel.y *= 0.9;
+                }
+                self.vel.y -= 0.5;
+            }
+            self.vel.x *= 1.1;
+            self.vel.x = self.vel.x.clamp(-14.0, 14.0);
+        }
+        // `:22403-22423` — the aiStyle-1/16/40 + the 229 orb: the full-shimmer
+        // two-cell kill probe, else the falling bounce (-vy, netUpdate, the
+        // >600 life cap to 600, -60 life, clear wet/shimmerWet).
+        else if matches!(style, 1 | 16 | 40) || self.kind == CHLOROPHYTE_ORB {
+            if self.shimmer_two_cell_kill(world) {
+                self.kill();
+            } else if self.vel.y > 0.0 {
+                self.vel.y *= -1.0;
+                self.net_update = true;
+                if self.time_left > 600 {
+                    self.time_left = 600;
+                }
+                self.time_left -= 60;
+                self.shimmer_wet = false;
+                self.wet = false;
+            }
+        }
+        // `:22424-22439` — the aiStyle-5/8/21/28/29/33/36/47/93/115/151/152 +
+        // the 1024/669: the same two-cell kill probe + falling bounce, but NO
+        // life cap / -60 (the bounce keeps the life).
+        else if matches!(
+            style,
+            5 | 8 | 21 | 28 | 29 | 33 | 36 | 47 | 93 | 115 | 151 | 152
+        ) || matches!(self.kind, 1024 | 669)
+        {
+            if self.shimmer_two_cell_kill(world) {
+                self.kill();
+            } else if self.vel.y > 0.0 {
+                self.vel.y *= -1.0;
+                self.net_update = true;
+                self.shimmer_wet = false;
+                self.wet = false;
+            }
+        }
+        // `:22440-22452` — the aiStyle-15 flail (the non-refused states): the
+        // falling bounce + the -0.4 Y clamp to -8.
+        else if style == 15 {
+            if self.vel.y > 0.0 {
+                self.vel.y *= -1.0;
+                self.net_update = true;
+            }
+            self.vel.y -= 0.4;
+            if self.vel.y < -8.0 {
+                self.vel.y = -8.0;
+            }
+        }
+        // `:22453-22466` — the aiStyle-99 yoyo (the non-ghost states): the
+        // falling bounce + clear wet, then the vy pin to -8 (the `> -8` test
+        // sets -8 — a verbatim source quirk: it forces -8 whenever vy > -8).
+        else if style == 99 {
+            if self.vel.y > 0.0 {
+                self.vel.y *= -1.0;
+                self.net_update = true;
+                self.shimmer_wet = false;
+                self.wet = false;
+            }
+            if self.vel.y > -8.0 {
+                self.vel.y = -8.0;
+            }
+        }
+        // `:22467-22470` — the aiStyle-7/9/13/35/53/197/130/134/137/138/149/
+        // 160/204: instant kill.
+        else if matches!(
+            style,
+            7 | 9 | 13 | 35 | 53 | 197 | 130 | 134 | 137 | 138 | 149 | 160 | 204
+        ) {
+            self.kill();
+        }
+        // `:22471-22495` — the aiStyle-2 thrown: -0.7 Y, -20 life. The 936
+        // rainbow-slime spawn arm (`:22474-22490`) is rowless + the net/
+        // achievement layers — skipped (the -20 life else-arm stands).
+        else if style == 2 {
+            self.vel.y -= 0.7;
+            self.time_left -= 20;
+        }
+        // `:22496-22503` — the aiStyle-14/16: the >3000 life -60, -0.5 Y.
+        else if matches!(style, 14 | 16) {
+            if self.time_left > 3000 {
+                self.time_left -= 60;
+            }
+            self.vel.y -= 0.5;
+        }
+        // `:22504-22515` — the aiStyle-25/17: the >10 Y x0.97 damp, -0.7 Y,
+        // the <-8 clamp to -10.
+        else if matches!(style, 25 | 17) {
+            if self.vel.y > 10.0 {
+                self.vel.y *= 0.97;
+            }
+            self.vel.y -= 0.7;
+            if self.vel.y < -10.0 {
+                self.vel.y = -10.0;
+            }
+        }
+    }
+
+    /// `Shimmer()`'s two-cell kill probe (`:22405-22410` / `:22426-22431`):
+    /// `(int)(Center.X / 16)`, `(int)(position.Y / 16)` — the cell at the
+    /// projectile's top-centre must be FULL shimmer (`liquid == 255 &&
+    /// shimmer()`) AND the cell above it must carry shimmer liquid
+    /// (`liquid > 0 && shimmer()`). Both `InWorld` + non-null. The probe reads
+    /// the tile's `liquid_kind() == Shimmer` (tr-core tile.rs:140).
+    #[allow(dead_code)] // STAGED: only `shimmer` calls it (the wet block is unported)
+    fn shimmer_two_cell_kill(&self, world: &World) -> bool {
+        let num = ((self.pos.x + self.w * 0.5) / TILE_PX) as i32;
+        let num2 = (self.pos.y / TILE_PX) as i32;
+        let full = |x: i32, y: i32, need_full: bool| {
+            world.tile(x, y).is_some_and(|t| {
+                let amount_ok = if need_full { t.liquid == u8::MAX } else { t.liquid > 0 };
+                amount_ok && t.liquid_kind() == tr_core::tile::LiquidKind::Shimmer
+            })
+        };
+        full(num, num2, true) && full(num, num2 - 1, false)
+    }
+
     /// `AI()`'s `TrailingMode` chain (`Projectile.cs:17091-17195`): the history
     /// rings shift **once per update call** — after the AI sub-steps, ahead of
     /// the `timeLeft--` at `:17201` — so a sub-stepped kind records one entry
@@ -44991,5 +45177,115 @@ mod w4_g2_rowless_tests {
         // The 237's death hook spawns the 238 raining cloud (the kill ran).
         assert!(pool.slots().iter().any(|p| p.active && p.kind == RAIN_CLOUD_RAINING),
             "the kill hook fired (:74535-74538)");
+    }
+
+    // --- W4-g2 reconciliation: the Shimmer() family (STAGED, unwired) --------
+    // The helper is driven directly (shimmer_wet set by hand) — its :17011
+    // caller is the unported generic wet block. WRITTEN NOT RUN (code-only).
+
+    /// `Projectile.cs:22403-22422` — the 229 orb's shimmer arm: a falling orb
+    /// (vy > 0) over a NON-full shimmer cell bounces (-vy), syncs, caps the
+    /// life to 600 then -60, and clears wet/shimmerWet.
+    #[test]
+    fn w4_g2_shimmer_the_orb_bounces_and_ages() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(CHLOROPHYTE_ORB, 200.0, 200.0, 2.0, 5.0, 30, 0.0).unwrap();
+        let mut w = world();
+        // No shimmer tiles → the two-cell kill probe fails, the bounce runs.
+        let p = &mut pool.slots_mut()[slot];
+        p.shimmer_wet = true;
+        p.wet = true;
+        p.time_left = 3600;
+        p.shimmer(&w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.vel.y, -5.0, "the falling bounce (:22413)");
+        assert!(p.net_update, ":22414");
+        assert_eq!(p.time_left, 540, "cap 600 then -60 (:22415-22419)");
+        assert!(!p.shimmer_wet && !p.wet, "the wet flags clear (:22420-22421)");
+        assert!(p.active, "the bounce keeps the orb alive");
+    }
+
+    /// `Projectile.cs:22405-22410` — the two-cell kill probe: a FULL shimmer
+    /// cell at the top-centre AND a shimmer cell above it kill the orb.
+    #[test]
+    fn w4_g2_shimmer_the_two_cell_probe_kills() {
+        let mut pool = ProjectilePool::new();
+        // Orb at (200, 200): top-centre tile ((200+15)/16, 200/16) = (13, 12).
+        let slot = pool.spawn_with_data(CHLOROPHYTE_ORB, 200.0, 200.0, 2.0, 5.0, 30, 0.0).unwrap();
+        let mut w = world();
+        let fill = |w: &mut World, x: i32, y: i32, amount: u8| {
+            let i = w.index(x, y);
+            w.tiles[i].liquid = amount;
+            w.tiles[i].set_liquid_kind(LiquidKind::Shimmer);
+        };
+        fill(&mut w, 13, 12, u8::MAX); // full cell at top-centre
+        fill(&mut w, 13, 11, 100); // shimmer above (liquid > 0)
+        let p = &mut pool.slots_mut()[slot];
+        p.shimmer_wet = true;
+        p.shimmer(&w);
+        assert!(!pool.slots()[slot].active, "the two-cell probe kills (:22409)");
+        // A single full cell (no shimmer above) does NOT kill — the bounce runs.
+        let slot2 = pool.spawn_with_data(CHLOROPHYTE_ORB, 200.0, 200.0, 2.0, 5.0, 30, 0.0).unwrap();
+        let mut w2 = world();
+        fill(&mut w2, 13, 12, u8::MAX);
+        let p2 = &mut pool.slots_mut()[slot2];
+        p2.shimmer_wet = true;
+        p2.shimmer(&w2);
+        assert!(pool.slots()[slot2].active, "one cell is not enough — the bounce stands");
+        assert_eq!(pool.slots()[slot2].vel.y, -5.0);
+    }
+
+    /// `Projectile.cs:22380-22383` — the arrow-family float: the wooden arrow
+    /// (1, aiStyle 1) takes -0.4 Y, no life change, no bounce.
+    #[test]
+    fn w4_g2_shimmer_the_arrow_floats() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(WOODEN_ARROW, 200.0, 200.0, 4.0, 3.0, 20, 0.0).unwrap();
+        let w = world();
+        let p = &mut pool.slots_mut()[slot];
+        p.shimmer_wet = true;
+        let life = p.time_left;
+        p.shimmer(&w);
+        let p = &pool.slots()[slot];
+        assert!((p.vel.y - 2.6).abs() < 1e-6, "the -0.4 float (:22382)");
+        assert_eq!(p.time_left, life, "the arrow float keeps the life");
+        assert!(p.active);
+    }
+
+    /// `Projectile.cs:22363-22366` — the refusal gate: a hostile shot (the
+    /// port's `!friendly` proxy) with a non-25/17 style returns untouched.
+    #[test]
+    fn w4_g2_shimmer_the_hostile_gate_refuses() {
+        let mut pool = ProjectilePool::new();
+        // The hostile inferno bolt 291 (aiStyle 50, friendly false).
+        let slot = hostile_slot(&mut pool, INFERNO_HOSTILE_BOLT, 200.0, 200.0, 2.0, 5.0);
+        let w = world();
+        let p = &mut pool.slots_mut()[slot];
+        p.shimmer_wet = true;
+        let vel = p.vel;
+        let life = p.time_left;
+        p.shimmer(&w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.vel, vel, "the hostile gate refuses — no velocity change");
+        assert_eq!(p.time_left, life);
+        assert!(p.active);
+    }
+
+    /// `Projectile.cs:22424-22438` — the aiStyle-5 falling star (92): the
+    /// bounce keeps the life (NO cap / -60, unlike the aiStyle-1/16/40 arm).
+    #[test]
+    fn w4_g2_shimmer_the_star_bounce_keeps_life() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(FALLING_STAR, 200.0, 200.0, 2.0, 5.0, 20, 0.0).unwrap();
+        let w = world();
+        let p = &mut pool.slots_mut()[slot];
+        p.shimmer_wet = true;
+        p.wet = true;
+        p.time_left = 3600;
+        p.shimmer(&w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.vel.y, -5.0, "the bounce (:22434)");
+        assert_eq!(p.time_left, 3600, "NO life cap / -60 (the :22424 arm)");
+        assert!(!p.shimmer_wet && !p.wet, "the wet flags clear (:22436-22437)");
     }
 }
