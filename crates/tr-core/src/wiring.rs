@@ -1671,7 +1671,8 @@ impl Wiring {
     /// `HitWireSingle`'s `if (type == 216)` block `:1489-1494`): the string
     /// rocket — the variant rides `frameY / 40`, the anchor moves up one cell
     /// when the sprite's `frameY % 40 == 18`, and both fixture tiles
-    /// deactivate after the launch.
+    /// deactivate after the launch. The `SkipWire(i, j)` runs AFTER the
+    /// launch (`Wiring.cs:1492` — W4-f11 census, the port used to drop it).
     fn launch_rocket(&mut self, world: &mut World, i: i32, j: i32) {
         let frame_y = world.tile_frame_y(i, j);
         // `:62163-62168`: the variant band and the anchor adjustment.
@@ -1703,6 +1704,9 @@ impl Wiring {
                 t.flags &= !crate::tile::FLAG_ACTIVE;
             }
         }
+        // `Wiring.SkipWire(i, j)` (`Wiring.cs:1492`) — AFTER the launch, and
+        // only the hit cell (the C# does not skip `j + 1`).
+        self.skip.insert((i, j));
     }
 
     /// `WorldGen.LaunchRocketSmall` (`WorldGen.cs:62181-62198`, from case 335
@@ -1710,11 +1714,15 @@ impl Wiring {
     /// shifts up/left when its own frame is the 18 column/row, and the rocket
     /// is `415 + Main.rand.Next(4)`.
     fn launch_rocket_small(&mut self, world: &World, i: i32, j: i32, frame_x: i16, frame_y: i16) {
-        // `:1510-1517`: the 2×2 anchor and the SkipWire.
+        // `:1510-1517`: the 2×2 anchor and the SkipWire — all FOUR cells
+        // (`Wiring.cs:1512-1515`; W4-f11 census, the port used to skip only
+        // the left column).
         let num72 = j - (frame_y as i32 / 18) as i32;
         let num73 = i - (frame_x as i32 / 18) as i32;
         self.skip.insert((num73, num72));
         self.skip.insert((num73, num72 + 1));
+        self.skip.insert((num73 + 1, num72));
+        self.skip.insert((num73 + 1, num72 + 1));
         if !self.check_mech(num73, num72, 30) {
             return;
         }
@@ -1751,7 +1759,9 @@ impl Wiring {
     /// reads the app's pool and runs there (decision D1); the roll therefore
     /// happens before the dedupe — the recorded deviation.
     fn firework_fountain(&mut self, i: i32, j: i32, frame_x: i16, frame_y: i16) {
-        // `:1524-1530`: the 2×2 anchor and the SkipWire.
+        // `:1524-1530`: the 1×2 anchor's two SkipWire calls (`:1526-1527` —
+        // the C# fountain skips exactly the left column, unlike the box's
+        // four; verified by the W4-f11 census).
         let num69 = j - (frame_y as i32 / 18) as i32;
         let num70 = i - (frame_x as i32 / 18) as i32;
         self.skip.insert((num70, num69));
