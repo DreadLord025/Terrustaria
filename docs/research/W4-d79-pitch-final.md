@@ -222,7 +222,7 @@ written not run).
 | g21 `7da02f439` | 105 | 6 | 111 | +21 |
 | g22 `250488c34` | 94 | 7 | 101 | +10 net (+12 added, −1 blanket tick, +1 test) |
 | g23 `945391e33` | 88 | 6 | 94 | +4 net (+6 added, −2) |
-| e10 `432dd5ab1` | 93 | 0 | 93 | +9 net (+11 added, −7 Roar, −1 cart; the 6 base test-rig Roar plays retired with the rewire) |
+| e10 `432dd5ab1` | 93 | 0 | 93 | +9 net prod (+11 added, −1 doors.rs Roar, −1 cart); the −7 Roar split is 6 TEST-rig summon-helper plays + 1 prod (the base's 6 test sites all rewired onto `play_roar`) |
 | d80 `075b954d2` | 84 | 6 | 90 | 0 |
 | f49 `6c0ee2aa2` | 84 | 6 | 90 | 0 |
 | f12 `ee67786ec` | 85 | 6 | 91 | +1 (the `play("hungry")` drain, F4) |
