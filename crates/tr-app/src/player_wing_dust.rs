@@ -493,6 +493,16 @@ pub(crate) fn drain_wing_frame(app: &mut App, b: WingFrameDust) {
                 d.velocity.y += 0.5;
             }
         }
+        // W4-g66 gap-fill — `:30309-30360`: the Fairy-33 eye-colour pair.
+        33 => fairy_eye_pair(app, &b),
+        // W4-g66 gap-fill — `:30408-30445`: the Leaf-38 orbit triples.
+        38 => leaf_orbits(app, &b),
+        // W4-g66 gap-fill — `:30529-30607`: the Chicken Bones-47 bursts.
+        47 => chicken_bones(app, &b),
+        // W4-g66 gap-fill — `:30609-30691`: the Heroicis-49 light-gated rolls.
+        49 => heroicis(app, &b),
+        // W4-g66 gap-fill — `:30693-30735`: the Kazzymodus-50 sparkle rolls.
+        50 => kazzymodus(app, &b),
         // `:30505-30521`: the Nebula-29 rest roll — 1/5 type-6 scale 2.4 at
         // the mid box, the 1/10 fadeIn 2.
         29 => {
@@ -561,6 +571,315 @@ fn bat_sparkles(app: &mut App, b: &WingFrameDust) {
         if rng.next_max(10) == 0 {
             d.fade_in = 0.5;
         }
+    }
+}
+
+/// W4-g66 gap-fill — `:30324-30358`: the Fairy-33 eye-colour pair. The
+/// colour is `hslToRgb(rgbToHsl(eyeColor).X, 1, 0.5)` (the tested
+/// `ui::color` round-trip); TWO type-182 puffs over the body box (speed =
+/// player velocity, alpha 127), each pinned to a foot corner (facing-left
+/// shifts X −4), velocity ±2 X / +2 Y minus 0.3× the player velocity, then
+/// a `CloneDust` at ×0.65 scale/fadeIn re-tinted White. The clone's
+/// `dustIndex != 6000` guard is the pool's own sentinel early-return.
+fn fairy_eye_pair(app: &mut App, b: &WingFrameDust) {
+    let (h, _, _) = crate::ui::color::rgb_to_hsl(b.eye_color);
+    let c = crate::ui::color::hsl_to_rgb(h, 1.0, 0.5, 255);
+    let new_color = Color::new(c[0], c[1], c[2], c[3]);
+    let x_off = if b.facing != 1 { -4.0 } else { 0.0 };
+    for m in 0..2 {
+        let idx = nd(
+            app,
+            Vec2::new(b.x, b.y),
+            b.width as i32,
+            b.height as i32,
+            182,
+            b.vx,
+            b.vy,
+            127,
+            new_color,
+            1.0,
+        );
+        {
+            let d = app.dust.slot_mut(idx);
+            d.no_gravity = true;
+            d.fade_in = 1.0;
+            d.scale = 1.0;
+            d.no_light = true;
+            d.no_light_emittance = false;
+            let corner_x = if m == 0 { b.x + x_off } else { b.x + b.width + x_off };
+            d.position = Vec2::new(corner_x, b.y + b.height);
+            // `:30340`/`:30345`: X = X*1 ∓ 2 − vx*0.3 (m0 −2, m1 +2).
+            let sign = if m == 0 { -2.0 } else { 2.0 };
+            d.velocity.x = d.velocity.x + sign - b.vx * 0.3;
+            d.velocity.y = d.velocity.y + 2.0 - b.vy * 0.3;
+        }
+        // `:30349-30357`: the clone (sentinel-guarded inside the pool).
+        let ctx = app.spawn_ctx();
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let clone = app.dust.clone_dust(rng, &ctx, &app.world, idx);
+        if clone != idx {
+            let d = app.dust.slot_mut(clone);
+            d.scale *= 0.65;
+            d.fade_in *= 0.65;
+            d.color = Color::new(255, 255, 255, 255);
+        }
+    }
+}
+
+/// W4-g66 gap-fill — `:30408-30445`: the Leaf-38 orbit triples. THREE
+/// iterations × THREE `NewDustPerfect` type-267 puffs tinted
+/// `underShirtColor`: the orbit anchors (−39,6)/(−23,2)/(−31,−6) scaled by
+/// `(direction, gravDir)` plus a 2-px rotation vector at
+/// `miscCounter*direction / −15` (the third: /−20) turns, velocity =
+/// 0.5× the player velocity plus the iteration's −0.33/−0.66 fold.
+/// Scales 0.47/0.35/0.49; noGravity + noLight.
+fn leaf_orbits(app: &mut App, b: &WingFrameDust) {
+    let center = Vec2::new(b.x + b.width * 0.5, b.y + b.height * 0.5);
+    let dirs = Vec2::new(b.facing as f32, 1.0);
+    let value = Vec2::new(b.vx, b.vy) * 0.5;
+    let c = b.under_shirt_color;
+    let tint = Color::new(c[0], c[1], c[2], c[3]);
+    let num34 = b.misc_counter as i32 * b.facing;
+    let tau = std::f32::consts::PI * 2.0;
+    for n in 0..3 {
+        let fold = match n {
+            1 => Vec2::new(b.vx, b.vy) * -0.33,
+            2 => Vec2::new(b.vx, b.vy) * -0.66,
+            _ => Vec2::ZERO,
+        };
+        for (anchor, denom, scale) in [
+            (Vec2::new(-39.0, 6.0), -15.0f32, 0.47f32),
+            (Vec2::new(-23.0, 2.0), -15.0, 0.35),
+            (Vec2::new(-31.0, -6.0), -20.0, 0.49),
+        ] {
+            let ang = num34 as f32 / denom * tau;
+            let off = anchor * dirs + Vec2::new(2.0, 0.0).rotate(Vec2::from_angle(ang));
+            let ctx = app.spawn_ctx();
+            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            let idx = app.dust.new_dust_perfect(
+                rng, &ctx, &app.world, center + off + fold, 267, Some(value), 0, tint, 1.0,
+            );
+            let d = app.dust.slot_mut(idx);
+            d.no_gravity = true;
+            d.no_light = true;
+            d.no_light_emittance = false;
+            d.scale = scale;
+        }
+    }
+}
+
+/// W4-g66 gap-fill — the frame-row bob table the Chicken Bones/Heroicis
+/// share (`:30535-30568`/`:30615-30648`): rows 3/6 +0.5, 4/5 +1, 8 −0.5,
+/// 9 −1, 10 −0.5; the rest 0.
+fn dev_row_bob(frame: i32) -> f32 {
+    match frame {
+        3 | 6 => 0.5,
+        4 | 5 => 1.0,
+        8 | 10 => -0.5,
+        9 => -1.0,
+        _ => 0.0,
+    }
+}
+
+/// W4-g66 gap-fill — `:30529-30607`: the Chicken Bones-47 dust. The
+/// `justSwitched && frame == 6 && controlJump` burst: 8 type-264 puffs
+/// (10×10 box, tint (50,120,255,200), scale 1.1×(1+0.25×NextFloatDirection))
+/// at the centre ± the (−25/−5)×direction, 20-down offsets; the spawn's
+/// X-delta doubles into Y, velocity = (x*0.5, 3). Then the 1/6 rest roll
+/// (30×50 box at centre +(−30×direction, 0)): velocity ×0.1, Y/pos
+/// += bob*2, velocity += playerVel*0.3*NextFloat. `customData` dropped.
+fn chicken_bones(app: &mut App, b: &WingFrameDust) {
+    if b.wing_frame == 0 {
+        return;
+    }
+    let bob = dev_row_bob(b.wing_frame);
+    let center = Vec2::new(b.x + b.width * 0.5, b.y + b.height * 0.5);
+    let dir = b.facing as f32;
+    let tint = Color::new(50, 120, 255, 200);
+    if b.just_switched && b.wing_frame == 6 && b.control_jump {
+        for i in 0..8 {
+            let off = if i < 4 {
+                Vec2::new(-25.0 * dir, 20.0)
+            } else {
+                Vec2::new(-5.0 * dir, 20.0)
+            };
+            let scale = {
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                1.1 * (1.0 + 0.25 * rng.next_float_direction())
+            };
+            let idx = ndd(app, center - Vec2::new(5.0, 5.0) + off, 10, 10, 264, 0, tint, scale);
+            let d = app.dust.slot_mut(idx);
+            let x = (d.position - center - off).x;
+            d.position.y += x * 2.0;
+            d.no_gravity = true;
+            d.no_light_emittance = false;
+            d.no_light = true;
+            d.fade_in = 0.0;
+            d.velocity = Vec2::new(x * 0.5, 3.0);
+        }
+    }
+    if roll(app, 6) {
+        let off = Vec2::new(-30.0 * dir, 0.0);
+        let scale = {
+            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            1.1 * (1.0 + 0.25 * rng.next_float_direction())
+        };
+        let idx = ndd(app, center - Vec2::new(15.0, 25.0) + off, 30, 50, 264, 0, tint, scale);
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let d = app.dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.no_light_emittance = false;
+        d.no_light = true;
+        d.velocity *= 0.1;
+        d.fade_in = 0.0;
+        d.velocity.y += bob * 2.0;
+        d.position.y += bob * 2.0;
+        d.velocity += Vec2::new(b.vx, b.vy) * 0.3 * rng.next_float();
+    }
+}
+
+/// W4-g66 gap-fill — `Lighting.GetColor(Point)` (`Lighting.cs:180-187`) as
+/// XNA bytes: the engine sample × `GlobalBrightness` (1.2, or 1.0 under
+/// the Darkness debuff — `:109-116`), the float colour ctor truncates.
+/// The Color-mode style transforms are draw-pass conventions (`gore.rs`'s
+/// `light_color` note); the raw engine read is the gameplay sample. Out of
+/// the computed rect the legacy engine reads 0 (`legacy.rs:341-350`).
+fn heroicis_light_lum(app: &App, b: &WingFrameDust) -> f32 {
+    let tx = b.mounted_cx as i32 >> 4;
+    let ty = b.mounted_cy as i32 >> 4;
+    let sample = if let Some(legacy) = app.legacy_light.as_ref() {
+        legacy.get_color(tx, ty)
+    } else {
+        app.light.get(tx, ty)
+    };
+    let brightness = if b.blind { 1.0 } else { tr_core::lighting::GLOBAL_BRIGHTNESS };
+    let bytes = [
+        (sample[0] * brightness) as u8,
+        (sample[1] * brightness) as u8,
+        (sample[2] * brightness) as u8,
+        255,
+    ];
+    let (_, _, l) = crate::ui::color::rgb_to_hsl(bytes);
+    // `Utils.Remap(l, 0.2, 0.4, 0, 1)` (`Utils.cs:345-348`, clamped):
+    // the lerp collapses to the clamped inverse lerp.
+    ((l as f32 - 0.2) / 0.2).clamp(0.0, 1.0)
+}
+
+/// W4-g66 gap-fill — `:30609-30691`: the Heroicis-49 dust — the Chicken
+/// Bones shape gated on the mounted-centre light: the burst's each
+/// iteration draws NextFloat and skips when `lum < draw`; the rest roll
+/// needs `Next(6) == 0` AND `lum >= NextFloat()`. Tint White×200, scale
+/// 0.6×(1+0.45×dir), the burst box 10×5 at (−20/−10)×dir, 15 down,
+/// velocity (x*0.5, 2); the rest box 30×40, velocity.Y += bob*1.5,
+/// position.Y += bob*2.
+fn heroicis(app: &mut App, b: &WingFrameDust) {
+    if b.wing_frame == 0 {
+        return;
+    }
+    let bob = dev_row_bob(b.wing_frame);
+    // `:30653`: num4 reads AFTER the frame-0 gate; no RNG draws in it.
+    let lum = heroicis_light_lum(app, b);
+    let center = Vec2::new(b.x + b.width * 0.5, b.y + b.height * 0.5);
+    let dir = b.facing as f32;
+    let tint = Color::new(255, 255, 255, 200);
+    if b.just_switched && b.wing_frame == 6 && b.control_jump {
+        for i in 0..8 {
+            let gate = app
+                .rngs
+                .stream(crate::app::RngKey::UpdatePlayers)
+                .next_float();
+            if lum < gate {
+                continue;
+            }
+            let off = if i < 4 {
+                Vec2::new(-20.0 * dir, 15.0)
+            } else {
+                Vec2::new(-10.0 * dir, 15.0)
+            };
+            // `:30662`: the scale ARGUMENT's NextFloatDirection draw lands
+            // BEFORE the spawn's default-block draws (C# argument order).
+            let scale = {
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                0.6 * (1.0 + 0.45 * rng.next_float_direction())
+            };
+            let idx = ndd(app, center - Vec2::new(5.0, 2.5) + off, 10, 5, 264, 0, tint, scale);
+            let d = app.dust.slot_mut(idx);
+            let x = (d.position - center - off).x;
+            d.position.y += x * 2.0;
+            d.no_gravity = true;
+            d.no_light_emittance = false;
+            d.no_light = true;
+            d.fade_in = 0.0;
+            d.velocity = Vec2::new(x * 0.5, 2.0);
+        }
+    }
+    if roll(app, 6) {
+        let gate = app
+            .rngs
+            .stream(crate::app::RngKey::UpdatePlayers)
+            .next_float();
+        if lum >= gate {
+            let off = Vec2::new(-30.0 * dir, 0.0);
+            let scale = {
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                0.6 * (1.0 + 0.45 * rng.next_float_direction())
+            };
+            let idx = ndd(app, center - Vec2::new(15.0, 20.0) + off, 30, 40, 264, 0, tint, scale);
+            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            let d = app.dust.slot_mut(idx);
+            d.no_gravity = true;
+            d.no_light_emittance = false;
+            d.no_light = true;
+            d.velocity *= 0.1;
+            d.fade_in = 0.0;
+            d.velocity.y += bob * 1.5;
+            d.position.y += bob * 2.0;
+            d.velocity += Vec2::new(b.vx, b.vy) * 0.3 * rng.next_float();
+        }
+    }
+}
+
+/// W4-g66 gap-fill — `:30693-30735`: the Kazzymodus-50 dust. The
+/// `justSwitched && frame == 1` burst: 16 type-6 puffs (30×10 box at
+/// centre +((−25/−5)×dir, −20), alpha 100, tint (50,120,255,200), scale
+/// 1.2), velocity = (NextFloatDirection×5, NextFloatDirection×2), fadeIn
+/// 1.2, noGravity. Then the 1/4 rest roll: the Next(2) side pick
+/// (−30/+10 ×dir), the frame-1 ? −25 : −5 Y row, box 25×20, velocity =
+/// (NextFloatDirection×2.5, NextFloat×3).
+fn kazzymodus(app: &mut App, b: &WingFrameDust) {
+    if b.wing_frame == 0 {
+        return;
+    }
+    let center = Vec2::new(b.x + b.width * 0.5, b.y + b.height * 0.5);
+    let dir = b.facing as f32;
+    let tint = Color::new(50, 120, 255, 200);
+    if b.just_switched && b.wing_frame == 1 {
+        for i in 0..16 {
+            let x_off = if i < 4 { -25.0 * dir } else { -5.0 * dir };
+            let pos = center + Vec2::new(x_off, -20.0) - Vec2::new(15.0, 5.0);
+            let idx = ndd(app, pos, 30, 10, 6, 100, tint, 1.2);
+            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            let d = app.dust.slot_mut(idx);
+            d.velocity.x = rng.next_float_direction() * 5.0;
+            d.velocity.y = rng.next_float_direction() * 2.0;
+            d.fade_in = 1.2;
+            d.no_gravity = true;
+            d.no_light_emittance = false;
+        }
+    }
+    if roll(app, 4) {
+        let side = roll(app, 2);
+        let x_off = dir * if side { -30.0 } else { 10.0 };
+        let y_row = if b.wing_frame == 1 { -25.0 } else { -5.0 };
+        let pos = center + Vec2::new(x_off, y_row) - Vec2::new(12.5, 10.0);
+        let idx = ndd(app, pos, 25, 20, 6, 100, tint, 1.2);
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let d = app.dust.slot_mut(idx);
+        d.velocity.x = rng.next_float_direction() * 2.5;
+        d.velocity.y = rng.next_float() * 3.0;
+        d.fade_in = 1.2;
+        d.no_gravity = true;
+        d.no_light_emittance = false;
     }
 }
 
@@ -1103,6 +1422,15 @@ mod tests {
             facing: 1,
             hover_up: false,
             count: 1,
+            eye_color: [105, 90, 75, 255],
+            under_shirt_color: [160, 180, 215, 255],
+            misc_counter: 0,
+            just_switched: false,
+            control_jump: true,
+            wing_frame: 2,
+            mounted_cx: 310.0,
+            mounted_cy: 621.0,
+            blind: false,
         }
     }
 

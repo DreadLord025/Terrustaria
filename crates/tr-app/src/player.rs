@@ -817,6 +817,58 @@ pub(crate) struct WingFrameDust {
     pub(crate) facing: i32,
     pub(crate) hover_up: bool,
     pub(crate) count: i32,
+    /// W4-g66 gap-fill — the wings-33 eye-colour HSL pair (`:30324`):
+    /// `eyeColor` at the C# read moment (alpha kept — the XNA colour ctor).
+    pub(crate) eye_color: [u8; 4],
+    /// W4-g66 gap-fill — the wings-38 orbit triples' tint (`:30425`).
+    pub(crate) under_shirt_color: [u8; 4],
+    /// W4-g66 gap-fill — `miscCounter` (`:30411`, the wings-38 orbit phase).
+    pub(crate) misc_counter: u32,
+    /// W4-g66 gap-fill — `justSwitched` (`:30000`/`:30071`/`:30142`): the
+    /// frame machine crossed a row boundary THIS call (47/49/50 bursts).
+    pub(crate) just_switched: bool,
+    /// W4-g66 gap-fill — `controlJump` (`:30573`/`:30654`, the burst gates).
+    pub(crate) control_jump: bool,
+    /// W4-g66 gap-fill — `wingFrame` AFTER the arm's machine ran
+    /// (`:30531`/`:30611`/`:30695` read it post-machine).
+    pub(crate) wing_frame: i32,
+    /// W4-g66 gap-fill — the Heroicis-49 light gate (`:30653`):
+    /// `MountedCenter` (`:3337`, folds to `center()` — no mount offsets)
+    /// at the C# read moment; the drain samples the light map there.
+    pub(crate) mounted_cx: f32,
+    pub(crate) mounted_cy: f32,
+    /// `blind` — the drain's `Lighting.GetColor` brightness pick
+    /// (`Lighting.cs:109-116`: 1.2, or 1.0 under Darkness).
+    pub(crate) blind: bool,
+}
+
+impl WingFrameDust {
+    /// The box/velocity snapshot every `WingFrame` arm shares — the
+    /// appearance/frame extras default off (only the 33/38/47/49/50 arms
+    /// read them, and those arms set them explicitly).
+    pub(crate) fn base(wings: i32, p: &Player) -> Self {
+        Self {
+            wings,
+            x: p.x,
+            y: p.y,
+            width: p.width,
+            height: p.height,
+            vx: p.vx,
+            vy: p.vy,
+            facing: p.facing,
+            hover_up: false,
+            count: 0,
+            eye_color: p.eye_color,
+            under_shirt_color: p.under_shirt_color,
+            misc_counter: p.misc_counter,
+            just_switched: false,
+            control_jump: p.control_jump,
+            wing_frame: p.wing_frame,
+            mounted_cx: p.mounted_center().0,
+            mounted_cy: p.mounted_center().1,
+            blind: p.blind,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -1853,6 +1905,17 @@ pub struct Player {
     /// (`TR_WINGS=<ArmorIDs.Wing>` pins it; the granting items land with
     /// M3-EQUIP-3).
     pub wings_logic: i32,
+    /// W4-g66 gap-fill — `Player.eyeColor = new Color(105, 90, 75)`
+    /// (`Player.cs:2558`): the character-creation colour
+    /// (`NewPlayerDraft.eye_color`, randomised by `RandomizePlayer`'s
+    /// `ScaledHslToRgb` loop, `UICharacterCreation.cs:1252-1258`). The
+    /// wings-33 `WingFrame` arm reads it (`:30324`, the HSL round-trip);
+    /// the session glue (`App::apply_session_appearance`) copies the draft
+    /// at world entry, `.plr` load rides the f44 save lane.
+    pub eye_color: [u8; 4],
+    /// W4-g66 gap-fill — `Player.underShirtColor = new Color(160, 180, 215)`
+    /// (`Player.cs:2562`): the wings-38 orbit triples' tint (`:30425`).
+    pub under_shirt_color: [u8; 4],
     /// `Player.rocketTime` / `rocketTimeMax` / `rocketDelay` / `rocketDelay2`
     /// (`Player.cs:2744-2748`): the rocket-boots fuel and its thrust cadence.
     pub rocket_time: i32,
@@ -3087,6 +3150,9 @@ impl Player {
             wing_time: 0.0,
             wing_time_max: 0,
             wings_logic: 0,
+            // `Player.cs:2558`/`:2562` — the `new Player()` colour inits.
+            eye_color: [105, 90, 75, 255],
+            under_shirt_color: [160, 180, 215, 255],
             rocket_time: 0,
             rocket_time_max: 7,
             rocket_delay: 0,
@@ -3867,6 +3933,7 @@ impl Player {
     pub(crate) fn take_wing_frame_dust(&mut self) -> Option<WingFrameDust> {
         self.pending_wing_frame_dust.take()
     }
+
 
     /// W4-d51 — queues the dash dust snapshot at the C# read moment (the
     /// velocity writes above each site have already landed).
@@ -8956,11 +9023,15 @@ impl Player {
 
     /// `Player.ShouldDrawWingsThatAreAlwaysAnimated` (`Player.cs:30737-30748`):
     /// the three always-animated wing sets keep the rest legs while airborne.
+    /// W4-g66 gap-fill: the mount gate is `mount.CanUseWings` (`:30743`) —
+    /// `Mount.cs:570-580` returns TRUE when `_data == null || !_active`;
+    /// the previous `data().is_some_and` folded it to false and starved
+    /// the Rainbow/Spooky arms unmounted.
     fn should_draw_wings_that_are_always_animated(&self) -> bool {
         self.vy != 0.0
             && !self.grappling_active
             && (!self.wet || !self.should_float_in_water())
-            && self.mount.data().is_some_and(|d| d.can_use_wings)
+            && self.mount.can_use_wings()
     }
 
     /// `Player.ShouldFloatInWater` (`Player.cs:3872-3885`): `canFloatInWater`
@@ -10384,7 +10455,8 @@ impl Player {
         }
         // S1-E-21f — `WingFrame(flag19)` (`Player.cs:26820`, `:29468-30527`).
         // W4-g66: the jetpack-4 / Bat-30 / Rainbow-45 / Spooky-39 dust arms
-        // run their own frame machines and queue their rolls here.
+        // run their own frame machines and queue their rolls here; the
+        // gap-fill adds the 33/38 appearance arms + the 47/49/50 machines.
         self.wing_frame_visuals(flag19);
         // The port runs the DEFAULT arm's frame machine (`:30448-30526`:
         // num35 = 4, num36 = 4, num37 = 0, num38 = 0, num39 = 1 — the
@@ -10393,11 +10465,13 @@ impl Player {
         // the grounded 0. The machine sits behind the C#'s exclusion gate
         // (`:26835`: wings 4/22/0/24/28/30/33/45 — the early-return arms own
         // their frames; W4-g66 adds 39, whose Spooky arm early-returns at
-        // `:30307`). The `wingFrame == 3` flap edge (`:26835-26858`) runs
-        // AFTER the rocket→wing conversion below, in the C# order; wings
-        // 43/44 read frame 4 and 49 reads frame 5 — their frame tables are
-        // unported, so their flap arms stay silent (the documented deviation).
-        if !matches!(self.wings_logic, 4 | 22 | 0 | 24 | 28 | 30 | 33 | 39 | 45) {
+        // `:30307`, and the gap-fill adds 38/47/49/50 — their `WingFrame`
+        // arms early-return at `:30446`/`:30021`/`:30092`/`:30163`). The
+        // `wingFrame == 3` flap edge (`:26835-26858`) runs AFTER the
+        // rocket→wing conversion below, in the C# order; wings 43/44 read
+        // frame 4 and 49 reads frame 5 — 49's machine landed with the
+        // gap-fill, 43/44's tables stay unported (the documented deviation).
+        if !matches!(self.wings_logic, 4 | 22 | 0 | 24 | 28 | 30 | 33 | 38 | 39 | 45 | 47 | 49 | 50) {
             if flag19 || self.jump > 0 {
                 self.wing_frame_counter += 1;
                 if self.wing_frame_counter > 4 {
@@ -10414,18 +10488,7 @@ impl Player {
                 // type-6 scale 2.4 + the 1/10 fadeIn 2), drained on
                 // `UpdatePlayers`.
                 if self.wings_logic == 29 {
-                    self.pending_wing_frame_dust = Some(WingFrameDust {
-                        wings: 29,
-                        x: self.x,
-                        y: self.y,
-                        width: self.width,
-                        height: self.height,
-                        vx: self.vx,
-                        vy: self.vy,
-                        facing: self.facing,
-                        hover_up: false,
-                        count: 0,
-                    });
+                    self.pending_wing_frame_dust = Some(WingFrameDust::base(29, self));
                 }
             } else {
                 // `:30523-30526` — the grounded rest frame (num38 = 0).
@@ -10446,9 +10509,16 @@ impl Player {
         }
         // `:26835-26858`: the flap-sound edge — `wingFrame == 3` plays
         // `SoundID.Item32` once through the `flapSound` latch; the façade
-        // draw rides the drain.
+        // draw rides the drain. W4-g66 gap-fill: wings 49 reads frame 5
+        // (`:26842-26845` — its machine landed); the 43/44 frame-4 edge
+        // stays with their unported tables.
         if flag19 && !matches!(self.wings_logic, 4 | 22 | 0 | 24 | 28 | 30 | 33 | 45) {
-            if self.wing_frame == 3 {
+            let flap_edge = if self.wings_logic == 49 {
+                self.wing_frame == 5
+            } else {
+                self.wing_frame == 3
+            };
+            if flap_edge {
                 if !self.flap_sound {
                     if let Some(idx) = crate::soundid::SOUND_STYLES
                         .iter()
@@ -10664,13 +10734,14 @@ impl Player {
     }
 
     /// W4-g66 — the `WingFrame` dust arms' frame machines
-    /// (`Player.cs:29471-30307`): the jetpack-4 flap flames (2 or 4 per tick,
+    /// (`Player.cs:29471-30527`): the jetpack-4 flap flames (2 or 4 per tick,
     /// the hover-up pick), the Bat-30 sparkle machine, the Rainbow-45 glow
-    /// cadence and the Spooky-39 shadow puffs. The dust rolls queue one
-    /// snapshot; the drain replays them on `UpdatePlayers`. The wings-4/45
-    /// Item13/Item24 cadences (`:29475-29480`, `:30167-30175`) are audio
-    /// seams (the S1-E-21 family owns the rocket cues) — the delay counters
-    /// still tick so the cadence state stays source-true.
+    /// cadence, the Spooky-39 shadow puffs and (gap-fill) the wings-33/38
+    /// appearance arms + the 47/49/50 `justSwitched` machines. The dust
+    /// rolls queue one snapshot; the drain replays them on `UpdatePlayers`.
+    /// The wings-4/45 Item13/Item24 cadences (`:29475-29480`, `:30167-30175`)
+    /// are audio seams (the S1-E-21 family owns the rocket cues) — the delay
+    /// counters still tick so the cadence state stays source-true.
     fn wing_frame_visuals(&mut self, wing_flap: bool) {
         match self.wings_logic {
             // `:29471-29541`: the jetpack — flames while flapping or in the
@@ -10681,18 +10752,9 @@ impl Player {
                     if self.rocket_delay2 <= 0 {
                         self.rocket_delay2 = 60;
                     }
-                    self.pending_wing_frame_dust = Some(WingFrameDust {
-                        wings: 4,
-                        x: self.x,
-                        y: self.y,
-                        width: self.width,
-                        height: self.height,
-                        vx: self.vx,
-                        vy: self.vy,
-                        facing: self.facing,
-                        hover_up: self.trying_to_hover_up(),
-                        count: 0,
-                    });
+                    let mut b = WingFrameDust::base(4, self);
+                    b.hover_up = self.trying_to_hover_up();
+                    self.pending_wing_frame_dust = Some(b);
                     // `:29526-29535`: counter > 4 wraps the frame 0..2.
                     self.wing_frame_counter += 1;
                     if self.wing_frame_counter > 4 {
@@ -10733,18 +10795,7 @@ impl Player {
                     self.wing_frame = 0;
                 }
                 if ran {
-                    self.pending_wing_frame_dust = Some(WingFrameDust {
-                        wings: 30,
-                        x: self.x,
-                        y: self.y,
-                        width: self.width,
-                        height: self.height,
-                        vx: self.vx,
-                        vy: self.vy,
-                        facing: self.facing,
-                        hover_up: false,
-                        count: 0,
-                    });
+                    self.pending_wing_frame_dust = Some(WingFrameDust::base(30, self));
                 }
             }
             // `:30165-30204`: the Rainbow wings — the always-animated gate,
@@ -10767,18 +10818,7 @@ impl Player {
                     }
                     self.wing_frame = self.wing_frame_counter / num25;
                 }
-                self.pending_wing_frame_dust = Some(WingFrameDust {
-                    wings: 45,
-                    x: self.x,
-                    y: self.y,
-                    width: self.width,
-                    height: self.height,
-                    vx: self.vx,
-                    vy: self.vy,
-                    facing: self.facing,
-                    hover_up: false,
-                    count: 0,
-                });
+                self.pending_wing_frame_dust = Some(WingFrameDust::base(45, self));
             }
             // `:30244-30307`: the Spooky wings — the 4/9/6-tick rows and the
             // 0/1/5 shadow-puff count at the foot box.
@@ -10807,21 +10847,156 @@ impl Player {
                 if self.vy == 0.0 {
                     count = 0;
                 }
-                self.pending_wing_frame_dust = Some(WingFrameDust {
-                    wings: 39,
-                    x: self.x,
-                    y: self.y,
-                    width: self.width,
-                    height: self.height,
-                    vx: self.vx,
-                    vy: self.vy,
-                    facing: self.facing,
-                    hover_up: false,
-                    count,
-                });
+                let mut b = WingFrameDust::base(39, self);
+                b.count = count;
+                self.pending_wing_frame_dust = Some(b);
+            }
+            // W4-g66 gap-fill — `:30309-30360`: the Fairy wings (33) — the
+            // eye-colour HSL pair. No frame machine; the flap/jump/held-jump
+            // gate only, the drain reads `eye_color`.
+            33 => {
+                let flag9 = wing_flap
+                    || self.jump > 0
+                    || (self.vy != 0.0 && self.control_jump);
+                if flag9 {
+                    self.pending_wing_frame_dust = Some(WingFrameDust::base(33, self));
+                }
+            }
+            // W4-g66 gap-fill — `:30362-30446`: the Leaf wings (38) — the
+            // 8-tick rows 1..3 (frame 4 folds to 2) machine, the under-shirt
+            // orbit triples ride the drain when the machine ran (flag10).
+            38 => {
+                let mut ran = false;
+                if wing_flap || self.jump > 0 {
+                    self.wing_frame_counter += 1;
+                    if self.wing_frame_counter >= 32 {
+                        self.wing_frame_counter = 0;
+                    }
+                    self.wing_frame = 1 + self.wing_frame_counter / 8;
+                    if self.wing_frame == 4 {
+                        self.wing_frame = 2;
+                    }
+                    ran = true;
+                } else if self.vy != 0.0 {
+                    if self.control_jump {
+                        self.wing_frame_counter += 1;
+                        if self.wing_frame_counter >= 32 {
+                            self.wing_frame_counter = 0;
+                        }
+                        self.wing_frame = 1 + self.wing_frame_counter / 8;
+                        if self.wing_frame == 4 {
+                            self.wing_frame = 2;
+                        }
+                        ran = true;
+                    } else {
+                        self.wing_frame = 0;
+                    }
+                } else {
+                    self.wing_frame = 0;
+                }
+                if ran {
+                    self.pending_wing_frame_dust = Some(WingFrameDust::base(38, self));
+                }
+            }
+            // W4-g66 gap-fill — `:29952-30021`: the Chicken Bones wings (47)
+            // — the shared 2/3/4/6-tick machine (`justSwitched` at the row
+            // boundary), the burst + rest roll ride the drain.
+            47 => {
+                let b = self.dev_wing_frame_machine(wing_flap, 6, 10, 2, 3, 10);
+                self.pending_wing_frame_dust = Some(b);
+            }
+            // W4-g66 gap-fill — `:30023-30092`: the Heroicis wings (49) —
+            // the SAME machine as 47; the drain gates its rolls on the
+            // mounted-centre light sample.
+            49 => {
+                let b = self.dev_wing_frame_machine(wing_flap, 6, 10, 2, 3, 10);
+                self.pending_wing_frame_dust = Some(b);
+            }
+            // W4-g66 gap-fill — `:30094-30163`: the Kazzymodus wings (50) —
+            // the 5-tick falling step, the 1→3 / 2→1 / wrap-at-9 ladder.
+            50 => {
+                let b = self.dev_wing_frame_machine(wing_flap, 5, 9, 2, 2, 3);
+                self.pending_wing_frame_dust = Some(b);
             }
             _ => {}
         }
+    }
+
+    /// W4-g66 gap-fill — the dev-wing `justSwitched` frame machine
+    /// (`Player.cs:29952-30021` wings 47, `:30023-30092` wings 49,
+    /// `:30094-30163` wings 50 — one shape, three constant sets).
+    /// `fall_step` = num22/23/24's airborne step (6/6/5), `wrap` = the
+    /// `++wingFrame > wrap` ceiling (10/10/9), `restart` = the wrapped-to
+    /// frame (2), `jump_from` = the flag3 ladder edge's source frame
+    /// (47/49: 3→1; 50: 2→1) and `fold_to` = the `wingFrame == 1` fold
+    /// target (10/10/3). `GetWingsFunctionalityForVisuals` (`:29461-29466`)
+    /// returns canHover/canBoost false for 47/49/50 (none is in the
+    /// 22/30/31/28/33/35/44/45 or 44/45 lists) and the stats' hover override
+    /// is −1 (`WingStatsInitializer.cs:59-61`), so the flap-step ladder
+    /// collapses to `vy > 0 ? 2 : 4`.
+    fn dev_wing_frame_machine(
+        &mut self,
+        wing_flap: bool,
+        fall_step: i32,
+        wrap: i32,
+        restart: i32,
+        jump_from: i32,
+        fold_to: i32,
+    ) -> WingFrameDust {
+        let mut flag3 = false;
+        let mut animate = true;
+        let step;
+        if wing_flap {
+            // `:29963`/`:30034`/`:30105`: the collapsed ladder.
+            step = if self.vy > 0.0 { 2 } else { 4 };
+        } else if self.vy != 0.0 {
+            let mut s = fall_step;
+            if self.vy > 0.0 {
+                flag3 = self.control_jump && !self.is_performing_down_dash();
+                if flag3 {
+                    // `:29973`/`:30044`/`:30115`: the held-jump step is 3.
+                    s = 3;
+                    if self.wing_frame == 1 {
+                        animate = false;
+                    }
+                } else if self.wing_frame == 2 {
+                    animate = false;
+                }
+            }
+            step = s;
+        } else {
+            // `:29987-29988`: grounded — the machine rests at 0.
+            step = fall_step;
+            animate = false;
+            self.wing_frame = 0;
+        }
+        let mut just_switched = false;
+        if animate {
+            if self.wing_frame == 0 {
+                self.wing_frame = restart;
+            }
+            self.wing_frame_counter += 1;
+            if self.wing_frame_counter >= step {
+                just_switched = true;
+                self.wing_frame_counter = 0;
+                if self.wing_frame == 1 {
+                    self.wing_frame = fold_to;
+                } else if self.wing_frame == jump_from && flag3 {
+                    self.wing_frame = 1;
+                } else {
+                    self.wing_frame += 1;
+                    if self.wing_frame > wrap {
+                        self.wing_frame = restart;
+                    }
+                }
+            }
+        } else {
+            self.wing_frame_counter = 0;
+        }
+        // The snapshot reads the POST-machine frame (`:30531` et al.).
+        let mut b = WingFrameDust::base(self.wings_logic, self);
+        b.just_switched = just_switched;
+        b
     }
 
     /// W4-g66 — the wing-glide frame pins (`Player.cs:27181-27333`): the
@@ -22647,5 +22822,85 @@ mod s1_p_i27_tests {
         p.equipped[2] = 0;
         p.update(&w, PlayerInput::default());
         assert!(!p.set_stardust, "(:18743)");
+    }
+
+    // -- W4-g66 gap-fill: the dev-wing machines + appearance producer -----
+    // Witnesses WRITTEN NOT RUN (code-only mode).
+
+
+
+    /// `:29952-30021`/`:30094-30163` — the dev-wing machines: 47's flag3
+    /// step-3 ladder (frame 1 rests, 3→1 on the held jump), 50's 1→3 fold
+    /// and wrap at 9. `justSwitched` marks the row boundary.
+    #[test]
+    fn w4_g66_the_dev_wing_machines_switch_rows() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.wings_logic = 47;
+        p.vy = 1.0;
+        p.control_jump = true;
+        p.wing_frame = 1;
+        p.wing_frame_counter = 0;
+        p.wing_frame_visuals(false);
+        // flag3 + frame 1 → animate false, the counter rests.
+        assert_eq!(p.wing_frame, 1);
+        assert_eq!(p.wing_frame_counter, 0);
+        let b = p.take_wing_frame_dust().expect("47 queues every call");
+        assert!(!b.just_switched);
+        // Frame 2 + flag3: the step-3 machine runs, 3→1 at the boundary.
+        p.wing_frame = 3;
+        p.wing_frame_counter = 2;
+        p.wing_frame_visuals(false);
+        assert_eq!(p.wing_frame, 1, "the flag3 ladder edge");
+        let b = p.take_wing_frame_dust().unwrap();
+        assert!(b.just_switched);
+        // 50: the 1→3 fold at the boundary (no controlJump needed).
+        let mut q = Player::spawn(&w);
+        q.wings_logic = 50;
+        q.vy = 1.0;
+        q.control_jump = true;
+        q.wing_frame = 1;
+        q.wing_frame_counter = 2;
+        q.wing_frame_visuals(false);
+        assert_eq!(q.wing_frame, 3, "the 50 fold 1→3");
+        let b = q.take_wing_frame_dust().unwrap();
+        assert!(b.just_switched);
+        assert_eq!(b.wing_frame, 3, "the snapshot reads post-machine");
+        // Grounded: the machine rests at 0, no queue extras.
+        q.vy = 0.0;
+        q.wing_frame_visuals(false);
+        assert_eq!(q.wing_frame, 0);
+        // 33: the gate-only arm — no flap/jump/held-jump, no queue.
+        let mut r = Player::spawn(&w);
+        r.wings_logic = 33;
+        r.vy = 1.0;
+        r.control_jump = false;
+        r.wing_frame_visuals(false);
+        assert!(r.take_wing_frame_dust().is_none());
+        r.control_jump = true;
+        r.wing_frame_visuals(false);
+        let b = r.take_wing_frame_dust().expect("the held jump arms 33");
+        assert_eq!(b.eye_color, [105, 90, 75, 255], "the default eye colour");
+    }
+
+    /// The appearance producer: the session draft's colours land on the
+    /// live player at world entry; no draft keeps the ctor initializers.
+    #[test]
+    fn w4_g66_the_session_appearance_lands_on_the_player() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(Player::spawn(&app.world));
+        let mut draft = crate::ui::char_creation::NewPlayerDraft::new();
+        draft.eye_color = [10, 200, 30, 255];
+        draft.undershirt_color = [200, 10, 30, 255];
+        app.session_draft = Some(draft);
+        app.apply_session_appearance();
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.eye_color, [10, 200, 30, 255]);
+        assert_eq!(p.under_shirt_color, [200, 10, 30, 255]);
+        // No draft → the defaults survive.
+        app.session_draft = None;
+        app.apply_session_appearance();
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.eye_color, [10, 200, 30, 255], "no draft, no overwrite");
     }
 }
