@@ -176,6 +176,15 @@ impl App {
                 .pairs()
                 .map(|(banner, kills)| BannerKill { banner, kills })
                 .collect();
+            // `BannerSystem.Save`'s `claimableBanners` half
+            // (`BannerSystem.cs:180-185`): the claimable-banner pool the
+            // milestone fills (W4-e24) — the v18 section, sparse like the
+            // kill counts.
+            let banner_claimable: Vec<save::BannerClaimable> = self
+                .banners
+                .claimable_pairs()
+                .map(|(banner, count)| save::BannerClaimable { banner, count })
+                .collect();
             // `NPCKillsTracker.Save` (`NPCKillsTracker.cs:59-70`): the bestiary
             // kill counts ride the world file's section 10 in vanilla; the port
             // had them on the `.trplayer` sidecar, whose line stays written
@@ -224,6 +233,7 @@ impl App {
             let side = save::WorldSide {
                 chests,
                 banners,
+                banner_claimable,
                 bestiary,
                 npcs,
                 ore_tiers: Some(ore_tiers),
@@ -1159,6 +1169,7 @@ mod chest_save_tests {
                 bestiary: Vec::new(),
                 npcs: Vec::new(),
                 ore_tiers: None,
+                ..Default::default()
             }),
             PathBuf::new(),
         );
@@ -1209,14 +1220,16 @@ mod chest_save_tests {
             WorldSections::native(save::WorldSide::default()),
             path.clone(),
         );
-        // Two NPC families (the Blue Slime 1 → the banner 69, the Green Slime
+        // Two NPC families (the Blue Slime 1 → the banner 69, the Pinky
         // -4 → the banner 151, `bestiary::npc_to_banner`) — the production
-        // call the death pass makes (`world_sim/npcs.rs`'s kill hook).
+        // call the death pass makes (`world_sim/npcs.rs`'s kill hook). The
+        // counts stay below the milestone (50 / 25), so no announcement
+        // fires and the lang singleton is untouched.
         for _ in 0..7 {
-            app.banners.add_npc_kill_by(1, "Tester");
+            app.banners.add_npc_kill_by(1, 0, "Tester");
         }
         for _ in 0..3 {
-            app.banners.add_npc_kill_by(-4, "Tester");
+            app.banners.add_npc_kill_by(-4, 0, "Tester");
         }
         app.player = None;
         app.settings.map_enabled = false;

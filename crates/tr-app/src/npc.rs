@@ -1244,6 +1244,13 @@ pub struct Npc {
     /// only reader is `AnyBossHindersRespawnTime` (`Player.cs:39100`), which
     /// the port has not ported yet; add it with that gate.
     pub player_interaction: [bool; 256],
+    /// `NPC.lastInteraction` (`NPC.cs:6087`, default 255): the most recent
+    /// player slot that hit this NPC. `ApplyInteraction_Inner`
+    /// (`NPC.cs:80057-80066`) writes it for `player < 255`;
+    /// `CountKillForBannersAndDropThem` (`NPC.cs:79814-79818`) reads it as
+    /// the banner-announcement `plr` (falling back to `FindClosestPlayer`
+    /// when that slot is inactive/dead). W4-e24.
+    pub last_interaction: i32,
     /// `NPC.SpawnedFromStatue` (`NPC.cs:6061`): set by the wire-triggered
     /// statue spawns; gates the loot (`NPCLoot`'s StatueSpawnedDropRarity
     /// check, `NPC.cs:78849`).
@@ -2933,6 +2940,8 @@ impl Npc {
             just_hit: false,
             immune: [0; 256],
             player_interaction: [false; 256],
+            // `NPC.lastInteraction = 255` (`NPC.cs:6087`): the unset sentinel.
+            last_interaction: 255,
             spawned_from_statue: false,
             buffs: NpcBuffs::for_kind(kind),
             frame: 0,
@@ -4542,6 +4551,14 @@ impl Npc {
             let target = Npc::carrier_index(npcs, idx).unwrap_or(idx);
             // `ApplyInteraction_Inner` (`NPC.cs:80035-80056`).
             npcs[target].player_interaction[owner as usize] = true;
+            // `ApplyInteraction_Inner`'s `lastInteraction` write
+            // (`NPC.cs:80057-80066`): the `player < 255` gate — the port's
+            // owner is a u8 slot, so the full interaction always latches it
+            // (the C# `LocalPlayerInteraction` localOnly arm writes only
+            // `interactedWithPlayerLocally`, which the port does not model).
+            if (owner as i32) < 255 {
+                npcs[target].last_interaction = owner as i32;
+            }
         }
         // The knockback half (`NPC.cs:81389-81458`).
         let n = &mut npcs[idx];

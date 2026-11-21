@@ -142,6 +142,45 @@ impl ItemSlot {
             self.count = max;
         }
     }
+
+    /// `Item.TryAddStack(itemType, ref amountLeftToAdd)` (`Item.cs:49543-49570`,
+    /// W4-e24): merge `amount` of `kind` into this slot. An air slot takes the
+    /// kind (`SetDefaults`) and absorbs up to `maxStack`; a matching kind
+    /// absorbs up to its remaining room; a mismatched kind or a full stack
+    /// refuses. Returns whether ANY was added and decrements `amount` by the
+    /// absorbed count (the C#'s `ref` out param). The caller drops the
+    /// remainder (`HandleBannerClaimResponse`'s `QuickSpawnItem` overflow).
+    pub(crate) fn try_add_stack(&mut self, kind: u16, amount: &mut u32) -> bool {
+        if *amount == 0 {
+            return false;
+        }
+        let max = registry::max_stack(kind);
+        if self.kind == 0 || self.count == 0 {
+            // `IsAir` → `SetDefaults(itemType)`; the fresh slot's stack is the
+            // min of the request and the kind's cap.
+            *self = ItemSlot {
+                kind,
+                name: registry::name(kind),
+                count: (*amount).min(max),
+                prefix: 0,
+            };
+            *amount -= self.count;
+            return true;
+        }
+        if self.kind != kind {
+            return false;
+        }
+        if self.count >= max {
+            return false;
+        }
+        let room = (max - self.count).min(*amount);
+        if room == 0 {
+            return false;
+        }
+        self.count += room;
+        *amount -= room;
+        true
+    }
 }
 
 /// `Player.GetItem`'s grid passes (`Player.cs:39353-39394`, S1-P-i47): the
@@ -1231,6 +1270,41 @@ pub fn render_key(items: &[ItemDrop], anim_step: u32) -> u32 {
 mod tests {
     use super::*;
     use tr_core::tile::{Tile, FLAG_ACTIVE};
+
+    /// W4-e24 — `Item.TryAddStack` (`Item.cs:49543-49570`): the air slot takes
+    /// the kind up to its cap, a matching kind absorbs its remaining room, a
+    /// mismatched kind or a full stack refuses; the `ref` amount decrements by
+    /// the absorbed count (the banner-claim delivery's cursor merge).
+    #[test]
+    fn w4_e24_try_add_stack_merges_up_to_the_cap() {
+        // The Slime Banner 1683 stacks to 9999 (`itemdata.rs`).
+        let mut air = EMPTY_SLOT;
+        let mut amount = 5u32;
+        assert!(air.try_add_stack(1683, &mut amount));
+        assert_eq!((air.kind, air.count, amount), (1683, 5, 0));
+        // A matching kind absorbs more.
+        amount = 3;
+        assert!(air.try_add_stack(1683, &mut amount));
+        assert_eq!((air.count, amount), (8, 0));
+        // A mismatched kind refuses (the amount is untouched).
+        amount = 2;
+        assert!(!air.try_add_stack(1684, &mut amount));
+        assert_eq!((air.kind, air.count, amount), (1683, 8, 2));
+        // A full stack refuses.
+        air.count = registry::max_stack(1683);
+        amount = 1;
+        assert!(!air.try_add_stack(1683, &mut amount));
+        assert_eq!(amount, 1);
+        // The air slot caps at maxStack (the request overflow stays).
+        let mut big = EMPTY_SLOT;
+        amount = registry::max_stack(1683) + 10;
+        assert!(big.try_add_stack(1683, &mut amount));
+        assert_eq!(big.count, registry::max_stack(1683));
+        assert_eq!(amount, 10);
+        // A zero request is a no-op.
+        amount = 0;
+        assert!(!big.try_add_stack(1683, &mut amount));
+    }
 
     /// S1-E-21 wave A — the per-site cue selection: `Item.UseSound` rows
     /// (`Item.cs`'s `SetDefaults` cases + the `DefaultTo*` helpers) resolve

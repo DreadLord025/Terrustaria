@@ -5250,24 +5250,33 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 .notify(achievements::CondKind::NpcKilled(entry.net_id));
         }
         app.send_npc_killed(npc, entry.net_id as i16);
-        // `NPC.CountKillForBannersAndDropThem` (`NPC.cs:79818-79827`) →
-        // `BannerSystem.AddNPCKillBy` (M2-BUFF-8): the milestone spawns the
-        // banner item at the death spot and announces the tally in the
-        // Command color.
-        if let Some((banner, text)) = app.banners.add_npc_kill_by(entry.net_id, &app.player_name) {
-            crate::chat::broadcast_death_text(&mut app.chat, &text, crate::chat::COLOR_COMMAND);
-            let item = tr_core::bestiary::banner_to_item(banner);
-            // `CountKillForBannersAndDropThem` fires from the death path —
-            // the `UpdateNPCs` stream (`NPC.cs:79818-79827`).
-            let rng = app.rngs.stream(RngKey::UpdateNpcs);
-            crate::world_sim::items::spawn_item_drop(
-                &mut app.items,
-                rng,
-                item as u16,
-                1,
-                (npc.x / 16.0) as i32,
-                (npc.y / 16.0) as i32,
-            );
+        // `NPC.CountKillForBannersAndDropThem` (`NPC.cs:79810-79821`) →
+        // `BannerSystem.AddNPCKillBy` (`BannerSystem.cs:231-258`). W4-e24:
+        // the faithful drop-rule chain — the tally gates on
+        // `GetWereThereAnyInteractions` (`NPC.cs:78840`, the NPCLoot banner
+        // arm) and `ExcludedFromDeathTally` (`:79812`); the announcement
+        // `plr` is `lastInteraction` (falling back to `FindClosestPlayer`
+        // when that slot is inactive/dead, `:79814-79818`). The milestone
+        // makes the banner CLAIMABLE (`AddClaimableBanner`) and announces
+        // the tally in the Command color — it does NOT drop the banner item
+        // at the death spot (the pre-e24 world-drop was unfaithful; the
+        // player claims the item through the BannerClaimingUI). The whole
+        // chain draws NO RNG (the C# `AddNPCKillBy`/`AddKill`/
+        // `AddClaimableBanner` are pure state writes).
+        if crate::banners::get_were_there_any_interactions(npc, app.local_id as usize) {
+            let banner_id = crate::banners::banner_id(entry.net_id, npc.kind.cs_id() as i32);
+            if !crate::banners::excluded_from_death_tally(entry.net_id) {
+                let plr = banner_kill_plr(app, npc);
+                if let Some(text) =
+                    app.banners.add_npc_kill_by(banner_id, plr, &app.player_name)
+                {
+                    crate::chat::broadcast_death_text(
+                        &mut app.chat,
+                        &text,
+                        crate::chat::COLOR_COMMAND,
+                    );
+                }
+            }
         }
         // `NPC.checkDead`'s boss arms (`NPC.cs:79416`'s
         // `SetEventFlagCleared`): the boss deaths set the world's downed
@@ -6777,6 +6786,66 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         app.npcs.push(n);
     }
     app.npc_timer = 1.0 / 60.0;
+}
+
+/// `CountKillForBannersAndDropThem`'s `plr` pick (`NPC.cs:79814-79818`):
+/// `lastInteraction` stands when that player slot is active and alive;
+/// otherwise `FindClosestPlayer` (`NPC.cs:77456-77492`) picks the nearest
+/// living player (the dead/ghost fallback). The port's single session
+/// player rides slot `local_id`; the remote peers (`remote_players`) ride
+/// their own slots for the host's `FindClosestPlayer` scan. A slot the port
+/// does not model is simply absent (the C# loops the 255 `Main.player`
+/// slots; an inactive slot never wins). No RNG draws — the pick is a pure
+/// distance scan.
+fn banner_kill_plr(app: &App, npc: &Npc) -> i32 {
+    let local = app.local_id as i32;
+    // The `lastInteraction` slot's active/alive read: the local player is
+    // the session player; a remote slot is active while its peer is stored.
+    let last = npc.last_interaction;
+    let last_ok = if last == local {
+        app.player.as_ref().is_some_and(|p| !p.dead)
+    } else {
+        last >= 0 && app.remote_players.contains_key(&(last as u32))
+    };
+    if last_ok {
+        return last;
+    }
+    // `FindClosestPlayer`: the living-pass candidates, then the dead
+    // fallback inside the helper. The local player's centre is its live
+    // hitbox centre; a remote peer's centre is its wire position + the
+    // 20x42 box half-extents (the port's peer hitbox stand-in).
+    let mut candidates: Vec<crate::banners::ClosestPlayerCandidate> = Vec::new();
+    let mut slots: Vec<i32> = Vec::new();
+    if let Some(p) = app.player.as_ref() {
+        let (cx, cy) = p.center();
+        candidates.push(crate::banners::ClosestPlayerCandidate {
+            active: true,
+            dead: p.dead,
+            ghost: false,
+            cx,
+            cy,
+        });
+        slots.push(local);
+    }
+    let mut peer_ids: Vec<u32> = app.remote_players.keys().copied().collect();
+    peer_ids.sort_unstable();
+    for id in peer_ids {
+        let peer = &app.remote_players[&id];
+        candidates.push(crate::banners::ClosestPlayerCandidate {
+            active: true,
+            dead: peer.hp <= 0,
+            ghost: false,
+            cx: peer.x + crate::player::WIDTH * 0.5,
+            cy: peer.y + crate::player::HEIGHT * 0.5,
+        });
+        slots.push(id as i32);
+    }
+    let pick = crate::banners::find_closest_player(npc.center(), &candidates);
+    if pick < 0 {
+        -1
+    } else {
+        slots[pick as usize]
+    }
 }
 
 /// The full NPC loot through the rule engine

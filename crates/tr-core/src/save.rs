@@ -55,6 +55,11 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// / `jungleBG` / `hallowBG` / `crimsonBG` at `WorldFile.cs:1319-1323` and
 /// `mushroomBG` at `:1375`) that the `DrawSurfaceBG_*` variants resolve their
 /// `Background_<id>` sheets from; a pre-v16 file loads the `setBG` defaults.
+/// v17 appended `NPC.downedFishron` (the case-370 death flag, S1-D-3 W-9).
+/// v18 appended the banner claimable counts (`BannerSystem.Save`'s
+/// `claimableBanners` half, `BannerSystem.cs:180-185`, the `version >= 289`
+/// load arm `:203-211`) — the claimable-banner pool the milestone fills
+/// (W4-e24); a pre-v18 file loads none (the pool starts empty).
 ///
 /// **Not** in this version, and why: the TownManager rooms
 /// (`WorldFile.cs:1687-1701`), the bestiary sights/chats
@@ -65,7 +70,7 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// file-absent temps (`_tempSandstorm*`/`_tempParty*`/`_tempLanternNight*` —
 /// no writer or loader site in `WorldFile.cs`) reset on load by design, so
 /// the port saves none of them either (S1-J-7).
-pub const VERSION: u32 = 17;
+pub const VERSION: u32 = 18;
 
 /// The v7+ sections' payload — the world chests, the banner kill counts, the
 /// bestiary kill counts and the town NPCs. New sections grow this struct
@@ -74,6 +79,11 @@ pub const VERSION: u32 = 17;
 pub struct WorldSide {
     pub chests: Vec<ChestRecord>,
     pub banners: Vec<BannerKill>,
+    /// `BannerSystem.Save`'s `claimableBanners` half (`BannerSystem.cs:180-185`,
+    /// the `version >= 289` load arm `:203-211`) — the claimable-banner pool
+    /// the milestone fills (W4-e24). Sparse like `banners`; a pre-v18 file
+    /// loads none (the pool starts empty, the C#'s pre-289 reset).
+    pub banner_claimable: Vec<BannerClaimable>,
     pub bestiary: Vec<BestiaryKill>,
     pub npcs: Vec<NpcRecord>,
     /// `WorldGen.SavedOreTiers` (`WorldGen.cs:3283-3297`) — seven `i32` metal
@@ -115,6 +125,16 @@ pub struct NpcRecord {
 pub struct BannerKill {
     pub banner: i32,
     pub kills: i32,
+}
+
+/// One banner's claimable count — the C# `BannerSystem.Save`'s
+/// `claimableBanners` half (`ushort` per banner id, `BannerSystem.cs:180-185`);
+/// the port stores the counts sparsely like `BannerKill`, so each record
+/// carries its id (W4-e24).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BannerClaimable {
+    pub banner: i32,
+    pub count: u16,
 }
 
 /// One bestiary entry's kill count — the C# `NPCKillsTracker.Save` shape
@@ -428,6 +448,15 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
     // `:79349`) — S1-D-3 W-9 fishron wiring; the v15 queen-slime byte's
     // shape.
     w.write_all(&[u8::from(world.downed_fishron)])?;
+    // v18: the banner claimable counts (`BannerSystem.Save`'s
+    // `claimableBanners` half, `BannerSystem.cs:180-185`) — a u32 count, then
+    // per banner the id (i32) and the count (u16). The port's sparse map
+    // where the vanilla writes a dense `ushort[293]` array (W4-e24).
+    w.write_all(&(side.banner_claimable.len() as u32).to_le_bytes())?;
+    for c in &side.banner_claimable {
+        w.write_all(&c.banner.to_le_bytes())?;
+        w.write_all(&c.count.to_le_bytes())?;
+    }
     Ok(())
 }
 
@@ -810,8 +839,26 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
     if version >= 17 {
         world.downed_fishron = r.u8()? != 0;
     }
+    // v18: the banner claimable counts (`BannerSystem.Load`'s `version >= 289`
+    // claimable half, `BannerSystem.cs:203-211`); a pre-v18 file loads none
+    // (the pool starts empty, the C#'s pre-289 reset). W4-e24.
+    if version >= 18 {
+        side.banner_claimable = read_banner_claimable_v18(&mut r)?;
+    }
     world.revision = 0;
     Ok((world, side))
+}
+
+/// The v18 banner-claimable reader — the exact inverse of the v18 write.
+fn read_banner_claimable_v18(r: &mut Reader<'_>) -> Result<Vec<BannerClaimable>> {
+    let count = r.u32()? as usize;
+    let mut out = Vec::with_capacity(count.min(4096));
+    for _ in 0..count {
+        let banner = r.i32()?;
+        let count = r.u16()?;
+        out.push(BannerClaimable { banner, count });
+    }
+    Ok(out)
 }
 
 /// The v8 banners reader — the exact inverse of the v8 write.
@@ -1054,8 +1101,8 @@ mod tests {
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
         assert_eq!(
             &buf[8..12],
-            &[17, 0, 0, 0],
-            "the writer emits the current v17"
+            &[18, 0, 0, 0],
+            "the writer emits the current v18"
         );
         let (back, _chests) = parse(&buf).unwrap();
         assert_eq!(back.sundial_cooldown, 5);
@@ -1064,10 +1111,12 @@ mod tests {
 
     #[test]
     fn dw_1_4_v3_loads_zero_cooldowns() {
-        // DW-1.4: a pristine v3 file (the current stream stripped of the
-        // v4 tail (2 bytes) and the v5 tail (1 presence byte — the world has
-        // no bed spawn), the version field restored) loads with both
-        // cooldowns at 0.
+        // DW-1.4: a v3 payload (the version field patched) loads with both
+        // cooldowns at 0 — the v3 parse stops after the paint extras and
+        // never reads the v4 cooldown bytes (`World::new`'s 0s stand). The
+        // end-trim only has to stay inside the post-extras tail (the v18
+        // banner-claimable count lengthens it, W4-e24); 3 bytes is safely
+        // within it.
         let mut w = World::new("Test".into(), 32, 32);
         w.sundial_cooldown = 7;
         let mut buf = Vec::new();
@@ -1082,13 +1131,13 @@ mod tests {
     #[test]
     fn dw_1_4_version_above_4_rejected() {
         // DW-1.4 (dirty): the existing loader rejects a version above the
-        // current one (`save.rs` version gate). v17 (the downedFishron
-        // byte, S1-D-3 W-9) is now the current format, so the gate pins 17.
+        // current one (`save.rs` version gate). v18 (the banner claimable
+        // counts, W4-e24) is now the current format, so the gate pins 18.
         let w = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        buf[8..12].copy_from_slice(&18u32.to_le_bytes());
-        assert!(parse(&buf).is_err(), "version 18 is unsupported");
+        buf[8..12].copy_from_slice(&19u32.to_le_bytes());
+        assert!(parse(&buf).is_err(), "version 19 is unsupported");
     }
 
     #[test]
@@ -1166,8 +1215,9 @@ mod tests {
         // The v7 block of an empty-wire/entity/chest/banner/bestiary world: the
         // fixed flags block + four empty colour counts + one empty entity count +
         // one empty chest count + one empty banner count + one empty bestiary count.
-        // (+1: the v17 downedFishron byte rides the flags block's tail.)
-        buf.truncate(buf.len() - (V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 4 + 4 + 4 + 4 + 1));
+        // (+1: the v17 downedFishron byte rides the flags block's tail;
+        //  +4: the v18 empty banner-claimable count, W4-e24.)
+        buf.truncate(buf.len() - (V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 4 + 4 + 4 + 4 + 1 + 4));
         buf[8..12].copy_from_slice(&6u32.to_le_bytes());
         let (back, side) = parse(&buf).unwrap();
         let chests = side.chests;
@@ -1277,9 +1327,10 @@ mod tests {
         let cur_len = buf.len();
         let mut v12 = buf.clone();
         // The v13 block is the tail: 4 + (4+len+8) + 4 + 8 bytes, then the
-        // v14 rain block (9 bytes), the v15 flag (1), the v16 styles (5)
-        // and the v17 fishron flag (1).
-        let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1;
+        // v14 rain block (9 bytes), the v15 flag (1), the v16 styles (5),
+        // the v17 fishron flag (1) and the v18 empty banner-claimable
+        // count (4, W4-e24).
+        let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1 + 4;
         v12.truncate(cur_len - tail - 1);
         v12[8..12].copy_from_slice(&12u32.to_le_bytes());
         let (back, _) = parse(&v12).unwrap();
@@ -1295,6 +1346,7 @@ mod tests {
             bestiary: Vec::new(),
             npcs: Vec::new(),
             ore_tiers: None,
+            ..Default::default()
         }
     }
 
@@ -1306,8 +1358,9 @@ mod tests {
     const EMPTY_V13_TAIL: usize = 8;
     /// The v14 rain block: 1 bool + 4 i32 + 4 f32 (the constants-off defaults
     /// for an empty rain event), the v15 Queen Slime flag byte, the v16
-    /// five style bytes and the v17 downedFishron byte (S1-D-3 W-9).
-    const EMPTY_V16_TAIL: usize = EMPTY_V13_TAIL + 9 + 1 + 5 + 1;
+    /// five style bytes, the v17 downedFishron byte (S1-D-3 W-9) and the
+    /// v18 empty banner-claimable count (4 bytes, W4-e24).
+    const EMPTY_V16_TAIL: usize = EMPTY_V13_TAIL + 9 + 1 + 5 + 1 + 4;
 
     fn back_flags(buf: &[u8]) -> u16 {
         let end = buf.len() - EMPTY_V16_TAIL;
@@ -1493,10 +1546,10 @@ mod tests {
         assert!(back.downed_queen_slime, "the flag survives the reload");
         // A pre-v15 file (the tail truncated, the version patched) loads
         // with the flag down — the vanilla's own reset arm (`:2376`).
-        // The v16 style bytes + the v17 fishron byte ride behind the v15
-        // flag (6 bytes).
+        // The v16 style bytes + the v17 fishron byte + the v18 empty
+        // banner-claimable count ride behind the v15 flag (6 + 4 bytes).
         let mut v14 = buf.clone();
-        v14.truncate(v14.len() - 1 - 5 - 1);
+        v14.truncate(v14.len() - 1 - 5 - 1 - 4);
         v14[8..12].copy_from_slice(&14u32.to_le_bytes());
         let (back, _) = parse(&v14).unwrap();
         assert!(!back.downed_queen_slime, "a pre-v15 file resets the flag");
@@ -1515,8 +1568,9 @@ mod tests {
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
         // The v6 tail of an empty-wire/entity world: the fixed flags block +
         // four empty colour counts + one empty entity count.
-        // (+1: the v17 downedFishron byte rides the flags block's tail.)
-        buf.truncate(buf.len() - (2 + V6_FLAGS_LEN + 1 + 4 * 4 + 4));
+        // (+1: the v17 downedFishron byte rides the flags block's tail;
+        //  +4: the v18 empty banner-claimable count, W4-e24.)
+        buf.truncate(buf.len() - (2 + V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 4));
         buf[8..12].copy_from_slice(&5u32.to_le_bytes());
         let (back, _chests) = parse(&buf).unwrap();
         assert!(!back.hard_mode);
@@ -1602,8 +1656,8 @@ mod tests {
         write_world(&mut buf, &w, &chest_side(&chests)).unwrap();
         assert_eq!(
             &buf[8..12],
-            &[17, 0, 0, 0],
-            "the writer emits the current v17"
+            &[18, 0, 0, 0],
+            "the writer emits the current v18"
         );
         let (back, side) = parse(&buf).unwrap();
         let back_chests = side.chests;
@@ -1714,6 +1768,7 @@ mod tests {
             bestiary: Vec::new(),
             npcs: Vec::new(),
             ore_tiers: None,
+            ..Default::default()
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -1746,6 +1801,7 @@ mod tests {
             bestiary: Vec::new(),
             npcs: Vec::new(),
             ore_tiers: None,
+            ..Default::default()
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -1769,6 +1825,7 @@ mod tests {
             bestiary: Vec::new(),
             npcs: Vec::new(),
             ore_tiers: None,
+            ..Default::default()
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -1799,6 +1856,7 @@ mod tests {
             bestiary: Vec::new(),
             npcs: Vec::new(),
             ore_tiers: None,
+            ..Default::default()
         };
         let mut a = Vec::new();
         let mut b = Vec::new();
@@ -1836,6 +1894,7 @@ mod tests {
             ],
             npcs: Vec::new(),
             ore_tiers: None,
+            ..Default::default()
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -1861,6 +1920,7 @@ mod tests {
             }],
             npcs: Vec::new(),
             ore_tiers: None,
+            ..Default::default()
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -1884,6 +1944,7 @@ mod tests {
             }],
             npcs: Vec::new(),
             ore_tiers: None,
+            ..Default::default()
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -1910,6 +1971,7 @@ mod tests {
             ],
             npcs: Vec::new(),
             ore_tiers: None,
+            ..Default::default()
         };
         let mut a = Vec::new();
         let mut b = Vec::new();
@@ -1950,6 +2012,7 @@ mod tests {
                 },
             ],
             ore_tiers: None,
+            ..Default::default()
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -1980,6 +2043,7 @@ mod tests {
                 home_y: 1,
             }],
             ore_tiers: None,
+            ..Default::default()
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -2011,6 +2075,7 @@ mod tests {
                 home_y: 1,
             }],
             ore_tiers: None,
+            ..Default::default()
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -2047,6 +2112,7 @@ mod tests {
                 },
             ],
             ore_tiers: None,
+            ..Default::default()
         };
         let mut a = Vec::new();
         let mut b = Vec::new();
@@ -2068,6 +2134,7 @@ mod tests {
             bestiary: Vec::new(),
             npcs: Vec::new(),
             ore_tiers: Some([166, 12, 169, 172, -1, -1, -1]),
+            ..Default::default()
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -2092,6 +2159,7 @@ mod tests {
             bestiary: Vec::new(),
             npcs: Vec::new(),
             ore_tiers: Some([166, 6, 9, 8, 107, -1, -1]),
+            ..Default::default()
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -2112,6 +2180,7 @@ mod tests {
             bestiary: Vec::new(),
             npcs: Vec::new(),
             ore_tiers: Some([7, 6, 9, 8, -1, -1, -1]),
+            ..Default::default()
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -2129,6 +2198,7 @@ mod tests {
             bestiary: Vec::new(),
             npcs: Vec::new(),
             ore_tiers: Some([13, 6, 9, 8, -1, -1, -1]),
+            ..Default::default()
         };
         let mut a = Vec::new();
         let mut b = Vec::new();

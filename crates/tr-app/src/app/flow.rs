@@ -2150,6 +2150,7 @@ pub(crate) mod front_flow_tests {
             notifications: ui::notifications::NotificationsTracker::default(),
             emotes: crate::emotes::EmoteSystem::default(),
             banners: crate::banners::BannerSystem::default(),
+            fake_cursor: crate::banners::FakeCursorItem::default(),
             town_look_timer: 0.0,
             town_arrival: crate::town_arrival::ArrivalState::new(),
             reuse_delay: 0.0,
