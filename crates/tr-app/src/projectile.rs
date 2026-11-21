@@ -18274,16 +18274,54 @@ impl ProjectilePool {
                                 self.slots[i].pos += vel;
                             }
                         }
-                        // aiStyle 113: the Bone javelin (598)
+                        // aiStyle 113: the WHOLE target-sticker census
+                        // (W4-d12 F1): 598/614/636/971/975/1024
                         // (`AI_113_TargetSticker` `:40562-40899`). The stick
-                        // pin + Daybroken + the 6-javelin cap ride the on-hit
-                        // seam; the arm reads the pinned NPC off `npcs`.
+                        // pin + the per-kind debuffs + the javelin caps ride
+                        // the on-hit seam; the arm reads the pinned NPC off
+                        // `npcs` and the 1024 return state off the owner.
                         113 => {
-                            crate::projectile_ai_thrown::bone_javelin_step(
+                            let sticker_owner = if self.slots[i].owner == local_owner {
+                                player.as_deref().map(|pl| {
+                                    let (cx, cy) = pl.center();
+                                    crate::projectile_ai_thrown::StickerOwner {
+                                        center: Vec2::new(cx, cy),
+                                        dead: pl.dead,
+                                        hitbox: tr_core::whip::Rect::new(
+                                            pl.x as i32,
+                                            pl.y as i32,
+                                            pl.width as i32,
+                                            pl.height as i32,
+                                        ),
+                                    }
+                                })
+                            } else {
+                                None
+                            };
+                            let inline_damage = crate::projectile_ai_thrown::target_sticker_step(
                                 &mut self.slots[i],
                                 world,
                                 &npcs[..],
+                                rng,
+                                sticker_owner,
                             );
+                            if inline_damage {
+                                // `:40783-40784` — the card's stuck→return
+                                // transition: ResetLocalNPCHitImmunity then
+                                // the inline Damage(). The C# runs it BEFORE
+                                // the same-tick return-state block; the port
+                                // runs it after the arm (the box is identical
+                                // — the return block moves no position before
+                                // its kill check; the 117 burst precedent).
+                                let base = i * 256;
+                                self.local_immunity[base..base + 256].fill(0);
+                                let dolls = doll_flags(player.as_deref());
+                                let luck = player
+                                    .as_deref()
+                                    .map(|p| p.luck_state.luck)
+                                    .unwrap_or(0.0);
+                                self.damage_pve_boxed(i, npcs, dolls, rng, luck);
+                            }
                         }
                         // aiStyle 36: the bees (181/566), the beenade's
                         // children (`Projectile.cs:27292-27471`). The arm owns
@@ -21968,13 +22006,16 @@ impl ProjectilePool {
             .retain(|&(k, _), stamp| !(k == EXPLODING_BULLET && *stamp == expected_time));
     }
 
-    /// S1-P-i28 — `Projectile.KillOldestJavelin` (`Projectile.cs:15074-15101`,
-    /// called from the bone javelin's on-hit arm `:13979-13990`): scan the
-    /// pool for the owner's bone javelins stuck (`ai[0]==1`) on this NPC
-    /// (`ai[1]==target`), excluding the just-pinned slot; once 6 are found,
-    /// kill the one with the lowest `timeLeft` (the oldest). The C# breaks the
-    /// scan at the buffer length (6), so only the first 6 in slot order count.
-    fn kill_oldest_javelin(&mut self, protected: usize, target: u16) {
+    /// S1-P-i28 / W4-d12 F1 — `Projectile.KillOldestJavelin`
+    /// (`Projectile.cs:15074-15101`, called from the target-sticker on-hit
+    /// arm `:13979-13990`): scan the pool for the owner's SAME-KIND stickers
+    /// stuck (`ai[0]==1`) on this NPC (`ai[1]==target`), excluding the
+    /// just-pinned slot; once `cap` are found, kill the one with the lowest
+    /// `timeLeft` (the oldest). The C# breaks the scan at the buffer length,
+    /// so only the first `cap` in slot order count. The census: only
+    /// 598/636/614 carry the cap (`:13979`), at 6/8/10 respectively
+    /// (`_javelinsMax6/8/10`, `:79773-79775`); 971/975/1024 do NOT.
+    fn kill_oldest_javelin(&mut self, protected: usize, target: u16, kind: u16, cap: usize) {
         let owner = self.slots[protected].owner;
         let mut oldest = usize::MAX;
         let mut lowest = i32::MAX;
@@ -21983,7 +22024,7 @@ impl ProjectilePool {
             if i != protected
                 && p.active
                 && p.owner == owner
-                && p.kind == BONE_JAVELIN
+                && p.kind == kind
                 && p.ai[0] == 1.0
                 && p.ai[1] == target as f32
             {
@@ -21992,13 +22033,13 @@ impl ProjectilePool {
                     oldest = i;
                 }
                 count += 1;
-                if count >= 6 {
+                if count >= cap {
                     break;
                 }
             }
         }
-        // `:15088-15091` — fewer than 6 found: nothing dies.
-        if count >= 6 && oldest != usize::MAX {
+        // `:15088-15091` — fewer than `cap` found: nothing dies.
+        if count >= cap && oldest != usize::MAX {
             self.kill(oldest);
         }
     }
@@ -23276,6 +23317,16 @@ impl ProjectilePool {
         rng: &mut dyn tr_core::loot::DropRng,
     ) {
         let is_whip = tr_core::whip::is_whip(self.slots[slot].kind);
+        // W4-d12 F1 — `Damage_CanDealDamage`'s target-sticker term
+        // (`Projectile.cs:12448`: `(598|636|614|971|975|1024) && ai[0]==1`
+        // → false): a STUCK sticker deals no contact damage — the stick's
+        // debuff rides the one landing hit, not a re-hit every immunity
+        // window. The card's return state (ai[0]==2) damages normally.
+        if crate::projectile_ai_thrown::TARGET_STICKERS.contains(&self.slots[slot].kind)
+            && self.slots[slot].ai[0] == 1.0
+        {
+            return;
+        }
         let (damage, owner_idx, uses_local, uses_id_static, max_penetrate, kb, center) = {
             let p = &self.slots[slot];
             if p.damage <= 0 {
@@ -23440,6 +23491,13 @@ impl ProjectilePool {
             // `Damage_GetProjectileSpecificDamageMultiplier` (`:14447-14465`)
             // and `Damage`'s knockback/hit-direction arms (`:13614-13619`).
             let (mut damage, mut kb, mut from_x) = (damage, kb, center.x);
+            // W4-d12 F1 — `Damage_GetProjectileSpecificDamageMultiplier`'s
+            // card term (`Projectile.cs:14553-14556`): the RETURNING Killing
+            // Deck card (ai[0]==2) deals ×1.5, truncated (`num6 = (int)
+            // (damage * mult)`, `:12852`) before DamageVar.
+            if p.kind == DEAD_CELLS_KILLING_DECK_CARD && p.ai[0] == 2.0 {
+                damage = (damage as f32 * 1.5) as i32;
+            }
             let mut skip_box_test = false;
             if let Some(f) = flail {
                 if FLAIL_KINDS.contains(&p.kind) {
@@ -23506,9 +23564,19 @@ impl ProjectilePool {
                 // (`:12654`): the projectile's damage box against the NPC's
                 // raw rect. `npc.getRect()` is exact (no +4 point-test pad).
                 let (nw, nh) = n.size();
-                proj_rect.intersects(tr_core::whip::Rect::new(
+                let mut target = tr_core::whip::Rect::new(
                     n.x as i32, n.y as i32, nw as i32, nh as i32,
-                ))
+                );
+                // W4-d12 F1 — `Colliding`'s 614/636 arms (`:15738-15741` /
+                // `:15782-15785`): a >8×8 target rect shrinks by an eighth
+                // per axis (XNA int division) before the overlap test.
+                if (p.kind == STARDUST_CELL_MINION_SHOT || p.kind == DAYBREAK)
+                    && target.w > 8
+                    && target.h > 8
+                {
+                    target.inflate(-target.w / 8, -target.h / 8);
+                }
+                proj_rect.intersects(target)
             };
             if !touches {
                 continue;
@@ -23553,18 +23621,19 @@ impl ProjectilePool {
             }
             // Projectile.cs:12938 — pre-defense variance on the hit damage.
             dmg = tr_core::damage::damage_var(rng, dmg as f32, luck);
-            // S1-P-i28 — `Damage_PVE_Inner`'s aiStyle-113 stick pin
-            // (`Projectile.cs:13210-13217`): on the first hit (`ai[0] < 2`)
-            // the bone javelin pins to this NPC — `ai[0]=1`, `ai[1]=victim`,
+            // S1-P-i28 / W4-d12 F1 — `Damage_PVE_Inner`'s aiStyle-113 stick
+            // pin (`Projectile.cs:13210-13217`): on the first hit
+            // (`ai[0] < 2`) EVERY target-sticker census kind pins to this
+            // NPC — `ai[0]=1`, `ai[1]=victim`,
             // `velocity = (npc.Center - Center) * 0.75`. The C# arm sits
             // AFTER DamageVar (`:12938`) and BEFORE the Hellfire clamp
-            // (`:13252`) / StatusNPC / StrikeNPC, so the Daybroken gate
-            // below reads the fresh pin. ALL scalars are copied before the
-            // mutation so the `p` borrow ends here (E0502).
+            // (`:13252`) / StatusNPC / StrikeNPC, so the per-kind debuff
+            // gates below read the fresh pin. ALL scalars are copied before
+            // the mutation so the `p` borrow ends here (E0502).
             let pkind = p.kind;
             let (ppx, ppy, pw, ph) = (p.pos.x, p.pos.y, p.w, p.h);
             let hellfire_clamp = p.kind == HELLFIRE_ARROW && p.time_left > 1;
-            if p.kind == BONE_JAVELIN && p.ai[0] < 2.0 {
+            if crate::projectile_ai_thrown::TARGET_STICKERS.contains(&p.kind) && p.ai[0] < 2.0 {
                 let (ncx, ncy) = n.center();
                 let (pcx, pcy) = (ppx + pw * 0.5, ppy + ph * 0.5);
                 let pin_vel = Vec2::new((ncx - pcx) * 0.75, (ncy - pcy) * 0.75);
@@ -23923,11 +23992,21 @@ impl ProjectilePool {
                     idx as u16,
                     rng,
                 );
-                // S1-P-i28 — `KillOldestJavelin` (`Projectile.cs:13979-13990`,
-                // `:15074-15101`): the bone javelin caps the sticks on one NPC
-                // at 6 — the 6th stick kills the oldest (lowest timeLeft).
-                if self.slots[slot].kind == BONE_JAVELIN {
-                    self.kill_oldest_javelin(slot, idx as u16);
+                // S1-P-i28 / W4-d12 F1 — `KillOldestJavelin`
+                // (`Projectile.cs:13979-13990`, `:15074-15101`): the
+                // per-NPC stick caps — the bone javelin 6, the Daybreak 8,
+                // the Stardust Cell shot 10 (`_javelinsMax6/8/10`); the
+                // cap's last stick kills the oldest (lowest timeLeft). The
+                // 971/975/1024 are NOT in the C# arm — no cap for them.
+                let cap = match self.slots[slot].kind {
+                    BONE_JAVELIN => Some(6usize),
+                    DAYBREAK => Some(8),
+                    STARDUST_CELL_MINION_SHOT => Some(10),
+                    _ => None,
+                };
+                if let Some(cap) = cap {
+                    let kind = self.slots[slot].kind;
+                    self.kill_oldest_javelin(slot, idx as u16, kind, cap);
                 }
                 // `:13673` (`ownedBySomeone & flag8`) + `:13810` (`if (flag10)`):
                 // the whip per-type switch's gate. `flag8 = !immortal`
@@ -24016,6 +24095,15 @@ impl ProjectilePool {
         rng: &mut dyn DropRng,
         luck: f32,
     ) {
+        // W4-d12 F1 — the same `Damage_CanDealDamage` sticker gate
+        // (`:12448`): the boxed walk is `Damage()` too. The card's inline
+        // return-transition walk runs at ai[0]==2 (the arm set it before
+        // the request), so the gate passes there.
+        if crate::projectile_ai_thrown::TARGET_STICKERS.contains(&self.slots[slot].kind)
+            && self.slots[slot].ai[0] == 1.0
+        {
+            return;
+        }
         let (damage, owner, uses_local, uses_id_static, max_penetrate, kb) = {
             let p = &self.slots[slot];
             if p.damage <= 0 {
@@ -24035,9 +24123,26 @@ impl ProjectilePool {
         // base-4 default is the player's; the death-burst callers pass no
         // player — the per-hit roll still rides the stream in the C# order).
         let owned_by_someone = owner < 255 && !self.slots[slot].trap;
+        // W4-d12 F1 — the card's ×1.5 return multiplier (`:14553-14556`,
+        // `(int)(damage * mult)` `:12852`): the inline return-transition
+        // walk runs at ai[0]==2.
+        let damage = if self.slots[slot].kind == DEAD_CELLS_KILLING_DECK_CARD
+            && self.slots[slot].ai[0] == 2.0
+        {
+            (damage as f32 * 1.5) as i32
+        } else {
+            damage
+        };
         let (px, py, pw, ph) = {
             let p = &self.slots[slot];
-            (p.pos.x, p.pos.y, p.w, p.h)
+            // W4-d12 F1 — `Damage_GetHitbox`'s card term (`:14988-14991`):
+            // the inline return-transition `Damage()` reads the +6-inflated
+            // box (the plain walk gets it through `damage_hitbox`).
+            if p.kind == DEAD_CELLS_KILLING_DECK_CARD {
+                (p.pos.x - 6.0, p.pos.y - 6.0, p.w + 12.0, p.h + 12.0)
+            } else {
+                (p.pos.x, p.pos.y, p.w, p.h)
+            }
         };
         // The index walk: the strike reaches the carrier's life pool
         // (`NPC.realLife`, `NPC.cs:81374-81378`).
