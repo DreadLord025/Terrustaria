@@ -62,6 +62,21 @@ impl RecipeEntry {
     }
 }
 
+/// `UpdateContents`'s `recipeEntry.availableIndex = i` (`NewCraftingUI.cs:610`):
+/// `i` walks `Main.availableRecipe` — the RAW available list — so a shown
+/// entry's `availableIndex` is its position in that raw list, NOT its grid
+/// position. With a filter tab active the two diverge (`:596-611`: the
+/// `gridIndex` counts `_filteredRecipes`, the `availableIndex` counts
+/// `availableRecipe`), and `Main.focusRecipe` rides the raw position
+/// (`HandleCraftSlot` `:510`, `UpdateContents` `:622`). A recipe absent from
+/// the raw list keeps the ctor's -1 (`:592`) — `Available` false.
+pub fn available_position(available: &[usize], recipe: usize) -> i32 {
+    available
+        .iter()
+        .position(|&r| r == recipe)
+        .map_or(-1, |p| p as i32)
+}
+
 /// `NewCraftingUI.IsGridPoint` (`:754-761`): the grid's gamepad link-point
 /// window is `[20100, 21000)` — `point >= 20100 && point < 21000`.
 pub fn is_grid_point(point: i32) -> bool {
@@ -234,6 +249,34 @@ mod tests {
         assert!(
             !slot_hovering(true, hb, [120.0, 220.0], true),
             "IgnoreMouseInterface"
+        );
+    }
+
+    /// W4-f23 deviation fix: `availableIndex = i` (`NewCraftingUI.cs:610`)
+    /// counts the RAW `Main.availableRecipe` list, not the shown grid — with
+    /// a filter active the two diverge (`:596-611`), and `Main.focusRecipe`
+    /// rides the raw position (`HandleCraftSlot` `:510`, `:622`).
+    #[test]
+    fn available_position_counts_the_raw_list_not_the_grid() {
+        // Raw availableRecipe = [7, 3, 12, 5]; a filter shows only [3, 5].
+        let raw = [7usize, 3, 12, 5];
+        let shown = [3usize, 5];
+        // The shown entries' availableIndex values are their RAW positions.
+        assert_eq!(available_position(&raw, shown[0]), 1, "not grid index 0");
+        assert_eq!(available_position(&raw, shown[1]), 3, "not grid index 1");
+        // Every raw entry maps to its own position (`:596-610`'s loop).
+        for (i, &r) in raw.iter().enumerate() {
+            assert_eq!(available_position(&raw, r), i as i32);
+        }
+        // A recipe outside the raw list keeps the ctor's -1 (`:592`) —
+        // `Available` false, the DisabledSlotColor arm.
+        assert_eq!(available_position(&raw, 99), -1);
+        let mut e = RecipeEntry::new(99);
+        e.available_index = available_position(&raw, 99);
+        assert!(!e.available());
+        assert_eq!(
+            slot_tint(&e),
+            [160.0 / 255.0, 160.0 / 255.0, 160.0 / 255.0, 1.0]
         );
     }
 }
