@@ -9,13 +9,15 @@
 //! `tools/atlas_sim.js` skyline twin). Wiring needs the C#'s separate
 //! background-target family (`Main.backgroundTarget`, S1-G-13) or an atlas
 //! re-budget; both are out of this lane's scope. The STYLE inputs
-//! (`caveBackX`/`caveBackStyle`/`iceBackStyle`/`jungleBackStyle`) are also
-//! unowned: `WorldGen.RandomizeCaveBackgrounds` (`WorldGen.cs:8192-8249`) draws
-//! them mid-tail and inserting those draws would shift the seed-finish stream
-//! and move the frozen `world_hash` pins — a worldgen lane's call, not this one.
+//! (`caveBackX`/`caveBackStyle`/`iceBackStyle`/`jungleBackStyle`) were
+//! unowned at the time of writing; W4-g72 phases 7-8 own them now
+//! (`WorldGen.RandomizeCaveBackgrounds`, `WorldGen.cs:8192-8249`, ported in
+//! `worldgen/cave_bg.rs` and drawn in `step_world_tail` ahead of the moon
+//! roll — the `world_hash` pins carry stale-by-design notes).
 //!
 //! Everything here is pure (no RNG draws anywhere in the three C# functions)
-//! and witnessed against the source line-by-line.
+//! and witnessed against the source line-by-line. The atlas overflow above
+//! is the only remaining wiring blocker.
 
 /// The style-pick inputs — the `Main` statics + `SceneMetrics` fields
 /// `DrawBackground_PickUndergroundBackgroundStyle` reads (`Main.cs:54033-54095`).

@@ -1479,13 +1479,44 @@ sources still overflow the atlas; 10 witnesses WRITTEN NOT RUN. No atlas sheet a
 `caveBackStyle[0..4]` (with three distinctness rejection loops) + `iceBackStyle`/`hellBackStyle`/
 `jungleBackStyle` on the shared `genRand` stream, in the worldgen tail BETWEEN
 `RandomizeTreeStyle` (`:11338`) and `RandomizeBackgrounds` (`:11340`) and BEFORE
-`RandomizeMoonState`'s `Next(9)` (`:11341`); it is ALSO re-rolled at boot (`Main.cs:6603`),
-overwriting the `.wld`-persisted arrays (`WorldFile.cs:1260-1269`/`:2058-2066`). The port's
-`step_world_tail` (`pipeline.rs:2685-2731`) draws only `moon_type` + `hell_back_style` and must
-stay the last rng-consuming step, so inserting the cave block shifts the frozen `world_hash`
-pins (`SEED42_512`/`DEFAULT_WORLD`) — a worldgen lane's call, NOT this one. Research note 64
-documents the exact draw list, order, width-arm bounds, the moon-before-cave ordering
-constraint and the re-pin requirement; no RNG drawn, no pin touched, no `World` field added.
+`RandomizeMoonState`'s `Next(9)` (`:11341`); it is ALSO rolled at boot (`Main.cs:6603`).
+The port's `step_world_tail` (`pipeline.rs:2685-2731`) drew only `moon_type` + `hell_back_style`.
+Research note 64 documents the exact draw list, order, width-arm bounds and the
+moon-before-cave ordering constraint.
+
+**The cave-style rolls OWNED (W4-g72 lane 3 phases 7-8, `worldgen/cave_bg.rs`).**
+The Lead's port-gap assignment superseded the phase-6 "do not wire" verdict.
+The port now draws the whole block in `step_world_tail` AHEAD of the moon
+`Next(9)` (the C# `:11339`-before-`:11341` order) on the shared xorshift
+stream, through ONE generic driver (`randomize_cave_backgrounds<R: CaveRoll>`)
+that also serves the Knuth boot stream — the three width arms' f64-truncated
+bands (4200: `Next(1050,3150)`; 6400: `Next(857,3417)`/`Next(2988,5548)`; else
+the 0.25/0.5/0.75 ±0.15 bands), the base styles in index order, the three
+distinctness rejection loops in C# order, and the ice-`Next(4)`/hell-`Next(3)`/
+jungle-`Next(2)` tail. The old standalone hell draw is folded into the tail
+(no double draw). `World` gains `cave_back_x: [i32;4]` / `cave_back_style:
+[i32;4]` / `ice_back_style` / `jungle_back_style` (the `[3]` entries keep
+their `new int[4]` zeros — `Main.cs:66696-66697`, never rolled/sent).
+Persistence: the `.wld` flags block writes/reads the arrays
+(`WorldFile.cs:1260-1268`/`:2058-2066`, replacing the zero-writes/skip-reads);
+the `.trwld` v18 tail appends 31 bytes (3 i32 + 4 i32 + 3 u8 — `hellBackStyle`
+joins because the `.trwld` NEVER persisted it before, contrary to the old
+save.rs note); the `7 WorldInfo` header carries the roll host→client
+(`NetMessage.cs:258-278`). **Boot-roll census correction:** `Main.cs:6603`
+fires in `Initialize_AlmostEverything` ONCE per process (splash `:52572` /
+dedServ `:6499`) BEFORE any world load, with `Main.maxTilesX` still its
+static 0 (`Main.cs:1011`) — so it always takes the width-0 else arm, and the
+load's flags read OVERWRITES it (research/64 §2's "re-rolled on every load,
+overwrites the persisted arrays" was backwards). The port executes the boot
+roll in `App::new` on a dedicated `UnifiedRandom(world_seed)` as a dead store
+(the draw-order contract; `rngs.global()` untouched so the menu-path
+witnesses stay pinned). The `world_hash` pins carry stale-by-design notes:
+the tail is the last `streams.rng` consumer and writes no tiles, so the tile
+hash is expected UNCHANGED; the gate re-pins if measured otherwise, `a == b`
+stays green. The gen-side `RandomizeBackgrounds` (`:11340`, the forest
+surface rolls) remains unported — g71 owns the surface setBG slots' PERSISTENCE
+and draw tables, not that roll; inserting it later shifts the moon draw again
+(the same re-pin pattern). Witnesses WRITTEN NOT RUN (code-only).
 
 The sheet is anchored to `Main.worldSurface`, so its value must match `TerrainPass.ApplyPass`:
 `worldSurface = (int)(max(surfaceY) + 25.0)` вЂ” the *deepest* column, not the mean вЂ” with

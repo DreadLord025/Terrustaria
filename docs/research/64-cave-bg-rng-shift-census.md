@@ -92,18 +92,28 @@ the counts are data-dependent (the `while` loops re-draw until distinct).
    So in C# the cave rolls sit **between** `RandomizeTreeStyle` and
    `RandomizeBackgrounds`, and **before** `RandomizeMoonState`'s `Next(9)`.
 
-2. **Boot / world load** — `Main.cs:6603` (`Initialize`):
+2. **Boot / world load** — `Main.cs:6603` (`Initialize_AlmostEverything`):
    ```
    6594  WorldGen.RandomizeBackgrounds(Main.rand);
    6595-6602  if (treeBGSet1[0]==173) RandomizeBackgrounds(Main.rand);  // ≤2 retries
-   6603  WorldGen.RandomizeCaveBackgrounds();    // <-- re-rolled on EVERY load
+   6603  WorldGen.RandomizeCaveBackgrounds();    // <-- rolled ONCE at process boot
    ```
-   **Consequence:** the `.wld`-persisted cave arrays (`WorldFile.cs:1260-1269`
-   write / `:2058-2066` read) are **overwritten at boot** by a fresh
-   `Main.rand`-driven roll. The persisted values are not what the renderer sees
-   after load — the boot roll is. (The port skip-reads them,
-   `wld/sections/flags.rs:382-383`, and re-rolls only `hell_back_style` in the
-   worldgen tail; see §3.)
+   **CORRECTION (W4-g72 phase 8, 2026-11-21):** the original census read this
+   as "re-rolled on EVERY load, overwriting the persisted arrays". That is
+   WRONG. `Initialize_AlmostEverything` fires ONCE per process — from the
+   splash tail (`Main.cs:52572`) or dedServ `Initialize` (`:6499`) — BEFORE
+   any world file is loaded. At that point `Main.maxTilesX` is still its
+   static 0 (`Main.cs:1011`; the first writes are `autoCreate` `:4886-4896` /
+   the dedServ size prompt `:5301` / `LoadWorldHeader` `WorldFile.cs:1976`,
+   all later), so the boot roll ALWAYS takes the else arm with width 0
+   (three `Next(0,0)` band draws — Knuth still samples — + four distinct
+   styles + the ice/hell/jungle tail). The subsequent world load's flags
+   read (`WorldFile.cs:2058-2067`) then OVERWRITES the rolled statics with
+   the persisted values — the load wins, not the boot roll. The persisted
+   arrays ARE what the renderer sees after load. The port's flags reader
+   now owns them (`wld/sections/flags.rs`, W4-g72 phase 8); the boot roll
+   executes in `App::new` on a dedicated `UnifiedRandom(world_seed)` as a
+   dead store (the draw-order contract), leaving `rngs.global()` untouched.
 
 ---
 
@@ -171,22 +181,28 @@ To wire `RandomizeCaveBackgrounds` faithfully the worldgen lane must, **in
    `direct.moon_type == via_pipeline.moon_type` / `hell_back_style` parity
    asserts (`pipeline.rs:3491-3493`) survive too (both paths draw identically).
 
-**Boot re-roll caveat (§2.2):** C# re-rolls the cave arrays on every world load
-(`Main.cs:6603`), so a faithful port must ALSO re-roll them at load from the
-load-time `Main.rand` stand-in — otherwise loaded worlds keep the generation
-roll while vanilla shows a fresh one. That is a separate app-lane seam (the
-port's load path), flagged here so the worldgen lane does not assume the
-generation roll is the final renderer input.
+**Boot re-roll caveat (§2.2, CORRECTED in phase 8):** C# rolls the cave
+arrays ONCE at process boot (`Main.cs:6603`, before any load, width 0), and
+the world load's flags read then overwrites them — the persisted values are
+the final renderer input. The port's load path owns the arrays (phase 8);
+no per-load re-roll exists in C# and none is ported.
 
 ---
 
 ## 5. Verdict
 
-- **Do NOT wire in lane 3** (pin-moving; the task forbids it). The style machine
-  (`bg_styles.rs`) and the capture seams (`bg_target.rs`) consume the rolls but
-  the rolls themselves are unowned.
+- **Original census verdict (phase 6):** do NOT wire in lane 3 (pin-moving).
+- **SUPERSEDED (phases 7-8, 2026-11-21):** the Lead's port-gap assignment
+  moved the roll into this lane. `worldgen/cave_bg.rs` ports the function
+  over a `CaveRoll` trait (xorshift gen-side in `step_world_tail` ahead of
+  the moon draw; Knuth boot-side in `App::new` as a dead store — see the §2
+  correction), `World` carries the four fields, both save formats persist
+  them (`.wld` flags + `.trwld` v18) and the `7 WorldInfo` header syncs them.
+  The `world_hash` pins carry stale-by-design notes (the tail is the last
+  `streams.rng` consumer and writes no tiles — the tile hash is expected
+  unchanged; the gate re-pins if measured otherwise, `a == b` stays green).
 - The exact draw list, order, rejection loops, width-arm bounds and the
-  moon-before/after ordering constraint are documented above for the worldgen
-  lane to implement + re-pin in one pass.
-- No RNG was drawn, no `world_hash` constant touched, no `World` field added by
-  this census. Witnesses: none (documentation only).
+  moon-before/after ordering constraint above were implemented verbatim.
+- Witnesses: 7 in `cave_bg.rs` + 2 in `pipeline.rs` + 1 extended in
+  `bg.rs` + 1 in `save.rs` + the `wld` owned-field sweep + 1 in `netglue.rs`
+  — all WRITTEN NOT RUN (code-only lane).

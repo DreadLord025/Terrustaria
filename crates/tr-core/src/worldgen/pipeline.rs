@@ -2731,6 +2731,13 @@ fn step_world_tail(
     // the SAME `Next(3)` (`:8247`) — folded into the tail, not drawn twice.
     // The `world_hash` pins move BY DESIGN (the moon draw shifts behind the
     // new block — the established M5-BIOME / M5-ORES re-pin pattern).
+    // Deviation note: the C# boot roll (`Main.cs:6603`) leaves its values in
+    // `Main.caveBackStyle` before generation, so the arm-A/B UN-rolled
+    // entries keep the boot values there; the port's boot roll is a dead
+    // store (the load order differs — see `App::new`), so generation passes
+    // the `World::new` zeros. The un-rolled entries are unreachable by the
+    // style pick inside their arm (the trailing boundaries pin to the
+    // width), so only a past-the-edge probe column could observe them.
     let roll = super::cave_bg::randomize_cave_backgrounds(
         &mut streams.rng,
         world.width,
