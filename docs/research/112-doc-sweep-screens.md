@@ -143,11 +143,28 @@ on the App (`App.issue_reporter`), `open_reports` running the merge +
 `GoToBottom` over the merged rows, and the Workshop ring rule pinned
 (`workshop_add_report` + `WORKSHOP_MAX_REPORTS`). The log stays empty in
 practice — the port has no resource-pack pipeline, the exact vanilla
-state with no packs and no Steam. The indicator + Workshop hub entries
-stay d84's lane.
+state with no packs and no Steam.
+
+**FINAL-phase consumer census + wire**: the ONLY `GetReports` consumer
+in the decompile is `UIReportsPage.PopulateLogs` (`:144`) — no F3-panel
+report rows exist (the debug cheat-sheet reads none). The consumer-side
+entry half is now ported: `IssueReportsIndicator`
+(`IssueReportsIndicator.cs:10-80`, 18c assigns it to d85) as
+`ui::reports::IssueIndicator` + `App.issue_indicator` — the slide-in
+lerp, the centered-int-box hover + outline + mouse text, the click →
+`open_reports` + `Hide`, drawn at `DrawMenu`'s tail (`Main.cs:51886`,
+both menu regimes) with the press routed ahead of the rows/cards; the
+notify seam plays `DD2_ExplosiveTrapExplode` (three variations, legacy
+id-42, audio-only pick). The Workshop hub's Reports button stays d84's
+lane (its `front_hint` notice is the no-Steam stand-in).
 
 Witnesses: `reports.rs::the_general_reporter_appends_and_merges`,
-`::the_workshop_ring_caps_at_1000` (written, not run).
+`::the_workshop_ring_caps_at_1000`, `::the_indicator_slides_in_and_out_per_drawn_frame`,
+`::the_indicator_hit_is_the_centered_int_rect`,
+`flow.rs::w4_d85_the_indicator_click_opens_the_reports_and_hides`,
+`::w4_d85_the_indicator_over_a_front_screen_parks_it_as_back`,
+`audio.rs::the_issue_report_notify_cue_registers_and_plays`,
+`assets.rs::the_issue_indicator_button_pair_packs` (written, not run).
 
 ## 4. research/18 + 19 small rows taken
 

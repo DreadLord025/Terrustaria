@@ -39365,19 +39365,45 @@ The `UIReportsPage` port (`ui/reports.rs`, table row 10):
   resource-pack music failure (`LegacyAudioSystem.cs:114-119`); the port
   has no resource-pack pipeline, so the log stays empty exactly as
   vanilla with no packs.
+- **The consumer census closed 2026-11-21 (FINAL phase)**: the ONLY
+  `IProvideReports.GetReports` consumer in the whole decompile is
+  `UIReportsPage.PopulateLogs` (`:144`) — there are no F3-panel report
+  rows (the debug cheat-sheet reads none) and no other reader. The
+  consumer-side entry half landed: `IssueReportsIndicator`
+  (`IssueReportsIndicator.cs:10-80`) ports as `ui::reports::IssueIndicator`
+  on the App (`Main.IssueReporterIndicator`, `Main.cs:1813/:67043`) —
+  the ±1-per-drawn-frame slide (`Draw`, `:48`), the
+  `ScreenSize + (40,-80)` → `+(-80,0)` lerp (`:54-55`), the
+  `Utils.CenteredRectangle` int-box hover (`:59`), the outline +
+  `UI.IssueReporterHasThingsToShow` mouse text (`:62-63/:73-78`), and
+  the click → `OpenReportsMenu` + `Hide` (`:64-68`). The draw site is
+  `DrawMenu`'s tail (`Main.cs:51886`, after `MenuUI.Draw` at `:51063` —
+  both menu regimes); the press routes ahead of the menu rows / card
+  table. The notify seam (`App::issue_report_notify`) plays
+  `SoundID.DD2_ExplosiveTrapExplode` (`SoundID.cs:1604`, the three
+  variations registered on the legacy id-42 path, the audio-only
+  `style_random` pick). The producer census: the only non-Steam
+  `AddReport`/`AttemptLettingPlayerKnow` caller is the resource-pack
+  music failure (`LegacyAudioSystem.cs:114-119`); the Steam reporter's
+  six `Report*Problem` methods (`WorkshopIssueReporter.cs:49-90`) feed
+  from `WorkshopHelper.cs:103/:261-370` + `WorkshopSocialModule.cs:
+  142/:169` — all Steam-only. With neither pipeline the indicator never
+  shows: the exact vanilla state on a pack-free, no-Steam install.
 - **Deviations**: (1) the log is always empty in practice (no
   resource-pack pipeline — the `Workshop.ReportLogsInitialMessage` row
-  draws, `PopulateLogs`'s empty arm, `:147-160`); (2) the entry is the
-  `TR_UI=reports` preset (the vanilla entries are the Workshop hub's
-  Reports button, `UIWorkshopHub.cs:295-300`, and the issue indicator's
-  click, `IssueReportsIndicator.cs:64-68` — the indicator itself is
-  unported, d84's lane); (3) the gamepad snap points
-  (`SetupGamepadPoints`, `:232-247`) are out of scope (§J.3).
+  draws, `PopulateLogs`'s empty arm, `:147-160`); (2) the entries are the
+  `TR_UI=reports` preset and the ported indicator's click (the Workshop
+  hub's Reports button, `UIWorkshopHub.cs:295-300`, stays d84's lane —
+  its `front_hint` notice is the no-Steam stand-in); (3) the gamepad snap
+  points (`SetupGamepadPoints`, `:232-247`) are out of scope (§J.3);
+  (4) the indicator's `Setup()` asset requests resolve through the atlas
+  Lookups (`UI/Workshop/IssueButton` + `_Outline`, packed) instead of
+  per-call `Main.Assets.Request` — the sheets are static.
 - **Back**: `GoBackClick` (`:206-211`) returns the parked
   `_previousUIState` / `_menuIdToGoBackTo` — the flow table's
   `FlowClick::ReportsBack` row carries both.
-- Code-only mode: the witness tests (`reports.rs` 4 + `flow.rs` 2) are
-  WRITTEN, NOT RUN.
+- Code-only mode: the witness tests (`reports.rs` 6 + `flow.rs` 4 +
+  `audio.rs` 1 + `assets.rs` 1) are WRITTEN, NOT RUN.
 
 ## Advanced world creation (W4-d85, 2026-11-20, code-only)
 

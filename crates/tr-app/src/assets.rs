@@ -1031,6 +1031,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/ButtonCloudActive",
         "UI/ButtonCloudInactive",
         "UI/Divider",
+        // W4-d85 FINAL: the issue-report indicator's button pair
+        // (`IssueReportsIndicator.cs:41-42`).
+        "UI/Workshop/IssueButton",
+        "UI/Workshop/IssueButton_Outline",
         "UI/InnerPanelBackground",
         "UI/PlayerBackground",
         "UI/IconCrimson",
@@ -2195,6 +2199,12 @@ pub struct Lookups {
     pub card_cloud: [Option<tr_render::SheetRect>; 2],
     /// `UI/Divider` 8x4 (`UICharacterListItem.cs:52`).
     pub ui_divider: Option<tr_render::SheetRect>,
+    /// `UI/Workshop/IssueButton` (`IssueReportsIndicator.cs:41`) — the
+    /// menu-tail issue-report button (W4-d85 FINAL).
+    pub ui_issue_button: Option<tr_render::SheetRect>,
+    /// `UI/Workshop/IssueButton_Outline` (`IssueReportsIndicator.cs:42`) —
+    /// the hover outline over the button.
+    pub ui_issue_button_outline: Option<tr_render::SheetRect>,
     /// `UI/InnerPanelBackground` 24x27 — the card info panels (`:53`, `DrawPanel`
     /// `:310-315` splices it 8/8/8/8).
     pub ui_inner_panel: Option<tr_render::SheetRect>,
@@ -2712,6 +2722,8 @@ impl Lookups {
             card_cloud: ["UI/ButtonCloudActive", "UI/ButtonCloudInactive"]
                 .map(|n| atlas.sheet(n).copied()),
             ui_divider: atlas.sheet("UI/Divider").copied(),
+            ui_issue_button: atlas.sheet("UI/Workshop/IssueButton").copied(),
+            ui_issue_button_outline: atlas.sheet("UI/Workshop/IssueButton_Outline").copied(),
             ui_inner_panel: atlas.sheet("UI/InnerPanelBackground").copied(),
             ui_player_background: atlas.sheet("UI/PlayerBackground").copied(),
             ui_world_icon: atlas.sheet("UI/IconCrimson").copied(),
@@ -3688,6 +3700,23 @@ mod tests {
             );
         }
         assert!(lookups.npc_heads[0].is_none(), "the query cell has no head");
+    }
+
+    /// W4-d85 FINAL — the issue-report indicator's button pair reaches the
+    /// atlas (`IssueReportsIndicator.cs:41-42`'s two `Main.Assets.Request`
+    /// names); the draw reads the sheet's own size (`value.Frame()`), so the
+    /// pin is presence + non-zero, not a hand-copied dimension.
+    #[test]
+    fn the_issue_indicator_button_pair_packs() {
+        let (_, lookups) = content_lookups();
+        let button = lookups
+            .ui_issue_button
+            .expect("UI/Workshop/IssueButton must reach the atlas");
+        let outline = lookups
+            .ui_issue_button_outline
+            .expect("UI/Workshop/IssueButton_Outline must reach the atlas");
+        assert!(button.width > 0 && button.height > 0, "a real button sheet");
+        assert!(outline.width > 0 && outline.height > 0, "a real outline sheet");
     }
 
     #[test]

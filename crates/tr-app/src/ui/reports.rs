@@ -215,6 +215,125 @@ pub fn scrollbar_attaches(view_h: f32, content_h: f32) -> bool {
     content_h != view_h
 }
 
+// --- The issue indicator (`IssueReportsIndicator.cs:10-80`) ------------------
+//
+// The consumer-side half of the reporter pipeline (W4-d85 FINAL): the
+// menu-tail button `Main.DrawMenu` draws (`Main.cs:51886`, right before
+// `DrawCursor`) that opens this page. `AttemptLettingPlayerKnow` (`:20-25`)
+// is called by the resource-pack music failure (`LegacyAudioSystem.cs:118`)
+// and the Steam Workshop reporter's notify event
+// (`WorkshopSocialModule.cs:42-46`); with neither pipeline the port's
+// indicator never shows — the exact vanilla state on a pack-free, no-Steam
+// install. The state machine is ported so a future producer (or a test)
+// drives the same slide-in / hover / click-to-open flow.
+
+/// `IssueReportsIndicator` (`IssueReportsIndicator.cs:12-18`) — the two
+/// private fields; the two `Asset<Texture2D>` requests (`Setup`, `:39-43`)
+/// resolve through the atlas Lookups instead.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct IssueIndicator {
+    /// `_displayUpPercent` (`:12`) — the slide-in/out accumulator.
+    pub display_up_percent: f32,
+    /// `_shouldBeShowing` (`:14`).
+    pub should_be_showing: bool,
+}
+
+impl IssueIndicator {
+    /// `AttemptLettingPlayerKnow` (`:20-25`): `Setup()` + the show latch.
+    /// The `SoundEngine.PlaySound(SoundID.DD2_ExplosiveTrapExplode)` cue is
+    /// the caller's (`App::issue_report_notify` — the audio system lives on
+    /// the App, not here).
+    pub fn attempt_letting_player_know(&mut self) {
+        self.should_be_showing = true;
+    }
+
+    /// `Hide` (`:27-31`): the latch clears AND the percent snaps to 0 (no
+    /// slide-out when explicitly hidden — the Workshop hub's Logs button
+    /// and the indicator's own click call this).
+    pub fn hide(&mut self) {
+        self.should_be_showing = false;
+        self.display_up_percent = 0.0;
+    }
+
+    /// `Draw`'s first two lines (`:47-48`): the percent walks ±1 per DRAWN
+    /// frame (`shouldBeShowing.ToDirectionInt()` — +1 showing, −1 hiding,
+    /// `Utils.cs:2010-2017`), clamped 0..1. Returns whether the button draws
+    /// this frame (`:49-52`'s zero early-out).
+    pub fn tick_draw(&mut self) -> bool {
+        let dir = if self.should_be_showing { 1.0 } else { -1.0 };
+        self.display_up_percent = (self.display_up_percent + dir).clamp(0.0, 1.0);
+        self.display_up_percent != 0.0
+    }
+}
+
+/// The button's centre (`Draw`, `:54-55`): `ScreenSize + (40, -80)` lerped
+/// to `+ (-80, 0)` by the display percent — parked 40 px off the right edge,
+/// slid in to `screenWidth - 40, screenHeight - 80`.
+pub fn indicator_center(screen: Vec2, percent: f32) -> Vec2 {
+    let parked = screen + Vec2::new(40.0, -80.0);
+    parked.lerp(parked + Vec2::new(-80.0, 0.0), percent)
+}
+
+/// The hover/click box (`Draw`, `:59`): `Utils.CenteredRectangle(center,
+/// size)` (`Utils.cs:947-950`) — the int-truncated top-left, the size as-is.
+/// `ContainsPoint` is `Rectangle.Contains` on the truncated mouse point
+/// (`Main.MouseScreen.ToPoint()`).
+pub fn indicator_hit(center: Vec2, size: Vec2, mouse: Vec2) -> bool {
+    let x = (center.x - size.x * 0.5) as i32;
+    let y = (center.y - size.y * 0.5) as i32;
+    let (mx, my) = (mouse.x as i32, mouse.y as i32);
+    mx >= x && mx < x + size.x as i32 && my >= y && my < y + size.y as i32
+}
+
+/// `Draw` (`:45-79`): the button at the lerped centre (origin = half the
+/// frame, scale 1, white), the outline over it while hovered, and the
+/// `UI.IssueReporterHasThingsToShow` mouse text (`:62-63`). The click arm
+/// (`:64-68` — `OpenUI` + `Hide`) is the App's (`issue_indicator_click`):
+/// this draw only reports the hover. Returns the hover flag.
+pub fn draw_indicator(
+    r: &mut SpriteRenderer,
+    lookups: &Lookups,
+    screen: Vec2,
+    percent: f32,
+    mouse: Vec2,
+    pulse: super::UiPulse,
+) -> bool {
+    let Some(sheet) = lookups.ui_issue_button else {
+        return false;
+    };
+    let size = Vec2::new(sheet.width as f32, sheet.height as f32);
+    let center = indicator_center(screen, percent);
+    let hovered = indicator_hit(center, size, mouse);
+    super::push_whole(
+        r,
+        lookups,
+        &sheet,
+        [center.x - size.x * 0.5, center.y - size.y * 0.5, size.x, size.y],
+        [1.0; 4],
+    );
+    if hovered {
+        if let Some(outline) = lookups.ui_issue_button_outline {
+            let os = Vec2::new(outline.width as f32, outline.height as f32);
+            super::push_whole(
+                r,
+                lookups,
+                &outline,
+                [center.x - os.x * 0.5, center.y - os.y * 0.5, os.x, os.y],
+                [1.0; 4],
+            );
+        }
+        super::tooltip::draw_mouse_text(
+            r,
+            lookups,
+            mouse,
+            &lang::text("UI.IssueReporterHasThingsToShow"),
+            screen,
+            pulse,
+        );
+    }
+    hovered
+}
+
 // --- Hits --------------------------------------------------------------------
 
 /// The Back panel under the pointer (`GoBackClick`, `:206-211`).
@@ -512,6 +631,58 @@ mod tests {
         assert_eq!(merged.len(), 3);
         assert_eq!(merged[2].text, "w1");
         assert_eq!(merged_reports(r.get_reports(), None), r.get_reports());
+    }
+
+    /// `IssueReportsIndicator`'s state machine (`IssueReportsIndicator.cs:
+    /// 20-31/:47-55`): the notify latches the show, the percent walks ±1 per
+    /// drawn frame clamped 0..1, `Hide` snaps to 0, and the centre lerps
+    /// from the parked off-screen point to the slid-in one.
+    #[test]
+    fn the_indicator_slides_in_and_out_per_drawn_frame() {
+        let mut ind = IssueIndicator::default();
+        // Hidden: the percent walks −1, clamps at 0, nothing draws.
+        assert!(!ind.tick_draw());
+        assert_eq!(ind.display_up_percent, 0.0);
+        // Notify: the latch sets, the percent climbs +1 per frame, clamped.
+        ind.attempt_letting_player_know();
+        assert!(ind.should_be_showing);
+        assert!(ind.tick_draw());
+        assert_eq!(ind.display_up_percent, 1.0);
+        assert!(ind.tick_draw(), "clamped at 1, still draws");
+        // The centre: parked at screen + (40, -80), slid to + (-40, -80).
+        let screen = Vec2::new(1600.0, 900.0);
+        assert_eq!(indicator_center(screen, 0.0), Vec2::new(1640.0, 820.0));
+        assert_eq!(indicator_center(screen, 1.0), Vec2::new(1560.0, 820.0));
+        assert_eq!(indicator_center(screen, 0.5), Vec2::new(1600.0, 820.0));
+        // Hide: the latch clears AND the percent snaps (no slide-out).
+        ind.hide();
+        assert!(!ind.should_be_showing);
+        assert_eq!(ind.display_up_percent, 0.0);
+        assert!(!ind.tick_draw());
+        // A notify after a hide re-shows; a plain latch-clear slides OUT
+        // one percent per frame (the C# has no other clear path): 1 → 0.
+        ind.attempt_letting_player_know();
+        ind.tick_draw();
+        assert_eq!(ind.display_up_percent, 1.0);
+        ind.should_be_showing = false;
+        assert!(!ind.tick_draw(), "the −1 step lands at 0 — nothing draws");
+        assert_eq!(ind.display_up_percent, 0.0);
+    }
+
+    /// The indicator's hover box (`Draw`, `:59` — `Utils.CenteredRectangle`
+    /// + `Rectangle.Contains` on the truncated mouse point).
+    #[test]
+    fn the_indicator_hit_is_the_centered_int_rect() {
+        let center = Vec2::new(1560.0, 820.0);
+        let size = Vec2::new(34.0, 34.0);
+        // The box: (1543, 803)..(1577, 837) — int-truncated top-left.
+        assert!(indicator_hit(center, size, Vec2::new(1560.0, 820.0)));
+        assert!(indicator_hit(center, size, Vec2::new(1543.0, 803.0)), "the left/top edge is inclusive");
+        assert!(!indicator_hit(center, size, Vec2::new(1577.0, 820.0)), "the right edge is exclusive");
+        assert!(!indicator_hit(center, size, Vec2::new(1560.0, 837.0)), "the bottom edge is exclusive");
+        // The mouse point truncates (`Main.MouseScreen.ToPoint()`).
+        assert!(indicator_hit(center, size, Vec2::new(1543.9, 803.9)));
+        assert!(!indicator_hit(center, size, Vec2::new(1542.9, 803.0)));
     }
 
     /// `WorkshopIssueReporter.AddReport`'s 1000-entry ring

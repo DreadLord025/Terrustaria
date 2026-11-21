@@ -1484,6 +1484,48 @@ impl App {
         true
     }
 
+    /// `IssueReportsIndicator.AttemptLettingPlayerKnow`
+    /// (`IssueReportsIndicator.cs:20-25`) — the producer-side notify: the
+    /// show latch + the `DD2_ExplosiveTrapExplode` cue. The C#'s callers are
+    /// the resource-pack music failure (`LegacyAudioSystem.cs:118`) and the
+    /// Steam reporter's notify event (`WorkshopSocialModule.cs:42-46`);
+    /// neither pipeline exists in the port, so this seam is reached only by
+    /// a future producer (or a test) — the indicator stays hidden exactly
+    /// as vanilla on a pack-free, no-Steam install.
+    pub(crate) fn issue_report_notify(&mut self) {
+        self.issue_indicator.attempt_letting_player_know();
+        self.audio.play_issue_report_notify();
+    }
+
+    /// The indicator's click (`IssueReportsIndicator.Draw`, `:64-68`):
+    /// `OpenUI` (`:33-37` — `Main.OpenReportsMenu`) + `Hide` (`:27-31`).
+    /// The C# reads `Main.mouseLeft` (the HELD flag) inside the hover, so
+    /// the port fires on the press event while the button is hovered and
+    /// the menu regime is live — the draw site is `DrawMenu`'s tail
+    /// (`Main.cs:51886`), which covers BOTH the legacy pages and the 888
+    /// front screens (`MenuUI.Draw` at `:51063` precedes it). Returns
+    /// whether the click landed.
+    pub(crate) fn issue_indicator_click(&mut self) -> bool {
+        if (self.menu.is_none() && self.front.is_none())
+            || self.issue_indicator.display_up_percent == 0.0
+        {
+            return false;
+        }
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let center = ui::reports::indicator_center(screen, self.issue_indicator.display_up_percent);
+        let Some(sheet) = self.lookups.ui_issue_button else {
+            return false;
+        };
+        let size = Vec2::new(sheet.width as f32, sheet.height as f32);
+        if !ui::reports::indicator_hit(center, size, self.mouse_pos) {
+            return false;
+        }
+        self.open_reports();
+        self.issue_indicator.hide();
+        true
+    }
+
     /// `UIReportsPage`'s wheel (`UIList.ScrollWheel` through
     /// `UserInterface.Update`'s arm): the log's scrollbar owns the notch
     /// while the page is live; the accumulator is consumed whatever the
@@ -1898,6 +1940,93 @@ pub(crate) mod front_flow_tests {
             Some(FlowClick::ReportsBack)
         );
         assert_eq!(front.click(&mut app, screen, Vec2::new(800.0, 400.0), false), None);
+    }
+
+    /// W4-d85 FINAL — the indicator's notify → click → open chain
+    /// (`IssueReportsIndicator.cs:20-25/:64-68` → `Main.OpenReportsMenu`):
+    /// the notify latches the show + plays the cue, the hovered click opens
+    /// the reports page over the parked menu and hides the indicator; an
+    /// unhovered or hidden click does nothing.
+    #[test]
+    fn w4_d85_the_indicator_click_opens_the_reports_and_hides() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.menu = Some(menu::Menu::new(app.settings.clone(), "p".into()));
+        // The notify: the latch + the cue (the played-count seam).
+        let before = app.audio.played_count();
+        app.issue_report_notify();
+        assert!(app.issue_indicator.should_be_showing);
+        assert_eq!(app.audio.played_count(), before + 1, "the notify cue played");
+        // The percent must be up for the button to draw/click — one drawn
+        // frame's tick (`Draw`, `:48`).
+        assert!(!app.issue_indicator_click(), "percent 0 — nothing draws yet");
+        app.issue_indicator.tick_draw();
+        assert_eq!(app.issue_indicator.display_up_percent, 1.0);
+        // The slid-in centre at the headless 1280x720: (1240, 640). The
+        // headless Lookups carry no sheet, so the hit box is absent — pin
+        // a 34x34 sheet stand-in for the geometry (the retail size is
+        // decoded at runtime; the box maths is size-driven).
+        app.lookups.ui_issue_button = Some(tr_render::SheetRect {
+            x: 0,
+            y: 0,
+            width: 34,
+            height: 34,
+            plain_frame: (0, 0),
+        });
+        app.mouse_pos = Vec2::new(640.0, 360.0);
+        assert!(!app.issue_indicator_click(), "off the button — no open");
+        assert!(app.menu.is_some(), "the menu stays live");
+        app.mouse_pos = Vec2::new(1240.0, 640.0);
+        assert!(app.issue_indicator_click(), "the hovered click lands");
+        assert!(matches!(app.front, Some(FrontScreen::Reports(_))), "the reports page opened");
+        assert!(app.menu.is_none(), "the menu parked (OpenReportsMenu's 888)");
+        assert!(!app.issue_indicator.should_be_showing, "Hide ran");
+        assert_eq!(app.issue_indicator.display_up_percent, 0.0, "the percent snapped");
+        // The Back target is the parked menu page (`_menuIdToGoBackTo`).
+        let Some(FrontScreen::Reports(state)) = app.front.as_ref() else {
+            panic!("the reports page is live");
+        };
+        assert!(state.back_front.is_none());
+        assert_eq!(state.back_page, Some(menu::Page::Main));
+    }
+
+    /// W4-d85 FINAL — the indicator over a FRONT screen (`DrawMenu`'s tail
+    /// draws after `MenuUI.Draw`, `Main.cs:51063`→`:51886`): the click opens
+    /// the reports page with the live screen as the parked Back target
+    /// (`OpenReportsMenu`'s `Main.MenuUI.CurrentState`).
+    #[test]
+    fn w4_d85_the_indicator_over_a_front_screen_parks_it_as_back() {
+        let mut app = flow_app(Some(FrontScreen::WorldSelect), vec![], vec![]);
+        app.issue_report_notify();
+        app.issue_indicator.tick_draw();
+        app.lookups.ui_issue_button = Some(tr_render::SheetRect {
+            x: 0,
+            y: 0,
+            width: 34,
+            height: 34,
+            plain_frame: (0, 0),
+        });
+        app.mouse_pos = Vec2::new(1240.0, 640.0);
+        assert!(app.issue_indicator_click());
+        let Some(FrontScreen::Reports(state)) = app.front.as_ref() else {
+            panic!("the reports page opened over the front screen");
+        };
+        assert_eq!(state.back_front, Some(FrontScreen::WorldSelect));
+        assert!(state.back_page.is_none());
+        // The in-world regime (no menu, no front) never draws the indicator —
+        // `DrawMenu` does not run (`Main.cs:62249`'s gameMenu branch).
+        let mut app = flow_app(None, vec![], vec![]);
+        app.issue_report_notify();
+        app.issue_indicator.tick_draw();
+        app.lookups.ui_issue_button = Some(tr_render::SheetRect {
+            x: 0,
+            y: 0,
+            width: 34,
+            height: 34,
+            plain_frame: (0, 0),
+        });
+        app.mouse_pos = Vec2::new(1240.0, 640.0);
+        assert!(!app.issue_indicator_click(), "no menu regime — no click");
+        assert!(app.front.is_none());
     }
 
     /// W4-d85 rows 11-12 — the Advanced-tab hops carry the draft through:
@@ -2694,6 +2823,7 @@ pub(crate) mod front_flow_tests {
             debug_loadouts_scroll: 0.0,
             world_advanced_glitch: ui::world_creation_advanced::EverythingGlitch::default(),
             issue_reporter: ui::reports::GeneralIssueReporter::default(),
+            issue_indicator: ui::reports::IssueIndicator::default(),
             notifications: ui::notifications::NotificationsTracker::default(),
             emotes: crate::emotes::EmoteSystem::default(),
             banners: crate::banners::BannerSystem::default(),

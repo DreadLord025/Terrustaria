@@ -259,6 +259,7 @@ impl App {
                     menu,
                     front,
                     front_hint,
+                    issue_indicator,
                     settings,
                     remote_players,
                     map,
@@ -1871,6 +1872,29 @@ impl App {
                             &self.debug_loadouts_search,
                             self.debug_loadouts_scroll,
                             self.mouse_pos,
+                        );
+                    }
+                    // `Main.IssueReporterIndicator.Draw` (`Main.cs:51886`,
+                    // `DrawMenu`'s tail right before `DrawCursor` — AFTER the
+                    // 888 `MenuUI.Draw` at `:51063`, the legacy rows and the
+                    // fancy-UI overlays, so it covers both menu regimes):
+                    // the issue-report button slides in from the right edge
+                    // while a report needs attention (`IssueReportsIndicator.
+                    // cs:45-79`). The percent ticks once per DRAWN frame here
+                    // — the C# advances it inside Draw, not Update. Never
+                    // shows in the port (no producer), the exact vanilla
+                    // state on a pack-free, no-Steam install.
+                    if (menu.is_some() || front.is_some()) && issue_indicator.tick_draw() {
+                        ui::reports::draw_indicator(
+                            renderer,
+                            lookups,
+                            screen,
+                            issue_indicator.display_up_percent,
+                            self.mouse_pos,
+                            ui::UiPulse {
+                                text: self.mouse_text_color as f32 / 255.0,
+                                cursor_scale: self.cursor.scale(),
+                            },
                         );
                     }
                     // `DrawInterface_13_AchievementCompletePopups`

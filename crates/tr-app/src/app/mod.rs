@@ -346,6 +346,12 @@ pub(crate) struct App {
     /// `:52352-52363`). Empty in the port: the only non-Steam producer is
     /// the resource-pack music failure, which has no pipeline here.
     pub(crate) issue_reporter: ui::reports::GeneralIssueReporter,
+    /// `Main.IssueReporterIndicator` (`Main.cs:1813`, created `:67043`) —
+    /// the menu-tail button that opens the reports page
+    /// (`IssueReportsIndicator.cs:10-80`, drawn at `Main.cs:51886`).
+    /// Never shows in the port: its only non-Steam trigger is the same
+    /// resource-pack music failure (W4-d85 FINAL).
+    pub(crate) issue_indicator: ui::reports::IssueIndicator,
     /// The four category toggles, all on at `OnActivate`
     /// (`UIAchievementsMenu.InitializePage`'s `SetState(value: true)`).
     pub(crate) achievements_categories: [bool; 4],
@@ -3867,6 +3873,7 @@ impl App {
             debug_loadouts_scroll: 0.0,
             world_advanced_glitch: ui::world_creation_advanced::EverythingGlitch::default(),
             issue_reporter: ui::reports::GeneralIssueReporter::default(),
+            issue_indicator: ui::reports::IssueIndicator::default(),
             // The filter bits default to all-on (`SetState(value: true)`);
             // a shot run can pin a single category through the bitmask.
             achievements_categories: {

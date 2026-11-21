@@ -496,6 +496,14 @@ impl ApplicationHandler for App {
                                     self.handle_debug_loadouts_clicks();
                                     return;
                                 }
+                                // `IssueReportsIndicator.Draw`'s click arm
+                                // (`IssueReportsIndicator.cs:64-68`): the
+                                // menu-tail button draws over the rows
+                                // (`Main.cs:51886`), so its hover takes the
+                                // press first — `OpenReportsMenu` + `Hide`.
+                                if pressed && self.issue_indicator_click() {
+                                    return;
+                                }
                                 m.update_hover(self.mouse_pos);
                                 let action = m.click();
                                 // Bug 17: the legacy menu's click tick —
@@ -509,6 +517,13 @@ impl ApplicationHandler for App {
                             return;
                         }
                         if self.front.is_some() {
+                            // The indicator draws over the 888 screens too
+                            // (`DrawMenu`'s tail, `Main.cs:51886` — after
+                            // `MenuUI.Draw` at `:51063`), so its hover takes
+                            // the press before the card table.
+                            if pressed && self.issue_indicator_click() {
+                                return;
+                            }
                             // The 888 screens are click-driven: the press
                             // routes through the card-hit table (`Main.
                             // MouseUI`'s click while `MenuUI` is live). The
