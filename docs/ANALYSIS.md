@@ -39412,3 +39412,21 @@ pins the notify per kind. Drain-coverage note: the drain rides
 `break_tile` only (c36's placement, kept verbatim) — projectile/collision
 kill paths leave the notify pending until the next `break_tile`; widening
 it is the c36 lane's call. Census `docs/research/W4-g85-orb-draw.md` §7.3.
+
+### Wiring round 2 — the orb light emit VERIFIED scanner-seeded (same branch)
+
+The contract's "AddLight orb tiles (g18-oracle co-lane)" check resolves
+NEGATIVE: the orb family's light is NOT an entity-list `AddLight` source.
+31/696 (+ the 26/695 altars) glow through `TileLightScanner`'s
+`case 26/31/695/696` (`TileLightScanner.cs:2965-2983`), landed in
+`tile_light/scanner.rs::misc_lights` (`:1051-1061`) — the scanner writes
+the `LightMap` directly. The Heart object 12 / ManaCrystal 639 have NO
+top-level scanner light arm (every `case 12` is a nested torch/chandelier/
+lamp style row; 639 has no scanner mention) — their glow is the
+`Main.tileShine`/`tileShine2` modulation (`Main.cs:7518`/`:9652-9653`) +
+the g85 sparkle dust. W4-g18's independent census (`547154708`) confirms:
+Main.cs has exactly five `Lighting.AddLight` sites, ALL `DrawProj`
+hook-chain arms (332/488, e8's lane), and "NO update-side or ambient
+AddLight — tile ambience is scanner-seeded". Nothing to wire; the g85
+dust wiring + the landed scanner arm are the complete draw/light picture.
+Census `docs/research/W4-g85-orb-draw.md` §7.4.

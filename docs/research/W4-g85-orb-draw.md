@@ -484,3 +484,19 @@ empty.**
 **Nothing to wire for item 4** — the light emit was already landed
 (scanner) and the g85 dust wiring completes the draw side. This section
 is the verification record the contract asked for.
+
+### Wiring-round-2 verification
+
+Code-only: every ported line re-read against the cited C# windows
+(`TileDrawing.cs:897-968`/`:4358-4402`/`:4435-4467`/`:6624-6686`,
+`Main.cs:9420-9467`/`:9649-9653`/`:21778-21818`, `Item.cs:4914-4927`,
+`Player.cs:9981-9984`, `NPC.cs:442-471`/`:1282-1453`/`:4165-4502`,
+`WorldGen.cs:54169-54344`, `TileLightScanner.cs:2965-2983` + the nested
+`case 12` rows, `TileID.cs:504`/`:551`/`:578-609`). Co-lane reads: d9
+`667e1f0c2` (the tileSpelunker bitset), d60's module doc (the prologue
+deferral), c36 `6c8eb75dd` (the unconditional notify), g18
+`547154708`/`a99dfa964` (the AddLight census), d35 (the GoblinScout kind).
+2 new spelunker witnesses + the extended four-case notify census WRITTEN
+NOT RUN — no cargo/rustc/rustfmt/tests/dotnet/graphify invoked. 20
+witnesses total on the branch (18 prior + 2 spelunker; the notify census
+extends an existing witness).
