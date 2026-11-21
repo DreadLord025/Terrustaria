@@ -207,19 +207,33 @@ pub fn convert_cell_flavor(world: &mut World, x: i32, y: i32, flavor: Conversion
     }
 }
 
+/// `CanChlorophyteGrow` (`:69464-69515`): the density gates — the
+/// chlorophyte count in the ±35 box ≤ 40 and in the ±85 box ≤ 130. The
+/// remix world widens both (`+5`, `×15`, `−4`, `−8`, `:69470-69476`);
+/// otherwise a cell ABOVE the rock layer halves BOTH caps and widens BOTH
+/// boxes ×1.5 (`:69477-69483`). The scans are half-open `[i−r, i+r)` with
+/// the `InWorld` guard.
 pub fn can_chlorophyte_grow(world: &World, x: i32, y: i32) -> bool {
-    let (mut r_small, mut cap_big) = (35i32, 130i32);
-    if (y as f64) < world.rock_layer {
-        r_small = (r_small as f64 * 1.5) as i32;
+    let (mut cap_small, mut cap_big, mut r_small, mut r_big) = (40i32, 130i32, 35i32, 85i32);
+    if world.seeds.contains(crate::seeds::SeedFlags::REMIX) {
+        cap_small += 5;
+        cap_big *= 15;
+        r_small -= 4;
+        r_big -= 8;
+    } else if (y as f64) < world.rock_layer {
+        cap_small /= 2;
         cap_big /= 2;
+        r_small = (r_small as f64 * 1.5) as i32;
+        r_big = (r_big as f64 * 1.5) as i32;
     }
     let count = |r: i32| -> i32 {
         let mut n = 0;
         for k in (x - r)..(x + r) {
             for l in (y - r)..(y + r) {
-                if world
-                    .tile(k, l)
-                    .is_some_and(|t| t.active() && t.kind == 211)
+                if in_world(world, k, l, 0)
+                    && world
+                        .tile(k, l)
+                        .is_some_and(|t| t.active() && t.kind == 211)
                 {
                     n += 1;
                 }
@@ -227,48 +241,109 @@ pub fn can_chlorophyte_grow(world: &World, x: i32, y: i32) -> bool {
         }
         n
     };
-    if count(r_small) > 40 {
+    if count(r_small) > cap_small {
         return false;
     }
-    count(85) <= cap_big
+    count(r_big) <= cap_big
 }
 
-/// `nearbyChlorophyte` (`:69502+`): the chlorophyte within 5 tiles (the
-/// defence radius).
-fn nearby_chlorophyte(world: &World, x: i32, y: i32) -> bool {
-    for dx in -5..=5 {
-        for dy in -5..=5 {
+/// `nearbyChlorophyte` (`:69517-69558`): the defence radius — the ±5 box
+/// counts the 211 chlorophyte AND the 346 chlorophyte jungle grass; ≥3
+/// always defends, 1-2 roll `Next(-1, 4) < count` (the remix world
+/// `Next(-1, 3)`). The 10-tile border margin returns false without drawing.
+fn nearby_chlorophyte(world: &World, x: i32, y: i32, rng: &mut UnifiedRandom) -> bool {
+    let num2 = 5;
+    if x <= num2 + 5 || x >= world.width - num2 - 5 {
+        return false;
+    }
+    if y <= num2 + 5 || y >= world.height - num2 - 5 {
+        return false;
+    }
+    let mut num = 0.0f64;
+    for k in (x - num2)..=(x + num2) {
+        for l in (y - num2)..=(y + num2) {
             if world
-                .tile(x + dx, y + dy)
-                .is_some_and(|t| t.active() && t.kind == 211)
+                .tile(k, l)
+                .is_some_and(|t| t.active() && matches!(t.kind, 211 | 346))
             {
+                num += 1.0;
+                if num >= 3.0 {
+                    return true;
+                }
+            }
+        }
+    }
+    if num > 0.0 {
+        if world.seeds.contains(crate::seeds::SeedFlags::REMIX) {
+            if (rng.next_range(-1, 3) as f64) < num {
                 return true;
             }
+        } else if (rng.next_range(-1, 4) as f64) < num {
+            return true;
         }
     }
     false
 }
 
-/// `CountNearBlocksTypes(i, j, 2, 1, 27)`: the sunflower (27) suppression
-/// within 2 tiles.
-fn sunflower_nearby(world: &World, x: i32, y: i32) -> bool {
-    for dx in -2..=2 {
-        for dy in -2..=2 {
-            if world
-                .tile(x + dx, y + dy)
-                .is_some_and(|t| t.active() && t.kind == 27)
-            {
-                return true;
+/// `ChlorophyteDefense` (`:69456-69462`): the remix worlds run the type-10
+/// purge conversion on the defended cell; the normal worlds do nothing.
+fn chlorophyte_defense(world: &mut World, x: i32, y: i32) {
+    if world.seeds.contains(crate::seeds::SeedFlags::REMIX) {
+        convert_purge_cell(world, x, y, 10);
+    }
+}
+
+/// `CountNearBlocksTypes(i, j, radius, cap, tiletypes)` (`:69560-69598`):
+/// the clamped-box count of the active matching tiles; a positive cap
+/// returns early once the count reaches it.
+fn count_near_blocks_types(world: &World, i: i32, j: i32, radius: i32, cap: i32, kinds: &[u16]) -> i32 {
+    if kinds.is_empty() {
+        return 0;
+    }
+    let x0 = (i - radius).clamp(0, world.width - 1);
+    let x1 = (i + radius).clamp(0, world.width - 1);
+    let y0 = (j - radius).clamp(0, world.height - 1);
+    let y1 = (j + radius).clamp(0, world.height - 1);
+    let mut num = 0;
+    for k in x0..=x1 {
+        for l in y0..=y1 {
+            let Some(t) = world.tile(k, l) else {
+                continue;
+            };
+            if !t.active() {
+                continue;
+            }
+            if kinds.contains(&t.kind) {
+                num += 1;
+                if cap <= 0 || num < cap {
+                    continue;
+                }
+                return num;
             }
         }
     }
-    false
+    num
 }
 
-/// `hardUpdateWorld`'s spread arms (`:69645-69860`): the chlorophyte growth
-/// (the 211/346 sources) and the evil/crimson infection spread. `x`/`y` are
-/// the random picks the caller drew (the same `UpdateWorld` underground
-/// picks the crystal shards ride).
+/// `WorldGen.hardUpdateWorld` (`WorldGen.cs:69600-69955`), verbatim: the
+/// `hardModeWorldUpdates` gate (`:69602` — the caller passes the flag the
+/// `UpdateWorld` head derives, `:71501`), the actuated-cell skip, the
+/// crystal-shard arm, the chlorophyte arms (the 60-grass seeding
+/// `:69652-69660`, the 211/346 growth + the single type-9 purge pick
+/// `:69661-69701`), then the three infection loops (corruption `:69706`,
+/// crimson `:69795`, hallow `:69884`) with the `continue`-retry semantics
+/// (an out-of-world pick or a sunflower-blocked pick re-draws; a defended
+/// cell, an unconvertible target or a failed `Next(2)` re-roll ends the
+/// loop).
+///
+/// Deviations: the C#'s `Main.rand` purge-pick draws (`:69693-69694`) ride
+/// the same stream as `genRand` under the SwapRandom (the port's single
+/// per-phase stream, the `update_growth` convention); the shared
+/// `convert_cell_flavor` approximation parks the type-2 hallow Convert's
+/// torch/golf/mud-adjacency arms (the `micro_surface.rs` precedent) and the
+/// shared `convert_tile` map has no moss/477/69 rows — the loops' draws
+/// stay verbatim, those kinds convert as no-ops until the shared map grows
+/// the rows.
 pub fn hard_update_world(
     world: &mut World,
     x: i32,
@@ -277,51 +352,103 @@ pub fn hard_update_world(
     allowed_to_spread: bool,
     rng: &mut UnifiedRandom,
 ) {
+    hard_update_world_gated(world, x, y, true, downed_plant_boss, allowed_to_spread, rng);
+}
+
+/// The gated form — `hard_mode_world_updates` mirrors
+/// `WorldGen.hardModeWorldUpdates` (`:71501`: `hardMode || (remix &&
+/// getGood && !anniversary)`); the `UpdateWorld` callers pass the derived
+/// flag, the direct callers (the tests, the legacy seams) pass true.
+pub fn hard_update_world_gated(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    hard_mode_world_updates: bool,
+    downed_plant_boss: bool,
+    allowed_to_spread: bool,
+    rng: &mut UnifiedRandom,
+) {
+    // `:69602`: the gate + the actuated-cell skip.
+    if !hard_mode_world_updates {
+        return;
+    }
     let Some(t) = world.tile(x, y) else {
         return;
     };
-    if !t.active() {
+    if t.inactive() {
         return;
     }
     let kind = t.kind;
-    // `:69604-69644`: the crystal-shard arm runs FIRST in `hardUpdateWorld`
-    // (the shard stones below the rock layer, their own gates inside).
-    crate::growth::grow_crystal_shards(world, x, y, rng);
-    // `:69646-69685`: the chlorophyte arms (the 211 chlorophyte + the 346
-    // chlorophyte jungle-grass source).
-    if matches!(kind, 211 | 346) {
-        // `Next(3) != 0`: the 4-dir neighbour growth into the mud/the jungle
-        // grass, gated by `CanChlorophyteGrow`.
-        if rng.next_max(3) != 0 {
-            let (dx, dy) = match rng.next_max(4) {
-                0 => (1, 0),
-                1 => (-1, 0),
-                2 => (0, 1),
-                _ => (0, -1),
-            };
-            let (nx, ny) = (x + dx, y + dy);
-            if world
-                .tile(nx, ny)
-                .is_some_and(|t| t.active() && matches!(t.kind, 59 | 60))
+    let remix = world.seeds.contains(crate::seeds::SeedFlags::REMIX);
+    // `:69607-69649`: the crystal-shard arm runs FIRST. The full condition
+    // (the shard-stone kind, the rock-layer/remix depth, the `Next(5)`
+    // roll) short-circuits here exactly like the C#'s `if`; the placement
+    // body (`:69609-69648`) lives in `grow_crystal_shards`.
+    if kind > 0
+        && crate::growth::CAN_GROW_CRYSTAL_SHARDS.contains(&kind)
+        && ((y as f64) > world.rock_layer || remix)
+        && rng.next_max(5) == 0
+    {
+        crate::growth::grow_crystal_shards(world, x, y, rng);
+    }
+    // `:69650-69701`: the chlorophyte arms below the surface/rock midpoint
+    // (or anywhere in the remix world).
+    if (y as f64) > (world.world_surface + world.rock_layer) / 2.0 || remix {
+        // The 60-grass seeding arm (`:69652-69660`): the 1/300 roll, the
+        // ±10 target, the mud cell with a free (or non-tree) top, gated by
+        // `CanChlorophyteGrow` — `Convert(…, 8)` grows the chlorophyte 211.
+        if kind == 60 && rng.next_max(300) == 0 {
+            let nx = x + rng.next_range(-10, 11);
+            let ny = y + rng.next_range(-10, 11);
+            let top_ok = !world.tile(nx, ny - 1).is_some_and(|t| {
+                t.active() && matches!(t.kind, 5 | 236 | 702 | 238)
+            });
+            if in_world(world, nx, ny, 2)
+                && world.tile(nx, ny).is_some_and(|t| t.active() && t.kind == 59)
+                && top_ok
                 && can_chlorophyte_grow(world, nx, ny)
             {
                 convert_cell(world, nx, ny, false, true);
             }
         }
-        // The ±6 random re-scan (`Convert(..., 9)` — the mud/jungle cells
-        // near the source convert too).
-        let nx = x + (rng.next_max(13) as i32 - 6);
-        let ny = y + (rng.next_max(13) as i32 - 6);
-        if world
-            .tile(nx, ny)
-            .is_some_and(|t| t.active() && matches!(t.kind, 59 | 60))
-            && can_chlorophyte_grow(world, nx, ny)
-        {
-            convert_cell(world, nx, ny, false, true);
+        // The 211/346 source arms (`:69661-69701`).
+        if matches!(kind, 211 | 346) {
+            // `Next(3) != 0`: the 4-dir neighbour growth into the mud/the
+            // jungle grass, gated by `CanChlorophyteGrow`.
+            if rng.next_max(3) != 0 {
+                let (dx, dy) = match rng.next_max(4) {
+                    0 => (1, 0),
+                    1 => (-1, 0),
+                    2 => (0, 1),
+                    _ => (0, -1),
+                };
+                let (nx, ny) = (x + dx, y + dy);
+                if in_world(world, nx, ny, 2)
+                    && world
+                        .tile(nx, ny)
+                        .is_some_and(|t| t.active() && matches!(t.kind, 59 | 60))
+                    && can_chlorophyte_grow(world, nx, ny)
+                {
+                    convert_cell(world, nx, ny, false, true);
+                }
+            }
+            // The ±6 purge pick (`:69689-69700`): the C#'s `while (flag)`
+            // sets `flag = false` at the top and NEVER re-arms it (no
+            // `continue`, no `flag = true` in the body) — it runs EXACTLY
+            // ONE iteration: one `Main.rand.Next(-6, 7)` pair, then
+            // `Convert(…, 9)` on the pick iff it is an in-world ACTIVE cell
+            // (the grasses jungle-ify, the dirt mud-ifies, the evil
+            // stones/sands purify, the thorns die).
+            let nx = x + rng.next_range(-6, 7);
+            let ny = y + rng.next_range(-6, 7);
+            if in_world(world, nx, ny, 2)
+                && world.tile(nx, ny).is_some_and(|t| t.active())
+            {
+                convert_purge_cell(world, nx, ny, 9);
+            }
         }
-        return;
     }
-    // `:69688-69691`: the post-PlantBoss worlds halve the spread; the
+    // `:69702-69705`: the post-PlantBoss worlds halve the spread; the
     // creative spread-stop gate.
     if downed_plant_boss && rng.next_max(2) != 0 {
         return;
@@ -329,42 +456,146 @@ pub fn hard_update_world(
     if !allowed_to_spread {
         return;
     }
-    let corruption = SPREADS_CORRUPTION.contains(&kind);
-    let crimson = SPREADS_CRIMSON.contains(&kind);
-    if !corruption && !crimson {
-        return;
+    // The corruption loop (`:69706-69794`).
+    if SPREADS_CORRUPTION.contains(&kind) {
+        spread_loop(world, x, y, 1, rng);
     }
-    // The spread loop (`:69696-69860`): the ±3 target, the chlorophyte
-    // defence, the sunflower suppression, the conversions with the
-    // `Next(2) == 0` re-roll chain.
-    let mut tx = x + (rng.next_max(7) as i32 - 3);
-    let mut ty = y + (rng.next_max(7) as i32 - 3);
+    // The crimson loop (`:69795-69883`).
+    if SPREADS_CRIMSON.contains(&kind) {
+        spread_loop(world, x, y, 4, rng);
+    }
+    // The hallow loop (`:69884-69954`) — no chlorophyte defence, the
+    // sunflower check shares the InWorld gate. `TileID.Sets.SpreadsHallow`
+    // (`TileID.cs:584`) is the generated bitset.
+    if crate::tiledata::SET_SPREADS_HALLOW.has(kind) {
+        spread_loop_hallow(world, x, y, rng);
+    }
+}
+
+/// The evil infection loop (`WorldGen.cs:69706-69883`, the corruption and
+/// crimson bodies are identical bar the conversion type): the ±3 pick, the
+/// `InWorld(…, 10)` retry, the chlorophyte defence (the remix purge), the
+/// sunflower retry, then the per-kind ladder — each convertible kind rolls
+/// `Next(2) == 0` to re-draw and converts with `walls: false`. An
+/// unconvertible target ends the loop (the C#'s `flag2` stays false).
+fn spread_loop(world: &mut World, x: i32, y: i32, conversion_type: u8, rng: &mut UnifiedRandom) {
     loop {
-        if !(10..world.width - 10).contains(&tx) || !(10..world.height - 10).contains(&ty) {
+        let tx = x + rng.next_range(-3, 4);
+        let ty = y + rng.next_range(-3, 4);
+        if !in_world(world, tx, ty, 10) {
+            continue;
+        }
+        if nearby_chlorophyte(world, tx, ty, rng) {
+            chlorophyte_defense(world, tx, ty);
+            // The defended cell ends this iteration WITHOUT a re-roll
+            // (the C#'s else-arm never runs, `flag2` stays false).
             break;
         }
-        if nearby_chlorophyte(world, tx, ty) {
-            // `ChlorophyteDefense` (`:69456-69460`): the conversion runs in
-            // the remix worlds only — the normal worlds just break the
-            // spread loop here.
-            break;
+        if count_near_blocks_types(world, tx, ty, 2, 1, &[27]) > 0 {
+            continue;
         }
-        if sunflower_nearby(world, tx, ty) {
+        let Some(t) = world.tile(tx, ty) else {
             break;
-        }
-        let convertible = world.tile(tx, ty).is_some_and(|t| {
-            matches!(t.kind, 2 | 477 | 1 | 60 | 69 | 161 | 53 | 396 | 397)
-        });
+        };
+        let kind = t.kind;
+        // The ladder (`:69728-69791` / `:69817-69880`): the grass family,
+        // the stone + moss, the sand, the sandstone, the hardened sand, the
+        // jungle grass, the sandstone-69 arm, the ice.
+        let convertible = matches!(kind, 2 | 477 | 1 | 53 | 396 | 397 | 60 | 69 | 161)
+            || crate::tiledata::TILE_MOSS.has(kind);
         if !convertible {
             break;
         }
         let reroll = rng.next_max(2) == 0;
-        convert_cell(world, tx, ty, corruption, false);
+        convert_cell_flavor(
+            world,
+            tx,
+            ty,
+            if conversion_type == 1 {
+                ConversionFlavor::Corruption
+            } else {
+                ConversionFlavor::Crimson
+            },
+            false,
+        );
         if !reroll {
             break;
         }
-        tx += rng.next_max(7) as i32 - 3;
-        ty += rng.next_max(7) as i32 - 3;
+    }
+}
+
+/// The hallow infection loop (`WorldGen.cs:69884-69954`): the same shape
+/// minus the chlorophyte defence; the ladder is the grass 2, the golf
+/// grass 477, the stone + moss, the sand 53, the sandstone 396, the
+/// hardened sand 397, the ice 161 — each converts with type 2.
+fn spread_loop_hallow(world: &mut World, x: i32, y: i32, rng: &mut UnifiedRandom) {
+    loop {
+        let tx = x + rng.next_range(-3, 4);
+        let ty = y + rng.next_range(-3, 4);
+        if !in_world(world, tx, ty, 10)
+            || count_near_blocks_types(world, tx, ty, 2, 1, &[27]) > 0
+        {
+            continue;
+        }
+        let Some(t) = world.tile(tx, ty) else {
+            break;
+        };
+        let kind = t.kind;
+        let convertible =
+            matches!(kind, 2 | 477 | 1 | 53 | 396 | 397 | 161) || crate::tiledata::TILE_MOSS.has(kind);
+        if !convertible {
+            break;
+        }
+        let reroll = rng.next_max(2) == 0;
+        convert_cell_flavor(world, tx, ty, ConversionFlavor::Hallow, false);
+        if !reroll {
+            break;
+        }
+    }
+}
+
+/// `Convert`'s type-9/10 purge arms (`WorldGen.cs:55671-55763`): the
+/// chlorophyte defence's jungle conversion. Type 9 also purifies the
+/// grasses (2/477/492 → 60), type 10 keeps only the evil grasses
+/// (23/199/661/662 → 60); both map the evil stones → 1, the evil sands →
+/// 53, the hardened sands → 397, the sandstones → 396, and KILL the thorn
+/// family (24/32/201/205/352/636). Type 9's dirt 0 → mud 59 arm is the
+/// jungle-ification the purge pick rides.
+fn convert_purge_cell(world: &mut World, x: i32, y: i32, conversion_type: u8) {
+    let Some(t) = world.tile(x, y) else {
+        return;
+    };
+    // The Convert head guard (`:55094-55097`): `!active && wall <= 0` —
+    // an actuated cell WITH a wall still converts (the type arms read
+    // `type`, not `active`).
+    if !t.active() && t.wall == 0 {
+        return;
+    }
+    let kind = t.kind;
+    let new_kind = match kind {
+        23 | 199 | 661 | 662 => Some(60),
+        2 | 477 | 492 if conversion_type == 9 => Some(60),
+        109 if conversion_type == 9 => Some(60),
+        0 if conversion_type == 9 => Some(59),
+        25 | 203 => Some(1),
+        112 | 234 => Some(53),
+        398 | 399 => Some(397),
+        400 | 401 => Some(396),
+        _ => None,
+    };
+    if let Some(k) = new_kind {
+        if let Some(t) = world.tile_mut(x, y) {
+            t.kind = k;
+            t.frame_x = 0;
+            t.frame_y = 0;
+        }
+        return;
+    }
+    // The thorn kill (`:55707-55718` / `:55750-55761`) — `KillTile(i, j)`
+    // with the default `noItem: false` (the `convert_cleanse_cell`
+    // precedent).
+    if matches!(kind, 24 | 32 | 201 | 205 | 352 | 636) {
+        let _ = crate::edit::kill_tile(world, x, y, false);
     }
 }
 
@@ -1516,8 +1747,9 @@ mod tests {
         put(&mut w, 199, 200, 1); // the stone
         put(&mut w, 200, 199, 53); // the sand
         put(&mut w, 200, 201, 161); // the ice
-        // The stone's wall set before the spread (the wall converts with
-        // the tile — the already-corrupt tiles leave the Convert map).
+        // The stone's wall set before the spread — the C#'s infection
+        // Convert calls are ALL `walls: false` (`:69734`, `:69742`, …), so
+        // the wall stays natural even as the tile corrupts.
         let i = w.index(199, 200);
         w.tiles[i].wall = 1;
         let mut rng = UnifiedRandom::new(1);
@@ -1528,39 +1760,65 @@ mod tests {
         assert_eq!(w.tile(199, 200).unwrap().kind, 25, "the stone corrupted");
         assert_eq!(w.tile(200, 199).unwrap().kind, 112, "the sand corrupted");
         assert_eq!(w.tile(200, 201).unwrap().kind, 163, "the ice corrupted");
-        assert_eq!(w.tile(199, 200).unwrap().wall, 3, "the wall corrupted");
+        assert_eq!(
+            w.tile(199, 200).unwrap().wall,
+            1,
+            "the wall stays — the spread Convert is walls: false"
+        );
     }
 
     #[test]
     fn the_sunflower_and_chlorophyte_defend() {
-        // The sunflower (27) within 2 tiles stops the spread.
-        let mut w = world();
-        put(&mut w, 200, 200, 25);
-        put(&mut w, 201, 200, 2);
-        put(&mut w, 204, 200, 27); // the sunflower two tiles out
-        put(&mut w, 203, 200, 2);
-        let mut rng = UnifiedRandom::new(3);
-        for _ in 0..100 {
-            hard_update_world(&mut w, 200, 200, false, true, &mut rng);
+        // The sunflower (27) within 2 tiles stops the spread. The C#'s
+        // `continue` re-draws a sunflower-blocked pick (`:69724-69727`), so
+        // the assertion is statistical: over many seeds the guarded cell
+        // converts far less often than the open one.
+        let mut guarded_hits = 0;
+        let mut open_hits = 0;
+        for seed in 1u64..60 {
+            let mut w = world();
+            put(&mut w, 200, 200, 25);
+            put(&mut w, 201, 200, 2);
+            put(&mut w, 204, 200, 27); // the sunflower two tiles out
+            put(&mut w, 203, 200, 2);
+            let mut rng = UnifiedRandom::new(seed as i32);
+            for _ in 0..100 {
+                hard_update_world(&mut w, 200, 200, false, true, &mut rng);
+            }
+            if w.tile(203, 200).unwrap().kind == 23 {
+                guarded_hits += 1;
+            }
+            if w.tile(201, 200).unwrap().kind == 23 {
+                open_hits += 1;
+            }
         }
-        assert_eq!(w.tile(203, 200).unwrap().kind, 2, "the sunflower blocks");
-        assert_eq!(w.tile(201, 200).unwrap().kind, 23, "the far side corrupts");
+        assert!(
+            guarded_hits < open_hits,
+            "the sunflower guards ({guarded_hits} vs {open_hits})"
+        );
         // The chlorophyte defence (`ChlorophyteDefense` is the remix-only
         // conversion — the normal worlds just stop the spread): the
-        // corrupt grass next to the chlorophyte stays put.
-        let mut w = world();
-        put(&mut w, 200, 200, 211); // the chlorophyte
-        put(&mut w, 202, 200, 23); // the corrupt grass next to it
-        put(&mut w, 205, 200, 2); // the grass beyond the defence radius
-        let mut rng = UnifiedRandom::new(4);
-        for _ in 0..100 {
-            hard_update_world(&mut w, 202, 200, false, true, &mut rng);
+        // corrupt grass next to THREE chlorophytes (the >=3 short-circuit)
+        // stays put across the seeds.
+        let mut defended_hits = 0;
+        for seed in 1u64..60 {
+            let mut w = world();
+            put(&mut w, 199, 199, 211);
+            put(&mut w, 200, 199, 211);
+            put(&mut w, 201, 199, 211);
+            put(&mut w, 202, 200, 23); // the corrupt grass in the defence box
+            put(&mut w, 203, 200, 2); // the grass beside it
+            let mut rng = UnifiedRandom::new(seed as i32);
+            for _ in 0..100 {
+                hard_update_world(&mut w, 202, 200, false, true, &mut rng);
+            }
+            if w.tile(203, 200).unwrap().kind == 23 {
+                defended_hits += 1;
+            }
         }
-        assert_eq!(w.tile(202, 200).unwrap().kind, 23, "the source intact");
-        assert_eq!(
-            w.tile(201, 200).unwrap().kind,
-            0,
-            "the defence radius holds the cells"
+        assert!(
+            defended_hits < 30,
+            "the >=3 defence holds most picks ({defended_hits}/60)"
         );
     }
 
@@ -1598,5 +1856,180 @@ mod tests {
             hard_update_world(&mut w, 200, 200, false, false, &mut rng);
         }
         assert_eq!(w.tile(201, 200).unwrap().kind, 2, "the spread frozen");
+    }
+
+    /// W4-d103 tail (P8/P13): the `hardModeWorldUpdates` gate
+    /// (`WorldGen.cs:69602`) — a pre-hardmode classic world draws NOTHING
+    /// and converts nothing; the flag derivation (`:71501`) opens it for
+    /// hardmode and for the remix·getGood·!anniversary combo.
+    #[test]
+    fn w4_d103_p8_the_hardmode_gate_freezes_the_pre_hardmode_world() {
+        let mut w = world();
+        put(&mut w, 200, 200, 25);
+        put(&mut w, 201, 200, 2);
+        let mut rng = UnifiedRandom::new(7);
+        let pristine = rng.clone();
+        for _ in 0..50 {
+            hard_update_world_gated(&mut w, 200, 200, false, false, true, &mut rng);
+        }
+        assert_eq!(rng, pristine, "the gated-off arm draws nothing");
+        assert_eq!(w.tile(201, 200).unwrap().kind, 2, "no spread");
+        // The derivation: classic pre-hardmode false, hardmode true, the
+        // remix·getGood combo true, the anniversary veto false.
+        let mut c = World::new("t".into(), 100, 100);
+        assert!(!crate::growth::hard_mode_world_updates(&c));
+        c.hard_mode = true;
+        assert!(crate::growth::hard_mode_world_updates(&c));
+        c.hard_mode = false;
+        c.seeds.insert(crate::seeds::SeedFlags::REMIX);
+        c.seeds.insert(crate::seeds::SeedFlags::FOR_THE_WORTHY);
+        assert!(crate::growth::hard_mode_world_updates(&c));
+        c.seeds.insert(crate::seeds::SeedFlags::TENTH_ANNIVERSARY);
+        assert!(!crate::growth::hard_mode_world_updates(&c));
+    }
+
+    /// W4-d103 tail (P8): the actuated-cell skip (`:69602`'s `inActive()`)
+    /// — an actuated source draws nothing.
+    #[test]
+    fn w4_d103_p8_the_actuated_source_skips() {
+        let mut w = world();
+        put(&mut w, 200, 200, 25);
+        let i = w.index(200, 200);
+        w.tiles[i].flags |= crate::tile::FLAG_INACTIVE;
+        put(&mut w, 201, 200, 2);
+        let mut rng = UnifiedRandom::new(8);
+        let pristine = rng.clone();
+        hard_update_world(&mut w, 200, 200, false, true, &mut rng);
+        assert_eq!(rng, pristine, "the actuated cell draws nothing");
+        assert_eq!(w.tile(201, 200).unwrap().kind, 2);
+    }
+
+    /// W4-d103 tail (P8): the 60-grass chlorophyte seeding arm
+    /// (`:69652-69660`) — below the surface/rock midpoint, a jungle-grass
+    /// source rolls `Next(300)`; on 0 the ±10 mud target with a free top
+    /// grows the chlorophyte 211 through `Convert(…, 8)`.
+    #[test]
+    fn w4_d103_p8_the_jungle_grass_seeds_chlorophyte() {
+        let mut w = world();
+        w.world_surface = 100.0;
+        w.rock_layer = 200.0;
+        // The mud field below the midpoint (150).
+        for x in 180..220 {
+            for y in 180..220 {
+                put(&mut w, x, y, 59);
+            }
+        }
+        put(&mut w, 200, 200, 60); // the jungle-grass source
+        let mut rng = UnifiedRandom::new(1);
+        let mut grew = false;
+        for _ in 0..4000 {
+            hard_update_world(&mut w, 200, 200, false, true, &mut rng);
+            if (180..220).any(|x| {
+                (180..220).any(|y| {
+                    w.tile(x, y).is_some_and(|t| t.active() && t.kind == 211)
+                })
+            }) {
+                grew = true;
+                break;
+            }
+        }
+        assert!(grew, "the 1/300 arm seeded a chlorophyte into the mud");
+    }
+
+    /// W4-d103 tail (P8): the type-9 purge pick (`:69689-69700`) — the C#'s
+    /// `while (flag)` clears `flag` at the top and never re-arms it, so it
+    /// runs EXACTLY ONCE: one `Next(-6, 7)` pair, `Convert(…, 9)` on the pick
+    /// iff it is an in-world ACTIVE cell. The witness drives a fully-solid
+    /// box (every pick is active, so a looping port would keep drawing) and
+    /// asserts the stream advanced by EXACTLY the head draws + one pair, and
+    /// that a == b replays byte-identical.
+    #[test]
+    fn w4_d103_p8_the_purge_runs_exactly_one_pick() {
+        let build = || {
+            let mut w = world();
+            w.world_surface = 100.0;
+            w.rock_layer = 200.0;
+            // A solid stone box around the 211 source: every ±6 pick lands
+            // on an active cell, so a "loop until air" port would spin.
+            for x in 190..211 {
+                for y in 190..211 {
+                    put(&mut w, x, y, 1);
+                }
+            }
+            put(&mut w, 200, 200, 211);
+            w
+        };
+        // The 211 source is NOT shard-capable, so the head's `Next(5)` is
+        // skipped; below the midpoint the 211/346 arm draws `Next(3)` (the
+        // 4-dir growth gate), then the single purge `Next(-6, 7)` pair.
+        let mut w = build();
+        let mut rng = UnifiedRandom::new(2);
+        let mut mirror = rng.clone();
+        // Replay the head draws the C# makes before the purge pick: the
+        // `Next(3)` gate, and — only when it fires (!= 0) — the `Next(4)`
+        // direction. Then the one purge pair.
+        let gate = mirror.next_max(3);
+        if gate != 0 {
+            let _dir = mirror.next_max(4);
+        }
+        let _px = mirror.next_range(-6, 7);
+        let _py = mirror.next_range(-6, 7);
+        hard_update_world(&mut w, 200, 200, false, true, &mut rng);
+        assert_eq!(rng, mirror, "the purge draws exactly ONE Next(-6,7) pair");
+
+        // a == b: the twin replays byte-identical (the single pick included).
+        let mut w2 = build();
+        let mut rng2 = UnifiedRandom::new(2);
+        hard_update_world(&mut w2, 200, 200, false, true, &mut rng2);
+        assert_eq!(rng, rng2, "a == b stream");
+        assert_eq!(w.tiles, w2.tiles, "a == b tiles");
+    }
+
+    /// W4-d103 tail (P8): the hallow infection loop (`:69884-69954`) — a
+    /// pearlstone 117 source hallow-ifies the grass/stone/sand neighbours
+    /// (the type-2 Convert), with no chlorophyte defence.
+    #[test]
+    fn w4_d103_p8_the_hallow_source_spreads() {
+        let mut w = world();
+        put(&mut w, 200, 200, 117); // the pearlstone source
+        put(&mut w, 201, 200, 2); // the grass
+        put(&mut w, 199, 200, 1); // the stone
+        put(&mut w, 200, 199, 53); // the sand
+        let mut rng = UnifiedRandom::new(3);
+        for _ in 0..300 {
+            hard_update_world(&mut w, 200, 200, false, true, &mut rng);
+        }
+        assert_eq!(w.tile(201, 200).unwrap().kind, 109, "the grass hallowed");
+        assert_eq!(w.tile(199, 200).unwrap().kind, 117, "the stone hallowed");
+        assert_eq!(w.tile(200, 199).unwrap().kind, 116, "the sand hallowed");
+    }
+
+    /// W4-d103 tail (P11): `nearbyChlorophyte` (`:69517-69558`) — the ±5
+    /// box counts 211 AND 346; ≥3 always defends, 1-2 roll the
+    /// `Next(-1, 4) < count` gate. The 10-tile border returns false
+    /// without drawing.
+    #[test]
+    fn w4_d103_p11_the_chlorophyte_defence_counts_both_sources() {
+        let mut w = world();
+        // Three sources in the box: always true, no draw.
+        put(&mut w, 199, 200, 211);
+        put(&mut w, 200, 200, 346);
+        put(&mut w, 201, 200, 211);
+        let mut rng = UnifiedRandom::new(4);
+        let pristine = rng.clone();
+        assert!(nearby_chlorophyte(&w, 200, 200, &mut rng));
+        assert_eq!(rng, pristine, "the >=3 short-circuit draws nothing");
+        // The border margin: false, no draw.
+        assert!(!nearby_chlorophyte(&w, 5, 200, &mut rng));
+        assert_eq!(rng, pristine, "the border short-circuit draws nothing");
+        // One source: the roll decides (the mirror consumes one draw).
+        let mut w2 = world();
+        put(&mut w2, 200, 200, 211);
+        let mut rng2 = UnifiedRandom::new(5);
+        let mut mirror = rng2.clone();
+        let got = nearby_chlorophyte(&w2, 200, 200, &mut rng2);
+        let roll = mirror.next_range(-1, 4);
+        assert_eq!(got, (roll as f64) < 1.0);
+        assert_eq!(rng2, mirror, "exactly one Next(-1, 4)");
     }
 }

@@ -50,12 +50,12 @@ takes the WorldGen POST-passes — the hardmode/growth functions outside
 | P5 | `initializeHardMode` moss-wall tail | 31663-31698 | none | **missing** (25·width/4200 placements, RandomWorldPoint, the Crimson/Corrupt/Hallow wall-family roll, ShapeFloodFill(1000) + OnlyWalls pocket + OuterOutline wall ring) — THIS LANE |
 | P6 | `SmashAltar` | 48927-49109 | `ores.rs::smash_altar` (classic tiers/bands/blobs landed) | drunk tier-flip arms `:48939-48948`/`:48976-48985`/`:49008-49017`, the remix band `:49056-49067`, the anniversary strength `:49069-49071` — THIS LANE (seed arms); the wraith spawn `:49078-49105` parks (no NPC.SpawnOnPlayer port) |
 | P7 | `OreRunner` | 48831-48925 | `ores.rs::ore_runner` (shape walk landed) | the 59-above-sky stop `:48843-48846`, the velocity drift + clamp `:48915-48923`, the runtime paint-reset + SquareTileFrame `:48887-48895`, the wallType/stayInArea/onlyReplace parameters — THIS LANE |
-| P8 | `hardUpdateWorld` | 69600-69924 | `spread.rs::hard_update_world` + `growth.rs::grow_crystal_shards` | **the hardModeWorldUpdates gate `:69602` (wired unconditionally today), the 60-grass chlorophyte seeding arm `:69652-69660`, the type-9 purge loop `:69689-69700`, ChlorophyteDefense `:69456-69462` + Convert types 9/10 `:55671-55763`, the sunflower retry semantics (`continue`, not break)** — THIS LANE |
+| P8 | `hardUpdateWorld` | 69600-69955 | `spread.rs::hard_update_world_gated` + `growth.rs::grow_crystal_shards` | **LANDED (P8 slice)** — the hardModeWorldUpdates gate `:69602`, the 60-grass chlorophyte seeding arm `:69652-69660`, the SINGLE type-9 purge pick `:69689-69700` (the C# `while(flag)` never re-arms), ChlorophyteDefense `:69456-69462` + Convert types 9/10 `:55671-55763`, the sunflower retry semantics (`continue`, not break), the walls:false Converts |
 | P9 | Moss conversion micro-passes | 72371-72430 (overground), 73699-73755 (underground) | `growth/grass.rs::grow_moss_arm` = overground ONLY | **the underground arm is missing** (no NextDouble gate, flag9 net gate, PlaceTile 184 spray) — THIS LANE |
 | P10 | `MossConversion` | 71457-71493 | `growth/grass.rs::moss_conversion` | landed verbatim (DW-2.9 witnesses) |
-| P11 | `CanChlorophyteGrow` | 69464-69512 | `spread.rs::can_chlorophyte_grow` | the remix arm (+5/×15/−4/−8) + the above-rock halving of BOTH caps are wrong (port halves only the big cap and widens the small box) — fixed with P8 |
+| P11 | `CanChlorophyteGrow` | 69464-69515 | `spread.rs::can_chlorophyte_grow` | **LANDED (P8 slice)** — the remix arm (+5/×15/−4/−8) + the above-rock halving of BOTH caps and ×1.5 of BOTH boxes |
 | P12 | `DoStartInHardmode` | 1899-1903 | `micro_surface.rs::start_in_hardmode` | landed (seed-gated); rides the P2-P5 rewrite automatically |
-| P13 | `hardModeWorldUpdates` set | 71501 | none (`update_world` runs the spread arms ungated) | `hardMode || (remix && getGood && !anniversary)` — with P8 |
+| P13 | `hardModeWorldUpdates` set | 71501 | `growth.rs::hard_mode_world_updates` | **LANDED (P8 slice)** — `hardMode || (remix && getGood && !anniversary)`, read by both dispatchers + the app growth tick |
 | P14 | `TransformWorldOnBackgroundThread` | 31721-31742 | inline (documented deviation in `start_hardmode`) | stays (single-threaded port; no behavioural gap) |
 
 Not this lane (runtime/event helpers, own lanes): `TryProtectingSpawnedItems`/
@@ -64,15 +64,42 @@ Not this lane (runtime/event helpers, own lanes): `TryProtectingSpawnedItems`/
 
 ## This lane's slices (one per commit)
 
-1. **(this doc)** the tail census + claim.
+1. **(this doc)** the tail census + claim. → `fe9a565f`
 2. **P2+P3+P4** — `initializeHardMode` head verbatim + `GERunner` verbatim
    rewrite (the two are one draw chain; splitting them would leave the head
-   drawing anchors nobody consumes).
+   drawing anchors nobody consumes). → `04637c12`
 3. **P5** — the moss-wall tail (the flood-fill/outline framework inline,
-   the `wall_variety.rs` precedent).
+   the `wall_variety.rs` precedent). → `23f55212`
 4. **P6+P7** — SmashAltar seed arms + OreRunner's missing halves.
+   → `339d9f6d`
 5. **P8+P11+P13** — hardUpdateWorld's gates + the chlorophyte arms +
-   Convert types 9/10 + ChlorophyteDefense.
+   Convert types 9/10 + ChlorophyteDefense. → landed (this slice):
+   - `hard_update_world_gated` (`:69600-69955`) verbatim: the
+     `hardModeWorldUpdates` gate (`growth.rs::hard_mode_world_updates`,
+     `:71501`), the actuated skip, the shard head gates moved to the call
+     site (`grow_crystal_shards` = the placement body only), the 60-grass
+     1/300 seeding, the 211/346 growth + the **single** type-9 purge pick
+     (the C# `while (flag)` at `:69689` clears `flag` and never re-arms —
+     one `Next(-6,7)` pair per source update, NOT a loop-until-air), the
+     post-Plantera `Next(2)` halving, the three infection loops with the
+     `continue`-retry / defence-break semantics and `walls: false`
+     Converts (the old wall-converts-with-the-tile test assertion was the
+     deviation — fixed).
+   - `nearby_chlorophyte` (`:69517-69558`): the 211+346 ±5 count, the ≥3
+     no-draw short-circuit, the border margin, the remix `Next(-1,3)` roll.
+   - `ChlorophyteDefense` (`:69456-69462`): the remix-only type-10 purge;
+     `convert_purge_cell` = Convert types 9/10 (`:55671-55763`) with the
+     `KillTile` default-args thorn kill.
+   - `can_chlorophyte_grow` (`:69464-69515`) fixed: the remix
+     +5/×15/−4/−8 arm and the above-rock halving of BOTH caps + ×1.5 of
+     BOTH boxes.
+   - Both `UpdateWorld` dispatchers call the gated form on ACTIVE picks
+     only (the C# `nactive()` else-if; the old unconditional call on
+     inactive cells drew nothing anyway but sat at the wrong site). The
+     overground dispatcher's arm placement keeps the port's existing
+     approximation shape (documented at the call site).
+   - 6 witnesses written NOT run; pins unchanged (runtime-only), a==b
+     stays.
 6. **P9** — the underground moss arm.
 
 ## Discipline

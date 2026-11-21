@@ -710,6 +710,24 @@ pub fn update_world_overground_tile(
         grow_shell_pile(world, x, y, wind_speed, max_raining, raining, rng);
         return;
     }
+    // `:72218`: the hard-mode infection arm on every ACTIVE overground pick
+    // (the `hardModeWorldUpdates` gate inside reads the `:71501` derivation).
+    // Deviation: the C# reaches this arm only through the final
+    // `else if (nactive())` (`:72216` — the 518/519/liquid>32 arms take the
+    // earlier branches); the port's dispatcher runs it on every active pick
+    // ahead of the type arms. The infection kinds never overlap 518/519, so
+    // the divergence is the liquid>32 grass cells and the post-Plantera
+    // `Next(2)` draw on the earlier-branch kinds — the dispatcher's existing
+    // approximation shape (the dye head sits ahead of the alch arm too).
+    crate::spread::hard_update_world_gated(
+        world,
+        x,
+        y,
+        hard_mode_world_updates(world),
+        world.downed_plant_boss,
+        true,
+        rng,
+    );
     // `:72063-72067`: the tombstone arm — a grave cell rolls
     // `TryGrowingAbigailsFlower` once per update, ahead of the alch/beach
     // chain the C# walks next.
@@ -846,22 +864,18 @@ pub fn update_world_overground_tile(
     }
 }
 
-/// The crystal-shard arm of `hardUpdateWorld` (`:69603-69640`): the shard
-/// stones below the rock layer roll `Next(5)`, the 4-dir neighbour must be
-/// empty, the radius-6 density stays under 2, the style `Next(18)` (the big
-/// shard `18 + Next(6)` at 1/50).
+/// The crystal-shard PLACEMENT body of `hardUpdateWorld`
+/// (`WorldGen.cs:69609-69648`): the 4-dir neighbour must be empty, the
+/// radius-6 density stays under 2, the style `Next(18)` (the big shard
+/// `18 + Next(6)` at 1/50). The HEAD gates (the shard-stone kind, the
+/// rock-layer/remix depth, the `Next(5)` roll) live at the
+/// `hard_update_world` call site (`:69607`) — the C# short-circuits them
+/// into the arm's condition; this fn assumes they passed.
 pub fn grow_crystal_shards(world: &mut World, x: i32, y: i32, rng: &mut UnifiedRandom) {
     let Some(t) = world.tile(x, y) else {
         return;
     };
     if !t.active() || !CAN_GROW_CRYSTAL_SHARDS.contains(&t.kind) {
-        return;
-    }
-    // `((double)j > Main.rockLayer || remixWorld)`.
-    if (y as f64) <= world.rock_layer {
-        return;
-    }
-    if rng.next_max(5) != 0 {
         return;
     }
     // `:69609-69625`: the 4-dir pick — 0 left, 1 right, 2/3 down (the C#'s
@@ -927,6 +941,11 @@ pub fn update_world(
     if rate == 0 {
         return 0;
     }
+    // `WorldGen.UpdateWorld`'s head (`:71501`) derives the hardmode-update
+    // flag once (`hardMode || (remix && getGood && !anniversary)`); the
+    // port's dispatchers re-derive it per pick from the same world state
+    // (`hard_mode_world_updates`) — the flags cannot change mid-tick, so
+    // the reads agree. Pre-hardmode classic worlds skip the infection arms.
     // `WorldGen.UpdateWorld`'s setup (`:71503`, `:71508`): the infection
     // spread flag comes in from the caller (`AllowedToSpreadInfections`, set
     // from the journey `StopBiomeSpreadPower`) and the wall-arm box radius is
@@ -976,6 +995,17 @@ pub fn update_world(
         picks += 1;
     }
     picks
+}
+
+/// `WorldGen.hardModeWorldUpdates` (`WorldGen.cs:71501`): the
+/// `UpdateWorld` head derives it once per tick — `Main.hardMode ||
+/// (Main.remixWorld && Main.getGoodWorld && !Main.tenthAnniversaryWorld)`.
+/// The `hardUpdateWorld` gate (`:69602`) reads it.
+pub fn hard_mode_world_updates(world: &World) -> bool {
+    world.hard_mode
+        || (world.seeds.contains(crate::seeds::SeedFlags::REMIX)
+            && world.seeds.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY)
+            && !world.seeds.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY))
 }
 
 /// `WorldGen.beachDistance` = 380 (`WorldGen.cs:86914`) — the shell arm's
@@ -1688,15 +1718,26 @@ pub fn update_world_underground_tile(
         return;
     }
     if !active {
-        // The hard-mode infection arm (`:73252`) and the tail `else`'s web arm
-        // (`:73803-73806`: wall 62, no liquid). The dye/seaweed, 444/396 and
-        // town-NPC arms park.
-        crate::spread::hard_update_world(world, i, j, false, allowed_to_spread, rng);
+        // The C# `nactive` else-if (`:73252`) does not fire on an inactive
+        // cell — the hardUpdateWorld call parks with the active arm below.
+        // The tail `else`'s web arm (`:73803-73806`: wall 62, no liquid).
+        // The dye/seaweed, 444/396 and town-NPC arms park.
         if world.tile(i, j).is_some_and(|t| t.wall == 62 && t.liquid == 0) {
             grow_web(world, i, j, rng);
         }
         return;
     }
+    // `:73254`: the hard-mode infection arm on every ACTIVE pick (the
+    // `hardModeWorldUpdates` gate inside reads the `:71501` derivation).
+    crate::spread::hard_update_world_gated(
+        world,
+        i,
+        j,
+        hard_mode_world_updates(world),
+        world.downed_plant_boss,
+        allowed_to_spread,
+        rng,
+    );
     // `:73255-73262`: the dye-plant head — `Main.rand.Next(2500)` on every
     // `nactive` pick, the exotic arm at `Next(10000)` in hardmode.
     if rng.next_max(2500) == 0 {

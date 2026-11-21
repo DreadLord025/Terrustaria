@@ -319,6 +319,11 @@ mod tests {
     // the remix band + GERunner verbatim) runs only on the hardmode switch
     // / the start_in_hardmode micro-seed — no classic pipeline step calls
     // it. This pin is UNCHANGED. a == b stays.
+    // W4-d103 tail P8/P11/P13 (2026-11-21, code-only): the hardUpdateWorld
+    // rewrite (the hardModeWorldUpdates gate, the chlorophyte arms, the
+    // verbatim infection loops) is RUNTIME-only — `UpdateWorld` runs on the
+    // fixed-step growth tick, never inside the generation pipeline. This
+    // pin is UNCHANGED. a == b stays.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -424,6 +429,10 @@ mod tests {
     // `start_in_hardmode` micro-seed world changes by design (it has no
     // pin). `World.dungeon_x/y` became owned state (the dungeon step
     // publishes the anchor); neither field is hashed. a == b stays.
+    // W4-d103 tail P8/P11/P13 (2026-11-21, code-only): hardUpdateWorld +
+    // its gates are RUNTIME-only (the fixed-step growth tick) — no
+    // executed pipeline step calls them, classic or seeded. This pin is
+    // UNCHANGED. a == b stays.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

@@ -91,9 +91,11 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
             app.wind.speed_current,
             rng,
         );
-        // `hardUpdateWorld`'s spread arms ride the same picks (the port
-        // runs them unconditionally — the hardmode gate waits for
-        // M5-HARDFORCE; `downedPlantBoss` false = the full rate).
+        // `hardUpdateWorld`'s spread arms ride the same picks — the
+        // `hardModeWorldUpdates` gate (`WorldGen.cs:69602`/`:71501`) now
+        // reads the real derivation (`hardMode || remix·getGood·!tenth`),
+        // and `downedPlantBoss` rides the world flag (the post-Plantera
+        // half-rate, `:69702`).
         //
         // The bands are the ones the C#'s own loops pick from
         // (`WorldGen.genRand.Next(10, Main.maxTilesX - 10)`,
@@ -110,7 +112,15 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
         if sx_lo < sx_hi && sy_lo < sy_hi {
             let sx = rng.next_range(sx_lo, sx_hi);
             let sy = rng.next_range(sy_lo, sy_hi);
-            tr_core::spread::hard_update_world(world, sx, sy, false, allowed_to_spread, rng);
+            tr_core::spread::hard_update_world_gated(
+                world,
+                sx,
+                sy,
+                tr_core::growth::hard_mode_world_updates(world),
+                world.downed_plant_boss,
+                allowed_to_spread,
+                rng,
+            );
         }
     });
     app.growth_step.cap_backlog();
@@ -243,11 +253,12 @@ mod tests {
         );
         let sx = stream.next_range(10, twin.world.width - 10);
         let sy = stream.next_range(twin.world.rock_layer as i32, twin.world.height - 40);
-        tr_core::spread::hard_update_world(
+        tr_core::spread::hard_update_world_gated(
             &mut twin.world,
             sx,
             sy,
-            false,
+            tr_core::growth::hard_mode_world_updates(&twin.world),
+            twin.world.downed_plant_boss,
             allowed,
             &mut stream,
         );
