@@ -841,12 +841,21 @@ pub fn update_world_overground_tile(
                 grow_spike(world, x, y, 352, 199, rng);
             }
         }
-        // The jungle thorn arm (:73658-73661): the 69 tile grows the same
-        // walk with no roll.
-        if kind == 69 {
-            grow_spike(world, x, y, 69, 60, rng);
-        }
+        // W4-g83: the dead overground-69 arm is DELETED here (contract §3 —
+        // it sat inside `if grass_pass`, 69 is not a member, it never fired;
+        // the genuine arm is the UNDERGROUND one, wired below after
+        // `grow_vine_arm`). Keeping both would double-fire if the grass set
+        // ever grows.
     }
+    // W4-g83 (contract §3): `UpdateWorld_OvergroundTile`'s vine chain
+    // (`WorldGen.cs:72504-72802`) — the fresh `if (tile.nactive())` block
+    // AFTER the grass/moss arms, at the fn tail. The port's early returns
+    // (alch/saplings/cactus/moss) skip it faithfully: none of those kinds is
+    // a vine-chain source (192 takes no early return). The lily-61 `else if`
+    // between the two chains is the jungle-plant lane's; when the overground
+    // wall-spread lands it goes BEFORE this call (`:72499-72503`). The arm
+    // draws the caller's ACTIVE genRand (the UpdateWorldGen stream).
+    crate::vine_growth::grow_overground_vines(world, x, y, rng);
 }
 
 /// The crystal-shard arm of `hardUpdateWorld` (`:69603-69640`): the shard
@@ -1653,6 +1662,70 @@ pub(super) mod tests {
         assert_eq!(picks, 50 + 25);
     }
 
+    /// W4-g83 wiring witness (contract §3): the overground vine chain rides
+    /// the END of `update_world_overground_tile` (the C# `:72504`
+    /// `if (tile.nactive())` block after the grass/moss arms) — a dirt pick
+    /// with a free cell below grows the plain vine 52 through the DISPATCHER
+    /// (the plain arm's `Next(1)` always fires), on the caller's stream.
+    #[test]
+    fn w4_g83_the_overground_dispatcher_grows_the_vine_tail() {
+        let mut w = world();
+        w.world_surface = 250.0;
+        put(&mut w, 100, 200, 2, 0); // the dirt pick, free cell below
+        let mut rng = UnifiedRandom::new(7);
+        update_world_overground_tile(&mut w, 100, 200, true, false, 0.0, 0.0, &mut rng);
+        assert!(
+            w.tile(100, 201).is_some_and(|t| t.active() && t.kind == 52),
+            "the vine chain ran at the fn tail"
+        );
+        // The grown vine carries NO port-only frame-important flag (the
+        // write is dropped at wiring — C# never marks the 8 kinds).
+        assert!(
+            !w.frame_important.get(52).copied().unwrap_or(false),
+            "vine 52 is not frame-important (Main.cs census)"
+        );
+    }
+
+    /// W4-g83 wiring witness (contract §3): the jungle-thorn arm rides the
+    /// UNDERGROUND dispatcher right after `grow_vine_arm` (`:73658-73661`,
+    /// `GrowSpike(69, 60)` NO roll) — a 69 pick with the diamond's standing
+    /// thorn grows a new 69; the dead overground-69 arm is deleted (an
+    /// overground 69 pick never fires it: 69 is not a `grass_pass` member).
+    #[test]
+    fn w4_g83_the_jungle_thorn_rides_the_underground_dispatcher() {
+        let mut w = world();
+        w.world_surface = 100.0;
+        // The diamond seed: a 69 standing on the jungle grass 60 within the
+        // radius-7 walk of the pick (100, 200).
+        put(&mut w, 100, 200, 69, 0);
+        put(&mut w, 103, 201, 60, 0);
+        put(&mut w, 103, 200, 69, 0);
+        let mut grew = false;
+        for seed in 1u64..200 {
+            let mut w = w.clone();
+            let mut rng = UnifiedRandom::new(seed as i32);
+            update_world_underground_tile(&mut w, 100, 200, 3, true, true, false, &mut rng);
+            let n69 = w.tiles.iter().filter(|t| t.active() && t.kind == 69).count();
+            if n69 > 2 {
+                grew = true;
+                break;
+            }
+        }
+        assert!(grew, "the underground thorn arm grew a third 69");
+        // The overground dispatcher does NOT fire the 69 arm (deleted).
+        let mut w2 = world();
+        w2.world_surface = 250.0;
+        put(&mut w2, 100, 200, 69, 0);
+        put(&mut w2, 103, 201, 60, 0);
+        put(&mut w2, 103, 200, 69, 0);
+        let mut rng = UnifiedRandom::new(7);
+        for _ in 0..50 {
+            update_world_overground_tile(&mut w2, 100, 200, true, false, 0.0, 0.0, &mut rng);
+        }
+        let n69 = w2.tiles.iter().filter(|t| t.active() && t.kind == 69).count();
+        assert_eq!(n69, 2, "the dead overground-69 arm stays dead");
+    }
+
 }
 
 /// `WorldGen.UpdateWorld_UndergroundTile` (`WorldGen.cs:73214-73614`): the
@@ -1770,6 +1843,12 @@ pub fn update_world_underground_tile(
     // The five vine families (`:73311-73482`) — the port's one-fn arm. The
     // 444/396 moss and oyster arms park.
     grow_vine_arm(world, i, j, rng);
+    // W4-g83 (contract §3): the jungle-thorn arm (`:73658-73661`) — a 69
+    // tile runs `GrowSpike(69, 60)` with NO roll, right after the vine
+    // families and BEFORE the wall block. Faithful despite the C# `else if`:
+    // 69 is disjoint from every earlier arm's kind set and the fn self-gates
+    // on `kind == 69`. Same caller stream (UpdateWorldGen).
+    crate::vine_growth::grow_underground_jungle_thorn(world, i, j, rng);
     // The wall arms (`:72499-72502`, behind `AllowedToSpreadInfections`); the
     // web and town-NPC arms park.
     if allowed_to_spread {

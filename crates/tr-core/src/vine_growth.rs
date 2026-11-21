@@ -12,9 +12,10 @@
 //!   6) — the temple-brick 226 arm's density gate.
 //! * [`grow_underground_jungle_thorn`] (`WorldGen.cs:73658-73661`): the
 //!   underground dispatcher's jungle-thorn arm — a 69 tile runs `GrowSpike`
-//!   (69, 60) with NO roll. The port's overground 69 arm (`growth.rs:843`)
-//!   sits inside `grass_pass`, which 69 is not a member of, so it never
-//!   fires; the genuine arm is the underground one.
+//!   (69, 60) with NO roll. The port's former overground 69 arm sat inside
+//!   `grass_pass`, which 69 is not a member of, so it never fired; it is
+//!   DELETED at wiring (contract §3) and the genuine underground arm is
+//!   wired after `grow_vine_arm`.
 //! * [`thorn_down_merge_frame`] (`WorldGen.cs:82043-82066`): the thorn
 //!   down-merge — cases 32/352/69/655 fold a matching grass neighbour BELOW
 //!   into the thorn (`down = num`) before the generic block frameset runs.
