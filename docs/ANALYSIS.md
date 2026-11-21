@@ -8678,11 +8678,20 @@ change at all rates.
 
 The research corrected the row: the severity machine, the SceneState
 filters, the music-40 ladder, the zone gate and the bgDelay tracking
-already landed (BG-18 / WEATHER-1), and the `SandstormSky` sky tint is
-**dead code in 1.4.5.8** вЂ” registered (`ScreenEffectInitializer.cs:71`)
-but never activated anywhere, so `_opacity` stays 0 and the quad never
-draws. Documented out; the visible sky wash is the SceneState
-filter/overlay pair.
+already landed (BG-18 / WEATHER-1). The `SandstormSky` sky tint is **NOT dead
+code** — the earlier "never activated" reading (WEATHER-2) was wrong: the
+activation is variable-based, so a grep for a literal `Activate("Sandstorm"`
+misses it. `SceneState.cs:97` calls `ManageSpecialBiomeVisuals("Sandstorm",
+Main.UseStormEffects && Sandstorm.ShowSandstormVisuals())`, and `:313-317`
+activates `SkyManager.Instance[biomeName]` when `inZone` flips — with
+`biomeName == "Sandstorm"`, registered at `ScreenEffectInitializer.cs:71` and
+`UseStormEffects` defaulting true (`Main.cs:66572`). So during a desert
+sandstorm the sky IS activated, `_opacity` ramps to 1, and `SandstormSky.Draw`
+(`:49-56`) paints the `(0.85,0.66,0.33)*0.8*ColorOfTheSkies * _opacity *
+min(1, Severity*1.5)` quad (the same path activates Blizzard/Aurora). The port
+draws the SceneState fg/bg filter pair but NOT this `CustomSky` tint quad — a
+real visual gap owned by the f42 second-half-visuals lane (W4-c40 DOC-SWEEP
+lane 6, research/78, corrected 2026-11-21).
 
 The task's real delta is `Sandstorm.EmitDust` (`Main.cs:17247`) вЂ” the
 flying sand, in `crates/tr-app/src/sand.rs`:
