@@ -453,8 +453,9 @@ pub enum NpcKind {
     /// `NPC.cs:11154-11167`: 18x40, 600 HP, damage 200, defense 30, kb 0.3,
     /// value 5000, rarity 4). The alpha ramp (`NPC.cs:20844-20854`) fades
     /// it out over 255 ticks; a strike resets alpha to 0. Fires the 129
-    /// RuneBlast (`NPC.cs:21264-21274`). The protocol id is port-local 354
-    /// (the vanilla 172 collides with DD2DarkMageT3's port-local slot).
+    /// RuneBlast (`NPC.cs:21264-21274`). The protocol id is port-local 827
+    /// (the vanilla 172 collides with DD2DarkMageT3's port-local slot; the
+    /// RETIRE round moved it off 354 — d37's corridor, research/244).
     RuneWizard,
     /// `NPCID.LibrarianSkeleton` (693) — the dungeon book caster (`aiStyle
     /// 8`, `NPC.cs:17723-17735`: 18x40, 70 HP, damage 18, defense 2, kb 0.6,
@@ -465,7 +466,11 @@ pub enum NpcKind {
     LibrarianSkeleton,
     /// `NPCID.ChaosBall` (30) — the caster's sphere (`aiStyle 9`, 16x16,
     /// 1 HP, `noGravity`/`noTileCollide`). Tim's `ChaosBallTim` clone 665
-    /// folds here (identical stats and name, `NPC.cs:17398`).
+    /// folds here (R4 FINAL, research/244: stat-identical rows
+    /// `NPC.cs:15699-15713`/`:17403-17417`, one aiStyle-9 arm `:21519`,
+    /// one {31} immunity row, one "Chaos Ball" name; the banner split
+    /// 665→177/30→39 is unreachable — both are Hide=true bestiary
+    /// exclusions, no kill credit drains).
     ChaosBall,
     /// `NPCID.BurningSphere` (25) — the Fire Imp's sphere (`aiStyle 9`,
     /// `NPC.cs:9093`).
@@ -18648,10 +18653,11 @@ impl Npc {
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
             // W4-g5 — the two casters: the RuneWizard's render key rides
-            // its port-local protocol id 354 (the BlazingWheel precedent —
-            // the vanilla 172 is DD2DarkMageT3's key above); the
+            // its port-local protocol id 827 (the RETIRE renumber,
+            // research/244 — was 354, d37's CochinealBeetle corridor; the
+            // vanilla 172 is DD2DarkMageT3's key above); the
             // LibrarianSkeleton's 693 is free (vanilla).
-            NpcKind::RuneWizard => 354,
+            NpcKind::RuneWizard => 827,
             NpcKind::LibrarianSkeleton => 693,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -24108,7 +24114,7 @@ mod tests {
     fn w4_g5_the_two_casters_setdefaults_rows() {
         // (kind, vanilla, protocol, w, h, ai, hp, dmg, def, value, kb)
         let rows = [
-            (NpcKind::RuneWizard, 172u16, 354u16, 18.0, 40.0, 8u8, 600, 200, 30, 5000.0, 0.3f32),
+            (NpcKind::RuneWizard, 172u16, 827u16, 18.0, 40.0, 8u8, 600, 200, 30, 5000.0, 0.3f32),
             (NpcKind::LibrarianSkeleton, 693, 693, 18.0, 40.0, 8, 70, 18, 2, 160.0, 0.6),
         ];
         for (kind, vanilla, protocol, w, h, ai, hp, dmg, def, value, kb) in rows {

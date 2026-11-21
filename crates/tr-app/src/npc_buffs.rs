@@ -232,10 +232,21 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // The volley bees: `NPCID.Sets.DebuffImmunitySets` rows 210/211
         // — `SpecificallyImmuneTo = { 20, 31 }` (`NPCID.cs:7312-7325`).
         NpcKind::Bee | NpcKind::BeeSmall => &[20, 31],
-        // The casters/spheres: no debuff-immunity rows in the data (the
-        // Fire Imp's `lavaImmune` rides the liquid system).
-        NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => &[],
-        NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => &[],
+        // The casters' `NPCID.Sets.DebuffImmunitySets` rows (W4-g5 RETIRE
+        // census — the base comment "no debuff-immunity rows in the data"
+        // was wrong; the rows exist): 29 {31} (`NPCID.cs:6244-6250`),
+        // 45 {20,31} (`:6364-6368`), 32 {20,31} (`:6272-6278`),
+        // 24 {24,31,323} (`:6227-6233`), 533 the 14-row set (`:9085-9095`).
+        // The Fire Imp's `lavaImmune` rides the liquid system separately.
+        NpcKind::GoblinSorcerer => &[31],
+        NpcKind::Tim | NpcKind::DarkCaster => &[20, 31],
+        NpcKind::FireImp => &[24, 31, 323],
+        NpcKind::DesertDjinn => &[20, 24, 31, 39, 44, 69, 70, 395, 153, 189, 203, 204, 323, 324],
+        // The spheres: 25/30/33 each {31} (`NPCID.cs:6234-6240`/`:6251-6257`/
+        // `:6279-6285`); the 665 ChaosBallTim clone shares the 30's row
+        // (`:6258-6264`) — the R4 fold keeps ONE kind, so the {31} row
+        // covers both net ids.
+        NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => &[31],
         // The swimmers: no debuff-immunity rows.
         NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => &[],
         // The worms: no debuff-immunity rows.
@@ -1124,6 +1135,36 @@ mod tests {
         let eye = NpcBuffs::for_kind(NpcKind::DemonEye);
         let wandering = NpcBuffs::for_kind(NpcKind::WanderingEye);
         assert!(!eye.buff_immune[20] && !wandering.buff_immune[20]);
+    }
+
+    /// W4-g5 RETIRE — the caster/sphere family's `DebuffImmunitySets` rows
+    /// (the base's "no debuff-immunity rows" comment was wrong): 29 {31}
+    /// (`NPCID.cs:6244-6250`), 45/32 {20,31} (`:6364-6368`/`:6272-6278`),
+    /// 24 {24,31,323} (`:6227-6233`), 533 the 14-row set (`:9085-9095`),
+    /// 25/30/33 {31} (`:6234-6240`/`:6251-6257`/`:6279-6285`); the 665
+    /// ChaosBallTim clone shares the 30's {31} (`:6258-6264`) — the R4
+    /// fold's one kind carries both net ids' immunity. WRITTEN NOT RUN.
+    #[test]
+    fn w4_g5_the_caster_family_immunity_rows_match_the_id_sets() {
+        let sorc = NpcBuffs::for_kind(NpcKind::GoblinSorcerer);
+        assert!(sorc.buff_immune[31] && !sorc.buff_immune[20]);
+        for kind in [NpcKind::Tim, NpcKind::DarkCaster] {
+            let b = NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[20] && b.buff_immune[31], "{kind:?}");
+        }
+        let imp = NpcBuffs::for_kind(NpcKind::FireImp);
+        assert!(imp.buff_immune[24] && imp.buff_immune[31] && imp.buff_immune[323]);
+        assert!(!imp.buff_immune[20], "the 24 row has no Poisoned");
+        let djinn = NpcBuffs::for_kind(NpcKind::DesertDjinn);
+        for id in [20, 24, 31, 39, 44, 69, 70, 395, 153, 189, 203, 204, 323, 324] {
+            assert!(djinn.buff_immune[id], "the 533 row's {id}");
+        }
+        assert!(!djinn.buff_immune[46], "no row outside the 14");
+        for kind in [NpcKind::ChaosBall, NpcKind::BurningSphere, NpcKind::WaterSphere] {
+            let b = NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[31], "{kind:?} Confused-immune");
+            assert!(!b.buff_immune[20], "{kind:?} not Poisoned-immune");
+        }
     }
 
     #[test]

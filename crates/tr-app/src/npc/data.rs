@@ -588,9 +588,12 @@ impl NpcKind {
             NpcKind::WyvernTail => 228,
             // W4-g5 — the two unclaimed aiStyle-8 casters. The RuneWizard's
             // vanilla 172 collides with DD2DarkMageT3's port-local 172, so
-            // it takes the next-free port-local 354 (the BlazingWheel
-            // precedent); the LibrarianSkeleton's 693 is free (vanilla).
-            NpcKind::RuneWizard => 354,
+            // it takes a port-local id; the RETIRE round moved it 354 → 827
+            // (research/244: 354 squats d37's CochinealBeetle corridor
+            // 354-399, the research/108 E2 kinds-lane rule; 827 is above
+            // d39's pushed 817-823 band + the R7 817-826 pin). The
+            // LibrarianSkeleton's 693 is free (vanilla).
+            NpcKind::RuneWizard => 827,
             NpcKind::LibrarianSkeleton => 693,
         }
     }
@@ -923,7 +926,7 @@ impl NpcKind {
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
             // W4-g5 — the two unclaimed aiStyle-8 casters (`to_u16` above).
-            354 => NpcKind::RuneWizard,
+            827 => NpcKind::RuneWizard,
             693 => NpcKind::LibrarianSkeleton,
             _ => return None,
         })

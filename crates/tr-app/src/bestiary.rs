@@ -648,7 +648,11 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Librarian Skeleton",
     },
     // The spheres: the Chaos Ball entry also covers Tim's ChaosBallTim
-    // clone 665 (the port folds it — identical stats and name).
+    // clone 665 (R4 FINAL, research/244 — stat-identical, one aiStyle-9
+    // arm, one {31} immunity, one name; both net ids are Hide=true
+    // exclusions in C# (`NPCID.cs:1443-1456`) — the port's entry is the
+    // pre-existing base row, kept; the 665 banner split (Tim's 177) is
+    // unreachable, no credit drains for either).
     BestiaryEntryDef {
         credit_id: "ChaosBall",
         net_id: 30,

@@ -102,8 +102,13 @@ const WALL_DUNGEON: [u16; 9] = [7, 8, 9, 94, 95, 96, 97, 98, 99];
 
 /// The C#'s type-32 / 281-286 / 693 group (`NPC.cs:18960`) — the teleport
 /// spot must sit in front of a dungeon wall unless Skeletron is alive.
+/// W4-g5 RETIRE: the 693 joins (the phases-4-6 draft landed the kind but
+/// left it out of this match — the fallback search teleported anywhere;
+/// d43 batch-12's row carried the gate, keep-one merges onto THIS arm).
+/// The 281-286 arms are the d38 branch's claim (its tip extends this
+/// match with the six hardmode kinds — the merger unions the lists).
 fn dungeon_wall_gated(kind: NpcKind) -> bool {
-    matches!(kind, NpcKind::DarkCaster)
+    matches!(kind, NpcKind::DarkCaster | NpcKind::LibrarianSkeleton)
 }
 
 /// `Collision.SolidTiles(startX, endX, startY, endY)`
@@ -841,7 +846,17 @@ pub fn ai_style_8_step(
                 }
                 NpcKind::Tim => {
                     // `:21242` — type 665, the ChaosBallTim clone; the port
-                    // folds it into ChaosBall (identical stats and name).
+                    // folds it into ChaosBall (R4 FINAL, research/244:
+                    // stat-identical SetDefaults `:15699-15713` vs
+                    // `:17403-17417`, the same aiStyle-9 arm `:21519`, the
+                    // same {31} immunity `NPCID.cs:6251-6264`, the same
+                    // "Chaos Ball" display name). The one C# surface that
+                    // differs — the banner (665 → Tim's 177,
+                    // `BannerSystem.cs:864-866`; 30 → the Sorcerer's 39) —
+                    // is UNREACHABLE in the port: both ids are Hide=true
+                    // bestiary exclusions (`NPCID.cs:1443-1456`), no
+                    // ENTRIES row, no kill-credit/banner drain ever fires
+                    // for either. d43's distinct-kind row retires at merge.
                     shot = Some(CasterShot { kind: NpcKind::ChaosBall, x: sx, y: sy, ai3: 0.0 });
                 }
                 NpcKind::DarkCaster => {
@@ -1268,6 +1283,43 @@ mod tests {
             &w,
             &mut rng2,
             NpcKind::DarkCaster,
+            (40.0 * 16.0, 110.0 * 16.0),
+            (100, 117),
+            20,
+            &tp,
+            true,
+        );
+        assert!(spot2.is_some(), "AnyNPCs(35) opens the gate");
+    }
+
+    /// `NPC.cs:18960-18966` — the 693 rides the SAME dungeon-wall gate as
+    /// the 32 (the C#'s `(type == 32 || (type >= 281 && type <= 286) ||
+    /// type == 693)` group): on a wall-less world with no Skeletron the
+    /// shared fallback search rejects every spot; a live head opens it.
+    /// W4-g5 RETIRE fix witness — the phases-4-6 draft omitted the 693
+    /// from `dungeon_wall_gated`. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_g5_the_librarian_skeleton_needs_a_dungeon_wall_or_a_live_skeletron() {
+        let w = ground_air();
+        let p = player_at(100.0 * 16.0, 116.0 * 16.0);
+        let tp = TelefragPlayer::from_player(&p);
+        let mut rng = UnifiedRandom::new(7);
+        let spot = attempt_find_teleport_spot(
+            &w,
+            &mut rng,
+            NpcKind::LibrarianSkeleton,
+            (40.0 * 16.0, 110.0 * 16.0),
+            (100, 117),
+            20,
+            &tp,
+            false,
+        );
+        assert!(spot.is_none(), "no dungeon walls, no head: no spot");
+        let mut rng2 = UnifiedRandom::new(7);
+        let spot2 = attempt_find_teleport_spot(
+            &w,
+            &mut rng2,
+            NpcKind::LibrarianSkeleton,
             (40.0 * 16.0, 110.0 * 16.0),
             (100, 117),
             20,
