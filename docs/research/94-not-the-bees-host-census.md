@@ -73,3 +73,17 @@ remaining Finish-family gaps).
   flag and never enters either function — **both world-hash pins are UNCHANGED
   by this task** (the g41 egg-sac re-pin deferral stands as-is).
 - The `a == b` determinism witnesses are written NOT run (code-only).
+
+## Landed (this task)
+
+- `crates/tr-core/src/worldgen/not_the_bees.rs` — `not_the_bees` (the
+  conversion), `finish_not_the_bees` (the host), `spread_wall2`,
+  `over_grown_dungeon`, `spider_wall_search` (the remover wiring), the
+  per-cell helpers + 17 witness tests (written NOT run).
+- `pipeline.rs::step_seed_finish` — the NTB slot between drunk and FTW
+  (`:22435-22439`), `gv` threaded for `lava_line`.
+- `spider_gem_moss.rs::spider_wall_remover` — doc flips UNWIRED → WIRED.
+- `world_hash.rs` — both pin notes record the host is flag-gated (pins
+  UNCHANGED); the egg-sac deferral stands.
+- Docs: ANALYSIS "The NOT-THE-BEES host (W4-g41 follow-up)", PORT_MAP row,
+  research INDEX 94, anchors.txt row, census-93 remover clause updated.

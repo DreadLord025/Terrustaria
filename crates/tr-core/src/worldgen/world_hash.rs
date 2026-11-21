@@ -242,6 +242,10 @@ mod tests {
     // DEFAULT_WORLD below) move this pin too — the 512 world's spider caves
     // restyle/pop sacs and the framer keeps the 165 frames. Stale-by-design;
     // the gate re-pins it.
+    // W4-g41 follow-up (code-only): the NOT-THE-BEES host (`not_the_bees.rs`)
+    // is flag-gated on NOT_THE_BEES — a classic 512 world never enters it, so
+    // this pin is UNCHANGED by the host port (the egg-sac deferral above
+    // stands). Census: `docs/research/94-not-the-bees-host-census.md`.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -295,6 +299,17 @@ mod tests {
     // re-pin is DEFERRED to the merge gate (no compiler on this branch, the
     // S1-K-2 wave B precedent). The `a == b` determinism witnesses are
     // written NOT run. Census: `docs/research/93-spider-cave-census.md`.
+    // W4-g41 follow-up (2026-11-21, code-only): the NOT-THE-BEES host
+    // (`not_the_bees.rs`, `WorldGen.cs:25107-25360` + `:25388-25797`) lands at
+    // `step_seed_finish`'s C# slot (`:22435-22439`) and WIRES the egg-sac
+    // task's `spider_wall_remover` at the two FTW+NTB search loops
+    // (`:25409-25434`). BOTH functions are flag-gated on NOT_THE_BEES (and
+    // skyblock), so a classic world never enters them and draws nothing —
+    // the two pins are UNCHANGED by this task (the egg-sac re-pin deferral
+    // above stands as-is). The host's draws ride fresh `pass_rng("NotTheBees")`
+    // / `pass_rng("FinishNotTheBees")` streams; the `a == b` determinism
+    // witnesses (incl. a full-pipeline NTB+FTW world) are written NOT run.
+    // Census: `docs/research/94-not-the-bees-host-census.md`.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

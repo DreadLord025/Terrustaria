@@ -63,10 +63,10 @@ stalactite family + its support validator), **wall coverage** (the wall-62 flood
    `Next(8,21)` budget / `Next(8,33)` life pair, the `Next(-10,11)*0.1` velocity pair, the
    per-step `num*(life/total)` radius, the `|dx|+|dy| < radius*0.5*(1+Next(-10,11)*0.015)`
    diamond test clearing wall 62 → 0, and the `Next(-10,11)*0.05` velocity jitter with the
-   ±1 clamps. **Unwired**: its only callers are `FinishNotTheBees`' two search loops
-   (`:25409-25434`, the FTW+NTB combo), and `FinishNotTheBees` (`:25388`) is itself
-   unported — the function lands as a tested pure fn (the c32 constants-off precedent),
-   wiring deferred to the `FinishNotTheBees` row.
+   ±1 clamps. **WIRED by the W4-g41 follow-up**: its only callers are `FinishNotTheBees`'
+   two search loops (`:25409-25434`, the FTW+NTB combo), ported in
+   `not_the_bees.rs::spider_wall_search` and dispatched from `step_seed_finish`'s NTB slot
+   (census `docs/research/94-not-the-bees-host-census.md`).
 
 ## Census deviations recorded, NOT changed (out of this task's scope)
 
