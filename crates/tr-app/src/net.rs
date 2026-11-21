@@ -393,6 +393,20 @@ pub mod id {
     /// doc only — no variant is invented for a frame with neither arm
     /// (the 24 precedent).
     pub const SHIMMER_ITEMS_DEPRECATED: u8 = 145;
+    /// `146 ShimmerActions` (`MessageID.cs:306`) — writer
+    /// `NetMessage.cs:1611-1623` (`(byte)kind` then kind 0: a Vector2;
+    /// kind 1: a Vector2 + `(int)amount`), reader
+    /// `MessageBuffer.cs:4310-4327` (client-only: kind 0
+    /// `WorldItem.ShimmerEffect`, kind 1 `AddCoinLuck`). Host sends:
+    /// `WorldItem.cs:1665` (the shimmer FX) + `:1716` (the coin luck).
+    /// S2c-only.
+    pub const SHIMMER_ACTIONS: u8 = 146;
+    /// `148 SyncItemCannotBeTakenByEnemiesDeprecated` (`MessageID.cs:310`)
+    /// — DEAD: no writer case, no reader case (the default arm drops it,
+    /// `MessageBuffer.cs:4477-4482`), zero send sites tree-wide. The
+    /// enemy-grab lock became the `21` bit-3 tail (d98's wave I).
+    /// Constant + census doc only (the 24/145 precedent).
+    pub const ITEM_ENEMY_LOCK_DEPRECATED: u8 = 148;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -2372,6 +2386,23 @@ pub struct CountsAsHost {
     pub counts_as_host: bool,
 }
 
+/// `msg 146 ShimmerActions`'s body (`NetMessage.cs:1611-1623`): the kind
+/// byte, then kind 0 → `WriteVector2(number2, number3)` (the shimmer FX
+/// position); kind 1 → the Vector2 + `(int)number4` (the coin amount).
+/// Any other kind writes NOTHING after the byte (the switch has no
+/// default). The reader (`MessageBuffer.cs:4313-4325`) mirrors the two
+/// arms; unknown kinds read nothing.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ShimmerAction {
+    /// kind 0 — `WorldItem.ShimmerEffect(position)`
+    /// (`MessageBuffer.cs:4316`).
+    Effect { x: f32, y: f32 },
+    /// kind 1 — `AddCoinLuck(position, amount)` (`:4320-4322`).
+    CoinLuck { x: f32, y: f32, amount: i32 },
+    /// Any other kind byte — no tail on either side.
+    Unknown(u8),
+}
+
 impl HatRackItemSync {
     /// The reader's unfold (`MessageBuffer.cs:4005-4009`): `>= 2` is a
     /// dye slot, the index is `wire_slot - 2`.
@@ -2826,6 +2857,10 @@ pub enum S2c {
     /// flag push (`MessageBuffer.cs:934`; client-only store
     /// `:4230-4237`). S2c-only.
     CountsAsHost(CountsAsHost),
+    /// `146 ShimmerActions` — the shimmer FX / coin-luck push
+    /// (`WorldItem.cs:1665`/`:1716`; client-only reader
+    /// `MessageBuffer.cs:4310-4327`). S2c-only.
+    ShimmerAction(ShimmerAction),
     // ---- internal (no 1:1 body in the port's scope) ----
     Joined {
         id: u32,
@@ -3520,6 +3555,7 @@ impl S2c {
             Self::HatRackItemSync(_) => id::TE_HAT_RACK_ITEM_SYNC,
             Self::FinishedConnecting => id::FINISHED_CONNECTING,
             Self::CountsAsHost(_) => id::COUNTS_AS_HOST,
+            Self::ShimmerAction(_) => id::SHIMMER_ACTIONS,
         }
     }
 
@@ -3717,6 +3753,14 @@ impl S2c {
             Self::FinishedConnecting => w,
             // `NetMessage.cs:1587-1590`: (byte)player + (number2 == 1f).
             Self::CountsAsHost(c) => w.u8(c.player_id).bool(c.counts_as_host),
+            // `NetMessage.cs:1611-1623`: (byte)kind + the kind-keyed tail.
+            Self::ShimmerAction(a) => match *a {
+                ShimmerAction::Effect { x, y } => w.u8(0).f32(x).f32(y),
+                ShimmerAction::CoinLuck { x, y, amount } => {
+                    w.u8(1).f32(x).f32(y).i32(amount)
+                }
+                ShimmerAction::Unknown(k) => w.u8(k),
+            },
             // `NetMessage.cs:948-951` / `:987-995` — the same bodies as C2s.
             Self::ReleaseItemOwnership(r) => w.i16(r.slot).bool(r.force_assign_to_server),
             Self::LiquidUpdate(l) => w.i16(l.x).i16(l.y).u8(l.liquid).u8(l.liquid_type),
@@ -4087,6 +4131,20 @@ impl S2c {
             id::COUNTS_AS_HOST => Self::CountsAsHost(CountsAsHost {
                 player_id: r.u8()?,
                 counts_as_host: r.bool()?,
+            }),
+            // `MessageBuffer.cs:4313-4325`: ReadByte kind; 0 → Vector2,
+            // 1 → Vector2 + ReadInt32, else nothing.
+            id::SHIMMER_ACTIONS => Self::ShimmerAction(match r.u8()? {
+                0 => ShimmerAction::Effect {
+                    x: r.f32()?,
+                    y: r.f32()?,
+                },
+                1 => ShimmerAction::CoinLuck {
+                    x: r.f32()?,
+                    y: r.f32()?,
+                    amount: r.i32()?,
+                },
+                k => ShimmerAction::Unknown(k),
             }),
             // `MessageBuffer.cs:2234-2236` / `:2409-2412` — the shared
             // reader reads the same shapes on both sides.
@@ -7557,6 +7615,58 @@ mod tests {
         assert_eq!(id::SHIMMER_ITEMS_DEPRECATED, 145);
         assert!(C2s::decode(145, &mut NetReader::new(&[])).is_none());
         assert!(S2c::decode(145, &mut NetReader::new(&[])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_shimmer_actions_round_trips() {
+        // `NetMessage.cs:1611-1623`: (byte)kind; 0 → Vector2, 1 →
+        // Vector2 + (int)amount, else nothing.
+        let fx = ShimmerAction::Effect { x: 100.5, y: -20.25 };
+        let f = S2c::ShimmerAction(fx).encode();
+        assert_eq!(f[2], 146);
+        let mut body = vec![0u8];
+        body.extend_from_slice(&100.5f32.to_le_bytes());
+        body.extend_from_slice(&(-20.25f32).to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(f[2], &mut r).expect("decode") {
+            S2c::ShimmerAction(d) => assert_eq!(d, fx),
+            other => panic!("expected 146, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // The coin-luck arm (`WorldItem.cs:1716`: the stack rides number4).
+        let coin = ShimmerAction::CoinLuck { x: 1.0, y: 2.0, amount: 10000 };
+        let f = S2c::ShimmerAction(coin).encode();
+        let mut body = vec![1u8];
+        body.extend_from_slice(&1.0f32.to_le_bytes());
+        body.extend_from_slice(&2.0f32.to_le_bytes());
+        body.extend_from_slice(&10000i32.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(146, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ShimmerAction(d) => assert_eq!(d, coin),
+            other => panic!("expected 146, got {:?}", other.msg_id()),
+        }
+        // An unknown kind writes/reads NOTHING after the byte.
+        let f = S2c::ShimmerAction(ShimmerAction::Unknown(7)).encode();
+        assert_eq!(&f[3..], &[7]);
+        match S2c::decode(146, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ShimmerAction(d) => assert_eq!(d, ShimmerAction::Unknown(7)),
+            other => panic!("expected 146, got {:?}", other.msg_id()),
+        }
+        // S2c-only.
+        assert!(C2s::decode(146, &mut NetReader::new(&[0, 0, 0, 0, 0, 0, 0, 0, 0])).is_none());
+        // A truncated coin amount must not decode.
+        assert!(S2c::decode(146, &mut NetReader::new(&[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_item_enemy_lock_deprecated_is_censused_dead() {
+        // `148` — no writer case, no reader case, zero send sites; the
+        // enemy-grab lock became the 21 bit-3 tail (d98's wave I).
+        // Constant + census doc only (the 24/145 precedent).
+        assert_eq!(id::ITEM_ENEMY_LOCK_DEPRECATED, 148);
+        assert!(C2s::decode(148, &mut NetReader::new(&[])).is_none());
+        assert!(S2c::decode(148, &mut NetReader::new(&[])).is_none());
     }
 
     #[test]

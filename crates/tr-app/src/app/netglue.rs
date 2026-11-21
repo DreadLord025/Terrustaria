@@ -1994,6 +1994,11 @@ impl App {
             // (`MessageBuffer.cs:4230-4237`) lands with the apply-wiring
             // lanes (g48-g52) / S1-I-4.
             S2c::CountsAsHost(_) => {}
+            // S1-I-1 W4-f21: `146`'s client ShimmerEffect / AddCoinLuck
+            // (`MessageBuffer.cs:4310-4327`) lands with the apply-wiring
+            // lanes (g48-g52) / S1-I-4 — the FX dust/sound burst is the
+            // shimmer lane's RNG census, not this codec's.
+            S2c::ShimmerAction(_) => {}
         }
     }
 
