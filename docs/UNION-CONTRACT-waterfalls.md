@@ -116,3 +116,28 @@ Judge only by the `test result: ok` lines (cargo may exit 1 on success).
 The union was compile-checked by inspection only — if the 19 witnesses
 surface fixture drift, fix the FIXTURE against the C# walk (the decisions
 above are locked; the numbers are hand-replays, not run results).
+
+## Addendum — the falls-adjacent census (post-union, same branch)
+
+Two residual lanes landed on top of the union (commits `7a408d98` /
+`43296a24`), both code-only:
+
+1. **Source detection** (`FindWaterfalls` :100-330 census): the pure-flag
+   kind probes (`Tile.cs:345-382` — no `liquid > 0` guard), the truncating
+   `scan_view` (:119-122) replacing the caller's floor/ceil ±1 derivation,
+   and the `instantBGTransitionCounter == 10` forced rescan
+   (`Main.cs:61841`, Spawn arms `Player.cs:37569`). Census finding: there
+   is NO type-12 source in the C# — 12 is the rain arm's background
+   texture (:486); the landed type set 0/1/14/25/11/22/26 is complete.
+2. **Ambience consumers** (`Main.Ambience` :13466-13509): the verbatim
+   `liquid_loop_update` decision half (int casts, ambientLava Manhattan
+   pick + strength sum, the 960 pan divisor, the out-of-range
+   keep-last-volume arm, the case-34 −0.2 pitch) + live re-pan gains in
+   `audio.rs`. `App::ambient_lava` rides the load reset — its only C#
+   writer is the retro-only `oldDrawWater` scan, unported by design.
+
+The merger keeps these too (they are part of THIS branch's versions of
+`waterfall/mod.rs`, `ambient_sound.rs`, `audio.rs`, `app/frame.rs`,
+`app/mod.rs`, `app/flow.rs`, `world_sim/liquids.rs`,
+`world_sim/player.rs`, `recall_teleport.rs`). 9 new witnesses, written
+not run.

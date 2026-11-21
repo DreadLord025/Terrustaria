@@ -872,6 +872,24 @@ non-solid and solid tile passes (`Main.DoDraw_Waterfalls`).
   side is dry, non-solid and unsloped. The `196`/`460`/`717` fountain tiles spawn types
   `11`/`22`/`26` one row below when the cell underneath is open. The liquid kind check
   order is `tile2` (above) then `tile4` (right) then `tile3` (left), as in the source.
+- Source-detection residuals (W4-g73 falls-adjacent census, code-only): the
+  kind probes are PURE header-bit tests — `Tile.lava()/honey()/shimmer()`
+  (`Tile.cs:345-382`) never read `liquid`, so a drained tile's stale flag still
+  classifies the spout (`any_liquid_kind` dropped its invented `liquid > 0`
+  guard). The scan rectangle is `WaterfallManager::scan_view`
+  (`WaterfallManager.cs:119-122`): four `(int)` TRUNCATING casts of the raw
+  unscaled `screenPosition`/screen size — no zoom divide, no floor/ceil (the
+  first port pass's floor/ceil ±1 derivation scanned up to a tile wider).
+  The forced flag is `Main.instantBGTransitionCounter == 10`
+  (`Main.cs:61841`): the local-player Spawn arms set 10
+  (`Player.cs:37569` — the revive path and `spawn_recall`), `DrawBG`
+  decrements (`:64039-64041`), and the world-load init stays 2
+  (`:66738`). Census note: the C# has NO type-12 SOURCE — 12 is the rain
+  arm's background TEXTURE (`:486`); the source types are exactly
+  0/1/14/25 (half-brick spout) and 11/22/26 (tiles 196/460/717), all landed.
+  Witnesses: `a_stale_liquid_flag_classifies_without_any_liquid_amount`,
+  `the_scan_view_truncates_like_the_csharp_int_casts`,
+  `the_forced_flag_bypasses_the_thirty_tick_rescan_gate` (written, not run).
 - `UpdateFrame` reproduces all five counters (regular 3-tick, slow 7-tick, rain,
   lava-rain and snow) plus `DoUpdate_AnimateDiscoRGB`. The `Main.mouseTextColor` flicker
   that the lava/shimmer light pulses use is owned by `lighting/` (`M1.5-LIGHT-1`) rather
@@ -933,6 +951,34 @@ non-solid and solid tile passes (`Main.DoDraw_Waterfalls`).
   carries the raw `Main.screenPosition`/`Width`/`Height`; `centre()` truncates the int
   halving before the float add. See `docs/UNION-CONTRACT-waterfalls.md` for the
   g73/g74/g75 family-merge contract.
+- Ambience consumers (W4-g73 falls-adjacent census, code-only): the ¼ s
+  `Main.Ambience` tick (`Main.cs:13466-13509`) now runs the verbatim
+  decision half `ambient_sound::liquid_loop_update` — the `(int)`
+  truncations of the `PlaySound(34/35, x, y, strength)` arguments
+  (`:13477`/`:13500`), the lavafall arm's `ambientLava` Manhattan-distance
+  position pick and strength SUM (`:13488-13497`, the play gate stays the
+  lavafall strength alone, `:13498`), the `LegacySoundPlayer.cs:390-396`
+  attenuation (pan divides by `MaxWorldViewSize.X * 0.5` = 960, NOT the
+  live screen width) and the out-of-range KEEP-LAST-VOLUME arm (`flag`
+  false skips the whole `if (flag)` block at `:415` — the first port pass
+  wrongly stopped the loop). The case-34 re-volume arm's `Pitch = -0.2f`
+  (`:1268`, XNA octaves → sink speed `2^-0.2`) and case 35's `-0f`
+  (`:1298`) are applied; the fresh-create arms set no pitch. The pan now
+  reaches the PLAYING source through shared atomic gains
+  (`audio.rs::LiquidPanGains`/`PannedShared` — the baked-at-creation
+  deviation is retired). `App::ambient_lava` carries the
+  `Main.ambientLava*` triple at the `Main.cs:67235-67236` load reset: its
+  only writer is the RETRO `oldDrawWater` scan (`:57615-57634`/
+  `:57932-57936`, `!Lighting.NotRetro` only), which the port's
+  `LiquidRenderer` path never runs — so the pooled-lava contribution is
+  structurally zero, exactly like a non-retro original. All three App
+  triples initialise at the load reset (-1, -1, 0), not (0, 0, 0).
+  Witnesses: `the_waterfall_loop_truncates_and_pans_against_the_1920_view`,
+  `an_out_of_range_position_keeps_the_live_loop_untouched`,
+  `zero_strength_stops_the_waterfall_loop`,
+  `the_lavafall_arm_picks_the_nearer_position_and_sums_strength`,
+  `the_menu_mutes_and_the_shimmer_factor_scales_the_loop`,
+  `the_liquid_loop_pan_gains_update_the_live_source` (written, not run).
 - `GetAlpha`'s wall gate (`WaterfallManager.cs:1037`) is ported in full:
   `wall != 0 && (showInvisible || (wall != 318 && !tile.invisibleWall()))` — any wall
   dims while invisible sight is on; wall 318 and Echo-coated walls never dim
@@ -978,7 +1024,9 @@ non-solid and solid tile passes (`Main.DoDraw_Waterfalls`).
   with a slightly dimmed backdrop under the sparkle. `Main.DrawTileInWater` (the
   tile-518 submerged redraw) is not ported: the generator never places tile 518.
 - Not ported: the `HorizonClouds`-style shader tint of `NextHorizonRenderer.CloudsEnd`
-  for falls, `Main.ambientLava(X/Y/Strength)` (an audio-ambience feed, not lighting),
+  for falls, the retro-only `oldDrawWater` `Main.ambientLava(X/Y/Strength)` scan
+  (the triple's field + load reset are ported — see the ambience-consumers bullet;
+  the scan itself only runs under `!Lighting.NotRetro`, which the port never enters),
   the `player.lavaOpacity` factor and the storm/rare cloud type branches.
   `TR_NO_WATERFALL=1` skips the walk for A/B screenshots; `TR_SPOUT=x,y` stamps a
   half-brick spout with liquid and a clear drop (`TR_SPOUT_KIND=<0..3>` sets the
@@ -2493,8 +2541,11 @@ camera centre and the three volume sliders.
 ### Ambience emitters (`tr-app/ambient_sound.rs`, M6-AUDIO-1)
 
 The ambience *audio* of 1.4.5.8 is five emitters; `Main.Ambience` (the waterfall/lavafall
-loops, M1.4-BG-20) and the rain/wind music-pool loops were already in main, so this task
-ported the remaining three and verified the fourth:
+loops, M1.4-BG-20 — the verbatim decision half `liquid_loop_update` landed with the
+W4-g73 falls-adjacent census: the (int) casts, the ambientLava Manhattan pick + strength
+sum, the 960 pan divisor, the out-of-range keep-last-volume arm and the case-34 −0.2
+pitch; see ANALYSIS "Waterfall overlay") and the rain/wind music-pool loops were already
+in main, so this task ported the remaining three and verified the fourth:
 
 * **Blizzard loops** (`SceneState.cs:189-253`). The two tracked global loops resume on
   `ZoneRain && ZoneSnow` вЂ” the raw zone pair, not the `UseStormEffects`-gated visual вЂ” and
