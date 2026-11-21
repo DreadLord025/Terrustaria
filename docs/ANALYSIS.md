@@ -39359,3 +39359,45 @@ Six commits on top of the union (b4ca66e9, be4cb841, eec344ce, 73f4f4d4,
   recorded for the eventual merge.
 
 All final-sweep witnesses WRITTEN NOT RUN (code-only).
+
+### Party closeout (2026-11-21, post-final-sweep)
+
+- **The Pigronata break loot** (research/70 §8g, 97724ea7): the C# sends
+  tile 454 to `CheckChand` alongside the chandelier 34
+  (`WorldGen.cs:85510-85513`); the port only dispatched 34, so the
+  Pigronata had no integrity check and no loot. `check_chandelier` is now
+  kind-parameterised (the 4-wide style walk, the 37-row second-block skip,
+  the ox+1 ceiling anchor — one LEFT of the registry origin column, the
+  `nactive` gate verbatim; the old stand-in's liquid allowance and
+  Check3x3 attribution were not the C#), the kill loop wraps
+  `destroyObject`, and the tail is the FULL (width+2)x5 `TileFrame` ring
+  (outer-x/inner-y) for BOTH 34 and 454 — the other checks keep the
+  8-point perimeter sample. The 454 break records one `PigronataEvent` at
+  the checked cell; the app resolves the `Next(9)` table
+  (`:52880-52963`) on the UpdatePlayers stream — silver rain (2/3/4),
+  silver + Flask of Party 1358 (5/6), silver + one Gold 73 (7), the
+  jackpot 100 silver + 30-90 PartyBullet 1349 + flask + gold (8), the
+  clamp-to-budget stack loops verbatim; not `noItem`-gated (the pot/pile
+  convention). Recorded deviation: the C# spawns the loot in 32x32/52x52
+  rects around the cell; the port's drop spawn folds the rect into the
+  cell-origin pop (the house convention). The break dust is g14's claimed
+  `KillTile_MakeTileDust` 454 => 139 confetti row — not re-ported. 34's
+  drop record unchanged (the chandelier style rows stay its lane's).
+  5 witnesses WRITTEN NOT RUN.
+- **The party-center-of-attention census** (research/70 §8h, d118ff9d):
+  NO C# gathering behavior exists — town NPCs do not cluster near the
+  party-giver; `AI_007_TownEntities` reads home tiles only. Every party-NPC
+  site is co-lane-claimed (b3 talk-gate wiring + party_up feed, c39/d55
+  hats, d120 chat, b1 slime insides, spawner PartyBunny, UI emotes, wiring
+  bunny-statue, town-spawn 678 gate, seed afterPartyOfDoom, worldgen
+  starting roster); census comment at the npc_ai_town.rs talk gate,
+  nothing ported.
+- **The 114 receipt** (research/70 §8i): c39's pushed tip 8ecb288a carries
+  research/114 §7 EXECUTED; its cake-side drops name f41c f1f95be4
+  canonical — §8f's verdicts agree. The f34-StationBuff merge-scope piece
+  is ALREADY carried by this branch (b4ca66e9: the seven-row dispatch, the
+  pitched-cue app arm, the single 192 arm, the cues/witnesses/TR_TOGGLE
+  arm) — the merger drops f34's duplicate dispatch/app/192 hunks and keeps
+  this branch's anchor-bearing superset; f34's non-party scope (the
+  honey-contact grant, the 366 player arm + reset, the +2/+2 regen fold
+  and their witnesses) stays f34's own merge.

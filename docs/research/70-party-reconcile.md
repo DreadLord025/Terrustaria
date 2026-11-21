@@ -527,6 +527,14 @@ No unclaimed natural-trigger arm remains; nothing ported here.
 
 ### 8f. c39 cross-read (research/114 does NOT exist) — keep-one verdicts
 
+> **Closeout correction (§8i)**: this probe pre-dated c39's push. c39's
+> tip `8ecb288a` (origin/task/W4-c39-lantern-birthday) DOES carry
+> `docs/research/114-lantern-party-master-reconcile.md` with its own §7
+> EXECUTED record — the "does NOT exist" claim below was true of the
+> then-fetched tip only. The verdicts below were re-checked against the
+> pushed 114 and all still hold (114 §1h/§7-verdict-4 dropped exactly the
+> pieces listed here); §8i records the receipt.
+
 c39's tip carries NO docs/research/114 (the branch's research tree is
 the base 01-92 set; the task's '114' likely means the sibling
 W4-d114-tileobjectdata-4 lane, whose scope is TileObjectData hooks, not
@@ -554,3 +562,133 @@ a collapsed freeCake talk gift (drop-at-NPC-centre, no latch).
 Verification (code-only): no cargo/tests/rustfmt/graphify invoked; all
 witnesses WRITTEN NOT RUN. Commits: b4ca66e9 (8a), be4cb841 (8b),
 eec344ce (8c), 73f4f4d4 (8d), + the 8e census commit.
+
+### 8g. Pigronata break loot — LANDED (97724ea7)
+
+Item 3746 (`Item.cs:33164-33175`: createTile 454, consumable, 10000) places
+the 4x3 Pigronata (`TileObjectData.cs:3161-3168`: Style3x3 widened to 4,
+origin (2,0), AnchorTop (SolidTile|SolidSide, 1, 1), LavaDeath — the D_454
+registry def already rowed). **Census**: the C# `TileFrameImportant`
+dispatch sends BOTH 34 and 454 to `CheckChand` (`WorldGen.cs:85510-85513`);
+the port's `check_object` only dispatched 34 (through a Check3x3-attribution
+stand-in), so the Pigronata had NO integrity check and NO break loot —
+unclaimed (no sibling branch touches kill.rs's chandelier arm; d111/d114's
+kill.rs diffs vs base are empty). Landed: `check_chandelier` parameterised
+by kind — the 4-wide style walk (`:52803-52807`), the 37-row second-block
+skip (`:52829-52837`), the ox+1 ceiling anchor (`:52857-52864` — one LEFT
+of the registry origin column ox+2, the check's own maths; `nactive` gate
+verbatim, the stand-in's liquid allowance dropped), the destroyObject-
+wrapped kill loop, and the FULL (width+2)x5 TileFrame tail ring
+(`:52969-52975`, outer-x/inner-y — both 34 and 454; the other tails keep
+the 8-point perimeter sample). The 454 break records ONE `PigronataEvent`
+at the checked cell; the app resolves the `Next(9)` loot table
+(`:52880-52963`) on the UpdatePlayers stream: 0/1 nothing; 2/3/4
+`Next(10,31)` silver in `Next(2,11)` stacks; 5/6 `Next(60,80)` silver in
+`Next(3,16)` stacks + Flask of Party 1358; 7 `Next(10,31)` silver in
+`Next(2,9)` stacks + one Gold Coin 73; 8 the jackpot — fixed 100 silver +
+`Next(30,91)` PartyBullet 1349 in `Next(7,14)` stacks + flask + gold (the
+clamp-to-budget loops verbatim, the singles AFTER both loops). Not
+`noItem`-gated (the pot/pile `Check*`-level convention). 34's own drop
+record unchanged (the chandelier style rows stay its lane's). The break
+dust is g14's claimed `KillTile_MakeTileDust` 454 => 139 confetti row
+(`WorldGen.cs:66946-66948`, a35efec2's worldgen_dust_tile.rs) — not
+re-ported. 5 witnesses (anchor-hold + the ox+1-not-origin quirk, the
+anchor-break event at the first framed cell, the 4-column style walk incl
+style 2, the mirrored-oracle Next(9) table over 400 seeds with the
+stream-position contract, the full app place->break->loot route).
+
+### 8h. Party-center-of-attention census — NO gathering behavior exists
+
+The task's "town NPCs cluster near the party-giver" hypothesis is FALSE in
+the C#: the full `BirthdayParty` reference census (13 files — Chest, Main,
+NPC, Player, WorldGen, Wiring, NetMessage, MessageBuffer, WorldFile,
+TileDrawing, PlayerDrawLayers, EmoteBubble, BirthdayParty itself) finds NO
+party-position term anywhere in `AI_007_TownEntities`
+(`NPC.cs:52965-55560`) — the position machine reads home tiles only
+(`floorX/floorY`, the ±25/±35/±50 bands, the resting-spot probes); there is
+no `partyCenterOfAttention` symbol in the decompile. The complete party-NPC
+behavior set, all CLAIMED:
+- the `:55289-55307` talk gate (208 always, others while PartyIsUp with
+  AttackType == AttackType[208] = 0) + the `:54298-54328` facing state
+  machine (states 6/7/18/19) — **S1-D-3 ported** in npc_ai_town.rs; the
+  aiStyle-7 axis wiring is **W4-b3** (96a5d88f0) and the live
+  `TownEnv.party_up` feed at the build site is b3 phase 2's declared
+  follow-up (b3's npc.rs:10160 still `party_up: false`);
+- the hats — **c39** draw (party_hat.rs) / **d55** gores (114 §1g);
+- `UpdateAltTexture` `:90210-90234` (altTexture 1 while PartyIsUp) —
+  NPC-texture lane (no port field; npc_ai_style42.rs:47 records the
+  `:81143` altTexture gap);
+- the `:94867` party chat text (HasNoPartyText gate) — **d120**
+  (c5e68a80, npc_chat.rs:339/:360);
+- the `:60460-60470` slime inside-items (GenuineParty above surface →
+  Next(2): balloon Next(3736,3739) else Confetti 1345) — **b1**
+  (f010b85b, npc_ai_slime.rs:111-112);
+- the `:1643`/`:2593`/`:4289` PartyBunny 540 critter-spawn arms
+  (PartyIsUp && Next(3) != 0) — spawner lane (the port's spawner.rs
+  critter ladders sit constants-off behind unmodelled tile/weather gates);
+- `EmoteBubble.ProbeEvents` `:401` (PartyIsUp && Next(3) == 0 → emotes
+  126-129) — UI lane (emotes.rs carries the bubble machinery, the probe
+  ladder unported);
+- `Wiring.cs:2304-2307` bunny-statue 540 swap — wiring lane (core
+  wiring.rs:1105 records the plain-bunny stand-in);
+- `Main.cs:65795`/`:65916`/`:66078` flag8 (GenuineParty ||
+  unlockedSlimeGreenSpawn) → TownSlimeGreen 678 spawn gate — town-spawn
+  lane (**d119** 04d7f9fd / f43 / c41; d119's town_arrival.rs models the
+  PartyGirl flag7 gate, the 678 arm is its lane's remaining tail);
+- `Main.cs:17926-17943` afterPartyOfDoom (the getfixedboi party-ends
+  massacre) — special-seed lane;
+- `WorldGen.cs:19728-19795` the starting-party CelebratingNPCs roster —
+  worldgen lane (spawner.rs:765 records the unported AddPasses town pass).
+Census comment added at the npc_ai_town.rs talk gate naming the owners
+(d118ff9d); nothing unclaimed to port.
+
+### 8i. The 114 receipt — c39 EXECUTED re-read + the f34-piece carry
+
+c39's pushed tip `8ecb288a` carries research/114 with §7 EXECUTED (7
+verdict commits b5ab90db/4d184569/912f0ae2/a493e8f1/bb19d79f/7aff2857/
+ce288dac). Re-read against this branch:
+- **114 §1h/§7-verdict-4 (a493e8f1)** dropped c39's cake-side third copies
+  (CakeEat variant/dispatch/app arm/TR_TOGGLE arm/interaction_events arm,
+  the 192 duplicate, the collapsed freeCake talk arm, the live-feed hunks)
+  naming **f41c f1f95be4 canonical** — exactly this branch's union chain.
+  §8f's keep-one verdicts and 114's drops AGREE; no reconciliation needed.
+  c39 keeps its full-tick sugar-rush witness in the union (tests the
+  surviving f34 arm — this branch's player.rs:6531).
+- **f34-StationBuff merge-scope receipt**: 114 §7's remaining-merge-scope
+  lists "f34's StationBuff dispatch + app arm + the single 192 => arm" as
+  a sibling KEEP piece landing at the merge. **This branch already carries
+  it** (b4ca66e9, the §8a landing): the seven-row dispatch
+  (edit.rs:322-328, the `621 => Some((192, 7_200))` anchor row), the app
+  arm with the cake row's faithful pitched case-2 play
+  (doors.rs:382-394, `play_npc_item_cue(2)`), the single `192 =>` SugarRush
+  arm (player.rs:6531) + f34's verbatim witness (player.rs:12720) beside
+  f41's rebase/expiry one (:12742), the Item_149/Item_179 cue registrations
+  (audio.rs:282-284) + witness (:3612), the TR_TOGGLE log arm
+  (app/mod.rs:4581), f34's 6 dispatch/app witnesses (the neighbour no-draw
+  one re-derived) + the pitched-roll witness (doors.rs:1266). **The merger
+  drops the f34-branch piece** (43c44837's dispatch/app/192-arm hunks) —
+  this branch's copy is the anchor-bearing superset (the pitched cue).
+  f34's NON-party scope stays f34's: the honey-contact grant
+  (AddBuff(48,1800), Player.cs:27744-27748), the 366 player-match arm +
+  ResetEffects clear (:10185-10188/:18362 — the base buff_effects.rs
+  accumulator row is NOT the live player-match arm), the honey +2 regen/
+  +2 ramp fold (:19134-19138) and their 3 witnesses + the DW-2.5
+  re-derivation — none are on this branch (verified: no add_buff(48,1800),
+  no 366 player arm, no holding(48) fold, no
+  w4_f34_honey_contact_refreshes_the_honey_buff_every_tick witness), all
+  land with f34's own merge. Anchor accounting: this branch's anchors.txt
+  carries the ONE shared row `edit.rs|621 => Some((192, 7_200))` (the
+  W4-f34/f41 final-sweep row, marker present at edit.rs:323) — the merger
+  keeps it and drops f34's duplicate 621 row; f34's OTHER rows
+  (`edit.rs|StationBuff`, `doors.rs|w4_e28_the_crystal_ball_…`,
+  `player.rs|w4_f34_honey_contact_…`) are NOT on this branch — the first
+  two markers DO exist in this branch's code (edit.rs:272, doors.rs:1144,
+  the e28 base the b4ca66e9 landing built on) so their rows survive the
+  merge harmlessly, the honey row rides f34's own piece.
+- c39's other §7 verdicts (triggers/LanternSky/hats/AI_166/anchors/luck)
+  are c39-side retirements onto f40/d17/d55 canonicals — disjoint from
+  this branch's files; the §3 recipe and the 8f KEEP-ones stand.
+
+Verification (code-only): no cargo/tests/rustfmt/graphify invoked; all
+witnesses WRITTEN NOT RUN. Closeout commits: 97724ea7 (8g), d118ff9d
+(8h), + this docs commit (8i).
