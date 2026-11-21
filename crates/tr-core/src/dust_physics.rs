@@ -19,27 +19,36 @@
 //!   arms). Each skipped `AddLight` is cited at its arm below so the light feed
 //!   can reconcile timing. Where the C# computes a light from a POST-mutation
 //!   scale (206 `:766`, 174 `:807`, 230 `:639`, 309 `:486`, 261 `:695-704`), the
-//!   mutation lands HERE and the feed must read the post-update record (the
-//!   feed's current local-decrement compensation for 206/174/230 is retired at
-//!   the wiring wave — see ANALYSIS "The dust physics chain (W4-d50)").
+//!   mutation lands HERE and the feed reads the post-update record — the
+//!   feed's local-decrement compensations for 206/174/230/309/261 were RETIRED
+//!   at the W4-d50 wiring (research/69 §5 — see ANALYSIS "The dust physics
+//!   chain (W4-d50)" + its wiring-resume section).
 //! - **`customData`** — dropped with the field (`particles.rs`'s `Dust` record):
 //!   the Player/Projectile/NPC/Vector2/Color/int/float follower halves never
 //!   fire. Each is cited; the 31 `else if (noGravity)` arm (`:1297`) becomes
 //!   reachable BECAUSE the NPC `customData` branch is dropped (noted there).
 //! - **`Main.snowDust`** (`:1747`) — a `Main` static (`Main.cs:621`), not a
-//!   `Dust` one; the pool does not carry it (the skeleton's documented drop).
-//!   The 76 arm's `snowDust++` is cited and skipped.
+//!   `Dust` one; the 76 arm feeds it through [`DustPhysicsEnv::snow_dust`]
+//!   (the `sand_storm_count` env-delta pattern — the d54 ONE-EDIT hunk
+//!   `84eb739b`, research/131 §7.2a), and the caller lands the delta on
+//!   `DustPool::snow_dust` after the pass (the head reset `:428` rides
+//!   `update_dust`, so the post-pass write lands the exact count).
 //!
-//! # Wiring (the d51-54 / e1-e4 sites' wave)
+//! # Wiring (W4-d50 resume — WIRED, research/69 §4-6+8)
 //!
-//! UNWIRED pure port (the `npc_ai_*` code-only precedent). The generic loop
-//! calls [`pre_move`] BEFORE `position += velocity` (`Dust.cs:468-476` precedes
-//! `:477`) and [`type_chain`] AFTER it (the `type_arm` hook, `:478-2334`); the
+//! The generic loop (`particles.rs::update_dust`) calls [`pre_move`] BEFORE
+//! `position += velocity` (`Dust.cs:468-472` precedes `:477`) — the `:473-476`
+//! lava-bubble increment stays INLINE in the skeleton (g13's canonical,
+//! landed + witnessed; the `pre_move` 35 arm is stripped, research/69 §4) —
+//! and the live tick (`tr-app::minecart::tick`, the `dust_phase` slot) passes
+//! [`type_chain`] as the `type_arm` hook AFTER the move (`:478-2334`); the
 //! hook's `bool` is [`type_chain`]'s return — `true` exactly when a SECOND-chain
 //! arm matched (`:2130-2334`), so the skeleton's final `else if (type != 304 &&
 //! noGravity)` gravity tail (`:2335`) is suppressed, exactly as the C#'s else-if
 //! structure does. The FIRST ladder's standalone arms (213/268 included) return
 //! `false` and take the tail alongside, the corrected S1-E-3 chain reading.
+//! The minecart 213 / sand 268 hand-dispatches retired into the chain (their
+//! bodies WERE the chain's arms).
 //! Child `NewDust` spawns (159/164/173/160/162) are recorded in
 //! [`DustPhysicsEnv::spawns`] and drained by the caller after the pass (the
 //! `wants_*` sink precedent); the deferral is stream-neutral for every current
@@ -141,6 +150,10 @@ pub struct DustPhysicsEnv<'a> {
     /// adds it to the pool after the pass (the skeleton resets the counter to 0
     /// at the head, `:429`, so the post-pass add lands the exact count).
     pub sand_storm_count: &'a mut i32,
+    /// `Main.snowDust++` (76 `:1747`) accumulated as a delta; the caller
+    /// lands it on `pool.snow_dust` after the pass (the head reset `:428`
+    /// rides `update_dust`, so the post-pass write lands the exact count).
+    pub snow_dust: &'a mut i32,
 }
 
 /// `MathHelper.Lerp(value1, value2, amount)` = `value1 + (value2 - value1) *
@@ -156,19 +169,19 @@ fn xna_normalize(v: Vec2) -> Vec2 {
     v / v.length()
 }
 
-/// The pre-move per-type statements (`Dust.cs:468-476`), which the C# runs
-/// BEFORE `position += velocity` (`:477`). The generic loop calls this ahead of
-/// the move; `lava_bubbles` is `Dust.lavaBubbles` (`:475`, the 35 arm).
-pub fn pre_move(d: &mut Dust, lava_bubbles: &mut i32) {
+/// The pre-move per-type statements (`Dust.cs:468-472`), which the C# runs
+/// BEFORE `position += velocity` (`:477`). The generic loop runs this inside
+/// `update_dust` ahead of the move (the W4-d50 wiring). The `:473-476`
+/// lava-bubble counter is STRIPPED from here (research/69 §4 strip-contract):
+/// the skeleton's inline increment is CANONICAL — exactly one `+= 1` per live
+/// 35 per pass, at the C#'s exact pre-move position — and the now-unused
+/// `lava_bubbles` parameter is dropped with it (§4: "d50's to drop").
+pub fn pre_move(d: &mut Dust) {
     // `:468-472` — the 299/300/301 (`(uint)(type-299) <= 2`) + 305 family.
     let num3 = d.dust_type;
     if ((num3 - 299) as u32) <= 2 || num3 == 305 {
         d.scale *= 0.96;
         d.velocity.y -= 0.01;
-    }
-    // `:473-476` — the lava-bubble counter.
-    if d.dust_type == 35 {
-        *lava_bubbles += 1;
     }
 }
 
@@ -648,8 +661,10 @@ pub fn type_chain<R: DustRng>(d: &mut Dust, rng: &mut R, env: &mut DustPhysicsEn
         // `:1735-1744` — the damp; AddLight (`:1743`, S1-E-5).
         d.velocity *= 0.98;
     } else if ty == 76 {
-        // `:1745-1763` — `Main.snowDust++` (`:1747`) is a Main static, dropped
-        // (module docs). The grow, the player-fall lerp + push, the solid damp.
+        // `:1745-1763` — `Main.snowDust++` (`:1747`) feeds the env delta
+        // (the sand_storm_count pattern; the caller lands pool.snow_dust).
+        *env.snow_dust += 1;
+        // The grow, the player-fall lerp + push, the solid damp.
         d.scale += 0.009;
         let y = env.player_vy;
         if y > 0.0 && d.fade_in == 0.0 && d.velocity.y < y {
@@ -1084,6 +1099,7 @@ mod tests {
         let light = |_: i32, _: i32| Color::WHITE;
         let mut spawns = Vec::new();
         let mut sand = 0;
+        let mut snow = 0;
         let mut env = DustPhysicsEnv {
             world: &w,
             show_sandstorm_visuals: true,
@@ -1096,32 +1112,38 @@ mod tests {
             light_color: &light,
             spawns: &mut spawns,
             sand_storm_count: &mut sand,
+            snow_dust: &mut snow,
         };
         let matched = type_chain(d, rng, &mut env);
         (matched, spawns, sand)
     }
 
-    // ---- pre-move (`:468-476`) ----
+    // ---- pre-move (`:468-472`, the 35 arm stripped — research/69 §4) ----
 
     #[test]
-    fn w4_d50_pre_move_the_299_family_and_the_lava_counter() {
-        let mut lava = 0;
+    fn w4_d50_pre_move_the_299_family_shrink_lift_and_the_stripped_35_arm() {
         for ty in [299, 300, 301, 305] {
             let mut d = dust(ty, 1.0);
             d.velocity = Vec2::new(2.0, 3.0);
-            pre_move(&mut d, &mut lava);
+            pre_move(&mut d);
             assert_eq!(d.scale, 0.96, "type {ty} shrinks");
             assert_eq!(d.velocity.y, 3.0 - 0.01, "type {ty} lifts");
         }
         // 302/304 are NOT in the `(uint)(type-299) <= 2` band nor 305.
         for ty in [298, 302, 304] {
             let mut d = dust(ty, 1.0);
-            pre_move(&mut d, &mut lava);
+            pre_move(&mut d);
             assert_eq!(d.scale, 1.0, "type {ty} untouched");
         }
+        // The strip-contract (research/69 §4): pre_move no longer touches the
+        // lava counter — the skeleton's inline increment is canonical (the
+        // `w4_g13_lava_bubbles_*` witness in particles.rs pins it). A 35
+        // passes through pre_move completely untouched.
         let mut d = dust(35, 1.0);
-        pre_move(&mut d, &mut lava);
-        assert_eq!(lava, 1, "the 35 arm counts a lava bubble");
+        d.velocity = Vec2::new(2.0, 3.0);
+        pre_move(&mut d);
+        assert_eq!(d.scale, 1.0, "the stripped 35 arm mutates nothing");
+        assert_eq!(d.velocity, Vec2::new(2.0, 3.0));
     }
 
     // ---- the standalone FIRST-ladder physics ----
@@ -1203,6 +1225,7 @@ mod tests {
         let light = |_: i32, _: i32| Color::WHITE;
         let mut spawns = Vec::new();
         let mut sand = 0;
+        let mut snow = 0;
         let mk = || DustPhysicsEnv {
             world: &w,
             show_sandstorm_visuals: true,
@@ -1215,6 +1238,7 @@ mod tests {
             light_color: &light,
             spawns: &mut spawns,
             sand_storm_count: &mut sand,
+            snow_dust: &mut snow,
         };
         // 329 (`:587`): scale *= 0.8.
         let mut d = dust(329, 1.0);
@@ -1359,6 +1383,7 @@ mod tests {
         let light = |_: i32, _: i32| Color::WHITE;
         let mut spawns = Vec::new();
         let mut sand = 0;
+        let mut snow = 0;
         let mut rng = UnifiedRandom::new(7);
         // noLight + wet → half push (`:1679-1682`).
         let mut d = dust(27, 1.0);
@@ -1376,6 +1401,7 @@ mod tests {
             light_color: &light,
             spawns: &mut spawns,
             sand_storm_count: &mut sand,
+            snow_dust: &mut snow,
         };
         type_chain(&mut d, &mut rng, &mut e);
         assert_eq!(d.position, Vec2::new(81.0, 82.0), "the wet half-push");
@@ -1395,6 +1421,7 @@ mod tests {
             light_color: &light,
             spawns: &mut spawns,
             sand_storm_count: &mut sand,
+            snow_dust: &mut snow,
         };
         type_chain(&mut d, &mut rng, &mut e);
         assert_eq!(d.position, Vec2::new(82.0, 84.0), "the dry full push");
@@ -1425,6 +1452,7 @@ mod tests {
         let light = |_: i32, _: i32| Color::WHITE;
         let mut spawns = Vec::new();
         let mut sand = 0;
+        let mut snow = 0;
         let mut rng = UnifiedRandom::new(7);
         let mut d = dust(76, 1.0);
         d.fade_in = 0.0;
@@ -1442,12 +1470,16 @@ mod tests {
             light_color: &light,
             spawns: &mut spawns,
             sand_storm_count: &mut sand,
+            snow_dust: &mut snow,
         };
         type_chain(&mut d, &mut rng, &mut e);
         // lerp(1, 5, 0.04) = 1.16; push y += 5*0.2 = 1.
         assert_eq!(d.velocity.y, 1.0 + (5.0 - 1.0) * 0.04);
         assert_eq!(d.position.y, 81.0);
         assert_eq!(d.scale, 1.009);
+        // The G2 ONE-EDIT hunk (d54 `84eb739b`, research/131 §7.2a): the 76
+        // arm feeds `Main.snowDust++` (`:1747`) through the env delta.
+        assert_eq!(snow, 1, "snowDust++ rides the env delta");
     }
 
     #[test]
@@ -1459,8 +1491,10 @@ mod tests {
         let (matched, _, sand) = run(&mut d, &mut rng);
         assert!(!matched, "268 is a FIRST-ladder arm");
         assert_eq!(sand, 1, "SandStormCount++");
-        // velocity *= 1.0050251 then the sine overwrites vy.
-        assert_eq!(d.velocity.x, 2.0 * 1.0050251);
+        // velocity *= 1.0050251, the sine overwrites vy, then the GENERIC
+        // air drag (`:2071-2073`, the `else if (type != 304)` — 268 is not
+        // exempt) takes vx ×0.99.
+        assert_eq!(d.velocity.x, 2.0 * 1.0050251 * 0.99);
         assert_eq!(d.velocity.y, (80.0f32 * 0.0043982295).sin() * 2.0 + 3.0);
         // 268 is exempt from the rotation rebuild (`:2079`).
         assert_eq!(d.rotation, 0.0);
@@ -1471,6 +1505,7 @@ mod tests {
         let light = |_: i32, _: i32| Color::WHITE;
         let mut spawns = Vec::new();
         let mut sand2 = 0;
+        let mut snow = 0;
         let mut d = dust(268, 1.0);
         d.fade_in = 0.0;
         let mut e = DustPhysicsEnv {
@@ -1485,6 +1520,7 @@ mod tests {
             light_color: &light,
             spawns: &mut spawns,
             sand_storm_count: &mut sand2,
+            snow_dust: &mut snow,
         };
         type_chain(&mut d, &mut rng, &mut e);
         // +0.01 - 0.05 (no visuals) - 0.01 (burn-out) = -0.05.
@@ -1501,7 +1537,8 @@ mod tests {
         run(&mut d, &mut rng);
         let sine = (80.0f32 * 0.0043982295).sin() * 2.0;
         assert_eq!(d.velocity.y, (sine - 3.0) / 20.0);
-        assert_eq!(d.velocity.x, 2.0 * 1.0050251);
+        // The generic `:2073` drag applies to 270 too (not 41/44/304).
+        assert_eq!(d.velocity.x, 2.0 * 1.0050251 * 0.99);
         // 271 (`:1781`): (vy*1.0050251 - 4) / 6.
         let mut d = dust(271, 1.0);
         d.velocity = Vec2::new(2.0, 9.0);
@@ -1567,6 +1604,7 @@ mod tests {
         let light = |_: i32, _: i32| Color::WHITE;
         let mut spawns = Vec::new();
         let mut sand = 0;
+        let mut snow = 0;
         // 34 wet (`:1959-1986`): Next(2) then Next(-10,10), vx clamp ±0.25.
         let mut d = dust(34, 1.0);
         d.velocity = Vec2::new(0.0, 0.0);
@@ -1584,6 +1622,7 @@ mod tests {
             light_color: &light,
             spawns: &mut spawns,
             sand_storm_count: &mut sand,
+            snow_dust: &mut snow,
         };
         type_chain(&mut d, &mut rng, &mut e);
         assert_eq!(rng.calls, vec!["max2=1", "rng-10..10=100"]);
@@ -1608,6 +1647,7 @@ mod tests {
             light_color: &light,
             spawns: &mut spawns,
             sand_storm_count: &mut sand,
+            snow_dust: &mut snow,
         };
         type_chain(&mut d, &mut rng, &mut e);
         assert_eq!(d.scale, 0.0);
@@ -1670,6 +1710,7 @@ mod tests {
         let light = |_: i32, _: i32| Color::WHITE;
         let mut spawns = Vec::new();
         let mut sand = 0;
+        let mut snow = 0;
         // fadeIn = 1 → num78 = 0 → the player center (`:2091`).
         let mut d = dust(235, 1.0);
         d.fade_in = 1.0;
@@ -1688,6 +1729,7 @@ mod tests {
             light_color: &light,
             spawns: &mut spawns,
             sand_storm_count: &mut sand,
+            snow_dust: &mut snow,
         };
         type_chain(&mut d, &mut rng, &mut e);
         // The FIRST-ladder 235 arm (`:820`) runs scale -= 0.01 → 0.99, then
@@ -1756,6 +1798,7 @@ mod tests {
         let light = |_: i32, _: i32| Color::WHITE;
         let mut spawns = Vec::new();
         let mut sand = 0;
+        let mut snow = 0;
         let mut rng = UnifiedRandom::new(7);
         // 278 gravity over the solid tile (5,5) = px (80,80) (`:2197`).
         let mut d = dust(278, 1.0);
@@ -1775,6 +1818,7 @@ mod tests {
             light_color: &light,
             spawns: &mut spawns,
             sand_storm_count: &mut sand,
+            snow_dust: &mut snow,
         };
         let matched = type_chain(&mut d, &mut rng, &mut e);
         assert!(matched);
@@ -1790,6 +1834,7 @@ mod tests {
         let wet = |_: Vec2, _: f32, _: f32| false;
         let mut spawns = Vec::new();
         let mut sand = 0;
+        let mut snow = 0;
         let mut rng = UnifiedRandom::new(7);
         // Black light + black dust colour → num48/49/50 = 0 → kill (`:1435`).
         let dark = |_: i32, _: i32| Color::new(0, 0, 0, 255);
@@ -1808,6 +1853,7 @@ mod tests {
             light_color: &dark,
             spawns: &mut spawns,
             sand_storm_count: &mut sand,
+            snow_dust: &mut snow,
         };
         type_chain(&mut d, &mut rng, &mut e);
         assert!(!d.active, "the full-dark 43 dies");
@@ -1828,6 +1874,7 @@ mod tests {
             light_color: &bright,
             spawns: &mut spawns,
             sand_storm_count: &mut sand,
+            snow_dust: &mut snow,
         };
         type_chain(&mut d, &mut rng, &mut e);
         assert!(d.active);
@@ -1994,8 +2041,10 @@ mod tests {
     // ---- the full-pool integration: pre_move + move + type_chain + tail ----
 
     /// Drive the generic loop with the physics hook, mirroring the wiring:
-    /// `pre_move` before the move, `type_chain` as the hook, the skeleton's
-    /// gravity tail when the hook returns false.
+    /// the skeleton runs `pre_move` + the canonical inline 35 increment
+    /// before the move (`:468-476`, W4-d50 wiring — research/69 §4), the
+    /// hook is `type_chain`, the skeleton's gravity tail when it returns
+    /// false, and the sand/snow deltas land after the pass.
     fn tick_physics(pool: &mut DustPool, rng: &mut UnifiedRandom, ctx: &UpdateCtx) {
         let w = empty_world();
         let solid = |_: Vec2, _: f32, _: f32| false;
@@ -2003,18 +2052,8 @@ mod tests {
         let light = |_: i32, _: i32| Color::WHITE;
         let mut spawns = Vec::new();
         let mut sand = 0;
-        // pre_move (`:468-476`) runs BEFORE the skeleton's move (`:477`); the
-        // skeleton owns the move and the kills, the hook is type_chain.
-        for i in 0..crate::particles::DUST_SENTINEL {
-            if pool.slot(i).active {
-                let mut lava = pool.lava_bubbles;
-                let mut d = *pool.slot(i);
-                pre_move(&mut d, &mut lava);
-                *pool.slot_mut(i) = d;
-                pool.lava_bubbles = lava;
-            }
-        }
-        pool.update_dust(ctx, rng, |d| {
+        let mut snow = 0;
+        pool.update_dust(ctx, rng, |d, rng| {
             let mut env = DustPhysicsEnv {
                 world: &w,
                 show_sandstorm_visuals: true,
@@ -2027,10 +2066,12 @@ mod tests {
                 light_color: &light,
                 spawns: &mut spawns,
                 sand_storm_count: &mut sand,
+                snow_dust: &mut snow,
             };
             type_chain(d, rng, &mut env)
         });
         pool.sand_storm_count += sand;
+        pool.snow_dust = snow;
         // Drain the child spawns (the census's NewDust requests).
         let sc = SpawnCtx {
             game_menu: false,
