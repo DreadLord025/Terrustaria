@@ -161,6 +161,9 @@
 //! | 682-684 | `:86307-86309` | the 608/609 Grebe death (3 gores 1154/1155/1156) |
 //! | 685-690 | `:86260-86268` | the 362-365 Duck family death (3 gores each, per-type) |
 //! | 691-694 | `:86326-86329` | the 348/349 Nutcracker death: the first four gores (528-531) |
+//! | 695 | `:86330` | the 348/349 Nutcracker death: the 532 tail |
+//! | 696-700 | `:86346-86350` | the 351 Krampus death (5 gores 538-542) |
+//! | 701-704 | `:86366-86369` | the 350 death (4 gores 533-536) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -4333,8 +4336,7 @@ fn duck_family_death(
 
 /// The 348/349 Nutcracker death (`NPC.cs:86322-86330`, sites 691-695): the
 /// 10-dust type-5 burst, then the 5 gores 528/529/530/531/532 at position.
-/// This commit ports the first four gores (sites 691-694); the 532 tail
-/// lands with the next batch. Scale defaults to 1.
+/// Scale defaults to 1.
 fn nutcracker_death(
     npc: &Npc,
     dust: &mut DustPool,
@@ -4357,6 +4359,62 @@ fn nutcracker_death(
     gore.new_gore(rng, world, pos, vel, 529, 1.0); // :86327
     gore.new_gore(rng, world, pos, vel, 530, 1.0); // :86328
     gore.new_gore(rng, world, pos, vel, 531, 1.0); // :86329
+    gore.new_gore(rng, world, pos, vel, 532, 1.0); // :86330
+}
+
+/// The 351 Krampus death (`NPC.cs:86342-86350`, sites 696-700): the
+/// 10-dust type-5 burst, then the 5 gores 538/539/540/541/542 at position.
+/// Scale defaults to 1.
+fn krampus_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 538, 1.0); // :86346
+    gore.new_gore(rng, world, pos, vel, 539, 1.0); // :86347
+    gore.new_gore(rng, world, pos, vel, 540, 1.0); // :86348
+    gore.new_gore(rng, world, pos, vel, 541, 1.0); // :86349
+    gore.new_gore(rng, world, pos, vel, 542, 1.0); // :86350
+}
+
+/// The 350 ElfArcher death (`NPC.cs:86362-86369`, sites 701-704): the
+/// 10-dust type-5 burst, then the 4 gores 533/534/535/536 at position.
+/// Scale defaults to 1.
+fn elf_archer_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 533, 1.0); // :86366
+    gore.new_gore(rng, world, pos, vel, 534, 1.0); // :86367
+    gore.new_gore(rng, world, pos, vel, 535, 1.0); // :86368
+    gore.new_gore(rng, world, pos, vel, 536, 1.0); // :86369
 }
 
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
@@ -4879,10 +4937,17 @@ pub fn hit_effect_c(
     if (362..=365).contains(&npc_type) && npc.hp <= 0 {
         duck_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:86312-86331` — the 348/349 Nutcracker arm (sites 691-694 here; the
-    // 532 tail lands with the next batch).
+    // `:86312-86331` — the 348/349 Nutcracker arm (sites 691-695, all five).
     if (npc_type == 348 || npc_type == 349) && npc.hp <= 0 {
         nutcracker_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86332-86351` — the 351 Krampus arm (sites 696-700).
+    if npc_type == 351 && npc.hp <= 0 {
+        krampus_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86352-86370` — the 350 ElfArcher arm (sites 701-704).
+    if npc_type == 350 && npc.hp <= 0 {
+        elf_archer_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -7720,18 +7785,44 @@ mod tests {
         }
     }
 
-    /// `NPC.cs:86326-86329` — the Nutcracker death's first four gores:
-    /// 528/529/530/531.
+    /// `NPC.cs:86326-86330` — the Nutcracker death: the 5 gores
+    /// 528/529/530/531/532.
     #[test]
-    fn w4_f10_the_nutcracker_death_spawns_the_first_four_gores() {
+    fn w4_f10_the_nutcracker_death_spawns_the_five_gores() {
         let w = air();
         let n = boss(100.0, 100.0, 40.0, 50.0);
         let mut gore = GorePool::new();
         let mut dust = DustPool::new();
         let mut rng = UnifiedRandom::new(659);
         nutcracker_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![528, 529, 530, 531, 532]);
+    }
+
+    /// `NPC.cs:86346-86350` — the Krampus death: the 5 gores 538-542.
+    #[test]
+    fn w4_f10_the_krampus_death_spawns_the_five_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 50.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(661);
+        krampus_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![538, 539, 540, 541, 542]);
+    }
+
+    /// `NPC.cs:86366-86369` — the ElfArcher death: the 4 gores 533-536.
+    #[test]
+    fn w4_f10_the_elf_archer_death_spawns_the_four_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 50.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(673);
+        elf_archer_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
         let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
-        assert_eq!(types, vec![528, 529, 530, 531]);
+        assert_eq!(types, vec![533, 534, 535, 536]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
