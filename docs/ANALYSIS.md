@@ -39536,3 +39536,15 @@ glow-floor arm gains its `anchors.txt` canary row
 (`tile_light/scanner.rs | 238 =>`). Doc-only commit — no behaviour change,
 no new code; the three pre-existing witnesses stand as the phase-3
 verification (WRITTEN, NOT RUN, code-only mode).
+
+Final-phase seal (2026-11-22, code-only): the three final-phase commits
+(`e6c2dcd0d` keep-one prep, `856a57263` harvest/summon, `325034628` glow
+census) were re-verified against the tree — every cited Rust symbol
+exists at its cited line (`check_jungle_plant`, `BulbSummonEvent`/
+`bulb_summons`, `bulb_summon_plantera`, `spawn_on_player_tile`/
+`stamp_boss_spawn`, the `boot_statics` jungle bits, the scanner 238
+floor, the animator + row metric, the 10+3 `w4_g84_*` witnesses, the
+anchors canary row). Verdict: the FINAL phase is CLOSED — no owed items
+on this branch; the remaining work is merger-owned (research/137 §4, the
+§8.3 split) or other-lane-owned (d56/d57/d60, reverse-vines 549 = g31's
+drain). The full receipt: research/137 §5.

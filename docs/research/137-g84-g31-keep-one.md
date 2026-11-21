@@ -143,3 +143,29 @@ anchor (:672-676), the per-cell `_rand.Next(4)` (:721) and the
 6. `bulb_sway` (cfg(test)) + the `sunflower_sway` tests keep their maths
    pins; the anchors.txt rows :899-901 re-point at the drain bodies when the
    arms drop (never delete the rows to silence the canary — re-point).
+
+## 5. Final-phase verification receipt (2026-11-22, code-only)
+
+The three final phases are CLOSED on this branch and the last-3-commit
+claims were re-verified against the tree at tip `325034628` by direct
+symbol check: phase 1 (`e6c2dcd0d`, doc-only) — this doc + the INDEX row
+137 + the §4 merger checklist stand as published; phase 2 (`856a57263`) —
+`kill.rs:2305 fn check_jungle_plant` + `BulbSummonEvent :43` /
+`TileKill.bulb_summons :179`, `editing.rs:5561 bulb_summon_plantera`,
+`spawner.rs:799 spawn_on_player_tile` + `:857 stamp_boss_spawn`, the
+`boot_statics` jungle-plant bits (`pipeline.rs:2827-2829`) and all 10
+`w4_g84_*` witness fns exist exactly as the message claims; phase 3
+(`325034628`, doc-only ALREADY-LANDED) — `scanner.rs:945-953` (the 238
+accumulated R/B floor at 0.5, G untouched), `drawdata_anim.rs:303`
+(`step_gt_ge(238, 20, 4)`), `drawdata.rs:744-747` (`top = 2`,
+`add_fr_y = tile_frame * 36`), the both-engine seeds
+(`lighting/mod.rs:531` + `legacy.rs:1260`), the 3 witnesses
+(`scanner.rs:1262` / `drawdata_anim.rs:640` / `drawdata.rs:1655`) and the
+`anchors.txt` canary row (`scanner.rs | 238 => {`) all verified present.
+Nothing owed on THIS branch: the §4 checklist above is merger-owned (the
+UNION-CONTRACT §8.3 split), the d60 sparkle / d56 vision / d57 icon lanes
+are g31/other-lane-owned per §3, and the reverse-vines 549 gap is g31's
+`drain_reverse_vines` (first port there, research/09 row 12) — dropping
+the inline arms here would regress to static-generic with no drain wired
+(the phase-1 verdict). No builds/tests run (code-only mode); the
+witnesses remain WRITTEN NOT RUN.
