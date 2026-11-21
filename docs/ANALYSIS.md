@@ -39265,7 +39265,9 @@ Deliberate folds (documented):
   the core runs). `fighter_walker_kind` extended to the newly claimed
   kinds; none sits in the moan type lists, so the emitter stays draw-free.
 - The ambient moans (`:57338-57367`) ride the sim's post-AI emitter on the
-  UpdateNPCs stream — the core draws ZERO rand for the claimed set.
+  UpdateNPCs stream — the core draws ZERO rand for the claimed set OUTSIDE
+  a graveyard; the W4-g4 reconcile (below) threads the ONE conditional
+  bash draw inside one.
 - The zombie family keeps its byte-identical `update_zombie` fold; the
   frost siblings 338-352 keep `npc_ai_frost_mob`; the shooters and the
   martian head-arm kinds (386 turret-spawn / 389 zap / 383 bubble / 520
@@ -39286,6 +39288,116 @@ Deliberate folds (documented):
 Verification: code-only — every phase re-read against the cited C# windows;
 the seam signatures checked by read/grep. The witness tests
 (`npc_ai_style3.rs`) are WRITTEN, NOT RUN — no cargo/tests invoked.
+
+## W4-d22r — the G4 fighter reconcile (code-only)
+
+The g4 lane (`task/W4-g4-npc-style3-fighter`, tip `a9369ec3` local /
+`6dbed20d` origin at probe) landed P1-P6 + the residual P9 on the
+wave-3-shaped arms while this branch's style-3 core was in flight. The
+reconcile folds the keep-both contract (g4's `research/91` +
+`91-addendum-d22r-fold-list.md`) into THIS branch's canonical core:
+
+1. **The graveyard bash gate (P5 `743d3a02`) — signature UNION.** Both
+   scan entries take the caller's `UpdateNPCs` stream:
+   `fighter_obstacle_scan(npc, world, rng)` (the zombie fold, g4b's
+   shape) and `fighter_obstacle_scan_g(npc, world, rng, flag8, hop_flag,
+   num57, player_center)` (the axis generalisation, d22's folds). The
+   `flag25 = false` stand-in is replaced by
+   `npc.target_zone_graveyard && rng.next_max(60) == 0` (`NPC.cs:59997`)
+   in the shared body — ONE line serves both entries. The
+   `Npc::target_zone_graveyard` pre-stamp field + the sim pre-pass (the
+   wind convention, every slot from `scene_metrics.zone_graveyard`) +
+   the `fighters_not_discouraged` pre-stamp read + `update_zombie`'s
+   `&& !self.target_zone_graveyard` chain term (`:60302`) all land;
+   `fighter_core_step` threads `rng` from the axis dispatch and inherits
+   the chain term through `fighters_not_discouraged` (no local re-fold).
+   Outside a graveyard the `&&` short-circuits — the claimed set stays
+   draw-free (the legacy census); inside, one `Next(60)` per 60-tick
+   bash, ahead of the sim-tail moan (the S1-E-21e position remainder
+   extended by one conditional draw). Witnesses: the four P5 pins +
+   `w4_d22_the_axis_scan_g_carries_the_same_graveyard_gate` +
+   `w4_d22_the_core_threads_the_graveyard_bash_draw` (written not run).
+2. **The tall-gate bash (P4 `53063dd1`).** `tr_core::edit::shift_tall_gate`
+   (`WorldGen.cs:51723-51775`) ports verbatim; the drain's gate-388 arm
+   shifts to 389 with the `EmptyTile(ignoreTiles)` occupancy gate, the
+   refusal `ai[3] = num57` (`:60077`) and the `PlaySound(8)` cue on
+   UpdateNPCs. d22's GoblinPeon smash arm (`:60049`) stays — a distinct
+   mechanic (the Peon is not in flag24, accumulates on a normal night
+   and SMASHES). The S1-D-3z unported stand-in is retired.
+3. **The confused arms (P3 `c49ff03db` + P6 `1419f7d1`).** The shooter
+   ai1/ai2 reset (`:59197`), the rifleman's four arms (`:58470`/`:58485`
+   mirror/`:58566` gate/`:58576` timer), the engineer/zapper `ai[2]=-60`
+   dispatch resets (`:58986`/`:59048`) and the generic walker/ladder
+   buff-31 facing flip (`:77772-77775`) all land. The axis core needs NO
+   confused hunk — its `target_closest` already carries the flip (one
+   flip only; the P6 arms serve the non-claimed generic riders).
+4. **The banner-buff strength lane (P1 `f384797c4`).**
+   `Player.npc_banner_buff` (the per-tick scene snapshot,
+   `Player.cs:44197`), `banner_buff_for_npc` (`GetBannerBuffEffect`
+   `:20478-20492`), the `Auras.banner` → MonsterBanner 147 grant
+   (`:25552`), the melee (`:44303`, pre-crit/DamageVar), contact
+   (`:31388`, post-DamageVar), projectile PVE (`:13353`, post-DamageVar
+   pre-strike) and hostile EVP (`:14832`) arms, the pool's
+   `set_npc_banner_buff` snapshot + the hostile-shot drain's
+   `banner_id_to_respond_to` stamp (`FindBannerToAssociateTo`
+   `:11104-11117`). All RNG-free (the differential witnesses pin the
+   stream equality).
+5. **The summoner phase writes (P2 `3bb819a37`).** The 471 flight kb0/
+   def28, ground kb0.35/def26 + localAI[3] zero, pose kb0/def36
+   (`:56495`/`:56523`/`:56531`) land on `update_goblin_summoner`.
+6. **The residual P9 (`b85ff57de`) — the immunity census.**
+   `debuff_immune_ids` no longer folds whole families to `&[]`:
+   Skeleton/UndeadMiner [20], the frost trio [20,44,324], GoblinSummoner
+   [31,153], PirateCaptain [31], the lunar [31] kinds + Corite
+   [20,24,31,323], the DD2 walker roster [31] (Betsy [24,31,323],
+   skeletons [20,31]); `whip_immune` gains BlazingWheel + DD2LanePortal.
+   The P3/P6 witnesses repoint to the null-row kinds (RayGunner 382 /
+   VortexSoldier 429 — the BrainScrambler 381 / VortexHeadcrab 428 adds
+   are rejected). The axis core's confused flip reads the buff engine,
+   so the immune kinds correctly never flip.
+7. **The blood-moon census correction (`9bed77313`).** The
+   DOOR_BASH_TYPES note had the flag24 distinction INVERTED: the flag24
+   zombie family resets every bash on a normal night and only
+   accumulates on a blood moon (or a graveyard roll); the non-flag24
+   Blood Zombie 489 accumulates on EVERY night. The bash code was
+   already faithful — only the comments + the new
+   `w4_g4_the_blood_zombie_opens_doors_on_a_normal_night` witness.
+
+**The 22-walker axis vs the g8/g9/g10 kind-wire lanes (item 3):** the
+claims compose. g8 (tip `82c93cec`) wires the 34 UNWIRED-machine kinds
+≤230 (Vulture 61 … FlyingSnake 226 + Squid/Harpy/RedDevil) — none is a
+plain-walker claim; its two style-3 rows (WallCreeper 164, Nymph 196)
+keep `update_skeleton` kind arms (the axis `claims` gate does not name
+them, so the dispatch falls through — no double-claim). g9 (tip
+`5d08fdf2`) claims ten kind-gated rows (26/39/45/48/95/96/97) on the
+SAME landed machines — none overlaps the 22. g10 is at the wave-3 base
+(no commits). The one shared file region is `npc.rs`'s kind match: the
+g8/g9 arms are `unreachable!` markers for axis-claimed styles, d22's
+markers name style 3 — disjoint kind sets, the merge keeps both.
+
+**The styles 3-6 band FINAL census (item 4):** the C# `SetDefaults`
+`aiStyle = 3` roster is 191 types; 68 have port kinds. Every one is
+routed: the 22 plain walkers on the axis core, the 17 zombie variants
+on `update_zombie`, the shooters (111/214/215/216/350/381/382/411/424/
+426/520 + the pirate trio) on their machines, the frost siblings
+(338-340/342/343/348-351) on `npc_ai_frost_mob`/`update_skeleton`, the
+martian head-arm kinds (383/386/389) on their fns + the P3 resets, the
+pillar mobs (409/415/419/425/427/428/429/518) on their machines, the
+summoner 471 on its phase machine. NO C# AI_003 arm is missing for a
+ported kind: the banner-carrier question resolves to the 391 Scutlix
+(the carrier group's params 5/0.25/0.7 ride the ladder; the old invented
+50-px stop retired — the C# stop belongs to the 430-436/494/495 charge
+family, no port kinds) and the gnome 624's statue transform (no port
+kind); the goblin-peasant variants are the invasion four (26/27/28/111 —
+all routed, the Peon's smash drain live) — the C# has no "peasant" type.
+The 123 unported style-3 types (the mummies 31/294-296, the torch zombies
+590/591, the gnomes 624/631, the DD2-adjacent 494-506, …) are kind-roster
+gaps (the d34-d43 lanes), not AI-arm gaps. Styles 4/5/6 landed their
+census fixes in `c1d26278`/`204e0651`/`b24977d9` (this branch).
+
+Verification: code-only — the folds re-read against the cited C# windows
+and the g4 diffs; brace-balance delta-checked per file; the witnesses
+WRITTEN, NOT RUN.
 ## W4-d22 — the aiStyle-4 EoC RNG census + fix (code-only)
 
 The Eye of Cthulhu (`NPC.cs:19960-20801`) rode the kind-match arm
