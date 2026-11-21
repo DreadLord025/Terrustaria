@@ -1,10 +1,28 @@
-# 240 — NPC dust lane FINAL: keep-one confirmation + worm-seam census + family declaration (W4-f4, 2026-11-21)
+# 283 — NPC dust lane FINAL (SEALED): keep-one confirmation + worm-seam census + family declaration (W4-f4, 2026-11-21)
 
-> W4-f4 retire round, code-only. Number **240** per the d54 collision
-> registry (`150-research-number-registry.md`: the free block 151–236 is
-> fully assigned, 237+ free for future lanes; 237 taken by e23/g48,
-> 238 by c8/d42/g61, 239 by d42 at the fetched tips — re-scanned
-> 2026-11-21, all 355 `task/W4-*` tips). This doc closes the lane's
+> **SEALED.** W4-f4 retire round, code-only. Renumbered **240 → 283**
+> per the d54 collision registry (`150-research-number-registry.md`
+> round-2 §6.1 key 240 + §6.3 cutoff note): the doc was first pushed on
+> 240 at 15:00:53 (`e7ea8b24b`), AFTER g58's `240-happiness-final.md`
+> (12:16:37, `cdfe3d108` — the registry-confirmed winner) and g63's
+> `240-proj-trail-dust-family-final.md` (14:54:20, `1c52d5ee3`, a
+> post-sweep push f4 also loses to). f4 is the LAST of the three 240
+> claimants; the round-2 assignment block ends at 280 and the registry
+> directs post-cutoff losers to "take the next number ≥281 … after a
+> fresh all-tip sweep". Fresh sweep this round: `git fetch --prune` of
+> all **360** `task/W4-*` tips, `git ls-tree docs/research/` per tip
+> (**21 176 rows**), leading-number grouping — keys ≥237 present at
+> tips: 237–246, 264, 266, 269, 271, 273, 279, 280 (the round-3 cascade
+> had not assigned f4 a number in the fetched
+> `origin/task/W4-d54-dust-sites-world` research/150 — tip `72226e500`,
+> round 2). The first pick **281** was raced mid-round: a pre-push
+> re-fetch caught d30's `281-band-65-72-retire.md` (`ec89521fb`
+> 15:42:58, executed push beats the unpublished pick) and 282 taken
+> TWICE (d125 `282-d125-retire-final.md` + g48
+> `282-39-item-ownership-seed.md`) — f4 takes **283**, verified
+> zero-claimant at the final pre-push sweep (283–299 all free).
+> Content otherwise unchanged; the §1/§5 re-verifications below were
+> re-run at the current sibling tips. This doc closes the lane's
 > cross-lane obligations: the e2 keep-one register, the worm-seam
 > census, the d31 deferral closure, and the NPC-dust family declaration
 > against the d54 bible (`131-dust-master-status.md` §8.2).
@@ -32,6 +50,27 @@ folded in* (this round, `npc.rs`):
 | 41367 fan velocity | `UnitY.RotatedBy(a) * num7 * (nf*1.6f+1.6f)` (`NPC.cs:41370`) | `rot * (num7*(nf*1.6+1.6))` — scalar pre-folded | `(rot*num7)*(nf*1.6+1.6)` | **e2 form adopted** |
 | 41396 inner velocity | `-Vector2.UnitY * num7 * (nf*0.9f+1.6f)` (`:41399`) | `(0, -(num7*(nf*0.9+1.6)))` | `(0,-1)*num7*(nf*0.9+1.6)` | **e2 form adopted** |
 | 42222/42873 fan velocity | `Normalize(c-p) * 3.5f * (10f-num9*2f) / 10f` (`:42223`/`:42874`) | `n * (3.5*(10-2*num9)/10)` — scalar pre-folded | `((n*3.5)*(10-num9*2))/10` | **e2 form adopted** |
+
+**Re-verified at the SEAL round** against the CURRENT sibling tips:
+e2 tip `bfc081305` (its research/64 §5 register matches the table above
+verbatim; `6e304b960` 05:32:48 is the multiply-order fix cited), and the
+adopted forms are live in `npc.rs` (the storm fan/inner at the `:41336`
+window, the head/eye fans `n * 3.5 * (10.0 - num9*2.0) / 10.0` — the
+left-to-right chain). The C# rows re-read direct-path at
+`decompiled/Terraria/NPC.cs:41355-41406`/`:42204-42228` and
+`Utils.cs:1807-1810` (`(int)x >> 4`, both probes).
+
+**e2-side DROP list (the merger's other half):** with f4's bodies
+confirmed as the keep-one survivors, the e2-side duplicate emitters at
+these sites DROP at the merge — the KingSlime trio's inline
+`update_king_slime` dust arms (`1cbbcb95d`), the EterniaCrystal trio
+(`31c91d90`), and the MoonLord storm/fan/eye bodies (`31c91d90` +
+`6e304b960`, whose multiply ORDER f4 already absorbed). What e2 KEEPS
+as supplements (per its §5): the named `king_slime_teleport_ring`/
+`king_slime_body_drip` emitters + the grow-ring machine witness, the
+EterniaCrystal machine witnesses, and the storm/smoke/fan witnesses
+re-mirrored onto f4's bodies. f4 drops NOTHING on these sites — the
+bodies are its own.
 
 f32 multiplication is not associative — the pre-folded scalars round
 differently from the C#'s left-to-right evaluation. The mirrors
@@ -138,6 +177,17 @@ its own — no d31 file touched. The `getGoodWorld` 1021 fan
 (`:42267-42276`) stays d31's documented deferral (a projectile spawn,
 not dust; needs the runtime seed flag).
 
+**Re-read at the SEAL round**: d31 tip `0487ea324` ANALYSIS — the
+"Verdict per block" row ("Drama dust storm `:41336-41403` … the
+dust-GATED fan draws stay deferred with the dust engine") and the
+"Deferred" paragraph (the drama fan `:41365-41373` + inner
+`:41396-41401`, the head's 229 fan `:42221`, the eye's dust pairs) are
+UNCHANGED at the tip — they are d31-lane reads, and this §3 is the
+dust-lane closure receipt for them (the merger may annotate d31's rows
+"closed by f4 research/283"; f4 does not edit d31's branch). d31's
+9+3·inner unconditional draw census and f4's storm port consume the
+SAME draws in the SAME order — the two ledgers agree.
+
 ## 4. npc-dust-family declaration (the d54 bible §8.2 row, f4 slice)
 
 The bible's NPC.cs family: **927 NewDust* + 5 CloneDust = 932** (836 ND
@@ -155,13 +205,32 @@ contribution, at tip `b62d6c2a3` + this round:
 | b7 (this round) | leech entry 50976 | 1 |
 | **total** | | **26 sites** |
 
-Plus wave E's 17 gore sites (research/211, renumbered from 71 this
-round per registry-150 §1) — gore, not dust, excluded from the count.
-The f4 keep-one survivors per §1: KingSlime trio + EterniaCrystal
-trio + the five MoonLord windows (with the e2-b5 multiply order). The
-NPC family's remaining unclaimed remainder is the bible's own: the
-buff-VFX producers (>90322) ride their buff lanes (c16-c18/d71-d74),
-the 2 HitEffect CloneDust ride g62's ledger — **nothing owed by f4**.
+**NPC-dust-family bible (the b1–b7 seal):** the table above is the
+COMPLETE f4 slice — batches 1–7, 26 sites, every row cited to its
+landing commit and re-verifiable at this branch's tip. Cross-checks:
+e2's research/64 §2 AI-window table lists every f4 row with the same
+site ids + commits (tip `bfc081305`); the d54 bible §8.2's NPC 927+5
+family count treats these as claimed; the wave-E gore doc
+(research/211) is disjoint (gore, not dust).
+
+Plus wave E's 17 gore sites (research/211, renumbered 71 → 211 per
+registry-150 §1 — refs re-verified at this SEAL round: the ONLY
+carriers are `npc_hit_effect_e.rs` header comments ×2 and
+`docs/ANALYSIS.md`, all pointing at 211; zero stale `71-npc-gore-wave`
+refs anywhere on the branch). The f4 keep-one survivors per §1:
+KingSlime trio + EterniaCrystal trio + the five MoonLord windows (with
+the e2-b5 multiply order). The NPC family's remaining unclaimed
+remainder is the bible's own: the buff-VFX producers (>90322) ride
+their buff lanes (c16-c18/d71-d74), the 2 HitEffect CloneDust ride
+g62's ledger — **nothing owed by f4**.
+
+**SEAL declaration:** with this doc's four closures confirmed
+(§1 keep-one + multiply-order adoption, §2 worm-seam ZERO unclaimed
+live sites, §3 d31 deferral closed, §4 the 26-site family slice), the
+W4-f4 dust lane is **SEALED** — no further dust batches are owed, no
+open claims remain, and the merger takes this branch's tip as the
+lane's FINAL state. Any later f4 push is doc-integrity only (this
+renumber round included).
 
 ## 5. Verification record
 
@@ -170,6 +239,46 @@ invoked** (the lane directive). Witnesses WRITTEN NOT RUN. The C#
 re-reads cited above are direct-path reads of
 `decompiled/Terraria/NPC.cs`/`Utils.cs` (no junction recursion). The
 e2/d31/d54 comparisons are `git show <tip>:<path>` reads at the exact
-tips named. Registry scan: `git ls-tree` over all 355 remote
-`task/W4-*` tips, leading-number extraction, 237-239 confirmed taken,
-240 free.
+tips named.
+
+**Original retire-round scan (240 pick, SUPERSEDED):** `git ls-tree`
+over the then-355 remote `task/W4-*` tips found 237–239 taken and 240
+free — but g58's 143→240 self-rename (`cdfe3d108` 12:16:37) was already
+at its tip under a different FILENAME the scan's "240 free" check
+missed, and the registry round 2 (published 14:47:50, after that scan)
+adjudicated 240 to g58. This SEAL round's fresh sweep (360 tips,
+21 176 `docs/research/` rows, fetch `--prune`): 240 has THREE claimants
+(g58 12:16:37 winner / g63 14:54:20 / f4 15:00:53 last) — f4 renames
+240 → **283** (the fetched d54 research/150 at `72226e500` carries no
+f4 assignment, so the §6.3 self-adjudication rule applies: first free
+≥281 after a fresh sweep). The first pick 281 was raced: the pre-push
+re-fetch caught d30's `281-band-65-72-retire.md` (`ec89521fb`
+15:42:58 — an executed push beats the unpublished pick) and 282 taken
+twice (d125 retire-final + g48 item-ownership-seed); **283 verified
+zero-claimant** at the final pre-push sweep (283–299 free). 243
+(g58+d50) and 244 (d53+f39+g48+g86) are live post-cutoff collisions
+for OTHER lanes — not f4's to adjudicate; noted for the round-3
+cascade.
+
+**SEAL-round re-verifications (this commit):**
+- 71→211 rename refs: `git grep -n 71-npc-gore-wave-e-claims HEAD` →
+  EMPTY; `211-npc-gore-wave-e-claims` carried only by
+  `npc_hit_effect_e.rs:5`/`:57` + `docs/ANALYSIS.md:39255` — all
+  correct.
+- e2-b5 multiply order live in `npc.rs`: storm fan
+  `Vec2::new(-sn, cs) * num7 * (nf*1.6+1.6)`, inner
+  `Vec2::new(0.0,-1.0) * num7 * (nf*0.9+1.6)`, head/eye fans
+  `n * 3.5 * (10.0 - num9*2.0) / 10.0`; both tile probes
+  `(x as i32) >> 4` (storm `:41346` + smoke `:41415`).
+- case-398 comment: `moon_core_open_burst` doc carries the six-burst
+  re-fire quirk (no "fires ONCE" text remains); both witnesses present
+  (`w4_f4_the_core_open_burst_refires_six_times` asserts 6 bursts).
+- leech 50976: the latch block in `world_sim/npcs.rs` spawns 20×5
+  pre-move ahead of the budget roll; the two leech ledger witnesses
+  carry the 20×6-internals oracle replay.
+- C# spot re-reads: `NPC.cs:41355-41406` (the nine draws + fan/inner
+  velocities), `:42204-42228` (the head fan's
+  `Normalize(center-vector2) * 3.5f * (10f - num9*2f) / 10f`),
+  `Utils.cs:1807-1810` (`ToTileCoordinates` = `(int)x >> 4`).
+- d31 tip `0487ea324` / e2 tip `bfc081305` / d54 tip `72226e500`
+  re-fetched and read at those exact tips (the §1/§3 receipts above).

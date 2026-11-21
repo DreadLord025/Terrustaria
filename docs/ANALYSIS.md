@@ -39269,10 +39269,14 @@ the modules are UNWIRED standalone machines; the Betsy sweep's tile
 probe + KillTile dust amounts are the caller's. 10 witnesses WRITTEN
 NOT RUN - no cargo/rustc/rustfmt/tests/dotnet/graphify invoked.
 
-## The NPC dust lane FINAL (W4-f4 retire round, 2026-11-21, code-only)
+## The NPC dust lane FINAL (W4-f4 retire round, SEALED, 2026-11-21, code-only)
 
-research/240-npc-dust-final.md (free number per registry-150; the
-wave-E doc renumbered 71 → 211, refs updated). Three closures:
+research/283-npc-dust-final.md (SEALED; renumbered 240 → 283 per
+registry-150 §6.1 — g58's 240-happiness-final 12:16:37 wins the key,
+f4's 15:00:53 push is last of three claimants; fresh 360-tip sweep,
+the interim 281 pick lost to d30's executed push and 282 is taken
+twice, 283 first-free; the wave-E doc renumbered 71 → 211, refs
+verified). Three closures:
 
 - **e2 keep-one CONFIRMED with one re-derivation**: the merger takes
   f4's KingSlime trio + EterniaCrystal trio + the five MoonLord
