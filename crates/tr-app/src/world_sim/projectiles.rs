@@ -499,6 +499,39 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             // stream, attenuation gate first. The int overload draws NO
             // `GetRandomPitch` NextFloat.
             app.audio.play_fighter_moan(29, style, x, y, rng);
+        } else if id == 3 && style == 29 {
+            // S1-E-21h d75 part 4 — the 1054 SpiderBoulder's death cue
+            // (`Projectile.cs:74865`, `PlaySound(SoundID.NPCHit29, x, y)`).
+            // d3's `boulder_kill` parks the (3, 29) tuple; the C# call is
+            // the STYLE overload (one audio-only GetRandomPitch), so the
+            // drain routes to wave C's style façade — case 3's one
+            // `Next(-10, 11)` pitch rides this stream, gate first. Other
+            // id-3 styles fall through (the façade's None — a future
+            // style's route is its own lane's follow-up).
+            app.audio.play_npc_hit_sound("NPC_Hit_29", x, y, rng);
+        } else if id == 4 {
+            // S1-E-21h d75 part 4 — the 1055 Ghoulder's death cue
+            // (`Projectile.cs:74869`, `PlaySound(SoundID.NPCDeath6, x,
+            // y)`): the style overload — case 4's one `Next(-10, 11)`
+            // pitch after the gate (the 10 playing guard is
+            // style-10-only), the GetRandomPitch NextFloat audio-only.
+            app.audio.play_npc_death_style(style, x, y, rng);
+        } else if id == 37 {
+            // S1-E-21h d75 part 4 — the 502 Meowmere star's bounce chime
+            // (`Projectile.cs:18209`, `PlaySound(37, x, y, 5 + ai[0])`):
+            // case 37's Next(57,59) slot pick + the Next(-40,41) pitch
+            // ride this stream (the int overload — no GetRandomPitch),
+            // the Style×0.05 volume scales inside the façade.
+            app.audio.play_star_chime(style, x, y, rng);
+        } else if id == 2 && style == -34 {
+            // S1-E-21h d75 part 4 — the 1106 Foxparks flame's per-life cue
+            // (`Projectile.cs:41369`, `PlaySound(SoundID.FoxparksFlame,
+            // Center)`): the −34 named-row marker routes to the NAMED
+            // (2, 34) row at volume 0.15 (`SoundID.cs:1725`) — the plain
+            // +34 tuple stays Item34's (d76's Nebula Blaze latch, volume
+            // 1.0). The by-name façade keeps the volume (the
+            // play_chillet_sound precedent).
+            app.audio.play_foxparks_flame(x, y, rng);
         } else {
             app.audio.play_proj_sound((id, style), x, y, pitch_offset, rng);
         }
@@ -923,6 +956,152 @@ mod s1_e_21h_sound_stream_tests {
                 key.name()
             );
         }
+    }
+
+    /// S1-E-21h d75 part 4 — the two new drain routes' stream contract:
+    /// the RainbowBoulder trackable `(42, 274)` (d3's hard-bounce cue,
+    /// `Projectile.cs:20104`) draws NOTHING (case 42,
+    /// `LegacySoundPlayer.cs:1376-1381`); the FoxparksFlame named-row
+    /// marker `(2, -34)` (`:41369`) draws exactly ONE case-2 default
+    /// pitch (`Next(-6, 7)`) — the same draw the plain +34 tuple makes,
+    /// only the volume differs (0.15 vs 1.0). Both fire only past the
+    /// attenuation gate. The intents are parked through a rowed carrier
+    /// (the FROST_BOLT slot at rest — its own first-tick latch pre-fired
+    /// via ai[1]; the 1047/1106 rows ride d3/d18's pushed tips).
+    #[test]
+    fn s1_e_21h_d75_p4_the_rainbow_and_foxparks_drain_routes_draw_correctly() {
+        // The trackable: muted refuses draw-free …
+        let mut app = frost_bolt_app();
+        let slot = app
+            .projectiles
+            .slots()
+            .iter()
+            .position(|p| p.active)
+            .expect("the carrier");
+        app.projectiles.slots_mut()[slot].ai[1] = 1.0;
+        app.projectiles.slots_mut()[slot].wants_sound = Some((42, 274, 32.0, 32.0, 0.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        for key in RngKey::ALL {
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} pristine under the muted gate",
+                key.name()
+            );
+        }
+        // … audible: case 42 draws nothing anywhere.
+        let mut app = frost_bolt_app();
+        app.audio.set_listener(listener(1.0));
+        let slot = app
+            .projectiles
+            .slots()
+            .iter()
+            .position(|p| p.active)
+            .expect("the carrier");
+        app.projectiles.slots_mut()[slot].ai[1] = 1.0;
+        app.projectiles.slots_mut()[slot].wants_sound = Some((42, 274, 32.0, 32.0, 0.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        for key in RngKey::ALL {
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} pristine: the trackable drain draws nothing",
+                key.name()
+            );
+        }
+        // The FoxparksFlame marker: one case-2 pitch on UpdateProjectiles.
+        let mut app = frost_bolt_app();
+        app.audio.set_listener(listener(1.0));
+        let slot = app
+            .projectiles
+            .slots()
+            .iter()
+            .position(|p| p.active)
+            .expect("the carrier");
+        app.projectiles.slots_mut()[slot].ai[1] = 1.0;
+        app.projectiles.slots_mut()[slot].wants_sound = Some((2, -34, 32.0, 32.0, 0.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        let mut witness = UnifiedRandom::new(0);
+        let _ = witness.next_range(-6, 7);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateProjectiles),
+            witness,
+            "exactly one case-2 pitch draw for the named flame row"
+        );
+        for key in RngKey::ALL {
+            if key == RngKey::UpdateProjectiles {
+                continue;
+            }
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} stayed pristine",
+                key.name()
+            );
+        }
+        // The 1054 SpiderBoulder death cue (3, 29): case 3's ONE
+        // `Next(-10, 11)` pitch draw (`LegacySoundPlayer.cs:670`), the
+        // GetRandomPitch NextFloat audio-only.
+        let mut app = frost_bolt_app();
+        app.audio.set_listener(listener(1.0));
+        let slot = app
+            .projectiles
+            .slots()
+            .iter()
+            .position(|p| p.active)
+            .expect("the carrier");
+        app.projectiles.slots_mut()[slot].ai[1] = 1.0;
+        app.projectiles.slots_mut()[slot].wants_sound = Some((3, 29, 32.0, 32.0, 0.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        let mut witness = UnifiedRandom::new(0);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateProjectiles),
+            witness,
+            "case 3: exactly one pitch draw for the NPCHit29 death cue"
+        );
+        // The 1055 Ghoulder death cue (4, 6): case 4's ONE
+        // `Next(-10, 11)` pitch draw (`:693`), no playing guard (10-only).
+        let mut app = frost_bolt_app();
+        app.audio.set_listener(listener(1.0));
+        let slot = app
+            .projectiles
+            .slots()
+            .iter()
+            .position(|p| p.active)
+            .expect("the carrier");
+        app.projectiles.slots_mut()[slot].ai[1] = 1.0;
+        app.projectiles.slots_mut()[slot].wants_sound = Some((4, 6, 32.0, 32.0, 0.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        let mut witness = UnifiedRandom::new(0);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateProjectiles),
+            witness,
+            "case 4: exactly one pitch draw for the NPCDeath6 death cue"
+        );
+        // The 502 Meowmere star chime (37, style): case 37's TWO draws —
+        // the Next(57,59) slot pick, then the Next(-40,41) pitch
+        // (`LegacySoundPlayer.cs:1328`/`:1332`).
+        let mut app = frost_bolt_app();
+        app.audio.set_listener(listener(1.0));
+        let slot = app
+            .projectiles
+            .slots()
+            .iter()
+            .position(|p| p.active)
+            .expect("the carrier");
+        app.projectiles.slots_mut()[slot].ai[1] = 1.0;
+        app.projectiles.slots_mut()[slot].wants_sound = Some((37, 6, 32.0, 32.0, 0.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        let mut witness = UnifiedRandom::new(0);
+        let _ = witness.next_range(57, 59);
+        let _ = witness.next_range(-40, 41);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateProjectiles),
+            witness,
+            "case 37: slot pick then pitch, two draws"
+        );
     }
 }
 

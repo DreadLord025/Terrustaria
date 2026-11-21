@@ -3902,6 +3902,22 @@ impl Projectile {
         }
     }
 
+    /// S1-E-21h d75 part 4 — the 465 CultistBossLightningOrb's first-tick
+    /// head (`Projectile.cs:31939-31945`, the aiStyle-88 block's own
+    /// `type == 465` branch, AHEAD of the 580's bolt body): the Item121
+    /// play at `base.position` THEN the `localAI[1] = 1` latch (the C#
+    /// statement order). The 465 row (`:5382-5390`: 80x80, aiStyle 88,
+    /// hostile, alpha 255, ignoreWater, tileCollide false) is unrowed on
+    /// every pushed tip — the gate stays inert until d9's lane lands it
+    /// (the owed-arm convention, f1's NONE-site kinds). The orb's own
+    /// alpha/life machine (`:31946-31990`) is the row-porter's half.
+    fn cultist_lightning_latch(&mut self) {
+        if self.kind == 465 && self.local_ai[1] == 0.0 {
+            self.wants_sound = Some((2, 121, self.pos.x, self.pos.y, 0.0));
+            self.local_ai[1] = 1.0;
+        }
+    }
+
     /// `AI()`'s aiStyle-88 block's VortexLightning arm
     /// (`Projectile.cs:32145-32249`) — the ritual bolt: the initial
     /// stationary wait, the 900-wrap latch, the per-step wand, the
@@ -5527,8 +5543,10 @@ impl Projectile {
         // `SoundID.Item7` at `base.position`. The 301 Stacked Discs'
         // −0.33-pitch arm has no ported row — deferred. The cue fires on
         // both flight legs while the cooldown is at 0, ahead of the state
-        // machine, exactly as the C# orders it.
-        if self.sound_delay == 0 {
+        // machine, exactly as the C# orders it. S1-E-21h d75 part 4 —
+        // the 383/phaseblade exclusions are now EXPLICIT (the owed-arm
+        // gates below serve those kinds cue-less at the head).
+        if self.sound_delay == 0 && self.kind != 383 && !is_a_phaseblade(self.kind) {
             self.sound_delay = 8 * (self.extra_updates as i32 + 1);
             self.wants_sound = Some((2, 7, self.pos.x, self.pos.y, 0.0));
         }
@@ -5661,6 +5679,31 @@ impl Projectile {
             hit_x |= self.pos.x <= 0.0 || self.pos.x + self.w >= world.width as f32 * 16.0;
             hit_y |= self.pos.y <= 0.0 || self.pos.y + self.h >= world.height as f32 * 16.0;
             if hit_x || hit_y {
+                if self.kind == 383 {
+                    // S1-E-21h d75 part 4 — the 383 Anchor's OWN arm
+                    // (`Projectile.cs:19524-19532` + `:19563-19568`):
+                    // at `ai[1] >= 10` the explosion latches
+                    // `localAI[0] = 300` and plays Item14 at
+                    // `base.position` (the HitTilesInACircle body is a
+                    // skipped effect); the return arms (`ai[0] = 1`)
+                    // but the axes do NOT reverse (the `type != 383`
+                    // exclusion at `:19564`). The row (`:4655-4663`)
+                    // is unrowed on every pushed tip — inert until d1's
+                    // lane lands it (the owed-arm convention). The
+                    // single-intent fold keeps the Item14 (the tail's
+                    // Dig guard below skips a filled slot — the
+                    // explosion cue outranks the thud, recorded).
+                    if self.ai[1] >= 10.0 {
+                        self.local_ai[0] = 300.0;
+                        self.wants_sound = Some((2, 14, self.pos.x, self.pos.y, 0.0));
+                    }
+                    self.ai[0] = 1.0;
+                    self.pos += self.vel;
+                    if self.wants_sound.is_none() {
+                        self.wants_sound = Some((0, 0, self.pos.x, self.pos.y, 0.0));
+                    }
+                    return;
+                }
                 if matches!(self.kind, 33 | LIGHT_DISC | 866) {
                     // `:19550-19560`: the 33/106/866 trio reverses only the
                     // changed axis and does NOT arm the return — the Light
@@ -7538,6 +7581,38 @@ impl Projectile {
             let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
             let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
             if hit_x || hit_y {
+                // S1-E-21h d75 part 4 — the 502 Meowmere star's OWN arm
+                // (`Projectile.cs:18206-18254`), AHEAD of the aiStyle-8
+                // arm in the C# kind-first chain: the clamp-1..5 `ai[0]`
+                // bump THEN the `PlaySound(37, x, y, 5 + ai[0])` star
+                // chime (case 37: the Next(57,59) slot pick + the
+                // Next(-40,41) pitch ride the drain), the fifth bounce
+                // steps into the wall and kills, else the blocked axes
+                // reverse from the incoming velocity. The 502 row
+                // (`:5732-5741`) is unrowed on every pushed tip — the
+                // gate stays inert until d1's lane lands it (the owed-arm
+                // convention). The hue dust ring's draws
+                // (`:18226-18237`) and the owner-gated Damage resize
+                // (`:18238-18253`) are the row-porter's half (recorded).
+                if self.kind == 502 {
+                    self.ai[0] = (self.ai[0] + 1.0).clamp(1.0, 5.0);
+                    self.wants_sound =
+                        Some((37, 5 + self.ai[0] as i32, self.pos.x, self.pos.y, 0.0));
+                    if self.ai[0] >= 5.0 {
+                        self.pos += self.vel;
+                        self.active = false;
+                        self.time_left = 0;
+                        return;
+                    }
+                    if hit_y {
+                        self.vel.y = -self.vel.y;
+                    }
+                    if hit_x {
+                        self.vel.x = -self.vel.x;
+                    }
+                    self.pos += self.vel;
+                    return;
+                }
                 // The C#'s bounce arm is `else if (this.aiStyle == 8 &&
                 // this.type != 96)` (`:19573`), so the hostile cursed flame 96
                 // falls past it to the blocked-move chain's default
@@ -7628,12 +7703,25 @@ impl Projectile {
     /// order — the `ai[1] != 0f && Next(2) != 0` early-return (`:24604-24607`)
     /// is kept (it skips the trailing dust, not the movement).
     fn ai_aqua_scepter(&mut self, world: &World, rng: &mut dyn DropRng) {
+        // S1-E-21h d75 part 4 — the 288 GoldenShowerHostile's first-tick
+        // head (`Projectile.cs:24503-24507`, at the TOP of the aiStyle-12
+        // arm, BEFORE the 280/288 shared block): the Item17 play THEN the
+        // `localAI[0] = 1` latch (the C# statement order). The 288 row
+        // (`:3772-3783`: 32x32, aiStyle 12, hostile, alpha 255, penetrate
+        // −1, extraUpdates 2, ignoreWater) is unrowed on every pushed tip
+        // — the gate stays inert until the row lands (the owed-arm
+        // convention). The kind's `ai[0] = 4` latch + the shared 0.002
+        // decay block are the row-porter's gameplay half (recorded).
+        if self.kind == 288 && self.local_ai[0] == 0.0 {
+            self.wants_sound = Some((2, 17, self.pos.x, self.pos.y, 0.0));
+            self.local_ai[0] = 1.0;
+        }
         // Gate-merge (i20+i21): ONE aiStyle-12 arm serves both families — the
         // C# `else if (this.aiStyle == 12)` (`:24501-24635`) branches on type:
         // 280 (the Golden Shower) takes the `:24508-24546` head (0.002 decay,
         // 0.075 arc, its dust draws SKIPPED per the i21 convention) and
         // returns; 22 (the Aqua Scepter) runs the body below.
-        if self.kind == GOLDEN_SHOWER {
+        if self.kind == GOLDEN_SHOWER || self.kind == 288 {
             self.ai_golden_shower(world);
             return;
         }
@@ -8772,8 +8860,11 @@ impl Projectile {
     /// `ai[0]` counts up to 3 then rests while `velocity.Y += 0.075f` arcs the
     /// stream down. The three-dust trail and the `Next(8)` sparkle roll
     /// (`:24522-24540`) are dust-only — SKIPPED with their draws (the pool's
-    /// dust convention, ANALYSIS). The 288 hostile twin's sound/`ai[0]=4`
-    /// latch is not a ported kind.
+    /// dust convention, ANALYSIS). S1-E-21h d75 part 4 — the 288 hostile
+    /// twin shares this block (`:24508`'s `type == 280 || type == 288`);
+    /// its `ai[0] = 4` write (`:24515-24517`) forces the arc from tick one.
+    /// The row is unported — the arm stays inert for 288 until it lands
+    /// (the first-tick Item17 cue rides `ai_aqua_scepter`'s head).
     fn ai_golden_shower(&mut self, world: &World) {
         // `:24510-24514`: the scale decay + the kill.
         self.scale -= 0.002;
@@ -8781,6 +8872,11 @@ impl Projectile {
             self.active = false;
             self.time_left = 0;
             return;
+        }
+        // `:24515-24517`: the 288's arc latch — every tick, before the
+        // `> 3f` gate (the hostile stream never counts).
+        if self.kind == 288 {
+            self.ai[0] = 4.0;
         }
         // `:24519-24545`: the arc — past 3 the stream falls, else it counts.
         if self.ai[0] > 3.0 {
@@ -17560,6 +17656,7 @@ impl ProjectilePool {
                             crate::projectile_ai_misc::ai_flamethrower(
                                 &mut self.slots[i],
                                 rng,
+                                i,
                             );
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
@@ -18168,9 +18265,12 @@ impl ProjectilePool {
                             }
                         }
                         88 => {
-                            // `AI()`'s aiStyle-88 block (`Projectile.cs:32145-32249`):
-                            // the Vortex ritual bolt (580) — wrap latch, tile stop,
-                            // stationary kill and the wand step.
+                            // `AI()`'s aiStyle-88 block (`Projectile.cs:31937-32249`).
+                            // S1-E-21h d75 part 4 — the 465's first-tick Item121
+                            // head (the owed-arm gate, its own method).
+                            self.slots[i].cultist_lightning_latch();
+                            // The Vortex ritual bolt (580) — wrap latch, tile stop,
+                            // stationary kill and the wand step (`:32145-32249`).
                             self.slots[i].ai_vortex_bolt(world, rng);
                         }
                         108 => {
@@ -23889,6 +23989,61 @@ mod s1_e_21h_sound_tests {
         assert_eq!(s.sound_delay, -1, "the decrement skips non-positives");
     }
 
+    /// S1-E-21h d75 part 4 — the 383 Anchor's owed explosion gate
+    /// (`Projectile.cs:19524-19532`): the whoosh head EXCLUDES the 383
+    /// (`:38868`); at `ai[1] >= 10` a blocked move latches
+    /// `localAI[0] = 300`, plays Item14 at the pre-move position and arms
+    /// the return WITHOUT reversing the axes (`:19564`'s `type != 383`);
+    /// below 10 only the tail's Dig thud fires (post-move position). The
+    /// row is unrowed — the slot is built by hand.
+    #[test]
+    fn s1_e_21h_d75_p4_the_anchor_explodes_at_ten_without_reversing() {
+        let mut w = air();
+        let i = w.index(5, 4);
+        w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut p = Projectile {
+            active: true,
+            kind: 383,
+            owner: 0,
+            pos: Vec2::new(72.0, 64.0),
+            w: 8.0,
+            h: 8.0,
+            vel: Vec2::new(8.0, 0.0),
+            tile_collide: true,
+            ai: [0.0, 10.0, 0.0, 0.0],
+            ..Default::default()
+        };
+        p.ai_boomerang(&w, None, 1.0, true);
+        assert_eq!(p.sound_delay, 0, "the whoosh head excludes the 383");
+        assert_eq!(p.local_ai[0], 300.0, "the explosion latch");
+        assert_eq!(
+            p.wants_sound,
+            Some((2, 14, 72.0, 64.0, 0.0)),
+            "the Item14 outranks the tail thud (the single-intent fold)"
+        );
+        assert_eq!(p.ai[0], 1.0, "the return arms");
+        assert_eq!(p.vel.x, 8.0, "the 383 does NOT reverse");
+        // Below the 10-tick gate: no explosion, only the tail Dig thud
+        // at the POST-move position.
+        let mut q = Projectile {
+            active: true,
+            kind: 383,
+            owner: 0,
+            pos: Vec2::new(72.0, 64.0),
+            w: 8.0,
+            h: 8.0,
+            vel: Vec2::new(8.0, 0.0),
+            tile_collide: true,
+            ai: [0.0, 5.0, 0.0, 0.0],
+            ..Default::default()
+        };
+        q.ai_boomerang(&w, None, 1.0, true);
+        assert_eq!(q.local_ai[0], 0.0, "no explosion below 10");
+        assert_eq!(q.wants_sound, Some((0, 0, 80.0, 64.0, 0.0)), "the tail thud");
+        assert_eq!(q.ai[0], 1.0);
+    }
+
     /// The bomb kill cue (`Kill_Bombs_DoUsualKillCode` `:78331`/`:78386`):
     /// the detonation latch queues `SoundID.Item14` at the PRE-resize
     /// position, once, for the kinds `explode_bomb` accepts.
@@ -24340,6 +24495,54 @@ mod s1_e_21h_sound_tests {
                 assert!(!p.active);
             }
         }
+    }
+
+    /// S1-E-21h d75 part 4 — the 502 Meowmere star's own bounce arm
+    /// (`Projectile.cs:18206-18225`): the clamp-1..5 bump THEN the
+    /// `PlaySound(37, x, y, 5 + ai[0])` chime (styles 6..10), the fifth
+    /// bounce steps into the wall and dies. The row is unrowed — the
+    /// slot is built by hand (the owed-arm convention).
+    #[test]
+    fn s1_e_21h_d75_p4_the_meowmere_star_chimes_five_bounces() {
+        let mut w = air();
+        let i = w.index(5, 4);
+        w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut p = Projectile {
+            active: true,
+            kind: 502,
+            owner: 0,
+            pos: Vec2::new(72.0, 64.0),
+            w: 8.0,
+            h: 8.0,
+            vel: Vec2::new(8.0, 0.0),
+            tile_collide: true,
+            ..Default::default()
+        };
+        for bounce in 1..=4 {
+            p.pos = Vec2::new(72.0, 64.0);
+            p.vel = Vec2::new(8.0, 0.0);
+            p.wants_sound = None;
+            p.ai_ball_of_fire(&w);
+            assert_eq!(p.ai[0], bounce as f32, "the clamp bump");
+            assert_eq!(
+                p.wants_sound,
+                Some((37, 5 + bounce, 72.0, 64.0, 0.0)),
+                "bounce {bounce}: the star chime at the pre-move position"
+            );
+            assert!(p.active, "bounce {bounce} reflects");
+            assert_eq!(p.vel.x, -8.0, "the blocked X reverses");
+        }
+        // The fifth: the cue still fires (the play precedes the kill),
+        // then the step-into-the-wall death.
+        p.pos = Vec2::new(72.0, 64.0);
+        p.vel = Vec2::new(8.0, 0.0);
+        p.wants_sound = None;
+        p.ai_ball_of_fire(&w);
+        assert_eq!(p.ai[0], 5.0);
+        assert_eq!(p.wants_sound, Some((37, 10, 72.0, 64.0, 0.0)));
+        assert!(!p.active, "the fifth bounce kills");
+        assert_eq!(p.pos.x, 80.0, "the last step into the wall");
     }
 
     /// S1-E-21h d75 — the turret's blocked-move pair (`:40249`/`:40256`):
@@ -31375,6 +31578,75 @@ mod phasmal_projectile_tests {
         p.kind = 537; // the PhantasmalBolt — a different aiStyle-84 kind
         p.ai_phasmal_deathray(&surface_world(), &npcs);
         assert_eq!(p.wants_sound, None, "the 537 plays nothing here");
+    }
+
+    /// S1-E-21h d75 part 4 — the 465 CultistBossLightningOrb's first-tick
+    /// Item121 head (`Projectile.cs:31939-31945`): the play at
+    /// `base.position` THEN the `localAI[1] = 1` latch, once per life; the
+    /// 580 ritual bolt routed through the same style-88 dispatch head
+    /// queues nothing (the kind gate). The 465 row is unrowed — the slot
+    /// is built by hand (the owed-arm convention).
+    #[test]
+    fn s1_e_21h_d75_p4_the_cultist_lightning_latches_item121_once() {
+        let mut p = spawn(465, 300.0, 150.0);
+        p.cultist_lightning_latch();
+        assert_eq!(
+            p.wants_sound,
+            Some((2, 121, 300.0, 150.0, 0.0)),
+            "the first-tick Item121 at position"
+        );
+        assert_eq!(p.local_ai[1], 1.0, "the latch bumped after the play");
+        p.wants_sound = None;
+        for _ in 0..5 {
+            p.cultist_lightning_latch();
+            assert_eq!(p.wants_sound, None, "one cue per life");
+        }
+        // The 580 bolt keeps its own machine cue-less at this head.
+        let mut q = spawn(VORTEX_RITUAL_BOLT, 300.0, 150.0);
+        q.cultist_lightning_latch();
+        assert_eq!(q.wants_sound, None, "the 580 plays nothing here");
+        assert_eq!(q.local_ai[1], 0.0, "the bolt's wrap latch is untouched");
+    }
+
+    /// S1-E-21h d75 part 4 — the 288 GoldenShowerHostile's first-tick
+    /// Item17 head (`Projectile.cs:24503-24507`, the aiStyle-12 arm's top):
+    /// play THEN latch; the shared block's `ai[0] = 4` write
+    /// (`:24515-24517`) arcs the hostile stream from tick one (no count-up
+    /// phase); the friendly 280 keeps its counter and plays nothing at the
+    /// head. The 288 row is unrowed — the slot is built by hand.
+    #[test]
+    fn s1_e_21h_d75_p4_the_hostile_golden_shower_latches_item17_and_arcs() {
+        let w = surface_world();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let mut p = spawn(288, 300.0, 150.0);
+        p.tile_collide = false; // the C# row's stock true — the free-move
+        // probe keeps the fixture off the tiles (the cue reads no box).
+        p.scale = 1.0;
+        p.ai_aqua_scepter(&w, &mut rng);
+        assert_eq!(
+            p.wants_sound,
+            Some((2, 17, 300.0, 150.0, 0.0)),
+            "the first-tick Item17 at position"
+        );
+        assert_eq!(p.local_ai[0], 1.0, "the latch bumped after the play");
+        assert_eq!(p.ai[0], 4.0, "the hostile arc latch (`:24516`)");
+        assert!(
+            (p.vel.y - 0.075).abs() < 1e-6,
+            "the arc starts on tick one (`:24520`)"
+        );
+        // Tick 2: the latch spent — no second cue, the arc keeps falling.
+        p.wants_sound = None;
+        p.ai_aqua_scepter(&w, &mut rng);
+        assert_eq!(p.wants_sound, None, "one cue per life");
+        assert!((p.vel.y - 0.15).abs() < 1e-6);
+        // The friendly 280: no head cue, the counter counts (no arc yet).
+        let mut q = spawn(GOLDEN_SHOWER, 300.0, 150.0);
+        q.tile_collide = false;
+        q.scale = 1.0;
+        q.ai_aqua_scepter(&w, &mut rng);
+        assert_eq!(q.wants_sound, None, "the 280 plays nothing at the head");
+        assert_eq!(q.ai[0], 1.0, "the friendly counter counts");
+        assert_eq!(q.vel.y, 0.0);
     }
 
     #[test]

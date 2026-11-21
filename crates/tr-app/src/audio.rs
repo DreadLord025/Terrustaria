@@ -132,6 +132,12 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Hit_39", 3),
     ("NPC_Hit_40", 3),
     ("NPC_Hit_42", 3),
+    // S1-E-21h d75 part 4 — the 1054 SpiderBoulder's death cue
+    // (`Projectile.cs:74865`, `SoundID.NPCHit29` = (3, 29),
+    // `SoundID.cs:1285`; `Sounds/NPC_Hit_29.xnb` verified on disk). The
+    // row rides d3's pushed tip 2d01693ca — the bank closes the gap
+    // ahead of the merge.
+    ("NPC_Hit_29", 3),
     // The Force Bubble's hit cue (`NPC.cs:13889`'s `NPCHit43`) and the
     // Tesla Turret's (`NPC.cs:13930`'s `NPCHit53`, S1-F-13d).
     ("NPC_Hit_43", 3),
@@ -278,6 +284,13 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_41", 2),
     ("Item_43", 2),
     ("Item_44", 2),
+    // S1-E-21h d75 part 4 — the Meowmere star's case-37 variation pair
+    // (`LegacySoundPlayer.cs:1326-1336`: `Next(57, 59)` picks the
+    // SoundItem slot; `Sounds/Item_57.xnb`/`Item_58.xnb` verified on
+    // disk). The 502 row is unported (STILL DEFERRED) — the bank rows
+    // close the gap ahead of the kind's port.
+    ("Item_57", 2),
+    ("Item_58", 2),
     ("Item_59", 2),
     ("Item_60", 2),
     ("Item_61", 2),
@@ -352,6 +365,11 @@ const SFX_CUES: &[(&str, u32)] = &[
     // (`Projectile.cs:18090`/:18094`, both `.xnb` verified on disk).
     ("Item_114", 2),
     ("Item_115", 2),
+    // S1-E-21h d75 part 4 — the 465 CultistBossLightningOrb's first-tick
+    // cue (`Projectile.cs:31943`, `SoundID.Item121` = (2, 121),
+    // `SoundID.cs:1505`; `Sounds/Item_121.xnb` verified on disk). The
+    // 465 row is unrowed — the bank closes the gap ahead of d9's port.
+    ("Item_121", 2),
     // `SoundID.Roar` = 15 (`SoundID.cs`) — the boss-summon roar
     // (`Player.cs:43765`'s `SoundEngine.PlaySound(15, ...)`; the `Roar_0`
     // cue family).
@@ -534,6 +552,13 @@ pub(crate) const ITEM_CUSTOM_CUES: &[&str] = &[
     // `Projectile.cs:20751`/:20765 — `Sounds/Custom/sonar_potion.xnb`,
     // one variation).
     "sonar_potion",
+    // S1-E-21h d75 part 4 — the 1047 RainbowBoulder's hard-bounce cue
+    // (`SoundID.RainbowBoulder = CreateTrackable("rainbow_boulder")`,
+    // `SoundID.cs:1709`; `Projectile.cs:20104` —
+    // `Sounds/Custom/rainbow_boulder.xnb`, one variation). The bounce
+    // arm rides d3's `rainbow_check_bounce` (`wants_sound` (42, 274));
+    // this bank row makes the intent audible after the merge.
+    "rainbow_boulder",
 ];
 
 /// S1-P-i41 — the `Sounds/Custom/` trackables the mount system plays:
@@ -1380,6 +1405,11 @@ impl Audio {
         let cue = match style_num {
             13 => "NPC_Killed_13",
             61 => "NPC_Killed_61",
+            // S1-E-21h d75 part 4 — the 1055 Ghoulder's death cue
+            // (`Projectile.cs:74869`, `PlaySound(SoundID.NPCDeath6, x,
+            // y)`): d3's `boulder_kill` parks the (4, 6) tuple; the row
+            // rides d3's pushed tip 2d01693ca.
+            6 => "NPC_Killed_6",
             _ => return None,
         };
         let style = npc_sound_style(cue, "NPC_Killed_", 4)?;
@@ -2016,6 +2046,56 @@ impl Audio {
             .iter()
             .position(|s| s.sound_id == id as u8 && s.style == style)?;
         self.play_use_sound(idx as u16, x, y, pitch_offset, rng)
+    }
+
+    /// S1-E-21h d75 part 4 — one star-chime play (the 502 Meowmere's
+    /// bounce cue, `Projectile.cs:18209`: `PlaySound(37, (int)X, (int)Y,
+    /// 5 + (int)ai[0])` — the INT overload, NO GetRandomPitch draw).
+    /// Case 37 (`LegacySoundPlayer.cs:1326-1336`): the `Next(57, 59)`
+    /// slot pick FIRST, the `Style * 0.05` volume scale (the starGame
+    /// ×0.15 arm folds off — the seed is unported, the case-38
+    /// precedent), then the ONE `Next(-40, 41) * 0.01` pitch — both on
+    /// the caller's `UpdateProjectiles` stream, attenuation gate first.
+    /// Returns the cue; `None` when the gate refused.
+    pub fn play_star_chime(
+        &mut self,
+        style: i32,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        if sound::play_sound(37, x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let (slot, tweak, pitch) =
+            sound::star_chime_case37(style, &mut |lo, hi| rng.next_range(lo, hi));
+        let cue = if slot == 57 { "Item_57" } else { "Item_58" };
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit(cue, x, y, tweak, pitch.clamp(-1.0, 1.0));
+        Some(cue)
+    }
+
+    /// S1-E-21h d75 part 4 — one FoxparksFlame play (the 1106's per-life
+    /// flame cue, `Projectile.cs:41369`:
+    /// `SoundEngine.PlaySound(SoundID.FoxparksFlame, base.Center)`). The
+    /// NAMED style (`SoundID.cs:1725`: `new LegacySoundStyle(2, 34)
+    /// .WithVolume(0.15f)`) — NOT the plain `Item34` row the `(2, 34)`
+    /// tuple resolves to (volume 1.0), so the façade pins the row BY NAME
+    /// (the `play_chillet_sound` precedent). The style overload's
+    /// `GetRandomPitch` NextFloat rides the audio-only stream (variance 0 —
+    /// the draw still happens), the attenuation gate precedes case 2's
+    /// one gameplay pitch draw on the caller's `UpdateProjectiles` stream.
+    /// Returns the cue; `None` when the gate refused.
+    pub fn play_foxparks_flame(
+        &mut self,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        let idx = crate::soundid::SOUND_STYLES
+            .iter()
+            .position(|s| s.name == "FoxparksFlame")?;
+        self.play_use_sound(idx as u16, x, y, 0.0, rng)
     }
 
     /// S1-E-21h d75 part 2 — one Shatter play with a volume scale (the
@@ -3908,6 +3988,94 @@ mod tests {
                 .unwrap_or_else(|| panic!("style {style} resolves"));
             assert_eq!(cue, SFX_CUES.iter().map(|(n, _)| *n).find(|n| *n == cue).unwrap());
         }
+    }
+
+    /// S1-E-21h d75 part 4 — the RainbowBoulder trackable joins the bank:
+    /// d3's `rainbow_check_bounce` (`Projectile.cs:20104`) queues
+    /// `(42, 274)`; the drain's id-42 façade resolves the pinned
+    /// `rainbow_boulder` asset (`SoundID.cs:1709`, one variation, volume
+    /// 1.0, variance 0). Case 42 draws NOTHING from the gameplay stream;
+    /// the muted play refuses draw-free.
+    #[test]
+    fn s1_e_21h_d75_p4_the_rainbow_boulder_trackable_rides_the_proj_drain() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_proj_sound((42, 274), 0.0, 0.0, 0.0, &mut rng),
+            Some("rainbow_boulder")
+        );
+        assert_eq!(rng.peek(), peek, "case 42 consumes no gameplay draw");
+        assert!(
+            ITEM_CUSTOM_CUES.contains(&"rainbow_boulder"),
+            "the bank carries it"
+        );
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_proj_sound((42, 274), 0.0, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
+    }
+
+    /// S1-E-21h d75 part 4 — the star chime's case-37 contract
+    /// (`LegacySoundPlayer.cs:1326-1336`): TWO gameplay draws — the
+    /// `Next(57, 59)` slot pick FIRST, then the `Next(-40, 41)` pitch;
+    /// the Style×0.05 volume rides the façade (style 6 → ×0.30); the
+    /// int overload draws no GetRandomPitch. Muted refuses draw-free.
+    #[test]
+    fn s1_e_21h_d75_p4_the_star_chime_draws_slot_then_pitch() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let slot = witness.next_range(57, 59);
+        let _ = witness.next_range(-40, 41);
+        let want = if slot == 57 { "Item_57" } else { "Item_58" };
+        assert_eq!(audio.play_star_chime(6, 0.0, 0.0, &mut rng), Some(want));
+        assert_eq!(rng.peek(), witness.peek(), "exactly two draws, slot first");
+        assert!(SFX_CUES.contains(&("Item_57", 2)) && SFX_CUES.contains(&("Item_58", 2)));
+        // Muted: the gate refuses before any draw.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_star_chime(10, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
+    }
+
+    /// S1-E-21h d75 part 4 — the FoxparksFlame façade pins the NAMED
+    /// (2, 34) row at volume 0.15 (`SoundID.cs:1725`), not the plain
+    /// Item34 (volume 1.0) the generic tuple lookup finds first. The
+    /// style play draws one audio-only GetRandomPitch + one case-2
+    /// gameplay pitch (`Next(-6, 7)`) after the gate; muted refuses
+    /// draw-free.
+    #[test]
+    fn s1_e_21h_d75_p4_the_foxparks_flame_pins_the_named_quiet_row() {
+        use tr_core::unified_random::UnifiedRandom;
+        let row = crate::soundid::SOUND_STYLES
+            .iter()
+            .find(|s| s.name == "FoxparksFlame")
+            .expect("the named row");
+        assert_eq!((row.sound_id, row.style), (2, 34));
+        assert_eq!(row.volume, 0.15, "the WithVolume(0.15f) arm");
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-6, 7);
+        assert_eq!(audio.play_foxparks_flame(0.0, 0.0, &mut rng), Some("Item_34"));
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        // Muted: the gate refuses before any draw.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_foxparks_flame(0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
     }
 
     /// S1-E-21 wave C — the NPC death play's RNG contract

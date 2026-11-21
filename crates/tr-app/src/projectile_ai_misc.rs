@@ -38,7 +38,10 @@
 //!   `NextFloat` gate while `localAI[0] >= num2` (`:41391`); the taken
 //!   branch's `RotatedByRandom` pair (`:41394`), the `NextVector2Circular`
 //!   pair (`:41395`) and the scale/customData floats (`:41398-41399`).
-//!   Only the `NewDust*` INTERNAL rolls go with the dust pool.
+//!   Only the `NewDust*` INTERNAL rolls go with the dust pool. The 1106's
+//!   sound gate (`:41366-41370`, S1-E-21h d75 part 4) draws NOTHING — the
+//!   style overload's GetRandomPitch is audio-only and case 2's pitch
+//!   rides the drain.
 //! - 147: the rocket AI itself draws only the state-1 ring's per-particle
 //!   colour `NextFloat` (`:52940`); the explosion censuses are in
 //!   [`celeb2_explosion`]'s doc.
@@ -116,15 +119,25 @@ pub(crate) fn ai_spray(p: &mut Projectile, world: &mut World, local_owner: u8) {
 
 /// `AI_193_Flamethrower` (`Projectile.cs:41337-41401`) — the Flamethrower's
 /// Flames (85). The 1106 Foxparks variant keeps its constants arm; its
-/// sound gate (`:41366-41370`) is skipped (no sound layer, no `soundDelay`
-/// slot field) and 1106 has no row yet.
+/// sound gate (`:41366-41370`) is ARMED (S1-E-21h d75 part 4): the
+/// `soundDelay == 0 && whoAmI % 3 == 0` latch queues `SoundID.FoxparksFlame`
+/// at `base.Center` on `wants_sound` as the named-row marker `(2, -34)`
+/// (the plain `(2, 34)` tuple is Item34's — d76's Nebula Blaze owns it),
+/// `sound_delay = -1` (one cue per life). `who_am_i` is the dispatch's slot
+/// index (the C# `base.whoAmI`); the 1106 row rides d18's pushed tip
+/// `18916087b` — until the merge the kind cannot spawn and the gate stays
+/// inert (the owed-arm convention).
 ///
 /// The `Kill()` at 72 (`:41341-41344`) has NO return in the C# — the arm
 /// runs on into the velocity decay and the dust gates; the port keeps that
 /// shape. `HandleMovement` then runs before the `!active` return
 /// (`:17015`/`:17027`), so the dispatch's `kill_step` integrates the dead
 /// slot's last step too (a nothing-reads write, faithful to the C#).
-pub(crate) fn ai_flamethrower(p: &mut Projectile, rng: &mut dyn DropRng) {
+pub(crate) fn ai_flamethrower(
+    p: &mut Projectile,
+    rng: &mut dyn DropRng,
+    who_am_i: usize,
+) {
     // `:41339-41348` — the age counter, the 72-tick kill, the 60-tick decay.
     p.local_ai[0] += 1.0;
     let num = 60.0f32;
@@ -143,11 +156,29 @@ pub(crate) fn ai_flamethrower(p: &mut Projectile, rng: &mut dyn DropRng) {
         num2 = 0.0;
         num3 = num;
     }
-    // `:41357-41371` — the per-kind dust constants (the 1106 sound gate is
-    // the documented skip).
+    // `:41357-41371` — the per-kind dust constants. S1-E-21h d75 part 4 —
+    // the 1106's sound gate (`:41366-41370`): `soundDelay == 0 &&
+    // whoAmI % 3 == 0` latches −1 and queues FoxparksFlame at `base.Center`.
+    // The intent's style slot carries −34, the NAMED-row marker: the real
+    // (2, 34) tuple is ambiguous (Item34 volume 1.0 vs FoxparksFlame 0.15,
+    // `SoundID.cs:1725`) and d76's Nebula Blaze queues the plain +34 — the
+    // negative sentinel keeps the two apart (the dash-roar −1 precedent).
+    // The drain routes −34 to `play_foxparks_flame` (the by-name façade).
+    // The dust-window constants num4/num5 (60/50 → 15/15 for the 1106,
+    // `:41363-41364`) feed only the skipped dust bodies — not carried.
     let mut chance_flame = 0.25f32;
     if p.kind == 1106 {
         chance_flame *= 0.5;
+        if p.sound_delay == 0 && who_am_i % 3 == 0 {
+            p.sound_delay = -1;
+            p.wants_sound = Some((
+                2,
+                -34,
+                p.pos.x + p.w * 0.5,
+                p.pos.y + p.h * 0.5,
+                0.0,
+            ));
+        }
     }
     let chance_smoke = 0.5f32;
     // `:41372-41390` — the flame dust gate: the `NextFloat` draw stays; on
@@ -832,7 +863,7 @@ mod tests {
         // Ticks 1..49: the flame gate alone — 1 gate + 2 circular + 1
         // Next(4) per tick.
         for _ in 0..49 {
-            ai_flamethrower(&mut p, &mut rng);
+            ai_flamethrower(&mut p, &mut rng, 0);
         }
         assert_eq!(rng.floats, 49 * 3, "the flame gate + its circular pair");
         assert_eq!(rng.ranges, vec![(0, 4); 49], "the noGravity picks");
@@ -841,24 +872,24 @@ mod tests {
         // flame window closes at 50 — `localAI[0] < 50` fails at 50).
         // At tick 50 the flame gate's `localAI[0] < num3` is FALSE — only
         // the smoke gate rolls: 1 + 6 floats, no ranges.
-        ai_flamethrower(&mut p, &mut rng);
+        ai_flamethrower(&mut p, &mut rng, 0);
         assert_eq!(rng.floats, 49 * 3 + 7, "tick 50: smoke only");
         assert_eq!(rng.ranges.len(), 49);
         // Ticks 51..60: the smoke gate alone (7 floats each). The decay
         // (`localAI[0] >= 60`) lands on tick 60 — one 0.95 step.
         for _ in 0..10 {
-            ai_flamethrower(&mut p, &mut rng);
+            ai_flamethrower(&mut p, &mut rng, 0);
         }
         assert_eq!(rng.floats, 49 * 3 + 11 * 7);
         assert_eq!(p.vel.x, 8.0f32 * 0.95, "the first decay at tick 60 (`:41345-41348`)");
         // Tick 61: a second decay; the smoke gate keeps rolling. The C#'s
         // f32 accumulation — repeated * 0.95, not a pow.
-        ai_flamethrower(&mut p, &mut rng);
+        ai_flamethrower(&mut p, &mut rng, 0);
         assert_eq!(p.vel.x, 8.0f32 * 0.95 * 0.95, "the second decay at tick 61");
         assert_eq!(rng.floats, 49 * 3 + 12 * 7);
         // Ticks 62..72: the kill lands at 72 but the arm runs on.
         for _ in 0..11 {
-            ai_flamethrower(&mut p, &mut rng);
+            ai_flamethrower(&mut p, &mut rng, 0);
         }
         assert!(!p.active, "the 72-tick kill (`:41341-41344`)");
         assert_eq!(p.time_left, 0);
@@ -874,11 +905,53 @@ mod tests {
         p.ai[0] = 1.0;
         let mut rng = census();
         for _ in 0..72 {
-            ai_flamethrower(&mut p, &mut rng);
+            ai_flamethrower(&mut p, &mut rng, 0);
         }
         // Ticks 1..59: gate + 2 floats + Next(4); ticks 60..72: no gate.
         assert_eq!(rng.floats, 59 * 3, "one window, 59 taken ticks");
         assert_eq!(rng.ranges.len(), 59, "no smoke window");
+    }
+
+    /// S1-E-21h d75 part 4 — the 1106 Foxparks sound gate
+    /// (`Projectile.cs:41366-41370`): at `soundDelay == 0 && whoAmI % 3
+    /// == 0` the arm latches `sound_delay = -1` and queues the named-row
+    /// marker `(2, -34)` at `base.Center`, ONCE per life; the gate draws
+    /// NOTHING extra on the pass stream (the style play's pitch rides the
+    /// drain). The row lives on d18's pushed tip — the fixture builds the
+    /// slot by hand (the owed-arm convention).
+    #[test]
+    fn s1_e_21h_d75_p4_the_foxparks_flame_latches_once_at_center() {
+        let mut p = proj(85);
+        p.kind = 1106;
+        p.w = 6.0;
+        p.h = 6.0;
+        p.pos = Vec2::new(1600.0, 800.0);
+        let mut rng = census();
+        // whoAmI 1: 1 % 3 != 0 — no cue, soundDelay untouched.
+        ai_flamethrower(&mut p, &mut rng, 1);
+        assert_eq!(p.wants_sound, None, "the %3 gate refuses slot 1");
+        assert_eq!(p.sound_delay, 0);
+        // whoAmI 3: the latch fires at Center, the −1 keeps it down.
+        ai_flamethrower(&mut p, &mut rng, 3);
+        assert_eq!(
+            p.wants_sound,
+            Some((2, -34, 1603.0, 803.0, 0.0)),
+            "the named-row marker at Center"
+        );
+        assert_eq!(p.sound_delay, -1, "the one-cue-per-life latch");
+        // Later ticks: the −1 latch never re-fires (the pool's decrement
+        // is positive-only, `:16768-16771`).
+        p.wants_sound = None;
+        for _ in 0..20 {
+            ai_flamethrower(&mut p, &mut rng, 3);
+        }
+        assert_eq!(p.wants_sound, None, "no second cue");
+        // The 85 Flames twin: the kind gate keeps it silent.
+        let mut q = proj(85);
+        let mut rng2 = census();
+        ai_flamethrower(&mut q, &mut rng2, 0);
+        assert_eq!(q.wants_sound, None, "the 85 plays nothing here");
+        assert_eq!(q.sound_delay, 0);
     }
 
     /// Style 181 (`:43180-43183`): the alpha ramp truncates the XNA lerp
