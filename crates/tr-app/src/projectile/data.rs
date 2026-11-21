@@ -3382,6 +3382,22 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // ammo and then decline the spawn.
             85 => (6.0, 6.0, 193, 4, TIME_LEFT_DEFAULT, 2, true, false, false, RESET_STATE),
             145 => (6.0, 6.0, 31, -1, TIME_LEFT_DEFAULT, 2, false, false, false, RESET_STATE),
+            // W4-d18 — the seven solution sprays: `Projectile.cs:2350-2397`
+            // (146 Hallowed / 147 Corrupt / 148 Crimson / 149 Mushroom, four
+            // byte-identical blocks) and `:9633-9636` → `DefaultToSpray`
+            // (`:10691-10702`, 1015 Blue / 1016 Red / 1017 Purple — the
+            // TerraToilet solutions). Every block is the 145 shape VERBATIM:
+            // 6x6, aiStyle 31, friendly, `alpha = 255`, `penetrate = -1`,
+            // `extraUpdates = 2`, `tileCollide = false`, `ignoreWater = true`
+            // (the overlay below). Unclaimed on every pushed tip (f25 wired
+            // the conversion cells at its `ai_spray` but left the rows — its
+            // tip b004f4f1b has only 145; d4's tip the same); the `ai_spray`
+            // ladder's conversion types 1-7 stay no-ops here until f25's
+            // wiring merges (the counter/cap/spin run for every kind).
+            146..=149 | 1015..=1017 => (
+                6.0, 6.0, 31, -1, TIME_LEFT_DEFAULT, 2, false, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             1088 => (20.0, 20.0, 16, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // The Fairy Queen's shot 932 (`:8842-8856`): 10x10, aiStyle 181,
             // arrow, `penetrate = 5`, `timeLeft = 120`, `alpha = 0` and
@@ -4422,7 +4438,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == HIGH_VELOCITY_BULLET
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
-            || kind == GOLF_CLUB_HELPER,
+            || kind == GOLF_CLUB_HELPER
+            // W4-d18 — the seven solution sprays' `ignoreWater = true`
+            // (`Projectile.cs:2358`/`:2370`/`:2382`/`:2394` — the four
+            // 146-149 blocks — and `DefaultToSpray` `:10701` for
+            // 1015-1017). The 145 row's dropped alpha/ignoreWater is the
+            // pre-existing M3-ITEM-6 deviation (its row comment), unchanged.
+            || matches!(kind, 146..=149 | 1015..=1017),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -4989,6 +5011,11 @@ mod tests {
         // flag (`:2338-2349`/`:10145-10152`) — the census stays exact.
         assert_eq!(flags(145), (false, false, false));
         assert_eq!(flags(1088), (false, false, false));
+        // W4-d18 — the seven solution sprays set none either
+        // (`:2350-2397`/`DefaultToSpray` `:10691-10702`).
+        for k in (146..=149).chain(1015..=1017) {
+            assert_eq!(flags(k), (false, false, false), "kind {k}");
+        }
         // The magic spells.
         assert_eq!(flags(CRYSTAL_STORM), (false, false, true));
         assert_eq!(flags(SPARK), (false, false, true));
@@ -5018,6 +5045,35 @@ mod tests {
         assert_eq!(flags(DYNAMITE), (false, false, false));
         assert_eq!(flags(STICKY_BOMB), (false, false, false));
         assert_eq!(flags(BOMB_FISH), (false, false, false));
+    }
+
+    /// W4-d18 — the seven solution-spray rows (`Projectile.cs:2350-2397`
+    /// the four 146-149 blocks, `:9633-9636` → `DefaultToSpray`
+    /// `:10691-10702` for 1015-1017): every block is the 145 shape
+    /// verbatim — 6x6, aiStyle 31, penetrate −1, the stock 3600 life (the
+    /// arm caps it at 133), extraUpdates 2, tileCollide false, alpha 255,
+    /// ignoreWater true, NO class flag, NO immunity pair. WRITTEN NOT RUN
+    /// (code-only mode).
+    #[test]
+    fn w4_d18_the_solution_spray_rows_are_the_145_shape() {
+        for k in (146..=149u16).chain(1015..=1017) {
+            let d = proj_data(k).unwrap_or_else(|| panic!("kind {k} row"));
+            assert_eq!((d.w, d.h), (6.0, 6.0), "kind {k} box");
+            assert_eq!(d.ai_style, 31, "kind {k} style");
+            assert_eq!(d.penetrate, -1, "kind {k} penetrate");
+            assert_eq!(d.time_left, 3600, "kind {k} stock life");
+            assert_eq!(d.extra_updates, 2, "kind {k} extraUpdates");
+            assert!(!d.tile_collide, "kind {k} tileCollide false");
+            assert!(d.ignore_water, "kind {k} ignoreWater (`:2358`/`:10701`)");
+            assert_eq!(d.alpha, 255, "kind {k} alpha (`:2356`/`:10697`)");
+            assert!(!d.uses_local_immunity && !d.uses_id_static_immunity, "kind {k} stock immunity");
+            assert!(!d.melee && !d.ranged && !d.magic, "kind {k} no class flag");
+        }
+        // The rows enter the atlas pack set (the sheets exist for all seven).
+        let spawnable = spawnable_kinds();
+        for k in (146..=149u16).chain(1015..=1017) {
+            assert!(spawnable.contains(&k), "kind {k} packs");
+        }
     }
 
     #[test]

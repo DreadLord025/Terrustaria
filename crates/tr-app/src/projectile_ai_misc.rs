@@ -67,9 +67,12 @@ use crate::projectile::{
 };
 
 /// `AI()`'s aiStyle-31 arm (`Projectile.cs:26786-26886`) — the Clentaminator
-/// spray. Only the PureSpray 145 has a `proj_data` row (the 146-149 /
-/// 1015-1017 solutions are unrowed); the per-kind ladder is ported whole so
-/// the later rows land on a faithful arm.
+/// spray. W4-d18 rowed the seven solution kinds (146-149/1015-1017 — the
+/// rows were unclaimed on every pushed tip); the per-kind ladder below is
+/// the whole arm. The conversion cells for types 2/5/6/7 are W4-f25's
+/// wiring (its tip b004f4f1b dispatches `convert_sized_hallow` /
+/// `convert_sized_spray` here); until that merges, only the type-0 cleanse
+/// converts on this branch — the counter/cap/spin run for every kind.
 ///
 /// The dust-scale ladder (`:26845-26879`: the 7/3 threshold, the
 /// 0.2/0.4/0.6/0.8 fade steps, the flag13 ×1.2 and the `(int)(12·scale)`
@@ -94,8 +97,10 @@ pub(crate) fn ai_spray(p: &mut Projectile, world: &mut World, local_owner: u8) {
     };
     // `:26826-26835` — the owner-gated conversion: `Center.ToTileCoordinates`
     // (the `(int)(X/16)` truncation), size 2 (3 for the solution). Only the
-    // type-0 cleanse cell is ported (`spread::convert_cleanse`); the other
-    // conversion types' cells are the unrowed kinds' follow-up.
+    // type-0 cleanse cell is ported here (`spread::convert_cleanse`); the
+    // 146-149/1015-1017 rows exist (W4-d18), their conversion cells are
+    // f25's wiring (types 2/5/6/7) + d1/g42's (types 1/3/4) — a no-op on
+    // this branch until those merge.
     if p.owner == local_owner && conversion == 0 {
         let tx = ((p.pos.x + p.w * 0.5) / 16.0) as i32;
         let ty = ((p.pos.y + p.h * 0.5) / 16.0) as i32;
@@ -118,7 +123,9 @@ pub(crate) fn ai_spray(p: &mut Projectile, world: &mut World, local_owner: u8) {
 /// `AI_193_Flamethrower` (`Projectile.cs:41337-41401`) — the Flamethrower's
 /// Flames (85). The 1106 Foxparks variant keeps its constants arm; its
 /// sound gate (`:41366-41370`) is skipped (no sound layer, no `soundDelay`
-/// slot field) and 1106 has no row yet.
+/// slot field). The 1106 row landed with the d18 census residual
+/// (18916087); the 85/1106 `localAI[0] >= 54` damage gate
+/// (`:12460-12467`) rides the pool's damage walks (`flames_faded`).
 ///
 /// The `Kill()` at 72 (`:41341-41344`) has NO return in the C# — the arm
 /// runs on into the velocity decay and the dust gates; the port keeps that
