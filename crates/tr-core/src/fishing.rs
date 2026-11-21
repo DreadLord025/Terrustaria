@@ -2330,6 +2330,55 @@ mod drop_rule_tests {
         }
     }
 
+    /// W4-g90 census witness (WRITTEN NOT RUN, code-only): the Combat
+    /// Book 4382 is a fishing DROP, not a fishing-power penalty —
+    /// `GameContentFishDropPopulator.cs:196`
+    /// `Add(Legendary, 2, 4382, BloodMoon, DidNotUseCombatBook)` (the
+    /// 2-arg `Add` = numerator 1, `AFishDropRulePopulator.cs:201-204`),
+    /// the condition `!NPC.combatBookWasUsed` (`:171`). The old
+    /// `FishingCheck_RollItemDropOld` inline arm (`Projectile.cs:21056`,
+    /// `!combatBookWasUsed && bloodMoon && legendary && Next(3)==0`) is
+    /// DEAD CODE — `SetFishingCheckResults:20742` calls the DB-backed
+    /// `FishingCheck_RollItemDrop` only. The live chain:
+    /// `world_sim/projectiles.rs:327` feeds `app.world.combat_book_was_used`
+    /// → `BobberInputs` → `FishingContext` (`projectile_bobber.rs:357`)
+    /// → this rule. Once the book is used the 4382 row never answers;
+    /// the Chum Bucket 5240 row (`:197`, no book gate) still can.
+    #[test]
+    fn w4_g90_the_combat_book_drop_dies_once_the_book_is_used() {
+        let rules = vanilla_drop_rules();
+        let mut ctx = base_ctx();
+        ctx.blood_moon = true;
+        ctx.legendary = true;
+        // Book unused: some seed rolls the 4382 (1/2 chance × the
+        // legendary tier already rolled — the row is first in RareDrops).
+        let mut book_hits = 0;
+        for seed in 0..40u64 {
+            let mut rng = FastRandom::new(seed.wrapping_mul(1_000_003).wrapping_add(7));
+            if rules.try_get_item_drop(&ctx, &mut rng) == Some(4382) {
+                book_hits += 1;
+            }
+        }
+        assert!(book_hits > 0, "the blood-moon legendary book row answers");
+        // Book used: NO seed ever rolls 4382 again (the condition gate
+        // runs BEFORE the chance draw — the RNG stream stays aligned).
+        ctx.combat_book_was_used = true;
+        for seed in 0..40u64 {
+            let mut rng = FastRandom::new(seed.wrapping_mul(1_000_003).wrapping_add(7));
+            assert_ne!(rules.try_get_item_drop(&ctx, &mut rng), Some(4382));
+        }
+        // The gate is a condition, not a rarity/chance edit: with the
+        // book used the SAME seed's draw sequence skips the 4382 row's
+        // Next(2) entirely (conditions precede the chance,
+        // `FishDropRule.cs:31-51`) — the 5240 row draws first instead.
+        let mut used = FastRandom::new(7);
+        let drop = rules.try_get_item_drop(&ctx, &mut used);
+        let mut witness = FastRandom::new(7);
+        // 4382 row: conditions fail → NO draw. 5240 row: Next(2) < 1?
+        let chum = witness.next_range(0, 2) < 1;
+        assert_eq!(drop == Some(5240), chum, "the stream skips the gated row");
+    }
+
     #[test]
     fn the_ocean_rows_need_the_edge_water_and_the_shallow_band() {
         // `IsOriginalOcean` (`AFishDropRulePopulator.cs:267-274`).
