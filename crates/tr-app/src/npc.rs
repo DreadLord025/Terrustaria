@@ -11966,15 +11966,23 @@ impl Npc {
             self.ai[0] -= 1.0;
             // `:65840-65843` — the summon sound window (the tracked cue).
             // `:65844-65848` — the summon marker + `DD2Event.RaiseGoblins`.
+            // W4-d14 doc-sweep item 4: `NewProjectile(..., 673, 0, 0f,
+            // Main.myPlayer)` — the owner is the local player, so the
+            // aiStyle-133 ramp simulates on a client too; the payload rides
+            // the ai-shot list (the breath precedent) and the C# passes the
+            // CENTRE (the drain converts to the top-left).
             if self.ai[1] == 2.0 && self.ai[0] == 64.0 {
-                self.wants_hostile_shot.push((
-                    673u16,
-                    cx + self.facing as f32 * 24.0,
-                    cy - 40.0,
-                    0.0,
-                    0.0,
-                    0,
-                ));
+                self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                    kind: 673u16,
+                    x: cx + self.facing as f32 * 24.0,
+                    y: cy - 40.0,
+                    vx: 0.0,
+                    vy: 0.0,
+                    damage: 0,
+                    ai0: 0.0,
+                    ai1: 0.0,
+                    scale: None,
+                });
                 // `DD2Event.RaiseGoblins` — the port's summon request.
                 self.wants_sphere.push((NpcKind::DD2GoblinT1, cx, cy, 0.0));
             }
@@ -12012,14 +12020,25 @@ impl Npc {
                         .tile(tx, y)
                         .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind));
                     if solid {
-                        self.wants_hostile_shot.push((
-                            674u16,
-                            tx as f32 * TILE_PX + 8.0,
-                            y as f32 * TILE_PX,
-                            0.0,
-                            0.0,
-                            0,
-                        ));
+                        // `:65864` — `NewProjectile(..., result.
+                        // ToWorldCoordinates(8, 0), Zero, 674, 0, 0f,
+                        // Main.myPlayer)`: the local owner keeps the heal
+                        // scan alive on a client (the breath precedent).
+                        // The point is the tile's centre-x / top-y; the
+                        // drain's `NewProjectile` half-box subtraction
+                        // (`Projectile.cs:10876-10877`) lands the box at
+                        // `tileX + 3, tileY - 5`.
+                        self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                            kind: 674u16,
+                            x: tx as f32 * TILE_PX + 8.0,
+                            y: y as f32 * TILE_PX,
+                            vx: 0.0,
+                            vy: 0.0,
+                            damage: 0,
+                            ai0: 0.0,
+                            ai1: 0.0,
+                            scale: None,
+                        });
                         break;
                     }
                 }

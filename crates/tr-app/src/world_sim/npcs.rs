@@ -5975,8 +5975,17 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // the aiStyle-136 arm unsimulated on a client) and the CENTRE (the
         // `NewProjectile` box-centring `Projectile.cs:10876-10877`); the
         // other payload shots keep the stock 255-owner/top-left shape.
-        let (owner, x, y) = if shot.kind == crate::projectile::BETSY_BREATH {
-            let d = crate::projectile::proj_data(shot.kind).expect("the rowed breath");
+        // W4-d14 doc-sweep item 4: the Dark Mage's markers ride the same
+        // seam — the 673 summon marker (`NPC.cs:65846`) and the 674 heal
+        // mark (`:65864`) both pass `Main.myPlayer` and the CENTRE /
+        // `ToWorldCoordinates(8, 0)` point, so owner 255 would leave the
+        // aiStyle-133 arms (the opacity ramp / the 40-tick heal scan)
+        // unsimulated on a client.
+        let (owner, x, y) = if shot.kind == crate::projectile::BETSY_BREATH
+            || shot.kind == crate::projectile::DARK_MAGE_MARKER
+            || shot.kind == crate::projectile::DARK_MAGE_HEAL
+        {
+            let d = crate::projectile::proj_data(shot.kind).expect("the rowed marker");
             (app.local_id as u8, shot.x - d.w * 0.5, shot.y - d.h * 0.5)
         } else {
             (255, shot.x, shot.y)
@@ -11479,7 +11488,11 @@ mod dd2_goblin_tests {
                 if s.0 == 675 {
                     saw_flame = true;
                 }
-                if s.0 == 673 {
+            }
+            // W4-d14 doc-sweep item 4: the 673 marker moved to the ai-shot
+            // list (the local-owner seam, `NPC.cs:65846`).
+            for s in n.wants_hostile_shot_ai.iter() {
+                if s.kind == 673 {
                     saw_summon = true;
                 }
             }
@@ -17184,6 +17197,77 @@ mod dd2_tier_tests {
             );
             assert!(n.ai[0] <= 0.0, "the charge never arms: {}", n.ai[0]);
         }
+    }
+
+    /// W4-d14 doc-sweep item 4 — the Dark Mage's heal mark (674): the
+    /// `:65862-65864` queue runs at `ai[0]` 40/48/56 of the heal phase,
+    /// the `Searches.Down(50)` scan finds the first solid tile under
+    /// `Center.X + direction * 240` and spawns at its
+    /// `ToWorldCoordinates(8, 0)`. The drain gives it `Main.myPlayer` as
+    /// the owner (the breath precedent — owner 255 would leave the
+    /// aiStyle-133 arm unsimulated on a client) and converts the point to
+    /// the top-left (`Projectile.cs:10876-10877`). The pool's 40-tick scan
+    /// (`Projectile.cs:36469-36497`) then heals every live NPC with
+    /// damage >= 1 / lifeMax >= 30 inside 1000 px EXCEPT the Dark Mages,
+    /// min(500, missing), and dies.
+    #[test]
+    fn the_dark_mage_heal_mark_drains_local_owned_and_heals_the_army() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player);
+        let mut mage = Npc::new(NpcKind::DD2DarkMage, 145.0 * TILE_PX, 1500.0, 1, 0.0);
+        mage.hp = mage.max_hp;
+        mage.caster_counter = 60; // past the materialize
+        // The heal phase's first marker window: 41 drops to 40 on the tick.
+        mage.ai[1] = 1.0;
+        mage.ai[0] = 41.0;
+        app.npcs.push(mage);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let heal = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|s| s.active && s.kind == 674)
+            .expect("the heal mark drains into the pool");
+        assert_eq!(
+            heal.owner,
+            app.local_id as u8,
+            "Main.myPlayer — the arm simulates on a client too"
+        );
+        // The scan column: `(2320 + 17 + 240) / 16 = 161`, the first solid
+        // row from 93 down is the surface at 120. `ToWorldCoordinates(8, 0)`
+        // = (2584, 1920); the half-box subtraction lands (2579, 1915).
+        assert_eq!((heal.pos.x, heal.pos.y), (2579.0, 1915.0));
+        assert_eq!(heal.damage, 0, "the marker deals no damage");
+        // The scan's subjects: a wounded goblin (heals), a full-health
+        // goblin (no heal) and a second mage (the 564/565 exclusion).
+        let mut goblin = Npc::new(NpcKind::DD2GoblinT1, 160.0 * TILE_PX, 118.0 * TILE_PX, 1, 0.0);
+        goblin.hp = 1;
+        app.npcs.push(goblin);
+        let mut healthy = Npc::new(NpcKind::DD2GoblinT1, 161.0 * TILE_PX, 118.0 * TILE_PX, 1, 0.0);
+        healthy.hp = healthy.max_hp;
+        let healthy_max = healthy.max_hp;
+        app.npcs.push(healthy);
+        let mut mage2 = Npc::new(NpcKind::DD2DarkMage, 162.0 * TILE_PX, 118.0 * TILE_PX, 1, 0.0);
+        mage2.hp = 1;
+        app.npcs.push(mage2);
+        // 40 pool ticks: the scan fires on the 40th and kills the marker.
+        for _ in 0..40 {
+            crate::world_sim::projectiles::update_projectiles(&mut app, 1.0 / 60.0);
+        }
+        assert!(
+            !app.projectiles.slots().iter().any(|s| s.active && s.kind == 674),
+            "the marker dies after the scan (`:36497`)"
+        );
+        let g = app.npcs.iter().find(|n| n.kind == NpcKind::DD2GoblinT1 && n.x < 161.0 * TILE_PX).unwrap();
+        assert_eq!(g.hp, 1 + 500.min(g.max_hp - 1), "min(500, missing) heals");
+        let h = app.npcs.iter().find(|n| n.kind == NpcKind::DD2GoblinT1 && n.x >= 161.0 * TILE_PX).unwrap();
+        assert_eq!(h.hp, healthy_max, "a full-health NPC takes no heal");
+        let m2 = app.npcs.iter().filter(|n| n.kind == NpcKind::DD2DarkMage).nth(1).unwrap();
+        assert_eq!(m2.hp, 1, "the mages exclude themselves (`:36481`)");
     }
 
     /// `AI_107`'s 570/571 arm (`NPC.cs:63145-63195`): the drakin's 671
