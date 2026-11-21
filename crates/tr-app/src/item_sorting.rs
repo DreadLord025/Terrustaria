@@ -980,7 +980,8 @@ pub fn sort(inv: &mut [ItemSlot], ignore: &[usize], with_feedback: bool, mult: [
     // and, at 0, remove the head and `num4 += num3` (the next layer band's
     // hue). The port collects `(slot, hue)` pairs; the caller applies them to
     // the glow state with the open-container flag (`with_feedback` gates the
-    // whole ramp — `:1584`). The leftover tail (`:1573`) has no count entry,
+    // SetGlow only — `:1584`; the counts walk itself runs ungated). The
+    // leftover tail (`:1573`) has no count entry,
     // so it keeps the last band's hue (the C# `_sort_counts[0]` would throw on
     // an empty list; with `Last - Trash` matching everything the tail is empty
     // in practice — the port guards the index).
@@ -995,12 +996,15 @@ pub fn sort(inv: &mut [ItemSlot], ignore: &[usize], with_feedback: bool, mult: [
         inv[slot] = *item;
         if with_feedback {
             feedback.push((slot, num4));
-            if !counts.is_empty() {
-                counts[0] -= 1;
-                if counts[0] == 0 {
-                    counts.remove(0);
-                    num4 += num3;
-                }
+        }
+        // `:1588-1593` — the counts walk runs OUTSIDE the withFeedback gate
+        // in the C# (only the SetGlow is gated); keeping it ungated is
+        // order-identical and matches the source structure.
+        if !counts.is_empty() {
+            counts[0] -= 1;
+            if counts[0] == 0 {
+                counts.remove(0);
+                num4 += num3;
             }
         }
     }

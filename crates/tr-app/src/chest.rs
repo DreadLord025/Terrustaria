@@ -2784,9 +2784,10 @@ mod tests {
         // The other banks ignore the vault lock.
         assert_eq!(toggle_open(&mut app, 10, 19, -2), 10, "the piggy opens");
         assert_eq!(app.player.as_ref().unwrap().chest, -2);
-        // The echo clears the lock; the vault opens.
+        // The echo clears the lock; the vault opens — with the piggy still
+        // open this is the SWITCH arm, sound 12 (`Player.cs:33248-33252`).
         app.player.as_mut().unwrap().clear_void_bag_lock_on_echo(0);
-        assert_eq!(toggle_open(&mut app, 10, 19, -5), 10, "the cleared lock opens");
+        assert_eq!(toggle_open(&mut app, 10, 19, -5), 12, "the cleared lock opens (the switch)");
         assert_eq!(app.player.as_ref().unwrap().chest, -5);
     }
 
