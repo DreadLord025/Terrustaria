@@ -677,9 +677,11 @@ impl App {
     /// statements are state-disjoint from them, so the consolidation is a
     /// no-op (the screenshot pairs prove it).
     pub(super) fn draw_half_pre_snapshots(&mut self, dt: f32) {
-    if self.menu.is_none() && self.front.is_none() {
-        self.stepper.drawn_this_update = true;
-    }
+    // `WorldUpdateStepper.DrawnThisUpdate = true` (`Main.cs:62478`) sits at
+    // the END of `DoDraw`, AFTER the draw passes — not at the draw-half head.
+    // The W4-g13 dust emitters read `FocusHelper.Allow*` (= `!DrawnThisUpdate`)
+    // DURING the draw, so the mark must stay clear until the passes finish;
+    // `frame()` sets it right after `draw_region` returns (the C# position).
     if self.is_client() && self.frame_count == 90 {
         if let Some((x, y)) = crate::env::net_edit() {
             self.request_edit(x, y, 0, 0);
