@@ -990,3 +990,79 @@ gate position, the if/else `StopRain` arm shape and `StartSlimeRain`'s
 `:64744` fix all stay d130's landed body. The wind rename
 (`lantern_night` ↔ `lanterns_up`) stays f40/105 §4's mechanical verdict.
 Exactly two hunks; WRITTEN NOT RUN (code-only — no cargo invoked).
+
+---
+
+## 14. RETIRE — QueenSlime-24 re-probe: STILL UNPORTED, task-seed d43r
+
+The §9 row-24 claim re-probed at retire against the named lanes:
+
+- **d43 band 631-697** (`origin/task/W4-d43-npc-kinds-631-697`): tip
+  `a725acb04` — **the wave-3 base itself, 0 commits ahead of
+  `origin/main`** (`git rev-list --count origin/main..` = 0). The band
+  lane is claimed but has landed NOTHING: `NpcKind::QueenSlime` grep
+  over its `crates/` tree returns zero hits (the `queen_slime` hits are
+  the pre-existing pet/hook/mount/loot/town-chatter consumers of the
+  `downed_queen_slime` FLAG, not the kind). **657 is NOT rowed.**
+- **d33 styles 95-127** (`origin/task/W4-d33-npc-ai-styles-95-127`, tip
+  `b08acf463`, 25 commits ahead): `npc_ai_style121.rs` EXISTS — the full
+  `AI_121_QueenSlime` machine (`NPC.cs:45202-45812`), `style121_step`
+  (`:354`) + `Style121Env`/`Style121Outcome` (shots 922/926, minions
+  658/659/660, sounds, light, hide) + `queen_find_frame` (`:1007`). Its
+  own module doc states it: "The port's roster has no queen-slime kind
+  — the module lands UNWIRED (the `npc_ai_style73.rs` precedent)." No
+  `NpcKind::QueenSlime` in d33's `npc.rs` either.
+
+**Verdict: no event-wire hunk can publish — there is no kind to match
+on any branch.** The §9 row-24 census stands (the id-table witness
+already sweeps id 24; only the death arm waits). Task-seed:
+
+### Task-seed d43r — row the QueenSlime 657 kind + wire the death arm
+
+Scope (the band lane's first row, or a follow-on `d43r` branch off it):
+
+1. **Row the kind** `NpcKind::QueenSlime` (vanilla id 657) through every
+   exhaustive `NpcKind` match — the d33 dragonfly precedent
+   (`ba8b9b5c`/`e71010d3`): `to_u16`/`from_u16` keep 657,
+   `cs_id`/`net_id`/`render_key` ride it; `SetDefaults` row
+   `NPC.cs:17310-17325` verbatim (114×100, aiStyle 121, damage 60,
+   defense 26, lifeMax 18000, NPCHit1/NPCDeath64, lavaImmune,
+   knockBackResist 0, value 60000, boss, npcSlots 5); `ALL_KINDS` +1,
+   the `s1_f_3` gate +1; bestiary/bestiary-sheet rows per `NPCID.cs`
+   (the boss keeps its own card).
+2. **Wire the AI**: the `ai_style() == 121` axis arm + the kind-match
+   route feed d33's `style121_step` (merge-order: d33's module lands
+   first or rides the same merge); the `Style121Outcome` drain (shots →
+   `Projectile.NewProjectile` 922/926, minions → `NPC.NewNPC`
+   658/659/660 at `:45801`, sounds, the constant light, hide) — the
+   env's `no_tile_collide`/`no_gravity` round-trip per the module doc.
+   The minion kinds 658-660 are their own rows (the band's scope).
+3. **The death arm — the c39 event-wire hunk, ready to apply the moment
+   the kind exists** (`world_sim/npcs.rs`, the `DoDeathEvents` match,
+   beside the d125 Empress arm; `NPC.cs:79357-79359` case 657 →
+   `SetEventFlagCleared(ref downedQueenSlime, 24)`):
+
+   ```rust
+   // `DoDeathEvents`'s case 657 (`NPC.cs:79357-79359`):
+   // `SetEventFlagCleared(ref downedQueenSlime, 24)`. Id 24 is a
+   // DEFAULT row — the first kill ARMS the lantern night (the
+   // census's row 24; the dual-dungeon Hallow-tier wall clear is
+   // the worldgen lane's remainder, research/114 §9).
+   NpcKind::QueenSlime => {
+       let was_down = app.world.downed_queen_slime;
+       app.world.downed_queen_slime = true;
+       crate::world_events::on_game_event_cleared(&mut app.world_events, 24, !was_down);
+   }
+   ```
+
+   The flag byte already round-trips (v15 `.trwld` + `.wld` `:1396`);
+   `on_game_event_cleared`'s id-24 default arm already arms
+   (`world_events.rs:372-382` — only 4/21/22 skip); the id-table
+   witness already covers 24. **Zero helper-side work remains — the
+   seed is purely the kind + its arm.**
+4. Witness: extend the death-arm rig (first kill arms
+   `next_night_is_lantern_night`, repeat kill does not) — the Golem/
+   Fishron precedent shape (`npcs.rs:5165-5179`).
+
+Nothing lands on c39 (no kind here either); the seed is recorded for
+the band lane. WRITTEN NOT RUN (code-only).
