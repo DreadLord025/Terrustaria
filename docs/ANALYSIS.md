@@ -25761,7 +25761,7 @@ Deliberate deviations:
   new `App.tile_draw_rand` (`TileDrawing._rand` stand-in, world-seeded —
   the `mine_crack_rng` convention); the pylon SPAWN + the void-lens draw
   the bare global (`NamedRngs::global()`). Both gate `!game_paused`. See
-  the W4-f6 wiring section + research/67.
+  the W4-f6 wiring section + research/198 (renamed 67→198, round-1).
 * **Frame counters.** `Main.tileFrameCounter[597]` wraps at 64 and `[491]` at
   40 (`Main.cs:19284-19287`/`:19227-19230`, `AnimateTiles`); the animator is
   unported (`drawdata.rs`'s `tile_frame в‰Ў 0`), so the pass stands them in with
@@ -39306,7 +39306,8 @@ before merge.
 
 The staged emitters are now called from the live machines (6 commits:
 `bebd0c55`/`ac0c7edc`/`65ec64a2`/`bcd63051`/`7dfcd098`/`7c9165da`). The
-seam census + the e4 keep-one decision: `docs/research/67-dust-world-wiring-keep-one.md`.
+seam census + the e4 keep-one decision: `docs/research/198-dust-world-wiring-keep-one.md`
+(renamed 67→198, registry round-1).
 
 * **Mount spawn/dismount/failed-dismount** — the `pending_mount_dust`
   request channel (the `pending_sticky_dust` convention): the pure player
@@ -39361,6 +39362,6 @@ callers, verified).
 
 **e4 keep-one:** f6's 27 Mount sites SUPERSEDE e4's 19 (`mount_dust.rs`
 canonical); e4 wires ParticleOrchestrator 41-61 only. The merger drops
-e4's Mount emitters to avoid double-drawing (research/67).
+e4's Mount emitters to avoid double-drawing (research/198, renamed from 67).
 
 Code-only: the 6 wiring drain-parity witnesses are WRITTEN NOT RUN.

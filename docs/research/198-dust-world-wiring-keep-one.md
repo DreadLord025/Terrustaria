@@ -1,4 +1,10 @@
-# 67 — World-lane dust WIRING (W4-f6): keep-one + seam census
+# 198 — World-lane dust WIRING (W4-f6): keep-one + seam census
+
+> Rename chain: **67→198 (round-1)** — registry `150-research-number-registry.md`
+> §3 f6-dust-world-3 row + §10.4 owed list: f6's `67-dust-world-wiring-keep-one.md`
+> → `198-dust-world-wiring-keep-one.md` (slug kept). 67 stays d54's
+> dust-orch-sites-claims key until the dust-union merge; g63's 67 renamed
+> away →199. SEAL receipts below cite the pre-rename `research/67` as history.
 
 Status: SEALED (W4-f6, the world lane's wiring + final phase, branch
 `task/W4-f6-dust-world-3`, pushed tip `ebdcbd96d`; the SEAL receipts at
@@ -389,7 +395,7 @@ tip directly (its own merger note: "take f6's tip AFTER its push"). The
 flips the fold row to RESOLVED-PUSHED on this receipt; nothing is owed by
 f6 for the atan2 fold.
 
-### (5) research/67 SEALED + the mount-dust-family bible
+### (5) research/198 (chain-history: research/67) SEALED + the mount-dust-family bible
 
 This document is the mount-dust-family bible: the e4 keep-one (f6's 27 ⊃
 e4's 19, `mount_dust.rs` canonical), the g68 `tile_draw_rand` ONE-field

@@ -7,14 +7,14 @@ spawn/dismount 7), `680ac9d8` (batch 4, small world files 13) — then WIRED
 to the live machines across 6 wiring commits (`bebd0c55` spawn/dismount,
 `ac0c7edc` movement, `65ec64a2` effects, `bcd63051` chest+poof, `7dfcd098`
 pylon+void-lens, `7c9165da` lava bubbles). The wiring seam census + the e4
-keep-one decision live in research/67. Code-only: WRITTEN NOT RUN, the 32
+keep-one decision live in research/198 (renamed 67→198, round-1). Code-only: WRITTEN NOT RUN, the 32
 draw-mirror + 6 wiring witnesses are owed a compile window before merge.
 The claim below was written early per the lane's coordination rule — the
 branch list is the claim record; this doc pins the file split so the world
 batches never overlap the entity lanes or the g11-g15 Main/WorldGen/WorldItem
 lanes.
 
-WIRING NOTE (research/67): the chest unlock rides **UpdatePlayers**
+WIRING NOTE (research/198, renamed from 67): the chest unlock rides **UpdatePlayers**
 (ItemCheck→TileInteractionsUse), NOT the bare global the Contract section
 below guessed; the pylon/void-lens/lava sites are draw-side (private
 `tile_draw_rand`/`liquid_rand` + bare global). The popup flash (g57), rain

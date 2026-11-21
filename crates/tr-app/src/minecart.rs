@@ -16,7 +16,8 @@
 //! remaining pre-consumer items keep targeted allows until Phase 3 (sparks)
 //! and M2-MOUNT-3 (the hook-mount snap, the sprite decode) land.
 //!
-//! W4-f6 final 4 — the unclaimed track-side dust (research/67): the four
+//! W4-f6 final 4 — the unclaimed track-side dust (research/198, renamed
+//! 67→198 round-1): the four
 //! non-base `MinecartDust` delegates (`DelegateMethods.Minecart.SparksFart`
 //! :328 / `SparksTerraFart` :348 / `SparksMech` :373 / `SparksMeow` :394, the
 //! 51/53/11/33 cart rows) ride the SAME `wheel_sparks` queue → `spawn_spark`
@@ -1000,7 +1001,7 @@ pub(crate) struct SparkSpawn {
 /// The cart's `MinecartDust` delegate (`MountDelegatesData.MinecartDust`,
 /// `Mount.cs:104`). The base `Sparks` (`DelegateMethods.cs:223-242`) is the
 /// type-213 wheel spark; the four variants are the unclaimed track-side dust
-/// (research/67): Fart 51 (`:1099`), Terra-Fart 53 (`:1107`), Mech 11
+/// (research/198, renamed from 67): Fart 51 (`:1099`), Terra-Fart 53 (`:1107`), Mech 11
 /// (`:1487`), Meowmere 33 (`:1013`). Every other cart row keeps `Sparks`
 /// (`SetAsMinecart` `:2751`, the hand-written 6/13/16 rows `:916`/`:1595`/
 /// `:1047`).
@@ -1665,7 +1666,7 @@ pub(crate) fn minecart_bumper_sound(
 }
 
 /// `DelegateMethods.Minecart.SpawnFartCloud` (`DelegateMethods.cs:258-306`) —
-/// the fart carts' (51/53) cloud visual, STAGED (research/67): the live
+/// the fart carts' (51/53) cloud visual, STAGED (research/198, renamed from 67): the live
 /// triggers are c14's fart sound delegates (`JumpingSoundFart` :308-312 /
 /// `LandingSoundFart` :314-319 / `BumperSoundFart` :321-326, which call this
 /// with `useDelay` false/true respectively) — those land on
