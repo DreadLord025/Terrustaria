@@ -1,4 +1,11 @@
-# 248 — W4-e26 luck-system FINAL census: the critter sweep scope, the factor activation, the Frog/Duck keep-one claims-table, the luck-family declaration
+# 357 — W4-e26 luck-system FINAL census: the critter sweep scope, the factor activation, the Frog/Duck keep-one claims-table, the luck-family declaration
+
+> **Chain-banner: 248 → 357 (registry-150 §9 UNIFIED FINAL, d54 tip `b4c94432c`, §9.2 row 357).**
+> g82's published round-2 reservation wins key 248 (§6.3, publish `72226e500`
+> 14:47:50; e26's add `cbaea2864` 15:44:26 is POST-publish → loses). The round-4
+> draft's e26→333 assignment collided with d119's assigned 333; §9's CORRECTION
+> row gives e26 **357** (FINAL — §9 wins over any earlier section). The
+> original first-free 248 selection below is kept as chain-history provenance.
 
 Branch: `task/W4-e26-luck-system` (retire phase, 2026-11-21, code-only —
 no cargo/tests/rustfmt/graphify invoked; every witness WRITTEN NOT RUN).

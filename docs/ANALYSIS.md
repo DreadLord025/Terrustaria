@@ -7364,7 +7364,7 @@ Deviations, all deliberate:
   5043 favor `:45226-45243` gates the trigger on `!unlockedBiomeTorches`);
   the e26 `torch_scan_step` stays the no-event test entry, the
   `nearbyTorches` counter still runs. (Was "not ported" pre-f33 вЂ” see
-  research/248 §2; the f33 merge composes the event entry.)
+  research/357 §2; the f33 merge composes the event entry.)
 - **The temple zone is unmodelled** вЂ” the skip gate
   `ZoneDungeon || ZoneLihzhardTemple` (`:17923`) runs on dungeon only.
 - **`ZoneLihzhardTemple`-free torch inputs** вЂ” the zones ride a per-tick
@@ -7527,9 +7527,9 @@ draws ride the caller's `UpdateNPCs` stream in C# order (the witnesses
 mirror the cited `Next`/`NextFloat` calls on a cloned `UnifiedRandom`);
 the luck setters stay draw-free.
 
-### The W4-e26 RETIRE — the E8 keep-one execution + the FINAL census (research/248)
+### The W4-e26 RETIRE — the E8 keep-one execution + the FINAL census (research/357)
 
-The retire phase (`04dbdb0d2` + research/248) executes the d37-E8 keep-one work
+The retire phase (`04dbdb0d2` + research/357) executes the d37-E8 keep-one work
 order on the roster and publishes the luck-family declaration. **The Duck 362
 variant DROPS to c10** (the waterfowl family's canonical owner, research/108
 E8/SEAL S1 — c10 lands its Duck@731 + the style-68 swim/Transform chain at
@@ -7550,7 +7550,7 @@ dups max 744 i16-safe, `ALL_KINDS` 273 rows, sheet tables 184/184, `ENTRIES` 252
 Duck arms 0, Frog 744/744; the re-pinned protocol witness asserts
 `from_u16(362/731/361) == None` (the dropped/moved slots).
 
-**The sweep scope (research/248 §1)**: the c8 generic critter provider
+**The sweep scope (research/357 §1)**: the c8 generic critter provider
 (`counts_as_a_critter`, the live `max_hp <= 5 && contact_damage() == 0` gate,
 research/238 §1/§7a verified at e26 tip) auto-covers the Frog + ladybug pair with
 **zero per-lane sight/provider wiring**; the GoldLadyBug 605→{604} row is
@@ -7562,7 +7562,7 @@ gate (`add_lady_bug_rain_boost` clamped at `crate::luck::LADYBUG_RAIN_CAP`); the
 e26 kill/bait **callers** (`world_sim/npcs.rs:5083`, `editing.rs:2911`) compose
 onto d130's setter unchanged at merge. No e26 rain.rs edit owed.
 
-**The factor activation (research/248 §2)**: f33's torch-god event ports the
+**The factor activation (research/357 §2)**: f33's torch-god event ports the
 torch-luck scan's **head/tail** (`torch_scan_step_event`, the `happyFunTorchTime`/
 `torchGodCooldown` head `Player.cs:17733-17742` + the `:18066-18086` trigger gated
 on `!unlockedBiomeTorches`, the 5043 favor `:45226-45243` setting it permanent) —
@@ -7575,7 +7575,7 @@ deviation bullet above is SUPERSEDED at merge by f33's event-carrying scan entry
 (the e26 `torch_scan_step` stays the no-event test entry; `player.rs::update_luck`
 routes through f33's `torch_scan_step_event`).
 
-**The claims-table (research/248 §3)**: Frog 361 — e26 keeps (wire 744), f18's
+**The claims-table (research/357 §3)**: Frog 361 — e26 keeps (wire 744), f18's
 duplicate (proto 243) drops at merge; Duck 362 — c10 keeps (wire 731), e26 + f18
 (proto 244) drop; LadyBug/GoldLadyBug 604/605 — e26 keeps (the d42 flip). d39 is
 census-only for 361/362 (research/125 defers to e26/c10, rows neither in code).
@@ -7583,7 +7583,7 @@ census-only for 361/362 (research/125 defers to e26/c10, rows neither in code).
 research/148; its only Frog link is the GoldFrog 445 gold-peer, d40's kind, the c8
 `GOLD_PEER_TABLE` 445→{Frog} row pointing at e26's Frog 361 entry — zero e26
 action). The actual Frog/Duck code claimants are e26/c10/f18.
-**LUCK-FAMILY COMPLETE** (research/248 §4): the full `RecalculateLuck` formula
+**LUCK-FAMILY COMPLETE** (research/357 §4): the full `RecalculateLuck` formula
 runs in C# order, every term live or neutral-default; residual work is merge-time
 only (the c8 UI `unlock_state_world` fold, the d130 rain union, the f33 torch-scan
 compose, the c10 Duck@731 + style68 wiring, the d37 bijection re-pin). No further
