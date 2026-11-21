@@ -1153,7 +1153,7 @@ e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
 | 311 | — | FREE (c9 moved to 349) | free |
 | 312 | d106 | 281-d106-worldgen-6-retire-final | rename owed |
 | 313 | d9 | 313-projectile-ai-81-90-final | DONE c1cd16f79 |
-| 314 | c25 | 281-c25-keyboard-text-field-final | rename in flight |
+| 314 | c25 | 314-c25-keyboard-text-field-final | DONE 0736bbc4e (keyboard.rs pinned-blob comments intentional) |
 | 315 | c32 | 281-convert-tables-family-bible | rename owed |
 | 316 | f39 | 281-f39-v18-claim-input (244→281) | rename owed |
 | 317 | g8 | 281-g8-kind-wire-final | rename owed |
