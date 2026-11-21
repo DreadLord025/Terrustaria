@@ -560,6 +560,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     // (`Player.cs:56169-56172`): collected in the tick, run after the player
     // borrow releases `app` (the kills + drop rolls need `&mut App`).
     let mut force_clear: Option<(i32, i32)> = None;
+    // W4-g11 — the `Player.Teleport` effect pair, collected the same way (the
+    // replay needs `&mut App`; the drain runs it after the step).
+    let mut teleport_effect_req: Option<crate::main_dust::PlayerTeleportReq> = None;
     if let Some(p) = app.player.as_mut() {
         // `Player.cs:18802-18804`: `ResetEffects` clears the Actuation Rod's
         // lock ONLY while `releaseUseItem` rides. `releaseUseItem` is
@@ -1550,6 +1553,27 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 // `Shellphone_Spawn`'s fallback may queue the force-clear.
                 force_clear = p.take_force_clear();
             }
+            // W4-g11 — the `Player.Teleport` effect pair (`Player.cs:37444`/
+            // `:37489`): the movement core queued it (the no-space teleport
+            // above, the Shellphone fallback). The replay needs `&mut App`
+            // (the pool + the player), which this closure's `p` borrow cannot
+            // hand out — it rides the post-step drain beside `force_clear`
+            // (the same-tick deferral is observation-identical: nothing probes
+            // the dust between the move and the drain). The stream is the
+            // `UpdatePlayers` swap (`Main.cs:17754`).
+            if let Some((ox, oy, nx, ny, style, e2, ei, mult)) = p.take_teleport_effect() {
+                teleport_effect_req = Some(crate::main_dust::PlayerTeleportReq {
+                    old_x: ox,
+                    old_y: oy,
+                    new_x: nx,
+                    new_y: ny,
+                    style,
+                    extra_info2: e2,
+                    extra_info: ei,
+                    mult,
+                    key: crate::app::RngKey::UpdatePlayers,
+                });
+            }
             // `Main.UpdateWorld_Players`' tail (`Main.cs:17869-17873`): the
             // journey godmode player's three pools are refilled to their
             // maxima — `statLifeMax2`/`statManaMax2`/`breathMax` are the
@@ -1655,6 +1679,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     // after the tick closure and the player borrow released `app`.
     for (x, y) in switch_sends {
         app.send_hit_switch(x, y);
+    }
+    // W4-g11 — the `Player.Teleport` effect pair (`Player.cs:37444`/`:37489`):
+    // the Entry effect at the OLD box, the move, the Exit at the NEW box, the
+    // grants — on the `UpdatePlayers` stream. The same-tick deferral is
+    // observation-identical (nothing probes the dust between the move and
+    // this drain); it runs BEFORE the force-clear so the Shellphone fallback's
+    // tile kills follow the teleport exactly like the C#.
+    if let Some(req) = teleport_effect_req {
+        crate::main_dust::player_teleport(app, req);
     }
     // `Spawn_ForceClearArea` (`Player.cs:37914-37935`): the same-tick
     // deferral is observation-identical — nothing probes the spawn area

@@ -39279,8 +39279,20 @@ Deliberate deviations / drops (all cited in the module):
   (before `Sandstorm.EmitDust` `:17247`) on `NamedRngs::global()`, and the
   `rain.rs` `Snowflake` vector stand-in is retired (keep-one: the flakes
   live in the shared pool; the 76 physics arm is d50's `dust_physics.rs`
-  lane, the generic draw pass the draw lane's). The teleport callers'
-  effect halves are the port's documented render seams
-  (`player.rs::teleport_style`). The 11 witnesses
-  (`main_dust.rs::tests`) mirror every draw sequence with full-stream
-  equality. WRITTEN NOT RUN — no cargo/rustc invoked (code-only).
+  lane, the generic draw pass the draw lane's). The `TeleportEffect`
+  styles 0/1/2/3/4/5/7 are WIRED at the caller seams: `Player.Teleport`
+  (`player.rs::teleport_style_with_extra` queues the Entry/Exit pair +
+  the `teleportTime`/`teleportStyle`/`lastPortalColorIndex` grants;
+  `main_dust::player_teleport` replays Entry-at-OLD, move, Exit-at-NEW)
+  drained by the player tick (`world_sim/player.rs`, UpdatePlayers) and
+  the wiring pads (`world_sim/wiring.rs`, UpdateWorldGen — the move
+  defers to the replay via `queue_teleport_effect`); `NPC.Teleport`
+  (`main_dust::npc_teleport`, the `Npc` teleport fields) drained by the
+  wiring pads in pool order. The caller passes its pass's `RngKey`; the
+  Item6/Item8/Splash cues ride the same stream. The per-tick
+  `UpdateTeleportVisuals`/`UpdateNPC_TeleportVisuals` decay arms are the
+  W4-e1/NPC dust lanes' (the grants stay at 1 until then — the C# clamps
+  the multiplier either way). The 11 port witnesses + 5 wiring witnesses
+  (`main_dust.rs::tests`, `world_sim/wiring.rs::tests`) mirror every draw
+  sequence with full-stream equality. WRITTEN NOT RUN — no cargo/rustc
+  invoked (code-only).

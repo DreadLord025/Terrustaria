@@ -17058,7 +17058,9 @@ impl ProjectilePool {
                                                 Vec2::new(center.0, center.1),
                                             );
                                             // `Player.Teleport(vector, 10)` — the
-                                            // style-10 instant move.
+                                            // style-10 instant move. (The effect
+                                            // pair is style 10 — g12's arm; the
+                                            // movement stand-in stays.)
                                             p.teleport(target.x, target.y);
                                         }
                                     }

@@ -1937,6 +1937,30 @@ pub struct Player {
     /// `(floor_x, floor_y)` — the kills + liquid wipes need `&mut World` and
     /// the cascade's drop rolls, so the drain runs them (`editing`).
     pending_force_clear: Option<(i32, i32)>,
+    /// W4-g11 — `Player.teleportTime` (`Player.cs:37490`'s `= 1f` grant):
+    /// the `TeleportEffect` dust-count multiplier reads it
+    /// (`Clamp(1 - t*0.99, 0.01, 1)`, `:37442`). The per-tick
+    /// `UpdateTeleportVisuals` decay (`:16613-16670`) is the W4-e1 dust lane's
+    /// — until it lands the field stays at its grant (the C# clamps the
+    /// multiplier at 0.01 either way).
+    pub teleport_time: f32,
+    /// W4-g11 — `Player.teleportStyle` (`Player.cs:37491`): the last
+    /// `Teleport` style, the `UpdateTeleportVisuals` per-tick arm's selector
+    /// (the W4-e1 lane's consumer).
+    pub teleport_style_id: i32,
+    /// W4-g11 — `Player.lastPortalColorIndex` (`Player.cs:37435`/`:37477`):
+    /// the portal pair's colour index — the Entry effect reads the OLD
+    /// value, the post-move write arms the Exit effect's.
+    pub last_portal_color_index: i32,
+    /// W4-g11 — the `Player.Teleport` effect request (`Player.cs:37444`/
+    /// `:37489`): `(old_x, old_y, new_x, new_y, style, extra_info2,
+    /// extra_info, dust_count_mult)` — the movement core
+    /// (`teleport_style_with_extra`) queues it, the drain replays the Entry
+    /// effect at the OLD box, the move, then the Exit effect at the NEW box
+    /// on the caller's pass stream (the `pending_force_clear` convention;
+    /// `main_dust::player_teleport`).
+    #[allow(clippy::type_complexity)]
+    pending_teleport_effect: Option<(f32, f32, f32, f32, i32, i32, i32, f32)>,
     /// The wheel-spark rolls' named stream (the per-consumer convention — C#
     /// rolls the shared `Main.rand` at `Player.cs:19873-19901` and inside
     /// `DelegateMethods.Minecart.Sparks`). Seeded from the world seed.
@@ -2881,6 +2905,10 @@ impl Player {
             pending_no_space_sound: None,
             pending_no_space_teleport: false,
             pending_force_clear: None,
+            teleport_time: 0.0,
+            teleport_style_id: 0,
+            last_portal_color_index: 0,
+            pending_teleport_effect: None,
             spark_rng: world.seed ^ 0x0CA4_75B1_A5E5_DD1D,
             pending_sparks: Vec::new(),
             pending_cart_sounds: Vec::new(),
@@ -3385,6 +3413,17 @@ impl Player {
     /// (`Player.cs:56171`) — `(floor_x, floor_y)` of the invalid spawn area.
     pub(crate) fn take_force_clear(&mut self) -> Option<(i32, i32)> {
         self.pending_force_clear.take()
+    }
+
+    /// W4-g11 — takes the `Player.Teleport` effect request
+    /// (`Player.cs:37444`/`:37489`): `(old_x, old_y, new_x, new_y, style,
+    /// extra_info2, extra_info, dust_count_mult)` — the drain runs
+    /// `main_dust::player_teleport` (the Entry effect at the OLD box, the
+    /// movement core, the Exit effect at the NEW box, the
+    /// `teleportTime`/`teleportStyle` grants).
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn take_teleport_effect(&mut self) -> Option<(f32, f32, f32, f32, i32, i32, i32, f32)> {
+        self.pending_teleport_effect.take()
     }
 
     /// Takes the queued mana-restore text amount (`Player.ManaEffect`,
@@ -9447,7 +9486,61 @@ impl Player {
     /// `oldPosition` sync. The camera/effect/map halves are render seams.
     /// The velocity is NOT zeroed here — the C# scan zeroes it before the
     /// call (`TeleportHelpers.cs:12`) and `Shellphone_Spawn` after (`:56175`).
+    ///
+    /// W4-g11: the full `Teleport` shape queues the effect pair
+    /// (`pending_teleport_effect`) — the Entry `TeleportEffect` at the OLD
+    /// box BEFORE the move (`:37444`), the Exit at the NEW box AFTER
+    /// (`:37489`), the style-4 portal-colour hand-off (`:37433-37436`/
+    /// `:37475-37481`) and the `teleportTime = 1`/`teleportStyle` grants
+    /// (`:37490-37491`). The drain (`world_sim/player.rs`) replays it through
+    /// `main_dust::player_teleport` on the `UpdatePlayers` stream — the
+    /// `pending_force_clear` convention (the effects need `&mut App`).
     pub fn teleport_style(&mut self, new_x: f32, new_y: f32, style: i32) {
+        self.teleport_style_with_extra(new_x, new_y, style, 0);
+    }
+
+    /// The `extraInfo`-carrying form (`Player.cs:37414`'s third parameter) —
+    /// the portal pair's colour index (`Style == 4`, `:37433-37436`); every
+    /// other style passes 0 (the C# default). The effect pair queues and the
+    /// movement core runs inline; the drain replays the effects around the
+    /// (already-applied) move — see [`Self::queue_teleport_effect`] for the
+    /// deferred form the wiring pads use.
+    pub fn teleport_style_with_extra(&mut self, new_x: f32, new_y: f32, style: i32, extra_info: i32) {
+        self.queue_teleport_effect(new_x, new_y, style, extra_info);
+        self.teleport_move_core(new_x, new_y, style);
+        // `:37490-37491` — the grants (the drain re-arms them after the Exit
+        // effect; the C# writes them at the Teleport tail).
+        self.teleport_time = 1.0;
+        self.teleport_style_id = style;
+    }
+
+    /// W4-g11 — queue the `Player.Teleport` effect pair WITHOUT moving: the
+    /// caller defers the move to the replay (`main_dust::player_teleport`),
+    /// which runs Entry-at-OLD, the move, Exit-at-NEW in the C# order. The
+    /// wiring pads use this (the replay needs `&mut App`, which the wiring
+    /// closure's disjoint captures cannot hand out — the `party_credits`
+    /// post-step drain convention).
+    pub(crate) fn queue_teleport_effect(&mut self, new_x: f32, new_y: f32, style: i32, extra_info: i32) {
+        // `:37432-37436` — the Entry effect reads the OLD portal colour.
+        let extra_info2 = if style == 4 { self.last_portal_color_index } else { 0 };
+        // `:37442` — `MathHelper.Clamp(1 - teleportTime*0.99, 0.01, 1)`.
+        let mult = (1.0 - self.teleport_time * 0.99).clamp(0.01, 1.0);
+        // `:37444`/`:37489` — the effect pair rides the drain (the Entry at
+        // the OLD box, the move, the Exit at the NEW box).
+        self.pending_teleport_effect =
+            Some((self.x, self.y, new_x, new_y, style, extra_info2, extra_info, mult));
+        // `:37475-37481` — the post-move portal hand-off: the Exit effect
+        // reads the NEW colour (`extraInfo`), the flag/gravity writes are the
+        // portal physics lane's (cited skip — no portal caller yet).
+        if style == 4 {
+            self.last_portal_color_index = extra_info;
+        }
+    }
+
+    /// The movement core shared by `teleport_style_with_extra` and the
+    /// effect drain (which must NOT re-queue): `:37420-37431` + `:37446`/
+    /// `:37455`/`:37488`.
+    pub(crate) fn teleport_move_core(&mut self, new_x: f32, new_y: f32, style: i32) {
         // `:37420-37423` — every style but 10 removes the hooks.
         if style != 10 {
             self.release_grappling_hooks = true;

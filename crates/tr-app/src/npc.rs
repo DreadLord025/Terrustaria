@@ -1248,6 +1248,19 @@ pub struct Npc {
     /// statue spawns; gates the loot (`NPCLoot`'s StatueSpawnedDropRarity
     /// check, `NPC.cs:78849`).
     pub spawned_from_statue: bool,
+    /// W4-g11 — `NPC.teleportTime` (`NPC.cs:81052`'s `= 1f` grant): the
+    /// `NPC.Teleport` dust-count multiplier reads it (`> 0 ? 0.3 : 1`,
+    /// `:81042`). The per-tick `UpdateNPC_TeleportVisuals` decay
+    /// (`:92194-92241`) is the NPC dust lane's — until it lands the field
+    /// stays at its grant.
+    pub teleport_time: f32,
+    /// W4-g11 — `NPC.teleportStyle` (`NPC.cs:81053`): the last `Teleport`
+    /// style, the `UpdateNPC_TeleportVisuals` arm's selector.
+    pub teleport_style_id: i32,
+    /// W4-g11 — `NPC.lastPortalColorIndex` (`NPC.cs:81040`/`:81048`): the
+    /// portal pair's colour index — the Entry effect reads the OLD value,
+    /// the post-move write arms the Exit effect's.
+    pub last_portal_color_index: i32,
     /// `NPC.buffType[20]` / `buffTime[20]` / `buffImmune` — the debuff engine
     /// (`npc_buffs.rs`, `NPC.cs:6193-6197`); the DoT tick runs from
     /// `Npc::update` like the C# buff block of `UpdateNPC`.
@@ -2934,6 +2947,9 @@ impl Npc {
             immune: [0; 256],
             player_interaction: [false; 256],
             spawned_from_statue: false,
+            teleport_time: 0.0,
+            teleport_style_id: 0,
+            last_portal_color_index: 0,
             buffs: NpcBuffs::for_kind(kind),
             frame: 0,
             frame_counter: 0.0,

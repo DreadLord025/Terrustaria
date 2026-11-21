@@ -23,18 +23,23 @@
 //! and `Wiring.Teleport` (`Wiring.cs:3154`/`:3170`, the `UpdateWorldGen`
 //! swap) — the caller passes its pass's stream key.
 //!
-//! Wiring status: the snow site is WIRED (W4-g11 wiring round) —
+//! Wiring status (W4-g11 wiring round — BOTH seams WIRED): the snow site —
 //! `world_sim::scene_scan::update_scene` calls `snowing` at the `:17238`
 //! slot (before `Sandstorm.EmitDust` `:17247`, on `NamedRngs::global()`),
 //! and the `rain.rs` `Snowflake` vector stand-in is retired (keep-one). The
 //! type-76 physics arm (`snowDust++`, the scale lerp — `Dust.cs:1745-1763`)
 //! is d50's `dust_physics.rs` lane; until it lands the flakes ride the
 //! generic `UpdateDust` move/kills, and the pool's generic draw pass is the
-//! draw lane's. The `TeleportEffect` callers' effect halves are the port's
-//! documented render seams (`player.rs::teleport_style` — "the camera/effect/
-//! map halves are render seams"; `recall_teleport` runs its own recall dust,
-//! NOT `TeleportEffect`). The witnesses below pin the ports. WRITTEN NOT RUN
-//! (code-only mode).
+//! draw lane's. The `TeleportEffect` styles — `Player.Teleport`
+//! (`player.rs::teleport_style_with_extra` queues the Entry/Exit pair + the
+//! grants; `player_teleport` below replays Entry-at-OLD, move, Exit-at-NEW)
+//! drained by the player tick (`world_sim/player.rs`, UpdatePlayers) and the
+//! wiring pads (`world_sim/wiring.rs`, UpdateWorldGen); `NPC.Teleport`
+//! (`npc_teleport` below) drained by the wiring pads in pool order. The
+//! per-tick `UpdateTeleportVisuals` decay arms are the W4-e1/NPC dust lanes'.
+//! `recall_teleport` runs its own recall dust, NOT `TeleportEffect` (the
+//! mirror/recall cluster calls `Spawn`, not `Teleport`). The witnesses below
+//! pin the ports + the wiring. WRITTEN NOT RUN (code-only mode).
 
 // The entry points are staged (see the wiring note above) — the witnesses
 // exercise them under `cfg(test)`; the lint stays quiet until the wiring.
@@ -495,6 +500,108 @@ fn nd_direct(app: &mut App, pos: Vec2, w: i32, h: i32, ty: i32, key: RngKey) -> 
     app.dust.new_dust_direct(
         rng, &ctx, &app.world, pos, w, h, ty, 0.0, 0.0, 0, Color::default(), 1.0,
     )
+}
+
+/// W4-g11 wiring — the `Player.Teleport` request (`Player.cs:37414-37496`):
+/// the movement core queues it (`Player::teleport_style_with_extra`), the
+/// drain replays the C# order — the Entry `TeleportEffect` at the OLD box
+/// (`:37444`), the move (`:37446`), the Exit at the NEW box (`:37489`), the
+/// `teleportTime`/`teleportStyle` grants (`:37490-37491`). `key` is the
+/// CALLER's pass stream: `UpdatePlayers` for the player-tick callers
+/// (`Main.cs:17754`), `UpdateWorldGen` for the wiring pads (`Wiring.cs:3154`
+/// under `WorldGen.UpdateWorld`), `UpdateProjectiles` for the Queen-Slime
+/// hook (`Projectile.cs:52775` under the projectile pass).
+pub(crate) struct PlayerTeleportReq {
+    pub old_x: f32,
+    pub old_y: f32,
+    pub new_x: f32,
+    pub new_y: f32,
+    pub style: i32,
+    /// The Entry effect's `extraInfo2` (the OLD portal colour, `:37433-37436`).
+    pub extra_info2: i32,
+    /// The Exit effect's `extraInfo2` (the NEW portal colour, `:37475-37478`).
+    pub extra_info: i32,
+    /// `:37442` — `Clamp(1 - teleportTime*0.99, 0.01, 1)`.
+    pub mult: f32,
+    pub key: RngKey,
+}
+
+/// The `Player.Teleport` replay (W4-g11 wiring): the Entry effect at the OLD
+/// box, the movement core, the Exit effect at the NEW box, then the grants.
+/// The camera transition / map-refresh halves (`:37456-37474`) stay the
+/// port's render seams (`world_sim::camera` owns the wiring-pad transition).
+pub(crate) fn player_teleport(app: &mut App, req: PlayerTeleportReq) {
+    let Some(p) = app.player.as_ref() else {
+        return;
+    };
+    let (w, h) = (p.width as i32, p.height as i32);
+    let old_rect = EffectRect { x: req.old_x as i32, y: req.old_y as i32, width: w, height: h };
+    // `:37444` — the Entry effect BEFORE the position write.
+    teleport_effect(app, old_rect, req.style, req.extra_info2, req.mult, req.key);
+    // `:37446`/`:37455`/`:37488` — the move (no re-queue).
+    if let Some(p) = app.player.as_mut() {
+        p.teleport_move_core(req.new_x, req.new_y, req.style);
+    }
+    let new_rect = EffectRect { x: req.new_x as i32, y: req.new_y as i32, width: w, height: h };
+    // `:37489` — the Exit effect AFTER the move.
+    teleport_effect(app, new_rect, req.style, req.extra_info, req.mult, req.key);
+    // `:37490-37491` — the grants.
+    if let Some(p) = app.player.as_mut() {
+        p.teleport_time = 1.0;
+        p.teleport_style_id = req.style;
+    }
+}
+
+/// W4-g11 wiring — the `NPC.Teleport` request (`NPC.cs:81035-81058`): the
+/// wiring-pad drain queues it, the replay runs the Entry effect at the OLD
+/// box (`:81044`), the position write (`:81045`), the Exit at the NEW box
+/// (`:81051`), the grants (`:81052-81053`). `index` is the NPC's slot in
+/// `App::npcs`; `key` the caller's pass stream (`UpdateWorldGen` for the
+/// pads, `Wiring.cs:3170`).
+pub(crate) struct NpcTeleportReq {
+    pub index: usize,
+    pub new_x: f32,
+    pub new_y: f32,
+    pub style: i32,
+    pub extra_info: i32,
+    pub key: RngKey,
+}
+
+/// The `NPC.Teleport` replay (W4-g11 wiring). The MP `SendData(65)`
+/// (`:81054-81057`) is single-player dead.
+pub(crate) fn npc_teleport(app: &mut App, req: NpcTeleportReq) {
+    let Some(n) = app.npcs.get(req.index) else {
+        return;
+    };
+    let (w, h) = n.size();
+    let (w, h) = (w as i32, h as i32);
+    // `:81037-81041` — the Entry reads the OLD portal colour.
+    let extra_info2 = if req.style == 4 { n.last_portal_color_index } else { 0 };
+    // `:81042` — `teleportTime > 0 ? 0.3 : 1`.
+    let mult = if n.teleport_time > 0.0 { 0.3 } else { 1.0 };
+    let old_rect = EffectRect { x: n.x as i32, y: n.y as i32, width: w, height: h };
+    // `:81044` — the Entry effect BEFORE the position write.
+    teleport_effect(app, old_rect, req.style, extra_info2, mult, req.key);
+    // `:81045-81050` — the move + the portal hand-off.
+    let Some(n) = app.npcs.get_mut(req.index) else {
+        return;
+    };
+    n.x = req.new_x;
+    n.y = req.new_y;
+    let exit_extra = if req.style == 4 {
+        n.last_portal_color_index = req.extra_info;
+        n.last_portal_color_index
+    } else {
+        extra_info2
+    };
+    let new_rect = EffectRect { x: req.new_x as i32, y: req.new_y as i32, width: w, height: h };
+    // `:81051` — the Exit effect AFTER the move.
+    teleport_effect(app, new_rect, req.style, exit_extra, mult, req.key);
+    // `:81052-81053` — the grants.
+    if let Some(n) = app.npcs.get_mut(req.index) {
+        n.teleport_time = 1.0;
+        n.teleport_style_id = req.style;
+    }
 }
 
 #[cfg(test)]
@@ -1004,6 +1111,194 @@ mod tests {
         snowing(&env, app.rngs.global(), &ctx, &app.world, &mut app.dust);
         assert_eq!(crate::minecart::live_type(&app.dust, 76), 40);
         assert_eq!(app.rngs.global().clone(), UnifiedRandom::new(1));
+    }
+
+    // --- W4-g11 wiring: the Teleport replays -------------------------------
+
+    /// The player rig: the teleport rig + a player parked on the OLD box
+    /// (300, 600), the listener on its centre so both effect cues pass the
+    /// attenuation gate.
+    fn player_rig(seed: i32) -> App {
+        let mut app = rig(seed);
+        let mut p = crate::player::Player::spawn(&app.world);
+        p.x = 300.0;
+        p.y = 600.0;
+        app.player = Some(p);
+        app
+    }
+
+    /// The `Player.Teleport` replay (`Player.cs:37414-37496`): the Entry
+    /// effect at the OLD box BEFORE the move, the Exit at the NEW box AFTER,
+    /// both on the caller's stream in C# order — style 1's two Item8 cues +
+    /// two 8-puff bursts (mult 0.05), the full stream mirror walks them.
+    #[test]
+    fn w4_g11_player_teleport_replays_entry_then_exit() {
+        let mut app = player_rig(0x5EED);
+        player_teleport(
+            &mut app,
+            PlayerTeleportReq {
+                old_x: 300.0,
+                old_y: 600.0,
+                new_x: 500.0,
+                new_y: 700.0,
+                style: 1,
+                extra_info2: 0,
+                extra_info: 0,
+                mult: 0.05,
+                key: KEY,
+            },
+        );
+        // The move + the grants (`:37446`/`:37490-37491`).
+        let p = app.player.as_ref().unwrap();
+        assert_eq!((p.x, p.y), (500.0, 700.0));
+        assert_eq!(p.teleport_time, 1.0);
+        assert_eq!(p.teleport_style_id, 1);
+        // 8 puffs at the OLD box + 8 at the NEW (`20*42/5*0.05 = 8.4 → 8`).
+        let slots = live(&app);
+        assert_eq!(slots.len(), 16);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        for (burst, origin) in [(0usize, Vec2::new(300.0, 600.0)), (8, Vec2::new(500.0, 700.0))] {
+            item_pitch(&mut rng); // the Item8 cue precedes each burst
+            for j in 0..8 {
+                let d = slots[burst + j];
+                assert_eq!(d.dust_type, 164);
+                let (pos, v, _) = default_block(&mut rng, origin, 20, 42);
+                assert_eq!(d.position, pos);
+                assert_eq!(d.velocity, v);
+                let mut scale = rng.next_range(20, 70) as f32 * 0.01;
+                if j < 10 {
+                    scale += 0.25;
+                }
+                if j < 5 {
+                    scale += 0.25;
+                }
+                assert_eq!(d.scale, scale);
+            }
+        }
+        assert_eq!(stream_of(&mut app), rng);
+    }
+
+    /// The queue contract: `teleport_style` captures the OLD box + the
+    /// `Clamp(1 - teleportTime*0.99, 0.01, 1)` mult at the call moment, moves
+    /// the player, grants `teleportTime = 1`/`teleportStyle`, and the take
+    /// drains once (the `pending_force_clear` convention).
+    #[test]
+    fn w4_g11_teleport_style_queues_the_effect_pair() {
+        let mut app = player_rig(3);
+        let p = app.player.as_mut().unwrap();
+        p.teleport_time = 0.5; // mult = 1 - 0.495 = 0.505
+        p.teleport_style(500.0, 700.0, 1);
+        assert_eq!((p.x, p.y), (500.0, 700.0), "the move ran inline");
+        assert_eq!(p.teleport_time, 1.0);
+        assert_eq!(p.teleport_style_id, 1);
+        let req = p.take_teleport_effect().expect("the pair queued");
+        assert_eq!((req.0, req.1, req.2, req.3), (300.0, 600.0, 500.0, 700.0));
+        assert_eq!((req.4, req.5, req.6), (1, 0, 0));
+        assert!((req.7 - 0.505).abs() < 1e-6, "mult = 1 - 0.5*0.99: {}", req.7);
+        assert!(p.take_teleport_effect().is_none(), "drains once");
+        // A second teleport clamps the mult at 0.01 (teleportTime 1).
+        p.teleport_style(600.0, 800.0, 2);
+        let req = p.take_teleport_effect().unwrap();
+        assert_eq!(req.7, 0.01);
+    }
+
+    /// The `NPC.Teleport` replay (`NPC.cs:81035-81058`): the Entry at the OLD
+    /// box, the move, the Exit at the NEW box, the grants — style 0's two
+    /// Item6 cues + two bursts. The NPC box is its `size()` (the Nurse 20×42
+    /// stand-in is the rig's; the mirror reads the live size).
+    #[test]
+    fn w4_g11_npc_teleport_replays_entry_then_exit() {
+        let mut app = rig(0xC0FFEE);
+        let mut n = crate::npc::Npc::new(crate::npc::NpcKind::Nurse, 300.0, 600.0, 1, 0.0);
+        n.hp = n.max_hp;
+        app.npcs.push(n);
+        let (w, h) = app.npcs[0].size();
+        let (wi, hi) = (w as i32, h as i32);
+        npc_teleport(
+            &mut app,
+            NpcTeleportReq {
+                index: 0,
+                new_x: 500.0,
+                new_y: 700.0,
+                style: 0,
+                extra_info: 0,
+                key: KEY,
+            },
+        );
+        assert_eq!((app.npcs[0].x, app.npcs[0].y), (500.0, 700.0));
+        assert_eq!(app.npcs[0].teleport_time, 1.0);
+        assert_eq!(app.npcs[0].teleport_style_id, 0);
+        // mult 1 (teleportTime was 0): `w*h/5` puffs per burst.
+        let per_burst = (wi * hi / 5) as usize;
+        let slots = live(&app);
+        assert_eq!(slots.len(), per_burst * 2);
+        let mut rng = UnifiedRandom::new(0xC0FFEE);
+        for (burst, origin) in
+            [(0usize, Vec2::new(300.0, 600.0)), (per_burst, Vec2::new(500.0, 700.0))]
+        {
+            item_pitch(&mut rng); // the Item6 cue precedes each burst
+            for j in 0..per_burst {
+                let d = slots[burst + j];
+                assert_eq!(d.dust_type, 159);
+                let (pos, v, _) = default_block(&mut rng, origin, wi, hi);
+                assert_eq!(d.position, pos);
+                assert_eq!(d.velocity, v);
+                let mut scale = rng.next_range(20, 70) as f32 * 0.01;
+                if j < 10 {
+                    scale += 0.25;
+                }
+                if j < 5 {
+                    scale += 0.25;
+                }
+                assert_eq!(d.scale, scale);
+            }
+        }
+        assert_eq!(stream_of(&mut app), rng);
+        // A re-teleport inside the window reads mult 0.3 (`:81042`).
+        let before = app.rngs.stream(KEY).clone();
+        npc_teleport(
+            &mut app,
+            NpcTeleportReq { index: 0, new_x: 500.0, new_y: 700.0, style: 0, extra_info: 0, key: KEY },
+        );
+        let expected = ((wi * hi / 5) as f32 * 0.3) as usize;
+        assert_eq!(live(&app).len() - per_burst * 2, expected * 2);
+        assert_ne!(app.rngs.stream(KEY).clone(), before);
+    }
+
+    /// The caller-key contract: the wiring pads replay on `UpdateWorldGen`,
+    /// the player tick on `UpdatePlayers` — the OTHER streams stay untouched
+    /// (one RNG slot per C# pass, S1-A-10).
+    #[test]
+    fn w4_g11_the_replay_rides_only_the_callers_stream() {
+        let mut app = player_rig(9);
+        // The global baseline BEFORE any read (the rig's spawn_ctx does not
+        // draw; the replay must not touch the bare stream either).
+        let global_before = app.rngs.global().clone();
+        let untouched: Vec<_> = crate::app::RngKey::ALL
+            .iter()
+            .copied()
+            .filter(|k| *k != crate::app::RngKey::UpdateWorldGen)
+            .map(|k| (k, app.rngs.stream(k).clone()))
+            .collect();
+        player_teleport(
+            &mut app,
+            PlayerTeleportReq {
+                old_x: 300.0,
+                old_y: 600.0,
+                new_x: 500.0,
+                new_y: 700.0,
+                style: 1,
+                extra_info2: 0,
+                extra_info: 0,
+                mult: 0.05,
+                key: crate::app::RngKey::UpdateWorldGen,
+            },
+        );
+        assert!(!live(&app).is_empty(), "the replay drew on UpdateWorldGen");
+        for (k, before) in untouched {
+            assert_eq!(app.rngs.stream(k).clone(), before, "{k:?} moved");
+        }
+        assert_eq!(app.rngs.global().clone(), global_before);
     }
 }
 
