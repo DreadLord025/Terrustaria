@@ -1,9 +1,23 @@
-# 143 — The happiness final round (W4-g58): the buy/sell latch repoint, the report-UI census, the savings 3-way call-site census, the portrait-hop census
+# 240 — The happiness final round (W4-g58): the buy/sell latch repoint, the report-UI census, the savings 3-way call-site census, the portrait-hop census
 
 Date: 2026-11-21. Code-only — no cargo/tests run; every claim re-read from
 the C# (`decompiled/`) and the branch tips named below. This is g58's FINAL
 round: the four remaining items of the "Shop happiness UI (W4-g58)"
 ANALYSIS section, closed or censused.
+
+**Renumbered 143 → 240** per the research/150 collision registry
+(`origin/task/W4-d54-dust-sites-world` tip `38bfd1d22`, §2's one-sided rule:
+"if those lanes later push them, they MUST take free numbers 237+"). The
+registry scan found 143 ONE-SIDED (c4's `143-d40-crimsongoldfish-retire-hunk.md`
+first-add 09:02:12 keeps the number); a fresh 356-tip `git ls-tree` scan this
+round finds FIVE 143 claimants pushed after the scan — c4 (keeps 143),
+d120 `143-d120-chatter-retire.md` (09:46:26 → 237), d42
+`143-d42-roster-sheets.md` (09:50:22 → 238), c8
+`143-c8-crawler-final-census.md` (10:03:55 → 239), g58 this doc (10:26:59 →
+**240**, fourth loser in first-add order). Numbers 237–249 are free at every
+tip; the 237/238/239 assignments are recorded here for those lanes/merger —
+each renames on its OWN branch. Content below is unchanged from the 143
+edition; refs updated (INDEX row, ANALYSIS §citations, the two code comments).
 
 Refs examined (origin tips at the round's start):
 

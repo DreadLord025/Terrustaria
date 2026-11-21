@@ -1695,7 +1695,7 @@ impl App {
                                     // LATCHED `currentShoppingSettings.
                                     // PriceAdjustment`, not the shop-open
                                     // `shop_mood` capture (the buy-lane
-                                    // repoint, research/143).
+                                    // repoint, research/240).
                                     self.shopping_settings.price_adjustment,
                                     self.discount_available,
                                 )

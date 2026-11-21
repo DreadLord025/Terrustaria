@@ -173,7 +173,7 @@ pub(crate) struct App {
     /// The portrait DRAW is deferred (no portrait system, S1-E-10b); the
     /// counter + the hop math (`ui::npc_chat::portrait_hop_lift`) are
     /// ported so the animation state is faithful when the draw lands
-    /// (research/143's portrait census).
+    /// (research/240's portrait census).
     pub(crate) npc_chat_portrait_frame_counter: i32,
     /// `Player.currentShoppingSettings` (`Player.cs:2916`) — latched by
     /// `SetTalkNPC` (`Player.cs:4383-4390`): the talk open runs
@@ -225,7 +225,7 @@ pub(crate) struct App {
     /// reforge/nurse/tax/chrome) all read the `shopping_settings` latch
     /// instead (`Player.cs:35382-35388` etc. — `currentShoppingSettings`'
     /// only write site is `SetTalkNPC` `:4389`); this field stays as the
-    /// f37 merge side's shop-open capture (research/143, the buy-lane
+    /// f37 merge side's shop-open capture (research/240, the buy-lane
     /// repoint census).
     pub(crate) shop_mood: f32,
     /// `Player.discountAvailable` (`Player.cs:25638`): refreshed from
