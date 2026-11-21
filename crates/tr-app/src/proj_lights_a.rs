@@ -25,10 +25,13 @@
 //! Like the `ProjLight` chain and the e6 second wave, an arm whose kind has no
 //! `proj_data` row is absent wholesale (no slot can carry it), and no ported
 //! arm draws `Main.rand` — the feed is pure, so its placement cannot move any
-//! stream. A light gated on a `Main.rand` draw is absent wholesale (the e6
-//! RNG rule): the 409 Typhoon (`:30378`, inside `Next(3) == 0`), the 590
-//! TruffleSpore (`:34226`, the `Next(28,42)` colour flicker), the 849
-//! ScytheWhip (`:47846`) and the 912 CoolWhip (`:48011`).
+//! stream. A light gated on a `Main.rand` draw is absent FROM THIS FEED (the
+//! e6 RNG rule); round 3 arms the four rand-gated sites in the SIM instead
+//! (the `item_lights` named-stream precedent): the 409 Typhoon (`:30378`,
+//! `ai_typhoon`), the 590 TruffleSpore (`:34226`, `ai_truffle_spore`), the 849
+//! ScytheWhip (`:47846`) and the 912 CoolWhip (`:48011`) — both
+//! `whip_dust_lights` — take their gate draws on the `UpdateProjectiles`
+//! stream and queue intents the world-sim pass drains (`drain_ai_lights`).
 //!
 //! **Round 2 (the 42-absent re-census):** the d-lane AI ports pushed since the
 //! first wave rowed ~20 of the absent kinds (W4-d12/d13/d17/d19/d20/d21); their
@@ -39,6 +42,17 @@
 //! misattributions are corrected: site 45 (`:41775`) is the 985 arm (not 973),
 //! site 46 (`:42181`) the 1126 arm (not 972). The tiger/601 state-driven
 //! deviations are unchanged (no lane ported their AI). See ANALYSIS.
+//!
+//! **Round 3 (lights-final, 2026-11-21):** the four rand-gated sites arm in
+//! the sim (above); the d9/d10/d11 lanes rowed nine more of the absent kinds
+//! (451/464/490/492 d9, 518/535 d10, 567/568/575 d11) — their ten sites
+//! activate here (the 464 pair counts two). The 978 Volcano's d12 row is
+//! aiStyle 189, NOT the `:34487` trio's aiStyle 117 — the third term stays
+//! unreachable (a style mismatch, not a missing row). Accounting: **58 ported
+//! sites (54 in this feed + 4 rand-armed in the sim) / 64 light contributions
+//! (the 464 ring adds 5 extra), 2 audit-landed, 7 absent** (502, 1092, 465,
+//! 466, 731, the phaseblade pair, 756; the 978 trio term is site 26's
+//! unreachable third kind, not a separate site).
 //!
 //! **The site register (all 67, in line order):**
 //!
@@ -76,16 +90,19 @@
 //!   else `AddLight(Center, 0.3, 0.5, 0.7)`. PORTED.
 //! * `:30378` — site 11, the 409 Typhoon's
 //!   `AddLight((int)Center/16, 0.1, 0.4, 0.6)`, INSIDE
-//!   `localAI[1] > 10 && Main.rand.Next(3) == 0`. Absent wholesale (the RNG
-//!   rule): the light rides a rand draw the pure feed cannot take. (The
-//!   sim's `ai_typhoon` already runs the fade block unconditionally — a
-//!   recorded deviation — but the light stays absent until the gate lands.)
+//!   `localAI[1] > 10 && Main.rand.Next(3) == 0`. ARMED round 3 — NOT in
+//!   this pure feed: the sim's `ai_typhoon` takes the gate draw on the
+//!   `UpdateProjectiles` stream and queues the intent (`drain_ai_lights`,
+//!   the `item_lights` named-stream precedent); the unconditional-fade
+//!   deviation is retired.
 //! * `:31212` — site 12, the 451 InfluxWaver's alpha-scaled
 //!   `AddLight((int)Center/16, 0.3·a, 0.4·a, 1·a)` (aiStyle-81 tail).
-//!   Absent: 451 has no row.
+//!   PORTED round 3 — rowed by W4-d9; the AI arm is unported, so the light
+//!   reads the spawn alpha (the tiger/601 state-driven precedent).
 //! * `:31864`/`:31893` — sites 13/14, the 464 CultistBossIceMist's
 //!   `AddLight(Center, 0.3, 0.75, 0.9)` (aiStyle-86, the `ai[1]==1` spin and
-//!   the 6-point ring). Absent: 464 has no row.
+//!   the 6-point ring). PORTED round 3 — rowed by W4-d9; the spawn
+//!   `ai[1] == 0` reads the ring arm (the state-driven precedent).
 //! * `:31998` — site 15, the 465 CultistBossLightningOrb's
 //!   `AddLight(Center, 0.4, 0.85, 0.9)` (aiStyle-88). Absent: 465 no row.
 //! * `:32049` — site 16, the 466 CultistBossLightningOrbArc's
@@ -94,20 +111,23 @@
 //!   `AddLight(Center, 0.3, 0.45, 0.5)` (aiStyle-88's `type == 580` else
 //!   arm, after `frameCounter++`). PORTED.
 //! * `:32384` — site 18, the 490 CultistRitual's
-//!   `AddLight(Center, 1.1, 0.9, 0.4)` (aiStyle-89 tail). Absent: 490 no row.
+//!   `AddLight(Center, 1.1, 0.9, 0.4)` (aiStyle-89 tail). PORTED round 3 —
+//!   rowed by W4-d9; the `flag43` NPC-active/type gate folds to the
+//!   `ai[1] >= 0` slot-state half (the feed carries no NPC slice).
 //! * `:32410` — site 19, the 492 MagicLantern's
-//!   `AddLight(base.position, 0.35, 0.35, 0.1)` (aiStyle-90). Absent: 492 no
-//!   row.
+//!   `AddLight(base.position, 0.35, 0.35, 0.1)` (aiStyle-90). PORTED round
+//!   3 — rowed by W4-d9; the top-left anchor.
 //! * `:32962` — site 20, the 518 CoinPortal's
 //!   `AddLight(Center, 0.8·0.3, 181/255·0.3, 72/255·0.3)` (aiStyle-94 tail).
-//!   Absent: 518 no row.
+//!   PORTED round 3 — rowed by W4-d10.
 //! * `:33580` — site 21, the 575 NebulaSphere's
-//!   `AddLight(Center, 0.5, 0.1, 0.3)` (aiStyle-107). Absent: 575 no row.
+//!   `AddLight(Center, 0.5, 0.1, 0.3)` (aiStyle-107). PORTED round 3 —
+//!   rowed by W4-d11.
 //! * `:34226` — site 22, the 590 TruffleSpore's rand-flicker
 //!   `AddLight(Center, …)` (aiStyle-112, `alpha == 0` + `Next(28,42)`).
-//!   Absent wholesale (the RNG rule): the colour's `num831` rides a
-//!   `Main.rand.Next(28,42)` draw the pure feed cannot take. (The 590 row
-//!   landed with W4-d12, but the rand gate keeps the light absent.)
+//!   ARMED round 3 — NOT in this pure feed: the sim's `ai_truffle_spore`
+//!   takes the flicker draw on the `UpdateProjectiles` stream and queues
+//!   the intent (`drain_ai_lights`). The 590 row is W4-d12's to merge.
 //! * `:34265` — site 23, the 644 RainbowCrystalExplosion's
 //!   `AddLight(Center, hslToRgb(ai[0],1,0.5).ToVector3()·0.5)` (aiStyle-112,
 //!   `alpha == 0`). PORTED.
@@ -160,8 +180,9 @@
 //! * `:40038` — site 38, the 1078 MeteorOre's `AddLight(Center, 1,0,0)`
 //!   (AI_199). PORTED — rowed by W4-d20.
 //! * `:40046` — site 39, the 567/568 SporeTrap's
-//!   `AddLight(Center, 0.2·n, 0.275·n, 0.075·n)` (AI_105 head). Absent:
-//!   neither rowed.
+//!   `AddLight(Center, 0.2·n, 0.275·n, 0.075·n)` (AI_105 head). PORTED
+//!   round 3 — rowed by W4-d11; the head reads `(1-alpha/255)·scale`, dark
+//!   at the alpha-255 spawn until the AI arm's fade runs.
 //! * `:40507` — site 40, the AI_196_Petal early-return
 //!   `AddLight(Center, vector)` (`ai[0] < 20 && ai[0] >= 10`). The reaching
 //!   kinds are 1038/1116 (aiStyle 196); the rowed 248 FlowerPowPetal is
@@ -193,7 +214,9 @@
 //!   trail + mounted-centre pair (AI_182, the profile `trailColor`, the
 //!   Opacity window). PORTED — rowed by W4-d19.
 //! * `:44612` — site 50, the 535 MedusaHead's
-//!   `AddLight(Center, 0.9, 0.75, 0.1)` (AI_100). Absent: 535 no row.
+//!   `AddLight(Center, 0.9, 0.75, 0.1)` (AI_100). PORTED round 3 — rowed by
+//!   W4-d10; the local-owner channel-Kill gate folds live (the feed carries
+//!   no channel state).
 //! * `:44662` — site 51, the 623 StardustGuardian's
 //!   `AddLight(Center, 0.9, 0.9, 0.7)` (AI_120's 623 arm). PORTED.
 //! * `:46037` — site 52, the 342 NorthPole's
@@ -207,10 +230,13 @@
 //!   `AddLight(Center, (32,108,0))` (AI_161). PORTED — rowed by W4-d17.
 //! * `:47846` — site 56, the 849 ScytheWhip's
 //!   `AddLight(r2.Center, 0.2, 0, 0.4)` (AI_165's 849 arm), INSIDE the
-//!   `Next(9) != 0` rand gate. Absent wholesale (the RNG rule).
+//!   `Next(9) != 0` rand gate. ARMED round 3 — NOT in this pure feed: the
+//!   sim's `whip_dust_lights` takes the gate draws on the
+//!   `UpdateProjectiles` stream and queues the intent (`drain_ai_lights`).
 //! * `:48011` — site 57, the 912 CoolWhip's
 //!   `AddLight(r16.Center, 0.1, 0.1, 0.2)` (AI_165's 912 arm), INSIDE the
-//!   `NextFloat() < num28/2` rand gate. Absent wholesale (the RNG rule).
+//!   `NextFloat() < num28/2` rand gate. ARMED round 3 — the same
+//!   `whip_dust_lights` drain seam.
 //! * `:49283`/`:49287`/`:49291` — sites 58/59/60, the Storm Tigers'
 //!   `AddLight(Center, …)` (AI_067's `flag3`, `ai[0] != 4`): 833 One·0.5,
 //!   834 One·0.8, 835 `Lerp(OurFavoriteColor, White, 0.8)·1`. PORTED — the
@@ -400,6 +426,83 @@ pub(crate) fn proj_lights_a(
         // then `frameCounter++` and the unconditional centre light (the
         // sim's `ai_vortex_bolt` runs the wrap latch / wand around it).
         out.push((cx, cy, [0.3, 0.45, 0.5]));
+    } else if p.kind == 451 {
+        // `:31211-31212` — aiStyle-81's tail: `num655 = alpha / 255f`, then
+        // `AddLight((int)Center.X / 16, (int)Center.Y / 16, 0.3·n, 0.4·n,
+        // 1·n)` — the truncate-FIRST anchor form. Rowed by W4-d9 (aiStyle 81,
+        // alpha 255); the AI arm is unported here, so the slot keeps its
+        // spawn alpha and the light reads it (the tiger/601 state-driven
+        // precedent — full-bright at the spawn state, ANALYSIS round 3).
+        let n = p.alpha as f32 / 255.0;
+        out.push((
+            (p.pos.x + p.w * 0.5) as i32 / 16,
+            (p.pos.y + p.h * 0.5) as i32 / 16,
+            [0.3 * n, 0.4 * n, 1.0 * n],
+        ));
+    } else if p.kind == 464 {
+        // `:31827-31899` — aiStyle-86's CultistBossIceMist pair. Rowed by
+        // W4-d9 (aiStyle 86, alpha 255); the AI arm is unported, so the slot
+        // keeps its spawn state (`ai[1] == 0` → the ring arm; the spin arm's
+        // `:31864` light needs the `ai[1] == 1` spawn).
+        if p.ai[1] == 1.0 {
+            // `:31864` — the spin arm's centre light, before the `return`.
+            out.push((cx, cy, [0.3, 0.75, 0.9]));
+        } else {
+            // `:31889-31893` — the 6-point ring: `spinningpoint2 =
+            // (0, -720).RotatedBy(velocity.ToRotation()) * (ai[0] % 45 / 45)`,
+            // each point `Center + spinningpoint2.RotatedBy(i · 2π/6)`. The
+            // C# `RotatedBy` computes in double (`Utils.cs:1188-1196`); the
+            // per-point dust draws after each light are the sim's skip.
+            let centre = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+            let rot = p.vel.to_angle() as f64;
+            let (s, c) = rot.sin_cos();
+            let base = Vec2::new((720.0 * s) as f32, (-720.0 * c) as f32)
+                * (p.ai[0] % 45.0 / 45.0);
+            for i in 0..6 {
+                let a = (i as f64) * (std::f64::consts::PI * 2.0) / 6.0;
+                let (s, c) = a.sin_cos();
+                let pt = centre
+                    + Vec2::new(
+                        (base.x as f64 * c - base.y as f64 * s) as f32,
+                        (base.x as f64 * s + base.y as f64 * c) as f32,
+                    );
+                out.push(((pt.x / 16.0) as i32, (pt.y / 16.0) as i32, [0.3, 0.75, 0.9]));
+            }
+        }
+    } else if p.kind == 490 {
+        // `:32362-32385` — aiStyle-89's CultistRitual tail: the light fires
+        // only when `flag43` is FALSE — `ai[1] >= 0` naming an ACTIVE NPC of
+        // type 439/454/521 (the cultist trio); the `ai[1] == -1` arm needs
+        // `alpha != 255`. The feed carries no NPC slice, so the gate folds to
+        // the slot-state half: `ai[1] >= 0` lights (the target-active/type
+        // half lands with the AI arm — the tiger/601 precedent, ANALYSIS
+        // round 3 records the fold). Rowed by W4-d9 (aiStyle 89, alpha 255).
+        if p.ai[1] >= 0.0 {
+            out.push((cx, cy, [1.1, 0.9, 0.4]));
+        }
+    } else if p.kind == 492 {
+        // `:32410` — aiStyle-90's MagicLantern: `AddLight(base.position,
+        // 0.35, 0.35, 0.1)` — the TOP-LEFT anchor (the quotient truncation on
+        // the raw position), unconditional after the direction copy (the
+        // only early exit is the owner-dead `Kill()` without a return — the
+        // C# keeps running the arm). Rowed by W4-d9 (aiStyle 90).
+        out.push((
+            (p.pos.x / 16.0) as i32,
+            (p.pos.y / 16.0) as i32,
+            [0.35, 0.35, 0.1],
+        ));
+    } else if p.kind == 518 {
+        // `:32962` — aiStyle-94's CoinPortal tail: `(0.8·0.3, 181/255·0.3,
+        // 72/255·0.3)` at the centre, unconditional (the `ai[0] == 240`
+        // Kill has no return; the surrounding rand dust / coin spawns are
+        // the sim's skips). Rowed by W4-d10 (aiStyle 94, alpha 255).
+        out.push((cx, cy, [0.8 * 0.3, 181.0 / 255.0 * 0.3, 72.0 / 255.0 * 0.3]));
+    } else if p.kind == 575 {
+        // `:33580` — aiStyle-107's 575 NebulaSphere arm: (0.5, 0.1, 0.3) at
+        // the centre, unconditional inside the type block (the rand dust
+        // loop after it can `return`, but the light precedes it). Rowed by
+        // W4-d11 (aiStyle 107, alpha 255).
+        out.push((cx, cy, [0.5, 0.1, 0.3]));
     } else if p.kind == RAINBOW_CRYSTAL_EXPLOSION {
         // `:34239` + `:34263-34265` — `newColor3 =
         // Main.hslToRgb(ai[0], 1f, 0.5f)` computed at the arm head; the
@@ -532,6 +635,14 @@ pub(crate) fn proj_lights_a(
         // not). Rowed by W4-d20 (`:10067-10077`); its `ai_meteor_ore` runs
         // the spin. The hostile+friendly trap keeps both flags.
         out.push((cx, cy, [1.0, 0.0, 0.0]));
+    } else if p.kind == 567 || p.kind == 568 {
+        // `:40045-40046` — AI_105_SporeSac's HEAD: `num = (1 - alpha/255) *
+        // scale`, then `(0.2·n, 0.275·n, 0.075·n)` at the centre — before
+        // every state write, so the post-step slot reads it directly. Rowed
+        // by W4-d11 (aiStyle 105, alpha 255 → dark at the spawn state until
+        // the AI arm's fade runs — the e6 ported-but-dark precedent).
+        let n = (1.0 - p.alpha as f32 / 255.0) * p.scale;
+        out.push((cx, cy, [0.2 * n, 0.275 * n, 0.075 * n]));
     } else if p.kind == 1038 || p.kind == 1116 {
         // `:40466-40513` — AI_196_Petal. `vector` = (0.5, 0, 0.2) for the
         // 1038 FlowerWhipPetal, (0, 0.6, 0.6) for the 1116 PetalstormShot.
@@ -638,6 +749,14 @@ pub(crate) fn proj_lights_a(
                 ));
             }
         }
+    } else if p.kind == 535 {
+        // `:44612` — AI_100_Medusa's 535 MedusaHead tail: (0.9, 0.75, 0.1)
+        // at the centre, unconditional inside the type block (the only
+        // early return is the local-owner `!player.channel` Kill — the
+        // feed carries no channel state, so the light reads every live
+        // slot; the channel gate lands with the AI arm, ANALYSIS round 3).
+        // Rowed by W4-d10 (aiStyle 100).
+        out.push((cx, cy, [0.9, 0.75, 0.1]));
     } else if p.kind == STARDUST_GUARDIAN {
         // `:44662` — AI_120's 623 arm: (0.9, 0.9, 0.7) at the centre,
         // unconditional inside the `flag` (623) block.
@@ -1239,27 +1358,87 @@ mod tests {
 
     #[test]
     fn an_unrowed_kind_contributes_nothing() {
-        // Round 2: the d-lanes rowed ~20 of the first wave's absent kinds and
-        // their arms are now live (the activation witnesses below). What stays
-        // absent: the still-unrowed kinds — the 502 Meowmere (site 4), the
-        // 1092 book (7), the 451 InfluxWaver (12), the 464/465/466 cultist orbs
-        // (13-16), the 490 ritual (18), the 492 lantern (19), the 518 coin
-        // portal (20), the 575 nebula sphere (21), the 978 Volcano (the 26
-        // trio's third term), the 731 thunder staff (31), the phaseblades
-        // (35-36), the 567/568 spore traps (39), the 535 medusa head (50), the
-        // 756 sharp tears (62); the rand-gated 590 truffle spore (22), the
-        // 409 Typhoon (11), the 849/912 whips (56-57); and the 248
+        // Round 3: the d9/d10/d11 lanes rowed nine more of the absent kinds
+        // (451/464/490/492, 518/535, 567/568/575) and their arms are live
+        // (the activation witnesses below); the four rand-gated sites
+        // (409/590/849/912) arm in the SIM's drain seam, never in this pure
+        // feed. What stays absent: the still-unrowed kinds — the 502
+        // Meowmere (site 4), the 1092 book (7), the 465/466 cultist orbs
+        // (15-16), the 731 thunder staff (31), the phaseblades (35-36), the
+        // 756 sharp tears (62); the 978 Volcano's d12 row is aiStyle 189,
+        // not the trio's 117 (the third term unreachable); and the 248
         // FlowerPowPetal (aiStyle 1, never reaches AI_196) plus the 973/972
         // sword beams (rowed by d19/d20 but with NO light arm — the wave-1
         // register misattributed sites 45/46 to them). A slot carrying any of
         // them feeds no light.
         for kind in [
-            502u16, 1092, 451, 464, 465, 466, 490, 492, 518, 575, 590, 978, 731,
-            1059, 1074, 567, 568, 248, 973, 972, 535, 849, 912, 756, 409,
+            502u16, 1092, 465, 466, 978, 731,
+            1059, 1074, 248, 973, 972, 756,
+            // The rand-gated four: armed in the sim, dark in this feed.
+            409, 590, 849, 912,
         ] {
             let p = slot(kind);
             assert!(proj_lights_a(&p, None).is_empty(), "kind {kind}");
         }
+    }
+
+    #[test]
+    fn the_d9_activated_arms_light_their_colours() {
+        // Site 12 (`:31212`) — the 451 InfluxWaver: alpha/255 scales
+        // (0.3, 0.4, 1), the truncate-FIRST centre anchor.
+        let mut p = slot(451);
+        p.alpha = 255;
+        assert_eq!(proj_lights_a(&p, None), vec![(10, 11, [0.3, 0.4, 1.0])]);
+        p.alpha = 0;
+        assert_eq!(proj_lights_a(&p, None)[0].2, [0.0, 0.0, 0.0]);
+        // Sites 13/14 (`:31864`/`:31893`) — the 464 ice mist: the spawn
+        // ai[1] == 0 reads the 6-point ring; at ai[0] = 0 the ring collapses
+        // to six copies of the centre light. The ai[1] == 1 spawn reads the
+        // single spin-arm light.
+        let mut p = slot(464);
+        p.ai[0] = 0.0;
+        let ring = proj_lights_a(&p, None);
+        assert_eq!(ring.len(), 6, "the 6-point ring");
+        for l in &ring {
+            assert_eq!(*l, (10, 11, [0.3, 0.75, 0.9]));
+        }
+        p.ai[1] = 1.0;
+        assert_eq!(proj_lights_a(&p, None), vec![(10, 11, [0.3, 0.75, 0.9])]);
+        // Site 18 (`:32384`) — the 490 ritual: the ai[1] >= 0 slot-state
+        // half of the flag43 gate (the NPC-active/type half lands with the
+        // AI arm).
+        let mut p = slot(490);
+        p.ai[1] = 0.0;
+        assert_eq!(proj_lights_a(&p, None), vec![(10, 11, [1.1, 0.9, 0.4])]);
+        p.ai[1] = -1.0;
+        p.alpha = 255;
+        assert!(proj_lights_a(&p, None).is_empty(), "the -1/255 kill arm");
+        // Site 19 (`:32410`) — the 492 lantern: the TOP-LEFT anchor.
+        let p = slot(492);
+        assert_eq!(proj_lights_a(&p, None), vec![(10, 11, [0.35, 0.35, 0.1])]);
+    }
+
+    #[test]
+    fn the_d10_d11_activated_arms_light_their_colours() {
+        // Site 20 (`:32962`) — the 518 coin portal: the fixed gold.
+        assert_eq!(
+            proj_lights_a(&slot(518), None),
+            vec![(10, 11, [0.8 * 0.3, 181.0 / 255.0 * 0.3, 72.0 / 255.0 * 0.3])]
+        );
+        // Site 50 (`:44612`) — the 535 medusa head.
+        assert_eq!(proj_lights_a(&slot(535), None), vec![(10, 11, [0.9, 0.75, 0.1])]);
+        // Site 39 (`:40046`) — the 567/568 spore traps: (1-alpha/255)·scale
+        // scales (0.2, 0.275, 0.075); the alpha-255 spawn is dark-but-armed.
+        for kind in [567u16, 568] {
+            let mut p = slot(kind);
+            p.alpha = 255;
+            assert_eq!(proj_lights_a(&p, None)[0].2, [0.0, 0.0, 0.0]);
+            p.alpha = 0;
+            p.scale = 1.0;
+            assert_eq!(proj_lights_a(&p, None), vec![(10, 11, [0.2, 0.275, 0.075])]);
+        }
+        // Site 21 (`:33580`) — the 575 nebula sphere.
+        assert_eq!(proj_lights_a(&slot(575), None), vec![(10, 11, [0.5, 0.1, 0.3])]);
     }
 
     #[test]
