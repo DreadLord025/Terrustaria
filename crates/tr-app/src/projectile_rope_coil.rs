@@ -718,31 +718,39 @@ mod tests {
             (p.pos.y - (460.0 + 6.0 + 10.0)).abs() < 1e-4,
             "the adjusted +6 THEN the dead-tick +10 (`:20445`)"
         );
-        // The null-tile abort: a short world (32 rows) with a side wall.
-        // The box (300..314, 490..504) flies right into the wall's left
-        // face at x=320: vx 10 clamps to 6 (contact), vy 0 stays 0 (the
-        // box rows 30..31 are wall-free at x 18..19 — the wall column is
-        // 20). Centre (307, 497) → tile (19, 31)… row 31 exists, so seat
-        // the box one row lower: y = 500 → centre y 507 → ty 31 still.
-        // Instead push the centre PAST the world: y = 506 → centre 513 →
-        // ty 32 > 31 → world.tile(19, 32) = None. The box bottom 520 is
-        // past the world too, but the X probe still hits the wall column
-        // at rows 30..31 (the box top 506 spans rows 31..32; row 31 of
-        // column 20 is solid), so the collision clamps vx → contact.
+        // The null-tile abort: the ONLY reachable null-centre contact for
+        // a 14px box is the bottomSlope snap arm (`:27216-27221`) — it
+        // SETS pos.y = ty*16+24, pushing the centre a full cell BELOW the
+        // sloped tile. Rig: a 32-row world (rows 0..31), a slope-4
+        // (bottom-sloped) dirt cell at (20, 31) — the LAST row. The coil
+        // at (313, 486), box (313..327, 486..500), vel (0, 5): the target
+        // box overlaps the cell, but the slope-4 pass-through needs
+        // pos.y ≥ ry (486 < 496 — false) and every clamp arm's rest-side
+        // test fails (bottom 500 > ry 496, right 327 > rx 320, left 313
+        // < rx+16 336, top 486 < ry+16 512) → adjusted == vel → the else
+        // probe: centre+vel = (320, 498) → tile (20, 31), active +
+        // bottom_slope → the snap: pos = (20*16+8, 31*16+16+8) =
+        // (328, 520). The walk anchor reads the POST-snap centre
+        // (335, 527) → tile (20, 32) — NULL (32 rows). The abort returns
+        // WITHOUT Kill; the fix integrates the raw vel ON TOP of the
+        // adjusted step the anchor block already applied.
         let mut w2 = World::new("t".into(), 64, 32);
-        for y in 28..32 {
-            put(&mut w2, 20, y, 1);
+        {
+            let t = w2.tile_mut(20, 31).unwrap();
+            t.kind = 1;
+            t.flags |= FLAG_ACTIVE;
+            t.set_slope(4); // bottomSlope (slope() 3|4)
         }
         let mut q = proj(171);
-        q.pos = Vec2::new(300.0, 506.0);
-        q.vel = Vec2::new(10.0, 0.0);
+        q.pos = Vec2::new(313.0, 486.0);
+        q.vel = Vec2::new(0.0, 5.0);
         let kills = coil_step(&mut q, &mut w2, 0);
         assert!(kills.is_empty());
         assert!(q.active, "the null abort never kills (`:27244-27247`)");
         assert_eq!(q.ai[1], 0.0);
         assert!(
-            (q.pos.x - 310.0).abs() < 1e-4,
-            "the abort integrates the raw vel (HandleMovement, `:17015`)"
+            (q.pos.y - (520.0 + 5.0 + 5.0)).abs() < 1e-4 && (q.pos.x - 328.0).abs() < 1e-4,
+            "snap 520 + adjusted 5 + the abort's raw-vel 5 (HandleMovement, `:17015`)"
         );
     }
 
@@ -905,11 +913,11 @@ mod tests {
         assert!(crate::render::ropes::is_rope(&w, 20, 29).0, "the :19652 gate");
         // The lone-cell arm (:19656-19668): one link, no rope-kind
         // neighbour above/below → the row*16+22 hang snap applies.
-        let rope_nbr = |x: i32, y: i32| {
+        fn rope_nbr(w: &World, x: i32, y: i32) -> bool {
             w.tile(x, y)
                 .is_some_and(|t| t.active() && td::TILE_ROPE.has(t.kind))
-        };
-        assert!(!rope_nbr(20, 28) && !rope_nbr(20, 30), "a lone cell");
+        }
+        assert!(!rope_nbr(&w, 20, 28) && !rope_nbr(&w, 20, 30), "a lone cell");
         // LEG 3 — RIDE predicate: the placed kind is non-solid (the
         // attach's solid_collision probe passes; f3 0b11548f verified the
         // rope kinds non-solid) and a second link below extends the
@@ -917,7 +925,7 @@ mod tests {
         // would, then the descent probe reads rope at the next row.
         assert!(!td::TILE_SOLID.has(213), "the hang box never collides");
         put(&mut w, 20, 30, 213); // over the floor cell — a rope column
-        assert!(rope_nbr(20, 30), "the ride's next-row probe (:24250 shape)");
+        assert!(rope_nbr(&w, 20, 30), "the ride's next-row probe (:24250 shape)");
         // LEG 4 — COIL-REFUND: the same coil's death ladder pays back
         // 10-ai1 = 9 rope items (the world drop the pool hook queues).
         assert_eq!(coil_death_drop(p.kind, p.ai[1]), Some((965, 9)));
