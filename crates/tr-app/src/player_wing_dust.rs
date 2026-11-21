@@ -15,7 +15,7 @@
 //! truncates the f32 hitbox first.
 
 use crate::app::App;
-use crate::player::{WingAirDust, WingGlideDust};
+use crate::player::{WingAirDust, WingFrameDust, WingGlideDust};
 use crate::player_dust::{lerp_color, nd};
 use glam::Vec2;
 use tr_core::particles::Color;
@@ -414,6 +414,153 @@ fn festive_glide(app: &mut App, b: &WingGlideDust) {
         d.no_light = true;
         d.velocity /= 4.0;
         d.velocity -= Vec2::new(b.vx, b.vy);
+    }
+}
+
+/// Drain the `WingFrame` dust arms (`Player.cs:29468-30527`). The tick ran
+/// the frame machines (`wing_frame_visuals`); this replays the rolls.
+pub(crate) fn drain_wing_frame(app: &mut App, b: WingFrameDust) {
+    let cx = b.x + (b.width as i32 / 2) as f32;
+    match b.wings {
+        // `:29481-29525`: the jetpack flap flames — 2 puffs (4 while
+        // hover-up), the i=1/3 inner box (+8/−20, y+6), i>1 adds vy.
+        // Post: X ×0.1, Y = Y + 2 − vy*0.3, noGravity; the 4-count adds
+        // Y += 6. The type-6 tweak chain rides each spawn.
+        4 => {
+            let count = if b.hover_up { 4 } else { 2 };
+            for i in 0..count {
+                let mut x = cx + 16.0;
+                if b.facing > 0 {
+                    x = cx - 26.0;
+                }
+                let mut y = b.y + b.height - 18.0;
+                if i == 1 || i == 3 {
+                    x = cx + 8.0;
+                    if b.facing > 0 {
+                        x = cx - 20.0;
+                    }
+                    y += 6.0;
+                }
+                if i > 1 {
+                    y += b.vy;
+                }
+                let idx = nd(app, Vec2::new(x, y), 8, 8, 6, 0.0, 0.0, 100, Color::default(), 1.75);
+                let d = app.dust.slot_mut(idx);
+                d.velocity.x *= 0.1;
+                d.velocity.y = d.velocity.y + 2.0 - b.vy * 0.3;
+                d.no_gravity = true;
+                d.no_light_emittance = false;
+                if count == 4 {
+                    d.velocity.y += 6.0;
+                }
+            }
+        }
+        // `:29816-29858`: the Bat sparkles — two 4-iteration loops at the
+        // centre, 1/4 then 1/8 gates; the rotation-vector offsets, the
+        // position/velocity overwrites, the 1/10 fadeIn 0.5 (the else arm
+        // sets customData — a dropped field, the draw still happens).
+        30 => bat_sparkles(app, &b),
+        // `:30195-30203`: the Rainbow glow — 1/8, the centred 40×24 box at
+        // Bottom, type 43 White×0.5 scale 0.2, fadeIn 0.4, velocity +=
+        // playerVel then ×0.35.
+        45 => {
+            if roll(app, 8) {
+                let bx = b.x + (b.width as i32 / 2) as f32;
+                let by = b.y + b.height;
+                // `Utils.CenteredRectangle`: (int)(center - size/2).
+                let rx = (bx - 20.0) as i32;
+                let ry = (by - 12.0) as i32;
+                let idx = ndd(app, Vec2::new(rx as f32, ry as f32), 40, 24, 43, 0, Color::new(127, 127, 127, 127), 0.2);
+                let d = app.dust.slot_mut(idx);
+                d.fade_in = 0.4;
+                d.velocity += Vec2::new(b.vx, b.vy);
+                d.velocity *= 0.35;
+            }
+        }
+        // `:30289-30306`: the Spooky shadow puffs — count 0/1/5 at the
+        // centred 50×20 box 10 above Bottom, type 31 Black, scale 0.7,
+        // velocity ×0.4 then Y += 0.5.
+        39 => {
+            let bx = b.x + (b.width as i32 / 2) as f32;
+            let by = b.y + b.height - 10.0;
+            let rx = (bx - 25.0) as i32;
+            let ry = (by - 10.0) as i32;
+            for _ in 0..b.count {
+                let idx = ndd(app, Vec2::new(rx as f32, ry as f32), 50, 20, 31, 0, Color::new(0, 0, 0, 255), 1.0);
+                let d = app.dust.slot_mut(idx);
+                d.scale = 0.7;
+                d.velocity *= 0.4;
+                d.velocity.y += 0.5;
+            }
+        }
+        // `:30505-30521`: the Nebula-29 rest roll — 1/5 type-6 scale 2.4 at
+        // the mid box, the 1/10 fadeIn 2.
+        29 => {
+            if roll(app, 5) {
+                let mid_y = b.y + (b.height as i32 / 2) as f32 - 15.0;
+                let idx = nd(app, Vec2::new(cx + back_off(b.facing), mid_y), 30, 30, 6, 0.0, 0.0, 100, Color::default(), 2.4);
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                let d = app.dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.no_light_emittance = false;
+                d.velocity *= 0.3;
+                if rng.next_max(10) == 0 {
+                    d.fade_in = 2.0;
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// `:29816-29858` — the Bat-30 sparkle loops. Loop 1: 4 iterations, 1/4
+/// gate, the `(-0.74539816 + PI/8*j + 0.03*j)` rotation scaled by
+/// `(-direction*20, 20)`; type 229 White scale 0.8, position = centre +
+/// offset, velocity = DirectionTo(position)*2. Loop 2: 1/8 gate, the
+/// `(-0.7053982 + PI/8*k + 0.03*k)` rotation scaled by `(direction*20, 24)`
+/// plus `(-direction*16, 0)`; scale 0.5, velocity = Normalize(position −
+/// centre − (-direction*16, 0))*2, position += velocity*5. Both: the 1/10
+/// fadeIn-0.5-vs-customData draw (customData is dropped).
+fn bat_sparkles(app: &mut App, b: &WingFrameDust) {
+    let center = Vec2::new(b.x + b.width * 0.5, b.y + b.height * 0.5);
+    let dir = b.facing as f32;
+    for j in 0..4 {
+        if !roll(app, 4) {
+            continue;
+        }
+        let ang = -0.74539816f32 + std::f32::consts::PI / 8.0 * j as f32 + 0.03 * j as f32;
+        let off = Vec2::new(ang.cos(), ang.sin()) * Vec2::new(-dir * 20.0, 20.0);
+        let idx = nd(app, center, 0, 0, 229, 0.0, 0.0, 100, Color::WHITE, 0.8);
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let d = app.dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.no_light_emittance = false;
+        d.position = center + off;
+        let delta = d.position - center;
+        d.velocity = if delta == Vec2::ZERO { Vec2::ZERO } else { delta.normalize() * 2.0 };
+        if rng.next_max(10) == 0 {
+            d.fade_in = 0.5;
+        }
+    }
+    for k in 0..4 {
+        if !roll(app, 8) {
+            continue;
+        }
+        let ang = -0.7053982f32 + std::f32::consts::PI / 8.0 * k as f32 + 0.03 * k as f32;
+        let shift = Vec2::new(-dir * 16.0, 0.0);
+        let off = Vec2::new(ang.cos(), ang.sin()) * Vec2::new(dir * 20.0, 24.0) + shift;
+        let idx = nd(app, center, 0, 0, 229, 0.0, 0.0, 100, Color::WHITE, 0.5);
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let d = app.dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.no_light_emittance = false;
+        d.position = center + off;
+        let delta = d.position - center - shift;
+        d.velocity = if delta == Vec2::ZERO { Vec2::ZERO } else { delta.normalize() * 2.0 };
+        d.position += d.velocity * 5.0;
+        if rng.next_max(10) == 0 {
+            d.fade_in = 0.5;
+        }
     }
 }
 
@@ -943,5 +1090,188 @@ mod tests {
         }
         assert_eq!(slots.len(), expect);
         assert_eq!(stream_of(&mut app), rng);
+    }
+    fn frame_burst(wings: i32) -> WingFrameDust {
+        WingFrameDust {
+            wings,
+            x: 300.0,
+            y: 600.0,
+            width: 20.0,
+            height: 42.0,
+            vx: 3.0,
+            vy: -5.01,
+            facing: 1,
+            hover_up: false,
+            count: 1,
+        }
+    }
+
+    /// `:29481-29525` — the jetpack flap flames: 2 puffs (4 hover-up), the
+    /// inner-box pick, the type-6 tweak, the Y folds.
+    #[test]
+    fn w4_g66_the_jetpack_flap_flames_pick_the_inner_box() {
+        for hover_up in [false, true] {
+            let mut app = rig(0x5EED);
+            let mut b = frame_burst(4);
+            b.hover_up = hover_up;
+            drain_wing_frame(&mut app, b);
+            let count = if hover_up { 4 } else { 2 };
+            let slots = live(&app);
+            assert_eq!(slots.len(), count);
+            let mut rng = UnifiedRandom::new(0x5EED);
+            for (i, d) in slots.iter().enumerate() {
+                assert_eq!(d.dust_type, 6);
+                let mut x = 310.0 - 26.0;
+                let mut y = 600.0 + 42.0 - 18.0;
+                if i == 1 || i == 3 {
+                    x = 310.0 - 20.0;
+                    y += 6.0;
+                }
+                if i > 1 {
+                    y += b.vy;
+                }
+                let (pos, vel, mut sc) =
+                    default_block(&mut rng, Vec2::new(x, y), 8, 8, 1.75);
+                let vy = rng.next_range(-10, 6) as f32 * 0.1;
+                sc *= 0.7;
+                let mut v = Vec2::new(vel.x * 0.3 * 0.1, vy + 2.0 - b.vy * 0.3);
+                if count == 4 {
+                    v.y += 6.0;
+                }
+                assert_eq!(d.position, pos);
+                assert_eq!(d.velocity, v);
+                assert_eq!(d.scale, sc);
+                assert!(d.no_gravity);
+            }
+            assert_eq!(stream_of(&mut app), rng);
+        }
+    }
+
+    /// `:29816-29858` — the Bat sparkle loops: the 4+4 gates ride the
+    /// stream in order; the passing ones overwrite position/velocity.
+    #[test]
+    fn w4_g66_the_bat_sparkles_overwrite_the_ring() {
+        let mut app = rig(0x5EED);
+        let b = frame_burst(30);
+        drain_wing_frame(&mut app, b);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        let center = Vec2::new(310.0, 621.0);
+        let dir = 1.0f32;
+        let mut expect = Vec::new();
+        for j in 0..4 {
+            if rng.next_max(4) != 0 {
+                continue;
+            }
+            let ang = -0.74539816f32 + std::f32::consts::PI / 8.0 * j as f32 + 0.03 * j as f32;
+            let off = Vec2::new(ang.cos(), ang.sin()) * Vec2::new(-dir * 20.0, 20.0);
+            let (_, _, sc) = default_block(&mut rng, center, 5, 5, 0.8);
+            let pos = center + off;
+            let vel = off.normalize() * 2.0;
+            let fade = if rng.next_max(10) == 0 { 0.5 } else { 0.0 };
+            expect.push((pos, vel, sc, fade));
+        }
+        for k in 0..4 {
+            if rng.next_max(8) != 0 {
+                continue;
+            }
+            let ang = -0.7053982f32 + std::f32::consts::PI / 8.0 * k as f32 + 0.03 * k as f32;
+            let shift = Vec2::new(-dir * 16.0, 0.0);
+            let off = Vec2::new(ang.cos(), ang.sin()) * Vec2::new(dir * 20.0, 24.0) + shift;
+            let (_, _, sc) = default_block(&mut rng, center, 5, 5, 0.5);
+            let pos0 = center + off;
+            let vel = (pos0 - center - shift).normalize() * 2.0;
+            let pos = pos0 + vel * 5.0;
+            let fade = if rng.next_max(10) == 0 { 0.5 } else { 0.0 };
+            expect.push((pos, vel, sc, fade));
+        }
+        let slots = live(&app);
+        assert_eq!(slots.len(), expect.len());
+        for (d, (pos, vel, sc, fade)) in slots.iter().zip(&expect) {
+            assert_eq!(d.dust_type, 229);
+            assert_eq!(d.position, *pos);
+            assert_eq!(d.velocity, *vel);
+            assert_eq!(d.scale, *sc);
+            assert_eq!(d.fade_in, *fade);
+            assert!(d.no_gravity);
+        }
+        assert_eq!(stream_of(&mut app), rng);
+    }
+
+    /// `:30195-30203` + `:30289-30306` — the Rainbow glow and the Spooky
+    /// shadow puffs.
+    #[test]
+    fn w4_g66_the_rainbow_glow_and_spooky_shadows() {
+        // Rainbow: find a passing 1/8 seed.
+        let mut seed = 1;
+        while UnifiedRandom::new(seed).next_max(8) != 0 {
+            seed += 1;
+        }
+        let mut app = rig(seed);
+        let b = frame_burst(45);
+        drain_wing_frame(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 1);
+        let d = slots[0];
+        assert_eq!(d.dust_type, 43);
+        assert_eq!(d.fade_in, 0.4);
+        assert_eq!(d.color, Color::new(127, 127, 127, 127));
+        let mut rng = UnifiedRandom::new(seed);
+        let _ = rng.next_max(8);
+        let (pos, vel, sc) =
+            default_block(&mut rng, Vec2::new(290.0, 630.0), 40, 24, 0.2);
+        assert_eq!(d.position, pos);
+        assert_eq!(d.velocity, (vel + Vec2::new(b.vx, b.vy)) * 0.35);
+        assert_eq!(d.scale, sc);
+        assert_eq!(stream_of(&mut app), rng);
+        // Spooky: count 5 at the foot box, scale 0.7, Y += 0.5.
+        let mut app = rig(0x5EED);
+        let mut b = frame_burst(39);
+        b.count = 5;
+        drain_wing_frame(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 5);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        for d in &slots {
+            assert_eq!(d.dust_type, 31);
+            assert_eq!(d.color, Color::new(0, 0, 0, 255));
+            let (pos, vel, _) =
+                default_block(&mut rng, Vec2::new(285.0, 622.0), 50, 20, 1.0);
+            assert_eq!(d.position, pos);
+            let mut v = vel * 0.4;
+            v.y += 0.5;
+            assert_eq!(d.velocity, v);
+            assert_eq!(d.scale, 0.7);
+        }
+        assert_eq!(stream_of(&mut app), rng);
+        // Count 0: no draws.
+        let mut app = rig(0x5EED);
+        let mut b = frame_burst(39);
+        b.count = 0;
+        drain_wing_frame(&mut app, b);
+        assert_eq!(live(&app).len(), 0);
+        assert_eq!(stream_of(&mut app), UnifiedRandom::new(0x5EED));
+    }
+
+    /// The tick side: the jetpack-4 flap arm queues the flames and runs its
+    /// own 0..2 frame machine (not the default 0..3).
+    #[test]
+    fn w4_g66_the_jetpack_tick_runs_its_own_machine() {
+        let w = World::new("t".into(), 64, 128);
+        let mut p = crate::player::Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, crate::player::PlayerInput::default());
+        }
+        p.equipped[3] = 748; // Jetpack — wings_logic 4
+        p.wing_time = 100.0;
+        let held = crate::player::PlayerInput { jump: true, ..Default::default() };
+        p.update(&w, held); // the ground jump: jump > 0 → the flap arm
+        let f = p.take_wing_frame_dust().expect("the jump burst queues flames");
+        assert_eq!(f.wings, 4);
+        // The machine wraps at 3, not 4.
+        p.wing_frame = 2;
+        p.wing_frame_counter = 4;
+        p.update(&w, held);
+        assert_eq!(p.wing_frame, 0, "the wrap at 3");
+        assert_eq!(p.wing_frame_counter, 0);
     }
 }

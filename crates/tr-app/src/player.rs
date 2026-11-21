@@ -800,6 +800,25 @@ pub(crate) struct RudolphTrail {
     pub(crate) facing: i32,
 }
 
+/// W4-g66 — one queued `WingFrame` dust call (`Player.cs:29468-30527`): the
+/// jetpack-4 flap flames, the Bat-30 sparkles, the Rainbow-45 glow, the
+/// Spooky-39 shadow puffs, the Nebula-29 rest roll. The tick ran the arm's
+/// frame machine; `count` is the wings-39 puff count (0/1/5) and `hover_up`
+/// the wings-4 count pick, both read at the C# moment.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct WingFrameDust {
+    pub(crate) wings: i32,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+    pub(crate) facing: i32,
+    pub(crate) hover_up: bool,
+    pub(crate) count: i32,
+}
+
 #[derive(Clone, Debug)]
 pub struct Player {
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
@@ -2234,6 +2253,9 @@ pub struct Player {
     pending_walk_effect_dust: Option<WalkEffectDust>,
     /// W4-g66 — the tick's queued Rudolph flight trail (`Player.cs:36164`).
     pending_rudolph_trail: Option<RudolphTrail>,
+    /// W4-g66 — the tick's queued `WingFrame` dust call
+    /// (`Player.cs:29468-30527`).
+    pending_wing_frame_dust: Option<WingFrameDust>,
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
@@ -3183,6 +3205,7 @@ impl Player {
             social_shadow_rocket_boots: false,
             pending_walk_effect_dust: None,
             pending_rudolph_trail: None,
+            pending_wing_frame_dust: None,
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
@@ -3839,6 +3862,12 @@ impl Player {
         self.pending_rudolph_trail.take()
     }
 
+    /// W4-g66 — takes the `WingFrame` dust snapshot (`Player.cs:29468-30527`);
+    /// drained on `UpdatePlayers` (`player_wing_dust::drain_wing_frame`).
+    pub(crate) fn take_wing_frame_dust(&mut self) -> Option<WingFrameDust> {
+        self.pending_wing_frame_dust.take()
+    }
+
     /// W4-d51 — queues the dash dust snapshot at the C# read moment (the
     /// velocity writes above each site have already landed).
     fn queue_dash_dust(&mut self, active: bool) {
@@ -4034,6 +4063,7 @@ impl Player {
         self.pending_rocket_flame_dust = None;
         self.pending_walk_effect_dust = None;
         self.pending_rudolph_trail = None;
+        self.pending_wing_frame_dust = None;
         self.pending_sticky_kill = None;
         self.pending_mana_effect = None;
         self.pending_heal_effect = None;
@@ -10353,6 +10383,9 @@ impl Player {
             self.wing_movement();
         }
         // S1-E-21f — `WingFrame(flag19)` (`Player.cs:26820`, `:29468-30527`).
+        // W4-g66: the jetpack-4 / Bat-30 / Rainbow-45 / Spooky-39 dust arms
+        // run their own frame machines and queue their rolls here.
+        self.wing_frame_visuals(flag19);
         // The port runs the DEFAULT arm's frame machine (`:30448-30526`:
         // num35 = 4, num36 = 4, num37 = 0, num38 = 0, num39 = 1 — the
         // wings-43/48/32 constants and the hover wings' own tables are visual
@@ -10376,6 +10409,23 @@ impl Player {
             } else if self.vy != 0.0 {
                 // `:30482-30484` — the airborne rest frame (num39 = 1).
                 self.wing_frame = 1;
+                // W4-g66 — `:30505-30521`: the Nebula-29 rest roll (1/5
+                // type-6 scale 2.4 + the 1/10 fadeIn 2), drained on
+                // `UpdatePlayers`.
+                if self.wings_logic == 29 {
+                    self.pending_wing_frame_dust = Some(WingFrameDust {
+                        wings: 29,
+                        x: self.x,
+                        y: self.y,
+                        width: self.width,
+                        height: self.height,
+                        vx: self.vx,
+                        vy: self.vy,
+                        facing: self.facing,
+                        hover_up: false,
+                        count: 0,
+                    });
+                }
             } else {
                 // `:30523-30526` — the grounded rest frame (num38 = 0).
                 self.wing_frame = 0;
@@ -10610,6 +10660,167 @@ impl Player {
             return false;
         }
         true
+    }
+
+    /// W4-g66 — the `WingFrame` dust arms' frame machines
+    /// (`Player.cs:29471-30307`): the jetpack-4 flap flames (2 or 4 per tick,
+    /// the hover-up pick), the Bat-30 sparkle machine, the Rainbow-45 glow
+    /// cadence and the Spooky-39 shadow puffs. The dust rolls queue one
+    /// snapshot; the drain replays them on `UpdatePlayers`. The wings-4/45
+    /// Item13/Item24 cadences (`:29475-29480`, `:30167-30175`) are audio
+    /// seams (the S1-E-21 family owns the rocket cues) — the delay counters
+    /// still tick so the cadence state stays source-true.
+    fn wing_frame_visuals(&mut self, wing_flap: bool) {
+        match self.wings_logic {
+            // `:29471-29541`: the jetpack — flames while flapping or in the
+            // initial jump burst; the rest frame 3 otherwise.
+            4 => {
+                if wing_flap || self.jump > 0 {
+                    self.rocket_delay2 -= 1;
+                    if self.rocket_delay2 <= 0 {
+                        self.rocket_delay2 = 60;
+                    }
+                    self.pending_wing_frame_dust = Some(WingFrameDust {
+                        wings: 4,
+                        x: self.x,
+                        y: self.y,
+                        width: self.width,
+                        height: self.height,
+                        vx: self.vx,
+                        vy: self.vy,
+                        facing: self.facing,
+                        hover_up: self.trying_to_hover_up(),
+                        count: 0,
+                    });
+                    // `:29526-29535`: counter > 4 wraps the frame 0..2.
+                    self.wing_frame_counter += 1;
+                    if self.wing_frame_counter > 4 {
+                        self.wing_frame += 1;
+                        self.wing_frame_counter = 0;
+                        if self.wing_frame >= 3 {
+                            self.wing_frame = 0;
+                        }
+                    }
+                } else if !self.control_jump || self.vy == 0.0 {
+                    self.wing_frame = 3;
+                }
+            }
+            // `:29772-29859`: the Bat wings — the 2-tick rows 1..3 machine
+            // while flapping / hold-jumping airborne; the sparkles ride the
+            // drain only when the machine ran (flag2).
+            30 => {
+                let mut ran = false;
+                if wing_flap || self.jump > 0 {
+                    self.wing_frame_counter += 1;
+                    if self.wing_frame_counter >= 6 {
+                        self.wing_frame_counter = 0;
+                    }
+                    self.wing_frame = 1 + self.wing_frame_counter / 2;
+                    ran = true;
+                } else if self.vy != 0.0 {
+                    if self.control_jump {
+                        self.wing_frame_counter += 1;
+                        if self.wing_frame_counter >= 6 {
+                            self.wing_frame_counter = 0;
+                        }
+                        self.wing_frame = 1 + self.wing_frame_counter / 2;
+                        ran = true;
+                    } else {
+                        self.wing_frame = 0;
+                    }
+                } else {
+                    self.wing_frame = 0;
+                }
+                if ran {
+                    self.pending_wing_frame_dust = Some(WingFrameDust {
+                        wings: 30,
+                        x: self.x,
+                        y: self.y,
+                        width: self.width,
+                        height: self.height,
+                        vx: self.vx,
+                        vy: self.vy,
+                        facing: self.facing,
+                        hover_up: false,
+                        count: 0,
+                    });
+                }
+            }
+            // `:30165-30204`: the Rainbow wings — the always-animated gate,
+            // the Item24 cadence while the budget lasts, the 3/5-tick rows.
+            45 if self.should_draw_wings_that_are_always_animated() => {
+                if self.wing_time > 0.0 {
+                    self.rocket_delay2 -= 1;
+                    if self.rocket_delay2 <= 0 {
+                        self.rocket_delay2 = 30;
+                    }
+                }
+                if self.vy == 0.0 {
+                    self.wing_frame_counter = 0;
+                    self.wing_frame = 0;
+                } else {
+                    self.wing_frame_counter += 1;
+                    let num25 = if self.wing_time == 0.0 { 5 } else { 3 };
+                    if self.wing_frame_counter >= num25 * 6 {
+                        self.wing_frame_counter = 0;
+                    }
+                    self.wing_frame = self.wing_frame_counter / num25;
+                }
+                self.pending_wing_frame_dust = Some(WingFrameDust {
+                    wings: 45,
+                    x: self.x,
+                    y: self.y,
+                    width: self.width,
+                    height: self.height,
+                    vx: self.vx,
+                    vy: self.vy,
+                    facing: self.facing,
+                    hover_up: false,
+                    count: 0,
+                });
+            }
+            // `:30244-30307`: the Spooky wings — the 4/9/6-tick rows and the
+            // 0/1/5 shadow-puff count at the foot box.
+            39 if self.should_draw_wings_that_are_always_animated() => {
+                if wing_flap || self.jump > 0 {
+                    self.wing_frame_counter += 1;
+                    if self.wing_frame_counter >= 24 {
+                        self.wing_frame_counter = 0;
+                    }
+                    self.wing_frame = self.wing_frame_counter / 4;
+                } else if self.vy != 0.0 {
+                    let step = if self.control_jump { 9 } else { 6 };
+                    self.wing_frame_counter += 1;
+                    if self.wing_frame_counter >= step * 6 {
+                        self.wing_frame_counter = 0;
+                    }
+                    self.wing_frame = self.wing_frame_counter / step;
+                } else {
+                    self.wing_frame_counter += 1;
+                    if self.wing_frame_counter >= 24 {
+                        self.wing_frame_counter = 0;
+                    }
+                    self.wing_frame = self.wing_frame_counter / 4;
+                }
+                let mut count = if self.wing_frame == 3 { 5 } else { 1 };
+                if self.vy == 0.0 {
+                    count = 0;
+                }
+                self.pending_wing_frame_dust = Some(WingFrameDust {
+                    wings: 39,
+                    x: self.x,
+                    y: self.y,
+                    width: self.width,
+                    height: self.height,
+                    vx: self.vx,
+                    vy: self.vy,
+                    facing: self.facing,
+                    hover_up: false,
+                    count,
+                });
+            }
+            _ => {}
+        }
     }
 
     /// W4-g66 — the wing-glide frame pins (`Player.cs:27181-27333`): the
