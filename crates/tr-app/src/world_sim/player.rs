@@ -640,6 +640,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // ghost flies INSTEAD of `UpdateDead` — the early return precedes the
         // dead branch. `Ghost()` reads the live controls and the world bounds.
         if p.ghost {
+            // `AllowsRespawnTimerSkip`'s ghost refusal (`Player.cs:38964`)
+            // reads live in the death-screen draw — the ghost never shows the
+            // skip prompt. Clear the cached flag so a stale `true` from the
+            // pre-ghost dead tick cannot draw it (`Main.cs:45348`'s gate).
+            app.respawn_skip_available = false;
             app.player_step.tick(dt, |_| {
                 p.ghost_tick(&app.world, input);
             });
