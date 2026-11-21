@@ -1797,6 +1797,39 @@ impl App {
                 return;
             }
         }
+        // The quick-stack-all / sort-inventory buttons (`Main.cs:41833-41897`,
+        // W4-g21 batch 3 hosts 62/63/64): both ride `chest == -1 && npcShop == 0`
+        // (`:41833/:41869`) and the `!LocalPlayerHasPendingInventoryActions`
+        // hover gate. The quick-stack button's left press runs QuickStackAllChests
+        // (sound 12), its right press cycles the mode (sound 10 + SaveSettings);
+        // the sort button's left press runs SortInventory (sound 12). A hit
+        // consumes the press before the trash/equipment arms.
+        if self.inventory_open && self.open_container() == -1 && self.shop_npc.is_none() {
+            let pending = self.mouse_item.kind != 0 && self.mouse_item.count != 0;
+            if !pending {
+                let stack_size = self
+                    .lookups
+                    .chest_stack
+                    .first()
+                    .and_then(|s| s.as_ref())
+                    .map(|s| (s.width as f32, s.height as f32))
+                    .unwrap_or((30.0, 30.0));
+                if ui::inventory::quick_stack_button_hit(self.mouse_pos, stack_size) {
+                    if left {
+                        self.quick_stack_all_click();
+                        return;
+                    }
+                    if right_edge {
+                        self.quick_stack_mode_click();
+                        return;
+                    }
+                }
+                if left && ui::inventory::sort_button_hit(self.mouse_pos) {
+                    self.sort_inventory_click();
+                    return;
+                }
+            }
+        }
         // The trash slot's left click (`ItemSlot.LeftClick`'s context-6 arm,
         // `ItemSlot.cs:937-941`): `MouseItemSwap(ref trashItem, 6)` — the
         // plain held/trash swap (no favorited-held guard exists in the C#
@@ -2526,6 +2559,219 @@ impl App {
             None => [1.0; 4],
         };
         crate::item_sorting::sort_chest(&mut wc.slots, mult);
+    }
+
+    /// `Main.cs:41845-41850` — the quick-stack-all button's left press:
+    /// `Player.QuickStackAllChests` (`Player.cs:23183-23189`) then
+    /// `SoundEngine.PlaySound(12)` (`:41849`). The `HasLockedInventory` gate
+    /// (`Player.cs:23089-23096`) is `IsStackingItems || pending actions`; the
+    /// port's `inventoryChestStack`/`disableVoidBag` have no state (the net
+    /// slot-lock is unported), so the gate reads the cursor-held item only
+    /// (`LocalPlayerHasPendingInventoryActions`, `Main.cs:42598-42605` —
+    /// `FakeCursorItem` is the port's `mouse_item`; `CraftingRequests.
+    /// HasPendingRequests` is unported, false). W4-g21 batch 3, host 62.
+    fn quick_stack_all_click(&mut self) {
+        // `HasLockedInventory`: a held cursor item locks the inventory.
+        if self.mouse_item.kind != 0 && self.mouse_item.count != 0 {
+            return;
+        }
+        let smart = self.settings.stack_to_chests_mode == 1;
+        // The banks-then-chests entry (`QuickStackToNearbyInventories`,
+        // `QuickStacking.cs:232-236`). The bank MoveCoins pre-pass + the item
+        // transfer into the in-range banks; the port's banks are always
+        // unlocked and the tile-bank range scan is the caller's.
+        self.quick_stack_banks();
+        // The world-chest transfer (`QuickStackToNearbyChests`, `:251-266`).
+        let favs = self.favorite_slots.clone();
+        let fav = move |i: usize| favs.contains(&i);
+        let use_void = crate::chest::use_void_bag(self);
+        // The in-range chests (`NearbyChests.GetChestsInRangeOf`,
+        // `NearbyChests.cs:10-31`): the port's `craft::chests_in_range` scans
+        // the tile kinds within 600 px of the player's feet, dropping the
+        // locked/in-use ones — but quick-stack KEEPS the locked chests (they
+        // block the transfer, `DestinationHelper.locked`), so the scan here
+        // includes them. The C# walks `Main.chest[]` instance order; the port
+        // walks the store order (the recorded raster-order deviation).
+        let player_center = self.player.as_ref().map(|p| p.center());
+        let open_chest = self.open_container();
+        // The range + locked scan first (immutable borrows), then the mutable
+        // slot borrows — the two cannot overlap.
+        let mut in_range: Vec<(usize, bool, (f32, f32))> = Vec::new();
+        if let Some((px, py)) = player_center {
+            for (idx, wc) in self.world_chests.iter().enumerate() {
+                if wc.tile == crate::chest::removed_tile() {
+                    continue;
+                }
+                let cx = wc.tile.0 as f32 * 16.0 + 16.0;
+                let cy = wc.tile.1 as f32 * 16.0 + 16.0;
+                let dx = cx - px;
+                let dy = cy - py;
+                if dx * dx + dy * dy > crate::craft::CHEST_RANGE_PX * crate::craft::CHEST_RANGE_PX {
+                    continue;
+                }
+                let locked = crate::chest::is_locked_or_in_use(&self.world_chests, &self.world, idx, open_chest);
+                in_range.push((idx, locked, (cx, cy)));
+            }
+        }
+        let mut chests: Vec<(&mut [crate::item::ItemSlot], bool, (f32, f32), i32)> = Vec::new();
+        for (idx, locked, pos) in in_range {
+            if let Some(wc) = self.world_chests.get_mut(idx) {
+                chests.push((&mut wc.slots[..], locked, pos, idx as i32));
+            }
+        }
+        // The void vault is a SOURCE (packed + restored), never a destination.
+        let vault: Option<&mut [crate::item::ItemSlot]> = if use_void {
+            self.player.as_mut().map(|p| &mut p.banks[3][..])
+        } else {
+            None
+        };
+        let _blocked = crate::quick_stack::quick_stack_to_nearby_chests(
+            crate::quick_stack::QuickStackInput {
+                grid: &mut self.inventory,
+                vault,
+                fav: &fav,
+                chests,
+                smart_stack: smart,
+            },
+        );
+        // `SoundEngine.PlaySound(12)` (`Main.cs:41849`) — AFTER the transfer.
+        self.audio.play("Menu_Tick");
+    }
+
+    /// `QuickStacking.QuickStackToNearbyBanks` (`QuickStacking.cs:238-249`):
+    /// MoveCoins into each in-range bank, then the item transfer. The port's
+    /// tile-bank range scan (`NearbyChests.GetBanksInRangeOf`, `:59-83`) reads
+    /// the piggy 29 / safe 97 / defender 463 / void 491 tiles around the player;
+    /// the projectile-bank half (Money Trough / Void Lens) is unported.
+    fn quick_stack_banks(&mut self) {
+        let Some(p) = self.player.as_ref() else { return };
+        let (px, py) = p.center();
+        let reach = (crate::craft::CHEST_RANGE_PX / 16.0 + 2.0) as i32;
+        let tx = (px / 16.0) as i32;
+        let ty = (py / 16.0) as i32;
+        // The bank kinds in range, in raster order, deduped by bank index
+        // (`!scratch.Contains(bank)`, `NearbyChests.cs:73`).
+        let mut found: Vec<usize> = Vec::new();
+        for j in (tx - reach)..=(tx + reach) {
+            for k in (ty - reach)..=(ty + reach) {
+                let Some(t) = self.world.tile(j, k) else { continue };
+                if !t.active() {
+                    continue;
+                }
+                let bi = match t.kind {
+                    29 => 0,  // piggy bank → bank (-2)
+                    97 => 1,  // safe → bank2 (-3)
+                    463 => 2, // defender's forge → bank3 (-4)
+                    491 => 3, // void vault → bank4 (-5)
+                    _ => continue,
+                };
+                // The void vault refuses while a Closed Void Bag 5325 is carried
+                // (`ContainerIndexToPlayerBank`, `NearbyChests.cs:118-127`).
+                if bi == 3
+                    && self.inventory.iter().chain(self.equip.coins.iter()).chain(self.equip.ammo.iter())
+                        .any(|s| s.count > 0 && s.kind == 5325)
+                {
+                    continue;
+                }
+                if !found.contains(&bi) {
+                    found.push(bi);
+                }
+            }
+        }
+        if found.is_empty() {
+            return;
+        }
+        let favs = self.favorite_slots.clone();
+        let fav = move |i: usize| favs.contains(&i);
+        // MoveCoins into each bank (the audio/rng pre-pass, `ChestUI.MoveCoins`
+        // `:997-1207`), then the item transfer. The banks borrow disjointly.
+        let mut rng = std::mem::replace(self.rngs.global(), tr_core::UnifiedRandom::default());
+        for &bi in &found {
+            let Some(p) = self.player.as_mut() else { break };
+            crate::bank::move_coins(
+                &mut p.banks[bi],
+                &mut self.inventory,
+                &mut self.equip.coins,
+                &fav,
+                &mut self.audio,
+                &mut rng,
+            );
+        }
+        *self.rngs.global() = rng;
+        // The item transfer into the in-range banks (no void vault source).
+        let Some(p) = self.player.as_mut() else { return };
+        let banks: Vec<&mut [crate::item::ItemSlot]> = found
+            .iter()
+            .map(|&bi| &mut p.banks[bi][..])
+            .collect();
+        crate::quick_stack::quick_stack_to_nearby_banks(&mut self.inventory, &fav, banks);
+    }
+
+    /// `Main.cs:41851-41857` — the quick-stack button's right press:
+    /// `Player.Settings.CycleQuickStackMode` + `SoundEngine.PlaySound(10)`
+    /// (`:41855`) + `Main.SaveSettings` (`:41856`). W4-g21 batch 3, host 63.
+    fn quick_stack_mode_click(&mut self) {
+        self.settings.stack_to_chests_mode =
+            crate::quick_stack::cycle_quick_stack_mode(self.settings.stack_to_chests_mode);
+        self.audio.play("Menu_Open"); // `PlaySound(10)` (`:41855`)
+        let _ = self.settings.save(); // `Main.SaveSettings` (`:41856`)
+    }
+
+    /// `Main.cs:41883-41888` — the sort-inventory button's left press:
+    /// `ItemSorting.SortInventory` (`ItemSorting.cs:1616-1627`) then
+    /// `SoundEngine.PlaySound(12)` (`:41887`). The `HasLockedInventory` gate is
+    /// the quick-stack one; the Coin Gun 905 suppresses the coin consolidation.
+    /// W4-g21 batch 3, host 64.
+    fn sort_inventory_click(&mut self) {
+        if self.mouse_item.kind != 0 && self.mouse_item.count != 0 {
+            return;
+        }
+        let has_coin_gun = self.inventory.iter().chain(self.equip.coins.iter()).chain(self.equip.ammo.iter())
+            .any(|s| s.count > 0 && s.kind == 905);
+        let mult = match self.player.as_ref() {
+            Some(p) => [p.melee_damage, p.ranged_damage, p.magic_damage, p.minion_damage],
+            None => [1.0; 4],
+        };
+        let favs = self.favorite_slots.clone();
+        let fav = move |i: usize| favs.contains(&i);
+        let overflow = crate::item_sorting::sort_inventory(
+            &mut self.inventory,
+            &mut self.equip.coins,
+            &mut self.equip.ammo,
+            &fav,
+            has_coin_gun,
+            mult,
+        );
+        // The coin-overflow tail (`SortCoins`, `:1870-1876`): QuickSpawnItem the
+        // remainder at the player's centre (`GetOrDropItem` → the pickup stack
+        // first, the overflow spawns a world drop). The port deposits into the
+        // grid and drops the rest.
+        if !overflow.is_empty() {
+            let center = self.player.as_ref().map(|p| p.center()).unwrap_or((0.0, 0.0));
+            let mut rng = std::mem::replace(self.rngs.global(), tr_core::UnifiedRandom::default());
+            for (kind, count) in overflow {
+                let left = crate::item::deposit_pickup(
+                    &mut self.inventory,
+                    &mut self.equip.ammo,
+                    kind,
+                    0,
+                    count,
+                    |i| favs.contains(&i),
+                    &mut |_| {},
+                );
+                if left > 0 {
+                    crate::world_sim::items::spawn_item_drop_px(
+                        &mut self.items,
+                        &mut rng,
+                        kind,
+                        left,
+                        glam::Vec2::new(center.0, center.1),
+                    );
+                }
+            }
+            *self.rngs.global() = rng;
+        }
+        self.audio.play("Menu_Tick"); // `PlaySound(12)` (`:41887`)
     }
 
     /// One ctx-3 cell's click pair (`ItemSlot.Handle`'s `LeftClick` +
@@ -4022,6 +4268,52 @@ mod tests {
             100,
             "the bank untouched by the chest row"
         );
+    }
+
+    /// W4-g21 batch 3 hosts 62/63/64 — the quick-stack-all / sort buttons
+    /// (`Main.cs:41833-41897`): the left press runs the engine + sound 12, the
+    /// quick-stack right press cycles the mode + sound 10. The buttons ride
+    /// `chest == -1 && npcShop == 0`, so the test closes the container first.
+    #[test]
+    fn w4_g21_quick_stack_and_sort_buttons_fire_their_engines_and_cues() {
+        // A closed-container app with one in-range world chest holding wood.
+        let mut app = inv_app();
+        app.world_chests.push(WorldChest {
+            tile: (20, 10),
+            slots: vec![slot(9, 9900), EMPTY_SLOT],
+            name: String::new(),
+            max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
+        });
+        // Put the player next to the chest so it is in range.
+        if let Some(p) = app.player.as_mut() {
+            p.x = 20.0 * 16.0;
+            p.y = 10.0 * 16.0;
+        }
+        app.inventory[10] = slot(9, 50); // storage wood
+        // The quick-stack button's left press (498, 244).
+        app.mouse_pos = Vec2::new(505.0, 250.0);
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.world_chests[0].slots[0].count, 9950, "the wood quick-stacked");
+        assert!(app.inventory[10].count == 0, "the source drained");
+        assert_eq!(app.audio.played_count(), before + 1, "`PlaySound(12)` (`:41849`)");
+        // The quick-stack button's right press cycles the mode + sound 10.
+        app.mouse_pos = Vec2::new(505.0, 250.0);
+        let before = app.audio.played_count();
+        app.ui_right_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.settings.stack_to_chests_mode, 1, "the mode cycled");
+        assert_eq!(app.audio.played_count(), before + 1, "`PlaySound(10)` (`:41855`)");
+        // The sort button's left press (534, 244) runs SortInventory + sound 12.
+        app.inventory[11] = slot(2, 30);
+        app.inventory[12] = slot(9, 20);
+        app.mouse_pos = Vec2::new(540.0, 250.0);
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.audio.played_count(), before + 1, "`PlaySound(12)` (`:41887`)");
     }
 
     /// DW-3.6 — the bank DepositAll call site gains the MoveCoins pre-pass

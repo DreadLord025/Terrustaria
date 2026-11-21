@@ -169,6 +169,10 @@ pub enum HoverRef {
     SuperCart,
     /// `Player.miscDyes[0..4]`.
     MiscDye(usize),
+    /// The quick-stack-all button (`Main.cs:41833-41868`, W4-g21 batch 3).
+    QuickStackButton,
+    /// The sort-inventory button (`Main.cs:41869-41897`, W4-g21 batch 3).
+    SortButton,
     /// `Player.trashItem`.
     Trash,
 }
@@ -188,6 +192,11 @@ pub struct InventoryHit {
     /// `Main.hidePVPAndTeamIcons` (`Main.cs:42053-42056`) — set by the housing
     /// page once its columns reach the PVP icons.
     pub hide_pvp_icons: bool,
+    /// The quick-stack/sort buttons' hover-edge tick count (`DoStatefulTickSound`,
+    /// `Main.cs:41865/:41890` → `:3244`): the caller plays this many `Menu_Tick`
+    /// cues after the draw (the audio borrow stays with the chest panel during
+    /// the call, W4-g21 batch 3).
+    pub hover_ticks: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -387,6 +396,22 @@ pub fn misc_tick_click(
     None
 }
 
+/// `Main.cs:41833-41868`: the quick-stack-all button at `(498, 244)` in the
+/// `ChestStack[0]` sheet's native size; the hover box is inclusive on every
+/// edge (`mouseX >= num79 && mouseX <= num79 + num81`, `:41842`). The sheet
+/// fallback is 30x30 (the retail `UI/ChestStack_0` cell).
+pub fn quick_stack_button_hit(mouse: Vec2, size: (f32, f32)) -> bool {
+    let (x, y) = (498.0, 244.0); // `Main.cs:41836-41837`
+    mouse.x >= x && mouse.x <= x + size.0 && mouse.y >= y && mouse.y <= y + size.1
+}
+
+/// `Main.cs:41869-41897`: the sort-inventory button at `(534, 244)`, a fixed
+/// 30x30 box (`num86 = num87 = 30`, `:41874-41875`), inclusive edges (`:41878`).
+pub fn sort_button_hit(mouse: Vec2) -> bool {
+    let (x, y) = (534.0, 244.0); // `Main.cs:41872-41873`
+    mouse.x >= x && mouse.x <= x + 30.0 && mouse.y >= y && mouse.y <= y + 30.0
+}
+
 /// `Main.cs:41446`: `mouseX >= x && mouseX <= x + W*scale && mouseY >= y &&
 /// mouseY <= y + H*scale`, with `cell = W = H`. Inclusive on the right/bottom
 /// edges too — unlike `ui::in_rect`'s `Rectangle.Contains` (exclusive
@@ -553,6 +578,16 @@ pub fn draw(
     hide_misc: &[bool; 2],
     unlocked_super_cart: bool,
     enabled_super_cart: bool,
+    // `Player.Settings.StackToChestsPreferredMode` — the quick-stack button's
+    // frame (`Main.cs:41866`, W4-g21 batch 3 host 63).
+    stack_to_chests_mode: u8,
+    // `Main.allChestStackHover`/`inventorySortMouseOver` (`Main.cs:1297/:1299`):
+    // the buttons' hover latches — the draw advances them via
+    // `DoStatefulTickSound` (`:41865/:41890`); the hover-edge ticks are returned
+    // in `InventoryHit::hover_ticks` for the caller to play (the audio borrow
+    // stays with the chest panel during the call).
+    all_chest_stack_hover: &mut bool,
+    inventory_sort_hover: &mut bool,
 ) -> InventoryHit {
     // `Main.DrawInventory`'s button pair (`Main.cs:41012-41013`):
     // `DrawBestiaryIcon` rides beside `DrawEmoteBubblesButton`. The bestiary
@@ -985,6 +1020,53 @@ pub fn draw(
             );
             if hit.hovered.is_none() && hit_test(mouse, p.x, p.y + m_h, INVENTORY_SCALE, cell) {
                 hit.hovered = Some(HoverRef::Bank(idx));
+            }
+        }
+    }
+
+    // `Main.cs:41833-41897`: the quick-stack-all + sort-inventory buttons —
+    // both ride `chest == -1 && npcShop == 0` (the port's `bank.is_none()` +
+    // `!chest_or_shop` covers the world-chest/shop case; the bank panel keeps
+    // its own transfer row). The hover latches advance via DoStatefulTickSound
+    // (`:41865/:41890`), the hover-edge tick plays sound 12.
+    if bank.is_none() && !chest_or_shop {
+        // The quick-stack button (`:41833-41868`): frame `num78` starts 0,
+        // becomes 1 on hover, then `+ (int)mode * 2` (`:41866`).
+        let stack_size = lookups
+            .chest_stack
+            .first()
+            .and_then(|s| s.as_ref())
+            .map(|s| (s.width as f32, s.height as f32))
+            .unwrap_or((30.0, 30.0));
+        let stack_hover = quick_stack_button_hit(mouse, stack_size);
+        let frame = (if stack_hover { 1 } else { 0 }) + (stack_to_chests_mode as usize) * 2;
+        if let Some(rect) = lookups.chest_stack.get(frame).and_then(|s| s.as_ref()) {
+            let (uv, w, h) = super::chrome::sheet_frame(rect, lookups.atlas_size);
+            r.push_ui_sprite([498.0, 244.0], [w, h], uv, [1.0; 4]);
+        }
+        if stack_hover && hit.hovered.is_none() {
+            hit.hovered = Some(HoverRef::QuickStackButton);
+        }
+        // `DoStatefulTickSound(ref allChestStackHover, state2)` (`:41865`).
+        if *all_chest_stack_hover != stack_hover {
+            *all_chest_stack_hover = stack_hover;
+            if stack_hover {
+                hit.hover_ticks += 1; // `:3244`
+            }
+        }
+        // The sort button (`:41869-41897`): `InventorySort[hover ? 1 : 0]`.
+        let sort_hover = sort_button_hit(mouse);
+        if let Some(rect) = lookups.inventory_sort[if sort_hover { 1 } else { 0 }].as_ref() {
+            let (uv, w, h) = super::chrome::sheet_frame(rect, lookups.atlas_size);
+            r.push_ui_sprite([534.0, 244.0], [w, h], uv, [1.0; 4]);
+        }
+        if sort_hover && hit.hovered.is_none() {
+            hit.hovered = Some(HoverRef::SortButton);
+        }
+        if *inventory_sort_hover != sort_hover {
+            *inventory_sort_hover = sort_hover;
+            if sort_hover {
+                hit.hover_ticks += 1; // `:3244`
             }
         }
     }

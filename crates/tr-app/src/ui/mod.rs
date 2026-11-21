@@ -699,6 +699,10 @@ pub fn draw_hud(
     hide_misc: &[bool; 2],
     unlocked_super_cart: bool,
     enabled_super_cart: bool,
+    // The quick-stack/sort buttons (`Main.cs:41833-41897`, W4-g21 batch 3).
+    stack_to_chests_mode: u8,
+    all_chest_stack_hover: &mut bool,
+    inventory_sort_hover: &mut bool,
     // The buff bar (`Main.DrawInterface_Resources_Buffs`, `Main.cs:43203`):
     // the per-slot alpha (`Main.buffAlpha`), the cancel gate
     // (`Main.mouseRight && Main.mouseRightRelease`, `:43333`) and the
@@ -876,7 +880,16 @@ pub fn draw_hud(
             hide_misc,
             unlocked_super_cart,
             enabled_super_cart,
+            // The quick-stack/sort buttons (`Main.cs:41833-41897`).
+            stack_to_chests_mode,
+            all_chest_stack_hover,
+            inventory_sort_hover,
         );
+        // The buttons' hover-edge ticks (`DoStatefulTickSound`, `Main.cs:3244`)
+        // — played after the chest panel's audio borrow ends.
+        for _ in 0..hit.hover_ticks {
+            chest_panel.audio.play("Menu_Tick");
+        }
         open_hover = hit.hovered;
         open_housing = hit.housing;
         hide_pvp_icons = hit.hide_pvp_icons;
@@ -1190,6 +1203,22 @@ pub fn draw_hud(
                 tooltip::draw_mouse_text(r, lookups, mouse_pos, &label, screen, pulse);
                 None
             }
+            // `Main.cs:41860-41863`: the quick-stack button's MouseText is the
+            // mode's label (`GameUI.QuickStackToNearby` / `SmartStackToNearby`).
+            Some(inventory::HoverRef::QuickStackButton) => {
+                let key = if stack_to_chests_mode == 0 {
+                    "GameUI.QuickStackToNearby"
+                } else {
+                    "GameUI.SmartStackToNearby"
+                };
+                tooltip::draw_mouse_text(r, lookups, mouse_pos, &crate::lang::text(key), screen, pulse);
+                None
+            }
+            // `Main.cs:41893-41896`: `GameUI.SortInventory`.
+            Some(inventory::HoverRef::SortButton) => {
+                tooltip::draw_mouse_text(r, lookups, mouse_pos, &crate::lang::text("GameUI.SortInventory"), screen, pulse);
+                None
+            }
             other => other.and_then(|h| hover_item_for(equip, inventory, h, bank.map(|b| b.0))),
         }
     } else {
@@ -1248,6 +1277,9 @@ fn hover_item_for<'a>(
         // The misc-page ticks replace the tooltip too (`Main.cs:41294-41298`,
         // `Lang.inter[58 + num26]`).
         H::HideMisc(_) | H::SuperCart => None,
+        // The quick-stack/sort buttons carry no item (`Main.cs:41860-41863`,
+        // `:41893-41896` — the MouseText labels are drawn separately).
+        H::QuickStackButton | H::SortButton => None,
         H::Coin(i) => equip.coins.get(i),
         H::Ammo(i) => equip.ammo.get(i),
         H::Armor(i) => equip.armor.get(i),

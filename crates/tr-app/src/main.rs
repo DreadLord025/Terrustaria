@@ -49,6 +49,7 @@ mod yoyo_string;
 mod item;
 mod itemdata;
 mod item_sorting;
+mod quick_stack;
 mod sortdata;
 mod lang;
 mod lang_tables;

@@ -834,6 +834,17 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // `TextureAssets.InventoryTickOn/Off`).
         "Inventory_Tick_On",
         "Inventory_Tick_Off",
+        // `UI/ChestStack_0..3` — the quick-stack-all button's 4 frames
+        // (`Main.cs:41838-41867`, `TextureAssets.ChestStack`,
+        // `AssetInitializer.cs:245-248`); `UI/Sort_0..1` — the sort-inventory
+        // button's idle/hover frames (`Main.cs:41891`, `TextureAssets.InventorySort`,
+        // `AssetInitializer.cs:275-278`). W4-g21 batch 3 hosts 62/63/64.
+        "UI/ChestStack_0",
+        "UI/ChestStack_1",
+        "UI/ChestStack_2",
+        "UI/ChestStack_3",
+        "UI/Sort_0",
+        "UI/Sort_1",
         "UI/DisplaySlots_0",
         "UI/DisplaySlots_1",
         "UI/DisplaySlots_2",
@@ -2064,6 +2075,12 @@ pub struct Lookups {
     /// the right of every accessory row (`Main.cs:41436-41460`).
     pub ui_tick_on: Option<tr_render::SheetRect>,
     pub ui_tick_off: Option<tr_render::SheetRect>,
+    /// `UI/ChestStack_0..3`: the quick-stack-all button's frames
+    /// (`Main.cs:41838-41867`, W4-g21 batch 3 host 62).
+    pub chest_stack: [Option<tr_render::SheetRect>; 4],
+    /// `UI/Sort_0..1`: the sort-inventory button's idle/hover frames
+    /// (`Main.cs:41891`, W4-g21 batch 3 host 64).
+    pub inventory_sort: [Option<tr_render::SheetRect>; 2],
     /// `Inventory_Back18`: the crafting-recipe slot frame (`ItemSlot.cs:2272`).
     pub ui_back18: Option<tr_render::SheetRect>,
     /// `UI/PanelBackground`: the panel background 9-slice (`UIPanel.cs:30`).
@@ -2435,6 +2452,12 @@ impl Lookups {
             ui_defense_shield: atlas.sheet("Extra_58").copied(),
             ui_tick_on: atlas.sheet("Inventory_Tick_On").copied(),
             ui_tick_off: atlas.sheet("Inventory_Tick_Off").copied(),
+            chest_stack: std::array::from_fn(|i| {
+                atlas.sheet(&format!("UI/ChestStack_{i}")).copied()
+            }),
+            inventory_sort: std::array::from_fn(|i| {
+                atlas.sheet(&format!("UI/Sort_{i}")).copied()
+            }),
             ui_back18: atlas.sheet("Inventory_Back18").copied(),
             ui_panel_bg: atlas.sheet("UI/PanelBackground").copied(),
             ui_panel_border: atlas.sheet("UI/PanelBorder").copied(),

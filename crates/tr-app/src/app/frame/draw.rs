@@ -1782,6 +1782,10 @@ impl App {
                             &hide_misc,
                             unlocked_super_cart,
                             enabled_super_cart,
+                            // The quick-stack/sort buttons (`Main.cs:41833-41897`).
+                            self.settings.stack_to_chests_mode,
+                            &mut self.all_chest_stack_hover,
+                            &mut self.inventory_sort_hover,
                             // The buff bar (`Main.DrawInterface_Resources_Buffs`).
                             &mut self.buff_alpha,
                             &mut self.buff_removals,

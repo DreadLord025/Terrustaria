@@ -118,6 +118,11 @@ macro_rules! rarity_desc {
     };
 }
 
+/// `ItemSorting.LayerCount` (`ItemSorting.cs:1326`, `_layerCount = list.Count`
+/// `:1394`): the 52 setup layers — the quick-stack `DestinationHelper`'s
+/// `categoryScores` array length (`QuickStacking.cs:32`).
+pub const SETUP_LAYER_COUNT: usize = 52;
+
 /// The 52 layers in `SetupWhiteLists` order (`ItemSorting.cs:1334-1385`) — the
 /// order `Validate`'s whitelists and [`layer_of_table`] are built in. The live
 /// `Sort` reorders only the four weapon layers (see [`sort_order`]).
@@ -790,6 +795,16 @@ static SETUP_LAYERS: [Layer; 52] = [
     },
 ];
 
+/// `ItemSorting.GetSortingLayerIndex` (`ItemSorting.cs:1611-1614`): the
+/// setup-layer index of an item type — the quick-stack `GetCategory`
+/// (`QuickStacking.cs:227-230`) reads it for the smart-stack category scores.
+pub fn sorting_layer_index(kind: u16) -> usize {
+    layer_of_table()
+        .get(kind as usize)
+        .copied()
+        .unwrap_or(u8::MAX) as usize
+}
+
 /// `ItemSortingLayer.Validate` (`ItemSorting.cs:23-29`) precomputed: the index
 /// (in [`SETUP_LAYERS`] order) of the first layer whose filter claims each item
 /// type in the synthetic full-inventory sweep (`SetupWhiteLists`, `:1386-1408`).
@@ -883,6 +898,20 @@ fn run_layer(
 /// (`:1584-1587`), which the port has no equivalent for; the resulting order is
 /// identical (see the module doc).
 pub fn sort(inv: &mut [ItemSlot], ignore: &[usize], with_feedback: bool, mult: [f32; 4]) {
+    sort_fav(inv, ignore, with_feedback, mult, &|_| false);
+}
+
+/// [`sort`] with a per-slot favorite predicate — the player-inventory sort
+/// (`ItemSorting.SortInventory`, `:1616-1627`) skips favorited stacks
+/// (`:1505`'s `!item.favorited`); the chest sort passes `|_| false` (chest
+/// slots can never be favorited). `fav(i)` reads the slot's own flag.
+pub fn sort_fav(
+    inv: &mut [ItemSlot],
+    ignore: &[usize],
+    with_feedback: bool,
+    mult: [f32; 4],
+    fav: &dyn Fn(usize) -> bool,
+) {
     let _ = with_feedback;
     let layers = sort_order(mult[0], mult[1], mult[2], mult[3]);
 
@@ -890,7 +919,7 @@ pub fn sort(inv: &mut [ItemSlot], ignore: &[usize], with_feedback: bool, mult: [
     // (`:1500-1510`). Chest slots are never favorited.
     let mut items_to_sort: Vec<usize> = (0..inv.len())
         .filter(|&i| !ignore.contains(&i))
-        .filter(|&i| !is_empty(&inv[i]))
+        .filter(|&i| !is_empty(&inv[i]) && !fav(i))
         .collect();
 
     // The stack-merge pass (`:1511-1550`): pull from later stacks into earlier
@@ -983,6 +1012,325 @@ pub fn sort_chest(slots: &mut [ItemSlot], mult: [f32; 4]) {
     sort(slots, &[], true, mult);
 }
 
+// ---------------------------------------------------------------------------
+// W4-g21 batch 3 — the player-inventory Sort button (`Main.cs:41869-41897`,
+// site `:41887`). The C# operates on the single 59-slot `Player.inventory`;
+// the port splits it (grid `App.inventory[50]`, `equip.coins[4]`,
+// `equip.ammo[4]`), so these helpers take the three arrays and address them
+// through the vanilla index space (grid 0..50, coins 50..54, ammo 54..58).
+// ---------------------------------------------------------------------------
+
+/// The port's split inventory as one mutable 58-slot view: index `i < 50` is
+/// the grid, `50..54` the coin rows, `54..58` the ammo rows. The trash slot 58
+/// is outside the sort (`SortInventory` ignores it, `:1625`).
+struct InvView<'a> {
+    grid: &'a mut [ItemSlot; crate::item::INV],
+    coins: &'a mut [ItemSlot; crate::inv::COINS],
+    ammo: &'a mut [ItemSlot; crate::inv::AMMO],
+}
+
+impl<'a> InvView<'a> {
+    fn get(&self, i: usize) -> &ItemSlot {
+        match i {
+            0..=49 => &self.grid[i],
+            50..=53 => &self.coins[i - 50],
+            _ => &self.ammo[i - 54],
+        }
+    }
+    fn set(&mut self, i: usize, v: ItemSlot) {
+        match i {
+            0..=49 => self.grid[i] = v,
+            50..=53 => self.coins[i - 50] = v,
+            _ => self.ammo[i - 54] = v,
+        }
+    }
+    fn swap(&mut self, a: usize, b: usize) {
+        let va = *self.get(a);
+        let vb = *self.get(b);
+        self.set(a, vb);
+        self.set(b, va);
+    }
+}
+
+/// `Utils.CoinsCount` (`Utils.cs:1019-1046`) over the 58-slot carry: the
+/// 71/72/73/74 stacks fold to copper at 1/100/10000/1000000. `overFlowing`
+/// is always false in 1.4.5.8 (`:1044`).
+fn coins_count(inv: &InvView<'_>) -> i64 {
+    let mut n = 0i64;
+    for i in 0..58 {
+        let s = inv.get(i);
+        let mult = match s.kind {
+            71 => 1,
+            72 => 100,
+            73 => 10000,
+            74 => 1000000,
+            _ => 0,
+        };
+        n += s.count as i64 * mult;
+    }
+    n
+}
+
+/// `Utils.CoinsSplit` (`Utils.cs:1048-1060`): the copper total split into
+/// [copper, silver, gold, platinum] counts, largest tier first.
+fn coins_split(count: i64) -> [i64; 4] {
+    let mut out = [0i64; 4];
+    let mut acc = 0i64;
+    let mut denom = 1000000i64;
+    for k in (0..4).rev() {
+        out[k] = (count - acc) / denom;
+        acc += out[k] * denom;
+        denom /= 100;
+    }
+    out
+}
+
+/// `ItemSorting.SortCoins` (`ItemSorting.cs:1770-1879`): consolidate every
+/// coin stack into the fewest stacks, coin rows first then the grid; the
+/// 100-iteration guard's overflow tail `QuickSpawnItem`s the remainder
+/// (`:1870-1876`). Returns the overflow spawns as `(kind, count)` pairs for
+/// the caller to drop at the player's centre (`Player.QuickSpawnItem` →
+/// `GetOrDropItem`, `Player.cs:7187-7200`). The Coin Gun 905 gate is the
+/// caller's (`SortInventory`, `:1620`).
+fn sort_coins(inv: &mut InvView<'_>) -> Vec<(u16, u32)> {
+    let count = coins_count(inv);
+    let common_max = crate::item::COMMON_MAX_STACK as i64; // 9999
+    let mut split = coins_split(count);
+    // The stack-count probe (`:1780-1795`): copper/silver/gold cap at 99,
+    // platinum at CommonMaxStack.
+    let mut needed = 0usize;
+    for i in 0..3 {
+        let mut n = split[i];
+        while n > 0 {
+            n -= 99;
+            needed += 1;
+        }
+    }
+    let mut plat = split[3];
+    while plat > common_max {
+        plat -= common_max;
+        needed += 1;
+    }
+    // The occupied-coin-slot count (`:1796-1803`): fewer slots than needed
+    // stacks means the consolidation cannot fit — bail (the C# returns).
+    let mut occupied = 0usize;
+    for i in 0..58 {
+        let s = inv.get(i);
+        if (71..=74).contains(&s.kind) && s.count > 0 {
+            occupied += 1;
+        }
+    }
+    if occupied < needed {
+        return Vec::new();
+    }
+    // Clear every coin stack (`:1808-1814`).
+    for i in 0..58 {
+        let s = *inv.get(i);
+        if (71..=74).contains(&s.kind) && s.count > 0 {
+            inv.set(i, EMPTY_SLOT);
+        }
+    }
+    // Refill largest tier first, coin rows 50..54 then grid 0..50 (`:1815-1864`).
+    let mut overflow = Vec::new();
+    let mut guard = 100;
+    loop {
+        let mut tier = None;
+        for k in (0..4).rev() {
+            if split[k] > 0 {
+                tier = Some(k);
+                break;
+            }
+        }
+        let Some(k) = tier else { break };
+        let mut amount = split[k];
+        if k == 3 && amount > common_max {
+            amount = common_max;
+        }
+        let mut placed = false;
+        for i in 50..54 {
+            if is_empty(inv.get(i)) {
+                inv.set(i, ItemSlot { kind: 71 + k as u16, name: crate::registry::name(71 + k as u16), count: amount as u32, prefix: 0 });
+                split[k] -= amount;
+                placed = true;
+                break;
+            }
+        }
+        if !placed {
+            for i in 0..50 {
+                if is_empty(inv.get(i)) {
+                    inv.set(i, ItemSlot { kind: 71 + k as u16, name: crate::registry::name(71 + k as u16), count: amount as u32, prefix: 0 });
+                    split[k] -= amount;
+                    placed = true;
+                    break;
+                }
+            }
+        }
+        guard -= 1;
+        if guard > 0 {
+            continue;
+        }
+        // The overflow tail (`:1870-1876`): QuickSpawnItem the remainder.
+        for k in (0..4).rev() {
+            if split[k] > 0 {
+                overflow.push((71 + k as u16, split[k] as u32));
+            }
+        }
+        break;
+    }
+    overflow
+}
+
+/// `ItemSorting.RefillItemStack` (`ItemSorting.cs:1881-1911`): pull same-type
+/// non-favorited stacks from `[start, end)` into `target` up to its maxStack.
+fn refill_item_stack(inv: &mut InvView<'_>, target: usize, start: usize, end: usize, fav: &dyn Fn(usize) -> bool) {
+    let kind = inv.get(target).kind;
+    let max = def(kind).max_stack;
+    let mut room = max.saturating_sub(inv.get(target).count);
+    if room == 0 {
+        return;
+    }
+    for i in start..end {
+        let s = *inv.get(i);
+        if s.count >= 1 && s.kind == kind && !fav(i) {
+            let take = s.count.min(room);
+            room -= take;
+            let mut t = *inv.get(target);
+            t.count += take;
+            inv.set(target, t);
+            let mut src = s;
+            src.count -= take;
+            if src.count == 0 {
+                src = EMPTY_SLOT;
+            }
+            inv.set(i, src);
+            if room == 0 {
+                break;
+            }
+        }
+    }
+}
+
+/// `ItemSorting.TrySlidingUp` (`ItemSorting.cs:1913-1923`): swap the slot into
+/// the first air slot at or above `minimum`.
+fn try_sliding_up(inv: &mut InvView<'_>, slot: usize, minimum: usize) {
+    for i in minimum..slot {
+        if is_empty(inv.get(i)) {
+            inv.swap(i, slot);
+            break;
+        }
+    }
+}
+
+/// `ItemSorting.ClearAmmoSlotSpaces` (`ItemSorting.cs:1750-1768`): top up each
+/// partial ammo stack from the rows below it (a favorited stack only from the
+/// other ammo rows), then slide every non-favorited ammo stack up.
+fn clear_ammo_slot_spaces(inv: &mut InvView<'_>, fav: &dyn Fn(usize) -> bool) {
+    for i in 54..58 {
+        let s = *inv.get(i);
+        let ammo = def(s.kind).ammo;
+        if !is_empty(&s) && ammo != 0 && s.count < def(s.kind).max_stack {
+            let start = if fav(i) { 54 } else { i + 1 };
+            refill_item_stack(inv, i, start, 58, fav);
+        }
+    }
+    for j in 54..58 {
+        if inv.get(j).kind > 0 && !fav(j) {
+            try_sliding_up(inv, j, 54);
+        }
+    }
+}
+
+/// `ItemSorting.FillAmmoFromInventory` (`ItemSorting.cs:1688-1748`): refill the
+/// occupied ammo stacks from the grid, then fill the empty ammo rows — first
+/// with grid stacks of an already-accepted ammo type, then with any
+/// `FitsAmmoSlot` kind. `SetGlow` (`:1695`) is the port's no-op glow deviation.
+fn fill_ammo_from_inventory(inv: &mut InvView<'_>, fav: &dyn Fn(usize) -> bool) {
+    let mut accepted: Vec<u16> = Vec::new();
+    let mut empty: Vec<usize> = Vec::new();
+    for i in 54..58 {
+        let s = *inv.get(i);
+        if is_empty(&s) {
+            empty.push(i);
+        } else if def(s.kind).ammo != 0 {
+            if !accepted.contains(&s.kind) {
+                accepted.push(s.kind);
+            }
+            refill_item_stack(inv, i, 0, 50, fav);
+        }
+    }
+    if empty.is_empty() {
+        return;
+    }
+    // Pass 1 (`:1714-1728`): grid stacks of an accepted type.
+    for j in 0..50 {
+        let s = *inv.get(j);
+        if s.count >= 1
+            && crate::item::can_fill_empty_ammo_slot(s.kind)
+            && accepted.contains(&s.kind)
+            && !fav(j)
+        {
+            let num = empty.remove(0);
+            inv.swap(j, num);
+            refill_item_stack(inv, num, 0, 50, fav);
+            if empty.is_empty() {
+                break;
+            }
+        }
+    }
+    if empty.is_empty() {
+        return;
+    }
+    // Pass 2 (`:1733-1747`): any FitsAmmoSlot kind.
+    for k in 0..50 {
+        let s = *inv.get(k);
+        if s.count >= 1
+            && crate::item::can_fill_empty_ammo_slot(s.kind)
+            && crate::item::fits_ammo_slot(s.kind)
+            && !fav(k)
+        {
+            let num = empty.remove(0);
+            inv.swap(k, num);
+            refill_item_stack(inv, num, 0, 50, fav);
+            if empty.is_empty() {
+                break;
+            }
+        }
+    }
+}
+
+/// `ItemSorting.SortAmmo` (`ItemSorting.cs:1682-1686`).
+fn sort_ammo(inv: &mut InvView<'_>, fav: &dyn Fn(usize) -> bool) {
+    clear_ammo_slot_spaces(inv, fav);
+    fill_ammo_from_inventory(inv, fav);
+}
+
+/// `ItemSorting.SortInventory` (`ItemSorting.cs:1616-1627`) — the player Sort
+/// button (`Main.cs:41886`). The `HasLockedInventory` gate is the caller's;
+/// `HasItem(905)` (the Coin Gun) suppresses the coin consolidation. The grid
+/// sort ignores the hotbar 0..9 and the coin/ammo rows 50..57 (`:1625`), so
+/// only the storage rows 10..49 reorder. Returns the coin-overflow spawns.
+pub fn sort_inventory(
+    grid: &mut [ItemSlot; crate::item::INV],
+    coins: &mut [ItemSlot; crate::inv::COINS],
+    ammo: &mut [ItemSlot; crate::inv::AMMO],
+    fav: &dyn Fn(usize) -> bool,
+    has_coin_gun: bool,
+    mult: [f32; 4],
+) -> Vec<(u16, u32)> {
+    let mut inv = InvView { grid, coins, ammo };
+    let mut overflow = Vec::new();
+    if !has_coin_gun {
+        overflow = sort_coins(&mut inv);
+    }
+    sort_ammo(&mut inv, fav);
+    // The grid sort over the storage rows only: build a 50-slot view with the
+    // hotbar/coin/ammo rows ignored. The C# passes the whole 59-slot array with
+    // ignoreSlots {0..9, 50..58}; the port sorts the grid slice with {0..9}.
+    let ignore: Vec<usize> = (0..10).collect();
+    sort_fav(inv.grid, &ignore, true, mult, &|i| fav(i));
+    overflow
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -994,6 +1342,61 @@ mod tests {
             count,
             prefix: 0,
         }
+    }
+
+    /// W4-g21 batch 3 host 64 — `SortCoins` (`ItemSorting.cs:1770-1879`): the
+    /// coin stacks consolidate into the fewest stacks, coin rows first.
+    #[test]
+    fn w4_g21_sort_coins_consolidates_into_the_coin_rows() {
+        let mut grid = [EMPTY_SLOT; crate::item::INV];
+        let mut coins = [EMPTY_SLOT; crate::inv::COINS];
+        let mut ammo = [EMPTY_SLOT; crate::inv::AMMO];
+        // 150 copper spread across two grid stacks → 1 silver + 50 copper.
+        grid[10] = slot(71, 100);
+        grid[11] = slot(71, 50);
+        let mut inv = InvView { grid: &mut grid, coins: &mut coins, ammo: &mut ammo };
+        let overflow = sort_coins(&mut inv);
+        assert!(overflow.is_empty());
+        assert!(is_empty(inv.get(10)), "the grid coin stacks cleared");
+        assert!(is_empty(inv.get(11)));
+        // 150 copper = 1 silver (100) + 50 copper, largest tier first in the
+        // coin rows: coin row 0 = silver 1, coin row 1 = copper 50.
+        assert_eq!(inv.get(50).kind, 72);
+        assert_eq!(inv.get(50).count, 1);
+        assert_eq!(inv.get(51).kind, 71);
+        assert_eq!(inv.get(51).count, 50);
+    }
+
+    /// `SortCoins` bails when the occupied coin slots are fewer than the
+    /// needed stacks (`:1804-1807`).
+    #[test]
+    fn w4_g21_sort_coins_bails_when_too_few_slots() {
+        let mut grid = [EMPTY_SLOT; crate::item::INV];
+        let mut coins = [EMPTY_SLOT; crate::inv::COINS];
+        let mut ammo = [EMPTY_SLOT; crate::inv::AMMO];
+        // 99999999 copper needs many stacks but only one coin slot is occupied.
+        grid[10] = slot(71, 9999);
+        let mut inv = InvView { grid: &mut grid, coins: &mut coins, ammo: &mut ammo };
+        let before = *inv.get(10);
+        let overflow = sort_coins(&mut inv);
+        assert!(overflow.is_empty());
+        assert_eq!(*inv.get(10), before, "the consolidation bailed, nothing moved");
+    }
+
+    /// `SortInventory` ignores the hotbar 0..9 (`:1625`): a hotbar stack stays
+    /// put while the storage rows reorder.
+    #[test]
+    fn w4_g21_sort_inventory_leaves_the_hotbar_alone() {
+        let mut grid = [EMPTY_SLOT; crate::item::INV];
+        let mut coins = [EMPTY_SLOT; crate::inv::COINS];
+        let mut ammo = [EMPTY_SLOT; crate::inv::AMMO];
+        grid[0] = slot(9, 50); // hotbar wood
+        grid[10] = slot(2, 30); // storage stone
+        grid[11] = slot(9, 20); // storage wood
+        sort_inventory(&mut grid, &mut coins, &mut ammo, &|_| false, false, [1.0; 4]);
+        assert_eq!(grid[0], slot(9, 50), "the hotbar wood stayed");
+        // The storage rows sorted: wood (9) and stone (2) reorder by layer.
+        assert!(!is_empty(&grid[10]) && !is_empty(&grid[11]));
     }
 
     /// The C# `SetupWhiteLists` assert (`ItemSorting.cs:1409`): no item type is

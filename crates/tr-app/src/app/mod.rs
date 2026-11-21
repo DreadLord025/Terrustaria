@@ -775,6 +775,12 @@ pub(crate) struct App {
     pub(crate) net_release: bool,
     /// `Main.frameRelease` (`Main.cs:989`): the F10 press-edge latch.
     pub(crate) frame_release: bool,
+    /// `Main.allChestStackHover` (`Main.cs:1297`): the quick-stack button's
+    /// hover latch (`DoStatefulTickSound`, `Main.cs:41865`, W4-g21 batch 3).
+    pub(crate) all_chest_stack_hover: bool,
+    /// `Main.inventorySortMouseOver` (`Main.cs:1299`): the sort button's hover
+    /// latch (`DoStatefulTickSound`, `Main.cs:41890`, W4-g21 batch 3).
+    pub(crate) inventory_sort_hover: bool,
     pub(crate) keys: HashSet<KeyCode>,
     /// `Main.cUp`..`Main.cMount` (`Main.cs:67163-67176`): the live gameplay
     /// bind table, mirrored from `settings.keybinds` so a rebind in the
@@ -3988,6 +3994,8 @@ impl App {
             draw_release: false,
             net_release: false,
             frame_release: false,
+            all_chest_stack_hover: false,
+            inventory_sort_hover: false,
             keys: HashSet::new(),
             keybinds: crate::input_map::default_binds(),
             map_binds: crate::input_map::default_map_binds(),
