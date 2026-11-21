@@ -226,7 +226,7 @@ use glam::Vec2;
 
 use crate::entity_lights::{tile_x, tile_y, XAnchor};
 use crate::projectile::{
-    Projectile, DEADLY_SPHERE, ORNAMENT_HOSTILE, THUNDER_SPEAR_BOLT,
+    Projectile, DEADLY_SPHERE, ORNAMENT_HOSTILE, THUNDER_SPEAR_BOLT, VORTEX_RITUAL_BOLT,
 };
 
 /// The centre tile of a slot's post-step box, quotient-truncated (the
@@ -276,6 +276,11 @@ pub(crate) fn proj_lights_a(
             [0.3, 0.5, 0.7]
         };
         out.push((cx, cy, rgb));
+    } else if p.kind == VORTEX_RITUAL_BOLT {
+        // `:32145-32155` — aiStyle-88's `else` arm: `type != 580` returns,
+        // then `frameCounter++` and the unconditional centre light (the
+        // sim's `ai_vortex_bolt` runs the wrap latch / wand around it).
+        out.push((cx, cy, [0.3, 0.45, 0.5]));
     }
     out
 }
@@ -331,10 +336,23 @@ mod tests {
     }
 
     #[test]
+    fn the_vortex_ritual_bolt_lights_a_fixed_teal() {
+        // `:32155` — (0.3, 0.45, 0.5) at the centre, unconditional inside
+        // the aiStyle-88 type-580 else arm.
+        let p = slot(VORTEX_RITUAL_BOLT);
+        assert_eq!(proj_lights_a(&p, None), vec![(10, 11, [0.3, 0.45, 0.5])]);
+    }
+
+    #[test]
     fn every_ported_kind_has_a_proj_data_row() {
         // The absent-wholesale rule's invariant: every kind this feed serves
         // resolves a `proj_data` row (the spawn gate).
-        for kind in [ORNAMENT_HOSTILE, THUNDER_SPEAR_BOLT, DEADLY_SPHERE] {
+        for kind in [
+            ORNAMENT_HOSTILE,
+            THUNDER_SPEAR_BOLT,
+            DEADLY_SPHERE,
+            VORTEX_RITUAL_BOLT,
+        ] {
             assert!(
                 proj_data(kind).is_some(),
                 "kind {kind} must have a row"
@@ -344,9 +362,12 @@ mod tests {
 
     #[test]
     fn an_unrowed_kind_contributes_nothing() {
-        // The 502 Meowmere (site 4) and the 1092 book (site 7) have no rows;
-        // a slot carrying them (were one ever spawned) feeds no light.
-        for kind in [502u16, 1092] {
+        // The 502 Meowmere (site 4), the 1092 book (site 7), the 451
+        // InfluxWaver (site 12), the 464/465/466 cultist orbs (sites 13-16),
+        // the 490 ritual (site 18), the 492 lantern (site 19) and the 518
+        // coin portal (site 20) have no rows; a slot carrying them (were one
+        // ever spawned) feeds no light.
+        for kind in [502u16, 1092, 451, 464, 465, 466, 490, 492, 518] {
             let p = slot(kind);
             assert!(proj_lights_a(&p, None).is_empty());
         }
