@@ -11,7 +11,13 @@
 //! - the room-object helpers `GenerateDungeonWaterCandle`/`PotionBottle`/
 //!   `Pot`/`Book` + `FirstSolid` (`DungeonUtils.cs:373-413/:514-543`),
 //! - the shelf-style rolls (`DungeonCrawler.cs:256-267`) and the
-//!   `DungeonGlobalBookshelves` pass (`DungeonGlobalBookshelves.cs:23-207`).
+//!   `DungeonGlobalBookshelves` pass (`DungeonGlobalBookshelves.cs:23-207`),
+//! - the GroundFurniture selection layer (R2): the wall-keyed default
+//!   item rows + the style substitution chain + the `Next(13)` kind
+//!   ladder + the area tables + the budget scalars
+//!   (`DungeonGlobalGroundFurniture.cs:37-63/:191-218/:275-554/:862-873`).
+//!   The placement tail (`:555-857`) needs the room/hall object lists —
+//!   the wiring round's seam.
 //!
 //! Claim census (this lane's UNCLAIMED verification): no pushed W4 branch
 //! diff touches these symbols; c32 owns the style TABLES (its
@@ -1288,6 +1294,577 @@ pub(crate) fn bookshelves(world: &mut World, r: &mut Rng, data: &BookshelfData<'
     num3
 }
 
+// --- the GroundFurniture selection layer (R2) --------------------------------
+//
+// `DungeonGlobalGroundFurniture` (`DungeonGlobalGroundFurniture.cs:34-874`)
+// splits into the room/hall placement loops (they need the port's missing
+// `DungeonRoom`/`DungeonHall` object lists — the wiring round's seam) and
+// the PURE selection layer ported here: the wall-keyed default item rows
+// (`:275-340`), the style item-list substitution
+// (`GroundFurniture_GetFurnitureItem`, `:862-873`), the `Next(13)` kind
+// ladder with its re-roll arms (`:363-371`), the area-size tables
+// (`:372-506`), and the budget scalars (`:37-63/:191-218`). The placement
+// tail (`:555-857`, the PlaceTile/Place4x2 arms + the candle/book/pot
+// scatter) consumes these products; it rides the room/hall wiring.
+
+/// The furniture item rows `GroundFurniture_ActuallyGenerateFurniture`
+/// selects from (`DungeonGlobalGroundFurniture.cs:275-340`) — the C#'s
+/// num4..num17 locals, named by their ladder slot:
+/// num18=0 table(+chair), 1 workbench(+chair), 2 vase/statue, 3 bookcase,
+/// 4 chair, 5 bed, 6 piano, 7 dresser, 8 sofa, 9 bathtub, 10 lamp,
+/// 11 candelabra, 12 clock. `candle` (num7) also feeds the on-table
+/// scatter (`:612-647/:692-728`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct FurnitureItems {
+    pub chair: i32,
+    pub table: i32,
+    pub workbench: i32,
+    pub candle: i32,
+    pub vase_or_statue: i32,
+    pub bookcase: i32,
+    pub bed: i32,
+    pub piano: i32,
+    pub dresser: i32,
+    pub sofa: i32,
+    pub bathtub: i32,
+    pub lamp: i32,
+    pub candelabra: i32,
+    pub clock: i32,
+}
+
+/// The default rows (`:275-288`) — the blue-dungeon items.
+const FURNITURE_BLUE: FurnitureItems = FurnitureItems {
+    chair: 1396,
+    table: 1397,
+    workbench: 1398,
+    candle: 1405,
+    vase_or_statue: 1408,
+    bookcase: 1414,
+    bed: 1470,
+    piano: 2376,
+    dresser: 2386,
+    sofa: 2402,
+    bathtub: 2658,
+    lamp: 2664,
+    candelabra: 2645,
+    clock: 3900,
+};
+
+/// `switch (wallType)` (`:289-323`) + the 94..105 painted-wall override
+/// (`:324-340`). The override reads the CELL's wall (`Main.tile[num3,
+/// j].wall`), not the passed `wallType` — the port takes both verbatim.
+pub(crate) fn furniture_defaults(wall_type: u16, cell_wall: u16) -> FurnitureItems {
+    let mut items = match wall_type {
+        // `case 8` (`:291-306`) — green.
+        8 => FurnitureItems {
+            chair: 1399,
+            table: 1400,
+            workbench: 1401,
+            candle: 1406,
+            vase_or_statue: 1409,
+            bookcase: 1415,
+            bed: 1471,
+            piano: 2377,
+            dresser: 2387,
+            sofa: 2403,
+            bathtub: 2659,
+            lamp: 2665,
+            candelabra: 2646,
+            clock: 3901,
+        },
+        // `case 9` (`:307-322`) — pink.
+        9 => FurnitureItems {
+            chair: 1402,
+            table: 1403,
+            workbench: 1404,
+            candle: 1407,
+            vase_or_statue: 1410,
+            bookcase: 1416,
+            bed: 1472,
+            piano: 2378,
+            dresser: 2388,
+            sofa: 2404,
+            bathtub: 2660,
+            lamp: 2666,
+            candelabra: 2647,
+            clock: 3902,
+        },
+        _ => FURNITURE_BLUE,
+    };
+    // `:324-340`: the painted-wall band wins over the colour rows.
+    if (94..=105).contains(&cell_wall) {
+        items = FurnitureItems {
+            chair: 1509,
+            table: 1510,
+            workbench: 1511,
+            candle: 5743,
+            vase_or_statue: -1,
+            bookcase: 1512,
+            bed: 5740,
+            piano: 5750,
+            dresser: 5741,
+            sofa: 5753,
+            bathtub: 5739,
+            lamp: 5742,
+            candelabra: 5748,
+            clock: 5746,
+        };
+    }
+    items
+}
+
+/// The style item lists `GroundFurniture_ActuallyGenerateFurniture`
+/// substitutes through `GetFurnitureItem` (`:348-361`) — the
+/// `DungeonGenerationStyleData` rows, in the C#'s substitution order
+/// (table, workbench, candle, vase, bookcase, chair, bed, piano, dresser,
+/// sofa, bathtub, lamp, candelabra, clock — NOTE lamp BEFORE candelabra,
+/// `:359-360`). `None` is the C# null (the item becomes −1); `Some(&[])`
+/// is `new int[0]` (the default item survives).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct FurnitureStyleItems {
+    pub table: Option<&'static [i32]>,
+    pub workbench: Option<&'static [i32]>,
+    pub candle: Option<&'static [i32]>,
+    pub vase_or_statue: Option<&'static [i32]>,
+    pub bookcase: Option<&'static [i32]>,
+    pub chair: Option<&'static [i32]>,
+    pub bed: Option<&'static [i32]>,
+    pub piano: Option<&'static [i32]>,
+    pub dresser: Option<&'static [i32]>,
+    pub sofa: Option<&'static [i32]>,
+    pub bathtub: Option<&'static [i32]>,
+    pub lamp: Option<&'static [i32]>,
+    pub candelabra: Option<&'static [i32]>,
+    pub clock: Option<&'static [i32]>,
+}
+
+/// `GroundFurniture_GetFurnitureItem` (`DungeonGlobalGroundFurniture.cs:
+/// 862-873`): null → −1 (NO draw); empty or style 0 → the default (NO
+/// draw); else `items[genRand.Next(len)]`.
+pub(crate) fn get_furniture_item(
+    style_id: u8,
+    r: &mut Rng,
+    default_item: i32,
+    items: Option<&'static [i32]>,
+) -> i32 {
+    let Some(items) = items else {
+        return -1;
+    };
+    if items.is_empty() || style_id == 0 {
+        return default_item;
+    }
+    items[r.range(0, items.len() as i32) as usize]
+}
+
+/// The full substitution chain (`:344-362`): when `GetStyleForWall`
+/// resolved a style, `flag`/`flag2` become `Style == 0` and every item
+/// row rides `GetFurnitureItem` in the C#'s order. Returns the items and
+/// the style-0 flag (the placement tail's `flag`/`flag2` — both are the
+/// same value here, `:346-347`).
+pub(crate) fn furniture_items_for_style(
+    defaults: FurnitureItems,
+    style_id: u8,
+    lists: &FurnitureStyleItems,
+    r: &mut Rng,
+) -> (FurnitureItems, bool) {
+    let style0 = style_id == 0;
+    let g = |d: i32, l: Option<&'static [i32]>| get_furniture_item(style_id, r, d, l);
+    let items = FurnitureItems {
+        table: g(defaults.table, lists.table),
+        workbench: g(defaults.workbench, lists.workbench),
+        candle: g(defaults.candle, lists.candle),
+        vase_or_statue: g(defaults.vase_or_statue, lists.vase_or_statue),
+        bookcase: g(defaults.bookcase, lists.bookcase),
+        chair: g(defaults.chair, lists.chair),
+        bed: g(defaults.bed, lists.bed),
+        piano: g(defaults.piano, lists.piano),
+        dresser: g(defaults.dresser, lists.dresser),
+        sofa: g(defaults.sofa, lists.sofa),
+        bathtub: g(defaults.bathtub, lists.bathtub),
+        // `:359-360`: num16 (lamp) substitutes BEFORE num15 (candelabra).
+        lamp: g(defaults.lamp, lists.lamp),
+        candelabra: g(defaults.candelabra, lists.candelabra),
+        clock: g(defaults.clock, lists.clock),
+    };
+    (items, style0)
+}
+
+/// The style item lists of the dual quads' statics
+/// (`DungeonGenerationStyles.cs` — the same rows c32's tables carry; the
+/// merger dedupes). Only the styles the dual dungeons generate are
+/// listed; the lookup falls back to no substitution for anything else.
+pub(crate) fn furniture_style_items(style_id: u8) -> Option<FurnitureStyleItems> {
+    let lists = match style_id {
+        // Cavern (`:326-342`).
+        1 => FurnitureStyleItems {
+            table: Some(&[32, 5894]),
+            workbench: Some(&[36, 5896]),
+            candle: Some(&[105, 713, 5883]),
+            vase_or_statue: None,
+            bookcase: Some(&[354, 5881]),
+            chair: Some(&[34, 5884]),
+            bed: Some(&[224, 5880]),
+            piano: Some(&[333, 5891]),
+            dresser: Some(&[334, 5888]),
+            sofa: Some(&[2397, 5893]),
+            bathtub: Some(&[336, 5879]),
+            lamp: Some(&[342, 5889]),
+            candelabra: Some(&[349, 714, 5882]),
+            clock: Some(&[359, 5887]),
+        },
+        // Snow (`:373-389`).
+        2 => FurnitureStyleItems {
+            table: Some(&[2248, 5815]),
+            workbench: Some(&[2252, 5817]),
+            candle: Some(&[2049, 5802]),
+            vase_or_statue: None,
+            bookcase: Some(&[2031, 5800]),
+            chair: Some(&[2288, 5803]),
+            bed: Some(&[2068, 5799]),
+            piano: Some(&[2247, 5811]),
+            dresser: Some(&[3913, 5808]),
+            sofa: Some(&[2635, 5814]),
+            bathtub: Some(&[2076, 5798]),
+            lamp: Some(&[2086, 5809]),
+            candelabra: Some(&[2100, 5801]),
+            clock: Some(&[2594, 5806]),
+        },
+        // Desert (`:414-430`).
+        3 => FurnitureStyleItems {
+            table: Some(&[4314]),
+            workbench: Some(&[4315]),
+            candle: Some(&[4303]),
+            vase_or_statue: None,
+            bookcase: Some(&[4300]),
+            chair: Some(&[4304]),
+            bed: Some(&[4299]),
+            piano: Some(&[4310]),
+            dresser: Some(&[4301]),
+            sofa: Some(&[4313]),
+            bathtub: Some(&[4298]),
+            lamp: Some(&[4308]),
+            candelabra: Some(&[4302]),
+            clock: Some(&[4306]),
+        },
+        // Corruption (`:455-470`).
+        4 => FurnitureStyleItems {
+            table: Some(&[638, 3974, 5773]),
+            workbench: Some(&[635, 3975, 5775]),
+            candle: Some(&[2046, 3962, 5760]),
+            vase_or_statue: None,
+            bookcase: Some(&[2021, 3960, 5758]),
+            chair: Some(&[628, 3963, 5761]),
+            bed: Some(&[644, 3959, 5757]),
+            piano: Some(&[641, 3971, 5769]),
+            dresser: Some(&[647, 3968, 5766]),
+            sofa: Some(&[2398, 3973, 5772]),
+            bathtub: Some(&[2073, 3958, 5756]),
+            lamp: Some(&[2083, 3969, 5767]),
+            candelabra: Some(&[2093, 3961, 5759]),
+            clock: Some(&[2593, 3966, 5764]),
+        },
+        // Crimson (`:495-510`).
+        5 => FurnitureStyleItems {
+            table: Some(&[917, 828, 5794]),
+            workbench: Some(&[916, 813, 5796]),
+            candle: Some(&[2154, 2047, 5781]),
+            vase_or_statue: None,
+            bookcase: Some(&[2136, 2022, 5779]),
+            chair: Some(&[915, 809, 5782]),
+            bed: Some(&[920, 2067, 5778]),
+            piano: Some(&[919, 2246, 5790]),
+            dresser: Some(&[918, 2640, 5787]),
+            sofa: Some(&[2401, 2634, 5793]),
+            bathtub: Some(&[2127, 2074, 5777]),
+            lamp: Some(&[2132, 2084, 5788]),
+            candelabra: Some(&[2150, 2094, 5780]),
+            clock: Some(&[2604, 2598, 5785]),
+        },
+        // Hallow (`:574-589`).
+        6 => FurnitureStyleItems {
+            table: Some(&[640, 3920]),
+            workbench: Some(&[637, 3909]),
+            candle: Some(&[2051, 3890]),
+            vase_or_statue: None,
+            bookcase: Some(&[2027, 3917]),
+            chair: Some(&[630, 3889]),
+            bed: Some(&[646, 3897]),
+            piano: Some(&[643, 3915]),
+            dresser: Some(&[649, 3911]),
+            sofa: Some(&[2400, 3918]),
+            bathtub: Some(&[2078, 3895]),
+            lamp: Some(&[2088, 3892]),
+            candelabra: Some(&[2099, 3893]),
+            clock: Some(&[2602, 3898]),
+        },
+        // Jungle (`:736-751`).
+        8 => FurnitureStyleItems {
+            table: Some(&[639]),
+            workbench: Some(&[636]),
+            candle: Some(&[2050]),
+            vase_or_statue: None,
+            bookcase: Some(&[2026]),
+            chair: Some(&[629]),
+            bed: Some(&[645]),
+            piano: Some(&[642]),
+            dresser: Some(&[648]),
+            sofa: Some(&[2399]),
+            bathtub: Some(&[2077]),
+            lamp: Some(&[2087]),
+            candelabra: Some(&[2098]),
+            clock: Some(&[2597]),
+        },
+        // Beehive (`:655-670`).
+        9 => FurnitureStyleItems {
+            table: Some(&[1717]),
+            workbench: Some(&[2251]),
+            candle: Some(&[2648]),
+            vase_or_statue: None,
+            bookcase: Some(&[2023]),
+            chair: Some(&[1707]),
+            bed: Some(&[1721]),
+            piano: Some(&[2255]),
+            dresser: Some(&[2395]),
+            sofa: Some(&[2411]),
+            bathtub: Some(&[2124]),
+            lamp: Some(&[2129]),
+            candelabra: Some(&[2095]),
+            clock: Some(&[2240]),
+        },
+        // Temple (`:779-794`) — the only style with a vase/statue row.
+        10 => FurnitureStyleItems {
+            table: Some(&[1144]),
+            workbench: Some(&[1145]),
+            candle: Some(&[2052]),
+            vase_or_statue: Some(&[1152, 1153, 1154]),
+            bookcase: Some(&[2030]),
+            chair: Some(&[1143]),
+            bed: Some(&[2069]),
+            piano: Some(&[2385]),
+            dresser: Some(&[2396]),
+            sofa: Some(&[2416]),
+            bathtub: Some(&[2079]),
+            lamp: Some(&[2089]),
+            candelabra: Some(&[2101]),
+            clock: Some(&[2595]),
+        },
+        // Shimmer (`:210-225`).
+        11 => FurnitureStyleItems {
+            table: Some(&[5565]),
+            workbench: Some(&[5566]),
+            candle: Some(&[5553]),
+            vase_or_statue: None,
+            bookcase: Some(&[5550]),
+            chair: Some(&[5554]),
+            bed: Some(&[5549]),
+            piano: Some(&[5561]),
+            dresser: Some(&[5551]),
+            sofa: Some(&[5564]),
+            bathtub: Some(&[5548]),
+            lamp: Some(&[5559]),
+            candelabra: Some(&[5552]),
+            clock: Some(&[5557]),
+        },
+        // Spider (`:249-264`).
+        12 => FurnitureStyleItems {
+            table: Some(&[32]),
+            workbench: Some(&[36]),
+            candle: Some(&[105, 713]),
+            vase_or_statue: None,
+            bookcase: Some(&[354]),
+            chair: Some(&[34]),
+            bed: Some(&[224]),
+            piano: Some(&[333]),
+            dresser: Some(&[334]),
+            sofa: Some(&[2397]),
+            bathtub: Some(&[336]),
+            lamp: Some(&[342]),
+            candelabra: Some(&[349, 714]),
+            clock: Some(&[359]),
+        },
+        // LivingWood (`:288-303`) and LivingMahogany (`:695-710`) — the
+        // same furniture rows (both LivingWoodStyleData).
+        13 | 14 => FurnitureStyleItems {
+            table: Some(&[829]),
+            workbench: Some(&[2633]),
+            candle: Some(&[2153]),
+            vase_or_statue: None,
+            bookcase: Some(&[2135]),
+            chair: Some(&[806]),
+            bed: Some(&[2139]),
+            piano: Some(&[2245]),
+            dresser: Some(&[3914]),
+            sofa: Some(&[2636]),
+            bathtub: Some(&[2126]),
+            lamp: Some(&[2131]),
+            candelabra: Some(&[2149]),
+            clock: Some(&[2596]),
+        },
+        // Crystal (`:534-549`).
+        15 => FurnitureStyleItems {
+            table: Some(&[3920]),
+            workbench: Some(&[3909]),
+            candle: Some(&[3890]),
+            vase_or_statue: None,
+            bookcase: Some(&[3917]),
+            chair: Some(&[3889]),
+            bed: Some(&[3897]),
+            piano: Some(&[3915]),
+            dresser: Some(&[3911]),
+            sofa: Some(&[3918]),
+            bathtub: Some(&[3895]),
+            lamp: Some(&[3892]),
+            candelabra: Some(&[3893]),
+            clock: Some(&[3898]),
+        },
+        _ => return None,
+    };
+    Some(lists)
+}
+
+/// The `Next(13)` furniture-kind ladder (`:363-371`): the initial draw,
+/// the 10/11/12 re-roll (`Next(4) != 0` → redraw), then the while-loop
+/// that rejects kinds whose item is −1 (2 vase, 5 bed, 6 piano,
+/// 7 dresser, 8 sofa, 9 bathtub, 10/11/12 the lamp/candelabra/clock
+/// trio). Kinds 0/1/3/4 are never rejected (their items are always
+/// present in the default rows).
+///
+/// VERBATIM C# QUIRK (`:368` vs `:831/:840`): the rejection loop checks
+/// kind 10 against num15 (the CANDELABRA) and kind 11 against num16 (the
+/// LAMP), while the placement arms place kind 10 → num16 (lamp) and kind
+/// 11 → num15 (candelabra) — the loop's two checks are SWAPPED relative
+/// to the placement. The port keeps the swap 1:1.
+pub(crate) fn roll_furniture_kind(items: &FurnitureItems, r: &mut Rng) -> i32 {
+    let mut num18 = r.range(0, 13);
+    if (num18 == 10 || num18 == 11 || num18 == 12) && r.range(0, 4) != 0 {
+        num18 = r.range(0, 13);
+    }
+    while (num18 == 2 && items.vase_or_statue == -1)
+        || (num18 == 5 && items.bed == -1)
+        || (num18 == 6 && items.piano == -1)
+        || (num18 == 7 && items.dresser == -1)
+        || (num18 == 8 && items.sofa == -1)
+        || (num18 == 9 && items.bathtub == -1)
+        // `:368`: kind 10 checks num15 (candelabra), kind 11 num16 (lamp)
+        // — the swapped pair, verbatim (the placement arms are the other
+        // way round, `:831-848`).
+        || (num18 == 10 && items.candelabra == -1)
+        || (num18 == 11 && items.lamp == -1)
+        || (num18 == 12 && items.clock == -1)
+    {
+        num18 = r.range(0, 13);
+    }
+    num18
+}
+
+/// The furniture area half-sizes (`:372-506`): `(num19, num20)` per kind
+/// — the regular table, then the `noRegularFurnitureAreaChecks` override
+/// table (the hall fallback arm, `:163/:171`). Index = the ladder kind.
+const FURNITURE_AREA: [(i32, i32); 13] = [
+    (5, 4), // 0 table
+    (4, 3), // 1 workbench
+    (3, 5), // 2 vase/statue
+    (4, 6), // 3 bookcase
+    (3, 3), // 4 chair
+    (5, 3), // 5 bed
+    (5, 4), // 6 piano
+    (5, 4), // 7 dresser
+    (5, 4), // 8 sofa
+    (5, 3), // 9 bathtub
+    (2, 4), // 10 lamp
+    (3, 3), // 11 candelabra
+    (2, 5), // 12 clock
+];
+
+/// The `noRegularFurnitureAreaChecks` table (`:439-506`).
+const FURNITURE_AREA_NO_CHECKS: [(i32, i32); 13] = [
+    (3, 4),
+    (2, 3),
+    (3, 5),
+    (3, 6),
+    (1, 3),
+    (4, 3),
+    (4, 4),
+    (4, 4),
+    (4, 4),
+    (4, 3),
+    (1, 4),
+    (2, 3),
+    (2, 5),
+];
+
+/// The area lookup — kind −1 (the area-check veto, `:532/:553`) has no
+/// row; the C# leaves num19/num20 at 0, so the port returns (0, 0).
+pub(crate) fn furniture_area(kind: i32, no_regular_checks: bool) -> (i32, i32) {
+    if !(0..13).contains(&kind) {
+        return (0, 0);
+    }
+    if no_regular_checks {
+        FURNITURE_AREA_NO_CHECKS[kind as usize]
+    } else {
+        FURNITURE_AREA[kind as usize]
+    }
+}
+
+/// The area-width gate (`:546-554`): `num22 = num19 * 1.75f` (the
+/// regular arm) or `num19` (no-checks); a run narrower than that vetoes
+/// the kind (`num18 = -1`). f32 arithmetic verbatim.
+pub(crate) fn furniture_width_gate(run_width: i32, half_width: i32, no_regular_checks: bool) -> bool {
+    let num22 = if no_regular_checks {
+        half_width as f32
+    } else {
+        half_width as f32 * 1.75f32
+    };
+    (run_width as f32) >= num22
+}
+
+/// The dual room/hall budgets (`GroundFurniture_DualDungeons`,
+/// `:37-63`): `num = maxTilesX / 4200f`; alch/bewitch =
+/// `(1 + (int)num) * globalFeatureScalar` (the f32→int truncation inside
+/// the sum is verbatim — `(float)(int)num`, not `num`); both zero when
+/// no style-0 is in the quad (`:40-53`); the water-candle minimum
+/// 5/10/15 by world size (`:54-63`). `defaultCount` 4 (rooms, `:64`) /
+/// 6 (halls, `:65`) — `GetFurnitureCount`'s base returns the default
+/// (`DungeonRoom.cs:261-264`, `DungeonHall.cs:54-57`).
+pub(crate) fn dual_furniture_budgets(
+    max_x: i32,
+    global_feature_scalar: f64,
+    has_style0: bool,
+) -> (i32, i32, i32) {
+    let num = max_x as f32 / 4200f32;
+    let mut alch = ((1f32 + (num as i32) as f32) as f64 * global_feature_scalar) as i32;
+    let mut bewitch = alch;
+    if !has_style0 {
+        alch = 0;
+        bewitch = 0;
+    }
+    let minimum_water_candles = match world_size(max_x) {
+        1 => 10,
+        2 => 15,
+        _ => 5,
+    };
+    (alch, bewitch, minimum_water_candles)
+}
+
+/// The legacy `GroundFurniture` budgets (`:191-218`): the attempt count
+/// `(2000 * num) * scalar`, the same alch/bewitch/style-0 gate, and the
+/// water-candle minimum (−1 for a non-dual dungeon — the `:209-218` arm
+/// only sets it under DualDungeon).
+pub(crate) fn legacy_furniture_budgets(
+    max_x: i32,
+    global_feature_scalar: f64,
+    has_style0: bool,
+    dual: bool,
+) -> (i32, i32, i32, i32) {
+    let num = max_x as f32 / 4200f32;
+    let attempts = ((2000f32 * num) as f64 * global_feature_scalar) as i32;
+    let (alch, bewitch, mut candles) = dual_furniture_budgets(max_x, global_feature_scalar, has_style0);
+    if !dual {
+        candles = -1;
+    }
+    (attempts, alch, bewitch, candles)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1682,5 +2259,151 @@ mod tests {
         for (_, _, fy) in &shelves_a {
             assert!((9 * 18..13 * 18).contains(fy), "frameY {fy}");
         }
+    }
+
+    /// The wall-keyed default furniture rows + the 94..105 override
+    /// (`DungeonGlobalGroundFurniture.cs:275-340`).
+    #[test]
+    fn w4_f24_furniture_defaults_match_the_wall_rows() {
+        let blue = furniture_defaults(7, 7);
+        assert_eq!((blue.chair, blue.table, blue.workbench), (1396, 1397, 1398));
+        assert_eq!((blue.candle, blue.vase_or_statue, blue.bookcase), (1405, 1408, 1414));
+        assert_eq!((blue.bed, blue.piano, blue.clock), (1470, 2376, 3900));
+        let green = furniture_defaults(8, 8);
+        assert_eq!((green.chair, green.table, green.candelabra), (1399, 1400, 2646));
+        let pink = furniture_defaults(9, 9);
+        assert_eq!((pink.chair, pink.bathtub, pink.clock), (1402, 2660, 3902));
+        // The painted-wall band overrides ANY colour row — and reads the
+        // CELL wall, not the passed wallType.
+        let painted = furniture_defaults(7, 94);
+        assert_eq!((painted.chair, painted.table, painted.candle), (1509, 1510, 5743));
+        assert_eq!(painted.vase_or_statue, -1);
+        assert_eq!((painted.bed, painted.piano, painted.clock), (5740, 5750, 5746));
+        let painted_green = furniture_defaults(8, 105);
+        assert_eq!(painted_green.chair, 1509);
+        // Outside the band the colour rows stand.
+        assert_eq!(furniture_defaults(7, 93).chair, 1396);
+        assert_eq!(furniture_defaults(7, 106).chair, 1396);
+    }
+
+    /// GetFurnitureItem: null → −1, empty/style-0 → default (no draws),
+    /// else one Next(len) pick (`:862-873`); the substitution chain runs
+    /// in the C#'s order with lamp before candelabra (`:348-361`).
+    #[test]
+    fn w4_f24_furniture_item_substitution() {
+        let mut a = Rng::from_seed(7);
+        let mut b = Rng::from_seed(7);
+        // Null and empty draw nothing.
+        assert_eq!(get_furniture_item(1, &mut a, 1397, None), -1);
+        assert_eq!(get_furniture_item(1, &mut a, 1397, Some(&[])), 1397);
+        // Style 0 keeps the default even with a non-empty list.
+        assert_eq!(get_furniture_item(0, &mut a, 1397, Some(&[32, 5894])), 1397);
+        assert_eq!(a.range(0, 1000), b.range(0, 1000)); // stream untouched
+        // A real pick draws one Next(len).
+        let v = get_furniture_item(1, &mut a, 1397, Some(&[32, 5894]));
+        assert!(v == 32 || v == 5894);
+        // The full chain: Temple's vase row is the only non-null one.
+        let defaults = furniture_defaults(7, 7);
+        let temple = furniture_style_items(10).unwrap();
+        let mut r = Rng::from_seed(3);
+        let (items, style0) = furniture_items_for_style(defaults, 10, &temple, &mut r);
+        assert!(!style0);
+        assert_eq!(items.table, 1144);
+        assert!([1152, 1153, 1154].contains(&items.vase_or_statue));
+        // Style 0 keeps every default (the GetCurrentDungeonStyle rows
+        // are all empty — the substitution is a no-op with no draws).
+        let mut c = Rng::from_seed(3);
+        let mut d = Rng::from_seed(3);
+        let empty = FurnitureStyleItems {
+            table: Some(&[]), workbench: Some(&[]), candle: Some(&[]),
+            vase_or_statue: Some(&[]), bookcase: Some(&[]), chair: Some(&[]),
+            bed: Some(&[]), piano: Some(&[]), dresser: Some(&[]),
+            sofa: Some(&[]), bathtub: Some(&[]), lamp: Some(&[]),
+            candelabra: Some(&[]), clock: Some(&[]),
+        };
+        let (kept, style0) = furniture_items_for_style(defaults, 0, &empty, &mut c);
+        assert!(style0);
+        assert_eq!(kept, defaults);
+        assert_eq!(c.range(0, 1000), d.range(0, 1000));
+    }
+
+    /// The Next(13) ladder: the 10/11/12 re-roll and the −1-item
+    /// rejection loop (`:363-371`); a == b replay.
+    #[test]
+    fn w4_f24_furniture_kind_ladder() {
+        let run = |items: FurnitureItems| {
+            let mut r = Rng::from_seed(41);
+            (0..32).map(|_| roll_furniture_kind(&items, &mut r)).collect::<Vec<_>>()
+        };
+        let blue = furniture_defaults(7, 7);
+        let a = run(blue);
+        assert_eq!(a, run(blue));
+        assert!(a.iter().all(|&k| (0..13).contains(&k)));
+        // With the vase item −1 (the painted-wall row), kind 2 never
+        // survives the rejection loop.
+        let painted = furniture_defaults(7, 94);
+        let b = run(painted);
+        assert!(!b.contains(&2));
+        assert_eq!(b, run(painted));
+        // An all-−1 tail row set forces the never-rejected kinds only.
+        let mut stripped = blue;
+        stripped.bed = -1;
+        stripped.piano = -1;
+        stripped.dresser = -1;
+        stripped.sofa = -1;
+        stripped.bathtub = -1;
+        stripped.lamp = -1;
+        stripped.candelabra = -1;
+        stripped.clock = -1;
+        stripped.vase_or_statue = -1;
+        let c = run(stripped);
+        assert!(c.iter().all(|&k| [0, 1, 3, 4].contains(&k)));
+        // The `:368` swapped pair, verbatim: kind 10 is rejected by the
+        // CANDELABRA being −1 (not the lamp), kind 11 by the LAMP.
+        let mut swap_a = blue;
+        swap_a.candelabra = -1; // lamp stays present
+        let sa = run(swap_a);
+        assert!(!sa.contains(&10)); // kind 10 rejected via candelabra
+        let mut swap_b = blue;
+        swap_b.lamp = -1; // candelabra stays present
+        let sb = run(swap_b);
+        assert!(!sb.contains(&11)); // kind 11 rejected via lamp
+    }
+
+    /// The area tables + the 1.75f width gate (`:372-554`).
+    #[test]
+    fn w4_f24_furniture_area_tables_and_gate() {
+        assert_eq!(furniture_area(0, false), (5, 4));
+        assert_eq!(furniture_area(0, true), (3, 4));
+        assert_eq!(furniture_area(4, false), (3, 3));
+        assert_eq!(furniture_area(4, true), (1, 3));
+        assert_eq!(furniture_area(12, false), (2, 5));
+        assert_eq!(furniture_area(12, true), (2, 5));
+        assert_eq!(furniture_area(-1, false), (0, 0));
+        // The gate: run 8 vs half-width 5 → 8 >= 8.75 false; no-checks
+        // → 8 >= 5 true.
+        assert!(!furniture_width_gate(8, 5, false));
+        assert!(furniture_width_gate(9, 5, false));
+        assert!(furniture_width_gate(8, 5, true));
+        assert!(!furniture_width_gate(4, 5, true));
+    }
+
+    /// The budget scalars (`:37-63/:191-218`): the (int)num truncation,
+    /// the style-0 gate, the 5/10/15 candle minimum by world size.
+    #[test]
+    fn w4_f24_furniture_budgets() {
+        // Small world (4200): num = 1.0 → alch/bewitch = 2, candles 5.
+        assert_eq!(dual_furniture_budgets(4200, 1.0, true), (2, 2, 5));
+        // Medium (6400): num = 1.523… → (int)num = 1 → still 2, candles 10.
+        assert_eq!(dual_furniture_budgets(6400, 1.0, true), (2, 2, 10));
+        // Large (8400): num = 2.0 → 3, candles 15.
+        assert_eq!(dual_furniture_budgets(8400, 1.0, true), (3, 3, 15));
+        // No style-0 in the quad zeroes both tables.
+        assert_eq!(dual_furniture_budgets(4200, 1.0, false), (0, 0, 5));
+        // The scalar multiplies AFTER the truncation.
+        assert_eq!(dual_furniture_budgets(4200, 0.5, true), (1, 1, 5));
+        // Legacy: attempts = 2000*num*scalar; non-dual candles −1.
+        assert_eq!(legacy_furniture_budgets(4200, 1.0, true, false), (2000, 2, 2, -1));
+        assert_eq!(legacy_furniture_budgets(4200, 1.0, true, true), (2000, 2, 2, 5));
     }
 }
