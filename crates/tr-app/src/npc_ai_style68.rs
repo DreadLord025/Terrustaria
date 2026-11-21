@@ -9,13 +9,19 @@
 //! arm transforms back via `Transform(this.type - 1, 0f, 200 +
 //! Main.rand.Next(200))` (`:34760`).
 //!
-//! **UNWIRED module (code-only mode, 2026-11-19).** None of the four types
-//! has a `NpcKind` yet (`npc/data.rs::ai_style` carries no style-68 row), so
-//! the arm lands as pure functions over the port's `Npc` slot + a context
-//! seam; the wiring (new kinds, the `update_rng` style-axis arm, the
-//! `size_override` rows from [`STYLE68_BIRDS`], the 1080 BirdDroppings
-//! projectile and the full `NPC.Transform`) is the family's merge step —
-//! the `npc_ai_style24.rs` (S1-D-3 aiStyle-24) precedent.
+//! **WIRED by W4-c10 (code-only mode, 2026-11-21).** The four kinds
+//! landed (`npc.rs`'s `NpcKind::Duck2`/`DuckWhite2`/`Seagull2`/`Grebe2` +
+//! the walker rows `Duck`/`DuckWhite`/`Seagull`/`Grebe`); the
+//! `update_rng` style axis claims 68 (`npc.rs::ai_068_waterfowl` — the
+//! adapter feeds the player seam, drains the 1080 request through
+//! `wants_hostile_shot` and flips the kind on the dry landing's
+//! transform), the walkers' `AI_007` takeoff gate rides
+//! `npc.rs::waterfowl_walker_step` (`NPC.cs:53180-53184`), and the 1080
+//! BirdDroppings projectile rows + `AI_200` arm live in
+//! `projectile/data.rs` + `projectile_bird_droppings.rs`. The module's
+//! pure fns are UNCHANGED — the wiring reads them verbatim (the
+//! `size_override` carrier fixtures below stay valid: the live kinds
+//! carry the same boxes through `NpcKind::size`).
 //!
 //! The one `TargetClosest()` site (`NPC.cs:34641`) rides the shared
 //! selection helper (`crate::npc_target::target_closest`,
@@ -34,7 +40,7 @@
 //! Every other path (the swim, the flight, the bounces, the probe, the
 //! dead-target return, the client) draws NOTHING — pinned by the mirrored
 //! `UnifiedRandom` stream witnesses below.
-#![allow(dead_code)] // UNWIRED — see the module doc; the wiring is the S1-D-3 merge step.
+#![allow(dead_code)] // STYLE68_BIRDS keeps the census rows for the witnesses; the live kinds read NpcKind::size (W4-c10).
 
 use crate::npc::Npc;
 use crate::npc_ai_style24::{
@@ -191,7 +197,8 @@ fn transform_core(npc: &mut Npc, world: &World, cands: &[TargetCandidate], ticke
 /// The aiStyle-68 arm (`NPC.cs:34623-34879`), in the C#'s exact order:
 /// the poop gate → `noGravity = true` → the `ai[0]` state machine
 /// (0 swimming-perch / else flight with the 300-tick landing). `ty` is
-/// `this.type` (the port's kinds carry no waterfowl rows yet).
+/// `this.type` — W4-c10's adapter passes `kind.cs_id()` (the four
+/// swimmers' vanilla ids 363/365/603/609).
 pub fn ai_style_68(
     npc: &mut Npc,
     ty: i32,

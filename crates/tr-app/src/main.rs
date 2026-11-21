@@ -209,6 +209,10 @@ mod projectile_ai_golf;
 // S1-P-i16: the dart guns' projectile AIs (267/477/478/479/442 aiStyle 1,
 // 443 aiStyle 77, 167-170 aiStyle 34, the 480 flame drop's dust census).
 mod projectile_ai_darts;
+// W4-c10: the BirdDroppings 1080's aiStyle-200 arm (AI_200_BirdDroppings,
+// Projectile.cs:39985-40017 + the HandleMovement :18921-18928 splat) —
+// the aiStyle-24/68 birds' poop shot.
+mod projectile_bird_droppings;
 // S1-P-i18 special bullets: the 11 aiStyle-1 bullet specials' per-type AI_001
 // arms + HandleMovement bounces + Kill() death effects (36/89/104/207/242/
 // 279/283/284/285/286/287), pure per-kind fns behind the `covers` gate.

@@ -19775,6 +19775,36 @@ impl ProjectilePool {
                                 );
                             }
                         }
+                        // W4-c10 — the BirdDroppings 1080's aiStyle-200
+                        // arm (`AI()`'s `else if (this.aiStyle == 200)`,
+                        // `Projectile.cs:36763-36766` → `AI_200_BirdDroppings`
+                        // `:39985-40017`): the 0.3/16 gravity, the two-dust
+                        // draw census, the player-intersect kill and the
+                        // HandleMovement `:18921-18928` splat — the module
+                        // owns the whole body (the aiStyle-19 spear shape).
+                        // The player rect: the session player while
+                        // active-and-alive (`:40012`'s gate; the port's
+                        // `player` seam is the live session slot).
+                        200 => {
+                            let rect = player.as_deref().and_then(|pl| {
+                                if pl.dead {
+                                    None
+                                } else {
+                                    Some((
+                                        pl.x as i32,
+                                        pl.y as i32,
+                                        crate::player::WIDTH as i32,
+                                        crate::player::HEIGHT as i32,
+                                    ))
+                                }
+                            });
+                            crate::projectile_bird_droppings::bird_droppings_step(
+                                &mut self.slots[i],
+                                world,
+                                rect,
+                                rng,
+                            );
+                        }
                         _ => {}
                     }
                     }

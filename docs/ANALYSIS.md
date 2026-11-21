@@ -35823,16 +35823,15 @@ will call once `NpcKind::EmpressOfLight` lands. The remainder: the roster row
 `update_kind_ai` wiring + the five projectile AIs + the `IsDamageDodgeable`
 636 arm (`npc.rs:3402-3403` notes it) + the `OurFavoriteColor` enrage tint
 (render-side). 28 witness tests WRITTEN NOT RUN — **no compiler invoked**.
-## The waterfowl family (S1-D-3 aiStyle-68, task/S1-D-3-aistyle68, 2026-11-19, code-only mode)
+## The waterfowl family (S1-D-3 aiStyle-68, task/S1-D-3-aistyle68, 2026-11-19; WIRED by W4-c10, task/W4-c10-style68-waterfowl, 2026-11-21, code-only mode)
 
 `crates/tr-app/src/npc_ai_style68.rs` ports `NPC.AI()`'s
 `else if (this.aiStyle == 68)` block (`NPC.cs:34623-34879`) as a pure
 `ai_style_68(npc, ty, world, ctx, rng)` over the `Style68Ctx`/
 `Style68Outcome` seam. **Code-only mode: no compiler invoked; the 16
-witness tests are written, not run.** The module is UNWIRED — no
-`NpcKind` for the four types, no style-68 row in `npc/data.rs::ai_style`,
-no `update_rng` arm; the wiring is the family's merge step (the
-`npc_ai_style24.rs` precedent).
+witness tests are written, not run.** **WIRED by W4-c10** (see "The
+waterfowl wiring (W4-c10)" below): the module's pure fns are UNCHANGED —
+the wiring reads them verbatim through `npc.rs::ai_068_waterfowl`.
 
 **The census.** `Select-String "aiStyle = 68;"` over `NPC.cs` returns
 exactly FOUR rows: Duck2 363 (`:13629`), DuckWhite2 365 (`:13653`),
@@ -35910,24 +35909,34 @@ client — draws nothing. The witnesses pin this by mirrored
 the 32-seed landing replay, the zero-draw wet/client/descent pins and a
 ten-tick full-cycle replay (flight under the player → dry landing).
 
-**Folds / documented skips (the wiring round's job).**
-- The four `NpcKind` variants + the `SetDefaults` stats + the
-  `update_rng` `68 =>` dispatch claim; the machine keys on the vanilla
-  `npc_type` with the box on `size_override` until then.
-- The 1080 BirdDroppings projectile (`ProjectileID.cs:2714`) rides
-  `Style68Outcome::poop_shot` (the style-24 seam shape).
-- The full `NPC.Transform` (the walker `SetDefaults` sounds/value,
-  `TransformVisuals`, `GiveTownUniqueDataToNPCsThatNeedIt`, the netMode-2
-  SendData pair `:81131-81135`) — `transform_core` applies the observable
-  subset; the type flip itself rides `Style68Outcome::transform`.
-- `noGravity` rides `Style68Outcome::no_gravity` (the `Npc` slot has no
-  field yet); the generic integration tail (gravity/maxFall/oldVelocity
-  latches, `NPC.cs:90465-90503`/`:92538`) stays with the sim.
-- The walkers' water re-entry gate (`NPC.cs:53180`) and the
-  `FindFrame`/gore arms (`:86258-86305`) are the companion wiring rows.
-- The local `solid_tile` copy (the `drawdata_cases_a.rs`/`grapple.rs`
-  shape) — the shared-helper extraction is the wiring step's, the
-  `npc_ai_style16.rs` precedent.
+**Folds / documented skips (W4-c10 landed the wiring; the remainder below).**
+- ~~The four `NpcKind` variants + the `SetDefaults` stats + the
+  `update_rng` `68 =>` dispatch claim~~ — LANDED (W4-c10 phases 1+2, all
+  EIGHT kinds so the `Transform(type-1)` landing has real target rows).
+- ~~The 1080 BirdDroppings projectile (`ProjectileID.cs:2714`) rides
+  `Style68Outcome::poop_shot`~~ — LANDED: the adapter drains it through
+  `wants_hostile_shot`; `projectile_bird_droppings.rs` owns the AI_200
+  arm + the `HandleMovement` splat (the dust VISUALS stay the documented
+  skip; the 2×(Next(2), NextFloat) draw census is preserved).
+- The full `NPC.Transform` — `transform_core` applies the observable
+  subset and the adapter flips the kind; STILL FOLDED: the walker
+  `SetDefaults` sounds/value side-effects, `TransformVisuals` (gore/dust
+  puff), `GiveTownUniqueDataToNPCsThatNeedIt` and the netMode-2 SendData
+  pair (`:81131-81135` — single-player port, no MP consumer).
+- ~~`noGravity` rides `Style68Outcome::no_gravity`~~ — LANDED: the
+  adapter gates `npc_ai_golem::body_gravity` + the 10 fall cap on it,
+  then runs `integrate_flyer_collision` (the bat/fish no-gravity
+  integration stand-in; the waterfowl never sets noTileCollide).
+- ~~The walkers' water re-entry gate (`NPC.cs:53180`) and the
+  `FindFrame` arms~~ — LANDED (`waterfowl_walker_step` + the eight
+  `find_frame` cases). STILL FOLDED: the walkers' full
+  `AI_007_TownEntities` migration (`npc_ai_town.rs`'s step — the stand-in
+  keeps the town-stand-in walk until then) and the gore arms
+  (`:86258-86305`'s gore types ride the generic gore fallback).
+- The local `solid_tile` copy stays (the `drawdata_cases_a.rs`/
+  `grapple.rs` shape); the shared-helper extraction was NOT done by the
+  wiring (the module's fns are unchanged) — still the
+  `npc_ai_style16.rs` precedent's follow-up.
 
 **Verification.** Code-only: the whole arm was re-read line-by-line
 against `NPC.cs:34623-34879` (the gate casts, the flip margin, the water
@@ -35937,6 +35946,86 @@ read/grep (`Npc` fields incl. `sprite_dir`/`old_target`/`target_rect`,
 `World::tile`'s None-out-of-bounds, `target_closest`'s facing/net_update
 writes, `can_hit`'s 9-arg shape, `UnifiedRandom`'s Clone+PartialEq). The
 16 witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
+
+## The waterfowl wiring (W4-c10, task/W4-c10-style68-waterfowl, 2026-11-21, code-only mode)
+
+Two phases on the branch; witnesses WRITTEN NOT RUN — **no cargo, no
+tests, no compiler invoked**.
+
+**Phase 1 — the eight kinds.** ALL EIGHT rows land (not just the four
+swimmers) so the landing `Transform(type - 1)` has real target rows:
+walkers Duck 362 / DuckWhite 364 / Seagull 602 / Grebe 608 (aiStyle 7) +
+swimmers Duck2 363 / DuckWhite2 365 / Seagull2 603 / Grebe2 609 (aiStyle
+68). Vanilla ids for protocol/cs_id/render_key (census: all eight free;
+15 rows in both `NPC_FRAME_COUNT` and `Main.cs:67082`). Every exhaustive
+`NpcKind` match got its arms (the `to_u16`/`ai_style`/`size`/`max_hp`/
+`contact_damage`/`defense`/`value` tables, `npc_buffs::debuff_immune_ids`
+`&[]`, `netglue::npc_seed`, the render draw match); `max_hp` 5 / damage
+0 / defense 0 / value 0 / kb 1.0 / NPCHit1+NPCDeath1 per the SetDefaults
+rows. The `find_frame` cases: walkers the 4-tick 3..9 walk band, swimmers
+the wet 8-tick 1..2 paddle / still row 1 / flight 11..14 with the
+`vx * 0.1` tilt (`NPC.cs:73747-73886`). `WATERFOWL_SHEETS` + the draw arm
++ the rotation whitelist; the bestiary's eight entries use the en-US
+NPCName JSON display names (all four Duck rows "Duck"; Seagull2
+"Seagull", Grebe2 "Grebe"). The walker kind arm is
+`waterfowl_walker_step`: the `AI_007` head takeoff gate
+(`NPC.cs:53180-53184`, `vy > 4 || vy < -4 || wet`) →
+`transform_to_kind(type + 1)`, else the existing `update_guide` town
+stand-in. 1 witness (the defaults-vs-C# rows).
+
+**Phase 2 — the axis claim + the shot.** The style axis's `68 =>
+self.ai_068_waterfowl(...)` claims the four swimmers (their kind arms are
+`unreachable!` markers). The adapter (`npc.rs`): re-probes `wet`, feeds
+the one-slot `Style24Player` seam (`session_candidate` + the live
+`player.luck()` + the sim-stamped `Npc::player_is_cenx` — the new field
+pre-stamped in `world_sim/npcs.rs` from `app.player_name` via the
+unchanged `is_this_cenx`, the wind pre-stamp convention: the player name
+lives on the App, outside the AI borrow), calls the module verbatim with
+`ty = kind.cs_id()`, netMode 0 / ticker 0 (the single-player stand-ins).
+The out-drains: `poop_shot` → `wants_hostile_shot` (1080, zero
+velocity/damage/kb, the `:34632` call shape); `transform` → the kind
+flip onto the walker + `size_override = None` (the kind table carries
+the 22x26 box) + scale 1 / alpha 0 / frame reset — the halves the
+carrier-kind `transform_core` could not know. The movement tail: the
+arm's LAST `no_gravity` write gates `npc_ai_golem::body_gravity` + the
+10 cap (`NPC.cs:90465-90472`, no per-type gravity arm for these types),
+then `integrate_flyer_collision` (the bat/fish stand-in — the waterfowl
+never sets noTileCollide). 2 wiring witnesses (the axis claim's zero-draw
+dry takeoff + the dry landing's kind flip with the ONE mirrored
+`Next(200)`).
+
+**The 1080 BirdDroppings.** `projectile/data.rs`: the `BIRD_DROPPINGS`
+const + the `proj_data` row (`Projectile.cs:10078-10086`: 10x10, aiStyle
+200, alpha 255, penetrate -1, stock tileCollide/timeLeft) + the
+`ignore_water` overlay. New `projectile_bird_droppings.rs`:
+`AI_200_BirdDroppings` (`Projectile.cs:39985-40017` — the 0.3 gravity /
+16 cap, the player-rect intersect kill, damage-free) + the
+`HandleMovement` `:18921-18928` splat (the blocked-step integrate-then-
+kill probe stand-in, the frost-shot granularity — documented). The dust
+VISUALS are the port's documented skip; the DRAWS ride the pool stream
+in C# order: per iteration ONE `Next(2)` then ONE `NextFloat`, two
+iterations per tick (the 480 flame drop's census convention). The pool's
+`200 =>` dispatch arm passes the session player's int-truncated rect
+while alive. 4 witnesses (the row, the fall + draw census, the strict-
+edge intersect kill, the splat).
+
+**Deliberate stand-ins.** netMode 0 (single-player port — the `!= 1`
+gates stand open), ticker 0 (the `npc_ai_bat` convention), the town-AI
+walk stand-in for the walkers (the full `AI_007` migration is
+`npc_ai_town.rs`'s step), the flyer-collision integration tail, the
+blocked-step splat granularity, `TransformVisuals`/gore/sound folds and
+the netMode-2 SendData pair (no MP consumer) — all listed in the family
+section's folds above. The module's pure fns and its 16 witnesses are
+UNCHANGED; `STYLE68_BIRDS` stays as the census fixture (the live kinds
+carry the same boxes through `NpcKind::size`).
+
+**Verification.** Code-only: every cross-module reference re-checked by
+read/grep (the `Style68Ctx`/`Style68Outcome` shapes, the
+`wants_hostile_shot` 6-tuple, `body_gravity`'s `(f32, i32, f64)`,
+`ProjData`'s tuple unpacking, `DropRng`'s two methods, the
+`pub use data::*` re-export, `app.player_name`'s `pub(crate)`). All
+witnesses WRITTEN NOT RUN — **no build/tests were run**.
+
 ## The mana machinery (S1-P-i19)
 
 **Headline finding — `DebugOptions.ManaV2` is the SHIPPED mana machine.** The

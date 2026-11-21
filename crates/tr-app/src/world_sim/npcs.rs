@@ -4249,6 +4249,21 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
     }
+    // W4-c10 — `Player.IsThisCenx()` pre-stamp for the aiStyle-68 poop
+    // gate's Cenx bypass (`NPC.cs:34629`): the player name lives on the
+    // App, outside the AI's `&Player` borrow (the wind pre-stamp's
+    // convention). Only the four swimmers read it.
+    {
+        let is_cenx = crate::npc_ai_style24::is_this_cenx(&app.player_name);
+        for n in app.npcs.iter_mut() {
+            if matches!(
+                n.kind,
+                NpcKind::Duck2 | NpcKind::DuckWhite2 | NpcKind::Seagull2 | NpcKind::Grebe2
+            ) {
+                n.player_is_cenx = is_cenx;
+            }
+        }
+    }
     // The Twins' shared-despawn seam (S1-D-3-wire-retinazer,
     // `NPC.cs:26468-26474` — the aiStyle-30 arm's `num400 != whoAmI`
     // scan over the other ACTIVE type-125/126 slots, feeding

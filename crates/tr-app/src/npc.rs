@@ -1751,6 +1751,14 @@ pub struct Npc {
     /// Bubble's wind blend reads it (`NPC.cs:34903`). The AI's `&World`
     /// borrow cannot reach `app.wind`; 0 until the sim stamps it.
     pub wind_speed_current: f32,
+    /// W4-c10 — `Player.IsThisCenx()` (`Player.cs:18179-18186`) over the
+    /// session player's name, pre-stamped by the sim before the update
+    /// (the `wind_speed_current` pre-pass convention): the aiStyle-68
+    /// poop gate's Cenx bypass reads it (`NPC.cs:34629`). The player
+    /// name lives on the App (`app.player_name`), outside the AI's
+    /// `&Player` borrow; false until the sim stamps it (the solo tests'
+    /// non-Cenx default).
+    pub player_is_cenx: bool,
     /// The Twins' shared-despawn seam (S1-D-3-wire-retinazer): the OTHER
     /// active type-125/126 NPCs' `timeLeft`s in slot order — the C#'s
     /// `num400 != whoAmI` scan inside the aiStyle-30/31 arms
@@ -3120,6 +3128,7 @@ impl Npc {
             wants_fishron_trail: Vec::new(),
             wants_fishron_bolts: Vec::new(),
             wind_speed_current: 0.0,
+            player_is_cenx: false,
             twin_time_lefts: Vec::new(),
             slot: 0,
             wants_martian_invasion: false,
@@ -4962,6 +4971,14 @@ impl Npc {
             // (`Main.rand.Next(80, 121)`, `NPC.cs:49481`) — the adapter
             // draws it at request time on the caller's stream.
             69 => self.ai_069_fishron(world, player, rng),
+            // `else if (this.aiStyle == 68)` (`NPC.cs:34623-34879`) — the
+            // waterfowl swimmers Duck2 363 / DuckWhite2 365 / Seagull2 603
+            // / Grebe2 609. W4-c10: the faithful `npc_ai_style68::ai_style_68`
+            // arm claims the axis (the S1-D-3 module, 16 witnesses); the
+            // adapter feeds the poop gate's player seam, drains the 1080
+            // BirdDroppings request + the dry landing's Transform(type-1),
+            // and owns the post-AI movement tail.
+            68 => self.ai_068_waterfowl(world, player, rng),
             // `else if (this.aiStyle == 70)` (`NPC.cs:34884-34957`) —
             // the Detonating Bubble 371, the style's only user. The
             // faithful `npc_ai_style70::ai_style70` arm (456a2366).
@@ -5737,6 +5754,95 @@ impl Npc {
             // is the tracked-sound seam; the port's NPC sound table has
             // no style-19 row, so it stays a documented skip (ANALYSIS).
         }
+    }
+
+    /// W4-c10 — the aiStyle-68 adapter: the waterfowl swimmers' faithful
+    /// arm (`npc_ai_style68::ai_style_68`, `NPC.cs:34623-34879`). The
+    /// seams: this tick's `Entity.wet` (the `is_wet` pass, the
+    /// `update_swimmer` convention), the session player as the slot-0
+    /// `Style24Player` (the live `luck()` + the sim-stamped
+    /// `player_is_cenx` — the poop gate's two reads, `NPC.cs:34629`),
+    /// `Main.netMode` 0 (the port is single-player) and the ticker 0
+    /// stand-in (the `npc_ai_bat` convention). The out-requests:
+    /// * `poop_shot` → the 1080 BirdDroppings through `wants_hostile_shot`
+    ///   (the C# `NewProjectile(..., player.Center.X, base.Center.Y, 0f,
+    ///   0f, 1080, 0, 0f)`, `:34632` — the drain's `spawn_hostile` applies
+    ///   `SetDefaults`; the position rides the module's carried pair, the
+    ///   stinger drain's convention);
+    /// * `transform` → the dry landing's walker reveal: the module's
+    ///   `transform_core` already applied the observable `NPC.Transform`
+    ///   subset in place (`:81084-81114`); this adapter flips the KIND
+    ///   (the port's kinds now carry the walker rows), clears the
+    ///   `size_override` onto the kind's own 22x26 box and re-stamps the
+    ///   frame reset the module's carrier-kind core could not know.
+    /// The movement tail mirrors `UpdateNPC`: the arm's last `noGravity`
+    /// write gates the depth-scaled 0.3 gravity + the 10 fall cap
+    /// (`NPC.cs:90465-90472` + `UpdateNPC_UpdateGravity` `:90878-90936` —
+    /// the waterfowl types have no per-type gravity arm), then the
+    /// no-gravity `UpdateCollision` stand-in (`integrate_flyer_collision`,
+    /// the bat/fish tail shape; the wet 0.5 slowdown is
+    /// `Collision_MoveWhileWet`'s `waterMovementSpeed`, `:92561`).
+    fn ai_068_waterfowl(&mut self, world: &World, player: &mut Player, rng: &mut UnifiedRandom) {
+        let (w, h) = self.size();
+        self.wet = is_wet(world, self.x, self.y, w, h);
+        let cand = crate::npc_target::session_candidate(player);
+        let players = [crate::npc_ai_style24::Style24Player {
+            candidate: cand,
+            luck: player.luck(),
+            is_cenx: self.player_is_cenx,
+        }];
+        let ctx = crate::npc_ai_style68::Style68Ctx {
+            players: &players,
+            net_mode: 0,
+            ticker: 0,
+        };
+        // The vanilla type — the module's gates read `this.type`
+        // (`cs_id` carries the four swimmers' own ids).
+        let ty = self.kind.cs_id() as i32;
+        let out = crate::npc_ai_style68::ai_style_68(self, ty, world, &ctx, rng);
+        if let Some((sx, sy)) = out.poop_shot {
+            // `:34632` — the BirdDroppings 1080, zero velocity/damage/kb.
+            self.wants_hostile_shot
+                .push((crate::projectile::BIRD_DROPPINGS, sx, sy, 0.0, 0.0, 0));
+        }
+        if let Some((new_ty, _ai1)) = out.transform {
+            // The module's `transform_core` ran the observable
+            // `NPC.Transform` subset (the ±height reposition, the ai
+            // reset, the TargetClosest, the life rescale, ai[1] = the
+            // drawn 200..399). The kind flip + the kind-table halves the
+            // carrier-kind core could not know land here: the walker
+            // kind, its own 22x26 box, scale 1 / alpha 0 and the frame
+            // reset (`SetDefaults`, `:8525`/`:8529`/`:8536`).
+            let new_kind = match new_ty {
+                362 => NpcKind::Duck,
+                364 => NpcKind::DuckWhite,
+                602 => NpcKind::Seagull,
+                608 => NpcKind::Grebe,
+                _ => unreachable!("the module transforms to type - 1 only"),
+            };
+            self.kind = new_kind;
+            self.size_override = None; // the walker kind's own box
+            self.scale = 1.0;
+            self.alpha = 0;
+            self.frame = 0;
+            self.frame_counter = 0.0;
+        }
+        // `NPC.UpdateNPC`'s gravity block (`NPC.cs:90465-90472`): the
+        // arm's LAST noGravity write gates it (the perch clears the flag,
+        // the wet swim re-arms it, the flight keeps it).
+        if !out.no_gravity {
+            self.vy = (self.vy
+                + crate::npc_ai_golem::body_gravity(
+                    self.y,
+                    world.width as i32,
+                    world.world_surface,
+                ))
+            .min(10.0);
+        }
+        // `UpdateCollision` (`NPC.cs:90490-90492`): the waterfowl never
+        // sets noTileCollide, so the tile-colliding integration runs —
+        // the port's established no-gravity stand-in (the bat/fish tail).
+        self.integrate_flyer_collision(world);
     }
 
     /// The kind-keyed dispatch — the pre-S1-D-2 `match self.kind`, unchanged
@@ -24300,6 +24406,95 @@ mod tests {
         }
         for ty in [362, 364, 602, 608] {
             assert!(!crate::npc_ai_style24::bird_that_can_poop(ty));
+        }
+    }
+
+    /// W4-c10 — the axis claim: a full `update_rng` tick of each swimmer
+    /// runs the aiStyle-68 arm (the `unreachable!` kind arms never fire),
+    /// keeps the kind inside its 15-row strip and draws nothing on the
+    /// dry-perch takeoff path. The dry perch flips ai[0] to 1 with the
+    /// facing flip (`NPC.cs:34720-34726`) — the observable the axis arm
+    /// produces through the adapter. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c10_the_axis_claims_style_68_for_the_four_swimmers() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        for kind in [
+            NpcKind::Duck2,
+            NpcKind::DuckWhite2,
+            NpcKind::Seagull2,
+            NpcKind::Grebe2,
+        ] {
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            let hp = n.hp;
+            let mut rng = UnifiedRandom::new(1);
+            let before = rng.clone();
+            // The dry perch: ai[0] 0, not wet → the takeoff arm.
+            n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            assert_eq!(n.ai[0], 1.0, "{kind:?} the dry takeoff (:34722)");
+            assert!(n.net_update, "{kind:?} the takeoff netUpdate (:34723)");
+            assert_eq!(rng, before, "{kind:?} the takeoff draws nothing");
+            // A hundred flight ticks stay inside the strip and keep hp.
+            for _ in 0..100 {
+                n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+                assert!(n.frame < 15, "{kind:?} row {} of 15", n.frame);
+                assert!(n.hp <= hp, "{kind:?} hp grew");
+                if n.kind != kind {
+                    // The dry landing transformed into the walker — the
+                    // walker's own strip is 15 rows too.
+                    assert_eq!(n.kind.ai_style(), 7, "{kind:?} landed on the walker");
+                    break;
+                }
+            }
+        }
+    }
+
+    /// W4-c10 — the dry landing's kind flip: the module's
+    /// `transform_core` + the adapter's kind halves produce the walker
+    /// kind, its own 22x26 box (no `size_override`), ai[1] = the drawn
+    /// 200..399 AFTER the reset, the −4 reposition and the ONE Next(200)
+    /// draw (`NPC.cs:34758-34761` + `:81084-81114`). The mirrored-stream
+    /// witness: the adapter's tick draws exactly the module's one roll.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c10_the_dry_landing_flips_the_kind_to_the_walker() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        for (swimmer, walker) in [
+            (NpcKind::Duck2, NpcKind::Duck),
+            (NpcKind::DuckWhite2, NpcKind::DuckWhite),
+            (NpcKind::Seagull2, NpcKind::Seagull),
+            (NpcKind::Grebe2, NpcKind::Grebe),
+        ] {
+            let mut n = Npc::new(swimmer, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            n.ai[0] = 1.0;
+            n.ai[1] = 299.0; // increments to 300 this tick
+            n.local_ai[3] = 1.0; // skip the poop gate
+            n.vy = 0.0; // grounded → the landing arm
+            n.vx = 2.0;
+            n.hp = 3; // the rescale passes 3 * 5 / 5 = 3
+            let y0 = n.y;
+            let mut a = UnifiedRandom::new(9);
+            let mut b = UnifiedRandom::new(9);
+            n.update_rng(&w, &mut player, 1.0 / 60.0, &mut a);
+            let want_ai1 = 200.0 + b.next_max(200) as f32;
+            assert_eq!(n.kind, walker, "{swimmer:?} → {walker:?}");
+            assert_eq!(n.size(), (22.0, 26.0), "the walker's own box");
+            assert_eq!(n.size_override, None, "the kind table carries the box");
+            // The ±height reposition nets −4; the movement tail may add
+            // the walk step, so pin the transform's own arithmetic via
+            // the module witness (npc_ai_style68) — here the box/kind/ai.
+            assert!(n.y <= y0 - 4.0 + 26.0, "the reposition ran");
+            assert_eq!(n.ai[0], 0.0);
+            assert_eq!(n.ai[1], want_ai1, "ai[1] = the drawn idle (:81112)");
+            assert_eq!(n.local_ai, [0.0; 4], "SetDefaults zeroed localAI");
+            assert_eq!(n.hp, 3, "the integer rescale");
+            assert!(n.net_update);
+            assert_eq!(n.frame, 0, "the adapter's frame reset");
+            // The walker's next tick rides the aiStyle-7 kind arm (the
+            // takeoff gate reads vy/wet — no panic, no style-68 re-entry).
+            n.update_rng(&w, &mut player, 1.0 / 60.0, &mut a);
+            assert!(n.kind == walker || n.kind == swimmer, "the walker cycle");
         }
     }
 
