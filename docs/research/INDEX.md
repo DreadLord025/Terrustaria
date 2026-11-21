@@ -75,6 +75,9 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
+| 68 | Main dust residual sweep (W4-g13): sibling re-probe, ZERO unclaimed spawn windows, the Dust.cs internals audit (3 d50 wiring flags), both lavaBubbles readers | `68-dust-main-residual-sweep.md` | ✅ |
+| 69 | The 52 second-chain dust lights (W4-g13): census + collector + wiring + the d50 strip-contract (s4) + decrement retire (s5) + the FINAL receipt (s6, d50 tip UNCHANGED) | `69-dust-second-chain-lights.md` | ✅ FINAL |
+| 70 | Dust DRAW-tint census FINAL + the GetAlpha 157/327 drop closures (W4-g13; d54 s7.2 G3/G4): the dead-raise quirk, the draw-pass RNG placement contract | `70-dust-draw-tint-final.md` | ✅ |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

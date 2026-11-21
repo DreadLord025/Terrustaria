@@ -39407,3 +39407,48 @@ hook, the pool carries the POST-mutation scale, so `dust_lights.rs`'s
 compensating local decrements (206 `:381`, 174 `:419`, 230 `:309`, plus
 309/261) DOUBLE-COUNT and retire; the same retire applies to this module's
 replays arm-by-arm (research/69 §5).
+
+**FINAL-phase receipt (research/69 §6).** The d50 tip re-probed at the
+final phase is STILL `2e243a2d` — `pre_move`'s type-35 arm present, no
+strip landed; the strip-contract and the retire note stand verbatim for
+the merger.
+
+## The dust DRAW-tint census + the 157/327 GetAlpha closures (W4-g13 final)
+
+research/70 — the final-phase census of every `Dust.GetColor`/`GetAlpha`
+draw consumer (`Main.DrawDust` `Main.cs:38828-39027`, the full 8-hit
+grep) finds the SPRITE-tint column table-complete port-wide: every
+per-type arm lives in `dust_table.rs` (S1-E-2), the generic base+overlay
+and black-death are ported for the live types (`minecart::draw` 213,
+`sand::draw` 268), and the cull rect + else-kill is g67's `2c452edd`
+(ancestor of tip `30b39fceb`; the d130 fold is research/134 R3). The
+trail walks (130-134/278/219-223/264/226-272/331) are the dust DRAW
+lane's remainder — no tint gap. The two S1-E-2 documented drops (d54
+research/131 §7.2 G3/G4, UNCLAIMED — no `task/W4-d54g` branch exists)
+close here on main's `dust_table.rs` (empty diff on every sibling):
+
+- **G3, type 157** (`Dust.cs:2627-2651`): `get_alpha_mouse_text(d,
+  new_color, mouse_text_color)` — the pulse byte is a parameter (the
+  caller binds `App.mouse_text_color`, the ported
+  `DoUpdate_AnimateCursorColors`). The f32 truncation boundaries are
+  pinned: pulse 190 → channel 126 / alpha **29** (f32 1.9−1.6 < 0.3);
+  pulse 255 → cap-255 channels / alpha **94** (f32 2.55−1.6 < 0.95).
+- **G4, type 327** (`Dust.cs:2658-2676`): `get_alpha_disco(d, new_color,
+  day_time, disco, rng)` — the night gate, THREE `NextFloat` draws R/G/B
+  on the caller's `Main.rand` slot, `App.disco` bytes. **The dead-raise
+  quirk:** `(int)(f) * 255` truncates BEFORE the multiply and f ∈ [0.1,
+  0.45875) < 1 always — every raise is 0, the arm NEVER changes the
+  colour; its only effect is the three draws per night draw of a live
+  327. Kept verbatim, witnessed (`FloatLog` counts 3/0/0/0 draws across
+  night/day/non-327/fullBright).
+- **Wiring contract:** the seams are STAGED (no live caller — zero
+  behavioural delta); the DRAW lane routes live 157/327 slots at the
+  generic tint site `:38973` (327 has no trail arm — one GetAlpha call
+  per slot per draw), between the gore draw `:62282` and the
+  end-of-Draw `DrawnThisUpdate` set `:62478`. The stream is
+  `rngs.global()`; relative order vs the item sparkle (`:38664`) and
+  the retro liquid pair (`:57789`) is fixed by the C# call chain.
+- 3 witnesses WRITTEN NOT RUN (code-only mode): the 157 pulse pins, the
+  327 draw-count + dead-raise pins, the census composition pins (the
+  6/15/59-64 WHITE override, the packed-0 overlay gate, the 264
+  base×0.3→GetColor chain, the 331 GetColor(GetAlpha(WHITE)) trail tint).
