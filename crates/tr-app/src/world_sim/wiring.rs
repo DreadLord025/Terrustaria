@@ -233,6 +233,33 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                 // family — dropped with the ANALYSIS note, like the other
                 // not-yet-ported projectile families.
                 tr_core::wiring::StatueSpawn::Boulder { .. } => {}
+                tr_core::wiring::StatueSpawn::Poof {
+                    x,
+                    y,
+                    npc_id,
+                    cap_ids,
+                } => {
+                    // W4-g61 wiring — `Wiring.cs:2274-2276`/`:2328-2330`/
+                    // `:2396-2398`: a body-gated statue spawn whose `CheckMech`
+                    // cooldown was consumed and whose `NPC.MechSpawn` cap passed,
+                    // but whose `Collision.SolidTiles` body gate blocked the
+                    // spawn, poofs INSTEAD of spawning. The cap is re-checked here
+                    // (it reads the entity list, in queue order — the statues
+                    // spawned earlier in the flood are already in `app.npcs`, so
+                    // the count matches the C#'s inline check). The poof anchor is
+                    // `(num140 - 4, num141 - 22) - (10, 10)` = `(x - 14, y - 32)`.
+                    let caps: Vec<u16> = cap_ids.iter().map(|&c| c as u16).collect();
+                    if !crate::wiring_stub::npc_mech_spawn(
+                        app.npcs.iter().map(|n| (n.x, n.y, n.kind.cs_id())),
+                        &caps,
+                        npc_id as u16,
+                        x as f32,
+                        y as f32,
+                    ) {
+                        continue;
+                    }
+                    wiring_poof(app, Vec2::new((x - 14) as f32, (y - 32) as f32));
+                }
             }
         }
         // The actuation cascade's object drops (`SquareTileFrame(resetFrame:
@@ -340,6 +367,13 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                 py as f32,
                 app.rngs.stream(crate::app::RngKey::UpdateWorldGen),
             );
+        }
+        // W4-g61 wiring — the logic-gate burn-out poofs (`Wiring.cs:824-826`):
+        // a gate re-poked while `_GatesDone` poofs at `(lampX, i) * 16 - (10, 10)`
+        // (the core computed the pixel anchor). No cap — the poof runs on the
+        // wiring stream like the statue body-gate poofs.
+        for (px, py) in app.wiring.take_lamp_poofs() {
+            wiring_poof(app, Vec2::new(px as f32, py as f32));
         }
     });
     for _ in 0..party_credits {
@@ -471,6 +505,26 @@ fn statue_npc(npc_id: i16, x: i32, y: i32) -> Option<Npc> {
     };
     let (w, h) = kind.size();
     Some(Npc::new(kind, x as f32 - w * 0.5, y as f32 - h, 1, 0.0))
+}
+
+/// W4-g61 wiring — one `Utils.PoofOfSmoke` (`Utils.cs:1078-1093`) through the
+/// g61 module on the wiring stream (the statue/lamp poofs run inside
+/// `HitWireSingle`/`CheckLogicGate`, which the C# reaches under the
+/// `UpdateWorldGen` swap — the port's wiring-RNG stand-in, M7-WIRE-1, the
+/// actuation-drop convention). `position` is the C# anchor in world pixels.
+/// The poof plays no sound; the gore/dust pools are the App's live ones.
+fn wiring_poof(app: &mut App, position: Vec2) {
+    let ctx = app.spawn_ctx();
+    let rng = app.wiring.rand_mut();
+    let mut env = crate::npc_spawn_visuals::SpawnVisualsEnv {
+        world: &app.world,
+        dust: &mut app.dust,
+        dust_ctx: &ctx,
+        gore: &mut app.gore,
+        rng,
+        play_sound: &mut |_, _, _, _, _| {},
+    };
+    crate::npc_spawn_visuals::poof_of_smoke(&mut env, position);
 }
 
 /// The spiky ball's proximity cap (`Wiring.cs:1814-1822`/`:1945-1953`): the
@@ -766,6 +820,83 @@ mod tests {
         let mut app = app_with(105, 66 * 36, 0); // style 66 → the Wraith (82)
         trip_and_tick(&mut app);
         assert!(app.npcs.is_empty(), "the unported kind drops");
+    }
+
+    /// W4-g61 wiring — `Wiring.cs:2320-2332`: the hornet statue (style 16)
+    /// whose 2×2 body gate is blocked poofs INSTEAD of spawning (the cap
+    /// passes — the npc list is empty). The poof anchor is
+    /// `(num140 - 4, num141 - 22) - (10, 10)` = `(anchor_x - 14, anchor_y - 32)`;
+    /// the ten type-16 dust + 3-6 gores land on the wiring stream (the
+    /// scratch-pool replay ends where the live stream ends).
+    #[test]
+    fn w4_g61_the_blocked_hornet_statue_poofs_on_the_wiring_stream() {
+        let mut app = app_with(105, 16 * 36, 0); // style 16 → the Hornet (42)
+        // A solid tile inside the 2×2 body gate (num137-1..num137+1,
+        // num136..num136+1) = x∈[9,11], y∈[20,21]. (9,21) is below the wired
+        // row 20, so the flood still reaches the statue.
+        let bi = app.world.index(9, 21);
+        app.world.tiles[bi] = Tile {
+            kind: 1,
+            ..Default::default()
+        };
+        app.world.tiles[bi].flags |= FLAG_ACTIVE;
+        let before = app.wiring.rand_mut().clone();
+        trip_and_tick(&mut app);
+        assert!(app.npcs.is_empty(), "the body gate blocks the spawn");
+        let after = app.wiring.rand_mut().clone();
+        // The replay: a scratch pool + the same ctx, the pre-trip stream.
+        let anchor_x = 10 * 16 + 16;
+        let anchor_y = (20 + 3) * 16;
+        let ctx = app.spawn_ctx();
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut gore = tr_core::gore::GorePool::new();
+        let mut replay = before;
+        let mut env = crate::npc_spawn_visuals::SpawnVisualsEnv {
+            world: &app.world,
+            dust: &mut dust,
+            dust_ctx: &ctx,
+            gore: &mut gore,
+            rng: &mut replay,
+            play_sound: &mut |_, _, _, _, _| {},
+        };
+        crate::npc_spawn_visuals::poof_of_smoke(
+            &mut env,
+            Vec2::new((anchor_x - 14) as f32, (anchor_y - 32) as f32),
+        );
+        assert_eq!(after, replay, "the poof's draws ride the wiring stream");
+        let live: Vec<_> = app.dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 10, "ten type-16 dust");
+        for d in live {
+            assert_eq!(d.dust_type, 16);
+        }
+        let gores: Vec<_> = app.gore.slots().iter().filter(|g| g.active).collect();
+        assert!((3..=6).contains(&gores.len()), "the smoke gores");
+    }
+
+    /// W4-g61 wiring — the cap gate: a blocked hornet statue whose
+    /// `NPC.MechSpawn` cap FAILS (10 hornets already alive) poofs NOTHING
+    /// (the C# checks the cap before the body gate, `:2321`).
+    #[test]
+    fn w4_g61_the_cap_blocked_hornet_statue_poofs_nothing() {
+        let mut app = app_with(105, 16 * 36, 0);
+        let bi = app.world.index(9, 21);
+        app.world.tiles[bi] = Tile {
+            kind: 1,
+            ..Default::default()
+        };
+        app.world.tiles[bi].flags |= FLAG_ACTIVE;
+        // Ten living hornets near the anchor exhaust the global cap.
+        for k in 0..10 {
+            app.npcs
+                .push(npc_of(NpcKind::Hornet, 176.0 + k as f32, 368.0));
+        }
+        trip_and_tick(&mut app);
+        assert_eq!(app.npcs.len(), 10, "no spawn");
+        assert!(
+            app.dust.slots().iter().all(|d| !d.active),
+            "the cap-blocked statue poofs nothing"
+        );
+        assert!(app.gore.slots().iter().all(|g| !g.active));
     }
 
     #[test]
