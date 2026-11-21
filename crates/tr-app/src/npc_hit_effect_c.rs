@@ -72,6 +72,8 @@
 //! | 259-263 | `:83657-83661` | the 411 Stardust Dragon body death (5 gores, Next(2)-gated type-229 dust) |
 //! | 264-274 | `:83670-83676` | the 491 Flying Dutchman death: the head block (2 fixed + 3x3 loop gores) |
 //! | 275-284 | `:83680-83684` | the 491 Flying Dutchman death: the RandomVector2 fan, iterations -1/0 |
+//! | 285-289 | `:83680-83684` | the 491 Flying Dutchman death: the RandomVector2 fan, iteration 1 |
+//! | 290-293 | `:83688-83689` | the 491 Flying Dutchman death: the 855 loop (2x2 gores) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -1634,8 +1636,7 @@ fn dutchman_death_head(
 /// RandomVector2(-40,40)`. The per-gore draw order is the C# argument
 /// evaluation: the position's `RandomVector2` (TWO NextDouble, X then Y)
 /// FIRST, then the type's `SelectRandom` (ONE Next(3)), then the NewGore
-/// kicks. This commit ports iterations -1 and 0 (sites 275-284); iteration
-/// 1 lands with the next batch.
+/// kicks. Sites 275-289 (all three iterations).
 fn dutchman_death_fan(
     npc: &Npc,
     gore: &mut GorePool,
@@ -1648,8 +1649,8 @@ fn dutchman_death_fan(
     let v16 = rotated_by(Vec2::new(dir, 0.0), npc.rotation as f64);
     let vel = Vec2::new(npc.vx, npc.vy);
     let s = npc.scale;
-    // `:83678` — num184 = -1..1; this commit runs -1 and 0 only.
-    for num184 in -1..1 {
+    // `:83678` — num184 = -1..1 (all three iterations).
+    for num184 in -1..2 {
         let _ = num184; // the anchors do not depend on the loop index here
         // `:83680` — width*0.35, drop 200.
         let p = v15 + v16 * (w * 0.35) - Vec2::new(0.0, 200.0) + random_vector2(rng, -40.0, 40.0);
@@ -1671,6 +1672,29 @@ fn dutchman_death_fan(
         let p = v15 + v16 * (w * -0.15) - Vec2::new(0.0, 300.0) + random_vector2(rng, -40.0, 40.0);
         let ty = select_random(rng, &[860, 892, 893]);
         gore.new_gore(rng, world, p, vel, ty, s);
+    }
+}
+
+/// The 491 Flying Dutchman death's 855 loop (`NPC.cs:83686-83690`, sites
+/// 290-293): the `num185 = 0..1` loop, each spawning 2 gores of type 855 at
+/// `v15 + v16*(width*±0.15) - (0, 160 + 60*num185)`. No arm-level draws.
+fn dutchman_death_855(
+    npc: &Npc,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let (w, _h) = npc.size();
+    let v15 = center(npc) - Vec2::new(60.0, 60.0);
+    let dir = if npc.sprite_dir != 1 { 1.0 } else { -1.0 };
+    let v16 = rotated_by(Vec2::new(dir, 0.0), npc.rotation as f64);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    // `:83686` — num185 = 0..1.
+    for num185 in 0..2 {
+        let drop = (160 + 60 * num185) as f32;
+        gore.new_gore(rng, world, v15 + v16 * (w * 0.15) - Vec2::new(0.0, drop), vel, 855, s); // :83688
+        gore.new_gore(rng, world, v15 + v16 * (w * -0.15) - Vec2::new(0.0, drop), vel, 855, s); // :83689
     }
 }
 
@@ -1860,11 +1884,12 @@ pub fn hit_effect_c(
         stardust_dragon_body_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     // `:83664-83722` — the 491 Flying Dutchman arm; the HEAD block (sites
-    // 264-274) + the fan iterations -1/0 (sites 275-284); the rest lands
-    // with the next batches.
+    // 264-274) + the full fan (sites 275-289) + the 855 loop (sites
+    // 290-293); the rest lands with the next batches.
     if npc_type == 491 && npc.hp <= 0 {
         dutchman_death_head(npc, gore, rng, world);
         dutchman_death_fan(npc, gore, rng, world);
+        dutchman_death_855(npc, gore, rng, world);
     }
     outcome
 }
@@ -2956,9 +2981,9 @@ mod tests {
         assert_eq!(gore.slot(1).position, Vec2::new(215.0 - 116.0, 100.0));
     }
 
-    /// `NPC.cs:83680-83684` — the Dutchman fan (iterations -1/0): 10 gores
-    /// of type SelectRandom(860,892,893), each drawing RandomVector2 (two
-    /// NextDouble) THEN SelectRandom (Next(3)) THEN the kicks. The twin
+    /// `NPC.cs:83680-83684` — the Dutchman fan (all three iterations): 15
+    /// gores of type SelectRandom(860,892,893), each drawing RandomVector2
+    /// (two NextDouble) THEN SelectRandom (Next(3)) THEN the kicks. The twin
     /// replay pins that per-gore order.
     #[test]
     fn w4_f10_the_dutchman_fan_draws_position_then_type() {
@@ -2969,16 +2994,16 @@ mod tests {
         let mut gore = GorePool::new();
         let mut rng = UnifiedRandom::new(191);
         dutchman_death_fan(&n, &mut gore, &mut rng, &w);
-        // 2 iterations x 5 gores = 10.
-        let active = gore.slots()[..10].iter().filter(|g| g.active).count();
-        assert_eq!(active, 10);
-        for g in &gore.slots()[..10] {
+        // 3 iterations x 5 gores = 15.
+        let active = gore.slots()[..15].iter().filter(|g| g.active).count();
+        assert_eq!(active, 15);
+        for g in &gore.slots()[..15] {
             assert!(matches!(g.gore_type, 860 | 892 | 893), "fan type {}", g.gore_type);
         }
         // The twin: per gore two NextDouble (RandomVector2) + Next(3)
         // (SelectRandom) + the two kicks.
         let mut twin = UnifiedRandom::new(191);
-        for _ in 0..10 {
+        for _ in 0..15 {
             let _rx = twin.next_double();
             let _ry = twin.next_double();
             let _sel = twin.next_max(3);
@@ -2986,6 +3011,27 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the fan mirrors the C# argument order");
+    }
+
+    /// `NPC.cs:83688-83689` — the Dutchman 855 loop: 4 gores of type 855 at
+    /// width*±0.15 with drops 160 and 220 (160 + 60*num185).
+    #[test]
+    fn w4_f10_the_dutchman_855_loop_spawns_the_four_gores() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 350.0, 120.0);
+        n.sprite_dir = -1;
+        n.rotation = 0.0;
+        let mut gore = GorePool::new();
+        let mut rng = UnifiedRandom::new(193);
+        dutchman_death_855(&n, &mut gore, &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![855, 855, 855, 855]);
+        // v15 = (215,100); width*0.15 = 52.5. num185=0 drop 160 -> y=-60.
+        assert_eq!(gore.slot(0).position, Vec2::new(215.0 + 52.5, 100.0 - 160.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(215.0 - 52.5, 100.0 - 160.0));
+        // num185=1 drop 220 -> y=-120.
+        assert_eq!(gore.slot(2).position, Vec2::new(215.0 + 52.5, 100.0 - 220.0));
+        assert_eq!(gore.slot(3).position, Vec2::new(215.0 - 52.5, 100.0 - 220.0));
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
