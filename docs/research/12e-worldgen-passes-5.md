@@ -83,7 +83,13 @@ Jungle `:20813` are already executed steps; #46 Settle Liquids Again
       `surface flora`; witness
       `w4_d105_the_dye_plants_step_sits_after_the_herbs` + 5 unit tests;
       the 227/656/752 frame-important boot statics land.
-- [ ] 41 Flowers
+- [x] 41 Flowers — `surface.rs::pass_flowers` + `flower_cell` +
+      `place_flower` + `is_fit_to_place_flower_in` (`:20447-20598` + the
+      `PlaceTile`-3 arm `:59507-59580` + `IsFitToPlaceFlowerIn`
+      `:58231-58251`); the `GenVars.logX/logY` seam lands (the fallen-log
+      pass's product, −1 reset); step `flowers` between `vines` and
+      `muds walls in jungle` (DW-5.3's adjacency re-pinned +2); witness
+      `w4_d105_the_flowers_step_sits_after_the_vines` + 3 unit tests.
 - [ ] 42 Mushrooms
 - [ ] 43 Random Gems
 - [ ] 44 Moss Grass

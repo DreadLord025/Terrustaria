@@ -1174,6 +1174,292 @@ fn place_chillet_eggs(world: &mut World, rock_layer: f64, remix: bool, rng: &mut
     }
 }
 
+/// `Flowers` (`WorldGen.cs:20447-20598`): `maxTilesX * 0.004` patch
+/// attempts (remix ×6). The classic arm rolls a centre column
+/// `Next(100, width-100)` and two half-sizes `Next(15, 30)`, scans down to
+/// the first active cell, then dresses the ±half-size box: the existing
+/// grass tufts (3) recolour to the patch's flower style (and 2/3 become
+/// jungle flowers 73), and the bare grass/stone/clay/ore tops get a
+/// `PlaceTile(3)` flower. The remix arm is the underground twin (the log
+/// anchor override, the `Next(15, 45)` half-sizes, the rock-layer y pick).
+pub(crate) fn pass_flowers(
+    world: &mut World,
+    gv_log: &mut (i32, i32),
+    world_surface: f64,
+    rock_layer: f64,
+    remix: bool,
+    rng: &mut Rng,
+) {
+    let mut count = (world.width as f64 * 0.004) as i32;
+    if remix {
+        count *= 6;
+    }
+    for _ in 0..count {
+        let mut cx = rng.range(100, world.width - 100);
+        let mut half_x = rng.range(15, 30);
+        let mut half_y = rng.range(15, 30);
+        if remix {
+            // `:20463-20473` — the remix half-sizes + the underground y.
+            half_x = rng.range(15, 45);
+            half_y = rng.range(15, 45);
+            // The sub-vanilla band collapse: the C# throws on an empty
+            // `Next(rockLayer, height-350)`; the port draws the half-sizes
+            // then skips the y pick (the wave B convention).
+            let y_lo = rock_layer as i32;
+            let y_hi = world.height - 350;
+            if y_hi <= y_lo {
+                continue;
+            }
+            let mut cy = rng.range(y_lo, y_hi);
+            if gv_log.0 >= 0 {
+                cx = gv_log.0;
+                cy = gv_log.1;
+                gv_log.0 = -1;
+            }
+            // `:20474` — the patch style from the flower list.
+            let style = FLOWER_STYLES[rng.range(0, FLOWER_STYLES.len() as i32) as usize];
+            for j in cx - half_x..cx + half_x {
+                for k in cy - half_y..cy + half_y {
+                    flower_cell(world, j, k, style, rng);
+                }
+            }
+        } else {
+            // `:20528-20594` — the classic scan down to the first active
+            // cell, then the box dress.
+            let mut l = half_y;
+            while (l as f64) < world_surface - half_y as f64 - 1.0 {
+                if world.tile(cx, l).is_some_and(|t| t.active()) {
+                    // `:20532-20537` — the log anchor override.
+                    if gv_log.0 >= 0 {
+                        cx = gv_log.0;
+                        l = gv_log.1;
+                        gv_log.0 = -1;
+                    }
+                    let style =
+                        FLOWER_STYLES[rng.range(0, FLOWER_STYLES.len() as i32) as usize];
+                    for m in cx - half_x..cx + half_x {
+                        for n in l - half_y..l + half_y {
+                            if in_world_flowers(world, m, n) {
+                                flower_cell(world, m, n, style, rng);
+                            }
+                        }
+                    }
+                    break;
+                }
+                l += 1;
+            }
+        }
+    }
+}
+
+/// The flower style list (`WorldGen.cs:20474` / `:20538`'s
+/// `NextFromList<int>(21, 24, 27, 30, 33, 36, 39, 42)`).
+const FLOWER_STYLES: [i32; 8] = [21, 24, 27, 30, 33, 36, 39, 42];
+
+/// `WorldGen.InWorld(m, n, 5)` (`:20543`).
+fn in_world_flowers(world: &World, x: i32, y: i32) -> bool {
+    x >= 5 && y >= 5 && x < world.width - 5 && y < world.height - 5
+}
+
+/// One box cell of the Flowers pass (`WorldGen.cs:20479-20521` remix /
+/// `:20545-20587` classic — the two bodies are identical): the fallen-log
+/// (488) and solid cells skip; an existing grass tuft (3) recolours to the
+/// patch style (2/3 → jungle flower 73); a bare grass/stone/clay/ore top
+/// with no wall behind gets a `PlaceTile(3)` flower (the soil converts to
+/// grass first, the `KillTile` clears the cell, a 1/2 roll flattens the
+/// floor, the flower plants and recolours).
+fn flower_cell(world: &mut World, x: i32, y: i32, style: i32, rng: &mut Rng) {
+    let Some(tile) = world.tile(x, y).copied() else {
+        return;
+    };
+    let Some(below) = world.tile(x, y + 1).copied() else {
+        return;
+    };
+    let below2 = world.tile(x, y + 2).copied();
+    // `:20482` / `:20548` — the log + solid gate.
+    if (tile.active() && tile.kind == 488)
+        || (tile.active() && crate::tiledata::TILE_SOLID.has(tile.kind))
+    {
+        return;
+    }
+    if tile.active() && tile.kind == 3 {
+        // `:20484-20491` / `:20550-20557` — the recolour arm.
+        if let Some(t) = world.tile_mut(x, y) {
+            t.frame_x = ((style + rng.range(0, 3)) * 18) as i16;
+        }
+        if rng.range(0, 3) != 0 {
+            if let Some(t) = world.tile_mut(x, y) {
+                t.kind = 73;
+            }
+        }
+    } else if below.wall == 0
+        && below.active()
+        && (below.kind == 2
+            || ((below.kind == 40 || below.kind == 1 || crate::tiledata::SET_ORE.has(below.kind))
+                && !tile.active()))
+        && (!tile.active()
+            || tile.kind == 185
+            || tile.kind == 186
+            || tile.kind == 187
+            || (tile.kind == 5 && (x as f64) < world.width as f64 * 0.48)
+            || (x as f64) > world.width as f64 * 0.52)
+    {
+        // `:20492-20521` / `:20558-20587` — the bare-top flower arm.
+        let below_is_soft =
+            below.kind == 40 || below.kind == 1 || crate::tiledata::SET_ORE.has(below.kind);
+        if below_is_soft {
+            // The soil converts to grass (the cell and the one below it).
+            if let Some(t) = world.tile_mut(x, y + 1) {
+                t.kind = 2;
+            }
+            if below2.is_some_and(|t| {
+                t.kind == 40 || t.kind == 1 || crate::tiledata::SET_ORE.has(t.kind)
+            }) {
+                if let Some(t) = world.tile_mut(x, y + 2) {
+                    t.kind = 2;
+                }
+            }
+        }
+        // `WorldGen.KillTile(x, y)` — the gen-time strip (the cell is
+        // inactive or a pile/tree here; the cascade's noItem path).
+        crate::edit::kill_tile(world, x, y, true);
+        if rng.range(0, 2) == 0 {
+            if let Some(t) = world.tile_mut(x, y + 1) {
+                t.set_slope(0);
+                t.flags &= !crate::tile::FLAG_HALF_BRICK;
+            }
+        }
+        // `WorldGen.PlaceTile(x, y, 3)` — the flower arm.
+        place_flower(world, x, y, rng);
+        // The post-placement recolour (the cell is now a 3).
+        let now = world.tile(x, y).copied();
+        if now.is_some_and(|t| t.active() && t.kind == 3) {
+            if let Some(t) = world.tile_mut(x, y) {
+                t.frame_x = ((style + rng.range(0, 3)) * 18) as i16;
+            }
+            if rng.range(0, 3) != 0 {
+                if let Some(t) = world.tile_mut(x, y) {
+                    t.kind = 73;
+                }
+            }
+        }
+        // The trailing soil revert (the cell two below, if still soft).
+        if world.tile(x, y + 2).is_some_and(|t| {
+            t.kind == 40 || t.kind == 1 || crate::tiledata::SET_ORE.has(t.kind)
+        }) {
+            if let Some(t) = world.tile_mut(x, y + 2) {
+                t.kind = 0;
+            }
+        }
+    }
+}
+
+/// `WorldGen.PlaceTile`'s flower arm (`WorldGen.cs:59507-59580`, type 3):
+/// `IsFitToPlaceFlowerIn` gates the soil, then the planter-box / wall /
+/// bare-ground style picks. The liquid gate (`:59468`) refuses any liquid
+/// cell first. The `NextFromList` draws are uniform over the listed frames.
+fn place_flower(world: &mut World, x: i32, y: i32, rng: &mut Rng) {
+    // The liquid gate (`:59454-59471`): tile 3 refuses any liquid.
+    if world.tile(x, y).is_some_and(|t| t.liquid > 0) {
+        return;
+    }
+    if !is_fit_to_place_flower_in(world, x, y, 3) {
+        return;
+    }
+    let below_kind = world.tile(x, y + 1).map(|t| t.kind);
+    let cell_wall = world.tile(x, y).map(|t| t.wall).unwrap_or(0);
+    let below_wall = world.tile(x, y + 1).map(|t| t.wall).unwrap_or(0);
+    let mut wrote = false;
+    if matches!(below_kind, Some(78) | Some(380) | Some(579)) {
+        // `:59523-59542` — the planter-box arm: the wide flower list.
+        if let Some(t) = world.tile_mut(x, y) {
+            t.flags |= FLAG_ACTIVE;
+            t.kind = 3;
+        }
+        let list = PLANTER_FLOWER_STYLES;
+        let mut frame = list[rng.range(0, list.len() as i32) as usize];
+        if matches!(frame, 21 | 24 | 27 | 30 | 33 | 36 | 39 | 42) {
+            frame += rng.range(0, 3);
+        }
+        if let Some(t) = world.tile_mut(x, y) {
+            t.frame_x = (frame * 18) as i16;
+        }
+        wrote = true;
+    } else if allows_plants_to_grow(cell_wall) && allows_plants_to_grow(below_wall) {
+        // `:59543-59578` — the walled arm: the 1/50 mushroom, the 1/35 (or
+        // the cave-wall 63-70) tall flower, else the short grass tuft.
+        if rng.range(0, 50) == 0 {
+            if let Some(t) = world.tile_mut(x, y) {
+                t.flags |= FLAG_ACTIVE;
+                t.kind = 3;
+                t.frame_x = 144;
+            }
+        } else if rng.range(0, 35) == 0 || (63..=70).contains(&cell_wall) {
+            if let Some(t) = world.tile_mut(x, y) {
+                t.flags |= FLAG_ACTIVE;
+                t.kind = 3;
+            }
+            let list = TALL_FLOWER_STYLES;
+            let frame = list[rng.range(0, list.len() as i32) as usize];
+            if let Some(t) = world.tile_mut(x, y) {
+                t.frame_x = (frame * 18) as i16;
+            }
+        } else {
+            if let Some(t) = world.tile_mut(x, y) {
+                t.flags |= FLAG_ACTIVE;
+                t.kind = 3;
+                t.frame_x = (rng.range(0, 6) * 18) as i16;
+            }
+        }
+        wrote = true;
+    }
+    // `PlaceTile`'s tail `SquareTileFrame` (`:60261`, the `if (tile.active())`
+    // gate) — only when a write landed.
+    if wrote {
+        crate::edit::square_tile_frame_gen(world, x, y);
+    }
+}
+
+/// `WorldGen.IsFitToPlaceFlowerIn` (`WorldGen.cs:58231-58251`, type 3): the
+/// floor must be active, flat, not half brick, and grass (2) / clay pot
+/// (78) / planter box (380) / golf grass (477/579).
+fn is_fit_to_place_flower_in(world: &World, x: i32, y: i32, kind: u16) -> bool {
+    if y < 1 || y > world.height - 1 {
+        return false;
+    }
+    let Some(floor) = world.tile(x, y + 1) else {
+        return false;
+    };
+    if floor.active() && floor.slope() == 0 && !floor.half_brick() {
+        // The type-3 soil set (`:58240`): 2/78/380/477/579.
+        if matches!(floor.kind, 2 | 78 | 380 | 477 | 579) && kind == 3 {
+            return true;
+        }
+        return false;
+    }
+    false
+}
+
+/// The planter-box flower list (`WorldGen.cs:59527`'s
+/// `NextFromList<int>(6, 7, 9, .., 21, 24, .., 42)`).
+const PLANTER_FLOWER_STYLES: [i32; 22] = [
+    6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 24, 27, 30, 33, 36, 39, 42,
+];
+
+/// The tall-flower list (`WorldGen.cs:59562`'s
+/// `NextFromList<int>(6, 7, 9, .., 20)`).
+const TALL_FLOWER_STYLES: [i32; 14] = [6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+
+/// `WallID.Sets.AllowsPlantsToGrow` (`WallID.cs:97`).
+const ALLOWS_PLANTS_TO_GROW: [u16; 27] = [
+    0, 150, 138, 145, 107, 152, 140, 139, 141, 106, 245, 315, 317, 63, 64, 65, 66, 67, 68, 69, 81,
+    70, 264, 268, 265, 74, 80,
+];
+
+fn allows_plants_to_grow(wall: u16) -> bool {
+    ALLOWS_PLANTS_TO_GROW.contains(&wall)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1441,5 +1727,63 @@ mod tests {
             assert_eq!(t.frame_x % 34, 0, "the dye style frame");
             assert_eq!(t.frame_y, 0);
         }
+    }
+
+    /// `IsFitToPlaceFlowerIn` (`WorldGen.cs:58231-58251`, type 3): the flat
+    /// grass floor passes; a sloped or stone floor refuses.
+    #[test]
+    fn is_fit_to_place_flower_checks_the_soil() {
+        let mut w = grass_world(100, 100, 50);
+        assert!(is_fit_to_place_flower_in(&w, 50, 49, 3));
+        // A stone floor refuses.
+        let i = w.index(60, 50);
+        w.tiles[i].kind = 1;
+        assert!(!is_fit_to_place_flower_in(&w, 60, 49, 3));
+        // A sloped grass floor refuses.
+        let i = w.index(70, 50);
+        w.tiles[i].set_slope(1);
+        assert!(!is_fit_to_place_flower_in(&w, 70, 49, 3));
+    }
+
+    /// The recolour arm (`:20550-20557`): an existing grass tuft (3) takes
+    /// the patch style frame and 2/3 becomes a jungle flower (73).
+    #[test]
+    fn flower_cell_recolours_the_grass_tuft() {
+        let mut w = grass_world(200, 200, 100);
+        // A grass tuft at (100, 99).
+        let i = w.index(100, 99);
+        w.tiles[i].kind = 3;
+        w.tiles[i].frame_x = 0;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let mut rng = Rng::from_seed(2);
+        flower_cell(&mut w, 100, 99, 21, &mut rng);
+        let t = w.tile(100, 99).unwrap();
+        assert!(t.active());
+        assert!(t.kind == 3 || t.kind == 73, "the tuft recolours");
+        // The frame is a patch-style multiple of 18 (21..23).
+        assert!(t.frame_x >= 21 * 18 && t.frame_x <= 23 * 18);
+    }
+
+    /// The full pass (`:20447-20598`): the flower patches dress the grass
+    /// surface — the jungle flowers (73) and the recoloured tufts land.
+    #[test]
+    fn the_flowers_pass_dresses_the_surface() {
+        let mut w = grass_world(4200, 1200, 300);
+        // Pre-seed some grass tufts so the recolour arm has targets.
+        for x in (100..4100).step_by(7) {
+            let i = w.index(x, 299);
+            w.tiles[i].kind = 3;
+            w.tiles[i].frame_x = 0;
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut log = (-1, 0);
+        let mut rng = Rng::from_seed(13);
+        pass_flowers(&mut w, &mut log, 350.0, 600.0, false, &mut rng);
+        let jungle_flowers = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 73)
+            .count();
+        assert!(jungle_flowers > 0, "the jungle flowers ({jungle_flowers})");
     }
 }

@@ -367,6 +367,15 @@ pub(crate) struct GenVars {
     /// main item — the cycle with the `> 3 → Next(4)` re-roll. S1-A-4:
     /// drawn at the island-house site, once per house.
     pub(crate) sky_island_house_count: u32,
+    /// `GenVars.logX`/`logY` (`GenVars.cs:252-254`, reset −1 at
+    /// `WorldGen.cs:11210`) — the fallen-log anchor the Place Fallen Log
+    /// pass publishes (`:18645-18646`, a 1/2 roll) and the Flowers pass
+    /// consumes (`:20468-20473` remix / `:20532-20537` classic, resetting
+    /// logX to −1 after the read). The port has no faithful fallen-log pass
+    /// yet, so the fields stay at their −1 reset and the Flowers override
+    /// never fires — the seam is in place for the log pass to write.
+    pub(crate) log_x: i32,
+    pub(crate) log_y: i32,
 }
 
 impl Default for GenVars {
@@ -427,6 +436,10 @@ impl Default for GenVars {
             // computes both in `run`'s Reset stand-in.
             crimson_left: false,
             flip_infections: false,
+            // `GenVars.logX` resets to −1 (`WorldGen.cs:11210`); logY is
+            // zero-init until the fallen-log pass writes it.
+            log_x: -1,
+            log_y: 0,
         }
     }
 }
@@ -1384,6 +1397,10 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // insertion.
     step!("jungle plants", "Jungle Plants", step_jungle_plants),
     step!("vines", "Vines", step_vines),
+    // The vanilla Flowers slot (`WorldGen.cs:20447`): after Vines
+    // (`:20193`), before Mushrooms (`:20599`) — W4-d105 lane 5. The patch
+    // rolls + the PlaceTile-3 style draws ride `pass_rng("Flowers")`.
+    step!("flowers", "Flowers", step_flowers),
     // The vanilla slot (`WorldGen.cs:20813`): after Vines, before the
     // islands step the plan pins it against — the M5-BIOME phase-5
     // insertion.
@@ -2366,6 +2383,41 @@ fn step_dye_plants(
     );
 }
 
+/// `Flowers` (`WorldGen.cs:20447-20598`, `GenPassNameID.Flowers`) — the
+/// `maxTilesX * 0.004` patch attempts (remix ×6). The
+/// `Skyblock.denySomeGeneration` gate (`:20449`) rides the adapter; the
+/// patch rolls + the `PlaceTile(3)` style draws ride
+/// `pass_rng("Flowers")`. The log-anchor override reads/writes the
+/// `GenVars.logX/logY` seam (the fallen-log pass's product).
+fn step_flowers(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if skyblock_deny_some_generation(opts) {
+        return;
+    }
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    let remix = opts.flags.contains(crate::seeds::SeedFlags::REMIX);
+    let mut log = (gv.log_x, gv.log_y);
+    surface::pass_flowers(
+        world,
+        &mut log,
+        world_surface,
+        rock_layer,
+        remix,
+        &mut streams.pass_rng("Flowers"),
+    );
+    gv.log_x = log.0;
+    gv.log_y = log.1;
+}
+
 /// `Webs And Honey` (`WorldGen.cs:19995`) — the wall-keyed sweep that hangs
 /// cobweb in the spider caves and honeyed speleothems in the hives.
 fn step_webs_and_honey(
@@ -3326,8 +3378,9 @@ mod tests {
         // "Sunflowers", `:19898`) between `guide` and `trees`, + `herbs`
         // (vanilla "Herbs", `:19964`) between `trees` and `surface flora`,
         // + `dye plants` (vanilla "Dye Plants", `:19981`) between `herbs`
-        // and `surface flora`.
-        assert_eq!(names.len(), 70);
+        // and `surface flora`, + `flowers` (vanilla "Flowers", `:20447`)
+        // between `vines` and `muds walls in jungle`.
+        assert_eq!(names.len(), 71);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3412,6 +3465,7 @@ mod tests {
                 "mushroom and jungle plants",
                 "jungle plants",
                 "vines",
+                "flowers",
                 "muds walls in jungle",
                 "floating islands",
                 "remove water",
@@ -3548,14 +3602,17 @@ mod tests {
     /// plants` (vanilla `:20122` → `:20165`, before Vines `:20193`) and
     /// `muds walls in jungle` between `vines` and `floating islands` (the
     /// plan's slot; vanilla carries Muds Walls In Jungle after Vines,
-    /// `:20193` → `:20813`).
+    /// `:20193` → `:20813`). W4-d105 lane 5 inserts `flowers` (vanilla
+    /// Flowers `:20447`) between `vines` and `muds walls in jungle`, so the
+    /// adjacency is +2 now — the relative pair itself still holds.
     #[test]
     fn test_DW_5_3_new_steps_sit_in_their_vanilla_positions() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("wet jungle"), pos("altars") + 1);
         assert_eq!(pos("jungle plants"), pos("mushroom and jungle plants") + 1);
-        assert_eq!(pos("muds walls in jungle"), pos("vines") + 1);
+        // + flowers (W4-d105 lane 5, the vanilla Flowers slot `:20447`).
+        assert_eq!(pos("muds walls in jungle"), pos("vines") + 2);
         assert_eq!(names[pos("muds walls in jungle") + 1], "floating islands");
         // The vanilla chain carries the same relative pairs.
         let chain: Vec<&str> = VANILLA_CHAIN
@@ -3715,6 +3772,30 @@ mod tests {
         assert!(cpos("Herbs") < cpos("Dye Plants"));
         assert!(cpos("Dye Plants") < cpos("Webs And Honey"));
         assert!(cpos("Dye Plants") < cpos("Weeds"));
+    }
+
+    /// W4-d105 lane 5 (#41): `flowers` sits immediately after `vines` and
+    /// before `muds walls in jungle` — the vanilla Vines
+    /// (`WorldGen.cs:20193`) → Flowers (`:20447`) → Mushrooms (`:20599`) →
+    /// Gems In Ice Biome (`:20697`) → Random Gems (`:20729`) → Moss Grass
+    /// (`:20769`) → Muds Walls In Jungle (`:20813`) chain (the port's
+    /// `muds walls in jungle` stands in for the still-unexecuted slots
+    /// between).
+    #[test]
+    fn w4_d105_the_flowers_step_sits_after_the_vines() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("flowers"), pos("vines") + 1);
+        assert_eq!(pos("flowers") + 1, pos("muds walls in jungle"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Vines") < cpos("Flowers"));
+        assert!(cpos("Flowers") < cpos("Mushrooms"));
+        assert!(cpos("Flowers") < cpos("Muds Walls In Jungle"));
     }
 
     #[test]

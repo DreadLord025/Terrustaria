@@ -256,7 +256,9 @@ mod tests {
     // attempts), matures the herbs (82 → 83 → 84) and plants the glow
     // tulips 656 + the chillet eggs 752 (`WorldGen.cs:19981-19994` +
     // `:71286-71455` / `:45748-45775` / `:45622-45678`) — both pins move
-    // again by design.
+    // again by design. #41 Flowers recolours the grass tufts to the patch
+    // styles (3 → 73) and plants the bare-top flowers
+    // (`WorldGen.cs:20447-20598`) — both pins move again by design.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
