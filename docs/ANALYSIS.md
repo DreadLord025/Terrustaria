@@ -39247,7 +39247,8 @@ click buffers; the player tick applies).
 
 ## The projectile Kill hook lane a, SEALED (W4-g1, 2026-11-21, code-only mode)
 
-**The family ledger**: `docs/research/26d-g1-proj-missing-a-family-bible.md`
+**The family ledger**: `docs/research/373-g1-proj-missing-a-family-bible.md`
+(renumbered 26d-g1 → 373 per research-number-registry §10)
 (census `26d-projectile-kill-hooks-census.md`, SEALED). g1's FINAL kept
 set: the **459/709 shared burst** (`Projectile.cs:73338-73371` — scale≥1
 Resize-144 → `Damage()` → dust/gore rings, the `:73351` order preserved

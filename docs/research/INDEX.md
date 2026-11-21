@@ -46,7 +46,7 @@ per `docs/superpowers` agreements).
 | 25 | NPC AI families (aiStyle dispatch) | `25-npc-ai-audit.md` | в¬њ |
 | 26 | Projectile AI families (aiStyle dispatch) | `26-projectile-ai-audit.md` | в¬њ |
 | 26d | g1 Kill-hook census (SEALED — g1 keeps 459/521/522/80, the 452/454/448 EVP trio folded to d78 per 26f §1) | `26d-projectile-kill-hooks-census.md` | done |
-| 26d-g1 | the proj-missing-a family bible (lane ledger + the g1×d78/f20/d15/g65/d77 merge instructions) | `26d-g1-proj-missing-a-family-bible.md` | done |
+| 373 | the proj-missing-a family bible (lane ledger + the g1×d78/f20/d15/g65/d77 merge instructions) — renumbered 26d-g1 → 373 per registry §10 | `373-g1-proj-missing-a-family-bible.md` | done |
 | 27 | Mounts / pets / minecart / grapple | `27-mounts-pets-vehicles.md` | в¬њ |
 | 28 | Buffs & debuffs (apply, UI, sync) | `28-buffs-debuffs.md` | в¬њ |
 | 29 | Town NPCs (housing/happiness/pylon) | `29-town-npc-housing.md` | в¬њ |

@@ -10,7 +10,8 @@
 > refuse the boss blasts the C# `:14799` lands); g65's pushed bodies own
 > the trio's draws. The 459|709 pool-gate widening EXECUTED on this branch
 > (was "at the merge" — the local const matches f20's byte-for-byte). The
-> family ledger: `26d-g1-proj-missing-a-family-bible.md`. g1 witnesses:
+> family ledger: `373-g1-proj-missing-a-family-bible.md` (renumbered
+> 26d-g1 → 373 per research-number-registry §10). g1 witnesses:
 > **12 WRITTEN NOT RUN** (code-only; the DONE tip carried 18 despite its
 > "22" message — 4 module + 3 pool hostile-trio witnesses dropped with
 > their hooks, one 709-gate witness added: 6 module + 6 pool).

@@ -1,4 +1,8 @@
-# 26d-g1 — the proj-missing-a family bible (W4-g1, lane a) — FINAL
+# 373 — the proj-missing-a family bible (W4-g1, lane a) — FINAL
+
+> **Renumbered 26d-g1 → 373 per research-number-registry §10** (d54 tip
+> `08d21666e`, §10.2 row 373): 26d belongs to W4-d12 (round-1 winner);
+> this late landing (`ef671cf2b`) takes the free number 373, slug kept.
 
 > Written 2026-11-21 at the g1 SEAL round (branch
 > `task/W4-g1-proj-ai-missing-a`, worktree `TR-W4-g1`, code-only mode —
