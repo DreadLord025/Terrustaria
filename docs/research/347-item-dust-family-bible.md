@@ -1,8 +1,19 @@
-# 309 — The item-dust-family bible (W4-g15 SEAL round)
+# 347 — The item-dust-family bible (W4-g15 SEAL round)
 
-Number **309** per the research/150 free-block rule (a fresh
-full-remote `ls-tree` scan at this seal round: highest claimed key
-308, 309+ unclaimed; 78 already forked twice — g78-sight/c40-weather).
+> **RENAME CHAIN: 309 (self-pick at `131961a73` 16:48:33, contested) →
+> 347 (registry-150 §8.7 FROZEN ASSIGNMENT).** The d54 collision
+> registry (`150-research-number-registry.md`, round-4 §8.7 AMENDMENT 3,
+> read at `origin/task/W4-d54` `a15cb634b`) renumbers every post-§8
+> self-pick to 341+: g15's 309 pick → **347**; the
+> key 309 collision stands with d125 (`281-empress-sheets-ledger.md` →
+> 309 per §8.1 — d125-309 stands). All refs re-pointed this commit;
+> NO SELF-PICKS — §8/§8.7 assignments only.
+
+Number **347** per registry-150 §8.7 (the original **309** pick used
+the research/150 free-block rule — a fresh full-remote `ls-tree` scan
+at the seal round found highest claimed key 308, 309+ unclaimed; that
+tips-only sweep missed §8's reservations, so the pick was contested;
+78 already forked twice — g78-sight/c40-weather).
 Published with the research/77 SEAL (`task/W4-g15-dust-item-sites`).
 **This is the merger's single page for the WorldItem/Item
 dust+entity surface** — who owns which half, the keep-one rulings,

@@ -478,17 +478,18 @@ only, no junction recursion; no cargo/rustc/tests/graphify invoked).
 
 The cross-lane family fold-table (who owns which half of the
 WorldItem/Item dust+entity surface, the keep-one rulings, the
-merge order) lives in **research/309** (`309-item-dust-family-bible.md`,
-this seal round — number 309 per the research/150 free-block rule:
-a fresh full-remote `ls-tree` scan at the seal found the highest
-claimed key 308, 309+ unclaimed; 78 was NOT used — two prior forks
-already carry it, g78-sight + c40-weather). research/65 (the
+merge order) lives in **research/347** (`347-item-dust-family-bible.md`,
+this seal round — number 347 per registry-150 §8.7 FROZEN assignment:
+the original 309 self-pick (`131961a73`, the free-block scan found the
+highest claimed key 308, 309+ unclaimed) missed §8's reservations and
+was contested — chain 309→347, d125-309 stands; 78 was NOT used — two
+prior forks already carry it, g78-sight + c40-weather). research/65 (the
 dust-half census correction) and this doc stay the per-lane
-records; 309 is the merger's single page.
+records; 347 is the merger's single page.
 
 ### Seal-round commits
 
 | Hash | What |
 | ---- | ---- |
 | `8f04df01b` | the 145 SHIMMER-SEAL 16-box repin (shared block only) |
-| (this doc's commit) | research/77 SEALED + research/309 family bible + INDEX/PORT_MAP/ANALYSIS receipts |
+| (this doc's commit) | research/77 SEALED + research/347 family bible (309 self-pick → 347 per registry-150 §8.7) + INDEX/PORT_MAP/ANALYSIS receipts |

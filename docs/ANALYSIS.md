@@ -36180,7 +36180,8 @@ client reservation-hold expiry.
 (code-only lane). 15 `anchors.txt` canary rows added (`527904546`).
 
 **SEAL (2026-11-21, code-only).** research/77 is SEALED (the S1-S5
-receipts there; the family bible is research/309). The seal round
+receipts there; the family bible is research/347 — the 309 self-pick
+renumbered per registry-150 §8.7). The seal round
 executed the research/145 SHIMMER-SEAL 16-box repin on this branch
 (`8f04df01b` — the shared inherited i47/i52 witness block ONLY: grab
 edge 42/43, magnet spawns 292/192, x-pin 289, y-pin 192; the explicit
@@ -36193,7 +36194,7 @@ and stay); (2) the copper-slime roster gap NARROWED — d43 `fd6a544fc`
 lands the `TownSlimeCopper` NpcKind row but no `TransformCopperSlime`
 consumer, so the post-merge seed is the pickup→`transform_to_kind`
 call + the town-arrival flag gates (`Main.cs:65940/:66070`) + msg
-140, NOT a roster port (research/309 §4).
+140, NOT a roster port (research/347 §4).
 
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
