@@ -806,8 +806,15 @@ pub(crate) fn crystal_shard_sparkle(
 // ---------------------------------------------------------------------------
 
 /// Sites 28292/28298/28302 — the 281 bunny's `ai[0] == 3f` burst
-/// (`Projectile.cs:28288-28314`): the 162-shaped 10× dust 31 + 5× the
-/// dust-6 pair + the gore `Next(61,64)` argument (scale 1.5).
+/// (`Projectile.cs:28288-28314`, the LIVE aiStyle-49 arm — the `:23337-
+/// 23363` aiStyle-2 twin is dead code, 281 rides style 49): the
+/// 162-shaped 10× dust 31 + 5× the dust-6 pair + the gore `Next(61,64)`
+/// argument (scale 1.5). UNWIRED: the machine is W4-d5's
+/// `projectile_ai_style49.rs` (`5f7390a30`, unmerged) and the 281 row is
+/// unclaimed on every pushed tip. At activation the d5 tick-3 block's
+/// body-skipped gore draws (its `Next(61,64)` + the two NewGore kicks)
+/// are superseded by this emitter's gore row + the gore lane's pool
+/// (the 162 `frost_shard_burst` / g16 `tombstone_landing_gore` seam).
 pub(crate) fn bunny_burst(
     p: &TrailSlot,
     rng: &mut dyn DropRng,

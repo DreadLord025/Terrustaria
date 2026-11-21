@@ -71,7 +71,7 @@ gated kinds ≤400 in `AI()` proper:
 | 24 | 94 (`:25960`) | crystal shard |
 | 27 | 114 (`:26451/26465*`/26472*/26482*/26484*/26496), 115 (`:26465/26496`), 116 (`:26501`), 132/173 (`:26472-26486`, ≤400) | trident/beam family |
 | 28 | 118 (`:26615`), 119/128 (`:26624`), 129 (`:26642`), 177 (`:26606`), 309 (`:26633`), 359 (the `:26624` triple gate) | frost bolt family |
-| 49 | 281 (`:23341/23347/23351` — the C# aiStyle-2 `type==281` twin arm; SetDefaults row 49 is the 1.4.5 remap, the AI arm is the type-gated 2-block) | cannon bunny |
+| 49 | 281 (`:28292/28298/28302` — the LIVE aiStyle-49 arm `:28243-28322`; the `:23341/23347/23351` aiStyle-2 `type==281` twin is DEAD code — 281 rides style 49 since the `:3680` SetDefaults remap, the d5 F2 finding) | cannon bunny |
 | 50 | 291 (`:28343`), 295 (`:28354`), 296 (`:28392`) | inferno fork |
 | 51 | 297 (`:28411`), 293 (the else arm `:28426`) | spectre staff |
 | 52 | 298/305 (`:28539/28552`) | rainbow |
@@ -187,10 +187,26 @@ The unrowed-kind emitters' rows were checked against the pushed d-lane
   positives: NEBULA_ARCANUM 617 / NEBULA_ARCANUM_SUBSHOT 618 /
   SPIRIT_FLAME 659, different kinds).
 - **281** CANNON_BUNNY — the const exists (`data.rs:710`) but NO match
-  arm on ANY branch (`git log --all -S 'CANNON_BUNNY =>'` empty). The
-  bunny emitter stays UNWIRED; the aiStyle-49 machine (`:28243-28322`)
-  is also unported (no `49 =>` dispatch arm). Activation needs both the
-  row AND the machine — a d-lane follow-up, not this dust lane's.
+  arm on ANY branch (`git log --all -S 'CANNON_BUNNY =>'` empty; the
+  2026-11-21 re-probe swept every pushed tip's `data.rs` for `281`
+  literal/range arms too — none). The aiStyle-49 machine IS ported:
+  **W4-d5 `5f7390a30`** (`projectile_ai_style49.rs`, UNWIRED) carries the
+  verbatim `:28243-28322` AI arm + the `:18833-18860` HandleMovement
+  bounce (`bunny_bounce`) + the `:75749-75803` Kill hook (`bunny_kill`,
+  g65's death-dust lane overlaps its 20+10×2 dust census — the merger
+  reconciles). There is NO `AI_049` named fn in the C# — the arm is the
+  inline `else if (this.aiStyle == 49)` block, NOT a :31000-region
+  machine. The style-49 arm is CLAIMED by d5; g63 does not re-port it.
+  The `bunny_burst` emitter below cites the LIVE `:28288-28314` site
+  (the census-table correction). Activation needs the ROW (unclaimed —
+  any d-lane follow-up) + d5's merge + the one-line `bunny_burst` call
+  inside d5's tick-3 block (its dust loops are body-skipped there; the
+  gore `Next(61,64)` + kicks it consumes must move to the g63 emitter
+  at merge — the 162 `frost_shard_burst` precedent). The g16 gore lane
+  (`36e03444`) ALSO wired a 281 landing gore onto the DEAD aiStyle-2
+  twin block (`:23355-23362`) — dead code for 281 (style 49 never
+  reaches it); the merger should re-point it at d5's tick-3 block or
+  drop it (the g16 `tombstone_landing_gore` body is the same gore row).
 
 These rows live on UNMERGED d-lane branches; at this tip (main `a725acb0`)
 none is present, so every batch-6 emitter is correctly UNWIRED. They

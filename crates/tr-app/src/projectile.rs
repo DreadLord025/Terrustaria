@@ -2668,9 +2668,11 @@ impl Projectile {
             // the `SoundID.Item14` latch are the ported state). W4-g63:
             // the 162's `ai[0] == 3f` dust/gore burst is RE-ARMED on the
             // live pool (`:23294-23317`, the gore's `Next(61,64)`
-            // argument consumed, the body d55's). The 281 twin's own
-            // arm is aiStyle 49 (`:28288-28314`) — its burst rides the
-            // style-49 machine, not this shared block.
+            // argument consumed, the body d55's). The 281 twin block
+            // (`:23321-23364`) is DEAD C# code — 281 rides aiStyle 49
+            // (`:3680`, the d5 F2 finding); its live burst emitter
+            // (`bunny_burst`, `:28288-28314`) waits on d5's machine +
+            // the unclaimed 281 row (research/66).
             162 | 281 => {
                 if self.ai[1] == 0.0 {
                     self.ai[1] = 1.0;
