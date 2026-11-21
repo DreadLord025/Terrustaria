@@ -39805,6 +39805,28 @@ fadeIn 1.5 vel×0.75). Witnesses: the gem 15/45 counts + type ladder + AoE
 gate, the 1115 ai0 count ladder, the 379/377 scale range — WRITTEN NOT
 RUN.
 
+### Batch 24 (10 kinds, the bomb/sparkle bursts `:75749-76204`)
+
+281 (the bomb/dynamite: gated ai[0]!=−3; TWO leading gores 76/77 each a
+Next(−20,21) X/Y velocity pair + kicks; 20× dust-31 vel×1.4 + 10 pairs
+dust-6 (vel×5 noGravity / vel×3 GRAVITY) + 4 corner gores Next(61,64);
+the damage>0 128-resize + Damage unported), 162 (resize 64×64 centred
+BEFORE the dust; 20× dust-31 vel×2.5 + 50× dust-6 noGravity vel×=
+Next(50,151)×0.1 + 10× dust-6 vel×3 Y−− GRAVITY + 4 corner gores; the
+144-resize + Damage AFTER unported), 240 (the 281 dust shape on the
+ORIGINAL box + 4 corner gores; the 96-resize + Damage AFTER unported),
+282 (10× dust-171 scale Next(1,10)×0.1 noGravity fadeIn 1.5 vel×0.75),
+660 (Next(4,10)× dust-180 at Center 0×0 vel×1.6 Y−− += −baseVel×
+(NextFloat×2−1)×0.5 scale 2 fadeIn 0.5 noGravity), 638 (the moonlord
+bullet RECLAIMED from the moonlord module's census skip — Next(2,5)×
+dust-229 at Center 0×0 vel×1.6 Y−− position−=(4,4) then Lerp(own,Center,
+0.5) noGravity; the module doc note updated), 411-414 (dust type 9 /
+412,414→11 / 413→19; 5× speed (0,vel.Y/2) noGravity vel −= baseVel×0.5).
+The 712 (the gore-scale NextFloatDirection census) stays deferred to a
+later batch. Witnesses: the 281/240 40-count + ai0 gate, the 162
+80-count, the 282 10-count, the 660/638 Next-count probes, the 411-414
+type ladder — WRITTEN NOT RUN.
+
 ### The re-census (all Kill dust arms vs the 104 + d12 + i17/i18 + g16)
 
 A full re-grep of `Projectile.cs:70642-77262` for `Dust.NewDust*` sites,

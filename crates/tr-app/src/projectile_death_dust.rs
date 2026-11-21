@@ -3276,6 +3276,153 @@ fn death_bursts(
                 d.velocity *= 0.75;
             }
         }
+        // `:75749-75803` — the 281 bomb/dynamite: gated ai[0] != −3; TWO
+        // leading gores 76/77 (each a Next(−20,21) X/Y velocity pair + the
+        // kicks, fixed types); 20× dust-31 alpha 100 scale 1.5 vel×1.4;
+        // 10 PAIRS dust-6 alpha 100 (scale 2.5 noGravity vel×5, then scale
+        // 1.5 vel×3 GRAVITY); 4 corner gores Next(61,64) + kicks. The
+        // damage>0 128-resize + Damage stay unported state.
+        281 => {
+            if s.ai0 != -3.0 {
+                for _ in 0..2 {
+                    let _ = rng.next_range(-20, 21);
+                    let _ = rng.next_range(-20, 21);
+                    let _ = rng.next_range(10, 31);
+                    let _ = rng.next_range(-20, 21);
+                }
+                for _ in 0..20 {
+                    let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 31, 0.0, 0.0, 100, Color::default(), 1.5);
+                    dust.slot_mut(idx).velocity *= 1.4;
+                }
+                for _ in 0..10 {
+                    let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 6, 0.0, 0.0, 100, Color::default(), 2.5);
+                    let d = dust.slot_mut(idx);
+                    d.no_gravity = true;
+                    d.velocity *= 5.0;
+                    let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 6, 0.0, 0.0, 100, Color::default(), 1.5);
+                    dust.slot_mut(idx).velocity *= 3.0;
+                }
+                for _ in 0..4 {
+                    let _ = rng.next_range(61, 64);
+                    let _ = rng.next_range(10, 31);
+                    let _ = rng.next_range(-20, 21);
+                }
+            }
+        }
+        // `:75804-75854` — the 162: resize 64×64 centred BEFORE the dust;
+        // 20× dust-31 alpha 100 scale 1.5 vel×2.5; 50× dust-6 alpha 100
+        // scale 2.5 noGravity vel×= Next(50,151)×0.1; 10× dust-6 alpha 100
+        // scale 1.5 vel×3 Y−− (GRAVITY); 4 corner gores. The 144-resize +
+        // Damage AFTER stay unported.
+        162 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let pos = center - Vec2::splat(32.0);
+            for _ in 0..20 {
+                let idx = dust.new_dust(rng, ctx, world, pos, 64, 64, 31, 0.0, 0.0, 100, Color::default(), 1.5);
+                dust.slot_mut(idx).velocity *= 2.5;
+            }
+            for _ in 0..50 {
+                let idx = dust.new_dust(rng, ctx, world, pos, 64, 64, 6, 0.0, 0.0, 100, Color::default(), 2.5);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= rng.next_range(50, 151) as f32 * 0.1;
+            }
+            for _ in 0..10 {
+                let idx = dust.new_dust(rng, ctx, world, pos, 64, 64, 6, 0.0, 0.0, 100, Color::default(), 1.5);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 3.0;
+                d.velocity.y -= 1.0;
+            }
+            for _ in 0..4 {
+                let _ = rng.next_range(61, 64);
+                let _ = rng.next_range(10, 31);
+                let _ = rng.next_range(-20, 21);
+            }
+        }
+        // `:75855-75894` — the 240: the 281 dust shape on the ORIGINAL box
+        // (20× dust-31 vel×1.4 + 10 pairs dust-6 + 4 corner gores); the
+        // 96-resize + Damage AFTER stay unported.
+        240 => {
+            for _ in 0..20 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 31, 0.0, 0.0, 100, Color::default(), 1.5);
+                dust.slot_mut(idx).velocity *= 1.4;
+            }
+            for _ in 0..10 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 6, 0.0, 0.0, 100, Color::default(), 2.5);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 5.0;
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 6, 0.0, 0.0, 100, Color::default(), 1.5);
+                dust.slot_mut(idx).velocity *= 3.0;
+            }
+            for _ in 0..4 {
+                let _ = rng.next_range(61, 64);
+                let _ = rng.next_range(10, 31);
+                let _ = rng.next_range(-20, 21);
+            }
+        }
+        // `:75899-75910` — the 282: 10× dust-171 alpha 100 scale Next(1,10)
+        // ×0.1 noGravity fadeIn 1.5 vel×0.75 (the 379 shape at count 10).
+        282 => {
+            for _ in 0..10 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 171, 0.0, 0.0, 100, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.scale = rng.next_range(1, 10) as f32 * 0.1;
+                d.no_gravity = true;
+                d.fade_in = 1.5;
+                d.velocity *= 0.75;
+            }
+        }
+        // `:76067-76082` — the 660: Next(4,10)× dust-180 at Center 0×0
+        // alpha 100 defaults, vel×1.6 Y−− += −baseVel×(NextFloat×2−1)×0.5,
+        // scale 2 fadeIn 0.5 noGravity. HitTiles draws nothing here.
+        660 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let count = rng.next_range(4, 10);
+            for _ in 0..count {
+                let idx = dust.new_dust(rng, ctx, world, center, 0, 0, 180, 0.0, 0.0, 100, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 1.6;
+                d.velocity.y -= 1.0;
+                d.velocity += -s.vel * (rng.next_float() * 2.0 - 1.0) * 0.5;
+                d.scale = 2.0;
+                d.fade_in = 0.5;
+                d.no_gravity = true;
+            }
+        }
+        // `:76119-76133` — the 638 moonlord bullet: Next(2,5)× dust-229 at
+        // Center 0×0 alpha 100 defaults, vel×1.6 Y−−, position −= (4,4)
+        // then Lerp(own, Center, 0.5), noGravity. (The moonlord module's
+        // census skip of this draw is RECLAIMED here.)
+        638 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let count = rng.next_range(2, 5);
+            for _ in 0..count {
+                let idx = dust.new_dust(rng, ctx, world, center, 0, 0, 229, 0.0, 0.0, 100, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 1.6;
+                d.velocity.y -= 1.0;
+                d.position -= Vec2::splat(4.0);
+                d.position = lerp_vec(d.position, center, 0.5);
+                d.no_gravity = true;
+            }
+        }
+        // `:76187-76204` — the 411-414: dust type 9 (412/414 → 11, 413 →
+        // 19); 5× that dust speed (0, vel.Y/2) defaults noGravity vel −=
+        // baseVel×0.5.
+        411..=414 => {
+            let dust_type = match s.kind {
+                412 | 414 => 11,
+                413 => 19,
+                _ => 9,
+            };
+            for _ in 0..5 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, dust_type, 0.0, s.vel.y / 2.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity -= s.vel * 0.5;
+            }
+        }
         _ => {}
     }
 }
@@ -5757,6 +5904,76 @@ mod tests {
             assert_eq!(active.len(), 5, "kind {kind}");
             assert!(active.iter().all(|d| d.dust_type == 171 && d.no_gravity && d.fade_in == 1.5));
             assert!(active.iter().all(|d| d.scale >= 0.09 && d.scale <= 0.91));
+        }
+    }
+
+    /// The 281/240 bomb dust: 20 dust-31 + 20 dust-6 = 40; the 281's
+    /// ai0==−3 gate spawns nothing. The 162: 20 + 50 + 10 = 80.
+    #[test]
+    fn w4_g65_the_bomb_bursts() {
+        let w = world();
+        for kind in [281u16, 240] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), 40, "kind {kind}");
+            assert_eq!(active.iter().filter(|d| d.dust_type == 31).count(), 20);
+            assert_eq!(active.iter().filter(|d| d.dust_type == 6).count(), 20);
+        }
+        let mut s = snap(281);
+        s.ai0 = -3.0;
+        let mut dust = DustPool::new();
+        drain(&[s], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        assert!(dust.slots().iter().all(|d| !d.active));
+        let mut dust = DustPool::new();
+        drain(&[snap(162)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 80);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 31).count(), 20);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 6).count(), 60);
+    }
+
+    /// The 282: 10 dust-171 noGravity fadeIn 1.5.
+    #[test]
+    fn w4_g65_the_282_burst() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(282)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 10);
+        assert!(active.iter().all(|d| d.dust_type == 171 && d.no_gravity && d.fade_in == 1.5));
+    }
+
+    /// The 660/638: Next(4,10) dust-180 / Next(2,5) dust-229, noGravity.
+    #[test]
+    fn w4_g65_the_660_638_bursts() {
+        let w = world();
+        let mut probe = UnifiedRandom::new(7);
+        let count = probe.next_range(4, 10);
+        let mut dust = DustPool::new();
+        drain(&[snap(660)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), count as usize);
+        assert!(active.iter().all(|d| d.dust_type == 180 && d.no_gravity && d.scale == 2.0));
+        let mut probe = UnifiedRandom::new(7);
+        let count = probe.next_range(2, 5);
+        let mut dust = DustPool::new();
+        drain(&[snap(638)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), count as usize);
+        assert!(active.iter().all(|d| d.dust_type == 229 && d.no_gravity));
+    }
+
+    /// The 411-414: 5 dust of type 9/11/19, noGravity.
+    #[test]
+    fn w4_g65_the_411_414_bursts() {
+        let w = world();
+        for (kind, dust_type) in [(411u16, 9), (412, 11), (413, 19), (414, 11)] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), 5, "kind {kind}");
+            assert!(active.iter().all(|d| d.dust_type == dust_type && d.no_gravity), "kind {kind}");
         }
     }
 }

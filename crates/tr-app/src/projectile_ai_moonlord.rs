@@ -57,10 +57,11 @@
 //! point): the 638's proximity burst `Next(15, 31)` (`:55889`), the 640's
 //! `Next(extraUpdates)` / `Next(2|6)` / `Next(2)` / `NextDouble` / `Next(10)`
 //! dust gates (`:55453-55470`) and its `numUpdates == 1` trail dust
-//! (`:55473-55481`, no `numUpdates` field in the port), the 638 `Kill()`
-//! dust `Next(2, 5)` (`:76123`). (The 639/640 `Kill()` dust `Next(5, 10)`
-//! (`:73433`) was RECLAIMED by W4-g65 batch 16 — the death-dust drain now
-//! runs the real bodies + that draw, `projectile_death_dust.rs`.) None of
+//! (`:55473-55481`, no `numUpdates` field in the port). (The 639/640
+//! `Kill()` dust `Next(5, 10)` (`:73433`) was RECLAIMED by W4-g65 batch 16
+//! and the 638 `Kill()` dust `Next(2, 5)` (`:76123`) by batch 24 — the
+//! death-dust drain now runs the real bodies + those draws,
+//! `projectile_death_dust.rs`.) None of
 //! these draws gates observable state — the dust bodies
 //! are the only consumers — so skipping them keeps every state-bearing
 //! decision identical; the argument is recorded in ANALYSIS.
