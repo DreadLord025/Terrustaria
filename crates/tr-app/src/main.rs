@@ -40,6 +40,7 @@ mod item_lights;
 mod npc_lights;
 mod npc_lights_b;
 mod player_lights;
+mod player_lights_b;
 mod proj_lights;
 mod eoc_fight;
 mod input_map;

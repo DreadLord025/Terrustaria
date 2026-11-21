@@ -8343,8 +8343,9 @@ impl Player {
     /// (the Water Strider's buff-265 grant, `:9897`, or the flippers/merman)
     /// while not holding down; mounted, only the Water Strider's mount (37)
     /// floats. The buff arm now grants `can_float_in_water`, so the pose arm
-    /// is reachable.
-    fn should_float_in_water(&self) -> bool {
+    /// is reachable. `pub(crate)` so the Kazzymodus wing light's
+    /// `ShouldDrawWingsThatAreAlwaysAnimated` gate reads it (`player_lights_b`).
+    pub(crate) fn should_float_in_water(&self) -> bool {
         if self.can_float_in_water && !self.control_down {
             if self.mount.is_active() {
                 return self.mount.kind() == 37;

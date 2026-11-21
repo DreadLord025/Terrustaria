@@ -561,6 +561,26 @@ impl App {
                         ) {
                             self.entity_lights.add(x, y, rgb);
                         }
+                        // The Player GAP batch (S1-E-5 W4-e7 census close,
+                        // `player_lights_b.rs`): the 10 dropped sites whose
+                        // mount/armor/wing/melee/phase-color dependencies have
+                        // since landed — Rudolph's trail, the three armor-set
+                        // lights, the Chillet dash + melee-swing lights, the
+                        // Kazzymodus wing and the phase-blade held light. Same
+                        // ONE `EntityLights` pair, no RNG (every rand-bearing
+                        // dust branch skipped wholesale). The held frame's
+                        // height rides the swing lights' hitbox.
+                        let held_frame_h = lookups
+                            .item_icon(held_kind)
+                            .map_or(0.0, |(_, _, h)| h);
+                        for (x, y, rgb) in crate::player_lights_b::player_lights_b(
+                            p,
+                            held_kind,
+                            held_frame_w,
+                            held_frame_h,
+                        ) {
+                            self.entity_lights.add(x, y, rgb);
+                        }
                     }
                     // `Projectile.ProjLight` (S1-E-5, `Projectile.cs:
                     // 16153-16661`): `Update` calls it once per movement
