@@ -180,6 +180,7 @@ pub(crate) mod prefix_id;
 pub(crate) mod projectile_id;
 pub(crate) mod id_tables;
 pub(crate) mod world_events;
+mod proj_trail_dust;
 mod projectile;
 mod projectile_ai001_b;
 mod projectile_ai_frostmoon;
