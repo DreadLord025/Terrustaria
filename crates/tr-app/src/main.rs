@@ -215,6 +215,15 @@ mod projectile_ai_darts;
 // tile scan (types 11/1/4) + the fertilizer sapling growth (genRand defers
 // to the pass). The rows + the dispatch arm are wired in projectile.rs.
 mod projectile_ai_powder;
+// W4-d1 wave 3: the aiStyle-10 falling-block family (AI_010,
+// Projectile.cs:57826-58100 — the sandfall kinds 31/39/40/56/67/71/179/241/
+// 812/411-414 + the DirtBall 17 + the player Mud Ball 1081 + the sandgun
+// balls 42/65/68/354, closing the S1-D-5 "42-row gap"). The dust-gate
+// draws stay, the channel aim-steer + gravity ladder + tile walk + the
+// HandleMovement blocked arms + the Kill_ExplodeTiles death placement
+// (item drops ride pending_block_drops → UpdateItems). The frozen
+// spawn_falling tail keeps its carve-out (falling_tile.is_some()).
+mod projectile_ai_falling;
 // S1-P-i18 special bullets: the 11 aiStyle-1 bullet specials' per-type AI_001
 // arms + HandleMovement bounces + Kill() death effects (36/89/104/207/242/
 // 279/283/284/285/286/287), pure per-kind fns behind the `covers` gate.

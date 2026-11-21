@@ -621,6 +621,22 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             }
         }
     }
+    // W4-d1 — the falling-block death placement's item drops
+    // (`Kill_ExplodeTiles`'s aiStyle-10 arm, `Projectile.cs:77562-77569`'s
+    // `Item.RequestNewItem`): the refused placement / occupied cell drops
+    // the block item at the parked pixel point. The C# queues the request
+    // under the `UpdateProjectiles` swap and `Main.UpdateItems` resolves
+    // it (`Item.NewItem`'s velocity/prefix draws ride the `UpdateItems`
+    // stream — the `drain_catches` convention).
+    for (item, x, y) in app.projectiles.drain_block_drops() {
+        crate::world_sim::items::spawn_item_drop_px(
+            &mut app.items,
+            app.rngs.stream(crate::app::RngKey::UpdateItems),
+            item,
+            1,
+            glam::Vec2::new(x, y),
+        );
+    }
     // S1-P-i55 — the golf arms' queued effects, drained at the pass tail
     // (the `drain_mark_spawns` shape — the pool cannot borrow the App).
     // The C# plays the sounds / trips the wiring mid-walk; the port's

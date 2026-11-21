@@ -1076,6 +1076,102 @@ pub const PINK_DUNGEON_DEBRIS: u16 = 738;
 /// `:57942`, `:58073`, `:77369`).
 pub const DUNGEON_DEBRIS: [u16; 3] =
     [BLUE_DUNGEON_DEBRIS, GREEN_DUNGEON_DEBRIS, PINK_DUNGEON_DEBRIS];
+// ---- W4-d1 wave 3: the aiStyle-10 falling-block family (`AI_010`,
+// `Projectile.cs:57826-58100`). The kinds `WorldGen.GetSandfallProjData`
+// (`WorldGen.cs:86514-86570`, `tr_core::falling::sandfall_proj_data`) spawns
+// when a `TileID.Sets.Falling` tile loses its support, plus the DirtBall
+// the Dirt Rod fires. The rows are verbatim `SetDefaults` slices; the
+// `friendly`/`hostile` flags the row shape carries no field for ride the
+// arm (`projectile_ai_falling`) and the damage-pass gates (ANALYSIS "The
+// projectile data-row deviations").
+/// `ProjectileID.DirtBall` (17, `ProjectileID.cs:588`) — the Dirt Rod's
+/// dirt ball (`Projectile.cs:985-992`): 10x10, aiStyle 10, friendly,
+/// ignoreWater, the stock penetrate 1.
+pub const DIRT_BALL: u16 = 17;
+/// `ProjectileID.SandBallFalling` (31, `ProjectileID.cs:616`) — the sand
+/// tile's fall (`Projectile.cs:1131-1140`): 10x10, aiStyle 10, friendly +
+/// hostile, penetrate −1.
+pub const SAND_BALL_FALLING: u16 = 31;
+/// `ProjectileID.MudBall` (39, `ProjectileID.cs:632`) — the mud tile's
+/// fall (`Projectile.cs:1217-1226`), the 31's shape.
+pub const MUD_BALL_FALLING: u16 = 39;
+/// `ProjectileID.AshBallFalling` (40, `ProjectileID.cs:634`) — the ash
+/// tile's fall (`Projectile.cs:1227-1236`), the 31's shape. The channel
+/// aim-steer excludes it (`:57956`).
+pub const ASH_BALL_FALLING: u16 = 40;
+/// `ProjectileID.EbonsandBallFalling` (56, `ProjectileID.cs:666`) — the
+/// ebonsand tile's fall (`Projectile.cs:1384-1393`), the 31's shape.
+pub const EBONSAND_BALL_FALLING: u16 = 56;
+/// `ProjectileID.PearlSandBallFalling` (67, `ProjectileID.cs:688`) — the
+/// pearlsand tile's fall (`Projectile.cs:1467-1476`), the 31's shape.
+pub const PEARLSAND_BALL_FALLING: u16 = 67;
+/// `ProjectileID.SiltBall` (71, `ProjectileID.cs:696`) — the silt tile's
+/// fall (`Projectile.cs:1512-1521`), the 31's shape.
+pub const SILT_BALL_FALLING: u16 = 71;
+/// `ProjectileID.SlushBall` (179, `ProjectileID.cs:912`) — the slush
+/// tile's fall (`Projectile.cs:2650-2659`), the 31's shape.
+pub const SLUSH_BALL_FALLING: u16 = 179;
+/// `ProjectileID.CrimsandBallFalling` (241, `ProjectileID.cs:1036`) — the
+/// crimsand tile's fall (`Projectile.cs:3228-3237`), the 31's shape.
+pub const CRIMSAND_BALL_FALLING: u16 = 241;
+/// `ProjectileID.ShellPileFalling` (812, `ProjectileID.cs:2178`) — the
+/// shell-pile tile's fall (`Projectile.cs:7953-7962`), the 31's shape.
+pub const SHELL_PILE_FALLING: u16 = 812;
+/// `ProjectileID.CopperCoinsFalling` (411, `ProjectileID.cs:1376`) — the
+/// copper coin pile's fall (`Projectile.cs:4933-4941`): 10x10, aiStyle 10
+/// ONLY — the stock friendly false / penetrate 1 stand (the arm holds the
+/// C# friendly state, the debris precedent).
+pub const COPPER_COINS_FALLING: u16 = 411;
+/// `ProjectileID.SilverCoinsFalling` (412, `ProjectileID.cs:1378`) — the
+/// silver twin of the 411.
+pub const SILVER_COINS_FALLING: u16 = 412;
+/// `ProjectileID.GoldCoinsFalling` (413, `ProjectileID.cs:1380`) — the
+/// gold twin of the 411.
+pub const GOLD_COINS_FALLING: u16 = 413;
+/// `ProjectileID.PlatinumCoinsFalling` (414, `ProjectileID.cs:1382`) — the
+/// platinum twin of the 411.
+pub const PLATINUM_COINS_FALLING: u16 = 414;
+/// `ProjectileID.MudBallPlayer` (1081, `ProjectileID.cs:2716`) — the
+/// player Mud Ball (`Projectile.cs:10087-10094`): 12x12, aiStyle 10,
+/// friendly, penetrate −1; its own 20-tick gravity delay + side-slide.
+pub const MUD_BALL_PLAYER: u16 = 1081;
+/// The four coin-pile kinds the C# spells `type >= 411 && type <= 414`
+/// (`Projectile.cs:57853`, `:17598`).
+pub const COIN_PILE_KINDS: [u16; 4] = [
+    COPPER_COINS_FALLING, SILVER_COINS_FALLING, GOLD_COINS_FALLING, PLATINUM_COINS_FALLING,
+];
+/// The falling-block kinds whose `SetDefaults` arms set `hostile = true`
+/// beside `friendly` (the natural falls: `Projectile.cs:1138`/`:1224`/
+/// `:1234`/`:1391`/`:1474`/`:1519`/`:2657`/`:3235`/`:7960`). The row shape
+/// carries neither flag; the pool's `!friendly` player-damage proxy reads
+/// this set so the C# `Damage_EVP` pass runs for them (the DUNGEON_DEBRIS
+/// exemption's mirror, ANALYSIS W4-d1). The sandgun balls 42/65/68/354 are
+/// friendly + ranged (NOT hostile), the 17/1081 friendly only, the coin
+/// piles stock both-false — none joins.
+pub const FALLING_HOSTILE_KINDS: [u16; 9] = [
+    SAND_BALL_FALLING, MUD_BALL_FALLING, ASH_BALL_FALLING, EBONSAND_BALL_FALLING,
+    PEARLSAND_BALL_FALLING, SILT_BALL_FALLING, SLUSH_BALL_FALLING,
+    CRIMSAND_BALL_FALLING, SHELL_PILE_FALLING,
+];
+/// `ProjectileID.Sets.FallingBlockDoesNotFallThroughPlatforms`
+/// (`ProjectileID.cs:433`) — `HandleMovement`'s `flag6 = false` set
+/// (`Projectile.cs:17544-17547`): these falling blocks stop ON platforms.
+/// Verbatim order.
+pub const FALLING_BLOCK_NO_PLATFORM_FALL: [u16; 18] = [
+    71, 179, 40, 39, 17, 812, 411, 412, 413, 414, 31, 67, 56, 241, 42, 68, 65, 354,
+];
+/// The aiStyle-10 kinds the W4-d1 falling arm serves (the rowed set minus
+/// the 109 hostile snowball and the 736-738 debris trio, which keep their
+/// own arms). The rowed-but-inert sandgun balls 42/65/68/354 join here —
+/// the S1-D-5 "42-row gap" closes (ANALYSIS W4-d1).
+pub const FALLING_BLOCK_KINDS: [u16; 19] = [
+    DIRT_BALL, SAND_BALL_FALLING, MUD_BALL_FALLING, ASH_BALL_FALLING,
+    EBONSAND_BALL_FALLING, PEARLSAND_BALL_FALLING, SILT_BALL_FALLING,
+    SLUSH_BALL_FALLING, CRIMSAND_BALL_FALLING, SHELL_PILE_FALLING,
+    COPPER_COINS_FALLING, SILVER_COINS_FALLING, GOLD_COINS_FALLING,
+    PLATINUM_COINS_FALLING, MUD_BALL_PLAYER,
+    42, 65, 68, 354,
+];
 /// `ProjectileID.SpiritFlame` (659) — the Spirit Flame's shot (aiStyle 129).
 pub const SPIRIT_FLAME: u16 = 659;
 /// `ProjectileID.SkyFracture` (660) — the Sky Fracture's aiStyle-1 rider.
@@ -3296,6 +3392,22 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // knockBack (8 / 6) is dropped — the spawner's input wins.
             42 => (10.0, 10.0, 10, 1, TIME_LEFT_DEFAULT, 1, true, false, false, RESET_STATE),
             65 | 68 | 354 => (10.0, 10.0, 10, -1, TIME_LEFT_DEFAULT, 1, true, false, false, RESET_STATE),
+            // W4-d1 wave 3 — the falling-block family (`AI_010`). The
+            // DirtBall 17 (`Projectile.cs:985-992`): 10x10, aiStyle 10,
+            // friendly, ignoreWater (the overlay below); the stock
+            // penetrate 1 (`:774`) / 3600 life / tileCollide true stand.
+            DIRT_BALL => (10.0, 10.0, 10, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // The natural falls (`Projectile.cs:1131-1140` 31, `:1217-1226`
+            // 39, `:1227-1236` 40, `:1384-1393` 56): 10x10, aiStyle 10,
+            // friendly + hostile, `penetrate = -1`; the per-type
+            // `knockBack = 6f` is dropped — the spawner's input wins (the
+            // sand-row precedent above; `SpawnFallingBlockProjectile`
+            // passes KnockBack 0, `WorldGen.cs:86071`). The C# friendly +
+            // hostile pair rides the arm's damage gates (the row shape
+            // carries neither flag, ANALYSIS).
+            SAND_BALL_FALLING | MUD_BALL_FALLING | ASH_BALL_FALLING | EBONSAND_BALL_FALLING => {
+                (10.0, 10.0, 10, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
             // S1-P-i17 — the special-arrow rows (the ammo items' own `shoot`
             // ids, `itemdata.rs`). Every row is the C# `SetDefaults` arm
             // verbatim; the stock `timeLeft = 3600` (`:787`) stands wherever
@@ -4374,7 +4486,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d1 — the aiStyle-6 powder/fertilizer family's five arms
             // all set `ignoreWater = true` (`Projectile.cs:906`/`:922`/
             // `:5349`/`:9657`/`:9976`).
-            || POWDER_KINDS.contains(&kind),
+            || POWDER_KINDS.contains(&kind)
+            // W4-d1 — `Projectile.cs:991`: the DirtBall 17's
+            // `ignoreWater = true` (the only falling-family kind that sets
+            // it; the natural falls' arms touch neither).
+            || kind == DIRT_BALL,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).

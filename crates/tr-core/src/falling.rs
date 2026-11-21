@@ -44,8 +44,10 @@ pub fn sandfall_proj_data(tile_kind: u16) -> (u16, i32) {
 
 /// `WorldGen.BlockBelowMakesSandFall` (`WorldGen.cs:86585-86604`): the tile
 /// below is inactive; or the two below are inactive and the below is
-/// non-solid; or the below is tile 165 (the hardened-sand blend).
-fn block_below_makes_sand_fall(world: &World, x: i32, y: i32) -> bool {
+/// non-solid; or the below is tile 165 (the hardened-sand blend). W4-d1:
+/// public — `Kill_ExplodeTiles`'s aiStyle-10 death placement
+/// (`Projectile.cs:77537`) reads it too.
+pub fn block_below_makes_sand_fall(world: &World, x: i32, y: i32) -> bool {
     if y >= world.height - 1 {
         return false;
     }

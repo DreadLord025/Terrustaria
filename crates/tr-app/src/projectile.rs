@@ -13008,58 +13008,11 @@ impl Projectile {
         }
         // `:58038-58072` — the owner's tile walk over the box's tiles: the
         // breakables die, a top slope flattens and lifts the shard 16 px.
-        if self.owner == local_owner && self.tile_collide {
-            let x0 = (self.pos.x / 16.0) as i32;
-            let x1 = ((self.pos.x + self.w) / 16.0) as i32;
-            let y0 = (self.pos.y / 16.0) as i32;
-            let y1 = ((self.pos.y + self.h) / 16.0) as i32;
-            for tx in x0..=x1 {
-                for ty in y0..=y1 {
-                    // `WorldGen.InWorld(i, j)` (`WorldGen.cs:9688`, fluff 0)
-                    // + the null/active guard (`:58044-58052`).
-                    if !world.in_bounds(tx, ty) {
-                        continue;
-                    }
-                    let Some(tile) = world.tile(tx, ty) else {
-                        continue;
-                    };
-                    if !tile.active() {
-                        continue;
-                    }
-                    // `:58053-58060` — the breakable set: the small/large
-                    // piles 185-187, the stalactite 165, the heart 12, the
-                    // life-crystal boulder 665, the mana crystal 639, the
-                    // statues 105, the exposed gems 178 (`TileID.cs:653`/
-                    // `:839`/`:959`/`:985`/`:999-1003`/`:1907`/`:1959`).
-                    let kind = tile.kind;
-                    if (185..=187).contains(&kind)
-                        || kind == 165
-                        || kind == 12
-                        || kind == 665
-                        || kind == 639
-                        || kind == 105
-                        || kind == 178
-                    {
-                        let _ = tr_core::edit::kill_tile(world, tx, ty, false);
-                    } else if tile.top_slope()
-                        && !tr_core::tiledata::SET_PLATFORMS.has(kind)
-                    {
-                        // `:58061-58068` — `WorldGen.SlopeTile(i, j)`
-                        // (`WorldGen.cs:80768-80803`): clear the half brick
-                        // and the slope (the `slope_tile_flatten` shape,
-                        // `tileobject.rs:1264`), then lift the shard one
-                        // tile. The `CanPoundTile` gate (`:80770`) and the
-                        // fail-dust/sound/net tails are unported — the
-                        // flatten is unconditional (ANALYSIS).
-                        if let Some(t) = world.tile_mut(tx, ty) {
-                            t.flags &= !tr_core::tile::FLAG_HALF_BRICK;
-                            t.set_slope(0);
-                        }
-                        self.pos.y -= 16.0;
-                    }
-                }
-            }
-        }
+        // W4-d1: the body is the shared `ai010_owner_tile_walk` helper
+        // (`projectile_ai_falling`) — the falling-block family's second
+        // copy triggered the extraction (the house-style helper rule);
+        // the walk is verbatim the same C# block.
+        crate::projectile_ai_falling::ai010_owner_tile_walk(self, world, local_owner);
         // `:58073-58091` — the per-frame spin and the 10 px/tick fall cap.
         if self.frame == 0 {
             self.rot -= 0.1;
@@ -14804,6 +14757,12 @@ pub struct ProjectilePool {
     /// (`Projectile.cs:71986-71994` → `GiveItemToPlayer`): `(owner, item,
     /// stack)` the world sim resolves into the inventory/drop.
     pending_catches: Vec<(u8, u16, i32)>,
+    /// W4-d1 — the falling-block death placement's item drops
+    /// (`Kill_ExplodeTiles`'s aiStyle-10 arm, `Projectile.cs:77562-77569`'s
+    /// `Item.RequestNewItem`): `(item, x, y)` the world sim drains into
+    /// `spawn_item_drop_px` on the `UpdateItems` stream (the
+    /// `pending_catches` seam — the pool cannot borrow the App's items).
+    pending_block_drops: Vec<(u16, f32, f32)>,
     /// S1-P-i55 — the golf family's per-tick context
     /// (`Main.LocalGolfState` + `Main.MouseWorld` + the mouse-right pair +
     /// the player snapshot the aiStyle-150 arm reads). The world-sim pass
@@ -15204,6 +15163,7 @@ impl ProjectilePool {
             bobber_inputs: None,
             pending_splashes: Vec::new(),
             pending_catches: Vec::new(),
+            pending_block_drops: Vec::new(),
             golf_ctx: None,
             golf_effects: Vec::new(),
         }
@@ -15307,6 +15267,13 @@ impl ProjectilePool {
     /// hands to the owner's inventory (the `QuickSpawnItem` overflow drop).
     pub fn drain_catches(&mut self) -> Vec<(u8, u16, i32)> {
         std::mem::take(&mut self.pending_catches)
+    }
+
+    /// W4-d1 — the falling-block death placement's item-drop drain
+    /// (`Projectile.cs:77562-77569`): `(item, x, y)` the world sim spawns
+    /// through `spawn_item_drop_px` on the `UpdateItems` stream.
+    pub fn drain_block_drops(&mut self) -> Vec<(u16, f32, f32)> {
+        std::mem::take(&mut self.pending_block_drops)
     }
 
     /// S1-P-i35 — `Player.RemoveAllFishingBobbers` (`Player.cs:33576-33585`):
@@ -17277,21 +17244,41 @@ impl ProjectilePool {
                         }
                         // `AI()`'s `else if (this.aiStyle == 10)`
                         // (`Projectile.cs:24367-24370`) -> `AI_010`. The
-                        // SnowBallHostile 109 (S1-D-3q) is the first kind
-                        // with an AI arm here; the falling-tile kinds keep
-                        // their `falling_tile` movement below the dispatch.
-                        // The dungeon-debris trio's tile walk kills
+                        // SnowBallHostile 109 (S1-D-3q) keeps its own arm;
+                        // the dungeon-debris trio's tile walk kills
                         // breakables and flattens slopes, so it reborrows
                         // `world` mutably at its own call site (the
-                        // ai_ice_block carve-out); the other aiStyle-10
-                        // kinds keep the pre-existing no-op (the sand
-                        // family rides the falling-tile tail below; the 42
-                        // row's arm is the documented S1-D-5 gap).
+                        // ai_ice_block carve-out). W4-d1 wave 3: the
+                        // falling-block family (the sandfall kinds + the
+                        // DirtBall 17 + the 1081 + the sandgun balls
+                        // 42/65/68/354 — the S1-D-5 "42-row gap" closes)
+                        // rides `projectile_ai_falling::step`, gated on
+                        // `falling_tile.is_none()` — the `spawn_falling`
+                        // slots keep their frozen custom tail below (the
+                        // recorded carve-out, ANALYSIS W4-d1).
                         10 => {
                             if self.slots[i].kind == SNOW_BALL_HOSTILE {
                                 self.slots[i].ai_snowball_hostile(world);
                             } else if DUNGEON_DEBRIS.contains(&self.slots[i].kind) {
                                 self.slots[i].ai_dungeon_debris(world, rng, local_owner);
+                            } else if FALLING_BLOCK_KINDS.contains(&self.slots[i].kind)
+                                && self.slots[i].falling_tile.is_none()
+                            {
+                                // The channel latch + the mouse WORLD
+                                // point (`Main.mouseX + screenPosition`,
+                                // the `YoyoInputs.aim` snapshot the pass
+                                // builds — `:57956-57989`'s aim-steer).
+                                let channel =
+                                    player.as_deref().is_some_and(|p| p.channel);
+                                let aim = inputs.aim.map(|(x, y)| Vec2::new(x, y));
+                                crate::projectile_ai_falling::step(
+                                    &mut self.slots[i],
+                                    world,
+                                    rng,
+                                    local_owner,
+                                    channel,
+                                    aim,
+                                );
                             }
                         }
                         // W4-d1 — `AI()`'s `else if (this.aiStyle == 6)`
@@ -20203,9 +20190,24 @@ impl ProjectilePool {
                 // `hostile` stays false — an idle minion never hurts
                 // its owner.
                 if self.slots[i].active
-                    && !self.slots[i].friendly
-                    && !DUNGEON_DEBRIS.contains(&self.slots[i].kind)
-                    && self.slots[i].kind != SLIME_MINION
+                    && ((!self.slots[i].friendly
+                        && !DUNGEON_DEBRIS.contains(&self.slots[i].kind)
+                        && self.slots[i].kind != SLIME_MINION
+                        // W4-d1 — the coin piles' stock `hostile = false`
+                        // (`:764`) refuses `Damage_EVP` (`:14775`); the
+                        // arm holds `friendly = false` for the PVE refusal,
+                        // so the proxy must not hurt the player (the
+                        // debris exemption's mirror).
+                        && !COIN_PILE_KINDS.contains(&self.slots[i].kind))
+                        // W4-d1 — the natural falls are friendly + hostile
+                        // in the C# (`:1138` etc.): `Damage_EVP` runs for
+                        // them beside the PVE pass. The `!friendly` proxy
+                        // alone would skip them (the arm holds friendly
+                        // true); the set reads the hostile flag instead.
+                        // The frozen `spawn_falling` slots keep their
+                        // no-player-damage tail (the carve-out).
+                        || (FALLING_HOSTILE_KINDS.contains(&self.slots[i].kind)
+                            && self.slots[i].falling_tile.is_none()))
                 {
                     self.damage_player(i, player.as_deref_mut(), rng);
                 }
@@ -20328,6 +20330,25 @@ impl ProjectilePool {
                 // called from `Kill()` `:77258-77261`): the trio's death
                 // crack roll on the tile below its centre.
                 self.debris_death_crack(i, world, rng, local_owner);
+                // W4-d1 — `Kill()`'s falling-block arm
+                // (`Kill_ExplodeTiles`'s aiStyle-10 block,
+                // `Projectile.cs:77387-77570`, called from `Kill()`
+                // `:77258-77261`): the centre-cell tile place + the
+                // refused-placement item drop. The owner gate is the C#'s
+                // `:77267`; the `falling_tile.is_none()` carve-out keeps
+                // the frozen `spawn_falling` tail's own landing (the
+                // post-loop placement) — no double place (ANALYSIS W4-d1).
+                if FALLING_BLOCK_KINDS.contains(&self.slots[i].kind)
+                    && self.slots[i].falling_tile.is_none()
+                    && self.slots[i].owner == local_owner
+                {
+                    if let Some((item, x, y)) = crate::projectile_ai_falling::death_place(
+                        &self.slots[i],
+                        world,
+                    ) {
+                        self.pending_block_drops.push((item, x, y));
+                    }
+                }
                 // `Kill()`'s floating-turret arms (`Projectile.cs:72068-72093`/
                 // `:72155-72176`, S1-D-4b-3): the turret/crystal sweep their
                 // shots, the shard runs its death burst.
@@ -23024,6 +23045,15 @@ impl ProjectilePool {
             // holds the C# `friendly` state and this gate refuses the hit
             // (the port's PVE walk otherwise hits regardless of `friendly`).
             if DUNGEON_DEBRIS.contains(&p.kind) {
+                continue;
+            }
+            // W4-d1 — the coin piles 411-414 are stock `friendly = false`
+            // (`SetDefaults` `:4933-4941` touches neither flag, `:788`),
+            // so `Damage_PVE_Inner`'s `!friendly` refusal (`:12611`) means
+            // they hit no NPC. The falling arm holds the C# state; the
+            // frozen `spawn_falling` slots keep `friendly = true` (the
+            // 443 gate's flag-reading shape keeps them frozen).
+            if COIN_PILE_KINDS.contains(&p.kind) && !p.friendly {
                 continue;
             }
             // `:12620-12624`: the per-owner gate, bypassed by single-hitters.
@@ -42513,6 +42543,164 @@ mod w4_d1_falling_star_family_tests {
         let mut rng = Script::with_rolls(&[]);
         tick(&mut pool, &mut w, &mut rng);
         assert_eq!(pool.slots()[slot].alpha, 234, "254 − 2·10");
+    }
+}
+
+/// W4-d1 wave 3a — the aiStyle-10 falling-block family's first five rows
+/// (17/31/39/40/56) + the `projectile_ai_falling` arm (`AI_010`,
+/// `Projectile.cs:57826-58100`). Tests-as-code: written, not run (the
+/// task's code-only mode); every expected value is hand-derived from the
+/// cited C# lines.
+#[cfg(test)]
+mod w4_d1_falling_block_tests {
+    use super::*;
+
+    /// The scripted stream (the `DebrisScript` shape): records every
+    /// `(min, max)` draw, replays the roll list, exhausted reads `max - 1`.
+    struct Script {
+        rolls: Vec<i32>,
+        draws: Vec<(i32, i32)>,
+    }
+    impl Script {
+        fn with_rolls(rolls: &[i32]) -> Self {
+            Self { rolls: rolls.to_vec(), draws: Vec::new() }
+        }
+    }
+    impl tr_core::loot::DropRng for Script {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            if self.rolls.is_empty() { max - 1 } else { self.rolls.remove(0) }
+        }
+        fn next_float(&mut self) -> f32 { 0.5 }
+    }
+
+    fn world() -> World { World::new("t".into(), 128, 128) }
+
+    fn tick(pool: &mut ProjectilePool, w: &mut World, rng: &mut dyn tr_core::loot::DropRng) {
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            w, &mut npcs, None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), rng, 0, true,
+        );
+    }
+
+    fn put_solid(w: &mut World, x: i32, y: i32) {
+        use tr_core::tile::{Tile, FLAG_ACTIVE};
+        let i = w.index(x, y);
+        w.tiles[i] = Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    /// The five new rows carry their verbatim `SetDefaults` slices.
+    #[test]
+    fn w4_d1_the_falling_block_rows_match_set_defaults() {
+        // 17 (`:985-992`): 10×10, aiStyle 10, friendly, ignoreWater; the
+        // stock penetrate 1 (`:774`) / 3600 life / tileCollide true stand.
+        let d = proj_data(DIRT_BALL).expect("the 17 row");
+        assert_eq!((d.w, d.h, d.ai_style, d.penetrate), (10.0, 10.0, 10, 1));
+        assert_eq!(d.time_left, TIME_LEFT_DEFAULT);
+        assert_eq!(d.extra_updates, 0);
+        assert!(d.tile_collide);
+        assert!(d.ignore_water, ":991");
+        // 31/39/40/56 (`:1131-1140`/`:1217-1226`/`:1227-1236`/`:1384-1393`):
+        // 10×10, aiStyle 10, friendly + hostile, penetrate −1; the stock
+        // life / extraUpdates 0 / tileCollide true stand; no ignoreWater.
+        for k in [SAND_BALL_FALLING, MUD_BALL_FALLING, ASH_BALL_FALLING, EBONSAND_BALL_FALLING] {
+            let d = proj_data(k).expect("the falling row");
+            assert_eq!((d.w, d.h, d.ai_style, d.penetrate), (10.0, 10.0, 10, -1), "kind {k}");
+            assert_eq!(d.time_left, TIME_LEFT_DEFAULT, "kind {k}");
+            assert_eq!(d.extra_updates, 0, "kind {k}");
+            assert!(d.tile_collide, "kind {k}");
+            assert!(!d.ignore_water, "kind {k}");
+        }
+        // The platform set carries every wave-3a kind (`ProjectileID.cs:433`).
+        for k in [DIRT_BALL, SAND_BALL_FALLING, MUD_BALL_FALLING, ASH_BALL_FALLING, EBONSAND_BALL_FALLING] {
+            assert!(FALLING_BLOCK_NO_PLATFORM_FALL.contains(&k), "kind {k}");
+        }
+    }
+
+    /// The spawn-with-data copies the row (no decline): the 31's 10×10
+    /// box, penetrate −1 and the stock 3600 life land on the slot; the
+    /// data path carries NO `falling_tile` (the frozen-tail carve-out).
+    #[test]
+    fn w4_d1_the_sand_ball_spawn_carries_the_row() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(SAND_BALL_FALLING, 160.0, 100.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .expect("the 31 row spawns");
+        let p = &pool.slots()[slot];
+        assert_eq!((p.w, p.h), (10.0, 10.0));
+        assert_eq!(p.penetrate, -1);
+        assert_eq!(p.time_left, TIME_LEFT_DEFAULT);
+        assert!(p.tile_collide);
+        assert!(p.falling_tile.is_none(), "the data path, not spawn_falling");
+    }
+
+    /// The first-tick latch (`:57953-57995`): the owner's `ai[0] == 0`
+    /// drops tileCollide for the tick and arms `ai[0] = 1` (no channel);
+    /// the fall adds 0.41 (`:58019`), the spin 0.1 (`:58094`), the free
+    /// move integrates. The dust gate is the 31's `Next(2)` (`:57830`).
+    #[test]
+    fn w4_d1_the_sand_ball_first_tick_latches_the_fall() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(SAND_BALL_FALLING, 160.0, 100.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .expect("the 31 row spawns");
+        let mut w = world();
+        let mut rng = Script::with_rolls(&[]);
+        tick(&mut pool, &mut w, &mut rng);
+        let p = &pool.slots()[slot];
+        assert!(p.active);
+        assert_eq!(p.ai[0], 1.0, "the owner latch (:57993)");
+        assert!((p.vel.y - 0.41).abs() < 1e-6, "0 + 0.41 (:58019)");
+        assert!((p.rot - 0.1).abs() < 1e-6, "the spin (:58094)");
+        assert!((p.pos.y - 100.41).abs() < 1e-4, "the first-tick free move");
+        assert!(!p.tile_collide, "the latch dropped it for the tick (:57955)");
+        assert_eq!(rng.draws, vec![(0, 2)], "the 31's dust gate, one draw");
+    }
+
+    /// The DirtBall 17 rides the generic `Next(20)` dust tail (`:57938`)
+    /// — no per-kind branch names it — and keeps the stock penetrate 1.
+    #[test]
+    fn w4_d1_the_dirt_ball_uses_the_generic_dust_gate() {
+        let mut pool = ProjectilePool::new();
+        // ai0 = 1 skips the first-tick latch: a plain fall tick.
+        let slot = pool
+            .spawn_with_data_ai(DIRT_BALL, 160.0, 100.0, 0.0, 0.0, 10, 0.0, 1.0, 0.0)
+            .expect("the 17 row spawns");
+        let mut w = world();
+        let mut rng = Script::with_rolls(&[]);
+        tick(&mut pool, &mut w, &mut rng);
+        let p = &pool.slots()[slot];
+        assert!(p.active);
+        assert_eq!(p.penetrate, 1, "the stock penetrate (:774)");
+        assert!((p.vel.y - 0.41).abs() < 1e-6);
+        assert_eq!(rng.draws, vec![(0, 20)], "the generic dust tail (:57938)");
+    }
+
+    /// The landing: a blocked move kills (`:19849-19853`), the death hook
+    /// places the sand tile at the centre cell (`:77398-77405` → tile 53)
+    /// — the free cell above the ground, no item drop (the placement
+    /// stood). The blocked move draws the tile-cut `Next(3)` (`:17948`).
+    #[test]
+    fn w4_d1_the_sand_ball_lands_and_places_the_tile() {
+        let mut pool = ProjectilePool::new();
+        // The box bottom (374 + 10 = 384) rests on row 24's top; the first
+        // gravity step (0.41 + 0.41 = 0.82) pushes it inside → the Y-block.
+        let slot = pool
+            .spawn_with_data_ai(SAND_BALL_FALLING, 160.0, 374.0, 0.0, 0.41, 10, 0.0, 1.0, 0.0)
+            .expect("the 31 row spawns");
+        let mut w = world();
+        put_solid(&mut w, 10, 24);
+        let mut rng = Script::with_rolls(&[]);
+        tick(&mut pool, &mut w, &mut rng);
+        assert!(!pool.slots()[slot].active, "the blocked-move kill");
+        // The centre (165, 379) → cell (10, 23): the sand placed back.
+        let placed = w.tile(10, 23).unwrap();
+        assert_eq!(placed.kind, 53, "the 31 → tile 53 map (:77400)");
+        assert!(placed.active());
+        assert!(pool.drain_block_drops().is_empty(), "the placement stood, no drop");
+        assert_eq!(rng.draws, vec![(0, 2), (0, 3)], "the dust gate + the cut roll");
     }
 }
 
