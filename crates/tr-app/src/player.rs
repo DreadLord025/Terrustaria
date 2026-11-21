@@ -3890,6 +3890,35 @@ impl Player {
         }
     }
 
+    /// `Player.TogglePet` (`Player.cs:17342-17349`): the misc-equip page's pet
+    /// tick (`Main.cs:41240-41243`) flips `hideMisc[0]`; hiding clears the
+    /// equipped pet's buff (`miscEquips[0].buffType`). The App owns
+    /// `equip.misc_equips`, so the caller supplies the equipped kind.
+    /// W4-g21 batch 2, host 58.
+    pub fn toggle_pet(&mut self, pet_kind: u16) {
+        self.hide_misc[0] = !self.hide_misc[0];
+        if self.hide_misc[0] {
+            let bt = crate::registry::get(pet_kind).map_or(0, |d| d.buff_type);
+            self.buffs.clear_buff(bt); // `:17347`
+        }
+    }
+
+    /// `Player.ToggleLight` (`Player.cs:17351-17363`): the light-pet tick
+    /// (`Main.cs:41244-41247`) flips `hideMisc[1]`; hiding clears the light
+    /// pet's buff, and the Fairy Bell's legacy `buffType == 27` also clears
+    /// the 102/101 fairy buffs (`:17357-17360`). W4-g21 batch 2, host 58.
+    pub fn toggle_light(&mut self, light_kind: u16) {
+        self.hide_misc[1] = !self.hide_misc[1];
+        if self.hide_misc[1] {
+            let bt = crate::registry::get(light_kind).map_or(0, |d| d.buff_type);
+            self.buffs.clear_buff(bt); // `:17356`
+            if bt == 27 {
+                self.buffs.clear_buff(102); // `:17359`
+                self.buffs.clear_buff(101); // `:17360`
+            }
+        }
+    }
+
     /// `GetNurseHealCost`'s slot count (`Main.cs:40058-40065`): a debuff
     /// slot counts when `Main.debuff[b] && buffTime > 60 &&
     /// !NurseCannotRemoveDebuff[b]`.
@@ -13543,6 +13572,34 @@ mod tests {
             "the arm entered"
         );
         assert!(!p.mount.is_active(), "the mount dismounted");
+    }
+
+    /// W4-g21 batch 2 host 58 — `Player.TogglePet`/`ToggleLight`
+    /// (`Player.cs:17342-17363`): the misc-page ticks flip `hideMisc` and clear
+    /// the equipped buff on hide; the Fairy Bell's legacy 27 also clears 102/101.
+    #[test]
+    fn w4_g21_toggle_pet_and_light_flip_hide_and_clear_the_buff() {
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        // Carrot 603 carries buffType 40 (`Item.cs:8411`); Fairy Bell 425
+        // carries buffType 27 (`Item.cs:6342`).
+        p.buffs.add_buff(40, 3600);
+        p.toggle_pet(603);
+        assert!(p.hide_misc[0], "the pet hid");
+        assert_eq!(p.buffs.find_buff_index(40), None, "the pet buff cleared");
+        // Showing again does NOT re-add the buff (the C# only clears on hide).
+        p.toggle_pet(603);
+        assert!(!p.hide_misc[0]);
+        assert_eq!(p.buffs.find_buff_index(40), None);
+        // The light pet: hiding clears 27 and the 102/101 fairy buffs.
+        p.buffs.add_buff(27, 3600);
+        p.buffs.add_buff(102, 3600);
+        p.buffs.add_buff(101, 3600);
+        p.toggle_light(425);
+        assert!(p.hide_misc[1]);
+        assert_eq!(p.buffs.find_buff_index(27), None);
+        assert_eq!(p.buffs.find_buff_index(102), None, "`:17359`");
+        assert_eq!(p.buffs.find_buff_index(101), None, "`:17360`");
     }
 
     /// S1-P-i53 — `TryRemovingBuff_CheckBuffHideMisc` (`Main.cs:43390-43404`):

@@ -749,6 +749,32 @@ pub(crate) struct App {
     /// The debug *window* (the typed always-present overlay, top-left). Its own
     /// toggle (F4) so it can be up while the large `TR_DEBUG` overlay is off.
     pub(crate) debug_overlay: bool,
+    /// `Main.hideUI` (`Main.cs:2085`): the F11 interface-hide toggle
+    /// (`DoUpdate_F11_ToggleUI`, `Main.cs:18402-18424`). While true the
+    /// `DrawInterface_8_CheckF11UIHideToggle` layer (`:46175-46183`) returns
+    /// false, so every later interface layer stands down (W4-g21 batch 2).
+    pub(crate) hide_ui: bool,
+    /// `Main.drawDiag` (`Main.cs:509`): the F7 graphics-diagnostics cycle
+    /// (`DoUpdate_F7_ToggleGraphicsDiagnostics`, `Main.cs:18426-18452`) —
+    /// `(drawDiag + 1) % 3`; >0 forces `showFrameRate` (`:62479-62481`) and
+    /// clears the net-diagnostics flag (`:18440-18443`).
+    pub(crate) draw_diag: i32,
+    /// `Main.shouldDrawNetDiagnosticsUI` (`Main.cs:647`): the F8 net-diagnostics
+    /// toggle (`DoUpdate_F8_ToggleNetDiagnostics`, `Main.cs:18454-18473`);
+    /// turning it on zeroes `drawDiag` (`:18462-18465`).
+    pub(crate) net_diag: bool,
+    /// `Main.showFrameRate` (`Main.cs:991`): the F10 FPS toggle
+    /// (`DoUpdate_F10_ToggleFPS`, `Main.cs:18492-18514`) — `DrawFPS`
+    /// (`Main.cs:21491-21526`) draws the fps/ups line while it holds.
+    pub(crate) show_frame_rate: bool,
+    /// `Main.releaseUI` (`Main.cs:2087`): the F11 press-edge latch.
+    pub(crate) release_ui: bool,
+    /// `Main.drawRelease` (`Main.cs:511`): the F7 press-edge latch.
+    pub(crate) draw_release: bool,
+    /// `Main.netRelease` (`Main.cs:987`): the F8 press-edge latch.
+    pub(crate) net_release: bool,
+    /// `Main.frameRelease` (`Main.cs:989`): the F10 press-edge latch.
+    pub(crate) frame_release: bool,
     pub(crate) keys: HashSet<KeyCode>,
     /// `Main.cUp`..`Main.cMount` (`Main.cs:67163-67176`): the live gameplay
     /// bind table, mirrored from `settings.keybinds` so a rebind in the
@@ -3951,6 +3977,17 @@ impl App {
             zoom_pinned: crate::env::zoom_pinned(),
             debug: crate::env::debug(),
             debug_overlay: false,
+            // W4-g21 batch 2 — the F-key diagnostic toggles' boot state: the
+            // C# statics default false/0 (`Main.cs:509/:647/:991/:2085`), the
+            // release latches false (`:511/:987/:989/:2087`).
+            hide_ui: false,
+            draw_diag: 0,
+            net_diag: false,
+            show_frame_rate: false,
+            release_ui: false,
+            draw_release: false,
+            net_release: false,
+            frame_release: false,
             keys: HashSet::new(),
             keybinds: crate::input_map::default_binds(),
             map_binds: crate::input_map::default_map_binds(),

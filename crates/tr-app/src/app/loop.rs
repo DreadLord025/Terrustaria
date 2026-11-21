@@ -199,9 +199,14 @@ impl ApplicationHandler for App {
                             front.key(self, &event);
                             return;
                         }
+                        self.diag_key(code, true);
                         self.world_key(code);
                     } else {
                         self.keys.remove(&code);
+                        // The F-key diagnostic toggles' release latches
+                        // (`DoUpdate_F7/F8/F10/F11`, `Main.cs:18402-18514`):
+                        // the else-arm re-arms the release flag on key-up.
+                        self.diag_key(code, false);
                         // The smart-cursor hold mode (`Player.cs:28835-28839`):
                         // releasing the key turns the wanted state off when the
                         // toggle mode (`Main.cSmartCursorModeIsToggleAndNotHold`,
@@ -711,6 +716,91 @@ impl App {
         false
     }
 
+    /// The F-key diagnostic toggles (`Main.DoUpdate_F10_ToggleFPS` /
+    /// `DoUpdate_F8_ToggleNetDiagnostics` / `DoUpdate_F7_ToggleGraphicsDiagnostics`
+    /// / `DoUpdate_F11_ToggleUI`, `Main.cs:18402-18514`, called in that order
+    /// from `DoUpdate` `:17152-17156`). Each is a release-latch machine: the
+    /// toggle fires once per press while the latch holds, then the latch
+    /// clears; the else-arm (key up, or the chat/sign/chest-edit gate shut)
+    /// re-arms it. `pressed` is the key state — the port feeds the winit
+    /// press/release edges (the vanilla polls `keyState` every update).
+    /// W4-g21 batch 2: sites 19/20/21/23 (`:18416/:18432/:18460/:18498`) —
+    /// every toggle plays `SoundEngine.PlaySound(12)` (the int façade draws
+    /// NO gameplay RNG, `SoundEngine.cs:102-108`).
+    pub(crate) fn diag_key(&mut self, code: KeyCode, pressed: bool) {
+        // `!drawingPlayerChat && !editSign && !editChest` (`:18428/:18456/:18494`):
+        // the sign editor has no port state (host 52 stays deferred), the
+        // chest editor is the rename keyboard session (`chest_editing`).
+        let gated = !self.chat.open && !self.chest_editing();
+        match code {
+            // `DoUpdate_F11_ToggleUI` (`:18402-18424`) — NO chat/edit gate.
+            KeyCode::F11 => {
+                if pressed {
+                    if self.release_ui {
+                        self.hide_ui = !self.hide_ui; // `:18408-18415`
+                        // `:18416` — the cue plays AFTER the flip.
+                        self.audio.play("Menu_Tick");
+                    }
+                    self.release_ui = false; // `:18418`
+                } else {
+                    self.release_ui = true; // `:18422`
+                }
+            }
+            // `DoUpdate_F7_ToggleGraphicsDiagnostics` (`:18426-18452`).
+            KeyCode::F7 => {
+                if pressed && gated {
+                    if self.draw_release {
+                        self.audio.play("Menu_Tick"); // `:18432` — BEFORE the state
+                        let alt = self.keys.contains(&KeyCode::AltLeft)
+                            || self.keys.contains(&KeyCode::AltRight);
+                        if alt {
+                            // `:18435` — `TimeLogger.ToggleLogging()`: the
+                            // TimeLogger is unported (the render-target family
+                            // deviation); the cue plays, the logging toggle
+                            // is a no-op (ANALYSIS, W4-g21 batch 2).
+                        } else {
+                            self.draw_diag = (self.draw_diag + 1) % 3; // `:18439`
+                            if self.draw_diag > 0 {
+                                self.net_diag = false; // `:18440-18443`
+                            }
+                        }
+                    }
+                    self.draw_release = false; // `:18446`
+                } else {
+                    self.draw_release = true; // `:18450`
+                }
+            }
+            // `DoUpdate_F8_ToggleNetDiagnostics` (`:18454-18473`).
+            KeyCode::F8 => {
+                if pressed && gated {
+                    if self.net_release {
+                        self.audio.play("Menu_Tick"); // `:18460`
+                        self.net_diag = !self.net_diag; // `:18461`
+                        if self.net_diag {
+                            self.draw_diag = 0; // `:18462-18465`
+                        }
+                    }
+                    self.net_release = false; // `:18467`
+                } else {
+                    self.net_release = true; // `:18471`
+                }
+            }
+            // `DoUpdate_F10_ToggleFPS` (`:18492-18514`).
+            KeyCode::F10 => {
+                if pressed && gated {
+                    if self.frame_release {
+                        self.audio.play("Menu_Tick"); // `:18498`
+                        self.show_frame_rate = !self.show_frame_rate; // `:18499-18506`
+                    }
+                    self.frame_release = false; // `:18508`
+                } else {
+                    self.frame_release = true; // `:18512`
+                }
+            }
+            _ => {}
+        }
+    }
+
     pub(crate) fn world_key(&mut self, code: KeyCode) {
         match code {
             KeyCode::Escape => {
@@ -1047,6 +1137,104 @@ mod tests {
         app.world_key(KeyCode::F2);
         assert_eq!(app.light_mode, mode_before.next(), "the mode cycled");
         assert_eq!(app.audio.played_count(), before + 1, "one Menu_Tick cue");
+    }
+
+    // ------------------------------------------------------------------
+    // W4-g21 batch 2 — the F-key diagnostic toggles (sites 19/20/21/23).
+    // ------------------------------------------------------------------
+
+    /// `DoUpdate_F11_ToggleUI` (`Main.cs:18402-18424`): the release latch
+    /// fires the flip + sound 12 once per press; the key-up re-arms it.
+    #[test]
+    fn w4_g21_f11_toggles_hide_ui_once_per_press() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.release_ui = true; // the boot latch is armed by the first key-up
+        let before = app.audio.played_count();
+        app.diag_key(KeyCode::F11, true);
+        assert!(app.hide_ui, "the first press hides the UI");
+        assert_eq!(app.audio.played_count(), before + 1, "`PlaySound(12)`");
+        // A held repeat cannot re-fire (the latch cleared).
+        app.diag_key(KeyCode::F11, true);
+        assert!(app.hide_ui);
+        assert_eq!(app.audio.played_count(), before + 1, "no second cue");
+        // Key-up re-arms; the next press shows the UI again.
+        app.diag_key(KeyCode::F11, false);
+        app.diag_key(KeyCode::F11, true);
+        assert!(!app.hide_ui);
+        assert_eq!(app.audio.played_count(), before + 2);
+    }
+
+    /// `DoUpdate_F7_ToggleGraphicsDiagnostics` (`Main.cs:18426-18452`): the
+    /// `(drawDiag + 1) % 3` cycle plays sound 12 first; `drawDiag > 0` clears
+    /// the net-diagnostics flag.
+    #[test]
+    fn w4_g21_f7_cycles_draw_diag_and_clears_net_diag() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.draw_release = true;
+        app.net_diag = true;
+        let before = app.audio.played_count();
+        app.diag_key(KeyCode::F7, true);
+        assert_eq!(app.draw_diag, 1);
+        assert!(!app.net_diag, "`:18440-18443` clears the net flag");
+        assert_eq!(app.audio.played_count(), before + 1);
+        app.diag_key(KeyCode::F7, false);
+        app.diag_key(KeyCode::F7, true);
+        assert_eq!(app.draw_diag, 2);
+        app.diag_key(KeyCode::F7, false);
+        app.diag_key(KeyCode::F7, true);
+        assert_eq!(app.draw_diag, 0, "the cycle wraps at 3");
+    }
+
+    /// `DoUpdate_F8_ToggleNetDiagnostics` (`Main.cs:18454-18473`): turning the
+    /// net flag on zeroes `drawDiag`; the cue plays before the flip.
+    #[test]
+    fn w4_g21_f8_toggles_net_diag_and_zeroes_draw_diag() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.net_release = true;
+        app.draw_diag = 2;
+        let before = app.audio.played_count();
+        app.diag_key(KeyCode::F8, true);
+        assert!(app.net_diag);
+        assert_eq!(app.draw_diag, 0, "`:18462-18465`");
+        assert_eq!(app.audio.played_count(), before + 1);
+    }
+
+    /// `DoUpdate_F10_ToggleFPS` (`Main.cs:18492-18514`): the FPS flag flips
+    /// with sound 12.
+    #[test]
+    fn w4_g21_f10_toggles_show_frame_rate() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.frame_release = true;
+        let before = app.audio.played_count();
+        app.diag_key(KeyCode::F10, true);
+        assert!(app.show_frame_rate);
+        assert_eq!(app.audio.played_count(), before + 1);
+        app.diag_key(KeyCode::F10, false);
+        app.diag_key(KeyCode::F10, true);
+        assert!(!app.show_frame_rate);
+    }
+
+    /// The chat/edit gate (`:18428/:18456/:18494`): while the chat is open the
+    /// F7/F8/F10 toggles stand down (and re-arm their latches); F11 has no gate.
+    #[test]
+    fn w4_g21_the_chat_gate_shuts_f7_f8_f10_but_not_f11() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.chat.open = true;
+        app.draw_release = true;
+        app.net_release = true;
+        app.frame_release = true;
+        app.release_ui = true;
+        let before = app.audio.played_count();
+        app.diag_key(KeyCode::F7, true);
+        app.diag_key(KeyCode::F8, true);
+        app.diag_key(KeyCode::F10, true);
+        assert_eq!(app.draw_diag, 0);
+        assert!(!app.net_diag);
+        assert!(!app.show_frame_rate);
+        assert_eq!(app.audio.played_count(), before, "the gated toggles play nothing");
+        app.diag_key(KeyCode::F11, true);
+        assert!(app.hide_ui, "F11 has no chat gate");
+        assert_eq!(app.audio.played_count(), before + 1);
     }
 }
 

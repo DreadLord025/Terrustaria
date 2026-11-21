@@ -163,6 +163,10 @@ pub enum HoverRef {
     /// The accessory "hide the visuals" tick next to `Player.armor[i]`
     /// (`Main.cs:41426-41445`). Carries the armour index, `3..=9`.
     HideAccessory(usize),
+    /// The misc-equip page's pet/light tick (`Main.cs:41226-41256`), rows 0/1.
+    HideMisc(usize),
+    /// The misc-equip page's super-cart tick (`Main.cs:41258-41283`), row 2.
+    SuperCart,
     /// `Player.miscDyes[0..4]`.
     MiscDye(usize),
     /// `Player.trashItem`.
@@ -340,6 +344,49 @@ pub fn accessory_tick_click(
         .map(|(i, _)| i)
 }
 
+/// `Main.cs:41226`: the misc tick box sits at `(r.Left + 34, r.Top - 2)` in
+/// the slot's NATIVE tick size (`Rectangle.Contains` — half-open edges).
+pub fn misc_tick_pos(screen_w: f32, base_y: f32, m: usize) -> Vec2 {
+    let x = screen_w - 92.0; // `Main.cs:41177`
+    Vec2::new(x + 34.0, misc_row_y(base_y, m) - 2.0)
+}
+
+/// `Main.cs:41265-41266`: the super-cart tick box recentres on the pet tick's
+/// box — `r2 = (X + W/2, Y + H/2, W, H)` then `Offset(-W/2, -H/2)`. The two
+/// integer half-width offsets cancel exactly, so the box lands on the same
+/// `(r.Left + 34, r.Top - 2)` anchor as the pet/light ticks (row 2).
+pub fn super_cart_tick_pos(screen_w: f32, base_y: f32, _tick: (f32, f32)) -> Vec2 {
+    misc_tick_pos(screen_w, base_y, 2)
+}
+
+/// The misc-page tick hit (`Main.cs:41228-41283`), in the C#'s order: the
+/// pet/light tick first (rows 0/1, `num25 != -1`), then the super-cart tick
+/// (row 2, `flag2 = unlockedSuperCart`). Returns `(row, super_cart)`.
+/// `mouse_air` gates both (`Main.mouseItem.IsAir`, `:41228/:41258`).
+pub fn misc_tick_click(
+    screen_w: f32,
+    base_y: f32,
+    mouse: Vec2,
+    tick: (f32, f32),
+    mouse_air: bool,
+    unlocked_super_cart: bool,
+) -> Option<(usize, bool)> {
+    if !mouse_air {
+        return None;
+    }
+    for m in 0..2usize {
+        if in_tick(mouse, tick_rect(misc_tick_pos(screen_w, base_y, m), tick)) {
+            return Some((m, false));
+        }
+    }
+    if unlocked_super_cart
+        && in_tick(mouse, tick_rect(super_cart_tick_pos(screen_w, base_y, tick), tick))
+    {
+        return Some((2, true));
+    }
+    None
+}
+
 /// `Main.cs:41446`: `mouseX >= x && mouseX <= x + W*scale && mouseY >= y &&
 /// mouseY <= y + H*scale`, with `cell = W = H`. Inclusive on the right/bottom
 /// edges too — unlike `ui::in_rect`'s `Rectangle.Contains` (exclusive
@@ -500,6 +547,12 @@ pub fn draw(
     // `Main.mouseItem.IsAir`: every tick draw and hit is gated on it
     // (`Main.cs:41430`, `:41453`).
     mouse_air: bool,
+    // `Player.hideMisc` + `Player.unlockedSuperCart`/`enabledSuperCart` — the
+    // misc-page pet/light/super-cart ticks (`Main.cs:41226-41283`, W4-g21
+    // batch 2 hosts 58/59).
+    hide_misc: &[bool; 2],
+    unlocked_super_cart: bool,
+    enabled_super_cart: bool,
 ) -> InventoryHit {
     // `Main.DrawInventory`'s button pair (`Main.cs:41012-41013`):
     // `DrawBestiaryIcon` rides beside `DrawEmoteBubblesButton`. The bestiary
@@ -665,6 +718,48 @@ pub fn draw(
                     );
                     if hit.hovered.is_none() && hit_test(mouse, x, y, INVENTORY_SCALE, cell) {
                         hit.hovered = Some(HoverRef::MiscDye(m));
+                    }
+                }
+            }
+        }
+        // `Main.cs:41225-41298`: the misc-page ticks — pet/light rows 0/1
+        // (`InventoryTickOn/Off`, `:41230-41233`) and the super-cart row 2
+        // (`Extra[255]/[256]`, `:41260-41264`), drawn at `Color.White * 0.7f`
+        // (`:41293`) while the cursor holds nothing. The tick box wins the
+        // hover over the slot under it (`flag3`, `:41284`).
+        if mouse_air {
+            let tick = lookups
+                .ui_tick_on
+                .as_ref()
+                .map(|s| (s.width as f32, s.height as f32))
+                .unwrap_or((16.0, 16.0));
+            for m in 0..2usize {
+                let pos = misc_tick_pos(screen.x, base_y, m);
+                let sheet = if hide_misc[m] {
+                    lookups.ui_tick_off.as_ref()
+                } else {
+                    lookups.ui_tick_on.as_ref()
+                };
+                if let Some(rect) = sheet {
+                    let (uv, tw, th) = super::chrome::sheet_frame(rect, lookups.atlas_size);
+                    r.push_ui_sprite([pos.x, pos.y], [tw, th], uv, [1.0, 1.0, 1.0, 0.7]);
+                    if hit.hovered.is_none() && in_tick(mouse, tick_rect(pos, (tw, th))) {
+                        hit.hovered = Some(HoverRef::HideMisc(m));
+                    }
+                }
+            }
+            if unlocked_super_cart {
+                let pos = super_cart_tick_pos(screen.x, base_y, tick);
+                let sheet = if enabled_super_cart {
+                    lookups.extra_255.as_ref()
+                } else {
+                    lookups.extra_256.as_ref()
+                };
+                if let Some(rect) = sheet {
+                    let (uv, tw, th) = super::chrome::sheet_frame(rect, lookups.atlas_size);
+                    r.push_ui_sprite([pos.x, pos.y], [tw, th], uv, [1.0, 1.0, 1.0, 0.7]);
+                    if hit.hovered.is_none() && in_tick(mouse, tick_rect(pos, (tw, th))) {
+                        hit.hovered = Some(HoverRef::SuperCart);
                     }
                 }
             }

@@ -811,6 +811,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_282",
         "Extra_299",
         "Extra_305",
+        // `TextureAssets.Extra[255]/[256]` — the super-cart on/off ticks
+        // (`Main.cs:41260-41264`, W4-g21 batch 2 host 59).
+        "Extra_255",
+        "Extra_256",
         "UI/Cursor_0",
         "UI/Cursor_1",
         "Mana",
@@ -1978,6 +1982,10 @@ pub struct Lookups {
     pub extra_282: Option<tr_render::SheetRect>,
     pub extra_299: Option<tr_render::SheetRect>,
     pub extra_305: Option<tr_render::SheetRect>,
+    /// `Extra_255`/`Extra_256`: the super-cart on/off ticks
+    /// (`Main.cs:41260-41264`, W4-g21 batch 2 host 59).
+    pub extra_255: Option<tr_render::SheetRect>,
+    pub extra_256: Option<tr_render::SheetRect>,
     /// `TextureAssets.Extra[49]`: the `ScreenObstruction` border
     /// (`ScreenObstruction.cs:53`).
     pub extra_49: Option<tr_render::SheetRect>,
@@ -2401,6 +2409,8 @@ impl Lookups {
             extra_282: atlas.sheet("Extra_282").copied(),
             extra_299: atlas.sheet("Extra_299").copied(),
             extra_305: atlas.sheet("Extra_305").copied(),
+            extra_255: atlas.sheet("Extra_255").copied(),
+            extra_256: atlas.sheet("Extra_256").copied(),
             extra_49: atlas.sheet("Extra_49").copied(),
             extra_98: atlas.sheet("Extra_98").copied(),
             flame_ring: atlas.sheet("FlameRing").copied(),

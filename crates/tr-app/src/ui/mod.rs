@@ -694,6 +694,11 @@ pub fn draw_hud(
     // `Player.hideVisibleAccessory` — the accessory visible/hidden ticks beside
     // the accessory column (`Main.cs:41425-41460`).
     hide_visible_accessory: &[bool; 10],
+    // `Player.hideMisc` + the super-cart flags — the misc-page ticks
+    // (`Main.cs:41226-41283`, W4-g21 batch 2 hosts 58/59).
+    hide_misc: &[bool; 2],
+    unlocked_super_cart: bool,
+    enabled_super_cart: bool,
     // The buff bar (`Main.DrawInterface_Resources_Buffs`, `Main.cs:43203`):
     // the per-slot alpha (`Main.buffAlpha`), the cancel gate
     // (`Main.mouseRight && Main.mouseRightRelease`, `:43333`) and the
@@ -867,6 +872,10 @@ pub fn draw_hud(
             // accessory visible/hidden ticks (`Main.cs:41425-41460`).
             hide_visible_accessory,
             mouse_item_is_air,
+            // The misc-page pet/light/super-cart ticks (`Main.cs:41226-41283`).
+            hide_misc,
+            unlocked_super_cart,
+            enabled_super_cart,
         );
         open_hover = hit.hovered;
         open_housing = hit.housing;
@@ -1168,6 +1177,19 @@ pub fn draw_hud(
                 tooltip::draw_mouse_text(r, lookups, mouse_pos, &label, screen, pulse);
                 None
             }
+            // `Main.cs:41294-41298`: the misc tick's mouse text is
+            // `Lang.inter[58 + num26]` — `num26 = hideMisc ? 2 : 1` for the
+            // pet/light rows, `enabledSuperCart ? 2 : 1` for the cart.
+            Some(inventory::HoverRef::HideMisc(m)) => {
+                let label = crate::lang::inter(if hide_misc[m] { 60 } else { 59 });
+                tooltip::draw_mouse_text(r, lookups, mouse_pos, &label, screen, pulse);
+                None
+            }
+            Some(inventory::HoverRef::SuperCart) => {
+                let label = crate::lang::inter(if enabled_super_cart { 60 } else { 59 });
+                tooltip::draw_mouse_text(r, lookups, mouse_pos, &label, screen, pulse);
+                None
+            }
             other => other.and_then(|h| hover_item_for(equip, inventory, h, bank.map(|b| b.0))),
         }
     } else {
@@ -1223,6 +1245,9 @@ fn hover_item_for<'a>(
         // `Main.cs:41462-41465`: the tick replaces the slot's tooltip with
         // `Lang.inter[59]` / `[60]` ("Visible" / "Hidden"), so no item text.
         H::HideAccessory(_) => None,
+        // The misc-page ticks replace the tooltip too (`Main.cs:41294-41298`,
+        // `Lang.inter[58 + num26]`).
+        H::HideMisc(_) | H::SuperCart => None,
         H::Coin(i) => equip.coins.get(i),
         H::Ammo(i) => equip.ammo.get(i),
         H::Armor(i) => equip.armor.get(i),

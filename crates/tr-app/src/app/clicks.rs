@@ -1817,6 +1817,42 @@ impl App {
             }
             return;
         }
+        // The misc-page ticks (`Main.cs:41226-41283`, W4-g21 batch 2 hosts
+        // 58/59): the pet/light tick (rows 0/1) and the super-cart tick (row 2)
+        // are checked before the misc slot grid — the C# tick box sits over the
+        // slot's right edge (`flag3`, `:41284`), gated on `mouseItem.IsAir`.
+        if left && self.inventory_open && self.equip_page == ui::inventory::EQUIP_PAGE_MISC {
+            let (sw, sh) = self.screen_size();
+            let base_y = ui::inventory::equip_page_base_y(sh, self.main_m_h());
+            let tick = self
+                .lookups
+                .ui_tick_on
+                .as_ref()
+                .map(|s| (s.width as f32, s.height as f32))
+                .unwrap_or((16.0, 16.0));
+            let air = self.mouse_item.kind == 0 || self.mouse_item.count == 0;
+            let unlocked = self.player.as_ref().is_some_and(|p| p.unlocked_super_cart);
+            if let Some((m, super_cart)) = ui::inventory::misc_tick_click(
+                sw, base_y, self.mouse_pos, tick, air, unlocked,
+            ) {
+                if let Some(p) = self.player.as_mut() {
+                    if super_cart {
+                        // `Main.cs:41273`: `enabledSuperCart = !enabledSuperCart`.
+                        p.enabled_super_cart = !p.enabled_super_cart;
+                    } else if m == 0 {
+                        p.toggle_pet(self.equip.misc_equips[0].kind); // `:41242`
+                    } else {
+                        p.toggle_light(self.equip.misc_equips[1].kind); // `:41246`
+                    }
+                }
+                // `SoundEngine.PlaySound(12)` (`Main.cs:41249/:41275`).
+                self.audio.play("Menu_Tick");
+                // `SendData(4)` in MP (`:41250-41253/:41276-41279`) — the
+                // player-info packet carries no hideMisc/superCart field in
+                // the port's `net.rs`, so the flip stays local (ANALYSIS).
+                return;
+            }
+        }
         // The equipment columns (`Main.cs:41288,41450,41491,41519`): armour,
         // vanity, dye and — on the misc page — the misc-equip/misc-dye pair.
         // `ItemSlot.Handle` runs for every cell `DrawInventory` draws, so the
@@ -4709,6 +4745,50 @@ mod tests {
                 "page {page} must not toggle the tick"
             );
         }
+    }
+
+    /// W4-g21 batch 2 hosts 58/59 — the misc-page pet/light/super-cart ticks
+    /// (`Main.cs:41226-41283`): a press flips the flag, cues `PlaySound(12)`
+    /// and is consumed before the misc slot grid; a held stack keeps them inert.
+    #[test]
+    fn w4_g21_the_misc_ticks_toggle_pet_light_and_super_cart() {
+        let mut app = inv_app();
+        app.equip_page = ui::inventory::EQUIP_PAGE_MISC;
+        let (sw, sh) = app.screen_size();
+        let base_y = ui::inventory::equip_page_base_y(sh, app.main_m_h());
+        let tick = (16.0, 16.0);
+        // The pet tick (row 0).
+        let pet = ui::inventory::misc_tick_pos(sw, base_y, 0);
+        app.mouse_pos = Vec2::new(pet.x + 2.0, pet.y + 2.0);
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(app.player.as_ref().unwrap().hide_misc[0], "the pet hid");
+        assert_eq!(app.audio.played_count(), before + 1, "`PlaySound(12)` (`:41249`)");
+        // The light tick (row 1).
+        let light = ui::inventory::misc_tick_pos(sw, base_y, 1);
+        app.mouse_pos = Vec2::new(light.x + 2.0, light.y + 2.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(app.player.as_ref().unwrap().hide_misc[1]);
+        // The super-cart tick (row 2) needs `unlockedSuperCart`.
+        app.player.as_mut().unwrap().unlocked_super_cart = true;
+        let cart = ui::inventory::super_cart_tick_pos(sw, base_y, tick);
+        app.mouse_pos = Vec2::new(cart.x + 2.0, cart.y + 2.0);
+        let enabled_before = app.player.as_ref().unwrap().enabled_super_cart;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(
+            app.player.as_ref().unwrap().enabled_super_cart,
+            !enabled_before,
+            "the cart flipped (`:41273`)"
+        );
+        // A held stack keeps every tick inert (`Main.mouseItem.IsAir`, `:41228`).
+        app.mouse_item = slot(3, 5);
+        app.mouse_pos = Vec2::new(pet.x + 2.0, pet.y + 2.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(app.player.as_ref().unwrap().hide_misc[0], "no flip while holding");
     }
 
     /// `Main.cs:42828-42858` + `:42864-42867`: a press on a page tab sets

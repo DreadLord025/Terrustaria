@@ -171,6 +171,10 @@ impl App {
                 .as_ref()
                 .map(|p| p.hide_visible_accessory)
                 .unwrap_or([false; 10]);
+            // The misc-page tick inputs (`Main.cs:41226-41283`, W4-g21 batch 2).
+            let hide_misc = self.player.as_ref().map(|p| p.hide_misc).unwrap_or([false; 2]);
+            let unlocked_super_cart = self.player.as_ref().is_some_and(|p| p.unlocked_super_cart);
+            let enabled_super_cart = self.player.as_ref().is_some_and(|p| p.enabled_super_cart);
             // `Main.ActivePlayerFileData.Player.difficulty` for the world-select
             // grey-out (`UIWorldSelect.cs:179`) — snapshotted before the disjoint
             // borrow below (it reads `self.session_draft`).
@@ -1416,6 +1420,10 @@ impl App {
                     // returns early after `DrawMap`, before `DrawInterface` (`62432`), so
                     // the HUD (hotbar, life, inventory) is not drawn over the map.
                     let fullscreen_map = settings.map_enabled && map.as_ref().is_some_and(|m| m.open);
+                    // `DrawInterface_16_MapOrMinimap` (`Main.cs:44794-44798`) sits
+                    // AFTER the F11 hide toggle in the layer list, so `hideUI`
+                    // stands the minimap down too (W4-g21 batch 2).
+                    let hide_ui = self.hide_ui;
                     // The minimap branch draws **before** the HUD: the vanilla
                     // interface passes are ordered 16 (map/minimap,
                     // `Main.cs:44796`) < 25/27/30 (resources/inventory/hotbar,
@@ -1442,6 +1450,7 @@ impl App {
                         && front.is_none()
                         && !crate::env::no_hud()
                         && !fullscreen_map
+                        && !hide_ui
                         // `Main.inFancyUI` (`IngameFancyUI.cs:64-72`): the
                         // bestiary state covers the interface — the minimap HUD
                         // does not draw under it.
@@ -1561,7 +1570,14 @@ impl App {
                                 hint,
                             );
                         }
-                    } else if menu.is_none() && !crate::env::no_hud() && !fullscreen_map {
+                    } else if menu.is_none() && !crate::env::no_hud() && !fullscreen_map
+                        // `DrawInterface_8_CheckF11UIHideToggle` (`Main.cs:46175-46183`):
+                        // `Main.hideUI` returns false, so every interface layer
+                        // after the toggle stands down (W4-g21 batch 2). The
+                        // pre-toggle layers (emote bubbles 1.1, entity markers)
+                        // are fused into this call — the recorded deviation.
+                        && !self.hide_ui
+                    {
                         let craft_available = if self.crafting_open {
                             // `Recipe.UpdateRecipeList` (`Recipe.cs:230-259`): the
                             // owned counts fold the inventory and the in-range
@@ -1762,6 +1778,10 @@ impl App {
                             // accessory visible/hidden ticks in `DrawInventory`
                             // (`Main.cs:41425-41460`).
                             &hide_visible_accessory,
+                            // The misc-page ticks (`Main.cs:41226-41283`).
+                            &hide_misc,
+                            unlocked_super_cart,
+                            enabled_super_cart,
                             // The buff bar (`Main.DrawInterface_Resources_Buffs`).
                             &mut self.buff_alpha,
                             &mut self.buff_removals,
@@ -1986,6 +2006,35 @@ impl App {
                             // (`:44831/:44841/:44861`), so the hearts and the
                             // inventory paint over the frame.
                         }
+                    }
+
+                    // `Main.DrawFPS` (`Main.cs:21491-21526`, called at `:62407`):
+                    // the fps/ups line at `(4, screenHeight - 24)` while
+                    // `showFrameRate` holds. `DoUpdate_F7`'s `drawDiag > 0` forces
+                    // `showFrameRate = true` (`:62479-62481`); the DetailedFPS
+                    // graph / TimeLogger draws (`:62485/:62494`) are unported
+                    // (W4-g21 batch 2). The port's fps rides `frame_history`.
+                    let show_fps = self.show_frame_rate || self.draw_diag > 0;
+                    if show_fps && !crate::env::no_hud() {
+                        let avg = if frame_history.is_empty() {
+                            0.0
+                        } else {
+                            frame_history.iter().sum::<f32>() / frame_history.len() as f32
+                        };
+                        let fps = if avg > 0.0 { 1000.0 / avg } else { 0.0 };
+                        // `Main.frameRate + "fps " + Main.updateRate + "ups"`
+                        // (`:21495`) — the port's update rate is the 60 Hz step.
+                        let text = format!("{fps:.0}fps 60ups");
+                        let c = self.mouse_text_color as f32 / 255.0;
+                        hud_text(
+                            renderer,
+                            lookups,
+                            4.0,
+                            screen.y - 24.0,
+                            1.0,
+                            [c, c, c, c],
+                            &text,
+                        );
                     }
 
                     if *debug {
