@@ -276,6 +276,14 @@ pub struct ShopEntry {
     /// it on the Tavernkeep's rows (`Chest.cs:2972-3149`); it wins over the
     /// instance value in `Item.GetStoreValue` (`Item.cs:49901-49908`).
     pub shop_custom_price: Option<i32>,
+    /// `Item.shopSpecialCurrency` (`CustomCurrencyID.cs:5-11`) — -1 = the
+    /// plain coin purse; the Tavernkeep's rows stamp the Defender Medals
+    /// currency (`Chest.cs:2987`+, registered as currency 0 over the item
+    /// 3817, `CustomCurrencyManager.cs:17`). A non-(-1) row prices RAW —
+    /// `GetItemExpectedPrice`'s early return
+    /// (`Player.cs:35361-35365` → `CustomCurrencySystem.cs:265-270`):
+    /// no discount, no mood, no buyOnce divide.
+    pub shop_special_currency: i32,
     /// `Item.buyOnce` — the vanilla stamps it on rows the player sold into
     /// the shop (`Chest.AddItemToShop`, `Chest.cs:701`); a buyOnce row buys
     /// at the store value ÷ the adjustment ÷ 5 (`Player.cs:35381-35395`).
@@ -2097,6 +2105,7 @@ fn row(item: u16, when: StockWhen) -> ShopEntry {
         item,
         when,
         shop_custom_price: None,
+        shop_special_currency: -1, // `Item.cs:289`'s field default
         buy_once: false,
         is_a_shop_item: false,
         prefix: 0,
@@ -2319,12 +2328,11 @@ pub fn get_store_value(instance_value: i32, shop_custom_price: Option<i32>) -> i
 
 /// `Player.GetItemExpectedPrice` (`Player.cs:35359-35396`) — the
 /// `(calc_for_selling, calc_for_buying)` pair. The `shopSpecialCurrency
-/// != -1` early return (`:35361-35365`, the Tavernkeep's defender-medal
-/// rows) needs the `CustomCurrencyManager` — not ported (no custom
-/// currencies), so those rows must not reach this helper yet. The
-/// arithmetic rides the C#'s f32 casts: the discount multiply truncates
-/// (the `(int)` cast — no rounding), the adjustment multiply/divide round
-/// as `Math.Round` does (the banker's rounding).
+/// != -1` early return (`:35361-35365`) lives in [`row_prices`] (the
+/// entry carries the currency id; this helper prices the plain-currency
+/// half). The arithmetic rides the C#'s f32 casts: the discount multiply
+/// truncates (the `(int)` cast — no rounding), the adjustment
+/// multiply/divide round as `Math.Round` does (the banker's rounding).
 pub fn get_item_expected_price(
     store_value: i32,
     buy_once: bool,
@@ -2363,9 +2371,15 @@ pub fn get_item_expected_price(
 /// The stock row's `(selling, buying)` pair: the row prices its store
 /// value — `GetStoreValue` over the `shopCustomPrice` override and the
 /// kind default (`SetupShop` rows are fresh `SetDefaults` instances,
-/// prefix 0).
+/// prefix 0). A special-currency row (the Tavernkeep's medals) takes the
+/// `:35361-35365` early return: `CustomCurrencySystem.GetItemExpectedPrice`
+/// (`CustomCurrencySystem.cs:265-270`) stamps BOTH halves with the raw
+/// store value — no discount, no mood, no buyOnce divide.
 fn row_prices(entry: &ShopEntry, discount_available: bool, price_adjustment: f32) -> (i64, i64) {
     let store = get_store_value(ITEMS[entry.item as usize].value, entry.shop_custom_price);
+    if entry.shop_special_currency != crate::custom_currency::CURRENCY_NONE {
+        return (store as i64, store as i64);
+    }
     get_item_expected_price(
         store,
         entry.buy_once,
@@ -2646,6 +2660,7 @@ pub fn add_item_to_shop(
         item: item.kind,
         when: StockWhen::Always,
         shop_custom_price: None,
+        shop_special_currency: -1,
         buy_once: true,
         is_a_shop_item: false,
         prefix: item.prefix,
@@ -3532,6 +3547,7 @@ mod tests {
             item: 88,
             when: StockWhen::Always,
             shop_custom_price: Some(50),
+            shop_special_currency: -1,
             buy_once: false,
             is_a_shop_item: false,
             prefix: 0,
@@ -4129,6 +4145,7 @@ mod s1_p_i44_tests {
                 item: 0,
                 when: StockWhen::Always,
                 shop_custom_price: None,
+                shop_special_currency: -1,
                 buy_once: false,
                 is_a_shop_item: false,
                 prefix: 0,

@@ -166,6 +166,9 @@ mod grapple;
 mod gore_seam;
 mod creative;
 mod creative_sacrifices;
+// W4-d122 shop currency: the Defender Medal wallet (CustomCurrencyManager/
+// CustomCurrencySingleCoin) — the Tavernkeep's medal rows buy through it.
+mod custom_currency;
 mod happiness;
 mod hotbar;
 mod hurt_modifiers;

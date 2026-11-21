@@ -1679,9 +1679,12 @@ impl App {
     /// `ItemSlot.cs:1220`/`:1650`). The consumer is the shop-grid click
     /// (`app/clicks.rs`).
     ///
-    /// Deviation: the charge rides the port's aggregate `App.coins` purse
-    /// (the recorded coin model, ANALYSIS) — the C# `BuyItem` spends the
-    /// inventory + bank coin stacks through `TryPurchasing`.
+    /// Deviation: the PLAIN-currency charge rides the port's aggregate
+    /// `App.coins` purse (the recorded coin model, ANALYSIS) — the C#
+    /// `BuyItem` spends the inventory + bank coin stacks through
+    /// `TryPurchasing`. The special-currency arm (the Tavernkeep's medal
+    /// rows) IS ported: `custom_currency.rs` spends the real 3817 stacks
+    /// across the inventory + the four banks with the restore-on-fail.
     pub(crate) fn buy_shop_item(&mut self, slot: usize) -> bool {
         // `ItemSlot.HandleShopSlot` (`UI/ItemSlot.cs:2059-2060`): the
         // charge is `GetItemExpectedPrice`'s buying value for the stock
@@ -1695,7 +1698,32 @@ impl App {
         }
         let price =
             crate::shop::buy_price_row(entry, self.discount_available, self.shop_mood) as u64;
-        if self.coins < price {
+        // `Player.BuyItem`'s custom-currency arm (`Player.cs:35402-35405`)
+        // → `CustomCurrencyManager.BuyItem` (`CustomCurrencyManager.cs:
+        // 69-119`): the medal wallet counts the inventory (minus the coin
+        // slots) + the four banks and spends the 3817 stacks through
+        // `CustomCurrencySingleCoin.TryPurchasing` — the full-cache restore
+        // on a failed spend rides `custom_currency.rs`. The plain purse
+        // keeps the recorded aggregate `App.coins` model (ANALYSIS).
+        let special = entry.shop_special_currency;
+        if special != crate::custom_currency::CURRENCY_NONE {
+            let Some(p) = self.player.as_mut() else {
+                return false; // no player = no wallet (the C# always has one)
+            };
+            let ok = crate::custom_currency::buy_with_currency(
+                price as i64,
+                [
+                    self.inventory.as_mut_slice(),
+                    p.banks[0].as_mut_slice(),
+                    p.banks[1].as_mut_slice(),
+                    p.banks[2].as_mut_slice(),
+                    p.banks[3].as_mut_slice(),
+                ],
+            );
+            if !ok {
+                return false; // `:77-80`'s short-wallet refusal / the restore
+            }
+        } else if self.coins < price {
             return false;
         }
         // `:2075-2083` — an air cursor takes the row's kind (and prefix);
@@ -1708,9 +1736,10 @@ impl App {
                 prefix: entry.prefix,
             };
         }
-        // `:2084-2087` — the sellback memo (no custom currencies in the
-        // port, so the `shopSpecialCurrency == -1` half is always true).
-        if !entry.buy_once {
+        // `:2084-2087` — the sellback memo: plain-currency non-buyOnce rows
+        // only (`!inv[slot].buyOnce && inv[slot].shopSpecialCurrency == -1`
+        // — the medal rows never memo).
+        if !entry.buy_once && special == crate::custom_currency::CURRENCY_NONE {
             self.shop_sellback.add(entry.item, entry.prefix, 1);
         }
         self.mouse_item.count += 1;
@@ -1724,6 +1753,7 @@ impl App {
                     item: 0,
                     when: crate::shop::StockWhen::Always,
                     shop_custom_price: None,
+                    shop_special_currency: -1,
                     buy_once: false,
                     is_a_shop_item: false,
                     prefix: 0,
@@ -1731,7 +1761,9 @@ impl App {
                 };
             }
         }
-        self.coins -= price;
+        if special == crate::custom_currency::CURRENCY_NONE {
+            self.coins -= price; // the medal arm already spent the wallet
+        }
         true
     }
 
@@ -5772,6 +5804,7 @@ mod s1_p_i44_tests {
             item: 9,
             when: crate::shop::StockWhen::Always,
             shop_custom_price: None,
+            shop_special_currency: -1,
             buy_once: true,
             is_a_shop_item: false,
             prefix: 0,
