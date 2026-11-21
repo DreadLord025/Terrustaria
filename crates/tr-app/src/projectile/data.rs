@@ -1045,6 +1045,9 @@ pub const SANDNADO_FRIENDLY: u16 = 656;
 /// `ProjectileID.SandnadoHostile` (657) — the hostile sandnado (aiStyle 127,
 /// `Projectile.cs:7061-7070`).
 pub const SANDNADO_HOSTILE: u16 = 657;
+/// `ProjectileID.SandnadoHostileMark` (658) — the hostile sandnado's spawn
+/// mark (aiStyle 128, `Projectile.cs:7071-7082`).
+pub const SANDNADO_MARK: u16 = 658;
 /// `ProjectileID.SpiritFlame` (659) — the Spirit Flame's shot (aiStyle 129).
 pub const SPIRIT_FLAME: u16 = 659;
 /// `ProjectileID.SkyFracture` (660) — the Sky Fracture's aiStyle-1 rider.
@@ -3581,6 +3584,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // 10x10, aiStyle 127, hostile, `tileCollide = false`,
             // `penetrate = -1`, `timeLeft = 1200`, NO immunity pair.
             SANDNADO_HOSTILE => (10.0, 10.0, 127, -1, 1200, 0, false, false, false, RESET_STATE),
+            // W4-d13 — `Projectile.cs:7071-7082` (658, the Sandnado Mark):
+            // 14x14, aiStyle 128, `penetrate = 1` (the stock), `timeLeft =
+            // 900`, `tileCollide = false`, `ignoreWater`, `alpha = 255`,
+            // hostile.
+            SANDNADO_MARK => (14.0, 14.0, 128, 1, 900, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
             // The sentries: the aiStyle-53 placeable staff sentries —
             // FrostHydra (`Projectile.cs:3997`; the `light = 0.25f`/
             // `coldDamage` lines have no port consumer, the module doc),
@@ -4247,9 +4255,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d13 — the aiStyle-124 pets set `ignoreWater` themselves
             // (`Projectile.cs:6986`/`:8470`/`:8516`/`:8562`/`:8584`/`:9043`).
             || STYLE124_PETS.contains(&kind)
-            // W4-d13 — the Wire Kite / geyser / stomp set `ignoreWater`
-            // (`Projectile.cs:6996`/`:7031`/`:7181`).
-            || matches!(kind, WIRE_KITE | GEYSER_TRAP | OGRE_STOMP)
+            // W4-d13 — the Wire Kite / geyser / stomp / sandnado mark set
+            // `ignoreWater` (`Projectile.cs:6996`/`:7031`/`:7181`/`:7079`).
+            || matches!(kind, WIRE_KITE | GEYSER_TRAP | OGRE_STOMP | SANDNADO_MARK)
             // AI_026 slice A: the Tiki Spirit (`Projectile.cs:2860`) and the
             // Wisp (`:3002`) set `ignoreWater`; the other flyers keep false.
             || matches!(kind, TIKI_SPIRIT | WISP)

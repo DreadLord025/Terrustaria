@@ -210,6 +210,11 @@ mod projectile_ai_geyser;
 // tail dust census (`Projectile.cs:35998-36085`). Code-only — witnesses
 // written not run.
 mod projectile_ai_sandnado;
+// W4-d13 — the aiStyle-128 sandnado mark (658): the spin/fade/scale machine,
+// the tick-60 hostile-sandnado spawn and the dust census + Kill burst
+// (`Projectile.cs:36086-36197`, `:72374-72393`). Code-only — witnesses
+// written not run.
+mod projectile_ai_sandnado_mark;
 mod projectile_ai026_a;
 mod projectile_ai026_b;
 mod projectile_ai026_c;

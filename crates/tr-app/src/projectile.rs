@@ -13166,7 +13166,7 @@ pub fn randomize_insanity_shadow_for(
 /// the setter writes `alpha = (int)Clamp((1 - value) * 255, 0, 255)`. The
 /// aiStyle-133 raise marker ramps it 0 → 1 → 0 over its 80 ticks
 /// (`:36442-36453`) and the aiStyle-157 spikes ride it (`:51442-51451`).
-fn opacity_of(alpha: i32) -> f32 {
+pub(crate) fn opacity_of(alpha: i32) -> f32 {
     1.0 - alpha as f32 / 255.0
 }
 
@@ -17556,6 +17556,40 @@ impl ProjectilePool {
                             let v = self.slots[i].vel;
                             self.slots[i].pos += v;
                         }
+                        // W4-d13 — `AI()`'s `else if (this.aiStyle == 128)`
+                        // (`Projectile.cs:36086-36197`): the hostile
+                        // Sandnado's spawn mark (658). The spin/fade/scale
+                        // machine + the dust census ride the pass's stream;
+                        // the tick-60 sandnado (657) spawn resolves here.
+                        128 => {
+                            let expert =
+                                player.as_deref().is_some_and(|p| p.buffs.expert_mode);
+                            let spawn =
+                                self.slots[i].ai_sandnado_mark(rng, expert, local_owner);
+                            if let Some(s) = spawn {
+                                let owner_id = self.slots[i].owner;
+                                // `NewProjectile` centres the box
+                                // (`:10876-10877`); the 657 is hostile.
+                                if let Some(slot) = self.spawn_with_data_ai_owned(
+                                    SANDNADO_HOSTILE,
+                                    owner_id,
+                                    s.x - 5.0,
+                                    s.y - 5.0,
+                                    0.0,
+                                    0.0,
+                                    s.damage,
+                                    3.0,
+                                    0.0,
+                                    0.0,
+                                ) {
+                                    self.slots[slot].friendly = false;
+                                }
+                            }
+                            // `HandleMovement`: `tileCollide = false`
+                            // (`:7078`) — the free integrate.
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
+                        }
                         // The carve-out of the arm-signature doc block above:
                         // aiStyle 22 writes tiles, so it reborrows `world`
                         // mutably at its own call site.
@@ -20146,6 +20180,14 @@ impl ProjectilePool {
                 // `:72155-72176`, S1-D-4b-3): the turret/crystal sweep their
                 // shots, the shard runs its death burst.
                 self.floating_turret_kill(i, npcs, doll_flags(player.as_deref()), rng, luck);
+                // W4-d13 — `Kill()`'s type-658 arm (`Projectile.cs:72374-
+                // 72393`): the Sandnado Mark's death dust burst (10 dust
+                // 269, the Next(3) gate + the fadeIn/scale rolls). The C#
+                // body order: the 658 arm sits AFTER the 644 shard
+                // (`:72155`) and BEFORE the 444 bubble (`:73398`).
+                if self.slots[i].kind == SANDNADO_MARK {
+                    crate::projectile_ai_sandnado_mark::sandnado_mark_kill_draws(rng);
+                }
                 // S1-D-4 unarmed styles: the 932's death-dust census
                 // (`:71109-71147`) and the Celebration rockets' Kill arm
                 // (`:73632-73645` resize + Damage + explosion, plus the
