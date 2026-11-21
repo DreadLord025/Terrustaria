@@ -702,8 +702,19 @@ pub const SWORDFISH_BONE_2: u16 = 1108;
 pub const SWORDFISH_BONE_3: u16 = 1109;
 /// `ProjectileID.Bomb`-family cannon ammo (178, `Projectile.cs:2641-2649`).
 pub const CANNON_BOMB: u16 = 178;
-/// The explosive cannonball (601, `Projectile.cs:6499-6512`) — aiStyle 1 with
-/// `extraUpdates = 30`.
+/// The Portal Gun's bolt (601 = C# `ProjectileID.PortalGunBolt`,
+/// `ProjectileID.cs:1756`; `Projectile.cs:6502-6510` — aiStyle 1, 10×10,
+/// alpha 255, friendly, `extraUpdates = 30`, the STOCK penetrate 1).
+/// NAME DEVIATION (recorded, W4-d6 retire — the d18 finding): the constant
+/// was ported as "the explosive cannonball" citing `:6499-6512` under the
+/// M7-WIRE-2 cannon-ammo block; `:6499-6501` is the TAIL of the previous
+/// type arm, the true 601 block is `:6502-6510` and 601 is NOT cannon ammo.
+/// The value 601, the aiStyle-1 slice-B arm (`projectile_ai001_b.rs`, the
+/// portal fade/frame machine `:54066-54120`) and the trailing-mode-0 row
+/// (`ProjectileID.cs:521` lists 601 → 0) are all correct for the bolt; the
+/// rename is deferred (the `POISON_DART`/645 precedent below). The
+/// teleport AI (`PortalHelper.TryPlacingPortal`, `Projectile.cs:18099`)
+/// stays unported — a recorded remainder.
 pub const CANNON_EXPLOSIVE: u16 = 601;
 /// The bunny cannon's projectile (281, `Projectile.cs:3676-3687` — aiStyle 49,
 /// no ported AI; the constant anchors the `BunnyCannonCanFire` scan).
@@ -2301,22 +2312,33 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // explosion (`Projectile.cs:1953-1965` — aiStyle 16, 260×260,
             // `timeLeft` 2, `tileCollide = false`, trap), the land mine's
             // (`:2524-2535` — aiStyle 16, 128×128, `timeLeft` 2, trap-less),
-            // and the cannon ammo 178/601 (`:2641-2649` — aiStyle 1, 10×10,
-            // `timeLeft` 2 / `extraUpdates` 30).
+            // and the cannon ammo 178 (`:2641-2649` — aiStyle 1, 10×10,
+            // `timeLeft` 2, penetrate −1).
             EXPLOSIVES_BLAST => (260.0, 260.0, 16, -1, 2, 0, false, false, true, RESET_STATE),
             LANDMINE_BLAST => (128.0, 128.0, 16, -1, 2, 0, false, false, false, RESET_STATE),
             CANNON_BOMB => (10.0, 10.0, 1, -1, 2, 0, true, false, false, RESET_STATE),
+            // W4-d6 retire (the d18 `dd7b1b0a` finding, fixed here): 601 is
+            // C# `PortalGunBolt` (`ProjectileID.cs:1756`), aiStyle 1
+            // (`Projectile.cs:6506`) — NOT cannon ammo. The M7-WIRE-2 row
+            // (blame 85e1d416e) carried penetrate −1 / alpha 0 where the
+            // true C# 601 keeps the stock penetrate 1 (`:774`) + alpha 255
+            // (`:6507`); `friendly = true` (`:6508`) rides the spawn seam's
+            // owner argument like every aiStyle-1 row. The stock 3600
+            // `timeLeft` (`:787`) + `tileCollide` (`:775`) + extraUpdates 30
+            // (`:6509`) stay. The d18 damage gate refuses 601 faithfully
+            // (`:12448`); the teleport AI (`PortalHelper.TryPlacingPortal`
+            // `:18099`) is unported (the const doc's remainder).
             CANNON_EXPLOSIVE => (
                 10.0,
                 10.0,
                 1,
-                -1,
+                1,
                 TIME_LEFT_DEFAULT,
                 30,
                 true,
                 false,
                 false,
-                RESET_STATE,
+                (false, -2, false, -1, 255, 1.0),
             ),
             // `:864-873` / `:1345-1353` / `:2012-2022`: the boomerangs —
             // 22×22, aiStyle 3, `penetrate = -1`, melee.
@@ -4861,6 +4883,34 @@ mod tests {
         assert_eq!(flags(DYNAMITE), (false, false, false));
         assert_eq!(flags(STICKY_BOMB), (false, false, false));
         assert_eq!(flags(BOMB_FISH), (false, false, false));
+    }
+
+    #[test]
+    fn w4_d6_retire_the_601_row_is_the_portal_bolt_not_cannon_ammo() {
+        // The d18 finding (dd7b1b0a, the PROJ-171 retire phase-3 census) fixed
+        // here: 601 = `ProjectileID.PortalGunBolt` (`ProjectileID.cs:1756`).
+        // The C# block `Projectile.cs:6502-6510`: 10x10, aiStyle 1, alpha
+        // 255, friendly, extraUpdates 30 — penetrate stays the stock 1
+        // (`:774`), timeLeft the stock 3600 (`:787`), tileCollide the stock
+        // true (`:775`). The old M7-WIRE-2 row carried -1/alpha 0 under the
+        // 178-cannonball comment; the 178 row is untouched.
+        let bolt = proj_data(CANNON_EXPLOSIVE).expect("the 601 row");
+        assert_eq!(CANNON_EXPLOSIVE, 601);
+        assert_eq!((bolt.w, bolt.h), (10.0, 10.0), ":6504-6505");
+        assert_eq!(bolt.ai_style, 1, ":6506");
+        assert_eq!(bolt.alpha, 255, ":6507");
+        assert_eq!(bolt.penetrate, 1, "the stock :774 — NOT the 178's -1");
+        assert_eq!(bolt.extra_updates, 30, ":6509");
+        assert_eq!(bolt.time_left, TIME_LEFT_DEFAULT, "the stock :787");
+        assert!(bolt.tile_collide, "the stock :775");
+        assert!(!bolt.arrow && !bolt.trap);
+        let bomb = proj_data(CANNON_BOMB).expect("the 178 row");
+        assert_eq!(bomb.penetrate, -1, ":2647");
+        assert_eq!(bomb.time_left, 2, ":2648");
+        // The aiStyle-1 slice-B fade consumes the 255 spawn: 255 - 17*15 = 0
+        // clamps on tick 18 (`:54096-54100`); the trailing-mode row keeps 0
+        // (`ProjectileID.cs:521` lists 601 -> 0).
+        assert_eq!(crate::projectile::trailing_mode(CANNON_EXPLOSIVE), 0);
     }
 
     #[test]

@@ -31989,7 +31989,7 @@ mod widened_state_tests {
     /// sweep lives here rather than over `0..2048`. The rows whose C#
     /// `SetDefaults` overrides the reset (the shadow hand and the Dark Mage
     /// marker, both `alpha = 255`) sit outside it since S1-D-4b-1.
-    const BASELINE_ROWS: [u16; 39] = [
+    const BASELINE_ROWS: [u16; 38] = [
         WOODEN_ARROW,
         FLAME_ARROW,
         WOODEN_ARROW_HOSTILE,
@@ -32015,7 +32015,6 @@ mod widened_state_tests {
         EXPLOSIVES_BLAST,
         LANDMINE_BLAST,
         CANNON_BOMB,
-        CANNON_EXPLOSIVE,
         ENCHANTED_BOOMERANG,
         WOODEN_BOOMERANG,
         ICE_BOOMERANG,
