@@ -18767,47 +18767,57 @@ mod wall_placement_tests {
 
     /// W4-c42 FINAL (§8.4 drain-union finish): breaking a PRESSED weighted
     /// plate (428) fires `DestroyPlate` → the release poke trips the wire
-    /// line → a wired open door closes. The close cue must drain HERE on
-    /// the UpdatePlayers stream (the site drained only the switch clicks
-    /// before — the cue lingered into the next stage's drain). WRITTEN
-    /// NOT RUN (code-only).
+    /// line → a wired CLOSED trapdoor opens on the press and CLOSES again
+    /// on the release. The release cue must drain HERE on the UpdatePlayers
+    /// stream (the site drained only the switch clicks before — the cue
+    /// lingered into the next stage's drain). The ordering fix is the
+    /// observable: the C# poke runs inside `KillTile_GetItemDrops` BEFORE
+    /// the clear (`WorldGen.cs:63863`/`:63885`), so it sees the LIVE plate;
+    /// the port poked after the kill and the active gate refused the
+    /// release trip entirely (the trapdoor stayed open). WRITTEN NOT RUN.
     #[test]
     fn c42_the_broken_pressed_plate_drains_its_door_cues_in_pass() {
         let mut app = flow_app(None, vec![], vec![]);
         let mut w = World::new("t".into(), 64, 64);
-        // The plate at (10, 20); the open door pair at columns 14/15.
+        // The plate at (10, 20); the closed trapdoor 2×2 at columns 14/15,
+        // rows 19/20 — ONLY the (14, 20) body cell carries wire (a wire on
+        // both columns would re-shift the trapdoor mid-flood).
         let i = w.index(10, 20);
         w.tiles[i] = Tile { kind: 428, ..Default::default() };
         w.tiles[i].flags |= FLAG_ACTIVE;
-        for row in 0..3i32 {
-            for (col, fx) in [(14i32, 0i16), (15, 18)] {
-                let k = w.index(col, 17 + row);
-                w.tiles[k] = Tile { kind: 11, frame_x: fx, frame_y: (row * 18) as i16, ..Default::default() };
+        for row in 0..2i32 {
+            for col in 0..2i32 {
+                let k = w.index(14 + col, 19 + row);
+                w.tiles[k] = Tile {
+                    kind: 386,
+                    frame_x: (col * 18) as i16,
+                    frame_y: (row * 18) as i16,
+                    ..Default::default()
+                };
                 w.tiles[k].flags |= FLAG_ACTIVE;
             }
         }
-        // The red line: plate → row 20 → up column 15 into the leaf cell.
-        for x in 10..=15 {
+        // The red line: plate → row 20 → the trapdoor's left body cell.
+        for x in 10..=14 {
             w.wires.set(x, 20, tr_core::wiring::WireColor::Red, true);
         }
-        w.wires.set(15, 19, tr_core::wiring::WireColor::Red, true);
-        w.wires.set(15, 18, tr_core::wiring::WireColor::Red, true);
         app.world = w;
         // The plate is PRESSED (the release poke fires only then —
         // `PressurePlateHelper.cs:94-101`'s TryGetValue gate). The press
-        // poke itself trips the line and CLOSES the open door.
+        // poke trips the line: the styleX-0 trapdoor opens DOWNWARD (the
+        // bottom row becomes 387, `WorldGen.cs:51453-51494`).
         app.wiring.press_plate(&mut app.world, 10, 20);
-        assert_eq!(app.world.tile(14, 18).unwrap().kind, 10, "the press closed it");
+        assert_eq!(app.world.tile(14, 20).unwrap().kind, 387, "the press opened it");
         let _ = app.wiring.take_door_cues();
         let _ = app.wiring.take_switch_clicks();
         let _ = app.wiring.take_door_echoes();
         break_tile(&mut app, 10, 20);
-        // The release poke re-opens the door (the C# order: the poke sees
-        // the LIVE plate — the port poked after the clear before, and the
-        // active gate refused the release trip entirely).
-        assert_eq!(app.world.tile(14, 18).unwrap().kind, 11, "the release re-opened the door");
+        // The release poke closes the trapdoor (the 387 pair closes back
+        // to 386, `:51534-51592`) — the poke saw the LIVE plate (the
+        // ordering fix; the old post-kill poke never tripped).
+        assert_eq!(app.world.tile(14, 20).unwrap().kind, 386, "the release closed the trapdoor");
         // The cue drained HERE — nothing lingers past the break.
-        assert!(app.wiring.take_door_cues().is_empty(), "the open cue drained in-pass");
+        assert!(app.wiring.take_door_cues().is_empty(), "the close cue drained in-pass");
         assert!(app.wiring.take_door_echoes().is_empty(), "the §8.2 SP discard ran");
     }
 }

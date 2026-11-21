@@ -4650,7 +4650,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // an NPC-tripped plate can shift a wired trapdoor/gate.
         app.wiring.set_entity_boxes(
             crate::world_sim::wiring::collect_entity_boxes(
-                app.player.as_deref(),
+                app.player.as_ref(),
                 &app.npcs,
                 &app.remote_players,
             ),

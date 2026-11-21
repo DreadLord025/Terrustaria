@@ -25,7 +25,7 @@ use crate::npc::NpcKind;
 /// join with their `PlayerNet` position (`hp > 0` stands in for the C#
 /// `active && !dead` — `PlayerNet` carries no dead flag, ANALYSIS note).
 pub(crate) fn stamp_wiring_entity_boxes(app: &mut App) {
-    let boxes = collect_entity_boxes(app.player.as_deref(), &app.npcs, &app.remote_players);
+    let boxes = collect_entity_boxes(app.player.as_ref(), &app.npcs, &app.remote_players);
     app.wiring.set_entity_boxes(boxes);
 }
 

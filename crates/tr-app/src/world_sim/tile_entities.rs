@@ -75,7 +75,7 @@ mod w4_c42_final_tests {
 
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
-    use tr_core::tile_entities::{SENSOR_NIGHT, TeKind};
+    use tr_core::tile_entities::TeKind;
     use tr_core::wiring::WireColor;
 
     /// A night sensor (423, frameY 18) wired to an open door (11) at
@@ -123,6 +123,5 @@ mod w4_c42_final_tests {
         assert!(app.wiring.take_door_cues().is_empty(), "the close cue drained in-pass");
         // The forced close's echo drained too (the §8.2 SP discard).
         assert!(app.wiring.take_door_echoes().is_empty());
-        let _ = SENSOR_NIGHT; // the check id the fixture's frameY 18 encodes
     }
 }
