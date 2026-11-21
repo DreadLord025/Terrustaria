@@ -355,11 +355,48 @@ pub struct World {
     /// 682 raises it; `Projectile.cs:20819`'s enemy roll gates on it) — the
     /// same Main-global standing-in (S1-P-i35).
     pub unlocked_slime_red_spawn: bool,
+    /// `NPC.unlockedSlimeGreenSpawn` (`WorldGen.cs:5606` — the Town Slime Green
+    /// 678's arrival; the doom party clears it, `Main.cs:17940`). The town-slime
+    /// kinds are unported, so the latch round-trips (W4-f45).
+    pub unlocked_slime_green_spawn: bool,
+    /// `NPC.unlockedSlimeOldSpawn` (`NPC.cs:19147` — `TransformElderSlime`, the
+    /// bound 685's rescue). Unported kind; the latch round-trips (W4-f45).
+    pub unlocked_slime_old_spawn: bool,
+    /// `NPC.unlockedSlimePurpleSpawn` (`NPC.cs:81774` — the bound 686's death
+    /// transforms it to the Town Slime Purple 680). Unported; round-trips.
+    pub unlocked_slime_purple_spawn: bool,
+    /// `NPC.unlockedSlimeYellowSpawn` (`Projectile.cs:14750` — the shimmer
+    /// projectile transforms the bound 687 to the Town Slime Yellow 683).
+    /// Unported; the latch round-trips (W4-f45).
+    pub unlocked_slime_yellow_spawn: bool,
+    /// `NPC.unlockedSlimeCopperSpawn` (`NPC.cs:19171` — `TransformCopperSlime`,
+    /// the convertible town NPC's shimmer). Unported; round-trips (W4-f45).
+    pub unlocked_slime_copper_spawn: bool,
     /// `NPC.combatBookWasUsed` (`WorldFile.cs`'s combatBookWasUsed flag;
     /// `FishingConditions.DidNotUseCombatBook` reads it, `Projectile.cs`'s
     /// `PrepareFishingContext` context) — the world-field standing-in
     /// (S1-P-i35).
     pub combat_book_was_used: bool,
+    /// `NPC.combatBookVolumeTwoWasUsed` (`WorldFile.cs:1407` write / `:2418`
+    /// read, v259+; the use arm `Player.cs:45337-45349`, item 5336). The g89b
+    /// boosters lane co-claims the consumer (`npc_ai_town.rs`'s `combat_book_two`
+    /// env); the file round-trips the latch (W4-f45).
+    pub combat_book_volume_two_was_used: bool,
+    /// `NPC.peddlersSatchelWasUsed` (`WorldFile.cs:1408` write / `:2426` read,
+    /// v260+; the use arm `Player.cs:45368-45383`, item 5343). The g89b lane
+    /// co-claims the consumer; the file round-trips the latch (W4-f45).
+    pub peddlers_satchel_was_used: bool,
+    /// `NPC.boughtCat` (`WorldFile.cs:1392` write / `:2358` read, v217+; the
+    /// license use `Player.cs:45356`, item 4829 -> the Cat 637). The f43 town-
+    /// spawn lane's `TailFlags.bought_cat` consumer; the file round-trips.
+    pub bought_cat: bool,
+    /// `NPC.boughtDog` (`WorldFile.cs:1393` / `:2359`; `Player.cs:45360`, item
+    /// 4830 -> the Dog 638). The f43 lane's consumer; round-trips (W4-f45).
+    pub bought_dog: bool,
+    /// `NPC.boughtBunny` (`WorldFile.cs:1394` / `:2360`; `Player.cs:45364`, item
+    /// 4910 -> the Bunny 656; the doom party clears it, `Main.cs:17941`). The
+    /// f43 lane's consumer; round-trips (W4-f45).
+    pub bought_bunny: bool,
     /// The body's `velocity.X` — the fists' tether anchor folds it in
     /// (`AI_047`'s `vector = Main.npc[golemBoss].Center + nPC.velocity +
     /// (0, -9 * scale)`, `NPC.cs:19258-19259`) — the WoF write-through
@@ -416,6 +453,13 @@ pub struct World {
     pub total_invasion_points: f32,
     /// `Main.hardMode` (`AmbienceServer.cs:61`). Runtime-only, not saved.
     pub hard_mode: bool,
+    /// `Main.afterPartyOfDoom` (`WorldFile.cs:1305` write / `:2109` read,
+    /// v257+): the getfixedboi anniversary world's doom party — the C# arms it
+    /// at generation (`WorldGen.cs:11128-11137`: tenth anniversary + get-good,
+    /// not skyblock) and `UpdateWorld_NPCs` (`Main.cs:17926-17943`) kills every
+    /// town NPC (minus the five exclusions) once the party ends, clearing the
+    /// mech/party-girl/princess/rainbow/green unlocks + the bunny license.
+    pub after_party_of_doom: bool,
     /// `WorldGen.altarCount` (`WorldGen.cs:4202`): the smashed altars drive
     /// the hardmode ore tiers.
     pub altars_smashed: i32,
@@ -833,7 +877,17 @@ impl World {
             golem_fist_right_alive: false,
             unlocked_slime_rainbow_spawn: false,
             unlocked_slime_red_spawn: false,
+            unlocked_slime_green_spawn: false,
+            unlocked_slime_old_spawn: false,
+            unlocked_slime_purple_spawn: false,
+            unlocked_slime_yellow_spawn: false,
+            unlocked_slime_copper_spawn: false,
             combat_book_was_used: false,
+            combat_book_volume_two_was_used: false,
+            peddlers_satchel_was_used: false,
+            bought_cat: false,
+            bought_dog: false,
+            bought_bunny: false,
             golem_vx: 0.0,
             slime_rain: false,
             slime_rain_time: 0.0,
@@ -885,6 +939,7 @@ impl World {
             wave_kills: 0.0,
             total_invasion_points: 0.0,
             hard_mode: false,
+            after_party_of_doom: false,
 
             altars_smashed: 0,
             shadow_orb_smashed: false,

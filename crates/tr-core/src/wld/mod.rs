@@ -1710,6 +1710,7 @@ mod tests {
         world.shadow_orb_count = 7;
         world.altars_smashed = 3;
         world.hard_mode = true;
+        world.after_party_of_doom = true;
         world.invasion_delay = 5;
         world.invasion_size = 60;
         world.invasion_type = 1;
@@ -1945,6 +1946,10 @@ mod tests {
         );
         assert_eq!(got.altars_smashed, want.altars_smashed, "{context}: altars");
         assert_eq!(got.hard_mode, want.hard_mode, "{context}: hard mode");
+        assert_eq!(
+            got.after_party_of_doom, want.after_party_of_doom,
+            "{context}: afterPartyOfDoom"
+        );
         assert_eq!(
             got.invasion_delay, want.invasion_delay,
             "{context}: invasion delay"
@@ -2246,6 +2251,8 @@ mod tests {
         tail[31] = world.shadow_orb_count as u8; // C# truncates to a byte
         tail[32..36].copy_from_slice(&world.altars_smashed.to_le_bytes());
         tail[36] = u8::from(world.hard_mode);
+        // W4-f45: afterPartyOfDoom at tail 37 (`WorldFile.cs:1305`, v257+).
+        tail[37] = u8::from(world.after_party_of_doom);
         // The invasion block at 38..57 + slime rain + sundial (`:1306-1312`).
         tail[38..42].copy_from_slice(&world.invasion_delay.to_le_bytes());
         tail[42..46].copy_from_slice(&world.invasion_size.to_le_bytes());
@@ -4510,6 +4517,40 @@ mod tests {
             i16::from_le_bytes(buf[tail_at + 100..tail_at + 102].try_into().unwrap()),
             150, "numClouds round-trips"
         );
+        assert_eq!(&buf[flags_at..ptr1], &block[..], "the owned block matches the table");
+    }
+
+    /// W4-f45 — `afterPartyOfDoom` lands at tail 37 (`WorldFile.cs:1305`) and
+    /// follows the v257 read gate (`:2109`); the gen arm stamps it for the
+    /// getfixedboi anniversary world (`WorldGen.cs:11128-11137`). Written, NOT
+    /// run (code-only mode).
+    #[test]
+    fn w4_f45_the_after_party_of_doom_lands_and_gates() {
+        let mut data = fixture();
+        let tail_at = tail_offset_in_synthetic(&data, VER);
+        data[tail_at + 37] = 1; // afterPartyOfDoom
+        let w = parse(&data).expect("the patched fixture parses");
+        assert!(w.after_party_of_doom, "afterPartyOfDoom at tail 37");
+        // v256: the byte does not exist yet — stays false.
+        let w = parse(&synthetic_file(256, &[2, 144], 160, 11)).expect("v256 loads");
+        assert!(!w.after_party_of_doom, "below 257: afterPartyOfDoom stays false");
+        // v257: the byte lands (the tail's hardMode+1 position; the v257 tail
+        // lacks the 289 claimable array, 588 bytes, but afterPartyOfDoom sits
+        // before it at 37 — unchanged).
+        let mut data = synthetic_file(257, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 257);
+        data[tail_at + 37] = 1;
+        let w = parse(&data).expect("v257 loads");
+        assert!(w.after_party_of_doom, "afterPartyOfDoom reads from 257");
+        // The writer's own block carries the owned world's flag.
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let block = expected_flags_block(&world);
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let flags_at = ptr1 - block.len();
+        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let tail_at = flags_at + prefix_len;
+        assert_eq!(buf[tail_at + 37], 1, "afterPartyOfDoom round-trips");
         assert_eq!(&buf[flags_at..ptr1], &block[..], "the owned block matches the table");
     }
 

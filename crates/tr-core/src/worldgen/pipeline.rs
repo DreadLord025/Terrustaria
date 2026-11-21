@@ -2756,6 +2756,20 @@ fn step_world_tail(
     // The port draws them after the hell roll (the same accepted deviation).
     world.ice_back_style = (streams.rng.next_u32() % 4) as i32;
     world.jungle_back_style = (streams.rng.next_u32() % 2) as i32;
+    // W4-f45 — `WorldGen.Reset`'s doom-party arm (`WorldGen.cs:11128-11137`):
+    // a tenth-anniversary world (not skyblock) opens with a genuine party on a
+    // 5-day cooldown; with get-good too, `afterPartyOfDoom` arms (the party's
+    // end kills the town — `Main.cs:17926-17943`). The C# sets these in Reset
+    // (pre-pass); the port stamps them in the tail (no RNG — the same values).
+    let anniversary = opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY);
+    let skyblock = opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK);
+    let get_good = opts.flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY);
+    world.after_party_of_doom = false;
+    if anniversary && !skyblock {
+        world.party_genuine = true;
+        world.party_cooldown = 5;
+        world.after_party_of_doom = get_good;
+    }
 }
 
 /// `WorldGen.RandomizeTreeStyle` (`WorldGen.cs:8117-8190`): the surface tree

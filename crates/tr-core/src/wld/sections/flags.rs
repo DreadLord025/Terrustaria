@@ -76,7 +76,7 @@ pub fn write(w: &mut Writer, world: &World) {
     w.u8(world.shadow_orb_count as u8); // C# truncates to a byte
     w.i32(world.altars_smashed);
     w.boolean(world.hard_mode);
-    w.boolean(false); // afterPartyOfDoom — unowned
+    w.boolean(world.after_party_of_doom); // afterPartyOfDoom (W4-f45, `:1305`)
                       // WorldFile.cs:1306-1312: the invasion block.
     w.i32(world.invasion_delay);
     w.i32(world.invasion_size);
@@ -461,7 +461,7 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     world.altars_smashed = r.i32()?;
     world.hard_mode = r.bool()?;
     if version >= 257 {
-        r.skip(1)?; // afterPartyOfDoom
+        world.after_party_of_doom = r.bool()?; // afterPartyOfDoom (W4-f45, `:2109`)
     }
     world.invasion_delay = r.i32()?;
     world.invasion_size = r.i32()?;

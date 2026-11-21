@@ -3797,6 +3797,30 @@ fn king_slime_minion_batch(king: &Npc, count: u32, rng: &mut UnifiedRandom) -> V
 }
 
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
+    // W4-f45 — `Main.UpdateWorld_NPCs`'s doom-party arm (`Main.cs:17926-17943`):
+    // once the getfixedboi anniversary party ends (`afterPartyOfDoom &&
+    // !PartyIsUp`), every town NPC dies (the 9999 strike — the port's hp=0
+    // instant-kill deviation) except the five exclusions (Old Man 37, Skeleton
+    // Merchant 453, Travelling Merchant 368, Town Slime Purple 680, Dryad 20 —
+    // only the last two have ported kinds), and the mech/party-girl/princess/
+    // rainbow/green unlocks + the bunny license clear. Draw-free.
+    if app.world.after_party_of_doom && !crate::world_events::party_is_up(&app.world_events) {
+        for n in app.npcs.iter_mut() {
+            if n.hp > 0
+                && n.kind.is_town_npc_like()
+                && !matches!(n.kind, NpcKind::TravellingMerchant | NpcKind::Dryad)
+            {
+                n.hp = 0; // `StrikeNPCNoInteraction(9999, 10f, -direction)`
+            }
+        }
+        app.world.saved_mech = false;
+        app.world.unlocked_party_girl = false;
+        app.world.unlocked_princess = false;
+        app.world.unlocked_slime_rainbow_spawn = false;
+        app.world.unlocked_slime_green_spawn = false;
+        app.world.bought_bunny = false;
+        app.world.after_party_of_doom = false;
+    }
     // `Main.UpdateTime`'s Moon-Lord block (`Main.cs:64987-64994`): the
     // apocalypse's countdown ticks down and at zero the boss spawns.
     crate::world_sim::lunar::update_moon_lord_countdown(app);
