@@ -6920,10 +6920,11 @@ Deliberate deviations / deferred:
 - **The portrait** (`Main.DrawNPCPortrait`, `Main.cs:40318`, called at
   `NPCChatPanel.cs:79`) and **the corner item**
   (`Main.DrawNPCChatBottomRightItem`, `:39789`/`:80`) are deferred.
-- **The sign half**: `CanHoldConversation`'s `sign != -1` arm (`:276-283`),
-  the `editSign` blinker/IME composition (`DrawText` `:236-262`) and
-  `CloseNPCChatOrSign`'s `CloseSign` (`Main.cs:40682`) are unported вЂ” the
-  port's panel draws only while `talk_npc` holds.
+- **The sign half** landed with W4-f22: `CanHoldConversation`'s `sign != -1`
+  arm (`:276-283`), the `editSign` blinker (`DrawText` `:254-261`) and
+  `CloseNPCChatOrSign`'s `CloseSign` (`Main.cs:40682`) are live — ANALYSIS
+  "The sign keyboard (W4-f22)". The IME composition (`:242-253`) stays
+  deferred with the IME service.
 - **The Dryad Stardew override** (`OverrideChatTextWithShenanigans`,
   `:195-213`) is deferred with the animation system.
 - **The gamepad/virtual-keyboard arms** (`PrepareVirtualKeyboard`
@@ -6945,6 +6946,126 @@ Deliberate deviations / deferred:
   HUD spine draws the chat input strip early too; the panel sits under the
   inventory/bestiary/options layers, which is the visible-order difference
   that matters.
+
+## The sign keyboard (W4-f22, 2026-11-20, code-only mode)
+
+The sign editor end-to-end: `IngameFancyUI.OpenVirtualKeyboard(1)`
+(`IngameFancyUI.cs:86-145`) on the existing `ui/keyboard.rs`, the sign domain
+in `crates/tr-app/src/signs.rs` (the S1-E-27 net half extended), and the
+NPCChatPanel dialog's sign half. **Code-only mode**: no compiler/tests were
+invoked; the 14 witnesses are written not run (4 in `ui/keyboard.rs`, 9 in
+`signs.rs`, 1 in `ui/npc_chat.rs`), verified by re-reading the C#.
+
+**The census pin: the sign text cap is 1200, NOT 500.** `IngameFancyUI.cs:145`
+passes `allowEmpty: false, 1200` to the `UIVirtualKeyboard` ctor (the ctor
+default `maxLength` is 20, `:159`); pinned as `signs::SIGN_MAX_TEXT_LENGTH`
+and witnessed by `the_sign_keyboard_opens_with_the_1200_cap` (a 1300-char
+write trims to 1200 through `SetTextMaxLength`, `:428`).
+
+What landed:
+
+- **The open chain** — the `Main.tileSign` right-click arm
+  (`Player.cs:32693-32724`, wired in `world_sim/editing/doors.rs` between the
+  bed and clock arms + the `app/clicks.rs` open-inventory route): a re-click
+  on the OPEN sign closes it (`:32697-32701`), single player opens
+  `Sign.ReadSign`'s record (`:32704-32707`), the MP client sends `46` at the
+  frame-decoded origin (`:32710-32721`); the host resolves locally (the `46 ->
+  47` loopback's net effect, the chest `31` precedent). The client's `47`
+  open arm (`MessageBuffer.cs:2400-2403` — sender == myPlayer, the record
+  survived `TextSign`, `!flags[0]`) lands in `netglue.rs`'s `S2c::SignData`.
+- **`Player.OpenSign`/`CloseSign`** (`Player.cs:33542-33551`/`:33528-33540`) —
+  `signs::open_sign`/`close_sign`: `IngameUIWindows.CloseAll(quiet)`'s live
+  pieces (map/options/emotes/bestiary/talk), sound 10/11, the `player.sign`
+  latch (`Player.cs:1440`, the `:17014` `UpdateDead` clear) and the
+  `Main.npcChatText = Main.sign[s].text` read display.
+- **The Edit/Save toggle** — `NPCInteractions.Actions.OpenSign`
+  (`NPCInteractions.cs:15-42`, registered after CloseChat at `:515-516`):
+  `Lang.inter[48]` "Edit" opens the keyboard, `Lang.inter[47]` "Save" submits;
+  `ui/npc_chat.rs::interactions`/`interaction_rects` draw and hit the row
+  (`DrawButtons`' per-button walk, `NPCChatPanel.cs:93-135`), the click runs
+  through `handle_npc_chat_clicks` index 1.
+- **The ctx-1 keyboard** (`ui/keyboard.rs`, phase A): `Context::Sign` /
+  `editing_sign` (`UIVirtualKeyboard.cs:166`), the `-5000` sign offset parks
+  the textbox/label off-screen (`:176` — the text edits in the dialog),
+  `TextIsValidForSubmit`'s `_editingSign` always-valid gate (`:621`), the
+  `UI.Save` submit label on both layers (`:291`/`:327`), and
+  `BuildSpaceBarArea`'s bottom row (`:444-489`, `bottom_row()`): space 3-wide
+  (2 with the restore key), the `UI.EnterButton` newline key at x = 5 (4 with
+  restore), the `UI.RestoreButton` at `(6, 4, 2)` while `CanRestore()` holds
+  (`_cancelCacheSign.Length > 0`, `:504-515`). `Click::Newline`/`Restore`
+  play sound 12 and write `"\n"` / spend the cache (`:462-467`/`:476-484`).
+- **The multi-line edit** — the physical Enter appends `"\n"` in the sign
+  context (`UIVirtualKeyboard.cs:751-754`) instead of submitting; the submit
+  rides the Save button or the dialog's Save interaction. `CopyTextToSign`
+  (`:1049-1059`) syncs the live keyboard text into `npcChatText` per frame
+  (`App::keyboard_sync_chat_text`), so the dialog shows the edit; the dialog
+  draws UNDER the keyboard (`IngameFancyUI.Draw`'s `GUIChatDraw` arm,
+  `IngameFancyUI.cs:212-215` — the port's front-draw arm in
+  `app/frame/draw.rs`, its clicks take the press first in `app/loop.rs`),
+  gated by `GUIChatDraw`'s `npcChatText != "" || sign != -1` and `!editChest`
+  (`Main.cs:46713`). The edit caret is `DrawText`'s 20-tick `textBlinker`
+  (`NPCChatPanel.cs:254-261`, the chest `TextBlinker` reused on
+  `App.sign_text_blinker`).
+- **Submit/cancel** — `Main.SubmitSignText` (`Main.cs:40694-40704`): sound
+  12, `Sign.TextSign(player.sign, Main.npcChatText)` (the closure ignores its
+  trimmed argument — the live UNTRIMMED text lands), `editSign = false`, the
+  netMode-1 client sends `47` (sender byte 0, flags 0).
+  `Main.InputTextSignCancel` (`Main.cs:19817-19826`): `CacheCanceledInput(1)`
+  parks the live text in `_cancelCacheSign` (`App.sign_cancel_cache`,
+  `UIVirtualKeyboard.cs:1031-1037`), `npcChatText` re-reads the stored record;
+  `RestoreCanceledInput(1)` (`:1039-1047`) returns the cache to the box and
+  empties it (the bottom row rebuilds without the restore key, `:481-484`).
+- **The closes** — the per-tick range close (`Player.cs:27504-27518`: the
+  32x32 sign box vs the `TileReachCheckSettings.Simple` world region, sound
+  11), the `Main.editSign` gate (`Main.cs:17389-17394`: the editor dies when
+  the index clears) — both in `signs::sign_tick` beside `chest::tick_open`;
+  `ToggleInv`'s sign Escape arm (`Player.cs:5017-5020` — `CloseSign()`, no
+  inventory toggle); `CloseNPCChatOrSign`'s `CloseSign(quiet: true)` half
+  (`Main.cs:40682`).
+
+Deliberate deviations / deferred:
+
+- **`Main.editSign` is the session** — the port models the flag as "the
+  `KeyboardTail::SignEdit` session is open" (`App::sign_editing`, the
+  chest-rename shape); there is no separate boolean to drift.
+- **The `screenHeight > 700` gate is not ported** —
+  `CanShowVirtualKeyboard(1)` → `UIVirtualKeyboard.CanDisplay`
+  (`UIVirtualKeyboard.cs:1022-1029`) falls back to the inline
+  `Main.InputTextSign` editor (`Main.cs:19782-19799`) on short screens; the
+  port carries no inline editor, so the keyboard opens at every height.
+- **IME / input plumbing** — `Main.instance.HandleIME()` /
+  `SetIMEPanelAnchor` (`UIVirtualKeyboard.cs:747-749`), the composition
+  string draw + anchor (`NPCChatPanel.cs:242-253`), `Main.clrInput()`
+  (`IngameFancyUI.cs:128`) and `Main.blockKey` (`Main.cs:19820`) have no
+  port route (the winit text path replaces `GetInputText`'s key polling).
+- **The sign hover surfaces are unported** — the `Player.cs:32101-32115`
+  hover latch (`Main.signBubble`/`signX`/`signY`/`signHover`), the
+  `signHover` mouse tooltip (`Main.cs:42940-42964`, the 460 px/10-line wrap
+  at the cursor) and `DrawInterface_19_SignTileBubble`
+  (`Main.cs:45739-45760`, the `Chat2` bubble over the sign — including its
+  `gravDir == -1` flip `:45745-45747`, unreachable while the port keeps
+  `gravDir = 1`). The sign text is readable only through the open dialog.
+- **Kill-on-break is lazy** — `WorldGen.KillTile`'s `Sign.KillSign`
+  (`WorldGen.cs:43686-43689`, every type except 395) is not wired into the
+  port's tile-break path; `signs::kill_sign` exists but runs only through
+  `ReadSign`'s non-sign-origin kill (`Sign.cs:30-34`) and `TextSign`'s
+  dead-tile splice (`Sign.cs:77-80`) — a broken sign's record dies on the
+  next read/write, not on the break tick.
+- **The front-screen keyboard pauses the sim** — the chest-rename precedent
+  (ANALYSIS "Chest UI + world chests (M3-CHEST-UI)"): vanilla keeps the
+  world ticking and draws the game UI under `InGameUI`; the port's keyboard
+  is a front screen, so the world sim pauses and the HUD hides while the
+  editor is open. The dialog-under-keyboard draw arm + the click-first
+  routing keep the visible interaction identical.
+
+Co-claims for the merger: `ui/keyboard.rs` is also edited by
+`origin/task/W4-c25-keyboard-text-field` (pure `TextField`/`get_input_text`
+bindings, +516 lines, no App wiring) — f22 changes the
+`layout`/`click_at`/`draw` signatures and adds `Context`/`bottom_row`, c25
+appends self-contained bindings; keep both halves. The sign net ids
+(`46`/`47`) already landed on main (S1-E-27); f22 adds only the client-open
+arm. `origin/task/W4-d98-net-ids-items-chests` may overlap `net.rs`/
+`netglue.rs`; the i43 chest/sign work is already on main.
 
 ## Town housing (S1-E-11a, 2026-11-14)
 

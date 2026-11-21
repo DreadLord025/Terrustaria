@@ -242,7 +242,15 @@ character rename splices the `.plr` name field (`player_file::rename_player_file
 `PlayerFileData.Rename`) and the world rename splices the `.trwld` header
 (`save_list::rename_world`, `WorldGen.RenameWorldCallBack`); the session stand-in
 renames in memory, a failed write notices through `front_hint` — ANALYSIS "The card
-renames (W4-f22)".
+renames (W4-f22)". The keyboard also serves the **sign editor** (context 1, W4-f22):
+`Context::Sign` parks the textbox/label off-screen (`-5000`, `UIVirtualKeyboard.cs:176`
+— the text edits in the NPCChatPanel dialog, see "Sign editor" below), the submit
+label reads `UI.Save` (`:291`/`:327`), the submit gate is always-valid (`:621`), and
+the bottom row (`bottom_row`, `BuildSpaceBarArea` `:444-489`) swaps the 6-wide space
+bar for a 3-wide space + the `UI.EnterButton` newline key (2-wide space + x-shifted
+newline while the cancel cache holds) + the `UI.RestoreButton` at `(6, 4, 2)`. The
+sign text cap is **1200** (`IngameFancyUI.cs:145` — `signs::SIGN_MAX_TEXT_LENGTH`,
+NOT 500). ANALYSIS "The sign keyboard (W4-f22)".
 
 ### Credits and legacy confirms (`menu/`)
 
@@ -505,6 +513,38 @@ Screenshots: `TR_CHEST` stages a stocked style-0 chest on the spawn plateau and 
 the panel deterministically (the `TR_INV`/`TR_CRAFT` presence-flag pattern); double
 runs are SHA256-equal.
 
+### Sign editor (`signs.rs`, `Sign.cs` + `IngameFancyUI.cs`)
+
+The sign text field (W4-f22) rides the town-chatter dialog: right-clicking a sign
+tile (`Player.cs:32693-32724` — the `world_sim/editing/doors.rs` arm + the
+open-inventory click route) opens the record through `Sign.ReadSign`
+(`Sign.cs:24-60`, the frame-decoded 2-wide origin, the create-if-missing slot) and
+`Player.OpenSign` (`Player.cs:33542-33551` — `CloseAll(quiet)`'s live pieces, sound
+10, `npcChatText = sign.text`); the NPCChatPanel draws the text read-only with a
+Close + **Edit** row (`Lang.inter[48]`, `NPCInteractions.Actions.OpenSign`
+`NPCInteractions.cs:15-42`). A re-click on the open sign closes it; the MP client
+asks the host with `46` and the `47` answer opens it (`MessageBuffer.cs:2366-2405`,
+the S1-E-27 ids — the client-open arm is W4-f22).
+
+Edit opens `IngameFancyUI.OpenVirtualKeyboard(1)` (`IngameFancyUI.cs:86-145`):
+sound 12, the ctx-1 keyboard with the `UI.EnterMessage` label, the sign text
+prefill, `allowEmpty: false` and **maxLength 1200** (the census pin — NOT 500).
+The keyboard's own textbox is parked off-screen (`-5000`,
+`UIVirtualKeyboard.cs:176`); the text edits in the dialog, which draws UNDER the
+keyboard (`IngameFancyUI.Draw`'s `GUIChatDraw` arm, `:212-215`) with the 20-tick
+edit caret (`NPCChatPanel.cs:254-261`). The live keyboard text syncs into
+`npcChatText` per frame (`CopyTextToSign`, `:1049-1059`). Physical Enter appends
+a newline (`:751-754`); the submit rides the **Save** button / the dialog's Save
+row (`Lang.inter[47]`) — `Main.SubmitSignText` (`Main.cs:40694-40704`): sound 12,
+`Sign.TextSign`, the netMode-1 client sends `47`. Cancel (`Main.InputTextSignCancel`,
+`:19817-19826`) parks the live draft in the cancel cache; re-opening shows the
+**Restore** key (`UIVirtualKeyboard.cs:1039-1047`) which spends it. The sign closes
+on walk-away (the `Simple` reach region, `Player.cs:27504-27518`), death
+(`:17014`), Escape (`ToggleInv`'s sign arm, `:5017-5020`) or the dialog's Close
+(`CloseNPCChatOrSign`'s `CloseSign(quiet)` half). Deviations (the sim pause, the
+screenHeight>700 gate, IME, the unported signHover tooltip/bubble, lazy
+kill-on-break): ANALYSIS "The sign keyboard (W4-f22)".
+
 ### Minimap frame (`ui/minimap.rs`, `MinimapFrame.cs`)
 
 The frame around the already-ported map tiles is the `MinimapFrame`/
@@ -662,8 +702,10 @@ caller) — the full list is in `docs/ANALYSIS.md` →
   splices, the 460 px/10-line wrapped text at `+(20,20)` stepping 30 px and
   the always-present Close button (`Lang.inter[52]`, hover scale 1.2, sound
   12 on the hover edge, sound 11 + `talkNPC = -1` on the click). The
-  right-click open rides `world_sim::npcs::talk_to_npc`. Deferred: the other
-  interaction buttons, the portrait, the corner item, the sign/IME blinker,
+  right-click open rides `world_sim::npcs::talk_to_npc`. The sign half landed
+  W4-f22 (the `sign != -1` gate, the Edit/Save interaction row, the edit caret —
+  see "Sign editor" above). Deferred: the other
+  interaction buttons, the portrait, the corner item, the IME composition,
   the Dryad Stardew override and the gamepad arms — `docs/ANALYSIS.md` →
   "Town chatter UI (S1-E-10b)".
 
