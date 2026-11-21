@@ -219,6 +219,7 @@
 //! | 1023-1028 | `:87638-87649` | the 13/14/15 Eater of Worlds death (2 gores each, per-type) |
 //! | 1029-1038 | `:87668-87693` | the 17 Merchant + 441 TaxCollector death (5 gores each, shimmer variants) |
 //! | 1039-1048 | `:87709-87733` | the 86 Unicorn (7 gores) + 155 Wolf (3 gores) death |
+//! | 1049-1056 | `:87749-87771` | the 329 Hellhound (3 gores) + 163/238 BlackRecluse (5 gores) death |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -6028,6 +6029,60 @@ fn wolf_death(
     gore.new_gore(rng, world, pos, vel, 183, 1.0); // :87733
 }
 
+/// The 329 Hellhound death (`NPC.cs:87745-87751`, sites 1049-1051): the
+/// 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 3 gores 485/486/487 at position. Scale defaults to 1.
+fn hellhound_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 485, 1.0); // :87749
+    gore.new_gore(rng, world, pos, vel, 486, 1.0); // :87750
+    gore.new_gore(rng, world, pos, vel, 487, 1.0); // :87751
+}
+
+/// The 163/238 BlackRecluse death (`NPC.cs:87763-87771`, sites 1052-1056):
+/// the 50-dust type-18 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then
+/// the 5 gores 205/206/206/206/206 at position. Scale defaults to 1.
+fn black_recluse_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 18, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 205, 1.0); // :87767
+    gore.new_gore(rng, world, pos, vel, 206, 1.0); // :87768
+    gore.new_gore(rng, world, pos, vel, 206, 1.0); // :87769
+    gore.new_gore(rng, world, pos, vel, 206, 1.0); // :87770
+    gore.new_gore(rng, world, pos, vel, 206, 1.0); // :87771
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -6761,6 +6816,14 @@ pub fn hit_effect_c(
     // `:87717-87734` — the 155 Wolf arm (sites 1046-1048).
     if npc_type == 155 && npc.hp <= 0 {
         wolf_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87735-87752` — the 329 Hellhound arm (sites 1049-1051).
+    if npc_type == 329 && npc.hp <= 0 {
+        hellhound_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87753-87772` — the 163/238 BlackRecluse arm (sites 1052-1056).
+    if (npc_type == 163 || npc_type == 238) && npc.hp <= 0 {
+        black_recluse_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -10678,6 +10741,33 @@ mod tests {
         wolf_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
         let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
         assert_eq!(types, vec![181, 182, 183]);
+    }
+
+    /// `NPC.cs:87749-87751` — the Hellhound death: the 3 gores 485/486/487.
+    #[test]
+    fn w4_f10_the_hellhound_death_spawns_the_three_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1021);
+        hellhound_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![485, 486, 487]);
+    }
+
+    /// `NPC.cs:87767-87771` — the BlackRecluse death: the 5 gores
+    /// 205/206/206/206/206.
+    #[test]
+    fn w4_f10_the_black_recluse_death_spawns_the_five_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1031);
+        black_recluse_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![205, 206, 206, 206, 206]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
