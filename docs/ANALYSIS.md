@@ -39308,6 +39308,25 @@ the item-use path, the draw and the census pins.
     `Remap(localAI[0], 0, 300, 0, 1)` is the live value; the no-tail five's
     `num6` spin (`:37331`) is zeroed on the next line — both fold to
     their final values.
+- **The kite WIND interplay verified (residual 7)**: the aiStyle census
+  pins 155 = the mystic snake coil, 156 = the Bat of Light
+  (`AI_156_BatOfLight`, `Projectile.cs:51516`), the KITES = 160 (the
+  dispatch `:36603-36606`). The generic wind-physics tail
+  (`ShouldUseWindPhysics`, `:22101-22136`) never serves aiStyle 160 (its
+  case list stops at 106) AND `Main.windPhysics` is false for the whole
+  1.4.5.8 tree (`Main.cs:66841`, no `= true` write) — the kite's ONLY
+  wind is `KiteLogic`'s `WindForVisuals` hover (`:48520-48565`: the
+  300-cap counter, the num7 = GetLerpValue(0.2, 0.5, |wind|)·0.5 lift vs
+  the 0.02 + num7·0.25 gravity, the storm squash, the ±2 clamp), fed by
+  the `visual_scene` seam (`wind.speed_current` = `Main.WindForVisuals`
+  `Main.cs:2823`). The windy-day achievement's flag
+  (`Main.IsItAHappyWindyDay` = `_shouldUseWindyDayMusic`, `Main.cs:2903`)
+  rides `Wind::update_windy_day_state` (`Main.cs:12990-13027`).
+  - FIX: `in_a_place_with_wind`'s out-of-world arm — the C# `InWorld`
+    guard (`WorldGen.cs:86868`) SKIPS outside cells; the port's old
+    refuse-on-`None` folded every edge-of-map kite calm. Now `continue`
+    (the liquid/wall refusals unchanged, `WallID.Sets.AllowsWind`
+    `WallID.cs:95` = `tr_core::wind::wall_allows_wind`).
 - **The 155 rope seams are LIVE**: the dispatch passes `&mut World`
   straight into `ai_mystic_snake_coil` (the ai_ice_block carve-out);
   `place_tile`/`kill_tile` bump `world.revision` (the `WorldFrameKey`

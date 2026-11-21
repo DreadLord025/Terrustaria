@@ -71,6 +71,11 @@ pub struct KiteContext {
 /// `:86848-86856`, the REMIX flip) and the per-cell liquid/wall refusal.
 /// The pool holds no `Wind` struct — the world's `world_surface` +
 /// seed flags carry the same state (`tr_core::wind::Wind`'s fields).
+/// Residual 7 fix: the C# `InWorld` guard (`:86868`) SKIPS out-of-world
+/// cells — only an in-world null tile refuses (`:86871-86874`, never
+/// occurs with the `Main.tile` allocation); the port's `World::tile`
+/// answers `None` out of bounds, so `None` continues (the old
+/// refuse-on-`None` folded every edge-of-map kite calm).
 fn in_a_place_with_wind(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
     let x = (pos.x / 16.0) as i32;
     let y = (pos.y / 16.0) as i32;
@@ -86,8 +91,10 @@ fn in_a_place_with_wind(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
     }
     for i in 0..ww {
         for j in 0..hh {
+            // `:86868` — `if (WorldGen.InWorld(x + i, y + j))`: the
+            // out-of-world cell is SKIPPED, not a refusal.
             let Some(t) = world.tile(x + i, y + j) else {
-                return false;
+                continue;
             };
             if t.liquid > 0 || (t.wall > 0 && !tr_core::wind::wall_allows_wind(t.wall)) {
                 return false;
@@ -708,6 +715,132 @@ mod w4_d16_160_tests {
         p2.owner = 1;
         kite_step(&mut p2, &w, Some(&mut pl2), &ctx(), (0.0, 0.0, 0.0, 0.0), &mut census(), 0, 3, 3);
         assert!(pl2.buffs.find_buff_index(383).is_none(), "the owner gate");
+    }
+
+    /// Residual 7 — the aiStyle census: 155 is the mystic snake coil,
+    /// 156 the Bat of Light (`AI_156_BatOfLight`, `Projectile.cs:51516`),
+    /// the KITES are 160 (`AI_160_Kites`, the dispatch `:36603-36606`).
+    /// The generic wind-physics tail (`ShouldUseWindPhysics`,
+    /// `:22101-22136`) never serves aiStyle 160 — its case list stops at
+    /// 106 — AND `Main.windPhysics` is false for the whole 1.4.5.8 tree
+    /// (`Main.cs:66841`, no `= true` write anywhere): the kite's ONLY
+    /// wind is `KiteLogic`'s `WindForVisuals` hover (`:48520-48529`).
+    #[test]
+    fn w4_d16_160_the_aistyle_census_and_the_wind_gate() {
+        assert_eq!(proj_data(754).unwrap().ai_style, 155, "the coil");
+        assert_eq!(proj_data(766).unwrap().ai_style, 160, "the kites");
+        for &k in KITE_KINDS.iter() {
+            assert_eq!(proj_data(k).unwrap().ai_style, 160, "kind {k}");
+        }
+    }
+
+    /// Residual 7 — the wind-lift arm (`KiteLogic` `:48520-48565`): the
+    /// 300-cap wind counter, the num7 lift vs the calm gravity, the
+    /// storm squash and the ±2 clamp. Wind 0.5 → num7 = 0.5: the lift
+    /// beats the 0.02 + num7·0.25 gravity and the kite climbs; calm →
+    /// num7 = 0 and the +0.02 gravity sinks it.
+    #[test]
+    fn w4_d16_160_the_wind_lift_arm() {
+        let w = world();
+        let mut pl = crate::player::Player::spawn(&w);
+        // Windy: localAI[0] counts UP toward 300, the velocity leans
+        // toward the wind target and the Y lifts. GlobalTime −π/2 →
+        // sin = −1: the bob target sits 25 px ABOVE the kite, so the
+        // below-target catch-up (`:48558-48561`) does not fire and the
+        // raw lift/gravity pair shows (−num7 + 0.02 + num7·0.25).
+        let mut p = kite(&w, &pl);
+        p.vel = Vec2::ZERO;
+        kite_step(
+            &mut p, &w, Some(&mut pl), &ctx(),
+            (0.5, 0.0, 0.0, -std::f32::consts::FRAC_PI_2), &mut census(), 0, 3, 3,
+        );
+        assert_eq!(p.local_ai[0], 1.0, "the |wind| >= 0.2 counter +1 (`:48528`)");
+        assert!(p.vel.x > 0.0, "the wind steers +X: {}", p.vel.x);
+        assert!(p.vel.y < 0.0, "the num7 lift beats gravity: {}", p.vel.y);
+        // The counter caps at 300.
+        p.local_ai[0] = 300.0;
+        kite_step(
+            &mut p, &w, Some(&mut pl), &ctx(),
+            (0.5, 0.0, 0.0, -std::f32::consts::FRAC_PI_2), &mut census(), 0, 3, 3,
+        );
+        assert_eq!(p.local_ai[0], 300.0, "the 300 cap");
+        // Calm: the counter drains, num7 = 0 zeroes the steer, the
+        // +0.02 gravity sinks the kite (the below-target catch-up may
+        // add num7 + 0.01 = 0.01 × 0.75 — still positive).
+        let mut p2 = kite(&w, &pl);
+        p2.vel = Vec2::ZERO;
+        p2.local_ai[0] = 10.0;
+        kite_step(&mut p2, &w, Some(&mut pl), &ctx(), (0.0, 0.0, 0.0, 0.0), &mut census(), 0, 3, 3);
+        assert_eq!(p2.local_ai[0], 9.0, "the calm counter −1");
+        assert_eq!(p2.vel.x, 0.0, "num7 == 0 zeroes the wind steer (`:48538-48541`)");
+        assert!(p2.vel.y > 0.0, "the calm gravity: {}", p2.vel.y);
+        // The ±2 clamp: a fast-falling calm kite clamps to +2.
+        let mut p3 = kite(&w, &pl);
+        p3.vel = Vec2::new(0.0, 5.0);
+        kite_step(&mut p3, &w, Some(&mut pl), &ctx(), (0.0, 0.0, 0.0, 0.0), &mut census(), 0, 3, 3);
+        assert!(p3.vel.y <= 2.0 + 0.01, "the ±2 clamp (`:48557`): {}", p3.vel.y);
+        // The storm squash (`:48532-48535`): cloudAlpha 0.8 with
+        // |wind| 0.5 >= 0.4 flips the bob's positive Y toward negative
+        // (1 − 0.5·2 = 0) — the target Y loses the cloud lift.
+        let mut p4 = kite(&w, &pl);
+        p4.vel = Vec2::ZERO;
+        // GlobalTime π/2 → sin = 1: vector.y = (1 + 0.8·5)·25 = 125
+        // before the squash; the squash zeroes it (×(1 − 1) = 0).
+        kite_step(
+            &mut p4, &w, Some(&mut pl), &ctx(),
+            (0.5, 0.0, 0.8, std::f32::consts::FRAC_PI_2), &mut census(), 0, 3, 3,
+        );
+        // With the Y target squashed to the kite's own Y the steer is
+        // pure +X — the velocity's Y stays on the lift/gravity lane.
+        assert!(p4.vel.x > 0.0, "the wind X survives the squash");
+    }
+
+    /// Residual 7 — `InAPlaceWithWind`'s refusals (`WorldGen.cs:86858-86883`):
+    /// a liquid cell or a wind-blocking wall in the box kills the wind
+    /// read (num6 = 0 → the calm lane); the AllowsWind glass wall passes;
+    /// the below-surface height gate refuses; the out-of-world cells are
+    /// SKIPPED (`:86868`'s InWorld guard — the residual-7 fix, the old
+    /// port refused every edge-of-map kite).
+    #[test]
+    fn w4_d16_160_the_wind_place_gate() {
+        let mut w = world();
+        let mut pl = crate::player::Player::spawn(&w);
+        let p0 = kite(&w, &pl);
+        let (tx, ty) = ((p0.pos.x / 16.0) as i32, (p0.pos.y / 16.0) as i32);
+        // The baseline: open air above the surface — the wind reads.
+        let mut p = kite(&w, &pl);
+        kite_step(&mut p, &w, Some(&mut pl), &ctx(), (0.5, 0.0, 0.0, 0.0), &mut census(), 0, 3, 3);
+        assert_eq!(p.local_ai[0], 1.0, "the open-air wind");
+        // A liquid cell refuses (`:86875`).
+        let i = w.index(tx, ty);
+        w.tiles[i].liquid = 100;
+        let mut p2 = kite(&w, &pl);
+        kite_step(&mut p2, &w, Some(&mut pl), &ctx(), (0.5, 0.0, 0.0, 0.0), &mut census(), 0, 3, 3);
+        assert_eq!(p2.local_ai[0], 0.0, "the liquid refusal");
+        w.tiles[i].liquid = 0;
+        // A wind-blocking wall refuses; the AllowsWind glass (13) is
+        // NOT in the set — use 150 (the set's first non-zero entry).
+        w.tiles[i].wall = 1;
+        let mut p3 = kite(&w, &pl);
+        kite_step(&mut p3, &w, Some(&mut pl), &ctx(), (0.5, 0.0, 0.0, 0.0), &mut census(), 0, 3, 3);
+        assert_eq!(p3.local_ai[0], 0.0, "the wall refusal");
+        w.tiles[i].wall = 150;
+        let mut p4 = kite(&w, &pl);
+        kite_step(&mut p4, &w, Some(&mut pl), &ctx(), (0.5, 0.0, 0.0, 0.0), &mut census(), 0, 3, 3);
+        assert_eq!(p4.local_ai[0], 1.0, "the AllowsWind wall passes (`WallID.cs:95`)");
+        w.tiles[i].wall = 0;
+        // Below the surface: DoesWindBlowAtThisHeight refuses.
+        let mut p5 = kite(&w, &pl);
+        p5.pos.y = (w.world_surface as f32 + 10.0) * 16.0;
+        kite_step(&mut p5, &w, Some(&mut pl), &ctx(), (0.5, 0.0, 0.0, 0.0), &mut census(), 0, 3, 3);
+        assert_eq!(p5.local_ai[0], 0.0, "the height gate");
+        // The out-of-world skip: a kite at the map's left edge (the box
+        // covers only x = −1) still reads the wind — the C# InWorld
+        // guard skips the outside cell instead of refusing.
+        let mut p6 = kite(&w, &pl);
+        p6.pos.x = -20.0;
+        kite_step(&mut p6, &w, Some(&mut pl), &ctx(), (0.5, 0.0, 0.0, 0.0), &mut census(), 0, 3, 3);
+        assert_eq!(p6.local_ai[0], 1.0, "the out-of-world cells skip (`:86868`)");
     }
 
     /// The dispatch wiring: a spawned kite with the context fed runs the
