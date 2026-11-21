@@ -19215,6 +19215,87 @@ into the positions/sizes and compare the screen mouse against the scaled
 rects (the `minimap_origin_raw` convention, the same as the NPC head
 pass). 9 `w4_e17_*` witnesses WRITTEN NOT RUN (code-only mode).
 
+## The map NPC heads + pylon network lines / click state (W4-e17 first half, code-only 2026-11-21)
+
+The f29 census's first half (items 1-4), ported ahead of the player-pin /
+death / misc / revenge passes above (items 5-8, the parallel lane).
+
+**The NPC head overlays** — `crates/tr-app/src/map_npc_icons.rs` ports
+`Main.DrawNPCMapIcons`/`2`/`3` (`Main.cs:56099-56292`): the fullscreen pass
+(`:56222-56292`, wired at `:55926` before the player heads), the minimap
+pass (`:56144-56220`, wired at `:55709` between the icon layers and the
+frame foreground, the strict-edged `(miniMapX+12, miniMapY+10, W-16, H-14)`
+clip) and the `mapStyle == 2` overlay pass (`:56099-56142`, ported but
+UNWIRED — the P4 plan's Uncertainty 7). The boss half resolves
+`GetBossHeadTextureIndex` (`NPC.cs:7557-7606`) over
+`NPCID.Sets.BossHeadTextures` (`NPCID.cs:10479`, keyed by the C# type, NOT
+the folded bestiary net id — the Golem parts fold onto 245 but only the
+246/249 heads draw) plus the seven type overrides (the Eye's phase-2 swap,
+the Brain's illusion hide, Plantera's INTEGER `lifeMax/2`, the twins'
+laser/spit phases, the Cultist's clone swap); `GetBossHeadRotation`
+(`:7608-7632`) and `GetBossHeadSpriteEffects` (`:7634-7642`, the Dutchman's
+`spriteDirection == 1` flip) gate the tilt/flip. The Destroyer head's
+segment-average (`:56125-56137`) walks the chain by `worm_id`/`seg_index`
+(the port's stable identity — the pool compacts, the C#'s `Main.npc[ai[0]]`
+slot links do not survive), head + up to 14 active links, divided by the
+count. The town half resolves `TownNPCProfiles.GetHeadIndexSafe`
+(`TownNPCProfiles.cs:200-207`): the stacked shimmer profiles pick the
+variant by `townNpcVariationIndex` (`Profiles.cs:44-52`), the pet
+`VariantNPCProfile`s index their head-id arrays (`:238-241`), the town
+slimes are fixed-head `LegacyNPCProfile`s, and the rest fall to
+`NPC.TypeToDefaultHeadIndex`. The outlined head
+(`OutlinedTextureRenderer.DrawWithOutlines` → the baked
+`AnOutlinedDrawRenderTargetContent` rings, `:38-62`) is reproduced as
+direct quads like `draw_player_map_icon`: 8 black copies at Manhattan
+radius 4, 4 border copies at radius 2, then the body — all riding the
+single `Color(alpha,alpha,alpha,alpha)` blit tint. The hover text is
+`FullName` (town, `Game.NPCTitle` "{0} the {1}") / `GivenOrTypeName`
+(boss); the hover rect's half-width is the C#'s INTEGER `(float)(Width()/2)`.
+The town `nextDialogue.ShowIndicator` notification bubble
+(`Utils.DrawNotificationIcon`, `Utils.cs:442-461`) is ported but gated off
+(the dialogue system is unported). The minimap pass folds the `MapScale`
+batch transform into the positions/sizes (`head_scale = num46 * MapScale`,
+the `minimap_origin_raw` convention).
+
+**The pylon network lines + hover/click state** — `map_layers.rs` ports
+`TeleportPylonsMapLayer.Draw` (`TeleportPylonsMapLayer.cs:30-110`): the
+fullscreen network lines (`:45-64`) from `Main.MapPylonTile`'s unclamped
+centre to every OTHER revealed pylon's, one black 6px + one white 2px
+`DrawLine` (`:18-28`: `Min(5,(int)Distance)` BlackTile segments lerped along
+the line, origin `(0, width/2)`, scale `(len/n/16, width/16)`); the markers
+draw through `DrawScaled` (the minimap, `MapOverlayDrawContext.cs:218-242`,
+the 2x hover scale) / `DrawClamped` (the fullscreen, `:118-216`, the
+border-10 rect pull-back along the ray from the screen centre + the
+`Extra_299` frame (2,1) offscreen arrow + the 0.5x offscreen / 2x hovered
+scales). The marker frame is the faithful `SpriteFrame(11,1,col,0)` cell —
+28 px wide (330/11 − PaddingX 2), NOT the 30 the earlier port drew. A hover
+claims `Main.cancelWormHole` (`:81`) and the item-name text; a press latches
+`PylonClick::Teleport` (onscreen) / `PanTo` (offscreen). `map.rs` carries the
+`MapPylonTile`/`PanTargetMapFullscreen`/`cancelWormHole` state, the 0.15 pan
+lerp (`Main.cs:55361-55385`, the `1/dist` overshoot guard + the <1-tile
+snap, a held press cancels) and `pylon_view_fit` (`Player.cs:32188-32212`:
+the anchor + every revealed pylon `Including`'d, `Inflate(20,20)`, the
+INTEGER rect centre, the scale clamped to fit `screen-40`); `set_open(true)`
+clears the selection (`TryOpeningFullscreenMap`, `:29113`). The 597 tile
+right-click (`world_sim/editing/doors.rs`, `Player.cs:32180-32212`) decodes
+the 3x4 body anchor (`x - frameX/18%3, y - frameY/18%4`), opens the map and
+fits the network. The marker click drains in `app/clicks.rs`:
+`handle_pylon_map_click` runs the `HandleTeleportRequest` gate ladder
+(`tr_core::pylons::handle_teleport_request`, the destination metrics scanned
+at the pylon) → `Player.Teleport(newPos, 9, pylonType)` + `velocity = 0`
+(`:189-194`) or the refusal chat line; the offscreen click arms the pan.
+The press edge is snapshotted (`App::map_left_press`) in `frame_shared_setup`
+BEFORE the click cluster consumes `ui_left_press` (the draw reads it after).
+
+Documented drops: the `mapStyle == 2` overlay head pass is unwired (the P4
+plan's Uncertainty 7); the town notification indicator is gated off (the
+dialogue system is unported); the wormhole-potion teleport hover that
+`cancelWormHole` guards is MP-only and unported (`HasUnityPotion`), so the
+flag is carried but has no same-frame consumer yet. 13 `w4_e17_*` witnesses
+WRITTEN NOT RUN (code-only mode). The atlas pack stays under the 8192-px
+bound: the head sheets add +16 px (8115 → 8131, measured through
+`tools/atlas_sim.js`'s skyline packer over the real content dims).
+
 ## Dust & gore (module 15) (S1-E-1, 2026-11-14; S1-E-3, 2026-11-17)
 
 `crates/tr-core/src/particles.rs` is the `Main.dust` analog: the C# keeps the pool as the static `Main.dust[6001]` array plus the three static pressure counters (`Dust.dCount`, `lavaBubbles`, `SandStormCount`, `Dust.cs:12-16`), and the port carries the same global-pool semantics вЂ” one pool the App owns, spawns addressed by slot, slot 6000 the refuse sentinel `NewDust` returns and never scans (`Main.cs:66985`, `Dust.cs:79`/`:103`). The spawn path is a 1:1 transcription of `Dust.cs:10-407`: the guard chain (`:77-101`), the off-screen cull with the `400*(1-dCount)` margin (`:89-97`), the first-inactive-slot scan and the five pressure bands (`:103-152`), the default block with the per-100 frame shift (`:153-193`), the `ChildSafety` re-type arm (`:194-213`, `ChildSafety.cs:33`) and the per-type tweak chain (`:214-252`). The pool draws from the caller-passed stream (the `DustRng` seam, the C# `Next`/`NextFloat` conversions `UnifiedRandom.cs:120-141`), so per-consumer streams are preserved: the pool's band rolls are the only added draws on the clients' streams. The sand spawn site additionally regained the C# `NewDust` velocity/scale rolls the stand-in had skipped (`Sandstorm.cs:226`; the final 0.9 scale pin unchanged), and `Settings::blood` arms `pool.child_safety` at spawn вЂ” blood on is the vanilla default (the gate skipped), blood off sets `ChildSafety.Disabled` false and the re-type fires.
