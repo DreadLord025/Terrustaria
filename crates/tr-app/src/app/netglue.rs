@@ -3566,6 +3566,10 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // Doc-sweep lane 36 — the ShimmerSlime plants its feet on the
+        // column surface (the wave-A slime seed; the aiStyle-1 machine
+        // takes over on the first tick).
+        crate::npc::NpcKind::ShimmerSlime => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
     })
 }
 

@@ -586,6 +586,10 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // Doc-sweep lane 36 — the ShimmerSlime keeps its vanilla id
+            // (676 is free in the protocol space; the 677 twin is
+            // W4-c7/c9's pushed claim). `NPCID.cs:12029`.
+            NpcKind::ShimmerSlime => 676,
         }
     }
 
@@ -916,6 +920,8 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            // Doc-sweep lane 36 — the ShimmerSlime's vanilla id (`to_u16`).
+            676 => NpcKind::ShimmerSlime,
             _ => return None,
         })
     }
@@ -1788,6 +1794,8 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Hit_1",
             NpcKind::AngryNimbus => "NPC_Hit_30",
             NpcKind::DungeonSpirit => "NPC_Hit_36",
+            // Doc-sweep lane 36 — `SoundID.NPCHit1` (`NPC.cs:17576`).
+            NpcKind::ShimmerSlime => "NPC_Hit_1",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2092,6 +2100,8 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Killed_1",
             NpcKind::AngryNimbus => "NPC_Killed_33",
             NpcKind::DungeonSpirit => "NPC_Killed_39",
+            // Doc-sweep lane 36 — `SoundID.NPCDeath1` (`NPC.cs:17577`).
+            NpcKind::ShimmerSlime => "NPC_Killed_1",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2451,6 +2461,9 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // aiStyle 1 — doc-sweep lane 36, the ShimmerSlime
+            // (`NPC.cs:17570`), the shared slime family.
+            NpcKind::ShimmerSlime => 1,
         }
     }
 
@@ -2981,6 +2994,8 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // Doc-sweep lane 36 — 676 24x18 (`NPC.cs:17568-17569`).
+            NpcKind::ShimmerSlime => (24.0, 18.0),
         }
     }
 
@@ -3622,6 +3637,8 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // Doc-sweep lane 36 — 676 lifeMax 80 (`NPC.cs:17573`).
+            NpcKind::ShimmerSlime => 80,
         }
     }
 
@@ -3986,6 +4003,8 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // Doc-sweep lane 36 — 676 damage 20 (`NPC.cs:17571`).
+            NpcKind::ShimmerSlime => 20,
         }
     }
 }

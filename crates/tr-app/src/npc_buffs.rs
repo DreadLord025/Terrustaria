@@ -488,6 +488,10 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+        // Doc-sweep lane 36 — 676 has no `DebuffImmunitySets` row
+        // (`NPCID.cs:6075+` carries no 676 entry) — the C# else-branch's
+        // no-immunity (`NPC.cs:17826-17832`).
+        NpcKind::ShimmerSlime => &[],
     }
 }
 

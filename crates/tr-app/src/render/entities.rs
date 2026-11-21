@@ -1245,6 +1245,7 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     250, // the Angry Nimbus
     288, // the Dungeon Spirit
     384, // the Force Bubble
+    676, // the Shimmer Slime (doc-sweep lane 36)
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -3169,6 +3170,12 @@ pub(crate) fn draw_npcs(
             }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
+            }
+            // Doc-sweep lane 36 — the ShimmerSlime draws its own 2-frame
+            // strip (`Main.npcFrameCount[676]` = 2) at the generic
+            // centred anchor (the small-kinds shape).
+            NpcKind::ShimmerSlime => {
+                pumpkin_moon_draw(assets.npc_sheet(676), npc_rows(676), n, w, h)
             }
         };
         let Some(tex) = tex else {

@@ -1275,6 +1275,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_72",
         "NPC_250",
         "NPC_288",
+        // Doc-sweep lane 36 — the ShimmerSlime's 2-frame strip (the
+        // d35 atlas-repack wave owns the packing reconciliation; a
+        // missing file keeps the draw arm's None fallback).
+        "NPC_676",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -2657,6 +2661,8 @@ impl Lookups {
                 atlas.sheet("NPC_72").copied(),
                 atlas.sheet("NPC_250").copied(),
                 atlas.sheet("NPC_288").copied(),
+                // Doc-sweep lane 36 — the ShimmerSlime's strip.
+                atlas.sheet("NPC_676").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),
