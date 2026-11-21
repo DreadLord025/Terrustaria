@@ -39378,3 +39378,19 @@ extended: v258/259/260 + the 2036/2037 byte pins), `npc_ai_town.rs` ×1
 (both books stack), `achievements.rs` (the TRAINING_DAY dispatch),
 `net.rs` ×1 (the flags3 bit positions + the slot copy), `netglue.rs` ×1
 (the join carries the unlocks + the world flags).
+
+### The persist fold-input (reconcile-input phase)
+
+The three-way persist reconciliation is published as
+`docs/research/135-g90-persist-folds.md` — the mechanical fold-input
+for g88d (the superset owner) and the g71c union extension: this
+branch's exact v7 six-line block + reader gates, the six-line v7
+recognition rule (g88's token-count walk misparses it — bread lands in
+the aegis slot, the last line overwrites bread), the `.plr`-bool ↔
+103/122 unlock-token mapping table (103 §2a's reserved order wins; no
+pushed writer ever emitted token 4+), the `.trwld` v18 pair at union
+offsets 19/20 (the 21-byte g70⨉g71⨉g90 tail + the six truncation-constant
+moves), and the combat-book consumer census (the town ladder is the b3
+lane's UNWIRED seam — flag/persistence/net complete, live consumers are
+the fishing condition, TRAINING_DAY and the satchel shop +1). This
+branch keeps its persist shape; the merger folds per 135.

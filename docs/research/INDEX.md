@@ -74,7 +74,8 @@ per `docs/superpowers` agreements).
 | 60 | Item-use census (S1-P-i01: Player.ItemCheck vs world_sim/editing.rs use path; U1-U39 rows + 11 fix slices) | `60-item-use-census.md` | 🟡 |
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
-| 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
+| 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base - no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
+| 135 | W4-g90 persist fold-input (the v7 six-line block's exact lines/gates + the six-line v7 recognition rule g88's walk misparses; the .plr-bool ↔ 103/122 unlock-token mapping table; the .trwld v18 two-byte tail at union offsets 19/20 → 21-byte g70⨉g71⨉g90 union; the combat-book consumer census — town ladder UNWIRED b3 seam, fishing/TRAINING_DAY/satchel armed; code-only) | `135-g90-persist-folds.md` | ✅ |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
