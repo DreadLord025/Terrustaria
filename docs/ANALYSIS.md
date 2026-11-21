@@ -39503,21 +39503,34 @@ click buffers; the player tick applies).
   `mana_max_base`/`mana_max`; the six flag restores ride verbatim
   (aegis/gummy/ambrosia + the v10 crystal trio, then bread), then the
   v11 torch unlock + the toggle via `set_using_biome_torches`.
-- **The merger contract doc — FINAL.**
+- **The merger contract doc — FINAL-FINAL (receipts complete).**
   `docs/research/103-persist-v7-layout.md`
   carries the full token order/counts, the unlock line's token map
   (tokens 1-6 LIVE: aegis/gummy/ambrosia + the crystal trio at v10;
-  token 7 DD2 RESERVED → v12), §2b the torch-line adjudication + the
-  conditional drop-recommendation, the back-compat matrix (every
-  predecessor shape → its witness), the §5a use-arm dup adjudication
-  (g88 keep-own vs a6's powerups dups, pending research/138 — still
-  unpushed at the v11 pass), §8 the research/135 alignment note (the
-  C#-verified crystal=4/arcane=5/pearl=6 order WINS over 135's
-  pearl-first recommendation — no back-compat obligation either way,
-  135's own words; the six-line recognition rule LANDED) and §9 the
-  FULL merger persist-checklist with f44c's research/132 master-map
-  cross-refs (L1 f44c base + the named-bool dedups / L2 this superset /
-  L3 the 21-byte v18 union). g89d's
+  token 7 DD2 RESERVED → v12 — the receipts-pass census confirms NO
+  pushed lane claims it: d124 owns the WORLD tier latches `.wld` tail
+  1931-1933/gate 178, not the player token; the C# field is a derived
+  per-tick mirror of `DD2Event.DownedInvasionAnyDifficulty`,
+  `Player.cs:24450-24453`), §1a the f44-FINAL cross-receipt (132 §2d's
+  value-range recognition = this reader's all-0/1 guard, SAME rule;
+  the line-16 seat geometry agrees, the v10→v11 version delta
+  reconciled — v11 binding; the slot-11 property fix `63204f85`
+  compatible with the live getter/setter accessors), §2b the
+  torch-line adjudication + the conditional drop-recommendation, the
+  back-compat matrix (every predecessor shape → its witness), §5a the
+  use-arm dup adjudication — NOW CONFIRMED by the pushed research/138
+  (`d7de8bd53`: g88 keep-own 29/109/1291 verbatim; the shimmer six take
+  a6's machine with g90's field/consumer anchors; g87's `dh` v7 line
+  DROPS — the v11 reader tolerates it lossy-not-corrupt; the
+  g87-triple-flag dedups onto f45's `.wld` block + the union), §8 the
+  research/135 alignment note (the C#-verified crystal=4/arcane=5/
+  pearl=6 order WINS — 138 §6's written-order verdict concurs; the
+  six-line rule LANDED + witness-verified against g90's actual pushed
+  writer at tip `94d33f2ca`) and §9 the FULL merger persist-checklist
+  (FINAL-FINAL) with the 132/135/138 cross-refs (L1 f44c base + the
+  named-bool dedups / L2 this superset / L3 the RECONCILED 100-byte
+  v18 head + dense — 132's 97 + g87's 3 pets, the two published
+  layouts' union). g89d's
   `docs/research/122-persist-v9-addendum.md` (`4344bd50`, carried onto
   this branch with §6 + §7 fold receipts + the v11 post-receipt note)
   is the g89-lane view of the same
