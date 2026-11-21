@@ -5,7 +5,9 @@ Date: 2026-11-21. Author: W4-g46 (reconcile phase, code-only — no cargo/tests 
 > **STALE-TIP WARNING (W4-g45 LIQUID RETIRE, 2026-11-21).** Everything below
 > through A7 is written against the PRE-RE-FOLD tips (union `f57d7bacd`,
 > graft-prep). The g46d RE-FOLD LANDED: `origin/task/W4-g46-liquid-evaporation`
-> is now **`9bc722e5`** (base-swapped onto g47 `95e9c1ef`). Read **A9** (the
+> is now **`9bc722e5`** (base-swapped onto g47 `95e9c1ef`). Read **A10**
+> (monitor pass 2 — g15 push-rescue LANDED `7981aa5bf`, union still
+> pre-graft) then **A9** (the
 > LIQUID SEAL reconcile — the ONE authoritative fold-list for g46e,
 > reconciled against g47 `ca76d68ee` §15) at the tail FIRST, then **A8**
 > (the NOW-LANDED receipt) + **A8-graft** (the exact down-arm hunk; A9.1
@@ -785,6 +787,9 @@ module that landed at re-fold step 3 (`16fd6ad78`) ahead of graft step 5.
 
 #### A9.4 The g15 push-owed probe (LOCAL-ONLY — no push from this lane)
 
+> **SUPERSEDED by A10.3 (monitor pass 2):** the push LANDED — remote tip
+> is now `7981aa5bf`, `d43b490f3` in remote history. Debt DISCHARGED.
+
 Fresh `ls-remote` + fetch this pass: `origin/task/W4-g15-dust-item-sites`
 is **STILL `f8f35d799`**; local tip `7981aa5bf` is **20 ahead**
 (`rev-list --count` = 20). `d43b490f3` (TryFillBucket):
@@ -808,3 +813,56 @@ addition: `liquid_clock` pure dt+wind, RNG-free, liquid-free worlds
 bit-identical). Expected **109 + 2** written-not-run pins. **The seal is
 NOT done until the down-arm hunk (row 1) is in the union.** 104 §7 remains
 the receipt of record; post-seal corrections ride THIS section (A9+).
+
+### A10. Post-seal monitor pass 2 (W4-g45 SEAL-VERIFY, 2026-11-21, code-only)
+
+Fresh fetch + blob re-reads this pass. Four probes, four verdicts:
+
+#### A10.1 g45f-liquid-seal LANDED
+
+`f95dcacc3` (the A9 ONE-authoritative-fold-list commit) is the tip of BOTH
+local and `origin/task/W4-g45-liquid-lava-honey-delays` (rev-parse equal,
+working tree clean). A9 is published; nothing on this lane is owed.
+
+#### A10.2 g46e-seal: graft NOT consumed (union UNCHANGED)
+
+`origin/task/W4-g46-liquid-evaporation` tip is STILL **`9bc722e5f`**; no
+`g46e` branch exists (`branch -a` grep = 0). Fresh blob reads:
+down-arm copy :1414 still PRE-`kill_tile` :1422, stale gate :1426, stale
+merge-type reads :1436-1441 — the A8-graft hunk (A9.2 row 1) is still
+ABSENT; `liquid_downarm_live` grep = 0; `#[test]` count = **102** (the
+pre-graft measure, not 109). `own_now` :1112 LIVE with the reaction-
+consumption comment (row 2 stays comment-only). g47 tip STILL
+`ca76d68ee` (§15 published, successor-wins source unchanged). `main`
+moved to `051600da8` (S1-L-11g craft freeze guards) — g46/g45/g15 all
+`merge-base --is-ancestor origin/main` exit 1 (none merged). **The A9.2
+10-row fold-list stands verbatim; the seal is NOT done.**
+
+#### A10.3 g15 push-rescue NOW LANDED (A9.4 SUPERSEDED — debt DISCHARGED)
+
+`origin/task/W4-g15-dust-item-sites` tip is NOW **`7981aa5bf`** — the
+exact local tip A9.4 measured 20 ahead of `f8f35d799`
+(`rev-list --count f8f35d799..7981aa5bf` = 20, matches). TryFillBucket
+`d43b490f3`: `merge-base --is-ancestor … origin/task/W4-g15` → **exit 0**
+(was exit 1 at A9.4). The PUSH-OWED note is RESOLVED — no foreign push
+was made from this lane; the g15 lane published it itself. Consequences
+for the merger: 104 §6c-compose was written against `7981aa5bf` and that
+tip is now the REMOTE tip — the compose contract needs NO re-pin; take
+`origin/task/W4-g15` directly (the "wait or take local" clause is moot).
+Disjointness re-verified on the published tip: the rain-fill gate
+`!was_grabbed && drop.kind == 205 && !reserved_elsewhere` is present in
+remote `items.rs` (the 205→206 conversion), g45's full-inventory
+hand-back world-205 spawn composes into it; buckets surfaces stay
+disjoint — union `editing/` tree = doors/sentry/wiring only, NO
+`buckets.rs` anywhere in the union or main trees; g45-local
+`editing/buckets.rs` rides A9.2 row 8 unchanged.
+
+#### A10.4 104 §7 SEALED receipt + family bible: INTACT, FINAL
+
+104 header + §7 SEALED banners unchanged (post-seal corrections ride
+this section, per 104's own banner — §6c's "local tip / wait for push"
+wording is historical, corrected HERE not there). The A9.5 family bible
+stands FINAL as written: g46-union-canonical + g47-machinery-source +
+g45-buckets/deltas + f25-gen, gate command + **109 + 2** expectation +
+the down-arm-hunk seal condition. Only monitor state changed this pass:
+A9.4's push debt → DISCHARGED (A10.3); everything else UNCHANGED.
