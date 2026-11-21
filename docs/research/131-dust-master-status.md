@@ -332,7 +332,7 @@ paths — gravity :1819, drag :2071, rotation rebuild :2079, fadeIn
 | # | Gap | Types / sites | Detail |
 | - | --- | ------------- | ------ |
 | G1 | **The 52 second-chain/RNG-adjacent AddLight sites** (all 52 reachable — the former "1 dead" :2275 corrected LIVE in the gap-closure round, G5 row) | 159 `:1061`, 164 `:1099`, 173 `:1137`, 160/162 `:1208/:1212`, 168 `:1241`, 244-247 `:1399`, 43 `:1441`, 15/57/58 `:1470/:1474/:1478`, 110-114 `:1501-1537`, 311/312/313 `:1546/:1555/:1564`, 66 `:1588`, 267 `:1619`, 20/21/231 `:1635/:1640/:1644`, 27/45 `:1692`, 55/56/73/74 `:1706/:1714/:1722/:1731`, 71/72 `:1743`, 35 `:1896`, 67/92 `:1926`, 185 `:1939`, 107 `:1950`, 35-wet `:1994`, 68 `:2004`, 70 `:2013`, 41 `:2041`, 44 `:2069`, 130-134 `:2139/:2143/:2147/:2151`, 278 `:2182`, 219-223 `:2214/:2218/:2222/:2226`, 226 `:2254`, 331 `:2299`, 272 `:2312`; DEAD only at the noLightEmittance producers: 226's customData-Color `:2275` — **CORRECTED in the gap-closure round (G5 row): LIVE via ParticleOrchestrator.cs:1171/:1184/:1199 (no noLightEmittance), reconstructible from `d.color`** | dust_lights.rs's own module doc promises these "land with S1-E-3's chain port" — d50's chain port (`cb07d2b6`) cites each skipped AddLight but did NOT extend dust_lights.rs (verified: identical to main at d50 tip). The physics mutations they interleave with ARE ported, so the feed can be added as post-update reads exactly like the landed 206/174/230 compensation retire note. This is the ONLY type-arm coverage gap port-wide. |
-| G2 | **76-arm `Main.snowDust++` merge seam** (`:1747`) | 76 | d50's `type_chain` 76 arm cites+skips the increment ("the pool does not carry it") — but d130's particles.rs NOW carries `pool.snow_dust` (reset `:428` at the head, fed by d130's `snow::type_76_arm` through the live minecart tick). At the d50×d130 merge the `type_chain` 76 arm must feed the counter (one env field or a pool write) or the snowfall budget (`Main.cs:13057`) reads 0. Cross-ref §5 row 2 fold F4 (the counter is also the F4 hoist target). |
+| G2 | **76-arm `Main.snowDust++` merge seam** (`:1747`) | 76 | d50's `type_chain` 76 arm (dust_physics.rs:650-665 at tip `2e243a2d`) cites+skips the increment ("the pool does not carry it") — but d130's particles.rs NOW carries `pool.snow_dust` (field :233, head reset :329 inside `update_dust` per `Dust.cs:428`, fed by d130's `snow::type_76_arm` through the live minecart tick :1069/:1106/:1126). **ONE-EDIT exact hunk published §7.2a below** — the `sand_storm_count` env-delta pattern (NOT a pool write: d50's tr-core cannot see the app pool, and d130's tick already lands the delta post-pass). Cross-ref §5 row 2 fold F4 (the counter is also the F4 hoist target). |
 | G3 | GetAlpha type 157 (`:2627-2651`) | 157 | **CLOSED (gap-closure round)** — ported at `dust_table::get_alpha_with_globals` (this branch): `DustDrawGlobals.mouse_text_color` feeds the `(m/100f − 1.6f)` scale/+50/clamp arm verbatim; the f32-floor alpha (m=255 → 94, not 95) pinned by `w4_d54_g3_get_alpha_157_mouse_text_pulse`. The pure `get_alpha` keeps its shape (no global-free caller reaches 157). |
 | G4 | GetAlpha type 327 (`:2658-2676`) | 327 | **CLOSED (gap-closure round)** — ported at the same seam: `day_time` gate + `disco_rgb` + THREE draw-pass `NextFloat` draws. VERBATIM QUIRK verified: `(int)(sum) * 255` truncates BEFORE the multiply (sum always < 1) → every channel computes 0, the colour passes through unchanged, but the draws still advance the stream — ported structurally, pinned by `w4_d54_g4_get_alpha_327_night_draws_and_zero_quirk`. Reachable port-wide: tile-718 break → dust 327 (`WorldGen.cs:68516-68518` = `worldgen_dust_tile.rs:1013-1015` on d54). The disco feed precedent is g75's `set_disco_rgb` latch; the draw-pass caller wiring (which `Main.rand` stream) is the draw-seam wave's — the seam takes `impl DustRng`. |
 | G5 | customData follower halves (dropped field) | 325, 86-92/286, 240, 259/6/158/135-int, 263/264, 230, 182, 261, 229/228/279, 269, 304, 31-float/NPC, 267, 219-223, 226-Player/Color, 272-Player/NPC | **CENSUSED FINAL (gap-closure round)** — the follower halves stay dropped (the `Dust` record has no customData), each cited at its arm in dust_physics.rs; the 31 `else if (noGravity)` `:1297` reachability flip is ported. **The G1 ":2275 dead" sub-claim is WRONG — corrected:** the full C# `customData =` producer census found FOUR Color-valued producers: Projectile.cs:39844 + StormLightningParticle.cs:215 BOTH set `noLight = (noLightEmittance = true)` (`:39851`/`:222`) so `:2275` never fires THERE, but **ParticleOrchestrator.cs:1171/:1184/:1199 (`SpawnLightningExplosionDust`, 24 type-226 dusts) sets customData = color with NO noLightEmittance** → `:2275` IS LIVE, and d54 ports that producer (`orch_dust_lightning.rs::lightning_explosion_dust`, colour written at :211/:223/:238). **Reconstruction precedent for the S1-E-5 feed:** at EVERY Color producer `customData == dust.color` (assigned from the same colour, never mutated after — CloneDust copies both, Dust.cs:280/:284), so the light feed can read `d.color` directly gated on `!d.no_light_emittance` — no customData field needed for the Color half. The Player-follow halves (`:2265`/`:2239`) stay genuinely dropped (Projectile.cs:68978/:68999 lightning-aura sentry-backpack Player customData). |
@@ -347,6 +347,82 @@ Types 0-340 with NO named arm anywhere (e.g. 0-4, 7-13, 17-19, 22-26,
 138/197/180/181/183 GetAlpha-only — all named exceptions checked)
 ride the generic paths, which are ported in full. **No physics arm is
 missing port-wide; the owed work is G1 (lights) + G2 (counter seam).**
+
+### 7.2a G2 — the ONE-EDIT `snowDust++` hunk (d50×d130 resolve, mechanical)
+
+The physics file (`dust_physics.rs`) is d50's — this branch does not
+carry it, so the edit is published here for the merger. **Pattern: the
+`sand_storm_count` env-delta** (d50 dust_physics.rs:140-143), NOT a pool
+write — d50's tr-core cannot see the app-side pool, and the C# resets
+the static at the pass head (`Dust.cs:428`) so a post-pass delta lands
+the exact count. Three mechanical pieces, ONE semantic edit (piece 2);
+pieces 1/3 are its plumbing:
+
+**Piece 1 — the env field** (`DustPhysicsEnv`, after
+`sand_storm_count: &'a mut i32,` at d50 tip :143), add:
+
+```rust
+    /// `Main.snowDust++` (76 `:1747`) accumulated as a delta; the caller
+    /// lands it on `pool.snow_dust` after the pass (the head reset `:428`
+    /// rides `update_dust`, so the post-pass write lands the exact count).
+    pub snow_dust: &'a mut i32,
+```
+
+**Piece 2 — THE one edit** (the `type_chain` 76 arm, d50 tip
+dust_physics.rs:650-653), old:
+
+```rust
+    } else if ty == 76 {
+        // `:1745-1763` — `Main.snowDust++` (`:1747`) is a Main static, dropped
+        // (module docs). The grow, the player-fall lerp + push, the solid damp.
+        d.scale += 0.009;
+```
+
+new:
+
+```rust
+    } else if ty == 76 {
+        // `:1745-1763` — `Main.snowDust++` (`:1747`) feeds the env delta
+        // (the sand_storm_count pattern; the caller lands pool.snow_dust).
+        *env.snow_dust += 1;
+        // The grow, the player-fall lerp + push, the solid damp.
+        d.scale += 0.009;
+```
+
+**Piece 3 — the caller landing** (the d50×d130 tick resolve): d130's
+`minecart::tick` already carries the exact shape for its own
+`snow::type_76_arm` — `let mut snow_dust = 0;` (:1069) …
+`pool.snow_dust = snow_dust;` (:1126). At the resolve the tick keeps ONE
+76 dispatcher: **d50's `type_chain` wins the arm body** (it is the
+canonical chain port; d130's `snow::type_76_arm` + `type_76_tails`
+retire into it — same maths, verified line-for-line this round: grow
+0.009, lerp 0.04 fall-drag, noLight push 0.2, solid damp 0.9/0.25, the
+second-chain drag/rotation/fade tails), the env construction gains
+`snow_dust: &mut snow_dust,` beside `sand_storm_count`, and the existing
+:1126 post-pass landing feeds the budget (`Main.cs:13057`) unchanged.
+The module-doc drop note (d50 :29-31) retires with piece 2. F4 (§5 row
+2) hoists the budget READ of this counter — orthogonal, no conflict.
+
+### 7.2b G5/G6 closure census (gap-closure round, this branch)
+
+Evidence for the corrected rows above (all reads this round, direct
+file paths): the full-tree C# `customData =` producer sweep (every
+`.cs` under decompiled/Terraria, non-entity assignments filtered) found
+exactly FOUR Color-valued writers — Projectile.cs:39844 (`noLight =
+(noLightEmittance = true)` at :39851), StormLightningParticle.cs:215
+(same double-set at :222), ParticleOrchestrator.cs:1171/:1184/:1199
+(`SpawnLightningExplosionDust` — NO emittance gate anywhere in
+:1164-1239). d54's port of that producer
+(`orch_dust_lightning.rs::lightning_explosion_dust`) writes
+`d.color = custom_color` at :211/:223/:238 and never sets
+`no_light_emittance` on the 226s — matching the C#, so the S1-E-5 light
+feed reconstructs `:2275` as `num83 * d.color.rgb / 255` gated
+`!d.no_light_emittance` with NO record field. The 235 sweep
+(`NewDust*` + `.type =` + `SelectRandom` forms) found exactly ONE
+producer: NPC.cs:90977, `fadeIn = i + 1` at :90980 inside the
+active-player loop :90964-90966 — single-player index 0 only, so d50's
+`env.player_center` arm is exact; the (10,21) fallback stays as
+documented unreachable insurance.
 
 ## Verification
 
