@@ -2078,9 +2078,11 @@ fn moss_zombie_death(
 /// Zombie → 262/263x2/264x2 (`:87066-87070`, sites 327-331), 319 Doctor
 /// Zombie → 451/453x2/452x2 (`:87075-87079`, sites 332-336; mid 453 NOT
 /// 452), 320 Superman Zombie → 454/455/456x2 (`:87084-87087`, sites
-/// 337-340, the FOUR shape); the 321/223/... tails land in later
-/// batches. The hit-half 186/632 Next(5) gore gates (`:86945-86952`)
-/// are g62's lane.
+/// 337-340, the FOUR shape), 321 Pixie Zombie → 457/458x2/459x2
+/// (`:87092-87096`, sites 341-345), 223 Raincoat Zombie →
+/// 309/310x2/311x2 (`:87101-87105`, sites 346-350); the 132/186/189/251
+/// head-switch + shared tail lands next batch. The hit-half 186/632
+/// Next(5) gore gates (`:86945-86952`) are g62's lane.
 fn zombie_arm_death(
     npc: &Npc,
     npc_type: i32,
@@ -2241,6 +2243,24 @@ fn zombie_arm_death(
         gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 455, s); // :87085
         gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 456, s); // :87086
         gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 456, s); // :87087
+        return;
+    }
+    if npc_type == 321 {
+        // `:87090-87098` — the Pixie Zombie ladder + return.
+        gore.new_gore(rng, world, pos, vel, 457, s); // :87092
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 458, s); // :87093
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 458, s); // :87094
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 459, s); // :87095
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 459, s); // :87096
+        return;
+    }
+    if npc_type == 223 {
+        // `:87099-87107` — the Raincoat Zombie ladder + return.
+        gore.new_gore(rng, world, pos, vel, 309, s); // :87101
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 310, s); // :87102
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 310, s); // :87103
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 311, s); // :87104
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 311, s); // :87105
         return;
     }
 }
@@ -2491,8 +2511,8 @@ pub fn hit_effect_d(
     }
     // `:86937-...` — the giant zombie arm (430-436/590/591/3/52/53/536/
     // 104/109/331/332/132/161/162/186-189/200/223/251/319-321/632); the
-    // 104/632/331/332/109/161/162/188/200/319/320 branches are live
-    // (sites 286-340), the rest land later.
+    // 104/632/331/332/109/161/162/188/200/319/320/321/223 branches are
+    // live (sites 286-350), the head-switch tail lands later.
     else if matches!(npc_type, 430..=436 | 590 | 591 | 3 | 52 | 53 | 536 | 104 | 109 | 331 | 332 | 132 | 161 | 162 | 186 | 187 | 188 | 189 | 200 | 223 | 251 | 319 | 320 | 321 | 632)
     {
         zombie_arm_death(
@@ -4469,6 +4489,35 @@ mod tests {
                 twin_dust(&mut twin, 30, 44);
             }
             for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "zombie {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87092-87105` — the Pixie ladder 457/458x2/459x2 and the
+    /// Raincoat ladder 309/310x2/311x2.
+    #[test]
+    fn w4_f5d_the_pixie_and_raincoat_zombie_ladders() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, want) in [
+            (321, vec![457, 458, 458, 459, 459]),
+            (223, vec![309, 310, 310, 311, 311]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(347);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "zombie {kind}");
+            assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+            let mut twin = UnifiedRandom::new(347);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
                 let _ky = twin.next_range(10, 31);
                 let _kx = twin.next_range(-20, 21);
             }
