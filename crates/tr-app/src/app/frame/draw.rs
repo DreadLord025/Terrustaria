@@ -1545,6 +1545,8 @@ impl App {
                             scroll: self.front_scroll,
                             vk_grid: self.vk_grid,
                             frame_count: *frame_count,
+                            audio: &mut self.audio,
+                            rng_global: self.rngs.global(),
                         };
                         front.draw(&mut d);
                         // The port's not-ported notice for the front screens

@@ -1067,6 +1067,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/CharCreation/ClothStyleFemale",
         "UI/CharCreation/Voice",
         "UI/CharCreation/ColorCharacter",
+        // W4-e10 — the voice prev/next buttons + their hover outline
+        // (`UICharacterCreation.cs:450-451`), 64x64 `Frame(2,2)` sheets.
+        "UI/TexturePackButtons",
+        "UI/TexturePackButtonsOutline",
         "UI/WorldCreation/PreviewBorder",
         "UI/WorldCreation/IconRandomName",
         "UI/WorldCreation/IconRandomSeed",
@@ -2231,6 +2235,11 @@ pub struct Lookups {
     pub cc_cloth_styles: [Option<tr_render::SheetRect>; 2],
     /// `UI/CharCreation/Voice` 26x32 (`:482`).
     pub cc_voice: Option<tr_render::SheetRect>,
+    /// W4-e10 — `UI/TexturePackButtons` / `TexturePackButtonsOutline` 64x64
+    /// (`:450-451`): the voice prev/next `Frame(2,2,0,1)`/`(1,1)` buttons and
+    /// their hover outline.
+    pub cc_voice_arrows: Option<tr_render::SheetRect>,
+    pub cc_voice_arrows_outline: Option<tr_render::SheetRect>,
     /// `UI/CharCreation/ColorCharacter` 26x238 — the Clothing category's
     /// 7-frame body stack, one 26x34 frame per layer
     /// (`UICharacterCreation.cs:747-759`).
@@ -2738,6 +2747,8 @@ impl Lookups {
             ]
             .map(|n| atlas.sheet(n).copied()),
             cc_voice: atlas.sheet("UI/CharCreation/Voice").copied(),
+            cc_voice_arrows: atlas.sheet("UI/TexturePackButtons").copied(),
+            cc_voice_arrows_outline: atlas.sheet("UI/TexturePackButtonsOutline").copied(),
             cc_color_character: atlas.sheet("UI/CharCreation/ColorCharacter").copied(),
             wc_preview_border: atlas.sheet("UI/WorldCreation/PreviewBorder").copied(),
             wc_icons: [

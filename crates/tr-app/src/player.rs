@@ -178,6 +178,46 @@ pub(crate) enum DeathVoice {
     Style(&'static str),
 }
 
+/// W4-e10 — `Utils.Remap(voicePitchOffset, -1, 1, -0.7, 0.7)`
+/// (`Player.cs:38699-38700`): the clamped lerp the default-voice arms ride.
+/// Shared by [`default_voice_hurt`] (the world drain + the char-creation
+/// preview).
+pub(crate) fn voice_pitch_remap(voice_pitch_offset: f32) -> f32 {
+    let t = ((voice_pitch_offset + 1.0) / 2.0).clamp(0.0, 1.0);
+    -0.7 + 1.4 * t
+}
+
+/// W4-e10 — `PlayHurtSound`'s tail (`Player.cs:38694-38712`): the DST-world
+/// arm (not remix) then the default `voiceVariant` switch with the remapped
+/// pitch. Extracted so the char-creation `PlayVoicePreview`
+/// (`UICharacterCreation.cs:1517-1527`) runs the SAME decision tree over the
+/// draft's voice fields — a fresh `PendingPlayer` has no stoned buff, no
+/// voiceOverride, no mount/werewolf/armor, so those arms never fire there.
+/// Returns `None` for an unhandled variant (the C# falls through silently).
+pub(crate) fn default_voice_hurt(
+    voice_variant: i32,
+    voice_pitch_offset: f32,
+    male: bool,
+    dont_starve: bool,
+    remix: bool,
+) -> Option<HurtVoice> {
+    // `:38694-38698` — the DST-world arm (not remix).
+    if dont_starve && !remix {
+        return Some(HurtVoice::Style(
+            if male { "DSTMaleHurt" } else { "DSTFemaleHurt" },
+            0.0,
+        ));
+    }
+    // `:38699-38712` — the default voiceVariant switch.
+    let pitch = voice_pitch_remap(voice_pitch_offset);
+    match voice_variant {
+        1 => Some(HurtVoice::Male(pitch)),
+        2 => Some(HurtVoice::Female(pitch)),
+        3 => Some(HurtVoice::Style("DefaultPlayerHurt", pitch)),
+        _ => None,
+    }
+}
+
 #[derive(Default, Clone, Copy)]
 pub struct PlayerInput {
     pub left: bool,
@@ -3496,14 +3536,6 @@ impl Player {
         matches!(self.skin_variant, 0 | 1 | 2 | 3 | 8 | 10)
     }
 
-    /// W4-e10 — the default-voice pitch offset (`Player.cs:38699-38700`):
-    /// `Utils.Remap(voicePitchOffset, -1, 1, -0.7, 0.7)` — the clamped lerp
-    /// `MathHelper.Lerp(-0.7, 0.7, GetLerpValue(-1, 1, voicePitchOffset))`.
-    fn voice_pitch(&self) -> f32 {
-        let t = ((self.voice_pitch_offset + 1.0) / 2.0).clamp(0.0, 1.0);
-        -0.7 + 1.4 * t
-    }
-
     /// W4-e10 — `Player.PlayHurtSound`'s decision tree (`Player.cs:38569-
     /// 38712`), in the C#'s exact priority order: stoned → voiceOverride →
     /// mount → werewolf → frostArmor → boneArmor → DST-world → voiceVariant.
@@ -3561,22 +3593,15 @@ impl Player {
         if self.bone_armor {
             return Some(HurtVoice::Npc(3, 2));
         }
-        // `:38694-38698` — the DST-world arm (not remix).
-        if dont_starve && !remix {
-            return Some(HurtVoice::Style(
-                if self.male() { "DSTMaleHurt" } else { "DSTFemaleHurt" },
-                0.0,
-            ));
-        }
-        // `:38699-38712` — the default voiceVariant switch, with the remapped
-        // pitch offset.
-        let pitch = self.voice_pitch();
-        match self.voice_variant {
-            1 => Some(HurtVoice::Male(pitch)),
-            2 => Some(HurtVoice::Female(pitch)),
-            3 => Some(HurtVoice::Style("DefaultPlayerHurt", pitch)),
-            _ => None,
-        }
+        // `:38694-38712` — the DST-world arm + the default voiceVariant switch,
+        // shared with the char-creation preview (`default_voice_hurt`).
+        default_voice_hurt(
+            self.voice_variant,
+            self.voice_pitch_offset,
+            self.male(),
+            dont_starve,
+            remix,
+        )
     }
 
     /// W4-e10 — `Player.PlayDeathSound`'s decision tree (`Player.cs:38715-
