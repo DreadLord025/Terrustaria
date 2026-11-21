@@ -229,10 +229,23 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                     npc.x = x as f32 - w * 0.5;
                     npc.y = y as f32 - h - 1.0;
                 }
-                // The boulder statue's projectile 99 (aiStyle 25) has no ported
-                // family — dropped with the ANALYSIS note, like the other
-                // not-yet-ported projectile families.
-                tr_core::wiring::StatueSpawn::Boulder { .. } => {}
+                // W4-d3 — the boulder statue's projectile 99 (`Wiring.cs:2002-
+                // 2010`): `NewProjectile((num89+1)*16, num90*16+28, 0, 0, 99,
+                // 70, 10, myPlayer)`. The core emits the centre point; the
+                // pool's `spawn_with_data` takes the top-left, so the 31×31
+                // box subtracts its half (`NewProjectile` `Projectile.cs:
+                // 10876-10877`). The aiStyle-25 arm now owns the roll.
+                tr_core::wiring::StatueSpawn::Boulder { x, y } => {
+                    app.projectiles.spawn_with_data(
+                        crate::projectile::BOULDER,
+                        x as f32 - 15.5,
+                        y as f32 - 15.5,
+                        0.0,
+                        0.0,
+                        70,
+                        10.0,
+                    );
+                }
             }
         }
         // The actuation cascade's object drops (`SquareTileFrame(resetFrame:
