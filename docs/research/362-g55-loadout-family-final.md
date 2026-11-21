@@ -1,12 +1,13 @@
-# 334 — W4-g55 LOADOUT-REST FINAL: the loadout-family declaration + the persist/net compose census
+# 362 — W4-g55 LOADOUT-REST FINAL: the loadout-family declaration + the persist/net compose census
 
 **Status: FINAL (code-only retire round).** Branch `task/W4-g55-ui-loadout-save`,
 base tip `ca1bc92d` (dev-2/3/4 net-147 LoadoutSync + clientCloneLoadouts +
-pendingItemReuse landed). Number **334** per research/150 §8 (round 4): the
-assigned blocks 151–236 / 246–280 / 281–303 / 304–307 / 308–332 are RESERVED,
-333 is RESERVED for g65 (dispatch, claim unverified at tip), **334+ FREE**;
-a fresh all-tip sweep (362 tips) found NO doc at 330+ and NO g55 assignment
-in the registry. This doc is the loadout-family merger-bible: the remaining
+pendingItemReuse landed). **Number 362 — rename chain 334→362 per research/150
+§9.2 (UNIFIED FINAL, d54 tip b4c94432c):** the original self-pick **334** (taken
+under §8 round-4's "334+ FREE" guidance after a fresh all-tip sweep found no
+g55 assignment) landed in g62's assigned 334 (`334-g62-hit-dust-final`,
+EXECUTED 87299d2c8); §9.2 re-assigns this doc **362**. This doc is the
+loadout-family merger-bible: the remaining
 loadout arms censused, the two unclaimed gameplay arms LANDED this round, the
 `.plr`/`.trplayer` compose confirmed against f44/g88/g87, and the net-147
 apply-side lane adjudicated.

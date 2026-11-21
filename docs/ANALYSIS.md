@@ -18930,7 +18930,7 @@ sets as kinds/hide/share); v6-and-older files load on loadout 0 with empty sets.
   `mouseLeftRelease = false` are ported.
 
 **Landed since the Ph5 note (dev-1/2/3/4 + the loadout-rest retire round,
-research/334):** the `Extra_310..315` share-badge corner icons
+research/362):** the `Extra_310..315` share-badge corner icons
 (`ItemSlot.cs:2733-2746`, dev-1 — packed + drawn at `Color.White*0.7*num17`);
 the `clientCloneLoadouts` item-array half (`Player.cs:54522-54531`, dev-3 —
 `LoadoutClone` + `App.loadout_clone`); the `TrySendData(147)` send-on-swap +
@@ -18946,7 +18946,7 @@ loadout sweep (`Player.cs:54351-54355`), the angler reward loadout scan
 c28's; the `.plr`/`.trplayer` transport dedups onto f44/g88; the net-147 apply
 is g55's keep-one over g51's stub; the tooltip share lines are e16/f28's; the
 `FixLoadedData` sanitisation folds onto f44's walk) are merge-time folds, not
-g55 gaps — the full census + compose confirmation is research/334.
+g55 gaps — the full census + compose confirmation is research/362.
 
 **Evidence**: 29 `w4_g55_*` witnesses written not run (code-only lane) — the
 swap rotation/gate/wrap, the `.plr` round-trip + index clamp + fresh-zero block,
