@@ -39464,3 +39464,32 @@ family is 94/94 (research/69 §7), the tint column table-complete
 (research/70). Everything remaining is WIRING — d50's strip/retire
 contracts (research/69 §4-6, tip UNCHANGED), the DRAW lane's generic
 walk, the three-way `main_dust.rs` union — not porting.
+
+## LIGHTS RETIRE (W4-g13 retire phase, 2026-11-21)
+
+The final-phase seams above are RETIRED into the d54-canonical shape and
+the wiring contracts published as exact hunks (research/70 §6-8):
+
+- **G3/G4 keep-one (the SAME-FILE collision).** After the FINAL
+  declaration d54's own gap-closure landed the SAME two arms on ITS branch
+  (`1d16ef4e` tip) — both branches now edit `dust_table.rs`. d54's
+  single-seam shape (`DustDrawGlobals` + `get_alpha_with_globals`) is
+  canonical: this branch RETIRES `get_alpha_mouse_text`/`get_alpha_disco`
+  (`daf7b780`) and takes the d54 blob `58305d0a8` VERBATIM (verified
+  strict superset — the diff vs the d54 file has ZERO deletions; the only
+  adds are the module keep-one note, the `FloatLog` rig and the two g13
+  census witnesses). The 157/327 behaviour is unchanged (same maths, same
+  gates, same dead-raise quirk, same 190→a29 / 255→a94 boundaries — the
+  d54 witnesses pin them under new names). The per-fn dedupe table for the
+  d54i-bible merger is research/70 §6.
+- **DrawDust tint wiring-contract.** research/70 §7 publishes the exact
+  wire-hunks for the draw lane: g67's `draw_splashes` (`rain.rs:1463`, tip
+  `30b39fce`, cull+else-kill landed `2c452edd` ancestor-verified) swaps its
+  `:1494` `get_alpha` call for `get_alpha_with_globals` with a globals
+  struct sampled once per pass + `rngs.global()` threaded; the generic
+  all-type walk uses the same feed at the `:38973` position.
+- **d50-session probe.** `TR-W4-d50` read-only re-probe (research/69 §8):
+  HEAD `2e243a2d` == origin tip, status CLEAN, index/HEAD-reflog mtime
+  2026-11-20 21:10:02 — the session is dead-clean (>12h idle), NOT
+  dead-dirty; nothing to salvage. The pre_move-35 strip + the wiring are
+  still owed (research/69 §4-6 contracts stand verbatim for the resume).

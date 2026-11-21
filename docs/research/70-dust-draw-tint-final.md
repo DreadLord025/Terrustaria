@@ -132,3 +132,48 @@ coverage now has NO open tint/physics/light gap — only wiring seams.**
 - This doc + the ANALYSIS section + the PORT_MAP/ROADMAP/anchors rows.
 - No sibling file touched (`dust_physics.rs` read-only; the seams live in
   main's `dust_table.rs`, empty-diff on every probed sibling).
+
+## 6. RETIRE keep-one — the G3/G4 SAME-FILE collision with d54 (dedupe table for the d54i-bible)
+
+**Post-FINAL re-probe (2026-11-21, retire phase).** d54's own gap-closure
+landed the SAME two arms AFTER this branch's FINAL declaration: tip
+`1d16ef4e` (was `c89aea9f` at the final phase) carries
+`DustDrawGlobals` + `get_alpha_with_globals` in the SAME file
+`crates/tr-core/src/dust_table.rs` — a textual-merge-collision on BOTH
+branches. `daf7b780` (this branch's two-seam closure) is NOT an ancestor
+of d54's tip (`merge-base --is-ancestor` exit 1); the merge-base of the
+two branches is `a725acb04`.
+
+**Keep-one decision: d54-canonical.** d54's single-seam shape folds both
+arms into ONE entry at their exact C# positions (one call site for the
+DRAW lane instead of two type-routed seams) and owns the gap-table rows
+(research/131 §7.2). This branch RETIRES `get_alpha_mouse_text` +
+`get_alpha_disco` and takes the d54 blob `58305d0a8` VERBATIM. Verified:
+`git diff --no-index <d54-file> <this-file>` has **ZERO deletions** — every
+d54-canonical item is byte-identical; the only adds are the module
+keep-one note and the g13 census witnesses below. Behaviour identical:
+same 157 maths (`/100−1.6`, +50, cap 255, uncapped alpha; 190→a29 /
+255→a94), same 327 gate + THREE R/G/B draws + dead-raise quirk
+(`(int)(sum)*255`, sum < 1); the disco field widens `[u8;3]`→`[i32;3]`
+(the C# `Main.DiscoR/G/B` ARE ints, `Main.cs:959-963` — the port's
+`App.disco` bytes feed via `as i32`).
+
+**Per-fn dedupe table (the d54i-bible merger contract):**
+
+| Item | d54 `1d16ef4e` | g13 retire tip | Merger resolution |
+| ---- | -------------- | -------------- | ----------------- |
+| module doc | canonical | canonical + keep-one note | take g13 (superset) |
+| `DustDrawGlobals` | canonical | byte-identical | keep one |
+| `get_alpha` (+ the G3/G4 comment) | canonical | byte-identical | keep one |
+| `get_alpha_with_globals` | canonical | byte-identical | keep one |
+| `get_alpha_mouse_text` / `get_alpha_disco` | absent | RETIRED (absent) | keep absence |
+| `w4_d54_g3_get_alpha_157_mouse_text_pulse` | canonical | byte-identical | keep one |
+| `w4_d54_g4_get_alpha_327_night_draws_and_zero_quirk` | canonical | byte-identical | keep one |
+| `w4_g13_get_alpha_157_the_mouse_text_pulse` / `w4_g13_get_alpha_327_night_draws_three_and_never_raises` | absent | RETIRED (superseded by the d54 witnesses) | keep absence |
+| `FloatLog` rig | absent | g13-only add (feeds the census witness) | take g13 |
+| `w4_g13_globals_seam_gate_census` | absent | g13-only add (non-327/fullBright 0-draw + zero-disco 3-draw pins over the canonical seam) | take g13 |
+| `w4_g13_draw_tint_census_pins` | absent | g13-only add (§1 composition pins) | take g13 |
+
+The anchors row re-points at `pub fn get_alpha_with_globals` (the retired
+`pub fn get_alpha_disco` marker would fail the canary). §2-3 above stay as
+the HISTORICAL closure record; the live seam is the canonical one.
