@@ -1445,6 +1445,13 @@ pub struct Player {
     /// (`:35137-35140`, `Item.cs:49963`) and `GrabItems` pulls stars at
     /// speed 12 / acc 5 (`:34943-34946`).
     pub mana_magnet: bool,
+    /// `Player.treasureMagnet` (`Player.cs:936`): the Treasure Magnet 5010
+    /// (`:14551-14553`) and the Hand Of Creation 5126 (`:15286-15294`) arm it
+    /// per tick; `ResetEffects` clears it (`:18493`). The consumer is
+    /// `GetItemGrabRange`'s `Item.treasureGrabRange = 150` add (`:35149-35152`,
+    /// `Item.cs:49965`) — W4-g15 doc-sweep lane 5 (the flag existed on
+    /// `GrabFlags` but no equipment grant ever set it).
+    pub treasure_magnet: bool,
     /// `Player.lifeMagnet` (`Player.cs:934`): the Heartreach Potion's buff 105
     /// arms it (`UpdateBuffs` `:10138-10141`); `ResetEffects` clears it
     /// (`:18492`). `GetItemGrabRange` adds `Item.lifeGrabRange = 250` for the
@@ -2752,6 +2759,7 @@ impl Player {
             gold_ring: false,
             has_lucky_coin: false,
             mana_magnet: false,
+            treasure_magnet: false,
             life_magnet: false,
             latest_mana_potion_damage_bonus: 0.0,
             latest_mana_potion_duration: 0.0,
@@ -5000,7 +5008,18 @@ impl Player {
             // reaches, one grant path. The Architect's Gizmo Pack (5126)
             // carries the same `chiselSpeed` (`:15293`) plus the range
             // flag the reach scan reads (`craft.rs`).
-            4056 | 5126 => self.pick_speed_bonus += 0.25,
+            4056 => self.pick_speed_bonus += 0.25,
+            // W4-g15 lane 5 — the Treasure Magnet 5010 (`Player.cs:14551-
+            // 14553`): the bare `treasureMagnet` flag, the +150 grab-range
+            // add (`GetItemGrabRange` `:35149-35152`).
+            5010 => self.treasure_magnet = true,
+            // The Hand Of Creation 5126: the chisel row above PLUS the
+            // `treasureMagnet` row (`:15292`) — ONE arm (a second 5126 arm
+            // below would be unreachable, the i52 keep-one convention).
+            5126 => {
+                self.pick_speed_bonus += 0.25;
+                self.treasure_magnet = true;
+            }
             // S1-P-i35 — `ApplyEquipFunctional`' fishing rows
             // (`Player.cs:14651-14683`), in the C#'s order: the High Test
             // Line 2373, the Angler Earring 2374 (+10), the glow-bobber
@@ -6045,6 +6064,9 @@ impl Player {
         // re-arm them per tick (S1-P-i52).
         self.mana_magnet = false;
         self.life_magnet = false;
+        // `ResetEffects`' `treasureMagnet = false` (`Player.cs:18493`): the
+        // 5010/5126 grants re-arm it per tick (W4-g15 lane 5).
+        self.treasure_magnet = false;
         // `ResetEffects`' retaliate-family clears (S1-C-7 wave B):
         // `strongBees = false` (`Player.cs:18322`), `honeyCombItem = null`
         // (`:18386`), `starCloakItem` + the four overrides = null
@@ -14788,6 +14810,30 @@ mod tests {
         let p = player_with_accessory(0);
         assert!(!p.mana_magnet, "ResetEffects cleared it");
         assert!(!p.life_magnet);
+    }
+
+    /// W4-g15 lane 5 — `ApplyEquipFunctional`'s Treasure Magnet 5010
+    /// (`Player.cs:14551-14553`) and the Hand Of Creation 5126's
+    /// `treasureMagnet` row (`:15292`): the flag arms per tick, the
+    /// `ResetEffects` clear (`:18493`) drops it when the item comes off,
+    /// and the 5126 chisel half (`:15293`, the +0.25 pick-speed fold)
+    /// survives the merged arm. The consumer is `GetItemGrabRange`'s
+    /// +150 (`:35149-35152`).
+    #[test]
+    fn w4_g15_the_treasure_magnet_accessories_arm_treasure_magnet() {
+        let p = player_with_accessory(5010);
+        assert!(p.treasure_magnet, "the Treasure Magnet");
+        let p = player_with_accessory(5126);
+        assert!(p.treasure_magnet, "the Hand Of Creation's magnet row");
+        assert!(
+            (p.pick_speed_bonus - 0.25).abs() < 1e-4,
+            "the 5126 chisel half kept"
+        );
+        let p = player_with_accessory(4056);
+        assert!(!p.treasure_magnet, "the Ancient Chisel carries no magnet");
+        assert!((p.pick_speed_bonus - 0.25).abs() < 1e-4);
+        let p = player_with_accessory(0);
+        assert!(!p.treasure_magnet, "ResetEffects cleared it");
     }
 
     /// `UpdateBuffs`' Heartreach arm (`Player.cs:10138-10141`): buff 105

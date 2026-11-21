@@ -188,6 +188,9 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 gold_ring: pl.gold_ring,
                 mana_magnet: pl.mana_magnet,
                 life_magnet: pl.life_magnet,
+                // W4-g15 lane 5 — the 5010/5126 grants now arm the flag
+                // (`player.rs`, `Player.cs:14552`/`:15292`).
+                treasure_magnet: pl.treasure_magnet,
                 journey_far_range: pl.far_placement_range,
                 ..Default::default()
             };
