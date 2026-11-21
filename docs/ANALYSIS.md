@@ -6253,6 +6253,31 @@ burst's `Dust.NewDust` rides the same `UpdateNPCs` stream as the AI draws
 (the Everscream/saucer precedent) — the dust-free `None` seam is a
 test-isolation convenience, not a behavioural fork.
 
+**W4-d127 compile-risk re-verify (2026-11-21, by inspection — no compiler):**
+the two flagged spots were re-read and are CORRECT; no behaviour change.
+1. **`Option<&mut DustPool>` reborrow** (`world_sim/npcs.rs::update_worms_ctx`):
+   the `mut dust: Option<&mut DustPool>` param + `if let Some(dust) =
+   dust.as_deref_mut()` inside the init `while` loop is the reborrow-in-loop
+   shape — `as_deref_mut()` yields `Option<&mut DustPool>` WITHOUT consuming the
+   outer `Option`, so each iteration re-borrows the pool (a consuming
+   `if let Some(dust) = dust` would move it on the first head). The inner
+   `dust.new_dust(rng, …)` matches the 13-arg `DustPool::new_dust` signature
+   (`UnifiedRandom: DustRng`). A consuming form would not compile; this one
+   does. Witness `the_dust_reborrow_survives_two_leech_heads_in_one_pass` pins
+   two heads bursting 40 dust into the one caller-owned pool in a single pass.
+2. **`wof_key` bit-pack** (`app/frame/draw.rs`): the four fields occupy disjoint
+   ranges — clock [0,8), band top [8,24), band bottom [24,40), tongue [40,41).
+   The band statics are i32 but ALWAYS valid while a wall lives: the first
+   `style27_step` initialises them (`ease_band`'s −1→target branch) in the update
+   half, which runs ahead of the draw half, and the clamps hold them in
+   `[underworld+10, +80]*16` (max `2400*16 = 38400 < 2^16`). So the sign-extended
+   `as i64 as u64` shift never sees a negative and the fields never overlap — the
+   pack is injective over reachable states (the `-1` sentinel is unreachable at
+   draw time). The mouth clock's NEXT-tick value keeps the key always-different
+   while a wall lives (no stale cache hit) and holds while paused. The computation
+   is left UNCHANGED (the G6 `WorldFrameKey` contents are frozen); witness
+   `wof_key_field_layout_is_injective_over_the_band_range` pins the layout.
+
 ## The Eye of Cthulhu (M4-BOSS-1)
 
 The first boss lands through the aiStyle-4 block's classic path
@@ -29117,6 +29142,24 @@ style-axis arm, the 1080 projectile, the full Transform) is the merge step.
   default), `noGravity` (returned in `Style24Outcome`), the poop shot and the
   transform (requests, the `wants_hostile_shot` pattern), the player's
   `IsThisCenx` answer (pre-computed by the wiring from the profile name).
+- **W4-d127 census re-audit (2026-11-21, code-only)**: the arm re-read line-by-line
+  against `NPC.cs:25313-25537` is a COMPLETE 1:1 port вЂ” every gate present (poop
+  column/LoS/roll-or-Cenx, owl night-reveal + roost scan, the day/rain perch flush
+  `:25373-25376`, the startle `(double)vy>0.3` widen, the flutter grown-100 rect,
+  the descent, the flight bounces/steering/15-row probe, the wet tail). The census
+  is EXACTLY 11 types across 9 `aiStyle = 24` sites (74/297/298 share `:9751`);
+  there is NO walk arm (the "cardinal walk" premise does not apply вЂ” Cardinal 298
+  is a perching/flying bird). One doc defect fixed: the four non-style-24 poop
+  members are the aiStyle-68 WATERFOWL Duck2 363 / DuckWhite2 365 / Seagull2 603 /
+  Grebe2 609 (`NPCID.cs:11403`/`:11407`/`:11883`/`:11895`), NOT "Cardinal 363 /
+  BlueJay 365 / Seagull 603 / Cormorant 609" (Cardinal is 298, BlueJay 297 вЂ” both
+  style-24 members HERE). Two witnesses added (the 11-vs-4 census split, the owl
+  day/rain/night perch gate). WIRING ownership stays with the kind-roster co-lanes:
+  Bird 74 = W4-d35 (data-only, AI no-op), BirdBlue 297 / BirdRed 298 = W4-d38
+  (`update_bird` feeds this module + the 1080 droppings drain), GoldBird 442 =
+  W4-d40, Owl 611 = W4-d42, the jungle five 671-675 + OwlMimic 689 = W4-d43; the
+  1080 BirdDroppings projectile machine = W4-d20. This lane adds no `NpcKind` (the
+  g8-g10 kind-wire co-lanes carry no style-24 row вЂ” verified on their tips).
 ## The WoF Eye's aiStyle-28 arm (S1-D-3 aiStyle-28, 2026-11-18, code-only mode)
 `crates/tr-app/src/npc_ai_style28.rs` ports `NPC.AI()`'s
 `else if (this.aiStyle == 28)` block (`NPC.cs:26053-26208`) as a pure
