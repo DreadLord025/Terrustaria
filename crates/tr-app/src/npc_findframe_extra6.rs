@@ -107,6 +107,22 @@ pub enum FindFrameExtra6Kind {
     /// `NPCID.BoneLee` = 287 (`NPCID.cs:11251`) — the humanoid-group
     /// fighter walk (`NPC.cs:68590`, the wave-B keep-one delegate).
     BoneLee,
+    /// `NPCID.Paladin` = 290 (`NPCID.cs:11257`) — `case 290`
+    /// (`NPC.cs:75963-76016`).
+    Paladin,
+    /// `NPCID.SkeletonSniper` = 291 (`NPCID.cs:11259`) — the
+    /// sniper/tactical draw group (`NPC.cs:76139`).
+    SkeletonSniper,
+    /// `NPCID.TacticalSkeleton` = 292 (`NPCID.cs:11261`) — the same
+    /// draw group (`NPC.cs:76140`).
+    TacticalSkeleton,
+    /// `NPCID.SkeletonCommando` = 293 (`NPCID.cs:11263`) — the
+    /// 110/214/215/216 archer group (`NPC.cs:76021`).
+    SkeletonCommando,
+    /// `NPCID.AngryBonesBigMuscle` = 295 (`NPCID.cs:11267`) — the
+    /// humanoid-group fighter walk (`NPC.cs:68592`, the wave-B
+    /// keep-one delegate, the `:69647` air pin-0 member).
+    AngryBonesBigMuscle,
 }
 
 impl FindFrameExtra6Kind {
@@ -123,6 +139,11 @@ impl FindFrameExtra6Kind {
             Self::DiabolistRed => 285,
             Self::DiabolistWhite => 286,
             Self::BoneLee => 287,
+            Self::Paladin => 290,
+            Self::SkeletonSniper => 291,
+            Self::TacticalSkeleton => 292,
+            Self::SkeletonCommando => 293,
+            Self::AngryBonesBigMuscle => 295,
         }
     }
 
@@ -145,6 +166,13 @@ impl FindFrameExtra6Kind {
             // Main.cs:67112 (entry 287): 16 — the ONE 16-row sheet in
             // this slice's humanoid pair (295 is 15).
             Self::BoneLee => 16,
+            // Main.cs:67113 (entries 290..293): 12, 21, 21, 20.
+            Self::Paladin => 12,
+            Self::SkeletonSniper => 21,
+            Self::TacticalSkeleton => 21,
+            Self::SkeletonCommando => 20,
+            // Main.cs:67113 (entry 295): 15.
+            Self::AngryBonesBigMuscle => 15,
         }
     }
 }
@@ -163,6 +191,11 @@ pub fn find_frame_kind_extra6(vanilla_type: i16) -> Option<FindFrameExtra6Kind> 
         285 => FindFrameExtra6Kind::DiabolistRed,
         286 => FindFrameExtra6Kind::DiabolistWhite,
         287 => FindFrameExtra6Kind::BoneLee,
+        290 => FindFrameExtra6Kind::Paladin,
+        291 => FindFrameExtra6Kind::SkeletonSniper,
+        292 => FindFrameExtra6Kind::TacticalSkeleton,
+        293 => FindFrameExtra6Kind::SkeletonCommando,
+        295 => FindFrameExtra6Kind::AngryBonesBigMuscle,
         _ => return None,
     })
 }
@@ -288,18 +321,20 @@ pub fn find_frame_extra6(kind: FindFrameExtra6Kind, s: &mut FrameState, i: &Fram
                 s.row = 1;
             }
         }
-        // The humanoid-group case list (`NPC.cs:68590` carries 287)
-        // → the shared fighter walk (`NPC.cs:68647-69655`) via the
-        // wave-B keep-one helper (the extra-3 SnowFlinx/Nymph/
-        // Lihzahrd delegate precedent). Bone Lee is NOT
+        // The humanoid-group case list (`NPC.cs:68590`/`:68592`
+        // carries 287/295) → the shared fighter walk (`NPC.cs:68647-
+        // 69655`) via the wave-B keep-one helper (the extra-3
+        // SnowFlinx/Nymph/Lihzahrd delegate precedent). Neither is
         // `isLikeATownNPC` (`NPC.cs:6856-6866` — only 453 + the town
-        // flag; its SetDefaults arm `:12724-12737` sets aiStyle 3, no
-        // townNPC), so `num57` = 0 and the walk wraps at the FULL
-        // `npcFrameCount` = 16; not a town slime, so `num108` = 6 and
-        // `num109` = row 2. NOT in the airborne pin list (`:69647` —
-        // the air holds row 1), NOT the 140/489 idle-row-1 pair (the
-        // idle snaps row 0, `:69510-69518`).
-        FindFrameExtra6Kind::BoneLee => {
+        // flag; their SetDefaults arms `:12724-12737`/`:12838-12850`
+        // set aiStyle 3, no townNPC), so `num57` = 0 and the walk
+        // wraps at the FULL `npcFrameCount` (287 = 16, 295 = 15);
+        // neither is a town slime, so `num108` = 6 and `num109` =
+        // row 2. The airborne pin list (`:69647`) carries 295 (row
+        // 0, with wave-B's 294/296) but NOT 287 (the group's row 1).
+        // Neither is the 140/489 idle-row-1 pair (the idle snaps
+        // row 0, `:69510-69518`).
+        FindFrameExtra6Kind::BoneLee | FindFrameExtra6Kind::AngryBonesBigMuscle => {
             let bi = crate::npc_findframe_b::FrameInput {
                 vx: i.vx,
                 vy: i.vy,
@@ -313,12 +348,160 @@ pub fn find_frame_extra6(kind: FindFrameExtra6Kind, s: &mut FrameState, i: &Fram
                 sprite_dir: s.sprite_dir,
                 rotation: 0.0,
             };
+            // 287 holds the group's air row 1; 295 IS in the `:69647`
+            // pin list (with wave-B's 294/296) — the air snaps row 0.
+            let air_row0 = kind == FindFrameExtra6Kind::AngryBonesBigMuscle;
             crate::npc_findframe_b::humanoid_fighter_frame(
                 &mut bs,
                 &bi,
                 kind.frame_count(),
+                air_row0,
                 false,
-                false,
+            );
+            s.row = bs.row;
+            s.counter = bs.counter;
+            s.sprite_dir = bs.sprite_dir;
+        }
+        // `case 290` (`NPC.cs:75963-76016`): the Paladin. The
+        // grounded ±1 flip (`:75965-75973`); the `ai[2] > 0` hammer
+        // pose (`:75974-75989`) picks the row off `ai[1]`: < 10 row
+        // 11, < 20 row 10, else row 9 — and BREAKS (the counter is
+        // untouched). The idle snaps row 0 + zeroes the counter
+        // (`:75990-75995`); the walk lifts any row < 2 to 2
+        // (`:75996-75999`), accumulates `|vx| * 1` — NO +1
+        // (`:76000`, unlike the bones/humanoid walkers), the > 6
+        // counter steps a row (`:76001-76005`), and the wrap is the
+        // STRICT `frame.Y > num * 8` (`:76006-76009` — row 9 wraps
+        // to 2, NOT the sheet's full 12 rows: rows 9..11 are the
+        // hammer poses). The air zeroes the counter and pins row 1
+        // (`:76011-76015`). No rotation write.
+        FindFrameExtra6Kind::Paladin => {
+            if i.vy == 0.0 {
+                // `:75965-75973`.
+                if i.direction == 1 {
+                    s.sprite_dir = 1;
+                }
+                if i.direction == -1 {
+                    s.sprite_dir = -1;
+                }
+                // `:75974-75989`.
+                if i.ai[2] > 0.0 {
+                    s.row = if i.ai[1] < 10.0 {
+                        11
+                    } else if i.ai[1] < 20.0 {
+                        10
+                    } else {
+                        9
+                    };
+                    return;
+                }
+                // `:75990-75995`.
+                if i.vx == 0.0 {
+                    s.counter = 0.0;
+                    s.row = 0;
+                    return;
+                }
+                // `:75996-75999`.
+                if s.row < 2 {
+                    s.row = 2;
+                }
+                // `:76000-76005`.
+                s.counter += i.vx.abs();
+                if s.counter > 6.0 {
+                    s.row += 1;
+                    s.counter = 0.0;
+                }
+                // `:76006-76009` — the strict > 8 wrap.
+                if s.row > 8 {
+                    s.row = 2;
+                }
+            } else {
+                // `:76011-76015`.
+                s.counter = 0.0;
+                s.row = 1;
+            }
+        }
+        // `case 291/292` (`NPC.cs:76139-76178`): the Sniper/Tactical
+        // draw walk. The grounded ±1 flip (`:76142-76150`); the
+        // `ai[2] > 0` draw pose (`:76151-76157`) copies `direction`
+        // UNCONDITIONALLY (0 included — not the ±1 gate) and pins
+        // row `(int)ai[2] - 1`, counter zeroed, BREAK. The walk
+        // lifts any row < 7 to 7 (`:76158-76161`), accumulates
+        // `|vx| * 3.3` (`:76162`), the > 6 counter steps a row
+        // (`:76163-76167`), wrapping at the FULL 21 rows back to 7
+        // (`:76168-76171` — rows 0..6 are the aim/draw poses). The
+        // air zeroes the counter and pins row 6 (`:76173-76177`).
+        // No rotation write.
+        FindFrameExtra6Kind::SkeletonSniper | FindFrameExtra6Kind::TacticalSkeleton => {
+            if i.vy == 0.0 {
+                // `:76142-76150`.
+                if i.direction == 1 {
+                    s.sprite_dir = 1;
+                }
+                if i.direction == -1 {
+                    s.sprite_dir = -1;
+                }
+                // `:76151-76157`.
+                if i.ai[2] > 0.0 {
+                    s.sprite_dir = i.direction;
+                    // The C# writes `(int)ai[2] - 1` outright
+                    // (`:76154`); the draw AI only ever sets whole
+                    // 1.. poses, so the saturate guards the
+                    // fractional-edge negative row the row-index
+                    // port cannot carry (the ElfArcher 350
+                    // precedent, `npc.rs:8896-8900`).
+                    s.row = ((i.ai[2] as i32) - 1).max(0) as u32;
+                    s.counter = 0.0;
+                    return;
+                }
+                // `:76158-76161`.
+                if s.row < 7 {
+                    s.row = 7;
+                }
+                // `:76162-76167`.
+                s.counter += i.vx.abs() * 3.3;
+                if s.counter > 6.0 {
+                    s.row += 1;
+                    s.counter = 0.0;
+                }
+                // `:76168-76171`.
+                if s.row >= kind.frame_count() {
+                    s.row = 7;
+                }
+            } else {
+                // `:76173-76177`.
+                s.counter = 0.0;
+                s.row = 6;
+            }
+        }
+        // `case 293` in the 110/214/215/216 archer group (`NPC.cs:
+        // 76017-76059`): the SAME machine as wave-B's SkeletonArcher
+        // (110) / IcyMerman (206) arms (`npc_findframe_b.rs:434-463`)
+        // — the keep-one delegate (the extra-3 humanoid precedent).
+        // Both sheets are 20 rows (`Main.cs:67095` entry 110 =
+        // `Main.cs:67113` entry 293, cross-checked in the witness),
+        // so the wave-B arm's internal `frame_count()` is exactly
+        // this kind's: the shot pose pins row `(int)ai[2]` (NO -1,
+        // unlike 291/292), the walk climbs rows 6..19 at `|vx| * 3`,
+        // the air holds row 0.
+        FindFrameExtra6Kind::SkeletonCommando => {
+            let bi = crate::npc_findframe_b::FrameInput {
+                vx: i.vx,
+                vy: i.vy,
+                direction: i.direction,
+                wet: false,
+                ai: i.ai,
+            };
+            let mut bs = crate::npc_findframe_b::FrameState {
+                row: s.row,
+                counter: s.counter,
+                sprite_dir: s.sprite_dir,
+                rotation: 0.0,
+            };
+            crate::npc_findframe_b::find_frame_b(
+                crate::npc_findframe_b::FindFrameKind::SkeletonArcher,
+                &mut bs,
+                &bi,
             );
             s.row = bs.row;
             s.counter = bs.counter;
@@ -361,6 +544,11 @@ mod tests {
             FindFrameExtra6Kind::DiabolistRed,
             FindFrameExtra6Kind::DiabolistWhite,
             FindFrameExtra6Kind::BoneLee,
+            FindFrameExtra6Kind::Paladin,
+            FindFrameExtra6Kind::SkeletonSniper,
+            FindFrameExtra6Kind::TacticalSkeleton,
+            FindFrameExtra6Kind::SkeletonCommando,
+            FindFrameExtra6Kind::AngryBonesBigMuscle,
         ] {
             assert_eq!(
                 k.frame_count(),
@@ -462,8 +650,119 @@ mod tests {
         assert_eq!(rows_over(k, input(1.0, 0.0), 7), vec![2, 2, 3, 3, 3, 4, 4]);
     }
 
-    /// The seam maps exactly this slice's ids — the covered 288 and
-    /// the slice-5 277 stay `None`.
+    /// The Paladin's hammer pose ladder (`NPC.cs:75974-75989`):
+    /// ai[2] > 0 picks row 11 / 10 / 9 off the ai[1] < 10 / < 20
+    /// bands, the counter UNTOUCHED; the walk accumulates |vx| with
+    /// NO +1 and wraps at the STRICT row > 8 (`:76000-76009` — rows
+    /// 9..11 are hammer-only); the air pins row 1, the idle row 0.
+    #[test]
+    fn f26s6_the_paladin_hammer_ladder_and_strict_8_wrap() {
+        let k = FindFrameExtra6Kind::Paladin;
+        let mut s = FrameState { row: 4, counter: 5.0, sprite_dir: 1 };
+        let mut hammer = input(3.0, 0.0);
+        hammer.ai[2] = 1.0;
+        hammer.ai[1] = 5.0;
+        find_frame_extra6(k, &mut s, &hammer);
+        assert_eq!((s.row, s.counter), (11, 5.0));
+        hammer.ai[1] = 15.0;
+        find_frame_extra6(k, &mut s, &hammer);
+        assert_eq!((s.row, s.counter), (10, 5.0));
+        hammer.ai[1] = 25.0;
+        find_frame_extra6(k, &mut s, &hammer);
+        assert_eq!((s.row, s.counter), (9, 5.0));
+        // vx 7 → +7/tick > 6 steps every tick from the lift-to-2:
+        // rows 3..8 then the 9-wrap → 2 (the strict > 8, replay).
+        assert_eq!(rows_over(k, input(7.0, 0.0), 8), vec![3, 4, 5, 6, 7, 8, 2, 3]);
+        // vx 3 → +3/tick, steps on ticks 3/6 (9 > 6, zeroed).
+        assert_eq!(rows_over(k, input(3.0, 0.0), 6), vec![2, 2, 3, 3, 3, 4]);
+        let mut s = FrameState { row: 7, counter: 2.0, sprite_dir: 1 };
+        find_frame_extra6(k, &mut s, &input(0.0, 1.0));
+        assert_eq!((s.row, s.counter), (1, 0.0), "air row 1");
+        find_frame_extra6(k, &mut s, &input(0.0, 0.0));
+        assert_eq!((s.row, s.counter), (0, 0.0), "idle row 0");
+    }
+
+    /// The Sniper/Tactical draw walk (`NPC.cs:76151-76177`): the
+    /// ai[2] > 0 pose pins row (int)ai[2]-1 with the UNCONDITIONAL
+    /// direction copy (0 included) and zeroes the counter; the walk
+    /// lifts to 7 and accumulates |vx|*3.3 (vx 2 → 6.6 > 6 steps
+    /// every tick), wrapping at 21 back to 7; the air pins row 6.
+    #[test]
+    fn f26s6_the_snipers_draw_pose_and_21_row_walk() {
+        for k in [FindFrameExtra6Kind::SkeletonSniper, FindFrameExtra6Kind::TacticalSkeleton] {
+            let mut s = FrameState { row: 9, counter: 4.0, sprite_dir: 1 };
+            let mut draw = input(2.0, 0.0);
+            draw.ai[2] = 3.0;
+            draw.direction = 0;
+            find_frame_extra6(k, &mut s, &draw);
+            assert_eq!((s.row, s.counter, s.sprite_dir), (2, 0.0, 0), "{k:?} pose");
+            // The fractional-edge saturate (the ElfArcher precedent).
+            draw.ai[2] = 0.5;
+            find_frame_extra6(k, &mut s, &draw);
+            assert_eq!(s.row, 0, "{k:?} saturate");
+            // vx 2 → 6.6/tick: lift 0→7, step to 8, stride to 20,
+            // the 14th tick wraps 21 → 7 (replay-derived).
+            assert_eq!(
+                rows_over(k, input(2.0, 0.0), 14),
+                vec![8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 7],
+                "{k:?}"
+            );
+            let mut s = FrameState { row: 12, counter: 3.0, sprite_dir: 1 };
+            find_frame_extra6(k, &mut s, &input(1.0, -1.0));
+            assert_eq!((s.row, s.counter), (6, 0.0), "{k:?} air row 6");
+        }
+    }
+
+    /// The Commando is the wave-B archer machine keep-one: both
+    /// sheets are 20 rows, the shot pose pins row (int)ai[2] with
+    /// NO -1 (unlike 291/292), the walk climbs 6..19 at |vx|*3, the
+    /// air holds row 0 (`NPC.cs:76032-76057`).
+    #[test]
+    fn f26s6_the_commando_delegates_to_the_wave_b_archer() {
+        let k = FindFrameExtra6Kind::SkeletonCommando;
+        assert_eq!(
+            k.frame_count(),
+            crate::npc_findframe_b::FindFrameKind::SkeletonArcher.frame_count(),
+            "the two 20-row sheets must agree for the delegate"
+        );
+        let mut s = FrameState { row: 3, counter: 5.0, sprite_dir: 1 };
+        let mut shot = input(3.0, 0.0);
+        shot.ai[2] = 4.0;
+        shot.direction = -1;
+        find_frame_extra6(k, &mut s, &shot);
+        assert_eq!((s.row, s.counter, s.sprite_dir), (4, 0.0, -1), "no -1");
+        // vx 2 → +6/tick never > 6: the row holds at the lift-to-6.
+        assert_eq!(rows_over(k, input(2.0, 0.0), 3), vec![6, 6, 6]);
+        // vx 3 → +9/tick steps every tick: 7..19 then wrap 20 → 6.
+        assert_eq!(
+            rows_over(k, input(3.0, 0.0), 14),
+            vec![7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 6]
+        );
+        let mut s = FrameState { row: 11, counter: 2.0, sprite_dir: 1 };
+        find_frame_extra6(k, &mut s, &input(0.0, 2.0));
+        assert_eq!((s.row, s.counter), (0, 0.0), "air row 0");
+    }
+
+    /// The Angry Bones Big Muscle is the `:69647` air pin-0 member:
+    /// the air snaps row 0 (the Bone Lee twin holds row 1), the walk
+    /// wraps at the 15-row sheet, the idle snaps row 0.
+    #[test]
+    fn f26s6_the_big_muscle_air_pins_0_on_the_15_row_sheet() {
+        let k = FindFrameExtra6Kind::AngryBonesBigMuscle;
+        let mut s = FrameState { row: 9, counter: 4.0, sprite_dir: 1 };
+        find_frame_extra6(k, &mut s, &input(2.0, -1.0));
+        assert_eq!((s.row, s.counter), (0, 0.0), "air row 0 (the pin list)");
+        assert_eq!(
+            rows_over(k, input(3.0, 0.0), 13),
+            vec![3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 2],
+            "the 15-row wrap (287's 16-row twin reaches 15)"
+        );
+        find_frame_extra6(k, &mut s, &input(0.0, 0.0));
+        assert_eq!((s.row, s.counter), (0, 0.0), "idle row 0");
+    }
+
+    /// The seam maps exactly this slice's ids — the covered 288/289/
+    /// 294/296/305 and the slice-5 277 stay `None`.
     #[test]
     fn f26s6_the_seam_maps_exactly_the_slice() {
         for (id, k) in [
@@ -477,11 +776,16 @@ mod tests {
             (285, FindFrameExtra6Kind::DiabolistRed),
             (286, FindFrameExtra6Kind::DiabolistWhite),
             (287, FindFrameExtra6Kind::BoneLee),
+            (290, FindFrameExtra6Kind::Paladin),
+            (291, FindFrameExtra6Kind::SkeletonSniper),
+            (292, FindFrameExtra6Kind::TacticalSkeleton),
+            (293, FindFrameExtra6Kind::SkeletonCommando),
+            (295, FindFrameExtra6Kind::AngryBonesBigMuscle),
         ] {
             assert_eq!(find_frame_kind_extra6(id), Some(k));
             assert_eq!(k.vanilla_type(), id);
         }
-        for id in [277, 288, 290, 305] {
+        for id in [277, 288, 289, 294, 296, 297, 305] {
             assert_eq!(find_frame_kind_extra6(id), None, "{id}");
         }
     }
