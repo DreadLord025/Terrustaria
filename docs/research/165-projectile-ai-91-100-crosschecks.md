@@ -1,4 +1,8 @@
-# 26d — W4-d10 parked-seam cross-checks (1128 spore row, 536 Medusa rays)
+# 165 — W4-d10 parked-seam cross-checks (1128 spore row, 536 Medusa rays)
+
+> Renumbered 26d → 165 per the research-number collision registry
+> (`150-research-number-registry.md`, W4-d54): the 26d key belongs to
+> W4-d12's 111-120 census; this doc takes its assigned free number 165.
 
 > Branch `task/W4-d10-proj-ai-91-100`, 2026-11-21. Code-only round: the
 > witnesses are WRITTEN NOT RUN. These are the keep-one / composition
@@ -11,7 +15,9 @@
 
 - g2 (`task/W4-g2-proj-ai-missing-b`) censused 1128
   (ChlorophyteClaymoreSporeCloud) as a **rowless child** in `8ac7d95e` /
-  `docs/research/26d-projectile-rowless-kinds-w4-g2.md`: its 229
+  `docs/research/163-projectile-rowless-kinds-w4-g2.md` (g2's copy of
+  `26d-projectile-rowless-kinds-w4-g2.md`, renumbered → 163 by the
+  research-number registry 150 on g2's own branch): its 229
   (Chlorophyte orb) Kill burst spawns 32 children of kind 1128 with all 64
   `Main.rand` draws KEPT in order (X `Next(-25,26)` then Y `Next(-45,46)`
   per child), but the spawn **declines at the `proj_data` guard** until the

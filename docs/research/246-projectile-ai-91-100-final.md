@@ -1,13 +1,20 @@
-# 26d — W4-d10 FINAL: the projectile aiStyles 91-100 band table
+# 246 — W4-d10 FINAL: the projectile aiStyles 91-100 band table
 
+> Numbered 246 per the research-number collision registry
+> (`150-research-number-registry.md`, W4-d54): the doc was first written
+> as 26d (a colliding key — d12 owns 26d); 237-245 are consumed by
+> post-registry lanes (e23/g48 237, c8/d42/g61 238, d42/f21/g56 239,
+> c42/d53/g58 240, g58 241-243, c28 244, 39-lane 245), so this FINAL
+> takes the first free number, 246.
+>
 > Branch `task/W4-d10-proj-ai-91-100`, base `a725acb0` (wave-3 complete),
 > 2026-11-21. CODE-ONLY round: every witness is WRITTEN NOT RUN. This is
 > the band's final ledger — one row per style arm, the port state, the
 > commit hash, the C# anchor, the witness count, and the cross-lane
 > composition notes. The per-style census lives in the module doc
 > (`projectile_ai_91_100.rs`) and the commit messages; the spawn-source
-> verdicts in `26d-projectile-ai-91-100-docsweep.md`, the keep-one /
-> composition verdicts in `26d-projectile-ai-91-100-crosschecks.md`.
+> verdicts in `166-projectile-ai-91-100-docsweep.md`, the keep-one /
+> composition verdicts in `165-projectile-ai-91-100-crosschecks.md`.
 
 ## The band table (all ten arms LANDED on this branch)
 
@@ -33,8 +40,8 @@
 | the Counterweight SPAWN lane | `Player.cs:12356-12415` (the `:13272`/`:12826` call sites), the grants `:14714-14766` + the vanity loop `:13009-13015` | `counterweight_spawn` + `counterweight_on_hit` + `Player.counter_weight/vanity_counter_weight/yoyo_glove` + the bags' `Next(7)`/`Next(6)` roll on the UpdatePlayers stream | `6e0f1381` | PER-HIT cadence, ZERO lane draws; the roll re-draws per tick while worn (the C# ResetEffects behaviour); 6 witnesses |
 | the CultistTablet activation contract | `NPC.cs:36757-36925` (d31's port) + the `:36863/:36874/:36885` owner argument | docsweep §98: the wiring wave's dispatch + the 526 drain owner-0 re-pin | `649b18ae` | claimed by d31/d40 — NO re-port; 1 composition witness |
 | the MEDUSA_HEAD_RAY drop-hunk | the dc7acb5e keep-one verdict | the const removed, the literal 536 spawns, the s100 witness re-pinned | `7ca50dad` | d11's const is the one definition at merge |
-| the cross-checks | g2's 1128 census + d11's 536 composition | `26d-…-crosschecks.md` | `dc7acb5e` | the 1128 keep-one (d10 owns) + the 536 composition (key link / strike walk / scatter rolls) |
-| the DOC-SWEEP | the 94/97/98 producer censuses | `26d-…-docsweep.md` + the stale 518 comment fix (`editing.rs:5717`) | `732d3480` | the pot break / the Money Trough / the tablet — the three dispatch guesses corrected |
+| the cross-checks | g2's 1128 census + d11's 536 composition | `165-…-crosschecks.md` | `dc7acb5e` | the 1128 keep-one (d10 owns) + the 536 composition (key link / strike walk / scatter rolls) |
+| the DOC-SWEEP | the 94/97/98 producer censuses | `166-…-docsweep.md` + the stale 518 comment fix (`editing.rs:5717`) | `732d3480` | the pot break / the Money Trough / the tablet — the three dispatch guesses corrected |
 | the anchors canaries | one row per style arm | `anchors.txt` (10 rows + the grants/lane rows) | `1f0b60e9` | every marker verified present in the module |
 
 ## The witness ledger (WRITTEN NOT RUN — code-only mode)
@@ -79,6 +86,58 @@ no-row decline).
 5. **M3-EQUIP-3 ⨉ d10:** the framework landed (`5ec90b7c`); d10's
    grants + spawn lane extend it — the `counterWeight`/`yoyoGlove`
    fields are d10's alone, no keep-one.
+
+## RETIRE verification (2026-11-21, the closing pass)
+
+1. **Git-log census — all four satellite items LANDED on this branch:**
+   the counterweight-spawn lane `6e0f1381`, the CultistTablet-437 /
+   style-83 activation contract `649b18ae`, the MEDUSA_HEAD_RAY
+   drop-hunk `7ca50dad`, the band table itself `e1519df7` (this doc).
+   The ten style commits + the mouse seam / grants / crosschecks /
+   docsweep / canaries rows above match `git log` verbatim.
+2. **Band re-verified in code — all ten styles ARMED, all kinds ROWED:**
+   - dispatch: `projectile.rs` arms `91 =>` :18233 … `100 =>` :18339
+     (the `99 =>` :18095 kind-gate ahead of `ai_yoyo`), each calling
+     this module's port fn.
+   - rows: `projectile/data.rs` — SHADOW_FLAME 496 (:713/:1707),
+     TOXIC_CLOUD 511/512/513 (:717-719/:1724-1732), GAS_TRAP 1007
+     (:723/:1739), SPORE_CLOUD 1128 (:727/:1747), NAIL_FRIENDLY 514
+     (:730/:1755), COIN_PORTAL 518 (:733/:1762), TOXIC_BUBBLE 523
+     (:736/:1769), ICHOR_SPLASH 524 (:739/:1776), FLYING_PIGGY_BANK 525
+     (:743/:1785), CULTIST_BOSS_PARTICLE 526 (:747/:1794), MEDUSA_HEAD
+     535 (:751/:1806), the seven counterweights 556-561/1079
+     (:830-849/:3056-3058, `is_counterweight` :853); `proj_frames`
+     518=4 / 525=5 / 535=12 / 1128=5 (:4784-4787). The witness count
+     re-counted from the code: 49 + 5 + 3 + 1 = **58** `w4_d10_*` fns
+     (`git grep -c "fn w4_d10_"` per file).
+   - remaining gaps (all recorded, none owed by d10): the 536 row is
+     d11's post-merge pin (the no-row decline until then); the
+     `deadMansSweater` gas-trap halving is an unported accessory
+     (module doc :89-90); `HadAnActiveInteractableProjectile` :33070 +
+     the piggy container UI :78815 are no-consumer skips (:91-93);
+     `hide`/`drawLayer`/`usesOwnerLight` have no port slot fields
+     (:103-104); the dust/particle/light layers are the house skips.
+3. **The d31-lane reads CONFIRMED (the 526 contract composes):** d31's
+   `npc_ai_style83.rs` (`a31ff86e`, read via `git show` on its branch)
+   pushes `HostileShotAi { kind: 526, damage: 0, ai0/ai1 = target }`
+   at all three bursts — `ring_particle` :419-429 (boss centre), the
+   gated launches :601-609 (`tx/ty` = centre + spin × radius + 20),
+   the trickle (same `ring_particle`). d10's `ai_cultist_particle`
+   (:1049) reads exactly `Vec2::new(p.ai[0], p.ai[1])` (:1052) — the
+   packed target. The generic `wants_hostile_shot_ai` drain
+   (`world_sim/npcs.rs:5947-5956`) calls `spawn_hostile_ai` which
+   hardcodes owner **255** (`projectile.rs:15751`); the owner-0 re-pin
+   precedent `spawn_hostile_ai_owned` (:15763) →
+   `spawn_with_data_ai_owned` (:16045) exists — the wiring wave's
+   contract (166 §98 item 2) is executable as written. No code change
+   owed here; the composition witness
+   `w4_d10_s98_the_tablet_payload_composes` (:2622) pins both shapes.
+4. **Registry renumber EXECUTED** (`150-research-number-registry.md`,
+   W4-d54): crosschecks 26d → **165**, docsweep 26d → **166** (the §3
+   assignments); this FINAL takes **246** (237-245 consumed by
+   post-registry lanes). Refs updated: this doc's header block +
+   satellite rows, the module doc :36/:102, the s98 witness comment
+   :2611; 165's g2 citation now names g2's own rename target (163).
 
 ## Verification
 

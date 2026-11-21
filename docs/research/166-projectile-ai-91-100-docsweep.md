@@ -1,4 +1,8 @@
-# 26d — W4-d10 DOC-SWEEP: the 94/97/98 spawn-source censuses
+# 166 — W4-d10 DOC-SWEEP: the 94/97/98 spawn-source censuses
+
+> Renumbered 26d → 166 per the research-number collision registry
+> (`150-research-number-registry.md`, W4-d54): the 26d key belongs to
+> W4-d12's 111-120 census; this doc takes its assigned free number 166.
 
 > Branch `task/W4-d10-proj-ai-91-100`, 2026-11-21. Code-only round. These
 > are the item-source / use-arm / spawn-source verdicts for the three

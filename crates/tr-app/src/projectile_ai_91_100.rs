@@ -33,7 +33,7 @@
 //! (`7fec14aa`) landed the 437/438 SetDefaults rows. The activation
 //! contract (the 526 producer→consumer composition + the drain's
 //! owner/friendly re-pin d10 owes at merge):
-//! `docs/research/26d-projectile-ai-91-100-docsweep.md` §98.
+//! `docs/research/166-projectile-ai-91-100-docsweep.md` §98.
 //!
 //! RNG contract (the `UpdateProjectiles` stream, `Main.cs:17775-17777`):
 //! every EXPLICIT `Main.rand` draw at the call sites stays, in the C#'s
@@ -99,7 +99,7 @@
 //!   duplicate `MEDUSA_HEAD_RAY` const is removed, the dispatch spawns
 //!   through the LITERAL 536 and the s100 row witness is re-pinned to
 //!   d11's landed shape (the post-merge pin, WRITTEN NOT RUN —
-//!   `docs/research/26d-projectile-ai-91-100-crosschecks.md` §2).
+//!   `docs/research/165-projectile-ai-91-100-crosschecks.md` §2).
 //! - `hide` (1007) / `drawLayer` / `usesOwnerLight` (535) have no port
 //!   slot fields — draw-layer state, the module doc convention.
 //!
@@ -2608,7 +2608,7 @@ mod tests {
     }
 
     /// W4-d10 — the §98 ACTIVATION CONTRACT's composition witness
-    /// (`docs/research/26d-projectile-ai-91-100-docsweep.md`): a
+    /// (`docs/research/166-projectile-ai-91-100-docsweep.md`): a
     /// d31-shaped 526 payload (`Style83Out.shots`' `HostileShotAi`:
     /// damage 0, ai0/ai1 = the boss-centre target) spawned through the
     /// pool flies the d10 seek and arrives at the packed target. BOTH
