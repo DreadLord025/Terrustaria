@@ -512,7 +512,11 @@ pub(crate) fn item_sparkle_feed(
     for it in items {
         // `:38604` — `!item.active || item.IsAir`: the port's list holds only
         // live, non-air drops (kind 0 / count 0 never enter it).
-        let (cx, cy) = (it.center().x, it.center().y);
+        // `:38619` — `Lighting.GetColor(item.Center.ToTileCoordinates())`:
+        // the C# `item.Center` is `position + width/2` with the 16-px box
+        // (`WorldItem.cs:138`), i.e. `pos + 8`, NOT the port's 14-px physics
+        // centre (`pos + 7`) — the light tile can differ at a cell boundary.
+        let (cx, cy) = (it.pos.x + 8.0, it.pos.y + 8.0);
         let (r, _, _) = light_color_bytes(
             light,
             brightness,
@@ -1417,7 +1421,7 @@ mod tests {
         let (mut pool2, _, _) = rig();
         let mut m = UnifiedRandom::new(0x5EED);
         for it in &drops {
-            let (cx, cy) = (it.center().x, it.center().y);
+            let (cx, cy) = (it.pos.x + 8.0, it.pos.y + 8.0);
             let (r, _, _) = light_color_bytes(
                 &light, brightness,
                 (cx / tr_core::TILE_PX) as i32, (cy / tr_core::TILE_PX) as i32,
