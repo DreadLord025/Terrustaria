@@ -39244,3 +39244,99 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+## The wind leaf particles (W4-g68, 2026-11-20, code-only)
+
+The wind-driven leaf layer now rides the real gore machinery end to end:
+spawn (`TileDrawing.EmitTreeLeaves` `TileDrawing.cs:7779-7891` and
+`EmitLivingTreeLeaf`/`_Below`/`_Sideways` `:7549-7592`), physics
+(`Gore_UpdateLeaf` `Gore.cs:1085-1209`, the S1-E-4 `GorePool::update_leaf`)
+and draw (`Main.DrawGore` `Main.cs:21873-21907`, the S1-E-4b
+`render/gore.rs` pass). CODE-ONLY MODE: no compiler invoked; the 17
+witnesses (8 foliage + 8 tr-core leaf physics + 1 sand wind coupling) are
+WRITTEN NOT RUN.
+
+**The d60-flagged 192-leaf deviation is reconciled.** The W4-d60 census
+(77429fe1) flagged the inline `render/tiles.rs` arm: it gated on
+`wind.sway_enabled` (the C# does NOT), drew the sideways `Next(2)` only
+when the wind pick was non-zero (the C# draws it UNCONDITIONALLY after
+the below-spawn), used a one-cell downwind probe (the C# needs TWO open
+cells), dropped the paint column and never handled type 384. The arm now
+calls the faithful `emit_living_tree_leaf` trio in `render/foliage.rs`
+(the same body d60's unwired `tile_draw_particles.rs` carries — when that
+module lands, the wiring wave dedupes onto one copy):
+
+* the gate is `emit_effects && kind in {192, 384}` then
+  `_rand.Next(leafFrequency / 4) == 0` (`:6848-6855`); 192 sheds gore 910,
+  384 sheds 914;
+* below (`:7558-7569`): the tile under must be non-strict-solid and dry;
+  wind < −0.2 needs (x−1, x−2) open at y+1, wind > 0.2 needs (x+1, x+2);
+  `NewGorePerfect` at `(x*16, y*16+16)`, zero velocity, scale 1;
+* sideways (`:7571-7592`): the unconditional `Next(2)`; `num` = the wind
+  sign above 0.2 else 0 (dead wind probes the tile's OWN cell — a 192
+  block is walk-through, so both gores spawn); the −10 px left-shift
+  quirk; position `(x*16 + 8 + 4*num + num2, y*16 + 8)`;
+* both writes set `Frame.CurrentColumn = tile.color()` (the paint column
+  the `Main.DrawGore` framed source rect reads).
+
+**The private leaf pool is retired.** The old `LeafGore` Vec (400-cap,
+`App.leaves`) with its draw-time `tick_leaves` approximation is deleted:
+its fall/rest math re-derived `Gore_UpdateLeaf` with a simplified probe
+(no liquid-rect intersection, no honey/lava arms, no `DisappearSpeed`
+rows, a floor() tile probe instead of the `(int)x >> 4` shift). Every
+leaf is now a `GorePool` slot: the 600-slot pressure (`Gore.NewGore`'s
+first-inactive scan + refuse sentinel) replaces the 400-cap drain, the
+`gores` phase (`Main.cs:17971`, between NPCs and projectiles) ticks the
+faithful physics, and `Main.DrawGore` draws it with `Gore.GetAlpha` and
+the 32-column paint frame. `App.leaves`, `foliage::draw_leaves`,
+`Lookups::leaf_gores/leaf_sheet/leaf_uv/leaf_frame` are removed (the
+`gore_sheets` map already carries every `Gore_<id>` sheet, 914 included).
+
+**RNG census — two streams kept separate (the d60 precedent).** The gate
+draws (`Next(frequency)`, the 192/384 `Next(maxValue)`, the sideways
+`Next(2)`) ride `TileDrawing._rand` — the port's per-frame pinned
+`FastRandom` stand-in (`sparkle_seed ^ 0x9E37…`, the TILE-DRAW-3
+convention). The `Main.rand` draws ride the App's bare global
+`UnifiedRandom` (`NamedRngs::global`): the C# tile-draw emission runs
+OUTSIDE every `SwapRandom` block (`Main.cs:17811-17812` sits after the
+`UpdateServerOrClient` wrapper closes), so the global stream is the
+faithful home. In C# order: `EmitTreeLeaves`' hallowed height pick
+`Next(0, 28)` (`:7884` — previously mis-rolled on the gate stream), then
+the `NewGoreDirect` ARGUMENT draws `RandomVector2(Main.rand, −2, 2)`
+(two `NextFloat`, X then Y, `Utils.cs:2431-2434`) and the scale roll
+`0.7 + NextFloat()*0.6` (`:7889`), then `NewGore`'s internals
+(`Gore.cs:1327-1328` velocity jitter, the SpecialAI-3 four-draw leaf
+init `:1393-1401`). The `RandomVector2` velocity is DISCARDED by the
+leaf init but its draws still fire (argument evaluation precedes the
+call). `NewGorePerfect` (the living-wood arms) burns the same internals
+then overwrites position/velocity — zero velocity survives.
+
+**Deliberate deviations / deferred seams.**
+* The emission gate `_isActiveAndNotPaused`
+  (`FocusHelper.AllowTileDrawingToEmitEffects`, `TileDrawing.cs:469`)
+  reads `!game_paused && !TR_NO_WIND` — the focus gate is unported; the
+  A/B switch keeps the whole wind feature screenshotable.
+* The leaf spawns fire only on a world-range REBUILD (the G6 cache):
+  vanilla re-runs `DrawTiles_EmitParticles` per draw under its
+  `!Lighting.UpdateEveryFrame || FastRandom(TileFrameSeed).WithModifier
+  (x,y).Next(4)==0` quarter-roll (`:965-968`); the port's cached-range
+  model cannot re-emit without invalidating the cache, so the shed
+  cadence is per-rebuild, not per-frame. The d60 wiring wave owns the
+  reconciled emission cadence for the whole particle battery.
+* `Gore_UpdateLeaf`'s lava arm deactivates the leaf but its five-dust
+  puff (`Gore.cs:1119-1122`) stays the recorded S1-E-4 dust-seam drop.
+* `Gore.Width/Height` read the 1f texture-unloaded fallback (the S1-E-4
+  asset-seam drop), so the falling liquid probe centres on
+  `position + 0.5` instead of the sheet half-size.
+* The desert debris (`Sandstorm.EmitDust`, `sand.rs`) already landed with
+  S1-E-1/E-3; W4-g68 adds the wind-coupling witness (the
+  `sign(wind)*Lerp(0.9,1,|wind|)` drift, the `num13*20` push, the
+  severity scales, the dead-calm refusal) — no behaviour change.
+
+Verification: 17 witness tests WRITTEN NOT RUN (no cargo/rustc invoked) —
+`render/foliage.rs` 8 (the dead-wind double shed, the sideways miss, the
+two-open-cell gate, the −10 left shift, the paint column, the liquid
+refusal, the two-stream census with the gate-stream step pin, the paused
+gate), `tr-core/gore.rs` 8 (the π/180 sway + wind*4 surface term, the
+underground drop, the collision rest switch, the water drift ×0.94 +
+underground zero, honey freeze, lava burn-up, the open-ground resume
+0.1/0/α+20, the 600+255 fade), `sand.rs` 1 (the wind recipe bounds).
