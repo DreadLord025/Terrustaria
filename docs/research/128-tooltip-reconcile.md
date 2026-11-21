@@ -1,17 +1,32 @@
-# 128 — Tooltip 2-way reconcile (W4-e16 × W4-f28, code-only)
+# 128 — Tooltip 2-way reconcile (W4-e16 × W4-f28, code-only) — STATUS: FINAL
 
 **Branch:** `task/W4-e16-item-tooltip-lines` (this doc) · **Probed tips:**
 e16 `380f05a1` (30 witnesses) vs f28 `85165b8b`
-(`origin/task/W4-f28-tooltip-lines-2`, pushed AFTER the e16 probe; full diff
+(`origin/task/W4-f28-tooltip-lines-2`; full diff
 read: `604f208d` GenItemData provision → `d771dcac` port → `d5f7dd82` records →
 `85165b8b` compile fixes). Common base `a725acb0` (main). **Mode:** CODE-ONLY —
 git + file reads, no compiler; NO code changes to f28.
 
-**f28b cross-note:** the Lead reports f28b active on the deferred families.
-As of this probe (4× `git fetch --prune` + `ls-remote` + worktree/reflog scan)
-**no `f28b` branch, worktree or remote ref exists** — the only f28 tip is
-`85165b8b`. The deferred-family verdicts below (§5) are therefore PROVISIONAL:
-re-read f28b's tip before the merge if it appears.
+**CLOSEOUT (final):** the Lead's salvage-exec **f28c is ACTIVE on the f28
+branch** — f28 becomes canonical and executes the §5/§8 salvages there.
+This branch is now banner-marked (commit `1c15c74c`, comments only):
+every duplicated half carries a `DEPRECATED-BY-UNION (128 §…)` marker,
+every unique survivor a `UNIQUE-SALVAGE (128 §…)` marker — nothing
+deleted, the witnesses + anchors still read the live code until f28c
+folds the salvages. The exact hunk list f28c reads is §8.2; the final
+witness-dedupe map is §6.
+
+**Deferred-lane re-verification (closeout probe):**
+- `f28b` still NOT FOUND (fetch + branch scan at closeout) — f28's tip is
+  still `85165b8b`; the §5-f28 list is the whole f28 salvage surface.
+- **c24 journey LANDED on its branch** (`origin/task/W4-c24-journey-ui`
+  tip `e2e50a42`, NOT in main): see §7 — the sacrifice rows' constants-off
+  rationale is REVISED (the gate inputs now exist; the rows still unported
+  on every lane).
+- **e23 bestiary LANDED on its branch** (`origin/task/W4-e23-bestiary-ui-grid`
+  tip `6daf6d3d`, NOT in main): the `bestiary_notes` writer EXISTS
+  (`ui/bestiary.rs:534`, witness `the_bestiary_notes_join_the_non_empty_conditions`
+  `:2562`) — §7's bestiary entry updated; e16's DROP note is superseded.
 
 ## 1. The two shapes
 
@@ -73,8 +88,8 @@ KEEP = the implementation the merge should keep (both land ⇒ keep-one, named).
 | 32 | accessory fixed rows 62-80 (Warding "+20 " space) | :21152-21265 | tooltip.rs match table | lines2 match table | either (identical incl. the space) |
 | 33 | armor-set bonus row (grey 130/190 unworn / LimeGreen complete) | :21267-21311 | tooltip.rs `best_worn_set` + `ctx.context != 8` | lines2 `SETS.find` (array[0]) unworn / `best_worn_set` worn + `flags.worn_armor` | **f28** (unworn reads array[0] literally); VERIFY e16 `best_worn_set` row choice for the unworn text |
 | 34 | share hint (flag2 && Settings.ShowLoadoutShareHint, OurFavoriteColor 190) | :21312-21317 | tooltip.rs + settings.rs key (Put :4219/Get :4553, default true Player.cs:412) | DEFERRED | **e16** (MUST-SALVAGE: key + row + round-trip witness) |
-| 35 | journey creative-sacrifice rows (difficulty==3, ctx whitelist) | :21318-21333 | CONSTANTS-OFF cited (no journey difficulty) | DEFERRED (no sacrifice tracker; ctx whitelist rides loadout port) | **drop-both, cited** (identical net; e16 ctx map is the future seam) |
-| 36 | BestiaryNotes split lines | :21334-21342 | DROP cited (only writer `UIBestiaryInfoItemLine.cs:155`) | lines2 emits over `HoverFlags.bestiary_notes: Option<&'static str>` (inert) | **f28 seam** (writer `DrawMouseOver` :121-126 sets `Main.HoverItem` — the row IS reachable once the bestiary hover lands; e16 DROP note superseded) |
+| 35 | journey creative-sacrifice rows (difficulty==3, ctx whitelist) | :21318-21333 | cited drop (constants rationale REVISED at closeout — c24 landed the gate inputs, §7) | DEFERRED (no sacrifice rows; ctx whitelist rides loadout port) | **drop-both, cited — pending port** (c24 tip `e2e50a42`: difficulty-3 + `sacrifice_numbers` now exist; e16 ctx map is the seam, §7) |
+| 36 | BestiaryNotes split lines | :21334-21342 | DROP cited — SUPERSEDED (e23 writer landed, §7) | lines2 emits over `HoverFlags.bestiary_notes: Option<&'static str>` (inert until the wire) | **f28 seam** (e23 `bestiary_notes` writer EXISTS at tip `6daf6d3d`; `DrawMouseOver` :121-126 feeds `Main.HoverItem` — the remaining work is the hover WIRE, §7) |
 | — | line tint byte-truncation | :20406 | tooltip.rs `draw_item_tooltip` | tooltip.rs `draw_item_tooltip` | either (identical `(byte)(c*num2)`) |
 | — | shop lines (`AddShopLines`) | :20448-20555 | out of scope (W4-f37) | out of scope (S1-P-i44 chrome follow-up) | drop-both → f37 |
 | — | diff 1/2 name colours | :20620-20627 | unported (no difficulty) | deferred (call passes 0) | drop-both, cited |
@@ -189,7 +204,7 @@ param):
    helper; the `yoyoLogo` index return; `HoverFlags.bestiary_notes` seam;
    the `open_chest` pre-`chest::draw` capture fix (`85165b8b`).
 
-## 6. Witness union (30 + 18 = 48; the Lead's "16" under-counts f28)
+## 6. Witness union — FINAL dedupe map (30 + 18 = 48; the Lead's "16" under-counts f28)
 
 e16: 26 `w4_e16_*` in `tooltip.rs` + 3 in `tooltip_sets.rs` + 1 settings
 (`w4_e16_the_loadout_share_hint_round_trips`). f28: **15** `w4_f28_*` in
@@ -228,20 +243,79 @@ identical assertions at merge, never drop coverage):
 | settings key | `…loadout_share_hint_round_trips` | — | **e16 only** |
 | format grammar | — | 3 tr-core tests | **f28 only** |
 
-Net after dedupe: ~40 distinct witnesses; the union coverage must not
-shrink below the 48 assertion sets.
+**FINAL verdicts (closeout, f28c reads these literally):**
+
+- **Dedupe (retire the e16 twin, f28 witness carries the topic — 8 e16 fns):**
+  summon/whip use-time, shop tip[60], Strange Brew range (assertions ride
+  f28 `…coin_gun_gate_and_the_range_restore`), cursed Plantera, DD2+well-fed
+  (`…dd2_and_well_fed_rows` — its DD2-gate assertions MOVE into the salvaged
+  t1‖t2‖t3 derivation test before retiring), duration banker's, accessory
+  fixed rows (inside f28 `…prefix_comparison_rows`).
+  Plus the place/ammo/consumable pair: dedupe onto f28
+  `…place_ammo_consumable_ladder_repairs` **after adding e16's `wall > 0`
+  assertion** (§2 row 16 VERIFY) — never drop that check with the twin.
+- **Keep-both (different seam/depth):** quiver+Psycho-Knife (2 e16 row-level
+  vs f28 helper-level), revolver visual crit, tile wand row-level (the
+  sets-table twin retires, §3), wiring rows (statue carve-out keeps its
+  `tooltip_sets` home), seed rows (e16 pins the DD2 derivation), prefix %
+  deltas (e16 mana-invert 3-prefix matrix is deeper), pen/tag signed
+  (output identical post-§4.6), favourite+bank block, social, armor set.
+- **Keep f28 shape, port e16 assertions:** coin-gun damage gate (e16 tip[3]
+  RANGED-25-dmg assertions + the 58-slot scan land on f28's gate+range
+  witness), rapid attack (f28 PRE-charge/cap/decay + e16's three-kind
+  set-guard assertions), Mechdusa (`pop;pop;push` shape, e16 last-line
+  assertions), yoyo/expert/master (f28's Guarding-63 master-shift pin wins;
+  e16 `…yoyo_expert_and_master_rows` retires only after its expert-set
+  assertions are covered by the `d.expert` column checks).
+- **e16-only survivors (UNIQUE-SALVAGE, must land on f28):**
+  `…loadout_share_arm_suppresses_the_equipable_row`,
+  `…knockback_delta_reads_the_prefix_only_oldkb`,
+  `…loadout_share_hint_round_trips` (settings), the fishing typo-fix
+  (currently assertion-free — ADD a `PrecentFishingPower` witness at f28c),
+  `tooltip_sets` statue/alt-use table tests (the tile-wand + extractinator
+  halves retire with their tables into the columns).
+- **f28-only survivors:** the 3 tr-core format tests
+  (`the_prefix_rows_section_format_matches_dotnet`,
+  `plain_and_two_arg_holes_still_format`, `zero_pad_and_optional_holes`).
+
+Net after dedupe: ~38 distinct witnesses; the union coverage must not
+shrink below the 48 assertion sets — every retired twin's assertions are
+either already in the surviving f28 witness or explicitly moved above.
 
 ## 7. Drops union (both branches' cited deferrals — one list at merge)
 
-- **Journey sacrifice rows** (:21318-21333): e16 CONSTANTS-OFF (no
-  difficulty==3) / f28 no-tracker — same net no-op; the ctx whitelist
-  (0,1,2,3,4,32,15,6,22,35,7,5,29,34,41,42,43) rides e16's context map when
-  the creative tracker lands.
-- **BestiaryNotes writer** (:21334-21342): e16 DROP is SUPERSEDED by f28's
-  `HoverFlags.bestiary_notes` seam — the C# writer
-  (`UIBestiaryInfoItemLine.cs:137-156`) feeds `Main.HoverItem` through
-  `DrawMouseOver` (:121-126), so the row is real once the bestiary hover
-  line ports; keep the seam, inert today.
+- **Journey sacrifice rows** (:21318-21333): RE-VERIFIED at closeout
+  against `origin/task/W4-c24-journey-ui` tip `e2e50a42` (landed on its
+  branch, NOT in main). The old "constants-off, difficulty==3 never
+  holds" rationale is **REVISED**: `App::active_player_difficulty()`
+  (`app/mod.rs:2380`) can now return 3 (the char-creation Journey row,
+  `Click::Difficulty(3)` witness `char_creation.rs:2660`), and the sacrifice tracker
+  landed (`research.rs` `ResearchTracker::sacrifice_numbers` :94,
+  `register_sacrifice` :35; `App.research` field `app/mod.rs:190`). c24's
+  `draw_hud` even feeds the journey grid's hovered cell into
+  `hover_item` (its `ui/mod.rs` diff) with contexts 29/34
+  (`journey.rs::grid_context` :641). **The rows themselves remain
+  unported on every lane** (c24 did NOT touch `ui/tooltip.rs`; no
+  `CreativeSacrificeNeeded`/`ItemUnlockedByTeammate` string anywhere in
+  its crates) — so the drop verdict STANDS, but it is now a *pending
+  port*, not a constants-off no-op: once f28c's merged tooltip reads the
+  ctx whitelist (0,1,2,3,4,32,15,6,22,35,7,5,29,34,41,42,43 — e16's
+  context map is the seam) + difficulty 3 + `sacrifice_numbers`, the rows
+  are directly implementable. The teammate-credit arm (:21327-21332)
+  stays single-player inert (c24 `research.rs:23-24`).
+- **BestiaryNotes writer** (:21334-21342): RE-VERIFIED at closeout against
+  `origin/task/W4-e23-bestiary-ui-grid` tip `6daf6d3d` (landed on its
+  branch, NOT in main). **The writer EXISTS**: `ui/bestiary.rs:534`
+  `bestiary_notes(conditions)` ports `SetBestiaryNotesOnItemCache`
+  (`UIBestiaryInfoItemLine.cs:137-156`, the `"\n"` join at :155), witnessed
+  by `the_bestiary_notes_join_the_non_empty_conditions` (:2562); the hover
+  gate `info_item_shows_tooltip` (:550) ports `DrawSelf` :112-119 and is
+  `#[allow(dead_code)]`-marked "the drop-row hover tooltip lands with the
+  tooltip work". C# `DrawMouseOver` (:121-126) sets
+  `Main.HoverItem = _infoDisplayItem` — so e16's DROP note is SUPERSEDED:
+  keep f28's `HoverFlags.bestiary_notes` seam; the remaining work is the
+  WIRE (e23's notes string → the hover item → the tooltip flags), not the
+  writer. The seam stays inert until that wire lands.
 - **OneDropLogo draw arm** (:20408-20439): both emit the " " placeholder;
   f28 returns the row index — the texture pass (5-copy shadow + tint) is
   render work, deferred.
@@ -254,12 +328,42 @@ shrink below the 48 assertion sets.
 - **rapid-attack use-site grant** (`Player.cs:44291`): no writer yet both;
   f28's decay + increase arm are live machinery waiting on the melee lane.
 
-## 8. Merge order recommendation (for the Lead)
+## 8. Merge order — FINAL (f28c executes on the f28 branch)
 
-1. f28 lands first (generator + format + structure are the base).
-2. e16 rebases onto it: salvage §5-e16 items into `tooltip_lines2.rs` /
-   `tooltip.rs` / `settings.rs`, resolve the `TooltipWorld` collision per §4,
-   dedupe the set tables + prefix block per §3/§4.6, repoint the e16 anchor.
-3. Re-check f28b's tip (if it exists by then) against §5/§7 before verdicts
-   freeze; run the witness union (§6) — both lanes are WRITTEN NOT RUN, the
-   merged branch is the first place they can actually execute.
+1. **f28 is the base** (`origin/task/W4-f28-tooltip-lines-2` tip
+   `85165b8b`: generator + format + two-module structure). f28c salvages
+   INTO it there — e16 does NOT rebase; its branch stays banner-marked
+   until the salvages land, then retires.
+2. **The exact e16 salvage-hunk list (f28c reads this; source = e16 tip
+   `1c15c74c`, banner markers `UNIQUE-SALVAGE`):**
+
+   | # | e16 source (file · symbol · C# anchor) | f28 destination | Note |
+   | --- | --- | --- | --- |
+   | S1 | `ui/tooltip.rs` · loadout head latches + `UI.ItemLoadoutShared` arm (`:20636-20654`) | `tooltip_lines2::append_second_half` head / `tooltip.rs` first half, reading `HoverFlags.context` | flag suppresses the equipable row (S3); flag2 feeds S4 |
+   | S2 | `ui/tooltip_sets.rs` · `can_loadout_share_at` (ctx 8-12, `ItemSlot.cs:395-399`) | `tooltip_sets.rs` stays the ONE table home | pure ID-set, survives §3 |
+   | S3 | `ui/tooltip.rs` · `!loadout_share_flag` gate on the equipable row (`:20816`) | wrap f28 `equipable_row(kind, npc_shop)` call (`tooltip_lines2.rs:776`) | f28 helper itself KEEP |
+   | S4 | `ui/tooltip.rs` · share-hint row (`:21312-21317`, tint 255,231,69,190) + `settings.rs` `show_loadout_share_hint` (field/Default/parse arm/to_json row) | `append_second_half` tail + `settings.rs` | Put `Main.cs:4219` / Get `:4553` / default true `Player.cs:412`; round-trip witness rides |
+   | S5 | `ui/tooltip.rs` · `PrecentFishingPower` typo-fix (`Main.cs:20806`) | f28 `tooltip.rs:401` — replace `RecentFishingPower` | ADD a witness (e16 has none for this row) |
+   | S6 | `prefix.rs` · `prefixed_stats_of(def, prefix)` | keep as the application primitive; re-point f28 `hover_stats` (`tooltip_lines2.rs:333`) at it when the caller holds the row | keep f28's bare-def fallback as the outer `Option` |
+   | S7 | `ui/tooltip.rs` · `old_kb = ps.knock_back` capture BEFORE the glove/buff scales (`:20333`) | f28 prefix block already captures `stats.knock_back` pre-scale — keep ONE, pin with e16 `…prefix_only_oldkb` witness | discipline, not new code |
+   | S8 | `ui/mod.rs` · full HoverRef→ctx map + coin/ammo favourite stamps (`ItemSlot.cs:3184-3198`) | extend f28 `HoverFlags` with `context: i32`; draw-site favourited lookup takes e16's map | grid 0 / coin 1 / ammo 2 / armor 8,10,9,11 / dye 12 / misc 16-20 / misc-dye 33 / trash 6 / bank 4 / hotbar 13 / craft 22 |
+   | S9 | `ui/mod.rs` · 58-slot `has_coin_gun` bool (grid + `equip.coins` + `equip.ammo`, `Player.cs:55894-55904`) | replace f28 `inv.iter().take(58)` (`tooltip_lines2.rs:761`, a 50-slot slice) | the bool is the smaller edit (§4.4) |
+   | S10 | `app/frame/draw.rs` · `downed_dd2_any = dd2_downed_t1‖t2‖t3` (`DD2Event.cs:89-99`) | f28 `TooltipWorld` draw-site derivation — replace the `dd2_won` sentinel | §4.2 |
+   | S11 | `ui/tooltip.rs` · place gate `wall.map_or(false, \|w\| w > 0)` (`createWall > 0`) | VERIFY f28 `place_row_active`'s `wall.is_some()`; take `> 0` if it differs | §2 row 16 |
+   | S12 | witnesses: `…loadout_share_arm_suppresses_the_equipable_row`, `…knockback_delta_reads_the_prefix_only_oldkb`, `…loadout_share_hint_round_trips`, the mana-invert matrix assertions, the DD2-gate assertions, the coin-gun tip[3] assertions, the `wall > 0` assertion | port per the §6 FINAL map | never shrink below the 48 assertion sets |
+   | S13 | `anchors.txt` · the `fn append_prefix_lines` row | REPOINT at f28 `append_prefix_rows` (`tooltip_lines2.rs:561`) | never delete to silence the canary (§4.7); the `tooltip_sets::wireable` row survives (statue carve-out stays) |
+
+   Dedupe at the same time (§3): f28's inline ID-set copies fold into
+   `tooltip_sets.rs`; the four census tables + `signed_fmt` + the
+   read-only rapid-attack wrapper + e16 `TooltipWorld` retire (all
+   banner-marked on e16). `Settings.ShowLoadoutShareHint` to_json row
+   order: keep e16's slot (after `SettingsEnabled_OpaqueBoxBehindTooltips`,
+   before `MinimapFrame`) — the key-order witness reads it.
+3. **Deferred-lane verdicts are FROZEN** (§7 re-verified): c24 `e2e50a42`
+   and e23 `6daf6d3d` are on their branches, not main; f28b never
+   appeared. The journey rows stay a pending port; the bestiary seam
+   stays inert until the hover wire.
+4. Run the witness union (§6) on the merged f28 branch — both lanes are
+   WRITTEN NOT RUN; the merged branch is the first place they execute.
+   e16's branch + worktree retire only after every S-hunk is verified on
+   f28 (banner grep: no `UNIQUE-SALVAGE` marker left unported).
