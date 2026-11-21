@@ -33750,3 +33750,71 @@ mod w4_d120_kind_witnesses {
         assert_eq!(bound.frame, 0, "579 holds row 0");
     }
 }
+
+#[cfg(test)]
+mod w4_d120_shop_button_witnesses {
+    //! W4-d120 final census (code-only): the shop-button chain —
+    //! `NPCInteractions.Initialize`'s 25-row registry
+    //! (`NPCInteractions.cs:488-512`) vs the port's kind→index map.
+    //! WRITTEN NOT RUN.
+    use super::*;
+
+    /// The claimed kinds' registry rows: `Shop(142, 9)`/`Shop(160, 10)`/
+    /// `Shop(178, 11)`/`Shop(209, 14)` (`:496-501`); the sibling lanes'
+    /// Pirate `Shop(229, 17)` (`:504`) and SkeletonMerchant
+    /// `Shop(453, 20)` (`:507`) ride the cs_id fallback.
+    #[test]
+    fn w4_d120_the_claimed_kinds_shop_indices() {
+        for (kind, index) in [
+            (NpcKind::SantaClaus, 9u32),
+            (NpcKind::Truffle, 10),
+            (NpcKind::Steampunker, 11),
+            (NpcKind::Cyborg, 14),
+        ] {
+            assert_eq!(shop_index_for_kind(kind), Some(index), "{kind:?}");
+        }
+        // The bound Tavernkeep (579) has NO shop — the C# registers
+        // Shop(550, 21) only, and 579 transforms to 550 on the talk
+        // (`NPC.cs:19857-19860`) before any button could show.
+        assert_eq!(shop_index_for_kind(NpcKind::BartenderUnconscious), None);
+        // The no-shop set (`Initialize` registers no row for them):
+        // Nurse 18, Guide 22, TaxCollector 441, Angler 369, the bound
+        // forms.
+        for kind in [
+            NpcKind::Nurse,
+            NpcKind::Guide,
+            NpcKind::TaxCollector,
+            NpcKind::Angler,
+            NpcKind::BoundGoblin,
+            NpcKind::BoundWizard,
+            NpcKind::BoundMechanic,
+            NpcKind::WebbedStylist,
+            NpcKind::SleepingAngler,
+            NpcKind::SleepingGolfer,
+        ] {
+            assert_eq!(shop_index_for_kind(kind), None, "{kind:?} no shop");
+        }
+    }
+
+    /// The chain's shape: `GetChat` answers the ladder line on the talk
+    /// (`Main.cs:43081-43082`); the SHOP is a panel interaction button
+    /// (`OpenShop.GetText` = `Lang.inter[28]`, `NPCInteractions.cs:64-71`)
+    /// whose `Interact` runs `Main.OpenShop(shopIndex)`
+    /// (`Main.cs:40459-40467`) — inventory open, stackSplit 9999, the
+    /// chat text CLEARED, SetupShop, sound 12. NO draw in the whole
+    /// chain. The port's cursor-open stand-in drains the same side
+    /// effects (`try_open_town_shop_at_cursor`); the button row itself
+    /// is the panel lane's (f22's interaction_rects generalize it).
+    #[test]
+    fn w4_d120_the_shop_label_is_inter_28_and_the_open_draws_nothing() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        assert_eq!(crate::lang::inter(28), "Shop", "OpenShop.GetText");
+        // The second Painter row's custom label (`:512`).
+        assert_eq!(
+            crate::lang::text("GameUI.PainterDecor"),
+            "Decor",
+            "the decor button's custom text key"
+        );
+    }
+}

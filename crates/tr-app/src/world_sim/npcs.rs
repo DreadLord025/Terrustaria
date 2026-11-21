@@ -592,9 +592,17 @@ pub(crate) fn start_invasion_in(
     true
 }
 
-/// The kind → the shop number (`NPCInteractions.cs:488-498`'s registry:
-/// `Shop(17, 1)`, `Shop(19, 2)` … `Shop(107, 6)` — the port keeps the
-/// vanilla indices). `None` = no shop (the Guide).
+/// The kind → the shop number (`NPCInteractions.Initialize`,
+/// `NPCInteractions.cs:488-512` — the FULL 25-row registry census,
+/// W4-d120 final: `Shop(17, 1)` … `Shop(663, 24)` plus the Painter's
+/// SECOND row `Shop(227, 25, "GameUI.PainterDecor")` `:512`; the port
+/// keeps the vanilla indices). `None` = no shop — the census's no-shop
+/// set is exactly Nurse 18 / OldMan 37 / Guide 22 / TaxCollector 441 /
+/// Angler 369 / the bound forms (105/106/123/354/376/579/589) / the
+/// SkeletonMerchant 453 HAS shop 20 / the pets+slimes have none.
+/// The Painter's decor row answers index 15 (the first matching
+/// `OpenShop.Condition`, `:59-62`); 25 needs its own button row — the
+/// panel task's, recorded in docs/ANALYSIS.md.
 pub(crate) fn shop_index_for_kind(kind: NpcKind) -> Option<u32> {
     Some(match kind {
         NpcKind::Merchant => 1,
@@ -614,7 +622,25 @@ pub(crate) fn shop_index_for_kind(kind: NpcKind) -> Option<u32> {
         NpcKind::Princess => 24,
         NpcKind::DyeTrader => 12,
         NpcKind::PartyGirl => 13,
-        _ => return None,
+        // W4-d120 final census: the claimed kinds' registry rows —
+        // `Shop(142, 9)`/`Shop(160, 10)`/`Shop(178, 11)`/`Shop(209, 14)`
+        // (`:496-501`). The STOCK for 9/10/11/14 is d122's lane (its
+        // shop.rs already carries the four cases, `Chest.cs:2091-2135`/
+        // `:2360`); until it merges these indices resolve empty stock.
+        NpcKind::SantaClaus => 9,
+        NpcKind::Truffle => 10,
+        NpcKind::Steampunker => 11,
+        NpcKind::Cyborg => 14,
+        // The sibling lanes' kinds (type-keyed arms' shop twins):
+        // `Shop(229, 17)` (`:504`, d37's Pirate), `Shop(453, 20)`
+        // (`:507`, d40's SkeletonMerchant). `Shop(550, 21)` (`:508`)
+        // is d122's row (its shop-currency lane lands the Tavernkeep
+        // mapping WITH the medal stock) — not duplicated here.
+        _ => match kind.cs_id() {
+            229 => 17,
+            453 => 20,
+            _ => return None,
+        },
     })
 }
 
