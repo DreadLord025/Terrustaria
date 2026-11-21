@@ -10392,11 +10392,12 @@ impl Player {
         // seams): counter > 4 wraps the frame 0..3, the airborne rest frame 1,
         // the grounded 0. The machine sits behind the C#'s exclusion gate
         // (`:26835`: wings 4/22/0/24/28/30/33/45 — the early-return arms own
-        // their frames). The `wingFrame == 3` flap edge (`:26835-26858`) runs
+        // their frames; W4-g66 adds 39, whose Spooky arm early-returns at
+        // `:30307`). The `wingFrame == 3` flap edge (`:26835-26858`) runs
         // AFTER the rocket→wing conversion below, in the C# order; wings
         // 43/44 read frame 4 and 49 reads frame 5 — their frame tables are
         // unported, so their flap arms stay silent (the documented deviation).
-        if !matches!(self.wings_logic, 4 | 22 | 0 | 24 | 28 | 30 | 33 | 45) {
+        if !matches!(self.wings_logic, 4 | 22 | 0 | 24 | 28 | 30 | 33 | 39 | 45) {
             if flag19 || self.jump > 0 {
                 self.wing_frame_counter += 1;
                 if self.wing_frame_counter > 4 {
