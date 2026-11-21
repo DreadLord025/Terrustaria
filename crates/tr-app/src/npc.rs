@@ -1248,8 +1248,9 @@ pub enum NpcKind {
     VampireBat,
     /// `NPCID.FlyingSnake` (226, `NPCID.cs:11129`) — the temple snake
     /// (`NPC.cs:11911-11924`): 34x50, aiStyle 14, dmg 85, def 28, 260 HP,
-    /// kb 0.65, NPCHit23/NPCDeath26, value 400, npcSlots 0.5. The
-    /// velocity-sign facing + the 4/2.5 approach are cited machine skips.
+    /// kb 0.65, NPCHit23/NPCDeath26, value 400, npcSlots 0.5. WIRED: the
+    /// axis' 14 arm rides `bat_ai` — the velocity-sign facing + the 4/2.5
+    /// approach landed with the W4-g8 machine round.
     FlyingSnake,
     // ---- W4-g8 lane 1 batch 4: the last three ≤230 d22-d33 machine
     // members — the Squid (style 18) + the Harpy/RedDevil (style 14).
@@ -5304,9 +5305,9 @@ impl Npc {
             // bats' machine, the S1-D-3 reconcile): the tile bounces, the
             // approach arms, the water-group second pass, the drift, the
             // Demon/VoodooDemon sickle shot. The 158 surface-flee +
-            // Transform(159) landed with W4-g8 (the Vampire census row);
-            // the 226 type-specific branches are cited machine skips.
-            // noGravity — the flyer integration tail.
+            // Transform(159) and the 226 velocity-sign facing + 4/2.5
+            // approach landed with W4-g8 (the Vampire/FlyingSnake machine
+            // branches). noGravity — the flyer integration tail.
             14 => {
                 self.update_cave_bat(world, player, rng);
             }
@@ -36975,5 +36976,40 @@ mod w4_g8_kind_wire_1_tests {
         let mut vamp2 = Npc::new(NpcKind::Vampire, 1000.0, 1000.0, 1, 0.0);
         vamp2.update_vampire(&w, &mut near_player, 1.0 / 60.0);
         assert_eq!(vamp2.wants_transform, None, "the 300px gate (:58848)");
+    }
+
+    /// W4-g8 machine round 4 — the FlyingSnake's approach wiring pin
+    /// (WRITTEN NOT RUN): `update_cave_bat` routes the snake through the
+    /// 4/2.5 approach (`NPC.cs:22971-23037`), NOT the generic 0.1/0.04 —
+    /// one dry tick toward a left+above player gives vx −0.2 / vy −0.1
+    /// before the flyer integration moves the body.
+    #[test]
+    fn w4_g8_machine_the_flying_snake_rides_the_four_two_half_approach() {
+        let w = World::new("t".into(), 200, 120);
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 900.0;
+        player.y = 900.0;
+        player.dead = false;
+        let mut snake = Npc::new(NpcKind::FlyingSnake, 1000.0, 1000.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(1);
+        let before = rng.peek();
+        // The pure arm (no integration) — the approach writes are visible.
+        let cand = crate::npc_target::session_candidate(&player);
+        let players = [cand];
+        let players_wet = [player.wet];
+        let env = crate::npc_ai_style14::Style14Env {
+            world: &w,
+            players: &players,
+            players_wet: &players_wet,
+            net_mode: 0,
+            ticker: 0,
+        };
+        assert!(crate::npc_ai_style14::bat_ai(&mut snake, &env, &mut rng).is_none());
+        assert!((snake.vx - -0.2).abs() < 1e-5, "the 0.2 X accel: {}", snake.vx);
+        assert!((snake.vy - -0.1).abs() < 1e-5, "the 0.1 Y accel: {}", snake.vy);
+        assert_eq!(snake.facing, -1, "the player is to the left");
+        assert_eq!(snake.direction_y, -1, "and above");
+        assert_eq!(rng.peek(), before, "the snake's approach draws no Main.rand");
+        assert!(snake.wants_hostile_shot.is_empty(), "the FlyingSnake never shoots");
     }
 }

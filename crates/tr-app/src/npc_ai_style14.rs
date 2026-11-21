@@ -8,14 +8,14 @@
 //! `:17342`). The port models four of them: CaveBat 49, JungleBat 51,
 //! Hellbat 60, VoodooDemon 66 (`npc/data.rs::ai_style`). This module ports
 //! the whole arm's STRUCTURE with the branches those four types take; the
-//! unported types' own branches (226's velocity-sign facing `:22876-22894`,
-//! 226's 4/2.5 approach `:22971-23037`, 660's 0.35/0.3/6/5 approach
-//! `:23038-23115`) are cited skips — they land with their kinds.
+//! one remaining unported type's branch (660's 0.35/0.3/6/5 approach
+//! `:23038-23115`) is a cited skip — it lands with its kind.
 //! 48's wet arm `:23333-23345` + feather shot `:23416-23436`, 156's
-//! trident shot `:23458-23484`, and 158's surface flee + 7-cap approach
+//! trident shot `:23458-23484`, 158's surface flee + 7-cap approach
 //! `:22899-22970` + Transform(159) `:23346-23355` + double `ai[1]++`
-//! `:23357-23360` landed with the W4-g8 machine round (the
-//! Harpy/RedDevil/VampireBat wirings).
+//! `:23357-23360`, and 226's velocity-sign facing `:22876-22894` + 4/2.5
+//! approach `:22971-23037` landed with the W4-g8 machine round (the
+//! Harpy/RedDevil/VampireBat/FlyingSnake wirings).
 //!
 //! WIRED (the S1-D-3 bat/fish reconcile, `task/S1-D-3-reconcile-batfish`):
 //! `npc.rs::update_cave_bat` routes the four kinds through [`bat_ai`],
@@ -103,15 +103,35 @@ pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> O
     let net_id = npc.kind.net_id();
     // `:22852-22875` — the tile-bounce clamps.
     bounce(npc);
-    // `:22876-22898` — type 226 faces by velocity sign when the target is
-    // not hittable (unported kind); every other type runs `TargetClosest`
+    // `:22876-22898` — type 226 latches its velocity-sign facing BEFORE
+    // TargetClosest, and keeps it when the target is not hittable (W4-g8:
+    // the FlyingSnake landed); every other type runs `TargetClosest`
     // (`:22897`), faceTarget default true, aiStyle 14.
-    target_closest(npc, env.world, env.players, true, 14, env.ticker);
+    if net_id == 226 {
+        // `:22878-22887` — num223/num224 = the velocity signs (0 → +1).
+        let num223 = if npc.vx < 0.0 { -1 } else { 1 };
+        let num224 = if npc.vy < 0.0 { -1 } else { 1 };
+        target_closest(npc, env.world, env.players, true, 14, env.ticker);
+        // `:22889-22893` — the blocked sight line keeps the latched signs.
+        let p = &env.players[npc.target as usize];
+        let (w, h) = npc.size();
+        if !crate::projectile::can_hit(
+            env.world, npc.x, npc.y, w, h, p.x, p.y, p.width as f32, p.height as f32,
+        ) {
+            npc.facing = num223;
+            npc.direction_y = num224;
+        }
+    } else {
+        target_closest(npc, env.world, env.players, true, 14, env.ticker);
+    }
     // `:22899-23182` — the per-type approach arms. 158's surface flee +
-    // 7-cap approach landed with W4-g8 (the VampireBat); 226/660 unported;
-    // the else arm (`:23116-23182`) is the shared 0.1/4 X + 0.04/1.5 Y.
+    // 7-cap approach and 226's 4/2.5 approach landed with W4-g8 (the
+    // VampireBat/FlyingSnake); 660 unported; the else arm
+    // (`:23116-23182`) is the shared 0.1/4 X + 0.04/1.5 Y.
     if net_id == 158 {
         vampire_bat_approach(npc, env);
+    } else if net_id == 226 {
+        flying_snake_approach(npc);
     } else {
         generic_approach(npc);
     }
@@ -431,6 +451,59 @@ fn vampire_bat_approach(npc: &mut Npc, env: &Style14Env<'_>) {
         }
         if npc.vy > 7.0 {
             npc.vy = 7.0;
+        }
+    }
+}
+
+/// The FlyingSnake's approach (`NPC.cs:22971-23037`, W4-g8): the 4-cap X
+/// (0.2 accel, the opposite-side 0.1 double-add, the 0.05 near-zero brake)
+/// and the 2.5-cap Y (0.1 accel, the 0.05 double-add, the 0.03 brake). The
+/// Y comparisons are DOUBLE-promoted in the C# (`(double)velocity.Y`) —
+/// the f32 values compare identically against the exactly-representable
+/// ±2.5 (the generic_approach convention).
+fn flying_snake_approach(npc: &mut Npc) {
+    // `:22973-23004` — the X approach, cap ±4.
+    if npc.facing == -1 && npc.vx > -4.0 {
+        npc.vx -= 0.2;
+        if npc.vx > 4.0 {
+            npc.vx -= 0.1;
+        } else if npc.vx > 0.0 {
+            npc.vx += 0.05;
+        }
+        if npc.vx < -4.0 {
+            npc.vx = -4.0;
+        }
+    } else if npc.facing == 1 && npc.vx < 4.0 {
+        npc.vx += 0.2;
+        if npc.vx < -4.0 {
+            npc.vx += 0.1;
+        } else if npc.vx < 0.0 {
+            npc.vx -= 0.05;
+        }
+        if npc.vx > 4.0 {
+            npc.vx = 4.0;
+        }
+    }
+    // `:23005-23036` — the Y approach, cap ±2.5.
+    if npc.direction_y == -1 && npc.vy > -2.5 {
+        npc.vy -= 0.1;
+        if npc.vy > 2.5 {
+            npc.vy -= 0.05;
+        } else if npc.vy > 0.0 {
+            npc.vy += 0.03;
+        }
+        if npc.vy < -2.5 {
+            npc.vy = -2.5;
+        }
+    } else if npc.direction_y == 1 && npc.vy < 2.5 {
+        npc.vy += 0.1;
+        if npc.vy < -2.5 {
+            npc.vy += 0.05;
+        } else if npc.vy < 0.0 {
+            npc.vy -= 0.03;
+        }
+        if npc.vy > 2.5 {
+            npc.vy = 2.5;
         }
     }
 }
@@ -1257,5 +1330,83 @@ mod tests {
         let mut rng = UnifiedRandom::new(1);
         bat_ai(&mut n, &e, &mut rng);
         assert_eq!(n.wants_transform, None, "the client keeps the bat form");
+    }
+
+    /// W4-g8 machine round — `NPC.cs:22973-23036`: the FlyingSnake's 4/2.5
+    /// approach (0.2 X accel / 0.1 Y accel, NOT the generic 0.1/0.04).
+    /// Facing −1 / directionY −1 (player left + above) → vx −0.2, vy −0.1
+    /// in ONE pass (226 is outside WATER_GROUP).
+    #[test]
+    fn w4_g8_s14_the_flying_snake_approaches_at_the_four_and_two_half_caps() {
+        let w = air();
+        let players = [cand(900.0, 900.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::FlyingSnake, 1000.0, 1000.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(1);
+        assert!(bat_ai(&mut n, &env(&w, &players, &wet), &mut rng).is_none());
+        assert!(near(n.vx, -0.2), "the 0.2 X accel: {}", n.vx);
+        assert!(near(n.vy, -0.1), "the 0.1 Y accel: {}", n.vy);
+        // The caps: vx −3.9 → −4.1 → clamp −4; vy −2.4 → −2.5 (at cap).
+        let mut n2 = Npc::new(NpcKind::FlyingSnake, 1000.0, 1000.0, -1, 0.0);
+        n2.vx = -3.9;
+        n2.vy = -2.4;
+        n2.direction_y = -1;
+        bat_ai(&mut n2, &env(&w, &players, &wet), &mut rng);
+        assert_eq!(n2.vx, -4.0, "the −4 X cap (:22985-22987)");
+        assert_eq!(n2.vy, -2.5, "the −2.5 Y cap (:23016-23018)");
+    }
+
+    /// `NPC.cs:22876-22894` — the FlyingSnake latches its velocity-sign
+    /// facing BEFORE TargetClosest and keeps it when the sight line is
+    /// blocked. Moving left + up (vx −1, vy −1) with a wall between it and
+    /// the player: the facing stays −1/−1 (the latched signs), NOT the
+    /// player's direction.
+    #[test]
+    fn w4_g8_s14_the_flying_snake_keeps_the_velocity_facing_when_blocked() {
+        let w = walled();
+        // Player to the RIGHT (1300) — TargetClosest would face +1, but
+        // the wall blocks CanHit, so the latched velocity signs stand.
+        let players = [cand(1300.0, 979.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::FlyingSnake, 1000.0, 1000.0, 1, 0.0);
+        n.vx = -1.0; // moving left → num223 = −1.
+        n.vy = -1.0; // moving up → num224 = −1.
+        let mut rng = UnifiedRandom::new(1);
+        bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert_eq!(n.facing, -1, "the latched X sign survives the blocked CanHit (:22891)");
+        assert_eq!(n.direction_y, -1, "the latched Y sign (:22892)");
+    }
+
+    /// `NPC.cs:22889` — with a CLEAR sight line the FlyingSnake faces the
+    /// player normally (the latched signs are discarded).
+    #[test]
+    fn w4_g8_s14_the_flying_snake_faces_the_player_when_hittable() {
+        let w = air();
+        // Player to the right + below, clear air → facing +1, directionY +1.
+        let players = [cand(1100.0, 1100.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::FlyingSnake, 1000.0, 1000.0, 1, 0.0);
+        n.vx = -1.0; // moving left — the latch would be −1...
+        n.vy = -1.0;
+        let mut rng = UnifiedRandom::new(1);
+        bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert_eq!(n.facing, 1, "CanHit true → TargetClosest's facing stands");
+        assert_eq!(n.direction_y, 1);
+    }
+
+    /// `NPC.cs:22880-22887` — a stationary FlyingSnake (vx 0, vy 0) latches
+    /// +1/+1 (the C#'s `num223 = 1` default; only `< 0` flips to −1).
+    #[test]
+    fn w4_g8_s14_the_flying_snake_zero_velocity_latches_positive() {
+        let w = walled();
+        let players = [cand(1300.0, 979.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::FlyingSnake, 1000.0, 1000.0, 1, 0.0);
+        n.vx = 0.0;
+        n.vy = 0.0;
+        let mut rng = UnifiedRandom::new(1);
+        bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert_eq!(n.facing, 1, "0 is not < 0 → num223 stays 1 (:22878-22883)");
+        assert_eq!(n.direction_y, 1, "num224 stays 1 (:22884-22887)");
     }
 }
