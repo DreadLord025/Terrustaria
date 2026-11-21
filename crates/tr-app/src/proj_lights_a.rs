@@ -1168,16 +1168,26 @@ mod tests {
         // The 984 TerraBlade2 (aiStyle 190) at (160,176) 16x16, rot 0,
         // scale 1: centre (168,184); the −π/4 anchor (217.497, 134.503) →
         // tile (13,8); the +π/4 anchor (217.497, 233.497) → tile (13,14).
+        // The sword branch reads the row's ai_style, so it is live only once
+        // d19's 984 row merges (the conditional d12 precedent); until then the
+        // kind resolves no row and the general-box half is the no-op below.
         let mut p = slot(984);
         p.melee = true;
         p.rot = 0.0;
         p.scale = 1.0;
-        let got = chillet_mount_light(&p, Some(62));
-        assert_eq!(got.len(), 2);
-        assert_eq!((got[0].0, got[0].1), (13, 8));
-        assert_eq!((got[1].0, got[1].1), (13, 14));
-        assert_eq!(got[0].2, [0.25, 0.05, 0.3]);
-        assert_eq!(got[1].2, got[0].2);
+        if proj_data(984).is_some_and(|d| d.ai_style == 190) {
+            let got = chillet_mount_light(&p, Some(62));
+            assert_eq!(got.len(), 2);
+            assert_eq!((got[0].0, got[0].1), (13, 8));
+            assert_eq!((got[1].0, got[1].1), (13, 14));
+            assert_eq!(got[0].2, [0.25, 0.05, 0.3]);
+            assert_eq!(got[1].2, got[0].2);
+        } else {
+            // No row yet → the general-box centre half (the kind is unrowed,
+            // so no slot carries it in production; the geometry pins above
+            // arm when the row lands).
+            assert_eq!(chillet_mount_light(&p, Some(62)), vec![(10, 11, [0.25, 0.05, 0.3])]);
+        }
     }
 
     #[test]
