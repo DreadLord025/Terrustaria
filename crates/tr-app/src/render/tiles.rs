@@ -727,6 +727,38 @@ pub(crate) fn draw_tiles(
                     ) {
                         dd = cased;
                     }
+                    // W4-g34 (research/67 §2.3, f14's slice-B/A order): the
+                    // critter-cage rewrite — the C# FIRST GetTileDrawData
+                    // switch's cage case groups (TileDrawing.cs:5629-5907),
+                    // at the FIRST switch's TAIL position: AFTER the static
+                    // table + slice B's delegated first-switch cases,
+                    // BEFORE slice A's SECOND switch (:6049-6507). The
+                    // 568/569/570/580 glow rects read `tileFrameY + addFrY`
+                    // POST-cage (:6085-6104), so the rewrite must land
+                    // before `apply_cases_a` builds them, and before the
+                    // source-rect resolve (:1007 reads the final
+                    // addFrX/addFrY). `cage_draw_data` REPLACES the static
+                    // cage arms with `top = 2` + the per-animal
+                    // `addFrY = Main.<table>[idx] * stride` read from the
+                    // wired cage animator (`AnimateTiles_CritterCages`,
+                    // `Main.cs:13511-16596`). The chest rewrite stays with
+                    // the chest lane (W4-d58's `:993` seam). The
+                    // `Main.critterCage = true` side effect (:5672 etc.)
+                    // rides the post-dd flag block below — the port's
+                    // fused-pass stand-in, one cell later in the same walk.
+                    if tr_core::drawdata_furniture::is_lane2_cage_kind(tile.kind) {
+                        if let Some(cage) = tr_core::drawdata_furniture::cage_draw_data(
+                            tile.kind,
+                            tx,
+                            ty,
+                            tile.frame_x,
+                            tile.frame_y,
+                            tr_core::drawdata_furniture::CAGE_FRAMES,
+                            |table, row, idx| cage_anim.frame_of(table, row, idx),
+                        ) {
+                            dd = cage;
+                        }
+                    }
                     // S1-F-9d slice A: the delegated static-case pass —
                     // LilyPad's liquid float (518), the oasis/sea-oats
                     // biome rows (530/529) and the SECOND GetTileDrawData
@@ -748,30 +780,6 @@ pub(crate) fn draw_tiles(
                     let _glow = crate::drawdata_cases_a::apply_cases_a(
                         &mut dd, world, tile, tx, ty, cell_bytes, 255, 0.0,
                     );
-                    // W4-g34 lane 2: the second-half critter-cage rewrite
-                    // (`TileDrawing.cs:5783-5907`, the small-animal tail +
-                    // water/jellyfish groups) — `cage_draw_data` replaces the
-                    // static fallback arm with `top = 2` + the per-animal
-                    // `addFrY = Main.<table>[idx] * stride` read from the
-                    // wired cage animator (`AnimateTiles_CritterCages`,
-                    // `Main.cs:13511-16596`). The big-cage ids + snail 285
-                    // are g33's half; the chest rewrite stays with the chest
-                    // lane (W4-d58). The `Main.critterCage = true` side
-                    // effect (`:5781` etc.) is raised for EVERY cage kind
-                    // below — it gates the whole animator, not just this half.
-                    if tr_core::drawdata_furniture::is_lane2_cage_kind(tile.kind) {
-                        if let Some(cage) = tr_core::drawdata_furniture::cage_draw_data(
-                            tile.kind,
-                            tx,
-                            ty,
-                            tile.frame_x,
-                            tile.frame_y,
-                            tr_core::drawdata_furniture::CAGE_FRAMES,
-                            |table, row, idx| cage_anim.frame_of(table, row, idx),
-                        ) {
-                            dd = cage;
-                        }
-                    }
                     dd
                 } else {
                     tr_core::drawdata::TileDrawData::default()
@@ -1927,10 +1935,12 @@ mod tests {
 
     /// W4-g34 lane-2 draw-feed witness (WRITTEN NOT RUN — code-only mode):
     /// the second-half cage rewrite reads the wired cage animator through
-    /// `cage_draw_data`'s `frame_of` AFTER the drawdata dispatch (the C#
-    /// `GetTileDrawData` cage arms, `TileDrawing.cs:5783-5907`), gated on
-    /// `is_lane2_cage_kind`; the `Main.critterCage` flag is cleared at the
-    /// pass head (`:474`) and raised for every cage cell (`:5672` etc.).
+    /// `cage_draw_data`'s `frame_of` (the C# `GetTileDrawData` cage arms,
+    /// `TileDrawing.cs:5783-5907`), gated on `is_lane2_cage_kind`; the
+    /// `Main.critterCage` flag is cleared at the pass head (`:474`) and
+    /// raised for every cage cell (`:5672` etc.). The old `cage > glow`
+    /// assertion is INVERTED by the order witness below (research/67
+    /// §2.3 — f14's slice-B/A composite order).
     #[test]
     fn the_lane2_cage_rewrite_feeds_from_the_cage_animator() {
         let src = include_str!("tiles.rs");
@@ -1941,22 +1951,17 @@ mod tests {
         // The rewrite is gated on the lane-2 half and reads the animator.
         assert!(
             dd_block.contains("is_lane2_cage_kind(tile.kind)"),
-            "the rewrite covers only the second-half cage ids"
+            "the rewrite covers the second-half cage ids"
         );
         assert!(
             dd_block.contains("cage_anim.frame_of(table, row, idx)"),
             "the cage frame rides the wired animator's tables"
         );
-        assert!(
-            dd_block.contains("cage_draw_data("),
-            "the rewrite goes through the furniture cage arm"
+        assert_eq!(
+            dd_block.matches("cage_draw_data(").count(),
+            1,
+            "exactly one live cage dispatch site"
         );
-        // The rewrite sits AFTER the second-switch glow pass (the C# cage
-        // arms are in the FIRST switch, but the port applies the table
-        // rewrite last so it replaces the static fallback wholesale).
-        let glow = dd_block.find("apply_cases_a(").unwrap();
-        let cage = dd_block.find("is_lane2_cage_kind").unwrap();
-        assert!(cage > glow, "the cage rewrite follows the glow pass");
         // The proximity flag: cleared at the head, raised per cage cell.
         assert!(
             body.contains("*critter_cage = false;"),
@@ -1970,6 +1975,75 @@ mod tests {
             body.contains("is_cage_kind(tile.kind)"),
             "the flag covers EVERY cage kind (the animator is whole)"
         );
+    }
+
+    /// W4-g34 composite-order witness (WRITTEN NOT RUN — f14's
+    /// `w4_f14_the_cage_post_pass_rides_the_first_switch_tail` adapted to
+    /// the direct `cage_draw_data` call, research/67 §2.3/§5): the cage
+    /// rewrite sits at the C# FIRST `GetTileDrawData` switch's tail
+    /// (TileDrawing.cs:5629-5907) — AFTER `draw_data` + slice B's
+    /// delegated first-switch cases and BEFORE slice A's SECOND switch,
+    /// whose 568/569/570/580 glow rects read `tileFrameY + addFrY`
+    /// POST-cage (`:6085-6104`), and BEFORE the source-rect resolve
+    /// (`:1007`). This REPLACES the old post-slice-A `cage > glow` pin
+    /// (the assertion INVERTS to glow > post-cage-read).
+    #[test]
+    fn the_cage_rewrite_rides_the_first_switch_tail() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let dd_block = &body[body.find("let dd = if active").unwrap()
+            ..body.find("// Resolve the drawn tile frame once").unwrap()];
+        let table = dd_block.find("tr_core::drawdata::draw_data(").expect("the static table");
+        let cases_b = dd_block.find("crate::drawdata_cases_b::case_draw_data(").expect("slice B");
+        let cage = dd_block
+            .find("tr_core::drawdata_furniture::cage_draw_data(")
+            .expect("the cage rewrite");
+        let cases_a = dd_block
+            .find("crate::drawdata_cases_a::apply_cases_a")
+            .expect("slice A");
+        assert!(table < cases_b, "slice B follows the static table");
+        assert!(cases_b < cage, "the cage groups are the FIRST switch's tail");
+        assert!(
+            cage < cases_a,
+            "the SECOND switch's glow rects read the POST-cage addFrY (:6085-6104)"
+        );
+        // The gate precedes the rewrite and feeds the animator's tables.
+        let gate = dd_block.find("is_lane2_cage_kind(tile.kind)").unwrap();
+        assert!(gate < cage, "the cage-kind gate precedes the rewrite");
+        assert!(dd_block.contains("cage_anim.frame_of(table, row, idx)"));
+        // The source-rect resolve reads the final addFrX/addFrY (:1007).
+        assert!(cage < body.find("// Resolve the drawn tile frame once").unwrap());
+    }
+
+    /// W4-g34 union acceptance pin (WRITTEN NOT RUN — g33's
+    /// `wired_cage_rewrite_matches_the_static_arms_at_t0` retargeted to
+    /// `CritterCageAnimator`, research/67 §5): with the vanilla t=0 tables
+    /// the wired cage rewrite is byte-equal to the static arms for EVERY
+    /// one of the 92 cage ids — the union wiring changes no pixel until
+    /// the animator moves the tables.
+    #[test]
+    fn wired_cage_rewrite_matches_the_static_arms_at_t0() {
+        let a = tr_core::critter_cage_anim::CritterCageAnimator::new();
+        let cages: &[u16] = &[
+            275, 276, 277, 278, 279, 280, 281, 296, 297, 309, 358, 359, 413, 414, 542, 550, 551,
+            553, 554, 558, 559, 599, 600, 601, 602, 603, 604, 605, 606, 607, 608, 609, 610, 611,
+            612, 632, 640, 643, 644, 645, 710, 285, 286, 298, 299, 310, 339, 361, 362, 363, 364,
+            391, 392, 393, 394, 532, 533, 538, 544, 555, 556, 582, 619, 629, 282, 505, 543, 598,
+            568, 569, 570, 288, 289, 290, 291, 292, 293, 294, 295, 360, 580, 620, 521, 522, 523,
+            524, 525, 526, 527, 316, 317, 318,
+        ];
+        assert_eq!(cages.len(), 92);
+        for &kind in cages {
+            let static_arm = tr_core::drawdata::draw_data(kind, 13, 7, 18, 18, 0, false);
+            let wired = tr_core::drawdata_furniture::cage_draw_data(
+                kind, 13, 7, 18, 18,
+                tr_core::drawdata_furniture::CAGE_FRAMES,
+                |t, r, i| a.frame_of(t, r, i),
+            )
+            .unwrap();
+            assert_eq!(wired, static_arm, "kind {kind}");
+        }
     }
 
     // S1-G-9: `DrawSingleTile_SlicedBlock`'s per-slice light chain
