@@ -24976,17 +24976,32 @@ caching wait on. What landed, 1:1:
 
 Deviations / scope (deliberate):
 
-- **No draw pass consumes the layers yet.** The frame path is unchanged:
-  the port keeps its single G6-cached world range + the
-  `render_world_fx` screen ping-pong (`sprite.rs`), and the family is
-  allocated but not rendered into by the world passes. The per-layer
-  render callbacks (`RenderTiles`/`RenderWallsAndBlacks`/`RenderWater`/
-  `RenderBackground*`, `Main.cs:57329-58091`), the skyTarget bind in the
-  sky pass (`:62025`) and the composite draws (`:63333`, `:62213`,
-  `:62196`, `:62308`) are the follow-up half of S1-G-13 вЂ” moving the
-  existing passes onto the layers is a draw-pass-order change and needs
-  its own A/B (the draw-pass order is frozen this round). The G6
-  `WorldFrameKey` is untouched.
+- **The consumers ride `TR_LAYER_TARGETS` (default OFF).** The fused frame
+  path is unchanged: the port keeps its single G6-cached world range + the
+  `render_world_fx` screen ping-pong (`sprite.rs`) by default. With
+  `TR_LAYER_TARGETS=1` the gated path (`app/layer_targets.rs`) renders the
+  world through the family: the `RenderToTargets` executor
+  (`tr_render::render_to_targets`) drives the per-layer callbacks
+  (`RenderTiles`/`RenderTiles2` → the `TileFilter::Solid`/`NonSolid` halves,
+  `RenderWallsAndBlacks` → the black merge + `draw_wall_layer`,
+  `RenderWater`/`RenderBackgroundWater` → `draw_waters`, `RenderBackground`
+  → `draw_background`), the skyTarget bind captures the sky range
+  (`sky_target_active`, `Main.cs:62021-62027`), and the six `DoDraw`
+  composites land in order with the direct-screen entity blocks
+  interleaved (`TileFilter::ScreenExtras`/`Screen`). The G6 `WorldFrameKey`
+  is untouched — the gated path bypasses the world-range cache entirely
+  (the layer targets ARE the cache). The draw-pass-order A/B is the
+  follow-up; the gate keeps the frozen default pixel-identical.
+- **The capture chunk render landed** (`app/capture_render.rs`,
+  `GpuCaptureRenderer`): `Main.DrawCapture` (`:56673-57081`) renders one
+  128-tile chunk through the family into the 2048² framebuffer, downscales
+  when `UseScaling` and reads the pixels back (`read_texture_rgba`), writing
+  `SavePath/Captures/<name>.png` (or the per-chunk PNGs when unscaled). It
+  rides the same gate; with it off the S1-E-17 no-op stub drains the queue.
+  The capture entity passes (`captureEntities` arms, `:56876-57017`) and the
+  biome background-index override are unported this round (the chunk renders
+  tiles/walls/liquids/backdrop only); the four `LightTiles` calls collapse to
+  one `compute_into` (the modern engine's single-pass equivalent).
 - **`IsContentLost` has no wgpu equivalent** вЂ” device loss recreates
   everything; `ensure` re-inits on absence or backbuffer-size change
   (the null-check half of `:58154`).
@@ -24998,10 +25013,10 @@ Deviations / scope (deliberate):
   `target_transition` is ported + tested but the frame only ever takes
   the Init/Keep arms. The Retro/UpdateEveryFrame drawToScreen branch
   stays the research/02 deviation.
-- **The capture seam stays a stub** (`app/capture_driver.rs`'s
-  `PendingCaptureRenderer`): the family exists, but `Main.DrawCapture`
-  (`:56673-57066`) rendering chunks through it is the consumer half вЂ”
-  documented in "The loading screen + capture mode" above.
+- **The capture seam's stub is the gate-off fallback** (`app/capture_driver.rs`'s
+  `PendingCaptureRenderer`): with `TR_LAYER_TARGETS` off the queue drains
+  without pixels (the S1-E-17 behaviour); with it on the `GpuCaptureRenderer`
+  renders the chunks (see the consumer deviation above).
 
 Tests: 17 in `targets.rs` вЂ” the layout math (1080p HiDef/Reach, small
 window, the X-cap-on-both-axes clamp, wide-HiDef), `IsPartiallyOffscreen`
