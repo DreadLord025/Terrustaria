@@ -1086,6 +1086,26 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    /// `NPCID.PirateGhost` (662) — Pirate's Curse (`aiStyle 122`):
+    /// 18x40, dmg 75, def 22, 500 HP, kb 0.2,
+    /// value 0.0, noGravity (`NPC.cs:17367-17383`). W4-d43.
+    PirateGhost,
+    /// `NPCID.TorchGod` (664) — The Torch God (`aiStyle 0`):
+    /// 0x0, dmg 0, def 0, 20 HP, kb 1.0,
+    /// value 0.0, boss (`NPC.cs:17398-17402`). W4-d43.
+    TorchGod,
+    /// `NPCID.ChaosBallTim` (665) — Chaos Ball (`aiStyle 9`):
+    /// 16x16, dmg 20, def 0, 1 HP, kb 0.0,
+    /// value 0.0, noGravity (`NPC.cs:17403-17417`). W4-d43.
+    ChaosBallTim,
+    /// `NPCID.VileSpitEaterOfWorlds` (666) — Vile Spit (`aiStyle 9`):
+    /// 16x16, dmg 65, def 0, 1 HP, kb 0.0,
+    /// value 0.0, noGravity (`NPC.cs:17418-17433`). W4-d43.
+    VileSpitEaterOfWorlds,
+    /// `NPCID.GoldenSlime` (667) — Golden Slime (`aiStyle 1`):
+    /// 24x18, dmg 5, def 5, 300 HP, kb 1.4,
+    /// value 1500.0 (`NPC.cs:17434-17448`). W4-d43.
+    GoldenSlime,
     /// `NPCID.QueenSlimeBoss` (657) — Queen Slime (`aiStyle 121`):
     /// 114x100, dmg 60, def 26, 18000 HP, kb 0.0,
     /// value 60000.0, boss (`NPC.cs:17310-17325`). W4-d43.
@@ -3073,7 +3093,7 @@ impl Npc {
                 // The BlazingWheel's `scale = 1.2f` row (`NPC.cs:9730`,
                 // the small-kinds wiring wave).
                 .unwrap_or(match kind {
-                    NpcKind::BlazingWheel => 1.2, NpcKind::RockGolem => 1.1,
+                    NpcKind::BlazingWheel => 1.2, NpcKind::VileSpitEaterOfWorlds => 0.9, NpcKind::RockGolem => 1.1,
                     _ => 1.0,
                 }),
             net_offset: Vec2::ZERO,
@@ -3105,7 +3125,7 @@ impl Npc {
             // S1-D-3 W-9: Duke Fishron's `boss = true` row
             // (`NPC.cs:13716`) — the target-facing inheritance gate
             // (`npc_target.rs`'s `!npc.boss` term) reads it.
-            boss: matches!(kind, NpcKind::DukeFishron | NpcKind::HallowBoss | NpcKind::QueenSlimeBoss),
+            boss: matches!(kind, NpcKind::DukeFishron | NpcKind::HallowBoss | NpcKind::QueenSlimeBoss | NpcKind::TorchGod),
             collide_x: false,
             collide_y: false,
             old_vx: 0.0,
@@ -3252,6 +3272,8 @@ impl Npc {
                             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
                                 255
                             }
+                            NpcKind::ChaosBallTim => 100,
+                            NpcKind::VileSpitEaterOfWorlds => 80,
                             _ => 0,
                         }
                     }),
@@ -3652,6 +3674,11 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            NpcKind::PirateGhost => 0.2,
+            NpcKind::TorchGod => 1.0,
+            NpcKind::ChaosBallTim => 0.0,
+            NpcKind::VileSpitEaterOfWorlds => 0.0,
+            NpcKind::GoldenSlime => 1.4,
             NpcKind::QueenSlimeBoss => 0.0,
             NpcKind::QueenSlimeMinionBlue => 1.0,
             NpcKind::QueenSlimeMinionPink => 1.0,
@@ -4062,6 +4089,11 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            NpcKind::PirateGhost => 22,
+            NpcKind::TorchGod => 0,
+            NpcKind::ChaosBallTim => 0,
+            NpcKind::VileSpitEaterOfWorlds => 0,
+            NpcKind::GoldenSlime => 5,
             NpcKind::QueenSlimeBoss => 26,
             NpcKind::QueenSlimeMinionBlue => 35,
             NpcKind::QueenSlimeMinionPink => 35,
@@ -4464,6 +4496,11 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            NpcKind::PirateGhost => 0.0,
+            NpcKind::TorchGod => 0.0,
+            NpcKind::ChaosBallTim => 0.0,
+            NpcKind::VileSpitEaterOfWorlds => 0.0,
+            NpcKind::GoldenSlime => 1500.0,
             NpcKind::QueenSlimeBoss => 60000.0,
             NpcKind::QueenSlimeMinionBlue => 0.0,
             NpcKind::QueenSlimeMinionPink => 0.0,
@@ -6500,6 +6537,19 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // W4-d43: AI_122_PirateGhost (NPC.cs:44843-44882) — the pirate ghost machine is unported. The kind holds
+            // still until its machine lands (the MartianTurret stand-in precedent).
+            NpcKind::PirateGhost => {}
+            // W4-d43: aiStyle 0 — the stationary bound stand (the BoundGoblin precedent); the Torch God is a fixed boss trigger. The kind holds
+            // still until its machine lands (the MartianTurret stand-in precedent).
+            NpcKind::TorchGod => {}
+            NpcKind::ChaosBallTim => {
+                unreachable!("aiStyle 9 rides the style axis (W4-d43)")
+            }
+            NpcKind::VileSpitEaterOfWorlds => {
+                unreachable!("aiStyle 9 rides the style axis (W4-d43)")
+            }
+            NpcKind::GoldenSlime => self.update_slime(world, player, dt),
             // W4-d43: AI_121_QueenSlime (NPC.cs:45202-45812) — the queen slime machine is unported. The kind holds
             // still until its machine lands (the MartianTurret stand-in precedent).
             NpcKind::QueenSlimeBoss => {}
@@ -10103,6 +10153,84 @@ impl Npc {
                     if self.frame_counter >= 27.0 {
                         self.frame_counter = 0.0;
                     }
+                }
+            }
+            NpcKind::PirateGhost => {
+                // `case 634 : case 662 : case 664` (`NPC.cs:74835-74884`): the
+                // spore-bat / pirate-ghost / torch-god flap — the sprite flips
+                // on the velocity sign, the rotation tilts `vx * 0.1`, the
+                // 6-tick counter advances one row and wraps at the strip
+                // (the 634 arm decrements the count by one, `:74868`).
+                if self.vx > 0.0 {
+                    self.sprite_dir = 1;
+                }
+                if self.vx < 0.0 {
+                    self.sprite_dir = -1;
+                }
+                self.rotation = self.vx * 0.1;
+                self.frame_counter += 1.0;
+                let count = self.rows();
+                if self.frame_counter >= 6.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= count {
+                    self.frame = 0;
+                }
+            }
+            NpcKind::TorchGod => {
+                // `case 634 : case 662 : case 664` (`NPC.cs:74835-74884`): the
+                // spore-bat / pirate-ghost / torch-god flap — the sprite flips
+                // on the velocity sign, the rotation tilts `vx * 0.1`, the
+                // 6-tick counter advances one row and wraps at the strip
+                // (the 634 arm decrements the count by one, `:74868`).
+                if self.vx > 0.0 {
+                    self.sprite_dir = 1;
+                }
+                if self.vx < 0.0 {
+                    self.sprite_dir = -1;
+                }
+                self.rotation = self.vx * 0.1;
+                self.frame_counter += 1.0;
+                let count = self.rows();
+                if self.frame_counter >= 6.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= count {
+                    self.frame = 0;
+                }
+            }
+            NpcKind::ChaosBallTim => {
+                // No `FindFrame` case (`NPC.cs:66684-77370` carries none for this
+                // type) and `Main.npcFrameCount` = 1 — the single frame holds.
+                self.frame = 0;
+            }
+            NpcKind::VileSpitEaterOfWorlds => {
+                // No `FindFrame` case (`NPC.cs:66684-77370` carries none for this
+                // type) and `Main.npcFrameCount` = 1 — the single frame holds.
+                self.frame = 0;
+            }
+            NpcKind::GoldenSlime => {
+                // `case 658 : case 659 : case 667 : case 676` (`NPC.cs:70820-70843`):
+                // the queen-slime minion / golden / shimmer slime flap — the
+                // counter ticks once, doubled while moving (`num2 > 0`) and
+                // tripled in the crouch class (`num2 == 4`); >=8 advances one
+                // row and wraps at the strip. (The 302/304 sprite snap is not
+                // these kinds'.)
+                self.frame_counter += 1.0;
+                if num2 > 0 {
+                    self.frame_counter += 1.0;
+                }
+                if num2 == 4 {
+                    self.frame_counter += 1.0;
+                }
+                if self.frame_counter >= 8.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= self.rows() {
+                    self.frame = 0;
                 }
             }
         }
@@ -19721,6 +19849,11 @@ impl Npc {
             NpcKind::QueenSlimeMinionPink => 659,
             NpcKind::QueenSlimeMinionPurple => 660,
             NpcKind::EmpressButterfly => 661,
+            NpcKind::PirateGhost => 662,
+            NpcKind::TorchGod => 664,
+            NpcKind::ChaosBallTim => 665,
+            NpcKind::VileSpitEaterOfWorlds => 666,
+            NpcKind::GoldenSlime => 667,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -24790,7 +24923,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 300] = [
+    pub(super) const ALL_KINDS: [NpcKind; 305] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -25098,6 +25231,11 @@ mod tests {
         NpcKind::QueenSlimeMinionPink,
         NpcKind::QueenSlimeMinionPurple,
         NpcKind::EmpressButterfly,
+        NpcKind::PirateGhost,
+        NpcKind::TorchGod,
+        NpcKind::ChaosBallTim,
+        NpcKind::VileSpitEaterOfWorlds,
+        NpcKind::GoldenSlime,
         NpcKind::WyvernTail,
     ];
 
@@ -25316,6 +25454,37 @@ mod tests {
             (NpcKind::QueenSlimeMinionPink, 659, 1u8, 24.0, 18.0, 40, 35, 150, 1.0, 0.0),
             (NpcKind::QueenSlimeMinionPurple, 660, 14u8, 40.0, 30.0, 50, 30, 120, 0.8, 0.0),
             (NpcKind::EmpressButterfly, 661, 65u8, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(kind.to_u16(), ty, "{kind:?} protocol id = vanilla id");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+    }
+
+    /// W4-d43 batch 7 — the new kinds' `SetDefaults` rows pin against the
+    /// C# (`NPC.cs` SetDefaults arms), through the port's tables — the
+    /// `s1_d_3_wire_smallkinds_the_defaults_match_the_csharp_rows` shape.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d43_batch7_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::PirateGhost, 662, 122u8, 18.0, 40.0, 75, 22, 500, 0.2, 0.0),
+            (NpcKind::TorchGod, 664, 0u8, 0.0, 0.0, 0, 0, 20, 1.0, 0.0),
+            (NpcKind::ChaosBallTim, 665, 9u8, 16.0, 16.0, 20, 0, 1, 0.0, 0.0),
+            (NpcKind::VileSpitEaterOfWorlds, 666, 9u8, 16.0, 16.0, 65, 0, 1, 0.0, 0.0),
+            (NpcKind::GoldenSlime, 667, 1u8, 24.0, 18.0, 5, 5, 300, 1.4, 1500.0),
         ];
         for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
             let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
@@ -28897,7 +29066,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            300,
+            305,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(

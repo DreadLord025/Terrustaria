@@ -1595,6 +1595,36 @@ fn portrait_data(
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
+        (NpcKind::PirateGhost, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::TorchGod, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(0.0);
+            (sheet_i, h, 0.0, h, white)
+        }
+        (NpcKind::ChaosBallTim, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 1.0)
+                .unwrap_or(16.0);
+            (sheet_i, h, 16.0, h, white)
+        }
+        (NpcKind::VileSpitEaterOfWorlds, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 1.0)
+                .unwrap_or(16.0);
+            (sheet_i, h, 16.0, h, white)
+        }
+        (NpcKind::GoldenSlime, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(18.0);
+            (sheet_i, h, 24.0, h, white)
+        }
         (NpcKind::QueenSlimeBoss, _) => (sheet_i, 100.0, 114.0, 100.0, white),
         (NpcKind::QueenSlimeMinionBlue, _) => {
             let h = entry_sheet(lookups, entry)

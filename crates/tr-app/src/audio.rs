@@ -181,6 +181,7 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_59", 4),
     ("NPC_Killed_62", 4),
     ("NPC_Killed_66", 4),
+    ("NPC_Killed_9", 4),
     ("NPC_Killed_64", 4),
     ("NPC_Hit_41", 3),
     ("NPC_Killed_43", 4),

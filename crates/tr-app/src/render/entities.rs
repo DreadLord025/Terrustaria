@@ -3339,6 +3339,21 @@ pub(crate) fn draw_npcs(
             NpcKind::EmpressButterfly => {
                 pumpkin_moon_draw(assets.npc_sheet(661), npc_rows(661), n, w, h)
             }
+            NpcKind::PirateGhost => {
+                pumpkin_moon_draw(assets.npc_sheet(662), npc_rows(662), n, w, h)
+            }
+            NpcKind::TorchGod => {
+                pumpkin_moon_draw(assets.npc_sheet(664), npc_rows(664), n, w, h)
+            }
+            NpcKind::ChaosBallTim => {
+                pumpkin_moon_draw(assets.npc_sheet(665), npc_rows(665), n, w, h)
+            }
+            NpcKind::VileSpitEaterOfWorlds => {
+                scaled_anchor(assets.npc_sheet(666), npc_rows(666), n, w, h)
+            }
+            NpcKind::GoldenSlime => {
+                pumpkin_moon_draw(assets.npc_sheet(667), npc_rows(667), n, w, h)
+            }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
@@ -3499,6 +3514,8 @@ pub(crate) fn draw_npcs(
                     | NpcKind::MagmaSnail
                     | NpcKind::QueenSlimeMinionPurple
                     | NpcKind::EmpressButterfly
+                    | NpcKind::PirateGhost
+                    | NpcKind::TorchGod
                     | NpcKind::DungeonSpirit
             )
         {
