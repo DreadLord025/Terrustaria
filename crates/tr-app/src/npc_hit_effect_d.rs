@@ -4456,6 +4456,55 @@ fn skeleton_merchant_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, leg2, s); // :88682
 }
 
+/// The 269-276/281-286 armored bones death (`NPC.cs:88684-88723`): the
+/// 20x dust-26 burst at (2.5·hd, −2.5), then the base five 42/43x2/44x2
+/// (`:88698-88702`, sites 715-719), then the per-kind weapon extra at
+/// +20 Y: 269 → 406 (`:88705`, site 720), 270 → 407 (`:88709`, site
+/// 721), 271/272 → 408 (`:88713`, site 722), 274 → 409 (`:88717`, site
+/// 723), 276 → 410 (`:88721`, site 724). `this.scale` carried.
+fn armored_bones_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88694-88697` — the 20x dust-26 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 26, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let p20 = Vec2::new(pos.x, pos.y + 20.0);
+    let p34 = Vec2::new(pos.x, pos.y + 34.0);
+    // `:88698-88702` — the base five.
+    gore.new_gore(rng, world, pos, vel, 42, s); // :88698
+    gore.new_gore(rng, world, p20, vel, 43, s); // :88699
+    gore.new_gore(rng, world, p20, vel, 43, s); // :88700
+    gore.new_gore(rng, world, p34, vel, 44, s); // :88701
+    gore.new_gore(rng, world, p34, vel, 44, s); // :88702
+    // `:88703-88722` — the per-kind weapon extra.
+    let extra = match npc_type {
+        269 => Some(406),        // :88705
+        270 => Some(407),        // :88709
+        271 | 272 => Some(408),  // :88713
+        274 => Some(409),        // :88717
+        276 => Some(410),        // :88721
+        _ => None,
+    };
+    if let Some(t) = extra {
+        gore.new_gore(rng, world, p20, vel, t, s);
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -4982,6 +5031,11 @@ pub fn hit_effect_d(
     // `:88661-88683` — the 453 Skeleton Merchant arm (sites 710-714).
     else if npc_type == 453 {
         skeleton_merchant_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88684-88723` — the 269-276/281-286 armored bones arm (sites
+    // 715-724).
+    else if matches!(npc_type, 269..=276 | 281..=286) {
+        armored_bones_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -8758,6 +8812,49 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "merchant shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:88698-88721` — the armored bones: the base five
+    /// 42/43x2/44x2 + the per-kind weapon extra at +20 Y (269→406,
+    /// 270→407, 271/272→408, 274→409, 276→410; the 281-286 kinds have
+    /// no extra).
+    #[test]
+    fn w4_f5d_the_armored_bones_base_five_and_weapon_extras() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, want) in [
+            (269, vec![42, 43, 43, 44, 44, 406]),
+            (270, vec![42, 43, 43, 44, 44, 407]),
+            (271, vec![42, 43, 43, 44, 44, 408]),
+            (272, vec![42, 43, 43, 44, 44, 408]),
+            (274, vec![42, 43, 43, 44, 44, 409]),
+            (276, vec![42, 43, 43, 44, 44, 410]),
+            (281, vec![42, 43, 43, 44, 44]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(709);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "bones {kind}");
+            if want.len() == 6 {
+                assert_eq!(gore.slot(5).position, Vec2::new(100.0, 120.0));
+            }
+            let mut twin = UnifiedRandom::new(709);
+            for _ in 0..20 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "bones {kind} mirrors the C# draws");
         }
     }
 }
