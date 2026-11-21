@@ -725,9 +725,9 @@ pub struct Player {
     pub deadly_sphere_minion: bool,
     /// `Player.magicLantern` (`Player.cs:2082`) — the MagicLantern light
     /// pet's keep-alive flag (the aiStyle-90 arm pins `timeLeft = 2` while
-    /// it stands, `Projectile.cs:32393-32396`). The grant side (`:11372`,
-    /// the light-pet buff pass) is unported — the flag stays false until it
-    /// lands; the reset (`:18485`) rides the buff-clear pass (W4-d9).
+    /// it stands, `Projectile.cs:32393-32396`). WIRED (W4-d9): the buff-152
+    /// arm grants it (`:11372`, `buff_effects_accessory.rs`), the reset
+    /// (`:18485`) rides the same pass's per-tick flag clears.
     pub magic_lantern: bool,
     /// `Player.dead`: the player is dead and waiting for the respawn timer
     /// (`Player.cs:38908`).

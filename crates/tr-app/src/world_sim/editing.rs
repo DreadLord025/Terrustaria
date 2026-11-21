@@ -17205,6 +17205,38 @@ mod use_loop_tests {
             .count();
         assert_eq!(live, 1, "the cap of 1 holds after the spawn");
     }
+
+    /// W4-d9 wiring — the MagicLantern 3043 USE path (`Player.cs:53242-
+    /// 53245`'s `ItemCheck_ApplyPetBuffs` grant + the generic `:49437`
+    /// shoot tail): the use grants buff 152 at 3600 ticks and spawns the
+    /// 492 light pet at the player centre + aim*10 with zero velocity
+    /// (shootSpeed 0), damage 0. The buff-152 arm's keep-alive + the
+    /// aiStyle-90 machine ride `buff_effects_accessory.rs` /
+    /// `projectile_ai_style90.rs`. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d9_the_magic_lantern_use_grants_the_buff_and_spawns() {
+        let mut app = app_with_staff(3043); // the Magic Lantern — shoot 492, buff 152
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        // The use-start grant (`Player.cs:53242-53245`): buff 152 at 3600.
+        let p = app.player.as_ref().unwrap();
+        let i = p.buffs.find_buff_index(152).expect("the 152 grant");
+        assert_eq!(p.buffs.buff_time[i], 3600, "the ApplyPetBuffs 3600 grant");
+        // The generic shoot tail's 492 spawn: zero velocity (shootSpeed 0),
+        // damage 0, the row's box, the player-centre + aim*10 spawn point.
+        let slot = app.projectiles.slots().iter().find(|s| s.active && s.kind == 492)
+            .expect("the lantern spawned");
+        assert_eq!((slot.vel.x, slot.vel.y), (0.0, 0.0), "shootSpeed 0");
+        assert_eq!(slot.damage, 0);
+        assert_eq!((slot.w, slot.h), (18.0, 32.0), "the 492 row's box");
+        assert_eq!(slot.owner, 0, "the local owner");
+        let (cx, cy) = p.center();
+        // The cursor sits left of the player (the fixture's camera column
+        // 30 vs the player column 33) — the aim is (-1, 0), so the spawn
+        // point is the centre + (-10, 0).
+        assert_eq!((slot.pos.x, slot.pos.y), (cx - 10.0, cy));
+    }
 }
 
 /// S1-P-i26 — the sentry-summon USE path's integration witnesses: the two

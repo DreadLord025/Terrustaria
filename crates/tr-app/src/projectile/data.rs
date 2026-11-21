@@ -4548,8 +4548,10 @@ pub const LIGHT_PET_PROJ: &[u16] = &[18, 500, 72, 87, 86, 211, 492, 650, 702, 89
 /// lives (the `:42880` `item.buffTime` grant is 0 for the staves, a ghost).
 /// Verbatim: the 1157/1309/1802/2364/2365 single-item arms (`:53190`/`:53194`/
 /// `:53218`/`:53234`/`:53238`) plus the 24-case switch (`:53254-53277`).
+/// W4-d9 wiring: the 3043 MagicLantern light-pet arm (`:53242-53245`) joins
+/// the list — the same `AddBuff(sItem.buffType, 3600)` grant.
 pub const MINION_STAFF_PET_BUFF_ITEMS: &[u16] = &[
-    1157, 1309, 1802, 2364, 2365, 2535, 2551, 2584, 2621, 2749, 3249, 3474, 3531, 4269, 4273,
+    1157, 1309, 1802, 2364, 2365, 2535, 2551, 2584, 2621, 2749, 3043, 3249, 3474, 3531, 4269, 4273,
     4281, 4607, 4758, 5005, 5069, 5114, 5456, 5663, 5664, 6148, 6149, 6161, 6164,
 ];
 
