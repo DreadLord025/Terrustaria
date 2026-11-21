@@ -678,6 +678,19 @@ const SHIMMER_MAX_FALL: f32 = 4.0;
 const FRICTION_X: f32 = 0.95;
 const FRICTION_EPSILON: f32 = 0.1;
 
+/// `ItemID.Sets.ItemNoGravity` (`ItemID.cs:1320`): `CreateBoolSet(520, 521,
+/// 575, 549, 548, 547, 3453, 3454, 3455, 3456, 3457, 3458, 3459, 3580, 3581,
+/// 4143)` — the souls/fragments/lunar fragments + the Mana pickup 4143 that
+/// float (`MoveInWorld`'s no-gravity head, `WorldItem.cs:774-786`).
+const ITEM_NO_GRAVITY: &[u16] = &[
+    520, 521, 575, 549, 548, 547, 3453, 3454, 3455, 3456, 3457, 3458, 3459, 3580, 3581, 4143,
+];
+
+/// `ItemID.Sets.ItemNoGravity[type]` (`ItemID.cs:1320`).
+pub fn item_no_gravity(kind: u16) -> bool {
+    ITEM_NO_GRAVITY.contains(&kind)
+}
+
 /// The accessory flags `GetItemGrabRange`/`GrabItems` read
 /// (`Player.cs:35133-35151`/`:34943-34963`). The port's equipment pass has
 /// not landed the Mana Magnet / Treasure Magnet grants (the `manaMagnet`
@@ -1223,26 +1236,40 @@ impl ItemDrop {
         }
     }
 
-    /// The non-grabbed movement half: `MoveInWorld`'s gravity/friction head
-    /// (`WorldItem.cs:849-864`) and the tile-collision pass. `gravity`/
+    /// The non-grabbed movement half: `MoveInWorld`'s `ItemNoGravity` float
+    /// head (`WorldItem.cs:774-786`) or the gravity/friction head
+    /// (`:849-862`), then the conveyor + tile-collision pass. `gravity`/
     /// `max_fall` are the caller's resolved pair (the shimmer-wet override or
     /// the shimmered 0). The repulsion scan itself (`:790-847`) is the
     /// slice-level [`Self::repel_shimmered`] the items pass runs before this
-    /// update; its `flag` rides [`Self::repulsed`]. The `ItemNoGravity` float
-    /// (`:774-786`) is deferred (ANALYSIS W4-e19).
+    /// update; its `flag` rides [`Self::repulsed`].
     fn move_in_world(&mut self, world: &World, gravity: f32, max_fall: f32) {
-        // `WorldItem.cs:849-853` — the gravity add and the fall cap.
-        self.vel.y = (self.vel.y + gravity).min(max_fall);
-        // `WorldItem.cs:854-860` — the friction and the `0.1` rest snap, both
-        // applied BEFORE the collision pass (`MoveInWorld`'s order).
-        self.vel.x *= FRICTION_X;
-        if self.vel.x.abs() < FRICTION_EPSILON {
-            self.vel.x = 0.0;
-        }
-        // `WorldItem.cs:859-862` — the repulsion flag's damp, AFTER the
-        // friction/snap and BEFORE the conveyor pass.
-        if self.repulsed {
-            self.vel.x *= 0.8;
+        if !self.shimmered && item_no_gravity(self.kind) {
+            // `WorldItem.cs:774-786` — the float: BOTH axes ×0.95 with the
+            // 0.1 rest snap, no gravity add, no repulsion (the scan lives in
+            // the else arm and is shimmered-only anyway).
+            self.vel.x *= FRICTION_X;
+            if self.vel.x.abs() < FRICTION_EPSILON {
+                self.vel.x = 0.0;
+            }
+            self.vel.y *= FRICTION_X;
+            if self.vel.y.abs() < FRICTION_EPSILON {
+                self.vel.y = 0.0;
+            }
+        } else {
+            // `WorldItem.cs:849-853` — the gravity add and the fall cap.
+            self.vel.y = (self.vel.y + gravity).min(max_fall);
+            // `WorldItem.cs:854-860` — the friction and the `0.1` rest snap,
+            // both applied BEFORE the collision pass (`MoveInWorld`'s order).
+            self.vel.x *= FRICTION_X;
+            if self.vel.x.abs() < FRICTION_EPSILON {
+                self.vel.x = 0.0;
+            }
+            // `WorldItem.cs:859-862` — the repulsion flag's damp, AFTER the
+            // friction/snap and BEFORE the conveyor pass.
+            if self.repulsed {
+                self.vel.x *= 0.8;
+            }
         }
         self.repulsed = false;
         // `WorldItem.cs:864`: the belt contacts bend the velocity before the
@@ -2313,5 +2340,42 @@ mod s1_p_i47_tests {
         let mut plain = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 1.0, 0.0, 0.0);
         plain.update(&w, 1.0 / 60.0);
         assert!((plain.vel.x - 0.95).abs() < 1e-5);
+    }
+
+    /// W4-e19 — the `ItemNoGravity` float (`WorldItem.cs:774-786`): a Soul of
+    /// Light (520, `ItemID.cs:1320`) damps BOTH axes ×0.95 with the 0.1 snap
+    /// and takes NO gravity add — it never falls.
+    #[test]
+    fn w4_e19_the_no_gravity_kinds_float() {
+        assert!(item_no_gravity(520) && item_no_gravity(4143) && !item_no_gravity(2));
+        let w = ground();
+        let mut soul = ItemDrop::new(520, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 2.0, 2.0, 0.0);
+        soul.update(&w, 1.0 / 60.0);
+        // ×0.95 on both axes, no +0.1 gravity on Y.
+        assert!((soul.vel.x - 1.9).abs() < 1e-5, "X damped: {}", soul.vel.x);
+        assert!((soul.vel.y - 1.9).abs() < 1e-5, "Y damped, no gravity: {}", soul.vel.y);
+        // The 0.1 rest snap on Y too: a slow float settles to zero.
+        let mut slow = ItemDrop::new(521, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.105, 0.105, 0.0);
+        slow.update(&w, 1.0 / 60.0);
+        assert_eq!(slow.vel.x, 0.0, "0.105*0.95 < 0.1 snaps");
+        assert_eq!(slow.vel.y, 0.0);
+        // A plain kind still falls (the else arm).
+        let mut dirt = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 0.0);
+        dirt.update(&w, 1.0 / 60.0);
+        assert!((dirt.vel.y - 0.1).abs() < 1e-6);
+    }
+
+    /// The float's `!shimmered` gate (`:774`): a shimmered no-gravity kind
+    /// takes the ELSE arm — gravity (0 for shimmered) + the X-only friction.
+    #[test]
+    fn w4_e19_a_shimmered_no_gravity_kind_takes_the_gravity_arm() {
+        let w = ground(); // dry: the shimmered drop damps Y ×0.9 (UpdateShimmer)
+        let mut soul = ItemDrop::new(520, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 2.0, 2.0, 0.0);
+        soul.shimmered = true;
+        soul.update(&w, 1.0 / 60.0);
+        // UpdateShimmer's dry damp: Y 2.0×0.9 = 1.8, gravity 0, no Y friction
+        // (the else arm frictions X only).
+        assert!((soul.vel.y - 1.8).abs() < 1e-5, "the else arm: {}", soul.vel.y);
+        assert!((soul.vel.x - 1.9).abs() < 1e-5);
     }
 }
