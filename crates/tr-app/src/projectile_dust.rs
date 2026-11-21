@@ -1808,11 +1808,11 @@ pub(crate) fn style86_ice_mist_ring_464(p: &Projectile, world: &World, d: &mut P
         p.vel.y.atan2(p.vel.x) as f64,
     ) * (p.ai[0] % 45.0 / 45.0);
     for k in 0..6 {
-        let spoke = Vec2::new(cx, cy)
-            + crate::bow_launch::rotated_by(
-                spin,
-                k as f64 * (std::f64::consts::PI * 2.0) / 6.0,
-            );
+        // `:31892` — `(float)num706 * ((float)Math.PI * 2f) / 6f` is FLOAT
+        // arithmetic (multiply then divide), widened to double only at the
+        // RotatedBy call — the float rounding is kept.
+        let angle = (k as f32 * (std::f32::consts::PI * 2.0) / 6.0) as f64;
+        let spoke = Vec2::new(cx, cy) + crate::bow_launch::rotated_by(spin, angle);
         for _ in 0..2 {
             let jitter = random_vector2(d.rng, -8.0, 8.0) / 2.0;
             let idx = d.new_dust(
@@ -2562,8 +2562,12 @@ pub(crate) fn style128_sandnado_orbits_658(
     let center = Vec2::new(cx, cy);
     for i in 0..2 {
         if d.rng.next_range(0, 10) == 0 {
+            // `:36156` — `(float)num964 * (float)Math.PI` is FLOAT math.
             let spin = crate::bow_launch::rotated_by(
-                crate::bow_launch::rotated_by(Vec2::Y, i as f64 * std::f64::consts::PI),
+                crate::bow_launch::rotated_by(
+                    Vec2::Y,
+                    (i as f32 * std::f32::consts::PI) as f64,
+                ),
                 p.rot as f64,
             );
             let idx = d.new_dust(world, center, 0, 0, 267, 0.0, 0.0, 225, Color::WHITE, 1.5);
@@ -2577,7 +2581,11 @@ pub(crate) fn style128_sandnado_orbits_658(
     }
     for i in 0..2 {
         if d.rng.next_range(0, 10) == 0 {
-            let spin = crate::bow_launch::rotated_by(Vec2::Y, i as f64 * std::f64::consts::PI);
+            // `:36169` — same float multiply, NO rotation spin.
+            let spin = crate::bow_launch::rotated_by(
+                Vec2::Y,
+                (i as f32 * std::f32::consts::PI) as f64,
+            );
             let idx = d.new_dust(world, center, 0, 0, 267, 0.0, 0.0, 225, Color::WHITE, 1.5);
             let dust = d.pool.slot_mut(idx);
             dust.no_gravity = true;
@@ -4301,9 +4309,8 @@ mod tests {
             Vec2::new(0.0, -720.0), p.vel.y.atan2(p.vel.x) as f64,
         ) * (20.0f32 % 45.0 / 45.0);
         for k in 0..6 {
-            let spoke = Vec2::new(cx, cy) + crate::bow_launch::rotated_by(
-                spin, k as f64 * (std::f64::consts::PI * 2.0) / 6.0,
-            );
+            let angle = (k as f32 * (std::f32::consts::PI * 2.0) / 6.0) as f64;
+            let spoke = Vec2::new(cx, cy) + crate::bow_launch::rotated_by(spin, angle);
             for _ in 0..2 {
                 let jx = 16.0 * mirror.next_double() as f32 - 8.0;
                 let jy = 16.0 * mirror.next_double() as f32 - 8.0;
@@ -5047,7 +5054,9 @@ mod tests {
         for loop_i in 0..2 {
             for i in 0..2 {
                 if mirror.next_range(0, 10) == 0 {
-                    let mut spin = crate::bow_launch::rotated_by(Vec2::Y, i as f64 * std::f64::consts::PI);
+                    let mut spin = crate::bow_launch::rotated_by(
+                        Vec2::Y, (i as f32 * std::f32::consts::PI) as f64,
+                    );
                     if loop_i == 0 {
                         spin = crate::bow_launch::rotated_by(spin, 1.1f64);
                     }
