@@ -1161,6 +1161,57 @@ mod tests {
         );
     }
 
+    /// W4-f40 FINAL item 4 — the f45 compose-contract for the lantern quad.
+    /// f45 (`task/W4-f45-wld-header-2`, tip `6352d384`) owns the .wld halves:
+    /// - save: `saveglue.rs:132-136` snapshots `world_events`' quad into
+    ///   `World.lantern_night_{cooldown,genuine,manual,next_night_is_genuine}`
+    ///   (`SetTempToOngoing`, `WorldFile.cs:1060-1063`);
+    /// - the flags block writes them at tail 1940..1946
+    ///   (`flags.rs:211-214`, `WorldFile.cs:1381-1384`) and reads them back
+    ///   at version >= 207 (`flags.rs:670-673`, `:2326-2329`);
+    /// - restore: `App::new`'s `from_wld` block (`mod.rs:4123-4127`,
+    ///   `SetOngoingToTemps` `:173-176`) copies the four World fields into
+    ///   `world_events.{lantern_nights_on_cooldown: i32, genuine_lanterns:
+    ///   bool, manual_lanterns: bool, next_night_is_lantern_night: bool}`.
+    /// THIS witness pins the f40 half of that contract: the exact field
+    /// names + types the f45 assignments read/write (a rename or retype on
+    /// this branch breaks the compile here, before the merge silently
+    /// breaks the restore), and the net-install clear-then-install order.
+    #[test]
+    fn w4_f40_the_lantern_quad_matches_the_f45_restore_shape() {
+        // The typed mirror of f45's `from_wld` assignments (mod.rs:4123-4127):
+        // the World-side types (i32 + three bools, flags.rs:670-673's reader)
+        // flow into the WorldEvents fields with NO conversion. If this
+        // branch renames/retypes any of the four, this stops compiling.
+        let (cooldown, genuine, manual, next): (i32, bool, bool, bool) = (7, true, false, true);
+        let mut app = in_world_app();
+        app.world_events.lantern_nights_on_cooldown = cooldown;
+        app.world_events.genuine_lanterns = genuine;
+        app.world_events.manual_lanterns = manual;
+        app.world_events.next_night_is_lantern_night = next;
+        // The restore-onto-live path ends at the shared tail — it must keep
+        // all four (the clear ran BEFORE, at the install sites).
+        app.enter_loaded_world();
+        assert_eq!(app.world_events.lantern_nights_on_cooldown, 7);
+        assert!(app.world_events.genuine_lanterns);
+        assert!(!app.world_events.manual_lanterns);
+        assert!(app.world_events.next_night_is_lantern_night);
+        // The net-install order pin: `client_install_world` clears the quad
+        // + resets the sky BEFORE `self.world = world` (the tile install)
+        // and before the `enter_loaded_world` tail (`Netplay.cs:500`'s
+        // state-4 `WorldGen.clearWorld` precedes the section apply).
+        let src = include_str!("netglue.rs");
+        let at = src.find("fn client_install_world(").expect("the install");
+        let body = &src[at..];
+        let clear_at = body.find("world_clear(").expect("the install clear");
+        let sky_at = body.find("lantern_sky.reset()").expect("the sky reset");
+        let install_at = body.find("self.world = world;").expect("the install");
+        let tail_at = body.find("self.enter_loaded_world()").expect("the tail");
+        assert!(clear_at < install_at, "clear before the tile install");
+        assert!(sky_at < install_at, "the sky reset rides the same site");
+        assert!(install_at < tail_at, "the tail runs after the install");
+    }
+
     /// The Phase-2 stepper tests' fixture: the in-world app with a slime on a
     /// ground world — the DW-1.2 shape, minus the water/rain instruments the
     /// pacing doesn't read. The liquid sim is rebuilt for the swapped world's
