@@ -1143,12 +1143,15 @@ fn spawn_npc_at(
         // W4-f42 — the sandstorm spawn arm (`NPC.cs:3949-4018`): the
         // zone chain's `else if (Sandstorm.Happening && ZoneSandstorm &&
         // TileID.Sets.Conversion.Sand[tileType] && Spawning_SandstoneCheck)`
-        // — after the moon-event arms, before the surface probe. The
-        // pre-hardmode ladder (546/61/69), the hardmode ladder (541/510/
-        // 542-545/78/79/630/80), and the 546/580/581 fallthrough. The
-        // 541 SandElemental / 510 DuneSplicer / 542-545 SandSharks are
-        // unported kinds — their rolls consume and spawn nothing (the
-        // Wyvern arm's consume-and-return-None shape).
+        // — after the moon-event arms, before the post-sandstorm mummy
+        // arms (`:4020-4035`) and the surface probe. The pre-hardmode
+        // ladder (546/61/69), the hardmode ladder (541/510/542-545/78/79/
+        // 630/80), and the 546/580/581 fallthrough. The 541 SandElemental
+        // / 510 DuneSplicer / 542-545 SandSharks are unported kinds —
+        // their rolls consume and spawn nothing (the Wyvern arm's
+        // consume-and-return-None shape). d33's unwired npc_ai_style102/
+        // 103 modules are keyed on the vanilla npc_type; wiring these
+        // arms waits on the roster kinds (research/108-input-f42 §5).
         if ctx.sandstorm_happening
             && ctx.flags.zone_sandstorm
             && matches!(tile_kind, 53 | 112 | 116 | 234)
@@ -1204,6 +1207,29 @@ fn spawn_npc_at(
                 // `:4015-4018` — the FlyingAntlion (581).
                 return spawn_desert_flyer(ctx, x, y, NpcKind::FlyingAntlion);
             }
+        }
+        // W4-f42 — the post-sandstorm mummy arms (`NPC.cs:4020-4035`): the
+        // zone chain's next four `else if`s AFTER the sandstorm arm, so
+        // they fire on the SAME conversion-sand rows with NO event gate —
+        // the everyday hardmode desert spawns. The 53 row keeps its
+        // `Next(3)` (1/3); the 112/234/116 rows tighten to `Next(2)` (1/2)
+        // outside the event (`:4024`/`:4028`/`:4032`). Each arm is
+        // terminal: a hit spawns, a miss falls through to the next arm's
+        // own roll — exactly the else-if chain's order. The `:4036`
+        // underground-hallow arm that follows needs `underGround`/remix
+        // and never fires inside this surface block (unmodelled).
+        if ctx.flags.hard_mode && tile_kind == 53 && rng.next_max(3) == 0 {
+            // `:4020-4023` — the Mummy (78).
+            return spawn_desert_ground(ctx, x, y, NpcKind::Mummy);
+        } else if ctx.flags.hard_mode && tile_kind == 112 && rng.next_max(2) == 0 {
+            // `:4024-4027` — the DarkMummy (79).
+            return spawn_desert_ground(ctx, x, y, NpcKind::DarkMummy);
+        } else if ctx.flags.hard_mode && tile_kind == 234 && rng.next_max(2) == 0 {
+            // `:4028-4031` — the BloodMummy (630).
+            return spawn_desert_ground(ctx, x, y, NpcKind::BloodMummy);
+        } else if ctx.flags.hard_mode && tile_kind == 116 && rng.next_max(2) == 0 {
+            // `:4032-4035` — the LightMummy (80).
+            return spawn_desert_ground(ctx, x, y, NpcKind::LightMummy);
         }
         // The surface probe arm (`NPC.cs:4164-4199`, the `surfaceSpawn`
         // branch): the graveyard/snow-rain/rain specials ahead of it sit
@@ -2341,6 +2367,10 @@ mod tests {
                 w.tiles[i].flags |= FLAG_ACTIVE;
             }
         }
+        let mut c = ctx(&w, 290.0 * 16.0, true);
+        c.sandstorm_happening = true;
+        c.flags.zone_sandstorm = true;
+        c.flags.hard_mode = true;
         let mut dark = false;
         for seed in 0..600u64 {
             let mut rng = UnifiedRandom::new(seed as i32);
@@ -2352,6 +2382,68 @@ mod tests {
             }
         }
         assert!(dark, "the 112 row spawns the DarkMummy");
+    }
+
+    /// W4-f42 — the post-sandstorm mummy arms (`NPC.cs:4020-4035`): with
+    /// NO event (`Sandstorm.Happening` false) the hardmode conversion-sand
+    /// rows still spawn their mummy — the 53 row on `Next(3)`, the
+    /// 112/234/116 rows on `Next(2)`. The witness replays the exact draw
+    /// order (`GetZombieSettings`' `Next(7)` first, `NPC.cs:1284`, then
+    /// the arm's own roll — the tile-mismatched arms above draw nothing)
+    /// and pins the spawn iff the replayed roll hits.
+    #[test]
+    fn post_sandstorm_mummy_arms_fire_without_the_event() {
+        use tr_core::tile::{Tile, FLAG_ACTIVE};
+        for (tile, kind, denom) in [
+            (53u16, NpcKind::Mummy, 3),
+            (112, NpcKind::DarkMummy, 2),
+            (234, NpcKind::BloodMummy, 2),
+            (116, NpcKind::LightMummy, 2),
+        ] {
+            let mut w = World::new("t".into(), 400, 700);
+            for x in 0..400 {
+                for y in 300..700 {
+                    let i = w.index(x, y);
+                    w.tiles[i] = Tile { kind: tile, ..Default::default() };
+                    w.tiles[i].flags |= FLAG_ACTIVE;
+                }
+            }
+            w.world_surface = 310.0;
+            w.rock_layer = 320.0;
+            w.compute_column_surface();
+            let mut c = ctx(&w, 290.0 * 16.0, true);
+            c.flags.hard_mode = true;
+            // The event gates stay OFF — the arms are the outside-event
+            // desert spawns (`:4020`'s chain position after `:3949`).
+            assert!(!c.sandstorm_happening && !c.flags.zone_sandstorm);
+            let mut hits = 0;
+            for seed in 0..400u64 {
+                let mut replay = UnifiedRandom::new(seed as i32);
+                let _ = replay.next_max(7); // the zombie-style roll
+                let expect = replay.next_max(denom) == 0;
+                let mut rng = UnifiedRandom::new(seed as i32);
+                let got = spawn_npc_at(&c, &mut rng, 210, 300 * 16, false, false, false);
+                if expect {
+                    let n = got.unwrap_or_else(|| panic!("tile {tile} seed {seed}: the arm's roll hit but nothing spawned"));
+                    assert_eq!(n.kind, kind, "tile {tile} seed {seed}");
+                    let (nw, nh) = kind.size();
+                    assert_eq!(n.x, 210.0 * TILE_PX + 8.0 - nw * 0.5);
+                    assert_eq!(n.y, 300.0 * TILE_PX - nh);
+                    hits += 1;
+                } else if let Some(n) = got {
+                    assert_ne!(n.kind, kind, "tile {tile} seed {seed}: spawned on a missed roll");
+                }
+            }
+            assert!(hits > 0, "tile {tile}: no mummy across the sweep");
+            // The hardmode gate: pre-hardmode the arms never fire.
+            c.flags.hard_mode = false;
+            for seed in 0..100u64 {
+                let mut rng = UnifiedRandom::new(seed as i32);
+                if let Some(n) = spawn_npc_at(&c, &mut rng, 210, 300 * 16, false, false, false) {
+                    assert_ne!(n.kind, kind, "tile {tile} seed {seed}: pre-hardmode mummy");
+                }
+            }
+        }
     }
 
     fn ctx(world: &World, y_px: f32, day: bool) -> SpawnContext<'_> {
