@@ -28,7 +28,7 @@ been superseded):
 | Ref | Tip read | Persist state |
 | --- | --- | --- |
 | `origin/task/W4-g89-aegis-fruit-use` | `598642563` (g89f over g89e `e9ec8dcfc` / g89d `4344bd50`) | `.trplayer` **v9** 3-token unlock line (research/122); `.plr` fruit/gummy/ambrosia bools both halves; `.wld` book-two byte (g89e); `.trwld` stays **v17** |
-| `origin/task/W4-g88-life-fruit-use` | **`a9f1c29d8` (g88f fold 7 FINAL — PUSHED)** over `c8985b534` (v10 crystal fold) / `6998a4ecb` (fold 5 docs) | `.trplayer` **v11 SUPERSET** (research/103 FINAL — g89c+g90b+a6+f33 folded; the torch pair is LINE 16, both v7 recognition rules landed); carries research/122 + the v11 post-receipt |
+| `origin/task/W4-g88-life-fruit-use` | **`6a829a0e8` (g88h receipts-phase FINAL-FINAL — PUSHED, the SEAL probe)** over `a9f1c29d8` (g88f fold 7, the v11 code tip) | `.trplayer` **v11 SUPERSET** (research/103 FINAL — g89c+g90b+a6+f33 folded; the torch pair is LINE 16, both v7 recognition rules landed); carries research/122 + the v11 post-receipt; its four-receipt table + the dh-DROP + the 100-byte step-10 arithmetic adjudicated §2f |
 | `origin/task/W4-g90-artisan-bread-use` | **`94d33f2ca`** (reconcile over `b3b82d071` / lane 7 `73367e0af`) | `.trplayer` **v7** six 1-token lines + `.plr` bools 1/3/4/5/6 + `.trwld` **v18** 2-byte tail; research/**135** pushed (`135-g90-persist-folds.md`) — its §2 rule LANDED in g88f |
 | `origin/task/W4-a6-crystals-powerups` | **`d7de8bd53` (the 4-way master reconcile — PUSHED)** over `8ed96ee5d` | use arms + consumers; NO sidecar writer, NO `.trwld` claim; `.wld` book-two/satchel/bought-pets bytes — **research/138 pushed** (`138-powerup-master-reconcile.md`), its verdicts seated §3-L2/L3 |
 | `origin/task/W4-f33-torch-god-favor` | `8a000407f` (torch-favor v7-line: `6f2c122e8` use arm → `7954d6ed1` docs → `a429b37c0`/`8a000407f` shimmer+desert arms) | the v7 ONE 2-token pair-line fork — **FOLDED into g88f v11** (§2d's receipt); the event/favor/949 machines (`torch_god.rs`, keep-one over d19 per research/93) stay f33's |
@@ -304,7 +304,7 @@ The fold landed this section's proposal with ONE deliberate deviation:
   identical named fields (the FINAL slot-11 property model is the
   superset — f33's raw-bool witness re-pins per §2d rule 4).
 
-### 2e. The g87 `dh` sentinel line (a NEW v7 shape — retire-probe input)
+### 2e. The g87 `dh` sentinel line (a NEW v7 shape — retire-probe input; the CONDITIONAL fold — see §2f's default-DROP adjudication)
 
 `origin/task/W4-g87-demon-heart-use` tip `dfbcaf94b` (PUSHED, read at
 this probe — the claimant the FINAL probe missed). Its `persist.rs`
@@ -365,6 +365,75 @@ reader is the merge winner; the fold:
    Pet License arm to a6 (`use_pet_license`, the sole full-fidelity
    claimant of the exchange legs); g87's simpler grant arm dedups onto
    it at the merge, the persist carriers are unaffected.
+
+### 2f. The g88h seal receipt (the L2-definitive re-read, SEAL probe)
+
+`origin/task/W4-g88-life-fruit-use` latest tip **`6a829a0e8`** (the
+receipts-phase FINAL-FINAL, PUSHED over the v11 code tip `a9f1c29d8`)
+read FULL — research/103's §1a f44-cross-receipt, §2a's DD2 census,
+§5a's g87-triple-flag adjudication, §9's receipts-complete checklist.
+The verdicts, item by item against THIS doc:
+
+1. **The 107-receipt — g88h does NOT carry it (one pass stale, now
+   closed by this seal).** Its §9 step 10 publishes a reconciled
+   **100-byte** head ("132's 97 + g87's 3 pets at 52-54, books move
+   55/56, identity 57..100") — computed against our FINAL `bdd1cc79a`
+   (the arithmetic-slip era), before the RETIRE `d35876af9` corrected
+   97→98 and seated the moon-boss 5 + underworld 1. Its own text
+   flags the arithmetic as "the L3 merger's to verify against the
+   final tips — L2 is independent of it". **This doc's §3-L3 rule 1
+   (the 107-byte FINAL-SEAL table, mutual-received with 92 §1-FULL)
+   supersedes g88h's step-10 100-byte arithmetic**; its pets-before-
+   books rationale (`:1392-1394` < `:1407-1408`) is CONSUMED and
+   holds in the FINAL-SEAL order (pets [57..60] < books [61..63]).
+   Its step-11 `.wld` dedups (f45 base, pets keep-f45, d124's
+   independent tier trio) match §3-L3 rule 3 verbatim.
+2. **The `dh` line-17 question — g88h reads it as DROP, ours folds
+   it; adjudicated: the DROP wins as the DEFAULT, our §2e fold stays
+   the CONDITIONAL seat.** g88h §5a/§9 step 9 (consuming 138-FINAL
+   §10.4): the `dh` sentinel line DROPS at merge — the v11 reader
+   tolerates a g87 file lossy-not-corrupt (the 3-token `dh` line hits
+   the `_ => {}` arm, `persist.rs:565` on its tip — verified in its
+   census), both flags are L1 fields (`extraAccessory` row 18, the
+   super-cart BitsByte row 64) that ride THIS branch's complete
+   walk, so no L2 carrier is owed. **The SEAL adjudication:** the
+   character-load hydration is THIS seal phase's code obligation
+   (§4's hunk — the port lands in this phase's code commit), making
+   the L1 carrier live on load — the
+   `dh` line's only remaining value is the in-session dual-carrier
+   BEFORE an exit-save exists (the same condition the torch line's
+   drop rides, 103 §2b rule 3). So: **the merger DEFAULT is g88h's
+   DROP** (no v12 bump, no line 17, the v11 writer stands; DD2 keeps
+   its v12 token-7 reservation per g88h §2a — our §2e's v13 re-seat
+   is VOID under the default). §2e's recognition rule + line-17 seat
+   stay published as the CONDITIONAL alternative: they activate only
+   if the merger chooses to carry the two unlocks in-session before
+   the exit-save lands, in which case §2e's v12-line-17/DD2→v13
+   arithmetic applies verbatim. The back-compat matrix's two `dh`
+   rows (§5) hold under BOTH paths (tolerated-loss without the rule,
+   lossless with it).
+3. **The L2 base + token plan — AGREED, no delta.** g88h §9 step 6
+   confirms writer v11 + the tolerant v7-v11 reader as the base (our
+   §3-L2's "base = g88 `6998a4ecb` v9" staleness note matches its own
+   correction); token 7 UNCLAIMED (d124 owns the WORLD tier latches
+   `.wld` 1931-1933 gate 178, NO `.plr`/`.trplayer`/`save.rs` diff —
+   its census re-verified `git diff --stat` empty); the C#
+   `downedDD2EventAnyDifficulty` is a derived per-tick mirror
+   (`Player.cs:24450-24453`) whose only consumer is the turret-use
+   refusal `:52083` — the L1 byte stays file-verbatim transport
+   (row 25), no live-field obligation. The use-arm keep-ones (§9
+   step 8: g88 keeps 29/109/1291, a6's `use_shimmer_permanent`
+   machine for the six, ONE `use_combat_book`, 5326 g90, 5043 a6 +
+   f33 machine + c36 helper, g87's three arms DROP) match our
+   §3-L2 rule 7's table — consumed verbatim.
+4. **The conditional torch-line drop — condition (a) is this phase's
+   port.** 103 §2b rule 3 gates the drop on
+   (a) character-load hydration AND (b) the exit-save. The seal-phase
+   port lands (a) (§4's hunk, this phase's code commit); (b) — a
+   `.plr` re-save at world exit — remains
+   open (the port's save funnel writes the sidecar only). The line
+   stays until (b); the restore precedence (character first, sidecar
+   second, sidecar wins) becomes the LIVE order in `App::new` (§4).
 
 ## 3. Per-layer merge order (the FINAL merger persist-checklist)
 
@@ -452,7 +521,8 @@ research/135 §6 + §2d/§2e above, in order:
    contingency is RETIRED — the fold is pushed; take the file whole.
 2. **The v7 legacy arm is DONE** (135 §2's six-1-token-line rule + §2d's
    one-line-2-token-0/1 rule both landed in g88f — 103 §3/§8's receipt).
-   The merger ADDS §2e's `dh`-sentinel recognition to the same arm.
+   The `dh`-sentinel recognition is CONDITIONAL (§2f's adjudication:
+   the default is g88h's DROP; the rule lands only with the line).
 3. **Tokens 4/5/6 are LIVE at v10+** in the C#-verified order
    crystal=4/arcane=5/pearl=6 (103 §2a's FINAL map + §8's alignment
    note; 138 §6 re-verified the written order is binding). Short-line
@@ -461,12 +531,17 @@ research/135 §6 + §2d/§2e above, in order:
    the conditional drop-recommendation, the v10 back-read witness).
    Nothing left to do except the §2b dual-carrier revisit when the two
    §2c seams land.
-5. **Append the g87 `dh` line** (§2e — line 17, writer bumps v12, the
-   DD2 version reservation moves to v13; the sentinel recognition in
-   the v7 arm; the v11 back-read defaults both false).
+5. **The g87 `dh` line — DEFAULT DROP (§2f's g88h receipt).** The v11
+   writer stands; the two unlocks ride L1 (rows 18/64) + the
+   character-load hydration. ONLY if the merger needs the in-session
+   carriers before the exit-save lands: §2e's conditional fold
+   (line 17, writer bumps v12, DD2's version reservation moves to
+   v13; the sentinel recognition in the v7 arm; the v11 back-read
+   defaults both false).
 6. **Dedup** g90's `SavedPlayer` flag fields + App restores onto the
    superset's (all folded at v10/v11); f33's pair fields join the same
-   restore block (landed); g87's two fields join at the v12 fold.
+   restore block (landed); g87's two fields need NO L2 seat under the
+   default (the hydration restores them from L1).
 7. **Seat research/138's adjudications — PUSHED now (`d7de8bd53`), the
    FINAL probe's "when it pushes" contingency is RETIRED.** 138 §1's
    per-item verdicts (the C# re-read adjudications, a6's five fidelity
@@ -784,7 +859,7 @@ remainder (the character-load path), not a voice-specific one.
 | `.trplayer` v1/v2 | L2 | any lane reader | kinds migrate (`migrate_kind`) |
 | `.trplayer` v3-v6 | L2 | any lane reader | prefix rides, post-dye defaults |
 | `.trplayer` v7 (5 historical numeric shapes + g90b six-line + f33 pair-line + g87 dh-sentinel) | L2 | g88f v11 reader (the numeric rules LANDED) | the six numeric/six-line shapes load losslessly (103 §4 matrix + `g90bs_six_line_v7_loads_positionally` + `f33s_torch_only_v7_loads_positionally`); the `dh` line needs the §2e rule (next row) |
-| `.trplayer` v7 g87 `dh`-sentinel line | L2 | g88f v11 reader WITHOUT the §2e rule | **LOSS** (the 3-token `dh` line hits "any other shape → defaults kept" — both unlocks silently false); the §2e sentinel recognition is mandatory at the v12 fold |
+| `.trplayer` v7 g87 `dh`-sentinel line | L2 | g88f v11 reader WITHOUT the §2e rule | **LOSS** (the 3-token `dh` line hits "any other shape → defaults kept" — both unlocks silently false, NOT corrupt; g88h's census verified `persist.rs:565`). Under the §2f DEFAULT-DROP this is the accepted merge behaviour — the flags ride L1 + the hydration; the §2e recognition is owed only at the conditional v12 fold |
 | `.trplayer` v7 g87 `dh`-line | L2 | g87's own reader | loads (its native shape); the numeric v7 files default both false — aligned but lossy, NOT the merge winner |
 | `.trplayer` v8/v9 short lines | L2 | g88 superset / g89 reader | tokens 1-3 back-read, rest false |
 | `.trplayer` v9 g88-superset | L2 | g89's reader | line 8 reads; pairs/bread/loadout lines IGNORED (g89's reader stops after line 8 — lossy but aligned; the superset reader is the merge winner) |
@@ -948,6 +1023,17 @@ stream). Both layouts' 107-byte totals verified by summation
 (16+31+3+1+5+1+3+1+2+44). No cargo/tests/rustfmt/graphify per the lane
 constraint.
 
+**SEAL-phase verification (item 2 — the g88h receipt):** g88
+`6a829a0e8` fetched + research/103 read FULL at that tip (§1a's
+f44-FINAL cross-receipt, §2a's DD2 v12-contract-seat census, §2b's
+torch-line drop conditions, §5a's g87-triple-flag verdicts, §9's
+receipts-complete table + steps 10/11); its step-10 100-byte
+arithmetic re-derived against our FINAL `bdd1cc79a` base (the
+97-slip era) and superseded by the 107-byte FINAL-SEAL table; its
+`dh`-DROP vs our §2e-fold collision adjudicated in §2f (default DROP,
+conditional fold). No cargo/tests/rustfmt/graphify per the lane
+constraint.
+
 ## 8. The FINAL-FINAL merger persist-checklist (THE merger-bible — all
 recognition rules, all claimants, all dedup steps, in order)
 
@@ -1001,14 +1087,19 @@ merger executes, it does not re-decide.
    - **The lone-1-token aegis-first ambiguity** (103 §3): the ONLY
      surviving bounded misread (g90 bread-only → aegis slot); ends
      at the fold, documented.
-3. ADD **§2e's `dh`-sentinel rule** to the v7 arm (first token `dh` →
-   the g87 unlock pair) + append **line 17 `dh <extra> <cart>`**,
-   writer bumps **v12** (the DD2 version reservation moves to v13;
-   token 7 on the unlock line stays DD2-reserved). v11 back-read:
-   missing line 17 → both false. Restore: plain bool fields, NOT
-   `enabledSuperCart` (L1-only).
+3. The g87 `dh` line — **DEFAULT DROP** (§2f's g88h receipt; g88h
+   §5a/§9 step 9 + 138-FINAL §10.4): the v11 reader tolerates a g87
+   file lossy-not-corrupt (`persist.rs:565`'s `_ => {}` arm), both
+   flags ride L1 + the hydration. ONLY IF the merger needs the
+   in-session carriers before the exit-save lands: ADD **§2e's
+   `dh`-sentinel rule** (first token `dh` → the g87 unlock pair) +
+   append **line 17 `dh <extra> <cart>`**, writer bumps **v12** (the
+   DD2 version reservation moves to v13; token 7 on the unlock line
+   stays DD2-reserved). v11 back-read: missing line 17 → both false.
+   Restore: plain bool fields, NOT `enabledSuperCart` (L1-only).
 4. Dedup the `SavedPlayer`/App-restore fields (g90/f33 folded; g87's
-   two join at the v12 fold).
+   two need no L2 seat under the default — the hydration restores
+   them from L1; they join only at the conditional v12 fold).
 5. Seat 138 §1's use-arm verdicts (§3-L2 rule 7's table — g88 keeps
    the crystal/fruit carriers, a6 owns the shimmer/book/satchel/
    license/torch arms, g90 owns the loaf + the Player-field consumer
