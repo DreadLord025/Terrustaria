@@ -14267,8 +14267,11 @@ impl Npc {
                         let num9 = if num >= 120.0 { 1 } else { 0 };
                         for j in 0..1 + num9 {
                             let (dust_type, scale) = if j % 2 == 1 { (229, 1.65) } else { (229, 0.8) };
-                            let ang = rng.next_double() * (std::f32::consts::PI as f64 * 2.0);
-                            let (ac, as_) = (ang.cos() as f32, ang.sin() as f32);
+                            // `:42221` — `(float)NextDouble() * ((float)PI * 2f)`:
+                            // the f32 truncation BEFORE the multiply (the e2-b5
+                            // widened-f32 convention, f4-b6's form).
+                            let ang = (rng.next_double() as f32) * std::f32::consts::TAU;
+                            let (ac, as_) = ((ang as f64).cos() as f32, (ang as f64).sin() as f32);
                             let px = cx + ac * (27.0 / 2.0);
                             let py = cy + as_ * (59.0 / 2.0);
                             let idx = dust.new_dust(
@@ -14715,8 +14718,10 @@ impl Npc {
                         let num19 = if num >= 120.0 { 1 } else { 0 };
                         for n in 0..1 + num19 {
                             let (dust_type, scale) = if n % 2 == 1 { (229, 1.65) } else { (229, 0.8) };
-                            let ang = rng.next_double() * (std::f32::consts::PI as f64 * 2.0);
-                            let (ac, as_) = (ang.cos() as f32, ang.sin() as f32);
+                            // `:42872` — the same widened-f32 angle as the
+                            // head's fan (`(float)NextDouble() * 2πf`).
+                            let ang = (rng.next_double() as f32) * std::f32::consts::TAU;
+                            let (ac, as_) = ((ang as f64).cos() as f32, (ang as f64).sin() as f32);
                             let px = cx + ac * (30.0 / 2.0);
                             let py = cy + as_ * (30.0 / 2.0);
                             let idx = dust.new_dust(
@@ -34854,8 +34859,8 @@ mod w4_e2_batch5_tests {
             let num9 = if num >= 120.0 { 1 } else { 0 };
             for j in 0..1 + num9 {
                 let scale = if j % 2 == 1 { 1.65 } else { 0.8 };
-                let ang = mirror.next_double() * (std::f32::consts::PI as f64 * 2.0);
-                let (ac, as_) = (ang.cos() as f32, ang.sin() as f32);
+                let ang = (mirror.next_double() as f32) * std::f32::consts::TAU;
+                let (ac, as_) = ((ang as f64).cos() as f32, (ang as f64).sin() as f32);
                 let px = cx + ac * 13.5;
                 let py = cy + as_ * 29.5;
                 let idx = mpool.new_dust(&mut mirror, &ctx, &w, glam::Vec2::new(px - 8.0, py - 8.0), 16, 16, 229, n.vx / 2.0, n.vy / 2.0, 0, tr_core::particles::Color::default(), 1.0);
@@ -34958,8 +34963,8 @@ mod w4_e2_batch5_tests {
             let num19 = if num >= 120.0 { 1 } else { 0 };
             for j in 0..1 + num19 {
                 let scale = if j % 2 == 1 { 1.65 } else { 0.8 };
-                let ang = mirror.next_double() * (std::f32::consts::PI as f64 * 2.0);
-                let (ac, as_) = (ang.cos() as f32, ang.sin() as f32);
+                let ang = (mirror.next_double() as f32) * std::f32::consts::TAU;
+                let (ac, as_) = ((ang as f64).cos() as f32, (ang as f64).sin() as f32);
                 let px = cx + ac * 15.0;
                 let py = cy + as_ * 15.0;
                 let idx = mpool.new_dust(&mut mirror, &ctx, &w, glam::Vec2::new(px - 8.0, py - 8.0), 16, 16, 229, n.vx / 2.0, n.vy / 2.0, 0, tr_core::particles::Color::default(), 1.0);
