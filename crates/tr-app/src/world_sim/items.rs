@@ -121,6 +121,13 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
     // takes the field borrows (the `world_sim/player.rs:426` pattern — a
     // whole-`app` method call inside would collide with `&mut app.items`).
     let spawn_ctx = app.spawn_ctx();
+    // The splash keep-one (f47b adopt): `Main.waterStyle` is the live biome
+    // style the `Dust.dustWater()` arm reads (`Dust.cs:402-418`); the
+    // `TR_WATER_STYLE` pin caps at 14 like the draw pass so the splash dust
+    // family matches the pinned liquid draws (`app/frame/draw.rs`).
+    let splash_water_style = crate::env::water_style()
+        .map(|n| n.min(14) as i32)
+        .unwrap_or_else(|| crate::biome::calculate_water_style(&app.world, app.camera) as i32);
     app.item_step.tick(dt.min(0.25), |step| {
         // --- `Player.GrabItems` (`Player.cs:34905-34976`, S1-P-i47) ---------
         // The C# runs it from `Player.Update` (`:27428`) BEFORE the item
@@ -695,7 +702,7 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                     &mut app.dust,
                     &spawn_ctx,
                     world,
-                    app.camera,
+                    splash_water_style,
                     &mut app.audio,
                     app.rngs.stream(crate::app::RngKey::UpdateItems),
                     splash,
@@ -764,12 +771,14 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
 /// stream — the C# runs inside `WorldItem.UpdateItem` under the
 /// `Main.cs:18024` swap. The dust rolls come FIRST (the C# plays the sound
 /// AFTER the loop); the play's own pitch draw follows the attenuation gate
-/// (`audio::play_splash_sound`).
+/// (`audio::play_splash_sound`). `water_style` is `Main.waterStyle` — the
+/// caller feeds the live biome style honouring the `TR_WATER_STYLE` pin
+/// (the f47b keep-one adopt).
 fn item_splash(
     dust: &mut tr_core::particles::DustPool,
     ctx: &tr_core::particles::SpawnCtx,
     world: &tr_core::world::World,
-    camera: Vec2,
+    water_style: i32,
     audio: &mut crate::audio::Audio,
     rng: &mut UnifiedRandom,
     splash: crate::item::ItemSplash,
@@ -791,8 +800,7 @@ fn item_splash(
     } else if splash.honey {
         (152, 5, 1) // `:917-926`/`:996-1005`
     } else {
-        let ws = crate::biome::calculate_water_style(world, camera) as i32;
-        (tr_core::particles::dust_water(ws), 10, 1) // `:930-939`/`:1009-1018`
+        (tr_core::particles::dust_water(water_style), 10, 1) // `:930-939`/`:1009-1018`
     };
     for _ in 0..n {
         let idx = dust.new_dust(
@@ -1713,6 +1721,146 @@ mod shimmer_tests {
             assert_eq!(d.alpha, 100, "the water arm sets alpha 100");
             assert!(d.no_gravity);
         }
+    }
+
+    /// The keep-one census twin (f47b `w4_f47ds_..._draws_71`, re-pinned to
+    /// the C# 16-box): the shimmer ENTRY arm draws exactly 71 on the caller's
+    /// stream — 10 × (6 `NewDust` draws + 1 `Next(6)` colour) + the style-4
+    /// cue's `Next(-20, 1)` pitch (`WorldItem.cs:890-913`). At SIZE 16 the
+    /// `NewDust` box is `width + 12 = 28` → `next_max(24)` (the f47 14-box
+    /// twin drew `next_max(22)`); the anchor Y is `pos.Y + 16/2 - 8 = pos.Y`
+    /// (the 14-box sat 1 px higher). The type-308 tweak chain draws nothing.
+    #[test]
+    fn w4_e19_the_shimmer_entry_splash_draws_71_at_the_16_box() {
+        let w = World::new("sp71".into(), 40, 40);
+        let mut pool = tr_core::particles::DustPool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(1920.0, 1080.0),
+            max_dust_to_draw: 6000,
+            ..Default::default()
+        };
+        let mut audio = crate::audio::Audio::new(None);
+        let mut rng = UnifiedRandom::new(4242);
+        let splash = crate::item::ItemSplash {
+            pos: Vec2::new(300.0, 300.0),
+            exit: false,
+            lava: false,
+            shimmer: true,
+            honey: false,
+        };
+        item_splash(&mut pool, &ctx, &w, 0, &mut audio, &mut rng, splash);
+        // The twin: 10 × (6 NewDust + 1 colour) + 1 pitch = 71 draws.
+        let mut twin = UnifiedRandom::new(4242);
+        let mut colours = Vec::new();
+        for _ in 0..10 {
+            twin.next_max(24); // width+12-4 = 28-4 (the 16-box)
+            twin.next_max(20); // 24-4
+            twin.next_range(-20, 21);
+            twin.next_range(-20, 21);
+            twin.next_max(3);
+            twin.next_range(-20, 21);
+            colours.push(twin.next_max(6));
+        }
+        twin.next_range(-20, 1); // the style-4 pitch (`LegacySoundPlayer.cs:881-885`)
+        assert_eq!(rng, twin, "71 draws exactly, in C# order");
+        let d0 = pool.slot_mut(0);
+        assert_eq!(d0.dust_type, 308);
+        assert_eq!(d0.scale, 0.8, "the shimmer arm SETS the scale");
+        assert!(d0.no_gravity);
+        assert_eq!(d0.alpha, 0, "the shimmer arm sets no alpha");
+        let expect = match colours[0] {
+            0 => (255u8, 255u8, 210u8),
+            1 => (190, 245, 255),
+            2 => (255, 150, 255),
+            _ => (190, 175, 255),
+        };
+        assert_eq!((d0.color.r, d0.color.g, d0.color.b), expect);
+        // The 16-box anchor: x ∈ [pos.X-6+4, pos.X-6+27], y ∈ [pos.Y+4,
+        // pos.Y+23] (the `height/2 - 8` term is 0 at 16; f47's 14-box sat
+        // at y-1 with a 22-wide roll).
+        assert!((298.0..=321.0).contains(&d0.position.x), "x: {}", d0.position.x);
+        assert!((304.0..=323.0).contains(&d0.position.y), "y: {}", d0.position.y);
+    }
+
+    /// The lava arm's census twin (f47b `..._draws_31`): 5 × 6 `NewDust`
+    /// draws + the style-1 cue's `Next(-10, 11)` pitch = 31
+    /// (`WorldItem.cs:944-953`); the type-35 tweak sets `vy = -0.5` and the
+    /// arm's `-= 1.5` lands it at −2.0, scale SET 1.3, alpha 100.
+    #[test]
+    fn w4_e19_the_lava_splash_draws_31_and_wins_the_gate() {
+        let w = World::new("sp31".into(), 40, 40);
+        let mut pool = tr_core::particles::DustPool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(1920.0, 1080.0),
+            max_dust_to_draw: 6000,
+            ..Default::default()
+        };
+        let mut audio = crate::audio::Audio::new(None);
+        let mut rng = UnifiedRandom::new(777);
+        // Lava wins even with the shimmer/honey flags also set (`:886`/`:965`).
+        let splash = crate::item::ItemSplash {
+            pos: Vec2::new(300.0, 300.0),
+            exit: true,
+            lava: true,
+            shimmer: true,
+            honey: true,
+        };
+        item_splash(&mut pool, &ctx, &w, 0, &mut audio, &mut rng, splash);
+        let mut twin = UnifiedRandom::new(777);
+        for _ in 0..5 {
+            twin.next_max(24);
+            twin.next_max(20);
+            twin.next_range(-20, 21);
+            twin.next_range(-20, 21);
+            twin.next_max(3);
+            twin.next_range(-20, 21);
+        }
+        twin.next_range(-10, 11); // the style-1 pitch (`:888`)
+        assert_eq!(rng, twin, "31 draws exactly");
+        let n35 = pool.slots().iter().filter(|d| d.active && d.dust_type == 35).count();
+        assert_eq!(n35, 5, "the lava family, not 308/152");
+        let d0 = pool.slot_mut(0);
+        assert_eq!(d0.scale, 1.3);
+        assert_eq!(d0.alpha, 100);
+        assert!((d0.velocity.y - (-2.0)).abs() < 1e-5, "vy: {}", d0.velocity.y);
+        assert!(d0.no_gravity);
+    }
+
+    /// The water EXIT anchor drops the `- 8` (`WorldItem.cs:1011`): at the
+    /// 16-box the exit anchor is `pos.Y + 8` vs the entry's `pos.Y + 0`
+    /// (`height/2 - 8`); the dust Y bands separate by exactly 8 px.
+    #[test]
+    fn w4_e19_the_water_exit_anchor_drops_the_minus_8() {
+        let w = World::new("spw".into(), 40, 40);
+        let ctx = tr_core::particles::SpawnCtx {
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(1920.0, 1080.0),
+            max_dust_to_draw: 6000,
+            ..Default::default()
+        };
+        let base = crate::item::ItemSplash {
+            pos: Vec2::new(300.0, 300.0),
+            exit: false,
+            lava: false,
+            shimmer: false,
+            honey: false,
+        };
+        let mut ys = Vec::new();
+        for exit in [false, true] {
+            let mut pool = tr_core::particles::DustPool::new();
+            let mut audio = crate::audio::Audio::new(None);
+            let mut rng = UnifiedRandom::new(99);
+            let s = crate::item::ItemSplash { exit, ..base };
+            item_splash(&mut pool, &ctx, &w, 0, &mut audio, &mut rng, s);
+            let d0 = pool.slot_mut(0);
+            assert_eq!(d0.dust_type, tr_core::particles::dust_water(0));
+            ys.push(d0.position.y);
+        }
+        // Same seed → same rolls; the only delta is the anchor's 8 px.
+        assert_eq!(ys[1] - ys[0], 8.0, "entry {:?} exit {:?}", ys[0], ys[1]);
+        assert!((304.0..=323.0).contains(&ys[0]), "entry band at pos.Y+0");
     }
 }
 
