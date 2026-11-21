@@ -27,19 +27,20 @@ SetDefaults kinds). "arm" = the Rust fn that flies the style.
 | style | state | Rust dispatch / C# body | kinds | arm |
 | --- | --- | --- | --- | --- |
 | 31 | P | :17296 (`:26786-26886` Clentaminator spray) | 145 (+146-149/1015-1017 unrowed) | `projectile_ai_misc::ai_spray` |
-| 32 | M | :26887-27048 (timeLeft=10, 255-player/NPC/1000-proj bounce scans at ai0≥20) | 155 BeachBall | this task |
+| 32 | P | :26887-27048 (timeLeft=10, 255-player/NPC/1000-proj bounce scans at ai0≥20) | 155 BeachBall | `beach_ball_step` (pool-side) |
 | 33 | P | :17153 (`:27049-27135` flares) | 163/310/1008-1011 | `projectile_ai_light_items::flare_step` |
 | 34 | P | :17522 (`:27136-27188` fireworks) | 167-170/415-418 | `projectile_ai_darts::firework_flight` |
-| 35 | M | :27189-27291 (ai0>30 fall + ×0.985 drag, 14 clamp, rope-place walk) | 171/475/505/506 rope coils | this task |
+| 35 | P | :27189-27291 (ai0>30 fall + ×0.985 drag, 14 clamp, rope-place walk) | 171/475/505/506 rope coils | `ai_rope_coil` |
 | 36 | P | :17598 (`:27292-27471` bees/bat) | 181/566/307/316 | `projectile_ai_thrown::bee_step` + `ai_bat` |
-| 37 | M | :27472-27499 (spear trap; row deviation — f19 F3) | 186 SpearTrap | this task |
-| 38 | M | :27500-27512 (flame jet trap, 6-tick sound cycle + 188 spawn) | 187 FlamethrowerTrap | this task |
-| 39 | M | :27513-27779 (alpha −50 + owner 2000-px cut + piranha homing) | 190 MechanicalPiranha | this task |
+| 37 | P | :27472-27499 (spear trap; row deviation — f19 F3, FIXED) | 186 SpearTrap | `ai_trap_spear` |
+| 38 | P | :27500-27512 (flame jet trap, 6-tick sound cycle + 188 spawn) | 187 FlamethrowerTrap | `ai_flame_jet` |
+| 39 | P | :27513-27779 (alpha −50 + owner 2000-px cut + piranha homing) | 190 MechanicalPiranha | `piranha_step` (pool-side) |
 | 40 | P | :16973 (`:27780-27783` → `AI_040_LeafBlower`) | 206 Leaf | `ai_leaf_blower` |
 
-**Verdict at census time: 5 of 10 styles armed (31/33/34/36/40); 5 MISSING
-(32/35/37/38/39) — this task ports them one style per commit; the table's
-state column is flipped to P as each arm lands.**
+**Verdict: 10 of 10 styles armed. The census found 5 MISSING (32/35/37/38/39);
+this task ported all five, one style per commit (37 `0f92565b`, 38 `a336f4aa`,
+35 `548a9190`, 32 `d9324e5f`, 39 `5771c1f0`). Code-only round — the witness
+tests are WRITTEN NOT RUN (no cargo invoked, the task contract).**
 
 ## Finding F3 carried from W4-f19 — style 37's row was a DELIBERATE stand-in
 
