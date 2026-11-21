@@ -492,6 +492,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_181",
         "Extra_198",
         "Extra_93",
+        // W4-f50 deviation 3: `TextureAssets.Beetle` = `Images/BeetleOrb`
+        // (`AssetInitializer.cs:578`), the Beetle orb's 3-frame wing sheet
+        // (`DrawPlayer_37_BeetleBuff`, `PlayerDrawLayers.cs:4007-4031`).
+        "BeetleOrb",
         // Armor sheets, slots 1..4 = copper/iron/silver/gold. `AssetInitializer.cs:
         // 165-185` indexes the texture arrays by the armor slot itself, so the file
         // number equals the slot: `Armor_Head_{n}`, `Armor_Legs_{n}` and the

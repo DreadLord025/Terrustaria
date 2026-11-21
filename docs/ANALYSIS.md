@@ -39316,12 +39316,23 @@ re-verified FIRST: both are already on main (`npc.rs::contact` /
   `ApplyArmorSoundAndDustChanges` texture-id scan (`:38167-38186`, the
   visual lane); the stoned buff (156) is the only live key, the default 5
   stands for the rest. The `shader` post-arms are the dye layer's.
-- **The Solar shield-orbit + Beetle orb-orbit positions**
-  (`solarShieldPos`/`Vel` `:16403-16428`, `beetlePos`/`Vel`
-  `:16458-16496`) are cosmetic and unported (their `Next(-100,101)`
-  draws ride the visual lane). The `solarDashing` dash machine is the
-  melee lane's (the `dashType = 3` grant lands, the dash-state disjunct
-  folds false).
+- **The Solar shield-orbit positions** (`solarShieldPos`/`Vel`
+  `:16403-16428`) stay cosmetic/unported (the Solar shield draw is its own
+  lane). The `solarDashing` dash machine is the melee lane's (the
+  `dashType = 3` grant lands, the dash-state disjunct folds false).
+- **The Beetle orb-orbit** (`beetlePos`/`Vel` `:16458-16496`) — **PORTED**
+  (deviation 3, the visual lane). `update_armor_sets_always_beetle` now
+  integrates the orbit verbatim (the 3-frame wing cycle, the unused-orb
+  clear, pos += vel, the `Next(-100,101)` X-then-Y jitter pair per live
+  orb, the 100/30 far/near pulls with the 10/20-part blends, the >2 speed
+  damp ×0.9, the `-velocity * 0.25` drag), drawing from the tick's
+  `UpdatePlayers` stream. The draw-side pure fns (`beetle_ghost_scale`/
+  `beetle_ghost_color`/`beetle_orb_uv`/`beetle_orb_pos`) + the
+  `beetle_orb_layers` builder port `DrawPlayer_37_BeetleBuff`
+  (`PlayerDrawLayers.cs:4007-4031`: 5 trail ghosts + 1 body per orb, the
+  `0.5 - j*0.1` byte tint, the `Height/3*frame+1` / `Height/3-2` rect, the
+  `(W/2, H/6)` origin), wired through `PlayerCompositeState` +
+  `PlayerAssets.beetle_orb` (`Images/BeetleOrb`, `AssetInitializer.cs:578`).
 - **The 608 blast's dust/gore burst bodies** — **PORTED** (deviation 2,
   through the dust seam in the g64-pattern adapter). g64's ledger
   (`77616a7d`: 41 trail kinds + deferred 813/957/670/590) claims NO 608

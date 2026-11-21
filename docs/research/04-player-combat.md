@@ -235,8 +235,8 @@ Determinism: items 1, 2, 9 and 10 all change RNG draw counts / results on the sh
 | `:38382` | `CombatText.NewText(playerRect, DamagedFriendly[Crit], num2, Crit)` | **NEW** — queues `pending_hurt_text`, the drain spawns BEFORE the retaliate block (the C# `:38382` < `:38401` order) |
 | `:38527-38553` | the hit-dust loop (`num2/statLifeMax2*100` particles) | **NEW** — queues `pending_hurt_dust` (hit dir, num2); the drain spawns stoned 1 / default 5 (the frost/bone texture-id keys are the visual lane). `num22` stays 0 (the C# never increments it; the NextFloat draw still consumed) |
 | `:10342-10443` | the Beetle/Solar buff-ladder re-derivation | **NEW** — `rederive_beetle_solar_buffs` (the slot-ordered `DelBuff(j); j--` rescan, the count assignment unconditional, the 98-100 melee rows) |
-| `:16366-16439` / `:16499-16527` / `:16529-16581` | `ApplySetBonus_Solar`/`BeetleDefense`/`BeetleDamage` | **NEW** — the recharge machines at the `UpdateArmorSets` seam (the shield/orb-orbit positions cosmetic, unported) |
-| `:16358-16364` / `:16441-16497` | the always-counter zeros | **NEW** — `update_armor_sets_always_solar`/`beetle` |
+| `:16366-16439` / `:16499-16527` / `:16529-16581` | `ApplySetBonus_Solar`/`BeetleDefense`/`BeetleDamage` | **NEW** — the recharge machines at the `UpdateArmorSets` seam (the Solar shield-orbit positions cosmetic, unported; the Beetle orb-orbit PORTED, deviation 3) |
+| `:16358-16364` / `:16441-16497` | the always-counter zeros | **NEW** — `update_armor_sets_always_solar`/`beetle`; the Beetle always-machine now integrates the orb-orbit (deviation 3: the frame cycle, the unused-orb clear, the `Next(-100,101)` jitter pair, the pulls/damp/drag) + the `DrawPlayer_37_BeetleBuff` draw layer |
 
 ### RNG order census (the hurt's new draws, per lane)
 

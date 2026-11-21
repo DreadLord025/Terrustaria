@@ -1509,6 +1509,19 @@ pub struct Player {
     pub beetle_counter: f32,
     pub beetle_countdown: i32,
     pub beetle_buff: bool,
+    /// W4-f50 deviation 3 — `Player.beetlePos`/`beetleVel` (`Player.cs:964-
+    /// 966`, `Vector2[3]`): the orb-orbit positions the
+    /// `UpdateArmorSets_Always_Beetle` machine integrates
+    /// (`:16458-16496`) and `DrawPlayer_37_BeetleBuff` draws
+    /// (`PlayerDrawLayers.cs:4007-4031`). The per-orb `Next(-100,101)`
+    /// velocity jitter pair rides the `UpdatePlayers` stream.
+    pub beetle_pos: [Vec2; 3],
+    pub beetle_vel: [Vec2; 3],
+    /// `Player.beetleFrame`/`beetleFrameCounter` (`Player.cs:968-970`):
+    /// the 3-frame wing cycle — the counter pins at 1, so the frame
+    /// advances EVERY tick while a Beetle set is worn (`:16448-16457`).
+    pub beetle_frame: i32,
+    pub beetle_frame_counter: i32,
     /// `Player.hasFootball` (`Player.cs:12906-12918`): the Football (4743)
     /// in the inventory arms it; `ResetEffects` clears it (`:18345`). The
     /// hurt arm (`:38255-38269`) spawns the 861 return + clears the slot.
@@ -2841,6 +2854,10 @@ impl Player {
             beetle_counter: 0.0,
             beetle_countdown: 0,
             beetle_buff: false,
+            beetle_pos: [Vec2::ZERO; 3],
+            beetle_vel: [Vec2::ZERO; 3],
+            beetle_frame: 0,
+            beetle_frame_counter: 0,
             has_football: false,
             shadow_dodge_timer: 0,
             brain_of_confusion_dodge_animation_counter: 0,
@@ -4578,7 +4595,7 @@ impl Player {
     /// `UpdateArmorSets`, both inside `Player.Update`; the re-derivation is
     /// idempotent per tick, so the relative order of the count reads is
     /// preserved.
-    pub fn update_beetle_solar_sets(&mut self) {
+    pub fn update_beetle_solar_sets(&mut self, rng: &mut dyn tr_core::loot::DropRng) {
         self.rederive_beetle_solar_buffs();
         if self.set_solar {
             self.apply_set_bonus_solar();
@@ -4589,17 +4606,74 @@ impl Player {
         if self.beetle_offense {
             self.apply_set_bonus_beetle_damage();
         }
-        self.update_armor_sets_always_beetle();
+        self.update_armor_sets_always_beetle(rng);
         self.update_armor_sets_always_solar();
     }
 
-    /// `Player.UpdateArmorSets_Always_Beetle` (`Player.cs:16441-16497`): the
-    /// counter zero when neither Beetle set is worn. The orb-orbit positions
-    /// (`beetlePos`/`Vel`, `:16458-16496`) are cosmetic and unported (their
-    /// `Next(-100,101)` draws ride the visual lane). W4-f50.
-    pub fn update_armor_sets_always_beetle(&mut self) {
+    /// `Player.UpdateArmorSets_Always_Beetle` (`Player.cs:16441-16497`):
+    /// the counter zero when neither Beetle set is worn, then the 3-frame
+    /// wing cycle, the unused-orb position clear and the orb-orbit
+    /// integration (deviation 3). The per-orb `Next(-100,101)` velocity
+    /// jitter pair draws from the passed stream (the `UpdatePlayers`
+    /// swap — `Player.Update` runs under `Main.cs:17754`); the test
+    /// wrapper's scratch stream stands in for gear-less players.
+    pub fn update_armor_sets_always_beetle(&mut self, rng: &mut dyn tr_core::loot::DropRng) {
         if !self.beetle_defense && !self.beetle_offense {
             self.beetle_counter = 0.0;
+            return;
+        }
+        // `:16448-16457` — the frame counter pins at 1, so the frame
+        // advances every tick (0→1→2→0).
+        self.beetle_frame_counter += 1;
+        if self.beetle_frame_counter >= 1 {
+            self.beetle_frame_counter = 0;
+            self.beetle_frame += 1;
+            if self.beetle_frame > 2 {
+                self.beetle_frame = 0;
+            }
+        }
+        // `:16458-16462` — the unused orbs' positions zero.
+        for i in self.beetle_orbs.max(0) as usize..3 {
+            self.beetle_pos[i] = Vec2::ZERO;
+        }
+        // `:16463-16496` — the orbit integration, per live orb.
+        for j in 0..self.beetle_orbs.max(0) as usize {
+            self.beetle_pos[j] += self.beetle_vel[j];
+            // `:16466-16467` — the jitter pair, X then Y.
+            self.beetle_vel[j].x += rng.next_range(-100, 101) as f32 * 0.005;
+            self.beetle_vel[j].y += rng.next_range(-100, 101) as f32 * 0.005;
+            let mut x = self.beetle_pos[j].x;
+            let mut y = self.beetle_pos[j].y;
+            let mut num = (x * x + y * y).sqrt();
+            if num > 100.0 {
+                // `:16471-16479` — the far pull: 20/num, the 10-part blend.
+                num = 20.0 / num;
+                x *= 0.0 - num;
+                y *= 0.0 - num;
+                let num2 = 10;
+                self.beetle_vel[j].x =
+                    (self.beetle_vel[j].x * (num2 - 1) as f32 + x) / num2 as f32;
+                self.beetle_vel[j].y =
+                    (self.beetle_vel[j].y * (num2 - 1) as f32 + y) / num2 as f32;
+            } else if num > 30.0 {
+                // `:16480-16488` — the near pull: 10/num, the 20-part blend.
+                num = 10.0 / num;
+                x *= 0.0 - num;
+                y *= 0.0 - num;
+                let num3 = 20;
+                self.beetle_vel[j].x =
+                    (self.beetle_vel[j].x * (num3 - 1) as f32 + x) / num3 as f32;
+                self.beetle_vel[j].y =
+                    (self.beetle_vel[j].y * (num3 - 1) as f32 + y) / num3 as f32;
+            }
+            // `:16489-16494` — the speed damp past 2.
+            x = self.beetle_vel[j].x;
+            y = self.beetle_vel[j].y;
+            if (x * x + y * y).sqrt() > 2.0 {
+                self.beetle_vel[j] *= 0.9;
+            }
+            // `:16495` — the player-velocity drag.
+            self.beetle_pos[j] -= Vec2::new(self.vx, self.vy) * 0.25;
         }
     }
 
@@ -7454,8 +7528,9 @@ impl Player {
         // machine + the always-counter zeros. The set flags re-armed in the
         // armor-set match above; the counts re-derive from the live buffs
         // before the machines read them (the C# order: `UpdateBuffs` →
-        // `UpdateArmorSets`, both inside `Player.Update`).
-        self.update_beetle_solar_sets();
+        // `UpdateArmorSets`, both inside `Player.Update`). Deviation 3: the
+        // orb-orbit's `Next(-100,101)` pair draws from the tick's stream.
+        self.update_beetle_solar_sets(rng);
         // `Player.cs:25900-25911` — the Mana Sickness damage cut: after every
         // `magicDamage` grant (the buff scan, the equip/set rows), the recalc
         // multiplies `magicDamage *= 1 - manaSickReduction` then `*= manaHeat`
@@ -16278,6 +16353,61 @@ mod tests {
         q.immune = false;
         assert!(q.hurt(10, q.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
         assert!(q.take_football().is_none(), "no football flag, no request");
+    }
+
+    #[test]
+    fn w4_f50_the_beetle_orb_orbit_integrates_and_draws_the_jitter_pair() {
+        // `UpdateArmorSets_Always_Beetle` (`Player.cs:16441-16497`): the
+        // frame cycle advances every tick, the unused orbs' positions zero,
+        // and each live orb integrates pos += vel, the Next(-100,101) jitter
+        // pair (X then Y), the far/near pulls, the speed damp and the
+        // player-velocity drag. Deviation 3.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.beetle_defense = true;
+        p.beetle_orbs = 2;
+        p.beetle_pos[0] = Vec2::new(10.0, 0.0);
+        p.beetle_vel[0] = Vec2::new(1.0, 0.0);
+        p.beetle_pos[2] = Vec2::new(50.0, 50.0); // unused → zeroed
+        p.vx = 4.0;
+        p.vy = 0.0;
+        // A counting stream: the jitter pair draws Next(-100,101) twice per
+        // live orb (X then Y). Here we assert the DRAW COUNT + order.
+        struct CountRng {
+            ranges: Vec<(i32, i32)>,
+        }
+        impl tr_core::loot::DropRng for CountRng {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                self.ranges.push((min, max));
+                0
+            }
+            fn next_float(&mut self) -> f32 {
+                0.0
+            }
+        }
+        let mut rng = CountRng { ranges: Vec::new() };
+        p.update_armor_sets_always_beetle(&mut rng);
+        // 2 live orbs × the X/Y jitter pair = 4 Next(-100,101) draws.
+        assert_eq!(
+            rng.ranges,
+            vec![(-100, 101), (-100, 101), (-100, 101), (-100, 101)],
+            "the jitter pair per live orb, X then Y (:16466-16467)"
+        );
+        // The frame advanced (0 → 1) and the counter reset.
+        assert_eq!(p.beetle_frame, 1);
+        assert_eq!(p.beetle_frame_counter, 0);
+        // The unused orb's position zeroed.
+        assert_eq!(p.beetle_pos[2], Vec2::ZERO);
+        // Orb 0: pos += vel (10+1, 0), jitter 0, no pull (len 11 < 30), no
+        // damp (vel len 1 < 2), then the drag -vx*0.25 = -1 → x = 10.
+        assert_eq!(p.beetle_pos[0], Vec2::new(10.0, 0.0));
+        // Without a set the counter zeroes and nothing draws.
+        let mut q = Player::spawn(&w);
+        q.beetle_counter = 5.0;
+        let mut rng2 = CountRng { ranges: Vec::new() };
+        q.update_armor_sets_always_beetle(&mut rng2);
+        assert_eq!(q.beetle_counter, 0.0);
+        assert!(rng2.ranges.is_empty(), "no set → no orbit draws");
     }
 
     #[test]
