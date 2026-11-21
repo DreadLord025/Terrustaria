@@ -98,10 +98,12 @@ pub(crate) struct CloudEnv {
 
 impl CloudEnv {
     /// Gather the world-side flags; the caller supplies the live per-tick
-    /// values. `WorldGen.crimson` is not persisted at world level (the
-    /// `lang.rs:222` documented default — corruption), and `NPC.downedBoss2`
-    /// folds to `downed_eow` (the Brain's downed flag has no world field yet).
-    /// The drunk-menu arm's gen flags stay false in-world (`gameMenu` false).
+    /// values. `WorldGen.crimson` reads the world evil type (`World.crimson`,
+    /// W4-g69 — persisted in the `.wld` flags block + the `.trwld` v18 tail);
+    /// `NPC.downedBoss2` folds to `downed_eow`, which covers BOTH orb bosses
+    /// (the EoW and the Brain share the flag — `world_sim/npcs.rs`'s death
+    /// hooks, `NPC.cs:79443-79458`'s shared case 13/14/15/266). The
+    /// drunk-menu arm's gen flags stay false in-world (`gameMenu` false).
     pub(crate) fn gather(
         world: &World,
         screen: Vec2,
@@ -126,7 +128,7 @@ impl CloudEnv {
             downed_boss1: world.downed_eoc,
             downed_boss2: world.downed_eow,
             downed_boss3: world.downed_skeletron,
-            crimson: false,
+            crimson: world.crimson,
             hard_mode: world.hard_mode,
             drunk_world_text: false,
             dont_starve_gen: false,
@@ -1157,6 +1159,49 @@ mod tests {
         let mut rng = UnifiedRandom::new(9);
         f.update_cloud_layer(&mut rng, 0.5, 2, true, false, false);
         assert_eq!(f.cloud_bg_active, -100.0 + 6.0 + 12.0);
+    }
+
+    #[test]
+    fn w4_g69_rare_cloud_36_reads_the_live_crimson_and_boss2_flags() {
+        // `Cloud.cs:196`: type 36's gate is `NPC.downedBoss2 &&
+        // WorldGen.crimson` — W4-g69: `CloudEnv::gather` now feeds the real
+        // `World.crimson` (the v18-persisted evil type) and `downed_eow`
+        // (the SHARED boss2 flag — the Brain's death sets it too,
+        // `world_sim/npcs.rs`). Pin a stream whose first rare pick is 36
+        // (RARE_NORMAL index 14) and replay the gate both ways.
+        let pick36 = (1..100_000i32)
+            .find(|&s| UnifiedRandom::new(s).next_max(20) == 14)
+            .expect("a type-36 first pick exists");
+        // Gate OPEN: boss2 downed on a crimson world -> 36 accepted on the
+        // first draw (state pin: exactly one draw consumed).
+        let mut e = env();
+        e.downed_boss2 = true;
+        e.crimson = true;
+        let mut r = UnifiedRandom::new(pick36);
+        assert_eq!(roll_rare_cloud(&mut r, &e), 36);
+        let mut replay = UnifiedRandom::new(pick36);
+        let _ = replay.next_max(20); // the one accepted pick
+        assert_eq!(r.peek(), replay.peek(), "exactly one draw consumed");
+        // Gate CLOSED, crimson half: corruption world -> 36 rejected, the
+        // loop re-rolls until another type passes.
+        e.crimson = false;
+        let mut r = UnifiedRandom::new(pick36);
+        let got = roll_rare_cloud(&mut r, &e);
+        assert_ne!(got, 36, "a corruption world never keeps type 36");
+        // Gate CLOSED, boss2 half: crimson world, boss alive -> rejected.
+        e.crimson = true;
+        e.downed_boss2 = false;
+        let mut r = UnifiedRandom::new(pick36);
+        assert_ne!(roll_rare_cloud(&mut r, &e), 36);
+        // The gather feeds the World fields (not a pinned false).
+        let mut w = World::new("t".into(), 64, 64);
+        w.crimson = true;
+        w.downed_eow = true;
+        let g = CloudEnv::gather(&w, Vec2::new(1280.0, 720.0), 0.0, 0.0, false, 1, 0.0, 0.0);
+        assert!(g.crimson && g.downed_boss2, "the live flags reach the env");
+        w.crimson = false;
+        let g = CloudEnv::gather(&w, Vec2::new(1280.0, 720.0), 0.0, 0.0, false, 1, 0.0, 0.0);
+        assert!(!g.crimson, "a corruption world reads false");
     }
 
     #[test]
