@@ -41,6 +41,18 @@ const TXT_INVALID_OP: &str = "Invalid operation at this state.";
 /// it.
 const SMOOTHING_RANGE: f32 = 300.0;
 
+/// `Main.teamColor[0..6]` (`Main.cs:6657-6662`): the six team chat colours —
+/// white (no team), red, green, blue, yellow, pink. The `45 TeamChange`
+/// announcement reads them (`MessageBuffer.cs:2337`). W4-g49.
+const TEAM_COLORS: [[u8; 3]; 6] = [
+    [255, 255, 255],
+    [218, 59, 59],
+    [59, 218, 85],
+    [59, 149, 218],
+    [242, 221, 100],
+    [224, 100, 242],
+];
+
 /// The `13` heartbeat span in `net_tick` calls: the C#'s
 /// `netPlayCounter % 420 == 0` at 60 Hz = 7 s (`Main.cs:64522-64529`); the
 /// port's tick runs at 10 Hz, so 42 calls cover the same span.
@@ -807,13 +819,96 @@ impl App {
                     })); // `:2573`
                 }
             }
+            // `case 42` — a peer's mana (`MessageBuffer.cs:2290-2306`): the
+            // host forces the subject to the sender (`:2293-2296`) and stores
+            // both shorts. There is NO relay arm — the fan-out is the join
+            // push / send path (`SyncOnePlayer` `NetMessage.cs:2904`, S1-I-4).
+            C2s::PlayerMana(pm) => {
+                let peer = self.remote_players.entry(id).or_default();
+                peer.mana = pm.mana as i32; // `:2303`
+                peer.max_mana = pm.max_mana as i32; // `:2304`
+            }
+            // `case 45` — a peer changed team (`MessageBuffer.cs:2325-2364`):
+            // the host forces the subject to the sender (`:2329-2332`), stores
+            // the team, relays to the others (`:2342`) and announces the change
+            // to the sender + the old/new team members (`:2343-2354`). The
+            // `157` team-spawn tail (`:2355-2363`) is a different id (out of
+            // this lane) and the port has no team-based-spawn seed.
+            C2s::TeamChange(tc) => {
+                let old_team = self.remote_players.get(&id).map(|p| p.team).unwrap_or(0);
+                let new_team = tc.team as i32;
+                let name = {
+                    let peer = self.remote_players.entry(id).or_default();
+                    peer.team = new_team; // `:2336`
+                    peer.name.clone()
+                };
+                // The relay (`:2342`): `TrySendData(45, -1, whoAmI, …)`.
+                server.broadcast_except(
+                    &S2c::TeamChange(net::TeamChange {
+                        player_id: id as u8,
+                        team: tc.team,
+                    }),
+                    id,
+                );
+                // The announcement (`:2343-2354`): `Lang.mp[13 + team]` (or
+                // `Lang.mp[22]` for the pink team 5) in the team colour, sent
+                // to the sender and every player on the old or new team.
+                let key_idx = if new_team == 5 { 22 } else { 13 + new_team };
+                let text = crate::lang::text_args(
+                    &format!("LegacyMultiplayer.{key_idx}"),
+                    &[name],
+                );
+                let color = TEAM_COLORS[new_team.clamp(0, 5) as usize];
+                // Recipient slots: the sender, plus the old/new team members
+                // (the host is slot 0, the peers ride `remote_players`).
+                let mut recipients: Vec<u32> = vec![id];
+                if old_team > 0 {
+                    if self.player.as_ref().is_some_and(|p| p.team == old_team) {
+                        recipients.push(0);
+                    }
+                    for (&pid, p) in &self.remote_players {
+                        if p.team == old_team {
+                            recipients.push(pid);
+                        }
+                    }
+                }
+                if new_team > 0 {
+                    if self.player.as_ref().is_some_and(|p| p.team == new_team) {
+                        recipients.push(0);
+                    }
+                    for (&pid, p) in &self.remote_players {
+                        if p.team == new_team {
+                            recipients.push(pid);
+                        }
+                    }
+                }
+                recipients.sort_unstable();
+                recipients.dedup();
+                for slot in recipients {
+                    if slot == 0 {
+                        // The host's own display (`ChatHelper.DisplayMessage`).
+                        crate::chat::broadcast_death_text(&mut self.chat, &text, color);
+                    } else {
+                        let sm = crate::app::netmodules::ServerMessage {
+                            author: 255,
+                            text: text.clone(),
+                            color: net::Rgb(color[0], color[1], color[2]),
+                        };
+                        server.send(
+                            slot,
+                            &S2c::NetModule {
+                                module: crate::app::netmodules::module_id::TEXT,
+                                body: sm.encode(),
+                            },
+                        );
+                    }
+                }
+            }
             // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
             // codecs (`net.rs`); the host apply/relay arms
-            // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
-            // `:4282-4297`, `:4328-4343`) land with the send-path pass (S1-I-4).
+            // (`MessageBuffer.cs:1851-1867`, `:4282-4297`, `:4328-4343`) land
+            // with the send-path pass (S1-I-4).
             C2s::TogglePvp(_)
-            | C2s::PlayerMana(_)
-            | C2s::TeamChange(_)
             | C2s::ProjectileTrackers(_)
             | C2s::SyncLoadout(_) => {}
         }
@@ -1841,15 +1936,31 @@ impl App {
                     }
                 }
             }
+            // `case 42` — a peer's mana (`MessageBuffer.cs:2290-2306`): our
+            // own echo is skipped (`:2297-2300`, `ServerSideCharacter` is
+            // false in the port), a peer's lands in its record.
+            S2c::PlayerMana(pm) => {
+                if pm.player_id as u32 == self.local_id {
+                    return; // `:2297-2300`
+                }
+                let peer = self.remote_players.entry(pm.player_id as u32).or_default();
+                peer.mana = pm.mana as i32; // `:2303`
+                peer.max_mana = pm.max_mana as i32; // `:2304`
+            }
+            // `case 45` — a peer's team (`MessageBuffer.cs:2325-2340`): the
+            // client stores the team byte and breaks before the host-only
+            // relay/chat (`:2338-2340`).
+            S2c::TeamChange(tc) => {
+                let peer = self.remote_players.entry(tc.player_id as u32).or_default();
+                peer.team = tc.team as i32; // `:2336`
+            }
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
             // codecs (`net.rs`); the client read sites
-            // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
-            // `:2695-2739`, `:3118-3126`, `:3147-3153`, `:4043-4048`,
-            // `:4195-4203`, `:4238-4249`, `:4282-4297`, `:4328-4343`) land
+            // (`MessageBuffer.cs:1851-1867`, `:2695-2739`, `:3118-3126`,
+            // `:3147-3153`, `:4043-4048`, `:4195-4203`, `:4238-4249`,
+            // `:4282-4297`, `:4328-4343`) land
             // with the send-path pass (S1-I-4) — nothing sends them yet.
             S2c::TogglePvp(_)
-            | S2c::PlayerMana(_)
-            | S2c::TeamChange(_)
             | S2c::NpcHouse(_)
             | S2c::TravelShop(_)
             | S2c::AnglerQuest(_)
@@ -5203,6 +5314,59 @@ mod message_family_tests {
             client_app.bestiary.kills.get_kill_count(credit.credit_id),
             count,
             "the join snapshot's module-4 body applies"
+        );
+    }
+
+    /// W4-g49 `42 Unknown42` (`MessageBuffer.cs:2290-2306`): the host forces
+    /// the subject to the sender (`:2293-2296`) and stores both mana shorts.
+    /// There is no relay arm — the fan-out is the join push / send path.
+    #[test]
+    fn w4_g49_player_mana_lands_on_the_host() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::PlayerMana(net::PlayerMana {
+                player_id: 0, // forced to the sender on the host (`:2293-2296`)
+                mana: 180,
+                max_mana: 200,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        let peer = host_app
+            .remote_players
+            .get(&client_app.local_id)
+            .expect("the host stored the peer");
+        assert_eq!(peer.mana, 180, "the host stored statMana (`:2303`)");
+        assert_eq!(peer.max_mana, 200, "the host stored statManaMax (`:2304`)");
+    }
+
+    /// W4-g49 `45 TeamChange` (`MessageBuffer.cs:2325-2364`): the host forces
+    /// the subject to the sender (`:2329-2332`), stores the team (`:2336`),
+    /// relays to the others (`:2342`) and announces the change to the sender +
+    /// the old/new team members in the team colour (`:2343-2354`).
+    #[test]
+    fn w4_g49_team_change_stores_relays_and_announces() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TeamChange(net::TeamChange {
+                player_id: 0, // forced to the sender (`:2329-2332`)
+                team: 1,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        let peer = host_app
+            .remote_players
+            .get(&client_app.local_id)
+            .expect("the host stored the peer");
+        assert_eq!(peer.team, 1, "the host stored the team (`:2336`)");
+        // The announcement reached the sender (the only team-1 member) as a
+        // module-1 text line in the red team colour (`:2343-2354`).
+        assert!(
+            client_app
+                .chat
+                .messages
+                .iter()
+                .any(|m| m.color == TEAM_COLORS[1]),
+            "the team-change announcement reached the sender in the team colour"
         );
     }
 }

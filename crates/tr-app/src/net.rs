@@ -575,6 +575,13 @@ pub struct PlayerNet {
     /// has open, fed by `80 SyncPlayerChestIndex`
     /// (`MessageBuffer.cs:3216-3227`). `None` = closed (`-1`), the `Default`.
     pub chest: Option<i16>,
+    /// `Main.player[id].statMana`/`statManaMax`, fed by `42 Unknown42`
+    /// (`MessageBuffer.cs:2290-2306`). W4-g49.
+    pub mana: i32,
+    pub max_mana: i32,
+    /// `Main.player[id].team`, fed by `45 TeamChange`
+    /// (`MessageBuffer.cs:2325-2336`). W4-g49.
+    pub team: i32,
 }
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four
