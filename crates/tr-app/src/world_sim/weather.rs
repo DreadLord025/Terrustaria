@@ -140,6 +140,12 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
     let night_pre = app.world.time < 16200.0;
     let dusk_pre = app.world.time < 32400.0;
     let mut night_raining = false;
+    // The homeless-arrival NO_HOBO count (W4-d119 phase 2) — fired after
+    // the tick closure (the `notify_progression_net` &mut App seam).
+    let mut homeless_events = 0u32;
+    // `Main.cs:65043`'s `Main.netMode != 1` gate — the whole homeless block
+    // is server/single-player only (computed before the field destructure).
+    let not_client = !app.is_client();
     let App {
         world_tick_step,
         world,
@@ -332,8 +338,57 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
                 );
             }
         }
+        // (7b) `Main.cs:65043-65062`: the HOMELESS arrival/departure pair,
+        // right after the travel block (W4-d119 phase 2). The departure
+        // runs at night / past 48600; the arrival rolls
+        // `Next(27000/dayRate) == 0` over the first half of the day, gated
+        // on `!IsFastForwardingTime() && GetWorldUpdateRate() > 0` — the
+        // roll AND the whole `SpawnHomelessNPC` body ride `UpdateTime`.
+        // The NO_HOBO notifications accumulate and fire after the closure
+        // (the `notify_progression_net` borrow seam, the growth precedent).
+        if not_client && (!world.day_time || world.time > 48600.0) {
+            crate::town_spawn::unspawn_homeless_npc(
+                &mut app.npcs,
+                app.player.as_ref(),
+                &mut app.chat,
+            );
+        } else if not_client
+            && world.day_time
+            && world.time < 27000.0
+            && !world.is_fast_forwarding()
+            // `GetWorldUpdateRate() > 0` (`WorldGen.cs:72020-72030`): the
+            // FreezeTime power / a zero time-rate slider stop it.
+            && app.creative_powers.time_rate() > 0.0
+        {
+            // `:65052-65057`: `num8 = max(dayRate, 1)`,
+            // `maxValue = (int)(27000.0 / num8)`, `Next(maxValue) == 0`.
+            let num8 = world.day_rate().max(1);
+            let max_value = (27000.0 / num8 as f64) as i32;
+            if app
+                .rngs
+                .stream(crate::app::RngKey::UpdateTime)
+                .next_max(max_value)
+                == 0
+            {
+                homeless_events += crate::town_spawn::spawn_homeless_npc(
+                    world,
+                    &mut app.npcs,
+                    &mut app.town_rooms,
+                    &mut app.town_arrival,
+                    &mut app.town_spawn,
+                    app.player.as_ref(),
+                    app.rngs.stream(crate::app::RngKey::UpdateTime),
+                    &mut app.chat,
+                );
+            }
+        }
     });
     world_tick_step.cap_backlog();
+    // The homeless-arrival NO_HOBO rows (`WorldGen.cs:5460`/`:5780`), after
+    // the mutable pass releases the field borrows.
+    for _ in 0..homeless_events {
+        let _ = app.notify_progression_net(8);
+    }
     // (6) The Deerclops arm (`Main.cs:65121-65134`): the tick that steps
     // past 16200 while raining; the roll + the player gates ride
     // `deerclops_roll`, the spawn `SpawnOnPlayer`'s shape.

@@ -88,6 +88,22 @@ impl ArrivalState {
             .position(|k| *k == kind)
             .is_some_and(|i| self.can_spawn[i])
     }
+
+    /// `Main.townNPCCanSpawn[type] = true` — the table write
+    /// (`Main.cs:65800-65956`); a kind outside the LADDER has no entry.
+    pub(crate) fn set_can_spawn(&mut self, kind: NpcKind) {
+        if let Some(i) = LADDER.iter().position(|k| *k == kind) {
+            self.can_spawn[i] = true;
+        }
+    }
+
+    /// `Main.townNPCCanSpawn[type] = false` — the resident clear
+    /// (`WorldGen.cs:4903`, `:5454`, `:5562`).
+    pub(crate) fn clear_can_spawn(&mut self, kind: NpcKind) {
+        if let Some(i) = LADDER.iter().position(|k| *k == kind) {
+            self.can_spawn[i] = false;
+        }
+    }
 }
 
 /// `ItemID.Sets.ItemsThatCountAsBombsForDemolitionistToSpawn`

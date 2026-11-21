@@ -2152,6 +2152,7 @@ pub(crate) mod front_flow_tests {
             banners: crate::banners::BannerSystem::default(),
             town_look_timer: 0.0,
             town_arrival: crate::town_arrival::ArrivalState::new(),
+            town_spawn: crate::town_spawn::TownSpawnStatics::default(),
             reuse_delay: 0.0,
             window: None,
             gpu: None,

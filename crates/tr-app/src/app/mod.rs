@@ -304,6 +304,11 @@ pub(crate) struct App {
     /// `WorldGen.prioritizedTownNPCType` (`Main.cs:65542-66116`) — the town
     /// NPC arrival gates (M4-TOWN-1b).
     pub(crate) town_arrival: crate::town_arrival::ArrivalState,
+    /// `WorldGen.homelessSpawnTimeout`/`LastFoundHouse`/`npcSpawnDelay`/
+    /// `npcSpawnPeriod`/`canSpawn`/`currentlyTryingToUseAlternateHousingSpot`
+    /// (`WorldGen.cs:4244`/`:4320`/`:4238`/`:4240`/`:4282`/`:4322`) — the
+    /// homeless-arrival + SpawnTownNPC statics (W4-d119 phase 2).
+    pub(crate) town_spawn: crate::town_spawn::TownSpawnStatics,
     /// `Player.reuseDelay` (`Player.cs:1444`): the post-swing reuse lock in
     /// seconds (`Item.reuseDelay` ticks, `Item.cs:317`); M3-ITEM-5.
     pub(crate) reuse_delay: f32,
@@ -3769,6 +3774,7 @@ impl App {
             },
             town_look_timer: 0.0,
             town_arrival: crate::town_arrival::ArrivalState::new(),
+            town_spawn: crate::town_spawn::TownSpawnStatics::default(),
             reuse_delay: 0.0,
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
             // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on

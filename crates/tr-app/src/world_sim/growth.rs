@@ -75,6 +75,17 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
     // fires NO_HOBO (8) once the borrow releases (`SpawnTownNPC:5460`).
     let mut relocated = 0u32;
     app.growth_step.tick(dt.min(0.25), |_| {
+        // `WorldGen.UpdateWorld`'s head statics (`WorldGen.cs:71535-71549`,
+        // W4-d119 phase 2): the rate-0 early return gates the homeless-spawn
+        // timeout decay (once per call while positive) and the
+        // `npcSpawnPeriod = 20 * GetWorldUpdateRate()` re-arm. The port runs
+        // the growth pass at the day rate 1, so the period is 20.
+        if app.creative_powers.time_rate() > 0.0 {
+            if app.town_spawn.homeless_spawn_timeout > 0 {
+                app.town_spawn.homeless_spawn_timeout -= 1;
+            }
+            app.town_spawn.npc_spawn_period = 20;
+        }
         // `WorldGen.UpdatePrioritizedTownNPC` (`:71627-71641`): the first
         // homeless town NPC with an expired timer becomes the prioritized type.
         crate::town_rehome::update_prioritized_town_npc(&app.npcs, &mut app.town_arrival);
