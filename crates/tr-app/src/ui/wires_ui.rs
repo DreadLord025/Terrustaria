@@ -195,7 +195,19 @@ impl WiresRadial {
         }
         let dir = if value { 1.0 } else { -1.0 }; // ToDirectionInt (`Utils.cs:2010-2017`)
         let num = (self.line_opacity + 0.05 * dir).clamp(min, 1.0);
-        self.line_opacity += 0.05 * (num - self.line_opacity).signum();
+        // `Math.Sign(float)` (`:144`) returns 0 on an exact tie - Rust's
+        // `f32::signum(+0.0)` returns +1, which at opacity 1.0 (num ==
+        // opacity) would overshoot to 1.05 and the snap's `< 0.05` test
+        // would leave it there. The three-way sign keeps the C# tie.
+        let d = num - self.line_opacity;
+        let sign = if d > 0.0 {
+            1.0
+        } else if d < 0.0 {
+            -1.0
+        } else {
+            0.0
+        };
+        self.line_opacity += 0.05 * sign;
         if (self.line_opacity - num).abs() < 0.05 {
             self.line_opacity = num;
         }
@@ -669,6 +681,40 @@ mod tests {
         // The fade-out target is 0 (min 0 when the UI gate closes).
         w.line_update(false, true, &inp);
         assert!((w.line_opacity - 0.70).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_opacity_tie_holds_at_one_math_sign_zero() {
+        // `WiresUI.cs:144`: `Math.Sign(0f)` is 0 - at opacity 1.0 the
+        // clamp target num is also 1.0, so the step adds nothing and the
+        // snap leaves it at 1.0. Rust's f32::signum(+0.0) = +1 would
+        // overshoot to 1.05 (and the `< 0.05` snap would NOT pull it
+        // back) - the three-way sign keeps the tie.
+        let mut w = WiresRadial {
+            line_opacity: 1.0,
+            ..Default::default()
+        };
+        let inp = RadialInputs {
+            mouse: Vec2::ZERO,
+            screen: Vec2::new(1280.0, 720.0),
+            held_kind: 3611,
+            held_count: 1,
+            dead: false,
+            mouse_item: false,
+            icon_enabled: false,
+            chat_open: false,
+            mouse_interface: false,
+            options_or_fancy: false,
+            right_press: false,
+            left_press: false,
+            no_throw: false,
+            talking: false,
+        };
+        w.line_update(true, true, &inp);
+        assert_eq!(w.line_opacity, 1.0, "the tie must not overshoot");
+        // The fade from the ceiling steps down normally.
+        w.line_update(false, true, &inp);
+        assert!((w.line_opacity - 0.95).abs() < 1e-6, "got {}", w.line_opacity);
     }
 
     #[test]
