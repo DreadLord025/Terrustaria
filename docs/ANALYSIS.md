@@ -39382,17 +39382,92 @@ Deviations resolved (W4-g58 deviation round, 2026-11-21, code-only mode):
 
 Deviations still constants-off (each rides its own lane):
 
-- The pets' `housingCategory` filter
-  (`TownRoomManager.CanNPCsLiveWithEachOther_ShopHelper`,
-  `TownRoomManager.cs:153-161`) is inert — no pets ported.
-- The <=0.82 achievement (`Player.cs:4391-4394`) rides the achievement
-  lane; the portrait hop (`DoNPCPortraitHop`) and the corner item are
-  unported (S1-E-10b's deferral).
-- The nurse-heal cost recompute (`App::nurse_heal_cost`) reads a fresh
-  `process_mood` rather than the LATCHED `currentShoppingSettings.
-  PriceAdjustment` the C# `GetNurseHealCost` reads (`Main.cs:40100`) — the
-  pre-existing nurse-lane deviation, unchanged by W4-g58 (the Nurse is
-  never the Princess, so the head's no-draw closure is inert there).
+- ~~The pets' `housingCategory` filter~~ — LANDED (the latch round,
+  2026-11-21, `f6c6007d4`). `ShopHelper.cs:305` admits a crowd neighbor
+  only when `!WorldGen.TownManager.CanNPCsLiveWithEachOther_ShopHelper`
+  (`TownRoomManager.cs:153-161` — CanLive is housingCategory INEQUALITY,
+  so the negated gate counts SAME-category neighbors: pets crowd pets,
+  never humans). `happiness.rs::crowd_neighbor_counts` reuses the housing
+  lane's `town::can_npcs_live_with_each_other` negated; no pet kind ships,
+  so every ported pair is 0==0 → counted — the filter is armed for the
+  pet lane.
+- ~~The <=0.82 achievement (`Player.cs:4391-4394`)~~ — LANDED (the latch
+  round, `f6c6007d4`). `AchievementManager::complete_row_condition` ports
+  the ROW-TARGETED `GetCondition(row, name).Complete()`
+  (`AchievementsHelper.cs:355-357` case 20 →
+  `TALK_TO_NPC_AT_MAX_HAPPINESS`/"Do"; `AchievementCondition.cs:37-47` +
+  `Achievement.cs:93-108`) — NOT the broadcast `notify_custom`, which
+  would close all nine "Do" rows. `set_talk_npc` fires it on the latched
+  adjustment with the `BoundTownNPCs` (`NPCID.cs:10441`, the six ported
+  kinds) + `!homeless` gates. The portrait hop (`DoNPCPortraitHop`) and
+  the corner item stay unported (S1-E-10b's deferral — no portrait
+  system).
+- ~~The nurse-heal cost recompute~~ — LANDED (the latch round,
+  `3ac5432d5`). `currentShoppingSettings` has exactly ONE write site:
+  `Player.SetTalkNPC` (`Player.cs:4383-4390`; the open chain `Main.cs:
+  42939` HoverOverNPCs ← DrawMouseOver `:45150` → `:43081`), and
+  `GetNurseHealCost` (`Main.cs:40100`) reads the LATCHED `PriceAdjustment`
+  with NO NPC-index parameter (`NurseHeal.Interact`, `NPCInteractions.cs:
+  258-261`). `App::nurse_heal_cost`/`nurse_heal` drop the index and read
+  `shopping_settings.price_adjustment`; the fresh `process_mood` + the
+  no-draw closure are deleted — the Princess head draws at the LATCH on
+  `NamedRngs::global()`, the nurse read is draw-free. Mood changes between
+  the talk and the heal do not change the cost (the witness).
+
+The latch round (2026-11-21, code-only mode, `3ac5432d5`/`f6c6007d4`/
+`13be13a6a`/`a027138d8`):
+
+- **The reforge price's happiness interplay** — LANDED (`13be13a6a`).
+  `Main.DrawInventory`'s reforge block (`:41584-41591`) multiplies the
+  LATCHED `currentShoppingSettings.PriceAdjustment` (`:41591`), not a
+  shop-open capture: the vanilla opens the menu through the Tinkerer's
+  CHAT button (`NPCChatText_TinkererReforge`, `Main.cs:40022-40029`), so
+  the talk latch is live. g57 was visual-only (the reveal/popup lane);
+  S1-P-i45 ported the cast chain but fed `shop_mood`. `reforge_click` +
+  the draw-site price both read `shopping_settings.price_adjustment`;
+  the port's collapsed #9 entry keeps the first press's latch (the
+  same-NPC re-click falls through `talk_to_npc` without re-latching,
+  `Main.cs:43077`). **Cross-note (the buy lane)**: `Player.
+  GetItemExpectedPrice` (`Player.cs:35382-35388`) ALSO reads the latch —
+  the buy/sell transactions still ride the `shop_mood` capture
+  (`buy_shop_item`/`sell_item`); their repoint rides the shop-transaction
+  lane (S1-P-i44's follow-up), not this round.
+- **The tax-collector payout's happiness interplay** — LANDED
+  (`a027138d8`). `Main.NPCChatText_DoTaxCollector` (`:40180-40225`)
+  DIVIDES the purse by the latched adjustment (`:40184` — a happy
+  collector pays MORE than the accrued purse), the same value
+  `GetCoinValueText_TaxCollector` displays (`:39933`, the <0→0 clamp
+  display-only); the coins spawn at `Main.LocalPlayer.Center`
+  (`:40192`/`:40199`/`:40206`/`:40215`), NOT the collector's box.
+  `tax_collector_payout` now divides by `shopping_settings.
+  price_adjustment` and spawns at the player centre (the headless
+  no-player fallback keeps his); the collapsed right-click latches on
+  the first press (the vanilla button's Condition `TalkNPCType == 441`,
+  `NPCInteractions.cs:223-226`, exists only while talking). His roster
+  rows verified live: the biome table (`PersonalityDatabasePopulator.cs:
+  47-51`, Like Snow / Dislike Hallow), the neighbor switch
+  (`AllPersonalitiesModifier.cs:321-342` — the Santa hate row drops, 142
+  unported) and the rows that name him (the Merchant `:43-60`, the Angler
+  `:141-158`, the PartyGirl `:119-140`, the Clothier `:285-302`).
+- **The latch-site census** (the round's spine): `currentShoppingSettings`
+  is written ONLY by `Player.SetTalkNPC` (`Player.cs:4383-4390`). The C#
+  call sites: the talk open (`Main.cs:43081`, the `:42939` HoverOverNPCs
+  chain), the bound-NPC transform (`NPC.cs:44889`), the per-tick close
+  (`Player.cs:27500`), the chest/dresser prologues (`Player.cs:32874`/
+  `:32931`/`:33088`), the recall/death/etc. closes (`Player.cs:5007`/
+  `:17015`/`:29109`/`:37648`, `Main.cs:37730`/`:37808`/`:40683`/`:41098`/
+  `:42399`/`:42454`/`:43675`/`:43689`, `TileEntity.cs:292`,
+  `IngameUIWindows.cs:35`, `NewCraftingUI.cs:942`) and the net sync
+  (`MessageBuffer.cs:2264`). The port's `set_talk_npc` covers the landed
+  six (talk open/close, the Close click, the two chest prologues, the
+  recall teleport); the remaining closes ride their own unported systems.
+  The four latch READERS censused: `GetNurseHealCost` (`:40100`),
+  `NPCChatText_DoTaxCollector` (`:40184`) + its display twin (`:39933`),
+  the reforge block (`:41591`), the shop chrome (`:41793` — already
+  latched via the W4-g58 chrome), `GetItemExpectedPrice` (`:35382-35388`,
+  the buy lane's cross-note) and the Stylist hair price (`:43799`, the
+  hair-dye lane) + the Angler reward rarity (`Player.cs:56306`, the quest
+  lane).
 
 Witnesses (WRITTEN NOT RUN): `happiness.rs::w4_g58_tests` x9 original (the
 25-row biome table, the 25-case neighbor switch, the kind-view filter, the
@@ -39409,4 +39484,13 @@ homeless Condition, the settings reset); `ui/shop_happiness.rs` x3 (the
 icon bands, the P0 text, the chrome positions); `ui/savings.rs` x5 (the
 CoinsCount denominations, the CoinsCombineStacks cap, the CoinsSplit walk,
 the CenteredRectangle truncation, the savings cell draw state);
-`assets.rs` x1 (the coin spin strips pack + slice 8 frames).
+`assets.rs` x1 (the coin spin strips pack + slice 8 frames). The latch
+round adds: `app/mod.rs::s1_e_18_tests` x2 (the nurse cost reads the talk
+latch — the homeless→housed mood change is inert until a re-latch; the
+≤0.82 talk fires ONLY its achievement row, the Nurse + loved ArmsDealer +
+Princess 0.79 band), `happiness.rs::w4_g58_tests` x1 (the crowd gate's
+housingCategory filter), `achievements.rs` x1 (the row-targeted complete
+vs the broadcast), `app/flow.rs` x1 (the reforge charge reads the talk
+latch, not the shop capture), `world_sim/npcs.rs` x1 (the tax payout
+divides by the latch — 300/1.5=200, 300/0.75=400 — and spawns at the
+player centre).

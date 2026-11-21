@@ -5694,6 +5694,8 @@ mod s1_e_18_tests {
     /// (`AchievementsHelper.cs:407-410`). A purse too short never reaches it.
     #[test]
     fn the_nurse_heal_credits_the_paid_copper_to_frequent_flyer() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         let mut player = crate::player::Player::spawn(&app.world);
         player.hp = player.max_hp / 2;
@@ -5739,6 +5741,8 @@ mod s1_e_18_tests {
     /// picks the new mood up.
     #[test]
     fn the_nurse_cost_reads_the_talk_latch_not_a_fresh_mood() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         let mut player = crate::player::Player::spawn(&app.world);
         player.hp = player.max_hp / 2;
@@ -5777,6 +5781,8 @@ mod s1_e_18_tests {
     /// NPC does — and ONLY that row completes (the "Do" flag is shared).
     #[test]
     fn the_max_happiness_talk_fires_only_its_achievement_row() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         app.player = Some(crate::player::Player::spawn(&app.world));
         let mut nurse = crate::npc::Npc::new(crate::npc::NpcKind::Nurse, 32.0, 100.0, 1, 0.0);
