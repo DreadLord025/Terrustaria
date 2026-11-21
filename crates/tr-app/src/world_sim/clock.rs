@@ -402,19 +402,17 @@ mod tests {
 
     /// The DUSK twin: the boundary's blood-moon draw sits AFTER the
     /// `Star.NightSetup` prefix (`Main.cs:65223` — 1-3 draws, W4-d15
-    /// final), so the found seed's stream is returned positioned past
-    /// a replayed NightSetup (the classic gates — the fixtures carry
-    /// no tenth-anniversary seed).
+    /// final). The probe replays NightSetup to find a seed whose
+    /// POST-prefix draw satisfies `pred`; the returned stream is FRESH
+    /// (`advance_time` replays the prefix itself — the classic gates,
+    /// the fixtures carry no tenth-anniversary seed).
     fn stream_with_dusk_roll(pred: impl Fn(f64) -> bool) -> UnifiedRandom {
         for seed in 0..10_000 {
             let mut r = UnifiedRandom::new(seed);
             let mut w = World::new("probe".into(), 8, 8);
             w.roll_starfall_night_setup(false, &mut r);
             if pred(r.next_double()) {
-                let mut r = UnifiedRandom::new(seed);
-                let mut w = World::new("probe".into(), 8, 8);
-                w.roll_starfall_night_setup(false, &mut r);
-                return r;
+                return UnifiedRandom::new(seed);
             }
         }
         panic!("no seed in 0..10_000 has a post-NightSetup roll matching the predicate");
