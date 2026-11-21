@@ -34,8 +34,16 @@ mod shift;
 // W4-c42 batch 2 — the wired trapdoor/tall-gate shifts (`WorldGen.cs:51447-
 // 51596`/`:51723-51775`), the `HitWireSingle` arms `Wiring.cs:1440-1460` call.
 pub use shift::{shift_tall_gate, shift_trapdoor};
+mod replace;
+// W4-g48 — the net-17 kind-21 `WorldGen.ReplaceTile` family
+// (`WorldGen.cs:62558-62775`), the smart-cursor block swap.
+pub use replace::{
+    is_tile_replaceable, replace_tile, replace_tile_commit, replace_tile_prepare,
+    would_tile_replacement_work, ReplaceOutcome,
+};
+pub use kill::solid_tile;
 pub(crate) use kill::{
-    remove_tile, solid_tile, solid_tile2, solid_tile_allow_bottom_slope, square_tile_frame_gen,
+    remove_tile, solid_tile2, solid_tile_allow_bottom_slope, square_tile_frame_gen,
 };
 
 /// `WallID.UnbreakableBlockWall` / `WallID.Count - 1` region used by the dungeon

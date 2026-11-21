@@ -305,6 +305,22 @@ pub(crate) fn item_drop_chests(style: i32, second_type: bool) -> u16 {
     }
 }
 
+/// `WorldGen.GetCampfireItemDrop(style)` (`WorldGen.cs:50039-50072`): the
+/// campfire item the `ReplaceTile` large-object drop reads
+/// (`KillTile_GetItemDrops` `:63983-63985`, `frameX / 54`). W4-g48.
+pub(crate) fn campfire_item_drop(style: i32) -> u16 {
+    match style {
+        0 => 966,
+        1..=5 => (3046 + style - 1) as u16,
+        6 => 3723,
+        7 => 3724,
+        8..=13 => (4689 + style - 8) as u16,
+        14 => 5299,
+        15 => 5357,
+        _ => 966,
+    }
+}
+
 /// `WorldGen.GetItemDrop_Dressers(style)` (`WorldGen.cs:49855-50037`): the
 /// dresser item. The default is 334; styles 1-3 are 646+style, 5-15 are
 /// 2386+style-5, the rest a verbatim ladder.

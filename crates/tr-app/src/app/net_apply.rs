@@ -320,7 +320,9 @@ pub(crate) fn host_tile_edit(app: &mut App, server: &net::Server, id: u32, e: ne
         }
         21 => {
             // `WorldGen.ReplaceTile(x, y, (ushort)num152, num153)` (`:1264`)
-            // — unported (`liquid.rs:709` records the gap); the relay runs.
+            // — the smart-cursor block swap (the `edit::replace` family,
+            // W4-g48; the former `liquid.rs:709` cited skip is closed).
+            let _ = replace_tile_apply(app, Some(server), x, y, e.value.max(0) as u16, e.style as i32, true);
         }
         22 => {
             // `WorldGen.ReplaceWall(x, y, (ushort)num152)` (`:1269`).
@@ -491,7 +493,12 @@ pub(crate) fn client_tile_edit(app: &mut App, e: net::TileEdit) {
                 app.world_key = None;
             }
         }
-        21 => {}
+        21 => {
+            // The client runs the same `ReplaceTile` — the `netMode == 1`
+            // gates inside skip the drops, the fossil chain and the rigged
+            // switch (the loot arrives as `21`, the break relays as `17`).
+            let _ = replace_tile_apply(app, None, x, y, e.value.max(0) as u16, e.style as i32, false);
+        }
         18 => {
             app.wiring.poke_logic_gate(&mut app.world, x, y);
             app.world_key = None;
@@ -1136,4 +1143,179 @@ pub(crate) fn tile_square(app: &App, x: i32, y: i32, w: i32, h: i32) -> net::Sec
         change_type: 0,
         records,
     }
+}
+
+/// The `17` kind-21 `WorldGen.ReplaceTile` apply (`WorldGen.cs:62558-62580`,
+/// W4-g48 — the `edit::replace` family). The C# tail order: dust → sound →
+/// `KillTile_DropItems(includeLargeObjectDrops: true)` →
+/// `AttemptFossilShattering` → the rigged-chest switch → the replacement.
+/// `server: Some` is the host (the drops spawn, the fossil chain runs with
+/// its `17` relays, the rigged chest fires `HitSwitch` + `59`); `None` is
+/// the client (the `netMode == 1` gates skip all four — the loot arrives as
+/// `21` messages). Returns whether the replacement ran (the gates refused
+/// otherwise); the caller's relay runs either way (`:1277`).
+fn replace_tile_apply(
+    app: &mut App,
+    server: Option<&net::Server>,
+    x: i32,
+    y: i32,
+    target: u16,
+    style: i32,
+    host: bool,
+) -> bool {
+    let Some(mut plan) = edit::replace_tile_prepare(&app.world, x, y, target) else {
+        return false;
+    };
+    let (ax, ay) = (plan.x, plan.y);
+    let old = plan.old;
+    // `KillTile_GetTileDustAmount(fail: false)` + the MakeTileDust burst
+    // (`:62570-62574`) — the port has no per-tick dust layer (the recorded
+    // visual seam, the kind-0 precedent); the count is derived, not spawned.
+    let _dust = crate::collision::tile_dust_amount(old.kind, false, old.frame_x);
+    // `KillTile_PlaySounds(x, y, fail: false, tileSafely)` (`:62575`) — the
+    // ORIGINAL cell's cue table, on the moved anchor.
+    let sounds = edit::kill_tile_sound(old.kind, old.frame_x, false);
+    let (px, py) = (ax as f32 * TILE_PX, ay as f32 * TILE_PX);
+    for cue in [sounds.primary, sounds.extra, sounds.shatter]
+        .into_iter()
+        .flatten()
+    {
+        if let Some((name, volume)) = crate::world_sim::editing::kill_cue(cue) {
+            app.audio.play_at(name, px, py, volume);
+        }
+    }
+    if host {
+        // `KillTile_DropItems(x, y, tileSafely, includeLargeObjectDrops:
+        // true)` (`:62576`, `WorldGen.cs:63948-63962`): the large-object
+        // switch (chest/dresser/campfire, `:63973-63986`) overrides the
+        // per-cell drop, then the per-cell slice runs — the SAME
+        // `break_drop_events` hit-cell path the break uses (no held item:
+        // no staff/axe).
+        let large: Option<u16> = match old.kind {
+            21 | 467 => Some(crate::chest::item_drop_chests(
+                i32::from(old.frame_x) / 36,
+                old.kind == 467,
+            )),
+            88 => Some(crate::chest::item_drop_dressers(i32::from(old.frame_x) / 54)),
+            215 => Some(crate::chest::campfire_item_drop(i32::from(old.frame_x) / 54)),
+            _ => None,
+        };
+        let hit = crate::world_sim::editing::HitCell {
+            x: ax,
+            y: ay,
+            kind: old.kind,
+            frame_x: old.frame_x,
+            frame_y: old.frame_y,
+        };
+        let ctx = crate::world_sim::editing::drop_ctx(app);
+        let mut rolls: Vec<(u16, u32)> = Vec::new();
+        if let Some(id) = large.filter(|id| *id > 0) {
+            rolls.push((id, 1));
+        } else {
+            let kill = edit::TileKill { kind: old.kind, ..Default::default() };
+            let (events, _portals) = crate::world_sim::editing::break_drop_events(
+                &kill,
+                &app.world,
+                Some(hit),
+                false,
+                0,
+                app.rngs.global(),
+                &ctx,
+            );
+            rolls.extend(events.into_iter().map(|(id, n, _, _)| (id, n)));
+        }
+        for (id, count) in rolls {
+            let rng = app.rngs.global();
+            crate::world_sim::items::spawn_item_drop(&mut app.items, rng, id, count, ax, ay);
+        }
+        // `AttemptFossilShattering(x, y, tileSafely, fail: false)` (`:62577`,
+        // `WorldGen.cs:63484-63513`): the desert fossil 404's 3x3 chain —
+        // genRand.Next(15) per neighbour (4 when unsupported / the !fail
+        // top-centre), a 0 rolls the KillTile(noItem: true) + the `17`
+        // relay to EVERYONE. The `fossilBreak` re-entrancy guard never
+        // binds here (the only fossil caller on the handler; the chain's
+        // own kills are 404s whose KillTile runs the fossil arm again in
+        // C# — guarded off; the port's replicated_break has no fossil
+        // recursion, order-identical).
+        if old.kind == 404 {
+            for k in ax - 1..=ax + 1 {
+                for l in ay - 1..=ay + 1 {
+                    let mut max = 15;
+                    if !edit::solid_tile(&app.world, k, l + 1) {
+                        max = 4;
+                    } else if k == ax && l == ay - 1 {
+                        max = 4; // `!fail` — the reader passes false
+                    }
+                    let fossil = app
+                        .world
+                        .tile(k, l)
+                        .is_some_and(|t| t.active() && t.kind == 404);
+                    if (k != ax || l != ay) && fossil {
+                        // The genRand stand-in: one global throw seeds the
+                        // FastRandom (the break_drop_events convention).
+                        let seed = app.rngs.global().next() as u64;
+                        let mut gen = tr_core::tile_light::FastRandom::new(seed);
+                        if gen.next(max) == 0 {
+                            crate::world_sim::editing::replicated_break(app, k, l, true, true);
+                            if let Some(server) = server {
+                                // `SendData(17, -1, -1, null, 0, k, l)`
+                                // (`:63507`) — kind 0, value/style 0.
+                                server.broadcast(&S2c::TileEdit(net::TileEdit {
+                                    kind: 0,
+                                    x: k as i16,
+                                    y: l as i16,
+                                    value: 0,
+                                    style: 0,
+                                }));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // The rigged-chest probe (`:62586-62590`): BEFORE the swap (the
+        // frame check reads the OLD tiles). `IsChestRigged` = the 467
+        // frameX/36 == 4 Dead Man's Chest (`netglue::is_rigged`).
+        if tr_core::tiledata::SET_BASIC_CHEST.has(target)
+            && crate::app::netglue::is_rigged(&app.world, ax, ay)
+        {
+            app.wiring.hit_switch(&mut app.world, ax, ay);
+            if let Some(server) = server {
+                server.broadcast(&S2c::HitSwitch(net::HitSwitch {
+                    x: ax as i16,
+                    y: ay as i16,
+                }));
+            }
+        }
+    }
+    // The seed-flag reads (`Main.onlyShimmerOceanWorlds` —
+    // `SpecialSeedFeatures.cs:93` / `Main.cs:2674-2684`; the plain-tenth
+    // arm `:62637`).
+    use tr_core::seeds::SeedFlags;
+    let s = app.world.seeds;
+    let rainbow_sand = s.contains(SeedFlags::DRUNK)
+        && s.contains(SeedFlags::TENTH_ANNIVERSARY)
+        && !s.contains(SeedFlags::REMIX)
+        && !s.contains(SeedFlags::ZENITH)
+        && !s.contains(SeedFlags::NOT_THE_BEES);
+    let tenth_plain = s.contains(SeedFlags::TENTH_ANNIVERSARY)
+        && !s.contains(SeedFlags::REMIX)
+        && !s.contains(SeedFlags::NOT_THE_BEES)
+        && !s.contains(SeedFlags::DONT_STARVE);
+    let holds = holds_items(&app.world_chests);
+    edit::replace_tile_commit(
+        &mut app.world,
+        &mut plan,
+        target,
+        style,
+        holds,
+        rainbow_sand,
+        tenth_plain,
+    );
+    // The EliminateNaturalExtras kills' cascade records (the single arm).
+    if host {
+        spawn_object_drops(app, std::mem::take(&mut plan.drops));
+    }
+    app.world_key = None;
+    true
 }

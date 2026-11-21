@@ -6474,6 +6474,56 @@ mod g48_apply_tests {
         );
     }
 
+    /// `case 17` kind 21 (`MessageBuffer.cs:1263-1265`): a client's
+    /// ReplaceTile edit swaps the host's stone block (1) for a dirt block
+    /// (0 is refused — Conversion.Grass; use wood 30 → stone 1) and relays;
+    /// the receiving client swaps its own copy. The host drops the OLD
+    /// block's item (`KillTile_DropItems`, stone → 3); the client spawns no
+    /// local drop (the `netMode == 1` gate). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn g48_17_replace_tile_edit_swaps_and_replicates() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // A stone block at (6, 3) on both sides (above the dirt row).
+        for app in [&mut host_app, &mut client_app] {
+            let i = app.world.index(6, 3);
+            app.world.tiles[i] = tr_core::Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TileEdit(net::TileEdit {
+                kind: 21, // ReplaceTile
+                x: 6,
+                y: 3,
+                value: 30, // wood — a valid solid target
+                style: 0,
+            }));
+        }
+        let mut swapped = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            swapped = host_app.world.tile(6, 3).is_some_and(|t| t.active() && t.kind == 30)
+                && client_app.world.tile(6, 3).is_some_and(|t| t.active() && t.kind == 30);
+            if swapped {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(swapped, "the stone became wood on both sides");
+        // The host dropped the old stone's item 3 (`tile_drop(1)`); the
+        // client spawned nothing local (its loot arrives as `21`).
+        assert!(host_app.items.iter().any(|d| d.kind == 3), "the host's stone drop");
+        assert!(
+            !client_app.items.iter().any(|d| d.kind == 3),
+            "the client's netMode==1 drop gate"
+        );
+    }
+
     /// `case 19` action 3 (`MessageBuffer.cs:1318-1320`): a client's
     /// trapdoor-OPEN toggle (`ShiftTrapdoor(x, y, dir==1, 0)` — the 0 is
     /// OPEN-only, the `:51534` close branch gates `!= 0`) runs the canonical
