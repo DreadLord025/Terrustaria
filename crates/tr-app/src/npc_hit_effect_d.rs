@@ -3819,6 +3819,81 @@ fn santa_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88174
 }
 
+/// The 178 Steampunker death (`NPC.cs:88176-88197`, sites 560-563): the
+/// 50x dust-5 burst at (2.5·hd, −2.5), then the altTexture-gated head
+/// 231 (shimmer 1348, default-0 stand-in) + 232x2 at +20 Y + ONE 233 at
+/// +34 Y (shimmer 1349/1350 — the FOUR shape, single legs slot), scale
+/// 1f.
+fn steampunker_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88186-88189` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:88190-88193` — the head, altTexture==0 stand-in (always taken).
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1348 } else { 231 }, 1.0); // :88192
+    let mid = if shimmer { 1349 } else { 232 };
+    let legs = if shimmer { 1350 } else { 233 };
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88194
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88195
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88196
+}
+
+/// The 353/354 Stylist death (`NPC.cs:88198-88221`, sites 564-569): the
+/// 50x dust-5 burst at (2.5·hd, −2.5), then the altTexture-gated head
+/// 544 (shimmer 1351, default-0 stand-in) + the SECOND head-slot 543
+/// (shimmer 1352) at position + 546x2 at +20 Y + 545x2 at +34 Y
+/// (shimmer 1353/1354 — NOTE the normal types are NOT a ladder:
+/// 544/543/546/545), scale 1f.
+fn stylist_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88208-88211` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:88212-88215` — the head, altTexture==0 stand-in (always taken).
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1351 } else { 544 }, 1.0); // :88214
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1352 } else { 543 }, 1.0); // :88216
+    let mid = if shimmer { 1353 } else { 546 };
+    let legs = if shimmer { 1354 } else { 545 };
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88217
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88218
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88219
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88220
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -4268,6 +4343,14 @@ pub fn hit_effect_d(
     // `:88153-88175` — the 142 Santa Claus arm (sites 555-559).
     else if npc_type == 142 {
         santa_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88176-88197` — the 178 Steampunker arm (sites 560-563).
+    else if npc_type == 178 {
+        steampunker_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88198-88221` — the 353/354 Stylist arm (sites 564-569).
+    else if npc_type == 353 || npc_type == 354 {
+        stylist_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -7458,6 +7541,46 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "santa shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:88192-88196` — the Steampunker FOUR (single legs slot);
+    /// `:88214-88220` — the Stylist SIX with the two head slots (normal
+    /// 544/543 NOT a ladder).
+    #[test]
+    fn w4_f5d_the_steampunker_four_and_the_stylist_six() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, shimmer, want) in [
+            (178, false, vec![231, 232, 232, 233]),
+            (178, true, vec![1348, 1349, 1349, 1350]),
+            (353, false, vec![544, 543, 546, 546, 545, 545]),
+            (354, true, vec![1351, 1352, 1353, 1353, 1354, 1354]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(593);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "town {kind} shimmer={shimmer}");
+            if kind == 353 || kind == 354 {
+                assert_eq!(gore.slot(1).position, Vec2::new(100.0, 100.0));
+            }
+            let mut twin = UnifiedRandom::new(593);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "town {kind} shimmer={shimmer} mirrors");
         }
     }
 }
