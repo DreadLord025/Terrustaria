@@ -44,11 +44,17 @@
 //! * The `tileSolid[229/232/162]` pass-head pokes (`WorldGen.cs:20872`,
 //!   `:20897-20898`) are the port's boot table (the documented
 //!   `solid_tile2` deferral); the `progress.Set` calls draw nothing.
-//!   The `tileSolid[225] = false` WINDOW (`:16850` Life Crystals tail →
-//!   `:18426` surface-spread restore) IS modelled for the dent walk's
-//!   `SolidTile` reads ([`solid_tile_hive_window`]) — the port's steps
-//!   between those slots read the boot table elsewhere (the documented
-//!   per-pass window deferral).
+//!   The `tileSolid[225] = false` WINDOW is modelled where it matters:
+//!   vanilla's weight order runs Hives (weight-slot 50) BEFORE Life
+//!   Crystals (60), whose tail flips 225 non-solid (`:16850`) until the
+//!   surface-spread pass restores it (`:18426`) — so `HiveBiome.Place`'s
+//!   dent walk reads the boot table's SOLID 225 (`Main.cs:10236`), while
+//!   the Larva pass (slot 99, after the Piles restore `:19454`) reads
+//!   solid 225 again. The port's EXECUTED_PIPELINE runs `beehives` after
+//!   its Life-Crystals-era steps, so the window is carried explicitly:
+//!   [`place_hive`] takes the boot-table `solid_tile` (the vanilla Hives
+//!   slot's state) — no adjustment needed, the C# state at the C# slot
+//!   is what the port reproduces.
 //! * The drunk-seed branches are ported but dead in the port's classic
 //!   fixtures (`world.seeds` carries the flags); the remix arms ride the
 //!   same `SeedFlags::REMIX` the other passes read.
@@ -60,17 +66,6 @@ use super::Rng;
 use crate::seeds::SeedFlags;
 use crate::tile::{LiquidKind, FLAG_ACTIVE, FLAG_HALF_BRICK};
 use crate::world::World;
-
-/// `WorldGen.SolidTile` with the `tileSolid[225]` window applied
-/// (`WorldGen.cs:16850` — the Life Crystals tail flips 225 non-solid and
-/// it stays so through Beehives/Larva until the surface-spread pass
-/// `:18426` restores it): the hive pass's `BadSpotForHoneyFall` probes
-/// and `CreateDentForHoneyFall` walk read hive blocks as NON-solid. The
-/// shared `mini_biomes::solid_tile` carries the boot table; this wrapper
-/// subtracts the one kind the window changes.
-fn solid_tile_hive_window(world: &World, x: i32, y: i32) -> bool {
-    solid_tile(world, x, y) && world.tile(x, y).is_some_and(|t| t.kind != 225)
-}
 
 /// `GenVars.larvaX/larvaY` (`GenVars.cs:150-154`, `new int[100]` at
 /// `:446-447`) + `numLarva` (reset 0, `WorldGen.cs:11245`). The stand
@@ -348,10 +343,10 @@ fn create_dent_for_honey_fall(world: &mut World, x: i32, y: i32, dir: i32) {
     let y = y + 1;
     let mut x = x;
     let mut num = 0;
-    while (num < 4 || solid_tile_hive_window(world, x, y)) && x > 10 && x < world.width - 10 {
+    while (num < 4 || solid_tile(world, x, y)) && x > 10 && x < world.width - 10 {
         num += 1;
         x += dir;
-        if solid_tile_hive_window(world, x, y) {
+        if solid_tile(world, x, y) {
             // `:298` — PoundTile, generation-time (the gated i31 port;
             // worldgen has no chest store, the closure answers false).
             crate::edit::pound_tile(world, x, y, true, |_, _| false);
@@ -532,9 +527,9 @@ pub(crate) fn pass_beehives(
 /// `num = -2` group at `:53538-53567`): the 3×3 clear above the floor
 /// row, the `SolidTile2` floor gate, then the nine style-0 frames.
 /// `PlaceTile(x, y, 231, mute: true)` dispatches here (`:59967-59970`);
-/// the outer PlaceTile gate is bypassed during generation (`:53140`'s
-/// `generatingWorld && !tileSolid[225] && type == 231` override — the
-/// hive pass runs with 225 non-solid, `:16850`).
+/// the outer PlaceTile gate passes on `!tileSolid[231]` (`:59373` — the
+/// larva is not a solid kind), and at the Larva slot the boot table's
+/// solid 225 floor stands (the Piles pass restored it, `:19454`).
 fn place_larva_3x3(world: &mut World, x: i32, y: i32) -> bool {
     // `:53541-53554`: the 3×3 body must be clear (x-1..x+1 × y-2..y).
     for i in x - 1..x + 2 {
@@ -593,5 +588,285 @@ pub(crate) fn pass_larva(world: &mut World, anchors: &LarvaAnchors) {
         }
         // `:20895`: PlaceTile(num, num2, 231, mute: true) → Place3x3.
         place_larva_3x3(world, num, num2);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tile::Tile;
+
+    /// A solid-mud world with a jungle-grass (60) core — the disc the
+    /// Place gate's 75 %/2+ scan passes on. `surface` sits above the
+    /// hive band so the tunnel's wall-0 veto never fires (the cells
+    /// carry the natural mud wall 15 below it — the fixture sets 86
+    /// nowhere, the tunnels write it).
+    fn mud_world(width: i32, height: i32) -> World {
+        let mut w = World::new("hive".into(), width, height);
+        for x in 0..width {
+            for y in 0..height {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 59,
+                    wall: 15,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w
+    }
+
+    #[test]
+    fn the_circle_membership_is_the_csharp_row_walk() {
+        // `Shapes.Circle(15)` (`Shapes.cs:33-49`): row dy spans
+        // ±min(15, (int)sqrt(16² − dy²)) — the dy=0 row is the FULL
+        // ±15 (the naive dx²+dy² ≤ 225 test agrees), but dy=±15 spans
+        // ±(int)sqrt(256−225) = ±5, NOT 0 — the C# disc is wider at the
+        // poles than the Euclidean disc.
+        assert_eq!(circle_half_width(15, 0), 15);
+        assert_eq!(circle_half_width(15, 15), 5);
+        assert_eq!(circle_half_width(15, -15), 5);
+        // dy=±8: sqrt(256−64) = sqrt(192) ≈ 13.85 → 13 (the Euclidean
+        // test would give sqrt(225−64) ≈ 12.68 → 12).
+        assert_eq!(circle_half_width(15, 8), 13);
+    }
+
+    #[test]
+    fn the_stand_publishes_the_clamped_anchor_and_clears_the_3x4() {
+        // `CreateStandForLarva` (`HiveBiome.cs:357-383`): the anchor
+        // clamps 5..max-5, the counter advances, the three rows above
+        // clear and the row below sets 225 slopeless.
+        let mut w = mud_world(60, 60);
+        let mut anchors = LarvaAnchors::default();
+        create_stand_for_larva(&mut w, &mut anchors, 30.7, 20.2);
+        assert_eq!((anchors.x[0], anchors.y[0], anchors.num), (30, 20, 1));
+        for dx in -1..=1 {
+            for dy in -2..=0 {
+                assert!(
+                    !w.tile(30 + dx, 20 + dy).unwrap().active(),
+                    "the stand clears ({dx}, {dy})"
+                );
+            }
+            let floor = w.tile(30 + dx, 21).unwrap();
+            assert!(floor.active() && floor.kind == 225, "the 225 floor row");
+            assert_eq!(floor.slope(), 0);
+            assert!(!floor.half_brick());
+        }
+        // The clamp: an anchor near the edge lands at 5 / max-5.
+        create_stand_for_larva(&mut w, &mut anchors, 1.0, 59.0);
+        assert_eq!((anchors.x[1], anchors.y[1]), (5, 55));
+    }
+
+    #[test]
+    fn the_larva_counter_wraps_at_the_last_slot() {
+        // `:362-365`: numLarva >= 100 → 99 — the last slot overwrites.
+        let mut w = mud_world(60, 60);
+        let mut anchors = LarvaAnchors::default();
+        for k in 0..105 {
+            create_stand_for_larva(&mut w, &mut anchors, 30.0, 20.0 + (k % 5) as f64);
+        }
+        assert_eq!(anchors.num, 99);
+        // The 105th stand (k=104, y=24) overwrote slot 99.
+        assert_eq!(anchors.y[99], 24);
+    }
+
+    #[test]
+    fn the_place_gate_refuses_the_sparse_disc_and_the_larva_tile() {
+        // `:21-28`: an empty world fails the IsSolid scan (0 solids);
+        // `:17-20`: a 226 tile inside the 150/10 scan vetoes.
+        let mut w = World::new("hive2".into(), 400, 600);
+        let mut protected = Vec::new();
+        let mut anchors = LarvaAnchors::default();
+        let mut rng = Rng::from_seed(5);
+        assert!(!place_hive(&mut w, 200, 300, &mut protected, &mut anchors, &mut rng, 100.0));
+        // The mud disc passes the scan but a 226 at a scanned cell vetoes.
+        let mut w2 = mud_world(400, 600);
+        let i = w2.index(200, 300);
+        w2.tiles[i].kind = 226;
+        assert!(!place_hive(&mut w2, 200, 300, &mut protected, &mut anchors, &mut rng, 100.0));
+        assert_eq!(anchors.num, 0, "no stand published on a refusal");
+    }
+
+    #[test]
+    fn the_place_gate_refuses_the_non_jungle_disc() {
+        // The 75 % mud/hive ratio: a stone disc with a 2-cell 60 core
+        // fails the ratio even though the hive count clears 2.
+        let mut w = mud_world(400, 600);
+        for x in 0..400 {
+            for y in 0..600 {
+                let i = w.index(x, y);
+                w.tiles[i].kind = 1; // stone
+            }
+        }
+        for (x, y) in [(200, 300), (201, 300)] {
+            let i = w.index(x, y);
+            w.tiles[i].kind = 60;
+        }
+        let mut protected = Vec::new();
+        let mut anchors = LarvaAnchors::default();
+        let mut rng = Rng::from_seed(5);
+        assert!(!place_hive(&mut w, 200, 300, &mut protected, &mut anchors, &mut rng, 100.0));
+    }
+
+    #[test]
+    fn the_hive_carves_the_tunnels_and_publishes_the_stand() {
+        // A full mud disc with a 60 core: the Place gates pass, the
+        // tunnel chains carve the 86-walled honey pockets and the 225
+        // shells, and the stand publishes one anchor per chain.
+        let mut w = mud_world(400, 600);
+        for x in 150..250 {
+            for y in 250..350 {
+                let i = w.index(x, y);
+                w.tiles[i].kind = 60;
+            }
+        }
+        let mut protected = Vec::new();
+        let mut anchors = LarvaAnchors::default();
+        let mut rng = Rng::from_seed(11);
+        assert!(place_hive(&mut w, 200, 300, &mut protected, &mut anchors, &mut rng, 100.0));
+        // The 110×110 inflate-5 rect registered (`:100`).
+        assert_eq!(protected, vec![(145, 245, 110, 110)]);
+        // 2-4 chains, one stand each (`:29-54`, `:85` publishes the LAST
+        // chain's end only — the C# CreateStandForLarva runs once).
+        assert_eq!(anchors.num, 1, "one stand per hive (the last chain end)");
+        // The tunnels wrote the hive wall 86 and the honey liquid.
+        let wall86 = w.tiles.iter().filter(|t| t.wall == 86).count();
+        assert!(wall86 > 50, "the tunnel walls: {wall86}");
+        let honey = w
+            .tiles
+            .iter()
+            .filter(|t| t.liquid > 0 && t.liquid_kind() == LiquidKind::Honey)
+            .count();
+        assert!(honey > 20, "the honey pockets: {honey}");
+        let hive_blocks = w.tiles.iter().filter(|t| t.active() && t.kind == 225).count();
+        assert!(hive_blocks > 50, "the 225 shells: {hive_blocks}");
+        // The stand ran at the last chain's end (the anchor publishes;
+        // the 3×4 floor shape is pinned by the dedicated stand witness —
+        // the chain end can drift, so the anchor may clamp away from the
+        // written cells).
+        assert!(anchors.x[0] >= 5 && anchors.x[0] <= w.width - 5);
+        assert!(anchors.y[0] >= 5 && anchors.y[0] <= w.height - 5);
+    }
+
+    #[test]
+    fn the_honey_cube_and_the_dent_write_their_shapes() {
+        // `CreateBlockedHoneyCube` (`:308-327`): the inner 2×2 honey,
+        // the 12-cell 225 rim. `CreateDentForHoneyFall` (`:287-306`):
+        // the reversed walk pounds the solid floor into half-bricks.
+        let mut w = mud_world(80, 80);
+        create_blocked_honey_cube(&mut w, 40, 40);
+        for i in 40..=41 {
+            for j in 40..=41 {
+                let t = w.tile(i, j).unwrap();
+                assert!(!t.active() && t.liquid == u8::MAX);
+                assert_eq!(t.liquid_kind(), LiquidKind::Honey);
+            }
+        }
+        for i in 39..=42 {
+            for j in 39..=42 {
+                if (40..=41).contains(&i) && (40..=41).contains(&j) {
+                    continue;
+                }
+                let t = w.tile(i, j).unwrap();
+                assert!(t.active() && t.kind == 225, "the rim ({i}, {j})");
+            }
+        }
+        // The dent: dir=1 → the walk goes LEFT (dir *= -1), y+1. The
+        // floor is solid mud, so the first 4+ cells pound half-brick.
+        create_dent_for_honey_fall(&mut w, 40, 40, 1);
+        let pounded = (30..40)
+            .filter(|&x| w.tile(x, 41).unwrap().half_brick())
+            .count();
+        assert!(pounded >= 4, "the dent pounds the floor: {pounded}");
+    }
+
+    #[test]
+    fn the_larva_pass_places_the_3x3_over_the_stand() {
+        // `BeeLarvaInBeehives` (`:20868-20900`): the stand re-clear +
+        // the 231 Place3x3 — nine cells, style-0 frames, the num=-2
+        // offset (rows y-2..y carry frameY 0/18/36).
+        let mut w = mud_world(80, 80);
+        let mut anchors = LarvaAnchors::default();
+        create_stand_for_larva(&mut w, &mut anchors, 40.0, 40.0);
+        pass_larva(&mut w, &anchors);
+        for (row, fy) in [(38, 0i16), (39, 18), (40, 36)] {
+            for (col, fx) in [(39, 0i16), (40, 18), (41, 36)] {
+                let t = w.tile(col, row).unwrap();
+                assert!(t.active() && t.kind == 231, "the larva cell ({col}, {row})");
+                assert_eq!((t.frame_x, t.frame_y), (fx, fy), "the style-0 frames");
+            }
+        }
+        // The floor row stays 225 (the Place3x3 gate read it).
+        for col in 39..=41 {
+            let t = w.tile(col, 41).unwrap();
+            assert!(t.active() && t.kind == 225);
+        }
+    }
+
+    #[test]
+    fn the_larva_placement_refuses_a_blocked_body() {
+        // `Place3x3`'s clear gate (`:53541-53554`): an active cell in
+        // the 3×3 body refuses the placement. (The pass's stand re-clear
+        // runs first and would wipe a foreign body cell, so the gate is
+        // pinned on the placement fn directly.)
+        let mut w = mud_world(80, 80);
+        // The floor row: 225 at y=41 under the body.
+        for col in 39..=41 {
+            let i = w.index(col, 41);
+            w.tiles[i].kind = 225;
+        }
+        // A foreign active cell inside the body (x-1..x+1 × y-2..y).
+        let i = w.index(40, 39);
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.tiles[i].kind = 1;
+        assert!(!place_larva_3x3(&mut w, 40, 40));
+        assert!(
+            !w.tiles.iter().any(|t| t.active() && t.kind == 231),
+            "the blocked body refuses the 231"
+        );
+        // The floor gate: a non-solid floor row refuses too.
+        let mut w2 = mud_world(80, 80);
+        for col in 39..=41 {
+            let i = w2.index(col, 41);
+            w2.tiles[i].flags &= !FLAG_ACTIVE; // the floor is air
+        }
+        // The body above is solid mud — clear it first (the gate order:
+        // body clear, then floor).
+        for row in 38..=40 {
+            for col in 39..=41 {
+                let i = w2.index(col, row);
+                w2.tiles[i].flags &= !FLAG_ACTIVE;
+            }
+        }
+        assert!(!place_larva_3x3(&mut w2, 40, 40));
+    }
+
+    #[test]
+    fn the_beehives_pass_is_reproducible_for_a_seed() {
+        // The a == b determinism witness: two runs of the faithful pass
+        // over identical worlds draw identical streams and write
+        // identical tiles (the full Tile, all fields).
+        let run = || {
+            let mut w = mud_world(400, 600);
+            for x in 100..300 {
+                for y in 200..400 {
+                    let i = w.index(x, y);
+                    w.tiles[i].kind = 60;
+                }
+            }
+            let mut anchors = LarvaAnchors::default();
+            let mut rng = Rng::from_seed(42);
+            let placed = pass_beehives(&mut w, 100.0, 180.0, &mut anchors, &mut rng);
+            pass_larva(&mut w, &anchors);
+            (w, anchors, placed)
+        };
+        let (a, aa, pa) = run();
+        let (b, ab, pb) = run();
+        assert_eq!(pa, pb);
+        assert_eq!(aa.num, ab.num);
+        assert_eq!(aa.x, ab.x);
+        assert_eq!(aa.y, ab.y);
+        assert_eq!(a.tiles, b.tiles, "a == b — the full tile state");
     }
 }
