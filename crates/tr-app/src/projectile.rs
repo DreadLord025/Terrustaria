@@ -13682,9 +13682,11 @@ pub(crate) fn trailing_mode(kind: u16) -> i32 {
         // W4-d16 — the kites' mode 2 (`ProjectileID.cs:521`: every
         // DefaultToKite kind carries 2): `DrawKite`'s tail walk reads
         // `oldPos`/`oldRot`/`oldSpriteDirection` (`Main.cs:37513-37521`).
-        // The C# `TrailCacheLength` is 60/65/80 (`:522`) — the port's
-        // fixed 10-entry ring is the recorded trail-density deviation
-        // (ANALYSIS, the 640 precedent).
+        // The C# `TrailCacheLength` is 60/65/80 (`:522`) — residual 6
+        // CLOSED the ring deviation: `trail_cache_length` resizes the
+        // slot's `trail_len` on every spawn seam and every reader walks
+        // `..trail_len` (`TRAIL_RING_CAP` 80, the 640's C#-20 keeps its
+        // own recorded deviation above).
         k if crate::projectile_ai_kites::KITE_KINDS.contains(&k) => 2,
         // `:17140`'s mode 3 — the three aimed spells with a trail drawer.
         MAGIC_MISSILE | FLAMELASH | RAINBOW_ROD_BULLET => 3,

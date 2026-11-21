@@ -153,8 +153,10 @@ pub(crate) fn is_considered_standing_still(vx: f32, vy: f32) -> bool {
 /// and petting/sitting/sleeping zero it too (`:25511-25514` — petting has
 /// no port field, the sitting/sleeping pair stands). `item_animation` is
 /// the tick count (the `ticks_of` convention); `control_torch` the
-/// LeftShift smart-select key. Runs at the `update_player` seam AFTER
-/// the movement tick (the C# tail reads the post-movement velocity).
+/// LeftShift smart-select key. Runs at the `update_player` seam AFTER the
+/// `:25218` selection update and BEFORE the movement block — the
+/// standing-still read is the PREVIOUS tick's velocity, exactly the C#
+/// order (the seam comment, `world_sim/player.rs`).
 pub(crate) fn afk_counter_tick(
     app: &mut App,
     item_animation: i32,

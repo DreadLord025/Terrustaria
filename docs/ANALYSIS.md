@@ -39404,6 +39404,34 @@ the item-use path, the draw and the census pins.
   161-170 AI lane is d17's read claim; the census witness
   (`projectile/data.rs`) pins the helper shape for the rowing pass.
 
+- **The 728/729 death cues COMPOSE with d77** (the SEAL round): the
+  `Kill()` arms' Item10 plays (`Projectile.cs:75127`/`:75151`, both at
+  `base.position` ahead of the dust bodies — the 728's 7-dust + two
+  NextFloat star rings + the screen-gated 7-gore fan `:75128-75147` are
+  the g65/g16 lanes', the 729's 10-dust `:75152-75157` likewise) are
+  ARMED on the d77 lane's `kill_tail_cue` map (`0573b70f2`:
+  `728 | 729 => Some((2, 10, pos.x, pos.y, 1.0))`, its fifth field
+  volumeScale — the d77 queue's shape). d16's half of the compose is the
+  ROWS + the aiStyle-151/152 dispatch arms (the map is kind-keyed, the
+  row only gates the spawn — d77's own witness comment); the
+  paper-airplane 761/762 cue stays d16-SELF-ARMED (the death-hook block,
+  `projectile.rs` — d77's keep-one list names them). DO NOT add a second
+  728/729 arm at the merge: one play per death (the d77 supersedes-f1
+  precedent, `research/26f-d78-final-kill-dedupe.md`'s family).
+- **The wind-guard fix covers BOTH copies** (the SEAL round): the shared
+  `tr_core::wind::Wind::in_a_place_with_wind` (`wind.rs`, the
+  `drawdata_cases_b`/`player.rs`/`render/tiles.rs` consumers) carried the
+  same refuse-on-`None` bug — now `continue` on the out-of-world cell
+  (the C# `InWorld` skip, `WorldGen.cs:86868`), the in-world liquid/wall
+  refusals unchanged; the skip-arm witness pins the border-straddling
+  region, the height gate, both refusals, the AllowsWind 150 pass and
+  the fully-outside region.
+- **The afk-counter seam comment corrected** (the SEAL round): the
+  `afk_counter_tick` doc said "AFTER the movement tick" — the seam
+  (`world_sim/player.rs:573-583`) runs it AFTER the `:25218` selection
+  update and BEFORE the movement block (the previous tick's velocity,
+  the C# order); the doc now matches the seam.
+
 ### Verification (W4-d16 residuals)
 
 Code-only: every port re-read against the cited C# windows; the seam call
@@ -39411,7 +39439,11 @@ sites checked against the actual signatures by read/grep (`registry::get`,
 `Player::mounted_center/rotated_relative_point/weapon_knockback`,
 `ProjectilePool::spawn_with_data_ai_owned/slots_mut`,
 `assets::Lookups::proj_frame/uv_rect`, `tr_core::edit::place_tile/kill_tile`,
-`world.revision`). The witness tests (kites.rs 6 + kite_string.rs 4 +
-projectile_ai_misc.rs 3 + projectile/data.rs 1) are WRITTEN, NOT RUN —
-no cargo/rustc/rustfmt/tests/graphify invoked.
+`world.revision`). The witness tests (projectile_ai_kites.rs 10 +
+kite_string.rs 6 + world_sim/editing/kites.rs 13 + projectile_ai_misc.rs
+37 + projectile/data.rs 1 + projectile.rs 1 + tr-core wind.rs 1 = 69) are
+WRITTEN, NOT RUN — no cargo/rustc/rustfmt/tests/graphify invoked. The SEAL
+round's record + the merge contracts live in
+`docs/research/246-d16-research-final.md` + `247-kite-family-bible.md`
+(the 150 registry's free block, 237+ — max taken at the 382-tip scan: 245).
 
