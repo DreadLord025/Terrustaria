@@ -1211,6 +1211,15 @@ pub struct Player {
     pub pulley_dir: u8,
     /// `Player.shieldRaised` (`Player.cs:36481`): body row 10.
     pub shield_raised: bool,
+    /// `Player.shield` (`Player.cs:1584`): the visible shield's
+    /// `ArmorIDs.Shield` slot (−1 = none). `ResetVisibleAccessories`
+    /// (`:31134`, called from `Player.Update` `:25624`) clears it per tick;
+    /// `UpdateVisibleAccessories` (`:36753-36833`, from `PlayerFrame`
+    /// `:35770` while alive) re-derives it: the equipped shieldSlot rows,
+    /// the eocDash/raised fallbacks (`:36762-36777`) and the held-4760
+    /// override (`:36806-36810`, slot 9 = BouncingShield). The draw layer
+    /// `DrawPlayer_25_Shield` reads it (`PlayerDrawLayers.cs:2954-3024`).
+    pub shield: i16,
     /// `Player.hasRaisableShield` (`Player.cs:3128`): any equipped wearable
     /// with `shieldSlot > 0` (`GrantArmorBenefits` `:13123-13126`) or the
     /// held Bouncing Shield 4760 with no live 866 (`UpdateEquips`
@@ -2695,6 +2704,7 @@ impl Player {
             pulley: false,
             pulley_dir: 0,
             shield_raised: false,
+            shield: -1,
             has_raisable_shield: false,
             shield_parry_time_left: 0,
             shield_parry_cooldown: 0,
@@ -3835,6 +3845,9 @@ impl Player {
     /// respawn decrement clamped to `respawnTimerMax` (3600), and the
     /// jump-press skip while `AllowsRespawnTimerSkip`. Returns true when the
     /// player should respawn now.
+    /// `Player.UpdateDead`'s visible-accessory clear (`Player.cs:16937` →
+    /// `ResetVisibleAccessories` `:31134`): the dead tick drops the visible
+    /// shield (the `PlayerFrame` re-derive never runs while dead).
     pub fn update_dead(
         &mut self,
         jump: bool,
@@ -3843,6 +3856,7 @@ impl Player {
         moon_event_live: bool,
     ) -> bool {
         self.dead_time += 1;
+        self.shield = -1;
         // `Player.cs:17016`: the dead tick zeroes the life pool.
         self.hp = 0;
         // `Player.cs:17017`: the dead tick drops the channel.
@@ -6100,6 +6114,12 @@ impl Player {
         }
         self.move_speed = 1.0;
         self.strongest_move_speed_debuff = 1.0;
+        // `Player.Update`'s `ResetVisibleAccessories` call (`Player.cs:25624`
+        // → `:31134`): the visible shield slot clears per tick; the
+        // `PlayerFrame`-time `update_visible_shield` re-derives it. The other
+        // slots (handon/back/waist/…) have no port consumers yet — only the
+        // shield row lands (W4-f48 lane 20).
+        self.shield = -1;
         // `Player.cs:24371-24374`: a mounted cart keeps `onWrongGround` across
         // the tick (the on-track check below rewrites it); everyone else
         // clears it at the defaults.
@@ -8297,6 +8317,76 @@ impl Player {
             self.apply_item_composite_arms(&held);
         } else {
             self.apply_hold_composite_arms(&held);
+        }
+        // `PlayerFrame`'s `!dead` visible-accessory pass (`Player.cs:35768-
+        // 35771` → `UpdateVisibleAccessories` `:36753-36833`): only the
+        // shield slot has a port consumer (`DrawPlayer_25_Shield`), so the
+        // port derives just that row — AFTER the composite arms above (the
+        // C# `ItemIsVisuallyIncompatible` reads `compositeBackArm.enabled`).
+        if !self.dead {
+            self.update_visible_shield();
+        }
+    }
+
+    /// `UpdateVisibleAccessories`' shield rows (`Player.cs:36762-36777`,
+    /// `:36790-36793` → `UpdateVisibleAccessory` `:36923-36926`,
+    /// `:36806-36810`), shield-only: the equipped `shieldSlot` rows scan
+    /// slots 3..10 (the vanity slots 13..20 have no port loadout), the
+    /// eocDash/raised fallbacks fill an unset slot ahead of the visible
+    /// pass, and the held Bouncing Shield (4760, no live 866) overrides to
+    /// slot 9. `ItemIsVisuallyIncompatible`'s shield arms (`:36837-36843`):
+    /// an enabled composite back arm or a held food hides the worn shield.
+    /// The `cShield` dye fallback (`:36765-36768`) has no port dye-slot
+    /// consumer — the shield draws plain (recorded, ANALYSIS).
+    fn update_visible_shield(&mut self) {
+        // `Item.shieldSlot` per id (`Item.cs:3250/:6039/:12218/:19122/
+        // :28645/:33727/:35509/:35515/:47589/:47620/:47647` — the same
+        // eleven rows the raisable-shield list reads).
+        fn shield_slot(kind: u16) -> i16 {
+            match kind {
+                156 => 1,  // Cobalt Shield
+                938 => 2,  // Paladin's Shield
+                397 => 3,  // Obsidian Shield
+                1613 => 4, // Ankh Shield
+                3097 => 5, // Shield of Cthulhu
+                3810 => 6, // Squire's Shield
+                3997 => 7, // Frozen Shield
+                3998 => 8, // Hero's Shield
+                6183 => 10, // Silver Shield
+                6177 => 11, // Royal Guard Harness
+                6188 => 12, // Restoration Shield
+                _ => -1,
+            }
+        }
+        for m in 3..10 {
+            if !self.is_item_slot_unlocked_and_usable(m) {
+                continue;
+            }
+            let slot = shield_slot(self.equipped[m]);
+            // `:36762-36777`: the eocDash / raised fallbacks — they fill an
+            // unset shield slot BEFORE the visibility gate, so a hidden
+            // accessory still guards while raised.
+            if (self.eoc_dash > 0 || self.shield_raised) && self.shield == -1 && slot != -1 {
+                self.shield = slot;
+            }
+            // `ItemIsVisuallyIncompatible` (`:36837-36843`), shield arms.
+            if slot > 0
+                && (self.composite_back.enabled
+                    || crate::sortdata::IS_FOOD.get(self.held_item_kind))
+            {
+                continue;
+            }
+            // `:36790-36793` → `UpdateVisibleAccessory` `:36923-36926`.
+            if !self.hide_visible_accessory[m] && slot > 0 {
+                self.shield = slot;
+            }
+        }
+        // `:36806-36810`: the held Bouncing Shield draws slot 9 until its
+        // thrown 866 is live (`ownedProjectileCounts[866] < 1`).
+        if self.held_item_kind == 4760
+            && self.owned_projectile_counts.get(866).copied().unwrap_or(0) < 1
+        {
+            self.shield = 9;
         }
     }
 
@@ -15996,6 +16086,64 @@ mod tests {
         p.update(&w, PlayerInput::default()); // ticks to 0, purged
         p.update(&w, PlayerInput::default());
         assert!(!p.parry_damage_buff, "the expiry folds the flag back");
+    }
+
+    /// W4-f48 lane 20 — `UpdateVisibleAccessories`' shield rows
+    /// (`Player.cs:36762-36777/:36790-36793/:36923-36926/:36806-36810`):
+    /// the equipped shieldSlot ids map to their `ArmorIDs.Shield` slots,
+    /// the per-tick reset re-folds, hide/composite-back/food gates refuse
+    /// the visible row (but not the raised fallback), and the held 4760
+    /// overrides to slot 9 until its 866 is live.
+    #[test]
+    fn w4_f48_visible_shield_slot_derives_from_the_equipped_rows() {
+        let w = ground_world();
+        let pairs = [
+            (156u16, 1i16), (938, 2), (397, 3), (1613, 4), (3097, 5),
+            (3810, 6), (3997, 7), (3998, 8), (6183, 10), (6177, 11), (6188, 12),
+        ];
+        for (kind, slot) in pairs {
+            let mut p = Player::spawn(&w);
+            p.equipped[3] = kind;
+            p.update(&w, PlayerInput::default());
+            assert_eq!(p.shield, slot, "shield {kind} draws slot {slot}");
+        }
+        // No shield: the reset holds −1.
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shield, -1);
+        // The hide tick refuses the visible row…
+        p.equipped[3] = 156;
+        p.hide_visible_accessory[3] = true;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shield, -1, "hidden accessory draws nothing");
+        // …but the raised fallback fills the slot ahead of the gate.
+        p.shield_raised = true;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shield, 1, "the raised fallback beats the hide tick");
+        p.shield_raised = false;
+        // The eocDash fallback too.
+        p.eoc_dash = 5;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shield, 1);
+        p.eoc_dash = 0;
+        // A held food hides the worn shield (`ItemIsVisuallyIncompatible`).
+        p.hide_visible_accessory[3] = false;
+        p.held_item_kind = 353; // cooked fish? — IsFood row
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shield, -1, "food in hand hides the shield");
+        p.held_item_kind = 0;
+        // The held Bouncing Shield overrides to slot 9.
+        p.held_item_kind = 4760;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shield, 9);
+        // A live thrown 866 drops the override back to the worn slot.
+        p.owned_projectile_counts[866] = 1;
+        p.update_frames(&w);
+        assert_eq!(p.shield, 1, "the thrown shield is out — the worn row returns");
+        p.owned_projectile_counts[866] = 0;
+        p.held_item_kind = 0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shield, 1);
     }
 
     #[test]
