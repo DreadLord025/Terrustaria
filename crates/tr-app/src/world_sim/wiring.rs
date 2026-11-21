@@ -687,29 +687,34 @@ fn try_adding_to_stack(
 
 /// `Wiring.TryToPutItemInChest` (`Wiring.cs:2680-2701`): coins ride the coin
 /// arm; otherwise the first stack merge, then the first empty slot. Returns
-/// `(placed, remaining)` — `placed` is the C# bool (any merge or empty-slot
-/// fill), `remaining` is the drop's leftover stack (the C# `worldItem.stack`
-/// after the partial merge; 0 when fully consumed / `TurnToAir`).
+/// `(placed, remaining, via_empty_slot)` — `placed` is the C# bool (any merge
+/// or empty-slot fill), `remaining` is the drop's leftover stack (the C#
+/// `worldItem.stack` after the partial merge; 0 when fully consumed /
+/// `TurnToAir`), `via_empty_slot` marks the `TryAddingToEmptySlot` arm so the
+/// caller runs its `PlaySound(7)` (`:2765`) on the wiring stream.
 fn try_put_item_in_chest(
     drop: &crate::item::ItemDrop,
     slots: &mut [crate::item::ItemSlot],
     max_items: usize,
-) -> (bool, u32) {
+) -> (bool, u32, bool) {
     if crate::registry::is_coin(drop.kind) {
         let placed = try_move_coins_in_chest(drop.kind, drop.count, slots, max_items);
         // `TryMoveCoinsInChest` always `TurnToAir`s the drop on success
-        // (`Wiring.cs:2755`); a failure leaves it untouched.
-        return (placed, if placed { 0 } else { drop.count });
+        // (`Wiring.cs:2755`); a failure leaves it untouched. No cue on this
+        // arm — only `TryAddingToEmptySlot` plays (`:2765`).
+        return (placed, if placed { 0 } else { drop.count }, false);
     }
     let mut left = drop.count;
     // `:2686-2692`: the stack-merge pass over the chest's slots. A partial
     // merge returns true with a remainder (the C# `num > 0`, `:2797`).
     for slot in slots.iter_mut().take(max_items.min(slots.len())) {
         if try_adding_to_stack(drop.kind, drop.prefix, &mut left, slot) {
-            return (true, left);
+            return (true, left, false);
         }
     }
-    // `:2693-2699`: the first empty slot takes the whole (remaining) drop.
+    // `:2693-2699`: the first empty slot takes the whole (remaining) drop —
+    // `TryAddingToEmptySlot` (`:2759-2770`): clone + `newAndShiny = false`
+    // fold + `PlaySound(7)` (the caller's cue, see the hopper).
     for idx in 0..max_items {
         let air = slots.get(idx).is_none_or(|s| s.kind == 0 || s.count == 0);
         if air {
@@ -722,10 +727,10 @@ fn try_put_item_in_chest(
                 count: left,
                 prefix: drop.prefix,
             };
-            return (true, 0);
+            return (true, 0, true);
         }
     }
-    (false, drop.count)
+    (false, drop.count, false)
 }
 
 /// `Wiring.Hopper` (`Wiring.cs:2638-2678`, `HitWireSingle` cases 21/467): the
@@ -785,8 +790,17 @@ fn hopper_pull(app: &mut App, i: i32, j: i32, kind: u16) {
         }
         let slots = crate::chest::chest_slots_mut(&mut app.world_chests, idx)
             .expect("the chest exists");
-        let (placed, remaining) = try_put_item_in_chest(drop, slots, max_items);
+        let (placed, remaining, via_empty_slot) = try_put_item_in_chest(drop, slots, max_items);
         if placed {
+            // `:2765` — `TryAddingToEmptySlot`'s `SoundEngine.PlaySound(7)`:
+            // the case-7 pitch draw (`Next(-10, 11) * 0.01`,
+            // `LegacySoundPlayer.cs:725`) rides the wiring stream (the
+            // `HitWireSingle` site's `Main.rand`, the S1-L-6c contract) —
+            // played only on the empty-slot fill, never on a stack merge or
+            // the coin arm (W4-f11 fidelity port, research-71 §3b.1).
+            if via_empty_slot {
+                app.audio.play_pickup_sound(false, app.wiring.rand_mut());
+            }
             // `:2669-2671`: the drop's stack carries the leftover (a partial
             // merge); `TurnToAir` only when it emptied. `SyncItem`/
             // `VisualizeChestTransfer` are net/draw effects (no port).
@@ -1577,5 +1591,57 @@ mod tests {
         let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
         assert_eq!(slots[0].count, 3, "the dirt is untouched");
         assert!(app.items.is_empty(), "no drop from a mode -1 roll");
+    }
+
+    /// W4-f11 fidelity port (research-71 §3b.1): `TryAddingToEmptySlot`'s
+    /// `PlaySound(7)` (`Wiring.cs:2765`) — the empty-slot hopper fill draws
+    /// exactly ONE `Next(-10, 11)` pitch (`LegacySoundPlayer.cs:725`) on the
+    /// wiring stream; the stack-merge and coin arms draw nothing (no cue).
+    #[test]
+    fn w4_f11_the_hopper_empty_slot_fill_draws_the_case7_pitch() {
+        use tr_core::unified_random::UnifiedRandom;
+        // Empty chest → the dirt drop enters via the empty-slot arm.
+        let mut app = app_with(21, 0, 0);
+        app.wiring.seed_rand(7);
+        let idx = chest_at(&mut app, 10, 20, vec![]);
+        app.items.push(crate::item::ItemDrop::new(
+            2, 5, 0, 10.0 * 16.0 + 16.0, 20.0 * 16.0 + 16.0, 0.0, 0.0, 0.0,
+        ));
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        trip_and_tick(&mut app);
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert!(slots.iter().any(|s| s.kind == 2 && s.count == 5), "the dirt landed");
+        assert_eq!(
+            app.wiring.rand_mut().peek(),
+            witness.peek(),
+            "exactly one case-7 pitch draw on the wiring stream"
+        );
+        // The stack-merge arm plays no cue: a second same-kind drop merges
+        // into the landed stack without touching the stream.
+        let peek = app.wiring.rand_mut().peek();
+        app.items.push(crate::item::ItemDrop::new(
+            2, 3, 0, 10.0 * 16.0 + 16.0, 20.0 * 16.0 + 16.0, 0.0, 0.0, 0.0,
+        ));
+        // Drain the 60-tick hopper cooldown, then re-hit.
+        for _ in 0..60 {
+            update_wiring(&mut app, 1.0 / 60.0);
+        }
+        trip_and_tick(&mut app);
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert!(slots.iter().any(|s| s.kind == 2 && s.count == 8), "the merge ran");
+        assert_eq!(app.wiring.rand_mut().peek(), peek, "the stack merge is draw-free");
+        // The coin arm plays no cue either (the coin merge is draw-free).
+        let peek = app.wiring.rand_mut().peek();
+        app.items.push(crate::item::ItemDrop::new(
+            71, 4, 0, 10.0 * 16.0 + 16.0, 20.0 * 16.0 + 16.0, 0.0, 0.0, 0.0,
+        ));
+        for _ in 0..60 {
+            update_wiring(&mut app, 1.0 / 60.0);
+        }
+        trip_and_tick(&mut app);
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert!(slots.iter().any(|s| s.kind == 71 && s.count == 4), "the coins landed");
+        assert_eq!(app.wiring.rand_mut().peek(), peek, "the coin arm is draw-free");
     }
 }
