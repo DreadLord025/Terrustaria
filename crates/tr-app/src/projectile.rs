@@ -13018,6 +13018,103 @@ impl Projectile {
         self.kill_step(world);
     }
 
+    /// W4-g5 — `AI()`'s aiStyle-107 block (`Projectile.cs:33553-33678`),
+    /// the 596 DesertDjinnCurse arm (the 575 SandTornado sibling is an
+    /// unported kind, cited skip). The shared tail's constants: num801 =
+    /// 10 (the homing inertia), num802 = 7.5 (the 596 override `:33585`),
+    /// num803 = 40 (the homing distance gate). The dust ring's
+    /// `Next(3) != 0` EARLY RETURN (`:33619-33622`) is verbatim: on 2 of
+    /// 3 ring iterations the whole AI returns BEFORE the homing tail —
+    /// the draw is arm-level (consumed, policy A), the `NewDust`
+    /// internals stay the dust task's skip.
+    fn ai_djinn_curse(
+        &mut self,
+        world: &World,
+        player: Option<&crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        // `:33586-33597` — the materialize fade: timeLeft > 30 fades
+        // alpha −25/tick; inside a solid tile it holds at 128.
+        if self.time_left > 30 && self.alpha > 0 {
+            self.alpha -= 25;
+        }
+        if self.time_left > 30
+            && self.alpha < 128
+            && solid_collision(world, self.pos, self.w, self.h)
+        {
+            self.alpha = 128;
+        }
+        if self.alpha < 0 {
+            self.alpha = 0;
+        }
+        // `:33598-33605` — the 4-frame sheet, every 5th tick.
+        self.frame_counter += 1;
+        if self.frame_counter > 4 {
+            self.frame_counter = 0;
+            self.frame += 1;
+            if self.frame >= 4 {
+                self.frame = 0;
+            }
+        }
+        // `:33615-33616` — the ring age (num805 is dust-visual only).
+        self.ai[1] += 1.0;
+        // `:33617-33630` — the 3-iteration dust ring: `Next(3) != 0`
+        // RETURNS from the whole AI (the homing tail below is skipped);
+        // == 0 spawns one dust (the internals are the dust task's skip).
+        for _ in 0..3 {
+            if rng.next_range(0, 3) != 0 {
+                return;
+            }
+        }
+        // `:33631-33651` — the pre-blast fuse: timeLeft < 4 recentres
+        // the 60×60 box and re-arms the damage (30, expert 22); the
+        // 10-dust burst's `SelectRandom(Main.rand, 27, 6)` draws one
+        // `Next(2)` per dust (`Utils.cs:2459-2462`, arm-level — consumed,
+        // the empress SelectRandom precedent); the `NewDust` internals
+        // stay the dust task's skip.
+        if self.time_left < 4 {
+            let expert = player.is_some_and(|p| p.buffs.expert_mode);
+            let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+            self.w = 60.0;
+            self.h = 60.0;
+            self.pos = center - Vec2::splat(30.0);
+            self.damage = if expert { 22 } else { 30 };
+            for _ in 0..10 {
+                let _ = rng.next_range(0, 2); // `:33644` SelectRandom(27, 6)
+            }
+        }
+        // `:33653-33677` — the homing tail: ai[0] is the TARGET PLAYER
+        // slot (the NPC volley passes `this.target`, `NPC.cs:21155`).
+        // The port has one session player — slot 0 (the single-player
+        // fold, the saucer-missile convention).
+        let target = self.ai[0] as i32;
+        let live = target == 0 && player.is_some_and(|p| !p.dead);
+        if live {
+            let p = player.unwrap();
+            let (pcx, pcy) = p.center();
+            let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+            let pc = Vec2::new(pcx, pcy);
+            // `:33656` — beyond 40 px the (v×9 + aim×7.5)/10 blend.
+            if center.distance(pc) > 40.0 {
+                let mut dir = safe_normalize(pc - center);
+                if dir.is_nan() {
+                    dir = Vec2::new(0.0, 1.0); // `:33659-33662`
+                }
+                self.vel = (self.vel * 9.0 + dir * 7.5) / 10.0;
+            }
+        } else {
+            // `:33666-33677` — no live target: the life floors at 30 and
+            // ai[0] latches −1 once (netUpdate).
+            if self.time_left > 30 {
+                self.time_left = 30;
+            }
+            if self.ai[0] != -1.0 {
+                self.ai[0] = -1.0;
+                self.net_update = true;
+            }
+        }
+    }
+
     /// `Kill()` (`Projectile.cs:70644-70648`): the slot's death — `active`
     /// off and `timeLeft` zeroed. The `num` capture (`:70649`, the
     /// pre-zeroing timeLeft) rides `kill_time_left` for the 639's death
@@ -17948,6 +18045,13 @@ impl ProjectilePool {
                                 .unwrap_or((self.slots[i].pos.x, self.slots[i].pos.y));
                             self.slots[i].ai_vortex_ritual(player_pos, rng);
                         }
+                        107 => {
+                            // W4-g5 — `AI()`'s aiStyle-107 block
+                            // (`Projectile.cs:33553-33678`): the 596
+                            // DesertDjinnCurse (the only rowed 107 kind;
+                            // the 575 SandTornado sibling is unported).
+                            self.slots[i].ai_djinn_curse(world, player.as_deref(), rng);
+                        }
                         99 => {
                             // `AI_099_2_Yoyos`'s `flag` (`:67736-67742`): an
                             // active slot below this index, same owner and
@@ -20008,6 +20112,18 @@ impl ProjectilePool {
                 // `Kill()`'s MoonlordArrow arm (`Projectile.cs:73431-73452`,
                 // S1-D-4): the 639's death spawns its 640 trail.
                 self.moonlord_arrow_kill(i);
+                // W4-g5 — `Kill()`'s type-596 arm (`Projectile.cs:72470-
+                // 72502`): the Djinn curse's death explosion (the C# body
+                // order: 72470 sits ABOVE the 73398/73528 wave-3 arms).
+                self.djinn_curse_kill(
+                    i,
+                    npcs,
+                    doll_flags(player.as_deref()),
+                    rng,
+                    player.as_deref().map(|p| p.luck_state.luck).unwrap_or(0.0),
+                    player.as_deref().is_some_and(|p| p.buffs.expert_mode),
+                    player.as_deref_mut(),
+                );
                 // S1-P-i14 (V5 gate) — `Kill()`'s Xenopopper-bubble arm
                 // (`Projectile.cs:73398-73419`): the 444's death releases
                 // its deferred payload (`localAI[0]` bullet kind,
@@ -20240,6 +20356,84 @@ impl ProjectilePool {
             let x = (num442 * 16 + 8) as f32;
             let y = (num441 * 16 - 24) as f32;
             self.spawn_cloud(CTHULUNADO, x, y, 0.0, 0.0, damage, 16.0, 24.0, local_owner);
+        }
+    }
+
+    /// W4-g5 — `Kill()`'s type-596 arm (`Projectile.cs:72470-72502`): the
+    /// Djinn curse's death explosion. `position = Center`, the 60×60
+    /// recentre, damage 30 (expert 22), ONE `Damage()` walk through the
+    /// resized box (the gem_bolt_aoe precedent — PVE here; the hostile
+    /// player contact rides the box overlap below, the Damage_EVP fold),
+    /// `SoundID.Item14`, then the three dust rings. Policy A: the rings'
+    /// ARM-LEVEL draws are consumed — `RotatedByRandom` is TWO
+    /// `NextDouble` (`Utils.cs:1697-1700`) and loops 1/2 add one more
+    /// `NextDouble` radius scale each; the `NewDust` internals stay the
+    /// dust task's skip. Kind-gated; a dead slot never returns to active,
+    /// so it fires once per death.
+    fn djinn_curse_kill(
+        &mut self,
+        slot: usize,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        rng: &mut dyn DropRng,
+        luck: f32,
+        expert: bool,
+        player: Option<&mut crate::player::Player>,
+    ) {
+        if self.slots[slot].kind != DJINN_CURSE {
+            return;
+        }
+        // `:72472-72480` — the recentred 60×60 resize + the damage re-arm.
+        let center = {
+            let p = &self.slots[slot];
+            Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+        };
+        let p = &mut self.slots[slot];
+        p.w = 60.0;
+        p.h = 60.0;
+        p.pos = center - Vec2::splat(30.0);
+        p.damage = if expert { 22 } else { 30 };
+        // `:72481` — `Damage()`: the PVE box walk (the gem_bolt_aoe seam).
+        self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+        // `:72481`'s Damage_EVP half: the hostile box hurts the player on
+        // overlap (the iframe gate inside `hurt_with_source` holds repeats).
+        if let Some(pl) = player {
+            let p = &self.slots[slot];
+            let hit = p.pos.x < pl.x + crate::player::WIDTH
+                && p.pos.x + p.w > pl.x
+                && p.pos.y < pl.y + crate::player::HEIGHT
+                && p.pos.y + p.h > pl.y;
+            if hit && p.damage > 0 && !pl.dead {
+                let dmg = p.damage;
+                let cx = p.pos.x + p.w * 0.5;
+                let dodgeable = p.is_damage_dodgeable();
+                pl.hurt_with_source(dmg, cx, rng, dodgeable, DJINN_CURSE);
+            }
+        }
+        // `:72482` — the blast cue at the resized position.
+        let (bx, by) = {
+            let p = &self.slots[slot];
+            (p.pos.x, p.pos.y)
+        };
+        self.pending_proj_sounds.push((2, 14, bx, by, 0.0));
+        // `:72483-72487` — ring 1: 4× type-31, RotatedByRandom(π) (2
+        // NextDouble) + one NextDouble radius scale each.
+        for _ in 0..4 {
+            let _ = rng.next_double();
+            let _ = rng.next_double();
+            let _ = rng.next_double();
+        }
+        // `:72488-72494` — ring 2: 20× type-27, the same 3-draw shape.
+        for _ in 0..20 {
+            let _ = rng.next_double();
+            let _ = rng.next_double();
+            let _ = rng.next_double();
+        }
+        // `:72495-72501` — ring 3: 10× type-31, RotatedByRandom(π) only
+        // (2 NextDouble; the `.RotatedBy(velocity.ToRotation())` is pure).
+        for _ in 0..10 {
+            let _ = rng.next_double();
+            let _ = rng.next_double();
         }
     }
 
@@ -44382,5 +44576,158 @@ mod s1_p_i25_dragon_tests {
         let cy = d.pos.y + d.h * 0.5;
         assert!((cx - 412.0).abs() < 0.01, "the centre kept: {cx}");
         assert!((cy - 312.0).abs() < 0.01, "the centre kept: {cy}");
+    }
+}
+
+// ===== W4-g5: the 596 DesertDjinnCurse witnesses (WRITTEN NOT RUN) =====
+
+#[cfg(test)]
+mod w4_g5_djinn_curse_tests {
+    use super::*;
+    use tr_core::UnifiedRandom;
+
+    fn air() -> World {
+        World::new("t".into(), 300, 200)
+    }
+
+    /// A 596 slot carrying its SetDefaults row (`Projectile.cs:6450-6460`).
+    fn curse(x: f32, y: f32) -> Projectile {
+        let d = proj_data(DJINN_CURSE).expect("the 596 row");
+        Projectile {
+            active: true,
+            kind: DJINN_CURSE,
+            owner: 0,
+            pos: Vec2::new(x, y),
+            w: d.w,
+            h: d.h,
+            alpha: d.alpha,
+            time_left: d.time_left,
+            tile_collide: d.tile_collide,
+            penetrate: d.penetrate,
+            max_penetrate: d.penetrate,
+            ignore_water: d.ignore_water,
+            ..Default::default()
+        }
+    }
+
+    /// A zero-returning stream: every ring gate passes (`Next(3) == 0`),
+    /// so the homing tail always runs.
+    struct ZeroRng;
+    impl tr_core::loot::DropRng for ZeroRng {
+        fn next_range(&mut self, _min: i32, _max: i32) -> i32 {
+            0
+        }
+        fn next_float(&mut self) -> f32 {
+            0.0
+        }
+    }
+
+    /// The SetDefaults row pin (`Projectile.cs:6450-6460`): 8x8, aiStyle
+    /// 107, hostile, alpha 255, ignoreWater, timeLeft 180, tileCollide
+    /// false, the stock penetrate 1.
+    #[test]
+    fn w4_g5_the_596_row_matches_set_defaults() {
+        let d = proj_data(DJINN_CURSE).expect("the row");
+        assert_eq!((d.w, d.h), (8.0, 8.0), ":6452-6453");
+        assert_eq!(d.ai_style, 107, ":6454");
+        assert_eq!(d.alpha, 255, ":6456");
+        assert!(d.ignore_water, ":6457");
+        assert_eq!(d.time_left, 180, ":6458");
+        assert!(!d.tile_collide, ":6459");
+        assert_eq!(d.penetrate, 1, "the stock :774");
+    }
+
+    /// `:33617-33622` — the ring's `Next(3) != 0` EARLY RETURN: a stream
+    /// whose first draw is non-zero consumes exactly ONE Next(3) and the
+    /// homing tail never runs (ai[1] incremented, velocity untouched).
+    #[test]
+    fn w4_g5_the_ring_early_return_skips_the_homing_tail() {
+        let w = air();
+        let mut p = curse(100.0, 100.0);
+        p.ai[0] = 0.0; // the live target slot
+        p.vel = Vec2::new(1.0, 0.0);
+        let pl = Player::spawn(&w);
+        let first = UnifiedRandom::new(3).next_max(3);
+        let mut rng = UnifiedRandom::new(3);
+        p.ai_djinn_curse(&w, Some(&pl), &mut rng);
+        let mut mirror = UnifiedRandom::new(3);
+        let _ = mirror.next_max(3);
+        if first != 0 {
+            assert_eq!(rng, mirror, "exactly one Next(3), then RETURN");
+            assert_eq!(p.vel, Vec2::new(1.0, 0.0), "the homing tail skipped");
+        }
+        assert_eq!(p.ai[1], 1.0, "the ring age ticked before the return");
+    }
+
+    /// `:33653-33664` — with the ring gates passing (a zero-returning
+    /// stream), the homing blend runs: beyond 40 px the velocity walks
+    /// (v*9 + aim*7.5)/10 toward the player.
+    #[test]
+    fn w4_g5_the_homing_blend_walks_toward_the_target() {
+        let w = air();
+        let mut pl = Player::spawn(&w);
+        pl.x = 1000.0;
+        // The player centre Y (pl.y + 21) matches the curse centre Y
+        // (100 + 4) so the aim is exactly +X.
+        pl.y = 83.0;
+        let mut p = curse(100.0, 100.0);
+        p.ai[0] = 0.0;
+        p.vel = Vec2::ZERO;
+        p.ai_djinn_curse(&w, Some(&pl), &mut ZeroRng);
+        // The aim is +X; one blend step from zero = 7.5/10 = 0.75.
+        assert!((p.vel.x - 0.75).abs() < 0.01, "the first blend step: {}", p.vel.x);
+        assert!(p.vel.y.abs() < 0.01);
+    }
+
+    /// `:33666-33677` — no live target (ai[0] = 5, not the session slot):
+    /// the life floors at 30 and the latch writes netUpdate once.
+    #[test]
+    fn w4_g5_the_dead_target_floors_the_life_and_latches() {
+        let w = air();
+        let mut p = curse(100.0, 100.0);
+        p.ai[0] = 5.0;
+        p.time_left = 180;
+        p.ai_djinn_curse(&w, None, &mut ZeroRng);
+        assert_eq!(p.time_left, 30, ":33668-33671");
+        assert_eq!(p.ai[0], -1.0, ":33672-33675");
+        assert!(p.net_update);
+    }
+
+    /// `:72470-72502` — the Kill explosion: the 60x60 recentre, damage
+    /// 30 (expert 22), the Item14 cue, and the three rings' arm-level
+    /// draw census: 4x3 + 20x3 + 10x2 = 92 NextDouble draws.
+    #[test]
+    fn w4_g5_the_kill_explosion_resizes_arms_and_draws_92_doubles() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(DJINN_CURSE, 0, 196.0, 196.0, 0.0, 0.0, 0, 1.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = UnifiedRandom::new(9);
+        let before = rng.clone();
+        pool.djinn_curse_kill(slot, &mut [], (false, false), &mut rng, 0.0, false, None);
+        let p = &pool.slots()[slot];
+        assert_eq!((p.w, p.h), (60.0, 60.0), ":72473");
+        assert_eq!(p.pos, Vec2::new(170.0, 170.0), "the centre kept: 200-30");
+        assert_eq!(p.damage, 30, ":72475-72480 (normal)");
+        // The draw census: 92 NextDouble = 92 sample() steps.
+        let mut mirror = before;
+        for _ in 0..92 {
+            let _ = mirror.next_double();
+        }
+        assert_eq!(rng, mirror, "4x3 + 20x3 + 10x2 = 92 doubles");
+        let sounds = pool.drain_proj_sounds();
+        assert_eq!(sounds, vec![(2, 14, 170.0, 170.0, 0.0)], ":72482 Item14");
+    }
+
+    /// The expert damage arm (`:72476-72479`): 22, not 30.
+    #[test]
+    fn w4_g5_the_expert_explosion_arms_22() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(DJINN_CURSE, 0, 196.0, 196.0, 0.0, 0.0, 0, 1.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = UnifiedRandom::new(9);
+        pool.djinn_curse_kill(slot, &mut [], (false, false), &mut rng, 0.0, true, None);
+        assert_eq!(pool.slots()[slot].damage, 22);
     }
 }

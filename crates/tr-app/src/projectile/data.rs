@@ -3975,6 +3975,25 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             GOLF_CLUB_HELPER => {
                 (2.0, 2.0, 150, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
             }
+            // `Projectile.cs:6450-6460` — the Djinn's curse (596, W4-g5):
+            // 8x8, aiStyle 107, hostile, alpha 255, ignoreWater (the
+            // overlay below), timeLeft 180, tileCollide false; the stock
+            // penetrate 1 (`:774`). The flight arm is `ai_djinn_curse`
+            // (the shared 107 homing tail `:33653-33677` + the 596 dust
+            // ring's Next(3) early-RETURN quirk `:33617-33630`); the
+            // death explosion is `djinn_curse_kill` (`:72470-72502`).
+            DJINN_CURSE => (
+                8.0,
+                8.0,
+                107,
+                1,
+                180,
+                0,
+                false,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -4217,7 +4236,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == HIGH_VELOCITY_BULLET
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
-            || kind == GOLF_CLUB_HELPER,
+            || kind == GOLF_CLUB_HELPER
+            // W4-g5 — `Projectile.cs:6457`: the Djinn's curse (596) sets
+            // `ignoreWater = true` (the `wet = false` spawn write
+            // `:10886-10889`).
+            || kind == DJINN_CURSE,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
