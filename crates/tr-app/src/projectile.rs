@@ -20019,14 +20019,14 @@ impl ProjectilePool {
                 // `:72155-72176`, S1-D-4b-3): the turret/crystal sweep their
                 // shots, the shard runs its death burst.
                 self.floating_turret_kill(i, npcs, doll_flags(player.as_deref()), rng, luck);
-                // S1-D-4 unarmed styles: the 932's death-dust census
-                // (`:71109-71147`) and the Celebration rockets' Kill arm
+                // S1-D-4 unarmed styles: the Celebration rockets' Kill arm
                 // (`:73632-73645` resize + Damage + explosion, plus the
                 // 716/718 `Kill_ExplodeTiles` tile break `:77297-77365`).
-                // C# body order: the 932 dust chain precedes the 715 arm.
-                if self.slots[i].kind == 932 {
-                    crate::projectile_ai_misc::fairy_queen_death_draws(rng);
-                }
+                // The 932's death-dust census (`:71109-71147`) was DEDUPED
+                // onto the W4-g65 death-dust drain (batch 30) — the drain
+                // runs the real bodies + the same draws on the same stream
+                // (the keep-one rule, the firework precedent), so the old
+                // `fairy_queen_death_draws` call here is removed.
                 self.celeb2_death(
                     i,
                     world,

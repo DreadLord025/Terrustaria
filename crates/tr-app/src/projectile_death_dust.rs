@@ -4333,6 +4333,53 @@ fn death_bursts(
                 }
             }
         }
+        // `:71109-71147` — the 932 fairy-queen weapon: colour
+        // GetFairyQueenWeaponsColor = hsl((ai1+0.5)%1,1,0.5)×Opacity (the
+        // default non-dev-name path); one head NextFloat; a 10-step trail
+        // at pos − vel×step (NOT the oldPos ring), count Next(1,3) with the
+        // 0.3/0.75 decrements, ramp Lerp(0.3,1,GetLerpValue(10,0,step));
+        // per dust a dust-267 colour vel×=NextFloat×0.8 noGravity scale
+        // 0.9+NextFloat×1.2 fadeIn NextFloat×1.2×ramp scale×=ramp + a
+        // CloneDust (scale/2, fadeIn×0.85, White). The i16 census
+        // (`fairy_queen_death_draws`) is DEDUPED onto this arm — the hook
+        // no longer rolls those draws (the keep-one rule).
+        932 => {
+            let opacity = 1.0 - s.alpha as f32 / 255.0;
+            let h = (s.ai1 + 0.5) % 1.0;
+            let c = crate::ui::color::hsl_to_rgb(h as f64, 1.0, 0.5, 255);
+            let m = crate::ui::color::mul(c, opacity);
+            let color = Color::new(m[0], m[1], m[2], m[3]);
+            let mut target = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let _ = rng.next_float(); // the head draw (`:71114`)
+            for step in 0..10 {
+                let walk = s.pos - s.vel * step as f32;
+                let mut count = rng.next_range(1, 3);
+                let lerp = crate::projectile::get_lerp_value(10.0, 0.0, step as f32);
+                let ramp = lerp_f32(0.3, 1.0, lerp);
+                if step as f32 >= 10.0 * 0.3 {
+                    count -= 1;
+                }
+                if step as f32 >= 10.0 * 0.75 {
+                    count -= 2;
+                }
+                let _ = safe_normalize(target - walk); // the discarded DirectionTo
+                target = walk;
+                for _ in 0..count.max(0) {
+                    let idx = dust.new_dust(rng, ctx, world, walk, s.w, s.h, 267, 0.0, 0.0, 0, color, 1.0);
+                    let d = dust.slot_mut(idx);
+                    d.velocity *= rng.next_float() * 0.8;
+                    d.no_gravity = true;
+                    d.scale = 0.9 + rng.next_float() * 1.2;
+                    d.fade_in = rng.next_float() * 1.2 * ramp;
+                    d.scale *= ramp;
+                    let clone = dust.clone_dust(rng, ctx, world, idx);
+                    let cl = dust.slot_mut(clone);
+                    cl.scale /= 2.0;
+                    cl.fade_in *= 0.85;
+                    cl.color = Color::WHITE;
+                }
+            }
+        }
         _ => {}
     }
 }
@@ -7278,6 +7325,29 @@ mod tests {
         drain(&[trail_snap(34)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
         let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
         assert!(active.iter().filter(|d| d.dust_type == 6).count() >= 40);
+    }
+
+    /// The 932 fairy-queen weapon: the 10-step pos−vel×step trail (NOT the
+    /// oldPos ring), so it spawns even with a ZERO ring. The census is
+    /// deduped onto the drain — determinism pins the whole arm.
+    #[test]
+    fn w4_g65_the_932_fairy_queen() {
+        let w = world();
+        let mut s = snap(932);
+        s.ai1 = 0.25;
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(7);
+        drain(&[s], &mut dust, &mut rng, &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert!(!active.is_empty());
+        assert!(active.iter().all(|d| d.dust_type == 267));
+        // The clones are White; the originals carry the hsl colour.
+        assert!(active.iter().any(|d| d.color == Color::WHITE));
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(7);
+        drain(&[s], &mut dust2, &mut rng2, &ctx(), &w);
+        assert_eq!(dust.slots(), dust2.slots());
+        assert_eq!(rng, rng2);
     }
 
     /// The 711/686 trails: loop 1 (3 entries × 2/3 dust) + loop 3 (5

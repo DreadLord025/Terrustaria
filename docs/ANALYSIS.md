@@ -39962,6 +39962,22 @@ C# `Next(choices.Length)` shape). Witnesses: the 636 10-count, the 502
 10-count + ZERO-ring emptiness, the 711/686 tail counts + determinism —
 WRITTEN NOT RUN.
 
+### Batch 30 (1 kind, the 932 fairy-queen weapon — the census dedupe)
+
+932 (the fairy-queen weapon death: colour GetFairyQueenWeaponsColor =
+hsl((ai1+0.5)%1,1,0.5)×Opacity on the default non-dev-name path; one head
+NextFloat; a 10-step trail at pos − vel×step — NOT the oldPos ring, so it
+spawns even with a ZERO ring; count Next(1,3) with the 0.3/0.75
+decrements, ramp Lerp(0.3,1,GetLerpValue(10,0,step)); per dust a dust-267
+colour vel×=NextFloat×0.8 noGravity scale 0.9+NextFloat×1.2 fadeIn
+NextFloat×1.2×ramp scale×=ramp + a CloneDust scale/2 fadeIn×0.85 White).
+**The i16 `fairy_queen_death_draws` census is DEDUPED onto this arm** —
+the production hook (`projectile.rs:20027`) no longer rolls those draws
+(the keep-one rule, the firework precedent); the census fn stays
+`#[cfg(test)]` as the shape witness. This was the LAST reclaimable dust
+arm with a consumed census. Witness: the 932 dust-267 + White clones +
+determinism — WRITTEN NOT RUN.
+
 ### The re-census (all Kill dust arms vs the 104 + d12 + i17/i18 + g16)
 
 A full re-grep of `Projectile.cs:70642-77262` for `Dust.NewDust*` sites,

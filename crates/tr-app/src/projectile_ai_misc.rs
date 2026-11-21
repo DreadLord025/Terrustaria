@@ -440,6 +440,12 @@ pub(crate) fn celeb2_kill_resize(p: &mut Projectile) {
 /// internals go with the dust pool; a negative count spawns nothing (the
 /// C#'s `num47 < num45` loop). The colour helper draws nothing (module
 /// doc); the `SoundID.Item10` is the sound skip.
+///
+/// W4-g65 batch 30 DEDUPED this census onto the death-dust drain
+/// (`projectile_death_dust.rs`'s 932 arm runs the real bodies + the same
+/// draws on the same stream — the keep-one rule). The production hook no
+/// longer calls it; it stays as the census-shape witness below.
+#[cfg(test)]
 pub(crate) fn fairy_queen_death_draws(rng: &mut dyn DropRng) {
     let _ = rng.next_float(); // `:71114`
     for step in 0..10 {
