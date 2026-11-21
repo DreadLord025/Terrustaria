@@ -39934,3 +39934,81 @@ five C# bodies before writing (the 7b replay-sweep precedent); the
 frame counts were counted entry-by-entry off the `Main.cs:67082`
 697-entry initializer vs `render/entities.rs::NPC_FRAME_COUNT` — all
 15 agree.
+
+## W4-f26 FindFrame extra wave 7e (slice 7e, 2026-11-21, code-only mode)
+
+The NEXT 5 TRULY-unclaimed case ids after the 7d slice —
+**526/527/528/529/530** — landed as pure machines in
+`crates/tr-app/src/npc_findframe_extra7e.rs` (the 7d module + seam
+shape copied; commit `9c2b0a84`). The census: 122 unclaimed after the
+pushed 7d tip `63417edd`'s 5 claims − this slice's 5 = **117
+unclaimed** (the full re-probe in
+`docs/research/68-findframe-census-addendum-7e.md` — the d41 tip
+`4ed22f0b` still CLAIM-only, the NEW d42 tip `88df5809` a WIP enum
+checkpoint, the f27 tip `0e187428`'s extra8/9 carrying no 526-530 arm;
+the only 526-530 grep hits on any pushed tip are the Mechanic shop
+ITEM id 530 in a test list).
+
+Per-case notes (the C# bodies read line-for-line):
+
+* **526/527 DesertGhoulCrimson/Hallow** (`NPC.cs:69908-69945`, labels
+  `:69910-69911`) — the 7d-deferred pair, the SAME 524..527 group
+  body. The machine is copied VERBATIM from the 7d module (the 7c
+  nine-salamander ONE-group precedent: each slice's module carries
+  its own copy, the wiring round keeps one). The `!= 0`-gated
+  grounded direction copy, the idle zeroes BOTH row and counter and
+  BREAKS, the walk lifts row <= 1 to 2 then accumulates |vx| THEN ++
+  with the STRICT > 9 step over rows 2..7 wrapping at the 8-row count
+  back to 2, the air pins row 1 + zeroes the counter with the sprite
+  UNTOUCHED.
+* **528/529 DesertLamiaLight/Dark** (`:69946-69977`) — the ghoul
+  shape MINUS the lift-to-2: a row-0 start walks 0 → 1 (the ghoul
+  would snap it to 2). The SAME `!= 0`-gated copy + idle-zero-BREAK +
+  |vx| THEN ++ STRICT > 9 step, but the wrap fires at row >= count − 1
+  back to **1** (`:69967-69970` — rows 1..7 are the walk strip on the
+  9-row sheet; row 0 is idle-only) and the air pins row count − 1 =
+  **8** (`:69974`), NOT the ghoul's row 1 — the last sheet row is the
+  AIR row, never walkable.
+* **530 DesertScorpionWalk** (the 164/236/239/530 group
+  `:73083-73111`, label `:73086`; 164 WallCreeper d46-branch-wired,
+  236 JungleCreeper + 239 BloodCrawler f27-WIRED(g7) per the d44
+  master wire-status table — only 530 was open). The air zeroes the
+  counter FIRST then pins row 4 rising (vy < 0) / row 0 falling and
+  BREAKS — sprite UNTOUCHED. The grounded branch copies the sprite
+  UNCONDITIONALLY (`:73100` — no `!= 0` gate; direction 0 zeroes the
+  sprite), accumulates |vx| * 1.1 with NO +1 (`:73101`), then feeds
+  the **WHILE >= 6 stepper** (`:73102-73110`) — subtract 6 + step a
+  row PER LOOP, so high |vx| steps multiple rows in one tick (vx 20 →
+  +22 → three rows) — with the STRICT > 3 wrap over rows 0..3 (row 4
+  is the air-rise row only). NO idle branch: vx == 0 grounded adds 0,
+  row/counter HELD. The 530 → 531 wall transform (`:58892-58899`)
+  rides the AI, NOT FindFrame.
+
+RNG + world reads: ZERO across all five arms (mechanical grep over
+`:69908-69977` + `:73083-73111` for `Main.rand`/`Framing`/`Main.tile`/
+`ai[`/`localAI`/`rotation` = no match). The 7d flare's resolved-draw
+seams are NOT needed — `FrameInput` carries only vx/vy (the 7c
+shape); the wiring order is unconstrained beyond the C#'s own tick
+order (velocity settled → FindFrame). `direction` rides `FrameState`
+for the uniform 7d wiring copy (read-only this wave).
+
+Frame counts counted entry-by-entry off `Main.cs:67082` (`:67136`
+entries 7/8 = 8 for 526/527, entries 9/10 = 9 for 528/529; `:67137`
+entry 1 = 5 for 530) and re-diffed against
+`render/entities.rs::NPC_FRAME_COUNT` — all 697 slots agree, ZERO
+mismatches.
+
+Verification (code-only): 9 module witnesses written not run — the
+frame-count table cross-check, the ghoul-pair walk/lift + idle/air
+vectors (the SAME replays the 7d tests pin for 524/525), the lamia
+no-lift walk + count−1 wrap edge + last-row air pin, the scorpion
+air pins + while-stepper (the vx-3 cadence corrected from the first
+draft: the step lands ticks 2/4/6/8/10/11 — the 6/3.3 ≈ 1.82-tick
+cadence, not every other tick; the vx-20 three-row multi-step), the
+seam-exactness witness and the 5-kind 27-combo strip sweep. The
+Python replay (`tools/_f26_7e_replay.py` — the pinned vectors + the
+135-combo sweep) and the JS sweep twin (`tools/_f26_7e_sweep.js`)
+written not run; every vector hand-re-derived against line-for-line
+C# transcriptions (the f32 product rounding checked: 3 × 1.1f rounds
+to 3.3f, the accumulator boundaries sit far from the step edges).
+
