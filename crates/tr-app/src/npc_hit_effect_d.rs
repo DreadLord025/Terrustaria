@@ -4234,6 +4234,47 @@ fn squid_snail_death(
     }
 }
 
+/// The skeleton-family arm's death (`NPC.cs:88527-88640`): the 20x
+/// dust-26 burst at (2.5·hd, −2.5), then the per-kind sub-branch +
+/// early return, `this.scale` carried throughout. The live branch:
+/// 167 Undead Viking → 213/214 + 43x2 at +20 Y + 212x2 at +34 Y
+/// (`:88543-88548`, sites 648-653); the 197/481/201/202/203/322-324
+/// branches + the generic tail land in later batches.
+fn skeleton_family_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88537-88540` — the 20x dust-26 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 26, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let p20 = Vec2::new(pos.x, pos.y + 20.0);
+    let p34 = Vec2::new(pos.x, pos.y + 34.0);
+    if npc_type == 167 {
+        // `:88541-88550` — the Undead Viking six + return.
+        gore.new_gore(rng, world, pos, vel, 213, s); // :88543
+        gore.new_gore(rng, world, pos, vel, 214, s); // :88544
+        gore.new_gore(rng, world, p20, vel, 43, s); // :88545
+        gore.new_gore(rng, world, p20, vel, 43, s); // :88546
+        gore.new_gore(rng, world, p34, vel, 212, s); // :88547
+        gore.new_gore(rng, world, p34, vel, 212, s); // :88548
+        return;
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -4744,6 +4785,14 @@ pub fn hit_effect_d(
     // `:88503-88526` — the 220/221 sea snail/squid arm (sites 645-647).
     else if npc_type == 220 || npc_type == 221 {
         squid_snail_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88527-88640` — the skeleton-family arm (21/31/294-296/32/44/45/
+    // 77/110/167/197/201-203/287/291-293/322-324/481/449-452/693); the
+    // 167 Undead Viking branch is live (sites 648-653), the rest land
+    // later.
+    else if matches!(npc_type, 21 | 31 | 294 | 295 | 296 | 32 | 44 | 45 | 77 | 110 | 167 | 197 | 201 | 202 | 203 | 287 | 291 | 292 | 293 | 322 | 323 | 324 | 481 | 449 | 450 | 451 | 452 | 693)
+    {
+        skeleton_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -8243,5 +8292,34 @@ mod tests {
             }
             assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
         }
+    }
+
+    /// `NPC.cs:88543-88548` — the Undead Viking six: 213/214 at position
+    /// + 43x2 at +20 Y + 212x2 at +34 Y, this.scale carried, after the
+    /// 20x dust-26 burst.
+    #[test]
+    fn w4_f5d_the_undead_viking_six() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        n.scale = 1.05;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(647);
+        let _ = hit_effect_d(&n, 167, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![213, 214, 43, 43, 212, 212]);
+        assert_eq!(gore.slot(2).position, Vec2::new(100.0, 120.0));
+        assert_eq!(gore.slot(4).position, Vec2::new(100.0, 134.0));
+        assert_eq!(gore.slot(0).scale, 1.05);
+        assert!(!gore.slot(6).active, "exactly six gores");
+        let mut twin = UnifiedRandom::new(647);
+        for _ in 0..20 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..6 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the undead viking mirrors the C# draws");
     }
 }
