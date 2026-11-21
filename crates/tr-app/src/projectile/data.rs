@@ -3918,12 +3918,28 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // 726/1133): 24×24, aiStyle 5, penetrate 2, alpha 50, tileCollide
             // false, local immunity 10; `armorPenetration = 25` (`:7657`) has
             // no row consumer (the NETTLE_BURST precedent).
-            MANA_CLOAK_STAR | BEE_CLOAK_STAR | STAR_VEIL_STAR => (
+            MANA_CLOAK_STAR | BEE_CLOAK_STAR | STAR_VEIL_STAR | STAR_CLOAK_STAR
+            | SNAKE_BAND_STAR => (
                 24.0, 24.0, 5, 2, TIME_LEFT_DEFAULT, 0, false, false, false,
                 (true, 10, false, -1, 50, 1.0),
             ),
-            // (W4-d1 wave 2b — the 726/1133 cloak twins + the 1037/1049
-            // meteor rows land next commit.)
+            // `Projectile.cs:9780-9792` — the Meteor Whip meteor (1037):
+            // 24×24, aiStyle 5, scale 0.8, extraUpdates 1, alpha 254,
+            // tileCollide false, local immunity −1; the stock penetrate 1
+            // (`:774`) stands (the arm writes none).
+            METEOR_WHIP_METEOR => (
+                24.0, 24.0, 5, 1, TIME_LEFT_DEFAULT, 1, false, false, false,
+                (true, -1, false, -1, 254, 0.8),
+            ),
+            // `Projectile.cs:9938-9952` — the Meteor Staff meteor (1049):
+            // 24×24, aiStyle 5, hostile + friendly, scale 0.8, timeLeft 1200,
+            // extraUpdates 1, alpha 254, penetrate −1, tileCollide false,
+            // trap. The `hostile` flag rides the arm's `friendly = false`
+            // proxy (the hostile-spawn seam), not the row.
+            METEOR_STORM_METEOR => (
+                24.0, 24.0, 5, -1, 1200, 1, false, false, true,
+                (false, -2, false, -1, 254, 0.8),
+            ),
             // `Projectile.cs:1556-1593` — the harp notes (76/77/78): aiStyle 21,
             // `alpha = 100`, `penetrate = 5`, `timeLeft = 180`, ignoreWater; the
             // per-kind box (76: 10x22, 77: 18x24, 78: 22x24). The `switch (2)`

@@ -42392,9 +42392,9 @@ mod w4_d1_falling_star_family_tests {
         assert!(d.melee);
         assert!(d.uses_local_immunity);
         assert_eq!(d.local_hit_cooldown, 15);
-        // 723-725 (`:7646-7658`): 24×24, pen 2, alpha 50, tileCollide
-        // false, local immunity 10. (The 726/1133 twins land next commit.)
-        for k in [MANA_CLOAK_STAR, BEE_CLOAK_STAR, STAR_VEIL_STAR] {
+        // 723-726/1133 (`:7646-7658`): 24×24, pen 2, alpha 50, tileCollide
+        // false, local immunity 10.
+        for k in CLOAK_STAR_KINDS {
             let d = proj_data(k).expect("the cloak row");
             assert_eq!((d.w, d.h, d.ai_style, d.penetrate), (24.0, 24.0, 5, 2), "kind {k}");
             assert_eq!(d.alpha, 50, "kind {k}");
@@ -42402,6 +42402,21 @@ mod w4_d1_falling_star_family_tests {
             assert!(d.uses_local_immunity, "kind {k}");
             assert_eq!(d.local_hit_cooldown, 10, "kind {k}");
         }
+        // 1037 (`:9780-9792`): 24×24, scale 0.8, extraUpdates 1, alpha 254,
+        // tileCollide false, local immunity −1, stock pen 1.
+        let d = proj_data(METEOR_WHIP_METEOR).expect("the 1037 row");
+        assert_eq!((d.w, d.h, d.ai_style, d.penetrate, d.extra_updates), (24.0, 24.0, 5, 1, 1));
+        assert_eq!((d.alpha, d.scale), (254, 0.8));
+        assert!(!d.tile_collide);
+        assert!(d.uses_local_immunity);
+        assert_eq!(d.local_hit_cooldown, -1);
+        // 1049 (`:9938-9952`): 24×24, scale 0.8, timeLeft 1200, extraUpdates
+        // 1, alpha 254, pen −1, tileCollide false, trap.
+        let d = proj_data(METEOR_STORM_METEOR).expect("the 1049 row");
+        assert_eq!((d.w, d.h, d.ai_style, d.penetrate, d.time_left, d.extra_updates), (24.0, 24.0, 5, -1, 1200, 1));
+        assert_eq!((d.alpha, d.scale), (254, 0.8));
+        assert!(!d.tile_collide);
+        assert!(d.trap);
     }
 
     /// The spawn-with-data copies the row (no decline): the cloak star's
@@ -42483,6 +42498,21 @@ mod w4_d1_falling_star_family_tests {
             .expect("the 12 row spawns");
         tick(&mut pool, &mut w, &mut rng);
         assert!(pool.slots()[slot].active, "the 50-damage star survives");
+    }
+
+    /// The Meteor Whip meteor's alpha ramps −10 to the 0 floor
+    /// (`:23886-23899`); with extraUpdates 1 that is 2 sub-steps per update:
+    /// 254 → 234 after one. The rotation points along the velocity.
+    #[test]
+    fn w4_d1_the_meteor_whip_alpha() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(METEOR_WHIP_METEOR, 0, 100.0, 100.0, 0.0, 8.0, 40, 2.0, 0.0, 5000.0)
+            .expect("the 1037 row spawns");
+        let mut w = world();
+        let mut rng = Script::with_rolls(&[]);
+        tick(&mut pool, &mut w, &mut rng);
+        assert_eq!(pool.slots()[slot].alpha, 234, "254 − 2·10");
     }
 }
 
