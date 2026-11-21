@@ -20042,6 +20042,14 @@ impl ProjectilePool {
                     if let Some(p) = player.as_deref_mut() {
                         self.try_cancel_channel(i, p);
                     }
+                    // S1-E-21h d76 DOC-SWEEP — `Kill()`'s non-bomb cue arms
+                    // in the d76 range (`Projectile.cs:70855-70975`): the
+                    // death-cue map queues its intent at the death hook (the
+                    // C# plays inside `Kill()` while the slot is still active,
+                    // so the cue rides every Kill()-shaped death; the
+                    // out-of-world guard's direct deactivate never reaches
+                    // `Kill()`). The d77 map (`:71112+`) is the sibling lane.
+                    self.kill_tail_cue(i);
                 }
                 self.spawn_inferno_blast(i);
                 // S1-P-i21 — `Kill()`'s type-237 arm (`:74535-74538`): the
@@ -20163,6 +20171,53 @@ impl ProjectilePool {
                     self.slots[s].time_left -= tl_delta;
                 }
             }
+        }
+    }
+
+    /// S1-E-21h d76 DOC-SWEEP — `Kill()`'s sound-only / cue-first non-bomb
+    /// death arms in the d76 line-order range (`Projectile.cs:70855-70975`,
+    /// the four `PlaySound` sites before d77's map starts at `:71112`): one
+    /// cue per death, queued straight into the pool's sound queue (the death
+    /// hook runs AFTER the sub-step loop's `wants_sound` forward, so the
+    /// intent cannot ride the slot field — the d77 `kill_tail_cue` shape).
+    /// The C# plays inside `Kill()` while the slot is still active
+    /// (`active = false` lands at `:77262`); the port's death hook is the
+    /// same once-per-death seam, and the cue reads the PRE-hook position
+    /// (every mapped arm plays before its own state writes, or has none).
+    /// The dust/gore bodies stay skipped (the module's RNG note); the
+    /// style-facade plays ride id 2 — the drain (`world_sim/projectiles.rs`)
+    /// routes them through the wave-A façade. Positions ride untruncated
+    /// (the landed 21h queue convention; the id-2 façade truncates itself).
+    /// The 1020/1105 arm's `GetActiveSound(...).Stop()` (`:70863`, the Jim's
+    /// Drone hum) is the tracked-instance stop — the standing D4 deviation.
+    /// The 1080 arm's `ApplyBuffTo(player, 120, 600)` (`:70933`) and the
+    /// 1085 arm's `brokenMirrorBadLuckTime = 25200` (`:70921`) are the
+    /// state halves — the cue precedes both, so it lands; the buff/luck
+    /// writes are the player-state follow-up (the d77 cue-first precedent).
+    fn kill_tail_cue(&mut self, slot: usize) {
+        let p = &self.slots[slot];
+        let pos = p.pos;
+        let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        let cue: Option<(u16, i32, f32, f32, f32, f32)> = match p.kind {
+            // `:70865` — the Jim's Drone / RC Car's Item62 blast at position
+            // (the `type == 1020 || type == 1105` arm; the dust/gore census
+            // `:70866-70900` stays skipped).
+            JIMS_DRONE | REMOTE_CONTROL_CAR => Some((2, 62, pos.x, pos.y, 0.0, 1.0)),
+            // `:70904` — the Pretty Mirror's Item106 shatter at Center (the
+            // oldVelocity drag + the gore ring `:70905-70914` stay skipped;
+            // the bad-luck write `:70921` is the state follow-up).
+            PRETTY_MIRROR => Some((2, 106, center.x, center.y, 0.0, 1.0)),
+            // `:70936` — the Bird Droppings' Item177 splat at Center (the
+            // int-overload `(int)Center.X/Y` — the id-2 façade truncates;
+            // the stinky-buff write `:70933` is the state follow-up).
+            BIRD_DROPPINGS => Some((2, 177, center.x, center.y, 0.0, 1.0)),
+            // `:70958` — the Torch God helper's Item10 pop at Center (the
+            // 40-dust torch census `:70959-70974` stays skipped).
+            TORCH_GOD_HELPER => Some((2, 10, center.x, center.y, 0.0, 1.0)),
+            _ => None,
+        };
+        if let Some((id, style, x, y, pitch, vol)) = cue {
+            self.pending_proj_sounds.push((id, style, x, y, pitch, vol));
         }
     }
 
@@ -23848,6 +23903,56 @@ mod s1_e_21h_sound_tests {
         );
         assert_eq!(pool.slots()[slot].sound_delay, -1, "the latch holds");
     }
+
+    /// S1-E-21h d76 DOC-SWEEP — the Kill()-tail non-bomb cue map (the d76
+    /// range's four sites `:70865`/`:70904`/`:70936`/`:70958`): one queued
+    /// intent per death at the C#'s pre-hook position, the payload's
+    /// id/style/volume exact, and a non-mapped kind queues nothing. The
+    /// 1020/1105 pair shares the Item62 blast; the 1085/1080/1084 cues ride
+    /// Center. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn s1_e_21h_d76_sweep_the_kill_tail_cue_map() {
+        let mut pool = ProjectilePool::new();
+        // (kind, expected (id, style), position mode: 0 = pos, 1 = center)
+        let cases: [(u16, (u16, i32), u8); 5] = [
+            (JIMS_DRONE, (2, 62), 0),
+            (REMOTE_CONTROL_CAR, (2, 62), 0),
+            (PRETTY_MIRROR, (2, 106), 1),
+            (BIRD_DROPPINGS, (2, 177), 1),
+            (TORCH_GOD_HELPER, (2, 10), 1),
+        ];
+        for (kind, want, mode) in cases {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .expect("the row spawns");
+            let p = &pool.slots()[slot];
+            let (x, y) = if mode == 1 {
+                (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+            } else {
+                (p.pos.x, p.pos.y)
+            };
+            pool.kill_tail_cue(slot);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "kind {kind}: one cue per death");
+            assert_eq!(
+                (queued[0].0, queued[0].1, queued[0].2, queued[0].3, queued[0].4, queued[0].5),
+                (want.0, want.1, x, y, 0.0, 1.0),
+                "kind {kind}'s cue payload"
+            );
+            // The map is idempotent per call site: a second call queues a
+            // second intent (the death hook runs once — the slot never
+            // returns to active), so the once-per-death guarantee is the
+            // hook's, not the map's.
+            pool.kill(slot);
+        }
+        // A kind outside the map queues nothing (the bomb's cue rides its
+        // own detonation latch, not the death map).
+        let slot = pool
+            .spawn_with_data_ai_owned(28, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .expect("the bomb row spawns");
+        pool.kill_tail_cue(slot);
+        assert!(pool.drain_proj_sounds().is_empty(), "the bomb keeps its latch cue");
+    }
 }
 
 #[cfg(test)]
@@ -23931,7 +24036,13 @@ mod tests {
         // Dragon chain (121) WAS ported at the gate (`dragon_step`) — its
         // deferral collided with the same pin and the machine is one
         // self-contained family.
-        const UNARMED_ROWED: [u8; 4] = [156, 164, 169, 206];
+        // S1-E-21h d76 DOC-SWEEP: the four Kill()-tail cue kinds' styles join
+        // the census — 195 (Jim's Drone 1020), 200 (Bird Droppings 1080),
+        // 202 (Torch God helper 1084) and 205 (RC Car 1105). Their rows land
+        // so the death-hook `kill_tail_cue` can spawn them; the AI machines
+        // are the documented follow-ups (the d21 lane ports 202/205's bodies;
+        // 195/200 stay census rows). The cue lands on death regardless.
+        const UNARMED_ROWED: [u8; 8] = [156, 164, 169, 206, 195, 200, 202, 205];
         // S1-F-13c: the Frost Moon bosses' seven hostile-shot kinds ride the
         // KIND-gated `projectile_frost_shots::handles` arm ahead of the
         // aiStyle dispatch — their styles are armed there, not in the

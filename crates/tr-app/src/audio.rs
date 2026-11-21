@@ -281,6 +281,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_59", 2),
     ("Item_60", 2),
     ("Item_61", 2),
+    // S1-E-21h d76 DOC-SWEEP — the Kill()-tail blast cue (the Jim's Drone /
+    // RC Car's `SoundID.Item62`, `Projectile.cs:70865`; the asset is on disk).
+    ("Item_62", 2),
     ("Item_63", 2),
     ("Item_64", 2),
     ("Item_66", 2),
