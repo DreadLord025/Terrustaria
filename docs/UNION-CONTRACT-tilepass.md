@@ -1,13 +1,18 @@
 # UNION-CONTRACT — the tile-draw pass family (g28/g29/g30/g31/g32) + the d56–d60 seam census
 
-**STATUS: EXECUTED + ATTACHED (shadow)** (union-exec + attach phases,
-same branch `task/W4-g31-tile-draw-pass-4`, code-only). The §1–§3
+**STATUS: FINAL — EXECUTED + ATTACHED (shadow) + TILEPASS-FINAL**
+(union-exec + attach + d-hunk prep + final phases, same branch
+`task/W4-g31-tile-draw-pass-4`, code-only). The §1–§3
 keep/drop/rebind prescription was carried out IN-LANE — see §7 for the
 execution record. The attach phase censused the d-lane tips against
 the union driver shape and wired the union into `render/tiles.rs`
 behind `TR_TILEPASS` (default OFF, PLAN-ONLY) — see §8 for the verdict,
 the exact seam signatures and the pixel-merge script (§4 made
 concrete). The ctor-draw residual is CLOSED (`render/tile_ctor.rs`).
+The FINAL phase (§9) executed the on-branch C-conflict resolutions
+(the `is_visible` promote-d60 keep-one), the 717 `lava_light_a`
+shadow-plan bind at the table-pass position and the §8.5 drip
+direct-bind order plan; the 85-witness inventory is pinned in §9.2.
 
 Merger assist for the TILE-PASS 5-WAY UNION. Written on `task/W4-g31-tile-draw-pass-4`
 (reconcile phase, code-only — NO code changes to any lane; this document is the
@@ -128,7 +133,9 @@ exist nowhere else. Attach points (§4 bind order):
   g31/d60/pylons rebind at wiring. Until then all copies stay (code-only).
   *(CORRECTION, research/136 §4: d56's tip has NO standalone fn — the
   logic is inlined in `tile_draw_gate`. The mechanical keep-one is
-  d60's `is_visible` PROMOTED to tr-render; d56's gate calls it.)*
+  d60's `is_visible` PROMOTED to tr-render; d56's gate calls it.
+  EXECUTED, final phase §9.1: `tr-render/src/tile_visibility.rs`,
+  g31/pylons rebound.)*
 * `post_draw_drain_order` driver: at merge, FOLD into a per-pass dispatch
   (`drain_one_pass(pass, ...)`) so g29's `post_draw_tiles` can bind each of
   its ten nature steps individually (§2.3). KEEP `POST_DRAW_DRAIN_ORDER` +
@@ -621,8 +628,9 @@ pub(crate) fn drain_one_pass(
   — bind to `foliage.rs` per-marker, `vines.rs` per-root,
   `pylons.rs::{pylon,trophy,void_lens}_sprites` per-anchor (they need
   the renderer + `SpecialEnv`; the impl holds them).
-* `is_visible` keep-one: d56's `tr_render` copy at the merge (§1.4);
-  g31/d60/pylons rebind.
+* `is_visible` keep-one: **EXECUTED (final phase, §9.1)** — d60's shape
+  promoted to `tr_render::tile_visibility::is_visible` (primitive params);
+  g31/pylons rebound; d56's gate + d60's battery rebind at the merge.
 
 **The ctor residual (F1, closed):** `tile_ctor.rs` —
 `noise_table() -> &'static [f32; 256]`, `linear_noise(x: f32) -> f32`,
@@ -701,28 +709,141 @@ SmoothStep, the LavaLightA bands). F2 `tile_attach.rs`: 4 `#[test]`
 (the four-call frame order over the real binds, the registry→drain
 dispatch, plan determinism, the gated attach-site position + RNG
 separation). All WRITTEN NOT RUN (code-only). Union g-family total
-70 (§7) + 10 attach = 80 on this branch.
+70 (§7) + 10 attach = 80 at the attach phase. *(The final phase adds
+2 attach witnesses + 3 tile_visibility witnesses → 85; the pinned
+inventory is §9.2.)*
 
-### 8.5 The drip seam (the g68 co-lane, requested)
+### 8.5 The drip seam (the g68 co-lane — FINAL-phase update)
 
-g68's deferred-4 (`07396db1c`, tip `b20480d72`) ported the ONE
-unclaimed emission body — `EmitLiquidDrops` (`TileDrawing.cs:7594-7674`,
-the vine-tip/stalactite/shimmer-candle drips) — as
-`foliage.rs::emit_liquid_drops`, UNWIRED with 3 witnesses. The call
-site is the `Draw` switch `:688-694` (kinds 373/374/375/461/709 →
-emit then `continue`), which g30 records as
-`CellClass::LiquidDrops`/`liquid_drop_cells`. **The pixel bind:**
-`classify_and_draw_cell`'s LiquidDrops arm calls
-`foliage::emit_liquid_drops(world, y, x, kind, water_style,
-zone_corrupt, zone_crimson, zone_hallow, rand, main_rand, gore)`
+g68's deferred-4 (`07396db1c`) ported the ONE unclaimed emission body —
+`EmitLiquidDrops` (`TileDrawing.cs:7594-7674`, the
+vine-tip/stalactite/shimmer-candle drips) — as
+`foliage.rs::emit_liquid_drops`. **Latest-tip re-read (final phase):
+origin/task/W4-g68-weather-wind-leaves is now `d247a1c9f`** (wiring-1
+`ea9e784f6` … wiring-4 past the research/136 `b20480d72` census): the
+body is **WIRED on its own branch** via
+`emit_liquid_drops_area`'s per-frame view-rect rescan in
+`frame/draw.rs` (the tile-cracks precedent), gate stream = the
+PERSISTENT `App.tile_draw_rand` (`UnifiedRandom`, world-seeded — the
+`mine_crack_rng` deviation class), spawn internals on the bare global
+`Main.rand`. g68's own doc names the rescan a stand-in: "when g30
+lands, the wiring wave swaps the rescan for the recorded cells".
+
+**The exact signature (verified by `git show d247a1c9f:…/foliage.rs`):**
+
+```rust
+pub(crate) fn emit_liquid_drops(
+    world: &World, j: i32, i: i32, kind: u16, water_style: i32,
+    zone_corrupt: bool, zone_crimson: bool, zone_hallow: bool,
+    rand: &mut UnifiedRandom,      // TileDrawing._rand (the ONE stream)
+    main_rand: &mut UnifiedRandom, // Main.rand (NewGore internals)
+    gore: &mut GorePool,
+)
+```
+
+The call site is the `Draw` switch `:688-694` (kinds 373/374/375/461/709
+→ emit then `continue`), which g30 records as
+`CellClass::LiquidDrops`/`liquid_drop_cells`. **The pixel bind (the
+exact 2-line hunk, into the seams impl's `classify_and_draw_cell`
+LiquidDrops arm — NOT a drain):**
+
+```rust
+// inside `if class == CellClass::LiquidDrops { … }`, replacing the record-only arm:
+crate::render::foliage::emit_liquid_drops(world, y, x, kind, water_style,
+    zone_corrupt, zone_crimson, zone_hallow, &mut self.rand, self.main_rand, self.gore);
+```
+
+(the impl holds `water_style` = the caller's
+`waterStyleOverride`-resolved style, the three `Main.SceneMetrics.Zone*`
+bools, the ONE `_rand` and the `Main.rand`/gore handles g68 already
+threads for the leaf path; the record push STAYS as the census input).
 DIRECTLY per cell — the C# emits INSIDE the switch, so the
 `Next(num*2)` gate draws on the ONE `_rand` in row-major cell order
 BEFORE the `continue`; draining the recorded cells later would
 re-order the stream (research/136 C5). The wet-tile refusal precedes
 the roll (no draw); the anti-cluster box scans the 600 gore slots;
 the type pick is water-style then the kind/zone overrides (last zone
-wins). The recorded cells stay as the shadow-plan census input. The
-g68 deferred-2 cadence contract binds this seam too (emission out of
-the cached range, the persistent `_rand`, the `DrawnThisUpdate`
-mechanism — never widen G6). Full tables + the 717 glowmask
-bind-contract (f15 co-lane): `docs/research/136-tilepass-d-hunks.md`.
+wins: 374→716, 375→717, 709→1383, 461→943 + corrupt 1160 / crimson
+1161 / hallow 1162). **At the bind, g68's
+`emit_liquid_drops_area` rescan call in `frame/draw.rs` DROPS** (the
+per-cell arm owns the emission — keeping both double-rolls the gate).
+The g68 deferred-2 cadence contract binds this seam too (emission out
+of the cached range, the persistent `_rand`, the `DrawnThisUpdate`
+mechanism — never widen G6).
+
+**Executed on THIS branch (final phase, `10530fd88`):** g68's body
+does not exist here (copying it would create the C2-class dup), so the
+union's LiquidDrops arm binds the ORDER:
+`tile_attach.rs::classify_and_draw_cell` plans `drip_plan: Vec<(x, y,
+kind)>` row-major per classified cell — the exact call order the hunk
+above must fire in — witnessed equal to `reg.liquid_drop_cells` and
+row-major over out-of-order inserts
+(`w4_g31_attach_drip_plan_preserves_the_switch_arm_order`). Full
+tables + the 717 glowmask bind-contract (f15 co-lane):
+`docs/research/136-tilepass-d-hunks.md`.
+
+---
+
+## 9. FINAL-PHASE EXECUTION RECORD (this branch, code-only)
+
+Three commits on top of the d-hunk prep (`766a5a5a8`):
+`d3b5d5fd9` (item 1, the C-conflict sweep), `cb70b15d1` (item 2, the
+717 bind), `10530fd88` (item 3, the drip order plan) + this docs
+commit (item 4).
+
+### 9.1 C1–C7 disposition on THIS branch's files
+
+| Pair | On-branch status | Action |
+|---|---|---|
+| C1 (d57 TE-post vs d60 petals) | NO overlap (research/136 §2) — neither lane's file is here | nothing to execute; the verdict stands |
+| C2 (3 leaf copies) | **Verified: this branch carries NO `emit_living_tree_leaf` copy** (grep census over `render/` — the union never ported the battery). The base inline 192 arm (`tiles.rs:1078-1122`) is g68's deletion target at ITS merge, not a g31 dup | nothing to strip; keep-one winner stays g68's foliage.rs body |
+| C3 (d56 gate vs f15 dark-merge) | both sides off-branch | merge obligation; the 717 shadow plan (item 2) feeds the `glow_mask_id: 362` half when d56 lands |
+| C4 (d59 vs f15 side-fill inputs) | both sides off-branch | merge obligation (f15's `neighbor()` rebinds to `FillNeighbor::from_world`) |
+| C5 (g68 drips vs g30 LiquidDrops) | g30's record arm IS here | **EXECUTED as the order plan** (§8.5, `drip_plan`) + the exact 2-line pixel hunk published |
+| C6 (4 `solid_tile` twins) | two on-branch: `tile_ctor.rs:172` + `drawdata_cases_a.rs:129` — **bodies verified identical** (active ∧ TILE_SOLID ∧ ¬SOLID_TOP ∧ ¬half ∧ slope 0 ∧ ¬inactive, null ⇒ true) | keep-one stays a merge obligation per C6 (lowest-crate copy wins); no semantic conflict |
+| C7 (d58 chest position) | d58's hunk off-branch | merge obligation (MOVE to CAD step 8, never re-derive) |
+| `is_visible` promote-d60 (§1.4 correction) | g31's + pylons' copies ARE here | **EXECUTED**: `tr-render/src/tile_visibility.rs` (d60's shape, primitive params — tr-render has no tr-core dep so the correction's `&Tile` sketch cannot live there; the invisible bit is a parameter, d60 passes `false`, the union wrappers pass the real `World::invisible_block`); `tile_drains::is_visible` + `pylons::is_visible` rebound as thin wrappers, bodies deleted; d56's gate / d60's battery rebind at the merge |
+
+### 9.2 Witness inventory PIN (actual `#[test]` census, final tip)
+
+| File | Count | Delta vs attach phase |
+|---|---|---|
+| `render/tile_pass.rs` | 18 | — |
+| `render/special_points.rs` | 14 | — |
+| `render/tile_drains.rs` | 22 | — (the `is_visible` wrapper keeps every drain witness green-by-shape) |
+| `render/tile_draw_pass.rs` | 10 | — |
+| `tr-render/quality_light.rs` | 6 | — |
+| **g-family union** | **70** | the §3/§7 target, unchanged |
+| `render/tile_ctor.rs` | 6 | — |
+| `render/tile_attach.rs` | 6 | +2: `w4_g31_attach_717_glow_plan_is_the_lava_light_truncation`, `w4_g31_attach_drip_plan_preserves_the_switch_arm_order` |
+| `tr-render/tile_visibility.rs` | 3 | +3 (new): echo-bit/sight, platform-row-48-only, 541/631-always-gated |
+| **Branch total** | **85** | 80 + 5 |
+
+All WRITTEN NOT RUN (code-only mode — no cargo/tests/rustfmt/graphify
+invoked in any phase). The 80-witness attach-phase pin (§8.4) is
+superseded by this table; the g-family 70 is untouched.
+
+### 9.3 The 717 bind — executed shape + remaining obligations
+
+Executed (`cb70b15d1`): the shadow plans one `lava_glows` entry per
+drawn 717 cell at CAD step 14 (after the flames tail, before f15's
+record bind), colour `[b,b,b,a]` = `[(v*255) as u8 ×3, ((v/2)*255) as
+u8]` from `tile_ctor::lava_light_a(world, x, y, (anim_time*60) %
+216000)` — the two truncations are independent (NOT `a = b/2`).
+Stream-free. Asset census: **`Glow_362.xnb` EXISTS** in
+`assets/Content/Images` but is **NOT in f15's `GLOW_SHEET_NAMES`
+addition** (f15's 44 sheets came from `glow_switch`; the TABLE-pass
+masks are a different census — research/136 §3 predicted exactly
+this). Remaining pixel obligations (the table-pass lane / family
+merge): load `Glow_362`, push the cell-rect glow at `vector` behind
+the `:971` gate coupling (`tile_draw_gate(glow_mask_id: 362)` — the
+two binds land together), key `time_for_visual_effects` in G6 (the
+`anim` slot's convention; never widen silently).
+
+### 9.4 What the final phase did NOT change
+
+No lane code touched (d56-d60/f15/g68 tips read-only via `git show`);
+no fused-loop pixel path moved (`tiles.rs` untouched this phase); the
+G6 key untouched; the shadow stays PLAN-ONLY default-OFF. The
+research/136 fold script (F0-F4) is unchanged — this phase executed
+only the items whose files live on THIS branch.

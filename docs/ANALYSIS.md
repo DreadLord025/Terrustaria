@@ -39665,8 +39665,65 @@ pixel-merge script: `docs/UNION-CONTRACT-tilepass.md` §8. Summary:
   union g-family 70 + attach 10 = 80 on this branch. Anchors rows for
   both modules; the attach-site witness pins the gated call's position
   (after the fused walk, before the NPC pass) and the RNG separation.
+  *(Superseded by the final phase: 6 attach + 3 tile_visibility → 85;
+  UNION-CONTRACT §9.2 is the pinned inventory.)*
 
 Code-only: **no cargo/rustc/tests/graphify invoked** — every seam was
 compiled by inspection; the golden literals were re-derived with an
 independent Python evaluation of the .NET algorithms (not the Rust
 bodies).
+
+## The TILEPASS final phase (W4-g31, same branch)
+
+On top of the d-hunk fold prep (`766a5a5a8`, research/136). Three code
+commits + the contract final-status; the full record is
+`docs/UNION-CONTRACT-tilepass.md` §9. Summary + deliberate deviations:
+
+* **The `is_visible` keep-one EXECUTED** (`d3b5d5fd9`): d60's standalone
+  shape (`tile_draw_particles.rs:442`) promoted to
+  `tr-render/src/tile_visibility.rs`; g31 `tile_drains::is_visible` +
+  `pylons::is_visible` rebound as thin world-reading wrappers (bodies
+  deleted). **Deviation from research/136 §4's sketch**: the promoted fn
+  takes PRIMITIVES (`kind, frame_y, invisible_block,
+  show_invisible_blocks`), not `&Tile` — tr-render has no tr-core
+  dependency and d56's `tile_draw_gate` already takes the same
+  primitives, so this shape binds every consumer without a crate
+  dependency change. The invisible bit is a PARAMETER (d60 hardcodes
+  `false`; the union wrappers pass the real `World::invisible_block`
+  bit — zero behaviour change on this branch: the old bodies read the
+  same bit, and the `i16 /18` truncation equals the promoted `i32` cast
+  for every `frame_y`). d56's gate / d60's battery rebind at the merge.
+* **C2/C6 verified, nothing to strip**: this branch carries NO
+  `emit_living_tree_leaf` copy (the union never ported the battery — the
+  base inline 192 arm is g68's deletion target at ITS merge); the two
+  on-branch `solid_tile` twins (`tile_ctor.rs` / `drawdata_cases_a.rs`)
+  have identical bodies, keep-one stays a merge obligation per C6.
+* **The 717 `lava_light_a` bind EXECUTED as a shadow PLAN**
+  (`cb70b15d1`): `tile_attach.rs::classify_and_draw_cell` plans one
+  `lava_glows` entry per drawn 717 cell at CAD step 14 (the
+  `Main.tileGlowMask` table pass `:1178-1342` — f15's `:1343` record
+  seam explicitly scopes it OUT), colour = the XNA `Color(v,v,v,v/2)`
+  per-channel truncation (`b=(v*255) as u8`, `a=((v/2)*255) as u8` —
+  NOT `b/2`), clock `(anim_time*60) % 216000` (the `frame/draw.rs:374`
+  convention). Stream-free. **Asset census**: `Glow_362.xnb` exists in
+  `assets/Content/Images` but is NOT in f15's `GLOW_SHEET_NAMES`
+  addition (its 44 sheets came from `glow_switch`; the table-pass masks
+  are a different census) — the sheet load + the pixel push + the `:971`
+  gate coupling (`tile_draw_gate(glow_mask_id: 362)`) + the G6
+  `time_for_visual_effects` keying are the table-pass lane's obligations
+  (research/136 §3).
+* **The §8.5 drip seam EXECUTED as the direct-bind ORDER plan**
+  (`10530fd88`): g68's latest tip (`d247a1c9f`) re-read — its
+  `emit_liquid_drops` is now WIRED on ITS branch (the
+  `emit_liquid_drops_area` per-frame rescan + the persistent
+  `App.tile_draw_rand`); the body does not exist HERE, and copying it
+  would create the C2-class dup. The union's LiquidDrops arm plans
+  `drip_plan` row-major (the exact call order the pixel hunk fires in —
+  C5: the C# emits inside the Draw switch BEFORE the `continue`, so
+  draining the recorded cells later re-orders the ONE `_rand`); the
+  exact 2-line pixel hunk + the rescan-DROPS obligation are published in
+  UNION-CONTRACT §8.5.
+* **Witnesses**: +2 attach (the 717 truncation/band plan, the drip
+  row-major order) + 3 tile_visibility = 85 total on this branch
+  (§9.2's pinned inventory; the g-family 70 untouched). All written NOT
+  run — code-only, no cargo/tests/rustfmt/graphify in this phase.

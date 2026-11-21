@@ -441,3 +441,42 @@ obligation, the C4 `from_world` rebind, the §4 `is_visible`
 correction and the §5 drip seam are FOLD-TIME obligations recorded
 here — the contract's §8.2 signature table is unchanged (every bind
 above fits the executed seam shapes).
+
+---
+
+## 7. FINAL-phase addendum (executed on task/W4-g31, code-only)
+
+The g31 TILEPASS final phase executed the items whose files live on
+that branch (full record: UNION-CONTRACT §9, commits `d3b5d5fd9` /
+`cb70b15d1` / `10530fd88`):
+
+* **§4 `is_visible` correction EXECUTED** — promoted to
+  `tr-render/src/tile_visibility.rs` with PRIMITIVE params (kind,
+  frame_y, invisible_block, show_invisible_blocks), not the `&Tile`
+  this section sketched: tr-render has no tr-core dependency and
+  d56's `tile_draw_gate` already takes the same primitives. The
+  invisible bit is a parameter (d60 passes `false`; the g31/pylons
+  wrappers — rebound, bodies deleted — pass the real
+  `World::invisible_block` bit). d56's gate / d60's battery rebind at
+  the merge.
+* **§3 717 bind EXECUTED as a shadow plan** —
+  `tile_attach.rs::lava_glows`, one entry per drawn 717 cell at CAD
+  step 14, `Color(v,v,v,v/2)` truncation of `lava_light_a`. Asset
+  census answered: `Glow_362.xnb` EXISTS but is NOT in f15's
+  `GLOW_SHEET_NAMES` set (as §3 predicted — the table-pass masks are
+  a different census); the load + push + `:971` coupling + G6 clock
+  keying stay the table-pass lane's obligations.
+* **§5 drip seam — g68 tip MOVED**: origin is now `d247a1c9f`
+  (wiring-1 `ea9e784f6` … wiring-4), past this document's `b20480d72`
+  read. `emit_liquid_drops` is WIRED on g68's branch via
+  `emit_liquid_drops_area`'s per-frame rescan + the persistent
+  `App.tile_draw_rand`; its signature is unchanged from §5's sketch
+  (verified by full `git show` read). The g31 side executed the
+  direct-bind ORDER plan (`tile_attach.rs::drip_plan`, row-major,
+  witnessed equal to `reg.liquid_drop_cells`); the exact 2-line pixel
+  hunk + the "g68's rescan call DROPS at the bind" obligation are
+  published in UNION-CONTRACT §8.5.
+* **C2/C6 on-branch census**: NO `emit_living_tree_leaf` copy exists
+  on the g31 branch (nothing to strip); the two on-branch
+  `solid_tile` twins are identical-body (keep-one stays a merge
+  obligation). C1/C3/C4/C7 are off-branch pairs — unchanged.
