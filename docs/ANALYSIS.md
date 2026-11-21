@@ -6919,9 +6919,12 @@ Deliberate deviations / deferred:
   sign's Edit/Save while a sign is open), but the layout is dynamic:
   `interaction_lines = ceil(count/4)` (`:174`) feeds the panel height
   (`:68`) and the `num % 4 == 0` reset steps the row y by `num/4*22`
-  (`:106`) — the W4-d120 compose note's >4-button fix landed with the
-  W4-f22 retire phase, so the merge lane only grows `interactions` /
-  `interaction_count`.
+  (`:106`) — the W4-d120 >4-button fix (research/143 §1's 2-hunk patch,
+  ported ahead of its publication and verified equivalent: the same
+  `div_ceil(4)` fn, `panel_rect`'s live-count parameter, the y-step; the
+  port's `interaction_count(sign_open)` helper answers the same count the
+  patch's `interactions(...).len()` call-sites compute). The merge lane
+  only grows `interactions` / `interaction_count`.
 - **The portrait** (`Main.DrawNPCPortrait`, `Main.cs:40318`, called at
   `NPCChatPanel.cs:79`) and **the corner item**
   (`Main.DrawNPCChatBottomRightItem`, `:39789`/`:80`) are deferred.

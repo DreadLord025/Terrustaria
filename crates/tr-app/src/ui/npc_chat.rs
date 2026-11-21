@@ -68,10 +68,12 @@ pub(crate) fn panel_lines(lookups: &Lookups, chat_text: &str) -> Vec<String> {
 /// (`PrepareInteractions`, `NPCChatPanel.cs:174`,
 /// `AllowedInteractionsPerLine = 4` `:30`) — the integer ceil the panel
 /// height (`:68`) and the button-row origin (`:93`) both read. The
-/// W4-d120 compose note's dynamic-lines fix: the shop / happiness /
+/// W4-d120 dynamic-lines fix (research/143 §1's 2-hunk patch, landed here
+/// ahead of its publication — verified equivalent): the shop / happiness /
 /// housing rows (g58/f38/d120's buttons) push the count past 4 at merge,
 /// so the line count grows with the label list instead of pinning 1.
-fn interaction_lines(count: usize) -> usize {
+/// Zero interactions → 0 (`Ceiling(0f)`).
+pub(crate) fn interaction_lines(count: usize) -> usize {
     count.div_ceil(4) // `Math.Ceiling(count / 4f)` (`:174`)
 }
 
