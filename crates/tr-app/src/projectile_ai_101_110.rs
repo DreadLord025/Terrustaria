@@ -539,6 +539,44 @@ pub(crate) fn ai_spore_sac(
     }
 }
 
+/// `AI()`'s aiStyle-106 block (`Projectile.cs:33516-33552`) — the
+/// 569-571 SporeGas clouds (the Spore Sac's released gas): the
+/// velocity-driven spin (`rot += vel.X * 0.02`, then ±|vel.Y| * 0.02 by
+/// the X sign), the 0.98 drag, and the 60-tick age gate — before it the
+/// alpha fades down to 80 (-30/tick), after it up to 255 (+5/tick) then
+/// the owner-gated kill. ZERO `Main.rand` draws by construction.
+///
+/// Movement: 106 is not on `UpdatePosition`'s skip list (`:20435`), so
+/// the dispatch's `kill_step` integrates the dragged velocity.
+pub(crate) fn ai_spore_gas(p: &mut Projectile, local_owner: u8) {
+    // `:33518-33526` — the spin.
+    p.rot += p.vel.x * 0.02;
+    if p.vel.x < 0.0 {
+        p.rot -= p.vel.y.abs() * 0.02;
+    } else {
+        p.rot += p.vel.y.abs() * 0.02;
+    }
+    // `:33527` — the drag.
+    p.vel *= 0.98;
+    // `:33528-33551` — the age gate + the alpha legs.
+    p.ai[0] += 1.0;
+    if p.ai[0] >= 60.0 {
+        if p.alpha < 255 {
+            p.alpha += 5;
+            if p.alpha > 255 {
+                p.alpha = 255;
+            }
+        } else if p.owner == local_owner {
+            kill(p);
+        }
+    } else if p.alpha > 80 {
+        p.alpha -= 30;
+        if p.alpha < 80 {
+            p.alpha = 80;
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Witnesses (W4-d11 code-only round — WRITTEN NOT RUN).
 
@@ -1019,5 +1057,77 @@ mod tests {
         ai_spore_sac(&mut p, &[], Some(p.pos), true, 5, 0);
         // The drift adds 0.002 then the 0.98 drag: (1.002)*0.98.
         assert!((p.vel.x - 1.002 * 0.98).abs() < 1e-5, ":40190");
+    }
+
+    /// The 569-571 rows (`Projectile.cs:6206-6218`) + the shared 569
+    /// immunity identity (`UseGroupStaticImmunity(569)`, `:6217`).
+    #[test]
+    fn w4_d11_106_the_gas_rows_carry_their_styles() {
+        for kind in [569u16, 570, 571] {
+            let d = proj_data(kind).unwrap();
+            assert_eq!((d.ai_style, d.w, d.h, d.penetrate), (106, 32.0, 32.0, -1));
+            assert_eq!((d.alpha, d.time_left), (255, 3600));
+            assert!(!d.tile_collide, ":6215");
+            assert!(d.uses_id_static_immunity, ":6217");
+            assert_eq!(d.immunity_identity, 569, "the shared group");
+        }
+    }
+
+    /// `:33518-33527` — the spin: rot += vel.X*0.02 then ±|vel.Y|*0.02
+    /// by the X sign; the 0.98 drag runs after.
+    #[test]
+    fn w4_d11_106_the_spin_reads_the_velocity_sign() {
+        let mut p = proj(569);
+        p.vel = Vec2::new(2.0, -3.0);
+        ai_spore_gas(&mut p, 0);
+        // +X: rot = 2*0.02 + 3*0.02 = 0.1.
+        assert!((p.rot - 0.1).abs() < 1e-6);
+        assert_eq!(p.vel, Vec2::new(2.0, -3.0) * 0.98, "the drag");
+        let mut p = proj(569);
+        p.vel = Vec2::new(-2.0, -3.0);
+        ai_spore_gas(&mut p, 0);
+        // -X: rot = -2*0.02 - 3*0.02 = -0.1.
+        assert!((p.rot + 0.1).abs() < 1e-6);
+    }
+
+    /// `:33544-33551` — before 60 ticks the alpha fades -30/tick to the
+    /// 80 floor (255 -> 225 -> 195 -> 165 -> 135 -> 105 -> 80 clamp).
+    #[test]
+    fn w4_d11_106_the_alpha_fades_to_eighty() {
+        let mut p = proj(569);
+        for _ in 0..5 {
+            ai_spore_gas(&mut p, 0);
+        }
+        assert_eq!(p.alpha, 105, "255 - 5*30");
+        ai_spore_gas(&mut p, 0);
+        assert_eq!(p.alpha, 80, "the clamp (75 -> 80)");
+        ai_spore_gas(&mut p, 0);
+        assert_eq!(p.alpha, 80, "the floor holds");
+    }
+
+    /// `:33529-33542` — at 60 ticks the fade flips: +5/tick to 255, then
+    /// the owner-gated kill (a foreign owner's cloud lingers at 255).
+    #[test]
+    fn w4_d11_106_the_old_cloud_fades_up_and_dies() {
+        let mut p = proj(569);
+        p.ai[0] = 59.0;
+        p.alpha = 80;
+        ai_spore_gas(&mut p, 0);
+        assert_eq!(p.ai[0], 60.0);
+        assert_eq!(p.alpha, 85, "the +5 leg");
+        for _ in 0..34 {
+            ai_spore_gas(&mut p, 0);
+        }
+        assert_eq!(p.alpha, 255, "85 + 34*5");
+        assert!(p.active, "the fade leg does not kill");
+        ai_spore_gas(&mut p, 0);
+        assert!(!p.active, "alpha 255 + owner -> Kill");
+        // A foreign owner's cloud never kills on the alpha gate.
+        let mut p = proj(569);
+        p.owner = 3;
+        p.ai[0] = 60.0;
+        p.alpha = 255;
+        ai_spore_gas(&mut p, 0);
+        assert!(p.active, ":33539's owner gate");
     }
 }

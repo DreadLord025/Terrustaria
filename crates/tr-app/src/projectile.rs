@@ -17935,6 +17935,17 @@ impl ProjectilePool {
                             );
                             self.slots[i].kill_step(world);
                         }
+                        // W4-d11 — aiStyle 106 (`AI()` `:33516-33552`):
+                        // the 569-571 SporeGas clouds — the velocity spin,
+                        // the 0.98 drag, the 60-tick alpha gate + the
+                        // owner-gated kill. `kill_step` integrates.
+                        106 => {
+                            crate::projectile_ai_101_110::ai_spore_gas(
+                                &mut self.slots[i],
+                                local_owner,
+                            );
+                            self.slots[i].kill_step(world);
+                        }
                         // W4-d11 — aiStyle 105 (`AI()` `:33512-33515` ->
                         // `AI_105_SporeSac` `:40043-40192`): the 567/568
                         // Spore Sac traps. `IndexForVisuals` is the slot

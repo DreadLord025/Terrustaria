@@ -327,6 +327,14 @@ pub const BRAIN_OF_CONFUSION: u16 = 565;
 /// false, ignoreWater, `UseGroupStaticImmunity(567)`). W4-d11.
 pub const SPORE_TRAP: u16 = 567;
 pub const SPORE_TRAP_2: u16 = 568;
+/// `ProjectileID.SporeGas` (569) / `SporeGas2` (570) / `SporeGas3` (571)
+/// — the Spore Sac's released gas clouds, aiStyle 106
+/// (`Projectile.cs:6206-6218`: 32x32, friendly, penetrate -1, alpha 255,
+/// timeLeft 3600, tileCollide false, ignoreWater,
+/// `UseGroupStaticImmunity(569)`). W4-d11.
+pub const SPORE_GAS: u16 = 569;
+pub const SPORE_GAS_2: u16 = 570;
+pub const SPORE_GAS_3: u16 = 571;
 pub const VORTEX_LIGHTNING: u16 = 578;
 pub const VORTEX_PORTAL: u16 = 579;
 pub const VORTEX_RITUAL_BOLT: u16 = 580;
@@ -2506,6 +2514,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             SPORE_TRAP_2 => {
                 (16.0, 16.0, 105, 1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, true, 10, 255, 1.0))
             }
+            // W4-d11 — `Projectile.cs:6206-6218` (569-571, the SporeGas
+            // clouds): 32x32, aiStyle 106, penetrate -1, alpha 255,
+            // timeLeft 3600, tileCollide false; the shared
+            // `UseGroupStaticImmunity(569)` rides the idStatic overlay.
+            SPORE_GAS | SPORE_GAS_2 | SPORE_GAS_3 => {
+                (32.0, 32.0, 106, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, true, 10, 255, 1.0))
+            }
             // W4-d11 — `Projectile.cs:6107-6119` (536, the MedusaHeadRay):
             // 10x10, aiStyle 101, penetrate -1, tileCollide false;
             // drawLayer 7 / usesOwnerLight are render-side (dropped).
@@ -4164,6 +4179,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             BEE
         } else if matches!(kind, SPORE_TRAP | SPORE_TRAP_2) {
             SPORE_TRAP
+        } else if matches!(kind, SPORE_GAS | SPORE_GAS_2 | SPORE_GAS_3) {
+            SPORE_GAS
         } else {
             0
         },
@@ -4304,6 +4321,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d11 — the Spore Sac traps set `ignoreWater`
             // (`Projectile.cs:6203`).
             || matches!(kind, SPORE_TRAP | SPORE_TRAP_2)
+            // W4-d11 — the SporeGas clouds set `ignoreWater`
+            // (`Projectile.cs:6216`).
+            || matches!(kind, SPORE_GAS | SPORE_GAS_2 | SPORE_GAS_3)
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
             || kind == GOLF_CLUB_HELPER,
