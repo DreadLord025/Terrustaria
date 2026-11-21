@@ -373,8 +373,15 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                     // stack into `extraValue` while the CARRIER's
                     // `extraValue < value && extraValue + value <
                     // 999000000` (`realLife` redirect, `:1143-1155`).
+                    // W4-g15 lane 5 — the `:405` gate row also applies:
+                    // `enemyGrabDelayTime == 0 && playerIndexTheItemIsReservedFor
+                    // == Main.myPlayer`. The port runs the revenge arm at the
+                    // pickup (the standing coin-wallet deviation, ANALYSIS
+                    // S1-P-i50), so the reservation is the grab gate's own
+                    // `reserved_elsewhere` (already checked above); the
+                    // enemy-delay clock gates the monster suck too.
                     let mut drop = items[i].clone();
-                    if expert_mode {
+                    if expert_mode && drop.enemy_grab_delay_time == 0 {
                         let coin_copper = registry::coin_value(kind) * drop.count as u64;
                         // The C# walks Main.npc in index order and processes
                         // EVERY intersecting NPC (no break, `:1121-1200`);
