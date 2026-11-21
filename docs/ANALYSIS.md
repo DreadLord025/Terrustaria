@@ -39244,3 +39244,56 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The world-lane dust sites (W4-f6, task/W4-f6-dust-world-3, 2026-11-21, code-only mode)
+
+The world lane's THIRD batch (d54 first / e4 second pushed zero commits —
+dead lanes). 40 `Dust.NewDust*` sites across the world-sim files outside
+the entity lanes (Player/NPC/Projectile) and the g11-g15
+Main/WorldGen/WorldItem lanes: **all 27 Mount.cs sites** + 13 small
+world-file sites (Chest 420, Utils.PoofOfSmoke 1089, TeleportPylonsSystem
+390, VoidLensHelper 48/63, PopupText 461/470/479/488, LiquidRenderer
+560/564, Rain 122, MessageBuffer 3697). Census + split:
+`docs/research/65-dust-world-sites-claims.md`.
+
+Two new STAGED-emitter modules (the e2 Skeletron/Brain precedent — the
+enclosing machines are unported M2-MOUNT-3/4 or draw-side, so each fn takes
+the snapshot at the C# read moment and the wiring wave calls them at the
+C# positions on the cited pass):
+
+* `crates/tr-app/src/mount_dust.rs` — the 27 Mount sites (the drill beam
+  pair, the UpdateFrame dash/gallop rings + bodies, the four minecart
+  effects, the UpdateEffects broom/drill/lava arms, the Pixie tail, the
+  failed-dismount burst, DoSpawnDust's Wolf/Chillet/generic loops + clones)
+  plus the shared `GetFairyQueenWeaponsColorFull`
+  (`Projectile.cs:21665-21889` verbatim — the ~40-arm dev-name switch, the
+  Cenx/Artyrian/Bame/Unit One early returns, the `hslToRgb` generic path)
+  and the MathHelper/Utils vector + float-Color helpers. 24 witnesses.
+* `crates/tr-app/src/world_dust.rs` — the 13 small-file sites + the
+  `dustWater` map. 8 witnesses.
+
+**Deliberate drops (each cited at its site):** the `dust.shader` /
+`dust.customData` writes (the `particles.rs` field drops); the mount
+`Lighting.AddLight` heads (the light lane's); the case-14 `cMount == 0`
+FloorVisuals hop (`Mount.cs:4110-4115`, the caller's temporary ±24 px
+position shift); the `netMode == 2` head guards (single-player); the
+`Gore.NewGore` bodies (W4-d55's lane — their ARGUMENT draws are consumed
+in order, the e2 spin hand-off split). `EmitGolfCartSmoke`
+(`Mount.cs:4623`) is DEAD code (zero callers in the decompile) — ported
+verbatim for the census, staged unwired.
+
+**RNG (S1-A-10, one slot per C# pass):** the mount/chest/poof/nebula sites
+ride `UpdatePlayers` or the bare global (`NamedRngs::global()`, the
+clicks/netglue `UpdateInventory`/net-dispatch convention); the void-lens
+rides `UpdateProjectiles` (`Projectile.cs:52195`); the fancy flash rides
+`UpdateFloatingText` (`Main.cs:17791`); the lava bubbles ride the
+renderer's PRIVATE `_random` (`LiquidRenderer.cs:132`, a distinct
+`UnifiedRandom` — NOT a swap key, documented); the rain splash rides the
+draw's bare global (`Main.DrawItems` :38821, no swap). No new streams.
+The f32 loop-step accumulations are preserved verbatim (the lava trail's
+0.1 step runs 10 iterations, the broom trail's 0.125 step runs 8 — the
+accumulated f32 error, not a tidy 11/9).
+
+Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify
+invoked** (user directive). The 32 witnesses are owed a compile window
+before merge.

@@ -1,9 +1,13 @@
 # 65 — World-sim dust-site batches (W4-d54 / W4-e4 / W4-f6): claims + census
 
-Status: CLAIM doc (W4-f6, batch 3 of the world lane). Written early per the
-lane's coordination rule — the branch list is the claim record; this doc pins
-the file split so the world batches never overlap the entity lanes or the
-g11-g15 Main/WorldGen/WorldItem lanes.
+Status: DELIVERED (W4-f6, batch 3 of the world lane). All 40 sites ported
+across 4 commits — `885a6bfa` (batch 1, Mount movement 10), `d6f555b8`
+(batch 2, Mount effects 10), `9dec91b0` (batch 3, Mount spawn/dismount 7),
+`680ac9d8` (batch 4, small world files 13). Code-only: WRITTEN NOT RUN, the
+32 witnesses are owed a compile window before merge. The claim below was
+written early per the lane's coordination rule — the branch list is the
+claim record; this doc pins the file split so the world batches never
+overlap the entity lanes or the g11-g15 Main/WorldGen/WorldItem lanes.
 
 ## Lane boundary (what "world" means here)
 
@@ -123,3 +127,35 @@ merge. Emitters whose enclosing machine is unported are staged (the e2
 Skeletron/Brain precedent) with draw-mirror witnesses; the live ones (Chest
 Unlock, Utils.PoofOfSmoke, the mount arms present in `mount.rs` /
 `player.rs::update_mount`) are wired.
+
+## Delivery (W4-f6)
+
+Two new modules, both staged-emitter (the enclosing machines are unported
+M2-MOUNT-3/4 or draw-side; the wiring wave calls them at the C# positions):
+
+- `crates/tr-app/src/mount_dust.rs` — all 27 Mount.cs sites (batches 1-3),
+  plus the shared `GetFairyQueenWeaponsColorFull`
+  (`Projectile.cs:21665-21889`, the ~40-arm dev-name switch + the
+  Cenx/Artyrian/Bame/Unit One early returns + the `hslToRgb` generic path)
+  and the `MathHelper.Lerp/SmoothStep`, `Turn01ToCyclic010`,
+  `PingPongFrom01To010`, `NextVector2Square/Circular`, `DirectionTo`,
+  float-`Color` ctor/lerp/scale helpers. 24 draw-mirror witnesses.
+- `crates/tr-app/src/world_dust.rs` — the 13 small world-file sites
+  (batch 4) + the `dustWater` map. 8 draw-mirror witnesses.
+
+Deliberate drops (each cited at its site): the `dust.shader` /
+`dust.customData` writes (the `particles.rs` field drops), the mount
+`Lighting.AddLight` heads (the light lane's), the case-14 `cMount == 0`
+FloorVisuals hop (`Mount.cs:4110-4115`, the caller's), the
+`netMode == 2` head guards (single-player), and the `Gore.NewGore` bodies
+(W4-d55's lane — their ARGUMENT draws are consumed in order, the e2 spin
+hand-off split). `EmitGolfCartSmoke` (`Mount.cs:4623`) is DEAD code (zero
+callers) — ported verbatim for the census, staged unwired.
+
+RNG: every site drains on its C# pass's stream (S1-A-10) — the mount /
+chest / poof / nebula sites on `UpdatePlayers` or the bare global
+(`NamedRngs::global()`, the clicks/netglue convention), the void-lens on
+`UpdateProjectiles`, the fancy flash on `UpdateFloatingText`, the lava
+bubbles on the renderer's PRIVATE `_random` (`LiquidRenderer.cs:132`, a
+distinct stream — NOT a swap key), the rain splash on the draw's bare
+global. No new streams.
