@@ -586,17 +586,19 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
-            // W4-d39 (research/125 §3): the band 351-420's unclaimed
-            // kinds take research/108's port-local 781-804 corridor —
-            // vanilla 356 sits inside d37's pushed 354-399 protocol
-            // band, so vanilla-free numbering is NOT available here.
-            NpcKind::Butterfly => 781,
-            NpcKind::ScorpionBlack => 782,
-            NpcKind::Scorpion => 783,
-            NpcKind::Grasshopper => 784,
-            NpcKind::ChatteringTeethBomb => 785,
-            NpcKind::CultistArcherBlue => 786,
-            NpcKind::CultistArcherWhite => 787,
+            // W4-d39 (research/125 §3 + 108 R7): the band 351-420's
+            // unclaimed kinds take the port-local 817-826 corridor
+            // (R7 re-pin; the original 781-804 guidance was superseded
+            // by the R4-R6 small-lane moves) — vanilla 356 sits inside
+            // d37's pushed 354-399 protocol band, so vanilla-free
+            // numbering is NOT available here.
+            NpcKind::Butterfly => 817,
+            NpcKind::ScorpionBlack => 818,
+            NpcKind::Scorpion => 819,
+            NpcKind::Grasshopper => 820,
+            NpcKind::ChatteringTeethBomb => 821,
+            NpcKind::CultistArcherBlue => 822,
+            NpcKind::CultistArcherWhite => 823,
         }
     }
 
@@ -927,14 +929,14 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
-            // W4-d39: the port-local 781+ band (`to_u16` above).
-            781 => NpcKind::Butterfly,
-            782 => NpcKind::ScorpionBlack,
-            783 => NpcKind::Scorpion,
-            784 => NpcKind::Grasshopper,
-            785 => NpcKind::ChatteringTeethBomb,
-            786 => NpcKind::CultistArcherBlue,
-            787 => NpcKind::CultistArcherWhite,
+            // W4-d39: the port-local 817+ band (`to_u16` above, 108 R7).
+            817 => NpcKind::Butterfly,
+            818 => NpcKind::ScorpionBlack,
+            819 => NpcKind::Scorpion,
+            820 => NpcKind::Grasshopper,
+            821 => NpcKind::ChatteringTeethBomb,
+            822 => NpcKind::CultistArcherBlue,
+            823 => NpcKind::CultistArcherWhite,
             _ => return None,
         })
     }

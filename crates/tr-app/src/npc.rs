@@ -1097,13 +1097,13 @@ pub enum NpcKind {
     /// `:45106` — `bug_net::catch_item` already re-derives it). WIRED:
     /// the axis' 65 arm rides `npc_ai_style65::ai_065_step` (the new
     /// module, the type-356 branches of `AI_065_Butterflies`,
-    /// `NPC.cs:44896-45119`). Protocol id 781 (research/108 §3's
-    /// port-local 781-804 band — vanilla 356 sits inside d37's pushed
+    /// `NPC.cs:44896-45119`). Protocol id 817 (research/108 R7's
+    /// port-local 817-826 band — vanilla 356 sits inside d37's pushed
     /// 354-399 protocol corridor).
     Butterfly,
     /// `NPCID.ScorpionBlack` (366, `NPCID.cs:11409`) — the black desert
     /// critter (`NPC.cs:13661-13672`, the 366/367 shared row): 26x18,
-    /// aiStyle 7, dmg 0, def 0, 5 HP, catchItem 2156. Protocol id 782
+    /// aiStyle 7, dmg 0, def 0, 5 HP, catchItem 2156. Protocol id 818
     /// (research/108 §3's port-local band). The aiStyle-7 town-critter
     /// machine (`npc_ai_town::town_npc_ai`) is UNWIRED for the critter
     /// band — the kind arm holds the documented wander stand-in
@@ -1112,11 +1112,11 @@ pub enum NpcKind {
     /// `NPCID.Scorpion` (367, `NPCID.cs:11411`) — the brown desert
     /// critter (the same `NPC.cs:13661-13672` row): 26x18, aiStyle 7,
     /// dmg 0, def 0, 5 HP, catchItem 2157 (`2156 + type - 366`).
-    /// Protocol id 783.
+    /// Protocol id 819.
     Scorpion,
     /// `NPCID.Grasshopper` (377, `NPCID.cs:11431`) — the surface hopper
     /// (`NPC.cs:13811-13824`): 14x10, aiStyle 1, dmg 0, def 0, 5 HP,
-    /// friendly, catchItem 2740, slots 0.1. Protocol id 784. Rides the
+    /// friendly, catchItem 2740, slots 0.1. Protocol id 820. Rides the
     /// aiStyle-1 hop stand-in (`update_slime`, the wave-A precedent —
     /// the C#'s `AI_001_Slimes` has no 377 branch, the generic hop IS
     /// the machine).
@@ -1124,7 +1124,7 @@ pub enum NpcKind {
     /// `NPCID.ChatteringTeethBomb` (378, `NPCID.cs:11433`) — the blood
     /// moon's hopping bomb (`NPC.cs:13825-13838`): 20x26, aiStyle 41,
     /// dmg 120, def 30, 200 HP, kb 0.5, value 450, slots 1. Protocol id
-    /// 785. WIRED: the axis' 41 arm rides `npc_ai_style41::style41_step`
+    /// 821. WIRED: the axis' 41 arm rides `npc_ai_style41::style41_step`
     /// (the faithful S1-D-3 module — the 3-hop cycle, the wet/<64-px
     /// arming, the 10-tick fuse + the 160x160 explosion resize; keyed
     /// on `cs_id()` 378, NOT the port-local protocol id).
@@ -1133,12 +1133,12 @@ pub enum NpcKind {
     /// cultist's archer (`NPC.cs:13839-13855`, the 379/380 shared row):
     /// 18x40, aiStyle 3, dmg 45, def 14, 210 HP, kb 0.55, value 1000,
     /// slots 0, lavaImmune, netAlways, chaseable=false. Protocol id
-    /// 786. The aiStyle-3 walker stand-in (`update_zombie`, the wave-A
+    /// 822. The aiStyle-3 walker stand-in (`update_zombie`, the wave-A
     /// precedent); the `AI_003` 379/380 retreat branch (`NPC.cs:56181-
     /// 56214`) + the summoner link are the c1 wiring lane's.
     CultistArcherBlue,
     /// `NPCID.CultistArcherWhite` (380, `NPCID.cs:11437`) — the white
-    /// archer (the same `NPC.cs:13839-13855` row). Protocol id 787.
+    /// archer (the same `NPC.cs:13839-13855` row). Protocol id 823.
     /// `Hide = true` (`NPCID.cs:3735`) — NO bestiary entry of its own
     /// (the populator's `GetExclusions`, `BestiaryDatabaseNPCsPopulator.cs:870-886`);
     /// `try_entry_for_npc` folds it onto the blue archer's 379 (the
@@ -5035,7 +5035,7 @@ impl Npc {
             // `npc_ai_style41::style41_step` (the 3-hop cycle, the
             // wet/<64-px arming, the 10-tick fuse + the 160x160
             // explosion resize); keyed on `cs_id()` (the C# `this.type`
-            // branches read 378, NOT the port-local protocol id 785).
+            // branches read 378, NOT the port-local protocol id 821).
             // The module owns its integration (the frost-legion shape)
             // and consumes ZERO RNG draws (its dust/gore/sound emissions
             // are the documented skips — the module header's census).
@@ -32095,14 +32095,14 @@ mod s1_d_2_tests {
     /// damage 0, defense 0, value 0, knockBackResist 1 (the head default,
     /// `NPC.cs:8533` — no row written), NPCHit1/NPCDeath1, and the `[31]`
     /// Confused immunity (`NPCID.cs:8164`). The protocol id is the
-    /// port-local 781 (research/108 §3), NOT the vanilla 356.
+    /// port-local 817 (research/108 R7), NOT the vanilla 356.
     #[test]
     fn w4_d39_the_butterfly_setdefaults_rows() {
         let kind = NpcKind::Butterfly;
         assert_eq!(kind.cs_id(), 356, "vanilla type (the bestiary net id)");
         assert_eq!(kind.net_id(), 356, "net id");
-        assert_eq!(kind.to_u16(), 781, "protocol id = port-local 781");
-        assert_eq!(NpcKind::from_u16(781), Some(kind), "decode");
+        assert_eq!(kind.to_u16(), 817, "protocol id = port-local 817");
+        assert_eq!(NpcKind::from_u16(817), Some(kind), "decode");
         assert_eq!(NpcKind::from_u16(356), None, "356 stays d37-band free");
         assert_eq!(kind.size(), (10.0, 10.0), "size");
         assert_eq!(kind.ai_style(), 65, "aiStyle");
@@ -32224,14 +32224,14 @@ mod s1_d_2_tests {
     /// `SetDefaults` rows (`NPC.cs:13661-13672`/`:13811-13824`): size,
     /// aiStyle, lifeMax 5, dmg/def/value 0, kb 1 (the head default),
     /// NPCHit1/NPCDeath1, the `[31]` immunity, the port-local protocol
-    /// ids 782/783/784, the catch items 2156/2157/2740.
+    /// ids 818/819/820, the catch items 2156/2157/2740.
     #[test]
     fn w4_d39_the_scorpion_grasshopper_setdefaults_rows() {
         // (kind, vanilla, proto, w, h, ai, catch)
         let table = [
-            (NpcKind::ScorpionBlack, 366u16, 782u16, 26.0, 18.0, 7u8, 2156),
-            (NpcKind::Scorpion, 367, 783, 26.0, 18.0, 7, 2157),
-            (NpcKind::Grasshopper, 377, 784, 14.0, 10.0, 1, 2740),
+            (NpcKind::ScorpionBlack, 366u16, 818u16, 26.0, 18.0, 7u8, 2156),
+            (NpcKind::Scorpion, 367, 819, 26.0, 18.0, 7, 2157),
+            (NpcKind::Grasshopper, 377, 820, 14.0, 10.0, 1, 2740),
         ];
         for (kind, vanilla, proto, w, h, ai, catch) in table {
             assert_eq!(kind.cs_id(), vanilla, "{kind:?} vanilla type");
@@ -32372,18 +32372,18 @@ mod s1_d_2_tests {
 
     /// W4-d39 batch 3 — the teeth bomb + the archer pair's `SetDefaults`
     /// rows (`NPC.cs:13825-13838`/`:13839-13855`): size, aiStyle, HP,
-    /// damage, defense, value, kb, the port-local ids 785/786/787, the
+    /// damage, defense, value, kb, the port-local ids 821/822/823, the
     /// archer's chaseable=false + the white's 379 bestiary fold.
     #[test]
     fn w4_d39_the_teeth_archer_setdefaults_rows() {
         // (kind, cs, proto, w, h, ai, hp, dmg, def, value, kb)
         let table = [
-            (NpcKind::ChatteringTeethBomb, 378u16, 785u16, 20.0, 26.0, 41u8, 200, 120, 30, 450.0, 0.5),
-            (NpcKind::CultistArcherBlue, 379, 786, 18.0, 40.0, 3, 210, 45, 14, 1000.0, 0.55),
+            (NpcKind::ChatteringTeethBomb, 378u16, 821u16, 20.0, 26.0, 41u8, 200, 120, 30, 450.0, 0.5),
+            (NpcKind::CultistArcherBlue, 379, 822, 18.0, 40.0, 3, 210, 45, 14, 1000.0, 0.55),
             // The white archer's cs_id rides the FOLDED 379 (the s1_f_3
             // invariant — the Sharkron2 precedent); its own vanilla 380
             // lives in the render_key/texture rows.
-            (NpcKind::CultistArcherWhite, 379, 787, 18.0, 40.0, 3, 210, 45, 14, 1000.0, 0.55),
+            (NpcKind::CultistArcherWhite, 379, 823, 18.0, 40.0, 3, 210, 45, 14, 1000.0, 0.55),
         ];
         for (kind, cs, proto, w, h, ai, hp, dmg, def, value, kb) in table {
             assert_eq!(kind.cs_id(), cs, "{kind:?} cs id (the fold)");
