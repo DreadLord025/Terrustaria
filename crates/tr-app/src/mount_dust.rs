@@ -1,9 +1,12 @@
-//! W4-f6 batch 1 — the Mount.cs MOVEMENT dust sites (10): the drill mount's
-//! beam puffs (`UseDrill`, `Mount.cs:3113`/`:3170`) and the `UpdateFrame`
-//! (`:3581`) per-type dash/gallop arms — the Unicorn/WoF-Goat ring + body
-//! (`:3878`/`:3896`), the Pirate Ship ring + run puff (`:3939`/`:3970`), the
-//! Spooky Wood ring + body (`:4000`/`:4023`) and the Basilisk run + charge
-//! dusts (`:4103`/`:4123`).
+//! W4-f6 batches 1-2 — the Mount.cs dust sites. Batch 1 (MOVEMENT, 10): the
+//! drill mount's beam puffs (`UseDrill`, `Mount.cs:3113`/`:3170`) and the
+//! `UpdateFrame` (`:3581`) per-type dash/gallop arms — the Unicorn/WoF-Goat
+//! ring + body (`:3878`/`:3896`), the Pirate Ship ring + run puff
+//! (`:3939`/`:3970`), the Spooky Wood ring + body (`:4000`/`:4023`) and the
+//! Basilisk run + charge dusts (`:4103`/`:4123`). Batch 2 (EFFECTS, 10): the
+//! golf-cart smoke (`:4626`, DEAD), the four minecart effects
+//! (`:4703`/`:4719`/`:4750`/`:4782`) and the `UpdateEffects` broom/drill/lava
+//! arms (`:4824`/`:4849`/`:5061`/`:5071`/`:5099`).
 //!
 //! Contract (the S1-E-1 pool, d50's `DustPool`): every draw rides the
 //! caller's `UpdatePlayers` stream in C# statement order — `Mount.UseDrill`
@@ -407,6 +410,460 @@ pub fn basilisk_charge_dust(
         d.scale = 0.5 + rng.next_float() * 0.8; // `:4136`
         d.fade_in = 0.5 + rng.next_float() * 1.0; // `:4137`
         // `:4138` — the shader write (dropped).
+    }
+}
+
+// ---------------------------------------------------------------------------
+// W4-f6 batch 2 — the Mount EFFECTS dust sites (10): the golf-cart smoke
+// (`EmitGolfCartSmoke`, `Mount.cs:4626` — DEAD, zero callers), the four
+// minecart effects (`DoGemMinecartEffect` :4703 / `DoSteamMinecartEffect`
+// :4719 / `DoExhaustMinecartEffect` :4750 / `DoConfettiMinecartEffect` :4782)
+// and the `UpdateEffects` (:4795) arms — the Witch Broom sparkle + trail
+// (:4824/:4849), the Drill-mount trail (:5061/:5071) and the Lava-cart
+// trail (:5099). Same staged-emitter contract as batch 1: the minecart rows
+// (25-31/32/34/36) are M2-MOUNT-3 and the broom/drill/lava `UpdateEffects`
+// arms are unported, so each fn takes the snapshot at the C# read moment
+// and the wiring wave calls them on the `UpdatePlayers` stream.
+//
+// `RotatedRelativePoint` is the caller's (`player.rs::rotated_relative_point`,
+// the `fullRotation`/`gfxOffY`/mount-offset fold) — the emitters take the
+// already-rotated spawn point. `Directions` = `(direction, gravDir)` =
+// `(facing, 1)` in the port (no gravity flip). The `shader` writes are the
+// dropped field; the broom's `Lighting.AddLight` (:4820) and the drill/lava
+// `AddLight` heads are the light lane's.
+// ---------------------------------------------------------------------------
+
+/// `Utils.NextVector2Square(min, max)` (`Utils.cs:1251-1254`): TWO
+/// `NextDouble` draws (X then Y), `(max-min)*(float)NextDouble()+min`.
+fn next_vector2_square(rng: &mut UnifiedRandom, min: f32, max: f32) -> Vec2 {
+    let x = (max - min) * rng.next_double() as f32 + min;
+    let y = (max - min) * rng.next_double() as f32 + min;
+    Vec2::new(x, y)
+}
+
+/// `Utils.NextVector2Circular(hw, hh)` (`Utils.cs:1266-1269`):
+/// `NextVector2Unit() * (hw, hh) * NextFloat()` — the unit vector is
+/// `(2π*NextFloat()).ToRotationVector2()` (ONE NextFloat), then ONE more
+/// NextFloat radius. TWO draws total.
+fn next_vector2_circular(rng: &mut UnifiedRandom, hw: f32, hh: f32) -> Vec2 {
+    let angle = std::f32::consts::PI * 2.0 * rng.next_float();
+    let unit = Vec2::new(
+        (angle as f64).cos() as f32,
+        (angle as f64).sin() as f32,
+    );
+    unit * Vec2::new(hw, hh) * rng.next_float()
+}
+
+/// `Vector2.DirectionTo` (`Utils.cs`): `Normalize(Target - Origin)` — the
+/// zero vector normalizes to zero (XNA's `Normalize` guards the length).
+fn direction_to(origin: Vec2, target: Vec2) -> Vec2 {
+    (target - origin).normalize_or_zero()
+}
+
+/// Site 4626 — the golf-cart smoke (`Mount.cs:4623-4639`). **DEAD CODE**:
+/// `EmitGolfCartSmoke` has ZERO callers in the decompile (the golf-cart
+/// `UpdateFrame_GolfCart` :4570-4621 calls `EmitGolfCartWheelDust` +
+/// `EmitGolfCartlight`, never this). Ported verbatim for the census, staged
+/// unwired. ONE `NewDustDirect(position, 0, 0, 31, -direction,
+/// -gravDir*0.24, 100)`, then `position = position` (the anchor),
+/// `velocity *= 0.1`, `velocity += (-direction, -gravDir*0.25)`,
+/// `scale = 0.5`; a non-zero `vx` adds `Sign(vx)*1.3` X; `rushing` sets
+/// `fadeIn = 0.8`. `position` = `Bottom + (-direction*34, -gravDir*12)`.
+pub fn golf_cart_smoke(
+    position: Vec2,
+    facing: i32,
+    vx: f32,
+    rushing: bool,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let dir = facing as f32;
+    // `:4626` — gravDir = 1 in the port; SpeedY = -0.24.
+    let idx = dust.new_dust_direct(
+        rng, ctx, world, position, 0, 0, 31, -dir, -0.24, 100, Color::default(), 1.0,
+    );
+    let d = dust.slot_mut(idx);
+    d.position = position; // `:4627`
+    d.velocity *= 0.1; // `:4628`
+    d.velocity += Vec2::new(-dir, -0.25); // `:4629`
+    d.scale = 0.5; // `:4630`
+    if vx != 0.0 {
+        d.velocity += Vec2::new(sign_i(vx) as f32 * 1.3, 0.0); // `:4631-4634`
+    }
+    if rushing {
+        d.fade_in = 0.8; // `:4635-4638`
+    }
+}
+
+/// Site 4703 — the gem-minecart sparkle (`Mount.cs:4697-4710`): a
+/// `Next(10) == 0` gate EVERY tick; on a 0, ONE
+/// `NextVector2Square(-1, 1) * (22, 10)` offset, then
+/// `NewDustPerfect(RotatedRelativePoint(Center + (0, 10)*Directions +
+/// offset), dustType)`; `noGravity`, `fadeIn = 0.6`, `scale = 0.4`,
+/// `velocity *= 0.25`. `spawn_point` is the already-rotated anchor (the
+/// caller folds `Center + (0, 10)*Directions` through
+/// `rotated_relative_point`); `dust_type` is the per-cart gem id
+/// (86-91/262, `UpdateEffects` :4858-4878). Returns whether the gate fired.
+pub fn gem_minecart_sparkle(
+    spawn_point: Vec2,
+    dust_type: i32,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) -> bool {
+    if rng.next_max(10) != 0 {
+        return false; // `:4699` — the gate draw still ran.
+    }
+    // `:4701` — the square offset, scaled (22, 10).
+    let offset = next_vector2_square(rng, -1.0, 1.0) * Vec2::new(22.0, 10.0);
+    // `:4703` — NewDustPerfect(point + offset, dustType): the internals
+    // roll, then position is overwritten to the exact point.
+    let idx = dust.new_dust_perfect(
+        rng, ctx, world, spawn_point + offset, dust_type, None, 0, Color::default(), 1.0,
+    );
+    let d = dust.slot_mut(idx);
+    d.no_gravity = true; // `:4704`
+    d.fade_in = 0.6; // `:4705`
+    d.scale = 0.4; // `:4706`
+    d.velocity *= 0.25; // `:4707`
+    // `:4708` — the shader write (dropped).
+    true
+}
+
+/// Site 4719 — the steam-minecart puff (`Mount.cs:4712-4727`): the gate is
+/// `|vx| >= 1 && (|vx| >= 6 || frame == 0)` (NO rand in the gate). On a
+/// pass, ONE `NextVector2Square(-1, 1) * (3, 3)` offset, then
+/// `NewDustPerfect(RotatedRelativePoint(Center + (-10, -4)*Directions +
+/// offset), dustType)`; `noGravity`, `fadeIn = 0.6`, `scale = 1.8`,
+/// `velocity *= 0.25`, `velocity.Y -= 2`. `dust_type` is 303 (the steam
+/// cart 36, :5125). Returns whether the gate passed.
+pub fn steam_minecart_puff(
+    spawn_point: Vec2,
+    dust_type: i32,
+    vx: f32,
+    frame: i32,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) -> bool {
+    let num = vx.abs(); // `:4714`
+    // `:4715` — `!(num < 1) && (!(num < 6) || frame == 0)`.
+    if num < 1.0 || (num < 6.0 && frame != 0) {
+        return false;
+    }
+    let offset = next_vector2_square(rng, -1.0, 1.0) * Vec2::new(3.0, 3.0); // `:4717`
+    let idx = dust.new_dust_perfect(
+        rng, ctx, world, spawn_point + offset, dust_type, None, 0, Color::default(), 1.0,
+    );
+    let d = dust.slot_mut(idx);
+    d.no_gravity = true; // `:4720`
+    d.fade_in = 0.6; // `:4721`
+    d.scale = 1.8; // `:4722`
+    d.velocity *= 0.25; // `:4723`
+    d.velocity.y -= 2.0; // `:4724`
+    // `:4725` — the shader write (dropped).
+    true
+}
+
+/// Site 4750 — the exhaust-minecart smoke (`Mount.cs:4729-4761`): the gate
+/// is `num < 1 && Next(4) != 0` → return (the `Next(4)` draws ONLY when
+/// `num < 1`, the `&&` short-circuit). `num2 = 1 + (int)num/6` dusts; each
+/// a `NextVector2Square(-1, 1) * (3, 3)` offset, the anchor
+/// `(-18, 20)*Directions` (+ `4*direction` X when `num > 6`, + `velocity *
+/// (num2/3)` when `num2 > 0` — INTEGER `num2/3`), then
+/// `NewDustPerfect(RotatedRelativePoint(Center + anchor + offset),
+/// dustType)`; `noGravity`, `fadeIn = 0.6`, `scale = 1.2`,
+/// `velocity *= 0.2`, and `num < 1` subtracts `0.5*direction` X.
+/// `dust_type` is 31 (the exhaust cart 32, :5128). `num2` decrements
+/// BEFORE each spawn (the `while` body's first statement).
+#[allow(clippy::too_many_arguments)]
+pub fn exhaust_minecart_smoke(
+    center: Vec2,
+    facing: i32,
+    vel: Vec2,
+    dust_type: i32,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let num = vel.length(); // `:4731`
+    if num < 1.0 && rng.next_max(4) != 0 {
+        return; // `:4732-4735` — the Next(4) only when slow.
+    }
+    let mut num2 = 1 + (num as i32) / 6; // `:4736`
+    while num2 > 0 {
+        num2 -= 1; // `:4739` — decrement BEFORE the spawn.
+        let offset = next_vector2_square(rng, -1.0, 1.0) * Vec2::new(3.0, 3.0); // `:4740`
+        let mut anchor = Vec2::new(-18.0, 20.0) * Vec2::new(facing as f32, 1.0); // `:4741`
+        if num > 6.0 {
+            anchor.x += 4.0 * facing as f32; // `:4742-4745`
+        }
+        if num2 > 0 {
+            anchor += vel * (num2 / 3) as f32; // `:4746-4749` — integer div.
+        }
+        let idx = dust.new_dust_perfect(
+            rng, ctx, world, center + anchor + offset, dust_type, None, 0,
+            Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true; // `:4751`
+        d.fade_in = 0.6; // `:4752`
+        d.scale = 1.2; // `:4753`
+        d.velocity *= 0.2; // `:4754`
+        if num < 1.0 {
+            d.velocity.x -= 0.5 * facing as f32; // `:4755-4758`
+        }
+        // `:4759` — the shader write (dropped).
+    }
+}
+
+/// Site 4782 — the confetti-minecart burst (`Mount.cs:4763-4793`): the gate
+/// is `(num < 1 && Next(6) != 0) || (num < 3 && Next(3) != 0)` → return
+/// (the `Next(6)` draws when `num < 1`; the `Next(3)` draws when the first
+/// clause is false AND `num < 3`). `num2 = 1 + (int)num/6` dusts; each a
+/// `NextFloat()*2` wobble (`num3`), a `NextVector2Square(-1, 1) * (3, 8)`
+/// offset, the anchor `(-18, 4)*Directions` with
+/// `X += num*direction*0.5 + (direction*num2)*num3` (+ `velocity*(num2/3)`
+/// when `num2 > 0`), then `NewDustPerfect(RotatedRelativePoint(Center +
+/// anchor + offset), 139 + Next(4))`; `noGravity`, `fadeIn = 0.6`,
+/// `scale = 0.5 + num3/2`, `velocity *= 0.2`, `num < 1` subtracts
+/// `0.5*direction` X. `num2` decrements BEFORE each spawn.
+#[allow(clippy::too_many_arguments)]
+pub fn confetti_minecart_burst(
+    center: Vec2,
+    facing: i32,
+    vel: Vec2,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let num = vel.length(); // `:4765`
+    // `:4766` — the two-clause gate; each Next draws only when its `num`
+    // threshold holds and the earlier clause did not already return.
+    if num < 1.0 && rng.next_max(6) != 0 {
+        return;
+    }
+    if num < 3.0 && rng.next_max(3) != 0 {
+        return;
+    }
+    let dir = facing as f32;
+    let mut num2 = 1 + (num as i32) / 6; // `:4770`
+    while num2 > 0 {
+        num2 -= 1; // `:4773`
+        let num3 = rng.next_float() * 2.0; // `:4774`
+        let offset = next_vector2_square(rng, -1.0, 1.0) * Vec2::new(3.0, 8.0); // `:4775`
+        let mut anchor = Vec2::new(-18.0, 4.0) * Vec2::new(dir, 1.0); // `:4776`
+        // `:4777` — (direction * num2) is INTEGER, cast once.
+        anchor.x += num * dir * 0.5 + (facing * num2) as f32 * num3;
+        if num2 > 0 {
+            anchor += vel * (num2 / 3) as f32; // `:4778-4781`
+        }
+        let ty = 139 + rng.next_max(4); // `:4782` — the type ARGUMENT draw.
+        let idx = dust.new_dust_perfect(
+            rng, ctx, world, center + anchor + offset, ty, None, 0, Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true; // `:4783`
+        d.fade_in = 0.6; // `:4784`
+        d.scale = 0.5 + num3 / 2.0; // `:4785`
+        d.velocity *= 0.2; // `:4786`
+        if num < 1.0 {
+            d.velocity.x -= 0.5 * dir; // `:4787-4790`
+        }
+        // `:4791` — the shader write (dropped).
+    }
+}
+
+/// Site 4824 — the Witch Broom's trinket sparkle (`Mount.cs:4815-4833`):
+/// case 23, a `Next(45) == 0` gate EVERY tick; on a 0, ONE
+/// `NextVector2Circular(4, 4)` offset, then `NewDustPerfect(trinket_point +
+/// offset, 43, Zero, 254, Color(255, 255, 0, 255), 0.3)`; a NON-zero offset
+/// sets `velocity = DirectionTo(trinket_point, dust.position) * 0.2`;
+/// `fadeIn = 0.3`, `noLightEmittance`. `trinket_point` is the caller's
+/// `RotatedRelativePoint(Center + (29*direction, -4) +
+/// (trinket_rotation + π/2).ToRotationVector2() * 11)` — the broom trinket
+/// swing (`GetWitchBroomTrinketRotation` :3562, the wind/miscCounter fold).
+/// Returns whether the gate fired.
+pub fn broom_trinket_sparkle(
+    trinket_point: Vec2,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) -> bool {
+    if rng.next_max(45) != 0 {
+        return false; // `:4821` — the gate draw still ran.
+    }
+    let offset = next_vector2_circular(rng, 4.0, 4.0); // `:4823`
+    // `:4824` — NewDustPerfect(point + offset, 43, Zero, 254, yellow, 0.3).
+    let idx = dust.new_dust_perfect(
+        rng, ctx, world, trinket_point + offset, 43, Some(Vec2::ZERO), 254,
+        Color::new(255, 255, 0, 255), 0.3,
+    );
+    let d = dust.slot_mut(idx);
+    if offset != Vec2::ZERO {
+        d.velocity = direction_to(trinket_point, d.position) * 0.2; // `:4825-4828`
+    }
+    d.fade_in = 0.3; // `:4829`
+    d.no_light_emittance = true; // `:4830`
+    // `:4831-4832` — customData + shader (dropped).
+    true
+}
+
+/// Site 4849 — the Witch Broom's trinket trail (`Mount.cs:4834-4855`): the
+/// gate is `NextFloat() <= num12` where `num12 = 0.1 + velocity.Length()/30`
+/// (the NextFloat draws EVERY tick; a fail breaks). On a pass, ONE
+/// `NextFloat()` phase (`num13`), then 8 steps (`num14 = 0..1 step 0.125`),
+/// each a `Next(15) == 0` gate; on a 0, the spoke
+/// `((2π*num14 + num13).ToRotationVector2() * (0.5, 1) * 4).RotatedBy(
+/// fullRotation)`, then `NewDustPerfect(pos4 + spoke, 43, Zero, 254,
+/// yellow, 0.3)`; `velocity = spoke*0.025 + DirectionTo(pos5,
+/// dust.position)*0.5`, `fadeIn = 0.3`, `noLightEmittance`. `pos4`/`pos5`
+/// are the caller's rotated anchors (`Center + (18 - 20*NextFloat()*
+/// direction, 12)` and `Center + (52*direction, -6)` — the pos4 NextFloat
+/// is drawn BEFORE the gate, :4835). Returns whether the gate passed.
+#[allow(clippy::too_many_arguments)]
+pub fn broom_trinket_trail(
+    pos4: Vec2,
+    pos5: Vec2,
+    full_rotation: f32,
+    vel_len: f32,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) -> bool {
+    let num12 = 0.1 + vel_len / 30.0; // `:4834`
+    if !(rng.next_float() <= num12) {
+        return false; // `:4839-4842` — the NextFloat still ran.
+    }
+    let num13 = rng.next_float(); // `:4843`
+    let mut num14 = 0.0f32;
+    while num14 < 1.0 {
+        if rng.next_max(15) == 0 {
+            // `:4848` — the spoke, rotated by the player's fullRotation.
+            let angle = std::f32::consts::PI * 2.0 * num14 + num13;
+            let unit = Vec2::new(
+                (angle as f64).cos() as f32,
+                (angle as f64).sin() as f32,
+            );
+            let spoke = rotated_by(unit * Vec2::new(0.5, 1.0) * 4.0, full_rotation as f64);
+            let idx = dust.new_dust_perfect(
+                rng, ctx, world, pos4 + spoke, 43, Some(Vec2::ZERO), 254,
+                Color::new(255, 255, 0, 255), 0.3,
+            );
+            let d = dust.slot_mut(idx);
+            d.velocity = spoke * 0.025 + direction_to(pos5, d.position) * 0.5; // `:4850`
+            d.fade_in = 0.3; // `:4851`
+            d.no_light_emittance = true; // `:4852`
+            // `:4853` — the shader write (dropped).
+        }
+        num14 += 0.125; // `:4844` — the f32 loop step.
+    }
+    true
+}
+
+/// Sites 5061/5071 — the Drill-mount's exhaust trail (`Mount.cs:5016-5078`,
+/// case 11): the trail anchors `vector8 = Bottom + vector6 + vector7` and
+/// `vector9 = oldPosition + Size*(0.5, 1) + vector6 + vector7` (the
+/// `vector6`/`vector7` fullRotation folds are the caller's, :5044-5049).
+/// When `Distance(vector8, vector9) > 3`, `num10 = (int)Distance/3` (+1 when
+/// `Distance % 3 != 0`) dusts at `Lerp(vector9, vector8, num11/num10)` for
+/// `num11 = 1..=num10`; else ONE dust at `vector8`. Each:
+/// `NewDust(Center, 0, 0, 182)`, `position` overwritten, `noGravity`,
+/// `velocity = Zero`. The `AddLight` head (:5030-5034) is the light lane's.
+pub fn drill_mount_trail(
+    center: Vec2,
+    anchor_now: Vec2,
+    anchor_old: Vec2,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let dist = (anchor_now - anchor_old).length(); // `:5052`
+    if dist > 3.0 {
+        // `:5054-5058` — the integer step count, +1 on a remainder.
+        let mut num10 = dist as i32 / 3;
+        if dist % 3.0 != 0.0 {
+            num10 += 1;
+        }
+        let mut num11 = 1.0f32;
+        while num11 <= num10 as f32 {
+            let idx = dust.new_dust(
+                rng, ctx, world, center, 0, 0, 182, 0.0, 0.0, 0, Color::default(), 1.0,
+            );
+            let d = dust.slot_mut(idx);
+            // `:5062` — Lerp(old, now, num11/num10).
+            d.position = anchor_old + (anchor_now - anchor_old) * (num11 / num10 as f32);
+            d.no_gravity = true; // `:5063`
+            d.velocity = Vec2::ZERO; // `:5064`
+            // `:5065-5066` — customData + shader (dropped).
+            num11 += 1.0;
+        }
+    } else {
+        let idx = dust.new_dust(
+            rng, ctx, world, center, 0, 0, 182, 0.0, 0.0, 0, Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.position = anchor_now; // `:5072`
+        d.no_gravity = true; // `:5073`
+        d.velocity = Vec2::ZERO; // `:5074`
+        // `:5075-5076` — customData + shader (dropped).
+    }
+}
+
+/// Site 5099 — the Lava-cart's bubble trail (`Mount.cs:5080-5114`, case
+/// 22): `num5 = Clamp(velocity.Length()/5, 0, 1)`; the f32 `num6 = 0..=1
+/// step 0.1` loop runs 10 iterations (the accumulated f32 error pushes the
+/// 11th value past 1.0), each a `NextFloat() < num5` gate — on a FAIL
+/// (`!(NextFloat() < num5)`) ONE `NewDustPerfect(Lerp(value, vector2, num6),
+/// 65, NextVector2Circular(0.5, 0.5)*num5)`; `scale = 0.6`, `fadeIn = 0`,
+/// `velocity *= -1`, `noGravity`, `velocity -= vector4`; a `Next(10) == 0`
+/// sets `fadeIn = 1.3` AND `velocity = NextVector2Circular(3, 3)*num5`.
+/// `value`/`vector2`/`vector4` are the caller's shadow-offset anchors
+/// (:5089-5093). NOTE the C# spawns on the gate FAIL (the `!(...)` body).
+#[allow(clippy::too_many_arguments)]
+pub fn lava_cart_trail(
+    value: Vec2,
+    anchor: Vec2,
+    delta: Vec2,
+    vel_len: f32,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let num5 = (vel_len / 5.0).clamp(0.0, 1.0); // `:5094`
+    let mut num6 = 0.0f32;
+    while num6 <= 1.0 {
+        if !(rng.next_float() < num5) {
+            // `:5099` — the circular velocity is the ARGUMENT draw.
+            let vel = next_vector2_circular(rng, 0.5, 0.5) * num5;
+            let idx = dust.new_dust_perfect(
+                rng, ctx, world, value + (anchor - value) * num6, 65, Some(vel), 0,
+                Color::default(), 1.0,
+            );
+            let d = dust.slot_mut(idx);
+            d.scale = 0.6; // `:5100`
+            d.fade_in = 0.0; // `:5101`
+            // `:5102` — customData (dropped).
+            d.velocity *= -1.0; // `:5103`
+            d.no_gravity = true; // `:5104`
+            d.velocity -= delta; // `:5105`
+            // `:5106` — the shader write (dropped).
+            if rng.next_max(10) == 0 {
+                d.fade_in = 1.3; // `:5107-5109`
+                d.velocity = next_vector2_circular(rng, 3.0, 3.0) * num5; // `:5110`
+            }
+        }
+        num6 += 0.1; // `:5095` — the f32 loop step.
     }
 }
 
@@ -826,5 +1283,463 @@ mod tests {
         assert!(active(&pool).is_empty(), "both spawns culled");
         assert!(pool.slot(6000).no_gravity, "the sentinel takes the write");
         assert!(!pool.slot(6000).active, "the sentinel stays dead");
+    }
+
+    // ---- W4-f6 batch 2 witnesses (the Mount effects sites) ----
+
+    /// W4-f6 — site 4626 (DEAD EmitGolfCartSmoke): one type-31 Direct dust,
+    /// the velocity chain lands vx' = (-dir + jitter)*0.1 - dir + Sign(vx)*1.3.
+    /// The mirror replays the same pool call + post-writes.
+    #[test]
+    fn w4_f6_golf_smoke_mirrors_the_velocity_chain() {
+        let w = world();
+        let c = ctx();
+        let pos = Vec2::new(400.0, 600.0);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(31);
+        golf_cart_smoke(pos, 1, 5.0, true, &mut rng, &mut pool, &c, &w);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(31);
+        let idx = mpool.new_dust_direct(
+            &mut mirror, &c, &w, pos, 0, 0, 31, -1.0, -0.24, 100, Color::default(), 1.0,
+        );
+        let md = mpool.slot_mut(idx);
+        md.position = pos;
+        md.velocity *= 0.1;
+        md.velocity += Vec2::new(-1.0, -0.25);
+        md.scale = 0.5;
+        md.velocity += Vec2::new(1.3, 0.0); // Sign(5) = 1
+        md.fade_in = 0.8;
+        assert_eq!(active(&pool).len(), 1);
+        assert_eq!(pool.slot(0).position, pos);
+        assert_eq!(pool.slot(0).velocity, mpool.slot(0).velocity);
+        assert_eq!(pool.slot(0).scale, 0.5);
+        assert_eq!(pool.slot(0).fade_in, 0.8);
+        assert_eq!(pool.slot(0).dust_type, 31);
+        assert_eq!(rng.next(), mirror.next());
+        // The non-rushing arm leaves fadeIn at the NewDust default (0).
+        let mut npool = DustPool::new();
+        let mut nrng = UnifiedRandom::new(31);
+        golf_cart_smoke(pos, 1, 0.0, false, &mut nrng, &mut npool, &c, &w);
+        assert_eq!(npool.slot(0).fade_in, 0.0, "no rushing, no fadeIn");
+        // vx == 0 adds no X kick: vx' = (-1 + jitter)*0.1 - 1, jitter in
+        // [-2, 2] (the NewDust default-block velocity roll, Dust.cs:170),
+        // so vx' in [-1.3, -0.9].
+        let vx0 = npool.slot(0).velocity.x;
+        assert!(vx0 >= -1.31 && vx0 <= -0.89, "no Sign kick at vx 0: {vx0}");
+    }
+
+    /// W4-f6 — site 4703: the Next(10) gate draws every tick; a pass spawns
+    /// one Perfect dust with the square offset (2 NextDouble) and the
+    /// noGravity/0.6/0.4/×0.25 chain. The mirror lands identical records.
+    #[test]
+    fn w4_f6_gem_sparkle_gates_and_mirrors() {
+        let w = world();
+        let c = ctx();
+        let anchor = Vec2::new(500.0, 500.0);
+        // Find a seed whose first Next(10) is 0 (the gate fires).
+        let mut seed = 0;
+        loop {
+            let mut probe = UnifiedRandom::new(seed);
+            if probe.next_max(10) == 0 {
+                break;
+            }
+            seed += 1;
+        }
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(seed);
+        assert!(gem_minecart_sparkle(anchor, 86, &mut rng, &mut pool, &c, &w));
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(seed);
+        let _ = mirror.next_max(10);
+        let offset = next_vector2_square(&mut mirror, -1.0, 1.0) * Vec2::new(22.0, 10.0);
+        let idx = mpool.new_dust_perfect(
+            &mut mirror, &c, &w, anchor + offset, 86, None, 0, Color::default(), 1.0,
+        );
+        let md = mpool.slot_mut(idx);
+        md.no_gravity = true;
+        md.fade_in = 0.6;
+        md.scale = 0.4;
+        md.velocity *= 0.25;
+        assert_eq!(active(&pool).len(), 1);
+        assert_eq!(pool.slot(0).position, anchor + offset);
+        assert_eq!(pool.slot(0).velocity, mpool.slot(0).velocity);
+        assert_eq!(pool.slot(0).scale, 0.4);
+        assert_eq!(pool.slot(0).fade_in, 0.6);
+        assert!(pool.slot(0).no_gravity);
+        assert_eq!(rng.next(), mirror.next());
+        // A failed gate spawns nothing but advances the stream one draw.
+        let mut fseed = seed;
+        loop {
+            let mut probe = UnifiedRandom::new(fseed);
+            if probe.next_max(10) != 0 {
+                break;
+            }
+            fseed += 1;
+        }
+        let mut fpool = DustPool::new();
+        let mut frng = UnifiedRandom::new(fseed);
+        assert!(!gem_minecart_sparkle(anchor, 86, &mut frng, &mut fpool, &c, &w));
+        assert!(active(&fpool).is_empty());
+        let mut probe = UnifiedRandom::new(fseed);
+        let _ = probe.next_max(10);
+        assert_eq!(frng.next(), probe.next(), "the gate draw ran");
+    }
+
+    /// W4-f6 — site 4719: the steam gate is rand-free (|vx| >= 1 and
+    /// (|vx| >= 6 or frame 0)); a pass spawns one Perfect dust with the
+    /// (3,3) square offset and the Y -= 2 tail.
+    #[test]
+    fn w4_f6_steam_puff_gates_and_mirrors() {
+        let w = world();
+        let c = ctx();
+        let anchor = Vec2::new(600.0, 500.0);
+        // Slow + non-zero frame: no dust, no draws.
+        let mut slow = DustPool::new();
+        let mut srng = UnifiedRandom::new(2);
+        assert!(!steam_minecart_puff(anchor, 303, 0.5, 1, &mut srng, &mut slow, &c, &w));
+        assert!(active(&slow).is_empty());
+        let mut probe = UnifiedRandom::new(2);
+        assert_eq!(srng.next(), probe.next(), "the gate draws nothing");
+        // Mid-speed + frame 0: fires.
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(2);
+        assert!(steam_minecart_puff(anchor, 303, 3.0, 0, &mut rng, &mut pool, &c, &w));
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(2);
+        let offset = next_vector2_square(&mut mirror, -1.0, 1.0) * Vec2::new(3.0, 3.0);
+        let idx = mpool.new_dust_perfect(
+            &mut mirror, &c, &w, anchor + offset, 303, None, 0, Color::default(), 1.0,
+        );
+        let md = mpool.slot_mut(idx);
+        md.no_gravity = true;
+        md.fade_in = 0.6;
+        md.scale = 1.8;
+        md.velocity *= 0.25;
+        md.velocity.y -= 2.0;
+        assert_eq!(active(&pool).len(), 1);
+        assert_eq!(pool.slot(0).position, anchor + offset);
+        assert_eq!(pool.slot(0).velocity, mpool.slot(0).velocity);
+        assert_eq!(pool.slot(0).scale, 1.8);
+        assert_eq!(rng.next(), mirror.next());
+        // Fast (>= 6) fires regardless of frame.
+        let mut fast = DustPool::new();
+        let mut frng = UnifiedRandom::new(2);
+        assert!(steam_minecart_puff(anchor, 303, 7.0, 3, &mut frng, &mut fast, &c, &w));
+        assert_eq!(active(&fast).len(), 1);
+    }
+
+    /// W4-f6 — site 4750: the exhaust gate's Next(4) draws ONLY when slow;
+    /// num2 = 1 + (int)num/6 dusts, each decrementing num2 before the spawn.
+    /// A fast player (num >= 1) skips the gate draw entirely.
+    #[test]
+    fn w4_f6_exhaust_smoke_counts_and_mirrors() {
+        let w = world();
+        let c = ctx();
+        let center = Vec2::new(500.0, 500.0);
+        // num = 7 -> num2 = 2 dusts; the gate draw is skipped (num >= 1).
+        let vel = Vec2::new(7.0, 0.0);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(8);
+        exhaust_minecart_smoke(center, 1, vel, 31, &mut rng, &mut pool, &c, &w);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(8);
+        let num = vel.length();
+        let mut num2 = 1 + (num as i32) / 6;
+        let mut count = 0;
+        while num2 > 0 {
+            num2 -= 1;
+            let offset = next_vector2_square(&mut mirror, -1.0, 1.0) * Vec2::new(3.0, 3.0);
+            let mut anchor = Vec2::new(-18.0, 20.0);
+            if num > 6.0 {
+                anchor.x += 4.0;
+            }
+            if num2 > 0 {
+                anchor += vel * (num2 / 3) as f32;
+            }
+            let idx = mpool.new_dust_perfect(
+                &mut mirror, &c, &w, center + anchor + offset, 31, None, 0,
+                Color::default(), 1.0,
+            );
+            let md = mpool.slot_mut(idx);
+            md.no_gravity = true;
+            md.fade_in = 0.6;
+            md.scale = 1.2;
+            md.velocity *= 0.2;
+            count += 1;
+        }
+        assert_eq!(count, 2, "num2 = 1 + 7/6 = 2");
+        assert_eq!(active(&pool).len(), 2);
+        for i in 0..2 {
+            assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+            assert_eq!(pool.slot(i).scale, 1.2);
+        }
+        assert_eq!(rng.next(), mirror.next());
+        // A slow player (num < 1) draws the Next(4) gate; on a fail, nothing.
+        let mut fseed = 0;
+        loop {
+            let mut probe = UnifiedRandom::new(fseed);
+            if probe.next_max(4) != 0 {
+                break;
+            }
+            fseed += 1;
+        }
+        let mut fpool = DustPool::new();
+        let mut frng = UnifiedRandom::new(fseed);
+        exhaust_minecart_smoke(center, 1, Vec2::new(0.3, 0.0), 31, &mut frng, &mut fpool, &c, &w);
+        assert!(active(&fpool).is_empty(), "the slow gate refused");
+        let mut probe = UnifiedRandom::new(fseed);
+        let _ = probe.next_max(4);
+        assert_eq!(frng.next(), probe.next(), "the Next(4) ran");
+    }
+
+    /// W4-f6 — site 4782: the confetti gate's two Next draws (Next(6) when
+    /// num < 1, Next(3) when num < 3 and the first clause passed); each dust
+    /// draws NextFloat wobble + square offset + Next(4) type. The mirror
+    /// replays the full chain.
+    #[test]
+    fn w4_f6_confetti_burst_mirrors_the_chain() {
+        let w = world();
+        let c = ctx();
+        let center = Vec2::new(500.0, 500.0);
+        // num = 4 -> both gates skipped (num >= 3); num2 = 1 dust.
+        let vel = Vec2::new(4.0, 0.0);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(12);
+        confetti_minecart_burst(center, -1, vel, &mut rng, &mut pool, &c, &w);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(12);
+        let num = vel.length();
+        let dir = -1.0f32;
+        let mut num2 = 1 + (num as i32) / 6;
+        let mut count = 0;
+        while num2 > 0 {
+            num2 -= 1;
+            let num3 = mirror.next_float() * 2.0;
+            let offset = next_vector2_square(&mut mirror, -1.0, 1.0) * Vec2::new(3.0, 8.0);
+            let mut anchor = Vec2::new(-18.0, 4.0) * Vec2::new(dir, 1.0);
+            anchor.x += num * dir * 0.5 + (-1 * num2) as f32 * num3;
+            if num2 > 0 {
+                anchor += vel * (num2 / 3) as f32;
+            }
+            let ty = 139 + mirror.next_max(4);
+            let idx = mpool.new_dust_perfect(
+                &mut mirror, &c, &w, center + anchor + offset, ty, None, 0,
+                Color::default(), 1.0,
+            );
+            let md = mpool.slot_mut(idx);
+            md.no_gravity = true;
+            md.fade_in = 0.6;
+            md.scale = 0.5 + num3 / 2.0;
+            md.velocity *= 0.2;
+            count += 1;
+        }
+        assert_eq!(count, 1, "num2 = 1 + 4/6 = 1");
+        assert_eq!(active(&pool).len(), 1);
+        assert_eq!(pool.slot(0).position, mpool.slot(0).position);
+        assert_eq!(pool.slot(0).velocity, mpool.slot(0).velocity);
+        assert_eq!(pool.slot(0).scale, mpool.slot(0).scale);
+        assert_eq!(pool.slot(0).dust_type, mpool.slot(0).dust_type);
+        assert!(pool.slot(0).dust_type >= 139 && pool.slot(0).dust_type <= 142);
+        assert_eq!(rng.next(), mirror.next());
+    }
+
+    /// W4-f6 — site 4824: the Next(45) gate, the circular offset (2 draws),
+    /// the Perfect yellow 43 dust with the DirectionTo velocity when the
+    /// offset is non-zero. The mirror lands identical records.
+    #[test]
+    fn w4_f6_broom_sparkle_gates_and_mirrors() {
+        let w = world();
+        let c = ctx();
+        let tp = Vec2::new(520.0, 480.0);
+        let mut seed = 0;
+        loop {
+            let mut probe = UnifiedRandom::new(seed);
+            if probe.next_max(45) == 0 {
+                break;
+            }
+            seed += 1;
+        }
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(seed);
+        assert!(broom_trinket_sparkle(tp, &mut rng, &mut pool, &c, &w));
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(seed);
+        let _ = mirror.next_max(45);
+        let offset = next_vector2_circular(&mut mirror, 4.0, 4.0);
+        let idx = mpool.new_dust_perfect(
+            &mut mirror, &c, &w, tp + offset, 43, Some(Vec2::ZERO), 254,
+            Color::new(255, 255, 0, 255), 0.3,
+        );
+        let md = mpool.slot_mut(idx);
+        if offset != Vec2::ZERO {
+            md.velocity = direction_to(tp, md.position) * 0.2;
+        }
+        md.fade_in = 0.3;
+        md.no_light_emittance = true;
+        assert_eq!(active(&pool).len(), 1);
+        assert_eq!(pool.slot(0).position, tp + offset);
+        assert_eq!(pool.slot(0).velocity, mpool.slot(0).velocity);
+        assert_eq!(pool.slot(0).color, Color::new(255, 255, 0, 255));
+        assert_eq!(pool.slot(0).alpha, 254);
+        assert_eq!(pool.slot(0).fade_in, 0.3);
+        assert!(pool.slot(0).no_light_emittance);
+        assert_eq!(rng.next(), mirror.next());
+    }
+
+    /// W4-f6 — site 4849: the NextFloat gate (draws every tick), the phase
+    /// NextFloat, then 8 Next(15) gates; a fired gate spawns the rotated
+    /// spoke dust. The mirror replays the whole loop.
+    #[test]
+    fn w4_f6_broom_trail_mirrors_the_loop() {
+        let w = world();
+        let c = ctx();
+        let pos4 = Vec2::new(500.0, 500.0);
+        let pos5 = Vec2::new(552.0, 494.0);
+        // vel_len 0 -> num12 = 0.1; find a seed whose first NextFloat <= 0.1.
+        let mut seed = 0;
+        loop {
+            let mut probe = UnifiedRandom::new(seed);
+            if probe.next_float() <= 0.1 {
+                break;
+            }
+            seed += 1;
+        }
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(seed);
+        assert!(broom_trinket_trail(pos4, pos5, 0.0, 0.0, &mut rng, &mut pool, &c, &w));
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(seed);
+        let _ = mirror.next_float(); // the gate
+        let num13 = mirror.next_float();
+        let mut num14 = 0.0f32;
+        let mut fired = 0;
+        while num14 < 1.0 {
+            if mirror.next_max(15) == 0 {
+                let angle = std::f32::consts::PI * 2.0 * num14 + num13;
+                let unit = Vec2::new(
+                    (angle as f64).cos() as f32,
+                    (angle as f64).sin() as f32,
+                );
+                let spoke = rotated_by(unit * Vec2::new(0.5, 1.0) * 4.0, 0.0);
+                let idx = mpool.new_dust_perfect(
+                    &mut mirror, &c, &w, pos4 + spoke, 43, Some(Vec2::ZERO), 254,
+                    Color::new(255, 255, 0, 255), 0.3,
+                );
+                let md = mpool.slot_mut(idx);
+                md.velocity = spoke * 0.025 + direction_to(pos5, md.position) * 0.5;
+                md.fade_in = 0.3;
+                md.no_light_emittance = true;
+                fired += 1;
+            }
+            num14 += 0.125;
+        }
+        assert_eq!(active(&pool).len(), fired);
+        for i in 0..fired {
+            assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+        }
+        assert_eq!(rng.next(), mirror.next());
+        // A failed gate (NextFloat > num12) spawns nothing, one draw.
+        let mut fseed = seed;
+        loop {
+            let mut probe = UnifiedRandom::new(fseed);
+            if probe.next_float() > 0.1 {
+                break;
+            }
+            fseed += 1;
+        }
+        let mut fpool = DustPool::new();
+        let mut frng = UnifiedRandom::new(fseed);
+        assert!(!broom_trinket_trail(pos4, pos5, 0.0, 0.0, &mut frng, &mut fpool, &c, &w));
+        assert!(active(&fpool).is_empty());
+        let mut probe = UnifiedRandom::new(fseed);
+        let _ = probe.next_float();
+        assert_eq!(frng.next(), probe.next());
+    }
+
+    /// W4-f6 — sites 5061/5071: a > 3 px gap spawns ceil(dist/3) lerped
+    /// dusts; a <= 3 px gap spawns one at the now-anchor. Each is a type-182
+    /// noGravity zero-velocity dust.
+    #[test]
+    fn w4_f6_drill_trail_lerps_and_single() {
+        let w = world();
+        let c = ctx();
+        let center = Vec2::new(500.0, 500.0);
+        let old = Vec2::new(500.0, 600.0);
+        let now = Vec2::new(500.0, 590.0); // dist 10 -> ceil(10/3) = 4
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(6);
+        drill_mount_trail(center, now, old, &mut rng, &mut pool, &c, &w);
+        assert_eq!(active(&pool).len(), 4, "ceil(10/3) = 4");
+        // The lerp positions: old + (now-old)*(i/4) for i = 1..4.
+        for i in 0..4 {
+            let t = (i + 1) as f32 / 4.0;
+            let want = old + (now - old) * t;
+            assert_eq!(pool.slot(i).position, want);
+            assert_eq!(pool.slot(i).dust_type, 182);
+            assert!(pool.slot(i).no_gravity);
+            assert_eq!(pool.slot(i).velocity, Vec2::ZERO);
+        }
+        // A short gap (dist 2) spawns one at the now-anchor.
+        let mut spool = DustPool::new();
+        let mut srng = UnifiedRandom::new(6);
+        let near = Vec2::new(500.0, 598.0);
+        drill_mount_trail(center, near, old, &mut srng, &mut spool, &c, &w);
+        assert_eq!(active(&spool).len(), 1);
+        assert_eq!(spool.slot(0).position, near);
+        assert_eq!(spool.slot(0).dust_type, 182);
+    }
+
+    /// W4-f6 — site 5099: the lava trail spawns on the NextFloat gate FAIL;
+    /// num5 = clamp(vel/5, 0, 1). At vel 0 (num5 0) every gate fails, so all
+    /// 10 f32-step iterations spawn. The mirror replays the per-step
+    /// circular velocity + the Next(10) override.
+    #[test]
+    fn w4_f6_lava_trail_spawns_on_gate_fail() {
+        let w = world();
+        let c = ctx();
+        let value = Vec2::new(480.0, 520.0);
+        let anchor = Vec2::new(520.0, 510.0);
+        let delta = Vec2::new(40.0, -10.0);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(19);
+        lava_cart_trail(value, anchor, delta, 0.0, &mut rng, &mut pool, &c, &w);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(19);
+        let num5 = 0.0f32;
+        let mut num6 = 0.0f32;
+        let mut count = 0;
+        while num6 <= 1.0 {
+            if !(mirror.next_float() < num5) {
+                let vel = next_vector2_circular(&mut mirror, 0.5, 0.5) * num5;
+                let idx = mpool.new_dust_perfect(
+                    &mut mirror, &c, &w, value + (anchor - value) * num6, 65, Some(vel), 0,
+                    Color::default(), 1.0,
+                );
+                let md = mpool.slot_mut(idx);
+                md.scale = 0.6;
+                md.fade_in = 0.0;
+                md.velocity *= -1.0;
+                md.no_gravity = true;
+                md.velocity -= delta;
+                if mirror.next_max(10) == 0 {
+                    md.fade_in = 1.3;
+                    md.velocity = next_vector2_circular(&mut mirror, 3.0, 3.0) * num5;
+                }
+                count += 1;
+            }
+            num6 += 0.1;
+        }
+        assert_eq!(active(&pool).len(), count);
+        assert_eq!(count, 10, "the f32 0.1 step runs 10 iterations");
+        for i in 0..count {
+            assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+            assert_eq!(pool.slot(i).scale, 0.6);
+            assert!(pool.slot(i).no_gravity);
+        }
+        assert_eq!(rng.next(), mirror.next());
     }
 }
