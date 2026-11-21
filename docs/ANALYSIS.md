@@ -33002,7 +33002,14 @@ two-page form, tip `7d131be3`): NPC_692 is a **page-1 admission candidate**
 — its padded area (138×994 ≈ **137.2 kpx**, the 113 §4 union's unit) would
 rank **#10** in the padded-area-DESC merge-priority list — just above
 `NPC_109` (130.2 kpx) and below `NPC_243` (153.8 kpx, #9); a mid-upper
-consumer, well below the d70 sunflares (1052.7 kpx each). It is NOT in the
+consumer, well below the d70 sunflares (1052.7 kpx each).
+**SUPERSEDED (the final phase, research/144):** d35's ATLAS FINAL
+(`e5558b0a9`) regenerated the union to 490 names — the Orca inserts at
+**FINAL rank #16** (between NPC_243 #15 and NPC_109 #16), and the §10.6
+lazy-NPC contract replaces the page-1 ask: NPC_692 joins the world's
+NPC page (the census input), NOT the eager union. The dims-row +
+admission contract: `docs/research/144-orca-npc692-census-input.md`.
+It is NOT in the
 113 407-name union list (that census predates this lane's sheets phase), so
 the repack must ADD it: owner `W4-c4-style44-flying-fish`, dims 136×992,
 page 1. The 113 §4 priority order step (4)/(5) ("the remaining branches'
