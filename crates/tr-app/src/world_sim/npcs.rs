@@ -4990,32 +4990,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     update_dd2_event(app, dt);
     let dead: Vec<Npc> = app.npcs.iter().filter(|n| n.hp <= 0).cloned().collect();
     app.npcs.retain(|n| n.hp > 0);
-    // The invasion kill credit (`NPC.cs:78236-78279`): the group match
-    // drains the army's points and reports the progress.
+    // W4-f32 DOC-SWEEP — the death path re-ordered to the C# `NPCLoot`
+    // sequence (`NPC.cs:78830-78899`), per NPC in slot order (the C# runs
+    // `checkDead` → `NPCLoot` inside each `NPC.UpdateNPC`, `Main.cs:17767`).
+    // The draw-free invasion/moon reports (`checkDead`'s tail, `:78230-
+    // 78275`) are consolidated after the loot — they draw nothing, so the
+    // `UpdateNPCs` stream is byte-identical to the per-NPC interleave.
     for npc in &dead {
-        // `NPC.checkDead`'s carrier guard (`NPC.cs:78040-78042`): a
-        // linked segment never runs the death events — the carrier's
-        // death carries them.
+        // `NPC.checkDead`'s carrier guard (`NPC.cs:78040-78042`): a linked
+        // segment never runs the death events — the carrier's death carries
+        // them (the loot, coins, bestiary credit and banners alike).
         if npc.has_carrier() {
             continue;
         }
-        // `NPC.checkDead`'s DD2 crystal arms (`NPC.cs:79240-79278`,
-        // `DoDeathEvents`'s 552-578 rows — they run inside `NPCLoot`
-        // (`:78223` → `:78856`), BEFORE `CheckProgress` at `:78230`): the
-        // budget decision reads the pre-kill invasion pair, so the drop
-        // walk rides ahead of the kill report's wave advance. S1-E-12c.
-        dd2_crystal_drop(app, npc);
-        report_invasion_kill(app, npc.kind);
-        // `NPC.cs:78230-78232`'s death-site pair — `CheckProgressFrostMoon`
-        // then `CheckProgressPumpkinMoon` — the C# runs them right after
-        // `DD2Event.CheckProgress` and before the invasion group's match. The
-        // port bundles the DD2 walk and the group accounting inside
-        // `report_invasion_kill` (disjoint state: the invasion size vs the
-        // moon-event waves, and neither draws the RNG), so the moon walks
-        // ride right behind it; each walk self-gates on its own flag, so a
-        // single running event walks alone.
-        app.world.report_frost_moon_kill(npc.kind.to_u16());
-        app.world.report_pumpkin_moon_kill(npc.kind.to_u16());
         // `NPC.checkDead` plays `this.DeathSound` at `base.position`
         // (`NPC.cs:78186-78194`) — the kind's own death cue through the
         // faithful case-4 path (S1-E-21 wave C): the volume arms + the
@@ -5063,170 +5050,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 rng,
             );
         }
-    }
-    // B-6b — the mob-kill → shield-chip loop (`NPC.cs:79279-79320`):
-    // BEFORE the tower death arms, like the C# switch's case order (the
-    // mob cases 412-429 precede the pillar cases 517/422/507/493). Each
-    // dead celestial mob whose pillar's shield stands sends one 629 bolt
-    // at the host pillar; zero RNG draws by construction.
-    spawn_tower_damage_bolts(app, &dead);
-    // The Golem's death chain (`:79346`'s event-flag case 245 + the
-    // head's detach at `:84957`): the BODY's death raises
-    // `downedGolemBoss`; the attached head's death spawns the free head
-    // at its position (`NewNPC(..., 249, base.whoAmI)`).
-    for npc in &dead {
-        match npc.kind {
-            NpcKind::Golem => {
-                app.world.downed_golem = true;
-            }
-            // S1-D-3 W-9 fishron wiring — `DoDeathEvents`'s case 370
-            // (`NPC.cs:79348-79350`): `SetEventFlagCleared(ref
-            // downedFishron, 7)`. The progression notification (the
-            // flag-7 net message) rides the flag; the port's
-            // notify_progression_net carries the WoF precedent's shape.
-            NpcKind::DukeFishron => {
-                app.world.downed_fishron = true;
-            }
-            NpcKind::Deerclops => {
-                app.world.downed_deerclops = true;
-            }
-            NpcKind::SolarTower => {
-                app.world.downed_tower_solar = true;
-                app.world.tower_active_solar = false;
-                // `NPC.cs:79324-79325`'s `UpdateLunarApocalypse()` +
-                // `MessageLunarApocalypse()`.
-                crate::world_sim::lunar::update_lunar_apocalypse(app);
-                crate::world_sim::lunar::message_lunar_apocalypse(app);
-            }
-            // `DoDeathEvents`'s 398 row (`NPC.cs:79397-79404`): the core's
-            // death clears the lunar apocalypse (the vanilla's
-            // `SetEventFlagCleared(ref downedMoonlord, 10)` +
-            // `LunarApocalypseIsUp = false`). S1-D-3: the flag rides the
-            // drama's `checkDead` ONLY — the `active = false` kills that
-            // bypass it (the lost-part gate `:41267-41272`, the despawn
-            // ride `:41504`) carry `moon_despawn_kill` and never raise
-            // the downed flag. The despawn ride's parts-clear
-            // (`:41490-41514`) rides HERE: the core deactivates on the
-            // same tick it requests the clear, so the resolve reads the
-            // dead clone (the post-AI pass would never see it).
-            NpcKind::MoonLordCore => {
-                if npc.wants_moon_parts_clear {
-                    for n in app.npcs.iter_mut() {
-                        if matches!(
-                            n.kind,
-                            NpcKind::MoonLordHand | NpcKind::MoonLordHead | NpcKind::MoonLordFreeEye
-                        ) && n.hp > 0
-                        {
-                            n.hp = 0;
-                            n.moon_despawn_kill = true;
-                        }
-                    }
-                    app.world.lunar_apocalypse_is_up = false;
-                } else if !npc.moon_despawn_kill {
-                    app.world.downed_moon_lord = true;
-                    app.world.lunar_apocalypse_is_up = false;
-                }
-            }
-            NpcKind::NebulaTower => {
-                app.world.downed_tower_nebula = true;
-                app.world.tower_active_nebula = false;
-                crate::world_sim::lunar::update_lunar_apocalypse(app);
-                crate::world_sim::lunar::message_lunar_apocalypse(app);
-            }
-            NpcKind::StardustTower => {
-                app.world.downed_tower_stardust = true;
-                app.world.tower_active_stardust = false;
-                crate::world_sim::lunar::update_lunar_apocalypse(app);
-                crate::world_sim::lunar::message_lunar_apocalypse(app);
-            }
-            NpcKind::VortexTower => {
-                app.world.downed_tower_vortex = true;
-                app.world.tower_active_vortex = false;
-                crate::world_sim::lunar::update_lunar_apocalypse(app);
-                crate::world_sim::lunar::message_lunar_apocalypse(app);
-            }
-            // `DoDeathEvents`'s 439 row (`NPC.cs:79393-79396`): the
-            // cultist's death clears its flag and raises the apocalypse
-            // (`WorldGen.TriggerLunarApocalypse`).
-            NpcKind::AncientCultist => {
-                app.world.downed_ancient_cultist = true;
-                // `WorldGen.TriggerLunarApocalypse` fires from `checkDead`
-                // under the `UpdateNPCs` swap (`NPC.cs:79393-79396`,
-                // `Main.cs:17767-17769`).
-                let rng = app.rngs.stream(RngKey::UpdateNpcs);
-                crate::world_sim::lunar::trigger_lunar_apocalypse(
-                    &mut app.world,
-                    &mut app.npcs,
-                    rng,
-                );
-            }
-            // `DoDeathEvents`'s 422 row (`NPC.cs:79327-79332`): the Vortex
-            // pillar's own pair (the other agent's parallel merge added the
-            // kind + this arm with the lunar-apocalypse calls — the port had
-            // no Vortex kind at all before, so its `downedTowerVortex` /
-            // `TowerActiveVortex` never cleared).
-            NpcKind::EaterOfWorldsHead | NpcKind::BrainOfCthulhu => {
-                // `NPC.cs:79450-79456`'s orb-boss-death arm: the pending
-                // meteorite — the guaranteed first (the pre-kill read of
-                // the downed flag), the 1/2 afterwards.
-                let was_down = app.world.downed_eow;
-                if !was_down {
-                    app.world.spawn_meteor = true;
-                } else {
-                    // `NPC.cs:79450-79456` draws `Next(2)` under the
-                    // `UpdateNPCs` swap (`checkDead` -> `DoDeathEvents`
-                    // inside `NPC.UpdateNPC`, `Main.cs:17767-17769`) — the
-                    // stream S1-A-11's npcs pass lands on in P3.
-                    app.world.spawn_meteor = tr_core::worldgen::meteor::boss_death_roll(
-                        app.rngs.stream(crate::app::RngKey::UpdateNpcs),
-                        true,
-                    );
-                }
-                app.world.downed_eow = true;
-            }
-            NpcKind::GolemHead => {
-                let mut free =
-                    Npc::new(NpcKind::GolemHeadFree, npc.x, npc.y + npc.size().1, 1, 0.0);
-                free.dont_take_damage = true;
-                free.hp = free.max_hp;
-                app.npcs.push(free);
-            }
-            _ => {}
-        }
-    }
-    // The Slime Rain kill counter (`DoDeathEvents_AdvanceSlimeRain`,
-    // `NPC.cs:79078-79095`): the slime kills count toward 150 (75 after
-    // the first King) while no King lives (`!AnyNPCs(50)`); at the
-    // threshold `SpawnOnPlayer(50)` — the King — and the counter flips
-    // negative (`-num / 2`) for the next climb.
-    if app.world.slime_rain
-        && !app
-            .npcs
-            .iter()
-            .any(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
-    {
-        for npc in &dead {
-            if npc.kind != NpcKind::Slime {
-                continue;
-            }
-            let threshold = if app.world.downed_slime_king { 75 } else { 150 };
-            app.world.slime_rain_kills += 1;
-            if app.world.slime_rain_kills >= threshold {
-                if let Some(p) = app.player.as_ref() {
-                    let xt = ((p.x / TILE_PX) as i32 + 12).clamp(2, app.world.width - 3);
-                    if let Some(k) = Npc::spawn_king_slime(&app.world, xt) {
-                        app.npcs.push(k);
-                    }
-                }
-                app.world.slime_rain_kills = -threshold / 2;
-            }
-        }
-    }
-    for npc in &dead {
-        // `Main.BestiaryTracker.Kills.RegisterKill` at the death's NPCLoot
-        // (`NPC.cs:78835-78847`); the `GetWereThereAnyInteractions` gate is
-        // constants-on — every death the port produces today is a player
-        // kill, and no ported kind fails `IsNPCValidForBestiaryKillCredit`.
+        // `NPCLoot`'s head (`NPC.cs:78839-78847`): `CountKillForAchievements`
+        // + the bestiary kill + `CountKillForBannersAndDropThem`. The
+        // `GetWereThereAnyInteractions` gate is constants-on — every death
+        // the port produces today is a player kill, and no ported kind fails
+        // `IsNPCValidForBestiaryKillCredit`.
         let entry = crate::bestiary::entry_for_npc(npc.kind, npc.slime);
         app.bestiary.kills.register_kill(entry.credit_id);
         // `NPCKillsTracker.RegisterKill`'s `netMode == 2` half
@@ -5250,7 +5078,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 .notify(achievements::CondKind::NpcKilled(entry.net_id));
         }
         app.send_npc_killed(npc, entry.net_id as i16);
-        // `NPC.CountKillForBannersAndDropThem` (`NPC.cs:79818-79827`) →
+        // `NPC.CountKillForBannersAndDropThem` (`NPC.cs:79810-79821`) →
         // `BannerSystem.AddNPCKillBy` (M2-BUFF-8): the milestone spawns the
         // banner item at the death spot and announces the tally in the
         // Command color.
@@ -5258,7 +5086,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             crate::chat::broadcast_death_text(&mut app.chat, &text, crate::chat::COLOR_COMMAND);
             let item = tr_core::bestiary::banner_to_item(banner);
             // `CountKillForBannersAndDropThem` fires from the death path —
-            // the `UpdateNPCs` stream (`NPC.cs:79818-79827`).
+            // the `UpdateNPCs` stream (`NPC.cs:79810-79821`).
             let rng = app.rngs.stream(RngKey::UpdateNpcs);
             crate::world_sim::items::spawn_item_drop(
                 &mut app.items,
@@ -5269,85 +5097,61 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 (npc.y / 16.0) as i32,
             );
         }
-        // `NPC.checkDead`'s boss arms (`NPC.cs:79416`'s
-        // `SetEventFlagCleared`): the boss deaths set the world's downed
-        // flags. The player-kill gate rides the same kill path as the
-        // bestiary credit above.
-        match npc.kind {
-            NpcKind::KingSlime => {
-                app.world.downed_slime_king = true;
-                // `NPC.cs:79405-79410` (case 50): the King's death while a
-                // slime rain is up calls `Main.StopSlimeRain()` and fires
-                // STICKY_SITUATION (progression 16).
-                if app.world.slime_rain {
-                    // `NPC.cs:79405-79410` (case 50): `Main.StopSlimeRain()`
-                    // fires from `checkDead` under the `UpdateNPCs` swap —
-                    // the duration draw rides `UpdateNPCs`, not the weather
-                    // tick's `UpdateTime` (the other caller).
-                    crate::world_sim::weather::stop_slime_rain(
-                        &mut app.world,
-                        app.rngs.stream(crate::app::RngKey::UpdateNpcs),
-                    );
-                    let _ = app.notify_progression_net(16);
-                }
-            }
-            NpcKind::EyeOfCthulhu => app.world.downed_eoc = true,
-            NpcKind::EaterOfWorldsHead => app.world.downed_eow = true,
-            NpcKind::QueenBee => app.world.downed_queen_bee = true,
-            NpcKind::TheDestroyer => app.world.downed_mech_boss1 = true,
-            NpcKind::SkeletronPrime => app.world.downed_mech_boss3 = true,
-            // The Twins: the flag when BOTH eyes are dead (the vanilla
-            // checks `!AnyNPCs(125) && !AnyNPCs(126)` after the death).
-            NpcKind::Retinazer => {
-                if !app
-                    .npcs
-                    .iter()
-                    .any(|n| n.kind == NpcKind::Spazmatism && n.hp > 0)
-                {
-                    app.world.downed_mech_boss2 = true;
-                }
-            }
-            NpcKind::Spazmatism => {
-                if !app
-                    .npcs
-                    .iter()
-                    .any(|n| n.kind == NpcKind::Retinazer && n.hp > 0)
-                {
-                    app.world.downed_mech_boss2 = true;
-                }
-            }
-            NpcKind::Plantera => app.world.downed_plant_boss = true,
-            // The Brain: the vanilla shares `downedBoss2` with the EoW —
-            // the port's `downed_eow` covers the shared flag.
-            NpcKind::BrainOfCthulhu => app.world.downed_eow = true,
-            NpcKind::SkeletronHead => app.world.downed_skeletron = true,
-            NpcKind::WallOfFlesh => {
-                // `WorldGen.StartHardmode()` (`NPC.cs:79485`'s death hook,
-                // `WorldGen.cs:31701-31712`): `Main.hardMode = true` — the
-                // hardmode shop rows and the ores ride the flag — then
-                // ITS_HARD (progression 9), guarded by the `!hardMode`
-                // early-return so a repeat death cannot re-fire it.
-                if !app.world.hard_mode {
-                    app.world.hard_mode = true;
-                    let _ = app.notify_progression_net(9);
-                }
-            }
-            _ => {}
+        // `NPCLoot_DropItems` (`NPC.cs:78855` → `:78925-78937`): the rule
+        // engine over the dead NPC's registered drops.
+        spawn_loot(app, npc);
+        // `DoDeathEvents` (`NPC.cs:78856` → `:79197-79514`), in the C#'s
+        // call order: AdvanceSlimeRain → SummonDungeonSpirit → the type
+        // switch → the boss tail.
+        advance_slime_rain(app, npc);
+        summon_dungeon_spirit(app, npc);
+        do_death_events_switch(app, npc);
+        // `DoDeathEvents`' boss tail (`NPC.cs:79505-79513`, gated
+        // `this.boss`). The `moon_despawn_kill` term: the C#'s bypass
+        // kills (the orphan guards / the despawn ride / the drama sweep,
+        // `NPC.cs:41579-41583`/`:41490-41514`) set `active = false`
+        // WITHOUT `checkDead`, so `NPCLoot` — and the boss tail with it —
+        // never runs on them; the port's death loop still processes the
+        // bypass corpses (the recorded batched-death deviation), so the
+        // tail refuses them here (a Moon Lord despawn is not a defeat).
+        if npc.is_boss_kind() && !npc.moon_despawn_kill {
+            boss_potions_and_hearts(app, npc);
+            // `DoDeathEvents_CelebrateBossDeath` (`NPC.cs:79018-79034`):
+            // the defeat broadcast in the BossOrEvent color — the Twins
+            // take the PLURAL row with the `Enemies.TheTwins` name, the
+            // Moon Lord the `Enemies.MoonLord` name, every other boss its
+            // own `GetTypeNetName` row (`:79022-79033`).
+            let (key, name) = match entry.net_id {
+                125 | 126 => (
+                    "Announcement.HasBeenDefeated_Plural",
+                    crate::lang::text("Enemies.TheTwins"),
+                ),
+                398 => (
+                    "Announcement.HasBeenDefeated_Single",
+                    crate::lang::text("Enemies.MoonLord"),
+                ),
+                _ => (
+                    "Announcement.HasBeenDefeated_Single",
+                    crate::lang::npc_name(entry.net_id),
+                ),
+            };
+            let text = crate::lang::text_args(key, &[name]);
+            crate::chat::broadcast_death_text(&mut app.chat, &text, crate::chat::COLOR_BOSS_OR_EVENT);
         }
-        // `NPC.checkDead`'s carrier guard (`NPC.cs:78040-78042`): a linked
-        // segment drops nothing — the loot, the coins, the bestiary credit
-        // and the banners ride the carrier's death (`NPC.cs:78839-78850`).
-        if npc.has_carrier() {
-            continue;
-        }
-        spawn_coins(app, &npc);
-        spawn_loot(app, &npc);
-        // W4-f32 — the luck-consuming death tail: `NPCLoot_DropHeals`
-        // (the common life/mana roll + the per-type hearts, `NPC.cs:79098-
-        // 79195`/`:79531-79557`) and `DoDeathEvents_SummonDungeonSpirit`
-        // (`:79064-79078`). Appended after the port's coins/loot batch
-        // (ANALYSIS "The luck consumers (W4-f32)").
-        spawn_heals_and_death_events(app, &npc);
+        // `NPCLoot_DropMoney` (`NPC.cs:78897` → `:79619-79750`).
+        spawn_coins(app, npc);
+        // `NPCLoot_DropHeals` (`NPC.cs:78898` → `:79098-79195`): the common
+        // life/mana roll + the per-type hearts — the LAST call in NPCLoot.
+        spawn_heals(app, npc);
+        // `NPC.checkDead`'s tail (`NPC.cs:78230-78275`), AFTER NPCLoot:
+        // `DD2Event.CheckProgress` (the wave report — its medal drops draw
+        // the ItemDrop triplet on `UpdateNPCs`), then the frost/pumpkin
+        // moon walks (draw-free), then the invasion group's match. The
+        // per-NPC slot keeps the C#'s interleave: the crystal budget above
+        // read the pre-kill pair, this report advances the wave. S1-E-12c.
+        report_invasion_kill(app, npc.kind);
+        app.world.report_frost_moon_kill(npc.kind.to_u16());
+        app.world.report_pumpkin_moon_kill(npc.kind.to_u16());
     }
     // B-6b — the shield lifecycle's live consumers, at the death path's
     // tail (the C# owns the reset in the static state, `NPC.cs:95247-
@@ -6792,7 +6596,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
 /// (`ItemDropResolver.TryDropping` over `ItemDropDatabase.Populate()`, ported
 /// into `loot_db_gen`): the dead NPC's vanilla net id resolves its registered
 /// rules; the executor skips requests for items the registry does not model.
-fn spawn_loot(app: &mut App, npc: &Npc) {
+pub(crate) fn spawn_loot(app: &mut App, npc: &Npc) {
     let entry = crate::bestiary::entry_for_npc(npc.kind, npc.slime);
     let net_id = entry.net_id;
     let x = npc.x;
@@ -6830,6 +6634,14 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
             zone_snow: zones.zone_snow,
             zone_corrupt: zones.zone_corrupt,
             zone_crimson: zones.zone_crimson,
+            // W4-f32 DOC-SWEEP — the soul-of-light/night gates
+            // (`Conditions.cs:830-876`/`:1579-1612`): the hallow zone for
+            // the light soul, and the depth band below the rock layer
+            // (`position.Y > rockLayer * 16`, `:1606`) the shared
+            // `SoulOfWhateverConditionCanDrop` reads. The corrupt/crimson
+            // zones above already feed the night soul.
+            zone_hallow: zones.zone_hallow,
+            soul_depth_ok: (npc.y as f64) > app.world.rock_layer * 16.0,
             downed_eoc: app.world.downed_eoc,
             // M5-SEED-1: the classic secret-seed flags (`loot.rs`'s
             // `TenthAnniversaryIsUp`/`DontStarveIsUp`/`RemixSeed`/
@@ -6876,7 +6688,16 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
             life_max: npc.max_hp,
             friendly: false,
             spawned_from_statue: npc.spawned_from_statue,
-            is_boss: npc.kind == NpcKind::KingSlime,
+            // W4-f32 DOC-SWEEP — the faithful `NPC.boss` read (the 23
+            // `SetDefaults` `boss = true` rows, `Npc::is_boss_kind`): the
+            // soul gate's `info.npc.boss` (`Conditions.cs:1581`) and the
+            // `LegacyHack_IsABoss` trophy rows read it. The old
+            // KingSlime-only stand-in left every other boss's trophy
+            // condition dead and let bosses pass the soul gate.
+            is_boss: npc.is_boss_kind(),
+            // `NPCID.Sets.DontDropDungeonKeysOrSouls` (`NPCID.cs:10115`):
+            // type 23 (Meteor Head) alone — the soul/key gates refuse it.
+            dont_drop_keys: net_id == 23,
             has_player_target: true,
             // The slime-body rain / statue-mimic style (`ai[1]`) and the
             // RedHat Skeletron state (`ai[3]`) ride the live ai vector
@@ -6941,7 +6762,7 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
 /// ±20-75 % spread, the six bonus chains and the platinum/gold/silver/copper
 /// split. Coin velocities ride the death path's `UpdateNPCs` stream like
 /// the C# scatter.
-fn spawn_coins(app: &mut App, npc: &Npc) {
+pub(crate) fn spawn_coins(app: &mut App, npc: &Npc) {
     let (x, y) = npc.center();
     // `NPCLoot_DropMoney` fires from the same death path — the `UpdateNPCs`
     // stream (`NPC.cs:79622`'s luck read rides it too).
@@ -6954,8 +6775,14 @@ fn spawn_coins(app: &mut App, npc: &Npc) {
         // the port's single player; the `|luck|` double-roll gate lives in
         // `drop_money` (`loot.rs:316-318`).
         app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0),
-        false,                  // Midas
-        false,                  // Main.bloodMoon
+        // `this.midas` (`NPC.cs:79631`) — `UpdateNPC_BuffApply` sets it
+        // while buff 72 is live (`NPC.cs:92017-92020`), clears it when the
+        // buff lapses (`:92165`); the port reads the buff directly (the
+        // Flask of Gold / Golden Bullet on-hit arms land it,
+        // `melee_on_hit.rs:127`).
+        npc.buffs.has_buff(72),
+        // `Main.bloodMoon` (`NPC.cs:79660`): the +0-100 % bump.
+        app.world.blood_moon,
         npc.extra_value as f32, // `NPCLoot_DropMoney`'s `+= extraValue` (:79680)
         &mut out,
     );
@@ -7122,15 +6949,11 @@ fn summon_dungeon_spirit_roll(
     false
 }
 
-/// The death path's `NPCLoot_DropHeals` + `DoDeathEvents_SummonDungeonSpirit`
-/// lane (W4-f32): runs AFTER `spawn_coins`/`spawn_loot` in the port's
-/// batched death pass — the C# order inside `NPCLoot` is DropItems →
-/// DoDeathEvents → DropMoney → DropHeals (`NPC.cs:78855-78898`); the
-/// port's documented coins-first batching keeps the pre-existing
-/// coin/loot stream intact and appends the new draws at the tail
-/// (ANALYSIS "The luck consumers (W4-f32)"). All draws ride the
-/// `UpdateNPCs` stream (the `NPC.UpdateNPC` swap).
-fn spawn_heals_and_death_events(app: &mut App, npc: &Npc) {
+/// `NPC.NPCLoot_DropHeals` (`NPC.cs:79098-79195`): the common life/mana
+/// roll + the per-type heart tail — the LAST call inside `NPCLoot`
+/// (`:78898`), after `NPCLoot_DropMoney`. All draws ride the `UpdateNPCs`
+/// stream (the `NPC.UpdateNPC` swap).
+pub(crate) fn spawn_heals(app: &mut App, npc: &Npc) {
     let entry = crate::bestiary::entry_for_npc(npc.kind, npc.slime);
     let net_id = entry.net_id;
     let rng = app.rngs.stream(RngKey::UpdateNpcs);
@@ -7174,26 +6997,34 @@ fn spawn_heals_and_death_events(app: &mut App, npc: &Npc) {
         let kind = crate::world_sim::items::seasonal_pickup_kind(
             raw_kind, tenth, halloween, xmas, rng,
         );
-        // The port's ItemDrop scatter model (the same triplet
-        // `spawn_loot` uses; the C#'s `Next(-30,31)*0.1` /
-        // `Next(-40,-15)*0.1` defaults are the documented stand-in).
-        let vx = (rng.next_float() * 2.0 - 1.0) * 1.2;
-        let vy = -1.5 - rng.next_float();
-        let phase = rng.next_float() * std::f32::consts::TAU;
-        app.items.push(ItemDrop::new(
-            kind,
-            1,
-            crate::prefix::roll_prefix(kind, -1, rng),
-            x,
-            y,
-            vx,
-            vy,
-            phase,
-        ));
+        // W4-f32 DOC-SWEEP — the REAL per-heart scatter (`Item.NewItem`'s
+        // default velocity, `Item.cs:49749-49750`): TWO integer draws,
+        // `Next(-30,31)*0.1` then `Next(-40,-15)*0.1` — hearts/stars are
+        // NOT in `ItemID.Sets.ItemNoGravity` (`ItemID.cs:1320`), so the
+        // gravity arm applies. The old 3-float triplet stand-in (the
+        // `spawn_loot` model) drew a phantom third `next_float` and used
+        // float ranges; replaced verbatim. `Item.Prefix(-1)` runs FIRST
+        // (`Item.cs:49730`) but draws nothing for hearts (CanHavePrefixes
+        // gate, `Item.cs:515-518`); the phase field is a port render
+        // stand-in the C# does not draw — pinned 0.
+        let prefix = crate::prefix::roll_prefix(kind, -1, rng);
+        let vx = rng.next_range(-30, 31) as f32 * 0.1;
+        let vy = rng.next_range(-40, -15) as f32 * 0.1;
+        app.items.push(ItemDrop::new(kind, 1, prefix, x, y, vx, vy, 0.0));
     }
-    // `DoDeathEvents_SummonDungeonSpirit` — the wisp spawn at the NPC's
-    // centre on a dungeon-wall tile (`Main.wallDungeon`, `Main.cs:10598-
-    // 10606`: 7/8/9/94-99 — `tr_core::scene::is_dungeon_wall`).
+}
+
+/// `NPC.DoDeathEvents_SummonDungeonSpirit` (`NPC.cs:79064-79078`), the
+/// second call inside `DoDeathEvents` (`:79200`) — AFTER the slime-rain
+/// advance and BEFORE the boss death arms / `NPCLoot_DropMoney`. The wisp
+/// spawns at the NPC's centre on a dungeon-wall tile (`Main.wallDungeon`,
+/// `Main.cs:10598-10606`: 7/8/9/94-99 — `tr_core::scene::is_dungeon_wall`).
+pub(crate) fn summon_dungeon_spirit(app: &mut App, npc: &Npc) {
+    let entry = crate::bestiary::entry_for_npc(npc.kind, npc.slime);
+    let net_id = entry.net_id;
+    let rng = app.rngs.stream(RngKey::UpdateNpcs);
+    let luck = app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0);
+    let expert = app.player.as_ref().is_some_and(|p| p.buffs.expert_mode);
     let (cx, cy) = npc.center();
     let centre_wall_dungeon = app
         .world
@@ -7224,6 +7055,287 @@ fn spawn_heals_and_death_events(app: &mut App, npc: &Npc) {
         );
         spirit.hp = spirit.max_hp;
         app.npcs.push(spirit);
+    }
+}
+
+/// `NPC.DoDeathEvents_AdvanceSlimeRain` (`NPC.cs:79080-79096`), the FIRST
+/// call inside `DoDeathEvents` (`:79199`): a slime kill (`slimeRainNPC[1]`,
+/// `Main.cs:8864`) while the rain is up and no King lives counts toward
+/// 150 (75 after the first King); at the threshold `SpawnOnPlayer(50)`
+/// and the counter flips negative (`-num / 2`). Draw-free.
+pub(crate) fn advance_slime_rain(app: &mut App, npc: &Npc) {
+    if !app.world.slime_rain || npc.kind != NpcKind::Slime {
+        return;
+    }
+    if app
+        .npcs
+        .iter()
+        .any(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
+    {
+        return;
+    }
+    let threshold = if app.world.downed_slime_king { 75 } else { 150 };
+    app.world.slime_rain_kills += 1;
+    if app.world.slime_rain_kills >= threshold {
+        if let Some(p) = app.player.as_ref() {
+            let xt = ((p.x / TILE_PX) as i32 + 12).clamp(2, app.world.width - 3);
+            if let Some(k) = Npc::spawn_king_slime(&app.world, xt) {
+                app.npcs.push(k);
+            }
+        }
+        app.world.slime_rain_kills = -threshold / 2;
+    }
+}
+
+/// `NPC.DoDeathEvents_DropBossPotionsAndHearts` (`NPC.cs:78945-79016`),
+/// the boss tail of `DoDeathEvents` (`:79507`, gated `this.boss`): one
+/// potion stack `Next(5,16)` of the per-boss id, then `Next(5)+5` hearts
+/// (each its own `Item.NewItem`), then the Badger's Hat 5004 when BOTH
+/// the EoC and the WoF died today (`EoCKilledToday && WoFKilledToday`,
+/// reset at dusk — `Main.cs:65221`). All draws ride `UpdateNPCs`.
+pub(crate) fn boss_potions_and_hearts(app: &mut App, npc: &Npc) {
+    let rng = app.rngs.stream(RngKey::UpdateNpcs);
+    let stack = rng.next_range(5, 16);
+    // `:78948-78996`: the potion id ladder (28 default).
+    let net_id = crate::bestiary::entry_for_npc(npc.kind, npc.slime).net_id;
+    let potion = match net_id {
+        113 | 35 | 668 => 188,
+        222 => 1134,
+        657 | 636 | 245 | 262 | 370 | 395 | 439 => 499,
+        398 => 3544,
+        t if t > 113 && t < 222 => 499,
+        _ => 28,
+    };
+    let tenth = app
+        .world
+        .seeds
+        .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
+    let halloween = app
+        .world
+        .micro_seeds
+        .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN);
+    let xmas = app
+        .world
+        .micro_seeds
+        .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS);
+    let (x, y) = (npc.x, npc.y);
+    // The potion stack (`:78997`) — a plain item, no seasonal remap.
+    crate::world_sim::items::spawn_item_drop_px(
+        &mut app.items,
+        rng,
+        potion as u16,
+        stack as u32,
+        Vec2::new(x, y),
+    );
+    // `:78998-79002`: `Next(5) + 5` hearts, each its own NewItem.
+    let hearts = rng.next_max(5) + 5;
+    for _ in 0..hearts {
+        let kind = crate::world_sim::items::seasonal_pickup_kind(58, tenth, halloween, xmas, rng);
+        crate::world_sim::items::spawn_item_drop_px(
+            &mut app.items,
+            rng,
+            kind,
+            1,
+            Vec2::new(x, y),
+        );
+    }
+    // `:79003-79015`: the daily EoC/WoF latches + the Badger's Hat.
+    if net_id == 4 {
+        app.world.eoc_killed_today = true;
+    } else if net_id == 113 {
+        app.world.wof_killed_today = true;
+    }
+    if app.world.eoc_killed_today && app.world.wof_killed_today {
+        app.world.eoc_killed_today = false;
+        app.world.wof_killed_today = false;
+        crate::world_sim::items::spawn_item_drop_px(
+            &mut app.items,
+            rng,
+            5004,
+            1,
+            Vec2::new(x, y),
+        );
+    }
+}
+
+/// `NPC.DoDeathEvents`' type switch (`NPC.cs:79205-79504`), per NPC in
+/// the C#'s case order — the ported arms only (the unported kinds' rows
+/// are documented skips). The DD2 crystal rows (`:79240-79278`) run
+/// BEFORE the tower rows (`:79279-79344`), the boss flag rows after.
+pub(crate) fn do_death_events_switch(app: &mut App, npc: &Npc) {
+    // `:79240-79278` — the DD2 crystal arms (552-578): the budget decision
+    // reads the pre-kill invasion pair (`dd2_crystal_drop` self-gates on
+    // the pool id + the ongoing flag). S1-E-12c.
+    dd2_crystal_drop(app, npc);
+    // `:79279-79320` — the mob-kill → shield-chip rows (the celestial
+    // mobs 402-429/518): one 629 bolt at the host pillar while its shield
+    // stands. Zero RNG draws by construction (`spawn_tower_damage_bolts`
+    // on the one-NPC slice keeps the B-6b seam).
+    spawn_tower_damage_bolts(app, std::slice::from_ref(npc));
+    match npc.kind {
+        // `:79321-79344` — the four pillar rows: the downed flag + the
+        // active clear + the lunar-apocalypse pair.
+        NpcKind::SolarTower => {
+            app.world.downed_tower_solar = true;
+            app.world.tower_active_solar = false;
+            // `NPC.cs:79324-79325`'s `UpdateLunarApocalypse()` +
+            // `MessageLunarApocalypse()`.
+            crate::world_sim::lunar::update_lunar_apocalypse(app);
+            crate::world_sim::lunar::message_lunar_apocalypse(app);
+        }
+        NpcKind::VortexTower => {
+            app.world.downed_tower_vortex = true;
+            app.world.tower_active_vortex = false;
+            crate::world_sim::lunar::update_lunar_apocalypse(app);
+            crate::world_sim::lunar::message_lunar_apocalypse(app);
+        }
+        NpcKind::NebulaTower => {
+            app.world.downed_tower_nebula = true;
+            app.world.tower_active_nebula = false;
+            crate::world_sim::lunar::update_lunar_apocalypse(app);
+            crate::world_sim::lunar::message_lunar_apocalypse(app);
+        }
+        NpcKind::StardustTower => {
+            app.world.downed_tower_stardust = true;
+            app.world.tower_active_stardust = false;
+            crate::world_sim::lunar::update_lunar_apocalypse(app);
+            crate::world_sim::lunar::message_lunar_apocalypse(app);
+        }
+        // `:79345-79347` — case 245: `SetEventFlagCleared(downedGolemBoss, 6)`.
+        NpcKind::Golem => {
+            app.world.downed_golem = true;
+        }
+        // `:79348-79350` — case 370: `SetEventFlagCleared(downedFishron, 7)`.
+        NpcKind::DukeFishron => {
+            app.world.downed_fishron = true;
+        }
+        // `:79354-79356` — case 668: `SetEventFlagCleared(downedDeerclops, 25)`.
+        NpcKind::Deerclops => {
+            app.world.downed_deerclops = true;
+        }
+        // `:79386-79392` — case 222: `SetEventFlagCleared(downedQueenBee, 8)`.
+        NpcKind::QueenBee => app.world.downed_queen_bee = true,
+        // `:79393-79396` — case 439: the cultist's flag + the apocalypse.
+        NpcKind::AncientCultist => {
+            app.world.downed_ancient_cultist = true;
+            // `WorldGen.TriggerLunarApocalypse` fires from `checkDead`
+            // under the `UpdateNPCs` swap (`NPC.cs:79393-79396`,
+            // `Main.cs:17767-17769`).
+            let rng = app.rngs.stream(RngKey::UpdateNpcs);
+            crate::world_sim::lunar::trigger_lunar_apocalypse(
+                &mut app.world,
+                &mut app.npcs,
+                rng,
+            );
+        }
+        // `:79397-79404` — case 398: the core's death clears the lunar
+        // apocalypse. S1-D-3: the flag rides the drama's `checkDead` ONLY —
+        // the `active = false` kills that bypass it (the lost-part gate
+        // `:41267-41272`, the despawn ride `:41504`) carry
+        // `moon_despawn_kill` and never raise the downed flag. The despawn
+        // ride's parts-clear (`:41490-41514`) rides HERE: the core
+        // deactivates on the same tick it requests the clear, so the
+        // resolve reads the dead clone (the post-AI pass would never see it).
+        NpcKind::MoonLordCore => {
+            if npc.wants_moon_parts_clear {
+                for n in app.npcs.iter_mut() {
+                    if matches!(
+                        n.kind,
+                        NpcKind::MoonLordHand | NpcKind::MoonLordHead | NpcKind::MoonLordFreeEye
+                    ) && n.hp > 0
+                    {
+                        n.hp = 0;
+                        n.moon_despawn_kill = true;
+                    }
+                }
+                app.world.lunar_apocalypse_is_up = false;
+            } else if !npc.moon_despawn_kill {
+                app.world.downed_moon_lord = true;
+                app.world.lunar_apocalypse_is_up = false;
+            }
+        }
+        // `:79405-79421` — case 50: the King's flag + the slime-rain stop
+        // (the `StopSlimeRain` duration draw rides `UpdateNPCs`, not the
+        // weather tick's `UpdateTime` — the other caller) + progression 16.
+        NpcKind::KingSlime => {
+            if app.world.slime_rain {
+                crate::world_sim::weather::stop_slime_rain(
+                    &mut app.world,
+                    app.rngs.stream(crate::app::RngKey::UpdateNpcs),
+                );
+                let _ = app.notify_progression_net(16);
+            }
+            app.world.downed_slime_king = true;
+        }
+        // `:79422-79429` — cases 125/126: the Twins' shared flag when BOTH
+        // eyes are dead (the vanilla checks `!AnyNPCs` after the death).
+        NpcKind::Retinazer => {
+            if !app
+                .npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::Spazmatism && n.hp > 0)
+            {
+                app.world.downed_mech_boss2 = true;
+            }
+        }
+        NpcKind::Spazmatism => {
+            if !app
+                .npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::Retinazer && n.hp > 0)
+            {
+                app.world.downed_mech_boss2 = true;
+            }
+        }
+        // `:79430-79439` — case 262: `SetEventFlagCleared(downedPlantBoss, 12)`.
+        NpcKind::Plantera => app.world.downed_plant_boss = true,
+        // `:79440-79442` — case 4: `SetEventFlagCleared(downedBoss1, 13)`.
+        NpcKind::EyeOfCthulhu => app.world.downed_eoc = true,
+        // `:79443-79459` — cases 13/14/15/266: the orb-boss arm — the
+        // pending meteorite (the guaranteed first, the 1/2 afterwards,
+        // `NPC.cs:79453-79456`) + the shared `downedBoss2` flag (the port's
+        // `downed_eow` covers the EoW/Brain share).
+        NpcKind::EaterOfWorldsHead | NpcKind::BrainOfCthulhu => {
+            let was_down = app.world.downed_eow;
+            if !was_down {
+                app.world.spawn_meteor = true;
+            } else {
+                // `NPC.cs:79453-79456` draws `Next(2)` under the
+                // `UpdateNPCs` swap (`checkDead` -> `DoDeathEvents`
+                // inside `NPC.UpdateNPC`, `Main.cs:17767-17769`).
+                app.world.spawn_meteor = tr_core::worldgen::meteor::boss_death_roll(
+                    app.rngs.stream(crate::app::RngKey::UpdateNpcs),
+                    true,
+                );
+            }
+            app.world.downed_eow = true;
+        }
+        // `:79460-79465` — case 35: `SetEventFlagCleared(downedBoss3, 15)`.
+        NpcKind::SkeletronHead => app.world.downed_skeletron = true,
+        // `:79466-79472` — case 127: `downedMechBoss3`.
+        NpcKind::SkeletronPrime => app.world.downed_mech_boss3 = true,
+        // `:79473-79479` — case 134: `downedMechBoss1`.
+        NpcKind::TheDestroyer => app.world.downed_mech_boss1 = true,
+        // `:79480-79492` — case 113: `WorldGen.StartHardmode()`
+        // (`WorldGen.cs:31701-31712`) + ITS_HARD (progression 9), guarded
+        // by the `!hardMode` early-return so a repeat death cannot re-fire.
+        NpcKind::WallOfFlesh => {
+            if !app.world.hard_mode {
+                app.world.hard_mode = true;
+                let _ = app.notify_progression_net(9);
+            }
+        }
+        // The Golem head's detach (`NPC.cs:84957`'s `HitEffect` arm, the
+        // port folds it into the death switch): the attached head's death
+        // spawns the free head at its position (`NewNPC(..., 249)`).
+        NpcKind::GolemHead => {
+            let mut free =
+                Npc::new(NpcKind::GolemHeadFree, npc.x, npc.y + npc.size().1, 1, 0.0);
+            free.dont_take_damage = true;
+            free.hp = free.max_hp;
+            app.npcs.push(free);
+        }
+        _ => {}
     }
 }
 
@@ -8440,7 +8552,7 @@ mod tests {
         a.world = world;
         a.player = Some(crate::player::Player::spawn(&a.world));
         let npc = Npc::spawn_slime_variant(&a.world, 30, SlimeVariant::Blue).unwrap();
-        spawn_heals_and_death_events(&mut a, &npc);
+        spawn_heals(&mut a, &npc);
         let after0 = a.rngs.stream(RngKey::UpdateNpcs).clone();
         assert_ne!(after0, UnifiedRandom::new(a.world.seed as i32), "the tail drew");
         // Twin at luck 1.0: the 1/6 and 1/2 gates always hit — the stream
@@ -8450,12 +8562,109 @@ mod tests {
         b.world.compute_column_surface();
         b.player = Some(crate::player::Player::spawn(&b.world));
         b.player.as_mut().unwrap().luck_state.luck = 1.0;
-        spawn_heals_and_death_events(&mut b, &npc);
+        spawn_heals(&mut b, &npc);
         assert_ne!(
             *b.rngs.stream(RngKey::UpdateNpcs),
             after0,
             "luck 1.0 takes the hit branches"
         );
+    }
+
+    /// W4-f32 DOC-SWEEP — the REAL per-heart scatter (`Item.NewItem`'s
+    /// default velocity, `Item.cs:49749-49750`): TWO integer draws
+    /// `Next(-30,31)*0.1` / `Next(-40,-15)*0.1`, no phantom third float.
+    /// The Horseman (315) drops a guaranteed heart (`NPC.cs:79126-79128`),
+    /// so its heals tail spawns exactly one heart with the integer scatter.
+    #[test]
+    fn f32_heart_scatter_uses_the_csharp_integer_draws() {
+        use crate::app::flow::front_flow_tests::flow_app;
+        let mut a = flow_app(None, vec![], vec![]);
+        let mut world = crate::test_world_helpers::ground();
+        world.compute_column_surface();
+        a.world = world;
+        a.player = Some(crate::player::Player::spawn(&a.world));
+        // The Horseman: net 315, the guaranteed heart (no luck gate).
+        let mut horseman = Npc::new(NpcKind::HeadlessHorseman, 30.0 * 16.0, 5.0 * 16.0, 1, 0.0);
+        horseman.hp = 0;
+        let before = a.items.len();
+        spawn_heals(&mut a, &horseman);
+        let hearts: Vec<&ItemDrop> = a.items[before..]
+            .iter()
+            .filter(|d| d.kind == 58)
+            .collect();
+        assert_eq!(hearts.len(), 1, "the Horseman's guaranteed heart");
+        // The scatter: the twin replays the two integer draws on the same
+        // stream the heals tail consumed (the common life/mana rolls draw
+        // first, then the heart's velocity pair).
+        let h = hearts[0];
+        // vx in [-3.0, 3.0] step 0.1; vy in [-4.0, -1.6] step 0.1.
+        assert!(h.vel.x >= -3.0 && h.vel.x <= 3.0, "vx {}", h.vel.x);
+        assert!(h.vel.y >= -4.0 && h.vel.y <= -1.6, "vy {}", h.vel.y);
+        // The integer lattice: vx*10 and vy*10 are (near-)integers.
+        assert!((h.vel.x * 10.0).round() == h.vel.x * 10.0 || (h.vel.x * 10.0 - (h.vel.x * 10.0).round()).abs() < 1e-4);
+        assert_eq!(h.phase, 0.0, "the C# draws no phase");
+        assert_eq!(h.prefix, 0, "hearts take no prefix");
+    }
+
+    /// W4-f32 DOC-SWEEP — `DoDeathEvents_DropBossPotionsAndHearts`
+    /// (`NPC.cs:78945-79016`): the boss tail drops one potion stack
+    /// `Next(5,16)` + `Next(5)+5` hearts. The EoC (4) uses potion 28 and
+    /// latches `EoCKilledToday`; the WoF (113) uses 188 and latches
+    /// `WoFKilledToday`; BOTH in one day drops the Badger's Hat 5004 and
+    /// resets the latches (`:79003-79015`).
+    #[test]
+    fn f32_boss_potions_hearts_and_badger_hat() {
+        use crate::app::flow::front_flow_tests::flow_app;
+        let mut a = flow_app(None, vec![], vec![]);
+        let mut world = crate::test_world_helpers::ground();
+        world.compute_column_surface();
+        a.world = world;
+        a.player = Some(crate::player::Player::spawn(&a.world));
+        // The EoC death: potion 28 + 5..9 hearts, EoCKilledToday latches.
+        let mut eoc = Npc::new(NpcKind::EyeOfCthulhu, 30.0 * 16.0, 5.0 * 16.0, 1, 0.0);
+        eoc.hp = 0;
+        let before = a.items.len();
+        boss_potions_and_hearts(&mut a, &eoc);
+        let drops = &a.items[before..];
+        assert!(drops.iter().any(|d| d.kind == 28), "the EoC's potion 28");
+        let heart_count = drops.iter().filter(|d| d.kind == 58).count();
+        assert!((5..=9).contains(&heart_count), "Next(5)+5 hearts: {heart_count}");
+        assert!(a.world.eoc_killed_today, "EoCKilledToday latches");
+        assert!(!drops.iter().any(|d| d.kind == 5004), "no hat yet (WoF alive)");
+        // The WoF death the same day: potion 188 + hearts + the Badger's Hat.
+        let mut wof = Npc::new(NpcKind::WallOfFlesh, 30.0 * 16.0, 5.0 * 16.0, 1, 0.0);
+        wof.hp = 0;
+        let before = a.items.len();
+        boss_potions_and_hearts(&mut a, &wof);
+        let drops = &a.items[before..];
+        assert!(drops.iter().any(|d| d.kind == 188), "the WoF's potion 188");
+        assert!(drops.iter().any(|d| d.kind == 5004), "the Badger's Hat 5004");
+        assert!(!a.world.eoc_killed_today, "the latches reset after the hat");
+        assert!(!a.world.wof_killed_today);
+        // A second EoC death (no WoF today) drops no hat.
+        let before = a.items.len();
+        boss_potions_and_hearts(&mut a, &eoc);
+        assert!(!a.items[before..].iter().any(|d| d.kind == 5004), "one hat per day-pair");
+    }
+
+    /// W4-f32 DOC-SWEEP — the dusk reset (`NPC.ResetBadgerHatTime`,
+    /// `Main.cs:65221` → `NPC.cs:78939-78943`): the daily EoC/WoF latches
+    /// clear at the day→night boundary, so the hat needs both in ONE day.
+    #[test]
+    fn f32_badger_hat_latches_reset_at_dusk() {
+        let mut world = tr_core::World::new("t".into(), 8, 8);
+        world.eoc_killed_today = true;
+        world.wof_killed_today = true;
+        world.day_time = true;
+        // `Main.cs:65148` is STRICT (`> 54000.0`): resting AT 54000 and
+        // adding one tick crosses; 53999 + 1 lands exactly on the boundary
+        // and stays day.
+        world.time = 54000.0;
+        let mut rng = UnifiedRandom::new(1);
+        crate::world_sim::clock::advance_time(&mut world, 1.0 / 60.0, &mut rng, false);
+        assert!(!world.day_time, "the boundary crossed to night");
+        assert!(!world.eoc_killed_today, "EoCKilledToday cleared at dusk");
+        assert!(!world.wof_killed_today, "WoFKilledToday cleared at dusk");
     }
 
     // M5-SEED-2: `endlessHalloween` / `endlessChristmas`
@@ -17520,10 +17729,13 @@ mod dw3_tests {
         }
     }
 
-    /// DW-3.2: the death loot (coins + loot + the velocity triplets) draws
-    /// `stream(UpdateNPCs)` in the pass's NPCLoot order — the kill path's
-    /// UpdateNPCs consumption equals the loot fns' direct replay (the AI
-    /// tick of a dead slime draws nothing), and the other streams stay put.
+    /// DW-3.2: the death loot draws `stream(UpdateNPCs)` in the pass's
+    /// NPCLoot order — the kill path's UpdateNPCs consumption equals the
+    /// loot fns' direct replay (the AI tick of a dead slime draws nothing),
+    /// and the other streams stay put. W4-f32 DOC-SWEEP: the C# order is
+    /// DropItems → DoDeathEvents → DropMoney → DropHeals (`NPC.cs:78855-
+    /// 78898`) — the twin replays loot, then the (draw-free for a slime)
+    /// death events, then coins, then heals.
     #[test]
     fn test_dw_3_2_death_loot_rides_the_update_npcs_stream() {
         let mut a = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
@@ -17547,17 +17759,20 @@ mod dw3_tests {
         // pristine stream — the C# order is the death sound FIRST
         // (`NPC.checkDead` `NPC.cs:78193`, one case-4 pitch draw
         // `LegacySoundPlayer.cs:693` — S1-E-21 wave C), then the NPCLoot
-        // order (coins, then the rule engine, then the velocity/prefix
-        // draws, then the W4-f32 heals/spirit tail); the replay is
-        // byte-for-byte.
+        // order (the rule engine, then DoDeathEvents — draw-free for a
+        // slime: no rain, no dungeon gates, not a boss — then coins, then
+        // the heals tail); the replay is byte-for-byte.
         let mut twin = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         twin.world = crate::test_world_helpers::ground();
         twin.world.compute_column_surface();
         twin.player = Some(crate::player::Player::spawn(&twin.world));
         let _death_pitch = twin.rngs.stream(RngKey::UpdateNpcs).next_range(-10, 11);
-        spawn_coins(&mut twin, &slime);
         spawn_loot(&mut twin, &slime);
-        spawn_heals_and_death_events(&mut twin, &slime);
+        advance_slime_rain(&mut twin, &slime);
+        summon_dungeon_spirit(&mut twin, &slime);
+        do_death_events_switch(&mut twin, &slime);
+        spawn_coins(&mut twin, &slime);
+        spawn_heals(&mut twin, &slime);
         assert_eq!(
             *twin.rngs.stream(RngKey::UpdateNpcs),
             after,
