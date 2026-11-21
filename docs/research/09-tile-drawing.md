@@ -136,7 +136,7 @@ disco arms 160/692 (`Main.DiscoR/G/B`), tile 83's texture override, 323's frond-
 | **Tile-entity-bearing furniture** — 395/698/520/471/470/475/378/334/620/237 | special-point registry + entity item sprites | none | **MISSING** |
 | **Particles/dust from tiles** — `DrawTiles_EmitParticles` :6688-7548, `EmitLivingTreeLeaf` :7549, `EmitAlchemyHerbParticles` :9605 | per-tile sparkle/dust rolls on `Main.TileFrameSeed` | none (leaves only: `tiles.rs:868-914`) | **MISSING** (leaves partial) |
 | **Dangerous-tile outline / `GetTileOutlineInfo` :4478** | highlight overlay | none | **MISSING** (debug feature) |
-| **`Draw_LiquidBehindTile` / submerged vertex tints :3824-4152, :4145** | water mask behind sloped cells + shimmer tint | `render/liquids.rs::draw_tile_liquid_behind` + comment :638 | **PARTIAL** — the shimmer vertex tint is called out in ROADMAP :188-189 as open. **W4-g75 final-sweep census (2026-11-21):** the `:3858` refusal chain is missing its `CheckForWaterfall` arm — `tileCache.halfBrick() && (num3 > 160 || num > 160) && waterfallManager.CheckForWaterfall(tileX, tileY)` (a spouting half-brick suppresses its own behind-water so the fall reads clean); `check_for_waterfall` is ported (`waterfall/mod.rs:238`) but UNWIRED — `draw_tile_liquid_behind` has no manager handle. The `inActive()` half of the same refusal is owned by the g80 actuator lane (`liquid_behind_refused`, `task/W4-g80-tile-actuator-draw` — not duplicated here). |
+| **`Draw_LiquidBehindTile` / submerged vertex tints :3824-4152, :4145** | water mask behind sloped cells + shimmer tint | `render/liquids.rs::draw_tile_liquid_behind` + `liquid_behind_spout_refused` | **PARTIAL** — the shimmer vertex tint is called out in ROADMAP :188-189 as open. **W4-g75 final-sweep census + retire-contract wiring (2026-11-21):** the `:3858` refusal chain's `CheckForWaterfall` arm — `tileCache.halfBrick() && (num3 > 160 || num > 160) && waterfallManager.CheckForWaterfall(tileX, tileY)` (a spouting half-brick suppresses its own behind-water so the fall reads clean) — is now WIRED as `liquid_behind_spout_refused` (the `:3835-3844` type-379 bubble exclusion on `num3`/`num` verbatim; the manager handle rides `draw_tiles`' existing `waterfall` seam). The `inActive()` half of the same refusal is owned by the g80 actuator lane (`liquid_behind_refused`, af6cd44f — that commit leaves the spout clause as a recorded deviation; the halves compose by OR at the family merge). 3 witnesses written not run. |
 | **Master trophy / pylon / void lens / critter cage** | dedicated passes | `render/pylons.rs` (S1-G-1 wave D) | **PORTED** (trophy/pylon/lens; critter cage stays MISSING — `DrawSpecialTilesLegacy`) |
 
 ## Tests
@@ -246,12 +246,11 @@ disco arms 160/692 (`Main.DiscoR/G/B`), tile 83's texture override, 323's frond-
 
 ## Task seeds
 
-- **S** — Wire `WaterfallManager.CheckForWaterfall` into `draw_tile_liquid_behind`'s refusal
-  (`TileDrawing.cs:3858`): a half-brick spout with >160 liquid on either side suppresses its
-  behind-water quad. `check_for_waterfall` is already ported (`waterfall/mod.rs:238`); the
-  renderer needs the manager handle (the `draw_tiles` seam already carries it). Coordinate
-  with the g80 actuator lane's `inActive()` half of the same refusal line. *[W4-g75 final
-  sweep residual, 2026-11-21]*
+- ~~**S** — Wire `WaterfallManager.CheckForWaterfall` into `draw_tile_liquid_behind`'s refusal
+  (`TileDrawing.cs:3858`)~~ **DONE (W4-g75 retire-contract, 2026-11-21):**
+  `liquid_behind_spout_refused` (`render/liquids.rs`), the manager handle fed from the
+  `draw_tiles` seam; the g80 `inActive()` half (af6cd44f) composes by OR at the family
+  merge — complementary, not contested. *[was the W4-g75 final-sweep residual]*
 - **S** — Port the platform arms: `SET_PLATFORMS` cases in `drawdata.rs` (martian glow rows
   26/27 from `TileDrawing.cs:6157-6170`) + the slope side-fill quads (`:1517-1543`) in
   `tiles.rs`. Depends on nothing; high pixel payoff. *[covers deviation 6]*

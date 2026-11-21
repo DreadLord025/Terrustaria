@@ -254,10 +254,13 @@ from the walk's dual `AmbientScan`. Residual: the `ambientLava` blend
 
 ### Residuals (recorded, not ported here)
 
-1. `DrawTile_LiquidBehindTile`'s `:3858` `CheckForWaterfall` refusal arm —
-   `check_for_waterfall` is ported but the renderer has no manager handle at
-   that site (research/09 task seed; coordinate with g80's `inActive()` half).
-2. The `ambientLava` blend (above) — a `DrawWaters` lane concern.
+1. ~~`DrawTile_LiquidBehindTile`'s `:3858` `CheckForWaterfall` refusal arm~~
+   **WIRED in the retire-contract phase** (`liquid_behind_spout_refused`,
+   the manager handle from the `draw_tiles` seam; g80's `inActive()` half
+   composes by OR — see the addendum below).
+2. The `ambientLava` blend (above) — a `DrawWaters` lane concern; on the
+   canonical g73 branch resolved UPSTREAM by `liquid_loop_update` (the
+   two-tier split — see the addendum and the `sound.rs` DELEGATED-STATUS note).
 3. `Main.gfxQuality` fixed 1.0 (the documented convergence value, `mod.rs:24-27`).
 
 ## Verification the merger must run (this lane was code-only)

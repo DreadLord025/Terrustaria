@@ -1092,11 +1092,19 @@ non-solid and solid tile passes (`Main.DoDraw_Waterfalls`).
   `lava_fountain_draws_the_two_sheet_pair_and_lights_every_cell`. The ambience
   consumer is verified LIVE (`frame.rs:300-335` → `sound::liquid_ambience` →
   `audio.rs::set_liquid_loop`, both re-pitch branches); the `ambientLava` blend
-  (`Main.cs:13488-13497`) stays unported — `Main.ambientLava*` is stored by
-  `DrawWaters` (`:57934-57936`), outside the waterfall lane. Residual recorded in
-  research/09: `DrawTile_LiquidBehindTile`'s `:3858` `CheckForWaterfall` refusal
-  arm is unwired (`check_for_waterfall` ported, no renderer handle); the
-  `inActive()` half belongs to the g80 actuator lane. The tile-side fountain
+  (`Main.cs:13488-13497`) stays unported HERE — `Main.ambientLava*` is stored by
+  `DrawWaters` (`:57934-57936`), outside the waterfall lane; on the canonical g73
+  branch (82ae8b96) the blend is resolved UPSTREAM by
+  `ambient_sound::liquid_loop_update`, which delegates its volume walk to the
+  pure `sound::liquid_ambience` (the two-tier split — the `sound.rs`
+  DELEGATED-STATUS note; the merger keeps BOTH fns). Retire-contract update:
+  `DrawTile_LiquidBehindTile`'s `:3858` `CheckForWaterfall` refusal arm is now
+  WIRED (`render/liquids.rs::liquid_behind_spout_refused`, the manager handle
+  fed from `draw_tiles`' existing `waterfall` seam, the `:3835-3844` type-379
+  bubble exclusion verbatim; 3 witnesses written not run); the
+  `inActive()` half belongs to the g80 actuator lane (af6cd44f
+  `liquid_behind_refused` — that commit explicitly leaves the spout clause as
+  a recorded deviation; the halves compose by OR at the family merge). The tile-side fountain
   chain verified complete: tile 338 placement (`tileobject/registry.rs` D_338,
   item 2738), wiring case 338 (`wiring.rs:2315` → `firework_fountain` :1660,
   `Wiring.cs:1522-1546` verbatim incl. `CheckMech(30)` + `419 + Next(4)`), the

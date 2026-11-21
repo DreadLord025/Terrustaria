@@ -74,8 +74,19 @@ pub struct Listener {
 /// `MaxWorldViewSize.X * 0.5` (960, `Main.cs:66714`), not the window width.
 ///
 /// The lavafall channel's `ambientLava` blend (`Main.cs:13488-13497`) is not
-/// ported (`Main.ambientLava*` stays at the load reset), so the caller feeds
-/// the lavafall triple alone.
+/// ported HERE (`Main.ambientLava*` stays at the load reset), so a direct
+/// caller feeds the lavafall triple alone.
+///
+/// **DELEGATED-STATUS (W4-g75 retire-contract, 2026-11-21):** on the
+/// canonical g73 branch (82ae8b96) this pure fn is the VOLUME TIER of a
+/// two-tier split — `ambient_sound::liquid_loop_update` (the DECISION tier:
+/// the Manhattan position pick + the `ambientLavafallStrength +
+/// ambientLavaStrength` sum, `Main.cs:13488-13497`, the play gate on the
+/// channel's OWN strength, the slot/pitch bookkeeping) delegates its
+/// per-channel volume walk to this fn. The `ambientLava` residual above is
+/// thereby resolved UPSTREAM by the g73 tier; this fn itself stays
+/// blend-free. **The merger keeps BOTH fns, two-tier** — do not collapse
+/// the decision tier into this walk or re-derive either half.
 #[allow(clippy::too_many_arguments)]
 pub fn liquid_ambience(
     strength: f32,
