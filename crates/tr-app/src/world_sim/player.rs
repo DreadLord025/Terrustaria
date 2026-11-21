@@ -626,7 +626,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             for slot in std::mem::take(&mut app.buff_removals) {
                 let bt = p.buffs.buff_type[slot];
                 if p.try_removing_buff(&app.world, slot, bt, misc_buffs) {
-                    app.audio.play("Menu_Tick");
+                    app.audio.play_menu("Menu_Tick");
                 }
             }
         }

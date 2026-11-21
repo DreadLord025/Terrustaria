@@ -464,7 +464,7 @@ impl App {
         if left && self.cursor_override == CURSOR_FAVORITE {
             let idx = row_favorite_index(context, k);
             if self.toggle_favorite(idx) != 0 {
-                self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                self.audio.play_menu("Menu_Tick"); // `SoundEngine.PlaySound(12)`
             }
             return;
         }
@@ -913,7 +913,7 @@ impl App {
         if self.ui_left_press {
             if let Some(i) = ui::crafting::filter_hit(screen, self.mouse_pos) {
                 self.craft_filters.click(i);
-                self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                self.audio.play_menu("Menu_Tick"); // `SoundEngine.PlaySound(12)`
                 self.ui_left_press = false;
                 return true;
             }
@@ -990,7 +990,7 @@ impl App {
                 self.focus_recipe = idx as i32;
                 self.stack_split = 15;
                 self.prevent_craft_click = true;
-                self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                self.audio.play_menu("Menu_Tick"); // `SoundEngine.PlaySound(12)`
                 self.ui_left_press = false;
             }
             return true;
@@ -1320,7 +1320,7 @@ impl App {
         }
         // `:45223-45227`: the right release drops the head, sound 12.
         if right_edge {
-            self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+            self.audio.play_menu("Menu_Tick"); // `SoundEngine.PlaySound(12)`
             self.mouse_npc_index = -1;
             self.mouse_npc_type = -1;
         }
@@ -1371,7 +1371,7 @@ impl App {
                 // `Main.TryMovingNPC:45176-45178`: clear the head, sound 12.
                 self.mouse_npc_index = -1;
                 self.mouse_npc_type = -1;
-                self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                self.audio.play_menu("Menu_Tick"); // `SoundEngine.PlaySound(12)`
                 // `SpawnTownNPC`'s relocation arm fires NO_HOBO (progression
                 // 8, `WorldGen.cs:5460`).
                 let _ = self.notify_progression_net(8);
@@ -1417,7 +1417,7 @@ impl App {
             if let Some((head, npc)) =
                 ui::housing::hover(&cells, [self.mouse_pos.x, self.mouse_pos.y], 0.85)
             {
-                self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)` (`:42060`)
+                self.audio.play_menu("Menu_Tick"); // `SoundEngine.PlaySound(12)` (`:42060`)
                 if head == ui::housing::HOUSING_QUERY {
                     // `SetMouseNPC_ToHousingQuery()` (`:42063`).
                     self.mouse_npc_index = -1;
@@ -1482,7 +1482,7 @@ impl App {
                         p.hide_visible_accessory[i] = !p.hide_visible_accessory[i];
                     }
                     // `SoundEngine.PlaySound(12)` (`Main.cs:41438`).
-                    self.audio.play("Menu_Tick");
+                    self.audio.play_menu("Menu_Tick");
                     // `SendData(4)` in MP — the player-info packet is not ported
                     // for this field (`net.rs`'s `hide_visible_accessory` is a
                     // decode-only `u16`), so the flip stays local (ANALYSIS).
@@ -1503,7 +1503,7 @@ impl App {
                 match ui::chrome::pvp_click(&state, &hit) {
                     Some(ui::chrome::PvpClick::ToggleHostile) => {
                         self.team_cooldown = ui::chrome::TEAM_COOLDOWN_LEN;
-                        self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                        self.audio.play_menu("Menu_Tick"); // `SoundEngine.PlaySound(12)`
                         if let Some(p) = self.player.as_mut() {
                             p.hostile = !p.hostile;
                         }
@@ -1514,7 +1514,7 @@ impl App {
                     }
                     Some(ui::chrome::PvpClick::SetTeam(i)) => {
                         self.team_cooldown = ui::chrome::TEAM_COOLDOWN_LEN;
-                        self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                        self.audio.play_menu("Menu_Tick"); // `SoundEngine.PlaySound(12)`
                         if let Some(p) = self.player.as_mut() {
                             p.team = i;
                         }
@@ -1543,7 +1543,7 @@ impl App {
                 if let Some(sel) = ui::chrome::page_tab_click(tab, self.equip_page_selected) {
                     self.equip_page_selected = sel;
                     // `SoundEngine.PlaySound(10)` (`:42857`) — the port's cue.
-                    self.audio.play("Menu_Open");
+                    self.audio.play_menu("Menu_Open");
                 }
                 return;
             }
@@ -1866,7 +1866,7 @@ impl App {
                 let channel = self.player.as_ref().is_some_and(|p| p.channel);
                 if !control_torch && !channel && !self.block_mouse {
                     if self.selection.select(self.selected, slot, false) {
-                        self.audio.play("Menu_Tick"); // `Select`, `:506`
+                        self.audio.play_menu("Menu_Tick"); // `Select`, `:506`
                     }
                 }
             }
@@ -1880,7 +1880,7 @@ impl App {
         // through to the pickup arm.
         if left && self.cursor_override == CURSOR_FAVORITE {
             if self.toggle_favorite(slot) != 0 {
-                self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                self.audio.play_menu("Menu_Tick"); // `SoundEngine.PlaySound(12)`
             }
             return;
         }
@@ -2686,7 +2686,7 @@ impl App {
             if !self.pickup_one_into_mouse(&mut slot) {
                 break; // `:1707` refuses
             }
-            self.audio.play("Menu_Tick"); // `:1710` — `SoundEngine.PlaySound(12)`
+            self.audio.play_menu("Menu_Tick"); // `:1710` — `SoundEngine.PlaySound(12)`
             // `RefreshStackSplitCooldown` (`:1774-1784`).
             self.stack_split = if self.stack_split == 0 {
                 30 // `:1778`

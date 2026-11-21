@@ -2317,6 +2317,23 @@ impl Audio {
         Some(name)
     }
 
+    /// W4-d79 — the unpositioned menu cues (`SoundID.MenuOpen/MenuClose/
+    /// MenuTick = 10/11/12`, `SoundID.cs:42/44/46`): cases 10/11/12
+    /// (`LegacySoundPlayer.cs:750-782`) are the draw-free single-voice pool —
+    /// each Stop()s the old instance + re-creates (`:751-777`); the int
+    /// overload (`SoundEngine.cs:102-108`) draws NO `GetRandomPitch` and the
+    /// cases draw NO `Main.rand`. The UI/click sites play them unpositioned
+    /// (the `x == -1` flag arm). Routes [`Audio::play_single_voice`]; returns
+    /// the cue played, `None` when the gate refused or the name is not a menu
+    /// cue. Case 12's `FocusHelper.AllowInputProcessing` gate (`:771`) folds
+    /// to true (the standing D12 focus deviation).
+    pub fn play_menu(&mut self, cue: &str) -> Option<&'static str> {
+        if !matches!(cue, "Menu_Open" | "Menu_Close" | "Menu_Tick") {
+            return None;
+        }
+        self.play_single_voice(cue, -1.0, -1.0)
+    }
+
     /// research/32 D1 — one case-7 Grab play (`LegacySoundPlayer.cs:717-
     /// 727`): the int overload draws no `GetRandomPitch`; after the
     /// attenuation gate ONE `Main.rand.Next(-10, 11) * 0.01` pitch draw
@@ -4188,6 +4205,15 @@ mod tests {
         // An unlisted name refuses draw-free (the bank-gap guard).
         assert_eq!(audio.play_single_voice("Dig_0", -1.0, -1.0), None);
         assert_eq!(rng.peek(), peek);
+        // The play_menu façade routes the three menu cues to the same pool
+        // and refuses a non-menu name (the Camera shutter rides
+        // play_single_voice directly).
+        for cue in ["Menu_Open", "Menu_Close", "Menu_Tick"] {
+            assert_eq!(audio.play_menu(cue), Some(cue));
+        }
+        assert_eq!(audio.play_menu("Camera"), None, "play_menu is menu-only");
+        assert_eq!(audio.play_menu("Grab"), None);
+        assert_eq!(rng.peek(), peek, "the menu façade is draw-free too");
     }
 
     /// W4-d79 — the TrashItem trackable (`SoundID.cs:1738`,

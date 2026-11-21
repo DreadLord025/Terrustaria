@@ -345,7 +345,7 @@ impl App {
     /// (`frame.rs:256`), covering `StopWaterfallAmbienceAudio`'s effect.
     pub(crate) fn save_and_quit(&mut self) {
         // `WorldGen.cs:6703`: `SoundEngine.PlaySound(11)`.
-        self.audio.play("Menu_Close");
+        self.audio.play_menu("Menu_Close");
         // `WorldGen.cs:6705-6708`: the invasion bar resets.
         self.invasion_progress = -1;
         self.invasion_progress_display_left = 0;
@@ -362,7 +362,7 @@ impl App {
         // snapshotted the live rain into the file payload above.
         self.save_world();
         // `WorldGen.cs:6676`: `SoundEngine.PlaySound(10)` after the world write.
-        self.audio.play("Menu_Open");
+        self.audio.play_menu("Menu_Open");
         // `WorldGen.cs:6678-6679`: both fast-forward flags drop.
         self.world.fast_forward_to_dawn = false;
         self.world.fast_forward_to_dusk = false;

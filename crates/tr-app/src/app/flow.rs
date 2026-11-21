@@ -378,7 +378,7 @@ fn world_play_click(app: &mut App, i: usize) -> Option<FlowClick> {
     }
     match ui::world_select::rejection_key(app.active_player_difficulty() == 3, game_mode) {
         Some(key) => {
-            app.audio.play("Menu_Open"); // `SoundEngine.PlaySound(10)`
+            app.audio.play_menu("Menu_Open"); // `SoundEngine.PlaySound(10)`
             app.front_hint = Some(crate::lang::text(key));
             None
         }
@@ -1264,9 +1264,9 @@ impl App {
                     | FlowClick::WorldCreateBack
                     | FlowClick::ConfirmNo
             ) {
-                self.audio.play("Menu_Close"); // `SoundEngine.PlaySound(11)`
+                self.audio.play_menu("Menu_Close"); // `SoundEngine.PlaySound(11)`
             } else {
-                self.audio.play("Menu_Open"); // `SoundEngine.PlaySound(10)`
+                self.audio.play_menu("Menu_Open"); // `SoundEngine.PlaySound(10)`
             }
             self.apply_front_flow(front, click);
         }
@@ -1607,7 +1607,7 @@ pub(crate) mod front_flow_tests {
         assert!(hit.is_some(), "the pointer is over an element");
         if hit != app.front_hover_hit {
             if hit.is_some() {
-                app.audio.play("Menu_Tick");
+                app.audio.play_menu("Menu_Tick");
             }
             app.front_hover_hit = hit;
         }
@@ -1620,7 +1620,7 @@ pub(crate) mod front_flow_tests {
         let hit2 = app.front_hit();
         if hit2 != app.front_hover_hit {
             if hit2.is_some() {
-                app.audio.play("Menu_Tick");
+                app.audio.play_menu("Menu_Tick");
             }
             app.front_hover_hit = hit2;
         }

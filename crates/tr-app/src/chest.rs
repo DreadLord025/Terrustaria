@@ -976,7 +976,7 @@ pub(crate) fn play_menu_sound(app: &mut App, legacy_id: u32) {
         12 => "Menu_Tick",
         _ => return,
     };
-    app.audio.play_single_voice(cue, -1.0, -1.0);
+    app.audio.play_menu(cue);
 }
 
 /// The right-click open path (`Player.cs:33056-33260`), the editing.rs
@@ -1924,7 +1924,7 @@ pub(crate) fn open_rename(app: &mut App) -> bool {
         Some(p) if p.chest >= 0 => (p.chest, p.chest_x, p.chest_y),
         _ => return false, // the DW-5.4 guard (`ChestUI.cs:844-848`'s calm arm)
     };
-    app.audio.play("Menu_Tick"); // `:90` — `SoundEngine.PlaySound(12)`
+    app.audio.play_menu("Menu_Tick"); // `:90` — `SoundEngine.PlaySound(12)`
     // `:103-119` — the tile-default decode at the open chest's origin (the
     // phase-3 `default_chest_name` chain).
     let default_name = app
@@ -1970,7 +1970,7 @@ pub(crate) fn open_rename(app: &mut App) -> bool {
 /// (`UIVirtualKeyboard.cs:1061-1067`); the C# submit closure ignores its
 /// trimmed argument (`:363`), so the untrimmed text is what lands.
 pub(crate) fn rename_submit(app: &mut App, text: &str) -> u32 {
-    app.audio.play("Menu_Tick"); // `:842`
+    app.audio.play_menu("Menu_Tick"); // `:842`
     app.front = None; // `Main.editChest = false` (:843) + `Close(quiet: true)`
     let chest = match app.player.as_ref() {
         Some(p) if p.chest >= 0 => p.chest,
@@ -2055,7 +2055,7 @@ pub(crate) fn flush_edited_chest_name(app: &mut App) {
 /// panel-cancel (ID 6) leaves the keyboard open (recorded deviation).
 /// `Main.blockKey` (`:868`) has no port route.
 pub(crate) fn rename_cancel(app: &mut App) -> u32 {
-    app.audio.play("Menu_Tick"); // `:865`
+    app.audio.play_menu("Menu_Tick"); // `:865`
     app.front = None;
     12
 }

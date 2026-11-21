@@ -414,7 +414,7 @@ impl ApplicationHandler for App {
                             self.selection.hotbar as i32 - step,
                         );
                         if self.selection.select(self.selected, target, false) {
-                            self.audio.play("Menu_Tick");
+                            self.audio.play_menu("Menu_Tick");
                         }
                     }
                 }
@@ -451,7 +451,7 @@ impl ApplicationHandler for App {
                                 // `Main.DoStatefulTickSound` (`Main.cs:3244`,
                                 // `:3256`) / the settings rows' activation.
                                 if !matches!(action, menu::Action::None) {
-                                    self.audio.play("Menu_Tick");
+                                    self.audio.play_menu("Menu_Tick");
                                 }
                                 self.apply_menu_action(action, event_loop);
                             }
@@ -575,7 +575,7 @@ impl ApplicationHandler for App {
                     m.update_hover(pointer);
                     // Bug 17: the legacy menu's hover tick (`DoStatefulTickSound`).
                     if m.hover != before && m.hover.is_some() {
-                        self.audio.play("Menu_Tick");
+                        self.audio.play_menu("Menu_Tick");
                     }
                 }
                 // `UIScrollbar.DrawSelf`'s drag (`UIScrollbar.cs:109-112`):
@@ -590,7 +590,7 @@ impl ApplicationHandler for App {
                     let hit = self.front_hit();
                     if hit != self.front_hover_hit {
                         if hit.is_some() {
-                            self.audio.play("Menu_Tick");
+                            self.audio.play_menu("Menu_Tick");
                         }
                         self.front_hover_hit = hit;
                     }
@@ -610,7 +610,7 @@ impl ApplicationHandler for App {
                     );
                     if hit != self.emotes.hover {
                         if hit.is_some() {
-                            self.audio.play("Menu_Tick");
+                            self.audio.play_menu("Menu_Tick");
                         }
                         self.emotes.hover = hit;
                     }
@@ -673,7 +673,7 @@ impl App {
     /// those overlays eat the key before `world_key` runs.
     fn hotbar_digit(&mut self, slot: usize) {
         if self.selection.select(self.selected, slot, false) {
-            self.audio.play("Menu_Tick");
+            self.audio.play_menu("Menu_Tick");
         }
     }
 
@@ -750,7 +750,7 @@ impl App {
                 // persisted setting is never read as the state.
                 //
                 // `SoundEngine.PlaySound(12)` (`:28818`), the port's 12 cue.
-                self.audio.play("Menu_Tick");
+                self.audio.play_menu("Menu_Tick");
                 if self.settings.smart_cursor_toggle {
                     self.smart_cursor_used = !self.smart_cursor_used;
                 } else {

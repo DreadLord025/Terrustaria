@@ -171,7 +171,9 @@ impl App {
         // the front-end pointer machine's `left_held`, which only tracks the
         // 888 screens' presses.
         if let Some(cue) = crate::ui::ingame_options::update(self, self.mine_down) {
-            self.audio.play(cue);
+            // W4-d79 — the options-screen hover/animation cues (cases 10/12)
+            // ride the single-voice pool (draw-free).
+            self.audio.play_menu(cue);
         }
         // `Main.DrawInterface_29_SettingsButton` (`Main.cs:45513-45527`): the
         // Settings button's position, its `exitScale` hover animation and the
