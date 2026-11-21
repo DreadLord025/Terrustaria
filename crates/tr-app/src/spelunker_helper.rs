@@ -329,15 +329,16 @@ mod tests {
         assert_eq!(h.frame_counter, 0, "the counter wrapped");
     }
 
-    /// `:50`: the 30-tile radius gate — a spelunkable tile 31 tiles away
-    /// is skipped (no roll, no dust); 30 tiles away passes. The window is
-    /// ±30 so both cells are scanned, but only the in-radius one rolls.
+    /// `:50`: the 30-tile radius gate — a spelunkable tile INSIDE the ±30
+    /// window but at Euclidean distance > 30 (dx 30, dy 1 → √901 ≈ 30.017)
+    /// is skipped (no roll, no dust); the exactly-30 tile passes.
     #[test]
     fn w4_g78_the_thirty_tile_radius_gate() {
         let mut w = World::new("t".into(), 100, 100);
-        // Ore at exactly 30 tiles east of the spot's tile, and one at 31.
-        for x in [70, 71] {
-            let i = w.index(x, 50);
+        // Ore at exactly 30 tiles east of the spot's tile, and one at
+        // (30 east, 1 south) — inside the window, outside the radius.
+        for (x, y) in [(70, 50), (70, 51)] {
+            let i = w.index(x, y);
             w.tiles[i].kind = 6;
             w.tiles[i].flags |= FLAG_ACTIVE;
         }
@@ -349,5 +350,6 @@ mod tests {
         assert_eq!(rng.pos, 1, "only the in-radius ore rolls");
         assert_eq!(out.len(), 1, "only the 30-tile ore passes");
         assert_eq!(out[0].x, 70.0 * 16.0);
+        assert_eq!(out[0].y, 50.0 * 16.0);
     }
 }

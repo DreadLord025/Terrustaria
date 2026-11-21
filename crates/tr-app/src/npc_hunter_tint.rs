@@ -174,8 +174,9 @@ mod tests {
     use super::*;
 
     /// `buffColor` (`:90986-90993`): the byte truncate toward zero —
-    /// 200 * 0.65 = 130.0 → 130; 100 * 0.75 = 75; a 0.45 multiplier on 255
-    /// truncates 114.75 → 114.
+    /// 200 * 0.65f32: the exact product 129.99999523… rounds to 130.0f
+    /// (within half an f32 ulp of 130), so the truncate gives 130;
+    /// 100 * 0.75 = 75 exact; 255 * 0.45f32 = 114.74999… → 114.
     #[test]
     fn w4_g78_buff_color_truncates_toward_zero() {
         assert_eq!(buff_color([200, 100, 255, 255], 0.65, 0.75, 0.45, 1.0), [130, 75, 114, 255]);
@@ -248,11 +249,11 @@ mod tests {
     }
 
     /// The accumulator compounding: brokenArmor (×0.75 all) THEN poisoned
-    /// (num ×0.65, num3 ×0.75) re-applies the RUNNING product — R
-    /// 200·0.75·0.65 = 97.5 → 97, G 200·0.75 = 150, B 200·0.75·0.75 = 112.5
-    /// → 112. The sparkle-slime arm (`:91102`) does NOT write the
-    /// accumulators, so a following hunter floor reads the un-sparkled
-    /// multipliers (witnessed via the ichor-free dark path).
+    /// (num ×0.65, num3 ×0.75) re-applies the RUNNING product to the
+    /// ALREADY-TRUNCATED colour — first arm [200,200,200] → [150,150,150];
+    /// second arm R 150·(0.75f32·0.65f32) = 73.12499… → 73, G 150·0.75 =
+    /// 112.5 → 112, B 150·0.5625 = 84.375 → 84 (the per-arm truncation
+    /// compounds, exactly like the C#'s repeated buffColor calls).
     #[test]
     fn w4_g78_the_multipliers_compound_in_arm_order() {
         let f = NpcTintFlags {
@@ -261,6 +262,6 @@ mod tests {
             poisoned: true,
             ..Default::default()
         };
-        assert_eq!(npc_color_tinted_by_buffs([200, 200, 200, 255], &f), [97, 150, 112, 255]);
+        assert_eq!(npc_color_tinted_by_buffs([200, 200, 200, 255], &f), [73, 112, 84, 255]);
     }
 }
