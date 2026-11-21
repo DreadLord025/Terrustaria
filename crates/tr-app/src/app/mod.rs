@@ -2856,6 +2856,9 @@ impl App {
         atlas_stats: (u32, u32, usize, usize),
     ) -> App {
         let mut world = world;
+        // W4-g70: snapshot the forest styles before `world` moves into the
+        // struct literal — the live hill ids seed from them.
+        let forest_styles = world.forest_bg_styles;
         let clouds = make_clouds(&world, &lookups);
         let sky = make_sky_assets(&atlas, &world);
         let stars = make_stars(&world);
@@ -3618,7 +3621,7 @@ impl App {
                 a[0] = 1.0;
                 a
             },
-            forest_hills: world_sim::bg_animation::hills_from_styles(&world.forest_bg_styles),
+            forest_hills: world_sim::bg_animation::hills_from_styles(&forest_styles),
             forest_bg_anim: world_sim::bg_animation::ForestBgAnimation::default(),
             bg_flash: world_sim::bg_animation::BackgroundChangeFlash::default(),
             stars,

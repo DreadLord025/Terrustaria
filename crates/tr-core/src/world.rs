@@ -124,7 +124,7 @@ pub struct World {
     // The four forest tree-set styles (`WorldGen.treeBG1..4`, `setBG` slots
     // 0/10/11/12 — `WorldGen.cs:7219-7234`). `WorldGen.SetForestBGSet`
     // (`WorldGen.cs:7639-7768`) expands each into its three tree-line ids and
-    // its two hill ids — see [`forest_bg_sets`]. The vanilla rolls them per
+    // its two hill ids — see [`World::forest_bg_set`]. The vanilla rolls them per
     // world in `RandomizeBackgrounds` (`WorldGen.cs:8121-8166` rolls the
     // `treeX` dividers too); the port fixes style 0 for all four like the
     // five variants' constants-off defaults, and loads the real styles from

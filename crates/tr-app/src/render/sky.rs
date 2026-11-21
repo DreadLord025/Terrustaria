@@ -4,7 +4,8 @@
 use super::BgTex;
 use super::bg::{
     FrontLayer, bg_scale_adjust, draw_background, draw_bg_layer, draw_front_trees,
-    forest_layers, front_layers, layer_y_offset, mushroom_tint, push_screen_rot,
+    forest_173_frame_id, forest_layers, front_layers, layer_y_offset, mushroom_tint,
+    push_screen_rot,
 };
 use crate::app::{next_rand, rand01};
 use crate::assets;
@@ -1337,7 +1338,7 @@ pub(crate) fn draw_sky(
         // `forest_layers`; the 173 row swaps its drawn sheet to the
         // `251 + counter/10 % 4` frame (`:61373`).
         let forest_ids = world.forest_bg(0).1;
-        let frame_173 = sky.forest_173_frames[(counter / 10 % 4) as usize];
+        let frame_173 = sky.forest_173_frames[(forest_173_frame_id(counter) - 251) as usize];
         let forest = forest_layers(forest_ids, sky.forest_sets[0], HACK, frame_173);
         draw_front_trees(
             r,
