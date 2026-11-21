@@ -1616,6 +1616,92 @@ fn blood_zombie_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, s);
 }
 
+/// The 534 Demon Tax Collector death (`NPC.cs:86690-86709`, sites
+/// 218-222): the 50x dust-5 burst at (2.5·hd, −2.5), then the ladder
+/// 894/895/895/896/896 at +0/+20/+20/+34/+34 Y, `this.scale` carried.
+fn tax_collector_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86700-86703` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 894, s); // :86704
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 895, s); // :86705
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 895, s); // :86706
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 896, s); // :86707
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 896, s); // :86708
+}
+
+/// The 490 Drippler death (`NPC.cs:86710-86729`, sites 223-227): the 50x
+/// dust-5 burst at (2.5·hd, −2.5), then 725/726/727 at position, then
+/// TWO `725 + Next(3)` random picks — the argument draws evaluate BEFORE
+/// each NewGore (one Next(3) per gore, in source order), `this.scale`
+/// carried.
+fn drippler_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86720-86723` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 725, s); // :86724
+    gore.new_gore(rng, world, pos, vel, 726, s); // :86725
+    gore.new_gore(rng, world, pos, vel, 727, s); // :86726
+    // `:86727` — the first random pick: Next(3) BEFORE the NewGore.
+    let pick1 = 725 + rng.next_max(3);
+    gore.new_gore(rng, world, pos, vel, pick1, s);
+    // `:86728` — the second random pick.
+    let pick2 = 725 + rng.next_max(3);
+    gore.new_gore(rng, world, pos, vel, pick2, s);
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -1818,6 +1904,15 @@ pub fn hit_effect_d(
     // `:86659-86689` — the 489/586 blood zombie arm (sites 208-217).
     else if npc_type == 489 || npc_type == 586 {
         blood_zombie_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86690-86709` — the 534 Demon Tax Collector arm (sites 218-222).
+    else if npc_type == 534 {
+        tax_collector_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86710-86729` — the 490 Drippler arm (sites 223-227, the two
+    // Next(3) argument picks).
+    else if npc_type == 490 {
+        drippler_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -3211,5 +3306,67 @@ mod tests {
             }
             assert_eq!(rng.peek(), twin.peek(), "blood zombie {kind} mirrors the C# draws");
         }
+    }
+
+    /// `NPC.cs:86704-86708` — the Tax Collector ladder 894/895x2/896x2,
+    /// same +20/+34 Y / this.scale contract as the blood zombies.
+    #[test]
+    fn w4_f5d_the_tax_collector_ladder_carries_the_scale() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        n.scale = 1.05;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(223);
+        let _ = hit_effect_d(&n, 534, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![894, 895, 895, 896, 896]);
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+        assert_eq!(gore.slot(0).scale, 1.05);
+        let mut twin = UnifiedRandom::new(223);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the tax collector mirrors the C# draws");
+    }
+
+    /// `NPC.cs:86724-86728` — the Drippler: 725/726/727 then TWO
+    /// `725 + Next(3)` picks; the twin replay pins the argument draws
+    /// BETWEEN the third and fourth / fourth and fifth gores' kicks
+    /// (Next(3) before each NewGore, then the gore's Y/X kicks).
+    #[test]
+    fn w4_f5d_the_drippler_draws_the_two_type_picks() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(227);
+        let _ = hit_effect_d(&n, 490, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(&types[..3], &[725, 726, 727]);
+        assert!((725..=727).contains(&types[3]), "pick1 in range: {}", types[3]);
+        assert!((725..=727).contains(&types[4]), "pick2 in range: {}", types[4]);
+        let mut twin = UnifiedRandom::new(227);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 30);
+        }
+        for _ in 0..3 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        // The two picks: Next(3) then the gore's kicks, twice.
+        let p1 = 725 + twin.next_max(3);
+        let _ky = twin.next_range(10, 31);
+        let _kx = twin.next_range(-20, 21);
+        let p2 = 725 + twin.next_max(3);
+        let _ky = twin.next_range(10, 31);
+        let _kx = twin.next_range(-20, 21);
+        assert_eq!(types[3], p1, "pick1 matches the twin");
+        assert_eq!(types[4], p2, "pick2 matches the twin");
+        assert_eq!(rng.peek(), twin.peek(), "the drippler mirrors the C# draws");
     }
 }
