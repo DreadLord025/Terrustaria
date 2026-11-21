@@ -409,8 +409,11 @@ module g45-owned whole, the shimmer-flow twin dropped, the docs
 g45-owned. 5 witnesses + 2 anchors rows. The §8 commit list is
 UNCHANGED; the re-fold base tip moves to this branch's retire tip.
 
-**Receipt 4 — the landing state.** The g47 branch retires at the §14
-commit (parent `2bbadd9bd`, the co-lane carry). The merger's contract,
+**Receipt 4 — the landing state.** The g47 branch retires at
+**`bf5fc4ffb`** (the §14 receipts commit `0823ec3dd` + the wiring
+completion: the `liquid_clock` field on the flow.rs front-end-boot App
+literal, the second full-App construction site — the compile-by-
+inspection census found no others). The merger's contract,
 FINAL: (a) g46d re-bases onto THIS tip per §8+§12 step 1 (re-fetch
 first — if g47's tip moved again, the successor wins); (b) graft steps
 5-7 per §12 (the g45b guards + the f25 DELETE-dedupe + the producer
