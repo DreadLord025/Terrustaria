@@ -39402,6 +39402,49 @@ bodies are the skipped part), so g64c can read the scan's tile hits off
 the machine; the 670 style-126 sites are style-generic (no 670-gated
 dust).
 
+**(3) The wire-kite apply — f11's mass-wire landed, the activation
+contract published.** f11's tip (`dda240eec`, read: `6bc1547d` docs +
+`24fa39f1` code + research/133 §1g/§2a-d) ports the FULL apply on ITS
+branch: `tr_core::wiring::mass_wire_operation_step`/`_inner`
+(`Wiring.cs:3329-3421`/`:3235-3327`) + the app half
+`wiring_devices::mass_wire_operation(app, ps: (i32,i32), pe: (i32,i32),
+mode: u8)` (`:419-453` — the 58-slot stock census, the ConsumeItem bill,
+the cut-cache drops at `master.Center`) + `App.wire_tool_mode`
+(`WiresUI.cs:23`, default Red) + the 3625 Multicolor Wrench click arm.
+It does NOT consume `app.pending_mass_wire_ops` — f11's ANALYSIS records
+"the projectile family is unported, so only the 3625 click arm lands"
+(stale for THIS branch: the 651 machine + the Kill-hook drain landed
+`dc8630b8`). The shapes COMPOSE verbatim: my `(owner u8, ps_x, ps_y, pe_x,
+pe_y)` tuples carry TILE coords on both sides (`(int)X >> 4`,
+`Utils.cs:1807-1810`), so the merge wave's drain is a destructure + call.
+The contract (published at `world_sim/projectiles.rs`'s drain seam, the
+`app/mod.rs` field doc and the wire-kite module doc):
+
+* drain `take_mass_wire_ops`'s parked buffer at the SAME pass-tail seam,
+  before the next pass replaces it (the C# applies synchronously inside
+  Kill; the per-tick park is the port's one-seam-late convention);
+* gate `owner == app.local_id` (the C# `owner == Main.myPlayer`,
+  `:72053` — the pool already simulates local-owned slots only, the gate
+  is belt-and-braces);
+* pass `app.wire_tool_mode` RAW — the kite path reads
+  `WiresUI.Settings.ToolMode` unmasked (`Wiring.cs:3241`); only the 3625
+  click arm strips the Actuator bit (`Player.cs:46908`, f11's arm) — the
+  kite must NOT reuse that mask;
+* NO `wire_operations_cooldown` gate on this path (the C# Kill hook has
+  none — the throttle is `CanUseItem`'s, the use arm's);
+* STREAM NOTE: f11's `mass_wire_operation` rolls its cut-cache
+  `Item.NewItem` drops on `RngKey::UpdatePlayers` (the 3625 use path's
+  stage); the kite's Kill runs INSIDE `UpdateProjectiles`
+  (`Main.cs:17775`'s SwapRandom) — the merge wave must thread the
+  caller's stage stream into the drop spawns (the
+  `spawn_item_drop_px_fields` field-wise precedent) or record the fold
+  as a deviation. The placement/bill halves draw no RNG.
+
+f11 is NOT merged into this branch (the code-only co-lane rule); nothing
+here calls the unmerged fn. 1 shape-composition witness
+(`w4_d13_the_queued_tuple_composes_with_the_f11_apply_shape`) WRITTEN NOT
+RUN.
+
 ### Verification
 
 Code-only: every change re-read against the cited C# windows; the seam

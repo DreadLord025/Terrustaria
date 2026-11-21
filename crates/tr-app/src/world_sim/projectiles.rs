@@ -449,10 +449,28 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // (`Projectile.cs:72051-72067`): the release-latch deaths queued their
     // `(owner, ps, pe)` anchors; the app slot holds THIS tick's requests
     // (a per-tick buffer — the C# applies synchronously inside Kill).
-    // The APPLY stays the wiring lane's deferral (the `WiresUI` tool modes,
-    // `world_sim/editing/wiring.rs:28-29` — f11's claim); when it lands it
-    // consumes the buffer at this same seam, before the next pass replaces
-    // it. Until then the requests are dropped tick-end (the deferral).
+    // ACTIVATION CONTRACT (f11's apply landed on ITS branch, `6bc1547d`/
+    // `24fa39f1` — `wiring_devices::mass_wire_operation(app, ps, pe, mode)`,
+    // unmerged here): the merge wave drains THIS buffer at THIS seam,
+    // before the next pass replaces it —
+    //   for (owner, psx, psy, pex, pey) in take_mass_wire_ops() {
+    //       if owner as u32 != app.local_id { continue; } // the Kill gate
+    //       mass_wire_operation(app, (psx, psy), (pex, pey),
+    //                           app.wire_tool_mode); // :3241 ToolMode, UNMASKED
+    //   }
+    // The shapes compose verbatim: ps/pe are TILE coords on both sides
+    // (`(int)X >> 4`, `Utils.cs:1807-1810`); the mode is the RAW
+    // `WiresUI.Settings.ToolMode` (`Wiring.cs:3241` — the kite does NOT
+    // strip the Actuator bit; only the 3625 click arm masks, f11's
+    // `Player.cs:46908`). No `wire_operations_cooldown` gate on this path
+    // (the C# Kill hook has none — the throttle is CanUseItem's, the use
+    // arm's). STREAM NOTE: f11's `mass_wire_operation` rolls its cut-cache
+    // drops on `RngKey::UpdatePlayers` (the 3625 use path's stage); the
+    // kite's Kill runs INSIDE `UpdateProjectiles` (`Main.cs:17775`'s swap)
+    // — the merge wave must thread the caller's stage stream (the
+    // `spawn_item_drop_px_fields` field-wise precedent) or record the
+    // fold as a deviation. Until f11 merges, the requests drop tick-end
+    // (the documented deferral).
     app.pending_mass_wire_ops = app.projectiles.take_mass_wire_ops();
     // S1-C-7 wave B — the hostile-shot lane's hurt modifiers (`Player.Hurt`
     // `:38396-38517` via `Projectile.Damage` `Projectile.cs:14868`): the

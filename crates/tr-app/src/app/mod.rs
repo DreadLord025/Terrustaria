@@ -266,10 +266,13 @@ pub(crate) struct App {
     pub(crate) block_mouse: bool,
     /// W4-d13 — the Wire Kite's release-death `Wiring.MassWireOperation`
     /// requests (`Projectile.cs:72051-72067`): `(owner, ps_x, ps_y, pe_x,
-    /// pe_y)` drained from the projectile pool's kill hook. UNCONSUMED —
-    /// the apply needs the `WiresUI` tool modes (`Wiring.cs:3241`,
-    /// `world_sim/editing/wiring.rs:28-29`, f11's wiring lane); the request
-    /// seam keeps the anchors so the apply wave has nothing to re-derive.
+    /// pe_y)` drained from the projectile pool's kill hook — TILE coords
+    /// (`(int)X >> 4`). UNCONSUMED on this branch: f11's apply
+    /// (`wiring_devices::mass_wire_operation(app, ps, pe, mode)`) landed on
+    /// ITS branch (`6bc1547d`/`24fa39f1`), unmerged; the drain-site
+    /// activation contract lives at `world_sim/projectiles.rs`'s
+    /// `take_mass_wire_ops` seam (the raw ToolMode, no Actuator strip, no
+    /// cooldown gate, the UpdateProjectiles stream note).
     pub(crate) pending_mass_wire_ops: Vec<(u8, i32, i32, i32, i32)>,
     /// Vanilla-style per-slot hotbar scale (selected grows to 1.0).
     pub(crate) hotbar_scales: [f32; HOTBAR],

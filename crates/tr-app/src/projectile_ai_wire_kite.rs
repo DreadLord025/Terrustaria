@@ -29,10 +29,14 @@
 //! is WIRED to the request seam: the pool's death hook queues
 //! `(owner, ps, pe)` (`take_mass_wire_ops`) and the world-sim pass parks
 //! them on `app.pending_mass_wire_ops` (a per-tick buffer). The APPLY
-//! itself stays the wiring lane's documented deferral (`world_sim/editing/
-//! wiring.rs:28-29` — the mass wire operation needs the unported `WiresUI`
-//! tool modes, f11's claim); the anchors are kept so the apply wave has
-//! nothing to re-derive.
+//! landed on f11's branch (`6bc1547d`/`24fa39f1` —
+//! `wiring_devices::mass_wire_operation(app, ps, pe, mode)`, the 58-slot
+//! stock census + the core L-walk + the ConsumeItem bill + the cut-cache
+//! drops), UNMERGED here: the drain-site activation contract (the raw
+//! `WiresUI.Settings.ToolMode` — the kite does NOT strip the Actuator bit,
+//! `Wiring.cs:3241`; no cooldown gate; the UpdateProjectiles stream note)
+//! lives at `world_sim/projectiles.rs`'s drain seam. The anchors are kept
+//! so the merge wave has nothing to re-derive.
 
 use glam::Vec2;
 
@@ -343,6 +347,41 @@ mod w4_d13_style125_tests {
         assert!(
             pool.take_mass_wire_ops().is_empty(),
             "no latch, no request"
+        );
+    }
+
+    /// W4-d13 activation — the f11 shape-composition contract: the queued
+    /// tuple destructures straight into f11's
+    /// `mass_wire_operation(app, ps: (i32, i32), pe: (i32, i32), mode: u8)`
+    /// (its branch `24fa39f1`, `Wiring.cs:419-453`): ps/pe are TILE coords
+    /// on both sides (`Utils.cs:1807-1810`'s `(int)X >> 4`), the owner gate
+    /// folds to the local player, and the mode is the RAW ToolMode
+    /// (`Wiring.cs:3241` — no Actuator strip on the kite path, unlike the
+    /// 3625 click arm's `Player.cs:46908` mask).
+    #[test]
+    fn w4_d13_the_queued_tuple_composes_with_the_f11_apply_shape() {
+        // The tuple the drain parks: (owner, ps_x, ps_y, pe_x, pe_y).
+        let queued: (u8, i32, i32, i32, i32) = (0, 12, 34, 6, 6);
+        let (owner, ps_x, ps_y, pe_x, pe_y) = queued;
+        // f11's parameter shapes (the compile-level composition — the fn
+        // itself is unmerged; the merge wave calls it with these).
+        let ps: (i32, i32) = (ps_x, ps_y);
+        let pe: (i32, i32) = (pe_x, pe_y);
+        let mode: u8 = tr_core::smart_cursor::multi_tool_mode::RED
+            | tr_core::smart_cursor::multi_tool_mode::ACTUATOR;
+        assert_eq!(owner, 0, "the local-owner gate passes");
+        assert_eq!(ps, (12, 34), "ps = (ai[0], ai[1]).ToPoint()");
+        assert_eq!(pe, (6, 6), "pe = Center.ToTileCoordinates()");
+        // The kite passes the mode UNMASKED — the Actuator bit survives
+        // (the 3625 arm's mask would strip it; this path must not).
+        assert_ne!(mode & tr_core::smart_cursor::multi_tool_mode::ACTUATOR, 0);
+        // The pe re-derivation from a pixel Centre agrees with the queue
+        // site's `(int)X >> 4` (the negative-coordinate arithmetic shift).
+        let centre = glam::Vec2::new(105.0, -23.0);
+        assert_eq!(
+            ((centre.x as i32) >> 4, (centre.y as i32) >> 4),
+            (6, -2),
+            "the arithmetic shift, not a division"
         );
     }
 }
