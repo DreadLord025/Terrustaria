@@ -39368,9 +39368,9 @@ Code-only: every arm re-read against the cited C# windows; the seam call
 sites checked against the actual signatures by read/grep (`App.dust`/
 `rngs`/`spawn_ctx`/`entity_lights`, `DustPool::new_dust/new_dust_direct/
 slot_mut`, `Player` fields, `registry::get`, `buffs.add_buff`,
-`audio.play_use_sound`, `soundid::SOUND_STYLES`). The 40 witness tests
-(`player_trail_dust.rs` 10 + `player_wing_dust.rs` 15 +
-`player_boot_dust.rs` 15) are WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/
+`audio.play_use_sound`, `soundid::SOUND_STYLES`). The 39 witness tests
+(`player_trail_dust.rs` 10 + `player_wing_dust.rs` 16 +
+`player_boot_dust.rs` 13) are WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/
 tests/dotnet/graphify invoked**. Each drain witness mirrors the full draw
 sequence per arm (the `default_block` six-draw contract + the per-site
 post rolls) and pins the stream state; the tick witnesses pin the
