@@ -165,6 +165,7 @@
 //! | 696-700 | `:86346-86350` | the 351 Krampus death (5 gores 538-542) |
 //! | 701-704 | `:86366-86369` | the 350 death (4 gores 533-536) |
 //! | 705-712 | `:86387-86406` | the corrupt/crimson critter family 47/57/58/464/465 death (per-type) |
+//! | 713-722 | `:86425-86446` | the crimson monster family 173/174/181/182/268 death (per-type, alpha dust) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -4455,6 +4456,45 @@ fn corrupt_critter_death(
     }
 }
 
+/// The crimson monster family death (`NPC.cs:86419-86446`, sites 713-722):
+/// the 50-dust type-5 burst (SpeedX `2*hitDirection`, SpeedY -2, alpha from
+/// the NPC), then the per-type gores at position — 173 Crimera → [223,224],
+/// 174 Herpling → [225,226], 181 FaceMonster → [237], 182 FloatyGross →
+/// [238,239], 268 IchorSticker → [403,404,405]. Scale defaults to 1.
+fn crimson_monster_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    let alpha = npc.alpha as i32;
+    // `:86419-86422` — the 50-dust type-5 burst (alpha from the NPC).
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, alpha,
+            Color::default(), 1.0,
+        );
+    }
+    // `:86423-86447` — the per-type gore list.
+    let gores: &[i32] = match npc_type {
+        173 => &[223, 224],
+        174 => &[225, 226],
+        181 => &[237],
+        182 => &[238, 239],
+        _ => &[403, 404, 405], // 268 IchorSticker
+    };
+    let vel = Vec2::new(npc.vx, npc.vy);
+    for &ty in gores {
+        gore.new_gore(rng, world, pos, vel, ty, 1.0);
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -4993,6 +5033,12 @@ pub fn hit_effect_c(
         && npc.hp <= 0
     {
         corrupt_critter_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86409-86448` — the crimson monster family arm (sites 713-722).
+    if (npc_type == 173 || npc_type == 174 || npc_type == 181 || npc_type == 182 || npc_type == 268)
+        && npc.hp <= 0
+    {
+        crimson_monster_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -7890,6 +7936,31 @@ mod tests {
             corrupt_critter_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
             let types: Vec<i32> = gore.slots()[..gores.len()].iter().map(|g| g.gore_type).collect();
             assert_eq!(types, gores, "corrupt critter {ty}");
+        }
+    }
+
+    /// `NPC.cs:86425-86446` — the crimson monster family: 173→[223,224],
+    /// 174→[225,226], 181→[237], 182→[238,239], 268→[403,404,405], after
+    /// the 50-dust type-5 alpha burst.
+    #[test]
+    fn w4_f10_the_crimson_monster_death_uses_the_per_type_list() {
+        let w = air();
+        let cases: [(i32, &[i32]); 5] = [
+            (173, &[223, 224]),
+            (174, &[225, 226]),
+            (181, &[237]),
+            (182, &[238, 239]),
+            (268, &[403, 404, 405]),
+        ];
+        for (ty, gores) in cases {
+            let mut n = boss(100.0, 100.0, 36.0, 30.0);
+            n.alpha = 30;
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(683);
+            crimson_monster_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..gores.len()].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, gores, "crimson monster {ty}");
         }
     }
 
