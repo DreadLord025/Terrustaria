@@ -25,8 +25,18 @@
 //! `ClampToDeadZone` (`:5296-5333`), the eye-offset table (`:1398-1421`),
 //! `StopAbilityCharge` (`:2922-2931`) and the remote charge/active flag
 //! writes — the 441/453 crosshair AI (`Projectile.cs:30621-30670`) calls
-//! them. The Drill (8) mining payload (`DrillMountData`, `UpdateDrill`/
-//! `UseDrill` `:3036-3180`) and the Santank (46) ability stay M2-MOUNT-4.
+//! them.
+//!
+//! W4-d8 FINAL-PHASE (1) exception: the Drill (8) ability's SELF-CONTAINED
+//! half is ported here too — the `DrillMountData` payload (`:36-58`),
+//! `UpdateDrill`'s cooldown tick + diode lerp (`:3036-3057`), `AimAbility`'s
+//! Drill case (`:5466-5494`, the diode target + wrap + crosshair pin), the
+//! `UseAbility` toggle + 453 spawn tuple (`:3314-3335`) and the
+//! `UpdateEffects` no-crosshair clear (`:5010-5015`). The mining WRITE
+//! (`UseDrill` `:3059-3180` — `PickTile`/`PickWall`/`Tile.SmoothSlope`/
+//! `Hurt`/dust) stays M2-MOUNT-4: `Tile.SmoothSlope` (`Tile.cs:792-865`) is
+//! unported and the writes are App-level seams (the split-contract doc,
+//! `docs/research/97`). The Santank (46) ability stays M2-MOUNT-4.
 
 use glam::Vec2;
 
@@ -47,6 +57,66 @@ pub(crate) const FRAME_IN_AIR: i32 = 2;
 pub(crate) const FRAME_FLYING: i32 = 3;
 pub(crate) const FRAME_SWIMMING: i32 = 4;
 pub(crate) const FRAME_DASHING: i32 = 5;
+
+/// `Mount.DrillBeam` (`Mount.cs:20-34`) — one of the Drill's eight mining
+/// beams. `cur_tile_target` is the `Point16` the beam is latched onto
+/// (`(-1, -1)` = `Point16.NegativeOne`, no target); `cooldown` counts down
+/// one per `UpdateDrill` tick and gates the beam's next pick; `last_purpose`
+/// records whether the last hit was a block (0) or a wall (1) — the
+/// smart-cursor scans skip a cell another beam already holds for the SAME
+/// purpose (`Mount.cs:3200`/`:3236`). W4-d8 FINAL-PHASE (1): the beam STATE
+/// is ported (the cooldown tick + the target latch the crosshair aim and
+/// the mining write read); the `UseDrill` pick that ASSIGNS the target is
+/// the M2-MOUNT-4 write half.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct DrillBeam {
+    pub cur_tile_target: (i32, i32),
+    pub cooldown: i32,
+    pub last_purpose: i32,
+}
+
+impl Default for DrillBeam {
+    /// `DrillBeam()` (`Mount.cs:28-33`): no target, cooldown 0, purpose 0.
+    fn default() -> Self {
+        DrillBeam { cur_tile_target: (-1, -1), cooldown: 0, last_purpose: 0 }
+    }
+}
+
+/// `Mount.DrillMountData` (`Mount.cs:36-58`) — the Drill's (8)
+/// `_mountSpecificData` payload. `SetMount` news it fresh (`:6287-6290`):
+/// eight default beams, all rotations 0, `beamCooldown` 0, crosshair unset.
+/// W4-d8 FINAL-PHASE (1): the payload is ported as the self-contained
+/// ability state — the diode rotation the `AimAbility` Drill case writes
+/// (`:5466-5494`) and `UpdateDrill` lerps (`:3052`), the beam cooldowns
+/// `UpdateDrill` ticks (`:3039-3051`), the `beamCooldown` gate and the
+/// `crosshairPosition` the remote smart-cursor reads (`:3183`/`:3219`).
+/// `outerRingRotation` (`:42`) is the DRAW's ring spin (`UpdateFrame`
+/// `:3524-3533`, `Draw` `:5811`) — carried for completeness, ticked by the
+/// draw layer's seam (unported), so it stays 0 here.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct DrillMountData {
+    pub diode_rotation_target: f32,
+    pub diode_rotation: f32,
+    pub outer_ring_rotation: f32,
+    pub beams: [DrillBeam; 8],
+    pub beam_cooldown: i32,
+    pub crosshair_position: Vec2,
+}
+
+impl Default for DrillMountData {
+    /// `DrillMountData()` (`Mount.cs:50-57`): eight fresh beams, the float
+    /// fields default 0, `crosshairPosition` default `Vector2.Zero`.
+    fn default() -> Self {
+        DrillMountData {
+            diode_rotation_target: 0.0,
+            diode_rotation: 0.0,
+            outer_ring_rotation: 0.0,
+            beams: [DrillBeam::default(); 8],
+            beam_cooldown: 0,
+            crosshair_position: Vec2::ZERO,
+        }
+    }
+}
 
 /// The static per-type row — `Mount.MountData` (`Mount.cs:129-266`). Fields the
 /// framework does not consume yet (ability charges, minecart rails) are carried
@@ -2126,9 +2196,18 @@ pub(crate) struct MountState {
     /// Velociraptor's (54) `_mountSpecificData` payload: `UpdateAfterEquips`
     /// (`Mount.cs:2989-2997`) sets it to `wingsLogic > 0` every tick;
     /// `CanFly` (`:2866-2869`) reads it BEFORE the `flightTimeMax` gate.
-    /// The other `_mountSpecificData` payloads (Drill 8, ExtraFrame 35 —
-    /// `SetMount` `:6287-6294`) are M2-MOUNT-4 state and not carried yet.
+    /// The other `_mountSpecificData` payloads (ExtraFrame 35 —
+    /// `SetMount` `:6291-6294`) are M2-MOUNT-4 state and not carried yet.
     selective_allowed_to_fly: bool,
+    /// `DrillMountData` (`Mount.cs:36-58`) — the Drill's (8)
+    /// `_mountSpecificData` payload, newed fresh by `SetMount` (`:6287-
+    /// 6290`). W4-d8 FINAL-PHASE (1): the self-contained ability state (the
+    /// diode rotation, the eight beam cooldowns/targets, the `beamCooldown`
+    /// gate, the crosshair pin). `Reset` does NOT clear it (the C# `Reset`
+    /// `:675-694` never touches `_mountSpecificData`); `set_mount` rebuilds
+    /// it on a Drill mount. The `UseDrill` mining write that consumes the
+    /// beams is M2-MOUNT-4.
+    drill: DrillMountData,
     #[cfg(test)]
     test_can_use_wings: Option<bool>,
     #[cfg(test)]
@@ -2168,6 +2247,7 @@ impl Default for MountState {
             should_super_cart: false,
             walking_grace_time_left: 0,
             selective_allowed_to_fly: false,
+            drill: DrillMountData::default(),
             #[cfg(test)]
             test_can_use_wings: None,
             #[cfg(test)]
@@ -2525,6 +2605,15 @@ impl MountState {
         }
         if self.kind == 46 && self.ability_cooldown < 40 {
             self.ability_cooldown = 40;
+        }
+        // `:6287-6290` — the Drill (8) news a fresh `DrillMountData` (eight
+        // default beams, rotations 0, beamCooldown 0). W4-d8 FINAL-PHASE
+        // (1): the self-contained ability payload. `FinalizeMountData`
+        // (`:6307-6318`) seeds `diodeRotation` to π for a LEFT-facing
+        // display-doll/inanimate mount — the port has no display-doll
+        // player, so the seed never fires (the fresh 0 stands).
+        if self.kind == 8 {
+            self.drill = DrillMountData::default();
         }
         Some(Equip {
             clear_buff: old_buff,
@@ -3108,6 +3197,143 @@ impl MountState {
         Some(out)
     }
 
+    /// `Mount.UpdateDrill` (`Mount.cs:3036-3057`) — the Drill's (8) per-tick
+    /// ability maintenance, called from `Player.Update`'s mount block
+    /// (`Player.cs:26683-26686`). W4-d8 FINAL-PHASE (1): the self-contained
+    /// cooldown tick + diode lerp. Each beam's cooldown decrements; at 1 it
+    /// drops to 0 AND the beam's target latches back to `(-1, -1)`
+    /// (`:3046-3050`). The diode rotation lerps 15% toward its target
+    /// (`:3052`, the `AimAbility` Drill case writes the target). The shared
+    /// `beamCooldown` decrements (`:3053-3056`). The `controlUp`/
+    /// `controlDown` params are UNUSED in the C# body (the mining write's
+    /// reach is cursor-driven) — carried for signature parity. Zero draws.
+    pub(crate) fn update_drill(&mut self) {
+        if self.kind != 8 {
+            return;
+        }
+        for beam in self.drill.beams.iter_mut() {
+            // `:3042-3050` — the two-arm countdown.
+            if beam.cooldown > 1 {
+                beam.cooldown -= 1;
+            } else if beam.cooldown == 1 {
+                beam.cooldown = 0;
+                beam.cur_tile_target = (-1, -1);
+            }
+        }
+        // `:3052` — `diodeRotation = diodeRotation * 0.85f + 0.15f *
+        // diodeRotationTarget` (the f32 lerp, verbatim).
+        self.drill.diode_rotation =
+            self.drill.diode_rotation * 0.85 + 0.15 * self.drill.diode_rotation_target;
+        // `:3053-3056` — the shared gate countdown.
+        if self.drill.beam_cooldown > 0 {
+            self.drill.beam_cooldown -= 1;
+        }
+    }
+
+    /// `Mount.AimAbility`'s Drill (8) case (`Mount.cs:5466-5494`) — the
+    /// diode's aim. W4-d8 FINAL-PHASE (1): the self-contained half the
+    /// 453 crosshair's local + remote aim calls reach (`Projectile.cs:
+    /// 30648`/`:30669`). The dead-zone-clamped cursor's angle (wrapped to
+    /// `[0, 2π)`) becomes `diodeRotationTarget`; the CURRENT rotation is
+    /// wrapped to `[0, 2π)` then nudged ±2π so the lerp takes the SHORT way
+    /// round (`:5481-5491`); the crosshair position pins the RAW mouse
+    /// (`:5493`, the remote smart-cursor reads it). Returns true (the C#
+    /// case always does, `:5494`). The `_aiming = true` head (`:5337`) is
+    /// the switch's, shared with the Scutlix aim. Zero draws.
+    pub(crate) fn aim_ability_drill(&mut self, center: Vec2, mouse: Vec2) -> bool {
+        self.aiming = true; // `:5337`
+        if self.kind != 8 {
+            return false; // `:5496-5497` — the default arm
+        }
+        // `:5468-5475` — the clamped cursor's angle, wrapped to [0, 2π).
+        let v = self.clamp_to_dead_zone(center, mouse) - center;
+        let mut target = v.y.atan2(v.x);
+        if target < 0.0 {
+            target += std::f32::consts::PI * 2.0;
+        }
+        self.drill.diode_rotation_target = target;
+        // `:5476-5492` — the current rotation's wrap + the short-way nudge.
+        let mut cur = self.drill.diode_rotation % (std::f32::consts::PI * 2.0);
+        if cur < 0.0 {
+            cur += std::f32::consts::PI * 2.0;
+        }
+        if cur < target {
+            if target - cur > std::f32::consts::PI {
+                cur += std::f32::consts::PI * 2.0;
+            }
+        } else if cur - target > std::f32::consts::PI {
+            cur -= std::f32::consts::PI * 2.0;
+        }
+        self.drill.diode_rotation = cur;
+        // `:5493` — the RAW mouse pin (NOT the clamped point).
+        self.drill.crosshair_position = mouse;
+        true
+    }
+
+    /// `Mount.UseAbility`'s Drill (8) case (`Mount.cs:3314-3335`) — the
+    /// mining toggle + the 453 crosshair spawn. W4-d8 FINAL-PHASE (1): the
+    /// self-contained flag/spawn half. LOCAL owner (`Main.myPlayer ==
+    /// whoAmI`): `toggleOn: false` clears `_abilityActive` (`:3317-3320`);
+    /// `toggleOn: true` on an INACTIVE drill spawns the 453 crosshair at the
+    /// mouse with `ai0/ai1` = the mouse−player offset, zero velocity, damage
+    /// 0 (`:3321-3329`) and sets the flag. REMOTE owner: the flag follows
+    /// `toggleOn` (`:3332-3335`). Returns the 453 spawn tuple
+    /// `(x, y, ai0, ai1)` when the local press spawns it (the caller spawns
+    /// through the pool, the `scutlix_laser_fire` intent precedent); `None`
+    /// otherwise. The `mouse` is `Main.screenPosition + (mouseX, mouseY)`.
+    /// Zero draws (the spawn is deterministic).
+    pub(crate) fn use_ability_drill(
+        &mut self,
+        player_pos: Vec2,
+        mouse: Vec2,
+        toggle_on: bool,
+        local_owner: bool,
+    ) -> Option<(f32, f32, f32, f32)> {
+        if self.kind != 8 {
+            return None; // `:3256` — the switch's case 8 only
+        }
+        if local_owner {
+            if !toggle_on {
+                // `:3317-3320` — the release clears the flag.
+                self.ability_active = false;
+                return None;
+            }
+            if !self.ability_active {
+                // `:3321-3329` — the press on an inactive drill: the 453
+                // spawn (ai0/ai1 = the owner-relative mouse offset).
+                self.ability_active = true;
+                return Some((
+                    mouse.x,
+                    mouse.y,
+                    mouse.x - player_pos.x,
+                    mouse.y - player_pos.y,
+                ));
+            }
+            return None; // already active — no re-spawn (`:3321` gate)
+        }
+        // `:3332-3335` — the remote branch: the flag follows toggleOn.
+        self.ability_active = toggle_on;
+        None
+    }
+
+    /// `Mount.UpdateEffects`'s Drill (8) case (`Mount.cs:5010-5015`) — the
+    /// no-crosshair clear: when the owner holds NO live 453 crosshair
+    /// (`ownedProjectileCounts[453] < 1`), `_abilityActive` drops. W4-d8
+    /// FINAL-PHASE (1): the self-contained gate the per-tick mount block
+    /// reads (`Player::update_mount`). `crosshair_count` is the owner's
+    /// live 453 count (the `owned_projectile_counts` recount). Zero draws.
+    pub(crate) fn drill_update_effects_gate(&mut self, crosshair_count: i32) {
+        if self.kind == 8 && crosshair_count < 1 {
+            self.ability_active = false;
+        }
+    }
+
+    /// The Drill's `DrillMountData` payload (read-only) — the mining write's
+    /// beam/cooldown/crosshair census and the draw's diode rotation read it.
+    pub(crate) fn drill_data(&self) -> &DrillMountData {
+        &self.drill
+    }
+
     /// `Mount.ExtraFall` / `Mount.FallDamage` (:183/:181 read via properties).
     pub(crate) fn extra_fall(&self) -> i32 {
         self.data().map_or(0, |d| d.extra_fall)
@@ -3381,6 +3607,97 @@ mod tests {
         assert!(!m.ability_charging());
         assert_eq!(m.ability_cooldown, 20, "the row's cooldown (`:1351`)");
         assert_eq!(m.ability_duration, 0, "the row's duration (`:1352`)");
+    }
+
+    /// W4-d8 FINAL-PHASE (1) — the Drill (8) ability's self-contained half
+    /// (WRITTEN NOT RUN, code-only): the fresh `DrillMountData`, the
+    /// `UpdateDrill` cooldown tick + diode lerp, the `AimAbility` diode
+    /// target/wrap + crosshair pin, the `UseAbility` toggle + 453 spawn
+    /// tuple, and the `UpdateEffects` no-crosshair clear. Every expected
+    /// value is hand-derived from the cited C# lines. The `UseDrill` mining
+    /// WRITE stays M2-MOUNT-4 (the split-contract doc, research/97).
+    #[test]
+    fn w4_d8_the_drill_ability_math() {
+        use super::*;
+        let mut m = MountState::default();
+        assert!(m.set_mount(8, false).is_some());
+        // The fresh payload (`:6287-6290` → `:50-57`): eight default beams,
+        // rotations 0, beamCooldown 0, crosshair unset.
+        let d = m.drill_data();
+        assert_eq!(d.beams.len(), 8);
+        assert_eq!(d.beams[0], DrillBeam::default(), "(-1,-1), cd 0, purpose 0");
+        assert_eq!(d.diode_rotation, 0.0);
+        assert_eq!(d.beam_cooldown, 0);
+        assert_eq!(d.crosshair_position, Vec2::ZERO);
+        // UpdateDrill's beam countdown (`:3042-3050`): a beam at cd 3 ticks
+        // 3→2→1, then the 1→0 arm latches the target back to (-1,-1).
+        m.drill.beams[0].cooldown = 3;
+        m.drill.beams[0].cur_tile_target = (10, 20);
+        m.update_drill();
+        assert_eq!(m.drill.beams[0].cooldown, 2, "3 → 2 (`:3044`)");
+        assert_eq!(m.drill.beams[0].cur_tile_target, (10, 20), "target holds");
+        m.update_drill();
+        assert_eq!(m.drill.beams[0].cooldown, 1, "2 → 1");
+        m.update_drill();
+        assert_eq!(m.drill.beams[0].cooldown, 0, "1 → 0 (`:3048`)");
+        assert_eq!(m.drill.beams[0].cur_tile_target, (-1, -1), "the latch (`:3049`)");
+        // The diode lerp (`:3052`): rotation 0, target 2 → 0*0.85 + 0.15*2
+        // = 0.3. The shared gate (`:3053-3056`): beamCooldown 2 → 1.
+        m.drill.diode_rotation = 0.0;
+        m.drill.diode_rotation_target = 2.0;
+        m.drill.beam_cooldown = 2;
+        m.update_drill();
+        assert!((m.drill.diode_rotation - 0.3).abs() < 1e-6, "the 15% lerp");
+        assert_eq!(m.drill.beam_cooldown, 1, "the gate countdown");
+        // AimAbility's Drill case (`:5466-5494`): a level-right cursor
+        // (1200, 500) from centre (1000, 500) is outside the ±80×±80 dead
+        // zone → angle 0 → target 0. The crosshair pins the RAW mouse.
+        let c = Vec2::new(1000.0, 500.0);
+        let mouse = Vec2::new(1200.0, 500.0);
+        assert!(m.aim_ability_drill(c, mouse), "the case always returns true");
+        assert!((m.drill.diode_rotation_target - 0.0).abs() < 1e-6, "angle 0");
+        assert_eq!(m.drill.crosshair_position, mouse, "the raw pin (`:5493`)");
+        // A straight-up cursor (1000, 300): angle −π/2 → wrapped to 3π/2
+        // (`:5471-5474`). Reset the current rotation to 0 so it wraps to 0;
+        // 0 < 3π/2 and 3π/2 − 0 > π → cur += 2π (`:5483-5486`) so the lerp
+        // goes the short way (down through 2π toward 3π/2).
+        m.drill.diode_rotation = 0.0;
+        let _ = m.aim_ability_drill(c, Vec2::new(1000.0, 300.0));
+        let three_pi_2 = std::f32::consts::PI * 1.5;
+        assert!((m.drill.diode_rotation_target - three_pi_2).abs() < 1e-4, "−π/2 → 3π/2");
+        assert!((m.drill.diode_rotation - std::f32::consts::PI * 2.0).abs() < 1e-4, "the +2π nudge");
+        // UseAbility's local toggle (`:3314-3335`): the press on an inactive
+        // drill spawns the 453 at the mouse with ai0/ai1 = mouse − player.
+        let player_pos = Vec2::new(980.0, 458.0);
+        let spawn = m
+            .use_ability_drill(player_pos, mouse, true, true)
+            .expect("the press spawns the crosshair");
+        assert_eq!(spawn, (1200.0, 500.0, 220.0, 42.0), "x, y, ai0, ai1");
+        assert!(m.ability_active(), "the flag sets (`:3329`)");
+        // A second press while active spawns nothing (`:3321` gate).
+        assert!(m.use_ability_drill(player_pos, mouse, true, true).is_none());
+        // The release clears the flag, no spawn (`:3317-3320`).
+        assert!(m.use_ability_drill(player_pos, mouse, false, true).is_none());
+        assert!(!m.ability_active());
+        // The remote branch (`:3332-3335`): the flag follows toggleOn.
+        assert!(m.use_ability_drill(player_pos, mouse, true, false).is_none());
+        assert!(m.ability_active(), "remote toggleOn sets");
+        assert!(m.use_ability_drill(player_pos, mouse, false, false).is_none());
+        assert!(!m.ability_active(), "remote toggleOff clears");
+        // UpdateEffects' no-crosshair gate (`:5010-5015`): count 0 drops the
+        // flag; count 1 keeps it.
+        m.ability_active = true;
+        m.drill_update_effects_gate(0);
+        assert!(!m.ability_active(), "no 453 → the flag drops");
+        m.ability_active = true;
+        m.drill_update_effects_gate(1);
+        assert!(m.ability_active(), "a live 453 keeps it");
+        // A non-Drill mount is inert: update_drill / aim / use are no-ops.
+        let mut u = MountState::default();
+        assert!(u.set_mount(10, false).is_some());
+        u.update_drill();
+        assert!(!u.aim_ability_drill(c, mouse), "the default arm (`:5496`)");
+        assert!(u.use_ability_drill(player_pos, mouse, true, true).is_none());
     }
 
     #[test]

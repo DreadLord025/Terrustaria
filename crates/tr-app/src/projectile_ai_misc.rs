@@ -974,9 +974,17 @@ pub(crate) fn scutlix_laser_charge_latch(p: &mut Projectile) {
 /// the remote `StartAbilityCharge` (`:30662`) → the `_abilityCharging`
 /// latch (the local-owner 441 spawn itself is the auto-aim's
 /// `UpdateEffects` path, M2-MOUNT-4 — the crosshair's own remote gate
-/// only sets the flag, `Mount.cs:2916-2919`). The Drill (8) halves write
-/// the unported `DrillMountData` (the diode rotation / the mining beams,
-/// `Mount.cs:5466-5494`/`:3059-3180`) and fold out with it (M2-MOUNT-4).
+/// only sets the flag, `Mount.cs:2916-2919`).
+///
+/// W4-d8 FINAL-PHASE (1) — the Drill (8) half's SELF-CONTAINED state is
+/// ported too: `AimAbility`'s Drill case (`:30648`/`:30669`) →
+/// [`crate::mount::MountState::aim_ability_drill`] (the diode target/wrap +
+/// the crosshair pin), the channel-release `UseAbility(toggleOn: false)`
+/// (`:30651`) → [`crate::mount::MountState::use_ability_drill`] (the
+/// `_abilityActive` clear). The `UseDrill` mining WRITE (`Mount.cs:3059-
+/// 3180` — `PickTile`/`PickWall`/`Tile.SmoothSlope`/`Hurt`/dust) stays
+/// M2-MOUNT-4 (`Tile.SmoothSlope` unported, the writes are App-level seams;
+/// the split-contract doc, `docs/research/97`).
 pub(crate) fn ai_mount_crosshair(
     p: &mut Projectile,
     i: usize,
@@ -1025,23 +1033,30 @@ pub(crate) fn ai_mount_crosshair(
             p.ai[1] = dy;
         }
         // `:30648` — `mount.AimAbility(player6, base.position)`: the
-        // Scutlix head's aim (the facing write rides the player). The
+        // Scutlix head's aim (the facing write rides the player) OR the
+        // Drill's diode aim (W4-d8 FINAL-PHASE (1): the self-contained
+        // Drill half — the diode target/wrap + the crosshair pin). The
         // position is the crosshair's own (the mouse pin above), NOT the
         // clamped cursor — the clamp lives inside the ability.
         let (pcx, pcy) = pl.center();
-        let mut facing = pl.facing;
-        let _ = pl.mount.aim_ability_scutlix(
-            Vec2::new(pcx, pcy),
-            &mut facing,
-            pl.vx,
-            p.pos,
-        );
-        pl.facing = facing;
+        if p.kind == DRILL_MOUNT_CROSSHAIR {
+            let _ = pl.mount.aim_ability_drill(Vec2::new(pcx, pcy), p.pos);
+        } else {
+            let mut facing = pl.facing;
+            let _ = pl.mount.aim_ability_scutlix(
+                Vec2::new(pcx, pcy),
+                &mut facing,
+                pl.vx,
+                p.pos,
+            );
+            pl.facing = facing;
+        }
         // `:30649-30653` — the channel release: `UseAbility(player6,
         // base.position, toggleOn: false)` then `Kill()`. The Scutlix fire
         // spawns the two 606 beams (the intent parks on the slot); the
         // Drill's `toggleOn: false` clears `_abilityActive` (`Mount.cs:
-        // 3317-3320`) — the flag the mining layer reads (M2-MOUNT-4).
+        // 3317-3320`) — the flag the mining layer reads (W4-d8 FINAL-PHASE
+        // (1): the clear is ported; the `UseDrill` write stays M2-MOUNT-4).
         if !pl.channel {
             if p.kind == SCUTLIX_LASER_CROSSHAIR {
                 if let Some(beams) = pl.mount.scutlix_laser_fire(
@@ -1053,6 +1068,15 @@ pub(crate) fn ai_mount_crosshair(
                 ) {
                     p.wants_scutlix_beams.extend_from_slice(&beams);
                 }
+            } else {
+                // The 453 release: the local `UseAbility(toggleOn: false)`
+                // (`:3317-3320`) — no spawn, just the flag clear.
+                let _ = pl.mount.use_ability_drill(
+                    Vec2::new(pl.x, pl.y),
+                    p.pos,
+                    false,
+                    true,
+                );
             }
             p.kill_time_left = p.time_left;
             p.active = false;
@@ -1077,17 +1101,22 @@ pub(crate) fn ai_mount_crosshair(
     if p.kind == DRILL_MOUNT_CROSSHAIR && !pl.mount.ability_active() {
         pl.mount.set_ability_active(false);
     }
-    // `:30669` — the remote `AimAbility` (the Scutlix head's aim; the
-    // Drill's diode rotation folds out with its payload).
+    // `:30669` — the remote `AimAbility` (the Scutlix head's aim OR the
+    // Drill's diode aim — W4-d8 FINAL-PHASE (1): the Drill half is ported,
+    // the remote smart-cursor reads the crosshair pin it writes).
     let (pcx, pcy) = pl.center();
-    let mut facing = pl.facing;
-    let _ = pl.mount.aim_ability_scutlix(
-        Vec2::new(pcx, pcy),
-        &mut facing,
-        pl.vx,
-        p.pos,
-    );
-    pl.facing = facing;
+    if p.kind == DRILL_MOUNT_CROSSHAIR {
+        let _ = pl.mount.aim_ability_drill(Vec2::new(pcx, pcy), p.pos);
+    } else {
+        let mut facing = pl.facing;
+        let _ = pl.mount.aim_ability_scutlix(
+            Vec2::new(pcx, pcy),
+            &mut facing,
+            pl.vx,
+            p.pos,
+        );
+        pl.facing = facing;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1906,6 +1935,26 @@ mod tests {
         let mut r = proj(DRILL_MOUNT_CROSSHAIR);
         ai_mount_crosshair(&mut r, 4, Some((1300.0, 700.0)), Some(&mut pl), 0);
         assert!(r.active, "the 453 needs mount 8 (`:30633`)");
+        // W4-d8 FINAL-PHASE (1): the local 453 aim writes the diode target +
+        // the crosshair pin (`Mount.cs:5466-5494`). The cursor (1300, 700)
+        // is right-down of the player centre → a positive wrapped angle.
+        assert_eq!(
+            pl.mount.drill_data().crosshair_position,
+            Vec2::new(1300.0, 700.0),
+            "the raw mouse pin (`:5493`)"
+        );
+        assert!(
+            pl.mount.drill_data().diode_rotation_target > 0.0,
+            "the right-down cursor's wrapped angle"
+        );
+        // The 453 channel release clears the mining flag (`:30651` →
+        // `Mount.cs:3317-3320`) and kills the crosshair.
+        pl.mount.set_ability_active(true);
+        pl.channel = false;
+        ai_mount_crosshair(&mut r, 4, Some((1300.0, 700.0)), Some(&mut pl), 0);
+        assert!(!r.active, "the release kills (`:30652`)");
+        assert!(!pl.mount.ability_active(), "the Drill flag clears (`:3319`)");
+        pl.channel = true;
         // The remote owner: the position follows the stored offset.
         let mut s = proj(SCUTLIX_LASER_CROSSHAIR);
         let _ = pl.mount.set_mount(9, false);

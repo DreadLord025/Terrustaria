@@ -9615,11 +9615,26 @@ impl Player {
             self.run_acceleration /= 2.0;
             self.max_run_speed /= 2.0;
         }
+        // `Mount.UpdateEffects`'s Drill (8) case (`Mount.cs:5010-5015`,
+        // W4-d8 FINAL-PHASE (1)): no live 453 crosshair → the mining flag
+        // drops. The owned-count is this tick's recount (the
+        // `update_projectile_caches` seam ran ahead, `Player.cs:25565`).
+        if self.mount.kind() == 8 {
+            let crosshairs = self.owned_projectile_counts[crate::projectile::DRILL_MOUNT_CROSSHAIR as usize];
+            self.mount.drill_update_effects_gate(crosshairs);
+        }
         // `:26660-26663` (the roller skates), `:26665-26682` (the cart/OnTrack
-        // block — M2-MOUNT-3) and `:26683-26686` (`UpdateDrill` —
-        // M2-MOUNT-4) have no rows in this table yet; the ability counters
-        // still tick (`:26663`).
+        // block — M2-MOUNT-3) have no rows in this table yet; the ability
+        // counters still tick (`:26663`).
         self.mount.ability_recovery();
+        // `Player.cs:26683-26686` — the Drill's (8) `UpdateDrill` per-tick
+        // maintenance (W4-d8 FINAL-PHASE (1): the beam cooldowns + the diode
+        // lerp + the shared gate). The C# passes controlUp/controlDown,
+        // which the body never reads (the mining write's reach is
+        // cursor-driven) — the port's no-arg call is signature-equivalent.
+        if self.mount.kind() == 8 {
+            self.mount.update_drill();
+        }
     }
 
     /// The flight section (`Player.cs:26745-27359`): the budget zeroing,
