@@ -1239,8 +1239,10 @@ via `ApplyColorOfTheSkiesToTiles`. Drops are drawn with the `Rain` texture's 2x4
 rotated by `atan2(vx, -vy)`, tinted by `Lighting.GetColor` * 0.85.
 
 Storms add two pieces from `Main.DrawSurfaceBG`/`Main.SpawnStormLightning`: the
-`cloudBG` layers (`Background_112/113`, scale 1.65/1.85, parallax 0.09/0.12) fade in with a
-`cloudBGAlpha`-style ramp tied to the rain intensity, and heavy rain (> 0.65) throws a
+`cloudBG` layers (`Background_112/113`, scale 1.65/1.85, parallax 0.09/0.12) fade in with
+the C# `cloudBGAlpha` ramp (`Main.cs:59358-59373` — per draw, ±0.0005·dayRate toward 1/0
+by the live `cloudBGActive` overcast machine, W4-g69; the earlier intensity-tied
+stand-in is retired), and heavy rain (> 0.65) throws a
 lightning flash every 5вЂ“15 s. The flash is a 0.38-alpha full-screen white overlay that
 decays over ~11 ticks; there is no bolt geometry or thunder audio yet.
 
@@ -1502,16 +1504,31 @@ C# double/float edge, `cloud.rs::cloud_in_bucket`), the `DrawClouds_*` cY formul
 are active in-world so `ProcessCloudAlpha` clamps 1). The `ShouldDrawSurfaceBackground`
 gate (`Main.cs:59707-59720`) folds the remix seed + the fullscreen map.
 
-Cloud deviations (W4-g69): `CloudEnv::gather` folds `WorldGen.crimson` to false (no
-world-level field yet) and `downedBoss2` to `downed_eow`; the drunk-menu type override's
-gen flags stay false in-world. `Rain::change_rain` still reads the `NUM_CLOUDS_STAND_IN`
-constant (100), not the live `num_clouds` — the ChangeRain band gates are the
-weather-completion row's remainder. The `cloudBGAlpha` visual ramp (`Rain::cloud_bg`)
-keeps its 10× stand-in schedule even though `cloudBGActive` now runs live. The
-`HorizonClouds` shader of `NextHorizonRenderer.CloudsEnd` (sun-tinted cloud shading) and
-the dead `BetterColorsForClouds` (never called in 1.4.5.8) are not ported. The old
-100 px screen cull is gone — the C# draws every active in-bucket cloud (the retire bounds
-of `Cloud.cs:417-420` keep them near the screen anyway).
+Cloud deviations (W4-g69, deviation-fix round): `CloudEnv::gather` reads the LIVE
+`World.crimson` (`WorldGen.crimson`, persisted in the `.wld` flags byte
+`WorldFile.cs:1281/2080` and the `.trwld` v18 tail; generation sets it from
+`GenOptions.crimson`) and `downed_eow` for `NPC.downedBoss2` — the shared flag covers
+both orb bosses (`NPC.cs:79443-79458`'s shared death case 13/14/15/266), so the
+`RollRareCloud` type-36 gate (`Cloud.cs:196`, `downedBoss2 && crimson`) is complete; the shop/lang/loot
+consumers keep their own documented folds (their lanes' rows). The drunk-menu type
+override's gen flags stay false in-world. `Rain::change_rain` reads the LIVE
+`CloudField.num_clouds`/`cloud_bg_active` (`Main.cs:64730`'s `cloudBGActive >= 1f ||
+(double)numClouds > 150.0` then `> 100.0` — all three bands reachable; the pinned
+`NUM_CLOUDS_STAND_IN` is retired), and the ×4.25 start arm reads the live
+`cloudBGActive` too (`:64916`). The `cloudBGAlpha` visual ramp is the C# schedule now:
+`Rain::cloud_bg_draw_step` at the draw head, `±0.0005·dayRate` (RAW, no `max(1,…)`)
+per draw toward 1/0 by `cloudBGActive > 0`, inside the `DrawSurfaceBG` gate chain
+(`Main.cs:59354-59373`: `!drunkWorldGen && ShouldDrawSurfaceBackground() &&
+screenPosition.Y/16 <= worldSurface+10` AND `BackgroundEnabled`) — the retired
+10×-per-tick intensity chase is gone (one documented placement deviation: the C#
+ramps between the distant and closer cloud passes, the port at the draw head; no
+pass before the storm banks reads the value). The `HorizonClouds` shader of
+`NextHorizonRenderer.CloudsEnd` (`:323-356` — the sun/moon-tinted cloud shading:
+celestial colour + position, visibility × `1 - cloudBGAlpha`; needs the unported
+`GameShaders.Misc` infrastructure) and the dead `BetterColorsForClouds` (never
+called in 1.4.5.8) are not ported — the passes draw the byte-chain colours directly.
+The old 100 px screen cull is gone — the C# draws every active in-bucket cloud (the
+retire bounds of `Cloud.cs:417-420` keep them near the screen anyway).
 
 Stars: `make_stars` ports `Star.SpawnStars` (`Star.cs:86-158`) in its RNG order вЂ” count
 `Next(200,400)`, positions in the 1920x1200 design space, `rotation Next(628)В·0.01`,
@@ -8620,9 +8637,10 @@ gate on the start branch (only the slime roll is day-gated, `:64925`).
 verbatim; `RollLuck(25)` consumes the Rain stream through the loot engine's
 `roll_luck` (`:64668` вЂ” luck 0 today, plain semantics), and the coin-rain value roll
 (`Next(75,151)В·100В·100 Г—maxTilesX/4200`, `:64670-64673`) is consumed but not stored вЂ”
-coin projectiles are unported. The cloud-alpha ramps (`cloudAlpha` and the
-`cloudBGAlpha` stand-in) scale by `max(1, day_rate)` (`:61902-61906`,
-`:13187/13205` shapes).
+coin projectiles are unported. The `cloudAlpha` visual ramp scales by
+`max(1, day_rate)` (`:61902-61906`); the `cloudBGAlpha` ramp is the C# per-draw
+schedule now (`Main.cs:59358-59373`, ±0.0005·dayRate RAW — W4-g69 deviation fix,
+`Rain::cloud_bg_draw_step` at the draw head).
 
 RNG stays per-consumer (the WEATHER-2 convention): Rain's splitmix is the single
 rain-consumer stream (the thunder tiers, the `update_time` rolls, the
@@ -8640,13 +8658,14 @@ Deviations, all deliberate:
   and `WorldGen.GetWorldUpdateRate` (`WorldGen.cs:72020-72028`) only clamps it at 24
   and freeze-gates it. `world_sim/growth.rs:18` passes the literal `1`; never feed it
   `day_rate()`.
-- **The `numClouds` stand-in is pinned at 100** (`NUM_CLOUDS_STAND_IN`): the live
-  cloud-count walk (`Main.cs:58952-59036`) now runs on `CloudField` (W4-g69), but
-  `Rain::change_rain` still reads the constant — with exactly 100 the
-  `numClouds > 150`/`> 100` ChangeRain bands are dead and only the storm gate
-  (`cloudBGActive >= 1f` → `cloud_bg >= 1.0`) reaches the heavy bands; the same
-  `cloud_bg` stand-in reads the ×4.25 start arm (`:64916`). Re-home both onto the
-  live `CloudField.num_clouds`/`cloud_bg_active` with the weather-completion row.
+- **RESOLVED (W4-g69 deviation-fix round): the `numClouds` stand-in.** The pinned
+  `NUM_CLOUDS_STAND_IN` (100) is retired — `Rain::change_rain` reads the live
+  `CloudField.num_clouds`/`cloud_bg_active` (`Main.cs:64730`'s `cloudBGActive >= 1f
+  || (double)numClouds > 150.0`, then `> 100.0` — all three bands reachable), and
+  the ×4.25 start arm reads the live `cloudBGActive` (`:64916`). The `cloudBGAlpha`
+  visual ramp moved to the C# per-draw schedule (`Rain::cloud_bg_draw_step`,
+  `Main.cs:59358-59373`, ±0.0005·dayRate RAW inside the `DrawSurfaceBG` gate
+  chain) — see "Clouds and stars (M1.4-BG-11/16, W4-g69)".
 - **`Rain.wind` (the drop drift) is static now.** The retired session schedule was
   its last writer; vanilla's drops read the live `Main.windSpeedCurrent` per tick
   (`:58830-58950` feeds `Wind` directly). The field stays seed-time-fixed until a

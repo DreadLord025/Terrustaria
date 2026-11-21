@@ -489,6 +489,14 @@ pub(crate) fn draw_cloud_color(
 /// (`UpdateCloudParallax` already moved it against the camera). `sky` is
 /// `Main.ColorOfTheSkies` and `global_cloud_alpha` is
 /// `ProcessCloudAlpha() * Main.atmo` (`Main.cs:59330`).
+///
+/// `EndDrawingClouds` → `NextHorizonRenderer.CloudsEnd`
+/// (`NextHorizonRenderer.cs:323-356`) re-draws the buffered sprites through
+/// the `GameShaders.Misc["HorizonClouds"]` shader — the sun/moon-tinted
+/// cloud shading (the celestial colour + position, the visibility factor
+/// scaled by `1 - cloudBGAlpha`). The port's misc-shader infrastructure is
+/// unported (W4-g69, documented in ANALYSIS "Clouds and stars"), so the
+/// pass draws the byte-chain colours directly — the documented deviation.
 #[allow(clippy::too_many_arguments)]
 fn draw_cloud_pass(
     r: &mut SpriteRenderer,
