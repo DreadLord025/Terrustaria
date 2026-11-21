@@ -242,7 +242,9 @@ mod tests {
     // 512-wide world (both Count draws truncate to 0), so the residual
     // itself leaves this pin unchanged; the P0 hive-rising stalactite arm
     // may move it via the spider-cave decor — the gate re-pins or confirms
-    // (see the DEFAULT_WORLD note).
+    // (see the DEFAULT_WORLD note). The entrance residual (research 94)
+    // CAN fire on the 512 world (the 36-wide desert band's entrance
+    // fraction) — its Blotches ledger may move this pin too; same gate.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -305,6 +307,19 @@ mod tests {
     // arm, `WorldGen.cs:38543-38552`, previously missing) can move the pin
     // if a spider-cave hive seat exists on the 512 world; unmeasurable
     // code-only, so the gate re-pins or confirms it.
+    // W4-g40 entrance residual (2026-11-21, code-only, research 94): the
+    // four underground-desert entrances now run the faithful Blotches
+    // draws + SetTile/ClearTile/Smooth chains (`desert_entrances.rs`), and
+    // the entrance gate reads the JSON 0.5 with the anniversary/extraLiquid
+    // halves (`DesertBiome.cs:23`). BOTH pins may move BY DESIGN: the 512
+    // world's desert band is 36 tiles wide and its entrance fraction can
+    // fire (the Blotches ledger then shifts the Full Desert stream tail —
+    // isolated, no other pass's stream moves); the default world's
+    // entrances change shape/walls wherever the roll fires. The re-pin is
+    // DEFERRED to the merge gate (no compiler on this branch); `a == b`
+    // stays green (the `desert_entrances.rs` witnesses pin the Blotches
+    // ledger replay + the per-kind end-to-end replay, `desert.rs` pins the
+    // anniversary stream separation).
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

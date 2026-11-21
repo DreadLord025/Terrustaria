@@ -39276,3 +39276,82 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The desert entrance residual (W4-g40 continuation, code-only, 2026-11-21)
+
+**Census first** (research `94-w4g40-biome-residual-census.md`): after the
+marble/granite residual closed (79361f00), the remaining C# biome classes
+were censused against the landed port. Co-lane claims READ, not touched:
+g44 owns FloatingIslands/IslandHouse (local census d32816ce + phase-2 tip),
+d101/d107 own the Ice passes (the `GenPassNameID.IceBiome` = "Generate Ice
+Biome" name fix, `GenPassNameID.cs:239`, consistent on both), g37 B8 + d104
+own Spreading Grass, d106 R1 owns Grass Wall, c29 owns the dead-man's-chest
+biome, g43 owns the jungle temple. **Census correction:** the Lead's
+`ConvertGrassToDirt` does not exist in the 1.4.5.8 decompilation (0 hits
+tree-wide) — the real units are `Convert` (`WorldGen.cs:55085`) and
+`SpreadGrass` (`:75146`), both landed (M5-SPREAD-2 / S1-K-3b).
+
+**First unclaimed residual:** the `DesertBiome.Place` entrance family
+(`desert_entrances.rs`, no branch since ab6c11f7). The shape-level port
+(97a7db29) skipped the stochastic modifiers and approximated three chains.
+Seventeen deviations found and closed verbatim (the full line-by-line list
+is in research 94); the load-bearing ones:
+
+* `Shapes.Circle` (`Shapes.cs:33-49`) is a **y-major** row walk with the
+  `(hr+1)²` inflation — not a normalised ellipse, and not x-major. With
+  `Blotches` drawing per cell the visit order is part of the RNG ledger.
+* `Modifiers.Blotches` (`Modifiers.cs:126-146`) lands at all five sites
+  through the shared `mini_biomes::blotched_gen_shared` seam (the S1-K-2
+  wave-C body, exposed `pub(crate)` — no second copy).
+* `Actions.Smooth` (`Actions.cs:608-622`) runs the anthill tail
+  (single-cell) and the larva mouth (`Offset(0,1)+Expand(1)+IsSolid`,
+  neighbours-first) on the g40-P1 `biomes::tile_smooth_slope{,_one}` seams
+  (exposed `pub(crate)`).
+* `Actions.SetTile` (`Actions.cs:203-236`) is `Clear(~(Wiring|Actuator))`
+  (`Tile.cs:744-790`) — the **wall does not survive** (the old port used
+  `ResetToType`); `Actions.ClearTile` keeps kind/wall/liquid
+  (`Tile.cs:123-128`, the `clear_tile_keep` seam); `Modifiers.IsSolid` is
+  `SolidOrSlopedTile` (`Modifiers.cs:561-571`) — slopes/half-bricks pass.
+* The chambers' `OuterOutline` walks the RECORDED `ShapeData`'s 8-neighbour
+  exterior (`ModShapes.cs:28-71`), the tunnel `Rectangle(2,4)` sits at
+  `(0,0)` (not centred) and its chain order is load-bearing — the 397
+  `SetTile`'s Clear wipes the wall the `Expand(1)` just placed (no trailing
+  `PlaceWall`, unlike the outline chain); `NotInShape` filters the rect
+  cell only, not the expansion; the direction draw `Next(2) != 0 ? 1 : -1`
+  was INVERTED in the old port (`chance(2)` returned +1 on the zero draw).
+* The pit `SmootherStep` carries the C# f32-π literal
+  `3.1415927410125732` (`PitEntrance.cs:70`) — the old port dropped the
+  multiply (the taper closed far too early); the bowl depth is
+  `min(10, (hr-|k|)²)` (`:50`), not `min(num6, min(10, num6²))`.
+* `Shapes.Tail`'s `ToTileCoordinates` floors (`(int)v >> 4`,
+  `Utils.cs:1812-1815`) — the old truncation differed on negatives.
+
+**P2 — the entrance gate** (`DesertBiome.cs:23`): `!tenthAnniversaryWorld
+&& NextDouble() <= ChanceOfEntrance && !extraLiquid.Enabled`. The
+anniversary seed short-circuits BEFORE the fraction draw; extraLiquid
+draws it then skips (the && order kept). `ChanceOfEntrance` now reads the
+embedded `Biomes.DesertBiome` JSON 0.5 through the `CreateBiome` lookup
+(`WorldGenConfiguration.cs:27-34`) — the C# field default 0.3333 only
+applies when the entry is absent.
+
+**Kept deviations:** the `ShapeData` HashSet iteration order is
+.NET-unspecified — the port pins insertion order (the RNG-free outline
+chain is outcome-order-independent: a converted cell fails `OnlyTiles(53)`
+on any later visit; the larva Smooth chain is order-dependent in C#
+itself). The `SquareWallFrame`/`TileFrame` framing rides the post-pipeline
+seam. The hive carve's `PostPlacementEffect.Smooth`
+(`DesertHive.cs:197,216-218`) stays deferred — the next slice (the
+`tile_smooth_slope_one` seam now exists). `structures.AddStructure(area,
+10)` (`DesertBiome.cs:43-44`) is the NON-protected list no ported
+`CanPlace` reads (`StructureMap.cs:19-52`) — a documented no-op, the
+thin-ice precedent.
+
+**RNG/hash:** the entrance Blotches draws land on the `Full Desert`
+per-pass stream only — no other pass's ledger moves. Both `DEFAULT_WORLD`
+and `SEED42_512` may move BY DESIGN (the 512 world's 36-wide desert band
+can fire the entrance fraction); the re-pin is DEFERRED to the merge gate
+(no compiler on this branch). `a == b` stays green: 15 witnesses WRITTEN
+NOT RUN — the Blotches ledger replayed independently, the circle walk
+order/extents, the SetTile mask, the IsSolid slope arms, the π literal,
+the squared bowl, the shifted larva shape, the direction draw, the
+anniversary stream separation, and the per-kind end-to-end replay.
