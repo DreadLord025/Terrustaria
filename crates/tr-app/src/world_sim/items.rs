@@ -756,6 +756,49 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                     continue;
                 }
             }
+            // W4-g15 lane 5 — `CheckInWorld` (`WorldItem.cs:422`, `:573-588`):
+            // a drop whose position leaves the world (20-tile fluff) is
+            // recovered to the spawn if it is a `RecoverableImportantItem`
+            // (the boss bags, `ItemID.cs:1386` — the same 21-row set as
+            // `BossBag`), else aired out. The C# runs it AFTER CheckLavaDeath
+            // and BEFORE DespawnIfMeetingConditions; the port keeps it after
+            // the despawn burns (the kinds are disjoint — a boss bag never
+            // burns — so the order is observationally identical). The recover
+            // target is the world spawn in SP (`Main.LocalPlayer.SpawnX < 0`
+            // when no bed is set; the port's `bed_spawn` is the override).
+            if !was_grabbed {
+                let ptx = (drop.pos.x as i32) >> 4;
+                let pty = (drop.pos.y as i32) >> 4;
+                let fluff = 20;
+                let in_world = ptx >= fluff
+                    && ptx < world.width - fluff
+                    && pty >= fluff
+                    && pty < world.height - fluff;
+                if !in_world {
+                    if crate::entity_lights::BOSS_BAG.contains(&drop.kind) {
+                        // `:579` — the recover: `Center = spawn.ToWorldCoordinates()`
+                        // (the +8/+8 cell centre), `velocity = Zero`. The SP
+                        // target is the world spawn; a validated bed overrides.
+                        let (sx, sy) = match world.bed_spawn {
+                            Some((bx, by))
+                                if crate::world_sim::editing::bed_spawn_valid(world, bx, by)
+                                    .is_ok() =>
+                            {
+                                (bx, by)
+                            }
+                            _ => (world.spawn_x, world.spawn_y),
+                        };
+                        let cx = sx as f32 * TILE_PX + 8.0;
+                        let cy = sy as f32 * TILE_PX + 8.0;
+                        drop.pos = Vec2::new(cx - crate::item::SIZE * 0.5, cy - crate::item::SIZE * 0.5);
+                        drop.vel = Vec2::ZERO;
+                    } else {
+                        // `:584` — `TurnToAir`.
+                        items.swap_remove(i);
+                        continue;
+                    }
+                }
+            }
             // S1-E-5 — `WorldItem.UpdateItem_VisualEffects`'s rand/essScale
             // head (`WorldItem.cs:1206-1293`, `item_lights.rs`): the C# runs
             // it at `:436`, after the movement half, per live drop in
@@ -2152,6 +2195,62 @@ mod make_a_wish_tests {
         app.items.push(coin);
         try_granting_make_a_wish_set(&mut app);
         assert!(app.items.iter().any(|it| it.kind == 74), "non-desert refuses");
+    }
+}
+
+#[cfg(test)]
+mod check_in_world_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::item::ItemDrop;
+    use crate::player::Player;
+
+    /// A 100x100 world with the spawn at (50, 50); the player stands far
+    /// from the off-world drops so the grab pass never touches them.
+    fn wide_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = tr_core::world::World::new("wide".into(), 100, 100);
+        w.spawn_x = 50;
+        w.spawn_y = 50;
+        w.compute_column_surface();
+        app.world = w;
+        let mut player = Player::spawn(&app.world);
+        // Far from every test drop (the grab rectangle is ~52 px) so the
+        // grab pass never touches them — CheckInWorld is the only consumer.
+        player.x = 50.0 * TILE_PX;
+        player.y = 2.0 * TILE_PX;
+        app.player = Some(player);
+        app
+    }
+
+    /// `CheckInWorld` (`WorldItem.cs:573-588`): a rare-0 drop beyond the
+    /// 20-tile fluff airs out; a boss bag (RecoverableImportantItem) is
+    /// recovered to the spawn cell centre with zero velocity.
+    #[test]
+    fn w4_g15_off_world_drops_air_out_and_boss_bags_recover() {
+        let mut app = wide_app();
+        // A dirt drop at tile (5, 50) — inside the 20-tile fluff (x < 20).
+        app.items.push(ItemDrop::new(2, 1, 0, 5.0 * TILE_PX, 50.0 * TILE_PX, 3.0, 0.0, 0.0));
+        // A boss bag (3318) at tile (95, 50) — beyond width - 20 = 80.
+        app.items.push(ItemDrop::new(3318, 1, 0, 95.0 * TILE_PX, 50.0 * TILE_PX, 3.0, 0.0, 0.0));
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(!app.items.iter().any(|it| it.kind == 2), "the dirt aired out");
+        let bag = app.items.iter().find(|it| it.kind == 3318).expect("the bag recovered");
+        // The spawn cell (50, 50) centre = (50*16+8, 50*16+8); the drop's
+        // top-left = centre - SIZE/2.
+        let want = Vec2::new(50.0 * TILE_PX + 8.0 - crate::item::SIZE * 0.5, 50.0 * TILE_PX + 8.0 - crate::item::SIZE * 0.5);
+        assert!((bag.pos - want).length() < 0.5, "recovered to the spawn, got {:?}", bag.pos);
+        assert_eq!(bag.vel, Vec2::ZERO, "the velocity zeroed");
+    }
+
+    /// A drop INSIDE the fluff boundary is untouched (the gate is strict).
+    #[test]
+    fn w4_g15_a_drop_inside_the_fluff_survives() {
+        let mut app = wide_app();
+        // Tile (25, 50) — inside [20, 80).
+        app.items.push(ItemDrop::new(2, 1, 0, 25.0 * TILE_PX, 50.0 * TILE_PX, 0.0, 0.0, 0.0));
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items.iter().any(|it| it.kind == 2), "the in-bounds drop survives");
     }
 }
 
