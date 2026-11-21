@@ -123,6 +123,23 @@
 //! - 83318/83321 — Nebula Beast 423 (`:83312-83327`), ×50, Next(4)==0.
 //! - 83351/83354 — Nebula Headcrab 421 (`:83345-83360`), ×20, Next(2)==0.
 //! - 83384/83387 — Nebula Brain 420 (`:83378-83393`), ×20, Next(2)==0.
+//! Batch 9 (the Stardust pillar's live arms):
+//! - 83419 — the Stardust Cells 405/406 (`:83411-83433`): the
+//!   `10 + dmg/10` ring, dust 229 in the width/4 centre box; the DEAD
+//!   vector10's NextDouble + Next(24,41) draws are KEPT (computed never
+//!   used — the d50 235 precedent), the position re-anchors on the
+//!   normalized spawn offset × num161 × scale − 4, velocity ×2 (i<30)
+//!   or the Next(45,91) draw, scale 0.7 + NextFloat.
+//! - 83487/83490 — Stardust Spider Big 409 (`:83481-83492`): ×50 dust
+//!   17 + Next(4)==0 → dust-229 noGravity child (NO other post-writes).
+//! - 83514/83517 — Spider Small 410 (`:83508-83519`): ×10, same shape.
+//! - 83538/83541 — Jellyfish Big 407 (`:83532-83543`): ×50 dust 17
+//!   scale 0.75 Transparent + Next(2)==0 child.
+//! - 83640/83643 — Stardust Soldier 411 (`:83634-83645`): ×20, the
+//!   Next(4) shape.
+//! DEFERRED: the Stardust Worm 402's oldPos trail (`:83579-83596`)
+//! needs the NPC oldPos ring the port does not carry yet — its arm
+//! lands with that field (documented in ANALYSIS).
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -653,6 +670,74 @@ pub fn replay_hit_dust(
                     d.scale = 1.5;
                     d.fade_in = 1.0;
                     d.velocity *= 3.0;
+                }
+            }
+        }
+        // `:83411-83433` — the Stardust Cells' live ring: the bound is
+        // `10.0 + dmg / 10.0` (NO lifeMax term). Per iteration: the DEAD
+        // vector10 draws FIRST (NextDouble + Next(24,41), computed never
+        // used — the d50 235 precedent), then the dust-229 spawn in the
+        // width/4 centre box, the normalized-offset re-anchor, the
+        // velocity arm and the scale draw.
+        405 | 406 => {
+            let bound = 10.0 + s.dmg / 10.0;
+            let mut i = 0u32;
+            while (i as f64) < bound {
+                let num161 = s.w / 4; // `:83417` — INTEGER division
+                // `:83418` — the dead vector10: NextDouble then
+                // Next(24,41), both consumed, the result never read.
+                let _ = rng.next_double();
+                let _ = rng.next_range(24, 41);
+                let idx = dust.new_dust(
+                    rng, ctx, world,
+                    Vec2::new(s.cx - num161 as f32, s.cy - num161 as f32),
+                    num161 * 2, num161 * 2, 229, 0.0, 0.0, 0, Color::default(), 1.0,
+                ); // `:83419`
+                let d = dust.slot_mut(idx);
+                // `:83421-83422` — Normalize(pos - Centre); the zero
+                // vector normalizes to zero (XNA).
+                let off = Vec2::new(d.position.x - s.cx, d.position.y - s.cy);
+                let len = off.length();
+                let n = if len > 0.0 { off / len } else { Vec2::ZERO };
+                d.position = Vec2::new(
+                    s.cx + n.x * num161 as f32 * s.scale - 4.0,
+                    s.cy + n.y * num161 as f32 * s.scale - 4.0,
+                );
+                if i < 30 {
+                    // `:83425` — the spawn velocity's length, ×2.
+                    let vlen = d.velocity.length();
+                    d.velocity = n * vlen * 2.0;
+                } else {
+                    // `:83429` — `2f * vector11 * Next(45,91) / 10f`:
+                    // the C# multiplies the vector FIRST, then divides.
+                    d.velocity = (n * 2.0) * rng.next_range(45, 91) as f32 / 10.0;
+                }
+                d.no_gravity = true; // `:83431`
+                d.scale = 0.7 + rng.next_float(); // `:83432`
+                i += 1;
+            }
+        }
+        // `:83481-83645` — the Stardust dust-17 arms: parent then the
+        // Next(N)==0 dust-229 child with ONLY noGravity (no scale/fade/
+        // velocity writes — unlike the solar/Vortex/Nebula children).
+        // 409 ×50 Next(4), 410 ×10 Next(4), 407 ×50 Next(2) scale-0.75
+        // Transparent parent, 411 ×20 Next(4).
+        409 | 410 | 407 | 411 => {
+            let (mult, gate) = match s.npc_type {
+                409 => (50.0, 4),
+                410 => (10.0, 4),
+                407 => (50.0, 2),
+                _ => (20.0, 4),
+            };
+            let parent_scale = if s.npc_type == 407 { 0.75 } else { 1.0 };
+            for _ in 0..hit_count(s.dmg, s.life_max, mult) {
+                live_dust(
+                    s, 17, dir, -1.0, 0, Color::TRANSPARENT, parent_scale,
+                    rng, dust, ctx, world,
+                );
+                if rng.next_max(gate) == 0 {
+                    let idx = live_dust(s, 229, 0.0, 0.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                    dust.slot_mut(idx).no_gravity = true;
                 }
             }
         }
@@ -1446,6 +1531,84 @@ mod tests {
                     d.scale = 1.5;
                     d.fade_in = 1.0;
                     d.velocity *= 3.0;
+                }
+            }
+            assert_eq!(rng, twin_rng, "type {t}");
+            assert_eq!(dust.slots(), twin.slots(), "type {t}");
+        }
+    }
+
+    /// W4-g62 batch 9 — the Stardust Cell ring (`NPC.cs:83415-83432`):
+    /// bound 10 + dmg/10 (no lifeMax), the DEAD vector draws consumed
+    /// per iteration, the re-anchor + velocity + scale draws mirror.
+    #[test]
+    fn w4_g62_the_stardust_cell_ring_mirrors_the_dead_draws() {
+        let world = air();
+        let ctx = ctx();
+        let mut s = snap(405, 100, 100, 25.0); // bound 12.5 → 13 iterations
+        s.w = 40;
+        s.cx = 120.0;
+        s.cy = 110.0;
+        s.scale = 1.3;
+        let mut rng = UnifiedRandom::new(97);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(97);
+        let mut twin = DustPool::new();
+        for i in 0..13u32 {
+            let num161 = 40 / 4;
+            let _ = twin_rng.next_double();
+            let _ = twin_rng.next_range(24, 41);
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(120.0 - 10.0, 110.0 - 10.0),
+                20, 20, 229, 0.0, 0.0, 0, Color::default(), 1.0,
+            );
+            let d = twin.slot_mut(idx);
+            let off = Vec2::new(d.position.x - 120.0, d.position.y - 110.0);
+            let len = off.length();
+            let n = if len > 0.0 { off / len } else { Vec2::ZERO };
+            d.position = Vec2::new(120.0 + n.x * 10.0 * 1.3 - 4.0, 110.0 + n.y * 10.0 * 1.3 - 4.0);
+            if i < 30 {
+                let vlen = d.velocity.length();
+                d.velocity = n * vlen * 2.0;
+            } else {
+                d.velocity = (n * 2.0) * twin_rng.next_range(45, 91) as f32 / 10.0;
+            }
+            d.no_gravity = true;
+            d.scale = 0.7 + twin_rng.next_float();
+        }
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+    }
+
+    /// W4-g62 batch 9 — the Stardust dust-17 arms (`NPC.cs:83487-83491`
+    /// etc.): the child carries ONLY noGravity; 407's parent is scale
+    /// 0.75 Transparent, its gate Next(2); 410's bound ×10.
+    #[test]
+    fn w4_g62_the_stardust_17_arms() {
+        let world = air();
+        let ctx = ctx();
+        for (t, mult, gate, pscale) in
+            [(409, 50.0, 4, 1.0f32), (410, 10.0, 4, 1.0), (407, 50.0, 2, 0.75), (411, 20.0, 4, 1.0)]
+        {
+            let s = snap(t, 100, 100, 50.0);
+            let iters = hit_count(s.dmg, s.life_max, mult);
+            let mut rng = UnifiedRandom::new(101);
+            let mut dust = DustPool::new();
+            replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+            let mut twin_rng = UnifiedRandom::new(101);
+            let mut twin = DustPool::new();
+            for _ in 0..iters {
+                twin.new_dust(
+                    &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 17,
+                    1.0, -1.0, 0, Color::TRANSPARENT, pscale,
+                );
+                if twin_rng.next_max(gate) == 0 {
+                    let idx = twin.new_dust(
+                        &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 229,
+                        0.0, 0.0, 0, Color::default(), 1.0,
+                    );
+                    twin.slot_mut(idx).no_gravity = true;
                 }
             }
             assert_eq!(rng, twin_rng, "type {t}");
