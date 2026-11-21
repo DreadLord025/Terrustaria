@@ -4070,6 +4070,18 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             PAPER_AIRPLANE_A | PAPER_AIRPLANE_B => {
                 (10.0, 10.0, 159, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
             }
+            // W4-d16 — `DefaultToKite` (`Projectile.cs:10744-10751`), the
+            // 24 kinds the SetDefaults blocks route to it (`:7889-7892`/
+            // `:8040-8044`/`:8055-8059`/`:8136-8140`/`:8149-8153`/
+            // `:8168-8172`/`:8182-8186`): 4x4, aiStyle 160, penetrate -1,
+            // extraUpdates 60 (the first tick's 61 sub-steps settle to 0
+            // at the numUpdates==1 sub-step, `:48516-48519`). Stock
+            // timeLeft 3600 / tileCollide true / alpha 0 / friendly false
+            // (the helper sets none — the kite is a held marker, not a
+            // shot; the item rows carry damage -1).
+            k if crate::projectile_ai_kites::KITE_KINDS.contains(&k) => {
+                (4.0, 4.0, 160, -1, TIME_LEFT_DEFAULT, 60, true, false, false, RESET_STATE)
+            }
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -4235,7 +4247,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             )
             // S1-P-i55 — `Projectile.cs:7628`: the golf balls (721 + the 14
             // dyed twins) set `netImportant = true` themselves.
-            || matches!(kind, GOLF_BALL | 739..=752),
+            || matches!(kind, GOLF_BALL | 739..=752)
+            // W4-d16 — the 822+ kites set `netImportant = true` themselves
+            // (`Projectile.cs:8042`/`:8057`/`:8138`/`:8151`/`:8170`/
+            // `:8184`); the 766-771 block (`:7889-7892`) keeps the stock
+            // false (the `DefaultToKite` helper sets none).
+            || matches!(kind, 822..=824 | 826..=830 | 838..=840 | 843..=846 | 850 | 852..=853),
         ignore_water: ((minion || sentry)
             && !matches!(
                 kind,
@@ -4716,6 +4733,16 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // W4-d16 — the Void Lens' 8-frame sheet (`Main.cs:8504`) —
         // `AI_154`'s 5-tick cycle wraps at it (`Projectile.cs:52179-52186`).
         VOID_LENS => 8,
+        // W4-d16 — the kite sheets (`Main.cs:8632-8636`/`:8643`/`:8645-
+        // :8647`/`:8655-8656`/`:8658`): the 766-770 five 4-frame kites,
+        // the 824/839/840/853 wind-flap fours, the 826 pigron's 3, the
+        // 828/829 jellyfish pair's 2. The rest keep the stock 1 (no
+        // override in `Main.cs:8444-8727`). `KiteLogic`'s frame machine
+        // (`Projectile.cs:48627-48691`) reads them.
+        766..=770 => 4,
+        824 | 839 | 840 | 853 => 4,
+        826 => 3,
+        828 | 829 => 2,
 
         // The Explosive Trap family (`Main.cs:8467-8472`): the traps and the
         // T1/T2 blasts animate 4 frames, the T3 blast 5 — `AI_138`'s wrap

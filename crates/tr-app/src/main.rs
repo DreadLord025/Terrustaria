@@ -232,6 +232,9 @@ mod projectile_bobber;
 // thrust arm + its extension/retract curve and reach-ahead hitbox, plus the
 // small sub-shot arms (the spore/cloud/bolt/snowflake/flake the spears spawn).
 mod projectile_ai_spear;
+// W4-d16 — the kite family (aiStyle 160, `AI_160_Kites` + `KiteLogic`):
+// the 24 DefaultToKite kinds' wind hover + anchor reel + frame machine.
+mod projectile_ai_kites;
 mod rain;
 // S1-P-i38: the recall / magic-mirror / ice-mirror / potion-of-return use
 // path — ItemCheck's spawn-recall arms (Player.cs:42976-42999 / :43107-43140 /

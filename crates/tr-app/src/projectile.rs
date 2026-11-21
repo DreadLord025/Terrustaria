@@ -14476,6 +14476,13 @@ pub struct ProjectilePool {
     /// `wind_for_visuals` is `Main.windSpeedCurrent` (`Main.cs:2823`), NOT
     /// the wind-physics tail's `wind_speed` (that gate is off, `:16777`).
     visual_scene: (f32, f64, f32, f32),
+    /// W4-d16 — the kite family's (aiStyle 160) per-tick item-state
+    /// snapshot (`AI_160_Kites`/`KiteLogic`'s `selectedItem.shoot` /
+    /// `itemAnimation` / `controlUseItem` reads). The world-sim pass
+    /// feeds it through [`ProjectilePool::set_kite_context`] (the
+    /// `set_spear_owner` pattern); `None` keeps the kite arm inert (the
+    /// pool-only tests feed it directly).
+    kite_ctx: Option<crate::projectile_ai_kites::KiteContext>,
     /// `Player._blackListedTileCoordsForGrappling` (`Player.cs:6202`) per
     /// owner: the tiles that owner's hooks may not latch on. The C# rebuilds
     /// the set when a hook latches (`Projectile.cs:52772` →
@@ -14933,6 +14940,7 @@ impl ProjectilePool {
             wind_speed: 0.0,
             screen_view: None,
             visual_scene: (0.0, 0.0, 0.0, 0.0),
+            kite_ctx: None,
             hook_blacklist: HashMap::new(),
             disco: [255, 0, 0],
             pending_npc_hit_sounds: Vec::new(),
@@ -15027,6 +15035,13 @@ impl ProjectilePool {
     /// `update` (the `set_screen_view` pattern).
     pub fn set_visual_scene(&mut self, scene: (f32, f64, f32, f32)) {
         self.visual_scene = scene;
+    }
+
+    /// W4-d16 — the kite family's per-tick item-state snapshot
+    /// (`AI_160_Kites`/`KiteLogic`'s app-level reads). The world-sim pass
+    /// feeds it before `update` (the `set_spear_owner` pattern).
+    pub fn set_kite_context(&mut self, ctx: Option<crate::projectile_ai_kites::KiteContext>) {
+        self.kite_ctx = ctx;
     }
 
     /// `Main.DiscoR/G/B` as the aiStyle-123 crystal's shard-hue roll sees it
@@ -17655,6 +17670,30 @@ impl ProjectilePool {
                             );
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
+                        }
+                        // W4-d16 — aiStyle 160, the kites
+                        // (`AI_160_Kites` `:48421-48464` + `KiteLogic`
+                        // `:48466-48693`): the 24 DefaultToKite kinds'
+                        // wind hover + anchor reel. The arm owns its
+                        // movement (the flail precedent — the blocked
+                        // chain excludes 160, `:18398`, so kites slide).
+                        // `sub_steps - 2 - sub` is the C# `numUpdates`
+                        // (the ai001_c precedent); the item-state
+                        // snapshot rides `kite_ctx` (the spear pattern).
+                        160 => {
+                            if let Some(ctx) = self.kite_ctx {
+                                crate::projectile_ai_kites::kite_step(
+                                    &mut self.slots[i],
+                                    world,
+                                    player.as_deref_mut(),
+                                    &ctx,
+                                    self.visual_scene,
+                                    rng,
+                                    local_owner,
+                                    sub_steps as i32 - 2 - sub as i32,
+                                    i as i32,
+                                );
+                            }
                         }
                         // The aiStyle-2 thrown family
                         // (`Projectile.cs:23205-23689`): the wind head, the

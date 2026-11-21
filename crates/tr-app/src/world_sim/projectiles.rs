@@ -354,6 +354,26 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         app.rain.visual_alpha(),
         app.anim_time % 3600.0,
     ));
+    // W4-d16 — the kite family's item-state snapshot (`AI_160_Kites`'s
+    // `inventory[selectedItem].shoot` gate `Projectile.cs:48431` +
+    // `KiteLogic`'s `controlUseItem && itemAnimation == 0` reel-out gate
+    // `:48485`). The swing timer derives the tick count (the spear
+    // `ticks_of` convention); the use button is the raw `mine_down`
+    // (the flail `control_use_item` precedent).
+    let kite_ctx = app.player.as_ref().map(|_| {
+        let held = app.inventory[app.selected];
+        let selected_shoot = if held.count > 0 {
+            crate::registry::projectile(held.kind).unwrap_or(0)
+        } else {
+            0
+        };
+        crate::projectile_ai_kites::KiteContext {
+            selected_shoot,
+            item_animation: (app.swing * 60.0).round() as i32,
+            control_use_item: app.mine_down,
+        }
+    });
+    app.projectiles.set_kite_context(kite_ctx);
     // S1-P-i55 — the golf context (`Main.LocalGolfState` + `Main.MouseWorld`
     // + the mouse-right pair + the player snapshot). The C# reads the live
     // state mid-walk; the port clones it into the pool for the tick and
