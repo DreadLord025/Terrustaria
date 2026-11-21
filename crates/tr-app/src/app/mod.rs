@@ -880,7 +880,7 @@ pub(crate) struct App {
     /// `MultiToolMode.Red` (`WiresUI.cs:94`); the WiresRadial UI owns the
     /// setting — its LOGIC half landed W4-f11 (`ui/wires_radial.rs`, the
     /// flower/line state machine + the slot toggles); the DRAW passes are
-    /// the research/135 contract remainder.
+    /// the research/152 contract remainder.
     pub(crate) wire_tool_mode: u8,
     /// `WiresUI.radial` (`WiresUI.cs:694`): the ToolMode radial's state
     /// (the flower anchor/open flag, the line opacity, the actuator latch).

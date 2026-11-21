@@ -1,5 +1,12 @@
-# 134 — The light-family unification: final hunks for c42c (95 §4 / §8.5)
+# 151 — The light-family unification: final hunks for c42c (95 §4 / §8.5)
 
+> Renumbered 134 → 151 (2026-11-21): the INDEX-registry wave on the
+> d54-branch reads assigned 134/135/136 to the first-pushed g67/g90/g31
+> docs (`134-g67-post-union-folds`, `135-g90-persist-folds`,
+> `136-tilepass-d-hunks`); 151-153 were free across all origin tips at
+> rename time (research/150 not yet landed — if the registry assigns
+> different numbers when it pushes, the merger re-points mechanically).
+>
 > Merger hand-off · 2026-11-21 · code-only (no cargo/tests/graphify run) ·
 > sources: `decompiled/Terraria/Wiring.cs:2800-3072` (the 11 statics),
 > `WorldGen.cs:72970-73024` (`TryToggleLight`), the f11 tip

@@ -1,5 +1,9 @@
-# 136 — The Grand Design 3611 drag / proj-651: landed-verification + the apply activation (95 open-seam 5)
+# 153 — The Grand Design 3611 drag / proj-651: landed-verification + the apply activation (95 open-seam 5)
 
+> Renumbered 136 → 153 (2026-11-21, the INDEX-registry collision —
+> g31's `136-tilepass-d-hunks` was first-pushed; see research/151's
+> header for the full note).
+>
 > W4-f11 · 2026-11-21 · code-only (no cargo/tests/graphify run) · sources:
 > `decompiled/Terraria/Projectile.cs:6990-7000` (the SetDefaults row),
 > `:35697-35833` (aiStyle 125), `:72051-72067` (the Kill hook),
@@ -57,7 +61,7 @@ Contract pins (d13 `ed631370d`, re-verified against the C# here):
 - **RAW ToolMode** — `MassWireOperationInner` reads `Settings.ToolMode`
   unmasked (`Wiring.cs:3241`); the Actuator strip is the 3625 arm's own
   (`Player.cs:46908`), NOT the kite's. The WiresRadial logic half
-  (research/135) now makes the field reachable in-game.
+  (research/152) now makes the field reachable in-game.
 - **No cooldown gate** — the Kill hook has none; the
   `wire_operations_cooldown` throttle is `CanUseItem`'s (the use arm's).
 - **Tile coords both sides** — `(int)X >> 4` on the pool side, the core

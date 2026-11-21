@@ -414,7 +414,7 @@ fn consume_one(inventory: &mut [ItemSlot], equip: &mut crate::inv::EquipSlots, k
 /// spread on the CALLER's stage stream (`drop_rng` — the 3625 use path
 /// rides `UpdatePlayers`, the Grand Design's kite Kill rides
 /// `UpdateProjectiles`; the d13 activation contract's stream note,
-/// research/136).
+/// research/153).
 pub(crate) fn mass_wire_operation(
     app: &mut App,
     ps: (i32, i32),
@@ -572,7 +572,7 @@ mod tests {
         assert_eq!(app.inventory[0].count, 8, "two channels billed two wires");
     }
 
-    /// W4-f11 — the d13 activation contract's composition (research/136):
+    /// W4-f11 — the d13 activation contract's composition (research/153):
     /// the Grand Design's kite Kill passes the RAW ToolMode (the Actuator
     /// bit NOT stripped — `Wiring.cs:3241`; only the 3625 click arm masks,
     /// `Player.cs:46908`) and the `UpdateProjectiles` stage stream (the

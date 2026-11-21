@@ -7,9 +7,9 @@
 //! `DrawCursorArea` `:511-691`) are the contract-doc remainder — they need
 //! the `TextureAssets.WireUi[12]` + `BuilderAcc` atlas loads, the gamepad
 //! thumbstick paths and the centred-rotated sprite draws (the port's UI
-//! sprite seam), ~450 C# lines of pure draw. See research/135.
+//! sprite seam), ~450 C# lines of pure draw. See research/152.
 //!
-//! Deviations (documented, research/135): `PlayerInput.UsingGamepad` /
+//! Deviations (documented, research/152): `PlayerInput.UsingGamepad` /
 //! `LockGamepadTileUseButton` fold to false (no gamepad in the port — the
 //! smart-cursor precedent); `player.mouseInterface`/`lastMouseInterface`
 //! have no port fields — the caller passes the folded `mouse_interface`
@@ -133,7 +133,7 @@ impl WiresRadial {
         // The click dispatch lives in the C#'s DRAW passes (`DrawFlower`
         // when active, `DrawLine` when the line shows); the port runs it
         // here so the logic half is whole without the sprite seam. The
-        // geometry is the draw passes' own (research/135 §2).
+        // geometry is the draw passes' own (research/152 §2).
         if self.active {
             self.flower_clicks(mouse, input, tool_mode, allow_actuators)
         } else if self.line_opacity > 0.0 {

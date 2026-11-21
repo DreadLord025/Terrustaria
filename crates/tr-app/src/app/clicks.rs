@@ -820,7 +820,7 @@ impl App {
 
     /// `WiresUI.HandleWiresUI` (`WiresUI.cs:698-702` →
     /// `DrawInterface_9_WireSelection`, `Main.cs:46195-46203`): the ToolMode
-    /// radial's per-frame update — the LOGIC half (W4-f11, research/135):
+    /// radial's per-frame update — the LOGIC half (W4-f11, research/152):
     /// the flower/line state machine + the slot toggles write
     /// `wire_tool_mode`; the DRAW passes are the contract remainder. Runs
     /// after the inventory handlers (the C# DrawInterface_9 sits after
@@ -841,7 +841,7 @@ impl App {
             talking: self.talk_npc.is_some(),
             chat_open: self.chat.open,
             // The folded mouseInterface snapshot: the minimap hover is the
-            // port's one documented mirror (no unified field — research/135).
+            // port's one documented mirror (no unified field — research/152).
             mouse_interface: self.minimap_hover.is_some(),
             options_open: self.ingame_options.open
                 || self.achievements_open
