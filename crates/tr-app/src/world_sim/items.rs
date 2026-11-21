@@ -117,6 +117,16 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
     let mut voodoo: Option<(Vec2, u32)> = None;
     // The drops whose shimmer ramp crossed 0.9 this step (the post-pass apply).
     let mut shimmer_due: Vec<u32> = Vec::new();
+    // W4-g15 — the dust spawn ctx captured ONCE per tick, before the items
+    // borrow (the `world_sim/npcs.rs` dust convention). `Main.waterStyle` is
+    // the draw-pass value (`Main.cs:57475`); the port recomputes it from the
+    // camera (the `capture_driver.rs` precedent). The day/remix/DD2 gates the
+    // despawn burns read are captured here too (they cannot change mid-tick).
+    let dust_ctx = app.spawn_ctx();
+    let water_style = crate::biome::calculate_water_style(&app.world, app.camera) as i32;
+    let day_time = app.world.day_time;
+    let remix_world = app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
+    let dd2_ongoing = app.world.dd2_event_ongoing;
     app.item_step.tick(dt.min(0.25), |step| {
         // --- `Player.GrabItems` (`Player.cs:34905-34976`, S1-P-i47) ---------
         // The C# runs it from `Player.Update` (`:27428`) BEFORE the item
@@ -668,7 +678,60 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 continue;
             }
             let was_grabbed = drop.being_grabbed;
+            // W4-g15 — `WorldItem.UpdateShimmer`'s shimmered sparkle
+            // (`WorldItem.cs:459-481`) draws `Main.rand` INSIDE UpdateShimmer
+            // (`:403`), BEFORE MoveInWorld's splash. The port's `update` is
+            // RNG-free, so the sparkle drain runs here first (the C# position),
+            // then the movement, then the splash drain below.
+            if !was_grabbed && drop.shimmered {
+                let mut s = crate::item_dust::DustSink {
+                    rng: app.rngs.stream(crate::app::RngKey::UpdateItems),
+                    dust: &mut app.dust,
+                    world,
+                    ctx: &dust_ctx,
+                    audio: &mut *audio,
+                };
+                crate::item_dust::shimmered_sparkle(&mut s, &drop);
+            }
             drop.update(world, step);
+            // W4-g15 — the liquid entry/exit splash (`WorldItem.cs:879-1035`),
+            // inside MoveInWorld AFTER the sparkle. `wet_edges` armed the
+            // marker during `update`; drain it on the same stream.
+            if let Some((entry, kind)) = drop.splash_edge {
+                let mut s = crate::item_dust::DustSink {
+                    rng: app.rngs.stream(crate::app::RngKey::UpdateItems),
+                    dust: &mut app.dust,
+                    world,
+                    ctx: &dust_ctx,
+                    audio: &mut *audio,
+                };
+                crate::item_dust::splash_edge(&mut s, &drop, entry, kind, water_style);
+            }
+            // W4-g15 — `DespawnIfMeetingConditions` (`WorldItem.cs:423`,
+            // `:639-679`): the fallen-star daytime burn / the 4143 expiry /
+            // the 3822 DD2 despawn, AFTER MoveInWorld and BEFORE the visual
+            // effects. A fired burn airs the drop out (`TurnToAirAndSync`).
+            if !was_grabbed {
+                let burned = {
+                    let mut s = crate::item_dust::DustSink {
+                        rng: app.rngs.stream(crate::app::RngKey::UpdateItems),
+                        dust: &mut app.dust,
+                        world,
+                        ctx: &dust_ctx,
+                        audio: &mut *audio,
+                    };
+                    // The C#'s three independent `if`s (`:645`/`:657`/`:665`);
+                    // the kinds are mutually exclusive, so at most one fires.
+                    let a = crate::item_dust::fallen_star_burn(&mut s, &drop, day_time, remix_world, was_grabbed);
+                    let b = crate::item_dust::mana_cloak_star_expiry(&mut s, &drop);
+                    let c = crate::item_dust::dd2_energy_despawn(&mut s, &drop, dd2_ongoing);
+                    a || b || c
+                };
+                if burned {
+                    items.swap_remove(i);
+                    continue;
+                }
+            }
             // S1-E-5 — `WorldItem.UpdateItem_VisualEffects`'s rand/essScale
             // head (`WorldItem.cs:1206-1293`, `item_lights.rs`): the C# runs
             // it at `:436`, after the movement half, per live drop in
@@ -678,8 +741,27 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             // pass above and never reaches here; the lava-burned drops are
             // the same. The RNG-free arms stay in the frame feed
             // (`entity_lights::item_light`).
+            //
+            // W4-g15 — the 116 meteorite arm is now ported (it was deferred
+            // here): its flicker + 1/250 dust gate ride `item_dust`. The 501
+            // pixie-dust arm is dust-only. The 75 / boss-bag `% 12` sparkles
+            // follow the (RNG-free) light halves.
             let ess = app.ess_scale;
-            if let Some((x, y, rgb)) = crate::item_lights::rand_light(
+            if drop.kind == 116 {
+                let light = {
+                    let mut s = crate::item_dust::DustSink {
+                        rng: app.rngs.stream(crate::app::RngKey::UpdateItems),
+                        dust: &mut app.dust,
+                        world,
+                        ctx: &dust_ctx,
+                        audio: &mut *audio,
+                    };
+                    crate::item_dust::meteorite_visual(&mut s, &drop)
+                };
+                if let Some((x, y, rgb)) = light {
+                    app.entity_lights.add(x, y, rgb);
+                }
+            } else if let Some((x, y, rgb)) = crate::item_lights::rand_light(
                 drop.kind,
                 drop.pos,
                 crate::item::SIZE,
@@ -688,6 +770,31 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             ) {
                 app.entity_lights.add(x, y, rgb);
             }
+            if drop.kind == 501 {
+                let mut s = crate::item_dust::DustSink {
+                    rng: app.rngs.stream(crate::app::RngKey::UpdateItems),
+                    dust: &mut app.dust,
+                    world,
+                    ctx: &dust_ctx,
+                    audio: &mut *audio,
+                };
+                crate::item_dust::pixie_dust_visual(&mut s, &drop);
+            }
+            if drop.kind == 75 || crate::entity_lights::BOSS_BAG.contains(&drop.kind) {
+                let mut s = crate::item_dust::DustSink {
+                    rng: app.rngs.stream(crate::app::RngKey::UpdateItems),
+                    dust: &mut app.dust,
+                    world,
+                    ctx: &dust_ctx,
+                    audio: &mut *audio,
+                };
+                crate::item_dust::fallen_star_sparkle(&mut s, &drop);
+                crate::item_dust::boss_bag_sparkle(&mut s, &drop);
+            }
+            // W4-g15 — `WorldItem.cs:437-440`: the `timeSinceItemSpawned` tick
+            // runs AFTER `UpdateItem_VisualEffects` (`:436`), so the sparkle /
+            // expiry gates above read the pre-increment value this tick.
+            drop.tick_age();
             // `WorldItem.UpdateShimmer`'s 0.9 trigger (`WorldItem.cs:528-535`):
             // the transform runs after the step's items borrow is released (the
             // apply needs the app wholesale for the spawns and the world flags).

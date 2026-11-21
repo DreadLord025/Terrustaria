@@ -888,6 +888,42 @@ pub struct ItemDrop {
     /// `WorldItem.onConveyor` (`WorldItem.cs:864`'s stored bool): the belt
     /// contact suppresses the draw-side velocity spin (`Main.cs:38613`).
     pub on_conveyor: bool,
+    /// `Entity.wetCount` (`Entity.cs:32`) — the splash cooldown: the entry /
+    /// exit arms set 20 (`WorldItem.cs:885`/`:964`), the wet-half tail ticks
+    /// it down (`:1042-1045`). Gates the splash dust bursts (W4-g15).
+    pub wet_count: i32,
+    /// `Entity.wet` — `Collision.WetCollision`'s fresh probe this tick
+    /// (`WorldItem.cs:870`, the edge arms `:881`/`:959`), distinct from
+    /// [`Self::box_is_wet`] (the light-arm gate).
+    pub wet: bool,
+    /// `Entity.lavaWet` — `Collision.LavaCollision` (`WorldItem.cs:865-869`);
+    /// cleared when dry (`:1036-1041`).
+    pub lava_wet: bool,
+    /// `Entity.honeyWet` — `Collision.honey` (`WorldItem.cs:871-874`);
+    /// cleared when dry (`:1036-1041`).
+    pub honey_wet: bool,
+    /// `WorldItem.timeSinceItemSpawned`'s TICK counter (`WorldItem.cs:38`,
+    /// incremented at `:437-440` with the 2147483547 cap) — the `% 12`
+    /// fallen-star / boss-bag sparkle gate (`:1627`/`:1639`) and the 4143
+    /// expiry's `> 300` (`:657`). The seconds stand-in [`Self::age`] stays
+    /// for its own consumers.
+    pub age_ticks: i32,
+    /// W4-g15 — the splash edge the last non-grabbed update armed
+    /// (`WorldItem.cs:879-1035`): `Some((entry, kind))`, `None` no edge /
+    /// cooldown armed. The kind is resolved at edge time (the `:1036-1041`
+    /// dry-clear runs before the drain). [`crate::item_dust::splash_edge`]
+    /// drains it (the dust + the case-19 play) in the items pass.
+    pub splash_edge: Option<(bool, SplashKind)>,
+}
+
+/// The liquid kind a splash edge resolved to (`WorldItem.cs:886-954` entry /
+/// `:965-1033` exit): lava first, then shimmer, then honey, else water.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SplashKind {
+    Water,
+    Lava,
+    Honey,
+    Shimmer,
 }
 
 impl ItemDrop {
@@ -917,6 +953,12 @@ impl ItemDrop {
             grab_delay_player: 255,
             being_grabbed: false,
             on_conveyor: false,
+            wet_count: 0,
+            wet: false,
+            lava_wet: false,
+            honey_wet: false,
+            age_ticks: 0,
+            splash_edge: None,
         }
     }
 
@@ -1072,11 +1114,22 @@ impl ItemDrop {
     /// `being_grabbed` skips the ground physics for the tick after a pull
     /// (`:425-435`): wet flags clear, the velocity applies raw
     /// (`ApplyMovement`, `:1074-1084`), the flag resets.
+    ///
+    /// **RNG-free** (W4-g15): the `UpdateShimmer` sparkle (`:459-481`) and the
+    /// splash bursts (`:879-1035`) draw `Main.rand`, so they run in the
+    /// dedicated `item_dust` drains at their C# positions, not here. This
+    /// method keeps the flag/cooldown arithmetic (`wet_edges` arms the
+    /// [`Self::splash_edge`] marker the drain reads).
     pub fn update(&mut self, world: &World, dt: f32) {
         self.age += dt;
+        self.splash_edge = None;
         if self.being_grabbed {
             // `UpdateItem`'s grabbed arm (`WorldItem.cs:425-435`).
             self.shimmer_wet = false;
+            self.wet = false;
+            self.wet_count = 0;
+            self.lava_wet = false;
+            self.honey_wet = false;
             self.being_grabbed = false;
             self.on_conveyor = false;
             self.pos += self.vel;
@@ -1091,11 +1144,94 @@ impl ItemDrop {
             } else {
                 self.move_in_world(world);
             }
+            // `MoveInWorld`'s wet-flag head (`WorldItem.cs:865-878`): the
+            // fresh probes run AFTER the friction/belt half, BEFORE the
+            // splash edge arms. The port's probes are the player.rs pair
+            // (`Collision.cs:1572-1684`); the honey/shimmer kinds ride the
+            // box scan (the `Collision.honey`/`Collision.shimmer` statics'
+            // last-write-wins is approximated by the box union — ANALYSIS).
+            //
+            // W4-g15 — the wet half runs ONLY in this `!beingGrabbed` branch:
+            // the C#'s `MoveInWorld` (which carries the splash arms) is at
+            // `:413` inside the non-grabbed arm; the grabbed arm (`:425-435`)
+            // clears the flags and skips it. Being in this `else` already
+            // encodes that gate.
+            if crate::player::lava_collision(world, self.pos.x, self.pos.y, SIZE, SIZE) {
+                self.lava_wet = true;
+            }
+            let now_wet =
+                crate::player::wet_collision(world, self.pos.x, self.pos.y, SIZE, SIZE);
+            if self.box_in_liquid(world, |t| {
+                t.liquid > 0 && t.liquid_kind() == tr_core::tile::LiquidKind::Honey
+            }) {
+                self.honey_wet = true;
+            }
+            if self.box_in_liquid(world, |t| {
+                t.liquid > 0 && tr_core::shimmer::tile_is_shimmer(t)
+            }) {
+                self.shimmer_wet = true;
+            }
+            self.wet_edges(now_wet);
+            // `:1036-1041` — dry clears lava/honey/shimmerWet (NOT `wet`).
+            if !self.wet {
+                self.lava_wet = false;
+                self.honey_wet = false;
+                self.shimmer_wet = false;
+            }
+            // `:1042-1045` — the cooldown ticks at the wet half's tail.
+            if self.wet_count > 0 {
+                self.wet_count -= 1;
+            }
         }
         // `WorldItem.cs:441-444` — the grab delay ticks down every update,
         // grabbed or not.
         if self.grab_delay_time > 0 {
             self.grab_delay_time -= 1;
+        }
+    }
+
+    /// `WorldItem.cs:437-440` — the `timeSinceItemSpawned` tick (the cap
+    /// included). The C# runs it AFTER `UpdateItem_VisualEffects` (`:436`),
+    /// so the `% 12` sparkle gate and the 4143 `> 300` expiry read the
+    /// PRE-increment value this tick; the items pass calls this after the
+    /// visual drains (W4-g15).
+    pub fn tick_age(&mut self) {
+        if self.age_ticks < 2147483547 {
+            self.age_ticks += 1;
+        }
+    }
+
+    /// `MoveInWorld`'s wet-edge arms (`WorldItem.cs:879-1035`): the entry
+    /// (`:879-958`) and exit (`:959-1035`) cooldown gates. The dust bursts +
+    /// the case-19 plays are the [`Self::splash_edge`] drain
+    /// (`crate::item_dust::splash_edge`); the state machine stays here so the
+    /// physics-only callers keep the exact flag/cooldown arithmetic. The kind
+    /// resolves at edge time: lava first (`flag2`/`lavaWet`), then shimmer,
+    /// then honey, else water (the `:886-940` / `:965-1019` arm order).
+    fn wet_edges(&mut self, now_wet: bool) {
+        let kind = if self.lava_wet {
+            SplashKind::Lava
+        } else if self.shimmer_wet {
+            SplashKind::Shimmer
+        } else if self.honey_wet {
+            SplashKind::Honey
+        } else {
+            SplashKind::Water
+        };
+        if now_wet {
+            if !self.wet {
+                if self.wet_count == 0 {
+                    self.wet_count = 20;
+                    self.splash_edge = Some((true, kind));
+                }
+                self.wet = true;
+            }
+        } else if self.wet {
+            self.wet = false;
+            if self.wet_count == 0 {
+                self.wet_count = 20;
+                self.splash_edge = Some((false, kind));
+            }
         }
     }
 

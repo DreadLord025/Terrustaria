@@ -203,6 +203,12 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                         grab_delay_player: 255,
                         being_grabbed: false,
                         on_conveyor: false,
+                        wet_count: 0,
+                        wet: false,
+                        lava_wet: false,
+                        honey_wet: false,
+                        age_ticks: 0,
+                        splash_edge: None,
                     });
                 }
                 tr_core::wiring::StatueSpawn::Teleport { x, y, roster } => {
@@ -790,6 +796,12 @@ mod tests {
                 grab_delay_player: 255,
                 being_grabbed: false,
                 on_conveyor: false,
+                wet_count: 0,
+                wet: false,
+                lava_wet: false,
+                honey_wet: false,
+                age_ticks: 0,
+                splash_edge: None,
             });
         }
         trip_and_tick(&mut app);

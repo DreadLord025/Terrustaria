@@ -351,6 +351,10 @@ pub(crate) fn apply_due_transforms(app: &mut App, indices: &[u32]) {
             continue;
         }
         let outcome = resolve_shimmer(&ctx, drop.kind, drop.count, make_npc);
+        // W4-g15 — the C#'s shared tail reads `base.Center` AFTER the arm
+        // (`WorldItem.cs:1846`); the position never moves during GetShimmered,
+        // so capture it here (the arm may air the drop out before the tail).
+        let shimmer_center = drop.center();
         let Some(drop_mut) = app.items.get_mut(idx as usize) else {
             continue;
         };
@@ -453,13 +457,24 @@ pub(crate) fn apply_due_transforms(app: &mut App, indices: &[u32]) {
                 apply_decraft(app, idx, recipe_index, amount);
             }
         }
-        // `WorldItem.cs:1849` — the shared tail every arm falls through to:
-        // `AchievementsHelper.NotifyProgressionEvent(27)` (TRANSMUTE_ITEM).
-        // `Refused` is the two early returns above it (`:1732` the
-        // already-unlocked rainbow slime, `:1754` the active slime rain), and
-        // `Nothing` is `CanShimmer() == false` — the C# never reaches
-        // `GetShimmered` then, so neither credits.
+        // `WorldItem.cs:1843-1848` — the shared tail every non-refused arm
+        // falls through to: `shimmerWet = true; wet = true; velocity *= 0.1f;
+        // WorldItem.ShimmerEffect(base.Center); SyncItem()`. The transform /
+        // coin / decraft arms already wrote the velocity cut + shimmerWet; the
+        // ShimmerEffect burst (W4-g15) is the dust + Item176 play, on the same
+        // `UpdateItems` stream. `Refused`/`Nothing` never reach GetShimmered.
         if !matches!(outcome, ShimmerOutcome::Nothing | ShimmerOutcome::Refused) {
+            let spawn_ctx = app.spawn_ctx();
+            let mut s = crate::item_dust::DustSink {
+                rng: app.rngs.stream(crate::app::RngKey::UpdateItems),
+                dust: &mut app.dust,
+                world: &app.world,
+                ctx: &spawn_ctx,
+                audio: &mut app.audio,
+            };
+            crate::item_dust::shimmer_effect(&mut s, shimmer_center);
+            // `:1849` — `AchievementsHelper.NotifyProgressionEvent(27)`
+            // (TRANSMUTE_ITEM).
             let _ = app.notify_progression_net(27);
         }
     }
