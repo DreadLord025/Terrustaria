@@ -6993,24 +6993,6 @@ impl Npc {
     }
 
     pub(crate) fn find_frame(&mut self) {
-        // W4-c8 sweep — the crawler groups' shared machine + the slope
-        // tail at slope 0 (the world-free flat-tile default; the
-        // world-read entry `find_frame_world` resolves the probe). The
-        // tail at 0 writes nothing, so the world-free lane is unchanged.
-        if matches!(
-            self.kind,
-            NpcKind::Worm
-                | NpcKind::GoldWorm
-                | NpcKind::EnchantedNightcrawler
-                | NpcKind::Maggot
-                | NpcKind::Grubby
-                | NpcKind::Sluggy
-                | NpcKind::Buggy
-        ) {
-            self.find_frame_crawler_groups();
-            self.find_frame_crawler_slope_tail(0);
-            return;
-        }
         // `NPC.cs:66696-66704` — `num2` is the velocity class only while
         // `aiAction == 0`; `aiAction == 1` forces the crouch class 4 (the
         // King Slime's shrink/wind-up writes it, `:43224`/`:43342`).
@@ -7127,10 +7109,22 @@ impl Npc {
                 }
             }
             // W4-c8 sweep — the crawler groups (357/448/484/606 +
-            // 485/486/487) moved ABOVE the match into
-            // `find_frame_crawler_groups` + the slope tail (the early
-            // return claims them; the world-read entry resolves the
-            // probe). The arms here are gone — one machine, one copy.
+            // 485/486/487) ride the shared machine
+            // (`find_frame_crawler_groups`) + the slope tail at slope 0
+            // (the world-free flat-tile default — the tail writes
+            // nothing at 0). The world-read entry `find_frame_world`
+            // resolves the probe against the live world (the d44
+            // pattern); one machine, one copy.
+            NpcKind::Worm
+            | NpcKind::GoldWorm
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Maggot
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy => {
+                self.find_frame_crawler_groups();
+                self.find_frame_crawler_slope_tail(0);
+            }
             // The Wizard/Mechanic: `FindFrame`'s humanoid-group case list
             // carries them (`NPC.cs:68554`/`:68556`) with no arm of their
             // own — the shared town body's rows stand.
