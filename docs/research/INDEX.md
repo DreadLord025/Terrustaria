@@ -75,6 +75,8 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
+| 156 | W4-d5 projectile aiStyles 41-50 dispatch census (41/42/43/46/49 MISSING ported UNWIRED, 44/45/47/48/50 verify-only, gaps F1-F6; renumbered 26d→156 per registry-150 §3, d12 wins the key) | `156-projectile-ai-41-50-census.md` | ✅ census |
+| 360 | W4-d5 projectile aiStyles 41-50 FINAL + SEALED — the landing census (6 commits, 5 UNWIRED machines), the e3 STAGED style43 emitter ACTIVATED (the 8-kept-NextFloat census REPLACED by crystal_leaf_burst_227, pool internals + POST-spawn blend; the Kill 15-float census dropped to the g65 drain), the all-styles-armed/kinds-rowed sweep (F1-F6 closed on g2's pushed tip; the only residue = d5's own 6 rows + 5 dispatch arms + the crystalLeaf player fields), the g65-Kill-309 compose (227/281 single-roller drop instructions + the g63 tick-3/g16 gore seams), the band declaration; number per registry-150 §8.7 new-doc rule (≥360, fresh sweep); 31 witnesses WRITTEN NOT RUN | `360-projectile-ai-41-50-final.md` | ✅ FINAL + SEALED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
