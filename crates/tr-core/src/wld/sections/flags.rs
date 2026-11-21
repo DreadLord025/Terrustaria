@@ -251,8 +251,8 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(world.unlocked_arms_dealer_spawn); // unlockedArmsDealerSpawn (W4-f45)
     w.boolean(world.unlocked_nurse_spawn); // unlockedNurseSpawn (W4-f45)
     w.boolean(world.unlocked_princess); // unlockedPrincessSpawn
-    w.boolean(false); // combatBookVolumeTwoWasUsed
-    w.boolean(false); // peddlersSatchelWasUsed
+    w.boolean(world.combat_book_volume_two_was_used); // combatBookVolumeTwoWasUsed (W4-f45, `:1407`; g89b co-claim)
+    w.boolean(world.peddlers_satchel_was_used); // peddlersSatchelWasUsed (`:1408`; g89b co-claim)
     w.boolean(false); // unlockedSlimeGreenSpawn
     w.boolean(false); // unlockedSlimeOldSpawn
     w.boolean(false); // unlockedSlimePurpleSpawn
@@ -728,10 +728,10 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         world.unlocked_princess = r.bool()?; // unlockedPrincessSpawn
     }
     if version >= 259 {
-        r.skip(1)?; // combatBookVolumeTwoWasUsed
+        world.combat_book_volume_two_was_used = r.bool()?; // combatBookVolumeTwoWasUsed (W4-f45, `:2418`)
     }
     if version >= 260 {
-        r.skip(1)?; // peddlersSatchelWasUsed
+        world.peddlers_satchel_was_used = r.bool()?; // peddlersSatchelWasUsed (`:2426`)
     }
     if version >= 261 {
         r.skip(3)?; // unlockedSlimeGreen/Old/Purple

@@ -1812,6 +1812,9 @@ mod tests {
         world.bought_cat = true;
         world.bought_dog = true;
         world.bought_bunny = true;
+        // W4-f45: the booster pair (the g89b lane's co-claim).
+        world.combat_book_volume_two_was_used = true;
+        world.peddlers_satchel_was_used = true;
         world
     }
 
@@ -2183,6 +2186,14 @@ mod tests {
         assert_eq!(got.bought_cat, want.bought_cat, "{context}: boughtCat");
         assert_eq!(got.bought_dog, want.bought_dog, "{context}: boughtDog");
         assert_eq!(got.bought_bunny, want.bought_bunny, "{context}: boughtBunny");
+        assert_eq!(
+            got.combat_book_volume_two_was_used, want.combat_book_volume_two_was_used,
+            "{context}: combatBookVolumeTwoWasUsed"
+        );
+        assert_eq!(
+            got.peddlers_satchel_was_used, want.peddlers_satchel_was_used,
+            "{context}: peddlersSatchelWasUsed"
+        );
     }
 
     #[test]
@@ -2391,6 +2402,9 @@ mod tests {
         tail[2033 + d] = u8::from(world.unlocked_arms_dealer_spawn); // (`:1404`)
         tail[2034 + d] = u8::from(world.unlocked_nurse_spawn); // (`:1405`)
         tail[2035 + d] = u8::from(world.unlocked_princess); // (`:1406`)
+        // W4-f45: the booster pair at 2036/2037 (`:1407-1408`, v259/260).
+        tail[2036 + d] = u8::from(world.combat_book_volume_two_was_used);
+        tail[2037 + d] = u8::from(world.peddlers_satchel_was_used);
         tail[2026 + d] = u8::from(world.downed_deerclops); // downedDeerclops (`:1397`)
         // The rainbow slime in the 7-slime run at 2038 (`:1410-1414`):
         // green/old/purple, then rainbow@2041, red@2042 (gate V3, i35).
@@ -4709,6 +4723,52 @@ mod tests {
         for off in [2021, 2022, 2023] {
             assert_eq!(buf[tail_at + off + d], 1, "pet license at tail {off}+d");
         }
+        assert_eq!(&buf[flags_at..ptr1], &block[..], "the owned block matches the table");
+    }
+
+    /// W4-f45 — `combatBookVolumeTwoWasUsed`/`peddlersSatchelWasUsed` land at
+    /// tail 2036/2037 (`WorldFile.cs:1407-1408`) and follow the v259/v260 read
+    /// gates (`:2417-2431`). The g89b boosters lane co-claims the consumers
+    /// (`npc_ai_town.rs`'s `combat_book_two` env); the use-setters
+    /// (`Player.cs:45337-45383`) ride the item-use lane. Written, NOT run.
+    #[test]
+    fn w4_f45_the_booster_pair_lands_and_gates() {
+        let mut data = fixture();
+        let tail_at = tail_offset_in_synthetic(&data, VER);
+        data[tail_at + 2036] = 1; // combatBookVolumeTwoWasUsed
+        let w = parse(&data).expect("the patched fixture parses");
+        assert!(w.combat_book_volume_two_was_used, "combatBookTwo at tail 2036");
+        assert!(!w.peddlers_satchel_was_used, "the satchel byte after it stays 0");
+        // v258: neither byte exists yet.
+        let w = parse(&synthetic_file(258, &[2, 144], 160, 11)).expect("v258 loads");
+        assert!(!w.combat_book_volume_two_was_used, "below 259: combatBookTwo false");
+        assert!(!w.peddlers_satchel_was_used, "below 260: satchel false");
+        // v259: the book lands, the satchel does not. The v259 tail lacks the
+        // 260 satchel (1), 261 slimes (7), 264 moondial (2), 287+ seeds — all
+        // AFTER the book, so the book offset stays 2036.
+        let mut data = synthetic_file(259, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 259);
+        data[tail_at + 2036] = 1;
+        let w = parse(&data).expect("v259 loads");
+        assert!(w.combat_book_volume_two_was_used, "combatBookTwo reads from 259");
+        assert!(!w.peddlers_satchel_was_used, "below 260: the satchel stays false");
+        // v260: the satchel lands at 2037.
+        let mut data = synthetic_file(260, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 260);
+        data[tail_at + 2037] = 1;
+        let w = parse(&data).expect("v260 loads");
+        assert!(w.peddlers_satchel_was_used, "peddlersSatchel reads from 260");
+        // The writer's own block carries the owned world's pair (d=8 shift).
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let block = expected_flags_block(&world);
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let flags_at = ptr1 - block.len();
+        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let tail_at = flags_at + prefix_len;
+        let d = 4 * world.party_celebrants.len();
+        assert_eq!(buf[tail_at + 2036 + d], 1, "combatBookTwo round-trips");
+        assert_eq!(buf[tail_at + 2037 + d], 1, "peddlersSatchel round-trips");
         assert_eq!(&buf[flags_at..ptr1], &block[..], "the owned block matches the table");
     }
 
