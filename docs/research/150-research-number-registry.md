@@ -1129,6 +1129,13 @@ self-pick any number again — execute §8/§8.7 assignments ONLY. New docs take
 
 ## §9 — UNIFIED FINAL TABLE (Lead, post-06aea22e0) — THE SINGLE AUTHORITY
 
+> FindFrame addendum (f27 8d28f09b4): the DD2 tail 564/565/568/569/576/577 is
+> PORTED PURE (grid-draw seam contracts published); only 572-575 (emote/RNG)
+> + 634 (RNG seam) remain deferred-with-contract. extra12/extra13 duplicate:
+> keep-one = wider e12 11-kind claim; extra13's four drop to parity refs.
+> Remaining unclaimed FindFrame ids = 20 (634/664/667/669/671-677/687-689/691-696),
+> ALL roster-arm-covered per d44 refresh-5 — keep-one adjudication, not port work.
+
 The dispatched round-4 draft (a15cb634b, 308–333 scheme) was marked ⛔ SUPERSEDED
 by its own writer in `06aea22e0`. This §9 consolidates §8/§8.5/§8.6/§8.7 + the
 e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
@@ -1175,7 +1182,7 @@ e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
 | 333 | d119 | 333-housing-relocation-family-bible | DONE aaced1581 |
 | 334 | g62 | 334-g62-hit-dust-final | DONE 87299d2c8 |
 | 335 | f30 | 335-f30-systems-retire | DONE 981400cda |
-| 336 | d13 | 304-…-final (executed 243→304 e310bd6e7) | rename owed 304→336 |
+| 336 | d13 | 336-d13-pet-light-retire-final | DONE 6850a19e5 |
 | 337 | f24 | 337-f24-room-content-final | DONE 012160f4c |
 | 338 | d30 | 338-band-65-72-retire | DONE ee73eff97 |
 | 339 | g17 | 339-g17-gore-world-final | DONE 2c73354f1 |
@@ -1192,11 +1199,11 @@ e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
 | 350 | c7 | 350-c7-critter-family-final | DONE 90abc1edf |
 | 351 | e5 | 351-gore-sites-family-bible | DONE 74ae9b085 |
 | 352 | d1 | 352-d1-falling-block-final | DONE 194c66ce6 (2 code-comment cites owed: data.rs:3611 foreign-dirty + misc.rs:78/844 — code lane) |
-| 353 | d13 | 305-projectile-ai-121-130-band-final (e310bd6e7) | NEW rename owed |
+| 353 | d13 | 353-projectile-ai-121-130-band-final | DONE 6850a19e5 |
 | 354 | d2 | 354-proj-ai-11-20-retire | DONE a070571ce (310-invalid-self corrected) |
 | 355 | d11 | 355-w4-d11-retire-final | DONE 7820a9466 |
 | 356 | c11 | 284-c11-martian-turret-final (9a9c2625e) | NEW rename owed |
-| 357 | e26 | 248-e26-luck-final-census (cbaea2864) | NEW — CORRECTION: the §8-banner e26→333 collided with d119→333; e26 takes 357 |
+| 357 | e26 | 357-e26-luck-final-census | DONE 35de96a5e |
 | 358 | g15 | 77-doc-sweep-items (§7.3's 284 target voided: 284=g52) | NEW rename owed |
 | 359 | g51 | 309-g51-net-te-family-seal (6c4ec70d7, post-§9 self-pick) | NEW rename owed 309→359 |
 | 360 | g10 | 360-g10-pets-final (7414ba339) | KEEP (first-add wins the ≥360 rule) |
@@ -1204,7 +1211,7 @@ e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
 | 362 | g55 | 334-g55-loadout-family-final (b4bf0e08b 17:37, post-§9 self-pick into g62's assigned 334) | NEW rename owed 334→362 |
 | 363 | d31 | 352-d31-style83-wiring-retire-final (1f0bd6385 17:39, post-§9 self-pick into d1's assigned 352) | NEW rename owed 352→363 |
 | 364 | g16 | 360-proj-gore-family-final (1254ff5e0 17:40:42, third 360 claimant; g10 17:31 first) | NEW rename owed 360→364 |
-| 365 | e21 | 285-e21-wiring-tail-seal (b7c7b2b61, post-§9 self-pick into §7.2's 285) | NEW rename owed 285→365 |
+| 365 | e21 | 365-e21-wiring-tail-seal | DONE 2fb0a36ee |
 | 366 | g18 | 360-addlight-family-bible (7b2b9acb7, fourth 360 claimant) | NEW rename owed 360→366 |
 
 ### §9.3 — rules
