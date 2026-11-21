@@ -3448,8 +3448,10 @@ fn invasion_spawn_pick(
 /// applies the spawn capsule; the port's release spawns through the generic
 /// `Npc::new` (the capsule's tile scan is the NPC roster's own spawn logic).
 /// Returns whether a drop-owning spawn happened (the roster only covers the 85
-/// ported kinds — the shimmer slime 676, the shimmered town NPC 677 and the
-/// rainbow slime 681 wait for the M4-NPC roster).
+/// ported kinds — the shimmer slime 676 and the rainbow slime 681 wait
+/// for the M4-NPC roster; the Shimmerfly 677 landed with W4-g62's
+/// trail-kind rowing (the c9 kind adopted), so its bottle/critter
+/// release now spawns).
 pub(crate) fn spawn_shimmer_release(app: &mut App, npc_type: u16, x: f32, y: f32) -> bool {
     // S1-P-i36 repair: the C# `NPC.ReleaseNPC` types live in the vanilla
     // `NPC.type` space (the bestiary NET id) — `NpcKind::from_u16` maps the
@@ -4403,6 +4405,38 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         });
                         if !alive {
                             npcs[oi].carrier_uid = 0;
+                        }
+                    }
+                }
+                // W4-c9 — the Shimmerfly's threat-scan pool
+                // (`NPC.cs:34120-34128`: `Main.npc[0..maxNPCs]` in slot
+                // order — active, damage > 0, !friendly, the int-truncated
+                // Hitbox). The per-NPC `&mut self` update cannot see its
+                // siblings, so the views are stamped here before the slot
+                // loop (the twin_time_lefts carrier precedent). ORDER
+                // DEVIATION (documented, the ForceBubble pre-pass's
+                // shape): the C# scans at the fly's own slot turn; the
+                // port reads the tick-start pool — one tick of lag for
+                // later slots. RNG-free by construction.
+                {
+                    let views: Vec<crate::npc_ai_style64::Ai64NpcView> = npcs
+                        .iter()
+                        .map(|m| {
+                            let (mw, mh) = m.size();
+                            crate::npc_ai_style64::Ai64NpcView {
+                                active: m.hp > 0,
+                                damage: m.damage_override.unwrap_or(m.kind.contact_damage()),
+                                friendly: m.friendly,
+                                x: m.x,
+                                y: m.y,
+                                width: mw as i32,
+                                height: mh as i32,
+                            }
+                        })
+                        .collect();
+                    for fi in 0..npcs.len() {
+                        if npcs[fi].kind == NpcKind::Shimmerfly && npcs[fi].hp > 0 {
+                            npcs[fi].shimmerfly_threat_views = views.clone();
                         }
                     }
                 }
@@ -6198,6 +6232,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     let new_kind = match ty {
                         382 => NpcKind::RayGunner,
                         518 => NpcKind::SolarSpearman,
+                        // W4-c9's snail shimmer Transform(677) drain arm
+                        // (adopted with the Shimmerfly rowing — inert on
+                        // this base: the snail trio stays c9's, nothing
+                        // queues 677 here yet; the merge dedupes).
+                        677 => NpcKind::Shimmerfly,
                         _ => continue,
                     };
                     npcs[i].transform_to_kind(world_ref, player, new_kind);

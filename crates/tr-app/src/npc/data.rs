@@ -586,6 +586,18 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // The Shimmerfly (W4-c9's rowing, adopted by W4-g62 for the
+            // TRAILCACHE WIDENING's 677→60 row): the vanilla id 677 is a
+            // free protocol slot (the to_u16 scan: the 354+ band above
+            // the landed families is unclaimed), so it keeps its vanilla
+            // id — the AngryNimbus/DungeonSpirit precedent. The snail
+            // trio 359/360/655 stays c9's (the merge dedupes).
+            NpcKind::Shimmerfly => 677,
+            // W4-d42 - the vanilla ids 620-624 are free protocol slots
+            // (the 108 union plan's VANILLA-FREE band; d42 2d7ac08c3's
+            // rowing, adopted by W4-g62 for the 620→20 trail row — the
+            // rest of the roster stays d42's, the merge dedupes).
+            NpcKind::GoblinShark => 620,
         }
     }
 
@@ -916,6 +928,12 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            // The Shimmerfly (W4-c9's rowing, adopted by W4-g62): the
+            // vanilla id kept (`to_u16` above).
+            677 => NpcKind::Shimmerfly,
+            // W4-d42 - the vanilla-free band (d42 2d7ac08c3's rowing,
+            // adopted by W4-g62 for the 620→20 trail row).
+            620 => NpcKind::GoblinShark,
             _ => return None,
         })
     }
@@ -1788,6 +1806,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Hit_1",
             NpcKind::AngryNimbus => "NPC_Hit_30",
             NpcKind::DungeonSpirit => "NPC_Hit_36",
+            // The Shimmerfly (W4-c9's rowing, adopted by W4-g62):
+            // NPCHit1 (`NPC.cs:17587`).
+            NpcKind::Shimmerfly => "NPC_Hit_1",
+            // W4-d42 - the roster's HitSound rows.
+            NpcKind::GoblinShark => "dd2_drakin_hurt_0",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2092,6 +2115,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Killed_1",
             NpcKind::AngryNimbus => "NPC_Killed_33",
             NpcKind::DungeonSpirit => "NPC_Killed_39",
+            // The Shimmerfly (W4-c9's rowing, adopted by W4-g62):
+            // NPCDeath1 (`NPC.cs:17588`).
+            NpcKind::Shimmerfly => "NPC_Killed_1",
+            // W4-d42 - the roster's DeathSound rows (614's null row
+            // rides the None fall-through).
+            NpcKind::GoblinShark => "dd2_drakin_death_0",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2200,6 +2229,11 @@ impl NpcKind {
             // aiStyle-49 AI head sets `noGravity = true` every tick
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
             NpcKind::AngryNimbus => true,
+            // The Shimmerfly (W4-c9's rowing, adopted by W4-g62): the
+            // `SetDefaults` noGravity row (`NPC.cs:17590`). kb 1 (the
+            // head default — the row writes none), so a strike can push
+            // it; the snail trio's rows stay c9's (the merge dedupes).
+            NpcKind::Shimmerfly => true,
             _ => false,
         }
     }
@@ -2451,6 +2485,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // The shimmer transform target (W4-c9's rowing, adopted by
+            // W4-g62) — `NPC.cs:17583`.
+            NpcKind::Shimmerfly => 64,
+            // W4-d42 - the NPCID 620-624 SetDefaults rows.
+            NpcKind::GoblinShark => 107,
         }
     }
 
@@ -2981,6 +3020,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // The Shimmerfly (W4-c9's rowing, adopted by W4-g62): 677
+            // 10x10 (`NPC.cs:17581-17582`).
+            NpcKind::Shimmerfly => (10.0, 10.0),
+            // W4-d42 - the NPCID 620-624 SetDefaults rows.
+            NpcKind::GoblinShark => (34.0, 58.0),
         }
     }
 
@@ -3083,6 +3127,17 @@ impl NpcKind {
             // not cs_id; the render sheets keep 371/373 via render_key.
             NpcKind::DukeFishron => 370,
             NpcKind::Sharkron => 372,
+            // The Shimmerfly (W4-c9's rowing, adopted by W4-g62): the
+            // vanilla `NPC.type` id — the AI arm's type gate (the 677
+            // threat scan) and the catch/convert tables read it
+            // (`NPCID.cs:12031`). It has its own bestiary entry (the
+            // populator's `FindEntryByNPCID(677)` info row), so no fold
+            // is needed.
+            NpcKind::Shimmerfly => 677,
+            // W4-d42 - the roster's TRUE vanilla types (the folded kinds
+            // keep their own - the AI arms read cs_id; the bestiary
+            // folds in entry_for_npc only).
+            NpcKind::GoblinShark => 620,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -3106,15 +3161,22 @@ impl NpcKind {
     /// `SetDefaults` reads it at `NPC.cs:8456` and resizes
     /// `oldPos`/`oldRot` (`:8458-8462`), then zeroes the whole array
     /// (`:8463-8468`). The port keeps max-size `[Vec2; 60]` storage
-    /// and this logical length (`Npc.trail_len`); kinds not yet rowed
-    /// (519 SolarGoop / 522 AncientLight / 620 GoblinShark / 677
-    /// Shimmerfly / 685 BoundTownSlimeOld) fall through to 10 — their
-    /// wiring lanes add the row here when the KIND lands (the same
-    /// day their `update_trails` gate widens).
+    /// and this logical length (`Npc.trail_len`). W4-g62 follow-up:
+    /// the 677 Shimmerfly (c9's kind) and the 620 GoblinShark (d42's
+    /// kind) are ROWED here — 677→60 (the MAX) and 620→20 — and their
+    /// `update_trails` mode-7 gates widen the same day. Kinds not yet
+    /// rowed (519 SolarGoop / 522 AncientLight / 685 BoundTownSlimeOld)
+    /// fall through to 10 — their wiring lanes add the row here when
+    /// the KIND lands (522 is NOT rowed by d42 either — its 561-630
+    /// band excludes the pillar mob; the cultist lane's).
     pub fn trail_cache_length(self) -> usize {
         match self {
             // 402 — the Stardust Worm Head, 36 slots (`:10450`).
             NpcKind::StardustWormHead => 36,
+            // 677 — the Shimmerfly, 60 slots: the census MAX (`:10450`).
+            NpcKind::Shimmerfly => 60,
+            // 620 — the GoblinShark, 20 slots (`:10450`).
+            NpcKind::GoblinShark => 20,
             _ => 10,
         }
     }
@@ -3642,6 +3704,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // The Shimmerfly (W4-c9's rowing, adopted by W4-g62):
+            // lifeMax 5 (`NPC.cs:17586`).
+            NpcKind::Shimmerfly => 5,
+            // W4-d42 - the NPCID 620-624 SetDefaults rows.
+            NpcKind::GoblinShark => 5000,
         }
     }
 
@@ -4006,6 +4073,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // The Shimmerfly (W4-c9's rowing, adopted by W4-g62):
+            // damage 0 (`NPC.cs:17584`).
+            NpcKind::Shimmerfly => 0,
+            // W4-d42 - the NPCID 620-624 SetDefaults rows.
+            NpcKind::GoblinShark => 70,
         }
     }
 }

@@ -39371,8 +39371,13 @@ this.oldPos.Length`). The mode-7 shift bounds on `oldPos.Length - 1`
 walked `oldPos.Length` walks `..trail_len`. Slots ≥ trail_len stay
 ZERO (the C# resize zero-fills growth; the `:8463-8468` loop zeroes
 everything). `NpcKind::trail_cache_length()` (npc/data.rs, after
-`cs_id`) carries the table; today only `StardustWormHead => 36` is
-rowed — 519/522/620/677/685 KINDS are unported on this base, their
+`cs_id`) carries the table; `StardustWormHead => 36` landed with the
+widening, and the **trail-kind follow-up (this commit) rows 677→60
+(the MAX) + 620→20** — the Shimmerfly (c9 2042d77f1's kind) and the
+GoblinShark (d42 2d7ac08c3's kind) adopted verbatim, their mode-7
+gates widened the same day (the rowing note below). 519/522/685 KINDS
+stay unported on this base (522 is NOT rowed by d42 either — its
+561-630 band excludes the pillar mob; the cultist lane's), their
 wiring lanes add the row (and widen the `update_trails` gate) when the
 kind lands. `Npc::new` sets `trail_len` (≈ SetDefaults at spawn);
 `transform_to_kind` re-lengths + re-zeroes both rings.
@@ -39413,6 +39418,40 @@ fresh-ring death witness's gate loop widens `0..10` → `0..36` exactly
 like g62's live twin (d3b008c78). The `Npc`-side hunks 1-6 above are
 SHARED — one copy at merge; the `DeathFx`-side widening is g60's own
 file, no collision with `HitDustSnapshot` (g62's, already widened).
+
+**g60f-widening RECEIPT — EXECUTED, the DeathFx-half INCLUDED (verified
+against g60 tip 30fea0fe1, 2026-11-21).** The g60 lane consumed this
+contract at 19431e385 ("the g60 half of g62's 6-hunk contract (32af98b4
+CONSUME)") and the follow-up 9a6c543f7 re-verified it in Python UTF-8
+(the PS1 probe misread the cmd-redirected snapshot's encoding — the
+same trap this lane's own probes hit). Re-derived here against the
+g60 tip's raw bytes (LF-normalized; the working tree is CRLF):
+- **Hunks 1-6 (the shared `Npc` surface): ALL BYTE-IDENTICAL to g62
+  32af98b44** — the three fields (`old_pos: [Vec2; 60]` / `old_rot:
+  [f32; 60]` / `trail_len: usize`), the `Npc::new` init trio, the
+  `trail_cache_length` table (402→36, default 10), the `update_trails`
+  fn (gate 402+574/575 + `..trail_len` stride + the stamps), the
+  Transform re-length/re-zero hunk, and ALL FOUR witnesses
+  (`w4_g60_the_worm_head_trail_shifts_mode_7`,
+  `w4_g60_other_kinds_do_not_shift_the_trail`,
+  `w4_g62_the_trail_cache_census_and_resize`,
+  `w4_g62_the_kobold_flyers_shift_the_mode_7_ring`) — each compared
+  segment-for-segment equal. The merge dedupes trivially.
+- **The DeathFx-half (g60's own struct): EXECUTED.**
+  `npc_death_dust.rs`'s `DeathFx.old_pos` is `[Vec2; 60]`,
+  `pub trail_len: usize` sits beside it, the strike capture reads
+  `old_pos: npc.old_pos, trail_len: npc.trail_len`, the 402 death loop
+  bounds `for i in 0..fx.trail_len` (`:83611` NO min — up to 36
+  Next(4) gates, the zero-break unchanged), and the fresh-ring death
+  witness's gate loop walks `0..36`. The g60e cross-note above is
+  LANDED, not pending.
+- **The ONLY g62-side delta g60 does NOT carry: this follow-up's
+  trail-kind rowing** (the 677→60 / 620→20 rows + the two-kind gate
+  widening below) — g60's table/gate stay at the 32af98b44 shape
+  (402-only table, 402+574/575 gate). At merge the g62 versions win
+  (they are the strict superset); g60's byte-identical hunks dedupe
+  against the UNCHANGED parts, the two widened hunks (table + gate)
+  resolve to g62's. No semantic conflict: g60 owns no 677/620 reader.
 
 **Draw-count consequences (re-derived, witnesses updated):**
 - 519 (`:83011`, stride 3 over 20): slots 0,3,6,9,12,15,18 — **FLAT 7
@@ -39473,6 +39512,70 @@ ported. Outside it, two dust-adjacent readers remain, both OTHER lanes'
 - `:49584-49586`/`:49708-49710` — Duke Fishron's ring RESETS (writers,
   no dust); the Main.cs readers are render-only (the trail draw).
 
+### Trail-kind rowing — 677 Shimmerfly + 620 GoblinShark (this follow-up)
+
+The TRAILCACHE WIDENING's census left four deviation rows unrowed
+because their KINDS were unported on this base. Two of them are now
+rowed by their sibling lanes, so this lane adopts the kinds (verbatim
+where the hunk is shared) and lands the rows + gates:
+
+- **677 Shimmerfly — c9 2042d77f1 rows it** (the snail wall-crawler
+  wave: `NpcKind::Shimmerfly`, aiStyle 64, 10x10, 5 HP, the
+  `npc_ai_style64::ai_064_step` 677 branches + the threat-view pool).
+  Adopted here: the enum variant, the `to_u16`/`from_u16` 677 arms,
+  the stats rows (size/ai_style/max_hp/contact_damage/cs_id/hit_sound/
+  death_sound/no_gravity/kb/defense/value), the kind-gated 64 axis arm
+  + `ai_064_shimmerfly` adapter + the `shimmerfly_threat_views` field
+  + the sim pre-pass stamp (all c9-verbatim), the bestiary entry, the
+  portrait arm, the draw arm (`scaled_anchor` over NPC_677, the
+  rotation whitelist), the NPC_677 sheet pack + the bestiary order-table
+  row, and the `Transform(677)` drain arm (inert here — the snail trio
+  stays c9's, nothing queues 677 yet). **Trail row: 677→60, the census
+  MAX** — the logical length IS the storage; the mode-7 gate widens.
+  NOT adopted (c9's own lane): the snail trio 359/360/655, the
+  aiStyle-67 adapter, the shimmer-seam fields, the collision
+  `walk_down_slope` — the merge takes c9's copies; the shared hunks
+  dedupe. **One deliberate correction over c9:** the 677
+  `DebuffImmunitySets` row is `{ SpecificallyImmuneTo: [31] }`
+  (`NPCID.cs:10015-10021`) — c9's `&[]` arm missed it; this lane rows
+  `&[31]` (the C# dictionary is the source of truth; at merge this
+  arm wins).
+- **620 GoblinShark — d42 2d7ac08c3 rows it** (the 578-630 roster's
+  VANILLA-FREE band renumber: protocol id 620 == the vanilla type).
+  Adopted here: the enum variant, the `to_u16`/`from_u16` 620 arms,
+  the stats rows (34x58, aiStyle 107, 5000 HP, dmg 70, def 30, kb 0,
+  value 7500, the dd2_drakin hit/death cues, the alpha-255 spawn fade),
+  the `update_kind_ai` idle stand-in (aiStyle 107 UNWIRED — d42's own
+  dispatch shape), the full FindFrame case-620 arm (d42-verbatim), the
+  render_key 620 row, the bestiary entry ("Hemogoblin Shark"), the
+  portrait arm, the generic-anchor draw arm (the sheet is NOT packed —
+  d42's atlas-headroom deferral, the arm no-draws), the net-seed hover
+  arm, and the `&[31]` debuff row (`NPCID.cs:9655-9661`). **Trail row:
+  620→20**; the mode-7 gate widens. NOT adopted (d42's own lane): the
+  other 42 roster kinds, the sheets research — the merge takes d42's
+  copies; the shared hunks dedupe.
+- **522 AncientLight — NOT rowed, NOT armed.** The grep census: this
+  base's `npc/data.rs` has no 522 kind (the name row in
+  `lang_tables.rs:599` + the `npc_hit_dust.rs` :83031 crystal arm keyed
+  on `npc_type` are the only 522s), and d42's 561-630 band EXCLUDES it
+  (the pillar mob is the cultist lane's kind — `npc_ai_cultist.rs`'s
+  header names it). Its 522→20 row + mode-7 gate wait on that lane,
+  exactly like the 519 SolarGoop's (the `npc_ai_pillar.rs` spawn
+  request). The 685 BoundTownSlimeOld's explicit 10 IS the default —
+  no row needed when it lands.
+
+**Draw/stream consequence: ZERO.** Neither 677 nor 620 has a HitEffect
+oldPos reader (the :81654-89834 sweep found only 519/402) — the shift
+is pure state, the same shape as the 574/575 arm. The 677's ring fills
+after 60 ticks (the storage IS the logical length), the 620's after 20
+(slots 20..60 stay zero). Witnesses:
+`w4_g62_the_shimmerfly_and_goblin_shark_shift_their_rowed_rings` (the
+rows, the 60/20-tick fills, the storage-past-trail_len zeros, the
+Transform re-length to the MAX) +
+`w4_g62_the_rowed_kinds_defaults_match_the_csharp_rows` (the
+SetDefaults pin, the protocol round-trip, the noGravity/alpha/debuff
+rows) — written, not run (code-only).
+
 ### Batch 35 — the FOUR hit-half gore bodies + the 133 eye-pop latch (research/240)
 
 The f5 FINAL receipt (research/111) split its 853-site recount into 849
@@ -39521,7 +39624,9 @@ plus the `npc.rs` seam witness
 (`w4_g62_every_landed_strike_queues_one_hit_dust_capture`), the two
 g60-adopted trail witnesses (widened) and the two new widening
 witnesses (`w4_g62_the_trail_cache_census_and_resize`,
-`w4_g62_the_kobold_flyers_shift_the_mode_7_ring`) and the new
+`w4_g62_the_kobold_flyers_shift_the_mode_7_ring`) plus the trail-kind
+rowing's two (`w4_g62_the_shimmerfly_and_goblin_shark_shift_their_rowed_rings`,
+`w4_g62_the_rowed_kinds_defaults_match_the_csharp_rows`) and the new
 `world_sim/npcs.rs` seam witness
 (`w4_g62_the_drain_latches_the_eye_and_spawns_one_pop`) are
 WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/

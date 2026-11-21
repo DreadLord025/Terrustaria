@@ -23,11 +23,16 @@
 //! block (`:34070-34153`), the 358/654/else glow colours (`:34160-34171`)
 //! and the 677 rotation tail (`:34234-34237`).
 //!
-//! The port has no `NpcKind` for any of the four yet, so this module lands
-//! UNWIRED (the `npc_ai_style53.rs` tentacle precedent, 89a9b808): pure fns
-//! + the [`Ai64Ctx`]/[`Ai64Effects`] seam, keyed on the vanilla type so the
-//! branch is reachable and testable before the kinds land. The wiring step
-//! adds the four kinds + their `SetDefaults` rows + the style-axis claim.
+//! The port has no `NpcKind` for the 355/358/654 trio yet (W4-c7's kind
+//! wave), so those three stay UNWIRED; the Shimmerfly 677 landed with
+//! **W4-c9 (2026-11-21)** — `NpcKind::Shimmerfly` claims the kind-gated
+//! aiStyle-64 axis arm (`npc.rs::ai_064_shimmerfly`): the sim pre-pass
+//! stamps the slot-ordered threat views (`shimmerfly_threat_views`),
+//! the solo path runs the scan over the empty list (the style75 solo
+//! fold), and the noGravity/noTileCollide tail is the raw integration.
+//! The wiring step for the trio adds their kinds + the glow feed.
+//! (W4-g62 adopts the c9 rowing + wiring verbatim for the TRAILCACHE
+//! WIDENING's 677→60 row — the merge dedupes.)
 //!
 //! Seam: the module writes only the fields the C# arm writes — velocity,
 //! `ai[0]`/`ai[1]`/`ai[3]`, `localAI[0..3]`, `scale`, `rotation` (677),
