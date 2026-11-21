@@ -39439,11 +39439,13 @@ and the floor-row-30 anchor verified against `can_place`'s scoring).
 
 ## The W4-d2 RETIRE — band-11-20 SEALED (2026-11-21, code-only)
 
-research/**310** (number per registry-150's §7.4 AUTHORITY at the latest
-d54 tip `0a658c7b3` + a fresh all-tip ls-tree sweep: the first publish's
-283 loses to f26's §7.3 re-issue (14:18:55, published 15:35:39) and
-g59's `283-death-effects-family-bible.md`; 308 four-claimant
-(c24/d21/g13/g65), 309=g15, 310 first-free — chain 283→310, rename
+research/**354** (number per registry-150's §9 UNIFIED FINAL AUTHORITY,
+d54 tip `4b0d5c246`, §9.2 row 354 = d2: the first publish's 283 loses to
+f26's §7.3 re-issue (14:18:55, published 15:35:39) and g59's
+`283-death-effects-family-bible.md`; the prior 283→310 self-rename was
+INVALID — 310 is g48's §9.2 assignment (`310-c28-18-send-switch`,
+DONE `09364c008`) and §9 forbids self-picks — chain
+283→310-invalid-self→354, rename
 executed on this branch per the registry procedure) publishes the
 five-part FINAL: (1) the git-log census —
 five commits `ebf418031`/`15e5448a9`/`61c47ed79` + the two witness-fix

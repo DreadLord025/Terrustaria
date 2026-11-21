@@ -44611,7 +44611,7 @@ mod s1_p_i25_dragon_tests {
         assert!((cy - 312.0).abs() < 0.01, "the centre kept: {cy}");
     }
 
-    /// W4-d2 RETIRE (research/310 §5, chain 283→310) — the band-11-20 declaration pin:
+    /// W4-d2 RETIRE (research/354 §5, chain 283→310-invalid-self→354 per registry §9.2) — the band-11-20 declaration pin:
     /// every style label 11..=20 appears EXACTLY ONCE as a top-level arm
     /// of the aiStyle dispatch (the s1_d_4c scan shape, band-scoped).
     /// The three missing styles (11/13/17) landed on this lane; the
@@ -44643,7 +44643,7 @@ mod s1_p_i25_dragon_tests {
             assert_eq!(
                 counts.get(&style).copied().unwrap_or(0),
                 1,
-                "band style {style} must have exactly one live arm (research/310)"
+                "band style {style} must have exactly one live arm (research/354)"
             );
         }
     }
@@ -44672,7 +44672,7 @@ mod s1_p_i25_dragon_tests {
     }
 
     /// W4-d2 RETIRE — the 261 BoulderStaffOfEarth stays UNROWED until
-    /// S1-P-i61 lands it (research/310 §2: aiStyle 14, NOT the flail 15;
+    /// S1-P-i61 lands it (research/354 §2: aiStyle 14, NOT the flail 15;
     /// the row + the `HandleMovement` ±3 boulder half are the seed's).
     /// The activation-contract pin: when the seed lands the row, this
     /// witness flips to the `:3452-3462` row assertion (32×34, style 14,

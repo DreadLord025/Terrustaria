@@ -75,7 +75,7 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
-| 310 | Projectile aiStyles 11-20 RETIRE FINAL (W4-d2: the git-log census, the 261 flail-15-NOT-14 resolution + S1-P-i61 seed, the 10/10-armed + 169/196-rowed census with the 27 named remainders, the d77c/f1 kill-tail DISJOINT compose receipt, the band declaration; code-only, witnesses written not run; chain 283→310 — 283 loses to f26's registry §7.3 re-issue + g59, 308 four-claimant, 310 first-free per §7.4) | `310-proj-ai-11-20-retire.md` | ✅ SEALED |
+| 354 | Projectile aiStyles 11-20 RETIRE FINAL (W4-d2: the git-log census, the 261 flail-15-NOT-14 resolution + S1-P-i61 seed, the 10/10-armed + 169/196-rowed census with the 27 named remainders, the d77c/f1 kill-tail DISJOINT compose receipt, the band declaration; code-only, witnesses written not run; chain 283→310 (invalid self-pick — 310 is g48's §9.2 assignment, DONE 09364c008)→354 per registry §9.2 UNIFIED FINAL, d54 tip 4b0d5c246) | `354-proj-ai-11-20-retire.md` | ✅ SEALED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
