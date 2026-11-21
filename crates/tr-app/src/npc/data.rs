@@ -586,6 +586,12 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-e21 — the bunny statue's pair (46/540): the next-free
+            // port-local holes above the wyvern band (the vanilla 46 is
+            // the WallOfFlesh's protocol slot, 540 is free but the pair
+            // keeps one band). `NPC.cs:9336-9347`.
+            NpcKind::Bunny => 229,
+            NpcKind::PartyBunny => 237,
         }
     }
 
@@ -916,6 +922,9 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            // W4-e21 — the bunny pair's port-local holes (`to_u16` above).
+            229 => NpcKind::Bunny,
+            237 => NpcKind::PartyBunny,
             _ => return None,
         })
     }
@@ -1538,6 +1547,8 @@ impl NpcKind {
             NpcKind::Goldfish => "NPC_Hit_1",
             NpcKind::Piranha => "NPC_Hit_1",
             NpcKind::Shark => "NPC_Hit_1",
+            // W4-e21 — the bunny pair: `SoundID.NPCHit1` (`NPC.cs:9344`).
+            NpcKind::Bunny | NpcKind::PartyBunny => "NPC_Hit_1",
             NpcKind::DevourerHead => "NPC_Hit_1",
             NpcKind::GiantWormHead => "NPC_Hit_1",
             NpcKind::Merchant => "NPC_Hit_1",
@@ -1839,6 +1850,8 @@ impl NpcKind {
             NpcKind::Goldfish => "NPC_Killed_1",
             NpcKind::Piranha => "NPC_Killed_1",
             NpcKind::Shark => "NPC_Killed_1",
+            // W4-e21 — the bunny pair: `SoundID.NPCDeath1` (`NPC.cs:9345`).
+            NpcKind::Bunny | NpcKind::PartyBunny => "NPC_Killed_1",
             NpcKind::DevourerHead => "NPC_Killed_1",
             NpcKind::GiantWormHead => "NPC_Killed_1",
             NpcKind::Merchant => "NPC_Killed_1",
@@ -2295,6 +2308,9 @@ impl NpcKind {
             NpcKind::Clothier | NpcKind::TravellingMerchant | NpcKind::Angler | NpcKind::Stylist | NpcKind::TaxCollector |
             NpcKind::Golfer | NpcKind::Zoologist | NpcKind::Princess | NpcKind::DyeTrader | NpcKind::PartyGirl |
             NpcKind::Wizard | NpcKind::Mechanic | NpcKind::GoblinTinkerer => 7,
+            // W4-e21 — the bunny pair (46/540) shares the SAME aiStyle-7
+            // row (`NPC.cs:9340`): the town-critter hop.
+            NpcKind::Bunny | NpcKind::PartyBunny => 7,
             // aiStyle 8 - NPC.cs:9083, :9125, :9326, :14978, :15690
             NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => 8,
             // aiStyle 9 - NPC.cs:9097, :9139, :15703
@@ -2894,6 +2910,8 @@ impl NpcKind {
             NpcKind::Goldfish => (20.0, 18.0),
             NpcKind::Piranha => (18.0, 20.0),
             NpcKind::Shark => (100.0, 24.0),
+            // W4-e21 — the bunny pair: 18x20 (`NPC.cs:9338-9339`).
+            NpcKind::Bunny | NpcKind::PartyBunny => (18.0, 20.0),
             // The worms: the Devourer 22x22 (`:8763`), the Giant Worm 14x14
             // (`:8850`), the Eater of Worlds 38x38 (`:8903`).
             NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail => (22.0, 22.0),
@@ -3062,6 +3080,11 @@ impl NpcKind {
             NpcKind::Goldfish => 55,
             NpcKind::Piranha => 58,
             NpcKind::Shark => 65,
+            // W4-e21 — the bunny pair's vanilla `NPC.type` (`NPCID.cs:10769`/
+            // `:11757`): the statue drain's `NPC.MechSpawn` group reads these
+            // (the bunny group {46, 540, 303, 337}, `NPC.cs:7443-7449`).
+            NpcKind::Bunny => 46,
+            NpcKind::PartyBunny => 540,
             // The Plantera minion family (S1-D-3-wire-plantera-minions):
             // `NPCID.FungiSpore` 261 / `PlanterasHook` 263 /
             // `PlanterasTentacle` 264 / `Spore` 265 (`ID/NPCID.cs:11199`/
@@ -3513,6 +3536,8 @@ impl NpcKind {
             NpcKind::Goldfish => 5,
             NpcKind::Piranha => 30,
             NpcKind::Shark => 300,
+            // W4-e21 — the bunny pair: lifeMax 5 (`NPC.cs:9343`).
+            NpcKind::Bunny | NpcKind::PartyBunny => 5,
             // The worms: the segment HP per family (`:8763`/`:8850`/`:8903`).
             NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail => 100,
             NpcKind::GiantWormHead | NpcKind::GiantWormBody | NpcKind::GiantWormTail => 30,
@@ -3873,6 +3898,8 @@ impl NpcKind {
             NpcKind::Goldfish => 0,
             NpcKind::Piranha => 25,
             NpcKind::Shark => 40,
+            // W4-e21 — the bunny pair: damage 0 (`NPC.cs:9341`).
+            NpcKind::Bunny | NpcKind::PartyBunny => 0,
             // The worms: the head hits hardest, the tail softest
             // (`:8763`'s 31/16/13, `:8850`'s 8/4/4, `:8903`'s 22/13/11).
             NpcKind::DevourerHead => 31,

@@ -289,6 +289,12 @@ pub struct Wiring {
     /// `HitWireSingle`'s case-455 party-toggle requests
     /// (`BirthdayParty.ToggleManualParty`, `BirthdayParty.cs:202-217`).
     party_toggles: u32,
+    /// `BirthdayParty.PartyIsUp` (`BirthdayParty.cs:25-32`) mirrored in by
+    /// the app layer before the wiring step — the statue style-9 arm reads
+    /// it at the `HitWireSingle` site (`Wiring.cs:2304-2307`: the party
+    /// bunny 540 replaces the plain bunny 46 while the party is up). The
+    /// `WorldEvents` book stays app-side; this is the read-only snapshot.
+    party_is_up: bool,
     /// The switch-click positions from `HitSwitch`'s seven
     /// `SoundEngine.PlaySound(28, ...)` sites (`Wiring.cs:267`/`:272`/
     /// `:285`/`:310`/`:323`/`:339`/`:375`, S1-E-21i) in world pixels, queued
@@ -807,6 +813,14 @@ impl Wiring {
         std::mem::take(&mut self.party_toggles)
     }
 
+    /// Mirrors `BirthdayParty.PartyIsUp` (`BirthdayParty.cs:25-32`) in for
+    /// the next flood — the app layer owns the `WorldEvents` book and feeds
+    /// the snapshot before the wiring step; the statue style-9 arm reads it
+    /// at the C#'s `HitWireSingle` site (`Wiring.cs:2304-2307`).
+    pub fn set_party_is_up(&mut self, up: bool) {
+        self.party_is_up = up;
+    }
+
     /// The trap family (`HitWireSingle`'s case 137, `Wiring.cs:1760-1993`):
     /// `frameY / 18` selects the trap — 0 dart trap (98 PoisonDart, 20 dmg,
     /// speed 12), 1 super dart trap (184 PoisonDartTrap, 40, 12), 2 flame
@@ -1102,10 +1116,14 @@ impl Wiring {
             8 => {
                 self.statue_spawn_npc(num137, num136, anchor_x, anchor_y - 12, 55, NO_CAPS);
             }
-            // `:2303-2307`: 540 while `BirthdayParty.PartyIsUp` — the port has no
-            // party state, so the plain bunny always drops (ANALYSIS note).
+            // `:2301-2313`: `int type3 = 46; if (BirthdayParty.PartyIsUp)
+            // type3 = 540;` — the pick happens BEFORE `CheckMech`/`MechSpawn`
+            // (`:2308`), so the party bunny's cap rides the request id (the
+            // bunny group {46, 540, 303, 337}, `NPC.cs:7443-7449`). The
+            // party state is the app's mirror (`set_party_is_up`).
             9 => {
-                self.statue_spawn_npc(num137, num136, anchor_x, anchor_y - 12, 46, NO_CAPS);
+                let type3 = if self.party_is_up { 540 } else { 46 };
+                self.statue_spawn_npc(num137, num136, anchor_x, anchor_y - 12, type3, NO_CAPS);
             }
             10 => {
                 self.statue_spawn_npc(num137, num136, anchor_x, anchor_y, 21, NO_CAPS);
@@ -4119,6 +4137,62 @@ mod statue_tests {
                 npc_id: 2,
                 cap_ids: &[],
             }]
+        );
+    }
+
+    #[test]
+    fn w4_e21_the_bunny_statue_picks_540_while_the_party_is_up() {
+        // The Bunny statue = style 9 (the second table's `case 9`,
+        // `Wiring.cs:2301-2313`): `int type3 = 46; if (BirthdayParty.PartyIsUp)
+        // type3 = 540;` — the pick happens BEFORE `CheckMech(30)`/`MechSpawn`,
+        // so the request id (and therefore the bunny-group cap) follows the
+        // party state at the `HitWireSingle` site. The app mirrors
+        // `PartyIsUp` in through `set_party_is_up` before the step.
+        let mut w = world_with_statue(9, 0);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 9, 20, 1, 1);
+        assert_eq!(
+            wiring.take_statue_spawns(),
+            vec![StatueSpawn::Npc {
+                x: ANCHOR_X,
+                y: ANCHOR_Y - 12,
+                npc_id: 46,
+                cap_ids: &[],
+            }],
+            "no party → the plain bunny 46"
+        );
+        // The party comes up: the next trip (past the 30-tick cooldown) picks
+        // 540 at the same verbatim anchor.
+        wiring.set_party_is_up(true);
+        for _ in 0..30 {
+            wiring.update(&mut w);
+        }
+        wiring.trip_wire(&mut w, 9, 20, 1, 1);
+        assert_eq!(
+            wiring.take_statue_spawns(),
+            vec![StatueSpawn::Npc {
+                x: ANCHOR_X,
+                y: ANCHOR_Y - 12,
+                npc_id: 540,
+                cap_ids: &[],
+            }],
+            "party up → the party bunny 540"
+        );
+        // The party goes down: the pick returns to 46.
+        wiring.set_party_is_up(false);
+        for _ in 0..30 {
+            wiring.update(&mut w);
+        }
+        wiring.trip_wire(&mut w, 9, 20, 1, 1);
+        assert_eq!(
+            wiring.take_statue_spawns(),
+            vec![StatueSpawn::Npc {
+                x: ANCHOR_X,
+                y: ANCHOR_Y - 12,
+                npc_id: 46,
+                cap_ids: &[],
+            }],
+            "party down → the plain bunny 46 again"
         );
     }
 
