@@ -1,17 +1,75 @@
-# UNION-CONTRACT — the W4-g73/g74/g75 waterfall family merge (FINAL)
+# UNION-CONTRACT — the W4-g73/g74/g75 waterfall family merge (FINAL, retire-sealed)
 
-**Status: FINAL UNION on `task/W4-g73-waterfall-draw` (THIS branch).** The
-final falls fold `eee87f98` merges the g75 union tip `e30ad7ba` (itself the
-union-fold `9bbc3e1d`: g75 residuals `2997a58c` + the g73 union `9a15f3d7`)
-into the g73 falls-adjacent tip `155b56ba`, then keeps g73's faithful
-superset wherever the two lanes ported the same C# arm differently.
+**Status: FINAL UNION on `task/W4-g73-waterfall-draw` (THIS branch),
+RETIRE-SEALED 2026-11-21.** The final falls fold `eee87f98` merges the g75
+union tip `e30ad7ba` (itself the union-fold `9bbc3e1d`: g75 residuals
+`2997a58c` + the g73 union `9a15f3d7`) into the g73 falls-adjacent tip
+`155b56ba`, then keeps g73's faithful superset wherever the two lanes
+ported the same C# arm differently. The closeout (`5d444f15`) folded the
+g75d sweep; the RETIRE phase sealed the two remaining cross-lane items:
+the g24 quit-stop DUP (keep-one adjudication, §-quit below) and the
+`CalculateWaterStyle` fountain head arm (the 207-chain's last link,
+UNCLAIMED census → ported here).
 
 **The merger takes ONE branch: THIS one.** `task/W4-g75-honeyfall-draw`
-(`e30ad7ba` and any later g75d final-sweep commits stacked on it) and
-`task/W4-g74-lavafall-draw` (`cd462c1a`) are FULLY CONTAINED here — their
-waterfall modules, consumers and witnesses are all in this tree. Drop
-them wholesale at merge time; do not re-merge them. Every semantic
+(tip `41b64b04`, all six g75d sweep commits folded per-hunk) and
+`task/W4-g74-lavafall-draw` (tip `cd462c1a`) are FULLY CONTAINED here —
+their waterfall modules, consumers and witnesses are all in this tree.
+Drop them wholesale at merge time; do not re-merge them. Every semantic
 decision is already resolved in code, with witnesses.
+
+**Retire-phase containment re-verify (2026-11-21, post-closeout):**
+`git merge-base --is-ancestor cd462c1ae HEAD` → exit 0 and
+`git log cd462c1ae..origin/task/W4-g74-lavafall-draw` → empty (g74 done,
+nothing after the glow-fixture fix); `git log
+41b64b04..origin/task/W4-g75-honeyfall-draw` → empty (the g75f/g75e
+sessions landed NOTHING past the folded fold-list extension — g75 done).
+The g75 branch tip's own ancestry check is moot (its commits were folded
+per-hunk, not merged — the fold record below is the containment proof).
+
+## §-quit — the g24/g73 quit-stop DUP: keep-one adjudication (RETIRE phase)
+
+Two lanes wired `WorldGen.StopWaterfallAmbienceAudio` (`WorldGen.cs:
+6689-6699`, the 34/35 (-1,-1,0) sentinel pair) into `save_and_quit`
+(`:6704`): g24's doc-sweep `c3eccb77` (+ the `7ca8b087` dead-code allow)
+and this branch's closeout `4e7e3f58`. **Verdict: g24b is the SUPERSET —
+its shape is kept, ONE `:6704` call site and ONE stop fn survive.**
+
+| Element | g24 `c3eccb77`+`7ca8b087` | g73 closeout `4e7e3f58` | Keep-one resolution |
+| --- | --- | --- | --- |
+| `stop_waterfall_ambience` body | direct sink kill + `liquid_ambience_stops` counter | route through `set_liquid_loop(ch, 0.0)` | **g24's** — the closeout's route no-ops HEADLESS (`set_liquid_loop` gates on the decoded cue + output handle BEFORE its stop arm), so its witness could never observe a live stop; the direct kill matches the C# sentinel's draw-free immediacy |
+| `save_and_quit` `:6704` call | yes | yes (the DUP) | ONE call site (identical position, after the Menu_Close 11) |
+| `StopTrackedSounds` `:6715` | yes (`stop_tracked_sounds`) | no | **g24's** — folded |
+| `JustQuit` `:6627-6662` | PORTED (`just_quit` + the F3 World-tab row 15, the `/quit` dispatcher stand-in, `#[allow(dead_code)]`) | "stays unported" (the closeout missed the debug-command caller) | **g24's** — folded; the closeout's deferral note RETIRED |
+| Witness support | `menu_accept_style`/`tracked_count_for`/`insert_test_cue`/`count_style_entries` | none | **g24's** — folded (test-only readers carry `#[allow(dead_code)]` on this branch; g24's `SecretSeed.Enable` production caller stays on the g24 branch) |
+| Witnesses | `w4_g24_the_ambience_stop_pair_and_the_tracked_pool_drain` + `w4_g24_the_quit_paths_stop_the_ambience_and_the_tracked_pool` + `w4_g24_the_quit_row_runs_just_quit` | `the_quit_stop_kills_both_liquid_loop_channels` | **g24's three** — the closeout's witness retired INTO the first (its dead-slot/idempotence assertions carried over) |
+
+Fold correction (C#-verified): g24's `s1_e_29_the_world_tab_keeps_its_
+fifteen_rows` witness was left STALE on the g24 branch (still asserting
+15 rows against its own 16-row panel) — this branch's fold renames it
+`..._sixteen_rows` and pins row 15 = "Quit (no save)".
+
+**Merger instruction for the g24 branch**: its `stop_waterfall_ambience`/
+`just_quit`/`save_and_quit`/`debug_panel` hunks are ALREADY HERE with
+identical semantics — at the g24 merge keep THIS branch's copies (or
+g24's, byte-equivalent bodies); never land BOTH `:6704` call sites. The
+`menu_accept_style` fn merges cleanly (g24 adds the `SecretSeed.Enable`
+caller; drop this branch's `#[allow(dead_code)]` when that caller lands).
+
+## §-fountain — the CalculateWaterStyle head arm (RETIRE phase)
+
+The closeout's noted biome-lane gap is CLOSED on this branch:
+`Main.cs:57390-57393`'s `ActiveFountainColor >= 0` head arm ported as
+`biome::calculate_water_style_with_fountain`, consumers wired
+(`draw_tiles` + the `:57475` liquidAlpha ramp + the legacy-light style +
+the `Rain::water_style` latch — `Rain.cs:205` reads the STORED static).
+Claim census: g46/g47's `biome.rs` byte-identical to the pre-port version
+(empty diff, both branches), the same "no consumer yet" ANALYSIS note, no
+biome lane (g40-g44/d129) touches the file — UNCLAIMED, so the falls lane
+took it. `calculate_water_style` (no fountain) stays the
+`ignoreFountains: true` capture arm (`CaptureBiome.cs:158`). 4 witnesses;
+ANALYSIS "The fountain head arm". The tile-207 chain is now COMPLETE:
+place → wire trip (`SwitchFountain`) → scene scan → head arm → recolour.
 
 ## Cross-note to g75d (the g75-branch final sweep)
 
@@ -246,8 +304,10 @@ by the sweep's `lava_fountain_tile_717_drops_below` /
 `lava_fountain_draws_the_two_sheet_pair_and_lights_every_cell` (counted
 below; the unique tail-fade/quad-count assertions carried over).
 
-Quit stop (`crates/tr-app/src/audio.rs`, 1):
-`the_quit_stop_kills_both_liquid_loop_channels`.
+Quit stop (`crates/tr-app/src/audio.rs`, 1 — RETIRED into the g24
+keep-one's superset witness, see the retire inventory below):
+~~`the_quit_stop_kills_both_liquid_loop_channels`~~ →
+`w4_g24_the_ambience_stop_pair_and_the_tracked_pool_drain`.
 
 Retro scan (`crates/tr-core/src/retro_water.rs`, 3):
 `one_lit_lava_cell_sums_full_strength_at_the_screen_centre`,
@@ -276,20 +336,47 @@ Spout clause (`crates/tr-app/src/render/liquids.rs` 2 + `render/tiles.rs`
 `w4_g75_a_bubble_neighbour_does_not_feed_the_spout_clause`,
 `the_liquid_behind_call_feeds_the_waterfall_manager`.
 
-Lane total: 43 + 7 closeout-unique + 8 sweep = 58. The closeout's
-chain-status census (the 338/207 fountain chains — the proj AI rides the
-d8 lane `50dcaa75` —, the g75d fold, the g24 stop claim) is recorded in
-ANALYSIS "W4-g73 FALLS CLOSEOUT" + "The g75d final-sweep FOLD".
+Lane total after the closeout + sweep: 43 + 7 closeout-unique + 8 sweep =
+58. The closeout's chain-status census (the 338/207 fountain chains — the
+proj AI rides the d8 lane `50dcaa75` —, the g75d fold, the g24 stop claim)
+is recorded in ANALYSIS "W4-g73 FALLS CLOSEOUT" + "The g75d final-sweep
+FOLD".
+
+### The RETIRE-phase witnesses (2026-11-21 — written, NOT run)
+
+Quit-stop keep-one (3 g24-shape witnesses replace the closeout's 1 — the
+dead-slot/idempotence assertions carried over; net +2):
+`w4_g24_the_ambience_stop_pair_and_the_tracked_pool_drain`
+(`crates/tr-app/src/audio.rs`),
+`w4_g24_the_quit_paths_stop_the_ambience_and_the_tracked_pool`
+(`crates/tr-app/src/app/saveglue.rs`),
+`w4_g24_the_quit_row_runs_just_quit` (`crates/tr-app/src/debug_panel.rs`,
+the `debug` feature's test module). The stale fifteen-rows witness is
+corrected to `s1_e_29_the_world_tab_keeps_its_sixteen_rows` (a fix, not a
+new witness).
+
+Fountain head arm (4):
+`the_fountain_head_arm_outranks_every_biome_arm` +
+`no_fountain_falls_through_and_the_capture_path_ignores_fountains`
+(`crates/tr-app/src/biome.rs`),
+`the_stored_fountain_water_style_feeds_the_drop_frame_types`
+(`crates/tr-app/src/rain.rs`),
+`the_tile_pass_water_style_carries_the_fountain_head_arm`
+(`crates/tr-app/src/render/tiles.rs`).
+
+**FINAL lane total: 58 − 1 retired + 3 keep-one + 4 head-arm = 64
+witnesses** (all written NOT run — code-only).
 
 ## Verification the merger must run (this lane was code-only)
 
 ```powershell
 cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids
 cargo test -p tr-app --test main_anchors
+cargo test -p tr-app --features debug   # the F3 quit-row witness lives in the debug-feature module
 ```
 
 Judge only by the `test result: ok` lines (cargo may exit 1 on success).
-The final fold was compile-checked by inspection only — if the 43
+The final fold was compile-checked by inspection only — if the 64
 witnesses surface fixture drift, fix the FIXTURE against the C# walk (the
 decisions above are locked; the numbers are hand-replays, not run
 results). Known inspection notes for the verifier:
@@ -307,3 +394,13 @@ results). Known inspection notes for the verifier:
   gates on `triple.0 <= 0` BEFORE the walk (the C# `Main.cs:13475`/
   `:13498` shape) — `liquid_ambience`'s own camera-centre stop arm remains
   for its direct witnesses.
+* RETIRE: `draw_tiles` gained one parameter (`active_fountain_color:
+  i32`, after `liquid_alpha`) — the single frame caller feeds
+  `self.scene_metrics.active_fountain_color`; `Rain` gained the
+  `water_style: u32` latch (init 0, the `update_rain` feed). The quit-stop
+  witnesses run headless through the counter seam
+  (`liquid_ambience_stop_count`), never a real sink.
+* The g24 merge overlap is documented in §-quit: identical bodies, ONE
+  `:6704` call site; the g46/g47 merges carry no `biome.rs`/`rain.rs`
+  water-style hunks (their versions predate the head arm — this branch's
+  copies win, §-fountain).
