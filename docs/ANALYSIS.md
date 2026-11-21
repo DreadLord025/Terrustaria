@@ -39305,26 +39305,107 @@ NO >50 shrink rolls here (unlike `NPCLoot_DropMoney`), the `(int)`
 truncations and the copper `< 1 → 1` floor verbatim. The zero-value
 bosses (Betsy/Ogre/Dark Mage) draw the 5 gates and mint nothing.
 
-### The wiring (`app/clicks.rs::open_boss_bag_click`)
+### The wiring (`app/clicks.rs::open_boss_bag_click` + `open_container_click`)
 
 The `ItemSlot.RightClick` `OpenableBag` arm (`UI/ItemSlot.cs:1660-1667`)
 fires on the press edge (`Main.mouseRightRelease`) with an air cursor or
 one that cannot stack with the cell, BEFORE the `HasItemSwap` cycle
-(`:1668`). Only the `BossBag` subset has a ported opener — the
-crates/presents/herb bags fall through to the swap/split arms (the
-recorded gap). `TryOpenContainer` (`:1786-1804`) grants FIRST, then the
-bag stack decrements (`:1795-1799`), sound 7 (`:1800`), `stackSplit = 30`
-(`:1801`), `mouseRightRelease = false` (`:1802`). Every grant rides
+(`:1668`). The arm now covers ALL 58 `ItemID.Sets.OpenableBag` kinds
+(`ItemID.cs:1384`): the 21 boss bags dispatch to `open_boss_bag_click`,
+the other 37 (26 crates + 11 misc/present kinds) to
+`open_container_click`, which ports `TryOpenContainer_GrantItems`'
+else-if order (`:1806-1865`) — the fishing crates → the herb bag 3093 →
+the can of worms 4345 → the oyster 4410 → the goodie bag 1774 → the
+chillet egg 6142 → the Lock Box 3085 (the Golden Key 327 CONSUME gate,
+`ConsumeItem(327, reverseOrder: false, includeVoidBag: true)` — a miss
+returns false: NO decrement, NO sound, NO cooldown) → the Shadow
+Lockbox 4879 (the Shadow Key 329 PRESENCE gate,
+`HasItemInInventoryOrOpenVoidBag` — NOT consumed) → the Present 1869 →
+the legacy presents 599/600/601. `TryOpenContainer` (`:1786-1804`)
+grants FIRST, then the bag stack decrements (`:1795-1799`), sound 7
+(`:1800`), `stackSplit = 30` (`:1801`), `mouseRightRelease = false`
+(`:1802`) — the shared `finish_container_open` tail. Every grant rides
 `GetOrDropItem(PickupItemFromWorld)` (`Player.cs:7187-7199`): the
 `Player.GetItem` fill (the coin rows + `DoCoins` per fill for coins, the
-`deposit_pickup` ammo/occupied/hotbar/reverse-empty walk for non-coins),
-the void vault as the last resort (`GetItemSettings.cs:57`'s
-`CanGoIntoVoidVault`), the overflow a world drop at the player's centre
-(`Item.RequestNewItem`, `:7198`, the prefix preserved — no fresh roll).
-The whole open is a UI click OUTSIDE every `SwapRandom` block, so the
-bag rolls AND the fill chimes ride `NamedRngs::global()` (the
-bare-`Main.rand` stand-in, the `quick_transfer_from_slot` precedent);
-every named stage stream stays pristine.
+`deposit_pickup` ammo/occupied/hotbar/reverse-empty walk for non-coins —
+the shared `fill_quick_spawn_grants`), the void vault as the last
+resort (`GetItemSettings.cs:57`'s `CanGoIntoVoidVault`), the overflow a
+world drop at the player's centre (`Item.RequestNewItem`, `:7198`, the
+prefix preserved — no fresh roll). The whole open is a UI click OUTSIDE
+every `SwapRandom` block, so the bag rolls AND the fill chimes ride
+`NamedRngs::global()` (the bare-`Main.rand` stand-in, the
+`quick_transfer_from_slot` precedent); every named stage stream stays
+pristine.
+
+### The sibling opener families (the widened scope)
+
+Four modules share the `BagGrant`/`quick_spawn` seam (made `pub(crate)`):
+
+- `fishing_crates.rs` — `Player.OpenFishingCrate`
+  (`Player.cs:8028-9250`), the OPEN side only (the fishing-catch crate
+  roll is f36's lane). The three base crates (Wooden 2334/3979, Iron
+  2335/3980, Golden 2336/3981) return from their own retry-until-granted
+  while-loops; the other 20 ride the shared loop (`:8595-8914`, the
+  `maxValue = 1` biome-weapon gate always passes on the first pass) +
+  the shared tails (`:8915-9249`). The kept quirks: the wooden
+  `Next(4)`-over-six-cases dead picks (11/700 never land; the ore pick's
+  21/705/19/706 likewise), the wooden hardmode gate drawing NO pick on
+  a miss (`:8127`), the golden `continue` (`:8510-8512`), the two
+  SEPARATE Enchanted Sword 989 gates (1/30 pre-hardmode vs 1/15
+  hardmode, both always draw), the lava 174/175 re-types AFTER the pick
+  draws (`:8823`/`:8882` — the hardmode bar re-pick OVERWRITES the 174
+  but the ore's `Next(3)!=0` gate misses at zero so the 175 can stay),
+  the discarded `num14`/`num16` `Next(5)`s (`:8668`/`:8734`), the Ocean
+  `Next(4)` BEFORE the 1/10 Water Bolt gate (`:8601-8602`), the hallowed
+  3986 second-soul stack RE-DRAW (`:9237` discarded, `:9245` lands), the
+  Hallowed 3207/3986 weapon-arm ABSENCE in the shared loop.
+  `CrateEnv::skyblock_low_tiles` is the gen-time tile-census seam
+  (`WorldGen.cs:3209-3217`) — the wiring passes false.
+- `presents.rs` — `OpenPresent` (`:7031-7150`, the else-if chance chain;
+  the `Next(15)` hardmode gate DRAWS even pre-hardmode and a gated hit
+  falls through to the 1/30 Coal), `OpenLegacyPresent` (`:7152-7168`,
+  ONE `Next(14)`: 0+hardmode → Snow Globe 602, `<=7` including a
+  pre-hardmode 0 → Candy Cane Block 586, else 591), `OpenGoodieBag`
+  (`:9502-9585`, the two 1/150 early-returns Unlucky Yarn 1810 / Bat
+  Hook 1800, the 1/4 Rotten Egg 1809 ×10-40, the 1/10 `Next(1846,1851)`
+  painting pick, the 19-way costume switch — case 10 is the Witch set
+  (1766,1775,1776), NOT contiguous; case 18's 1851 also sits in the
+  painting range).
+- `misc_bags.rs` — `OpenHerbBag` (`:9367-9441`, the 2-4+1/3 count × the
+  14-herb pick × the 2-4 stack + the 1/3-gated 1-4 add — the add draw
+  only inside the gate), `OpenCanofWorms` (`:9443-9455`, the
+  `Next(10) < 3` boundary), `OpenOyster` (`:9457-9476`, the nested
+  1/4-gated pearl chain 4414/4413/4412 + the always-4411),
+  `OpenChilletEgg` (`:9491-9500`), `OpenLockBox` (`:9330-9365`, the
+  `Next(7)` 0-and-default-both-164 pick, the remix 157→2623 swap, the
+  getGoodWorld SHORT-CIRCUIT `Next(5)` gate — no draw when the flag is
+  down) + `OpenShadowLockbox` (`:9310-9328`, the remix 112→683 list
+  swap). Both lock-box openers are degenerate one-pass whiles in the
+  C#; the port keeps the single pass. `consume_item_loc` ports
+  `ConsumeItem`'s first-match scan (`Player.cs:9269-9308`) over the
+  58-slot carry view + the OPEN void bag.
+- `npc_death_heals.rs` — the g60-UNCLAIMED death item-drop lane (g60's
+  census covers the death DUST only): `NPCLoot_DropHeals`
+  (`NPC.cs:79098-79195`) + `NPCLoot_DropCommonLifeAndMana`
+  (`:79531-79557`) + `DoDeathEvents_DropBossPotionsAndHearts`
+  (`:78945-79016`) over the `DropRng`/`roll_luck` seam. The kept
+  quirks: the 16/121/81 netID exclusions (81 still runs the SECOND mana
+  roll), the mana-first `Next(2)` pick whose heart else-if DRAWS its
+  own `Next(2)` on a full-mana first hit, the 267/13-15 life-gated
+  arms, the 116-119 expert-only `Next(5)`, the boss potion chain's
+  `>113 && <222` mech band BEFORE the 636/245/262/370/395/439 arms
+  (222→1134, 398→3544), the EoC/WoF KilledToday Badger's Hat 5004
+  latch-and-reset. The 23-kind boss table = the 22 `SetDefaults`
+  `boss = true` rows + the EoW head's `DropEoWLoot` dynamic last-
+  segment latch (`:78414-78429`). The wiring: `spawn_heals` runs AFTER
+  `spawn_loot` in the death retain (the C# loot-before-heals order on
+  the shared `UpdateNPCs` stream; the coins-before-loot fold is the
+  recorded pre-existing deviation), the latches live on
+  `World.eoc_killed_today`/`wof_killed_today` (the dusk transition
+  clears both, `Main.cs:65221` `ResetBadgerHatTime` — wired in
+  `world_sim/clock.rs`), every heal drop rides the `spawn_loot`
+  convention (the seasonal heart/star remap BEFORE the prefix/velocity
+  draws, `Item.cs:49668-49714`).
 
 ### Deliberate deviations / out of scope
 
@@ -39336,14 +39417,18 @@ every named stage stream stays pristine.
 - `crimson` stays false (the port persists no world-evil type, the
   `shop.rs`/`loot.rs` `crimson_world` gap) — the EoC bag grants the
   corruption ore/bar pair (56/59).
-- The crates/presents/herb-bag/goodie-bag openers (`OpenFishingCrate`,
-  `OpenPresent`, `OpenHerbBag`, …) are NOT ported — only the `BossBag`
-  subset of `ItemID.Sets.OpenableBag` has an opener; the rest fall
-  through to the swap/split arms (the recorded gap).
-- The death-side `DoDeathEvents_DropBossPotionsAndHearts`
-  (`NPC.cs:78945-79016`, the boss potion + 5-9 hearts + Badger's Hat)
-  and `NPCLoot_DropHeals`/`DropCommonLifeAndMana` (`:79098-79195`/
-  `:79531-79557`) are OUT of this task (the death-events lane).
+- `CrateEnv::skyblock_low_tiles` stays false (the gen-time active-tile
+  census, `WorldGen.cs:3209-3217`, has no port) — the Sky crate's
+  Sky Mill 2197 tail never fires; the seam is one `Next(3)` when wired.
+- The death-heal feed's `expert` stays false (the same constants-off
+  note) — the Hungry 116-119 always drop their heart, the expert 1/5
+  gate never draws; `HealPlayer` reads the live `hp < max_hp` /
+  `mana < mana_max` (the `statLifeMax2` buff bumps are the equipment
+  pass's lane).
+- The death-feed order fold: the port's death retain runs
+  `spawn_coins` BEFORE `spawn_loot` (pre-existing); the heal feed lands
+  AFTER `spawn_loot`, keeping the C#'s loot-before-heals relative
+  order. The C#'s full order is items → boss potions → money → heals.
 - The `GetItem` favorite guard reads the port's slot-positional
   `favorite_slots` (the S1-P-i47 model); the `newAndShiny` flag and the
   `PopupText`/achievement pickup hooks are the standing UI deviations.
@@ -39356,7 +39441,10 @@ call sites checked against the actual signatures by read/grep
 `do_coins`, `void_vault_take`/`can_void_vault_accept`, `registry::get`/
 `name`/`max_stack`/`is_coin`/`coin_value`, `NamedRngs::global`/`stream`,
 `Player.extra_accessory`/`center`/`void_vault_enabled`/`banks`,
-`World.seeds`, `ItemSlot`/`EMPTY_SLOT`, `coin_slot.force_slot_state`).
-The witnesses (per-boss same-seed `UnifiedRandom` replays in
-`boss_bags.rs` + the 8 wiring witnesses in `clicks.rs`) are WRITTEN, NOT
-RUN — **no cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.
+`World.seeds`, `ItemSlot`/`EMPTY_SLOT`, `coin_slot.force_slot_state`,
+`DropRng`/`roll_luck`, `seasonal_pickup_kind`, `use_void_bag`,
+`entry_for_npc`, `contact_damage`). The witnesses (per-boss same-seed
+`UnifiedRandom` replays in `boss_bags.rs`, the crate/present/misc/heal
+family replays + scripted draw-census pins in the four new modules,
+and the wiring witnesses in `clicks.rs`) are WRITTEN, NOT RUN — **no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.

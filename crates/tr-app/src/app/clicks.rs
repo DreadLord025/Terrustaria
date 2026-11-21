@@ -6645,7 +6645,7 @@ mod w4_f35_boss_bag_open_tests {
             .filter(|s| matches!(s.kind, 307..=318 | 2357 | 2358))
             .map(|s| s.count)
             .sum();
-        assert!((4..=25).contains(&herbs), "2-5 herbs x 2-8 each: {herbs}");
+        assert!((4..=40).contains(&herbs), "2-5 herbs x 2-8 each: {herbs}");
     }
 
     #[test]
