@@ -86,7 +86,9 @@
 //!   overlap;
 //! * the damage-side slices stay with the wiring: the telegraph invuln
 //!   (`Damage_CanDealDamage` `:12448` — 919/923 deal no damage while
-//!   `localAI[0] <= 60`), the BossNoCheese immunity group (`Damage_EVP`
+//!   `localAI[0] <= 60`) is CLOSED by W4-d18's full-switch census
+//!   (`projectile.rs::damage_kind_gate_refuses`); the BossNoCheese
+//!   immunity group (`Damage_EVP`
 //!   `:14788-14796`), 919's line hitbox (`Colliding` `:15625-15641`, ±40 px
 //!   along the rotation, width 8), 923's three-segment beam hitbox
 //!   (`:15642-15668`, 510/660/800 × scale at widths 100/60/10 × 0.7 scale),

@@ -33674,7 +33674,9 @@ below the 50 % skip tier `Dust.cs:142-148`, on-screen, `ChildSafety.Disabled`):
   keeps the fall-through byte-identical.
 - **Damage-side slices** (the wiring/damage work owns them): the telegraph
   invuln (`Damage_CanDealDamage` `:12448` — 919/923 deal no damage while
-  `localAI[0] <= 60`), the BossNoCheese immunity group (`Damage_EVP`
+  `localAI[0] <= 60`) — **CLOSED by W4-d18's full-switch census**
+  (`projectile.rs::damage_kind_gate_refuses`, all three damage walks);
+  the BossNoCheese immunity group (`Damage_EVP`
   `:14788-14796`), 919's ±40-px line hitbox (`Colliding` `:15625-15641`),
   923's three-segment beam (`:15642-15668`), 872's every-2nd-of-50 oldPos
   hitbox (`:15675-15694` — needs the 120-entry `TrailCacheLength` ring,
@@ -39244,3 +39246,49 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## W4-d18 Damage_CanDealDamage — the full-switch census + the reachable ports (code-only)
+
+**Task.** The `Projectile.Damage_CanDealDamage` switch (`Projectile.cs:12446-12485`)
+audited term-by-term against this branch's rows; every REACHABLE small term ported
+into the three damage walks (`projectile.rs::damage_pve` / `damage_pve_boxed` /
+`damage_player` — the C# gate wraps `Damage()` whole, `:12497`, so PVE, PVP and
+EVP all refuse). **No compiler invoked**; the witnesses are WRITTEN, NOT RUN.
+
+**The census (every term, its status):**
+
+| C# term (`:12448-12480`) | status |
+|---|---|
+| types 18/72/86/87/226/650/439/535/651/600/602 (row-less) | ported arm-total in `damage_kind_gate_refuses` (never spawn) |
+| 378 SpiderEgg, 613 StardustCellMinion, 444 Xenopopper bubble, 500 CrimsonHeart, 1018 DirtiestBlock, 1056 BoulderPet, 460 ChargedBlasterCannon holder, 633 LastPrism holder, 601, 831 StormTigerGem, 970 AbigailCounter, 861 Football (row-less), 1007 GasTrap (row-less) | PORTED (the unconditional list, this round) |
+| 882/888/895/896/653/1090 (row-less light pets) | ported arm-total |
+| aiStyle 31 (sprays 145 + the seven W4-d18 solution rows) / 32 (row-less) | PORTED |
+| aiStyle 137 `ai[0] != 0` (the Lightning Auras 688-690 — zap only on the wrap tick, `:68886-68890`) | PORTED |
+| aiStyle 138 (the Explosive Traps 691-693 — the sentry never deals contact damage; the 139 blast is NOT gated) | PORTED |
+| 833/834/835 `ai[0] == 4` (the Storm Tigers' pounce) | PORTED |
+| 1022 `ai[2] > 0` (the Mushroom Boi's spore state) | PORTED |
+| 919/923 `localAI[0] <= 60` (the Empress telegraph — closes the S1-D-4 damage-side slice) | PORTED |
+| aiStyle 10 `localAI[1] == -1` (`:12456`) | PORTED arm-total — unreachable: the debris arm pins 0 (`:57952`), the sand tail never writes -1 (the pre-existing ANALYSIS note) |
+| 85/1106 `localAI[0] >= 54` (`:12460-12467` — the smoke tail of the 72-tick AI_193 life) | PORTED (`flames_faded`, this round, all three walks) |
+| 188 `localAI[0] < 5` (the launch ramp) | CLAIMED: W4-d4's DOC-SWEEP gate, tip 509b9943c (unmerged) — not re-ported |
+| aiStyle 113 family 598/636/614/971/975/1024 `ai[0] == 1` (the stuck stickers) | CLAIMED: W4-d12's census, tip 719ffb76c (unmerged; only the 598 row exists here) — not re-ported |
+| aiStyle 15 `ai[0] == 0 && localAI[1] <= 12` (the flail hold) | ALREADY PORTED: `flail_damage_adjust` |
+| 434 `localAI[0] != 0`, 451, 631 `localAI[1] == 0`, 537 `localAI[0] <= 30`, 261 speed < 1.5, 818 `ai[0] < 1`, 281 `ai[0] == -3`, 511-513/1128 `ai[1] >= 1`, 1092 `ai[0] <= 1`, 1091/1122 `localAI[0] <= 0` (`:12468-12475`) | UNPORTED: all row-less on every pushed tip (never spawn) — port with their rows |
+| aiStyle 25 `localAI[2] <= 7` with the 1021/1047/1005/1014 exceptions (`:12476`), aiStyle 93 `ai[0]` not 0/2 (`:12452`) | UNPORTED: no style-25/93 rows |
+| the `Main.projPet` block (`:12480` — every pet/minion deals no contact damage EXCEPT the exception ladder: 266/407/317, 388 ai0==2, 390-395, 1093/1112/1118, 533 ai0 6..8, 625-628, 755/946 ai0!=0, 758/951/963/1022, 759 last-frame, 833-835, 864, 623 ai0==2) | REMAINDER: the big one. The port's PVE walk historically hits regardless of `friendly` (the recorded deviation); this block needs its own audit slice — the PROJ_PET table exists (`data.rs`) but the exception ladder interacts with every minion family's friendly-window machine |
+
+**Row deviation surfaced.** The `CANNON_EXPLOSIVE` const is 601 = C#
+`PortalGunBolt` (`ProjectileID.cs:1756`), but its row (`data.rs`, the M7-WIRE-2
+"cannon ammo 178/601" block, `:2357`) carries `penetrate = -1` where the true
+C# 601 (`Projectile.cs:6502-6510`) keeps the stock 1, and its comment cites the
+178 cannonball block (`:2641-2649`). The true C# 601 is the damage-less portal
+bolt — this census's gate refuses it, faithful to the id. The port's cannonball
+damage rides its death blast, so the gate is behaviour-neutral for the
+mislabeled row; the row/const mismatch itself is left for the wiring lane
+(renaming is out of this task's scope).
+
+**Witnesses (WRITTEN, NOT RUN).** `w4_d18_the_flames_smoke_tail_deals_no_damage`
+(0/53 bite, 54/71 refuse, both kinds, all three walks, the refused contact
+keeps the shot) and `w4_d18_the_damage_kind_gate_census` (the unconditional
+list, the tiger/boi/empress/aura windows both sides, the sprays, the sand
+latch, the untouched-kind freeze check, a live 378 PVE refusal).
