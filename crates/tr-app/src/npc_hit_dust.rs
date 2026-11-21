@@ -376,6 +376,19 @@
 //!   dust 250.
 //! - 86564 — the Larvae Antlion 582 (`:86549-86552`): ×30 dust 250
 //!   (the num513 override).
+//! Batch 27 (the remaining martian/saucer live arms):
+//! - 84540 — the Scutlix 391 (`:84534-84541`): the martian divisor,
+//!   dust 227.
+//! - 84560 — the saucer parts 392-395 (`:84554-84563`): ×20 dust 228 at
+//!   (-dir,-1), Centre-Lerp 0.25 + scale 0.5.
+//! - 84598 — 482/483 (`:84592-84599`): the martian divisor, dust 240.
+//! - 84622 — 631 (`:84616-84623`): the martian divisor, dust 1.
+//! - 85399 — the Vile Spits 112/666 (`:85395-85407`): EVERY strike,
+//!   FLAT 20 dust 18 at (0,0) y+2, alpha 100 scale 2; the post-spawn
+//!   Next(2)==0 → scale ×0.6 + continue, else velocity ×1.4 +
+//!   noGravity.
+//! - 86904 — 343 (`:86898-86905`): ×100 dust 5.
+//! - 86923 — 691 (`:86917-86924`): ×100 dust 5.
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -578,6 +591,25 @@ pub fn replay_hit_dust(
     if s.npc_type == 690 {
         for _ in 0..10 {
             live_dust(s, 1, dir, -1.0, 0, Color::default(), 1.2, rng, dust, ctx, world);
+        }
+        return;
+    }
+    // `:85395-85407` — the Vile Spits: EVERY strike, FLAT 20 dust 18 at
+    // (x, y+2), (0,0), alpha 100 scale 2; the post-spawn Next(2): 0 →
+    // scale ×0.6 + continue, else velocity ×1.4 + noGravity.
+    if s.npc_type == 112 || s.npc_type == 666 {
+        for _ in 0..20 {
+            let idx = dust.new_dust(
+                rng, ctx, world, Vec2::new(s.x, s.y + 2.0), s.w, s.h, 18,
+                0.0, 0.0, 100, Color::default(), 2.0,
+            );
+            let d = dust.slot_mut(idx);
+            if rng.next_max(2) == 0 {
+                d.scale *= 0.6; // `:85402`
+                continue; // `:85403`
+            }
+            d.velocity *= 1.4; // `:85405`
+            d.no_gravity = true; // `:85406`
         }
         return;
     }
@@ -1738,6 +1770,38 @@ pub fn replay_hit_dust(
             let mult = if s.npc_type == 582 { 30.0 } else { 100.0 };
             for _ in 0..hit_count(s.dmg, s.life_max, mult) {
                 live_dust(s, 250, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:84534-84541`/`:84592-84623` — the martian-divisor rows:
+        // Scutlix 227, 482/483 dust 240, 631 dust 1.
+        391 | 482 | 483 | 631 => {
+            let t = match s.npc_type {
+                391 => 227,
+                482 | 483 => 240,
+                _ => 1,
+            };
+            let bound = s.dmg / (s.life_max * 50) as f64;
+            let mut count = 0u32;
+            while (count as f64) < bound {
+                live_dust(s, t, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                count += 1;
+            }
+        }
+        // `:84554-84563` — the saucer parts: ×20 dust 228 at (-dir,-1),
+        // the Centre-Lerp 0.25 + scale 0.5 (the 384 shape).
+        392..=395 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 20.0) {
+                let idx = live_dust(s, 228, -dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                let d = dust.slot_mut(idx);
+                d.position.x += (s.cx - d.position.x) * 0.25;
+                d.position.y += (s.cy - d.position.y) * 0.25;
+                d.scale = 0.5;
+            }
+        }
+        // `:86898-86924` — 343/691: ×100 dust 5.
+        343 | 691 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
             }
         }
         // `:89526-89548`/`:89690-89700` — the three spheres are handled
@@ -3357,5 +3421,49 @@ mod tests {
             replay_hit_dust(&s2, &mut r2, &mut p2, &ctx, &world);
             assert_eq!(p2.slots().iter().filter(|d| d.active).count(), 5, "type {t}");
         }
+    }
+
+    /// W4-g62 batch 27 — the Vile Spit's post-spawn Next(2) branch
+    /// (`NPC.cs:85400-85406`): 0 → scale ×0.6 ONLY (continue), else
+    /// velocity ×1.4 + noGravity; FLAT 20 even on death, the y+2 box.
+    #[test]
+    fn w4_g62_the_vile_spit_branch_mirrors() {
+        let world = air();
+        let ctx = ctx();
+        let s = snap(112, -5, 100, 10.0);
+        let mut rng = UnifiedRandom::new(227);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(227);
+        let mut twin = DustPool::new();
+        for _ in 0..20 {
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(100.0, 102.0), 24, 18, 18,
+                0.0, 0.0, 100, Color::default(), 2.0,
+            );
+            let d = twin.slot_mut(idx);
+            if twin_rng.next_max(2) == 0 {
+                d.scale *= 0.6;
+                continue;
+            }
+            d.velocity *= 1.4;
+            d.no_gravity = true;
+        }
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+        // The saucer Lerp arm + the martian-divisor rows.
+        let sc = snap(392, 100, 100, 50.0); // ×20 → 10
+        let mut r2 = UnifiedRandom::new(227);
+        let mut p2 = DustPool::new();
+        replay_hit_dust(&sc, &mut r2, &mut p2, &ctx, &world);
+        let live: Vec<_> = p2.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 10);
+        assert!(live.iter().all(|d| d.dust_type == 228 && d.scale == 0.5));
+        let sx = snap(391, 300, 300, 15000.0); // divisor → 1
+        let mut r3 = UnifiedRandom::new(227);
+        let mut p3 = DustPool::new();
+        replay_hit_dust(&sx, &mut r3, &mut p3, &ctx, &world);
+        assert_eq!(p3.slots().iter().filter(|d| d.active).count(), 1);
+        assert!(p3.slots().iter().filter(|d| d.active).all(|d| d.dust_type == 227));
     }
 }
