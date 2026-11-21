@@ -347,6 +347,58 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             app.world_key = None;
             return true;
         }
+        edit::TileInteraction::RightClickToggle { x, y, kind } => {
+            // W4-e10 — the five right-click toggle arms
+            // (`Player.cs:32228-32284`): ALL play `PlaySound(28,
+            // myX * 16, myY * 16, 0)` at the CLICKED cell's top-left
+            // BEFORE the toggle — the Mech-28 seam (case 28,
+            // `LegacySoundPlayer.cs:995-1009`: the slot-0 playing guard,
+            // then ONE `Next(-10, 11) * 0.01` pitch draw on
+            // `UpdatePlayers` — the tile use runs in `Player.ItemCheck`,
+            // `Main.cs:17754`).
+            app.audio.play_switch_click(
+                *x as f32 * TILE_PX,
+                *y as f32 * TILE_PX,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
+            let frame = app
+                .world
+                .tile(*x, *y)
+                .map(|t| (t.frame_x, t.frame_y))
+                .unwrap_or((0, 0));
+            match kind {
+                // `:32232`: `WorldGen.SwitchMB` — the 2×2 frameX flip.
+                139 => app.wiring.switch_mb(&mut app.world, *x, *y, frame.0, frame.1),
+                // `:32269`: `WorldGen.SwitchFountain` — the 2×4 frameY flip.
+                207 => {
+                    app.wiring
+                        .switch_fountain(&mut app.world, *x, *y, frame.0, frame.1)
+                }
+                // `:32276`: `WorldGen.SwitchMonolith` (the
+                // `GamepadEnableGrappleCooldown` at `:32275` is a gamepad
+                // input seam — no port).
+                410 | 480 | 509 | 657 | 658 | 720 | 721 | 725 | 733 => {
+                    app.wiring
+                        .switch_monolith(&mut app.world, *x, *y, *kind, frame.0, frame.1)
+                }
+                // `:32283`: `BirthdayParty.ToggleManualParty`
+                // (`BirthdayParty.cs:145-163`): the flag flip, then the
+                // up-state edge credits THROW_A_PARTY (25) — the same
+                // request the wiring case-455 arm drains.
+                455 => {
+                    let was_up = crate::world_events::party_is_up(&app.world_events);
+                    app.world_events.manual_party = !app.world_events.manual_party;
+                    if !was_up && crate::world_events::party_is_up(&app.world_events) {
+                        let _ = app.achievements.notify_progression(25);
+                    }
+                }
+                // The campfire's frameY flip already ran in the core
+                // dispatch (`edit::interact_at`'s inline arm).
+                _ => {}
+            }
+            app.world_key = None;
+            return true;
+        }
         edit::TileInteraction::StationInteract { kind } => {
             // `Player.cs:33279-33284` (the `TileInteractionsUse` tail): the
             // clicked tile's filter lands in `CraftingUI._lastFilter` via
@@ -453,6 +505,9 @@ fn interaction_events(
         // The furniture interactions are consumed in `interact_tile` ahead of
         // this mapping; the arms only keep the match exhaustive.
         edit::TileInteraction::CandleToggled => (None, Vec::new()),
+        // The right-click toggle family (the Mech-28 click + the wiring
+        // halves) is consumed in `interact_tile` ahead of this mapping.
+        edit::TileInteraction::RightClickToggle { .. } => (None, Vec::new()),
         // The switch trip is consumed in `interact_tile` ahead of this
         // mapping — no cue, no drops.
         edit::TileInteraction::HitSwitch { .. } => (None, Vec::new()),
@@ -696,6 +751,95 @@ mod tests {
             *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
             mirror,
             "the one case-2 pitch draw, nothing else"
+        );
+    }
+
+    /// W4-e10 — the right-click toggle family's Mech-28 click
+    /// (`Player.cs:32231`/`:32237`/`:32268`/`:32274`/`:32281`:
+    /// `PlaySound(28, myX * 16, myY * 16, 0)`): ONE case-28
+    /// `Next(-10, 11)` pitch draw on `UpdatePlayers` after the gate, at
+    /// the CLICKED cell — and the toggle runs (the fountain's frameY
+    /// flip; the party centre's flag + the THROW_A_PARTY up-edge).
+    #[test]
+    fn w4_e10_the_right_click_toggles_play_one_mech_draw_each() {
+        // The fountain: a full 2×4 at (10..12, 16..20), frameY (y-16)*18.
+        let mut w = object_world();
+        for x in 10..12 {
+            for y in 16..20 {
+                set_tile(&mut w, x, y, 207);
+                let i = w.index(x, y);
+                w.tiles[i].frame_x = ((x - 10) * 18) as i16;
+                w.tiles[i].frame_y = ((y - 16) * 18) as i16;
+            }
+        }
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        let mut player = Player::spawn(&app.world);
+        player.x = 10.0 * TILE_PX;
+        player.y = 18.0 * TILE_PX;
+        app.player = Some(player);
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (10.0 * TILE_PX, 18.0 * TILE_PX),
+            sound_volume: 1.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        let mut mirror = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        let _ = mirror.next_range(-10, 11); // the one case-28 pitch draw
+        let before = app.audio.played_count();
+        assert!(interact_tile(&mut app, 10, 18), "the fountain fires");
+        assert_eq!(app.audio.played_count(), before + 1, "the Mech-28 click");
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            mirror,
+            "one case-28 draw, nothing else"
+        );
+        assert_eq!(app.world.tile_frame_y(10, 16), 72, "SwitchFountain flipped");
+        // The party centre: the click flips the manual flag and the
+        // up-edge credits THROW_A_PARTY — one more Mech draw.
+        set_tile(&mut app.world, 12, 19, 455);
+        let _ = mirror.next_range(-10, 11);
+        let before = app.audio.played_count();
+        assert!(!app.world_events.manual_party);
+        assert!(interact_tile(&mut app, 12, 19), "the party centre fires");
+        assert!(app.world_events.manual_party, "ToggleManualParty");
+        assert_eq!(app.audio.played_count(), before + 1);
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            mirror
+        );
+        assert!(
+            app.achievements.take_completed_events().contains(&"THROW_A_PARTY"),
+            "the up-edge credits the party achievement"
+        );
+        // The silent twin: the gate refuses before the draw — the toggle
+        // still runs (the C# plays no sound at volume 0, the state moves).
+        let mut app2 = flow_app(None, vec![], vec![]);
+        let mut w2 = object_world();
+        set_tile(&mut w2, 12, 19, 455);
+        app2.world = w2;
+        app2.player = Some(Player::spawn(&app2.world));
+        app2.audio.set_listener(crate::sound::Listener {
+            camera_center: (0.0, 0.0),
+            sound_volume: 0.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        let rng_before = app2.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        let before2 = app2.audio.played_count();
+        assert!(interact_tile(&mut app2, 12, 19));
+        assert!(app2.world_events.manual_party, "the toggle is not audio-gated");
+        assert_eq!(app2.audio.played_count(), before2, "silent: no play");
+        assert_eq!(
+            *app2.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            rng_before,
+            "the muted Mech click is draw-free"
         );
     }
 

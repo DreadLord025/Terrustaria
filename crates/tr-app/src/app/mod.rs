@@ -4551,6 +4551,9 @@ fn apply_tr_toggles(world: &mut World, ops: &[crate::env::TrToggle]) {
                 edit::TileInteraction::CandleToggled => {
                     log::info!("TR_TOGGLE {},{} -> candle toggled", op.x, op.y)
                 }
+                edit::TileInteraction::RightClickToggle { kind, .. } => {
+                    log::info!("TR_TOGGLE {},{} -> right-click toggle ({kind})", op.x, op.y)
+                }
                 edit::TileInteraction::ChairSit { .. } => {
                     log::info!("TR_TOGGLE {},{} -> chair sit", op.x, op.y)
                 }
