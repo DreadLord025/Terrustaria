@@ -1787,16 +1787,22 @@ mod chest_save_tests {
         app.player = None;
         app.settings.map_enabled = false;
         app.achievements.save_path = Some(ach_path.clone());
-        // Partial progress only — no completion event fires.
-        app.achievements.notify(CondKind::ItemPickup(9));
+        // Partial progress only — one of SLAYER_OF_WORLDS' 15 conditions,
+        // the row stays open so NO completion event fires; only the quit
+        // route's save call can persist this.
+        app.achievements.notify(CondKind::NpcKilled(13));
+        assert!(!ach_path.exists(), "no completion save fired");
         app.save_and_quit();
         assert!(ach_path.exists(), "the quit route wrote the achievements file");
         let mut fresh = AchievementManager::registry();
         achievements::load(&ach_path, &mut fresh);
-        assert!(
-            fresh.list.iter().any(|a| a.name == "TIMBER" && a.completed),
-            "the pickup rode the quit save"
-        );
+        let slayer = fresh
+            .list
+            .iter()
+            .find(|a| a.name == "SLAYER_OF_WORLDS")
+            .unwrap();
+        assert!(slayer.conditions[0].completed, "the partial condition rode the quit save");
+        assert!(!slayer.completed, "the row stays open");
         crate::test_world_helpers::remove_scratch(&dir);
     }
 }
