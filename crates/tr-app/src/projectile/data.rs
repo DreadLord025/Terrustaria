@@ -587,6 +587,13 @@ pub const TRAP_SPIKY_BALL: u16 = 185;
 /// f19 F3 fix — the old 185 stand-in values are retired; correcting the row
 /// before the arm existed would have parked the spear in `_ => {}`).
 pub const TRAP_SPEAR: u16 = 186;
+/// The Flamethrower Trap's jet (`ProjectileID.FlamethrowerTrap = 187`,
+/// `Projectile.cs:2741-2751`: aiStyle 38, 6×6, `alpha = 255`,
+/// `tileCollide = false`, `ignoreWater`, `timeLeft = 60`, trap — NEITHER
+/// friendly nor hostile: the jet itself damages nothing, its 6-tick cycle
+/// spawns the 188 FlamesTrap children). W4-d4 landed the row with the
+/// `ai_flame_jet` arm.
+pub const FLAMETHROWER_TRAP: u16 = 187;
 /// The Venom Dart Trap's projectile (the C# `VenomDartTrap = 980`,
 /// `Projectile.cs:9330-9339`; the WIRE-1 legacy named it TRAP_SPIKY).
 pub const TRAP_VENOM_DART: u16 = 980;
@@ -2272,6 +2279,25 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // convention — the spawn sites own the flags; the port's
             // `spawn_with_data` defaults friendly true).
             TRAP_SPEAR => (10.0, 14.0, 37, -1, 300, 0, false, false, true, RESET_STATE),
+            // `:2741-2751` — the Flamethrower Trap's jet (187): 6x6,
+            // aiStyle **38**, alpha 255, tileCollide false, ignoreWater
+            // (the overlay below), timeLeft 60, trap; the stock penetrate
+            // 1 (`:774` — the arm writes no override). NEITHER friendly
+            // nor hostile in the C# — the spawn site holds friendly false
+            // and the damage walks refuse the kind (the dungeon-debris
+            // precedent); the jet's damage rides its 188 children.
+            FLAMETHROWER_TRAP => (
+                6.0,
+                6.0,
+                38,
+                1,
+                60,
+                0,
+                false,
+                false,
+                true,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             // The wiring.device arms (M7-WIRE-2): the explosives 141's
             // explosion (`Projectile.cs:1953-1965` — aiStyle 16, 260×260,
             // `timeLeft` 2, `tileCollide = false`, trap), the land mine's
@@ -4215,7 +4241,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == GOLF_CLUB_HELPER
             // W4-d4 — `Projectile.cs:2735`: the Spear Trap's spear (186)
             // sets `ignoreWater = true` (the row landed with the 37 arm).
-            || kind == TRAP_SPEAR,
+            || kind == TRAP_SPEAR
+            // W4-d4 — `Projectile.cs:2748`: the flame jet (187) sets
+            // `ignoreWater = true` (the row landed with the 38 arm).
+            || kind == FLAMETHROWER_TRAP,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).

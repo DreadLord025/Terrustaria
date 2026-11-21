@@ -11353,6 +11353,44 @@ impl Projectile {
         self.pos += v;
     }
 
+    /// `AI()`'s aiStyle-38 arm (`Projectile.cs:27500-27512`) — the
+    /// Flamethrower Trap's jet (187, the style's only `SetDefaults` row,
+    /// `:2741-2751`). W4-d4: the row + arm land together (the wiring drain's
+    /// old 187 drop is lifted).
+    ///
+    /// The jet counts `ai[0]`; at ≥6 it resets, plays `SoundID.Item34` and
+    /// (owner-gated) spawns the 188 FlamesTrap with the jet's own
+    /// velocity/damage/knockBack (`:27502-27511`). aiStyle 38 is on
+    /// `UpdatePosition`'s skip list (`:20435`) → NO integrate; the jet hangs
+    /// at its spawn point for its 60-tick life. The cue rides `wants_sound`,
+    /// the child spawn rides `wants_dart_spawns` (the pool cannot spawn
+    /// mid-iteration).
+    fn ai_flame_jet(&mut self, local_owner: u8) {
+        self.ai[0] += 1.0;
+        if self.ai[0] >= 6.0 {
+            self.ai[0] = 0.0;
+            // `:27506` — `SoundEngine.PlaySound(SoundID.Item34, position)`.
+            self.wants_sound = Some((2, 34, self.pos.x, self.pos.y, 0.0));
+            // `:27507-27510` — the owner-gated 188 spawn. `NewProjectile`
+            // centres the box (`:10876-10877`), so the spawn site subtracts
+            // the 6×6 flame's half-box from the jet's top-left position.
+            if self.owner == local_owner {
+                self.wants_dart_spawns.push((
+                    FLAMES_TRAP,
+                    self.pos.x - 3.0,
+                    self.pos.y - 3.0,
+                    self.vel.x,
+                    self.vel.y,
+                    self.damage,
+                    self.knock_back,
+                    0.0,
+                    0.0,
+                    0,
+                ));
+            }
+        }
+    }
+
     /// `AI_158_BabyBird` (`Projectile.cs:48757-48928`) — the buff-216 baby bird
     /// (759, the style's only kind): the perch keep-alive, the 6-tick 5-frame
     /// walk, the 800-px target hunt with the intersect/close/far/all-home
@@ -17579,6 +17617,13 @@ impl ProjectilePool {
                         // row (the 185 stand-in retired). The arm owns its
                         // integration (tileCollide false, `:2734`).
                         37 => self.slots[i].ai_trap_spear(world),
+                        // W4-d4 — `AI()`'s `else if (this.aiStyle == 38)`
+                        // (`Projectile.cs:27500-27512`): the Flamethrower
+                        // Trap's jet (187). The 6-tick cycle's Item34 cue
+                        // rides `wants_sound`, the 188 child rides
+                        // `wants_dart_spawns`. NO movement: aiStyle 38 is
+                        // on `UpdatePosition`'s skip list (`:20435`).
+                        38 => self.slots[i].ai_flame_jet(local_owner),
                         // S1-P-i16 — the aiStyle-77 Electrosphere sphere
                         // (`AI()` `:30671-30761`): the fade/pulse/frame
                         // machine + the dust draws; the arm owns its
@@ -19909,6 +19954,12 @@ impl ProjectilePool {
                     && !self.slots[i].friendly
                     && !DUNGEON_DEBRIS.contains(&self.slots[i].kind)
                     && self.slots[i].kind != SLIME_MINION
+                    // W4-d4 — the flame jet 187 is stock `hostile = false`
+                    // (`Projectile.cs:2741-2751` sets neither flag), so
+                    // `Damage_EVP` refuses (`:14775`) — the `!friendly`
+                    // proxy must not hurt the player (the debris exemption
+                    // precedent).
+                    && self.slots[i].kind != FLAMETHROWER_TRAP
                 {
                     self.damage_player(i, player.as_deref_mut(), rng);
                 }
@@ -22705,6 +22756,14 @@ impl ProjectilePool {
             // refusal `:12611`). The fresh sphere spawns friendly (the
             // `:788` default) and hits normally.
             if p.kind == 443 && !p.friendly {
+                continue;
+            }
+            // W4-d4 — the Flamethrower Trap's jet 187 (`SetDefaults`
+            // `Projectile.cs:2741-2751`): NEITHER friendly nor hostile in
+            // the C# — the jet damages no NPC (`Damage_PVE_Inner`'s
+            // `!friendly` refusal `:12611`); its damage rides the 188
+            // children. The spawn site holds friendly false.
+            if p.kind == FLAMETHROWER_TRAP {
                 continue;
             }
             if refuses_friendly(n, p.kind, kill_guide, kill_clothier) {
@@ -25693,9 +25752,16 @@ mod arrow_tests {
         assert!(spiky.trap);
         assert_eq!(TRAP_SPIKY_BALL, 185, "the C# ProjectileID.SpikyBallTrap");
         assert_eq!(TRAP_SPEAR, 186, "the C# ProjectileID.SpearTrap");
-        // The flame jet 187 (aiStyle 38) is unported — no data, the emission
-        // drops at the drain.
-        assert!(proj_data(187).is_none());
+        // W4-d4: the flame jet 187 (aiStyle 38) carries its row + the
+        // `ai_flame_jet` arm (`Projectile.cs:2741-2751`/`:27500-27512`).
+        let jet = proj_data(187).expect("the 187 row (W4-d4)");
+        assert_eq!((jet.w, jet.h), (6.0, 6.0), "`:2743-2744`");
+        assert_eq!(jet.ai_style, 38, "`:2745`");
+        assert_eq!(jet.alpha, 255, "`:2746`");
+        assert!(!jet.tile_collide, "`:2747`");
+        assert!(jet.ignore_water, "`:2748`");
+        assert_eq!(jet.time_left, 60, "`:2749`");
+        assert!(jet.trap, "`:2750`");
         // The projectile-ai task moved the shuriken onto the data table: its
         // `SetDefaults` row (`Projectile.cs:828-836`) is the 22x22 aiStyle-2
         // box with `penetrate = 4`.
@@ -25890,6 +25956,102 @@ mod arrow_tests {
         assert!(
             (p.rot - (-std::f32::consts::FRAC_PI_2)).abs() < 1e-6,
             "the anchor-pointing rotation"
+        );
+    }
+
+    /// W4-d4 — the aiStyle-38 flame jet (187, `Projectile.cs:27500-27512`):
+    /// the 6-tick cycle plays Item34 and spawns one 188 FlamesTrap child
+    /// with the jet's velocity/damage/knockBack; the jet itself NEVER
+    /// moves (aiStyle 38 is on `UpdatePosition`'s skip list, `:20435`).
+    #[test]
+    fn the_flame_jet_cycles_every_six_ticks_and_never_moves() {
+        fn step(pool: &mut ProjectilePool, w: &mut World) {
+            let mut npcs = Vec::new();
+            pool.update(
+                w,
+                &mut npcs,
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
+        }
+        let mut pool = ProjectilePool::new();
+        let jet = pool
+            .spawn_with_data(FLAMETHROWER_TRAP, 160.0, 200.0, 5.0, 0.0, 40, 2.0)
+            .unwrap();
+        let mut w = world();
+        // Ticks 1-5: the counter climbs, no cue and no child yet.
+        for _ in 0..5 {
+            step(&mut pool, &mut w);
+        }
+        assert_eq!(pool.slots()[jet].ai[0], 5.0, "`:27502`");
+        assert!(pool.drain_proj_sounds().is_empty(), "no cue before the 6th tick");
+        assert_eq!(
+            pool.slots().iter().filter(|p| p.active && p.kind == FLAMES_TRAP).count(),
+            0,
+            "no child before the 6th tick"
+        );
+        // Tick 6: the reset, the Item34 cue and the owner-gated 188 spawn.
+        step(&mut pool, &mut w);
+        assert_eq!(pool.slots()[jet].ai[0], 0.0, "the reset (`:27505`)");
+        assert_eq!(
+            pool.drain_proj_sounds(),
+            vec![(2, 34, 160.0, 200.0, 0.0)],
+            "the Item34 cue (`:27506`)"
+        );
+        let child = pool
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == FLAMES_TRAP)
+            .expect("the 188 child (`:27509`)");
+        // The spawn site passed the jet's top-left minus the 6×6 half-box
+        // (`NewProjectile`'s centre convention, `:10876-10877`): the child
+        // spawned at (157, 197). The C# `UpdateProjectiles` walk reaches
+        // the fresh higher-index slot in the SAME frame — the child's
+        // aiStyle-23 arm ran its 3 sub-steps (extraUpdates 2): +5 px X
+        // each, so the box sits at (172, 197) after the spawn tick.
+        assert_eq!(child.pos, Vec2::new(172.0, 197.0));
+        assert_eq!(child.vel, Vec2::new(5.0, 0.0), "the jet's velocity");
+        assert_eq!(child.damage, 40, "the jet's damage");
+        assert_eq!(child.knock_back, 2.0, "the jet's knockBack");
+        // The jet never moves — its position is the spawn point after 6
+        // ticks of `velocity = (5, 0)` (`:20435`'s aiStyle-38 skip).
+        assert_eq!(pool.slots()[jet].pos, Vec2::new(160.0, 200.0));
+        assert_eq!(pool.slots()[jet].vel, Vec2::new(5.0, 0.0));
+    }
+
+    /// W4-d4 — the flame jet's 188 spawn is OWNER-gated (`:27507`): a
+    /// foreign-owned jet still cycles its counter and queues the cue
+    /// (`:27502-27506` run unconditionally), but never queues the child.
+    #[test]
+    fn the_flame_jet_child_spawn_is_owner_gated() {
+        let mut p = Projectile {
+            active: true,
+            kind: FLAMETHROWER_TRAP,
+            owner: 1,
+            pos: Vec2::new(160.0, 200.0),
+            vel: Vec2::new(5.0, 0.0),
+            damage: 40,
+            knock_back: 2.0,
+            ..Default::default()
+        };
+        for _ in 0..6 {
+            p.ai_flame_jet(0);
+        }
+        assert_eq!(p.ai[0], 0.0, "the counter still cycles (`:27502-27505`)");
+        assert_eq!(
+            p.wants_sound,
+            Some((2, 34, 160.0, 200.0, 0.0)),
+            "the cue plays regardless of owner (`:27506`)"
+        );
+        assert!(
+            p.wants_dart_spawns.is_empty(),
+            "the 188 spawn is owner-gated (`:27507`)"
         );
     }
 }
@@ -31327,10 +31489,12 @@ mod widened_state_tests {
         assert_eq!(deadeye.extra_updates, 1, "`extraUpdates = 1` (`:2671`)");
         assert_eq!(deadeye.penetrate, -1, "`penetrate = -1` (`:2666`)");
         assert!(!deadeye.arrow, "the 180 arm never sets `arrow`");
-        assert!(
-            proj_data(187).is_none(),
-            "the flame jet stays a passthrough"
-        );
+        // W4-d4: the flame jet 187 left the passthrough state — its row
+        // writes `alpha = 255` (`Projectile.cs:2746`), so it sits outside
+        // the reset sweep like the shadow hand (the row witness lives in
+        // `the_family_data_map_is_verbatim`).
+        let jet = proj_data(187).unwrap_or_else(|| panic!("the flame jet lost its row"));
+        assert_eq!(jet.alpha, 255, "`alpha = 255` (`:2746`)");
     }
 
     #[test]
