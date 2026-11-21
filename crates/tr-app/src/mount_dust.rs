@@ -80,9 +80,12 @@ pub fn drill_beam_dust(
     ctx: &SpawnCtx,
     world: &World,
 ) {
-    // `:3107` — `(vector - mountedPlayer.Center).ToRotation()` (atan2).
+    // `:3107` — `(vector - mountedPlayer.Center).ToRotation()`:
+    // Utils.cs:1655-1658 `(float)Math.Atan2(v.Y, v.X)` — Math.Atan2 is
+    // DOUBLE of the widened floats, cast back (e4 to_rotation precedent,
+    // orchestrator_dust.rs:76-78).
     let d = target - player_center;
-    let num = d.y.atan2(d.x);
+    let num = (d.y as f64).atan2(d.x as f64) as f32;
     for _ in 0..2 {
         // `:3110` — the Next(2) side pick, the f32 π/2 offset.
         let side = if rng.next_max(2) == 1 { -1.0 } else { 1.0 };
@@ -1843,7 +1846,7 @@ mod tests {
         let mut mpool = DustPool::new();
         let mut mirror = UnifiedRandom::new(7);
         let d = target - center;
-        let num = d.y.atan2(d.x);
+        let num = (d.y as f64).atan2(d.x as f64) as f32;
         for _ in 0..2 {
             let side = if mirror.next_max(2) == 1 { -1.0 } else { 1.0 };
             let num2 = num + side * (std::f32::consts::PI / 2.0);
