@@ -595,4 +595,39 @@ mod tests {
         // A second town NPC's emergence never re-fires the row.
         assert_eq!(app.notify_progression_net(43), None);
     }
+
+    /// W4-c36 NOTIFY-SYNC (3) — TO_INFINITY_AND_BEYOND's consumer half:
+    /// the row is a single `Flag("Do")` (`AchievementInitializer.cs:375-377`);
+    /// d20b's published kill-arm hunk (research/30 NOTIFY-SYNC (3)) drains
+    /// the 1020's altitude death into
+    /// `complete_condition("TO_INFINITY_AND_BEYOND", "Do")`
+    /// (`Projectile.cs:70857-70862` — `Kill()`'s 1020 arm, the
+    /// `pos.y - height <= 640 && owner == myPlayer` gate). The named-row
+    /// completion fires once; a second drone death is a no-op. WRITTEN
+    /// NOT RUN (code-only mode).
+    #[test]
+    fn w4_c36_to_infinity_completes_on_the_do_flag() {
+        use crate::achievements::CondKind;
+        let mut app = app_with_player();
+        let row = app
+            .achievements
+            .list
+            .iter()
+            .find(|a| a.name == "TO_INFINITY_AND_BEYOND")
+            .expect("the registry row");
+        assert_eq!(row.conditions.len(), 1);
+        assert!(matches!(row.conditions[0].kind, CondKind::Custom("Do")));
+        assert!(!done(&app, "TO_INFINITY_AND_BEYOND"));
+        // The drain's completion shape (the lava-fishing pattern).
+        let first = app
+            .achievements
+            .complete_condition("TO_INFINITY_AND_BEYOND", "Do");
+        assert_eq!(first, Some("TO_INFINITY_AND_BEYOND"));
+        assert!(done(&app, "TO_INFINITY_AND_BEYOND"));
+        // A second altitude death never re-fires.
+        assert_eq!(
+            app.achievements.complete_condition("TO_INFINITY_AND_BEYOND", "Do"),
+            None
+        );
+    }
 }

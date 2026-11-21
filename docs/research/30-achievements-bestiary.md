@@ -437,7 +437,7 @@ branches exist.
 | PET_THE_PET | "Do" | none — the petting stop is cited-unported in `player.rs:9178` | no | `Player.cs:33350`/`:33397` unowned |
 | FIND_A_FAIRY | "Do" | d42 `88df58090` WIP adds the FairyCritter enum variants (non-compiling, superseded) | no | fairy kinds + the sight seam (`NPC.cs:48647`, HandleSpecialEvent 22) |
 | PURIFY_ENTIRE_WORLD | "Do" | f22 `e7756fa70` does NOT port the Dryad status dialog (grep negative) | no | `Main.cs:40276` unowned |
-| TO_INFINITY_AND_BEYOND | "Do" | **d20 `13de9ccf6` ports AI_195 Jim's Drone + the altitude/held-5451 kill gates** — but NO achievement wire, and main's `proj_data` has no 1020 row (the spawn drops) | no | after d20 merge: the 1020 kill arm → `complete_condition("TO_INFINITY_AND_BEYOND", "Do")` when `pos.y - height <= 640 && owner == myPlayer` (`Projectile.cs:70857-70862`) |
+| TO_INFINITY_AND_BEYOND | "Do" | **d20 `13de9ccf6` ports AI_195 Jim's Drone + the altitude/held-5451 kill gates** (`projectile_ai_misc.rs:1092-1110` — the `pos.y - h <= 640` kill at `:1105-1109`) — but NO achievement wire; the 1020 `proj_data` row IS on d20 (`data.rs:3633`), NOT on main (the spawn drops there) | no | the exact kill-arm hunk for d20b is PUBLISHED in NOTIFY-SYNC (3) below — the `Kill()` 1020 arm (`Projectile.cs:70857-70862`) latches a `wants_to_infinity` intent at the death hook, the world-sim drain fires `complete_condition("TO_INFINITY_AND_BEYOND", "Do")` (the c36 lava-fishing pattern) |
 | GOING_OLDSCHOOL | "Do" | none — the classic title screen is unported on every tip | no | `Main.cs:63018` → `AchievementsHelper.cs:382-385` unowned |
 
 **Net: 0 of 20 wireable in-tree today; 4 rows (40, 43, 45, TO_INFINITY) have
@@ -626,6 +626,112 @@ The adapter's `shimmering: false` fold (`npc.rs:10186`) MUST become the
 live buff-353 flag (`npc.shimmering`) in the same merge — f47's seam
 already reads it. Witness (this branch, the consumer half):
 `w4_c36_new_digs_fires_on_progression_forty_three`.
+
+### (3) TO_INFINITY_AND_BEYOND — the exact kill-arm hunk for d20b
+
+d20's tip `13de9ccf6` ports `ai_jims_drone`
+(`projectile_ai_misc.rs:1092`): the altitude kill is at `:1105-1109`
+(`p.pos.y - p.h <= 640.0` → the kill-flag triple + return, inside the
+`p.owner == local_owner` block — `Projectile.cs:40933-40937`). The C#
+achievement fires in **`Kill()`**, not the AI: `Projectile.cs:70855-70862`
+— the `type == 1020 || type == 1105` arm's 1020 half completes
+`GetCondition("TO_INFINITY_AND_BEYOND", "Do")` when
+`position.Y - height <= 640f && owner == Main.myPlayer`. So ANY 1020
+death at altitude credits (the AI's altitude kill is the normal path;
+a tile/expire death below 640 px from the top also reads the same
+position gate). The port's death-hook seam is the pool's
+`if !self.slots[i].active` block (`projectile.rs:20141`, d20 tip) — the
+`moonlord_arrow_kill(i)` neighbourhood (`:20205`), kind-gated,
+once-per-death. The 1020 row exists on d20 (`data.rs:3633`) — the hunk
+is constants-copy for d20b (its sweep is active); NOT applied on c36
+(the row + the AI are not on this base).
+
+**Hunk A — `crates/tr-app/src/projectile.rs`, the `Projectile` struct
+tail (d20 `:785`'s `pub owner_hit_check: bool,` — after it, before the
+closing brace), add:**
+
+```rust
+    /// W4-c36 NOTIFY-SYNC (3) — the TO_INFINITY_AND_BEYOND intent
+    /// (`Projectile.cs:70857-70862`, `Kill()`'s 1020 arm): the death hook
+    /// latches it when a Jim's Drone dies at `pos.y - h <= 640` under the
+    /// local owner; the world sim drains it into
+    /// `complete_condition("TO_INFINITY_AND_BEYOND", "Do")` (the
+    /// `wants_lava_fishing_achievement` pattern — the pool cannot borrow
+    /// the App's manager mid-iteration).
+    pub wants_to_infinity: bool,
+```
+
+**plus the three literal tails** (the `Default` impl d20 `:873` and the
+two test fixtures d20 `:30655`/`:31065` — after each
+`owner_hit_check: false,`):
+
+```rust
+            wants_to_infinity: false,
+```
+
+**Hunk B — `crates/tr-app/src/projectile.rs`, the death-hook chain
+(d20 `:20205`'s `self.moonlord_arrow_kill(i);` — after it), insert:**
+
+```rust
+                // W4-c36 NOTIFY-SYNC (3) — `Kill()`'s 1020 arm
+                // (`Projectile.cs:70855-70862`): Jim's Drone's death at
+                // `position.Y - height <= 640f` under `Main.myPlayer`
+                // completes TO_INFINITY_AND_BEYOND's "Do". The altitude
+                // gate re-reads the DEAD slot's position (the AI's kill
+                // at `:40933-40937` returns before any move; a
+                // tile/expire death reads its own last position — the
+                // C# reads the same field in Kill()). Kind-gated,
+                // once-per-death (a dead slot never returns to active).
+                // The 1105 half of the C# arm carries no achievement.
+                if self.slots[i].kind == 1020
+                    && self.slots[i].owner == local_owner
+                    && self.slots[i].pos.y - self.slots[i].h <= 640.0
+                {
+                    self.slots[i].wants_to_infinity = true;
+                }
+```
+
+**Hunk C — `crates/tr-app/src/projectile.rs`, the drain (beside
+`drain_lava_fishing_achievement`, c36 `:15026` — the same shape on d20's
+`drain_catches` neighbourhood `:15031`), add:**
+
+```rust
+    /// W4-c36 NOTIFY-SYNC (3) — the TO_INFINITY drain
+    /// (`Projectile.cs:70857-70862`): true when any 1020 died at altitude
+    /// under the local owner this pass; the world sim completes
+    /// TO_INFINITY_AND_BEYOND's "Do".
+    pub fn drain_to_infinity(&mut self) -> bool {
+        let mut fired = false;
+        for s in self.slots.iter_mut() {
+            if s.wants_to_infinity {
+                s.wants_to_infinity = false;
+                fired = true;
+            }
+        }
+        fired
+    }
+```
+
+**Hunk D — `crates/tr-app/src/world_sim/projectiles.rs`, the pass-tail
+drain (d20 `:562`'s splash drain — after the `for` loop, before the
+catch drain), insert:**
+
+```rust
+    // W4-c36 NOTIFY-SYNC (3) — the TO_INFINITY drain
+    // (`Projectile.cs:70857-70862`): the 1020's altitude death →
+    // `GetCondition("TO_INFINITY_AND_BEYOND", "Do").Complete()`.
+    if app.projectiles.drain_to_infinity() {
+        let _ = app
+            .achievements
+            .complete_condition("TO_INFINITY_AND_BEYOND", "Do");
+    }
+```
+
+Order note: the C# fires inside `Kill()` mid-pass; the port drains at
+the pass tail (the lava-fishing/splash convention — the completion is
+RNG-free, no stream impact). The `SoundID.Item62` cue + the 15-dust
+burst (`:70865-70869`) stay d20's cited visual seams. Witness (this
+branch, the consumer half): `w4_c36_to_infinity_completes_on_the_do_flag`.
 
 ## Task seeds
 
