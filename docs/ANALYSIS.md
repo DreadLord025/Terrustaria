@@ -39381,9 +39381,9 @@ re-read line-by-line (`NetMessage.cs:89-100`/`:913-927`,
 `WorldGen.cs:57813-57845`/`:41554-41838`/`:49855-50036`,
 `Chest.cs:590-607`, `Item.cs:385-395`, `WorldItem.cs:36`); the g48 `34`
 codec and the d92 `162` codec replicated byte-verbatim (keep-one at
-merge). 10 witness tests WRITTEN NOT RUN (2 `net.rs::w4_g52_*` byte pins —
+merge). 9 witness tests WRITTEN NOT RUN (2 `net.rs::w4_g52_*` byte pins —
 `34` round trip + `162` bodyless; 4 `netglue.rs::w4_g52_relay_tests`
 end-to-end — the `21` gate, the `162` ack, the `34` place/destroy arms;
-2 `chest.rs` table/store pins; 1 `edit/place.rs` `place_chest` pin; 1
-`chest.rs` `try_create_chest` pin) — **no compiler invoked**.
+2 `chest.rs` pins — the drop tables + `try_create_chest`; 1
+`edit/place.rs` `place_chest` pin) — **no compiler invoked**.
 
