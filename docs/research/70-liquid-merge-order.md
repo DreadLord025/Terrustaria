@@ -330,3 +330,28 @@ pins. All written-not-run until the gate.
    `app.liquid_tick` stays DEAD (no re-introduction).
 7. **`graphify update .`** on the merged branch, then the main merge per
    MAIN-RULES (ref-update, post-merge ancestor + symbol verification).
+
+## §13 — g45d co-lane FINAL reconcile (W4-g47 retire, 2026-11-21)
+
+Re-read against `origin/task/W4-g45-liquid-lava-honey-delays` tip
+**`6f5bd2a2d`** (the doc-sweep landing). The four post-`8e81814e` commits
+censused fn-by-fn against this branch's §10 owner table:
+
+| g45 commit | Surface | Owner verdict (FINAL) |
+| --- | --- | --- |
+| `fa96cf32a` | `Player.ItemCheck_UseBuckets` (`Player.cs:46318-46504`) + `editing/buckets.rs` (455 lines) + `PutItemInInventoryFromItemUsage` + the 5 splashes + 10 witnesses | **g45 owns it whole** — a Player/editing surface, NOT liquid.rs; zero overlap with the g47 base files. The graft takes the module + its `world_sim/editing.rs` wiring as-is; its `add_water(&mut World)` calls ride g45b's own signature ripple (§"Graft order" step 5). No g47 action. |
+| `c8908a55d` | the `LiquidCheck` down arm's LIVE post-burn reads (`:1286` gate + `:1303` merge-type reads AFTER the `:1280` burn) + 4 witnesses (`liquid_downarm_live`) | **ADOPTED onto the g47 base this retire phase** — the g47 canonical `liquid_check` had the same pre-kill-copy bug (the down snapshot taken at `:1274` before the burn). The re-read + `flag`-stays-pre-kill form landed verbatim; the 4 witnesses carried into g47's `liquid_downarm_live` module (fixture shape kept — the +6 embed is inert on the guard-free base, becomes the g45b precondition at the graft). **The g46 UNION has the SAME stale read** (`f57d7bacd`'s `liquid_check`: `down` copied before its `kill_tile`, gate reads the copy) — g46d's re-fold takes the g47 base form, which now carries the fix; the union's own copy is superseded, NOT re-merged. Dedupe at the graft: ONE `liquid_downarm_live` module (the g47 copy; g45's is byte-identical bar the module doc). |
+| `99a4f8ccf` | `shimmer_falls_every_visit_like_water` (the shimmer no-gate flow witness) | **DROPS at the union** — the g47 closeout's `shimmer_falls_every_visit_ungated` pins the same arm with the sharper zero-delay assertion (§11's pair-dedupe rule, one name kept: the g47 form). §11's count adjusts: the g45 shimmer-flow pin is a THIRD twin of the same pair, not a new pin. |
+| `8d581953b` | the fall arm's LIVE post-evaporation read (`own_now`, `:570-575`) + `the_fall_arm_moves_the_post_evaporation_level` | **ADOPTED onto the g47 base this retire phase** — the same `start.liquid` pre-read existed here; on this evap-free lane the live read is a no-op for pure falls but fixes the REACTION-consumption resurrection (the side merge zeroes the cell mid-visit, the fall must move the live 0). New g47 witness `the_fall_arm_reads_the_live_post_reaction_level` discriminates it without evap (lava+water side merge under quickSettle). The union ALREADY carries `own_now` (`f57d7bacd:832`) — the re-fold's base now matches it, zero delta. The g45 evap-form witness stays g45/union-owned (it needs the evap block; rides the graft, §11 row 1's convention). |
+| `6f5bd2a2d` | docs (research/104, the 69 ADDENDUM A1-A6, research/11, PORT_MAP, ANALYSIS, INDEX, anchors ×4) + the bucket witness rig fixes | **g45 owns its docs**; the 69 ADDENDUM's A1/A2 (the union dropped the g45b guards + fixtures) and A3 (the union's stale down-arm read — CONFIRMED still present at `f57d7bacd` this pass) fold into §8's re-fold obligations: the re-base onto the g47 tip now carries the down-arm fix natively, and step 5 still owns the guards. A6's graft order matches §12's. |
+
+**Net effect on §8/§12**: the g46d re-fold list is UNCHANGED (the two sim
+fixes now live on the g47 base the re-fold takes wholesale — they ride
+`dd66fa3a`'s successor tip automatically). The witness arithmetic against
+§11's 93 (which predates the four g45 doc-sweep commits — the union
+`f57d7bacd` 07:06 pre-dates `c8908a55d` 07:18 / `99a4f8ccf` 07:39 /
+`8d581953b` 07:51): +4 (the down-arm module — ONE copy, the g47 carry, the
+g45 original dedupes onto it), +1 (g45's evap-form fall witness, rides the
+graft), +1 (the g47 live-fall reaction pin), +0 (the g45 shimmer-flow twin
+DROPS onto the closeout's ungated pin) = **99 pins** in `liquid.rs`
+post-graft, plus the 2 wiring compose pins. All written-not-run.

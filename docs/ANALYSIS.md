@@ -18802,6 +18802,37 @@ the above-copy + the solid no-copy), `has_full_water_reads_the_visible_non_surfa
 storm 37, the negative west remainder, the wind-independent waterfall
 clock).
 
+### The g45d co-lane carry (W4-g47 retire, 2026-11-21)
+
+The g45 doc-sweep's two liquid.rs sim fixes adopted onto the g47 canonical
+base (research/70 §13's FINAL owner table; both were real fidelity gaps
+in the base body, not lane-specific deltas):
+
+- **The fall arm's LIVE read** (`Liquid.cs:570-575`, g45 `8d581953`):
+  `update_tile`'s down transfer now reads `own_now` (the live cell) after
+  the reaction block, not the `:464` entry snapshot — the side/up merge
+  can zero the checking cell mid-visit and the old pre-read resurrected
+  the consumed units into the cell below. On this evap-free lane the
+  reaction case is the discriminator; the g46 evap case rides the graft
+  (the union already carries `own_now` — the re-fold's base now matches).
+  Witness: `the_fall_arm_reads_the_live_post_reaction_level` (lava+water
+  side merge under quickSettle, the fall moves the live 0).
+- **The down arm's LIVE post-burn reads** (`Liquid.cs:1278-1306`, g45
+  `c8908a55`): `liquid_check` re-reads the cell after the `tileCut` burn
+  before the `:1286` gate + the `:1303` merge-type reads; `flag` stays
+  the pre-kill `:1274` read. The seven cut kinds outside
+  `tileObsidianKill` (444/518/519/549/637/638/711) now drain/merge like
+  the C#. The g46 UNION carries the SAME stale read — the re-fold takes
+  this fixed base form. Witnesses: the 4-pin `liquid_downarm_live`
+  module carried verbatim (one copy at the graft; g45's dedupes onto it).
+
+The g45 bucket module (`fa96cf32a`, `editing/buckets.rs`) is a
+Player/editing surface — g45 owns it whole, zero overlap with the g47
+base files. The g45 shimmer-flow witness (`99a4f8ccf`) drops onto the
+closeout's `shimmer_falls_every_visit_ungated` (same arm, sharper
+zero-delay pin). Post-graft count: 99 `liquid.rs` pins + 2 wiring compose
+pins (research/70 §13 supersedes §11's 93). All written, NOT run.
+
 ## The Frost Legion machine (R-25-1, 2026-11-13)
 
 `NPC.AI()`'s aiStyle-38 block (`NPC.cs:28995-29145`) is ported 1:1 as
