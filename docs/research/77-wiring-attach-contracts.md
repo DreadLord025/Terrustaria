@@ -8,6 +8,16 @@
 > hunk census run 2026-11-21 (every `origin/task/W4-*` branch scanned for
 > the target files/regions). **The merger (c42d / the research/95 union
 > lane) applies these hunks; g78 does not.**
+>
+> **SIGHT-RETIRE UPDATE (research/78, 2026-11-21):** §3.1 is CONSUMED —
+> c42 `f173fb88d` landed it as `MonolithToggle` / `use_switch_monolith`
+> (+ the real `quick_grapple_cooldown`); use c42's names (research/78
+> §1). §3.2 stays the break-lane contract. The §3.2 drop rides the
+> ObjectDrop FIX-ONCE (research/78 §2 — the core landed, the drains'
+> hunks published). §1.3's counter+scan half landed as
+> `held_3002_tick` (research/78 §3 carries the caller hunks). §4's
+> exact delete line-ranges (incl. the g64 file-union note) are in
+> research/78 §4.
 
 ## What g78 WIRED on its own branch (the uncontested seams)
 

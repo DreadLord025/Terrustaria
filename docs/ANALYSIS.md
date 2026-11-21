@@ -39446,3 +39446,51 @@ G6 key-widen changes no stream. The spelunker attach forms draw only
 through the caller's stream when attached (the `None` path draws nothing).
 9 new witnesses WRITTEN, NOT RUN (spelunker_helper 1, npc_hunter_tint 4,
 projectile_ai_light_items 4).
+
+### The sight-retire seal (W4-g78, 2026-11-21 — research/78)
+
+The sight family closes: every mechanic has a named final owner and a
+landed-or-published hunk (the bible: research/78 §5).
+
+* **The c42 wiring-seal**: research/77 §3.1 is CONSUMED at c42
+  `f173fb88d` — the landed names are `TileInteraction::MonolithToggle` /
+  `Wiring::use_switch_monolith` (NOT the §3.1 draft's
+  `MonolithSwitch`/`switch_monolith_use`), and c42 ported the REAL
+  `Player.quick_grapple_cooldown` (the §3.1 "no gamepad layer" deviation
+  note is superseded). §3.2 (the 657 Check2xX break check) stays the
+  break-lane contract.
+* **The ObjectDrop centre-gap FIX-ONCE** (the pre-existing ~15 px
+  left/up gap research/77 §3.2 flagged): the C# rect→centre conversion
+  (`Item.cs:49649-49652`, the 16×16 WorldItem box `WorldItem.cs:138`)
+  lands as `ObjectDrop::spawn_centre_px` (the per-kind rect census:
+  32×32 furniture; 16×16 doors 10/11 via `DropDoorItem` + the on-table
+  13/33/49/78 group whose `CheckOnTable1x1` spawns nothing itself — the
+  drop rides `KillTile`'s per-cell 16×16) + `spawn_item_drop_centre`
+  (the 14×14 box at centre−SIZE/2; **the draws are byte-identical** —
+  only the position differs, no stream change). WIRED at the ONE
+  uncontested consumer (the actuation drain, `world_sim/wiring.rs`);
+  the editing.rs/doors.rs/recall_teleport.rs drains are contested
+  (g85/g48, d79/e10/g24, g83) — the one-fix hunk locations + the lane
+  ownership: research/78 §2.3. **Deliberate scope limit:** the per-cell
+  /pot/tree/wall 16×16-family drops keep the tile feed (the same class
+  of gap, but the whole-feed audit is the item-spawn lane's — recorded
+  so the merger does not fix the ObjectDrop drains twice).
+* **The held-3002 `spelunkerTimer`**: the counter+scan half lands
+  ATTACH-READY as `held_3002_tick` (g78's own module — the `byte`
+  counter rides the caller's `&mut u8`, `wrapping_add` matches the C#
+  `byte++`, the >=10 wrap runs ONE `add_spot_to_check` on the SHARED
+  helper instance; NO distance/netMode gate). The `Player` field + the
+  `world_sim/player.rs` tick/drain are contested (18 lanes at the
+  window) — hunks research/78 §3.
+* **The keep-one dedupe**: the EXACT delete line-ranges publish
+  (research/78 §4) — g78's copy re-exports d9's `pub` bitset+fn; d13's
+  inline table deletes at `projectile_ai_pets124.rs:59-80` (the g64
+  file-union copy: :57-78, the fn body byte-identical); d56's tr-render
+  copy STAYS (tr-render has no tr-core/tr-app dependency — verified
+  Cargo.toml; the crate-boundary exception).
+
+RNG: the FIX-ONCE changes positions ONLY (the spawn draws are
+byte-identical, proven by the draw-stream twin witness); the held tick
+draws only through the caller's UpdatePlayers stream on the wrap.
+6 new witnesses WRITTEN, NOT RUN (spelunker_helper 3, edit/kill 1,
+items 1, wiring 1).
