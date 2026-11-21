@@ -226,6 +226,7 @@
 //! | 1079-1088 | `:87886-87900` | the 105/107 GoblinTinkerer + 106/108 Wizard death (5 gores each, shimmer) |
 //! | 1089-1098 | `:87916-87940` | the 123/124 Mechanic + 22 Guide death (5 gores each, shimmer) |
 //! | 1099-1108 | `:87956-87983` | the 550 Bartender + 588/589 Golfer death (5 gores each, +8 X offsets, shimmer) |
+//! | 1109-1114 | `:88016-88021` | the 633 BestiaryGirl death (6 gores, altTexture/shimmer head variants) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -6399,6 +6400,47 @@ fn golfer_death(
     gore.new_gore(rng, world, Vec2::new(pos.x + 8.0, pos.y + 34.0), vel, if shimmer { 1313 } else { 1111 }, 1.0); // :87983
 }
 
+/// The 633 BestiaryGirl death (`NPC.cs:87995-88021`, sites 1109-1114): the
+/// 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then 6
+/// gores. The head/middle types (`num646`/`num647`) start at 1219/1220,
+/// become 1223/1224 when `altTexture == 2`, and 1377/1379 (or 1378/1380
+/// when altTexture==2) when shimmer. The tail is 1221 (1382 shimmer) at
+/// +34, then 1222/1222 (1381 shimmer) at +34 (the second at +8 X). Scale
+/// defaults to 1.
+///
+/// `altTexture` stand-in: the port has NO altTexture field, so the
+/// `altTexture == 2` branch never fires (the head/middle stay 1219/1220 or
+/// the shimmer 1377/1379).
+fn bestiary_girl_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer = npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(633);
+    // `:87999-88015` — the head/middle types (the altTexture==2 stand-in
+    // never fires).
+    let (num646, num647) = if shimmer { (1377, 1379) } else { (1219, 1220) };
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, num646, 1.0); // :88016
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, num647, 1.0); // :88017
+    gore.new_gore(rng, world, Vec2::new(pos.x + 8.0, pos.y + 20.0), vel, num647, 1.0); // :88018
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, if shimmer { 1382 } else { 1221 }, 1.0); // :88019
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, if shimmer { 1381 } else { 1222 }, 1.0); // :88020
+    gore.new_gore(rng, world, Vec2::new(pos.x + 8.0, pos.y + 34.0), vel, if shimmer { 1381 } else { 1222 }, 1.0); // :88021
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -7181,6 +7223,10 @@ pub fn hit_effect_c(
     // `:87962-87984` — the 588/589 Golfer arm (sites 1104-1108).
     if (npc_type == 588 || npc_type == 589) && npc.hp <= 0 {
         golfer_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87985-88022` — the 633 BestiaryGirl arm (sites 1109-1114).
+    if npc_type == 633 && npc.hp <= 0 {
+        bestiary_girl_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -11310,6 +11356,32 @@ mod tests {
         assert_eq!(types, vec![1109, 1110, 1110, 1111, 1111]);
         assert_eq!(gore.slot(2).position, Vec2::new(108.0, 120.0));
         assert_eq!(gore.slot(4).position, Vec2::new(108.0, 134.0));
+    }
+
+    /// `NPC.cs:88016-88021` — the BestiaryGirl death: the 6 gores
+    /// 1219/1220/1220/1221/1222/1222 (normal) or 1377/1379/1379/1382/1381/
+    /// 1381 (shimmer), with the +8 X offsets.
+    #[test]
+    fn w4_f10_the_bestiary_girl_death_uses_the_shimmer_variants() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 56.0);
+        n.variation_index = 0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1097);
+        bestiary_girl_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1219, 1220, 1220, 1221, 1222, 1222]);
+        assert_eq!(gore.slot(2).position, Vec2::new(108.0, 120.0));
+        assert_eq!(gore.slot(5).position, Vec2::new(108.0, 134.0));
+        let mut n2 = boss(100.0, 100.0, 40.0, 56.0);
+        n2.variation_index = 1;
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(1097);
+        bestiary_girl_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        let types2: Vec<i32> = gore2.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![1377, 1379, 1379, 1382, 1381, 1381]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
