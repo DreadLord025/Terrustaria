@@ -34608,17 +34608,66 @@ mod w4_c9_snail_wiring_tests {
             m.find_frame();
         }
         assert_eq!(m.frame, 0, "the idle wrap past row 1");
+        // The GoldBunny walk (vx 2): the |vx|+1 accumulator feeds +3.0 —
+        // the step every 3rd tick (the strict >6 edge: 6.0 NOT >6), the
+        // FULL-7 wrap to row 0 (`NPC.cs:76882-76892`).
+        let mut bu = Npc::new(NpcKind::GoldBunny, 0.0, 0.0, 1, 0.0);
+        bu.vx = 2.0;
+        for _ in 0..3 {
+            bu.find_frame();
+        }
+        assert_eq!(bu.frame, 1, "the first >6 walk step");
+        for _ in 0..18 {
+            bu.find_frame();
+        }
+        assert_eq!(bu.frame, 0, "the 7th step wraps 7 >= 7 to row 0");
+        // The GoldBunny air rows: rising 4, falling 6, counter zeroed.
+        bu.vy = -1.0;
+        bu.find_frame();
+        assert_eq!((bu.frame, bu.frame_counter), (4, 0.0));
+        bu.vy = 1.0;
+        bu.find_frame();
+        assert_eq!((bu.frame, bu.frame_counter), (6, 0.0));
+        // The GoldFrog wet swim rows by |vx| (`NPC.cs:76625-76636`).
+        let mut fr = Npc::new(NpcKind::GoldFrog, 0.0, 0.0, -1, 0.0);
+        fr.wet = true;
+        for (vx, row) in [(0.3f32, 10u32), (0.2, 11), (0.0, 12)] {
+            fr.vx = vx;
+            fr.find_frame();
+            assert_eq!(fr.frame, row, "the wet |vx| row");
+            assert_eq!(fr.sprite_dir, -1, "the unconditional sprite copy");
+        }
+        // The GoldFrog grounded walk: the 6-tick phases rows 0/6/8/9,
+        // the >= 23 reset (`NPC.cs:76654-76675`).
+        fr.wet = false;
+        fr.vx = 1.0;
+        fr.frame_counter = 0.0;
+        for _ in 0..6 {
+            fr.find_frame();
+        }
+        assert_eq!(fr.frame, 6, "the second walk phase");
+        for _ in 0..6 {
+            fr.find_frame();
+        }
+        assert_eq!(fr.frame, 8, "the third walk phase");
+        for _ in 0..11 {
+            fr.find_frame();
+        }
+        assert_eq!((fr.frame, fr.frame_counter), (9, 0.0), "the 23 reset");
     }
 
-    /// The gold critters' sheets + the bestiary order table: all three
+    /// The gold critters' sheets + the bestiary order table: all five
     /// strips are packed and the frame counts are the vanilla's (442 five
-    /// rows, 446 two, 447 six — `Main.cs:67128`).
+    /// rows, 446 two, 447 six — `Main.cs:67128`; 443 seven, 445 thirteen
+    /// — `:67128`/`:67118`).
     #[test]
     fn w4_c9_the_gold_critter_sheets_resolve() {
         for (kind, id, rows) in [
             (NpcKind::GoldBird, 442u16, 5u32),
             (NpcKind::GoldGrasshopper, 446, 2),
             (NpcKind::GoldMouse, 447, 6),
+            (NpcKind::GoldBunny, 443, 7),
+            (NpcKind::GoldFrog, 445, 13),
         ] {
             assert_eq!(crate::render::entities::texture_net_id(kind), id);
             assert_eq!(crate::render::entities::npc_rows(id), rows);
