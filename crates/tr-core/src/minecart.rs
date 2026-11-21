@@ -461,6 +461,29 @@ mod tests {
         assert_eq!(w.tile_frame_y(10, 20), -1);
     }
 
+    /// W4-g48 f11-tail-fix pin: the `(pound & flag4) && !mute` fail tail
+    /// (`:1163-1166`) NEVER removes the track — the C# `KillTile(fail: true)`
+    /// converts grass/moss + wakes framing and returns (`WorldGen.cs:63709-63737`),
+    /// and tile 314 matches none of the conversion rows. The f11 body's
+    /// `kill_tile(world, i, j, true)` mapped `true` to no_item and KILLED the
+    /// tile; the net-17 reader passes the DEFAULT `mute: false`
+    /// (`MessageBuffer.cs:1229`), so the branch fires there. The isolated rail
+    /// (front 0, both sides −1) with level neighbours both sides (mask 18)
+    /// cycles the front 0 → 1 under pound, flag4 fires — the tile survives.
+    #[test]
+    fn w4_g48_the_pound_fail_tail_never_removes_the_track() {
+        let mut w = world();
+        put_track(&mut w, 10, 20, 0, -1);
+        put_track(&mut w, 9, 20, 1, -1);
+        put_track(&mut w, 11, 20, 1, -1);
+        assert!(frame_track(&mut w, 10, 20, true, false), "the pound cycles");
+        let t = w.tile(10, 20).copied().expect("the track survived the fail tail");
+        assert_eq!(t.kind, 314, "KillTile(fail:true) never removes");
+        assert!(t.flags & FLAG_ACTIVE != 0, "still active");
+        assert_eq!(t.frame_x, 1, "front cycled to the level straight");
+        assert_eq!(t.frame_y, -1, "back unchanged (flag2 one-sided branch)");
+    }
+
     /// `GetNearbyTilesSetLookupIndex` (`:1170-1198`): the six-neighbour mask.
     #[test]
     fn w4_f11_the_lookup_index_masks_the_six_track_neighbours() {
