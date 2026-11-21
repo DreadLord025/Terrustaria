@@ -3285,6 +3285,86 @@ fn spider_death(
     }
 }
 
+/// The 329 Hellhound death (`NPC.cs:87735-87752`, sites 485-487): the
+/// 50x dust-5 burst at (2.5·hd, −2.5), then 485/486/487 at position,
+/// scale 1f.
+fn hellhound_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87745-87748` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 485, 1.0); // :87749
+    gore.new_gore(rng, world, pos, vel, 486, 1.0); // :87750
+    gore.new_gore(rng, world, pos, vel, 487, 1.0); // :87751
+}
+
+/// The 241 Blood Feeder death (`NPC.cs:87833-87849`, sites 488-489):
+/// the 50x dust-5 burst at (2.5·hd, −2.5), then 354/355 at position,
+/// scale 1f.
+fn blood_feeder_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87843-87846` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 354, 1.0); // :87847
+    gore.new_gore(rng, world, pos, vel, 355, 1.0); // :87848
+}
+
+/// The 242 Blood Jelly death (`NPC.cs:87850-87869`, sites 490-494): the
+/// 50x dust-5 burst at (2.5·hd, −2.5), then 356/357/357/358/358 at
+/// position, scale 1f.
+fn blood_jelly_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87860-87863` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    for t in [356, 357, 357, 358, 358] {
+        gore.new_gore(rng, world, pos, vel, t, 1.0); // :87864-87868
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -3670,6 +3750,20 @@ pub fn hit_effect_d(
     // Creeper (sites 465-484).
     else if matches!(npc_type, 163 | 238 | 164 | 165 | 239 | 240 | 236 | 237) {
         spider_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87735-87752` — the 329 Hellhound arm (sites 485-487). NOTE the
+    // C# chain order: the 329 arm precedes the spider arms; the arms are
+    // mutually exclusive on type so the port's order is equivalent.
+    else if npc_type == 329 {
+        hellhound_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87833-87849` — the 241 Blood Feeder arm (sites 488-489).
+    else if npc_type == 241 {
+        blood_feeder_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87850-87869` — the 242 Blood Jelly arm (sites 490-494).
+    else if npc_type == 242 {
+        blood_jelly_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -6486,6 +6580,41 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "spider {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87749-87751`/`:87847-87848`/`:87864-87868` — the
+    /// Hellhound triple 485/486/487, the Blood Feeder pair 354/355, the
+    /// Blood Jelly five 356/357x2/358x2.
+    #[test]
+    fn w4_f5d_the_hellhound_feeder_jelly_spawn_the_kind_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 36.0, 30.0);
+        for (kind, want) in [
+            (329, vec![485, 486, 487]),
+            (241, vec![354, 355]),
+            (242, vec![356, 357, 357, 358, 358]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(509);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "kind {kind}");
+            let mut twin = UnifiedRandom::new(509);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 36, 30);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
         }
     }
 }
