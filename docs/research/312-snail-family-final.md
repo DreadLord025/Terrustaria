@@ -1,11 +1,26 @@
-# 281 — The snail-family FINAL bible + the W4-c9 seal census
+# 312 — The snail-family FINAL bible + the W4-c9 seal census
 
 Status: FINAL / SEAL RECEIPT — W4-c9, branch `task/W4-c9-style67-snails`.
-Number taken per the registry (`150-research-number-registry.md` at
-`origin/task/W4-d54-dust-sites-world` tip `38bfd1d22`: "Numbers 281+ are
-FREE"); a fresh sweep of **all 360 pushed `task/W4-*` tips**
-(`git ls-tree docs/research/` per tip, key ≥281 extraction) found **zero
-claims ≥281** — 281 is the first free number, claimed here. The lane's
+
+> **REGISTRY-RENAME 281 → 312 (this round).** The seal commit `9252d6f31`
+> claimed 281 citing the registry's round-2 banner ("Numbers 281+ are
+> FREE") — but that banner is **SUPERSEDED by §7 (round 3)** in the same
+> registry file (`150-research-number-registry.md` at
+> `origin/task/W4-d54-dust-sites-world` tip `38bfd1d22`): §7 assigns the
+> block **281–303** to rename losers (281 = f26's 7h addendum assignment,
+> 282/283 = f26's 7i/7j) and states "**the free floor is now 304**… Do NOT
+> pick max-on-origin+1". A fresh full sweep of **all 363 remote refs**
+> (`git ls-tree docs/research/` per ref, numeric-key extraction ≥281)
+> found 281 at **TEN** tips (c9/c25/c32/d30/d106/d125/d9/f39/g48/g8),
+> 282 ×3, 283/284/293/298 taken — the seal's "zero claims ≥281" was a
+> stale/incomplete sweep. The floor 304 is ALSO contested (d119
+> housing-bible + g17 gore-world-final), 305 = f4, 308 = g13. **312 is
+> free at every ref** and sits clear of the live 304-308 claim cluster
+> (306/307/309-311 are the likely next max+1 picks) — claimed here per
+> the first-pushed-wins rule. All refs re-pointed (INDEX row 312,
+> ANALYSIS FINAL seal, PORT_MAP row 360, ROADMAP:424, anchors.txt:903).
+
+The lane's
 earlier register stays `109-snail-band-claims.md` (109 = c9's win per the
 registry §4 correction row: first-add 07:13:30 `2042d77f1`; d20→228,
 d36x→229, d36→236 are THEIR renames, not ours). Code-only mode: no
@@ -23,6 +38,15 @@ dirty-file mtimes 12:58–13:34 (>50 min stale at probe time). Verdict:
 GoldBunny/GoldFrog wiring round. Landed verbatim as wave 2 (`49d4cfb61`),
 no clobber. (No `c9b` branch exists on origin — d37's `0466ecf81`
 already noted "no c9b branch exists - apply on the same lane".)
+
+> **Successor-round addendum:** the co-lane DID wake later (its own
+> 2×90s dead-probe at 14:25–14:29, then wave 2 `49d4cfb61` 15:33,
+> witnesses `abf900c2d` 15:47, FINAL seal `9252d6f31` 15:57, pushed).
+> The successor agent's probes: 15:07:32 / 15:14:55 (dirty-8 mtimes
+> 12:58–13:34, identical hashes — idle, push executed), then the co-lane
+> advanced mid-task; re-probes 16:02:57 / 16:05:17 at `9252d6f31` clean
+> and stable (its seal declares no further commits) — this round's
+> rename + drop-hunks landed on the quiet tree, no clobber.
 
 ## 1. Seal item 1 — style-67-snails + adjacent-critter-kinds: LANDED, census
 
@@ -221,9 +245,102 @@ table (the E3 740/741 shift), cs_id/net_id keys untouched, the w4_c9
 axis witness re-pinned (§5) — merge-wave work, receipted not executed; (3) f26-7j's 655 seam folds onto the wired kind-match arm
 (§4); (4) d37's ALL_KINDS hunk drops as already-satisfied (§2); (5) the
 c8 sight gate needs nothing from this lane (§3); (6) the f47 ramp
-composes via the 353 flag + the aiStyle-67 wet exemption.
+composes via the 353 flag + the aiStyle-67 wet exemption; (7) the FIVE
+gold-critter dup drops to c10 per the exact §6 hunks (the d37-LV +3
+extended by wave 2's 443/445) — rows stay on-branch per the E8
+dropped-lane rule, the drops ride the merge wave; the critter module
+keep-one reconciles the walk-exit draw order (§6b).
 
-## 6. Witness register (this seal round)
+## 6. The gold-critter DUP drop-hunks (c9 → c10, the d37-LV +3 extended to five)
+
+d37's laggard-verify (`2ea22ce3e`, research/108 LV) ruled: c9's gold
+critters at 442/446/447 **duplicate c10's pushed rows** (`5fcc68ae6`'s
+tree, the `d7f422049` twelve-kind roster tail) — "kinds-lane rule: c10
+keeps, c9 drops; c9's wiring composes". Wave 2 grew the dup set to FIVE
+(443/445 are in c10's tail too, same commit). Per the E8 dropped-lane
+rule (the d42 `bac408be0` precedent) **the rows STAY on this branch**;
+the exact drop-hunks below are EXECUTE-prep for the merge wave. Line
+numbers are 1-indexed inclusive at tip `9252d6f31` (the FINAL seal tree;
+the rename commit changes docs only).
+
+**Keeper verification (c10 tip `15f93d134`, scripted git-show reads):**
+all five variants + `to_u16`/`from_u16` arms + ALL_KINDS rows (decl 290),
+cs_id/sound(NPCHit1; GoldMouse NPCDeath4)/ai_style(24/7/7/1/7)/size/
+lifeMax/damage/net_id tables, bestiary ENTRIES ×5, `npc_buffs` &[31]
+(the `NPCID.cs:8612-8652` rows), NPC_442-447 sheets +
+BESTIARY_NPC_SHEET_IDS (decl 201) + the Lookups vec, portrait_data arms,
+the draw + rotation-whitelist arms, the netglue seed (the twelve-critter
+bare-stats arm), FindFrame arms ×5 (`npc.rs:9782-9946` region). The C#
+stat rows are identical on both lanes (both re-read
+`NPC.cs:14247-14331`).
+
+### 6a. DROP whole (c10's row survives)
+
+| File | Lines | Content |
+|---|---|---|
+| `npc.rs` | 1115–1149 | the five enum variants + doc comments |
+| `npc.rs` | 3619–3623 | the kb rows (0.8 bird / 1.0 others) |
+| `npc.rs` | 4007–4009 | the defense-0 comment + row |
+| `npc.rs` | 4385–4387 | the value-0 comment + row |
+| `npc.rs` | 19275–19279 | the `to_u16` five arms |
+| `npc.rs` | 24644–24650 | the ALL_KINDS five rows + comments; decl :24358 re-pins to the merge union (NOT 279−5 — every lane's decl reconciles per d37-S4) |
+| `npc/data.rs` | 602–606 | the cs_id five arms |
+| `npc/data.rs` | 945–949 | the from_u16 five arms |
+| `npc/data.rs` | 1827–1829 | the NPCHit1 comment + row |
+| `npc/data.rs` | 2139–2143 | the death-sound comments + rows (NPC_Killed_1 ×4 + GoldMouse NPC_Killed_4) |
+| `npc/data.rs` | 2514–2521 | the ai_style comments + rows |
+| `npc/data.rs` | 3061–3067 | the size rows + comment |
+| `npc/data.rs` | 3186–3190 | the net_id five arms |
+| `npc/data.rs` | 3733–3735 | the lifeMax-5 comment + row |
+| `npc/data.rs` | 4103–4105 | the damage-0 comment + row |
+| `npc_buffs.rs` | 491–494 | the Confused &[31] comment + row |
+| `bestiary.rs` | 2211–2255 | the five ENTRIES rows + comment |
+| `assets.rs` | 1285–1292 | the STATIC_SHEET_NAMES comment + NPC_442/446/447/443/445 |
+| `assets.rs` | 1916–1918 | the SHEET_IDS comment + `442, 446, 447,` + `443, 445,`; decl :1878 190→185 (c10's own grid supersedes wholesale at merge) |
+| `assets.rs` | 2687–2695 | the Lookups vec comments + five `atlas.sheet` entries |
+| `render/entities.rs` | 1258–1262 | the GOLD_CRITTER_SHEETS doc + const |
+| `render/entities.rs` | 519 | the `.chain(GOLD_CRITTER_SHEETS)` line (c10's own sheet chain survives) |
+| `render/entities.rs` | 3365–3368 | the GoldBird rotation-whitelist comment + member (the snail members :3358–3364 STAY) |
+| `ui/bestiary.rs` | 1605–1612 | the portrait comment + five arms |
+| `app/netglue.rs` | 3585–3598 | the gold seed comment + the grasshopper/mouse, bunny/frog and bird arms (c10's twelve-critter bare-stats arm seeds them; the position overwrite + first-tick machine takeover make the ctor choice behaviour-identical) |
+
+### 6b. DROP the arm, KEEP the machine re-keyed (the wiring-composes half)
+
+- `npc.rs` 6755–6766 (the dispatch arms) + the `update_gold_bird` /
+  `update_gold_grasshopper` wrappers (`:5973`/`:6050` regions): DROP as
+  dispatch — c10 routes GoldBird through its aiStyle-24 axis
+  (`ai_024_bird`, the shared poop gate) and GoldGrasshopper through
+  `update_slime`. c9's wrappers are faithful re-ports of the same C#
+  machines; keep-one per the d20b/1080 precedent, no double dispatch.
+- `npc.rs` 9478–9640 (the five FindFrame kind-match arms): c10
+  has its own five arms (`npc.rs:9782-9946` at its tip, same C# cases
+  `:73627-73650`/`:76851-76904`/`:76618-76685`/`:70959-70980`/
+  `:76514-76565`). Keep ONE set at merge — either is verbatim; the
+  merger keeps c10's (the kinds-lane owner) and drops c9's.
+- `npc_ai_critter.rs` (the whole module): c10 carries the d38-derived
+  module with the SAME gold rows (`row()`: bunny 1/0.07/true, frog
+  1/0.07/true, mouse 2/1/false — identical constants). Keep c10's
+  module (it also serves 299/300/303/337). **One semantic delta the
+  merge wave must reconcile:** c9's walk→idle draw is the TownCritter
+  `300+Next(300)−Next(100)` (`NPC.cs:53817-53831` — re-read verbatim
+  this round, the `:53824` subtraction); c10's module header cites
+  `:54289-54296` (`60+Next(60)`, the sit/talk-state exit — a DIFFERENT
+  arm of AI_007). For the wander state 1→0 the C# is `:53817-53831`;
+  c9's draw order is the faithful one — the merged module must keep
+  the `:53820`/`:53824` draws for the gold/critter walk exit (the
+  c9 witnesses `w4_c9_the_gold_critter_walk_to_idle_subtracts` pin it).
+- The w4_c9 gold witnesses (`npc.rs:34531-34671` region,
+  `npc_ai_critter.rs` tests): keep as the merge's regression pins,
+  re-keyed onto the surviving c10 module (the assertions are
+  C#-literal, lane-agnostic).
+
+**Net effect:** c9 keeps the snail four + ALL their wiring; the five
+gold kinds resolve to c10's rows; ONE critter module (c10's body, c9's
+walk-exit draw order); one FindFrame set; the bestiary/sheet/portrait
+copies dedupe to c10's. No behaviour change on any seam (all stats
+C#-identical, verified both tips).
+
+## 7. Witness register (this seal round)
 
 - The 2×90s alive-probe (§0) — scripted diff-hash equality.
 - The d37 patch scratch-index apply + post-apply census (§2) — exit 0
@@ -234,3 +351,12 @@ composes via the 353 flag + the aiStyle-67 wet exemption.
   `:76618-76685` (the frog group), ≤80-line windows.
 - The extended frame/sheets witnesses (§1) — WRITTEN NOT RUN
   (code-only mode).
+- The §6 drop-hunk round (the successor agent): the c10-tip keeper
+  verification (git-show reads of all five kinds across
+  npc.rs/data.rs/bestiary/assets/netglue/render/ui/npc_buffs at
+  `15f93d134`), the 28-site line-pin table read from the `9252d6f31`
+  tree, the `NPC.cs:53817-53831` vs `:54289-54296` walk-exit re-read
+  (the §6b draw-order delta), the registry §7 round-3 re-read + the
+  fresh all-ref 281+ sweep (281×10 / 282×3 taken, the 304 floor also
+  contested ×2, 312 free at every ref) — the 281→312 rename receipt in
+  the header.
