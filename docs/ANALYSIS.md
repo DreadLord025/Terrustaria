@@ -39306,3 +39306,34 @@ The Rust witness tests (glowmask 3, npc_glow 2, projectile/data 2,
 registry 1) are WRITTEN, NOT RUN. Every record re-read against the cited C#
 window; the clone-row fix traced write-by-write against
 `Item.cs:26576-26581`/`:2003-2016`.
+
+### The f15 sheet-set reconciliation (W4-g35, 8ca19097)
+
+W4-f15's TILE-DRAW-2 binding added **45** `Glow_{id}` sheets to
+`GLOW_SHEET_NAMES` (25e4ffe2: 51-69/88/112-125/127/202/243/267-270/289/
+315/329/330). Census against this task's **37** `Main.tileGlowMask` rows
+(`glowmask.rs`):
+
+- The two sets are **disjoint by design** — f15 binds the SECOND
+  `GetTileDrawData` switch's per-case glow records
+  (`TileDrawing.cs:6049-6507`, `drawdata_cases_a::glow_switch`), drawn at
+  `DrawSingleTile:1343-1403`; the 37-row table feeds the SEPARATE
+  `Main.tileGlowMask` pass at `:1178-1339`. The table's 35 distinct masks
+  (429/445 share 214; 129 is the −2 sentinel, no sheet) are a different
+  sheet family; zero overlap with f15's 45.
+- **No mismatch**: f15 did NOT add sheets for the dead-colour kinds.
+  `case 391` (`TileDrawing.cs:1247`, colour (250,250,250,200)) and
+  `case 718` (`:1190`, colour (0,0,0,0)) have colour arms in the
+  `tileGlowMask` switch but NO `Main.tileGlowMask[391/718]` assignment
+  anywhere in `Main.cs` (re-verified: the only `tileGlowMask[...]` writes
+  are `:10024-10068` + the `:8437` reset) — the `!= -1` gate never opens,
+  so no sheet is needed and none was added. 391's other two switch hits
+  (`:5766`/`:5806`) are the FIRST switch's terrarium-cage framing
+  (`wormCageFrame`), not glow. Verbatim source state, not a port gap.
+- `glow_switch` also picks mask 327 (case 638) — already packed pre-f15
+  (the shimmer-vine sheet, S1-G-1); f15's 45 + 327 = the switch's full
+  46-mask census.
+- The `tileGlowMask` table pass itself (`:1178-1339` — texture swap, the
+  per-type colour switch, the slope/half-brick draw ladder) remains
+  UNPORTED on both branches; f15's task doc names it "a separate wide
+  task, explicitly out of scope". Its 35 sheets are still unbound.
