@@ -190,6 +190,7 @@ mod projectile_ai_moonlord;
 // projectile.rs. Code-only mode — witness tests written not run.
 mod projectile_ai_style81;
 mod projectile_ai_style86;
+mod projectile_ai_style87;
 
 
 mod projectile_ai001_a;

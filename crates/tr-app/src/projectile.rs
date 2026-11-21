@@ -17907,6 +17907,25 @@ impl ProjectilePool {
                                 self.slots[i].kill_step(world);
                             }
                         }
+                        // W4-d9 — the aiStyle-87 ClingerStaff 482 wall
+                        // (`Projectile.cs:31901-31936`): the position/height
+                        // pins, the owner-facing direction, the keep-one
+                        // sibling kill. The owner centre rides the `owner`
+                        // snapshot (the C# `Main.player[owner].Center.X`).
+                        87 => {
+                            let owner_cx = owner.map(|(x, _)| x).unwrap_or(self.slots[i].pos.x);
+                            let sibling_kill =
+                                crate::projectile_ai_style87::clinger_staff_sibling_kill(
+                                    &self.slots,
+                                    i,
+                                );
+                            crate::projectile_ai_style87::ai_clinger_staff(
+                                &mut self.slots[i],
+                                owner_cx,
+                                sibling_kill,
+                            );
+                            self.slots[i].kill_step(world);
+                        }
                         102 => {
                             let player = owner.unwrap_or((0.0, 0.0));
                             let npcs = &npcs[..];
@@ -22846,6 +22865,14 @@ impl ProjectilePool {
             }
             // Projectile.cs:12938 — pre-defense variance on the hit damage.
             dmg = tr_core::damage::damage_var(rng, dmg as f32, luck);
+            // W4-d9 — `Damage_PVE_Inner`'s type-482 clause (`Projectile.cs:
+            // 12951-12954`): the ClingerStaff halves its damage against
+            // aiStyle-6/37 NPCs (the flyers), after DamageVar.
+            dmg = crate::projectile_ai_style87::clinger_staff_damage(
+                &self.slots[slot],
+                &npcs[idx],
+                dmg,
+            );
             // S1-P-i28 — `Damage_PVE_Inner`'s aiStyle-113 stick pin
             // (`Projectile.cs:13210-13217`): on the first hit (`ai[0] < 2`)
             // the bone javelin pins to this NPC — `ai[0]=1`, `ai[1]=victim`,
@@ -23055,6 +23082,11 @@ impl ProjectilePool {
             // melee-only ones never fire for an arrow by construction.
             crate::special_arrows::status_npc(self.slots[slot].kind, &mut npcs[idx], rng);
             self.special_bullet_status_npc(slot, &mut npcs[idx], rng);
+            // W4-d9 — `StatusNPC`'s type-482 arm (`Projectile.cs:11665-
+            // 11668`): the ClingerStaff's CursedInferno (39, 420).
+            if self.slots[slot].kind == CLINGER_STAFF {
+                crate::projectile_ai_style87::clinger_staff_status_npc(&mut npcs[idx]);
+            }
             let expert = player.as_deref().is_some_and(|pl| pl.buffs.expert_mode);
             let landed = Npc::strike_projectile(
                 npcs, idx, strike_dmg, from_x, kb, hit_crit, Some(owner_idx as u8), expert,

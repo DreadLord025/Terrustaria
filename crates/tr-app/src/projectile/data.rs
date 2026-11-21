@@ -2487,6 +2487,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // 60x60, aiStyle 86, hostile, tileCollide false, penetrate −1,
             // alpha 255, ignoreWater. The stock timeLeft 3600 (`:787`) stands.
             CULTIST_BOSS_ICE_MIST => (60.0, 60.0, 86, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d9 — `Projectile.cs:5572-5586`: the ClingerStaff (482): 16x200,
+            // aiStyle 87, friendly, tileCollide false, penetrate −1, alpha 255,
+            // ignoreWater, timeLeft 18000, magic, idStatic-10.
+            CLINGER_STAFF => (16.0, 200.0, 87, -1, 18000, 0, false, false, false, (false, -2, true, 10, 255, 1.0)),
             // `Projectile.cs:5329-5339` — the Phantasmal Bolt (462): 8x8,
             // aiStyle 1, hostile, `alpha = 255`, extraUpdates 3, tileCollide
             // false, ignoreWater. S1-D-5 carries the C# alpha (the slice-B
@@ -4244,6 +4248,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d9 — `Projectile.cs:5360`: the CultistBossIceMist's
             // `ignoreWater = true`.
             || kind == CULTIST_BOSS_ICE_MIST
+            // W4-d9 — `Projectile.cs:5581`: the ClingerStaff's `ignoreWater`.
+            || kind == CLINGER_STAFF
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
             || kind == GOLF_CLUB_HELPER,
@@ -4345,6 +4351,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | NEBULA_ARCANUM | NEBULA_ARCANUM_SUBSHOT
                 | LAST_PRISM_LASER | LAST_PRISM | NEBULA_BLAZE_1 | NEBULA_BLAZE_2
                 | POISON_DART | SPIRIT_FLAME | SKY_FRACTURE | BOOK_OF_SKULLS | SPARK
+                // W4-d9 — the ClingerStaff's magic wall (`Projectile.cs:5583`).
+                | CLINGER_STAFF
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the
