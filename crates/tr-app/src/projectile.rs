@@ -7901,6 +7901,10 @@ impl Projectile {
                     self.kill();
                 }
             }
+            // The C# `return` (`:28348`) exits AI() only — HandleMovement
+            // (`:17015`) still runs: tileCollide false, so the free move
+            // integrates the (possibly zeroed) velocity.
+            self.kill_step(world);
             return;
         }
         // `:28350-28360`: the bolt 295's whole AI arm is its 8× dust 174 and

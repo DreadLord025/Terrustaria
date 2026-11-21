@@ -4927,4 +4927,91 @@ mod tests {
         assert!(!proj_data(WOODEN_ARROW).unwrap().applies_immunity_time_on_single_hits);
         assert!(!proj_data(BLAND_WHIP).unwrap().applies_immunity_time_on_single_hits);
     }
+
+    /// W4-g2 (d5 F1/F4/F5/F6) — the nine rowless kinds' `SetDefaults`
+    /// slices, WRITTEN NOT RUN (code-only mode): every value re-read from
+    /// the cited C# arms. (w, h, aiStyle, penetrate, timeLeft, extraUpdates,
+    /// tileCollide, alpha, scale).
+    #[test]
+    fn the_w4_g2_rowless_rows_are_verbatim() {
+        let cases: [(u16, f32, f32, u8, i32, i32, u32, bool, i32, f32); 9] = [
+            // `Projectile.cs:3151-3163` — the orb: stock tileCollide TRUE.
+            (CHLOROPHYTE_ORB, 30.0, 30.0, 44, -1, 3600, 0, true, 0, 1.0),
+            // `:3255-3262` — the moving blood cloud (the 237 twin).
+            (BLOOD_CLOUD_MOVING, 28.0, 28.0, 45, -1, 3600, 0, true, 0, 1.0),
+            // `:3263-3273` — the settled blood cloud (the 238 twin).
+            (BLOOD_CLOUD_RAINING, 54.0, 28.0, 45, -1, 18000, 0, false, 0, 1.0),
+            // `:3274-3288` — the blood drop: penetrate 2, NOT the 239's 5.
+            (BLOOD_RAIN, 4.0, 40.0, 45, 2, 300, 1, true, 0, 1.1),
+            // `:3491-3502` — the hostile nimbus drop.
+            (RAIN_NIMBUS, 4.0, 40.0, 45, -1, 120, 1, true, 0, 1.1),
+            // `:3793-3803` — the hostile beam.
+            (SHADOWBEAM_HOSTILE, 4.0, 4.0, 48, -1, 100, 100, true, 0, 1.0),
+            // `:3804-3814` — the hostile bolt.
+            (INFERNO_HOSTILE_BOLT, 12.0, 12.0, 50, -1, 3600, 0, false, 255, 1.0),
+            // `:3815-3825` — the hostile blast: 130, NOT the 296's 150.
+            (INFERNO_HOSTILE_BLAST, 130.0, 130.0, 50, -1, 3600, 0, false, 255, 1.0),
+            // `:5037-5046` — the UFO laser: STOCK penetrate 1.
+            (UFO_LASER, 8.0, 8.0, 48, 1, 100, 100, true, 0, 1.0),
+        ];
+        for (kind, w, h, style, pen, life, extra, collide, alpha, scale) in cases {
+            let d = proj_data(kind).unwrap_or_else(|| panic!("kind {kind} rowed"));
+            assert_eq!((d.w, d.h), (w, h), "kind {kind} box");
+            assert_eq!(d.ai_style, style, "kind {kind} aiStyle");
+            assert_eq!(d.penetrate, pen, "kind {kind} penetrate");
+            assert_eq!(d.time_left, life, "kind {kind} timeLeft");
+            assert_eq!(d.extra_updates, extra, "kind {kind} extraUpdates");
+            assert_eq!(d.tile_collide, collide, "kind {kind} tileCollide");
+            assert_eq!(d.alpha, alpha, "kind {kind} alpha");
+            assert_eq!(d.scale, scale, "kind {kind} scale");
+        }
+        // The immunity pairs: the orb / blood drop ride idStatic-10
+        // (`:3161-3162`/`:3286-3287`); the rest keep the reset.
+        for kind in [CHLOROPHYTE_ORB, BLOOD_RAIN] {
+            let d = proj_data(kind).unwrap();
+            assert!(d.uses_id_static_immunity, "kind {kind} idStatic");
+            assert_eq!(d.id_static_hit_cooldown, 10, "kind {kind} cooldown");
+            assert!(!d.uses_local_immunity, "kind {kind} no local pair");
+        }
+        for kind in [BLOOD_CLOUD_MOVING, BLOOD_CLOUD_RAINING, RAIN_NIMBUS,
+            SHADOWBEAM_HOSTILE, INFERNO_HOSTILE_BOLT, INFERNO_HOSTILE_BLAST, UFO_LASER]
+        {
+            let d = proj_data(kind).unwrap();
+            assert!(!d.uses_local_immunity && !d.uses_id_static_immunity, "kind {kind} reset");
+        }
+        // The class flags: melee 229 (`:3157`), magic 245/290/291/292
+        // (`:3284`/`:3799`/`:3811`/`:3822`); the clouds/drops 243/244/264
+        // and the laser 433 set NONE.
+        assert!(proj_data(CHLOROPHYTE_ORB).unwrap().melee);
+        for kind in [BLOOD_RAIN, SHADOWBEAM_HOSTILE, INFERNO_HOSTILE_BOLT, INFERNO_HOSTILE_BLAST] {
+            assert!(proj_data(kind).unwrap().magic, "kind {kind} magic");
+        }
+        for kind in [BLOOD_CLOUD_MOVING, BLOOD_CLOUD_RAINING, RAIN_NIMBUS, UFO_LASER] {
+            let d = proj_data(kind).unwrap();
+            assert!(!d.melee && !d.ranged && !d.magic, "kind {kind} no class flag");
+        }
+        // netImportant: the two blood clouds (`:3257`/`:3265`); the drop
+        // 245 and the rest keep false.
+        assert!(proj_data(BLOOD_CLOUD_MOVING).unwrap().net_important);
+        assert!(proj_data(BLOOD_CLOUD_RAINING).unwrap().net_important);
+        assert!(!proj_data(BLOOD_RAIN).unwrap().net_important);
+        // ignoreWater: 244/245/264/433 (`:3267`/`:3276`/`:3493`/`:5045`);
+        // the moving cloud 243 keeps false.
+        for kind in [BLOOD_CLOUD_RAINING, BLOOD_RAIN, RAIN_NIMBUS, UFO_LASER] {
+            assert!(proj_data(kind).unwrap().ignore_water, "kind {kind} ignoreWater");
+        }
+        assert!(!proj_data(BLOOD_CLOUD_MOVING).unwrap().ignore_water);
+        // The orb's light 0.2 (`:3159`) — every other new kind stays dark.
+        assert_eq!(proj_data(CHLOROPHYTE_ORB).unwrap().light, 0.2);
+        // The frame sheets (`Main.cs:8606-8609`): orb 4, clouds 4/6; the
+        // drops/beams/bolts/blasts keep the stock 1.
+        assert_eq!(proj_frames(CHLOROPHYTE_ORB), 4);
+        assert_eq!(proj_frames(BLOOD_CLOUD_MOVING), 4);
+        assert_eq!(proj_frames(BLOOD_CLOUD_RAINING), 6);
+        for kind in [BLOOD_RAIN, RAIN_NIMBUS, SHADOWBEAM_HOSTILE,
+            INFERNO_HOSTILE_BOLT, INFERNO_HOSTILE_BLAST, UFO_LASER]
+        {
+            assert_eq!(proj_frames(kind), 1, "kind {kind} stock sheet");
+        }
+    }
 }
