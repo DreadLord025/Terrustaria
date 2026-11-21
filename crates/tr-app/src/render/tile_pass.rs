@@ -19,8 +19,10 @@
 //! This module owns the STRUCTURE that sequences them — it computes the
 //! area/bounds/black strips/order itself and delegates the tier rebuild,
 //! the per-cell classification and every draw call through
-//! [`TilePassSeams`]. At the family merge the seams bind to the sibling
-//! modules; nothing here imports them (they are not on main yet).
+//! [`TilePassSeams`]. The siblings are landed on this branch by the
+//! union-exec (below); the driver still delegates through the trait —
+//! the wiring step supplies the binding impl, the witnesses keep the
+//! recorder.
 //!
 //! UNION-EXEC (docs/UNION-CONTRACT-tilepass.md, this branch): the g28
 //! pass-1 head folds in here — its stand-in registry, tuple

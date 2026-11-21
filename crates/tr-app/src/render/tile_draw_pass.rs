@@ -64,8 +64,8 @@
 #![allow(dead_code)] // UNWIRED — see the module doc; wiring is the family merge step.
 
 use super::tile_pass::{
-    LayerCacheClear, LegacyCacheClear, PlacementPreviewGate, LAYER_BEHIND_TILES,
-    LAYER_LIQUID_BEHIND_TILES, LAYER_OVER_TILES, LAYER_TILES, MAX_SPECIALS_LEGACY,
+    LayerCacheClear, LegacyCacheClear, LAYER_BEHIND_TILES, LAYER_LIQUID_BEHIND_TILES,
+    LAYER_OVER_TILES, LAYER_TILES, MAX_SPECIALS_LEGACY,
 };
 use std::collections::HashSet;
 
@@ -404,6 +404,7 @@ pub(crate) fn render_target_tile_order() -> &'static [FrameTileStep] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::render::tile_pass::PlacementPreviewGate;
     use DrawStep::*;
 
     fn area(fx: i32, lx: i32, fy: i32, ly: i32) -> super::super::tile_pass::ScreenDrawArea {

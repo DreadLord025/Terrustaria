@@ -1,5 +1,12 @@
 # UNION-CONTRACT — the tile-draw pass family (g28/g29/g30/g31/g32) + the d56–d60 seam census
 
+**STATUS: EXECUTED** (union-exec phase, same branch
+`task/W4-g31-tile-draw-pass-4`, code-only). The §1–§3 keep/drop/rebind
+prescription below was carried out IN-LANE on this branch — see §7 for
+the execution record (commit hashes, per-file outcomes, the census
+delta). §4 (the tiles.rs bind order) and §5 (the d-lane seams) remain
+the wiring wave's script: `render/tiles.rs` is UNTOUCHED (contested).
+
 Merger assist for the TILE-PASS 5-WAY UNION. Written on `task/W4-g31-tile-draw-pass-4`
 (reconcile phase, code-only — NO code changes to any lane; this document is the
 merge prescription). All line/shape claims below were read from the pushed
@@ -429,3 +436,56 @@ d-lane rows unchanged.
 *This contract was produced code-only: no cargo/rustc/tests were invoked; all
 claims above cite `git show`/`git diff` reads of the pushed tips. No lane's
 code was modified.*
+
+---
+
+## 7. EXECUTION RECORD (union-exec, this branch)
+
+Executed on `task/W4-g31-tile-draw-pass-4` on top of the contract commit
+`53603df1`, in four phases (code-only — no cargo/rustc/tests/graphify;
+every seam compiled by inspection):
+
+| Phase | Commit | Scope |
+|---|---|---|
+| A — land | `69675330` | g29 `tile_pass.rs` (`9bb92d0b`), g30 `special_points.rs` (`cd7f7d31`), g32 `tile_draw_pass.rs` (`8b4fe36c`), g28 `quality_light.rs` (`3f1a40cf`) landed verbatim via `git checkout <tip> -- <path>`; `render/mod.rs` union declarations (§1.5), `tr-render/lib.rs` `pub mod quality_light;`, `torch.rs` pub keep-one (g30 doc + g28 note). g28's stand-in `tile_pass.rs` NOT landed (§1.1 DROP). |
+| B — g29 folds | `dd4f2948` | §2.1 framing flags onto `ScreenDrawArea` + 2 ctor inputs threaded through `DrawLayerInputs` and all three probes; `LegacySpecialPoints` DROP → g32 `LegacyCaches` (cap witness REBIND); `render_target_layer_order` DROP → g32 `render_target_tile_order` (gate notes folded); the `:517` wall-350 debug-arm comment fold; the 2 g32 REBIND witnesses (`the_area_cast_truncates_toward_zero`, `the_black_strip_offset_and_row_break`) land here; the martian `[b,b,b,0]` quad + the behind-liquid OOB/inactive assertions fold into their g29 survivors. |
+| C+D — g32 reduction + g31 binds | `44f423cb` | §1.3 KEEP set only in `tile_draw_pass.rs` (wind-grid fn over the g29 area type, layer pick/batch sequence, `LegacyCaches` + per-step `clear_legacy_step`/`clear_layer_step` g29-enum bindings, `draw_steps`/`placement_preview_draws`/`legacy_restarts_batch`, `FrameTileStep` phase orders); all dup constants import from `tile_pass`. §1.4/§2.3 in `tile_drains.rs`: `BUCKET_*` derive from g30 `TileCounterType`; drivers take `&[Vec<(i32,i32)>; 11]` (`&g30_reg.buckets` binds directly, `DrainBuckets` stays the owned fixture); `drain_one_pass` per-pass dispatch + `drain_pass_for_post_step` (the 12-step map; g32 `None` arms + g28 frozen bucket order fold into the bucket witness); `post_draw_drain_order` = thin frozen loop, ONE shared `_rand`; the rand-stream witness re-runs the per-pass fold for exact flag equality. |
+| E — docs | (this commit) | ANALYSIS union (g28 ×2 / g29 / g32 sections + the stale-claim correction + the union-exec section), PORT_MAP rows (g28 quality_light, g28→g29 merged tile_pass row, g32 reduced row), anchors (g28 row repointed to `quality_light_tiers` + `draw_layer`; g30/g32 rows; the g32 marker repointed `post_draw_tiles_passes` → `draw_steps` — the symbol DROPPED per §1.3, the §6 canary note superseded), research/09 row 2 (g29's edit; d56's row untouched — not on this branch). |
+
+**Witness census (actual `#[test]` after the folds):** quality_light 6 +
+tile_pass 18 (g29 16 + 2 g32 REBINDs) + special_points 14 + tile_drains 22
++ tile_draw_pass 10 = **70** — the §3 target met. Census delta vs the §3
+name map: the map's "g32 KEEP 12" arithmetic (9 listed KEEP + 3 REBIND)
+counted the two g32 REBINDs that landed in `tile_pass.rs`
+(`the_area_cast_truncates_toward_zero`,
+`the_black_strip_offset_and_row_break`) on BOTH sides — they live once,
+in the canonical file (tile_pass 18 = 16 + 2); the reduced
+`tile_draw_pass.rs` keeps its 9 listed KEEP + the third REBIND
+(`the_legacy_points_append_and_cap_at_1000` onto `LegacyCaches`) = 10.
+The g29 `legacy_points_append_and_cap` REBIND and the g32 legacy-cap
+REBIND both pin the SAME `LegacyCaches` API from their own lanes'
+angles (append/cap/clear vs append/cap/order) — both kept per §3's
+"g29 16 KEEP all" rule. No dropped assertion is lost: all 14 g28-file
+and 8 g32-dup witnesses fold into the named survivors (§3 tables).
+
+**Deviations from the prescription (recorded, deliberate):**
+* §1.3 said g32's `post_draw_tiles_passes` "survives — the symbol is
+  KEPT in the reduced file" (§6 canary note) while the same table's
+  verdict row says `PostPass`/`post_draw_tiles_passes`/`post_pass_bucket`
+  DROP, FOLD. The table wins (it is the per-symbol disposition); the
+  anchors row repoints to `draw_steps` so the canary stays armed.
+* §1.4's "pass `&g30_reg.buckets` (or a thin view)": the drivers take
+  the array slice type directly; `DrainBuckets` remains as the owned
+  witness fixture only (its three driver witnesses pass
+  `&buckets.points`).
+* `is_visible` keep-one onto d56's `tr_render` copy is NOT executed —
+  d56 is not on main (§1.4 "Until then all copies stay"). Same for the
+  `DrainCellLight` → d56 and dust → d60 binds; `PortedBodyDrain` →
+  foliage/vines/pylons binds at the tiles.rs wiring (the bodies need
+  the renderer, the seam is the compile-time boundary).
+
+**UNWIRED attach (contested, documented not executed):**
+`render/tiles.rs::draw_tiles` untouched. The §4 checklist is the wiring
+script; the §5 d-lane census (d58/d59 WIRED hunk zones, the
+special_tiles.rs doc/chest-deletion resolution) applies at the family
+merge with the d-lanes.
