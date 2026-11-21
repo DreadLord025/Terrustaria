@@ -39432,11 +39432,11 @@ witnesses (`w4_g51_the_try_placing_quadruplet_stores_and_shares`,
 `the_town_slime_transform_*`, `w4_g51_the_pending_*`/
 `the_pending_damage_queue_*`). WRITTEN NOT RUN (code-only lane).
 
-### The g51 SEAL (research/309, 2026-11-21)
+### The g51 SEAL (research/359, 2026-11-21)
 
 The FINAL state was re-verified against the C# and the sibling tips
 (g50 `e2fd0637d`, f21 `5dfc6a764`, g52 `0224fff80`, f30 `973ec04c4`) —
-the full receipt + the net-121-family bible is `docs/research/309-g51-net-te-family-seal.md`.
+the full receipt + the net-121-family bible is `docs/research/359-g51-net-te-family-seal.md`.
 Verdicts: the 8 BIG arms + 139 + 145/148 all match their cited C# windows;
 the f21 lifted codecs are BYTE-EQUAL (per-block raw compare, re-pinned);
 the g50 TE-store lift is NOT byte-identical — g51's `tile_entities.rs` is
@@ -39462,6 +39462,6 @@ and wins keep-one whole. Two fidelity fixes landed:
 The f30 compose (disjoint keep-both: f30's decision core + gift vs the
 g51 net arm) + the `STARDEW_JUMINO` row-dup (f30's literal `995 =>` row
 vs g51's named-constant row — `#[deny(unreachable_patterns)]`, keep g51's,
-drop f30's) are recorded in research/309 §4 for the union merger. The 139
+drop f30's) are recorded in research/359 §4 for the union merger. The 139
 join push is the g52c master's input (g52 tip carries no `counts_as_host`;
 research/139 stays RESERVED). WRITTEN NOT RUN (code-only lane).

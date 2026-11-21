@@ -1,4 +1,12 @@
-# 309 — W4-g51 SEAL: the net TE-family FINAL verification + the net-121-family bible
+# 359 — W4-g51 SEAL: the net TE-family FINAL verification + the net-121-family bible
+
+> **Chain-banner: 309→359 (registry §9.2, d125-KEEPS-309).** Per the collision
+> registry (`150-research-number-registry.md`, W4-d54 tip `b4c94432c`, §9
+> UNIFIED FINAL — THE SINGLE AUTHORITY), 309 is d125's executed empress
+> sheets ledger (`309-empress-sheets-ledger`, DONE `5f8569945`); this doc's
+> round-3 self-pick of 309 was a post-§9 contested pick → **g51 takes 359**
+> (§9.2 row 359). The original pick history below is chain-history, kept
+> verbatim.
 
 Number per the collision registry (`150-research-number-registry.md`, W4-d54
 tip `0426245f2`, round 3 + §7.4 extension): the assignment blocks end at 307,
@@ -206,7 +214,7 @@ The 121-anchored family = the TE-state apply arms + their seams. Doc map
 | research/276 (f21b, 239→276 EXECUTED `5dfc6a764`) | f21b | the APPLY coverage census g48-g52 + the union keep-one notes + the f21b 57/76/58 survivors |
 | research/271 (g50, 154→271 EXECUTED `e2fd0637d`) | g50b | the g52c cross-input of research/40's DONE statuses × the net lane; the 139-RESERVED provenance |
 | research/23 (base trunk) | — | the wiring/TE audit (the family's C# inventory) |
-| **309 (this doc)** | g51 | the TE-family SEAL: the 8 BIG arms verified, the g50/f21 keep-one hunks (§2/§3), the f30 compose (§4), the 139 input (§5) |
+| **359 (this doc)** | g51 | the TE-family SEAL: the 8 BIG arms verified, the g50/f21 keep-one hunks (§2/§3), the f30 compose (§4), the 139 input (§5) |
 | research/139 (RESERVED, unpushed) | g52c | the master-final table; g51's `counts_as_host` join push is its input (§5) |
 
 **Merge order for the family** (extends f21b 276 §7): codecs first (f21

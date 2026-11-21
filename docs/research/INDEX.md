@@ -75,7 +75,7 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
-| 309 | W4-g51 SEAL: the net TE-family FINAL verification (the 8 BIG apply arms + 139 + 145/148; the g50 TE-store superset keep-one + the f21 byte-equal codec re-pin + the f30 dryad compose/995-row-dup; the net-121-family bible; registry round-3 §7.4 pick, 308 taken by g13) | `309-g51-net-te-family-seal.md` | ✅ SEALED (code-only, witnesses WRITTEN NOT RUN) |
+| 359 | W4-g51 SEAL: the net TE-family FINAL verification (the 8 BIG apply arms + 139 + 145/148; the g50 TE-store superset keep-one + the f21 byte-equal codec re-pin + the f30 dryad compose/995-row-dup; the net-121-family bible; registry §9.2 assignment 309→359, d125-KEEPS-309) | `359-g51-net-te-family-seal.md` | ✅ SEALED (code-only, witnesses WRITTEN NOT RUN) |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
