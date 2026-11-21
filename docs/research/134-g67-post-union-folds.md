@@ -1,31 +1,80 @@
-# 134 — W4-g67 post-union fold-list (for W4-d130d/e)
+# 134 — W4-g67 post-union fold-list (for W4-d130f)
 
-**STATUS: FOLD-LIST PUBLISHED — FINAL-PHASE RE-CHECK DONE, R1–R7 STILL OPEN**
-(code-only, `task/W4-g67-weather-rain-splash`).
+**STATUS: RETIRED — R1–R4/R6-partial EXECUTED BY d130 `16a792d5`; R5/R6-caller/R7
++ the 2-hunk fold-addendum OPEN for d130f** (code-only,
+`task/W4-g67-weather-rain-splash`).
 
-## Fold-monitor re-check (g67 final phase, 2026-11-21)
+## Fold-monitor re-check (g67 retire phase, 2026-11-21, tip `97ed44f5`)
 
-`git fetch origin --prune` + `git ls-remote --heads origin`: the d130 lane is
-still **one branch**, `task/W4-d130-weather-ambience` at **`560a02eac`** — the
-exact tip this note was derived against. No `d130d`/`d130e`/`d130-draw_splashes`
-branch exists on origin. **d130e has NOT landed; this fold-list stands.** Every
-residual was re-verified per-hunk against the d130 tip's actual file bodies
-(`git show origin/task/W4-d130-weather-ambience:<path>`), not commit messages:
+The previous re-check (below, against `560a02eac`) is **STALE**: d130's
+`16a792d5` (08:55) folded the R1–R7-direct residuals BEFORE g67's `134` FINAL
+(`e777b3e2`, 09:13) was published — the d130 tip `97ed44f5` records the 134
+absence and folds from the g67 commit bodies themselves. Re-verified per-hunk
+against the NEW tip's actual file bodies (`git show
+origin/task/W4-d130-weather-ambience:<path>` at `97ed44f5`):
 
-| residual | d130-tip evidence (re-read 2026-11-21) | verdict |
+| residual | d130-tip `97ed44f5` evidence | verdict |
 | --- | --- | --- |
-| R1 | `app/frame/world.rs:188/253/494`, `app/netmodules.rs:484`, `world_sim/weather.rs:110` all still feed `self.rain.is_raining()`; the tip's `rain.rs` fn-list has `cloud_alpha` (`:292`) but NO `is_it_raining` | OPEN |
-| R2 | `app/saveglue.rs:346` `save_and_quit` — `:361` still carries the "ClearRain is visual-only" comment, no `clear_rain()` call; `rain.rs` has no `clear_rain` fn | OPEN |
-| R3 | `rain.rs:1308-1310` still documents the 4×4 cull as "not modelled … a documented widening"; no `splash_cull_rect`/`dust_in_cull_rect` in the fn-list | OPEN |
-| R4 | no `new_rain_forced` in the tip's `rain.rs` fn-list | OPEN |
-| R5 | `rain.rs:1048` `new_rain` still reads `thresholds::SNOW_TILE_NORMAL as f32` unconditionally | OPEN |
-| R6 | `player.rs` grep: no `eyebrella`/`5101` arm (only an unrelated `:15519` citation) | OPEN |
-| R7 | `player.rs` grep: no `umbrella_hold` arm | OPEN |
+| R1 | `rain.rs:316` `is_it_raining`; feeds `frame/world.rs:192/259/503`, `netmodules.rs:486`, `weather.rs:116` — all `is_it_raining()` now | **EXECUTED** (`16a792d5`) |
+| R2 | `rain.rs:325` `clear_rain`; `saveglue.rs:366` calls it after the save | **EXECUTED** (`16a792d5`) |
+| R3 | `rain.rs:1500/1512` `splash_cull_rect`/`dust_in_cull_rect`; `draw_splashes:1410-1417` + `snow.rs:316-323` apply the else-kill (the snow lane d130 extended on its own) | **EXECUTED** (`16a792d5`) |
+| R4 | `rain.rs:1132` `new_rain_forced` (fixed-slot scan, `#[allow(dead_code)]` — caller still unported there) | **EXECUTED** (`16a792d5`) |
+| R5 | `rain.rs:1088` still reads `thresholds::SNOW_TILE_NORMAL as f32`; `:1083-1086` documents the gap ("the skyblock arm lands with …") | **OPEN → d130f** |
+| R6 | seam (`new_rain_forced`) landed, but `player.rs` grep: still no `eyebrella`/`5101` caller arm | **caller OPEN → d130f** |
+| R7 | `player.rs` grep: no `umbrella_hold_slow_fall` arm (only unrelated holdStyle-4 pose cites) | **OPEN → d130f** |
 
-The "Already folded" table below was likewise re-checked at the same tip
-(splash lane `88cfbf38`, impact gate `50c845e5`, float attempt loop
-`spawn:962-1030`, `new_rain:1034-1081`, f39 start gate via `cf4574e9`) — all
-still present, none regressed.
+The "Already folded" table below still holds at the new tip (splash lane
+`88cfbf38`, impact gate `50c845e5`, float attempt loop `spawn:996`,
+`new_rain:1069`, f39 start gate via `cf4574e9`) — none regressed. d130's
+`16a792d5` ALSO folded the gameMenu kill-only arm (`update_drops:948`,
+`RainInputs.game_menu:235`) + the `:84` menu spawn-through disjunct
+(`spawn:1046`) — the "Deliberate divergences" menu bullet below is thereby
+RETIRED (d130 took g67's arm after all).
+
+## Fold-addendum for d130f — the 2 draw hunks that POST-DATE the fold
+
+g67's final phase 3 (`7aaf66f0`, 09:02) re-pinned `Main.DrawRain`'s light tile +
+XNA byte tint AFTER d130's `16a792d5` fold (08:55). Re-reading the d130 tip
+shows d130's own phase-2a core (`ea4863d9`, 01:49) ALREADY carried both fixes —
+so the addendum is **1 semantic delta + 1 witness pin**, not 2 re-ports:
+
+* **A1 — the tint ALPHA channel (SEMANTIC DELTA, fold required).** g67's
+  `rain_drop_tint` (`rain.rs:1595`) byte-casts ALL FOUR channels but its
+  witness `w4_g67_draw_rain_tint_is_the_xna_byte_chain` (`:3230`) asserts
+  alpha stays 255 ("the C# never dims it") — that assertion is WRONG against
+  the code AND against the C#: `Color * 0.85f` multiplies A too
+  (`Main.cs:38813`, XNA `Color.operator*` scales all four bytes), so full
+  light draws alpha 216, and shimmer 0.25 gives 162. d130's `rain_tint`
+  (`rain.rs:1297`) is byte-identical to g67's fn body and its witness
+  `the_draw_tint_is_the_xna_byte_chain` (`:1939`) pins the CORRECT values
+  (`[216/255; 4]`, alpha 162 under shimmer 0.25). **d130f: keep d130's
+  `rain_tint` + witness verbatim; g67's alpha-255 assertions are retired
+  with the wholesale drop — do NOT port them.** (g67's own witness is
+  internally inconsistent — written-not-run; the union's compile gate will
+  never see it because the copy drops.)
+* **A2 — the light-tile witness pin (NO code delta).** d130's `draw` inlines
+  the `(pos+4)>>4` sample as the `light_tile` closure (`rain.rs:1250-1256`) —
+  semantically identical to g67's `rain_light_tile` helper (`:1585`), but
+  d130 has NO dedicated geometry witness. **d130f: re-pin g67's
+  `w4_g67_draw_rain_light_tile_is_pos_plus_four_shifted` (`rain.rs:3211`)
+  onto the closure's expression** (the 12..15-px-band crossing, the 63.9
+  edge, the negative-coordinate truncation arms). Pure addition.
+
+## Fold-monitor re-check (SUPERSEDED — was against tip `560a02eac`)
+
+The table below was the final-phase reading before d130's `16a792d5` landed;
+kept for the record — every row's verdict is superseded by the retire-phase
+table above.
+
+| residual | d130-tip `560a02eac` evidence (re-read 2026-11-21, pre-fold) | verdict then |
+| --- | --- | --- |
+| R1 | `app/frame/world.rs:188/253/494`, `app/netmodules.rs:484`, `world_sim/weather.rs:110` all fed `self.rain.is_raining()`; no `is_it_raining` in the fn-list | OPEN (now EXECUTED) |
+| R2 | `app/saveglue.rs:346` `save_and_quit` — the "ClearRain is visual-only" comment, no `clear_rain()` call | OPEN (now EXECUTED) |
+| R3 | `rain.rs:1308-1310` documented the 4×4 cull as "not modelled … a documented widening" | OPEN (now EXECUTED) |
+| R4 | no `new_rain_forced` in the fn-list | OPEN (now EXECUTED) |
+| R5 | `rain.rs:1048` `new_rain` read `thresholds::SNOW_TILE_NORMAL as f32` unconditionally | OPEN (still OPEN) |
+| R6 | `player.rs` grep: no `eyebrella`/`5101` arm | OPEN (seam done, caller still OPEN) |
+| R7 | `player.rs` grep: no `umbrella_hold` arm | OPEN (still OPEN) |
 
 **STATUS (original): FOLD-LIST PUBLISHED** (code-only, `task/W4-g67-weather-rain-splash`).
 The d130 union-exec (`88cfbf38`, research/83 §3) transplanted g67's **phase-1
@@ -56,9 +105,14 @@ wholesale); the folds below are the **semantic residuals** that fit d130's shape
 | `NewRain` budget (`maxRain*cloudAlpha`, gfx `(1+q)/2` cut q<0.9, snow `(1-r²)`, `atmo^9`, `atmo<0.4` kill), discarded depth factor, live `GetRainFallVelocity` (`wind*18,14`), `waterStyle*3+Next(3)` | `rain.rs::new_rain` (`:990-1045`) | FOLDED |
 | The `:64890` `!slimeRain && !LanternsUp && !NextNightIsLanternNight` start gate + the `:64868-64871` lanterns-up StopRain arm | `rain.rs::update_time` (the three sampled flags) + `weather.rs:250` | FOLDED via **W4-f39** (`cf4574e9`) — d130's `update_time` gained `slime_rain`/`lanterns_up`/`next_night_lanterns` params; g67's `start_gates_open` bool is the same gate, superseded |
 
-## Residuals d130 still lacks (the fold-list)
+## Residuals (the fold-list — receipts per the retire-phase table)
 
-### R1 — `IsItRaining` consumers (g67 phase 4, `5c9398ea`)
+R1–R4 are **EXECUTED** by d130 `16a792d5` (receipts at tip `97ed44f5` in the
+retire-phase table); their specs below are kept as the fold record. **R5, R6's
+caller, R7 remain the d130f work-list**, plus the 2-hunk fold-addendum (A1/A2)
+above.
+
+### R1 — `IsItRaining` consumers (g67 phase 4, `5c9398ea`) — EXECUTED `16a792d5`
 
 `Main.IsItRaining` = `cloudAlpha > 0` (`Main.cs:2597`), NOT the `Main.raining`
 event flag. The ambience scheduler / music rain gates / storm-lightning gate
@@ -79,7 +133,7 @@ d130 already has `visual_alpha()` (`rain.rs:286`, the `cloudAlpha` clamp) — ad
 **Witness:** g67 `w4_g67_clear_rain_and_is_it_raining` (the event flag off but
 `cloudAlpha 0.5 > 0` → `is_it_raining()` true).
 
-### R2 — `ClearRain` on save-and-quit (g67 phase 4, `5c9398ea`)
+### R2 — `ClearRain` on save-and-quit (g67 phase 4, `5c9398ea`) — EXECUTED `16a792d5`
 
 `Rain.ClearRain` (`Rain.cs:22-28`) deactivates every drop; the C# calls it from
 `SaveAndQuitCallBack` (`WorldGen.cs:6672`) AFTER the save snapshotted the live
@@ -95,7 +149,7 @@ field survives onto the menu.
   empty `Rain`).
 * **Witness:** g67 `w4_g67_clear_rain_and_is_it_raining` (the `clear_rain` half).
 
-### R3 — the `DrawDust` cull rect + else-kill (g67 phase 5, `2c452edd`)
+### R3 — the `DrawDust` cull rect + else-kill (g67 phase 5, `2c452edd`) — EXECUTED `16a792d5` (also `snow::draw`)
 
 d130's `draw_splashes` (`rain.rs:1266`) still documents the 4×4 cull rect as
 "not modelled — a documented widening". **That widening is WRONG** (g67 phase 5
@@ -114,7 +168,7 @@ that misses — a kill, not a skip.
 * **Witness:** g67 `w4_g67_drawdust_cull_rect_is_the_wide_box_with_an_else_kill`
   (the wide-box edges, the 4×4 boundary, the shifted-view kill).
 
-### R4 — `NewRainForced` (g67 phase 4, `5c9398ea`)
+### R4 — `NewRainForced` (g67 phase 4, `5c9398ea`) — EXECUTED `16a792d5` (seam; caller = R6)
 
 `Rain.NewRainForced` (`Rain.cs:135-164`) — the Eyebrella vanity drip's spawn
 entry. d130 has **no `new_rain_forced`**. Unlike `NewRain` it ignores
@@ -130,7 +184,7 @@ the drop fields are the same `:159-162` shape (scale `Next(-20,21)*0.01`,
 * **Witness:** g67 `w4_g67_new_rain_forced_budget_and_shape` (q0 → cap 375, the
   376th refuses with the `maxRain` sentinel).
 
-### R5 — the skyblock snow-threshold arm (g67 follow-up, `f8c4b659`)
+### R5 — the skyblock snow-threshold arm (g67 follow-up, `f8c4b659`) — OPEN → d130f
 
 d130's `new_rain` snow suppression reads the **normal 1500** unconditionally
 (`rain.rs:1048`, `SNOW_TILE_NORMAL as f32`). `SceneMetrics.SnowTileThreshold` is
@@ -149,7 +203,7 @@ skyblock-aware: 300 when `WorldGen.Skyblock.lowTiles`, else 1500
   `w4_g67_skyblock_thresholds_pick_300_over_1500` (scene.rs),
   `w4_g67_skyblock_low_tiles_lowers_the_snow_threshold` (rain.rs).
 
-### R6 — the Eyebrella caller + `eyebrellaCloud` (g67 follow-up, `356a1ac0`)
+### R6 — the Eyebrella caller + `eyebrellaCloud` (g67 follow-up, `356a1ac0`) — caller OPEN → d130f
 
 The `UpdateEquips` arm (`Player.cs:13083-13087`): head armor slot 0 or vanity
 head slot 10 wearing 5101 fires `DoEyebrellaRainEffect` (`:14308-14331`) and
@@ -167,7 +221,7 @@ live `wind*3, 9` velocity.
   `w4_g67_eyebrella_drip_refuses_solid_and_wet_tiles`,
   `w4_g67_eyebrella_cloud_arms_from_head_or_vanity_slot`.
 
-### R7 — the umbrella held-item arm (g67 follow-up, `01ba6c7a`)
+### R7 — the umbrella held-item arm (g67 follow-up, `01ba6c7a`) — OPEN → d130f
 
 The Umbrella (946) / Tragic Umbrella (4707) `holdStyle == 2` sim arm
 (`Player.ItemCheck_ApplyHoldStyle`, `Player.cs:50476-50498`): at rest +
@@ -187,11 +241,12 @@ rain union.
 * **The spawn cadence.** g67 accumulates the fractional rate (`spawn_acc`,
   floor per tick); d130 runs the C# float attempt loop (`while attempt < num`,
   ceil(num) attempts per call). d130's is the faithful shape — keep it.
-* **The `gameMenu` kill-only arm.** g67 ports `Rain.cs:103-109` (`+2000f`)
-  verbatim behind `DropSimInputs.game_menu`; d130 folds it out ("gameMenu never
-  holds in-world — the weather cluster is menu-gated"). Both are defensible;
-  d130's fold is documented in research/83. If d130d/e wants the residual-drop
-  menu tick, g67's arm is the reference — otherwise keep d130's fold.
+* **The `gameMenu` kill-only arm — DIVERGENCE RETIRED.** g67 ports
+  `Rain.cs:103-109` (`+2000f`) verbatim behind `DropSimInputs.game_menu`;
+  d130 originally folded it out, but `16a792d5` took g67's arm after all
+  (`update_drops:948`, `RainInputs.game_menu:235`, move-first no-roll no-probe)
+  plus the `MakeRain:84` menu spawn-through disjunct (`spawn:1046`). The two
+  copies now agree — nothing left to decide here.
 * **The drop storage.** g67 uses a compacted `Vec<Drop>` (swap_remove); d130
   uses a fixed `[Drop; 750]` in slot order. Keep d130's (research/83 §3).
 
@@ -200,52 +255,68 @@ rain union.
 | commit | files | the unique hunks |
 | --- | --- | --- |
 | `40128e5d` (phase 1) | `rain.rs`, `minecart.rs`, `world_sim/weather.rs`, `app/frame/draw.rs` | splash lane — **FOLDED** by d130 `88cfbf38` |
-| `d2dd8989` (phase 3) | `rain.rs`, `world_sim/weather.rs` | `DropSimInputs` seam + menu/remix kill-only arms + AnyDanger gathering — remix/AnyDanger **FOLDED**; menu arm folded out (divergence) |
-| `5c9398ea` (phase 4) | `rain.rs`, `app/frame/world.rs`, `app/netmodules.rs`, `app/saveglue.rs`, `world_sim/weather.rs` | MakeRain/NewRain verbatim (**FOLDED**), `NewRainForced` (**R4**), `ClearRain` (**R2**), `IsItRaining` consumers (**R1**), `:64890` start gate (**FOLDED** via f39) |
-| `2c452edd` (phase 5) | `rain.rs` | DrawDust cull rect + else-kill (**R3**) |
+| `d2dd8989` (phase 3) | `rain.rs`, `world_sim/weather.rs` | `DropSimInputs` seam + menu/remix kill-only arms + AnyDanger gathering — ALL **FOLDED** (menu arm via `16a792d5`, the fold-out retired) |
+| `5c9398ea` (phase 4) | `rain.rs`, `app/frame/world.rs`, `app/netmodules.rs`, `app/saveglue.rs`, `world_sim/weather.rs` | MakeRain/NewRain verbatim (**FOLDED**), `NewRainForced` (**R4 EXECUTED**), `ClearRain` (**R2 EXECUTED**), `IsItRaining` consumers (**R1 EXECUTED**), `:64890` start gate (**FOLDED** via f39) |
+| `2c452edd` (phase 5) | `rain.rs` | DrawDust cull rect + else-kill (**R3 EXECUTED**, d130 extended it to `snow::draw`) |
 | `112d1b20` (phase 6) | `docs/ANALYSIS.md`, `docs/PORT_MAP.md` | docs-only — the census record (no code) |
-| `f8c4b659` (follow-up) | `world.rs`, `scene.rs`, `scene_scan.rs`, `rain.rs`, `worldgen/mod.rs`, `app/mod.rs` | skyblock low-tiles + snow threshold (**R5**) |
-| `356a1ac0` (follow-up) | `player.rs`, `world_sim/player.rs`, `rain.rs` | Eyebrella caller + `eyebrellaCloud` (**R6**, depends R4) |
-| `01ba6c7a` (follow-up) | `player.rs`, `render/player_layers.rs` | umbrella held-item arm (**R7**) |
+| `f8c4b659` (follow-up) | `world.rs`, `scene.rs`, `scene_scan.rs`, `rain.rs`, `worldgen/mod.rs`, `app/mod.rs` | skyblock low-tiles + snow threshold (**R5 OPEN → d130f**) |
+| `356a1ac0` (follow-up) | `player.rs`, `world_sim/player.rs`, `rain.rs` | Eyebrella caller + `eyebrellaCloud` (**R6 caller OPEN → d130f**, seam R4 done) |
+| `01ba6c7a` (follow-up) | `player.rs`, `render/player_layers.rs` | umbrella held-item arm (**R7 OPEN → d130f**) |
+| `7aaf66f0` (final phase 3) | `rain.rs`, `app/frame/draw.rs` | DrawRain light tile + XNA byte tint — d130 `ea4863d9` already carried both; **A1** (g67's alpha-255 witness assertions WRONG, d130's correct — keep d130's) + **A2** (light-tile witness re-pin) POST-DATE `16a792d5` — the fold-addendum |
 
-**Fold order for d130d/e:** R1 + R2 + R3 (rain.rs / app glue, independent) →
-R4 (`new_rain_forced` seam) → R5 (skyblock, coordinate f24) → R6 (Eyebrella,
-needs R4) → R7 (umbrella, independent). All g67 witnesses are WRITTEN NOT RUN
-(code-only mode) — re-pin them to d130's `RainInputs`/fixed-slot shape on fold.
+**Fold order for d130f:** R5 (skyblock, coordinate f24) → R6 (Eyebrella caller,
+seam already landed) → R7 (umbrella, independent) + A2 (light-tile witness
+re-pin; A1 needs NO code — keep d130's `rain_tint`/witness verbatim). All g67
+witnesses are WRITTEN NOT RUN (code-only mode) — re-pin them to d130's
+`RainInputs`/fixed-slot shape on fold.
 
-## KEEP-d130-CANONICAL instruction (refreshed, g67 final phase)
+## KEEP-d130-CANONICAL instruction (FINAL-FINAL — g67 retire phase, fold-source tip `e777b3e2`)
 
 The union-exec decision (research/83 §3, d130 `ec1d73c7`) stands: **the merger
-keeps d130's `rain.rs` core wholesale; g67's `rain.rs` drops wholesale.** The
-folds above are the ONLY g67 content that crosses the boundary, hunk by hunk —
-never take a g67 fn body over a d130 one. Concretely, d130d/e:
+keeps d130's `rain.rs` core wholesale; g67's `rain.rs` drops wholesale EXCEPT
+the still-open folds (R5/R6-caller/R7) and the A2 witness pin.** The fold
+record above is the ONLY g67 content that crosses the boundary, hunk by hunk —
+never take a g67 fn body over a d130 one. Concretely:
 
-1. **KEEP** d130's float attempt loop (`spawn:962-1030`), fixed-750-slot pool
-   in slot order, `RainInputs` shape, the menu fold-out, the spawn-then-update
+1. **KEEP** d130's float attempt loop (`spawn:996-1067` at tip `97ed44f5`),
+   fixed-750-slot pool in slot order, `RainInputs` shape, the spawn-then-update
    tick order (the C# net order — `Main.Update:17220` spawns, `DrawRain:38819`
-   moves), the verbatim `new_rain` (`:1034-1081`), the `update_drops` impact
-   gate (`50c845e5` reconcile), and `crate::snow`'s `Main.snowing()` port
-   (the `:13092` raining branch included — g67's `snow_mode` biome gate is the
-   retired approximation, ANALYSIS "visual-overlap census").
-2. **FOLD** only R1–R7 as semantic residuals adapted to that shape (the
-   per-hunk table above). R3's rect/kill helpers and R1's `is_it_raining`
-   are pure additions; R2's `clear_rain` deactivates all 750 slots (NOT
-   `Vec::clear` — d130 keeps the array); R4's `new_rain_forced` scans the
-   first inactive slot within the gfx-cut budget.
-3. **RE-PIN** the g67 witnesses to the fixed-slot shape on fold (the
+   moves), the verbatim `new_rain` (`:1069-1130`), the `update_drops` impact
+   gate (`50c845e5` reconcile), the gameMenu arm d130 took at `16a792d5`
+   (`:948`, the earlier fold-out retired), and `crate::snow`'s `Main.snowing()`
+   port (the `:13092` raining branch included — g67's `snow_mode` biome gate is
+   the retired approximation, ANALYSIS "visual-overlap census").
+2. **ALREADY FOLDED — do NOT re-fold:** R1 (`is_it_raining` + the five
+   consumers), R2 (`clear_rain` + the `save_and_quit` call), R3 (cull rect +
+   else-kill, splashes AND snow), R4 (`new_rain_forced` seam) — all executed by
+   d130 `16a792d5`, receipts in the retire-phase table.
+3. **STILL TO FOLD (d130f):** R5 (the skyblock snow threshold — d130's
+   `new_rain:1088` still reads the unconditional 1500; the gap is documented
+   at `:1083-1086`), R6's caller (the Eyebrella `UpdateEquips` arm +
+   `eyebrella_cloud` + the `pending_eyebrella_rain` drain — the R4 seam is
+   waiting `#[allow(dead_code)]`), R7 (the umbrella holdStyle-2 sim + render
+   arms), and **A2** (the light-tile geometry witness re-pin). **A1 needs no
+   code**: d130's `rain_tint` already dims alpha correctly — g67's
+   alpha-stays-255 witness assertions drop with the wholesale copy.
+4. **RE-PIN** the g67 witnesses to the fixed-slot shape on fold (the
    `pin_drop`/`RainInputs`/`drop_count` conventions d130 `88cfbf38` already
    established for the splash lane).
 
-**Draw-side boundary (refreshed):** the falling-drop draw (`Main.DrawRain`,
-`Main.cs:38800-38826`) is d130's `draw`/`rain_tint` — already canonical at the
-tip (the `(pos+4)>>4` light tile + the XNA byte chain + the shimmer arm,
-`rain.rs:1167-1190/1215-1232`). g67's final phase re-pinned the SAME semantics
-on its own branch (`rain_light_tile`/`rain_drop_tint`, commit `7aaf66f0`) so
-the two copies agree hunk-for-hunk; the merger keeps d130's copy and drops
-g67's. The splash draw (`draw_splashes`, the `DrawDust` generic path) is the
-transplanted g67 lane d130 already carries — R3 fixes its cull rect in place.
-No d130-draw_splashes branch exists on origin (re-checked 2026-11-21); the
-splash draw is NOT unclaimed — it lives in d130's tip via `88cfbf38`.
+**Draw-side boundary (FINAL-FINAL):** the falling-drop draw (`Main.DrawRain`,
+`Main.cs:38800-38826`) is d130's `draw`/`rain_tint` — canonical at tip
+`97ed44f5` (the `(pos+4)>>4` light tile inlined at `rain.rs:1250-1256` + the
+XNA byte chain `rain_tint:1297` + the shimmer arm, alpha INCLUDED — the C#
+`Color * 0.85f` scales A too). g67's final phase 3 (`7aaf66f0`, POST-DATING
+d130's fold `16a792d5`) re-pinned the same light-tile/tint semantics as
+`rain_light_tile`/`rain_drop_tint` helpers, but its tint WITNESS wrongly pins
+alpha at 255 (A1) — the fn bodies agree, the assertions do not; **d130's copy
+and witness are the correct ones, keep them verbatim**. The merger keeps
+d130's draw and drops g67's wholesale (the A2 geometry witness is the one
+salvage). The splash draw (`draw_splashes`, the `DrawDust` generic path) is the
+transplanted g67 lane d130 already carries — R3's cull fix landed in place at
+`16a792d5`. No d130-draw_splashes branch exists on origin (re-checked
+2026-11-21 at the retire phase); the splash draw is NOT unclaimed — it lives
+in d130's tip via `88cfbf38`.
 
 **Final-phase census additions (g67, for the merger's benefit):**
 * `Rain.cs` fn-census COMPLETE: 6/6 methods + 7/7 fields mapped; the `alpha`
