@@ -5511,6 +5511,64 @@ fn snow_flinx_death(
     gore.new_gore(rng, world, pos, vel, 240, npc.scale);
 }
 
+/// The 42/176/205/231-235 hornet/moth family death (`NPC.cs:89702-89741`,
+/// sites 839-842): the 50x dust-18 burst carrying
+/// `this.alpha`/`this.color`/`this.scale` (color default stand-in), speed
+/// (hd, −2) — the 1× hitDirection — then the per-kind sub-branch: the 205
+/// Moth → 270/271/271/272 (`:89718-89721`), the 176 Moss Hornet → 229/230
+/// (`:89726-89727`), the rest → num857/71 where num857 = 70 except the 232
+/// Hornet Honey → 1384 and the 234 Hornet Spikey → 1385 (`:89730-89740`).
+/// All `this.scale` carried.
+fn hornet_family_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89712-89715` — the 50x dust-18 burst, alpha/scale carried.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        18,
+        hit_direction / 2.0, // the helper doubles hd; the C# passes 1x
+        50,
+        npc.alpha as i32,
+        Color::default(),
+        npc.scale,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    if npc_type == 205 {
+        // `:89718-89721` — the Moth quartet.
+        for t in [270, 271, 271, 272] {
+            gore.new_gore(rng, world, pos, vel, t, s);
+        }
+        return;
+    }
+    if npc_type == 176 {
+        // `:89726-89727` — the Moss Hornet pair.
+        gore.new_gore(rng, world, pos, vel, 229, s);
+        gore.new_gore(rng, world, pos, vel, 230, s);
+        return;
+    }
+    // `:89730-89738` — the hornet head pick (the 29-analogue default 70).
+    let head = match npc_type {
+        232 => 1384, // :89733
+        234 => 1385, // :89737
+        _ => 70,     // :89730
+    };
+    gore.new_gore(rng, world, pos, vel, head, s); // :89739
+    gore.new_gore(rng, world, pos, vel, 71, s); // :89740
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -6182,6 +6240,11 @@ pub fn hit_effect_d(
     // `:89690-89701` — the 30/665 arm: NO gore sites (the ungated 20x
     // paired dust-27 census + the Item10 cue are the dust/c13 lanes';
     // recorded, not ported).
+    // `:89702-89741` — the 42/176/205/231-235 hornet/moth family arm
+    // (sites 839-842).
+    else if matches!(npc_type, 42 | 176 | 205 | 231..=235) {
+        hornet_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
     outcome
 }
 
@@ -10716,5 +10779,55 @@ mod tests {
         let _ky = twin.next_range(10, 31);
         let _kx = twin.next_range(-20, 21);
         assert_eq!(rng.peek(), twin.peek(), "the flinx mirrors the C# draws");
+    }
+
+    /// `NPC.cs:89718-89740` — the hornet/moth family: the 205 quartet
+    /// 270/271/271/272, the 176 pair 229/230, the hornet head pick
+    /// (232→1384, 234→1385, else 70) + 71; the 50x dust-18 dye census
+    /// (this.alpha) first.
+    #[test]
+    fn w4_f5d_the_hornet_family_head_picks() {
+        for (kind, want) in [
+            (42, vec![70, 71]),
+            (176, vec![229, 230]),
+            (205, vec![270, 271, 271, 272]),
+            (231, vec![70, 71]),
+            (232, vec![1384, 71]),
+            (233, vec![70, 71]),
+            (234, vec![1385, 71]),
+            (235, vec![70, 71]),
+        ] {
+            let w = air();
+            let mut n = mob(100.0, 100.0, 30.0, 30.0);
+            n.alpha = 77;
+            n.scale = 1.25;
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(863);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "hornet {kind}");
+            for (i, _) in want.iter().enumerate() {
+                assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0), "hornet {kind} gore {i}");
+                assert_eq!(gore.slot(i).scale, 1.25, "hornet {kind} gore {i} scale");
+            }
+            let dyed = dust.slots().iter().find(|d| d.active).unwrap();
+            assert_eq!(dyed.dust_type, 18);
+            assert_eq!(dyed.alpha, 77, "the dust carries this.alpha");
+            let mut twin = UnifiedRandom::new(863);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 30);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "hornet {kind} mirrors the C# draws");
+        }
     }
 }
