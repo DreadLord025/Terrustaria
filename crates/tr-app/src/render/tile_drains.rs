@@ -12,10 +12,25 @@
 //! (pass 5) owns the orchestration + the `PostDrawTiles` ORDER
 //! (`render/tile_draw_pass.rs`). g29's module doc assigns the deferred bucket
 //! drains to "g31/g32 (passes 4-5)"; g32 took the order/structure, so THIS
-//! module (g31, pass 4) owns the drain BODIES. Nothing here imports the
-//! sibling modules (they are not on main yet) — the family merge binds
-//! [`DrainBuckets`] to g30's `SpecialPoints::buckets` and the per-cell light
-//! seam to d56's `tr-render::animated_tiles`.
+//! module (g31, pass 4) owns the drain BODIES.
+//!
+//! UNION-EXEC (docs/UNION-CONTRACT-tilepass.md §1.4, this branch): the g29/
+//! g30/g32 siblings are landed here, so the mechanical binds are IN:
+//! * the `BUCKET_*` constants keep-one onto g30's `TileCounterType as
+//!   usize` (single source of truth, values verified identical 0..10);
+//! * the drivers take `&[Vec<(i32, i32)>; 11]` — the caller passes
+//!   `&g30_reg.buckets` directly ([`DrainBuckets`] stays as the owned
+//!   witness fixture);
+//! * [`drain_one_pass`] is the per-pass dispatch the g29
+//!   `post_draw_tiles` driver binds each of its ten nature steps through
+//!   ([`drain_pass_for_post_step`] maps the 12-step `PostDrawStep` enum;
+//!   `EndBatch`/`NatureAfterAllObjects`/the two TE passes map to `None` —
+//!   the g32 `None`-arm fold); [`post_draw_drain_order`] is the thin
+//!   frozen-order loop over it, ONE shared `_rand` in pass order;
+//! * the per-cell light seam ([`DrainCellLight`]) still binds to d56's
+//!   `tr-render::animated_tiles` at the d-lane merge (not on main);
+//!   [`PortedBodyDrain`] binds to the on-main `foliage.rs`/`vines.rs`/
+//!   `pylons.rs` passes at the tiles.rs wiring (they need the renderer).
 //!
 //! What is ported here (research/09 rows 10-12, the MISSING drains):
 //! * [`drain_multi_tile_vines`] — `DrawMultiTileVines` (`:8829-8888`) + the
@@ -71,26 +86,30 @@ use tr_core::wind::Wind;
 use tr_core::{UnifiedRandom, World};
 
 // ---------------------------------------------------------------------------
-// Bucket indices — TileCounterType (TileDrawing.cs:21-35). The discriminants
-// ARE the `_specialsCount`/`_specialPositions` indices (`:185`); g30 owns the
-// enum, these constants mirror it so the drains stay import-free.
+// Bucket indices — UNION keep-one (contract §1.4): the g30
+// `TileCounterType` discriminants ARE the `_specialsCount`/
+// `_specialPositions` indices (`TileDrawing.cs:21-35`/`:185`); the
+// constants now derive from the enum (single source of truth).
 // ---------------------------------------------------------------------------
 
-pub(crate) const BUCKET_TREE: usize = 0;
-pub(crate) const BUCKET_WINDY_GRASS: usize = 1;
-pub(crate) const BUCKET_MULTI_TILE_GRASS: usize = 2;
-pub(crate) const BUCKET_MULTI_TILE_VINE: usize = 3;
-pub(crate) const BUCKET_VINE: usize = 4;
-pub(crate) const BUCKET_BIOME_GRASS: usize = 5;
-pub(crate) const BUCKET_VOID_LENS: usize = 6;
-pub(crate) const BUCKET_REVERSE_VINE: usize = 7;
-pub(crate) const BUCKET_TELEPORTATION_PYLON: usize = 8;
-pub(crate) const BUCKET_MASTER_TROPHY: usize = 9;
-pub(crate) const BUCKET_ANY_DIRECTIONAL_GRASS: usize = 10;
+use crate::render::special_points::TileCounterType;
 
-/// The registry view the drains walk — g30's `SpecialPoints::buckets` binds
-/// here at the family merge (the eleven `Vec<(x, y)>` lists, indexed by
-/// `TileCounterType`). `BiomeGrass` (5) is never registered nor drained.
+pub(crate) const BUCKET_TREE: usize = TileCounterType::Tree as usize;
+pub(crate) const BUCKET_WINDY_GRASS: usize = TileCounterType::WindyGrass as usize;
+pub(crate) const BUCKET_MULTI_TILE_GRASS: usize = TileCounterType::MultiTileGrass as usize;
+pub(crate) const BUCKET_MULTI_TILE_VINE: usize = TileCounterType::MultiTileVine as usize;
+pub(crate) const BUCKET_VINE: usize = TileCounterType::Vine as usize;
+pub(crate) const BUCKET_BIOME_GRASS: usize = TileCounterType::BiomeGrass as usize;
+pub(crate) const BUCKET_VOID_LENS: usize = TileCounterType::VoidLens as usize;
+pub(crate) const BUCKET_REVERSE_VINE: usize = TileCounterType::ReverseVine as usize;
+pub(crate) const BUCKET_TELEPORTATION_PYLON: usize = TileCounterType::TeleportationPylon as usize;
+pub(crate) const BUCKET_MASTER_TROPHY: usize = TileCounterType::MasterTrophy as usize;
+pub(crate) const BUCKET_ANY_DIRECTIONAL_GRASS: usize = TileCounterType::AnyDirectionalGrass as usize;
+
+/// The owned witness fixture for the eleven-bucket shape — UNION
+/// (contract §1.4): the drivers take `&[Vec<(i32, i32)>; 11]` and the
+/// wiring passes `&g30_reg.buckets` directly (identical shape, no second
+/// registry). `BiomeGrass` (5) is never registered nor drained.
 pub(crate) struct DrainBuckets {
     pub points: [Vec<(i32, i32)>; 11],
 }
@@ -112,9 +131,11 @@ impl DrainBuckets {
 /// `DrawAnimatedTile_AdjustForVisionChangers` (`:8481-8552`) →
 /// `DrawTiles_GetLightOverride` (`:6624-6686`) → the gated
 /// `DrawTiles_EmitParticles` (`:8350-8353`). d56 ports the byte maths into
-/// `tr-render::animated_tiles`; the drains seam it so this module stays
-/// import-free. `can_do_dust` is the per-cell `_rand.Next(4)==0` flag the
-/// drain ALREADY drew (the stream-order rule); `base` is `Lighting.GetColor`.
+/// `tr-render::animated_tiles` (`vision_changer_light` → `light_override`);
+/// the drains seam it because d56 is not on main yet (the d-lane merge
+/// binds it; gated dust emission is d60). `can_do_dust` is the per-cell
+/// `_rand.Next(4)==0` flag the drain ALREADY drew (the stream-order rule —
+/// the binding must NOT re-roll); `base` is `Lighting.GetColor`.
 pub(crate) trait DrainCellLight {
     fn cell_light(
         &mut self,
@@ -1334,8 +1355,9 @@ pub(crate) fn drain_multi_tile_vines(
 // ---------------------------------------------------------------------------
 
 /// One `PostDrawTiles(false)` pass (`TileDrawing.cs:421-430`), in C# call
-/// order. The g32 module owns the same enum for the orchestration; this copy
-/// drives the DRAIN bodies (the family merge keep-ones one).
+/// order. UNION keep-one (contract §2.3): the g32 `PostPass` copy dropped;
+/// this enum drives the DRAIN bodies and the g29 outer `PostDrawStep`
+/// order maps onto it via [`drain_pass_for_post_step`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum DrainPass {
     MultiTileVines,
@@ -1405,13 +1427,42 @@ pub(crate) trait PortedBodyDrain {
     fn trophy_point(&mut self, world: &World, x: i32, y: i32);
 }
 
+/// UNION (contract §2.3): the g29 `PostDrawStep` → drain-pass map — the
+/// ten nature steps bind to [`drain_one_pass`]; `EndBatch`/
+/// `NatureAfterAllObjects` are the batch/nature seam, the two TE passes
+/// are d57's doll/hat-rack passes — all four map to `None` here (the g32
+/// `post_pass_bucket` `None`-arm fold, its literal-usize copy dropped).
+pub(crate) fn drain_pass_for_post_step(
+    step: crate::render::tile_pass::PostDrawStep,
+) -> Option<DrainPass> {
+    use crate::render::tile_pass::PostDrawStep as S;
+    match step {
+        S::DrawMultiTileVines => Some(DrainPass::MultiTileVines),
+        S::DrawMultiTileGrass => Some(DrainPass::MultiTileGrass),
+        S::DrawVoidLenses => Some(DrainPass::VoidLenses),
+        S::DrawTeleportationPylons => Some(DrainPass::TeleportationPylons),
+        S::DrawMasterTrophies => Some(DrainPass::MasterTrophies),
+        S::DrawGrass => Some(DrainPass::Grass),
+        S::DrawAnyDirectionalGrass => Some(DrainPass::AnyDirectionalGrass),
+        S::DrawTrees => Some(DrainPass::Trees),
+        S::DrawVines => Some(DrainPass::Vines),
+        S::DrawReverseVines => Some(DrainPass::ReverseVines),
+        S::EndBatch
+        | S::NatureAfterAllObjects
+        | S::DrawEntitiesHatRacks
+        | S::DrawEntitiesDisplayDolls => None,
+    }
+}
+
 /// `PostDrawTiles(false)` (`TileDrawing.cs:414-442`): drain all ten buckets
-/// in C# order. The five MISSING bodies (MultiTileVines / MultiTileGrass /
-/// Grass / AnyDirectionalGrass / ReverseVines) run through this module's
-/// drains; the five ported bodies (VoidLenses / Pylons / Trophies / Trees /
-/// Vines) run through the [`PortedBodyDrain`] seam. The `_rand` stream is
-/// shared across the grass/vine drains in pass order (the C# `_rand` is one
-/// `UnifiedRandom` per `TileDrawing`, `:104`/`:191`).
+/// in C# order. UNION fold (contract §1.4): a thin loop over
+/// [`drain_one_pass`] — the g29 `post_draw_tiles` driver binds each of its
+/// ten nature steps through the per-pass dispatch individually (via
+/// [`drain_pass_for_post_step`]); this block-order driver stays as the
+/// frozen witness path. The `_rand` stream is shared across the grass/vine
+/// drains in pass order (the C# `_rand` is one `UnifiedRandom` per
+/// `TileDrawing`, `:104`/`:191`) — the sharing survives the fold because
+/// the caller threads ONE `&mut UnifiedRandom` through every dispatch.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn post_draw_drain_order(
     world: &World,
@@ -1428,7 +1479,7 @@ pub(crate) fn post_draw_drain_order(
     master_color: f32,
     tile_frame_seed: u64,
     global_time: f32,
-    buckets: &DrainBuckets,
+    buckets: &[Vec<(i32, i32)>; 11],
     sprites: &mut Vec<DrainSprite>,
     fairy_jars: &mut Vec<DrainFairyJar>,
     rising: &mut Vec<RisingVineSegment>,
@@ -1436,60 +1487,99 @@ pub(crate) fn post_draw_drain_order(
     flames: &mut Vec<DrainFlame>,
 ) {
     for pass in POST_DRAW_DRAIN_ORDER {
-        let points = &buckets.points[drain_pass_bucket(pass)];
-        match pass {
-            DrainPass::MultiTileVines => drain_multi_tile_vines(
-                world, wind, light, sunflower_counter, rng, seam, show_invisible,
-                disco, master_color, tile_frame_seed, global_time, points,
-                sprites, fairy_jars, jar_items, flames,
-            ),
-            DrainPass::MultiTileGrass => drain_multi_tile_grass(
-                world, wind, light, sunflower_counter, rng, seam, show_invisible,
-                points, sprites,
-            ),
-            DrainPass::Grass => drain_grass(
-                world, wind, light, grass_counter, rng, seam, show_invisible,
-                points, sprites,
-            ),
-            DrainPass::AnyDirectionalGrass => drain_any_directional_grass(
-                world, wind, light, grass_counter, rng, seam, show_invisible,
-                points, sprites,
-            ),
-            DrainPass::ReverseVines => {
-                drain_reverse_vines(world, wind, vine_counter, show_invisible, points, rising)
-            }
-            DrainPass::Trees => {
-                for &(x, y) in points {
-                    // `tile == null || !tile.active()` (`:8066`).
-                    if world.tile(x, y).is_some_and(|t| t.active()) {
-                        ported.tree_point(world, x, y);
-                    }
+        drain_one_pass(
+            pass, world, wind, light, grass_counter, sunflower_counter,
+            vine_counter, rng, seam, ported, show_invisible, disco,
+            master_color, tile_frame_seed, global_time, buckets, sprites,
+            fairy_jars, rising, jar_items, flames,
+        );
+    }
+}
+
+/// One `PostDrawTiles(false)` nature pass — the per-pass dispatch the g29
+/// `TilePassSeams::post_draw_pass(step)` seam binds to (contract §1.4/
+/// §2.3). The five MISSING bodies (MultiTileVines / MultiTileGrass /
+/// Grass / AnyDirectionalGrass / ReverseVines) run through this module's
+/// drains; the five ported bodies (VoidLenses / Pylons / Trophies / Trees /
+/// Vines) run through the [`PortedBodyDrain`] seam. `buckets` is the g30
+/// `SpecialPoints.buckets` array passed by reference (no second registry).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn drain_one_pass(
+    pass: DrainPass,
+    world: &World,
+    wind: &Wind,
+    light: &tr_core::lighting::LightMap,
+    grass_counter: f32,
+    sunflower_counter: f32,
+    vine_counter: f32,
+    rng: &mut UnifiedRandom,
+    seam: &mut impl DrainCellLight,
+    ported: &mut impl PortedBodyDrain,
+    show_invisible: bool,
+    disco: [u8; 3],
+    master_color: f32,
+    tile_frame_seed: u64,
+    global_time: f32,
+    buckets: &[Vec<(i32, i32)>; 11],
+    sprites: &mut Vec<DrainSprite>,
+    fairy_jars: &mut Vec<DrainFairyJar>,
+    rising: &mut Vec<RisingVineSegment>,
+    jar_items: &mut Vec<DrainJarItem>,
+    flames: &mut Vec<DrainFlame>,
+) {
+    let points = &buckets[drain_pass_bucket(pass)];
+    match pass {
+        DrainPass::MultiTileVines => drain_multi_tile_vines(
+            world, wind, light, sunflower_counter, rng, seam, show_invisible,
+            disco, master_color, tile_frame_seed, global_time, points,
+            sprites, fairy_jars, jar_items, flames,
+        ),
+        DrainPass::MultiTileGrass => drain_multi_tile_grass(
+            world, wind, light, sunflower_counter, rng, seam, show_invisible,
+            points, sprites,
+        ),
+        DrainPass::Grass => drain_grass(
+            world, wind, light, grass_counter, rng, seam, show_invisible,
+            points, sprites,
+        ),
+        DrainPass::AnyDirectionalGrass => drain_any_directional_grass(
+            world, wind, light, grass_counter, rng, seam, show_invisible,
+            points, sprites,
+        ),
+        DrainPass::ReverseVines => {
+            drain_reverse_vines(world, wind, vine_counter, show_invisible, points, rising)
+        }
+        DrainPass::Trees => {
+            for &(x, y) in points {
+                // `tile == null || !tile.active()` (`:8066`).
+                if world.tile(x, y).is_some_and(|t| t.active()) {
+                    ported.tree_point(world, x, y);
                 }
             }
-            DrainPass::Vines => {
-                for &(x, y) in points {
-                    ported.vine_root(world, x, y);
+        }
+        DrainPass::Vines => {
+            for &(x, y) in points {
+                ported.vine_root(world, x, y);
+            }
+        }
+        DrainPass::VoidLenses => {
+            for &(x, y) in points {
+                ported.void_lens_point(world, x, y);
+            }
+        }
+        DrainPass::TeleportationPylons => {
+            for &(x, y) in points {
+                // `tile == null || !tile.active()` (`:8647`).
+                if world.tile(x, y).is_some_and(|t| t.active()) {
+                    ported.pylon_point(world, x, y);
                 }
             }
-            DrainPass::VoidLenses => {
-                for &(x, y) in points {
-                    ported.void_lens_point(world, x, y);
-                }
-            }
-            DrainPass::TeleportationPylons => {
-                for &(x, y) in points {
-                    // `tile == null || !tile.active()` (`:8647`).
-                    if world.tile(x, y).is_some_and(|t| t.active()) {
-                        ported.pylon_point(world, x, y);
-                    }
-                }
-            }
-            DrainPass::MasterTrophies => {
-                for &(x, y) in points {
-                    // `tile == null || !tile.active()` (`:8605`).
-                    if world.tile(x, y).is_some_and(|t| t.active()) {
-                        ported.trophy_point(world, x, y);
-                    }
+        }
+        DrainPass::MasterTrophies => {
+            for &(x, y) in points {
+                // `tile == null || !tile.active()` (`:8605`).
+                if world.tile(x, y).is_some_and(|t| t.active()) {
+                    ported.trophy_point(world, x, y);
                 }
             }
         }
@@ -2048,11 +2138,42 @@ mod tests {
         for p in POST_DRAW_DRAIN_ORDER {
             assert_ne!(drain_pass_bucket(p), 5);
         }
+        // The g32 `the_post_pass_bucket_indices` None-arm fold (contract
+        // §2.3): the nature flush + the two TE passes drain NO bucket,
+        // and neither does the EndBatch step; every nature step of the
+        // g29 12-step order maps to exactly the frozen drain order.
+        use crate::render::tile_pass::{PostDrawStep, POST_DRAW_NON_SOLID, POST_DRAW_SOLID};
+        assert_eq!(drain_pass_for_post_step(PostDrawStep::EndBatch), None);
+        assert_eq!(drain_pass_for_post_step(PostDrawStep::NatureAfterAllObjects), None);
+        assert_eq!(drain_pass_for_post_step(PostDrawStep::DrawEntitiesHatRacks), None);
+        assert_eq!(drain_pass_for_post_step(PostDrawStep::DrawEntitiesDisplayDolls), None);
+        for step in POST_DRAW_SOLID {
+            assert_eq!(drain_pass_for_post_step(step), None);
+        }
+        let mapped: Vec<DrainPass> = POST_DRAW_NON_SOLID
+            .iter()
+            .filter_map(|s| drain_pass_for_post_step(*s))
+            .collect();
+        assert_eq!(mapped, POST_DRAW_DRAIN_ORDER);
+        // The g28 frozen bucket order fold (`the_layers_and_post_draw_
+        // order_are_frozen`): the drain order's bucket sequence is
+        // 3,2,6,8,9,1,10,0,4,7 — reordering changes the composite.
+        assert_eq!(
+            POST_DRAW_DRAIN_ORDER.map(drain_pass_bucket),
+            [3, 2, 6, 8, 9, 1, 10, 0, 4, 7]
+        );
+        // The g30 registry feeds the dispatch directly (contract §1.4):
+        // the drivers take the buckets array by reference — no second
+        // registry. (Shape bind: SpecialPoints.buckets is the same type.)
+        let reg = crate::render::special_points::SpecialPoints::new();
+        let _view: &[Vec<(i32, i32)>; 11] = &reg.buckets;
     }
 
     /// Witness: the driver walks the ported bodies in C# pass order — Trees
     /// (bucket 0) before Vines (bucket 4), and the pylon/trophy/lens passes
     /// run before Grass. The active gate skips an inactive tree point.
+    /// UNION (contract §1.4): re-run against the per-pass fold — the
+    /// block driver IS the `drain_one_pass` loop now, same order.
     #[test]
     fn w4_g31_driver_walks_ported_bodies_in_order() {
         let mut w = world(20, 40);
@@ -2078,7 +2199,7 @@ mod tests {
         let mut flames = Vec::new();
         post_draw_drain_order(
             &w, &wind, &light, 0.0, 0.0, 0.0, &mut rng, &mut seam, &mut ported,
-            false, [0, 0, 0], 0.0, 0, 0.0, &buckets, &mut sprites, &mut fairy,
+            false, [0, 0, 0], 0.0, 0, 0.0, &buckets.points, &mut sprites, &mut fairy,
             &mut rising, &mut jars, &mut flames,
         );
         // The pylon (pass 4) runs before the trees (pass 8) before the vines
@@ -2091,7 +2212,9 @@ mod tests {
 
     /// Witness: the `_rand` stream is shared across the grass drains in pass
     /// order — MultiTileGrass (pass 2) consumes its per-cell rolls before
-    /// Grass (pass 6), so the flags arrive in that order.
+    /// Grass (pass 6), so the flags arrive in that order. UNION (contract
+    /// §1.4): also re-runs the SAME inputs through the per-pass dispatch
+    /// with one shared fresh stream — the flags must match exactly.
     #[test]
     fn w4_g31_rand_stream_shared_across_drains_in_order() {
         let mut w = world(20, 40);
@@ -2117,11 +2240,31 @@ mod tests {
         let mut flames = Vec::new();
         post_draw_drain_order(
             &w, &wind, &light, 0.0, 0.0, 0.0, &mut rng, &mut seam, &mut ported,
-            false, [0, 0, 0], 0.0, 0, 0.0, &buckets, &mut sprites, &mut fairy,
+            false, [0, 0, 0], 0.0, 0, 0.0, &buckets.points, &mut sprites, &mut fairy,
             &mut rising, &mut jars, &mut flames,
         );
         // 4 multi-tile cells + 1 grass cell = 5 rolls, in pass order.
         assert_eq!(seam.flags.len(), 5);
+        // The per-pass fold (contract §1.4): re-running the SAME world
+        // through drain_one_pass per step, threading ONE fresh _rand in
+        // POST_DRAW_DRAIN_ORDER, reproduces the block driver's flags
+        // exactly — the stream sharing survives the dispatch split.
+        let mut rng2 = UnifiedRandom::new(1);
+        let mut seam2 = CountingLight { flags: Vec::new() };
+        let mut ported2 = RecordingBodies::default();
+        let mut sprites2 = Vec::new();
+        let mut fairy2 = Vec::new();
+        let mut rising2 = Vec::new();
+        let mut jars2 = Vec::new();
+        let mut flames2 = Vec::new();
+        for pass in POST_DRAW_DRAIN_ORDER {
+            drain_one_pass(
+                pass, &w, &wind, &light, 0.0, 0.0, 0.0, &mut rng2, &mut seam2,
+                &mut ported2, false, [0, 0, 0], 0.0, 0, 0.0, &buckets.points,
+                &mut sprites2, &mut fairy2, &mut rising2, &mut jars2, &mut flames2,
+            );
+        }
+        assert_eq!(seam2.flags, seam.flags, "the per-pass fold keeps the stream");
     }
 
     // -- The rarity colour + rgbToHsl ---------------------------------------
