@@ -1056,6 +1056,13 @@ pub fn draw_hud(
                     pulse,
                     tooltip::TooltipContext {
                         player,
+                        // `ItemSlot.MouseHover(22)` (`Main.cs:42258`): the
+                        // crafting-material context (the e16 map,
+                        // research/128 §4.3).
+                        flags: tooltip_lines2::HoverFlags {
+                            context: 22,
+                            ..Default::default()
+                        },
                         world: tooltip_lines2::TooltipWorld {
                             npc_shop: shop.is_some(),
                             ..tooltip_world
@@ -1225,32 +1232,64 @@ pub fn draw_hud(
     // (`Main.cs:20701`).
     let held_crit = crate::registry::get(inventory[selected].kind).map_or(0, |d| d.crit);
     // W4-f28 — the hovered instance's `ItemSlot.MouseHover` stamps
-    // (`ItemSlot.cs:3183-3198`): context 8 (the worn armour column's first
-    // three rows) sets wornArmor, contexts 9/11 (the vanity column) set
-    // social; the grid favourite rides `App.favorite_slots`.
+    // (`ItemSlot.cs:3183-3198`) + the full HoverRef→context map (the e16
+    // salvage, research/128 §4.3): context 8 stamps wornArmor, 9/11 stamp
+    // social; the grid/coin/ammo favourites ride `App.favorite_slots`
+    // under the vanilla slot numbering (`inv::coin_slot_index` /
+    // `ammo_slot_index` — coins 50-53, ammo 54-57).
     let hover_flags = {
         let mut f = tooltip_lines2::HoverFlags::default();
-        if inventory_open {
+        if shop_hover_slot.is_some() {
+            // The shop grid's context-15 stamp (`ItemSlot.cs:3195-3197`).
+            f.context = 15;
+        } else if inventory_open {
             match open_hover {
-                Some(inventory::HoverRef::Grid(i)) => f.favorited = favorites.contains(&i),
-                Some(inventory::HoverRef::Armor(i)) => {
-                    // `ui/inventory.rs:709-785`: armor[0..3) draws at context
-                    // 8 (wornArmor), armor[3..10) at 10 (no MouseHover case —
-                    // the accessories keep the default); the vanity column
-                    // armor[10..20) draws at contexts 9/11, both stamping
-                    // social (`ItemSlot.cs:3191-3193`).
-                    if i < 3 {
-                        f.worn_armor = true;
-                    } else if (10..20).contains(&i) {
-                        f.social = true;
-                    }
+                Some(inventory::HoverRef::Grid(i)) => {
+                    f.context = 0;
+                    f.favorited = favorites.contains(&i);
                 }
+                Some(inventory::HoverRef::Coin(i)) => {
+                    f.context = 1;
+                    f.favorited = favorites.contains(&crate::inv::coin_slot_index(i));
+                }
+                Some(inventory::HoverRef::Ammo(i)) => {
+                    f.context = 2;
+                    f.favorited = favorites.contains(&crate::inv::ammo_slot_index(i));
+                }
+                Some(inventory::HoverRef::Armor(i)) => {
+                    // `Main.cs:41396-41496`: armour 0-2 ctx 8, accessories
+                    // 3-9 ctx 10; vanity 10-12 ctx 9, vanity accessories
+                    // 13-19 ctx 11 — the stamps ride the context
+                    // (`ItemSlot.cs:3186-3194`).
+                    f.context = match i {
+                        0..=2 => 8,
+                        3..=9 => 10,
+                        10..=12 => 9,
+                        _ => 11,
+                    };
+                    f.worn_armor = f.context == 8;
+                    f.social = matches!(f.context, 9 | 11);
+                }
+                Some(inventory::HoverRef::Dye(_)) => f.context = 12,
+                Some(inventory::HoverRef::MiscEquip(i)) => {
+                    // `Main.cs:41199-41215`: pet 19, light 20, minecart 18,
+                    // mount 17, grapple 16 — the port's MISC_CONTEXT order
+                    // (`ui/inventory.rs:379`).
+                    f.context = [19, 20, 18, 17, 16][i.min(4)];
+                }
+                Some(inventory::HoverRef::MiscDye(_)) => f.context = 33,
+                Some(inventory::HoverRef::Trash) => f.context = 6,
+                Some(inventory::HoverRef::Bank(_)) => f.context = 4,
                 _ => {}
             }
-        } else if let Some(i) =
-            tooltip::hovered_slot(mouse_pos, false, selected, hotbar_scales, inventory)
-        {
-            f.favorited = favorites.contains(&i);
+        } else {
+            // The closed hotbar: context 13, the grid favourites apply.
+            f.context = 13;
+            if let Some(i) =
+                tooltip::hovered_slot(mouse_pos, false, selected, hotbar_scales, inventory)
+            {
+                f.favorited = favorites.contains(&i);
+            }
         }
         f
     };
@@ -1299,6 +1338,8 @@ pub fn draw_hud(
             has_coin_gun: has_coin_gun(inventory, equip),
             held_kind: inventory[selected].kind,
             open_chest,
+            show_loadout_share_hint: ingame_options
+                .map_or(true, |(s, _)| s.show_loadout_share_hint),
             shop_lines,
             ..Default::default()
         },

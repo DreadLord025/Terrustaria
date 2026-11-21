@@ -366,11 +366,16 @@ pub fn hover_stats(d: &ItemDef, prefix: u16) -> crate::prefix::PrefixedStats {
 /// The name row's colour (`Main.cs:20328-20332` + `GetItemNameColor`
 /// `:20557-20629`): an expert item overrides `rare` to −12 (the disco
 /// cycle); −13 is the master pulse `(255, (byte)(masterColor * 200f), 0)`.
-/// `diff` 1/2 (the medium/hardcore character colours) is unported — the
-/// tooltip call always passes 0 (`MouseText`'s default).
-pub fn tooltip_name_color(rare: i32, expert: bool, world: &TooltipWorld) -> [f32; 4] {
+/// `diff` 1/2 are the mediumcore/hardcore CHARACTER colours (`Main.mcColor`
+/// `(1, 0.6, 0)` / `Main.hcColor` `(1, 0.15, 0.1)`, `Main.cs:66765-66766`) —
+/// the LAST overrides, after every rarity arm (`:20620-20627`). The item
+/// tooltip's own call passes 0 (`DrawInterface_33_MouseText`, `:45419`);
+/// the stealthed-remote-player hover passes `player.difficulty`
+/// (`DrawMouseOver`, `:42934`) — that hover is unported, so the parameter
+/// stays 0 at every live call site, but the arms are the C#'s own.
+pub fn tooltip_name_color(rare: i32, expert: bool, diff: u8, world: &TooltipWorld) -> [f32; 4] {
     let rare = if expert { -12 } else { rare };
-    match rare {
+    let base = match rare {
         -13 => [1.0, (world.master_color * 200.0) as u8 as f32 / 255.0, 0.0, 1.0],
         -12 => [
             world.disco[0] as f32 / 255.0,
@@ -379,6 +384,14 @@ pub fn tooltip_name_color(rare: i32, expert: bool, world: &TooltipWorld) -> [f32
             1.0,
         ],
         _ => item_name_color(rare),
+    };
+    // `:20620-20627` — the diff overrides win over every rarity colour.
+    match diff {
+        // `Main.mcColor = new Color(1f, 0.6f, 0f)` (`Main.cs:66765`).
+        1 => [1.0, 0.6, 0.0, 1.0],
+        // `Main.hcColor = new Color(1f, 0.15f, 0.1f)` (`:66766`).
+        2 => [1.0, 0.15, 0.1, 1.0],
+        _ => base,
     }
 }
 
@@ -1000,6 +1013,8 @@ mod w4_f28_tests {
                             "PrecentFishingPower": "{0}% fishing power",
                             "BaitRequired": "Requires bait to catch fish" },
                 "UI": { "ItemCannotBePlacedInsideItself": "Placing into itself will be blocked",
+                        "ItemLoadoutShared": "Shared with other loadouts",
+                        "ItemLoadoutShareHint": "{InputTriggerUI_FavoriteItem} to share across loadouts",
                         "ItemSetBonusGeneral": "Set Bonus: {Description}",
                         "ItemSetBonusEquipped": "Set Bonus ({Numerator}/{Denominator})\n{Description}",
                         "ItemSetBonusDecidedByHead": "Changes with head piece" }
@@ -1164,7 +1179,7 @@ mod w4_f28_tests {
         // The expert name colour: the disco stock (255, 0, 0).
         assert_eq!(rows[0].1, [1.0, 0.0, 0.0, 1.0]);
         // The master pulse: (255, (byte)(masterColor * 200), 0).
-        let c = tooltip_name_color(-13, false, &TooltipWorld { master_color: 0.5, ..TooltipWorld::STOCK });
+        let c = tooltip_name_color(-13, false, 0, &TooltipWorld { master_color: 0.5, ..TooltipWorld::STOCK });
         assert_eq!(c, [1.0, 100.0 / 255.0, 0.0, 1.0]);
         // The animator: 1f + 0.05 clamps to 1 and flips the direction.
         assert_eq!(advance_master_color(1.0, 1), (1.0, -1));
@@ -1515,5 +1530,77 @@ mod w4_f28_tests {
         assert!(!t.contains(&glove_leak.as_str()), "the glove scale must not leak: {t:?}");
         // The word tier reads the glove-scaled 12.65 → tip[22].
         assert!(t.contains(&crate::lang::tip(22).as_str()), "{t:?}");
+    }
+
+    /// W4-f28 salvage (research/128 §5-e16.4, e16
+    /// `w4_e16_the_loadout_share_arm_suppresses_the_equipable_row`): a
+    /// shareable context (8-12, `ItemSlot.cs:395-399`) latches `flag` — the
+    /// favourited Meteor Helmet prints UI.ItemLoadoutShared and the
+    /// equipable row drops (`Main.cs:20816`'s `!flag`); the unfavourited
+    /// piece latches flag2 (the share hint at the tail, `:21312-21317`,
+    /// OurFavoriteColor (255,231,69) at alpha 190, `Main.cs:66748`).
+    #[test]
+    fn w4_f28_the_loadout_share_arm_suppresses_the_equipable_row() {
+        let _g = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_lang();
+        let flags = HoverFlags { context: 8, favorited: true, worn_armor: true, ..Default::default() };
+        let ctx = TooltipContext { flags, ..Default::default() };
+        let rows = item_tooltip_lines(123, def(123), ctx);
+        let t = texts(&rows);
+        assert!(t.contains(&"Shared with other loadouts"), "{t:?}");
+        assert!(!t.contains(&crate::lang::tip(23).as_str()), "the equipable row drops");
+        assert!(!t.contains(&crate::lang::tip(56).as_str()), "no plain favourite pair");
+        // The unfavourited shareable slot: the hint row in OurFavoriteColor.
+        let flags = HoverFlags { context: 8, worn_armor: true, ..Default::default() };
+        let ctx = TooltipContext { flags, ..Default::default() };
+        let rows = item_tooltip_lines(123, def(123), ctx);
+        let hint = rows
+            .iter()
+            .find(|(t, _)| t == "{InputTriggerUI_FavoriteItem} to share across loadouts")
+            .expect("the share hint");
+        assert_eq!(hint.1, [1.0, 231.0 / 255.0, 69.0 / 255.0, 190.0 / 255.0]);
+        // The setting off drops the hint (Player.cs:372/:412).
+        let ctx = TooltipContext { flags, show_loadout_share_hint: false, ..Default::default() };
+        let rows = item_tooltip_lines(123, def(123), ctx);
+        assert!(!texts(&rows).iter().any(|t| t.contains("share across loadouts")));
+        // canLoadoutShareAt: exactly 8..=12.
+        for c in 8..=12 {
+            assert!(can_loadout_share_at(c));
+        }
+        assert!(!can_loadout_share_at(7));
+        assert!(!can_loadout_share_at(13));
+        assert!(!can_loadout_share_at(-1));
+    }
+
+    /// W4-f28 — the diff 1/2 name colours (`GetItemNameColor`,
+    /// `Main.cs:20620-20627`): the mediumcore `mcColor` (1, 0.6, 0) and the
+    /// hardcore `hcColor` (1, 0.15, 0.1) (`Main.cs:66765-66766`) override
+    /// EVERY rarity colour, the expert disco included. The item tooltip's
+    /// own call passes 0; the stealthed-remote-player hover passes the
+    /// character's difficulty (`:42934`). WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_f28_the_diff_colours_override_every_rarity() {
+        let _g = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_lang();
+        // diff 0 keeps the rarity colour (the white rare-0 name).
+        let c = tooltip_name_color(0, false, 0, &TooltipWorld::STOCK);
+        assert_eq!(c, [1.0, 1.0, 1.0, 1.0]);
+        // diff 1: the mediumcore orange, over the rare-8 yellow AND the
+        // expert disco (the override runs after every rarity arm).
+        let c = tooltip_name_color(8, false, 1, &TooltipWorld::STOCK);
+        assert_eq!(c, [1.0, 0.6, 0.0, 1.0]);
+        let c = tooltip_name_color(0, true, 1, &TooltipWorld::STOCK);
+        assert_eq!(c, [1.0, 0.6, 0.0, 1.0]);
+        // diff 2: the hardcore red, over the master pulse too.
+        let c = tooltip_name_color(-13, false, 2, &TooltipWorld { master_color: 0.5, ..TooltipWorld::STOCK });
+        assert_eq!(c, [1.0, 0.15, 0.1, 1.0]);
+        // The tooltip rows carry it through the context.
+        let ctx = TooltipContext { diff: 2, ..Default::default() };
+        let rows = item_tooltip_lines(4, def(4), ctx);
+        assert_eq!(rows[0].1, [1.0, 0.15, 0.1, 1.0]);
+        // Any other diff value keeps the rarity colour (the C# has only
+        // the two arms).
+        let c = tooltip_name_color(0, false, 3, &TooltipWorld::STOCK);
+        assert_eq!(c, [1.0, 1.0, 1.0, 1.0]);
     }
 }

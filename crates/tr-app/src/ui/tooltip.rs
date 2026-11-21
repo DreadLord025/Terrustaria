@@ -240,6 +240,12 @@ pub struct TooltipContext<'a> {
     /// so the draw sites leave this `None` until the persistent recipe-list
     /// port lands (docs/ANALYSIS.md).
     pub crafting_missing_reason: Option<String>,
+    /// W4-f28 — `MouseTextCache.diff` (`Main.cs:20172`): the mediumcore (1)
+    /// / hardcore (2) character-colour override on the name row
+    /// (`GetItemNameColor`, `:20620-20627`). The item tooltip's own call
+    /// passes 0 (`DrawInterface_33_MouseText`, `:45419`); the stealthed-
+    /// remote-player hover passes `player.difficulty` (`:42934`, unported).
+    pub diff: u8,
     /// W4-f28 — the shop price row's hover inputs
     /// (`Main.MouseText_DrawItemTooltip_AddShopLines`, `Main.cs:20448-20555`):
     /// `Some` while a shop is open (`Main.npcShop > 0`) — the row appends
@@ -263,6 +269,7 @@ impl Default for TooltipContext<'_> {
             open_chest: -1,
             show_loadout_share_hint: true,
             crafting_missing_reason: None,
+            diff: 0,
             shop_lines: None,
         }
     }
@@ -329,7 +336,7 @@ pub fn item_tooltip_lines(
     let rare = stats.rare;
     let mut lines: Vec<(String, [f32; 4])> = vec![(
         hover_name(kind, ctx.prefix, ctx.stack),
-        tooltip_lines2::tooltip_name_color(rare, d.expert, &ctx.world),
+        tooltip_lines2::tooltip_name_color(rare, d.expert, ctx.diff, &ctx.world),
     )];
     // `:20636-20663` — the favourite / loadout-share head (the e16 arm,
     // research/128 §5-e16.4). `flag` latches the loadout-share arm (it
