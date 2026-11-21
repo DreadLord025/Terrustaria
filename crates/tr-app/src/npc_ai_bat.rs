@@ -5,14 +5,14 @@
 //! the C#'s dispatch key, so this module owns style 8:
 //!
 //! * type 24 Fire Imp (`SetDefaults` `NPC.cs:9078-9092`),
-//! * type 29 Goblin Sorcerer (`:9326` group),
+//! * type 29 Goblin Sorcerer (`:15686-15699`),
 //! * type 32 Dark Caster (`:9121-9134`),
-//! * type 45 Tim (`:11158` group),
+//! * type 45 Tim (`:9322-9336`),
+//! * type 172 Rune Wizard (`:11154-11167`, W4-g5),
 //! * type 533 Desert Djinn (`:14974-14987`),
-//! * types 281-286 the hardmode dungeon casters (`:12640-12723`) — unported
-//!   kinds, deferred,
-//! * type 172 Rune Wizard (`:17727` group) and 693 Librarian Skeleton —
-//!   unported kinds, deferred.
+//! * type 693 Librarian Skeleton (`:17723-17735`, W4-g5),
+//! * types 281-286 the hardmode dungeon casters (`:12640-12723`) — the
+//!   d38 branch's claim (pushed, unmerged).
 //!
 //! The seam (S1-D-3, code-only mode): `Npc::update_caster` (`npc.rs`, the
 //! kind-dispatched arm — it also carries the Poltergeist aiStyle-22 stand-in)
@@ -32,21 +32,29 @@
 //! 2. The teleport search (`:18952-18953`): 2 draws per attempt (X then Y),
 //!    ≤100 attempts; the >2000-px Manhattan bail draws NOTHING. The radius
 //!    is the C# DEFAULT 20 for EVERY type (`:18937`/`:21097` — `num88` is
-//!    only the post-teleport windup, the W4-d128 L1 fix).
+//!    only the post-teleport windup, the W4-d128 L1 fix). The 693's book
+//!    search (`:19009-19085`, W4-g5) runs FIRST: one `Next(2)` direction
+//!    seed + ≤100 X-then-Y pairs (`Next(target ± 30)`), the >125-tile
+//!    Euclidean bail draws NOTHING.
 //! 3. The Djinn volley search (`:21137-21160`): on the `% 30 == 0 &&
 //!    / 30 < 5` windup ticks (ai[1] = 120/90/60/30/0 AFTER the decrement),
 //!    2 draws per iteration (X then Y), ≤50 iterations, early-exit on the
 //!    first accepted tile; the >2000-px length gate draws NOTHING.
-//! 4. The ambient tail gates (`:21279-21374`): 29/45 `Next(5)` every tick,
+//! 4. The shoot ticks (W4-g5): the 172's shadow beam (`:21264-21274`) draws
+//!    two `Next(-10, 11)` aim jitters (X then Y); the 693's book shot
+//!    (`:21248-21263`) draws `Next(bookCount)` on a found book OR two
+//!    `NextFloat` (the NextVector2Circular angle + radius) on the fallback.
+//! 5. The ambient tail gates (`:21279-21374`): 29/45 `Next(5)` every tick,
 //!    32 `Next(3)` every tick, the else group (24) `Next(6)` every tick,
-//!    533 draws NOTHING (light only).
+//!    533 draws NOTHING (light only), the 693 draws NOTHING (the ai[0]-
+//!    scaled light, `:21301-21308`), the 172 draws `Next(255)` per alpha-
+//!    dust iteration (1, or 2 at alpha 255, `:21310-21325`).
 //!
-//! The unported kinds' own draws (172's aim jitter `:21268-21269` + alpha
-//! dust `:21319-21325`, 281-286's `Next(2)` gates `:21331`/`:21340`/`:21350`,
-//! 693's light-only tail) stay cited skips with their kinds. This is the
-//! deliberate ONE-TIME stream shift the W4-d128 plan mandates — the golden
-//! outputs re-bless at the verification gate (ANALYSIS "The caster aiStyle-8
-//! draw-parity (W4-g5)").
+//! The d38 kinds' own draws (281-286's `Next(2)` gates `:21331`/`:21340`/
+//! `:21350`) stay the d38 branch's claim. This is the deliberate ONE-TIME
+//! stream shift the W4-d128 plan mandates — the golden outputs re-bless at
+//! the verification gate (ANALYSIS "The caster aiStyle-8 draw-parity
+//! (W4-g5)").
 
 use crate::npc::{Npc, NpcKind};
 use crate::npc_target::{target_closest, TargetCandidate};
@@ -276,6 +284,208 @@ fn to_tile(v: f32) -> i32 {
     (v as i32) >> 4
 }
 
+/// `NPC.AI_AttemptToFindTeleportSpotNearBooks_SearchWall`
+/// (`NPC.cs:19087-19134`): the vertical book scan. Steps `y` by ±1 until
+/// a solid tile stops it; a `TileID.Books` (50) tile whose 16×16 box
+/// inflated 80 misses every live player's telefrag union is the chosen
+/// book. Returns `(book tile, out_of_bounds)`.
+fn book_search_wall(
+    world: &World,
+    x: i32,
+    y: i32,
+    downwards: bool,
+    player: &TelefragPlayer,
+) -> (Option<(i32, i32)>, bool) {
+    let step = if downwards { 1 } else { -1 };
+    let mut y = y;
+    loop {
+        y += step;
+        if y < 0 || y >= world.height {
+            return (None, true); // out of bounds
+        }
+        let tile = world.tile(x, y);
+        // `:19104-19107` — a non-book tile continues the scan.
+        if !tile.is_some_and(|t| t.active() && t.kind == 50) {
+            // `:19131` — the while condition: a solid tile stops the scan.
+            if tile.is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind)) {
+                return (None, false);
+            }
+            continue;
+        }
+        // `:19108-19125` — the telefrag union (the shared attempt's shape).
+        let rect = (x * 16 - 80, y * 16 - 80, 176, 176);
+        let mut blocked = false;
+        if !player.dead {
+            let hx = player.x as i32;
+            let hy = player.y as i32;
+            let dx = (player.vx * 20.0) as i32;
+            let dy = (player.vy * 20.0) as i32;
+            let ux = hx.min(hx + dx);
+            let uy = hy.min(hy + dy);
+            let uw = player.width + dx.abs();
+            let uh = player.height + dy.abs();
+            blocked = ux < rect.0 + rect.2
+                && rect.0 < ux + uw
+                && uy < rect.1 + rect.3
+                && rect.1 < uy + uh;
+        }
+        if blocked {
+            return (None, false); // `:19126-19129` — the break
+        }
+        return (Some((x, y)), false); // `:19130` — the chosen book
+    }
+}
+
+/// `NPC.AI_AttemptToFindTeleportSpotNearBooks` (`NPC.cs:19009-19085`):
+/// the 693's book teleport. The >125-tile Euclidean bail draws NOTHING;
+/// otherwise one `Next(2)` seeds the scan direction, then ≤100 attempts
+/// of an X-then-Y pair (`Next(target ± maxRange)`). Each attempt scans
+/// horizontally for a solid tile, then vertically (down, then up) for a
+/// book; the chosen destination is `(bookX - direction, bookY + 1)`.
+fn attempt_find_teleport_spot_near_books(
+    world: &World,
+    rng: &mut UnifiedRandom,
+    self_center: (f32, f32),
+    target_tile: (i32, i32),
+    max_range: i32,
+    player: &TelefragPlayer,
+) -> Option<(i32, i32)> {
+    // `:19012-19013` — `(int)Center.X / 16` (truncate, then int /16).
+    let num = self_center.0 as i32 / 16;
+    let num2 = self_center.1 as i32 / 16;
+    // `:19014-19019` — the >125-tile Euclidean bail draws NOTHING.
+    let dx = (num - target_tile.0) as f32;
+    let dy = (num2 - target_tile.1) as f32;
+    if (dx * dx + dy * dy).sqrt() > 125.0 {
+        return None;
+    }
+    // `:19020` — one Next(2) seeds the direction (±1).
+    let mut direction = rng.next_max(2) * 2 - 1;
+    for _ in 0..100 {
+        // `:19023-19024` — X first, then Y.
+        let mut x = rng.next_range(target_tile.0 - max_range, target_tile.0 + max_range + 1);
+        let y = rng.next_range(target_tile.1 - max_range, target_tile.1 + max_range + 1);
+        // `:19025-19028` — out of world: the whole attempt returns false.
+        if x < 0 || x >= world.width || y < 0 || y >= world.height {
+            return None;
+        }
+        // `:19029-19032` — the tile must be in front of a dungeon wall
+        // and not active.
+        let tile = world.tile(x, y);
+        if !tile.is_some_and(|t| WALL_DUNGEON.contains(&t.wall))
+            || tile.is_some_and(|t| t.active())
+        {
+            continue;
+        }
+        direction *= -1; // `:19033`
+        // `:19036-19047` — the horizontal scan for a solid tile.
+        let x_min = (target_tile.0 - max_range).max(0);
+        let x_max = (target_tile.0 + max_range).min(world.width - 1);
+        let mut out_of_bounds = false;
+        loop {
+            x += direction;
+            if x < x_min || x > x_max {
+                out_of_bounds = true;
+                break;
+            }
+            if world.tile(x, y).is_some_and(|t| {
+                t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind)
+            }) {
+                break;
+            }
+        }
+        if out_of_bounds {
+            continue;
+        }
+        x -= direction; // `:19054`
+        // `:19055-19066` — the downward book scan. The while loops while
+        // SearchWall returns a book; the self-box skip re-scans from the
+        // book's y. The scan's out-of-bounds continues the outer for.
+        let mut scan_y = y;
+        let mut down_oob = false;
+        loop {
+            let (book, oob) = book_search_wall(world, x, scan_y, true, player);
+            match book {
+                Some((bx, by)) => {
+                    // `:19058-19062` — the self-box skip continues the scan.
+                    if (bx as f32 - num as f32).abs() <= 1.0
+                        && (by as f32 - num2 as f32).abs() <= 1.0
+                    {
+                        scan_y = by;
+                        continue;
+                    }
+                    // `:19063-19065` — the destination is (bookX - dir, bookY + 1).
+                    return Some((bx - direction, by + 1));
+                }
+                None => {
+                    down_oob = oob;
+                    break; // the scan ended (no book / blocked / oob)
+                }
+            }
+        }
+        if down_oob {
+            continue; // `:19067-19070`
+        }
+        // `:19071-19082` — the upward book scan (the same shape).
+        scan_y = y;
+        loop {
+            let (book, _oob) = book_search_wall(world, x, scan_y, false, player);
+            match book {
+                Some((bx, by)) => {
+                    if (bx as f32 - num as f32).abs() <= 1.0
+                        && (by as f32 - num2 as f32).abs() <= 1.0
+                    {
+                        scan_y = by;
+                        continue;
+                    }
+                    return Some((bx - direction, by + 1));
+                }
+                None => break,
+            }
+        }
+    }
+    None
+}
+
+/// `NPC.AI_FindNearbyBook` (`NPC.cs:62308-62364`): the 693's book shot
+/// search. Collects up to 20 `TileID.Books` (50) tiles in the
+/// `searchPosition + (searchWidth, searchHeight)` box (row-major), then
+/// picks one via `Next(count)`. Returns the chosen book tile.
+fn find_nearby_book(
+    world: &World,
+    search: (i32, i32),
+    width: i32,
+    height: i32,
+    rng: &mut UnifiedRandom,
+) -> Option<(i32, i32)> {
+    // `:62313-62318` — the clamped search box.
+    let x0 = search.0.max(0);
+    let x1 = (search.0 + width).min(world.width);
+    let y0 = search.1.max(0);
+    let y1 = (search.1 + height).min(world.height);
+    // `:62319-62343` — the row-major collection (≤20, `_nearbyBooks`).
+    let mut books: Vec<(i32, i32)> = Vec::new();
+    for y in y0..y1 {
+        for x in x0..x1 {
+            if world.tile(x, y).is_some_and(|t| t.active() && t.kind == 50) {
+                books.push((x, y));
+                if books.len() >= 20 {
+                    break;
+                }
+            }
+        }
+        if books.len() >= 20 {
+            break;
+        }
+    }
+    // `:62356-62362` — the pick: Next(count).
+    if books.is_empty() {
+        return None;
+    }
+    let idx = rng.next_max(books.len() as i32) as usize;
+    Some(books[idx])
+}
+
 /// The whole `if (this.aiStyle == 8)` block (`NPC.cs:20817-21376`) for the
 /// ported kinds. State rides `npc.ai[0]` (the cycle counter), `npc.ai[1]`
 /// (the windup countdown), `npc.ai[2]`/`ai[3]` (the pending teleport tile —
@@ -329,12 +539,24 @@ pub fn ai_style_8_step(
     if npc.vx > -0.1 && npc.vx < 0.1 {
         npc.vx = 0.0;
     }
-    // `:20836-20843` — the cycle init (the 693 localAI[1] arm is deferred).
+    // `:20836-20843` — the cycle init; the 693's localAI[1] = 150 book-
+    // teleport cooldown seeds here (W4-g5).
     if npc.ai[0] == 0.0 {
         npc.ai[0] = 500.0;
+        if npc.kind == NpcKind::LibrarianSkeleton {
+            npc.local_ai[1] = 150.0; // `:20841`
+        }
     }
-    // `:20844-20854` — the type-172 alpha ramp: deferred (Rune Wizard is
-    // not a ported kind).
+    // `:20844-20854` — the type-172 alpha ramp (W4-g5): alpha++ toward
+    // 255 (the fade-out), a strike resets it to 0 (the justHit reappear).
+    if npc.kind == NpcKind::RuneWizard {
+        if npc.alpha < 255 {
+            npc.alpha += 1;
+        }
+        if npc.just_hit {
+            npc.alpha = 0;
+        }
+    }
     // `:20855-20992` — the pending teleport: place the body on the tile,
     // zero the velocity, clear ai[2]/ai[3]. W4-g5 draw-parity: the two
     // 50-dust bursts' ARM-LEVEL draws are consumed (29/45's `Next(1, 3)`
@@ -345,6 +567,10 @@ pub fn ai_style_8_step(
     // the C#'s order around the placement.
     if npc.ai[2] != 0.0 && npc.ai[3] != 0.0 {
         let (w, h) = npc.size();
+        // `:20858-20861` — the 172 vanishes on the teleport tick (W4-g5).
+        if npc.kind == NpcKind::RuneWizard {
+            npc.alpha = 255;
+        }
         // `:20862` — the departure puff at the pre-teleport position.
         npc.wants_sound.push(crate::npc::NpcSoundRequest {
             cue: crate::npc::NpcSoundCue::Item8,
@@ -369,18 +595,44 @@ pub fn ai_style_8_step(
         // `:20932-20991` — burst 2, at the NEW position.
         teleport_burst_draws(rng, npc.kind);
     }
-    // `:20993` — the counter tick (the 693 localAI block `:20994-21005` is
-    // deferred with its kind).
+    // `:20993` — the counter tick.
     npc.ai[0] += 1.0;
+    // `:20994-21005` — the 693 localAI clock (W4-g5): localAI[0] counts
+    // up, localAI[2] (the hit-stun) counts down, localAI[3] latches the
+    // facing once the counter passes 1.
+    if npc.kind == NpcKind::LibrarianSkeleton {
+        npc.local_ai[0] += 1.0;
+        if npc.local_ai[2] > 0.0 {
+            npc.local_ai[2] -= 1.0;
+        }
+        if npc.local_ai[3] == 0.0 && npc.local_ai[0] > 1.0 {
+            npc.local_ai[3] = npc.facing as f32;
+        }
+    }
     // `:21006-21010` — `flag5 = AI_GlobalFiringDistanceCheck(Center,
     // player.Center)`; the Goblin Sorcerer (29) is always in range.
     let mut flag5 = global_firing_distance_check(npc.center(), player.center());
     if npc.kind == NpcKind::GoblinSorcerer {
         flag5 = true;
     }
-    // `:21011-21050` — the 283/284, 172, 533, 281/282 trigger arms. Only
-    // the Djinn's is ported; the dungeon casters / Rune Wizard are deferred.
-    if npc.kind == NpcKind::DesertDjinn {
+    // `:21011-21050` — the 283/284, 172, 533, 281/282 trigger arms. The
+    // Djinn's and the Rune Wizard's are ported; the dungeon casters
+    // (281-286) are the d38 branch's claim.
+    if npc.kind == NpcKind::RuneWizard {
+        // `:21023-21030` — the six 75-spaced triggers wind the 30-tick
+        // windup (W4-g5).
+        if flag5
+            && (npc.ai[0] == 75.0
+                || npc.ai[0] == 150.0
+                || npc.ai[0] == 225.0
+                || npc.ai[0] == 300.0
+                || npc.ai[0] == 375.0
+                || npc.ai[0] == 450.0)
+        {
+            npc.ai[1] = 30.0;
+            npc.net_update = true;
+        }
+    } else if npc.kind == NpcKind::DesertDjinn {
         // `:21031-21038` — the single 180 trigger winds the 181-tick volley.
         if flag5 && npc.ai[0] == 180.0 {
             npc.ai[1] = 181.0;
@@ -429,21 +681,32 @@ pub fn ai_style_8_step(
         // `:21089-21093` — num88 = 20, the Fire Imp 5. It is ONLY the
         // post-teleport windup (`ai[1] = num88`, `:21101`).
         let num88 = if npc.kind == NpcKind::FireImp { 5 } else { 20 };
-        // `:21094` — the 693 near-books attempt is deferred with its kind.
+        // `:21094` — the 693 near-books attempt runs FIRST (W4-g5); the
+        // shared attempt is the fallback (`:21095-21097`).
+        let mut found = None;
+        if npc.kind == NpcKind::LibrarianSkeleton {
+            found = attempt_find_teleport_spot_near_books(
+                world, rng, npc.center(), target_tile, 30,
+                &TelefragPlayer::from_player(player),
+            );
+        }
         // `:21097` — the shared attempt; `AnyNPCs(35)` rides the sim's
         // live-head presence mirror (B-1: was the red-hat hands-count
         // stand-in). W4-g5 L1: the radius is the C# DEFAULT 20 for EVERY
         // type — the old `num88` misuse shrank the Fire Imp's search to 5.
-        if let Some((tx, ty)) = attempt_find_teleport_spot(
-            world,
-            rng,
-            npc.kind,
-            npc.center(),
-            target_tile,
-            20,
-            &TelefragPlayer::from_player(player),
-            world.skeletron_head_present,
-        ) {
+        if found.is_none() {
+            found = attempt_find_teleport_spot(
+                world,
+                rng,
+                npc.kind,
+                npc.center(),
+                target_tile,
+                20,
+                &TelefragPlayer::from_player(player),
+                world.skeletron_head_present,
+            );
+        }
+        if let Some((tx, ty)) = found {
             // `:21099-21104` — the destination rides ai[2]/ai[3]; the
             // placement happens on the NEXT tick (`:20855`).
             npc.ai[1] = num88 as f32;
@@ -451,7 +714,13 @@ pub fn ai_style_8_step(
             npc.ai[3] = ty as f32;
         }
         npc.net_update = true;
-        // `:21106-21111` — the 693 localAI reset: deferred.
+        // `:21106-21111` — the 693 localAI reset (W4-g5): the book-
+        // teleport cooldown re-arms to 650, the clock and facing reset.
+        if npc.kind == NpcKind::LibrarianSkeleton {
+            npc.local_ai[0] = 0.0;
+            npc.local_ai[1] = 650.0;
+            npc.local_ai[3] = 0.0;
+        }
     }
     // `:21113-21278` — the windup countdown and the shoot.
     let mut shot = None;
@@ -548,17 +817,18 @@ pub fn ai_style_8_step(
             }
         } else if npc.ai[1] == num89 {
             // `:21175-21277` — the standard shoot tick. The 281-286
-            // projectile arm (`:21177-21227`) and the 693/172 arms are
-            // deferred with their kinds.
+            // projectile arm (`:21177-21227`) is the d38 branch's claim;
+            // the 693/172 arms are ported here (W4-g5).
             // S1-E-21g — `NPC.cs:21230-21233`: the cast's Item8 puff
-            // (`this.type != 172` — the Rune Wizard is silent; no ported
-            // kind is 172, every caster here plays).
-            npc.wants_sound.push(crate::npc::NpcSoundRequest {
-                cue: crate::npc::NpcSoundCue::Item8,
-                x: npc.x,
-                y: npc.y,
-            });
-            let (w, _) = npc.size();
+            // (`this.type != 172` — the Rune Wizard is silent).
+            if npc.kind != NpcKind::RuneWizard {
+                npc.wants_sound.push(crate::npc::NpcSoundRequest {
+                    cue: crate::npc::NpcSoundCue::Item8,
+                    x: npc.x,
+                    y: npc.y,
+                });
+            }
+            let (w, h) = npc.size();
             // `:21238`/`:21242`/`:21246` — `(int)pos.X + width/2,
             // (int)pos.Y - 8` (NPC.NewNPC's Bottom convention, `:80770`).
             let (sx, sy) = (
@@ -584,6 +854,64 @@ pub fn ai_style_8_step(
                         ai3: if flag4 { 1.0 } else { 0.0 },
                     });
                 }
+                NpcKind::RuneWizard => {
+                    // `:21264-21274` — the shadow beam (W4-g5): the 129
+                    // RuneBlast at speed 10, damage 40, timeLeft 300. The
+                    // spawn point is the body CENTRE (`pos + size*0.5`);
+                    // the aim jitters ±10 (two Next(-10,11), X then Y).
+                    let (cx, cy) = (npc.x + w * 0.5, npc.y + h * 0.5);
+                    let (pcx, pcy) = player.center();
+                    let mut ax = pcx - cx + rng.next_range(-10, 11) as f32;
+                    let mut ay = pcy - cy + rng.next_range(-10, 11) as f32;
+                    let inv = 10.0 / (ax * ax + ay * ay).sqrt();
+                    ax *= inv;
+                    ay *= inv;
+                    // `:21271` — the 129 at damage 40; the timeLeft = 300
+                    // post-spawn write rides the drain's override list.
+                    npc.wants_hostile_shot.push((129, cx, cy, ax, ay, 40));
+                    // `:21273` — localAI[0] = 0.
+                    npc.local_ai[0] = 0.0;
+                }
+                NpcKind::LibrarianSkeleton => {
+                    // `:21248-21263` — the book shot (W4-g5): the 1092
+                    // LibrarianSkeletonBook at damage 13, ai0 = 0, ai1 =
+                    // 45, ai2 = target. The spawn point is a nearby book
+                    // (`AI_FindNearbyBook`) or the body centre + a
+                    // NextVector2Circular(30, 15) offset.
+                    let (cx, cy) = npc.center();
+                    let search = (to_tile(cx) - 10, to_tile(cy) - 20);
+                    let vec = if let Some((bx, by)) =
+                        find_nearby_book(world, search, 20, 30, rng)
+                    {
+                        // `ToWorldCoordinates` (`Utils.cs:1762-1765`):
+                        // tile*16 + 8 (the tile centre).
+                        ((bx * 16 + 8) as f32, (by * 16 + 8) as f32)
+                    } else {
+                        // `NextVector2Circular(30, 15)` (`Utils.cs:1266-
+                        // 1269`): NextVector2Unit() * (30,15) * NextFloat()
+                        // — two NextFloat draws (the angle, then the radius).
+                        let angle = rng.next_float() * std::f32::consts::TAU;
+                        let radius = rng.next_float();
+                        (
+                            cx + angle.cos() * 30.0 * radius,
+                            cy + angle.sin() * 15.0 * radius,
+                        )
+                    };
+                    // `:21262` — the 1092 at damage 13, ai0 = 0, ai1 = 45,
+                    // ai2 = this.target. The port's single player folds
+                    // ai2 to 0 (the saucer-missile convention).
+                    npc.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                        kind: 1092,
+                        x: vec.0,
+                        y: vec.1,
+                        vx: 0.0,
+                        vy: 0.0,
+                        damage: 13,
+                        ai0: 0.0,
+                        ai1: 45.0,
+                        scale: None,
+                    });
+                }
                 _ => {}
             }
         }
@@ -594,12 +922,25 @@ pub fn ai_style_8_step(
     // their C# positions (the `NewDust` internals stay the dust task's
     // skip): 29/45 `Next(5)` (`:21282`), 32 `Next(3)` (`:21292`), the else
     // group (24) `Next(6)` (`:21366`); 533 draws NOTHING (`:21358-21361`,
-    // light only). The unported kinds' arms (172/281-286/693) stay cited
-    // skips with their kinds.
+    // light only). The 172's alpha dust (`:21310-21325`) and the 693's
+    // light (`:21301-21308`) are ported here (W4-g5); the 281-286 arms
+    // are the d38 branch's claim.
     if matches!(npc.kind, NpcKind::GoblinSorcerer | NpcKind::Tim) {
         let _ = rng.next_max(5); // `:21282` — Next(5) == 0 gates the dust
     } else if npc.kind == NpcKind::DarkCaster {
         let _ = rng.next_max(3); // `:21292` — Next(3) != 0 gates the dust
+    } else if npc.kind == NpcKind::LibrarianSkeleton {
+        // `:21301-21308` — light only, NO draw (the ai[0]-scaled light is
+        // the frame pass's feed, `npc_lights.rs`).
+    } else if npc.kind == NpcKind::RuneWizard {
+        // `:21310-21325` — the alpha dust: 1 iteration (alpha < 255) or 2
+        // (alpha == 255), each gated by `Next(255) > 255 - alpha`. The
+        // gate draw is arm-level (consumed); the dust's Next(30)/Next(30)/
+        // Next(6) internals stay the dust task's skip.
+        let iterations = if npc.alpha == 255 { 2 } else { 1 };
+        for _ in 0..iterations {
+            let _ = rng.next_max(255); // `:21319` — the alpha gate
+        }
     } else if npc.kind == NpcKind::DesertDjinn {
         // `:21358-21361` — light only, NO draw.
     } else {

@@ -926,6 +926,14 @@ pub const INFERNO_BLAST: u16 = 296;
 pub const VENOM_FANG: u16 = 355;
 /// `ProjectileID.FrostBoltStaff` (359) — the Frost Staff's bolt.
 pub const FROST_BOLT: u16 = 359;
+/// `ProjectileID.RuneBlast` (129) — the Rune Wizard's shadow beam
+/// (W4-g5, `Projectile.cs:2180-2190`: 14x14, aiStyle 28, alpha 255,
+/// penetrate -1, hostile, tileCollide false).
+pub const RUNE_BLAST: u16 = 129;
+/// `ProjectileID.LibrarianSkeletonBook` (1092) — the Librarian Skeleton's
+/// book shot (W4-g5, `Projectile.cs:10186-10194`: 16x16, aiStyle 18,
+/// hostile, penetrate -1, timeLeft 420).
+pub const LIBRARIAN_BOOK: u16 = 1092;
 /// The fishing bobbers (S1-P-i35): the plain pole family 360-366
 /// (`ProjectileID.BobberWooden`..`BobberSittingDuck`), the Fleshcatcher /
 /// Hotline 381/382, the Blood rod 760 and the Scarab 775
@@ -2752,6 +2760,19 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:4497-4507` — the frost staff's bolt: 14x14, aiStyle 28,
             // alpha 255, `penetrate = 2` (coldDamage — no slot field yet).
             FROST_BOLT => (14.0, 14.0, 28, 2, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:2180-2190` — the Rune Wizard's RuneBlast (129, W4-g5):
+            // 14x14, aiStyle 28, alpha 255, `penetrate = -1`, hostile,
+            // `tileCollide = false`. The stock 3600 life (the NPC's shoot
+            // overrides it to 300, `NPC.cs:21272`). The flight arm is
+            // `ai_frost_bolt` (the shared aiStyle-28 first-tick Item28 cue
+            // + the 129's 6-dust Next(4)/Next(5) block).
+            RUNE_BLAST => (14.0, 14.0, 28, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:10186-10194` — the Librarian Skeleton's book (1092, W4-g5):
+            // 16x16, aiStyle 18, hostile, `penetrate = -1`, `timeLeft =
+            // 420`. The stock `tileCollide = true` (`:775`) stands. The
+            // flight arm is `ai_librarian_book` (the 45-tick hover, the
+            // aim turn, the 9-speed home, the page-gore trail).
+            LIBRARIAN_BOOK => (16.0, 16.0, 18, -1, 420, 0, true, false, false, RESET_STATE),
             // `:6461-6470` + `ApplyGemStaffStats` (`:10683-10689`) — the
             // Amber Staff's bolt, the gem-bolt family's seventh kind.
             GEM_BOLT_AMBER => (10.0, 10.0, 29, 1, 300, 0, true, false, false, (true, 60, false, -1, 255, 1.0)),
@@ -4732,6 +4753,10 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // wraps at it. The other glowsticks/flares keep the stock 1 (no
         // `projFrames` override in `Main.cs:8444-8727`).
         FAIRY_GLOWSTICK => 4,
+        // W4-g5 — the 1092 book's 54-frame sheet (`Main.cs:8720`): the 6×9
+        // grid (`Main.cs:33197`'s `Frame(6, 9, frame/9, frame%9)`). The
+        // 129 RuneBlast keeps the stock 1 (no `projFrames` override).
+        LIBRARIAN_BOOK => 54,
         _ => 1,
     }
 }

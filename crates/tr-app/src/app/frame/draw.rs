@@ -447,6 +447,7 @@ impl App {
                             pos,
                             w,
                             h,
+                            n.ai[0],
                         ) {
                             self.entity_lights.add(x, y, rgb);
                         }
@@ -567,6 +568,16 @@ impl App {
                             p.kind, p.light, p.pos, p.w, p.h, good_world, &params,
                         ) {
                             self.entity_lights.add(x, y, rgb);
+                        }
+                        // W4-g5 — the 1092 book's per-tick `Lighting.AddLight
+                        // (base.Center, 0.3f, 0.25f, 0.1f)` (`Projectile.cs:
+                        // 25394`): a constant AI-head light, NOT the
+                        // SetDefaults `light` amount (the 1092 row carries
+                        // none). The Centre anchor truncates per axis.
+                        if p.kind == crate::projectile::LIBRARIAN_BOOK {
+                            let cx = ((p.pos.x + p.w * 0.5) / 16.0) as i32;
+                            let cy = ((p.pos.y + p.h * 0.5) / 16.0) as i32;
+                            self.entity_lights.add(cx, cy, [0.3, 0.25, 0.1]);
                         }
                     }
                     // The Dust `UpdateDust` lights (S1-E-5, dust family):

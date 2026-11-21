@@ -7440,6 +7440,106 @@ impl Projectile {
         self.kill_step(world);
     }
 
+    /// W4-g5 — `AI()`'s aiStyle-18 block (`Projectile.cs:25392-25456`),
+    /// the 1092 LibrarianSkeletonBook arm. The 45-tick hover (ai[0] = 1,
+    /// the ai[1] countdown from the NPC's 45), the aim turn in the last
+    /// 20 ticks, then the 9-speed home (ai[0] = 2) with the page-gore
+    /// trail. The target player slot (ai[2]) folds to the session player
+    /// (the single-player convention, the saucer-missile precedent).
+    ///
+    /// RNG by construction (policy A — the arm-level draws consumed, the
+    /// `NewDust`/`NewGore` internals the dust/gore tasks' skip): the init
+    /// tick draws `Next(6)` + `Next(3)` (the frame) + 6× two `Next(-10,11)`
+    /// (the dust velocity arguments); the home transition draws `Next(6)`
+    /// (the frame); the home tick draws `Next(5)` (the gore gate) and, on
+    /// a zero, two `NextDouble` (NextVector2Square) + one `NextFloat` +
+    /// one `Next(3)` (SelectRandom); every tick draws `Next(15)` (the
+    /// trailing dust gate).
+    fn ai_librarian_book(
+        &mut self,
+        world: &World,
+        player: Option<&crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        // `:25394` — the constant Centre light is the frame pass's feed
+        // (`app/frame/draw.rs`, the npc_lights precedent).
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        // `:25395-25406` — the init: the random frame, the -3 lift, the
+        // 6-dust burst (the velocity arguments are arm-level draws).
+        if self.ai[0] == 0.0 {
+            self.frame = rng.next_range(0, 6) * 9 + rng.next_range(0, 3);
+            self.vel.y = -3.0;
+            self.ai[0] = 1.0;
+            for _ in 0..6 {
+                let _ = rng.next_range(-10, 11); // `:25402` — dust vel.X
+                let _ = rng.next_range(-10, 11); // `:25402` — dust vel.Y
+            }
+        }
+        if self.ai[0] == 1.0 {
+            // `:25409` — the hover lift decay.
+            self.vel.y *= 0.95;
+            // `:25411-25416` — the last 20 ticks turn toward the player.
+            // The C# reads `Main.player[(int)ai[2]]`; the port's single
+            // player folds ai[2] to slot 0.
+            if self.ai[1] < 20.0 {
+                if let Some(p) = player {
+                    let (pcx, pcy) = p.center();
+                    let target = (pcy - center.y).atan2(pcx - center.x)
+                        + std::f32::consts::FRAC_PI_2;
+                    self.rot = angle_towards(self.rot, target, 0.25);
+                }
+            }
+            // `:25417-25426` — the post-decrement countdown: the check
+            // reads the OLD ai[1], then decrements.
+            let fire = self.ai[1] <= 0.0;
+            self.ai[1] -= 1.0;
+            if fire {
+                self.ai[0] = 2.0;
+                // `:25420-25423` — the C# kills on an inactive target; the
+                // port's session player is always active (the single-
+                // player convention), so the kill never fires.
+                // `:25424` — SafeNormalize(playerCentre - centre, One) * 9.
+                let vel = if let Some(p) = player {
+                    let (pcx, pcy) = p.center();
+                    let d = Vec2::new(pcx - center.x, pcy - center.y);
+                    if d == Vec2::ZERO || d.is_nan() {
+                        Vec2::ONE
+                    } else {
+                        d.normalize()
+                    }
+                } else {
+                    Vec2::ONE
+                };
+                self.vel = vel * 9.0;
+                // `:25425` — frame = frame/9*9 + 3 + Next(6).
+                self.frame = self.frame / 9 * 9 + 3 + rng.next_range(0, 6);
+            }
+        } else if self.ai[0] == 2.0 {
+            // `:25430-25435` — the home spin: sign(vel.X) (0 reads 1).
+            let mut sign = self.vel.x.signum() as i32;
+            if sign == 0 {
+                sign = 1;
+            }
+            self.rot += self.vel.length() * sign as f32 * 0.03;
+            // `:25436-25445` — the page gore: the Next(5) gate, then the
+            // NextVector2Square(0,1) position (two NextDouble), the
+            // -NextFloat()*16 lift, the SelectRandom(1007,1008,1008) kind
+            // (one Next(3)). The gore spawn is the gore task's skip.
+            if rng.next_range(0, 5) == 0 {
+                let _ = rng.next_double(); // NextVector2Square X
+                let _ = rng.next_double(); // NextVector2Square Y
+                let _ = rng.next_float(); // the lift
+                let _ = rng.next_range(0, 3); // SelectRandom(1007,1008,1008)
+            }
+        }
+        // `:25447-25455` — the trailing dust gate (every tick). The dust
+        // spawn is the dust task's skip.
+        let _ = rng.next_range(0, 15);
+        // `HandleMovement` after the AI (`:17015`): the 1092 keeps its
+        // row's tileCollide, so a blocked move kills (the kill_step shape).
+        self.kill_step(world);
+    }
+
     /// `AI()`'s aiStyle-12 arm (`Projectile.cs:24501-24635`) — the Aqua
     /// Scepter's water stream (type 22). The 280/288 obsidian-skin arms
     /// (`:24508-24547`) are unported kinds. The type-22 constants
@@ -7853,7 +7953,18 @@ impl Projectile {
         self.kill_step(world);
     }
 
-    fn ai_frost_bolt(&mut self, world: &World) {
+    fn ai_frost_bolt(&mut self, world: &World, rng: &mut dyn tr_core::loot::DropRng) {
+        // `:26638-26646` — the 129 RuneBlast's dust block (W4-g5): 6 dust
+        // EVERY tick, each with a `Next(4)` velocity scale + a `Next(5)`
+        // size scale. The two draws are arm-level (policy A — consumed);
+        // the `NewDust` internals stay the dust task's skip. The block
+        // runs BEFORE the first-tick cue (the C#'s body order).
+        if self.kind == RUNE_BLAST {
+            for _ in 0..6 {
+                let _ = rng.next_range(0, 4); // `:26644` — velocity *= 0.1 + Next(4)*0.1
+                let _ = rng.next_range(0, 5); // `:26645` — scale *= 1 + Next(5)*0.1
+            }
+        }
         if self.ai[1] == 0.0 {
             self.ai[1] = 1.0;
             // `:26648-26674` — the first-tick cue: the Houndius Shootius
@@ -10280,6 +10391,50 @@ impl Projectile {
         // vanilla draws through the reverse-subtract + additive batches.
         if self.kind == LIGHTS_BANE {
             self.draw_lights_bane(r, lookups, camera, zoom, screen);
+            return;
+        }
+        // W4-g5 — the 1092 book's 6×9 grid draw (`Main.cs:33197`'s
+        // `Frame(6, 9, frame/9, frame%9)` + `:34028-34031`'s
+        // `EntitySpriteDraw`): the colour is raw white × the ai[1] fade
+        // (`Remap(ai[1], 100, 120, 0, 1)` — the NPC's 45-tick hover reads
+        // 0, the book invisible until the player's own 100+ cast), the
+        // anchor is the box CENTRE and the origin the 40×40 cell centre.
+        if self.kind == LIBRARIAN_BOOK {
+            if let Some(sheet) = lookups.proj_sheets.get(&LIBRARIAN_BOOK).copied() {
+                let alpha = get_lerp_value(100.0, 120.0, self.ai[1]);
+                let cell_w = sheet.width / 6;
+                let cell_h = sheet.height / 9;
+                let frame = self.frame.max(0);
+                let uv = assets::uv_rect(
+                    &sheet,
+                    lookups.atlas_size,
+                    (frame / 9) * cell_w as i32,
+                    (frame % 9) * cell_h as i32,
+                    cell_w,
+                    cell_h,
+                );
+                let scale = self.scale.max(0.0) * zoom;
+                let anchor = [
+                    (self.pos.x + self.w * 0.5 - camera.x) * zoom + screen.x * 0.5,
+                    (self.pos.y + self.h * 0.5 - camera.y) * zoom + screen.y * 0.5,
+                ];
+                let origin = [
+                    cell_w as f32 * 0.5 * scale,
+                    cell_h as f32 * 0.5 * scale,
+                ];
+                let (s, c) = self.rot.sin_cos();
+                let tl = [
+                    anchor[0] - (origin[0] * c - origin[1] * s),
+                    anchor[1] - (origin[0] * s + origin[1] * c),
+                ];
+                r.push_ui_sprite_rot(
+                    tl,
+                    [cell_w as f32 * scale, cell_h as f32 * scale],
+                    uv,
+                    [1.0, 1.0, 1.0, alpha],
+                    self.rot,
+                );
+            }
             return;
         }
         // The ported trail families' quad-ribbon trails (M4-PROJ-6b Phase 7):
@@ -17366,7 +17521,17 @@ impl ProjectilePool {
                             self.slots[i].wet = wet;
                             self.slots[i].ai_bomb(world, &npcs[..], rng, local_owner);
                         }
-                        18 => self.slots[i].ai_demon_scythe(world),
+                        18 => {
+                            // W4-g5 — the 1092 book's own aiStyle-18 block
+                            // (`Projectile.cs:25392-25456`) runs ahead of the
+                            // generic DemonScythe flight; the other style-18
+                            // kinds keep the shared arm.
+                            if self.slots[i].kind == LIBRARIAN_BOOK {
+                                self.slots[i].ai_librarian_book(world, player.as_deref(), rng);
+                            } else {
+                                self.slots[i].ai_demon_scythe(world);
+                            }
+                        }
                         // `AI()`'s `else if (this.aiStyle == 12)`
                         // (`Projectile.cs:24501-24635`) — the Aqua Scepter's
                         // water stream (22): the scale decay, the gravity and
@@ -17550,7 +17715,7 @@ impl ProjectilePool {
                                 p.time_left = 60;
                             }
                         }
-                        28 => self.slots[i].ai_frost_bolt(world),
+                        28 => self.slots[i].ai_frost_bolt(world, rng),
                         50 => self.slots[i].ai_inferno_fork(world),
                         // The aiStyle-27 followup caster family
                         // (`Projectile.cs:26420-26554`): the Unholy Trident
@@ -23674,10 +23839,11 @@ mod s1_e_21h_sound_tests {
                 tile_collide: false,
                 ..Default::default()
             };
+            let mut rng = tr_core::UnifiedRandom::new(7);
             match proj_data(kind).map(|d| d.ai_style) {
                 Some(8) => p.ai_ball_of_fire(&w),
                 Some(27) => p.ai_unholy_trident(&w),
-                Some(28) => p.ai_frost_bolt(&w),
+                Some(28) => p.ai_frost_bolt(&w, &mut rng),
                 Some(50) => p.ai_inferno_fork(&w),
                 other => panic!("kind {kind}'s arm: {other:?}"),
             }
@@ -23691,7 +23857,7 @@ mod s1_e_21h_sound_tests {
             match proj_data(kind).map(|d| d.ai_style) {
                 Some(8) => p.ai_ball_of_fire(&w),
                 Some(27) => p.ai_unholy_trident(&w),
-                Some(28) => p.ai_frost_bolt(&w),
+                Some(28) => p.ai_frost_bolt(&w, &mut rng),
                 Some(50) => p.ai_inferno_fork(&w),
                 _ => unreachable!(),
             }

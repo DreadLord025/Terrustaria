@@ -5926,6 +5926,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             || kind == crate::projectile::QUEEN_BEE_STINGER
             || kind == crate::projectile::DEMON_SICKLE
             || kind == crate::projectile::SKULL
+            // W4-g5 — the Rune Wizard's RuneBlast (`NPC.cs:21272`'s
+            // `Main.projectile[num108].timeLeft = 300`).
+            || kind == crate::projectile::RUNE_BLAST
         {
             300
         } else {
