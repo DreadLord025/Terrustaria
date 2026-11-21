@@ -140,6 +140,9 @@
 //! | 573 | `:85775` | the 496/497 GiantShelly death (1 gore 739+(type-496)) |
 //! | 574-576 | `:85793-85795` | the 498-506 Salamander death (3 gores, per-type offset type-498) |
 //! | 577-586 | `:85813-85839` | the bat family 49/51/93/150/152/226 death (per-type gore lists) |
+//! | 587-589 | `:85856-85858` | the 611/689 Owl/OwlMimic death (3 gores 1164/1164/1165) |
+//! | 590-593 | `:85874-85877` | the 624 Gnome death (4 gores 1190-1193) |
+//! | 594-596 | `:85893-85895` | the 628 Dandelion death: the first three gores (1205/1206/1206) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -3760,6 +3763,87 @@ fn bat_family_death(
     }
 }
 
+/// The 611/689 Owl / OwlMimic death (`NPC.cs:85852-85858`, sites 587-589):
+/// the 15-dust type-5 burst, then the 3 gores 1164/1164/1165 at position
+/// (the 1164 repeats). Scale defaults to 1.
+fn owl_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..15 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 1164, 1.0); // :85856
+    gore.new_gore(rng, world, pos, vel, 1164, 1.0); // :85857
+    gore.new_gore(rng, world, pos, vel, 1165, 1.0); // :85858
+}
+
+/// The 624 Gnome death (`NPC.cs:85870-85877`, sites 590-593): the 10-dust
+/// type-5 burst, then the 4 gores 1190/1191/1192/1193 at position. Scale
+/// defaults to 1.
+fn gnome_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 1190, 1.0); // :85874
+    gore.new_gore(rng, world, pos, vel, 1191, 1.0); // :85875
+    gore.new_gore(rng, world, pos, vel, 1192, 1.0); // :85876
+    gore.new_gore(rng, world, pos, vel, 1193, 1.0); // :85877
+}
+
+/// The 628 Dandelion death (`NPC.cs:85889-85896`, sites 594-597): the
+/// 10-dust type-3 burst, then the 4 gores 1205/1206/1206/1207 at position
+/// (the 1206 repeats). This commit ports the first three gores (sites
+/// 594-596); the 1207 tail lands with the next batch. Scale defaults to 1.
+fn dandelion_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:85889-85892` — the 10-dust type-3 burst.
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 3, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 1205, 1.0); // :85893
+    gore.new_gore(rng, world, pos, vel, 1206, 1.0); // :85894
+    gore.new_gore(rng, world, pos, vel, 1206, 1.0); // :85895
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -4212,6 +4296,19 @@ pub fn hit_effect_c(
         && npc.hp <= 0
     {
         bat_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85842-85859` — the 611/689 Owl/OwlMimic arm (sites 587-589).
+    if (npc_type == 611 || npc_type == 689) && npc.hp <= 0 {
+        owl_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85860-85878` — the 624 Gnome arm (sites 590-593).
+    if npc_type == 624 && npc.hp <= 0 {
+        gnome_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85879-85897` — the 628 Dandelion arm (sites 594-596 here; the 1207
+    // tail lands with the next batch).
+    if npc_type == 628 && npc.hp <= 0 {
+        dandelion_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -6678,6 +6775,47 @@ mod tests {
                 assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
             }
         }
+    }
+
+    /// `NPC.cs:85856-85858` — the Owl death: the 3 gores 1164/1164/1165
+    /// (the 1164 repeats).
+    #[test]
+    fn w4_f10_the_owl_death_spawns_the_three_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 36.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(547);
+        owl_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1164, 1164, 1165]);
+    }
+
+    /// `NPC.cs:85874-85877` — the Gnome death: the 4 gores 1190-1193.
+    #[test]
+    fn w4_f10_the_gnome_death_spawns_the_four_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 40.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(557);
+        gnome_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1190, 1191, 1192, 1193]);
+    }
+
+    /// `NPC.cs:85893-85895` — the Dandelion death's first three gores:
+    /// 1205/1206/1206, after the 10-dust type-3 burst.
+    #[test]
+    fn w4_f10_the_dandelion_death_spawns_the_first_three_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 40.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(563);
+        dandelion_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1205, 1206, 1206]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
