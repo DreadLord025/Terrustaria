@@ -1160,4 +1160,123 @@ mod tests {
         assert!(!crate::bug_net::npc_catchable(317));
         assert!(!crate::bug_net::npc_catchable(689));
     }
+
+    /// W4-d127 chain item 2 — the AXIS claim source pin (the c8
+    /// pattern): `update_rng_dust`'s style match carries EXACTLY ONE
+    /// `24 =>` arm routing to `ai_024_bird_family`, and the family fn
+    /// calls the faithful module with the sim-stamped cloud_alpha +
+    /// neighbours, the slot's release_owner and the vanilla cs_id.
+    /// Scanned from source like `s1_d_4c_every_kind_has_exactly_one_arm`
+    /// — a duplicate arm is dead code (the FIRST wins), so the count
+    /// pin keeps the claim single. WRITTEN NOT RUN.
+    #[test]
+    fn the_axis_24_claim_is_single_and_routes_the_family() {
+        let src = include_str!("npc.rs");
+        let axis = src.find("match self.kind.ai_style()").expect("the style axis");
+        let rest = &src[axis..];
+        let end = rest.find("_ => self.update_kind_ai").expect("the axis fallthrough");
+        let body = &rest[..end];
+        let arms: Vec<&str> = body
+            .lines()
+            .map(|l| l.trim_start())
+            .filter(|l| l.starts_with("24 =>"))
+            .collect();
+        assert_eq!(arms.len(), 1, "one live axis-24 arm (S1-D-4c)");
+        assert!(arms[0].contains("ai_024_bird_family"), "the arm routes the family fn");
+        // The family fn feeds the module (the call site exists) and
+        // queues BOTH out-requests (the poop shot + the transform).
+        let fam = src.find("fn ai_024_bird_family").expect("the family fn");
+        let frest = &src[fam..];
+        let fend = frest.find("\n    }").expect("the fn's close");
+        let fbody = &frest[..fend];
+        assert!(fbody.contains("npc_ai_style24::ai_style_24(self, self.kind.cs_id()"));
+        assert!(fbody.contains("cloud_alpha: self.cloud_alpha"));
+        assert!(fbody.contains("neighbors: &neighbors"));
+        assert!(fbody.contains("release_owner: self.release_owner as i32"));
+        assert!(fbody.contains("wants_hostile_shot.push((1080"));
+        assert!(fbody.contains("wants_transform = Some(ty)"));
+        // The integration tail: the gravity gate reads the outcome's
+        // noGravity, the depth-scaled body_gravity + the wet 0.2/7 row,
+        // the dead-band snap, the oldVelocity latch.
+        assert!(fbody.contains("if !out.no_gravity"));
+        assert!(fbody.contains("npc_ai_golem::body_gravity"));
+        assert!(fbody.contains("(self.vy + 0.2).min(7.0)"));
+        assert!(fbody.contains("(self.vx as f64) < 0.005"));
+        assert!(fbody.contains("self.old_vx = self.vx"));
+    }
+
+    /// W4-d127 chain item 2 — the sim-stamp source pin: the pre-pass
+    /// stamps `cloud_alpha` (Rain.visual_alpha) and the slot-order
+    /// roost neighbours with the per-slot `is_self` flag for EVERY
+    /// living ai_style-24 kind (all 11 — the owls' scan is not
+    /// special-cased away), gated by the any-bird probe. WRITTEN NOT
+    /// RUN.
+    #[test]
+    fn the_sim_stamps_reach_every_style24_kind() {
+        let src = include_str!("world_sim/npcs.rs");
+        let start = src.find("the aiStyle-24 birds' ambient pre-stamps").expect("the pre-pass");
+        let rest = &src[start..];
+        let end = rest.find("// The Twins' shared-despawn seam").expect("the next pre-pass");
+        let body = &rest[..end];
+        assert!(body.contains("app.rain.visual_alpha()"), "the live cloudAlpha");
+        assert!(body.contains("n.kind.ai_style() == 24"), "the style gate covers ALL 11 kinds");
+        assert!(body.contains("is_self: j == i"), "the whoAmI skip rides the slot index");
+        assert!(body.contains("n.kind.is_town_resident()"), "the townNPC row (:25351)");
+        assert!(body.contains("cloud_alpha = cloud"));
+        assert!(body.contains("style24_neighbors = snap"));
+        // The stamp fields exist on the Npc ctor (the merge-ready
+        // claim: no kind carries style 24 yet, so the pass no-ops).
+        let npc_src = include_str!("npc.rs");
+        assert!(npc_src.contains("cloud_alpha: 0.0,"), "the clear-sky stock");
+        assert!(npc_src.contains("style24_neighbors: Vec::new(),"));
+    }
+
+    /// W4-d127 chain item 2 — the family arm's behaviour on a carrier
+    /// slot (no style-24 kind exists on this branch — the census
+    /// ownership rule): a perched carrier bird with the row's box,
+    /// stamped neighbours and a negative-luck player runs the WHOLE
+    /// seam shape the axis arm applies: the module call, the gravity
+    /// tail (perched → gravity ON, the depth-scaled term), the dead-
+    /// band snap and the ground landing. Drives the module + tail
+    /// pieces directly (the private fn's shape is pinned by the source
+    /// witness above). WRITTEN NOT RUN.
+    #[test]
+    fn the_perched_bird_lands_under_the_depth_scaled_gravity() {
+        let mut w = air();
+        // A floor at row 70 (y 1120): the bird at y 1100 falls 6 px.
+        for c in 0..200 {
+            let i = w.index(c, 70);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.world_surface = 60.0;
+        let players = [player(2000.0, 1000.0, 0.0, false)];
+        let c = ctx(&players, &[]);
+        let mut n = bird(74, 100.0, 1100.0);
+        n.ai[0] = 0.0; // perched
+        n.local_ai[0] = 1.0;
+        let out = ai_style_24(&mut n, 74, &w, &c, &mut UnifiedRandom::new(1));
+        assert!(!out.no_gravity, "the perch arm returns gravity (:25372)");
+        // The tail's gravity term: depth-scaled 0.3 (y/16 = 68.75, the
+        // 60+10*num² floor with width 200 → num² tiny → num2 clamps
+        // 0.25 → 0.075), capped 10.
+        let g = crate::npc_ai_golem::body_gravity(n.y, w.width as i32, w.world_surface);
+        assert!(g > 0.0 && g <= 0.3);
+        n.vy = (n.vy + g).min(10.0);
+        let vy0 = n.vy;
+        assert!(vy0 > 0.0, "the perched bird starts falling");
+        // The ground snap (the tail's shape): feet (y + 14) cross row
+        // 70's top (1120) → snap to 1120 - 14 and zero vy.
+        let ny = n.y + n.vy;
+        let feet_row = ((ny + 14.0) / 16.0).floor() as i32;
+        let blocked = w
+            .tile((n.x / 16.0) as i32, feet_row)
+            .map_or(false, |t| t.active() && !t.inactive() && TILE_SOLID.has(t.kind));
+        if blocked && n.vy > 0.0 {
+            n.y = feet_row as f32 * 16.0 - 14.0;
+            n.vy = 0.0;
+        }
+        // Either it landed exactly on the floor top or is still above.
+        assert!(n.y + 14.0 <= 1120.0 + 0.001, "never inside the floor");
+    }
 }

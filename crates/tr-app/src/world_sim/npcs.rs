@@ -4332,6 +4332,63 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
     }
+    // W4-d127 — the aiStyle-24 birds' ambient pre-stamps: `Main.cloudAlpha`
+    // (the owl's day/rain perch flush + the night-roost gate,
+    // `NPC.cs:25343`/`:25373` — the port's Rain.visual_alpha clamp keeps
+    // the gates' zero-ness exact: the arm tests only == 0 / > 0) and the
+    // owl's roost neighbour scan (`NPC.cs:25345-25367`, the whole pool in
+    // slot order with the per-slot `is_self` flag — the twin_time_lefts
+    // carrier precedent). No kind carries ai_style 24 until the roster
+    // co-lanes merge (74=d35, 297/298=d38, 442=d40, 611=d42, 671-675/689=
+    // d43), so the pass is a no-op today; the axis arm is merge-ready.
+    {
+        let cloud = app.rain.visual_alpha();
+        let any_bird = app.npcs.iter().any(|n| n.kind.ai_style() == 24 && n.hp > 0);
+        if any_bird {
+            let snap: Vec<(bool, i32, f32, f32, f32, i32, i32, bool)> = app
+                .npcs
+                .iter()
+                .map(|n| {
+                    let (nw, nh) = n.size();
+                    (
+                        n.hp > 0,
+                        n.kind.cs_id() as i32,
+                        n.ai[0],
+                        n.x,
+                        n.y,
+                        nw as i32,
+                        nh as i32,
+                        // `Main.npc[i].townNPC` (`:25351`) — the port's
+                        // resident-kind flag (the SetDefaults row).
+                        n.kind.is_town_resident(),
+                    )
+                })
+                .collect();
+            for i in 0..app.npcs.len() {
+                if app.npcs[i].kind.ai_style() != 24 || app.npcs[i].hp <= 0 {
+                    continue;
+                }
+                app.npcs[i].cloud_alpha = cloud;
+                app.npcs[i].style24_neighbors = snap
+                    .iter()
+                    .enumerate()
+                    .map(|(j, &(active, ty, ai0, x, y, w, h, town))| {
+                        crate::npc_ai_style24::NeighborNpc {
+                            is_self: j == i,
+                            active,
+                            town_npc: town,
+                            ty,
+                            ai0,
+                            x,
+                            y,
+                            width: w,
+                            height: h,
+                        }
+                    })
+                    .collect();
+            }
+        }
+    }
     // The Twins' shared-despawn seam (S1-D-3-wire-retinazer,
     // `NPC.cs:26468-26474` — the aiStyle-30 arm's `num400 != whoAmI`
     // scan over the other ACTIVE type-125/126 slots, feeding
