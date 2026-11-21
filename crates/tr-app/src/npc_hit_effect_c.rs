@@ -179,6 +179,7 @@
 //! | 773-777 | `:86675-86679` | the 489 BloodZombie death (5 gores 722/723/723/724/724) |
 //! | 778-782 | `:86683-86687` | the 586 ZombieMerman death (5 gores 1106/1107/1107/1108/1108) |
 //! | 783-787 | `:86704-86708` | the 534 DemonTaxCollector death (5 gores 894/895/895/896/896) |
+//! | 788-792 | `:86724-86728` | the 490 Drippler death (5 gores, two Next(3) type draws) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -4808,6 +4809,40 @@ fn demon_tax_collector_death(
     blood_zombie_ladder(npc, dust, dust_ctx, gore, rng, world, hit_direction, 894, 895, 896);
 }
 
+/// The 490 Drippler death (`NPC.cs:86720-86728`, sites 788-792): the
+/// 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 5 gores at position at `this.scale` — 725/726/727 fixed, then TWO gores
+/// of type `725 + Next(3)` (each type draw fires before its spawn).
+fn drippler_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:86720-86723` — the 50-dust type-5 burst (SpeedX 2.5*dir).
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 725, s); // :86724
+    gore.new_gore(rng, world, pos, vel, 726, s); // :86725
+    gore.new_gore(rng, world, pos, vel, 727, s); // :86726
+    // `:86727-86728` — the two Next(3) type draws.
+    let ty = 725 + rng.next_max(3);
+    gore.new_gore(rng, world, pos, vel, ty, s);
+    let ty = 725 + rng.next_max(3);
+    gore.new_gore(rng, world, pos, vel, ty, s);
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -5401,6 +5436,10 @@ pub fn hit_effect_c(
     // `:86690-86709` — the 534 DemonTaxCollector arm (sites 783-787).
     if npc_type == 534 && npc.hp <= 0 {
         demon_tax_collector_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86710-86729` — the 490 Drippler arm (sites 788-792).
+    if npc_type == 490 && npc.hp <= 0 {
+        drippler_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -8502,6 +8541,46 @@ mod tests {
             assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
             assert_eq!(gore.slot(0).scale, 1.1);
         }
+    }
+
+    /// `NPC.cs:86724-86728` — the Drippler death: the 5 gores 725/726/727
+    /// fixed + two 725+Next(3). The twin replay pins the two type draws
+    /// before their spawns.
+    #[test]
+    fn w4_f10_the_drippler_death_draws_the_two_random_types() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 40.0);
+        n.scale = 1.0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(751);
+        drippler_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        assert_eq!(gore.slot(0).gore_type, 725);
+        assert_eq!(gore.slot(1).gore_type, 726);
+        assert_eq!(gore.slot(2).gore_type, 727);
+        assert!((725..728).contains(&gore.slot(3).gore_type));
+        assert!((725..728).contains(&gore.slot(4).gore_type));
+        // The twin: 50 type-5 dusts, then 3 fixed gores' kicks, then 2 x
+        // (Next(3) + 2 kicks).
+        let mut twin = UnifiedRandom::new(751);
+        for _ in 0..50 {
+            let _px = twin.next_max(36);
+            let _py = twin.next_max(36);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+        }
+        for _ in 0..3 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        for _ in 0..2 {
+            let _ty = twin.next_max(3);
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the drippler mirrors the C# draws");
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
