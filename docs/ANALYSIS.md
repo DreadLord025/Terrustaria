@@ -39683,3 +39683,76 @@ work is faithfulness adjudication (the 13 d43 row-0 stubs
 637/638/656/670/678-684 + the d42 arm-quality verdicts), not
 port-from-scratch. **No cargo/rustc/tests/rustfmt/graphify invoked**
 (code-only mode).
+
+## W4-d44 FindFrame refresh-5 FINAL - the family declaration + the 480/481/482 trio + the 634 SporeBat RNG-seam contract (2026-11-21, code-only mode)
+
+The d44 wire-final dispatch's closing phase (research/68 §10). A
+FULL-BAND mechanical re-scan of all 602 top-level `case` ids
+(`NPC.cs:66705-77370`) against every pushed lane's `find_frame` body
++ every pushed `npc_findframe_*` mapper + the `npc_ai_style*`
+find_frame fns, joined through each lane's own cs_id hand rows +
+bestiary net-id fallback: **UNCLAIMED = 0**. The refresh-2 130-id
+worklist is fully absorbed (53 module-claimed at the probe-time
+f26/f27 tips + 77 roster arms: 38 d42 + 31 d43 + 8 c4/e26/c8). The
+9 scanner residuals are all verified covered: 5 cs_id-fold inline
+arms on main (135 TheDestroyerBody `npc.rs:9084`, 246 GolemHead
+`:8926`, 249 GolemHeadFree `:9228`, 371 DetonatingBubble + 373
+Sharkron2 `:9629`) + 4 wave-B module machines awaiting their roster
+kinds (155 Wolf `npc_findframe_b.rs:497`, 167 UndeadViking + 197
+ArmoredViking the fighter group `:240-241`, 206 IcyMerman the archer
+shape `:437`). The family is COMPLETE on the pushed tips.
+
+**The 480/481/482 trio — CONFIRMED RESOLVED, no wire needed.** The
+extra7b keep-inline trio is re-verified arm-by-arm: the d40 inline
+arms (`npc.rs:9865/:9902/:9935` on the d40 tip `8fe1d6d3`) and the
+extra7b module arms (`npc_findframe_extra7b.rs:459/:522/:582`) are
+CONSTANT-IDENTICAL for all three (a mechanical diff of the gaze/idle/
+walk clamps, the stride thresholds, the accumulator forms, the air
+pins), and both match the C# windows (`NPC.cs:75103-75167` Medusa,
+`:71454-71515` GreekSkeleton, `:75202-75258` GraniteGolem). The frame
+counts 25/19/20 agree with `NPC_FRAME_COUNT` (the d40 inline reads
+`npc_rows(cs_id)`, the module `kind.frame_count()` — the same table).
+The d44 hook `find_frame_kind_extra7b_claimed` returns `None` for all
+three (`npc.rs:6924`) — the f26e keep-inline verdict stands, the
+merger keeps the d40 inline arms, the module arms ride as parity
+references. ZERO wire work.
+
+**The 634 SporeBat RNG-seam contract (published, not wired).** 634
+rides the floater group (`NPC.cs:74823-74884`, label `:74835`); its
+ONLY RNG draw is `:74844` `if (this.type == 634 &&
+Main.rand.Next(10) == 0)` — a per-tick 1-in-10 spore-dust spawn (Dust
+165, velocity *= 0.1f + noGravity). The zero-RNG rule excludes it
+from the f26 7g/7h waves; the f26 7h module header
+(`npc_findframe_extra7h.rs:100-133`) publishes the seam contract,
+restated + extended in research/68 §10.2 for the d44 wire lane: the
+bridge draws `Next(10)` EVERY tick for type 634 ONLY (the `&&`
+short-circuits for the other group members) from the caller's
+`npcs_rng` stream (`world_sim/npcs.rs:4196`, `RngKey::UpdateNpcs` —
+the SAME stream the AI pass uses, preserving the C# AI → FindFrame
+draw order `NPC.cs:90423` → `:90511`), feeds the RESOLVED boolean
+`spore_dust_draw_is_zero` into FrameInput (the 7d SolarFlare
+resolved-draw precedent), and the Dust.NewDust 165 spawn is a
+bridge-side effect keyed on the same boolean (the `wants_*`
+dust-request seam). The post-seam frame machine is zero-RNG: the
+vx-sign sprite gates (`:74850-74857`), rotation = vx*0.1f (`:74858`),
+the bare ++frameCounter (`:74864`), the >=6 step (`:74875-74879`),
+the wrap at num292 = count−1 (`:74867-74870` — the 49/51/60/634
+decrement applies: rows 0..3 flap on the 5-row sheet, row 4 never).
+634 ALREADY carries an inline arm on d43 (`npc.rs:9636`, tip
+`6fbe06250`) — the zero-RNG frame subset WITHOUT the dust draw; the
+seam-fed wave adds the dust half on top, the frame machine unchanged.
+So 634 is COVERED (inline); the contract is the dust-half upgrade
+path, not a from-scratch port.
+
+**The keep-one map** (research/68 §10.4): the d40-faithful-six
+464/465/466/468/469/470 keep d40 (the extra8 mapper never carried
+them); the d41-inline-twins 494-506 keep one either way (arm-by-arm
+equal to extra7c, the hook precedes at merge); 480/481/482 keep the
+d40 inline arms; the d43 retire `6fbe06250` adjudicates 18 kinds onto
+wired siblings (693→g5, 636/661→d125, 11 town pets→g10, 694→c3,
+654/677→c7, 655→c9). WIRED 198, MODULE-LANDED-unwired on this branch
+0 real wire ids, UNCLAIMED 0. The declaration is FINAL at the
+refresh-5 probe-time tips; the in-flight lanes (f26/f27/d41/d42/d43)
+may push more claims before merge — the merger re-probes at merge
+time. **No cargo/rustc/tests/rustfmt/graphify invoked** (code-only
+mode).
