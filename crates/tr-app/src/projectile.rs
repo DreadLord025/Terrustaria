@@ -20185,6 +20185,40 @@ impl ProjectilePool {
             // `:75214` — the Holy Arrow / falling star's Item10 (the star
             // spawn rides `special_arrow_kill` below the hook).
             91 | 92 => Some((2, 10, pos.x, pos.y)),
+            // `:75252` — the Crystal Bullet's Dig thud (the shard split
+            // rides `special_bullet_kill`).
+            89 => Some((0, 0, pos.x, pos.y)),
+            // `:75278` — the Houndius fireball's Item45.
+            967 => Some((2, 45, pos.x, pos.y)),
+            // `:75288` — the Dead Cells barnacle's Item167.
+            1026 => Some((2, 167, pos.x, pos.y)),
+            // `:75331` — the Frost Bolt staff's Item27 (the unrowed
+            // 118/119/128 siblings stay out).
+            359 => Some((2, 27, pos.x, pos.y)),
+            // `:75350`/`:75365` — the Frost Blast / Frost Hydra's Item27.
+            309 | 308 => Some((2, 27, pos.x, pos.y)),
+            // `:75515` — the Blizzard's Item27.
+            337 => Some((2, 27, pos.x, pos.y)),
+            // `:75537` — the Ice Block's Item27, gated `ai[0] >= 0`
+            // (`:75535`); the gel-tile KillTile (`:75551`) is the unported
+            // state remainder.
+            80 if p.ai[0] >= 0.0 => Some((2, 27, pos.x, pos.y)),
+            // `:75572` — the blowgun Poison Dart's Dig thud (the unrowed
+            // 51 sibling stays out).
+            267 => Some((0, 0, pos.x, pos.y)),
+            // `:75594` — the Fire / Flaming Arrow's Dig thud.
+            2 | 82 => Some((0, 0, pos.x, pos.y)),
+            // `:75602` — the merchant Bone Arrow's Dig thud.
+            474 => Some((0, 0, pos.x, pos.y)),
+            // `:75610` — the Frostburn Arrow's Dig thud.
+            172 => Some((0, 0, pos.x, pos.y)),
+            // `:75618` — the Cursed Arrow's Dig thud.
+            103 => Some((0, 0, pos.x, pos.y)),
+            // `:75632` — the Ichor Arrow's Dig thud.
+            278 => Some((0, 0, pos.x, pos.y)),
+            // `:75646` — the Shuriken / Throwing Knife / Poisoned Knife's
+            // Dig thud (the unrowed 599/909 siblings stay out).
+            3 | 48 | 54 => Some((0, 0, pos.x, pos.y)),
             _ => None,
         };
         if let Some((id, style, x, y)) = cue {
@@ -23995,6 +24029,65 @@ mod s1_e_21h_sound_tests {
             let queued = pool.drain_proj_sounds();
             assert_eq!(queued.len(), 1);
             assert_eq!((queued[0].0, queued[0].1), (2, 10));
+            pool.kill(slot);
+        }
+    }
+
+    /// S1-E-21h d77 — the cue map batch 3 (sites `:75252`-`:75646`): the
+    /// frost Item27 family, the thrown/arrow Dig thuds and the Ice Block's
+    /// `ai[0] >= 0` gate (`:75535`). WRITTEN NOT RUN.
+    #[test]
+    fn s1_e_21h_d77_the_kill_tail_cue_map_batch3_and_ice_gate() {
+        let mut pool = ProjectilePool::new();
+        let cases: [(u16, (u16, i32)); 15] = [
+            (89, (0, 0)),
+            (967, (2, 45)),
+            (1026, (2, 167)),
+            (359, (2, 27)),
+            (309, (2, 27)),
+            (308, (2, 27)),
+            (337, (2, 27)),
+            (267, (0, 0)),
+            (2, (0, 0)),
+            (82, (0, 0)),
+            (474, (0, 0)),
+            (172, (0, 0)),
+            (103, (0, 0)),
+            (278, (0, 0)),
+            (3, (0, 0)),
+        ];
+        for (kind, want) in cases {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .expect("the row spawns");
+            pool.kill_tail_cue(slot);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "kind {kind}: one cue");
+            assert_eq!((queued[0].0, queued[0].1), want, "kind {kind}'s payload");
+            pool.kill(slot);
+        }
+        // The knife siblings share the :75646 arm.
+        for kind in [48u16, 54] {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .expect("the knife row spawns");
+            pool.kill_tail_cue(slot);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1);
+            assert_eq!((queued[0].0, queued[0].1), (0, 0));
+            pool.kill(slot);
+        }
+        // The 80 gate: ai[0] < 0 dies silent, ai[0] >= 0 plays Item27.
+        for (ai0, plays) in [(-1.0f32, false), (0.0, true), (1.0, true)] {
+            let slot = pool
+                .spawn_with_data_ai_owned(80, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, ai0, 0.0)
+                .expect("the ice row spawns");
+            pool.kill_tail_cue(slot);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), usize::from(plays), "ice ai0 {ai0}");
+            if plays {
+                assert_eq!((queued[0].0, queued[0].1), (2, 27));
+            }
             pool.kill(slot);
         }
     }
