@@ -1,11 +1,17 @@
 # 83 — Mount special-ability census (M2-MOUNT-4, W4-c14 sound lane)
 
-Status: CENSUS + the two projectile abilities PORTED (Scutlix 9 + Santank 46),
-code-only (WRITTEN NOT RUN). The lane owns the two Santank ability cues
+Status: **SEALED** (2026-11-21, W4-c14 lane close). CENSUS + the two projectile
+abilities PORTED (Scutlix 9 + Santank 46, commits `0e290cae3` facade /
+`8ff589aad` machine / `968ae4edd` Meowcart-invariance witness / `b6c99ed11`
+docs), code-only (WRITTEN NOT RUN). The lane owns the two Santank ability cues
 (`Mount.cs:3300` Item89 / `:3311` Item11, research/82's two M2-MOUNT-4 gaps);
 the ability machinery is small enough to port whole, so it is ported here
 rather than handed to a mount lane. The Drill (8) and the dash-contact /
 slime-stomp combat abilities stay unported with their contracts recorded.
+Seal additions: §6 the f6 mutual receipt (f6 tip `ebdcbd96d`), §7 the
+dash/stomp combat-seam OWNER CONTRACT + task seed, §8 the 441/453 crosshair
+MP-scope record (with the 453 correction), §9 the mount-abilities family
+bible. This file is the family's canonical census — extend it, do not fork it.
 
 ## 1. `Mount.UseAbility` — the whole switch (Mount.cs:3254-3338)
 
@@ -56,6 +62,8 @@ On no target: `_abilityCharging = false` + `ResetHeadPosition()`.
   crosshair + `StartAbilityCharge` are DEAD in the port (the f6
   `EmitGolfCartSmoke` dead-code precedent) — documented, not ported. The live
   `_abilityCharging` writer is the scan's else-arm (`:4939`), ported.
+  **The 453 is NOT SP-dead** — see §8 for the corrected two-crosshair scope
+  record (the earlier blanket "441/453 dead" line was half wrong).
 
 ### The fire geometry (UseAbility, ported)
 
@@ -175,3 +183,176 @@ Witnesses (no cargo/rustc/rustfmt/tests/graphify invoked, the lane directive):
 - `world_sim/player.rs`: the scan→aim→fire driver, the cooldown cadence
   (Santank fires every 10 ticks, gift every 40), the no-target reset.
 - `minecart.rs`: the rattle's fixed pitch window (no speed term).
+
+## 6. f6 mutual receipt (SEAL — f6 tip `ebdcbd96d`, research/67 FINAL)
+
+Both lanes' keep-one boundaries re-read at seal time; every item below was
+verified against the f6 branch tip and the C#, not just the commit messages:
+
+1. **UseDrill activation seam = c14's contract, f6's published pin.** f6
+   `a67d13638` publishes the exact seam: `Player.cs:28288-28291` — after
+   `PlayerFrame` under the `UpdatePlayers` swap, `if (this.mount.Type == 8)
+   { this.mount.UseDrill(this); }` (re-read verbatim at seal). This MATCHES
+   §2's Drill contract: the mining-machine lane ports `DrillMountData` +
+   `UpdateDrill` + `UseDrill` + the 453 crosshair and calls at that seam;
+   the `_type == 8 && _abilityActive` gate is inside `UseDrill` (`:3061`).
+   c14 RECEIPTS the seam as the contract's call site — no c14 code touches it.
+2. **SpawnFartCloud STAGED = f6's body, c14's delegate seam.** f6 `573b7e7f2`
+   stages `minecart.rs::spawn_fart_cloud` (`#[allow(dead_code)]`, the 3 gores
+   `Main.rand.Next(435, 438)` + the 53-only 15-dust-107 tail,
+   `DelegateMethods.cs:258-306`). The LIVE callers are c14's three sound
+   delegates (`minecart.rs::minecart_jumping_sound_fart` `:1368` /
+   `minecart_landing_sound_fart` `:1385` / `minecart_bumper_sound_fart`
+   `:1311`), wired at `player.rs:7556`/`:7572`/`:7628`. The `useDelay` split
+   is part of the seam: Jumping/Landing pass `useDelay: false`
+   (`DelegateMethods.cs:311`/`:318` — the cloud fires EVERY delegate call),
+   Bumper uses the default `true` (`:325` — the `fartKartCloudDelay` 20-tick
+   gate, `Player.cs:1614`/`:1616`, decremented per track-rider tick
+   `:28098`). At merge, f6's staged body wires INTO c14's delegate call
+   sites with that split; the delay field + decay are f6's (the visual
+   payload), the cue order stays c14's. KEEP-ONE: no second cloud.
+3. **The 4 minecart spark delegates = f6's dust, c14's sounds only.** f6
+   `573b7e7f2` ports SparksFart (51, dust-211) / SparksTerraFart (53, the
+   queue-time 50% branch + dust-107) / SparksMech (11, dust-260) / SparksMeow
+   (33, the 213 body) — `DelegateMethods.cs:328-414`. c14's port of the same
+   delegate family is the CUE half only (Item16/53/56 pairs + the Meowcart
+   case-37 pair); zero dust in c14's cart code. Receipt: the two halves
+   compose at the same delegate call sites, no overlap.
+4. **tile_draw_rand = ONE field, f6's verdict accepted.** f6 `8a34f6642`:
+   `TileDrawing._rand` is ONE private field (`TileDrawing.cs:104`/`:191`) on
+   the ONE `Main.TilesRenderer` — g68's drip gate and f6's pylon gates share
+   it renderer-lifetime; ONE `App.tile_draw_rand` (f6 branch `app/mod.rs:723`,
+   world-seeded `:3926`), drips-before-pylons merge-order pin. c14 has NO
+   `TileDrawing._rand` consumer (grep of the c14 tip: zero hits) — receipt:
+   c14 adds no field, no rename; if a future c14 sound site ever needs the
+   draw stream it joins f6's single field. `Mount.cs` has zero private RNG
+   fields (all `Main.rand` UpdatePlayers), so the ability port's draws are
+   unaffected by the renderer-stream split.
+
+## 7. Combat-seam OWNER CONTRACT + task seed (SEAL)
+
+The dash-contact / slime-stomp abilities (§2 table) gate on a player→NPC
+contact-damage seam the port lacks. **Which lane owns it? NONE of the three
+live lanes — it is unclaimed, and this section claims it for a new seed.**
+Re-read at seal against both co-lane tips:
+
+- **d116 (`task/W4-d116-player-hurt-armor`, tip `dd9ad7da7`) owns INBOUND
+  damage only**: research/04's scope is `Player.Hurt` (`Player.cs:38197-38567`,
+  the whole inbound pipeline) + the `StrikeNPC_Inner` damage MATH
+  (`damage.rs`, defence ×0.5 / crit ×2 / floor 1, landed `bafd827c1`-era).
+  It does NOT port `CollideWithNPCs`/`ApplyDamageToNPC` — its census lists
+  NPC contact only as a `hurt` CALLER (`npc.rs:12333`), the reverse direction.
+- **g59 (`task/W4-g59-npc-death-effects-1`, tip `d277f782b`) owns POST-DEATH
+  visuals only**: `npc_death_dust.rs` + the `checkDead` gore/dust activations.
+  It consumes a death, it does not deal damage.
+- **The seam itself** — `CollideWithNPCs` (`Player.cs:20381-20409`),
+  `ApplyDamageToNPC` (`:20432-20461`), `GiveImmuneTimeForCollisionAttack`
+  (`:20494-20511`), `CanNPCBeHitByPlayerOrPlayerProjectile` (`:20513-20529`)
+  — is in NO pushed lane's diff. Grep of the c14 tip: no
+  `collide_with_npcs`/`apply_damage_to_npc`/`immune_strikes` anywhere.
+
+**Task seed M5-COMBAT-8 — the player→NPC contact-damage seam (M).** (Next
+free id after research/04's M5-COMBAT-1..7.) Port, in C# order:
+
+1. `CollideWithNPCs(myRect, Damage, Knockback, NPCImmuneTime, PlayerImmuneTime,
+   sourceItemId)` — the `Main.maxNPCs` scan, first-hit `break`, the gate chain
+   `active && !dontTakeDamage && !friendly && immune[whoAmI]==0 &&
+   CanNPCBeHitByPlayerOrPlayerProjectile && rect.Intersects &&
+   (noTileCollide || Collision.CanHit)`; direction from the velocity sign
+   (fallback `base.direction`); the local-only `ApplyDamageToNPC`; then
+   `npc.immune[whoAmI] = NPCImmuneTime` + `GiveImmuneTimeForCollisionAttack`
+   on EVERY hit (remote players grant i-frames too).
+2. `ApplyDamageToNPC` — banner buff ×`DamageDealt.Sample(difficulty)`,
+   `OnHit`, armour pen (`checkArmorPenetration`, melee:false),
+   `NPCKillAttempt`/`NPCDamageTracker.SetSourceForNextHit`, `StrikeNPC`,
+   `accDreamCatcher` DPS, `lastCreatureHit` banner id, `OnKillNPC` on death.
+3. `GiveImmuneTimeForCollisionAttack(time)` — the `_immuneStrikes` 3-strike
+   gate: `<=20` ticks since the last grant increments, else resets to 1;
+   `_timeSinceLastImmuneGet = 0`; grant `immune/immuneNoBlink/immuneTime`
+   only when `_immuneStrikes < 3 && (!immune || immuneTime <= time)`. The
+   counter ticks at `Player.cs:24663-24666` (cap 10000).
+4. `CanNPCBeHitByPlayerOrPlayerProjectile` — the `dontHurtCritters` /
+   minion/sentry-shot flag, the trap override, `IsCritterThatIsHostileToPlayers`,
+   the `NPCID.Sets.CountsAsCritter` set.
+
+**Boundary pins (the contract):**
+- vs **d116**: the strike MATH is d116's landed `damage.rs` — call it, never
+  re-derive. The i-frame grant writes the SAME General `immune/immuneTime`
+  pair d116's `hurt_cd` stand-in models (`player.rs:2279` + `damage.rs:172`)
+  — EXTEND that stand-in (plus `immuneNoBlink`), never add a second immunity
+  system. The new `_immuneStrikes`/`_timeSinceLastImmuneGet` fields are
+  M5-COMBAT-8's (no lane has them).
+- vs **g59**: death VISUALS stay g59's — M5-COMBAT-8 ends at
+  `Npc::strike_melee`/`strike_pooled` (`npc.rs:4468`/`:4512`) + the
+  OnHit/OnKill/banner tails; `checkDead`'s gore/dust activations are g59's
+  `npc_death_dust.rs`, untouched.
+- vs **f6**: the dash DUST (Unicorn/Goat `Mount.cs:3878`, Pirate/Spooky
+  `:3939`/`:4000`, Basilisk `:4103`/`:4123`) is f6's staged batch 1 — the
+  combat lane wires f6's emitters, no re-port (§4 keep-one).
+- **Consumers** (the mount lane's, after the seam lands): the five dash arms
+  (`Player.cs:20108-20174`, `HorizontalMovement` — Unicorn/WoFGoat/horses
+  60/30 dmg kb 10/7 item 4787; Pirate 100 kb 12 item 4792; Spooky 120 kb 12
+  item 4793; Basilisk 90 kb 10 item 3771; 17: 40 kb 10 item 4264,
+  PlayerImmuneTime **12** not 6; all NPCImmuneTime 30, PlayerImmuneTime 6
+  otherwise) + the slime stomp (`JumpMovement` `:20533-20565` — an INLINED
+  copy of the same scan, NOT a `CollideWithNPCs` call: dmg 40×minionDamage,
+  kb 5, `npc.immune = 10`, the bounce `velocity.Y = -10f` BEFORE the
+  i-frame grant(6), item 2430, gated `IsConsideredASlimeMount && wetSlime==0
+  && velocity.Y > 0`). The stomp's inline scan must share the seam's gate
+  helper, not duplicate it (house style: one mechanic, one helper).
+
+## 8. The 441/453 crosshairs — MP-scope record (SEAL, with correction)
+
+The earlier ANALYSIS/ROADMAP line "the 441/453 crosshairs are
+single-player-dead" was HALF WRONG; re-read whole at seal, the corrected
+record (both are aiStyle 76, Damage 0, KnockBack 0, `heldProj`):
+
+- **441 (Scutlix charge crosshair): SP-DEAD, confirmed.** The ONLY spawn is
+  `StartAbilityCharge`'s local arm (`Mount.cs:2909-2913`), and the ONLY
+  caller of `StartAbilityCharge` in the whole tree is `Projectile.cs:30662`
+  — the aiStyle-76 REMOTE-owner branch (`Main.myPlayer != owner`, a 441
+  already in flight whose owner stopped charging). Single-player can never
+  have a remote-owner projectile, so the spawn is unreachable. The live
+  `_abilityCharging` writer is the scan's else-arm (`Mount.cs:4939`),
+  ported. `Projectile.Kill()` also calls `StopAbilityCharge` for any 441
+  (`Projectile.cs:73394-73396`) — moot while no 441 exists.
+- **453 (Drill crosshair): SP-LIVE in the C#, PORT-dead only.** The spawn is
+  `UseAbility` case 8's local activate arm (`Mount.cs:3327`), reached in
+  single-player through the Drill toggle: `ItemCheck_HandleMount`
+  (`Player.cs:52922`, the `mount.Type == 8` arm) → `controlUseItem ||
+  controlUseTile` → `StartChanneling` → on `releaseUseItem && releaseUseTile`
+  → `UseAbility(this, Vector2.Zero, toggleOn: true)` (`:52944`). It is dead
+  IN THE PORT only because the Drill (8) is unported (§2 contract) — it is
+  NOT dead code, and the mining lane MUST port it with `UseDrill`.
+- **MP scope (recorded for the transport lane):** the aiStyle-76 machine
+  (`Projectile.cs:30620-30670`) splits on `Main.myPlayer == owner`: local =
+  mouse-track + `AimAbility` + the `!channel` → `UseAbility(false)` + `Kill`
+  release; remote = position-from-ai + the 441 `StartAbilityCharge` /
+  453 `!AbilityActive` → `UseAbility(false)` arms. The `Kill()` tail
+  (`:73390-73396`) carries the remote 453-off (`owner != myPlayer &&
+  AbilityActive` → `UseAbility(false)`) + the 441 `StopAbilityCharge`.
+  These remote arms + the 441 spawn are the MP-only surface; the 453 spawn
+  + the local release are single-player and ride the Drill contract.
+
+## 9. Mount-abilities family bible (SEAL — the canonical index)
+
+This file is the family's single census. Every member, its owner lane and
+its status at seal (extend THIS file for new findings; do not fork a new
+census):
+
+| member | C# site | owner lane | status |
+| ------ | ------- | ---------- | ------ |
+| Scutlix (9) auto-fire + 606 laser | `Mount.cs:3254-3289`/`:4879-4947`/`:5335-5465` | **c14** | PORTED (`8ff589aad`), 606 tile-latch deviation (ANALYSIS) |
+| Santank (46) auto-fire + 930 gift + 14 missile + the two cues | `Mount.cs:3290-3313` | **c14** | PORTED (`0e290cae3`/`8ff589aad`), INT-overload façade |
+| Drill (8) toggle + 453 crosshair + `UseDrill` mining | `Mount.cs:3314-3336`/`:3036-3252`, `Player.cs:52922-52948`/`:28288-28291` | **mining/mount lane** (contract §2 + §6.1 seam) | UNPORTED; beam dust f6-staged |
+| dash contact ×5 (10/47/40-42, 44, 45, 14, 17) | `Player.cs:20108-20174` | **M5-COMBAT-8 seed** (§7) | UNPORTED; dash dust f6 batch 1 |
+| slime stomp (3/50) | `Player.cs:20533-20565` | **M5-COMBAT-8 seed** (§7) | UNPORTED |
+| the contact-damage seam itself | `Player.cs:20381-20529` | **M5-COMBAT-8 seed** (§7, unclaimed by d116/g59) | UNPORTED |
+| 441 charge crosshair + `StartAbilityCharge` | `Mount.cs:2903-2920`, `Projectile.cs:30662` | MP transport lane (§8) | SP-DEAD, documented not ported |
+| Meowcart/minecart speed→pitch question | `Player.cs:19870`/`:19928` | **c14** | CLOSED — speed-invariant (§3, witness `968ae4edd`) |
+| cart/mount sound sites (rattle, landing, bumper, fart trio, case-37) | research/82 census | **c14** | PORTED (the W4-c14 wave) |
+| mount dust (27 sites) + fart cloud + 4 spark delegates | research/65/67 | **f6** | PORTED/STAGED on f6 (`ebdcbd96d`), §6 receipts |
+| charge eye-glow lights | `Mount.cs:5413`/`:5457` | light lane | dropped by both, seam accessor kept |
+
+Lane hashes at seal: c14 tip `b6c99ed11` (+ the `origin/main` sync merge),
+f6 tip `ebdcbd96d`, d116 tip `dd9ad7da7`, g59 tip `d277f782b`.

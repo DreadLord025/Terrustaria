@@ -7518,10 +7518,16 @@ Deliberate deviations (the standing conventions):
   keeps the seam discoverable). The 606 first-tick 4× dust-182 (`:54804-54812`) and
   the kill dust (`:73563-73572`) are the pool's dust census skip (the 449 sibling's
   convention — the `NewDust` args are constants, no explicit call-site draw).
-- **The 441/453 crosshairs + `StartAbilityCharge` are single-player-dead** — the
-  only caller is the aiStyle-76 remote-owner branch (`Projectile.cs:30662`); the
-  local `_abilityCharging` writer is the scan's else-arm (`:4939`), ported. The
-  Drill's 453 crosshair + `UseDrill` ride the mount-lane contract (research/83 §2).
+- **The 441 crosshair + `StartAbilityCharge` are single-player-dead; the 453
+  is port-dead only** (SEAL correction, research/83 §8) — 441's only caller is
+  the aiStyle-76 remote-owner branch (`Projectile.cs:30662`), unreachable in
+  SP; the local `_abilityCharging` writer is the scan's else-arm (`:4939`),
+  ported. The 453 is SP-LIVE in the C# (`UseAbility` case 8 `Mount.cs:3327`
+  via the Drill toggle `Player.cs:52944`) — dead in the port only because the
+  Drill is unported; the 453 crosshair + `UseDrill` ride the mount-lane
+  contract (research/83 §2) and MUST be ported with it. The remote aiStyle-76
+  arms + the `Kill()` tail (`Projectile.cs:73390-73396`) are the MP-scope
+  record (research/83 §8).
 - **The scan order** — the C# runs `UpdateEffects` at `Player.cs:25658` (inside
   `UpdateEquips`, before movement + the `:26664` AbilityRecovery); the port runs
   `update_mount_ability` in the world-sim player pass right before
@@ -7533,6 +7539,18 @@ Deliberate deviations (the standing conventions):
   → `ApplyDamageToNPC` → `GiveImmuneTimeForCollisionAttack` combat seam
   (`Player.cs:20108-20174`/`:20533-20564`/`:20381-20511`) is a combat lane, not a
   sound lane (research/83 §2 table). The dash DUST is f6's staged batch 1.
+  SEAL: the seam's OWNER CONTRACT is published as research/83 §7 — it is
+  unclaimed by d116 (inbound `Hurt` + the strike math only) and g59 (post-death
+  visuals only); the task seed **M5-COMBAT-8** claims it, with the boundary
+  pins (reuse d116's `damage.rs` math + the General i-frame stand-in, end at
+  `strike_pooled` before g59's death visuals, wire f6's staged dash dust) and
+  the stomp's inline-scan caveat (`JumpMovement` does NOT call
+  `CollideWithNPCs`; the bounce `vy = -10` precedes the i-frame grant).
+  The f6 mutual receipt (research/83 §6, f6 tip `ebdcbd96d`) closes the four
+  co-lane items: the UseDrill seam `Player.cs:28288-28291`, SpawnFartCloud
+  staged-with-c14-delegate-callers (the `useDelay` split: Jumping/Landing
+  false, Bumper true), the 4 spark delegates f6-dust/c14-sounds, and the ONE
+  `App.tile_draw_rand` field (c14 has no consumer).
 
 Verification (WRITTEN NOT RUN): the `mount.rs` dead-zone/aim-band/stop-charge/
 reset-head witnesses, the `audio.rs` int-overload RNG/volume witness (no style
