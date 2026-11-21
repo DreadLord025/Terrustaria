@@ -18998,4 +18998,64 @@ mod bucket_use_tests {
             assert_eq!(app.world.tile(30, 120).unwrap().liquid, 150, "the other kind stays");
         }
     }
+
+    /// LIQUID FINAL sponge census — the Super Absorbant Sponge 3032 draws
+    /// water AND shimmer (`:46333`'s two 3032 arms) but refuses lava/honey
+    /// (the selector sends it to the placement branch, which has no 3032
+    /// arm). The shimmer draw wipes the amount but NOT the shimmer bit
+    /// (`:46377-46379` clears only lava/honey) — the dry cell keeps
+    /// `FLAG_LIQUID_SHIMMER`, so a later water pour onto it would need the
+    /// type gate. No separate "shimmer sponge" item exists (research/104
+    /// §6a: 4343 is PaperAirplaneA, a phantom premise).
+    #[test]
+    fn w4_g45_the_super_sponge_draws_water_and_shimmer_only() {
+        for kind in [LiquidKind::Water, LiquidKind::Shimmer] {
+            let mut app = bucket_app(30, 120);
+            wet(&mut app.world, 30, 120, 150, kind);
+            hold(&mut app, 3032, 1);
+            app.mine_down = true;
+            ticks(&mut app, 2);
+            let t = app.world.tile(30, 120).unwrap();
+            assert_eq!(t.liquid, 0, "3032 drew {kind:?}");
+            if kind == LiquidKind::Shimmer {
+                assert_ne!(
+                    t.flags & tr_core::tile::FLAG_LIQUID_SHIMMER,
+                    0,
+                    "the shimmer bit survives the wipe (:46378-46379)"
+                );
+            }
+            assert_eq!(app.inventory[app.selected].count, 1, "no consumption");
+        }
+        for kind in [LiquidKind::Lava, LiquidKind::Honey] {
+            let mut app = bucket_app(30, 120);
+            wet(&mut app.world, 30, 120, 150, kind);
+            hold(&mut app, 3032, 1);
+            app.mine_down = true;
+            ticks(&mut app, 20);
+            assert_eq!(app.world.tile(30, 120).unwrap().liquid, 150, "3032 refuses {kind:?}");
+        }
+    }
+
+    /// LIQUID FINAL sponge census — the Ultra Absorbant Sponge 5304 draws
+    /// EVERY kind (`:46333`'s bare `sItem.type == 5304` arm), box-min
+    /// exempt, no consumption. The 150-unit lone cell passes only because
+    /// 5304 is in the `:46347` exemption list.
+    #[test]
+    fn w4_g45_the_ultra_sponge_draws_every_kind() {
+        for kind in [
+            LiquidKind::Water,
+            LiquidKind::Lava,
+            LiquidKind::Honey,
+            LiquidKind::Shimmer,
+        ] {
+            let mut app = bucket_app(30, 120);
+            wet(&mut app.world, 30, 120, 150, kind);
+            hold(&mut app, 5304, 1);
+            app.mine_down = true;
+            ticks(&mut app, 2);
+            assert_eq!(app.world.tile(30, 120).unwrap().liquid, 0, "5304 drew {kind:?}");
+            assert_eq!(app.inventory[app.selected].kind, 5304);
+            assert_eq!(app.inventory[app.selected].count, 1, "no consumption");
+        }
+    }
 }

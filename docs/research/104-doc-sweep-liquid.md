@@ -317,3 +317,71 @@ KEEP summary or A6 disagree, THIS table + research/70 §8-12 win.
   rows) — the g45 fixes are NOT union-only obligations; a re-base that
   takes the g47 tip verbatim re-introduces them. The A7 receipt re-flags
   this for g46d.
+
+## 6. LIQUID FINAL — the sponge ITEMS census + the bucket STACK-consume edges
+
+### 6a. The item rows — "super-absorbant-sponge 4343" is a PHANTOM id
+
+`ItemID.cs:10369`: **4343 = PaperAirplaneA**, not a sponge. The real rows
+(`ID/ItemID.cs:7747/:11427/:12289/:12291`): SuperAbsorbantSponge **3032**,
+LavaAbsorbantSponge **4872**, HoneyAbsorbantSponge **5303**,
+UltraAbsorbantSponge **5304**. There is NO shimmer-sponge item — the 3032's
+second selector arm (`Player.cs:46333` `sItem.type == 3032 && …shimmer()`)
+is what draws shimmer; the "shimmer sponge variant" premise maps onto that
+arm, not a fifth item. All four rows are ALREADY in main's generated
+`itemdata.rs` (lines 3198/5038/5469/5470), verified field-by-field against
+`Item.cs`:
+
+| id | C# case | useTime/Anim | tileBoost | rare | value | port row |
+| --- | --- | --- | --- | --- | --- | --- |
+| 3032 | `Item.cs:28072-28084` (shares 3031) | 5/12 | +2 | 7 | 500000 | ✅ match |
+| 4872 | `:39663-39674` | 5/12 | +2 | 7 | 500000 | ✅ match |
+| 5303 | `:42072-42083` | 5/12 | +2 | 7 | 500000 | ✅ match |
+| 5304 | `:42084-42095` | 3/8 | +3 | 8 | 1500000 | ✅ match |
+
+All four: `useStyle 1`, `useTurn`, `autoReuse`, `damage -1`, no
+pick/axe/hammer/createTile, `maxStack 9999` (the `CommonMaxStack` stock,
+`Item.cs:49017/:49966` — the case bodies never override it), no UseSound.
+**No item-row gap.** The Ultra's recipe (3032+4872+5303 at tile 114,
+`Recipe.cs:9979-9984`) is in `recipes_gen.rs:16262`; the angler reward rows
+(2451 hardmode split 5303/5302, the >10-quest 3031/3032 rolls,
+`Player.cs:56345-56389`) are in `angler.rs:197-228`; the lava-fishing
+4820/4872 drops (`GameContentFishDropPopulator.cs:243-244`) are in
+`fishing.rs:1644-1645`; the terraforming sort priorities
+(`ItemID.cs:1347`) are in `sortdata.rs:243`. The `AlsoABuildingItem` set
+(`ItemID.cs:1353`) has ZERO consumers in the decompile outside its own
+definition — dead surface, nothing to port.
+
+### 6b. The use arms — ported by g45, per-kind selector census
+
+The four sponge arms all ride the ONE pickup branch (`buckets.rs::
+bucket_pickup`); the selector (`Player.cs:46333`) per kind:
+
+| sponge | draws | refuses (falls to placement, no arm → no-op) | box-min | consume |
+| --- | --- | --- | --- | --- |
+| 3032 | water (`liquidType()==0`) OR shimmer | lava, honey | exempt (`:46347`) | none (`:46352`) |
+| 4872 | lava only | water, honey, shimmer | exempt | none |
+| 5303 | honey only | water, lava, shimmer | exempt | none |
+| 5304 | ANY (bare type arm) | — | exempt | none |
+
+The port's `is_sponge` + selector (`buckets.rs:61-63/:153-157`) match
+arm-for-arm. The shimmer-bit survival on the 3032/5304 shimmer draw
+(`:46377-46379` clears only lava/honey) is ported (`buckets.rs:221-224`).
+Witness coverage after this phase: the typed pair (4872/5303 own-kind +
+refusal, `w4_g45_the_typed_sponges_draw_only_their_kind`), the 3032
+water+shimmer draws / lava+honey refusals / shimmer-bit survival
+(`w4_g45_the_super_sponge_draws_water_and_shimmer_only`, NEW), the 5304
+all-four-kinds draw (`w4_g45_the_ultra_sponge_draws_every_kind`, NEW), the
+box-min exemption (`w4_g45_the_box_minimum_gates_the_bucket_but_not_the_sponge`).
+**No unclaimed use-arm remains** — nothing to port; two witness gaps closed.
+
+### 6c. The item-side bucket arm NOT owned by g45
+
+`WorldItem.TryFillBucket` (`WorldItem.cs:548-571`, the `:399-402` call): a
+dropped Empty Bucket 205 in the rain on a wind-allowing wall at the surface
+fills to 206 keeping its stack (`Next(600/dayRate)==0 &&
+NextFloat()<maxRaining`). **Owned by g15** (`d43b490f3`,
+`task/W4-g15-dust-item-sites`, unmerged, 2 witnesses) — NOT ported here, no
+duplication. It is the only other C# site that touches the bucket family's
+item state; the smart-cursor re-point (`Step_EmptyBuckets`,
+`SmartCursorHelper.cs:622-676`) was already in main (`smart_cursor.rs`).
