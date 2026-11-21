@@ -10190,13 +10190,18 @@ impl Projectile {
     /// interaction the generic `Update` wet block runs at `:17009-17012`
     /// (`if (base.shimmerWet) this.Shimmer()`), AFTER the AI and BEFORE
     /// `HandleMovement` (`:17015`). W4-g2 ports the method VERBATIM as a
-    /// STAGED helper: its only caller is the generic wet block
-    /// (`:16790-17007`), which is UNPORTED (d53's cited skip — "lands with the
-    /// generic wet subsystem"; only the bobber's aiStyle-61 `probe_wet` writes
-    /// `shimmer_wet` today, the i35 one-tick-lag deviation). The helper is
-    /// therefore UNWIRED in the dispatch — the wet-subsystem round drops the
-    /// `:17011` call in at the pre-`HandleMovement` seam. The witnesses drive
-    /// it directly (setting `shimmer_wet`), the e3 STAGED-emitter precedent.
+    /// STAGED helper. **SUPERSEDED (g2d)**: d53 batch 4 `fa7b331d3` landed
+    /// the generic wet machine (`projectile_wet::wet_block`, the
+    /// authoritative `shimmer_wet` writer) and FINAL item 2 `804ad5715`
+    /// ACTIVATED this helper on the d53 branch — the `:17011` caller-gate
+    /// wired right after `wet_block`. KEEP-ONE at merge: **this staged copy
+    /// DROPS** (f20d-F5, `0883a80bc`); d53's adopted pub(crate) pair
+    /// survives (byte-identical bodies bar the -10 comment fix — the "-8"
+    /// in the 25/17 arm comment below is the recorded typo). The drop-hunk
+    /// is published in `research/26d-projectile-rowless-riders-g2d.md` §5.
+    /// Until the merge this copy stays — the five `w4_g2_shimmer_*`
+    /// witnesses below drive it directly (setting `shimmer_wet`), the e3
+    /// STAGED-emitter precedent.
     ///
     /// The port's `hostile` proxy is `!friendly` (the hostile shots ride
     /// `friendly = false`, `:22765`); the C# `hostile` is a distinct field, but
@@ -45192,9 +45197,12 @@ mod w4_g2_rowless_tests {
             "the kill hook fired (:74535-74538)");
     }
 
-    // --- W4-g2 reconciliation: the Shimmer() family (STAGED, unwired) --------
-    // The helper is driven directly (shimmer_wet set by hand) — its :17011
-    // caller is the unported generic wet block. WRITTEN NOT RUN (code-only).
+    // --- W4-g2 reconciliation: the Shimmer() family (STAGED here; ACTIVATED
+    // by d53 804ad5715 — this staged copy DROPS at merge, f20d-F5; the
+    // drop-hunk: research/26d-projectile-rowless-riders-g2d.md §5) -----------
+    // The helper is driven directly (shimmer_wet set by hand); d53 carries
+    // its own 7 dispatch-gate witnesses — keep BOTH sets (disjoint names).
+    // WRITTEN NOT RUN (code-only).
 
     /// `Projectile.cs:22403-22422` — the 229 orb's shimmer arm: a falling orb
     /// (vy > 0) over a NON-full shimmer cell bounces (-vy), syncs, caps the

@@ -136,7 +136,12 @@ The four gaps the row round recorded were reconciled in a follow-up round
   (pure geometry, zero draws). Witnesses: the orb death test re-pinned to
   the inset geometry + `w4_g2_the_minus20_shrink_clears_a_full_box_wall` /
   `w4_g2_the_minus20_shrink_kills_on_the_inset_box`.
-- **The Shimmer() family — PORTED STAGED/UNWIRED** (`63a6db26`):
+- **The Shimmer() family — PORTED STAGED here, ACTIVATED by d53** (`63a6db26`;
+  **g2d SUPERSEDED-STATUS**: d53 batch 4 `fa7b331d3` landed the generic wet
+  machine and FINAL item 2 `804ad5715` wired the `:17011` caller-gate right
+  after `wet_block` — f20d-F5 `0883a80bc` re-verified the keep-one: g2's
+  staged copy DROPS at merge, d53's pub(crate) pair survives; the drop-hunk
+  is published in `26d-projectile-rowless-riders-g2d.md` §5):
   `Projectile::shimmer` (`:22361-22516`) verbatim, all arms, plus
   `shimmer_two_cell_kill` (the `:22405-22410` probe). Census: the SINGLE
   caller is `:17009-17012` (`if (base.shimmerWet) this.Shimmer()`), and

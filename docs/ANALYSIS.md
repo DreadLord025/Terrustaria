@@ -39291,3 +39291,39 @@ Witnesses (WRITTEN NOT RUN, code-only): the sibling-flag census test, the
 orb death witness re-pinned to the inset geometry + 2 shrink-geometry
 tests, 5 direct-drive Shimmer tests (the e3 STAGED precedent). No
 cargo/rustc/tests/graphify invoked.
+
+## The W4-g2d rowless-rider round (2026-11-21, code-only mode)
+
+Branch `task/W4-g2-proj-ai-missing-b` (the g2d resume of the frozen 81c4ab85
+tip; `docs/research/26d-projectile-rowless-riders-g2d.md`). The named
+rowless kinds with LIVE AI arms dispositioned:
+
+- **The 981 SilverBullet — ROWED** (`8bab64583`): the `SetDefaults` slice
+  (`Projectile.cs:9340-9353`) verbatim; the generic aiStyle-1 flight is its
+  whole AI (the only per-type site `:56746` is dust-only). The ProjLight
+  own arm (`:16343-16347`, `(l, 0.7l, 0.7l)`) landed; the Kill arm folds
+  onto the common HitTiles+Item10 group (the SilverBulletSparkle particle
+  request skipped). **The x3-vs-Werewolf arm (`:13385-13388`) is an INERT
+  cited skip**: NPCID 104 is unported, and the port's internal id 104 is
+  DD2SkeletonT1 (`npc/data.rs:288`) — gating on it would false-triple the
+  DD2 lane. The 27 WaterBolt's e3e "no row" flag was STALE (already rowed).
+- **The phaseblade 19-set + the 491 FlyingKnife — TASK-SEEDS** (research
+  §3/§4): rowing either without its machine would fly them on the WRONG
+  generic arm (`ai_boomerang` excludes the phaseblades at every site;
+  `ai_magic_missile`'s head routes 491 to the unported `_Old` variant).
+  The rows + machines must land together (the f19-F4 precedent). The
+  seeds carry the full C# site maps: the phaseblade head/outbound/swing/
+  return arms, the swing damage x0.6/x0.5 + knockback x0.6, the 10x10
+  collision box, the impact-dust colour table with its kept-draw contract;
+  the 491's `_Old` channel/boost/-10-latch/return-hunt machine + the
+  HandleMovement bounce arm (`:18464-18477`).
+- **The Shimmer() staged copy — DROPS at merge** (f20d-F5): d53
+  `804ad5715` ACTIVATED the helper behind its `wet_block` machine; the
+  keep-one is d53's pub(crate) pair (6 differing lines, the f20d re-read).
+  The exact drop-hunk (projectile.rs:10189-10376 pre-batch-B) is published
+  in research §5; the 5 g2 witnesses KEEP (they compile against the
+  surviving copy; d53's 7 are disjoint-named — keep both sets). The
+  anchors marker substring-matches d53's signature, so the canary holds.
+
+Witnesses (WRITTEN NOT RUN): the 981 row census + spawn/flight + ProjLight
+pins (3). No cargo/rustc/tests/graphify invoked.
