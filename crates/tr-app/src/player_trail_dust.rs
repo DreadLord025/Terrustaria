@@ -920,8 +920,10 @@ mod tests {
         let f = p.take_floor_dust().expect("grounded on sand queues the dust");
         assert_eq!(f.kind, 53);
         assert!(!f.falling, "settled ticks are not falling");
-        // Slope the center tile: the flags stay, the dust kind dies.
-        let i = w.index(((p.x + p.width * 0.5) / 16.0) as i32, 60);
+        // Slope a NEIGHBOR tile (the player still stands flat on the center):
+        // the flags stay, the dust kind dies.
+        let cx = ((p.x + p.width * 0.5) / 16.0) as i32;
+        let i = w.index(cx + 1, 60);
         w.tiles[i].set_slope(1);
         p.update(&w, crate::player::PlayerInput::default());
         let f = p.take_floor_dust().expect("the snapshot still queues");
