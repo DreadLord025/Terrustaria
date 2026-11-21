@@ -4295,6 +4295,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         let npcs = &mut app.npcs;
         let audio = &mut app.audio;
         let dust = &mut app.dust;
+        // W4-g61 wiring — the teleport-fade drain's gore pool (the poof/transform
+        // sites spawn gores; the fade itself draws only dust, but the env seam
+        // carries the pool). `Main.timeForVisualEffects` (`Main.cs:1181`, a double,
+        // ticks since start wrapped at 216000) — the port's `anim_time * 60` stand-in
+        // (the draw.rs:374 convention), captured before the field borrows.
+        let gore = &mut app.gore;
+        let time_for_visuals = (app.anim_time as f64 * 60.0) % 216000.0;
         // The aiStyle-75 family's per-tick difficulty inputs: the port is
         // single-difficulty classic (the expert bridge arm is constants-off
         // until the difficulty system lands — the module's `ctx.expert`).
@@ -4390,6 +4397,34 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     {
                         let n = &mut npcs[i];
                         n.slot = i;
+                        // W4-g61 wiring — `NPC.UpdateNPC_TeleportVisuals`
+                        // (`NPC.cs:92194-92241`, called at `:90322` after the
+                        // cast lights and BEFORE `AI()` `:90423`): the per-tick
+                        // teleport fade on the `UpdateNPCs` stream. The fields
+                        // copy in/out (the `&mut Npc` + `&mut`-field convention);
+                        // the head gate (`time <= 0`) draws nothing, so the
+                        // common case is a zero-draw no-op. The fade plays no
+                        // sound (the module's styles 0/4/12/13 are dust-only).
+                        if n.teleport_time > 0.0 {
+                            let mut tp = (n.teleport_time, n.teleport_style, n.last_portal_color_index);
+                            let mut env = crate::npc_spawn_visuals::SpawnVisualsEnv {
+                                world,
+                                dust: &mut *dust,
+                                dust_ctx: &dust_ctx,
+                                gore: &mut *gore,
+                                rng: npcs_rng,
+                                play_sound: &mut |_, _, _, _, _| {},
+                            };
+                            crate::npc_spawn_visuals::update_npc_teleport_visuals(
+                                &mut env,
+                                n,
+                                &mut tp,
+                                time_for_visuals,
+                            );
+                            n.teleport_time = tp.0;
+                            n.teleport_style = tp.1;
+                            n.last_portal_color_index = tp.2;
+                        }
                         // `NPC.OnSpawn`'s type-113 arm (`NPC.cs:8404-8407`):
                         // `Main.wofNPCIndex = whoAmI` at spawn — the presence
                         // mirror stays on while the wall lives (the death
