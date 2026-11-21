@@ -39,7 +39,7 @@
 //! * `:56403` Medusa stone-gaze NPCDeath17 → [`medusa_gaze_cue`]
 //! * `:66429` BigMimic reflect Item150 → [`reflect_projectile_cue`]
 
-#![allow(dead_code)] // UNWIRED - the kinds are unported; each kind's wiring is a one-call consumer (the style64/67 precedent).
+#![allow(dead_code)] // UNWIRED on THIS base (a725acb0). TAIL-ACTIVATION-2 re-probe (research/141 §8): the landed lanes changed the census — d42 (9b22c091) rowed 578-630 with {} style stand-ins, d33 (b08acf46) wired ONLY the aiStyle-114 axis (dragonflies 595-601), f42 (75f055fc) rowed the Antlion 69 + its style-19 machine. On this base NO tail site has a live consumer seam (the dragonfly machine is DRAW-FREE — no tail cue names 595-601), so every helper stays a one-call consumer; the per-site activation contract lives in research/141 §8.2 (the merger's keep-one map).
 
 use crate::npc::{Npc, NpcSoundCue, NpcSoundRequest};
 

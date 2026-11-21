@@ -1424,6 +1424,92 @@ mod tests {
         assert!(!called, "the guard precedes the draw");
     }
 
+    /// TAIL-ACTIVATION-2 (research/141 §8.3) — the landed roster lanes'
+    /// ambient-key census witness, table-side (WRITTEN NOT RUN; the
+    /// kinds live on d42/f42, not this base). The `IdleSounds` ladder
+    /// names the antlion trio (580/581/582, `:90115-90126`) but NEVER the
+    /// buried Antlion 69 — f42's rowed 69 draws nothing through the idle
+    /// seam, while d42's WalkingAntlion 580 / LarvaeAntlion 582 pin slot
+    /// 44 and f42's FlyingAntlion 581 ranges Next(44, 47). The
+    /// `UpdateNPC_CritterSounds` table names the Owl 611 + Seagull
+    /// 602/603 + Rat 610 (d42-rowed) but NEVER the dragonflies 595-601
+    /// (d33's LIVE axis) — the wired family is ambient-silent by C#, not
+    /// by omission. The cs_id key space (`world_sim/npcs.rs:4501/:4685`)
+    /// is what these vanilla ids must ride.
+    #[test]
+    fn w4_e9_tail_activation_2_the_landed_roster_ambient_census() {
+        // The buried Antlion 69 (f42 `75f055fc`, cs_id 69 via the
+        // bestiary net_id fallback): no idle arm, no critter arm.
+        let mut rolls = Rolls::new();
+        assert_eq!(idle_sound_cue(69, false, 0.0, &mut roll(&mut rolls)), None);
+        assert_eq!(rolls.calls, 0, "69 is outside the IdleSounds ladder");
+        let mut rolls = Rolls::new();
+        assert_eq!(
+            critter_sound_cue(69, true, 1000.0, 3000.0, 3000.0, 0.0, &mut roll(&mut rolls)),
+            None
+        );
+        assert_eq!(rolls.calls, 0, "69 is outside the critter table");
+        // The antlion trio's idle arms (d42 580/582 + f42 581).
+        for (ty, style) in [(580, 44), (582, 44)] {
+            let mut rolls = Rolls::with_zero(0);
+            assert_eq!(idle_sound_cue(ty, false, 0.0, &mut roll(&mut rolls)), Some(style));
+            assert_eq!(rolls.calls, 1, "type {ty}: the pinned slot");
+        }
+        let mut rolls = Rolls::with_zero(0);
+        let style = idle_sound_cue(581, false, 0.0, &mut roll(&mut rolls)).unwrap();
+        assert!((44..47).contains(&style), "581: Next(44, 47)");
+        assert_eq!(rolls.calls, 2);
+        // The d42 critter rows: the Owl 611 hoots only at night
+        // (`:92249`, Next(700), case 46); the Seagull 602/603 pair only
+        // by day (`:92253`, Next(1200), case 44); the Rat 610 any time
+        // (`:92337`, Next(1800), case 33). The day-gated arms draw
+        // NOTHING off-gate (the `&&` short-circuit precedes the roll).
+        let mut rolls = Rolls::new();
+        assert_eq!(
+            critter_sound_cue(611, true, 1000.0, 3000.0, 3000.0, 0.0, &mut roll(&mut rolls)),
+            None
+        );
+        assert_eq!(rolls.calls, 0, "the owl is night-only, the day gate draws nothing");
+        let mut rolls = Rolls::with_zero(0);
+        assert_eq!(
+            critter_sound_cue(611, false, 1000.0, 3000.0, 3000.0, 0.0, &mut roll(&mut rolls)),
+            Some((46, 1.0))
+        );
+        for ty in [602, 603] {
+            let mut rolls = Rolls::with_zero(0);
+            assert_eq!(
+                critter_sound_cue(ty, true, 1000.0, 3000.0, 3000.0, 0.0, &mut roll(&mut rolls)),
+                Some((44, 1.0))
+            );
+            let mut rolls = Rolls::new();
+            assert_eq!(
+                critter_sound_cue(ty, false, 1000.0, 3000.0, 3000.0, 0.0, &mut roll(&mut rolls)),
+                None
+            );
+            assert_eq!(rolls.calls, 0, "the seagulls are day-only");
+        }
+        let mut rolls = Rolls::with_zero(0);
+        assert_eq!(
+            critter_sound_cue(610, true, 1000.0, 3000.0, 3000.0, 0.0, &mut roll(&mut rolls)),
+            Some((33, 1.0))
+        );
+        // The dragonflies 595-601 (d33 `b08acf46`, the LIVE axis): BOTH
+        // ambient tables skip them — no draws day or night.
+        for ty in 595..=601 {
+            let mut rolls = Rolls::new();
+            assert_eq!(idle_sound_cue(ty, false, 0.0, &mut roll(&mut rolls)), None);
+            assert_eq!(rolls.calls, 0, "type {ty}: no idle arm");
+            for day in [true, false] {
+                let mut rolls = Rolls::new();
+                assert_eq!(
+                    critter_sound_cue(ty, day, 1000.0, 3000.0, 3000.0, 0.0, &mut roll(&mut rolls)),
+                    None
+                );
+                assert_eq!(rolls.calls, 0, "type {ty}: no critter arm (day={day})");
+            }
+        }
+    }
+
     #[test]
     fn move_towards_steps_by_the_amount_and_snaps_past_the_target() {
         assert_eq!(move_towards(0.0, 1.0, 0.01), 0.01);
