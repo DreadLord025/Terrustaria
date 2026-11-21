@@ -1665,6 +1665,21 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     }
                 }
             }
+            // W4-e10 — the hive/honey landing cue (`Player.cs:23830`,
+            // `MakeFloorDust` via `FloorVisuals` `:28271` — after
+            // `UpdateManaRegen` `:25995` in the C# Update): the
+            // `SoundID.Item177` style façade at `((int)Center.X,
+            // (int)Bottom.Y)` — the case-2 default pitch draw
+            // (`Next(-6, 7) * 0.01`) on `UpdatePlayers` after the gate.
+            if let Some((sx, sy)) = p.take_honey_land_sound() {
+                app.audio.play_proj_sound(
+                    (2, 177),
+                    sx,
+                    sy,
+                    0.0,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
             // S1-E-21f — the wing flap's Item-32 play (`Player.cs:26850`):
             // wave A's façade, the same stream contract as the Fart.
             if let Some((idx, sx, sy)) = p.take_flap_sound() {
@@ -2842,6 +2857,7 @@ mod tests {
             // line's standing-still double).
             p.y = 120.0 * 16.0 - p.height;
             p.vy = 0.0;
+            p.fall_start = 117; // the parked row — no fall-damage hit
             p.mana = 19;
             p.mana_max = 20;
             p.regen.mana_regen_count = 119;
@@ -2911,6 +2927,7 @@ mod tests {
         let mut p = Player::spawn(&app.world);
         p.y = 120.0 * 16.0 - p.height;
         p.vy = 0.0;
+        p.fall_start = 117; // the parked row — no fall-damage hit
         p.buffs.add_buff(156, 600);
         app.camera = Vec2::new(p.x + 10.0, p.y + 20.0);
         app.player = Some(p);
@@ -2971,6 +2988,64 @@ mod tests {
             .filter(|&&i| app.dust.slot(i).no_gravity)
             .count();
         assert_eq!(flagged, no_gravity, "the Next(2) arms landed");
+    }
+
+    /// W4-e10 — the hive/honey landing cue (`Player.cs:23830`): a falling
+    /// landing on the Hive 666 queues the `SoundID.Item177` style play;
+    /// the drain spends ONE case-2 default pitch draw (`Next(-6, 7)`) on
+    /// `UpdatePlayers`. A standing tick (falling false) stays silent.
+    #[test]
+    fn w4_e10_the_hive_landing_plays_item177_once() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = crate::test_world_helpers::ground();
+        // Replace the surface row under the spawn column with Hive 666.
+        let mut p = Player::spawn(&app.world);
+        let col = ((p.x + p.width * 0.5) / 16.0) as i32;
+        for tx in (col - 2)..=(col + 2) {
+            let i = app.world.index(tx, 120);
+            app.world.tiles[i].kind = 666;
+        }
+        // Park one tick above the surface with a falling velocity: the
+        // move integrates onto the hive, the collision zeroes vy, the
+        // falling latch (pre-move vy > gravity) is up. The hive itself
+        // zeroes the fall-damage counter (`Player.cs:25337`), and the
+        // fall_start pin keeps the grace honest.
+        p.y = 120.0 * 16.0 - p.height - 6.0;
+        p.vy = 6.0;
+        p.fall_start = 117;
+        app.camera = Vec2::new(p.x + 10.0, 120.0 * 16.0 - 20.0);
+        app.player = Some(p);
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (app.camera.x, app.camera.y),
+            sound_volume: 1.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        let seed = 0x4849_5645i32;
+        *app.rngs.stream(RngKey::UpdatePlayers) = UnifiedRandom::new(seed);
+        let mut twin = UnifiedRandom::new(seed);
+        let before = app.audio.played_count();
+        update_player(&mut app, 1.0 / 60.0);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.vy, 0.0, "the landing settled");
+        assert_eq!(
+            app.audio.played_count(),
+            before + 1,
+            "the Item177 landing chime"
+        );
+        let _ = twin.next_range(-6, 7); // the one case-2 default pitch
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdatePlayers),
+            twin,
+            "one pitch draw, nothing else"
+        );
+        // The next tick stands still (falling false) — no re-fire.
+        let before = app.audio.played_count();
+        update_player(&mut app, 1.0 / 60.0);
+        assert_eq!(app.audio.played_count(), before, "the edge fires once");
     }
 
     #[test]

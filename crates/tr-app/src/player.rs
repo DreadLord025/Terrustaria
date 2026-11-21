@@ -1969,6 +1969,11 @@ pub struct Player {
     /// EDGE (both directions — the C# plays on the un-stone too); the
     /// drain owns the audio device, the dust pool and `UpdatePlayers`.
     pending_stoned_transition: bool,
+    /// W4-e10 — the hive/honey landing cue (`Player.MakeFloorDust`'s
+    /// Falling arm, `Player.cs:23830`: `PlaySound(SoundID.Item177,
+    /// (int)Center.X, (int)Bottom.Y)`) — `(x, y)` truncated in the drain;
+    /// the style façade's case-2 pitch draw rides `UpdatePlayers`.
+    pending_honey_land_sound: Option<(f32, f32)>,
     /// S1-E-21f — the wing-flap latch `Player.flapSound` (`Player.cs:1128`):
     /// the `wingFrame == 3` edge plays `SoundID.Item32` once (`:26848-26852`),
     /// the off-frame clears it (`:26856`). The port's flap cadence is the
@@ -3028,6 +3033,7 @@ impl Player {
             pending_drown_sound: false,
             pending_mana_full: false,
             pending_stoned_transition: false,
+            pending_honey_land_sound: None,
             flap_sound: false,
             wing_frame: 0,
             wing_frame_counter: 0,
@@ -3543,6 +3549,12 @@ impl Player {
         std::mem::take(&mut self.pending_stoned_transition)
     }
 
+    /// W4-e10 — takes the hive/honey landing cue
+    /// (`Player.cs:23830`, `SoundID.Item177` at `(Center.X, Bottom.Y)`).
+    pub(crate) fn take_honey_land_sound(&mut self) -> Option<(f32, f32)> {
+        self.pending_honey_land_sound.take()
+    }
+
     /// S1-E-21f — takes the wing-flap `SoundID.Item32` play
     /// (`Player.cs:26850`) — `(style_index, position.X, position.Y)`.
     pub(crate) fn take_flap_sound(&mut self) -> Option<(u16, f32, f32)> {
@@ -3946,6 +3958,7 @@ impl Player {
         self.pending_drown_sound = false;
         self.pending_mana_full = false;
         self.pending_stoned_transition = false;
+        self.pending_honey_land_sound = None;
         self.pending_flap_sound = None;
         self.pending_rocket_sound = None;
         self.pending_wing_rocket_sound = None;
@@ -7952,6 +7965,11 @@ impl Player {
         // tell "moved onto the plate" from "stands on it".
         self.old_x = self.x;
         self.old_y = self.y;
+        // W4-e10 — `Player.cs:28073-28081`: the `falling` latch reads the
+        // post-gravity PRE-collision velocity (the gravity adds ran above,
+        // `:26805`/`:27032`); `FloorVisuals(falling)` (`:28271`) forwards
+        // it to `MakeFloorDust`'s hive-landing cue (`:23830`).
+        let falling = self.vy > gravity || self.vy < -gravity;
         self.move_vanilla(world, input.down, gravity);
         // `Player.cs:28237-28241` + `Minecart.HitTrackSwitch`
         // (`Minecart.cs:1281-1288`): the pressure-track trip fires at the
@@ -8068,7 +8086,7 @@ impl Player {
         // `Player.cs:28269-28272`: `FloorVisuals` after this tick's movement —
         // the movement block reads the flags next tick (one tick stale).
         if self.vy == 0.0 && !grappling {
-            self.floor_visuals(world);
+            self.floor_visuals(world, falling);
         }
 
         self.update_survival(world, rng);
@@ -11038,7 +11056,7 @@ impl Player {
     /// (`:23755-23783`): the tile row at the feet, center column first, then
     /// the neighbors, solid tiles only. The dust visuals (MakeFloorDust) and
     /// the slope dust carve-out stay with the particle tasks.
-    fn floor_visuals(&mut self, world: &World) {
+    fn floor_visuals(&mut self, world: &World, falling: bool) {
         let x = ((self.x + self.width * 0.5) / TILE_PX) as i32;
         // `Player.GetFloorTile` (`Player.cs:23755-23783`) reads `base.height` —
         // the live hitbox height (the mount framework's equip; the cart's 52).
@@ -11070,6 +11088,23 @@ impl Player {
         self.running_on_sand = tr_core::tiledata::SET_CONVERSION_SAND.has(kind)
             || tr_core::tiledata::SET_CONVERSION_SANDSTONE.has(kind)
             || tr_core::tiledata::SET_CONVERSION_HARDENED_SAND.has(kind);
+        // W4-e10 — `MakeFloorDust`'s hive-landing cue (`Player.cs:23825-
+        // 23831`): the `Falling` arm on the Hive 666 / Honey Block 712
+        // plays `SoundID.Item177` at `((int)Center.X, (int)Bottom.Y)`.
+        // The `!wet && !mount.Cart` gate is `FloorVisuals`' own
+        // (`:23740`); the slope carve-out (`:23736-23739`) zeroes the
+        // type before the call — the port's floor scan has no slope
+        // read yet, so the carve-out folds out with the dust visuals
+        // (the particle task). The style façade's case-2 pitch draw
+        // rides `UpdatePlayers` in the drain.
+        if falling
+            && matches!(kind, 666 | 712)
+            && !self.wet
+            && !(self.mount.is_active() && crate::mount::is_cart(self.mount.kind()))
+        {
+            let (cx, _) = self.center();
+            self.pending_honey_land_sound = Some((cx, self.y + self.height));
+        }
     }
 
     /// `Player.luck` (`Player.cs:3086`) — the value the roll consumers read
