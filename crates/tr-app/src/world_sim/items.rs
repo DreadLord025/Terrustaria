@@ -36,8 +36,8 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
         // grab rectangle and hide those locally until the next authoritative
         // snapshot. The range is `GetItemGrabRange`'s expanded hitbox
         // (`Player.cs:34926`, S1-P-i47) — the old 26 px circle had no C#
-        // counterpart. The client's accessory flags are the local player's;
-        // the unported grants read false (the `GrabFlags` seam).
+        // counterpart. The client's accessory flags are the local player's
+        // LIVE flags (W4-g15 lane 5 — the `GrabFlags` seam now reads them).
         let Some(p) = app.player.as_ref() else {
             return;
         };
@@ -56,8 +56,18 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             {
                 return false;
             }
-            let range = crate::item::get_item_grab_range(it.kind, crate::item::GrabFlags::default())
-                as f32;
+            // W4-g15 lane 5 — the client's accessory margins read the LIVE
+            // local-player flags (the host half below does the same); the
+            // old `GrabFlags::default()` refused the Gold Ring / magnet
+            // range extensions on the client's optimistic grab.
+            let flags = crate::item::GrabFlags {
+                gold_ring: p.gold_ring,
+                mana_magnet: p.mana_magnet,
+                life_magnet: p.life_magnet,
+                treasure_magnet: p.treasure_magnet,
+                journey_far_range: p.far_placement_range,
+            };
+            let range = crate::item::get_item_grab_range(it.kind, flags) as f32;
             crate::item::grab_rect_intersects(
                 px,
                 py,
