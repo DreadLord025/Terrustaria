@@ -1129,6 +1129,155 @@ pub(crate) fn spectre_hostile_trail(
 }
 
 // ---------------------------------------------------------------------------
+// aiStyle 23 — the Eye Fire / Flames Trap (`Projectile.cs:25861-25935`).
+// ---------------------------------------------------------------------------
+
+/// Site 25900 — the Eye Fire 101 / Flames Trap 188 launch-ramp dust
+/// (`Projectile.cs:25875-25928`): past `ai[0] > 7`, the 8/9/10 scale
+/// ladder (0.25/0.5/0.75, else 1), the counter++, then the type pick
+/// (101 → 75, else 6). The `num192 == 6 || Next(2) == 0` gate (the
+/// 188's 6 short-circuits it; the 101's 75 draws), one dust at v×0.2
+/// alpha 100, then the `Next(3) != 0 || (75 && Next(3) == 0)`
+/// noGravity/×3/×2 boost, the 188 ×1.25 vs ×1.5 scale, the ×1.2
+/// velocity, the ×num191 scale, and the 75's velocity += v (+ the
+/// !noGravity ×0.5). `ramp` is the PRE-increment ai[0] (the ladder
+/// read); the machine increments after.
+pub(crate) fn eye_fire_ramp_dust(
+    p: &TrailSlot,
+    kind: u16,
+    ramp: f32,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    // `:25877-25889` — the scale ladder.
+    let num191 = if ramp == 8.0 {
+        0.25
+    } else if ramp == 9.0 {
+        0.5
+    } else if ramp == 10.0 {
+        0.75
+    } else {
+        1.0
+    };
+    // `:25891-25895` — the type pick.
+    let num192 = if kind == 101 { 75 } else { 6 };
+    // `:25896` — `num192 == 6 || Next(2) == 0`: the 188 (type 6)
+    // short-circuits the gate; the 101 (type 75) draws the Next(2).
+    if num192 != 6 && rng.next_range(0, 2) != 0 {
+        return;
+    }
+    // `:25900` — the spawn (scale 1, the default).
+    let idx = dust.new_dust(
+        &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+        num192, p.vel.x * 0.2, p.vel.y * 0.2, 100, Color::default(), 1.0,
+    );
+    let d = dust.slot_mut(idx);
+    // `:25901-25907` — the boost gate: `Next(3) != 0 || (75 && Next(3)==0)`.
+    // The first Next(3) always draws; the second only when the first == 0
+    // AND the type is 75 (the `||` right operand's `&&`).
+    let first = rng.next_range(0, 3);
+    let boost = first != 0 || (num192 == 75 && rng.next_range(0, 3) == 0);
+    if boost {
+        d.no_gravity = true;
+        d.scale *= 3.0;
+        d.velocity.x *= 2.0;
+        d.velocity.y *= 2.0;
+    }
+    // `:25908-25915` — the 188 ×1.25 vs ×1.5 scale.
+    d.scale *= if kind == 188 { 1.25 } else { 1.5 };
+    // `:25916-25918` — the ×1.2 velocity + the ×num191 scale.
+    d.velocity.x *= 1.2;
+    d.velocity.y *= 1.2;
+    d.scale *= num191;
+    // `:25919-25926` — the 75's velocity += v (+ the !noGravity ×0.5).
+    if num192 == 75 {
+        d.velocity += p.vel;
+        if !d.no_gravity {
+            d.velocity *= 0.5;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// aiStyle 59 — the Spectre Wrath (`Projectile.cs:28938-28993`).
+// ---------------------------------------------------------------------------
+
+/// Site 28987 — the Spectre Wrath 356's per-tick 5-point ring
+/// (`Projectile.cs:28983-28992`): five dusts 175 (scale 1.3, noGravity,
+/// velocity zeroed) at `position - (vx*0.2*i, -vy*0.2*i)` — the X
+/// offset subtracts `vx*0.2*i`, the Y subtracts `(0 - vy*0.2)*i` (so
+/// the Y trail rides +vy). No gate draws; the ring runs every tick
+/// (the C# block sits after the steering, before the arm's end).
+pub(crate) fn spectre_wrath_ring(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for i in 0..5 {
+        let ox = p.vel.x * 0.2 * i as f32; // `:28985`
+        let oy = (0.0 - p.vel.y * 0.2) * i as f32; // `:28986`
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+            175, 0.0, 0.0, 100, Color::default(), 1.3,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true; // `:28988`
+        d.velocity *= 0.0; // `:28989`
+        d.position.x -= ox; // `:28990`
+        d.position.y -= oy; // `:28991`
+    }
+}
+
+// ---------------------------------------------------------------------------
+// aiStyle 65 — the Sharknado bolt (`Projectile.cs:29534-29603`).
+// ---------------------------------------------------------------------------
+
+/// Site 29549 — the Sharknado bolt 385's post-10 six-dust ring
+/// (`Projectile.cs:29544-29554`): six dusts 172 (scale 1.4, noGravity,
+/// noLight) at the rotated box-edge point + the random velocity vector;
+/// each draws `NextDouble()` (the angle) + `Next(3,8)` (the speed)
+/// BEFORE the spawn, then velocity /= 4 and −= velocity. The C# uses
+/// the f64 literal π (3.1415927410125732) for the angle and the f32
+/// `Math.PI / num503` for the per-dust rotation. `center` is the bolt's
+/// Centre; the machine passes the live velocity.
+pub(crate) fn sharknado_bolt_ring(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let num503 = 6;
+    let center = p.center();
+    let norm = p.vel.normalize_or_zero();
+    for i in 0..num503 {
+        // `:29547` — the box-edge point, rotated by (i - (6/2 - 1))·π/6.
+        let edge = norm * Vec2::new(p.w / 2.0, p.h) * 0.75;
+        let angle = (i - (num503 / 2 - 1)) as f32 * std::f32::consts::PI / num503 as f32;
+        let vector37 = crate::projectile::rotate(edge, angle) + center;
+        // `:29548` — the two argument draws: the NextDouble angle (the
+        // f64 π literal) + the Next(3,8) speed.
+        let a = (rng.next_double() * 3.1415927410125732) as f32 - std::f32::consts::FRAC_PI_2;
+        let speed = rng.next_range(3, 8) as f32;
+        let vector38 = Vec2::new(a.cos(), a.sin()) * speed;
+        // `:29549` — the spawn at vector37 + vector38, speeds vector38×2.
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, vector37 + vector38, 0, 0,
+            172, vector38.x * 2.0, vector38.y * 2.0, 100, Color::default(), 1.4,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true; // `:29550`
+        d.no_light = true; // `:29551`
+        d.velocity /= 4.0; // `:29552`
+        d.velocity -= p.vel; // `:29553`
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Witnesses — WRITTEN NOT RUN (code-only mode). Each mirrors the C#
 // draw sequence on a recording stream + a scratch pool with the
 // permissive ctx (the npc.rs `dust_ctx` convention), so the pool never
@@ -1511,5 +1660,69 @@ mod tests {
         let mut rng = Recorder::new(0);
         spectre_hostile_trail(&p, &mut rng, &mut dust, &c, &w);
         assert_eq!(live(&dust), 9);
+    }
+
+    /// W4-g63 — the eye-fire ramp: the 188 (type 6) short-circuits the
+    /// Next(2) gate (no draw), the 101 (type 75) draws it; the boost
+    /// gate's first Next(3) always draws, the second only on a 0 + 75.
+    #[test]
+    fn w4_g63_the_eye_fire_ramp_gate_chain() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(4.0, 0.0));
+        // The 188 at ramp 8: no Next(2) gate (the 6 short-circuit), the
+        // first Next(3) draws (roll 0 → the boost's second Next(3) is
+        // NOT drawn — the type is 6, not 75).
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        eye_fire_ramp_dust(&p, 188, 8.0, &mut rng, &mut dust, &c, &w);
+        assert!(!rng.ranges.contains(&(0, 2)), "the 188 short-circuits the Next(2)");
+        assert_eq!(live(&dust), 1);
+        assert_eq!(dust.slot(0).dust_type, 6);
+        // The 101 at ramp 8: the Next(2) gate draws (roll 0 passes),
+        // the first Next(3) == 0 → the second Next(3) draws (the 75).
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        eye_fire_ramp_dust(&p, 101, 8.0, &mut rng, &mut dust, &c, &w);
+        assert_eq!(rng.ranges[0], (0, 2), "the 101 draws the Next(2) gate");
+        assert_eq!(live(&dust), 1);
+        assert_eq!(dust.slot(0).dust_type, 75);
+        // The 101's Next(2) refused (roll 1): no dust.
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(1);
+        eye_fire_ramp_dust(&p, 101, 8.0, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 0);
+    }
+
+    /// W4-g63 — the 356 spectre-wrath ring: 5× dust 175 at the
+    /// velocity-offset points, velocity zeroed, no gate draws.
+    #[test]
+    fn w4_g63_the_spectre_wrath_ring_draws_five() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(10.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        spectre_wrath_ring(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 5);
+        assert!(dust.slots()[..5].iter().all(|d| d.dust_type == 175 && d.no_gravity));
+        // The i=1 X offset: vx*0.2*1 = 2 → position.X = 100 - 2.
+        assert!((dust.slot(1).position.x - 98.0).abs() < 1.0);
+    }
+
+    /// W4-g63 — the 385 sharknado ring: 6× dust 172, each with the
+    /// NextDouble + Next(3,8) argument pair (the Next(3,8) draws 6×).
+    #[test]
+    fn w4_g63_the_sharknado_ring_draws_six() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(6.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        sharknado_bolt_ring(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 6);
+        assert!(dust.slots()[..6].iter().all(|d| d.dust_type == 172 && d.no_gravity && d.no_light));
+        let speed_draws: Vec<_> = rng.ranges.iter().filter(|r| **r == (3, 8)).collect();
+        assert_eq!(speed_draws.len(), 6, "one Next(3,8) per dust");
     }
 }

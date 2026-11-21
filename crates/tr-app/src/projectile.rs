@@ -4458,15 +4458,28 @@ impl Projectile {
     /// (`NextDouble()` + `Next(3, 8)`, `:29548`) are SKIPPED WHOLESALE
     /// with the dust body (the spore precedent), so the arm takes no RNG.
     /// The wet kill (`:29598-29602`) rides the port's `is_wet` probe.
-    fn ai_sharknado_bolt(&mut self, world: &World, player: Option<&crate::player::Player>) {
+    fn ai_sharknado_bolt(
+        &mut self,
+        world: &World,
+        player: Option<&crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         if self.ai[1] > 0.0 {
             // `:29538-29575` — the aimed chase at player[ai[1] - 1].
             let num502 = (self.ai[1] as i32) - 1;
             if num502 < 255 {
                 self.local_ai[0] += 1.0;
                 if self.local_ai[0] > 10.0 {
-                    // The dust ring is skipped wholesale (no draws); the
-                    // fade/spin/frame tail still runs (`:29555-29561`).
+                    // `:29544-29554` — W4-g63: the six-dust 172 ring
+                    // RE-ARMED (the NextDouble + Next(3,8) pair per dust,
+                    // the rotated box-edge point); the fade/spin/frame
+                    // tail follows (`:29555-29561`).
+                    crate::projectile_trail_dust::sharknado_bolt_ring(
+                        &crate::projectile_trail_dust::TrailSlot::of(self),
+                        rng, dust, dust_ctx, world,
+                    );
                     self.alpha -= 5;
                     if self.alpha < 100 {
                         self.alpha = 100;
@@ -4689,7 +4702,14 @@ impl Projectile {
     /// verbatim — no `+ 1`, unlike the typhoon/arcanum locks). The row's
     /// `tileCollide = false` makes `HandleMovement`'s half a plain
     /// integration.
-    fn ai_spectre_wrath(&mut self, npcs: &[Npc], rng: &mut dyn tr_core::loot::DropRng) {
+    fn ai_spectre_wrath(
+        &mut self,
+        npcs: &[Npc],
+        rng: &mut dyn tr_core::loot::DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+        world: &World,
+    ) {
         // `:28940-28941` — the hostile window counter (the row's
         // `extraUpdates = 3` runs the arm four times per update).
         self.ai[1] += 1.0;
@@ -4744,8 +4764,12 @@ impl Projectile {
                 }
             }
         }
-        // The five-dust ring (`:28992-28996`) — SKIPPED (no dust layer, no
-        // rolls to consume).
+        // `:28983-28992` — W4-g63: the five-dust 175 ring RE-ARMED (the
+        // per-tick trail, after the steering, no gate draws).
+        crate::projectile_trail_dust::spectre_wrath_ring(
+            &crate::projectile_trail_dust::TrailSlot::of(self),
+            rng, dust, dust_ctx, world,
+        );
         self.pos += self.vel;
     }
 
@@ -11583,7 +11607,13 @@ impl Projectile {
     /// The port has no `Main.dust` layer (S1-E-1), so the dust block
     /// (`:25896-25928`) and its `Main.rand` draws are SKIPPED; everything the
     /// arm does to the projectile itself is ported.
-    fn ai_eye_fire(&mut self, world: &World) {
+    fn ai_eye_fire(
+        &mut self,
+        world: &World,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         // `:25863-25870` — the Flames Trap (188) floors its launch counter at
         // 8 and counts `localAI[0]` (the `Damage_CanDealDamage` gate at
         // `:12448` reads it: `localAI[0] < 5`).
@@ -11597,10 +11627,21 @@ impl Projectile {
         if self.time_left > 60 {
             self.time_left = 60;
         }
-        // `:25875-25893` / `:25930-25933` — the launch ramp. Both arms advance
-        // the counter by one (the 8/9/10 dust-scale ladder and the dust itself
-        // are the skipped layer), so the net effect on the slot is the ++.
-        self.ai[0] += 1.0;
+        // `:25875-25933` — the launch ramp. W4-g63: the dust block
+        // RE-ARMED — past ai[0] > 7 the 8/9/10 scale ladder + the
+        // per-type dust (the 101's 75, the 188's 6) with the gate
+        // chain; the counter increments INSIDE the ramp arm (the C#
+        // :25890), the else arm just counts (:25932).
+        if self.ai[0] > 7.0 {
+            let ramp = self.ai[0];
+            self.ai[0] += 1.0;
+            crate::projectile_trail_dust::eye_fire_ramp_dust(
+                &crate::projectile_trail_dust::TrailSlot::of(self),
+                self.kind, ramp, rng, dust, dust_ctx, world,
+            );
+        } else {
+            self.ai[0] += 1.0;
+        }
         // `:25934` — the spin: `rotation += 0.3f * direction`.
         self.rot += 0.3 * self.direction as f32;
         self.kill_step(world);
@@ -17840,7 +17881,7 @@ impl ProjectilePool {
                         // The Spectre Wrath (`:28938-28993`): the hostile
                         // window, the uniform re-pick (one rng draw) and the
                         // (v*29+d)/30 blend.
-                        59 => self.slots[i].ai_spectre_wrath(&npcs[..], rng),
+                        59 => self.slots[i].ai_spectre_wrath(&npcs[..], rng, dust, dust_ctx, world),
                         // The aiStyle-157 Deerclops ice spike
                         // (`:51358-51477`): the opacity ramp, the scale and
                         // the 20-tick life.
@@ -17934,7 +17975,7 @@ impl ProjectilePool {
                         // The aiStyle-23 Eye Fire (101) / Flames Trap (188)
                         // (`:25861-25935`): the launch ramp, the 60-tick cap
                         // and the spin.
-                        23 => self.slots[i].ai_eye_fire(world),
+                        23 => self.slots[i].ai_eye_fire(world, rng, dust, dust_ctx),
                         // S1-P-i28 — the thrown-consumable flight arms.
                         // aiStyle 68: the Molotov cocktail (399)
                         // (`Projectile.cs:30166-30239` + the movement-68
@@ -19935,7 +19976,7 @@ impl ProjectilePool {
                         // bolt (385) — the aimed chase (ai[1] = target+1)
                         // or the free cosine bob, the wet kill.
                         65 => {
-                            self.slots[i].ai_sharknado_bolt(world, player.as_deref());
+                            self.slots[i].ai_sharknado_bolt(world, player.as_deref(), rng, dust, dust_ctx);
                         }
                         // S1-D-4 empress proj — the Empress of Light's
                         // five projectile kinds (872/873/874/919/923,
@@ -41481,7 +41522,19 @@ mod s1_d_4b_5c_tests {
         let mut p = just(FLAMES_TRAP);
         p.ai[0] = 0.0;
         let w = world();
-        p.ai_eye_fire(&w);
+        // W4-g63: the ramp dust now threads the seam — a scratch pool +
+        // permissive ctx + a seeded stream (the state census is unchanged).
+        let mut dust = tr_core::particles::DustPool::new();
+        let dctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(w.width as f32 * TILE_PX, w.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        };
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        p.ai_eye_fire(&w, &mut rng, &mut dust, &dctx);
         assert_eq!(p.ai[0], 9.0, ":25865-25868 floors 0 to 8, :25890 adds one");
         assert_eq!(p.local_ai[0], 1.0, ":25869 counts the launch");
         assert_eq!(p.time_left, 60, ":25871-25874 caps the life at 60");
@@ -41497,7 +41550,17 @@ mod s1_d_4b_5c_tests {
         p.ai[0] = 0.0;
         p.direction = -1;
         let w = world();
-        p.ai_eye_fire(&w);
+        let mut dust = tr_core::particles::DustPool::new();
+        let dctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(w.width as f32 * TILE_PX, w.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        };
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        p.ai_eye_fire(&w, &mut rng, &mut dust, &dctx);
         assert_eq!(p.ai[0], 1.0, ":25932 — the below-7 arm just counts");
         assert_eq!(p.local_ai[0], 0.0, "the Eye Fire does not count launches");
         assert!((p.rot + 0.3).abs() < 1e-6, ":25934 mirrors with direction");

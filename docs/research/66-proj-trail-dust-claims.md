@@ -112,6 +112,14 @@ lands.
   the 295 8×174 bolt trail + the 296 fade-window burst (3 argument +
   2 jitter draws per dust); the 309 3×185 frost trail. The 156/157
   beams ride the shared pulse (no own dust block ≤400).
+- batch 3: 101, 188, 356, 385 — the rowed eye-fire / spectre-wrath /
+  sharknado machines (styles 23/59/65). The 101/188 launch-ramp dust
+  (the 8/9/10 scale ladder, the `num192==6 || Next(2)==0` gate — the
+  188's 6 short-circuits, the 101's 75 draws — the `Next(3)!=0 ||
+  (75 && Next(3)==0)` boost chain, the ×1.25/×1.5 scale, the 75's
+  velocity += v); the 356 per-tick 5×175 ring (the velocity-offset
+  points); the 385 post-10 6×172 ring (the NextDouble + Next(3,8)
+  argument pair per dust, the rotated box-edge point, noLight).
 - (following batches recorded in their commit messages + this table)
 
 Kinds with NO ported `proj_data` row keep their dust arm UNWIRED (the
