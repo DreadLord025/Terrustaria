@@ -35,16 +35,18 @@ d78's `magic_death_blast` carries neither. At merge, DROP d78's
 `magic_death_blast` + its death-hook call; KEEP g3's two helpers + calls.
 The 659 SpiritFlame arm is g3-unique (d78 never ported it).
 
-**d78b active on 452/454 — read claims.** d78's ANALYSIS "Deferred" paragraph
-names the hostile 452/454/448 EVP blasts as the NEXT batch (not yet ported in
-`5fe6d940`). g1's census (`26d`, `5bd68ce2`) claims 452/454/459/521/448/80 and
-its in-flight worktree (`TR-W4-g1`) carries `projectile_kill_hooks_a.rs`
-(452/454/448 hostile EVP bursts + 459/521/80). So the hostile resize-blast
-family is g1's claim, NOT d78's — d78 only PORTED the friendly magic family
-(the duplicate above). No 452/454 code exists in d78's pushed tip; the "d78b
-active on 452/454" note refers to d78's DEFERRED intent, which g1 already
-claimed and is porting. Keep-one: g1 owns 452/454/448; g3 owns the friendly
-magic family; d78's `magic_death_blast` is the duplicate to drop.
+**d78b active on 452/454 — read claims. (SUPERSEDED — see §6 FINAL.)** The
+original note read d78's part-1 tip `5fe6d940` ONLY and concluded g1 owns
+452/454/448. That was STALE: d78 part 2a (`3fd3cc27`, 06:06) pushed the EVP
+trio BEFORE this verdict commit (07:42). d78's FINAL adjudication
+(`fd59c51a0`, research/26f §1) re-adjudicated against g1's LOCAL-only port:
+g1's `death_burst_player_hit` rides `hurt_with_source` RAW damage (no
+DamageVar / hostileDamageScaling / ×2 / BossNoCheese cooldown — the General
+immune gate would refuse the boss blasts the C# `:14799` lands), so **d78
+KEEPS 452/454/448** (`hostile_death_blast` + `damage_evp_boxed` + the
+`player.rs` `hurt_cooldowns[6]` machinery) and g1 drops its three hooks,
+keeping its unique 459/521/522/80. g3 owns the friendly magic family; d78's
+`magic_death_blast` is the duplicate to drop (§6 carries the exact hunks).
 
 ## 2. Re-census: REMAINING OnHitNPC arms (`Damage_PVE_Inner` :13000-15000)
 
@@ -152,3 +154,68 @@ particle bodies are SKIPPED (the sibling lanes'). Witnesses WRITTEN, NOT RUN
 (no cargo/rustc/rustfmt/tests/graphify invoked — the Lead's constraint). The
 ports extend `damage_pve`'s existing seam (per-NPC damage mult, pre-strike
 modifiers, the immunity chain, the post-strike OnHit arms), no new module.
+
+## 6. FINAL — the d78-drop-hunks publish + the d78-session probe (g3 final phase)
+
+> Re-probed 2026-11-21 ~17:15 (+0200) against d78's LATEST pushed tip
+> `7ea64ff75` ("W4-d78 SEAL", 14:18:10). `git diff 481d0bf42 7ea64ff75d --
+> crates/tr-app/src/projectile.rs crates/tr-app/src/player.rs` is EMPTY —
+> the FINAL (`fd59c51a0`, 12:50) and SEAL commits are docs-only, so every
+> code range below is valid at BOTH `481d0bf4` and the latest `7ea64ff75`.
+
+### 6.1 d78-session status: ALIVE, DONE (FINAL + SEAL)
+
+The Lead's probe question was the `5fe6d940` tip-age. Answer: that tip is
+16+ hours old (00:52:33) but the SESSION IS ALIVE — it pushed five more
+commits the same day: `3fd3cc27` (06:06, part 2a EVP trio), `cbae0aa3`
+(08:04, part 2b child rows), `481d0bf4` (09:26, part 2c child-spawn Kill),
+`fd59c51a0` (12:50, FINAL four-way dedupe adjudication, research/26f) and
+`7ea64ff75` (14:18, SEAL — the 26f §6 addenda: refreshed g1-drop-hunks
+against g1's live 602-line local file, the d77-617 mutual receipt, the
+g3-cue-fix exact hunks, the blasts-family ownership bible). d78 has
+self-declared DONE; no further code pushes are expected. Its 26f §2
+CONFIRMS this lane's keep-g3 verdict arm-by-arm (79/16/34/634/635/661 g3
+supersets, 659 g3-unique) — the two lanes' publishes agree.
+
+### 6.2 The exact d78 `magic_death_blast` DROP hunks (for the merger)
+
+All ranges are `crates/tr-app/src/projectile.rs` at d78 tip `7ea64ff75`
+(== `481d0bf4` code). Verified by direct read at the latest tip.
+
+| # | hunk | lines | note |
+| --- | --- | --- | --- |
+| D1 | `magic_death_blast` fn + its doc comment | **:21513-21586** | doc starts `/// W4-d78 — Kill()'s magic resize-blast family` :21513; `fn magic_death_blast(` :21537; closing `}` :21586. The next fn's doc (`hostile_death_blast`, KEEP) starts :21588 — leave the :21587 blank line. |
+| D2 | the death-hook call + its comment | **:20102-20105 + :20107-20114** | **KEEP :20106** (`let luck = player.as_deref().map(\|p\| p.luck_state.luck).unwrap_or(0.0);`) — d78's own 2a `hostile_death_blast` call (:20120-20128) and 2c `child_spawn_kill` call (:20139-20147) read that `luck` binding. Drop ONLY the 4 comment lines :20102-20105 and the 8 call lines :20107-20114. |
+| D3 | witness mod `w4_d78_magic_death_blast_tests` + doc | **:26004-26201** | doc :26004-26009, `#[cfg(test)]` :26010, `mod` :26011, closing `}` :26201 (5 tests). g3's `w4_g3_aimed_spell_kill_tests` (:44897 at g3 tip `8568ef37`) + `w4_g3_nebula_spirit_onyx_kill_tests` (:45002) cover the same state plus cue/census. |
+| D4 | `anchors.txt` row **:899** (`fn magic_death_blast`) | delete in the SAME commit as D1 | the build.rs canary reads the CURRENT tree; g3's rows 899-902 (`aimed_spell_kill` / `nebula_spirit_onyx_kill` / `aimed_spell_kill_resize` / the DOC-SWEEP row) already carry the surviving markers. |
+
+**KEEP from d78 (do NOT drop):** `hostile_death_blast` :21588-21654 +
+`damage_evp_boxed` :21656-21779 + the hook call :20115-20128 + witnesses
+`w4_d78_hostile_death_blast_tests` :26203-26446; the `player.rs`
+`hurt_cooldowns: [i32; 6]` field+doc :1398-1408, ctor :2757,
+`set_immune_time_for_all_types` array write :4221-4225, `update_immunity`
+decay :4278-4284, `hurt_inner_cooldown` :4345-4561; the 2b/2c child-spawn
+family minus its 617/620 duplicate (d78's own 26f §3-4 tables govern that
+surgery — d77's `nebula_arcanum_kill` wins the 617 whole arm).
+
+### 6.3 The g3-side merger receipts (d78 26f §2 notes + SEAL §6c)
+
+1. **Cue keep-one onto d77.** d78's SEAL §6c pins g3's cue pushes at g3 tip
+   `8568ef37` `projectile.rs` **:21823-21832** (`aimed_spell_kill`'s Item10
+   block) and **:21884-21890** (`nebula_spirit_onyx_kill`'s Item14 block).
+   At merge, DROP those two blocks and let d77's `kill_tail_cue`
+   (`5f10560b`:20211, hooked :20250) own every cue — its positions are the
+   C#'s (the 634/635 Item14 plays at `:72015` BEFORE the `position =
+   Center` snap `:72016`; g3's fn queues post-recentre). Until d77 merges,
+   g3's pushes stay (they are the only cue-keeper on this branch). g3's
+   79/16 centre cue and 34 post-restore cue are position-identical to
+   d77's; only the 634/635 pre-snap differs — the drop is still whole-block
+   (keeping both plays each cue TWICE).
+2. **Census keep-until-g65.** g3's `*_death_draws` census calls
+   (:21833-21840, :21891-21899) stay until g65's dust BODIES push for the
+   same kind (g65 LOCAL batches 12/14 port the same draws inside the
+   bodies — `634|635` death_dust.rs:1976, `661`:2059, `659`:1583); then the
+   g3 census call for that kind drops (the g65-wins convention).
+3. **The 710 on-hit fan is NOT a dup** (d78 26f §5): g3's DOC-SWEEP
+   BetsySharpnel fan (`:14121`/`:53964`) is a different C# site from d77's
+   `betsy_arrow_kill` (`Kill()` host) — both survive.
