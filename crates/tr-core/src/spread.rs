@@ -667,15 +667,25 @@ pub fn gerunner(
     }
 }
 
-/// `WorldGen.initializeHardMode`'s runner half (`WorldGen.cs:31660-31666`):
+/// `WorldGen.initializeHardMode`'s runner half (`WorldGen.cs:31659-31660`):
 /// the hallow V on one side and the evil V on the other (the C# `GERunner(
-/// num3, 0, 3·num5, 5f)` good + `GERunner(num4, 0, −3·num5, 5f, good:
+/// num3, 0, 3·num5, 5f)` good + `GERunner(num4, 0, 3·−num5, 5f, good:
 /// false)`); the start xs sit ±`maxTilesX/7` off the middle.
-pub fn initialize_hard_mode(world: &mut World, corruption: bool, rng: &mut UnifiedRandom) {
+///
+/// W4-g69 retire sweep: the evil flavour is `WorldGen.crimson` read LIVE
+/// inside `GERunner` (`WorldGen.cs:76304`) — the port reads `world.crimson`
+/// (the persisted/UI-picked field) instead of the old `corruption` bool the
+/// callers re-derived from the seed's high bit (the `roll_crimson` stand-in,
+/// which ignored the UI pick and the drunk dawn flip).
+pub fn initialize_hard_mode(world: &mut World, rng: &mut UnifiedRandom) {
     let offset = world.width / 7;
     // `num5 = ±1` (`WorldGen.cs:31585-31590`) — the velocity `3·num5` gives
     // the 3:5 V slope verbatim.
     let speed = 3.0;
+    // The evil side's flavour: the C# `GERunner` reads the `WorldGen.crimson`
+    // static at `:76304`; `convert_tile`/`convert_wall` take the OPPOSITE
+    // bool (`corruption = !crimson`).
+    let corruption = !world.crimson;
     // The hallow runner: the east side heading further east.
     gerunner(world, world.width / 2 + offset, speed, true, corruption, rng);
     // The evil runner: the west side heading further west.
@@ -788,8 +798,9 @@ mod runner_tests {
     fn initialize_hard_mode_runs_both_runners() {
         // The corruption world (the crimson world swaps the evil kinds).
         let mut w = world();
+        w.crimson = false;
         let mut rng = UnifiedRandom::new(11);
-        initialize_hard_mode(&mut w, true, &mut rng);
+        initialize_hard_mode(&mut w, &mut rng);
         let hallowed = w
             .tiles
             .iter()
@@ -804,8 +815,9 @@ mod runner_tests {
         assert!(corrupt > 200, "the evil V ({corrupt})");
         // The crimson world: the evil kinds swap (199/203/234).
         let mut w2 = world();
+        w2.crimson = true;
         let mut rng = UnifiedRandom::new(11);
-        initialize_hard_mode(&mut w2, false, &mut rng);
+        initialize_hard_mode(&mut w2, &mut rng);
         let crimson = w2
             .tiles
             .iter()
