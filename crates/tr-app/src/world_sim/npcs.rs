@@ -208,6 +208,12 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
         return None; // `:43077` — the same NPC re-clicked falls through
     }
     app.talk_npc = Some(i); // `:43081` — `player.SetTalkNPC(i)`
+    // W4-d79 — the orphaned Chat emitter (`Main.cs:43083`,
+    // `SoundEngine.PlaySound(24)` — UNPOSITIONED): case 24
+    // (`LegacySoundPlayer.cs:957-962`) is Volume/Pan only, NO draws, the
+    // slot overwrites WITHOUT a Stop. Draw-free, so the GetChat rolls
+    // below keep their stream positions.
+    app.audio.play_single_voice("Chat", -1.0, -1.0);
     // The context off the live state. The world flags the port does not
     // carry yet (the storm clock, the happy-windy-day, `BirthdayParty`,
     // `LanternNight`, the remix world, `WorldGen.crimson`, the Moon Lord)
@@ -633,6 +639,11 @@ pub(crate) fn angler_turn_in(app: &mut App, angler_idx: usize) -> bool {
                 app.inventory[slot].kind = 0;
             }
             handed = true;
+            // W4-d79 — the orphaned Chat emitter (`Main.cs:40243`,
+            // `SoundEngine.PlaySound(24)` — unpositioned, between the
+            // stack decrement and the counter++): case 24 draws nothing,
+            // so the reward rolls below keep their stream positions.
+            app.audio.play_single_voice("Chat", -1.0, -1.0);
             // `:40244`: the counter++ BEFORE the reward table reads it.
             if let Some(p) = app.player.as_mut() {
                 p.angler_quests_finished += 1;
@@ -7781,6 +7792,69 @@ mod tests {
         app.inventory[0].kind = 0;
         angler_turn_in(&mut app, idx);
         assert!(!app.world.angler_quest_finished, "no fish, no hand-in");
+    }
+
+    /// W4-d79 — the orphaned Chat emitter's two sites: the talk open
+    /// (`Main.cs:43083`) and the Angler turn-in (`:40243`) play the
+    /// unpositioned case-24 Chat (draw-free — the `GetChat`/reward rolls
+    /// keep their stream positions). The same-NPC re-click and the
+    /// empty-hand turn-in stay silent.
+    #[test]
+    fn w4_d79_the_talk_and_the_angler_turn_in_play_the_chat_cue() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let world = app.world.clone();
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0;
+        player.y = 100.0;
+        app.player = Some(player);
+        app.world = world;
+        let mut g = Npc::new(NpcKind::Guide, 32.0, 100.0, 1, 0.0);
+        g.hp = g.max_hp;
+        app.npcs.push(g);
+        // The fresh right-press edge talks: one Chat play, no draws.
+        app.place_down = true;
+        let played = app.audio.played_count();
+        let streams: Vec<_> = RngKey::ALL
+            .iter()
+            .map(|k| app.rngs.stream(*k).clone())
+            .collect();
+        assert!(talk_to_npc(&mut app, false).is_some(), "the talk latched");
+        assert_eq!(app.audio.played_count(), played + 1, "the Chat cue played");
+        for (k, s) in RngKey::ALL.iter().zip(streams.iter()) {
+            // GetChat draws on the BARE global stream (the Main.rand
+            // stand-in) — every NAMED stage stream stays pristine.
+            assert_eq!(app.rngs.stream(*k), s, "{} untouched", k.name());
+        }
+        // The same-NPC re-click declines (`:43077`) — no second play.
+        let played = app.audio.played_count();
+        assert!(talk_to_npc(&mut app, true).is_none());
+        assert_eq!(app.audio.played_count(), played, "no re-play on re-click");
+        // The Angler turn-in: the Chat cue between the decrement and the
+        // counter++, draw-free (the reward rolls keep their positions).
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let world = app.world.clone();
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0;
+        app.player = Some(player);
+        app.world = world;
+        app.world.angler_quest = 7;
+        let quest = crate::angler::QUEST_POOL[7];
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: quest,
+            name: "Quest Fish",
+            count: 1,
+            prefix: 0,
+        };
+        let mut a = Npc::new(NpcKind::Angler, 32.0, 100.0, 1, 0.0);
+        a.hp = a.max_hp;
+        app.npcs.push(a);
+        let played = app.audio.played_count();
+        assert!(angler_turn_in(&mut app, 0));
+        assert_eq!(app.audio.played_count(), played + 1, "the turn-in Chat");
+        // The same-day refusal plays nothing.
+        let played = app.audio.played_count();
+        angler_turn_in(&mut app, 0);
+        assert_eq!(app.audio.played_count(), played, "the refusal is silent");
     }
 
     /// `UpdateTime_StartDay`'s `Main.AnglerQuestSwap()` (`Main.cs:65373`): the

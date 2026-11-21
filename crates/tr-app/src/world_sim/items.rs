@@ -150,10 +150,14 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 continue;
             }
             // The `IsAPickup` consume-on-touch arms (`PickupItem`
-            // `:35045-35098`): hearts/stars ride the i52 arms below; the
-            // nebula/4143 mana arms have no ported buff route — those kinds
-            // are not grabbed until they land (ANALYSIS S1-P-i47/i52).
-            if crate::item::is_a_pickup(kind) && !crate::item::is_heart_or_star(kind) {
+            // `:35045-35098`): hearts/stars ride the i52 arms below, the
+            // 4143 Mana Cloak star its W4-d79 arm; the nebula trio has no
+            // ported buff route — those kinds are not grabbed until it
+            // lands (ANALYSIS S1-P-i47/i52).
+            if crate::item::is_a_pickup(kind)
+                && !crate::item::is_heart_or_star(kind)
+                && kind != 4143
+            {
                 i += 1;
                 continue;
             }
@@ -277,6 +281,55 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                             location,
                             crate::combat_text::HEAL_MANA,
                             100,
+                            false,
+                            false,
+                            size,
+                            1.0,
+                            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                        );
+                        if p.mana > p.mana_max {
+                            p.mana = p.mana_max;
+                        }
+                    }
+                    items.swap_remove(i);
+                    continue;
+                }
+                if kind == 4143 {
+                    // W4-d79 — `:35080-35097`: the Mana Cloak star, the
+                    // star arm's 50-mana twin — `PlaySound(7)`
+                    // (unpositioned case-7 Grab, one `Next(-10, 11)` pitch
+                    // on `UpdatePlayers` after the gate), `statMana += 50`,
+                    // the same `TryApplyManaHeat(0.2f, 2f)` +
+                    // `ManaEffect(num2)` (the `num2 != 0` gate is always
+                    // true — 50), then the cap and `TurnToAir`. NOT in
+                    // `STAR_KINDS` (`:34942`'s flag2 excludes it — the
+                    // full-mana pull gate and the Mana Magnet row never
+                    // apply; the +12 grab margin is unconditional,
+                    // `:35141-35144`).
+                    audio.play_pickup_sound(
+                        false,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
+                    if let Some(p) = player.as_mut() {
+                        let num2 = 50;
+                        p.mana += num2;
+                        p.try_apply_mana_heat(0.2, 2.0);
+                        let text = num2.to_string();
+                        let size = match app.lookups.combat_text_font.as_ref() {
+                            Some(f) => [crate::ui::text::font_width(f, &text, 1.0), f.line_spacing],
+                            None => [text.chars().count() as f32 * 8.0, 10.0],
+                        };
+                        let location = crate::combat_text::Rect {
+                            x: p.x,
+                            y: p.y,
+                            width: crate::player::WIDTH,
+                            height: p.height,
+                        };
+                        crate::combat_text::spawn_amount(
+                            &mut app.combat_texts,
+                            location,
+                            crate::combat_text::HEAL_MANA,
+                            num2,
                             false,
                             false,
                             size,
@@ -2316,6 +2369,86 @@ mod pickup_tests {
         let p = app.player.as_ref().unwrap();
         assert_eq!(p.mana, 200);
         assert!(p.buffs.find_buff_index(396).is_some());
+    }
+
+    /// W4-d79 — the Mana Cloak star 4143 (`Player.cs:35080-35097`): the
+    /// star arm's 50-mana twin — +50 capped, the same ManaHeat (0.2, 2 s)
+    /// pair + buff 396, the RAW-50 HealMana text, the drop airs out and
+    /// never enters the inventory. The full-mana touch still consumes
+    /// (the `:34947` pull gate's flag2 list excludes 4143 entirely).
+    #[test]
+    fn w4_d79_the_mana_cloak_star_restores_fifty_and_arms_mana_heat() {
+        let mut app = pickup_world();
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana_max = 200;
+            p.mana = 180; // the cap eats 30 of the 50
+        }
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(4143, 1, pc.0 - 4.0, pc.1 - 4.0));
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items.is_empty(), "the Mana Cloak star aired out");
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana, 200, "capped at statManaMax2");
+        assert_eq!(p.latest_mana_potion_damage_bonus, 0.2);
+        assert!(
+            (p.latest_mana_potion_duration - 120.0).abs() < 1e-3,
+            "2 s = 120 ticks"
+        );
+        assert!(p.buffs.find_buff_index(396).is_some(), "ManaHeat added");
+        assert!(
+            app.inventory.iter().all(|s| s.count == 0),
+            "nothing entered the inventory"
+        );
+        let t = app
+            .combat_texts
+            .iter()
+            .find(|t| t.active)
+            .expect("the mana text spawned");
+        assert_eq!(t.text, "50", "the RAW 50 prints before the cap");
+        assert_eq!(t.color, crate::combat_text::HEAL_MANA);
+        // The full-mana touch: consumed, capped, heat refreshed.
+        let mut app = pickup_world();
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana_max = 200;
+            p.mana = 200;
+        }
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(4143, 1, pc.0 - 4.0, pc.1 - 4.0));
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items.is_empty(), "consumed at full mana");
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana, 200);
+        assert!(p.buffs.find_buff_index(396).is_some());
+    }
+
+    /// W4-d79 — the 4143 arm's RNG order: the case-7 pitch draw FIRST
+    /// (`:35082`), then the ManaEffect text's two placement draws — the
+    /// same three-draw contract as the heart/star witnesses above.
+    #[test]
+    fn w4_d79_the_mana_cloak_star_draws_ride_update_players_in_order() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut app = pickup_world();
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana_max = 200;
+            p.mana = 100;
+        }
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(4143, 1, pc.0 - 4.0, pc.1 - 4.0));
+        let seed = 0x4143_5152i32;
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = UnifiedRandom::new(seed);
+        let mut witness = UnifiedRandom::new(seed);
+        let _pitch = witness.next_range(-10, 11); // case 7 (`:725`)
+        let _dx = witness.next_range(-10, 11); // width 20
+        let _dy = witness.next_range(-21, 22); // height 42
+        update_items(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).peek(),
+            witness.peek(),
+            "exactly the chime + two placement draws, in the C# order"
+        );
     }
 
     /// The RNG order inside the heart pickup arm: the case-7 pitch draw
