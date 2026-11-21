@@ -89,6 +89,86 @@ pub(crate) fn kill_sign(signs: &mut Vec<WldSign>, x: i32, y: i32) {
     signs.retain(|s| !(s.x == x && s.y == y));
 }
 
+/// The lazy kill-on-break record sweep (`WorldGen.CheckSign`'s destroy
+/// tail, `WorldGen.cs:43686-43689` — `if (type != 395) Sign.KillSign(num7,
+/// num8)`): a broken sign tile loses its record at the object's ORIGIN.
+/// The port has no `CheckSign` cascade arm (the remaining cells float —
+/// the pre-existing deviation), so the sweep is LAZY: the hit cell's
+/// pre-kill frames decode the origin (`WorldGen.cs:43573-43578` —
+/// `frameX/18 % 2`, `frameY/18 % 2`, the same decode `Sign.ReadSign`
+/// uses for the 2x2 sign) and `Sign.KillSign` runs there. The 395 item
+/// frame shares `CheckSign` but is not a `tileSign` kind, so it never
+/// reaches this sweep (`type != 395`, `:43686`).
+///
+/// The C# nulls the slot in place; the port's dense store SPLICES, which
+/// shifts every later index — so the open `Player.sign` and `signHover`
+/// indices are remapped through the surviving records (the C# indices
+/// are stable; the port keeps the same record open). The editor close
+/// itself is the lazy `sign_tick` (`Player.cs:27509-27513` — `sign ==
+/// null -> CloseSign`), which also kills the keyboard through the
+/// `Main.editSign` gate (`Main.cs:17389-17394`); the remap keeps a
+/// DIFFERENT open sign's index valid across the splice.
+pub(crate) fn kill_broken_sign_record(
+    app: &mut App,
+    kind: u16,
+    x: i32,
+    y: i32,
+    frame_x: i16,
+    frame_y: i16,
+) {
+    if !is_sign_tile(kind) {
+        return;
+    }
+    let ox = x - i32::from(frame_x) / 18 % 2;
+    let oy = y - i32::from(frame_y) / 18 % 2;
+    // The pre-kill identities of the open/hovered records (the dense-store
+    // index remap — see the fn doc).
+    let open = app.player.as_ref().map_or(-1, |p| p.sign);
+    let open_key = if open >= 0 {
+        app.world.signs.get(open as usize).map(|s| (s.x, s.y))
+    } else {
+        None
+    };
+    let hover_key = if app.sign_hover >= 0 {
+        app.world
+            .signs
+            .get(app.sign_hover as usize)
+            .map(|s| (s.x, s.y))
+    } else {
+        None
+    };
+    kill_sign(&mut app.world.signs, ox, oy); // `:43688`
+    // The dense-store index remap. A SURVIVING open/hovered record keeps
+    // its identity (the C# slot index is stable; the splice shifts it).
+    // A KILLED open record becomes a NULL SLOT — an index past the store,
+    // the module's `Main.sign[i] == null` convention — so the lazy
+    // `sign_tick` (`Player.cs:27509-27513`) sees the missing record and
+    // runs `CloseSign()` (sound 11, the dialog clear, the editor gate),
+    // exactly like the C# null-in-place + next-tick close. A killed hover
+    // clears to -1 (`MouseOversClear` re-derives it every update anyway).
+    let remap = |key: Option<(i32, i32)>, null_slot: i32| -> i32 {
+        match key {
+            Some((x, y)) => app
+                .world
+                .signs
+                .iter()
+                .position(|s| s.x == x && s.y == y)
+                .map_or(null_slot, |i| i as i32),
+            None => -1,
+        }
+    };
+    let null_slot = app.world.signs.len() as i32;
+    let new_open = if open >= 0 {
+        remap(open_key, null_slot)
+    } else {
+        -1
+    };
+    if let Some(p) = app.player.as_mut() {
+        p.sign = new_open;
+    }
+    app.sign_hover = remap(hover_key, -1);
+}
+
 /// `Sign.ReadSign` (`Sign.cs:24-60`): the frame decode picks the top-left,
 /// a non-sign origin kills the record and answers -1, the slot scan finds
 /// the record, and `CreateIfMissing` claims the first free slot with an
@@ -317,6 +397,65 @@ pub(crate) fn restore_canceled_sign_input(app: &mut App) {
             .chars()
             .take(s.state.max_length)
             .collect(); // `:1044` — `this.Text = ...` -> `SetText`'s trim
+    }
+}
+
+/// `Main.MouseOversClear`'s sign half (`Main.cs:46511-46512`, called at
+/// the update head `:17035`): `signHover = -1`, `signBubble = false` every
+/// update — the scan below re-latches them. The `cursorItemIcon*` clears
+/// (`:46507-46510`) have no port state (the cursor-icon system is unported).
+pub(crate) fn mouse_overs_clear(app: &mut App) {
+    app.sign_hover = -1;
+    app.sign_bubble = false;
+}
+
+/// The sign half of `Player.TileInteractionsCheckLongDistance`
+/// (`Player.cs:32098-32115`, reached from `LookForTileInteractions`
+/// `:31962-31970` — the long-distance arm runs even OUT of reach): a
+/// hovered sign tile latches `noThrow = 2` (`:32100`), the bubble anchor
+/// `signX/signY` at the frame-decoded origin (`:32101-32107` —
+/// `frameX/18 % 2`, `frameY/18`, the 2x2 sign's top-left), and
+/// `Sign.ReadSign(CreateIfMissing: false)` (`:32108`) answers the record
+/// index. The `signHover` latch (`:32109-32114`) additionally needs the
+/// cursor INSIDE the origin's 2x2 box (`tileTargetX/Y` within
+/// `[num5, num5+1] x [num6, num6+1]`).
+///
+/// The C# `cursorItemIconEnabled = false` / `cursorItemIconID = -1`
+/// (`:32112-32113`) have no port state (the cursor-icon system is
+/// unported — the tooltip's `!mouseText` gate covers the visible effect).
+/// The smart-interact target override (`:31930-31934`) is unported: the
+/// port's cursor cell IS `tileTargetX/Y`.
+pub(crate) fn sign_hover_scan(app: &mut App, world_pos: glam::Vec2) {
+    let Some(p) = app.player.as_ref() else {
+        return;
+    };
+    if p.dead {
+        return; // `UpdateDead` returns before `LookForTileInteractions`
+    }
+    if app.map.as_ref().is_some_and(|m| m.open) {
+        return; // `Main.mapFullscreen` (`:31924`)
+    }
+    if app.bestiary_open {
+        return; // `Main.InGameUI.CurrentState == Main.BestiaryUI` (`:31924`)
+    }
+    let x = (world_pos.x / tr_core::TILE_PX).floor() as i32;
+    let y = (world_pos.y / tr_core::TILE_PX).floor() as i32;
+    let Some(t) = app.world.tile(x, y) else {
+        return; // `!WorldGen.InWorld` (`:32046`)
+    };
+    if !t.active() || !is_sign_tile(t.kind) {
+        return;
+    }
+    app.no_throw = 2; // `:32100`
+    let (fx, fy) = (t.frame_x / 18, t.frame_y / 18);
+    let ox = x - (fx % 2) as i32;
+    let oy = y - fy as i32;
+    app.sign_bubble = true; // `:32105`
+    app.sign_x = ox * 16 + 16; // `:32106`
+    app.sign_y = oy * 16; // `:32107`
+    let idx = read_sign(&mut app.world, x, y, false); // `:32108`
+    if idx != -1 && x >= ox && y >= oy && x <= ox + 1 && y <= oy + 1 {
+        app.sign_hover = idx; // `:32111`
     }
 }
 
@@ -580,5 +719,175 @@ mod tests {
         assert_eq!(app.player.as_ref().unwrap().sign, -1, "`:17014`");
         sign_tick(&mut app);
         assert!(!app.sign_editing(), "the editSign gate (`Main.cs:17391-17393`)");
+    }
+
+    /// W4-f22 — the sign hover/bubble latch (`Player.cs:32098-32115`): a
+    /// hovered sign tile sets `noThrow = 2`, the bubble anchor at the
+    /// frame-decoded origin (`signX = ox*16+16`, `signY = oy*16`), and
+    /// `signHover` to the record index when the cursor is inside the
+    /// origin's 2x2 box. `MouseOversClear` (`Main.cs:46511-46512`) clears
+    /// both latches each update.
+    #[test]
+    fn the_hover_scan_latches_the_bubble_and_the_hover() {
+        let mut app = sign_app();
+        // A record at the origin so ReadSign(CreateIfMissing:false) finds it.
+        let idx = find_or_create(&mut app.world.signs, 19, 30).unwrap();
+        text_sign(&mut app.world, idx, 19, 30, "hello".into());
+        mouse_overs_clear(&mut app);
+        assert_eq!(app.sign_hover, -1);
+        assert!(!app.sign_bubble);
+        // Hover the RIGHT half (20, 30): origin (19, 30), cursor inside the
+        // 2x2 box -> signHover latches.
+        sign_hover_scan(&mut app, click(20, 30));
+        assert_eq!(app.no_throw, 2, "`:32100`");
+        assert!(app.sign_bubble, "`:32105`");
+        assert_eq!(app.sign_x, 19 * 16 + 16, "`:32106`");
+        assert_eq!(app.sign_y, 30 * 16, "`:32107`");
+        assert_eq!(app.sign_hover, idx as i32, "`:32111`");
+        // The clear re-derives.
+        mouse_overs_clear(&mut app);
+        assert_eq!(app.sign_hover, -1);
+        assert!(!app.sign_bubble);
+    }
+
+    /// W4-f22 — the hover latch needs a LIVE record: with no record,
+    /// `ReadSign(CreateIfMissing:false)` answers -1, so the bubble still
+    /// latches (the tile is hovered) but `signHover` stays -1
+    /// (`Player.cs:32108-32109`).
+    #[test]
+    fn the_hover_without_a_record_latches_only_the_bubble() {
+        let mut app = sign_app();
+        sign_hover_scan(&mut app, click(20, 30));
+        assert!(app.sign_bubble, "the tile is hovered");
+        assert_eq!(app.sign_hover, -1, "no record -> ReadSign -1");
+        assert!(app.world.signs.is_empty(), "CreateIfMissing:false never creates");
+    }
+
+    /// W4-f22 — a non-sign tile never latches (`Player.cs:32098`'s
+    /// `Main.tileSign` gate).
+    #[test]
+    fn the_hover_scan_ignores_non_sign_tiles() {
+        let mut app = sign_app();
+        sign_hover_scan(&mut app, click(5, 5));
+        assert!(!app.sign_bubble);
+        assert_eq!(app.sign_hover, -1);
+        assert_eq!(app.no_throw, 0);
+    }
+
+    /// W4-f22 — the lazy kill-on-break (`WorldGen.cs:43686-43689`): breaking
+    /// a sign tile kills its record at the frame-decoded origin; the open
+    /// index becomes a NULL SLOT (past the store) so the lazy `sign_tick`
+    /// closes the dialog + editor with sound 11, exactly like the C#
+    /// null-in-place + next-tick close.
+    #[test]
+    fn breaking_the_open_sign_kills_the_record_and_closes_the_editor() {
+        let mut app = sign_app();
+        assert!(try_open_sign_at_cursor(&mut app, click(20, 30)));
+        text_sign(&mut app.world, 0, 19, 30, "stored".into());
+        app.npc_chat_text = "stored".into();
+        open_sign_keyboard(&mut app);
+        assert!(app.sign_editing());
+        assert_eq!(app.world.signs.len(), 1);
+        // Break the RIGHT half (20, 30): frame_x 18 -> origin (19, 30).
+        kill_broken_sign_record(&mut app, 55, 20, 30, 18, 0);
+        assert!(app.world.signs.is_empty(), "Sign.KillSign at the origin");
+        // The open index is a null slot (>= len), not -1: sign_tick closes.
+        let open = app.player.as_ref().unwrap().sign;
+        assert!(open >= app.world.signs.len() as i32, "the null-slot convention");
+        sign_tick(&mut app);
+        assert_eq!(app.player.as_ref().unwrap().sign, -1, "CloseSign ran");
+        assert!(!app.sign_editing(), "the editSign gate cleared the editor");
+        assert!(app.npc_chat_text.is_empty());
+    }
+
+    /// W4-f22 — breaking a DIFFERENT sign remaps the open index through the
+    /// dense-store splice: the open record keeps its identity (the C# slot
+    /// index is stable; the port's splice shifts it), so the dialog stays
+    /// open on the SAME text. The broken record sits BEFORE the open one,
+    /// so the splice shifts the open index 1 -> 0.
+    #[test]
+    fn breaking_another_sign_remaps_the_open_index() {
+        let mut app = sign_app();
+        // Two records: (5,5) first (the one to break), (19,30) opened.
+        let b = find_or_create(&mut app.world.signs, 5, 5).unwrap();
+        text_sign(&mut app.world, b, 5, 5, "drop".into());
+        let a = find_or_create(&mut app.world.signs, 19, 30).unwrap();
+        text_sign(&mut app.world, a, 19, 30, "keep".into());
+        assert_eq!(a, 1, "the open record is second");
+        if let Some(p) = app.player.as_mut() {
+            p.sign = a as i32; // open the SECOND record (index 1)
+        }
+        app.npc_chat_text = "keep".into();
+        // Break the sign at (5,5) (frame 0 -> origin (5,5)).
+        kill_broken_sign_record(&mut app, 55, 5, 5, 0, 0);
+        assert_eq!(app.world.signs.len(), 1, "only (5,5) died");
+        assert_eq!(app.world.signs[0].text, "keep");
+        // The open index remapped 1 -> 0 (the survivor is now first).
+        assert_eq!(app.player.as_ref().unwrap().sign, 0, "the splice remap");
+        assert_eq!(app.npc_chat_text, "keep", "the dialog keeps reading");
+    }
+
+    /// W4-f22 — the 395 item frame shares `CheckSign` but is NOT a
+    /// `tileSign` kind, so the sweep never touches it (`type != 395`,
+    /// `WorldGen.cs:43686`).
+    #[test]
+    fn the_item_frame_kind_is_not_swept() {
+        let mut app = sign_app();
+        let idx = find_or_create(&mut app.world.signs, 19, 30).unwrap();
+        text_sign(&mut app.world, idx, 19, 30, "kept".into());
+        kill_broken_sign_record(&mut app, 395, 20, 30, 18, 0);
+        assert_eq!(app.world.signs.len(), 1, "395 is not a tileSign kind");
+    }
+
+    /// W4-f22 — the tombstone epitaph DISPLAY (deviation 4; the d2 sweep
+    /// owns the `misc_text` WRITE — `projectile_ai_tombstone.rs`'s
+    /// `Sign.ReadSign`/`TextSign` at tile 85). Tile 85 IS a `tileSign` kind
+    /// (`Main.cs:10082`), so the C# carries NO read-only difference for
+    /// tombstones: the sign-read path shows the epitaph exactly like any
+    /// sign text. This witness stands in for the d2 write (a record at a
+    /// tile-85 origin holding the death text) and verifies the read/display
+    /// half — `OpenSign`'s `npcChatText` read (`Player.cs:33549`) and the
+    /// hover tooltip's text — surface the epitaph unchanged.
+    #[test]
+    fn the_tombstone_epitaph_reads_through_the_sign_path() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = World::new("tomb".into(), 64, 64);
+        // A 2x2 tombstone (tile 85) at origin (19, 30), the d2 placement
+        // shape (`projectile_ai_tombstone.rs`'s TileObject.Place).
+        for x in [19, 20] {
+            for y in [30, 31] {
+                if let Some(cell) = w.tile_mut(x, y) {
+                    cell.kind = 85;
+                    cell.flags |= FLAG_ACTIVE;
+                    cell.frame_x = if x == 19 { 0 } else { 18 };
+                    cell.frame_y = if y == 30 { 0 } else { 18 };
+                }
+            }
+        }
+        app.world = w;
+        app.player = Some(Player::spawn(&app.world));
+        if let Some(p) = app.player.as_mut() {
+            p.x = 19.0 * 16.0;
+            p.y = 28.0 * 16.0;
+        }
+        // The d2 write stand-in: the epitaph record at the tile-85 origin.
+        let idx = find_or_create(&mut app.world.signs, 19, 30).unwrap();
+        let epitaph = "Tester was slain...";
+        text_sign(&mut app.world, idx, 19, 30, epitaph.into());
+        // The read display: OpenSign latches npcChatText = the epitaph.
+        assert!(try_open_sign_at_cursor(&mut app, click(20, 30)));
+        assert_eq!(app.npc_chat_text, epitaph, "OpenSign reads the epitaph");
+        // The hover tooltip's text is the same record (no read-only gate).
+        sign_hover_scan(&mut app, click(20, 30));
+        assert_eq!(app.sign_hover, idx as i32);
+        assert_eq!(app.world.signs[app.sign_hover as usize].text, epitaph);
+        // The editor opens on the epitaph (the C# has no tombstone lock).
+        open_sign_keyboard(&mut app);
+        let Some(FrontScreen::Keyboard(s)) = app.front.as_ref() else {
+            panic!("the sign keyboard is live");
+        };
+        assert_eq!(s.request.initial, epitaph, "the prefill is the epitaph");
     }
 }
