@@ -2375,6 +2375,7 @@ pub(crate) mod front_flow_tests {
             map_binds: crate::input_map::default_map_binds(),
             mount_prev: false,
             quick_heal_prev: false,
+            map_style_prev: false,
             // S1-B-3 (the `App::new` comment carries the citations): an
             // unpaused, focused boot with the counter at the C# reset value.
             game_paused: false,

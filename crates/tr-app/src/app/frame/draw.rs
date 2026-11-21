@@ -1467,8 +1467,10 @@ impl App {
                             let pos = ui::minimap::draw_to_position(ui::minimap::minimap_origin_raw(
                                 screen, map_scale,
                             ));
-                            // `Main.mapMinimapAlpha = 1` (`Main.cs:66753`).
-                            ui::minimap::draw_background(renderer, lookups, pos, 1.0, map_scale);
+                            // `Main.mapMinimapAlpha` (`Main.cs:66753`, default
+                            // 1; the alpha keys step it, `prepare` clamps
+                            // `0.01..1` — `Main.cs:55523-55530`).
+                            ui::minimap::draw_background(renderer, lookups, pos, m.minimap_alpha, map_scale);
                             m.draw_minimap(renderer, world, screen, view_center, map_scale);
                             // `Main.cs:55696-55703`: the same layer walk inside the
                             // `mapStyle == 1` branch, clipped to the 240x240 minimap
@@ -1522,7 +1524,7 @@ impl App {
                                 ]),
                                 m.minimap_scale,
                                 num46,
-                                1.0,
+                                m.minimap_alpha, // `b` (`Main.cs:55532`)
                             );
                             // The hover highlight is `MinimapFrame.Update`'s
                             // `buttonUnderMouse.IsHighlighted`

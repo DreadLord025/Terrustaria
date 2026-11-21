@@ -774,6 +774,10 @@ pub(crate) struct App {
     /// `Player.releaseQuickHeal` (`Player.cs:1770`): the quick-heal press
     /// edge latch (`:24822-24833`), the per-player twin of `mount_prev`.
     pub(crate) quick_heal_prev: bool,
+    /// `Player.releaseMapStyle` (`Player.cs:1838`): the map-style key's
+    /// press-edge latch (`:24949-24965`) — the `mapStyle` cycle fires once
+    /// per press, not per held frame (the zoom/alpha keys ARE held keys).
+    pub(crate) map_style_prev: bool,
     /// `Main.gamePaused` (`Main.cs:645`): the world-sim freeze written by the
     /// two pause sources — the focus arm (`Main.cs:17138`) and the in-game
     /// gate's arm pair (`Main.cs:17197-17201`). Cleared on world load
@@ -1458,6 +1462,72 @@ impl App {
         }
         m.scale = map::map_scale_clamp(sw, self.world.width, m.scale);
         m.pos = map::map_clamp_pos(m.pos, &self.world);
+    }
+
+    /// `Player.cs:24909-24966`'s **minimap** half — the map-shut key rows
+    /// (`mapStyle == 1`): `MapZoomIn`/`MapZoomOut` multiply `mapMinimapScale`
+    /// by 1.025/0.975 while held (`:24913-24920` — the same multipliers as the
+    /// chrome buttons, `MinimapFrame.cs:122`/`:135`), `MapAlphaUp`/`MapAlphaDown`
+    /// step `mapMinimapAlpha` ±0.015 while held (`:24921-24928`), and
+    /// `MapStyle` cycles `mapStyle` 0→1→2→0 on the press edge with
+    /// `PlaySound(12)` (`:24949-24965`, the `releaseMapStyle` latch). The
+    /// clamps are the draw side's (`Main.cs:55515-55530`, `WorldMap::prepare`).
+    /// Runs per update like the fullscreen twin above — the vanilla block
+    /// sits in `Player.Update`'s per-frame input pass, not the fixed step.
+    /// `mapStyle == 2`'s overlay rows (`:24930-24947`) stay unported with the
+    /// overlay map itself (D18).
+    pub(crate) fn update_minimap_keys(&mut self) {
+        // `Player.cs:24768`: the whole block sits behind the chat/sign/chest
+        // editors; the port's chat overlay eats keys the same way.
+        if self.chat.open || self.menu.is_some() || self.front.is_some() {
+            return;
+        }
+        if self.map.as_ref().is_some_and(|m| m.open) {
+            return; // the fullscreen half is `update_map_input`
+        }
+        let map_binds = self.map_binds.clone();
+        let held = |action: crate::input_map::MapAction| {
+            self.keys.iter().any(|k| {
+                map_binds[action.index()].as_str() == crate::input_map::key_name(*k)
+            })
+        };
+        // `:24911-24928`: the zoom/alpha rows are `mapStyle == 1`-only.
+        if self.map_style == 1 {
+            let (zin, zout) = (
+                held(crate::input_map::MapAction::ZoomIn),
+                held(crate::input_map::MapAction::ZoomOut),
+            );
+            let (aup, adown) = (
+                held(crate::input_map::MapAction::AlphaUp),
+                held(crate::input_map::MapAction::AlphaDown),
+            );
+            if let Some(m) = self.map.as_mut() {
+                if zin {
+                    m.minimap_scale = map::minimap_key_scale(m.minimap_scale, true);
+                }
+                if zout {
+                    m.minimap_scale = map::minimap_key_scale(m.minimap_scale, false);
+                }
+                if aup {
+                    m.minimap_alpha = map::minimap_alpha_step(m.minimap_alpha, true);
+                }
+                if adown {
+                    m.minimap_alpha = map::minimap_alpha_step(m.minimap_alpha, false);
+                }
+            }
+        }
+        // `:24949-24965`: the style cycle is the ELSE half's shared row —
+        // it fires in every non-fullscreen style, on the press edge only.
+        let style_key = held(crate::input_map::MapAction::Style);
+        if style_key && !self.map_style_prev {
+            // `SoundEngine.PlaySound(12)` (`:24953`), the port's 12 cue.
+            self.audio.play("Menu_Tick");
+            self.map_style += 1; // `:24954`
+            if self.map_style > 2 {
+                self.map_style = 0; // `:24955-24958`
+            }
+        }
+        self.map_style_prev = style_key;
     }
 
     /// `Main.UpdateViewZoomKeys` (`Main.cs:16801-16815`): ViewZoomIn/Out adjust
@@ -4008,6 +4078,7 @@ impl App {
             map_binds: crate::input_map::default_map_binds(),
             mount_prev: false,
             quick_heal_prev: false,
+            map_style_prev: false,
             // `Main.gamePaused` starts false and `ResetGameCounter` pins
             // `GameUpdateCount` at 65536 (`Main.cs:6442-6445`, the `OnWorldLoad`
             // hook at `:6605`) — both ride this constructor, so a `swap_world`
@@ -5971,5 +6042,95 @@ mod w4_e18_map_drag_capture_tests {
         app.capture.interface.active = false;
         app.update_map_input();
         assert_eq!(app.map_grab, Some([140.0, 120.0]), "the anchor re-grabs");
+    }
+}
+
+#[cfg(test)]
+mod w4_e18_minimap_key_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    fn minimap_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = tr_core::World::new("minimap-keys".into(), 260, 200);
+        app.map = Some(map::WorldMap::new(&app.world));
+        app.map_style = 1;
+        app
+    }
+
+    /// W4-e18 final sweep (written, not run - code-only): the minimap zoom
+    /// keys (`Player.cs:24913-24920`, defaults `Add`/`Subtract` —
+    /// `Main.cs:67191-67192`) multiply `mapMinimapScale` by 1.025/0.975 per
+    /// held update while the map is SHUT and `mapStyle == 1`; the alpha keys
+    /// (`PageUp`/`PageDown`, `Main.cs:67193-67194`) step ±0.015 (`:24921-24928`).
+    #[test]
+    fn w4_e18_the_minimap_zoom_and_alpha_keys_step_while_held() {
+        let mut app = minimap_app();
+        let (s0, a0) = {
+            let m = app.map.as_ref().unwrap();
+            (m.minimap_scale, m.minimap_alpha)
+        };
+        app.keys.insert(KeyCode::NumpadAdd);
+        app.keys.insert(KeyCode::PageUp);
+        app.update_minimap_keys();
+        let m = app.map.as_ref().unwrap();
+        assert_eq!(m.minimap_scale, s0 * 1.025);
+        assert_eq!(m.minimap_alpha, a0 + 0.015);
+        // Held: the second update steps again (the C# rows are `Current`,
+        // not `JustPressed`).
+        app.update_minimap_keys();
+        let m = app.map.as_ref().unwrap();
+        assert_eq!(m.minimap_scale, s0 * 1.025 * 1.025);
+        app.keys.clear();
+        app.keys.insert(KeyCode::NumpadSubtract);
+        app.keys.insert(KeyCode::PageDown);
+        app.update_minimap_keys();
+        let m = app.map.as_ref().unwrap();
+        assert_eq!(m.minimap_scale, s0 * 1.025 * 1.025 * 0.975);
+        assert_eq!(m.minimap_alpha, a0 + 0.015 + 0.015 - 0.015);
+        // The fullscreen map owns the same keys instead (`update_map_input`,
+        // `Player.cs:24898-24908`): the minimap axes do not move.
+        app.map.as_mut().unwrap().open = true;
+        let before = app.map.as_ref().unwrap().minimap_scale;
+        app.update_minimap_keys();
+        assert_eq!(app.map.as_ref().unwrap().minimap_scale, before);
+        // `mapStyle != 1` disables the zoom/alpha rows (`:24911`).
+        app.map.as_mut().unwrap().open = false;
+        app.map_style = 0;
+        app.update_minimap_keys();
+        assert_eq!(app.map.as_ref().unwrap().minimap_scale, before);
+    }
+
+    /// W4-e18 final sweep (written, not run - code-only): the `MapStyle` key
+    /// (`Tab`, `Main.cs:67190`) cycles `mapStyle` 1→2→0→1 on the PRESS edge
+    /// only (`Player.cs:24949-24965`, the `releaseMapStyle` latch) — a held
+    /// key does not re-fire, and the cycle runs in every non-fullscreen style.
+    #[test]
+    fn w4_e18_the_style_key_cycles_on_the_press_edge_only() {
+        let mut app = minimap_app();
+        assert_eq!(app.map_style, 1);
+        app.keys.insert(KeyCode::Tab);
+        app.update_minimap_keys();
+        assert_eq!(app.map_style, 2, "1 -> 2");
+        // Held: no re-fire (`releaseMapStyle` stays false).
+        app.update_minimap_keys();
+        assert_eq!(app.map_style, 2);
+        app.keys.clear();
+        app.update_minimap_keys(); // the release re-arms the latch
+        app.keys.insert(KeyCode::Tab);
+        app.update_minimap_keys();
+        assert_eq!(app.map_style, 0, "2 -> 0 wraps");
+        app.keys.clear();
+        app.update_minimap_keys();
+        app.keys.insert(KeyCode::Tab);
+        app.update_minimap_keys();
+        assert_eq!(app.map_style, 1, "0 -> 1");
+        // The fullscreen map suppresses the whole block (`:24909`'s else).
+        app.map.as_mut().unwrap().open = true;
+        app.keys.clear();
+        app.update_minimap_keys();
+        app.keys.insert(KeyCode::Tab);
+        app.update_minimap_keys();
+        assert_eq!(app.map_style, 1, "the fullscreen map eats the style key");
     }
 }

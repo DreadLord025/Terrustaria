@@ -19089,6 +19089,34 @@ branches and `UIWorldGenDebug.IsActive` have no port counterpart; the
 (mod hook). Full table + evidence: `docs/research/14-map-minimap.md` "W4-e18
 first-half census". Witnesses: 2 chrome + 3 clicks + 1 cursor, written not run.
 
+### The minimap key rows + alpha (W4-e18 final sweep, 2026-11-21, code-only)
+
+`Player.cs:24909-24966`'s map-shut half was missing: the zoom keys
+(`MapZoomIn`/`MapZoomOut`, defaults `Add`/`Subtract`, `Main.cs:67191-67192`)
+multiply `mapMinimapScale` by **1.025/0.975** while held (`:24913-24920` — NOT
+the fullscreen keys' 1.05/0.95), the alpha keys (`PageUp`/`PageDown`,
+`:67193-67194`) step `mapMinimapAlpha` ±0.015 while held (`:24921-24928`), and
+the `MapStyle` key (`Tab`) cycles `mapStyle` 0→1→2→0 on the press edge with
+`PlaySound(12)` (`:24949-24965`, the `releaseMapStyle` latch). Ported:
+`map.rs::minimap_key_scale`/`minimap_alpha_step`,
+`app/mod.rs::update_minimap_keys` (+ the `map_style_prev` latch), wired per
+update from `frame_head` beside `update_view_zoom_keys`. `WorldMap` gains
+`minimap_alpha` (default 1, `Main.cs:66753`) and the draw-side clamps
+(`clamp_minimap_axes`, `Main.cs:55515-55530`: scale `0.2..3`, alpha `0.01..1`)
+called from `prepare`; the tile pass tints `(byte)(255 * alpha)`
+(`:55532` → `MapRenderer.cs:438`'s `Color(alpha,alpha,alpha,alpha)`), the
+backdrop (`MinimapFrame.cs:182`) and the minimap layer walk (`b`, `:55703-55706`)
+read the same alpha. The frame foreground stays `Color.White` (`:187`),
+unfaded, like the source. Deliberate deviations: the zoom/alpha rows run in
+`mapStyle == 1` only (`:24911`); `mapStyle == 2`'s overlay rows (`:24930-24947`,
+`mapOverlayScale`/`mapOverlayAlpha`) stay unported with the overlay map itself
+(D18); the style cycle fires in every non-fullscreen style (the shared else
+row). The chat/menu/front overlays gate the whole block (`Player.cs:24768`).
+D17 (no minimap alpha) is closed by this pass. Witnesses: 2 `map::tests::w4_e18_*`
+(key multipliers, alpha step + clamps) + 2
+`app::w4_e18_minimap_key_tests::*` (held stepping + gates, press-edge cycle),
+written not run.
+
 ## The crafting focus + quantity (S1-H-7, 2026-11-13)
 
 `Main.HoverOverCraftingItemButton` (`Main.cs:42252-42305`) is ported into

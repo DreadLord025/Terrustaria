@@ -117,6 +117,11 @@ impl App {
         self.frame_count += 1;
         // Main.cs:16801-16815,18376 — view zoom keys (S1-B-5).
         self.update_view_zoom_keys();
+        // `Player.cs:24909-24966` — the minimap key rows (zoom ±1.025/0.975,
+        // alpha ±0.015, the Tab style cycle): the map-shut half of the map
+        // input pass, per-update like the view zoom keys above (the C# block
+        // sits in `Player.Update`'s per-frame input region, `:24768`).
+        self.update_minimap_keys();
         // The adaptive fps loop's counter (`Main.cs:16961-16964`, S1-B-6):
         // the per-second arms run off the measured frames, dt-pinned under
         // `TR_SHOT` like the rest of the clock.

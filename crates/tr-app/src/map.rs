@@ -37,6 +37,22 @@ pub fn map_key_scale(scale: f32, zoom_in: bool) -> f32 {
     if zoom_in { scale * 1.05 } else { scale * 0.95 }
 }
 
+/// `Player.cs:24913-24920`: the **minimap** zoom keys (`mapStyle == 1`, map
+/// shut) — `MapZoomIn` → `mapMinimapScale *= 1.025`, `MapZoomOut` → `* 0.975`.
+/// The same multipliers as the chrome buttons (`MinimapFrame.cs:122`/`:135`)
+/// but the KEY arms clamp only on the draw side (`Main.cs:55515-55522`), so
+/// this fn does not clamp — [`crate::ui::minimap::clamp_minimap_scale`] does.
+pub fn minimap_key_scale(scale: f32, zoom_in: bool) -> f32 {
+    if zoom_in { scale * 1.025 } else { scale * 0.975 }
+}
+
+/// `Player.cs:24921-24928`: `MapAlphaUp` → `mapMinimapAlpha += 0.015`,
+/// `MapAlphaDown` → `-= 0.015` (`mapStyle == 1`, map shut). The clamp is the
+/// draw side's (`Main.cs:55523-55530`), see [`WorldMap::clamp_minimap_alpha`].
+pub fn minimap_alpha_step(alpha: f32, up: bool) -> f32 {
+    if up { alpha + 0.015 } else { alpha - 0.015 }
+}
+
 /// `Main.cs:55398-55413`: X into `10..=maxTilesX-10`, Y into `10..=maxTilesY-19`.
 pub fn map_clamp_pos(pos: [f32; 2], world: &World) -> [f32; 2] {
     [
@@ -397,8 +413,18 @@ pub struct WorldMap {
     /// `Main.mapFullscreenScale` (px per tile) and `Main.mapFullscreenPos` (tiles).
     pub scale: f32,
     pub pos: [f32; 2],
-    /// `Main.mapMinimapScale` (`Main.cs:66751`), fixed at 1.05 (no minimap-zoom UI yet).
+    /// `Main.mapMinimapScale` (`Main.cs:66751-66752`, default 1.05): the
+    /// minimap zoom axis — the chrome buttons (`ui/minimap.rs::apply`), the
+    /// zoom keys (`Player.cs:24913-24920`) and the draw-side clamp
+    /// (`Main.cs:55515-55522`, in `prepare`).
     pub minimap_scale: f32,
+    /// `Main.mapMinimapAlpha` (`Main.cs:66753`, default 1): the minimap's
+    /// opacity — the alpha keys (`Player.cs:24921-24928`, ±0.015) and the
+    /// draw-side clamp `0.01..1` (`Main.cs:55523-55530`, in `prepare`).
+    /// `b = (byte)(255 * alpha)` (`:55532`) tints the tile pass AND the
+    /// backdrop (`MinimapFrame.cs:182`); the frame foreground stays
+    /// `Color.White` (`:187`).
+    pub minimap_alpha: f32,
     /// `Main.mapTime` (`Main.cs:803`) — the countdown that gates the
     /// lighting → map export (`LegacyLighting.cs:349`).
     map_time: i32,
@@ -483,6 +509,7 @@ impl WorldMap {
             scale: MAP_FULLSCREEN_SCALE_DEFAULT,
             pos: [0.0, 0.0],
             minimap_scale: 1.05,
+            minimap_alpha: 1.0, // `Main.cs:66753`
             map_time: 0,
             map_time_max: 0,
             dirty: Vec::new(),
@@ -511,6 +538,16 @@ impl WorldMap {
         for t in self.tiles.iter_mut() {
             t.clear();
         }
+    }
+
+    /// `Main.cs:55515-55530`: the minimap's draw-side clamps — scale
+    /// `0.2..3` (`:55515-55522`), alpha `0.01..1` (`:55523-55530`). The zoom
+    /// keys / chrome buttons multiply and the alpha keys step ±0.015
+    /// unclamped (`Player.cs:24913-24928`); the DRAW clamps both every
+    /// frame. Split out of `prepare` so a headless witness can pin it.
+    pub fn clamp_minimap_axes(&mut self) {
+        self.minimap_scale = crate::ui::minimap::clamp_minimap_scale(self.minimap_scale);
+        self.minimap_alpha = self.minimap_alpha.clamp(0.01, 1.0);
     }
 
     /// Reveals from `light` on the `mapTime` cadence — the
@@ -845,6 +882,7 @@ impl WorldMap {
         self.scale = map_scale_clamp(screen.x, world.width, self.scale);
         // `Main.cs:55398-55413`.
         self.pos = map_clamp_pos(self.pos, world);
+        self.clamp_minimap_axes();
         // `Main.cs:55416-55424`: `resetMapFull` overrides the clamp with the unclamped
         // view centre `(screenPosition + screenSize/2)/16f`.
         if self.reset_pos {
@@ -927,11 +965,16 @@ impl WorldMap {
         map_scale: f32,
     ) {
         let q = map_minimap_quad(center_tile, self.minimap_scale, map_scale, screen, world);
+        // `Main.cs:55532`: `b = (byte)(255f * mapMinimapAlpha)`; the tile pass
+        // tints `new Color(alpha, alpha, alpha, alpha)` (`MapRenderer.cs:438`).
+        // The `(int)` truncation is the C# byte cast; the port's tint rides
+        // the byte multiply (`/255`), matching XNA's byte path.
+        let a = (255.0 * self.minimap_alpha) as u32 as f32 / 255.0;
         r.push_map_sprite(
             [q.dest[0], q.dest[1]],
             [q.dest[2], q.dest[3]],
             q.uv,
-            [1.0; 4],
+            [a; 4],
         );
     }
 
@@ -965,8 +1008,12 @@ impl WorldMap {
             [1.0; 4],
         );
         // `Main.cs:55996`: the overlay offset is the map's top-left px minus
-        // the 10-px frame inset, and the draw scale rides the map scale
-        // (`num77`'s formula — `Main.cs:55975-55985`).
+        // the 10-px frame inset. The draw scale is `num77`, which the C#
+        // UNCONDITIONALLY overwrites to `Main.UIScale` (`Main.cs:55915-55921`
+        // — the `(num5*0.25*2+1)/3` formula at `:55916-55919` is dead code,
+        // `num77 = 1f` at `:55920` then `num77 = Main.UIScale` at `:55921`).
+        // The port returns the map scale (the pre-existing S1-L-4 seam the
+        // f29 overlay ports consume) — recorded deviation, not re-tuned here.
         (
             [q.dest[0] - 10.0 * self.scale, q.dest[1] - 10.0 * self.scale],
             self.scale,
@@ -1939,6 +1986,49 @@ mod tests {
         // `Player.cs:24900-24907`.
         assert_eq!(map_key_scale(2.0, true), 2.1);
         assert_eq!(map_key_scale(2.0, false), 1.9);
+    }
+
+    /// W4-e18 final sweep (written, not run - code-only): the minimap zoom
+    /// keys' multipliers (`Player.cs:24913-24920`) differ from the fullscreen
+    /// keys' 1.05/0.95 — 1.025/0.975, the same as the chrome buttons
+    /// (`MinimapFrame.cs:122`/`:135`). No clamp inside the step: the draw
+    /// side owns it (`Main.cs:55515-55522`).
+    #[test]
+    fn w4_e18_minimap_key_zoom_matches_vanilla() {
+        assert_eq!(minimap_key_scale(2.0, true), 2.0 * 1.025);
+        assert_eq!(minimap_key_scale(2.0, false), 2.0 * 0.975);
+        // Beyond the clamp range the step still multiplies raw — the DRAW
+        // clamps (`clamp_minimap_axes`), like the C#.
+        assert_eq!(minimap_key_scale(4.0, true), 4.1);
+    }
+
+    /// W4-e18 final sweep (written, not run - code-only): the alpha keys step
+    /// ±0.015 (`Player.cs:24921-24928`) and the draw clamps `0.01..1`
+    /// (`Main.cs:55523-55530`); the tile-pass tint is the truncated
+    /// `(byte)(255 * alpha)` byte multiply (`:55532`, `MapRenderer.cs:438`).
+    #[test]
+    fn w4_e18_minimap_alpha_steps_and_clamps() {
+        let w = test_world();
+        let mut m = WorldMap::new(&w);
+        assert_eq!(m.minimap_alpha, 1.0, "the Main.cs:66753 default");
+        m.minimap_alpha = minimap_alpha_step(m.minimap_alpha, false);
+        assert_eq!(m.minimap_alpha, 1.0 - 0.015);
+        m.minimap_alpha = minimap_alpha_step(m.minimap_alpha, true);
+        assert_eq!(m.minimap_alpha, 1.0);
+        // Below the floor and above the ceiling the DRAW clamps.
+        m.minimap_alpha = -0.5;
+        m.clamp_minimap_axes();
+        assert_eq!(m.minimap_alpha, 0.01);
+        m.minimap_alpha = 2.0;
+        m.clamp_minimap_axes();
+        assert_eq!(m.minimap_alpha, 1.0);
+        // The zoom clamp rides the same pass.
+        m.minimap_scale = 5.0;
+        m.clamp_minimap_axes();
+        assert_eq!(m.minimap_scale, 3.0);
+        m.minimap_scale = 0.1;
+        m.clamp_minimap_axes();
+        assert_eq!(m.minimap_scale, 0.2);
     }
 
     #[test]
