@@ -5026,6 +5026,108 @@ fn skeletron_death(
     }
 }
 
+/// The mech smoke-burst census shared by the 139/134-136/347/346/127/
+/// 128-131 rows: `spark_count`x dust-31 (×1.4, alpha 100, scale 1.5)
+/// then `pair_count`x paired dust-6 bursts (the ×5 noGravity scale-2.5
+/// first + the ×3 scale-1.5 second). The post writes draw nothing.
+fn mech_smoke_burst(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    spark_count: i32,
+    pair_count: i32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..spark_count {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 31, 0.0, 0.0, 100,
+            Color::default(), 1.5,
+        );
+        dust.slot_mut(idx).velocity *= 1.4;
+    }
+    for _ in 0..pair_count {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 6, 0.0, 0.0, 100,
+            Color::default(), 2.5,
+        );
+        {
+            let d = dust.slot_mut(idx);
+            d.no_gravity = true;
+            d.velocity *= 5.0;
+        }
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 6, 0.0, 0.0, 100,
+            Color::default(), 1.5,
+        );
+        dust.slot_mut(idx).velocity *= 3.0;
+    }
+}
+
+/// The mech quadrant-smoke gores shared by the same rows: FOUR
+/// `Next(61,64)` smoke gores at position with zero velocity base, the
+/// post ×0.4 + the ±1 quadrant nudges (+/+ then -/+ then +/- then -/-).
+/// The type argument draws BEFORE each NewGore.
+fn mech_quadrant_smoke(
+    npc: &Npc,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let pos = Vec2::new(npc.x, npc.y);
+    // The C# passes `default` (zero) velocity — the kicks are the only
+    // base before the ×0.4 + the nudges.
+    let nudges = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
+    for (dx, dy) in nudges {
+        let t = rng.next_range(61, 64);
+        let idx = gore.new_gore(rng, world, pos, Vec2::ZERO, t, 1.0);
+        let g = gore.slot_mut(idx);
+        g.velocity *= 0.4;
+        g.velocity.x += dx;
+        g.velocity.y += dy;
+    }
+}
+
+/// The 139 Probe death (`NPC.cs:89210-89244`, sites 776-779): the
+/// 10x/5x mech smoke burst, then the four quadrant smoke gores. The
+/// `life <= 0` gate wraps the whole body.
+fn probe_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    _hit_direction: f32,
+) {
+    // `:89214-89226` — the 10x dust-31 + 5x paired dust-6 census.
+    mech_smoke_burst(npc, dust, dust_ctx, rng, world, 10, 5);
+    // `:89227-89242` — the four quadrant smoke gores.
+    mech_quadrant_smoke(npc, gore, rng, world);
+}
+
+/// The 467 Deadly Sphere death (`NPC.cs:89245-89265`, sites 780-781):
+/// the 7x/3x mech smoke burst, then TWO gore-660 at position, scale
+/// 1f. The `life <= 0` gate wraps the whole body.
+fn deadly_sphere_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    _hit_direction: f32,
+) {
+    // `:89249-89261` — the 7x dust-31 + 3x paired dust-6 census.
+    mech_smoke_burst(npc, dust, dust_ctx, rng, world, 7, 3);
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 660, 1.0); // :89262
+    gore.new_gore(rng, world, pos, vel, 660, 1.0); // :89263
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -5631,6 +5733,14 @@ pub fn hit_effect_d(
     // RedHat split).
     else if matches!(npc_type, 35 | 36 | 68) {
         skeletron_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89210-89244` — the 139 Probe arm (sites 776-779).
+    else if npc_type == 139 {
+        probe_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89245-89265` — the 467 Deadly Sphere arm (sites 780-781).
+    else if npc_type == 467 {
+        deadly_sphere_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -9740,5 +9850,60 @@ mod tests {
             }
             assert_eq!(rng.peek(), twin.peek(), "skeletron {kind} red_hat={red_hat} mirrors");
         }
+    }
+
+    /// `NPC.cs:89227-89242` — the Probe's four quadrant smoke gores
+    /// after the 10x/5x mech census; `:89262-89263` — the Deadly
+    /// Sphere's two 660 after the 7x/3x census.
+    #[test]
+    fn w4_f5d_the_probe_quadrants_and_the_deadly_sphere_pair() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(797);
+        let _ = hit_effect_d(&n, 139, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        for t in &types {
+            assert!((61..64).contains(t), "smoke type in range: {t}");
+        }
+        let mut twin = UnifiedRandom::new(797);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 30, 30);
+        }
+        for _ in 0..5 {
+            twin_dust(&mut twin, 30, 30);
+            twin_dust(&mut twin, 30, 30);
+        }
+        let nudges = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
+        for (i, (dx, dy)) in nudges.iter().enumerate() {
+            let t = twin.next_range(61, 64);
+            let ky = twin.next_range(10, 31) as f32 * 0.1;
+            let kx = twin.next_range(-20, 21) as f32 * 0.1;
+            assert_eq!(gore.slot(i).gore_type, t);
+            assert_eq!(gore.slot(i).velocity.x, kx * 0.4 + dx);
+            assert_eq!(gore.slot(i).velocity.y, -ky * 0.4 + dy);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the probe mirrors the C# draws");
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(809);
+        let _ = hit_effect_d(&n, 467, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![660, 660]);
+        assert!(!gore.slot(2).active, "exactly two gores");
+        let mut twin = UnifiedRandom::new(809);
+        for _ in 0..7 {
+            twin_dust(&mut twin, 30, 30);
+        }
+        for _ in 0..3 {
+            twin_dust(&mut twin, 30, 30);
+            twin_dust(&mut twin, 30, 30);
+        }
+        for _ in 0..2 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the deadly sphere mirrors the C# draws");
     }
 }
