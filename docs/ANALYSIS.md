@@ -19017,23 +19017,91 @@ compacted-list remap is the follow-up. The Truffle's housing-gate consumer
 flag round-trips without a live reader). The Clown/Empress/bartender latches
 round-trip without live setters (their kinds/rescue paths are unported).
 
-**Still unowned (no port state, written at the C# default):** GameMode, the
-tree/cave back-style arrays, iceBackStyle/jungleBackStyle, cloudBGActive/
-numClouds, claimableBanners, the treeTop variation table, the world-gen
-manifest JSON, afterPartyOfDoom, meteorShowerCount/coinRain,
-extraSpawnPoints, forceHalloweenForToday/forceXMasForToday,
-boughtCat/Dog/Bunny, combatBookVolumeTwoWasUsed/peddlersSatchelWasUsed, and
-the remaining slime-colour unlocks (green/old/purple/yellow/copper).
+**Still unowned (no port state, written at the C# default):** claimableBanners,
+the treeTop variation table, the world-gen manifest JSON (all three the W4-c44
+golden-fixture lane owns), and forceHalloweenForToday/forceXMasForToday (the
+W4-f39 season lane). The set below was claimed in the second pass (Ph5-Ph13).
+
+### Second pass (Ph5-Ph13): the remaining unowned census
+
+`task/W4-f45-wld-header-2` continues on the same branch (base `42b7363b`) and
+claims the rest of the header/flags fields that have a live port consumer in an
+in-flight lane or a faithful gen/death/use source. Every claim is a `World`
+field the `.wld` flags writer/reader round-trips; the byte offsets are
+hand-derived against the `flags_tail` running widths and pinned by the
+`expected_flags_block` independent table + the owned-world sweep.
+
+- **Ph5 — GameMode** (`WorldFile.cs:1240` write / `:1985` read): the world's
+  difficulty i32 (0 Classic / 1 Expert / 2 Master / 3 Journey), the W4-e25
+  expert/master scaling lane's consumer. The pre-209 read gates are ported: the
+  expert bool from 112 (`:2031`), the v208 master byte (`:2037-2040`), classic
+  below 112 (`:2035`). `GenOptions.game_mode` stamps the creation draft's
+  `_optionDifficulty` (`UIWorldCreation.cs:129`) through both create paths; the
+  `WorldInfo` wire carries the byte.
+- **Ph6 — the tree/cave back-style tables** (`:1253-1268` / `:2051-2066`):
+  `treeX[3]`/`treeStyle[4]`/`caveBackX[3]`/`caveBackStyle[4]` +
+  `iceBackStyle`/`jungleBackStyle`, the W4-g72 bg-layers lane's consumers. The
+  gen roll ports `RandomizeTreeStyle` (`WorldGen.cs:8117-8190`) +
+  `RandomizeCaveBackgrounds` (`:8192-8249`) — the per-size zone branches (small
+  2 / medium 3 / large 4), the distinct `Next(6)`/`Next(8)` style rolls with the
+  collision re-roll loops, the tree 0->4 reroll, the unused-boundary
+  `maxTilesX` fill. **Deviation:** the C# draws the tables BEFORE the moon/hell
+  rolls (`:11338-11341`); the port keeps its frozen moon->hell order (the
+  `worldgen_rolls_hell_back_style` pin) and draws the tables between them — the
+  port's xorshift stream is not byte-comparable with the C#'s Knuth one anyway
+  (research/35 #5), so this is the accepted stream deviation.
+- **Ph7 — cloudBGActive/numClouds** (`:1326-1327` / `:2142-2145`): the W4-g69
+  CloudField lane's mirrors. **Deviation:** the C# load reads `cloudBGActive`
+  then RE-ROLLS it (`:2144` `-genRand.Next(8640, 86400)`); the port reads the
+  stored value into the World mirror for the round-trip but the App's live
+  machine (the g69 lane) owns the re-roll. `numClouds` restores as-is (the short
+  cast).
+- **Ph8 — afterPartyOfDoom** (`:1305` / `:2109`, v257): the getfixedboi
+  anniversary doom party. The gen Reset arm (`WorldGen.cs:11128-11137`) stamps
+  it (tenth anniversary + get-good, not skyblock) plus the genuine party / 5-day
+  cooldown; the `UpdateWorld_NPCs` consumer (`Main.cs:17926-17943`) kills every
+  town NPC (minus the five exclusions — only TravellingMerchant 368 / Dryad 20
+  have ported kinds) once the party ends, clearing the mech/party-girl/princess/
+  rainbow/green unlocks + the bunny license. The strike is the port's hp=0
+  instant-kill deviation.
+- **Ph9 — meteorShowerCount/coinRain** (`:1422-1423` / `:2490-2491`, v291): the
+  starfall events. `StartMeteorShower` (`WorldGen.cs:6239-6244`) rolls
+  `Next(650,751)*4`; the `HandleMeteorFall` failed-pick arm now draws
+  `Next(3)==0` into it (`Main.cs:65497-65500` — the `resolve` previously skipped
+  the draw). `StartRain` stores `coinRain` (`Main.cs:64672-64673`), `StopRain`
+  clears it (`:64651`); `rain.rs`'s `start_rain`/`stop_rain`/`update_time` take
+  `&mut World`. The star/coin projectiles are unported, so the values round-trip
+  without spawns.
+- **Ph10 — extraSpawnPoints** (`:1425` / `:2501`, v297): the team-based extra
+  respawn anchors, the W4-c46 respawn lane's consumer.
+  `ExtraSpawnPointManager.cs:436-456`'s count byte + (i16 X, i16 Y) pairs; the
+  variable-length `expected_flags_block` splice carries them.
+- **Ph11 — boughtCat/Dog/Bunny** (`:1392-1394` / `:2358-2360`, v217): the pet
+  licenses, the W4-f43 town-spawn lane's `TailFlags` consumers. The license
+  use-setters (`Player.cs:45352-45366`) ride the item-use lane (the combat-book
+  v1 precedent — the latches round-trip).
+- **Ph12 — combatBookVolumeTwoWasUsed/peddlersSatchelWasUsed** (`:1407-1408` /
+  `:2418`/`:2426`, v259/260): the boosters, the W4-g89b lane co-claims the
+  consumers (`npc_ai_town.rs`'s `combat_book_two` env); the use-setters
+  (`Player.cs:45337-45383`) ride the item-use lane.
+- **Ph13 — the five remaining slime-colour unlocks** (green/old/purple/yellow/
+  copper, `:1409-1415` / `:2434-2440`, v261): the town-slime kinds are unported,
+  so the latches round-trip (the green arrival setter rides the f43 town-slime
+  lane; the doom party clears green, `Main.cs:17940`).
 
 **Determinism.** The new fields are not in `world_hash`'s fold (the tile
-hashes are untouched); the gen stamps (dungeon anchor, crimson) are
-deterministic functions of the options/seed. The `.wld` flags block grows
-by the variable celebrant/angler lists — the `expected_flags_block` table
-computes the shift, and the owned-world sweep pins the whole block.
+hashes are untouched); the gen stamps (dungeon anchor, crimson, the tree/cave
+tables, the doom party) are deterministic functions of the options/seed. The
+`.wld` flags block grows by the variable celebrant/angler/extra-spawn lists —
+the `expected_flags_block` table computes the shifts, and the owned-world sweep
+pins the whole block.
 
 Witnesses (written NOT run, code-only): the Ph1 seasonal-death census
-(`world_sim/npcs.rs`), the Ph1/Ph2/Ph3/Ph4 offset+gate witnesses
-(`wld/mod.rs::w4_f45_*`), and the extended `owned_world`/`assert_owned_fields`
+(`world_sim/npcs.rs`), the Ph1-Ph13 offset+gate witnesses
+(`wld/mod.rs::w4_f45_*`), the tree/cave roll witness
+(`worldgen/pipeline.rs::w4_f45_the_tree_cave_rolls_follow_the_per_size_branches`),
+the meteor-shower witness (`worldgen/meteor.rs`), the coin-rain store witness
+(`rain.rs::test_DW_2_4`), and the extended `owned_world`/`assert_owned_fields`
 round-trip sweep. The compile window runs them.
 
 ## The world-format contract (S1-J-8)
