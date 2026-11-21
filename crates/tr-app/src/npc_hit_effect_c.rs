@@ -246,6 +246,7 @@
 //! | 1260-1268 | `:88599-88611` | the 322 SkeletonTopHat (5 gores) + 323 SkeletonAstonaut (4 gores) death |
 //! | 1269-1273 | `:88616-88620` | the 324 SkeletonAlien death (5 gores 466/467/467/468/468) |
 //! | 1274-1281 | `:88623-88639` | the skeleton fall-through (head 42 + 77/110 extras + shared 43/43/44/44) |
+//! | 1282-1289 | `:88654-88657` | the 694 WaterBoltMimic death (5x1008 + 3x1007 random-Center gores) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -7447,6 +7448,38 @@ fn skeleton_fallthrough_death(
     gore.new_gore(rng, world, low, vel, 44, s); // :88639
 }
 
+/// The 694 WaterBoltMimic death (`NPC.cs:88652-88658`, sites 1282-1289):
+/// NO dust — the 5-iteration loop spawns a 1008 gore each iteration, and a
+/// 1007 gore when `num697 < 3` (so 5×1008 + 3×1007 = 8 gores). Each gore's
+/// position is `Center + ((-width + (int)(width*NextFloat))*0.5,
+/// (-height + (int)(height*NextFloat))*0.5)` — the two NextFloat draws fire
+/// per gore (the C# `(int)` truncates the float product). At `this.scale`.
+/// The hit-half is a dmg-scaled count (the wiring wave's).
+fn water_bolt_mimic_death(
+    npc: &Npc,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let (w, h) = npc.size();
+    let c = center(npc);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    // The per-gore random Center offset (two NextFloat draws).
+    let offset = |rng: &mut UnifiedRandom| -> Vec2 {
+        let ox = (-w + (w * rng.next_float()) as i32 as f32) * 0.5;
+        let oy = (-h + (h * rng.next_float()) as i32 as f32) * 0.5;
+        Vec2::new(ox, oy)
+    };
+    // `:88652-88658` — the 5-iteration loop.
+    for num697 in 0..5 {
+        gore.new_gore(rng, world, c + offset(rng), vel, 1008, s); // :88654
+        if num697 < 3 {
+            gore.new_gore(rng, world, c + offset(rng), vel, 1007, s); // :88657
+        }
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -8358,6 +8391,10 @@ pub fn hit_effect_c(
         && npc.hp <= 0
     {
         skeleton_fallthrough_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88641-88660` — the 694 WaterBoltMimic arm (sites 1282-1289).
+    if npc_type == 694 && npc.hp <= 0 {
+        water_bolt_mimic_death(npc, gore, rng, world);
     }
     outcome
 }
@@ -13107,6 +13144,29 @@ mod tests {
         skeleton_fallthrough_death(&n, 110, &mut dust3, &ctx(), &mut gore3, &mut rng3, &w, 1.0);
         let types3: Vec<i32> = gore3.slots()[..7].iter().map(|g| g.gore_type).collect();
         assert_eq!(types3, vec![42, 130, 43, 43, 131, 44, 44]);
+    }
+
+    /// `NPC.cs:88654-88657` — the WaterBoltMimic death: 5×1008 + 3×1007 =
+    /// 8 gores, each drawing two NextFloat for the Center offset. The twin
+    /// replay pins the per-gore offset draws + kicks.
+    #[test]
+    fn w4_f10_the_water_bolt_mimic_death_spawns_eight_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 40.0);
+        let mut gore = GorePool::new();
+        let mut rng = UnifiedRandom::new(1307);
+        water_bolt_mimic_death(&n, &mut gore, &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..8].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1008, 1007, 1008, 1007, 1008, 1007, 1008, 1008]);
+        // The twin: 8 gores x (2 NextFloat + 2 kicks).
+        let mut twin = UnifiedRandom::new(1307);
+        for _ in 0..8 {
+            let _ox = twin.next_float();
+            let _oy = twin.next_float();
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the mimic mirrors the C# draws");
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
