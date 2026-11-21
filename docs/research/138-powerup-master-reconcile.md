@@ -1,13 +1,19 @@
 # 138 — POWERUP MASTER RECONCILE (a6 ⨉ g87/g88/g89/g90 ⨉ c36/f33 ⨉ f44/f45)
 
-**Status: FINAL-FINAL (retire pass, §11).** Written by W4-a6 reconcile
+**Status: SEALED (seal pass, §12 — over the FINAL-FINAL retire pass §11).
+The `.trwld` union authority is g71d `f2d8c2c67` research/92 §1-FULL's
+107-byte head (§12.1 re-aligns §11.2's 101 and corrects a6's own seats);
+the Success-leg activation contract is §12.2; the family bible §12.3.**
+Written by W4-a6 reconcile
 (branch `task/W4-a6-crystals-powerups`, base `8ed96ee5`); the FINAL pass
 (§10) re-adjudicated the pushed g87 `dfbcaf94b` arm-by-arm. The RETIRE
 pass (§11, over `115ce655a`) receipts the NOW-LANDED g88 fold 7
 (`a9f1c29d8` — the six-line v7 rule IN CODE + the v11 torch line; §6's
 re-flag RETIRED), aligns §5a's union to the f44 FINAL master map
 (`bdd1cc79a`, research/132 §3-L3's 97-byte-head claim — corrected to
-**98 + g87's 3 = 101-byte head + W×H dense**, §11.2's delta), cross-
+**98 + g87's 3 = 101-byte head + W×H dense**, §11.2's delta; the seal
+pass §12.1 re-aligns the 101 to the LANDED **107** — moon five +
+underworld one — under g71d's 92 §1-FULL authority), cross-
 receipts the g87 closeout (`26620538e`, local over `dfbcaf94b` — the
 "g87b-143" the Lead named exists as NO pushed ref and NO research/143
 doc; the closeout folds all three a6 deltas, §11.3) and lands a6's
@@ -37,7 +43,9 @@ achievement dispatch, now closed.
 | `origin/task/W4-f33-torch-god-favor` | `333479e0b` | the Torch God EVENT machine (`torch_god.rs`) + the 5043 flag READS (`has_torch_gods_favor` scan, `ctx.unlocked_biome_torches`); completes NO achievement |
 | `origin/task/W4-f44-save-plr-2` | `bdd1cc79a` (FINAL docs; retire probe §11.2 — was `05e4020bb` at the reconcile probe, `63204f852` the slot-11 property fix between) | the COMPLETE `.plr` walk (research/99, 71 rows) incl. `used_upgrades[6]` array + `extra_accessory` + torch pair + bread + dd2 + counters; research/132 the persist MASTER INDEX (FINAL) — its §3-L3 publishes the seven-claimant **97-byte-head** `.trwld` union claim (§11.2 corrects the arithmetic to 98 and seats g87's pets → 101) |
 | `origin/task/W4-f45-wld-header-2` | `6352d3840` | the COMPLETE `.wld` flags block (pets 2021-23, book2 2036, satchel 2037, nurse, slime green/old, …) + a `.trwld` **v18 44-byte identity block** |
-| `origin/task/W4-g70-bg-layers-1` / `g71-bg-layers-2` | (92 §1) | `.trwld` v18 forest 16B / surface 3B → the 19-byte union |
+| `origin/task/W4-g70-bg-layers-1` / `g71-bg-layers-2` | (92 §1 at the probe; g71d **`f2d8c2c67`** at the seal, §12) | `.trwld` v18 forest 16B / surface 3B → the 19-byte union at the probe; g71d's 92 §1-FULL now publishes the 13-claimant **107-byte** union + the fired underworld byte (§12.1 — THE merger authority) |
+| `origin/task/W4-f43-town-spawn-2` | **`79a037f5e`** (seal probe, §12.2) | the town-spawn census tail (`town_arrival_pets.rs`, UNWIRED): the pet arrival gates + the FULL exchange chain as pure fns (reroll/profiles/names) — the Success-leg activation consumer |
+| `origin/task/W4-d43-npc-kinds-631-697` | = main **`a725acb04`** (zero own commits, seal census §12.2) | the town-pet KINDS lane (637/638/656 unclaimed — no `net_id` arm on main); the Success leg's step-1 dependency |
 
 **Census (ItemID.cs, verified):** 29 LifeCrystal / 109 ManaCrystal / 1291
 LifeFruit (`:4265`) / 3335 DemonHeart / 5289 MinecartPowerup / 5326
@@ -66,10 +74,10 @@ the generic tail `:43280-43326` pays ONE only when `itemTime == itemTimeMax`
 | **3335** Demon Heart | `:45192-45200` + start refusal `:52051-52054` | a6, g87 (`dfbcaf94b`) | Both grant arms faithful (`!extraAccessory && expertMode` → flag once, ApplyItemTime 30, consume). **a6 MORE faithful at the START**: a6 ports the `CheckCanUse` refusal (`:52051-52054` — used/non-expert: no swing, no UseSound); g87 starts the animation unconditionally and lets the grant gate refuse (its own classic-mode witness shows the swing starts). Re-adjudication §10.1. | **a6** (`use_demon_heart` + `use_start_refused`); g87's arm DROP at merge (§10.1). | `.plr` `extraAccessory` `:54776`: **f44** (`extra_accessory`, L1-only per 132 §2a). g87's `.trplayer` v7 `dh` line **DROP** — version collision + L1-only ruling (§10.4). No `.wld`. |
 | **5289** Minecart Powerup | `:45202-45214` | a6, g87 (`dfbcaf94b`) | **Both ports are NO-flag-gate ALWAYS-spawn** (`:45204` has no `!unlockedSuperCart` leg — every granted use re-arms ApplyItemTime, raises the flag once, spawns the 3353 Mech). a6's `quick_spawn_item` is the FULL `GetOrDropItem` walk: `GetItemSettings.PickupItemFromWorld` (`GetItemSettings.cs:57`, `CanGoIntoVoidVault: true`) → deposit walk + per-slot chime/notify (`:39491`/`:39505`) + void-vault LAST resort (`:39395-39398`) + overflow world drop with the pinned velocity triplet; the prefix roll rides **UpdatePlayers** (the use runs inside `Player.Update` → `Main.rand`; the Mech is non-prefixable so the `CanHavePrefixes` gate draws NOTHING either way, `Item.cs:515-518`). g87's walk is the bobber-catch simplification: `slot_for_pickup` only (no ammo/favorites/chime/notify/vault) and the roll on **UpdateItems** — the bobber's projectile-pass context misapplied to a player-context use (a recorded stream mis-attribution). Re-adjudication §10.2. | **a6** (`use_minecart_powerup` + `quick_spawn_item`); g87's arm + its `quick_spawn_item` twin DROP (§10.2). | `.plr` super-cart: **f44** (the <253 cart-derive, L1-only). g87's `dh` token 2 DROP (§10.4). No `.wld`. |
 | **5326** Artisan Loaf | `:45216-45224` | a6, g90 | Both port `!ateArtisanBread` → flag once, ApplyItemTime, consume. Equal use-arm fidelity. **g90 owns MORE consumers**: the skeleton-merchant stock gate `Chest.cs:2958` (`ArtisanLoafWindow`, shop index 20) + the `.plr` bread slot; a6 wires only the reach flag (pre-existing `craft.rs`). | **g90 keep-own** (`use_artisan_loaf` + the skeleton-merchant shop consumer); a6's dup DROP at merge. The reach consumer (`craft.rs::tile_reach` `:35671`) is shared/pre-existing. | `.plr` `ateArtisanBread` `:54779`/`:55245` gate 256: **f44** (== g90's field, clean dedup). `.trplayer` bread line 11: **g88 v10** (g90 folded). No `.wld`. |
-| **4382 / 5336** Combat Book + Vol Two | `:45322-45350` | a6, g89e, g90 | All three port the two independent WORLD-flag once-ever gates, ApplyItemTime 45, the `Misc.CombatBookUsed`/`Misc.CombatBookVolumeTwoUsed` ChatColors.World line (vol-two key is a `{$Misc.CombatBookUsed}` copy command), consume + TurnToAir. MP SendData(61,-11/-17) folds out. Equal fidelity (kinds disjoint from every other arm → press-edge position observation-identical). | **keep ONE** — recommend **a6** (`use_combat_book`, the single cluster seam) or g89e (pushed precedent); dedup the other two. The TRAINING_DAY progression-40 consumer (`:25695-25698`) lands once (§3.5, a6 now carries it; g89e/g90 also do). | `.wld` book2 byte tail **2036** gate 259: **f45** supersedes a6/g89e/g90 (§4). book1 tail 1939 gate 204 pre-existing (i35). `.trwld` book2: g90 v18 union offset **22** (§5a — moved from 19 by g87's pet trio). NO sidecar token (world global, 122 §5). |
+| **4382 / 5336** Combat Book + Vol Two | `:45322-45350` | a6, g89e, g90 | All three port the two independent WORLD-flag once-ever gates, ApplyItemTime 45, the `Misc.CombatBookUsed`/`Misc.CombatBookVolumeTwoUsed` ChatColors.World line (vol-two key is a `{$Misc.CombatBookUsed}` copy command), consume + TurnToAir. MP SendData(61,-11/-17) folds out. Equal fidelity (kinds disjoint from every other arm → press-edge position observation-identical). | **keep ONE** — recommend **a6** (`use_combat_book`, the single cluster seam) or g89e (pushed precedent); dedup the other two. The TRAINING_DAY progression-40 consumer (`:25695-25698`) lands once (§3.5, a6 now carries it; g89e/g90 also do). | `.wld` book2 byte tail **2036** gate 259: **f45** supersedes a6/g89e/g90 (§4). book1 tail 1939 gate 204 pre-existing (i35). `.trwld` book2: g90 v18 union offset **51** (§12.1 SEALED 107; §5a's 22 / §11.2's 55 superseded). NO sidecar token (world global, 122 §5). |
 | **5043** Torch God's Favor | `:45226-45243` | a6, c36, f33 | **a6 MORE faithful than c36**: the C# sets `UsingBiomeTorches = true` whose SETTER writes `builderAccStatus[11] = 0` (`:3960-3963`); a6 does BOTH (`unlocked_biome_torches = true` + `builder_acc_status[11] = 0`), c36 folds UsingBiomeTorches into the unlocked flag (its research/30 deviation). a6 also ports HandleSpecialEvent(24) + the SP bestiary TorchGod(664) RegisterKill. **Fixed §3.1**: a6's credit now row-targeted `complete_condition("GAIN_TORCH_GODS_FAVOR","Use")` (== c36). f33 owns the EVENT machine + flag READS, completes no achievement. | **a6** use arm (the faithful setter) — **supersedes c36 research/30's "keep c36's write" note** (C# re-read `:3960-3963`). **c36**'s `complete_condition` helper is the shared dispatch (a6 now carries the identical helper, dedup). **f33** event machine + `has_torch_gods_favor`/`unlocked_biome_torches` reads. Three-way split by responsibility, no overlap to delete. | `.plr` torch pair `:54777-54778` gate 229: **f44** (`unlocked_biome_torches` + `using_biome_torches`, L1-only). NO sidecar. No `.wld`. |
-| **5343** Peddler's Satchel | `:45368-45383` | a6, g90 | Both port the WORLD-flag once-ever gate, ApplyItemTime, `Misc.PeddlersSatchelUsed` World line, consume; the travel-shop +1 slot consumer `Chest.cs:1303-1306` (plain `num++`, NO RNG draw). Equal fidelity. | **keep ONE** — recommend **a6** (`use_peddlers_satchel`) or g90; dedup. The shop +1 consumer is identical on both (`shop.rs::setup_travel_shop`). | `.wld` satchel byte tail **2037** gate 260: **f45** supersedes a6/g90 (§4). `.trwld` satchel: g90 v18 union offset **23** (§5a — moved from 20). NO sidecar token. |
-| **4829 / 4830 / 4910** Pet Licenses | `:45352-45365` / `:45438-45445` / `NPC.cs:80894-80918` | a6, g87 (`dfbcaf94b` + closeout `26620538e`) | Both port the mid-swing `ItemTimeIsZero && (!bought \|\| AnyNPCs(npcType))` gate + the SP purchase arm (flag + `Misc.License*Used` World line + consume). **Exchange-fail adjudication (FINAL §10.3, closed at the retire pass §11.3):** the C# exchange legs (`:80910-80917`) always chat — Success on a reroll, **Fail** otherwise — and consume either way. At the FINAL probe a6's live scan had NO chat on the bought-and-resident pass (a future silent-consume leg) and g87 hardcoded `any_npcs = false`. **g87's closeout `26620538e` folded a6's live scan + `!bought` guard AND added the PetExchangeFail line; a6's retire pass adopts the same fail-chat fold (§11.3) — the lanes are now shape-identical on all three families.** The Success leg (RerollVariation + the chat) remains the shared merge debt, landing WITH the town-pet kinds + `TownNPCProfiles`. | **a6** (`use_pet_license`, the single-seam cluster machine) + the §11.3 shared Success-leg debt. The town-arrival gates `Main.cs:65900-65911` are the deferred consumer. g87's arm dedups onto a6's at merge (shape-identical now). | `.wld` bought-pet bytes tail **2021/2022/2023** gate 217: **f45** supersedes a6 **and g87** (§4/§10.5). g87's `.trwld` 3-byte v18 pet tail rides the UNIFIED union at offsets **51-53** (§11.2; five-way §5a superseded). NO sidecar (world globals). |
+| **5343** Peddler's Satchel | `:45368-45383` | a6, g90 | Both port the WORLD-flag once-ever gate, ApplyItemTime, `Misc.PeddlersSatchelUsed` World line, consume; the travel-shop +1 slot consumer `Chest.cs:1303-1306` (plain `num++`, NO RNG draw). Equal fidelity. | **keep ONE** — recommend **a6** (`use_peddlers_satchel`) or g90; dedup. The shop +1 consumer is identical on both (`shop.rs::setup_travel_shop`). | `.wld` satchel byte tail **2037** gate 260: **f45** supersedes a6/g90 (§4). `.trwld` satchel: g90 v18 union offset **52** (§12.1 SEALED 107; §5a's 23 / §11.2's 56 superseded). NO sidecar token. |
+| **4829 / 4830 / 4910** Pet Licenses | `:45352-45365` / `:45438-45445` / `NPC.cs:80894-80918` | a6, g87 (`dfbcaf94b` + closeout `26620538e`) | Both port the mid-swing `ItemTimeIsZero && (!bought \|\| AnyNPCs(npcType))` gate + the SP purchase arm (flag + `Misc.License*Used` World line + consume). **Exchange-fail adjudication (FINAL §10.3, closed at the retire pass §11.3):** the C# exchange legs (`:80910-80917`) always chat — Success on a reroll, **Fail** otherwise — and consume either way. At the FINAL probe a6's live scan had NO chat on the bought-and-resident pass (a future silent-consume leg) and g87 hardcoded `any_npcs = false`. **g87's closeout `26620538e` folded a6's live scan + `!bought` guard AND added the PetExchangeFail line; a6's retire pass adopts the same fail-chat fold (§11.3) — the lanes are now shape-identical on all three families.** The Success leg (RerollVariation + the chat) remains the shared merge debt, landing WITH the town-pet kinds + `TownNPCProfiles`. | **a6** (`use_pet_license`, the single-seam cluster machine) + the §11.3 shared Success-leg debt. The town-arrival gates `Main.cs:65900-65911` are the deferred consumer. g87's arm dedups onto a6's at merge (shape-identical now). | `.wld` bought-pet bytes tail **2021/2022/2023** gate 217: **f45** supersedes a6 **and g87** (§4/§10.5). g87's `.trwld` 3-byte v18 pet tail rides the SEALED 107-byte union at offsets **59-61** (§12.1; §11.2's 51-53 and five-way §5a superseded). NO sidecar (world globals). |
 | **5337-5342** six shimmer permanents | `:45385-45423` | a6 (all six), g89 (5338/5341/5342), g90 (5337/5339/5340/5341/5342) | Use arms: all faithful (once-ever `!used*` gate, ApplyItemTime 45, consume + TurnToAir, SendData(4) folds out). a6's mid-swing machine is the most literal (keeps the per-tick re-check for refused arms); g89/g90 fold onto the press tick (i37 convention, observation-identical SP). **Consumers were the gap — fixed §3.2-3.4**: pearl ownership (g90's Player field + mirror), aegis-crystal f32 order (g90's own `RegenInputs.aegis_crystal` slot), booster row order (g89's fruit→worm→ambrosia). a6 now matches every claimant consumer shape. | **a6** `use_shimmer_permanent` machine = the single use-arm owner for all six (the only one covering the full cluster on one seam); **dedup** g89's `use_aegis_fruit`/`use_gummy_worm`/`use_ambrosia` + g90's `use_shimmer_permanent_item`. **g90's Player field declarations + consumer shapes** are the merge anchors (a6 now matches): `used_aegis_crystal`/`used_arcane_crystal`/`used_galaxy_pearl` after `used_ambrosia`, the `update_luck` pearl mirror, the regen slots. g89's `used_aegis_fruit`/`used_ambrosia` decls dedup (same anchor). | `.plr` six unlock bools `:54781-54786` gate 260: **f44** `used_upgrades[6]` array (g89's 3 + g90's 5 named bools dedup onto it, 132 §3 L1). `.trplayer` unlock line 8 tokens 1-6: **g88 v10** (§6). No `.wld`. |
 | **5451 / 5738** Jim's Drone / Remote Control Car | `:45245-45272` + refusal `:52067-52074` + shoot suppression `:43519-43526` | a6 only | a6 ports `ItemCheck_TryDestroyingDrones`: the mid-swing `ownedProjectileCounts[proj] > 0 && controlUseItem && ItemTimeIsZero && !mouseInterface` kill of the owner's 1020/1105 projectiles, `releaseUseItem = false`, NO ApplyItemTime (weapons, not consumable), the use-start refusal + shoot suppression. The 1020/1105 AI is unported (dormant until it lands). Sole claimant. | **a6** (`drone_destroy_check`). | NO persist (the remotes are weapons; the projectile counts are live pool state). |
 
@@ -106,10 +114,12 @@ Per research/132 §2's routing rule, three layers, one writer per file:
   (the complete block); a6/g89/g90/g87's five contested bytes dedup onto it
   (§4). The `.trwld` v18 tail: this doc's §5a published the **68-byte
   five-way union** (g70×g71×g90×g87×f45); the retire probe aligns it to
-  the f44 FINAL master map's wider claimant set — the UNIFIED input is the
-  **101-byte fixed head + W×H dense** (§11.2: f44's 97-byte claim corrected
-  to 98 by its own component sum, + g87's 3 pets; g72 cave 31 + g69 1 +
-  d125 1 + d109 dense seated). World globals NEVER ride L2 (122 §5).
+  the f44 FINAL master map's wider claimant set — the retire probe's
+  UNIFIED input was the **101-byte fixed head + W×H dense** (§11.2: f44's
+  97-byte claim corrected to 98 by its own component sum, + g87's 3 pets;
+  g72 cave 31 + g69 1 + d125 1 + d109 dense seated); the SEAL pass seats
+  the moon five + the fired underworld byte → the **107-byte head** under
+  g71d's 92 §1-FULL authority (§12.1). World globals NEVER ride L2 (122 §5).
 
 **a6's net persist contribution:** the `.wld` book2/satchel/bought-pet bytes
 (now superseded by f45's superset, §4) and the live `Player`/`World` fields
@@ -221,9 +231,11 @@ tail pins survive as witnesses re-pinned onto f45's block.
 > (g70/g71/g90/g87/f45, 68 bytes). It EXCLUDED g72's 31-byte cave block,
 > g69's 1-byte crimson, d125's 1-byte downedEmpress and d109's dense
 > variants — all seated by the f44 FINAL master map (research/132 §3-L3,
-> `bdd1cc79a`). The UNIFIED merger input is §11.2's **101-byte head + W×H
-> dense** table; §5a's offsets survive as the g70/g71/g90/g87/f45-relative
-> sub-blocks with the moves §11.2 lists.
+> `bdd1cc79a`). The retire probe's UNIFIED input was §11.2's **101-byte
+> head + W×H dense** table; the SEAL pass re-aligns it to the LANDED
+> **107-byte head** (§12.1 — g71d 92 §1-FULL authority, pets 59-61, books
+> 51/52, identity 63..107). §5a's offsets survive as the
+> g70/g71/g90/g87/f45-relative sub-blocks with the moves §11.2/§12.1 list.
 
 research/92 §1 fixes the g70×g71 union at **19 bytes** (forest 16 + surface
 3); research/135 §4 extends it to **21** (book2/satchel at offsets 19/20).
@@ -251,14 +263,17 @@ field order" rationale extended.
 
 ### 5a. THE EXACT BYTE-LAYOUT TABLE (the FINAL-probe five-way sub-block — SUPERSEDED by §11.2's unified 101-byte head)
 
-> **Retire-pass banner:** the offsets below are the five-way (68-byte)
-> layout. In the UNIFIED head (§11.2) g70's forest stays 0..16; g72's cave
-> block inserts at 16..47; g71's surface moves 16..19 → 47..50; g69's
-> crimson takes 50; g87's pets move 19-21 → 51-53 (vanilla write order:
-> pets `:1392-1394` precede downedEmpress `:1395`); d125's empress takes
-> 54; g90's books move 22/23 → 55/56; f45/c43's identity moves 24..68 →
-> 57..101; d109's dense variants append LAST at 101..101+W×H. The field
-> ORDER inside every block is unchanged; only the positions move.
+> **Retire-pass banner (seal-updated):** the offsets below are the
+> five-way (68-byte) layout. In the retire probe's UNIFIED 101 head
+> (§11.2) g70's forest stayed 0..16; g72's cave inserted at 16..47; g71's
+> surface moved 16..19 → 47..50; g69's crimson took 50; g87's pets moved
+> 19-21 → 51-53; d125's empress took 54; g90's books moved 22/23 → 55/56;
+> identity moved 24..68 → 57..101. **In the SEALED 107 head (§12.1, g71d
+> 92 §1-FULL authority) the final seats are: books 51/52 (64a prefix),
+> moon five 53-57, underworld 58, pets 59-61 (vanilla write order: pets
+> `:1392-1394` precede downedEmpress `:1395`), empress 62, identity
+> 63..107, d109 dense LAST at 107..107+W×H.** The field ORDER inside
+> every block is unchanged; only the positions move.
 
 All offsets are from the START of the v18 block, i.e. the byte immediately
 after the v17 `downedFishron` u8. Every multi-byte field is little-endian
@@ -310,9 +325,11 @@ inside offsets 24..68; only the block's POSITION in the union moves
 (f45's own file has it at 0..44; the union shifts it +24).
 
 **VERSION stays 18.** In the five-way layout every truncation constant
-moves to **+68**; in the UNIFIED head (§11.2) every constant moves to
-**+101 plus the dense-block term** (the fixed head alone is 101; the
-end-relative probes subtract `101 + width*height`). The exact sites,
+moves to **+68**; in the retire probe's UNIFIED head (§11.2) every
+constant moved to **+101 plus the dense-block term**; in the SEALED head
+(§12.1) every constant moves to **+107 plus the dense-block term** (the
+fixed head alone is 107; the end-relative probes subtract
+`107 + width*height` — 92 §1-FULL.4's per-site table). The exact sites,
 per lane (line numbers at each lane's own tip):
 
 - **g71 (`save.rs`)**: `:1188` v6-downgrade truncate `+16+3`→`+68`… the v6
@@ -332,10 +349,10 @@ per lane (line numbers at each lane's own tip):
 - **g70**: the `+16` sites (92 §1's list) → `+68`.
 
 Every lane's round-trip witness re-pins 16/3/3/2/44 → 68 (five-way) or →
-101 + W×H (unified, §11.2). **Merge action:**
-the g71c union extension (135 §4's owner) folds g87's pets and f45/c43's
-identity block per §11.2's unified table; g90's pair MOVES (19/20 → 22/23
-five-way → 55/56 unified); f45's `stamp_created_identity`
+101 + W×H (unified, §11.2) or → **107 + W×H (SEALED, §12.1)**. **Merge
+action:** the g71d union owner lands 92 §1-FULL.2's writer/reader pair
+(the 107 authority, §12.1); g90's pair MOVES (19/20 → 22/23 five-way →
+55/56 unified-101 → **51/52 sealed-107**); f45's `stamp_created_identity`
 + WorldId roll stay its scope; g87's `World.bought_*` fields dedup onto
 f45/a6's identical fields (same names — a clean field-level dedup). This
 doc surfaces BOTH the f45 and the g87 collisions — flag to the
@@ -488,14 +505,16 @@ Per-layer, the surviving base first, then the folds:
 3. **L3 `.wld` flags** — base **f45** (`6352d384`, the complete block). Dedup
    a6/g89e/g90/g87's book2 (2036) / satchel (2037) / bought-pets (2021-23)
    flips onto f45's fields (§4). a6's use arms write the same World fields.
-4. **L3 `.trwld`** — the **101-byte-head + W×H dense v18 union** (§11.2's
-   unified table, superseding §5a's five-way 68): g70 forest 16 + g72 cave
-   31 + g71 surface 3 + g69 crimson 1 + d125 empress 1 + g87 pets 3 + g90
-   book2/satchel 2 + f45/c43 identity 44 + d109 dense LAST. Move every
-   truncation constant to +101 (+ the dense term at the end-relative
-   sites). VERSION stays 18, forward-only. The g71c union owner seats
-   every block per §11.2; g90's pair lands at 55/56, g87's pets at 51-53,
-   the identity block at 57..101.
+4. **L3 `.trwld`** — the **107-byte-head + W×H dense v18 union** (§12.1's
+   SEALED alignment of §11.2's 101, g71d 92 §1-FULL.2 authority;
+   superseding §5a's five-way 68): g70 forest 16 + g72 cave 31 + g71
+   surface 3 + g69 crimson 1 + g90 book2/satchel 2 + c39/f39 moon 5 +
+   g71 underworld 1 + g87 pets 3 + d125 empress 1 + f45/c43 identity 44
+   + d109 dense LAST. Move every truncation constant to +107 (+ the
+   dense term at the end-relative sites). VERSION stays 18,
+   forward-only. The g71d union owner seats every block per 92
+   §1-FULL.2; g90's pair lands at 51/52, g87's pets at 59-61, the
+   identity block at 63..107.
 5. **Use arms / consumers** — keep **a6's `powerups.rs` machine** for the
    cluster EXCEPT 29/109/1291 (g88 keep-own, 103 §5a) and 5326 (g90 keep-own,
    the skeleton-merchant consumer). Dedup g89's/g90's/c36's parallel shimmer
@@ -511,7 +530,8 @@ Per-layer, the surviving base first, then the folds:
 6. **Docs** — update 103 §2a (tokens 4/5/6 LIVE, crystal/arcane/pearl order),
    135 §3 (correct the UNION-token column to the written order), 132 §2b
    (correct the stale token order + add the f45 identity collision), 92 §1
-   (19→68 union), and INDEX rows 103/122/132/135/138.
+   (superseded by g71d's own §1-FULL — the 107 union landed there, §12.1),
+   and INDEX rows 103/122/132/135/138.
 
 **No code change to any other lane** (out of scope). a6's five fidelity
 fixes (§3) are the only code edits this pass; they make a6's consumers match
@@ -698,8 +718,11 @@ the f33 torch pair** — such a carrier rides **v12+**, §11.1.)
   fields, ctor-false). g87's `wld/mod.rs` tail pins `tail[2021-23]` are
   byte-identical to a6/f45's — the witnesses merge cleanly.
 - **`.trwld` pets:** g87's 3-byte v18 tail is the FIFTH union member
-  (§5/§5a): offsets 19-21, ahead of g90's book pair (vanilla write order
-  `:1392-1394` < `:1407-1408`). Its round-trip witness re-pins 3→68.
+  (§5/§5a): offsets 19-21 in the five-way, ahead of g90's book pair
+  there (vanilla write order `:1392-1394` < `:1407-1408`). In the SEALED
+  107 union the pets seat **59-61** and the books ride the 64a prefix at
+  51/52 (§12.1 — 64a's published order keeps its offsets stable). Its
+  round-trip witness re-pins 3→68→107.
 
 ### 10.6 g88 recognition-rule re-check — **RETIRED at the retire probe (§11.1)**
 
@@ -751,7 +774,8 @@ f45** (§10.5), **g87's `.trwld` pets ride the union** (§5a five-way /
 §11.2 unified). At the FINAL probe the `.trplayer` reader gap (§6/§10.6)
 and the five-way v18 collision (§5) were the two open merge actions; the
 retire pass CLOSES the reader gap (g88 fold 7 landed the rule, §11.1) and
-WIDENS the union to the unified 101-byte head (§11.2).
+WIDENS the union to the unified 101-byte head (§11.2; the seal pass seats
+the final 107, §12.1).
 
 ## 11. RETIRE pass (2026-11-21, over `115ce655a`) — the landed-claimant receipts
 
@@ -861,7 +885,9 @@ own 97 is off by one.** The delta, with the arithmetic receipt:
    f45's lineage, 132 §0 records it). 44 bytes once.
 
 **THE UNIFIED v18 INPUT — fixed head 101 bytes + W×H dense (the merger
-table, superseding §5a and correcting 132 §3-L3):**
+table, superseding §5a and correcting 132 §3-L3's FINAL 97; itself
+SUPERSEDED by §12's 107-authority alignment — kept as the retire-probe
+receipt):**
 
 | Offset | Len | Field | Rust type | Owner block | C# anchor |
 | --- | --- | --- | --- | --- | --- |
@@ -914,12 +940,17 @@ g71c's roll-wire persists it, insert 1 byte in the surface group →
 **102-byte head**, re-pin once. The g71c/g72c roll keep-one adjudication
 (132 §3-L3 step 2) is untouched by this delta — it is a worldgen-roll
 question, not a layout one; the persistence trio stays g72c's pushed
-shape either way.
+shape either way. *(Seal receipt §12: the seat FIRED — g71's pushed
+`f08e8d41e` wiring rolls + `.wld`-persists it; the final head is 107 with
+the moon-boss five also seated. Both re-pins landed in §12.)*
 
-**Merge action:** the g71c union owner takes THIS table (not §5a's 68,
-not 132's 97); f44's 132 §3-L3 needs the one-byte correction receipted
-here (flag to the f44 lane — a6 edits no foreign doc); g87's pets seat
-51-53, g90's pair 55/56, the identity block 57..101, d109 dense LAST.
+**Merge action (retire-probe wording, seal-superseded):** the g71c union
+owner takes THIS table (not §5a's 68, not 132's 97); f44's 132 §3-L3
+needs the one-byte correction receipted here (flag to the f44 lane — a6
+edits no foreign doc); g87's pets seat 51-53, g90's pair 55/56, the
+identity block 57..101, d109 dense LAST. *(§12.1: the seats moved again
+in the SEALED 107 — pets 59-61, books 51/52, identity 63..107; the
+correction flag to f44 now covers its divergent 107 too.)*
 
 ### 11.3 g87b-143 — the closeout cross-receipt + a6's exchange-fail fold
 
@@ -1025,14 +1056,20 @@ adjudication; the merger takes §1 + §8.
   + the f33 lone-pair rule + the torch line all LANDED — **no reader debt
   remains** (§11.1). g87's `dh` line DROPS (§10.4).
 - **L3 `.wld`:** f45 base; the five contested bytes dedup (§4).
-- **L3 `.trwld`:** the **UNIFIED 101-byte head + W×H dense** (§11.2) —
-  f44's 97 corrected to 98 by its own sum, + g87's 3 pets seated 51-53.
-  The underworldBG seat stays OPEN (102 if seated). The g71c/g72c roll
-  keep-one is the f44 map's owed adjudication, unchanged.
-- **Open merge actions remaining:** the unified-union landing (g71c
-  owner, §11.2's table), the f44 97→98 correction receipt (f44 lane),
-  the exchange Success leg (town-pet lane), the g71c/g72c roll keep-one
-  (f44 map §3-L3 step 2). The `.trplayer` reader gap is CLOSED.
+- **L3 `.trwld`:** the retire probe's **UNIFIED 101-byte head + W×H
+  dense** (§11.2) — f44's 97 corrected to 98 by its own sum, + g87's 3
+  pets seated 51-53; the underworldBG seat OPEN (102 if seated).
+  *(Seal §12.1: the seat FIRED and the moon five landed — the SEALED
+  head is **107**, g71d 92 §1-FULL authority, pets 59-61 / books 51/52 /
+  identity 63..107. The g71c/g72c roll keep-one is ADJUDICATED on both
+  new tips: g72's `cave_bg.rs` keeps the cave roll, g71 `fc76a48b`
+  dropped its duplicate — 92 §2.1-FINAL + 132 §3-L3 rule 2 agree.)*
+- **Open merge actions remaining (seal-updated):** the 107-union landing
+  (g71d owner, 92 §1-FULL.2's table per §12.1), the f44 divergent-107
+  re-pin receipt (§12.1 — its 97→98 correction already landed in
+  `d35876af9`), the exchange Success leg (§12.2's four-step activation
+  contract, d43/f43 lanes). The `.trplayer` reader gap is CLOSED; the
+  roll keep-one is CLOSED.
 
 **Verification performed (retire pass):**
 - `git fetch origin --prune` + full `git branch -r` census (no g87b/f44f
@@ -1055,4 +1092,174 @@ adjudication; the merger takes §1 + §8.
   cargo/tests/rustfmt/graphify per the lane constraint — witnesses
   WRITTEN, NOT RUN; presence verified by direct file reads.
 
-This doc is FINAL-FINAL for the a6 lane.
+## 12. SEAL pass (2026-11-21, over `6568aeeb6`) — the 107-authority alignment + the Success-leg activation contract
+
+The seal probe fetched the LATEST origin tips (the retire probe's
+`bdd1cc79a`/`94d33f2ca` reads are now superseded on the union question):
+g71 **`f2d8c2c67`** (research/92 §1-FULL — the 13-branch claimant registry
++ the 107-byte union, 10:03), f44 **`d35876af9`** (research/132
+FINAL-FINAL §3-L3 — ALSO 107, 10:17), g88 **`6a829a0e8`** (receipts phase,
+v11 code unchanged at `a9f1c29d8`), g90 **`740650d75`** (135 FINAL, v18
+pair unchanged), f43 **`79a037f5e`** (the town-spawn census), d43 tip =
+main `a725acb04` (zero commits of its own). g87 origin tip still
+`dfbcaf94b`.
+
+### 12.1 The 107-byte landed receipt — §11.2's 101 re-aligned, a6's seats corrected
+
+**The arithmetic bridge:** a6's retire-probe 101 (§11.2) + c39/f39's
+moon-boss five (5 B, `WorldFile.cs:1347-1351`, ONE deduped block —
+byte-identical claims, 92 §1-FULL.1 #7/#8) + g71's underworld byte (1 B,
+`:1376` — §11.2's OPEN seat FIRED: the pushed `f08e8d41e` wiring rolls +
+`.wld`-persists it) = **107 EXACTLY**. 16+31+3+1+2+5+1+3+1+44 = 107.
+Total tail = **107 + width×height** (d109 dense LAST, unchanged).
+
+**The two published 107 layouts DIVERGE on offsets — adjudicated:**
+
+| Seat | a6 §11.2 (101) | g71d 92 §1-FULL.2 (107, 10:03) | f44d 132 §3-L3 (107, 10:17) |
+| --- | --- | --- | --- |
+| forest / cave / surface | 0..16 / 16..47 / 47..50 | SAME | SAME |
+| g90 books | 55/56 | **51/52** (inside the kept-verbatim 64a 53-byte prefix) | **61/62** (strict C# order) |
+| crimson | 50 | 50 | **51** |
+| underworld | OPEN | **58** | **50** (surface-group extension) |
+| moon bosses | absent | 53..58 | 52..57 |
+| g87 pets | 51-53 | **59-61** | **57-59** |
+| empress | 54 | 62 | 60 |
+| identity | 57..101 | 63..107 | 63..107 |
+
+**Verdict: g71d's 92 §1-FULL.2 table is THE merger input.** Reasons, in
+order: (1) the Lead's seal directive names 92 §1-FULL the landed
+107-authority; (2) g71d's tip is the UNION OWNER lane (its §1-FULL.4
+carries the full per-branch truncation-move table + the writer/reader
+pair ready to land, and its own `save.rs` at `f2d8c2c67` still writes
+only the 3-byte surface tail `:434-441` / reads `:826-830` — the 107 is
+published as the merge instruction, exactly the shape §11.2 published
+its 101); (3) keeping g72's 64a 53-byte prefix VERBATIM at [0..53] holds
+every offset 64a already published stable — f44d's strict-C#-order
+re-shuffle moves crimson/books for zero fidelity gain (both orders are
+forward-only-legal; no released v18 exists). f44d's own doc claims "THE
+authoritative union" — a6 edits no foreign doc; this receipt flags the
+divergence to the f44 lane: **132 §3-L3's [50]/[51]/[52..57]/[57..60]/
+[61..63] seats re-pin to 92 §1-FULL.2's [58]/[50]/[53..58]/[59..62]/
+[51..53]** (the identity seat 63..107 and the dense term already agree).
+
+**a6's own seats re-checked against 92 §1-FULL — DIVERGENT, corrected:**
+§11.2 seated pets 51-53 / books 55/56 / empress 54 / identity 57..101
+(the moon five + underworld were absent/open). In the 107-authority:
+**g87 pets 59-61, g90 books 51/52, empress 62, moon 53-57, underworld 58,
+identity 63..107, dense 107..107+W×H.** The pets-before-empress C# order
+(`:1392-1394` < `:1395`) survives inside the extension group; the
+books-before-pets file order is 64a's published choice, NOT a fidelity
+error (the `.trwld` tail is port-only — only the FIELD SET must be
+C#-complete, and §1-FULL.1's 13-branch sweep proves it is). Every a6
+mention of 51-53/55/56/57..101/101/102 outside §11.2's own audit-trail
+table is superseded by THIS section (the §1/§2/§5/§5a/§8/§10/§11
+banners now point here). Truncation constants: every lane's fixed
+addend → **107** (92 §1-FULL.4's per-site table is the inventory; a6's
+§5a/§11.2 site lists stay valid as site lists, only the target moves
+101→107); end-relative probes subtract `107 + width*height`.
+
+### 12.2 The Success-leg debt — the activation contract (SHARED a6 × g87, consumers d43/f43)
+
+**Census (the town-pet-kind question the Lead asked):** the Success chat
+(`Misc.PetExchangeSuccess`, `NPC.cs:80910-80912`) fires only when
+`RerollVariationForNPCType(npcType)` finds a resident of net id
+637/638/656 AND its `RerollVariation()` succeeds (`:80920-80961` —
+`TownNPCProfiles.GetProfile` gate `:80935-80938`, the ≤100-draw
+`profile.RollVariation()` loop `:80941-80944`, `GetNameForVariant` +
+`life = lifeMax` + the PetExchange particle + `TrySendData(56)`
+`:80949-80959`). Direct C# window re-read this pass:
+`NPC.cs:80880-80979`. **No lane can witness the Success leg alone:**
+
+- **main `a725acb04`** (== d43's tip — `task/W4-d43-npc-kinds-631-697`
+  carries ZERO commits of its own): `npc/data.rs`'s `net_id` map has NO
+  arm for 637/638/656 (or any town slime 670/678-684) — the highest town
+  ids mapped are Zoologist 633 / Princess 663 (`:3023-3024`); the
+  town-pet AI helpers exist (`npc_ai_town.rs:137-145` `is_town_pet` /
+  `is_town_slime`, id-keyed pure fns) but no `NpcKind` carries those
+  ids, so a6/g87's LIVE `AnyNPCs` scans never answer (both lanes'
+  recorded boundary, re-verified).
+- **f43 `79a037f5e`** (`town_arrival_pets.rs`, 819 lines, UNWIRED
+  `#![allow(dead_code)]`): ports the WHOLE exchange chain as pure fns —
+  `unlock_or_exchange_pet` `:87-113` (the `PetUseOutcome::ExchangeSuccess`
+  arm `:74`/`:108-109`), `reroll_variation` `:126-148` (the 100-draw
+  cap), `reroll_variation_for_npc_type` `:150-184` (first-resident-only,
+  the no-profile false `:158-161`, the legacy-0 roll `:162-171`, the
+  heal `:178-179`), the six-variant rosters + head ids 27-44
+  (`:196-238`), `has_town_profile`'s 40-key set (`:255-298`), the
+  genRand name categories (`:307-330`), and the arrival gates
+  `tail_can_spawn` (`:398-414`: 637/638/656 on the bought flags,
+  `Main.cs:65900-65911`). It even records the load-side gap: the port's
+  `.wld` reader SKIPS the bought trio (`flags.rs:608` `r.skip(3)` per
+  its census note `:332-337`) — f45's flags superset closes that.
+
+**THE ACTIVATION CONTRACT (published to d43/f43 + the g87 merge):** the
+Success leg activates when ALL FOUR land, in this dependency order:
+
+1. **d43 (kinds):** `NpcKind::TownCat/TownDog/TownBunny` with `net_id`
+   637/638/656 (+ the town slimes 670/678-684 for the arrival ladder) —
+   the `npc/data.rs` map arms + `from_u16` seats. Until this lands the
+   live scans stay dead and BOTH lanes correctly refuse/chat-Fail only.
+2. **f43 (arrival):** splice `tail_can_spawn`'s pet arms into
+   `town_arrival.rs`'s machine at the cited seats (`Main.cs:65900-65911`)
+   so a bought flag actually spawns the resident; the `.wld` bought-trio
+   load rides f45's flags base (§4 — NOT a new writer).
+3. **f43 (profiles):** map `PetVariationSlot` onto the live `Npc`
+   (`variation_index`/`hp`/`max_hp`/`given_name` per its own `:186-194`
+   note) and wire `reroll_variation_for_npc_type` behind the use arm,
+   the roll on **`Main.rand`** (`Profiles.cs:216` `Next(6)` — the ONLY
+   Main.rand slot in the chain) and the name draw on **`WorldGen.genRand`**
+   (`LanguageManager.cs:419` — a DIFFERENT stream; f43's census pins both).
+4. **a6/g87 (chat):** the merged `use_pet_license` (a6's machine, §10.3/
+   §11.3 keep-own) swaps its hardcoded Fail else-arm for the reroll
+   result: true → `Misc.PetExchangeSuccess`, false → `Misc.PetExchangeFail`
+   (both already post Fail today — the Success dispatch is a ONE-LINE
+   conditional at activation, `powerups.rs:439-448`'s else-arm). The
+   consume-either-way tail (`:45442`) and the `!bought` guard are
+   already shape-identical on both lanes; nothing else moves.
+
+**Witness boundary (unchanged, now with the contract):** a6's
+`a_resident_non_pet_does_not_open_the_exchange` + g87's twin stay the
+negative-path pins; the positive Success witness lands WITH step 1
+(a kind carrying 637/638/656) — f43's pure-fn witnesses
+(`reroll_variation_for_npc_type` success/fail/legacy, `:656-672`) already
+pin the chain's semantics pre-activation. **No a6 code change this
+phase** — the else-arm's deviation comment already names the debt; this
+section is the published contract the town-pet lanes consume.
+
+### 12.3 The powerup-family bible (one paragraph)
+
+The powerup family seals as a five-lane machine with one owner per seam:
+**a6** owns the single-seam use-arm cluster (`crates/tr-app/src/powerups.rs`
+— 3335 Demon Heart with the `CheckCanUse` start refusal, 5289 Minecart
+with the full QuickSpawnItem walk, 4382/5336 combat books, 5043 Torch
+God's Favor with the faithful slot-11 setter, 5343 satchel, the six
+shimmer permanents 5337-5342, the pet licenses 4829/4830/4910 with the
+live scan + exchange-Fail chat, and the 5451/5738 drone-destroy checks)
+plus the five landed fidelity fixes (§3/§10.7/§11.4) and the shared
+`complete_condition` row-targeted dispatch; **g90** keeps the 5326
+Artisan Loaf arm + the skeleton-merchant consumer and owns the carrier/
+consumer/feeder shapes a6 matches (pearl mirror, regen slots, booster
+order, TRAINING_DAY); **g88** keeps 29/109/1291 (the `.trplayer` carrier
+lives there) and owns the L2 sidecar at **v11** (`a9f1c29d8` code, the
+six-line v7 rule + f33 lone-pair rule + torch line 16 all landed — zero
+reader debt, g87's `dh` line DROPS per §10.4); **f44** owns the L1 `.plr`
+complete walk (`used_upgrades[6]` + the L1-only fields) and **f45** the
+L3 `.wld` flags superset (the five contested bytes dedup, §4); the L3
+`.trwld` rides the **107-byte-head + W×H dense v18 union** under g71d's
+92 §1-FULL.2 authority (§12.1 — 13 claimants, 11 blocks, three dup pairs
+at zero layout cost, forward-only); the ONE remaining use-arm debt is
+the exchange **Success** leg, activation-contracted to d43's kinds +
+f43's arrival/profiles wiring (§12.2). Every keep-own stands; the merge
+is mechanical everywhere except the four-step activation contract.
+
+**Seal verification:** fetched-tip reads g71 `f2d8c2c67` (92 §1-FULL
+full + `save.rs:428-447`/`:822-833` — the 107 is published-not-coded,
+the surface tail still 3 B), f44 `d35876af9` (132 §3-L3's divergent
+107 table, `:557-599`), g88 `6a829a0e8` + g90 `740650d75` (tips moved,
+code unchanged), f43 `79a037f5e` (`town_arrival_pets.rs` full read),
+d43 = main `a725acb04` (`npc/data.rs` net-id census, `town_arrival.rs`
+gate census); C# window `NPC.cs:80880-80979` (≤100 lines, direct path).
+a6 edits this pass: this doc (§11.2 banners + §12) + the INDEX row.
+Docs-only — no cargo/tests/rustfmt/graphify per the lane constraint.
+
+This doc is SEALED for the a6 lane (FINAL-FINAL + the §12 seal).

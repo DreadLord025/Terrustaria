@@ -402,7 +402,9 @@ fn use_peddlers_satchel(app: &mut App) -> bool {
 /// consuming one with the chat the C# always posts; the g87 closeout
 /// `26620538e`'s fold shape (research/138 §11.3). The Success leg
 /// (`RerollVariationForNPCType` → `RollVariation`, `:80910-80912`) is
-/// the remaining merge debt — it lands WITH `TownNPCProfiles`. The
+/// the remaining merge debt — the four-step activation contract
+/// (d43 kinds → f43 arrival → f43 profiles → this else-arm's one-line
+/// Success/Fail dispatch) is research/138 §12.2. The
 /// bought flags are World fields (the `combat_book_was_used`
 /// standing-in); the town arrival gates (`Main.cs:65900-65911`) are the
 /// deferred consumer.

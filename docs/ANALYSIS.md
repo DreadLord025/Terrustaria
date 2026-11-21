@@ -36116,7 +36116,14 @@ never consume.
   never a silent consume; no flag re-raise, no license re-print. The
   Success leg (`RerollVariationForNPCType` → `RollVariation` +
   `Misc.PetExchangeSuccess`, `:80910-80912`) is the remaining merge
-  debt — it lands WITH `TownNPCProfiles`. Witnesses:
+  debt — it lands WITH `TownNPCProfiles`. **Activation contract
+  published (seal pass, research/138 §12.2):** d43's kinds (no `net_id`
+  arm for 637/638/656 exists on main `a725acb04`) → f43's arrival splice
+  (`town_arrival_pets.rs` at `79a037f5e`, UNWIRED, ports the whole
+  exchange chain incl. the profiles/rosters/names) → f43's live-Npc
+  profile wiring (variation roll on `Main.rand`, name on
+  `WorldGen.genRand`) → the one-line Success/Fail chat dispatch in the
+  merged use arm. Witnesses:
   `a_bought_license_without_a_resident_pet_refuses` +
   `a_resident_non_pet_does_not_open_the_exchange` (the net-id scan, not
   mere liveness); the positive path is unwitnessable until the pets land.
@@ -36134,8 +36141,9 @@ never consume.
   fields are f44's L1-only `.plr` lane). Both minecart ports are
   NO-flag-gate ALWAYS-spawn (`:45204` has no `!unlockedSuperCart` leg).
   g87's `.wld` pet flips dedup onto f45; its `.trwld` 3-byte pet tail
-  rides the UNIFIED 101-byte-head v18 union at offsets 51-53 (138 §11.2;
-  the five-way 68-byte table §5a is superseded).
+  rides the SEALED 107-byte-head v18 union at offsets 59-61 (138 §12.1 —
+  g71d f2d8c2c67 research/92 §1-FULL authority; §11.2's 101-head/51-53
+  seats and the five-way 68-byte table §5a are superseded).
 - **QuickSpawnItem (the minecart powerup's 3353 grant)**: the `GetItem`
   deposit walk with the per-slot chime + `NotifyItemPickup`, the void
   vault as the LAST resort and the overflow world drop at the player
