@@ -39999,3 +39999,74 @@ the `manaHeat` semantics cross-checked at `Player.cs:980/:10340/
 checked against the generated 124-id table before the witness was
 written. RNG untouched (the draw path draws no gameplay RNG; the
 MenuTick cue is the fixed sound).
+
+## The buff-HUD family compose + FINAL census (W4-c26, 2026-11-21)
+
+Code-only compose round on `task/W4-c26-buff-hud`: synced onto main
+051600da8 (the S1-L-11g craft freeze guards, anchors keep-both), then
+merged `origin/task/W4-f12-buff-effects` tip 22ce2a41f — the 270-id
+UpdateBuffs wiring + the 400-icon HUD final census + the closeout/retire
+receipts. d72 wave-F (cf96c8c1c) is an ANCESTOR of f12 with byte-identical
+blobs (`buff_effects_frame.rs` e7fe827bc, `potions.rs` 1dcc89c83), so the
+one merge composes both lanes. The full record — the landed census, the
+compose rulings, the buffFrame NONEXISTENT ledger and the family bible —
+lives in `docs/research/64-buff-hud-family.md` (registry number 64, the
+next free census slot; INDEX row added).
+
+### The compose rulings (the semantic conflicts, resolved by re-reading the C#)
+
+The c26 and f12 lanes fixed the same three HUD drifts independently.
+The auto-merge spliced BOTH `buff_tooltip` matches (a double percent
+append — "26%26%"); resolved to ONE match in the c26 text-then-percent
+shape (the C# switch mutates `text` then falls through, `Main.cs:43257-
+43288`), the 396 ceil promoted to f64 per `Math.Ceiling`'s double
+signature. `buff_icon_text` stays split (the f12 inline selection is the
+same body); the c26 grey 32×32 placeholder and the `ui::in_rect_strict`
+seam stay (f12 still had the vanish-on-missing-sheet `continue` and the
+private four-comparison copy). ONE composed percent witness carries both
+lanes' edges; the f12 `w4_f12_final_tooltip_*` name retired into it.
+**Fixture correction**: both lanes' percent fixtures registered the
+ManaSickness/ManaHeat rows under `Items.json` — the retail rows live in
+`Game.json` (`BuffDescription.ManaSickness` :1083, `ManaHeat` :1342;
+Items.json :141-144 has only the WellFed_Expert rows). The composed
+witness registers Game.json with the retail strings. One f12 comment
+corrected: 72 is Midas (`BuffID.cs:315`), not Tipsy (25, :221).
+
+### The buffFrame NONEXISTENT census (independent re-run)
+
+Case-insensitive `buffFrame` grep over `decompiled/` (*.cs): ZERO hits
+on this tree — `Main.buffFrame`/`buffFrameCounter` do not exist.
+`Main.cs:43315` draws the FULL `Buff_<id>` sheet
+(`Rectangle(0,0,Width(),Height())`, scale 1, rotation 0);
+`AssetInitializer.cs:418-420` loads ids 1..400 (`BuffID.Count = 401`,
+`BuffID.cs:997`) — all 400 icons STATIC. The only per-icon dynamics are
+the buffAlpha tint (+0.1/−0.05, clamp [0.4,1], `:43332/:43353/:43355-
+43361`; empty-slot reset 0.4 `:43227`; the fullscreen-map site's 0.65
+floor `:41338-41340`) and the icon text. The ONE real buff frame anim is
+Ice Barrier 62 (`Player.cs:10462-10485`: below-half gate, counter++ then
+>2 → frame++ wrap 12; above half → DelBuff+j--), sim-wired through the
+composed d73 boosters arm; its draw consumer is the player-draw lane.
+The Rust port has no `buff_frame` icon symbol — the f12
+`BuffFrameInputs`/`update_buff_frame` names are the UpdateBuffs TICK
+pass. Ledger + family map: research/64 §3/§5.
+
+### The witnesses (written, NOT run)
+
+The composed `s1_e_6_tests` set (research/64 §6 lists all): the four
+c26 witnesses (the percent one now on the retail Game.json fixture with
+both lanes' edges), the new
+`w4_c26_compose_the_percent_suffix_is_appended_exactly_once` (the
+double-append guard — one '%' per tooltip, the plain id carries none),
+and f12's buff-time + icon-census witnesses kept verbatim (one comment
+fix). `buffs.rs` keeps the f12 re-grant witness; every wave/wiring
+witness rides its module unchanged.
+
+### Verification
+
+Code-only: no cargo/rustc/rustfmt/tests/graphify invoked (worker rules).
+Every conflict resolved against the C# windows re-read on this tree
+(`Main.cs:43203-43404`, `:41325-41344`, `Player.cs:10458-10485`,
+`BuffID.cs:221/:315/:997`, `AssetInitializer.cs:418-420`, the en-US
+Game/Items json rows). The d72/f12 blob identity and the ancestry exit
+codes are quoted in research/64. RNG untouched (the compose adds no sim
+code beyond f12's own zero-draw waves; the HUD draws no gameplay RNG).

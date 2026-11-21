@@ -852,6 +852,39 @@ mod s1_e_6_tests {
         assert_eq!(buff_tooltip(&p, 396), "Magic damage increased by 0%");
     }
 
+    /// W4-c26 compose guard — the c26 and f12 lanes closed the SAME 94/396
+    /// arms independently; the merge keeps ONE `buff_tooltip`. This pins
+    /// the single-append shape: a spliced double match (the auto-merge
+    /// hazard) would print "…26%26%" / "…13%13%". Also pins that the
+    /// WellFed expert swap and the percent suffix COMPOSE (the C# switch
+    /// mutates `text` then falls through to the return — the fed ids
+    /// never carry a percent, the mana ids never swap rows).
+    #[test]
+    fn w4_c26_compose_the_percent_suffix_is_appended_exactly_once() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::test_register_source(
+            "Terraria.Localization.Content.en-US.Game.json",
+            r#"{
+                "BuffDescription": {
+                    "ManaSickness": "Magic damage reduced by ",
+                    "ManaHeat": "Magic damage increased by "
+                }
+            }"#,
+        );
+        let world = tr_core::World::new("t".into(), 10, 10);
+        let mut p = crate::player::Player::spawn(&world);
+        p.mana_sick_reduction = 0.25;
+        let t94 = buff_tooltip(&p, 94);
+        assert_eq!(t94, "Magic damage reduced by 26%");
+        assert_eq!(t94.matches('%').count(), 1, "one suffix, not two: {t94}");
+        p.mana_heat = 1.123;
+        let t396 = buff_tooltip(&p, 396);
+        assert_eq!(t396, "Magic damage increased by 13%");
+        assert_eq!(t396.matches('%').count(), 1, "one suffix, not two: {t396}");
+        // A plain id carries no suffix at all.
+        assert!(!buff_tooltip(&p, 5).contains('%'));
+    }
+
     /// W4-c26 — `Main.DrawBuffIcon`'s icon-text selection
     /// (`Main.cs:43316-43324`): the counter wins, else the over-2-tick
     /// duration at second resolution (`buffTimeValue / 60`), else nothing.
