@@ -193,3 +193,111 @@ rules. **Free floor 382+ — NO SELF-PICKS**; new docs need a Lead
 assignment appended to §9. This doc: 367, Lead-assigned (§9.2 row
 "367 | d54 | 367-merger-order-dag (Lead-assigned, in flight) | reserved"
 — executed by this landing).
+
+---
+
+## §7. 40-bible citation index + lane corrections (append, W4-d54)
+
+Recorded from the original DAG agent's verified 40-bible read
+(`docs/research/40-port-done-verification.md` family coverage), then
+independently re-pinned here via `git ls-tree`/`git show` on the exact
+commits named below. APPEND ONLY — §1–§6 above stand unchanged; where
+this section refines a §1 pin it is stated as a delta, not a rewrite.
+
+### §7.1 Lane corrections (where a bible actually lives)
+
+| Doc | Correction | Verified at |
+|---|---|---|
+| research/135 | Lives on **g90** (`task/W4-g90-artisan-bread-use`) — `135-g90-persist-folds.md` | tip **`43fee29a4`** |
+| research/95 | Lives on **c42** (`task/W4-c42-wiring-device-arms`) — `95-wiring-master-reconcile.md` | tip **`69148794c`** |
+| 26g | Lives on **d19** — `26g-clouds-keep-one.md` (NOT on the 26 audit's home lane) | `task/W4-d19-proj-ai-181-190` |
+| 26h | Lives on **d18** — `26h-projectile-ai-171-180-census.md` | `task/W4-d18-proj-ai-171-180` |
+| 92-D5 | = **g71**'s `92-doc-sweep-bg.md` **§1-SEAL.1** (the persist D5 fold rides the bg doc-sweep, not a standalone 92-D5 file) | `task/W4-g71-bg-layers-2` |
+| A9 liquid folds | Live on **g45**'s copy of **69** (`69-liquid-reconcile.md`) — merge 69 from g45, not from g46/g47 | `task/W4-g45-liquid-lava-honey-delays` |
+| f10-delete-receipt | = **f10's tip commit `afea4c0fc` ITSELF** — no standalone receipt file exists (ls-tree confirms); cite the commit | `task/W4-f10-gore-sites-3` tip `afea4c0fc` |
+
+### §7.2 Re-pin deltas at merge (tips moved since the original DAG read)
+
+| Lane | Old pin → NEW pin | Why |
+|---|---|---|
+| f46 | `77ff32040` → **`5c88f1901`** | map step-0 EXECUTED (84 §10.4 step 0 done, per §1 wave-3 map row) |
+| d3 | `5ff9fe983` → **`c23b7b013`** | 331-rename landed on the lane |
+| d125 | `5a26ae348` → **`5f8569945`** | 309/319-renames landed on the lane |
+
+All six hashes resolve locally (`git cat-file -e` exit 0); the three NEW
+pins are the current `origin/task/...` tips (rev-parse verified). The
+merger uses the NEW pins; the old ones are cited for chain-history only.
+
+### §7.3 Liquid docs-tail (the 70 union the merger must expect)
+
+- **g46 `a4d49b355`**'s copy of `70-liquid-merge-order.md` ends at the
+  **§7/R-12-5 settle-drivers addendum** (verified: last heading
+  "R-12-5 settle drivers addendum (g47 continuation)").
+- **g47 `e97b7cb22`**'s copy of 70 carries **§8–§16** (verified headings:
+  §8 g46d re-fold obligation … §15 LIQUID SEAL … §16 SEAL-VERIFY), incl.
+  the **A9 row-9** material.
+- The **g46e tail WIP (+314 lines, §13–15)** is being committed by a
+  SEPARATE agent — the merger expects the **UNION** of g46's tail + g47's
+  §8–§16 + the g46e commit, not either copy alone. Do not pick-one the 70
+  copies; compose per registry §4 shared-doc rules.
+- Note: g46's tip has since moved to `4bcbdd645` (the 71→374 MICRO
+  RENAME per registry §10.2 — `a4d49b355` is an ancestor, verified); the
+  70-tail content pin above is at `a4d49b355` as recorded.
+
+### §7.4 Independently re-verified gate flags (evidence pins for §2)
+
+| Flag (§2 ref) | Evidence | Re-verified |
+|---|---|---|
+| d40 OVERFLOW **+1580** row | d40 **`f4355d380`** ANALYSIS section (commit stat: `docs/ANALYSIS.md` +174; message pins "+all-56 d40 9772 (+1580)") — rides wave-2c step 4 census | commit show ✓ |
+| g62 **:82045 emit** | **`428e93ecb`** = g62 tip; "Emit the 667 live 3-gore twin at :82045 (the fifth hit-half site, e5 research/351 §4)" | commit show ✓ |
+| c42 seal | **`2910a7209`** ancestor of c42 tip (`merge-base --is-ancestor` exit 0) — 133 §8-c42 per §1 wave-3 | ancestry ✓ |
+| e20 repick | **`6d1754719`** ancestor of e20 tip (exit 0) — the 266 re-pick per §1 wave-3 | ancestry ✓ |
+| Owl needs d42 (§2.1) | **343 §10.5** on d43 (`343-d43-kinds-631-697-final.md`, heading "10.5 The one compile-risk … merge gate") | doc show ✓ |
+| 85-arm extend (§2.2) | **348 §2c-G2** on d32 (`348-band-85-93-retire.md`: the DeadlySphere **467** panic-hazard row — NOTE: 467 here is the KIND id, not a doc number) | doc show ✓ |
+| :86532 eye-pop (§2.3) | **111 §7.3** (`111-gore-final-verification.md` on f5: the `:86532` 133 WanderingEye eye-pop latch row) | doc show ✓ |
+| e21 15.5px (§2.7) | **365 §4** (`365-e21-wiring-tail-seal.md` on e21: "Receipt 4 — the boulder aiStyle-25 rows are d3's … 15.5px" keep-d3 seam) | doc show ✓ |
+
+### §7.5 Family → bible index (the §1 waves, one row per family)
+
+Filenames verified by lean `git ls-tree`/`git show` on the named lane
+ONLY where §1 did not already name the file. Lanes whose tables live in
+the roster master carry 108 as their bible (no per-lane doc exists —
+ls-tree confirmed for d34/d37-band lanes).
+
+| Wave | Family / lane | Bible doc(s) | Lane branch (origin/task/…) |
+|---|---|---|---|
+| 1 | roster master (X0–X5) | **108**-roster-master-reconcile | W4-d37-npc-kinds-211-280 |
+| 1 | d34 (266-280 keep) | 108 §X tables (no per-lane bible) | W4-d34-npc-kinds-211-280 |
+| 1 | d38 (281-337 anchor) | 108 §X + **293**-d38-crossnote-atlas-addendum | W4-d38-npc-kinds-281-350 |
+| 1 | d37 (354-399 ZERO-MOVE) | **108** | W4-d37-npc-kinds-211-280 |
+| 1 | d40 (430-488) | **345**-d40-band-421-490-seal + ANALYSIS @`f4355d380` | W4-d40-npc-kinds-421-490 |
+| 1 | d42 (578-630) | **238**-d42-roster-sheets + **239**-d42-final-keep-one-and-band | W4-d42-npc-kinds-561-630 |
+| 1 | d35 (renumber-LAST) | 108 §X (E7) + **113**-atlas-repack-plan | W4-d35-npc-kinds-71-140 |
+| 1 | d43 (Owl gate) | **343**-d43-kinds-631-697-final §10.5 | W4-d43-npc-kinds-631-697 |
+| 1 | d32 (85-93 retire) | **348**-band-85-93-retire §2c-G2 | W4-d32-npc-ai-styles-85-93 |
+| 1 | small lanes c3/c4/c7-c10/d23/d120/d125/g5/g8/d33/d9/d36/d39/d41/e26/g10/f47/e21/f42 | 108 §X3 per-lane tables (keep/move/drop); e21 tail = **365** §4; d125 NEW pin `5f8569945` (§7.2) | respective W4-* lanes per §1 |
+| 1 | f18 (ZERO rows) | 108 §X1e/X3 + **381**-npc-kinds-351-697-census (249 assignment VOID per §6) | W4-f18-npc-kinds-verify-2 |
+| 2a | persist | **103**-persist-v7-layout §L3-ARBITER 107-byte (g88's copy) + **132**-persist-master-map (f44's copy) + **92-D5** = g71 92-doc-sweep-bg §1-SEAL.1 (§7.1); 135 folds on g90 (§7.1) | W4-g88-life-fruit-use / W4-f44-save-plr-2 / W4-g71-bg-layers-2 / W4-g90-artisan-bread-use |
+| 2b | liquid | **69**-liquid-reconcile (A9 folds on **g45**, §7.1) + **70**-liquid-merge-order (UNION tail, §7.3) + **71**-liquid-seal-hunks → **374** per §10 (g46) | W4-g45-liquid-lava-honey-delays / W4-g46-liquid-evaporation / W4-g47-liquid-skip-settle |
+| 2c | atlas (LAST in wave 2) | **113** §17.5 7-step lazy-load | W4-d35-npc-kinds-71-140 |
+| 3 | gore | **111**-gore-final-verification (f5's copy; §7.3 :86532 row) + **351**-gore-sites-family-bible (e5) + **339**-g17-gore-world-final + **364**-proj-gore-family-final (g16) | W4-f5-dust-proj-3 / W4-e5-gore-sites-2 / W4-g17-gore-world-sites / W4-g16-gore-projectile-sites |
+| 3 | kill | **26i**-g65-kill-keep-one + **346**-g65-kill-death-dust-family-final (29 hunks; 503 fixed `16c7e9d8a`) | W4-g65-proj-death-dust |
+| 3 | wiring | **133**-fold-receipt §8-c42 (`2910a7209`) + **95**/280 seals (c42, §7.1) + **71**-wiring-device-reconcile (e20; 266 re-pick `6d1754719`) + **365** tail (e21); f11 = 133-f11-unique-folds | W4-c42-wiring-device-arms / W4-e20-wiring-device-arms-2 / W4-e21-wiring-device-arms-3 / W4-f11-wiring-arms-4 |
+| 3 | map | **84**-map-reconcile §10.4 (steps 1-4 MERGER-SIDE; step 0 done `5c88f1901` = f46 tip, §7.2) | W4-e18-minimap-reveal-queue / W4-f46-minimap-reveal-2 |
+| 3 | splash | **144**-splash-keep-one (e19) + **151**-shimmer-family-seal (f47) + f47-v2 → **379**-ARBITER-FINAL-v2 per §10 | W4-e19-liquid-quicksell-shimmer / W4-f47-liquid-shimmer-2 |
+| 3 | rope | **26e-f**-rope-union-final (on g82) | W4-g82-rope-coil-draw |
+| 3 | pets | **138**-powerup-master-reconcile §12.2 + **360**-g10-pets-final + **368**-pet-arrival-family-final | W4-g10-npc-kind-wire-3 / W4-f43-town-spawn-2 |
+| 3 | journey | **344**-journey-family-final | W4-c24-journey-ui |
+| 3 | addlight | **366**-addlight-family-bible (g18's copy) + e6-ANALYSIS-86/21 (ANALYSIS rows, no standalone file) | W4-g18-addlight-main-1 / W4-e6-addlight-proj-2 |
+| 3 | net | **359**-g51-net-te-family-seal | W4-g51-net-apply-arms-4 |
+| 3 | loadout | **362**-g55-loadout-family-final | W4-g55-ui-loadout-save |
+| 3 | dodge | **97**-doc-sweep-dodge (d115 `cc985584c`) | W4-d115-dodge-family |
+| 3 | hit-dust (g62) | **334**-g62-hit-dust-final (renamed 240→334 per registry §9; :82045 emit `428e93ecb`, §7.4) | W4-g62-npc-hit-dust |
+| 4 | dust union (d54) | **131**-dust-master-status + this **367**; ONE composed router (e4 + d54j/370), never both | W4-d54-dust-sites-world |
+| 4 | UI / net-glue / small | per-lane registry-deduped docs per §6; g81 dedupe `18e53dd0f` (§2.9) | respective W4-* lanes |
+
+Citation discipline: every "lives on" row above was re-checked against
+the named branch's tree or the named commit — not carried from memory.
+The 40-bible read that seeded this index is recorded in the Lead's
+dispatch; where this section and a lane's own chain-banner disagree on a
+filename, registry-150 §9/§10 still wins (§6).
