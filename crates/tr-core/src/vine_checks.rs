@@ -19,17 +19,25 @@
 //!   rising strip's per-segment source frames (`DrawRisingVineStrip`
 //!   `TileDrawing.cs:9173`).
 //!
-//! UNWIRED (code-only): the natural call sites are contested — `CheckVines`
-//! belongs in `framing.rs`'s `TileFrame` non-solid arm (d109/d110/g48) and
-//! `CheckUnderwaterPlant` in `TileFrameImportant`'s case 549 / the seaweed
-//! growth arm (`growth/decorations.rs`, d102/d106/g42). The pure checks land
-//! here; the wiring is the family's merge step. No RNG stream, frame-cache
-//! key or fixed-step order changes until wired.
+//! WIRED (W4-g83 wire phase 2): both checks ride
+//! `edit/kill.rs::square_tile_frame`'s dispatch — `check_underwater_plant` as
+//! the case-549 arm (before the tree arms, the frame-important dispatch
+//! precedes the non-solid arm) and `check_vines` as the non-solid `IsVine`
+//! arm after the cactus-80 arm (`docs/research/123-vine-wire-contract.md` §2,
+//! the uncontested seam — d102/d106/g42/d109/d110/g48 all carry empty
+//! `edit/kill.rs` diffs). The rng is THREADED: every entry
+//! (`kill_tile`/`square_tile_frame_*`) takes the caller's ACTIVE `genRand`
+//! stream — the growth tick's `UpdateWorldGen` when reached via a vine write,
+//! the edit stream via a player edit — never `world.frame_rng` (the
+//! variant-reset stream stays separate).
 //!
 //! Deviations: the `Main.netMode == 2` `NetMessage.SendData`/`SendTileSquare`
 //! sides are MP scope (the port's single-player growth never sends); the
 //! `SquareTileFrame` re-frame rides [`crate::edit::square_tile_frame_default`]
-//! (the C# `WorldGen.SquareTileFrame(i, j)` default `resetFrame: true`).
+//! (the C# `WorldGen.SquareTileFrame(i, j)` default `resetFrame: true`) on the
+//! SAME threaded stream; the full-frame pass (`framing.rs::frame_world`)
+//! stays cosmetic-only — the C# `FrameEverything` runs the checks per cell,
+//! the port's documented approximation (ANALYSIS, contract §2).
 
 use crate::tiledata as td;
 use crate::unified_random::UnifiedRandom;
@@ -64,7 +72,18 @@ fn safe_kind(world: &World, x: i32, y: i32) -> u16 {
 /// mismatch converts the cell (`tileCache.type = num6` + `SquareTileFrame`,
 /// `:84915-84920`); otherwise the per-type support gates (`:84921-84953`)
 /// kill a vine whose support is wrong (`KillTile`, `:84954-84958`).
-pub fn check_vines(world: &mut World, i: i32, j: i32, kind: u16) -> bool {
+///
+/// `rng` is the caller's ACTIVE `genRand` stream (contract §2): `CheckVines`
+/// itself draws nothing, but its conversion `SquareTileFrame` and support
+/// `KillTile` re-enter the framing dispatch, whose case-549 arm may re-roll
+/// a neighbouring seaweed tip on the same stream.
+pub fn check_vines(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    kind: u16,
+    rng: &mut UnifiedRandom,
+) -> bool {
     // `Tile tile = Main.tile[i, j - 1]; if (tile == null) return true;`
     // (`:84860-84864`). The port's out-of-world read is `None`.
     let Some(above) = world.tile(i, j - 1) else {
@@ -122,7 +141,7 @@ pub fn check_vines(world: &mut World, i: i32, j: i32, kind: u16) -> bool {
         if let Some(t) = world.tile_mut(i, j) {
             t.kind = num6;
         }
-        crate::edit::square_tile_frame_default(world, i, j);
+        crate::edit::square_tile_frame_default(world, i, j, rng);
         return false;
     }
     // The support kill gates (`:84921-84953`). `flag5` starts false; each
@@ -151,7 +170,7 @@ pub fn check_vines(world: &mut World, i: i32, j: i32, kind: u16) -> bool {
     }
     // `if (flag5) { KillTile(i, j); return false; }` (`:84954-84958`).
     if kill {
-        crate::edit::kill_tile(world, i, j, false);
+        crate::edit::kill_tile(world, i, j, false, rng);
         return false;
     }
     true
@@ -236,8 +255,8 @@ pub fn check_underwater_plant(world: &mut World, kind: u16, x: i32, y: i32, rng:
     // `if (!CanUnderwaterPlantGrowHere(type, x, y, ignoreSelf: true))
     // { KillTile(x, y); SquareTileFrame(x, y); return; }` (`:58580-58589`).
     if !can_underwater_plant_grow_here(world, kind, x, y, true) {
-        crate::edit::kill_tile(world, x, y, false);
-        crate::edit::square_tile_frame_default(world, x, y);
+        crate::edit::kill_tile(world, x, y, false, rng);
+        crate::edit::square_tile_frame_default(world, x, y, rng);
         return;
     }
     // `num = above.active() && above.type == type; flag = below.active() &&
@@ -286,6 +305,14 @@ mod tests {
         World::new("t".into(), 120, 120)
     }
 
+    // W4-g83 wire phase 2: `check_vines` threads the caller's active genRand
+    // stream (its inner SquareTileFrame/KillTile re-enter the dispatch). The
+    // ladder witnesses pin type/frame outcomes, not streams — a fresh seed-0
+    // stream per call (CheckVines itself draws nothing).
+    fn rng() -> UnifiedRandom {
+        UnifiedRandom::new(0)
+    }
+
     fn put(w: &mut World, x: i32, y: i32, kind: u16) {
         let i = w.index(x, y);
         w.tiles[i] = Tile {
@@ -318,11 +345,11 @@ mod tests {
         let mut w = world();
         put(&mut w, 60, 60, 60); // jungle grass above
         put(&mut w, 60, 61, 62); // jungle vine
-        assert!(check_vines(&mut w, 60, 61, 62), "same family: unchanged");
+        assert!(check_vines(&mut w, 60, 61, 62, &mut rng()), "same family: unchanged");
         assert_eq!(w.tile(60, 61).unwrap().kind, 62);
         // Replace the support with dirt: the vine converts to 52.
         put(&mut w, 60, 60, 2);
-        assert!(!check_vines(&mut w, 60, 61, 62), "foreign support: converts");
+        assert!(!check_vines(&mut w, 60, 61, 62, &mut rng()), "foreign support: converts");
         assert_eq!(w.tile(60, 61).unwrap().kind, 52);
     }
 
@@ -334,10 +361,10 @@ mod tests {
         let mut w = world();
         put(&mut w, 60, 60, 70); // mushroom grass
         put(&mut w, 60, 61, 528);
-        assert!(check_vines(&mut w, 60, 61, 528), "528 under 70: unchanged");
+        assert!(check_vines(&mut w, 60, 61, 528, &mut rng()), "528 under 70: unchanged");
         // A jungle vine under mushroom grass converts to 528.
         put(&mut w, 60, 61, 62);
-        assert!(!check_vines(&mut w, 60, 61, 62));
+        assert!(!check_vines(&mut w, 60, 61, 62, &mut rng()));
         assert_eq!(w.tile(60, 61).unwrap().kind, 528);
     }
 
@@ -350,7 +377,7 @@ mod tests {
         let mut w = world();
         put(&mut w, 60, 60, 382); // vine flower above
         put(&mut w, 60, 61, 52);
-        assert!(!check_vines(&mut w, 60, 61, 52));
+        assert!(!check_vines(&mut w, 60, 61, 52, &mut rng()));
         assert_eq!(w.tile(60, 61).unwrap().kind, 382);
     }
 
@@ -363,7 +390,7 @@ mod tests {
         let mut w = world();
         put(&mut w, 60, 60, 2);
         put(&mut w, 60, 61, 382);
-        assert!(check_vines(&mut w, 60, 61, 382), "382 under dirt 2: valid support");
+        assert!(check_vines(&mut w, 60, 61, 382, &mut rng()), "382 under dirt 2: valid support");
         assert_eq!(w.tile(60, 61).unwrap().kind, 382);
     }
 
@@ -376,14 +403,14 @@ mod tests {
         let mut w = world();
         put(&mut w, 60, 60, 1); // stone — no family flag
         put(&mut w, 60, 61, 528);
-        assert!(!check_vines(&mut w, 60, 61, 528), "528 under stone: dies");
+        assert!(!check_vines(&mut w, 60, 61, 528, &mut rng()), "528 under stone: dies");
         assert!(!w.tile(60, 61).unwrap().active(), "the cell is killed");
         // Under dirt the 528 CONVERTS to the plain vine 52 instead (the
         // ladder runs before the kill gates, `:84915-84920`).
         let mut w2 = world();
         put(&mut w2, 60, 60, 2);
         put(&mut w2, 60, 61, 528);
-        assert!(!check_vines(&mut w2, 60, 61, 528));
+        assert!(!check_vines(&mut w2, 60, 61, 528, &mut rng()));
         assert_eq!(w2.tile(60, 61).unwrap().kind, 52, "dirt converts 528 → 52");
     }
 
@@ -392,7 +419,7 @@ mod tests {
     fn w4_g83_check_vines_kills_the_floating_vine() {
         let mut w = world();
         put(&mut w, 60, 61, 62); // no cell above
-        assert!(!check_vines(&mut w, 60, 61, 62));
+        assert!(!check_vines(&mut w, 60, 61, 62, &mut rng()));
         assert!(!w.tile(60, 61).unwrap().active());
     }
 
@@ -404,7 +431,7 @@ mod tests {
         put(&mut w, 60, 60, 60);
         w.tiles[w.index(60, 60)].set_slope(3); // bottom slope
         put(&mut w, 60, 61, 62);
-        assert!(!check_vines(&mut w, 60, 61, 62));
+        assert!(!check_vines(&mut w, 60, 61, 62, &mut rng()));
         assert!(!w.tile(60, 61).unwrap().active());
     }
 
@@ -415,7 +442,7 @@ mod tests {
         put(&mut w, 60, 60, 60);
         w.tiles[w.index(60, 60)].flags |= crate::tile::FLAG_INACTIVE;
         put(&mut w, 60, 61, 62);
-        assert!(!check_vines(&mut w, 60, 61, 62));
+        assert!(!check_vines(&mut w, 60, 61, 62, &mut rng()));
     }
 
     // ---- CheckUnderwaterPlant: the tip-frame variants ----
@@ -569,8 +596,10 @@ mod tests {
     /// `CheckUnderwaterPlant`, `WorldGen.cs:84972-84974`), while NONE of the
     /// 8 vine kinds is (no `tileFrameImportant[52/62/…]` write exists in
     /// `Main.cs` — they ride `TileFrame`'s non-solid `IsVine` arm,
-    /// `:81375-81378`). `vine_growth::plant_vine` sets the flag anyway
-    /// (documented deviation, contract §3).
+    /// `:81375-81378`). The port-only `frame_important[vine]` write is
+    /// DROPPED at wiring (contract §2, wire phase 2 —
+    /// `vine_growth::plant_vine` / `growth.rs::grow_vine_arm` no longer set
+    /// it; the dispatch gate admits the vine kinds explicitly).
     #[test]
     fn w4_g83_only_the_seaweed_is_frame_important() {
         // The port's generated table has no frame-important set; the C#

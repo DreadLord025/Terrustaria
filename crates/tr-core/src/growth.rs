@@ -589,10 +589,11 @@ pub(crate) fn grow_vine_arm(world: &mut World, i: i32, j: i32, rng: &mut Unified
         t.flags = FLAG_ACTIVE;
         t.liquid = 0;
     }
-    if world.frame_important.len() <= vine as usize {
-        world.frame_important.resize(crate::tiledata::TILE_COUNT, false);
-    }
-    world.frame_important[vine as usize] = true;
+    // W4-g83 contract §2: the port-only `frame_important[vine] = true` write
+    // is DROPPED at wiring — no C# `Main.tileFrameImportant` write exists for
+    // the 8 vine kinds (`Main.cs` census); the flag mis-routed placed vines
+    // away from `reframe_area`'s cosmetic pass and the `CheckVines` dispatch
+    // now admits them through the explicit `is_vine` gate exception.
 }
 
 /// `WorldGen.GrowSpike` (:45481-45570): the thorn bushes on the evil/jungle
@@ -682,8 +683,10 @@ pub fn grow_spike(
     let di = world.index(num2, num3);
     world.tiles[di].meta = src_meta;
     world.set_extras_at(di, src_extras);
-    // `WorldGen.SquareTileFrame` (`:45482`).
-    crate::edit::square_tile_frame_gen(world, num2, num3);
+    // `WorldGen.SquareTileFrame` (`:45482`) — on the caller's ACTIVE genRand
+    // stream (W4-g83 contract §2: the growth tick's UpdateWorldGen stream;
+    // the framing dispatch's seaweed tip re-rolls draw it).
+    crate::edit::square_tile_frame_gen(world, num2, num3, rng);
     if world.frame_important.len() <= spike_type as usize {
         world.frame_important.resize(crate::tiledata::TILE_COUNT, false);
     }

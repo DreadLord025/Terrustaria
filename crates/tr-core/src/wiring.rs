@@ -1684,7 +1684,8 @@ impl Wiring {
     /// `HitWireSingle`'s case 141 (`Wiring.cs:2035-2039`): the explosives —
     /// `KillTile(noItem)` and the 108 explosion (500 dmg, 10 knockback).
     fn explosives(&mut self, world: &mut World, i: i32, j: i32) {
-        crate::edit::kill_tile(world, i, j, true); // `:2037` — no item drop
+        // W4-g83: the cascade rides the wiring stream (the active genRand).
+        crate::edit::kill_tile(world, i, j, true, self.rand_mut()); // `:2037` — no item drop
         self.device_shots.push(DeviceShot {
             kind: 108,
             x: i as f32 * 16.0 + 8.0,
@@ -1702,7 +1703,8 @@ impl Wiring {
     /// `:289-292` and `HitWireSingle`'s case 210 `:2040-2042`): `KillTile(noItem)`
     /// and the 164 explosion (250 dmg, 10 knockback).
     fn explode_mine(&mut self, world: &mut World, i: i32, j: i32) {
-        crate::edit::kill_tile(world, i, j, true); // `:3077`
+        // W4-g83: the cascade rides the wiring stream (the active genRand).
+        crate::edit::kill_tile(world, i, j, true, self.rand_mut()); // `:3077`
         self.device_shots.push(DeviceShot {
             kind: 164,
             x: i as f32 * 16.0 + 8.0,
@@ -2332,7 +2334,9 @@ impl Wiring {
                 if !actuator {
                     let next = if k >= 262 { k - 7 } else { k + 7 };
                     world.swap_tile_kind(i, j, next);
-                    let _ = crate::edit::square_tile_frame_default(world, i, j);
+                    // W4-g83: the wake's framing dispatch rides the wiring
+                    // stream (the active genRand of the wiring tick).
+                    let _ = crate::edit::square_tile_frame_default(world, i, j, self.rand_mut());
                 }
                 // `return;` — outside the `!actuator` guard (`:1047`).
             }
@@ -2555,11 +2559,12 @@ impl Wiring {
             // the type swap + the wake.
             546 => {
                 world.swap_tile_kind(i, j, 557);
-                let _ = crate::edit::square_tile_frame_default(world, i, j);
+                // W4-g83: the wake rides the wiring stream (contract §2).
+                let _ = crate::edit::square_tile_frame_default(world, i, j, self.rand_mut());
             }
             557 => {
                 world.swap_tile_kind(i, j, 546);
-                let _ = crate::edit::square_tile_frame_default(world, i, j);
+                let _ = crate::edit::square_tile_frame_default(world, i, j, self.rand_mut());
             }
             // The weighted pressure-plate's big frame shift (506, `:2503-
             // 2531`): the 2×3 anchor from `frameY / 18 % 3`, the active+same-
@@ -2999,7 +3004,10 @@ impl Wiring {
         if let Some(t) = world.tile_mut(i, j) {
             t.flags |= FLAG_INACTIVE;
         }
-        let drops = crate::edit::actuation_square_frame(world, i, j);
+        // W4-g83: the actuation wake's framing dispatch (the seaweed tip
+        // re-rolls) rides the wiring stream — the active genRand of the
+        // wiring tick (`Wiring.cs:3212` runs under the wiring `Main.rand`).
+        let drops = crate::edit::actuation_square_frame(world, i, j, self.rand_mut());
         self.actuation_drops.extend(drops);
     }
 
@@ -3009,7 +3017,7 @@ impl Wiring {
         if let Some(t) = world.tile_mut(i, j) {
             t.flags &= !FLAG_INACTIVE;
         }
-        let drops = crate::edit::actuation_square_frame(world, i, j);
+        let drops = crate::edit::actuation_square_frame(world, i, j, self.rand_mut());
         self.actuation_drops.extend(drops);
     }
 

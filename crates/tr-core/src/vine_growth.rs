@@ -22,17 +22,25 @@
 //!   so `tools/GenTileData`'s merge parser never emits them and `framing.rs`
 //!   lacks them. The helper computes the thorn's frame with the merge applied.
 //!
-//! UNWIRED (code-only): the natural call sites are contested — the overground
-//! chain belongs in `growth.rs::update_world_overground_tile` (d102/d106/g42),
-//! the thorn arm in `update_world_underground_tile`, and the down-merge in
-//! `framing.rs::frame_of_variant` (d109/d110/g48). The pure ports land here;
-//! the wiring is the family's merge step.
+//! WIRED (W4-g83 wire phase 2, `docs/research/123-vine-wire-contract.md`
+//! §3/§4): `grow_overground_vines` rides the END of
+//! `growth.rs::update_world_overground_tile` (after the `grass_pass` block —
+//! the C# `:72504` vine chain follows the grass/moss arms), the jungle-thorn
+//! arm sits right after `grow_vine_arm` in `update_world_underground_tile`
+//! (the dead overground-69 arm inside `grass_pass` is DELETED in the same
+//! step), and the thorn down-merge is the 4-line `frame_of_variant` insertion
+//! after the own-slope match. Both growth fns take the caller's ACTIVE
+//! `genRand` stream — the growth phase's `UpdateWorldGen` named stream, no
+//! new stream, no reseed. `thorn_down_merge_frame` stays as the witness
+//! fixture (contract §4 keep-one note: the witnesses assert frames).
 //!
 //! Deviations: the `Main.netMode == 2` `NetMessage.SendTileSquare` sides are
-//! MP scope; `SquareTileFrame` rides [`crate::edit::square_tile_frame_default`];
-//! `CopyPaintAndCoating` copies `meta` + the extras byte (the `grow_spike`
-//! convention, `growth.rs:678-684`). The `num24` budget in the plain arm
-//! (`:72508-72512`) is dead in the C# (never read) and is not carried.
+//! MP scope; `SquareTileFrame` rides [`crate::edit::square_tile_frame_default`]
+//! on the threaded stream; `CopyPaintAndCoating` copies `meta` + the extras
+//! byte (the `grow_spike` convention, `growth.rs:678-684`). The `num24` budget
+//! in the plain arm (`:72508-72512`) is dead in the C# (never read) and is not
+//! carried. The port-only `frame_important[vine]` write is dropped at wiring
+//! (contract §2 — C# never marks the 8 vine kinds frame-important).
 
 use crate::tiledata as td;
 use crate::unified_random::UnifiedRandom;
@@ -200,7 +208,21 @@ fn lookup_grass(world: &World, i: i32, j: i32, grass: u16, grass2: Option<u16>) 
 /// `active(true)`, `CopyPaintAndCoating(source)`, `SquareTileFrame(i, j+1)`
 /// (the C# arms' shared write, e.g. `:72551-72555`). The paint/coating copy
 /// rides `meta` + the extras byte (the `grow_spike` convention).
-fn plant_vine(world: &mut World, i: i32, j: i32, vine: u16, paint_src_y: i32) {
+///
+/// `rng` is the growth tick's ACTIVE `genRand` stream (contract §2/§3): the
+/// write's `SquareTileFrame` runs the vine/seaweed checks on the SAME stream
+/// the caller handed `update_world_*`. The port-only
+/// `frame_important[vine] = true` write is DROPPED at wiring (contract §2 —
+/// no C# `Main.tileFrameImportant` write exists for the 8 vine kinds; the
+/// flag mis-routed vines away from `reframe_area`'s cosmetic pass).
+fn plant_vine(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    vine: u16,
+    paint_src_y: i32,
+    rng: &mut UnifiedRandom,
+) {
     let dy = j + 1;
     let (src_meta, src_extras) = {
         let si = world.index(i, paint_src_y);
@@ -213,11 +235,7 @@ fn plant_vine(world: &mut World, i: i32, j: i32, vine: u16, paint_src_y: i32) {
     let di = world.index(i, dy);
     world.tiles[di].meta = src_meta;
     world.set_extras_at(di, src_extras);
-    crate::edit::square_tile_frame_default(world, i, dy);
-    if world.frame_important.len() <= vine as usize {
-        world.frame_important.resize(td::TILE_COUNT, false);
-    }
-    world.frame_important[vine as usize] = true;
+    crate::edit::square_tile_frame_default(world, i, dy, rng);
 }
 
 /// `WorldGen.UpdateWorld_OvergroundTile`'s vine chain
@@ -270,7 +288,7 @@ pub fn grow_overground_vines(world: &mut World, i: i32, j: i32, rng: &mut Unifie
             if lookup_grass(world, i, j, 2, None) {
                 // `CopyPaintAndCoating(Main.tile[i, j])` (`:72554`) — the
                 // SOURCE cell, not the cell above.
-                plant_vine(world, i, j, vine, j);
+                plant_vine(world, i, j, vine, j, rng);
             }
         }
     }
@@ -294,7 +312,7 @@ pub fn grow_overground_vines(world: &mut World, i: i32, j: i32, rng: &mut Unifie
         if flag && rng.next_max(odds) == 0 && below_clear(world, i, j) {
             // Look-up through 60/384/226 in ONE walk (`:72591-72603`).
             if lookup_jungle_grass(world, i, j) {
-                plant_vine(world, i, j, 62, j);
+                plant_vine(world, i, j, 62, j, rng);
             }
         }
     } else if (kind == 70 || kind == 528) && grow_more_vines(world, i, j) {
@@ -302,14 +320,14 @@ pub fn grow_overground_vines(world: &mut World, i: i32, j: i32, rng: &mut Unifie
         let odds = if kind == 528 { 7 } else { 70 };
         if rng.next_max(odds) == 0 && below_clear(world, i, j) && lookup_grass(world, i, j, 70, None)
         {
-            plant_vine(world, i, j, 528, j);
+            plant_vine(world, i, j, 528, j, rng);
         }
     } else if (kind == 109 || kind == 115) && grow_more_vines(world, i, j) {
         // Hallow (`:72655-72691`).
         let odds = if kind == 115 { 20 } else { 60 };
         if rng.next_max(odds) == 0 && below_clear(world, i, j) && lookup_grass(world, i, j, 109, None)
         {
-            plant_vine(world, i, j, 115, j);
+            plant_vine(world, i, j, 115, j, rng);
         }
     } else if (kind == 23 || kind == 661 || kind == 636) && grow_more_vines(world, i, j) {
         // Corrupt (`:72692-72728`).
@@ -318,7 +336,7 @@ pub fn grow_overground_vines(world: &mut World, i: i32, j: i32, rng: &mut Unifie
             && below_clear(world, i, j)
             && lookup_grass(world, i, j, 23, Some(661))
         {
-            plant_vine(world, i, j, 636, j);
+            plant_vine(world, i, j, 636, j, rng);
         }
     } else if (kind == 199 || kind == 662 || kind == 205) && grow_more_vines(world, i, j) {
         // Crimson (`:72729-72765`).
@@ -327,14 +345,14 @@ pub fn grow_overground_vines(world: &mut World, i: i32, j: i32, rng: &mut Unifie
             && below_clear(world, i, j)
             && lookup_grass(world, i, j, 199, Some(662))
         {
-            plant_vine(world, i, j, 205, j);
+            plant_vine(world, i, j, 205, j, rng);
         }
     } else if (kind == 633 || kind == 638) && grow_more_vines(world, i, j) {
         // Ash (`:72766-72802`).
         let odds = if kind == 638 { 7 } else { 70 };
         if rng.next_max(odds) == 0 && below_clear(world, i, j) && lookup_grass(world, i, j, 633, None)
         {
-            plant_vine(world, i, j, 638, j);
+            plant_vine(world, i, j, 638, j, rng);
         }
     }
 }
@@ -378,6 +396,9 @@ pub fn grow_underground_jungle_thorn(
         false
     }
 }
+
+// (`grow_spike`'s own `SquareTileFrame` seam threads the same `rng` — the
+// spike write's framing dispatch runs on the caller's active stream.)
 
 /// `WorldGen.TileFrameCosmetic`'s thorn down-merge (`WorldGen.cs:82043-82066`):
 /// cases 32/352/69/655 fold a matching grass neighbour BELOW into the thorn

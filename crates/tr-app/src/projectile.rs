@@ -7552,7 +7552,7 @@ impl Projectile {
     /// arm-signature doc block over the dispatch — and run only on the
     /// owner branch (`Main.myPlayer == this.owner`; the port's local player
     /// is slot `owner == 0`).
-    fn ai_ice_block(&mut self, world: &mut World) {
+    fn ai_ice_block(&mut self, world: &mut World, gen_rng: &mut tr_core::UnifiedRandom) {
         // `:25611`: a stopped block is fully opaque — the write runs against
         // the pre-place velocity, so the standing phase keeps its own alpha.
         if self.vel.x == 0.0 && self.vel.y == 0.0 {
@@ -7595,7 +7595,9 @@ impl Projectile {
                     .tile(tx, ty)
                     .is_some_and(|t| t.active() && t.kind == MAGICAL_ICE_BLOCK)
             {
-                let _ = tr_core::edit::kill_tile(world, tx, ty, false);
+                // W4-g83: the 900-tick mine-away's framing dispatch rides
+                // the pass's ACTIVE genRand stream (contract §2).
+                let _ = tr_core::edit::kill_tile(world, tx, ty, false, gen_rng);
                 self.active = false;
                 self.time_left = 0;
             }
@@ -12683,6 +12685,7 @@ impl Projectile {
         world: &mut World,
         rng: &mut dyn tr_core::loot::DropRng,
         local_owner: u8,
+        gen_rng: &mut tr_core::UnifiedRandom,
     ) {
         // The stock friendly = false (`:788`), held for the slot's whole
         // life — the damage passes refuse the trio either way.
@@ -12763,7 +12766,9 @@ impl Projectile {
                         || kind == 105
                         || kind == 178
                     {
-                        let _ = tr_core::edit::kill_tile(world, tx, ty, false);
+                        // W4-g83: the breakable kill's framing dispatch rides
+                        // the pass's ACTIVE genRand stream (contract §2).
+                        let _ = tr_core::edit::kill_tile(world, tx, ty, false, gen_rng);
                     } else if tile.top_slope()
                         && !tr_core::tiledata::SET_PLATFORMS.has(kind)
                     {
@@ -16562,6 +16567,12 @@ impl ProjectilePool {
         rng: &mut dyn tr_core::loot::DropRng,
         local_owner: u8,
         hostile_local: bool,
+        // W4-g83 contract §2: the ACTIVE `genRand` (`Main.rand`) stream of
+        // the projectile pass (`UpdateProjectiles`, `Main.cs:17775`) — the
+        // tile-kill arms' framing dispatch (the seaweed tip re-rolls) draws
+        // it. Separate from the `DropRng` loot object (the test fakes keep
+        // their scripted rolls; production passes the same stream twice).
+        gen_rng: &mut tr_core::UnifiedRandom,
     ) {
         self.update_count += 1;
         // `Player.Update`'s clear (`Player.cs:28300-28301`): the C#
@@ -16962,7 +16973,7 @@ impl ProjectilePool {
                             if self.slots[i].kind == SNOW_BALL_HOSTILE {
                                 self.slots[i].ai_snowball_hostile(world);
                             } else if DUNGEON_DEBRIS.contains(&self.slots[i].kind) {
-                                self.slots[i].ai_dungeon_debris(world, rng, local_owner);
+                                self.slots[i].ai_dungeon_debris(world, rng, local_owner, gen_rng);
                             }
                         }
                         // `AI()`'s `else if (this.aiStyle == 7)`
@@ -17298,6 +17309,7 @@ impl ProjectilePool {
                                 &mut self.slots[i],
                                 world,
                                 local_owner,
+                                gen_rng,
                             );
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
@@ -17400,7 +17412,7 @@ impl ProjectilePool {
                         // The carve-out of the arm-signature doc block above:
                         // aiStyle 22 writes tiles, so it reborrows `world`
                         // mutably at its own call site.
-                        22 => self.slots[i].ai_ice_block(world),
+                        22 => self.slots[i].ai_ice_block(world, gen_rng),
                         // S1-P-i29/i30 — the drill AND chainsaw families'
                         // aiStyle 20 (`Projectile.cs:25481-25584`,
                         // `DefaultToDrillOrChainsaw` `:10732-10742`): the
@@ -19923,9 +19935,10 @@ impl ProjectilePool {
                         rng,
                         luck,
                         local_owner,
+                        gen_rng,
                     );
                 } else {
-                    self.explode_bomb(i, world, npcs);
+                    self.explode_bomb(i, world, npcs, gen_rng);
                 }
             }
             // The per-sub-step `Damage()` calls (`Projectile.cs:17078`) moved
@@ -19974,7 +19987,7 @@ impl ProjectilePool {
                 // `Kill()`'s debris arm (`Kill_ExplodeTiles` `:77369-77385`,
                 // called from `Kill()` `:77258-77261`): the trio's death
                 // crack roll on the tile below its centre.
-                self.debris_death_crack(i, world, rng, local_owner);
+                self.debris_death_crack(i, world, rng, local_owner, gen_rng);
                 // `Kill()`'s floating-turret arms (`Projectile.cs:72068-72093`/
                 // `:72155-72176`, S1-D-4b-3): the turret/crystal sweep their
                 // shots, the shard runs its death burst.
@@ -19995,6 +20008,7 @@ impl ProjectilePool {
                     rng,
                     luck,
                     local_owner,
+                    gen_rng,
                 );
                 // S1-D-3 W-9 — `Kill()`'s 385 arm
                 // (`Projectile.cs:73761-73818`): the bolt's death spawns
@@ -20295,6 +20309,7 @@ impl ProjectilePool {
         world: &mut World,
         rng: &mut dyn DropRng,
         local_owner: u8,
+        gen_rng: &mut tr_core::UnifiedRandom,
     ) {
         let p = &self.slots[slot];
         if !DUNGEON_DEBRIS.contains(&p.kind) || p.owner != local_owner {
@@ -20310,7 +20325,10 @@ impl ProjectilePool {
             .tile(tx, ty)
             .is_some_and(|t| t.active() && tr_core::tiledata::SET_CRACKED_BRICKS.has(t.kind));
         if cracked && rng.next_range(0, 2) == 0 {
-            let _ = tr_core::edit::kill_tile(world, tx, ty, false);
+            // W4-g83: the crack kill's framing dispatch rides the pass's
+            // ACTIVE genRand stream (contract §2) — the crack ROLL stays on
+            // the DropRng loot object (the stream census is unchanged).
+            let _ = tr_core::edit::kill_tile(world, tx, ty, false, gen_rng);
         }
     }
 
@@ -20333,6 +20351,7 @@ impl ProjectilePool {
         rng: &mut dyn DropRng,
         luck: f32,
         local_owner: u8,
+        gen_rng: &mut tr_core::UnifiedRandom,
     ) {
         let kind = self.slots[slot].kind;
         if !matches!(kind, 715..=718) {
@@ -20389,7 +20408,9 @@ impl ProjectilePool {
                     if t.active() {
                         flag = can_explode_tile(t.kind, t.frame_y as i32 / 18);
                         if flag {
-                            let _ = tr_core::edit::kill_tile(world, i, j, false);
+                            // W4-g83: the crater kill's framing dispatch rides
+                            // the pass's ACTIVE genRand stream (contract §2).
+                            let _ = tr_core::edit::kill_tile(world, i, j, false, gen_rng);
                         }
                     }
                 }
@@ -21870,7 +21891,13 @@ impl ProjectilePool {
     /// 46844`) resizes the box and re-arms the damage, `Damage()` walks the
     /// NPCs through the resized box, `Kill_ExplodeTiles` (`:77265-77380`)
     /// digs the radius circle, and the slot deactivates.
-    fn explode_bomb(&mut self, slot: usize, world: &mut World, npcs: &mut [Npc]) {
+    fn explode_bomb(
+        &mut self,
+        slot: usize,
+        world: &mut World,
+        npcs: &mut [Npc],
+        gen_rng: &mut tr_core::UnifiedRandom,
+    ) {
         // S1-P-i28 — the grenades (30/397/517) resize to 128×128 and set
         // knockback 8 but KEEP their damage (`PrepareBombToBlow`
         // `Projectile.cs:46799-46803` — no `damage =` line), unlike the bombs
@@ -21936,7 +21963,9 @@ impl ProjectilePool {
                         continue;
                     };
                     if t.active() && tr_core::tiledata::SET_CRACKED_BRICKS.has(t.kind) {
-                        let _ = tr_core::edit::kill_tile(world, tx, ty, false);
+                        // W4-g83: the cracked-brick kill's framing dispatch
+                        // rides the pass's ACTIVE genRand stream (§2).
+                        let _ = tr_core::edit::kill_tile(world, tx, ty, false, gen_rng);
                     }
                 }
             }
@@ -21980,8 +22009,9 @@ impl ProjectilePool {
                     continue;
                 }
                 // `WorldGen.KillTile(i, j)` — the default drops stay on (the
-                // C# passes no `noItem`).
-                let _ = tr_core::edit::kill_tile(world, tx, ty, false);
+                // C# passes no `noItem`). W4-g83: the framing dispatch rides
+                // the pass's ACTIVE genRand stream (contract §2).
+                let _ = tr_core::edit::kill_tile(world, tx, ty, false, gen_rng);
                 // `ExplodeTiles`' wall walk: the 3×3 around the killed tile.
                 for wy in (ty - 1)..=(ty + 1) {
                     for wx in (tx - 1)..=(tx + 1) {
@@ -22026,6 +22056,7 @@ impl ProjectilePool {
         rng: &mut dyn tr_core::loot::DropRng,
         luck: f32,
         local_owner: u8,
+        gen_rng: &mut tr_core::UnifiedRandom,
     ) {
         let kind = self.slots[slot].kind;
         // `PrepareBombToBlow` (`:46770-46848`): `tileCollide = false`,
@@ -22128,7 +22159,9 @@ impl ProjectilePool {
                         if t.active() {
                             flag = can_explode_tile(t.kind, t.frame_y as i32 / 18);
                             if flag {
-                                let _ = tr_core::edit::kill_tile(world, i, j, false);
+                                // W4-g83: the crater kill's framing dispatch
+                                // rides the pass's ACTIVE genRand stream (§2).
+                                let _ = tr_core::edit::kill_tile(world, i, j, false, gen_rng);
                             }
                         }
                     }
@@ -23710,6 +23743,7 @@ mod s1_e_21h_sound_tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         let queued = pool.drain_proj_sounds();
         assert_eq!(queued.len(), 1, "the frost bolt's first-tick cue");
@@ -23734,6 +23768,7 @@ mod s1_e_21h_sound_tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_eq!(pool.slots()[slot].sound_delay, 4);
         pool.slots[slot].sound_delay = -1;
@@ -23748,6 +23783,7 @@ mod s1_e_21h_sound_tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_eq!(pool.slots()[slot].sound_delay, -1, "the latch holds");
     }
@@ -23892,6 +23928,7 @@ mod tests {
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 false,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         let p = &pool.slots()[slot];
@@ -24181,6 +24218,7 @@ mod tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(player.hp < player.max_hp, "the shot hurt");
         assert!(!pool.slots().iter().any(|p| p.active), "the shot died");
@@ -24208,6 +24246,7 @@ mod tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_eq!(player2.hp, player2.max_hp, "the friendly shot spares");
     }
@@ -24366,6 +24405,7 @@ mod tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_eq!(npcs[0].hp, hp, "the shot passes through the shield");
         assert!(pool.slots[slot].active, "and the shot is not consumed");
@@ -24401,6 +24441,7 @@ mod tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_eq!(npcs[0].hp, hp, "the shot passes through the Guide");
         assert!(pool.slots[slot].active, "and the shot is not consumed");
@@ -24426,6 +24467,7 @@ mod tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(npcs2[0].hp < hp, "the doll-armed Guide takes the shot");
         // The helper's matrix: every friendly kind refuses a plain shot, the
@@ -24463,6 +24505,7 @@ mod tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -24525,6 +24568,7 @@ mod tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(
             !pool.slots()[slot].active,
@@ -25087,6 +25131,7 @@ mod tests {
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         assert!(!pool.slots()[slot].active);
@@ -25120,6 +25165,7 @@ mod tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(
             (pool.slots()[slot].pos.x - (10.0 * TILE_PX + 44.0)).abs() < 0.01,
@@ -25162,6 +25208,7 @@ mod tests {
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             if frame < 5 {
                 assert!(
@@ -25210,6 +25257,7 @@ mod tests {
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             if frame < 4 {
                 assert!(
@@ -25262,6 +25310,7 @@ mod falling_tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         // The spawn vel (0, 0.41) + one gravity step (0.41) = 0.82.
         assert!(
@@ -25293,6 +25342,7 @@ mod falling_tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(!pool.slots()[slot].active, "the projectile died on landing");
         // The placement resolves through the box center → the tile row 23
@@ -25347,6 +25397,7 @@ mod falling_tests {
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         assert_eq!(w.tile(10, 23).unwrap().kind, 53, "the sand placed back");
@@ -25389,6 +25440,7 @@ mod frost_shot_tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -25684,6 +25736,7 @@ mod arrow_tests {
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         assert_eq!(
@@ -25701,6 +25754,7 @@ mod arrow_tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(
             (pool.slots[0].vel.y - 0.1).abs() < 1e-6,
@@ -25736,6 +25790,7 @@ mod arrow_tests {
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             if !pool.slots[0].active {
                 died = true;
@@ -25769,6 +25824,7 @@ mod arrow_tests {
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             if !pool.slots[0].active {
                 died = true;
@@ -25800,6 +25856,7 @@ mod arrow_tests {
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         assert_eq!(pool.slots[0].vel.y, 0.0, "no gravity for the first 5 ticks");
@@ -25814,6 +25871,7 @@ mod arrow_tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(
             (pool.slots[0].vel.y - 0.2).abs() < 1e-6,
@@ -25888,6 +25946,7 @@ mod boomerang_tests {
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         assert_eq!(pool.slots[0].ai[0], 0.0, "still outbound at tick 29");
@@ -25902,6 +25961,7 @@ mod boomerang_tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_eq!(pool.slots[0].ai[0], 1.0, "the return state at tick 30");
         assert_eq!(pool.slots[0].ai[1], 0.0);
@@ -25941,6 +26001,7 @@ mod boomerang_tests {
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             if pool.slots[0].ai[0] == 1.0 {
                 bounced = true;
@@ -25990,6 +26051,7 @@ mod boomerang_tests {
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             if !pool.slots[0].active {
                 caught = true;
@@ -26030,6 +26092,7 @@ mod boomerang_tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(!pool.slots[0].active, "the stray kills past the cut-off");
         assert_eq!(pool.slots[0].time_left, 0);
@@ -26090,6 +26153,7 @@ mod s1_p_i08_boomerang_tests {
             rng,
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -26311,6 +26375,7 @@ mod s1_p_i08_boomerang_tests {
             &mut rng,
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_eq!(pool.slots[0].vel.x, -8.0, "the outbound hit reversed");
         assert_eq!(pool.slots[0].ai[0], 1.0, "the return armed");
@@ -26330,6 +26395,7 @@ mod s1_p_i08_boomerang_tests {
             &mut rng,
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_ne!(pool.slots[0].vel.x, 8.0, "no second reverse");
     }
@@ -26596,6 +26662,7 @@ mod flail_tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -26950,7 +27017,7 @@ mod flail_tests {
         npcs[0].y = 490.0;
         let hp_before = npcs[0].hp;
         pool.update(&mut w, &mut npcs, Some((500.0, 500.0)), None, None,
-            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true, &mut tr_core::UnifiedRandom::new(0));
         assert_eq!(npcs[0].hp, hp_before, "the wind-up deals nothing");
     }
 
@@ -26967,7 +27034,7 @@ mod flail_tests {
         npcs[0].x = 540.0;
         npcs[0].y = 490.0;
         pool.update(&mut w, std::slice::from_mut(&mut npcs[0]), Some((500.0, 500.0)), None, None,
-            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true, &mut tr_core::UnifiedRandom::new(0));
         assert!(npcs[0].hp < npcs[0].max_hp, "the ellipse hit lands");
         // 80 px right: outside the radius → no hit. Refresh the NPC.
         let mut npcs = [Npc::spawn_slime(&w, 20).unwrap()];
@@ -26980,7 +27047,7 @@ mod flail_tests {
         pool.slots[slot2].local_ai[1] = 13.0;
         let hp = npcs[0].hp;
         pool.update(&mut w, &mut npcs, Some((500.0, 500.0)), None, None,
-            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true, &mut tr_core::UnifiedRandom::new(0));
         assert_eq!(npcs[0].hp, hp, "outside the ellipse misses");
         // 30 px BELOW the mount: dy_raw 30 / 0.4 = 75 > 55 → miss.
         let mut npcs = [Npc::spawn_slime(&w, 20).unwrap()];
@@ -26993,7 +27060,7 @@ mod flail_tests {
         pool.slots[slot3].local_ai[1] = 13.0;
         let hp = npcs[0].hp;
         pool.update(&mut w, &mut npcs, Some((500.0, 500.0)), None, None,
-            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true, &mut tr_core::UnifiedRandom::new(0));
         assert_eq!(npcs[0].hp, hp, "the sagging squash (0.4) misses at 30 px");
     }
 
@@ -27017,7 +27084,7 @@ mod flail_tests {
         npcs[0].hp = 10_000;
         let ins = inputs(Some((600.0, 500.0)), true, (500.0, 500.0), (500.0, 500.0));
         pool.update(&mut w, &mut npcs, Some((500.0, 500.0)), None, None,
-            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true, &mut tr_core::UnifiedRandom::new(0));
         // 200 × 1.2 = 240 pre-defense/pre-variance; S1-C-2 applies DamageVar
         // and defense (Projectile.cs:12938, NPC.cs:81239).
         let dealt = 10_000 - npcs[0].hp;
@@ -27047,7 +27114,7 @@ mod flail_tests {
         npcs[0].hp = 10_000;
         let ins = inputs(Some((600.0, 500.0)), true, (500.0, 500.0), (500.0, 500.0));
         pool.update(&mut w, &mut npcs, Some((500.0, 500.0)), None, None,
-            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true, &mut tr_core::UnifiedRandom::new(0));
         // 200 × 0.96 = 192 pre-defense/pre-variance; S1-C-2 applies DamageVar
         // and defense (Projectile.cs:12938, NPC.cs:81239).
         let dealt = 10_000 - npcs[0].hp;
@@ -27074,7 +27141,7 @@ mod flail_tests {
         // No player snapshot at all — the slot dies on the kill gate before
         // the damage walk, so nothing lands.
         pool.update(&mut w, &mut npcs, None, None, None, YoyoInputs::default(),
-            FlailInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            FlailInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true, &mut tr_core::UnifiedRandom::new(0));
         assert_eq!(npcs[0].hp, hp, "the orphan path deals nothing");
     }
 
@@ -27317,7 +27384,7 @@ mod flail_tests {
         pool.slots[slot].local_ai[0] = 19.0; // the scan fires this tick
         let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
         pool.update(&mut w, &mut npcs, Some((500.0, 500.0)), None, None,
-            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true, &mut tr_core::UnifiedRandom::new(0));
         let petals = pool.slots.iter().filter(|p| p.active && p.kind == FLOWER_POW_PETAL).count();
         assert_eq!(petals, 0, "a friendly NPC draws no petal");
     }
@@ -27335,7 +27402,7 @@ mod flail_tests {
         let mut player = crate::player::Player::spawn(&w);
         player.item_rotation = 99.0; // a sentinel the tail must overwrite
         pool.update(&mut w, &mut [], Some((500.0, 500.0)), None, Some(&mut player),
-            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true, &mut tr_core::UnifiedRandom::new(0));
         // Head right of the mount → rotation ≈ atan2(0, +60) = 0.
         assert!(player.item_rotation.abs() < 1e-3, "itemRotation tracks the chain, got {}", player.item_rotation);
     }
@@ -27439,6 +27506,7 @@ mod bomb_tests {
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         assert!(!pool.slots[0].active, "the bomb exploded at the fuse end");
@@ -27481,6 +27549,7 @@ mod bomb_tests {
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         assert!(!pool.slots[0].active);
@@ -27532,6 +27601,7 @@ mod bomb_tests {
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         assert!(
@@ -27562,6 +27632,7 @@ mod bomb_tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_eq!(pool.slots[0].damage, 0, "the flight damage zeroes");
         assert!(
@@ -27580,6 +27651,7 @@ mod bomb_tests {
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         assert!(
@@ -27602,6 +27674,7 @@ mod bomb_tests {
             &mut w, &mut [], None, None, None,
             YoyoInputs::default(), FlailInputs::default(),
             &mut tr_core::tile_light::FastRandom::new(7), 0, false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         let p = &pool.slots[0];
         assert_eq!(p.damage, 95, ":47175 — the keep-damage list");
@@ -27632,12 +27705,14 @@ mod bomb_tests {
         pool.update(
             &mut w, &mut [], None, None, None,
             YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(pool.slots[0].vel.x > 8.0, "still flying");
         // Tick 2: the contact (the destination box hits the wall).
         pool.update(
             &mut w, &mut [], None, None, None,
             YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_eq!(pool.slots[0].vel, Vec2::ZERO, ":19775 — the contact zero");
         assert_eq!(pool.slots[0].time_left, 3 - 1, ":19777 — the fuse (then the tick's −1)");
@@ -27647,6 +27722,7 @@ mod bomb_tests {
         pool.update(
             &mut w, &mut [], None, None, None,
             YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(!pool.slots[0].active, "the rocket exploded");
         // The wall survives — the 134 rocket is not a tile-breaker.
@@ -27678,6 +27754,7 @@ mod bomb_tests {
             pool.update(
                 &mut w, &mut [], None, None, None,
                 YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             assert!(!pool.slots[0].active, "kind {kind} exploded");
             // The compare spot is the RESIZED top-left (`:77338`): the
@@ -27717,6 +27794,7 @@ mod bomb_tests {
         pool.update(
             &mut w, &mut [], None, None, None,
             YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(
             !pool.slots().iter().any(|p| p.active && p.kind == 776),
@@ -27756,6 +27834,7 @@ mod bomb_tests {
         pool.update(
             &mut w, &mut [], None, None, None,
             YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         // The wet arm set timeLeft 1, then the tick's −1 → 0 → dead.
         assert!(!pool.slots[0].active, ":46910 — the wet kill");
@@ -27853,6 +27932,7 @@ mod bomb_tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(
             pool.slots[wood].active,
@@ -27957,6 +28037,7 @@ mod yoyo_tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -28181,6 +28262,7 @@ mod yoyo_tests {
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         assert!(pool.slots()[slot].active, "the fade runs 20 ticks");
@@ -28197,6 +28279,7 @@ mod yoyo_tests {
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         assert!(!pool.slots()[slot].active, "the 20-tick kill");
@@ -28289,6 +28372,7 @@ mod yoyo_tests {
                 &mut fast_seed(),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         let p = &pool.slots[0];
@@ -28327,6 +28411,7 @@ mod yoyo_tests {
             &mut fast_seed(),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_eq!(
             (pool.slots[0].ai[0], pool.slots[0].ai[1]),
@@ -28356,6 +28441,7 @@ mod yoyo_tests {
                 &mut fast_seed(),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         assert_eq!(pool.slots[0].local_ai[0], 180.0);
@@ -28371,6 +28457,7 @@ mod yoyo_tests {
             &mut fast_seed(),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_eq!(pool.slots[0].local_ai[0], 181.0);
         assert_eq!(pool.slots[0].ai[0], -1.0, "returned at tick 181");
@@ -28394,6 +28481,7 @@ mod yoyo_tests {
             &mut fast_seed(),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         pool.update(
             &mut w,
@@ -28406,6 +28494,7 @@ mod yoyo_tests {
             &mut fast_seed(),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_eq!(pool.slots[0].ai[0], -1.0);
         assert_eq!(pool.slots[0].ai[1], 0.0);
@@ -28436,6 +28525,7 @@ mod yoyo_tests {
                 &mut fast_seed(),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         // The owner retreats left: the yoyo sits ~130 px right of the owner's
@@ -28451,6 +28541,7 @@ mod yoyo_tests {
             &mut fast_seed(),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_eq!(pool.slots[0].ai[0], -1.0, "the forced return");
     }
@@ -28476,6 +28567,7 @@ mod yoyo_tests {
             &mut fast_seed(),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_eq!(pool.slots[slot].ai[0], -1.0, "released");
         assert!(!pool.slots[slot].active, "caught within the 23.5 px radius");
@@ -28501,6 +28593,7 @@ mod yoyo_tests {
             &mut fast_seed(),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(!pool.slots[slot].active, "the 2500 px stray dies");
     }
@@ -28528,6 +28621,7 @@ mod yoyo_tests {
             &mut fast_seed(),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_eq!(pool.slots[slot].ai[0], 380.0, "the held aim landed");
         // The CC: the channel stays true, `player_cced` flips.
@@ -28544,6 +28638,7 @@ mod yoyo_tests {
             &mut fast_seed(),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_eq!(pool.slots[slot].ai[0], -1.0, "the CCed release drops the aim");
         assert_eq!(pool.slots[slot].ai[1], 0.0);
@@ -28568,6 +28663,7 @@ mod yoyo_tests {
             &mut fast_seed(),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_eq!(
             pool.slots[0].time_left, 5,
@@ -28590,6 +28686,7 @@ mod yoyo_tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(!pool.slots[0].active, "the owner's death kills the string");
     }
@@ -28613,6 +28710,7 @@ mod yoyo_tests {
             &mut fast_seed(),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(!pool.slots[slot].active, "the NaN kill");
     }
@@ -28644,6 +28742,7 @@ mod yoyo_tests {
                 &mut fast_seed(),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             assert!(pool.slots[slot].active, "the yoyo survives the wall");
         }
@@ -28677,6 +28776,7 @@ mod yoyo_tests {
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         let p = &pool.slots[slot];
@@ -28709,6 +28809,7 @@ mod yoyo_tests {
                 &mut fast_seed(),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         assert!(
@@ -28733,6 +28834,7 @@ mod yoyo_tests {
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         assert_eq!(pool.slots[slot].direction, -1, "the nudge points left");
@@ -28773,6 +28875,7 @@ mod yoyo_tests {
                 &mut fast_seed(),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         assert!(
@@ -28824,6 +28927,7 @@ mod yoyo_tests {
                 &mut fast_seed(),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             max_first = max_first.max(pool.slots[first].vel.length());
             max_second = max_second.max(pool.slots[second].vel.length());
@@ -28853,6 +28957,7 @@ mod yoyo_tests {
                 &mut fast_seed(),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         assert_eq!(pool.slots[0].direction, -1, "the pose's direction");
@@ -28896,6 +29001,7 @@ mod yoyo_tests {
                 &mut fast_seed(),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             beam = beam.or_else(|| {
                 (0..MAX_PROJECTILES)
@@ -28932,6 +29038,7 @@ mod yoyo_tests {
                 &mut fast_seed(),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         assert!(!pool.slots[beam].active, "the beam fades out and dies");
@@ -28959,6 +29066,7 @@ mod yoyo_tests {
                 &mut fast_seed(),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             pool.slots[slot].penetrate
         };
@@ -29013,7 +29121,7 @@ mod s1_p_i09_yoyo_tests {
         inputs: YoyoInputs,
         rng: &mut dyn tr_core::loot::DropRng,
     ) {
-        pool.update(w, &mut [], owner, None, None, inputs, FlailInputs::default(), rng, 0, true);
+        pool.update(w, &mut [], owner, None, None, inputs, FlailInputs::default(), rng, 0, true, &mut tr_core::UnifiedRandom::new(0));
     }
 
     /// A recording stream — the beam-roll ORDER witness reads the exact
@@ -29162,6 +29270,7 @@ mod s1_p_i09_yoyo_tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_eq!(pool.slots[first].direction, -1, "the lone yoyo faces left");
         assert_eq!(pool.slots[second].direction, 1, "the double keeps the stock direction");
@@ -29215,6 +29324,7 @@ mod s1_p_i09_yoyo_tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         let beam = (0..MAX_PROJECTILES)
             .find(|&i| pool.slots[i].active && pool.slots[i].kind == TERRARIAN_BEAM)
@@ -29531,6 +29641,7 @@ mod whip_tests {
             &mut rng,
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -29686,6 +29797,7 @@ mod whip_tests {
                         &mut rng,
                         0,
                         true,
+                        &mut tr_core::UnifiedRandom::new(0),
                     );
                     ticks += 1;
                     if ticks >= 60 {
@@ -29719,6 +29831,7 @@ mod whip_tests {
             &mut rng,
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(
             (1.0..=3.0).contains(&pool.slots[0].local_ai[1]),
@@ -29740,6 +29853,7 @@ mod whip_tests {
                 &mut rng,
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             let arms = pool
                 .slots()
@@ -29787,6 +29901,7 @@ mod whip_tests {
                 &mut rng,
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             if !pool.slots[0].active {
                 break;
@@ -29839,6 +29954,7 @@ mod whip_tests {
             &mut tr_core::tile_light::FastRandom::new(3),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         let tagged = start - npcs[0].hp;
         assert!(tagged > 0, "the tagged summon shot must land");
@@ -29870,6 +29986,7 @@ mod whip_tests {
             &mut tr_core::tile_light::FastRandom::new(3),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         let untagged = start2 - npcs[0].hp;
         assert!(
@@ -29905,6 +30022,7 @@ mod whip_tests {
                 &mut rng,
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             ticks += 1;
             assert!(ticks < 60, "the whip must hit");
@@ -29933,6 +30051,7 @@ mod whip_tests {
                 &mut rng,
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             ticks2 += 1;
             assert!(ticks2 < 60, "the second whip must hit");
@@ -29963,6 +30082,7 @@ mod whip_tests {
                 &mut rng,
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             if !pool.slots[0].active {
                 break;
@@ -30009,6 +30129,7 @@ mod whip_tests {
                 &mut rng,
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             if !pool.slots[0].active {
                 break;
@@ -30616,6 +30737,7 @@ mod phasmal_projectile_tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -31036,6 +31158,7 @@ mod ritual_projectile_tests {
             &mut tr_core::tile_light::FastRandom::new(5),
             0,
             false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_eq!(pool.slots()[slot].ai[0], 1.0, "aiStyle 108 dispatched");
 
@@ -31066,6 +31189,7 @@ mod ritual_projectile_tests {
             &mut tr_core::tile_light::FastRandom::new(11),
             0,
             false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_eq!(pool.slots()[slot].ai[0], 0.0, "aiStyle 88 dispatched");
     }
@@ -31355,11 +31479,11 @@ mod widened_state_tests {
         // The gate the cooldown arms still bites: one hit, then the local
         // entry holds the re-hits off for 12 ticks.
         let hp0 = npc.hp;
-        pool.update(&mut w, std::slice::from_mut(&mut npc), None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false);
+        pool.update(&mut w, std::slice::from_mut(&mut npc), None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false, &mut tr_core::UnifiedRandom::new(0));
         let hit = hp0 - npc.hp;
         assert!(hit > 0, "first hit must deal damage");
         assert_eq!(pool.slots[slot].penetrate, 2);
-        pool.update(&mut w, std::slice::from_mut(&mut npc), None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false);
+        pool.update(&mut w, std::slice::from_mut(&mut npc), None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false, &mut tr_core::UnifiedRandom::new(0));
         assert_eq!(npc.hp, hp0 - hit, "the 12-tick cooldown gates the re-hit");
     }
 
@@ -31581,10 +31705,10 @@ mod magic_data_tests {
         p.max_penetrate = 3;
         p.penetrate = 3;
         let hp0 = npc.hp;
-        pool.update(&mut w, std::slice::from_mut(&mut npc), None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false);
+        pool.update(&mut w, std::slice::from_mut(&mut npc), None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false, &mut tr_core::UnifiedRandom::new(0));
         let hit = hp0 - npc.hp;
         assert!(hit > 0, "first hit must deal damage");
-        pool.update(&mut w, std::slice::from_mut(&mut npc), None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false);
+        pool.update(&mut w, std::slice::from_mut(&mut npc), None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false, &mut tr_core::UnifiedRandom::new(0));
         assert_eq!(npc.hp, hp0 - hit, "the 60-tick cooldown gates the re-hit");
     }
 
@@ -31910,7 +32034,7 @@ mod magic_ai_tests {
         let mut rng = tr_core::tile_light::FastRandom::new(7);
 
         let mut npcs: Vec<Npc> = Vec::new();
-        pool.update(w, &mut npcs, None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false);
+        pool.update(w, &mut npcs, None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false, &mut tr_core::UnifiedRandom::new(0));
     }
 
     /// The `tick(world, pool, npc)` fixture of the main `mod tests`, for the
@@ -31933,6 +32057,7 @@ mod magic_ai_tests {
             &mut rng,
             0,
             false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -31947,7 +32072,7 @@ mod magic_ai_tests {
             }
             n.hurt_cd = (n.hurt_cd - 1.0 / 60.0).max(0.0);
         }
-        pool.update(world, npcs, None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false);
+        pool.update(world, npcs, None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false, &mut tr_core::UnifiedRandom::new(0));
     }
 
     // ---------------------------------------------------------------- DW-3.1
@@ -32175,7 +32300,7 @@ mod magic_ai_tests {
         // (the shared `step` helper's `false` skips owner-255 slots).
         let mut rng = tr_core::tile_light::FastRandom::new(7);
         let mut npcs: Vec<Npc> = Vec::new();
-        pool.update(&mut w, &mut npcs, None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, true);
+        pool.update(&mut w, &mut npcs, None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, true, &mut tr_core::UnifiedRandom::new(0));
         assert_eq!(pool.slots()[0].ai[1], 1.0, "the one-tick latch (:25371)");
         // The friendly scythe never latches (the gate is type 44 only).
         let mut pool2 = ProjectilePool::new();
@@ -33009,7 +33134,7 @@ mod magic_ai_tests {
                 0.0,
             )
             .unwrap();
-        pool.update(&mut w, &mut npcs, None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false);
+        pool.update(&mut w, &mut npcs, None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false, &mut tr_core::UnifiedRandom::new(0));
         assert_eq!(pool.slots()[slot].time_left, 480 - 1 - 33);
         assert!(pool.slots()[slot].active, "it survives the drain");
     }
@@ -33535,6 +33660,7 @@ mod magic_ai_tests {
             &mut rng,
             0,
             false,
+            &mut tr_core::UnifiedRandom::new(0),
             );
         let spell = &pool.slots()[slot];
         assert_eq!(spell.ai[0], 500.0, "the aim X rides the channel target");
@@ -33572,6 +33698,7 @@ mod magic_ai_tests {
             &mut rng,
             0,
             false,
+            &mut tr_core::UnifiedRandom::new(0),
             );
         let spell = &pool.slots()[slot];
         assert_eq!(spell.ai[0], -1.0, "the release clears the aim");
@@ -33598,6 +33725,7 @@ mod magic_ai_tests {
             &mut rng,
             0,
             false,
+            &mut tr_core::UnifiedRandom::new(0),
             );
         let spell = &pool.slots()[slot];
         assert_eq!(spell.ai[1], -1.0, "a miss leaves the slot indexless");
@@ -33623,7 +33751,7 @@ mod magic_ai_tests {
         pool.slots_mut()[slot].time_left = 900;
         let mut w = world();
         let mut npcs: Vec<Npc> = Vec::new();
-        pool.update(&mut w, &mut npcs, None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false);
+        pool.update(&mut w, &mut npcs, None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false, &mut tr_core::UnifiedRandom::new(0));
         let spell = &pool.slots()[slot];
         assert!(
             spell.time_left <= 300,
@@ -33773,7 +33901,7 @@ mod magic_ai_tests {
             .unwrap();
         let mut w = world();
         let mut npcs: Vec<Npc> = Vec::new();
-        pool.update(&mut w, &mut npcs, None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false);
+        pool.update(&mut w, &mut npcs, None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false, &mut tr_core::UnifiedRandom::new(0));
         assert!(
             pool.slots()[slot].time_left <= 5,
             "the aimless flame dies at 5"
@@ -33787,7 +33915,7 @@ mod magic_ai_tests {
         pool.slots_mut()[slot].time_left = 900;
         let mut w = world();
         let mut npcs: Vec<Npc> = Vec::new();
-        pool.update(&mut w, &mut npcs, None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false);
+        pool.update(&mut w, &mut npcs, None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false, &mut tr_core::UnifiedRandom::new(0));
         assert!(
             pool.slots()[slot].time_left <= 240,
             "the waiting flame caps at 240"
@@ -33816,7 +33944,7 @@ mod magic_ai_tests {
             10.0 * TILE_PX,
             SlimeVariant::Blue,
         )];
-        pool.update(&mut w, &mut npcs, None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false);
+        pool.update(&mut w, &mut npcs, None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false, &mut tr_core::UnifiedRandom::new(0));
         let spell = &pool.slots()[slot];
         // The blend cap: the flight stays in the approach direction but only
         // 20% toward it, so |v| is at most 32 * 1.2 = 38.4 and the direction
@@ -33863,6 +33991,7 @@ mod magic_ai_tests {
             &mut rng,
             0,
             false,
+            &mut tr_core::UnifiedRandom::new(0),
             );
         let spell = &pool.slots()[slot];
         assert_eq!(spell.ai[0], -1.0, "the release runs");
@@ -34141,6 +34270,7 @@ mod magic_ai_tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         let p = &pool.slots()[slot];
         assert_eq!(p.local_ai[0], 1.0, "the sound latch fires once");
@@ -34164,6 +34294,7 @@ mod magic_ai_tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(
             (pool.slots()[slot].vel.x - 1.0).abs() < 1e-9,
@@ -34186,6 +34317,7 @@ mod magic_ai_tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(
             (pool.slots()[slot].vel.x - 1.0).abs() < 1e-9,
@@ -34611,6 +34743,7 @@ mod magic_ai_tests {
             &mut rng,
             0,
             false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -35672,6 +35805,7 @@ mod magic_ai_tests {
         pool.update(
             w, npcs, None, None, player,
             YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -35945,6 +36079,7 @@ mod magic_ai_tests {
                 &mut rng,
                 0,
                 false,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             let spell = &pool.slots()[slot];
             if holds {
@@ -35989,6 +36124,7 @@ mod magic_ai_tests {
             &mut rng,
             0,
             false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_eq!(
             pool.slots()[slot].ai[0], -1.0,
@@ -36034,6 +36170,7 @@ mod magic_ai_tests {
                 &mut rng,
                 0,
                 false,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             let spell = &pool.slots()[slot];
             assert_eq!(spell.ai[1], 0.0, "the target locked (d={d})");
@@ -36079,6 +36216,7 @@ mod magic_ai_tests {
             &mut rng,
             0,
             false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         let spell = &pool.slots()[slot];
         assert_eq!(spell.ai[0], 176.0, "the hold ran (no spin)");
@@ -36681,6 +36819,7 @@ mod summon_tests {
                 &mut rng(),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         let p = &pool.slots[tiger];
@@ -36831,6 +36970,7 @@ mod summon_tests {
                     &mut rng(),
                     0,
                     true,
+                    &mut tr_core::UnifiedRandom::new(0),
                 );
             }
             (
@@ -36892,6 +37032,7 @@ mod minion_tick_tests {
             &mut rng(),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -37096,6 +37237,7 @@ mod minion_ai_tests {
             &mut rng(),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -37174,6 +37316,7 @@ mod minion_ai_tests {
                 &mut rng(),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         let vx = pool.slots[slot].vel.x;
@@ -37203,6 +37346,7 @@ mod minion_ai_tests {
                 &mut rng(),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         let after_far = pool.slots[slot].pos.x;
@@ -37390,6 +37534,7 @@ mod minion_ai_tests {
             &mut rng(),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -37623,6 +37768,7 @@ mod sentry_tests {
             &mut rng(),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         let proj = &pool.slots[hydra];
         assert_eq!(proj.local_ai[1], 1.0, "localAI[1] latches to 1 at the init");
@@ -37659,6 +37805,7 @@ mod sentry_tests {
             &mut rng(),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         let proj = &pool.slots[hydra];
         assert_eq!(proj.ai[0], 59.0, "the reload is 60 ticks; the tail decrements it");
@@ -37699,6 +37846,7 @@ mod sentry_tests {
             &mut rng(),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         let proj = &pool.slots[houndius];
         assert_eq!(proj.ai[0], 89.0, "the Houndius reloads for 90 ticks; the tail decrements it");
@@ -37738,6 +37886,7 @@ mod sentry_tests {
             &mut rng(),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         let proj = &pool.slots[hydra];
         assert_eq!(proj.ai[0], 4.0, "the tail decrements ai[0] every tick");
@@ -37770,6 +37919,7 @@ mod sentry_tests {
                 &mut rng(),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             let proj = &pool.slots[hydra];
             assert_eq!(proj.vel.x, 0.0, "the free fall zeroes velocity.X");
@@ -37801,6 +37951,7 @@ mod sentry_tests {
                     &mut rng(),
                     0,
                     true,
+                    &mut tr_core::UnifiedRandom::new(0),
                 );
             }
             assert!(
@@ -37820,6 +37971,7 @@ mod sentry_tests {
                 &mut rng(),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             let shot = pool
                 .slots
@@ -37857,6 +38009,7 @@ mod sentry_tests {
                     &mut rng(),
                     0,
                     true,
+                    &mut tr_core::UnifiedRandom::new(0),
                 );
             }
             assert!(
@@ -37909,6 +38062,7 @@ mod sentry_tests {
                     &mut rng(),
                     0,
                     true,
+                    &mut tr_core::UnifiedRandom::new(0),
                 );
                 lowest = lowest.min(pool.slots[barnacle].vel.y);
             }
@@ -37952,6 +38106,7 @@ mod sentry_tests {
                 &mut rng(),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             assert_eq!(pool.slots[barnacle].frame, 3, "the barnacle holds frame 3");
         }
@@ -38097,6 +38252,7 @@ mod sentry_tests {
                 &mut rng(),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         assert!(pool.slots[slot].active, "alive at 35999 ticks");
@@ -38112,6 +38268,7 @@ mod sentry_tests {
             &mut rng(),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(!pool.slots[slot].active, "dead at 36000 ticks");
     }
@@ -38190,6 +38347,7 @@ mod sentry_tests {
                 &mut rng(),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         assert!(pool.slots[tower].active, "the tower persists during the event");
@@ -38210,6 +38368,7 @@ mod sentry_tests {
                 &mut rng(),
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         assert!(!pool.slots[tower].active, "dead once the 5-tick life drains");
@@ -38257,6 +38416,7 @@ mod s1_d_4b_2_trap_tests {
             &mut rng(),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -38683,6 +38843,7 @@ mod s1_d_4b_2_trap_tests {
                 &mut rng,
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             assert_eq!(rng.seed, before, "kind {kind} drew no RNG");
         }
@@ -38728,6 +38889,7 @@ mod s1_d_4b_9_flame_burst_tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -39004,6 +39166,7 @@ mod s1_d_4b_9_flame_burst_tests {
                 &mut rng,
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             // The reference replay of the C#'s draw order.
             let mut reference = tr_core::tile_light::FastRandom::new(7);
@@ -39050,6 +39213,7 @@ mod s1_d_4b_9_flame_burst_tests {
                 &mut rng,
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             let mut reference = tr_core::tile_light::FastRandom::new(7);
             for _ in 0..iterations {
@@ -39229,6 +39393,7 @@ mod use_path_tests {
             &mut rng,
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_eq!(pool.slots[slot].damage, 26, "26 x 1.0 + epsilon");
     }
@@ -39475,6 +39640,7 @@ mod s1_d_4b_3_tests {
             rng,
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -40701,6 +40867,7 @@ mod s1_d_4b_8_tests {
                 &mut rng,
                 0,
                 false,
+                &mut tr_core::UnifiedRandom::new(0),
             );
             let p = &pool.slots[slot];
             assert_eq!(p.ai[0], 1.0, "kind {kind}: the arm counted the age");
@@ -41032,6 +41199,7 @@ mod s1_d_4b_5c_tests {
             rng,
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -41311,6 +41479,7 @@ mod s1_d_4b_6_tests {
             &mut rng(),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -41611,6 +41780,7 @@ mod projectile_ai_tests {
             &mut rng,
             0,
             false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -41831,6 +42001,7 @@ mod s1_d_5_debris_tests {
             rng,
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -42056,6 +42227,7 @@ mod lights_bane_tests {
                 &mut rng,
                 0,
                 false,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
     }
@@ -42298,6 +42470,7 @@ mod s1_d_4b_7_tests {
             &mut rng(),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -42565,6 +42738,7 @@ mod proj_light_spawn_tests {
             rng,
             0,
             false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -42741,6 +42915,7 @@ mod s1_d_5_data_row_tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -42919,6 +43094,7 @@ mod s1_p_i22_magic_guns_tomes_tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -43163,6 +43339,7 @@ mod channel_machinery_tests {
             &mut rng,
             0,
             false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -43319,6 +43496,7 @@ mod channel_machinery_tests {
             &mut rng,
             1, // the peer's machine: its own shots simulate
             false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(!pool.slots()[slot].active, "the peer's shot died");
         assert!(p.channel, "a foreign owner's death never cancels");
@@ -44038,6 +44216,7 @@ mod s1_p_i56_guardian_tests {
                 &mut rng,
                 0,
                 true,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         let p = &pool.slots()[slot];
@@ -44117,6 +44296,7 @@ mod s1_p_i25_dragon_tests {
             rng,
             0,
             false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -44184,6 +44364,7 @@ mod s1_p_i25_dragon_tests {
             &mut rng,
             0,
             false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(!pool.slots()[slot].active, ":42833");
         assert_eq!(pool.slots()[slot].time_left, 0, "the port's kill() convention");
@@ -44252,6 +44433,7 @@ mod s1_p_i25_dragon_tests {
             &mut rng,
             0,
             false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         let d = &pool.slots()[slot];
         assert_eq!(d.vel, Vec2::new(1.2, 0.0), "0.8·1.5 along +X (:42918)");

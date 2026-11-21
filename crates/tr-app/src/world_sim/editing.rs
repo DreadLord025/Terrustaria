@@ -946,7 +946,14 @@ fn convert_grass_tile(app: &mut App, tx: i32, ty: i32, kind: u16) {
     if let Some(t) = app.world.tile_mut(tx, ty) {
         t.kind = new_kind;
     }
-    let _ = edit::square_tile_frame_default(&mut app.world, tx, ty);
+    // W4-g83: the conversion wake's framing dispatch rides the UpdatePlayers
+    // stream (the active genRand of the player tick, contract §2).
+    let _ = edit::square_tile_frame_default(
+        &mut app.world,
+        tx,
+        ty,
+        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+    );
     app.queue_map_ring(tx, ty);
     app.world_key = None;
 }
@@ -1396,7 +1403,15 @@ fn try_pounding_tile_tick(
             .iter()
             .any(|c| c.tile == (x, y) && c.slots.iter().any(|s| s.count > 0))
     };
-    let outcome = edit::try_pound_tile(&mut app.world, tx, ty, holds);
+    // W4-g83: the pound cycle's reframe dispatch rides the UpdatePlayers
+    // stream (the active genRand of the player tick, contract §2).
+    let outcome = edit::try_pound_tile(
+        &mut app.world,
+        tx,
+        ty,
+        holds,
+        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+    );
     match outcome {
         edit::PoundOutcome::Pounded { lift } => {
             // The SlopeTile/PoundTile Dig 0 cue (`WorldGen.cs:80782`/
@@ -5590,7 +5605,15 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             frame_y: t.frame_y,
         });
     app.queue_map_ring(tx, ty);
-    let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, false) else {
+    // W4-g83: the break cascade's framing dispatch rides the UpdatePlayers
+    // stream (the active genRand of the player tick, contract §2).
+    let Some(kill) = edit::kill_tile(
+        &mut app.world,
+        tx,
+        ty,
+        false,
+        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+    ) else {
         return;
     };
     // `Chest.DestroyChest` (`Chest.cs:625-645`, called from
@@ -6930,7 +6953,14 @@ pub(crate) fn spawn_force_clear_area(app: &mut App, floor_x: i32, floor_y: i32) 
                     t.liquid = 0;
                     t.flags &= !tr_core::tile::FLAG_LIQUID_LAVA;
                 }
-                for drop in tr_core::edit::square_tile_frame_default(&mut app.world, i, j) {
+                // W4-g83: the liquid-wipe wake rides the UpdatePlayers
+                // stream (contract §2).
+                for drop in tr_core::edit::square_tile_frame_default(
+                    &mut app.world,
+                    i,
+                    j,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                ) {
                     let id = drop
                         .item
                         .map(|item| item as u16)
@@ -7286,8 +7316,18 @@ fn flatten_torch_supports(app: &mut App, tx: i32, ty: i32) {
                     .iter()
                     .any(|c| c.tile == (x, y) && c.slots.iter().any(|s| s.count > 0))
             };
+            // W4-g83: the flatten's reframe dispatch rides the UpdatePlayers
+            // stream (contract §2).
             if !td::SET_PLATFORMS.has(s.kind)
-                && tr_core::edit::slope_tile(&mut app.world, sx, sy, 0, false, holds)
+                && tr_core::edit::slope_tile(
+                    &mut app.world,
+                    sx,
+                    sy,
+                    0,
+                    false,
+                    holds,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                )
             {
                 app.audio.play_place_sound(
                     (0, 1),
@@ -7625,7 +7665,19 @@ fn biome_torch_place_style(p: &crate::player::Player, world: &World) -> i32 {
 /// on the receiver too; the caller plays the cue on the bare `Main.rand`
 /// stream (the message handler runs outside every swap, `Main.cs:16895`'s
 /// `NpcStrike` precedent — S1-E-21i).
-pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16) -> Option<u16> {
+/// `rng` is the ACTIVE `genRand` stream of the message handler (W4-g83
+/// contract §2): the net replay runs outside every `SwapRandom`
+/// (`Main.cs:16895`'s NpcStrike precedent), so the caller passes the bare
+/// `Main.rand` stand-in (`rngs.global()`); the kill cascade's framing
+/// dispatch draws its seaweed tip re-rolls on it.
+pub(crate) fn apply_edit(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    kind: u8,
+    tile: u16,
+    rng: &mut tr_core::UnifiedRandom,
+) -> Option<u16> {
     match kind {
         0 => {
             // Vanilla suppresses item drops on the replication side
@@ -7636,7 +7688,7 @@ pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16)
             // store is reachable from a bare world, so that case passes
             // (the store is empty until M3-CHEST-UI anyway).
             if tr_core::edit::can_kill_tile(world, x, y, |_, _| false) {
-                edit::kill_tile(world, x, y, true);
+                edit::kill_tile(world, x, y, true, rng);
             }
             None
         }
@@ -10747,6 +10799,7 @@ mod tests {
             &mut rng,
             0,
             false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         let rocket = app.projectiles.slots().iter().find(|p| p.active).unwrap();
         assert_eq!(rocket.damage, 95, ":47175 — the keep-damage list");
@@ -10783,6 +10836,7 @@ mod tests {
                 crate::projectile::YoyoInputs::default(),
                 crate::projectile::FlailInputs::default(),
                 &mut rng, 0, false,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         assert_eq!(
@@ -10794,6 +10848,7 @@ mod tests {
             crate::projectile::YoyoInputs::default(),
             crate::projectile::FlailInputs::default(),
             &mut rng, 0, false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(
             (app.projectiles.slots()[slot].vel.y - 0.2).abs() < 1e-5,
@@ -10813,6 +10868,7 @@ mod tests {
             crate::projectile::YoyoInputs::default(),
             crate::projectile::FlailInputs::default(),
             &mut rng2, 0, false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         let vy1 = app2.projectiles.slots()[slot2].vel.y;
         assert!(
@@ -16779,6 +16835,7 @@ mod use_loop_tests {
             &mut rng,
             local,
             host,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         let p = app.player.as_ref().unwrap();
         assert_eq!(p.num_minions, 1, "the slot booked");

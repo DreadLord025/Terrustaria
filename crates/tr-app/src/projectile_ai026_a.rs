@@ -1705,6 +1705,7 @@ mod tests {
             &mut FastRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(pool.slots()[eater].vel.x < 0.0, "the eater steers home");
         // Slice C arms the 266: the band walks it left toward the

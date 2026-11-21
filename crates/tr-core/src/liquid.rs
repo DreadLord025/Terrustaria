@@ -249,7 +249,11 @@ impl LiquidSystem {
 
     /// One `Liquid.UpdateLiquid` call. Tick this at 30 Hz, like the original
     /// (every second 60 Hz world tick).
-    pub fn update(&mut self, world: &mut World) {
+    /// `rng` is the ACTIVE `genRand` stream of the liquid tick — the C#
+    /// `UpdateLiquid` swap (`WorldGen.cs:71528`, the port's
+    /// `RngKey::UpdateLiquid`): the merge-tile `KillTile`'s framing dispatch
+    /// (W4-g83 contract §2) draws its seaweed tip re-rolls on it.
+    pub fn update(&mut self, world: &mut World, rng: &mut crate::UnifiedRandom) {
         // `Liquid.UpdateLiquid`'s scope (`Liquid.cs:986`/`:1157`): the grate
         // and the boulders lose solidity for the whole pass, and the bubble
         // gains it (`Liquid.Update`'s `Main.tileSolid[379] = true`, `:451` —
@@ -291,7 +295,7 @@ impl LiquidSystem {
             } else {
                 self.active[i].delay
             };
-            let (kill, delay) = self.update_tile(world, x, y, self.active[i].kill, delay);
+            let (kill, delay) = self.update_tile(world, x, y, self.active[i].kill, delay, rng);
             self.active[i].kill = kill;
             self.active[i].delay = delay;
             if self.quick_fall {
@@ -346,6 +350,7 @@ impl LiquidSystem {
         y: i32,
         kill: u16,
         delay: u8,
+        rng: &mut crate::UnifiedRandom,
     ) -> (u16, u8) {
         let i = world.index(x, y);
         let start = world.tiles[i];
@@ -362,7 +367,7 @@ impl LiquidSystem {
         // (`Liquid.cs:484-490`/`:513-522`).
         let mut flow_delay = delay;
         if kind == 1 {
-            self.lava_check(world, x, y);
+            self.lava_check(world, x, y, rng);
             if !self.quick_fall {
                 if delay < 5 {
                     return (kill, delay + 1);
@@ -379,7 +384,7 @@ impl LiquidSystem {
                 }
             }
             if kind == 2 {
-                self.honey_check(world, x, y);
+                self.honey_check(world, x, y, rng);
                 if !self.quick_fall {
                     if delay < 10 {
                         return (kill, delay + 1);
@@ -396,7 +401,7 @@ impl LiquidSystem {
                     }
                 }
                 if kind == 3 {
-                    self.shimmer_check(world, x, y);
+                    self.shimmer_check(world, x, y, rng);
                 } else {
                     for (nx, ny) in [(x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)] {
                         if world.tile(nx, ny).is_some_and(|t| {
@@ -553,7 +558,7 @@ impl LiquidSystem {
 
     /// `Liquid.LavaCheck` (`Liquid.cs:1445-1459`): the generation-only
     /// underground-desert lava strip, then the merge check.
-    fn lava_check(&mut self, world: &mut World, x: i32, y: i32) {
+    fn lava_check(&mut self, world: &mut World, x: i32, y: i32, rng: &mut crate::UnifiedRandom) {
         if self.generating
             && !self.remix_world_gen
             && !world
@@ -572,17 +577,17 @@ impl LiquidSystem {
                 }
             }
         }
-        self.liquid_check(world, x, y, 1, false);
+        self.liquid_check(world, x, y, 1, false, rng);
     }
 
     /// `Liquid.HoneyCheck` (`Liquid.cs:1460-1463`).
-    fn honey_check(&mut self, world: &mut World, x: i32, y: i32) {
-        self.liquid_check(world, x, y, 2, false);
+    fn honey_check(&mut self, world: &mut World, x: i32, y: i32, rng: &mut crate::UnifiedRandom) {
+        self.liquid_check(world, x, y, 2, false, rng);
     }
 
     /// `Liquid.ShimmerCheck` (`Liquid.cs:1465-1468`).
-    fn shimmer_check(&mut self, world: &mut World, x: i32, y: i32) {
-        self.liquid_check(world, x, y, 3, false);
+    fn shimmer_check(&mut self, world: &mut World, x: i32, y: i32, rng: &mut crate::UnifiedRandom) {
+        self.liquid_check(world, x, y, 3, false, rng);
     }
 
     /// `Liquid.LiquidCheck` (`Liquid.cs:1225-1373`) — the whole merge
@@ -599,6 +604,7 @@ impl LiquidSystem {
         y: i32,
         this_liquid_type: u8,
         create_merge_tiles_during_gen: bool,
+        rng: &mut crate::UnifiedRandom,
     ) {
         // `WorldGen.InWorld(x, y, 1)` + `WorldGen.SolidTile(x, y)` (`:1227`).
         if x < 1 || y < 1 || x >= self.width - 1 || y >= self.height - 1 {
@@ -655,6 +661,7 @@ impl LiquidSystem {
                     liquid_merge_type,
                     liquid_merge_tile_type,
                     create_merge_tiles_during_gen,
+                    rng,
                 );
             }
         } else {
@@ -667,7 +674,9 @@ impl LiquidSystem {
                 && td::SET_IS_A_CONTAINER.has(here.kind)
                 && !td::SET_IS_A_CONTAINER.has(down.kind);
             if this_liquid_type != 0 && crate::tileobject::tile_cut(down.kind) {
-                crate::edit::kill_tile(world, x, y + 1, false);
+                // W4-g83: the cascade's framing dispatch rides the liquid
+                // tick's ACTIVE genRand stream (the UpdateLiquid swap).
+                crate::edit::kill_tile(world, x, y + 1, false, rng);
                 // `Main.netMode == 2` → `NetMessage.SendData(17, …)` (`:1309`)
                 // — no multiplayer in the port.
             }
@@ -699,6 +708,7 @@ impl LiquidSystem {
                     liquid_merge_type,
                     liquid_merge_tile_type,
                     create_merge_tiles_during_gen,
+                    rng,
                 );
             }
         }
@@ -722,6 +732,7 @@ impl LiquidSystem {
         liquid_merge_type: u8,
         liquid_merge_tile_type: u16,
         create_merge_tiles_during_gen: bool,
+        rng: &mut crate::UnifiedRandom,
     ) {
         // `WorldGen.GetLiquidChangeType` (`WorldGen.cs:4656-4684`) — the
         // change kind the merge reports. The live-game arm queues
@@ -749,7 +760,9 @@ impl LiquidSystem {
         } else {
             let here = world.tile(x, y).copied().unwrap_or_default();
             if here.active() {
-                crate::edit::kill_tile(world, x, y, false);
+                // W4-g83: the cascade's framing dispatch rides the liquid
+                // tick's ACTIVE genRand stream (the UpdateLiquid swap).
+                crate::edit::kill_tile(world, x, y, false, rng);
             }
             crate::edit::place_tile(world, x, y, liquid_merge_tile_type);
             // `WorldGen.SquareTileFrame(x, y)` (`:1366`) — the port's
@@ -991,6 +1004,14 @@ mod tests {
     use super::*;
     use crate::tile::FLAG_ACTIVE;
 
+    // W4-g83: the liquid pass threads the ACTIVE genRand stream (the
+    // UpdateLiquid swap) into the merge-tile KillTile's framing dispatch.
+    // The settlement witnesses pin levels/merges, not streams — a fresh
+    // seed-0 stream per call.
+    fn rng() -> crate::UnifiedRandom {
+        crate::UnifiedRandom::new(0)
+    }
+
     #[test]
     fn the_water_falls_through_the_grate_during_the_pass() {
         // S1-L-14 (`Liquid.cs:69-73`/`:986`/`:1157`): the runtime pass lifts
@@ -1014,7 +1035,7 @@ mod tests {
         sys.add_water(&w, 4, 4);
         // The water delay gate moves a cell every ~6 ticks (`Liquid.cs:484`).
         for _ in 0..40 {
-            sys.update(&mut w);
+            sys.update(&mut w, &mut rng());
         }
         let above: i32 = (3..6).map(|x| w.tiles[w.index(x, 4)].liquid as i32).sum();
         let mut below: i64 = 0;
@@ -1049,7 +1070,7 @@ mod tests {
         let mut sys = LiquidSystem::new(&w);
         sys.add_water(&w, 4, 4);
         for _ in 0..8 {
-            sys.update(&mut w);
+            sys.update(&mut w, &mut rng());
         }
         let above: i32 = (3..6).map(|x| w.tiles[w.index(x, 4)].liquid as i32).sum();
         let below: i32 = (3..6).map(|x| w.tiles[w.index(x, 6)].liquid as i32).sum();
@@ -1081,7 +1102,7 @@ mod tests {
         let mut sys = LiquidSystem::new(&w);
         sys.add_water(&w, 4, 4);
         for _ in 0..40 {
-            sys.update(&mut w);
+            sys.update(&mut w, &mut rng());
         }
         let mut below: i64 = 0;
         for x in 0..9 {
@@ -1123,7 +1144,7 @@ mod tests {
 
     fn run(sys: &mut LiquidSystem, w: &mut World, n: usize) {
         for _ in 0..n {
-            sys.update(w);
+            sys.update(w, &mut rng());
         }
     }
 
@@ -1305,7 +1326,7 @@ mod tests {
         w.tiles[stone].liquid = 30;
         set_kind(&mut w.tiles[stone], 1);
         let mut sys = LiquidSystem::new(&w);
-        sys.liquid_check(&mut w, 4, 4, 0, false);
+        sys.liquid_check(&mut w, 4, 4, 0, false, &mut rng());
         assert_eq!(w.tile(4, 5).unwrap().kind, 56, "the stone cell was merged into");
         assert_eq!(w.tile(4, 4).unwrap().liquid, 0);
     }
@@ -1334,7 +1355,7 @@ mod tests {
         w.tiles[stone].liquid = 30;
         set_kind(&mut w.tiles[stone], 1);
         let mut sys = LiquidSystem::new(&w);
-        sys.liquid_check(&mut w, 4, 4, 0, false);
+        sys.liquid_check(&mut w, 4, 4, 0, false, &mut rng());
         assert_eq!(
             sys.drain_merge_events(),
             vec![(TileChangeType::LavaWater, 4, 5)],
@@ -1346,7 +1367,7 @@ mod tests {
         // (`Liquid.cs:1345`'s gate) — the same merge queues nothing.
         let mut sys = LiquidSystem::new(&w);
         sys.generating = true;
-        sys.liquid_check(&mut w, 4, 4, 0, false);
+        sys.liquid_check(&mut w, 4, 4, 0, false, &mut rng());
         assert!(
             sys.drain_merge_events().is_empty(),
             "generation never queues a liquid-change sound"
@@ -1610,7 +1631,7 @@ mod liquid_sim {
         let mut sys = LiquidSystem::new(&w);
         sys.add_water(&w, 30, 50);
         for _ in 0..10 {
-            sys.update(&mut w);
+            sys.update(&mut w, &mut rng());
         }
         assert_eq!(w.tiles[w.index(30, 50)].liquid, 0, "the source drained");
         assert_eq!(w.tiles[w.index(30, 55)].liquid, 200, "10 passes -> 5 tiles down");
@@ -1642,7 +1663,7 @@ mod liquid_sim {
         let mut sys = LiquidSystem::new(&w);
         sys.add_water(&w, 31, 69);
         for _ in 0..12 {
-            sys.update(&mut w);
+            sys.update(&mut w, &mut rng());
         }
         let occupied: Vec<u8> = (5..=58)
             .map(|x| w.tiles[w.index(x, 69)].liquid)
@@ -1689,7 +1710,7 @@ mod liquid_sim {
         sys.add_water(&w, 30, 69);
         sys.add_water(&w, 31, 69);
         for _ in 0..12 {
-            sys.update(&mut w);
+            sys.update(&mut w, &mut rng());
         }
         assert_eq!(w.tiles[w.index(30, 69)].kind, 56, "tile 56 — the obsidian");
         assert_eq!(w.tiles[w.index(30, 69)].liquid, 0, "the merge emptied the cell");
@@ -1731,7 +1752,7 @@ mod liquid_sim {
         };
         let before = total(&w);
         for _ in 0..100 {
-            sys.update(&mut w);
+            sys.update(&mut w, &mut rng());
         }
         assert_eq!(total(&w), before, "the shaft conserves byte-exactly");
         assert!(
@@ -1763,7 +1784,7 @@ mod liquid_sim {
         };
         let mut prev = row_total(&w2);
         for _ in 0..60 {
-            sys2.update(&mut w2);
+            sys2.update(&mut w2, &mut rng());
             let now = row_total(&w2);
             let bound = 2 * sys2.active_len() as i32 + 4;
             assert!(

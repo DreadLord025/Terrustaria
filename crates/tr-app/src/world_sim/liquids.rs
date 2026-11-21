@@ -14,10 +14,14 @@ pub(crate) fn update_liquids(app: &mut App, dt: f32) {
     let liquids = &mut app.liquids;
     let world = &mut app.world;
     let audio = &mut app.audio;
+    // W4-g83 contract §2: the liquid tick's ACTIVE genRand stream — the C#
+    // `UpdateLiquid` swap (`WorldGen.cs:71528`); the merge-tile KillTile's
+    // framing dispatch (the seaweed tip re-rolls) draws it.
+    let rng = app.rngs.stream(crate::app::RngKey::UpdateLiquid);
     app.liquid_step.tick(dt, |_| {
         *liquid_tick = liquid_tick.wrapping_add(1);
         if *liquid_tick % 2 == 0 {
-            liquids.update(world);
+            liquids.update(world, rng);
             // `Liquid.cs:1345-1347`: the live merge plays its
             // `PlayLiquidChangeSound` inline — the port's engine is pure,
             // so it queues the events and the tick plays them here

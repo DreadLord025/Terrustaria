@@ -1045,6 +1045,14 @@ pub fn frame_of_variant(world: &World, x: i32, y: i32, variant: usize) -> Option
 /// Frames every non-important tile in the world (in place).
 ///
 /// `Main.tileFrameImportant` tiles keep the frames stored in the save file.
+///
+/// Standing deviation (W4-g83 contract §2, ANALYSIS "The vine draw
+/// residuals"): the C# `FrameEverything` runs `TileFrame` per cell — the
+/// `CheckVines`/`CheckUnderwaterPlant` dispatch included — while this pass
+/// is cosmetic-only (the banded-parallel frame cannot run the killing
+/// checks). The vine lifecycle checks ride the edit/growth dispatch
+/// (`edit/kill.rs::square_tile_frame`); a generated vine that lost its
+/// support stands until the next edit/growth frame touches it.
 #[allow(clippy::needless_range_loop)] // `x` also indexes the world, not just `row`
 pub fn frame_world(world: &mut World) -> usize {
     let important = world.frame_important.clone();

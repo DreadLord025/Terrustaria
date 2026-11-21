@@ -3389,7 +3389,7 @@ mod tests {
         // (`KillTile`'s registry cascade, `edit::kill_tile`).
         let inst = cp(&w, 10, 19, def, 0, 1, None).unwrap();
         assert!(place(&mut w, &inst));
-        assert!(crate::edit::kill_tile(&mut w, 11, 18, false).is_some());
+        assert!(crate::edit::kill_tile(&mut w, 11, 18, false, &mut crate::UnifiedRandom::new(0)).is_some());
         for sub_y in 0..3 {
             for sub_x in 0..3 {
                 assert!(!w.tile(9 + sub_x, 17 + sub_y).unwrap().active());
