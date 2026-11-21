@@ -198,12 +198,55 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
         for _ in 0..day_rate {
             wind.update_rain(max_raining);
         }
+        // W4-f39 (folded, final phase): `Main.cs:64846`'s outer gate —
+        // `(isThereAWorldSurface || remixWorld)` (`isThereAWorldSurface` =
+        // `worldSurface > 50.0`, `Main.cs:2788`) wraps the WHOLE slime-clock
+        // + rain + slime-roll block (`:64847-64951`). `Rain::update_time`
+        // carries its own copy of the gate; the slime clock and the morning
+        // roll ride this one.
+        let surface_ok = world.world_surface > 50.0 || wind.remix_world;
+        // `Main.cs:64848-64863`: the slime-rain clock runs FIRST, ahead of
+        // the rain section — the positive duration decays dayRate-scaled to
+        // the stop (`StopSlimeRain` at <= 0, `:64853`), the negative cooldown
+        // climbs back to zero (the overshoot snaps to exactly 0, `:64861`).
+        // The expiry's `StopSlimeRain` draw precedes the rain section's
+        // draws on `UpdateTime` (the C# statement order).
+        if surface_ok {
+            if world.slime_rain_time > 0.0 {
+                world.slime_rain_time -= day_rate as f64;
+                if world.slime_rain_time <= 0.0 {
+                    // The expiry's `StopSlimeRain` runs inside
+                    // `Main.UpdateTime`'s slime clock (`Main.cs:64853`) —
+                    // the `UpdateTime` stream.
+                    stop_slime_rain(world, app.rngs.stream(crate::app::RngKey::UpdateTime));
+                }
+            } else if world.slime_rain_time < 0.0 {
+                world.slime_rain_time += day_rate as f64;
+                if world.slime_rain_time > 0.0 {
+                    world.slime_rain_time = 0.0;
+                }
+            }
+        }
         // (3) `Main.cs:64833-64949`: Main.UpdateTime's rain section — the
         // `ladyBugRainBoost` drain, the `rainTime` drain + strength-change roll
         // while raining, the ×5.75/×4.25/ladybug start rolls when not (the
         // `86400/dayRate` denominators), and `StartRain`/`ChangeRain`/`StopRain`.
         // Runs after the weather loop, before Sandstorm.UpdateTime
         // (`Main.cs:64966`); `remixWorld` reads Wind's stand-in field.
+        // W4-f39: the branch-entry `Main.raining` sample — the C#'s
+        // `if (Main.raining) … else if (!slimeRain …)` ladder (`:64864` /
+        // `:64890`) picks its arm ONCE; a rain that ENDS inside this tick
+        // (the `rainTime` expiry, `:64880`) does not open the start arms or
+        // the slime roll until the next tick.
+        let was_raining = rain.is_raining();
+        // W4-f39: the `:64890` gate inputs sampled at the branch entry —
+        // the C# reads `Main.slimeRain`/`LanternNight.LanternsUp`/
+        // `NextNightIsLanternNight` live at `:64868`/`:64890`, BEFORE
+        // `LanternNight.UpdateTime` (`:64965`, step (4) below) can move
+        // them; the slime roll at `:64925` reads the SAME pre-update values.
+        let slime_rain_entry = world.slime_rain;
+        let lanterns_up = crate::world_events::lanterns_up(&app.world_events);
+        let next_night_lanterns = app.world_events.next_night_is_lantern_night;
         rain.update_time(
             day_rate,
             world,
@@ -213,6 +256,13 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
             // (`Main.cs:64668`) — the port's single player, 0 when none
             // (the C# falls back to a fresh `Player()`).
             app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0),
+            // W4-f39: `Main.cs:64890`'s `!Main.slimeRain &&
+            // !LanternNight.LanternsUp && !LanternNight.NextNightIsLanternNight`
+            // gate on the start arms, and `:64868-64871`'s `LanternsUp →
+            // StopRain()` arm.
+            slime_rain_entry,
+            lanterns_up,
+            next_night_lanterns,
         );
         // (4) `Main.cs:64963-64966`: the event walks — CultistRitual
         // (the delay decay + the recheck window's AnyDanger arm),
@@ -242,36 +292,27 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
             sandstorm.update_time(day_rate, wind.speed_current);
         }
         night_raining = rain.is_raining();
-        // (5) The Slime Rain event (`Main.cs:64925-64949`'s morning roll +
-        // the time flow): the expiry decays dayRate-scaled (`StopSlimeRain`
-        // at <= 0, `Main.cs:64788-64800`); the roll runs while the morning
-        // sun lasts — `!raining`, no invasion, `dayTime && time < 27000`:
-        // `Next(450000/dayRate)` — halved before the first King, x1.5
-        // hardmode after, x5 without a fight-ready player
-        // (`AnyPlayerReadyToFightKingSlime`: lifeMax > 140 && defense > 8,
-        // `Main.cs:65166-65174`); the classic requires ready (the
-        // `(flag3 || expertMode)` arm folds to ready).
-        // `Main.cs:64848-64863`: the slime-rain clock — the positive
-        // duration decays dayRate-scaled to the stop (`StopSlimeRain`), the
-        // negative cooldown climbs back to zero.
-        if world.slime_rain_time > 0.0 {
-            world.slime_rain_time -= day_rate as f64;
-            if world.slime_rain_time <= 0.0 {
-                // The expiry's `StopSlimeRain` runs inside `Main.UpdateTime`'s
-                // slime clock (`Main.cs:64853`) — the `UpdateTime` stream.
-                stop_slime_rain(world, app.rngs.stream(crate::app::RngKey::UpdateTime));
-            }
-        } else if world.slime_rain_time < 0.0 {
-            world.slime_rain_time += day_rate as f64;
-            if world.slime_rain_time > 0.0 {
-                world.slime_rain_time = 0.0;
-            }
-        }
-        // `Main.cs:64925`'s gate: `!Main.raining && !NPC.BusyWithAnyInvasionOfSorts()`
+        // (5) The Slime Rain morning roll (`Main.cs:64925-64949`). W4-f39
+        // (folded, final phase): the roll lives INSIDE the `:64890` else-if
+        // arm — it runs only when the tick entered NOT raining
+        // (`was_raining`), with no slime rain up and no lantern night (live
+        // or next), under the same `:64846` surface gate as the clock above
+        // (which ran BEFORE the rain section). The C# ladder picks its arm
+        // once: a rain that ended inside `Rain::update_time` this tick does
+        // NOT open the roll until the next tick. The roll's POSITION after
+        // the event walks is the port's recorded within-stream deviation —
+        // the entry samples keep the GATE values pre-update either way.
+        // `Main.cs:64925`'s own gate: `!Main.raining` (LIVE — a `StartRain`
+        // hit in the start arms closes it) `&& !NPC.BusyWithAnyInvasionOfSorts()`
         // (`NPC.cs:7022-7029` = `slimeRainTime == 0 && !bloodMoon && !eclipse
         // && !snowMoon && !pumpkinMoon && invasionType == 0 && !DD2Event.Ongoing`),
         // then `dayTime && time < 27000 && dayRate > 0`.
-        if !rain.is_raining()
+        if surface_ok
+            && !was_raining
+            && !slime_rain_entry
+            && !lanterns_up
+            && !next_night_lanterns
+            && !rain.is_raining()
             && world.slime_rain_time == 0.0
             && !world.blood_moon
             && !world.eclipse
@@ -283,19 +324,12 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
             && world.time < 27000.0
             && day_rate > 0
         {
-            let mut num3 = 450000.0 / (day_rate.max(1) as f64);
-            if !world.downed_slime_king {
-                num3 /= 2.0;
-            } else if world.hard_mode {
-                num3 *= 1.5;
-            }
+            // `AnyPlayerReadyToFightKingSlime` (`Main.cs:65166-65176`):
+            // `statLifeMax > 140 && statDefense > 8` — both EXCLUSIVE.
             let ready = app
                 .player
                 .as_ref()
                 .is_some_and(|p| p.max_hp > 140 && p.stat_defense > 8);
-            if !ready {
-                num3 *= 5.0;
-            }
             // The roll + `StartSlimeRain` ride `UpdateTime` (`Main.cs:64945`
             // inside the rain section of `Main.UpdateTime`). `StartSlimeRain`
             // re-checks the rain/gate arms itself (`:64744-64768`).
@@ -487,9 +521,12 @@ pub(crate) fn start_slime_rain(
     if world.slime_rain {
         return false;
     }
-    // `Main.remixWorld || !Main.isThereAWorldSurface` (`:64744`): the port has
-    // no remix worldgen, so only a world without a surface refuses.
-    if world.world_surface <= 0.0 {
+    // `Main.remixWorld || !Main.isThereAWorldSurface` (`:64744`): W4-f39
+    // (folded, final phase) — the remix seed refuses outright, and
+    // `isThereAWorldSurface` is `worldSurface > 50.0` (`Main.cs:2788`),
+    // EXCLUSIVE — the earlier `<= 0.0` check let a 1..50-tile surface
+    // through.
+    if world.seeds.contains(tr_core::seeds::SeedFlags::REMIX) || world.world_surface <= 50.0 {
         return false;
     }
     if raining {
@@ -1610,6 +1647,140 @@ mod tests {
             world.slime_rain_time, 40000.0,
             "a positive clock is not re-rolled"
         );
+    }
+
+    /// W4-f39 (folded, final phase) — `StartSlimeRain`'s `:64744` gate
+    /// fixes: the REMIX seed refuses outright (the port HAS the flag,
+    /// `World.seeds`), and `isThereAWorldSurface` is EXCLUSIVE
+    /// `worldSurface > 50.0` (`Main.cs:2788`) — a 1..50-tile surface
+    /// refuses too (the earlier `<= 0.0` check let it through).
+    #[test]
+    fn the_f39_start_slime_rain_remix_and_surface_gate() {
+        let mut world = tr_core::World::new("t".into(), 64, 64);
+        let mut rng = UnifiedRandom::new(7);
+        // The exclusive surface boundary: 50.0 refuses, 50.1 passes.
+        world.world_surface = 50.0;
+        let pristine = rng.clone();
+        assert!(!super::start_slime_rain(&mut world, false, &mut rng));
+        assert_eq!(rng, pristine, "the gate draws nothing");
+        world.world_surface = 50.1;
+        assert!(super::start_slime_rain(&mut world, false, &mut rng));
+        // The remix refusal — draw-free, even with a valid surface.
+        let mut remix = tr_core::World::new("r".into(), 64, 64);
+        remix.world_surface = 200.0;
+        remix.seeds |= tr_core::seeds::SeedFlags::REMIX;
+        let mut rng2 = UnifiedRandom::new(7);
+        let pristine2 = rng2.clone();
+        assert!(!super::start_slime_rain(&mut remix, false, &mut rng2));
+        assert!(!remix.slime_rain);
+        assert_eq!(rng2, pristine2, "the remix gate draws nothing");
+    }
+
+    /// W4-f39 (folded, final phase) — the `:64846` surface gate wraps the
+    /// slime CLOCK: in a surface-less world (`worldSurface <= 50`, no
+    /// remix) the positive duration does NOT decay and the negative
+    /// cooldown does NOT climb — the pre-fold port decayed unconditionally.
+    #[test]
+    fn the_f39_surface_gate_wraps_the_slime_clock() {
+        let mut app = flow_app(None, vec![], vec![]);
+        // flow_app's 8x8 world has worldSurface 0 — surface-less.
+        app.world.slime_rain = true;
+        app.world.slime_rain_time = 100.0;
+        update_world_tick(&mut app, STEP);
+        assert_eq!(
+            app.world.slime_rain_time, 100.0,
+            "the clock freezes without a surface (`:64846`)"
+        );
+        assert!(app.world.slime_rain, "no expiry stop either");
+        app.world.slime_rain_time = -100.0;
+        update_world_tick(&mut app, STEP);
+        assert_eq!(app.world.slime_rain_time, -100.0, "the cooldown frozen too");
+        // With a surface the clock decays again (dayRate 1).
+        app.world.world_surface = 200.0;
+        app.world.slime_rain_time = 100.0;
+        update_world_tick(&mut app, STEP);
+        assert_eq!(app.world.slime_rain_time, 99.0, "the gated clock decays");
+    }
+
+    /// W4-f39 (folded, final phase) — the ladder samples its arm ONCE
+    /// (`Main.cs:64864`/`:64890`): a rain that EXPIRES inside
+    /// `Rain::update_time` this tick leaves the tick in the raining arm —
+    /// the slime morning roll stays closed until the NEXT tick, even with
+    /// a fire-seeded `UpdateTime` stream and every other gate open.
+    #[test]
+    fn the_f39_expiring_rain_does_not_open_the_slime_roll_this_tick() {
+        // A seed whose FIRST UpdateTime draw hits Next(450000) — the
+        // morning roll would fire if the gate let it run.
+        let fire = (1..2_000_000i32)
+            .find(|&s| UnifiedRandom::new(s).next_max(450_000) == 0)
+            .expect("a 450000 seed exists");
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world.world_surface = 200.0;
+        app.world.day_time = true;
+        app.world.time = 1000.0;
+        app.world.downed_slime_king = true; // num3 = 450000 at dayRate 1
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 200;
+        player.stat_defense = 10; // fight-ready
+        app.player = Some(player);
+        *app.rngs.stream(crate::app::RngKey::UpdateTime) = UnifiedRandom::new(fire);
+        // The rain expires THIS tick: rainTime 1 → 0 → StopRain.
+        app.rain = Rain::with_forced(9, None, false);
+        app.rain.restore_saved(true, 1, 0.8);
+        update_world_tick(&mut app, STEP);
+        assert!(!app.rain.is_raining(), "the rain expired");
+        assert!(
+            !app.world.slime_rain,
+            "the roll stayed closed — the tick entered RAINING (`:64864`)"
+        );
+        // The stream is untouched by the roll (the expiry's StopRain draws
+        // nothing on UpdateTime; the strength roll never ran).
+        // NEXT tick: not raining at entry, the same stream fires the roll.
+        update_world_tick(&mut app, STEP);
+        assert!(app.world.slime_rain, "the next tick's roll fires");
+        assert!(app.world.slime_rain_time > 0.0, "the duration armed");
+    }
+
+    /// W4-f39 (folded, final phase) — the rain→slime-rain EVENT gate: a
+    /// live `Main.raining` closes the morning roll (`:64925`'s first term,
+    /// LIVE — and the `:64890` arm never runs while raining); a live
+    /// `slimeRain` closes the rain START arms in turn (`:64890`'s first
+    /// term). The two events are mutually exclusive through the ladder.
+    #[test]
+    fn the_f39_rain_and_slime_rain_are_mutually_exclusive() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world.world_surface = 200.0;
+        app.world.day_time = true;
+        app.world.time = 1000.0;
+        app.world.downed_slime_king = true;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 200;
+        player.stat_defense = 10;
+        app.player = Some(player);
+        // A live rain with a long clock: no slime start, however many ticks.
+        app.rain = Rain::with_forced(9, None, false);
+        app.rain.restore_saved(true, 86_400, 0.8);
+        for _ in 0..5 {
+            update_world_tick(&mut app, STEP);
+        }
+        assert!(!app.world.slime_rain, "the live rain blocks the slime roll");
+        // The reverse: a live slime rain closes the rain start arms — a
+        // fire-seeded Rain stream stays put (`:64890`'s !slimeRain term).
+        let fire = (1..8_000_000u64)
+            .find(|&s| {
+                let mut r = (s ^ 0x2545_F491_4F6C_DD1D).wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+                r = r.wrapping_add(0x9E37_79B9_7F4A_7C15);
+                let mut z = r;
+                z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+                z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+                (z ^ (z >> 31)) % 496_800 == 0
+            })
+            .expect("a fire seed exists");
+        app.rain = Rain::with_forced(fire, None, false);
+        app.world.slime_rain = true;
+        app.world.slime_rain_time = 40_000.0;
+        update_world_tick(&mut app, STEP);
+        assert!(!app.rain.is_raining(), "the live slime rain blocks the start arms");
     }
 
     /// S1-E-37: `Main.UpdateSlimeRainWarning` (`Main.cs:65504-65522`) — the

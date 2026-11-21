@@ -277,6 +277,62 @@ argument (the `21600 * (hardMode ? 2 : 3)` start denominator) — THIS branch
 keeps the two-arg pinned-`*3` shape; the merger takes c40's sim half
 wholesale (its five gaps), the zone gate here is already identical in both.
 
+## 6. Final-phase f39 slime-rain interplay fold (the rain→slime-rain chain)
+
+f39 (`task/W4-f39-weather-slimerain`, tip `f1a16877`) re-ported the
+`UpdateTime` slots around the rain section. Its UpdateTime-side fixes,
+verified against `Main.cs:64833-64951` and folded into THIS branch's tick
+(the f39 branch keeps its own sky-fall/kill-counter lanes — outside this
+fold):
+
+* **The `:64846` surface gate wraps the slime clock + roll.**
+  `isThereAWorldSurface` = `worldSurface > 50.0` (`Main.cs:2788`),
+  EXCLUSIVE. The pre-fold port decayed the slime clock in a surface-less
+  world; the gate now wraps the clock and the morning roll
+  (`Rain::update_time` carries its own copy).
+* **The clock decays BEFORE the rain section** (`:64848-64863` ahead of
+  `:64864`) — the expiry's `StopSlimeRain` draw precedes the rain
+  section's draws on `UpdateTime`. The pre-fold port ran the clock after
+  the sandstorm walk.
+* **The ladder samples its arm ONCE.** `was_raining`/`slime_rain`/
+  `lanterns_up`/`next_night_lanterns` sampled at the branch entry — a
+  rain that expires INSIDE `update_time` does not open the start arms or
+  the slime roll until the next tick; the lantern statics are read before
+  `LanternNight.UpdateTime` (`:64965`) can move them. The roll's live
+  `!Main.raining` term still closes it when a start arm fired.
+* **The lantern arms.** `:64868-64871`'s `LanternsUp → StopRain()` (no
+  drain, no strength roll) inside the raining branch; `:64890`'s
+  `!slimeRain && !LanternsUp && !NextNightIsLanternNight` gate on the
+  start arms — the pre-fold `update_time` folded all three to false. The
+  signature gains the three sampled flags (f39's shape).
+* **`StartSlimeRain`'s `:64744` gate**: the REMIX seed refuses outright
+  (`World.seeds`), and the surface check moves from `<= 0.0` to the
+  exclusive `<= 50.0`.
+
+The mutual-exclusion chain, verified end-to-end: a live `Main.raining`
+closes the slime morning roll (`:64925`'s first term + the `:64890` arm
+never runs while raining); a live `slimeRain` closes the rain start arms
+(`:64890`'s first term). `slimeRainTime != 0` additionally closes the roll
+through `BusyWithAnyInvasionOfSorts` (`NPC.cs:7024`). The roll's position
+after the event walks is the port's recorded within-stream deviation (the
+entry samples keep the GATE values pre-update either way; the C# runs the
+roll before the walks — the `UpdateTime` draws of the cultist/party/
+lantern walks are RNG-free in the port, so the stream order is unchanged).
+
+NOT folded (f39's own lanes, no overlap with this branch): the sky-fall
+`SlimeRainSpawns` re-port (`NPC.cs:5892-5955`), the per-death kill-counter
+gate (`NPC.cs:79082`), the menu-return `StopSlimeRain` (`Main.cs:48216`).
+The merger keeps f39's bodies for those; this branch's tick now matches
+f39's UpdateTime shape so the two merge without a semantic conflict.
+
+Witnesses (WRITTEN NOT RUN): the lanterns-up stop arm (draw-free), the
+`:64890` three-flag gate (fire-seeded control + each flag draw-free), the
+remix/exclusive-surface `StartSlimeRain` gate, the surface-gated clock
+(frozen surface-less, decays with a surface), the expiring-rain roll
+closure (the fire-seeded UpdateTime stream stays put this tick, fires the
+next), the mutual-exclusion pair (live rain blocks the slime roll; live
+slime rain blocks the fire-seeded start arms).
+
 ## Verification
 
 Code-only mode (per the task brief): no cargo/tests/graphify run. The fix was
