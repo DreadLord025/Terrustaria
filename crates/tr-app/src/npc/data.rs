@@ -651,6 +651,8 @@ impl NpcKind {
             NpcKind::Grubby => 485,
             NpcKind::Sluggy => 486,
             NpcKind::Buggy => 487,
+            // W4-d40: TargetDummy keep their vanilla ids (free in the protocol space).
+            NpcKind::TargetDummy => 488,
             NpcKind::WyvernTail => 228,
         }
     }
@@ -1047,6 +1049,8 @@ impl NpcKind {
             485 => NpcKind::Grubby,
             486 => NpcKind::Sluggy,
             487 => NpcKind::Buggy,
+            // W4-d40: the vanilla ids (`to_u16` above).
+            488 => NpcKind::TargetDummy,
             228 => NpcKind::WyvernTail,
             _ => return None,
         })
@@ -1989,6 +1993,8 @@ impl NpcKind {
             | NpcKind::Grubby
             | NpcKind::Sluggy
             | NpcKind::Buggy => "NPC_Hit_1",
+            // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
+            NpcKind::TargetDummy => "NPC_Hit_15",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2359,6 +2365,8 @@ impl NpcKind {
             | NpcKind::Grubby
             | NpcKind::Sluggy
             | NpcKind::Buggy => "NPC_Killed_1",
+            // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
+            NpcKind::TargetDummy => "NPC_Killed_2",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2802,6 +2810,8 @@ impl NpcKind {
             | NpcKind::Grubby
             | NpcKind::Sluggy
             | NpcKind::Buggy => 66,
+            // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
+            NpcKind::TargetDummy => 92,
             NpcKind::DungeonSpirit => 56,
         }
     }
@@ -3398,6 +3408,8 @@ impl NpcKind {
             | NpcKind::Grubby
             | NpcKind::Sluggy
             | NpcKind::Buggy => (10.0, 4.0),
+            // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
+            NpcKind::TargetDummy => (18.0, 40.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
         }
     }
@@ -3484,6 +3496,9 @@ impl NpcKind {
             // W4-d40: hand rows for the kinds with no bestiary entry
             // (the Hide=true exclusions with no credit-fold).
             NpcKind::BoneThrowingSkeleton4 => 452,
+            // W4-d40: hand rows for the kinds with no bestiary entry
+            // (the Hide=true exclusions with no credit-fold).
+            NpcKind::TargetDummy => 488,
             NpcKind::Goldfish => 55,
             NpcKind::Piranha => 58,
             NpcKind::Shark => 65,
@@ -4112,6 +4127,8 @@ impl NpcKind {
             NpcKind::Grubby => 5,
             NpcKind::Sluggy => 5,
             NpcKind::Buggy => 5,
+            // W4-d40: the SetDefaults lifeMax rows (`NPC.cs`).
+            NpcKind::TargetDummy => 1000,
             NpcKind::DungeonSpirit => 200,
         }
     }
@@ -4542,6 +4559,8 @@ impl NpcKind {
             NpcKind::Grubby => 0,
             NpcKind::Sluggy => 0,
             NpcKind::Buggy => 0,
+            // W4-d40: the SetDefaults damage rows (`NPC.cs`).
+            NpcKind::TargetDummy => 0,
             NpcKind::DungeonSpirit => 70,
         }
     }

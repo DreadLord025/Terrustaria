@@ -1086,6 +1086,10 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    // W4-d40 (NPCID 421-490 roster wave): TargetDummy.
+    /// `NPCID.TargetDummy` (488): 18x40, aiStyle 92, dmg 0, def 0, 1000 HP,
+    /// kb 0.0, value 0 (`NPC.cs` SetDefaults arm).
+    TargetDummy,
     // W4-d40 (NPCID 421-490 roster wave): GraniteFlyer, EnchantedNightcrawler, Grubby, Sluggy, Buggy.
     /// `NPCID.GraniteFlyer` (483): 20x30, aiStyle 91, dmg 24, def 8, 40 HP,
     /// kb 0.6, value 1000 (`NPC.cs` SetDefaults arm).
@@ -3221,7 +3225,8 @@ impl Npc {
             // Sleeping Angler's own arm (`:13798`).
             // W4-d40: the `chaseable = false` SetDefaults rows (`NPC.cs:14193`/`:14210`/`:14245`).
             chaseable: !matches!(kind, NpcKind::CultistTablet | NpcKind::CultistDevote | NpcKind::CultistBossClone),
-            immortal: false,
+            // W4-d40: the `immortal = true` SetDefaults row (`NPC.cs:14602`).
+            immortal: matches!(kind, NpcKind::TargetDummy),
             friendly: kind.is_town_resident()
                 || kind == NpcKind::SleepingAngler
                 // `NPC.SetDefaults`' catchable arm (`NPC.cs:17851-17855`):
@@ -3795,6 +3800,8 @@ impl Npc {
             NpcKind::Grubby => 1.0,
             NpcKind::Sluggy => 1.0,
             NpcKind::Buggy => 1.0,
+            // W4-d40: the SetDefaults knockBackResist rows (`NPC.cs`).
+            NpcKind::TargetDummy => 0.0,
             NpcKind::DungeonSpirit => 0.2,
             _ => 0.4,
         }
@@ -4241,6 +4248,8 @@ impl Npc {
             NpcKind::Grubby => 0,
             NpcKind::Sluggy => 0,
             NpcKind::Buggy => 0,
+            // W4-d40: the SetDefaults defense rows (`NPC.cs`).
+            NpcKind::TargetDummy => 0,
             NpcKind::DungeonSpirit => 30,
             NpcKind::Slime => unreachable!(),
         }
@@ -4679,6 +4688,8 @@ impl Npc {
             NpcKind::Grubby => 0.0,
             NpcKind::Sluggy => 0.0,
             NpcKind::Buggy => 0.0,
+            // W4-d40: the SetDefaults value rows (`NPC.cs`).
+            NpcKind::TargetDummy => 0.0,
             NpcKind::DungeonSpirit => 500.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -6769,6 +6780,9 @@ impl Npc {
             | NpcKind::Grubby
             | NpcKind::Sluggy
             | NpcKind::Buggy => {}
+            // W4-d40: TargetDummy - the aiStyle machine is UNWIRED
+            // (the style73 precedent); the kind arm keeps the match exhaustive.
+            NpcKind::TargetDummy => {}
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
@@ -9956,6 +9970,9 @@ impl Npc {
             | NpcKind::Grubby
             | NpcKind::Sluggy
             | NpcKind::Buggy => {
+                self.frame = 0;
+            }
+            NpcKind::TargetDummy => {
                 self.frame = 0;
             }
             NpcKind::DukeFishron => {
@@ -19646,6 +19663,8 @@ impl Npc {
             NpcKind::Grubby => 485,
             NpcKind::Sluggy => 486,
             NpcKind::Buggy => 487,
+            // W4-d40: the vanilla type ids (the G6 key stays injective).
+            NpcKind::TargetDummy => 488,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -24715,7 +24734,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 325] = [
+    pub(super) const ALL_KINDS: [NpcKind; 326] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24994,6 +25013,8 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-d40: TargetDummy.
+        NpcKind::TargetDummy,
         // W4-d40: GraniteFlyer, EnchantedNightcrawler, Grubby, Sluggy, Buggy.
         NpcKind::GraniteFlyer,
         NpcKind::EnchantedNightcrawler,
@@ -28671,7 +28692,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            325,
+            326,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
@@ -35361,5 +35382,42 @@ mod w4_d40_graniteflyer_enchantednightcrawler_tests {
         assert!(Npc::new(NpcKind::Grubby, 0.0, 0.0, 1, 0.0).friendly);
         assert!(Npc::new(NpcKind::Sluggy, 0.0, 0.0, 1, 0.0).friendly);
         assert!(Npc::new(NpcKind::Buggy, 0.0, 0.0, 1, 0.0).friendly);
+    }
+}
+
+/// W4-d40 (NPCID 421-490 roster wave): the TargetDummy
+/// `SetDefaults` rows pin against the C# through the port's piecewise
+/// tables (the small-kinds pin's shape). WRITTEN, NOT RUN (code-only).
+#[cfg(test)]
+mod w4_d40_targetdummy_tests {
+    use super::*;
+
+    #[test]
+    fn w4_d40_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::TargetDummy, 488u16, 92u8, 18.0, 40.0, 0, 0, 1000, 0.0f32, 0.0),
+        ];
+        for (kind, ty, ai, ww, hh, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (ww, hh), "{kind:?} size");
+            assert_eq!(shell.size(), (ww, hh), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+        }
+        // The HitSound/DeathSound rows (`NPC.cs` SetDefaults).
+        assert_eq!(NpcKind::TargetDummy.hit_sound(), Some("NPC_Hit_15"));
+        assert_eq!(NpcKind::TargetDummy.death_sound(), Some("NPC_Killed_2"));
+        // The protocol ids keep their vanilla slots (free in the space).
+        assert_eq!(NpcKind::TargetDummy.to_u16(), 488);
+        assert_eq!(NpcKind::from_u16(488), Some(NpcKind::TargetDummy));
+        // The bestiary credits (own entry or the credit-fold).
+        assert!(Npc::new(NpcKind::TargetDummy, 0.0, 0.0, 1, 0.0).immortal);
     }
 }
