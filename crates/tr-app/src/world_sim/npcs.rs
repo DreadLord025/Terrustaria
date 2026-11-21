@@ -5222,6 +5222,35 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
     }
+    // `NPC.DropEoWLoot` (`NPC.cs:78414-78430`, called from `checkDead`
+    // `:78195-78198` BEFORE `NPCLoot`/`CountKillForAchievements`): the LAST
+    // EoW segment alive sets `boss = true` — the scan skips the dying NPC
+    // itself (`i != whoAmI`) and every OTHER active 13/14/15. The port's
+    // death batch already removed every dead segment from `app.npcs`, so the
+    // "no other segment alive" test reads the survivors plus the OTHER dead
+    // clones this tick (the C# sees them active until their own checkDead).
+    // The latch rides the dead clone's `boss` flag, which the achievement
+    // gate below reads (`CountKillForAchievements`'s `if (this.boss)`).
+    let eow_kinds = |k: NpcKind| {
+        matches!(
+            k,
+            NpcKind::EaterOfWorldsHead | NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail
+        )
+    };
+    let mut dead: Vec<Npc> = dead;
+    for i in 0..dead.len() {
+        if !eow_kinds(dead[i].kind) {
+            continue;
+        }
+        let other_alive = app.npcs.iter().any(|n| n.hp > 0 && eow_kinds(n.kind))
+            || dead
+                .iter()
+                .enumerate()
+                .any(|(j, n)| j != i && eow_kinds(n.kind));
+        if !other_alive {
+            dead[i].boss = true;
+        }
+    }
     for npc in &dead {
         // `Main.BestiaryTracker.Kills.RegisterKill` at the death's NPCLoot
         // (`NPC.cs:78835-78847`); the `GetWereThereAnyInteractions` gate is
@@ -5239,17 +5268,68 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // `AchievementsHelper.TryGrantingBestiary100PercentAchievement` (`AchievementsHelper.cs:81-84`):
         // when the bestiary completion reaches 100%, fire progression event 29 (BOOK_WORM).
         let _ = app.try_grant_bestiary_100_net();
-        // `AchievementsHelper.NotifyNPCKilled` (`AchievementsHelper.cs:200-217`):
-        // the process whose player interacted gets the credit locally
-        // (`:202-208`, and in MP the host's own `97` loops back through its
-        // player slot, `:210-216`); a host additionally fans `97` out to every
-        // other interactor.
-        if npc.player_interaction[app.local_id as usize] {
-            let _ = app
+        // `NPC.CountKillForAchievements` (`NPC.cs:79833-79862`) — the
+        // achievement credit + the MechaMayhem machine, per the C# switch:
+        //   125/126 (the Twins): credit + mayhem ONLY when the OTHER eye is
+        //     already gone (`!AnyNPCs(other)`, `:79839`);
+        //   127/134 (Prime/Destroyer): mayhem FIRST, then credit (`:79847-79848`);
+        //   13/14/15 (the EoW family): credit only when `boss` (`:79853`);
+        //   default: credit (`:79859`).
+        // `NotifyNPCKilled` (`AchievementsHelper.cs:200-217`): the process
+        // whose player interacted gets the local credit (`:202-208`); a host
+        // additionally fans `97` out to every interactor (`:210-216`). The
+        // dying NPC is already out of `app.npcs` (the retain above), so the
+        // `AnyNPCs` scans read the surviving roster, like the C#.
+        let net_id = entry.net_id;
+        let notify_kill = |app: &mut App| {
+            if npc.player_interaction[app.local_id as usize] {
+                let _ = app
+                    .achievements
+                    .notify(achievements::CondKind::NpcKilled(net_id));
+            }
+            app.send_npc_killed(npc, net_id as i16);
+        };
+        let any_npcs = |app: &App, id: i32| {
+            app.npcs.iter().any(|n| n.hp > 0 && n.kind.net_id() == id)
+        };
+        let mayhem_kill = |app: &mut App| {
+            // Snapshot the living roster's net ids BEFORE the mutable borrow
+            // of `app.achievements` (the `AnyNPCs` predicate reads them; the
+            // dying NPC is already out of the list).
+            let alive: Vec<i32> = app
+                .npcs
+                .iter()
+                .filter(|n| n.hp > 0)
+                .map(|n| n.kind.net_id())
+                .collect();
+            if app
                 .achievements
-                .notify(achievements::CondKind::NpcKilled(entry.net_id));
+                .mecha_mayhem_kill(net_id, |id| alive.contains(&id))
+            {
+                // `MechaMayhem_Kill`'s tail fires progression 21 (MECHA_MAYHEM)
+                // through `NotifyProgressionEvent` (`AchievementsHelper.cs:480`).
+                let _ = app.notify_progression_net(21);
+            }
+        };
+        match net_id {
+            125 | 126 => {
+                let other = if net_id == 126 { 125 } else { 126 };
+                if !any_npcs(app, other) {
+                    notify_kill(app);
+                    mayhem_kill(app);
+                }
+            }
+            127 | 134 => {
+                mayhem_kill(app);
+                notify_kill(app);
+            }
+            13 | 14 | 15 => {
+                if npc.boss {
+                    notify_kill(app);
+                }
+            }
+            _ => notify_kill(app),
         }
-        app.send_npc_killed(npc, entry.net_id as i16);
         // `NPC.CountKillForBannersAndDropThem` (`NPC.cs:79818-79827`) →
         // `BannerSystem.AddNPCKillBy` (M2-BUFF-8): the milestone spawns the
         // banner item at the death spot and announces the tally in the
@@ -8084,6 +8164,86 @@ mod tests {
             "endlessHalloween drops the Goodie Bag"
         );
         assert!(xmas.contains(&1869), "endlessChristmas drops the Present");
+    }
+
+    /// W4-f30 — the death path's `CountKillForAchievements` Twins gate
+    /// (`NPC.cs:79839`): the credit + mayhem fire only when the OTHER eye is
+    /// already gone. The gate is the `!AnyNPCs(other)` scan over the living
+    /// roster (the dying eye is already out of `app.npcs` after the retain).
+    /// This witnesses the scan predicate the death arm reads, deterministically
+    /// (the full `update_npcs` boss AI is out of scope — the machine itself is
+    /// witnessed in `achievements.rs`).
+    #[test]
+    fn f30_the_twins_kill_gate_reads_the_other_eye() {
+        let any = |npcs: &[Npc], id: i32| npcs.iter().any(|n| n.hp > 0 && n.kind.net_id() == id);
+        let mut ret = Npc::new(NpcKind::Retinazer, 0.0, 0.0, 1, 0.0);
+        ret.hp = ret.max_hp;
+        let mut spaz = Npc::new(NpcKind::Spazmatism, 0.0, 0.0, 1, 0.0);
+        spaz.hp = spaz.max_hp;
+        // Both eyes alive: killing Retinazer (125) is gated — Spazmatism (126)
+        // still lives, so `!AnyNPCs(126)` is false.
+        let both = vec![ret.clone(), spaz.clone()];
+        assert!(any(&both, 126), "the other eye lives — the gate holds");
+        // The other eye gone: the gate opens.
+        spaz.hp = 0;
+        let one = vec![ret.clone(), spaz.clone()];
+        assert!(!any(&one, 126), "the other eye is gone — the gate opens");
+        // And the machine fires 21 on that last-eye kill once the run is armed
+        // and the other two families already fell.
+        let mut m = crate::achievements::AchievementManager::registry();
+        m.mecha_mayhem_start([127, 134, 125, 126].into_iter());
+        m.mecha_mayhem_kill(134, |id| [127, 125, 126].contains(&id));
+        m.mecha_mayhem_kill(127, |id| [125, 126].contains(&id));
+        assert!(m.mecha_mayhem_kill(125, |id| any(&one, id)), "the last eye fires 21");
+    }
+
+    /// W4-f30 — `NPC.DropEoWLoot`'s last-segment boss latch (`NPC.cs:78414-78430`):
+    /// the EoW achievement credit (`CountKillForAchievements`'s `if (this.boss)`,
+    /// `:79853`) fires only for the LAST segment. The latch sets `boss = true`
+    /// when no OTHER 13/14/15 is alive (the dying segment itself excluded, the
+    /// `i != whoAmI` term). This mirrors the death pass's scan over the dead
+    /// clones + the surviving roster.
+    #[test]
+    fn f30_the_eow_boss_latch_fires_only_for_the_last_segment() {
+        let eow = |k: NpcKind| {
+            matches!(
+                k,
+                NpcKind::EaterOfWorldsHead | NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail
+            )
+        };
+        let mut head = Npc::new(NpcKind::EaterOfWorldsHead, 0.0, 0.0, 1, 0.0);
+        head.hp = head.max_hp;
+        let mut body = Npc::new(NpcKind::EaterOfWorldsBody, 0.0, 0.0, 1, 0.0);
+        body.hp = body.max_hp;
+        // The death pass's latch: for each dead EoW clone at index i, no OTHER
+        // dead clone (j != i) and no living roster EoW means it is the last.
+        let latch = |dead: &[Npc], alive: &[Npc]| -> Vec<bool> {
+            (0..dead.len())
+                .map(|i| {
+                    if !eow(dead[i].kind) {
+                        return false;
+                    }
+                    let other = alive.iter().any(|n| n.hp > 0 && eow(n.kind))
+                        || dead.iter().enumerate().any(|(j, n)| j != i && eow(n.kind));
+                    !other
+                })
+                .collect()
+        };
+        // Both segments die this tick: neither is the last (each sees the other
+        // dead clone), so neither latches — the C# sees them active in turn.
+        head.hp = 0;
+        body.hp = 0;
+        let dead = vec![head.clone(), body.clone()];
+        assert_eq!(latch(&dead, &[]), vec![false, false], "two simultaneous deaths latch neither");
+        // The body died earlier (out of the batch); the head dies alone now —
+        // it is the last segment, so it latches.
+        let dead = vec![head.clone()];
+        assert_eq!(latch(&dead, &[]), vec![true], "the lone last segment latches");
+        // A living sibling keeps the latch off.
+        body.hp = body.max_hp;
+        let dead = vec![head.clone()];
+        assert_eq!(latch(&dead, &[body.clone()]), vec![false], "a living sibling holds the latch");
+        assert!(!head.boss, "Npc::new does not set the boss flag — the death pass does");
     }
 
     #[cfg(test)]

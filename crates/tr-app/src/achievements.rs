@@ -289,6 +289,25 @@ enum NotifyAmount {
     Float(f32),
 }
 
+/// `AchievementsHelper`'s MechaMayhem statics (`AchievementsHelper.cs:19-25`):
+/// `mayhemOK` + the three `mayhemNdown` latches. The machine grants
+/// MECHA_MAYHEM (progression 21) when all three mechanical bosses fall while
+/// all three were present at the last spawn (`MechaMayhem_Start`). The C#
+/// keeps these as `AchievementsHelper` statics; the port carries them on the
+/// manager so a fresh registry starts clean (the headless-test convention).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct MechaMayhem {
+    /// `mayhemOK` (`:19`): set by `MechaMayhem_Start` when Prime + Destroyer +
+    /// BOTH Twins are alive; cleared by a kill whose family is already gone.
+    pub ok: bool,
+    /// `mayhem1down` (`:21`): a Twin (125/126) fell while the run was live.
+    pub twins_down: bool,
+    /// `mayhem2down` (`:23`): the Destroyer (134) fell while the run was live.
+    pub destroyer_down: bool,
+    /// `mayhem3down` (`:25`): Skeletron Prime (127) fell while the run was live.
+    pub prime_down: bool,
+}
+
 /// `AchievementManager`: the registry + the notification surface.
 #[derive(Clone, Debug, Default)]
 pub struct AchievementManager {
@@ -306,6 +325,9 @@ pub struct AchievementManager {
     /// the queue into the notification tracker + the chat/sound subscriber
     /// (`App::drain_achievement_completions`).
     pub completed_events: Vec<&'static str>,
+    /// `AchievementsHelper`'s MechaMayhem statics (`AchievementsHelper.cs:19-25`)
+    /// — the MECHA_MAYHEM (progression 21) run state, see [`MechaMayhem`].
+    pub mecha_mayhem: MechaMayhem,
 }
 
 impl AchievementManager {
@@ -321,6 +343,7 @@ impl AchievementManager {
                 .collect(),
             save_path: None,
             completed_events: Vec::new(),
+            mecha_mayhem: MechaMayhem::default(),
         }
     }
 
@@ -457,6 +480,86 @@ impl AchievementManager {
     /// crafted item rather than on any craft.
     pub fn notify_craft(&mut self, item: u16) -> Option<&'static str> {
         self.notify(CondKind::ItemCraft(item))
+    }
+
+    /// `AchievementsHelper.ScanForMechs` (`AchievementsHelper.cs:485-504`):
+    /// scans the active roster for Skeletron Prime (127), the Destroyer (134)
+    /// and BOTH Twins (125 AND 126). `active_net_ids` yields the net id of
+    /// every living NPC, in slot order (the C# walks `Main.npc[0..maxNPCs]`).
+    fn scan_for_mechs(active_net_ids: impl Iterator<Item = i32>) -> (bool, bool, bool) {
+        let mut prime = false;
+        let mut destroyer = false;
+        let mut twin_126 = false;
+        let mut twin_125 = false;
+        for id in active_net_ids {
+            prime |= id == 127;
+            destroyer |= id == 134;
+            twin_126 |= id == 126; // `flag |= type == 126` (`:499`)
+            twin_125 |= id == 125; // `flag2 |= type == 125` (`:500`)
+        }
+        (prime, destroyer, twin_126 && twin_125)
+    }
+
+    /// `AchievementsHelper.MechaMayhem_Clear` (`AchievementsHelper.cs:430-439`):
+    /// called from `NPC.SpawnBoss` BEFORE a mech spawns (`NPC.cs:80664-80668`).
+    /// When NO mech family is alive the three down-latches reset (a fresh run).
+    pub fn mecha_mayhem_clear(&mut self, active_net_ids: impl Iterator<Item = i32>) {
+        let (prime, destroyer, twins) = Self::scan_for_mechs(active_net_ids);
+        if !(prime | destroyer | twins) {
+            self.mecha_mayhem.twins_down = false;
+            self.mecha_mayhem.destroyer_down = false;
+            self.mecha_mayhem.prime_down = false;
+        }
+    }
+
+    /// `AchievementsHelper.MechaMayhem_Start` (`AchievementsHelper.cs:441-445`):
+    /// called from `NPC.SpawnBoss` AFTER a mech spawns (`NPC.cs:80682-80685`).
+    /// `mayhemOK` arms only when Prime + Destroyer + BOTH Twins are all alive.
+    pub fn mecha_mayhem_start(&mut self, active_net_ids: impl Iterator<Item = i32>) {
+        let (prime, destroyer, twins) = Self::scan_for_mechs(active_net_ids);
+        self.mecha_mayhem.ok = prime & destroyer & twins;
+    }
+
+    /// `AchievementsHelper.MechaMayhem_Kill` (`AchievementsHelper.cs:447-483`):
+    /// called from `NPC.CountKillForAchievements` on a mech death
+    /// (`NPC.cs:79842`/`:79847`). `just_killed` is the dead NPC's net id;
+    /// `any_npcs` answers `NPC.AnyNPCs(id)` over the living roster (the dying
+    /// NPC is already out). Returns whether progression 21 (MECHA_MAYHEM)
+    /// fires — the caller routes it through `notify_progression_net`.
+    pub fn mecha_mayhem_kill(
+        &mut self,
+        just_killed: i32,
+        any_npcs: impl Fn(i32) -> bool,
+    ) -> bool {
+        if !self.mecha_mayhem.ok {
+            return false;
+        }
+        // `:451-459` — the Twins: a Twin kill latches; else if BOTH eyes are
+        // gone and the latch never fired, the run aborts.
+        if just_killed == 125 || just_killed == 126 {
+            self.mecha_mayhem.twins_down = true;
+        } else if !any_npcs(125) && !any_npcs(126) && !self.mecha_mayhem.twins_down {
+            self.mecha_mayhem.ok = false;
+            return false;
+        }
+        // `:460-468` — the Destroyer.
+        if just_killed == 134 {
+            self.mecha_mayhem.destroyer_down = true;
+        } else if !any_npcs(134) && !self.mecha_mayhem.destroyer_down {
+            self.mecha_mayhem.ok = false;
+            return false;
+        }
+        // `:469-477` — Skeletron Prime.
+        if just_killed == 127 {
+            self.mecha_mayhem.prime_down = true;
+        } else if !any_npcs(127) && !self.mecha_mayhem.prime_down {
+            self.mecha_mayhem.ok = false;
+            return false;
+        }
+        // `:478-481` — all three down: MECHA_MAYHEM.
+        self.mecha_mayhem.twins_down
+            && self.mecha_mayhem.destroyer_down
+            && self.mecha_mayhem.prime_down
     }
 
     /// `RegisterIconIndex`'s table (`:445-582`) by name.
@@ -939,5 +1042,83 @@ mod tests {
             false
         );
         crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    // ---- W4-f30: the MechaMayhem machine (progression 21) -----------------
+
+    /// `MechaMayhem_Start` arms `mayhemOK` only when Prime (127) + Destroyer
+    /// (134) + BOTH Twins (125 AND 126) are alive (`AchievementsHelper.cs:441-445`
+    /// + `ScanForMechs :485-504`). One missing family leaves it off.
+    #[test]
+    fn f30_mecha_mayhem_start_needs_all_three_families() {
+        let mut m = AchievementManager::registry();
+        m.mecha_mayhem_start([127, 134, 125, 126].into_iter());
+        assert!(m.mecha_mayhem.ok, "all four mechs alive arms the run");
+        // A single Twin is not the pair.
+        m.mecha_mayhem_start([127, 134, 125].into_iter());
+        assert!(!m.mecha_mayhem.ok, "one Twin short of the pair");
+        m.mecha_mayhem_start([127, 125, 126].into_iter());
+        assert!(!m.mecha_mayhem.ok, "no Destroyer");
+    }
+
+    /// `MechaMayhem_Clear` resets the three down-latches only when NO mech
+    /// family is alive (`AchievementsHelper.cs:430-439`).
+    #[test]
+    fn f30_mecha_mayhem_clear_resets_only_when_empty() {
+        let mut m = AchievementManager::registry();
+        m.mecha_mayhem.twins_down = true;
+        m.mecha_mayhem.destroyer_down = true;
+        m.mecha_mayhem.prime_down = true;
+        // A live mech keeps the latches.
+        m.mecha_mayhem_clear([134].into_iter());
+        assert!(m.mecha_mayhem.twins_down && m.mecha_mayhem.destroyer_down && m.mecha_mayhem.prime_down);
+        // An empty roster resets all three.
+        m.mecha_mayhem_clear(std::iter::empty());
+        assert!(!m.mecha_mayhem.twins_down && !m.mecha_mayhem.destroyer_down && !m.mecha_mayhem.prime_down);
+    }
+
+    /// The full run: all three families up, then each falls in turn — the
+    /// third death fires progression 21 (`AchievementsHelper.cs:447-483`).
+    /// The Twins latch on the SECOND eye's death (the first eye's death still
+    /// sees the other alive, so `CountKillForAchievements` skips it — the
+    /// caller's gate; here the machine is fed the surviving roster).
+    #[test]
+    fn f30_mecha_mayhem_full_run_fires_21() {
+        let mut m = AchievementManager::registry();
+        m.mecha_mayhem_start([127, 134, 125, 126].into_iter());
+        assert!(m.mecha_mayhem.ok);
+        // The Destroyer falls (134); the Twins + Prime still alive.
+        assert!(!m.mecha_mayhem_kill(134, |id| [127, 125, 126].contains(&id)));
+        assert!(m.mecha_mayhem.destroyer_down);
+        // Prime falls (127); the Twins still alive.
+        assert!(!m.mecha_mayhem_kill(127, |id| [125, 126].contains(&id)));
+        assert!(m.mecha_mayhem.prime_down);
+        // The second Twin falls (126) with the first (125) already gone.
+        assert!(m.mecha_mayhem_kill(126, |_| false), "all three down fires 21");
+        assert!(m.mecha_mayhem.twins_down);
+    }
+
+    /// A family vanishing WITHOUT its kill latching aborts the run
+    /// (`AchievementsHelper.cs:455-458`/`:464-467`/`:473-476`): the Destroyer
+    /// despawns (no 134 alive, `mayhem2down` false) while a Twin dies — the
+    /// machine clears `mayhemOK` and never fires 21.
+    #[test]
+    fn f30_mecha_mayhem_abort_when_a_family_vanishes() {
+        let mut m = AchievementManager::registry();
+        m.mecha_mayhem_start([127, 134, 125, 126].into_iter());
+        // A Twin (125) dies, but the Destroyer is already gone (despawned).
+        assert!(!m.mecha_mayhem_kill(125, |id| [127, 126].contains(&id)));
+        assert!(!m.mecha_mayhem.ok, "the missing Destroyer aborts the run");
+        // Even a later Prime kill cannot fire 21 once the run aborted.
+        assert!(!m.mecha_mayhem_kill(127, |_| false));
+    }
+
+    /// `mayhemOK` off (no Start, or a failed Start) — every kill is a no-op.
+    #[test]
+    fn f30_mecha_mayhem_inactive_run_never_fires() {
+        let mut m = AchievementManager::registry();
+        assert!(!m.mecha_mayhem_kill(134, |_| false));
+        assert!(!m.mecha_mayhem_kill(127, |_| false));
+        assert!(!m.mecha_mayhem_kill(126, |_| false));
     }
 }
