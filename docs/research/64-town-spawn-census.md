@@ -1,5 +1,19 @@
 # 64 — Town-spawn census (W4-f43, parallel to W4-c41)
 
+> **SPLICED (W4-f43b):** the "UNWIRED" status below is the census wave's
+> historical state. The wiring landed on this branch — research/352
+> (`352-pet-arrival-family-final.md`): the arrival gates ride
+> `town_arrival.rs`'s LADDER (21→32) + `condition_holds`, the exchange chain
+> dispatches from a6's `use_pet_license` else-arm through
+> `exchange_resident_pet`, the save flags widened (`.wld` + `.trwld` v18),
+> the g10 kinds merged (`5dee28650`). The "Port gaps the wiring lane must
+> close" section below is CLOSED except Santa 142 (no ported kind — d36)
+> and the unlock-source writers (the bound-slime transforms / King Slime
+> death / shimmer arms — their own lanes; the rainbow/red/shimmer flags
+> already had live writers). The RNG-slot table's "genRand NOT Main.rand"
+> reading is CORRECTED by 352: `WorldGen.genRand` aliases the active
+> `Main.rand` (`WorldGen.cs:4445`).
+
 Scope: `Main.UpdateTime_SpawnTownNPCs` (`Main.cs:65542-66116`) — the full
 canSpawn table + priority ladder, arm by arm — plus the unlock sources of the
 unclaimed arms. Code-only wave: ports WRITTEN NOT RUN, UNWIRED. The core

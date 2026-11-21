@@ -4881,6 +4881,45 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             .iter()
             .filter(|n| n.hp > 0 && n.kind.is_town_resident())
             .count() as i32;
+        // W4-f43b: the census-tail flags (`Main.cs:65795-65799` flag8 +
+        // `:65852-65956` the pet/slime/Santa/Princess arms). The season read
+        // is `Main.checkXMas` (`Main.cs:13118-13139`) over the local date —
+        // the C# reads `DateTime.Now` at the check; the port injects the
+        // same wall-clock date ONCE PER CHECK (the Party Girl's `party_roll`
+        // boundary above predicts the check tick, so no per-tick clock read
+        // enters the sim). The gate only feeds Santa 142, who has no ported
+        // kind yet. `forceXMasForever` is the endlessChristmas micro seed
+        // (`WorldGen.cs:572-578`, the loot flags' precedent).
+        let x_mas = if app.town_arrival.check_for_spawns + 1 >= 7200 {
+            let (day, month) = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| {
+                    let (_, m, day) =
+                        crate::ui::world_select::civil_from_days((d.as_secs() / 86_400) as i64);
+                    (day, m)
+                })
+                .unwrap_or((1, 1));
+            crate::town_arrival_pets::check_xmas(
+                day,
+                month,
+                false, // forceXMasForToday — unowned
+                app.world
+                    .micro_seeds
+                    .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS),
+            )
+        } else {
+            false
+        };
+        let tail = crate::town_arrival_pets::tail_flags_from_world(
+            &app.world,
+            app.world_events.genuine_party,
+            x_mas,
+        );
+        // flag9 (`Main.cs:65944-65952`) over the LIVE roster — the 24-type
+        // conjunction by vanilla id + the anniversary/unlock overrides.
+        let princess_flag9 = crate::town_arrival_pets::princess_flag9(&tail, &|t| {
+            crate::town_arrival_pets::resident_count_by_id(&app.npcs, t)
+        });
         let no_dyes: [crate::item::ItemSlot; 0] = [];
         let chosen = {
             let ctx = crate::town_arrival::ArrivalContext {
@@ -4890,6 +4929,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 max_hp,
                 party_roll,
                 residents,
+                tail,
+                princess_flag9,
             };
             // `WorldGen.IsThereASpawnablePrioritizedTownNPC`: every ladder arm
             // needs its room ready, and the port's rooms are found by the same
@@ -4928,6 +4969,22 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     } else if let Some(mut n) = Npc::spawn_town_at(&app.world, hx, hy, kind) {
                         // `WorldGen.cs:5564-5565`: the arrival writes its room.
                         n.home = Some((hx, hy));
+                        // W4-f43b: `NPC.NewNPC`'s
+                        // `GiveTownUniqueDataToNPCsThatNeedIt`
+                        // (`NPC.cs:80769` → `:80839-80856`) — the given
+                        // name + the profile variation roll (the license
+                        // pets' `Main.rand.Next(6)`, `Profiles.cs:216`) +
+                        // the variant name draw + the shimmer override.
+                        // The whole chain runs under the `UpdateTime` swap
+                        // here (`Main.cs:65153`), and `WorldGen.genRand`
+                        // aliases that same active `Main.rand`
+                        // (`WorldGen.cs:4445`) — ONE stream for both slots.
+                        let shimmered = app.shimmered_npcs.is_shimmered(kind.net_id());
+                        crate::town_arrival_pets::spawn_town_tail_unique_data(
+                            &mut n,
+                            shimmered,
+                            app.rngs.stream(RngKey::UpdateTime),
+                        );
                         app.npcs.push(n);
                         // `WorldGen.cs:5576`: the arrival fires NO_HOBO
                         // (progression 8) — the Truffle's IT_CAN_TALK (18,

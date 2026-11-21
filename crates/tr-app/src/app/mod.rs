@@ -3051,6 +3051,9 @@ impl App {
                     Some((rec.home_x, rec.home_y))
                 };
                 npc.given_name = rec.given_name.clone();
+                // W4-f43b: the v18 per-record variation byte restores the
+                // rolled variant (a pre-v18 record loads 0).
+                npc.variation_index = rec.variation_index;
                 npcs.push(npc);
             }
         }

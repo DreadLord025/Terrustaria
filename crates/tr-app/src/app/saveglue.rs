@@ -210,6 +210,10 @@ impl App {
                     homeless: n.home.is_none(),
                     home_x: n.home.map_or(-1, |(hx, _)| hx),
                     home_y: n.home.map_or(-1, |(_, hy)| hy),
+                    // W4-f43b: `SaveNPCs:1731`'s variation payload — the
+                    // license pets' rolled variant persists (the v18
+                    // per-record tail byte).
+                    variation_index: n.variation_index,
                 })
                 .collect();
             // `WorldGen.SavedOreTiers` (`WorldGen.cs:3283-3297`): the seven

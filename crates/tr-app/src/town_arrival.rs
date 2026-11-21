@@ -27,8 +27,13 @@ pub(crate) const NPCID_COUNT: usize = 697;
 
 /// The town kinds the port can actually place, in the exact order of the C#
 /// priority ladder (`Main.cs:65957-66116`). Every entry beyond the ladder's
-/// first few is only reachable once its own condition holds.
-pub(crate) const LADDER: [NpcKind; 21] = [
+/// first few is only reachable once its own condition holds. W4-f43b: the
+/// eleven g10 town-pet kinds join at the ladder's tail seats
+/// (`Main.cs:66066-66113` — Princess, Copper, Blue, Green, Old, Purple,
+/// RED, Yellow, RAINBOW, Bunny, Cat, Dog; the Red-before-Rainbow quirk is
+/// the C# order, NOT the canSpawn write order); Santa 142's seat
+/// (`:66042-66045`) stays closed — no ported Santa kind.
+pub(crate) const LADDER: [NpcKind; 32] = [
     NpcKind::Guide,
     NpcKind::Merchant,
     NpcKind::Nurse,
@@ -49,6 +54,18 @@ pub(crate) const LADDER: [NpcKind; 21] = [
     NpcKind::TaxCollector,
     NpcKind::Zoologist,
     NpcKind::Princess,
+    // `Main.cs:66070-66113` — the pet/slime tail (W4-f43b).
+    NpcKind::TownSlimeCopper,
+    NpcKind::TownSlimeBlue,
+    NpcKind::TownSlimeGreen,
+    NpcKind::TownSlimeOld,
+    NpcKind::TownSlimePurple,
+    NpcKind::TownSlimeRed,
+    NpcKind::TownSlimeYellow,
+    NpcKind::TownSlimeRainbow,
+    NpcKind::TownBunny,
+    NpcKind::TownCat,
+    NpcKind::TownDog,
     NpcKind::TravellingMerchant,
 ];
 
@@ -176,6 +193,17 @@ pub(crate) struct ArrivalContext<'a> {
     /// `num40` — the live town-resident total, the `>= 8` / `>= 20` terms the
     /// C# reads inline (`Main.cs:65929`, `:65785`).
     pub(crate) residents: i32,
+    /// W4-f43b: the census-tail flags (`town_arrival_pets::TailFlags`) — the
+    /// bought trio, the eight slime unlocks, flag8's GenuineParty term, the
+    /// season/anniversary overrides. The caller assembles them via
+    /// `tail_flags_from_world` (the party/season inputs live on the App).
+    pub(crate) tail: crate::town_arrival_pets::TailFlags,
+    /// W4-f43b: flag9 precomputed over the LIVE roster
+    /// (`town_arrival_pets::princess_flag9` with the by-id resident count) —
+    /// the 24-type conjunction needs the full vanilla-id walk the per-kind
+    /// `count` cannot give (unported types read 0, closing the roster term
+    /// exactly as the C# would with those residents absent).
+    pub(crate) princess_flag9: bool,
 }
 
 /// The `flag`/`flag2`… set of `Main.cs:65763-65799`, keyed by kind.
@@ -212,10 +240,26 @@ pub(crate) fn condition_holds(kind: NpcKind, ctx: &ArrivalContext<'_>) -> bool {
             (ctx.party_roll && ctx.residents >= 20) || w.unlocked_party_girl
         }
         NpcKind::Zoologist => false,
-        // `flag9`: every other town type resident (`:65944-65955`); the port
-        // ships the unlock flag, the roster term needs the full type set.
-        NpcKind::Princess => w.unlocked_princess,
+        // W4-f43b — flag9's full form (`Main.cs:65944-65952`): ALL 24
+        // roster types resident, OR the tenth-anniversary override (unless
+        // getGoodWorld), OR the debug unlock. The roster walks the live
+        // residents by vanilla id (`princess_flag9`'s injected count).
+        NpcKind::Princess => ctx.princess_flag9,
         NpcKind::TravellingMerchant => false,
+        // W4-f43b — the census tail's pet/slime arms
+        // (`Main.cs:65900-65943`), through the pure `tail_can_spawn` rows.
+        NpcKind::TownCat => ctx.tail.bought_cat,
+        NpcKind::TownDog => ctx.tail.bought_dog,
+        NpcKind::TownBunny => ctx.tail.bought_bunny,
+        NpcKind::TownSlimeBlue => ctx.tail.unlocked_slime_blue,
+        // flag8 = GenuineParty || unlockedSlimeGreenSpawn (`:65795-65799`).
+        NpcKind::TownSlimeGreen => ctx.tail.genuine_party || ctx.tail.unlocked_slime_green,
+        NpcKind::TownSlimeOld => ctx.tail.unlocked_slime_old,
+        NpcKind::TownSlimePurple => ctx.tail.unlocked_slime_purple,
+        NpcKind::TownSlimeRainbow => ctx.tail.unlocked_slime_rainbow,
+        NpcKind::TownSlimeRed => ctx.tail.unlocked_slime_red,
+        NpcKind::TownSlimeYellow => ctx.tail.unlocked_slime_yellow,
+        NpcKind::TownSlimeCopper => ctx.tail.unlocked_slime_copper,
         _ => false,
     }
 }
@@ -258,9 +302,11 @@ pub(crate) fn update_time_spawn_town_npcs(
     // The two gates that also require another resident (`:65810`, `:65818`).
     state.can_spawn[LADDER_POS_NURSE] &= count(NpcKind::Merchant) > 0;
     state.can_spawn[LADDER_POS_DEMOLITIONIST] &= count(NpcKind::Merchant) > 0;
-    // `:65927-65933` — the Zoologist opens at 10% bestiary completion, and the
-    // Princess at one of every other town type. Both need data the port does
-    // not model yet; they stay closed rather than guessing.
+    // `:65927-65933` — the Zoologist opens at 10% bestiary completion; the
+    // port does not model the completion percent yet, so his arm stays
+    // closed rather than guessing. The Princess's flag9 IS live now
+    // (W4-f43b — `ctx.princess_flag9`, the full 24-type roster walk +
+    // the anniversary/unlock overrides).
 
     // `:65957-66116` — the priority ladder: the first eligible kind wins.
     for (i, kind) in LADDER.iter().enumerate() {
@@ -297,6 +343,8 @@ mod tests {
             max_hp: 100,
             party_roll: false,
             residents: 1,
+            tail: crate::town_arrival_pets::tail_flags_from_world(world, false, false),
+            princess_flag9: world.unlocked_princess,
         }
     }
 
@@ -414,6 +462,8 @@ mod tests {
             max_hp: 200,
             party_roll: false,
             residents: 1,
+            tail: crate::town_arrival_pets::tail_flags_from_world(&world, false, false),
+            princess_flag9: world.unlocked_princess,
         };
         state.check_for_spawns = 7199;
         update_time_spawn_town_npcs(&mut state, &c, &npcs, &|_| false);

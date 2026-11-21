@@ -325,11 +325,30 @@ pub struct World {
     /// 1394`, v217; the town-pet arrival gates, `Main.cs:65900-65911`) —
     /// the same world-field standing-in. The pet licenses 4829/4830/4910
     /// write them (`powerups::use_pet_license`, W4-a6,
-    /// `Player.cs:45352-45365`). The arrival consumer is deferred: the port
-    /// ships no TownCat/TownDog/TownBunny `NpcKind` yet.
+    /// `Player.cs:45352-45365`). W4-f43b: the arrival consumer is LIVE —
+    /// the g10 TownCat/TownDog/TownBunny kinds spawn through
+    /// `town_arrival`'s tail arms (`Main.cs:65900-65911`).
     pub bought_cat: bool,
     pub bought_dog: bool,
     pub bought_bunny: bool,
+    /// `NPC.unlockedSlimeBlueSpawn` (`WorldFile.cs:1398`, v250; the blue
+    /// town slime's arrival gate, `Main.cs:65912-65915`) — the same
+    /// Main-global standing-in as the rainbow/red pair above. W4-f43b:
+    /// the eight-flag widening the town-slime arrival arms read
+    /// (`town_arrival_pets::tail_can_spawn`, `Main.cs:65912-65943`).
+    pub unlocked_slime_blue_spawn: bool,
+    /// `NPC.unlockedSlimeGreenSpawn` (`WorldFile.cs:1410`, v261) — flag8's
+    /// second term (`Main.cs:65796-65799`: `GenuineParty || green`).
+    pub unlocked_slime_green_spawn: bool,
+    /// `NPC.unlockedSlimeOldSpawn` (`WorldFile.cs:1411`, v261).
+    pub unlocked_slime_old_spawn: bool,
+    /// `NPC.unlockedSlimePurpleSpawn` (`WorldFile.cs:1412`, v261).
+    pub unlocked_slime_purple_spawn: bool,
+    /// `NPC.unlockedSlimeYellowSpawn` (`WorldFile.cs:1414`, v261).
+    pub unlocked_slime_yellow_spawn: bool,
+    /// `NPC.unlockedSlimeCopperSpawn` (`WorldFile.cs:1415`, v261; the
+    /// shimmer conversion's target gate, `NPCID.cs:10120`).
+    pub unlocked_slime_copper_spawn: bool,
     /// The body's `velocity.X` — the fists' tether anchor folds it in
     /// (`AI_047`'s `vector = Main.npc[golemBoss].Center + nPC.velocity +
     /// (0, -9 * scale)`, `NPC.cs:19258-19259`) — the WoF write-through
@@ -707,6 +726,12 @@ impl World {
             bought_cat: false,
             bought_dog: false,
             bought_bunny: false,
+            unlocked_slime_blue_spawn: false,
+            unlocked_slime_green_spawn: false,
+            unlocked_slime_old_spawn: false,
+            unlocked_slime_purple_spawn: false,
+            unlocked_slime_yellow_spawn: false,
+            unlocked_slime_copper_spawn: false,
             golem_vx: 0.0,
             slime_rain: false,
             slime_rain_time: 0.0,

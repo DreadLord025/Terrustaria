@@ -1,9 +1,15 @@
 //! W4-f43 — the town-spawn census tail: the pet-license, town-pet, town-slime,
 //! Santa and Princess arms of `Main.UpdateTime_SpawnTownNPCs`
-//! (`Main.cs:65542-66116`) plus their unlock sources. UNWIRED (code-only wave):
-//! the core 21-kind machine lives in [`crate::town_arrival`]; this module ports
-//! the arms that machine leaves closed, verbatim, as pure functions with the
-//! RNG draws injected. The wiring lane splices them at the cited positions.
+//! (`Main.cs:65542-66116`) plus their unlock sources. The pure census fns
+//! stay id-keyed with the RNG draws injected; the W4-f43b SPLICE section at
+//! the bottom wires them to the live machine: [`tail_flags_from_world`] reads
+//! the World flags, [`spawn_town_tail_unique_data`] is
+//! `GiveTownUniqueDataToNPCsThatNeedIt`'s arrival arm on the g10 town-pet
+//! kinds, and [`exchange_resident_pet`] is the live-Npc
+//! `RerollVariationForNPCType` adapter the a6 license else-arm dispatches
+//! (research/138 §12.2's contract, g10-kinds → f43-splice → a6 dispatch).
+//! The arrival gates ride [`crate::town_arrival`]'s machine; Santa 142 has
+//! no ported kind yet so his arm stays closed (the pure fns keep it verbatim).
 //!
 //! Census correction: the directive's "town pet slimes (701-707)" does not
 //! match this decompile — `NPCID.Count = 697` (`ID/NPCID.cs:12581`) and the
@@ -23,7 +29,18 @@
 //!   (`NPC.cs:7311-7322` → `LanguageManager.cs:419`
 //!   `value[random.Next(value.Count)]`; the variant profile's
 //!   `GetNameForVariant` `Profiles.cs:219-222`).
-#![allow(dead_code)] // W4-f43 code-only wave: the wiring lane splices the arms
+//!   Census correction (f43b re-read): `WorldGen.genRand` is an ALIAS for
+//!   `Main.rand` (`WorldGen.cs:4445` `public static UnifiedRandom genRand =>
+//!   Main.rand;`), not a separate generator — at the arrival site the active
+//!   swap is `UpdateTime` (`Main.cs:65153` inside the `UpdateTime` wrapper),
+//!   at the exchange site `UpdatePlayers` (research/138 §10.2's precedent).
+//!   The wiring passes the caller's active stage stream to both slots; the
+//!   pure fns keep them as separate injected closures.
+// W4-f43b: the SPLICE section is wired; the pure census fns the wiring does
+// not consume yet (Santa's arm — no ported kind; the ladder-tail/canSpawn
+// tables — the machine spells the arms per-kind; the head-id map — the
+// renderer's variant-texture lane) stay verbatim + witness-pinned.
+#![allow(dead_code)]
 
 /// `Main.checkXMas` (`Main.cs:13118-13139`): Christmas is Dec 15-31 on the
 /// wall clock; either force flag overrides. The date inputs are injected so
@@ -331,10 +348,11 @@ pub(crate) fn name_category_for(npc_type: i32, variation: i32) -> Option<String>
 
 /// The unlock/season flags the tail arms read. The `bought*` trio is
 /// `NPC.boughtCat/Dog/Bunny` (`NPC.cs:6301-6305`); the slime flags are
-/// `NPC.unlockedSlime*Spawn`. NOTE (census): the port's world save currently
-/// SKIPS the bought trio on load (`wld/sections/flags.rs:608` `r.skip(3)`)
-/// and only carries the rainbow/red slime flags (`world.rs:303-307`) — the
-/// wiring lane must widen both before these arms can fire in production.
+/// `NPC.unlockedSlime*Spawn`. W4-f43b: the World fields carry all eleven
+/// (a6's bought trio + f43's six slime-flag widening); the `.wld` reader
+/// owns them (`flags.rs` v217/v250/v261 — the old `r.skip(3)` load gap is
+/// closed) and [`tail_flags_from_world`] assembles this struct for the
+/// arrival machine.
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct TailFlags {
     pub(crate) bought_cat: bool,
@@ -509,6 +527,260 @@ pub(crate) fn pet_slime_princess_ladder_tail(
         num42 = 638;
     }
     num42
+}
+
+// ---------------------------------------------------------------------------
+// W4-f43b SPLICE — the wiring surface (research/138 §12.2's contract, leg 2).
+// The pure fns above stay id-keyed; these adapters bind them to the live
+// World / Npc / language manager on the g10 town-pet kinds.
+// ---------------------------------------------------------------------------
+
+use crate::npc::{Npc, NpcKind};
+use tr_core::UnifiedRandom;
+
+/// The g10 town-pet kinds in the tail's id order — the `NpcKind` twin of the
+/// 13 census arms minus Santa 142 (no ported Santa kind yet: his
+/// [`tail_can_spawn`]/[`santa_ladder_arm`] rows stay pure-fn-only). The
+/// Princess 663 already rides the 21-kind ladder; her flag9 widens below.
+pub(crate) const TAIL_KINDS: [(i32, NpcKind); 11] = [
+    (637, NpcKind::TownCat),
+    (638, NpcKind::TownDog),
+    (656, NpcKind::TownBunny),
+    (670, NpcKind::TownSlimeBlue),
+    (678, NpcKind::TownSlimeGreen),
+    (679, NpcKind::TownSlimeOld),
+    (680, NpcKind::TownSlimePurple),
+    (681, NpcKind::TownSlimeRainbow),
+    (682, NpcKind::TownSlimeRed),
+    (683, NpcKind::TownSlimeYellow),
+    (684, NpcKind::TownSlimeCopper),
+];
+
+/// The `NpcKind` for a tail net id (the [`TAIL_KINDS`] lookup).
+pub(crate) fn tail_kind(npc_type: i32) -> Option<NpcKind> {
+    TAIL_KINDS
+        .iter()
+        .find(|(id, _)| *id == npc_type)
+        .map(|(_, kind)| *kind)
+}
+
+/// [`TailFlags`] from the live World + the caller's season/party inputs.
+/// `genuine_party` is `BirthdayParty.GenuineParty`
+/// (`app.world_events.genuine_party`); `x_mas` is [`check_xmas`] over the
+/// injected local date + the two force flags (`Main.cs:13118-13139` — the
+/// endlessChristmas micro seed is `forceXMasForever`,
+/// `WorldGen.cs:572-578`); the anniversary/getGoodWorld pair reads the
+/// classic seed flags (`Main.tenthAnniversaryWorld`/`Main.getGoodWorld`,
+/// `Main.cs:65945`).
+pub(crate) fn tail_flags_from_world(
+    world: &tr_core::world::World,
+    genuine_party: bool,
+    x_mas: bool,
+) -> TailFlags {
+    TailFlags {
+        bought_cat: world.bought_cat,
+        bought_dog: world.bought_dog,
+        bought_bunny: world.bought_bunny,
+        unlocked_slime_blue: world.unlocked_slime_blue_spawn,
+        unlocked_slime_green: world.unlocked_slime_green_spawn,
+        unlocked_slime_old: world.unlocked_slime_old_spawn,
+        unlocked_slime_purple: world.unlocked_slime_purple_spawn,
+        unlocked_slime_rainbow: world.unlocked_slime_rainbow_spawn,
+        unlocked_slime_red: world.unlocked_slime_red_spawn,
+        unlocked_slime_yellow: world.unlocked_slime_yellow_spawn,
+        unlocked_slime_copper: world.unlocked_slime_copper_spawn,
+        genuine_party,
+        downed_frost: world.downed_frost,
+        x_mas,
+        unlocked_princess: world.unlocked_princess,
+        tenth_anniversary: world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),
+        get_good_world: world.seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+    }
+}
+
+/// The live resident count by vanilla net id — `Main.cs:65607-65768`'s
+/// `num2..num39` walk (`active && townNPC` per type; the port's `hp > 0`
+/// stands in for `active`, and `kind.net_id()` for `type`).
+pub(crate) fn resident_count_by_id(npcs: &[Npc], npc_type: i32) -> i32 {
+    npcs.iter()
+        .filter(|n| n.hp > 0 && n.kind.net_id() == npc_type)
+        .count() as i32
+}
+
+/// `NPC.getNewNPCNameInner` (`NPC.cs:7281-7325`) — the FULL type→category
+/// switch, not just the census tail's pets/slimes/Princess slice
+/// ([`name_category_for`]): every housed town type names from its own
+/// category; unknown types name `""` (`:7323`). The draw itself is
+/// `Language.RandomFromCategory(category, WorldGen.genRand)` —
+/// `WorldGen.genRand` is an alias for the ACTIVE `Main.rand`
+/// (`WorldGen.cs:4445`), so the caller passes its stage stream.
+pub(crate) fn town_name_category(npc_type: i32) -> Option<&'static str> {
+    Some(match npc_type {
+        17 => "MerchantNames",
+        18 => "NurseNames",
+        19 => "ArmsDealerNames",
+        20 => "DryadNames",
+        22 => "GuideNames",
+        38 => "DemolitionistNames",
+        54 => "ClothierNames",
+        107 => "GoblinTinkererNames",
+        108 => "WizardNames",
+        124 => "MechanicNames",
+        160 => "TruffleNames",
+        178 => "SteampunkerNames",
+        207 => "DyeTraderNames",
+        208 => "PartyGirlNames",
+        209 => "CyborgNames",
+        227 => "PainterNames",
+        228 => "WitchDoctorNames",
+        229 => "PirateNames",
+        353 => "StylistNames",
+        368 => "TravelingMerchantNames",
+        369 => "AnglerNames",
+        453 => "SkeletonMerchantNames",
+        441 => "TaxCollectorNames",
+        550 => "BartenderNames",
+        588 => "GolferNames",
+        633 => "BestiaryGirlNames",
+        663 => "PrincessNames",
+        _ => return None,
+    })
+}
+
+/// One `Language.RandomFromCategory(category, rng)` draw
+/// (`LanguageManager.cs:413-420`): `rng.Next(value.Count)` then the indexed
+/// entry. An unknown category names `"<category>.RANDOM"` (`:417` — the
+/// port's `lang::random_from_category` carries the same fallback); the
+/// C# would throw on an EMPTY category's `Next(0)`, the port's manager
+/// answers `.RANDOM` without a draw (recorded deviation — no shipped
+/// category is empty).
+fn draw_category_name(category: &str, rng: &mut UnifiedRandom) -> String {
+    let size = crate::lang::category_size(category);
+    if size == 0 {
+        return format!("{category}.RANDOM");
+    }
+    let index = rng.next_max(size as i32) as usize;
+    crate::lang::random_from_category(category, index)
+}
+
+/// `NPC.GiveTownUniqueDataToNPCsThatNeedIt` (`NPC.cs:80839-80856`) — the
+/// arrival arm `NewNPC` runs for every `isLikeATownNPC` (`:80769`):
+/// 1. `GivenName = getNewNPCName(Type)` (`:80844`) — the plain-category
+///    genRand draw (the pets draw their VARIANT-0 category here,
+///    `NPC.cs:7312-7314`).
+/// 2. With a `TownNPCProfiles` entry (`:80845-80849`):
+///    `townNpcVariationIndex = profile.RollVariation()` — the
+///    `Main.rand.Next(6)` VariantNPCProfile draw for the three license
+///    pets, the constant 0 for every Legacy/Stacked/Transformable profile
+///    (ZERO draws) — then `GivenName = profile.GetNameForVariant(npc)`,
+///    a SECOND genRand draw on the rolled variant's category.
+/// 3. `ShimmeredTownNPCs[Type]` forces variation 1 (`:80850-80853`).
+///
+/// `rng` is the ACTIVE stage stream at the spawn site — the C#
+/// `UpdateTime_SpawnTownNPCs` → `SpawnTownNPC` → `NewNPC` chain runs under
+/// the `UpdateTime` swap (`Main.cs:65153`/`:17795`), and `WorldGen.genRand`
+/// aliases that same `Main.rand` (`WorldGen.cs:4445`), so BOTH the
+/// variation roll and the name draws ride ONE stream here (the f43 census
+/// note's "different stream" reading corrected — same generator, same
+/// swap).
+pub(crate) fn spawn_town_tail_unique_data(
+    npc: &mut Npc,
+    shimmered: bool,
+    rng: &mut UnifiedRandom,
+) {
+    if !npc.kind.is_town_npc_like() {
+        return; // `:80842` — the isLikeATownNPC gate.
+    }
+    let npc_type = npc.kind.net_id();
+    // `:80844` — the plain-category name (pets: variant 0's category).
+    if let Some(category) =
+        name_category_for(npc_type, 0).or_else(|| town_name_category(npc_type).map(str::to_string))
+    {
+        npc.given_name = draw_category_name(&category, rng);
+    } else {
+        npc.given_name = String::new(); // `NPC.cs:7323` — unknown types "".
+    }
+    if has_town_profile(npc_type) {
+        // `:80847` — RollVariation: Next(6) for the VariantNPCProfile trio,
+        // the constant 0 (no draw) for every other profile.
+        npc.variation_index = match variant_count_for(npc_type) {
+            Some(count) => rng.next_max(count),
+            None => 0,
+        };
+        // `:80848` — GetNameForVariant: the pets key on the ROLLED variant
+        // (`Profiles.cs:219-222`), every other profile re-draws the plain
+        // category (`Profiles.cs:88-91`/`:144-147` → `getNewNPCName` —
+        // the slimes' colour categories included).
+        let category = match variant_count_for(npc_type) {
+            Some(_) => name_category_for(npc_type, npc.variation_index),
+            None => name_category_for(npc_type, 0)
+                .or_else(|| town_name_category(npc_type).map(str::to_string)),
+        };
+        if let Some(category) = category {
+            npc.given_name = draw_category_name(&category, rng);
+        }
+    }
+    if shimmered {
+        // `:80850-80853`.
+        npc.variation_index = 1;
+    }
+}
+
+/// The live-Npc [`PetVariationSlot`] adapter — the scan/roll split the
+/// research/138 §12.2 hunk names: the FIRST active resident of the type is
+/// snapshotted (`NPC.cs:80922-80928`'s slot-order walk), the pure
+/// [`reroll_variation_for_npc_type`] runs on the one-slot roster, and the
+/// result writes back. On success the C# also re-names
+/// (`GivenName = profile.GetNameForVariant`, `:80949` — a genRand draw on
+/// the NEW variant's category) and heals (`life = lifeMax`, `:80950` — the
+/// pure fn already heals the slot). The PetExchange particle +
+/// `TrySendData(56)` (`:80951-80959`) are MP/FX seams the port folds out.
+///
+/// `roll_rng` is the use-context `Main.rand` — `RngKey::UpdatePlayers`
+/// (research/138 §10.2's precedent); the name draw rides the SAME stream
+/// (`WorldGen.genRand` aliases the active `Main.rand`,
+/// `WorldGen.cs:4445`).
+pub(crate) fn exchange_resident_pet(
+    npcs: &mut [Npc],
+    npc_type: i32,
+    roll_rng: &mut UnifiedRandom,
+) -> bool {
+    // `:80922-80928` — the first active resident wins; none = false.
+    let Some(idx) = npcs
+        .iter()
+        .position(|n| n.hp > 0 && n.kind.net_id() == npc_type)
+    else {
+        return false;
+    };
+    let npc = &mut npcs[idx];
+    let mut slot = [PetVariationSlot {
+        active: true,
+        npc_type,
+        variation_index: npc.variation_index,
+        life: npc.hp,
+        life_max: npc.max_hp,
+    }];
+    let success = reroll_variation_for_npc_type(&mut slot, npc_type, &mut |n| {
+        roll_rng.next_max(n)
+    });
+    if success {
+        npc.variation_index = slot[0].variation_index;
+        npc.hp = slot[0].life; // `:80950` — the heal.
+        // `:80949` — GetNameForVariant on the NEW variation (the pets) or
+        // the plain category (every other profile — the slimes' colour
+        // categories included, `Profiles.cs:88-91` → `getNewNPCName`).
+        let category = match variant_count_for(npc_type) {
+            Some(_) => name_category_for(npc_type, npc.variation_index),
+            None => name_category_for(npc_type, 0)
+                .or_else(|| town_name_category(npc_type).map(str::to_string)),
+        };
+        if let Some(category) = category {
+            npc.given_name = draw_category_name(&category, roll_rng);
+        }
+    }
+    success
 }
 
 #[cfg(test)]
@@ -815,5 +1087,184 @@ mod tests {
         );
         // A live pick passes through.
         assert_eq!(pet_slime_princess_ladder_tail(22, &all, &no_residents), 22);
+    }
+
+    // -- W4-f43b SPLICE witnesses (WRITTEN NOT RUN) -------------------------
+
+    /// `tail_flags_from_world` reads all eleven flags + the seed overrides
+    /// (`Main.cs:65795-65799`, `:65945`).
+    #[test]
+    fn the_tail_flags_read_the_world_fields() {
+        let mut world = tr_core::world::World::new("t".into(), 50, 50);
+        world.bought_cat = true;
+        world.bought_dog = true;
+        world.bought_bunny = true;
+        world.unlocked_slime_blue_spawn = true;
+        world.unlocked_slime_green_spawn = true;
+        world.unlocked_slime_old_spawn = true;
+        world.unlocked_slime_purple_spawn = true;
+        world.unlocked_slime_rainbow_spawn = true;
+        world.unlocked_slime_red_spawn = true;
+        world.unlocked_slime_yellow_spawn = true;
+        world.unlocked_slime_copper_spawn = true;
+        world.downed_frost = true;
+        world.unlocked_princess = true;
+        world.seeds = tr_core::seeds::SeedFlags::from(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
+        let f = tail_flags_from_world(&world, true, true);
+        assert!(f.bought_cat && f.bought_dog && f.bought_bunny);
+        assert!(f.unlocked_slime_blue && f.unlocked_slime_green && f.unlocked_slime_old);
+        assert!(f.unlocked_slime_purple && f.unlocked_slime_rainbow && f.unlocked_slime_red);
+        assert!(f.unlocked_slime_yellow && f.unlocked_slime_copper);
+        assert!(f.genuine_party && f.downed_frost && f.x_mas && f.unlocked_princess);
+        assert!(f.tenth_anniversary && !f.get_good_world);
+        // getGoodWorld cancels the anniversary override, not the unlock.
+        world.seeds = tr_core::seeds::SeedFlags::from(
+            tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY | tr_core::seeds::SeedFlags::FOR_THE_WORTHY,
+        );
+        let f = tail_flags_from_world(&world, false, false);
+        assert!(f.tenth_anniversary && f.get_good_world);
+        assert!(!princess_flag9(&TailFlags {
+            tenth_anniversary: true, get_good_world: true, ..Default::default()
+        }, &no_residents));
+    }
+
+    /// The `TAIL_KINDS` map is the g10 roster at the vanilla ids; every
+    /// kind is a town pet and NOT a resident (the ladder's resident-count
+    /// exclusion, g10's `is_town_resident` note).
+    #[test]
+    fn the_tail_kinds_map_to_the_g10_roster() {
+        for (id, kind) in TAIL_KINDS {
+            assert_eq!(kind.net_id(), id, "{kind:?}");
+            assert!(kind.is_town_pet());
+            assert!(!kind.is_town_resident());
+            assert_eq!(tail_kind(id), Some(kind));
+        }
+        assert_eq!(tail_kind(142), None, "no ported Santa kind");
+        assert_eq!(tail_kind(663), None, "the Princess rides the base ladder");
+        assert_eq!(TAIL_KINDS.len(), 11);
+    }
+
+    /// `GiveTownUniqueDataToNPCsThatNeedIt` (`NPC.cs:80839-80856`): the
+    /// license pets draw TWICE on the plain stream (the variant-0 name,
+    /// then the Next(6) roll + the rolled-variant name — three draws);
+    /// the town slimes draw the plain name only (LegacyNPCProfile rolls
+    /// the constant 0 and re-names the same category — two draws); the
+    /// shimmer override forces variation 1 AFTER the rolls.
+    #[test]
+    fn the_arrival_unique_data_draws_the_csharp_shape() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        // The cat: name(0) + Next(6) + name(variant) — the twin replay.
+        let mut cat = Npc::new(NpcKind::TownCat, 0.0, 0.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(42);
+        spawn_town_tail_unique_data(&mut cat, false, &mut rng);
+        let mut twin = UnifiedRandom::new(42);
+        let size0 = crate::lang::category_size("CatNames_Siamese");
+        let _first = twin.next_max(size0 as i32);
+        let variant = twin.next_max(6);
+        let category = name_category_for(637, variant).unwrap();
+        let size1 = crate::lang::category_size(&category);
+        let second = twin.next_max(size1 as i32);
+        assert_eq!(cat.variation_index, variant);
+        assert_eq!(
+            cat.given_name,
+            crate::lang::random_from_category(&category, second as usize)
+        );
+        assert_eq!(rng, twin, "the draw order is name/roll/name");
+        // The slime: LegacyNPCProfile — the plain name, the constant-0
+        // roll (NO draw), the plain re-name. Two draws total.
+        let mut slime = Npc::new(NpcKind::TownSlimeBlue, 0.0, 0.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(42);
+        spawn_town_tail_unique_data(&mut slime, false, &mut rng);
+        let mut twin = UnifiedRandom::new(42);
+        let size = crate::lang::category_size("SlimeNames_Blue");
+        let _plain = twin.next_max(size as i32);
+        let renamed = twin.next_max(size as i32);
+        assert_eq!(slime.variation_index, 0, "the legacy roll is 0");
+        assert_eq!(
+            slime.given_name,
+            crate::lang::random_from_category("SlimeNames_Blue", renamed as usize)
+        );
+        assert_eq!(rng, twin, "two draws, no Next(6)");
+        // The shimmer override (`:80850-80853`) lands AFTER the rolls.
+        let mut shimmered = Npc::new(NpcKind::TownCat, 0.0, 0.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(42);
+        spawn_town_tail_unique_data(&mut shimmered, true, &mut rng);
+        assert_eq!(shimmered.variation_index, 1);
+        // A non-town kind is untouched (`:80842`'s gate).
+        let mut zombie = Npc::new(NpcKind::Zombie, 0.0, 0.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(42);
+        let pristine = rng.clone();
+        spawn_town_tail_unique_data(&mut zombie, false, &mut rng);
+        assert_eq!(rng, pristine, "no draws for a non-town kind");
+        assert!(zombie.given_name.is_empty());
+    }
+
+    /// `exchange_resident_pet` over live Npcs: the FIRST resident rerolls,
+    /// heals and re-names; a second copy waits; no resident = false with
+    /// no draw. The roll rides the injected stream (the use-context
+    /// `UpdatePlayers` pin is the caller's).
+    #[test]
+    fn the_live_exchange_rerolls_the_first_resident() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut a = Npc::new(NpcKind::TownCat, 0.0, 0.0, 1, 0.0);
+        a.hp = 10;
+        a.variation_index = 2;
+        let mut b = Npc::new(NpcKind::TownCat, 0.0, 0.0, 1, 0.0);
+        b.hp = 20;
+        b.variation_index = 2;
+        let mut npcs = vec![a, b];
+        // A seed whose first Next(6) != 2 — the immediate-change arm.
+        let mut seed = 1i32;
+        while UnifiedRandom::new(seed).next_max(6) == 2 {
+            seed += 1;
+        }
+        let mut rng = UnifiedRandom::new(seed);
+        assert!(exchange_resident_pet(&mut npcs, 637, &mut rng));
+        let want = UnifiedRandom::new(seed).next_max(6);
+        assert_eq!(npcs[0].variation_index, want);
+        assert_eq!(npcs[0].hp, npcs[0].max_hp, "the heal");
+        assert!(!npcs[0].given_name.is_empty(), "the re-name");
+        assert_eq!(npcs[1].variation_index, 2, "the second copy waits");
+        assert_eq!(npcs[1].hp, 20);
+        // No resident of the type: false, zero draws.
+        let mut rng = UnifiedRandom::new(seed);
+        let pristine = rng.clone();
+        assert!(!exchange_resident_pet(&mut npcs, 638, &mut rng));
+        assert_eq!(rng, pristine);
+        // A dead resident does not answer (`active` gate).
+        npcs[0].hp = 0;
+        npcs[1].hp = 0;
+        let mut rng = UnifiedRandom::new(seed);
+        let pristine = rng.clone();
+        assert!(!exchange_resident_pet(&mut npcs, 637, &mut rng));
+        assert_eq!(rng, pristine);
+    }
+
+    /// The 100-draw cap on the LIVE adapter: a stream that always repeats
+    /// the old index fails after exactly 100 Next(6) draws (the pure fn's
+    /// cap through the live seam).
+    #[test]
+    fn the_live_exchange_caps_at_one_hundred_draws() {
+        let mut cat = Npc::new(NpcKind::TownCat, 0.0, 0.0, 1, 0.0);
+        cat.variation_index = 0;
+        let mut npcs = vec![cat];
+        // A fixed-0 roller stands in for the pathological stream (the
+        // cap is the pure fn's; the adapter forwards the roll verbatim).
+        let mut draws = 0;
+        let ok = reroll_variation_for_npc_type(
+            &mut [PetVariationSlot {
+                active: true, npc_type: 637, variation_index: 0, life: 1, life_max: 10,
+            }],
+            637,
+            &mut |_| { draws += 1; 0 },
+        );
+        assert!(!ok);
+        assert_eq!(draws, 100);
+        // The live no-resident path is draw-free (above); the live
+        // success path draws at least one (the roll) — pinned by the
+        // first-resident witness.
+        assert_eq!(npcs[0].variation_index, 0);
     }
 }

@@ -39497,3 +39497,101 @@ ids are unique; `BESTIARY_NPC_SHEET_IDS` (192) matches the
 (`npc.rs::w4_g10_town_pet_wiring`, the PETS table carries all eleven)
 are WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/graphify
 invoked**.
+
+## Pet-arrival SPLICE (W4-f43b, research/352)
+
+The f43 census tail (`town_arrival_pets.rs`, UNWIRED) is SPLICED to the
+live machine — the a6f Success-leg activation contract's legs 2+3
+(research/138 §12.2). The g10 kinds (`5dee28650`, all eleven town pets
+637/638/656/670/678-684 WIRED) and the a6 powerups machine (`0766c8df9`)
+merge into this branch as the dependency base; the splice itself:
+
+- **The arrival gates**: `town_arrival.rs`'s LADDER grows 21→32 (the
+  eleven g10 kinds at the C# tail seats, `Main.cs:66066-66113` — the
+  Red-before-Rainbow quirk kept); `condition_holds` spells the pet/slime
+  arms (`:65900-65943`) and the Princess's FULL flag9 (the 24-roster
+  conjunction + the anniversary/unlock overrides, replacing the
+  unlock-only stub). `world_sim/npcs.rs` assembles `TailFlags` from the
+  World + the live `GenuineParty` + the `checkXMas` season read (the
+  wall-clock date injected ONCE PER CHECK — the party-roll boundary
+  predicts the check tick, no per-tick clock read enters the sim;
+  `forceXMasForever` = the endlessChristmas micro seed). Santa 142's arm
+  stays CLOSED — no ported Santa kind (d36's lane); the pure fns keep it
+  verbatim.
+- **The arrival unique-data**: `spawn_town_tail_unique_data` =
+  `GiveTownUniqueDataToNPCsThatNeedIt` (`NPC.cs:80839-80856`) at the
+  `spawn_town_at` placement seam — the plain-category name draw, the
+  profile variation roll (the license pets' `Next(6)`; the constant 0 for
+  every Legacy/Stacked/Transformable profile), the variant re-name, the
+  shimmer override.
+- **The exchange dispatch**: `exchange_resident_pet` (the live-Npc
+  `RerollVariationForNPCType` adapter — first resident, the ≤100-draw cap,
+  the no-profile false, the legacy-0 roll, the heal + re-name) wired into
+  a6's `use_pet_license` else-arm — the published one-line `if success`
+  key select (`Misc.PetExchangeSuccess`/`Fail`, `NPC.cs:80910-80917`), the
+  roll on `RngKey::UpdatePlayers` (research/138 §10.2's use-context
+  precedent). The LIVE `AnyNPCs` scan answers now (the g10 net ids), so
+  the exchange leg is REACHABLE — the a6/g87 "unwitnessable positive
+  path" boundary is CLOSED.
+- **The save-flag widening** (the `flags.rs:608` load-gap fix): the six
+  newly-owned town-slime unlock World fields (blue/green/old/purple/yellow/
+  copper — the rainbow/red pair were S1-P-i35's, the bought trio a6/g87's),
+  the `.wld` flags read/write owning all eight (v250/v261 gates), the
+  `.trwld` v18 tail (VERSION 17→18: the 3 license bytes — the g87 claimant
+  keep-one — + ALL 8 slime bytes = 11; the rainbow/red pair had no
+  native-save twin, a pre-existing gap f43b closes since its live arrival
+  arms read all eight; the g88h-A3 union seats the license bytes [57..60]
+  of the 107-byte head at the g71c merge, forward-only), and the v18
+  per-record variation byte (`NpcRecord.variation_index`, `SaveNPCs:1731`'s
+  BitsByte payload — the rolled variant survives the reload).
+
+### Deliberate deviations / recorded corrections
+
+- **`WorldGen.genRand` is an ALIAS for `Main.rand`** (`WorldGen.cs:4445`
+  `public static UnifiedRandom genRand => Main.rand;`) — the f43 census's
+  "different stream" reading is CORRECTED. At the arrival site both the
+  variation roll and the name draws ride the active `UpdateTime` swap
+  (`Main.cs:65153`/`:17795`); at the exchange site both ride
+  `UpdatePlayers`. ONE stream per site, not two. The pure fns keep the
+  slots as separate injected closures.
+- **The arrival placement cadence** (pre-existing M4-TOWN-1b deviation):
+  the C# normal town placement (`TrySpawningTownNPC`/`SpawnHomelessNPC` →
+  `SpawnTownNPC` → `NewNPC`, `WorldGen.cs:74869`/`5036`) runs under the
+  `UpdateWorldGen` swap (`Main.cs:17802-17804`), a separate pass from the
+  `UpdateTime`-gated `UpdateTime_SpawnTownNPCs` that only computes the
+  canSpawn table + `prioritizedTownNPCType`. The port folds the placement
+  into the `UpdateTime`-gated `update_npcs` block (M4-TOWN-1b), so the
+  unique-data draws ride `UpdateTime` — the stream that block already
+  uses for its Party Girl `Next(40)`. (The C# Old Man pre-arm DOES call
+  `NewNPC` under `UpdateTime`, `Main.cs:65780`.) A future split of the
+  placement into its own `UpdateWorldGen` pass would re-pin these draws;
+  the folded cadence is the recorded stand-in.
+- **The empty-category name draw**: the C# `RandomFromCategory` would
+  throw on an empty category's `Next(0)`; the port's manager answers
+  `<category>.RANDOM` without a draw (no shipped category is empty — the
+  localization JSON carries all the pet/slime/town categories).
+- **The season clock**: `checkXMas` reads the UTC date (the C# reads
+  `DateTime.Now` local) — the same stand-in `format_created` carries; the
+  gate only feeds Santa 142 (no ported kind), so no sim state rides it
+  today.
+- **The unlock-source writers** (the bound-slime transforms 685/686/687,
+  the King Slime death's blue-spawn, the sparkler/copper shimmer arms)
+  are their own lanes — the flags are owned + persisted here, the
+  rainbow/red/shimmer writers already live (`shimmer.rs`/
+  `world_sim/editing.rs`); the other six flags stay false until their
+  writers land (the C# verdict for a world where those events never
+  happened).
+- **d43-town-pets DUP**: keep-one g10-canonical (d43 research/343 §2c +
+  d37 research/250 + the g10-side receipt `f34bd2715`); the d43 rows drop
+  at the merge per its published drop-hunks. This branch merges NO d43
+  code.
+
+### Verification
+
+Code-only: every arm re-read against the cited C# windows in ≤100-line
+reads; the seam call sites checked against the actual signatures by
+read/grep. The 5 new splice witnesses (`town_arrival_pets.rs`), the 2
+positive exchange witnesses (`powerups.rs`), the 2 v18 round-trip
+witnesses (`save.rs`) + the re-pinned DW truncation fixtures and the
+`wld/mod.rs` six-flag gate walk are WRITTEN, NOT RUN — **no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.
