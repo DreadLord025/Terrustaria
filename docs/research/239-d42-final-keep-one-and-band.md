@@ -450,3 +450,73 @@ per-module documented (each module's header census) — the wiring must
 not reorder the draws. d42's idle arms are the exhaustive-match
 placeholders; each dies the moment its style's axis arm lands (the
 first-match shadow rule — the d127 retire-hunk precedent).
+
+## 7. SEAL-VERIFY receipt (the independent executor round, `c58c01840`)
+
+The Lead's four-item seal dispatch, each item verified at the named tips
+(git-show/git-grep read-only + node mechanical checks; no
+cargo/tests/rustfmt/graphify):
+
+1. **d42d-kinds-seal LANDED** as `c58c01840` (this doc §6 + research/238
+   §9 + the §1b correction + the number-key receipts). The 238/239
+   RENAME-collision item resolved by REGISTRY AUTHORITY, not push-time:
+   registry-150 rounds 2/3 (d54 `72226e500`/`0426245f2` §6.2/§7.4.2)
+   adjudicate on first-add %cI — d42's `9eadc3043` 12:15:55 is the first
+   238, `bac408be0` 12:55:30 the first 239; **both KEEP, CONFIRMED**.
+   Loser executions re-fetched at their origin tips: c8's
+   `262-c8-crawler-final-census.md` and g61's
+   `273-g61-spawn-family-final.md` both PRESENT (INDEX rows carry the
+   chains); g56→274 / f21→276 / g48→272 owed by their lanes. An
+   independent push-time-ordered draft (238→247/239→248) was staged in
+   this worktree mid-round and discarded — it contradicts the published
+   registry (247/248 are §6.1-reserved to d10/g82); zero residue (git
+   status clean, no 247/248 refs anywhere in crates/docs/tools/anchors).
+   - **d33-dragonfly-595-601-activation-contract VERIFIED**: axis
+     `114 => ai_114_dragonfly` npc.rs:5030, `style114_step` :254,
+     `dragonfly_neighbors` sim pre-pass world_sim/npcs.rs:4299,
+     `dragonfly_find_frame` :6820, DRAGONFLY_SHEETS assets.rs:1278-1285,
+     netglue hover seed :3572-3578, the 7 ENTRIES rows bestiary.rs:2183-
+     2240 + the C#-faithful 5-colour fold :2438-2442
+     (`ContentSamples.cs:1043-1047` re-read directly).
+   - **c10-waterfowl-602/603/608/609-drop VERIFIED**: to/from_u16
+     data.rs:597-600/:952-955, cs_id :3236-3239, the 4 ENTRIES rows
+     bestiary.rs:2213-2244 (OWN Seagull2/Grebe2 rows — the §1b corrected
+     shape), `68 => ai_068_waterfowl` npc.rs:5140, netglue seeds
+     :3577-3580; the C# re-read confirms NO 603→602/609→608 credit remap
+     in `ContentSamples.cs` (the HighestOf provider `Populator.cs:721-
+     730` is the fold; `Hide=true` `NPCID.cs:5256-5261`/`:5302-5307`
+     feeds only GetExclusions `:870-886`). The §1b grid-slot/provider
+     obligation stands for c10/the merger.
+   - **d35-lazy-load-43-sheets VERIFIED**: research/113 at `1afd327b9`
+     §10.6 step 7 + §13/§14.4 read in full; the mechanical 43-name scan
+     reproduces §9's split EXACTLY (14 union-named: 580/595-601/602/603/
+     608/609/619/630; 29 union-absent) and the assets.rs zero-hit check
+     passes (43 roster + 8 dropped ids, 0 hits — node, exit 0).
+2. **619-BloodSquid-hover + 11-kind-drop-hunks + 32-band-declaration
+   LANDED** (`33b3cfe07` + `bac408be0`): the three HoverParams gates
+   TRUE only on BLOOD_SQUID (npc_ai.rs:615-617; the four legacy presets
+   false :544-546/:562-564/:577-579/:592-594), the 3 witnesses present
+   (:1369/:1414/:1460, WRITTEN NOT RUN); the §1a ranges spot-checked at
+   HEAD (enum 1151-1194 / kb 3746-3759 / data.rs to_u16 609-619 /
+   bestiary ENTRIES 2265-2302 + folds 2660-2672 / buffs 511-524 /
+   netglue 3628+ / ui-bestiary 1617-1629 / entities 559-560+1244-1259+
+   3750-3761 / s1_f_3 29388-29390 — all kind-hit, boundaries clean);
+   ALL_KINDS still 313 (npc.rs:25066 — the E8 dropped-lane rule, the
+   rows stay until the merge wave); the 32-kind band §4 unchanged.
+3. **d37e-roster-E8 RECEIPTED**: research/108 at d37 `fbb948172`
+   (12:49:05, pushed) S1 row verbatim — d42 **PARTIAL-EXECUTED**
+   `49346dba6`, **36/36 owned moves DONE** (578-630, bijection 313/313,
+   ALL_KINDS 313 correct), the 8-kind ownership flip **ACCEPTED**
+   (fish-five→c4@581/587/592/607/615, LadyBug/GoldLadyBug→e26@604/605,
+   Maggot→c8@606). Its "7 dragonfly drops owed" line predates
+   `bac408be0` (12:55:30) by ~6 min — those drops + the 4 waterfowl are
+   now the §1a EXECUTE-prep hunks (merger-mechanical). ONE CONFLICT
+   flagged for d37f/the merger: 108-E8/S1's c10 row still orders the
+   4-waterfowl DROP (keep d42@602/603/608/609 per the pre-R3 E3 table)
+   while §1 drops d42's rows (keep c10's fully-wired superset) — the
+   R3 superset rule decides for c10 (the ANALYSIS SEAL paragraph
+   publishes the supersede note).
+4. **239 SEALED + band-561-630 bible**: this doc + research/238 carry
+   the registry receipts; the band declaration (§4, 32 kinds,
+   protocol==NPCID, the 19 holes itemized) is the lane's bible —
+   FINAL, no further d42 commits planned beyond this receipt.
