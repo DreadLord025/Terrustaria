@@ -39248,9 +39248,13 @@ click buffers; the player tick applies).
 ## Shop happiness UI (W4-g58, 2026-11-21, code-only mode)
 
 `crates/tr-app/src/happiness.rs` + `ui/npc_chat.rs` + `ui/shop_happiness.rs`
-land the happiness dialogue, the shop price-multiplier chrome and the FULL
-preference DATA tables. **Code-only mode**: no compiler/tests invoked; the
-15 new witness tests are written not run, verified by re-reading the C#.
++ `ui/savings.rs` land the happiness dialogue, the shop price-multiplier
+chrome, the FULL preference DATA tables and the savings coin pile. A
+follow-up deviation round resolves the five constants-off items recorded
+below (the Princess RNG head + HateLonely, the Zoologist shapeshift suffix,
+the Tavernkeep town twin, the player-zone biome judge, the DrawSavings
+pile). **Code-only mode**: no compiler/tests invoked; the witness tests are
+written not run, verified by re-reading the C#.
 
 What landed:
 
@@ -39305,35 +39309,104 @@ What landed:
   `Utils.DrawBorderStringFourWay`'s ±2 px ring tinted
   `White * (mouseTextColor/255)`.
 
-Deviations (constants-off, each rides its own lane):
+Deviations resolved (W4-g58 deviation round, 2026-11-21, code-only mode):
 
-- The Princess's random three-loves head (`AllPersonalitiesModifier.cs:
-  15-36`, `Main.rand.Next(list.Count)` per pick) and her HateLonely crowd
-  gate (`ShopHelper.cs:122-130`) — they draw the global RNG and ride her
-  AI lane; her static neighbor rows land.
-- The Zoologist's `altTexture == 2` shapeshift report suffix
-  (`ShopHelper.cs:191-194`) — no alt-texture state ported.
-- The Tavernkeep (550) is a town NPC but his kind ports as the DD2 event
-  Bartender (`cs_id` 109) — excluded from the crowd roster until his town
-  twin lands; his DATA rows are in the tables.
+- **The Princess's random three-loves head + HateLonely** — LANDED.
+  `AllPersonalitiesModifier.cs:15-36` draws `Main.rand.Next(list.Count)`
+  three times on the BARE `Main.rand` (the call chain `SetTalkNPC` <-
+  `HoverOverNPCs` <- `DrawMouseOver` <- `DrawInterface_39_MouseOver`,
+  `Main.cs:43081`/`:42939`/`:45150`, runs outside every `SwapRandom`
+  stage), so the port threads `NamedRngs::global()` through
+  `process_mood`/`shopping_settings` (the `roll` closure). The list is the
+  nearby resident TYPES in ascending NPCID order, deduped
+  (`nearbyNPCsByType` is a `bool[NPCID.Count]`, `ShopHelper.cs:152-156`);
+  each pick `RemoveAt`s (no replacement) and applies a Love x0.88 whose
+  report key is the dedicated `LoveNPC_{NPCID.Search.GetName(npcType)}`
+  (`LoveNPCByTypeName`, `ShopHelper.cs:243-250` -> `MoodFlag::PrincessLove`).
+  Her crowd gate (`ShopHelper.cs:122-130`): `flag = false` (no LoveSpace),
+  `num = 1f` (the crowd multiply is inert), and HateLonely + the 1000
+  sentinel when fewer than 2 within-house AND fewer than 2 within-village
+  neighbors (`MoodFlag::HateLonely`). The personality traits now run
+  UNCONDITIONALLY (the C# `:164-168` has no `< 1000` gate — the old port's
+  gate was itself a deviation; the sentinel rides the clamp at `:178` but
+  the report rows + the RNG draws still land).
+- **The Zoologist's shapeshift report suffix** — LANDED. `altTexture == 2`
+  (`ShopHelper.cs:191-194`) is exactly `NPC.ShouldBestiaryGirlBeLycantrope()`
+  (`NPC.cs:93753-93764`): `UpdateAltTexture` (`:90225-90227`) writes
+  `altTexture = 2` on that predicate, a pure world-state gate (a blood-moon
+  night, or a full-moon `moonPhase == 0` night). No alt-texture field is
+  needed: `should_bestiary_girl_be_lycantrope(blood_moon, day_time,
+  moon_phase)` derives it, `shopping_settings` reads the world clock, and
+  `prepend_report` appends the `Transformed` category suffix
+  (`TownNPCMood_BestiaryGirlTransformed`). The `npc_chat.rs` Zoologist arm
+  reuses the shared predicate.
+- **The Tavernkeep town twin** — LANDED (the premise was false). There is
+  NO separate event Bartender: `NPCID.DD2Bartender = 550` IS the town
+  Tavernkeep (`NPC.cs:16261-16274`: `townNPC = true`, aiStyle 7,
+  `friendly = true`); NPCID 109 is the Clown, and 109 is only the port's
+  WIRE id (`to_u16`), not his `cs_id` (which resolves 550 through the
+  bestiary). The crowd gate re-derives `townNPC && !IsNotReallyTownNPC`
+  (admit `DD2Bartender`, drop the Travelling Merchant 368 — the only
+  ported `IsNotReallyTownNPC` kind), and `neighbor_preferences`' kind roster
+  adds `DD2Bartender` so his rows (`:213-230`) + the rows that name him
+  (the Angler `:141-158`, the Demolitionist `:177-194`) resolve.
+- **The home-anchor biome judge** — LANDED (the M4-TOWN-2 convention was
+  wrong). `BiomePreferenceListTrait.ModifyShopPrice` (`:38-53`) tests the
+  PLAYER's zones (`info.player`, `:44`), NOT the home tile, and picks the
+  HIGHEST affection among the matching biomes applying ONE row
+  (`ApplyPreference`, `:55-73`). The "moot for the two-row tables" claim
+  was false — a player can be in two biomes at once (e.g. Hallow +
+  Underground). `AffectionLevel::affection_value` ports the enum ordering
+  (Love 100 / Like 50 / Dislike -50 / Hate -100, `AffectionLevel.cs:5-8`);
+  `biome_is_in` ports each `AShoppingBiome.IsInBiome` (Forest =
+  `ShoppingZone_Forest` = `!ShoppingZone_AnyBiome && !ShoppingZone_BelowSurface`,
+  `Player.cs:3823-3847`; Underground = `ShoppingZone_BelowSurface`;
+  Mushroom = `ZoneGlowshroom`; the rest the zone flags). `process_mood`
+  scans the PLAYER centre and applies the single highest-affection row;
+  `classify_biome` (the first-match collapse) is removed.
+- **`ItemSlot.DrawSavings`' coin pile** — LANDED (`ui/savings.rs`).
+  `ItemSlot.DrawSavings` (`:3704-3741`) sums the four banks
+  (`Utils.CoinsCount` `:1019-1046`, `CoinsCombineStacks` `:1062-1076` cap
+  9,999,999,999, `CoinsSplit` `:1048-1060`), draws the bank-icon pile
+  (4076 Void Vault / 3813 Defender's Forge / 346 Safe / 87 Piggy Bank —
+  `GetItemDrawFrame` returns the full texture, no `itemAnimations` row)
+  and `DrawMoney`'s vertical arm (`:3686-3701`). `CoinSlot.DrawItemCoin`
+  (`:240-254`) uses `TextureAssets.Coin[type-71]` — the 8-frame SPIN
+  strips (`Images/Coin_0..3`, `AssetInitializer.cs:367-370`), NOT the
+  single-frame `Item_71..74` icons; the assets loader packs them and
+  `Lookups::coin_strip_frame` slices them. `CoinSlotState` gains the
+  `Savings[4]` array + `update_savings` (`71 + slot`,
+  `SavingsCoinJumpScale` 10, `:225-228`/`:337`/`:341`); `UpdateSlotAnims`
+  steps Savings first (`:359-361`). The pile draws between the Shop label
+  (`Main.cs:41790`) and the happiness icon (`:41792`) at (504, invBottom).
+
+Deviations still constants-off (each rides its own lane):
+
 - The pets' `housingCategory` filter
   (`TownRoomManager.CanNPCsLiveWithEachOther_ShopHelper`,
   `TownRoomManager.cs:153-161`) is inert — no pets ported.
-- `ItemSlot.DrawSavings`' coin pile (`Main.cs:41791`) rides the coin-slot
-  lane; the ≤0.82 achievement (`Player.cs:4391-4394`) rides the
-  achievement lane; the portrait hop (`DoNPCPortraitHop`) and the corner
-  item are unported (S1-E-10b's deferral).
-- The biome traits judge the HOME anchor's scene scan (the M4-TOWN-2
-  convention) while the C# `BiomePreferenceListTrait.ModifyShopPrice`
-  (`:38-53`) tests the PLAYER's zones and picks the HIGHEST affection
-  among the matching biomes — the port keeps the home-anchor judge (the
-  recorded M4-TOWN-2 deviation); the row-order/highest-affection pick is
-  moot for the two-row tables (a judge is in one biome at a time).
+- The <=0.82 achievement (`Player.cs:4391-4394`) rides the achievement
+  lane; the portrait hop (`DoNPCPortraitHop`) and the corner item are
+  unported (S1-E-10b's deferral).
+- The nurse-heal cost recompute (`App::nurse_heal_cost`) reads a fresh
+  `process_mood` rather than the LATCHED `currentShoppingSettings.
+  PriceAdjustment` the C# `GetNurseHealCost` reads (`Main.cs:40100`) — the
+  pre-existing nurse-lane deviation, unchanged by W4-g58 (the Nurse is
+  never the Princess, so the head's no-draw closure is inert there).
 
-Witnesses (WRITTEN NOT RUN): `happiness.rs::w4_g58_tests` ×9 (the 25-row
-biome table, the 25-case neighbor switch, the kind-view filter, the
+Witnesses (WRITTEN NOT RUN): `happiness.rs::w4_g58_tests` x9 original (the
+25-row biome table, the 25-case neighbor switch, the kind-view filter, the
 affection multipliers, the name keys, the report prepend order, the
-neighbor naming, the Princess key, the homeless gate),
-`ui/npc_chat.rs` ×3 (the button click replaces the chat text, the
-homeless Condition, the settings reset), `ui/shop_happiness.rs` ×3 (the
-icon bands, the P0 text, the chrome positions).
+neighbor naming, the Princess key, the homeless gate) + the deviation round
+(the Tavernkeep town neighbor, the lycantrope predicate, the Zoologist
+Transformed suffix, the player-not-home biome judge x2, the
+highest-affection single-row pick, the Princess HateLonely, the Princess
+three-loves head RNG draws, the head list-end break, the Princess
+LoveNPC_{name} report key); `happiness.rs::tests` forest_world widened to
+1000 (the faithful Forest predicate needs a non-beach above-surface player
+row); `ui/npc_chat.rs` x3 (the button click replaces the chat text, the
+homeless Condition, the settings reset); `ui/shop_happiness.rs` x3 (the
+icon bands, the P0 text, the chrome positions); `ui/savings.rs` x5 (the
+CoinsCount denominations, the CoinsCombineStacks cap, the CoinsSplit walk,
+the CenteredRectangle truncation, the savings cell draw state);
+`assets.rs` x1 (the coin spin strips pack + slice 8 frames).
