@@ -39414,6 +39414,6 @@ step like the item/NPC/player feeds; the `EntityLights` max-merge is
 commutative, so the intra-family order only documents the C# layout.
 
 **Code-only mode: no cargo/rustc/rustfmt/tests/dotnet/graphify invoked; the
-15 witness tests in `player_lights_b.rs` are WRITTEN, NOT RUN.** The first
+14 witness tests in `player_lights_b.rs` are WRITTEN, NOT RUN.** The first
 build after the merge must run `cargo test -p tr-app player_lights_b` plus the
 catalog command.
