@@ -1644,4 +1644,66 @@ mod tests {
         assert!(slots.iter().any(|s| s.kind == 71 && s.count == 4), "the coins landed");
         assert_eq!(app.wiring.rand_mut().peek(), peek, "the coin arm is draw-free");
     }
+
+    /// W4-f11 port (research-71 §3b.3): `Utils.CoinsSplit`
+    /// (`Utils.cs:1048-1060`) — 1234567 copper → [67, 45, 23, 1]
+    /// (platinum 1, gold 23, silver 45, copper 67).
+    #[test]
+    fn w4_f11_coins_split_matches_the_csharp_denominations() {
+        assert_eq!(coins_split(1_234_567), [67, 45, 23, 1]);
+        assert_eq!(coins_split(0), [0, 0, 0, 0]);
+        assert_eq!(coins_split(100), [0, 1, 0, 0]);
+        assert_eq!(coins_split(1_000_000), [0, 0, 0, 1]);
+    }
+
+    /// W4-f11 port (research-71 §3b.3), re-pointed at the kept `hopper_pull`
+    /// body: the grab rect is 192×192 centred on `(ax*16+16, ay*16+16)`
+    /// (`Wiring.cs:2660`, `HopperGrabHitboxSize`; `Utils.CenteredRectangle`
+    /// floors the top-left). Anchor (10, 20) → centre (176, 336), box
+    /// [80, 272) × [240, 432); the strict-`<` test excludes the touching edge.
+    #[test]
+    fn w4_f11_the_hopper_grab_rect_is_192_centred() {
+        let (cx, cy) = (10.0 * 16.0 + 16.0, 20.0 * 16.0 + 16.0);
+        assert_eq!((cx - 96.0, cy - 96.0), (80.0, 240.0), "the floored top-left");
+        // A 14×14 drop at x 258 reaches 272 — the last intersecting column.
+        let mut app = app_with(21, 0, 0);
+        let idx = chest_at(&mut app, 10, 20, vec![]);
+        app.items.push(crate::item::ItemDrop::new(
+            2, 5, 0, 258.0, 330.0, 0.0, 0.0, 0.0,
+        ));
+        trip_and_tick(&mut app);
+        assert_eq!(app.items[0].count, 0, "the inside-edge drop was grabbed");
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert!(slots.iter().any(|s| s.kind == 2 && s.count == 5));
+        // At x 272 the drop's left edge touches the box's right edge — the
+        // strict-`<` `Rectangle.Intersects` refuses (474bc8b5's rule).
+        let mut app = app_with(21, 0, 0);
+        let idx = chest_at(&mut app, 10, 20, vec![]);
+        app.items.push(crate::item::ItemDrop::new(
+            2, 5, 0, 272.0, 330.0, 0.0, 0.0, 0.0,
+        ));
+        trip_and_tick(&mut app);
+        assert_eq!(app.items[0].count, 5, "the touching-edge drop stays out");
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert!(slots.iter().all(|s| s.count == 0), "the chest stayed empty");
+    }
+
+    /// W4-f11 port (research-71 §3b.3), re-pointed at `hopper_pull`: the
+    /// locked gate (`Wiring.cs:2651`, `Chest.IsLocked`) — a golden chest
+    /// (frameX 72, `Chest.cs:301-313`) refuses the grab; the drop stays.
+    #[test]
+    fn w4_f11_a_locked_chest_refuses_the_hopper() {
+        let mut app = app_with(21, 0, 0);
+        let idx = chest_at(&mut app, 10, 20, vec![]);
+        // Lock the anchor tile (72 % 36 == 0 keeps the anchor at (10, 20)).
+        let i = app.world.index(10, 20);
+        app.world.tiles[i].frame_x = 72;
+        app.items.push(crate::item::ItemDrop::new(
+            2, 5, 0, 10.0 * 16.0 + 16.0, 20.0 * 16.0 + 16.0, 0.0, 0.0, 0.0,
+        ));
+        trip_and_tick(&mut app);
+        assert_eq!(app.items[0].count, 5, "the locked chest kept the drop out");
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert!(slots.iter().all(|s| s.count == 0), "nothing entered");
+    }
 }
