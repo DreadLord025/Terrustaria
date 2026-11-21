@@ -306,6 +306,15 @@ pub fn item_tooltip_lines(
     d: &crate::itemdata::ItemDef,
     ctx: TooltipContext<'_>,
 ) -> Vec<(String, [f32; 4])> {
+    // The C# reads the PREFIXED hovered instance (`Item.Prefix` already
+    // applied, `Item.cs:576-586`): every stat below rides the prefixed
+    // stats, and the name colour the prefixed rare (`Main.cs:20328`).
+    let ps = crate::prefix::prefixed_stats_of(d, ctx.prefix);
+    // `Main.cs:20333` — `oldKB` is captured BEFORE the caller's
+    // glove/buff/shroomite scales mutate `hoverItem.knockBack`
+    // (`:20333-20350`): the prefix comparison (`:21124`) reads the
+    // PREFIX-only knockback, while the word tier reads the scaled one.
+    let old_kb = ps.knock_back;
     let mut lines: Vec<(String, [f32; 4])> = vec![(
         hover_name(kind, ctx.prefix, ctx.stack),
         // `:20328-20332` — the expert items force rare −12 (the disco
@@ -314,19 +323,19 @@ pub fn item_tooltip_lines(
         // (`:20620-20627`) stay unported (no difficulty flag).
         if super::tooltip_sets::expert_only(kind) {
             super::color::tint([ctx.disco[0], ctx.disco[1], ctx.disco[2], 255])
-        } else if registry::rare(kind) == -13 {
+        } else if ps.rare == -13 {
             // `(byte)(Main.masterColor * 200f)` (`:20562`) — masterColor
             // stays in [0, 1], so the truncation cannot wrap.
             [1.0, (ctx.master_color * 200.0) as u8 as f32 / 255.0, 0.0, 1.0]
         } else {
-            item_name_color(registry::rare(kind))
+            item_name_color(ps.rare)
         },
     )];
     // `:20669` — the damage gate: `damage > 0 && (!notAmmo || useStyle != 0)
     // && (type < 71 || type > 74 || HasItem(905))`. The coins 71-74 are
     // notAmmo placeables — their damage row only shows while the Coin Gun
     // is carried.
-    if d.damage > 0
+    if ps.damage > 0
         && (!crate::item::not_ammo(kind) || d.use_style != 0)
         && (!(71..=74).contains(&kind) || ctx.has_coin_gun)
     {
@@ -335,7 +344,7 @@ pub fn item_tooltip_lines(
         // (`ItemID.Sets.RapidAttackBonusDamage`, `:20673-20676` — the
         // read-only `ApplyRapidAttackBonus`), then the player's
         // weapon-damage multiplier.
-        let mut base = (d.damage as f32 * tooltip_damage_multiplier(kind)) as i32;
+        let mut base = (ps.damage as f32 * tooltip_damage_multiplier(kind)) as i32;
         if let Some(p) = ctx.player {
             base = p.apply_rapid_attack_bonus(base, kind);
         }
@@ -364,7 +373,7 @@ pub fn item_tooltip_lines(
             d.class,
             registry::DamageClass::Melee | registry::DamageClass::Ranged | registry::DamageClass::Magic
         ) {
-            let mut visual_crit = d.crit;
+            let mut visual_crit = ps.crit;
             if kind == 2269 {
                 if let Some(p) = ctx.player {
                     if p.revolver_crit_chance_bonus > 0 {
@@ -387,19 +396,19 @@ pub fn item_tooltip_lines(
             .projectile
             .is_some_and(|p| tr_core::whip::is_whip(p));
         if d.use_style != 0 && (!d.summon || whip) {
-            let tier = if d.use_animation <= 8 {
+            let tier = if ps.use_animation <= 8 {
                 6
-            } else if d.use_animation <= 20 {
+            } else if ps.use_animation <= 20 {
                 7
-            } else if d.use_animation <= 25 {
+            } else if ps.use_animation <= 25 {
                 8
-            } else if d.use_animation <= 30 {
+            } else if ps.use_animation <= 30 {
                 9
-            } else if d.use_animation <= 35 {
+            } else if ps.use_animation <= 35 {
                 10
-            } else if d.use_animation <= 45 {
+            } else if ps.use_animation <= 45 {
                 11
-            } else if d.use_animation <= 55 {
+            } else if ps.use_animation <= 55 {
                 12
             } else {
                 13
@@ -407,9 +416,10 @@ pub fn item_tooltip_lines(
             lines.push((crate::lang::tip(tier), [1.0, 1.0, 1.0, 1.0]));
         }
         // Knockback (`:20333-20345` + `:20749-20798`): the gloves and the
-        // buff scale the item's own knockback, the shroomite armour scales
-        // the ranged one, then the summon bonus and the quiver's ×1.1.
-        let mut kb = d.knock_back;
+        // buff scale the item's own (prefixed) knockback, the shroomite
+        // armour scales the ranged one, then the summon bonus and the
+        // quiver's ×1.1.
+        let mut kb = ps.knock_back;
         if let Some(p) = ctx.player {
             let mut num = 1.0f32;
             if d.class == registry::DamageClass::Melee && p.kb_glove {
@@ -608,12 +618,12 @@ pub fn item_tooltip_lines(
             [1.0, 1.0, 1.0, 1.0],
         ));
     }
-    // `:20905-20910` — the mana cost row.
-    if d.mana > 0
+    // `:20914-20918` — the mana cost row (the prefixed mana).
+    if ps.mana > 0
         && ((kind != 127 && kind != 4347 && kind != 4348 && kind != 514)
             || !ctx.player.map_or(false, |p| p.space_gun))
     {
-        let cost = (d.mana as f32 * ctx.player.map_or(1.0, |p| p.mana_cost)) as i32;
+        let cost = (ps.mana as f32 * ctx.player.map_or(1.0, |p| p.mana_cost)) as i32;
         lines.push((
             crate::lang::common_item_tooltip_fmt("UsesMana", cost),
             [1.0, 1.0, 1.0, 1.0],
@@ -741,10 +751,158 @@ pub fn item_tooltip_lines(
     if super::tooltip_sets::expert_only(kind) {
         lines.push((crate::lang::game_ui("Expert"), [1.0, 1.0, 1.0, 1.0]));
     }
-    if d.rare == -13 {
+    if ps.rare == -13 {
         lines.push((crate::lang::game_ui("Master"), [1.0, 1.0, 1.0, 1.0]));
     }
+    // `:21032-21265` — the prefix comparison rows (the red/green deltas
+    // against a fresh SetDefaults copy) + the accessory fixed rows.
+    append_prefix_lines(d, &ps, old_kb, ctx.prefix, &mut lines);
     lines
+}
+
+/// `Main.cs:20634-20635` — the prefix-delta colours: `color` (190,120,120)
+/// for the worse arm, `color2` (120,190,120) for the better.
+const PREFIX_BAD: [f32; 4] = [190.0 / 255.0, 120.0 / 255.0, 120.0 / 255.0, 1.0];
+const PREFIX_GOOD: [f32; 4] = [120.0 / 255.0, 190.0 / 255.0, 120.0 / 255.0, 1.0];
+
+/// One percent-delta row (`Main.cs:21040-21137`): `Math.Round((new - base)
+/// / base * 100)` (banker's), the `+` prefix only on the positive arm, the
+/// colour by the delta's sign — EXCEPT the mana row, whose colour test is
+/// `num10 > 0` (a mana-cost INCREASE is the worse arm, `:21093`).
+fn push_percent_delta(
+    lines: &mut Vec<(String, [f32; 4])>,
+    delta: f64,
+    tip: usize,
+    invert_colour: bool,
+) {
+    let n = tr_core::damage::round_bankers(delta);
+    let text = if n > 0 {
+        format!("+{n}{}", crate::lang::tip(tip))
+    } else {
+        format!("{n}{}", crate::lang::tip(tip))
+    };
+    let bad = if invert_colour { n > 0 } else { n < 0 };
+    lines.push((text, if bad { PREFIX_BAD } else { PREFIX_GOOD }));
+}
+
+/// `Main.cs:21032-21265` — the prefix block. `item2` is the fresh
+/// `SetDefaults` copy (`Main.tooltipPrefixComparisonItem` caches one per
+/// type; the port recomputes — same values). The percent rows compare the
+/// PREFIXED stats against the base; the knockback row compares `oldKB`
+/// (the prefixed knockback captured BEFORE the caller's glove/buff/
+/// shroomite scales, `:20333`). The accessory prefixes 62-80 grant player
+/// benefits, not item stats, so they print fixed rows instead
+/// (`:21152-21265`).
+fn append_prefix_lines(
+    d: &crate::itemdata::ItemDef,
+    ps: &crate::prefix::PrefixedStats,
+    old_kb: f32,
+    prefix: u16,
+    lines: &mut Vec<(String, [f32; 4])>,
+) {
+    if prefix == 0 {
+        return;
+    }
+    let f = |a: i32, b: i32| (a as f32 - b as f32) as f64 / b as f64 * 100.0;
+    if ps.damage != d.damage {
+        push_percent_delta(lines, f(ps.damage, d.damage), 39, false);
+    }
+    if ps.use_animation != d.use_animation as i32 {
+        // `:21056` — the speed delta is NEGATED (faster = positive). The
+        // C# prints the rounded double through string.Concat; whole
+        // values render without a decimal point.
+        let n = -tr_core::damage::round_bankers(f(ps.use_animation, d.use_animation as i32));
+        let text = if n > 0 {
+            format!("+{n}{}", crate::lang::tip(40))
+        } else {
+            format!("{n}{}", crate::lang::tip(40))
+        };
+        lines.push((text, if n < 0 { PREFIX_BAD } else { PREFIX_GOOD }));
+    }
+    if ps.crit != d.crit {
+        // `:21070` — the crit delta is the raw difference, NOT a percent.
+        // The C# prints the float through string.Concat (whole values
+        // render without a decimal point).
+        let n = ps.crit - d.crit;
+        let text = if n > 0 {
+            format!("+{n}{}", crate::lang::tip(41))
+        } else {
+            format!("{n}{}", crate::lang::tip(41))
+        };
+        lines.push((text, if n < 0 { PREFIX_BAD } else { PREFIX_GOOD }));
+    }
+    if ps.mana != d.mana {
+        push_percent_delta(lines, f(ps.mana, d.mana), 42, true);
+    }
+    if ps.scale != d.scale {
+        let delta = (ps.scale - d.scale) as f64 / d.scale as f64 * 100.0;
+        push_percent_delta(lines, delta, 43, false);
+    }
+    if ps.shoot_speed != d.shoot_speed {
+        let delta = (ps.shoot_speed - d.shoot_speed) as f64 / d.shoot_speed as f64 * 100.0;
+        push_percent_delta(lines, delta, 44, false);
+    }
+    if old_kb != d.knock_back {
+        let delta = (old_kb - d.knock_back) as f64 / d.knock_back as f64 * 100.0;
+        push_percent_delta(lines, delta, 45, false);
+    }
+    // `:21138-21151` — the armor-penetration / tag-damage rows through the
+    // `{0:+0;-#}` format keys. The port's `format_net` drops format
+    // specifiers (research/33 D5), so the sign is applied here.
+    if ps.armor_penetration != 0 {
+        lines.push((
+            signed_fmt("CommonItemTooltip.PrefixArmorPenetration", ps.armor_penetration),
+            if ps.armor_penetration < 0 { PREFIX_BAD } else { PREFIX_GOOD },
+        ));
+    }
+    if ps.tag_damage != 0 {
+        lines.push((
+            signed_fmt("CommonItemTooltip.PrefixTagDamage", ps.tag_damage),
+            if ps.tag_damage < 0 { PREFIX_BAD } else { PREFIX_GOOD },
+        ));
+    }
+    // `:21152-21265` — the accessory prefixes' fixed rows (all green).
+    let fixed: Option<(i32, usize)> = match prefix {
+        62 => Some((1, 25)),
+        63 => Some((2, 25)),
+        64 => Some((3, 25)),
+        65 => Some((4, 25)),
+        66 => Some((20, 31)),
+        67 => Some((2, 5)),
+        68 => Some((4, 5)),
+        69 => Some((1, 39)),
+        70 => Some((2, 39)),
+        71 => Some((3, 39)),
+        72 => Some((4, 39)),
+        73 => Some((1, 46)),
+        74 => Some((2, 46)),
+        75 => Some((3, 46)),
+        76 => Some((4, 46)),
+        77 => Some((1, 47)),
+        78 => Some((2, 47)),
+        79 => Some((3, 47)),
+        80 => Some((4, 47)),
+        _ => None,
+    };
+    if let Some((n, tip)) = fixed {
+        // `:21178` — the Warding mana row is "+20 " + tip[31] (the space
+        // is in the literal, unlike every other fixed row).
+        let text = if prefix == 66 {
+            format!("+{n} {}", crate::lang::tip(tip))
+        } else {
+            format!("+{n}{}", crate::lang::tip(tip))
+        };
+        lines.push((text, PREFIX_GOOD));
+    }
+}
+
+/// The `{0:+0;-#}` rows (`CommonItemTooltip.PrefixArmorPenetration` /
+/// `PrefixTagDamage`): the C# format prints `+N` / `-N` (zero as `0`).
+/// `format_net` drops the specifier (research/33 D5), so the signed
+/// argument is built here and substituted plain.
+fn signed_fmt(key: &str, n: i32) -> String {
+    let arg = if n > 0 { format!("+{n}") } else { n.to_string() };
+    crate::lang::text_args(key, &[arg])
 }
 
 /// `Main.MouseText_DrawItemTooltip` (`Main.cs:20322-20446`): the generic tooltip box
@@ -1726,5 +1884,168 @@ mod tests {
         assert!(rows.iter().any(|(t, _)| *t == crate::lang::game_ui("Master")), "{rows:?}");
         // masterColor 1.0 -> (byte)(1 * 200) = 200.
         assert_eq!(rows[0].1, [1.0, 200.0 / 255.0, 0.0, 1.0]);
+    }
+
+    // --- W4-e16 family 3: the prefix comparison rows --------------------------
+
+    /// `Main.cs:21032-21137`: the Legendary 81 Iron Broadsword 4 prints the
+    /// percent deltas against the base — damage 12→14 (+17%), speed 20→18
+    /// (+10%, negated), crit +5 (raw), knockback 5.5→6.325 (+15%), size
+    /// 1→1.1 (+10%) — all green; the name colour rides the prefixed rare.
+    #[test]
+    fn w4_e16_the_legendary_prefix_prints_the_percent_deltas() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let sword = crate::registry::get(4).expect("the iron broadsword row");
+        let rows = item_tooltip_lines(
+            4,
+            sword,
+            TooltipContext { prefix: 81, ..Default::default() },
+        );
+        let texts: Vec<&str> = rows.iter().map(|(t, _)| t.as_str()).collect();
+        assert!(texts.contains(&format!("+17{}", crate::lang::tip(39)).as_str()), "{texts:?}");
+        assert!(texts.contains(&format!("+10{}", crate::lang::tip(40)).as_str()), "{texts:?}");
+        assert!(texts.contains(&format!("+5{}", crate::lang::tip(41)).as_str()), "{texts:?}");
+        assert!(texts.contains(&format!("+15{}", crate::lang::tip(45)).as_str()), "{texts:?}");
+        assert!(texts.contains(&format!("+10{}", crate::lang::tip(43)).as_str()), "{texts:?}");
+        // The damage ROW itself reads the prefixed 14, not the base 12.
+        assert!(texts.contains(&format!("14{}", crate::lang::tip(2)).as_str()), "{texts:?}");
+        // Every delta row is green (120,190,120).
+        for (t, c) in &rows {
+            if t.ends_with(&crate::lang::tip(39)) || t.ends_with(&crate::lang::tip(45)) {
+                assert_eq!(*c, PREFIX_GOOD, "{t}");
+            }
+        }
+    }
+
+    /// `Main.cs:21040-21051`: the Broken 10 prefix (dmg 0.85) prints the
+    /// negative damage delta in RED (190,120,120); the mana row's colour
+    /// test is INVERTED (`:21093` — a cost increase is the worse arm).
+    #[test]
+    fn w4_e16_the_negative_deltas_are_red_and_the_mana_colour_inverts() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let sword = crate::registry::get(4).expect("the iron broadsword row");
+        // Broken 10: dmg 0.85 -> round(12 * 0.85) = 10 -> (10-12)/12 = -17%.
+        let rows = item_tooltip_lines(
+            4,
+            sword,
+            TooltipContext { prefix: 10, ..Default::default() },
+        );
+        let bad = rows
+            .iter()
+            .find(|(t, _)| *t == format!("-17{}", crate::lang::tip(39)))
+            .expect("the negative damage delta");
+        assert_eq!(bad.1, PREFIX_BAD);
+        // The Adept 26 prefix on the Space Gun 127 (mana 6 -> round(6*0.85)
+        // = 5): the mana delta is -17% and GREEN (a decrease is good).
+        let gun = crate::registry::get(127).expect("the space gun row");
+        let rows = item_tooltip_lines(
+            127,
+            gun,
+            TooltipContext { prefix: 26, ..Default::default() },
+        );
+        let mana = rows
+            .iter()
+            .find(|(t, _)| t.ends_with(&crate::lang::tip(42)))
+            .expect("the mana delta");
+        assert_eq!(mana.1, PREFIX_GOOD, "{mana:?}");
+        // The Mystical 35 prefix (mcst 1.2): mana 6 -> round(7.2) = 7,
+        // +17% — RED through the inverted test.
+        let rows = item_tooltip_lines(
+            127,
+            gun,
+            TooltipContext { prefix: 35, ..Default::default() },
+        );
+        let mana = rows
+            .iter()
+            .find(|(t, _)| *t == format!("+17{}", crate::lang::tip(42)))
+            .expect("the positive mana delta");
+        assert_eq!(mana.1, PREFIX_BAD);
+    }
+
+    /// `Main.cs:21138-21151`: the Ruthless 85 Sanguine Staff 4269 prints
+    /// the armor-penetration (+10) and tag-damage (+3) rows through the
+    /// `{0:+0;-#}` keys (the sign applied port-side, research/33 D5).
+    #[test]
+    fn w4_e16_the_whip_prefix_prints_the_signed_pen_and_tag_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::test_register_source(
+            "Terraria.Localization.Content.en-US.Items.json",
+            r#"{
+                "CommonItemTooltip": {
+                    "PrefixArmorPenetration": "{0:+0;-#} armor penetration",
+                    "PrefixTagDamage": "{0:+0;-#} summon tag damage"
+                }
+            }"#,
+        );
+        let staff = crate::registry::get(4269).expect("the sanguine staff row");
+        let rows = item_tooltip_lines(
+            4269,
+            staff,
+            TooltipContext { prefix: 85, ..Default::default() },
+        );
+        assert!(
+            rows.iter().any(|(t, c)| t == "+10 armor penetration" && *c == PREFIX_GOOD),
+            "{rows:?}"
+        );
+        assert!(
+            rows.iter().any(|(t, c)| t == "+3 summon tag damage" && *c == PREFIX_GOOD),
+            "{rows:?}"
+        );
+    }
+
+    /// `Main.cs:21152-21265`: the accessory prefixes print fixed green
+    /// rows — Hard 62 "+1 defense", Warding 66 "+20 mana" (the literal
+    /// space), Quick 2 67 "+2% critical strike chance".
+    #[test]
+    fn w4_e16_the_accessory_prefixes_print_the_fixed_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let watch = crate::registry::get(15).expect("the copper watch row");
+        for (prefix, want) in [
+            (62u16, format!("+1{}", crate::lang::tip(25))),
+            (66, format!("+20 {}", crate::lang::tip(31))),
+            (67, format!("+2{}", crate::lang::tip(5))),
+            (80, format!("+4{}", crate::lang::tip(47))),
+        ] {
+            let rows = item_tooltip_lines(
+                15,
+                watch,
+                TooltipContext { prefix, ..Default::default() },
+            );
+            let row = rows.iter().find(|(t, _)| *t == want).expect(&want);
+            assert_eq!(row.1, PREFIX_GOOD, "prefix {prefix}: {rows:?}");
+        }
+    }
+
+    /// `Main.cs:20333` + `:21124`: oldKB is captured BEFORE the glove
+    /// scale — the knockback DELTA row stays prefix-only (+15%) even with
+    /// the glove, while the WORD tier reads the glove-scaled knockback
+    /// (5.5 × 1.15 × 2 = 12.65 → the insane word tip[22]).
+    #[test]
+    fn w4_e16_the_knockback_delta_reads_the_prefix_only_oldkb() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let sword = crate::registry::get(4).expect("the iron broadsword row");
+        let world = tr_core::World::new("t".into(), 10, 10);
+        let mut player = crate::player::Player::spawn(&world);
+        player.kb_glove = true;
+        let rows = item_tooltip_lines(
+            4,
+            sword,
+            TooltipContext { prefix: 81, player: Some(&player), ..Default::default() },
+        );
+        // oldKB = 5.5 * 1.15 = 6.325; (6.325 - 5.5) / 5.5 * 100 = 15.
+        assert!(
+            rows.iter().any(|(t, _)| *t == format!("+15{}", crate::lang::tip(45))),
+            "{rows:?}"
+        );
+        assert!(
+            !rows.iter().any(|(t, _)| *t == format!("+130{}", crate::lang::tip(45))),
+            "the glove scale must not leak into the delta: {rows:?}"
+        );
+        // The word tier reads the glove-scaled 12.65 → tip[22].
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::tip(22)), "{rows:?}");
     }
 }

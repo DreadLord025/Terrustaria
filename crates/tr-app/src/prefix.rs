@@ -390,8 +390,18 @@ pub fn prefix_crit_bonus(prefix: u16) -> i32 {
 /// 3377/3779/3787 staff rows must reach the prefixed math).
 pub fn prefixed_stats(kind: u16, prefix: u16) -> Option<PrefixedStats> {
     let def = crate::registry::item(kind)?;
+    Some(prefixed_stats_of(def, prefix))
+}
+
+/// [`prefixed_stats`] over a caller-supplied row — the tooltip's seam
+/// (W4-e16): `Main.MouseText_DrawItemTooltip_GetLinesInfo` reads the
+/// PREFIXED hovered instance (`Item.Prefix` already applied,
+/// `Item.cs:576-586`), and the port's tooltip receives the hovered row
+/// directly (a witness may override fields), so the application runs on
+/// that row rather than re-reading the registry.
+pub fn prefixed_stats_of(def: &ItemDef, prefix: u16) -> PrefixedStats {
     if prefix == 0 {
-        return Some(PrefixedStats {
+        return PrefixedStats {
             damage: def.damage,
             use_animation: def.use_animation as i32,
             use_time: def.use_time as i32,
@@ -408,7 +418,7 @@ pub fn prefixed_stats(kind: u16, prefix: u16) -> Option<PrefixedStats> {
         });
     }
     let m = Multipliers::stat_switch(prefix);
-    Some(PrefixedStats {
+    PrefixedStats {
         damage: round_bankers((def.damage as f32 * m.dmg) as f64) as i32,
         use_animation: round_bankers((def.use_animation as f32 * m.spd) as f64) as i32,
         use_time: round_bankers((def.use_time as f32 * m.spd) as f64) as i32,
@@ -422,7 +432,7 @@ pub fn prefixed_stats(kind: u16, prefix: u16) -> Option<PrefixedStats> {
         armor_penetration: m.arpen,
         rare: shift_rare(def.rare, prefix, &m),
         value: ((def.value as f32) * Multipliers::value_multiplier(prefix, &m).powi(2)) as i32,
-    })
+    }
 }
 
 /// The rarity ladder + clamp (`Item.cs:587-613`): the value multiplier shifts
