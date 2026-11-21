@@ -870,4 +870,59 @@ mod tests {
         let (_, y) = check_rope_usability(&w, 214, true, 20, 20);
         assert_eq!(y, 21);
     }
+
+    // W4-f3 compose — the end-to-end place→attach→ride→coil-refund chain
+    // (origin/task/W4-f3-dust-player-3 0b11548f's pulley machine attaches
+    // to the SAME `td::TILE_ROPE` set this module's placement writes).
+    // This branch carries the placement + refund legs LIVE; the attach +
+    // ride legs are pinned here via the EXACT predicates f3's machine
+    // reads (`find_pulley`'s `is_rope` gate :19652 + the lone-cell
+    // `tile_rope_kind` neighbours :19665, `can_move_forward_on_rope`
+    // :24250) — the f3 player fns themselves live on the f3 branch; the
+    // merged tree runs the full chain (the 26e-f union doc's compose
+    // section). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_g82_f3_compose_the_placed_column_attaches_and_refunds() {
+        // LEG 1 — PLACE: the coil lands on the row-30 floor and writes a
+        // 213 link at (20, 29) (the placement-walk rig).
+        let mut w = world();
+        for x in 18..24 {
+            put(&mut w, x, 30, 1);
+        }
+        let mut p = proj(171);
+        p.pos = Vec2::new(320.0 - 7.0, 460.0);
+        p.vel = Vec2::new(0.0, 10.0);
+        coil_step(&mut p, &mut w, 0);
+        assert!(!p.active);
+        assert_eq!(p.ai[1], 1.0);
+        assert_eq!(w.tile(20, 29).unwrap().kind, 213);
+        // LEG 2 — ATTACH predicates: a player hanging at the link's row.
+        // f3 `find_pulley` probes ((x + width/2)/16, (y - 8)/16): seat the
+        // player centre on column 20, y = 29*16 + 8 → probe row 29 — the
+        // placed cell. The `is_rope` gate answers true (a TILE_ROPE kind,
+        // the early return, no column probe needed).
+        assert!(td::TILE_ROPE.has(w.tile(20, 29).unwrap().kind));
+        assert!(crate::render::ropes::is_rope(&w, 20, 29).0, "the :19652 gate");
+        // The lone-cell arm (:19656-19668): one link, no rope-kind
+        // neighbour above/below → the row*16+22 hang snap applies.
+        let rope_nbr = |x: i32, y: i32| {
+            w.tile(x, y)
+                .is_some_and(|t| t.active() && td::TILE_ROPE.has(t.kind))
+        };
+        assert!(!rope_nbr(20, 28) && !rope_nbr(20, 30), "a lone cell");
+        // LEG 3 — RIDE predicate: the placed kind is non-solid (the
+        // attach's solid_collision probe passes; f3 0b11548f verified the
+        // rope kinds non-solid) and a second link below extends the
+        // climbable column — place one by hand the way the usability walk
+        // would, then the descent probe reads rope at the next row.
+        assert!(!td::TILE_SOLID.has(213), "the hang box never collides");
+        put(&mut w, 20, 30, 213); // over the floor cell — a rope column
+        assert!(rope_nbr(20, 30), "the ride's next-row probe (:24250 shape)");
+        // LEG 4 — COIL-REFUND: the same coil's death ladder pays back
+        // 10-ai1 = 9 rope items (the world drop the pool hook queues).
+        assert_eq!(coil_death_drop(p.kind, p.ai[1]), Some((965, 9)));
+        // And an UNPLACED coil (ai1 == 0) refunds the coil item itself —
+        // the throw that never lands costs nothing.
+        assert_eq!(coil_death_drop(171, 0.0), Some((985, 1)));
+    }
 }
