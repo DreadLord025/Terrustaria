@@ -39494,3 +39494,15 @@ batch-5 sites are disjoint — keep them.
 
 4 new witnesses + the four-case crimson-bit extension WRITTEN NOT RUN;
 24 total on the branch.
+
+**The RETIRE addendum (same day, doc-only — census §9):** the receipts
+re-probed at the NEW co-lane tips and upgraded to exact merger line
+ranges — c36 `3a64a1b96` (`kill.rs:1087-1184` DELETE, g85's
+`:1089-1208` KEEP; the 5043-drop-hunk item is f33b's survival-drop
+hunk per c36's own three-way note — g85 touches no 5043 site), f35
+`1abae9ade` (`npcs.rs:5693-5725` stale poll DELETE, g85's `:5714-5805`
+replaces; the death arm is a strict wrap; the resummon witness
+byte-identical keep-one). The scout contract re-verified UNCLAIMED
+across all 356 W4 tips → the FINAL task-seed R-24-11 (research/90
+§2(d)). §8 SEALED + the ORB bible paragraph in the census. No new
+deviations — the retire phase changes no code.

@@ -503,6 +503,42 @@ extends an existing witness).
 
 ## 8. The FINAL phase (2026-11-21, same branch, code-only) — the summon split, the meteor gates, the keep-one receipt
 
+**§8 SEALED (2026-11-21, the RETIRE phase):** the FINAL verdicts below
+stand as landed; the RETIRE re-probes (§9.1/§9.2) at the NEWER co-lane
+tips (`3a64a1b96`/`1abae9ade`) confirmed every §8 claim unchanged and
+upgraded the keep-one verdicts to exact merger line ranges. Nothing in
+§8 is superseded — §9 only adds the cut lists.
+
+**The ORB bible (one paragraph).** A Shadow Orb / Crimson Heart is ONE
+tile kind 31 whose `frameX >= 36` half is the crimson variant (tile 12
+is the separate Life-Crystal Heart object, 639 the Mana Crystal, 696
+the placeable replica); `WorldGen.CheckOrb` (`:54169-54344`) snaps the
+broken cell to the 2×2's top-left, re-kills the whole object on any
+member's break, and switches FOUR ways — 696 drops its replica
+5469/5470, 12 drops 29, 639 drops 109 (all three draw-free and
+flag-free), and ONLY 31 draws the 5-way `Main.rand.Next(5)` (drawn even
+on the forced-first-smash override to the gun) from its crimson or
+corruption table, raises `shadowOrbSmashed`/`shadowOrbCount`, chats the
+chill/screams on smashes 1-2 (`misc[10]/[11]`, `ChatColors.World`), and
+on the third (or EVERY smash on FTW+DontStarve-not-remix) summons
+`SpawnOnPlayer` 266 the Brain (crimson bit set, gate `!AnyNPCs(266)`) or
+13 the EoW (gate `!AnyNPCs(13)` — each half ignores the OTHER boss's
+living body), resets the count INSIDE the gate, and fires progression 7
+SMASHING_POPPET — all inside case 31; the summoned boss's DEATH (not the
+smash) sets the shared `downedBoss2` and arms `spawnMeteor` (guaranteed
+first, `Next(2)` after, gated on `isThereAWorldSurface`; skyblock deaths
+also unlock `shadowOrbSmashed`), the nightly `UpdateTime_StartNight`
+bookend keeps a 1/50 meteor chance while `downedBoss2` stands, and
+`HandleMeteorFall` lands the ore the next morning past 16200; the SAME
+smash flag opens the goblin window — the dawn invasion roll and the
+day-ladder scout rung (`NPC.cs:4478`, the conditional `Next(7)` while
+`!downedGoblins`) — until the army is downed. The port keeps every gate
+and draw order (the count-poll summon with the recorded crimson bit,
+the chat watermark, the seed-flag lowTiles stand-in and the
+boundary-only surface cancel are the documented deviations); the
+merger keeps g85's `check_orb` WHOLE and drops c36's unconditional copy
+and f35's stale EoW-only poll (§9's exact ranges).
+
 ### 8.1 The c36 progression-7 keep-one — FINAL VERDICT: the g85 case-31 gate is CANONICAL
 
 **Re-probe of the c36 lane at its LATEST pushed tip `4e124425c`** (the
