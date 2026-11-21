@@ -657,10 +657,14 @@ fn try_move_coins_in_chest(
 }
 
 /// `Wiring.TryAddingToStack` (`Wiring.cs:2772-2798`): merge the drop into a
-/// matching chest stack up to its maxStack. Returns true when the drop is
-/// fully consumed (the C# `worldItem.stack <= 0` arm); a partial merge returns
-/// `num > 0` but the hopper caller treats any true as "placed" only when the
-/// drop emptied — the port models the full-consume path the hopper relies on.
+/// matching chest stack up to its maxStack. Returns `num > 0` — true on ANY
+/// merge (the C# `:2797`), even a partial one: the drop keeps its remainder
+/// and `TryToPutItemInChest` returns true (the hopper then marks the drop
+/// placed; the C# `worldItem.stack` carries the leftover, but the hopper's
+/// `SyncItem`/visualize run regardless — the port consumes the whole drop on
+/// a successful place, the single-player fold). The `chestItem.type == 0`
+/// clone arm (`:2790-2796`) is unreachable here (a type-0 slot fails
+/// `CanStack` first), so it is not ported.
 fn try_adding_to_stack(
     drop_kind: u16,
     drop_prefix: u16,
@@ -673,27 +677,36 @@ fn try_adding_to_stack(
     }
     let room = max - slot.count;
     let take = (*drop_count).min(room);
+    if take == 0 {
+        return false;
+    }
     *drop_count -= take;
     slot.count += take;
-    *drop_count == 0
+    true
 }
 
 /// `Wiring.TryToPutItemInChest` (`Wiring.cs:2680-2701`): coins ride the coin
 /// arm; otherwise the first stack merge, then the first empty slot. Returns
-/// true when the drop was placed (consumed).
+/// `(placed, remaining)` — `placed` is the C# bool (any merge or empty-slot
+/// fill), `remaining` is the drop's leftover stack (the C# `worldItem.stack`
+/// after the partial merge; 0 when fully consumed / `TurnToAir`).
 fn try_put_item_in_chest(
     drop: &crate::item::ItemDrop,
     slots: &mut [crate::item::ItemSlot],
     max_items: usize,
-) -> bool {
+) -> (bool, u32) {
     if crate::registry::is_coin(drop.kind) {
-        return try_move_coins_in_chest(drop.kind, drop.count, slots, max_items);
+        let placed = try_move_coins_in_chest(drop.kind, drop.count, slots, max_items);
+        // `TryMoveCoinsInChest` always `TurnToAir`s the drop on success
+        // (`Wiring.cs:2755`); a failure leaves it untouched.
+        return (placed, if placed { 0 } else { drop.count });
     }
     let mut left = drop.count;
-    // `:2686-2692`: the stack-merge pass over the chest's slots.
+    // `:2686-2692`: the stack-merge pass over the chest's slots. A partial
+    // merge returns true with a remainder (the C# `num > 0`, `:2797`).
     for slot in slots.iter_mut().take(max_items.min(slots.len())) {
         if try_adding_to_stack(drop.kind, drop.prefix, &mut left, slot) {
-            return true;
+            return (true, left);
         }
     }
     // `:2693-2699`: the first empty slot takes the whole (remaining) drop.
@@ -709,10 +722,10 @@ fn try_put_item_in_chest(
                 count: left,
                 prefix: drop.prefix,
             };
-            return true;
+            return (true, 0);
         }
     }
-    false
+    (false, drop.count)
 }
 
 /// `Wiring.Hopper` (`Wiring.cs:2638-2678`, `HitWireSingle` cases 21/467): the
@@ -772,9 +785,15 @@ fn hopper_pull(app: &mut App, i: i32, j: i32, kind: u16) {
         }
         let slots = crate::chest::chest_slots_mut(&mut app.world_chests, idx)
             .expect("the chest exists");
-        if try_put_item_in_chest(drop, slots, max_items) {
-            drop.count = 0;
-            drop.kind = 0;
+        let (placed, remaining) = try_put_item_in_chest(drop, slots, max_items);
+        if placed {
+            // `:2669-2671`: the drop's stack carries the leftover (a partial
+            // merge); `TurnToAir` only when it emptied. `SyncItem`/
+            // `VisualizeChestTransfer` are net/draw effects (no port).
+            drop.count = remaining;
+            if remaining == 0 {
+                drop.kind = 0;
+            }
             pulled = true;
         }
     }
@@ -1504,6 +1523,24 @@ mod tests {
         let copper: u32 = slots.iter().filter(|s| s.kind == 71).map(|s| s.count).sum();
         let silver: u32 = slots.iter().filter(|s| s.kind == 72).map(|s| s.count).sum();
         assert_eq!((copper, silver), (10, 2), "210 copper = 2 silver + 10 copper");
+    }
+
+    #[test]
+    fn dw_e20_the_hopper_partial_merge_keeps_the_remainder() {
+        // `Wiring.TryAddingToStack` (`Wiring.cs:2772-2798`): a partial merge
+        // returns `num > 0` (true) and the drop keeps its remainder. Dirt
+        // maxStack 9999; a chest slot at 9990 takes 9 of a 20-drop, leaving 11
+        // on the ground (the C# `worldItem.stack` carries the leftover).
+        let mut app = app_with(21, 0, 0);
+        let idx = chest_at(&mut app, 10, 20, vec![slot(2, 9990)]);
+        app.items.push(crate::item::ItemDrop::new(
+            2, 20, 0, 10.0 * 16.0 + 16.0, 20.0 * 16.0 + 16.0, 0.0, 0.0, 0.0,
+        ));
+        trip_and_tick(&mut app);
+        assert_eq!(app.items[0].count, 11, "the remainder stays on the ground");
+        assert_eq!(app.items[0].kind, 2, "the drop is still active");
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert_eq!(slots[0].count, 9999, "the chest stack filled to maxStack");
     }
 
     #[test]
