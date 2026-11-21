@@ -5189,6 +5189,30 @@ fn elf_copter_death(
     }
 }
 
+/// The 346 Santa-NK1 death (`NPC.cs:89355-89395`, sites 793-802): the
+/// SIX gores 518-523 at position FIRST, then the 10x/5x mech smoke
+/// burst, then the four quadrant smoke gores, scale 1f.
+fn santa_nk1_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    _hit_direction: f32,
+) {
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:89359-89364` — the six gores BEFORE the dust.
+    for t in [518, 519, 520, 521, 522, 523] {
+        gore.new_gore(rng, world, pos, vel, t, 1.0);
+    }
+    // `:89365-89377` — the 10x dust-31 + 5x paired dust-6 census.
+    mech_smoke_burst(npc, dust, dust_ctx, rng, world, 10, 5);
+    // `:89378-89393` — the four quadrant smoke gores.
+    mech_quadrant_smoke(npc, gore, rng, world);
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -5811,6 +5835,10 @@ pub fn hit_effect_d(
     // `:89324-89354` — the 347 Elf Copter arm (sites 787-792).
     else if npc_type == 347 {
         elf_copter_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89355-89395` — the 346 Santa-NK1 arm (sites 793-802).
+    else if npc_type == 346 {
+        santa_nk1_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -10051,5 +10079,41 @@ mod tests {
             assert_eq!(gore.slot(4 + i).velocity.y, -ky * 0.4 + dy);
         }
         assert_eq!(rng.peek(), twin.peek(), "the elf copter mirrors the C# draws");
+    }
+
+    /// `NPC.cs:89359-89393` — the Santa-NK1: six 518-523 BEFORE the
+    /// 10x/5x census, then the four quadrants.
+    #[test]
+    fn w4_f5d_the_santa_nk1_six_then_four_quadrants() {
+        let w = air();
+        let n = mob(100.0, 100.0, 60.0, 60.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(823);
+        let _ = hit_effect_d(&n, 346, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..10].iter().map(|g| g.gore_type).collect();
+        assert_eq!(&types[..6], &[518, 519, 520, 521, 522, 523]);
+        for t in &types[6..] {
+            assert!((61..64).contains(t), "smoke type in range: {t}");
+        }
+        assert!(!gore.slot(10).active, "exactly ten gores");
+        let mut twin = UnifiedRandom::new(823);
+        for _ in 0..6 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        for _ in 0..10 {
+            twin_dust(&mut twin, 60, 60);
+        }
+        for _ in 0..5 {
+            twin_dust(&mut twin, 60, 60);
+            twin_dust(&mut twin, 60, 60);
+        }
+        for _ in 0..4 {
+            let _t = twin.next_range(61, 64);
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the santa nk1 mirrors the C# draws");
     }
 }
