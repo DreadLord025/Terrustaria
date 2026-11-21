@@ -78,7 +78,8 @@ other new pass draws only its own `pass_rng("<vanilla name>")` stream.
 | 30 Hellforge | 2ac7c298 | landed (code-only; hash re-pin deferred to the gate) |
 | 31 Spreading Grass | 3a101031 | landed (code-only; classic arm, remix arm deferred to d107; hash re-pin deferred) |
 | 32 Surface Ore and Stone | 19bc132b | landed (code-only; 512-pin unchanged by the width guard; default re-pin deferred) |
-| 33 Place Fallen Log | (this commit) | landed (code-only; 512-pin unchanged by the width guard; default re-pin deferred) |
+| 33 Place Fallen Log | 2fdc8b96 | landed (code-only; 512-pin unchanged by the width guard; default re-pin deferred) |
+| 34 Traps | (this commit) | landed (code-only; 512-pin unchanged by the width guard; default re-pin deferred) |
 
 ### Pass 28 — Floating Island Houses (landed)
 
@@ -269,6 +270,39 @@ other new pass draws only its own `pass_rng("<vanilla name>")` stream.
   `DEFAULT_WORLD` stale-by-design. Re-pin DEFERRED; **a == b untouched**
   + the witness `w4_d104_33_the_fallen_log_places_and_replays`.
 
+### Pass 34 — Traps (landed)
+
+* **C# read in full**: the pass body `WorldGen.cs:18657-18786` (the
+  `denySomeGeneration` + `actuallyNoTrapsForRealIMeanIt` +
+  `notTheBees && !noTraps && !remix` gate, the `tileSolid[379]` window,
+  the `width*0.05` count with the getGood ×1.5 / skyblock /5, the
+  1150-attempt retry onto wall-less underground cells outside the ocean
+  band, the `width*0.003` sand-trap scatter onto wall-187 columns),
+  `placeTrap` `:8922-9513` (the head gates + the classic type roll +
+  case 0 dart `:9057-9201`, case 1 boulder `:9202-9399` with the
+  boulder-type roll chain + the pet cap, case 2 explosive `:9400-9459`,
+  case 3 geyser `:9460-9500`), `PlaceSandTrap` `:35463-35735`,
+  `placeTrap_CanContinue` `:8909-8920`, `IsTileNearby` `:8862-8884`,
+  `AreAnyTilesInSetNearby` `:8787-8804`, the three boulder-proximity
+  helpers `:8806-8860`, `CanGeneratePressurePlateAt` `:11029-11049`,
+  `Place1x1` `:45188-45233`, `Place2x2` `:51330-51420`, `GetWorldSize`
+  `:6559-6570`, `Tile.ClearTile` `Tile.cs:123-128`.
+* **Rust**: `worldgen/traps.rs` (new — the full port + 2 witnesses),
+  `pipeline.rs` (`GenVars.shimmer_position` + `boulder_pets_placed`,
+  `step_traps` after `place fallen log` with the three-part gate),
+  `progress.rs` (`Lang.gen[34]` `:18663`).
+* **RNG**: all draws on the fresh `pass_rng("Traps")` stream.
+* **Deviations**: the noTraps seed arms (count multipliers, TNT barrels,
+  boulder-solidity flips, anniversary type-1) + the drunk progress loop
+  + the `starGame` multiplier defer to the seed lanes / are unported;
+  the shimmer veto reads `GenVars.shimmer_position` (Zero until d102
+  publishes); the ≤400 width guard; the explosive case's `break` →
+  shared `return false` quirk kept 1:1.
+* **Hash doc**: `SEED42_512` UNCHANGED (the width guard);
+  `DEFAULT_WORLD` stale-by-design. Re-pin DEFERRED; **a == b untouched**
+  + the witnesses `w4_d104_34_the_geyser_places_and_replays` /
+  `w4_d104_34_the_dart_case_wires_the_plate`.
+
 ## Status
 
 - [x] 28 Floating Island Houses
@@ -277,6 +311,6 @@ other new pass draws only its own `pass_rng("<vanilla name>")` stream.
 - [x] 31 Spreading Grass (classic arm; remix arm → d107)
 - [x] 32 Surface Ore and Stone
 - [x] 33 Place Fallen Log
-- [ ] 34 Traps
+- [x] 34 Traps
 - [ ] 35 Piles
 - [ ] 36 Spawn Point

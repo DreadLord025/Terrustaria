@@ -45,6 +45,7 @@ mod surface;
 mod temple;
 mod terrain;
 mod tile_runner;
+mod traps;
 mod wavy;
 mod world_hash;
 mod finish_seeds;

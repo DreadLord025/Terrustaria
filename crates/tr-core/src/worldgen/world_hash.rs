@@ -285,6 +285,14 @@ mod tests {
     // UNCHANGED: the ≤800 width guard skips before any draw (the C#
     // column draw `Next(400, width-400)` throws there). The a == b
     // halves stay untouched.
+    // W4-d104 pass 34 (2026-11-21, code-only): the `Traps` pass
+    // (`WorldGen.cs:18657-18786` + `placeTrap` `:8922-9513` +
+    // `PlaceSandTrap` `:35463-35735`) lands — the dart/boulder/explosive/
+    // geyser traps + the desert sand traps on the fresh
+    // `pass_rng("Traps")` stream. The 512-wide pin is UNCHANGED: the
+    // ≤400 width guard skips before any draw (the C# column draw
+    // `Next(200, width-200)` throws there). The a == b halves stay
+    // untouched.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -358,6 +366,10 @@ mod tests {
     // pass (above) moves this pin BY DESIGN — the default world's 1-3
     // fallen logs (488) land on the grass surface. Re-pin DEFERRED to
     // the merge gate; the a == b halves stay untouched.
+    // W4-d104 pass 34 (2026-11-21, code-only): the `Traps` pass (above)
+    // moves this pin BY DESIGN — the default world's ~210 traps + ~12
+    // sand traps land underground. Re-pin DEFERRED to the merge gate;
+    // the a == b halves stay untouched.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

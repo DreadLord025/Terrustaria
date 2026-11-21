@@ -53,6 +53,7 @@ use super::structures;
 use super::surface;
 use super::temple;
 use super::terrain::{self, Layers, SurfaceMap};
+use super::traps;
 use super::wavy;
 use super::{GenOptions, TILE_ASH, TILE_DIRT, TILE_STONE};
 use crate::tiledata as td;
@@ -382,6 +383,14 @@ pub(crate) struct GenVars {
     /// (`:18513`, W4-d104 pass 33) records on its 1-in-2 roll; the Guide
     /// pass (`:20468-20536`, lane 5) consumes it.
     pub(crate) log_anchor: Option<(i32, i32)>,
+    /// `GenVars.shimmerPosition` (`GenVars.cs:282`, reset Zero
+    /// `WorldGen.cs:7039`) — the shimmer biome's anchor; the shimmer
+    /// lane (d102) publishes it, the Traps pass's 100-tile veto reads it.
+    pub(crate) shimmer_position: (i32, i32),
+    /// `GenVars.boulderPetsPlaced` (`GenVars.cs`, reset
+    /// `WorldGen.cs:8321`) — the pet-boulder cap counter the Traps pass
+    /// (W4-d104 pass 34) advances.
+    pub(crate) boulder_pets_placed: i32,
 }
 
 impl Default for GenVars {
@@ -422,6 +431,8 @@ impl Default for GenVars {
             island_house_slots: Vec::new(),
             ore_patch_x: Vec::new(),
             log_anchor: None,
+            shimmer_position: (0, 0),
+            boulder_pets_placed: 0,
             shell_start_x_left: 0,
             shell_start_y_left: 0,
             shell_start_x_right: 0,
@@ -1428,6 +1439,10 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // FallenLogsAndWaterFeatures pass's classic arm): after Surface Ore
     // and Stone (`:18447`), before Traps (`:18657`) — W4-d104 pass 33.
     step!("place fallen log", "Place Fallen Log", step_place_fallen_log),
+    // The vanilla Traps slot (`WorldGen.cs:18657`): after Place Fallen
+    // Log (`:18513`), before Piles (`:18788`) — W4-d104 pass 34. The
+    // scatter draws ride the fresh `pass_rng("Traps")` stream.
+    step!("traps", "Traps", step_traps),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
@@ -2791,6 +2806,53 @@ fn step_place_fallen_log(
     );
 }
 
+/// The `Traps` pass (`WorldGen.cs:18657-18786`, W4-d104 pass 34): the
+/// trap + sand-trap scatters on the fresh `pass_rng("Traps")` stream.
+/// The `Skyblock.denySomeGeneration` + `actuallyNoTrapsForRealIMeanIt`
+/// + `notTheBees && !noTraps && !remix` gate (`:18659`) rides here.
+fn step_traps(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if surface::deny_some_generation(world) {
+        return;
+    }
+    // `Variations.actuallyNoTrapsForRealIMeanIt` (`:293-303`):
+    // actuallyNoTraps && activeSecretSeedCount < 4.
+    let count = crate::seeds::active_secret_seed_count(world.micro_seeds, world.seeds);
+    if world
+        .micro_seeds
+        .contains(crate::seeds::MicroSeedFlags::ACTUALLY_NO_TRAPS)
+        && count < 4
+    {
+        return;
+    }
+    let not_the_bees = opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES);
+    let no_traps = opts.flags.contains(crate::seeds::SeedFlags::NO_TRAPS);
+    let remix = opts.flags.contains(crate::seeds::SeedFlags::REMIX);
+    if not_the_bees && !no_traps && !remix {
+        return;
+    }
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    traps::pass_traps(
+        world,
+        world_surface,
+        rock_layer,
+        gv.lava_line,
+        opts.flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY),
+        gv.shimmer_position,
+        &mut gv.boulder_pets_placed,
+        &mut streams.pass_rng("Traps"),
+    );
+}
+
 fn step_slopes(
     world: &mut World,
     gv: &mut GenVars,
@@ -3653,7 +3715,8 @@ mod tests {
         assert_eq!(pos("hellforge") + 1, pos("spreading grass"));
         assert_eq!(pos("spreading grass") + 1, pos("surface ore and stone"));
         assert_eq!(pos("surface ore and stone") + 1, pos("place fallen log"));
-        assert!(pos("place fallen log") < pos("trees"));
+        assert_eq!(pos("place fallen log") + 1, pos("traps"));
+        assert!(pos("traps") < pos("trees"));
         assert!(pos("floating islands") < pos("floating island houses"));
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
