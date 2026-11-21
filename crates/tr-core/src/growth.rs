@@ -47,8 +47,15 @@ use crate::world::World;
 mod decorations;
 mod grass;
 mod herbs;
+// W4-g42 dispatcher follow-up: the OVERWORLD `UpdateWorld_GrassGrowth` arms
+// (`WorldGen.cs:74510-74866`), the jungle-plant helpers (`:47779-47944`,
+// `:73164-73187`) and the UNDERGROUND tail switch (`:74414-74507`) +
+// the runtime `PlaceCatTail` (`:58629-58742`).
+mod jungle;
+mod overworld;
 mod pumpkins;
 mod trees;
+mod underground_tail;
 
 // S1-K-3: the tree family lives in `growth/trees.rs`; the public seams
 // stay on `growth` (verbatim move, behaviour frozen).
@@ -731,18 +738,17 @@ pub fn update_world_overground_tile(
         grow_alch(world, x, y, day_time, raining, rng);
         return;
     }
-    // The sapling arm (:72430-72434): the kind-20 sapling at `Next(20)`,
+    // The sapling arm (:72430-72449): the kind-20 sapling at `Next(20)`,
     // the beach palm saplings 595/615 at `Next(5)` (the settings profiles
-    // land with the vanity trees).
+    // land with the vanity trees). The C# arms do NOT return — the walk
+    // continues (the tile is no grass, so the tail arms skip it).
     if kind == 20 && rng.next_max(20) == 0 {
         attempt_grow_tree_from_sapling(world, x, y, false, rng);
-        return;
     }
     if (kind == 595 || kind == 615) && rng.next_max(5) == 0 {
-        // `AttemptToGrowTreeFromSapling`'s 595/615 arms (`:72435-72444`)
+        // `AttemptToGrowTreeFromSapling`'s 595/615 arms (`:72438-72449`)
         // — the Sakura/Willow settings profiles.
         attempt_grow_tree_from_sapling(world, x, y, false, rng);
-        return;
     }
     // The vanilla/KillTile arm (:72146-72152): the sakura/willow sapling or
     // its grown tile standing on the evil grass is killed (the trees do not
@@ -816,18 +822,22 @@ pub fn update_world_overground_tile(
         return;
     }
     if grass_pass {
-        // The mushroom grass 70 on the OVERGROUND path rides the overworld
-        // `case 70` arm (`:74704-74750`), NOT the underground slice — the C#
-        // `UpdateWorld_GrassGrowth` returns from the underground block at
-        // `:74508` before the overworld `switch (num10)` (`:74510`). The port's
-        // `update_world_grass_growth` carries the underground slice (its
-        // `allowed_to_spread` arg stands in for the C# `underground` flag the
-        // overground caller passes true); routing 70 through it would double
-        // the plant roll, so the overworld arm replaces it here (W4-g42 tail).
-        if kind == 70 {
-            overworld_mushroom_growth(world, x, y, x - 1, x + 2, y - 1, y + 2, rng);
-        } else {
-            update_world_grass_growth(
+        // W4-g42 dispatcher follow-up D2: the OVERGROUND caller passes
+        // `underground: false` (`:72357`), so every grass kind rides the
+        // OVERWORLD `switch (num10)` (`:74510-74866`) — NOT the underground
+        // slice (`update_world_grass_growth`, which returns at `:74508`).
+        // The old port routed everything but 70 through the underground
+        // slice, so the overworld plant rolls / spread ladder never ran
+        // (the case-70 find, T-3). Routing through both would double the
+        // plant rolls. `AllowedToSpreadInfections` rides the World field
+        // (the `update_world` caller sets it from the journey power).
+        let allowed = world.allowed_to_spread_infections;
+        match kind {
+            70 => overworld_mushroom_growth(world, x, y, x - 1, x + 2, y - 1, y + 2, rng),
+            60 => overworld::overworld_jungle_growth(world, x, y, x - 1, x + 2, y - 1, y + 2, rng),
+            226 => overworld::overworld_jungle_plant_growth(world, x, y, y - 1, rng),
+            633 => overworld::overworld_ash_growth(world, x, y, x - 1, x + 2, y - 1, y + 2, rng),
+            _ => overworld::overworld_grass_growth(
                 world,
                 x,
                 y,
@@ -835,9 +845,9 @@ pub fn update_world_overground_tile(
                 x + 2,
                 y - 1,
                 y + 2,
-                true,
+                allowed,
                 rng,
-            );
+            ),
         }
         // The thorn arms (:72362-72370): the corruption thorn 32 grows into
         // the corrupt grass 23 and the crimson thorn 352 into the crimson
@@ -850,11 +860,19 @@ pub fn update_world_overground_tile(
                 grow_spike(world, x, y, 352, 199, rng);
             }
         }
-        // The jungle thorn arm (:73658-73661): the 69 tile grows the same
-        // walk with no roll.
-        if kind == 69 {
-            grow_spike(world, x, y, 69, 60, rng);
-        }
+        // The jungle thorn arm (:73658-73661) is UNDERGROUND-only — g83's
+        // `vine_growth` carries it (fe5b5b8c, the :73658 GrowSpike(69,60)
+        // no-roll arm); the overground dispatcher never sees kind 69 (not
+        // in SpreadOverground), so the old arm here was dead code.
+    }
+    // The overground wall arms (`:72499-72503`, behind
+    // `AllowedToSpreadInfections`) — AFTER the whole else-if chain, for
+    // every active kind (the C# runs them outside the chain). The port's
+    // overground dispatcher lacked them entirely (W4-g42 dispatcher
+    // follow-up D2); the g83 vine grow-tops (`:72506+`) stay g83's lane.
+    if world.allowed_to_spread_infections {
+        spread_grass_walls(world, 3, x, y, rng);
+        spread_desert_walls(world, 3, x, y, rng);
     }
 }
 
@@ -872,9 +890,9 @@ pub fn update_world_overground_tile(
 /// MP's job. The `&` conjunction (`TryGrowingTreeByType(5) & flag10`,
 /// `:74723`) evaluates BOTH sides — the tree grow draws even when the LOS
 /// gate is off, so the port always grows. (The UNDERGROUND case-70 arm
-/// `:74497-74506` carries the liquid-above `PlaceCatTail` branch — c33's
-/// helper — and the `Next(250)` tree roll; it rides the underground
-/// dispatcher, a separate documented follow-up.)
+/// `:74497-74506` — the liquid-above `PlaceCatTail` branch and the
+/// `Next(250)` tree roll — landed with the dispatcher follow-up D4,
+/// `underground_tail.rs`.)
 fn overworld_mushroom_growth(
     world: &mut World,
     i: i32,
@@ -1021,7 +1039,9 @@ pub fn update_world(
     // `WorldGen.UpdateWorld`'s setup (`:71503`, `:71508`): the infection
     // spread flag comes in from the caller (`AllowedToSpreadInfections`, set
     // from the journey `StopBiomeSpreadPower`) and the wall-arm box radius is
-    // the constant 3.
+    // the constant 3. The flag rides the World field so the overworld grass
+    // arm (no flag parameter of its own) reads the same value.
+    world.allowed_to_spread_infections = allowed_to_spread;
     let wall_dist = 3;
     let mut picks = 0u32;
     let mut overground_count =
@@ -1070,8 +1090,8 @@ pub fn update_world(
 }
 
 /// `WorldGen.beachDistance` = 380 (`WorldGen.cs:86914`) — the shell arm's
-/// beach margins.
-const BEACH_DISTANCE: i32 = 380;
+/// beach margins (the runtime cattail's sand gate reads it too, `:58700`).
+pub(crate) const BEACH_DISTANCE: i32 = 380;
 
 /// `WorldGen.RollRandomSeaShellStyle` (`WorldGen.cs:45170-45187`) over the
 /// growth pass's `UnifiedRandom` (the C# `genRand`): the 5 seashell styles on
@@ -1681,13 +1701,16 @@ pub(super) mod tests {
     fn test_spread_2_grass_grows_over_dirt_and_the_spikes_grow() {
         // `UpdateWorld_GrassGrowth` (:74269+): the 3x3 scan converts the
         // dirt neighbours to grass; the flower-27 exclusion; the spike arms
-        // grow on the matching grass with the density gates.
+        // grow on the matching grass with the density gates. The scan half
+        // rides the UNDERGROUND slice (kind 2 is no longer in its table —
+        // W4-g42 D1); the overworld kind-2 dirt spread is
+        // `overworld::overworld_grass_growth` (the :74644 arm).
         let mut w = world();
         w.world_surface = 250.0; // the surface below the cells
         put(&mut w, 100, 200, 2, 0); // the grass seed cell
         put(&mut w, 101, 200, 0, 0); // the dirt neighbour
         let mut rng = UnifiedRandom::new(7);
-        update_world_grass_growth(&mut w, 100, 200, 99, 102, 199, 202, true, &mut rng);
+        overworld::overworld_grass_growth(&mut w, 100, 200, 99, 102, 199, 202, true, &mut rng);
         assert!(
             w.tile(101, 200).is_some_and(|t| t.kind == 2),
             "the dirt converted to grass"
@@ -1796,6 +1819,88 @@ pub(super) mod tests {
         assert_eq!(w.tile(101, 200).unwrap().kind, 70, "the mud spreads to mushroom grass");
     }
 
+    /// W4-g42 D5: the underground gem-sapling arm (`:73763-73768`) — a 590
+    /// gemcorn sapling rolls `Next(5)` and grows its gem tree through
+    /// `AttemptToGrowTreeFromSapling(underground: true)`. The old dispatcher
+    /// returned at the grass arm and never reached the sapling arms. The
+    /// gem sapling on stone with the gem wall family grows the topaz 583
+    /// (style 0) eventually; the OVERGROUND dispatcher refuses the same
+    /// sapling (the 590 arm's `!underground → false` gate, `:72886`).
+    #[test]
+    fn w4_g42_d5_the_underground_gem_sapling_grows_its_tree() {
+        let build = || {
+            let mut w = world();
+            w.world_surface = 100.0;
+            // The stone ground row + the gem wall family behind the column.
+            for x in 95..=105 {
+                put(&mut w, x, 210, 1, 0);
+                for y in 190..=209 {
+                    set_wall(&mut w, x, y, 61);
+                }
+            }
+            // The gem sapling 590 style 0 (topaz) at (100, 209), frameX 0.
+            put(&mut w, 100, 209, 590, 0);
+            w
+        };
+        let mut grew = false;
+        for seed in 1i32..800 {
+            let mut w = build();
+            let mut rng = UnifiedRandom::new(seed);
+            update_world_underground_tile(&mut w, 100, 209, 3, true, true, false, &mut rng);
+            // The trunk replaces the sapling cell and runs upward — any
+            // 583 in the column above the ground proves the grow.
+            if (190..=209).any(|y| w.tile(100, y).is_some_and(|t| t.active() && t.kind == 583)) {
+                grew = true;
+                break;
+            }
+        }
+        assert!(grew, "the underground Next(5) roll grows the topaz gem tree");
+        // The overground control: the same sapling never grows (the 590
+        // arm's underground-only gate) — and the overground dispatcher has
+        // no 590 arm at all (the C# :72431-72449 lists 20/595/615 only).
+        let mut w = build();
+        for seed in 1i32..200 {
+            let mut rng = UnifiedRandom::new(seed);
+            update_world_overground_tile(&mut w, 100, 209, true, false, 0.0, 0.0, &mut rng);
+        }
+        assert!(
+            w.tile(100, 209).is_some_and(|t| t.active() && t.kind == 590),
+            "the surface dispatcher leaves the gem sapling alone"
+        );
+    }
+
+    /// W4-g42 D4: the underground dispatcher's else-if chain no longer
+    /// returns at the grass arm — the wall arms (`:73809-73813`) run for a
+    /// grass cell too. A corrupt-grass cell with the natural wall 63 behind
+    /// it converts a neighbour wall on some stream (the Next(-2,3) pair).
+    #[test]
+    fn w4_g42_d4_the_underground_grass_cell_reaches_the_wall_arms() {
+        let mut w = world();
+        w.world_surface = 100.0;
+        put(&mut w, 100, 200, 23, 0);
+        set_wall(&mut w, 100, 200, 69); // the corruption wall on the source
+        for dx in -3i32..=3 {
+            for dy in -3i32..=3 {
+                set_wall(&mut w, 100 + dx, 200 + dy, 63);
+            }
+        }
+        set_wall(&mut w, 100, 200, 69);
+        let mut converted = false;
+        for seed in 1i32..400 {
+            let mut rng = UnifiedRandom::new(seed);
+            update_world_underground_tile(&mut w, 100, 200, 3, true, true, false, &mut rng);
+            if (97..=103).any(|x| {
+                (197..=203).any(|y| {
+                    (x, y) != (100, 200) && w.tile(x, y).is_some_and(|t| t.wall == 69)
+                })
+            }) {
+                converted = true;
+                break;
+            }
+        }
+        assert!(converted, "the grass cell's walk reaches SpreadGrassWalls");
+    }
+
 }
 
 /// `WorldGen.UpdateWorld_UndergroundTile` (`WorldGen.cs:73214-73614`): the
@@ -1873,7 +1978,10 @@ pub fn update_world_underground_tile(
     {
         grow_check_seaweed(world, i, j, rng);
     }
-    // The grass family + the spikes (`:73281-73295`).
+    // The grass family + the spikes (`:73280-73295`). The C# `else if`
+    // chain does NOT return — the walk continues to the sapling arms
+    // (`:73756-73780`) and the wall arms (`:73809-73813`) below (W4-g42
+    // dispatcher follow-up D4: the old `return` here skipped them).
     if SPREAD_UNDERGROUND.contains(&kind) {
         update_world_grass_growth(
             world,
@@ -1893,28 +2001,43 @@ pub fn update_world_underground_tile(
                 grow_spike(world, i, j, 352, 199, rng);
             }
         }
-        return;
-    }
-    // The lily → 74 conversion (`:73296-73310`).
-    if kind == 61 && rng.next_max(3) == 0 && world.tile(i, j + 1).map(|t| t.kind).unwrap_or(0) != 226 {
-        let frame_x = world.tile(i, j).map(|t| t.frame_x).unwrap_or(0);
-        if frame_x < 144 {
-            if rng.next_max(4) == 0 {
+    } else if kind == 61 && rng.next_max(3) == 0 {
+        // The lily → 74 conversion (`:73296-73310`) — an else-if arm, no
+        // return (the C# walks on to the wall arms).
+        if world.tile(i, j + 1).map(|t| t.kind).unwrap_or(0) != 226 {
+            let frame_x = world.tile(i, j).map(|t| t.frame_x).unwrap_or(0);
+            if frame_x < 144 {
+                if rng.next_max(4) == 0 {
+                    if let Some(t) = world.tile_mut(i, j) {
+                        t.frame_x = (162 + rng.next_range(0, 8) * 18) as i16;
+                    }
+                }
                 if let Some(t) = world.tile_mut(i, j) {
-                    t.frame_x = (162 + rng.next_range(0, 8) * 18) as i16;
+                    t.kind = 74;
                 }
             }
-            if let Some(t) = world.tile_mut(i, j) {
-                t.kind = 74;
-            }
         }
-        return;
+    } else if matches!(kind, 60 | 62 | 633 | 638 | 70 | 528 | 661 | 636 | 662 | 205) {
+        // The five vine families (`:73311-73482`) — the port's one-fn arm
+        // (an else-if arm; the 60/70/633/661/662 grasses never reach it,
+        // the grass arm above took them). The 444/396 moss and oyster arms
+        // park. The jungle-thorn kind-69 arm (`:73658`) is g83's claimed
+        // case (vine_growth, fe5b5b8c — UNWIRED contested seam); it stays
+        // out of this dispatcher until g83 wires it.
+        grow_vine_arm(world, i, j, rng);
     }
-    // The five vine families (`:73311-73482`) — the port's one-fn arm. The
-    // 444/396 moss and oyster arms park.
-    grow_vine_arm(world, i, j, rng);
-    // The wall arms (`:72499-72502`, behind `AllowedToSpreadInfections`); the
-    // web and town-NPC arms park.
+    // The underground sapling arms (`:73756-73780`): the 20/590/595/615
+    // saplings at `Next(5)`, `AttemptToGrowTreeFromSapling(underground:
+    // true)` — the gem sapling 590's runtime growth the port lacked
+    // (W4-g42 dispatcher follow-up D5). The C# arms are else-ifs of the
+    // big chain; none of these kinds is a grass/vine/lily/thorn, so the
+    // flat kind tests are observation-equivalent.
+    if matches!(kind, 20 | 590 | 595 | 615) && rng.next_max(5) == 0 {
+        attempt_grow_tree_from_sapling(world, i, j, true, rng);
+    }
+    // The wall arms (`:73809-73813`, behind `AllowedToSpreadInfections`) —
+    // AFTER the whole chain, for every active kind (the old port ran them
+    // only on the vine-arm fall-through). The web and town-NPC arms park.
     if allowed_to_spread {
         spread_grass_walls(world, wall_dist, i, j, rng);
         spread_desert_walls(world, wall_dist, i, j, rng);

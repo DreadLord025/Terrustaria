@@ -366,6 +366,13 @@ pub struct World {
     pub total_invasion_points: f32,
     /// `Main.hardMode` (`AmbienceServer.cs:61`). Runtime-only, not saved.
     pub hard_mode: bool,
+    /// `WorldGen.AllowedToSpreadInfections` (`WorldGen.cs:71502-71507`):
+    /// true unless the journey `StopBiomeSpreadPower` is enabled. The
+    /// `update_world` driver sets it per tick from the caller's flag; the
+    /// overworld grass arm reads it (W4-g42 dispatcher follow-up — the
+    /// overground dispatcher has no flag parameter of its own).
+    /// Runtime-only, not saved.
+    pub allowed_to_spread_infections: bool,
     /// `WorldGen.altarCount` (`WorldGen.cs:4202`): the smashed altars drive
     /// the hardmode ore tiers.
     pub altars_smashed: i32,
@@ -722,6 +729,9 @@ impl World {
             wave_kills: 0.0,
             total_invasion_points: 0.0,
             hard_mode: false,
+            // `WorldGen.AllowedToSpreadInfections`'s stock is true (the
+            // journey power off) — `UpdateWorld` re-sets it per tick.
+            allowed_to_spread_infections: true,
 
             altars_smashed: 0,
             shadow_orb_smashed: false,
