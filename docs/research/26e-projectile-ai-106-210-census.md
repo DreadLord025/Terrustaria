@@ -222,11 +222,22 @@ no rng, the `UpdateProjectiles` stream untouched BY CONSTRUCTION. The
   armed-by-gate, not missing.
 - **F4 (146 is empty).** `AI_146_DD2Victory` (:53960-53962) is an empty
   body — d15's arm is a documented no-op + row, not a machine.
-- **F5 (f19 F5 still open).** The 687 BetsyBreath row (12×12 aiStyle 1 vs
-  C# 30×30 aiStyle 136, :7315-7324) and the 686 box (22×22 vs 30×30,
-  :7301-7313) deviations stand; d14 owes the row fix WITH the 136 arm
-  (the 686 slice-B flight keeps its 22×22 box until then — the box fix
-  rides the same commit to keep the A/B pins consistent).
+- **F5 (f19 F5 — CLOSED on d14, retire-round re-probe).** The 687
+  BetsyBreath row (12×12 aiStyle 1 vs C# 30×30 aiStyle 136, :7315-7324)
+  and the 686 box (22×22 vs 30×30, :7301-7313) deviations stood at this
+  census; d14 owed the row fix WITH the 136 arm. RETIRE-round re-read
+  of `origin/task/W4-d14-proj-ai-131-140` (tip `eaa05ae9`): **landed** —
+  `97c5a9847` ("style 136: BetsyBreath arm + f19 F5 row fixes") rows
+  687 as 30×30 aiStyle 136 alpha 255 penetrate −1 and 686 as 30×30
+  aiStyle 1 alpha 255 (both `Projectile.cs:7305-7324` verbatim, the
+  row comments cite "W4-d14 / f19 F5"), the `136 =>` dispatch arm is
+  live (d14-tree `projectile.rs:19623`) with the
+  `w4_d14_betsy_breath_tests` module, and the `NPC.cs:62026` spawn
+  wiring rides ai1=whoAmI. The 686 slice-B flight takes the corrected
+  box at that merge (the A/B pins ride d14's commit). NOT yet in main
+  (`a725acb0` still carries the deviant rows) — the closure is
+  branch-landed, merge-pending; nothing further owed by any verify
+  lane.
 - **F6 (the slice-D gap).** The seven overlays above were rowed by
   S1-P-i13/i14/i17 AFTER the S1-D-5 slices were declared complete; no
   live branch claims them (d1's decade covers the style-1 AXIS, already
