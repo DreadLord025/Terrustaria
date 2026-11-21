@@ -39352,6 +39352,37 @@ the item-use path, the draw and the census pins.
     refuse-on-`None` folded every edge-of-map kite calm. Now `continue`
     (the liquid/wall refusals unchanged, `WallID.Sets.AllowsWind`
     `WallID.cs:95` = `tr_core::wind::wall_allows_wind`).
+- **The 723 kite-anchor place/kill chain LANDED (residual 9)**: the
+  `TileObjectData` row EXISTS (`TileObjectData.cs:4488-4517` — the 1x1
+  Style1x1 base, the bottom solid anchor 43 + the four top/left/right/
+  wall alternates, `HookPostPlaceMyPlayer = TEKiteAnchor.
+  Hook_AfterPlacement`, DrawYOffset 2; the generated `D_723` row
+  matches). The PLACE hook (`Player.cs:40144`
+  `CallPostPlacementPlayerHook` → `TileObjectData.cs:5269-5283` →
+  `TEKiteAnchor.cs:41-44` → `TELeashedEntityAnchorWithItem.cs:49-67` →
+  `TELeashedEntityAnchor.cs:19-28` → `TileEntity.Place`,
+  `DataStructures/TileEntity.cs:99-108`): the app's `place_tile` seam
+  calls `kites::kite_anchor_place_hook` after a successful 723 place —
+  `TileEntities::place` (the ValidTile kind-723 + position-free gates)
+  creates the entity, `InsertItem` stores the held kite type
+  (`TeData::Anchor`). The held kind is captured BEFORE the consumption
+  (the C# `num2` capture `:53` — the slot may turn to air). The hook's
+  `--stack` (`:54-57`) is the TileObject route's ONLY decrement
+  (`TileObject.Place` never touches the stack); the port's
+  `place_item_and_consume` generic decrement stands in for it (one
+  drain, same net effect — the hook does not consume again). The KILL
+  chain (`WorldGen.cs:63691-63694` `DropItemForTileBreak` +
+  `:63873-63876` `TEKiteAnchor.Kill`): `edit::kill_tile`'s
+  `anchor_teardown` removes the entity (`TileEntity.Kill`'s position +
+  type match, `TileEntity.cs:110-116`) and drops the stored item
+  (`TELeashedEntityAnchorWithItem.cs:20-30`, `itemType > 0` only) through
+  `object_drops` → `break_drop_events` → `spawn_item_drop`. The drop is
+  `!fail`-gated ONLY (the `noItem` gate `:63860` covers
+  `KillTile_DropItems`, not this arm). Skips: the leashed-kite visual
+  (`RespawnLeashedEntity`/`DespawnLeashedEntity` → `LeashedKite`,
+  M7-TE-2 — the entity + stored item stand), the `CheckAnchor` reorient
+  (`WorldGen.cs:53827-53885`, the framing pass's anchor support walk),
+  the netMode-1 `SendData(156/87)` arms (single-player).
 - **The 155 rope seams are LIVE**: the dispatch passes `&mut World`
   straight into `ai_mystic_snake_coil` (the ai_ice_block carve-out);
   `place_tile`/`kill_tile` bump `world.revision` (the `WorldFrameKey`

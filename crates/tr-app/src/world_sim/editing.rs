@@ -7588,6 +7588,11 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
             }
         }
     }
+    // W4-d16 residual 9 — the kite anchor's post-placement hook reads
+    // the held item's type BEFORE the consumption (`num2 =
+    // heldItem.type`, `TELeashedEntityAnchorWithItem.cs:53` — the slot
+    // may turn to air on the last item).
+    let held_kind_before = app.inventory[app.selected].kind;
     if !place_item_and_consume(
         &mut app.world,
         &mut app.inventory[app.selected],
@@ -7598,6 +7603,18 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
         dir,
     ) {
         return false;
+    }
+    // W4-d16 residual 9 — `PlaceThing_Tiles_PlaceIt`'s
+    // `CallPostPlacementPlayerHook` (`Player.cs:40144` →
+    // `TileObjectData.cs:5269-5283`): the 723 row's
+    // `hook_post_place_my_player` callback (`TEKiteAnchor.
+    // Hook_AfterPlacement`) creates the anchor tile entity + stores the
+    // kite item. The generated registry carries the callback NAME with
+    // `hook: None` (the documented-callback form); this is the runtime
+    // body, gated on the placed kind (the only TE hook the kite lane
+    // owns — the chest/sensor hooks keep their own seams).
+    if kind == 723 {
+        kites::kite_anchor_place_hook(app, tx, ty, held_kind_before);
     }
     // `Player.cs:40135-40140`: on a successful placement, an acorn's sapling
     // (`tileToCreate == 20 | 590 | 595 | 615`) bumps CONSERVATIONIST's `Do`

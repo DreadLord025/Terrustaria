@@ -248,6 +248,59 @@ pub(crate) fn afk_auto_kite_override(app: &mut App) -> Option<usize> {
     Some(slot)
 }
 
+/// W4-d16 residual 9 — the kite-anchor placement hook
+/// (`TileObjectData.CallPostPlacementPlayerHook`,
+/// `TileObjectData.cs:5269-5283` → `TEKiteAnchor.Hook_AfterPlacement`,
+/// `TEKiteAnchor.cs:41-44` → `TELeashedEntityAnchorWithItem.
+/// PlaceFromPlayerPlacementHook`, `TELeashedEntityAnchorWithItem.cs:49-67`
+/// → `TELeashedEntityAnchor.PlaceFromPlayerPlacementHook`,
+/// `TELeashedEntityAnchor.cs:19-28` → `TileEntity.Place`,
+/// `DataStructures/TileEntity.cs:99-108`). The 723 row's
+/// `hook_post_place_my_player` carries the callback name with
+/// `hook: None` (the generated registry's documented-callback form,
+/// `tileobject.rs` module doc); this is the runtime body the app's
+/// `place_tile` seam calls after a successful `TileObject.Place`.
+///
+/// The single-player path (`Main.netMode != 1`): `TileEntity.Place`
+/// creates the anchor entity at the cell (the port's
+/// `TileEntities::place` — the `ValidTile` kind-723 check +
+/// the position-free gate), then `InsertItem(num2)` stores the kite
+/// item (`:64`, `TELeashedEntityAnchorWithItem.cs:32-36`). `item_type`
+/// is the C# `num2 = heldItem.type` capture (`:53`) — the held kind
+/// BEFORE the consumption, threaded from the `place_tile` seam (the
+/// slot may be air by the time the hook runs). The hook's own stack
+/// consumption (`:54-57`, `!consumable && --stack <= 0 → TurnToAir`)
+/// is the C#'s ONLY decrement for the TileObject route
+/// (`TileObject.Place` itself never touches the stack); the port's
+/// `place_item_and_consume` generic decrement is the stand-in for it
+/// (one drain per successful place, the same net effect), so this hook
+/// does NOT consume again. The `RespawnLeashedEntity` half (`:35` →
+/// `CreateLeashedEntity` → `LeashedKite.NewInstance().SetDefaults
+/// (item.shoot)`) is M7-TE-2 — the entity + the stored item stand, the
+/// leashed-kite visual unported. Returns whether the entity placed.
+pub(crate) fn kite_anchor_place_hook(app: &mut App, tx: i32, ty: i32, item_type: u16) -> bool {
+    if item_type == 0 || !is_kite(item_type) {
+        return false;
+    }
+    // `TileEntity.Place` → `TEKiteAnchor.IsTileValidForEntity`
+    // (`TEKiteAnchor.cs:21-29`: the cell active + kind 723) + the
+    // position-free gate (`TileEntitiesManager.CheckValidTile`).
+    let Some(id) = app.world.tile_entities.place(
+        &app.world,
+        tr_core::tile_entities::TeKind::KiteAnchor,
+        tx as i16,
+        ty as i16,
+    ) else {
+        return false;
+    };
+    // `InsertItem(num2)` (`:64`): the anchor stores the kite item type
+    // (the `TeData::Anchor` payload is the itemType int).
+    if let Some(entity) = app.world.tile_entities.by_id_mut(id) {
+        entity.data = tr_core::tile_entities::TeData::Anchor(item_type as i32);
+    }
+    true
+}
+
 /// The LMB launch (`ItemCheck_Shoot`'s generic tail `Player.cs:49437` —
 /// the kite kinds carry no per-item arm; the spawn point is
 /// `RotatedRelativePoint(MountedCenter)` `:47196`, the aim normalized to
@@ -578,6 +631,94 @@ mod w4_d16_kite_use_tests {
         app.player.as_mut().unwrap().no_items = false;
         app.player.as_mut().unwrap().selected_kite = -1;
         assert_eq!(afk_auto_kite_override(&mut app), None);
+    }
+
+    /// Residual 9 — the 723 anchor row census (`TileObjectData.cs:4488-4517`):
+    /// the 1x1 Style1x1 base, the bottom solid anchor + the four alternates
+    /// (top/left/right/wall), the `TEKiteAnchor.Hook_AfterPlacement`
+    /// post-place callback, frame_important. The generated registry row
+    /// (`tileobject/registry.rs` D_723) matches.
+    #[test]
+    fn w4_d16_kite_the_anchor_tile_row() {
+        let def = tr_core::tileobject::def_for_tile(723).expect("the 723 row");
+        assert_eq!((def.width, def.height), (1, 1));
+        assert_eq!(def.origin, tr_core::tileobject::Point16::new(0, 0));
+        assert!(def.uses_custom_can_place, "the TileObject route");
+        assert!(def.frame_important);
+        assert_eq!(def.alternates.len(), 4, "the top/left/right/wall alternates");
+        assert_eq!(
+            def.hook_post_place_my_player.callback,
+            "TEKiteAnchor.Hook_AfterPlacement"
+        );
+        assert_eq!(def.hook_post_place_my_player.bad_return, -1);
+        assert!(def.hook_post_place_my_player.processed_coordinates);
+        // The bottom anchor (43 = SolidTile|SolidWithTop|SolidSide|AlternateTile).
+        assert_eq!(def.anchor_bottom.ty, 43);
+        // The kite items all place 723 (`Item.DefaultToKite`, `Item.cs:47837`).
+        for &item in KITE_ITEMS.iter() {
+            assert_eq!(registry::get(item).unwrap().tile, Some(723), "item {item}");
+        }
+    }
+
+    /// Residual 9 — the anchor place hook (`TELeashedEntityAnchorWithItem.
+    /// PlaceFromPlayerPlacementHook` → `TileEntity.Place` + `InsertItem`):
+    /// a placed 723 cell gains a KiteAnchor entity storing the held kite
+    /// item; the position-free gate refuses a second entity on the cell.
+    #[test]
+    fn w4_d16_kite_the_anchor_place_hook() {
+        let mut app = kite_app(4367);
+        // A 723 anchor cell at (10, 10) — active, kind 723.
+        let i = app.world.index(10, 10);
+        app.world.tiles[i] = tr_core::tile::Tile { kind: 723, ..Default::default() };
+        app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        assert!(kite_anchor_place_hook(&mut app, 10, 10, 4367), "the hook places");
+        let te = app.world.tile_entities.get_at(10, 10).expect("the entity");
+        assert_eq!(te.kind, tr_core::tile_entities::TeKind::KiteAnchor);
+        assert_eq!(te.data, tr_core::tile_entities::TeData::Anchor(4367), "the stored kite");
+        // The position-free gate refuses a duplicate.
+        assert!(!kite_anchor_place_hook(&mut app, 10, 10, 4367), "the cell is taken");
+        // A non-kite item refuses.
+        assert!(!kite_anchor_place_hook(&mut app, 11, 10, 1));
+        // The ValidTile gate: a non-723 cell refuses.
+        let j = app.world.index(12, 10);
+        app.world.tiles[j] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+        app.world.tiles[j].flags |= tr_core::tile::FLAG_ACTIVE;
+        assert!(!kite_anchor_place_hook(&mut app, 12, 10, 4367), "the kind gate");
+    }
+
+    /// Residual 9 — the anchor kill chain (`WorldGen.cs:63691-63694` +
+    /// `:63873-63876`): breaking the 723 cell removes the entity and drops
+    /// the stored kite item through `object_drops`; an empty anchor
+    /// (itemType 0) drops nothing; the type mismatch leaves a foreign
+    /// entity untouched.
+    #[test]
+    fn w4_d16_kite_the_anchor_kill_chain() {
+        let mut w = World::new("t".into(), 40, 40);
+        let i = w.index(10, 10);
+        w.tiles[i] = tr_core::tile::Tile { kind: 723, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let id = w.tile_entities.place_unchecked(tr_core::tile_entities::TeKind::KiteAnchor, 10, 10);
+        w.tile_entities.by_id_mut(id).unwrap().data =
+            tr_core::tile_entities::TeData::Anchor(4367);
+        let kill = tr_core::edit::kill_tile(&mut w, 10, 10, false).expect("the break");
+        assert!(w.tile_entities.get_at(10, 10).is_none(), "the entity removed");
+        assert_eq!(kill.object_drops.len(), 1, "the stored-item drop");
+        assert_eq!(kill.object_drops[0].item, Some(4367));
+        assert_eq!((kill.object_drops[0].x, kill.object_drops[0].y), (10, 10));
+        // The empty anchor drops nothing but still removes the entity.
+        let j = w.index(11, 10);
+        w.tiles[j] = tr_core::tile::Tile { kind: 723, ..Default::default() };
+        w.tiles[j].flags |= tr_core::tile::FLAG_ACTIVE;
+        w.tile_entities.place_unchecked(tr_core::tile_entities::TeKind::KiteAnchor, 11, 10);
+        let kill2 = tr_core::edit::kill_tile(&mut w, 11, 10, false).expect("the break");
+        assert!(w.tile_entities.get_at(11, 10).is_none());
+        assert!(kill2.object_drops.is_empty(), "itemType 0 drops nothing");
+        // A plain 723 cell with no entity breaks cleanly (no drop).
+        let k = w.index(12, 10);
+        w.tiles[k] = tr_core::tile::Tile { kind: 723, ..Default::default() };
+        w.tiles[k].flags |= tr_core::tile::FLAG_ACTIVE;
+        let kill3 = tr_core::edit::kill_tile(&mut w, 12, 10, false).expect("the break");
+        assert!(kill3.object_drops.is_empty());
     }
 
     /// Residual 8 — the fully-reeled kite kill zeroes both afk counters
