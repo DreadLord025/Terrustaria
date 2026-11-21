@@ -17869,14 +17869,14 @@ mod item_mechanics {
         fast.update(&app.world, ONE_TICK_SECS);
         assert!((fast.vel.y - 7.0).abs() < 1e-6, "maxFall is 7, got {}", fast.vel.y);
         // Resting on the floor: the drop lies still, it never bounces.
-        let mut rest = ItemDrop::new(2, 1, 0, 100.0, floor_top - 14.0, 0.0, 0.0, 0.0);
+        let mut rest = ItemDrop::new(2, 1, 0, 100.0, floor_top - crate::item::SIZE, 0.0, 0.0, 0.0);
         for _ in 0..30 {
             rest.update(&app.world, ONE_TICK_SECS);
         }
         assert_eq!(rest.vel.y, 0.0, "no restitution off the ground");
         assert_eq!(rest.vel.x, 0.0, "friction settles the slide");
         assert!(
-            (rest.pos.y - (floor_top - 14.0)).abs() < 0.5,
+            (rest.pos.y - (floor_top - crate::item::SIZE)).abs() < 0.5,
             "the drop lies flush on the floor, at {}",
             rest.pos.y
         );

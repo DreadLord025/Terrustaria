@@ -545,7 +545,14 @@ pub(crate) fn deposit_pickup(
     left
 }
 
-pub const SIZE: f32 = 14.0;
+/// `WorldItem.width = height = 16` (`WorldItem.cs:138`, the ctor's
+/// `base.width = (base.height = 16)`) — the drop's hitbox side. Keep-one
+/// 144 (the e19 round-3 fold, `e2003946b`): the old 14 px stand-in is
+/// retired; every probe (grab rect, WetCollision, LavaCollision, conveyor,
+/// TileCollision, the repulsion span, the splash width+12) reads the C#
+/// 16. The DRAW quad keeps the 14 px visual centred in the box
+/// ([`ItemDrop::draw`]'s `pos + 1`, `SIZE - 2` — pixels unchanged).
+pub const SIZE: f32 = 16.0;
 /// `Player.defaultItemGrabRange = 42` (`Player.cs:57121`), the base of
 /// `GetItemGrabRange` (`Player.cs:35130-35166`) — the px margin the grab
 /// rectangle expands the player's hitbox by (`:34926`).
@@ -776,7 +783,7 @@ pub(crate) fn rects_intersect(
 /// `GrabItems`' expanded grab rectangle (`Player.cs:34926`):
 /// `new Rectangle((int)position.X - itemGrabRange, (int)position.Y -
 /// itemGrabRange, width + itemGrabRange * 2, height + itemGrabRange * 2)`
-/// against the drop's 14x14 hitbox.
+/// against the drop's 16x16 hitbox.
 pub(crate) fn grab_rect_intersects(
     px: f32,
     py: f32,
@@ -939,7 +946,7 @@ pub struct ItemDrop {
     /// The natural roll's prefix (`Item.NewItem`'s `prefix` argument,
     /// `Item.cs:49730`); 0 = none.
     pub prefix: u16,
-    /// Top-left of the 14x14 item box, world pixels.
+    /// Top-left of the 16x16 item box, world pixels.
     pub pos: Vec2,
     pub vel: Vec2,
     /// `WorldItem.timeSinceItemSpawned`'s seconds stand-in (the C# counts
@@ -1036,9 +1043,25 @@ impl ItemDrop {
     /// `Collision.shimmer` statics the caller copies (`:871-877`). The shared
     /// NPC-side port (`npc_ai_slime.rs::wet_collision`, W4-f47 phase 2) is the
     /// engine half; doc-sweep lane 36 retired the full-box stand-in. For the
-    /// 14x14 drop box the probe is 10x7 at `(pos.x+2, pos.y+4)`.
+    /// 16x16 drop box the probe is 10x8 at `(pos.x+3, pos.y+4)` (keep-one
+    /// 144: the e19 round-3 box fix; the old 14-box read 10x7 at +2/+4).
     pub fn wet_probe(&self, world: &World) -> (bool, bool, bool) {
         crate::npc_ai_slime::wet_collision(world, self.pos.x, self.pos.y, SIZE as i32, SIZE as i32)
+    }
+
+    /// `Collision.WetCollision(position, width, height)`'s bool half
+    /// (`WorldItem.cs:870`, `Collision.cs:1572-1651`) — the CARRIED
+    /// `base.wet` read the `UpdateItem_VisualEffects` light arms gate on
+    /// (`app/frame/draw.rs`'s feed). The faithful centre-inset probe (the
+    /// `player::wet_collision` port — the same box maths as
+    /// [`Self::wet_probe`]'s `npc_ai_slime` engine, minus the kind statics).
+    /// Keep-one 144: the e19 lane's `box_is_wet` name kept (its draw-feed
+    /// caller), the doc-sweep 36 deletion retired — the probe engines
+    /// agree; only the carried-flag vs fresh-probe read differs (the C#
+    /// light arms read the Entity flag; the draw feed re-probes — the
+    /// recorded S1-E-5 draw-side convention).
+    pub fn box_is_wet(&self, world: &World) -> bool {
+        crate::player::wet_collision(world, self.pos.x, self.pos.y, SIZE, SIZE)
     }
 
     /// `Collision.LavaCollision(position, width, height)` (`WorldItem.cs:865`,
@@ -1173,7 +1196,7 @@ impl ItemDrop {
                     break;
                 }
                 budget -= 1;
-                // `num2 = (width + other.width) / 2` — both 14 → 14.
+                // `num2 = (width + other.width) / 2` — both 16 → 16.
                 let mut num2 = (SIZE + SIZE) / 2.0;
                 let dx = (centers[i].x - centers[j].x).abs();
                 let dy = (centers[i].y - centers[j].y).abs();
@@ -1445,7 +1468,7 @@ impl ItemDrop {
         };
         use tr_core::particles::Color;
         // The dust box anchor (`:892` etc.): height/2 is the INTEGER half
-        // (14/2 = 7); the exit water arm drops the −8 (`:1011`).
+        // (16/2 = 8, keep-one 144); the exit water arm drops the −8 (`:1011`).
         let half = SIZE as i32 / 2;
         let (count, dtype, dy, scale_mul, scale_set, alpha, y_fix): (
             i32, i32, f32, bool, f32, i32, f32,
@@ -1537,21 +1560,27 @@ impl ItemDrop {
         } else {
             self.vel.x * 0.2
         };
+        // The visual quad is the 14 px stand-in centred in the 16 px hitbox
+        // (`pos + 1`, `SIZE - 2`) — the box-size fix (keep-one 144, the e19
+        // round-3 fold) is physics-only, the pixels stay where the pre-fix
+        // draw put them (the C# anchors by the frame size,
+        // `Main.cs:38610-38612`, an unported per-frame stand-in).
+        const VIS: f32 = SIZE - 2.0;
         if rot == 0.0 {
             r.push_sprite(
                 [self.pos.x + 1.0, self.pos.y + 1.0],
-                [SIZE, SIZE],
+                [VIS, VIS],
                 uv,
                 [c[0], c[1], c[2], 1.0],
             );
         } else {
             r.push_sprite_origin_rot(
                 [self.pos.x + 1.0, self.pos.y + 1.0],
-                [SIZE, SIZE],
+                [VIS, VIS],
                 uv,
                 [c[0], c[1], c[2], 1.0],
                 rot,
-                [SIZE * 0.5, SIZE * 0.5],
+                [VIS * 0.5, VIS * 0.5],
             );
         }
         1
@@ -1868,20 +1897,21 @@ mod tests {
         let item_tc = crate::collision::tile_collision_opts(&w, pos, vel, SIZE, SIZE, false, false, true);
         assert_eq!(item_tc.vel[1], 4.0, "the item falls through the aetherium platform");
         // A NORMAL platform (frameY 0) still blocks the item pass: the
-        // residual is ry - (pos.y + SIZE) = 320 - 318 = 2.
+        // residual is ry - (pos.y + SIZE) = 320 - 320 = 0 (the 16 box's
+        // bottom lies flush at the platform top — keep-one 144).
         for x in 0..32 {
             let i = w.index(x, 20);
             w.tiles[i].frame_y = 0;
         }
         let item_tc2 = crate::collision::tile_collision_opts(&w, pos, vel, SIZE, SIZE, false, false, true);
-        assert!((item_tc2.vel[1] - 2.0).abs() < 1e-5, "a normal platform still blocks: {}", item_tc2.vel[1]);
+        assert!((item_tc2.vel[1] - 0.0).abs() < 1e-5, "a normal platform still blocks: {}", item_tc2.vel[1]);
     }
 
     /// `WorldItem.cs:789-848` — two overlapping shimmered drops repel: the
     /// left one pushes left, the right one pushes right, and the brake arms.
     #[test]
     fn w4_f47_the_shimmered_repulsion_pushes_apart() {
-        // Two shimmered drops 8 px apart (centres), within the 14 px window.
+        // Two shimmered drops 8 px apart (centres), within the 16 px window.
         let mut a = ItemDrop::new(11, 1, 0, 100.0, 100.0, 0.0, 0.0, 0.0);
         let mut b = ItemDrop::new(11, 1, 0, 108.0, 100.0, 0.0, 0.0, 0.0);
         a.shimmered = true;
@@ -1902,17 +1932,60 @@ mod tests {
         assert!(!far[0].repulsion_brake);
     }
 
+    /// Keep-one 144 (the e19 round-3 fold, `939e45dc8`'s witness pair):
+    /// `Collision.cs:2394`/`:2444` — the blocked-Y flush residual is the
+    /// velocity in BOTH arms (the port's `tile_collision_opts` keeps it
+    /// verbatim; no dry snap-and-zero stand-in ever existed on this lane).
+    /// A dry drop one px above the floor lands flush in ONE tick with the
+    /// residual as velocity (`ApplyMovement:1082`); at flush rest the
+    /// residual is 0, so the resting drop reads vel 0 (no bounce, no drift).
+    #[test]
+    fn w4_f47k1_the_dry_flush_landing_carries_the_residual_then_rests() {
+        let w = ground();
+        // Floor top 20*16 = 320, the 16 box lies flush at pos.y 304.
+        let mut land = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 303.0, 0.0, 2.0, 0.0);
+        land.update(&w, 1.0 / 60.0);
+        assert!((land.pos.y - 304.0).abs() < 1e-4, "dry flush landing: {}", land.pos.y);
+        assert!((land.vel.y - 1.0).abs() < 1e-4, "the dry residual: {}", land.vel.y);
+        // The next tick: gravity 0.1, the collision re-blocks at residual 0.
+        land.update(&w, 1.0 / 60.0);
+        assert!((land.pos.y - 304.0).abs() < 1e-4, "flush rest: {}", land.pos.y);
+        assert_eq!(land.vel.y, 0.0, "the rest residual is zero");
+    }
+
+    /// The wet twin (`:1056-1059` → `ApplyMovement:1078`): the blocked-Y
+    /// residual copies FULL into wetVelocity, so the wet drop lands flush
+    /// the same tick (the e19 round-3 witness folded, re-derived on this
+    /// lane's probe: the inset box finds the shimmer row mid-fall).
+    #[test]
+    fn w4_f47k1_the_wet_landing_keeps_the_flush_residual() {
+        let mut w = ground();
+        let j = w.index(10, 19);
+        w.tiles[j] = Tile::default();
+        w.tiles[j].set_liquid_kind(tr_core::tile::LiquidKind::Shimmer);
+        w.tiles[j].liquid = 255;
+        // One px above flush (303), falling at 2 — the probe's inset box
+        // (y 307..315) overlaps row 19, so the tick latches wet.
+        let mut d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 303.0, 0.0, 2.0, 0.0);
+        d.update(&w, 1.0 / 60.0);
+        assert!(d.wet && d.shimmer_wet, "the probe latched");
+        assert!((d.pos.y - 304.0).abs() < 1e-4, "flush landing: {}", d.pos.y);
+        assert!((d.vel.y - 1.0).abs() < 1e-4, "the residual velocity: {}", d.vel.y);
+    }
+
     // -----------------------------------------------------------------
     // Doc-sweep lane 36 — the faithful wet probes + the splash arms
     // (WRITTEN NOT RUN, code-only)
     // -----------------------------------------------------------------
 
     /// `Collision.cs:1576-1587` — the item's WetCollision probe box is the
-    /// CENTRE-INSET 10x7 at (pos+2, pos+4), NOT the full 14x14 box: a
+    /// CENTRE-INSET 10x8 at (pos+3, pos+4), NOT the full 16x16 box (keep-one
+    /// 144: the e19 round-3 box fix; the probe grows with the C# box): a
     /// liquid cell that only the full box's edge overlaps leaves the drop
     /// dry. A shimmer cell at tile (11, 10) spans x 176..192; the drop at
-    /// x = 163 has full-box right edge 177 (overlaps) but probe right edge
-    /// 163+2+10 = 175 (clear) — the old full-box stand-in read wet.
+    /// x = 163 has full-box right edge 179 (overlaps) but probe right edge
+    /// 163+3+10 = 176 (TOUCHES — strict > fails) — the old full-box
+    /// stand-in read wet.
     #[test]
     fn w4_f47ds_the_wet_probe_is_the_centre_inset_box() {
         let mut w = World::new("probe".into(), 32, 80);
@@ -1921,12 +1994,12 @@ mod tests {
         w.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Shimmer);
         w.compute_column_surface();
         w.compute_chunks();
-        // pos (163, 160): probe box x 165..175, y 164..171 — the cell
+        // pos (163, 160): probe box x 166..176, y 164..172 — the cell
         // x 176..192, y 160..160+0 (liquid 255 → surface drop (1/32)*2 =
-        // 0.0625, th 16) — no X overlap → dry.
+        // 0.0625, th 16) — the touching X edge is not an overlap → dry.
         let d = ItemDrop::new(2, 1, 0, 163.0, 160.0, 0.0, 0.0, 0.0);
         assert_eq!(d.wet_probe(&w), (false, false, false));
-        // Shift 2 px right: probe x 167..177 overlaps 176..192 → wet +
+        // Shift 2 px right: probe x 168..178 overlaps 176..192 → wet +
         // shimmer (the FIRST-cell-wins kind flag).
         let d2 = ItemDrop::new(2, 1, 0, 165.0, 160.0, 0.0, 0.0, 0.0);
         assert_eq!(d2.wet_probe(&w), (true, false, true));
@@ -1943,20 +2016,45 @@ mod tests {
         w.tiles[i].liquid = 64; // surface at y 160+12 = 172, depth 4
         w.compute_column_surface();
         w.compute_chunks();
-        // Probe y 164..171 — entirely above the 172 surface → dry.
+        // Probe y 164..172 — its bottom TOUCHES the 172 surface (strict >
+        // fails) → dry.
         let d = ItemDrop::new(2, 1, 0, 160.0, 160.0, 0.0, 0.0, 0.0);
         assert_eq!(d.wet_probe(&w).0, false);
-        // Probe y 168..175 overlaps 172..176 → wet.
+        // Probe y 168..176 overlaps 172..176 → wet.
         let d2 = ItemDrop::new(2, 1, 0, 160.0, 164.0, 0.0, 0.0, 0.0);
         assert_eq!(d2.wet_probe(&w).0, true);
         // LavaCollision keeps the FULL box (no inset) but the same surface
-        // drop: pos (160, 158) box y 158..172 TOUCHES 172 — strict > fails.
+        // drop: pos (160, 156) box y 156..172 TOUCHES 172 — strict > fails.
         let j = w.index(10, 10);
         w.tiles[j].set_liquid_kind(tr_core::tile::LiquidKind::Lava);
-        let d3 = ItemDrop::new(2, 1, 0, 160.0, 158.0, 0.0, 0.0, 0.0);
+        let d3 = ItemDrop::new(2, 1, 0, 160.0, 156.0, 0.0, 0.0, 0.0);
         assert!(!d3.lava_probe(&w), "the touching edge is not an overlap");
-        let d4 = ItemDrop::new(2, 1, 0, 160.0, 159.0, 0.0, 0.0, 0.0);
-        assert!(d4.lava_probe(&w), "box y 159..173 overlaps the 172 surface");
+        let d4 = ItemDrop::new(2, 1, 0, 160.0, 157.0, 0.0, 0.0, 0.0);
+        assert!(d4.lava_probe(&w), "box y 157..173 overlaps the 172 surface");
+    }
+
+    /// `Collision.cs:1610-1612` — the surface drops by (256-liquid)/32*2.
+    /// A half-full shimmer cell (liquid 128) has its surface 8 px down; a
+    /// drop whose centre-shrunk box sits in the top 8 px is NOT wet. The
+    /// old naive full-box overlap reported wet there. (Keep-one 144: the
+    /// e19 lane's `box_is_wet` witness folded — the draw-feed bool probe
+    /// runs the same box maths as `wet_probe`.)
+    #[test]
+    fn w4_f47ds_the_box_is_wet_probe_uses_the_liquid_surface_offset() {
+        let mut w = ground();
+        let j = w.index(10, 19);
+        w.tiles[j] = Tile::default();
+        w.tiles[j].set_liquid_kind(tr_core::tile::LiquidKind::Shimmer);
+        w.tiles[j].liquid = 128; // half-full: surface at 19*16 + 8
+        // The drop's box top at 19*16 (the cell top), 16 tall → the centre-
+        // shrunk probe (8 tall, centred) spans 19*16+4 .. +12; the liquid
+        // starts at +8, so it DOES overlap. Park it higher: top at 19*16-8 →
+        // probe spans -4 .. +4 relative to the cell → above the +8 surface.
+        let d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 19.0 * TILE_PX - 8.0, 0.0, 0.0, 0.0);
+        assert!(!d.box_is_wet(&w), "above the half-full surface is dry");
+        // A full cell (liquid 255, surface at +0.06) IS wet at the same spot.
+        w.tiles[j].liquid = 255;
+        assert!(d.box_is_wet(&w), "the full cell wets the box");
     }
 
     /// `WorldItem.cs:879-956` — the entry latch: a dry drop whose inset
@@ -1973,7 +2071,10 @@ mod tests {
         }
         w.compute_column_surface();
         w.compute_chunks();
-        let mut d = ItemDrop::new(2, 1, 0, 30.0 * TILE_PX, 11.0 * TILE_PX, 0.0, 0.0, 0.0);
+        // Keep-one 144 re-pin: the 16-box probe spans pos.y+4 .. pos.y+12;
+        // the row-12 surface sits at 192.06, so pos.y 176 (the old 11*16)
+        // gives 180..188 — dry. Park at 184: probe 188..196 overlaps.
+        let mut d = ItemDrop::new(2, 1, 0, 30.0 * TILE_PX, 184.0, 0.0, 0.0, 0.0);
         d.update(&w, 1.0 / 60.0);
         assert!(d.wet && d.shimmer_wet);
         assert_eq!(d.wet_count, 19, "20 armed, decremented same tick");
@@ -2033,7 +2134,7 @@ mod tests {
         let mut twin = tr_core::unified_random::UnifiedRandom::new(4242);
         let mut colours = Vec::new();
         for _ in 0..10 {
-            twin.next_max(22); // width+12-4 = 22
+            twin.next_max(24); // width+12-4 = 24 (the 16 box, keep-one 144)
             twin.next_max(20); // 24-4 = 20
             twin.next_range(-20, 21);
             twin.next_range(-20, 21);
@@ -2085,7 +2186,7 @@ mod tests {
         d.splash(&mut pool, &ctx, &w, &mut audio, &mut rng, 0);
         let mut twin = tr_core::unified_random::UnifiedRandom::new(7);
         for _ in 0..5 {
-            twin.next_max(22);
+            twin.next_max(24); // width+12-4 = 24 (the 16 box)
             twin.next_max(20);
             twin.next_range(-20, 21);
             twin.next_range(-20, 21);
@@ -2442,10 +2543,10 @@ mod s1_p_i47_tests {
     #[test]
     fn the_grab_rectangle_is_the_expanded_hitbox() {
         // The player at (100, 100) 20x42, range 42: the rect spans
-        // x 58..162, y 58..184. A 14x14 drop at x 44 (44+14 = 58) TOUCHES
-        // the left edge — no intersect; at 45 (45+14 = 59) it overlaps.
-        assert!(!grab_rect_intersects(100.0, 100.0, 20.0, 42.0, 42.0, Vec2::new(44.0, 100.0)));
-        assert!(grab_rect_intersects(100.0, 100.0, 20.0, 42.0, 42.0, Vec2::new(45.0, 100.0)));
+        // x 58..162, y 58..184. A 16x16 drop at x 42 (42+16 = 58) TOUCHES
+        // the left edge — no intersect; at 43 (43+16 = 59) it overlaps.
+        assert!(!grab_rect_intersects(100.0, 100.0, 20.0, 42.0, 42.0, Vec2::new(42.0, 100.0)));
+        assert!(grab_rect_intersects(100.0, 100.0, 20.0, 42.0, 42.0, Vec2::new(43.0, 100.0)));
         // The direct hitbox: strict overlap.
         assert!(rects_intersect(100.0, 100.0, 20.0, 42.0, 110.0, 120.0, 14.0, 14.0));
         assert!(!rects_intersect(100.0, 100.0, 20.0, 42.0, 120.0, 120.0, 14.0, 14.0));
@@ -2631,8 +2732,8 @@ mod s1_p_i47_tests {
     fn s1_p_i52_the_magnet_pull_blends_at_the_csharp_speed_and_acc() {
         let w = ground();
         let pc = Vec2::new(200.0, 200.0);
-        // centre at (300, 200) — pos = centre - 7 (the 14x14 box).
-        let mut heart = ItemDrop::new(58, 1, 0, 293.0, 193.0, 0.0, 0.0, 0.0);
+        // centre at (300, 200) — pos = centre - 8 (the 16x16 box).
+        let mut heart = ItemDrop::new(58, 1, 0, 292.0, 192.0, 0.0, 0.0, 0.0);
         heart.being_grabbed = true;
         pull_item_pickup(heart.center(), &mut heart.vel, pc, 15.0, 5);
         // f32: 15/100 is inexact, so the blend lands within an ulp of -3
@@ -2640,13 +2741,13 @@ mod s1_p_i47_tests {
         assert!((heart.vel.x - -3.0).abs() < 1e-4, "15/5 blend from rest: {}", heart.vel.x);
         assert_eq!(heart.vel.y, 0.0);
         heart.update(&w, 1.0 / 60.0);
-        assert!((heart.pos.x - 290.0).abs() < 1e-3, "the blend moves the drop: {}", heart.pos.x);
-        assert_eq!(heart.pos.y, 193.0);
+        assert!((heart.pos.x - 289.0).abs() < 1e-3, "the blend moves the drop: {}", heart.pos.x);
+        assert_eq!(heart.pos.y, 192.0);
         // The second tick blends again: (−3*4 + −15)/5 = −5.4.
         heart.being_grabbed = true;
         pull_item_pickup(heart.center(), &mut heart.vel, pc, 15.0, 5);
         assert!((heart.vel.x - -5.4).abs() < 1e-4, "vel {}", heart.vel.x);
-        let mut star = ItemDrop::new(184, 1, 0, 293.0, 193.0, 0.0, 0.0, 0.0);
+        let mut star = ItemDrop::new(184, 1, 0, 292.0, 192.0, 0.0, 0.0, 0.0);
         star.being_grabbed = true;
         pull_item_pickup(star.center(), &mut star.vel, pc, 12.0, 5);
         assert!((star.vel.x - -2.4).abs() < 1e-4, "12/5 blend: {}", star.vel.x);

@@ -35,7 +35,7 @@ use crate::entity_lights::{XAnchor, tile_x, tile_y};
 /// `Main.rand`; every other kind returns `None` without touching the stream.
 ///
 /// `pos` is the drop's top-left after the movement half and `size` its box
-/// side (`ItemDrop::SIZE`, 14 — C# `width`/`height`, equal for a drop).
+/// side (`ItemDrop::SIZE`, 16 — C# `width`/`height`, equal for a drop).
 /// `ess_scale` is `Main.essScale` as of the last draw pass
 /// (`Main.cs:62264-62277`).
 pub(crate) fn rand_light(
@@ -151,12 +151,12 @@ mod tests {
             1735, 1868, 4143, 522, 1332,
         ] {
             let mut rng = UnifiedRandom::new(4242);
-            let got = rand_light(kind, Vec2::new(160.0, 176.0), 14.0, 1.0, &mut rng)
+            let got = rand_light(kind, Vec2::new(160.0, 176.0), 16.0, 1.0, &mut rng)
                 .expect("a flicker kind lights");
             let mut twin = UnifiedRandom::new(4242);
             let draw = twin.next_range(90, 111);
             assert_eq!(rng, twin, "kind {kind}: exactly one Next(90,111)");
-            // The anchor: center (167, 183) -> tile (10, 11).
+            // The anchor: center (168, 184) -> tile (10, 11).
             assert_eq!((got.0, got.1), (10, 11), "kind {kind}");
             // The colour is a positive multiple of the drawn flicker.
             let scale = match kind {
@@ -197,7 +197,7 @@ mod tests {
         for kind in [116u16, 501, 75, 3318, 2, 1970, 0] {
             let mut rng = UnifiedRandom::new(7);
             assert!(
-                rand_light(kind, Vec2::ZERO, 14.0, 1.0, &mut rng).is_none(),
+                rand_light(kind, Vec2::ZERO, 16.0, 1.0, &mut rng).is_none(),
                 "kind {kind} contributes nothing here"
             );
             assert_eq!(rng, UnifiedRandom::new(7), "kind {kind} drew nothing");
@@ -216,7 +216,7 @@ mod tests {
         ];
         for (kind, base) in rows {
             let mut rng = UnifiedRandom::new(99);
-            let got = rand_light(kind, Vec2::new(-20.0, -20.0), 14.0, 0.7, &mut rng)
+            let got = rand_light(kind, Vec2::new(-20.0, -20.0), 16.0, 0.7, &mut rng)
                 .expect("a lunar fragment lights");
             assert_eq!(rng, UnifiedRandom::new(99), "kind {kind} is RNG-free");
             assert_eq!(
@@ -224,8 +224,8 @@ mod tests {
                 [base[0] * 0.7, base[1] * 0.7, base[2] * 0.7],
                 "kind {kind}"
             );
-            // The Vector2 overload truncates the quotient: center -13 ->
-            // (int)(-13/16) = 0, not -1.
+            // The Vector2 overload truncates the quotient: center -12 ->
+            // (int)(-12/16) = 0, not -1.
             assert_eq!((got.0, got.1), (0, 0));
         }
     }
@@ -236,8 +236,8 @@ mod tests {
     fn ess_scale_dims_the_flicker_arms() {
         let mut a = UnifiedRandom::new(5);
         let mut b = UnifiedRandom::new(5);
-        let full = rand_light(520, Vec2::ZERO, 14.0, 1.0, &mut a).unwrap().2;
-        let dim = rand_light(520, Vec2::ZERO, 14.0, 0.7, &mut b).unwrap().2;
+        let full = rand_light(520, Vec2::ZERO, 16.0, 1.0, &mut a).unwrap().2;
+        let dim = rand_light(520, Vec2::ZERO, 16.0, 0.7, &mut b).unwrap().2;
         assert_eq!(a, b, "the same single draw either way");
         assert_eq!(dim, [full[0] * 0.7, full[1] * 0.7, full[2] * 0.7]);
     }

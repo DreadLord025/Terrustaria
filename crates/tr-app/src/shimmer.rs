@@ -558,7 +558,7 @@ pub(crate) fn apply_due_transforms(app: &mut App, indices: &[u32]) {
     app.items.retain(|d| !(d.kind == 0 && d.count == 0));
 }
 
-/// The 14x14 item box in pixels (`ItemDrop::SIZE`).
+/// The 16x16 item box in pixels (`ItemDrop::SIZE`).
 const SIZE_PX: f32 = crate::item::SIZE;
 
 /// The air-out (`WorldItem.TurnToAir`'s effect on the drop list, `:1845-1848`).
