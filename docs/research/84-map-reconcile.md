@@ -623,33 +623,83 @@ close-button/icon-row witnesses assumed — close box centre (26, 695),
 corner (42, 710), icon row (840 + k*32, 40). Both sides now carry
 identical witness bodies; the merge sees no conflict there.
 
-**What the union still LACKS (this branch's MAP-FINAL additions, past
-their `75289a2db` fold-source tip):** the D18 style-2 overlay DRAW arm
-(`099beeba5`: `draw_overlay`/`map_overlay_quad`/`clamp_overlay_axes` +
-the style-2 key rows in the e18 input fn + the `:55625` layer walk at
-`num37` + the hover tail + 3 witnesses + 1 anchor row). Their §10.3
-family table still lists "D18 draw half — UNPORTED, recorded"; that row
-is now stale. **Fold recipe for the new commit** (their checklist item
-2's tip re-check fires): the `map.rs` helpers
-(`map_key_alpha`/`map_alpha_clamp`/`overlay_scale_clamp`) + the
-`overlay_scale`/`overlay_alpha` fields are ALREADY on the union
-byte-identical — skip those hunks; take `map_overlay_quad` +
-`WorldMap::draw_overlay` + `clamp_overlay_axes` + the 2 map witnesses +
-the anchor row wholesale; the style-2 key rows in `update_minimap_keys`
-DROP (the union's `update_minimap_zoom_keys` already carries the
-identical arms — but note the union clamps input-side there, so
-`clamp_overlay_axes` on the draw half is a benign double projection,
-keep it for the draw-side fidelity); the `frame/draw.rs` style-2 branch
-+ the pylon-scan gate widening apply as additions (the union's draw
-region has no style-2 arm); the docs sections append per the
-keep-both rule. The `:55626-55694` icon block stays with the f29-tip
-landing (their §10.3 step 2) — at that merge the overlay pick's draws
-insert into this branch's style-2 branch the same way they insert into
-the fullscreen/minimap arms.
-
 **§10.6/§10.7/§10.9 status: SUPERSEDED by the executed fold** — the
 10-commit list is folded (their §10.2), the 3-way keep-one is resolved
 (their §10.1, verified e18-correct-shape above), the merger contract's
 steps 2/3 are closed. What remains owed: the merge-time catalog run
 (their checklist item 5) + the f29-tip landing (their §10.3) + the
-`099beeba5` re-fold (this note's recipe).
+`099beeba5` re-fold (the SEALED recipe below).
+
+### 10.10 SEAL (2026-11-21, seal phase) — the f46g stale-row UPDATE + the exact `099beeba5` re-fold recipe
+
+**STATUS: SEALED.** Re-verified at the same tips (union `6fb5e01e8`,
+f29 `809d08238`, this branch `310c7b9b4` + this seal commit): the
+witness-set `Compare-Object` re-run gives the identical 7 e18-only fns
+(43 vs 36, zero union-only `w4_e18` names); the 3 helper bodies
+brace-matched byte-identical (`True` ×3). Nothing moved; the recipe
+below is FINAL — the f46 lane / merger executes it verbatim.
+
+**(a) The stale row — UPDATE owed on the f46 lane.** Their §10.3
+MAP-FAMILY table row "`mapStyle == 2` overlay DRAW + style-0 retro |
+`Main.cs:55548-55578` | UNPORTED — D18 draw half (keys landed) |
+recorded" is **NOW-STALE**: the draw half was ported on THIS branch as
+`099beeba5` (draw arm + clamps + quad + layer walk + hover tail; the
+style-0 half is a PHANTOM — no style-0 arm exists, callers gate 1/2 at
+`:45778`/`:62231`). The row must be rewritten to: *"`mapStyle == 2`
+overlay DRAW — ported e18 `099beeba5`, RE-FOLD OWED onto this union per
+e18 §10.10's hunk table; style-0 retro is a phantom; the `:55626-55694`
+icon block rides the f29-tip landing."* The f46 lane owns that edit
+(never this branch touching their file); this note is the published
+instruction. Their checklist item 2's tip re-check fires: the
+fold-source moved `75289a2db` → `310c7b9b4` (docs-only past `099beeba5`
+except `4cc600a97`, already mirrored as their `44749457`).
+
+**(b) The exact `099beeba5` hunks → the union** (one cherry-pick or
+manual apply; per-hunk resolution, never `-X`):
+
+| File / hunk (old-side range) | Content | Verdict |
+| --- | --- | --- |
+| `map.rs @@ -53,6 +53,38` | the 3 helpers `map_key_alpha`/`map_alpha_clamp`/`overlay_scale_clamp` | **SKIP** — bodies byte-identical to the union's `a352b16e` copies (`map.rs:46/52/67` union vs `:60/66/81` e18, brace-matched compare `True` ×3). ONE copy at merge; the union's stays. |
+| `map.rs @@ -121,6 +153,33` | `map_overlay_quad` (fractional screen-centred, Identity batch) | **TAKE wholesale** — absent on the union (grep: 0 hits). |
+| `map.rs @@ -425,6 +484,17` | `overlay_scale`/`overlay_alpha` field decls + doc comments | **SKIP the decls** (union `map.rs:450/454` identical), **TAKE the comment refresh** — the union's doc still says "The overlay draw itself is D18 (out of scope)", stale once the draw lands; the e18 comments reference `clamp_overlay_axes`/`draw_overlay` correctly. (Precision fix to this note's earlier "fields byte-identical" wording: decls + seeds identical, comments differ.) |
+| `map.rs @@ -517,6 +587,8` | ctor seeds `2.5`/`0.35` (`Main.cs:66754-66755`) | **SKIP** — union `map.rs:558-559` identical. |
+| `map.rs @@ -558,6 +630,22` | `WorldMap::clamp_overlay_axes` (two-ifs C# order, `RenderZoom = forced_minimum_zoom*zoom`) | **TAKE** — absent on the union. |
+| `map.rs @@ -1033,6 +1121,47` | `WorldMap::draw_overlay` (`(byte)(255*mapOverlayAlpha)` tint, returns the `:55625` icon context) | **TAKE wholesale** — absent on the union. |
+| `map.rs @@ -2169,6 +2298,73` | 2 witnesses `w4_e18_the_overlay_clamps_match_the_draw_side` + `w4_e18_the_overlay_quad_is_screen_centred_and_unscaled` | **TAKE** into the union's `map.rs` tests mod (written-not-run; they pin the WorldMap method + seeds + quad, which the union's free-helper witness does not). |
+| `app/mod.rs @@ -1474,8 +1474,10` | `update_minimap_keys` doc-comment refresh | **DROP** — the fn is absent on the union (§10.1 keep-one); `update_minimap_zoom_keys`'s docs already describe the style-2 rows. |
+| `app/mod.rs @@ -1515,6 +1517,34` | the style-2 key rows (`Player.cs:24930-24947`) | **DROP** — the union's `update_minimap_zoom_keys` (`app/mod.rs:1491`) carries the identical arms (`a352b16e`). The union clamps input-side there, so the folded `clamp_overlay_axes` on the draw half is a benign double projection — KEEP it for draw-side fidelity. |
+| `app/mod.rs @@ -6106,6 +6136,49` | witness `w4_e18_the_style_two_keys_step_the_overlay_axes` | **DROP** — the union's `w4_f46_style_two_keys_step_the_overlay_scale_and_alpha` pins the identical arms; the whole `w4_e18_minimap_key_tests` mod **incl. the `minimap_app` fixture** (`app/mod.rs:6088` e18) drops with the §10.1 keep-one (the union has its own `w4_f46_minimap_zoom_key_tests`, `:6114`). |
+| `frame/draw.rs @@ -164,9 +164,10` | pylon-scan gate widening `map_style == 1 \|\| == 2` | **TAKE** — apply to the union's gate line. |
+| `frame/draw.rs @@ -1467,9 +1468,9` | comment: style-2 "draws its tile pass + layer walk below" | **TAKE** — replaces the stale "draws nothing" comment (the same stale text sits on the f29 tip at its `draw.rs:1432`; see (c)). |
+| `frame/draw.rs @@ -1574,6 +1575,87` | the style-2 branch: gate + `draw_overlay` call + `num37` layer walk + `:56046` hover tail | **TAKE wholesale** — the union's draw region has no style-2 arm. |
+| `frame/draw.rs @@ -1928,6 +2010,13` | `clamp_overlay_axes` call beside `prepare` (`world_zoom` IS `RenderZoom`, `:61999`) | **TAKE**. |
+| `anchors.txt @@ -909,3 +909,4` | the `pub fn draw_overlay` row | **TAKE** — never delete rows to silence the canary. |
+| `ANALYSIS.md @@ -19203` (+30), `PORT_MAP.md @@ -388`, `research/14` (4 hunks) | docs | **APPEND per keep-both**; union-named sections win conflicts (their §10.2 rule). |
+
+Net union additions: 3 fns + 2 witnesses + 1 draw branch + 1 gate
+widening + 1 clamp call + 1 anchor row + comment refreshes. Net drops:
+the style-2 input rows + their witness + the fixture/mod (all covered
+by union equivalents, verified above).
+
+**(c) The f29-overlay compose — ruling confirmed + e18-containment
+receipt.** The f46g ruling (their §10.3, `9b9d8f1c`) stands verified
+against the fetched tips: **f46 union FIRST → f29 TIP `809d08238`
+SECOND; e17 drops without a landing** (contained in the tip's tree,
+their 12-file diff). This branch's containment receipt: **e18 is fully
+absorbed in the f46 union MODULO the owed `099beeba5` re-fold** — the
+7-witness table (research/14 census FINAL, SEALED) accounts every
+e18-only fn, and every non-witness e18 fn is on the union except the
+§10.1 keep-one drops and the 3 new draw fns this recipe folds. **The
+style-2 DRAW lands via THIS re-fold, NOT via f29**: the f29 tip's
+`draw.rs:1432` still says "`mapStyle == 2` (the overlay) draws nothing
+(out of P4 scope)" and its `map_npc_icons.rs:647`
+`draw_npc_map_icons_overlay` is `#[allow(dead_code)]` UNWIRED "so the
+overlay branch can call it when it lands". Compose consequence at the
+f29 second landing: the re-folded style-2 branch is NEW territory the
+f29 tip predates — its stale "draws nothing" comment must be OVERWRITTEN
+by the re-folded branch (never kept), and the f29 overlay pick's nine
+draws (incl. wiring `draw_npc_map_icons_overlay` + the `:55626-55694`
+icon block) insert INTO that branch the same way they insert into the
+fullscreen/minimap arms — never a second copy of the tile pass, the
+`num37` layer walk or the hover tail. Order is load-bearing: re-fold
+`099beeba5` BEFORE the f29 landing, or the icon block has no seam.

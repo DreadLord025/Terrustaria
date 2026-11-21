@@ -745,6 +745,14 @@ superseded): `Main.cs:55548-55578` + `:55609` + `:55615-55625` + the shared
 
 ## W4-e18 MAP-FINAL census FINAL (2026-11-21, code-only) — every e18 fn vs the union keep-table
 
+**TABLE FINAL / SEALED (seal phase, re-verified at the same tips: union
+`6fb5e01e8`, f29 `809d08238`, this branch `310c7b9b4`).** The
+`Compare-Object` re-run reproduces the identical result (43 e18 witness
+fns vs 36 on the union, exactly the 7 below e18-only, zero union-only
+`w4_e18` names). No row changes at seal; the drop/fold dispositions
+below are the merger's contract, executed via research/84 §10.10's
+SEALED hunk recipe.
+
 Method: `git grep "fn w4_e18"` on BOTH trees (this branch @ the MAP-FINAL
 tip vs `origin/task/W4-f46-minimap-reveal-2` @ `6fb5e01e8`), sorted +
 `Compare-Object`; every non-witness e18 fn from the `c6cf86bf..HEAD` diff
@@ -780,6 +788,17 @@ banner-marked dups), `ui/chrome.rs` (`fullmap_close_button_pos`/
 `app/clicks.rs` (`handle_fullmap_close` + the icon-row routing),
 `app/frame/draw.rs` (`close_dialog_behind_fullmap` at the head),
 `ui/mod.rs` (`draw_chat` pub + the fullscreen tail call).
+
+**Non-witness DROP/RE-FOLD rows (the seal-phase re-scan of every `+fn`
+in `c6cf86bf..HEAD`, checked by symbol against the union tree):**
+`update_minimap_keys`/`minimap_key_scale`/`minimap_alpha_step`/
+`clamp_minimap_axes` — DROP with the §10.1 keep-one (union grep: 0 hits,
+the drop executed); the `minimap_app` test fixture (`app/mod.rs:6088`,
+inside `w4_e18_minimap_key_tests`) — DROPS wholesale with that mod (the
+union has its own `w4_f46_minimap_zoom_key_tests`, `:6114`);
+`map_overlay_quad`/`draw_overlay`/`clamp_overlay_axes` — RE-FOLD OWED
+(the only non-witness e18 fns the union lacks that are not keep-one
+drops; they ride the §10.10 recipe). Nothing else.
 
 **The MAP-FINAL additions (past the union's `75289a2db` fold-source):**
 `map_overlay_quad`/`draw_overlay`/`clamp_overlay_axes` + the
@@ -817,3 +836,40 @@ is unaccounted for.**
 - **Owed at merge (not this branch's to run)**: the catalog command on
   the merged state (the union's checklist item 5), the f29-tip landing
   (their §10.3 step 2), the `099beeba5` re-fold (§10.10's recipe).
+
+## W4-e18 MAP SEAL receipt (2026-11-21, seal phase) — the minimap family SEALED
+
+**STATUS: SEALED — no further e18 work of any kind.** Re-verified at
+the fetched tips (union `6fb5e01e8`, f29 `809d08238`):
+
+- **e18 fully contained in the f46 union, MODULO one owed re-fold.**
+  The witness `Compare-Object` re-run: identical 7 e18-only fns (the
+  SEALED table above), zero union-only `w4_e18` names. The non-witness
+  re-scan: every e18 fn is on the union except the §10.1 keep-one drops
+  (incl. the `minimap_app` fixture/mod) and the 3 new draw fns.
+- **The owed re-fold is `099beeba5` ONLY** (style-2 draw arm). The
+  exact per-hunk recipe is research/84 §10.10 SEAL — TAKE 3 fns + 2
+  witnesses + the draw branch + gate widening + clamp call + anchor
+  row + comment refreshes; SKIP the 3 helpers (brace-matched
+  byte-identical to the union's `a352b16e` copies, `True` ×3 — ONE copy
+  at merge) + the field decls/seeds; DROP the style-2 input rows +
+  their witness + the fixture. Precision fix: the field DECLS + seeds
+  are byte-identical but the doc comments differ — take the e18 comment
+  refresh (the union's "D18 out of scope" wording is stale post-fold).
+- **f46g stale-row UPDATE published** (research/84 §10.10 SEAL (a)):
+  their §10.3 family-table "D18-style-2-draw-UNPORTED" row is NOW-STALE
+  (ported here `099beeba5`); the f46 lane rewrites it to
+  ported/re-fold-owed. This branch never edits their file.
+- **Compose order stands** (f46g ruling verified): f46 union FIRST →
+  f29 TIP `809d08238` SECOND → e17 drops (contained). The style-2 DRAW
+  lands via THIS re-fold, NOT f29 — the f29 tip's `draw.rs:1432` still
+  says style-2 "draws nothing" and `map_npc_icons.rs:647`'s
+  `draw_npc_map_icons_overlay` is UNWIRED dead code awaiting the
+  branch. Re-fold BEFORE the f29 landing; the f29 overlay pick then
+  inserts its nine draws into the re-folded style-2 branch (its stale
+  comment overwritten, never kept) — never twice.
+- **Verification (code-only as tasked)**: `git fetch` + `rev-parse`
+  (both tips), `git grep "fn w4_e18"` + `Compare-Object` on both trees,
+  brace-matched helper-body compares, the `c6cf86bf..HEAD` `+fn` re-scan
+  symbol-checked against the union, the f29 tip's stale-comment/UNWIRED
+  lines read from git objects. No cargo/tests/rustfmt/graphify.
