@@ -192,6 +192,9 @@ pub fn draw_builder_acc_toggles(
         let my = inp.mouse.y as i32;
         let hover = mx >= rx && mx < rx + 14 && my >= ry && my < ry + 14;
         let status = p.builder_acc_status[num3];
+        // `:47403`/`:47507` - the tint is computed BEFORE the click
+        // (the C# `color` assignment precedes the `flag3` increment), so
+        // the click frame still draws the OLD status's tint.
         let c = row_color(num3, status);
         if hover {
             let text = if matches!(num3, 4 | 5 | 6 | 7 | 9) {
@@ -219,7 +222,8 @@ pub fn draw_builder_acc_toggles(
                 clicked = true;
             }
         }
-        // `:47563` — the 14x14 icon at `(num3*16, 16)`, origin Size/2.
+        // `:47563` - the 14x14 icon at `(num3*16, 16)`, origin Size/2,
+        // in the PRE-click tint (the `color` local the switch computed).
         push_builder_frame(r, lookups, sheet, pos, (num3 as i32 * 16, 16, 14, 14), color::tint(c));
         if hover {
             // `:47566` — the InfoIcon[13] hover ring in OurFavoriteColor.
