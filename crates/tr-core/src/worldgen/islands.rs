@@ -2098,4 +2098,48 @@ mod tests {
         };
         assert_eq!(run(), run(), "the drunk variant passes must be deterministic");
     }
+
+    /// The skyblock island-side arms (`:12960-12962`, `:13003-13006`,
+    /// `:13024-13040`): skyblock + extraFloatingIslands runs the pass
+    /// with the fixed y anchor `worldSurface/2 + 100` (no column scan),
+    /// the `/42` attempt budget and the ±150/±75 clear window. The
+    /// skyblock TERRAIN is f24's `GenerateSkyBlockWorld` lane — these
+    /// arms only gate/position the island discs (the claim boundary:
+    /// ANALYSIS "Sky lakes / floating-island residuals", the f24 read).
+    #[test]
+    fn the_skyblock_island_side_arms() {
+        let mut w = sky_world(4200, 1200, 520);
+        w.seeds |= SeedFlags::SKYBLOCK;
+        w.micro_seeds |= MicroSeedFlags::EXTRA_FLOATING_ISLANDS;
+        let mut gv = gv_with_lakes(4200);
+        pass_floating_islands(&mut w, &mut gv, &mut Rng(42), 520.0, false);
+        // The fixed anchor: num6 = (545/2 + 100) = 372, the y roll
+        // Next(90, 272), the surfaceLow clamp min(y, 470) is inert here.
+        let anchor = (w.world_surface / 2.0 + 100.0) as i32;
+        for (y, lake) in gv.island_house_y.iter().zip(&gv.sky_lake) {
+            // The compact disc's ledger stores y - radius/2 (radius
+            // 40..60 → the top offset 20..30); the lake tail included.
+            let _ = lake;
+            assert!(
+                (90 - 30..anchor - 100).contains(y),
+                "the skyblock y {y} rides the fixed anchor {anchor}"
+            );
+        }
+        // A blocked sky rejects the site: an active tile inside every
+        // possible ±150/±75 window band forces the clear-window refusal
+        // (the budget exhausts, no island places).
+        let mut wb = sky_world(4200, 1200, 520);
+        wb.seeds |= SeedFlags::SKYBLOCK;
+        wb.micro_seeds |= MicroSeedFlags::EXTRA_FLOATING_ISLANDS;
+        for x in 0..4200 {
+            for y in 0..400 {
+                let i = wb.index(x, y);
+                wb.tiles[i].kind = 189;
+                wb.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let mut gvb = gv_with_lakes(4200);
+        pass_floating_islands(&mut wb, &mut gvb, &mut Rng(42), 520.0, false);
+        assert_eq!(gvb.num_island_houses, 0, "the clear window rejects every site");
+    }
 }
