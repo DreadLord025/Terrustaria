@@ -26,6 +26,10 @@ pub(crate) mod sky;
 pub(crate) mod special_tiles;
 pub(crate) mod tile_cracks;
 pub(crate) mod tiles;
+// W4-g72 lane 3: the hell parallax stack geometry (DrawUnderworldBackground /
+// DrawUnderworldBackgroundLayer), UNWIRED — the Underworld sheets overflow the
+// 8192 atlas bound (module docs).
+pub(crate) mod underworld_bg;
 pub(crate) mod vines;
 pub(crate) mod wires;
 
