@@ -39370,3 +39370,26 @@ UpdateNPCs (the bash). 3 witnesses WRITTEN NOT RUN (the core flip/gate
 walks + the app interact arms). The double-refuse plays two Door_Closed
 (the C# plays the 9 inside each refused call).
 
+
+### W4-g24 batch 3 (2026-11-21) вЂ” the wiring-tool Dig-0 upgrade (10 sites)
+
+Landed sites: the ten identical `PlaySound(0, i * 16, j * 16)` calls inside
+`PlaceActuator`/`KillActuator` and the four `PlaceWireN`/`KillWireN` pairs
+(`WorldGen.cs:58015`/`:58026`/`:58115`/`:58126`/`:58145`/`:58156`/`:58175`/
+`:58186`/`:58205`/`:58216`). The v1 `wire_placed_feedback` stand-in played a
+pinned `Dig_1` with NO draws; W4-g24 upgrades it to the faithful case 0
+(`play_place_sound((0,1), ...)`, the S1-E-21b path): the `Next(3)` variation
++ the `Next(-10,11)*0.01` pitch (`LegacySoundPlayer.cs:442`/:450`) ride the
+`UpdatePlayers` stream (the tools run in `Player.ItemCheck` under the
+`Main.cs:17754` swap), only AFTER the attenuation gate. **Draw-order fix**:
+the C# plays the sound INSIDE `KillActuator`/`KillWireN` BEFORE the
+`Item.NewItem` drop roll (`:58026` precedes `:58030`, `:58126` precedes
+`:58130`, etc.) вЂ” the cutter arms now call `wire_placed_feedback` ahead of
+`spawn_item_drop` so the two cue draws precede the drop's velocity/prefix
+rolls on the same stream (the v1 order had the drop first). The placement
+arms (wrench/actuator) draw exactly two (no drop follows). The Actuation
+Rod plays nothing (the C# `Wiring.Actuate` has no cue). 1 witness WRITTEN
+NOT RUN (the two-draw replay pin + the cutter's stream advance). The net
+message 17 stays the local-state truth; the five dust 50 stay the visual
+seam.
+

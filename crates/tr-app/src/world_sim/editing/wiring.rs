@@ -120,14 +120,18 @@ pub(crate) fn use_wiring_tool(app: &mut App, tx: i32, ty: i32) -> bool {
             // first (`KillActuator`, :46857), then the yellow wire, the green,
             // the blue and the red. Each successful kill is its own arm.
             if edit::kill_actuator(&mut app.world, tx, ty) {
-                // `WorldGen.KillActuator`'s drop (`Item.NewItem(..., 849)`,
-                // `WorldGen.cs:58030`) — the cutter runs in `Player.ItemCheck`
-                // (`Player.cs:46857`), so the drop rides `UpdatePlayers`. The
-                // five dust 50 (`:58032-58035`) are the visual seam (no dust
-                // engine on this path — ANALYSIS "The wiring tools").
+                // `WorldGen.KillActuator` plays the Dig 0 BEFORE the drop
+                // (`WorldGen.cs:58026` precedes `Item.NewItem` `:58030`) —
+                // the case-0 variation+pitch draws ride `UpdatePlayers`
+                // ahead of the drop's own rolls (W4-g24, the C# order).
+                wire_placed_feedback(app, tx, ty);
+                // The drop (`Item.NewItem(..., 849)`, `:58030`) — the cutter
+                // runs in `Player.ItemCheck` (`Player.cs:46857`), so it rides
+                // the same stream. The five dust 50 (`:58032-58035`) are the
+                // visual seam (no dust engine on this path — ANALYSIS "The
+                // wiring tools").
                 let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                 spawn_item_drop(&mut app.items, rng, ACTUATOR_ITEM, 1, tx, ty);
-                wire_placed_feedback(app, tx, ty);
                 return true;
             }
             use tr_core::wiring::WireColor;
@@ -138,13 +142,16 @@ pub(crate) fn use_wiring_tool(app: &mut App, tx: i32, ty: i32) -> bool {
                 WireColor::Red,
             ] {
                 if edit::kill_wire(&mut app.world, tx, ty, color) {
-                    // `WorldGen.KillWire`'s drop (`Item.NewItem(..., 530)`,
-                    // `WorldGen.cs:58130`) — the cutter's tile interaction runs
-                    // in `Player.ItemCheck` (`Player.cs:46862-46880`), so the
-                    // drop rides the `UpdatePlayers` stream.
+                    // `WorldGen.KillWireN` plays the Dig 0 BEFORE the drop
+                    // (`WorldGen.cs:58126`/`:58156`/`:58186`/`:58216` precede
+                    // `Item.NewItem` `:58130` etc.) — the case-0 draws ride
+                    // `UpdatePlayers` ahead of the drop's rolls (W4-g24).
+                    wire_placed_feedback(app, tx, ty);
+                    // The drop (`Item.NewItem(..., 530)`, `:58130`) — the
+                    // cutter's tile interaction runs in `Player.ItemCheck`
+                    // (`Player.cs:46862-46880`), same stream.
                     let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                     spawn_item_drop(&mut app.items, rng, WIRE_ITEM, 1, tx, ty);
-                    wire_placed_feedback(app, tx, ty);
                     return true;
                 }
             }
@@ -205,11 +212,23 @@ pub(crate) fn use_wiring_tool(app: &mut App, tx: i32, ty: i32) -> bool {
 }
 
 /// The wiring tools' feedback: the C#'s `SoundEngine.PlaySound(0, i * 16,
-/// j * 16)` (sound id 0 = "Dig_1") at the tile, and the net message 17 the
-/// port has no wire flavour for (the local wire state is the truth).
+/// j * 16)` — the ten identical sites inside `PlaceActuator`/`KillActuator`
+/// and the four `PlaceWireN`/`KillWireN` pairs (`WorldGen.cs:58015`/
+/// `:58026`/`:58115`/`:58126`/`:58145`/`:58156`/`:58175`/`:58186`/
+/// `:58205`/`:58216`). W4-g24: the v1 stand-in played a pinned `Dig_1`
+/// with NO draws; the faithful case 0 (`LegacySoundPlayer.cs:440-452`)
+/// draws the `Next(3)` variation + the `Next(-10, 11) * 0.01` pitch on the
+/// caller's stream — the tools run in `Player.ItemCheck` under the
+/// `Main.cs:17754` `UpdatePlayers` swap — only AFTER the attenuation gate
+/// (`play_place_sound`, the S1-E-21b path). The net message 17 the port
+/// has no wire flavour for (the local wire state is the truth).
 fn wire_placed_feedback(app: &mut App, tx: i32, ty: i32) {
-    app.audio
-        .play_at("Dig_1", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
+    app.audio.play_place_sound(
+        (0, 1),
+        tx as f32 * TILE_PX,
+        ty as f32 * TILE_PX,
+        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+    );
 }
 
 #[cfg(test)]
@@ -293,6 +312,45 @@ mod tests {
             "the release cleared the lock"
         );
         assert!(use_wiring_tool(&mut app, 10, 19), "the rod flips again");
+    }
+
+    /// W4-g24 — the wiring-tool Dig-0 upgrade: the ten `PlaySound(0, ...)`
+    /// sites (`WorldGen.cs:58015`/`:58026`/`:58115`/`:58126`/`:58145`/
+    /// `:58156`/`:58175`/`:58186`/`:58205`/`:58216`) now draw the case-0
+    /// `Next(3)` variation + `Next(-10, 11)` pitch on `UpdatePlayers`
+    /// (`LegacySoundPlayer.cs:442`/:450`), only after the attenuation gate.
+    /// The placement arm draws EXACTLY two (no drop follows); the cutter
+    /// draws the two cue rolls BEFORE the drop's own rolls (the C# plays
+    /// inside `KillWireN` before `Item.NewItem`).
+    #[test]
+    fn w4_g24_the_wiring_dig_cue_draws_two_on_update_players() {
+        use tr_core::wiring::WireColor;
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        app.inventory[app.selected] = slot(509, 1);
+        app.inventory[10] = slot(WIRE_ITEM, 3);
+        // The placement: exactly the two case-0 draws, no drop rolls. The
+        // flow app seeds every stream at 0 (`NamedRngs::new(0)`), so a
+        // fresh-seed replay of the two rolls pins the draw count.
+        assert!(use_wiring_tool(&mut app, 10, 19));
+        let mut replay = tr_core::UnifiedRandom::new(0);
+        let _ = replay.next_range(0, 3);
+        let _ = replay.next_range(-10, 11);
+        // The live stream's next value matches the two-draw replay's next.
+        let live_next = app.rngs.stream(crate::app::RngKey::UpdatePlayers).peek();
+        assert_eq!(live_next, replay.peek(), "exactly two case-0 draws");
+        // The cutter: the cue's two draws precede the drop's rolls. Seed a
+        // wire, cut it, and confirm the stream advanced past two draws (the
+        // drop adds its own velocity/prefix rolls on top).
+        let mut app2 = flow_app(None, vec![], vec![]);
+        app2.world = object_world();
+        app2.world.wires.set(10, 19, WireColor::Red, true);
+        app2.inventory[app2.selected] = slot(510, 1);
+        let start = app2.rngs.stream(crate::app::RngKey::UpdatePlayers).peek();
+        assert!(use_wiring_tool(&mut app2, 10, 19));
+        let after = app2.rngs.stream(crate::app::RngKey::UpdatePlayers).peek();
+        assert_ne!(start, after, "the cutter drew on UpdatePlayers");
+        assert!(app2.items.iter().any(|d| d.kind == WIRE_ITEM), "the drop");
     }
 
     // --- the wiring tools (`ItemCheck_UseWiringTools`) -------------------
