@@ -77,28 +77,30 @@ per `docs/superpowers` agreements).
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 131 | Dust cross-lane MASTER STATUS — **BIBLE-FINAL §8** (W4-d54: all-lane tips + per-fold VERIFIED/OWED table, Dust.cs FAMILY COMPLETE declaration + per-family spawn censuses, merger keep-one symbol checklist, witness recount 318→492 gross/≈461 net; F1-F7/g75d/116/G1-G6 closed, R5-R7+G2+e3-contracts+f6-push owed) | `131-dust-master-status.md` | ✅ consolidated final |
 
-| 150 | Research-number COLLISION REGISTRY (W4-d54 doc-integrity: **§4-REFRESH round 2** — full 358-tip re-scan ×6 fetches, 47 colliding number keys, 123 rename assignments 151–236 + 244–280, first-pushed-timestamp winners, self-rename reconciliation f11/g24/g67/c10/e23/g61/g89/c4/g50/d42/c8/g48/g58/g56/f47/f21/d53/c42/f45, per-lane rename instructions + refs-to-update, same-path fork dedupe rules; 237–243 taken by e23/d42/d42/g58×4; 281+ FREE) | `150-research-number-registry.md` | registry |
+| 150 | Research-number COLLISION REGISTRY (W4-d54 doc-integrity: **§4-REFRESH round 3** — full 360-tip re-scan, 53 colliding number keys, 144 live rename assignments 151–236 + 246–280 + 281–303, first-pushed-timestamp winners (renames contest at rename-commit), round-3 WINNER CORRECTIONS 125=d125/144+145=e19 (round-1/2 calls revoked →293/294/295), pre-publish g48 244/245 wins (c31→300/d81+g53→301), new 77/91×7/108/68×3/240/244 collisions + d83-fork→302, §7 supersedes §6; 237–245 winner-consumed; 304+ FREE) | `150-research-number-registry.md` | registry |
 
 ## ⚠️ Collision-aware index note (2026-11-21, W4-d54) — READ BEFORE MERGING
 
-**REFRESHED round 2 (registry §4-REFRESH banner + §6).** The number space
-`docs/research/NN-*.md` is **collided across the task/W4-\* branches**: the
-refresh re-scan of all **358** remote tips (21 038 rows, six fetches — lanes
-pushed mid-round) finds **47 colliding number keys** (round 1 found 32 of 355
-tips; the lane wave added 12k, 96, 108, 111, 129, 130, 137, 143–149, 237–240
-and extended 26d/26e/64/68). The authoritative registry is
+**REFRESHED round 3 (registry §4-REFRESH banner + §7 — §7 IS AUTHORITY).**
+The number space `docs/research/NN-*.md` is **collided across the task/W4-\*
+branches**: the round-3 re-scan of all **360** remote tips (21 172 rows; +2
+lanes: f12-buff-effects base-carry, g11-teleport-dust successor) finds **53
+colliding number keys**. The authoritative registry is
 **`150-research-number-registry.md`** — per-number winner (earliest
-first-pushed timestamp wins), loser → FREE-number assignments **151–236 +
-244–280** (123 total; **237–243 are consumed by winner pushes: e23
-bestiary-ui-final 237 / d42 roster-sheets 238 / d42 final-keep-one 239 / g58
-happiness-final 240 + latch-hunks 241 + chat-portrait-seed 242 +
-seal-verification 243**), per-lane rename instructions with refs-to-update,
-and same-path fork rules. **Numbers 281+ are FREE — do NOT pick
-max-on-origin+1 or first-free-at-your-last-fetch without checking the
-registry AND a fresh all-tip sweep** (f11's interim 151–153, g50's 154,
-g48's 237, g56+f21's 239, d53+c42's 240 and the c8/d42/g61 triple-238 all
-collided that way). Pushes after the registry's final sweep self-adjudicate
-per §6.3's cutoff note.
+first-pushed timestamp wins; a self-renamed doc contests the NEW number at
+its rename-commit time), loser → FREE-number assignments **151–236 +
+246–280 + 281–303** (144 live; **237–245 are winner-consumed: e23 237 / d42
+238+239 / g58 240–243 / g48 244+245 [pre-publish pushes beat the round-2
+draft reservations]**), per-lane rename instructions with refs-to-update,
+and same-path fork rules. **Round-3 winner corrections: 125 = d125's empress
+ledger (d38 →293), 144 = e19's splash-keep-one (c4 orca →294), 145 = e19's
+16box (g89 rod →295)** — earlier claimants the first two rounds missed.
+**Numbers 304+ are FREE — do NOT pick max-on-origin+1 or
+first-free-at-your-last-fetch without checking the registry AND a fresh
+all-tip sweep** (f11's interim 151–153, g50's 154, g48's 237/239, g56+f21's
+239, d53+c42+g63's 240, f39's 244 and the c8/d42/g61 triple-238 all collided
+that way). Pushes after the registry's round-3 sweep self-adjudicate per
+§7.3's cutoff note.
 
 **Merger rules (dedupe per registry, not per filename guess):**
 1. Numbers 08, 61–63, 90–92 belong to the inherited base census docs
@@ -110,27 +112,40 @@ per §6.3's cutoff note.
 2. When two branches carry the SAME filename: identical blob → keep one
    (clean merge); diverged blob → same-path fork, keep the earlier-first-add
    copy under the number, the later copy takes its assigned free number
-   (registry §1 fork rows / §4 / §6.1). Ten fork families now: 18b, 65, 66,
-   69, 70-liquid-merge-order, 71, 83, 84, 109, 122.
-3. Lanes rename on their OWN branches (registry §3 + §6.3 tables); until a
-   lane has renamed, the merger applies the registry mapping at merge time.
+   (registry §1 fork rows / §4 / §6.1 / §7.1). Eleven fork families now:
+   18b (d82 keeps; d83 DIVERGED →302; d81+g53 identical pair →301; e23 →246),
+   65, 66, 69, 70-liquid-merge-order, 71, 83, 84, 109, 122; plus 116 =
+   SAME-LANE successor fork (g11-dust-main → g11-teleport-dust): NO renumber,
+   merger keep-one the successor SEAL blob.
+3. Lanes rename on their OWN branches (registry §3 + §6.3 + §7.3 tables;
+   §7.3 RE-ISSUE rows replace their §6.3 originals); until a lane has
+   renamed, the merger applies the registry mapping at merge time.
    The registry's §3 d54 rows (65→186, 66→194) are applied at/after the dust
    union so sibling-lane citations into `131-dust-master-status.md` stay live.
    **Rename chains** (record the full chain in the doc header): f11
    134/135/136→151/152/153→**233/234/235 EXECUTED**; g67 134→146→**267**;
    c10 145→149→**270**; g61 237→238→**273**; c8 143→238→**262**;
-   d42 143→**238 EXECUTED+CONFIRMED** (+ **239 KEEPS** vs g56/f21); g58
-   143→**240 EXECUTED+CONFIRMED** (+ **241/242/243 KEEP**); g64 66-fork→**196
-   EXECUTED**; g89 139→**145 KEEPS**; g24 107→**146 KEEPS**; e23 **237
-   KEEPS**; g84 **137 KEEPS**; c4 **143/144/148 KEEP**, 145-addendum→**265**;
+   d42 143→**238 EXECUTED+CONFIRMED** (+ **239 KEEPS** vs g56/f21/g48); g58
+   143→**240 EXECUTED+CONFIRMED** (+ **241/242/243 KEEP** vs d53/c42/g63);
+   g64 66-fork→**196 EXECUTED**; g63 67-activation→**199 EXECUTED**; d10
+   26d→**165/166 EXECUTED** + 26d→246→**247 re-issued** (246=e23's fork
+   reservation); g24 107→**146 KEEPS**; e23 **237 KEEPS** (now sole
+   claimant); g84 **137 KEEPS**; c4 **143/148 KEEP**, **144 REVOKED→294**
+   (e19 earlier), 145-addendum→**265**; g89 **145 REVOKED→295** (e19
+   earlier; chain 139→145→295), 122 KEEPS; d38 **125 REVOKED→293** (d125
+   earlier); e19 **144/145 KEEP**, 146→**296**, 147→**268**, 148→**297**;
    e20 **149/147/71 KEEP**, 146→**266**, 148→**269**; g50 154→**271**;
-   g48 237→**272**; g56 239→**274**; d53 240→**275**; f21 239→**276**;
-   f47 144×2→**277/278**; f45 137→**279**; c42 240→**280**.
+   g48 237→239→**272 re-issued**, **244/245 KEEP** (pre-publish); c31
+   12k→**300 re-issued**; d81+g53 18b-fork→**301 re-issued**; d83
+   18b-fork→**302**; g56 239→**274**; d53 240→**275**; f21 239→**276**;
+   f47 144×2→**277/278**; f45 137→**279**; c42 240→**280**; f26
+   7h/7i/7j→**281/282/283**; g15 77→**284**; d22/g4 91×7→**285–291**;
+   g8 108→**292**; g63 240→**298**; f39 244→**299**; f3 65→**303**.
 4. 107 and 139 are now EMPTY at the tips (g24/g89 renamed away). 139 stays
-   RESERVED for g52c-net-master; 143/144 are now FULL collisions won by c4
-   (losers renumber per §6) — the round-1 "one-sided" note is superseded;
-   the brief's f21b doc finally pushed (on 239, loses → 276). Unpushed
-   sub-round docs take free numbers **281+**.
+   RESERVED for g52c-net-master; 143 is a FULL collision won by c4; 144/145
+   are won by e19 (round-3 corrections) — the round-1 "one-sided" note is
+   superseded; the brief's f21b doc finally pushed (on 239, loses → 276).
+   Unpushed sub-round docs take free numbers **304+**.
 5. This INDEX's row set above is the base+d54 view; rows for other lanes'
    docs enter with their merges, renumbered per the registry. The merger
    dedupes INDEX rows by (number, filename) using the registry mapping.
