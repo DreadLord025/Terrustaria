@@ -1595,6 +1595,23 @@ fn portrait_data(
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
+        // W4-d125 empress wiring — the portraits rest the sheets' own
+        // row heights over `Main.npcFrameCount` (636 two frames, 661
+        // three; `Main.cs:67147`/`:67150`). The sheets are deferred
+        // (the atlas-headroom wave) — `entry_sheet` returns None and
+        // the portrait draw skips until the repack (the wyvern note).
+        (NpcKind::EmpressOfLight, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(100.0);
+            (sheet_i, h, 100.0, h, white)
+        }
+        (NpcKind::PrismaticLacewing, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 10.0, h, white)
+        }
     }
 }
 

@@ -586,6 +586,12 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-d125 empress wiring — the next-free protocol band above
+            // the wyvern 223-228 (229/237.. the free holes; 230-236 are
+            // the holiday-zombie/wave bands). The vanilla types ride the
+            // bestiary entries (636/661), `cs_id` below.
+            NpcKind::EmpressOfLight => 229,
+            NpcKind::PrismaticLacewing => 237,
         }
     }
 
@@ -916,6 +922,9 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            // W4-d125 empress wiring (`to_u16` above).
+            229 => NpcKind::EmpressOfLight,
+            237 => NpcKind::PrismaticLacewing,
             _ => return None,
         })
     }
@@ -1796,6 +1805,9 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            // W4-d125: 636 `SoundID.NPCHit1` (`NPC.cs:17196`), 661
+            // `NPCHit1` (`:17358`).
+            NpcKind::EmpressOfLight | NpcKind::PrismaticLacewing => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2100,6 +2112,10 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            // W4-d125: 636 `SoundID.NPCDeath65` (`NPC.cs:17197`), 661
+            // `NPCDeath1` (`:17359`).
+            NpcKind::EmpressOfLight => "NPC_Killed_65",
+            NpcKind::PrismaticLacewing => "NPC_Killed_1",
             _ => return None,
         })
     }
@@ -2200,6 +2216,12 @@ impl NpcKind {
             // aiStyle-49 AI head sets `noGravity = true` every tick
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
             NpcKind::AngryNimbus => true,
+            // W4-d125: the Prismatic Lacewing (661, `NPC.cs:17361`) —
+            // noGravity, no kb row → the class default 1f (`:8533`), so
+            // the Y-pop selector reaches it. The Empress (636) is
+            // noGravity too (`:17190`) but kb 0 (`:17198`) — the
+            // knockback gate refuses resist 0, so no row is needed.
+            NpcKind::PrismaticLacewing => true,
             _ => false,
         }
     }
@@ -2451,6 +2473,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // W4-d125: 636 aiStyle 120 (`NPC.cs:17193`,
+            // `AI_120_HallowBoss`), 661 aiStyle 65 (`:17354`,
+            // `AI_065_Butterflies`' 661 branch).
+            NpcKind::EmpressOfLight => 120,
+            NpcKind::PrismaticLacewing => 65,
         }
     }
 
@@ -2981,6 +3008,10 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-d125: 636 100x100 (`NPC.cs:17191-17192`), 661 10x10
+            // (`:17352-17353`).
+            NpcKind::EmpressOfLight => (100.0, 100.0),
+            NpcKind::PrismaticLacewing => (10.0, 10.0),
         }
     }
 
@@ -3622,6 +3653,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-d125: 636 lifeMax 70000 (`NPC.cs:17195`), 661 lifeMax 5
+            // (`:17357`). The expert/master `ScaleStats` halves
+            // (`:18400-18404`) ride the difficulty system's seam.
+            NpcKind::EmpressOfLight => 70000,
+            NpcKind::PrismaticLacewing => 5,
         }
     }
 
@@ -3986,6 +4022,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-d125: 636 damage 80 (`NPC.cs:17194` — AI_120's tail
+            // rewrites it per tick from defDamage, 9999 enraged), 661
+            // damage 0 (`:17355`).
+            NpcKind::EmpressOfLight => 80,
+            NpcKind::PrismaticLacewing => 0,
         }
     }
 }

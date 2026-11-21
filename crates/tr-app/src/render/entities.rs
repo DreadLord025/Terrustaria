@@ -3170,6 +3170,24 @@ pub(crate) fn draw_npcs(
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
+            // W4-d125 empress wiring — the boss's dedicated draw
+            // (`DrawNPCDirect_HallowBoss`, `Main.cs:26471+`: the aurora
+            // halo + the colour-shift pass) is the render-side remainder;
+            // this arm draws the body sheet at `Main.npcFrameCount[636]`
+            // = 2 rows (`Main.cs:67147`) with the generic centred anchor.
+            // The sheet is DEFERRED (the ~71-px atlas headroom, the
+            // wyvern precedent — `npc_sheet` returns None and the draw
+            // skips until the repack).
+            NpcKind::EmpressOfLight => {
+                pumpkin_moon_draw(assets.npc_sheet(636), npc_rows(636), n, w, h)
+            }
+            // The Prismatic Lacewing — the butterfly group's generic draw
+            // at `Main.npcFrameCount[661]` = 3 rows (`Main.cs:67150`),
+            // the `vx * 0.3` tilt rides the rotation whitelist below
+            // (`FindFrame` case 661, `NPC.cs:72747`). Sheet deferred.
+            NpcKind::PrismaticLacewing => {
+                pumpkin_moon_draw(assets.npc_sheet(661), npc_rows(661), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3319,6 +3337,9 @@ pub(crate) fn draw_npcs(
                     // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
                     | NpcKind::BlazingWheel
                     | NpcKind::DungeonSpirit
+                    // W4-d125: the Lacewing's `rotation = vx * 0.3`
+                    // (`FindFrame` case 661, `NPC.cs:72747`).
+                    | NpcKind::PrismaticLacewing
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

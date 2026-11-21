@@ -484,6 +484,9 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+        // W4-d125: 636 (`NPCID.cs:9749-9755`) and 661 (`:9923-9929`)
+        // both carry `SpecificallyImmuneTo = { 31 }` — Confused.
+        NpcKind::EmpressOfLight | NpcKind::PrismaticLacewing => &[31],
     }
 }
 

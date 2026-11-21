@@ -439,7 +439,9 @@ fn attack_damage_for_projectiles(difficulty: f32, normal: f32, expert: f32) -> i
 /// (`:45933-45941`) takes THIS boss as the first live 636 (the
 /// single-Empress invariant; documented). Returns the updated sticky
 /// latch beside the answer; the non-remix arm leaves it untouched.
-fn should_empress_be_enraged(s: &EmpressState, env: &EmpressEnv) -> (bool, bool) {
+/// `pub(crate)` since W4-d125: the wiring's `IsDamageDodgeable` stamp
+/// (`npc.rs::ai_120_empress`) reads the same gate at contact time.
+pub(crate) fn should_empress_be_enraged(s: &EmpressState, env: &EmpressEnv) -> (bool, bool) {
     if env.remix_world {
         if env.empress_rage_mode {
             return (true, true);

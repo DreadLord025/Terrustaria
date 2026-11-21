@@ -1086,6 +1086,24 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    /// `NPCID.HallowBoss` (636, `NPCID.cs:11949`) — the Empress of Light
+    /// (`NPC.cs:17188-17206`): 100x100, aiStyle 120, dmg 80, def 50,
+    /// 70000 HP, kb 0, noGravity + noTileCollide, boss, Opacity 0
+    /// (alpha 255), dontTakeDamage, npcSlots 16, value 25 gold.
+    /// W4-d125 wiring: the faithful pure core
+    /// (`npc_ai_empress::empress_ai_step`, `AI_120_HallowBoss`,
+    /// `NPC.cs:45953-46942`) claims the aiStyle-120 axis arm; the
+    /// day-enrage one-shot rides `damage_override` 9999 + the
+    /// `IsDamageDodgeable` 636 arm (`:78752-78753`).
+    EmpressOfLight,
+    /// `NPCID.EmpressButterfly` (661, `NPCID.cs:11999`) — the Prismatic
+    /// Lacewing (`NPC.cs:17351-17365`): 10x10, aiStyle 65, dmg 0, def 0,
+    /// 5 HP, noGravity, lavaImmune, catchItem 4961, rarity 4, npcSlots
+    /// 0.25. W4-d125: the 661 branch of `AI_065_Butterflies`
+    /// (`NPC.cs:44896-45110`) rides `npc_ai_lacewing::lacewing_step`;
+    /// its death with player interaction spawns the Empress
+    /// (`DoDeathEvents` case 661, `NPC.cs:79493-79502`).
+    PrismaticLacewing,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -2981,8 +2999,9 @@ impl Npc {
             net_update: false,
             // S1-D-3 W-9: Duke Fishron's `boss = true` row
             // (`NPC.cs:13716`) — the target-facing inheritance gate
-            // (`npc_target.rs`'s `!npc.boss` term) reads it.
-            boss: kind == NpcKind::DukeFishron,
+            // (`npc_target.rs`'s `!npc.boss` term) reads it. W4-d125:
+            // the Empress's own row (`NPC.cs:17202`).
+            boss: matches!(kind, NpcKind::DukeFishron | NpcKind::EmpressOfLight),
             collide_x: false,
             collide_y: false,
             old_vx: 0.0,
@@ -3033,6 +3052,10 @@ impl Npc {
             dont_take_damage: matches!(
                 kind,
                 NpcKind::PlanterasHook | NpcKind::MartianSaucerCore | NpcKind::BlazingWheel
+                    // W4-d125: the Empress's `dontTakeDamage = true` row
+                    // (`NPC.cs:17204`) — AI_120's tail rewrites it per
+                    // tick (`:46919`, the materialize/invuln windows).
+                    | NpcKind::EmpressOfLight
             ),
             // NPC.cs:6517,8520 — behindTiles defaults false; per-type SetDefaults sets true (e.g. 10355).
             behind_tiles: kind.behind_tiles(),
@@ -3129,6 +3152,9 @@ impl Npc {
                             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
                                 255
                             }
+                            // W4-d125: the Empress's `Opacity = 0f` row
+                            // (`NPC.cs:17203`) — the materialize fades in.
+                            NpcKind::EmpressOfLight => 255,
                             _ => 0,
                         }
                     }),
@@ -3529,6 +3555,10 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            // W4-d125: 636 kb 0 (`NPC.cs:17198`); 661 writes no kb row —
+            // the class default 1f (`:8533`).
+            NpcKind::EmpressOfLight => 0.0,
+            NpcKind::PrismaticLacewing => 1.0,
             _ => 0.4,
         }
     }
@@ -3909,6 +3939,11 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            // W4-d125: 636 def 50 (`NPC.cs:17195` — the AI's ×1.2
+            // phase-2 rewrite rides `defense_override`), 661 def 0
+            // (`:17356`).
+            NpcKind::EmpressOfLight => 50,
+            NpcKind::PrismaticLacewing => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4281,6 +4316,10 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            // W4-d125: 636 value 25 gold (`NPC.cs:17199`); 661 writes no
+            // value row (the head's 0f, `:8544`).
+            NpcKind::EmpressOfLight => 250000.0,
+            NpcKind::PrismaticLacewing => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6287,6 +6326,15 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // W4-d125 empress wiring: 636 is claimed by the aiStyle-120
+            // axis above (the fishron precedent — this arm routes the
+            // direct-kind callers to the same machine); 661 rides the
+            // aiStyle-65 axis' `lacewing_step`.
+            NpcKind::EmpressOfLight => self.ai_120_empress(world, player, rng),
+            NpcKind::PrismaticLacewing => {
+                crate::npc_ai_lacewing::lacewing_step(self, world, player, &[], rng);
+                self.integrate_flyer_collision(world);
+            }
         }
     }
 
@@ -9037,6 +9085,35 @@ impl Npc {
                         if self.ai[2] > 130.0 && self.ai[2] < 155.0 {
                             self.frame = 7;
                         }
+                    }
+                }
+            }
+            // W4-d125 — `case 636` (`NPC.cs:67022-67024`): `frame.Y =
+            // IsInPhase2() ? num : 0` — row 1 in phase 2, row 0 otherwise
+            // (`Main.npcFrameCount[636]` = 2, `Main.cs:67147`'s row).
+            NpcKind::EmpressOfLight => {
+                self.frame = if self.ai[3] == 1.0 || self.ai[3] == 3.0 { 1 } else { 0 };
+            }
+            // W4-d125 — `case 661` (`NPC.cs:72742-72771`, shared with
+            // 356/444/653): the rotation `vx * 0.3`, spriteDirection =
+            // direction, the frameCounter accumulator `+1 + (|vx|+|vy|)/2`
+            // over the 7-tick bands (rows 0/1/2/1, wrap at 27); the
+            // `ai[2]-1` colour-row offset EXCLUDES 661 (`:72768`).
+            NpcKind::PrismaticLacewing => {
+                self.rotation = self.vx * 0.3;
+                self.sprite_dir = self.facing;
+                self.frame_counter +=
+                    1.0 + (self.vx.abs() + self.vy.abs()) / 2.0;
+                if self.frame_counter < 7.0 {
+                    self.frame = 0;
+                } else if self.frame_counter < 14.0 {
+                    self.frame = 1;
+                } else if self.frame_counter < 21.0 {
+                    self.frame = 2;
+                } else {
+                    self.frame = 1;
+                    if self.frame_counter >= 27.0 {
+                        self.frame_counter = 0.0;
                     }
                 }
             }
@@ -18601,6 +18678,10 @@ impl Npc {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-d125: the vanilla types 636/661 — unused by every arm
+            // above (the G6 key stays injective).
+            NpcKind::EmpressOfLight => 636,
+            NpcKind::PrismaticLacewing => 661,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23948,6 +24029,9 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-d125 empress wiring.
+        NpcKind::EmpressOfLight,
+        NpcKind::PrismaticLacewing,
     ];
 
     #[test]
