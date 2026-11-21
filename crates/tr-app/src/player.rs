@@ -7718,6 +7718,16 @@ impl Player {
                 self.run_slowdown *= 0.1;
             }
         }
+        // W4-g66 final (f3 keep-one input) — `Player.cs:26613-26617`: the
+        // Magic Carpet glide boosts the run (acceleration ×1.25, max ×1.5).
+        // The C# reads `carpetFrame != -1` BEFORE `CarpetMovement`
+        // (`:26766`) rewrites it this tick — the PREVIOUS tick's glide
+        // state, like the floor flags above. The performing-jump run
+        // boosts (`:26573-26612`) stay the extra-jump lane's.
+        if self.carpet_frame != -1 {
+            self.run_acceleration *= 1.25;
+            self.max_run_speed *= 1.5;
+        }
         // `Player.cs:25256-25287`: the hover latches — a down press edge
         // latches hover-down, an up edge swaps to hover-up; landing clears
         // both. The vanilla default is `Settings.HoverControl == Hold`
@@ -8011,9 +8021,11 @@ impl Player {
         // W4-g66 gap-fill — `Player.cs:26758-26766`: the wall-cling trio
         // between `DashMovement` and `DoubleJumpVisuals` — the Rat mount
         // climbs, everything else wallslides, then the Magic Carpet glide.
+        // The C# block is `grappling[0] == -1 && !tongued` (`:26494`); the
+        // f3 wall batch's tongue gate lands here (the keep-one input).
         // The type-31 wall dust queues one snapshot; the drain replays it
         // on `UpdatePlayers` (`player_trail_dust::drain_wall_dust`).
-        if !grappling {
+        if !grappling && !self.tongued {
             if self.mount.is_active() && self.mount.kind() == 55 {
                 self.wall_climb_movement(world, gravity);
             } else {
@@ -10694,7 +10706,9 @@ impl Player {
         let mut glide = false;
         // `:26745-26752` runs BEFORE the carpet in the C# tick (the port's
         // zeroing lives at the flight-section head, later): an unequipped
-        // tier's budget reads as zero here.
+        // tier's budget reads as zero here. KEEP-ONE (the f3 wall batch
+        // reads the raw fields — this synthesized zero-read is the
+        // C#-faithful form; ANALYSIS "the f3 wall/carpet keep-one").
         let wing_time = if self.wings_logic == 0 { 0.0 } else { self.wing_time };
         let rocket_time = if self.rocket_boots == 0 { 0 } else { self.rocket_time };
         // `:21845`: the big gate.
@@ -12875,7 +12889,10 @@ impl Player {
                 &mut self.gfx_off_y,
             );
         }
-        if dry && vel[1] >= gravity && !down && !self.cart_mounted {
+        // W4-g66 final (f3 keep-one input) — `Player.cs:28066`/`:23537`:
+        // the carpet glide (`carpetFrame != -1`) steps up even while
+        // rising — the Magic Carpet climbs ledges mid-flight.
+        if dry && (self.carpet_frame != -1 || vel[1] >= gravity) && !down && !self.cart_mounted {
             collision::step_up(
                 world,
                 &mut pos,
@@ -23516,5 +23533,90 @@ mod s1_p_i27_tests {
         app.apply_session_appearance();
         let p = app.player.as_ref().unwrap();
         assert_eq!(p.eye_color, [10, 200, 30, 255], "no draft, no overwrite");
+    }
+
+    // -- W4-g66 final: the f3 wall/carpet keep-one inputs --------------------
+    // Witnesses WRITTEN NOT RUN (code-only mode).
+
+    /// `:26613-26617` — the glide run boost reads the PREVIOUS tick's
+    /// `carpetFrame`: a live glide pose multiplies accel ×1.25 / max ×1.5;
+    /// the rest frame (−1) does not. Driven through the full tick (the
+    /// boost sits in the movement head, before `CarpetMovement` rewrites
+    /// the frame — no carpet equipped, so the frame survives the tick).
+    #[test]
+    fn w4_g66_final_the_carpet_glide_boosts_the_run() {
+        let w = ground_world();
+        let input = PlayerInput::default();
+        let mut p = Player::spawn(&w);
+        p.update(&w, input);
+        let acc0 = p.run_acceleration_value();
+        let max0 = p.max_run_speed_value();
+        let mut q = Player::spawn(&w);
+        q.carpet_frame = 0;
+        q.update(&w, input);
+        assert_eq!(q.run_acceleration_value(), acc0 * 1.25, ":26615");
+        assert_eq!(q.max_run_speed_value(), max0 * 1.5, ":26616");
+        assert_eq!(q.carpet_frame, -1, "no carpet: the :26100 clear fires");
+    }
+
+    /// `:26745-26752` — the carpet gate reads the ZEROED budgets: a bare
+    /// tier's residual wing/rocket budget reads as zero (the C# zeroes
+    /// before `CarpetMovement`), so the glide still launches. The f3 raw
+    /// read would refuse here — the keep-one verdict keeps the zero-read.
+    #[test]
+    fn w4_g66_final_the_carpet_gate_reads_zeroed_budgets() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.carpet = true;
+        p.can_carpet = true;
+        p.control_jump = true;
+        p.vy = 2.0;
+        p.wings_logic = 0;
+        p.wing_time = 50.0; // residual — the C# :26747 zeroes it first
+        p.rocket_boots = 0;
+        p.rocket_time = 30; // residual — :26751 zeroes it first
+        p.carpet_movement(0.4);
+        assert_eq!(p.carpet_time, 299, "the launch arms despite residuals");
+        assert!(p.carpet_frame >= 0, "the glide pose lands");
+        // An EQUIPPED tier's live budget still refuses (`:21845`).
+        let mut q = Player::spawn(&w);
+        q.carpet = true;
+        q.can_carpet = true;
+        q.control_jump = true;
+        q.vy = 2.0;
+        q.wings_logic = 1;
+        q.wing_time = 50.0;
+        q.carpet_movement(0.4);
+        assert_eq!(q.carpet_time, 0, "a live wing budget refuses");
+        assert_eq!(q.carpet_frame, -1);
+    }
+
+    /// `:21750-21840` — the level-2 down-drop puff is UNGATED: no Rat probe
+    /// runs on the Wallslide arms (`:21790` has no `!flag ||` clause), and
+    /// the mount gate already returned — a solid tile ahead never kills it.
+    #[test]
+    fn w4_g66_final_the_wallslide_puff_is_never_probe_gated() {
+        let mut w = ground_world();
+        for y in [39, 40] {
+            let i = w.index(20, y);
+            w.tiles[i].kind = 1;
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        // A solid tile 10 px BELOW the centre too (the Rat probe's target).
+        let i = w.index(19, 39);
+        w.tiles[i].kind = 1;
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut p = Player::spawn(&w);
+        p.x = 300.0;
+        p.y = 600.0;
+        p.vy = 1.0;
+        p.slide_dir = 1;
+        p.spiked_boots = 2;
+        p.control_right = true;
+        p.control_down = true;
+        p.wallslide_movement(&w, 0.4);
+        assert_eq!(p.vy, 4.0);
+        let b = p.take_wall_dust().expect("the down-drop puff is ungated");
+        assert!(!b.rat, "no Rat halver on the Wallslide arms");
     }
 }
