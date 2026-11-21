@@ -24029,6 +24029,71 @@ mod w4_f3_pulley_tests {
         p.find_pulley(&w);
         assert!(!p.pulley, "a vine never attaches (IsVine disjoint tileRope)");
     }
+
+    /// W4-f3 FINAL — the rope-coil end-to-end chain witness (host 5):
+    /// place-rope → pulley-attach → ride → coil-refund. The four links live on
+    /// three branches — d4's `ai_rope_coil` placement (`Projectile.cs:27227-
+    /// 27290`, the per-kind rope map + the `ai[1]` placed-counter), THIS
+    /// branch's `find_pulley`/`pulley_ride` (`Player.cs:19644`/`:26300`), and
+    /// g82's `coil_death_drop` refund ladder (`Projectile.cs:77572-77615`).
+    /// The witness mirrors the sibling machines' contracts (they are not in
+    /// this tree) and exercises the LIVE attach/ride against the placed column.
+    #[test]
+    fn w4_f3_the_rope_coil_chain_place_attach_ride_refund() {
+        // Link 1 — place-rope (d4 ai_rope_coil :27227-27239): the four coil
+        // kinds drop their rope tile; a 3-link placement leaves ai[1] = 3.
+        let coil_rope = |kind: u16| -> u16 {
+            match kind { 475 => 353, 506 => 366, 505 => 365, _ => 213 }
+        };
+        assert_eq!(coil_rope(171), 213, "Rope Coil -> rope (:27231)");
+        assert_eq!(coil_rope(475), 353, "Vine Rope Coil (:27233)");
+        assert_eq!(coil_rope(505), 365, "Silk Rope Coil (:27235)");
+        assert_eq!(coil_rope(506), 366, "Web Rope Coil (:27237)");
+        let placed = 3.0_f32; // ai[1] after three links (the :27283 increment)
+        let mut w = ground_world();
+        for y in 50..(50 + placed as i32) {
+            let i = w.index(20, y);
+            w.tiles[i] = Tile { kind: coil_rope(171), ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        // Link 2 — pulley-attach (THIS branch find_pulley :19650-19708): the
+        // placed column is td::TILE_ROPE, so the hang lands. Seat the player
+        // at the TOP link (row 50) so the lone-cell probe sees no rope above.
+        let mut p = on_rope(&w);
+        p.y = 50.0 * 16.0 + 8.0; // the (y-8)/16 probe row is 50
+        p.find_pulley(&w);
+        assert!(p.pulley, "the placed coil column attaches (:19708)");
+        assert_eq!(p.y, (50 * 16 + 22) as f32, "the top-link lone-cell hang");
+        // Link 3 — ride (THIS branch pulley_ride :26331-26381): holding DOWN
+        // descends the placed column (+0.2 first tick).
+        p.control_up = false;
+        p.control_down = true;
+        p.vy = 0.0;
+        p.pulley_ride(&w, MAX_FALL);
+        assert!(p.pulley, "still roped mid-column");
+        assert_eq!(p.vy, 0.2, "the descend first tick (:26420-26422)");
+        // Link 4 — coil-refund (g82 coil_death_drop :77572-77615): the coil
+        // that placed 3 links drops 10-3 = 7 rope items; an unplaced coil
+        // (ai[1]==0) drops ONE coil item; a full 10-link placement drops none.
+        let refund = |kind: u16, ai1: f32| -> Option<(u16, i32)> {
+            let (coil_item, rope_item) = match kind {
+                171 => (985u16, 965u16),
+                475 => (3005, 2996),
+                505 => (3079, 3077),
+                506 => (3080, 3078),
+                _ => return None,
+            };
+            if ai1 == 0.0 { Some((coil_item, 1)) }
+            else if ai1 < 10.0 { Some((rope_item, (10.0 - ai1) as i32)) }
+            else { None }
+        };
+        assert_eq!(refund(171, placed), Some((965, 7)), "3 placed -> 7 rope (:77580)");
+        assert_eq!(refund(171, 0.0), Some((985, 1)), "unplaced -> 1 coil (:77576)");
+        assert_eq!(refund(171, 10.0), None, "full placement -> nothing (:77578)");
+        assert_eq!(refund(475, 3.0), Some((2996, 7)), "vine rope refund (:77591)");
+        assert_eq!(refund(505, 3.0), Some((3077, 7)), "silk rope refund (:77602)");
+        assert_eq!(refund(506, 3.0), Some((3078, 7)), "web rope refund (:77613)");
+    }
 }
 
 /// W4-f3 folded host — the Magic Carpet fly machine (`Player.CarpetMovement`
