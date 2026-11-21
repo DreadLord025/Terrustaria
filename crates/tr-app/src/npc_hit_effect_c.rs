@@ -238,6 +238,7 @@
 //! | 1190-1199 | `:88405-88446` | the 208 PartyGirl + 209 Cyborg death (5 gores each, shimmer) |
 //! | 1200-1209 | `:88464-88476` | the 212 PirateDeckhand + 213 PirateCorsair death (5 gores each) |
 //! | 1210-1219 | `:88480-88492` | the 214 PirateDeadeye + 215 PirateCrossbower death (5 gores each) |
+//! | 1220-1227 | `:88496-88524` | the 216 PirateCaptain (5 gores) + 220/221 SeaSnail/Squid death (type-151 dust) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -7030,11 +7031,12 @@ fn cyborg_death(
     gore.new_gore(rng, world, low, vel, if shimmer { 1296 } else { 291 }, 1.0); // :88446
 }
 
-/// The 212-215 pirate invasion death (`NPC.cs:88458-88492`, sites
-/// 1200-1219): the 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY
+/// The 212-216 pirate invasion death (`NPC.cs:88458-88500`, sites
+/// 1200-1224): the 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY
 /// -2.5), then the per-type 5-gore ladder — 212 Deckhand → 336/337/338,
 /// 213 Corsair → 339/340/341, 214 Deadeye → 342/343/344, 215 Crossbower →
-/// 345/346/347 (each head, mid pair, tail pair). Scale defaults to 1.
+/// 345/346/347, 216 Captain → 348/349/350 (each head, mid pair, tail pair).
+/// Scale defaults to 1.
 fn pirate_invasion_death(
     npc: &Npc,
     npc_type: i32,
@@ -7053,12 +7055,13 @@ fn pirate_invasion_death(
             Color::default(), 1.0,
         );
     }
-    // `:88462-88492` — the per-type ladder.
+    // `:88462-88500` — the per-type ladder.
     let (head, mid, tail) = match npc_type {
         212 => (336, 337, 338),
         213 => (339, 340, 341),
         214 => (342, 343, 344),
-        _ => (345, 346, 347), // 215 Crossbower
+        215 => (345, 346, 347),
+        _ => (348, 349, 350), // 216 Captain
     };
     let vel = Vec2::new(npc.vx, npc.vy);
     let midp = Vec2::new(pos.x, pos.y + 20.0);
@@ -7068,6 +7071,38 @@ fn pirate_invasion_death(
     gore.new_gore(rng, world, midp, vel, mid, 1.0);
     gore.new_gore(rng, world, low, vel, tail, 1.0);
     gore.new_gore(rng, world, low, vel, tail, 1.0);
+}
+
+/// The 220/221 SeaSnail/Squid death (`NPC.cs:88513-88525`, sites
+/// 1225-1227): the 20-dust type-151 burst (SpeedX `2.5*hitDirection`,
+/// SpeedY -2.5, scale 0.7), then the per-type gores at position at
+/// `this.scale` — 221 Squid → [298,299], the else (220 SeaSnail) → [297].
+fn squid_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 151, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 0.7,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    if npc_type == 221 {
+        gore.new_gore(rng, world, pos, vel, 298, s); // :88519
+        gore.new_gore(rng, world, pos, vel, 299, s); // :88520
+    } else {
+        gore.new_gore(rng, world, pos, vel, 297, s); // :88524
+    }
 }
 
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
@@ -7925,10 +7960,14 @@ pub fn hit_effect_c(
     if npc_type == 209 && npc.hp <= 0 {
         cyborg_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:88448-88502` — the 212-216 pirate invasion arm; the 212/213/214/
-    // 215 (sites 1200-1219); the 216 lands with the next batch.
-    if (npc_type == 212 || npc_type == 213 || npc_type == 214 || npc_type == 215) && npc.hp <= 0 {
+    // `:88448-88502` — the 212-216 pirate invasion arm, COMPLETE (sites
+    // 1200-1224).
+    if (212..=216).contains(&npc_type) && npc.hp <= 0 {
         pirate_invasion_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88503-88526` — the 220/221 SeaSnail/Squid arm (sites 1225-1227).
+    if (npc_type == 220 || npc_type == 221) && npc.hp <= 0 {
+        squid_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -12481,17 +12520,18 @@ mod tests {
         assert_eq!(types2, vec![1294, 1295, 1295, 1296, 1296]);
     }
 
-    /// `NPC.cs:88464-88492` — the pirate invasion death: 212 →
+    /// `NPC.cs:88464-88500` — the pirate invasion death: 212 →
     /// 336/337/338, 213 → 339/340/341, 214 → 342/343/344, 215 →
-    /// 345/346/347 (each head + mid pair + tail pair).
+    /// 345/346/347, 216 → 348/349/350 (each head + mid pair + tail pair).
     #[test]
     fn w4_f10_the_pirate_invasion_death_uses_the_per_type_ladder() {
         let w = air();
-        let cases: [(i32, [i32; 5]); 4] = [
+        let cases: [(i32, [i32; 5]); 5] = [
             (212, [336, 337, 337, 338, 338]),
             (213, [339, 340, 340, 341, 341]),
             (214, [342, 343, 343, 344, 344]),
             (215, [345, 346, 346, 347, 347]),
+            (216, [348, 349, 349, 350, 350]),
         ];
         for (ty, gores) in cases {
             let n = boss(100.0, 100.0, 40.0, 56.0);
@@ -12501,6 +12541,22 @@ mod tests {
             pirate_invasion_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
             let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
             assert_eq!(types, gores, "pirate {ty}");
+        }
+    }
+
+    /// `NPC.cs:88519-88524` — the SeaSnail/Squid death: 221 Squid →
+    /// [298,299], 220 SeaSnail → [297].
+    #[test]
+    fn w4_f10_the_squid_death_uses_the_per_type_list() {
+        let w = air();
+        for (ty, gores) in [(221, [298, 299]), (220, [297])] {
+            let n = boss(100.0, 100.0, 30.0, 30.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(1237);
+            squid_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..gores.len()].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, gores, "squid {ty}");
         }
     }
 
