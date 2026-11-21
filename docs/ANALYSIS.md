@@ -22954,6 +22954,50 @@ Witnesses (written not run, code-only): `w4_f12_final_icon_census_*`,
 (`:41335`, the 46 px column grid + the 0.65 alpha floor) still rides the
 map tasks — unchanged from the S1-E-6 deviation.
 
+## The buff closeout (W4-f12 closeout, 2026-11-21)
+
+The closeout phase (research/W4-f12-closeout.md) closed the five remaining
+questions; the full evidence + the merge rulings live there. The record:
+
+1. **f49d nebula-exec** — NOT landed on `origin/task/W4-f49-mana-regen-2`
+   (tip 6c0ee2aa2 still carries the three scan arms + the pre-seam
+   `update_survival`). The f12 side PUBLISHED the exact `fold_orb` bridge
+   hunk (`p.nebula_level_mana = p.orb_scan.nebula_level_mana`, ASSIGN per
+   `:12072`); it lands with the merge together with f49's R3 deletions —
+   never one half alone.
+2. **Animation census** — `Main.buffFrame`/`buffFrameCounter` do not exist
+   in the C#; `DrawBuffIcon` draws the full static sheet (`:43315`), so
+   all 400 icons are single-frame and NO icon-cycle code is needed (the
+   lane-name premise retired). The one UpdateBuffs frame animation is
+   Ice Barrier 62's 12-frame body overlay (`:10469-10478` →
+   `PlayerDrawLayers:3918-3923`): sim wired (the persist-seeded pair),
+   draw layer unported. Beetle/solar/nebula orbit draws + the titanium
+   shader are player-draw/armor-set lane remainders (counters live).
+3. **Stack display** — the xN is the 28-handler `ownedProjectileCounts`
+   sum, never buff stacks; `AddBuff` has no stack field. Per-buff re-grant
+   semantics censused COMPLETE: default refresh-to-max, the only additive
+   ids 94 (cap 600) / 383 (cap 43200), the fed/pet/flask replace-families,
+   the orb/nebula tier ladders, the mount 10-pin, the 8 no-tick ids.
+4. **UpdateBuffs FINAL re-sweep** — `tools/w4_f12_closeout_sweep.py`
+   (committed, run): the 270-id set-diff is EMPTY on this tree, zero
+   dup-grants. TWO NEW cross-tree dups found in the landed tips: f50's
+   inline Panic-63 `moveSpeed++` (the wiring's DEBUFF_DISPATCH arm is
+   canonical — the inline copy folds out) and f50's
+   `rederive_beetle_solar_buffs` (a full second `:10342-10443` ladder
+   copy — g27 `apply_orb_arm` stays canonical; the machines-only fold
+   needs the post-scan lift + the `OrbContext` set-flag lifecycle fix,
+   the C# clears the flags AFTER UpdateBuffs at `:25618-25620`). The
+   d115-321 / f49-nebula rulings stand; the 59/205/94 grants land clean.
+5. **Research FINAL** — this record + the INDEX/PORT_MAP/ROADMAP rows.
+
+Closeout witnesses (written not run): 
+`w4_f12_closeout_orb_scan_is_assign_shaped`,
+`w4_f12_closeout_ice_frame_persists_and_cycles_across_ticks`,
+`w4_f12_closeout_panic_63_grants_move_speed_once_through_the_wiring`
+(buff_frame_wiring.rs),
+`w4_f12_closeout_regrant_is_refresh_except_the_two_additive_ids`
+(buffs.rs).
+
 ## Entity lights (S1-E-5, 2026-11-16)
 
 The C# funnels every `Lighting.AddLight` overload into

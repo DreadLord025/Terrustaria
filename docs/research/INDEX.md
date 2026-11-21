@@ -77,6 +77,7 @@ per `docs/superpowers` agreements).
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | W4-f12-sweep | The FULL 270-id UpdateBuffs stat-arm census (C# case-list vs every ownership set; 10 gaps closed inline; the nebula-twin f49 one-writer contract + the buff-321 d115 keep-one note; the final-phase g27 cross-verify appended) | `W4-f12-sweep-census.md` | ✅ set-diff EMPTY |
 | W4-f12-final | The buff-HUD final census (icon draw / tooltip lines / time display / debuff cancel / g27 canonical; the 94/396 tooltip arms restored, the icon-text font/scale/tint fixed; ANALYSIS "The buff-HUD final census") | `W4-f12-sweep-census.md` + ANALYSIS | ✅ 5 witnesses written not run |
+| W4-f12-closeout | The 5-item buff closeout (f49d status NOT-landed → the exact fold_orb bridge hunk published; the animation census — no Main.buffFrame exists, 400 static icons, Ice Barrier 62 the one wired frame anim; the stack-source census COMPLETE — xN is projectile counts, re-grant semantics per-buff; the FINAL keep-one re-sweep script — set-diff EMPTY + TWO NEW f50 cross-tree dups ruled (Panic-63 inline, the beetle/solar ladder re-derivation); ANALYSIS "The buff closeout") | `W4-f12-closeout.md` + `tools/w4_f12_closeout_sweep.py` | ✅ 4 witnesses written not run, script run green |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
