@@ -150,6 +150,7 @@
 //! | 611-620 | `:85985-86006` | the critter family: dolphin 615, bird 74, birds 297/298, scarlet macaw 671 |
 //! | 621-629 | `:86010-86024` | the critter family: blue macaw 672, toucan 673, yellow cockatiel 674 |
 //! | 630-638 | `:86028-86054` | the critter family: gray cockatiel 675, squirrel 299/538, mouse 300, rat 610, seahorse 626, anglerfish 102 |
+//! | 639-646 | `:86058-86075` | the critter family: flying fish 224, eyeball flying fish 587, turtle 616 |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -4044,6 +4045,30 @@ fn critter_family_death(
     else if npc_type == 102 {
         gore.new_gore(rng, world, pos, vel, 116, 1.0); // :86054
     }
+    // `:86056-86060` — the flying fish 224.
+    else if npc_type == 224 {
+        gore.new_gore(rng, world, pos, vel, 312, 1.0); // :86058
+        gore.new_gore(rng, world, pos, vel, 313, 1.0); // :86059
+    }
+    // `:86061-86069` — the eyeball flying fish 587 (an EXTRA 50-dust type-5
+    // burst at SpeedX 2.5*dir, SpeedY -2.5 before the gores).
+    else if npc_type == 587 {
+        for _ in 0..50 {
+            dust.new_dust(
+                rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+                Color::default(), 1.0,
+            );
+        }
+        gore.new_gore(rng, world, pos, vel, 1104, 1.0); // :86067
+        gore.new_gore(rng, world, pos, vel, 1105, 1.0); // :86068
+    }
+    // `:86070-86076` — the turtle 616.
+    else if npc_type == 616 {
+        gore.new_gore(rng, world, pos, vel, 1166, 1.0); // :86072
+        gore.new_gore(rng, world, pos, vel, 1167, 1.0); // :86073
+        gore.new_gore(rng, world, pos, vel, 1168, 1.0); // :86074
+        gore.new_gore(rng, world, pos, vel, 1168, 1.0); // :86075
+    }
 }
 
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
@@ -4523,13 +4548,14 @@ pub fn hit_effect_c(
     // goldfish (sites 601-610) + dolphin / bird / birds / scarlet macaw
     // (sites 611-620) + blue macaw / toucan / yellow cockatiel (sites
     // 621-629) + gray cockatiel / squirrels / mouse / rat / seahorse /
-    // anglerfish (sites 630-638); the rest lands with the next batches.
+    // anglerfish (sites 630-638) + flying fish / eyeball flying fish /
+    // turtle (sites 639-646); the rest lands with the next batches.
     if (npc_type == 46 || npc_type == 303 || npc_type == 337 || npc_type == 540 || npc_type == 67
         || npc_type == 55 || npc_type == 230 || npc_type == 615 || npc_type == 74
         || npc_type == 297 || npc_type == 298 || npc_type == 671 || npc_type == 672
         || npc_type == 673 || npc_type == 674 || npc_type == 675 || npc_type == 299
         || npc_type == 538 || npc_type == 300 || npc_type == 610 || npc_type == 626
-        || npc_type == 102)
+        || npc_type == 102 || npc_type == 224 || npc_type == 587 || npc_type == 616)
         && npc.hp <= 0
     {
         critter_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
@@ -7187,6 +7213,39 @@ mod tests {
             critter_family_death(&n, ty, &mut d, &ctx(), &mut g, &mut r, &w, 1.0);
             assert_eq!(g.slot(0).gore_type, gore_ty, "critter {ty}");
         }
+    }
+
+    /// `NPC.cs:86058-86075` — the flying fish 224 (312/313), eyeball flying
+    /// fish 587 (extra 50-dust burst + 1104/1105), turtle 616
+    /// (1166/1167/1168/1168).
+    #[test]
+    fn w4_f10_the_critter_family_flying_fish_turtle() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 24.0);
+        // The flying fish 224.
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(601);
+        critter_family_death(&n, 224, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![312, 313]);
+        // The eyeball flying fish 587: the extra dust burst runs.
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(601);
+        critter_family_death(&n, 587, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        let types2: Vec<i32> = gore2.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![1104, 1105]);
+        // 10 base dusts + 50 extra = 60 (minus any cull refusals).
+        let dust_active = dust2.slots().iter().filter(|d| d.active).count();
+        assert!(dust_active >= 50, "the extra burst ran: {dust_active}");
+        // The turtle 616.
+        let mut gore3 = GorePool::new();
+        let mut dust3 = DustPool::new();
+        let mut rng3 = UnifiedRandom::new(601);
+        critter_family_death(&n, 616, &mut dust3, &ctx(), &mut gore3, &mut rng3, &w, 1.0);
+        let types3: Vec<i32> = gore3.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types3, vec![1166, 1167, 1168, 1168]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
