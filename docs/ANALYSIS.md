@@ -30948,18 +30948,22 @@ portraits and the netglue bare seed. The wiring:
   drains it into the shared `EntityLights` pair at the NPC's slot turn
   (the C# `AddLight` position, `NPC.cs:34258`; the c7 firefly precedent).
   No RNG — the feed's placement cannot move any stream.
-- **The Transform(375) executor**: the dig queues `wants_transform =
-  Some(375)`; the sim's existing Transform drain (the aiStyle-75
-  carrier-gone pass) runs `transform_to_kind` after the tick. The
-  executor gained the `SetDefaults` head refresh (`NPC.cs:8508`/
-  `:8519-8520`/`:8523` + the catchable arm `:17851-17855`): friendly
-  (374 true → 375 false — 375 is NOT `npcCatchable`, `Main.cs:9326-9418`),
-  the 90-tick immunity window, behindTiles (`:13790`) and rotation. The
-  aiStyle-75 pairs (390→382, 416→518) are all non-catchable /
-  non-behindTiles kinds whose riders never write rotation, so the
-  refresh is a no-op for them. The one-tick Transform lag is the
-  aiStyle-75 documented fold; the bottom-anchored reposition nets 0
-  (both heights 10), the arm's +16 sink stands.
+- **The Transform(375) executor**: the dig runs `transform_to_kind`
+  INLINE in the axis arm (the C# order — `Transform(375)` inside `AI()`,
+  `NPC.cs:34345`, BEFORE the post-AI integration), then returns; the
+  digger's movement is the worm pass's. The inline swap preserves the
+  +16 sink — a deferred transform would let the crawler's ground
+  collision snap the worm back to the surface. The executor gained the
+  `SetDefaults` head refresh (`NPC.cs:8508`/`:8519-8520`/`:8523` + the
+  catchable arm `:17851-17855`): friendly (374 true → 375 false — 375 is
+  NOT `npcCatchable`, `Main.cs:9326-9418`), the 90-tick immunity window,
+  behindTiles (`:13790`) and rotation. The aiStyle-75 pairs (390→382,
+  416→518) are all non-catchable / non-behindTiles kinds whose riders
+  never write rotation, so the refresh is a no-op for them (they keep
+  the deferred sim drain). The bottom-anchored reposition nets 0 (both
+  heights 10), the arm's +16 sink stands; AI_006 lands one tick early on
+  the transform tick (the pool-pass fold — a single move, the sink
+  intact).
 - **The digger's movement**: 375 is aiStyle 6 — a LONE `AI_006` worm (the
   StardustWormHead precedent): `is_worm` true, `is_worm_head`/
   `is_worm_mid` false (375 sits outside the `:51301`/`:51436` chain

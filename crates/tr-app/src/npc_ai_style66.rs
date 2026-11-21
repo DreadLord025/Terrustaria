@@ -140,8 +140,9 @@
 //! pool — the dig proximity scan reads the players only). The 484 light
 //! request queues on `Npc::wants_ai_light` and drains into the shared
 //! `EntityLights` pair at the slot turn (the c7 firefly precedent); the
-//! dig queues `wants_transform = Some(375)` and the sim's Transform drain
-//! runs `transform_to_kind` (the aiStyle-75 carrier-gone precedent). The
+//! dig runs `transform_to_kind(TruffleWormDigger)` INLINE (the C# order —
+//! `Transform(375)` inside `AI()` before integration, preserving the +16
+//! sink), then returns — the digger's movement is the worm pass's. The
 //! integration tail is the family arm's own: the depth-scaled default
 //! gravity (`body_gravity`, `NPC.cs:90878-90955`) + the 10 fall cap, the
 //! dead-band X snap (`:90473-90476`) and the ground `UpdateCollision`

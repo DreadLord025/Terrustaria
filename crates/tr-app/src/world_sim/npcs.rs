@@ -6206,9 +6206,6 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     let new_kind = match ty {
                         382 => NpcKind::RayGunner,
                         518 => NpcKind::SolarSpearman,
-                        // W4-c8 — the TruffleWorm's dig (`NPC.cs:34345`):
-                        // 374 → 375, the lone fleeing digger (aiStyle 6).
-                        375 => NpcKind::TruffleWormDigger,
                         _ => continue,
                     };
                     npcs[i].transform_to_kind(world_ref, player, new_kind);

@@ -5176,11 +5176,15 @@ impl Npc {
     }
 
     /// `NPC.Transform(int newType, ...)` (`NPC.cs:81084-81114`) with the
-    /// default arguments the aiStyle-75 fallbacks pass (`Transform(382)` /
-    /// `Transform(518)`: ai0..3 = 0, `withReposition = true`), on the host
-    /// path (`Main.netMode != 1`, `:81086`). The bottom-anchored
-    /// reposition, the `SetDefaults` observable subset, the `TargetClosest`
-    /// and the integer life rescale floored at 1 — the `npc_ai_style42::
+    /// default arguments the callers pass (ai0..3 = 0, `withReposition =
+    /// true`): the aiStyle-75 carrier-gone fallbacks (`Transform(382)` /
+    /// `Transform(518)`, the deferred sim drain) and the aiStyle-66
+    /// TruffleWorm dig (`Transform(375)`, W4-c8 — run INLINE in the axis
+    /// arm, the C# order, so the +16 sink survives). Host path
+    /// (`Main.netMode != 1`, `:81086`). The bottom-anchored reposition, the
+    /// `SetDefaults` observable subset (incl. the friendly/immunity/
+    /// behindTiles/rotation head refresh), the `TargetClosest` and the
+    /// integer life rescale floored at 1 — the `npc_ai_style42::
     /// transform_to` / `npc_ai_style24::transform_core` precedent, keyed to
     /// the port's kind table. The value/knockback/visual halves are the
     /// wiring's full-Transform job (ANALYSIS).
@@ -5603,9 +5607,16 @@ impl Npc {
     /// The 484 light request queues on `wants_ai_light` for the sim's
     /// `EntityLights` drain at the slot turn (the `wants_hostile_shot`
     /// pattern; the solo wrapper leaves it for the caller). The 374 dig
-    /// (`ai[1] == 90`) queues `wants_transform = Some(375)` — the sim's
-    /// Transform drain runs `NPC.Transform` (`NPC.cs:81084-81145`) after
-    /// the tick (the aiStyle-75 carrier-gone precedent).
+    /// (`ai[1] == 90`) runs `NPC.Transform(375)` (`NPC.cs:81084-81145`)
+    /// INLINE — the C# calls it inside `AI()` (`:34345`), BEFORE the
+    /// post-AI integration, so the kind swap to the noGravity/noTileCollide
+    /// digger preserves the +16 sink (a deferred transform would let the
+    /// crawler's ground collision snap the worm back to the surface). The
+    /// transform is RNG-free (the module's census), so the inline call
+    /// cannot move the stream. The digger's movement is the worm pass's
+    /// (`AI_006`, the lone-worm routing) — it runs after the per-NPC loop,
+    /// so this arm returns without integrating on the transform tick (a
+    /// single move; AI_006 lands one tick early, the pool-pass fold).
     ///
     /// The integration tail is `NPC.UpdateNPC`'s post-AI movement
     /// (`NPC.cs:90459-90503`): the crawlers are noGravity=false /
@@ -5632,18 +5643,27 @@ impl Npc {
             self.wants_ai_light.push(light);
         }
         // `:34342-34346` — the TruffleWorm dig: the module already sank
-        // `y += 16`; the Transform(375) rides the sim's drain (the
-        // aiStyle-75 `wants_transform` precedent — the bottom-anchored
-        // reposition, the SetDefaults swap, TargetClosest, the integer
-        // life rescale, all RNG-free).
+        // `y += 16`; Transform(375) runs INLINE (the C# order — inside
+        // `AI()`, before integration). The bottom-anchored reposition nets
+        // 0 (both heights 10), the SetDefaults swap flips friendly/
+        // immunity/behindTiles, TargetClosest re-picks, the integer life
+        // rescale carries (both maxima 5), the ai zeroes — all RNG-free.
+        // The inline swap is what preserves the +16 sink: a deferred
+        // transform would let the crawler's ground collision below snap the
+        // worm back to the surface. The digger's movement is the worm
+        // pass's (`AI_006`, the lone-worm routing) — it runs after the
+        // per-NPC loop, so this arm returns without integrating (the
+        // pool-pass owns the movement; AI_006 lands one tick early on the
+        // transform tick, the documented pool-pass fold — a single move,
+        // the sink intact).
         if outcome.transform_to_digger {
-            self.wants_transform = Some(375);
+            self.transform_to_kind(world, player, NpcKind::TruffleWormDigger);
+            return;
         }
         // `NPC.UpdateNPC`'s post-AI movement (`NPC.cs:90459-90503`). The
-        // eight crawlers walk on gravity (noGravity false, `:8535`); the
-        // dig request above transforms AFTER the tick, so this tick still
-        // integrates as the crawler (the grounded worm's vy ≈ 0 — the
-        // one-tick Transform lag is the aiStyle-75 documented fold).
+        // eight crawlers walk on gravity (noGravity false, `:8535`): the
+        // default depth-scaled gravity + the 10 fall cap, the dead-band X
+        // snap and the ground `UpdateCollision` stand-in.
         self.vy = (self.vy
             + crate::npc_ai_golem::body_gravity(self.y, world.width as i32, world.world_surface))
         .min(10.0);
@@ -24612,17 +24632,22 @@ mod tests {
     /// W4-c8 — the axis-66 wiring: a full `update_rng` tick runs the
     /// faithful arm (the 484 flicker queues the light request, the
     /// grounded gait timer draws on the caller's stream), the 374 dig
-    /// queues `wants_transform = Some(375)`, and `transform_to_kind`
-    /// lands the digger (the SetDefaults refresh flips friendly/immunity/
-    /// behindTiles, the life carries, the ai zeroes). WRITTEN, NOT RUN
-    /// (code-only mode).
+    /// transforms INLINE to the digger (the C# order — `Transform(375)`
+    /// inside `AI()` before integration, so the +16 sink survives the
+    /// noTileCollide raw move), and the SetDefaults refresh flips
+    /// friendly/immunity/behindTiles, the life carries, the ai zeroes.
+    /// WRITTEN, NOT RUN (code-only mode).
     #[test]
     fn w4_c8_the_axis_claims_style66_and_the_dig_transforms() {
         let w = ground();
         let mut player = Player::spawn(&w);
         // The 484 flicker: one Next(90,111) every tick + the light request.
+        // The light is computed at the PRE-integration position (the arm's
+        // flicker reads the position first) — capture it before the tick.
         let mut night = Npc::new(NpcKind::EnchantedNightcrawler, 20.0 * TILE_PX, 29.0 * TILE_PX, 1, 0.0);
         night.local_ai[1] = 500.0; // no gait expiry this tick
+        let (cw, ch) = night.size();
+        let (ex, ey) = (night.x, night.y);
         let mut rng = UnifiedRandom::new(11);
         let mut witness = rng.clone();
         let roll = witness.next_range(90, 111);
@@ -24633,9 +24658,8 @@ mod tests {
         let num983 = roll as f32 * 0.01 * ((1.0f32 + 0.5) / 2.0);
         assert_eq!(rgb, [0.3 * num983, 0.1 * num983, 0.25 * num983]);
         // The centre tile: the quotient-truncated form (`:34258`).
-        let (cw, ch) = night.size();
-        assert_eq!(lx, ((night.x + cw / 2.0) / TILE_PX) as i32);
-        assert_eq!(ly, ((night.y + ch / 2.0) / TILE_PX) as i32);
+        assert_eq!(lx, ((ex + cw / 2.0) / TILE_PX) as i32);
+        assert_eq!(ly, ((ey + ch / 2.0) / TILE_PX) as i32);
         // A non-484 crawler queues no light.
         let mut worm = Npc::new(NpcKind::Worm, 20.0 * TILE_PX, 29.0 * TILE_PX, 1, 0.0);
         worm.local_ai[1] = 500.0;
@@ -24643,33 +24667,40 @@ mod tests {
         worm.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng2);
         assert!(worm.wants_ai_light.is_empty(), "357 has no flicker");
         // The 374 dig: seed the counter at 89 with the player near — the
-        // tick increments to 90, sinks 16 and queues the Transform.
+        // tick increments to 90, sinks 16 and transforms INLINE to the
+        // digger (the C# order). The digger is noGravity/noTileCollide, so
+        // the raw integration preserves the sink (no ground snap-back).
         let mut t = Npc::new(NpcKind::TruffleWorm, 20.0 * TILE_PX, 29.0 * TILE_PX, 1, 0.0);
         t.local_ai[1] = 5000.0;
         t.ai[1] = 89.0;
+        t.hp = 3; // a damaged worm keeps 3 through the rescale (both maxima 5)
         player.x = t.x; // the player centre within 160 of the worm centre
         player.y = t.y;
         let y0 = t.y;
         let mut rng3 = UnifiedRandom::new(11);
         t.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng3);
-        assert_eq!(t.ai[1], 90.0, "the counter caps at 90");
-        assert_eq!(t.wants_transform, Some(375), "the dig queues Transform(375)");
-        assert!(t.y >= y0 + 16.0, "the +16 sink (:34344)");
-        // The Transform executor: the digger lands with the SetDefaults
-        // refresh — friendly true→false, immunity 90→0, behindTiles
-        // false→true, the life carries (5→5), the ai zeroes.
-        t.hp = 3; // a damaged worm keeps 3 (both maxima 5)
-        t.transform_to_kind(&w, &player, NpcKind::TruffleWormDigger);
-        assert_eq!(t.kind, NpcKind::TruffleWormDigger);
+        // The inline transform landed the digger THIS tick.
+        assert_eq!(t.kind, NpcKind::TruffleWormDigger, "the dig transforms inline");
+        assert!(t.y >= y0 + 16.0, "the +16 sink survives (:34344, y {} vs {})", t.y, y0);
         assert!(!t.friendly, "375 is not npcCatchable — friendly flips false");
         assert_eq!(t.catchable_immunity, 0, "the immunity window clears");
         assert!(t.behind_tiles, ":13790 behindTiles");
         assert_eq!(t.hp, 3, "the integer life share carries (3*5/5)");
         assert_eq!(t.max_hp, 5);
-        assert_eq!(t.ai, [0.0; 4], "the ai zeroes (:81111-81114)");
-        assert_eq!(t.wants_transform, None, "the request drains");
+        assert_eq!(t.ai, [0.0; 4], "the ai zeroes (:81111-81114) — the 90-counter cleared");
         assert_eq!(t.size(), (10.0, 10.0), "the digger's 10x10 box");
         assert_eq!(t.rotation, 0.0, "the SetDefaults rotation reset (:8523)");
+        // The transform executor on its own (the direct-call path): the
+        // same refresh, the bottom-anchored reposition nets 0.
+        let mut t2 = Npc::new(NpcKind::TruffleWorm, 100.0, 100.0, 1, 0.0);
+        t2.hp = 3;
+        let ty0 = t2.y;
+        t2.transform_to_kind(&w, &player, NpcKind::TruffleWormDigger);
+        assert_eq!(t2.kind, NpcKind::TruffleWormDigger);
+        assert_eq!(t2.y, ty0, "the reposition nets 0 (both heights 10)");
+        assert_eq!(t2.hp, 3);
+        assert!(!t2.friendly);
+        assert!(t2.behind_tiles);
     }
 
     /// The Dye Trader's shop (`case 12`): the four always rows, the moon-phase
