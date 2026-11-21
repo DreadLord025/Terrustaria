@@ -7219,6 +7219,32 @@ appends self-contained bindings; keep both halves. The sign net ids
 arm. `origin/task/W4-d98-net-ids-items-chests` may overlap `net.rs`/
 `netglue.rs`; the i43 chest/sign work is already on main.
 
+**The c25 co-lane FINAL compose-verify (W4-f22 retire, 2026-11-21)** —
+the keep-both note above is now VERIFIED mechanically: a read-only
+`git merge-tree --write-tree` of f22's tip against
+`origin/task/W4-c25-keyboard-text-field` (e5daa96f7) auto-merges
+`crates/tr-app/src/ui/keyboard.rs` with ZERO conflicts — c25's +516-line
+block inserts after `write_str` (before the label tables) and its 9 tests
+insert inside `mod tests` before `panel_bg_truncates_to_the_xna_bytes`;
+f22's signature changes (`layout`/`click_at`/`draw` + `Context::Sign`/
+`bottom_row`) touch disjoint regions. The composed file carries both
+halves with no duplicate top-level symbols and one `mod tests`; c25's
+bindings are self-contained (`TextField`/`InputKeys`/`InputTextResult`/
+`BackspaceRepeat`/`get_input_text`/`trim_user_string`/`trim_last_character`/
+`sanitize_clipboard_text`/`round_to_even` — none calls f22's changed
+signatures, all `#[allow(dead_code)]` until the search/rename consumers
+attach). **Merger instruction: keep BOTH halves of `ui/keyboard.rs`
+verbatim (the auto-merge is correct); the only real conflicts are the
+`anchors.txt` + `docs/PORT_MAP.md` append races — keep BOTH sides' rows
+(f22's sign/rename rows AND c25's `TextField`/`get_input_text` rows; the
+PORT_MAP `UIVirtualKeyboard.cs` row takes f22's superset description and
+c25's separate `UITextBox.cs`/`GetInputText` row stays). `docs/UI.md` and
+`docs/ANALYSIS.md` auto-merge.** The c25 bindings' `char`-index caret vs
+the C# UTF-16 code-unit index is c25's documented mapping (its own
+ANALYSIS deviation); f22's sign editor keeps the `KeyboardState` text
+path — the two layers do not interact until a consumer wires
+`get_input_text` into a front screen.
+
 ## Town housing (S1-E-11a, 2026-11-14)
 
 `WorldGen.ScoreRoom` (`WorldGen.cs:5858-5992`) landed in `tr-core::housing`:
