@@ -15949,14 +15949,20 @@ fn summon_item_check(app: &App, item: u16) -> bool {
 /// The pre-hardmode boss spawners (`ItemCheck_UseBossSpawners`,
 /// `Player.cs:43751-43900`): the Worm Food 70 (`ZoneCorrupt` -> the EoW
 /// head 13), the Slime Crown 560 (ungated -> the King 50), the
-/// Abeemination 1133 (ungated -> the Queen Bee 222; the vanilla's
-/// Item173 sound rides the roar — the port's bank holds the one), the
-/// Bloody Spine 1331 (`ZoneCrimson` -> the Brain 266). The mech trio
-/// 544/556/557 and the later
-/// 4988/5120/5334 = the follow-ups. `NPC.SpawnOnPlayer` puts the boss at
-/// the player; the EoW rides the worm engine (the chain assembles in the
-/// worm pass); the Brain arrives alone (the Creepers' orbit = the
-/// follow-up).
+/// Abeemination 1133 (ungated -> the Queen Bee 222), the Bloody Spine
+/// 1331 (`ZoneCrimson` -> the Brain 266). The mech trio 544/556/557 and
+/// the later 4988/5120/5334 = the follow-ups. `NPC.SpawnOnPlayer` puts
+/// the boss at the player; the EoW rides the worm engine (the chain
+/// assembles in the worm pass); the Brain arrives alone (the Creepers'
+/// orbit = the follow-up).
+///
+/// W4-e10 — the cues are the C#'s own: the Abeemination plays
+/// `SoundID.Item173` at `(int)position.X/Y` (`Player.cs:43864`, the
+/// style façade — the case-2 pitch draw rides `UpdatePlayers`), every
+/// other arm plays `PlaySound(15, (int)position.X, (int)position.Y, 0)`
+/// (`:43760`/`:43775`/`:43792`/`:43808`/`:43826`/`:43842`/`:43879` —
+/// the int overload, case 15's slot-0 roar with the playing guard, NO
+/// draws). The play runs BEFORE the spawn, like the C# order.
 pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
     let held = app.inventory[app.selected];
     let item = held.kind;
@@ -16038,7 +16044,30 @@ pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
     let Some(boss) = boss else {
         return false;
     };
-    app.audio.play("Roar_0");
+    // W4-e10 — the C# cue sites (`Player.cs:43760`/`:43775`/`:43792`/
+    // `:43808`/`:43826`/`:43842`/`:43864`/`:43879`), at the player's
+    // TOP-LEFT (truncated), before the spawn.
+    let (plx, ply) = app
+        .player
+        .as_ref()
+        .map(|p| (p.x, p.y))
+        .unwrap_or((0.0, 0.0));
+    if item == 1133 {
+        // `:43864`: `PlaySound(SoundID.Item173, (int)position.X,
+        // (int)position.Y)` — the style façade (`play_proj_sound`'s
+        // contract: the NextFloat audio-only, the case-2 pitch on
+        // `UpdatePlayers` after the gate).
+        app.audio.play_proj_sound(
+            (2, 173),
+            plx,
+            ply,
+            0.0,
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+        );
+    } else {
+        // `PlaySound(15, x, y, 0)` — case 15, slot 0, the playing guard.
+        app.audio.play_roar(0, plx, ply);
+    }
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -16223,7 +16252,15 @@ pub(crate) fn use_suspicious_looking_eye(app: &mut App) -> bool {
     let Some(eye) = Npc::spawn_eye_of_cthulhu(&app.world, pcx, pcy) else {
         return false;
     };
-    app.audio.play("Roar_0");
+    // W4-e10 — `Player.cs:43775`: `PlaySound(15, (int)position.X,
+    // (int)position.Y, 0)` — case 15's slot-0 roar (the playing guard,
+    // no draws), at the TOP-LEFT, not the unpositioned stand-in.
+    let (plx, ply) = app
+        .player
+        .as_ref()
+        .map(|p| (p.x, p.y))
+        .unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, plx, ply);
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -16521,6 +16558,64 @@ mod loot_summon_tests {
             "SummonItemCheck refuses while alive"
         );
         assert_eq!(app.inventory[app.selected].count, 1);
+    }
+
+    /// W4-e10 — the summon cues' RNG contract: the case-15 roar
+    /// (`PlaySound(15, x, y, 0)`, `Player.cs:43760` et al.) draws NOTHING
+    /// on `UpdatePlayers` (`LegacySoundPlayer.cs:826-842`); the
+    /// Abeemination's `SoundID.Item173` style play (`:43864`) spends
+    /// exactly ONE case-2 `Next(-6, 7) * 0.01` pitch roll
+    /// (`LegacySoundPlayer.cs:632`) on the stream — the façade's
+    /// `GetRandomPitch` NextFloat is audio-only.
+    #[test]
+    fn w4_e10_the_summon_cues_ride_their_faithful_seams() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 64.0;
+        player.y = 64.0;
+        app.player = Some(player);
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (64.0, 64.0),
+            sound_volume: 1.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        // The Slime Crown: the roar plays, the stream does not move.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 560,
+            name: "Slime Crown".into(),
+            count: 1,
+            prefix: 0,
+        };
+        let before = app.audio.played_count();
+        let rng_before = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        assert!(use_boss_summon_item(&mut app));
+        assert_eq!(app.audio.played_count(), before + 1, "the crown's roar");
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            rng_before,
+            "case 15 draws nothing"
+        );
+        // The Abeemination: ONE case-2 pitch roll on UpdatePlayers.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 1133,
+            name: "Abeemination".into(),
+            count: 1,
+            prefix: 0,
+        };
+        let mut mirror = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        let _ = mirror.next_range(-6, 7);
+        let before = app.audio.played_count();
+        assert!(use_boss_summon_item(&mut app));
+        assert_eq!(app.audio.played_count(), before + 1, "the Item173 chime");
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            mirror,
+            "the Item173 case-2 pitch is the only draw"
+        );
     }
 
     #[test]
