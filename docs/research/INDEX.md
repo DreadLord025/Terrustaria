@@ -75,7 +75,7 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
-| 113 | Atlas repack plan (W4 union 407-name overflow: measured 2-page boundary contract + the BG-STYLE extension — 358-sheet inventory, per-world lazy-load budgets, g72 underworld escape, d38c supersession; code-only) | `113-atlas-repack-plan.md` | 🔄 |
+| 113 | Atlas repack plan FINAL (W4 union overflow: 2-page boundary contract + BG-STYLE extension + NPC lazy-load census — the lazy union fits ONE page 7059/7162, per-world NPC pages 1668-2566 px, realistic 3-page budget ~530-560 MB; FINAL 490-name union + claimant cross-read d38c/d40b/d125b + merger checklist/witness matrix; code-only) | `113-atlas-repack-plan.md` | ✅ FINAL |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

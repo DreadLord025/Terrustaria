@@ -246,40 +246,57 @@ an agent needs before touching code.
 - `gpu.rs` — wgpu 30 instance/device/surface. Backend defaults to **Vulkan**
   (`TR_BACKEND=dx12|gl` to override), `COPY_SRC` enabled for screenshots, HighPerformance
   adapter, 8192 max 2D texture dimension.
-- `atlas.rs` — shelf packer. Sheets are sorted tallest-first, packed into a fixed-width
-  (4096) atlas with 2 px padding. Each sheet also gets a **plain frame**: a fully opaque
+- `atlas.rs` — skyline bottom-left packer (S1-G-12b; the caller passes
+  `max_width = 8192`, `app/mod.rs:4692`). Sheets are sorted tallest-first
+  (stable, input-order tie-break), packed with 2 px padding; the layout
+  is a pure function of the input list. Each sheet also gets a **plain frame**: a fully opaque
   16×16 frame with the most uniform border, used for tiles whose frames are not stored.
   Wall sheets are laid out on a different grid (36 px stride, 8 px inset) — encoding this in
   `SheetLayout` was required for correct wall rendering.
 
   **Multi-page + lazy-load contract (W4, documented not implemented —
-  `docs/research/113-atlas-repack-plan.md` is the merger's spec).** The
-  merged W4 sheet union (407 names) overflows the 8192 strict-GPU bound
-  by AREA alone (74.7 Mpx → 9124 px lower bound), so the atlas becomes
+  `docs/research/113-atlas-repack-plan.md` is the merger's spec, FINAL
+  §1-12).** The
+  merged W4 sheet union (490 names at the FINAL re-extraction, §11)
+  overflows the 8192 strict-GPU bound
+  by AREA alone (77.2 Mpx → 9425 px lower bound), so the atlas becomes
   a D2 ARRAY: `SheetRect` gains `page: u32`, `Atlas` gains
   `pages: Vec<AtlasPage>`, `build_ref` packs skyline-unbounded then
   boundary-splits at 8192 (rects entirely under the cap keep page 0;
-  the tail re-packs page 1, recursively). Measured: union pages
-  8192/1298. The font array (`font_atlas.rs`, `sprite.wgsl:256`
+  the tail re-packs page 1, recursively). Measured: eager union pages
+  8192/1298 (407 base) / 8152/1720 (FINAL + d125 deferred). The font
+  array (`font_atlas.rs`, `sprite.wgsl:256`
   `sample_tex` layer select) is the landed precedent; the main-atlas
   layer encoding is layer-range (`layer < MAIN_PAGE_COUNT` = main
   page, above = font) with the offset applied at the single
-  `push_font_glyph` chokepoint. **BG style sheets are per-world lazy
-  pages, NOT union members**: the C# registers all 344 `Background_*`
-  + 14 `Underworld` assets `DoNotLoad` (`AssetInitializer.cs:239-242`,
-  `:390-393`; only 0/49 eager) and `Main.LoadBackground`
-  (`Main.cs:59039-59074`) fires per DRAWN layer — the port's
+  `push_font_glyph` chokepoint. **BG style sheets AND NPC sheets are
+  per-world lazy pages, NOT union members**: the C# registers all 344
+  `Background_*` + 14 `Underworld` assets `DoNotLoad`
+  (`AssetInitializer.cs:239-242`, `:390-393`; only 0/49 eager) and
+  `Main.LoadBackground` (`Main.cs:59039-59074`) fires per DRAWN layer;
+  ALL `TextureAssets.Npc` entries are `DoNotLoad` too
+  (`AssetInitializer.cs:127-129`) and `Main.LoadNPC`
+  (`Main.cs:59084-59090`) fires per DRAWN NPC via `SetFrameSize`
+  (`NPC.cs:66663`). The port's
   `load_world_sheets` bg arm (already per-world for the five owned
   families, `assets.rs:172-205`) extends to the rolled forest/snow/
   desert/ocean/cavern/underworld sets and packs them as FRESH pages
   after the union (realistic world: +1 page 7448 px; adversarial
   worst: +2 pages 8135+2138; the all-styles corpus is 200.7 Mpx and
-  must never load whole). `MAIN_PAGE_COUNT` is therefore a RUNTIME
+  must never load whole); the NPC rows leave the eager
+  `STATIC_SHEET_NAMES` pack and join the same per-world half
+  (research/113 §10: the lazy union shrinks to ONE page 7059-7162 px,
+  the per-world NPC set is one own page — fresh 1668 / long-lived
+  2152 / bestiary-opened 2566 px; Item/Projectile/Gore stay eager
+  supersets, 13.7 Mpx combined, the E-4b precedent).
+  `MAIN_PAGE_COUNT` is therefore a RUNTIME
   uniform (`atlas.pages.len()`), not a compile-time constant — the
   page count varies by world. The world-swap rebuild
   (`app/mod.rs:4642-4705`, static half cached) is the lazy-load seam;
   the rolled-set-at-world-load superset keeps the atlas immutable
-  during play (no mid-frame re-pack, G6 cache untouched). The g72
+  during play (no mid-frame re-pack, G6 cache untouched). Realistic
+  total: 3 pages ~530-560 MB, adversarial 4 pages ~639-656 MB
+  (research/113 §10.5). The g72
   underworld stack has a second escape: draw its 5 rolled sheets as
   standalone textures into the d69 `targets.rs` screenTarget family
   (the C# draws them outside the tile atlas, `Main.cs:52687-52691`),
