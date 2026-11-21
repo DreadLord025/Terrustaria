@@ -39610,3 +39610,161 @@ arm - a Main.rand/.Next(/NextFloat grep over all cited body ranges =
 ZERO; the humanoid group's town pose zones with their chat-bubble
 draws are the documented skip). Frame counts vs Main.cs:67082
 entry-by-entry AND render/entities.rs NPC_FRAME_COUNT.
+
+### The extra-8 per-case notes (the batches landed)
+
+`crates/tr-app/src/npc_findframe_extra8.rs` - the 15 arms verbatim
+(row-index convention - `num` cancels), 5 kinds per commit:
+
+| id | kind | C# case | rows (`Main.cs`) |
+| --- | --- | --- | --- |
+| 443 | GoldBunny | `:76855` (the bunny hop group) | 7 (`:67128`) |
+| 444 | GoldButterfly | `:72740` (the butterfly group) | 3 (`:67128`) |
+| 445 | GoldFrog | `:76619` (the frog group) | 13 (`:67128`) |
+| 446 | GoldGrasshopper | `:70959` (the grasshopper group) | 2 (`:67128`) |
+| 447 | GoldMouse | `:76514` (the mouse group) | 6 (`:67128`) |
+| 448 | GoldWorm | `:72775` (the worm group) | 2 (`:67128`) |
+| 449 | BoneThrowingSkeleton | `:71398-71453` | 19 (`:67128`) |
+| 450 | BoneThrowingSkeleton2 | `:71399` (the same group) | 19 (`:67129`) |
+| 451 | BoneThrowingSkeleton3 | `:71400` (the same group) | 19 (`:67129`) |
+| 452 | BoneThrowingSkeleton4 | `:71401` (the same group) | **20** (`:67129`) |
+| 453 | SkeletonMerchant | `:68610` (the humanoid TOWN group) | 26 (`:67129`) |
+| 454 | CultistDragonHead | `:70952-70957` | 3 (`:67129`) |
+| 460 | Butcher | `:68611` (the humanoid fighter group) | 16 (`:67130`) |
+| 461 | CreatureFromTheDeep | `:75315-75410` | 21 (`:67130`) |
+| 462 | Fritz | `:68612` (the humanoid group, 3 overrides) | 9 (`:67130`) |
+
+* **443 the Gold Bunny** (the bunny hop group `:76851-76904`, shared
+  with 46/47/303/337/464/540/614/646-652 - d44's 46/47 + extra-7's
+  337 keep-one): the grounded +/-1 flip (0 leaves it), the idle
+  row-0 snap + counter zero, the `|vx| * 1 + 1` accumulator with the
+  > 6 step over the FULL 7 rows (wrap to 0), the air pins row 4
+  rising / row 6 falling.
+* **444 the Gold Butterfly** (the flap group `:72739-72773`, shared
+  with 356/653/661 - d48 wave-C's 356 keep-one): the `vx * 0.3`
+  tilt, the UNCONDITIONAL direction copy, the velocity-fed counter
+  `+1 + (|vx| + |vy|) / 2`, the 7-tick bands rows 0/1/2/1 with the
+  reset at `7*4 - 1 = 27`. The colour bank (`:72768-72771`) is
+  type-gated `!= 444 && != 653 && != 661` - 444's 3-row sheet has
+  ONE bank, no `ai[2]` offset (the 356 24-row sheet's eight banks
+  are d48's).
+* **445 the Gold Frog** (the frog group `:76618-76685`, shared with
+  361/687 - d48's 361 keep-one): the unconditional copy; wet zeroes
+  the counter and the |vx| bands pick rows 10/11/12 (the 0.25/0.15
+  deadbands); the grounded idle's > 6 step walks rows 0..5 with the
+  `> num*5` wrap running EVERY tick (not only on the step); the
+  grounded walk rides the 6-tick bands 0/6/8/9 with the reset at
+  `6*4 - 1 = 23`; the air pins row 9 falling / row 8 rising.
+* **446 the Gold Grasshopper** (the group `:70958-70982`, shared
+  with 377 - d49 wave-D's 377 keep-one): the air row-1 / ground
+  row-0 pin + the unconditional copy on BOTH paths; the counter is
+  NEVER touched. The `IsABestiaryIconDummy` branch
+  (`:70960-70972`) is the display-only skip.
+* **447 the Gold Mouse** (the group `:76513-76565`, shared with 300
+  - f26d's 300 keep-one): the grounded +/-1 flip; the idle ticks
+  the counter and the > 8 step blinks rows 0/1 (the `> num*1` wrap
+  to 0); the walk (grounded OR air - the two tails are
+  byte-identical) accumulates `|vx| * 0.5 + 1`, the > 6 step walks
+  the FULL 6 rows wrapping to row 2 (rows 0/1 idle-only on the
+  walk). The air branch does NOT flip the sprite.
+* **448 the Gold Worm** (the group `:72774-72828`, shared with
+  357/484/606 - d48's 357 keep-one): the `localAI[0] = -2` pin
+  EVERY tick; the grounded tick zeroes the rotation, the idle pins
+  row 1 + zeroes the counter, the > 12 crawl alternates rows 1/0
+  (the `> num` wrap); the air pins row 1 and accumulates the
+  `direction * 0.1` spin. The slope override rides the
+  caller-resolved `FrameInput::slope` (the d48 precedent): slope 1
+  -> +0.785, slope 2 -> -0.785, both lifting the pin to 0.
+* **449-452 the bone throwers** (`:71398-71453`): the grounded +/-1
+  flip; the `ai[2] > 0` toss copies direction UNCONDITIONALLY and
+  picks row `count - 5 + band` off the `ai[1]` >= 50 / >= 43 /
+  >= 36 / >= 29 countdown (bands 1/2/3/4, else 0 - the C#'s
+  `50 - 7*k`), zeroing the counter and BREAKING; the idle snaps
+  row 0 with the counter UNTOUCHED; the walk lifts to 2 (the
+  doubled `if` at `:71429-71436` is idempotent), accumulates
+  `|vx| * 2` with NO +1, the > 6 step, and wraps at the LITERAL 15
+  back to 2 (`:71443` - rows 15+ are toss-only on EVERY sheet); the
+  air zeroes the counter and pins row 1. 452 is the ONE 20-row
+  sheet (`Main.cs:67129` slot 2) - its band-1 toss lands row 19,
+  the 19-row trio's lands 15; the walk band is the same.
+* **453 the Skeleton Merchant** (the humanoid TOWN member
+  `:68610`): `isLikeATownNPC` is the hard-coded type gate
+  (`NPC.cs:6860-6863` - NOT the townNPC flag; his SetDefaults row
+  `:14399-14413` sets aiStyle 7, no townNPC), so `num57` =
+  `ExtraFramesCount[453]` = 9 (`NPCID.cs:10464`) and the walk wraps
+  at 26 - 9 = 17 (rows 2..16 - the extra-3 Cyborg precedent). Idle
+  row 0, air row 1 (not in the `:69647` pin list). The town `ai[0]`
+  pose zones (`:68662-69488`, with their chat-bubble `Main.rand`
+  draws) are the documented skip.
+* **454 the Cultist Dragon Head** (`:70952-70957`): the row is
+  `(int)(frameCounter / 2)` - the counter is NEVER touched here
+  (the aiStyle-6 chain machine owns it); the 3-row sheet rides
+  counters 0-1/2-3/4-5. The bodies/tail 455-459 have NO FindFrame
+  case (npcFrameCount 1, out of the slice).
+* **460 the Butcher** (the humanoid fighter `:68611`, aiStyle 3
+  `:15498` no townNPC): the wave-B `humanoid_fighter_frame`
+  keep-one delegate - `num57` = 0, the FULL-16 wrap, idle row 0,
+  air row 1 (not in the pin list).
+* **461 the Creature From The Deep** (`:75315-75410`): WET - the
+  vx sign WRITES direction, a facing change mirrors the rotation
+  and copies the flip; the aim `atan2(vy*dir, vx*dir)` with the
+  literal 3.14/6.28 wrap-around, then the `(rot*4 + aim)/5` ease;
+  the `|velocity| + 1` counter's > 8 step walks rows 16..20 with
+  the `> 20` wrap to 16 and the `< 16` lift to **19** (the entry
+  quirk - a swimmer starting at row 0 lands 19). DRY - the > 3.14
+  rotation wrap, the +/-0.01 deadband snaps 0 ELSE the x0.9 decay;
+  the grounded +/-1 flip, the idle row-0 snap + counter zero, the
+  `|vx|*2 + 1` walk with the > 6 step and the `> 15` wrap to 2
+  (rows 16..20 swim-only); the air pins row 1.
+* **462 Fritz** (the humanoid group `:68612`, aiStyle 3 `:15524`):
+  THREE per-type overrides - the walk stride `num108` = 9
+  (`:69555-69558`, the > 9 step not the group's > 6), the air
+  branch pins row 1 rising / row 2 falling (`:69588-69600` - an
+  EARLY BREAK before the group's air tail, so the `:69647` pin
+  list is unreachable), and the 9-row sheet. The accumulator is
+  the group's `|vx|*2 + 1`, the lift-to-2 and the full-count
+  wrap-to-2 stand.
+
+**The 439 stub FIX** (`npc.rs:7135`): the v1 AncientCultist
+(cs_id 439 via the bestiary net_id `bestiary.rs:1714`, no hand row)
+1-frame pin was WRONG vs the C#'s `case 439/440` SHARED ladder
+(`NPC.cs:72017-72101` - the case list carries BOTH ids; the
+slice-7 note flagged it). The arm now delegates to the extra-7
+CultistBossClone machine (the `localAI[2]` pose selector, the
+counter++ AFTER the switch); only row/counter copy back (the
+ladder never writes sprite/rotation). The towers 422/493/507/517
+keep their row-0 pin (no FindFrame case, npcFrameCount 1).
+
+**The d40 merger notes**: the pushed roster lane
+`W4-d40-npc-kinds-421-490` (8fe1d6d3) carries row-0 stubs for
+443-448 (`npc.rs:9530-9540`) - THIS module's machines supersede
+them at the merge (the standard cs_id hook + bridge); its
+449-452/461 inline arms are faithful twins (keep-one either way);
+its 453/460/462 `humanoid_town_frame` stand-in is WRONG for
+460/462 (the town wrap counts `extra_frames_count` = 0 for them so
+the wrap is accidentally right, but the air branch never runs -
+the C# pins row 1 / the 462 pair) and right for 453 only if the
+kind's `humanoid_frame_count`/`extra_frames_count` rows are added
+(26/9) - this module's arms carry the counts internally, the
+merger takes them.
+
+Witnesses: 15 module tests + 1 npc.rs wiring test WRITTEN NOT RUN
+(code-only mode) - the count-table pin (all 15 vs
+`NPC_FRAME_COUNT`), the gold bunny hop + air pins, the butterfly
+velocity-fed bands + no-bank pin, the frog three gaits + wet
+deadbands, the grasshopper two-row pin + counter-hold, the mouse
+blink + stride + air-no-flip, the worm crawl + slope override, the
+bone-toss ladder + literal-15 wrap + the 452 count variant, the
+merchant town-17 wrap, the dragon-head counter/2 read, the butcher
+fighter bands, the creature swim entry quirk + aim ease + dry
+decay, the fritz > 9 stride + air pair, the 15-kind 5x3x3x3 strip
+sweep (40 ticks, every row inside its sheet) and the exact-slice
+seam sweep; the 439 wiring replay (pose 0 home-snap / pose 10
+cycle / ritual / unknown-selector / sprite-rotation hold / tower
+pin). The strip/band expectation tables were re-derived by
+mechanical replay of the ported machines (a Python transcription
+of the C# order), not by hand alone. Frame counts cross-checked
+entry-by-entry: `Main.cs:67082`'s 697-entry initializer vs
+`render/entities.rs::NPC_FRAME_COUNT` - all 15 agree. Zero RNG
+verified mechanically per arm (a `Main.rand`/`.Next(`/`NextFloat`
+grep over all cited body ranges = ZERO).
