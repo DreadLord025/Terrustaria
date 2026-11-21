@@ -1,7 +1,7 @@
 # 110 — NPC death dust × gore keep-one merger playbook (W4-g60)
 
-**Status:** ✅ FINAL STATUS (code-only; the wiring wave executes the strips; §12 the final-status refresh — the lane-tip re-probe, the f10↔f5 boundary overrun, the g59∩f5 extension, the per-row strip checklist, the union-shape / last_hit_dir / update_trails contracts)
-**Lane:** W4-g60 (`task/W4-g60-npc-death-effects-2`, wiring DONE `e55e2272`, playbook DONE `3b5f9b3c`, gore-tail DONE `ed7cef6e`, FINAL STATUS this commit)
+**Status:** ✅ FINAL-FINAL (code-only; the wiring wave executes the strips; §12 the final-status refresh + §12.8 the bible phase — the g62 widening CONSUMED (g60's half EXECUTED, `19431e385`), f5 CHAIN COMPLETE (853/853, remaining window 0), the f10-overrun drop-hunks EXACT per-fn line-ranges, the 185-row strip total, the union-8-step re-pinned)
+**Lane:** W4-g60 (`task/W4-g60-npc-death-effects-2`, wiring DONE `e55e2272`, playbook DONE `3b5f9b3c`, gore-tail DONE `ed7cef6e`, FINAL STATUS `402b32f2`, widening DONE `19431e385`, FINAL-FINAL this commit)
 **Companions:** W4-g59 (lane 1), W4-d55 / W4-e5 / W4-f10 / W4-f5 (the gore lanes), W4-g62 (the hit-dust lane), W4-c12 (the in-flight death feed)
 
 This is the **keep-one-exec** playbook for the NPC death-effects cluster. Five
@@ -22,31 +22,33 @@ and lists the precise strips at each lane's wiring.
 
 ---
 
-## 1. The lanes (FINAL-STATUS tip pin, 2026-11-21 — see §12 for the movement log)
+## 1. The lanes (FINAL-FINAL tip pin, 2026-11-21 — see §12/§12.8 for the movement log)
 
-| lane | branch | tip read (FINAL) | module(s) | scope |
+| lane | branch | tip read (FINAL-FINAL) | module(s) | scope |
 | --- | --- | --- | --- | --- |
-| **g59** | `task/W4-g59-npc-death-effects-1` | `dd336ef8` (DOC-SWEEP done; g59c activating) | `npc_death_dust.rs::death_dust` | death dust kinds **1-230**: **88 port kinds / 90 C# types** (batches 1-10: the 64 present-clean + the 24 d35 row-gated activations); **42 witnesses**; the 83/84 + 87 gore-ARG tails consumed |
-| **g60** | `task/W4-g60-npc-death-effects-2` | `ed7cef6e` | `npc_death_dust.rs::death_dust_feed` → `death_dust_draws` | death dust kinds **231-697** (121 census-present / **120 `lane_covers`** cs_ids); **27 witnesses** (23 module + 2 npcs.rs + 2 npc.rs) |
+| **g59** | `task/W4-g59-npc-death-effects-1` | `29c13d103` (DOC-SWEEP b11-13 done) | `npc_death_dust.rs::death_dust` | death dust kinds **1-230**: **113 census kinds / 111 wired match types** (batches 1-13: the 64 present-clean + 24 d35 + 23 b11-13 row-gated activations); **56 witnesses** (53 module + 3 seam); the 83/84 + 87 gore-ARG tails consumed |
+| **g60** | `task/W4-g60-npc-death-effects-2` | `19431e385` (widening EXECUTED) | `npc_death_dust.rs::death_dust_feed` → `death_dust_draws` | death dust kinds **231-697** (121 census-present / **120 `lane_covers`** cs_ids); **29 witnesses** (23 module + 2 npcs.rs + 4 npc.rs — the 2 g62-adopted widening witnesses added); the DeathFx ring WIDENED `[Vec2; 60]`+`trail_len` (§12.8) |
 | **d55** | `task/W4-d55-gore-table-sites` | `ec78d152` (unchanged) | `npc_hit_effect_a.rs::hit_effect` | gore wave A, sites 1-30 (`NPC.cs:81660-81941`) |
 | **e5** | `task/W4-e5-gore-sites-2` | `a62a32ce` (unchanged) | `npc_hit_effect_a.rs` (e5 copy) + `npc_hit_effect_b.rs::hit_effect_b` | gore wave B, sites 31-86 (`NPC.cs:81942-82216`) |
-| **f10** | `task/W4-f10-gore-sites-3` | `f7a9dd78` (batch 92, `:86784`) — **OVERRAN the `:85560` claim boundary** (§12.2) | `npc_hit_effect_c.rs::hit_effect_c` | wave C sites 1-560 legit (`:82206-85559`); **batches 62-92 (sites 562-816, `:85684-86784`) double-port f5's classic-mob chain**; **134 witnesses** |
-| **f5** | `task/W4-f5-dust-proj-3` | `d908a4fd` (batch 85, `:88816`, sites 725-733) — **ALIVE, advancing** | `npc_hit_effect_d.rs::hit_effect_d` | wave D claim `97c70c97`: the WHOLE `NPC.cs:85560-89835` classic-mob chain, **853 gore sites**; batches 1-85 pushed (sites 1-733); **remaining window `:88817-89835` ≈ 1019 lines / ~120 sites** (§12.1 census); **124 witnesses** |
-| **g62** | `task/W4-g62-npc-hit-dust` | `53fdbf07` (hit-half COMPLETE + the g60 ring adoption) | `npc_hit_dust.rs::replay_hit_dust` | the HIT (`life > 0`) halves; `HitDustSnapshot.old_pos` rides g60's ring verbatim; the 402 HIT `:83579` + 519 HIT `:83011` unblocked; **61 witnesses** |
-| **c12** | `task/W4-c12-style74-martian-drone` | `5778e596` (phase 2 done) | `npc_ai_style74.rs` `style74_death_feed` + `drone_hit_dust_plan`/`corite_hit_dust_plan` | the **388/418** in-flight death feed (count-plans, not yet pool-fed) |
+| **f10** | `task/W4-f10-gore-sites-3` | `91b082e3c` (batch 134, `:88220`) — **STILL OVERRUNNING, ALIVE** (§12.2/§12.8) | `npc_hit_effect_c.rs::hit_effect_c` | wave C sites 1-561 legit (`:82206-85559`); **batches 62-134 (sites 562-1149, `:85684-88220`) double-port f5's classic-mob chain — 88 cite-bearing fns + the cite-less `five_gore_ladder`, 85 gates, 97 witnesses** (§12.8 drop contract); **191 witnesses** total (94 legit) |
+| **f5** | `task/W4-f5-dust-proj-3` | `d0619d8e9` (completion docs; code tip `fa3c526d5` batch 103) — **CHAIN COMPLETE 853/853** | `npc_hit_effect_d.rs::hit_effect_d` | wave D claim `97c70c97` EXECUTED WHOLE: `NPC.cs:85560-89835`, **853 gore sites, remaining window 0**; **142 witnesses**; the NO-gore arms recorded-not-ported (§12.8) |
+| **g62** | `task/W4-g62-npc-hit-dust` | `32af98b44` (TRAILCACHE WIDENING record — the 6-hunk contract) | `npc_hit_dust.rs::replay_hit_dust` | the HIT (`life > 0`) halves; rings WIDENED `[60]`+`trail_len`; the 402 HIT `:83579` + 519 HIT `:83011` re-derived (36-gate / 7×5); **66 witnesses** (61 module + 5 npc.rs); g60's half EXECUTED (§12.8 receipt) |
+| **c12** | `task/W4-c12-style74-martian-drone` | `5778e596` (phase 2 done, unchanged) | `npc_ai_style74.rs` `style74_death_feed` + `drone_hit_dust_plan`/`corite_hit_dust_plan` | the **388/418** in-flight death feed (count-plans, not yet pool-fed) |
 
 All five branches share the merge-base `a725acb0` ("Land wave-3 magic+summon
 lane"). `death.rs` (the death-cue/loot retain) is **byte-identical** across
 d55/e5/f10/g59/g60 — none of these lanes touches it; the death **dust** seam is
 `world_sim/npcs.rs`'s death retain, not `death.rs`.
 
-**g59b/g59c note (FINAL):** g59's tip is now `dd336ef8` (batches 1-10 + the
-DOC-SWEEP; **88 port kinds / 90 C# types**, the 24 d35 row-gated activations
-73/75/77/78/79/80/82/83/84/85/86/93/94/95/96/97/98/99/100/101/103/110/122/140
-landed; g59c activating). The boundary check (§6) still holds — every g59 kind
-is ≤ 228, so no g59 batch can collide with g60. The g59 lane's NEW overlap is
-with the GORE lanes' dust re-draws (f5's 57 kinds + f10's 225 — §12.3), not with
-g60.
+**g59b/g59c note (FINAL-FINAL):** g59's tip is now `29c13d103` (batches 1-13 +
+the DOC-SWEEP; **113 census kinds / 111 wired match types**, the 24 d35 +
+23 b11-13 row-gated activations landed: 31/34/37/39/40/41/43/47/48/56/57/61/62/
+63/157/175/217/218/219/220/221/226/229). The boundary check (§6) still holds —
+every activated cs_id ≤ 229 ≤ 230, zero >230 flags (g59's own DOC-SWEEP
+re-verified it). The g59 lane's NEW overlap is with the GORE lanes' dust
+re-draws (f5's **93 kinds** — grew from 57+18 as g59 b11-13 activated the
+town/skeleton/beetle/sea-snail/pirate families f5 already re-drew — + f10's 225
+— §12.3/§12.8), not with g60.
 
 ---
 
@@ -992,6 +994,12 @@ shared-surface contracts: the `npc_death_dust.rs` union (§12.5), the
 
 ### 12.1 Lane-tip movement log + f5 liveness + remaining-window census
 
+> **FINAL-FINAL supersession (§12.8):** f5 COMPLETED the chain (batch 103,
+> `fa3c526d5`; docs tip `d0619d8e9`) — the remaining window below is now
+> **0**, every arm in the table pushed. The census stands as the historical
+> hand-off artifact; the 18-conditional strip rows resolved to 17 (kind 23
+> is f5-NO-gore, ports nothing — §12.8.2). f10 advanced b92→b134+ (§12.8.3).
+
 **Probe method:** `git fetch origin --prune` then `git rev-parse` / `git log -1`
 per lane branch, repeated across the session. The tips MOVED during the probe
 (the death family is live). Final pin (this commit's read):
@@ -1080,6 +1088,12 @@ gore-table scope skips them (no dispatch gates at `f7a9dd78`); g59's feed owns
 their dust (kinds ≤230). No unclaimed gore, no double-draw: the gap is closed.
 
 ### 12.2 The f10↔f5 boundary OVERRUN (the new gore-lane-vs-gore-lane overlap)
+
+> **FINAL-FINAL supersession (§12.8.3):** the overrun grew to batches 62-134
+> (sites 562-1149, `:85684-88220`, 88 fns + the cite-less `five_gore_ladder`,
+> 85 gates, 97 witnesses at `91b082e3c`) and f10 is STILL advancing — the
+> EXACT per-fn drop-hunks + the three contiguous band anchors + the re-census
+> scripts are §12.8.3. The ~38-fn table below is the b92 snapshot (historical).
 
 **Finding.** f10's claim boundary is `NPC.cs:82206-85559` (its module header:
 "f10 owns EVERYTHING below `:85560`"; f5's header reciprocates: "wave D … the
@@ -1182,6 +1196,10 @@ f10-window strip (NOT part of the §12.2 overrun).
 g59∩f5 + **1** g59∩f10 (225) = **168 actionable now**; + **18** conditional
 g59∩f5 (remaining window) = **186 eventual**. The §12.2 f10-overrun is a
 wholesale deletion (~38 fns), counted separately (not a dust-strip row).
+**FINAL-FINAL (§12.8.4): 204 actionable, 0 conditional** — f5 complete
+(17 of the 18 materialized, 23 is NO-gore) + g59 b11-13 added 19 more
+intersection kinds → g59∩f5 = **93**; the f10-overrun delete is 88+1 fns
+at `91b082e3c`, re-census at merge.
 
 ### 12.4 The mechanical strip checklist (the 110-row baseline + the FINAL extensions, per-row fn/hunk)
 
@@ -1266,9 +1284,9 @@ Fn map at `d908a4fd`:
 | 550 | `bartender_death` | — (b61 PUSHED) |
 | 588/589 | `golfer_death` | — (b61 PUSHED) |
 | 633 | `zoologist_death` | — (picks are data; b62 PUSHED) |
-| 250 | (nimbus, `:88959` shared arm — UNPUSHED) | — |
-| 315 | (headless, `:89026` — UNPUSHED) | — |
-| 471 | (summoner, `:89607` — UNPUSHED) | — |
+| 250 | `ice_tortoise_smoke_death` @4801 (`:88959` shared arm — b88 PUSHED) | — |
+| 315 | `headless_horseman_death` @4836 (`:89026` — b89 PUSHED; the pumpkin 446 ×0.1 post NOT 0.3) | — |
+| 471 | `goblin_summoner_death` @5359 (`:89607` — b99 PUSHED) | — |
 
 The **57 g59∩f5 rows** (§12.3): strip the SAME `death_dust_loop` hunk in each
 cited f5 fn (the g59 feed owns the dust); keep the gore bodies. The 18
@@ -1276,6 +1294,14 @@ remaining-window kinds strip when f5 pushes them. **f5 keeps its gore bodies +
 kicks for ALL its kinds** — only the dust loop (and the listed ARG re-draws)
 strip. The §12.2 f10-overrun deletion removes f10's duplicate, so f5 is the sole
 gore writer for the classic-mob chain.
+**FINAL-FINAL (§12.8.4): the g59∩f5 set is 93 kinds in 47 fn-rows** (f5
+complete + g59 b11-13; the per-fn gate list is `g60_g59_f5_inter.json`,
+re-runnable via `g60_g59_f5_inter.py`). The 23 Meteor Head row NEVER
+materializes (f5 NO-gore). The f5 fn-map above is at `d908a4fd`; the
+FINAL-FINAL f5-tip lines: `stylist_death` @3907, `present_mimic_death`
+@4514, `travelling_merchant_death` @3630, `town_pet_smoke_death` @3668,
+`tax_collector_town_death` @3154, `bartender_death` @3514, `golfer_death`
+@3549, `zoologist_death` @3590 (the rest unchanged in shape).
 
 **c12 (`npc_ai_style74.rs`) — 2 rows:** 388/418 `drone_hit_dust_plan`/
 `corite_hit_dust_plan` count-plans → **pool feeds** at the death retain (NOT a
@@ -1385,6 +1411,318 @@ shapes)"). Verified byte-identical: the `update_trails` body (g60 `npc.rs:4989-
   `trail_len` or a 60-slot ring + length — 685's row is the largest); until then
   the 10-slot shape is the recorded stand-in for BOTH lanes. The gate stays
   402-only until each kind's wiring lane lands (519's KIND is unported).
+  **FINAL-FINAL: the widening is EXECUTED on BOTH branches — see §12.8's
+  receipt; this deviation note is now historical (the merge dedupes the
+  byte-identical widened hunks, it does not widen anything).**
+
+### 12.8 THE BIBLE PHASE (FINAL-FINAL, 2026-11-21 — the widening executed, f5 complete, the drop-hunks exact)
+
+Three movements since §12's FINAL STATUS (`402b32f2`): **g62 published the
+EXACT 6-hunk widening contract** (`32af98b44`) and g60 EXECUTED its half;
+**f5 COMPLETED the whole classic-mob chain** (853/853 sites, remaining window
+0); **f10 kept overrunning** (b92→b134 during this phase alone). This section
+is the merger's FINAL input: the widening receipt, the f5-completion census,
+the EXACT f10-overrun drop-hunks (per-fn line-ranges at a pinned tip + the
+re-census scripts), and the refreshed strip totals.
+
+#### 12.8.1 The widening-executed receipt (g62's 6-hunk contract CONSUMED)
+
+g62's `32af98b44` ANALYSIS ("TRAILCACHE WIDENING — LANDED", the EXACT
+widening-hunk contract for g60) is CONSUMED. g60 commit **`19431e385`**
+applied all six `Npc`-side hunks **byte-identically** (verified line-for-line
+against g62's tip by `g60_verify_widen.ps1`: fields 34/34 lines equal, init
+8/8, update_trails fn+doc 40/40, Transform 7/7, table 19/19, witnesses
+105/105) plus g60's OWN `DeathFx` half:
+
+| hunk | surface | g60 landing (post-commit line refs) |
+| --- | --- | --- |
+| 1 fields | `npc.rs` `pub old_pos: [Vec2; 60]` / `pub old_rot: [f32; 60]` / `pub trail_len: usize` + the census doc | `:1241-1274` (g62 `:1233-1266` shape, byte-identical) |
+| 2 init | `Npc::new` `old_pos: [Vec2::ZERO; 60], old_rot: [0.0; 60], trail_len: kind.trail_cache_length(),` | `npc.rs:2977-2984` |
+| 3 table | `NpcKind::trail_cache_length` (`npc/data.rs`, after `cs_id`): `StardustWormHead => 36, _ => 10` + the full-census doc | `data.rs:3102-3120` |
+| 4 stride+gate | `update_trails` walks `(1..self.trail_len).rev()`; gate `matches!(kind, StardustWormHead \| DD2KoboldFlyerT2 \| DD2KoboldFlyerT3)` (945a6ea28's flyer widening adopted) | `npc.rs:5008-5048` |
+| 5 Transform | `transform_to_kind` re-lengths + re-zeroes both rings after `self.kind = new_kind` | `npc.rs:5199-5205` |
+| 6 witnesses | the two `w4_g60_*` trail witnesses REPLACED with g62's widened versions (36 logical slots, 34+2 shifts, `[Vec2::ZERO; 60]` inits, storage-past-trail_len zero asserts); g62's `w4_g62_the_trail_cache_census_and_resize` + `w4_g62_the_kobold_flyers_shift_the_mode_7_ring` ADOPTED too | `npc.rs:20563-20667` |
+| g60e | `DeathFx.old_pos: [Vec2; 60]` + `pub trail_len: usize` captured at strike (`death_dust_feed` copies `npc.trail_len`) | `npc_death_dust.rs:124-137`, `:278-279` |
+| g60-death-loop | the 402 DEATH arm (`:83611`, `num179 < this.oldPos.Length` NO min) bounds `for i in 0..fx.trail_len` — up to **36** per-slot Next(4) gates (was 10); the zero-break + the passing-slot 2× (Next(3) dust 17 + unconditional 229 ×3 noGravity) unchanged | `npc_death_dust.rs:809-846` |
+| fresh-ring witness | `w4_g60_the_worm_head_trail_gates_until_the_zero_break` gate loop `0..10` → `0..36` exactly; the live-slot witness walks `ring[..36]` | `npc_death_dust.rs:1505-1650` |
+
+All 22 non-402 `DeathFx` test sites carry `old_pos: [Vec2::ZERO; 60],
+trail_len: 10` (the default row — their arms never read the ring). The
+`Npc`-side hunks are ONE copy at merge (trivial dedupe — byte-identical);
+g62's only additions to the shared surface stay g62's (the pooled-path tail
+call, `HitDustSnapshot.old_pos[60]`+`trail_len`, the doc census notes). The
+402 sites stay disjoint: g60 DEATH `:83611`, g62 HIT `:83579`. **The §12.7
+"ONE widening at merge" item is CLOSED — both halves landed pre-merge.**
+
+#### 12.8.2 f5 CHAIN COMPLETE — the remaining-window census closes at 0
+
+f5's tip `d0619d8e9` (completion docs over code tip `fa3c526d5`, batch 103):
+**all 853 gore sites of `NPC.cs:85560-89835` ported**, source-count
+re-verified by f5 (853 `Gore.NewGore(` lines; 685 `gore.new_gore` call sites —
+the difference is the shared `mech_smoke_burst`/`mech_quadrant_smoke`/ladder
+helpers fanning out). The §12.1 remaining window `:88817-89835` is **EMPTY**
+— every arm in its table pushed (b86-103: the Pigron trio, 290, the Wyvern
+count-gore, the mummy smoke, the 250 nimbus, the 315 headless, the mushroom
+zombies, 140, the Bone Serpent, the Skeletron RedHat split, the Probe/Deadly
+Sphere/Destroyer/Elf Copter/Santa-NK1/Skeletron Prime mech band, the Fire
+Imp, the goblin family, the 471 summoner, 472, Medusa, Snow Flinx, the
+hornet/moth family, Man Eater/Snatcher, Angry Trapper, Harpy, Demon, the 156
+tail). **No f5-followup takeover is needed — the lane finished its claim.**
+
+**The NO-gore arms are recorded-not-ported** (f5's dispatcher comments +
+completion note): 59/60/151 lava, 687/685, 265 Spore, 663 (`:88411`
+unreachable), 277-280, 169, 316/330, 662, 34, 289, **23 Meteor Head**, 25
+Burning Sphere, 33 Water Sphere, 30/665. Their dust censuses stay the dust
+lanes' (g59/g60/g62) — **no f5 re-draw, no strip row** for them. This kills
+ONE of §12.3's 18 conditional rows: **23** (f5 recorded it NO-gore, ports
+nothing). The other 17 all pushed WITH dust re-draws (verified per-fn:
+`fire_imp_death` 24, `goblin_death` 26/27/28/29/73/111, `skeletron_death`
+35/36, `hornet_family_death` 42, `demon_death` 66, `mummy_death` 78/79/80,
+`ice_tortoise_smoke_death` 82, `wyvern_death` 87, `possessed_armor_death`
+140 — each carries its `death_dust_loop`/`new_dust` burst).
+
+**The 3 remaining g60 `gore-f5*` kinds PUSHED:** 250
+(`ice_tortoise_smoke_death` `:88959` shared arm, b88), 315
+(`headless_horseman_death` `:89026`, b89 — the pumpkin 446's ×0.1 post NOT
+0.3), 471 (`goblin_summoner_death` `:89607`, b99). **All 32 f5-owned g60
+kinds are now pushed re-draws** — the §12.4 f5 block's three UNPUSHED rows
+become strip rows (fn refs at f5's tip: `ice_tortoise_smoke_death` `:4801`,
+`headless_horseman_death` `:4836`, `goblin_summoner_death` `:5359`).
+
+**f5 stand-ins the merger inherits** (completion note): no `Npc.altTexture`
+(default-0 keeps head gores), no `Npc.color` (`Color::default()` for dye
+rows), `netMode` SP fold, sounds c13. The dust-6 seventh-draw witness fix
+(`086827426`: `twin_dust6` replays the type-6 tweak's `Next(-10,6)`,
+`Dust.cs:214-218`) is f5-internal — g60's `replay_spawn` already rides the
+pool's own internals, unaffected.
+
+**f5 compile-window flag (found by this probe, NOT fixed here — f5's lane):**
+`HitEffectOutcomeD` (`npc_hit_effect_d.rs:103-141`) declares
+`maggot_zombie_spawns`/`wof_screen_sweep`/`hungry_spawn` but **NOT
+`king_slime_spawns`**, while `:221` writes `outcome.king_slime_spawns` and
+two witnesses read it (`:6476`/`:6519`). The field declaration is missing —
+the module will not compile as-is. The merger (or f5's next commit) must add
+`pub king_slime_spawns: Option<(f32, f32)>,` to the struct (the doc comment
+for it already sits at `:104-112`, merged into the maggot doc). Recorded
+here so the compile window does not rediscover it blind.
+
+#### 12.8.3 The f10-overrun DROP-HUNKS — EXACT per-fn line-ranges (pinned tip `91b082e3c`, batch 134)
+
+§12.2's resolution stands (f5 claimed first, both headers agree f10 stops at
+`:85559`; f5 is now COMPLETE — the claim is executed, not in flight). The
+overrun GREW: batches 62-134, sites 562-1149, `NPC.cs:85684-88220`. **88
+cite-bearing fns (87 arms + the `blood_zombie_ladder` helper) + the cite-less
+`five_gore_ladder` = 89 fn bodies, 85 dispatch gates, 97 witnesses** — the wholesale
+deletion surface at the pinned tip. f10 is STILL ADVANCING (b92→b134 during
+this phase); the merger MUST re-run the census scripts at the merge-time tip
+(`g60_f10_overrun.py` + `g60_f10_gates.py`, committed alongside this doc —
+`python g60_f10_overrun.py <f10_c.rs> out.json` then
+`python g60_f10_gates.py <f10_c.rs>`; both are pure-text, no deps). The
+structure is stable: **the overrun is THREE CONTIGUOUS BANDS** (f10 appends
+in source order), so the mechanical delete is band-shaped, not 81 scattered
+edits:
+
+| band | pinned-tip range (`91b082e3c`) | anchor START | anchor END | re-census rule |
+| --- | --- | --- | --- | --- |
+| **A: the fns** | `npc_hit_effect_c.rs:3648-6698` (3051 lines: `king_slime_death` doc → `stylist_death` closing brace) | the `/// The 50 KingSlime death` doc line (first cite ≥ `:85560`) | the last fn whose min-cite ≥ `:85560`, closing `}` | every top-level fn with min-cite ≥ 85560 (the script's 88-fn list); the two ladder helpers `blood_zombie_ladder` (`:4791-4825`) + `five_gore_ladder` (`:4946-4982`) sit INSIDE the band — all their callers are overrun fns |
+| **B: the dispatch gates** | `:7122-7514` (393 lines: the KingSlime gate comment → the Stylist gate's closing brace) | the `// :85670-85703` comment after the Slimer gate (`:7116-7121` KEEPS — site 561 is legit) | the gate before `outcome` / `}` (`:7515-7516` KEEP) | every gate whose cite ≥ `:85560` OR whose callee is a band-A fn (the script catches the 2 comment-less gates: 586 `zombie_merman_death`, 263/264 `plantera_part_death`) |
+| **C: the witnesses** | `:9862-11834` (1973 lines: the KingSlime witness doc → the Stylist witness closing brace) | the `/// NPC.cs:85684` doc after the Slimer witness (`:9860` `}` KEEPS) | the last overrun witness; the Betsy-dispatch witness (`:11836-11863`) KEEPS | every `w4_f10_*` test whose min-cite ≥ 85560 or whose body calls a band-A fn (97 at this tip; the 94 legit tests + the Betsy witness stay) |
+
+**Plus two small out-of-band hunks:**
+- the module-header scope-table rows `//! | 562 |` … `//! | 1140-1149 |`
+  (`:136-233` at this tip — every row citing ≥ `:85560`; the `:85451` Slimer
+  row `:135` KEEPS), and
+- the `HitEffectOutcomeC` fields `king_slime_babies` (`:344-349`) +
+  `maggot_zombie_spawns` (`:350-355`) — both seams are f5's now
+  (`HitEffectOutcomeD.king_slime_spawns`/`.maggot_zombie_spawns`, the
+  wiring wave reads f5's). `slimer_spawn` (`:339-343`) KEEPS (site 561).
+
+**The per-fn drop list (88 cite-bearing fns = 87 arms + the
+`blood_zombie_ladder` helper, PLUS the cite-less `five_gore_ladder` at row
+39b = 89 fn bodies; pinned tip `91b082e3c`;
+the script output `g60_f10_overrun.json` is authoritative — doc-start–end
+ranges include each fn's doc comment):**
+
+| # | fn (doc-start–end) | C# window | f5 twin (fn @ f5-tip line) |
+| --- | --- | --- | --- |
+| 1 | `king_slime_death` 3648-3679 | `:85680-85702` | `king_slime_death` @191 |
+| 2 | `giant_tortoise_death` 3681-3706 | `:85714-85721` | `tortoise_death` @228 |
+| 3 | `derpling_death` 3708-3733 | `:85733-85740` | `derpling_death` @262 |
+| 4 | `crawdad_death` 3735-3762 | `:85752-85758` | `crawdad_death` @297 |
+| 5 | `giant_shelly_death` 3764-3787 | `:85771-85775` | `shelly_death` @334 |
+| 6 | `salamander_death` 3789-3818 | `:85788-85795` | `salamander_death` @367 |
+| 7 | `bat_family_death` 3820-3858 | `:85807-85839` | `bat_family_death` @407 |
+| 8 | `owl_death` 3860-3884 | `:85852-85858` | `owl_death` @458 |
+| 9 | `gnome_death` 3886-3911 | `:85870-85877` | `gnome_death` @491 |
+| 10 | `dandelion_death` 3913-3939 | `:85889-85896` | `dandelion_death` @525 |
+| 11 | `gem_bunny_death` 3941-3970 | `:85900-85919` | `gem_bunny_death` @561 |
+| 12 | `gem_squirrel_death` 3972-3998 | `:85923-85940` | `gem_squirrel_death` @598 |
+| 13 | `critter_family_death` 4000-4174 | `:85942-86089` | `critter_arm_death` @648 |
+| 14 | `penguin_family_death` 4176-4211 | `:86102-86125` | `penguin_frog_death` @803 |
+| 15 | `frog_death` 4213-4235 | `:86138-86143` | `frog_361_death` @847 |
+| 16 | `pupfish_death` 4237-4260 | `:86183-86188` | `pupfish_death` @1034 |
+| 17 | `pufferfish_death` 4262-4293 | `:86200-86214` | `pufferfish_death` @880 |
+| 18 | `seagull_death` 4295-4318 | `:86281-86288` | `seagull_death` @1002 |
+| 19 | `scorpion_death` 4320-4349 | `:86227-86241` | `scorpion_death` @920 |
+| 20 | `grebe_death` 4351-4375 | `:86301-86309` | `grebe_death` @1066 |
+| 21 | `duck_family_death` 4377-4408 | `:86254-86268` | `duck_death` @961 |
+| 22 | `nutcracker_death` 4410-4436 | `:86322-86330` | `nutcracker_death` @1099 |
+| 23 | `krampus_death` 4438-4464 | `:86342-86350` | `krampus_death` @1134 |
+| 24 | `elf_archer_death` 4466-4491 | `:86362-86369` | `elf_archer_death` @1169 |
+| 25 | `corrupt_critter_death` 4493-4528 | `:86381-86406` | `corrupt_critter_death` @1206 |
+| 26 | `crimson_monster_death` 4530-4567 | `:86419-86446` | `crimson_mob_death` @1256 |
+| 27 | `demon_eye_death` 4569-4610 | `:86459-86501` | `demon_eye_variant_death` @1310 |
+| 28 | `arapaima_death` 4612-4635 | `:86514-86519` | `arapaima_death` @1369 |
+| 29 | `wandering_eye_hit` 4637-4672 | `:86523-86543` | `wandering_eye_death` @1403 (**see the latch note below**) |
+| 30 | `antlion_death` 4674-4714 | `:86545-86605` | `antlion_death` @1474 |
+| 31 | `vulture_death` 4716-4740 | `:86617-86623` | `vulture_death` @1434 |
+| 32 | `raven_death` 4742-4765 | `:86635-86640` | `raven_death` @1535 |
+| 33 | `parrot_death` 4767-4789 | `:86652-86657` | `parrot_death` @1566 |
+| 34 | `blood_zombie_ladder` 4791-4825 (helper) | `:86669-86708` | f5's `blood_zombie_death` ladder @1603 |
+| 35 | `blood_zombie_death` 4827-4839 | `:86675` | `blood_zombie_death` @1603 |
+| 36 | `zombie_merman_death` 4841-4853 | `:86683` | the shared 489/586 arm @1603 |
+| 37 | `demon_tax_collector_death` 4855-4867 | `:86704` | `tax_collector_death` @1649 |
+| 38 | `drippler_death` 4869-4901 | `:86720-86728` | `drippler_death` @1691 |
+| 39 | `shark_family_death` 4903-4944 | `:86730-86784` | `shark_death` @1740 |
+| 39 | `shark_family_death` 4903-4944 | `:86730-86744` | `shark_death` @1740 |
+| 39b | `five_gore_ladder` 4946-4982 (helper, ZERO `:NNNNN` cites — the script's cite-filter misses it; its 4 callers `nymph_death`/`icy_merman_death`/`gingerbread_man_death`/`moss_zombie_death` are ALL in this band, so it drops with them) | the +0/+20/+20/+34/+34 ladder | f5's per-arm ladders |
+| 40 | `nymph_death` 4984-4997 | `:86797-86805` | f5's nymph arm |
+| 41 | `icy_merman_death` 4999-5012 | `:86838-86846` | f5's icy-merman arm |
+| 42 | `lihzahrd_death` 5014-5044 | `:86817-86826` | f5's lihzahrd arm |
+| 43 | `gingerbread_man_death` 5046-5059 | `:86858-86866` | `gingerbread_death` @1916 |
+| 44 | `zombie_elf_death` 5061-5095 | `:86878-86896` | `zombie_elf_death` @1958 |
+| 45 | `yeti_death` 5097-5124 | `:86908-86915` | `yeti_death` @2005 |
+| 46 | `moss_zombie_death` 5126-5139 | `:86927-86935` | `moss_zombie_death` @2045 |
+| 47 | `zombie_block_death` 5141-5361 | `:86937-87138` | `zombie_arm_death` @2109 + the maggot seam |
+| 48 | `cursed_weapon_death` 5363-5398 | `:87152-87162` | `cursed_weapon_death` @2329 |
+| 49 | `plantera_death` 5400-5435 | `:87186-87207` | `plantera_death` @2382 |
+| 50 | `plantera_part_death` 5437-5470 | `:87209-87217` | the 263/264 arm @2382 family |
+| 51 | `brain_of_cthulhu_death` 5472-5501 | `:87248-87257` | `brain_death` @2445 |
+| 52 | `creeper_death` 5503-5524 | `:87269-87273` | `creeper_death` @2479 |
+| 53 | `servant_of_cthulhu_death` 5526-5549 | `:87351-87356` | `servant_death` @2610 |
+| 54 | `wall_of_flesh_death` 5551-5586 | `:87368-87383` | the WoF arm + `wof_screen_sweep` seam |
+| 55 | `the_hungry_death` 5588-5614 | `:87429-87434` | the Hungry arm + `hungry_spawn` seam |
+| 56 | `leech_death` 5616-5640 | `:87446-87450` | `leech_death` @2746 |
+| 57 | `beetle_death` 5642-5680 | `:87462-87478` | `beetle_death` @2777 |
+| 58 | `queen_bee_death` 5682-5717 | `:87491-87500` | `queen_bee_death` @2824 |
+| 59 | `eater_of_souls_death` 5719-5767 | `:87512-87534` | `eater_family_death` @2871 |
+| 60 | `clinger_death` 5769-5797 | `:87547-87554` | `clinger_death` @2919 |
+| 61 | `devourer_death` 5799-5824 | `:87566-87570` | `devourer_death` @2954 |
+| 62 | `seeker_death` 5826-5849 | `:87583-87587` | the seeker arm @2987 family |
+| 63 | `giant_worm_death` 5851-5875 | `:87600-87604` | `giant_worm_death` @3020 |
+| 64 | `digger_death` 5877-5901 | `:87616-87620` | `digger_death` @3046 |
+| 65 | `eater_of_worlds_death` 5903-5936 | `:87632-87649` | `eater_of_worlds_death` @3074 |
+| 66 | `town_npc_death` 5938-5989 | `:87662-87693` | `guide_death` @3116 + `tax_collector_town_death` @3154 |
+| 67 | `unicorn_death` 5991-6015 | `:87705-87715` | `unicorn_death` @3192 |
+| 68 | `wolf_death` 6017-6041 | `:87727-87733` | f5's wolf arm |
+| 69 | `hellhound_death` 6043-6067 | `:87745-87751` | `hellhound_death` @3291 |
+| 70 | `black_recluse_death` 6069-6095 | `:87763-87771` | f5's black-recluse arm |
+| 71 | `wall_creeper_death` 6097-6123 | `:87783-87791` | f5's wall-creeper arm |
+| 72 | `blood_crawler_death` 6125-6149 | `:87803-87811` | f5's blood-crawler arm |
+| 73 | `jungle_creeper_death` 6151-6176 | `:87823-87831` | f5's jungle-creeper arm |
+| 74 | `blood_feeder_death` 6178-6201 | `:87843-87848` | f5's blood-feeder arm |
+| 75 | `blood_jelly_death` 6203-6227 | `:87860-87868` | f5's blood-jelly arm |
+| 76 | `bound_npc_death` 6229-6277 | `:87880-87900` | `bound_town_death` @3375 |
+| 77 | `mechanic_death` 6279-6309 | `:87912-87920` | f5's mechanic arm |
+| 78 | `guide_death` 6311-6341 | `:87932-87940` | `guide_death` @3116 |
+| 79 | `bartender_death` 6343-6372 | `:87952-87960` | `bartender_death` @3514 |
+| 80 | `golfer_death` 6374-6405 | `:87972-87983` | `golfer_death` @3549 |
+| 81 | `bestiary_girl_death` 6407-6446 | `:87995-88021` | `zoologist_death` @3590 |
+| 82 | `travelling_merchant_death` 6448-6480 | `:88033-88037` | `travelling_merchant_death` @3630 |
+| 83 | `painter_death` 6482-6514 | `:88086-88097` | `painter_death` @3708 |
+| 84 | `witch_doctor_death` 6516-6547 | `:88109-88117` | `witch_doctor_death` @3745 |
+| 85 | `pirate_death` 6549-6597 | `:88129-88151` | `pirate_death` @3785 (the shimmer dust-split twin) |
+| 86 | `santa_claus_death` 6599-6631 | `:88163-88167` | f5's santa arm |
+| 87 | `steampunker_death` 6633-6663 | `:88186-88196` | `steampunker_death` @3868 family |
+| 88 | `stylist_death` 6665-6698 | `:88208-88220` | `stylist_death` @3907 |
+
+(88 cite-bearing fns + the cite-less `five_gore_ladder` = **89 fn bodies**
+inside band A; the band delete takes them all regardless of the count.
+Rows 40-42/68/70-75/77/86's f5 twins ride f5's shared arms — the f5
+dispatch gate list in `g60_g59_f5_inter.json` names each.)
+
+**The 133 WanderingEye latch note (the ONE non-mechanical bit):** f10's
+`wandering_eye_hit` ports BOTH halves — the death arm (f5's twin covers it)
+AND the hit-half below-half-life eye-pop gore 1 (`:86529-86533`, the
+`localAI[0]` latch). f5's `wandering_eye_death` explicitly defers the latch
+("g62's lane"); g62's `npc_hit_dust.rs` 133 arm says "the half-life gore
+latch draws NOTHING (the body is d55's)" — but d55's pushed tip has NO 133
+body. **The latch gore is unowned after the wholesale delete.** The merger
+must hand the `:86529-86533` latch (one `NewGore(1)` + the `localAI[0]=1`
+write, zero argument draws) to g62's hit-dust wiring (its 133 arm already
+reads the gate) — a 5-line arm, NOT a reason to keep f10's fn.
+
+**What f10 KEEPS** (sites 1-561, `:82206-85559`): the DD2 band, the
+solar/nebula/vortex/stardust arms, the dutchman/desert/eclipse families, the
+cultist/martian/granite/golem arms, the critter gated-dust, umbrella 225,
+ice-tortoise 154, Slimer 121 (+ its `slimer_spawn` seam), the Betsy flipped
+arm (e5's twin keeps both branches — the §12.4 DELETE stands), the 94 legit
+witnesses + the Betsy-dispatch witness. The legit-window strips (§12.4's
+f10 block: 68 kinds in 42 fn-rows + the ARG hand-offs) are UNAFFECTED by the
+overrun delete — they live in the kept fns.
+
+#### 12.8.4 The refreshed strip totals (FINAL-FINAL)
+
+- **g59∩f5 = 93 kinds** (was 57 pushed + 18 conditional): g59's b11-13
+  activations (61/62/157/175/217-219/220/221/226/229 + the skeleton-family
+  21/31/32/44/45/77/110 + the town families 17/18/19/20/22/37/38/54/106/107/
+  108/123/124/207/208/212-216/227/228/229) intersect f5's now-complete
+  dispatch. Re-computed mechanically (`g60_g59_f5_inter.py` →
+  `g60_g59_f5_inter.json`): **93 kinds in 47 f5 fn-rows**, every one verified
+  to carry a dust re-draw (the 694 Water Bolt Mimic arm has none — not g59's
+  anyway). The 18-conditional list loses **23** (f5 NO-gore, ports nothing)
+  → 17 materialized; the other +19 come from g59's new activations. Full
+  kind list: `2,5,6,7,10,13,17,18,19,20,21,22,24,26,27,28,29,31,32,35,36,37,
+  38,39,42,43,44,45,47,48,49,51,54,56,57,58,61,62,65,66,73,77,78,79,80,82,83,
+  84,85,86,87,93,94,95,96,97,98,99,100,101,106,107,108,110,111,117,123,124,
+  140,157,175,190,191,192,193,194,207,208,212,213,214,215,216,217,218,219,
+  220,221,222,226,227,228,229`.
+- **g59∩f10 = {225}** unchanged (`umbrella_slime_death` @3451 at the pinned
+  tip — a legit-window strip, NOT part of the overrun delete).
+- **g60∩f5 = 32 kinds** — ALL pushed now (the 250/315/471 rows closed,
+  §12.8.2). The §12.4 f5 block's fn map refreshes to f5's tip lines
+  (the 23 fn-rows unchanged in shape; `stylist_death` @3907,
+  `present_mimic_death` @4514, the three new rows above).
+- **Strip-row total: 110 (g60 baseline) + 93 (g59∩f5) + 1 (g59∩f10 225) =
+  204 actionable.** No conditional rows remain — f5 is complete. (The
+  §12.3 "168 actionable / 186 eventual" is superseded: 168 + 17
+  materialized + 19 g59-activation rows = 204.)
+- **The f10-overrun delete is counted separately** (89 fn bodies +
+  85 gates + 97 witnesses at `91b082e3c`, growing — re-census at merge).
+  It auto-resolves the g60 kinds 348/349/350/351/489/490/262-264/266/267/
+  329/338-340/342/343/353/354/368/369/376/441/550/588/589/633/663 and the
+  g59 kinds in the window that f10 double-drew — those are NOT strip rows,
+  they are DELETE rows (f5's twin keeps the gore, the dust strips ride
+  f5's fn per §12.4).
+
+#### 12.8.5 The union-8-step (re-pinned at the FINAL-FINAL tips)
+
+§12.5's 8-step union plan stands, re-pinned: g59 `29c13d103` (2481 lines,
+`death_dust` @314, `air()` 200×200 @1195, `ctx()` @1199, `corpse()` @1210,
+**53 module witnesses**) × g60 `19431e385` (1998 lines, `DeathFx` @116
+WIDENED, `death_dust_feed` @251, `lane_covers` @291, `death_dust_draws`
+@310, `ctx()` @859, `air()` 200×120 @870, `replay_spawn` @878, **23 module
+witnesses**). The ONE semantic collision is unchanged: the test `air()`
+world height — rename g59's to `air_tall()`, keep g60's `air()`, repoint
+g59's 53 witnesses (54 `air()` call sites incl. the helper). Imports union
+to `{Npc, NpcKind}`. `main.rs` ONE `mod npc_death_dust;` (g59 `:66` / g60
+`:162`). `world_sim/npcs.rs` keeps BOTH death-retain calls (g59 `:5114` /
+g60 `:5044` — disjoint by kind). `anchors.txt` keeps BOTH rows. The
+`last_hit_dir` ONE-declaration (§12.6) re-verified at the new tips: g59
+field `:1240` / ctor `:2942` / records `:4412/:4467/:4580` / bubble reset
+`:5654`; g60 field `:1240` / ctor `:2976` / records `:4441/:4496/:4609`
+(no reset); c12 `5778e596` unchanged — dedupe to ONE declaration, KEEP
+BOTH fuse resets. The `update_trails` ONE-fn (§12.7) is now the WIDENED
+shape on both branches (§12.8.1) — trivial dedupe, plus g62's pooled-path
+tail call + `HitDustSnapshot` fields stay g62's.
+
+**Witness union (FINAL-FINAL):** g59 56 (53 module + 3 seam) + g60 29
+(23 module + 2 npcs.rs + 4 npc.rs) + d55 7 + e5 12 + f10 94 (the legit
+survivors of 191) + f5 142 + g62 66 (61 npc_hit_dust + 5 npc.rs) + c12 2
+= 408 raw. The g60/g62 shared npc.rs witnesses are the SAME 4 byte-identical
+tests (the 2 widened `w4_g60_*` + the 2 adopted `w4_g62_*`) — dedupe to ONE
+copy: **404 distinct witnesses** owed a compile window at the merge (the
+f10 overrun's 97 die with the delete).
 
 ---
 
@@ -1394,6 +1732,9 @@ walking each lane's full dispatch (`hit_effect`/`hit_effect_b`/`hit_effect_c`,
 `death_dust`/`death_dust_draws`/`lane_covers`) against the g60 census artifacts
 (`g60_kmap.json`, `g60_eligible.txt`, `g60_death_order.json`) and the C#
 `NPC.cs:81654-89834` death arms. §11 re-censused at f10 `67c51ec7` / f5
-`b33ba0a9` (claim `97c70c97`). **§12 FINAL STATUS re-probed at f10 `f7a9dd78` /
-f5 `d908a4fd` / g59 `dd336ef8` / g62 `53fdbf07` / c12 `5778e596` (g60 `ed7cef6e`).**
-Code-only: no cargo/tests/rustfmt/graphify invoked.*
+`b33ba0a9` (claim `97c70c97`). §12 FINAL STATUS re-probed at f10 `f7a9dd78` /
+f5 `d908a4fd` / g59 `dd336ef8` / g62 `53fdbf07` / c12 `5778e596` (g60
+`ed7cef6e`). **§12.8 FINAL-FINAL re-probed at f10 `91b082e3c` (b134, ALIVE) /
+f5 `d0619d8e9` (COMPLETE) / g59 `29c13d103` / g62 `32af98b44` / c12 `5778e596`
+(g60 `19431e385`, the widening executed).** Code-only: no cargo/tests/rustfmt/
+graphify invoked.*

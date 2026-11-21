@@ -39274,15 +39274,26 @@ Recorded deviations:
   else-if chain's town arm (`:88046`) matches 663 first; only the
   25-dust smoke burst + four tombstone picks fire.
 * **402 oldPos trail**: RESOLVED by the wiring wave - `Npc.old_pos`/
-  `old_rot` (`NPC.cs:6119-6121`) now carry the live 10-slot rings and
+  `old_rot` (`NPC.cs:6119-6121`) now carry the live rings and
   `Npc::update_trails` ports `UpdateNPC_UpdateTrails`'s mode-7 shift
   (`NPC.cs:90863-90872`, called at `:90512` after `FindFrame`;
   `NPCID.cs:10430` maps 402 -> 7). The feed's trail loop reads the
   live ring: a `== 0` gate on a filled slot spawns TWO gated pairs AT
   THE SLOT (`:83621-83630`); only a never-updated corpse still reads
   all-zero (the gates draw until the first `== 0` breaks - the C#'s
-  fresh-NPC shape). The other kinds' TrailingMode arms stay unwired
-  (their rings stay zero; no reader yet).
+  fresh-NPC shape). TRAILCACHE WIDENING EXECUTED (`19431e385`, g62's
+  `32af98b44` 6-hunk contract CONSUMED byte-identically): the rings
+  are `[Vec2; 60]`/`[f32; 60]` max-size storage + `trail_len` logical
+  length (`NpcKind::trail_cache_length`, 402->36, default 10; the
+  full census `NPCID.cs:10450`), the shift walks `..trail_len`, the
+  gate widened to 402+574/575 (g62's 945a6ea28), Transform re-zeroes;
+  `DeathFx.old_pos` widens the same + `trail_len` captured at strike,
+  the `:83611` death loop bounds `..fx.trail_len` (up to 36 Next(4)
+  gates), the fresh-ring witness's gate loop `0..36`. The merge
+  dedupes the byte-identical hunks (ONE copy); g62's pooled-path tail
+  call + `HitDustSnapshot` fields stay g62's. The other kinds'
+  TrailingMode arms stay unwired (their rings stay zero; no reader
+  yet).
 * **Keep-one census vs the d55/e5/f10 gore dispatchers** (the wiring
   wave's overlap audit): the gore lanes re-run death DUST loops for
   kinds this feed covers - d55's 668 (`deerclops_death`), e5's
@@ -39365,3 +39376,32 @@ old_pos`; the 402 HIT `:83579` (g62) vs DEATH `:83611` (g60) sites are
 disjoint; the TrailCacheLength under-carry 402→36/519→20 vs the 10-slot
 shape is the recorded deviation - ONE widening at merge). Code-only: no
 cargo/tests/rustfmt/graphify invoked.
+
+BIBLE PHASE / FINAL-FINAL (research/110 §12.8, `19431e385` + this commit):
+three movements. (1) **The widening EXECUTED** - g62's `32af98b44` published
+the EXACT 6-hunk contract; g60 consumed it byte-identically (fields/init/
+table/stride+gate/Transform/witnesses verified line-for-line equal by
+`g60_verify_widen.ps1`) plus its own DeathFx half (`old_pos[60]`+`trail_len`,
+the `:83611` death loop `..fx.trail_len`, the fresh-ring witness `0..36`).
+The §12.7 "ONE widening at merge" item is CLOSED pre-merge; the merge dedupes.
+(2) **f5 CHAIN COMPLETE** (`d0619d8e9` docs / `fa3c526d5` b103): all 853 gore
+sites of `:85560-89835` ported, remaining window 0, no takeover needed. The
+NO-gore arms (incl. 23 Meteor Head) are recorded-not-ported - no strip row.
+All 32 f5-owned g60 kinds pushed (250/315/471 closed). f5 compile-window flag:
+`HitEffectOutcomeD` is missing the `king_slime_spawns` field its `:221` write
++ 2 witnesses read (recorded in §12.8.2, f5's lane to fix). (3) **f10 kept
+overrunning** (b92→b134 during the phase): the drop surface is now 88 fns +
+the cite-less `five_gore_ladder`, 85 gates, 97 witnesses at `91b082e3c` -
+THREE CONTIGUOUS BANDS (fns `:3648-6698`, gates `:7122-7514`, witnesses
+`:9862-11834`) + the header rows `:136-233` + the two outcome fields; the
+EXACT per-fn line-ranges + the re-census scripts (`g60_f10_overrun.py`/
+`g60_f10_gates.py`) are §12.8.3 - f10 is ALIVE, re-census at the merge tip.
+The ONE non-mechanical bit: the 133 WanderingEye hit-half eye-pop latch
+(`:86529-86533`) is unowned after the delete (f5 defers to g62, g62 defers to
+d55, d55 has no body) - hand it to g62's hit-dust wiring. Strip totals
+refreshed: g59∩f5 = **93 kinds** (g59 b11-13 `29c13d103` activated the
+town/skeleton/beetle/sea-snail/pirate families f5 re-drew; 17 of the 18
+conditional materialized, 23 never) → **204 actionable rows, 0 conditional**.
+The union-8-step re-pinned (g59 2481 lines/53 module witnesses × g60 1998/23;
+the ONE `air()` height collision unchanged). Witness union 404 distinct after
+the byte-identical dedupe. Code-only: no cargo/tests/rustfmt/graphify invoked.
