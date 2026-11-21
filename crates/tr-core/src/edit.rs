@@ -988,9 +988,45 @@ fn ensure_frame_important(world: &mut World, kind: u16) {
 
 /// `WorldGen.IsLockedDoor` (`WorldGen.cs:69191-69197`): the golden-door
 /// frames (tile 10, `frameY` 594-646, `frameX` < 54). The wooden door never
-/// matches; the guard is ported because `OpenDoor` calls it.
-fn is_locked_door(tile: &Tile) -> bool {
+/// matches; the guard is ported because `OpenDoor` calls it. The Lihzahrd
+/// door (style 11, `frameY` 594/612/630) rides the same window — the temple
+/// key arm reads it too (W4-g43 doc-sweep).
+pub fn is_locked_door(tile: &Tile) -> bool {
     tile.kind == 10 && (594..=646).contains(&tile.frame_y) && tile.frame_x < 54
+}
+
+/// `WorldGen.UnlockDoor` (`WorldGen.cs:37599-37628`, W4-g43 doc-sweep):
+/// walks UP from `(i, j)` to the door's top row (`frameY == 594`); a row
+/// below the window (`frameY < 594`) or the world edge (`num <= 0`) refuses
+/// silently. On the anchor: `frameY += 54` on all three rows (the locked
+/// 594/612/630 → the unlocked 648/666/684 — `IsLockedDoor` stops matching).
+/// Returns the anchor row so the caller plays the `SoundID.Unlock` (22) cue
+/// at `(i * 16, num * 16 + 16)` (`:37614`) and fires
+/// `NotifyProgressionEvent(22)` (`:37627`, TEMPLE_RAIDER). The 4-per-row
+/// `Dust.NewDust(11)` (`:37622-37625`) is the unported dust layer — skipped
+/// (the tile-edit dust precedent, no spawn context on this route).
+pub fn unlock_door(world: &mut World, i: i32, j: i32) -> Option<i32> {
+    let mut num = j;
+    // `:37602-37605` — the null-tile guard; the port reads through `Option`.
+    world.tile(i, num)?;
+    // `:37606-37613` — the up-walk to the 594 anchor.
+    while world.tile(i, num)?.frame_y != 594 {
+        num -= 1;
+        let t = world.tile(i, num)?;
+        if t.frame_y < 594 || num <= 0 {
+            return None;
+        }
+    }
+    // `:37615-37626` — the three-row frame shift (the null-create guards are
+    // managed-Tile noise; an out-of-world row is skipped, the C# would write
+    // a fresh Tile the world never shows).
+    for k in num..=num + 2 {
+        if let Some(t) = world.tile_mut(i, k) {
+            t.frame_y += 54;
+            touch(world, i, k);
+        }
+    }
+    Some(num)
 }
 
 fn liquid_flags(flags: u8) -> u8 {

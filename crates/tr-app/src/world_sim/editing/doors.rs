@@ -126,6 +126,76 @@ fn spawn_golem_on_altar(app: &mut App) -> bool {
     true
 }
 
+/// The locked-door key payment (`Player.cs:32796-32838`, W4-g43 doc-sweep):
+/// the inventory walk (grid 0-49 + coins 50-53 + ammo 54-57 — the C#'s
+/// `inventory[0..58]`, the trash slot 58 is OUTSIDE this scan) pays the
+/// first Temple Key 1141 stack and unlocks; only when NO inventory key
+/// unlocked (`!flag9`, `:32818`) does the void-bag fallback walk bank4
+/// (`:32820-32836`). `WorldGen.UnlockDoor` (`WorldGen.cs:37599-37628`)
+/// shifts the three rows' frames off the locked window; its
+/// `SoundEngine.PlaySound(22, i*16, num*16+16)` (`:37614`, the anchor row +
+/// 16 px) plays here and `NotifyProgressionEvent(22)` (`:37627`,
+/// TEMPLE_RAIDER — `AchievementInitializer.cs:112-114`) fires once per
+/// unlock. The 12 dusts (`:37622-37625`) are the unported dust layer.
+fn unlock_temple_door(app: &mut App, tx: i32, ty: i32) {
+    const TEMPLE_KEY: u16 = 1141; // ItemID.cs:3965
+    let mut unlocked = false;
+    // `:32800-32817` — the inventory scan (the chest key walk's layout:
+    // the grid, then the coin/ammo rows; `break` on the first paid key).
+    for slot in app
+        .inventory
+        .iter_mut()
+        .chain(app.equip.coins.iter_mut())
+        .chain(app.equip.ammo.iter_mut())
+    {
+        if slot.kind != TEMPLE_KEY || slot.count == 0 {
+            continue;
+        }
+        slot.count -= 1;
+        if slot.count == 0 {
+            *slot = crate::item::EMPTY_SLOT;
+        }
+        if let Some(anchor) = edit::unlock_door(&mut app.world, tx, ty) {
+            play_door_unlock(app, tx, anchor);
+        }
+        unlocked = true;
+        break;
+    }
+    // `:32818-32837` — the void-bag fallback: `!flag9 && useVoidBag()`.
+    if !unlocked && crate::chest::use_void_bag(app) {
+        let Some(p) = app.player.as_mut() else {
+            return;
+        };
+        for slot in p.banks[3].iter_mut() {
+            if slot.kind != TEMPLE_KEY || slot.count == 0 {
+                continue;
+            }
+            slot.count -= 1;
+            if slot.count == 0 {
+                *slot = crate::item::EMPTY_SLOT;
+            }
+            if let Some(anchor) = edit::unlock_door(&mut app.world, tx, ty) {
+                play_door_unlock(app, tx, anchor);
+            }
+            break;
+        }
+    }
+}
+
+/// The unlock's cue + progression (`WorldGen.cs:37614`/:37627): the
+/// `SoundID.Unlock` (22) at the anchor row's `(i*16, num*16+16)` and
+/// `NotifyProgressionEvent(22)` — TEMPLE_RAIDER.
+fn play_door_unlock(app: &mut App, tx: i32, anchor: i32) {
+    app.audio.play_at(
+        "Unlock",
+        tx as f32 * TILE_PX,
+        anchor as f32 * TILE_PX + 16.0,
+        1.0,
+    );
+    let _ = app.notify_progression_net(22);
+    app.world_key = None;
+}
+
 pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
     // S1-P-i55 — the golf tee's right-click arm (`TileInteractionsUse`'s
     // `type == 494` branch, `Player.cs:32342-32354`): EVERY owned golf ball
@@ -184,6 +254,27 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
         .is_some_and(|t| t.active() && t.kind == 237)
     {
         return use_golem_altar(app);
+    }
+    // The locked-door key arm (`TileInteractionsUse`'s `type == 10` branch,
+    // `Player.cs:32793-32838`, W4-g43 doc-sweep): `WorldGen.IsLockedDoor`
+    // (`WorldGen.cs:69191-69197`) matches the golden/Lihzahrd locked frames
+    // (tile 10, frameY 594-646, frameX < 54 — the temple door's style 11
+    // rides 594/612/630). The 58-slot inventory scan (`:32800-32817`, the
+    // grid + coins + ammo, NOT the trash) pays one Temple Key 1141 and
+    // calls `WorldGen.UnlockDoor`; the void-bag fallback (`:32818-32837`,
+    // `useVoidBag`) walks bank4 the same way. The click is consumed whether
+    // or not a key was found (`flag2 = true`, `:32795`) — the door NEVER
+    // opens on a locked click; the next click opens it (`OpenDoor`'s own
+    // `IsLockedDoor` refusal, `:37654-37657`). The Plantera gate is the
+    // KEY's drop (the Temple Key drops from Plantera, `loot_db_gen.rs`'s
+    // 262 row), not a runtime check here.
+    if app
+        .world
+        .tile(tx, ty)
+        .is_some_and(|t| t.active() && edit::is_locked_door(t))
+    {
+        unlock_temple_door(app, tx, ty);
+        return true;
     }
     let direction = app.player.as_ref().map(|p| p.facing).unwrap_or(1);
     // The entity half of `Collision.EmptyTile` (`Collision.cs:1359`): the
@@ -1093,6 +1184,120 @@ mod tests {
                 .iter()
                 .all(|n| n.kind != NpcKind::Golem || n.hp == 0),
             "the hardmode gate refuses"
+        );
+    }
+
+    /// The temple-door rig: a Lihzahrd door (tile 10, style 11 — the locked
+    /// frames 594/612/630, frameX 0) at column 10, rows 19-21, over a stone
+    /// floor at 22 with a ceiling at 18 (the `open_door` anchor shape).
+    fn temple_door_app() -> App {
+        let mut w = World::new("t".into(), 80, 200);
+        w.frame_important = vec![false; tr_core::tiledata::TILE_COUNT];
+        for x in 0..80 {
+            for y in [18, 22] {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        for (row, fy) in [(19, 594i16), (20, 612), (21, 630)] {
+            let i = w.index(10, row);
+            w.tiles[i] = Tile {
+                kind: 10,
+                frame_x: 0,
+                frame_y: fy,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        let mut player = Player::spawn(&app.world);
+        player.x = 8.0 * 16.0;
+        player.y = 19.0 * 16.0;
+        app.player = Some(player);
+        app
+    }
+
+    /// W4-g43 doc-sweep — the Temple Key 1141 unlock (`Player.cs:32796-
+    /// 32838` + `WorldGen.UnlockDoor` `WorldGen.cs:37599-37628`): the locked
+    /// click pays one key, shifts the three rows +54 (594/612/630 →
+    /// 648/666/684 — `IsLockedDoor` stops matching) and NEVER opens the
+    /// door on the same click; the next click opens it. No key: the click
+    /// is consumed free and the door stays locked.
+    #[test]
+    fn the_temple_key_unlocks_the_door_then_the_next_click_opens_it() {
+        let mut app = temple_door_app();
+        // No key: consumed, locked, no open.
+        assert!(interact_tile(&mut app, 10, 20), "the locked click consumes");
+        assert_eq!(app.world.tile(10, 19).unwrap().frame_y, 594, "still locked");
+        assert_eq!(app.world.tile(10, 20).unwrap().kind, 10, "no open");
+        // One key in the inventory: paid, the frames shift, still closed.
+        app.inventory[0] = ItemSlot {
+            kind: 1141,
+            name: "Temple Key".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(interact_tile(&mut app, 10, 20));
+        assert_eq!(app.inventory[0].count, 0, "one key paid");
+        assert_eq!(app.inventory[0].kind, 0, "the emptied slot turns to air");
+        for (row, fy) in [(19, 648i16), (20, 666), (21, 684)] {
+            assert_eq!(
+                app.world.tile(10, row).unwrap().frame_y,
+                fy,
+                "the +54 shift, row {row}"
+            );
+            assert_eq!(app.world.tile(10, row).unwrap().kind, 10, "still closed");
+        }
+        // The next click opens the door (the player faces right, the open
+        // column lands at 10-11 — the entity gate is free of the player at
+        // x 8*16 .. 8*16+20, the column 10 starts at 160 > 148).
+        assert!(interact_tile(&mut app, 10, 20));
+        assert_eq!(
+            app.world.tile(10, 19).unwrap().kind,
+            11,
+            "the unlocked door opens on the NEXT click"
+        );
+    }
+
+    /// W4-g43 — the void-bag fallback (`Player.cs:32818-32837`): no
+    /// inventory key, but the Void Bag 4131 carried and a key in bank4 —
+    /// the bank walk pays it and unlocks. Without the bag the bank key is
+    /// never read.
+    #[test]
+    fn the_void_bag_holds_the_fallback_temple_key() {
+        let mut app = temple_door_app();
+        {
+            let p = app.player.as_mut().unwrap();
+            p.banks[3][0] = ItemSlot {
+                kind: 1141,
+                name: "Temple Key".into(),
+                count: 1,
+                prefix: 0,
+            };
+        }
+        // No Void Bag: the bank key is invisible, the door stays locked.
+        assert!(interact_tile(&mut app, 10, 20));
+        assert_eq!(app.world.tile(10, 19).unwrap().frame_y, 594);
+        assert_eq!(app.player.as_ref().unwrap().banks[3][0].count, 1);
+        // The Void Bag 4131 in the inventory opens the fallback.
+        app.inventory[1] = ItemSlot {
+            kind: 4131,
+            name: "Void Bag".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(interact_tile(&mut app, 10, 20));
+        assert_eq!(app.world.tile(10, 19).unwrap().frame_y, 648, "unlocked");
+        assert_eq!(
+            app.player.as_ref().unwrap().banks[3][0].count,
+            0,
+            "the bank key paid"
         );
     }
 }
