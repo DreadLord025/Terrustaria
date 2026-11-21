@@ -68,6 +68,43 @@ The 594 WindyBalloon / 686 BoundTownSlimePurple exclusions are in the
 gate as `cs_id` tests (both unported kinds today — the e26/luck lane's
 686-adjacent town slimes must keep them when rowed).
 
+### 1a. RETIRE RECEIPT — the Goldfish-55 freeze-lift activates NOW (witness)
+
+The sweep froze the Goldfish 55's sight provider as a "c4 follow-up"
+because 55 is the c4 lane's kind. Retire-time re-verification shows the
+freeze was over-cautious — **55 is a BASE kind, already on main**:
+
+- `origin/main` (`a725acb04`) carries `NpcKind::Goldfish`
+  (`npc.rs:464`), the `SetDefaults` rows `max_hp() => 5`
+  (`npc/data.rs:3513`) and `contact_damage() => 0` (`:3873`) — the C#
+  `NPC.cs:9460-9473` shape — AND the bestiary `ENTRIES` row
+  (`bestiary.rs:658-665`, credit "Goldfish", net 55). c4's own retire
+  declaration (research/148 at tip `0df6964be`) lists Goldfish 55 as
+  **"base — behaviour-frozen, untouched"**; c4's branch carries the
+  same base rows (its 55 entry at `bestiary.rs:659`).
+- Therefore the lift needs NO c4 merge to activate: on THIS branch the
+  base 55 rows pass `counts_as_a_critter` (`bestiary.rs:2280-2285`),
+  `is_critter_entry` accepts the base entry (`:2303-2305`), and
+  `unlock_state_world` (`:2412`) dispatches it to the sight provider.
+  The lift is LIVE for every world that spawns a Goldfish today.
+- **Witnesses pinning the activation** (WRITTEN NOT RUN, code-only):
+  `bestiary.rs::w4_c8_final_the_generic_critter_gate_covers_the_goldfish`
+  (`:2859` — the gate list includes Goldfish; 50 registered kills keep
+  the entry `NotKnownAtAll`, ONE sight flips it to
+  `CanShowDropsWithDropRates`; the 549 Hide counter-case) and the
+  scan-level
+  `world_sim/npcs.rs::w4_c8_final_the_sight_scan_covers_the_other_lanes_critters`
+  (`:14597` — a live Goldfish NPC 100 px from the player earns
+  `was_seen_near_player("Goldfish")` through the GENERIC scan with zero
+  crawler wiring, then tier 4 through the dispatch).
+- **What still waits for the c4 merge** (unchanged, §6): c4's UI
+  `unlock_state(entry, tracker)` call sites (`ui/bestiary.rs:510/537/
+  1683` at c4 tip `0df6964be` — the same three sites main carries at
+  `:510/537/1616`) reconcile onto `unlock_state_world` (the c8 fold
+  already applied on this branch at `:510/537/1637`); c4's GoldGoldfish
+  592 entry auto-rides `GOLD_PEER_TABLE`'s {55} row. The 55 lift itself
+  is NOT part of that wait — it is active here and now.
+
 **Cross-note to c7/c9/c10/e26/c4**: do NOT add per-lane sight scans or
 provider arms. Row the kinds (`max_hp`/`contact_damage`/`cs_id` +
 `ENTRIES`), and the scan + dispatch cover them. The witness
