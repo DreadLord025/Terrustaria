@@ -609,6 +609,12 @@ impl NpcKind {
             NpcKind::BoneThrowingSkeleton => 449,
             NpcKind::BoneThrowingSkeleton2 => 450,
             NpcKind::BoneThrowingSkeleton3 => 451,
+            // W4-d40: BoneThrowingSkeleton4, SkeletonMerchant, CultistDragonHead, CultistDragonBody1, CultistDragonBody2 keep their vanilla ids (free in the protocol space).
+            NpcKind::BoneThrowingSkeleton4 => 452,
+            NpcKind::SkeletonMerchant => 453,
+            NpcKind::CultistDragonHead => 454,
+            NpcKind::CultistDragonBody1 => 455,
+            NpcKind::CultistDragonBody2 => 456,
             NpcKind::WyvernTail => 228,
         }
     }
@@ -963,6 +969,12 @@ impl NpcKind {
             449 => NpcKind::BoneThrowingSkeleton,
             450 => NpcKind::BoneThrowingSkeleton2,
             451 => NpcKind::BoneThrowingSkeleton3,
+            // W4-d40: the vanilla ids (`to_u16` above).
+            452 => NpcKind::BoneThrowingSkeleton4,
+            453 => NpcKind::SkeletonMerchant,
+            454 => NpcKind::CultistDragonHead,
+            455 => NpcKind::CultistDragonBody1,
+            456 => NpcKind::CultistDragonBody2,
             228 => NpcKind::WyvernTail,
             _ => return None,
         })
@@ -1204,6 +1216,9 @@ impl NpcKind {
                     | NpcKind::PartyGirl
                     | NpcKind::Wizard
                     | NpcKind::Mechanic
+                    // W4-d40: the Skeleton Merchant's `isLikeATownNPC` row
+                    // (`NPC.cs:6860`: `type == 453`).
+                    | NpcKind::SkeletonMerchant
             )
     }
 
@@ -1860,6 +1875,12 @@ impl NpcKind {
             NpcKind::BoneThrowingSkeleton
             | NpcKind::BoneThrowingSkeleton2
             | NpcKind::BoneThrowingSkeleton3 => "NPC_Hit_2",
+            // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
+            NpcKind::BoneThrowingSkeleton4
+            | NpcKind::SkeletonMerchant => "NPC_Hit_2",
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2 => "NPC_Hit_56",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2188,6 +2209,12 @@ impl NpcKind {
             NpcKind::BoneThrowingSkeleton
             | NpcKind::BoneThrowingSkeleton2
             | NpcKind::BoneThrowingSkeleton3 => "NPC_Killed_2",
+            // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
+            NpcKind::BoneThrowingSkeleton4
+            | NpcKind::SkeletonMerchant => "NPC_Killed_2",
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2 => "NPC_Killed_60",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2300,6 +2327,10 @@ impl NpcKind {
             | NpcKind::CultistBossClone => true,
             // W4-d40: the SetDefaults noGravity rows (`NPC.cs`).
             NpcKind::GoldButterfly => true,
+            // W4-d40: the SetDefaults noGravity rows (`NPC.cs`).
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2 => true,
             NpcKind::AngryNimbus => true,
             _ => false,
         }
@@ -2575,6 +2606,12 @@ impl NpcKind {
             NpcKind::BoneThrowingSkeleton
             | NpcKind::BoneThrowingSkeleton2
             | NpcKind::BoneThrowingSkeleton3 => 3,
+            // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
+            NpcKind::BoneThrowingSkeleton4 => 3,
+            NpcKind::SkeletonMerchant => 7,
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2 => 6,
             NpcKind::DungeonSpirit => 56,
         }
     }
@@ -3129,6 +3166,12 @@ impl NpcKind {
             NpcKind::BoneThrowingSkeleton
             | NpcKind::BoneThrowingSkeleton2
             | NpcKind::BoneThrowingSkeleton3 => (18.0, 40.0),
+            // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
+            NpcKind::BoneThrowingSkeleton4
+            | NpcKind::SkeletonMerchant => (18.0, 40.0),
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2 => (32.0, 32.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
         }
     }
@@ -3212,6 +3255,9 @@ impl NpcKind {
             // (the Hide=true exclusions with no credit-fold).
             NpcKind::BoneThrowingSkeleton2 => 450,
             NpcKind::BoneThrowingSkeleton3 => 451,
+            // W4-d40: hand rows for the kinds with no bestiary entry
+            // (the Hide=true exclusions with no credit-fold).
+            NpcKind::BoneThrowingSkeleton4 => 452,
             NpcKind::Goldfish => 55,
             NpcKind::Piranha => 58,
             NpcKind::Shark => 65,
@@ -3798,6 +3844,12 @@ impl NpcKind {
             NpcKind::BoneThrowingSkeleton => 60,
             NpcKind::BoneThrowingSkeleton2 => 55,
             NpcKind::BoneThrowingSkeleton3 => 65,
+            // W4-d40: the SetDefaults lifeMax rows (`NPC.cs`).
+            NpcKind::BoneThrowingSkeleton4 => 60,
+            NpcKind::SkeletonMerchant => 250,
+            NpcKind::CultistDragonHead => 10000,
+            NpcKind::CultistDragonBody1 => 10000,
+            NpcKind::CultistDragonBody2 => 10000,
             NpcKind::DungeonSpirit => 200,
         }
     }
@@ -4186,6 +4238,12 @@ impl NpcKind {
             NpcKind::BoneThrowingSkeleton => 20,
             NpcKind::BoneThrowingSkeleton2 => 20,
             NpcKind::BoneThrowingSkeleton3 => 18,
+            // W4-d40: the SetDefaults damage rows (`NPC.cs`).
+            NpcKind::BoneThrowingSkeleton4 => 22,
+            NpcKind::SkeletonMerchant => 10,
+            NpcKind::CultistDragonHead => 100,
+            NpcKind::CultistDragonBody1 => 50,
+            NpcKind::CultistDragonBody2 => 50,
             NpcKind::DungeonSpirit => 70,
         }
     }

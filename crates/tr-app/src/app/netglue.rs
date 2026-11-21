@@ -3581,6 +3581,13 @@ fn npc_seed(
         | crate::npc::NpcKind::BoneThrowingSkeleton
         | crate::npc::NpcKind::BoneThrowingSkeleton2
         | crate::npc::NpcKind::BoneThrowingSkeleton3 => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
+        // W4-d40: the new kinds' net seeds (the bare stats seed; the
+        // net state overwrites the position below).
+        crate::npc::NpcKind::BoneThrowingSkeleton4
+        | crate::npc::NpcKind::SkeletonMerchant
+        | crate::npc::NpcKind::CultistDragonHead
+        | crate::npc::NpcKind::CultistDragonBody1
+        | crate::npc::NpcKind::CultistDragonBody2 => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
         // The wyvern family (`S1-D-3` wyvern): the sky flyer's net seed
         // rides the hover ctor (the net state overwrites the position
         // below); the chain links rebuild through the sim wiring — a lone
