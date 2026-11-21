@@ -2016,6 +2016,14 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     if crate::life_fruit::life_fruit_item_check(app, prev_mine_released && !prev_mine_down) {
         return;
     }
+    // W4-g88 — the Mana Crystal permanent upgrade (`ItemCheck_UseManaCrystal`,
+    // `Player.cs:45274-45288`, the `:43597` permanent-item slot AFTER the
+    // fruit). Same shared machine: the < 200 statManaMax gate, +20/+20/+20,
+    // ManaEffect(20) via the queue_mana_effect drain, HandleSpecialEvent(1)
+    // → STAR_POWER + the TOPPED_OFF 500/200 check.
+    if crate::crystals::mana_crystal_item_check(app, prev_mine_released && !prev_mine_down) {
+        return;
+    }
     // The boss spawners (`Player.ItemCheck_UseBossSpawners`,
     // `Player.cs:43751-43900`) and the event items (`ItemCheck_UseEventItems`,
     // `:43921-44055`) fire MID-SWING: their gate is `ItemTimeIsZero &&

@@ -1378,8 +1378,10 @@ pub struct Player {
     p_stone_prev: bool,
     /// `Player.statManaMax` (`Player.cs:1931`): the PERMANENT mana cap —
     /// the character file's `manaMax` (`:55226`, clamped to 200) and the
-    /// Mana Crystal's +20 use-grant (`:45276-45281`, unported). The
-    /// per-tick rebase reads it; nothing else writes it in play.
+    /// Mana Crystal's +20 use-grant (`ItemCheck_UseManaCrystal`,
+    /// `:45276-45281`, `crystals.rs`) raise it. The per-tick rebase reads
+    /// it (`statManaMax2 = statManaMax`, `:18389`); the TOPPED_OFF
+    /// 200-check reads it too.
     pub mana_max_base: i32,
     /// `Player.manaFlower` (`Player.cs:1876`-adjacent field, armed by the Mana
     /// Flower 555 `:15591-15594`, Arcane Flower 3991 `:14405-14406`, Magnet

@@ -39321,3 +39321,34 @@ click buffers; the player tick applies).
   event-0 no-op, the one-grant cadence, the CCed refusal) — WRITTEN, NOT
   RUN. No cargo/rustc/tests invoked.
 
+## The Mana Crystal use path (W4-g88, crystals lane)
+
+- **The census.** `ItemCheck_UseManaCrystal` lives at
+  `Player.cs:45274-45288` (the brief's :45305-45320 guess was the Life
+  Crystal's slot). Gate: `type == 109 && itemAnimation > 0 &&
+  statManaMax < 200 && ItemTimeIsZero`; body: `ApplyItemTime` +
+  `statManaMax/statManaMax2/statMana += 20` (RAW mana add) +
+  `ManaEffect(20)` + `HandleSpecialEvent(this, 1)`.
+- **The mana field already existed.** `Player.mana_max_base` predates
+  this lane (the per-tick `ResetEffects` rebase `statManaMax2 =
+  statManaMax` `:18389` IS ported, unlike the life half) — no new field;
+  its "unported" doc note is now corrected. `statManaMax2` maps to the
+  effective `mana_max`, both raise by 20.
+- **ManaEffect rides the queue.** `Player.ManaEffect` (`:4531-4538`)
+  queues via the existing `queue_mana_effect` (the cuffs/potion
+  precedent); the HealMana text spawns in `world_sim/player.rs`'s
+  player-tick drain (`take_mana_effect`). The MP SendData 43 broadcast
+  has no port.
+- **Event 1 is the named dispatch.** STAR_POWER's Use condition +
+  TOPPED_OFF at the full 500/200 permanent caps
+  (`AchievementsHelper.cs:290-296`), through the W4-g88
+  `handle_special_event_life_mana(1, …)` — NOT the generic Use-flag
+  fan-out (GET_A_LIFE stays spared).
+- **Wire order complete.** `update_editing` now runs Life Crystal
+  (`:43595`), Life Fruit (`:43596`), Mana Crystal (`:43597`) in the C#
+  call order, all on the ONE shared `permanent_upgrade_item_check`.
+- **Code-only mode.** 7 more witnesses in `crystals.rs` (the 20 grant,
+  the 200 refusal, the nine-crystal 20→200 ladder, the RAW mana add, the
+  ManaEffect queue, STAR_POWER + TOPPED_OFF timing + the GET_A_LIFE
+  sparing, the CCed refusal) — WRITTEN, NOT RUN.
+
