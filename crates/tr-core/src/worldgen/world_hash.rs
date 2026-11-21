@@ -295,6 +295,10 @@ mod tests {
     // settles the default world's lakes/ocean water and retypes the
     // below-water-line falls to lava, so this pin moves BY DESIGN too —
     // deferred to the gate with the SEED42_512 note. No RNG draw added.
+    // W4-f25 helper round (2026-11-21, code-only): the missing-WorldGen-helper
+    // ports (`spread::tile_is_exposed_to_air` etc., the `12g-f25-worldgen-
+    // helpers.md` ledger C1-C8) are UNWIRED — no executed step calls them,
+    // so BOTH pins are untouched by that round (the g39 H1-H15 precedent).
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
