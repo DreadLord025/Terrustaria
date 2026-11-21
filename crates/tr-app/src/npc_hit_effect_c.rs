@@ -110,6 +110,7 @@
 //! | 462-463 | `:84498-84499` | the 388 MartianDrone death (2 gores 605/606, ai[0]==3 rotation-vector velocity) |
 //! | 464-465 | `:84530-84531` | the 399 MartianProbe death (2 gores 898/899, same rotation-vector shape) |
 //! | 466-468 | `:84549-84551` | the 391 Scutlix death (3 gores 607/608/609, width/2 X offset) |
+//! | 469-476 | `:84575-84588` | the 392/393/394/395 Martian Saucer family death (395 core 6 gores, 393/394 one each; 392 none) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -2847,6 +2848,54 @@ fn scutlix_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 609, s); // :84551
 }
 
+/// The 392/393/394/395 Martian Saucer family death (`NPC.cs:84567-84589`,
+/// sites 469-476): the 30-dust type-228 burst (SpeedX `-1.5*hitDirection`,
+/// SpeedY -1.5, scale 0.5 post-write), then the per-type gores at Center:
+/// the 395 core spawns 6 (610/611/612/613/614/615 at the spread anchors),
+/// the 393 turret spawns 616, the 394 cannon spawns 617; the 392 saucer
+/// itself spawns NO gore (the C# has no 392 arm inside the block).
+fn martian_saucer_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:84567-84571` — the 30-dust type-228 burst (scale 0.5).
+    for _ in 0..30 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 228, -1.5 * hit_direction, -1.5, 0,
+            Color::default(), 1.0,
+        );
+        dust.slot_mut(idx).scale = 0.5;
+    }
+    let c = center(npc);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    // `:84573-84581` — the 395 core's 6 gores.
+    if npc_type == 395 {
+        gore.new_gore(rng, world, c + Vec2::new(-20.0, -10.0), vel, 610, s); // :84575
+        gore.new_gore(rng, world, c + Vec2::new(20.0, -10.0), vel, 611, s); // :84576
+        gore.new_gore(rng, world, c + Vec2::new(-50.0, 0.0), vel, 612, s); // :84577
+        gore.new_gore(rng, world, c + Vec2::new(50.0, 0.0), vel, 613, s); // :84578
+        gore.new_gore(rng, world, c + Vec2::new(-60.0, 10.0), vel, 614, s); // :84579
+        gore.new_gore(rng, world, c + Vec2::new(0.0, 30.0), vel, 615, s); // :84580
+    }
+    // `:84582-84585` — the 393 turret's single gore.
+    if npc_type == 393 {
+        gore.new_gore(rng, world, c, vel, 616, s); // :84584
+    }
+    // `:84586-84589` — the 394 cannon's single gore.
+    if npc_type == 394 {
+        gore.new_gore(rng, world, c, vel, 617, s); // :84588
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -3174,6 +3223,11 @@ pub fn hit_effect_c(
     // `:84534-84553` — the 391 Scutlix arm (sites 466-468).
     if npc_type == 391 && npc.hp <= 0 {
         scutlix_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:84554-84591` — the 392/393/394/395 Martian Saucer family arm
+    // (sites 469-476; the 392 saucer spawns no gore).
+    if (npc_type == 392 || npc_type == 393 || npc_type == 394 || npc_type == 395) && npc.hp <= 0 {
+        martian_saucer_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -5066,6 +5120,44 @@ mod tests {
         assert_eq!(gore.slot(0).position, Vec2::new(125.0, 100.0));
         assert_eq!(gore.slot(1).position, Vec2::new(125.0, 100.0));
         assert_eq!(gore.slot(2).position, Vec2::new(100.0, 120.0));
+    }
+
+    /// `NPC.cs:84575-84588` — the Martian Saucer family death: the 395
+    /// core spawns 6 gores at the spread anchors, the 393/394 spawn one
+    /// each at Center, and the 392 saucer spawns none.
+    #[test]
+    fn w4_f10_the_martian_saucer_family_death_per_type() {
+        let w = air();
+        // The 395 core: 6 gores.
+        let n = boss(100.0, 100.0, 100.0, 60.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(383);
+        martian_saucer_death(&n, 395, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![610, 611, 612, 613, 614, 615]);
+        // Center = (150,130); the 610 anchor is (130,120).
+        assert_eq!(gore.slot(0).position, Vec2::new(130.0, 120.0));
+        assert_eq!(gore.slot(5).position, Vec2::new(150.0, 160.0));
+        // The 393 turret: one gore 616 at Center.
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(383);
+        martian_saucer_death(&n, 393, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        assert_eq!(gore2.slot(0).gore_type, 616);
+        assert_eq!(gore2.slot(0).position, Vec2::new(150.0, 130.0));
+        // The 394 cannon: one gore 617.
+        let mut gore3 = GorePool::new();
+        let mut dust3 = DustPool::new();
+        let mut rng3 = UnifiedRandom::new(383);
+        martian_saucer_death(&n, 394, &mut dust3, &ctx(), &mut gore3, &mut rng3, &w, 1.0);
+        assert_eq!(gore3.slot(0).gore_type, 617);
+        // The 392 saucer: no gore.
+        let mut gore4 = GorePool::new();
+        let mut dust4 = DustPool::new();
+        let mut rng4 = UnifiedRandom::new(383);
+        martian_saucer_death(&n, 392, &mut dust4, &ctx(), &mut gore4, &mut rng4, &w, 1.0);
+        assert_eq!(gore4.slots().iter().filter(|g| g.active).count(), 0);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
