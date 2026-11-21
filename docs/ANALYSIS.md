@@ -36129,7 +36129,9 @@ never consume.
   hunk published in 138 §12.2). Witnesses:
   `a_bought_license_without_a_resident_pet_refuses` +
   `a_resident_non_pet_does_not_open_the_exchange` (the net-id scan, not
-  mere liveness); the positive path is unwitnessable until the pets land.
+  mere liveness); the positive Success witness is witnessable on g10's
+  tip (a 637/638/656 kind EXISTS) but lands WITH the f43b splice + the
+  hunk, not before (138 §12.2's updated boundary).
 - **g87 re-adjudication (research/138 §10 FINAL + §11.3 retire)**: g87
   `dfbcaf94b` pushed the same three families (3335/5289/licenses); its
   closeout `26620538e` (local over the pushed tip at the retire probe)
@@ -36145,9 +36147,9 @@ never consume.
   NO-flag-gate ALWAYS-spawn (`:45204` has no `!unlockedSuperCart` leg).
   g87's `.wld` pet flips dedup onto f45; its `.trwld` 3-byte pet tail
   rides the SEALED 107-byte-head v18 union at offsets 57-59 (138 §12.1's
-  D5-RE-PIN — g88h fc5cf11a research/103 §L3-DEFINITIVE D3 authority;
-  the seal's g71d 59-61 seats, §11.2's 101-head/51-53 seats and the
-  five-way 68-byte table §5a are superseded).
+  ARBITER receipt — g88 d09d7e10a research/103 §L3-ARBITER FINAL A3
+  authority, D3 restated verbatim; the seal's g71d 59-61 seats, §11.2's
+  101-head/51-53 seats and the five-way 68-byte table §5a are superseded).
 - **QuickSpawnItem (the minecart powerup's 3353 grant)**: the `GetItem`
   deposit walk with the per-slot chime + `NotifyItemPickup`, the void
   vault as the LAST resort and the overflow world drop at the player
