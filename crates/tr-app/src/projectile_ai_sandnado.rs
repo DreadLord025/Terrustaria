@@ -30,7 +30,14 @@ use tr_core::World;
 use tr_core::loot::DropRng;
 
 use crate::player::Player;
-use crate::projectile::{SANDNADO_FRIENDLY, SANDNADO_HOSTILE, Projectile, can_hit_line, get_lerp_value};
+use crate::projectile::{SANDNADO_FRIENDLY, SANDNADO_HOSTILE, Projectile, can_hit_line};
+
+/// `MathHelper.Lerp(value1, value2, amount)` (XNA): `value1 + (value2 -
+/// value1) * amount` — NOT `Utils.GetLerpValue` (the port's
+/// `get_lerp_value` is the inverse ramp).
+fn math_helper_lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
 
 /// `Kill()` (`Projectile.cs:70644-70648`) — the sibling-module deactivation
 /// (the `projectile_ai_spear` precedent; `Projectile::kill` is private).
@@ -193,10 +200,10 @@ impl Projectile {
             let value14 = 0.9f32;
             let amount3 = rng.next_float(); // `:36068`
             let mut vector160 = Vec2::new(
-                get_lerp_value(0.1, 1.0, rng.next_float()), // `:36069`
-                get_lerp_value(value13, value14, amount3),
+                math_helper_lerp(0.1, 1.0, rng.next_float()), // `:36069`
+                math_helper_lerp(value13, value14, amount3),
             );
-            vector160.x *= get_lerp_value(2.2, 0.6, amount3);
+            vector160.x *= math_helper_lerp(2.2, 0.6, amount3);
             vector160.x *= -1.0;
             let vector161 = Vec2::new(6.0, 10.0);
             let _vector162 = vector158 + vector159 * vector160 * 0.5 + vector161;

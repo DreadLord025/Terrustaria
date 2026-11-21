@@ -28,7 +28,14 @@
 use glam::Vec2;
 use tr_core::loot::DropRng;
 
-use crate::projectile::{Projectile, get_lerp_value, opacity_of};
+use crate::projectile::{Projectile, opacity_of};
+
+/// `MathHelper.Lerp(value1, value2, amount)` (XNA): `value1 + (value2 -
+/// value1) * amount` — NOT `Utils.GetLerpValue` (the port's
+/// `get_lerp_value` is the inverse ramp).
+fn math_helper_lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
 
 /// `Kill()` (`Projectile.cs:70644-70648`) — the sibling-module deactivation
 /// (the `projectile_ai_spear` precedent; `Projectile::kill` is private).
@@ -76,10 +83,10 @@ impl Projectile {
                 let value16 = 0.9f32;
                 let amount4 = rng.next_float(); // `:36100`
                 let mut vector163 = Vec2::new(
-                    get_lerp_value(0.1, 1.0, rng.next_float()), // `:36101`
-                    get_lerp_value(value15, value16, amount4),
+                    math_helper_lerp(0.1, 1.0, rng.next_float()), // `:36101`
+                    math_helper_lerp(value15, value16, amount4),
                 );
-                vector163.x *= get_lerp_value(2.2, 0.6, amount4);
+                vector163.x *= math_helper_lerp(2.2, 0.6, amount4);
                 vector163.x *= -1.0;
                 // The dust body is skipped; the conditional draws stay.
                 if vector163.x > -1.2 {
