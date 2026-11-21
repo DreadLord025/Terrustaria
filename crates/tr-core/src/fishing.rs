@@ -2439,4 +2439,180 @@ mod drop_rule_tests {
             "the legendary flag disables the bomb tier"
         );
     }
+
+    // --- W4-g44: the sky-lake fishing census witnesses (islands final 2/5).
+    // The sky-band catch rows LANDED with M7-FISH-2; these pin them against
+    // the re-read C# (`GameContentFishDropPopulator.cs:73-81/:214`) and
+    // connect them to the sky-lake bowl the islands pass carves.
+
+    /// `FloatingIslandDrops` (`:73-81`): the seven sky rows in Populate()
+    /// order — the six quest fish (Harpyfish 2461 / Cloudfish 2453 /
+    /// Wyverntail 2473 / Angelfish 2476 / FallenStarfish 2458 /
+    /// TheFishofCthulu 2459) + the plain Damselfish 2304. The Height0 rows
+    /// are space-only; the HeightUnder2 trio also answers at the surface.
+    #[test]
+    fn the_sky_lake_quest_fish_rows_match_the_populator() {
+        let rules = vanilla_drop_rules();
+        // Locate the seven rows by their items + conditions (the table's
+        // order pins them between DesertDrops and SurfaceDrops).
+        let sky: Vec<&FishRule> = rules
+            .rules
+            .iter()
+            .filter(|r| {
+                matches!(r.items, [2461] | [2453] | [2473] | [2476] | [2458] | [2459] | [2304])
+                    && r.conditions.iter().any(|c| {
+                        matches!(c, FishCondition::Height0 | FishCondition::HeightUnder2)
+                    })
+                    && !r.conditions.contains(&FishCondition::Remix)
+            })
+            .filter(|r| !matches!(r.conditions, [FishCondition::QuestFishRemix(_)]))
+            .collect();
+        // The plain quest rows carry QuestFish + height only; the remix
+        // twins (single-condition QuestFishRemix) are excluded above.
+        let sky: Vec<&FishRule> = sky
+            .into_iter()
+            .filter(|r| r.conditions.len() == 2 || r.items == [2304])
+            .collect();
+        assert_eq!(sky.len(), 7, "the seven FloatingIslandDrops rows");
+        for (item, conds) in [
+            (2461u16, &[FishCondition::QuestFish(2461), FishCondition::HeightUnder2][..]),
+            (2453, &[FishCondition::QuestFish(2453), FishCondition::Height0][..]),
+            (2473, &[FishCondition::QuestFish(2473), FishCondition::Height0][..]),
+            (2476, &[FishCondition::QuestFish(2476), FishCondition::Height0][..]),
+            (2458, &[FishCondition::QuestFish(2458), FishCondition::HeightUnder2][..]),
+            (2459, &[FishCondition::QuestFish(2459), FishCondition::HeightUnder2][..]),
+            (2304, &[FishCondition::Height0][..]),
+        ] {
+            let r = sky.iter().find(|r| r.items == [item]).expect("row present");
+            assert_eq!(r.conditions, conds, "item {item}");
+            assert_eq!((r.num, r.den), (1, 1), "the Uncommon 1/1 roll");
+            assert_eq!(r.rarity, FishRarity::Uncommon);
+        }
+    }
+
+    /// The sky crate pair (`CrateDrops` `:214`): the Floating Island
+    /// Fishing Crate 3206 pre-hardmode / Azure Crate 3985 hardmode, gated
+    /// `Crate && Height0` — the crate hit at the SPACE band only. The
+    /// biome crates ahead of it in the walk win where their zones read
+    /// true (the vanilla order), so the sky crate answers on a zoneless
+    /// sky pond.
+    #[test]
+    fn the_sky_crate_pair_gates_on_the_space_band() {
+        let rules = vanilla_drop_rules();
+        let early = rules
+            .rules
+            .iter()
+            .find(|r| r.items == [3206])
+            .expect("the 3206 row");
+        assert_eq!(
+            early.conditions,
+            &[FishCondition::Crate, FishCondition::Height0, FishCondition::EarlyMode]
+        );
+        let hard = rules
+            .rules
+            .iter()
+            .find(|r| r.items == [3985])
+            .expect("the 3985 row");
+        assert_eq!(
+            hard.conditions,
+            &[FishCondition::Crate, FishCondition::Height0, FishCondition::HardMode]
+        );
+        assert_eq!(early.rarity, FishRarity::Rare);
+        assert_eq!(hard.rarity, FishRarity::Rare);
+        // A zoneless sky pond with the crate hit: the walk lands on the
+        // sky crate (the RareDrops unconditional rows answer on some
+        // seeds — the crate is a fallback, sweep for it).
+        let mut ctx = base_ctx();
+        ctx.height_level = 0;
+        ctx.crate_hit = true;
+        ctx.rare = true;
+        let mut early_hits = 0;
+        for seed in 0..60u64 {
+            let mut rng = FastRandom::new(seed.wrapping_mul(1_000_003).wrapping_add(3));
+            if rules.try_get_item_drop(&ctx, &mut rng) == Some(3206) {
+                early_hits += 1;
+            }
+        }
+        assert!(early_hits > 0, "the sky crate answers on the space band");
+        // The hardmode twin swaps in; and one band down (surface 1) the
+        // sky crate never answers — the generic crate rows take over.
+        ctx.hard_mode = true;
+        let mut hard_hits = 0;
+        let mut early_in_hard = 0;
+        for seed in 0..60u64 {
+            let mut rng = FastRandom::new(seed.wrapping_mul(1_000_003).wrapping_add(3));
+            match rules.try_get_item_drop(&ctx, &mut rng) {
+                Some(3985) => hard_hits += 1,
+                Some(3206) => early_in_hard += 1,
+                _ => {}
+            }
+        }
+        assert!(hard_hits > 0, "the azure crate answers in hardmode");
+        assert_eq!(early_in_hard, 0, "the pre-hardmode crate is gone");
+        ctx.height_level = 1;
+        for seed in 0..60u64 {
+            let mut rng = FastRandom::new(seed.wrapping_mul(1_000_003).wrapping_add(3));
+            let drop = rules.try_get_item_drop(&ctx, &mut rng);
+            assert_ne!(drop, Some(3985), "no sky crate at the surface band");
+            assert_ne!(drop, Some(3206));
+        }
+    }
+
+    /// The sky-lake bowl IS fishable: the islands pass's compact CloudLake
+    /// (the rain-cloud rim + the water interior) passes the 75-tile pond
+    /// gate, and a bobber in it rolls height_level 0 — the space band the
+    /// sky rows read (`Projectile.cs:20712`: y < worldSurface * 0.5).
+    #[test]
+    fn the_sky_lake_bowl_builds_a_space_band_attempt() {
+        use crate::tile::FLAG_ACTIVE;
+        let mut w = World::new("skylake".into(), 1200, 400);
+        w.rock_layer = 120.0; // world_surface defaults to 100
+        // The compact bowl: 20 wide × 6 deep water at rows 40-45, the
+        // rain-cloud 196 rim under it (the islands.rs lake shape — the
+        // real disc's bowl is radius/3 wide × 3 deep inside a bigger
+        // cloud; the pond scan only reads the liquid span).
+        for x in 20..40 {
+            for y in 40..46 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+            }
+            let i = w.index(x, 46);
+            w.tiles[i].kind = 196;
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let pond = get_fishing_pond_state(&w, 30, 40);
+        assert!(pond.water_tiles >= 75, "the bowl clears the pond gate ({})", pond.water_tiles);
+        let ins = AttemptInputs {
+            base_level: 100,
+            bait_type: 2674, // the Journeyman Bait — a plain bait
+            ..Default::default()
+        };
+        let mut z = base_ctx();
+        let mut rng = FastRandom::new(9);
+        let a = try_build_fishing_attempt(&w, 30, 40, 640.0, &ins, &mut z, &mut rng)
+            .expect("the sky lake is fishable");
+        assert_eq!(a.height_level, 0, "the sky band");
+        assert_eq!(z.height_level, 0);
+        // The quest probe carries the angler's fish into the context —
+        // a Cloudfish quest answers through the Height0 row.
+        let ins = AttemptInputs {
+            quest_item: 2453,
+            angler_alive: true,
+            ..ins
+        };
+        let mut z2 = base_ctx();
+        let mut rng2 = FastRandom::new(9);
+        let _ = try_build_fishing_attempt(&w, 30, 40, 640.0, &ins, &mut z2, &mut rng2).unwrap();
+        assert_eq!(z2.quest_fish, 2453, "the quest fish rides the sky context");
+        let rules = vanilla_drop_rules();
+        z2.uncommon = true;
+        let mut hits = 0;
+        for seed in 0..60u64 {
+            let mut r = FastRandom::new(seed.wrapping_mul(1_000_003).wrapping_add(17));
+            if rules.try_get_item_drop(&z2, &mut r) == Some(2453) {
+                hits += 1;
+            }
+        }
+        assert!(hits > 0, "the Cloudfish quest answers in the sky lake");
+    }
 }
