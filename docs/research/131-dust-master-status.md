@@ -37,7 +37,7 @@ work each lane still owes.
 | e3 | task/W4-e3-dust-sites-proj-2 | `8023aa4d` | projectile_dust.rs — aiStyle-generic window :22297-24318 (41 sites + the 24328 edge pair, all 42 ported), 21 witnesses + 3 keep-one contracts vs d16/d1/f48 (doc sweep tip) |
 | d130 | task/W4-d130-weather-ambience | `ec1d73c7` | research/83 EXECUTED (`88cfbf38`): rain+splash union live on d130; snow.rs base kept — **the g11 addendum folds F1-F7 NOT yet applied** (still splitmix/1920/no pause gate at tip) |
 | g73 | task/W4-g73-waterfall-draw | `82ae8b96` | waterfall family FINAL UNION (`eee87f98` folds g75 `e30ad7ba`); contract rewritten: canonical = g73 tip, 43-witness inventory — **but g75 pushed 3 commits AFTER the fold base** (§5) |
-| g75 | task/W4-g75-honeyfall-draw | `2b9ed81f` | post-`e30ad7ba` final sweep: `d118f7ba` disco colour-source fix + `f4e3071f` 717 lava-fountain witnesses + `2b9ed81f` sweep docs — OWED a fold into g73 |
+| g75 | task/W4-g75-honeyfall-draw | `41b64b04` (final-audit re-read; was `2b9ed81f`) | post-`e30ad7ba` closeout, now SEVEN commits: `d118f7ba` disco colour-source fix + `f4e3071f` 717 lava-fountain witnesses + `2b9ed81f` sweep docs + `17161648` retire-contract fold-list + **`a3093a66` the :3858 spout WIRING** (`liquid_behind_spout_refused` — TileDrawing.cs:3858 halfBrick && (num3>160 || num>160) && CheckForWaterfall, the :3835-3844 type-379 exclusion; manager handle through the draw_tiles seam; 3 witnesses) + `d441713d` sound.rs DELEGATED-STATUS (two-tier split: g73 decision tier delegates its volume walk to g75's pure `liquid_ambience` — merger keeps BOTH fns) + `41b64b04` fold-list extension to **5 commits + the FINAL 51-witness inventory** — ALL verified absent from g73 by ancestry (exit 1 each), OWED the g73e re-fold (§5) |
 
 ## 2. Per-file keep-one FINAL table
 
@@ -105,7 +105,7 @@ witnesses supplement minus the poof/pylon/splash duplicates.
 
 | File | Keep-one FINAL | Status |
 | ---- | -------------- | ------ |
-| waterfall family (draw.rs/mod.rs/ambient_sound.rs/sound.rs/audio.rs + consumers) | **ONE branch: g73 tip** (`82ae8b96` contract FINAL; `eee87f98` already folds g75 `e30ad7ba` + g74 `cd462c1a`) — g73's `liquid_loop_update` superset (ambientLava Manhattan pick+sum, create-arm-no-pitch, live re-pan) delegates to g75's pure `sound::liquid_ambience`; g74/g75 branches DROP wholesale | **g75's 3 post-fold commits OWED a re-fold** (§5): `d118f7ba` removes the manager-local disco cycle g73 still carries (`update_disco_rgb`, verified at g73 tip) for the shared-statics `set_disco_rgb` latch; `f4e3071f`'s 2 lava-fountain witnesses (the 717 SPAWN arm itself is already in g73's mod.rs, verified) |
+| waterfall family (draw.rs/mod.rs/ambient_sound.rs/sound.rs/audio.rs + consumers) | **ONE branch: g73 tip** (`82ae8b96` contract FINAL; `eee87f98` already folds g75 `e30ad7ba` + g74 `cd462c1a`) — g73's `liquid_loop_update` superset (ambientLava Manhattan pick+sum, create-arm-no-pitch, live re-pan) delegates to g75's pure `sound::liquid_ambience`; g74/g75 branches DROP wholesale | **g75's SEVEN post-fold commits OWED a re-fold** (§5, final-audit re-read `41b64b04`): `d118f7ba` removes the manager-local disco cycle g73 still carries (`update_disco_rgb` at mod.rs:300/:303, re-verified at g73 tip) for the shared-statics `set_disco_rgb` latch; `f4e3071f`'s 2 lava-fountain witnesses (the 717 SPAWN arm itself is already in g73's mod.rs:457, re-verified); **NEW `a3093a66` :3858 spout wiring** (`liquid_behind_spout_refused` + the manager-handle parameter/call-site hunks in liquids.rs/tiles.rs + anchor row); `d441713d` DELEGATED-STATUS + doc syncs; `17161648`/`41b64b04` the per-hunk fold-list + 51-witness inventory. g75's `d441713d` records the two-tier keep-BOTH-fns contract (g73 decision tier + g75 pure volume walk) — the merger keeps both, no body contest |
 
 ## 3. Merge-order recommendation
 
@@ -172,11 +172,13 @@ Counts re-tallied from the fetched tips (`#[test]` grep per file):
 | g63 projectile_trail_dust.rs | 19 | KEEP whole |
 | g64 proj_trail_dust.rs | 44 (40 batch + 4 wiring-wave) | KEEP whole (incl. the DropRng/concrete seam parity + the 642/509 stream-parity pair) |
 | e3 projectile_dust.rs | 21 (incl. the 1051 pick-first keep-one witness, `ab75231f`) | KEEP whole |
-| g73 waterfall family | 43 (contract inventory) | + g75's post-fold 5 (3 disco + 2 lava-fountain) = 48 after the re-fold |
+| g73 waterfall family | 43 (contract inventory) | + g75's post-fold 8 (3 disco + 2 lava-fountain + 3 spout, `a3093a66`) = **51** after the re-fold (g75 `41b64b04`'s pinned FINAL inventory supersedes the earlier 48) |
 
 Union total (dust lanes, pre-dedup): **309 witnesses** (the table
 sums to 309, + g11's pad integration witness in wiring.rs = 310;
-315 after the g75 post-fold re-fold); the exact
+**318** after the g75 post-fold re-fold — final-audit update: the
+earlier 315 assumed 5 post-fold witnesses, g75 `41b64b04` pins 8:
+3 disco + 2 lava-fountain + 3 spout); the exact
 post-dedup tally is the merge-verify wave's census (checklist 6 of
 research/66). No cargo/tests invoked this round.
 
@@ -184,7 +186,7 @@ research/66). No cargo/tests invoked this round.
 
 | # | Fold | Owed by | Detail |
 | - | ---- | ------- | ------ |
-| 1 | **g73e — the g75 post-fold falls sweep** | g73 (or the family merger) | `git log e30ad7ba..origin/task/W4-g75-honeyfall-draw` = `d118f7ba` + `f4e3071f` + `2b9ed81f`. The disco colour-source fix is SEMANTIC: g73's mod.rs still carries the manager-local `update_disco_rgb` cycle (out of phase with the app's `advance_disco`, init 0 vs Main.Initialize's DiscoR=255 :66780) — replace with g75's `set_disco_rgb` latch fed from params.disco beside `set_show_invisible` (frame/draw.rs). The 717 spawn arm is already in g73; only the 2 witnesses + the 3 disco witnesses + the sweep docs fold. The g73 contract's own cross-note demands this check at merge time. |
+| 1 | **g73e — the g75 post-fold falls sweep** | g73 (or the family merger) | **FINAL-AUDIT UPDATE: the fold-list is now FIVE commits** (`git log e30ad7ba..origin/task/W4-g75-honeyfall-draw` = 7 commits; `17161648`/`41b64b04` are the fold-list docs themselves). Per g75's own `41b64b04` per-hunk list: `d118f7ba` disco FIX critical (g73's mod.rs:300/:303 still carries the manager-local `update_disco_rgb` cycle, re-verified — out of phase with the app's `advance_disco`, init 0 vs Main.Initialize's DiscoR=255 :66780; replace with g75's `set_disco_rgb` latch fed from params.disco beside `set_show_invisible`, frame/draw.rs) + `f4e3071f` 2 lava-fountain witnesses (717 spawn arm already in g73 mod.rs:457) + `2b9ed81f` sweep docs + **`a3093a66` the :3858 spout wiring** (liquids.rs `liquid_behind_spout_refused` + manager-handle parameter/call-site hunks + tiles.rs call feed + anchor row; composes by OR with g80's `af6cd44f` inActive half — documented, not contested) + `d441713d` sound.rs DELEGATED-STATUS + 4 census-doc syncs (the two-tier keep-BOTH-fns contract). All 7 ancestry-checked ABSENT from g73 tip `82ae8b96` this round. Witness inventory: 43 + 5 sweep + 3 spout = **51** (g75's pinned final count supersedes this doc's earlier 48). |
 | 2 | **g11c — the snowing details F1-F7** | d130 (the canonical branch) or the weather merger | research/83's g11 addendum (`d892d8d4`) lists 7 exact folds onto d130's snow.rs: F1 g11's body + the `global` stream (retire the Snow splitmix + App.snow field), F2 MAX_SCREEN_W 4096 HiDef (re-derive every budget expectation), F3 restore the in-body gamePaused gate, F4 counter budget once-per-call (d130's shape — g11's per-attempt live_type census retires; this SUPERSEDES research/66 §6's "g11b hoist" note: the hoist target is d130's counter param, not g11's loop), F5 int attempt-loop shape, F6 env re-point (g11's scene_scan SnowingEnv block → SnowInputs + game_paused), F7 the 4 g11 snow witnesses re-pinned. VERIFIED at d130 tip `ec1d73c7`: snow.rs still pins 1920/splitmix/no pause gate — NONE of F1-F7 applied yet. |
 | 3 | **f6 double-atan2 drill fix** | the mount-resolve merger (step 7) | f6 tip still computes `d.y.atan2(d.x)` in F32; take e4's caller-passes-aim shape (double atan2, orchestrator_dust.rs:76-78 precedent). **EXACT 2-hunk patch published §7.1 (final-audit round)** — minimal in-place `(d.y as f64).atan2(d.x as f64) as f32` at mount_dust.rs:85 + the :1598 witness mirror; signature keeps (target, player_center), no RNG-order change. |
 | 4 | **research/116's 6 wiring gaps** | the main-lane merger (step 4) | 10/11/13 fall-through on reachable callers (Queen-Slime hook, Shellphone), other_position on the reqs/queue, style-9 pylon extraInfo2, style-5 waterStyle param, Player.Teleport head/tail arms, the double-grant cleanup. |
@@ -355,3 +357,20 @@ particles.rs g61-vs-g64 delta was diffed in full (8 comment lines);
 the f6 atan2, d130 snow.rs pin state, g73 disco-cycle state and the
 g75 post-fold commit list were verified against the fetched blobs,
 not commit messages alone.
+
+**Final-audit round (2026-11-21, this addendum):** tips re-fetched —
+e4 `2a79551a`, f6 `5daa1d70`, d130 `ec1d73c7`, g73 `82ae8b96`
+UNCHANGED (verdicts stand: f6 :85 still `d.y.atan2(d.x)` f32; d130
+snow.rs still splitmix/1920/no pause gate — F1-F7 unapplied; g73
+mod.rs:300/:303 still `update_disco_rgb`, :457 still the 717 arm);
+g75 ADVANCED to `41b64b04` (+4 commits, all 7 post-fold commits
+ancestry-checked absent from g73, exit 1 each). The §7.1 hunk quotes
+are verbatim from the f6/e4 tip blobs + Utils.cs:1655-1658 read
+in-tree; the §7.2 census matched every extracted `dust.type`
+condition line of Dust.cs:420-2400 against the d50 tip's
+`type_chain`/`pre_move` and diffed the GetAlpha type sets mechanically
+(123 C# types, only 327 absent from the Rust arms); dust_lights.rs
+d50-vs-main diff EMPTY (the G1 gap evidence); d130's particles.rs
+`snow_dust` field + minecart tick feed read at tip (the G2 seam).
+d54 anchors: 11/11 markers grep-present; branch diff 24 files, all
+task scope. No cargo/tests/rustfmt/graphify invoked.
