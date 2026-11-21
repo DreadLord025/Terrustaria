@@ -428,6 +428,15 @@
 //! does not carry yet; the 661/657 DEATH halves, the 371 bubble ring
 //! (`:84239`), the 686/594 gore-only deaths and the daybreak prologue
 //! (`:81735`) are g59/g60's death lane.
+//! Batch 30 (the census tail — the last simple live rows):
+//! - 89660 — 480 (`:89654-89661`): ×100 dust 5.
+//! - 89680 — 185 (`:89674-89681`): ×100 dust 5.
+//! - 89821 — the chain's final else 156 (`:89811-89822`): ×100 dust 5.
+//! - 87244 — the Brain of Cthulhu 266 (`:87238-87245`): ×100 dust 5.
+//! - 87265 — the Creeper 267 (`:87259-87266`): ×50 dust 5.
+//! - 84643 — the gold critters (`NPCID.Sets.IsGoldCritter`,
+//!   `NPCID.cs:10126`: 442-448/539/592/593/601/605/613/627,
+//!   `:84637-84644`): FLAT 10, the Next(232,234) type arg per dust.
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -772,6 +781,21 @@ pub fn replay_hit_dust(
     // > 0)` and RETURNS; the death halves are g59/g60's.
     if s.life <= 0 {
         return;
+    }
+    // `:84637-84644` — the gold critters (`NPCID.Sets.IsGoldCritter`,
+    // `NPCID.cs:10126`): a STANDALONE if that runs BEFORE the giant
+    // else-if chain — FLAT 10, the Next(232,234) type argument draws
+    // before each spawn. Type 627 ALSO sits in the chain's `:85942`
+    // group, so it falls through (both arms fire, gold first); every
+    // other gold type has no chain arm and returns.
+    if matches!(s.npc_type, 442..=448 | 539 | 592 | 593 | 601 | 605 | 613 | 627) {
+        for _ in 0..10 {
+            let t = rng.next_range(232, 234);
+            live_dust(s, t, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+        }
+        if s.npc_type != 627 {
+            return;
+        }
     }
     match s.npc_type {
         // `:84721-84749` — the slime family (1/16/71/244/535).
@@ -1551,6 +1575,19 @@ pub fn replay_hit_dust(
                     s, 4, dir, -1.0, 100, Color::new(149, 208, 104), 1.0,
                     rng, dust, ctx, world,
                 );
+            }
+        }
+        // `:89654-89681`/`:89811-89822`/`:87238-87245` — the ×100 dust-5
+        // tail rows: 480, 185, the chain's final else 156, the Brain 266.
+        480 | 185 | 156 | 266 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:87259-87266` — the Creeper: ×50 dust 5.
+        267 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
             }
         }
         // `:85027-85034` — 225: ×100 dust 4, alpha 100, the blue tint.
@@ -3884,27 +3921,82 @@ mod tests {
         let mut rng = UnifiedRandom::new(251);
         let mut dust = DustPool::new();
         replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
-        let mut twin_rng = UnifiedRandom::new(251);
+        let mut t2 = UnifiedRandom::new(251);
         let mut twin = DustPool::new();
         let max = std::f64::consts::PI;
-        let angle = twin_rng.next_double() * max - twin_rng.next_double() * max;
+        let angle = t2.next_double() * max - t2.next_double() * max;
         let spin = crate::bow_launch::rotated_by(Vec2::new(0.0, -3.0), angle);
         for i in 0..24u32 {
             let idx = twin.new_dust(
-                &mut twin_rng, &ctx, &world, Vec2::new(112.0, 109.0), 0, 0, 66,
+                &mut t2, &ctx, &world, Vec2::new(112.0, 109.0), 0, 0, 66,
                 0.0, 0.0, 0, Color::TRANSPARENT, 1.0,
             );
             let d = twin.slot_mut(idx);
             d.position = Vec2::new(112.0, 109.0);
             let a = (std::f32::consts::PI * 2.0 * i as f32 / 24.0) as f64;
             let v = crate::bow_launch::rotated_by(spin, a);
-            let f = 0.8 + twin_rng.next_float() * 0.4;
+            let f = 0.8 + t2.next_float() * 0.4;
             d.velocity = v * Vec2::new(1.05, 1.0) * f * 2.0;
             d.color = Color::new(135, 206, 235, 255);
             d.no_gravity = true;
-            d.scale += 0.5 + twin_rng.next_float();
+            d.scale += 0.5 + t2.next_float();
+        }
+        assert_eq!(rng, t2);
+        assert_eq!(dust.slots(), twin.slots());
+    }
+
+    /// W4-g62 batch 30 — the gold-critter block runs BEFORE the chain
+    /// (`NPC.cs:84637`): FLAT 10 with the Next(232,234) arg per dust;
+    /// 627 falls through to the `:85948` ×20 dust-5 arm AFTER it.
+    #[test]
+    fn w4_g62_the_gold_critter_block_and_the_627_fallthrough() {
+        let world = air();
+        let ctx = ctx();
+        let s = snap(442, 10, 10, 1.0);
+        let mut rng = UnifiedRandom::new(257);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(257);
+        let mut twin = DustPool::new();
+        for _ in 0..10 {
+            let t = twin_rng.next_range(232, 234);
+            twin.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, t,
+                1.0, -1.0, 0, Color::default(), 1.0,
+            );
         }
         assert_eq!(rng, twin_rng);
         assert_eq!(dust.slots(), twin.slots());
+        // 627: the gold block THEN the ×20 chain arm (dmg/lifeMax·20 = 2).
+        let g = snap(627, 100, 100, 10.0);
+        let mut r2 = UnifiedRandom::new(257);
+        let mut p2 = DustPool::new();
+        replay_hit_dust(&g, &mut r2, &mut p2, &ctx, &world);
+        let mut t2 = UnifiedRandom::new(257);
+        let mut q2 = DustPool::new();
+        for _ in 0..10 {
+            let t = t2.next_range(232, 234);
+            q2.new_dust(
+                &mut t2, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, t,
+                1.0, -1.0, 0, Color::default(), 1.0,
+            );
+        }
+        for _ in 0..2 {
+            q2.new_dust(
+                &mut t2, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 5,
+                1.0, -1.0, 0, Color::default(), 1.0,
+            );
+        }
+        assert_eq!(r2, t2);
+        assert_eq!(p2.slots(), q2.slots());
+        // The tail rows: 480/185/156/266 ×100 dust 5, 267 ×50.
+        for (t, mult) in [(480, 100.0), (185, 100.0), (156, 100.0), (266, 100.0), (267, 50.0)] {
+            let s3 = snap(t, 100, 100, 10.0);
+            let want = hit_count(10.0, 100, mult);
+            let mut r3 = UnifiedRandom::new(257);
+            let mut p3 = DustPool::new();
+            replay_hit_dust(&s3, &mut r3, &mut p3, &ctx, &world);
+            assert_eq!(p3.slots().iter().filter(|d| d.active).count() as u32, want, "type {t}");
+        }
     }
 }
