@@ -275,8 +275,15 @@ pub(crate) fn host_tile_edit(app: &mut App, server: &net::Server, id: u32, e: ne
         }
         15 => {
             // `Minecart.FrameTrack(x, y, pound: true)` (`:1229`) — the
-            // track framing is unported (`minecart.rs` module doc); the
-            // relay still runs (the C# falls through to `:1277`).
+            // C# default `mute: false`. The f11 canonical track-framing
+            // seam (`tr_core::minecart`, the switch-cycle pound branch);
+            // the fail-tile tail is the documented no-op fix over f11
+            // (the C# `KillTile(fail: true)` never removes the track,
+            // `WorldGen.cs:63709-63737` — the module doc). The relay
+            // still runs (the C# falls through to `:1277`).
+            if tr_core::minecart::frame_track(&mut app.world, x, y, true, false) {
+                app.world_key = None;
+            }
         }
         18 => {
             // `Wiring.PokeLogicGate` (`:1241-1245`) — the C# RETURNS (no
@@ -477,7 +484,14 @@ pub(crate) fn client_tile_edit(app: &mut App, e: net::TileEdit) {
                 app.world_key = None;
             }
         }
-        15 | 21 => {}
+        15 => {
+            // The client runs the same `FrameTrack(pound: true)` (the C#
+            // reader has one body for both netModes).
+            if tr_core::minecart::frame_track(&mut app.world, x, y, true, false) {
+                app.world_key = None;
+            }
+        }
+        21 => {}
         18 => {
             app.wiring.poke_logic_gate(&mut app.world, x, y);
             app.world_key = None;

@@ -6189,6 +6189,63 @@ mod g48_apply_tests {
         assert!(host_app.items.iter().any(|d| d.kind == 530), "the 530 drop");
     }
 
+    /// `case 17` kind 15 (`MessageBuffer.cs:1227-1230`): a client's track
+    /// pound runs `Minecart.FrameTrack(x, y, pound: true)` (the C# default
+    /// `mute: false`) on the host and relays; the receiving client frames
+    /// its own copy. A level straight (front frame 1, both connections 1)
+    /// between two rails switches to the up-slope frame 5 (left 1 / right
+    /// 2 — the first two-sided option of mask 18 after the current front,
+    /// `Minecart.cs:1040-1108`); the C# fail-tile tail never removes the
+    /// track (the W4-g48 no-op fix over f11's kill). WRITTEN NOT RUN.
+    #[test]
+    fn g48_17_track_pound_edit_frames_and_replicates() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // Three rails in a row at y=3: (5,3) front 1, (6,3) front 1 back
+        // −1 (the hit), (7,3) front 1 — the mask is 2|16 = 18.
+        for app in [&mut host_app, &mut client_app] {
+            for x in 5..=7i32 {
+                let i = app.world.index(x, 3);
+                app.world.tiles[i] = tr_core::Tile {
+                    kind: 314,
+                    frame_x: 1,
+                    frame_y: -1,
+                    ..Default::default()
+                };
+                app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TileEdit(net::TileEdit {
+                kind: 15,
+                x: 6,
+                y: 3,
+                value: 0,
+                style: 0,
+            }));
+        }
+        let mut framed = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            framed = host_app.world.tile_frame_x(6, 3) == 5
+                && client_app.world.tile_frame_x(6, 3) == 5;
+            if framed {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(framed, "the track switched to the up-slope frame on both sides");
+        for app in [&host_app, &client_app] {
+            // The fail-tile tail (`flag4` true, mute false) did NOT kill
+            // the track (`WorldGen.cs:63709-63737` — no removal).
+            let t = app.world.tile(6, 3).unwrap();
+            assert!(t.active() && t.kind == 314, "the track survives the fail tick");
+            assert_eq!(t.frame_y, -1, "no back connection on the mask");
+        }
+    }
+
     /// `case 19` action 0 (`MessageBuffer.cs:1309-1311`): a client's door-open
     /// toggle runs `WorldGen.OpenDoor` on the host and relays the normalised
     /// direction to the other peers; the receiving client opens its copy.
