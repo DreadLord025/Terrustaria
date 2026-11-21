@@ -1293,6 +1293,21 @@ impl ItemDrop {
     /// suppressed on a conveyor (`item.onConveyor`) or after a shimmer
     /// transform (`:38614-38617`). The rotation pivots on the frame centre
     /// (`vector = frame.Size()/2`, `:38610`). Returns the quad count.
+    ///
+    /// W4-g15 lane 5 — the draw-side family the single-quad pass skipped:
+    /// * the shimmer colour fade (`:38621-38634`): a `shimmered` drop draws
+    ///   `255*(1-shimmerTime)` on ALL channels; a ramping one scales its lit
+    ///   colour by `(1-shimmerTime)` (the per-channel byte truncation),
+    /// * the aura echo copies (`:38667-38721`): the boss bags / the fallen
+    ///   star / the mana-cloak star orbit tinted ghost copies (the
+    ///   `timeSinceItemSpawned/240 + GlobalTimeWrappedHourly*0.04` phase, the
+    ///   `%4`/`%5` triangle radius pulse),
+    /// * the mana-crystal pulse (`:38722-38726`): 1522-1527/3643 draw
+    ///   `(250,250,250, mouseTextColor/2)` at `mouseTextColor/1000 + 0.8`,
+    /// * the shimmered additive second copy (`:38732-38735`): alpha 0 rides
+    ///   the premultiplied pipeline as additive (the pylon-ring convention).
+    /// `mouse_text_color` is `Main.mouseTextColor`; `anim_time % 3600` is
+    /// `Main.GlobalTimeWrappedHourly` (the caller folds it).
     pub fn draw(
         &self,
         r: &mut tr_render::SpriteRenderer,
@@ -1300,6 +1315,7 @@ impl ItemDrop {
         light: &LightMap,
         style: &LightStyle,
         anim_time: f32,
+        mouse_text_color: u8,
     ) -> u32 {
         let uv = if let Some((uv, _, _)) = lookups.item_icon(self.kind) {
             Some(uv)
@@ -1327,38 +1343,238 @@ impl ItemDrop {
         } else {
             self.vel.x * 0.2
         };
-        if rot == 0.0 {
+        // `Main.cs:38621-38634` — the shimmer colour fade (the byte
+        // truncations ride `shimmer_fade_color`).
+        let mut col = shimmer_fade_color(c, self.shimmered, self.shimmer_time);
+        // `Main.cs:38722-38726` — the mana crystals (1522-1527) and the
+        // Celestial Starboard 3643 pulse. The scale rides the quad size +
+        // the rotation origin (the C#'s `Draw(..., scale)` about the frame
+        // centre).
+        let mut scale = 1.0f32;
+        if matches!(self.kind, 1522..=1527 | 3643) {
+            let (c2, s2) = mana_crystal_pulse(mouse_text_color, self.shimmer_time);
+            col = c2;
+            scale = s2;
+        }
+        let mut quads = 0u32;
+        // `Main.cs:38667-38721` — the aura echo copies, drawn BEFORE the
+        // main sprite (the offsets/tints ride `aura_echo_offsets`).
+        let anchor = [self.pos.x + 1.0 + SIZE * 0.5, self.pos.y + 1.0 + SIZE * 0.5];
+        for (off, col4) in aura_echo_offsets(self.kind, self.age_ticks, anim_time % 3600.0) {
+            let pos = [
+                anchor[0] + off[0] - SIZE * 0.5 * scale,
+                anchor[1] + off[1] - SIZE * 0.5 * scale,
+            ];
+            r.push_sprite_origin_rot(
+                pos,
+                [SIZE * scale, SIZE * scale],
+                uv,
+                col4,
+                rot,
+                [SIZE * 0.5 * scale, SIZE * 0.5 * scale],
+            );
+            quads += 1;
+        }
+        if self.kind == 4143 {
+            // `:38720` — the white 128-alpha copy at the anchor, BEFORE the
+            // lit main draw.
+            r.push_sprite_origin_rot(
+                [anchor[0] - SIZE * 0.5, anchor[1] - SIZE * 0.5],
+                [SIZE, SIZE],
+                uv,
+                [1.0, 1.0, 1.0, 128.0 / 255.0],
+                rot,
+                [SIZE * 0.5, SIZE * 0.5],
+            );
+            quads += 1;
+        }
+        if rot == 0.0 && scale == 1.0 {
             r.push_sprite(
                 [self.pos.x + 1.0, self.pos.y + 1.0],
                 [SIZE, SIZE],
                 uv,
-                [c[0], c[1], c[2], 1.0],
+                col,
             );
         } else {
             r.push_sprite_origin_rot(
                 [self.pos.x + 1.0, self.pos.y + 1.0],
-                [SIZE, SIZE],
+                [SIZE * scale, SIZE * scale],
                 uv,
-                [c[0], c[1], c[2], 1.0],
+                col,
                 rot,
-                [SIZE * 0.5, SIZE * 0.5],
+                [SIZE * 0.5 * scale, SIZE * 0.5 * scale],
             );
         }
-        1
+        quads += 1;
+        // `Main.cs:38732-38735` — the shimmered additive copy: the same
+        // tint with A=0 (the premultiplied pipeline adds it, the pylon
+        // glow-ring convention).
+        if self.shimmered {
+            let add = [col[0], col[1], col[2], 0.0];
+            if rot == 0.0 && scale == 1.0 {
+                r.push_sprite([self.pos.x + 1.0, self.pos.y + 1.0], [SIZE, SIZE], uv, add);
+            } else {
+                r.push_sprite_origin_rot(
+                    [self.pos.x + 1.0, self.pos.y + 1.0],
+                    [SIZE * scale, SIZE * scale],
+                    uv,
+                    add,
+                    rot,
+                    [SIZE * 0.5 * scale, SIZE * 0.5 * scale],
+                );
+            }
+            quads += 1;
+        }
+        quads
     }
+}
+
+/// `Main.DrawItem`'s shimmer colour fade (`Main.cs:38621-38634`), W4-g15
+/// lane 5. The C# writes BYTES: a `shimmered` drop replaces every channel
+/// with `(byte)(255f * (1 - shimmerTime))`; a ramping one scales the lit
+/// colour per channel with the same truncation. The port's tint is the
+/// 0..1 float the pipeline multiplies — the byte round-trip keeps the
+/// truncation (`(byte)(c*255)` then `*(1-t)` then `/255`). `lit` is the
+/// shaded RGB; the alpha stays 1 (the C# `GetAlpha` colour's A is 255 for
+/// a plain drop — the `item.alpha` rows are the unported GetAlpha family).
+pub(crate) fn shimmer_fade_color(lit: [f32; 3], shimmered: bool, shimmer_time: f32) -> [f32; 4] {
+    if shimmered {
+        let v = (255.0 * (1.0 - shimmer_time)) as u8 as f32 / 255.0;
+        [v, v, v, v]
+    } else if shimmer_time > 0.0 {
+        let mut col = [lit[0], lit[1], lit[2], 1.0];
+        for ch in col.iter_mut() {
+            let b = (*ch * 255.0) as u8;
+            *ch = (b as f32 * (1.0 - shimmer_time)) as u8 as f32 / 255.0;
+        }
+        col
+    } else {
+        [lit[0], lit[1], lit[2], 1.0]
+    }
+}
+
+/// `Main.DrawItem`'s mana-crystal pulse (`Main.cs:38722-38726`), W4-g15
+/// lane 5: kinds 1522-1527/3643 draw `(250, 250, 250, mouseTextColor/2)`
+/// (integer division) at scale `(int)mouseTextColor/1000 + 0.8`; a live
+/// shimmer ramp scales all four channels by `(1 - shimmerTime)` with the
+/// per-channel byte truncation (`:38724`). Returns (colour, scale).
+pub(crate) fn mana_crystal_pulse(mouse_text_color: u8, shimmer_time: f32) -> ([f32; 4], f32) {
+    let v = 250.0 / 255.0;
+    let a = (mouse_text_color / 2) as f32 / 255.0;
+    let col = if shimmer_time > 0.0 {
+        let f = 1.0 - shimmer_time;
+        let vb = (250.0 * f) as u8 as f32 / 255.0;
+        let ab = ((mouse_text_color as f32 / 2.0) * f) as u8 as f32 / 255.0;
+        [vb, vb, vb, ab]
+    } else {
+        [v, v, v, a]
+    };
+    let scale = (mouse_text_color as i32 as f32) / 1000.0 + 0.8;
+    (col, scale)
+}
+
+/// `Main.DrawItem`'s aura echo copies (`Main.cs:38667-38721`), W4-g15
+/// lane 5: the boss bags (`ItemID.Sets.BossBag`), the fallen star 75 and
+/// the mana-cloak star 4143 orbit tinted ghost copies about the draw
+/// anchor. The phase is `timeSinceItemSpawned/240 +
+/// GlobalTimeWrappedHourly*0.04`; the radius pulse is the `%period/2`
+/// triangle folded to 0.5..1. Each copy sits at
+/// `(0, radius).RotatedBy((k + phase) * 2π) * pulse` with a FIXED colour
+/// (no light). Returns (offset, colour) pairs in draw order — the caller
+/// adds the anchor and spins each copy with the main sprite's `rot`.
+/// `gtw` is `Main.GlobalTimeWrappedHourly` (`anim_time % 3600`).
+pub(crate) fn aura_echo_offsets(kind: u16, age_ticks: i32, gtw: f32) -> Vec<([f32; 2], [f32; 4])> {
+    // (radius, k-step, pulse period, tint) per ring, in the C# draw order.
+    let rings: &[(f32, f32, f32, [u8; 4])] = if crate::entity_lights::BOSS_BAG.contains(&kind) {
+        // `:38676-38683` — 4 copies at radius 8 step 0.25, then 3 at
+        // radius 4 step 0.34; the `%4` triangle.
+        &[
+            (8.0, 0.25, 4.0, [90, 70, 255, 50]),
+            (4.0, 0.34, 4.0, [140, 120, 255, 77]),
+        ]
+    } else if kind == 75 {
+        // `:38694-38701` — the fallen star: the same two rings, the `%5`
+        // triangle, the blue tints.
+        &[
+            (8.0, 0.25, 5.0, [50, 50, 255, 50]),
+            (4.0, 0.34, 5.0, [120, 120, 255, 127]),
+        ]
+    } else if kind == 4143 {
+        // `:38712-38719` — the mana-cloak star: TWO 0.34 rings (8 then 4),
+        // the `%5` triangle (the white 128-alpha main copy is the caller's).
+        &[
+            (8.0, 0.34, 5.0, [30, 30, 155, 60]),
+            (4.0, 0.34, 5.0, [60, 60, 127, 57]),
+        ]
+    } else {
+        return Vec::new();
+    };
+    let phase = age_ticks as f32 / 240.0 + gtw * 0.04;
+    let mut out = Vec::with_capacity(7);
+    for &(radius, step, period, tint) in rings {
+        let mut pulse = gtw % period / 2.0;
+        if pulse >= 1.0 {
+            pulse = 2.0 - pulse;
+        }
+        pulse = pulse * 0.5 + 0.5;
+        let col = [
+            tint[0] as f32 / 255.0,
+            tint[1] as f32 / 255.0,
+            tint[2] as f32 / 255.0,
+            tint[3] as f32 / 255.0,
+        ];
+        // The C# `for (float k = 0f; k < 1f; k += step)` — the f32
+        // accumulation is load-bearing (0.34 lands 3 copies).
+        let mut k = 0.0f32;
+        while k < 1.0 {
+            // `(num6 + num4) * ((float)Math.PI * 2f)` — the f32 sum times
+            // the f32 2π; `RotatedBy` takes the double angle and casts its
+            // cos/sin to f32 (`Utils.cs:1675-1684`).
+            let ang = ((k + phase) * (std::f32::consts::PI * 2.0)) as f64;
+            // `(0, radius).RotatedBy(ang)`: `(-sin·r, cos·r)`.
+            let off = [
+                -(ang.sin() as f32) * radius * pulse,
+                (ang.cos() as f32) * radius * pulse,
+            ];
+            out.push((off, col));
+            k += step;
+        }
+    }
+    out
 }
 
 /// Hash of the item list for the G6 world-range key; includes the animation
 /// step and the velocity spin's source (`Main.cs:38613`'s `velocity.X *
 /// 0.2`) so a rolling drop redraws.
-pub fn render_key(items: &[ItemDrop], anim_step: u32) -> u32 {
+///
+/// W4-g15 lane 5 — the new draw inputs ride the key ONLY when a drop
+/// consumes them (the waterfall/vine zero-when-absent convention):
+/// * `shimmer_time`'s bits while a fade is live (`:38621-38634`),
+/// * the aura families' `age_ticks` + the full `GlobalTimeWrappedHourly`
+///   (`anim_time % 3600`, the `:38669` phase / radius pulse) — a boss bag /
+///   fallen star / mana-cloak star on screen animates every frame, so the
+///   world range rebuilds every frame while one lies in view;
+/// * the mana-crystal pulse reads `mouseTextColor`, already covered by
+///   `light_params` (`LightParams::identity` hashes it).
+pub fn render_key(items: &[ItemDrop], anim_step: u32, anim_time: f32) -> u32 {
     let mut h = items.len() as u32 ^ (anim_step << 24);
+    let mut aura = false;
     for it in items {
         h = h.wrapping_mul(31).wrapping_add(it.kind as u32);
         h = h.wrapping_mul(31).wrapping_add(it.pos.x.to_bits());
         h = h.wrapping_mul(31).wrapping_add(it.pos.y.to_bits());
         h = h.wrapping_mul(31).wrapping_add(it.count);
         h = h.wrapping_mul(31).wrapping_add(it.vel.x.to_bits());
+        if it.shimmered || it.shimmer_time > 0.0 {
+            h = h.wrapping_mul(31).wrapping_add(it.shimmer_time.to_bits());
+        }
+        if it.kind == 75 || it.kind == 4143 || crate::entity_lights::BOSS_BAG.contains(&it.kind) {
+            aura = true;
+            h = h.wrapping_mul(31).wrapping_add(it.age_ticks as u32);
+        }
+    }
+    if aura {
+        h = h.wrapping_mul(31).wrapping_add((anim_time % 3600.0).to_bits());
     }
     h
 }
@@ -1367,6 +1583,122 @@ pub fn render_key(items: &[ItemDrop], anim_step: u32) -> u32 {
 mod tests {
     use super::*;
     use tr_core::tile::{Tile, FLAG_ACTIVE};
+
+    /// W4-g15 lane 5 — `Main.DrawItem`'s shimmer fade (`Main.cs:38621-
+    /// 38634`): a shimmered drop replaces ALL channels with the byte
+    /// `(byte)(255*(1-t))`; a ramping drop scales the lit colour per
+    /// channel with the same truncation. At t=0.5 the shimmered colour is
+    /// `(byte)127.5 = 127` on every channel; a lit 1.0 channel ramps
+    /// `(byte)(255*0.5) = 127` too, a lit 0.5 channel `(byte)127.5 = 127`
+    /// then `(byte)63.5 = 63`.
+    #[test]
+    fn w4_g15_the_shimmer_fade_truncates_per_channel() {
+        let c = shimmer_fade_color([1.0, 0.5, 0.0], true, 0.5);
+        assert_eq!(c, [127.0 / 255.0; 4], "the shimmered flat fade");
+        let c = shimmer_fade_color([1.0, 0.5, 0.0], false, 0.5);
+        assert_eq!(c[0], 127.0 / 255.0);
+        assert_eq!(c[1], 63.0 / 255.0);
+        assert_eq!(c[2], 0.0);
+        assert_eq!(c[3], 1.0, "the ramp keeps A=1");
+        // t=0: the lit colour passes through untouched.
+        let c = shimmer_fade_color([0.2, 0.4, 0.6], false, 0.0);
+        assert_eq!(c, [0.2, 0.4, 0.6, 1.0]);
+        // t=1: the shimmered drop is fully transparent black.
+        assert_eq!(shimmer_fade_color([1.0; 3], true, 1.0), [0.0; 4]);
+    }
+
+    /// W4-g15 lane 5 — the mana-crystal pulse (`Main.cs:38722-38726`):
+    /// `(250,250,250, mouseTextColor/2)` at `mouseTextColor/1000 + 0.8`.
+    /// At 225: alpha `(byte)112` (225/2 integer division), scale 1.025.
+    /// The shimmer ramp scales all four channels (`:38724`).
+    #[test]
+    fn w4_g15_the_mana_crystal_pulse_reads_mouse_text_color() {
+        let (c, s) = mana_crystal_pulse(225, 0.0);
+        assert_eq!(c[0], 250.0 / 255.0);
+        assert_eq!(c[3], 112.0 / 255.0, "225/2 = 112 (int division)");
+        assert!((s - 1.025).abs() < 1e-6, "225/1000 + 0.8");
+        let (c, s) = mana_crystal_pulse(190, 0.0);
+        assert_eq!(c[3], 95.0 / 255.0);
+        assert!((s - 0.99).abs() < 1e-6);
+        // The shimmer ramp at t=0.5: RGB (byte)125, A (byte)(112.5*0.5)=56.
+        let (c, _) = mana_crystal_pulse(225, 0.5);
+        assert_eq!(c[0], 125.0 / 255.0);
+        assert_eq!(c[3], 56.0 / 255.0);
+    }
+
+    /// W4-g15 lane 5 — the aura echoes (`Main.cs:38667-38721`): the boss
+    /// bag draws 4+3 copies, the fallen star 4+3, the mana-cloak star 3+3;
+    /// every other kind draws none. At gtw=0/age=0 the phase is 0 and the
+    /// pulse is 0.5 (`0%4/2 = 0 → 0*0.5+0.5`), so the k=0 copy of the
+    /// radius-8 ring sits at `(0, 8*0.5) = (0, 4)` — straight DOWN from
+    /// the anchor (`(0,r).RotatedBy(0) = (0,r)`).
+    #[test]
+    fn w4_g15_the_aura_echo_rings_orbit_the_anchor() {
+        let e = aura_echo_offsets(3318, 0, 0.0);
+        assert_eq!(e.len(), 7, "the boss bag's 4 + 3 copies");
+        assert!((e[0].0[0]).abs() < 1e-6);
+        assert!((e[0].0[1] - 4.0).abs() < 1e-6, "k=0 at (0, 8*0.5)");
+        assert_eq!(e[0].1, [90.0 / 255.0, 70.0 / 255.0, 1.0, 50.0 / 255.0]);
+        // The k=0.25 copy: angle π/2 → (-8*0.5, 0) = (-4, 0) (left).
+        assert!((e[1].0[0] + 4.0).abs() < 1e-4);
+        assert!(e[1].0[1].abs() < 1e-4);
+        // The second ring's first copy: radius 4 → (0, 2).
+        assert!((e[4].0[1] - 2.0).abs() < 1e-6);
+        assert_eq!(e[4].1, [140.0 / 255.0, 120.0 / 255.0, 1.0, 77.0 / 255.0]);
+        // The fallen star: the same shape, the blue tints, the %5 pulse.
+        let e = aura_echo_offsets(75, 0, 0.0);
+        assert_eq!(e.len(), 7);
+        assert_eq!(e[0].1, [50.0 / 255.0, 50.0 / 255.0, 1.0, 50.0 / 255.0]);
+        // The mana-cloak star: 3 + 3 (both rings step 0.34).
+        let e = aura_echo_offsets(4143, 0, 0.0);
+        assert_eq!(e.len(), 6);
+        assert_eq!(e[0].1, [30.0 / 255.0, 30.0 / 255.0, 155.0 / 255.0, 60.0 / 255.0]);
+        // A plain drop: no echoes.
+        assert!(aura_echo_offsets(2, 0, 0.0).is_empty());
+        // The pulse triangle: gtw=2 → 2%4/2 = 1 → folded 2-1 = 1 →
+        // 1*0.5+0.5 = 1.0, so the k=0 copy sits at (0, 8).
+        let e = aura_echo_offsets(3318, 0, 2.0);
+        assert!((e[0].0[1] - 8.0).abs() < 1e-4, "the pulse peak");
+        // The age phase: age_ticks=240 → phase 1.0 → the k=0 copy wraps
+        // the full turn back to (0, 4) at gtw=0.
+        let e = aura_echo_offsets(3318, 240, 0.0);
+        assert!((e[0].0[0]).abs() < 1e-4);
+        assert!((e[0].0[1] - 4.0).abs() < 1e-4);
+    }
+
+    /// W4-g15 lane 5 — the G6 key coverage: an aura drop's `age_ticks` and
+    /// the wrapped clock ride `render_key` (the echoes animate every
+    /// frame); a plain-drop world's key ignores the clock (the
+    /// zero-when-absent convention keeps the old cache behaviour).
+    #[test]
+    fn w4_g15_the_render_key_covers_the_aura_inputs_only_when_present() {
+        let plain = vec![ItemDrop::new(2, 1, 0, 100.0, 100.0, 0.0, 0.0, 0.0)];
+        assert_eq!(
+            render_key(&plain, 0, 1.0),
+            render_key(&plain, 0, 2.0),
+            "a plain world ignores the clock"
+        );
+        let mut star = ItemDrop::new(75, 1, 0, 100.0, 100.0, 0.0, 0.0, 0.0);
+        let aura = vec![star.clone()];
+        assert_ne!(
+            render_key(&aura, 0, 1.0),
+            render_key(&aura, 0, 2.0),
+            "the fallen star's echoes read the clock"
+        );
+        star.age_ticks = 5;
+        assert_ne!(
+            render_key(&aura, 0, 1.0),
+            render_key(&[star], 0, 1.0),
+            "the age phase rides the key"
+        );
+        // The shimmer fade rides the key while live.
+        let mut sh = ItemDrop::new(2, 1, 0, 100.0, 100.0, 0.0, 0.0, 0.0);
+        sh.shimmered = true;
+        sh.shimmer_time = 0.5;
+        let k1 = render_key(&[sh.clone()], 0, 1.0);
+        sh.shimmer_time = 0.4;
+        assert_ne!(k1, render_key(&[sh], 0, 1.0));
+    }
 
     /// S1-E-21 wave A — the per-site cue selection: `Item.UseSound` rows
     /// (`Item.cs`'s `SetDefaults` cases + the `DefaultTo*` helpers) resolve

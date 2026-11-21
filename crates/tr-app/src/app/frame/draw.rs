@@ -958,7 +958,7 @@ impl App {
                         },
                         player_key,
                         npc_key,
-                        items_key: item::render_key(items, ((anim_time * 8.0) as u32) & 15),
+                        items_key: item::render_key(items, ((anim_time * 8.0) as u32) & 15, anim_time),
                         hand_key: {
                             let slot = inventory.get(*selected).filter(|s| s.count > 0);
                             let held = slot.map_or(0, |s| s.kind as u32);
