@@ -30,8 +30,10 @@
 //! own-stream precedent, but fully private here). The draw ORDER is the
 //! C#'s: per lantern X then Y (`GenerateLanterns`), then speed/variant/
 //! float-timer (`ResetLantern`); a reset draws speed/variant/timer then the
-//! new X (`Update`'s `:141-142`). The seed is fixed (0) for determinism —
-//! the C#'s time seed is unobservable in a deterministic port (recorded).
+//! new X (`Update`'s `:141-142`). The seed is the WORLD seed xored with
+//! `0x1A2B_3C4D` (c39's `event_skies.rs` form, grafted per research/114
+//! §1b's KEEP verdict — per-world variety, still deterministic; the C#'s
+//! time seed is unobservable in a deterministic port, recorded).
 //!
 //! Deliberate folds (ANALYSIS "The lantern-night sky (W4-f40)"):
 //! - `FocusHelper.PauseSkies` (`:115`) — the port's update rides the same
@@ -92,23 +94,19 @@ pub(crate) struct LanternSky {
     lanterns_drawing: i32,
 }
 
-impl Default for LanternSky {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl LanternSky {
-    pub(crate) fn new() -> Self {
+    /// The sky's private stream seeds from the world seed (c39 research/114
+    /// §1b's preferred form: `world_seed ^ 0x1A2B_3C4D`, the
+    /// `event_skies.rs:105` graft). The C#'s `new UnifiedRandom()` is
+    /// time-seeded; the port pins it per world — deterministic, with
+    /// per-world scatter variety (module docs).
+    pub(crate) fn new(world_seed: u64) -> Self {
         Self {
             active: false,
             leaving: false,
             opacity: 0.0,
             lanterns: Vec::new(),
-            // The C#'s `new UnifiedRandom()` is time-seeded; the port pins
-            // 0 for determinism (the private stream is unobservable — the
-            // module docs record it).
-            random: UnifiedRandom::new(0),
+            random: UnifiedRandom::new((world_seed ^ 0x1A2B_3C4D) as i32),
             lanterns_drawing: 0,
         }
     }
@@ -378,7 +376,7 @@ mod tests {
     /// stream is deterministic (the pinned seed).
     #[test]
     fn w4_f40_generate_lanterns_fills_the_depth_ladder() {
-        let mut sky = LanternSky::new();
+        let mut sky = LanternSky::new(0);
         sky.activate(800, 1200, 5000.0, 720.0, 400.0);
         assert_eq!(sky.lanterns.len(), 300, "maxTilesY / 4 = 1200 / 4");
         assert_eq!(sky.lanterns_drawing, 300);
@@ -397,7 +395,7 @@ mod tests {
             assert!(l.speed >= -4.0 && l.speed < -1.5, "{}", l.speed);
         }
         // Determinism: a second sky with the same seed regenerates identically.
-        let mut twin = LanternSky::new();
+        let mut twin = LanternSky::new(0);
         twin.activate(800, 1200, 5000.0, 720.0, 400.0);
         for (a, b) in sky.lanterns.iter().zip(twin.lanterns.iter()) {
             assert_eq!(a.position, b.position);
@@ -412,7 +410,7 @@ mod tests {
     /// timer decays; a lantern rising past 300 resets (or leaves).
     #[test]
     fn w4_f40_update_walks_the_opacity_and_decays_the_float_timer() {
-        let mut sky = LanternSky::new();
+        let mut sky = LanternSky::new(0);
         sky.activate(800, 1200, 5000.0, 720.0, 400.0);
         // 100 up-ticks reach full opacity.
         for _ in 0..100 {
@@ -440,7 +438,7 @@ mod tests {
     /// (`worldSurface * 16 + 1600`) with a fresh float timer.
     #[test]
     fn w4_f40_a_rising_lantern_resets_to_the_surface_band() {
-        let mut sky = LanternSky::new();
+        let mut sky = LanternSky::new(0);
         sky.activate(800, 1200, 5000.0, 720.0, 400.0);
         sky.lanterns[0].position.y = 250.0;
         sky.lanterns[0].time_until_float = 0;
@@ -467,7 +465,7 @@ mod tests {
     fn w4_f40_the_lantern_drift_consumes_the_live_wind() {
         // One lantern, i=0 of len=1, so the depth factor is (0/1+1.5)/2.5.
         // Pin speed and the float timer so the Y terms are exactly known.
-        let mut sky = LanternSky::new();
+        let mut sky = LanternSky::new(0);
         sky.lanterns = vec![Lantern {
             variant: 0,
             time_until_float: 0,
@@ -493,7 +491,7 @@ mod tests {
         assert!(sky.lanterns[0].rotation < 0.0, "negative wind flips the rotation");
         // The zero-wind fallback: wind 0 → 0.1, X drift = (0.1+0.1)*2*0.5*0.6
         // = 0.12 (NOT zero — the lanterns still drift on a calm night).
-        let mut calm = LanternSky::new();
+        let mut calm = LanternSky::new(0);
         calm.lanterns = vec![Lantern {
             variant: 0,
             time_until_float: 0,
@@ -510,6 +508,43 @@ mod tests {
             (calm.lanterns[0].position.x - 0.12).abs() < 1e-5,
             "the 0→0.1 fallback still drifts: {}",
             calm.lanterns[0].position.x
+        );
+    }
+
+    /// W4-f40 FINAL — the world-seed graft (c39 research/114 §1b's preferred
+    /// RNG form, `event_skies.rs:105`'s `world_seed ^ 0x1A2B_3C4D`): the
+    /// private stream seeds PER WORLD — two same-seed skies regenerate
+    /// identically, two different-seed skies scatter differently. The C#'s
+    /// time seed is unobservable; the port's per-world seed keeps both
+    /// determinism and variety (the module docs' recorded deviation).
+    #[test]
+    fn w4_f40_the_private_stream_seeds_from_the_world_seed() {
+        let mut a = LanternSky::new(7);
+        a.activate(800, 1200, 5000.0, 720.0, 400.0);
+        let mut twin = LanternSky::new(7);
+        twin.activate(800, 1200, 5000.0, 720.0, 400.0);
+        for (x, y) in a.lanterns.iter().zip(twin.lanterns.iter()) {
+            assert_eq!(x.position, y.position, "same seed, same scatter");
+            assert_eq!(x.speed, y.speed);
+            assert_eq!(x.variant, y.variant);
+            assert_eq!(x.time_until_float, y.time_until_float);
+        }
+        let mut b = LanternSky::new(8);
+        b.activate(800, 1200, 5000.0, 720.0, 400.0);
+        assert!(
+            a.lanterns.iter().zip(b.lanterns.iter()).any(|(x, y)| x.position != y.position),
+            "a different world seed scatters differently"
+        );
+        // The xor constant is c39's: seed 0's stream equals a bare
+        // `UnifiedRandom::new(0x1A2B_3C4D)` (the graft's exact form).
+        let mut probe = tr_core::UnifiedRandom::new(0x1A2B_3C4D);
+        let mut zero = LanternSky::new(0);
+        zero.activate(800, 1200, 5000.0, 720.0, 400.0);
+        // The first Generate draw is `Next(0, maxTilesX)` per lantern.
+        assert_eq!(
+            zero.lanterns[0].position.x as i32,
+            probe.next_range(0, 800) * 16,
+            "seed 0 rides the 0x1A2B_3C4D xor"
         );
     }
 }

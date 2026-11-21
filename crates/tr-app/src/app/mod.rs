@@ -4041,7 +4041,7 @@ impl App {
                 }
                 ambience
             },
-            lantern_sky: crate::render::lantern_sky::LanternSky::new(),
+            lantern_sky: crate::render::lantern_sky::LanternSky::new(world_seed),
             lantern_sky_step: FixedStepper::new(1.0 / 60.0, 8),
 
             tree_wind_counter: 0.0,

@@ -39290,8 +39290,11 @@ cargo/rustc/tests invoked).
 Deliberate folds (recorded):
 - The sky's `_random` is a PRIVATE `UnifiedRandom` (`LanternSky.cs:71`,
   the time-seeded ctor) вЂ” NOT `Main.rand`, on no named port stream. The
-  port pins seed 0 for determinism (the C#'s time seed is unobservable in a
-  deterministic port). The draw ORDER is the C#'s (X then Y in Generate,
+  port seeds it from the WORLD seed xored 0x1A2B_3C4D (c39's
+  `event_skies.rs` form, grafted per research/114 §1b's KEEP verdict:
+  per-world variety, still deterministic; the earlier pinned-0 seed is
+  superseded). The C#'s time seed is unobservable in a
+  deterministic port. The draw ORDER is the C#'s (X then Y in Generate,
   speed/variant/timer in Reset).
 - `FocusHelper.PauseSkies` folds into the step-gated ambience phase; the
   `gameMenu` draw-clear folds into the in-world-only sky pass.
