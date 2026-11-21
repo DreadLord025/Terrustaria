@@ -39302,3 +39302,37 @@ ctor row added (`NPC.cs:11342`). The 112/666 whole-arm burst
 meteor-head twin-pool replay, the snowman trio's shared census, the
 ice-slime pairs, the Crimslime alpha/vel×2, the Illuminant vel×1.5, the
 off-screen sentinel writes, the non-batch no-draw gate.
+
+### W4-g59 batch 2 (the gore-tail kinds, 10 kinds)
+
+The next 10 ascending dust-first clean kinds present in the port:
+2 DemonEye (`:86459-86462`, 50× type-5 2×dir/-2), 5 ServantOfCthulhu
+(`:87351-87354`, 20× type-5), 6/7/13 the EaterOfSouls/Devourer-head/
+EoW-head type-18 trio (`:87512`/`:87566`/`:87632`, 50× type-18 at
+`this.alpha`/`this.color`/`this.scale`, SpeedX = dir NOT doubled),
+10 GiantWormHead (`:87600-87603`, 10× type-5 2.5×dir/-2.5),
+17/18/19/20 the Merchant/Nurse/ArmsDealer/Dryad town quartet
+(`:87662`/`:88292`/`:88315`/`:88358`, 50× type-5 2.5×dir/-2.5).
+
+**Gore-sibling rule** (the g63 claim's convention): every batch-2 gore
+tail draws NO arguments — the types are constants or `this.type`
+arithmetic (`this.type - 7 + 18`, `this.type - 95 + 111`), and the
+shimmer/altTexture gates are field reads. So the dust loop is the whole
+RNG census; the `NewGore` bodies + kicks stay d55's lane.
+
+**Stand-ins**: the type-18 trio reads `npc.alpha`/`npc.scale` off the
+ctor. The EoW head's `alpha = 255` SetDefaults row (`:8921`) is the
+spawn-fade window (`AI_006_Worms` `:50998`'s `alpha -= 42`), unported —
+the ctor keeps the steady-state 0, so the feed reads 0 (the fade window
+is the worm AI lane's remainder; adding 255 to the ctor would render the
+worm invisible with no fade to clear it). The color stand-in is
+default(Color) — none of 6/7/13 writes a color.
+
+**ChildSafety**: batch 2's type 5 IS dangerous ({5,227,273,237,248,249,
+250,251}), but the re-type arm's draws are pool-owned and the blood
+toggle defaults ON (`Disabled = true`, no re-type) — the witnesses run
+the default pool.
+
+6 witnesses WRITTEN NOT RUN (code-only): the Demon Eye twin-pool replay,
+the type-18 trio's alpha/scale read, the Giant Worm's 2.5 multiplier, the
+town quartet's shared census, the Servant's 20-count, plus batch 1's 8.

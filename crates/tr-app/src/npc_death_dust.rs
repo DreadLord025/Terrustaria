@@ -1,6 +1,5 @@
 //! W4-g59 — the NPC death DUST lane: `NPC.HitEffect`'s per-kind death-half
-//! dust bursts (`life <= 0`), kinds 1-230, batch 1 (the 10 DUST-ONLY death
-//! kinds the port's kind set carries).
+//! dust bursts (`life <= 0`), kinds 1-230, batches 1-2 (20 kinds).
 //!
 //! `HitEffect` runs inside `StrikeNPC_Inner` (`NPC.cs:81488`), BEFORE
 //! `checkDead` (`:81561` → `:78040`); the port batches deaths into the NPC
@@ -19,6 +18,21 @@
 //! | 183 | Crimslime | `:85420-85424` | 50× type-136 `this.alpha`/`this.color`, vel×2 |
 //! | 210/211 | Bee/BeeSmall | `:85065-85077` | 6× type-150, Next(2) scale gate |
 //!
+//! ## Scope — batch 2 (the gore-tail kinds; the dust is the whole feed)
+//!
+//! | C# type(s) | port kind(s) | death arm | shape |
+//! | --- | --- | --- | --- |
+//! | 2 | DemonEye | `:86459-86462` | 50× type-5, 2×dir/-2 |
+//! | 5 | ServantOfCthulhu | `:87351-87354` | 20× type-5, 2×dir/-2 |
+//! | 6/7/13 | EaterOfSouls/Devourer/EoW heads | `:87512`/`:87566`/`:87632` | 50× type-18 alpha/color/scale |
+//! | 10 | GiantWormHead | `:87600-87603` | 10× type-5, 2.5×dir/-2.5 |
+//! | 17/18/19/20 | Merchant/Nurse/ArmsDealer/Dryad | `:87662`/`:88292`/`:88315`/`:88358` | 50× type-5, 2.5×dir |
+//!
+//! Every batch-2 gore tail draws NO arguments (constant types or
+//! `this.type` arithmetic — the shimmer/altTexture gates are field reads),
+//! so the dust loop is the whole RNG census; the `NewGore` bodies + kicks
+//! stay d55's lane (the g63 claim's gore-sibling rule).
+//!
 //! The census (the full 1-230 walk, 173 dust-first clean kinds) and the
 //! batch split live in docs/ANALYSIS.md "The NPC death dust table (W4-g59)".
 //! The gore-bearing death arms are d55's lane (`npc_hit_effect_a.rs`,
@@ -31,13 +45,14 @@
 //! Argument draws first (the Next(2) selectors), then the pool internals
 //! inside `DustPool::new_dust` (S1-E-1: the 6 default-block rolls; type 6
 //! adds the tweak-chain `Next(-10, 6)`, `Dust.cs:214-220`; types
-//! 4/25/71/76/136/150 hit no tweak). A cull refusal or a pressure-band gate
-//! consumes exactly the C#'s draws (the pool owns them). The post-spawn
-//! writes land on the returned slot, the sentinel included — the C# writes
-//! `Main.dust[6000]` too (the `npc_ai_style56.rs` precedent). None of the
-//! batch's types is ChildSafety-dangerous (`ChildSafety.cs`'s {5,227,273,
-//! 237,248,249,250,251} — the `DANGEROUS_DUST` set), so the re-type arm
-//! never fires here.
+//! 4/18/25/71/76/136/150 hit no tweak). A cull refusal or a pressure-band
+//! gate consumes exactly the C#'s draws (the pool owns them). The
+//! post-spawn writes land on the returned slot, the sentinel included —
+//! the C# writes `Main.dust[6000]` too (the `npc_ai_style56.rs` precedent).
+//! Batch 1's types are all ChildSafety-safe; batch 2's type 5 IS dangerous
+//! (`ChildSafety.cs`'s {5,227,273,237,248,249,250,251} — the
+//! `DANGEROUS_DUST` set), but the re-type arm's draws are pool-owned and
+//! the blood toggle defaults ON (`Disabled = true`, no re-type).
 //!
 //! ## Documented stand-ins
 //!
@@ -50,7 +65,12 @@
 //!   carries no color field; when the slime paint lane lands, the feed
 //!   reads it here.
 //! * 183's `this.alpha` reads [`Npc::alpha`] — the ctor carries the C#
-//!   `alpha = 55` row (`NPC.cs:11342`, added with this batch).
+//!   `alpha = 55` row (`NPC.cs:11342`, added with batch 1).
+//! * Batch 2's type-18 trio (6/7/13) reads `this.alpha`/`this.scale` off
+//!   the ctor: the EoW head's `alpha = 255` SetDefaults row (`:8921`) is
+//!   the spawn-fade window (`AI_006_Worms` `:50998`'s `alpha -= 42`), which
+//!   the port has not ported — the ctor keeps the steady-state 0, so the
+//!   feed reads 0 (the fade window is the worm AI lane's remainder).
 //! * The 143/144/145 trio shares ONE arm; the port's bestiary id rows for
 //!   SnowBalla/MysterySnowman (144/145 vs `NPCID.cs:10965-10967`'s
 //!   MisterStabby/SnowBalla naming) are dust-neutral — every id in the
@@ -168,6 +188,63 @@ pub fn death_dust(
                 } else {
                     d.scale = 0.8;
                 }
+            }
+        }
+        // ---- batch 2 (the gore-tail kinds; the dust is the whole feed —
+        // every gore type below is a constant / `this.type` arithmetic, so
+        // the tails draw NO arguments; the NewGore bodies + kicks are d55's).
+        // `NPC.cs:86459-86462` — the Demon Eye: 50 type-5 puffs.
+        2 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.0 * dir, -2.0, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:87351-87354` — the Servant of Cthulhu: 20 type-5 puffs.
+        5 => {
+            for _ in 0..20 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.0 * dir, -2.0, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:87512-87515` / `:87566-87569` / `:87632-87635` — the
+        // Eater of Souls (6), Devourer head (7) and EoW head (13): 50
+        // type-18 puffs at `this.alpha`/`this.color`/`this.scale`. The
+        // color stand-in is default (none of the three writes a color);
+        // the alpha reads the ctor (the worm spawn-fade `AI_006` is the AI
+        // lane's remainder — the steady-state 0 the port carries).
+        6 | 7 | 13 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 18, dir, -2.0,
+                    npc.alpha as i32, Color::default(), npc.scale,
+                );
+            }
+        }
+        // `NPC.cs:87600-87603` — the Giant Worm head: 10 type-5 puffs at
+        // 2.5×hitDirection, -2.5.
+        10 => {
+            for _ in 0..10 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.5 * dir, -2.5, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:87662-87665` / `:88292-88295` / `:88315-88318` /
+        // `:88358-88361` — the Merchant/Nurse/Arms Dealer/Dryad: 50 type-5
+        // puffs at 2.5×hitDirection, -2.5 (the shimmer/altTexture gore
+        // gates draw nothing).
+        17 | 18 | 19 | 20 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.5 * dir, -2.5, 0,
+                    Color::default(), 1.0,
+                );
             }
         }
         _ => return false,
@@ -445,5 +522,111 @@ mod tests {
         assert!(!death_dust(&n, 3, &mut dust, &ctx(), &mut rng, &w));
         assert_eq!(rng, before, "no arm, no draws");
         assert!(dust.slots().iter().all(|d| !d.active));
+    }
+
+    /// `NPC.cs:86459-86462` — the Demon Eye: 50 type-5 puffs at
+    /// 2×hitDirection/-2; the gore tail (1 + 2, `:86500-86501`) draws no
+    /// arguments, so the twin replay is the dust loop alone.
+    #[test]
+    fn w4_g59_the_demon_eye_death_draws_fifty_type_fives() {
+        let w = air();
+        let n = corpse(NpcKind::DemonEye);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(23);
+        assert!(death_dust(&n, 2, &mut dust, &ctx(), &mut rng, &w));
+        let mut twin = DustPool::new();
+        let mut twin_rng = UnifiedRandom::new(23);
+        let (dw, dh) = n.size();
+        for _ in 0..50 {
+            twin.new_dust(
+                &mut twin_rng, &ctx(), &w, Vec2::new(n.x, n.y),
+                dw as i32, dh as i32, 5, -2.0, -2.0, 0, Color::default(), 1.0,
+            );
+        }
+        assert_eq!(rng, twin_rng, "the gore tail draws no arguments");
+        assert_eq!(dust.slots(), twin.slots());
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 50);
+        assert!(live.iter().all(|d| d.dust_type == 5));
+    }
+
+    /// `NPC.cs:87512-87515` / `:87566-87569` / `:87632-87635` — the
+    /// type-18 trio (6/7/13): 50 puffs at `this.alpha`/`this.scale`,
+    /// SpeedX = hitDirection (NOT doubled), SpeedY -2. All three ids draw
+    /// the identical census on the same ctor state.
+    #[test]
+    fn w4_g59_the_type18_trio_reads_alpha_and_scale() {
+        let w = air();
+        let mut n = corpse(NpcKind::EaterOfSouls);
+        n.alpha = 200;
+        n.scale = 1.3;
+        let mut states = Vec::new();
+        for ty in [6, 7, 13] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(29);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 50);
+            for d in &live {
+                assert_eq!(d.dust_type, 18);
+                assert_eq!(d.alpha, 200);
+                // The pool's scale = (1 + Next(-20,21)*0.01) × this.scale.
+                assert!((d.scale - 1.3).abs() <= 0.26 + 1e-6);
+            }
+            states.push(rng.peek());
+        }
+        assert!(states.windows(2).all(|p| p[0] == p[1]), "one shape, three ids");
+    }
+
+    /// `NPC.cs:87600-87603` — the Giant Worm head: 10 type-5 puffs at
+    /// 2.5×dir/-2.5 (the 2.5 multiplier, NOT 2 — the worm family's own
+    /// arm, `this.type - 7 + 18` gore draws nothing).
+    #[test]
+    fn w4_g59_the_giant_worm_death_draws_ten_at_two_point_five() {
+        let w = air();
+        let n = corpse(NpcKind::GiantWormHead);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(31);
+        assert!(death_dust(&n, 10, &mut dust, &ctx(), &mut rng, &w));
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 10);
+        assert!(live.iter().all(|d| d.dust_type == 5));
+        // The SpeedX argument: -2.5 + the ±2 jitter (dir = -1).
+        assert!(live.iter().all(|d| d.velocity.x >= -4.5 && d.velocity.x <= -0.5));
+        assert!(live.iter().all(|d| d.velocity.y >= -4.5 && d.velocity.y <= -0.5));
+    }
+
+    /// `NPC.cs:87662-87665` etc. — the town quartet (17/18/19/20): 50
+    /// type-5 puffs at 2.5×dir/-2.5 each; the shimmer/altTexture gore
+    /// gates are field reads (no draws), so all four ids share the census.
+    #[test]
+    fn w4_g59_the_town_quartet_shares_one_census() {
+        let w = air();
+        let n = corpse(NpcKind::Merchant);
+        let mut states = Vec::new();
+        for ty in [17, 18, 19, 20] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(37);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 50);
+            assert!(live.iter().all(|d| d.dust_type == 5));
+            states.push(rng.peek());
+        }
+        assert!(states.windows(2).all(|p| p[0] == p[1]));
+    }
+
+    /// `NPC.cs:87351-87354` — the Servant of Cthulhu: 20 type-5 puffs
+    /// (the 20-count arm, not 50).
+    #[test]
+    fn w4_g59_the_servant_death_draws_twenty() {
+        let w = air();
+        let n = corpse(NpcKind::ServantOfCthulhu);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(41);
+        assert!(death_dust(&n, 5, &mut dust, &ctx(), &mut rng, &w));
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 20);
+        assert!(live.iter().all(|d| d.dust_type == 5));
     }
 }
