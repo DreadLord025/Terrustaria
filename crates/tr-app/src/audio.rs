@@ -90,6 +90,11 @@ const SFX_CUES: &[(&str, u32)] = &[
     // arm, `Player.cs:23257`): `SoundID.Drown = 23` (`SoundID.cs:68`),
     // case 23 (`LegacySoundPlayer.cs:947-956`) — Volume/Pan only, no draws.
     ("Drown", 23),
+    // W4-e10 — the full-mana chime (`SoundID.MaxMana = 25`,
+    // `Sounds/MaxMana.xnb`, `LegacySoundPlayer.cs:239`): case 25
+    // (`:963-968`) — Volume/Pan only, no draws. The full-bar regen trigger
+    // (`Player.cs:19552`) and `EmitMaxManaEffect` (`:49800`).
+    ("MaxMana", 25),
     ("NPC_Hit_1", 3),
     // The NPC hit family (the C#'s sound id 3, `LegacySoundPlayer.cs:646`):
     // the per-kind hit cues (`NPC.HitSound`, `NPC.cs:6475`) — the Skeletron's
@@ -2095,6 +2100,22 @@ impl Audio {
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.emit("Drown", -1.0, -1.0, 1.0, 0.0);
         Some("Drown")
+    }
+
+    /// W4-e10 — the full-mana chime (`Player.cs:19552`'s full-bar regen
+    /// trigger and `EmitMaxManaEffect` `:49800`: `PlaySound(25)` —
+    /// UNPOSITIONED). Case 25 (`LegacySoundPlayer.cs:963-968`):
+    /// Volume/Pan only — NO draws, no pitch; the int overload draws no
+    /// `GetRandomPitch`. The `SoundInstanceMaxMana` re-create is the
+    /// standing D4 deviation. Returns the cue; `None` when the gate
+    /// refused.
+    pub fn play_max_mana_sound(&mut self) -> Option<&'static str> {
+        if sound::play_sound(25, -1.0, -1.0, self.listener, 1.0).is_none() {
+            return None;
+        }
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit("MaxMana", -1.0, -1.0, 1.0, 0.0);
+        Some("MaxMana")
     }
 
     /// S1-E-21h — one projectile-family cue play: the AI arms' first-tick

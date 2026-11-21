@@ -1784,7 +1784,64 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     // shared `ItemCheck_ApplyManaRegenDelay` head ABOVE — both lanes carried
     // it; the gate's second copy was dropped, it re-applied the same delay
     // twice per tick.)
+    // W4-e10 — the expiry-edge marker for the EmitMaxManaEffect tail
+    // below (`Player.cs:42834-42837`: the arm runs INSIDE the
+    // `itemTime > 0` guard, on the decrement that lands at zero).
+    let item_time_was_running = app.item_time > 0.0;
     app.item_time = (app.item_time - dt).max(0.0);
+    // W4-e10 — `Player.ItemCheck`'s itemTime-expiry tail
+    // (`Player.cs:42837-42844`): on the tick the action timer lands at
+    // zero, the Starfury 65 / Ice Blade 724 / Enchanted Sword 989 fire
+    // `EmitMaxManaEffect` (`:49798-49808`): `PlaySound(25)` UNPOSITIONED
+    // (case 25, no draws), then 5 type-45 dust over the player's box —
+    // alpha 255, `default` colour, scale `Next(20, 26) * 0.1` (one draw
+    // per dust on `UpdatePlayers`, the `Main.cs:17754` swap), noLight +
+    // noGravity, velocity halved. The `!JustDroppedAnItem &&
+    // IsAllowedToHoldItems` gate mirrors the held-light arm's fold
+    // (`player_lights.rs`: the allowed flag is constants-true).
+    if app.item_time == 0.0 && item_time_was_running {
+        let held = app.inventory[app.selected];
+        if matches!(held.kind, 65 | 724 | 989)
+            && app.player.as_ref().is_some_and(|p| !p.just_dropped_an_item)
+        {
+            app.audio.play_max_mana_sound();
+            if let Some(p) = app.player.as_ref() {
+                let (pos, w, h) = (
+                    glam::Vec2::new(p.x, p.y),
+                    crate::player::WIDTH as i32,
+                    p.height as i32,
+                );
+                let ctx = app.spawn_ctx();
+                for _ in 0..5 {
+                    let scale = app
+                        .rngs
+                        .stream(crate::app::RngKey::UpdatePlayers)
+                        .next_range(20, 26) as f32
+                        * 0.1;
+                    let idx = app.dust.new_dust(
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                        &ctx,
+                        &app.world,
+                        pos,
+                        w,
+                        h,
+                        45,
+                        0.0,
+                        0.0,
+                        255,
+                        tr_core::particles::Color::default(),
+                        scale,
+                    );
+                    if idx != tr_core::particles::DUST_SENTINEL {
+                        let d = app.dust.slot_mut(idx);
+                        d.no_light = true;
+                        d.no_gravity = true;
+                        d.velocity *= 0.5;
+                    }
+                }
+            }
+        }
+    }
     // `Player.itemRotation`'s per-tick update for the aimed styles (useStyle
     // 5 reads the mouse; `ItemCheck`'s shoot block, `Player.cs:47349-47376`).
     if app.swing > 0.0 && app.swing_style == 5 {
@@ -9345,6 +9402,75 @@ mod tests {
         app.mine_down = true;
         update_editing(&mut app, 1.0 / 60.0, screen);
         assert!(app.player.as_ref().unwrap().mount.is_active());
+    }
+
+    #[test]
+    fn w4_e10_the_mana_blade_expiry_emits_the_max_mana_effect() {
+        // `Player.cs:42837-42844` -> `EmitMaxManaEffect` (`:49798-49808`):
+        // the itemTime-zero edge fires the unpositioned case-25 chime (no
+        // draws) + 5 type-45 dust; each dust draws the scale Next(20, 26)
+        // FIRST (the C# argument evaluation), then NewDust's six internals
+        // (`Dust.cs:170-190`). All on UpdatePlayers.
+        let mut app = mining_app(World::new("t".into(), 64, 800), 30, 260);
+        let (px, py, ph) = {
+            let p = app.player.as_ref().unwrap();
+            (p.x, p.y, p.height)
+        };
+        app.gfx_quality.max_dust_to_draw = 6000;
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (px, py),
+            sound_volume: 1.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        app.inventory[app.selected] = ItemSlot {
+            kind: 65,
+            name: "Starfury",
+            count: 1,
+            prefix: 0,
+        };
+        app.mine_down = false; // no use arms — the expiry tail only
+        app.item_time = 1.0 / 60.0; // one tick left
+        let seed = 0x4D41_4E41i32;
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = UnifiedRandom::new(seed);
+        let mut witness = UnifiedRandom::new(seed);
+        let before = app.audio.played_count();
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.item_time, 0.0);
+        assert_eq!(app.audio.played_count(), before + 1, "the case-25 chime");
+        let active: Vec<_> = (0..tr_core::particles::DUST_SENTINEL)
+            .filter(|&i| app.dust.slot(i).active && app.dust.slot(i).dust_type == 45)
+            .collect();
+        assert_eq!(active.len(), 5, "the five mana sparkles");
+        for &i in &active {
+            let d = app.dust.slot(i);
+            assert!(d.no_light && d.no_gravity, "the post-arms (:49804-49805)");
+            assert_eq!(d.alpha, 255);
+        }
+        // The draw twin: per dust the scale roll then the six internals
+        // (box 20x42 -> next_max(16)/next_max(38), no pressure band at
+        // slot < 0.5*6000, type 45 has no tweak/ChildSafety draws).
+        for _ in 0..5 {
+            let _ = witness.next_range(20, 26); // the scale argument
+            let _ = witness.next_max(16); // position.X (width 20 - 4)
+            let _ = witness.next_max((ph as i32) - 4); // position.Y
+            let _ = witness.next_range(-20, 21); // velocity.X
+            let _ = witness.next_range(-20, 21); // velocity.Y
+            let _ = witness.next_max(3); // frame.Y
+            let _ = witness.next_range(-20, 21); // the scale jitter
+        }
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            witness,
+            "the chime is draw-free; the dust chain is exact"
+        );
+        // The next tick (itemTime already 0) does NOT re-fire.
+        let before = app.audio.played_count();
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.audio.played_count(), before, "the edge fires once");
     }
 
     #[test]
