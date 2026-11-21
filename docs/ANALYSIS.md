@@ -39383,3 +39383,111 @@ d51 precedent), the within-lane order is verbatim.
 Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify invoked**
 (user directive). The 19 draw-mirror witnesses are owed a compile window before merge.
 
+## The wallclimb + vortex-stealth machines (W4-f3 escalation, task/W4-f3-dust-player-3, 2026-11-21, code-only mode)
+
+The H-h2 escalation un-defers the third batch's two unported-host clusters: the
+**wall-climb/wallslide movement machines** (the 5 type-31 dust sites
+`Player.cs:21654`/`:21678`/`:21729`/`:21790`/`:21826`) and the **Vortex-stealth
+system** (the 2 ring sites `:25877`/`:25887`). Both hosts now run; the dust drains
+ride the same `UpdatePlayers` queue convention. Two commits, one per machine.
+
+### Machine 1 — WallClimbMovement / WallslideMovement (`Player.cs:21607-21840`)
+
+Ported verbatim into `player.rs` (`wall_climb_movement` / `wallslide_movement`),
+called at the C# `:26758-26765` slot (after `DashMovement`, before
+`DoubleJumpVisuals`), inside the `grappling[0] == -1 && !tongued` movement block
+(`:26494`). The Rat mount (type 55) runs the climb machine, everyone else the
+wallslide — the exclusive dispatch is the C#'s own.
+
+* **The grants land** (`apply_equip_functional`): Climbing Claws 953 / Shoe Spikes
+  975 `spikedBoots++` (`:15040`/`:15044`), Tiger Climbing Gear 976 `+= 2`
+  (`:15048`), Master Ninja Gear 984 `= 2` (the ASSIGNMENT, `:15066`), the frog
+  family 3994/3995/3996 (the auto-jump + 1.6 jump-speed + 10 safe-fall bundle;
+  3994/3995 add `accFlipper`, 3995/3996 add `spikedBoots += 2`,
+  `:14426-14444`). The Rat's own +1 (`Mount.cs:3002`) already rode
+  `update_equips`' tail. `ResetEffects` clears (`:18660`).
+* **The state machine**: the shared wall probe (one pixel beyond the hitbox edge
+  on the `slideDir` side at the foot row; the wallslide needs the two-high pair,
+  `:21771`), the level-2 cling (`vy = -gravity + 1e-5`, the Featherfall `/3`
+  `/10` variants via `TryingToHoverUp`), the climb-up `-3` / climb-down `4` /
+  level-1 `-2`/`4`/`0.5` arms, `fallStart` refresh, `sliding` latch. The
+  `slideDir` capture already rode `move_vanilla` (`:28083`/`:28242-28252`).
+* **The consumers land**: the wall-jump (`sliding` counts as resting at the
+  `:20670` trigger; `vx = 3 * -slideDir` at `:20778`), the auto-jump disarm
+  (`:20632`), the `:26057` rest arm (`RefreshDoubleJumps` while sliding — the
+  `clear_stale_jumps` call site now carries it), the airborne body row 3
+  (`:36552`, already coded), the wing/rocket rest refills (`:26777`/`:26859`,
+  already read `sliding`), the Rat's frame machine (`Mount.cs:3603-3606`, already
+  reads `sliding`).
+* **The dust**: all five sites share one chain — type-31, box 8x8 at
+  `(x + width/2 + (width/2-4)*slideDir, y + height/2 + (height/2-4)*gravDir)`,
+  post-arms `slideDir<0 -> X-=10`, `velocity *= 0.1`, `scale *= 1.2`, `noGravity`,
+  the Rat's `scale *= 0.5`. The drain (`player_dust::drain_wall_dust`) runs after
+  the dash dust. The Rat's ceiling-suppression probe (`:21652` et al. —
+  `SafeNormalize(0, vy)*10` from the centre, `ToTileCoordinates` is `(int)>>4`)
+  rides the tick side (it reads the NEW climb velocity). The `cShoe` shader is a
+  dropped field; the `gravDir == -1` mirrors fold to their `+1` arms.
+* **Cited seams**: `CarpetMovement` (`:26766`) stays unported (the Magic Carpet
+  grant/machine are another lane); the `mount.BlockExtraJumps` arm (`:26045`)
+  has no mount row that sets it. The pulley `CancelAllJumpVisualEffects` site
+  (`:26135`) stays folded — the pulley MOVEMENT (`FindPulley` `:26122`) is still
+  unported, so that host never fires (the wall machines are not its host).
+
+### Machine 2 — the Vortex stealth system (`Player.cs:25733-25899`)
+
+The fields land: `set_vortex` (`:2818`), `vortex_stealth_active` (`:2852`),
+`stealth_timer` (`:1560`); the `stealth` default is FIXED from the port's wrong
+`0.0` to the C# `1f` (`:1562`). The full if-else-if chain ports as
+`player.rs::update_stealth`, called after `UpdateArmorSets` (`:25685`) and before
+the Mana Sickness tail (`:25900`):
+
+* **The Psycho Knife (3106) arm** (`:25733-25783`): swinging reveals (+0.1, the
+  15-tick grace), still fades (-0.02 once the grace runs out), moving reveals;
+  the melee x(1+(1-stealth)*3) / +30 crit (cap 100) / -750 aggro bonuses.
+* **The Shroomite arm** (`:25785-25825`): the run-speed dead-band still-fade
+  (-0.015, the 30-tick grace), the (|vx|+|vy|)*0.0075 moving recovery, the
+  `Utils.Remap(stealth, 1, 0.75, 1, 0)` ranged/crit/aggro bonuses. The Shroomite
+  triples (1546/1547/1548 + 1549 + 1550, `ArmorSetBonuses.cs:392-394`) now grant
+  `shroomiteStealth` (the field existed but no writer did); `ResetEffects`
+  clears it (`:18326`).
+* **The Vortex arm** (`:25826-25895`): active fades -0.04 toward 0 (the ranged
+  x(1+(1-stealth)*0.8) / +20 crit / -1200 aggro bonuses + the `accRunSpeed`/
+  `maxRunSpeed` x0.3 cut), inactive recovers +0.04 toward 1; `flag11` (the value
+  changed without clamping) queues the ring. The Vortex triple (2757/2758/2759,
+  `ArmorSetBonuses.cs:480`) grants `setVortex`; `ResetEffects` clears it
+  (`:18743`); `UpdateArmorSets_Always_Vortex` (`:16317`) drops the toggle on set
+  loss; the down-double-tap toggles it (`:56775`, `key_double_tap_down`); a dash
+  cancels it (`:21379`); a mount cancels it (`:25852`); a landed hit reveals
+  (`:38245`, `hurt_inner`); `GetWeaponKnockback`'s vortex arm (`:53364`) lands.
+  `aggro` now resets to 0 per tick (`:18377`) — the stealth writers subtract.
+* **The dust** (`player_dust::drain_vortex_stealth`): two independent `Next(2)`
+  gates; the type-229 outer ring (`UnitY.RotatedByRandom(2pi)` — TWO `NextDouble`,
+  `Utils.cs:1697-1700`; `NewDust` at `Center - vector*30`; `position = Center -
+  vector*Next(5,11)`; `velocity = vector.RotatedBy(pi/2)*4`; `scale = 0.5 +
+  NextFloat`; `fadeIn = 0.5`) and the type-240 inner ring (fresh spin, `*12`
+  radius, `-pi/2` x2 velocity). The drain follows the stoned burst (the machine
+  runs at `:25826`, after the stoned edge `:25228`). A refused gate spends no
+  draws beyond the gate itself.
+* **Cited folds**: the `NetMessage.SendData(84)` edges (`:25753`/`:25800`/
+  `:25843`/`:25869`) are MP-only; the `UpdateDead` set-flag clear (`:16977`) is
+  not ported (the port's `update_dead` does not clear the set flags — the
+  respawn's `ResetEffects` covers the live path); the `UpdateArmorLights`
+  vortex-stealth gate (`:31151`) is the light layer's.
+
+**RNG contract:** unchanged — every gate roll + `NewDust` internal + post-arm
+draw rides the `UpdatePlayers` stream in C# order. The wall dust drains after the
+dash dust (the `:26757`->`:26760` order); the vortex ring drains after the stoned
+burst (the `:25228`->`:25826` order). The drain lane order is now: stoned,
+**vortex-ring**, fast-run, jump, dash, **wall**, double-jump, splash-dust,
+splash-sound, drown-gasp, drown-bubble, floor, wing-glide.
+
+**Ownership note:** the e1 claim ledger (`docs/research/64-dust-sites-player-2.md`,
+commit `7c4b7d15`) lists these 7 sites in its batch-2/4 scope, but e1 has no
+pushed code (its branch tip is the claim doc only) and the H-h2 escalation
+explicitly reassigns the unported-host machines to this branch. The vortex
+stealth is unclaimed by any i-armor lane (no `set_vortex`/`vortex_stealth_active`
+field existed anywhere in `crates/`).
+
+Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify invoked**
+(user directive). The 15 new witnesses (8 wall + 7 stealth) are owed a compile
+window before merge.
