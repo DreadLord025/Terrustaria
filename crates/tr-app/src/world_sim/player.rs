@@ -583,6 +583,22 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // The zone flags (`Player.ZoneSnow`-family) — the torch-luck table's
         // inputs (`Player.cs:17924-18036`), refreshed beside the auras.
         p.zones = app.scene_metrics.zones();
+        // W4-d70 DOC-SWEEP: the sun-scorch exposure gates
+        // (`Player.cs:28681-28685`) — `ZoneGraveyard` and the Moon Lord's
+        // sky dim (`SceneMetrics.cs:299-310`, the closest core 398).
+        p.zone_graveyard = app.scene_metrics.zone_graveyard;
+        p.moon_lord_sky_intensity = {
+            let core = app.scene_metrics.closest_npc_position[398];
+            if core == [0.0, 0.0] {
+                None
+            } else {
+                let dx = app.scene_metrics.center[0] - core[0];
+                let dy = app.scene_metrics.center[1] - core[1];
+                let dist = (dx * dx + dy * dy).sqrt();
+                // `Utils.SmoothStep` is a clamped inverse lerp (`Utils.cs:126`).
+                Some(1.0 - ((dist - 3000.0) / (6000.0 - 3000.0)).clamp(0.0, 1.0))
+            }
+        };
         // The held torch's style (`inventory[selectedItem].createTile == 4`,
         // `Player.cs:17917-17920`).
         p.held_torch_style = app

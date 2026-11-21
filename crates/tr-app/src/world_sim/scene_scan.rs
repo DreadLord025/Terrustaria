@@ -662,6 +662,9 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         bg_delay: *bg_delay,
         global_time: *anim_time % 3600.0,
         moon_lord_npcs: &moon_lord_npcs,
+        // W4-d70 DOC-SWEEP: the live sun-scorch counter (the vampire seed's
+        // burn ramp) feeds the HeatDistortion branches.
+        sun_scorch_counter: player.as_ref().map_or(0, |p| p.sun_scorch_counter),
     };
     // The graphics gates follow the live menu toggles (`TR_*` pins override).
     filter_driver.sync_settings(settings);

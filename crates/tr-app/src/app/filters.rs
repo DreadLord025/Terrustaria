@@ -77,10 +77,10 @@ impl EnvPins {
     }
 }
 
-/// `Player.sunScorchCounter` — set by the sun-scorch debuff, which has no M1
-/// source; the HeatDistortion branches that read it (`SceneState.cs:98,146`)
-/// take 0.
-const SUN_SCORCH_COUNTER: i32 = 0;
+/// `Player.sunScorchCounter` — W4-d70 DOC-SWEEP: the vampire seed's
+/// sunlight-burn ramp is ported (`Player::update_sun_scorch`); the
+/// HeatDistortion branches that read it (`SceneState.cs:98,146`) take the
+/// live counter through [`SceneVisualInputs::sun_scorch_counter`].
 
 /// The `Main.*` statics and per-frame values `ApplyVisuals` reads
 /// (`SceneState.cs:64-253`).
@@ -125,6 +125,9 @@ pub(crate) struct SceneVisualInputs<'a> {
     /// (`MoonLordScreenShaderData.cs:30-68`): the core (398) and deathray eyes
     /// (400). Filled by `update_scene` from the live NPC list (W4-d70).
     pub(crate) moon_lord_npcs: &'a [tr_core::scene::MoonLordShaderNpc],
+    /// `Player.sunScorchCounter` (`Player.cs:2356`) — the HeatDistortion
+    /// branches' third term (`SceneState.cs:98,146`). W4-d70 DOC-SWEEP.
+    pub(crate) sun_scorch_counter: i32,
 }
 
 /// The `ApplyVisuals` driver: filter board + storm shader state + the last
@@ -358,7 +361,7 @@ impl FilterDriver {
                 self.use_heat_distortion,
                 heat_underworld,
                 heat_desert,
-                SUN_SCORCH_COUNTER,
+                inputs.sun_scorch_counter,
             ),
             inputs.skip_transitions,
         );
@@ -406,7 +409,7 @@ impl FilterDriver {
         // `:142-162`: HeatDistortion's intensity and `IsHidden = intensity <= 0`.
         if self.board.is_active(FilterId::HeatDistortion) {
             self.heat_intensity = heat_distortion_intensity(
-                SUN_SCORCH_COUNTER,
+                inputs.sun_scorch_counter,
                 heat_underworld,
                 heat_desert,
                 metrics.tile_center.1,
@@ -668,6 +671,7 @@ mod tests {
             bg_delay: 0,
             global_time: 12.5,
             moon_lord_npcs: &[],
+            sun_scorch_counter: 0,
         }
     }
 

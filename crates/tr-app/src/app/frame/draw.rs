@@ -1439,6 +1439,9 @@ impl App {
                             renderer,
                             lookups,
                             world,
+                            // W4-d70 DOC-SWEEP: the advanced-shadow offset +
+                            // the sun-scorch override read the local player.
+                            player.as_ref(),
                             draw_cam,
                             bg_zoom,
                             screen,

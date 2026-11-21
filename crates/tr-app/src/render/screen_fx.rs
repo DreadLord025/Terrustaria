@@ -630,9 +630,38 @@ struct LensElement {
     rotation: f32,
 }
 
+/// `Vector2.SafeNormalize` (`Vector2.cs`): the unit vector, or `default`
+/// when the length is zero.
+fn safe_normalize(v: [f32; 2], default: [f32; 2]) -> [f32; 2] {
+    let len = (v[0] * v[0] + v[1] * v[1]).sqrt();
+    if len == 0.0 {
+        default
+    } else {
+        [v[0] / len, v[1] / len]
+    }
+}
+
+/// `LensFlareElement.Draw`'s shadow offset (`LensFlareElement.cs:34-37`):
+/// `v = GetAdvancedShadow(0).Position - GetAdvancedShadow(min(4, count-1))
+/// .Position` — the player's last ~4 ticks of movement — then
+/// `Dot(v.SafeNormalize(UnitX), (sun - center).SafeNormalize(-UnitY)) *
+/// v.Length()`. W4-d70 DOC-SWEEP: the trail is ported
+/// (`Player::update_advanced_shadows`); the offset shifts the flare chain
+/// along the sun axis by `-0.0002 * num` of the lerp fraction (`:42`).
+fn lens_shadow_offset(player: &Player, sun: [f32; 2], center: [f32; 2]) -> f32 {
+    let newest = player.get_advanced_shadow(0);
+    let oldest = player.get_advanced_shadow(4.min(player.available_advanced_shadows_count - 1));
+    let v = [newest[0] - oldest[0], newest[1] - oldest[1]];
+    let v_len = (v[0] * v[0] + v[1] * v[1]).sqrt();
+    let v_unit = safe_normalize(v, [1.0, 0.0]);
+    let sun_dir = safe_normalize([sun[0] - center[0], sun[1] - center[1]], [0.0, -1.0]);
+    (v_unit[0] * sun_dir[0] + v_unit[1] * sun_dir[1]) * v_len
+}
+
 /// `LensFlareElement.Draw` (`LensFlareElement.cs:28-50`): the repeated flare
-/// sprites lerped from the sun toward the screen centre. The advanced-shadow
-/// offset (`:34-37`, `GetAdvancedShadow`) has no port — `num` is 0.
+/// sprites lerped from the sun toward the screen centre, shifted by the
+/// advanced-shadow offset (`:34-37`, `lens_shadow_offset`).
+#[allow(clippy::too_many_arguments)]
 fn draw_lens_element(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
@@ -642,6 +671,7 @@ fn draw_lens_element(
     intensity: f32,
     screen_position_y: f32,
     zoom: f32,
+    shadow_offset: f32,
 ) {
     if intensity == 0.0 {
         return;
@@ -659,8 +689,9 @@ fn draw_lens_element(
         let scale = e.scale_start + e.scale_over_index * fi;
         // `:41`: `Color * (1 + IntensityOverIndex * i) * intensity`.
         let c = scale_color(scale_color(e.color, 1.0 + e.intensity_over_index * fi), intensity);
-        // `:42`: the lerp fraction, `% 1f * 2f` (the shadow offset num = 0).
-        let frac = (e.distance_start + e.distance_along_index * fi) % 1.0 * 2.0;
+        // `:42`: the lerp fraction, `(d + num * -0.0002f) % 1f * 2f`.
+        let frac =
+            (e.distance_start + e.distance_along_index * fi + shadow_offset * -0.0002) % 1.0 * 2.0;
         let position = [
             sun[0] + (center[0] - sun[0]) * frac,
             sun[1] + (center[1] - sun[1]) * frac,
@@ -683,6 +714,7 @@ fn draw_lens_element(
 
 /// `NextHorizonRenderer.DrawSunsetFlare` (`NextHorizonRenderer.cs:401-465`):
 /// the seven sunset elements, in order.
+#[allow(clippy::too_many_arguments)]
 fn draw_sunset_flare(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
@@ -691,6 +723,7 @@ fn draw_sunset_flare(
     intensity: f32,
     screen_position_y: f32,
     zoom: f32,
+    shadow_offset: f32,
 ) {
     if intensity <= 0.01 {
         return;
@@ -713,12 +746,13 @@ fn draw_sunset_flare(
         LensElement { tex: 3, repeat_times: 1, scale_start: 0.4, scale_over_index: 0.0, distance_start: 0.65, distance_along_index: 0.0, color: scale_color([255, 255, 255, 0], 10.0 / 255.0), intensity_over_index: 0.0, rotation: std::f32::consts::PI },
     ];
     for e in &elements {
-        draw_lens_element(r, lookups, e, sun, center, intensity, screen_position_y, zoom);
+        draw_lens_element(r, lookups, e, sun, center, intensity, screen_position_y, zoom, shadow_offset);
     }
 }
 
 /// `NextHorizonRenderer.DrawSunriseFlare` (`NextHorizonRenderer.cs:467-532`):
 /// the seven sunrise elements, in order.
+#[allow(clippy::too_many_arguments)]
 fn draw_sunrise_flare(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
@@ -727,6 +761,7 @@ fn draw_sunrise_flare(
     intensity: f32,
     screen_position_y: f32,
     zoom: f32,
+    shadow_offset: f32,
 ) {
     if intensity <= 0.01 {
         return;
@@ -749,7 +784,7 @@ fn draw_sunrise_flare(
         LensElement { tex: 3, repeat_times: 1, scale_start: 0.38, scale_over_index: 0.0, distance_start: 0.65, distance_along_index: 0.0, color: scale_color([255, 255, 255, 0], 10.0 / 255.0), intensity_over_index: 0.0, rotation: std::f32::consts::PI },
     ];
     for e in &elements {
-        draw_lens_element(r, lookups, e, sun, center, intensity, screen_position_y, zoom);
+        draw_lens_element(r, lookups, e, sun, center, intensity, screen_position_y, zoom, shadow_offset);
     }
 }
 
@@ -808,11 +843,15 @@ fn flare_visibilities(
 /// (remix/drunk seeds, fullscreen map) and `HorizonHelper.SunVisibilityEnabled`
 /// (the sun-occlusion pixel target) are passed in by the caller; the occlusion
 /// mask itself has no port, so the flare draws at full temporal intensity.
+/// W4-d70 DOC-SWEEP: `player` feeds the advanced-shadow offset
+/// (`LensFlareElement.cs:34-37`) and the sun-scorch override
+/// (`AdjustIntensity` `:392-397`); `None` (TR_NOPLAYER) keeps both at 0.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_lens_flare(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
     world: &tr_core::World,
+    player: Option<&Player>,
     camera: Vec2,
     bg_zoom: f32,
     screen: Vec2,
@@ -831,8 +870,9 @@ pub(crate) fn draw_lens_flare(
         cloud_alpha,
         world.eclipse,
     );
-    let sunrise_intensity = adjust_flare_intensity(sunrise_vis, celestial_vis, 0);
-    let sunset_intensity = adjust_flare_intensity(sunset_vis, celestial_vis, 0);
+    let sun_scorch = player.map_or(0, |p| p.sun_scorch_counter);
+    let sunrise_intensity = adjust_flare_intensity(sunrise_vis, celestial_vis, sun_scorch);
+    let sunset_intensity = adjust_flare_intensity(sunset_vis, celestial_vis, sun_scorch);
     // `:373`: both below 0.01 → nothing.
     if sunrise_intensity <= 0.01 && sunset_intensity <= 0.01 {
         return;
@@ -852,8 +892,11 @@ pub(crate) fn draw_lens_flare(
     let center = [screen.x * 0.5, screen.y * 0.5];
     // `:46`: the screen-Y drift uses `Main.screenPosition.Y` (world px).
     let screen_position_y = view_top;
-    draw_sunrise_flare(r, lookups, sun, center, sunrise_intensity, screen_position_y, bg_zoom);
-    draw_sunset_flare(r, lookups, sun, center, sunset_intensity, screen_position_y, bg_zoom);
+    // `LensFlareElement.cs:34-37`: the advanced-shadow offset (0 without a
+    // local player — the C# reads `Main.LocalPlayer`, always present in game).
+    let shadow_offset = player.map_or(0.0, |p| lens_shadow_offset(p, sun, center));
+    draw_sunrise_flare(r, lookups, sun, center, sunrise_intensity, screen_position_y, bg_zoom, shadow_offset);
+    draw_sunset_flare(r, lookups, sun, center, sunset_intensity, screen_position_y, bg_zoom, shadow_offset);
 }
 
 #[cfg(test)]
@@ -1075,5 +1118,68 @@ mod w4_d70_screen_effect_tests {
         assert!(!outside);
         assert_eq!(if inside { 0.5 } else { 0.25 }, 0.5);
         assert_eq!(if outside { 0.5 } else { 0.25 }, 0.25);
+    }
+
+    /// W4-d70 DOC-SWEEP — `LensFlareElement.cs:34-37`: the shadow offset is
+    /// the dot of the trail's unit vector with the sun direction, times the
+    /// trail length. A player moving toward the sun gets the full length;
+    /// perpendicular motion gets 0; a still player gets 0.
+    #[test]
+    fn the_lens_shadow_offset_projects_the_trail_onto_the_sun_axis() {
+        let w = tr_core::World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // The sun sits to the right of the screen centre: dir = (1, 0).
+        let sun = [900.0, 360.0];
+        let center = [640.0, 360.0];
+        // A still player: the trail is all one point → offset 0.
+        for _ in 0..10 {
+            p.update_advanced_shadows();
+        }
+        assert_eq!(lens_shadow_offset(&p, sun, center), 0.0);
+        // Move +x 5 px/tick for 5 ticks: the trail spans 20 px (index 0 vs
+        // index 4), aligned with the sun → offset = +20.
+        for _ in 0..5 {
+            p.x += 5.0;
+            p.update_advanced_shadows();
+        }
+        let off = lens_shadow_offset(&p, sun, center);
+        assert!((off - 20.0).abs() < 1e-4, "{off}");
+        // Perpendicular motion (+y): the dot with (1,0) is 0.
+        let mut q = Player::spawn(&w);
+        for _ in 0..10 {
+            q.update_advanced_shadows();
+        }
+        for _ in 0..5 {
+            q.y += 5.0;
+            q.update_advanced_shadows();
+        }
+        assert!(lens_shadow_offset(&q, sun, center).abs() < 1e-4);
+    }
+
+    /// W4-d70 DOC-SWEEP — `Player.cs:4328-4345`: the ring caps at 60, the
+    /// index clamps at the count, and the reset clears only the count.
+    #[test]
+    fn the_advanced_shadow_ring_caps_and_resets() {
+        let w = tr_core::World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        assert_eq!(p.available_advanced_shadows_count, 0);
+        // One push: index 0 is the current position.
+        p.x = 100.0;
+        p.update_advanced_shadows();
+        assert_eq!(p.available_advanced_shadows_count, 1);
+        assert_eq!(p.get_advanced_shadow(0), [100.0, p.y]);
+        // 100 pushes: the count caps at 60.
+        for i in 0..100 {
+            p.x = i as f32;
+            p.update_advanced_shadows();
+        }
+        assert_eq!(p.available_advanced_shadows_count, 60);
+        // The freshest slot is the last push (x = 99).
+        assert_eq!(p.get_advanced_shadow(0)[0], 99.0);
+        // Index 4 walks back 4 ticks (x = 95).
+        assert_eq!(p.get_advanced_shadow(4)[0], 95.0);
+        // The reset clears the count; index 0 then clamps to the stale head.
+        p.reset_advanced_shadows();
+        assert_eq!(p.available_advanced_shadows_count, 0);
     }
 }
