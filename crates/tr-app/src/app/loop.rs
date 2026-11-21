@@ -792,7 +792,11 @@ impl App {
                 // `App.smart_cursor_used` (`Main.cs:2011`, default false); the
                 // persisted setting is never read as the state.
                 //
-                // `SoundEngine.PlaySound(12)` (`:28818`), the port's 12 cue.
+                // `SoundEngine.PlaySound(12)` — BOTH the toggle-mode press
+                // (`Player.cs:28820`) and the hold-mode press (`Player.cs:28827`)
+                // play the same Menu_Tick cue; the port's single press-edge play
+                // covers the pair (the hold mode's state tracks the key, the
+                // release arm in `window_event` clears it).
                 self.audio.play("Menu_Tick");
                 if self.settings.smart_cursor_toggle {
                     self.smart_cursor_used = !self.smart_cursor_used;
