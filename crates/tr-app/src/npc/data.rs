@@ -613,6 +613,17 @@ impl NpcKind {
             NpcKind::FloatyGross => 372,
             NpcKind::LostGirl => 373,
             NpcKind::Nymph => 374,
+            // W4-g8 lane 1 batch 3 — the next-free port-local band 375-384.
+            NpcKind::CursedSkull => 375,
+            NpcKind::Demon => 376,
+            NpcKind::GiantBat => 377,
+            NpcKind::Slimer => 378,
+            NpcKind::IlluminantBat => 379,
+            NpcKind::IceBat => 380,
+            NpcKind::Lavabat => 381,
+            NpcKind::GiantFlyingFox => 382,
+            NpcKind::VampireBat => 383,
+            NpcKind::FlyingSnake => 384,
         }
     }
 
@@ -967,6 +978,17 @@ impl NpcKind {
             372 => NpcKind::FloatyGross,
             373 => NpcKind::LostGirl,
             374 => NpcKind::Nymph,
+            // W4-g8 lane 1 batch 3 — the port-local 375-384 band.
+            375 => NpcKind::CursedSkull,
+            376 => NpcKind::Demon,
+            377 => NpcKind::GiantBat,
+            378 => NpcKind::Slimer,
+            379 => NpcKind::IlluminantBat,
+            380 => NpcKind::IceBat,
+            381 => NpcKind::Lavabat,
+            382 => NpcKind::GiantFlyingFox,
+            383 => NpcKind::VampireBat,
+            384 => NpcKind::FlyingSnake,
             _ => return None,
         })
     }
@@ -1870,6 +1892,16 @@ impl NpcKind {
             NpcKind::IceElemental => "NPC_Hit_5",
             NpcKind::Derpling => "NPC_Hit_22",
             NpcKind::CrimsonAxe => "NPC_Hit_4",
+            // W4-g8 lane 1 batch 3 — the `HitSound` rows: 34 NPCHit2
+            // (`NPC.cs:9158`), 62 NPCHit21 (`:9576`), 93/121/137/150/151/
+            // 152/158 NPCHit1 (`:10056`/`:10474`/`:10743`/`:10894`/`:10909`/
+            // `:10925`/`:15475`), 226 NPCHit23 (`:11920`).
+            NpcKind::CursedSkull => "NPC_Hit_2",
+            NpcKind::Demon => "NPC_Hit_21",
+            NpcKind::GiantBat | NpcKind::Slimer | NpcKind::IlluminantBat
+            | NpcKind::IceBat | NpcKind::Lavabat | NpcKind::GiantFlyingFox
+            | NpcKind::VampireBat => "NPC_Hit_1",
+            NpcKind::FlyingSnake => "NPC_Hit_23",
             _ => return None,
         })
     }
@@ -2198,6 +2230,17 @@ impl NpcKind {
             NpcKind::Derpling => "NPC_Killed_25",
             NpcKind::CrimsonAxe => "NPC_Killed_6",
             NpcKind::FloatyGross | NpcKind::Nymph => "NPC_Killed_2",
+            // W4-g8 lane 1 batch 3 — the `DeathSound` rows: 34 NPCDeath2
+            // (`NPC.cs:9159`), 62 NPCDeath24 (`:9578`), 93/150/151/152
+            // NPCDeath4 (`:10058`/`:10896`/`:10911`/`:10927`), 121
+            // NPCDeath1 (no row, the head default), 137/158 NPCDeath6
+            // (`:10745`/`:15477`), 226 NPCDeath26 (`:11922`).
+            NpcKind::CursedSkull => "NPC_Killed_2",
+            NpcKind::Demon => "NPC_Killed_24",
+            NpcKind::GiantBat | NpcKind::IceBat | NpcKind::Lavabat | NpcKind::GiantFlyingFox => "NPC_Killed_4",
+            NpcKind::Slimer => "NPC_Killed_1",
+            NpcKind::IlluminantBat | NpcKind::VampireBat => "NPC_Killed_6",
+            NpcKind::FlyingSnake => "NPC_Killed_26",
             _ => return None,
         })
     }
@@ -2574,6 +2617,14 @@ impl NpcKind {
             NpcKind::CrimsonAxe => 23,
             NpcKind::LostGirl => 42,
             NpcKind::Nymph => 3,
+            // W4-g8 lane 1 batch 3 — the `SetDefaults` aiStyle rows: 34 10
+            // (`NPC.cs:9154`), 62/93/121/137/150/151/152/158/226 14
+            // (`:9572`/`:10052`/`:10470`/`:10739`/`:10890`/`:10905`/
+            // `:10921`/`:15471`/`:11916`).
+            NpcKind::CursedSkull => 10,
+            NpcKind::Demon | NpcKind::GiantBat | NpcKind::Slimer | NpcKind::IlluminantBat
+            | NpcKind::IceBat | NpcKind::Lavabat | NpcKind::GiantFlyingFox
+            | NpcKind::VampireBat | NpcKind::FlyingSnake => 14,
         }
     }
 
@@ -3136,6 +3187,18 @@ impl NpcKind {
             NpcKind::CrimsonAxe => (40.0, 40.0),
             NpcKind::FloatyGross => (24.0, 62.0),
             NpcKind::LostGirl | NpcKind::Nymph => (18.0, 40.0),
+            // W4-g8 lane 1 batch 3 — the `SetDefaults` boxes: 34 26x28
+            // (`NPC.cs:9152-9153`), 62 28x48 (`:9570-9571`), 93/137 26x20
+            // (`:10050-10051`/`:10737-10738`), 121 40x30 (`:10468-10469`),
+            // 150/151/158 22x22 (`:10888-10889`/`:10903-10904`/`:15469-15470`),
+            // 152 38x34 (`:10919-10920`), 226 34x50 (`:11914-11915`).
+            NpcKind::CursedSkull => (26.0, 28.0),
+            NpcKind::Demon => (28.0, 48.0),
+            NpcKind::GiantBat | NpcKind::IlluminantBat => (26.0, 20.0),
+            NpcKind::Slimer => (40.0, 30.0),
+            NpcKind::IceBat | NpcKind::Lavabat | NpcKind::VampireBat => (22.0, 22.0),
+            NpcKind::GiantFlyingFox => (38.0, 34.0),
+            NpcKind::FlyingSnake => (34.0, 50.0),
         }
     }
 
@@ -3266,6 +3329,19 @@ impl NpcKind {
             NpcKind::FloatyGross => 182,
             NpcKind::LostGirl => 195,
             NpcKind::Nymph => 196,
+            // W4-g8 lane 1 batch 3 — the vanilla `NPC.type` ids
+            // (`NPCID.cs:10745`/`:10801`/`:10863`/`:10919`/`:10951`/
+            // `:10977`/`:10979`/`:10981`/`:10993`/`:11129`).
+            NpcKind::CursedSkull => 34,
+            NpcKind::Demon => 62,
+            NpcKind::GiantBat => 93,
+            NpcKind::Slimer => 121,
+            NpcKind::IlluminantBat => 137,
+            NpcKind::IceBat => 150,
+            NpcKind::Lavabat => 151,
+            NpcKind::GiantFlyingFox => 152,
+            NpcKind::VampireBat => 158,
+            NpcKind::FlyingSnake => 226,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -3842,6 +3918,21 @@ impl NpcKind {
             NpcKind::FloatyGross => 240,
             NpcKind::LostGirl => 250,
             NpcKind::Nymph => 300,
+            // W4-g8 lane 1 batch 3 — the `lifeMax` rows: 34 40
+            // (`NPC.cs:9157`), 62 120 (`:9575`), 93 100 (`:10055`), 121 60
+            // (`:10473`), 137 200 (`:10742`), 150 30 (`:10893`), 151 160
+            // (`:10908`), 152 220 (`:10924`), 158 750 (`:15474`), 226 260
+            // (`:11919`).
+            NpcKind::CursedSkull => 40,
+            NpcKind::Demon => 120,
+            NpcKind::GiantBat => 100,
+            NpcKind::Slimer => 60,
+            NpcKind::IlluminantBat => 200,
+            NpcKind::IceBat => 30,
+            NpcKind::Lavabat => 160,
+            NpcKind::GiantFlyingFox => 220,
+            NpcKind::VampireBat => 750,
+            NpcKind::FlyingSnake => 260,
         }
     }
 
@@ -4236,6 +4327,21 @@ impl NpcKind {
             NpcKind::FloatyGross => 65,
             NpcKind::LostGirl => 10,
             NpcKind::Nymph => 35,
+            // W4-g8 lane 1 batch 3 — the `damage` rows: 34 35
+            // (`NPC.cs:9155`), 62 32 (`:9573`), 93 45 (`:10053`), 121 45
+            // (`:10471`), 137 75 (`:10740`), 150 18 (`:10891`), 151 50
+            // (`:10906`), 152 80 (`:10922`), 158 60 (`:15472`), 226 85
+            // (`:11917`).
+            NpcKind::CursedSkull => 35,
+            NpcKind::Demon => 32,
+            NpcKind::GiantBat => 45,
+            NpcKind::Slimer => 45,
+            NpcKind::IlluminantBat => 75,
+            NpcKind::IceBat => 18,
+            NpcKind::Lavabat => 50,
+            NpcKind::GiantFlyingFox => 80,
+            NpcKind::VampireBat => 60,
+            NpcKind::FlyingSnake => 85,
         }
     }
 }

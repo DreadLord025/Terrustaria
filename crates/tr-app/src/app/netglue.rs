@@ -3609,6 +3609,22 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-g8 lane 1 batch 3 — the CursedSkull 34 + the nine aiStyle-14
+        // bat/flyer family members ride the hover ctor (the noGravity
+        // flyers — the bat family's cave-flier shape).
+        crate::npc::NpcKind::CursedSkull
+        | crate::npc::NpcKind::Demon
+        | crate::npc::NpcKind::GiantBat
+        | crate::npc::NpcKind::Slimer
+        | crate::npc::NpcKind::IlluminantBat
+        | crate::npc::NpcKind::IceBat
+        | crate::npc::NpcKind::Lavabat
+        | crate::npc::NpcKind::GiantFlyingFox
+        | crate::npc::NpcKind::VampireBat
+        | crate::npc::NpcKind::FlyingSnake => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

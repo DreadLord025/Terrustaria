@@ -505,6 +505,16 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::IceElemental => &[20, 31, 44, 324],
         NpcKind::CrimsonAxe => &[20, 24, 31, 323],
         NpcKind::Nymph => &[],
+        // W4-g8 lane 1 batch 3 — the `Sets.DebuffImmunitySets` rows: 34
+        // `[20, 31]`, 62 `[24, 31, 153, 323]`, 121/137 `[20]`, 150
+        // `[44, 324]`, 151 `[24, 323]`; 93/152/158/226 have no row (the
+        // null-row else-branch, no immunity).
+        NpcKind::CursedSkull => &[20, 31],
+        NpcKind::Demon => &[24, 31, 153, 323],
+        NpcKind::Slimer | NpcKind::IlluminantBat => &[20],
+        NpcKind::IceBat => &[44, 324],
+        NpcKind::Lavabat => &[24, 323],
+        NpcKind::GiantBat | NpcKind::GiantFlyingFox | NpcKind::VampireBat | NpcKind::FlyingSnake => &[],
     }
 }
 

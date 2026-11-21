@@ -1202,6 +1202,54 @@ pub enum NpcKind {
     /// kb 0.4, NPCHit1/NPCDeath2, value 2 gold, rarity 2. The LostGirl's
     /// transform target; the aiStyle-3 fighter ladder (the cap-2 group).
     Nymph,
+    // ---- W4-g8 lane 1 batch 3: the CursedSkull (style 10) + the nine
+    // aiStyle-14 bat/flyer family members. Protocol ids 375-384.
+    /// `NPCID.CursedSkull` (34, `NPCID.cs:10745`) — the dungeon skull
+    /// (`NPC.cs:9150-9165`): 26x28, aiStyle 10, dmg 35, def 6, 40 HP,
+    /// kb 0.2, NPCHit2/NPCDeath2, value 150, noGravity + noTileCollide,
+    /// npcSlots 0.75. WIRED: the axis' 10 arm rides `npc_ai_style10::style10_ai`.
+    CursedSkull,
+    /// `NPCID.Demon` (62, `NPCID.cs:10801`) — the underworld demon
+    /// (`NPC.cs:9567-9581`): 28x48, aiStyle 14, dmg 32, def 8, 120 HP,
+    /// kb 0.8, NPCHit21/NPCDeath24, value 300, npcSlots 2, lavaImmune.
+    /// WIRED: the axis' 14 arm rides `npc_ai_style14::bat_ai` (the sickle).
+    Demon,
+    /// `NPCID.GiantBat` (93, `NPCID.cs:10863`) — the cavern bat
+    /// (`NPC.cs:10047-10060`): 26x20, aiStyle 14, dmg 45, def 16, 100 HP,
+    /// kb 0.75, NPCHit1/NPCDeath4, value 400, npcSlots 0.5.
+    GiantBat,
+    /// `NPCID.Slimer` (121, `NPCID.cs:10919`) — the hardmode slime flyer
+    /// (`NPC.cs:10466-10478`): 40x30, aiStyle 14, dmg 45, def 20, 60 HP,
+    /// kb 0.8, NPCHit1/NPCDeath1 (no row), value 0 (no row), alpha 55,
+    /// scale 1.1.
+    Slimer,
+    /// `NPCID.IlluminantBat` (137, `NPCID.cs:10951`) — the hallow bat
+    /// (`NPC.cs:10735-10747`): 26x20, aiStyle 14, dmg 75, def 30, 200 HP,
+    /// kb 0.75, NPCHit1/NPCDeath6, value 500.
+    IlluminantBat,
+    /// `NPCID.IceBat` (150, `NPCID.cs:10977`) — the snow bat
+    /// (`NPC.cs:10885-10899`): 22x22, aiStyle 14, dmg 18, def 6, 30 HP,
+    /// kb 0.8, NPCHit1/NPCDeath4, value 250, npcSlots 0.5, coldDamage.
+    IceBat,
+    /// `NPCID.Lavabat` (151, `NPCID.cs:10979`) — the underworld bat
+    /// (`NPC.cs:10900-10915`): 22x22, aiStyle 14, dmg 50, def 16, 160 HP,
+    /// kb 0.6, NPCHit1/NPCDeath4, value 400, npcSlots 0.5, scale 1.15,
+    /// lavaImmune.
+    Lavabat,
+    /// `NPCID.GiantFlyingFox` (152, `NPCID.cs:10981`) — the jungle fox
+    /// (`NPC.cs:10916-10929`): 38x34, aiStyle 14, dmg 80, def 24, 220 HP,
+    /// kb 0.65, NPCHit1/NPCDeath4, value 400, npcSlots 0.5.
+    GiantFlyingFox,
+    /// `NPCID.VampireBat` (158, `NPCID.cs:10993`) — the eclipse bat
+    /// (`NPC.cs:15466-15479`): 22x22, aiStyle 14, dmg 60, def 32, 750 HP,
+    /// kb 0.75, NPCHit1/NPCDeath6, value 5000, npcSlots 2. The
+    /// Transform(159) + the surface-flee approach are cited machine skips.
+    VampireBat,
+    /// `NPCID.FlyingSnake` (226, `NPCID.cs:11129`) — the temple snake
+    /// (`NPC.cs:11911-11924`): 34x50, aiStyle 14, dmg 85, def 28, 260 HP,
+    /// kb 0.65, NPCHit23/NPCDeath26, value 400, npcSlots 0.5. The
+    /// velocity-sign facing + the 4/2.5 approach are cited machine skips.
+    FlyingSnake,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3096,6 +3144,14 @@ impl Npc {
                     // W4-g8 lane 1 batch 1 — the Spike Ball's `scale = 1.5f`
                     // row (`NPC.cs:9695`).
                     1.5
+                } else if kind == NpcKind::Slimer {
+                    // W4-g8 lane 1 batch 3 — the Slimer's `scale = 1.1f`
+                    // row (`NPC.cs:10477`).
+                    1.1
+                } else if kind == NpcKind::Lavabat {
+                    // W4-g8 lane 1 batch 3 — the Lavabat's `scale = 1.15f`
+                    // row (`NPC.cs:10913`).
+                    1.15
                 } else {
                     1.0
                 }),
@@ -3291,6 +3347,9 @@ impl Npc {
                             // alpha 100 (`:11328`).
                             NpcKind::GreenJellyfish => 20,
                             NpcKind::FloatyGross => 100,
+                            // W4-g8 lane 1 batch 3 — the Slimer's alpha 55
+                            // (`NPC.cs:10475`).
+                            NpcKind::Slimer => 55,
                             _ => 0,
                         }
                     }),
@@ -3717,6 +3776,16 @@ impl Npc {
             NpcKind::FloatyGross => 0.7,
             NpcKind::LostGirl => 0.5,
             NpcKind::Nymph => 0.4,
+            // W4-g8 lane 1 batch 3 — the `knockBackResist` rows: 34 0.2
+            // (`NPC.cs:9163`), 62 0.8 (`:9577`), 93/137/158 0.75 (`:10057`/
+            // `:10744`/`:15476`), 121/150 0.8 (`:10476`/`:10895`), 151 0.6
+            // (`:10910`), 152/226 0.65 (`:10926`/`:11921`).
+            NpcKind::CursedSkull => 0.2,
+            NpcKind::Demon => 0.8,
+            NpcKind::GiantBat | NpcKind::IlluminantBat | NpcKind::VampireBat => 0.75,
+            NpcKind::Slimer | NpcKind::IceBat => 0.8,
+            NpcKind::Lavabat => 0.6,
+            NpcKind::GiantFlyingFox | NpcKind::FlyingSnake => 0.65,
             _ => 0.4,
         }
     }
@@ -4126,6 +4195,21 @@ impl Npc {
             NpcKind::FloatyGross => 18,
             NpcKind::LostGirl => 30,
             NpcKind::Nymph => 16,
+            // W4-g8 lane 1 batch 3 — the `defense` rows: 34 6
+            // (`NPC.cs:9156`), 62 8 (`:9574`), 93 16 (`:10054`), 121 20
+            // (`:10472`), 137 30 (`:10741`), 150 6 (`:10892`), 151 16
+            // (`:10907`), 152 24 (`:10923`), 158 32 (`:15473`), 226 28
+            // (`:11918`).
+            NpcKind::CursedSkull => 6,
+            NpcKind::Demon => 8,
+            NpcKind::GiantBat => 16,
+            NpcKind::Slimer => 20,
+            NpcKind::IlluminantBat => 30,
+            NpcKind::IceBat => 6,
+            NpcKind::Lavabat => 16,
+            NpcKind::GiantFlyingFox => 24,
+            NpcKind::VampireBat => 32,
+            NpcKind::FlyingSnake => 28,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4531,6 +4615,18 @@ impl Npc {
             NpcKind::CrimsonAxe => 1000.0,
             NpcKind::FloatyGross => 500.0,
             NpcKind::LostGirl | NpcKind::Nymph => 20000.0,
+            // W4-g8 lane 1 batch 3 — the `value` rows (copper): 34 150
+            // (`NPC.cs:9162`), 62 300 (`:9579`), 93 400 (`:10059`), 121 0
+            // (no row), 137 500 (`:10746`), 150 250 (`:10897`), 151/152/226
+            // 400 (`:10913`/`:10928`/`:11923`), 158 5000 (`:15478`).
+            NpcKind::CursedSkull => 150.0,
+            NpcKind::Demon => 300.0,
+            NpcKind::GiantBat => 400.0,
+            NpcKind::Slimer => 0.0,
+            NpcKind::IlluminantBat => 500.0,
+            NpcKind::IceBat => 250.0,
+            NpcKind::Lavabat | NpcKind::GiantFlyingFox | NpcKind::FlyingSnake => 400.0,
+            NpcKind::VampireBat => 5000.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -5112,6 +5208,46 @@ impl Npc {
             // new module's arm; the unported 112/666/516 branches wait
             // on their kinds (the pure helpers are pinned there).
             9 => self.ai_009_sphere_family(world, player, rng),
+            // W4-g8 lane 1 batch 3 — `if (this.aiStyle == 10)`
+            // (`NPC.cs:21572-21918`) — the Cursed Skull 34 (`SetDefaults`
+            // `:9150-9165`). The faithful `npc_ai_style10::style10_ai`
+            // claims the axis: the 600-tick cycle, the distance-banded
+            // speed/accel, the dead-target flee; the machine integrates
+            // (noTileCollide) on every path. The 289/694 branches are
+            // unported kinds (cited skips). RNG-free on the 34 path.
+            10 => {
+                let npc_type = self.kind.cs_id() as i32;
+                let out = crate::npc_ai_style10::style10_ai(
+                    self, world, player, npc_type, self.hurt_cd > 0.0, 0, rng,
+                );
+                if let Some(kb) = out.knock_back_resist {
+                    self.kb_resist_override = Some(kb);
+                }
+                if out.play_item8_sound {
+                    self.wants_sound.push(crate::npc::NpcSoundRequest {
+                        cue: crate::npc::NpcSoundCue::Item8,
+                        x: self.x,
+                        y: self.y,
+                    });
+                }
+                if let Some((sx, sy)) = out.spawn_water_sphere {
+                    self.wants_sphere.push((NpcKind::WaterSphere, sx as f32, sy as f32, 0.0));
+                }
+            }
+            // W4-g8 lane 1 batch 3 — `else if (this.aiStyle == 14)`
+            // (`NPC.cs:22849-23486`) — the bat/flyer family: the Demon 62,
+            // GiantBat 93, Slimer 121, IlluminantBat 137, IceBat 150,
+            // Lavabat 151, GiantFlyingFox 152, VampireBat 158, FlyingSnake
+            // 226 (`SetDefaults` rows cited at the enum). The faithful
+            // `npc_ai_style14::bat_ai` claims the axis (the four landed
+            // bats' machine, the S1-D-3 reconcile): the tile bounces, the
+            // generic approach, the water-group second pass, the drift, the
+            // Demon/VoodooDemon sickle shot. The 158/226 type-specific
+            // branches are cited machine skips (they land with the machine
+            // round). noGravity — the flyer integration tail.
+            14 => {
+                self.update_cave_bat(world, player, rng);
+            }
             // `else if (this.aiStyle == 27)` (`NPC.cs:25635-26052`) —
             // S1-D-3 W-1: the Wall of Flesh rides the faithful
             // `npc_ai_style27::style27_step` (the one-time init, the band
@@ -6925,10 +7061,21 @@ impl Npc {
             // with a type-specific shadowflame machine, not aiStyle 8 caster.
             NpcKind::GoblinSummoner => self.update_goblin_summoner(world, player, rng),
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
-                // S1-D-3 reconcile: the four kinds ride the faithful
-                // aiStyle-14 machine (`npc_ai_style14::bat_ai`,
-                // `NPC.cs:22849-23486`) — the hash-jitter stand-in retired.
-                self.update_cave_bat(world, player, rng)
+                // W4-g8 lane 1 batch 3: aiStyle 14 rides the style axis
+                // above (`14 => update_cave_bat`) — this arm is unreachable
+                // through `update_rng` (the S1-D-2 axis precedent).
+                unreachable!("aiStyle 14 rides the style axis (W4-g8)")
+            }
+            // W4-g8 lane 1 batch 3 — the CursedSkull (aiStyle 10) + the
+            // nine bat/flyer family members (aiStyle 14) ride the style
+            // axis above — these arms are unreachable through `update_rng`.
+            NpcKind::CursedSkull => {
+                unreachable!("aiStyle 10 rides the style axis (W4-g8)")
+            }
+            NpcKind::Demon | NpcKind::GiantBat | NpcKind::Slimer | NpcKind::IlluminantBat
+            | NpcKind::IceBat | NpcKind::Lavabat | NpcKind::GiantFlyingFox
+            | NpcKind::VampireBat | NpcKind::FlyingSnake => {
+                unreachable!("aiStyle 14 rides the style axis (W4-g8)")
             }
             // S1-D-2: the aiStyle-5 hover family (6/42/23/5) rides the
             // style axis (`ai_005_hover_family`) — these arms are unreachable
@@ -10298,6 +10445,87 @@ impl Npc {
             // Nymph's walk — the shared town body over the 14-frame strip.
             NpcKind::Nymph => {
                 self.humanoid_town_frame();
+            }
+            // W4-g8 lane 1 batch 3 — the d22-d33 kinds' `FindFrame` cases.
+            // `case 34` (`NPC.cs:77055-77066`): the CursedSkull's spin —
+            // the 4-tick counter over the 3-row strip.
+            NpcKind::CursedSkull => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 4.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= 3 {
+                    self.frame = 0;
+                }
+            }
+            // `case 62` (`NPC.cs:73887-73902`): the Demon's flap —
+            // spriteDirection follows direction, the vx*0.1 tilt, the
+            // 5-tick counter over the 5-row strip.
+            NpcKind::Demon => {
+                self.sprite_dir = self.facing;
+                self.rotation = self.vx * 0.1;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 25.0 {
+                    self.frame_counter = 0.0;
+                }
+                self.frame = (self.frame_counter / 5.0) as u32;
+            }
+            // `case 121` (`NPC.cs:73996-74059`, the demon-eye group): the
+            // Slimer's flap — the 8-tick counter over the 4-row strip.
+            NpcKind::Slimer => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 8.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= 4 {
+                    self.frame = 0;
+                }
+            }
+            // `case 93/137` (`NPC.cs:74827-74884`, the ghost group): the
+            // GiantBat/IlluminantBat flap — spriteDirection follows the
+            // velocity sign, the vx*0.1 tilt, the 6-tick counter over the
+            // 4-row strip.
+            NpcKind::GiantBat | NpcKind::IlluminantBat => {
+                if self.vx > 0.0 {
+                    self.sprite_dir = 1;
+                }
+                if self.vx < 0.0 {
+                    self.sprite_dir = -1;
+                }
+                self.rotation = self.vx * 0.1;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= 4 {
+                    self.frame = 0;
+                }
+            }
+            // `case 150/151/152/158/226` (`NPC.cs:74786-74822`): the
+            // IceBat/Lavabat/GiantFlyingFox/VampireBat/FlyingSnake flap —
+            // spriteDirection follows the velocity sign, the vx*0.1 tilt,
+            // the 6-tick counter over the 4-row strip (the 150/151 dust
+            // arms are the cited visual skips).
+            NpcKind::IceBat | NpcKind::Lavabat | NpcKind::GiantFlyingFox
+            | NpcKind::VampireBat | NpcKind::FlyingSnake => {
+                if self.vx > 0.0 {
+                    self.sprite_dir = 1;
+                }
+                if self.vx < 0.0 {
+                    self.sprite_dir = -1;
+                }
+                self.rotation = self.vx * 0.1;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= 4 {
+                    self.frame = 0;
+                }
             }
         }
     }
@@ -19884,6 +20112,17 @@ impl Npc {
             NpcKind::FloatyGross => 372,
             NpcKind::LostGirl => 373,
             NpcKind::Nymph => 374,
+            // W4-g8 lane 1 batch 3 — the port-local 375-384 band.
+            NpcKind::CursedSkull => 375,
+            NpcKind::Demon => 376,
+            NpcKind::GiantBat => 377,
+            NpcKind::Slimer => 378,
+            NpcKind::IlluminantBat => 379,
+            NpcKind::IceBat => 380,
+            NpcKind::Lavabat => 381,
+            NpcKind::GiantFlyingFox => 382,
+            NpcKind::VampireBat => 383,
+            NpcKind::FlyingSnake => 384,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -25285,6 +25524,17 @@ mod tests {
         NpcKind::FloatyGross,
         NpcKind::LostGirl,
         NpcKind::Nymph,
+        // W4-g8 lane 1 batch 3 — the CursedSkull + the bat/flyer family.
+        NpcKind::CursedSkull,
+        NpcKind::Demon,
+        NpcKind::GiantBat,
+        NpcKind::Slimer,
+        NpcKind::IlluminantBat,
+        NpcKind::IceBat,
+        NpcKind::Lavabat,
+        NpcKind::GiantFlyingFox,
+        NpcKind::VampireBat,
+        NpcKind::FlyingSnake,
     ];
 
     #[test]
@@ -36258,5 +36508,86 @@ mod w4_g8_kind_wire_1_tests {
         let web = crate::projectile::proj_data(crate::projectile::WEB_SPIT)
             .expect("the WebSpit 472 row");
         assert_eq!(web.time_left, 60);
+    }
+
+    /// W4-g8 lane 1 batch 3 — the ten kinds' `SetDefaults` rows pin
+    /// against the C# through the port's tables.
+    /// (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+    #[test]
+    fn w4_g8_b3_the_defaults_match_the_csharp_rows() {
+        let rows = [
+            // NPC.cs:9150-9165 (CursedSkull 34).
+            (NpcKind::CursedSkull, 34u16, 10u8, 26.0, 28.0, 35, 6, 40, 0.2f32, 150.0f32),
+            // NPC.cs:9567-9581 (Demon 62).
+            (NpcKind::Demon, 62, 14, 28.0, 48.0, 32, 8, 120, 0.8, 300.0),
+            // NPC.cs:10047-10060 (GiantBat 93).
+            (NpcKind::GiantBat, 93, 14, 26.0, 20.0, 45, 16, 100, 0.75, 400.0),
+            // NPC.cs:10466-10478 (Slimer 121) — value 0 (no row).
+            (NpcKind::Slimer, 121, 14, 40.0, 30.0, 45, 20, 60, 0.8, 0.0),
+            // NPC.cs:10735-10747 (IlluminantBat 137).
+            (NpcKind::IlluminantBat, 137, 14, 26.0, 20.0, 75, 30, 200, 0.75, 500.0),
+            // NPC.cs:10885-10899 (IceBat 150).
+            (NpcKind::IceBat, 150, 14, 22.0, 22.0, 18, 6, 30, 0.8, 250.0),
+            // NPC.cs:10900-10915 (Lavabat 151).
+            (NpcKind::Lavabat, 151, 14, 22.0, 22.0, 50, 16, 160, 0.6, 400.0),
+            // NPC.cs:10916-10929 (GiantFlyingFox 152).
+            (NpcKind::GiantFlyingFox, 152, 14, 38.0, 34.0, 80, 24, 220, 0.65, 400.0),
+            // NPC.cs:15466-15479 (VampireBat 158).
+            (NpcKind::VampireBat, 158, 14, 22.0, 22.0, 60, 32, 750, 0.75, 5000.0),
+            // NPC.cs:11911-11924 (FlyingSnake 226).
+            (NpcKind::FlyingSnake, 226, 14, 34.0, 50.0, 85, 28, 260, 0.65, 400.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The flag rows: the Slimer's alpha 55 + scale 1.1 (`NPC.cs:10475`/
+        // `:10477`), the Lavabat's scale 1.15 (`:10913`).
+        let slimer = Npc::new(NpcKind::Slimer, 0.0, 0.0, 1, 0.0);
+        assert_eq!(slimer.alpha, 55);
+        assert_eq!(slimer.scale, 1.1);
+        assert_eq!(Npc::new(NpcKind::Lavabat, 0.0, 0.0, 1, 0.0).scale, 1.15);
+        // The port-local protocol band 375-384.
+        assert_eq!(NpcKind::CursedSkull.to_u16(), 375);
+        assert_eq!(NpcKind::FlyingSnake.to_u16(), 384);
+    }
+
+    /// The style axis claims 10/14 for the batch-3 kinds; the four landed
+    /// bats' kind arm is retired to the unreachable marker (the axis
+    /// migration).
+    #[test]
+    fn w4_g8_b3_the_axis_claims_10_and_14() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        for style in ["10", "14"] {
+            let mut count = 0u32;
+            for line in body.lines() {
+                let t = line.trim_start();
+                let Some(head) = t.split("=>").next() else { continue };
+                let head = head.split(" if ").next().unwrap_or(head);
+                if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                    continue;
+                }
+                for tok in head.split('|') {
+                    if tok.trim() == style {
+                        count += 1;
+                    }
+                }
+            }
+            assert_eq!(count, 1, "aiStyle {style} claimed once");
+        }
+        assert!(src.contains("aiStyle 10 rides the style axis (W4-g8)"));
+        assert!(src.contains("aiStyle 14 rides the style axis (W4-g8)"));
     }
 }

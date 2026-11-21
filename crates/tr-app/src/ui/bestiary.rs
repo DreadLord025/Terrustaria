@@ -1676,6 +1676,36 @@ fn portrait_data(
             let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 14.0).unwrap_or(56.0);
             (sheet_i, h, 38.0, h, white)
         }
+        // W4-g8 lane 1 batch 3 — the CursedSkull + the bat/flyer family
+        // portraits (the sheet's own row height over `Main.npcFrameCount`).
+        (NpcKind::CursedSkull, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 3.0).unwrap_or(40.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        (NpcKind::Demon, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 5.0).unwrap_or(62.0);
+            (sheet_i, h, 86.0, h, white)
+        }
+        (NpcKind::GiantBat | NpcKind::IlluminantBat, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 4.0).unwrap_or(32.0);
+            (sheet_i, h, 44.0, h, white)
+        }
+        (NpcKind::Slimer, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 4.0).unwrap_or(40.0);
+            (sheet_i, h, 44.0, h, white)
+        }
+        (NpcKind::IceBat | NpcKind::Lavabat | NpcKind::VampireBat, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 4.0).unwrap_or(48.0);
+            (sheet_i, h, 52.0, h, white)
+        }
+        (NpcKind::GiantFlyingFox, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 4.0).unwrap_or(46.0);
+            (sheet_i, h, 80.0, h, white)
+        }
+        (NpcKind::FlyingSnake, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 4.0).unwrap_or(40.0);
+            (sheet_i, h, 40.0, h, white)
+        }
     }
 }
 

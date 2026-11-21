@@ -517,6 +517,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(SMALL_KIND_SHEETS)
             .chain(KIND_WIRE_1_SHEETS)
             .chain(KIND_WIRE_2_SHEETS)
+            .chain(KIND_WIRE_3_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1280,6 +1281,22 @@ pub(crate) const KIND_WIRE_2_SHEETS: &[u32] = &[
     182, // the Floaty Gross
     195, // the Lost Girl
     196, // the Nymph
+];
+
+/// W4-g8 lane 1 batch 3 — the CursedSkull + the aiStyle-14 bat/flyer
+/// family's own sheets (`TextureAssets.Npc[type]`), keyed by the vanilla
+/// net id in `NpcAssets::npc_sheets` exactly like `KIND_WIRE_2_SHEETS`.
+pub(crate) const KIND_WIRE_3_SHEETS: &[u32] = &[
+    34,  // the Cursed Skull
+    62,  // the Demon
+    93,  // the Giant Bat
+    121, // the Slimer
+    137, // the Illuminant Bat
+    150, // the Ice Bat
+    151, // the Lavabat
+    152, // the Giant Flying Fox
+    158, // the Vampire Bat
+    226, // the Flying Snake
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -3243,6 +3260,25 @@ pub(crate) fn draw_npcs(
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
+            // W4-g8 lane 1 batch 3 — the CursedSkull + the bat/flyer family
+            // draw their OWN sheets (`KIND_WIRE_3_SHEETS`) at the generic
+            // centred anchor. The Slimer's 1.1 / the Lavabat's 1.15 scale
+            // ride `scaled_anchor` (the Spike Ball convention).
+            NpcKind::CursedSkull
+            | NpcKind::Demon
+            | NpcKind::GiantBat
+            | NpcKind::IlluminantBat
+            | NpcKind::IceBat
+            | NpcKind::GiantFlyingFox
+            | NpcKind::VampireBat
+            | NpcKind::FlyingSnake => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            NpcKind::Slimer | NpcKind::Lavabat => {
+                let ty = texture_net_id(n.kind);
+                scaled_anchor(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3413,6 +3449,16 @@ pub(crate) fn draw_npcs(
                     | NpcKind::FloatyGross
                     | NpcKind::WallCreeperWall
                     | NpcKind::CrimsonAxe
+                    // W4-g8 lane 1 batch 3 — the bat/flyer family's vx*0.1
+                    // tilt (`NPC.cs:73891`/`:74811`/`:74858`).
+                    | NpcKind::Demon
+                    | NpcKind::GiantBat
+                    | NpcKind::IlluminantBat
+                    | NpcKind::IceBat
+                    | NpcKind::Lavabat
+                    | NpcKind::GiantFlyingFox
+                    | NpcKind::VampireBat
+                    | NpcKind::FlyingSnake
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with
