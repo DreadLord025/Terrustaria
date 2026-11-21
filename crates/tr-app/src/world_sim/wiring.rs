@@ -358,11 +358,15 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
     }
     // The trap emissions spawn after the fixed step (`NewProjectile` with
     // the knockback 2f, `Wiring.cs:1990-1992`). The trap darts, the spiky
-    // ball 185, the spear 186 (aiStyle 14) and the flame jet 187 (aiStyle 38,
-    // W4-g43 doc-sweep — the stationary emitter of the 188 children) spawn
-    // through the pool. The ceiling −7 arm emits one identical `Spear`
-    // request twice: the C# evaluates its cap ONCE before both spawns, so
-    // identical requests share one cap decision (and therefore one pool scan).
+    // ball 185, the spear 186 (aiStyle 14) and the flame jet 187 (aiStyle
+    // 38 — the stationary emitter of the 188 children) spawn through the
+    // pool. The jet is stock friendly/hostile FALSE (`Projectile.cs
+    // :2741-2751`) — the spawn site flips the pool's friendly-true default
+    // off; its damage rides the 188 children (the W4-d4 drain lift, keep-one
+    // union with the W4-g43 row). The ceiling −7 arm emits one identical
+    // `Spear` request twice: the C# evaluates its cap ONCE before both
+    // spawns, so identical requests share one cap decision (and therefore
+    // one pool scan).
     let mut decided: Vec<tr_core::wiring::TrapRequest> = Vec::new();
     let mut blocked: Vec<tr_core::wiring::TrapRequest> = Vec::new();
     for req in trap_requests {
@@ -395,24 +399,38 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                 vy,
                 kind,
                 damage,
-            } => spawn_device_kind(app, kind, x, y, vx, vy, damage, 2.0, 0.0, 0.0),
+            } => {
+                let slot = spawn_device_kind(app, kind, x, y, vx, vy, damage, 2.0, 0.0, 0.0);
+                // The flame jet 187 is stock `friendly = false`
+                // (`Projectile.cs:2741-2751` sets neither flag); the pool's
+                // spawn defaults friendly true, so the site flips it off
+                // (the jet damages nothing itself — the 188 children do).
+                // The W4-d4 drain lift, keep-one union.
+                if kind == crate::projectile::FLAMETHROWER_TRAP {
+                    if let Some(s) = slot {
+                        app.projectiles.slots_mut()[s].friendly = false;
+                    }
+                }
+            }
             // The `count_kind` is the cap's counting type (F1: 0 on the
             // floor), NOT the spawn kind — every arm of the family fires the
             // spiky ball (185).
             tr_core::wiring::TrapRequest::Spear {
                 x, y, vx, vy, damage, ..
-            } => spawn_device_kind(
-                app,
-                crate::projectile::TRAP_SPIKY_BALL,
-                x,
-                y,
-                vx,
-                vy,
-                damage,
-                2.0,
-                0.0,
-                0.0,
-            ),
+            } => {
+                let _ = spawn_device_kind(
+                    app,
+                    crate::projectile::TRAP_SPIKY_BALL,
+                    x,
+                    y,
+                    vx,
+                    vy,
+                    damage,
+                    2.0,
+                    0.0,
+                    0.0,
+                );
+            }
         }
     }
     // The device shots spawn after the fixed step (`NewProjectile`,
@@ -435,7 +453,7 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
         if shot.kind == crate::projectile::CANNON_BUNNY && !bunny_cannon_can_fire(app) {
             continue;
         }
-        spawn_device_kind(
+        let _ = spawn_device_kind(
             app,
             shot.kind,
             shot.x,
@@ -557,6 +575,9 @@ fn fountain_anchored(app: &App, ai0: f32, ai1: f32) -> bool {
 
 /// The shared spawn: the port's pool when the family has `ProjData`, a silent
 /// drop otherwise (the ANALYSIS note lists the missing aiStyle families).
+/// Returns the spawned slot so the caller can apply the C# `SetDefaults`
+/// flags the pool's spawn defaults overwrite (the flame jet's
+/// friendly-false flip — the W4-d4 drain lift, keep-one union).
 fn spawn_device_kind(
     app: &mut App,
     kind: u16,
@@ -568,10 +589,12 @@ fn spawn_device_kind(
     knock_back: f32,
     ai0: f32,
     ai1: f32,
-) {
+) -> Option<usize> {
     if crate::projectile::proj_data(kind).is_some() {
         app.projectiles
-            .spawn_with_data_ai(kind, x, y, vx, vy, damage, knock_back, ai0, ai1);
+            .spawn_with_data_ai(kind, x, y, vx, vy, damage, knock_back, ai0, ai1)
+    } else {
+        None
     }
 }
 
@@ -999,6 +1022,32 @@ mod tests {
             .filter(|p| p.active && p.kind == crate::projectile::TRAP_SPIKY_BALL)
             .count();
         assert_eq!(live, 2, "one cap decision, two spawns");
+    }
+
+    /// The temple style-2 flame trap (`Wiring.cs:1772-1801`'s variant 2,
+    /// frameY 36): the jet 187 now SPAWNS through the drain (the W4-g43
+    /// row + the W4-d4 machine, keep-one union) with the C#'s stock
+    /// friendly/hostile FALSE — the spawn site flips the pool's
+    /// friendly-true default off (`Projectile.cs:2741-2751` sets neither
+    /// flag; the jet's damage rides its 188 children). frameX 18 → +1 X:
+    /// the jet spawns at `(10*16+8+10, 20*16+8)` = (178, 328) with
+    /// velocity (5, 0), damage 40, knockback 2. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_g43_the_flame_trap_spawns_the_jet_friendly_false() {
+        let mut app = app_with(137, 18, 2 * 18);
+        trip_and_tick(&mut app);
+        let jet = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == crate::projectile::FLAMETHROWER_TRAP)
+            .expect("the 187 jet spawns (the style-2 trap fires)");
+        assert_eq!(jet.pos, Vec2::new(178.0, 328.0), "the +10 px X offset");
+        assert_eq!(jet.vel, Vec2::new(5.0, 0.0), "the flame speed 5");
+        assert_eq!(jet.damage, 40);
+        assert_eq!(jet.knock_back, 2.0, "the shared trap knockback 2f");
+        assert!(!jet.friendly, "the spawn site flips the friendly default off");
+        assert_eq!(jet.time_left, 60, "the row's 60-tick life");
     }
 
     #[test]

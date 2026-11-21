@@ -300,8 +300,9 @@ struct FlailTick {
 
 /// The ported families' `SetDefaults` slice. The spear trap's spear (186,
 /// aiStyle 37) keeps its stand-in row — the aiStyle-37 port is the M4-PROJ
-/// follow-up; the flame jet (187, aiStyle 38) is ported (W4-g43 doc-sweep,
-/// the stationary 6-tick emitter of the 188 children).
+/// follow-up; the flame jet (187, aiStyle 38) rides the `ai_flame_jet`
+/// emitter (the W4-d4 a336f4aa machine, keep-one union with the W4-g43
+/// doc-sweep row — the stationary 6-tick emitter of the 188 children).
 ///
 /// The ammo-resolution rows (M3-ITEM-6 Phase 2): the kinds
 /// `Player.PickAmmo`'s resolution chain (`Player.cs:53458-53683`) resolves —
@@ -11302,35 +11303,38 @@ impl Projectile {
         self.kill_step(world);
     }
 
-    /// W4-g43 doc-sweep — the aiStyle-38 FlamethrowerTrap (187, the temple
-    /// flame trap's jet, `AI()` `Projectile.cs:27500-27512`): the stationary
-    /// emitter. `ai[0]++`; at `>= 6` it resets, plays `SoundID.Item34` and
-    /// (owner == myPlayer) spawns the 188 FlamesTrap at `base.position` with
-    /// the jet's velocity/damage/knockBack. `UpdatePosition`'s skip list
-    /// (`:20435`) holds the jet in place — NO movement integration (the
-    /// aiStyle-84 laser precedent). The child spawn rides the
-    /// `wants_dart_spawns` intent (the pool resolves it after the sub-steps);
-    /// the C# `NewProjectile` takes the jet's TOP-LEFT (`base.position.X/Y`,
-    /// `:27509`) and re-centres the 6x6 child on it (`:10876-10877`), so the
-    /// child's top-left lands at `pos + (w-6)/2` — the same 6x6 box, no shift.
-    fn ai_flamethrower_trap(&mut self) {
+    /// `AI()`'s aiStyle-38 arm (`Projectile.cs:27500-27512`) — the
+    /// Flamethrower Trap's jet (187, the style's only `SetDefaults` row,
+    /// `:2741-2751`). The W4-d4 `ai_flame_jet` machine, keep-one union with
+    /// the W4-g43 doc-sweep's row + wiring coverage (the g43
+    /// `ai_flamethrower_trap` copy is dropped: its hardcoded owner-0 gate
+    /// and uncompensated spawn site deviate from the C# — see the spawn
+    /// note below).
+    ///
+    /// The jet counts `ai[0]`; at ≥6 it resets, plays `SoundID.Item34` and
+    /// (owner-gated) spawns the 188 FlamesTrap with the jet's own
+    /// velocity/damage/knockBack (`:27502-27511`). aiStyle 38 is on
+    /// `UpdatePosition`'s skip list (`:20435`) → NO integrate; the jet hangs
+    /// at its spawn point for its 60-tick life. The cue rides `wants_sound`,
+    /// the child spawn rides `wants_dart_spawns` (the pool cannot spawn
+    /// mid-iteration).
+    fn ai_flame_jet(&mut self, local_owner: u8) {
         self.ai[0] += 1.0;
         if self.ai[0] >= 6.0 {
             self.ai[0] = 0.0;
-            // `:27506` — `SoundEngine.PlaySound(SoundID.Item34, position)`:
-            // the (2, 34) cue intent (the `wants_sound` pattern, drained on
-            // the `UpdateProjectiles` stream).
+            // `:27506` — `SoundEngine.PlaySound(SoundID.Item34, position)`.
             self.wants_sound = Some((2, 34, self.pos.x, self.pos.y, 0.0));
-            // `:27507-27510` — the owner gate (`Main.myPlayer == owner`): the
-            // wiring drain spawns the jet with owner 0 (the local player),
-            // so the gate passes. The 188 child carries the jet's
-            // velocity/damage/knockBack; `NewProjectile` re-centres the 6x6
-            // box on `base.position` — the same box, no half-shift.
-            if self.owner == 0 {
+            // `:27507-27510` — the owner-gated 188 spawn. The C# passes the
+            // jet's TOP-LEFT (`base.position.X/Y`, `:27509`) and
+            // `NewProjectile` centres the box on it (`:10876-10877`); the
+            // port's spawn seam takes the top-left directly, so the spawn
+            // site subtracts the 6×6 flame's half-box — the child's box
+            // lands centred on the jet's top-left exactly like the C#.
+            if self.owner == local_owner {
                 self.wants_dart_spawns.push((
                     FLAMES_TRAP,
-                    self.pos.x,
-                    self.pos.y,
+                    self.pos.x - 3.0,
+                    self.pos.y - 3.0,
                     self.vel.x,
                     self.vel.y,
                     self.damage,
@@ -17607,10 +17611,14 @@ impl ProjectilePool {
                         // (`:25861-25935`): the launch ramp, the 60-tick cap
                         // and the spin.
                         23 => self.slots[i].ai_eye_fire(world),
-                        // W4-g43 doc-sweep — the aiStyle-38 FlamethrowerTrap
-                        // (187, `AI()` `:27500-27512`): the stationary 6-tick
-                        // emitter of the 188 FlamesTrap children.
-                        38 => self.slots[i].ai_flamethrower_trap(),
+                        // The aiStyle-38 FlamethrowerTrap (187, `AI()`
+                        // `:27500-27512`): the stationary 6-tick emitter of
+                        // the 188 FlamesTrap children. Keep-one union: the
+                        // W4-d4 `ai_flame_jet` machine (the owner gate reads
+                        // the pass's local player, the spawn site carries
+                        // the `NewProjectile` centring) over the W4-g43
+                        // doc-sweep's row + wiring coverage.
+                        38 => self.slots[i].ai_flame_jet(local_owner),
                         // S1-P-i28 — the thrown-consumable flight arms.
                         // aiStyle 68: the Molotov cocktail (399)
                         // (`Projectile.cs:30166-30239` + the movement-68
@@ -19898,6 +19906,12 @@ impl ProjectilePool {
                     && !self.slots[i].friendly
                     && !DUNGEON_DEBRIS.contains(&self.slots[i].kind)
                     && self.slots[i].kind != SLIME_MINION
+                    // The flame jet 187 is stock `hostile = false`
+                    // (`Projectile.cs:2741-2751` sets neither flag), so
+                    // `Damage_EVP` refuses (`:14775`) — the `!friendly`
+                    // proxy must not hurt the player (the debris exemption
+                    // precedent). Keep-one union: the W4-d4 refusal.
+                    && self.slots[i].kind != FLAMETHROWER_TRAP
                 {
                     self.damage_player(i, player.as_deref_mut(), rng);
                 }
@@ -22696,6 +22710,26 @@ impl ProjectilePool {
             if p.kind == 443 && !p.friendly {
                 continue;
             }
+            // The Flamethrower Trap's jet 187 (`SetDefaults`
+            // `Projectile.cs:2741-2751`): NEITHER friendly nor hostile in
+            // the C# — the jet damages no NPC (`Damage_PVE_Inner`'s
+            // `!friendly` refusal `:12611`); its damage rides the 188
+            // children. The spawn site holds friendly false. Keep-one
+            // union: the W4-d4 refusal.
+            if p.kind == FLAMETHROWER_TRAP {
+                continue;
+            }
+            // `Damage_CanDealDamage` (`:12448`): the Flames Trap 188 deals
+            // nothing during its launch ramp (`localAI[0] < 5` — the
+            // counter `ai_eye_fire` floors/counts, `:25863-25870`;
+            // extraUpdates 2 → 3 sub-steps/frame, so the ramp is ~2
+            // frames). The C# gate wraps `Damage()` whole (`:12497`); the
+            // port carries it per-kind in both walks (the FLAMETHROWER_TRAP
+            // precedent). Union: the W4-d4 DOC-SWEEP gate — the jet's
+            // children now spawn on this branch (the temple style-2 trap).
+            if p.kind == FLAMES_TRAP && p.local_ai[0] < 5.0 {
+                continue;
+            }
             if refuses_friendly(n, p.kind, kill_guide, kill_clothier) {
                 continue;
             }
@@ -23330,6 +23364,11 @@ impl ProjectilePool {
         // base-4 default is the player's; the death-burst callers pass no
         // player — the per-hit roll still rides the stream in the C# order).
         let owned_by_someone = owner < 255 && !self.slots[slot].trap;
+        // The Flames Trap's launch-ramp refusal (`Damage_CanDealDamage`
+        // `:12448`), the boxed walk's copy (the W4-d4 union gate).
+        if self.slots[slot].kind == FLAMES_TRAP && self.slots[slot].local_ai[0] < 5.0 {
+            return;
+        }
         let (px, py, pw, ph) = {
             let p = &self.slots[slot];
             (p.pos.x, p.pos.y, p.w, p.h)
@@ -23460,6 +23499,12 @@ impl ProjectilePool {
         };
         let p = &self.slots[slot];
         if p.damage <= 0 {
+            return;
+        }
+        // `Damage_CanDealDamage` (`:12448`, the `Damage()` wrap `:12497`
+        // covers EVP too): the Flames Trap's launch ramp hurts no player
+        // either (`localAI[0] < 5`). The W4-d4 union gate.
+        if p.kind == FLAMES_TRAP && p.local_ai[0] < 5.0 {
             return;
         }
         let cx = p.pos.x + SIZE * 0.5;
@@ -41119,6 +41164,45 @@ mod s1_d_4b_5c_tests {
         assert!((p.rot + 0.3).abs() < 1e-6, ":25934 mirrors with direction");
     }
 
+    /// The 188 flame child's launch-ramp damage refusal
+    /// (`Damage_CanDealDamage` `Projectile.cs:12448`: `type == 188 &&
+    /// localAI[0] < 5`). The row EXISTS (`data.rs` FLAMES_TRAP, 6×6/23/−1/
+    /// extraUpdates 2/trap, `:2752-2763`) and `ai_eye_fire` counts
+    /// `local_ai[0]`; this pins the gate that count feeds. A fresh child
+    /// (localAI[0] = 0) overlapping an NPC deals nothing; after the counter
+    /// reaches 5 the hit lands. The 20-px hitbox inflate (`:15010-15013`)
+    /// makes the 6×6 box reach the NPC at 300. Keep-one union: the W4-d4
+    /// DOC-SWEEP gate — the temple style-2 trap's jet now spawns these
+    /// children on this branch. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_g43_the_flames_trap_launch_ramp_deals_no_damage() {
+        let run = |launch: f32| {
+            let w = world();
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai(FLAMES_TRAP, 300.0, 300.0, 0.0, 0.0, 40, 2.0, 0.0, 0.0)
+                .unwrap();
+            pool.slots_mut()[slot].local_ai[0] = launch;
+            let mut npc = Npc::new(NpcKind::Slime, 300.0, 300.0, 1, 0.0);
+            npc.hp = 500;
+            npc.max_hp = 500;
+            let before = npc.hp;
+            pool.damage_pve(
+                &w,
+                slot,
+                std::slice::from_mut(&mut npc),
+                None,
+                None,
+                None,
+                &mut tr_core::tile_light::FastRandom::new(7),
+            );
+            before - npc.hp
+        };
+        assert_eq!(run(0.0), 0, "localAI[0] < 5 refuses the hit (`:12448`)");
+        assert_eq!(run(4.0), 0, "the ramp's last refusing tick");
+        assert!(run(5.0) > 0, "localAI[0] >= 5 the flame bites");
+    }
+
     /// The aiStyle-158 walk (`Projectile.cs:48770-48777`): 6 ticks per frame,
     /// wrapping at `projFrames - 1` (so the last frame is only reachable by
     /// the perch snap — the walk wraps before it).
@@ -42857,38 +42941,57 @@ mod s1_d_5_data_row_tests {
         assert_eq!(d.penetrate, 1);
     }
 
-    /// W4-g43 doc-sweep — the FlamethrowerTrap (187, aiStyle 38,
-    /// `Projectile.cs:27500-27512`): the stationary 6-tick emitter. The jet
-    /// hangs at its spawn point (`UpdatePosition`'s skip list `:20435`),
-    /// `ai[0]` counts to 6, resets, and spawns the 188 FlamesTrap child with
-    /// the jet's velocity/damage/knockBack. The child rides the aiStyle-23
-    /// `ai_eye_fire` flight.
+    /// The FlamethrowerTrap (187, aiStyle 38, `Projectile.cs:27500-27512`):
+    /// the stationary 6-tick emitter. The jet hangs at its spawn point
+    /// (`UpdatePosition`'s skip list `:20435`), `ai[0]` counts to 6, resets,
+    /// and spawns the 188 FlamesTrap child with the jet's
+    /// velocity/damage/knockBack. The child rides the aiStyle-23
+    /// `ai_eye_fire` flight. Keep-one union: the W4-d4 `ai_flame_jet`
+    /// machine — the child's box is CENTRED on the jet's top-left (the
+    /// `NewProjectile` convention `:10876-10877`, the spawn site subtracts
+    /// the 6×6 half-box), and the fresh child's 3 sub-steps run in the SAME
+    /// frame (the C# `UpdateProjectiles` walk reaches the higher-index
+    /// slot). WRITTEN NOT RUN (code-only mode).
     #[test]
     fn w4_g43_the_flame_jet_emits_the_188_child_every_six_ticks() {
         let mut pool = ProjectilePool::new();
         let slot = pool
             .spawn_with_data(FLAMETHROWER_TRAP, 160.0, 160.0, 5.0, 0.0, 40, 2.0)
-            .expect("the 187 row spawns (W4-g43)");
+            .expect("the 187 row spawns");
         let mut w = world();
-        // Five ticks: the counter climbs, no child yet, the jet holds still.
+        // Five ticks: the counter climbs, no cue and no child yet, the jet
+        // holds still.
         for _ in 0..5 {
             step(&mut pool, &mut w);
         }
         let p = &pool.slots()[slot];
-        assert_eq!(p.ai[0], 5.0, "the emitter counter ticks");
+        assert_eq!(p.ai[0], 5.0, "the emitter counter ticks (`:27502`)");
         assert_eq!(p.pos, Vec2::new(160.0, 160.0), "the jet is stationary (:20435)");
+        assert!(pool.drain_proj_sounds().is_empty(), "no cue before the 6th tick");
         assert!(
             pool.slots().iter().all(|s| !s.active || s.kind != FLAMES_TRAP),
             "no child before the 6th tick"
         );
-        // The 6th tick: the counter resets and the 188 child spawns.
+        // The 6th tick: the counter resets, the Item34 cue queues and the
+        // owner-gated 188 child spawns.
         step(&mut pool, &mut w);
         assert_eq!(pool.slots()[slot].ai[0], 0.0, "the counter resets (:27505)");
+        assert_eq!(
+            pool.drain_proj_sounds(),
+            vec![(2, 34, 160.0, 160.0, 0.0)],
+            "the Item34 cue (`:27506`)"
+        );
         let child = pool
             .slots()
             .iter()
             .find(|s| s.active && s.kind == FLAMES_TRAP)
             .expect("the 188 child spawns (:27509)");
+        // The spawn site passed the jet's top-left minus the 6×6 half-box
+        // (`NewProjectile`'s centre convention, `:10876-10877`): the child
+        // spawned at (157, 157). Its aiStyle-23 arm ran its 3 sub-steps
+        // (extraUpdates 2) in the same frame: +5 px X each, so the box sits
+        // at (172, 157) after the spawn tick.
+        assert_eq!(child.pos, Vec2::new(172.0, 157.0));
         assert_eq!(child.vel, Vec2::new(5.0, 0.0), "the jet's velocity carries");
         assert_eq!(child.damage, 40, "the jet's damage carries");
         assert_eq!(child.knock_back, 2.0, "the jet's knockBack carries");
@@ -42902,6 +43005,41 @@ mod s1_d_5_data_row_tests {
             .filter(|s| s.active && s.kind == FLAMES_TRAP)
             .count();
         assert!(children >= 2, "the jet emits every 6 ticks ({children} children)");
+        // The jet never moves — its position is the spawn point after 12
+        // ticks of `velocity = (5, 0)` (`:20435`'s aiStyle-38 skip).
+        assert_eq!(pool.slots()[slot].pos, Vec2::new(160.0, 160.0));
+        assert_eq!(pool.slots()[slot].vel, Vec2::new(5.0, 0.0));
+    }
+
+    /// The flame jet's 188 spawn is OWNER-gated (`:27507`): a foreign-owned
+    /// jet still cycles its counter and queues the cue (`:27502-27506` run
+    /// unconditionally), but never queues the child. The W4-d4 union
+    /// witness. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_g43_the_flame_jet_child_spawn_is_owner_gated() {
+        let mut p = Projectile {
+            active: true,
+            kind: FLAMETHROWER_TRAP,
+            owner: 1,
+            pos: Vec2::new(160.0, 200.0),
+            vel: Vec2::new(5.0, 0.0),
+            damage: 40,
+            knock_back: 2.0,
+            ..Default::default()
+        };
+        for _ in 0..6 {
+            p.ai_flame_jet(0);
+        }
+        assert_eq!(p.ai[0], 0.0, "the counter still cycles (`:27502-27505`)");
+        assert_eq!(
+            p.wants_sound,
+            Some((2, 34, 160.0, 200.0, 0.0)),
+            "the cue plays regardless of owner (`:27506`)"
+        );
+        assert!(
+            p.wants_dart_spawns.is_empty(),
+            "the 188 spawn is owner-gated (`:27507`)"
+        );
     }
 
     #[test]
