@@ -242,6 +242,7 @@
 //! | 1228-1233 | `:88543-88548` | the 167 UndeadViking death (6 gores, type-26 dust) |
 //! | 1234-1243 | `:88553-88566` | the 197 ArmoredViking (5 gores) + 481 GreekSkeleton (5 gores) death |
 //! | 1244-1249 | `:88571-88576` | the 201/450 HeadacheSkeleton death (6 gores, type-26 dust) |
+//! | 1250-1259 | `:88581-88594` | the 202/451 MisassembledSkeleton + 203/452 PantlessSkeleton death (5 gores each) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -7236,6 +7237,70 @@ fn headache_skeleton_death(
     gore.new_gore(rng, world, low, vel, 44, s); // :88576
 }
 
+/// The 202/451 MisassembledSkeleton death (`NPC.cs:88579-88585`, sites
+/// 1250-1254): the 20-dust type-26 burst (SpeedX `2.5*hitDirection`, SpeedY
+/// -2.5), then the 5 gores at `this.scale` — 268 at position, 43/43 at +20,
+/// 44/44 at +34.
+fn misassembled_skeleton_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 26, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    gore.new_gore(rng, world, pos, vel, 268, s); // :88581
+    gore.new_gore(rng, world, mid, vel, 43, s); // :88582
+    gore.new_gore(rng, world, mid, vel, 43, s); // :88583
+    gore.new_gore(rng, world, low, vel, 44, s); // :88584
+    gore.new_gore(rng, world, low, vel, 44, s); // :88585
+}
+
+/// The 203/452 PantlessSkeleton death (`NPC.cs:88588-88594`, sites
+/// 1255-1259): the 20-dust type-26 burst (SpeedX `2.5*hitDirection`, SpeedY
+/// -2.5), then the 5 gores at `this.scale` — 269 at position, 43/43 at +20,
+/// 266/266 at +34.
+fn pantless_skeleton_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 26, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    gore.new_gore(rng, world, pos, vel, 269, s); // :88590
+    gore.new_gore(rng, world, mid, vel, 43, s); // :88591
+    gore.new_gore(rng, world, mid, vel, 43, s); // :88592
+    gore.new_gore(rng, world, low, vel, 266, s); // :88593
+    gore.new_gore(rng, world, low, vel, 266, s); // :88594
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -8115,6 +8180,15 @@ pub fn hit_effect_c(
     // `:88569-88577` — the 201/450 HeadacheSkeleton arm (sites 1244-1249).
     if (npc_type == 201 || npc_type == 450) && npc.hp <= 0 {
         headache_skeleton_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88579-88586` — the 202/451 MisassembledSkeleton arm (sites
+    // 1250-1254).
+    if (npc_type == 202 || npc_type == 451) && npc.hp <= 0 {
+        misassembled_skeleton_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88588-88595` — the 203/452 PantlessSkeleton arm (sites 1255-1259).
+    if (npc_type == 203 || npc_type == 452) && npc.hp <= 0 {
+        pantless_skeleton_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -12763,6 +12837,34 @@ mod tests {
         headache_skeleton_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
         let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
         assert_eq!(types, vec![265, 267, 43, 43, 44, 44]);
+    }
+
+    /// `NPC.cs:88581-88585` — the MisassembledSkeleton death: the 5 gores
+    /// 268/43/43/44/44.
+    #[test]
+    fn w4_f10_the_misassembled_skeleton_death_spawns_the_five_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1283);
+        misassembled_skeleton_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![268, 43, 43, 44, 44]);
+    }
+
+    /// `NPC.cs:88590-88594` — the PantlessSkeleton death: the 5 gores
+    /// 269/43/43/266/266.
+    #[test]
+    fn w4_f10_the_pantless_skeleton_death_spawns_the_five_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1289);
+        pantless_skeleton_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![269, 43, 43, 266, 266]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
