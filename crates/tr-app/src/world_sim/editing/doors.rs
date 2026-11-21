@@ -1133,11 +1133,13 @@ mod tests {
         // The dyn coercion the town arm's `doors: &mut dyn TownDoorOps`
         // parameter takes — NoOpTownDoors and AppTownDoors are drop-in
         // interchangeable at that seam (b3 phase 2 swaps the binding).
-        let mut adapter = AppTownDoors { app: &mut app };
-        let doors: &mut dyn TownDoorOps = &mut adapter;
         let before = app.audio.played_count();
-        assert!(doors.open_door(10, 18, 1), "the dyn open lands");
-        assert!(doors.close_door(10, 18), "the dyn close lands");
+        {
+            let mut adapter = AppTownDoors { app: &mut app };
+            let doors: &mut dyn TownDoorOps = &mut adapter;
+            assert!(doors.open_door(10, 18, 1), "the dyn open lands");
+            assert!(doors.close_door(10, 18), "the dyn close lands");
+        }
         assert_eq!(
             app.audio.played_count(),
             before + 2,
