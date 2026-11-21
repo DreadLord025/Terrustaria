@@ -1,7 +1,7 @@
 # UNION-CONTRACT — the tile-draw pass family (g28/g29/g30/g31/g32) + the d56–d60 seam census
 
-**STATUS: FINAL — EXECUTED + ATTACHED (shadow) + TILEPASS-FINAL + RETIRED**
-(union-exec + attach + d-hunk prep + final + retire phases, same branch
+**STATUS: SEALED — FINAL (EXECUTED + ATTACHED (shadow) + TILEPASS-FINAL + RETIRED + SEAL-VERIFY)**
+(union-exec + attach + d-hunk prep + final + retire + seal phases, same branch
 `task/W4-g31-tile-draw-pass-4`, code-only). The §1–§3
 keep/drop/rebind prescription was carried out IN-LANE — see §7 for the
 execution record. The attach phase censused the d-lane tips against
@@ -19,7 +19,11 @@ d56-d60 latest-tip re-verify + the owner-lane receipts
 instructions) and the FINAL merger-acceptance checklist (§10: gate
 command, the 85-witness name list, the A/B expectations, the
 scaffolding-drop steps, the ONE-`_rand` invariant, the
-g28/g29/g30/g32 keep-one branch-drop list).
+g28/g29/g30/g32 keep-one branch-drop list). The SEAL-VERIFY phase
+(§11 + research/136 §9) re-verified the five seal items at the
+current tips — the 85 names exact, g83's hunk-A byte-identity, the
+Glow_362 census + d35's +8 px, the c29 gemsparkle/627 dispositions —
+and SEALED this contract as the tilepass-family bible FINAL.
 
 Merger assist for the TILE-PASS 5-WAY UNION. Written on `task/W4-g31-tile-draw-pass-4`
 (reconcile phase, code-only — NO code changes to any lane; this document is the
@@ -1211,3 +1215,49 @@ visibility + the contract; it merges LAST of the five (or first —
 the folds are self-contained), and its own drop-list is §10.4.
 Branch deletion order is free; the anchors canary after EACH merge
 is not optional (the lossy-merge history, AGENTS.md).
+
+---
+
+## 11. SEAL-VERIFY receipt (SEAL phase — the bible FINAL)
+
+The five-item seal brief verified at the current pushed tips; the
+full read evidence is **research/136 §9** (the SEAL-VERIFY receipt).
+Summary of the verdicts:
+
+1. **85 witnesses landed at `9d1e331db`** (HEAD = origin, the
+   MERGE-READY retire tip). Fresh census 18/14/22/10/6 + 6/6/3 = 85;
+   the §10.2 pinned NAMES compared set-wise against the actual test
+   fns — **zero missing, zero extra**. §8.3 + §10 stand verbatim.
+2. **g83 `6dd967a2a`** (research/123 §9.1): hunk A LANDED —
+   `rising_vine_strip_segments`/`draw_reverse_vines` carry
+   `show_invisible`, the per-segment `visible` reads the full
+   `IsVisible`; g83's `is_visible` body is **byte-identical**
+   (case-sensitive, 12 lines) to g31's pre-promotion copy at
+   `766a5a5a`; the HEAD wrapper delegates to the promoted
+   `tr_render::tile_visibility` with the same semantics. Hunk B (the
+   g31-side rebind) stays OPEN as scripted — re-pinned to HEAD line
+   coordinates in 136 §9.2 (struct :528-544, strip :553-624, drain
+   :628-639, witnesses :1891/:1913).
+3. **Glow_362 load obligation** (d35 `1afd327b9`, research/113
+   §16.3): the xnb re-verified from its header — LZ4-compressed
+   7592 B, decompressed 311217 = 177 + **288×270**×4; NOT in f15's
+   `GLOW_SHEET_NAMES` (zero hits at `8ca19097d`); d35's measured
+   lazy-worst-union **7305→7313 (+8 px)** present in its
+   `_d35_retire_measure.json`. g84's `Extra_260`/`Glow_294` loads
+   KEPT — re-verified at g84's new tip `e6c2dcd0d` (docs-only move
+   from `8717e9384`, assets.rs untouched, §8.6 unchanged).
+4. **c29 `29c3ff2b5`** (research/130): the 178 gemsparkle is
+   d60-claimed `tileShine` — CONFIRMED against `Main.cs:7516` +
+   `TileDrawing.cs:7413-7526` and d60's table/shine_arm at
+   `77429fe1d` (the `1|6` fold, the roll-before-windows order, dust
+   43, no light emission). Rainbow-moss 627: record `(627, 313)`
+   (`Main.cs:10041`) in g35's table (unchanged at its new tip
+   `c5bbe55b0` — the move is the item/proj/NPC census, glowmask.rs
+   diff EMPTY); the disco colour arm (`TileDrawing.cs:1235-1239`)
+   is UNPORTED and binds with the `:1178-1342` table pass under the
+   SAME row-14/§3 contract as 717 (136 §9.4).
+5. **This contract + research/136 are SEALED — the tilepass-family
+   bible is FINAL.** d56-d60/f15/g68 tips unchanged since §8.1; the
+   two co-lane moves (g84, g35) receipted with zero prescription
+   change. The merger's runbook is §8.3 + 136's F0-F4 + §9.1 +
+   §10 — as written, nothing else.

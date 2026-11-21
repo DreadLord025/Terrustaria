@@ -568,3 +568,137 @@ and ZERO stale instructions.** The §8.3 wiring script, the F0-F4
 fold order and the C-pair dispositions are merge-ready as written;
 the only additions are §8.6's g84 mapping (new lane, new drop-list)
 and this receipt table.
+
+---
+
+## 9. SEAL-VERIFY receipt (this branch, code-only — the bible FINAL)
+
+The five-item seal brief re-verified against the CURRENT pushed tips
+(`git fetch --prune` at seal time) and the C# windows. Every item
+CONFIRMED; two co-lane tips moved since earlier reads — both deltas
+receipted below with ZERO prescription change.
+
+### 9.1 The 85-witness seal (retire tip `9d1e331db` = HEAD at seal)
+
+`git rev-parse HEAD origin/task/W4-g31-tile-draw-pass-4` — both
+`9d1e331dbc0df49a94d1ae81b1863f8704bc19c2` (the MERGE-READY retire tip,
+pushed). Fresh `#[test]` grep census at HEAD: tile_pass 18 +
+special_points 14 + tile_drains 22 + tile_draw_pass 10 +
+quality_light 6 = the g-family **70**; tile_ctor 6 + tile_attach 6 +
+tile_visibility 3 = **85 total**. Stronger than the counts: all **85
+NAMES** of UNION-CONTRACT §10.2 compared set-wise against the actual
+`fn` names under each `#[test]` — **zero missing, zero extra** (the
+pinned list is exact, not just the totals). §8.3's wiring script and
+§10's acceptance checklist stand verbatim.
+
+### 9.2 g83 keep-one hunk-pair (tip `6dd967a2a`, research/123 §9.1)
+
+g83's origin tip is `6dd967a2a` (the seaweed stream-twin fixture fix —
+AFTER the §9.1 doc commit; the hunk-pair contract is unchanged by it).
+Read evidence at the tip:
+
+* **Hunk A LANDED**: `vines.rs::rising_vine_strip_segments` (:400-407)
+  carries the 6th `show_invisible: bool` param; the per-segment push
+  reads `visible: is_visible(world, x, y, show_invisible)` (:478);
+  `draw_reverse_vines` (:521-533) threads the param (:537); the
+  interim fused-pass caller passes `show_invisible_blocks`
+  (`tiles.rs:1216` call, seam-4 comment). The new witness
+  `w4_g83_the_rising_visible_reads_the_full_is_visible` (:1051) pins
+  the sight override + platform-row-48 + 541/631 arms; vines.rs census
+  21 `#[test]` as §9.2 of 123 records.
+* **Byte-identity VERIFIED**: g83's `is_visible` body (:499-510) vs
+  g31's pre-promotion copy at `766a5a5a` (tile_drains.rs :181-192, the
+  tip g83 read) — **case-sensitive line-for-line BYTE-IDENTICAL**
+  (12 lines). g31's HEAD copy is now the thin wrapper over
+  `tr_render::tile_visibility::is_visible` (the FINAL-phase promote);
+  the promoted fn's arms are the same logic (`19 if frame_y/18==48`,
+  `541|631`, `!flag || show_invisible` ≡ `if flag { return show } true`).
+* **Hunk B (g31-side rebind) re-pinned to HEAD coordinates**: 123 §9.1
+  quotes the `766a5a5a` base — at HEAD the struct is :528-544 (was
+  :525-547), `rising_vine_strip` :553-624 (was :550-622),
+  `drain_reverse_vines` :628-639, `is_visible` :185-195 (was :178-191).
+  The script is UNCHANGED in substance: DELETE the strip fn + struct,
+  import g83's (`RisingVineSegment` field-identical, g83's carries the
+  `seam_top` doc — KEEP g83's), rebind the drain body, the 2 strip
+  witnesses (`w4_g31_rising_vine_strip_walks_up` :1891 /
+  `_breaks_on_non_thread` :1913) rebind with the trailing
+  `show_invisible` arg. Step 3's "both copies identical" note updates:
+  g83's copy stays byte-identical to the PROMOTED semantics; at the
+  family merge g83's `is_visible` rebinds onto
+  `tr_render::tile_visibility` like d56/d60 (the §1.4 keep-one), or
+  keeps its world-reading wrapper form — either binds zero-conflict.
+  Step 5 re-verified: g31's `drain_draw_data` == g83's inline
+  `draw_data(kind,x,y,fx,fy,0,solid_above)` + half-brick probe
+  (same `TILE_SOLID`/`TILE_SOLID_TOP` gate, same 8/0 half).
+
+### 9.3 Glow_362 load obligation (d35 tip `1afd327b9`, research/113 §16.3)
+
+* Asset re-verified INDEPENDENTLY: `assets/Content/Images/Glow_362.xnb`
+  EXISTS — XNBw v5, flags 0x80 (LZ4), 7592 bytes compressed,
+  decompressed-size header 311217 = 177 header + 288×270×4 —
+  **288×270 = 77,760 px (78.9 kpx padded)** confirmed from the file
+  header, not just the doc.
+* `Main.tileGlowMask[717] = 362` re-read at `Main.cs:10056` — exact.
+* f15 tip `8ca19097d` unchanged; its `assets.rs` `GLOW_SHEET_NAMES`
+  (:1727) has **zero** `Glow_362` hits — the load obligation stands.
+* d35's measured +8 px: `tools/_d35_retire_measure.json` at its tip
+  carries `"scenario": "lazy-union-worst+Glow362", "skyline": 7313`
+  vs the 7305 baseline — **7305→7313 (+8)** as 113 §16.3 records; the
+  plan's "owes g31" admission + the `:971` gate coupling (C3) stand.
+* g84 keep-one re-verified at its NEW tip `e6c2dcd0d` (was `8717e9384`
+  at the retire read): the move is **docs-only** (`git diff --stat`
+  8717e9384..e6c2dcd0d = ANALYSIS/PORT_MAP/research 09+137/INDEX, zero
+  crates/ files) — `assets.rs:498 "Extra_260"` + `:1739 "Glow_294"`
+  intact, the §8.6 mapping/drop-list UNCHANGED. g84's new research/137
+  is its own keep-one prep read of g31 `766a5a5a`; consistent with
+  §8.6, no new obligation.
+
+### 9.4 c29 gemsparkle + rainbow-moss-627 (tip `29c3ff2b5`, research/130)
+
+* **178 gemsparkle = d60-claimed tileShine — CONFIRMED at both ends.**
+  C#: `Main.tileShine[178] = 500` (`Main.cs:7516`) +
+  `tileShine2[178] = true` (:7517); `[63..68] = 900` (:7523-7528),
+  `[566] = 900` (:7529), `[211] = 500` (:7549). d60 tip `77429fe1d`:
+  `tile_shine` table `178 | 211 => 500` (:243),
+  `63|64|65|66|67|68|566 => 900` (:246); the `shine_arm` 178
+  style-colour match (:1532-1545) has the `1 | 6` yellow fold, the
+  magenta/blue/green/red/white columns, dust 43 + `velocity *= 0`,
+  the dark-light `<= 20` early return (:1501) and the
+  `Next(tileShine)`-BEFORE-frame-windows order (:1506) — line-for-line
+  the C# `:7413-7482` re-read. The 63-68/566/12/665/204/639/211
+  override chain (:1551-1559) matches `:7483-7526`. NOT light
+  emission (130's refuted AddLight premise stands). The 178 shine
+  rides CAD step 3 (d60's battery) — g31 has no re-port obligation.
+* **rainbow-moss 627 → the table-pass bind contract — CONFIRMED.**
+  C# re-read: `Main.tileGlowMask[627] = 313` (`Main.cs:10041`), the
+  colour switch `case 627: case 628: case 692:` →
+  `new Color(Main.DiscoR, Main.DiscoG, Main.DiscoB)`
+  (`TileDrawing.cs:1235-1239`), inside the `:1178-1342` pass — this
+  doc's §0 row 14. g35's `glowmask.rs` carries `(627, 313)` (:52) +
+  witness (:110) at its NEW tip `c5bbe55b0` (was `fd0a99f6` at c29's
+  read): the delta is the ITEM/PROJ/NPC glow-record census +
+  GenItemData interpreter fix — `git diff fd0a99f6..c5bbe55b0 --
+  crates/tr-core/src/glowmask.rs` is EMPTY, the tile table unchanged.
+  The disco colour switch is STILL UNPORTED — it lands with the
+  table-pass lane under the SAME §3/row-14 bind contract as 717
+  (the generic `!flag3` tail `:1291-1340`; 627 sets no flag3, no
+  texture override). The port's `drawdata_cases_a.rs` disco parking
+  (column 220, :344-345/:1110) is the SECOND-switch record lane —
+  a different site, no conflict. 130's Item-5 verdict (no
+  TileObjectData def; framing/light/map/sweep landed) stands.
+
+### 9.5 Seal verdict
+
+All five items CONFIRMED with read evidence at the current tips.
+Lane-tip register at seal: d56 `5d80b38a0` / d57 `70f43aa72` /
+d58 `a13635dcb` / d59 `f70498be0` / d60 `77429fe1d` / f15 `8ca19097d` /
+g68 `d247a1c9f` — ALL unchanged since §8.1; g83 `6dd967a2a` (hunk-A
+landed, hunk-B open as scripted); c29 `29c3ff2b5`, d35 `1afd327b9`
+(the cross-receipts); g84 `e6c2dcd0d` + g35 `c5bbe55b0` (the two
+moves, both receipted above — zero prescription change).
+**research/136 + UNION-CONTRACT are SEALED — the tilepass-family
+bible is FINAL.** The merger executes §8.3 + this doc's F0-F4 +
+§9.1's C-dispositions + UNION §10 as written; the only open items
+are the recorded merge obligations themselves (C3/C4/C7, the
+is_visible/g83 rebinds, the g68 rescan drop, the Glow_362 load +
+table-pass bind incl. the 627 disco arm).
