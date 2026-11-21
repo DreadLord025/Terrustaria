@@ -38005,6 +38005,54 @@ port's state, not changed here. The javelin spawn-Y witness was tightened to
 the exact top-left (`spawn_with_data_ai` takes the point as `pos`, not a
 centre). All fixes are code-only; the witnesses remain WRITTEN, NOT RUN.
 
+## The proj-111-120 DOC-SWEEP FINAL phase (W4-d12, task/W4-d12-proj-ai-111-120, 2026-11-21, code-only mode)
+
+The FINAL round of the lane-38 sweep (research/127). Five items; the
+substantive ports/fixes and their deliberate folds:
+
+- **The 978 item-121 Volcano proc** (`Player.Volcano_TrySpawningVolcano`
+  `Player.cs:44150-44158`): the `_spawnVolcanoExplosion` use-start latch
+  (`:43476-43479`), the `ApplyNPCOnHitEffects` consumption at
+  `(int)(dmg * 0.75)` (`:44487`), `spawn_volcano_proc` (the 978 at the victim
+  centre, ai0=0/ai1=2, vel `(0, -gravDir)`). The gate is
+  `HittableForOnHitRewards` (`NPC.cs:90043-90050`) — `!CountsAsACritter &&
+  !immortal`, NO liveness term, so a killing blow still fires (the 971/975
+  `CanBeChasedBy` contrast). `CountsAsACritter` (`:6887-6897`) excludes the
+  594 WindyBalloon / 686 BoundTownSlimePurple. **gravDir folds to 1** (no
+  gravity potion in the port, the `bow_launch.rs` precedent). NO StatusNPC
+  at spawn (the OnFire 24/180 rides the explosion walks `:11359-11362`), NO
+  javelin cap. The 978 `ownerHitCheck` gate stays unmodelled (the row's
+  documented skip — the spear family is the only ported consumer).
+- **The items-3/4 `proc_damage` E0425 fix**: the first pass read `dmg`
+  before its declaration; the C# value at the capture point is the
+  class-multiplied `raw` (`ApplyRapidAttackBonus` is a no-op for 5094/795/
+  121 — the set is {2608, 3349, 672}, `ItemID.cs:344`). The 971/975 witness
+  re-press rigs were repaired (autoReuse false + the rig's undecayed
+  `attack_cd`/`hurt_cd` need the release/press edge + timer clears).
+- **The 1024 recall no-active-gate fix**: the C# state-3 scan
+  (`Player.cs:49243`) and the no-outbound pre-check (`:49198`) read type +
+  owner with NO `active` gate, and `Kill()` never clears type/owner/ai/
+  damage (`Projectile.cs:77262`). A DEAD stuck card is recalled too (ai0=2
+  + the inline ×1.5 `Damage()`), then re-killed by the return-state check
+  next tick (`:40866`). The first pass's `p.active` gates dropped verbatim.
+  The `KillOldestJavelin` interplay: recalled ai0=2 cards NEVER count toward
+  a cap (the scan predicate is `ai[0]==1`, `:15079`), and the 1024 has no
+  cap arm (`:13979` names 598/636/614 only; 971/975 cap at the spawn proc).
+- **The 111-120 band census**: ALL ten styles ARMED + ROWED (the table in
+  research/127 FINAL item 2); NONE UNARMED_ROWED.
+- **The 614 ai1 chase witness + a9 compose-contract**: the chase reads
+  `ai[1]` (`:40594`); a9's four machines (156/164/169/206) spawn their own
+  shots with ai0=features/ai1=0 and never touch the 62-arm/614 — the lanes
+  compose.
+
+CODE-ONLY MODE: no cargo/rustc/rustfmt/tests/graphify invoked. 8 witnesses
+WRITTEN, NOT RUN; every expected value hand-derived from the cited C#
+lines. Every seam call site checked against the actual signatures by
+read/grep (`spawn_with_data_ai_owned`'s 10-arg shape, `Npc`'s
+`damage_override`/`contact_damage`/`to_u16` reads, the `kill_oldest_javelin`
+4-arg form, the `recall_killing_deck_cards`/`killing_deck_recall_damage`
+seams, the shooter/melee rig helpers).
+
 ## The item-use timing machinery (S1-P-i12, task/S1-P-i12-autoswing-usetime, 2026-11-20, code-only mode)
 
 The useTime/useAnimation/autoReuse fidelity slice from the i01 census
