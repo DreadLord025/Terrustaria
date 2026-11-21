@@ -333,17 +333,80 @@ written-not-run on both branches (their own commit messages say so).
 
 ## 10. FINAL STATUS + merger checklist (2026-11-21 closeout)
 
+> **§10 addendum (2026-11-21, shared-gap + dup pass — `aed75d0b`,
+> `3f858937`, `a352b16e`):** the two shared pan gaps are CLOSED on the
+> union (movement-key cancel in `update_map_input`, `resetMapFull` clear in
+> `WorldMap::recentre`; the union carries `pan_target` so the overlay
+> keep-one folds only step+arming). The minimap-key DUP is resolved: the
+> g53 `a9774d2a` superset + the e18 `249a0c1b` alpha state are folded
+> arm-by-arm into the union's `update_minimap_zoom_keys` (keep-one table
+> below). **The e18 tip MOVED past `670c948d` to `75289a2db`** (the e18d
+> final sweep landed 10 commits) — checklist item 2's re-fold is now
+> mandatory, with the key/alpha half of `249a0c1b` ALREADY folded by this
+> pass (drop its duplicate fns, see the table).
+
 **STATUS: COMPLETE.** The union on `task/W4-f46-minimap-reveal-2` is the
 branch the merger keeps; the separate e18/f46 versions are dropped. Chain
 since the EXECUTED header: fold phase (`c06bc2fe`/`6dea2b66`/`0fc306bc` +
 docs `af1bc80c`), then the closeout: `cc17880a` (e18 tip re-fetch — still
-`670c948d`, zero post-fold commits, nothing to re-fold), `08b749bd` (the
+`670c948d` AT THAT TIME, zero post-fold commits), `08b749bd` (the
 minimap remaining census: pan inertia PHANTOM, fullscreen zoom keys already
 landed, the style-1 minimap zoom keys + the Tab style-cycle key ported with
 5 witnesses), `8bb34f71` (the f29/e17 overlay composition cross-note,
-research/14). The e18d final-sweep contract stays published in research/14
-"fold status": any later e18 commit past `670c948d` re-folds per the recipe
+research/14), then the shared-gap + dup pass (`aed75d0b`/`3f858937`/
+`a352b16e` + this refresh). The e18d final-sweep contract stays published
+in research/14 "fold status": any later e18 commit re-folds per the recipe
 (fetch tip → cherry-pick → per-hunk onto the union seams).
+
+### §10.1 The minimap-key keep-one — g53 `a9774d2a` × e18 `249a0c1b` × the union, arm-by-arm vs `Player.cs:24909-24965`
+
+Three implementations of the same not-fullscreen block existed: the
+union's `update_minimap_zoom_keys` (style-1 zoom only, `08b749bd`) +
+`world_key`'s Tab arm; g53's `update_map_style_keys` (`a9774d2a`, the
+superset: both styles + alphas + state + tint, but a `mapEnabled` gate the
+C# lacks); e18's `update_minimap_keys` (`249a0c1b`, style-1 zoom+alpha +
+`minimap_alpha` state + draw clamps in `prepare` + tint). **Verdict: the
+union keeps ONE fn — `update_minimap_zoom_keys` — now carrying the g53c
+superset arms + the e18 alpha state + the union's gate detail. The merger
+drops g53's and e18's variants wholesale.** Per arm:
+
+| Arm (C# anchor) | g53 `a9774d2a` | e18 `249a0c1b` | union BEFORE | FOLD (kept, `a352b16e`) |
+| --- | --- | --- | --- | --- |
+| outer gate `:24768` (chat/sign/chest/blockInput) | absent | `chat.open \|\| menu \|\| front` | absent | **e18's gate** (the port's live overlays) |
+| `mapEnabled` gate | `!settings.map_enabled` return — **WRONG**, `:24911`/`:24930` check style only | absent (correct) | absent (correct, the closeout's gate-detail witness pins it) | **union detail kept: NO mapEnabled gate** |
+| fullscreen-open guard `:24898`/`:24909` | `m.open` return | `m.open` return | caller's else-arm only | guard added in-fn (witnesses call it directly) |
+| style-1 zoom ×1.025/×0.975 `:24913-24920` | `minimap_key_scale` + clamp after | `minimap_key_scale` unclamped, clamp in `prepare` | `ui::minimap::apply_key_zoom` (clamps per step, like the chrome buttons' `apply`) | **union's `apply_key_zoom`** (input-time clamp ≡ draw-time clamp: only keys/buttons mutate the axis and both clamp; the g53/e18 helper fns drop) |
+| style-1 alpha ±0.015 `:24921-24928` | `map_key_alpha` + `map_alpha_clamp` | `minimap_alpha_step` + `clamp_minimap_axes` | absent (D17) | **g53's `map_key_alpha`/`map_alpha_clamp` names** (shared by both styles), state field from e18/g53 (identical: seed 1, `Main.cs:66753`) |
+| style-2 zoom ×1.05/×0.95 `:24932-24939` | `map_key_scale` reuse | absent (D18 deferral) | absent | **g53 arm**, via the existing fullscreen `map_key_scale` |
+| style-2 alpha ±0.015 `:24940-24947` | present | absent | absent | **g53 arm**, `overlay_alpha` seed 0.35 (`:66755`) |
+| overlay scale clamp `:55550-55558` | `clamp(sw/ww, 16*zoom)` — **two flaws**: bare settings zoom ≠ `RenderZoom` (`= ForcedMinimumZoom × Clamp(GameZoomTarget,1,2)`, `Main.cs:61999` + `SpriteViewMatrix.cs:98`), and `f32::clamp` panics on an inverted range | absent | absent | **corrected fold**: caller passes `forced_minimum_zoom(screen) * zoom`; `overlay_scale_clamp` runs the two ifs in C# order (cap wins on inversion) |
+| alpha clamps `:55523-55530`/`:55559-55566` | 0.01..1 | 0.01..1 (in `prepare`) | absent | `map_alpha_clamp` per update (same equivalence as the zoom clamp) |
+| Tab cycle `:24949-24965` | in-fn `release_map_style` tick latch (+ App field + flow.rs init) | in-fn `map_style_prev` tick latch | `world_key`'s `MapAction::Style` press-edge arm (rebindable, fullscreen-guarded, 2 witnesses + anchor) | **union's `world_key` arm** — the port's press-edge convention; BOTH tick-latch variants + their App fields drop (no `release_map_style`/`map_style_prev` on the union) |
+| tile tint `Color(b×4)` `MapRenderer.cs:438`, `b=(byte)(255*alpha)` `:55532` | `draw_minimap` tint | same | `[1.0;4]` | **folded** (identical in both) |
+| backdrop live alpha `MinimapFrame.cs:182` | `draw_background(m.minimap_alpha)` | same | hardcoded 1.0 | **folded** |
+| layer-walk opacity `:55703` (`b` arg) | left 1.0 — **missed** | `m.minimap_alpha` | 1.0 | **e18's detail** folded (g53's miss corrected) |
+| state fields | `minimap_alpha`/`overlay_scale`/`overlay_alpha` | `minimap_alpha` only | none | ONE set on `WorldMap` (seeds 1/2.5/0.35, `Main.cs:66753-66755`) |
+
+Witnesses folded/adapted (written not run): the union's 5 closeout
+witnesses stay (the gate witness's "style 2 leaves the minimap scale
+alone" still holds — style 2 steps the OVERLAY axis); new
+`app::w4_f46_minimap_zoom_key_tests::w4_f46_alpha_keys_step_the_minimap_alpha_with_the_clamp`
++ `w4_f46_style_two_keys_step_the_overlay_scale_and_alpha` (the g53
+witness's 2.5-seed steps would be eaten by the `sw/ww` floor on the small
+fixture — the fold parks the scale above the floor first) +
+`map::tests::w4_f46_alpha_and_overlay_clamps_match_the_draw_side`. g53's 2
+witnesses and e18's 4 key witnesses drop with their fns (the Tab halves
+are already pinned by `app::loop::tests::w4_f46_*`).
+
+**e18 re-fold note (checklist item 2, now live):** tip `75289a2db` =
+`670c948d` + 10 final-sweep commits. `249a0c1b` (P1 keys) is superseded by
+this fold — when re-folding, SKIP its duplicate fns/fields/witnesses per
+the table above and keep only what the union lacks (nothing: all its arms
+are folded). The other nine (`0bd346e78` docs addendum, `4ad0f041`
+TryOpeningFullscreenMap, `029154fe2` Load catch arm, `2fa072d01` mapDelay,
+`8ec77f0f8`+`2e1f97c83` draw-head dialog close, `0d99d968c` draw-tail chat,
+`0002fa1fe`+`75289a2db` docs) are NOT folded by this pass — they re-fold
+per the research/14 recipe at merge time.
 
 **Merger checklist (in order):**
 
@@ -353,9 +416,11 @@ research/14). The e18d final-sweep contract stays published in research/14
    DoDraw half ahead of `WorldMap::prepare` (NOT an update-half call — the
    S1-B-8 orchestrator pin walks the frozen phase list and the driver is
    deliberately absent from it).
-2. **Re-fetch `origin/task/W4-e18-minimap-reveal-queue` at merge time.** If
-   the tip moved past `670c948d`, fold each new commit per research/14's
-   recipe BEFORE merging (the closeout re-fetch found it unmoved).
+2. **Re-fetch `origin/task/W4-e18-minimap-reveal-queue` at merge time.** The
+   tip HAS moved: `75289a2db` (the e18d final sweep, 10 commits past
+   `670c948d`). Fold each new commit per research/14's recipe BEFORE
+   merging — EXCEPT `249a0c1b`'s key/alpha arms, which the §10.1 fold
+   already landed (skip its duplicate fns/fields/witnesses per the table).
 3. **The overlay siblings are a SEPARATE keep-one, not part of this union:**
    `origin/task/W4-f29-map-overlay-2` (`e18bf6dd`) and
    `origin/task/W4-e17-map-overlay-layers` (`8500c3e5`, revived) port the
@@ -363,15 +428,21 @@ research/14). The e18d final-sweep contract stays published in research/14
    "W4-f46 × f29/e17 overlay composition" lists the seams: the draws insert
    before the hover text leaving the union's close/cursor tail last; the
    head icon re-homes to `:55931` with the 255-loop; the pan state lands
-   twice — f29's `update_map_input` step vs e17's `prepare` lerp). Close the
-   two shared gaps against the C# while folding: the movement-key pan
-   cancel (`Player.cs:24776-24791`) and the `resetMapFull` pan clear
-   (`Main.cs:55418`, missing in f29's arm).
+   twice — f29's `update_map_input` step vs e17's `prepare` lerp). The
+   two shared gaps are ALREADY CLOSED on the union (`aed75d0b`/`3f858937`):
+   the movement-key pan cancel (`Player.cs:24776-24791`, each held row
+   clears `pan_target`) and the `resetMapFull` pan clear (`Main.cs:55418`,
+   `WorldMap::recentre`). The union carries `pan_target: Option<[f32;2]>`
+   (f29's representation) — the overlay pick folds only its lerp STEP +
+   pylon-click ARMING hunks; its duplicate pan field/cancel code drops
+   (e17's bool+end pair converts 1:1 if e17 wins).
 4. **Anchors:** the union's rows are `map_sections.rs::get_next_map_draw`,
    `frame/world.rs::map_reveal_sweep_fields`, `map.rs::draw_to_map_section`,
    `map.rs::clear_map`, `ui/chrome.rs::fullmap_close_button_pos`,
    `ui/cursor.rs::draw_thick`, `ui/minimap.rs::apply_key_zoom`,
-   `app/loop.rs`'s `MapAction::Style` arm — plus the overlay pick's own rows.
+   `app/loop.rs`'s `MapAction::Style` arm, plus the shared-gap/dup rows
+   `map.rs::pan_target`, `map.rs::recentre`, `map.rs::map_key_alpha` —
+   plus the overlay pick's own rows.
    Never delete rows to silence the canary; the f46 pre-union rows pointing
    at dropped files were already removed by the base adoption.
 5. **Run the catalog verification on the merged state** (this closeout was
@@ -379,7 +450,10 @@ research/14). The e18d final-sweep contract stays published in research/14
    `cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids`,
    judge by the `test result: ok` lines. The new witnesses to watch:
    `ui::minimap::tests::w4_f46_key_zoom_*`,
-   `app::w4_f46_minimap_zoom_key_tests`, `app::loop::tests::w4_f46_*`, and
+   `app::w4_f46_minimap_zoom_key_tests` (incl. the alpha + style-2 pair),
+   `app::w4_e18_map_drag_capture_tests::w4_f46_movement_keys_cancel_*`,
+   `map::tests::w4_f46_the_reset_clears_*` +
+   `w4_f46_alpha_and_overlay_clamps_*`, `app::loop::tests::w4_f46_*`, and
    the folded e18/f46 sets (§7).
 6. **Docs are already union-shaped:** research/14 (censuses + fold status +
    composition note), this file, PORT_MAP's map rows, ROADMAP row 14,

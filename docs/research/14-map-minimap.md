@@ -296,12 +296,21 @@ Structural (already admitted in `docs/ANALYSIS.md` or the Rust "ruling" comments
   `ZoneGlowshroom`, `ZoneCorrupt`, `ZoneCrimson`, `ZoneHallow`, `ZoneJungle`, `bloodMoon` and
   `ZoneGraveyard` all take the `false` path, so the fullscreen backdrop shows the wrong sheet in
   those biomes until their zone evaluation is wired.
-- **D17 — minimap has no alpha config.** cosmetic · *not admitted*. `Main.mapMinimapAlpha`
-  (`Main.cs:55523-55532`) has no config key or clamp; the panel always draws at full alpha.
-- **D18 — `mapStyle` switcher's style-2 draw half absent.** behavioural · *not admitted*. The
+- **D17 — minimap has no alpha config.** cosmetic · CLOSED (W4-f46 dup
+  fold, `a352b16e`): `WorldMap.minimap_alpha` (`Main.cs:66753` seed 1), the
+  MapAlphaUp/Down keys step it ±0.015 (`Player.cs:24921-24928`), the
+  draw-side clamp 0.01..1 (`Main.cs:55523-55530`, `map::map_alpha_clamp`),
+  the backdrop + tile pass (`Color(b×4)`, `MapRenderer.cs:438`) + layer walk
+  read the live alpha. The C# has NO settings key for it — the alpha is
+  key-driven runtime state, not config (the old seed's "config key" reading
+  was wrong; e18 `249a0c1b` reached the same conclusion).
+- **D18 — `mapStyle` switcher's style-2 draw half absent.** behavioural · *not admitted*
+  (keys half CLOSED, W4-f46 dup fold `a352b16e`). The
   switcher itself is landed (the inventory icon row `Main.cs:41087-41120` + the Tab cycle key
-  `Player.cs:24949-24965`, W4-f46 closeout), but only `mapStyle == 1` draws; the `mapStyle == 2`
-  screen-overlay map and its `mapOverlayScale` (`Main.cs:55548-55578`) have no draw counterpart
+  `Player.cs:24949-24965`, W4-f46 closeout), and the style-2 KEY rows now step
+  `WorldMap.overlay_scale`/`overlay_alpha` (`Player.cs:24930-24947`, seeds 2.5/0.35
+  `Main.cs:66754-66755`, clamps `:55550-55566`); only the `mapStyle == 2`
+  screen-overlay map DRAW (`Main.cs:55548-55578`) still has no counterpart
   (style 0 correctly draws no map — `DrawMap`'s branch chain has no style-0 arm).
 - **D19 — map icon overlays entirely missing.** behavioural · *not admitted*. Pings
   (`PingMapLayer.cs`), team spawn (`TeamBasedSpawnMapLayer.cs`), pylon links
@@ -349,8 +358,9 @@ behavioural and neither currently recorded in the roadmap or ANALYSIS.
   nothing; fixes the stale-pixel class of D14.
 - **S — Wire `ClearEdges`** (`WorldMap.cs:260`, `BlackEdgeWidth = 40`): one loop over the outer 40
   tiles, run after load and after worldgen. Depends on nothing; fixes D4.
-- **S — Minimap alpha config** (`Main.cs:55523-55532`): a `MapMinimapAlpha` key in `settings.rs`,
-  clamped 0.01..1, threaded through `frame.rs:1248`/`map.rs`. Fixes D17.
+- **S — Minimap alpha config** (`Main.cs:55523-55532`): DONE differently —
+  no config key exists in C#; the alpha is key-driven state
+  (`WorldMap.minimap_alpha`, W4-f46 dup fold `a352b16e`). D17 closed.
 - **M — `MapBG` zone branches** (`Main.cs:56342-56444`): port `ZoneDungeon`, `ZoneGlowshroom`,
   `ZoneCorrupt`/`ZoneCrimson`/`ZoneHallow`/`ZoneJungle` and the `bloodMoon` doubling off
   `SceneMetrics`, plus the `ZoneGraveyard` wall test. Depends on the weather/SceneMetrics module
@@ -450,8 +460,10 @@ overlap this census.
   `SetTile`'s callers are all inside `MapHelper`'s three load formats - the port's
   `decode_tiles` writes the flat array directly (the same store). Nothing to port.
 - `WorldMap.IsRevealed` (`:44-47`) - `tile_revealed` (cite-repair row, landed).
-- `Main.mapMinimapAlpha` fade (`Main.cs:55523-55532`) - still MISSING (D17), out of this
-  census's scope (config key, not MapRenderer/WorldMap machinery).
+- `Main.mapMinimapAlpha` fade (`Main.cs:55523-55532`) - LANDED (W4-f46 dup
+  fold `a352b16e`: `WorldMap.minimap_alpha` + the ±0.015 keys + the clamp +
+  the tinted draws; D17 closed — the "config key" framing was wrong, C# has
+  none).
 - The world-clear map reset (`WorldGen.cs:6962-6985`: `Map.Clear()` gated on `mapReady`,
   `clearMap = true; mapTime = 0; updateMap = null; mapReady = false; refreshMap = false`)
   - the port's `swap_world` builds a fresh `App` with a fresh `WorldMap` (all fields at
@@ -571,7 +583,12 @@ Contract for any further e18 commits (zoom-keys/pan-inertia etc.):
 
 **Closeout re-fetch (2026-11-21, second pass):** `git ls-remote origin` +
 `git fetch` re-read the e18 tip at closeout time: **still `670c948d`** — zero
-commits past the folded base, nothing to re-fold. The zoom-key half of the
+commits past the folded base, nothing to re-fold. **SUPERSEDED by the
+shared-gap/dup pass (third re-fetch, same day): the tip is now `75289a2db`**
+— the e18d final sweep landed 10 commits (`0bd346e78`…`75289a2db`); its
+`249a0c1b` key/alpha half is folded into the union per research/84 §10.1
+(the keep-one table), the other nine re-fold per the recipe below at merge
+time. The zoom-key half of the
 e18d brief turned out to be ALREADY LANDED on the shared base (`a725acb0`:
 `map.rs::map_key_scale` `Player.cs:24898-24908` + the held-key wiring in
 `app/mod.rs::update_map_input` `:1427-1438` against the rebindable
@@ -595,7 +612,7 @@ claim-only death recorded above; `origin/task/W4-f29-map-overlay-2` @
 | fullscreen map zoom +/- keybinds | ALREADY LANDED (shared base `a725acb0`) | `map.rs::map_key_scale` (`Player.cs:24898-24908`, ×1.05/×0.95) + `app/mod.rs::update_map_input`'s held-key rows against `MapAction::ZoomIn/ZoomOut` (defaults `Add`/`Subtract`, `Main.cs:67190-67191`), driven from `world_sim/player.rs`'s `map_open` tail. The wheel half (`Player.cs:25190-25197`) rides `loop.rs`'s `MouseWheel` arm. |
 | minimap zoom keybinds (style 1, not fullscreen) | UNCLAIMED + MISSING → PORTED this pass | `Player.cs:24911-24920`: held `MapZoomIn`/`MapZoomOut` scale `Main.mapMinimapScale` ×1.025/×0.975 (the button constants, `MinimapFrame.cs:61-63`). Ported: `ui/minimap.rs::apply_key_zoom` + `app/mod.rs::update_minimap_zoom_keys` (the `mapStyle == 1` gate only — the C# arm has no `mapEnabled` check), wired in `world_sim/player.rs`'s not-fullscreen else-arm — the C#'s own `else` of `if (Main.mapFullscreen)` (`:24898`/`:24909`). |
 | map-style cycle KEY (Tab) | UNCLAIMED + MISSING → PORTED this pass | `Player.cs:24949-24965`: `cMapStyle` (default `Tab`, `Main.cs:67195`) press edge cycles `Main.mapStyle` 0→1→2→0 with `PlaySound(12)`, NOT-fullscreen arm only. Ported: `app/loop.rs::world_key`'s `MapAction::Style` arm (the rebindable row; `world_key` is the port's press edge, like the `Full` row). The style ICON row's clicks were already landed (`clicks.rs:1572-1602`, `Main.cs:41087-41120` — the "map-style cycle button" candidate resolves to it). |
-| `mapAlphaUp/Down` keys (PageUp/PageDown) | STILL MISSING (D17) | `Player.cs:24921-24928`/`:24940-24947` ride `mapMinimapAlpha`/`mapOverlayAlpha`, which have no port counterpart (the panel draws at alpha 1); porting the keys without the alpha state would be a no-op. Left with D17/D18. |
+| `mapAlphaUp/Down` keys (PageUp/PageDown) | PORTED (W4-f46 dup fold `a352b16e`, supersedes this row's D17 deferral) | `Player.cs:24921-24928`/`:24940-24947` ride `mapMinimapAlpha`/`mapOverlayAlpha` — the state now exists (`WorldMap.minimap_alpha`/`overlay_alpha`, seeds 1/0.35 `Main.cs:66753-66755`), the ±0.015 steps + the 0.01..1 clamps ride `update_minimap_zoom_keys`, the backdrop/tile/layer draws read the live alpha. D17 closed, D18 keys-half closed. |
 
 Witnesses (written, not run - code-only): 1
 `ui::minimap::tests::w4_f46_key_zoom_matches_the_button_constants_and_order`
