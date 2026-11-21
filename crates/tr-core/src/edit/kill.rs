@@ -32,6 +32,19 @@ pub struct ObjectDrop {
     pub item: Option<i32>,
 }
 
+/// One broken Plantera bulb's summon request — `CheckJunglePlant`'s 238 arm
+/// (`WorldGen.cs:48007-48026`): the nearest player (Manhattan distance, the
+/// 255-slot scan) within `dist / 16 < 50` tiles triggers
+/// `NPC.SpawnOnPlayer(plr, 262)`. The core has no NPC roster, so the check
+/// records the request and the app resolves the spawn (`break_tile`'s
+/// `bulb_summons` seam). Not `noItem`-gated — the C# arm sits outside the
+/// drop switch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct BulbSummonEvent {
+    pub x: i32,
+    pub y: i32,
+}
+
 /// One broken loot pot — `CheckPot`'s tail (`WorldGen.cs:57011-57014`): after
 /// the 2x2 dies, vanilla runs `SpawnThingsFromPot(i, j, num, num2, num4)` at
 /// the check's trigger cell with the pot's style row (`frameY / 36`). The app
@@ -160,6 +173,10 @@ pub struct TileKill {
     /// (`TileFrameImportant`'s `case 72`, `WorldGen.cs:85855-85873`:
     /// `genRand.Next(3)` picks frame (18, 0/18/36)) — the app resolves it.
     pub mushroom_frame_rolls: Vec<(i32, i32)>,
+    /// Every broken Plantera bulb's `NPC.SpawnOnPlayer(plr, 262)` request
+    /// (`WorldGen.cs:48007-48026`) — the app resolves the nearest-player
+    /// distance gate + the spawn.
+    pub bulb_summons: Vec<BulbSummonEvent>,
 }
 
 // The ring walk's re-entrancy cap (`square_tile_frame` → the check → the
@@ -475,6 +492,12 @@ fn square_tile_frame(
         if let Some(pile) = plan.pile_event {
             kill.pile_events.push(pile);
         }
+        // `CheckJunglePlant`'s 238 arm (:48007-48026) runs BEFORE the kill
+        // loop and outside the `noItem` gate — the summon request passes
+        // through unchanged (the `SpawnThingsFromPot` precedent).
+        if let Some(summon) = plan.bulb_summon {
+            kill.bulb_summons.push(summon);
+        }
         // `SpawnThingsFromPot`'s only gate is `Main.netMode != 1`
         // (:57011-57014) — the `noItem` flag never suppresses pot loot, so
         // the event passes through unchanged.
@@ -569,6 +592,7 @@ fn kill_plan_cells(
             kill.tree_events.extend(inner.tree_events);
             kill.palm_frame_rolls.extend(inner.palm_frame_rolls);
             kill.mushroom_frame_rolls.extend(inner.mushroom_frame_rolls);
+            kill.bulb_summons.extend(inner.bulb_summons);
         }
     }
 }
@@ -615,6 +639,9 @@ struct CheckPlan {
     pot_event: Option<PotEvent>,
     herb_event: Option<HerbEvent>,
     pile_event: Option<PileLootEvent>,
+    /// `CheckJunglePlant`'s 238 arm (`WorldGen.cs:48007-48026`) — the
+    /// Plantera summon request, recorded before the kill loop.
+    bulb_summon: Option<BulbSummonEvent>,
     /// The `Check*` tail's `TileFrame` ring — only the checks that CLOSE with
     /// one in C# (`Check3x2` `WorldGen.cs:49841-49849`, `Check3x4`
     /// :50161-50168, `Check4x2` :47499-47506; the others — CheckOnTable1x1,
@@ -656,6 +683,10 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         21 => check_chest(world, x, y),
         27 => check_sunflower(world, x, y),
         28 => check_pot(world, x, y),
+        // `WorldGen.cs:85475-85480`'s TileFrameImportant arm: the 233
+        // detritus + the 236/238/702 Life Fruit / bulb family ride
+        // `CheckJunglePlant` (:47946-48108).
+        233 | 236 | 238 | 702 => check_jungle_plant(world, x, y, kind),
         34 => check_chandelier(world, x, y),
         // M7-EXTRACT-1: the extractinators ride `Check3x3`'s bottom-support
         // arm (`WorldGen.cs:53114-53127`, the group the C# lists 219/642 in).
@@ -971,6 +1002,7 @@ fn kill_tree_cell(
         kill.tree_events.extend(inner.tree_events);
         kill.palm_frame_rolls.extend(inner.palm_frame_rolls);
         kill.mushroom_frame_rolls.extend(inner.mushroom_frame_rolls);
+        kill.bulb_summons.extend(inner.bulb_summons);
     }
 }
 
@@ -1177,6 +1209,7 @@ fn check_orb(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        bulb_summon: None,
     })
 }
 
@@ -1223,6 +1256,7 @@ fn check_piggy(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        bulb_summon: None,
         // floats until a later break (`WorldGen.cs`'s Check2x1 tail).
     })
 }
@@ -1273,6 +1307,7 @@ fn check_lamp(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        bulb_summon: None,
         // floats until a later break (`WorldGen.cs`'s check_lamp).
     })
 }
@@ -1337,6 +1372,7 @@ fn check_clock(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        bulb_summon: None,
         // floats until a later break (`WorldGen.cs`'s check_clock).
     })
 }
@@ -1394,6 +1430,7 @@ fn check_bookcase(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: Some(region_ring(&region)),
+        bulb_summon: None,
     })
 }
 
@@ -1448,6 +1485,7 @@ fn check_lantern(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        bulb_summon: None,
         // floats until a later break (`WorldGen.cs`'s check_lantern).
     })
 }
@@ -1514,6 +1552,7 @@ fn check_bed_bathtub(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: Some(region_ring(&region)),
+        bulb_summon: None,
     })
 }
 
@@ -1578,6 +1617,7 @@ fn check_candelabra_sink(world: &mut World, x: i32, y: i32) -> Option<CheckPlan>
         herb_event: None,
         pile_event: None,
         ring: None,
+        bulb_summon: None,
         // floats until a later break (`WorldGen.cs`'s check_candelabra_sink).
     })
 }
@@ -1647,6 +1687,7 @@ fn check_3x3_bottom(world: &mut World, x: i32, y: i32, kind: u16) -> Option<Chec
         herb_event: None,
         pile_event: None,
         ring: None,
+        bulb_summon: None,
         // floats until a later break (`WorldGen.cs`'s Check3x3 has no tail).
     })
 }
@@ -1709,6 +1750,7 @@ fn check_chandelier(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        bulb_summon: None,
         // floats until a later break (`WorldGen.cs`'s check_chandelier).
     })
 }
@@ -1774,6 +1816,7 @@ fn check_door_closed(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        bulb_summon: None,
         // floats until a later break (`WorldGen.cs`'s check_door_closed).
     })
 }
@@ -1823,6 +1866,7 @@ fn check_door_open(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        bulb_summon: None,
         // floats until a later break (`WorldGen.cs`'s check_door_open).
     })
 }
@@ -2000,6 +2044,7 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
         herb_event: None,
         pile_event,
         ring: Some(region_ring(&region)),
+        bulb_summon: None,
     })
 }
 
@@ -2039,6 +2084,7 @@ fn check_chair(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        bulb_summon: None,
         // floats until a later break (`WorldGen.cs`'s check_chair).
     })
 }
@@ -2078,6 +2124,7 @@ fn check_bench(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        bulb_summon: None,
         // floats until a later break (`WorldGen.cs`'s check_bench).
     })
 }
@@ -2133,6 +2180,7 @@ fn check_chest(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        bulb_summon: None,
         // floats until a later break (`WorldGen.cs`'s check_chest).
     })
 }
@@ -2225,6 +2273,153 @@ fn check_sunflower(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        bulb_summon: None,
+    })
+}
+
+/// `WorldGen.CheckJunglePlant` (`WorldGen.cs:47946-48108`), dispatched for
+/// 233/236/238/702 (`TileFrameImportant` :85475-85480). Two shapes:
+///
+/// * the 2×2 family (236 Life Fruit / 238 bulb / 702 replica, and the 233
+///   detritus rows `frameY >= 36`, :47952-48052): the origin from the frame
+///   grid (`frameX / 18` reduced mod 2, the style base `num2 * 36`;
+///   `frameY / 18` reduced mod 2 — the 233 rows carry `num3 = 36`, the
+///   fruit/bulb family `num3 = 0`, :47963-47972), every cell active of the
+///   type with the exact frames (:47982) and the ground row `SolidTile`
+///   type-60 jungle grass under both columns (702:
+///   `SolidTileAllowBottomSlope`, :47991-48001). On a break: the 238 arm
+///   records the Plantera summon request (:48007-48026 — the app resolves
+///   the nearest-player `< 50` tiles gate + `SpawnOnPlayer(plr, 262)`),
+///   236/702 drop the Life Fruit item 1291 at the TRIGGER cell
+///   (:48027-48034, `Item.NewItem(…, i*16, j*16, 32, 32, 1291)`), then the
+///   2×2 kill loop (:48037-48050).
+/// * the 233 3×2 detritus rows (`frameY < 36`, :48054-48107): the origin
+///   from `frameX / 18` reduced mod 3 (the style base `num13 * 54`), the
+///   row from `frameY / 18` directly, the ground row `SolidTile` type-60
+///   under all three columns (:48082); the kill loop sweeps 3×3
+///   (:48093-48105) and NO item spawns (233's per-cell drop is the empty
+///   group, :65829).
+///
+/// The `destroyObject` entry guard (:47948) rides the shared cascade flag
+/// (`destroy_object_guarded` defaults true for these kinds).
+fn check_jungle_plant(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> {
+    let t = *world.tile(x, y)?;
+    let fx = i32::from(t.frame_x);
+    let fy = i32::from(t.frame_y);
+    if fy >= 36 || kind == 236 || kind == 238 || kind == 702 {
+        // :47955-47972 — the 2×2 origin.
+        let mut col = fx / 18;
+        let mut style = 0;
+        while col > 1 {
+            col -= 2;
+            style += 1;
+        }
+        let ox = x - col;
+        let base_y = if kind == 236 || kind == 238 || kind == 702 { 0 } else { 36 };
+        let mut row = fy / 18;
+        while row > 1 {
+            row -= 2;
+        }
+        let oy = y - row;
+        let base_x = style * 36;
+        let mut broken = false;
+        let mut region = Vec::with_capacity(4);
+        for k in ox..ox + 2 {
+            for l in oy..oy + 2 {
+                region.push((k, l));
+                // :47982 — active, the type, the exact column/row frames.
+                let intact = world.tile(k, l).is_some_and(|c| {
+                    c.active()
+                        && c.kind == kind
+                        && i32::from(c.frame_x) == (k - ox) * 18 + base_x
+                        && i32::from(c.frame_y) == (l - oy) * 18 + base_y
+                });
+                if !intact {
+                    broken = true;
+                }
+            }
+            // :47987-48001 — the ground row.
+            if kind == 702 {
+                if !solid_tile_allow_bottom_slope(world, k, oy + 2) {
+                    broken = true;
+                }
+            } else if !solid_tile(world, k, oy + 2)
+                || world.tile(k, oy + 2).is_none_or(|g| g.kind != 60)
+            {
+                broken = true;
+            }
+        }
+        if !broken {
+            return None;
+        }
+        // :48007-48026 — the bulb's summon request (the app resolves the
+        // nearest-player gate); :48027-48034 — the fruit's item at the
+        // trigger cell.
+        let bulb_summon = (kind == 238).then_some(BulbSummonEvent { x, y });
+        let drop = (kind == 236 || kind == 702).then(|| ObjectDrop {
+            tile_kind: kind,
+            x,
+            y,
+            item: Some(1291),
+        });
+        return Some(CheckPlan {
+            drop,
+            cells: killable_cells(world, &region, kind),
+            pot_event: None,
+            herb_event: None,
+            pile_event: None,
+            ring: None,
+            bulb_summon,
+        });
+    }
+    // :48054-48107 — the 233 3×2 detritus rows.
+    let mut col = fx / 18;
+    let mut style = 0;
+    while col > 2 {
+        col -= 3;
+        style += 1;
+    }
+    let ox = x - col;
+    let oy = y - fy / 18;
+    let base_x = style * 54;
+    let mut broken = false;
+    let mut region = Vec::with_capacity(6);
+    for k in ox..ox + 3 {
+        for l in oy..oy + 2 {
+            region.push((k, l));
+            let intact = world.tile(k, l).is_some_and(|c| {
+                c.active()
+                    && c.kind == kind
+                    && i32::from(c.frame_x) == (k - ox) * 18 + base_x
+                    && i32::from(c.frame_y) == (l - oy) * 18
+            });
+            if !intact {
+                broken = true;
+            }
+        }
+        // :48082 — SolidTile type-60 under every column.
+        if !solid_tile(world, k, oy + 2) || world.tile(k, oy + 2).is_none_or(|g| g.kind != 60) {
+            broken = true;
+        }
+    }
+    if !broken {
+        return None;
+    }
+    // :48093-48105 — the kill loop sweeps 3×3 (the ground row included).
+    let mut sweep = Vec::with_capacity(9);
+    for k in ox..ox + 3 {
+        for l in oy..oy + 3 {
+            sweep.push((k, l));
+        }
+    }
+    Some(CheckPlan {
+        drop: None,
+        cells: killable_cells(world, &sweep, kind),
+        pot_event: None,
+        herb_event: None,
+        pile_event: None,
+        ring: None,
+        bulb_summon: None,
     })
 }
 
@@ -2405,6 +2600,7 @@ fn check_pot(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        bulb_summon: None,
     })
 }
 
@@ -2430,6 +2626,7 @@ fn check_pile(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
             herb_event: None,
             pile_event: None,
             ring: None,
+            bulb_summon: None,
         });
     }
     // :46904-46913 — only 185 carries the ground rules (the echo 649 is out
@@ -2463,6 +2660,7 @@ fn check_pile(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        bulb_summon: None,
     })
 }
 
@@ -2573,6 +2771,7 @@ fn check_pile_2x1(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckP
         herb_event: None,
         pile_event,
         ring: None,
+        bulb_summon: None,
     })
 }
 
@@ -2658,6 +2857,7 @@ fn check_on_table_1x1(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        bulb_summon: None,
     })
 }
 
@@ -2736,6 +2936,7 @@ fn check_alch(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         }),
         pile_event: None,
         ring: None,
+        bulb_summon: None,
     })
 }
 
@@ -4976,6 +5177,160 @@ mod tests {
         let kill = kill_tile(&mut w, 10, 20, false).unwrap();
         assert_eq!(kill.object_drops.len(), 1);
         assert!(kill.pile_events.is_empty());
+    }
+
+    // ---- W4-g84 final phase: CheckJunglePlant (236/238/702/233) ------------
+
+    /// A 2×2 Life Fruit / bulb / replica at (10, 18)-(11, 19) on a jungle
+    /// grass (60) row at y = 20 (the stone floor converted under both
+    /// columns). `style` picks the frame base (`num2 * 36`).
+    fn jungle_plant_world(kind: u16, style: i32) -> World {
+        let mut w = object_world();
+        for x in 10..12 {
+            let i = w.index(x, 20);
+            w.tiles[i].kind = 60; // jungle grass
+        }
+        for dy in 0..2i32 {
+            for dx in 0..2i32 {
+                set_object_cell(
+                    &mut w,
+                    10 + dx,
+                    18 + dy,
+                    kind,
+                    (dx * 18 + style * 36) as i16,
+                    (dy * 18) as i16,
+                );
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    /// W4-g84: the Life Fruit 236 breaks whole and drops ONE item 1291 at
+    /// the trigger cell (`WorldGen.cs:48027-48030` — the check-level
+    /// `Item.NewItem`, not a per-cell drop; 236 is in the empty
+    /// `KillTile_GetItemDrops` group :65831).
+    #[test]
+    fn w4_g84_life_fruit_break_drops_one_1291_at_the_trigger() {
+        let mut w = jungle_plant_world(236, 0);
+        // Break the bottom-right cell. The check's trigger is the FIRST
+        // surviving plant cell the 3×3 `SquareTileFrame` walk visits
+        // (`WorldGen.cs:80187-80195`): from (11,19) that is (10,18) — the
+        // top-left — so the drop lands there, not at the broken cell.
+        let kill = kill_tile(&mut w, 11, 19, false).unwrap();
+        assert_all_gone(&w, &[(10, 18), (11, 18), (10, 19), (11, 19)]);
+        assert_eq!(
+            kill.object_drops,
+            vec![ObjectDrop {
+                tile_kind: 236,
+                x: 10,
+                y: 18,
+                item: Some(1291),
+            }]
+        );
+        assert!(kill.bulb_summons.is_empty(), "the fruit never summons");
+    }
+
+    /// W4-g84: the 702 replica drops the same 1291 (`:48031-48034`) and its
+    /// ground row accepts `SolidTileAllowBottomSlope` (`:47991-47996` — the
+    /// 236/238 arm demands plain `SolidTile` type-60).
+    #[test]
+    fn w4_g84_life_fruit_replica_drops_1291_too() {
+        let mut w = jungle_plant_world(702, 1);
+        let kill = kill_tile(&mut w, 10, 18, false).unwrap();
+        assert_all_gone(&w, &[(10, 18), (11, 18), (10, 19), (11, 19)]);
+        assert_eq!(
+            kill.object_drops,
+            vec![ObjectDrop {
+                tile_kind: 702,
+                x: 10,
+                y: 18,
+                item: Some(1291),
+            }]
+        );
+    }
+
+    /// W4-g84: the bulb 238 records the summon request and drops NO item
+    /// (`:48007-48026` — the 238 arm has no `Item.NewItem`; the per-cell
+    /// group is empty :65833). The request survives `noItem` (it sits
+    /// outside the drop gate, the `SpawnThingsFromPot` precedent).
+    #[test]
+    fn w4_g84_bulb_break_records_the_summon_and_no_item() {
+        let mut w = jungle_plant_world(238, 0);
+        // Break the bottom-left cell; the first surviving cell the 3×3 walk
+        // visits is (10,18) (the top-left), so the summon records that cell.
+        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        assert_all_gone(&w, &[(10, 18), (11, 18), (10, 19), (11, 19)]);
+        assert!(kill.object_drops.is_empty(), "the bulb drops no item");
+        assert_eq!(
+            kill.bulb_summons,
+            vec![BulbSummonEvent { x: 10, y: 18 }]
+        );
+        // noItem suppresses drops, never the summon.
+        let mut w = jungle_plant_world(238, 0);
+        let kill = kill_tile(&mut w, 10, 19, true).unwrap();
+        assert_eq!(kill.bulb_summons.len(), 1);
+    }
+
+    /// W4-g84: an intact fruit on its jungle grass does NOT pop when a
+    /// neighbouring block breaks (`:47974-48002` — the integrity + ground
+    /// scan holds); the stone floor (not type-60) breaks it.
+    #[test]
+    fn w4_g84_intact_fruit_survives_and_stone_ground_breaks_it() {
+        let mut w = jungle_plant_world(236, 0);
+        // A stone block beside the fruit: its break frames the fruit's
+        // cells, the check runs, the integrity + the 60 ground hold.
+        set_object_cell(&mut w, 12, 19, 1, 0, 0);
+        let kill = kill_tile(&mut w, 12, 19, false).unwrap();
+        assert!(w.tile(10, 18).unwrap().active(), "the fruit survives");
+        assert!(kill.object_drops.is_empty());
+        // Convert the ground back to stone: the next break pops it. A fresh
+        // stone block at (12, 18) frames the fruit's right column.
+        let i = w.index(10, 20);
+        w.tiles[i].kind = 1;
+        set_object_cell(&mut w, 12, 18, 1, 0, 0);
+        let kill = kill_tile(&mut w, 12, 18, false).unwrap();
+        assert_all_gone(&w, &[(10, 18), (11, 18), (10, 19), (11, 19)]);
+        assert_eq!(kill.object_drops.len(), 1);
+        assert_eq!(kill.object_drops[0].item, Some(1291));
+    }
+
+    /// W4-g84: the 233 detritus 3×2 rows (`frameY < 36`, `:48054-48107`)
+    /// break whole with NO item (the empty per-cell group :65829) when the
+    /// jungle grass dies; the 3-wide origin reconstructs from `frameX/18`
+    /// mod 3.
+    #[test]
+    fn w4_g84_detritus_3x2_breaks_whole_without_a_drop() {
+        let mut w = object_world();
+        for x in 10..13 {
+            let i = w.index(x, 20);
+            w.tiles[i].kind = 60;
+        }
+        for dy in 0..2i32 {
+            for dx in 0..3i32 {
+                set_object_cell(
+                    &mut w,
+                    10 + dx,
+                    18 + dy,
+                    233,
+                    (dx * 18) as i16,
+                    (dy * 18) as i16,
+                );
+            }
+        }
+        w.compute_column_surface();
+        // Kill the middle ground column — the check's ground scan fails.
+        let kill = kill_tile(&mut w, 11, 20, false).unwrap();
+        for dy in 0..2i32 {
+            for dx in 0..3i32 {
+                assert!(
+                    !w.tile(10 + dx, 18 + dy).unwrap().active(),
+                    "detritus cell ({dx},{dy}) gone"
+                );
+            }
+        }
+        assert!(kill.object_drops.is_empty(), "233 drops no item");
+        assert!(kill.bulb_summons.is_empty());
     }
 
     #[test]

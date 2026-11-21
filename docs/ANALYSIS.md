@@ -39434,3 +39434,61 @@ published in `docs/research/137-g84-g31-keep-one.md`. No code change this
 phase — the mapping is the deliverable; the arms stay until the merger
 executes the split (dropping them here would regress the draw to the
 static-generic arm with no drain wired on this branch).
+
+### The Life Fruit harvest + the Plantera bulb summon (W4-g84 final phase 2, 2026-11-21, code-only)
+
+The DRAW/ITEM split the brief asked for: g88 (`task/W4-g88-life-fruit-use`)
+owns the item-1291 USE (`life_fruit.rs`, `ItemCheck_UseLifeFruit`
+`Player.cs:45290-45304`); this branch owns the 236-tile DRAW (the roster
+above) and now the tile-break HARVEST. The census verdict: the drop is NOT
+a `KillTile_GetItemDrops` per-cell case (236/238/702 sit in the empty group
+`WorldGen.cs:65829-66090`, generated as `KILL_TILE_NO_CELL_DROP`) — it is
+the `CheckJunglePlant` object-check's own `Item.NewItem`:
+
+* `WorldGen.CheckJunglePlant` (`:47946-48108`), dispatched for 233/236/238/
+  702 (`TileFrameImportant` `:85475-85480`). The 2×2 family (236/238/702 +
+  the 233 rows `frameY >= 36`) reconstructs the origin from the frame grid,
+  scans the four cells + the jungle-grass (60) ground row, and on a break:
+  the 238 arm records the Plantera summon (`:48007-48026`), 236/702 drop
+  ONE Life Fruit 1291 at the TRIGGER cell (`:48027-48034`), then the 2×2
+  kill loop (`:48037-48050`). The 233 3×2 rows (`frameY < 36`) sweep 3×3
+  with no item (`:48093-48105`). Ported as `edit/kill.rs::check_jungle_plant`
+  returning a `CheckPlan` (the `check_sunflower` shape); the summon rides a
+  new `BulbSummonEvent` record on `TileKill.bulb_summons` (the core has no
+  NPC roster — the `PotEvent`/`TreeDropEvent` precedent).
+* The trigger cell is the FIRST surviving plant cell the 3×3
+  `SquareTileFrame` walk visits (`WorldGen.cs:80187-80195`), not the broken
+  cell — breaking the bottom-right of a 2×2 drops at the top-left. The
+  witnesses pin this (`expected_trigger`'s convention).
+* The app seam `editing.rs::bulb_summon_plantera`: the nearest-player
+  Manhattan gate (`dist / 16 < 50`, `:48022` — the 255-slot scan collapses
+  to the port's one player), the `AnyNPCs(262)` refusal (`NPC.cs:80477`),
+  then `NPC.SpawnOnPlayer`'s generic ground scan (`:80565-80632`, ported as
+  `spawner.rs::spawn_on_player_tile` — 500×50 candidates, descend to solid,
+  the last attempt bypasses the safe-area/spawn-space gates) +
+  `SpawnBoss(num10*16+8, num11*16, 262, plr)` (`:80631` → `NewNPC`
+  `Bottom=(X,Y)` `:80770`, the 86×86 box). `stamp_boss_spawn` writes the
+  `timeLeft = activeTime*1.25 = 937` ×20 = 18740 window (`:80772`/`:80686`)
+  and the `Announcement.HasAwoken` broadcast in `ChatColors.BossOrEvent`
+  (`:80702-80704`). The scan's `Main.rand` draws ride the break's
+  `UpdatePlayers` stream (`Main.cs:17754`).
+
+Deviations (recorded, the spawner precedent): the skyblock midair arm
+(`WorldGen.Skyblock.lowTiles`, `:80581-80584`) and the type-50 EoW clearance
+special (`:80604-80614`) are constants-off / type-gated out; the
+`wallHouse` refusal arm (`:80589`) is unmodelled (the port has no
+`wallHouse` table); the `nactive` actuated-bit refinement follows the
+spawner's `active()` convention. The `boot_statics` frame-important bits
+for 233/236/238/702 (`Main.cs:7391/:10235/:10247-10248`) were added so a
+generated world's `PlaceJunglePlant` frames survive `frame_world` and the
+cascade reaches them — no generated-world hash pin exists (only relative
+`a==b` reproducibility + the frozen synthetic grid), so this is
+determinism-safe.
+
+Verification: 8 witness tests WRITTEN, NOT RUN (code-only) —
+`edit/kill.rs::tests` (5: the fruit drop at the trigger, the replica drop,
+the bulb summon record + no-item + noItem survival, the intact-fruit
+survival + stone-ground break, the detritus 3×2 no-drop) +
+`world_sim/editing.rs::tests` (3: the one-1291 harvest, the bulb summon
+once + the living-Plantera refusal, the far-bulb no-summon) +
+`spawner.rs::tests` (2: the ground scan determinism, the boss-spawn stamp).

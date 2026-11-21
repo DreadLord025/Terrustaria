@@ -5549,6 +5549,86 @@ pub(crate) fn kill_cue((id, style): edit::SoundCue) -> Option<(&'static str, f32
     })
 }
 
+/// `CheckJunglePlant`'s 238 arm (`WorldGen.cs:48007-48026`) + the
+/// `NPC.SpawnOnPlayer(plr, 262)` chain: the nearest-player Manhattan gate
+/// (`num8 / 16f < 50f`, the 255-slot scan collapses to the port's one
+/// player), the `AnyNPCs(262)` refusal (`NPC.cs:80477`), the generic ground
+/// scan ([`crate::spawner::spawn_on_player_tile`], `:80565-80632`), then
+/// `SpawnBoss(num10 * 16 + 8, num11 * 16, 262, plr)` (`:80631` →
+/// `NewNPC` `Bottom = (X, Y)` `:80770`, `Start = 1` `:80676`) + the
+/// `HasAwoken` broadcast. The scan's `Main.rand` draws ride the caller's
+/// `UpdatePlayers` stream (the break's swap, `Main.cs:17754`).
+fn bulb_summon_plantera(app: &mut App, bx: i32, by: i32) {
+    // `:80477` — one living Plantera blocks the summon.
+    if app
+        .npcs
+        .iter()
+        .any(|n| n.hp > 0 && n.kind == NpcKind::Plantera)
+    {
+        return;
+    }
+    let Some(player) = app.player.as_ref() else {
+        return;
+    };
+    // `:48013-48022` — the Manhattan distance to the bulb's trigger cell.
+    let dist = (player.x - bx as f32 * TILE_PX).abs() + (player.y - by as f32 * TILE_PX).abs();
+    if dist / 16.0 >= 50.0 {
+        return;
+    }
+    let (pcx, pcy) = player.center();
+    let ctx = crate::spawner::SpawnContext {
+        moon_npc_counts: &[],
+        world: &app.world,
+        player_center: (pcx, pcy),
+        player_pos: (player.x, player.y),
+        nearby_active_npcs: 0.0,
+        town_npcs: 0,
+        day_time: app.world.day_time,
+        player_life_max: 100,
+        underworld_for_bats: false,
+        flags: crate::spawner::SpawnFlags::default(),
+        bound_goblin_ok: false,
+        bound_wizard_ok: false,
+        bound_mech_ok: false,
+        below_deep_dungeon: false,
+        invaders: false,
+        downed_golem: false,
+        downed_martians: false,
+        invasion_type: 0,
+        invasion_summoner_alive: false,
+        invasion_captain_alive: false,
+        invasion_walker_alive: false,
+        invasion_saucer_alive: false,
+        invasion_progress_30: false,
+        invasion_progress_frac: 0.0,
+        any_danger: false,
+        probe_exists: false,
+        sky_behind_player: false,
+        moon_boss_cap_count: 0.0,
+    };
+    let Some((sx, sy)) = crate::spawner::spawn_on_player_tile(
+        &ctx,
+        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+    ) else {
+        return;
+    };
+    // `NewNPC` places `Bottom = (X, Y)` (`:80770`): the Plantera box is
+    // 86×86 (`npc/data.rs`'s size row), so the top-left lands at
+    // `(X - w/2, Y - h)`.
+    let (w, h) = NpcKind::Plantera.size();
+    let mut boss = Npc::new(
+        NpcKind::Plantera,
+        sx as f32 * TILE_PX + 8.0 - w * 0.5,
+        sy as f32 * TILE_PX - h,
+        1,
+        0.0,
+    );
+    boss.hp = boss.max_hp;
+    boss.target = 0; // `SpawnOnPlayer`'s `target = plr` (`:80528` precedent).
+    crate::spawner::stamp_boss_spawn(&mut boss, &mut app.chat, "Plantera");
+    app.npcs.push(boss);
+}
+
 pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     // The three `CanKillTile` refusals (`WorldGen.cs:62219-62326`) gate
     // every break source — the C# `KillTile` entry duplicates them through
@@ -5745,6 +5825,17 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
                 app.rngs.stream(crate::app::RngKey::UpdatePlayers),
             );
         }
+    }
+    // `CheckJunglePlant`'s 238 arm (`WorldGen.cs:48007-48026`): the broken
+    // Plantera bulb summons Plantera when the nearest player is within 50
+    // tiles (Manhattan distance, the 255-slot scan — the port has one
+    // player). `NPC.SpawnOnPlayer(plr, 262)` refuses while a Plantera lives
+    // (`NPC.cs:80477`'s `AnyNPCs(262)` gate), then the generic ground scan
+    // (`:80565-80632`) + `SpawnBoss` (`:80661-80714`). The break runs under
+    // the `UpdatePlayers` swap (`Main.cs:17754`), so the scan's `Main.rand`
+    // draws ride that stream.
+    for summon in &kill.bulb_summons {
+        bulb_summon_plantera(app, summon.x, summon.y);
     }
     // `WorldGen.TileFrame`'s falling check (`WorldGen.cs:81380`): the tile
     // above the break loses its support and the falling kind spawns the
@@ -13517,6 +13608,136 @@ mod tests {
 
     // DW-3.6: the Staff-of-Regrowth replant support matrix 78/380/579
     // (`Player.cs:45826`, called from the `flag` block :41279/:41290).
+
+    // ---- W4-g84 final phase: the Life Fruit harvest + the bulb summon ------
+
+    /// A 2×2 jungle plant (236/238/702) at (10, 18)-(11, 19) on a jungle
+    /// grass (60) row at y = 20 — the core `jungle_plant_world` fixture
+    /// shape, app-side.
+    fn set_jungle_plant(w: &mut World, kind: u16) {
+        for x in 10..12 {
+            let i = w.index(x, 20);
+            w.tiles[i].kind = 60;
+        }
+        for dy in 0..2i32 {
+            for dx in 0..2i32 {
+                let i = w.index(10 + dx, 18 + dy);
+                w.tiles[i] = Tile {
+                    kind,
+                    frame_x: (dx * 18) as i16,
+                    frame_y: (dy * 18) as i16,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.frame_important[kind as usize] = true;
+        w.compute_column_surface();
+    }
+
+    /// W4-g84: mining a Life Fruit tile drops exactly ONE Life Fruit item
+    /// 1291 (`WorldGen.cs:48027-48030`) — the whole 2×2 dies, the drop is
+    /// the check-level `Item.NewItem` at the trigger cell, never four
+    /// per-cell drops (236 is in the empty `KillTile_GetItemDrops` group).
+    #[test]
+    fn w4_g84_mining_life_fruit_drops_one_1291() {
+        let mut w = object_world();
+        set_jungle_plant(&mut w, 236);
+        let mut app = break_app(w, 0x5EED);
+        break_tile(&mut app, 11, 19);
+        for dy in 0..2i32 {
+            for dx in 0..2i32 {
+                assert!(
+                    !app.world.tile(10 + dx, 18 + dy).unwrap().active(),
+                    "fruit cell gone"
+                );
+            }
+        }
+        let fruits: Vec<_> = app.items.iter().filter(|it| it.kind == 1291).collect();
+        assert_eq!(fruits.len(), 1, "exactly one Life Fruit drop");
+        assert_eq!(fruits[0].count, 1);
+        // The 702 replica drops the same item (:48031-48034).
+        let mut w = object_world();
+        set_jungle_plant(&mut w, 702);
+        let mut app = break_app(w, 0x5EED);
+        break_tile(&mut app, 10, 18);
+        assert_eq!(
+            app.items.iter().filter(|it| it.kind == 1291).count(),
+            1,
+            "the replica drops 1291 too"
+        );
+    }
+
+    /// W4-g84: breaking the bulb 238 within 50 tiles summons Plantera
+    /// (`WorldGen.cs:48007-48026` → `NPC.SpawnOnPlayer(plr, 262)`): the
+    /// generic ground scan places the boss by `Bottom`, the `HasAwoken`
+    /// broadcast fires in the boss colour, and the ×20 despawn window is
+    /// stamped. A living Plantera blocks the second summon
+    /// (`NPC.cs:80477`).
+    #[test]
+    fn w4_g84_bulb_break_summons_plantera_once() {
+        let mut w = object_world();
+        set_jungle_plant(&mut w, 238);
+        let mut app = break_app(w, 0x5EED);
+        // The player stands right beside the bulb (the < 50-tile gate).
+        if let Some(p) = app.player.as_mut() {
+            p.x = 12.0 * TILE_PX;
+            p.y = 20.0 * TILE_PX - crate::player::HEIGHT;
+        }
+        break_tile(&mut app, 10, 19);
+        let boss = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::Plantera)
+            .expect("Plantera summoned");
+        assert_eq!(boss.hp, boss.max_hp);
+        assert_eq!(boss.despawn_timer, 937 * 20, "the SpawnBoss ×20 window");
+        assert_eq!(boss.target, 0);
+        assert!(
+            app.chat
+                .messages
+                .iter()
+                .any(|m| m.text.contains("Plantera has awoken")),
+            "the HasAwoken broadcast"
+        );
+        // The bulb dropped no item.
+        assert!(app.items.iter().all(|it| it.kind != 1291));
+        // A second bulb break while she lives summons nothing.
+        set_jungle_plant(&mut app.world, 238);
+        break_tile(&mut app, 10, 19);
+        assert_eq!(
+            app.npcs.iter().filter(|n| n.kind == NpcKind::Plantera).count(),
+            1,
+            "one Plantera only"
+        );
+    }
+
+    /// W4-g84: the bulb break beyond the 50-tile Manhattan gate summons
+    /// nothing (`:48022` — `num8 / 16f < 50f`), and the fruit's drop is
+    /// unaffected by the distance (the gate is the 238 arm's only).
+    #[test]
+    fn w4_g84_far_bulb_break_never_summons() {
+        let mut w = object_world();
+        set_jungle_plant(&mut w, 238);
+        let mut app = break_app(w, 0x5EED);
+        if let Some(p) = app.player.as_mut() {
+            // 60 tiles away — past the gate.
+            p.x = 70.0 * TILE_PX;
+            p.y = 20.0 * TILE_PX - crate::player::HEIGHT;
+        }
+        break_tile(&mut app, 10, 19);
+        assert!(
+            app.npcs.iter().all(|n| n.kind != NpcKind::Plantera),
+            "no summon past 50 tiles"
+        );
+        assert!(
+            app.chat
+                .messages
+                .iter()
+                .all(|m| !m.text.contains("awoken")),
+            "no broadcast"
+        );
+    }
 
     #[test]
     fn test_store_1_the_void_lens_routes_pickups_into_bank4() {
