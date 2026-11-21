@@ -2189,6 +2189,25 @@ impl Audio {
             .is_some_and(|sink| !sink.empty())
     }
 
+    /// `WorldGen.StopWaterfallAmbienceAudio` (`WorldGen.cs:6689-6699`): the
+    /// two `SoundEngine.PlaySound(34/35, -1, -1, 0)` calls. The (-1, -1)
+    /// sentinel position takes the case bodies' stop arm outright
+    /// (`LegacySoundPlayer.cs:1257`/`:1287` — `x == -1 || y == -1` ORs into
+    /// the stop condition BEFORE the volume walk matters), which stops the
+    /// playing `SoundInstanceLiquid[0]/[1]` — so the port routes both
+    /// channels through `set_liquid_loop(ch, 0.0)`'s stop arm (stopping a
+    /// dead slot is a no-op, the same as the C#'s null/Playing guard).
+    /// Called by `WorldGen.SaveAndQuit` (`:6704`, the port's `save_and_quit`)
+    /// and `WorldGen.JustQuit` (`:6631-6632`, inlined there — `JustQuit`'s
+    /// only C# caller is the debug chat command, the port has no caller yet).
+    /// W4-g73 closeout: g24's sounds wave recorded this as a deferral
+    /// ("no port caller") — the `save_and_quit` seam is that caller.
+    pub fn stop_waterfall_ambience(&mut self) {
+        for channel in 0..2 {
+            self.set_liquid_loop(channel, 0.0, 0.0, None);
+        }
+    }
+
     /// `SoundEngine.PlayTrackedSound(SoundStyle)`'s global arm
     /// (`SoundEngine.cs:114-122` + `SoundPlayer.cs:44-52`): a global
     /// tracked play — no position, so `ActiveSound` skips the attenuation
@@ -3274,6 +3293,26 @@ mod tests {
         assert_eq!(src.next(), Some(0.25));
         // Headless: no output device, so the slot never plays.
         let audio = Audio::new(None);
+        assert!(!audio.liquid_loop_playing(0));
+        assert!(!audio.liquid_loop_playing(1));
+    }
+
+    /// `WorldGen.StopWaterfallAmbienceAudio` (`WorldGen.cs:6689-6699`, W4-g73
+    /// closeout): the 34/35 (-1, -1, 0) plays take the case bodies' stop arm
+    /// (`LegacySoundPlayer.cs:1257`/`:1287`), which the port routes through
+    /// `set_liquid_loop(ch, 0.0)` — both channels stop, a dead slot stays
+    /// dead, and the headless no-device path is a safe no-op (the C# null
+    /// guard's equivalent). `save_and_quit` calls it after the 11
+    /// (`WorldGen.cs:6703-6704` order).
+    #[test]
+    fn the_quit_stop_kills_both_liquid_loop_channels() {
+        let mut audio = Audio::new(None);
+        // Stopping dead slots is a no-op — no panic, both stay dead.
+        audio.stop_waterfall_ambience();
+        assert!(!audio.liquid_loop_playing(0));
+        assert!(!audio.liquid_loop_playing(1));
+        // The stop seam is idempotent (the C# try/catch swallows repeats).
+        audio.stop_waterfall_ambience();
         assert!(!audio.liquid_loop_playing(0));
         assert!(!audio.liquid_loop_playing(1));
     }

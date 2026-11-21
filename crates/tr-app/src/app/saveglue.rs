@@ -342,10 +342,16 @@ impl App {
     /// shape `net_disconnect` uses. The tracked-sound stop /
     /// `CaptureInterface.ResetFocus` halves are not modelled; the frame's
     /// audio listener flips to menu mode off `menu.is_some()`
-    /// (`frame.rs:256`), covering `StopWaterfallAmbienceAudio`'s effect.
+    /// (`frame.rs:256`), which mutes the loops on the next ¼ s tick — but
+    /// the C# stops them IMMEDIATELY here, so the explicit
+    /// `StopWaterfallAmbienceAudio` call below is the verbatim seam
+    /// (W4-g73 closeout; g24's sounds wave deferred it as "no port caller").
     pub(crate) fn save_and_quit(&mut self) {
         // `WorldGen.cs:6703`: `SoundEngine.PlaySound(11)`.
         self.audio.play("Menu_Close");
+        // `WorldGen.cs:6704`: `WorldGen.StopWaterfallAmbienceAudio()` — the
+        // 34/35 (-1, -1, 0) plays stop both liquid loops before the save.
+        self.audio.stop_waterfall_ambience();
         // `WorldGen.cs:6705-6708`: the invasion bar resets.
         self.invasion_progress = -1;
         self.invasion_progress_display_left = 0;
