@@ -1356,6 +1356,68 @@ chain's last link, closeout item 3).
 `the_tile_pass_water_style_carries_the_fountain_head_arm`) + anchors row.
 The stale "no consumer yet" S1-L-1 note below is superseded by this record.
 
+### FALLS SEAL (W4-g73 seal phase, 2026-11-21, code-only)
+
+The family contract (`docs/UNION-CONTRACT-waterfalls.md`) is SEALED. The
+four seal receipts, each re-verified against the co-lanes' LATEST pushed
+tips:
+
+1. **g24 quit-stop MUTUAL receipt.** g24 advanced `a0d046b7` → `eca0c736`
+   (retire: `2678cfae` the research/107→146 renumber, `9fb7137d` the
+   cross-receipt, `eca0c736` FINAL-FINAL + the wg-sound-family table).
+   `9fb7137d` ADOPTS this branch's `bce01ece8` SUPERSET verdict verbatim
+   AND the 16-row-fix (`s1_e_29_the_world_tab_keeps_its_sixteen_rows`,
+   16/16 + the `Quit (no save)` tail row — the stale fifteen-rows witness
+   this branch caught is now corrected on BOTH sides). The
+   `stop_waterfall_ambience`/`just_quit`/`menu_accept_style`/
+   `tracked_count_for`/`insert_test_cue` fn bodies are byte-identical
+   across the two tips (Compare-Object empty); `tracked_sound.rs` differs
+   only in a doc reword + this branch's test-seam `dead_code` allow.
+   Final-instruction: **g24's branch OWNS the ONE stop fn (the sound
+   lane's home — its `SecretSeed.Enable` production caller lives there);
+   g73 CALLS it** — the folded copies dedupe either landing order, never
+   two `:6704` call sites. Both branches now publish the same verdict
+   (g24: ANALYSIS lane-26 §6 + research/106 retire addendum +
+   research/146 §5; g73: the contract §-quit).
+2. **g46d/g47f biome-lanes receipt.** g46 tip `9bc722e5` (RE-FOLD docs
+   close), g47 tip `776e6467` (retire 4b). Neither lane's post-fold
+   commits touch `biome.rs`/`rain.rs`; their `biome.rs` blobs are still
+   byte-identical to the pre-port version (three-way empty diff, the
+   head-arm fn absent — grep-verified) and their ANALYSIS still carries
+   the stale "ActiveFountainColor has no consumer yet" note (g46 `:22431`,
+   g47 `:22594`). Their copies LOSE per the contract; the cross-note is
+   published in §-fountain. `rain.rs` needs no hunk-split: this branch's
+   copy already carries their weather-lane uniques
+   (`add_lady_bug_rain_boost`, the `pub(crate)` rain toggles) — the diff
+   is exactly the five water-style hunks, so this branch's file wins
+   whole with nothing of theirs dropped.
+3. **WaterfallManager.cs FINAL full-file fn census** (contract §-census):
+   every member script-diffed against this tree. Every gameplay fn is
+   PORTED (the six the retire contract named plus `GetAlpha`,
+   `TrySparkling`, the per-quad `DrawWaterfall` overload, the
+   `WaterfallData` struct, `LoadContent`'s sheet loads, the static-ctor
+   latch init). Three NON-gameplay rows recorded UNPORTED, now owned by
+   the census instead of silent: the `WaterfallDrawLimit` config plumbing
+   (`BindTo`/`Configuration_OnLoad` `:76-85`, `Main.cs:6509`/`:4214` — the
+   port pins the default 1000, no settings UI writes the key), the
+   `Layer_Rain`/`Layer_Waterfall` TileBatch sort keys (static ctor
+   `:1176-1181`, `SetLayer` `:457`/`:732`, `Graphics/TileBatch.cs:235-242`
+   — the S1-G-13 layer-sort family; the port's single sprite pipeline has
+   no analogue, the within-list rain/fall order is preserved), and the
+   `DebugOptions.hideWater` dev toggle (`Main.cs:63312`,
+   `Testing/DebugOptions.cs:56` — the `TR_NO_WATERFALL` env hook is the
+   screenshot stand-in). The `maxLength` const `:28` is DEAD in the C#
+   (declared, zero reads); the `TimeLogger` stamps are dev tooling.
+4. **Contract SEALED + the falls-family merger bible** (one paragraph,
+   contract head): ONE branch lands, g74/g75 drop wholesale, the g24 and
+   g46/g47 borders fixed as above, the three census rows the only
+   recorded open items, 64 lane witnesses written NOT run.
+
+No code changed in the seal phase — the receipts are doc-only; the
+witness total stays 64. Containment re-verified at the seal: g74
+`cd462c1a` ancestor exit 0 + log-after empty, g75 `41b64b04` log-after
+empty.
+
 ## Wind sway and tree leaves (TILE-DRAW-3)
 
 `tr-core/src/wind.rs` already carried `Main.windSpeedCurrent`'s walk and

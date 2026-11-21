@@ -1,15 +1,38 @@
-# UNION-CONTRACT — the W4-g73/g74/g75 waterfall family merge (FINAL, retire-sealed)
+# UNION-CONTRACT — the W4-g73/g74/g75 waterfall family merge (SEALED)
 
-**Status: FINAL UNION on `task/W4-g73-waterfall-draw` (THIS branch),
-RETIRE-SEALED 2026-11-21.** The final falls fold `eee87f98` merges the g75
-union tip `e30ad7ba` (itself the union-fold `9bbc3e1d`: g75 residuals
-`2997a58c` + the g73 union `9a15f3d7`) into the g73 falls-adjacent tip
-`155b56ba`, then keeps g73's faithful superset wherever the two lanes
-ported the same C# arm differently. The closeout (`5d444f15`) folded the
-g75d sweep; the RETIRE phase sealed the two remaining cross-lane items:
-the g24 quit-stop DUP (keep-one adjudication, §-quit below) and the
-`CalculateWaterStyle` fountain head arm (the 207-chain's last link,
-UNCLAIMED census → ported here).
+**Status: SEALED 2026-11-21** on `task/W4-g73-waterfall-draw` (THIS
+branch). FINAL UNION + retire-seal + the SEAL phase's four receipts: the
+g24 quit-stop MUTUAL receipt (both branches publish the same keep-one,
+§-quit), the g46d/g47f biome-lanes receipt (their `biome.rs` copies lose,
+§-fountain), the WaterfallManager.cs full-file fn census (no gameplay fn
+unported, §-census) and the merger-bible paragraph below. The final falls
+fold `eee87f98` merges the g75 union tip `e30ad7ba` (itself the union-fold
+`9bbc3e1d`: g75 residuals `2997a58c` + the g73 union `9a15f3d7`) into the
+g73 falls-adjacent tip `155b56ba`, then keeps g73's faithful superset
+wherever the two lanes ported the same C# arm differently. The closeout
+(`5d444f15`) folded the g75d sweep; the RETIRE phase sealed the two
+remaining cross-lane items: the g24 quit-stop DUP (keep-one adjudication,
+§-quit below) and the `CalculateWaterStyle` fountain head arm (the
+207-chain's last link, UNCLAIMED census → ported here).
+
+**The falls-family merger bible (one paragraph).** The waterfall family
+is ONE branch: land `task/W4-g73-waterfall-draw` and drop g74 (`cd462c1a`,
+ancestor-contained) and g75 (`41b64b04`, per-hunk-folded) wholesale —
+every semantic they carry is already resolved here with witnesses, from
+the dual ambience scans and their two Y quirks through the two-tier
+liquid-loop audio stack (decision `liquid_loop_update` → volume
+`liquid_ambience` → live-re-pan `set_liquid_loop`) to the complete tile-207
+fountain chain (place → wire trip → scene scan → `CalculateWaterStyle`
+head arm → recolour + the stored-static rain latch); at the neighbouring
+merges the family's borders are equally fixed — g24 owns the ONE
+`stop_waterfall_ambience`/`just_quit` sound fn (this branch calls it, the
+byte-identical folded copies dedupe either landing order, never two
+`:6704` call sites), g46/g47's liquid UNION never touches the family's
+files and their pre-head-arm `biome.rs`/`rain.rs` copies lose to this
+branch's supersets, and the only recorded open items are the three
+non-gameplay census rows (`WaterfallDrawLimit` config plumbing, TileBatch
+layer-sort keys, `/hideWater` dev toggle) plus the verifier's gate run —
+64 lane witnesses written NOT run, judge by the `test result: ok` lines.
 
 **The merger takes ONE branch: THIS one.** `task/W4-g75-honeyfall-draw`
 (tip `41b64b04`, all six g75d sweep commits folded per-hunk) and
@@ -26,6 +49,9 @@ nothing after the glow-fixture fix); `git log
 sessions landed NOTHING past the folded fold-list extension — g75 done).
 The g75 branch tip's own ancestry check is moot (its commits were folded
 per-hunk, not merged — the fold record below is the containment proof).
+**SEAL re-verify (same commands, re-run): both still hold** — g74 tip
+still `cd462c1a` (ancestor exit 0, log-after empty), g75 tip still
+`41b64b04` (log-after empty).
 
 ## §-quit — the g24/g73 quit-stop DUP: keep-one adjudication (RETIRE phase)
 
@@ -55,11 +81,41 @@ identical semantics — at the g24 merge keep THIS branch's copies (or
 g24's, byte-equivalent bodies); never land BOTH `:6704` call sites. The
 `menu_accept_style` fn merges cleanly (g24 adds the `SecretSeed.Enable`
 caller; drop this branch's `#[allow(dead_code)]` when that caller lands).
-Re-fetch at retire-push time: g24 advanced past `7ca8b087` to `a0d046b7`
-(the FINAL phase — `1dfd8d4d`/`c48f8005`/`dbb09fd5`/`60508137`/`5a770104`/
-`a0d046b7`); the diff touches NONE of the quit-stop files (`audio.rs`,
-`saveglue.rs`, `debug_panel.rs`, `tracked_sound.rs` all untouched), so the
-adjudication above stands unchanged.
+
+**Final-instruction (which branch HOME the ONE fn lives in): the g24
+branch OWNS `stop_waterfall_ambience` (+ `just_quit`, `stop_tracked_sounds`,
+the counter seam); g73 CALLS it.** The function bodies are byte-identical
+on both tips (verified below), so the home choice is semantic, not
+behavioural: g24 is the sound lane — its `SecretSeed.Enable` production
+caller and the `w4_g24_*` witness family live there; the falls lane keeps
+only the CALL SITES (`save_and_quit`'s ONE `:6704` stop + the F3 row-15
+dispatch) and the witnesses folded verbatim. If g73 lands first the folded
+copies stand until the g24 merge dedupes them; if g24 lands first g73's
+identical hunks dedupe onto its home. Either order leaves ONE fn + ONE
+`:6704` call site.
+
+### The mutual receipt (SEAL re-fetch, 2026-11-21)
+
+g24 advanced past `a0d046b7` (the earlier retire-push re-fetch) to its
+FINAL tip **`eca0c736`** — three retire commits:
+
+| g24 commit | What it did | Consumption here |
+| --- | --- | --- |
+| `2678cfae` | research/107 → research/146 renumber (f21b owns 107) + comment re-points (`app/mod.rs`, `ui/world_load.rs`) | doc-only, no quit-stop semantics — nothing to fold; this contract cites research/146 from here on |
+| `9fb7137d` | the quit-stop cross-receipt: ADOPTS this branch's `bce01ece8` SUPERSET verdict verbatim (direct sink kill + counter + `StopTrackedSounds` + full `JustQuit` + F3 row 15; ONE fn + ONE `:6704` call, g73's folded copies kept) AND adopts the 16-row-fix: `s1_e_29_the_world_tab_keeps_its_fifteen_rows` → `..._sixteen_rows`, pins 16/16 + the `Quit (no save)` tail row, `world_rows` doc 15→16 | **both consumed** — verdict published g24-side (ANALYSIS lane-26 §6 + research/106 retire addendum + research/146 §5 item 2); the witness fix landed on g24 (`debug_panel.rs:1127`) matching this branch's corrected copy assertion-for-assertion |
+| `eca0c736` | retire 3+4: b3 monitor (b3 tip `96a5d88f` unchanged, `AppTownDoors` adoption UNCONSUMED — g24's own seam, not ours) + WG-SOUND FINAL-FINAL (79/79 sites, 22 witnesses written-not-run) + the wg-sound-family declaration table naming `g73 bce01ece8 — the quit-stop DUP RESOLVED` | doc-only receipt of OUR adjudication; nothing to fold |
+
+The `a0d046b7..eca0c736` diff touches `debug_panel.rs` ONLY in the witness
+fix + two comment re-points (`app/mod.rs`, `ui/world_load.rs` — research
+number cites); `audio.rs`, `saveglue.rs`, `tracked_sound.rs` UNTOUCHED.
+Byte-identity re-verified at the seal: `stop_waterfall_ambience`,
+`just_quit`, `menu_accept_style`, `tracked_count_for`, `insert_test_cue`
+fn bodies Compare-Object-empty against `eca0c736`; `tracked_sound.rs`
+differs only in a doc-comment reword + this branch's `#[allow(dead_code)]`
+on `count_style_entries` (the test seam, dropped when g24's production
+caller lands). **The keep-one adjudication is now MUTUALLY SEALED: both
+branches publish the same verdict, the same ONE-fn/ONE-call-site
+instruction, and the same corrected sixteen-rows witness.**
 
 ## §-fountain — the CalculateWaterStyle head arm (RETIRE phase)
 
@@ -75,6 +131,72 @@ took it. `calculate_water_style` (no fountain) stays the
 `ignoreFountains: true` capture arm (`CaptureBiome.cs:158`). 4 witnesses;
 ANALYSIS "The fountain head arm". The tile-207 chain is now COMPLETE:
 place → wire trip (`SwitchFountain`) → scene scan → head arm → recolour.
+
+### The biome-lanes receipt (SEAL re-fetch, g46d/g47f — their copies LOSE)
+
+Re-fetched at the seal: g46 tip **`9bc722e5`** (the RE-FOLD docs close,
+research/69 SUPERSEDED-BY-70, the liquid UNION contract) and g47 tip
+**`776e6467`** (retire 4b, the `liquid_clock` flow.rs literal fix). Neither
+lane's post-fold commits touch `biome.rs` or `rain.rs`
+(`git log <folded-tip>..<lane-tip> -- <file>` empty for both lanes, both
+files), and their `biome.rs` blobs are STILL byte-identical to each other
+and to this branch's pre-port version (`git diff` empty three ways;
+`calculate_water_style_with_fountain` absent from both — grep-verified).
+Their ANALYSIS still carries the stale "`ActiveFountainColor` has no
+consumer yet" note (g46 `:22431`, g47 `:22594`) — that note describes the
+PRE-port state; this branch's head arm supersedes it.
+
+**Cross-note to g46d/g47f (their tips):** the fountain head arm is PORTED
+on `task/W4-g73-waterfall-draw` (`d5c69ad4`, retire phase 2) —
+`biome::calculate_water_style_with_fountain` + the `draw_tiles`
+`active_fountain_color` parameter + the `Rain::water_style` latch. **At
+your merges your `biome.rs` copies LOSE per this contract**: your version
+predates the head arm; the falls branch's copy is a strict superset, take
+it whole. Your liquid.rs UNION is untouched by this — the waterfall
+family never edits `liquid.rs`. `rain.rs` is NOT a wholesale loss: your
+weather-lane uniques (`add_lady_bug_rain_boost` S1-P-i35 + the `pub(crate)`
+`start_rain`/`stop_rain` visibility, `600d6485`/`23748d62`) are ALREADY in
+this branch's copy too — the seal-time diff `git diff <your-tip>
+<g73-tip> -- rain.rs` shows exactly FIVE `@@` hunks, all water-style (the
+`water_style` field + init, the `NewRain` stored-static read, the two
+test-module hunks) and ZERO ladybug/visibility deltas. So the merge
+resolution is the same either way: THIS branch's `rain.rs` wins whole;
+nothing of yours is dropped.
+
+## §-census — the WaterfallManager.cs FINAL full-file fn census (SEAL phase)
+
+The retire contract's coverage claim was six fns (Update/Draw/
+FindWaterfalls/CheckForWaterfall/StylizeColor/AddLight). The SEAL re-read
+walked the WHOLE file — every member, script-diff against this tree.
+**Verdict: every gameplay fn is PORTED; the remaining members are
+config/asset plumbing, dev tooling or documented render-layer
+approximations — nothing behavioural is unported.**
+
+| C# member (`WaterfallManager.cs`) | Rust home | Verdict |
+| --- | --- | --- |
+| `WaterfallData` struct `:13-22` | `waterfall/mod.rs` `struct Waterfall` (x/y/kind/stop_at_step) | PORTED (field-for-field) |
+| consts `:24-30` (`minWet` 160, `maxWaterfallCountDefault` 1000, `maxLength` 100, `maxTypes` 28) | `MAX_WATERFALL_COUNT_DEFAULT`/`MAX_TYPES` named; 160 inline in the spout test; `maxLength` is DEAD in the C# (declared, zero reads — the walk cap is `waterfallDist`) | PORTED / dead-const noted |
+| `BindTo` `:76-79` + `Configuration_OnLoad` `:81-85` | UNPORTED — the `Preferences.OnLoad` event wiring for the `"WaterfallDrawLimit"` config key (`Main.cs:6509` binds, `:4214` writes). The port pins the DEFAULT 1000 (the `Get` fallback); no settings UI writes the key, so the pinned value is the only value a vanilla config round-trip can carry unless hand-edited. **Tiny close, config-plumbing class**: a `Settings.waterfall_draw_limit` field + a `WaterfallManager::with_capacity` ctor would close it; recorded, not ported (the settings lane owns config-surface sweeps) | UNPORTED (recorded) |
+| `LoadContent` `:87-93` | `assets.rs:1420-1427` — the `Waterfall_0..27` sheet loads (`MAX_TYPES` loop) | PORTED (asset-pipeline shape) |
+| `CheckForWaterfall` `:95-105` | `mod.rs:239` `check_for_waterfall` | PORTED (+ the `:3858` spout-clause consumer) |
+| `FindWaterfalls` `:107-255` | `mod.rs:349` `find_waterfalls` + `scan_view` | PORTED (30-tick cadence, dist/qualityMax, the spout test, 196/460/717 fountain arms; the `TimeLogger` stamps `:115`/`:254` are dev tooling — unported, no behaviour) |
+| `UpdateFrame` `:257-323` | `mod.rs:266` `update_tick` | PORTED (all five counters; disco cycle correctly NOT here — the shared-statics latch) |
+| `DrawWaterfall(Style, Alpha)` `:325-967` | `draw.rs:24` `draw_waterfall` | PORTED (the 640-line walk, both ambience scans, both Y quirks). The `Main.tileSolid[546] = false`/`= true` pair (`:327`/`:966`) is modelled as `solid_tile_draw`'s kind-546 carve-out (`draw.rs:986`) — no global table mutation, same walk semantics; `Main.cs:10124` re-inits the table entry true |
+| `DrawWaterfall(type, x, y, opacity, ...)` overload `:969-985` | quad `cell`+`opacity` + `render/tiles.rs:502-521` dispatch + `render/liquids.rs:420` `draw_shimmer_fall` | PORTED (type-25 base+Y42 sparkle; the plain arm is the atlas quad) |
+| `StylizeColor` `:987-1028` | `draw.rs:828` `stylize_color` | PORTED (190 floor, shared disco, gemspark white) |
+| `GetAlpha` `:1030-1044` | `draw.rs:868` `get_alpha` | PORTED (typed 1.0/0.8/0.75, `:1037` wall gate + latch, last-10 fade) |
+| `TrySparkling` `:1046-1065` | `draw.rs:941` `try_sparkling` + `take_sparkles` | PORTED (1/20000 brightest-channel roll; the Dust-43 AI unported — recorded deviation, ANALYSIS) |
+| `AddLight` `:1067-1116` | `draw.rs:908` `add_light` | PORTED (all 11 cases incl. the shimmer `:1112` dual-denominator quirk) |
+| `Draw()` `:1118-1174` | `mod.rs:499` `draw` | PORTED (latch head, stopAtStep re-arm, `:1125` drewLava reset, the 12-pass style table) |
+| static ctor `:1176-1181` | `Layer_Rain = 0`/`Layer_Waterfall = 1`: UNPORTED — `TileBatch.SetLayer` batch-sorting keys (`Graphics/TileBatch.cs:235-242`, `SortKey` `:49`, `FlushLayered`'s `Array.Sort` `:674`); the port's single sprite pipeline has no layer-sort analogue (the S1-G-13 `SetLayer` family, ANALYSIS "Behind-tiles layer"). The rain-vs-fall ordering WITHIN the quad list is preserved (the walk pushes rain arms per fall in scan order); only the cross-texture batch regrouping differs — invisible at alpha-blend except where sheets overlap, the same class as the documented row-major tile fusion. `_shouldShowInvisibleBlocksAndWalls = false` init: PORTED (`new()`'s `show_invisible_blocks_and_walls: false`) | layer keys UNPORTED (recorded); latch init PORTED |
+| caller-side `DebugOptions.hideWater` gate (`Main.cs:63312`, `Testing/DebugOptions.cs:56`) | UNPORTED — a `/hideWater` debug-chat toggle (default false); the port's `TR_NO_WATERFALL` env hook is the screenshot stand-in, not the chat command. Dev-tooling class | UNPORTED (recorded) |
+
+**Close verdict: no gameplay fn remains unported.** The three recorded
+UNPORTED rows are (1) the `WaterfallDrawLimit` config plumbing (default
+pinned, no UI writer), (2) the TileBatch layer-sort keys (render-pipeline
+class, S1-G-13 family), (3) the `/hideWater` dev toggle — none changes
+gameplay at the default config, and all three are now owned by this
+census instead of being silent.
 
 ## Cross-note to g75d (the g75-branch final sweep)
 
