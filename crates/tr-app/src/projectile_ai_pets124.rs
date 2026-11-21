@@ -104,6 +104,47 @@ fn idle_rotation(rot: f32) -> f32 {
     }
 }
 
+/// `DrawProjectile`'s 650 pointer pose (`Main.cs:34007-34027`) — the draw
+/// consumer of the steering tail's two localAI stores. Decodes the SAME
+/// angle/extension pair the AI arm re-encodes at `Projectile.cs:35694-
+/// 35695`: the state tag `(int)(localAI[0] / 2π)` picks the reach (the
+/// player-velocity state 1 reaches 7 px, every other state 5), the
+/// fractional angle + the IEEERemainder extension place the Extra[66]
+/// pointer sprite at `pos + unit(f) * ext * reach * scale`, drawn at scale
+/// `1 + floor(localAI[1]) * 0.02`. PORTED-UNWIRED: the render lane's
+/// projectile pass consumes it when the Extra-66 atlas slot lands (the
+/// g78 sight-sweep coordination — this is the spelunker-pointer consumer,
+/// NOT the echo-sight chain g78 owns).
+#[allow(dead_code)] // PORTED-UNWIRED: the render lane consumes it (the doc)
+pub(crate) fn tentacle_pointer_pose(
+    local_ai0: f32,
+    local_ai1: f32,
+    scale: f32,
+) -> (Vec2, f32) {
+    use std::f32::consts::{PI, TAU};
+    // `:34009-34016` — the decode (the AI tail's inverse).
+    let num435 = (local_ai0 / TAU) as i32;
+    let f = local_ai0 % TAU - PI;
+    let num436 = {
+        let x = f64::from(local_ai1);
+        let mut r = (x - x.round_ties_even()) as f32;
+        if r < 0.0 {
+            r += 1.0;
+        }
+        r
+    };
+    let num437 = local_ai1.floor() as i32;
+    // `:34017-34023` — the scale/reach ladder.
+    let num438 = 1.0 + num437 as f32 * 0.02;
+    let mut num439 = 5.0f32;
+    if num435 as f32 == 1.0 {
+        num439 = 7.0;
+    }
+    // `:34024` — `f.ToRotationVector2() * num436 * num439 * proj.scale`.
+    let (s, c) = f.sin_cos();
+    (Vec2::new(c, s) * num436 * num439 * scale, num438)
+}
+
 impl Projectile {
     /// `AI()`'s aiStyle-124 arm (`Projectile.cs:34970-35696`). The owner
     /// reads ride the dispatch's `player` link (the pool only simulates
@@ -864,5 +905,54 @@ mod w4_d13_style124_tests {
         p.local_ai[0] = 5.0;
         p.ai_pets_style124(&w, &[], Some(&pl), &mut rng, 1280.0);
         assert_eq!(p.local_ai[0], 300.0, "airborne: the 300 pin");
+    }
+
+    /// `Main.cs:34007-34027` — the 650 pointer pose decode: the state tag
+    /// picks the reach (state 1 → 7 px, else 5), the fractional angle and
+    /// the IEEERemainder extension place the sprite, the floor scales it.
+    /// The decode is the AI tail's re-encode inverse (`:35694-35695`).
+    #[test]
+    fn w4_d13_the_pointer_pose_decodes_the_steering_stores() {
+        use std::f32::consts::{PI, TAU};
+        // The idle rest pose the steering tail encodes: angle 0, state 0,
+        // extension 0.05 → localAI[0] = π, localAI[1] = 0.05.
+        let (off, scale) = tentacle_pointer_pose(PI, 0.05, 1.0);
+        assert!((off.x - 0.05 * 5.0).abs() < 1e-5, "f = 0 → +X, reach 5");
+        assert!(off.y.abs() < 1e-5);
+        assert!((scale - 1.0).abs() < 1e-6, "floor(0.05) = 0 → scale 1");
+        // State 1 (the player-velocity target): reach 7.
+        let (off, _) = tentacle_pointer_pose(PI + TAU, 0.5, 1.0);
+        assert!((off.x - 0.5 * 7.0).abs() < 1e-5, "state 1 reaches 7");
+        // The floor ladder: localAI[1] = 10.75 → scale 1 + 10·0.02.
+        let (_, scale) = tentacle_pointer_pose(PI, 10.75, 1.0);
+        assert!((scale - 1.2).abs() < 1e-5, "1 + floor(10.75)·0.02");
+        // The proj.scale multiplier rides the offset.
+        let (off, _) = tentacle_pointer_pose(PI, 0.5, 2.0);
+        assert!((off.x - 0.5 * 5.0 * 2.0).abs() < 1e-5, "the scale multiplies");
+        // A negative-fraction localAI[1] wraps the extension into [0, 1)
+        // (the IEEERemainder + 1 arm): -0.25 → 0.75.
+        let (off, _) = tentacle_pointer_pose(PI, -0.25, 1.0);
+        assert!((off.x - 0.75 * 5.0).abs() < 1e-5, "the negative wrap");
+    }
+
+    /// The full-circle round trip: the AI tail's encode (`:35694-35695`)
+    /// feeds the draw decode — the pointer lands on the steered angle.
+    #[test]
+    fn w4_d13_the_steering_encode_round_trips_through_the_pose() {
+        use std::f32::consts::PI;
+        let w = world();
+        let mut pl = player(&w);
+        pl.x = 512.0;
+        pl.y = 512.0;
+        let (pcx, pcy) = pl.center();
+        let mut p = pet(SUSPICIOUS_TENTACLE, Vec2::new(pcx - 10.0, pcy - 10.0));
+        p.local_ai = [PI, 0.0, 0.0];
+        let mut rng = CensusRng { ranges: Vec::new(), floats: 0 };
+        p.ai_pets_style124(&w, &[], Some(&pl), &mut rng, 1280.0);
+        // The idle tail encoded angle 0 / state 0 / extension 0.05.
+        let (off, scale) = tentacle_pointer_pose(p.local_ai[0], p.local_ai[1], p.scale);
+        assert!((off.x - 0.05 * 5.0).abs() < 1e-4, "the pointer faces +X");
+        assert!(off.y.abs() < 1e-4);
+        assert!((scale - 1.0).abs() < 1e-6);
     }
 }

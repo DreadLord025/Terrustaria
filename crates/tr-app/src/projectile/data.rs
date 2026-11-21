@@ -299,6 +299,13 @@ pub const NEBULA_EYE: u16 = 574;
 pub const VORTEX_LIGHTNING: u16 = 578;
 pub const VORTEX_PORTAL: u16 = 579;
 pub const VORTEX_RITUAL_BOLT: u16 = 580;
+/// `ProjectileID.BloodNautilusTears` (813) — the Blood Nautilus' ritual
+/// marker, the THIRD aiStyle-108 row (`Projectile.cs:6282-6293` shares the
+/// 578/579 block). W4-d13 residual: g64's ledger deferred its 13-site dust
+/// machine as "a whole-machine port" — the behaviour half lands here (the
+/// four phase windows + the tick-90 BloodSquid 619 + the Opacity-gated
+/// drip census), the dust BODIES stay g64's lane.
+pub const BLOOD_NAUTILUS_TEARS: u16 = 813;
 pub const TOWER_DAMAGE_BOLT: u16 = 629;
 pub const VORTEX_DART: u16 = 581;
 pub const PHANTASMAL_EYE: u16 = 452;
@@ -2489,9 +2496,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // ignoreWater, extraUpdates 2.
             TOWER_DAMAGE_BOLT => (8.0, 8.0, 122, -1, TIME_LEFT_DEFAULT, 2, false, false, true, RESET_STATE),
             // `:6282-6293`'s ritual markers (the 578 lightning + the 579
-            // portal): 32x32, aiStyle 108, tileCollide false, ignoreWater.
-            VORTEX_LIGHTNING | VORTEX_PORTAL => {
-                (32.0, 32.0, 108, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
+            // portal + W4-d13's 813 BloodNautilusTears): 32x32, aiStyle 108,
+            // friendly AND hostile, alpha 255, tileCollide false,
+            // ignoreWater, drawLayer 1 (a draw-side field, no pool
+            // consumer). `penetrate` keeps the stock 1 (`:774` — the block
+            // never sets it); the row shape carries neither friendly nor
+            // hostile (the data-row deviation census).
+            VORTEX_LIGHTNING | VORTEX_PORTAL | BLOOD_NAUTILUS_TEARS => {
+                (32.0, 32.0, 108, 1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
             }
             // `:6294-6305`'s VortexLightning (the 580): 14x14, aiStyle 88,
             // extraUpdates 4, ignoreWater.
@@ -4258,6 +4270,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d13 — the Wire Kite / geyser / stomp / sandnado mark set
             // `ignoreWater` (`Projectile.cs:6996`/`:7031`/`:7181`/`:7079`).
             || matches!(kind, WIRE_KITE | GEYSER_TRAP | OGRE_STOMP | SANDNADO_MARK)
+            // W4-d13 residual — the aiStyle-108 ritual markers' shared block
+            // sets `ignoreWater` (`Projectile.cs:6290`); the 578/579 rows
+            // predated the flag list, the 813 joins them.
+            || matches!(kind, VORTEX_LIGHTNING | VORTEX_PORTAL | BLOOD_NAUTILUS_TEARS)
             // AI_026 slice A: the Tiki Spirit (`Projectile.cs:2860`) and the
             // Wisp (`:3002`) set `ignoreWater`; the other flyers keep false.
             || matches!(kind, TIKI_SPIRIT | WISP)
