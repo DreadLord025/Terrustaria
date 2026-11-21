@@ -172,6 +172,8 @@
 //! | 741-743 | `:86532-86542` | the 133 WanderingEye hit/death (hit-half <50% latch gore 1 + 2 death gores 155) |
 //! | 744-749 | `:86568-86576` | the antlion 69/580 death (type-250 dust, per-type gores) |
 //! | 750-758 | `:86580-86591` | the antlion 581/508 death (5 and 4 gores respectively) |
+//! | 759-765 | `:86595-86604` | the antlion 509/582 death (completes the antlion block) |
+//! | 766-768 | `:86621-86623` | the 61 death (3 gores 86/87/88, +14 X offset) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -4606,12 +4608,13 @@ fn wandering_eye_hit(
     }
 }
 
-/// The antlion family death (`NPC.cs:86545-86605`, sites 744-758): the
+/// The antlion family death (`NPC.cs:86545-86605`, sites 744-765): the
 /// type-250 dust burst (SpeedX `2*hitDirection`, SpeedY -2; count 50, or 10
 /// for the 582 larva), then the per-type gores at position — 69 Antlion →
 /// [97,98], 580 WalkingAntlion → [1094,1095,1096,1097], 581 FlyingAntlion →
-/// [1098,1099,1100,1101,1101], 508 GiantWalkingAntlion → [811,812,813,814].
-/// The 509/582 variants land with the next batch. Scale defaults to 1.
+/// [1098,1099,1100,1101,1101], 508 GiantWalkingAntlion → [811,812,813,814],
+/// 509 GiantFlyingAntlion → [815,816,817,818,818], 582 LarvaeAntlion →
+/// [1102,1103]. Scale defaults to 1.
 fn antlion_death(
     npc: &Npc,
     npc_type: i32,
@@ -4637,12 +4640,40 @@ fn antlion_death(
         69 => &[97, 98],
         580 => &[1094, 1095, 1096, 1097],
         581 => &[1098, 1099, 1100, 1101, 1101],
-        _ => &[811, 812, 813, 814], // 508 GiantWalkingAntlion
+        508 => &[811, 812, 813, 814],
+        509 => &[815, 816, 817, 818, 818],
+        _ => &[1102, 1103], // 582 LarvaeAntlion
     };
     let vel = Vec2::new(npc.vx, npc.vy);
     for &ty in gores {
         gore.new_gore(rng, world, pos, vel, ty, 1.0);
     }
+}
+
+/// The 61 Vulture death (`NPC.cs:86617-86623`, sites 766-768): the 50-dust
+/// type-5 burst, then the 3 gores 86 at position and 87/88 at
+/// `position + (14, 0)`. Scale defaults to 1.
+fn vulture_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 86, 1.0); // :86621
+    gore.new_gore(rng, world, pos + Vec2::new(14.0, 0.0), vel, 87, 1.0); // :86622
+    gore.new_gore(rng, world, pos + Vec2::new(14.0, 0.0), vel, 88, 1.0); // :86623
 }
 
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
@@ -5207,10 +5238,17 @@ pub fn hit_effect_c(
     if npc_type == 133 {
         wandering_eye_hit(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:86545-86606` — the antlion family arm; the 69/580/581/508 variants
-    // (sites 744-758); the 509/582 land with the next batch.
-    if (npc_type == 69 || npc_type == 580 || npc_type == 581 || npc_type == 508) && npc.hp <= 0 {
+    // `:86545-86606` — the antlion family arm, COMPLETE (sites 744-765):
+    // the 69/580/581/508/509/582 variants.
+    if (npc_type == 69 || npc_type == 580 || npc_type == 581 || npc_type == 508
+        || npc_type == 509 || npc_type == 582)
+        && npc.hp <= 0
+    {
         antlion_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86607-86624` — the 61 Vulture arm (sites 766-768).
+    if npc_type == 61 && npc.hp <= 0 {
+        vulture_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -8216,17 +8254,20 @@ mod tests {
         assert_eq!(gore2.slot(1).position, Vec2::new(100.0, 114.0));
     }
 
-    /// `NPC.cs:86568-86591` — the antlion family: 69→[97,98],
+    /// `NPC.cs:86568-86604` — the antlion family: 69→[97,98],
     /// 580→[1094-1097], 581→[1098,1099,1100,1101,1101],
-    /// 508→[811,812,813,814], after the type-250 dust burst.
+    /// 508→[811,812,813,814], 509→[815,816,817,818,818], 582→[1102,1103]
+    /// (10-dust burst), after the type-250 dust burst.
     #[test]
     fn w4_f10_the_antlion_death_uses_the_per_type_list() {
         let w = air();
-        let cases: [(i32, &[i32]); 4] = [
+        let cases: [(i32, &[i32]); 6] = [
             (69, &[97, 98]),
             (580, &[1094, 1095, 1096, 1097]),
             (581, &[1098, 1099, 1100, 1101, 1101]),
             (508, &[811, 812, 813, 814]),
+            (509, &[815, 816, 817, 818, 818]),
+            (582, &[1102, 1103]),
         ];
         for (ty, gores) in cases {
             let n = boss(100.0, 100.0, 40.0, 30.0);
@@ -8237,6 +8278,23 @@ mod tests {
             let types: Vec<i32> = gore.slots()[..gores.len()].iter().map(|g| g.gore_type).collect();
             assert_eq!(types, gores, "antlion {ty}");
         }
+    }
+
+    /// `NPC.cs:86621-86623` — the Vulture death: the 3 gores 86 at position
+    /// and 87/88 at +14 X.
+    #[test]
+    fn w4_f10_the_vulture_death_spawns_the_three_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(727);
+        vulture_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![86, 87, 88]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(114.0, 100.0));
+        assert_eq!(gore.slot(2).position, Vec2::new(114.0, 100.0));
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
