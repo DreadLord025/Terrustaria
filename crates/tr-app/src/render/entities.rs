@@ -515,6 +515,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(DESTROYER_SHEETS)
             .chain(FISHRON_SHEETS)
             .chain(SMALL_KIND_SHEETS)
+            .chain(CRAWLER_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1113,6 +1114,10 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // (the officer's shield overlay, `Main.cs:25773-25777`) — the
         // fishron-hazard precedent. The turret has its own entry (387).
         NpcKind::ForceBubble => 384,
+        // W4-c8 — the TruffleWormDigger's bestiary entry folds onto the
+        // TruffleWorm (Hide=true), but its DRAW sheet is its own NPC_375
+        // (the fishron-hazard precedent). The eight crawlers ride cs_id.
+        NpcKind::TruffleWormDigger => 375,
         _ => kind.net_id() as u16,
     }
 }
@@ -1246,6 +1251,13 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     288, // the Dungeon Spirit
     384, // the Force Bubble
 ];
+
+/// W4-c8 — the crawling-critter family's sheets (the aiStyle-66 wiring):
+/// one sheet per kind, exactly as the vanilla's `TextureAssets.Npc[type]`
+/// — the eight crawlers plus the TruffleWormDigger (375) each draw their
+/// own `NPC_<id>` art. Keyed by the vanilla net id ([`NpcKind::cs_id`] /
+/// [`texture_net_id`]) in [`NpcAssets::npc_sheet`].
+pub(crate) const CRAWLER_SHEETS: &[u32] = &[357, 374, 375, 448, 484, 485, 486, 487, 606];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3170,6 +3182,26 @@ pub(crate) fn draw_npcs(
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
+            // W4-c8 — the crawling-critter family draws its own sheet
+            // (`CRAWLER_SHEETS`) at `SetFrameSize`'s integer-division row
+            // height over `Main.npcFrameCount[type]` (357/448/484/606 two
+            // rows, 374/375/485/486/487 four — `Main.cs:67082`) with the
+            // generic centred anchor (`Main.cs:25511-25516`) — the
+            // AngryNimbus shape. No kind writes `NPC.scale` (all 1f), so
+            // the plain anchor stands; the airborne tilt / digger aim ride
+            // the rotation whitelist below.
+            NpcKind::Worm
+            | NpcKind::TruffleWorm
+            | NpcKind::TruffleWormDigger
+            | NpcKind::GoldWorm
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy
+            | NpcKind::Maggot => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3319,6 +3351,20 @@ pub(crate) fn draw_npcs(
                     // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
                     | NpcKind::BlazingWheel
                     | NpcKind::DungeonSpirit
+                    // W4-c8 — the crawling critters' airborne tilt
+                    // (`FindFrame`'s `rotation += direction * 0.1f`,
+                    // `NPC.cs:71144`/`:72804`/`:72859`) and the digger's
+                    // velocity aim (`AI_006`'s `atan2 + PI/2` tail,
+                    // `NPC.cs:52201`). The grounded arms zero the rotation.
+                    | NpcKind::Worm
+                    | NpcKind::TruffleWorm
+                    | NpcKind::TruffleWormDigger
+                    | NpcKind::GoldWorm
+                    | NpcKind::EnchantedNightcrawler
+                    | NpcKind::Grubby
+                    | NpcKind::Sluggy
+                    | NpcKind::Buggy
+                    | NpcKind::Maggot
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

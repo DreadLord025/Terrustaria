@@ -1275,6 +1275,18 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_72",
         "NPC_250",
         "NPC_288",
+        // W4-c8 — the crawling-critter family's own sheets
+        // (`CRAWLER_SHEETS`), keyed by the vanilla net id in
+        // `NpcAssets::npc_sheets` (`render/entities.rs`).
+        "NPC_357",
+        "NPC_374",
+        "NPC_375",
+        "NPC_448",
+        "NPC_484",
+        "NPC_485",
+        "NPC_486",
+        "NPC_487",
+        "NPC_606",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -1860,7 +1872,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 181] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 189] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1895,6 +1907,11 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 181] = [
         // The small-kinds wiring wave (S1-D-3-wire-smallkinds) — appended
         // last so the earlier slots keep their indexes.
         72, 250, 288,
+        // W4-c8 — the crawling-critter family, appended last for the same
+        // reason. The digger 375 is Hide=true (no grid card of its own —
+        // it folds onto the TruffleWorm), so only the eight visible
+        // crawlers take sheet slots.
+        357, 374, 448, 484, 485, 486, 487, 606,
     ];
 
 /// Precomputed texture information for every type present in the world.

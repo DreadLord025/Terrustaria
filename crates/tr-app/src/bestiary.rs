@@ -2171,6 +2171,83 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Force Bubble",
     },
+    // W4-c8 — the crawling-critter family's own entries (the populator
+    // registers them all; `NPCID.Search.GetName` credits, the en-US
+    // NPCs.json display names). The digger 375 is Hide=true
+    // (`NPCID.cs:3714-3718`) — its entry exists (the ForceBubble
+    // precedent) but `entry_for_npc` folds it onto the TruffleWorm.
+    BestiaryEntryDef {
+        credit_id: "Worm",
+        net_id: 357,
+        kind: NpcKind::Worm,
+        variant: None,
+        quick_unlock: false,
+        name: "Worm",
+    },
+    BestiaryEntryDef {
+        credit_id: "TruffleWorm",
+        net_id: 374,
+        kind: NpcKind::TruffleWorm,
+        variant: None,
+        quick_unlock: false,
+        name: "Truffle Worm",
+    },
+    BestiaryEntryDef {
+        credit_id: "TruffleWormDigger",
+        net_id: 375,
+        kind: NpcKind::TruffleWormDigger,
+        variant: None,
+        quick_unlock: false,
+        name: "Truffle Worm",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldWorm",
+        net_id: 448,
+        kind: NpcKind::GoldWorm,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Worm",
+    },
+    BestiaryEntryDef {
+        credit_id: "EnchantedNightcrawler",
+        net_id: 484,
+        kind: NpcKind::EnchantedNightcrawler,
+        variant: None,
+        quick_unlock: false,
+        name: "Enchanted Nightcrawler",
+    },
+    BestiaryEntryDef {
+        credit_id: "Grubby",
+        net_id: 485,
+        kind: NpcKind::Grubby,
+        variant: None,
+        quick_unlock: false,
+        name: "Grubby",
+    },
+    BestiaryEntryDef {
+        credit_id: "Sluggy",
+        net_id: 486,
+        kind: NpcKind::Sluggy,
+        variant: None,
+        quick_unlock: false,
+        name: "Sluggy",
+    },
+    BestiaryEntryDef {
+        credit_id: "Buggy",
+        net_id: 487,
+        kind: NpcKind::Buggy,
+        variant: None,
+        quick_unlock: false,
+        name: "Buggy",
+    },
+    BestiaryEntryDef {
+        credit_id: "Maggot",
+        net_id: 606,
+        kind: NpcKind::Maggot,
+        variant: None,
+        quick_unlock: false,
+        name: "Maggot",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -2363,6 +2440,12 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // it never has an entry of its own (the Sleeping Angler precedent;
         // the banner fold agrees — `BannerSystem.cs:777-779` shares 141).
         NpcKind::ForceBubble => NpcKind::MartianOfficer,
+        // W4-c8 — the TruffleWormDigger rides the TruffleWorm's row — the
+        // vanilla's bestiary draw modifiers hide it (`NPCID.cs:3714-3718`'s
+        // `Hide = true`), so it folds onto the visible worm (the Force
+        // Bubble precedent; its own ENTRIES entry + cs_id 375 stand for
+        // the not-catchable friendly/immunity gate).
+        NpcKind::TruffleWormDigger => NpcKind::TruffleWorm,
         other => other,
     };
     ENTRIES

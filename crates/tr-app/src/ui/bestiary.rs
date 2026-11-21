@@ -1595,6 +1595,27 @@ fn portrait_data(
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
+        // W4-c8 — the crawling critters' portraits: the sheet's own row
+        // height over `Main.npcFrameCount[type]` (357/448/484/606 two
+        // frames, 374/485/486/487 four — `Main.cs:67082`), the frame width
+        // the sheet's own (the firefly/small-kinds rows' shape).
+        (NpcKind::Worm | NpcKind::GoldWorm | NpcKind::EnchantedNightcrawler | NpcKind::Maggot, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, h, h, white)
+        }
+        (NpcKind::TruffleWorm | NpcKind::Grubby | NpcKind::Sluggy | NpcKind::Buggy, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, h, h, white)
+        }
+        // The digger: hidden in the bestiary (`NPCID.cs:3714-3718`'s
+        // `Hide = true`) — it folds onto the TruffleWorm's entry, so this
+        // arm never renders; the SetDefaults box (10x10, `NPC.cs:13779-
+        // 13780`) stands as the shape (the ForceBubble precedent).
+        (NpcKind::TruffleWormDigger, _) => (sheet_i, 10.0, 10.0, 10.0, white),
     }
 }
 

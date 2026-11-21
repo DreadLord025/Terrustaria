@@ -586,6 +586,20 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-c8 — the crawling-critter family keeps its vanilla ids
+            // (357/374/375/448/484-487/606 are free in the protocol space
+            // — a to_u16 scan of the tree shows no arm on them).
+            // `NPCID.cs:11391`/`:11425`/`:11427`/`:11569`/`:11641-11647`/
+            // `:11889`.
+            NpcKind::Worm => 357,
+            NpcKind::TruffleWorm => 374,
+            NpcKind::TruffleWormDigger => 375,
+            NpcKind::GoldWorm => 448,
+            NpcKind::EnchantedNightcrawler => 484,
+            NpcKind::Grubby => 485,
+            NpcKind::Sluggy => 486,
+            NpcKind::Buggy => 487,
+            NpcKind::Maggot => 606,
         }
     }
 
@@ -916,6 +930,17 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            // W4-c8 — the crawling-critter family's vanilla ids (`to_u16`
+            // above).
+            357 => NpcKind::Worm,
+            374 => NpcKind::TruffleWorm,
+            375 => NpcKind::TruffleWormDigger,
+            448 => NpcKind::GoldWorm,
+            484 => NpcKind::EnchantedNightcrawler,
+            485 => NpcKind::Grubby,
+            486 => NpcKind::Sluggy,
+            487 => NpcKind::Buggy,
+            606 => NpcKind::Maggot,
             _ => return None,
         })
     }
@@ -980,6 +1005,13 @@ impl NpcKind {
                 // outside the `:51301` spawn lists, so `is_worm_head`
                 // stays false and the init never grows links).
                 | NpcKind::StardustWormHead
+                // W4-c8: the TruffleWormDigger (375) is the same shape —
+                // an AI_006 kind (`NPC.cs:13781` aiStyle 6, the `:51598`
+                // 1000-px dig list, the `:51730-51734` 6/0.15 tunables,
+                // the `:51861-51865` aim inversion) with NO chain (375
+                // sits outside the `:51301`/`:51436` lists;
+                // `is_worm_head`/`is_worm_mid` stay false).
+                | NpcKind::TruffleWormDigger
         )
     }
 
@@ -1106,6 +1138,10 @@ impl NpcKind {
             // NOT the wyvern's machine — the fixed 14-link chain and the
             // altitude-gate flyer live in `npc_ai_wyvern.rs` (UNWIRED).
             NpcKind::WyvernHead => (11.0, 0.25),
+            // W4-c8 — the TruffleWormDigger's 6/0.15 (`NPC.cs:51730-
+            // 51734`): the lone fleeing digger (the StardustWormHead
+            // precedent — `is_worm` true, no chain).
+            NpcKind::TruffleWormDigger => (6.0, 0.15),
             _ => (8.0, 0.07),
         }
     }
@@ -1788,6 +1824,18 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Hit_1",
             NpcKind::AngryNimbus => "NPC_Hit_30",
             NpcKind::DungeonSpirit => "NPC_Hit_36",
+            // W4-c8 — the crawling-critter family's `SoundID.NPCHit1`
+            // rows (`NPC.cs:13553`/`:13770`/`:13785`/`:14340`/`:14584`/
+            // `:16789`).
+            NpcKind::Worm
+            | NpcKind::TruffleWorm
+            | NpcKind::TruffleWormDigger
+            | NpcKind::GoldWorm
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy
+            | NpcKind::Maggot => "NPC_Hit_1",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2092,6 +2140,18 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Killed_1",
             NpcKind::AngryNimbus => "NPC_Killed_33",
             NpcKind::DungeonSpirit => "NPC_Killed_39",
+            // W4-c8 — the crawling-critter family's `SoundID.NPCDeath1`
+            // rows (`NPC.cs:13554`/`:13771`/`:13786`/`:14341`/`:14585`/
+            // `:16790`).
+            NpcKind::Worm
+            | NpcKind::TruffleWorm
+            | NpcKind::TruffleWormDigger
+            | NpcKind::GoldWorm
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy
+            | NpcKind::Maggot => "NPC_Killed_1",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2200,6 +2260,10 @@ impl NpcKind {
             // aiStyle-49 AI head sets `noGravity = true` every tick
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
             NpcKind::AngryNimbus => true,
+            // W4-c8 — the TruffleWormDigger's `noGravity = true` row
+            // (`NPC.cs:13787`); the eight style-66 crawlers keep the head
+            // default false (`:8535`) — they walk on gravity.
+            NpcKind::TruffleWormDigger => true,
             _ => false,
         }
     }
@@ -2451,6 +2515,22 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // aiStyle 66 — W4-c8, the crawling critters: `NPC.cs:13549`
+            // (357), `:13766` (374), `:14336` (448), `:14580` (the
+            // 484-487 range row), `:16785` (606) — the eight
+            // `this.aiStyle = 66;` rows of the SetDefaults census.
+            NpcKind::Worm
+            | NpcKind::TruffleWorm
+            | NpcKind::GoldWorm
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy
+            | NpcKind::Maggot => 66,
+            // aiStyle 6 — W4-c8, the TruffleWorm's dig target
+            // (`NPC.cs:13781`): the worm pass's lone-minion member (the
+            // StardustWormHead precedent — `is_worm` true, no chain).
+            NpcKind::TruffleWormDigger => 6,
         }
     }
 
@@ -2981,6 +3061,20 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-c8 — the crawling critters' boxes: the eight style-66
+            // kinds are 10x4 except the TruffleWorm's 20x10
+            // (`NPC.cs:13547-13548`/`:13764-13765`/`:14334-14335`/
+            // `:14578-14579`/`:16783-16784`); the digger 375 is 10x10
+            // (`:13779-13780`).
+            NpcKind::TruffleWorm => (20.0, 10.0),
+            NpcKind::TruffleWormDigger => (10.0, 10.0),
+            NpcKind::Worm
+            | NpcKind::GoldWorm
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy
+            | NpcKind::Maggot => (10.0, 4.0),
         }
     }
 
@@ -3083,6 +3177,24 @@ impl NpcKind {
             // not cs_id; the render sheets keep 371/373 via render_key.
             NpcKind::DukeFishron => 370,
             NpcKind::Sharkron => 372,
+            // W4-c8 — the crawling-critter family's vanilla `NPC.type`
+            // ids (the AI arm's per-type gates read them):
+            // `NPCID.cs:11391`/`:11425`/`:11427`/`:11569`/`:11641-11647`/
+            // `:11889`. The digger 375 keeps its OWN hand row — it is
+            // Hide=true in the bestiary (`NPCID.cs:3714-3718`, folds onto
+            // the TruffleWorm in `entry_for_npc`) but NOT `npcCatchable`
+            // (`Main.cs:9326-9418` lists 374, not 375), so cs_id must stay
+            // 375 to keep `friendly`/immunity false (the ForceBubble
+            // precedent — own cs_id, folded net_id).
+            NpcKind::Worm => 357,
+            NpcKind::TruffleWorm => 374,
+            NpcKind::TruffleWormDigger => 375,
+            NpcKind::GoldWorm => 448,
+            NpcKind::EnchantedNightcrawler => 484,
+            NpcKind::Grubby => 485,
+            NpcKind::Sluggy => 486,
+            NpcKind::Buggy => 487,
+            NpcKind::Maggot => 606,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -3201,6 +3313,9 @@ impl NpcKind {
                 // The BlazingWheel's `behindTiles = true` row
                 // (`NPC.cs:9724`, the small-kinds wiring wave).
                 | NpcKind::BlazingWheel
+                // W4-c8 — the TruffleWormDigger's `behindTiles = true`
+                // row (`NPC.cs:13790`): the digger draws under the tiles.
+                | NpcKind::TruffleWormDigger
         )
     }
 
@@ -3622,6 +3737,18 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-c8 — the crawling-critter family's `lifeMax = 5` rows
+            // (`NPC.cs:13552`/`:13769`/`:13784`/`:14339`/`:14583`/
+            // `:16788`).
+            NpcKind::Worm
+            | NpcKind::TruffleWorm
+            | NpcKind::TruffleWormDigger
+            | NpcKind::GoldWorm
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy
+            | NpcKind::Maggot => 5,
         }
     }
 
@@ -3986,6 +4113,18 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-c8 — the crawling-critter family's `damage = 0` rows
+            // (`NPC.cs:13550`/`:13767`/`:13782`/`:14337`/`:14581`/
+            // `:16786`) — the friendly critters never hurt the player.
+            NpcKind::Worm
+            | NpcKind::TruffleWorm
+            | NpcKind::TruffleWormDigger
+            | NpcKind::GoldWorm
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy
+            | NpcKind::Maggot => 0,
         }
     }
 }

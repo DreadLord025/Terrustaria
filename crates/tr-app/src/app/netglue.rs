@@ -3542,6 +3542,20 @@ fn npc_seed(
         | crate::npc::NpcKind::PlanterasHook
         | crate::npc::NpcKind::PlanterasTentacle
         | crate::npc::NpcKind::Spore => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
+        // W4-c8 — the crawling-critter family (357/374/375/448/484-487/
+        // 606): the ground crawlers seed bare at the net position (the
+        // Plantera minion arm's shape — the machine takes over on the
+        // first tick and the net state overwrites the position below;
+        // the digger 375 is noGravity/noTileCollide, no world probe).
+        crate::npc::NpcKind::Worm
+        | crate::npc::NpcKind::TruffleWorm
+        | crate::npc::NpcKind::TruffleWormDigger
+        | crate::npc::NpcKind::GoldWorm
+        | crate::npc::NpcKind::EnchantedNightcrawler
+        | crate::npc::NpcKind::Grubby
+        | crate::npc::NpcKind::Sluggy
+        | crate::npc::NpcKind::Buggy
+        | crate::npc::NpcKind::Maggot => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
         // S1-D-3 W-9 fishron wiring — the boss + its hazards fly through
         // tiles (the noTileCollide/noGravity rows); the hover ctor's
         // open-air seed is the join shape (the machine takes over on the
