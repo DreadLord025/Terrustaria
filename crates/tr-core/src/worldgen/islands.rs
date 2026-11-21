@@ -2366,4 +2366,73 @@ mod tests {
         }
         assert_eq!(mass(&w), before, "still full after the retirement tail");
     }
+
+    /// W4-g44 biome-closeout (island-house NPC housing census, WRITTEN
+    /// NOT RUN): the GENERATED IslandHouse is not yet a move-in-ready
+    /// room — exactly as vanilla. Two C# facts the port keeps 1:1:
+    /// (1) the door carve (`:79317-79322`) clears 5 columns × 3 rows but
+    /// `PlaceTile(10)` (`:79336` → `:59843-59883` → `PlaceDoor`
+    /// `:31773-31803`) fills ONE column — the two flank columns stay
+    /// open, so the room flood escapes through them (`CheckRoom`'s fill
+    /// runs past the wall-82 cells until the edge/size cut); (2) the
+    /// house places table/chairs/door/banners but NO torch — `RoomNeeds`
+    /// (`:5679-5730`) stays incomplete until the player adds a light.
+    /// The housing VALIDITY fix is the wall table (housing.rs
+    /// `is_house_wall` → the full `Main.wallHouse`, wall 82 included):
+    /// once the player seals the flanks and adds a torch the sky room
+    /// scores (the housing.rs witness). The d118/d119 co-lanes own the
+    /// move-in drivers; their `is_house_wall` copies need the same
+    /// full-table dedupe at the merge (research/87 closeout §3).
+    #[test]
+    fn w4_g44_the_generated_island_house_ships_open_flanks_and_no_torch() {
+        let mut w = sky_world(4200, 1200, 520);
+        let mut gv = GenVars::default();
+        build_island(&mut w, 1000, 200, 50, false, &mut Rng(5));
+        house_ground(&mut w, 1000, 205);
+        gv.island_house_x.push(1000);
+        gv.island_house_y.push(200);
+        gv.island_style.push(0);
+        gv.sky_lake.push(false);
+        gv.num_island_houses = 1;
+        pass_floating_island_houses(&mut w, &mut gv, &mut Rng(11), None, false);
+        // The house interior carries the disc wall 82 (the C# `wall`
+        // argument, `:79311`) — the housing fix's subject.
+        let disc = w.tiles.iter().filter(|t| t.wall == WALL_DISC).count();
+        assert!(disc > 50, "the disc-wall interior: {disc}");
+        // No torch anywhere in the house band (the C# places none).
+        let torches = (960..=1040)
+            .flat_map(|x| (160..=215).map(move |y| (x, y)))
+            .filter(|&(x, y)| w.tile(x, y).is_some_and(|t| t.active() && t.kind == 4))
+            .count();
+        assert_eq!(torches, 0, "the generated house ships no light source");
+        // The door carve's flank columns stay open: find the door column
+        // (the closed door 10 stack) and check the ±2 columns at the
+        // door's rows — at least one flank cell is inactive (the carve
+        // the single-column PlaceDoor never fills).
+        let door_col = (960..=1040)
+            .find(|&x| (160..=215).any(|y| w.tile(x, y).is_some_and(|t| t.active() && t.kind == 10)))
+            .expect("the house places a door");
+        let door_row = (160..=215)
+            .find(|&y| w.tile(door_col, y).is_some_and(|t| t.active() && t.kind == 10))
+            .unwrap();
+        let open_flanks = [-2i32, -1, 1, 2]
+            .iter()
+            .filter(|&&dx| {
+                (0..3).any(|dy| {
+                    w.tile(door_col + dx, door_row - dy)
+                        .is_some_and(|t| !t.active())
+                })
+            })
+            .count();
+        assert!(open_flanks >= 2, "the 5-wide carve keeps open flanks: {open_flanks}");
+        // RoomNeeds on the generated house's own furniture is incomplete
+        // (the torch flag) — the scan of the house's furniture kinds.
+        let kinds: Vec<u16> = (960..=1040)
+            .flat_map(|x| (160..=215).map(move |y| (x, y)))
+            .filter_map(|(x, y)| w.tile(x, y).filter(|t| t.active()).map(|t| t.kind))
+            .collect();
+        let flags = crate::housing::room_needs_flags(&kinds);
+        assert!(flags.table && flags.chair && flags.door, "the house furniture");
+        assert!(!flags.torch, "no torch — RoomNeeds incomplete until the player adds one");
+    }
 }
