@@ -14540,11 +14540,14 @@ powers/research вЂ” each needs its own scope.
   `AchievementsHelper.cs:411-418`), acorn plant `Do` (`Player.cs:40139`), Shadow
   chest `Peek` (`Player.cs:33243-33246`), grounded running `Move`
   (`Player.cs:28233-28236`). `StopSlimeRain` sets the negative cooldown clock
-  (`Main.cs:64787-64820`). **Blocked/unported:** progression 29 BOOK_WORM waits
-  on S1-F-15 (bestiary tier/`completion_percent` bug); nurse `Pay`
-  (`Main.cs:40110`), IT_CAN_TALK 18 (no Truffle kind 160), REAL_ESTATE_AGENT 17
-  partial (missing 107/178/229/209/160/550), DUNGEON_HEIST 19 / BIG_BOOTY 20
-  (locked-chest unlock path), and most other progression/CustomFlag rows lack
+  (`Main.cs:64787-64820`). **Blocked/unported (2026-11-12 snapshot; the W4-c36
+  re-probe reconciles it in research/30):** progression 29 BOOK_WORM's hook
+  FIRES (S1-E-18p29) and the S1-F-15 denominator bug is FIXED — the residual
+  gate is the town/critter provider fold (c37); nurse `Pay`
+  (`Main.cs:40110`) landed via S1-E-18-nurse-pay; IT_CAN_TALK 18 (no Truffle
+  kind 160), REAL_ESTATE_AGENT 17 partial (missing 178/229/209/160 — 107 and
+  550 ARE ported), DUNGEON_HEIST 19 / BIG_BOOTY 20 landed via
+  S1-E-18b-chest-progress; most other progression/CustomFlag rows lack
   owning systems. `tile_drop` returns `None` for altar 26 (C# empty drop group)
   to avoid leaking the Journey altar item.
 - **Notify sites, first batch (W4-c36, 2026-11-21).** The row-targeted
