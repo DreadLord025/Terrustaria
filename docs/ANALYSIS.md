@@ -33000,6 +33000,42 @@ the portrait slot (the draw arm already handles the Some/None seam — no
 code change needed beyond the sheet admission). Code-only: measurement
 re-run, no compiler invoked.
 
+## The fish CATCH census (W4-c4 follow-up, 2026-11-21, code-only)
+
+**Question:** are the Dolphin 615 / Pufferfish 688 / Orca 692 catchable?
+Censused against the two C# catch surfaces + the fishing tables (the
+f35/f36 co-lanes read: `task/W4-f35-expert-drop-trees` touches only
+`boss_bags.rs`/`clicks.rs`, `task/W4-f36-ooa-medal-drops` only the OOA
+medal drop side — NEITHER touches `fishing.rs`/`projectile_bobber.rs`/
+`bug_net.rs`, so the catch tables are this lane's to pin).
+
+**Net catch (`NPC.catchItem` + `Main.npcCatchable`):**
+- GoldGoldfish 592 → item **4274** (`NPC.cs:16691`), Pupfish 607 → **4373**
+  (`:16807`), Pufferfish 688 → **5511** (`:17665`); all three are in
+  `Main.npcCatchable` (`Main.cs:9394-9410`). NET-caught + releaseable.
+- **Dolphin 615: NO catchItem row** (`:16892-16904` writes none → the
+  `:8446` reset 0) and **NOT in `Main.npcCatchable`** (the list jumps
+  614→616). **Orca 692: NO catchItem row** (`:17709-17722`) and **NOT in
+  the whitelist** (692 never appears). Neither is net-caught.
+- The five enemies (57/157/241/465) carry no catchItem either.
+
+**Fishing (`FishingCheck_RollEnemySpawns` + the item-drop populator):**
+- The blood-moon enemy roll (`Projectile.cs:20804-20835`) spawns ONLY
+  682/620/621/586/587/618 — **never 615/688/692**.
+- `GameContentFishDropPopulator.cs`'s Ocean/Desert arms drop fish ITEMS
+  (2341/2342/2438/2332/2316/2301/2300/2297 ocean; 5490/4393/4394/4410/
+  4402/4401 desert) — **no 4274/4373/5511 critter-NPC row**. The three
+  critters are NET-caught, not fished.
+
+**Port state:** `bug_net.rs::catch_item`/`npc_catchable` already carry the
+verbatim rows (592/607/688 present; 615/692 absent → 0/false). The W4-c4
+bestiary entries make `kind_from_net_id(592/607/688)` resolve, so
+`release_npc`'s roster gap no longer eats the three critters (the stale
+"only the Goldfish 55 is a ported catchable kind" comment is corrected).
+Witness `w4_c4_the_fish_catch_census_matches_the_two_csharp_surfaces`
+(bug_net.rs) pins both surfaces + the release round-trip + the empty
+fishing-item-table scan. WRITTEN, NOT RUN (code-only).
+
 ## The firefly family (S1-D-3 aiStyle-64, 2026-11-18/19, code-only mode)
 
 **Task row.** ROADMAP `🟡 S1-D-3 aiStyle-64`; module
