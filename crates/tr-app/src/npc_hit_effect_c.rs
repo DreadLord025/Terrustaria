@@ -217,6 +217,7 @@
 //! | 1011-1016 | `:87570-87587` | the 7/8/9 Devourer + 98/99/100 Seeker death (1 gore each, per-type offset) |
 //! | 1017-1022 | `:87604-87620` | the 10/11/12 GiantWorm + 95/96/97 Digger death (1 gore each, per-type offset) |
 //! | 1023-1028 | `:87638-87649` | the 13/14/15 Eater of Worlds death (2 gores each, per-type) |
+//! | 1029-1038 | `:87668-87693` | the 17 Merchant + 441 TaxCollector death (5 gores each, shimmer variants) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -5921,6 +5922,59 @@ fn eater_of_worlds_death(
     gore.new_gore(rng, world, pos, vel, b, 1.0);
 }
 
+/// The 17 Merchant / 441 TaxCollector death (`NPC.cs:87662-87693`, sites
+/// 1029-1038): the 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY
+/// -2.5), then the 5-gore ladder with shimmer variants. The 17 Merchant:
+/// head 30 (1320 shimmer) gated on `altTexture == 0`, then 31/31 (1322
+/// shimmer) at +20 and 32/32 (1323 shimmer) at +34. The 441 TaxCollector:
+/// 768 (1358 shimmer) head, 769 (1359) / 770 (1361) at +20, 771 (1360) /
+/// 771 (1360) at +34. Scale defaults to 1.
+///
+/// `IsShimmerVariant` resolves through `npc_ai_town::shimmer_town_transform`
+/// + `variation_index == 1` (the wave-A `is_shimmer_variant` convention).
+/// `altTexture` stand-in: the port has NO altTexture field (the
+/// `npc_ai_style42.rs` precedent), so the head gate is treated as
+/// `altTexture == 0` (always true).
+fn town_npc_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    if npc_type == 17 {
+        // `:87666-87668` — the head gated on altTexture == 0 (the stand-in).
+        gore.new_gore(rng, world, pos, vel, if shimmer { 1320 } else { 30 }, 1.0);
+        gore.new_gore(rng, world, mid, vel, if shimmer { 1322 } else { 31 }, 1.0); // :87670
+        gore.new_gore(rng, world, mid, vel, if shimmer { 1322 } else { 31 }, 1.0); // :87671
+        gore.new_gore(rng, world, low, vel, if shimmer { 1323 } else { 32 }, 1.0); // :87672
+        gore.new_gore(rng, world, low, vel, if shimmer { 1323 } else { 32 }, 1.0); // :87673
+    } else {
+        // `:87689-87693` — the 441 TaxCollector.
+        gore.new_gore(rng, world, pos, vel, if shimmer { 1358 } else { 768 }, 1.0);
+        gore.new_gore(rng, world, mid, vel, if shimmer { 1359 } else { 769 }, 1.0);
+        gore.new_gore(rng, world, mid, vel, if shimmer { 1361 } else { 770 }, 1.0);
+        gore.new_gore(rng, world, low, vel, if shimmer { 1360 } else { 771 }, 1.0);
+        gore.new_gore(rng, world, low, vel, if shimmer { 1360 } else { 771 }, 1.0);
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -6641,6 +6695,11 @@ pub fn hit_effect_c(
     // `:87622-87651` — the 13/14/15 Eater of Worlds arm (sites 1023-1028).
     if (npc_type == 13 || npc_type == 14 || npc_type == 15) && npc.hp <= 0 {
         eater_of_worlds_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87652-87694` — the 17 Merchant / 441 TaxCollector arm (sites
+    // 1029-1038).
+    if (npc_type == 17 || npc_type == 441) && npc.hp <= 0 {
+        town_npc_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -10496,6 +10555,41 @@ mod tests {
             let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
             assert_eq!(types, gores, "eow {ty}");
         }
+    }
+
+    /// `NPC.cs:87668-87693` — the Merchant/TaxCollector death: the 5-gore
+    /// ladder with shimmer variants (17 → 30/31/32 normal, 1320/1322/1323
+    /// shimmer; 441 → 768/769/770/771 normal, 1358/1359/1361/1360 shimmer).
+    #[test]
+    fn w4_f10_the_town_npc_death_uses_the_shimmer_variants() {
+        let w = air();
+        // The Merchant 17, normal.
+        let mut n = boss(100.0, 100.0, 40.0, 56.0);
+        n.variation_index = 0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1009);
+        town_npc_death(&n, 17, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![30, 31, 31, 32, 32]);
+        // The Merchant 17, shimmer (variation 1 + the ShimmerTownTransform row).
+        let mut n2 = boss(100.0, 100.0, 40.0, 56.0);
+        n2.variation_index = 1;
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(1009);
+        town_npc_death(&n2, 17, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        let types2: Vec<i32> = gore2.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![1320, 1322, 1322, 1323, 1323]);
+        // The TaxCollector 441, normal.
+        let mut n3 = boss(100.0, 100.0, 40.0, 56.0);
+        n3.variation_index = 0;
+        let mut gore3 = GorePool::new();
+        let mut dust3 = DustPool::new();
+        let mut rng3 = UnifiedRandom::new(1009);
+        town_npc_death(&n3, 441, &mut dust3, &ctx(), &mut gore3, &mut rng3, &w, 1.0);
+        let types3: Vec<i32> = gore3.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types3, vec![768, 769, 770, 771, 771]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
