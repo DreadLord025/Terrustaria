@@ -39768,3 +39768,84 @@ entry-by-entry: `Main.cs:67082`'s 697-entry initializer vs
 `render/entities.rs::NPC_FRAME_COUNT` - all 15 agree. Zero RNG
 verified mechanically per arm (a `Main.rand`/`.Next(`/`NextFloat`
 grep over all cited body ranges = ZERO).
+## W4-f27 FindFrame extra wave 9 (slice 9 claim, 2026-11-21, code-only mode)
+
+**BAND CLAIM (early, before the batches):** the f27 lane continues on
+the SAME branch after extra-8 (72448094). The census re-derived
+mechanically against this branch's tree + the pushed roster lane
+`origin/task/W4-d40-npc-kinds-421-490` (tip STILL 8fe1d6d3 — the
+slice-8 tip, no new d40 batches) + the pushed f26 co-lane tip
+(`a2e47596a`, its extra-7c slice DONE at 494-506/508/509 — the f26e
+band starts at 494 exactly as briefed): every C# top-level case label
+of the switch on this.type (`NPC.cs:66705`, two-tab indent — the
+nested switches excluded) = **602 ids** (re-counted mechanically this
+slice, the slice-8 figure re-confirmed). The covered set (our tree's
+`npc.rs::find_frame` arms resolved through the cs_id hand rows + the
+bestiary net ids + the wave-A/B/e4/e7 module rosters + the d40 tip's
+landed arms incl its cs_id hand rows) = 316 (the slice-8 claim's 278
++ the 38-id d40-only delta — its roster kinds 443-488 that the
+slice-8 census counted as UNCLAIMED-but-claimed-by-f27/f26 instead
+of covered; the band arithmetic differs, the CLAIM SETS agree
+id-for-id, verified mechanically: `unc_s8 − unc_mine` is EXACTLY the
+38-id d40 delta and `unc_mine − unc_s8` is empty). The d44-d49
+claims subtract 72 more (disjoint) = 214 e13-base; minus the deduped
+e13/e14/f26(3+5+6)/f27(4+7) claims (52) = **162 unclaimed before
+slice 8's 15**. After the e8 seam + f26's pushed 7b (473-488) + 7c
+(494-506/508/509): **146 unclaimed** (the five folded segments
+135/246/249/371/373 are counted covered through their own arms, so
+no further subtraction). The 463-493 window is EMPTY of unclaimed
+ids — every id in it is either port-covered with a faithful arm,
+d40-covered (the fix candidates below), or f26-claimed.
+
+**The 463-472 re-census vs the d40 tip 8fe1d6d3 (the slice-8 scrutiny
+applied — its 443-448 row-0 stubs + 453/460/462 wrong stand-ins were
+the precedent):** the d40 arms read via `git show` (its npc.rs
+find_frame region :9684-9853 + its data.rs count helpers
+:3550-3613), each against the C# arm line-for-line:
+
+| id | kind | d40 arm (8fe1d6d3) | C# case | verdict |
+| --- | --- | --- | --- | --- |
+| 463 | Nailhead | `humanoid_town_frame` (`:9685`) | `:68613` (the humanoid fighter group) | **WRONG stand-in** — same defect as the slice-8 460/462: no grounded flip, no air tail at all (the vy!=0 path writes NOTHING), and `humanoid_frame_count` falls to `_ => 1` (d40 data.rs:3578 — Nailhead has NO row) so the walk wraps at 1−0=1: the walker never leaves row 2. FIX (extra9 module + the d40 merger note). |
+| 464 | CrimsonBunny | inline bunny hop (`:9691-9715`) | `:76856` (the 443 bunny group) | FAITHFUL — the ±1 flip, the idle row-0 snap, the \|vx\|+1 >6 step over the full 7 rows, the air 4/6 pins all match. EXCLUDE (cite `NPC.cs:76851-76904`; the e8 443 machine is the keep-one twin). |
+| 465 | CrimsonGoldfish | inline wet/dry 6-band (`:9716-9731`) | `:74186` (the 55/57/58/102/241 fish group) | FAITHFUL — the unconditional copy, the counter++, the wet rows 0..3 / dry rows 4/5 bands with the >=24 / >=12 counter-reset row-HOLD quirk all match. EXCLUDE (cite `NPC.cs:74181-74226`; the d44 57/241 fish keep-one). |
+| 466 | Psycho | inline stealth + stride (`:9732-9759`) | `:75466-75531` | FAITHFUL — the ai[2]<=0 stealth rows 0/1/2 off the ==0/<-8 bands (the IsABestiaryIconDummy disjunct is the display-only skip), the grounded lift-to-4 + \|vx\|*2+1 >7 step + the >17 wrap-to-4 + the <4 clamp, the air row 3 all match. EXCLUDE (cite `NPC.cs:75466-75531`). |
+| 467 | DeadlySphere | ROW-0 STUB (`:9760-9763`) | `:75069-75102` | **STUB** — the C# is a two-phase strip: ai[0]==1 winds UP rows 0..6 every >4 ticks and HOLDS at 6 (the bestiary-dummy reset is the display skip), else winds DOWN (the >3 clamp to 3 first) to 0. FIX. |
+| 468 | DrManFly | inline attack ladder + stride (`:9764-9794`) | `:71516-71577` | FAITHFUL — the grounded ±1 flip, the ai[2]>0 ladder rows 15+{-15,3,2,1,0} off the ai[1] <22/<28/<34/<40 bands + the unconditional copy + counter zero, the idle row-0 counter-HOLD (no zero — the C# `:71550-71553` writes only the row), the lift-to-2 + \|vx\|*2 NO-+1 >6 step + the literal-15 wrap, the air row 1 all match. EXCLUDE (cite `NPC.cs:71516-71577`; the f26 481 GreekSkeleton ladder twin). |
+| 469 | ThePossessed | inline lunge + stride (`:9795-9831`) | `:75665-75732` | FAITHFUL — the ai[2]==1 lunge (the atan2+1.57 tilt, the vx-sign direction WRITE, the \|velocity\| counter >11 step, the 2..5 both-clamps), the non-lunge rotation-0 snap, the grounded \|vx\|+1 >9 step over rows 6..11 with both clamps, the idle counter-zero-before-row order, the air row 1 all match. EXCLUDE (cite `NPC.cs:75665-75732`). |
+| 470 | CrimsonPenguin | inline evil-offset bands (`:9832-9853`) | `:76395-76456` | FAITHFUL — the localAI[0] 2/3/4 → +3/+6/+9 offset, the ±1 flip, the idle offset-row snap, the \|vx\| NO-+1 counter with the <6/<12/<15 bands + the >=15 reset-tick row-2+offset hold, the air row 2+offset (rise/fall identical) all match. EXCLUDE (cite `NPC.cs:76395-76456`; the d47 168 CorruptPenguin twin). |
+| 471 | GoblinSummoner | d40 has NO kind (out of its 421-490 band's NpcKind set — OUR tree owns it) | `:75532-75617` | **OUR npc.rs:7768 arm is a WRONG v1 stand-in** — the free `(vx!=0)+0.6 >=8` strip over 20 rows is NOT the C#'s ai[3] machine: the shadowflame phase (ai[3]<0) strides rows 17/18/19 on the \|velocity\|*0.5+1 counter with the <23 reset-tick row-18 hold, ai[3]==1 pins row 16 + zeroes, the grounded idle snaps row 0, the walk is \|vx\|*2+1 >7 over rows 2..15 with both clamps, the air pins row 1. FIX (the 439-fix precedent — our own kind, our own arm). |
+| 472 | ShadowFlameApparition | ROW-0 STUB (`:9760-9763`) | `:71369-71397` | **STUB** — the C# writes direction from the vx sign (0 → +1, the else), copies the sprite, tilts at atan2(vy*dir, vx*dir), and steps the 6-row strip every >4 ticks wrapping at >=6. FIX. |
+| 489 | BloodZombie | d40 has NO kind — OUR tree owns it | `:68614` (the humanoid group) | OUR `npc.rs:6418 blood_zombie_frame` FAITHFUL (the S1-D-3z arm: the idle-row-1 `:69510` pair, the num108=8 \|vx\|+0.5 stride `:69544-69549`, the full-9 wrap, the air-row-0 `:69647` pin). EXCLUDE with cite. |
+| 490 | Drippler | d40 has NO kind — OUR tree owns it | `:72521-72533` | OUR `npc.rs:6460 drippler_frame` FAITHFUL (the vx*0.15 tilt, the >6 step, the full-8 wrap). EXCLUDE with cite. |
+| 491 | PirateShip (FlyingDutchman) | no FindFrame case label at all | — (npcFrameCount 1, `Main.cs:67133`) | OUR `npc.rs:7741` row-0 pin CORRECT-BY-CONSTRUCTION (the 478 MothronEgg / tower precedent). EXCLUDE with cite. |
+| 492 | PirateShipCannon (FlyingDutchmanCannon) | no d40 kind — OUR tree owns it | `:71156-71158` | **OUR npc.rs:7744 arm is a WRONG v1 stand-in** — the free `(vx!=0)+0.6 >=8` strip over 9 rows is NOT the C#'s ONE-LINE `frame.Y = num * (int)ai[2]` (the aim-octant row the style75 machine owns — `NPC.cs:35789-35820` writes ai[2] 0..8, the port's `npc_ai_style75.rs:594-668` already ports that block verbatim). FIX. |
+| 493 | LunarTowerStardust | no FindFrame case label at all | — (npcFrameCount 1, `Main.cs:67133`) | OUR tower row-0 pin CORRECT-BY-CONSTRUCTION (the slice-8 439-fix note already pins 422/493/507/517). EXCLUDE with cite. |
+
+**THIS wave (f27 slice 9) claims the FIVE fix kinds: 463/467/471/472/
+492** — five machine ports (463/467/471/472/492 in
+`npc_findframe_extra9.rs`) + the two npc.rs arm FIXES for OUR OWN
+kinds (471 GoblinSummoner, 492 FlyingDutchmanCannon — the 439-fix
+precedent; 463/467/472 are d40 kinds, their wiring rides the roster
+merge). The 489-493 ascending probe found NO unclaimed case id (489/
+490 faithful, 491/493 no-case, 492 the fix above; f26e owns 494+ per
+its pushed 7c tip a2e47596a — no collision). The claim is 5 kinds
+(the brief's "up to 15" ceiling is not reachable — the band is
+exhausted; taking ANY id beyond it would collide with the f26e 494+
+band or the open 516+ tail that is NOT this slice's ascending window).
+
+Shape (the extra-8 precedent): pure machines over FrameState/
+FrameInput in `crates/tr-app/src/npc_findframe_extra9.rs`, the
+`find_frame_kind_extra9` vanilla-id seam; the ONE npc.rs edit pair is
+the 471/492 fixes (our own kinds — the 439-fix shape: copy the fields
+out, run one tick, copy back; 492's row is ai[2]-driven so only row
+copies back — the arm never touches the counter). 5 kinds per commit
+(the module lands in ONE batch — 5 kinds exactly). Zero RNG
+(verified mechanically per arm — a Main.rand/.Next(/NextFloat grep
+over all cited body ranges = ZERO: 467 `:75069-75102`, 471
+`:75532-75617`, 472 `:71369-71397`, 492 `:71156-71158`, 463's
+fighter head/tail `:68634-68661`/`:69489-69655` — the town pose
+zones with their chat-bubble draws are the documented skip, the
+463 fighter never enters them). Frame counts vs Main.cs:67082
+entry-by-entry AND render/entities.rs NPC_FRAME_COUNT (463=16
+`:67130` slot 3, 467=13 slot 7, 471=20 `:67131` slot 1, 472=6 slot
+2, 492=9 `:67133` slot 2 — all five agree with the port table).
