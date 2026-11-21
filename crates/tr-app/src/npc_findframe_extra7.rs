@@ -51,7 +51,10 @@
 //! * the humanoid group's town `ai[0]` sit/talk/attack pose zones
 //!   (`NPC.cs:68662-69488`) — 322/323/324 are aiStyle-3 fighters
 //!   (`NPC.cs:13079`/`:13092`/`:13105`, no `townNPC`), the wave-B
-//!   `humanoid_fighter_frame` keep-one precedent.
+//!   `humanoid_fighter_frame` keep-one precedent;
+//! * the slime group's 302/304 town-slime sprite snap
+//!   (`NPC.cs:70824-70827`) — the ribbon slimes 333-336 are not in
+//!   that pair.
 
 // The wiring is a later round (the kinds are not in `NpcKind` yet) —
 // the `npc_findframe_a.rs`/`npc_findframe_b.rs` precedent.
@@ -77,6 +80,21 @@ pub enum FindFrameExtra7Kind {
     /// `NPCID.SkeletonAstonaut` = 323 (`NPCID.cs:11323`, the C#'s
     /// spelling) — the same group (`NPC.cs:68600`).
     SkeletonAstonaut,
+    /// `NPCID.SkeletonAlien` = 324 (`NPCID.cs:11325`) — the same
+    /// group (`NPC.cs:68601`).
+    SkeletonAlien,
+    /// `NPCID.SlimeRibbonWhite` = 333 (`NPCID.cs:11343`) — the
+    /// num2-fed slime strip (`NPC.cs:70814`).
+    SlimeRibbonWhite,
+    /// `NPCID.SlimeRibbonYellow` = 334 (`NPCID.cs:11345`) — the same
+    /// strip (`NPC.cs:70815`).
+    SlimeRibbonYellow,
+    /// `NPCID.SlimeRibbonGreen` = 335 (`NPCID.cs:11347`) — the same
+    /// strip (`NPC.cs:70816`).
+    SlimeRibbonGreen,
+    /// `NPCID.SlimeRibbonRed` = 336 (`NPCID.cs:11349`) — the same
+    /// strip (`NPC.cs:70817`).
+    SlimeRibbonRed,
 }
 
 impl FindFrameExtra7Kind {
@@ -88,6 +106,11 @@ impl FindFrameExtra7Kind {
             Self::DemonEyeSpaceship => 318,
             Self::SkeletonTopHat => 322,
             Self::SkeletonAstonaut => 323,
+            Self::SkeletonAlien => 324,
+            Self::SlimeRibbonWhite => 333,
+            Self::SlimeRibbonYellow => 334,
+            Self::SlimeRibbonGreen => 335,
+            Self::SlimeRibbonRed => 336,
         }
     }
 
@@ -100,9 +123,15 @@ impl FindFrameExtra7Kind {
             Self::Ghost => 4,
             Self::DemonEyeOwl => 2,
             Self::DemonEyeSpaceship => 2,
-            // Main.cs:67116 (322/323): 16, 15.
+            // Main.cs:67116 (322/323/324): 16, 15, 16.
             Self::SkeletonTopHat => 16,
             Self::SkeletonAstonaut => 15,
+            Self::SkeletonAlien => 16,
+            // Main.cs:67117 (333-336): 2, 2, 2, 2.
+            Self::SlimeRibbonWhite => 2,
+            Self::SlimeRibbonYellow => 2,
+            Self::SlimeRibbonGreen => 2,
+            Self::SlimeRibbonRed => 2,
         }
     }
 }
@@ -116,6 +145,11 @@ pub fn find_frame_kind_extra7(vanilla_type: i16) -> Option<FindFrameExtra7Kind> 
         318 => FindFrameExtra7Kind::DemonEyeSpaceship,
         322 => FindFrameExtra7Kind::SkeletonTopHat,
         323 => FindFrameExtra7Kind::SkeletonAstonaut,
+        324 => FindFrameExtra7Kind::SkeletonAlien,
+        333 => FindFrameExtra7Kind::SlimeRibbonWhite,
+        334 => FindFrameExtra7Kind::SlimeRibbonYellow,
+        335 => FindFrameExtra7Kind::SlimeRibbonGreen,
+        336 => FindFrameExtra7Kind::SlimeRibbonRed,
         _ => return None,
     })
 }
@@ -131,14 +165,14 @@ pub struct FrameState {
     pub counter: f32,
     /// `NPC.spriteDirection` (±1).
     pub sprite_dir: i32,
-    /// `NPC.rotation` — the floater/eye arms write it; the skeleton
-    /// arms never touch it.
+    /// `NPC.rotation` — the floater/eye arms write it; the
+    /// skeleton/slime arms never touch it.
     pub rotation: f32,
 }
 
-/// The per-tick inputs the arms read: `velocity`, `direction` and
-/// the `ai` slots. The later batches add `aiAction` (the ribbon
-/// slimes' num2 feed) and `localAI[2]` (the cultist pose ladder).
+/// The per-tick inputs the arms read: `velocity`, `direction`, the
+/// `ai` slots and `aiAction`. Batch 3 adds `localAI[2]` (the cultist
+/// pose ladder).
 #[derive(Clone, Copy, Debug)]
 pub struct FrameInput {
     pub vx: f32,
@@ -147,11 +181,14 @@ pub struct FrameInput {
     /// the arms that gate on `direction == 1` / `== -1`).
     pub direction: i32,
     pub ai: [f32; 4],
+    /// `NPC.aiAction` — 0 the motion class, 1 the attack (`num2 = 4`,
+    /// `NPC.cs:66696-66704`); only the ribbon slimes read it.
+    pub ai_action: i32,
 }
 
 impl Default for FrameInput {
     fn default() -> Self {
-        Self { vx: 0.0, vy: 0.0, direction: 1, ai: [0.0; 4] }
+        Self { vx: 0.0, vy: 0.0, direction: 1, ai: [0.0; 4], ai_action: 0 }
     }
 }
 
@@ -221,12 +258,12 @@ pub fn find_frame_extra7(kind: FindFrameExtra7Kind, s: &mut FrameState, i: &Fram
                 s.row = 0;
             }
         }
-        // `case 322/323` in the humanoid-group case list
-        // (`NPC.cs:68599-68600`, 324 joins in batch 2) → the shared
-        // fighter walk (`NPC.cs:68647-69655`) via the wave-B keep-one
-        // helper (the extra-3 SnowFlinx/Nymph/Lihzahrd delegate
-        // precedent, the pub(crate) lift). None is `isLikeATownNPC`
-        // (`NPC.cs:6856-6866` — only 453 + the town flag; the
+        // `case 322/323/324` in the humanoid-group case list
+        // (`NPC.cs:68599-68601`) → the shared fighter walk
+        // (`NPC.cs:68647-69655`) via the wave-B keep-one helper (the
+        // extra-3 SnowFlinx/Nymph/Lihzahrd delegate precedent, the
+        // pub(crate) lift). None is `isLikeATownNPC`
+        // (`NPC.cs:6856-6866` — only 453 + the town flag; the three
         // SetDefaults arms `:13075-13114` set aiStyle 3, no
         // townNPC), so `num57` = 0 and the walk wraps at the FULL
         // `npcFrameCount`; none is a town slime, so `num108` = 6 and
@@ -235,7 +272,9 @@ pub fn find_frame_extra7(kind: FindFrameExtra7Kind, s: &mut FrameState, i: &Fram
         // the 140/489 idle-row-1 pair. The 323 astronaut is the ONE
         // 15-row sheet of the trio (322/324 walk to row 15 before
         // the wrap, 323 to row 14).
-        FindFrameExtra7Kind::SkeletonTopHat | FindFrameExtra7Kind::SkeletonAstonaut => {
+        FindFrameExtra7Kind::SkeletonTopHat
+        | FindFrameExtra7Kind::SkeletonAstonaut
+        | FindFrameExtra7Kind::SkeletonAlien => {
             let bi = crate::npc_findframe_b::FrameInput {
                 vx: i.vx,
                 vy: i.vy,
@@ -260,6 +299,53 @@ pub fn find_frame_extra7(kind: FindFrameExtra7Kind, s: &mut FrameState, i: &Fram
             s.counter = bs.counter;
             s.sprite_dir = bs.sprite_dir;
             s.rotation = bs.rotation;
+        }
+        // `case 333/334/335/336` in the slime strip group
+        // (`NPC.cs:70801-70846`, shared with 1/16/59/71/81/138/147/
+        // 183/184/204/225/302/304/535/537/658/659/667/676 — the
+        // port's Slime arm `npc.rs:7772` and wave-A's slime roster
+        // are the same machine, keep-one at the merge): the counter
+        // feeds on the `num2` motion class (`NPC.cs:66696-66704`):
+        // +1 always, +1 more while moving/airborne (num2 > 0), +1
+        // more on the attack class (num2 == 4, aiAction 1); the
+        // >= 8 step walks the FULL 2 rows with the >= count wrap.
+        // The 302/304 sprite snap (`:70824-70827`) is the town
+        // slimes', not the ribbons'. No sprite/rotation write.
+        FindFrameExtra7Kind::SlimeRibbonWhite
+        | FindFrameExtra7Kind::SlimeRibbonYellow
+        | FindFrameExtra7Kind::SlimeRibbonGreen
+        | FindFrameExtra7Kind::SlimeRibbonRed => {
+            // `:66696-66704` — the num2 class.
+            let num2 = if i.ai_action == 0 {
+                if i.vy < 0.0 {
+                    2
+                } else if i.vy > 0.0 {
+                    3
+                } else if i.vx != 0.0 {
+                    1
+                } else {
+                    0
+                }
+            } else if i.ai_action == 1 {
+                4
+            } else {
+                0
+            };
+            // `:70828-70845`.
+            s.counter += 1.0;
+            if num2 > 0 {
+                s.counter += 1.0;
+            }
+            if num2 == 4 {
+                s.counter += 1.0;
+            }
+            if s.counter >= 8.0 {
+                s.row += 1;
+                s.counter = 0.0;
+            }
+            if s.row >= kind.frame_count() {
+                s.row = 0;
+            }
         }
     }
 }
@@ -293,6 +379,11 @@ mod tests {
             FindFrameExtra7Kind::DemonEyeSpaceship,
             FindFrameExtra7Kind::SkeletonTopHat,
             FindFrameExtra7Kind::SkeletonAstonaut,
+            FindFrameExtra7Kind::SkeletonAlien,
+            FindFrameExtra7Kind::SlimeRibbonWhite,
+            FindFrameExtra7Kind::SlimeRibbonYellow,
+            FindFrameExtra7Kind::SlimeRibbonGreen,
+            FindFrameExtra7Kind::SlimeRibbonRed,
         ] {
             assert_eq!(
                 k.frame_count(),
@@ -345,13 +436,17 @@ mod tests {
         }
     }
 
-    /// 322/323 the costume skeletons: the wave-B fighter walk — the
-    /// |vx|*2+1 accumulator, the > 6 step, the lift-to-2 and the
+    /// 322/323/324 the costume skeletons: the wave-B fighter walk —
+    /// the |vx|*2+1 accumulator, the > 6 step, the lift-to-2 and the
     /// wrap-to-2 at the FULL count; the 323 astronaut's 15-row sheet
     /// wraps one row earlier (`NPC.cs:69521-69585`).
     #[test]
     fn f27s7_costume_skeletons_walk_the_fighter_bands() {
-        for k in [FindFrameExtra7Kind::SkeletonTopHat, FindFrameExtra7Kind::SkeletonAstonaut] {
+        for k in [
+            FindFrameExtra7Kind::SkeletonTopHat,
+            FindFrameExtra7Kind::SkeletonAstonaut,
+            FindFrameExtra7Kind::SkeletonAlien,
+        ] {
             // vx 1: +3 a tick, the row steps every 3rd tick.
             let rows = rows_over(k, input(1.0, 0.0), 6);
             assert_eq!(rows, vec![2, 2, 3, 3, 3, 4]);
@@ -362,11 +457,11 @@ mod tests {
             find_frame_extra7(k, &mut s, &input(1.0, -2.0));
             assert_eq!((s.row, s.counter), (1, 0.0));
         }
-        // The count variant: 322 reaches row 15, 323 wraps at 14
-        // (324's 16-row twin joins in batch 2).
+        // The count variant: 322/324 reach row 15, 323 wraps at 14.
         for (k, last) in [
             (FindFrameExtra7Kind::SkeletonTopHat, 15u32),
             (FindFrameExtra7Kind::SkeletonAstonaut, 14),
+            (FindFrameExtra7Kind::SkeletonAlien, 15),
         ] {
             let mut s = FrameState { row: last, counter: 6.0, ..Default::default() };
             find_frame_extra7(k, &mut s, &input(1.0, 0.0));
@@ -374,9 +469,36 @@ mod tests {
         }
     }
 
-    /// The batch's 5-kind strip sweep: a 5x3x3 vx/vy/direction input
-    /// grid, 40 ticks each — every row stays inside its sheet (the
-    /// extra-4 precedent; the full 15-kind sweep lands with batch 3).
+    /// 333-336 the ribbon slimes: the num2-fed 8-tick strip over the
+    /// 2 rows — idle 8 ticks a step, moving 4, attacking ~3
+    /// (`NPC.cs:70828-70845` + `:66696-66704`).
+    #[test]
+    fn f27s7_ribbon_slimes_feed_on_the_motion_class() {
+        for k in [
+            FindFrameExtra7Kind::SlimeRibbonWhite,
+            FindFrameExtra7Kind::SlimeRibbonYellow,
+            FindFrameExtra7Kind::SlimeRibbonGreen,
+            FindFrameExtra7Kind::SlimeRibbonRed,
+        ] {
+            let rows = rows_over(k, input(0.0, 0.0), 17);
+            assert_eq!(rows[7], 1, "idle steps on tick 8");
+            assert_eq!(rows[15], 0, "the wrap returns to 0 on tick 16");
+            let rows = rows_over(k, input(2.0, 0.0), 9);
+            assert_eq!(rows[3], 1, "moving steps on tick 4");
+            let i = FrameInput { ai_action: 1, ..Default::default() };
+            let rows = rows_over(k, i, 7);
+            assert_eq!(rows[2], 1, "attacking steps on tick 3 (+3/tick)");
+            // No sprite write (the 302/304 snap is the town slimes').
+            let mut s = FrameState { sprite_dir: -1, rotation: 0.5, ..Default::default() };
+            find_frame_extra7(k, &mut s, &input(2.0, 0.0));
+            assert_eq!((s.sprite_dir, s.rotation), (-1, 0.5));
+        }
+    }
+
+    /// The batch's 10-kind strip sweep: a 5x3x3 vx/vy/direction input
+    /// grid (plus the aiAction variant for the ribbons), 40 ticks
+    /// each — every row stays inside its sheet (the extra-4
+    /// precedent; the full 15-kind sweep lands with batch 3).
     #[test]
     fn f27s7_batch_strip_sweep_stays_inside_the_sheets() {
         let kinds = [
@@ -385,22 +507,35 @@ mod tests {
             FindFrameExtra7Kind::DemonEyeSpaceship,
             FindFrameExtra7Kind::SkeletonTopHat,
             FindFrameExtra7Kind::SkeletonAstonaut,
+            FindFrameExtra7Kind::SkeletonAlien,
+            FindFrameExtra7Kind::SlimeRibbonWhite,
+            FindFrameExtra7Kind::SlimeRibbonYellow,
+            FindFrameExtra7Kind::SlimeRibbonGreen,
+            FindFrameExtra7Kind::SlimeRibbonRed,
         ];
         for k in kinds {
             let count = k.frame_count();
             for vx in [-4.0f32, -1.0, 0.0, 1.0, 4.0] {
                 for vy in [-3.0f32, 0.0, 3.0] {
                     for direction in [-1i32, 0, 1] {
-                        let i = FrameInput { vx, vy, direction, ..Default::default() };
-                        let mut s = FrameState::default();
-                        for tick in 0..40 {
-                            find_frame_extra7(k, &mut s, &i);
-                            assert!(
-                                s.row < count,
-                                "type {} tick {tick} row {} >= {count} (vx {vx}, vy {vy}, dir {direction})",
-                                k.vanilla_type(),
-                                s.row
-                            );
+                        for ai_action in [0i32, 1] {
+                            let i = FrameInput {
+                                vx,
+                                vy,
+                                direction,
+                                ai_action,
+                                ..Default::default()
+                            };
+                            let mut s = FrameState::default();
+                            for tick in 0..40 {
+                                find_frame_extra7(k, &mut s, &i);
+                                assert!(
+                                    s.row < count,
+                                    "type {} tick {tick} row {} >= {count} (vx {vx}, vy {vy}, dir {direction})",
+                                    k.vanilla_type(),
+                                    s.row
+                                );
+                            }
                         }
                     }
                 }
@@ -414,7 +549,7 @@ mod tests {
     fn f27s7_seam_covers_exactly_the_slice() {
         for t in 0..697i16 {
             let k = find_frame_kind_extra7(t);
-            let claimed = [316, 317, 318, 322, 323];
+            let claimed = [316, 317, 318, 322, 323, 324, 333, 334, 335, 336];
             assert_eq!(k.is_some(), claimed.contains(&t), "type {t}");
             if let Some(k) = k {
                 assert_eq!(k.vanilla_type(), t);
