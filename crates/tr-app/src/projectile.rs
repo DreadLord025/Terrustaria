@@ -19975,8 +19975,17 @@ impl ProjectilePool {
                 // the death arms below so it reads the PRE-resize position
                 // (every C# arm plays ahead of its resize/`Damage()`). The
                 // cue is kind-disjoint from the bomb blasts and d77's
-                // selection; the drain plays it at the pass tail.
-                self.kill_sound_cue(i);
+                // selection; the drain plays it at the pass tail. The T3
+                // flag rides `Main.player[owner].setApprenticeT3`
+                // (`:71832`) for the Flame Burst shots' recentre size —
+                // the local player stands in for the owner (the pool's
+                // single-player snapshot, the doll_flags convention); a
+                // remote owner's shot keeps the base 96-box.
+                let apprentice_t3 = player
+                    .as_deref()
+                    .map(|p| p.set_apprentice_t3)
+                    .unwrap_or(false);
+                self.kill_sound_cue(i, apprentice_t3);
                 self.spawn_inferno_blast(i);
                 // S1-P-i21 — `Kill()`'s type-237 arm (`:74535-74538`): the
                 // moving cloud's death spawns the raining cloud 238.
@@ -21290,12 +21299,29 @@ impl ProjectilePool {
     /// note); the cue itself is draw-free at the queue site — its case draw
     /// rides the drain. Kinds whose death arm is unported (no row) are
     /// absent here, exactly as the census records.
-    fn kill_sound_cue(&mut self, slot: usize) {
+    fn kill_sound_cue(&mut self, slot: usize, apprentice_t3: bool) {
         let p = &self.slots[slot];
         let (x, y) = (p.pos.x, p.pos.y);
         // The full `(id, style, x, y, pitchOffset)` payload — every arm
-        // plays at `base.position` except the 932's `base.Center`.
+        // plays at `base.position` except the 932's `base.Center` (and
+        // the Flame Burst shots' derived post-recentre read).
         let cue: Option<(u16, i32, f32, f32, f32)> = match p.kind {
+            // `:71848` — the Flame Burst Tower shots' Item100 (S1-E-21h
+            // f1 final-phase remainder: the one rowed kind in the range
+            // neither d77's map nor any pushed sibling arms). The C#
+            // RECENTRES first (`:71844-71846`: position = Center,
+            // width = height = 16 * num129, Center = position) and runs
+            // `Damage()` (`:71847`) BEFORE the play — num129 is 6, or 13
+            // under `Main.player[owner].setApprenticeT3` (`:71832`/
+            // `:71841`). `Resize` keeps the centre, so the play point is
+            // the OLD centre minus the blast box's half (the 539 jellyfish
+            // precedent); the resize/Damage/dust state halves stay
+            // deferred (the S1-D-4b-9 kill-dust deferral stands). The
+            // unrowed 706 sibling stays out (the PART-arm convention).
+            FLAME_BURST_SHOT_1 | FLAME_BURST_SHOT_2 | FLAME_BURST_SHOT_3 => {
+                let half = if apprentice_t3 { 104.0 } else { 48.0 };
+                Some((2, 100, x + p.w * 0.5 - half, y + p.h * 0.5 - half, 0.0))
+            }
             // `:71112` — the 932 FairyQueenRangedItemShot's Item10 at
             // `base.Center` (the ONE Center-positioned cue of the batch).
             932 => Some((2, 10, x + p.w * 0.5, y + p.h * 0.5, 0.0)),
@@ -24168,7 +24194,7 @@ mod s1_e_21h_sound_tests {
                 let p = &pool.slots()[slot];
                 (p.w, p.h)
             };
-            pool.kill_sound_cue(slot);
+            pool.kill_sound_cue(slot, false);
             let queued = pool.drain_proj_sounds();
             assert_eq!(queued.len(), 1, "kind {kind}: one death cue");
             let (qx, qy) = if kind == 932 {
@@ -24214,7 +24240,7 @@ mod s1_e_21h_sound_tests {
             let slot = pool
                 .spawn_with_data_ai_owned(kind, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
                 .unwrap_or_else(|| panic!("kind {kind} has a row"));
-            pool.kill_sound_cue(slot);
+            pool.kill_sound_cue(slot, false);
             let queued = pool.drain_proj_sounds();
             assert_eq!(queued.len(), 1, "kind {kind}: one death cue");
             assert_eq!(queued[0], (id, style, 80.0, 80.0, 0.0, 1.0), "kind {kind}");
@@ -24225,10 +24251,10 @@ mod s1_e_21h_sound_tests {
             .spawn_with_data_ai_owned(ICE_BLOCK, 0, 96.0, 96.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
             .expect("the ice block row");
         pool.slots_mut()[slot].ai[0] = -1.0;
-        pool.kill_sound_cue(slot);
+        pool.kill_sound_cue(slot, false);
         assert!(pool.drain_proj_sounds().is_empty(), "the negative latch rides cue-less");
         pool.slots_mut()[slot].ai[0] = 0.0;
-        pool.kill_sound_cue(slot);
+        pool.kill_sound_cue(slot, false);
         let queued = pool.drain_proj_sounds();
         assert_eq!(queued, vec![(2, 27, 96.0, 96.0, 0.0, 1.0)], "the zero latch plays");
         pool.kill(slot);
@@ -24263,7 +24289,7 @@ mod s1_e_21h_sound_tests {
             let slot = pool
                 .spawn_with_data_ai_owned(kind, 0, 64.0, 64.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
                 .unwrap_or_else(|| panic!("kind {kind} has a row"));
-            pool.kill_sound_cue(slot);
+            pool.kill_sound_cue(slot, false);
             let queued = pool.drain_proj_sounds();
             assert_eq!(queued.len(), 1, "kind {kind}: one death cue");
             assert_eq!(queued[0], (id, style, 64.0, 64.0, 0.0, 1.0), "kind {kind}'s payload");
@@ -24378,7 +24404,7 @@ mod s1_e_21h_sound_tests {
                 h,
                 ..Default::default()
             };
-            pool.kill_sound_cue(0);
+            pool.kill_sound_cue(0, false);
             let queued = pool.drain_proj_sounds();
             assert_eq!(queued.len(), 1, "kind {kind}: one owed death cue");
             let (qx, qy) = match mode {
@@ -24411,11 +24437,11 @@ mod s1_e_21h_sound_tests {
             };
             // The placed-rope coil (`ai[1] != 0f`) rides cue-less.
             pool.slots_mut()[0].ai[1] = 1.0;
-            pool.kill_sound_cue(0);
+            pool.kill_sound_cue(0, false);
             assert!(pool.drain_proj_sounds().is_empty(), "kind {kind}: placed rope is silent");
             // The fresh coil (`ai[1] == 0f`) queues the Dig thud.
             pool.slots_mut()[0].ai[1] = 0.0;
-            pool.kill_sound_cue(0);
+            pool.kill_sound_cue(0, false);
             let queued = pool.drain_proj_sounds();
             assert_eq!(queued, vec![(0, 0, 64.0, 64.0, 0.0, 1.0)], "kind {kind}'s Dig thud");
         }
@@ -24438,12 +24464,52 @@ mod s1_e_21h_sound_tests {
                 pos: Vec2::new(64.0, 64.0),
                 ..Default::default()
             };
-            pool.kill_sound_cue(0);
+            pool.kill_sound_cue(0, false);
             assert!(
                 pool.drain_proj_sounds().is_empty(),
                 "kind {kind} self-arms on its sibling — f1 keeps one"
             );
         }
+    }
+
+    /// S1-E-21h f1 final phase — the Flame Burst Tower shots' Item100
+    /// (`Projectile.cs:71848`, the range census's one unclaimed rowed
+    /// site): the C# recentres to `16 * num129` (96, or 208 under the
+    /// owner's `setApprenticeT3`, `:71832-71846`) BEFORE the play, so the
+    /// cue reads the OLD centre minus the blast half (48 / 104 — the 539
+    /// jellyfish derived-read precedent). The unrowed 706 sibling queues
+    /// NOTHING (the PART-arm convention; a constructed slot proves the
+    /// gate). Written, NOT run — code-only mode.
+    #[test]
+    fn s1_e_21h_f1_final_the_flame_burst_shots_play_at_the_derived_recentre() {
+        let mut pool = ProjectilePool::new();
+        for kind in [FLAME_BURST_SHOT_1, FLAME_BURST_SHOT_2, FLAME_BURST_SHOT_3] {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 64.0, 64.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .unwrap_or_else(|| panic!("kind {kind} has a row (S1-D-4b-9)"));
+            // The 16×16 row box: centre (72, 72).
+            // Base: 96-box → play at centre − 48 = (24, 24).
+            pool.kill_sound_cue(slot, false);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued, vec![(2, 100, 24.0, 24.0, 0.0, 1.0)], "kind {kind} base");
+            // T3: 208-box → play at centre − 104 = (−32, −32).
+            pool.kill_sound_cue(slot, true);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued, vec![(2, 100, -32.0, -32.0, 0.0, 1.0)], "kind {kind} T3");
+            pool.kill(slot);
+        }
+        // The unrowed 706 sibling: no arm (the row guard declines it).
+        pool.slots_mut()[0] = Projectile {
+            active: true,
+            kind: 706,
+            owner: 0,
+            pos: Vec2::new(64.0, 64.0),
+            w: 16.0,
+            h: 16.0,
+            ..Default::default()
+        };
+        pool.kill_sound_cue(0, false);
+        assert!(pool.drain_proj_sounds().is_empty(), "706 is unrowed — no cue");
     }
 }
 
