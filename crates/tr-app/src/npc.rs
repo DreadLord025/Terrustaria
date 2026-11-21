@@ -6893,27 +6893,21 @@ impl Npc {
         }
     }
 
-    /// W4-d44 wire — the extra-7c claim set: the FIRST ELEVEN of the
-    /// slice-7c band 494-506/508/509 — the crawdad pair 494/495, the
-    /// giant shelly pair 496/497 and the seven salamanders 498-504
-    /// (the ≤11-kind batch cap, the extra7b-a precedent); 505/506/
-    /// 508/509 ride a later batch. The d41 tip `5d036721` carries
-    /// FAITHFUL inline twins for 494-506 (its batches 1-2, arm-by-arm
-    /// equal — the f26e 480/481/482 keep-inline precedent); the hook
-    /// precedes the roster arm at merge and the machines are
-    /// behaviour-identical, so the claim is safe either way (the
-    /// census research/68 §3.5 note).
+    /// W4-d44 wire — the extra-7c claim set: the FULL slice-7c band
+    /// 494-506/508/509, all 15 kinds (the in-module lookup verbatim).
+    /// The first batch claimed 494-504 (the ≤11-kind cap); this batch
+    /// widens to the LAST FOUR 505/506/508/509 (the salamander tail
+    /// pair, the Giant Walking Antlion, the Giant Flying Antlion).
+    /// The d41 tip `5d036721` carries FAITHFUL inline twins for
+    /// 494-506 (its batches 1-2, arm-by-arm equal — the f26e
+    /// 480/481/482 keep-inline precedent); the hook precedes the
+    /// roster arm at merge and the machines are behaviour-identical,
+    /// so the claim is safe either way (the census research/68 §3.5
+    /// note). 508/509 have NO roster kind on any tip.
     fn find_frame_kind_extra7c_claimed(
         cs_id: u16,
     ) -> Option<crate::npc_findframe_extra7c::FindFrameExtra7cKind> {
-        use crate::npc_findframe_extra7c::FindFrameExtra7cKind as K;
-        match crate::npc_findframe_extra7c::find_frame_kind_extra7c(cs_id as i16) {
-            // The ≤11-kind cap — the LAST FOUR ride a later batch.
-            Some(K::Salamander8 | K::Salamander9 | K::GiantWalkingAntlion | K::GiantFlyingAntlion) => {
-                None
-            }
-            other => other,
-        }
+        crate::npc_findframe_extra7c::find_frame_kind_extra7c(cs_id as i16)
     }
 
     /// W4-d44 wire — the extra-5 claim set: the FULL slice-5 band
@@ -7084,14 +7078,14 @@ impl Npc {
         }
         // W4-d44 wire (f26 slice 7c) — the `cs_id`-keyed hook into the
         // extra-wave-7c pure machines (`npc_findframe_extra7c.rs`) via
-        // `find_frame_kind_extra7c_claimed`: the FIRST ELEVEN slice-7c
-        // ids 494-504 (the crawdad pair, the giant shelly pair, the
-        // seven salamanders 498-504; 505/506/508/509 ride a later
-        // batch, the ≤11-kind cap). NO current kind's `cs_id` lands in
-        // the set (verified over the hand rows + the bestiary net
-        // ids), so this is stream-inert today; no arm draws RNG and
-        // none reads the world (the f26 7c mechanical grep over the
-        // five cited ranges = ZERO). The extra7 hook precedent.
+        // `find_frame_kind_extra7c_claimed`: ALL 15 slice-7c ids
+        // 494-506/508/509 (the crawdad pair, the giant shelly pair,
+        // the nine salamanders, the Giant Walking Antlion, the Giant
+        // Flying Antlion). NO current kind's `cs_id` lands in the set
+        // (verified over the hand rows + the bestiary net ids), so
+        // this is stream-inert today; no arm draws RNG and none reads
+        // the world (the f26 7c mechanical grep over the five cited
+        // ranges = ZERO). The extra7 hook precedent.
         if let Some(kind) = Self::find_frame_kind_extra7c_claimed(self.kind.cs_id()) {
             self.find_frame_wave_extra7c(kind);
             return;
@@ -34309,10 +34303,9 @@ mod w4_d44_wire_tests {
         }
     }
 
-    /// The extra-7c claim set is the FIRST ELEVEN slice-7c ids
-    /// 494-504 (the crawdad pair, the shelly pair, the seven
-    /// salamanders); 505/506/508/509 ride a later batch (the ≤11-kind
-    /// cap), the no-case 491/493 + the band edges stay outside.
+    /// The extra-7c claim set is the FULL slice-7c band
+    /// 494-506/508/509 — all 15 kinds; the no-case 491/493/507 + the
+    /// band edges stay outside.
     #[test]
     fn w4_d44_the_extra7c_claim_set_matches_the_batch_band() {
         use crate::npc_findframe_extra7c::FindFrameExtra7cKind as K;
@@ -34328,13 +34321,13 @@ mod w4_d44_wire_tests {
             (502, K::Salamander5),
             (503, K::Salamander6),
             (504, K::Salamander7),
+            (505, K::Salamander8),
+            (506, K::Salamander9),
+            (508, K::GiantWalkingAntlion),
+            (509, K::GiantFlyingAntlion),
         ];
         for (id, k) in table {
             assert_eq!(Npc::find_frame_kind_extra7c_claimed(id), Some(k), "{id}");
-        }
-        // The ≤11-kind cap — the LAST FOUR ride a later batch.
-        for id in [505, 506, 508, 509] {
-            assert_eq!(Npc::find_frame_kind_extra7c_claimed(id), None, "{id}");
         }
         // The no-case 491/493/507 + the band edges.
         for id in [490, 491, 493, 507, 510] {
@@ -34430,6 +34423,68 @@ mod w4_d44_wire_tests {
         n.vy = 2.0;
         n.find_frame_wave_extra7c(K::Salamander3);
         assert_eq!((n.frame, n.frame_counter), (10, 0.0));
+    }
+
+    /// The extra-7c tail batch: the salamander tail twins ride the
+    /// same group machine, the Giant Walking Antlion's counter-HELD
+    /// air/idle pins + the SIGN-GATED sprite + the 1+|vx|/2 walk
+    /// wrapping at row >= 6 back to 2 (`NPC.cs:70067-70103`), the
+    /// Giant Flying Antlion's EVERY-tick counter + the >= 3 step over
+    /// the FULL 9 rows + the sign-gated sprite (`:70104-70119`).
+    #[test]
+    fn w4_d44_the_extra7c_tail_batch_bridge() {
+        use crate::npc_findframe_extra7c::FindFrameExtra7cKind as K;
+        let mut n = bare(NpcKind::Piranha);
+        // The salamander tail twins: the air pin row 10 (the group
+        // machine, `:69902-69906`).
+        n.vy = 1.0;
+        n.frame_counter = 7.0;
+        n.find_frame_wave_extra7c(K::Salamander8);
+        assert_eq!((n.frame, n.frame_counter), (10, 0.0));
+        n.frame_counter = 7.0;
+        n.find_frame_wave_extra7c(K::Salamander9);
+        assert_eq!((n.frame, n.frame_counter), (10, 0.0));
+        // Walking antlion air: row 1, the counter is NOT touched.
+        n.frame = 4;
+        n.frame_counter = 5.0;
+        n.find_frame_wave_extra7c(K::GiantWalkingAntlion);
+        assert_eq!((n.frame, n.frame_counter), (1, 5.0));
+        // The idle: row 0, the counter NOT touched either.
+        n.vy = 0.0;
+        n.vx = 0.0;
+        n.find_frame_wave_extra7c(K::GiantWalkingAntlion);
+        assert_eq!((n.frame, n.frame_counter), (0, 5.0));
+        // The walk: row 0 lifts to 2, counter 5 + 1 + |1|/2 = 6.5 > 6
+        // steps row 2 → 3; the sprite copy is SIGN-GATED — facing -1
+        // with vx +1 keeps the old sprite.
+        n.frame = 0;
+        n.frame_counter = 5.0;
+        n.vx = 1.0;
+        n.facing = -1;
+        n.sprite_dir = 1;
+        n.find_frame_wave_extra7c(K::GiantWalkingAntlion);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (3, 0.0, 1));
+        // The wrap: row 5 steps to 6, row >= the 6-row count → 2.
+        n.frame = 5;
+        n.frame_counter = 6.0;
+        n.facing = 1;
+        n.find_frame_wave_extra7c(K::GiantWalkingAntlion);
+        assert_eq!((n.frame, n.sprite_dir), (2, 1), "the sign-gated copy");
+        // Flying antlion: the counter ticks EVERY tick (flaps in
+        // place); counter 2 + 1 = 3 >= 3 steps row 8 → 9, the FULL
+        // 9-row wrap lands 0; vx 0 leaves the sprite (no sign).
+        n.frame = 8;
+        n.frame_counter = 2.0;
+        n.vx = 0.0;
+        n.sprite_dir = -1;
+        n.find_frame_wave_extra7c(K::GiantFlyingAntlion);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (0, 0.0, -1));
+        // The sign-gated copy: vx 2 / facing 1 copies +1.
+        n.vx = 2.0;
+        n.facing = 1;
+        n.frame_counter = 0.0;
+        n.find_frame_wave_extra7c(K::GiantFlyingAntlion);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (0, 1.0, 1));
     }
 
     /// The extra-6 bridge copies the three fields both ways and feeds
