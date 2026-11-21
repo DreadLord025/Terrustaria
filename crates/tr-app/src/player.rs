@@ -1281,6 +1281,20 @@ pub struct Player {
     /// Bottom the 4870 use records (`:37506`), the return-gate hitbox centre
     /// (`PotionOfReturnHelper.TryGetGateHitbox`).
     pub potion_of_return_home_position: Option<(f32, f32)>,
+    /// `Player.lastDeathPostion` (`Player.cs:846`, the source's spelling):
+    /// the `Center` at the death moment (`KillMe`, `:38846`), the map death
+    /// marker's anchor (`Main.DrawPlayerDeathMarker`, `Main.cs:56446`).
+    /// W4-f29.
+    pub last_death_position: Option<(f32, f32)>,
+    /// `Player.lastDeathTime` (`Player.cs:848`): the wall-clock death stamp
+    /// (`DateTime.Now`, `KillMe` `:38847`), seconds since the Unix epoch —
+    /// the hover line's `Lang.LocalizedDuration(DateTime.Now - lastDeathTime)`
+    /// (`Main.cs:55986`). W4-f29.
+    pub last_death_time: f64,
+    /// `Player.showLastDeath` (`Player.cs:850`): set by `KillMe` (`:38848`),
+    /// never cleared in the source — the marker persists until the next
+    /// death overwrites it. W4-f29.
+    pub show_last_death: bool,
     pub hp: i32,
     pub max_hp: i32,
     /// `Player.statMana` / `Player.statManaMax` (`Player.cs:1930-1932`). A new
@@ -2716,6 +2730,9 @@ impl Player {
             spawn_y: sy,
             potion_of_return_original_use_position: None,
             potion_of_return_home_position: None,
+            last_death_position: None,
+            last_death_time: 0.0,
+            show_last_death: false,
             hp: 100,
             max_hp: 100,
             armor_penetration: 0,
@@ -3683,6 +3700,16 @@ impl Player {
         // flag splits the two counters; the port has no PVP, so every
         // death is PVE.
         self.deaths_pve = self.deaths_pve.saturating_add(1);
+        // `Player.KillMe` (`Player.cs:38846-38848`): the death marker's
+        // anchor + wall-clock stamp + the show flag (W4-f29). The C#
+        // `DateTime.Now` becomes seconds since the Unix epoch.
+        let (cx, cy) = self.center();
+        self.last_death_position = Some((cx, cy));
+        self.last_death_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs_f64())
+            .unwrap_or(0.0);
+        self.show_last_death = true;
         self.dead = true;
         self.dead_time = 0;
         self.respawn_timer = Player::get_respawn_time(boss_near, expert);

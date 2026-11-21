@@ -533,6 +533,528 @@ pub(crate) fn draw_npc_map_icons(
     text
 }
 
+// ---------------------------------------------------------------------------
+// The player death markers (`Main.DrawPlayerDeathMarker`, `Main.cs:56446-
+// 56464`, + the three call sites `:55672-55691` / `:55742-55765` /
+// `:55977-55987`).
+// ---------------------------------------------------------------------------
+
+/// `Main.DrawPlayerDeathMarker` (`Main.cs:56446-56464`): the MapDeath
+/// texture centred on the death spot, the `-(2 - scale/5*2)` y-offset and
+/// the `+4 -14*headScale` / `28*headScale` hover box. Returns whether the
+/// mouse hovers it (the C#'s `num19 = i` arm). `last_death` is the world-px
+/// `Center` stamp; `origin`/`left_top`/`scale` are the map transform; the
+/// fullscreen call passes `left_top = (num12, num13) = 0` and
+/// `origin = (num, num2)`. `present_scale` is the batch transform the draw
+/// rides (1.0 fullscreen, `MapScale` on the minimap): the position and
+/// size scale by it on the way to the screen, while the hover box stays in
+/// transform space (the caller's mouse is in that space too).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn draw_player_death_marker(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    last_death: [f32; 2],
+    origin: [f32; 2],
+    left_top: [f32; 2],
+    scale: f32,
+    head_scale: f32,
+    present_scale: f32,
+    alpha: u8,
+    mouse: Vec2,
+) -> bool {
+    // `:56448-56453`, the C# left-to-right order.
+    let mut x = (last_death[0] / 16.0 - left_top[0]) * scale;
+    let mut y = (last_death[1] / 16.0 - left_top[1]) * scale;
+    x += origin[0];
+    y = y + origin[1] - (2.0 - scale / 5.0 * 2.0);
+    x -= 10.0 * scale;
+    y -= 10.0 * scale;
+    let Some(sheet) = lookups.map_death else {
+        return false;
+    };
+    let Some(uv) = lookups.hud_uv(Some(&sheet)) else {
+        return false;
+    };
+    let size = [
+        sheet.width as f32 * head_scale * present_scale,
+        sheet.height as f32 * head_scale * present_scale,
+    ];
+    // `:56454`: origin = texture centre, so the top-left is pos - size/2.
+    let a = alpha as f32 / 255.0;
+    r.push_ui_sprite(
+        [
+            x * present_scale - size[0] * 0.5,
+            y * present_scale - size[1] * 0.5,
+        ],
+        size,
+        uv,
+        [a, a, a, a],
+    );
+    // `:56455-56463`: the hover box, in transform space.
+    let x0 = x + 4.0 - 14.0 * head_scale;
+    let y0 = y + 2.0 - 14.0 * head_scale;
+    let x1 = x0 + 28.0 * head_scale;
+    let y1 = y0 + 28.0 * head_scale;
+    mouse.x >= x0 && mouse.x <= x1 && mouse.y >= y0 && mouse.y <= y1
+}
+
+/// The minimap death-marker clip (`Main.cs:55752`): the
+/// `(miniMapX+8, miniMapY+8, W-18, H-16)` rect, strict on all four edges —
+/// distinct from the head clip's `+12/+10/-16/-14`.
+pub(crate) fn death_marker_in_minimap_clip(pos: [f32; 2], origin: [f32; 2]) -> bool {
+    pos[0] > origin[0] + 8.0
+        && pos[0] < origin[0] + 240.0 - 18.0
+        && pos[1] > origin[1] + 8.0
+        && pos[1] < origin[1] + 240.0 - 16.0
+}
+
+/// The minimap death-marker position (`Main.cs:55746-55751`): the same
+/// transform as the fullscreen marker but with the `num10/num11` sub-tile
+/// offsets added and NO `-10*scale` inset (the minimap branch keeps the
+/// raw panel origin). Returns the marker centre in transform space.
+pub(crate) fn minimap_death_marker_pos(
+    last_death: [f32; 2],
+    origin: [f32; 2],
+    left_top: [f32; 2],
+    sub_offset: [f32; 2],
+    scale: f32,
+) -> [f32; 2] {
+    let mut x = (last_death[0] / 16.0 - left_top[0]) * scale;
+    let mut y = (last_death[1] / 16.0 - left_top[1]) * scale;
+    x += origin[0];
+    y = y + origin[1] - (2.0 - scale / 5.0 * 2.0);
+    x += sub_offset[0];
+    y += sub_offset[1];
+    [x, y]
+}
+
+/// The minimap death-marker draw + hover (`Main.cs:55752-55764`): the
+/// MapDeath texture centred at the transform position (scaled to the
+/// screen by `present_scale` = `MapScale`), and the hover box with the
+/// minimap's EXTRA `-4f` on both axes (`:55757-55758`) — distinct from the
+/// fullscreen `DrawPlayerDeathMarker` box. `pos` is the transform-space
+/// centre from [`minimap_death_marker_pos`]; the mouse is in that space.
+pub(crate) fn draw_minimap_death_marker(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    pos: [f32; 2],
+    head_scale: f32,
+    present_scale: f32,
+    alpha: u8,
+    mouse: Vec2,
+) -> bool {
+    let Some(sheet) = lookups.map_death else {
+        return false;
+    };
+    let Some(uv) = lookups.hud_uv(Some(&sheet)) else {
+        return false;
+    };
+    let size = [
+        sheet.width as f32 * head_scale * present_scale,
+        sheet.height as f32 * head_scale * present_scale,
+    ];
+    let a = alpha as f32 / 255.0;
+    r.push_ui_sprite(
+        [
+            pos[0] * present_scale - size[0] * 0.5,
+            pos[1] * present_scale - size[1] * 0.5,
+        ],
+        size,
+        uv,
+        [a, a, a, a],
+    );
+    // `:55755-55761`: the hover box, the extra -4 on both axes.
+    let x0 = pos[0] + 4.0 - 14.0 * head_scale - 4.0;
+    let y0 = pos[1] + 2.0 - 14.0 * head_scale - 4.0;
+    let x1 = x0 + 28.0 * head_scale;
+    let y1 = y0 + 28.0 * head_scale;
+    mouse.x >= x0 && mouse.x <= x1 && mouse.y >= y0 && mouse.y <= y1
+}
+
+// ---------------------------------------------------------------------------
+// The revenge coin markers (`CoinLossRevengeSystem.RevengeMarker.DrawMapIcon`
+// `:252-266`, `DrawMapIcons` `:482-496`, `UseMouseOver` `:268-273`).
+// ---------------------------------------------------------------------------
+
+/// `RevengeMarker.DrawMapIcon`'s coin tier (`CoinLossRevengeSystem.cs:262`):
+/// <100c copper, <10000c silver, >=1000000c platinum, else gold.
+pub(crate) fn revenge_coin_tier(coins_value: u64) -> usize {
+    if coins_value < 100 {
+        0
+    } else if coins_value < 10_000 {
+        1
+    } else if coins_value >= 1_000_000 {
+        3
+    } else {
+        2
+    }
+}
+
+/// `Utils.CoinsSplit` (`Utils.cs:1048-1060`): the copper total split into
+/// `[copper, silver, gold, platinum]`.
+pub(crate) fn coins_split(count: u64) -> [u64; 4] {
+    let mut array = [0u64; 4];
+    let mut num = 0u64;
+    let mut denom = 1_000_000u64;
+    let mut i = 3;
+    loop {
+        array[i] = (count - num) / denom;
+        num += array[i] * denom;
+        denom /= 100;
+        if i == 0 {
+            break;
+        }
+        i -= 1;
+    }
+    array
+}
+
+/// `RevengeMarker.DrawMapIcon` (`CoinLossRevengeSystem.cs:252-266`): the
+/// coin tier's `Frame(1, 8)` row 0 centred on the marker's tile, clipped to
+/// the map rect. Returns whether the mouse hovers it. `location` is world
+/// px; the transform is `(location/16 - mapTopLeft)*mapScale + mapOffset`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn draw_revenge_map_icon(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    location: Vec2,
+    coins_value: u64,
+    map_top_left: [f32; 2],
+    map_offset: [f32; 2],
+    clip: Option<[f32; 4]>,
+    map_scale: f32,
+    draw_scale: f32,
+    mouse: Vec2,
+) -> bool {
+    // `:254-256`.
+    let pos = [
+        (location.x / 16.0 - map_top_left[0]) * map_scale + map_offset[0],
+        (location.y / 16.0 - map_top_left[1]) * map_scale + map_offset[1],
+    ];
+    // `:257-260`: the clip is on the POSITION point (Rectangle.Contains).
+    if let Some(c) = clip {
+        let px = pos[0] as i32;
+        let py = pos[1] as i32;
+        if px < c[0] as i32 || py < c[1] as i32 || px >= c[2] as i32 || py >= c[3] as i32 {
+            return false;
+        }
+    }
+    let tier = revenge_coin_tier(coins_value);
+    let Some(sheet) = lookups.coin_anim[tier] else {
+        return false;
+    };
+    // `value.Frame(1, 8)` (`:263`): the first of the 8 animation rows.
+    let fw = sheet.width as f32;
+    let fh = sheet.height as f32 / 8.0;
+    let Some(full_uv) = lookups.hud_uv(Some(&sheet)) else {
+        return false;
+    };
+    let uv = [full_uv[0], full_uv[1], full_uv[2], full_uv[1] + (full_uv[3] - full_uv[1]) / 8.0];
+    let size = [fw * draw_scale, fh * draw_scale];
+    // `:264`: origin = frame centre.
+    r.push_ui_sprite([pos[0] - size[0] * 0.5, pos[1] - size[1] * 0.5], size, uv, [1.0; 4]);
+    // `:265`: `Utils.CenteredRectangle(vector, rectangle.Size()*drawScale)`
+    // (`Utils.cs:947-950`) — the integer-truncated centred box.
+    let hx = (pos[0] - fw * draw_scale / 2.0) as i32;
+    let hy = (pos[1] - fh * draw_scale / 2.0) as i32;
+    let hw = (fw * draw_scale) as i32;
+    let hh = (fh * draw_scale) as i32;
+    let mx = mouse.x as i32;
+    let my = mouse.y as i32;
+    mx >= hx && mx < hx + hw && my >= hy && my < hy + hh
+}
+
+/// `RevengeMarker.UseMouseOver` (`CoinLossRevengeSystem.cs:268-273`): the
+/// horizontal `ItemSlot.DrawMoney` at `MouseScreen/drawScale + (-28) + (4,0)`.
+/// The C# clears `mouseTextString` first (`:270`) — the coin row REPLACES
+/// any hover text. The call re-begins the batch with `uIScaleMatrix`
+/// (`Main.cs:55991`/`:55771`), so every position/size is multiplied by
+/// `draw_scale` (= `Main.UIScale`) on the way to the screen. `ItemSlot.
+/// DrawMoney` (`ItemSlot.cs:3652-3684`) draws the four coin icons + stack
+/// counts; the port reproduces the horizontal row.
+pub(crate) fn revenge_use_mouse_over(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    coins_value: u64,
+    mouse: Vec2,
+    draw_scale: f32,
+) {
+    // `:271`: the anchor in the UIScale batch's space.
+    let ax = mouse.x / draw_scale - 28.0 + 4.0;
+    let ay = mouse.y / draw_scale;
+    let coins = coins_split(coins_value);
+    // `ItemSlot.cs:3663-3683`: the horizontal row, i = 0..3, coin type
+    // `74 - i` (platinum first), count `coinsArray[3 - i]` capped at 999.
+    for i in 0..4usize {
+        let tier = 3 - i;
+        let count = coins[tier].min(999);
+        // `:3680`: the coin centre at `(shopx + textWidth + 24*i + 45,
+        // shopy + 50)`. The text is "" (the C# passes ""), so textWidth 0.
+        let cx = (ax + 24.0 * i as f32 + 45.0) * draw_scale;
+        let cy = (ay + 50.0) * draw_scale;
+        if let Some(sheet) = lookups.coin_anim[tier] {
+            let fw = sheet.width as f32 * draw_scale;
+            let fh = sheet.height as f32 / 8.0 * draw_scale;
+            if let Some(full_uv) = lookups.hud_uv(Some(&sheet)) {
+                let uv = [
+                    full_uv[0],
+                    full_uv[1],
+                    full_uv[2],
+                    full_uv[1] + (full_uv[3] - full_uv[1]) / 8.0,
+                ];
+                // `CoinSlot.DrawItemCoin` (`CoinSlot.cs:240-253`): the
+                // frame centred, scale 1 in the batch (= draw_scale here).
+                r.push_ui_sprite([cx - fw * 0.5, cy - fh * 0.5], [fw, fh], uv, [1.0; 4]);
+            }
+        }
+        // `:3682`: the stack count, ItemStack font 0.75, origin
+        // `(0, LineSpacing)` at `(vector.X - 11, vector.Y + LineSpacing*0.75)`
+        // — the origin cancels the +LineSpacing*0.75, so the text top-left
+        // lands at `(vector.X - 11, vector.Y)` in batch space.
+        crate::ui::text::draw_border_string(
+            r,
+            lookups,
+            crate::ui::text::BorderFont::Item,
+            (ax + 24.0 * i as f32 + 45.0 - 11.0) * draw_scale,
+            cy,
+            0.75 * draw_scale,
+            &[[-2.0, 0.0], [2.0, 0.0], [0.0, -2.0], [0.0, 2.0]],
+            [1.0; 4],
+            &count.to_string(),
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The misc map icons (`Main.DrawMiscMapIcons`, `Main.cs:56466-56539`).
+// ---------------------------------------------------------------------------
+
+/// One misc portal/golf icon (`DrawMapIcons_PotionOfReturnHomePosition`
+/// `:56494-56513`, `...AppearAfterUsePosition` `:56473-56492`,
+/// `...LastGolfballHit` `:56515-56539`): the position is
+/// `((anchor + (0, -height/2))/16 - mapTopLeft)*mapScale + mapOffset`,
+/// FLOORED, the sheet centred, the hover box `Utils.CenteredRectangle`.
+/// Returns the hover text key hit, if any. `anchor` is the world-px
+/// position (the potion Bottom / the golf ball Centre); `height_offset` is
+/// `-LocalPlayer.height/2` for the portals, 0 for the golf ball.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn draw_misc_map_icon(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    sheet: Option<tr_render::SheetRect>,
+    anchor: [f32; 2],
+    height_offset: f32,
+    map_top_left: [f32; 2],
+    map_offset: [f32; 2],
+    clip: Option<[f32; 4]>,
+    map_scale: f32,
+    draw_scale: f32,
+    mouse: Vec2,
+) -> bool {
+    let Some(sheet) = sheet else { return false };
+    // `:56480`/`:56501`/`:56522`: the floored screen position.
+    let pos = [
+        (((anchor[0]) / 16.0 - map_top_left[0]) * map_scale + map_offset[0]).floor(),
+        (((anchor[1] + height_offset) / 16.0 - map_top_left[1]) * map_scale + map_offset[1]).floor(),
+    ];
+    if let Some(c) = clip {
+        let px = pos[0] as i32;
+        let py = pos[1] as i32;
+        if px < c[0] as i32 || py < c[1] as i32 || px >= c[2] as i32 || py >= c[3] as i32 {
+            return false;
+        }
+    }
+    let Some(uv) = lookups.hud_uv(Some(&sheet)) else {
+        return false;
+    };
+    let size = [sheet.width as f32 * draw_scale, sheet.height as f32 * draw_scale];
+    r.push_ui_sprite([pos[0] - size[0] * 0.5, pos[1] - size[1] * 0.5], size, uv, [1.0; 4]);
+    let hx = (pos[0] - sheet.width as f32 * draw_scale / 2.0) as i32;
+    let hy = (pos[1] - sheet.height as f32 * draw_scale / 2.0) as i32;
+    let hw = (sheet.width as f32 * draw_scale) as i32;
+    let hh = (sheet.height as f32 * draw_scale) as i32;
+    let mx = mouse.x as i32;
+    let my = mouse.y as i32;
+    mx >= hx && mx < hx + hw && my >= hy && my < hy + hh
+}
+
+// ---------------------------------------------------------------------------
+// The fullscreen hover tile/chest names (`Main.cs:55784-55913` +
+// `DrawMap_FindChestName`, `:56631-56643`).
+// ---------------------------------------------------------------------------
+
+/// `GolfState.GetLastHitBall` (`GolfState.cs:102-109`) for the map draw: the
+/// stored snapshot re-validated against the live pool slot — active, still
+/// a golf ball, still the local player's, and not re-hit since
+/// (`_lastRecordedSwingCount == ai[1]`). The port's `GolfState` keeps the
+/// snapshot + the swing count private, so this re-derives the four guards
+/// from `last_hit_golf_ball()` + the live slot (the `update_golf_state`
+/// convention, `world_sim/player.rs:344-358`).
+pub(crate) fn last_hit_golf_ball(
+    golf: &tr_core::golf_state::GolfState,
+    pool: &crate::projectile::ProjectilePool,
+    my_player: i32,
+) -> Option<tr_core::golf_state::GolfBall> {
+    let stored = golf.last_hit_golf_ball()?;
+    let q = pool.slots().get(stored.who_am_i)?;
+    if !q.active
+        || !tr_core::golf_state::is_a_golf_ball(q.kind as i32)
+        || q.owner as i32 != my_player
+    {
+        return None;
+    }
+    let (cx, cy) = q.center();
+    let live = tr_core::golf_state::GolfBall {
+        who_am_i: stored.who_am_i,
+        kind: q.kind as i32,
+        owner: q.owner as i32,
+        active: q.active,
+        position: q.pos,
+        center: Vec2::new(cx, cy),
+        ai1: q.ai[1],
+        local_ai1: q.local_ai[1],
+    };
+    // The re-hit guard: the stored snapshot's ai1 is the recorded swing
+    // count (`record_swing` writes both, `golf_state.rs:200-203`); a live
+    // ai1 past it means the ball was re-hit.
+    if stored.ai1 != live.ai1 {
+        return None;
+    }
+    Some(live)
+}
+
+/// `DrawMapIcons_LastGolfballHit`'s second draw (`Main.cs:56529-56532`): the
+/// ball's own `TextureAssets.Projectile[type]` frame centred on the same
+/// floored position, over the Extra_176 ring.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn draw_golf_ball_on_map(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    kind: u16,
+    center: [f32; 2],
+    map_top_left: [f32; 2],
+    map_offset: [f32; 2],
+    map_scale: f32,
+    draw_scale: f32,
+) {
+    let Some(sheet) = lookups.proj_sheets.get(&kind).copied() else {
+        return;
+    };
+    let pos = [
+        ((center[0] / 16.0 - map_top_left[0]) * map_scale + map_offset[0]).floor(),
+        ((center[1] / 16.0 - map_top_left[1]) * map_scale + map_offset[1]).floor(),
+    ];
+    let Some(uv) = lookups.hud_uv(Some(&sheet)) else {
+        return;
+    };
+    let size = [sheet.width as f32 * draw_scale, sheet.height as f32 * draw_scale];
+    r.push_ui_sprite([pos[0] - size[0] * 0.5, pos[1] - size[1] * 0.5], size, uv, [1.0; 4]);
+}
+
+/// `Main.DrawMap_FindChestName` (`Main.cs:56631-56643`): the chest's stored
+/// name appended to the style name, or the bare style name. `style` is the
+/// `frameX / fullTileWidth` index into the chest-name table.
+pub(crate) fn find_chest_name(
+    chests: &[crate::chest::WorldChest],
+    chest_names: fn(usize) -> String,
+    tile_frame_x: i32,
+    x: i32,
+    y: i32,
+    full_tile_width: i32,
+) -> String {
+    let Some(idx) = crate::chest::find_chest(chests, x, y) else {
+        return chest_names(0);
+    };
+    let style = (tile_frame_x / full_tile_width) as usize;
+    let name = &chests[idx].name;
+    if !name.is_empty() {
+        format!("{}: {}", chest_names(style), name)
+    } else {
+        chest_names(style)
+    }
+}
+
+/// The fullscreen hover tile decode (`Main.cs:55784-55913`): the tile under
+/// the cursor, gated `Light > 40`, then the chest/dresser style names or the
+/// map legend. `map_type` is the packed `MapTile.Type` (`baseType +
+/// baseOption`); the chest ranges come from `MapHelper.tileLookup` /
+/// `tileOptionCounts`. Returns the hover text, if any.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn fullscreen_hover_name(
+    world: &tr_core::World,
+    map_tiles: &[tr_core::map::MapTile],
+    chests: &[crate::chest::WorldChest],
+    tx: i32,
+    ty: i32,
+) -> Option<String> {
+    // `:55809`: the light gate. The caller's window gate keeps the coords
+    // in-bounds; the guard here keeps a stray call panic-free.
+    if tx < 0 || ty < 0 || tx >= world.width || ty >= world.height {
+        return None;
+    }
+    let idx = world.index(tx, ty);
+    let mt = map_tiles.get(idx)?;
+    if mt.light <= 40 {
+        return None;
+    }
+    let map_type = mt.ty as usize;
+    let table = tr_core::map::color_table();
+    let lookup = |tile: usize| table.tile_lookup[tile] as usize;
+    let options = |tile: usize| table.tile_option_counts[tile] as usize;
+    // `:55812-55819`: the chest/dresser lookup bounds.
+    let (l21, l441, l467, l468, l88) = (
+        lookup(21),
+        lookup(441),
+        lookup(467),
+        lookup(468),
+        lookup(88),
+    );
+    let (o21, o467, o88) = (options(21), options(467), options(88));
+    let tile = world.tile(tx, ty)?;
+    let frame_x = world.tile_frame_x(tx, ty);
+    let frame_y = world.tile_frame_y(tx, ty);
+    // The chest origin decode (`:55827-55836` etc.): step back to the
+    // top-left cell when the frame is not on a 36-px boundary.
+    let origin = |fx: i32, fy: i32| {
+        (
+            if fx % 36 != 0 { tx - 1 } else { tx },
+            if fy % 36 != 0 { ty - 1 } else { ty },
+        );
+    };
+    if map_type >= l21 && map_type < l21 + o21 {
+        // `:55822-55838`: chestType (tile 21).
+        let (ox, oy) = origin(frame_x, frame_y);
+        Some(find_chest_name(chests, crate::lang::chest_type, frame_x, ox, oy, 36))
+    } else if map_type >= l467 && map_type < l467 + o467 {
+        // `:55840-55856`: chestType2 (tile 467).
+        let (ox, oy) = origin(frame_x, frame_y);
+        Some(find_chest_name(chests, crate::lang::chest_type2, frame_x, ox, oy, 36))
+    } else if map_type >= l441 && map_type < l441 + o21 {
+        // `:55858-55874`: tile 441 reads chestType[frameX/36] directly.
+        Some(crate::lang::chest_type((frame_x / 36) as usize))
+    } else if map_type >= l468 && map_type < l468 + o467 {
+        // `:55876-55892`: tile 468 reads chestType2[frameX/36] directly.
+        Some(crate::lang::chest_type2((frame_x / 36) as usize))
+    } else if map_type >= l88 && map_type < l88 + o88 {
+        // `:55894-55907`: the dresser (tile 88) — the 54-px origin decode.
+        let x = tx - frame_x % 54 / 18;
+        let y = if frame_y % 36 != 0 { ty - 1 } else { ty };
+        let style = (frame_x / 54) as usize;
+        match crate::chest::find_chest(chests, x, y) {
+            None => Some(crate::lang::dresser_type(0)),
+            Some(idx) if chests[idx].name.is_empty() => Some(crate::lang::dresser_type(style)),
+            Some(idx) => Some(format!(
+                "{}: {}",
+                crate::lang::dresser_type(style),
+                chests[idx].name
+            )),
+        }
+    } else {
+        // `:55909-55912`: the map legend.
+        Some(crate::lang::map_object_name(map_type))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -746,5 +1268,154 @@ mod tests {
             npc_full_name(&guide),
             crate::lang::text_args("Game.NPCTitle", &["Andrew".into(), type_name])
         );
+    }
+
+    /// `CoinLossRevengeSystem.cs:262` — the coin tier brackets.
+    #[test]
+    fn w4_f29_revenge_coin_tier_brackets() {
+        assert_eq!(revenge_coin_tier(0), 0, "copper");
+        assert_eq!(revenge_coin_tier(99), 0);
+        assert_eq!(revenge_coin_tier(100), 1, "silver");
+        assert_eq!(revenge_coin_tier(9_999), 1);
+        assert_eq!(revenge_coin_tier(10_000), 2, "gold");
+        assert_eq!(revenge_coin_tier(999_999), 2);
+        assert_eq!(revenge_coin_tier(1_000_000), 3, "platinum");
+        assert_eq!(revenge_coin_tier(50_000_000), 3);
+    }
+
+    /// `Utils.cs:1048-1060` — CoinsSplit.
+    #[test]
+    fn w4_f29_coins_split_matches_utils() {
+        assert_eq!(coins_split(0), [0, 0, 0, 0]);
+        assert_eq!(coins_split(99), [99, 0, 0, 0]);
+        assert_eq!(coins_split(100), [0, 1, 0, 0]);
+        assert_eq!(coins_split(10_000), [0, 0, 1, 0]);
+        assert_eq!(coins_split(1_000_000), [0, 0, 0, 1]);
+        assert_eq!(coins_split(1_234_567), [67, 45, 23, 1]);
+    }
+
+    /// `Main.cs:56448-56453` — the death-marker transform, and the minimap
+    /// variant's sub-tile offsets (`:55746-55751`).
+    #[test]
+    fn w4_f29_death_marker_transform() {
+        // Fullscreen: origin (200,300), left_top 0, scale 4.
+        // x = 160/16*4 + 200 - 40 = 200; y = 320/16*4 + 300 - (2-1.6) - 40.
+        let last = [160.0, 320.0];
+        let scale = 4.0f32;
+        let x = (last[0] / 16.0) * scale + 200.0 - 10.0 * scale;
+        let y = (last[1] / 16.0) * scale + 300.0 - (2.0 - scale / 5.0 * 2.0) - 10.0 * scale;
+        assert_eq!(x, 200.0);
+        assert_eq!(y, 339.6);
+        // Minimap: the sub-offsets add, no -10*scale inset.
+        let got = minimap_death_marker_pos(last, [500.0, 90.0], [5.0, 10.0], [-0.5, -0.25], 2.0);
+        assert_eq!(got[0], 509.5);
+        assert_eq!(got[1], 108.95);
+    }
+
+    /// `Main.cs:55752` — the minimap death clip is +8/+8/-18/-16, strict.
+    #[test]
+    fn w4_f29_death_minimap_clip_edges() {
+        let origin = [500.0, 90.0];
+        assert!(death_marker_in_minimap_clip([600.0, 200.0], origin));
+        assert!(!death_marker_in_minimap_clip([508.0, 200.0], origin));
+        assert!(!death_marker_in_minimap_clip([722.0, 200.0], origin));
+        assert!(!death_marker_in_minimap_clip([600.0, 98.0], origin));
+        assert!(!death_marker_in_minimap_clip([600.0, 314.0], origin));
+    }
+
+    /// `Lang.cs:1158-1205` — LocalizedDuration's largest-unit + round-up.
+    #[test]
+    fn w4_f29_localized_duration_largest_unit() {
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        // Under a minute: seconds.
+        assert_eq!(crate::lang::localized_duration(45.0, false, false), "45 seconds");
+        assert_eq!(crate::lang::localized_duration(1.0, false, false), "1 second");
+        // Over a minute but under an hour: minutes, rounded up past 1 min.
+        assert_eq!(crate::lang::localized_duration(61.0, false, false), "2 minutes");
+        assert_eq!(crate::lang::localized_duration(60.0, false, false), "1 minute");
+        // Over an hour: hours rounded up.
+        assert_eq!(crate::lang::localized_duration(3601.0, false, false), "2 hours");
+        // Over a day: days rounded up.
+        assert_eq!(crate::lang::localized_duration(86401.0, false, false), "2 days");
+        // Abbreviated uses the Misc.Short* keys.
+        assert_eq!(crate::lang::localized_duration(45.0, true, false), "45 s");
+    }
+
+    /// `Main.cs:56631-56643` — the chest name append.
+    #[test]
+    fn w4_f29_find_chest_name_appends_the_stored_name() {
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut chest = crate::chest::WorldChest::default();
+        chest.tile = (10, 20);
+        chest.name = "Loot".into();
+        let chests = vec![chest];
+        // frameX 36 -> style 1; the stored name appends.
+        let got = find_chest_name(&chests, crate::lang::chest_type, 36, 10, 20, 36);
+        assert_eq!(got, format!("{}: Loot", crate::lang::chest_type(1)));
+        // No chest at the coords -> the bare style-0 name.
+        let got = find_chest_name(&chests, crate::lang::chest_type, 0, 99, 99, 36);
+        assert_eq!(got, crate::lang::chest_type(0));
+        // An empty stored name -> the bare style name.
+        let mut empty = crate::chest::WorldChest::default();
+        empty.tile = (10, 20);
+        let got = find_chest_name(&[empty], crate::lang::chest_type, 72, 10, 20, 36);
+        assert_eq!(got, crate::lang::chest_type(2));
+    }
+
+    /// `GolfState.cs:102-109` — the last-hit ball's four guards.
+    #[test]
+    fn w4_f29_last_hit_golf_ball_guards() {
+        use tr_core::golf_state::{GolfBall, GolfState};
+        let mut golf = GolfState::new();
+        let mut pool = crate::projectile::ProjectilePool::new();
+        // No stored ball -> None.
+        assert!(last_hit_golf_ball(&golf, &pool, 0).is_none());
+        // Spawn a golf ball (721) owned by the local player, hit it once.
+        let idx = pool
+            .spawn(721, 0, Vec2::new(160.0, 320.0), Vec2::ZERO, 0, 0.0, false)
+            .unwrap();
+        pool.slots_mut()[idx].ai[1] = 1.0;
+        let (cx, cy) = pool.slots()[idx].center();
+        let ball = GolfBall {
+            who_am_i: idx,
+            kind: 721,
+            owner: 0,
+            active: true,
+            position: pool.slots()[idx].pos,
+            center: Vec2::new(cx, cy),
+            ai1: 1.0,
+            local_ai1: 1.0,
+        };
+        golf.record_swing(&ball);
+        assert!(last_hit_golf_ball(&golf, &pool, 0).is_some());
+        // A re-hit (live ai1 past the recorded swing) drops it.
+        pool.slots_mut()[idx].ai[1] = 2.0;
+        assert!(last_hit_golf_ball(&golf, &pool, 0).is_none());
+        // Back to the recorded count, but inactive -> None.
+        pool.slots_mut()[idx].ai[1] = 1.0;
+        pool.slots_mut()[idx].active = false;
+        assert!(last_hit_golf_ball(&golf, &pool, 0).is_none());
+        // Active again, but a foreign owner -> None.
+        pool.slots_mut()[idx].active = true;
+        pool.slots_mut()[idx].owner = 3;
+        assert!(last_hit_golf_ball(&golf, &pool, 0).is_none());
+        // The foreign owner's own read resolves.
+        assert!(last_hit_golf_ball(&golf, &pool, 3).is_some());
+    }
+
+    /// `Main.cs:56480` — the misc icon's floored transform.
+    #[test]
+    fn w4_f29_misc_icon_position_is_floored() {
+        // anchor (161.7, 325.9), height_offset -21, scale 2.5, offset (100,50).
+        // x = (161.7/16)*2.5 + 100 = 25.265.. + 100 = 125.265 -> 125.
+        // y = ((325.9-21)/16)*2.5 + 50 = 47.64.. + 50 = 97.64 -> 97.
+        let anchor = [161.7f32, 325.9];
+        let h_off = -21.0f32;
+        let scale = 2.5f32;
+        let off = [100.0f32, 50.0];
+        let x = ((anchor[0] / 16.0) * scale + off[0]).floor();
+        let y = (((anchor[1] + h_off) / 16.0) * scale + off[1]).floor();
+        assert_eq!(x, 125.0);
+        assert_eq!(y, 97.0);
     }
 }

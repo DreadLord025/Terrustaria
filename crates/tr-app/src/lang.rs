@@ -1021,6 +1021,94 @@ pub fn dresser_type(i: usize) -> String {
     text(&format!("LegacyDresserType.{i}"))
 }
 
+/// `Lang.LocalizedDuration` (`Lang.cs:1158-1205`): the largest nonzero unit
+/// wins, rounded UP when the span exceeds one whole unit
+/// (`!showAllAvailableUnits && time > TimeSpan.FromX(1.0)` → `num++`), and
+/// the English culture spells the unit out (`abbreviated` is forced true
+/// for every non-English culture, `:1161`). `seconds` is the span's total
+/// seconds (the C# `TimeSpan`); the port's death hover reads
+/// `DateTime.Now - lastDeathTime` (`Main.cs:55986`). W4-f29.
+pub fn localized_duration(seconds: f64, abbreviated: bool, show_all_available_units: bool) -> String {
+    let abbreviated = abbreviated || active_culture() != GameCulture::English;
+    // `TimeSpan`'s integer component split (`:1162-1204`).
+    let total = seconds.max(0.0) as i64;
+    let days = total / 86_400;
+    let hours = (total % 86_400) / 3_600;
+    let minutes = (total % 3_600) / 60;
+    let secs = total % 60;
+    let mut text = String::new();
+    if days > 0 {
+        let mut num = days;
+        if !show_all_available_units && seconds > 86_400.0 {
+            num += 1;
+        }
+        text += &format!(
+            "{num}{}",
+            if abbreviated {
+                format!(" {}", text("Misc.ShortDays"))
+            } else if num == 1 {
+                " day".to_string()
+            } else {
+                " days".to_string()
+            }
+        );
+        if !show_all_available_units {
+            return text;
+        }
+        text += " ";
+    }
+    if hours > 0 {
+        let mut num = hours;
+        if !show_all_available_units && seconds > 3_600.0 {
+            num += 1;
+        }
+        text += &format!(
+            "{num}{}",
+            if abbreviated {
+                format!(" {}", text("Misc.ShortHours"))
+            } else if num == 1 {
+                " hour".to_string()
+            } else {
+                " hours".to_string()
+            }
+        );
+        if !show_all_available_units {
+            return text;
+        }
+        text += " ";
+    }
+    if minutes > 0 {
+        let mut num = minutes;
+        if !show_all_available_units && seconds > 60.0 {
+            num += 1;
+        }
+        text += &format!(
+            "{num}{}",
+            if abbreviated {
+                format!(" {}", text("Misc.ShortMinutes"))
+            } else if num == 1 {
+                " minute".to_string()
+            } else {
+                " minutes".to_string()
+            }
+        );
+        if !show_all_available_units {
+            return text;
+        }
+        text += " ";
+    }
+    text + &format!(
+        "{secs}{}",
+        if abbreviated {
+            format!(" {}", text("Misc.ShortSeconds"))
+        } else if secs == 1 {
+            " second".to_string()
+        } else {
+            " seconds".to_string()
+        }
+    )
+}
+
 /// All twelve shipped cultures in `GameCulture.CultureName` order — the
 /// language screens' row list.
 pub fn cultures() -> [GameCulture; 12] {
