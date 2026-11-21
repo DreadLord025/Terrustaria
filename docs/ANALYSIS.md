@@ -39704,6 +39704,27 @@ the smoke-puff centre/alpha-ladder/scale-or-gravity invariants, the 323
 gate split, the 589 colour ladder + exact-equality edge, the 311/316
 5-counts — WRITTEN NOT RUN.
 
+### Batch 19 (10 kinds, the confetti/trail-walk bursts `:74311-74733`)
+
+1097 (6× dust-6; the owner-gated ai[1]==1 eight-child spawn burst stays
+the spawn lane's), 270/837 (the 585 pair shape — 20 pairs dust-26 +
+dust-5 scale 1.5 (270) / dust-6 scale 2 (837) at pos+(4,4) box (w−8);
+the 837 penetrate sound gate draws nothing), 229 (the owner-gated
+32-shard spawn burst stays the spawn lane's; 25× dust-157 noGravity
+vel×1.5 scale 1.5), 178/289 (the confetti: 85/30× Next(139,143) type
+argument BEFORE the spawn, speed baseVel scale 1.2, the X/Y nudge ladder
+(+= ×0.01, ×= 1+×0.01, += ×0.05) + scale ×= 1+Next(−30,31)×0.01; then
+40/15 gore rows draws-only — Next(276,283) type, the kicks, the same
+ladder with scale ×= 1+Next(−20,21)×0.01 BEFORE the final nudges; shared
+`confetti_burst` helper), 475/505/506/171 (the trail walk: gated ai[1]<
+10, count = (int)(30×min(1,ai[0]/17)), the gravity ramp 0.4×min(1,ai[0]/
+30) accumulates per step, dir rescaled to 5.6 with the |x|+|y|<1 damp,
+step > ai[1] → FOUR dust of 3/239/30/129 at the walk point noGravity
+vel×0.3; the discarded Math.Atan2 draws nothing; shared `trail_walk_burst`
+helper). Witnesses: the 1097/229 counts, the 270/837 pair splits, the
+178/289 confetti counts + determinism (gore census included), the trail
+walks' 116-count + ai1>=10 gate — WRITTEN NOT RUN.
+
 ### The re-census (all Kill dust arms vs the 104 + d12 + i17/i18 + g16)
 
 A full re-grep of `Projectile.cs:70642-77262` for `Dust.NewDust*` sites,

@@ -2841,6 +2841,57 @@ fn death_bursts(
                 d.velocity += s.vel * 0.5;
             }
         }
+        // `:74311-74325` — the 1097: 6× dust-6 defaults. The owner-gated
+        // ai[1]==1 eight-child spawn burst (`:74318-74324`) stays the
+        // spawn lane's draws.
+        1097 => {
+            for _ in 0..6 {
+                dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 6, 0.0, 0.0, 0, Color::default(), 1.0);
+            }
+        }
+        // `:74348-74383` — the 270/837: the 585 pair shape — 20 pairs
+        // dust-26 alpha 100 noGravity vel×1.2 scale 1.3 −= oldVel×0.3,
+        // then dust-5 (270, scale 1.5) / dust-6 (837, scale 2) at
+        // pos+(4,4) box (w−8)×(h−8) alpha 100 noGravity vel×3. The 837's
+        // penetrate!=maxPenetrate sound gate draws nothing.
+        270 | 837 => {
+            let (second_type, second_scale) = if s.kind == 270 { (5, 1.5) } else { (6, 2.0) };
+            for _ in 0..20 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 26, 0.0, 0.0, 100, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 1.2;
+                d.scale = 1.3;
+                d.velocity -= s.old_vel * 0.3;
+                let idx = dust.new_dust(rng, ctx, world, s.pos + Vec2::splat(4.0), s.w - 8, s.h - 8, second_type, 0.0, 0.0, 100, Color::default(), second_scale);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 3.0;
+            }
+        }
+        // `:74450-74474` — the 229: the owner-gated 32-shard spawn burst
+        // (`:74453-74466`) stays the spawn lane's draws; 25× dust-157
+        // defaults noGravity vel×1.5 scale 1.5.
+        229 => {
+            for _ in 0..25 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 157, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 1.5;
+                d.scale = 1.5;
+            }
+        }
+        // `:74565-74589` — the 178: 85 confetti dust + 40 gore rows.
+        178 => confetti_burst(s, dust, rng, ctx, world, 85, 40),
+        // `:74590-74614` — the 289: 30 confetti dust + 15 gore rows.
+        289 => confetti_burst(s, dust, rng, ctx, world, 30, 15),
+        // `:74615-74678` — the 475/505/506: the trail walk at dust 3 /
+        // 239 / 30.
+        475 => trail_walk_burst(s, dust, rng, ctx, world, 3),
+        505 => trail_walk_burst(s, dust, rng, ctx, world, 239),
+        506 => trail_walk_burst(s, dust, rng, ctx, world, 30),
+        // `:74679-74733` — the 171: the trail walk at dust 129.
+        171 => trail_walk_burst(s, dust, rng, ctx, world, 129),
         _ => {}
     }
 }
@@ -3327,6 +3378,99 @@ fn cursed_flame_death(
             d.velocity *= 2.4;
             d.scale += rng.next_float();
         }
+    }
+}
+
+/// `Kill()`'s 178/289 confetti (`:74565-74614`): `count` dust of type
+/// Next(139,143) (the type argument draws BEFORE the spawn) speed =
+/// baseVel alpha 0 scale 1.2; per dust X/Y += Next(−50,51)×0.01, X/Y ×=
+/// 1+Next(−50,51)×0.01, X/Y += Next(−50,51)×0.05, scale ×= 1+Next(−30,31)
+/// ×0.01. Then `gores` gore rows (draws-only): the Next(276,283) type
+/// argument, the NewGore kicks, then the same X/Y nudge ladder with the
+/// scale ×= 1+Next(−20,21)×0.01 BEFORE the final ×0.05 nudges.
+fn confetti_burst(
+    s: &DeathSnapshot,
+    dust: &mut DustPool,
+    rng: &mut UnifiedRandom,
+    ctx: &SpawnCtx,
+    world: &World,
+    count: i32,
+    gores: i32,
+) {
+    for _ in 0..count {
+        let dust_type = rng.next_range(139, 143);
+        let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, dust_type, s.vel.x, s.vel.y, 0, Color::default(), 1.2);
+        let d = dust.slot_mut(idx);
+        d.velocity.x += rng.next_range(-50, 51) as f32 * 0.01;
+        d.velocity.y += rng.next_range(-50, 51) as f32 * 0.01;
+        d.velocity.x *= 1.0 + rng.next_range(-50, 51) as f32 * 0.01;
+        d.velocity.y *= 1.0 + rng.next_range(-50, 51) as f32 * 0.01;
+        d.velocity.x += rng.next_range(-50, 51) as f32 * 0.05;
+        d.velocity.y += rng.next_range(-50, 51) as f32 * 0.05;
+        d.scale *= 1.0 + rng.next_range(-30, 31) as f32 * 0.01;
+    }
+    for _ in 0..gores {
+        let _ = rng.next_range(276, 283);
+        let _ = rng.next_range(10, 31);
+        let _ = rng.next_range(-20, 21);
+        let _ = rng.next_range(-50, 51);
+        let _ = rng.next_range(-50, 51);
+        let _ = rng.next_range(-50, 51);
+        let _ = rng.next_range(-50, 51);
+        let _ = rng.next_range(-20, 21);
+        let _ = rng.next_range(-50, 51);
+        let _ = rng.next_range(-50, 51);
+    }
+}
+
+/// `Kill()`'s 475/505/506/171 trail-walk (`:74615-74733`): gated ai[1] <
+/// 10; the walk starts at the centre with dir = −baseVel, the gravity
+/// ramp 0.4×min(1, ai[0]/30) accumulates per step; each step rescales dir
+/// to 5.6 (the |x|+|y|<1 damp), and when step > ai[1] spawns FOUR dust of
+/// `dust_type` at the walk point noGravity vel×0.3; the walk advances by
+/// dir, dir resets to −baseVel + the accumulated ramp. No explicit draws
+/// beyond the spawns. (The discarded `Math.Atan2` draws nothing.)
+fn trail_walk_burst(
+    s: &DeathSnapshot,
+    dust: &mut DustPool,
+    rng: &mut UnifiedRandom,
+    ctx: &SpawnCtx,
+    world: &World,
+    dust_type: i32,
+) {
+    if s.ai1 >= 10.0 {
+        return;
+    }
+    let mut walk = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+    let mut dx = -s.vel.x;
+    let mut dy = -s.vel.y;
+    let count = (30.0 * if s.ai0 <= 17.0 { s.ai0 / 17.0 } else { 1.0 }) as i32;
+    let ramp = 0.4 * if s.ai0 <= 30.0 { s.ai0 / 30.0 } else { 1.0 };
+    let mut gravity = ramp;
+    dy += gravity;
+    for i in 0..count {
+        let len = (dx * dx + dy * dy).sqrt();
+        let mut speed = 5.6f32;
+        if dx.abs() + dy.abs() < 1.0 {
+            speed *= dx.abs() + dy.abs() / 1.0;
+        }
+        let f = speed / len;
+        dx *= f;
+        dy *= f;
+        if i as f32 > s.ai1 {
+            for _ in 0..4 {
+                let idx = dust.new_dust(rng, ctx, world, walk, s.w, s.h, dust_type, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 0.3;
+            }
+        }
+        walk.x += dx;
+        walk.y += dy;
+        dx = -s.vel.x;
+        dy = -s.vel.y;
+        gravity += ramp;
+        dy += gravity;
     }
 }
 
@@ -4905,6 +5049,80 @@ mod tests {
             let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
             assert_eq!(active.len(), 5);
             assert!(active.iter().all(|d| d.dust_type == dust_type && d.scale == 0.85 && d.no_gravity));
+        }
+    }
+
+    /// The 1097/229: 6 dust-6 / 25 dust-157 (noGravity scale 1.5); the
+    /// owner-gated spawn bursts draw nothing here.
+    #[test]
+    fn w4_g65_the_1097_229_bursts() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(1097)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 6);
+        assert!(active.iter().all(|d| d.dust_type == 6));
+        let mut dust = DustPool::new();
+        drain(&[snap(229)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 25);
+        assert!(active.iter().all(|d| d.dust_type == 157 && d.no_gravity && d.scale == 1.5));
+    }
+
+    /// The 270/837: 40 dust (20 pairs); the seconds are dust-5 scale 1.5
+    /// (270) / dust-6 scale 2 (837).
+    #[test]
+    fn w4_g65_the_270_837_pairs() {
+        let w = world();
+        for (kind, second_type, second_scale) in [(270u16, 5, 1.5f32), (837, 6, 2.0)] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), 40, "kind {kind}");
+            assert_eq!(active.iter().filter(|d| d.dust_type == 26).count(), 20);
+            assert!(active.iter().filter(|d| d.dust_type == second_type).all(|d| d.scale == second_scale && d.no_gravity));
+        }
+    }
+
+    /// The 178/289 confetti: 85/30 dust of types 139-142; the gore census
+    /// draws ride the same stream (determinism).
+    #[test]
+    fn w4_g65_the_178_289_confetti() {
+        let w = world();
+        for (kind, count) in [(178u16, 85), (289, 30)] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(7);
+            drain(&[snap(kind)], &mut dust, &mut rng, &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), count, "kind {kind}");
+            assert!(active.iter().all(|d| (139..=142).contains(&d.dust_type)), "kind {kind}");
+            let mut dust2 = DustPool::new();
+            let mut rng2 = UnifiedRandom::new(7);
+            drain(&[snap(kind)], &mut dust2, &mut rng2, &ctx(), &w);
+            assert_eq!(dust.slots(), dust2.slots());
+            assert_eq!(rng, rng2);
+        }
+    }
+
+    /// The trail walks: ai0=30/ai1=0 → 30 steps, steps 1..29 spawn 4
+    /// each = 116 dust; ai1 >= 10 → nothing. Types 3/239/30/129.
+    #[test]
+    fn w4_g65_the_trail_walks() {
+        let w = world();
+        for (kind, dust_type) in [(475u16, 3), (505, 239), (506, 30), (171, 129)] {
+            let mut s = snap(kind);
+            s.ai0 = 30.0;
+            s.ai1 = 0.0;
+            let mut dust = DustPool::new();
+            drain(&[s], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), 116, "kind {kind}");
+            assert!(active.iter().all(|d| d.dust_type == dust_type && d.no_gravity), "kind {kind}");
+            let mut s = snap(kind);
+            s.ai1 = 10.0;
+            let mut dust = DustPool::new();
+            drain(&[s], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            assert!(dust.slots().iter().all(|d| !d.active), "kind {kind} gated");
         }
     }
 }
