@@ -1730,7 +1730,8 @@ pub(crate) fn fairy_sparkle(
 /// Site 23985 — the natural FallingStar 12's 1-in-20 sparkle (`Projectile.
 /// cs:23970-23987`, the `type == 12 || type == 955` block): the screen-
 /// gated gore (`:23973-23981`, the `Next(6)` gate + the SelectRandom
-/// 16/17/17/17 type pick, the anniversary 16/16/16/17 variant) then the
+/// 16/17/17/17 type pick, the anniversary 16/16/16/17 RE-PICK — both
+/// `Next(4)` draws stay, the second wins) then the
 /// light 0.9 (`:23982`) then the `Next(20) == 0 || (anniversary &&
 /// Next(15) == 0)` dust gate → dust 58 at v×0.5, alpha 150, scale 1.2.
 /// The gore ARGUMENT draws are consumed (the body is W4-d55's). UNWIRED
@@ -1747,9 +1748,15 @@ pub(crate) fn natural_falling_star_sparkle(
     // `:23973-23981` — the screen-gated gore: the screen-intersect gate
     // folds true (the single-player view, the d52 convention), the
     // `Next(6)` gate draws, the taken branch draws the SelectRandom type
-    // (one `Next(4)` — `Utils.SelectRandom` over 4 entries).
+    // (one `Next(4)` — `Utils.SelectRandom` over 4 entries). On an
+    // anniversary world the C# RE-PICKS (`:23976-23978`) — BOTH `Next(4)`
+    // draws stay on the stream, the second value wins (the g16
+    // `falling_star_trail` pin).
     if rng.next_range(0, 6) == 0 {
-        let _ = rng.next_range(0, 4); // SelectRandom(16,17,17,17) / (16,16,16,17)
+        let _ = rng.next_range(0, 4); // SelectRandom(16,17,17,17)
+        if tenth_anniversary {
+            let _ = rng.next_range(0, 4); // SelectRandom(16,16,16,17)
+        }
     }
     // `:23983` — the dust gate: `Next(20) == 0 || (anniversary && Next(15)==0)`.
     // The Next(20) always draws; the Next(15) only on anniversary + a
@@ -3098,7 +3105,9 @@ mod tests {
         let mut rng = Recorder::new(0);
         natural_falling_star_sparkle(&p, true, &mut rng, &mut dust, &c, &w);
         assert!(rng.ranges.contains(&(0, 6)));
-        assert!(rng.ranges.contains(&(0, 4)));
+        // Anniversary: BOTH SelectRandom Next(4) draws (:23975-23978).
+        let picks: Vec<_> = rng.ranges.iter().filter(|r| **r == (0, 4)).collect();
+        assert_eq!(picks.len(), 2, "the anniversary re-pick draws twice");
         assert!(rng.ranges.contains(&(0, 20)));
         assert!(!rng.ranges.contains(&(0, 15)), "the Next(20) short-circuits");
         assert_eq!(live(&dust), 1);
