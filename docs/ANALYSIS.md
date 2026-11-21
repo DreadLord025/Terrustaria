@@ -18983,6 +18983,45 @@ body), `the_voice_pair_round_trips_clamps_and_derives` (hand-built 279 body,
 all 12 variants), `the_refunds_round_trip_as_count_and_triples`,
 `the_dialogues_round_trip_deduped`.
 
+**W4-f44 verify-sweep (2026-11-21): the full-walk audit + the found gaps.**
+The line-by-line `Serialize:54750-54933` / `Deserialize:55134-55764` audit
+(`docs/research/99-plr-complete-audit.md` — the complete offset table + the
+version-gate matrix) confirmed the PH3 field set is complete (no `miscEquips2`
+in 1.4.5.8; nothing follows the dialogues) and found seven gaps, all ported:
+(G1) bank4/loadout over-count ids dropped the stack + favourited — C#
+`Item.DeserializeFrom` (`Item.cs:49921-49933`) airs the id INSIDE `netDefaults`
+(`SetDefaults:48671-48674` zeroes the type), the stack read overwrites
+(`:49924`), `Prefix` no-ops on air, the favourited bool rides, and the final
+`type >= Count` check sees 0 and never fires — the aired slot keeps
+(0, file-stack, 0, file-fav); (G2) temp/refund over-count kept the prefix —
+now airs; (G3) negatives below -48 rode verbatim — `netDefaults`' switch has
+no case, the fresh air item stays, (0, file-stack, 0); (G4) a type-0 slot with
+a nonzero prefix byte kept the prefix — `Prefix` no-ops on any air item;
+(G5) the playtime gate 138 was missing (a genuine 135-137 file desynced);
+(G6) the misc < 136 arm skips slot 1 (`:55393`) — was reading five pairs;
+(G7) the unlock/seed header block (`extraAccessory`, the torch pair, artisan
+bread, the six used-upgrades, the DD2 downed flag, taxMoney, the death
+counters — `:54776-54790`), `hbLocked` (`:54889`) and the save timestamp's
+READ side (`:55688-55691`) were unmodelled state — a vanilla character lost
+them on a port re-save; all now ride both models (`PlayerFile`/
+`PlayerFileWrite`'s `extra_accessory`/`unlocked_biome_torches`/
+`using_biome_torches`/`ate_artisan_bread`/`used_upgrades[6]`/
+`downed_dd2_any_difficulty`/`tax_money`/`deaths_pve`/`deaths_pvp`/`hb_locked`/
+`last_saved_binary`). The shared air policy is `air_checked_triple`/
+`air_checked_pair`; the inventory's >= Count arm keeps its read-and-drop
+(`:55346-55355`). **Shim coverage**: no new arms needed — the 279 subset's
+existing header capture now rides the 11 bools + 3 counters it already
+consumed; the inc1/inc2 cuts sit after the new fields, so the shared prefix
+carries them. **Golden parity preserved**: every new write default emits the
+byte the old writer hardcoded; the fresh-tail read additionally pins the
+fixture's FixtureClock stamp on the read side. **Evidence** (witnesses
+written, code-only — not run): `the_unlock_and_counter_header_fields_round_trip`
+(offsets 66-90 + 2758), `a_pre_138_file_carries_no_playtime_i64` (hand-built
+135/137/138 bodies), `the_aired_slot_keeps_its_stack_and_favorited_from_the_file_bytes`
+(hand-spliced bytes at bank4 2001 / bank 921 / loadout 2884 / temp 2862 /
+refunds 3819 / inventory 291 / armor 111); the three over-count witnesses
+updated to the corrected expectations.
+
 ## The world-format contract (S1-J-8)
 
 **Decision: the two-format split stays, as a documented contract.** The port

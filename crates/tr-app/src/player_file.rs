@@ -66,6 +66,17 @@
 //! (`:54924-54925`), the refunds (`:54926`) and the deduped dialogues
 //! (`:54927-54932`). See `docs/ANALYSIS.md` "W4-f44 phase 3".
 //!
+//! **W4-f44 verify-sweep.** The full Serialize/Deserialize walk audit
+//! (`docs/research/99-plr-complete-audit.md`) found and fixed: the playtime
+//! gate 138 and the misc < 136 slot-1 skip (both variable inside the accepted
+//! [135, 326] range); the shared `netDefaults`/`stack`/`Prefix` air policy
+//! (`air_checked_triple`/`air_checked_pair` — an out-of-band id airs id+prefix
+//! while the file's stack rides, the favourited bool rides, and a type-0 slot
+//! with a nonzero prefix byte airs the prefix); and the previously-unmodelled
+//! unlock/seed header block (`extraAccessory`, the torch pair, artisan bread,
+//! the six used-upgrades, the DD2 downed flag, taxMoney, the death counters),
+//! `hbLocked` and the save timestamp's read side — all now ride both models.
+//!
 //! **Backward compat.** The port's own pre-S1-J-5 files were a *subset* mirror
 //! stamped release 279 (truncated after the inventory, missing `team` /
 //! `hideMisc` / the 324 bool / the armour-dye favourites), and its
@@ -102,7 +113,9 @@ const FILE_TYPE_PLAYER: u64 = 3;
 /// The section set this port writes: the current vanilla release **326**
 /// (`Player.InternalSavePlayerFile` writes the literal `326`,
 /// `Player.cs:54738`). S1-J-5 raised this from the old subset's 279; the
-/// emitted span currently runs through `hideInfo` (`Serialize:54893`).
+/// emitted span is the FULL `Serialize` (`Player.cs:54750-54933`) — the
+/// verify-sweep audit (`docs/research/99-plr-complete-audit.md`) pins every
+/// field's offset.
 const RELEASE: i32 = 326;
 
 /// The release the port's *pre-S1-J-5* subset writer stamped. Those files are
@@ -164,6 +177,39 @@ pub struct PlayerFile {
     /// `Player.team` (`Serialize:54757` writes `(byte)team` /
     /// `Deserialize:55167-55170`, gate 283) — 0 = no team.
     pub team: u8,
+    /// `Player.extraAccessory` (`Serialize:54776` / `Deserialize:55235-55238`,
+    /// gate 125) — the Demon Heart's sixth accessory slot. The verify-sweep
+    /// rides it (it used to be read-dropped / written fresh).
+    pub extra_accessory: bool,
+    /// `Player.unlockedBiomeTorches` / `UsingBiomeTorches`
+    /// (`Serialize:54777-54778` / `Deserialize:55241-55242`, gate 229).
+    pub unlocked_biome_torches: bool,
+    pub using_biome_torches: bool,
+    /// `Player.ateArtisanBread` (`Serialize:54779` /
+    /// `Deserialize:55243-55246`, gate 256 inside the 229 block).
+    pub ate_artisan_bread: bool,
+    /// The six one-use upgrade flags `usedAegisCrystal`/`usedAegisFruit`/
+    /// `usedArcaneCrystal`/`usedGalaxyPearl`/`usedGummyWorm`/`usedAmbrosia`
+    /// (`Serialize:54781-54786` / `Deserialize:55253-55261`, gate 260),
+    /// in file order.
+    pub used_upgrades: [bool; 6],
+    /// `Player.downedDD2EventAnyDifficulty` (`Serialize:54787` /
+    /// `Deserialize:55263-55266`, gate 182).
+    pub downed_dd2_any_difficulty: bool,
+    /// `Player.taxMoney` (`Serialize:54788` / `Deserialize:55267-55270`,
+    /// gate 128) — the Tax Collector's stored coin.
+    pub tax_money: i32,
+    /// `Player.numberOfDeathsPVE` / `numberOfDeathsPVP`
+    /// (`Serialize:54789-54790` / `Deserialize:55271-55278`, gate 254).
+    pub deaths_pve: i32,
+    pub deaths_pvp: i32,
+    /// `Player.hbLocked` (`Serialize:54889` / `Deserialize:55612-55615`,
+    /// gate 16) — the hotbar lock. The verify-sweep rides it.
+    pub hb_locked: bool,
+    /// `Player.lastTimePlayerWasSaved` (`Serialize:54909` writes
+    /// `DateTime.UtcNow.ToBinary()` / `Deserialize:55687-55691`, gate 202,
+    /// 0 below) — the read side of the write's `last_saved_binary`.
+    pub last_saved_binary: i64,
     pub skin_variant: u8,
     pub hair: i32,
     pub life: i32,
@@ -223,7 +269,9 @@ pub struct PlayerFile {
     pub bank3: [(i32, i32, u8); 40],
     /// `Player.bank4` (the Void Bag's 40 slots, `Player.cs:1591`), each
     /// `(type, stack, prefix, favorited)` — read at >= 198 with the favourited
-    /// bool gated >= 255 (`:55488-55500`).
+    /// bool gated >= 255 (`:55488-55500`). An out-of-band id airs id+prefix
+    /// while the stack + favourited ride (`Item.DeserializeFrom`,
+    /// `Item.cs:49923-49933`, the verify-sweep audit).
     pub bank4: [(i32, i32, u8, bool); 40],
     /// `Player.creativeTracker.ItemSacrifices`' `(persistentId, count)` pairs
     /// (`ItemsSacrificedUnlocksTracker.cs:157-169`), the Journey research the
@@ -544,10 +592,36 @@ fn read_bank_item(r: &mut Reader, what: &'static str) -> Result<(i32, i32, u8), 
     let id = r.i32().ok_or(PlayerFileError::Truncated(what))?;
     let stack = r.i32().ok_or(PlayerFileError::Truncated(what))?;
     let prefix = r.u8().ok_or(PlayerFileError::Truncated(what))?;
-    if (0..ITEM_ID_COUNT).contains(&id) || (-48..0).contains(&id) {
-        Ok((id, stack, prefix))
+    Ok(air_checked_triple(id, stack, prefix))
+}
+
+/// The shared `netDefaults`/`stack`/`Prefix` air policy for the triple reads
+/// (banks, bank4, loadouts, temp slots, refunds — the verify-sweep audit,
+/// `docs/research/99-plr-complete-audit.md`). C# `netDefaults(id)`
+/// (`Item.cs:1211-1367`): ids -1..-48 map to real items (the port keeps them
+/// verbatim per the ph2 policy); any OTHER negative has no switch case and
+/// leaves the fresh air item; ids >= `ItemID.Count` air through `SetDefaults`
+/// (`Item.cs:48671-48674`, `:48685-48688`). The stack read then OVERWRITES the
+/// aired stack (`Item.cs:49924` / `Player.cs:55359`), and `Prefix` no-ops on
+/// the air item (`CanHavePrefixes` false, `Item.cs:515-518`) — including a
+/// type-0 slot carrying a nonzero prefix byte. So: an aired id keeps the
+/// file's stack but airs the prefix; a live id rides verbatim.
+fn air_checked_triple(id: i32, stack: i32, prefix: u8) -> (i32, i32, u8) {
+    if (1..ITEM_ID_COUNT).contains(&id) || (-48..0).contains(&id) {
+        (id, stack, prefix)
     } else {
-        Ok((0, stack, 0))
+        (0, stack, 0)
+    }
+}
+
+/// The equip-pair flavour of [`air_checked_triple`] (no stack in the card
+/// model): armor/dye/misc air id+prefix together; the favorited bool is read
+/// unconditionally by the caller and rides (`Player.cs:55315`/`:55337`).
+fn air_checked_pair(id: i32, prefix: u8) -> (i32, u8) {
+    if (1..ITEM_ID_COUNT).contains(&id) || (-48..0).contains(&id) {
+        (id, prefix)
+    } else {
+        (0, 0)
     }
 }
 
@@ -578,7 +652,12 @@ fn read_player_fields(
     let name = r.cs_string().ok_or(PlayerFileError::Truncated("name"))?;
     let difficulty = r.u8().ok_or(PlayerFileError::Truncated("difficulty"))?; // gate 17
     // playTime ticks (`:55150-55157`, gate 138) — W4-f44 ph3 rides them.
-    tail.play_time_ticks = r.u64().ok_or(PlayerFileError::Truncated("playtime"))? as i64;
+    // The gate can vary inside the accepted [135, 326] range: a genuine
+    // 135..137 file carries NO playtime i64 (`SetPlayTime(TimeSpan.Zero)`),
+    // the verify-sweep audit caught the unconditional read desyncing those.
+    if version >= 138 {
+        tail.play_time_ticks = r.u64().ok_or(PlayerFileError::Truncated("playtime"))? as i64;
+    }
     let mut hair = r.i32().ok_or(PlayerFileError::Truncated("hair"))?;
     if hair >= 228 {
         hair = 0; // `:55159-55162`
@@ -609,30 +688,31 @@ fn read_player_fields(
     let mut mana_max = r.i32().ok_or(PlayerFileError::Truncated("manaMax"))?;
     mana_max = mana_max.min(200); // `:55227-55230`
     mana = mana.min(400); // `:55231-55234`
-    // The unlock/seed bools (`:55235-55262`).
-    let _extra = r.boolean().ok_or(PlayerFileError::Truncated("extra"))?; // gate 125
+    // The unlock/seed bools (`:55235-55262`) — the verify-sweep rides them
+    // (they used to be consumed-and-dropped / written fresh).
+    tail.extra_accessory = r.boolean().ok_or(PlayerFileError::Truncated("extra"))?; // gate 125
     if version >= 229 {
-        r.boolean().ok_or(PlayerFileError::Truncated("bt1"))?;
-        r.boolean().ok_or(PlayerFileError::Truncated("bt2"))?;
+        tail.unlocked_biome_torches = r.boolean().ok_or(PlayerFileError::Truncated("bt1"))?;
+        tail.using_biome_torches = r.boolean().ok_or(PlayerFileError::Truncated("bt2"))?;
         if version >= 256 {
-            r.boolean().ok_or(PlayerFileError::Truncated("bread"))?;
+            tail.ate_artisan_bread = r.boolean().ok_or(PlayerFileError::Truncated("bread"))?;
         }
         if version >= 324 {
-            r.boolean().ok_or(PlayerFileError::Truncated("extra324"))?; // `:55247-55250`
+            r.boolean().ok_or(PlayerFileError::Truncated("extra324"))?; // `:55247-55250` — the dead slot, read-dropped
         }
         if version >= 260 {
-            for _ in 0..6 {
-                r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
+            for slot in tail.used_upgrades.iter_mut() {
+                *slot = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
             }
         }
     }
     if version >= 182 {
-        r.boolean().ok_or(PlayerFileError::Truncated("dd2"))?;
+        tail.downed_dd2_any_difficulty = r.boolean().ok_or(PlayerFileError::Truncated("dd2"))?;
     }
-    let _tax = r.i32().ok_or(PlayerFileError::Truncated("tax"))?; // gate 128
+    tail.tax_money = r.i32().ok_or(PlayerFileError::Truncated("tax"))?; // gate 128
     if version >= 254 {
-        r.i32().ok_or(PlayerFileError::Truncated("pve"))?;
-        r.i32().ok_or(PlayerFileError::Truncated("pvp"))?;
+        tail.deaths_pve = r.i32().ok_or(PlayerFileError::Truncated("pve"))?;
+        tail.deaths_pvp = r.i32().ok_or(PlayerFileError::Truncated("pvp"))?;
     }
     let mut colors = [[0u8; 3]; 7];
     for color in colors.iter_mut() {
@@ -658,11 +738,8 @@ fn read_player_fields(
         // so a re-save round-trips the bytes (a legacy file's mapping needs
         // the item-defaults tables the card model does not carry). Anything
         // outside those bands airs like `SetDefaults` does.
-        if (0..ITEM_ID_COUNT).contains(&id) || (-48..0).contains(&id) {
-            *slot = (id, prefix, fav);
-        } else {
-            *slot = (0, 0, fav);
-        }
+        let (id, prefix) = air_checked_pair(id, prefix);
+        *slot = (id, prefix, fav);
     }
     // The dye: 10 slots x (id, prefix[, favorited >= 322]) (`:55319-55340`).
     let mut dye = [(0i32, 0u8, false); 10];
@@ -673,11 +750,8 @@ fn read_player_fields(
         if version >= 322 {
             fav = r.boolean().ok_or(PlayerFileError::Truncated("dyeFav"))?;
         }
-        if (0..ITEM_ID_COUNT).contains(&id) || (-48..0).contains(&id) {
-            *slot = (id, prefix, fav);
-        } else {
-            *slot = (0, 0, fav);
-        }
+        let (id, prefix) = air_checked_pair(id, prefix);
+        *slot = (id, prefix, fav);
     }
     // The inventory: 58 slots (`:55341-55367`); a type at/above ItemID.Count
     // reads the empty-slot triple and drops it.
@@ -697,26 +771,30 @@ fn read_player_fields(
             // gate 114
             inv_favorites |= 1 << i;
         }
-        *slot = (id, stack, prefix);
+        // The air policy (`Item.netDefaults`/`Prefix`, the verify-sweep
+        // audit): a negative below -48 or a type-0 slot airs the prefix;
+        // the stack rides (`Player.cs:55358-55360`).
+        *slot = air_checked_triple(id, stack, prefix);
     }
     // --- the post-inventory tail the old subset never reached -------------
     // miscEquips + miscDyes: 5 x (equip id/prefix, dye id/prefix)
-    // (`:55420-55447`, gates 117/136 both true here) — W4-f44 ph2 captures
+    // (`:55387-55447`, gate 117). The < 136 arm reads only FOUR pairs —
+    // slot 1 is skipped (`num10 != 1`, `:55391-55393`), so a genuine 135
+    // file carries 4 pairs mapping to slots 0/2/3/4 (the verify-sweep
+    // audit; >= 136 reads all five, `:55420-55447`). W4-f44 ph2 captures
     // the interleaved pairs verbatim (`Serialize:54831-54837`'s order).
     let mut misc = [(0i32, 0u8, 0i32, 0u8); 5];
-    for slot in misc.iter_mut() {
+    for (i, slot) in misc.iter_mut().enumerate() {
+        if version < 136 && i == 1 {
+            continue; // `:55393` — no bytes for slot 1 below 136
+        }
         let eq_id = r.i32().ok_or(PlayerFileError::Truncated("miscEquip"))?;
         let eq_prefix = r.u8().ok_or(PlayerFileError::Truncated("miscEquipPrefix"))?;
         let dye_id = r.i32().ok_or(PlayerFileError::Truncated("miscDye"))?;
         let dye_prefix = r.u8().ok_or(PlayerFileError::Truncated("miscDyePrefix"))?;
-        let eq_ok = (eq_id >= 0 && eq_id < ITEM_ID_COUNT) || (-48..0).contains(&eq_id);
-        let dye_ok = (dye_id >= 0 && dye_id < ITEM_ID_COUNT) || (-48..0).contains(&dye_id);
-        *slot = (
-            if eq_ok { eq_id } else { 0 },
-            if eq_ok { eq_prefix } else { 0 },
-            if dye_ok { dye_id } else { 0 },
-            if dye_ok { dye_prefix } else { 0 },
-        );
+        let (eq_id, eq_prefix) = air_checked_pair(eq_id, eq_prefix);
+        let (dye_id, dye_prefix) = air_checked_pair(dye_id, dye_prefix);
+        *slot = (eq_id, eq_prefix, dye_id, dye_prefix);
     }
     // bank + bank2: 40 slots x (id, stack, prefix) each (`:55449-55462`,
     // gate 58; the < 58 arm reads 20 — outside the accepted [135, 326]
@@ -733,9 +811,13 @@ fn read_player_fields(
         }
     }
     // `Player.bank4` — the Void Bag's 40 slots (`:55488-55500`); the C#
-    // `netDefaults(type)` airs a type >= ItemID.Count AFTER reading the whole
-    // record (`Item.DeserializeFrom`, `Item.cs:49930-49933`), so the port
-    // airs the slot but consumes the same bytes.
+    // `netDefaults(type)` airs a type >= ItemID.Count inside
+    // `Item.DeserializeFrom` (`Item.cs:49923`), then the stack read
+    // OVERWRITES the aired stack (`:49924`), `Prefix` no-ops on air
+    // (`:49925` → `:515-518`) and the favourited bool rides (`:49928`);
+    // the final `type >= Count → TurnToAir` check (`:49930-49933`) sees
+    // type 0 and no-ops. So an aired slot keeps stack + favorited —
+    // the verify-sweep audit corrected the old whole-slot drop.
     let mut bank4 = [(0i32, 0i32, 0u8, false); 40];
     if version >= 198 {
         for slot in bank4.iter_mut() {
@@ -746,9 +828,8 @@ fn read_player_fields(
             if version >= 255 {
                 fav = r.boolean().ok_or(PlayerFileError::Truncated("bank4Fav"))?;
             }
-            if id < ITEM_ID_COUNT {
-                *slot = (id, stack, prefix, fav);
-            }
+            let (id, stack, prefix) = air_checked_triple(id, stack, prefix);
+            *slot = (id, stack, prefix, fav);
         }
     }
     let mut void_vault_info = 0u8;
@@ -822,7 +903,7 @@ fn read_player_fields(
         tail.spawn_points.push((sp_x, sp_y, sp_i, sp_n));
     }
     if version >= 16 {
-        r.boolean().ok_or(PlayerFileError::Truncated("hbLocked"))?; // `:55612-55615`
+        tail.hb_locked = r.boolean().ok_or(PlayerFileError::Truncated("hbLocked"))?; // `:55612-55615`
     }
     if version >= 115 {
         for hide in tail.hide_info.iter_mut() {
@@ -900,7 +981,7 @@ fn read_player_fields(
         }
     }
     if version >= 202 {
-        r.u64().ok_or(PlayerFileError::Truncated("lastSaved"))?; // `:55688-55691`
+        tail.last_saved_binary = r.u64().ok_or(PlayerFileError::Truncated("lastSaved"))? as i64; // `:55688-55691`
     }
     if version >= 206 {
         tail.golfer_score = r.i32().ok_or(PlayerFileError::Truncated("golfer"))?; // `:55692-55695`
@@ -923,16 +1004,17 @@ fn read_player_fields(
     if version >= 214 {
         // LoadTemporaryItemSlotContents (`Player.cs:54962-54985`): one
         // BitsByte, then an Item.DeserializeFrom triple per set bit 0..3.
-        // W4-f44 ph3: the slots ride; the triple airs a type >= ItemID.Count
-        // AFTER the whole record (`Item.cs:49930-49933` TurnToAir — the
-        // bank4/loadout precedent keeps the read stack/prefix).
+        // W4-f44 ph3: the slots ride; the triple airs id+prefix on an
+        // out-of-band id while the stack rides (`air_checked_triple`, the
+        // verify-sweep audit — the aired `netDefaults` is overwritten by
+        // the stack read, `Item.cs:49923-49925`).
         let bits = r.u8().ok_or(PlayerFileError::Truncated("tempSlots"))?;
         for (i, slot) in tail.temp_slots.iter_mut().enumerate() {
             if bits & (1 << i) != 0 {
                 let id = r.i32().ok_or(PlayerFileError::Truncated("tempItem"))?;
                 let stack = r.i32().ok_or(PlayerFileError::Truncated("tempItem"))?;
                 let prefix = r.u8().ok_or(PlayerFileError::Truncated("tempItem"))?;
-                *slot = Some((if id < ITEM_ID_COUNT { id } else { 0 }, stack, prefix));
+                *slot = Some(air_checked_triple(id, stack, prefix));
             }
         }
     }
@@ -990,8 +1072,9 @@ fn read_player_fields(
         // CurrentLoadoutIndex + the three loadouts (`:55720-55727`);
         // EquipmentLoadout.Deserialize (`EquipmentLoadout.cs:47-61`):
         // 20 armor + 10 dye x (type, stack, prefix[, favorited >= 322])
-        // then Hide[10] bools. `Item.DeserializeFrom` airs a type >=
-        // ItemID.Count after the whole record is consumed (`Item.cs:49930`).
+        // then Hide[10] bools. `Item.DeserializeFrom` airs id+prefix on an
+        // out-of-band type while the stack + favourited ride
+        // (`air_checked_triple`, the verify-sweep audit — `Item.cs:49923-49933`).
         let idx = r.i32().ok_or(PlayerFileError::Truncated("loadoutIdx"))?;
         // `Utils.Clamp(idx, 0, Loadouts.Length - 1)` (`:55722`).
         tail.current_loadout = idx.clamp(0, 2);
@@ -1008,9 +1091,8 @@ fn read_player_fields(
                 if version >= 322 {
                     fav = r.boolean().ok_or(PlayerFileError::Truncated("loadoutFav"))?;
                 }
-                if id < ITEM_ID_COUNT {
-                    *slot = (id, stack, prefix, fav);
-                }
+                let (id, stack, prefix) = air_checked_triple(id, stack, prefix);
+                *slot = (id, stack, prefix, fav);
             }
             for hide in loadout.hide.iter_mut() {
                 *hide = r.boolean().ok_or(PlayerFileError::Truncated("loadoutHide"))?;
@@ -1038,14 +1120,15 @@ fn read_player_fields(
     }
     if version >= 300 {
         // _pendingRefunds (`:55746-55754`): count + Item.DeserializeFrom
-        // triples. W4-f44 ph3: the triples ride; an over-count id airs after
-        // the whole record (`Item.cs:49930-49933`, the bank4 precedent).
+        // triples. W4-f44 ph3: the triples ride; an out-of-band id airs
+        // id+prefix while the stack rides (`air_checked_triple`, the
+        // verify-sweep audit — `Item.cs:49923-49933`).
         let n = r.i32().ok_or(PlayerFileError::Truncated("refundCount"))?;
         for _ in 0..n {
             let id = r.i32().ok_or(PlayerFileError::Truncated("refundItem"))?;
             let stack = r.i32().ok_or(PlayerFileError::Truncated("refundItem"))?;
             let prefix = r.u8().ok_or(PlayerFileError::Truncated("refundItem"))?;
-            tail.refunds.push((if id < ITEM_ID_COUNT { id } else { 0 }, stack, prefix));
+            tail.refunds.push(air_checked_triple(id, stack, prefix));
         }
     }
     if version >= 310 {
@@ -1089,6 +1172,17 @@ struct PlayerTail {
     play_time_ticks: i64,
     hair_dye: u8,
     team: u8,
+    extra_accessory: bool,
+    unlocked_biome_torches: bool,
+    using_biome_torches: bool,
+    ate_artisan_bread: bool,
+    used_upgrades: [bool; 6],
+    downed_dd2_any_difficulty: bool,
+    tax_money: i32,
+    deaths_pve: i32,
+    deaths_pvp: i32,
+    hb_locked: bool,
+    last_saved_binary: i64,
     buffs: Vec<(i32, i32)>,
     spawn_points: Vec<(i32, i32, i32, String)>,
     current_loadout: i32,
@@ -1130,6 +1224,17 @@ impl Default for PlayerTail {
             play_time_ticks: 0,
             hair_dye: 0,
             team: 0,
+            extra_accessory: false,
+            unlocked_biome_torches: false,
+            using_biome_torches: false,
+            ate_artisan_bread: false,
+            used_upgrades: [false; 6],
+            downed_dd2_any_difficulty: false,
+            tax_money: 0,
+            deaths_pve: 0,
+            deaths_pvp: 0,
+            hb_locked: false,
+            last_saved_binary: 0,
             buffs: Vec::new(),
             spawn_points: Vec::new(),
             current_loadout: 0,
@@ -1200,6 +1305,17 @@ fn finish_player_file(
         play_time_ticks: tail.play_time_ticks,
         hair_dye: tail.hair_dye,
         team: tail.team,
+        extra_accessory: tail.extra_accessory,
+        unlocked_biome_torches: tail.unlocked_biome_torches,
+        using_biome_torches: tail.using_biome_torches,
+        ate_artisan_bread: tail.ate_artisan_bread,
+        used_upgrades: tail.used_upgrades,
+        downed_dd2_any_difficulty: tail.downed_dd2_any_difficulty,
+        tax_money: tail.tax_money,
+        deaths_pve: tail.deaths_pve,
+        deaths_pvp: tail.deaths_pvp,
+        hb_locked: tail.hb_locked,
+        last_saved_binary: tail.last_saved_binary,
         buffs: tail.buffs,
         spawn_points: tail.spawn_points,
         skin_variant,
@@ -1290,12 +1406,20 @@ fn read_legacy_port_subset(
     mana = mana.min(400);
     // extraAccessory, biome-torch pair, artisan bread, six unlocks, dd2 —
     // the 11 bools the old subset writer emitted (no 324 dead slot).
-    for _ in 0..11 {
-        r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
+    // The verify-sweep rides them (the full walk's order, all gates true
+    // at the subset's effective 279 shape).
+    let extra_accessory = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
+    let unlocked_biome_torches = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
+    let using_biome_torches = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
+    let ate_artisan_bread = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
+    let mut used_upgrades = [false; 6];
+    for slot in used_upgrades.iter_mut() {
+        *slot = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
     }
-    let _tax = r.i32().ok_or(PlayerFileError::Truncated("tax"))?;
-    let _pve = r.i32().ok_or(PlayerFileError::Truncated("pve"))?;
-    let _pvp = r.i32().ok_or(PlayerFileError::Truncated("pvp"))?;
+    let downed_dd2_any_difficulty = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
+    let tax_money = r.i32().ok_or(PlayerFileError::Truncated("tax"))?;
+    let deaths_pve = r.i32().ok_or(PlayerFileError::Truncated("pve"))?;
+    let deaths_pvp = r.i32().ok_or(PlayerFileError::Truncated("pvp"))?;
     let mut colors = [[0u8; 3]; 7];
     for color in colors.iter_mut() {
         for b in color.iter_mut() {
@@ -1308,17 +1432,15 @@ fn read_legacy_port_subset(
     for slot in armor.iter_mut() {
         let id = r.i32().ok_or(PlayerFileError::Truncated("armor"))?;
         let prefix = r.u8().ok_or(PlayerFileError::Truncated("armorPrefix"))?;
-        if (0..ITEM_ID_COUNT).contains(&id) || (-48..0).contains(&id) {
-            *slot = (id, prefix, false);
-        }
+        let (id, prefix) = air_checked_pair(id, prefix);
+        *slot = (id, prefix, false);
     }
     let mut dye = [(0i32, 0u8, false); 10];
     for slot in dye.iter_mut() {
         let id = r.i32().ok_or(PlayerFileError::Truncated("dye"))?;
         let prefix = r.u8().ok_or(PlayerFileError::Truncated("dyePrefix"))?;
-        if (0..ITEM_ID_COUNT).contains(&id) || (-48..0).contains(&id) {
-            *slot = (id, prefix, false);
-        }
+        let (id, prefix) = air_checked_pair(id, prefix);
+        *slot = (id, prefix, false);
     }
     let mut inventory = [(0i32, 0i32, 0u8); 58];
     let mut inv_favorites: u64 = 0;
@@ -1335,7 +1457,7 @@ fn read_legacy_port_subset(
         if r.boolean().ok_or(PlayerFileError::Truncated("invFav"))? {
             inv_favorites |= 1 << i;
         }
-        *slot = (id, stack, prefix);
+        *slot = air_checked_triple(id, stack, prefix);
     }
     let skin_variant = (skin_variant as i32).clamp(0, PLAYER_VARIANT_COUNT - 1) as u8;
     Ok(PlayerFile {
@@ -1344,6 +1466,17 @@ fn read_legacy_port_subset(
         play_time_ticks,
         hair_dye,
         team: 0, // the subset shape has no team byte
+        extra_accessory,
+        unlocked_biome_torches,
+        using_biome_torches,
+        ate_artisan_bread,
+        used_upgrades,
+        downed_dd2_any_difficulty,
+        tax_money,
+        deaths_pve,
+        deaths_pvp,
+        hb_locked: false, // the subset files end after the inventory
+        last_saved_binary: 0,
         buffs: Vec::new(), // the subset files end after the inventory
         spawn_points: Vec::new(),
         skin_variant,
@@ -1411,6 +1544,28 @@ pub struct PlayerFileWrite {
     pub hair_dye: u8,
     /// `(byte)Player.team` (`:54757`), default 0 = no team.
     pub team: u8,
+    /// `Player.extraAccessory` (`:54776`), default false (ctor `:56076`).
+    pub extra_accessory: bool,
+    /// `Player.unlockedBiomeTorches` / `UsingBiomeTorches`
+    /// (`:54777-54778`), default false.
+    pub unlocked_biome_torches: bool,
+    pub using_biome_torches: bool,
+    /// `Player.ateArtisanBread` (`:54779`), default false (ctor `:56077`).
+    pub ate_artisan_bread: bool,
+    /// The six one-use upgrade flags (`:54781-54786`, ctor `:56078-56083`),
+    /// in file order: AegisCrystal, AegisFruit, ArcaneCrystal, GalaxyPearl,
+    /// GummyWorm, Ambrosia. Default all false.
+    pub used_upgrades: [bool; 6],
+    /// `Player.downedDD2EventAnyDifficulty` (`:54787`), default false.
+    pub downed_dd2_any_difficulty: bool,
+    /// `Player.taxMoney` (`:54788`), default 0.
+    pub tax_money: i32,
+    /// `Player.numberOfDeathsPVE` / `numberOfDeathsPVP` (`:54789-54790`),
+    /// default 0.
+    pub deaths_pve: i32,
+    pub deaths_pvp: i32,
+    /// `Player.hbLocked` (`:54889`), default false (`Player.cs:1436`).
+    pub hb_locked: bool,
     pub skin_variant: u8,
     pub hair: i32,
     pub life: i32,
@@ -1524,6 +1679,16 @@ impl Default for PlayerFileWrite {
             play_time_ticks: 0,
             hair_dye: 0,
             team: 0,
+            extra_accessory: false,
+            unlocked_biome_torches: false,
+            using_biome_torches: false,
+            ate_artisan_bread: false,
+            used_upgrades: [false; 6],
+            downed_dd2_any_difficulty: false,
+            tax_money: 0,
+            deaths_pve: 0,
+            deaths_pvp: 0,
+            hb_locked: false,
             buffs: Vec::new(),
             spawn_points: Vec::new(),
             skin_variant: 0,
@@ -1631,21 +1796,21 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     w.i32(file.life_max); // `:54773`
     w.i32(file.mana); // `:54774`
     w.i32(file.mana_max); // `:54775`
-    w.boolean(false); // `:54776` extraAccessory (ctor `:56076`)
-    w.boolean(false); // `:54777` unlockedBiomeTorches
-    w.boolean(false); // `:54778` UsingBiomeTorches (unlocked=false -> false)
-    w.boolean(false); // `:54779` ateArtisanBread (ctor `:56077`)
+    // The unlock/seed block (`:54776-54790`) — the verify-sweep rides the
+    // caller's values (they used to be hardcoded fresh false/0). The 324
+    // dead slot (`:54780`) stays the hardcoded `false` the C# writes.
+    w.boolean(file.extra_accessory); // `:54776` (ctor `:56076`)
+    w.boolean(file.unlocked_biome_torches); // `:54777`
+    w.boolean(file.using_biome_torches); // `:54778`
+    w.boolean(file.ate_artisan_bread); // `:54779` (ctor `:56077`)
     w.boolean(false); // `:54780` the hardcoded `false` (the dead 324 slot)
-    w.boolean(false); // `:54781` usedAegisCrystal (ctor `:56078`)
-    w.boolean(false); // `:54782` usedAegisFruit (`:56079`)
-    w.boolean(false); // `:54783` usedArcaneCrystal (`:56080`)
-    w.boolean(false); // `:54784` usedGalaxyPearl (`:56081`)
-    w.boolean(false); // `:54785` usedGummyWorm (`:56082`)
-    w.boolean(false); // `:54786` usedAmbrosia (`:56083`)
-    w.boolean(false); // `:54787` downedDD2EventAnyDifficulty
-    w.i32(0); // `:54788` taxMoney
-    w.i32(0); // `:54789` numberOfDeathsPVE
-    w.i32(0); // `:54790` numberOfDeathsPVP
+    for used in file.used_upgrades {
+        w.boolean(used); // `:54781-54786` (ctor `:56078-56083`)
+    }
+    w.boolean(file.downed_dd2_any_difficulty); // `:54787`
+    w.i32(file.tax_money); // `:54788` taxMoney
+    w.i32(file.deaths_pve); // `:54789` numberOfDeathsPVE
+    w.i32(file.deaths_pvp); // `:54790` numberOfDeathsPVP
     for color in [
         file.hair_color, // `:54791-54793`
         file.skin_color, // `:54794-54796`
@@ -1745,8 +1910,9 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     if spawn_count < 200 {
         w.i32(-1);
     }
-    // hbLocked (`:54889`): default false (`Player.cs:1436`).
-    w.boolean(false);
+    // hbLocked (`:54889`): default false (`Player.cs:1436`) — the
+    // verify-sweep rides the caller's flag.
+    w.boolean(file.hb_locked);
     // hideInfo[13] (`:54890-54893`): a fresh `bool[13]` (`Player.cs:812`),
     // all false — W4-f44 ph2: the caller's toggles ride verbatim.
     for hide in file.hide_info {
@@ -2115,7 +2281,7 @@ mod tests {
     }
 
     /// W4-f44 ph3: the crafting refunds round-trip as count + triples; an
-    /// over-count id airs after the whole record; a fresh queue is count 0.
+    /// over-count id airs id+prefix (the stack rides); a fresh queue is count 0.
     #[test]
     fn the_refunds_round_trip_as_count_and_triples() {
         let refunds = vec![(757, 1, 81), (2, 999, 0), (3507, 1, 0)];
@@ -2135,13 +2301,16 @@ mod tests {
             i32::from_le_bytes(plain[refund_count_at..refund_count_at + 4].try_into().unwrap()),
             n as i32
         );
-        // An over-count id airs id only, stack/prefix ride (`Item.cs:49930`).
+        // An over-count id airs id+prefix while the stack rides
+        // (`Item.DeserializeFrom`, `Item.cs:49923-49925` — the verify-sweep
+        // audit: the aired netDefaults stack is overwritten by the read,
+        // Prefix no-ops on air).
         let written = PlayerFileWrite {
             refunds: vec![(ITEM_ID_COUNT + 2, 7, 9), (8, 99, 0)],
             ..sample()
         };
         let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
-        assert_eq!(file.refunds, vec![(0, 7, 9), (8, 99, 0)]);
+        assert_eq!(file.refunds, vec![(0, 7, 0), (8, 99, 0)]);
         // Fresh: count 0, no payloads (golden parity).
         let fresh = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
         assert!(fresh.refunds.is_empty());
@@ -2369,13 +2538,14 @@ mod tests {
         };
         let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
         assert_eq!(file.temp_slots, [Some((1, 1, 0)), Some((2, 2, 0)), Some((3, 3, 0)), Some((4, 4, 0))]);
-        // An over-count id airs after the whole record (`Item.cs:49930`).
+        // An over-count id airs id+prefix, the stack rides
+        // (`Item.cs:49923-49925`, the verify-sweep audit).
         let written = PlayerFileWrite {
             temp_slots: [Some((ITEM_ID_COUNT + 1, 5, 9)), None, None, None],
             ..sample()
         };
         let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
-        assert_eq!(file.temp_slots[0], Some((0, 5, 9)));
+        assert_eq!(file.temp_slots[0], Some((0, 5, 0)));
         // Fresh: the lone 0 BitsByte, no payloads (golden parity).
         let fresh = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
         assert_eq!(fresh.temp_slots, [None; 4]);
@@ -3242,6 +3412,13 @@ mod tests {
         assert_eq!(file.voice_pitch_offset, 0.0);
         assert!(file.refunds.is_empty());
         assert!(file.dialogues.is_empty());
+        // The verify-sweep: the header's unlock/counter block reads fresh,
+        // and the timestamp's READ side now surfaces the fixture's
+        // FixtureClock stamp (the write default stays 0).
+        assert!(!file.extra_accessory && !file.hb_locked);
+        assert_eq!(file.used_upgrades, [false; 6]);
+        assert_eq!((file.tax_money, file.deaths_pve, file.deaths_pvp), (0, 0, 0));
+        assert_eq!(file.last_saved_binary, 0x48DF_4506_E391_C000u64 as i64);
     }
 
     /// Back-compat gates: the port-only shallow retries (inc1 at the vault
@@ -3299,19 +3476,22 @@ mod tests {
         assert_eq!(inc2.angler_quests_finished, 0);
     }
 
-    /// An over-count item type in bank4/loadouts airs the slot after the full
-    /// record is consumed (`Item.DeserializeFrom`, `Item.cs:49930-49933`) —
-    /// the walk stays aligned and the later sections still read.
+    /// An over-count item type in bank4/loadouts airs id+prefix after the
+    /// full record is consumed, while the STACK and FAVOURITED ride
+    /// (`Item.DeserializeFrom`, `Item.cs:49923-49933` — netDefaults airs,
+    /// the stack read overwrites, Prefix no-ops on air, the final
+    /// type >= Count check sees type 0 and no-ops; the verify-sweep audit).
+    /// The walk stays aligned and the later sections still read.
     #[test]
     fn over_count_tail_items_air_without_desyncing() {
         let mut file = sample();
-        file.bank4[0] = (ITEM_ID_COUNT, 5, 0, false); // >= Count → air
+        file.bank4[0] = (ITEM_ID_COUNT, 5, 0, true); // >= Count → id+prefix air
         file.loadouts[0].dye[9] = (ITEM_ID_COUNT + 10, 1, 3, true); // → air
         file.loadouts[2].armor[19] = (89, 1, 0, false); // a real item AFTER the aired one
         file.research = vec![("Torch".into(), 100)];
         let read = read_player_bytes(&cbc_decrypt(&write_player_bytes(&file))).unwrap();
-        assert_eq!(read.bank4[0], (0, 0, 0, false));
-        assert_eq!(read.loadouts[0].dye[9], (0, 0, 0, false));
+        assert_eq!(read.bank4[0], (0, 5, 0, true), "stack + favorited ride the aired slot");
+        assert_eq!(read.loadouts[0].dye[9], (0, 1, 0, true));
         assert_eq!(read.loadouts[2].armor[19], (89, 1, 0, false));
         assert_eq!(
             read.research,
@@ -3553,5 +3733,268 @@ mod tests {
         assert_eq!(file.hide_info, [false; 13]);
         assert_eq!(file.powers, CreativePowersSave::default());
         assert_eq!(file.inventory, s.inventory);
+    }
+
+    // --- W4-f44 verify-sweep: the found-gap witnesses -----------------------
+    // (docs/research/99-plr-complete-audit.md)
+
+    /// The verify-sweep's newly-modelled header fields round-trip: the
+    /// unlock/seed block (`Serialize:54776-54790`), hbLocked (`:54889`) and
+    /// the save timestamp's read side (`:54909` / `:55688-55691`). They used
+    /// to be read-dropped and written fresh — a vanilla character's Demon
+    /// Heart slot, torch unlock, upgrade flags, tax coin, death counters,
+    /// hotbar lock and last-saved stamp were lost on a port re-save.
+    #[test]
+    fn the_unlock_and_counter_header_fields_round_trip() {
+        let written = PlayerFileWrite {
+            extra_accessory: true,
+            unlocked_biome_torches: true,
+            using_biome_torches: true,
+            ate_artisan_bread: true,
+            used_upgrades: [true, false, true, false, true, true],
+            downed_dd2_any_difficulty: true,
+            tax_money: 123456,
+            deaths_pve: 7,
+            deaths_pvp: 3,
+            hb_locked: true,
+            last_saved_binary: 0x48DF_4506_E391_C000,
+            ..sample()
+        };
+        let plain = serialize_plaintext(&written);
+        // The unlock block sits at offset 66 (24 prologue + 7 name + 1 diff
+        // + 8 playtime + 4 hair + 1 hairDye + 1 team + 2 hide + 1 hideMisc
+        // + 1 skin + 16 stats). Pin the bytes: extra, bt1, bt2, bread,
+        // dead-324 false, the six upgrades, dd2, tax, deaths.
+        assert_eq!(&plain[66..70], &[1, 1, 1, 1]);
+        assert_eq!(plain[70], 0, "the dead 324 slot stays hardcoded false");
+        assert_eq!(&plain[71..77], &[1, 0, 1, 0, 1, 1]);
+        assert_eq!(plain[77], 1); // dd2
+        assert_eq!(i32::from_le_bytes(plain[78..82].try_into().unwrap()), 123456);
+        assert_eq!(i32::from_le_bytes(plain[82..86].try_into().unwrap()), 7);
+        assert_eq!(i32::from_le_bytes(plain[86..90].try_into().unwrap()), 3);
+        // hbLocked at 2758 (spawn sentinel ends 2758 per the golden layout:
+        // buffs 2402..2754, sentinel 2754..2758).
+        assert_eq!(plain[2758], 1);
+        let file = read_player_bytes(&plain).unwrap();
+        assert!(file.extra_accessory);
+        assert!(file.unlocked_biome_torches && file.using_biome_torches);
+        assert!(file.ate_artisan_bread);
+        assert_eq!(file.used_upgrades, [true, false, true, false, true, true]);
+        assert!(file.downed_dd2_any_difficulty);
+        assert_eq!(file.tax_money, 123456);
+        assert_eq!((file.deaths_pve, file.deaths_pvp), (7, 3));
+        assert!(file.hb_locked);
+        assert_eq!(file.last_saved_binary, 0x48DF_4506_E391_C000);
+        // The fresh defaults still read fresh (golden parity).
+        let fresh = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
+        assert!(!fresh.extra_accessory && !fresh.hb_locked);
+        assert_eq!(fresh.used_upgrades, [false; 6]);
+        assert_eq!((fresh.tax_money, fresh.deaths_pve, fresh.deaths_pvp), (0, 0, 0));
+        assert_eq!(fresh.last_saved_binary, 0);
+    }
+
+    /// The playtime i64 is gated >= 138 (`Deserialize:55150-55157`): a
+    /// genuine 135..137 file carries NONE — `SetPlayTime(TimeSpan.Zero)` —
+    /// and the hair i32 follows the difficulty byte directly. The audit
+    /// caught the unconditional read desyncing those files.
+    #[test]
+    fn a_pre_138_file_carries_no_playtime_i64() {
+        for version in [135, 137, 138] {
+            let mut w = Writer::new();
+            w.i32(version);
+            w.u64(FILE_METADATA_MAGIC | (FILE_TYPE_PLAYER << 56));
+            w.u32(0);
+            w.u64(0);
+            w.cs_string("Old");
+            w.u8(0); // difficulty (gate 17)
+            if version >= 138 {
+                w.u64(639_000_000_000_000_000); // playtime (gate 138)
+            }
+            w.i32(7); // hair — the alignment probe
+            w.u8(0); // hairDye (gate 82) — no team below 283
+            w.bytes(&[0, 0]); // hide BitsBytes (gate 124)
+            w.u8(0); // hideMisc (gate 119)
+            w.u8(0); // skinVariant (gate 107)
+            for v in [100, 100, 20, 20] {
+                w.i32(v);
+            }
+            w.boolean(false); // extraAccessory (gate 125) — no 229 block
+            w.i32(0); // tax (gate 128) — no dd2 (182), no deaths (254)
+            w.bytes(&[0; 21]); // colors
+            for _ in 0..30 {
+                w.i32(0); // armor + dye pairs, no favourited (< 322)
+                w.u8(0);
+            }
+            for _ in 0..58 {
+                w.bytes(&[0; 10]); // inventory triples + favourited (114)
+            }
+            let misc_pairs = if version >= 136 { 5 } else { 4 };
+            for _ in 0..misc_pairs {
+                // misc pairs (gate 117); the < 136 arm skips slot 1
+                // (`:55391-55393`) — four pairs, not five.
+                w.bytes(&[0; 10]);
+            }
+            for _ in 0..80 {
+                w.bytes(&[0; 9]); // bank + bank2 (gate 58) — no bank3 (182)
+            }
+            // no bank4 (198), no vault (199); buffs: 22 pairs (< 252, >= 74)
+            for _ in 0..22 {
+                w.i32(0);
+                w.i32(0);
+            }
+            w.i32(-1); // spawn sentinel
+            w.boolean(false); // hbLocked (gate 16)
+            w.bytes(&[0; 13]); // hideInfo (gate 115)
+            w.i32(0); // angler (gate 98) — the walk ends here (< 162)
+            let file = read_player_bytes(&w.into_inner())
+                .unwrap_or_else(|e| panic!("version {version}: {e:?}"));
+            assert_eq!(file.hair, 7, "version {version} stays aligned");
+            assert_eq!(
+                file.play_time_ticks,
+                if version >= 138 { 639_000_000_000_000_000 } else { 0 }
+            );
+        }
+    }
+
+    /// The verify-sweep air policy, hand-built into the file bytes (NOT via
+    /// the port writer): `netDefaults` airs an out-of-band id, the stack read
+    /// OVERWRITES the aired stack, `Prefix` no-ops on air, and the favourited
+    /// bool rides (`Item.cs:49923-49933`). Covers all five triple families +
+    /// the type-0-with-prefix no-op + the below-(-48) negative band.
+    #[test]
+    fn the_aired_slot_keeps_its_stack_and_favorited_from_the_file_bytes() {
+        let plain = serialize_plaintext(&sample());
+        // bank4 slot 0 at 2001 (24 + 87 header + 120 armor + 60 dye + 580
+        // inventory + 50 misc + 1080 banks): (6300, 42, 9, true) → (0,42,0,true).
+        let mut w = Writer::new();
+        w.bytes(&plain[..2001]);
+        w.i32(6300);
+        w.i32(42);
+        w.u8(9);
+        w.boolean(true);
+        w.bytes(&plain[2011..]);
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.bank4[0], (0, 42, 0, true));
+        // bank slot 0 at 921: a type-0 slot with prefix 7 → the prefix airs
+        // (`Prefix` no-ops on the air item), the stack rides.
+        let mut w = Writer::new();
+        w.bytes(&plain[..921]);
+        w.i32(0);
+        w.i32(5);
+        w.u8(7);
+        w.bytes(&plain[930..]);
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.bank[0], (0, 5, 0));
+        // bank slot 1: a negative BELOW the -1..-48 band has no netDefaults
+        // case — the fresh air item stays, stack rides, prefix airs.
+        let mut w = Writer::new();
+        w.bytes(&plain[..930]);
+        w.i32(-49);
+        w.i32(3);
+        w.u8(9);
+        w.bytes(&plain[939..]);
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.bank[1], (0, 3, 0));
+        // loadout 0 armor 0 at 2884 (2880 idx + 4): (6300, 2, 81, true).
+        let mut w = Writer::new();
+        w.bytes(&plain[..2884]);
+        w.i32(6300);
+        w.i32(2);
+        w.u8(81);
+        w.boolean(true);
+        w.bytes(&plain[2894..]);
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.loadouts[0].armor[0], (0, 2, 0, true));
+        // loadout 0 armor 1 at 2894: (-49, 3, 81, true) — the below-band
+        // negative airs id+prefix, stack + favourited ride.
+        let mut w = Writer::new();
+        w.bytes(&plain[..2894]);
+        w.i32(-49);
+        w.i32(3);
+        w.u8(81);
+        w.boolean(true);
+        w.bytes(&plain[2904..]);
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.loadouts[0].armor[1], (0, 3, 0, true));
+        // temp slot 0 at 2862 (bits byte 0x01 + the triple): (6300, 7, 9).
+        let mut w = Writer::new();
+        w.bytes(&plain[..2862]);
+        w.u8(1);
+        w.i32(6300);
+        w.i32(7);
+        w.u8(9);
+        w.bytes(&plain[2863..]);
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.temp_slots[0], Some((0, 7, 0)));
+        // temp slot 1 (bits 0x02 at 2862, the triple right after at 2863):
+        // (-49, 6, 9) — the below-band negative airs id+prefix, stack rides.
+        let mut w = Writer::new();
+        w.bytes(&plain[..2862]);
+        w.u8(2);
+        w.i32(-49);
+        w.i32(6);
+        w.u8(9);
+        w.bytes(&plain[2863..]); // the powers onward (the fresh file had no payload)
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.temp_slots[1], Some((0, 6, 0)));
+        // refunds at 3819 (count + one triple): (6300, 4, 9) then a live one.
+        let mut w = Writer::new();
+        w.bytes(&plain[..3819]);
+        w.i32(2);
+        w.i32(6300);
+        w.i32(4);
+        w.u8(9);
+        w.i32(8);
+        w.i32(99);
+        w.u8(0);
+        w.bytes(&plain[3823..]); // the dialogue count tail
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.refunds, vec![(0, 4, 0), (8, 99, 0)]);
+        // refund slot 1: (-49, 6, 9) — the below-band negative.
+        let mut w = Writer::new();
+        w.bytes(&plain[..3819]);
+        w.i32(2);
+        w.i32(8);
+        w.i32(99);
+        w.u8(0);
+        w.i32(-49);
+        w.i32(6);
+        w.u8(9);
+        w.bytes(&plain[3823..]);
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.refunds, vec![(8, 99, 0), (0, 6, 0)]);
+        // inventory slot 0 at 291: (6300, 5, 9, true) → the >= Count arm
+        // (`Player.cs:55346-55355`) drops stack AND prefix AND the star.
+        let mut w = Writer::new();
+        w.bytes(&plain[..291]);
+        w.i32(6300);
+        w.i32(5);
+        w.u8(9);
+        w.boolean(true);
+        w.bytes(&plain[301..]);
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.inventory[0], (0, 0, 0));
+        assert_eq!(file.inv_favorites & 1, 0, "the over-count arm drops the star");
+        // inventory slot 1 at 301: (-49, 5, 9, true) → the netDefaults
+        // no-case air keeps the stack + the star, airs the prefix.
+        let mut w = Writer::new();
+        w.bytes(&plain[..301]);
+        w.i32(-49);
+        w.i32(5);
+        w.u8(9);
+        w.boolean(true);
+        w.bytes(&plain[311..]);
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.inventory[1], (0, 5, 0));
+        assert_eq!(file.inv_favorites & 2, 2);
+        // armor slot 0 at 111: (-49, 81, true) → id+prefix air, fav rides.
+        let mut w = Writer::new();
+        w.bytes(&plain[..111]);
+        w.i32(-49);
+        w.u8(81);
+        w.boolean(true);
+        w.bytes(&plain[117..]);
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.armor[0], (0, 0, true));
     }
 }
