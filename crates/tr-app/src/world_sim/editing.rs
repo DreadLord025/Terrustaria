@@ -3034,13 +3034,16 @@ fn fire_non_ammo_shot(
     // W4-f40 DOC-SWEEP — the Release Doves (4682) / Release Lantern (4702)
     // (`Item.cs:38555-38562`/`:38644-38651`, `DefaultToThrownWeapon`
     // `:48455-48466` + the `ranged = false`/`noUseGraphic` overrides): the
-    // C# carries NO per-item `ItemCheck_Shoot` arm for them — they ride the
+    // LANTERN 4702 carries NO per-item `ItemCheck_Shoot` arm — it rides the
     // generic tail (`Player.cs:49437`) at the EXACT
     // `RotatedRelativePoint(MountedCenter)` (`:47196`, no `+dir*10` lead),
-    // and the zero-aim fallback (`:47291-47296`) fires them at the facing
-    // like the boomerangs. The aiStyle-166 flight/visual is the d17 lane's
-    // claim (the 851/855 `proj_data` rows land with it — until then the
-    // spawn seam no-ops and only the launch decision + consume run here).
+    // and the zero-aim fallback (`:47291-47296`) fires it at the facing
+    // like the boomerangs. The DOVES 4682 DO have an arm (`:48383-48392`,
+    // FINAL census correction): three projectiles, each velocity
+    // `aim + Next(-20, 21) * 0.1` per axis, then `return`. The aiStyle-166
+    // flight/visual is the d17 lane's claim (the 851/855 `proj_data` rows
+    // land with it — until then the spawn seam no-ops and only the launch
+    // decision + consume + the volley's six draws run here).
     let release_use = matches!(held.kind, 4682 | 4702);
     if dir == Vec2::ZERO && !boomerang_use && !release_use {
         return false;
@@ -3189,22 +3192,39 @@ fn fire_non_ammo_shot(
         // the disc's CENTER lands on the player centre exactly.
         let (bw, bh) = crate::projectile::proj_data(proj)
             .map_or((0.0, 0.0), |d| (d.w, d.h));
-        let slot = app.projectiles.spawn_with_data_ai(
-            proj,
-            spawn.x - bw * 0.5,
-            spawn.y - bh * 0.5,
-            shot.x,
-            shot.y,
-            raw as i32,
-            fx_kb,
-            0.0,
-            0.0,
-        );
-        // Gate i08×i11: the throw-time crit stamp is gone — the per-hit
-        // roll reads the melee class flag off `proj_data`.
-        if let Some(slot) = slot {
-            app.projectiles.set_armor_penetration(slot, arpen);
-            app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+        // W4-f40 FINAL — the doves' volley arm (`Player.cs:48383-48392`):
+        // `for (num131 = 0; num131 < 3; num131++)` — three NewProjectile
+        // calls, each `SpeedX = num4 + Next(-20, 21) * 0.1`,
+        // `SpeedY = num5 + Next(-20, 21) * 0.1` (the X draw BEFORE the Y
+        // draw, per shot, on the `Main.rand` UpdatePlayers stream), then
+        // `return`. The lantern 4702 takes the single-shot arm (no draws).
+        let volley = if held.kind == 4682 { 3 } else { 1 };
+        for _ in 0..volley {
+            let (jx, jy) = if held.kind == 4682 {
+                (
+                    loot_rng.next_range(-20, 21) as f32 * 0.1,
+                    loot_rng.next_range(-20, 21) as f32 * 0.1,
+                )
+            } else {
+                (0.0, 0.0)
+            };
+            let slot = app.projectiles.spawn_with_data_ai(
+                proj,
+                spawn.x - bw * 0.5,
+                spawn.y - bh * 0.5,
+                shot.x + jx,
+                shot.y + jy,
+                raw as i32,
+                fx_kb,
+                0.0,
+                0.0,
+            );
+            // Gate i08×i11: the throw-time crit stamp is gone — the per-hit
+            // roll reads the melee class flag off `proj_data`.
+            if let Some(slot) = slot {
+                app.projectiles.set_armor_penetration(slot, arpen);
+                app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+            }
         }
     // S1-P-i25 — the summon-staff minion spawn arm
     // (`Player.ItemCheck_Shoot`'s per-item `SpawnMinionOnCursor`
@@ -18473,17 +18493,19 @@ mod s1_p_i08_throw_tests {
 /// W4-f40 DOC-SWEEP — the Release Doves (4682) / Release Lantern (4702) USE
 /// arm (`Item.cs:38555-38562`/`:38644-38651`: `DefaultToThrownWeapon`
 /// `:48455-48466` — useStyle 1, useTime/useAnimation 25, shoot 851/855,
-/// shootSpeed 4, consumable, `ranged = false`, `noUseGraphic`). The C#
-/// carries no per-item `ItemCheck_Shoot` arm — the generic tail
+/// shootSpeed 4, consumable, `ranged = false`, `noUseGraphic`). The LANTERN
+/// 4702 carries no per-item `ItemCheck_Shoot` arm — the generic tail
 /// (`Player.cs:49437`) at the exact `RotatedRelativePoint(MountedCenter)`
-/// with the zero-aim facing fallback (`:47291-47296`), then the
-/// `ItemCheck` consumable arm (`:43280-43326`: no ranged roll chain, always
-/// consume, the stack-empty `itemTime = itemAnimation` latch). The
+/// with the zero-aim facing fallback (`:47291-47296`); the DOVES 4682 carry
+/// the three-shot volley arm (`:48383-48392`, FINAL census correction —
+/// three spawns, each `aim + Next(-20, 21) * 0.1` per axis). Both then take
+/// the `ItemCheck` consumable arm (`:43280-43326`: no ranged roll chain,
+/// always consume, the stack-empty `itemTime = itemAnimation` latch). The
 /// aiStyle-166 flight + the 851/855 `proj_data` rows are the d17 lane's
 /// claim — on THIS branch the spawn seam no-ops (no rows), so the
-/// witnesses pin the launch decision + the consume; the exact-center
-/// spawn assertion rides the rows' landing (recorded in the doc).
-/// Code-only mode: WRITTEN NOT RUN.
+/// witnesses pin the launch decision + the consume + the volley's draw
+/// count; the exact-center spawn assertion rides the rows' landing
+/// (recorded in the doc). Code-only mode: WRITTEN NOT RUN.
 #[cfg(test)]
 mod w4_f40_release_tests {
     use super::*;
@@ -18578,10 +18600,40 @@ mod w4_f40_release_tests {
         *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed);
         fire(&mut app);
         assert_eq!(app.inventory[app.selected].count, 2, "always consume");
+    /// W4-f40 FINAL — the Release DOVES (4682) DO have a per-item
+    /// `ItemCheck_Shoot` arm (`Player.cs:48383-48392`): THREE projectiles,
+    /// each velocity `aim + Next(-20, 21) * 0.1` per axis (SIX
+    /// `UpdatePlayers` draws per use), then `return` — it never reaches the
+    /// generic tail. The Release LANTERN (4702) has NO arm (the generic
+    /// `:49437` tail, ONE projectile, zero draws — the earlier "no per-item
+    /// arm for them" census was half-wrong: 4682's arm was missed). The
+    /// 4702 half below stands; the 4682 volley arm is ported here.
+    #[test]
+    fn w4_f40_the_doves_fire_a_three_shot_volley_of_six_draws() {
+        let mut app = release_app(4682, 3);
+        let seed = 0x4682;
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed);
+        fire(&mut app);
+        assert_eq!(app.inventory[app.selected].count, 2, "one consume per use");
+        // The six draws: 3 shots x (X jitter, Y jitter), Next(-20, 21) each.
+        let mut probe = tr_core::UnifiedRandom::new(seed);
+        for _ in 0..3 {
+            let _ = probe.next_range(-20, 21);
+            let _ = probe.next_range(-20, 21);
+        }
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone(),
+            probe,
+            "the volley spends exactly six UpdatePlayers draws"
+        );
+        // The lantern contrast: ONE shot, ZERO draws (the generic tail).
+        let mut app = release_app(4702, 3);
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed);
+        fire(&mut app);
         assert_eq!(
             app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone(),
             tr_core::UnifiedRandom::new(seed),
-            "no not-consume roll: the release items are not ranged"
+            "the lantern rides the draw-free generic tail"
         );
     }
 }
