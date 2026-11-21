@@ -14823,6 +14823,38 @@ unported, so the tracker never edits in play and the check is inert until
 the Journey research lands — the helper, the count, the App field and both
 call sites are wired.
 
+### The systems RETIRE phase (W4-f30, 2026-11-21)
+
+The five sibling lanes (c46/d70/c24/f47/d2) landed their overlapping halves
+on their own unmerged branches; the keep-one verdicts + the exact drop-hunks
++ the compose meeting points are published in
+`docs/research/240-f30-systems-retire.md` (the FINAL systems-family census is
+its §6). The deviations that CHANGE at merge:
+
+- **Hardcore (35):** f30's `erase_player` superset + the `session_draft`
+  clear DROP for c46's verbatim two-file delete + the documented no-reset
+  ruling (the draft clear would zero the live difficulty and break the ghost
+  latch — the §1 evidence). The "superset" deviation recorded above retires
+  with the hunk.
+- **Sun-scorch (33):** d70's invisible-bit fold-to-false deviation retires —
+  f30's scan keeps the C# invisible-wall/block terms (the port HAS the bits).
+  d70's lens-flare/HeatDistortion feeds survive on the ONE kept counter field.
+- **Gravestone (36):** f30's "the TombFall visual keeps falling" double-visual
+  deviation retires — d2's spawn replaces the stand-in (the flight rides the
+  pool; `tick_tomb_falls` is dead code, zero callers). d2's date-drop
+  deviation is REVERSED: f30's `tombstone_date()` line survives the compose
+  (the C# writes it; the wall-clock read is display-only, never feeds
+  RNG/sim — the same class as the save timestamps). d2's friendly-only FTW
+  arm gains f30's `hostile` fold (the C# sets both).
+- **Town shimmer (43):** f30's core retires for f47's wired machine; the
+  merger adds the `netMode != 1` completion gate f47's arm omits
+  (`NPC.cs:53251`) and re-pins f30's client witness.
+- **Research (45):** the "inert until the Journey research lands" note
+  retires when c24 composes — its clamped `register_sacrifice` carries f30's
+  `LastEditId` bump at the C# `MarkContentsDirty` slot; the `.plr` load does
+  NOT dirty (C# `Load` :171-196), so the forced EnterWorld check is the
+  load-path 45 site and must run AFTER the research load.
+
 ## The emote bubble wheel (S1-E-26 wave B)
 
 **Code-only mode** (2026-11-18, `task/S1-E-26b-emote-ui`): no cargo/rustc/

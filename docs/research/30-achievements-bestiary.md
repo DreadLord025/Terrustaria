@@ -278,6 +278,24 @@ code), then the prepared research 45 wired. The boulder-rain (34),
 rainbow-boulder (39), combat-book-v2 (40) and Mechdusa-summon (31) systems
 stay with their active lanes (worldgen / d54 orch / g89b / boss-summon).
 
+### W4-f30 RETIRE phase (2026-11-21) — `240-f30-systems-retire.md`
+
+The sibling lanes landed their overlapping halves (c46 hardcore `7330cd4e`,
+d70 sun-scorch `a7620eec`, c24 Journey sacrifice `ff99f148`, f47 shimmer
+`1997be09`, d2 tombstones `f430ccf8` — all UNMERGED at this writing). The
+retire verdicts, the exact keep-one drop-hunks and the compose meeting points
+are published in **`240-f30-systems-retire.md`** (number per the d54 collision
+registry 150): 35 → KEEP c46 (the verbatim two-file delete + the no-draft-clear
+ruling + the seeded `update_dead`), 33 → KEEP f30's scan/33 wire, DROP d70's
+method copies (its lens-flare/shadow/HeatDistortion halves survive on the kept
+field), 45 → COMPOSE with c24 (its clamped `register_sacrifice` + f30's
+`LastEditId` bump at the `MarkContentsDirty` slot; the forced EnterWorld check
+is the load-path 45 site — C# `Load` does not dirty), 43 → KEEP f47's wired
+machine, DROP f30's core (+ add the `netMode != 1` completion gate f47 omits),
+36 → KEEP d2's verbatim flight + f30's 36 machinery/date/FTW-hostile folds.
+The census table above stays the band's record; the FINAL systems-family
+declaration (the lane is census-complete for its reserved band) is 240 §6.
+
 ## Task seeds
 
 - ~~**S** — Model `NPCKilledCondition.CreateMany` faithfully~~ — **done (S1-E-18)**.
