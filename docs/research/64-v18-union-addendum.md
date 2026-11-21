@@ -1,12 +1,18 @@
 # 64-addendum — the W4-g72 31-byte v18 claim, input to the g71c UNION
 
+> **SEALED (W4-g72 retire, 2026-11-21).** The claim (§1) landed and is
+> carried verbatim into the FINAL union; the layout authority is g71's
+> research/92 §1-FULL.2 (107-byte head) via research/64b. Nothing owed.
+
 > **SUPERSEDED for the final union by research/64b** (the CONSOLIDATED
-> claimant registry, W4-g72 closeout): the five-claimant 53-byte layout
-> below grew to TEN distinct blocks / a 106-byte head once g87's pet trio,
-> the c39≡f39 seasonal five, d125's empress byte and the c43/f45 identity
-> block were seated. OUR 31-byte claim (§1) and its C# seating (§2) are
-> unchanged and carried verbatim into 64b; the §3 truncation moves now
-> target 106, not 53.
+> claimant registry, W4-g72 closeout; retire-updated to the **107-byte**
+> head): the five-claimant 53-byte layout below grew to ELEVEN distinct
+> blocks once g87's pet trio, the c39≡f39 seasonal five, d125's empress
+> byte, the c43/f45 identity block AND g71's FIRED underworld byte (§3's
+> flagged seat — rolled + `.wld`-persisted at g71 tip `f2d8c2c67`) were
+> seated. The layout AUTHORITY is g71's research/92 §1-FULL.2, which keeps
+> OUR 53-byte prefix (§2) VERBATIM at [0..53]; OUR 31-byte claim (§1) is
+> unchanged. The §3 truncation moves now target **107**, not 53/106.
 
 **Branch:** `task/W4-g72-bg-layers-3` (final phase, continues DONE `2b02345c`).
 **Mode:** code-only — witnesses WRITTEN NOT RUN. **Audience:** the g71c
@@ -148,15 +154,19 @@ fixed shared order; this note publishes the recommended one.
 - Back-compat: unchanged from research/92 §1 — no released v18 exists, the
   union is forward-only from the merge; pre-v18 files keep each claimant's
   own defaults (ours: the `World::new` zeros, §1).
-- `underworldBG` (`:1376`) is NOT in any claimant's block yet. If g71c wires
-  `RandomizeBackgrounds`' underworld `Next(3)` (`WorldGen.cs:8011`) into the
-  tail, its byte should slot between g71's surface group and g69's crimson
-  (C# `:1376` sits after the setBG family) — a 54-byte union; coordinate in
-  the g71c lane, this note only flags the seat.
+- `underworldBG` (`:1376`) — **SEAT FIRED (retire receipt, research/64b §0):**
+  g71 DOES roll `RandomizeBackgrounds`' underworld `Next(3)`
+  (`WorldGen.cs:8011`, `bg_rolls.rs:168`/`:311`) and `.wld`-persists it
+  (`flags.rs:186`/`:577`) at tip `f2d8c2c67`. In the FINAL 107-byte union
+  (92 §1-FULL.2) the byte sits at **[58]** (after the moon-boss block, ahead
+  of the pets — the extension group's C# order; this note's original
+  "between surface and crimson" suggestion was superseded by the
+  keep-64a-prefix-stable rule). This flag is CLOSED.
 
 ## 4. Witnesses
 
 Code-only: no new executable witness in this note (it is a merge
 instruction). The existing `w4_g72_the_cave_background_roll_round_trips_in_v18`
 (`save.rs:1264`) pins our 31-byte block end-to-end and stays green through
-the merge with its truncation constant moved to 53.
+the merge with its truncation constant moved to 53 (then **107** in the
+FINAL union — research/64b §3).
