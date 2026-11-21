@@ -1607,6 +1607,12 @@ mod tests {
         world.day_time = false;
         world.moon_type = 5;
         world.moon_phase = 3;
+        // W4-g72: the cave-background roll rides the round-trip at distinct
+        // non-default values (arm-C-shaped: three bands, four styles).
+        world.cave_back_x = [120, 240, 290, 0];
+        world.cave_back_style = [3, 1, 7, 5];
+        world.ice_back_style = 2;
+        world.jungle_back_style = 1;
         world.hell_back_style = 2;
         world.blood_moon = true;
         world.eclipse = true;
@@ -1716,6 +1722,19 @@ mod tests {
         assert_eq!(
             got.hell_back_style, want.hell_back_style,
             "{context}: hell back style"
+        );
+        assert_eq!(got.cave_back_x, want.cave_back_x, "{context}: caveBackX");
+        assert_eq!(
+            got.cave_back_style, want.cave_back_style,
+            "{context}: caveBackStyle"
+        );
+        assert_eq!(
+            got.ice_back_style, want.ice_back_style,
+            "{context}: ice back style"
+        );
+        assert_eq!(
+            got.jungle_back_style, want.jungle_back_style,
+            "{context}: jungle back style"
         );
         assert_eq!(got.downed_eoc, want.downed_eoc, "{context}: downedBoss1");
         assert_eq!(got.downed_eow, want.downed_eow, "{context}: downedBoss2");
@@ -2070,12 +2089,20 @@ mod tests {
         b
     }
 
-    /// The owned middle of the flags table: the back styles (hell only), the
-    /// spawn/layers/time block — written between the 17 zero i32s of
-    /// `treeX`..`jungleBackStyle` and the `_tempBloodMoon` tail.
+    /// The owned middle of the flags table: the cave arrays + the back
+    /// styles (W4-g72), the spawn/layers/time block — written between the
+    /// 7 zero i32s of `treeX`/`treeStyle` and the `_tempBloodMoon` tail.
     fn flags_tail_prefix(world: &World) -> Vec<u8> {
         let mut b = Vec::new();
-        b.resize(3 * 4 + 4 * 4 + 3 * 4 + 4 * 4 + 2 * 4, 0); // tree/cave arrays + ice/jungle
+        b.resize(3 * 4 + 4 * 4, 0); // treeX/treeStyle — unowned
+        for i in 0..3 {
+            b.extend_from_slice(&world.cave_back_x[i].to_le_bytes());
+        }
+        for &s in &world.cave_back_style {
+            b.extend_from_slice(&s.to_le_bytes());
+        }
+        b.extend_from_slice(&(world.ice_back_style as i32).to_le_bytes());
+        b.extend_from_slice(&(world.jungle_back_style as i32).to_le_bytes());
         b.extend_from_slice(&(world.hell_back_style as i32).to_le_bytes());
         b.extend_from_slice(&world.spawn_x.to_le_bytes());
         b.extend_from_slice(&world.spawn_y.to_le_bytes());

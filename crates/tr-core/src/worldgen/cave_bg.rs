@@ -28,7 +28,7 @@
 //! both streams share the exact draw order.
 
 /// One `Next(maxValue)` draw (`maxValue = 8` for the styles, `WorldGen.cs:8194`).
-pub(crate) trait CaveRoll {
+pub trait CaveRoll {
     fn roll(&mut self, max: i32) -> i32;
     fn roll_range(&mut self, lo: i32, hi: i32) -> i32;
 }
@@ -55,7 +55,7 @@ impl CaveRoll for crate::unified_random::UnifiedRandom {
 
 /// The rolled state — `Main`'s statics, not yet stored on the world.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct CaveBackgrounds {
+pub struct CaveBackgrounds {
     /// `Main.caveBackX[0..4]` — only `[0..3]` are rolled/persisted; `[3]`
     /// keeps its C# initial 0 (`new int[4]`, `Main.cs:66696`).
     pub cave_back_x: [i32; 4],
@@ -69,37 +69,38 @@ pub(crate) struct CaveBackgrounds {
 
 /// The width-arm bounds (`WorldGen.cs:8197-8228`), computed in f64 then
 /// truncated exactly like the C# `(int)` casts — arm A `(1050, 3150)`, arm B
-/// `(857, 3417)` / `(2988, 5548)` (research/64 §1). `None` bands are NOT drawn
-/// (the C# assigns `maxTilesX` directly). The arm count also sets how many
-/// styles roll (A: 2, B: 3, else: 4).
-pub(crate) fn width_arm(width: i32) -> ([(i32, i32); 3], usize) {
+/// `(857, 3417)` / `(2988, 5548)` (research/64 §1). The third tuple element
+/// is how many bands DRAW (A: 1, B: 2, else: 3 — the trailing boundaries are
+/// direct `maxTilesX` assignments, `:8198-8199`/`:8211`); the count also sets
+/// how many styles roll (A: 2, B: 3, else: 4).
+pub fn width_arm(width: i32) -> ([(i32, i32); 3], usize, usize) {
     let w = width as f64;
     let band = |frac: f64, span: f64| ((w * frac - w * span) as i32, (w * frac + w * span) as i32);
     if width == 4200 {
         // :8197 — the single centre band; :8198-8199 assign maxTilesX twice.
-        ([(band(0.5, 0.25), (width, width), (width, width)], 2)
+        ([(band(0.5, 0.25), (width, width), (width, width)], 2, 1)
     } else if width == 6400 {
         // :8209-8210 — the two third-points ± 0.2; :8211 assigns maxTilesX.
-        ([(band(0.334, 0.2), band(0.667, 0.2), (width, width)], 3)
+        ([(band(0.334, 0.2), band(0.667, 0.2), (width, width)], 3, 2)
     } else {
         // :8226-8228 — the three quarter-points ± 0.15.
-        ([(band(0.25, 0.15), band(0.5, 0.15), band(0.75, 0.15)], 4)
+        ([(band(0.25, 0.15), band(0.5, 0.15), band(0.75, 0.15)], 4, 3)
     }
 }
 
 /// `RandomizeCaveBackgrounds` proper — every draw in C# order: the arm's
-/// `caveBackX` bands (equal-bound assignments draw nothing), the base styles
-/// in index order, the distinctness rejection loops in C# order (style[1] vs
-/// [0]; style[2] vs [0],[1]; style[3] vs [0],[1],[2]), then the common tail
-/// `iceBackStyle = Next(4)` / `hellBackStyle = Next(3)` /
+/// `caveBackX` bands (the trailing direct assignments draw nothing), the base
+/// styles in index order, the distinctness rejection loops in C# order
+/// (style[1] vs [0]; style[2] vs [0],[1]; style[3] vs [0],[1],[2]), then the
+/// common tail `iceBackStyle = Next(4)` / `hellBackStyle = Next(3)` /
 /// `jungleBackStyle = Next(2)` (`:8246-8248`). `styles` carries the PREVIOUS
 /// `Main.caveBackStyle` — entries the arm does not roll keep their value.
-pub(crate) fn randomize_cave_backgrounds<R: CaveRoll>(
+pub fn randomize_cave_backgrounds<R: CaveRoll>(
     rng: &mut R,
     width: i32,
     styles: [i32; 4],
 ) -> CaveBackgrounds {
-    let (bands, count) = width_arm(width);
+    let (bands, count, drawn) = width_arm(width);
     let mut out = CaveBackgrounds {
         cave_back_x: [0; 4],
         cave_back_style: styles,
@@ -107,15 +108,15 @@ pub(crate) fn randomize_cave_backgrounds<R: CaveRoll>(
         hell_back_style: 0,
         jungle_back_style: 0,
     };
-    for (i, &(lo, hi)) in bands.iter().enumerate().take(count.min(3)) {
-        // The no-draw assignments (`:8198-8199`/`:8211`) carry lo == hi ==
-        // width; only a real band draws. The boot roll's width-0 bands are
-        // all (0, 0) — the C# `Next(0, 0)` still draws one Sample() on the
-        // Knuth stream (UnifiedRandom.cs:126-130), so the driver must call
-        // roll_range for EVERY band, not skip the equal ones. Xorshift's
-        // range() draws nothing on an empty band (rng.rs contract) — the
-        // documented stream difference, each faithful to its own generator.
-        out.cave_back_x[i] = if lo == hi && width != 0 { lo } else { rng.roll_range(lo, hi) };
+    for (i, &(lo, hi)) in bands.iter().enumerate() {
+        // Only the arm's DRAWN bands roll; the trailing ones are the direct
+        // `maxTilesX` assignments (`:8198-8199`/`:8211`). The boot roll's
+        // width-0 arm draws all three (0, 0) bands — the C# `Next(0, 0)`
+        // still draws one Sample() on the Knuth stream
+        // (UnifiedRandom.cs:126-130); xorshift's range() draws nothing on an
+        // empty band (rng.rs contract) — the documented stream difference,
+        // each faithful to its own generator.
+        out.cave_back_x[i] = if i < drawn { rng.roll_range(lo, hi) } else { lo };
     }
     for slot in out.cave_back_style.iter_mut().take(count) {
         *slot = rng.roll(8);
@@ -151,7 +152,7 @@ pub(crate) fn randomize_cave_backgrounds<R: CaveRoll>(
 
 impl crate::world::World {
     /// Store a roll onto the world's fields (the `Main` statics' port home).
-    pub(crate) fn apply_cave_backgrounds(&mut self, roll: &CaveBackgrounds) {
+    pub fn apply_cave_backgrounds(&mut self, roll: &CaveBackgrounds) {
         self.cave_back_x = roll.cave_back_x;
         self.cave_back_style = roll.cave_back_style;
         self.ice_back_style = roll.ice_back_style;
@@ -169,17 +170,17 @@ mod tests {
     /// research/64 §1: the arm bounds are the C# f64-truncated constants.
     #[test]
     fn w4_g72_width_arm_bounds_match_the_csharp_casts() {
-        let (a, n) = width_arm(4200);
-        assert_eq!((a[0], n), ((1050, 3150), 2));
+        let (a, n, d) = width_arm(4200);
+        assert_eq!((a[0], n, d), ((1050, 3150), 2, 1));
         assert_eq!((a[1], a[2]), ((4200, 4200), (4200, 4200)));
-        let (b, n) = width_arm(6400);
-        assert_eq!((b[0], b[1], n), ((857, 3417), (2988, 5548), 3));
+        let (b, n, d) = width_arm(6400);
+        assert_eq!((b[0], b[1], n, d), ((857, 3417), (2988, 5548), 3, 2));
         assert_eq!(b[2], (6400, 6400));
-        let (c, n) = width_arm(8400);
-        assert_eq!((c[0], c[1], c[2], n), ((840, 3360), (2940, 5460), (5040, 7560), 4));
+        let (c, n, d) = width_arm(8400);
+        assert_eq!((c[0], c[1], c[2], n, d), ((840, 3360), (2940, 5460), (5040, 7560), 4, 3));
         // The boot roll's width-0 arm (Main.cs:1011 static default).
-        let (z, n) = width_arm(0);
-        assert_eq!((z[0], z[1], z[2], n), ((0, 0), (0, 0), (0, 0), 4));
+        let (z, n, d) = width_arm(0);
+        assert_eq!((z[0], z[1], z[2], n, d), ((0, 0), (0, 0), (0, 0), 4, 3));
     }
 
     /// The rolled styles are pairwise distinct inside the arm and every

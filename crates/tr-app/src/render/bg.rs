@@ -1749,8 +1749,11 @@ mod underground_bg_tests {
 
     #[test]
     fn worldgen_rolls_hell_back_style() {
-        // `WorldGen.cs:8247`: one `genRand.Next(3)` draw; the port fixes it per seed
-        // (drawn after the moon-type roll, so no other roll shifts).
+        // `WorldGen.cs:8247`: one `genRand.Next(3)` draw inside
+        // `RandomizeCaveBackgrounds`; W4-g72 wired the whole block into
+        // `step_world_tail` AHEAD of the moon roll (the C# `:11339`-before-
+        // `:11341` order), so the hell draw now rides the cave tail — still
+        // fixed per seed, still < 3.
         let opts = tr_core::worldgen::GenOptions {
             width: 512,
             height: 512,
@@ -1761,6 +1764,14 @@ mod underground_bg_tests {
         let b = tr_core::worldgen::generate(&opts);
         assert_eq!(a.hell_back_style, b.hell_back_style);
         assert!(a.hell_back_style < 3);
+        // W4-g72: the rest of the roll is deterministic too.
+        assert_eq!(a.cave_back_x, b.cave_back_x);
+        assert_eq!(a.cave_back_style, b.cave_back_style);
+        assert_eq!(
+            (a.ice_back_style, a.jungle_back_style),
+            (b.ice_back_style, b.jungle_back_style)
+        );
+        assert!(a.ice_back_style < 4 && a.jungle_back_style < 2);
     }
 }
 

@@ -124,11 +124,12 @@ pub struct World {
     /// `Main.hellBackStyle` (0..2): picks the animated magma sheet `Background_125..127`
     /// and the hell floor row `Background_185..187` (`Main.cs:54000-54008`).
     /// Rolled by `WorldGen.RandomizeCaveBackgrounds` (`WorldGen.cs:8247`) at
-    /// generation and re-rolled once at boot (`Main.cs:6603`, the port's
-    /// `App::new` — W4-g72 lane 3). The `.wld` DOES persist it
+    /// generation (`:11339`) and once at process boot (`Main.cs:6603`,
+    /// `Initialize_AlmostEverything` — BEFORE any world load, so the load's
+    /// `WorldFile.cs:2067` read overwrites the boot roll, not vice versa;
+    /// research/64 §2 corrected). The `.wld` DOES persist it
     /// (`WorldFile.cs:1269` write / `:2067` read — the old "not part of the
-    /// format" note here was wrong), but the boot roll overwrites the stored
-    /// value before anything draws.
+    /// format" note here was wrong); loaded worlds keep the stored value.
     pub hell_back_style: u8,
     // Per-biome surface background *style* variants (`WorldGen.corruptBG`,
     // `jungleBG`, `hallowBG`, `crimsonBG`, `mushroomBG`). The `.wld` stores the

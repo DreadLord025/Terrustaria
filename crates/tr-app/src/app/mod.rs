@@ -4076,6 +4076,29 @@ impl App {
         // The wiring RNG (`Main.rand` in the C#, `Wiring.cs:811-812`) seeds
         // from the world; vanilla seeds it from the clock (`Main.cs:6461-6463`).
         app.wiring.seed_rand(world_seed | 1);
+        // W4-g72: the boot cave-background roll — `WorldGen.RandomizeCaveBackgrounds()`
+        // (`Main.cs:6603`, `Initialize_AlmostEverything`, fired once per
+        // process from the splash tail `:52572` / dedServ `:6499`). Census
+        // correction (research/64 §2): the roll fires BEFORE any world load,
+        // when `Main.maxTilesX` is still its static 0 (`Main.cs:1011` — the
+        // first writes are `autoCreate` `:4886-4896` / `LoadWorldHeader`
+        // `WorldFile.cs:1976`, both later), so it ALWAYS takes the else arm
+        // with width 0 (three `Next(0,0)` band draws — Knuth still samples —
+        // + four distinct styles + the ice/hell/jungle tail). The subsequent
+        // load's flags read (`WorldFile.cs:2058-2067`) then OVERWRITES the
+        // rolled statics: in the port the load has ALREADY run (`load_world`
+        // before `App::new`), so the boot roll's values are dead stores —
+        // every world carries its persisted (or generation-rolled) arrays.
+        // The roll still executes on a DEDICATED `UnifiedRandom(world_seed)`
+        // stream (the bare-`Main.rand` stand-in's seeding convention), NOT
+        // `rngs.global()` — advancing the shared stand-in would shift every
+        // menu-path witness pinned against a fresh global, and the C# boot
+        // roll draws the clock-seeded process stream the port cannot
+        // reproduce anyway (the recorded NamedRngs deviation).
+        let _boot_cave_roll = {
+            let mut rng = tr_core::UnifiedRandom::new(world_seed as i32);
+            tr_core::worldgen::cave_bg::randomize_cave_backgrounds(&mut rng, 0, [0; 4])
+        };
         // `SetOngoingToTemps:169-172`: the sandstorm snapshot the load read out
         // of the flags block (`_tempSandstorm*`, `LoadWorldFlags:2277-2283`)
         // restores the event's live state, exactly as the rain triple above
