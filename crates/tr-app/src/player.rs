@@ -1502,6 +1502,12 @@ pub struct Player {
     /// `:16932`). No render consumer yet — carried for state parity (the
     /// S1-A-9 dead-slot convention).
     pub brain_of_confusion_dodge_animation_counter: i32,
+    /// `Player.wireOperationsCooldown` (`Player.cs:2868`): the Grand Design /
+    /// Multicolor Wrench use gate (`:52075`), decayed in `ResetEffects`
+    /// (`:18798-18801`); the `110` bill clears it (`MessageBuffer.cs:3805`,
+    /// W4-g50). The multi-tool use path is unported — carried for the net
+    /// apply and state parity.
+    pub wire_operations_cooldown: i32,
     /// `Player.creativeGodMode` (`Player.cs:1896`): refreshed every tick from
     /// the journey `GodmodePower` (`:25493-25497`; `ResetEffects` clears it at
     /// `:18789`). `Hurt` (`:38203`), `KillMe` (`:38809`) and
@@ -2792,6 +2798,7 @@ impl Player {
             strong_bees: false,
             shadow_dodge_timer: 0,
             brain_of_confusion_dodge_animation_counter: 0,
+            wire_operations_cooldown: 0,
             breath: BREATH_MAX,
             breath_cd: 0,
             creative_god_mode: false,
@@ -6248,6 +6255,11 @@ impl Player {
         self.long_invince = false;
         if self.brain_of_confusion_dodge_animation_counter > 0 {
             self.brain_of_confusion_dodge_animation_counter -= 1;
+        }
+        // `ResetEffects`' wire-operations cooldown (`Player.cs:18798-18801`,
+        // W4-g50): one tick off the Grand Design / Multicolor Wrench gate.
+        if self.wire_operations_cooldown > 0 {
+            self.wire_operations_cooldown -= 1;
         }
         // The luck inputs ResetEffects owns (`Player.cs:18732` stinky,
         // `:18812` equipmentBasedLuckBonus, `:18814` luckPotion): zeroed here,

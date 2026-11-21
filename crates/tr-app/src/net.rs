@@ -211,6 +211,15 @@ pub mod id {
     /// tool mode (`MessageID.cs:232`, `NetMessage.cs:1412-1418`,
     /// `MessageBuffer.cs:3774-3788`, client→host only).
     pub const MASS_WIRE_OPERATION: u8 = 109;
+    /// `110 MassWireOperationPay` (W4-g50, S1-I-4): `(short)` item type,
+    /// `(short)` count, `(byte)` player (`MessageID.cs:234`,
+    /// `NetMessage.cs:1419-1423`, `MessageBuffer.cs:3789-3808`,
+    /// host→client only, addressed to the billed player).
+    pub const MASS_WIRE_OPERATION_PAY: u8 = 110;
+    /// `111 ToggleParty` (W4-g50, S1-I-4): no body (`MessageID.cs:236`,
+    /// `BirthdayParty.cs:154`'s client ask, `MessageBuffer.cs:3809-3814`,
+    /// client→host only).
+    pub const TOGGLE_PARTY: u8 = 111;
     pub const PLAYER_STATE: u8 = 13; // NetMessage.cs:446-513 / MessageBuffer.cs:952-1059
     pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
@@ -2280,6 +2289,19 @@ pub struct MassWireOperation {
     pub tool_mode: u8,
 }
 
+/// `msg 110 MassWireOperationPay`'s body (`NetMessage.cs:1419-1423`, S1-I-1
+/// W4-d93): `(short)number` (the item type — 530 Wire or 849 Actuator),
+/// `(short)number2` (the consumed count) and `(byte)number3` (the billed
+/// player). The client only pays when `number3 == Main.myPlayer`
+/// (`MessageBuffer.cs:3797`): `ConsumeItem(type)` × count, then
+/// `wireOperationsCooldown = 0` (`:3801-3805`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MassWireOperationPay {
+    pub item_type: i16,
+    pub count: i16,
+    pub player: u8,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -2436,6 +2458,10 @@ pub enum C2s {
     /// Wrench drag (`Projectile.cs:72060`, `Player.cs:46911`); the host runs
     /// the operation for the sender (`MessageBuffer.cs:3774-3788`).
     MassWireOperation(MassWireOperation),
+    /// `111 ToggleParty` — this client asked to toggle the manual party
+    /// (`BirthdayParty.cs:154`); the host flips it (`MessageBuffer.cs:3809-
+    /// 3814`; W4-g50). No body.
+    ToggleParty,
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2624,6 +2650,9 @@ pub enum S2c {
     /// owner (`WorldGen.cs:50689-50692`; `MessageBuffer.cs:3758-3773`;
     /// W4-g50).
     WiredCannonShot(WiredCannonShot),
+    /// `110 MassWireOperationPay` - the mass wire operation's bill
+    /// (`Wiring.cs:441-442`; `MessageBuffer.cs:3789-3808`; W4-g50).
+    MassWireOperationPay(MassWireOperationPay),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2723,6 +2752,7 @@ impl C2s {
             Self::NebulaLevelupRequest(_) => id::NEBULA_LEVELUP_REQUEST,
             Self::GemLockToggle(_) => id::GEM_LOCK_TOGGLE,
             Self::MassWireOperation(_) => id::MASS_WIRE_OPERATION,
+            Self::ToggleParty => id::TOGGLE_PARTY,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2831,6 +2861,8 @@ impl C2s {
                 .i16(m.end_x)
                 .i16(m.end_y)
                 .u8(m.tool_mode),
+            // `BirthdayParty.cs:154` — no body.
+            Self::ToggleParty => w,
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -3029,6 +3061,8 @@ impl C2s {
                 end_y: r.i16()?,
                 tool_mode: r.u8()?,
             }),
+            // `MessageBuffer.cs:3809-3814` — no body.
+            id::TOGGLE_PARTY => Self::ToggleParty,
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -3208,6 +3242,7 @@ impl S2c {
             Self::PoofOfSmoke(_) => id::POOF_OF_SMOKE,
             Self::SmartText(_) => id::SMART_TEXT,
             Self::WiredCannonShot(_) => id::WIRED_CANNON_SHOT,
+            Self::MassWireOperationPay(_) => id::MASS_WIRE_OPERATION_PAY,
         }
     }
 
@@ -3450,6 +3485,8 @@ impl S2c {
                 .i16(c.angle)
                 .i16(c.ammo)
                 .u8(c.owner),
+            // `NetMessage.cs:1419-1423`: short type, short count, byte player.
+            Self::MassWireOperationPay(p) => w.i16(p.item_type).i16(p.count).u8(p.player),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -3804,6 +3841,12 @@ impl S2c {
                 angle: r.i16()?,
                 ammo: r.i16()?,
                 owner: r.u8()?,
+            }),
+            // `MessageBuffer.cs:3795-3797` — short type, short count, byte player.
+            id::MASS_WIRE_OPERATION_PAY => Self::MassWireOperationPay(MassWireOperationPay {
+                item_type: r.i16()?,
+                count: r.i16()?,
+                player: r.u8()?,
             }),
             _ => return None,
         })
@@ -6741,6 +6784,42 @@ mod tests {
         match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
             C2s::MassWireOperation(d) => assert_eq!(d, m),
             other => panic!("expected 109, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `110 MassWireOperationPay` (`NetMessage.cs:1419-1423`): short item
+    /// type, short count, byte player. Host→client only, addressed to the
+    /// billed player (`MessageBuffer.cs:3789-3808`).
+    #[test]
+    fn w4_g50_mass_wire_operation_pay_round_trips() {
+        let p = MassWireOperationPay {
+            item_type: 530, // Wire
+            count: 12,
+            player: 2,
+        };
+        let f = S2c::MassWireOperationPay(p).encode();
+        assert_eq!(f[2], 110);
+        let mut body = Vec::new();
+        body.extend_from_slice(&530i16.to_le_bytes());
+        body.extend_from_slice(&12i16.to_le_bytes());
+        body.push(2);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::MassWireOperationPay(d) => assert_eq!(d, p),
+            other => panic!("expected 110, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `111 ToggleParty` (`BirthdayParty.cs:154`): no body — a bare 3-byte
+    /// frame. Client→host only (`MessageBuffer.cs:3809-3814`).
+    #[test]
+    fn w4_g50_toggle_party_is_a_bare_frame() {
+        let c = C2s::ToggleParty.encode();
+        assert_eq!(c[2], 111);
+        assert_eq!(c.len(), 3, "id 111 has no body");
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::ToggleParty => {}
+            other => panic!("expected 111, got {:?}", other.msg_id()),
         }
     }
 }

@@ -1099,6 +1099,24 @@ impl App {
             // Grand Design multi-tool needs the `WiresUI` tool modes), so
             // the apply is parked; the codec is byte-verbatim (`net.rs`).
             C2s::MassWireOperation(_) => {}
+            // `case 111` — ToggleParty (W4-g50, `MessageBuffer.cs:3809-3814`
+            // → `BirthdayParty.ToggleManualParty`, `BirthdayParty.cs:145-164`):
+            // the host flips `ManualParty`, re-pushes the world header on a
+            // state change (`SendData(7)`, `:160`) and credits THROW_A_PARTY
+            // when the party came up (`CheckForAchievement`, `:162`).
+            C2s::ToggleParty => {
+                let was_up = crate::world_events::party_is_up(&self.world_events);
+                self.world_events.manual_party = !self.world_events.manual_party;
+                let now_up = crate::world_events::party_is_up(&self.world_events);
+                if was_up != now_up {
+                    // `SendData(7)` — the full world header re-push.
+                    server.broadcast(&S2c::WorldInfo(Box::new(self.world_info())));
+                    if now_up {
+                        // `NotifyProgressionEvent(25)` — the 98 fan-out.
+                        let _ = self.notify_progression_net(25);
+                    }
+                }
+            }
         }
     }
 
@@ -1197,6 +1215,29 @@ impl App {
             x: (i - num3) as i16,
             y: (j - num4) as i16,
         }));
+    }
+
+    /// `Player.ConsumeItem(type)`'s forward scan (`Player.cs:9269-9308`,
+    /// `reverseOrder: false`, `includeVoidBag: false`, W4-g50): the first
+    /// matching cell in the C#'s 58-slot `inventory` order — the port's grid
+    /// 0..49, then coins 50..53, then ammo 54..57 — loses one; a drained cell
+    /// turns to air (`SetDefaults(0)`). Returns whether one was consumed.
+    fn consume_item_forward(&mut self, kind: u16) -> bool {
+        let cells = self
+            .inventory
+            .iter_mut()
+            .chain(self.equip.coins.iter_mut())
+            .chain(self.equip.ammo.iter_mut());
+        for slot in cells {
+            if slot.count > 0 && slot.kind == kind {
+                slot.count -= 1;
+                if slot.count == 0 {
+                    slot.kind = 0;
+                }
+                return true;
+            }
+        }
+        false
     }
 
     /// `Utils.PoofOfSmoke` (`Utils.cs:1078-1093`, W4-g50): the gore burst
@@ -2421,6 +2462,20 @@ impl App {
                         c.damage as i32,
                         c.knockback,
                     );
+                }
+            }
+            // `case 110` — the mass wire operation's bill (W4-g50,
+            // `MessageBuffer.cs:3789-3808`): only the billed player pays
+            // (`num67 == Main.myPlayer`, `:3798`): `ConsumeItem(type)` ×
+            // count, then `wireOperationsCooldown = 0` (`:3801-3805`).
+            S2c::MassWireOperationPay(p) => {
+                if p.player as u32 == self.local_id {
+                    for _ in 0..p.count.max(0) {
+                        self.consume_item_forward(p.item_type.max(0) as u16);
+                    }
+                    if let Some(pl) = self.player.as_mut() {
+                        pl.wire_operations_cooldown = 0;
+                    }
                 }
             }
             // `151` — the slot is gone.
@@ -6918,5 +6973,55 @@ mod message_family_tests {
             .count();
         assert_eq!(before, 0, "the non-owner shot spawned nothing");
         assert!(after > 0, "the owner's shot replayed the 601");
+    }
+
+    /// `case 110` (`MessageBuffer.cs:3789-3808`): the billed player consumes
+    /// the wire stack and clears the cooldown; a non-billed player ignores it.
+    #[test]
+    fn w4_g50_the_110_wire_bill_consumes_for_the_billed_player() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let me = client_app.local_id as u8;
+        // Stock 20 wire in the client's first grid cell.
+        client_app.inventory[0] = crate::item::ItemSlot {
+            kind: 530,
+            name: crate::registry::name(530),
+            count: 20,
+            prefix: 0,
+        };
+        client_app.player.as_mut().unwrap().wire_operations_cooldown = 60;
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::MassWireOperationPay(net::MassWireOperationPay {
+                item_type: 530,
+                count: 12,
+                player: me,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        assert_eq!(client_app.inventory[0].count, 8, "12 wire consumed");
+        assert_eq!(
+            client_app.player.as_ref().unwrap().wire_operations_cooldown,
+            0,
+            "the bill cleared the cooldown"
+        );
+    }
+
+    /// `case 111` (`MessageBuffer.cs:3809-3814`, `BirthdayParty.cs:145-164`):
+    /// the host flips the manual party and credits THROW_A_PARTY on the rise.
+    #[test]
+    fn w4_g50_the_111_party_toggle_flips_and_credits() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        assert!(!crate::world_events::party_is_up(&host_app.world_events));
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::ToggleParty);
+        }
+        pump(&mut host_app, &mut client_app, 15);
+        assert!(host_app.world_events.manual_party, "the party came up");
+        assert!(crate::world_events::party_is_up(&host_app.world_events));
+        // A second toggle drops it (no credit on the fall).
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::ToggleParty);
+        }
+        pump(&mut host_app, &mut client_app, 15);
+        assert!(!host_app.world_events.manual_party, "the party dropped");
     }
 }
