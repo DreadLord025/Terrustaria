@@ -285,6 +285,42 @@ at that tip:
   holds pre-merge (row absent → no-op) and post-merge (row present →
   the centred spawn + the ai pins). **Contract GREEN — no change.**
 
+## §6 — the 181–190 band FINAL table (PROJ-181 phase 2)
+
+Census at d19 tip `a3481f7c9` + the pushed cross-branch tips (d18
+`18916087b`, d12c `9e668d0f0` on `task/W4-d12-proj-ai-111-120`, d20
+`243f81672`, f33 `7b334ea74`, d21 `9fa9e9ba0`, main `a725acb04`).
+"ARMED" = a dispatch arm serves the style; "ROWED" = every kind the arm
+serves has a `proj_data` row (the spawn seam declines rowless kinds).
+
+| style | kinds | arm (file:line at its branch) | dispatch | rows | status |
+|---|---|---|---|---|---|
+| 181 | 932 | `projectile_ai_misc.rs:185 ai_fairy_queen_shot` (main, S1-D-4) | `projectile.rs:17331` | 932 `data.rs:3653` (main) | **ARMED+ROWED** |
+| 182 | 933/1100 | `projectile_ai_sword_styles.rs:257 ai_final_fractal` (d19 `a4185f89`) | `projectile.rs:17348` (no integrate — the `:20435` skip list) | 933/1100 `data.rs:3680` | **ARMED+ROWED** |
+| 183 | 880/929 | `…sword_styles.rs:373 ai_zoologist_strike` (d19) | `projectile.rs:17371` | 880/929 `data.rs:3671` | **ARMED+ROWED** |
+| 184 | 949 | `…sword_styles.rs:443 ai_bad_torch_luck` (d19) | `projectile.rs:17403` | 949 `data.rs:3687` | **ARMED+ROWED — keep-f33** (§3: f33's `ai_184_bad_torch_luck` owns the 949 machine at merge; d19's arm retires, the dodge witness repoints; the rows are value-identical). f33 IS on origin (`8a000407f` ancestor of tip `7b334ea74`; the closeout re-pins the d19 drop-hunks). |
+| 185 | 476 | `…sword_styles.rs:494 ai_life_drain` (d19) | `projectile.rs:17415` | 476 `data.rs:3664` | **ARMED+ROWED** |
+| 186 | 950 | `…sword_styles.rs:553 ai_princess_weapon` (d19) | `projectile.rs:17427` | 950 `data.rs:3692` | **ARMED+ROWED — overlay landed**: magic `data.rs:4497`, ignoreWater `:4385–4386`, the `:13198` owner-facing direction arm `projectile.rs:23001` (shared with 476). |
+| 187 | 964/965 | `projectile.rs:10640 ai_insanity_shadow` (main `7bfd6afa4`, S1-D-4b-1) | `projectile.rs:17689` | 965 `data.rs:2158` (main); **964 rowed on d18** `18916087b` (`INSANITY_SHADOW_FRIENDLY`, d18 `data.rs:3944`) | **ARMED+ROWED** (964's row rides d18's merge; the arm already serves it) |
+| 188 | 974 | `projectile.rs:10745 ai_lights_bane` (main) | `projectile.rs:17693` | 974 `data.rs:3870` (main) | **ARMED+ROWED** |
+| 189 | 978/1125 | `projectile.rs:11245 ai_volcano` (main) | `projectile.rs:17697` | 1125 `data.rs:2912` (main); **978 rowed on d12c** `9e668d0f0` AND d18 `18916087b` | **ARMED+ROWED — 978 keep-one**: d12c and d18 both row 978 (value-identical: 160×160/189/pen 3/timeLeft 30 — the `:9268` second write wins — local −1/alpha 255/ignoreWater/melee). **Keep d12c's** — the superset: it alone adds `proj_frames[978]=5` (`Main.cs:8493`, re-read verbatim this round; d18's copy lacks the frames row, so its 2-tick frame machine would wrap at the stock 1). |
+| 190 | 972/982/983/984/997/1043/1126 | `…sword_styles.rs:1038 ai_nights_edge` (d19) | `projectile.rs:17438` (+ the `drain_claymore_spores` child drain `:17460`) | all seven `data.rs:3700–3736` | **ARMED+ROWED** — the 1043 row is ALSO on d20 (r109's dup note): keep-one at merge (values equal). The use-path gap is T5 (§7), not an arm/row gap. |
+
+**UNARMED_ROWED left in the band: NONE.** Every style 181–190 has both
+a dispatch arm and rows for every kind it serves. The residuals are
+merge-order, not coverage:
+
+1. **964** (187) and **978** (189) rows live on UNMERGED branches (d18 /
+   d12c) — until they merge, spawns of those kinds decline at the seam
+   (the arms are already on main and serve them the moment the rows
+   land). The 978 dup adjudicates keep-d12c (the frames superset).
+2. **184** keeps the d19 arm until the f33 merge retires it (§3) — no
+   coverage hole either way (both machines are faithful; f33's is the
+   fuller census).
+3. **190 is AI-complete but use-path-inert** until T5 lands (§7) — the
+   rows + arm are correct; the missing piece is the item-use spawner,
+   a different lane.
+
 ## Witnesses (this round, WRITTEN NOT RUN — code-only)
 
 - `projectile_ai_clouds.rs`: +2 new
