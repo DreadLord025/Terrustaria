@@ -93,6 +93,8 @@
 //! | 394-398 | `:84056-84060` | the 463 Nailhead death (5 gores 653/654/654/655/655) |
 //! | 399-403 | `:84078-84082` | the 461 CreatureFromTheDeep death (5 gores 647/648/648/649/649) |
 //! | 404-408 | `:84100-84104` | the 462 Fritz death (5 gores 650/651/651/652/652) |
+//! | 409-411 | `:84122-84124` | the 379/438 Cultist Archer/Devote death (3 gores 900/901/901) |
+//! | 412-418+ | `:84153-84159` | the 439 Cultist Boss death (Next(1,4) bone loop + 4 fixed gores 902/903/901/901) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -2272,6 +2274,105 @@ fn fritz_death(
     five_gore_type5_death(npc, dust, dust_ctx, gore, rng, world, hit_direction, 650, 651, 652);
 }
 
+/// The 379/438 Cultist Archer / Devote death (`NPC.cs:84118-84124`, sites
+/// 409-411): the 30-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY
+/// -2.5), then the 3 gores 900/901/901 — 900 at position, the 901 pair at
+/// +20 Y.
+fn cultist_archer_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:84118-84121` — the 30-dust type-5 burst.
+    for _ in 0..30 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 900, s); // :84122
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 901, s); // :84123
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 901, s); // :84124
+}
+
+/// The shared cultist BONE-SPATTER loop (`NPC.cs:84150-84155` et al.):
+/// `Next(1,4)` draws the count (1-3), then per gore a `Next(11,14)` type at
+/// `(pos.X, pos.Y + height/2 - 10)` with velocity `(hitDirection, 0)`, then
+/// the post-write `velocity *= 0.8`. The count draw fires ONCE before the
+/// loop; the type draw fires per gore BEFORE its spawn. The `height/2` is
+/// the C# integer division (height is int).
+fn cultist_bone_spatter(
+    npc: &Npc,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (_w, h) = npc.size();
+    let count = rng.next_range(1, 4);
+    let anchor = Vec2::new(npc.x, npc.y + (h as i32 / 2) as f32 - 10.0);
+    let s = npc.scale;
+    for _ in 0..count {
+        let ty = rng.next_range(11, 14);
+        let idx = gore.new_gore(rng, world, anchor, Vec2::new(hit_direction, 0.0), ty, s);
+        gore.slot_mut(idx).velocity *= 0.8;
+    }
+}
+
+/// The 439 Cultist Boss death (`NPC.cs:84140-84159`, sites 412-418+): the
+/// 30-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 10-dust type-16 burst (scale 1.5, velocity ×2, noGravity), then the
+/// `Next(1,4)` bone-spatter loop ([`cultist_bone_spatter`], 1-3 gores of
+/// `Next(11,14)`), then the 4 fixed gores 902/903/901/901 at the
+/// +0/+10/+20/+20 Y ladder. The bone loop's site count is variable (the
+/// 4 fixed gores are sites 415-418 when the loop draws 1).
+fn cultist_boss_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:84140-84143` — the 30-dust type-5 burst.
+    for _ in 0..30 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    // `:84144-84149` — the 10-dust type-16 burst.
+    for _ in 0..10 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 16, 0.0, 0.0, 0,
+            Color::default(), 1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    // `:84150-84155` — the bone-spatter loop.
+    cultist_bone_spatter(npc, gore, rng, world, hit_direction);
+    // `:84156-84159` — the 4 fixed gores.
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 902, s); // :84156
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 10.0), vel, 903, s); // :84157
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 901, s); // :84158
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 901, s); // :84159
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -2528,6 +2629,16 @@ pub fn hit_effect_c(
     // `:84085-84106` — the 462 Fritz arm (sites 404-408).
     if npc_type == 462 && npc.hp <= 0 {
         fritz_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:84107-84126` — the 379/438 Cultist Archer / Devote arm (sites
+    // 409-411).
+    if (npc_type == 379 || npc_type == 438) && npc.hp <= 0 {
+        cultist_archer_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:84127-84161` — the 439 Cultist Boss arm (sites 412-418+, the bone
+    // loop's count is variable).
+    if npc_type == 439 && npc.hp <= 0 {
+        cultist_boss_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -4072,6 +4183,73 @@ mod tests {
             f(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
             let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
             assert_eq!(types, gores);
+        }
+    }
+
+    /// `NPC.cs:84122-84124` — the Cultist Archer death: the 3 gores
+    /// 900/901/901 at +0/+20 Y, after the 30-dust type-5 burst.
+    #[test]
+    fn w4_f10_the_cultist_archer_death_spawns_the_three_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(293);
+        cultist_archer_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![900, 901, 901]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+    }
+
+    /// `NPC.cs:84150-84159` — the Cultist Boss death: the Next(1,4) bone
+    /// loop (1-3 gores of Next(11,14), velocity x0.8) then the 4 fixed gores
+    /// 902/903/901/901. The twin replay pins the count draw + per-bone type
+    /// draw + kicks + the fixed gores.
+    #[test]
+    fn w4_f10_the_cultist_boss_death_runs_the_bone_loop_then_the_fixed_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 60.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(307);
+        cultist_boss_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        // The twin: 30 type-5 dusts + 10 type-16 dusts (each 6-draw census;
+        // type 16 hits no tweak), then Next(1,4) count, then per bone
+        // Next(11,14) + 2 kicks, then the 4 fixed gores' kicks.
+        let mut twin = UnifiedRandom::new(307);
+        let census = |r: &mut UnifiedRandom| {
+            let _px = r.next_max(36);
+            let _py = r.next_max(56);
+            let _vx = r.next_range(-20, 21);
+            let _vy = r.next_range(-20, 21);
+            let _row = r.next_max(3);
+            let _scale = r.next_range(-20, 21);
+        };
+        for _ in 0..30 {
+            census(&mut twin);
+        }
+        for _ in 0..10 {
+            census(&mut twin);
+        }
+        let count = twin.next_range(1, 4);
+        for _ in 0..count {
+            let _ty = twin.next_range(11, 14);
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        for _ in 0..4 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the boss death mirrors the C# draws");
+        // The last four gores are the fixed 902/903/901/901.
+        let n_active = gore.slots().iter().filter(|g| g.active).count();
+        let fixed: Vec<i32> = gore.slots()[n_active - 4..n_active].iter().map(|g| g.gore_type).collect();
+        assert_eq!(fixed, vec![902, 903, 901, 901]);
+        // The bone gores (if any) are 11-13 with velocity x0.8.
+        for g in &gore.slots()[..n_active - 4] {
+            assert!(matches!(g.gore_type, 11 | 12 | 13));
         }
     }
 
