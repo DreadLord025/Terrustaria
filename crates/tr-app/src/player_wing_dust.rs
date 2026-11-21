@@ -1602,4 +1602,327 @@ mod tests {
         assert_eq!(p.wing_frame, 0, "the wrap at 3");
         assert_eq!(p.wing_frame_counter, 0);
     }
+
+    // -- W4-g66 gap-fill: the wings-33/38/47/49/50 appearance arms ----------
+    // Witnesses WRITTEN NOT RUN (code-only mode).
+
+    /// `:30324-30358` — the Fairy-33 pair: the eye-colour HSL round-trip,
+    /// the two foot-corner pins, the ±2 velocity folds and the ×0.65 White
+    /// clones. Each source spawn = the six default draws + the clone's own
+    /// six (the clone re-spawns at scale 1 then overwrites).
+    #[test]
+    fn w4_g66_the_fairy_pair_pins_the_corners_and_clones() {
+        let mut app = rig(0x5EED);
+        let mut b = frame_burst(33);
+        b.eye_color = [200, 40, 40, 255]; // a red-ish eye → hue ≈ 0
+        drain_wing_frame(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 4, "two sources + two clones");
+        let (h, _, _) = crate::ui::color::rgb_to_hsl(b.eye_color);
+        let c = crate::ui::color::hsl_to_rgb(h, 1.0, 0.5, 255);
+        let tint = Color::new(c[0], c[1], c[2], c[3]);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        for m in 0..2 {
+            let d = slots[m * 2];
+            assert_eq!(d.dust_type, 182);
+            assert_eq!(d.color, tint);
+            assert_eq!(d.alpha, 127);
+            let (_, vel, _) = default_block(&mut rng, Vec2::new(300.0, 600.0), 20, 42, 1.0);
+            let corner_x = if m == 0 { 300.0 } else { 320.0 };
+            assert_eq!(d.position, Vec2::new(corner_x, 642.0));
+            assert!(d.no_gravity && d.no_light);
+            assert_eq!(d.fade_in, 1.0);
+            assert_eq!(d.scale, 1.0);
+            // `:30329`: the spawn speeds are the player velocity; `:30340`/
+            // `:30345` fold ±2 X / +2 Y minus 0.3× it.
+            let sign = if m == 0 { -2.0 } else { 2.0 };
+            let v = Vec2::new(
+                vel.x + b.vx + sign - b.vx * 0.3,
+                vel.y + b.vy + 2.0 - b.vy * 0.3,
+            );
+            assert_eq!(d.velocity, v);
+            // The clone: its own default block at the pinned position,
+            // then the copied-field overwrite + the ×0.65 White re-tint.
+            let cl = slots[m * 2 + 1];
+            let _ = default_block(&mut rng, Vec2::new(corner_x, 642.0), 5, 5, 1.0);
+            assert_eq!(cl.position, d.position);
+            assert_eq!(cl.velocity, d.velocity);
+            assert_eq!(cl.scale, 0.65);
+            assert_eq!(cl.fade_in, 0.65);
+            assert_eq!(cl.color, Color::new(255, 255, 255, 255));
+        }
+        assert_eq!(stream_of(&mut app), rng);
+        // Facing left shifts both corners −4 (`:30325`).
+        let mut app = rig(0x5EED);
+        let mut b = frame_burst(33);
+        b.facing = -1;
+        drain_wing_frame(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots[0].position.x, 296.0);
+        assert_eq!(slots[2].position.x, 316.0);
+    }
+
+    /// `:30408-30445` — the Leaf-38 orbits: nine type-267 perfects tinted
+    /// underShirtColor, the miscCounter phase, the three anchors/scales,
+    /// the −0.33/−0.66 velocity folds.
+    #[test]
+    fn w4_g66_the_leaf_orbits_ride_the_misc_phase() {
+        let mut app = rig(0x5EED);
+        let mut b = frame_burst(38);
+        b.misc_counter = 7;
+        drain_wing_frame(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 9);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        let center = Vec2::new(310.0, 621.0);
+        let value = Vec2::new(b.vx, b.vy) * 0.5;
+        let tau = std::f32::consts::PI * 2.0;
+        let tint = Color::new(160, 180, 215, 255);
+        for n in 0..3 {
+            let fold = match n {
+                1 => Vec2::new(b.vx, b.vy) * -0.33,
+                2 => Vec2::new(b.vx, b.vy) * -0.66,
+                _ => Vec2::ZERO,
+            };
+            for (k, (anchor, denom, scale)) in [
+                (Vec2::new(-39.0, 6.0), -15.0f32, 0.47f32),
+                (Vec2::new(-23.0, 2.0), -15.0, 0.35),
+                (Vec2::new(-31.0, -6.0), -20.0, 0.49),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let d = slots[n * 3 + k];
+                let ang = 7.0 / denom * tau;
+                let off = anchor + Vec2::new(2.0, 0.0).rotate(Vec2::from_angle(ang));
+                let _ = default_block(&mut rng, center + off + fold, 5, 5, 1.0);
+                assert_eq!(d.dust_type, 267);
+                assert_eq!(d.color, tint);
+                assert_eq!(d.position, center + off + fold);
+                assert_eq!(d.velocity, value);
+                assert_eq!(d.scale, scale);
+                assert!(d.no_gravity && d.no_light);
+            }
+        }
+        assert_eq!(stream_of(&mut app), rng);
+    }
+
+    /// `:30573-30606` — the Chicken Bones-47 burst + rest roll: the scale
+    /// argument's NextFloatDirection precedes the default block; the
+    /// X-delta doubles into Y; the rest roll's bob and NextFloat fold.
+    #[test]
+    fn w4_g66_the_chicken_bones_burst_and_rest_roll() {
+        let mut app = rig(0x5EED);
+        let mut b = frame_burst(47);
+        b.wing_frame = 6;
+        b.just_switched = true;
+        drain_wing_frame(&mut app, b);
+        let slots = live(&app);
+        assert!(slots.len() >= 8, "the 8-burst always spawns");
+        let mut rng = UnifiedRandom::new(0x5EED);
+        let center = Vec2::new(310.0, 621.0);
+        for (i, d) in slots.iter().take(8).enumerate() {
+            assert_eq!(d.dust_type, 264);
+            assert_eq!(d.color, Color::new(50, 120, 255, 200));
+            let off = if i < 4 {
+                Vec2::new(-25.0, 20.0)
+            } else {
+                Vec2::new(-5.0, 20.0)
+            };
+            let sc_arg = 1.1 * (1.0 + 0.25 * rng.next_float_direction());
+            let (pos, _, sc) =
+                default_block(&mut rng, center - Vec2::new(5.0, 5.0) + off, 10, 10, sc_arg);
+            let x = (pos - center - off).x;
+            assert_eq!(d.position, Vec2::new(pos.x, pos.y + x * 2.0));
+            assert_eq!(d.velocity, Vec2::new(x * 0.5, 3.0));
+            assert_eq!(d.scale, sc);
+            assert_eq!(d.fade_in, 0.0);
+            assert!(d.no_gravity && d.no_light);
+        }
+        // The rest gate: Next(6); on a pass, the scale draw + block + bob.
+        if rng.next_max(6) == 0 {
+            assert_eq!(slots.len(), 9);
+            let d = slots[8];
+            let off = Vec2::new(-30.0, 0.0);
+            let sc_arg = 1.1 * (1.0 + 0.25 * rng.next_float_direction());
+            let (pos, vel, sc) =
+                default_block(&mut rng, center - Vec2::new(15.0, 25.0) + off, 30, 50, sc_arg);
+            let bob = 0.5f32; // frame 6
+            let fold = rng.next_float();
+            let mut v = vel * 0.1;
+            v.y += bob * 2.0;
+            v += Vec2::new(b.vx, b.vy) * 0.3 * fold;
+            assert_eq!(d.position, Vec2::new(pos.x, pos.y + bob * 2.0));
+            assert_eq!(d.velocity, v);
+            assert_eq!(d.scale, sc);
+        } else {
+            assert_eq!(slots.len(), 8);
+        }
+        assert_eq!(stream_of(&mut app), rng);
+        // Frame 0 never draws (`:30531`).
+        let mut app = rig(0x5EED);
+        let mut b = frame_burst(47);
+        b.wing_frame = 0;
+        drain_wing_frame(&mut app, b);
+        assert_eq!(live(&app).len(), 0);
+        assert_eq!(stream_of(&mut app), UnifiedRandom::new(0x5EED));
+    }
+
+    /// `:30653-30690` — the Heroicis-49 light gate: an unlit map (lum 0)
+    /// draws the per-iteration NextFloat gates and NOTHING else; a lit
+    /// map (lum 1) spawns all eight. The gate draw precedes the scale draw.
+    #[test]
+    fn w4_g66_the_heroicis_rolls_gate_on_the_light() {
+        // Dark: the default LightMap reads 0 outside its rect → lum 0.
+        // Mirror the gate draws exactly (a 0.0 NextFloat passes `lum >=`).
+        let mut app = rig(0x5EED);
+        let mut b = frame_burst(49);
+        b.wing_frame = 6;
+        b.just_switched = true;
+        drain_wing_frame(&mut app, b);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        let mut expect = 0usize;
+        let center = Vec2::new(310.0, 621.0);
+        for i in 0..8 {
+            if 0.0f32 < rng.next_float() {
+                continue;
+            }
+            let off = if i < 4 {
+                Vec2::new(-20.0, 15.0)
+            } else {
+                Vec2::new(-10.0, 15.0)
+            };
+            let sc_arg = 0.6 * (1.0 + 0.45 * rng.next_float_direction());
+            let _ = default_block(&mut rng, center - Vec2::new(5.0, 2.5) + off, 10, 5, sc_arg);
+            expect += 1;
+        }
+        if rng.next_max(6) == 0 && 0.0f32 >= rng.next_float() {
+            let sc_arg = 0.6 * (1.0 + 0.45 * rng.next_float_direction());
+            let _ = default_block(
+                &mut rng,
+                center - Vec2::new(15.0, 20.0) + Vec2::new(-30.0, 0.0),
+                30,
+                40,
+                sc_arg,
+            );
+            let _ = rng.next_float();
+            expect += 1;
+        }
+        assert_eq!(live(&app).len(), expect, "the dark map starves the rolls");
+        assert_eq!(stream_of(&mut app), rng);
+        // Lit: compute a bright surface map over the mounted centre tile
+        // (310/16=19, 621/16=38) — sky 1.0 above the surface reads ≥ 0.4
+        // luminance after the ×1.2 brightness, so lum pins to 1.
+        let mut app = rig(0x5EED);
+        app.world.world_surface = 60.0;
+        app.light = tr_core::lighting::LightMap::compute(
+            &app.world,
+            10,
+            30,
+            30,
+            45,
+            &tr_core::lighting::LightParams { sky: [1.0; 3], day_time: true, ..Default::default() },
+        );
+        let mut b = frame_burst(49);
+        b.wing_frame = 6;
+        b.just_switched = true;
+        let lum = heroicis_light_lum(&app, &b);
+        assert!(lum > 0.0, "the sky-lit centre passes some gates: {lum}");
+        drain_wing_frame(&mut app, b);
+        let slots = live(&app);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        let center = Vec2::new(310.0, 621.0);
+        let mut expect: Vec<(Vec2, Vec2, f32)> = Vec::new();
+        for i in 0..8 {
+            if lum < rng.next_float() {
+                continue;
+            }
+            let off = if i < 4 {
+                Vec2::new(-20.0, 15.0)
+            } else {
+                Vec2::new(-10.0, 15.0)
+            };
+            let sc_arg = 0.6 * (1.0 + 0.45 * rng.next_float_direction());
+            let (pos, _, sc) =
+                default_block(&mut rng, center - Vec2::new(5.0, 2.5) + off, 10, 5, sc_arg);
+            let x = (pos - center - off).x;
+            expect.push((Vec2::new(pos.x, pos.y + x * 2.0), Vec2::new(x * 0.5, 2.0), sc));
+        }
+        let mut rest = None;
+        if rng.next_max(6) == 0 && lum >= rng.next_float() {
+            let off = Vec2::new(-30.0, 0.0);
+            let sc_arg = 0.6 * (1.0 + 0.45 * rng.next_float_direction());
+            let (pos, vel, sc) =
+                default_block(&mut rng, center - Vec2::new(15.0, 20.0) + off, 30, 40, sc_arg);
+            let bob = 0.5f32; // frame 6
+            let mut v = vel * 0.1;
+            v.y += bob * 1.5;
+            v += Vec2::new(b.vx, b.vy) * 0.3 * rng.next_float();
+            rest = Some((Vec2::new(pos.x, pos.y + bob * 2.0), v, sc));
+        }
+        assert_eq!(slots.len(), expect.len() + rest.is_some() as usize);
+        for (d, (pos, vel, sc)) in slots.iter().zip(&expect) {
+            assert_eq!(d.dust_type, 264);
+            assert_eq!(d.color, Color::new(255, 255, 255, 200));
+            assert_eq!(d.position, *pos);
+            assert_eq!(d.velocity, *vel);
+            assert_eq!(d.scale, *sc);
+            assert!(d.no_gravity && d.no_light);
+        }
+        if let Some((pos, vel, sc)) = rest {
+            let d = slots[expect.len()];
+            assert_eq!(d.position, pos);
+            assert_eq!(d.velocity, vel);
+            assert_eq!(d.scale, sc);
+        }
+        assert_eq!(stream_of(&mut app), rng);
+    }
+
+    /// `:30700-30734` — the Kazzymodus-50 burst + rest roll: the 16-spawn
+    /// velocity overwrites (direction×5 / direction×2), the Next(2) side
+    /// pick and the frame-1 Y row.
+    #[test]
+    fn w4_g66_the_kazzymodus_burst_overwrites_velocity() {
+        let mut app = rig(0x5EED);
+        let mut b = frame_burst(50);
+        b.wing_frame = 1;
+        b.just_switched = true;
+        drain_wing_frame(&mut app, b);
+        let slots = live(&app);
+        assert!(slots.len() >= 16);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        let center = Vec2::new(310.0, 621.0);
+        for (i, d) in slots.iter().take(16).enumerate() {
+            let x_off = if i < 4 { -25.0 } else { -5.0 };
+            let pos = center + Vec2::new(x_off, -20.0) - Vec2::new(15.0, 5.0);
+            let (_, _, sc) = default_block(&mut rng, pos, 30, 10, 1.2);
+            // The type-6 tweak chain (`Dust.cs:214-224`): the extra vy draw,
+            // X ×0.3, scale ×0.7 — then the arm's velocity OVERWRITES.
+            let _ = rng.next_range(-10, 6);
+            assert_eq!(d.dust_type, 6);
+            assert_eq!(d.alpha, 100);
+            assert_eq!(d.color, Color::new(50, 120, 255, 200));
+            assert_eq!(d.velocity.x, rng.next_float_direction() * 5.0);
+            assert_eq!(d.velocity.y, rng.next_float_direction() * 2.0);
+            assert_eq!(d.scale, sc * 0.7);
+            assert_eq!(d.fade_in, 1.2);
+            assert!(d.no_gravity);
+        }
+        if rng.next_max(4) == 0 {
+            assert_eq!(slots.len(), 17);
+            let d = slots[16];
+            let side = rng.next_max(2) == 0;
+            let x_off = if side { -30.0 } else { 10.0 };
+            let pos = center + Vec2::new(x_off, -25.0) - Vec2::new(12.5, 10.0);
+            let (_, _, sc) = default_block(&mut rng, pos, 25, 20, 1.2);
+            let _ = rng.next_range(-10, 6);
+            assert_eq!(d.velocity.x, rng.next_float_direction() * 2.5);
+            assert_eq!(d.velocity.y, rng.next_float() * 3.0);
+            assert_eq!(d.scale, sc * 0.7);
+            assert_eq!(d.fade_in, 1.2);
+        } else {
+            assert_eq!(slots.len(), 16);
+        }
+        assert_eq!(stream_of(&mut app), rng);
+    }
 }

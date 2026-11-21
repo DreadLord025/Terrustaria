@@ -1548,10 +1548,27 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if let Some(burst) = p.take_wing_frame_dust() {
                 crate::player_wing_dust::drain_wing_frame(app, burst);
             }
+            // W4-g66 gap-fill — the boot/jetpack Item13/Item24 cue
+            // (`Player.cs:26884-26896`, `:29478`, `:30172`, `:27154`): the
+            // case-2 pitch draw rides `UpdatePlayers`, the same queued-sound
+            // convention as the flap Item32 below (the `pending_flap_sound`
+            // precedent — the play queues at the C# moment, the pitch draw
+            // lands at the drain; on a tick where a cue AND a dust arm both
+            // roll, the pitch-vs-dust interleave rides the queue order, the
+            // documented seam deviation). Placed before the boot flames:
+            // the boot cue (`:26884`) precedes `RocketBootVisuals` (`:26918`).
+            if let Some((idx, sx, sy)) = p.take_rocket_sound() {
+                app.audio.play_use_sound(
+                    idx,
+                    sx,
+                    sy,
+                    0.0,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
             // W4-g66 — `RocketBootVisuals` (`Player.cs:26918`, `:29330-29458`):
             // the thrust tick's flame pair, snapshotted before the thrust
-            // velocity writes. The Item13/Item24 rocketSoundDelay cues
-            // (`:26884-26896`) stay an audio seam (the S1-E-21 family).
+            // velocity writes.
             if let Some(burst) = p.take_rocket_flame_dust() {
                 crate::player_boot_dust::drain_rocket_flames(app, burst);
             }

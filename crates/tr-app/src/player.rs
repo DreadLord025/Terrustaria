@@ -1956,6 +1956,10 @@ pub struct Player {
     /// W4-g66 gap-fill — `Player.carpetFrameCounter` (`Player.cs:1096`,
     /// float): `+= 1 + |vx*0.5|` per glide tick, wraps at >8 (`:21866-21871`).
     pub carpet_frame_counter: f32,
+    /// W4-g66 gap-fill — `Player.rocketSoundDelay` (`Player.cs:2752`): the
+    /// Item13/Item24 boot cue cadence (`:26884-26896`), decremented every
+    /// tick (`:26903-26906`).
+    pub rocket_sound_delay: i32,
     /// `Player.rocketTime` / `rocketTimeMax` / `rocketDelay` / `rocketDelay2`
     /// (`Player.cs:2744-2748`): the rocket-boots fuel and its thrust cadence.
     pub rocket_time: i32,
@@ -2364,6 +2368,11 @@ pub struct Player {
     /// drained after the dash burst, before `DoubleJumpVisuals`
     /// (`:26758-26766` runs between them).
     pending_wall_dust: Option<WallDust>,
+    /// W4-g66 gap-fill — the boot Item13/Item24 cue (`Player.cs:26884-26896`)
+    /// + the wings-4/45 `WingFrame`/glide cadences (`:29478`/`:30172`/
+    /// `:27154`): `(style_index, x, y)` — the `pending_flap_sound`
+    /// convention (the case-2 pitch draw rides `UpdatePlayers` at the drain).
+    pending_rocket_sound: Option<(u16, f32, f32)>,
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
@@ -3202,7 +3211,9 @@ impl Player {
             can_carpet: false,
             carpet_time: 0,
             carpet_frame_counter: 0.0,
+            rocket_sound_delay: 0,
             pending_wall_dust: None,
+            pending_rocket_sound: None,
             rocket_time: 0,
             rocket_time_max: 7,
             rocket_delay: 0,
@@ -3991,6 +4002,23 @@ impl Player {
         self.pending_wall_dust.take()
     }
 
+    /// W4-g66 gap-fill — takes the boot/jetpack Item13/Item24 cue
+    /// (`Player.cs:26884-26896`, `:29478`, `:30172`, `:27154`) —
+    /// `(style_index, x, y)`, the `take_flap_sound` convention.
+    pub(crate) fn take_rocket_sound(&mut self) -> Option<(u16, f32, f32)> {
+        self.pending_rocket_sound.take()
+    }
+
+    /// W4-g66 gap-fill — queues one Item13/Item24 style play at the C#
+    /// read moment (`SoundEngine.PlaySound(SoundID.ItemN, base.position)`).
+    fn queue_rocket_sound(&mut self, name: &str) {
+        if let Some(idx) = crate::soundid::SOUND_STYLES
+            .iter()
+            .position(|s| s.name == name)
+        {
+            self.pending_rocket_sound = Some((idx as u16, self.x, self.y));
+        }
+    }
 
     /// W4-d51 — queues the dash dust snapshot at the C# read moment (the
     /// velocity writes above each site have already landed).
@@ -4189,6 +4217,7 @@ impl Player {
         self.pending_rudolph_trail = None;
         self.pending_wing_frame_dust = None;
         self.pending_wall_dust = None;
+        self.pending_rocket_sound = None;
         self.pending_sticky_kill = None;
         self.pending_mana_effect = None;
         self.pending_heal_effect = None;
@@ -10908,12 +10937,27 @@ impl Player {
                     // `:26875-26882`: tier 1 cadence 30, tiers 2/3/4/5 15.
                     self.rocket_delay2 = if self.rocket_boots == 1 { 30 } else { 15 };
                 }
-                // `:26884-26896`: the rocketSoundDelay cue (Item13/Item24 per
-                // vanity tier) is an audio seam — the port's rocket sound
-                // rides the S1-E-21 family, not this block.
+                // W4-g66 gap-fill — `:26884-26896`: the rocketSoundDelay cue
+                // — vanity tiers 1/5 play Item13 (cadence 30), tiers 2/3/4/6
+                // Item24 (cadence 15). The play queues on the
+                // `pending_flap_sound` convention (the drain's case-2 pitch
+                // draw rides `UpdatePlayers`).
+                if self.rocket_sound_delay <= 0 {
+                    if self.vanity_rocket_boots == 1 || self.vanity_rocket_boots == 5 {
+                        self.rocket_sound_delay = 30;
+                        self.queue_rocket_sound("Item13");
+                    } else if matches!(self.vanity_rocket_boots, 2 | 3 | 4 | 6) {
+                        self.rocket_sound_delay = 15;
+                        self.queue_rocket_sound("Item24");
+                    }
+                }
             } else {
                 self.can_rocket = false;
             }
+        }
+        // W4-g66 gap-fill — `:26903-26906`: the cue cadence ticks every tick.
+        if self.rocket_sound_delay > 0 {
+            self.rocket_sound_delay -= 1;
         }
         // `:26907-26910`: the flame cadence delay ticks every tick.
         if self.rocket_delay2 > 0 {
@@ -11068,8 +11112,8 @@ impl Player {
                 // `:27149-27190`: the wings-4 glide flame's own frame machine
                 // and the `:27194-27333` per-wing frame pins — tick-side
                 // state, the dust rolls ride the drain. The wings-4 Item13
-                // cadence (`:27151-27156`) is an audio seam (the S1-E-21
-                // family owns the rocket cues).
+                // cadence (`:27151-27156`) queues on `pending_rocket_sound`
+                // (gap-fill).
                 self.wing_glide_frames();
                 self.vy += gravity / 3.0;
                 if self.vy > fall_cap / 3.0 && !self.trying_to_hover_down() {
@@ -11089,8 +11133,7 @@ impl Player {
     /// appearance arms + the 47/49/50 `justSwitched` machines. The dust
     /// rolls queue one snapshot; the drain replays them on `UpdatePlayers`.
     /// The wings-4/45 Item13/Item24 cadences (`:29475-29480`, `:30167-30175`)
-    /// are audio seams (the S1-E-21 family owns the rocket cues) — the delay
-    /// counters still tick so the cadence state stays source-true.
+    /// queue on the `pending_rocket_sound` seam (gap-fill).
     fn wing_frame_visuals(&mut self, wing_flap: bool) {
         match self.wings_logic {
             // `:29471-29541`: the jetpack — flames while flapping or in the
@@ -11099,6 +11142,8 @@ impl Player {
                 if wing_flap || self.jump > 0 {
                     self.rocket_delay2 -= 1;
                     if self.rocket_delay2 <= 0 {
+                        // `:29478`: the Item13 flap cue (gap-fill).
+                        self.queue_rocket_sound("Item13");
                         self.rocket_delay2 = 60;
                     }
                     let mut b = WingFrameDust::base(4, self);
@@ -11153,6 +11198,8 @@ impl Player {
                 if self.wing_time > 0.0 {
                     self.rocket_delay2 -= 1;
                     if self.rocket_delay2 <= 0 {
+                        // `:30172`: the Item24 flutter cue (gap-fill).
+                        self.queue_rocket_sound("Item24");
                         self.rocket_delay2 = 30;
                     }
                 }
@@ -11348,16 +11395,25 @@ impl Player {
         b
     }
 
-    /// W4-g66 — the wing-glide frame pins (`Player.cs:27181-27333`): the
-    /// wings-4 flame machine (counter > 4 wraps 0..2) and the per-wing rest
-    /// frames the glide arm owns. No draws — the dust rolls ride
-    /// `player_wing_dust::drain_wing_glide`; the wings-30/34/39 counters
-    /// advance here exactly as the source (their `WingFrame` arms are
-    /// separate).
+    /// W4-g66 — the wing-glide frame pins (`Player.cs:27149-27333`): the
+    /// wings-4 flame machine (the Item13 cadence — gap-fill — then counter
+    /// > 4 wraps 0..2) and the per-wing rest frames the glide arm owns. No
+    /// draws — the dust rolls ride `player_wing_dust::drain_wing_glide`; the
+    /// wings-30/34/39 counters advance here exactly as the source (their
+    /// `WingFrame` arms are separate).
     fn wing_glide_frames(&mut self) {
         match self.wings_logic {
-            // `:27181-27190`: counter > 4 → frame++ wrap at 3.
+            // `:27149-27190`: the glide flame's Item13 cadence (gap-fill)
+            // then counter > 4 → frame++ wrap at 3.
             4 => {
+                // `:27151-27156`: the SAME rocketDelay2 the WingFrame arm
+                // ticks — the glide arm runs on the non-flag19 falling
+                // ticks, so the two never double-tick.
+                self.rocket_delay2 -= 1;
+                if self.rocket_delay2 <= 0 {
+                    self.queue_rocket_sound("Item13");
+                    self.rocket_delay2 = 60;
+                }
                 self.wing_frame_counter += 1;
                 if self.wing_frame_counter > 4 {
                     self.wing_frame += 1;
@@ -23174,7 +23230,7 @@ mod s1_p_i27_tests {
         assert!(!p.set_stardust, "(:18743)");
     }
 
-    // -- W4-g66 gap-fill: the wall-cling / carpet ticks -------------------
+    // -- W4-g66 gap-fill: the wall-cling / carpet / audio-cue ticks ---------
     // Witnesses WRITTEN NOT RUN (code-only mode).
 
     /// `:21750-21840` — the Wallslide tick: level-1 boots + a wall at the
@@ -23317,6 +23373,74 @@ mod s1_p_i27_tests {
         assert_eq!(p.carpet_time, 100, "the budget only ticks while gliding");
     }
 
+    /// `:26884-26896` + `:26903-26906` — the boot cue: vanity tier 1 plays
+    /// Item13 at cadence 30, tier 2 Item24 at 15; the delay decrements every
+    /// tick and gates the re-play.
+    #[test]
+    fn w4_g66_the_boot_cue_picks_the_vanity_tier() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.rocket_boots = 1;
+        p.vanity_rocket_boots = 1;
+        p.rocket_time = 5;
+        p.control_jump = true;
+        p.can_rocket = true;
+        p.rocket_release = true;
+        p.vy = 1.0;
+        p.flight_section(0.4, 10.0);
+        let (idx, _, _) = p.take_rocket_sound().expect("tier 1 plays Item13");
+        assert_eq!(crate::soundid::SOUND_STYLES[idx as usize].name, "Item13");
+        // `:26903-26906` runs BEFORE the thrust early-return — 30 minus
+        // the same-tick decrement.
+        assert_eq!(p.rocket_sound_delay, 29);
+        // The next trigger tick is inside the cadence → silent.
+        p.rocket_delay = 0;
+        p.rocket_time = 5;
+        p.flight_section(0.4, 10.0);
+        assert!(p.take_rocket_sound().is_none(), "the cadence gates");
+        // Tier 2 → Item24 at 15.
+        let mut q = Player::spawn(&w);
+        q.rocket_boots = 2;
+        q.vanity_rocket_boots = 2;
+        q.rocket_time = 5;
+        q.control_jump = true;
+        q.can_rocket = true;
+        q.rocket_release = true;
+        q.vy = 1.0;
+        q.flight_section(0.4, 10.0);
+        let (idx, _, _) = q.take_rocket_sound().expect("tier 2 plays Item24");
+        assert_eq!(crate::soundid::SOUND_STYLES[idx as usize].name, "Item24");
+        assert_eq!(q.rocket_sound_delay, 14);
+    }
+
+    /// `:29475-29480` — the jetpack flap cue: the rocketDelay2 wrap plays
+    /// Item13 and re-arms 60; `:30167-30175` — the Rainbow flutter plays
+    /// Item24 at 30 while the budget lasts.
+    #[test]
+    fn w4_g66_the_wing_frame_cues_play_on_the_wrap() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.wings_logic = 4;
+        p.rocket_delay2 = 1;
+        p.wing_frame_visuals(true);
+        let (idx, _, _) = p.take_rocket_sound().expect("the jetpack wrap plays");
+        assert_eq!(crate::soundid::SOUND_STYLES[idx as usize].name, "Item13");
+        assert_eq!(p.rocket_delay2, 60);
+        // No wrap → silent.
+        p.wing_frame_visuals(true);
+        assert!(p.take_rocket_sound().is_none());
+        assert_eq!(p.rocket_delay2, 59);
+        // Rainbow: the always-animated gate needs vy != 0, no grapple.
+        let mut q = Player::spawn(&w);
+        q.wings_logic = 45;
+        q.wing_time = 10.0;
+        q.vy = 1.0;
+        q.rocket_delay2 = 1;
+        q.wing_frame_visuals(false);
+        let (idx, _, _) = q.take_rocket_sound().expect("the Rainbow flutter plays");
+        assert_eq!(crate::soundid::SOUND_STYLES[idx as usize].name, "Item24");
+        assert_eq!(q.rocket_delay2, 30);
+    }
 
     /// `:29952-30021`/`:30094-30163` — the dev-wing machines: 47's flag3
     /// step-3 ladder (frame 1 rests, 3→1 on the held jump), 50's 1→3 fold
