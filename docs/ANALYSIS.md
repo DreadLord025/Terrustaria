@@ -39515,6 +39515,42 @@ stays the gore lane's. Witnesses: the 659 gate + ring/scatter split, the
 1012 40-count, the queen-slime counts/types, the sparkle f32-step counts,
 the 985 gate + 40-count — WRITTEN NOT RUN.
 
+### Batch 13 (10 kinds, the DD2 explosion bursts `:71652-72154`)
+
+710 (the ballista: resize 40×40 centred — position=Center OLD box then
+Center=position NEW box, the centre stays; 2× dust-31 alpha 100 scale 1.5
+scatter UnitY.RotatedByRandom(π)×NextDouble×w/2 GRAVITY ON, 10× dust-6
+alpha 0 scale 2.5 same scatter noGravity vel×2, 5× dust-31 alpha 0 scale
+1.5 UnitX.RotatedByRandom(π).RotatedBy(vel rot)×w/2 noGravity vel×2; the
+ai[1]=-1 + Damage stay unported state), 662/685 (the flame trail: dir =
+oldVelocity.SafeNormalize(Zero), walk from pos+dir×16, 16 steps each a
+Next(2) coin — 0 skips but STILL steps back 8 — else dust-11 Direct
+position=(own+Center)/2 vel+=oldVel×0.4 then ×0.5 noGravity), 680 (the
+662 trail + one dust-11 Direct Red scale 1.6 noGravity), 664/666/668/706
+(the apprentice explosion: the T3 flag doubles the burst — base 4/20/20/
+10/20 dust + 4 gore vs T3 8/40/50/5/30 + 8 gore, box 96 vs 208, mid dust 6
+vs 270, fadeIn 1.5 vs 2.0; the resize centred on the OLD centre; five dust
+loops 31-scatter/6-jet(Y>−2→×−0.4)/mid/6-X/31-X then the trailing gore loop
+consumed as a DRAWS-ONLY census in C# order — the Next(100) X/Y pair, the
+Next(61,64) TYPE argument BEFORE the NewGore kicks Next(10,31) Y then
+Next(-20,21) X (`Gore.cs:1327-1328`), the RotatedByRandom+NextDouble
+scatter, the Next(2) lift gate, the two Next(-10,11) nudges — the beenade
+precedent, bodies stay the gore lane's), 669 (12× dust-4 Direct alpha 100
+(255,255,255,110) scale 1.1 vel×1.5 + 80 PAIRS dust-4 alpha 50
+(245,200,30,155): scale 1.2 noGravity vel×=Next(10,71)×0.1 then scale 0.8
+gravity vel×=Next(10,41)×0.1, all at Center−(15,15) box 30×30; the 144
+resize + buffs + Damage AFTER the dust stay unported state), 614 (10×
+dust-229 defaults noGravity vel×3). The `DeathSnapshot` gains
+`apprentice_t3`, populated at the death hook from the local player (the
+pool only dispatches locally-owned slots, owner==myPlayer folds — the
+beenade precedent; no player → false). The module gains the shared
+`dd2_explosion_dust` helper (the four kinds share the C# arm). The 711
+oldPos-ring trail stays deferred (needs the oldPos[10] ring in the
+snapshot). Witnesses: the 710 17-count/gravity split, the 662/685/680
+trail caps + Red + determinism, the 664-family 74/133 counts + type splits
++ determinism (gore census included), the 669 172-count/pair bands, the
+614 10-count — WRITTEN NOT RUN.
+
 ### The re-census (all Kill dust arms vs the 104 + d12 + i17/i18 + g16)
 
 A full re-grep of `Projectile.cs:70642-77262` for `Dust.NewDust*` sites,

@@ -186,6 +186,107 @@ fn queen_slime_dust_color(rng: &mut UnifiedRandom) -> Color {
     lerp_color(Color::new(0, 160, 255, 255), inner, outer_t)
 }
 
+/// `Kill()`'s 664/666/668/706 DD2 explosion dust (`:71844-71900`). The
+/// caller computes the resized box first: `position = Center` with the OLD
+/// box, then width = height = 16×num129, then `Center = position` — so the
+/// new top-left = oldCentre − (16×num129)/2 and the centre stays the old
+/// centre (`Entity.cs:50-59`). The T3 variant doubles the counts/radii and
+/// swaps the mid dust to 270 (`:71832-71843`); the flag rides the snapshot
+/// from the owner. Five dust loops then the trailing gore loop — the gore
+/// DRAWS are consumed here in C# order (the beenade census precedent), the
+/// bodies stay the gore lane's.
+fn dd2_explosion_dust(
+    s: &DeathSnapshot,
+    dust: &mut DustPool,
+    rng: &mut UnifiedRandom,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let (mut n31a, mut n6, mut nmid, mut n6x, mut n31x, mut ngore) = (4, 20, 20, 10, 20, 4);
+    let mut fade = 1.5f32;
+    let mut box_size = 6;
+    let mut mid_type = 6;
+    if s.apprentice_t3 {
+        n31a += 4;
+        n31x += 10;
+        n6 += 20;
+        nmid += 30;
+        n6x /= 2;
+        ngore += 4;
+        fade += 0.5;
+        box_size += 7;
+        mid_type = 270;
+    }
+    let size = (16 * box_size) as f32;
+    let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+    let pos = center - Vec2::splat(size * 0.5);
+    let w = 16 * box_size;
+    let pi = std::f32::consts::PI;
+    let vel_rot = to_rotation(s.vel);
+    for _ in 0..n31a {
+        let idx = dust.new_dust(rng, ctx, world, pos, w, w, 31, 0.0, 0.0, 100, Color::default(), 1.5);
+        let scatter = rotated_by_random(rng, Vec2::Y, pi);
+        dust.slot_mut(idx).position = center + scatter * rng.next_double() as f32 * size / 2.0;
+    }
+    for _ in 0..n6 {
+        let idx = dust.new_dust_direct(rng, ctx, world, pos, w, w, 6, 0.0, 0.0, 200, Color::default(), 2.5);
+        let d = dust.slot_mut(idx);
+        let scatter = rotated_by_random(rng, Vec2::Y, pi);
+        d.position = center + scatter * rng.next_double() as f32 * size / 10.0;
+        d.velocity *= 16.0;
+        if d.velocity.y > -2.0 {
+            d.velocity.y *= -0.4;
+        }
+        d.no_light = true;
+        d.no_gravity = true;
+    }
+    for _ in 0..nmid {
+        let idx = dust.new_dust_direct(rng, ctx, world, pos, w, w, mid_type, 0.0, 0.0, 100, Color::default(), 1.5);
+        let d = dust.slot_mut(idx);
+        let scatter = rotated_by_random(rng, Vec2::Y, pi);
+        d.position = center + scatter * rng.next_double() as f32 * size / 2.0;
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+        d.fade_in = fade;
+    }
+    for _ in 0..n6x {
+        let idx = dust.new_dust(rng, ctx, world, pos, w, w, 6, 0.0, 0.0, 0, Color::default(), 2.7);
+        let d = dust.slot_mut(idx);
+        let scatter = rotated_by_random(rng, Vec2::X, pi);
+        d.position = center + rotated_by(scatter, vel_rot) * size / 2.0;
+        d.no_gravity = true;
+        d.velocity *= 3.0;
+    }
+    for _ in 0..n31x {
+        let idx = dust.new_dust(rng, ctx, world, pos, w, w, 31, 0.0, 0.0, 0, Color::default(), 1.5);
+        let d = dust.slot_mut(idx);
+        let scatter = rotated_by_random(rng, Vec2::X, pi);
+        d.position = center + rotated_by(scatter, vel_rot) * size / 2.0;
+        d.no_gravity = true;
+        d.velocity *= 3.0;
+    }
+    // `:71888-71900` — the trailing gore loop, draws-only census: the
+    // position X/Y Next(100) pair, the Next(61,64) TYPE argument (evaluated
+    // before the call), then the NewGore kicks (Y then X,
+    // `Gore.cs:1327-1328`), the scatter RotatedByRandom + NextDouble
+    // radius, the Next(2) lift gate and the two Next(-10,11) velocity
+    // nudges. The bodies stay the gore lane's.
+    for _ in 0..ngore {
+        let _ = rng.next_max(100);
+        let _ = rng.next_max(100);
+        let _ = rng.next_range(61, 64);
+        let _ = rng.next_range(10, 31);
+        let _ = rng.next_range(-20, 21);
+        let _ = rotated_by_random(rng, Vec2::Y, pi);
+        let _ = rng.next_double();
+        if rng.next_max(2) == 0 {
+            // The −30 lift is a body write; the gate draw stays.
+        }
+        let _ = rng.next_range(-10, 11);
+        let _ = rng.next_range(-10, 11);
+    }
+}
+
 /// The trail-position dust PAIR (`:77064-77073`): for `i in start..end`, two
 /// dust of `dust_type` at `pos − oldVel×(30/i)` box 8×8 speed oldVel alpha
 /// `alpha`, scale `scale_a` (noGravity when `ng_a`, vel×`mul_a`) + scale
@@ -375,6 +476,12 @@ pub(crate) struct DeathSnapshot {
     /// `base.localAI[1]` — the 985 Terraspark death gate reads it
     /// (`localAI[1] != 1f` suppresses the fan).
     pub local_ai1: f32,
+    /// `Main.player[owner].setApprenticeT3` — the 664/666/668/706 DD2
+    /// explosion's big-burst variant (`:71832-71843`). Populated at the
+    /// death hook from the local player (the pool only dispatches
+    /// locally-owned slots, so owner == myPlayer folds — the beenade
+    /// precedent); no player → false.
+    pub apprentice_t3: bool,
 }
 
 impl DeathSnapshot {
@@ -396,6 +503,7 @@ impl DeathSnapshot {
             alpha: p.alpha,
             old_pos: p.pos,
             local_ai1: p.local_ai[1],
+            apprentice_t3: false,
         }
     }
 }
@@ -1746,6 +1854,122 @@ fn death_bursts(
                 }
             }
         }
+        // `:71652-71679` — the 710 DD2 ballista explosion: resize 40×40
+        // centred (position=Center OLD box, then Center=position NEW box —
+        // the centre stays), ai[1]=-1 + Damage stay unported state. 2×
+        // dust-31 alpha 100 scale 1.5 scatter UnitY.RotatedByRandom(π)×
+        // NextDouble×w/2 (NO noGravity); 10× dust-6 alpha 0 scale 2.5 the
+        // same scatter noGravity vel×2; 5× dust-31 alpha 0 scale 1.5
+        // UnitX.RotatedByRandom(π).RotatedBy(vel rot)×w/2 noGravity vel×2.
+        710 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let pos = center - Vec2::splat(20.0);
+            let pi = std::f32::consts::PI;
+            for _ in 0..2 {
+                let idx = dust.new_dust(rng, ctx, world, pos, 40, 40, 31, 0.0, 0.0, 100, Color::default(), 1.5);
+                let scatter = rotated_by_random(rng, Vec2::Y, pi);
+                dust.slot_mut(idx).position = center + scatter * rng.next_double() as f32 * 40.0 / 2.0;
+            }
+            for _ in 0..10 {
+                let idx = dust.new_dust(rng, ctx, world, pos, 40, 40, 6, 0.0, 0.0, 0, Color::default(), 2.5);
+                let d = dust.slot_mut(idx);
+                let scatter = rotated_by_random(rng, Vec2::Y, pi);
+                d.position = center + scatter * rng.next_double() as f32 * 40.0 / 2.0;
+                d.no_gravity = true;
+                d.velocity *= 2.0;
+            }
+            let vel_rot = to_rotation(s.vel);
+            for _ in 0..5 {
+                let idx = dust.new_dust(rng, ctx, world, pos, 40, 40, 31, 0.0, 0.0, 0, Color::default(), 1.5);
+                let d = dust.slot_mut(idx);
+                let scatter = rotated_by_random(rng, Vec2::X, pi);
+                d.position = center + rotated_by(scatter, vel_rot) * 40.0 / 2.0;
+                d.no_gravity = true;
+                d.velocity *= 2.0;
+            }
+        }
+        // `:71780-71799` — the 662/685 DD2 flame trail: dir =
+        // oldVelocity.SafeNormalize(Zero), walk from pos+dir×16; 16 steps,
+        // each a Next(2) coin — 0 skips the dust (the walk STILL steps back
+        // 8); else dust-11 Direct, position = (own pos + Center)/2, vel +=
+        // oldVel×0.4 then ×0.5, noGravity; step back dir×8 either way.
+        662 | 685 => {
+            let dir = safe_normalize(s.old_vel);
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let mut walk = s.pos + dir * 16.0;
+            for _ in 0..16 {
+                if rng.next_max(2) == 0 {
+                    walk -= dir * 8.0;
+                    continue;
+                }
+                let idx = dust.new_dust_direct(rng, ctx, world, walk, s.w, s.h, 11, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.position = (d.position + center) / 2.0;
+                d.velocity += s.old_vel * 0.4;
+                d.velocity *= 0.5;
+                d.no_gravity = true;
+                walk -= dir * 8.0;
+            }
+        }
+        // `:71800-71820` — the 680: the 662 trail + one dust-11 Direct at
+        // pos, alpha 0 Red scale 1.6 noGravity.
+        680 => {
+            let dir = safe_normalize(s.old_vel);
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let mut walk = s.pos + dir * 16.0;
+            for _ in 0..16 {
+                if rng.next_max(2) == 0 {
+                    walk -= dir * 8.0;
+                    continue;
+                }
+                let idx = dust.new_dust_direct(rng, ctx, world, walk, s.w, s.h, 11, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.position = (d.position + center) / 2.0;
+                d.velocity += s.old_vel * 0.4;
+                d.velocity *= 0.5;
+                d.no_gravity = true;
+                walk -= dir * 8.0;
+            }
+            let idx = dust.new_dust_direct(rng, ctx, world, s.pos, s.w, s.h, 11, 0.0, 0.0, 0, Color::new(255, 0, 0, 255), 1.6);
+            dust.slot_mut(idx).no_gravity = true;
+        }
+        // `:71821-71901` — the 664/666/668/706 DD2 apprentice explosion:
+        // the T3 flag doubles the burst (see `dd2_explosion_dust`); the
+        // resize + Damage stay unported state, the trailing gore loop is
+        // the draws-only census inside the helper.
+        664 | 666 | 668 | 706 => dd2_explosion_dust(s, dust, rng, ctx, world),
+        // `:71952-71966` — the 669 DD2 flameburst: 12× dust-4 Direct at
+        // Center−(15,15) box 30×30 alpha 100 (255,255,255,110) scale 1.1
+        // vel×1.5; then 80 PAIRS: dust-4 alpha 50 (245,200,30,155) scale
+        // 1.2 noGravity vel×=Next(10,71)×0.1, then scale 0.8 (gravity ON)
+        // vel×=Next(10,41)×0.1. The 144 resize + buffs + Damage AFTER the
+        // dust stay unported state (the dust reads the ORIGINAL centre).
+        669 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let pos = center - Vec2::splat(15.0);
+            for _ in 0..12 {
+                let idx = dust.new_dust_direct(rng, ctx, world, pos, 30, 30, 4, 0.0, 0.0, 100, Color::new(255, 255, 255, 110), 1.1);
+                dust.slot_mut(idx).velocity *= 1.5;
+            }
+            for _ in 0..80 {
+                let idx = dust.new_dust_direct(rng, ctx, world, pos, 30, 30, 4, 0.0, 0.0, 50, Color::new(245, 200, 30, 155), 1.2);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= rng.next_range(10, 71) as f32 * 0.1;
+                let idx = dust.new_dust_direct(rng, ctx, world, pos, 30, 30, 4, 0.0, 0.0, 50, Color::new(245, 200, 30, 155), 0.8);
+                dust.slot_mut(idx).velocity *= rng.next_range(10, 41) as f32 * 0.1;
+            }
+        }
+        // `:72146-72154` — the 614: 10× dust-229 at pos box w×h defaults,
+        // noGravity vel×3.
+        614 => {
+            for _ in 0..10 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 229, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 3.0;
+            }
+        }
         _ => {}
     }
 }
@@ -2010,6 +2234,7 @@ mod tests {
             alpha: 0,
             old_pos: Vec2::new(100.0, 100.0),
             local_ai1: 0.0,
+            apprentice_t3: false,
         }
     }
 
@@ -2879,5 +3104,106 @@ mod tests {
         let mut dust2 = DustPool::new();
         drain(&[s], &mut dust2, &mut UnifiedRandom::new(7), &ctx(), &w);
         assert!(dust2.slots().iter().all(|d| !d.active));
+    }
+
+    /// The 710 ballista burst: 2 dust-31 alpha 100 (gravity ON) + 10
+    /// dust-6 + 5 dust-31 alpha 0 (all noGravity), every dust inside the
+    /// resized 40×40 box centred on the corpse centre.
+    #[test]
+    fn w4_g65_the_710_ballista_burst() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(710)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 17);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 31).count(), 7);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 6).count(), 10);
+        // The first two keep gravity; the other 15 are noGravity.
+        assert!(active[..2].iter().all(|d| !d.no_gravity && d.alpha == 100));
+        assert!(active[2..].iter().all(|d| d.no_gravity));
+    }
+
+    /// The 662/685/680 flame trails: ≤16 dust-11 (the Next(2) gates skip
+    /// some), all noGravity; the 680 adds one Red scale-1.6 dust-11.
+    /// Determinism: identical replays are byte-equal.
+    #[test]
+    fn w4_g65_the_662_685_680_flame_trails() {
+        let w = world();
+        for kind in [662u16, 685, 680] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(7);
+            drain(&[snap(kind)], &mut dust, &mut rng, &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            let cap = if kind == 680 { 17 } else { 16 };
+            assert!(active.len() <= cap, "kind {kind}");
+            assert!(active.iter().all(|d| d.dust_type == 11 && d.no_gravity), "kind {kind}");
+            if kind == 680 {
+                let red = active.iter().filter(|d| d.color == Color::new(255, 0, 0, 255)).count();
+                assert_eq!(red, 1);
+            }
+            let mut dust2 = DustPool::new();
+            let mut rng2 = UnifiedRandom::new(7);
+            drain(&[snap(kind)], &mut dust2, &mut rng2, &ctx(), &w);
+            assert_eq!(dust.slots(), dust2.slots());
+            assert_eq!(rng, rng2);
+        }
+    }
+
+    /// The 664-family DD2 explosion: base 74 dust (24× 31, 50× 6), T3 133
+    /// dust (38× 31, 45× 6, 50× 270). The trailing gore census draws ride
+    /// the same stream — determinism pins the whole arm.
+    #[test]
+    fn w4_g65_the_664_family_dd2_explosion() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(664)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 74);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 31).count(), 24);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 6).count(), 50);
+        let mut s = snap(666);
+        s.apprentice_t3 = true;
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(7);
+        drain(&[s], &mut dust, &mut rng, &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 133);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 31).count(), 38);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 6).count(), 45);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 270).count(), 50);
+        // Determinism (the gore census draws included).
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(7);
+        drain(&[s], &mut dust2, &mut rng2, &ctx(), &w);
+        assert_eq!(dust.slots(), dust2.slots());
+        assert_eq!(rng, rng2);
+    }
+
+    /// The 669 flameburst: 172 dust-4 — the first 12 alpha 100 scale 1.1
+    /// with gravity, then 80 noGravity scale-1.2 / 80 gravity scale-0.8
+    /// alternating pairs.
+    #[test]
+    fn w4_g65_the_669_flameburst() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(669)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 172);
+        assert!(active.iter().all(|d| d.dust_type == 4));
+        assert!(active[..12].iter().all(|d| d.alpha == 100 && d.scale == 1.1 && !d.no_gravity));
+        assert_eq!(active[12..].iter().filter(|d| d.no_gravity).count(), 80);
+        assert!(active[12..].iter().filter(|d| d.no_gravity).all(|d| d.scale == 1.2));
+        assert!(active[12..].iter().filter(|d| !d.no_gravity).all(|d| d.scale == 0.8));
+    }
+
+    /// The 614: 10 dust-229, all noGravity.
+    #[test]
+    fn w4_g65_the_614_burst() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(614)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 10);
+        assert!(active.iter().all(|d| d.dust_type == 229 && d.no_gravity));
     }
 }

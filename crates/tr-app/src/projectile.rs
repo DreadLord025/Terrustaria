@@ -19986,8 +19986,17 @@ impl ProjectilePool {
                     // gallop-dust queue→drain convention). The out-of-world
                     // guard's direct deactivate (`:16696`, no `Kill()`) never
                     // reaches here — same gate as the channel cancel above.
-                    self.death_dust
-                        .push(crate::projectile_death_dust::DeathSnapshot::of(&self.slots[i]));
+                    let mut death_snap =
+                        crate::projectile_death_dust::DeathSnapshot::of(&self.slots[i]);
+                    // The 664-family DD2 burst reads the owner's
+                    // setApprenticeT3 (`:71832`); the pool only dispatches
+                    // locally-owned slots so the owner folds to the local
+                    // player (the beenade owner-gate precedent).
+                    death_snap.apprentice_t3 = player
+                        .as_deref()
+                        .map(|p| p.set_apprentice_t3)
+                        .unwrap_or(false);
+                    self.death_dust.push(death_snap);
                 }
                 self.spawn_inferno_blast(i);
                 // S1-P-i21 — `Kill()`'s type-237 arm (`:74535-74538`): the
