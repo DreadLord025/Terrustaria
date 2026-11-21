@@ -816,6 +816,80 @@ pub fn open_door(
     true
 }
 
+/// `WorldGen.ShiftTallGate` (`WorldGen.cs:51723-51775`): swaps the tall gate
+/// covering `(x, y)` between its closed (388) and open (389) kinds. `closing`
+/// selects the target kind (true → 388, false → 389); the source is the
+/// opposite. `forced` skips the `Collision.EmptyTile` occupancy gate (the
+/// wired caller); the NPC door-bash drain sends false. `cell_blocked` is the
+/// player/NPC overlap check of `EmptyTile(ignoreTiles: true)`
+/// (`Collision.cs:1359`). The `PlaySound(8)` cue is app-side (the drain plays
+/// it on the `UpdateNPCs` stream, the `open_door` convention). `drops`
+/// collects the validate-cleanup kills.
+pub fn shift_tall_gate(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    closing: bool,
+    forced: bool,
+    cell_blocked: &dyn Fn(i32, i32) -> bool,
+    drops: &mut Vec<ObjectDrop>,
+) -> bool {
+    let target: u16 = if closing { 388 } else { 389 }; // :51725
+    let source: u16 = if closing { 389 } else { 388 }; // :51726
+    let Some(tile) = world.tile(x, y) else {
+        return false;
+    };
+    if tile.kind != source {
+        return false; // :51728-51731
+    }
+    // :51732-51743 — the gate's top row: the style from frameX/18, the
+    // in-gate row from frameY modulo the def's full coordinate height, then
+    // the coordinate-heights walk back to the top.
+    let style = i32::from(tile.frame_x) / 18;
+    let Some(def) = crate::tileobject::def_for_tile(388) else {
+        return false;
+    };
+    let Some(data) = crate::tileobject::get_tile_data(def, style, 1) else {
+        return false;
+    };
+    let full_h = data.coordinate_full_height();
+    if full_h <= 0 {
+        return false;
+    }
+    let mut row = i32::from(tile.frame_y) % full_h;
+    let mut i = 0i32;
+    while i < data.height && row - data.coordinate_heights[i as usize] >= 0 {
+        row -= data.coordinate_heights[i as usize];
+        i += 1;
+    }
+    let top = y - i;
+    let (width, height) = (data.width, data.height);
+    // :51744-51747 — the intact source square, or the cleanup kills refuse.
+    if !validate_tile_square(world, x, top, width, height, source, drops) {
+        return false;
+    }
+    // :51748-51754 — `Wiring.SkipWire`: no wiring in the port.
+    // :51755-51761 — every gate cell must be entity-free (ignoreTiles: true).
+    for k in 0..height {
+        if !forced && cell_blocked(x, top + k) {
+            return false;
+        }
+    }
+    // :51762 — `SoundEngine.PlaySound(8, x*16+16, y*16+16)`: app-side.
+    // :51763-51766 — the kind swap, row by row.
+    for l in 0..height {
+        if let Some(t) = world.tile_mut(x, top + l) {
+            t.kind = target;
+            touch(world, x, top + l);
+        }
+    }
+    // :51767-51773 — the `WorldGen.TileFrame` 3×(height+2) neighbourhood:
+    // gate cells keep their frames (frame-important), neighbours re-derive.
+    ensure_frame_important(world, target);
+    framing::reframe_area(world, x, top + height / 2, 2, false);
+    true
+}
+
 /// `WorldGen.CloseDoor` (`WorldGen.cs:31805-31907`): turns the open door
 /// (tile 11) covering `(i, j)` back into the closed door (tile 10) at the
 /// hinge column the open frames encode. `forced` skips the `Collision.
@@ -1465,6 +1539,45 @@ mod tests {
 
     fn no_blocker(_: i32, _: i32) -> bool {
         false
+    }
+
+    /// W4-g4 — `WorldGen.ShiftTallGate` (`WorldGen.cs:51723-51775`): the
+    /// zombie door-bash drain's gate-388 open. A closed tall gate (388, the
+    /// 1×5 style-0 object) shifts to its open kind (389) row by row; the
+    /// frames keep, the occupancy gate refuses a blocked cell, and a
+    /// non-gate cell refuses outright.
+    #[test]
+    fn w4_g4_shift_tall_gate_opens_the_closed_gate() {
+        let mut w = doorway_world();
+        // The closed tall gate at column 10, rows 14..18 (the 1×5 style-0
+        // object): frameX 0, frameY the coordinate-heights prefix
+        // (0/18/34/50/66 — the def's [18,16,16,16,18] rows). Set directly so
+        // the witness pins the SHIFT, not the placement anchors.
+        for (k, y) in (14..=18).enumerate() {
+            set_active(&mut w, 10, y, 388);
+            let fy = [0i16, 18, 34, 50, 66][k];
+            w.tile_mut(10, y).unwrap().frame_y = fy;
+        }
+        let mut drops = Vec::new();
+        assert!(shift_tall_gate(&mut w, 10, 18, false, false, &no_blocker, &mut drops));
+        for y in 14..=18 {
+            let t = w.tile(10, y).unwrap();
+            assert!(t.active() && t.kind == 389, "gate row {y} opens to 389");
+        }
+        // The open gate shifts back to closed (388) with `closing: true`.
+        assert!(shift_tall_gate(&mut w, 10, 18, true, false, &no_blocker, &mut drops));
+        for y in 14..=18 {
+            assert_eq!(w.tile(10, y).unwrap().kind, 388, "gate row {y} closes");
+        }
+        // A blocked cell refuses the shift (the occupancy gate).
+        let blocked = |_: i32, _: i32| true;
+        assert!(!shift_tall_gate(&mut w, 10, 18, false, false, &blocked, &mut drops));
+        assert_eq!(w.tile(10, 18).unwrap().kind, 388, "the blocked shift leaves the gate");
+        // `forced` skips the occupancy gate.
+        assert!(shift_tall_gate(&mut w, 10, 18, false, true, &blocked, &mut drops));
+        assert_eq!(w.tile(10, 18).unwrap().kind, 389, "the forced shift opens");
+        // A non-gate cell refuses outright.
+        assert!(!shift_tall_gate(&mut w, 12, 18, false, false, &no_blocker, &mut drops));
     }
 
     #[test]

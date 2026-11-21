@@ -1291,9 +1291,9 @@ pub struct Npc {
     /// drains it after the tick (the `wants_sphere` borrow-safe shape —
     /// `update_zombie` holds `&World` immutable). `open` is `flag28`
     /// (`ai[1] >= 10`): the drain plays the `KillTile(fail: true)` thud
-    /// on every bash and, when `open`, calls `edit::open_door` (a refusal
-    /// sets `ai[3] = num57`, `:60064`) + the `Door_Opened` cue. The tall
-    /// gate (388) `ShiftTallGate` is unported — the bash still counts.
+    /// on every bash and, when `open`, calls `edit::open_door` (door 10) or
+    /// `edit::shift_tall_gate` (gate 388, W4-g4); a refusal sets
+    /// `ai[3] = num57` (`:60064`/`:60077`) + the `Door_Opened` cue.
     pub wants_door_bash: Option<(i32, i32, i32, bool)>,
     /// The King Slime's minion batch count (`AI_015` `:44233`'s
     /// `rand(1, 4)` damage spawn / `:85689`'s `rand(4) + 4` death spawn).
