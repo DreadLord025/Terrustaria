@@ -4378,6 +4378,32 @@ mod tests {
         assert_eq!(n2.defense_override, Some(40));
     }
 
+    /// W4-g90 lane 7 — Volume Two's row (`NPC.cs:53025-53031`) is the SAME
+    /// +250/+8/×0.8/+0.25 as book one's, applied independently: both books
+    /// stack to +500 lifeMax / +16 defense / ×0.64 cooldown / +0.5 damage.
+    #[test]
+    fn w4_g90_both_combat_books_stack_their_rows() {
+        let w = ground();
+        let players: Vec<TownPlayer> = Vec::new();
+        let npcs: Vec<(usize, TownNpcView)> = Vec::new();
+        let mut e = env(&w, &players, &npcs);
+        e.combat_book = true;
+        e.combat_book_two = true;
+        let mut n = guide(0.0, 0.0, None);
+        let (num2, num3) = town_stat_bonuses(&mut n, stats(), &e, false, false);
+        assert!((num2 - 1.5).abs() < 1e-5, "1 + 0.25 + 0.25, num2 {num2}");
+        assert!((num3 - 2.0f32 * 0.8 * 0.8).abs() < 1e-5, "num3 {num3}");
+        assert_eq!(n.max_hp, 750, "250 + 250 + 250");
+        assert_eq!(n.defense_override, Some(31), "15 + 8 + 8");
+        // Book two ALONE (book one unused): the same single row.
+        e.combat_book = false;
+        let mut n2 = guide(0.0, 0.0, None);
+        let (num2b, _) = town_stat_bonuses(&mut n2, stats(), &e, false, false);
+        assert!((num2b - 1.25).abs() < 1e-5);
+        assert_eq!(n2.max_hp, 500);
+        assert_eq!(n2.defense_override, Some(23));
+    }
+
     /// `NPC.cs:55750-55785` — the pet idle: the slime takes state 20
     /// with NO Next(20,20+num) draw, then Next(300) + Next(240).
     #[test]

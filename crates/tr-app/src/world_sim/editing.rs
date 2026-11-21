@@ -2365,6 +2365,29 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         if held.kind == 5326 && use_artisan_loaf(app) {
             return;
         }
+        // W4-g90 lane 7 — the combat books (`Player.ItemCheck_UseCombatBook`,
+        // `Player.cs:45322-45350`, called at `:43604`) and the Peddler's
+        // Satchel (`ItemCheck_UsePeddlersSatchel`, `:45368-45383`, `:43605`).
+        // The once-ever gates are WORLD flags (`NPC.combatBookWasUsed` etc.,
+        // `NPC.cs:6339-6343`) — one book per world, not per player. Same
+        // press-tick fold as the loaf above.
+        if matches!(held.kind, 4382 | 5336) && use_combat_book(app) {
+            return;
+        }
+        if held.kind == 5343 && use_peddlers_satchel(app) {
+            return;
+        }
+        // W4-g90 lane 7 — the shimmer permanent items
+        // (`Player.ItemCheck_UseShimmerPermanentItems`, `Player.cs:45385-
+        // 45423`, called at `:43607`): 5337 Aegis Crystal, 5339 Arcane
+        // Crystal, 5340 Galaxy Pearl, 5341 Gummy Worm, 5342 Ambrosia. The
+        // 5338 Aegis Fruit arm is W4-g89's lane (its `use_aegis_fruit` lives
+        // on that branch) — this dispatch covers the OTHER five arms.
+        if matches!(held.kind, 5337 | 5339 | 5340 | 5341 | 5342)
+            && use_shimmer_permanent_item(app)
+        {
+            return;
+        }
     }
     // The held item's prefixed stats (`Item.Prefix`'s application on a
     // fresh item, recomputed — see prefix.rs): the swing pacing, the mana
@@ -15967,6 +15990,121 @@ pub(crate) fn use_artisan_loaf(app: &mut App) -> bool {
     true
 }
 
+/// `Player.ItemCheck_UseCombatBook` (`Player.cs:45322-45350`): the Combat
+/// Book 4382 and Volume Two 5336 — `ApplyItemTime` + the once-ever WORLD
+/// flag (`NPC.combatBookWasUsed` / `combatBookVolumeTwoWasUsed`, `NPC.cs:
+/// 6339/6341`; the port's `World` standing-in) + the `Misc.CombatBookUsed`
+/// / `Misc.CombatBookVolumeTwoUsed` world text (`ChatColors.World`, both
+/// keys resolve to the same line — the localization's `{$Misc.
+/// CombatBookUsed}` alias). The netMode!=0 `SendData(61, ..., -11/-17)`
+/// sync has no port message (the world flags ride the world save + the
+/// WorldInfo push). The consumable decrement is the generic `ItemCheck`
+/// tail (`:43280-43326`), folded onto this tick like the loaf's.
+pub(crate) fn use_combat_book(app: &mut App) -> bool {
+    let held = app.inventory[app.selected];
+    let (kind, used, key) = match held.kind {
+        4382 => (4382u16, app.world.combat_book_was_used, "Misc.CombatBookUsed"),
+        5336 => (5336, app.world.combat_book_volume_two_was_used, "Misc.CombatBookVolumeTwoUsed"),
+        _ => return false,
+    };
+    if held.count == 0 || used {
+        return false; // `:45324`/`:45337` — the once-ever world gate
+    }
+    if kind == 4382 {
+        app.world.combat_book_was_used = true; // `:45329`
+    } else {
+        app.world.combat_book_volume_two_was_used = true; // `:45342`
+    }
+    // `Main.NewText(Language.GetTextValue(...), ChatColors.World)`
+    // (`:45330`/`:45343`) — the port's chat monitor, the world colour.
+    app.chat.new_text(crate::lang::text(key), crate::chat::COLOR_WORLD);
+    // `ApplyItemTime(sItem)` (`:45326`/`:45339`) — the use-start seam arms
+    // the animation + the 45-tick action cadence (the loaf's fold).
+    start_use_timers(app, held);
+    app.item_time = crate::item::use_time_secs(kind);
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    true
+}
+
+/// `Player.ItemCheck_UsePeddlersSatchel` (`Player.cs:45368-45383`): the
+/// Peddler's Satchel 5343 — `ApplyItemTime` + the once-ever WORLD flag
+/// (`NPC.peddlersSatchelWasUsed`, `NPC.cs:6343`) + the
+/// `Misc.PeddlersSatchelUsed` world text. The consumer is
+/// `Chest.SetupTravelShop`'s +1 stock slot (`Chest.cs:1303-1306`,
+/// `shop::setup_travel_shop`). The netMode!=0 `SendData(61, ..., -18)`
+/// sync has no port message. Same consumable-tail fold as the books.
+pub(crate) fn use_peddlers_satchel(app: &mut App) -> bool {
+    let held = app.inventory[app.selected];
+    if held.kind != 5343 || held.count == 0 || app.world.peddlers_satchel_was_used {
+        return false; // `:45370` — the once-ever world gate
+    }
+    app.world.peddlers_satchel_was_used = true; // `:45375`
+    app.chat.new_text(
+        crate::lang::text("Misc.PeddlersSatchelUsed"),
+        crate::chat::COLOR_WORLD,
+    ); // `:45376`
+    start_use_timers(app, held); // `ApplyItemTime` (`:45372`)
+    app.item_time = crate::item::use_time_secs(5343);
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    true
+}
+
+/// `Player.ItemCheck_UseShimmerPermanentItems` (`Player.cs:45385-45423`),
+/// the five arms beside W4-g89's 5338 Aegis Fruit: 5337 Aegis Crystal
+/// (`:45387-45392`, `usedAegisCrystal` — the +0.2 life-regen ramp), 5339
+/// Arcane Crystal (`:45399-45404`, `usedArcaneCrystal` — the mana-regen
+/// boost), 5340 Galaxy Pearl (`:45405-45410`, `usedGalaxyPearl` — the
+/// +0.03 luck), 5341 Gummy Worm (`:45411-45416`, `usedGummyWorm` — the +3
+/// fishing skill, the i35 row's first in-play setter) and 5342 Ambrosia
+/// (`:45417-45422`, `usedAmbrosia` — the +5% speed triple). Every arm:
+/// the `!used…` once-ever gate, `ApplyItemTime` (the 45-tick cadence), the
+/// flag, the `SendData(4)` sync (the port's identity push carries the
+/// flags3 bits) and the generic consumable tail (`:43280-43326`).
+pub(crate) fn use_shimmer_permanent_item(app: &mut App) -> bool {
+    let held = app.inventory[app.selected];
+    if held.count == 0 {
+        return false;
+    }
+    let Some(p) = app.player.as_mut() else {
+        return false;
+    };
+    // The `!used…` half of each arm's gate (`:45387`/`:45399`/`:45405`/
+    // `:45411`/`:45417`): already used — refused outright, stack intact.
+    let flag = match held.kind {
+        5337 => &mut p.used_aegis_crystal,
+        5339 => &mut p.used_arcane_crystal,
+        5340 => &mut p.used_galaxy_pearl,
+        5341 => &mut p.used_gummy_worm,
+        5342 => &mut p.used_ambrosia,
+        _ => return false,
+    };
+    if *flag {
+        return false;
+    }
+    *flag = true;
+    // `ApplyItemTime(sItem)` — the use-start seam arms the animation + the
+    // action cadence together (the loaf/food fold).
+    start_use_timers(app, held);
+    app.item_time = crate::item::use_time_secs(held.kind);
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    true
+}
+
 /// `Player.ItemCheck_UseBossSpawners`'s eye arm (`Player.cs:43759-43771`):
 /// the night gate, the roar (`SoundEngine.PlaySound(15, ...)`, `SoundID.Roar`
 /// = 15), then `NPC.SpawnOnPlayer(onWhichPlayer, 4)`. The
@@ -18563,6 +18701,124 @@ mod s1_p_i08_throw_tests {
         let eaten = crate::craft::tile_reach(false, false, false, true);
         assert_eq!(eaten.0 - base.0, 4, "+4 X (`TB = 4`)");
         assert_eq!(eaten.1 - base.1, 4, "+4 Y");
+    }
+
+    // ---- W4-g90 lane 7: the shimmer permanents + the world-flag books ------
+    // WRITTEN NOT RUN (code-only mode). `ItemCheck_UseShimmerPermanentItems`
+    // (`Player.cs:45385-45423`), `ItemCheck_UseCombatBook` (`:45322-45350`)
+    // and `ItemCheck_UsePeddlersSatchel` (`:45368-45383`).
+
+    /// Each of the five shimmer arms sets ITS flag once, consumes one and
+    /// re-arms the 45-tick cadence (`Item.cs`'s useTime 45 rows).
+    #[test]
+    fn w4_g90_the_shimmer_items_set_their_permanent_flags() {
+        for kind in [5337u16, 5339, 5340, 5341, 5342] {
+            let mut app = potion_press_app(kind, 2);
+            update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+            app.mine_down = true;
+            update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+            let p = app.player.as_ref().unwrap();
+            let raised = match kind {
+                5337 => p.used_aegis_crystal,
+                5339 => p.used_arcane_crystal,
+                5340 => p.used_galaxy_pearl,
+                5341 => p.used_gummy_worm,
+                5342 => p.used_ambrosia,
+                _ => unreachable!(),
+            };
+            assert!(raised, "{kind}: the flag rises (`Player.cs:45390` etc.)");
+            assert_eq!(app.inventory[app.selected].count, 1, "{kind}: one consumed");
+            assert!(
+                (app.item_time - 45.0 / 60.0).abs() < 1e-6,
+                "{kind}: ApplyItemTime re-armed useTime 45"
+            );
+        }
+    }
+
+    /// The `!used…` gates: a second press with the flag raised refuses —
+    /// no consume, no re-arm (the loaf's shape, `Player.cs:45387` etc.).
+    #[test]
+    fn w4_g90_a_second_shimmer_item_is_refused() {
+        let mut app = potion_press_app(5341, 3);
+        app.player.as_mut().unwrap().used_gummy_worm = true;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        assert_eq!(app.inventory[app.selected].count, 3, "the stack untouched");
+        assert!(app.player.as_ref().unwrap().used_gummy_worm);
+    }
+
+    /// Holding LMB uses ONE item, not the stack (the press edge + the
+    /// once-ever gate, the i37 shape).
+    #[test]
+    fn w4_g90_holding_lmb_uses_one_ambrosia_only() {
+        let mut app = potion_press_app(5342, 5);
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        app.mine_down = true;
+        for _ in 0..120 {
+            update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        }
+        assert_eq!(app.inventory[app.selected].count, 4, "ONE per press");
+        assert!(app.player.as_ref().unwrap().used_ambrosia);
+    }
+
+    /// The Combat Book 4382 raises the WORLD flag (`NPC.combatBookWasUsed`,
+    /// `Player.cs:45329`), consumes one, re-arms useTime 45 and posts the
+    /// world text; a second book is refused by the world gate.
+    #[test]
+    fn w4_g90_the_combat_book_sets_the_world_flag_once() {
+        let mut app = potion_press_app(4382, 2);
+        assert!(!app.world.combat_book_was_used);
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        assert!(app.world.combat_book_was_used, "`Player.cs:45329`");
+        assert_eq!(app.inventory[app.selected].count, 1);
+        assert!((app.item_time - 45.0 / 60.0).abs() < 1e-6);
+        // The second press: the world gate refuses, the stack intact.
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        app.attack_cd = 0.0;
+        app.reuse_delay = 0.0;
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        assert_eq!(app.inventory[app.selected].count, 1, "once per world");
+    }
+
+    /// Volume Two 5336 raises its OWN world flag (`:45342`) — book one's
+    /// flag does not gate it (the two `if`s are independent).
+    #[test]
+    fn w4_g90_volume_two_has_its_own_world_flag() {
+        let mut app = potion_press_app(5336, 1);
+        app.world.combat_book_was_used = true; // book one already used
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        assert!(app.world.combat_book_volume_two_was_used, "`:45342`");
+        assert_eq!(app.inventory[app.selected].count, 0);
+        assert_eq!(app.inventory[app.selected].kind, 0, "the last book TurnToAir");
+    }
+
+    /// The Peddler's Satchel 5343 raises the world flag (`:45375`) and the
+    /// travel-shop stock grows by one slot (`Chest.cs:1303-1306` — a plain
+    /// +1, no RNG draw: the same seed rolls the same rows plus one).
+    #[test]
+    fn w4_g90_the_satchel_use_grows_the_travel_shop() {
+        let mut app = potion_press_app(5343, 1);
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        assert!(app.world.peddlers_satchel_was_used, "`:45375`");
+        assert_eq!(app.inventory[app.selected].count, 0);
+        // The shop consumer: the same world + seed, the flag's only effect
+        // is the +1 slot (the seed-7 stock's 7 rows become 8).
+        let mut w = tr_core::World::new("t".into(), 200, 200);
+        let base = crate::shop::setup_travel_shop(&w, 0.0, &mut tr_core::UnifiedRandom::new(7));
+        w.peddlers_satchel_was_used = true;
+        let grown = crate::shop::setup_travel_shop(&w, 0.0, &mut tr_core::UnifiedRandom::new(7));
+        let base_rows = base.iter().filter(|v| **v != 0).count();
+        let grown_rows = grown.iter().filter(|v| **v != 0).count();
+        assert_eq!(grown_rows, base_rows + 1, "the satchel's +1 slot");
     }
 }
 

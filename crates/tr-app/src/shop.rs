@@ -787,7 +787,8 @@ pub fn setup_travel_shop(world: &World, luck: f32, rng: &mut UnifiedRandom) -> [
     // `:1282`: the slot count `Main.rand.Next(4, 7)`.
     let mut num = rng.next_range(4, 7);
     // `:1283-1298`: the four `RollLuck` rows (the expert-mode `RollLuck(2)`
-    // at `:1299` and the satchel/tenth-anniversary rows sit constants-off).
+    // at `:1299` and the tenth-anniversary rows sit constants-off; the
+    // satchel's +1 at `:1303-1306` is world-flag-gated, W4-g90 lane 7).
     if roll_luck(luck, 4, rng) == 0 {
         num += 1;
     }
@@ -798,6 +799,13 @@ pub fn setup_travel_shop(world: &World, luck: f32, rng: &mut UnifiedRandom) -> [
         num += 1;
     }
     if roll_luck(luck, 32, rng) == 0 {
+        num += 1;
+    }
+    // `:1299-1302`: the expert-mode `RollLuck(2)` row stays constants-off
+    // (the port is single-difficulty — no expert worlds). `:1303-1306`:
+    // the Peddler's Satchel's +1 slot — a plain increment, NO RNG draw
+    // (W4-g90 lane 7; the 5343 use raises the world flag).
+    if world.peddlers_satchel_was_used {
         num += 1;
     }
     // `:1317-1318`: the base rarity denominators, rarest tier first.
