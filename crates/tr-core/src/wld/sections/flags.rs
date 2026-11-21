@@ -218,9 +218,9 @@ pub fn write(w: &mut Writer, world: &World) {
     for _ in 0..TREE_TOP_VARIATIONS {
         w.i32(0); // _variations
     }
-    // WorldFile.cs:1386-1391: the forced seasonal events (unowned), the four
-    // pre-hardmode ore tiers (`World.ore_tiers`, `:1388-1391`) and the pets
-    // (unowned).
+    // WorldFile.cs:1386-1391: the forced seasonal events (unowned — the f39
+    // season lane), the four pre-hardmode ore tiers (`World.ore_tiers`,
+    // `:1388-1391`) and the pet licenses (W4-f45, the f43 lane).
     w.boolean(false); // forceHalloweenForToday
     w.boolean(false); // forceXMasForToday
     w.i32(world.ore_tiers.copper); // Copper
@@ -264,7 +264,7 @@ pub fn write(w: &mut Writer, world: &World) {
     // seeds — W4-f45 claims the eight `Main.*` seed bytes: they are the
     // `InitializeSecretSeeds` mirrors of `World.micro_seeds` (`WorldGen.cs:
     // 553-587`), the same bits the `.trwld` v12 tail carries (`save.rs:388-390`).
-    // The two rain counters stay unowned (no port state).
+    // W4-f45 also claims the two starfall counters (`:1422-1423`).
     w.boolean(world.fast_forward_to_dusk);
     w.u8(world.moondial_cooldown);
     w.boolean(world.micro_seeds.contains(crate::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN)); // forceHalloweenForever (`WorldGen.cs:571-574`)
@@ -274,8 +274,8 @@ pub fn write(w: &mut Writer, world: &World) {
     w.i32(world.meteor_shower_count); // _tempMeteorShowerCount (W4-f45, `:1422`)
     w.i32(world.coin_rain); // _tempCoinRain (W4-f45, `:1423`)
               // WorldFile.cs:1424-1426: team-based spawns plus the extra spawn point
-              // list (`ExtraSpawnPointManager.Write`) — the spawn list is unowned,
-              // so a zero count; the seed byte is the micro-seed mirror.
+              // list (`ExtraSpawnPointManager.Write`) — W4-f45 claims the list (the
+              // c46 respawn lane); the seed byte is the micro-seed mirror.
     w.boolean(world.micro_seeds.contains(crate::seeds::MicroSeedFlags::TEAM_BASED_SPAWNS)); // teamBasedSpawnsSeed (`:563-566`)
     // `ExtraSpawnPointManager.Write` (`ExtraSpawnPointManager.cs:448-456`): a
     // count byte then that many (i16 X, i16 Y) pairs (W4-f45, the c46 lane).
