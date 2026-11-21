@@ -4315,6 +4315,27 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     let dust_ctx = dust_spawn_ctx;
     // Limit the scope of borrows to just the tick closure
     {
+        // W4-c8 sweep — the GoldWorm sparkle's light inputs, captured
+        // BEFORE the field borrows below (`app.light`/`app.light_mode`
+        // cannot be read through `app` while `world`/`dust` hold it
+        // mutable — the `dust_spawn_ctx` capture precedent). The style
+        // folds the mode's transforms + GlobalBrightness (the draw.rs
+        // construction: legacy modes pass through, blind drops 1.2 →
+        // 1.0); the light MAP itself is borrowed immutably (disjoint
+        // from the `&mut` fields).
+        let sparkle_light = &app.light;
+        let sparkle_anim_time = app.anim_time;
+        let mut sparkle_style = tr_core::lighting::LightStyle::for_mode(app.light_mode);
+        if app.light_mode != tr_core::lighting::LightMode::Color {
+            sparkle_style.grayscale = false;
+            sparkle_style.levels = 0;
+            sparkle_style.perturb = 0.0;
+        }
+        if player.as_ref().is_some_and(|p| p.blind) {
+            // `Lighting.UpdateGlobalBrightness` (`Lighting.cs:108-116`):
+            // the Darkness debuff's blind flag drops 1.2 → 1.0.
+            sparkle_style.brightness = 1.0;
+        }
         // S1-D-3 W-1: `&mut` — the WoF arm's band/index statics write back
         // INSIDE the loop, right after the wall's own update, so the
         // eye/Hungry slots later in the tick read the fresh values exactly
@@ -4446,6 +4467,45 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         // `:90534-90556`): the wild critter's 90-tick
                         // friendly window ticks down pre-AI, in slot order.
                         crate::bug_net::tick_catchable_immunity(n);
+                        // W4-c8 sweep — `UpdateNPC_CastLights`'s
+                        // IsGoldCritter arm (`NPC.cs:90320` →
+                        // `:92345-92368`), BEFORE `AI()` in `UpdateNPC`:
+                        // of the ported roster only the GoldWorm 448 is
+                        // in the set (`NPCID.cs:10126`). The light
+                        // sample is `Lighting.GetColor((int)Center.X/16,
+                        // (int)Center.Y/16)` (`:92348`, truncate-before-
+                        // divide) on the netOffset-added position; the
+                        // shade folds the mode + GlobalBrightness (the
+                        // draw.rs style construction — legacy modes are
+                        // pass-throughs, blind drops 1.2 → 1.0), then
+                        // the byte truncation (`Lighting.cs:240`). The
+                        // gate's Next(300) + the dust-43 spawn's
+                        // internal draws ride THIS `UpdateNPCs` stream
+                        // at the slot turn (the C# order — the gate
+                        // first, the spawn only on success).
+                        if n.kind == NpcKind::GoldWorm {
+                            let px = n.x + n.net_offset.x;
+                            let py = n.y + n.net_offset.y;
+                            let (nw, nh) = n.size();
+                            let tx = (px + nw * 0.5) as i32 / 16;
+                            let ty = (py + nh * 0.5) as i32 / 16;
+                            let c = sparkle_style.shade(
+                                sparkle_light.get(tx, ty),
+                                tx,
+                                ty,
+                                sparkle_anim_time,
+                            );
+                            let bytes = [
+                                ((c[0] * 255.0) as i32).min(255) as u8,
+                                ((c[1] * 255.0) as i32).min(255) as u8,
+                                ((c[2] * 255.0) as i32).min(255) as u8,
+                            ];
+                            if crate::npc_ai_style66::gold_worm_sparkle(bytes, npcs_rng) {
+                                crate::npc_ai_style66::gold_worm_sparkle_dust(
+                                    n, world, dust, &dust_ctx, npcs_rng,
+                                );
+                            }
+                        }
                         if crate::ambient_sound::fighter_walker_kind(n.kind) {
                             let (nw, nh) = n.size();
                             let player_intersects = n.x < player.x + crate::player::WIDTH

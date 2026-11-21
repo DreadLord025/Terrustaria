@@ -30998,10 +30998,19 @@ portraits and the netglue bare seed. The wiring:
   `find_frame_world` runs at BOTH production call sites
   (`npc.rs::update_rng_dust` tail + `world_sim/npcs.rs` slot loop);
   the world-free `find_frame` keeps slope 0 (the flat-tile default).
-  The GoldWorm sparkle (`gold_worm_sparkle`) stays unwired — the
-  `UpdateNPC_CastLights` pre-pass has no tile-light seam in the sim yet
-  (the style50 light-seam precedent; the dust-43 spawn's internal draws
-  must run in C# order when the dust feed lands). The `dontTakeDamage-
+  The GoldWorm sparkle (`gold_worm_sparkle`) is WIRED by the same sweep:
+  the census verdict is DUST, not light — `UpdateNPC_CastLights`'s
+  `IsGoldCritter` arm (`NPC.cs:92345-92368`, called at `:90320` BEFORE
+  `AI()`) spawns ONE dust 43 (alpha 254, `new Color(255,255,0)`, scale
+  0.5, velocity zeroed) when `Next(300) < maxchannel/30` on a tile whose
+  shaded light has any channel > 20. The sim's slot-turn pre-pass samples
+  `app.light` through the draw.rs `LightStyle` construction (legacy
+  pass-throughs + the blind brightness drop), runs the gate on the
+  `UpdateNPCs` stream and spawns through the real `DustPool`
+  (`gold_worm_sparkle_dust`) — the gate draw FIRST, the NewDust internals
+  only on success (the C# order; dust 43 is ChildSafety-safe, no extra
+  draw). The 484 essScale flicker was already the `wants_ai_light` feed
+  (phase 2) — the two effects are distinct C# arms. The `dontTakeDamage-
   FromHostiles` rows (374/375) have no port field yet — the hostile-NPC
   damage system is unported, so the flag is inert (the module's census
   pins it). The ground integration rides `integrate_flyer_collision`
