@@ -418,6 +418,55 @@ mod tests {
         assert_eq!(pl.hp, 100);
     }
 
+    /// A min-returning census rng (the d19 `CensusRng` shape): every
+    /// `Next(min, max)` rolls `min` — the belt's `Next(10) == 0` dodge
+    /// fires deterministically; the ranges are recorded for the order pin.
+    struct MinRng {
+        ranges: Vec<(i32, i32)>,
+    }
+
+    impl DropRng for MinRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            0.0
+        }
+    }
+
+    /// The d19b dodge contract (research/93 addendum §2 hunk C) on the
+    /// f33 arm: `SelfHurtPlayers` `:15050` passes `IsDamageDodgeable()` —
+    /// the 949 is outside the exactly-9999 undodgeable set (`:15064-15072`),
+    /// so `hurt_with_source(…, dodgeable: true, 949)` rides the shared
+    /// `hurt_inner` dodge lane (`Player.cs:38214-38241` — sash → belt →
+    /// brain → shadow). A belt-armed owner rolls the 1/10 BEFORE any
+    /// damage lands; the dodge swallows the hit (no HP loss, the 120/80
+    /// i-frames arm). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f33_the_self_hurt_is_dodgeable() {
+        let (_w, mut pl) = overlapping_player();
+        pl.black_belt = true;
+        let mut p = shot(6, 100.0);
+        let mut rng = MinRng { ranges: Vec::new() };
+        ai_184_bad_torch_luck(&mut p, Some(&mut pl), 0, &mut rng);
+        assert_eq!(pl.hp, 100, "the belt dodged the fireball");
+        assert!(pl.immune, "NinjaDodge's SetImmuneTimeForAllTypes");
+        // The stream order: the DamageVar variance roll, then the belt's
+        // 1/10, then the 4-dust census (the dodge returns before defense).
+        assert_eq!(rng.ranges[0], (-15, 16), "DamageVar (`Main.cs:66120`)");
+        assert_eq!(rng.ranges[1], (0, 10), "the belt's 1/10 (`:38222`)");
+        assert!(p.active, "the shot never dies on the hit");
+        // Without the belt the same overlap DOES hurt: the min-roll
+        // DamageVar(40) = 40 × 0.85 = 34, defense 0 → 34 damage.
+        let (_w2, mut pl2) = overlapping_player();
+        let mut q = shot(6, 100.0);
+        let mut rng2 = MinRng { ranges: Vec::new() };
+        ai_184_bad_torch_luck(&mut q, Some(&mut pl2), 0, &mut rng2);
+        assert_eq!(pl2.hp, 100 - 34, "the un-dodged fireball hurts");
+        assert!(!rng2.ranges.contains(&(0, 10)), "no belt, no dodge roll");
+    }
+
     #[test]
     fn w4_f33_the_launch_aim_is_normalized_to_8_with_the_raw_distance() {
         // `Player.cs:17895-17899`.
