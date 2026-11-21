@@ -1955,6 +1955,11 @@ pub struct Player {
     /// the RNG order is unchanged (S1-A-10). The type-153 `velocity *= 0.1`
     /// and `noGravity` post-arms ride the drain too.
     pending_sticky_dust: Vec<StickyDust>,
+    /// W4-f6 wiring — the tick's queued mount dust events
+    /// (`Mount.DoSpawnDust` / `DoFailedDismountDust`, the
+    /// `pending_sticky_dust` convention): the drain calls
+    /// `mount_dust::drain_mount_dust` on the `UpdatePlayers` stream.
+    pending_mount_dust: Vec<crate::mount_dust::MountDustRequest>,
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
@@ -2885,6 +2890,7 @@ impl Player {
             pending_sparks: Vec::new(),
             pending_cart_sounds: Vec::new(),
             pending_sticky_dust: Vec::new(),
+            pending_mount_dust: Vec::new(),
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
@@ -3642,6 +3648,7 @@ impl Player {
         self.pending_sparks.clear();
         self.pending_cart_sounds.clear();
         self.pending_sticky_dust.clear();
+        self.pending_mount_dust.clear();
         self.pending_sticky_kill = None;
         self.pending_mana_effect = None;
         self.pending_heal_effect = None;
@@ -3686,8 +3693,10 @@ impl Player {
         self.dead = true;
         self.dead_time = 0;
         self.respawn_timer = Player::get_respawn_time(boss_near, expert);
-        // `Player.KillMe` -> `mount.Dismount` (`Player.cs:38907`).
-        let _ = self.dismount(world, true);
+        // `Player.KillMe` -> `mount.Dismount(this)` (`Player.cs:38907`):
+        // the default `ignoreEffect = false` — the spawn dust fires
+        // (W4-f6; the old `true` was the no-dust-system stand-in).
+        let _ = self.dismount(world, false);
         // `Player.KillMe`'s tail (`Player.cs:38868`): the death cue — the
         // legacy "Player Killed" id 5 (`Player.cs:38737`, the default arm).
         self.pending_death_sound = Some("Player_Killed");
@@ -9034,12 +9043,89 @@ impl Player {
         self.buffs.clear_buff(bt);
     }
 
+    /// W4-f6 wiring — `Mount.DoSpawnDust`'s request (`Mount.cs:6371`): the
+    /// resolved box `r` (`:6439-6459`) computed at the C# read moment (the
+    /// GROWN hitbox for a mount, the pre-restore box for a dismount —
+    /// `Dismount` calls it BEFORE `Reset` + the 20×42 restore, `:6167-6176`).
+    /// The emitter itself drains on the `UpdatePlayers` stream via
+    /// `mount_dust::drain_mount_dust` (the `pending_sticky_dust` convention).
+    fn queue_spawn_dust(&mut self, kind: i32, is_dismounting: bool) {
+        let Some(row) = crate::mount::mount_data(kind) else {
+            return;
+        };
+        let pos = Vec2::new(self.x, self.y);
+        let vel = Vec2::new(self.vx, self.vy);
+        let (cx, cy) = self.center();
+        let center = Vec2::new(cx, cy);
+        // `:6439` — the default box: `(int)position.X - 20, (int)position.Y,
+        // width + 40, height` (the truncating int casts).
+        let mut r_top_left = Vec2::new(pos.x as i32 as f32 - 20.0, pos.y as i32 as f32);
+        let mut r_w = self.width as i32 + 40;
+        let mut r_h = self.height as i32;
+        // `:6440-6452` — the Bat (56) / Pixie (61) box: the dismount reads
+        // the Bottom-anchored DefaultSize (20×42), the mount the live
+        // hitbox; both inflate (10, 10).
+        if kind == 56 || kind == 61 {
+            if is_dismounting {
+                let bottom = Vec2::new(self.x + self.width * 0.5, self.y + self.height);
+                r_top_left = Vec2::new(
+                    bottom.x as i32 as f32 - (WIDTH as i32 / 2) as f32,
+                    bottom.y as i32 as f32 - HEIGHT as i32 as f32,
+                );
+                r_w = WIDTH as i32;
+                r_h = HEIGHT as i32;
+            } else {
+                r_top_left = Vec2::new(pos.x as i32 as f32, pos.y as i32 as f32);
+                r_w = self.width as i32;
+                r_h = self.height as i32;
+            }
+            r_top_left -= Vec2::new(10.0, 10.0);
+            r_w += 20;
+            r_h += 20;
+        }
+        // `:6453-6459` — the roller skates' bottom strip.
+        if kind > 0 && crate::mount::is_roller_skates(kind) {
+            let num3 = self.width as i32 / 2;
+            r_top_left = Vec2::new(
+                cx as i32 as f32 - num3 as f32 - 10.0,
+                (self.y + self.height) as i32 as f32 - 10.0,
+            );
+            r_w = (num3 + 20).max(1);
+            r_h = 10;
+        }
+        self.pending_mount_dust
+            .push(crate::mount_dust::MountDustRequest::Spawn {
+                kind,
+                spawn_dust: row.spawn_dust,
+                spawn_dust_no_gravity: row.spawn_dust_no_gravity,
+                // `MountID.Sets.Cart` (`:6462`) — the full 27-cart set.
+                is_cart: crate::mount::is_cart(kind),
+                is_dismounting,
+                pos,
+                width: self.width as i32,
+                height: self.height as i32,
+                r_top_left,
+                r_w,
+                r_h,
+                vel,
+                center,
+            });
+    }
+
+    /// Takes the tick's queued mount dust events (`Mount.DoSpawnDust` /
+    /// `DoFailedDismountDust`) — the caller owns `Main.dust` + the
+    /// `UpdatePlayers` stream (the `take_sticky_dust` convention).
+    pub(crate) fn take_mount_dust(&mut self) -> Vec<crate::mount_dust::MountDustRequest> {
+        std::mem::take(&mut self.pending_mount_dust)
+    }
+
     /// `Mount.SetMount` (`Mount.cs:6196-6305`) via the player: the state
     /// swap, the buff clear/add (`:6203`/`:6226`), the swap resets
     /// (`:6205-6213`), the pirate-ship dash reset (`:6228-6235`), the
     /// PlayerSize-delegate resize (`:6244-6263` — Rat 14×14, Bat 20×18,
     /// Pixie 8×14) or the bottom-anchored `42 + heightBoost` growth
     /// (`:6264-6277`), and the Chillet sound queue (`:6283-6286`).
+    /// W4-f6: the `DoSpawnDust` queue (`:6300`) runs after the growth.
     pub fn set_mount(&mut self, m: i32, wet: bool) -> bool {
         let Some(equip) = self.mount.set_mount(m, wet) else {
             return false;
@@ -9096,6 +9182,9 @@ impl Player {
             let (cx, cy) = self.center();
             self.pending_chillet_sound = Some((cx, cy));
         }
+        // `:6300` — `DoSpawnDust(mountedPlayer, isDismounting: false)` after
+        // `FinalizeMountData`, on the GROWN hitbox (W4-f6 wiring).
+        self.queue_spawn_dust(m, false);
         true
     }
 
@@ -9110,9 +9199,10 @@ impl Player {
     /// `Mount.Dismount` (`Mount.cs:6142-6194`) via the player: the buff clear
     /// (`:6150`), the transformation mounts' `noItems` restore (`:6152-6155`),
     /// the cart flip/boost clears (`:6156-6160`), the full-rotation reset
-    /// (`:6161-6162`) and the 20×42 hitbox restore (`:6176-6193`).
-    /// `ignore_effect` stands in for the spawn dust (`:6167-6170` — no dust
-    /// system yet). The petting stop (`:6163-6166`) has no port counterpart.
+    /// (`:6161-6162`), the `DoSpawnDust` queue (`:6167-6170`, W4-f6 — BEFORE
+    /// the state clears, on the still-mounted hitbox) and the 20×42 hitbox
+    /// restore (`:6176-6193`). The petting stop (`:6163-6166`) has no port
+    /// counterpart.
     pub fn dismount(&mut self, world: &World, ignore_effect: bool) -> bool {
         // `:6148` — `bool cart = this.Cart` is read BEFORE the state clears
         // (`Mount.Cart` = `Minecart && _active`, `Mount.cs:530-540`).
@@ -9122,10 +9212,17 @@ impl Player {
                 .data()
                 .is_some_and(|d| d.minecart);
         let was_type = self.mount.kind();
+        if !self.mount.is_active() {
+            return false; // `:6144-6147`
+        }
+        // `:6167-6170` — `DoSpawnDust(isDismounting: true)` runs while the
+        // mount data is still live (`Reset` is `:6171`), on the mounted box.
+        if !ignore_effect {
+            self.queue_spawn_dust(was_type, true);
+        }
         let Some(buff) = self.mount.dismount() else {
             return false;
         };
-        let _ = ignore_effect;
         self.clear_buff_type(buff);
         // `:6152-6155` — the Rat (55) / Bat (56) transformation mounts free
         // the item lock unless Cursed keeps it.
@@ -9346,10 +9443,28 @@ impl Player {
             self.failed_no_space_count += 1;
             if self.failed_no_space_count < 3 {
                 // `:6057` — `PlaySound(0, (int)position.X, (int)position.Y)`;
-                // the case-0 Dig draws ride the drain's stream. The
-                // `DoFailedDismountDust` (`:6058`) is a visual seam (no dust
-                // request channel for mounts yet — ANALYSIS).
+                // the case-0 Dig draws ride the drain's stream.
                 self.pending_no_space_sound = Some((self.x.trunc(), self.y.trunc()));
+                // `:6058` — `DoFailedDismountDust(this, FailedNoSpaceCount *
+                // 20)` (W4-f6 wiring): the hitbox inflates (10, 10)
+                // (`Mount.cs:6335-6336`); the emitter drains on the tick's
+                // `UpdatePlayers` stream AFTER the tink's case-0 draws.
+                if let Some(row) = crate::mount::mount_data(self.mount.kind()) {
+                    let (cx, cy) = self.center();
+                    self.pending_mount_dust.push(
+                        crate::mount_dust::MountDustRequest::FailedDismount {
+                            kind: self.mount.kind(),
+                            spawn_dust: row.spawn_dust,
+                            spawn_dust_no_gravity: row.spawn_dust_no_gravity,
+                            hitbox_top_left: Vec2::new(self.x - 10.0, self.y - 10.0),
+                            hitbox_w: self.width as i32 + 20,
+                            hitbox_h: self.height as i32 + 20,
+                            dust_amount: self.failed_no_space_count * 20,
+                            vel: Vec2::new(self.vx, self.vy),
+                            center: Vec2::new(cx, cy),
+                        },
+                    );
+                }
                 return None;
             }
             // `:6061-6066`: the third strike forces the dismount

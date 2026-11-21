@@ -2118,6 +2118,12 @@ pub(crate) struct MountState {
     /// The other `_mountSpecificData` payloads (Drill 8, ExtraFrame 35 —
     /// `SetMount` `:6287-6294`) are M2-MOUNT-4 state and not carried yet.
     selective_allowed_to_fly: bool,
+    /// W4-f6 wiring — the Pirate Ship (44) / Spooky Wood (45) dash-start
+    /// latch: the bool half of `_mountSpecificData` (`Mount.cs:3922-3934`
+    /// / `:3983-3994`). The rising edge fires the 20-dust ring; cleared
+    /// by [`MountState::reset`] (`Dismount` nulls the payload, `:6151`).
+    /// The `SetMount` swap branch (`:6212`) nulls it too.
+    dash_latch: bool,
     #[cfg(test)]
     test_can_use_wings: Option<bool>,
     #[cfg(test)]
@@ -2157,6 +2163,7 @@ impl Default for MountState {
             should_super_cart: false,
             walking_grace_time_left: 0,
             selective_allowed_to_fly: false,
+            dash_latch: false,
             #[cfg(test)]
             test_can_use_wings: None,
             #[cfg(test)]
@@ -2214,6 +2221,15 @@ impl MountState {
         // (`Mount.cs:6295-6298` → `:76-80`, `allowedToFly = false`); the
         // reset mirrors the fresh-payload default.
         self.selective_allowed_to_fly = false;
+        // `Dismount`/`SetMount` null `_mountSpecificData` (`:6151`/`:6212`)
+        // — the 44/45 dash latch dies with it (W4-f6 wiring).
+        self.dash_latch = false;
+    }
+
+    /// W4-f6 wiring — `Mount._frameExtra` read for the dash-ring emitters
+    /// (the POST-increment value, `Mount.cs:3860` runs before the ring).
+    pub(crate) fn frame_extra(&self) -> i32 {
+        self.frame_extra
     }
 
     pub(crate) fn is_active(&self) -> bool {

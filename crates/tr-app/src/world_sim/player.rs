@@ -1550,6 +1550,23 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 // `Shellphone_Spawn`'s fallback may queue the force-clear.
                 force_clear = p.take_force_clear();
             }
+            // W4-f6 wiring — the mount dust drain (`Mount.DoSpawnDust`
+            // `Mount.cs:6300`/`:6169` + `DoFailedDismountDust`
+            // `Player.cs:6058`): the tick queued snapshots in C# call order
+            // (the `pending_sticky_dust` convention); the emitters draw on
+            // the same `UpdatePlayers` stream AFTER the tink's case-0 draws
+            // above (`:6057` precedes `:6058`).
+            let mount_dust = p.take_mount_dust();
+            if !mount_dust.is_empty() {
+                crate::mount_dust::drain_mount_dust(
+                    mount_dust,
+                    &app.player_name,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                );
+            }
             // `Main.UpdateWorld_Players`' tail (`Main.cs:17869-17873`): the
             // journey godmode player's three pools are refilled to their
             // maxima — `statLifeMax2`/`statManaMax2`/`breathMax` are the

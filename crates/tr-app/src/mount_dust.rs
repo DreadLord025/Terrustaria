@@ -1557,6 +1557,95 @@ pub fn generic_spawn_dust(
     }
 }
 
+// ---------------------------------------------------------------------------
+// W4-f6 WIRING — the `pending_mount_dust` request channel (the
+// `pending_sticky_dust` convention, `player.rs:576`). The pure player tick
+// queues a snapshot at the C# read moment; the `world_sim` drain calls the
+// emitter on the `UpdatePlayers` stream (`Main.cs:17754` — `SetMount`,
+// `Dismount`, `DoFailedDismountDust`, `UpdateFrame` and `UpdateEffects` all
+// run inside `Player.Update`). Argument draws + pool internals + post-arms
+// stay inside the emitters, so the drain order IS the C# draw order.
+// ---------------------------------------------------------------------------
+
+/// One queued mount dust event. `Spawn` carries the resolved `DoSpawnDust`
+/// box (`Mount.cs:6439-6459` — the caller computes it BEFORE the mount
+/// state clears); `FailedDismount` the inflated hitbox (`:6335-6336`).
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum MountDustRequest {
+    /// `Mount.DoSpawnDust` (`:6371`) from `SetMount` (`:6300`,
+    /// `is_dismounting` false) or `Dismount` (`:6169`, true).
+    Spawn {
+        kind: i32,
+        spawn_dust: i32,
+        spawn_dust_no_gravity: bool,
+        is_cart: bool,
+        is_dismounting: bool,
+        pos: Vec2,
+        width: i32,
+        height: i32,
+        r_top_left: Vec2,
+        r_w: i32,
+        r_h: i32,
+        vel: Vec2,
+        center: Vec2,
+    },
+    /// `Mount.DoFailedDismountDust` (`:6320`) from the QuickMount ladder
+    /// (`Player.cs:6058`, `FailedNoSpaceCount * 20`).
+    FailedDismount {
+        kind: i32,
+        spawn_dust: i32,
+        spawn_dust_no_gravity: bool,
+        hitbox_top_left: Vec2,
+        hitbox_w: i32,
+        hitbox_h: i32,
+        dust_amount: i32,
+        vel: Vec2,
+        center: Vec2,
+    },
+}
+
+/// The drain: one request → its emitter, on the caller's `UpdatePlayers`
+/// stream. `player_name` is `Main.player[whoAmI].name` (the fairy-color
+/// dev-name switch reads it). The `netMode == 2` heads (`:6322`/`:6373`)
+/// are the single-player drop.
+pub(crate) fn drain_mount_dust(
+    requests: Vec<MountDustRequest>,
+    player_name: &str,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for req in requests {
+        match req {
+            MountDustRequest::Spawn {
+                kind, spawn_dust, spawn_dust_no_gravity, is_cart, is_dismounting,
+                pos, width, height, r_top_left, r_w, r_h, vel, center,
+            } => {
+                // `:6377-6420` — the Wolf / Chillet early-return arms.
+                if kind == 52 {
+                    wolf_spawn_dust(pos, width, height, vel, rng, dust, ctx, world);
+                } else if matches!(kind, 62..=65) {
+                    chillet_spawn_dust(pos, width, height, vel, rng, dust, ctx, world);
+                } else {
+                    generic_spawn_dust(
+                        kind, spawn_dust, spawn_dust_no_gravity, is_cart, is_dismounting,
+                        r_top_left, r_w, r_h, vel, player_name, center, rng, dust, ctx, world,
+                    );
+                }
+            }
+            MountDustRequest::FailedDismount {
+                kind, spawn_dust, spawn_dust_no_gravity, hitbox_top_left,
+                hitbox_w, hitbox_h, dust_amount, vel, center,
+            } => failed_dismount_dust(
+                kind, spawn_dust, spawn_dust_no_gravity, hitbox_top_left,
+                hitbox_w, hitbox_h, dust_amount, vel, player_name, center,
+                rng, dust, ctx, world,
+            ),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2738,5 +2827,84 @@ mod tests {
             assert_eq!(skate.slot(i).scale, smpool.slot(i).scale);
         }
         assert_eq!(srng.next(), smirror.next());
+    }
+
+    /// W4-f6 WIRING — the request-channel drain: a Spawn request routed
+    /// through `drain_mount_dust` lands byte-identical records + stream
+    /// position as the direct emitter call (the world_sim handoff changes
+    /// no draws). Wolf 52 rides the early-return arm.
+    #[test]
+    fn w4_f6_drain_spawn_matches_the_direct_wolf_emitter() {
+        let w = world();
+        let c = ctx();
+        let pos = Vec2::new(400.0, 300.0);
+        let vel = Vec2::new(2.0, -1.0);
+        let req = MountDustRequest::Spawn {
+            kind: 52,
+            spawn_dust: 267,
+            spawn_dust_no_gravity: false,
+            is_cart: false,
+            is_dismounting: false,
+            pos,
+            width: 20,
+            height: 42,
+            r_top_left: pos,
+            r_w: 60,
+            r_h: 42,
+            vel,
+            center: pos + Vec2::new(10.0, 21.0),
+        };
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(97);
+        drain_mount_dust(vec![req], "Terrarian", &mut rng, &mut pool, &c, &w);
+        let mut dpool = DustPool::new();
+        let mut drng = UnifiedRandom::new(97);
+        wolf_spawn_dust(pos, 20, 42, vel, &mut drng, &mut dpool, &c, &w);
+        assert_eq!(active(&pool).len(), active(&dpool).len());
+        for i in active(&pool) {
+            assert_eq!(pool.slot(i).position, dpool.slot(i).position);
+            assert_eq!(pool.slot(i).velocity, dpool.slot(i).velocity);
+            assert_eq!(pool.slot(i).scale, dpool.slot(i).scale);
+            assert_eq!(pool.slot(i).color, dpool.slot(i).color);
+        }
+        assert_eq!(rng.next(), drng.next(), "the drain changes no draws");
+    }
+
+    /// W4-f6 WIRING — the FailedDismount request: the drain routes to
+    /// `failed_dismount_dust` unchanged (the Bat arm, count 40 = strike 2).
+    #[test]
+    fn w4_f6_drain_failed_dismount_matches_the_direct_emitter() {
+        let w = world();
+        let c = ctx();
+        let tl = Vec2::new(390.0, 290.0);
+        let vel = Vec2::new(1.5, 0.0);
+        let center = Vec2::new(410.0, 321.0);
+        let req = MountDustRequest::FailedDismount {
+            kind: 56,
+            spawn_dust: 31,
+            spawn_dust_no_gravity: false,
+            hitbox_top_left: tl,
+            hitbox_w: 40,
+            hitbox_h: 38,
+            dust_amount: 40,
+            vel,
+            center,
+        };
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(101);
+        drain_mount_dust(vec![req], "Terrarian", &mut rng, &mut pool, &c, &w);
+        let mut dpool = DustPool::new();
+        let mut drng = UnifiedRandom::new(101);
+        failed_dismount_dust(
+            56, 31, false, tl, 40, 38, 40, vel, "Terrarian", center,
+            &mut drng, &mut dpool, &c, &w,
+        );
+        assert_eq!(active(&pool).len(), active(&dpool).len());
+        for i in active(&pool) {
+            assert_eq!(pool.slot(i).velocity, dpool.slot(i).velocity);
+            assert_eq!(pool.slot(i).scale, dpool.slot(i).scale);
+            assert_eq!(pool.slot(i).scale, 0.7, "the Bat pins scale 0.7");
+        }
+        assert_eq!(rng.next(), drng.next(), "the drain changes no draws");
     }
 }
