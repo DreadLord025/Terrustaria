@@ -2551,14 +2551,18 @@ mod pickup_tests {
         {
             let mut p = app.player.take().unwrap();
             p.equipped[3] = 2221; // the Celestial Cuffs
-            p.mana_max = 200;
-            p.mana = 150; // short — the :34947 gate stays open regardless
             let w = app.world.clone();
             for _ in 0..2 {
                 p.update(&w, crate::player::PlayerInput::default());
             }
             assert!(p.mana_magnet, "the equip pass armed the flag");
             assert!(p.magic_cuffs, "the cuffs' other half rides along");
+            // The bar AFTER the ticks (Update rebases mana_max to the base
+            // each tick); the magnet arm (:34943) wins over the :34947
+            // full-mana gate regardless, so the exact bar does not gate
+            // this pull — set it short for the census shape.
+            p.mana_max = 200;
+            p.mana = 150;
             app.player = Some(p);
         }
         let pc = app.player.as_ref().unwrap().center();
