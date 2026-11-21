@@ -1244,6 +1244,14 @@ pub struct Npc {
     /// only reader is `AnyBossHindersRespawnTime` (`Player.cs:39100`), which
     /// the port has not ported yet; add it with that gate.
     pub player_interaction: [bool; 256],
+    /// `NPC.nextDialogue` (`NPC.cs:6539`) — the pending conditional
+    /// dialogue. The C#'s registry (`ConditionalDialogue.Init`,
+    /// `ConditionalDialogue.cs:122-125`) registers exactly ONE dialogue:
+    /// the party girl's `FreeCakeDialogue` (208), so the port keeps the
+    /// one flag instead of the trait object. `CheckDialogue`
+    /// (`NPC.cs:90519-90532`) polls it every 10th tick; `GetChat`'s head
+    /// (`:93768-93771`) fires it ahead of the chatter ladder. W4-f41.
+    pub next_dialogue_free_cake: bool,
     /// `NPC.SpawnedFromStatue` (`NPC.cs:6061`): set by the wire-triggered
     /// statue spawns; gates the loot (`NPCLoot`'s StatueSpawnedDropRarity
     /// check, `NPC.cs:78849`).
@@ -2934,6 +2942,7 @@ impl Npc {
             immune: [0; 256],
             player_interaction: [false; 256],
             spawned_from_statue: false,
+            next_dialogue_free_cake: false,
             buffs: NpcBuffs::for_kind(kind),
             frame: 0,
             frame_counter: 0.0,

@@ -144,7 +144,9 @@ pub(crate) fn advance_time_with_events(
         app.world.eclipse = false;
         // `UpdateTime_StartNight`'s event pair (`Main.cs:65225-65226`):
         // `BirthdayParty.CheckNight()` then `LanternNight.CheckNight()` —
-        // S1-F-14.
+        // S1-F-14. W4-f41: `NPC.freeCake = false` (`Main.cs:65222`) runs
+        // BEFORE the pair — an unclaimed cake gift dies with the day.
+        app.world_events.free_cake = false;
         let gates = crate::world_events::LanternGates::from_world(&app.world, &app.npcs);
         let party_girl = app.npcs.iter().any(|n| {
             n.hp > 0 && n.kind == crate::npc::NpcKind::PartyGirl
@@ -593,6 +595,23 @@ mod tests {
         advance_time_with_events(&mut app, 5.0, false);
         assert!(!done(&app, "KILL_THE_SUN"));
         assert!(!done(&app, "BLOODBATH"));
+    }
+
+    /// W4-f41 — `UpdateTime_StartNight`'s `NPC.freeCake = false`
+    /// (`Main.cs:65222`): an unclaimed cake gift dies at dusk; a mid-day
+    /// tick never touches it.
+    #[test]
+    fn w4_f41_the_dusk_boundary_clears_the_free_cake_gift() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world.day_time = true;
+        app.world.time = 10000.0;
+        app.world_events.free_cake = true;
+        advance_time_with_events(&mut app, 5.0, false);
+        assert!(app.world_events.free_cake, "mid-day keeps the gift");
+        app.world.time = 53999.0;
+        advance_time_with_events(&mut app, 5.0, false);
+        assert!(!app.world.day_time, "the dusk crossed");
+        assert!(!app.world_events.free_cake, "StartNight clears the gift");
     }
 
     #[test]

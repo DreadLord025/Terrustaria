@@ -10,9 +10,10 @@
 //!
 //! Deviations: the party's `OrderBy(Main.rand.Next())` celebrating-NPC pick
 //! indexes the port's compacted `Vec<Npc>` (the C# indexes the stable
-//! `Main.npc` slots — recorded); `NPC.freeCake = true`'s companion consumer
-//! (the party girl's cake NPC) is unported; the party's `BroadcastText`
-//! rides the port's death-text broadcast with the C# colour
+//! `Main.npc` slots — recorded); `NPC.freeCake` rides [`WorldEvents`] (its
+//! writers are all party-machine sites; the consumer — the party girl's
+//! `FreeCakeDialogue` gift — is W4-f41, `npc_chat.rs`); the party's
+//! `BroadcastText` rides the port's death-text broadcast with the C# colour
 //! (`new Color(255, 0, 160)`).
 
 use crate::chat::{self, ChatMonitor};
@@ -45,6 +46,13 @@ pub(crate) struct WorldEvents {
     pub celebrating_npcs: Vec<usize>,
     /// `BirthdayParty._wasCelebrating`.
     was_celebrating: bool,
+    /// `NPC.freeCake` (`NPC.cs:6093`) — the C# static lives on `NPC`, but
+    /// its only writers are the party machine (`BirthdayParty.cs:106`'s
+    /// `NaturalAttempt` sets it, `Main.cs:65222`'s StartNight and
+    /// `WorldGen.cs:6945`'s clearWorld clear it) and its only reader is the
+    /// party girl's `FreeCakeDialogue` (`ConditionalDialogue.cs:51-67`),
+    /// so the port keeps it beside the party state. W4-f41.
+    pub free_cake: bool,
     // --- CultistRitual (`CultistRitual.cs`) ---
     /// `CultistRitual.delay` (`CultistRitual.delayStart` = 86400).
     pub cultist_delay: i32,
@@ -216,6 +224,9 @@ pub(crate) fn check_morning_party(
     }
     ev.genuine_party = true;
     ev.party_days_on_cooldown = rng(5, 11);
+    // `BirthdayParty.cs:106` — `NPC.freeCake = true`: the fresh genuine
+    // party arms the party girl's cake gift (W4-f41).
+    ev.free_cake = true;
     ev.celebrating_npcs.clear();
     // `Main.rand.Next(5) == 0 && list.Count > 12` → 3 celebrants, else the
     // `Next(3) == 0` → 2 arm — both draws consumed in the C#'s order.
@@ -313,6 +324,9 @@ pub(crate) fn world_clear(ev: &mut WorldEvents) {
     ev.party_days_on_cooldown = 0;
     ev.celebrating_npcs.clear();
     ev.was_celebrating = false;
+    // `WorldGen.clearWorld` (`WorldGen.cs:6945`) — `NPC.freeCake = false`
+    // rides the same world-clear family (W4-f41).
+    ev.free_cake = false;
     // The ritual's `delay`/`recheck` are NOT in the WorldClear family — they
     // ride the world-file load (`WorldFile.cs:163`'s `_tempCultistDelay`
     // restore), so this fn leaves them alone (the C#'s own scope).
@@ -427,6 +441,7 @@ mod tests {
             party_days_on_cooldown: 5,
             celebrating_npcs: vec![1, 2, 3],
             was_celebrating: true,
+            free_cake: true,
             cultist_delay: 86400,
             cultist_recheck: 600,
         };
@@ -435,9 +450,43 @@ mod tests {
         assert_eq!(ev.lantern_nights_on_cooldown, 0);
         assert!(!ev.manual_party && !ev.genuine_party);
         assert!(ev.celebrating_npcs.is_empty());
+        assert!(!ev.free_cake, "clearWorld clears the cake gift (:6945)");
         // The ritual's delay survives the clear (the world-file restore owns
         // it — `WorldFile.cs:163`).
         assert_eq!(ev.cultist_delay, 86400);
         assert_eq!(ev.cultist_recheck, 600);
+    }
+
+    /// W4-f41 — `NaturalAttempt`'s `NPC.freeCake = true` (`BirthdayParty.cs:106`)
+    /// arms only on a fresh genuine party: the missed roll, the cooldown
+    /// decrement and the missing party girl never touch it, and
+    /// `CheckNight` leaves it for `UpdateTime_StartNight`'s own clear
+    /// (`Main.cs:65222`).
+    #[test]
+    fn w4_f41_the_free_cake_flag_arms_on_the_fresh_party_only() {
+        let partyable = [true; 5];
+        // The gate misses: no flag.
+        let mut ev = WorldEvents::default();
+        check_morning_party(&mut ev, false, &partyable, &mut |lo, _| lo);
+        assert!(!ev.free_cake, "no party girl, no cake");
+        ev.party_days_on_cooldown = 2;
+        check_morning_party(&mut ev, true, &partyable, &mut |lo, _| lo);
+        assert!(!ev.free_cake, "the cooldown decrement draws nothing");
+        // The roll miss: no flag.
+        let mut ev2 = WorldEvents::default();
+        check_morning_party(&mut ev2, true, &partyable, &mut |_, _| 1);
+        assert!(!ev2.free_cake, "the Next(10) miss arms nothing");
+        // The hit: the flag arms with the party.
+        let mut ev3 = WorldEvents::default();
+        let mut seq = [0i32, 6, 1, 1].into_iter();
+        check_morning_party(&mut ev3, true, &partyable, &mut |lo, _| seq.next().unwrap_or(lo));
+        assert!(ev3.genuine_party);
+        assert!(ev3.free_cake, "the fresh party arms the cake (:106)");
+        // CheckNight clears the party but NOT the cake — the C#'s
+        // `NPC.freeCake = false` lives in StartNight itself.
+        let mut chat = ChatMonitor::default();
+        check_night_party(&mut ev3, &mut chat);
+        assert!(!ev3.genuine_party);
+        assert!(ev3.free_cake, "CheckNight never touches freeCake");
     }
 }

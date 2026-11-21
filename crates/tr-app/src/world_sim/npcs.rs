@@ -208,6 +208,47 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
         return None; // `:43077` — the same NPC re-clicked falls through
     }
     app.talk_npc = Some(i); // `:43081` — `player.SetTalkNPC(i)`
+    // W4-f41 — `GetChat`'s head (`NPC.cs:93768-93771`): a pending
+    // conditional dialogue fires BEFORE the chatter ladder. The only
+    // registered row is the party girl's `FreeCakeDialogue`
+    // (`ConditionalDialogue.cs:51-67`): `GetChatAndClearCondition` clears
+    // `NPC.freeCake`, gifts ONE Slice Of Cake 3750
+    // (`QuickSpawnItem(EntitySource_Gift, item, GiftRecieved)` — the
+    // direct-inventory `GetOrDropItem`, `Player.cs:7187-7200`; the item
+    // rides `SetDefaults(3750)` with NO prefix roll) and answers
+    // `PartyGirlSpecialText.Cake<Next(1, 4)>` on `Main.rand`. The
+    // `NetMessage.SendData(51, …, 10f)` NPC-effect broadcast is unported
+    // (the net lane owns 51). The draw rides the same bare-`Main.rand`
+    // stand-in the chatter uses (S1-A-10).
+    if app.npcs[i].next_dialogue_free_cake {
+        app.npcs[i].next_dialogue_free_cake = false;
+        app.world_events.free_cake = false;
+        if let Some(slot) = crate::item::slot_for_pickup(&mut app.inventory, 3750, 0) {
+            app.inventory[slot].count = (app.inventory[slot].count + 1)
+                .min(crate::registry::max_stack(3750));
+        } else {
+            // `GetOrDropItem`'s overflow (`Player.cs:7196-7199`):
+            // `Item.RequestNewItem` at the player's centre, prefix kept
+            // (0 here — the gift never rolled one).
+            let (cx, cy) = app
+                .player
+                .as_ref()
+                .map(|p| p.center())
+                .unwrap_or((0.0, 0.0));
+            let rng = app.rngs.global();
+            crate::world_sim::items::spawn_item_drop_px(
+                &mut app.items,
+                rng,
+                3750,
+                1,
+                Vec2::new(cx, cy),
+            );
+        }
+        let n = app.rngs.global().next_range(1, 4);
+        let text = crate::lang::text(&format!("PartyGirlSpecialText.Cake{n}"));
+        app.npc_chat_text = text.clone();
+        return Some(text);
+    }
     // The context off the live state. The world flags the port does not
     // carry yet (the storm clock, the happy-windy-day, `BirthdayParty`,
     // `LanternNight`, the remix world, `WorldGen.crimson`, the Moon Lord)
@@ -3801,6 +3842,26 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
         app.next_npc_uid = next;
+    }
+    // W4-f41 — `NPC.CheckDialogue` (`NPC.cs:90519-90532`, called from
+    // `UpdateNPC` `:90510`): every 10th tick per NPC
+    // (`(Main.GameUpdateCount + whoAmI) % 10 == 0`) polls the conditional-
+    // dialogue registry; the only registered row is the party girl's
+    // `FreeCakeDialogue` (208, `ConditionalDialogue.cs:124`) whose
+    // condition is `NPC.freeCake`. Between polls a latched dialogue whose
+    // condition fell clears (`:90527-90529`). The `netMode != 2` gate is
+    // the port's single-player constant. The poll is draw-free.
+    {
+        let free_cake = app.world_events.free_cake;
+        let count = app.game_update_count;
+        for n in app.npcs.iter_mut() {
+            let is_party_girl = n.hp > 0 && n.kind == NpcKind::PartyGirl;
+            if (count.wrapping_add(n.uid)) % 10 == 0 {
+                n.next_dialogue_free_cake = is_party_girl && free_cake;
+            } else if n.next_dialogue_free_cake && !(is_party_girl && free_cake) {
+                n.next_dialogue_free_cake = false;
+            }
+        }
     }
     // S1-D-3: `NPC.checkDead`'s Moon Lord arms (`NPC.cs:78060-78078`) +
     // `PrepareForDeathAnimation` (`:78032-78038`). The C# runs checkDead

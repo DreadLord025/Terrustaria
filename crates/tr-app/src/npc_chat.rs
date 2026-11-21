@@ -1086,6 +1086,110 @@ mod tests {
         assert!(app.npc_chat_text.is_empty());
     }
 
+    /// W4-f41 — the party girl's cake gift (`ConditionalDialogue.cs:51-67`
+    /// via `GetChat`'s head `NPC.cs:93768-93771`): a latched
+    /// `nextDialogue` fires BEFORE the chatter ladder — the talk clears
+    /// `NPC.freeCake`, gifts ONE Slice Of Cake 3750 into the inventory and
+    /// answers `PartyGirlSpecialText.Cake<Next(1,4)>`; the gift is
+    /// one-shot (the re-talk takes the normal chatter).
+    #[test]
+    fn w4_f41_the_party_girl_gifts_the_cake_once() {
+        init_lang();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        let p = app.player.as_ref().unwrap();
+        let mut girl = npc(NpcKind::PartyGirl);
+        girl.x = p.x + 16.0;
+        girl.y = p.y;
+        girl.next_dialogue_free_cake = true;
+        app.npcs.push(girl);
+        app.world_events.free_cake = true;
+        app.place_down = true;
+        let text = crate::world_sim::npcs::talk_to_npc(&mut app, false)
+            .expect("the pending dialogue opens the chat");
+        assert!(
+            text == crate::lang::text("PartyGirlSpecialText.Cake1")
+                || text == crate::lang::text("PartyGirlSpecialText.Cake2")
+                || text == crate::lang::text("PartyGirlSpecialText.Cake3"),
+            "one of the three Cake lines, got {text}"
+        );
+        assert!(!app.world_events.free_cake, "the gift clears the flag");
+        assert!(!app.npcs[0].next_dialogue_free_cake, "the latch cleared");
+        let cake = app
+            .inventory
+            .iter()
+            .find(|s| s.kind == 3750)
+            .expect("the Slice Of Cake landed in the inventory");
+        assert_eq!(cake.count, 1, "exactly one slice");
+        assert_eq!(cake.prefix, 0, "the gift never rolls a prefix");
+        // The re-talk: the same-NPC latch declines (falls through), so
+        // reset it and talk again — the normal chatter answers, no second
+        // cake.
+        app.talk_npc = None;
+        app.place_down = true;
+        let text2 = crate::world_sim::npcs::talk_to_npc(&mut app, false)
+            .expect("the chatter still answers");
+        assert_ne!(text2, text, "the gift line does not repeat");
+        assert_eq!(
+            app.inventory.iter().filter(|s| s.kind == 3750).count(),
+            1,
+            "no second gift"
+        );
+        let total: u32 = app
+            .inventory
+            .iter()
+            .filter(|s| s.kind == 3750)
+            .map(|s| s.count)
+            .sum();
+        assert_eq!(total, 1);
+    }
+
+    /// W4-f41 — `NPC.CheckDialogue` (`NPC.cs:90519-90532`): the 10-tick
+    /// poll latches the gift only for a live party girl while
+    /// `NPC.freeCake` is up; a condition fall between polls clears the
+    /// latch. (The dead-girl gate rides the `hp > 0` term — the poll
+    /// never latches for a corpse.)
+    #[test]
+    fn w4_f41_the_dialogue_poll_latches_and_clears() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut girl = npc(NpcKind::PartyGirl);
+        girl.uid = 7;
+        app.npcs.push(girl);
+        app.world_events.free_cake = true;
+        // The poll tick: (count + uid) % 10 == 0 → count = 3.
+        app.game_update_count = 3;
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let latched = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::PartyGirl)
+            .map(|n| n.next_dialogue_free_cake)
+            .unwrap_or(false);
+        assert!(latched, "the poll latched");
+        // A non-poll tick with the flag fallen clears the latch.
+        app.world_events.free_cake = false;
+        app.game_update_count = 4;
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let latched = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::PartyGirl)
+            .map(|n| n.next_dialogue_free_cake)
+            .unwrap_or(false);
+        assert!(!latched, "the fall cleared it");
+        // The flag back up on a poll tick re-latches.
+        app.world_events.free_cake = true;
+        app.game_update_count = 13; // (13 + 7) % 10 == 0
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let latched = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::PartyGirl)
+            .map(|n| n.next_dialogue_free_cake)
+            .unwrap_or(false);
+        assert!(latched, "the re-poll latched again");
+    }
+
     /// `NPCChatPanel.cs:65-68` — the panel's box: x = `screenWidth / 2 - 250`,
     /// y = 100, w = 500, h = 30 + 30·textLines + 30·interactionLines +
     /// max(0, 2·(interactionLines − 1)); the text origin is `+ (20, 20)`
