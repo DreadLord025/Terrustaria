@@ -15,20 +15,25 @@
 //! starts at 1 and increments per enabled channel (Red, Blue, Green —
 //! in THAT order), each `Lerp(color47, channelColor, 1f / num246)`; the
 //! Yellow lerp uses `1f / (num246 + 1f)` WITHOUT incrementing (verbatim
-//! quirk). `color47.A = 0` at the end — the additive-style alpha-0
-//! convention the port's pipeline draws opaque (the `render/wires.rs`
-//! alpha note; the C# spriteBatch here is the plain AlphaBlend batch,
-//! where alpha 0 premultiplied is a no-op — the port keeps the tint's
-//! alpha at 1 so the mask shows, the documented deviation).
+//! quirk). `color47.A = 0` at the end (`:31657`) — the C# batch is
+//! `BlendState.AlphaBlend` (premultiplied `One, OneMinusSrcAlpha`,
+//! `Main.cs:38213`/`:62294`), so an alpha-0 tint with non-zero RGB is an
+//! ADDITIVE term (`src + dst`): the ghost glows over the world. The
+//! port's pipeline is the same equation (`sprite.wgsl` keeps the rgb
+//! un-premultiplied, alpha = `tex.a * color.a`), so the C# alpha values
+//! reproduce the additive ghost verbatim (the seal fix, research/283 —
+//! the earlier alpha-255 override turned it into a semi-transparent
+//! REPLACE).
 //!
 //! Deviations (ANALYSIS "The Wire Kite ghost (S1-W4-g81)"):
-//! * the C#'s alpha-0 tints (`color46`/`color47` both end A=0) draw
-//!   NOTHING under XNA premultiplied AlphaBlend — the retail ghost is
-//!   visible because `EntitySpriteDraw` rides the batch the C# began
-//!   with `BlendState.NonPremultiplied` for the cached-proj pass
-//!   (`Main.DrawCachedProjs`, `:38216`). The port's ui range is the
-//!   premultiplied pipeline, so the tints keep alpha 255 (the visible
-//!   ghost the player sees);
+//! * the ghost pushes to the port's UI range (pre-transformed screen
+//!   pixels) rather than a world batch — the C# draws it in the world
+//!   pass (`DrawCachedProjsOverWiresUI`, `Main.cs:57034`, right after
+//!   `DrawWires` `:57030`, before the projectile/player passes). The
+//!   port's push order matches (after `draw_wires`, before the generic
+//!   projectile walk), but the UI range draws OVER the scene filter
+//!   where the C# ghost draws UNDER it — the recorded filter-order
+//!   deviation;
 //! * the L-path's corner/middle mask picks are ported verbatim including
 //!   the `num245 = 1` sign multipliers (the `* num245` terms are
 //!   identity — kept for the citation).
@@ -43,7 +48,8 @@ use crate::projectile::Projectile;
 /// The ghost's channel-mix colour (`Main.cs:31629-31658`): the grey base
 /// (127,127,127), the per-channel byte lerps in the C#'s order, and the
 /// cutter's grey swap. Returns `(color47, color46)` — the mask tint and
-/// the grey/cutter tint, both alpha-255 (the module-doc deviation).
+/// the grey/cutter tint. `color47` alpha 0 (the additive ghost), `color46`
+/// alpha 0 normally / 255 with the cutter (the C# values, `:31657`).
 pub fn ghost_colors(tool_mode: u8) -> ([u8; 4], [u8; 4]) {
     let mut color46 = [255u8, 255, 255, 0];
     let mut color47 = [127u8, 127, 127, 0];
@@ -67,12 +73,17 @@ pub fn ghost_colors(tool_mode: u8) -> ([u8; 4], [u8; 4]) {
     if tool_mode & mode::CUTTER != 0 {
         color46 = [50, 50, 50, 255];
     }
+    // `:31657` — `color47.A = 0` ALWAYS (the channel lerps raise the alpha
+    // toward the targets' 255, this resets it). `color46` keeps its alpha:
+    // 0 normally, 255 with the cutter. The C# batch is `BlendState.AlphaBlend`
+    // (`Main.cs:38213`/`:62294`, premultiplied `One, OneMinusSrcAlpha`): an
+    // alpha-0 tint with NON-zero RGB is an ADDITIVE term (`src + dst`), the
+    // visible ghost glow. The port's pipeline is the same equation
+    // (`sprite.wgsl`'s fragment keeps rgb un-premultiplied, alpha =
+    // `tex.a * color.a`), so the C# alpha values reproduce the additive
+    // ghost verbatim — the earlier alpha-255 override turned it into a
+    // semi-transparent REPLACE (the seal fix, research/283).
     color47[3] = 0;
-    // The port's visible-ghost deviation (module doc): alpha 255.
-    color47[3] = 255;
-    if color46[3] == 0 {
-        color46[3] = 255;
-    }
     (color47, color46)
 }
 
@@ -325,9 +336,11 @@ mod tests {
     fn the_single_channel_mix_is_the_half_lerp() {
         // `:31635-31639`: Red only — num246 = 2, Lerp((127..), Red, 1/2):
         // 127 + (255-127)*0.5 = 191, 127 + (0-127)*0.5 = 63.5 → 63.
+        // `:31657` resets color47.A to 0 (the additive ghost); color46
+        // keeps alpha 0 without the cutter.
         let (c47, c46) = ghost_colors(mode::RED);
-        assert_eq!(c47, [191, 63, 63, 255]);
-        assert_eq!(c46, [255, 255, 255, 255], "no cutter keeps the white grey");
+        assert_eq!(c47, [191, 63, 63, 0]);
+        assert_eq!(c46, [255, 255, 255, 0], "no cutter keeps the white grey, alpha 0");
     }
 
     #[test]
@@ -336,7 +349,7 @@ mod tests {
         // 1/3: (127.33→127, 42, 127.66→127); Green at 1/4: (95.25→95,
         // 42+(255-42)*0.25 = 95.25→95, 127+(0-127)*0.25 = 95.25→95).
         let (c47, _) = ghost_colors(mode::RED | mode::BLUE | mode::GREEN);
-        assert_eq!(c47, [95, 95, 95, 255]);
+        assert_eq!(c47, [95, 95, 95, 0]);
     }
 
     #[test]
@@ -344,17 +357,18 @@ mod tests {
         // `:31650-31653`: Yellow alone — num246 stays 1, the lerp is
         // 1/(1+1) = 0.5: (191, 191, 63).
         let (c47, _) = ghost_colors(mode::YELLOW);
-        assert_eq!(c47, [191, 191, 63, 255]);
+        assert_eq!(c47, [191, 191, 63, 0]);
         // Red+Yellow: num246 = 2 after Red, Yellow at 1/3:
         // 191 + (255-191)/3 = 212.33 → 212; 63 + (255-63)/3 = 127;
         // 63 + (0-63)/3 = 42.
         let (c47, _) = ghost_colors(mode::RED | mode::YELLOW);
-        assert_eq!(c47, [212, 127, 42, 255]);
+        assert_eq!(c47, [212, 127, 42, 0]);
     }
 
     #[test]
     fn the_cutter_swaps_the_grey() {
-        // `:31654-31657`.
+        // `:31654-31657`: the cutter's grey is (50,50,50,255) — alpha 255
+        // (a REPLACE quad, unlike the additive alpha-0 normal grey).
         let (_, c46) = ghost_colors(mode::CUTTER);
         assert_eq!(c46, [50, 50, 50, 255]);
     }

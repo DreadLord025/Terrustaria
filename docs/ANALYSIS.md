@@ -39397,9 +39397,22 @@ over-wire slot right after `draw_wires` (`Main.cs:62303` -> `:62315`), the
 generic projectile pass skips 651. The 3611 use gate
 (`Player.cs:52063-52066` no-channel refusal) + the zero-velocity centre
 spawn + the `TryUpdateChannel` tail landed in `world_sim/editing.rs`.
-**Deviations (documented):** the C# ghost tints carry alpha 0 (a no-op in
-its blend); the port's premultiplied pipeline needs alpha 255 to show the
-ghost - the tail overrides to 255. `Wiring.MassWireOperation` is UNPORTED
+**Deviations (documented):** the ghost pushes to the port's UI range
+(pre-transformed screen pixels) rather than a world batch - the push
+order matches the C# (`DrawCachedProjsOverWiresUI` `Main.cs:57034` right
+after `DrawWires` `:57030`, before the projectile/player passes), but the
+UI range draws OVER the scene filter where the C# ghost draws UNDER it
+(the filter-order deviation). **The alpha-0 tints are CORRECT, not a
+deviation** (the seal fix, research/283): the C# batch is
+`BlendState.AlphaBlend` (premultiplied `One, OneMinusSrcAlpha`), so
+`color47.A = 0` (`:31657`) with non-zero RGB is an ADDITIVE term
+(`src + dst`) - the visible ghost glow; `color46` keeps alpha 0 normally
+/ 255 with the cutter. The port's pipeline is the same equation
+(`sprite.wgsl` keeps rgb un-premultiplied, alpha = `tex.a * color.a`), so
+the C# alpha values reproduce the additive ghost verbatim. The earlier
+alpha-255 override (a misread of the blend as non-premultiplied) turned
+it into a semi-transparent REPLACE - removed at the seal.
+`Wiring.MassWireOperation` is UNPORTED
 ON THIS BRANCH - the kill intents drain and drop in
 `world_sim/projectiles.rs` with the note; the ghost preview + the
 anchor/release machine are the ported visuals. **The seal's compose
@@ -39496,8 +39509,8 @@ frame slot), 6789a055 (toggle column), 18e53dd0 (cursor icon + cache),
 
 ### The seal round (research/283, 2026-11-21)
 
-Five code fixes landed at the seal (87f7b159, d17a9da7, b8c46275,
-77505fa0):
+Six code fixes landed at the seal (87f7b159, d17a9da7, b8c46275,
+77505fa0, + the ghost-alpha fix):
 1. **The `flow_app` ctor carried NONE of the six new App fields** - the
    exhaustive test literal (`app/flow.rs:2134`, no `..Default` spread)
    would not compile (E0063) against 344 `flow_app` callers. The six
@@ -39528,6 +39541,17 @@ Five code fixes landed at the seal (87f7b159, d17a9da7, b8c46275,
 5. **The callerless `App::item_icon_cache_verification` drops** - the
    inline is the single body (the C# has one caller); the doc-note
    records where it lives.
+6. **The ghost's alpha-255 override REMOVED** - the C# batch is
+   `BlendState.AlphaBlend` (premultiplied `One, OneMinusSrcAlpha`), so
+   `color47.A = 0` (`Main.cs:31657`) with non-zero RGB is an ADDITIVE
+   term (`src + dst`), the visible ghost glow; `color46` keeps alpha 0
+   normally / 255 with the cutter. The port's pipeline is the same
+   equation (`sprite.wgsl` keeps rgb un-premultiplied, alpha =
+   `tex.a * color.a`), so the C# alpha values reproduce the additive
+   ghost verbatim. The earlier override (a misread of the blend as
+   non-premultiplied, the stale `liquids.rs` comment) turned it into a
+   semi-transparent REPLACE. The 5 colour-mix witnesses re-derived to
+   the C# alpha (the RGB bytes unchanged).
 The mass-op drop notes re-point at the compose verdict (§2 above +
 research/283 §4); the radial's icon_enabled doc-comments drop the stale
 "stand-in" wording (the field IS the sim latch since 851a73e1).
