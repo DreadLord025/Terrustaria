@@ -2170,8 +2170,15 @@ impl Wiring {
     /// tile carries the running colour; `_toProcess` counts converging paths
     /// and silences re-entries.
     fn hit_wire(&mut self, world: &mut World, seeds: Vec<(i32, i32)>, color: WireColor) {
-        self.skip.clear();
-        self.to_process.clear();
+        // W4-f11 census (fold-133): the C# clears ONLY `_wireDirectionList`
+        // at entry (`Wiring.cs:839`) — `_wireSkip`/`_toProcess` are cleared
+        // at the EXIT (`:977-978`), not the entry. On every standalone path
+        // the maps are already empty here (the previous pass exited clean),
+        // so the port's old entry clears were redundant; removing them makes
+        // the entry verbatim. (The C#'s nested gate-trip inside
+        // `LogicGatePass` shares the static maps and wipes the outer
+        // flood's state on its own exit — a re-entrancy quirk the port's
+        // per-call structure does not reproduce; recorded in ANALYSIS.)
         let mut next: VecDeque<((i32, i32), u8)> = seeds.iter().map(|&p| (p, 0)).collect();
         for &(x, y) in &seeds {
             self.skip.insert((x, y));
@@ -2262,6 +2269,14 @@ impl Wiring {
                 next.push_back((point, dx_y_to_dir(dx, dy)));
                 // `if (b > 0) _toProcess.Add(point2, b)` (`:971-974`).
                 if b > 0 {
+                    // W4-f11 census (fold-133): the C# `Dictionary.Add` would
+                    // throw on a duplicate key, but the key is provably absent
+                    // here: an entry exists ⇔ the `TryGetValue` arm above ran
+                    // and `continue`d (no enqueue), and it is removed exactly
+                    // when the count hits zero — after which this fresh
+                    // enqueue re-Adds it. `insert` is the same write. Only
+                    // the `b == 0` junction neighbours (424/445) enqueue
+                    // without an entry and may re-enter freely.
                     self.to_process.insert(point, i32::from(b));
                 }
             }
