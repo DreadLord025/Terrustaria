@@ -508,13 +508,31 @@ pub struct HoverParams {
     pub bounce: f32,
     /// The per-kind rotation arm (`NPC.cs:50580-50655`).
     pub rotation: HoverRotation,
+    /// `flag4`'s ±0.023 `ai[0]` bob drift (`NPC.cs:50446-50473`) with the
+    /// ALWAYS-true gate (`(num7 > 100f) | flag4`, `:50450` — `flag4` lists
+    /// 619 at `:50446`). `true` only for the BloodSquid today; the other
+    /// presets keep `false` (their drift is the hover-family wiring wave's
+    /// — the bees run theirs kind-locally in `update_bee_hover`).
+    pub bob_drift: bool,
+    /// The <150px approach boost (`NPC.cs:50474-50478`): `velocity +=
+    /// num4/num5 * 0.007` on the normalized aim when the snapped distance
+    /// `num7 < 150f` — the C# gate lists {6, 94, 173, 619}; only the
+    /// BloodSquid's preset carries it today.
+    pub close_boost: bool,
+    /// The BloodSquid's −0.3 rise (`NPC.cs:50485-50488`): the ELSE-if of
+    /// the dead-target flee — `type == 619 && Center.Y > targetData.Center.Y
+    /// - 200f` drops `velocity.Y` by 0.3 before the approach.
+    pub hover_rise: bool,
 }
 
 impl HoverParams {
     /// The Eater of Souls (type 6; `NPC.cs:50304-50307`: num 4, num2 0.02).
     /// `flag5` is false for it (`:50447`) and it flies through the tiles
     /// (`SetDefaults` case 6: `noTileCollide`), so it never bounces; the
-    /// rotation is the aim tilt (`:50643-50646`).
+    /// rotation is the aim tilt (`:50643-50646`). The num8 bob (`:50445`,
+    /// the >100px gate) and the type-6 <150px boost (`:50474`) stay OFF
+    /// here — the EoS behaviour is frozen; they ride the hover-family
+    /// wiring wave (the bee precedent's drift is bee-local).
     pub const EATER_OF_SOULS: Self = Self {
         max_speed: 4.0,
         accel: 0.02,
@@ -523,6 +541,9 @@ impl HoverParams {
         no_tile_collide: true,
         bounce: 0.4,
         rotation: HoverRotation::Aim,
+        bob_drift: false,
+        close_boost: false,
+        hover_rise: false,
     };
     /// The Hornet (type 42; `NPC.cs:50341-50344`: num 3.5, num2 0.021).
     /// Type 205 is the *other* hover kind (`NPC.cs:50364-50367`: 3.25/0.018) —
@@ -538,6 +559,9 @@ impl HoverParams {
         no_tile_collide: false,
         bounce: 0.7,
         rotation: HoverRotation::VelocityX,
+        bob_drift: false,
+        close_boost: false,
+        hover_rise: false,
     };
     /// The Servant of Cthulhu (type 5; `NPC.cs:50379-50382`: num 5, num2
     /// 0.03). The servant has its own arm now (S1-D-3k); the row stays as
@@ -550,6 +574,9 @@ impl HoverParams {
         no_tile_collide: true,
         bounce: 0.4,
         rotation: HoverRotation::Velocity,
+        bob_drift: false,
+        close_boost: false,
+        hover_rise: false,
     };
     /// The Meteor Head (type 23; `NPC.cs:50374-50377`: num 1, num2 0.03).
     /// `flag5` is true for it, it flies through the tiles (`SetDefaults`
@@ -562,13 +589,21 @@ impl HoverParams {
         no_tile_collide: true,
         bounce: 0.7,
         rotation: HoverRotation::SpriteAim,
+        bob_drift: false,
+        close_boost: false,
+        hover_rise: false,
     };
     /// W4-d42 - the Blood Squid (type 619; `NPC.cs:50323-50327`:
     /// num 6, num2 0.1). `flag5` is false for it (`:50447` lists
     /// 619 in the excluded set), it COLLIDES with the tiles
     /// (`SetDefaults` 619 writes noGravity only, `:16945`) so it
     /// takes the x0.7 bounce (`:50658`), and its rotation is the
-    /// aim tilt (`:50643-50646` lists 619).
+    /// aim tilt (`:50643-50646` lists 619). W4-d42 FINAL: the flag4
+    /// bob (`:50446-50473`, the ALWAYS-true `(num7 > 100f) | flag4`
+    /// gate `:50450`), the <150px approach boost (`:50474-50478`,
+    /// 619 in the {6, 94, 173, 619} set) and the -0.3 rise
+    /// (`:50485-50488`, the dead-flee's else-if) are now modelled —
+    /// the ANALYSIS roster-join gap CLOSED.
     pub const BLOOD_SQUID: Self = Self {
         max_speed: 6.0,
         accel: 0.1,
@@ -577,6 +612,9 @@ impl HoverParams {
         no_tile_collide: false,
         bounce: 0.7,
         rotation: HoverRotation::Aim,
+        bob_drift: true,
+        close_boost: true,
+        hover_rise: true,
     };
 }
 
@@ -647,8 +685,11 @@ pub fn hover_step(npc: &mut Npc, world: &World, target: HoverTarget, params: Hov
     let mut aim_x = snap8(target.center_x) - snap8(cx);
     let mut aim_y = snap8(target.center_y) - snap8(cy);
     // `:50427-50444` — the normalized aim at the `num` speed; a zero
-    // distance keeps the current velocity (`num4 = velocity.X`).
+    // distance keeps the current velocity (`num4 = velocity.X`). `num7`
+    // (`:50428`) keeps the PRE-normalize snapped distance for the
+    // bob/boost gates.
     let num6 = (aim_x * aim_x + aim_y * aim_y).sqrt();
+    let num7 = num6;
     if num6 == 0.0 {
         aim_x = npc.vx;
         aim_y = npc.vy;
@@ -657,11 +698,46 @@ pub fn hover_step(npc: &mut Npc, world: &World, target: HoverTarget, params: Hov
         aim_x *= scale;
         aim_y *= scale;
     }
+    // `:50445-50478` — the bob + boost block, gated `num8 | flag4`. The
+    // only preset carrying it today is the BloodSquid (619, `flag4`
+    // `:50446`), so the inner `(num7 > 100f) | flag4` gate (`:50450`) is
+    // ALWAYS true — the drift runs every tick. The num8 kinds' >100px
+    // gate rides the hover-family wiring wave (the bee precedent's drift
+    // is bee-local in `update_bee_hover`).
+    if params.bob_drift {
+        // `:50452-50472` — ai[0]++ then the ±0.023 drift: Y by the ai[0]
+        // sign, X by the ±100 band, the 200 wrap to -200.
+        npc.ai[0] += 1.0;
+        if npc.ai[0] > 0.0 {
+            npc.vy += 0.023;
+        } else {
+            npc.vy -= 0.023;
+        }
+        if npc.ai[0] < -100.0 || npc.ai[0] > 100.0 {
+            npc.vx += 0.023;
+        } else {
+            npc.vx -= 0.023;
+        }
+        if npc.ai[0] > 200.0 {
+            npc.ai[0] = -200.0;
+        }
+        // `:50474-50478` — the <150px approach boost on the NORMALIZED
+        // aim ({6, 94, 173, 619}; the BloodSquid's preset carries it).
+        if params.close_boost && num7 < 150.0 {
+            npc.vx += aim_x * 0.007;
+            npc.vy += aim_y * 0.007;
+        }
+    }
     // `:50480-50484` — a dead target: the NPC flies off along the facing
     // direction (`num`/`2` sideways, `-num`/`2` down).
     if target.dead {
         aim_x = npc.facing as f32 * max_speed / 2.0;
         aim_y = -max_speed / 2.0;
+    } else if params.hover_rise && cy > target.center_y - 200.0 {
+        // `:50485-50488` — the BloodSquid's ELSE-if rise: while its centre
+        // is below `targetData.Center.Y - 200f` it sheds 0.3 of upward
+        // velocity per tick, BEFORE the approach (the flee's else branch).
+        npc.vy -= 0.3;
     }
     // `:50547-50578` — the approach (`num2`) with the `flag5` double-add
     // on the sign flips.
@@ -1280,6 +1356,120 @@ mod tests {
             n.rotation
         );
         assert_ne!(n.rotation, 0.0);
+    }
+
+    /// W4-d42 FINAL — the BloodSquid's flag4 bob drift (`NPC.cs:50446-50473`):
+    /// the `(num7 > 100f) | flag4` gate (`:50450`) is ALWAYS true for 619
+    /// (flag4 lists it at `:50446`), so ai[0]++ + the ±0.023 drift run EVERY
+    /// tick — Y by the ai[0] sign, X by the ±100 band, the >200 wrap to
+    /// -200. The drift lands BEFORE the approach (`:50547`) and BEFORE the
+    /// dead-flee/rise block (`:50480-50488`), exactly the C# order.
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d42_the_blood_squid_bob_drifts_every_tick_and_wraps() {
+        let w = World::new("t".into(), 200, 200);
+        // Far target (num7 > 150: no boost) level with the squid's centre
+        // (cy == target.center_y > center_y - 200: the rise runs).
+        let target = HoverTarget {
+            center_x: 1200.0,
+            center_y: 182.0,
+            top_y: 160.0,
+            dead: false,
+        };
+        let mut n = Npc::new(NpcKind::BloodSquid, 160.0, 160.0, 1, 0.0);
+        hover_step(&mut n, &w, target, HoverParams::BLOOD_SQUID);
+        // Tick 1: ai[0] 0 -> 1 (> 0: vy += 0.023; in the ±100 band:
+        // vx -= 0.023), then the rise (-0.3), then the approach.
+        assert_eq!(n.ai[0], 1.0);
+        // The snapped aim: x = snap8(1200) - snap8(182) = 1200 - 176 = 1024;
+        // y = snap8(182) - snap8(182) = 0. num7 = 1024 (> 150, no boost).
+        // aim = (6, 0). vx: -0.023 + 0.1 = 0.077; vy: 0.023 - 0.3 = -0.277
+        // (< aim_y 0: + 0.1) = -0.177.
+        assert!((n.vx - 0.077).abs() < 1e-6, "bob X then approach: {}", n.vx);
+        assert!((n.vy - (-0.177)).abs() < 1e-6, "bob Y + rise then approach: {}", n.vy);
+        // The wrap: pre-load ai[0] = 200 -> ++201 (> 100: vx += 0.023;
+        // > 0: vy += 0.023) then the > 200 wrap to -200 (`:50469-50472`).
+        let mut n = Npc::new(NpcKind::BloodSquid, 160.0, 160.0, 1, 0.0);
+        n.ai[0] = 200.0;
+        hover_step(&mut n, &w, target, HoverParams::BLOOD_SQUID);
+        assert_eq!(n.ai[0], -200.0, "the > 200 wrap");
+        // vx: +0.023 (outside band) + 0.1 = 0.123; vy: +0.023 - 0.3 + 0.1.
+        assert!((n.vx - 0.123).abs() < 1e-6, "the wrap tick's +X drift: {}", n.vx);
+        // The negative side: ai[0] = -101 -> ++-100 (<= 0: vy -= 0.023;
+        // -100 is NOT < -100: vx -= 0.023), no wrap.
+        let mut n = Npc::new(NpcKind::BloodSquid, 160.0, 160.0, 1, 0.0);
+        n.ai[0] = -101.0;
+        hover_step(&mut n, &w, target, HoverParams::BLOOD_SQUID);
+        assert_eq!(n.ai[0], -100.0);
+        assert!((n.vx - (-0.023 + 0.1)).abs() < 1e-6, "the -100 boundary stays in-band: {}", n.vx);
+        assert!((n.vy - (-0.023 - 0.3 + 0.1)).abs() < 1e-6, "the <= 0 Y drift: {}", n.vy);
+    }
+
+    /// W4-d42 FINAL — the BloodSquid's <150px approach boost
+    /// (`NPC.cs:50474-50478`: `velocity += num4/num5 * 0.007` on the
+    /// NORMALIZED aim, the snapped num7 < 150 gate) and the -0.3 rise's
+    /// 200px gate (`:50485-50488`: `Center.Y > targetData.Center.Y - 200f`,
+    /// the dead-flee's ELSE-if). WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d42_the_blood_squid_close_boost_and_rise_gates() {
+        let w = World::new("t".into(), 200, 200);
+        // Near target: snapped aim (96, 0), num7 = 96 < 150 -> the boost
+        // adds aim * 0.007 AFTER the drift, BEFORE the approach.
+        let near = HoverTarget {
+            center_x: 278.0,
+            center_y: 182.0,
+            top_y: 160.0,
+            dead: false,
+        };
+        let mut n = Npc::new(NpcKind::BloodSquid, 160.0, 160.0, 1, 0.0);
+        hover_step(&mut n, &w, near, HoverParams::BLOOD_SQUID);
+        // aim = (6, 0); vx: -0.023 (drift) + 6*0.007 (boost) + 0.1 = 0.119.
+        assert!((n.vx - 0.119).abs() < 1e-6, "drift + boost + approach: {}", n.vx);
+        // The 150 boundary: the snapped distance is an 8px multiple, so
+        // the first step ABOVE 150 is 152 — NOT < 150 (no boost).
+        let edge = HoverTarget { center_x: 328.0, center_y: 182.0, top_y: 160.0, dead: false };
+        let mut n = Npc::new(NpcKind::BloodSquid, 160.0, 160.0, 1, 0.0);
+        hover_step(&mut n, &w, edge, HoverParams::BLOOD_SQUID);
+        assert!((n.vx - 0.077).abs() < 1e-6, "the strict < 150 gate: {}", n.vx);
+        // The rise gate: the squid's centre 182 vs target centre 400 —
+        // 182 > 400 - 200 = 200 is FALSE, no rise. num7 = 218 > 150.
+        let high = HoverTarget { center_x: 182.0, center_y: 400.0, top_y: 380.0, dead: false };
+        let mut n = Npc::new(NpcKind::BloodSquid, 160.0, 160.0, 1, 0.0);
+        hover_step(&mut n, &w, high, HoverParams::BLOOD_SQUID);
+        // vy: +0.023 (drift) then the approach towards aim_y = 6: +0.1.
+        assert!((n.vy - 0.123).abs() < 1e-6, "the rise stays off above the gate: {}", n.vy);
+        // The dead target: the flee REPLACES the aim and the rise's else-if
+        // never runs (`:50480-50484` wins). The bob still runs (it precedes
+        // the flag block in the C#).
+        let dead = HoverTarget { center_x: 278.0, center_y: 182.0, top_y: 160.0, dead: true };
+        let mut n = Npc::new(NpcKind::BloodSquid, 160.0, 160.0, 1, 0.0);
+        hover_step(&mut n, &w, dead, HoverParams::BLOOD_SQUID);
+        // vx: -0.023 + 6*0.007 then the approach towards the flee's
+        // facing*3 = +3: +0.1 -> 0.119. vy: +0.023 (drift), NO rise, then
+        // the approach towards -3: -0.1 -> -0.077 (flag5 false for 619:
+        // no sign-flip double-add).
+        assert!((n.vx - 0.119).abs() < 1e-6, "the flee keeps the boost: {}", n.vx);
+        assert!((n.vy - (-0.077)).abs() < 1e-6, "the flee skips the rise: {}", n.vy);
+    }
+
+    /// W4-d42 FINAL — the bob/boost/rise gates are BloodSquid-ONLY: the
+    /// four legacy presets keep them false so every pre-existing hover
+    /// kind's behaviour is frozen (the ANALYSIS gap-closure scope).
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d42_the_hover_bob_gates_are_blood_squid_only() {
+        for p in [
+            HoverParams::EATER_OF_SOULS,
+            HoverParams::HORNET,
+            HoverParams::SERVANT_OF_CTHULHU,
+            HoverParams::METEOR_HEAD,
+        ] {
+            assert!(!p.bob_drift, "the legacy preset bobs (frozen behaviour)");
+            assert!(!p.close_boost, "the legacy preset boosts (frozen behaviour)");
+            assert!(!p.hover_rise, "the legacy preset rises (frozen behaviour)");
+        }
+        let p = HoverParams::BLOOD_SQUID;
+        assert!(p.bob_drift && p.close_boost && p.hover_rise);
     }
 }
 

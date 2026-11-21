@@ -12106,6 +12106,12 @@ impl Npc {
             no_tile_collide: false,
             bounce: 0.7,
             rotation: HoverRotation::Velocity,
+            // The bees' flag4 drift runs kind-locally below (the C#
+            // position, ahead of this call) — the shared-core gates stay
+            // off so the drift is not double-applied.
+            bob_drift: false,
+            close_boost: false,
+            hover_rise: false,
         };
         // `:50446-50471` — flag4's drift runs BEFORE the velocity
         // approach (`:50540-50578`): ai[0]++ every tick (the bees are in

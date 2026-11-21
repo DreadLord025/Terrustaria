@@ -22416,11 +22416,24 @@ id). The folded kinds keep their OWN draw sheets via `texture_net_id` hand rows
    The BloodSquid (619, aiStyle 5) is WIRED to `ai_005_hover_family` via the new
    `HoverParams::BLOOD_SQUID` (num 6 / num2 0.1 `NPC.cs:50323-50327`, no flag5
    double-add `:50447`, tile collision with the 0.7 bounce `:50658`, the Aim
-   tilt `:50643-50646`). NOTE: the shared `hover_step` does not yet model the
-   flag4 bob drift (`:50446-50473`), the <150px approach boost (`:50474-50478`)
-   or the `-0.3` rise (`:50485-50488`) for 619 — the preset carries the num/num2
-   + bounce + rotation only; the bob/boost/rise ride the hover-family wiring
-   wave (the bee precedent's drift is bee-local). The aiStyle-16 swimmers
+   tilt `:50643-50646`). **FINAL phase: the documented bob/boost/rise gap is
+   CLOSED** — the shared `hover_step` now models the flag4 bob drift
+   (`:50446-50473`: ai[0]++ every tick — the `(num7 > 100f) | flag4` gate
+   `:50450` is always true for 619 — ±0.023 Y by sign / X by the ±100 band,
+   the >200 wrap to −200), the <150px approach boost (`:50474-50478`,
+   `velocity += num4/num5 * 0.007` on the normalized aim) and the −0.3 rise
+   (`:50485-50488`, the dead-flee's else-if, `Center.Y > target.Center.Y −
+   200f`), all at the exact C# position (drift/boost after the aim normalize,
+   before the flee/rise block and the approach). The three gates are new
+   `HoverParams` fields (`bob_drift`/`close_boost`/`hover_rise`), TRUE only
+   for `BLOOD_SQUID` — the four legacy presets keep them false so every
+   pre-existing hover kind is behaviour-frozen (the bees' drift stays
+   bee-local in `update_bee_hover`, no double-apply). Witnesses:
+   `w4_d42_the_blood_squid_bob_drifts_every_tick_and_wraps`,
+   `w4_d42_the_blood_squid_close_boost_and_rise_gates`,
+   `w4_d42_the_hover_bob_gates_are_blood_squid_only` (npc_ai.rs, WRITTEN NOT
+   RUN). The num8 kinds' >100px-gated bob (the EoS's own arm) rides the
+   hover-family wiring wave. The aiStyle-16 swimmers
    (592/607/615) are c4b's — NOT wired here.
 4. **FindFrame RNG stand-ins.** `find_frame` has no RNG seam, so the Owl's (611)
    idle head-turn table (`NPC.cs:73687-73731`, `Main.rand.Next(80)`/`Next(3)`)
