@@ -23119,7 +23119,9 @@ absent wholesale (no slot can carry it), a light gated on a `Main.rand` draw is
 absent wholesale (the e6 RNG rule), and no ported arm draws `Main.rand` — the
 feed is pure, so its placement cannot move any stream.
 
-**Accounting: 23 ported sites / 32 lights, 2 audit-landed, 42 absent.**
+**Accounting (first wave): 23 ported sites / 32 lights, 2 audit-landed, 42
+absent.** Round 2 re-censused the 42 absent and activated 22 of them — see the
+round-2 note below the register (45 ported / 55 lights / 20 absent).
 
 * Sites 1-2 (`:16655`/`:16659`) are the `ProjLight` chain tail, already live in
   `proj_lights.rs` (the 870 centre `AddLight` rides the common tail; the
@@ -23190,6 +23192,49 @@ the gem per-kind tints, the tiger tiers + `ai[0]!=4` gate, the hooks'
 mounted-centre-only / mounted+centre pair order, the celeb2 palette, the 601 lead
 anchor + portal hue), the every-ported-kind-has-a-row invariant (32 kinds) and
 the every-unrowed-kind-contributes-nothing sweep (44 kinds).
+
+**Round 2 — the 42-absent re-census (2026-11-21, `1b85dfec` / `88ee3165`).** The
+four blockers re-censused against the pushed d-lanes; the accounting moves to
+**45 ported sites / 55 lights, 2 audit-landed, 20 absent** (30 witnesses).
+
+* **Blocker 1 — the gate fields (site 3, `:17343`).** The `SetDefaults` census:
+  `hostile = true` **179 kinds**, `noEnchantments` **4** (480/1121/1131/1132),
+  `noEnchantmentVisuals` **21** (the outer `:16700` gate). The only runtime
+  `hostile` writes are the two classless bomb-death flips (`:28247` / `:75798`),
+  which the `(melee || ranged)` gate already excludes — so the flags are exact
+  kind-derived facts. They land as `data.rs::set_defaults_hostile /
+  _no_enchantments / _no_enchantment_visuals`; `chillet_mount_light` feeds site 3
+  ahead of the AI arms (`:16702` order), the aiStyle-190/191 swords emitting the
+  two rotated swing rects (`:17299-17305`). The feed resolves the owner's active
+  mount type (`owner == 0` → the local player, the e6 single-player fold).
+* **Blocker 2 — the rand-gated 409/849/912 stay absent.** All three lights sit
+  INSIDE a `Main.rand` gate (409 `Next(3)==0` `:30358`, 849 `Next(9)!=0`
+  `:47829`, 912 `NextFloat()<num28/2` `:47983`); the e6 RNG rule does not allow
+  arming them. The 590 truffle spore (`:34226`) is the same case — its colour
+  rides `Next(28,42)`; the d12 row landed but the rand gate keeps it absent.
+* **Blocker 3 — ~20 kinds activated** (the d-lanes rowed them): d12
+  602/612/953/614/636, d13 658, d17 855/1127, d19 984/1126/933/1100, d20
+  1078/1038/1116/1020/985, d21 1115/1105/1098/1123/1091/1117. The collector
+  matches `p.kind` directly, so an arm is live as soon as its lane's row lets a
+  slot carry the kind; the row stays the lane's to merge (keep-one-dedupe — this
+  branch copies no rows; the row invariant is conditional, the d12 precedent).
+  **Two first-wave misattributions corrected:** site 45 (`:41775`) is the
+  `type == 985` arm (after the `type != 985` return `:41726`), NOT the 973; site
+  46 (`:42181`) the `type == 1126` arm, NOT the 972 (which has no light arm).
+  The 602 gate reads `GetPortalColor(owner, ai[1])` (ai[1], not ai[0]). The
+  1091's `moreLightning && noLightning` seed-green (`:39871`) folds to the teal
+  default — the feed carries no micro-seed flags (faithful for every classic
+  world; a deliberate fold).
+* **Blocker 4 — the tiger/601 deviations unchanged.** W4-d7 still gates 833-835
+  out of `ai_freaking_pirates`; no lane ported the 601 teleport AI (`ai001_b`
+  runs only the fade/frame). Both keep their spawn `ai[0]`.
+
+The 20 still-absent sites: 502 (`:24307`), 1092 (`:25394`), 451 (`:31212`),
+464/465/466 (`:31864`/`:31893`/`:31998`/`:32049`), 490 (`:32384`), 492
+(`:32410`), 518 (`:32962`), 575 (`:33580`), 978 (the `:34487` trio's third
+term), 731 (`:37821`), the phaseblades (`:39020`/`:39021`), 567/568 (`:40046`),
+535 (`:44612`), 756 (`:51492`) — all still unrowed; plus the rand-gated 409
+(`:30378`), 590 (`:34226`), 849 (`:47846`), 912 (`:48011`).
 ### The Player family (S1-E-5, 2026-11-18, code-only mode)
 
 `crates/tr-app/src/player_lights.rs::player_lights` ports **32 of Player.cs's
