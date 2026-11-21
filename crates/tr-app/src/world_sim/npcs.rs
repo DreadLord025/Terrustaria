@@ -5340,13 +5340,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         if npc.has_carrier() {
             continue;
         }
-        spawn_coins(app, &npc);
-        spawn_loot(app, &npc);
-        // W4-f35 — the death HEAL feed (`NPC.cs:78898`'s
-        // `NPCLoot_DropHeals` + the `:79505-79507` boss tail): AFTER the
-        // loot, keeping the C#'s loot-before-heals order on the shared
-        // `UpdateNPCs` stream (the coins-before-loot fold above is the
-        // recorded pre-existing deviation).
+        // W4-f35 LOOT FINAL — the C# NPCLoot order (`NPC.cs:78855` →
+        // `:78897` → `:78898`): DropItems FIRST (its boss-bag/master-pet
+        // CommonCode tails zero npc.value), THEN DropMoney (reads the
+        // possibly-zeroed value), THEN DropHeals. The pre-final port ran
+        // coins before loot (the recorded fold — retired here).
+        let value_zeroed = spawn_loot(app, &npc);
+        spawn_coins(app, &npc, value_zeroed);
         spawn_heals(app, &npc);
     }
     // B-6b — the shield lifecycle's live consumers, at the death path's
@@ -6789,9 +6789,30 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
 /// (`ItemDropResolver.TryDropping` over `ItemDropDatabase.Populate()`, ported
 /// into `loot_db_gen`): the dead NPC's vanilla net id resolves its registered
 /// rules; the executor skips requests for items the registry does not model.
-fn spawn_loot(app: &mut App, npc: &Npc) {
+/// Returns whether any drop zeroed `npc.value` (`DropRequest.resets_money` —
+/// the boss bag / master pet `CommonCode` tails): the death path feeds the
+/// zeroed value into `spawn_coins` (the C# `NPCLoot_DropItems` :78855 runs
+/// BEFORE `NPCLoot_DropMoney` :78897).
+fn spawn_loot(app: &mut App, npc: &Npc) -> bool {
     let entry = crate::bestiary::entry_for_npc(npc.kind, npc.slime);
     let net_id = entry.net_id;
+    // W4-f35 LOOT FINAL — `NPCLoot`'s statue gate (`NPC.cs:78849-78852`):
+    // the early-mode refusal set + the rarity float draw (the type table
+    // `NPCID.cs:10445-10446`). Runs BEFORE any rule — a refusal draws
+    // nothing except the rarity arm's one NextFloat. `AnyInteractions`
+    // (`:78722-78742`) = the local player's interaction bit (netMode 0).
+    {
+        let rng = app.rngs.stream(RngKey::UpdateNpcs);
+        if tr_core::loot::statue_loot_refused(
+            rng,
+            npc.spawned_from_statue,
+            npc.kind.cs_id() as i32,
+            app.world.hard_mode,
+            npc.player_interaction[app.local_id as usize],
+        ) {
+            return false;
+        }
+    }
     let x = npc.x;
     let y = npc.y;
     // `NPCLoot()` fires from the death path inside `NPC.UpdateNPC`
@@ -6827,6 +6848,68 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
             zone_snow: zones.zone_snow,
             zone_corrupt: zones.zone_corrupt,
             zone_crimson: zones.zone_crimson,
+            // W4-f35 LOOT FINAL — the remaining live zone/depth feeds:
+            // the biome-key rows read jungle/hallow/desert (the desert
+            // fold excludes the beach, `Conditions.cs:1105-1107`), the
+            // soul rows read the hallow/evil pair + the NPC's own depth
+            // band (`Conditions.cs:1606`), LivingFlames the underworld
+            // band (`:945`), the yoyos their two depth bands
+            // (`:1145`/`:1234`), the pirate map its surface/ocean band
+            // (`:395-398`). All read the NPC's position, not the player's.
+            zone_jungle: zones.zone_jungle,
+            zone_hallow: zones.zone_hallow,
+            zone_desert: zones.zone_desert && !zones.zone_beach,
+            zone_dungeon: zones.zone_dungeon,
+            soul_depth_ok: (npc.y as f64) > app.world.rock_layer * 16.0,
+            underworld: (npc.y / 16.0) > (app.world.height - 200) as f32,
+            pirate_map_band: (npc.y / 16.0) as f64 < app.world.world_surface + 10.0
+                && {
+                    let cx = npc.center().0 / 16.0;
+                    cx < 380.0 || cx > (app.world.width - 380) as f32
+                },
+            deep_yoyo_band: (npc.y / 16.0) > (app.world.height - 350) as f32,
+            helfire_band: (npc.y / 16.0) as f64
+                > (app.world.rock_layer + (app.world.height as f64 * 2.0)) / 3.0,
+            // `Main.bloodMoon` (`Conditions.IsBloodMoonAndNotFromStatue`
+            // `:278`, the blood-zombie family's 4271 rows).
+            blood_moon: app.world.blood_moon,
+            // `Main.WindyEnoughForKiteDrops` (`Main.cs:2907`):
+            // `|windSpeedTarget| >= _maxWind` (0.4, `Main.cs:67226`) —
+            // the wind walk's live target (`wind.rs`'s MAX_WIND).
+            windy: app.wind.speed_target.abs() >= 0.4,
+            // The moon-event gates (`Conditions.cs:55-180`) read the
+            // live event flags + `NPC.waveNumber`.
+            pumpkin_moon: app.world.pumpkin_moon,
+            frost_moon: app.world.snow_moon,
+            wave_number: app.world.wave_number,
+            downed_boss2: app.world.downed_eow,
+            downed_boss3: app.world.downed_skeletron,
+            // `Conditions.DownedPlantera`/`FirstTimeKillingPlantera`
+            // (`Conditions.cs:322`/`:358`) — the ONE downedPlantBoss flag.
+            downed_plant_boss: app.world.downed_plant_boss,
+            // `Conditions.EyeOfCthulhuDefeatedAndNoAltarsInWorld`
+            // (`:1431-1434`): downedBoss1 + the Skyblock noAltars latch —
+            // the port's Skyblock identity keeps the latch true (the
+            // gen-time altar census has no port; the 5532/5533 drop arms
+            // are the same unported gap).
+            eoc_defeated_no_altars: app.world.downed_eoc
+                && app
+                    .world
+                    .seeds
+                    .contains(tr_core::seeds::SeedFlags::SKYBLOCK),
+            // `SkyblockIsUpNoSickle` (`Conditions.cs:1557-1565`):
+            // `HasItemInInventoryOrOpenVoidBag(1786)` — the 58-slot carry
+            // view + the OPEN void bag (the LockBox key-gate shape).
+            player_has_sickle: {
+                let has = |s: &crate::item::ItemSlot| s.count > 0 && s.kind == 1786;
+                app.inventory.iter().any(has)
+                    || app.equip.coins.iter().any(has)
+                    || app.equip.ammo.iter().any(has)
+                    || (crate::chest::use_void_bag(app)
+                        && app.player.as_ref().is_some_and(|p| {
+                            p.void_vault_enabled && p.banks[3].iter().any(has)
+                        }))
+            },
             downed_eoc: app.world.downed_eoc,
             // M5-SEED-1: the classic secret-seed flags (`loot.rs`'s
             // `TenthAnniversaryIsUp`/`DontStarveIsUp`/`RemixSeed`/
@@ -6862,6 +6945,18 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
                 .world
                 .micro_seeds
                 .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS),
+            // `SpecialSeedFeatures.Mechdusa` (`SpecialSeedFeatures.cs:119-
+            // 127`): remix AND getGoodWorld — the port's two seed flags.
+            mechdusa: app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX)
+                && app
+                    .world
+                    .seeds
+                    .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+            // `HalloweenWeapons`' caps (`Conditions.cs:809-810`): 500/40 ×
+            // the difficulty multipliers — the port models the classic
+            // world (both 1.0, the e25 constants-off note).
+            halloween_value_cap: 500.0,
+            halloween_damage_cap: 40.0,
             ..Default::default()
         },
         npc: tr_core::loot::LootNpc {
@@ -6871,10 +6966,63 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
             // placeholder 1.0.
             value: npc.value(),
             life_max: npc.max_hp,
-            friendly: false,
+            // W4-f35 LOOT FINAL — the live damage/defense/friendly feeds:
+            // the holiday rows' caps (`HalloweenWeapons` `Conditions.cs:812`,
+            // the goodie/present `damage > 0` gates) and the soul gate's
+            // `friendly` refusal read them.
+            damage: npc.damage_override.unwrap_or(npc.kind.contact_damage()),
+            defense: npc.defense(),
+            friendly: npc.friendly,
             spawned_from_statue: npc.spawned_from_statue,
-            is_boss: npc.kind == NpcKind::KingSlime,
-            has_player_target: true,
+            // `NPCID.Sets.DontDropDungeonKeysOrSouls` (`NPCID.cs:10115`):
+            // the one-member set {23} (the Meteor Head) — the key/soul
+            // gates' type refusal, keyed on the VANILLA type.
+            dont_drop_keys: npc.kind.cs_id() == 23,
+            // `info.npc.boss` (`Conditions.LegacyHack_IsABoss` + the soul
+            // gate's boss refusal): the 23-kind death table (the same set
+            // `npc_death_heals::is_boss_kind` ports) + the EoW head's
+            // dynamic last-segment latch (`DropEoWLoot`, `NPC.cs:78414-
+            // 78429` — the death retain already removed the dead slots).
+            is_boss: crate::npc_death_heals::is_boss_kind(net_id)
+                && (net_id != 13
+                    || !app.npcs.iter().any(|n| {
+                        n.hp > 0
+                            && matches!(
+                                n.kind,
+                                NpcKind::EaterOfWorldsHead
+                                    | NpcKind::EaterOfWorldsBody
+                                    | NpcKind::EaterOfWorldsTail
+                            )
+                    })),
+            // `Conditions.MissingTwin` (`:502-513`): the OTHER eye absent
+            // (the death retain removed this one; a live sibling refuses).
+            twin_missing: match npc.kind {
+                NpcKind::Retinazer => !app
+                    .npcs
+                    .iter()
+                    .any(|n| n.kind == NpcKind::Spazmatism && n.hp > 0),
+                NpcKind::Spazmatism => !app
+                    .npcs
+                    .iter()
+                    .any(|n| n.kind == NpcKind::Retinazer && n.hp > 0),
+                _ => false,
+            },
+            // `Conditions.MechdusaKill` (`:579-597`): the four parts
+            // (127/126/125/134) all absent — the remix+ftw Mechdusa seed
+            // only (the `mechdusa` flag below gates it).
+            mechdusa_parts_cleared: !app.npcs.iter().any(|n| {
+                n.hp > 0
+                    && matches!(
+                        n.kind,
+                        NpcKind::SkeletronPrime
+                            | NpcKind::Spazmatism
+                            | NpcKind::Retinazer
+                            | NpcKind::TheDestroyer
+                    )
+            }),
+            // `info.npc.HasPlayerTarget` (`NPC.cs:6486-6494`): target in
+            // [0, 255).
+            has_player_target: npc.target >= 0 && npc.target < 255,
             // The slime-body rain / statue-mimic style (`ai[1]`) and the
             // RedHat Skeletron state (`ai[3]`) ride the live ai vector
             // (`SlimeBodyItemDropRule.cs:19-22`, `NPC.cs:66671`). S1-E-14b:
@@ -6899,7 +7047,13 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
         info.flags.xmas,
     );
     drop(info); // releases the `&mut *rng` reborrow + the get_text borrow
+    let mut resets_money = false;
     for req in out {
+        // `DropRequest.resets_money` — the boss-bag / master-pet
+        // `CommonCode` tails zero `npc.value` (`CommonCode.cs:39`/`:55`);
+        // the death path feeds the zero into `spawn_coins` (the C# runs
+        // DropItems :78855 BEFORE DropMoney :78897).
+        resets_money |= req.resets_money;
         if req.item > 0 && crate::registry::get(req.item as u16).is_some() {
             // S1-P-i52 — `Item.NewItem`'s heart/star seasonal remap
             // (`Item.cs:49668-49714`) runs BEFORE the prefix/velocity
@@ -6931,14 +7085,18 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
             ));
         }
     }
+    resets_money
 }
 
 /// `NPC.NPCLoot_DropMoney` through the ported chain
 /// (`tr_core::loot::drop_money`): the per-kind `NPC.value` base, the
 /// ±20-75 % spread, the six bonus chains and the platinum/gold/silver/copper
 /// split. Coin velocities ride the death path's `UpdateNPCs` stream like
-/// the C# scatter.
-fn spawn_coins(app: &mut App, npc: &Npc) {
+/// the C# scatter. `value_zeroed` carries the loot pass's `resets_money`
+/// (the boss bag / master pet `CommonCode` tails): the C# `NPCLoot_DropItems`
+/// (`NPC.cs:78855`) zeroes `npc.value` BEFORE `NPCLoot_DropMoney` (`:78897`)
+/// reads it — an expert boss death drops NO coins (the bag carries them).
+fn spawn_coins(app: &mut App, npc: &Npc, value_zeroed: bool) {
     let (x, y) = npc.center();
     // `NPCLoot_DropMoney` fires from the same death path — the `UpdateNPCs`
     // stream (`NPC.cs:79622`'s luck read rides it too).
@@ -6946,13 +7104,19 @@ fn spawn_coins(app: &mut App, npc: &Npc) {
     let mut out = Vec::new();
     tr_core::loot::drop_money(
         rng,
-        npc.value(),
+        if value_zeroed { 0.0 } else { npc.value() },
         // `NPCLoot_DropMoney` reads `closestPlayer.luck` (`NPC.cs:79622`) —
         // the port's single player; the `|luck|` double-roll gate lives in
         // `drop_money` (`loot.rs:316-318`).
         app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0),
-        false,                  // Midas
-        false,                  // Main.bloodMoon
+        // W4-f35 LOOT FINAL — the two g4c false stand-ins wired live:
+        // `this.midas` (`NPC.cs:79631`) is the buff-72 flag the buff pass
+        // latches (`UpdateNPC_BuffFlags` `:92017-92020`, reset `:92165`) —
+        // the port reads the live buff slot (`has_buff(72)`, the same
+        // truth the C# flag mirrors each tick); `Main.bloodMoon`
+        // (`:79660`) reads the world's event flag.
+        npc.buffs.has_buff(72),
+        app.world.blood_moon,
         npc.extra_value as f32, // `NPCLoot_DropMoney`'s `+= extraValue` (:79680)
         &mut out,
     );
@@ -8054,16 +8218,20 @@ mod tests {
         )
         .expect("the surface spawns a blue slime");
 
-        spawn_coins(&mut a, &npc);
-        spawn_loot(&mut a, &npc);
+        // The C# NPCLoot order: loot first, then the coins (the f35 final
+        // fold — the pre-final port ran coins first).
+        let zeroed = spawn_loot(&mut a, &npc);
+        spawn_coins(&mut a, &npc, zeroed);
+        spawn_heals(&mut a, &npc);
         let state_0 = a.rngs.stream(crate::app::RngKey::UpdateNpcs).clone();
 
         // Replay from the pristine stream with luck 1.0 — the hit branches
         // draw differently (`CommonDrop.cs:36`'s luck double-roll).
         a.rngs = crate::app::rng::NamedRngs::new(a.world.seed as i32);
         a.player.as_mut().unwrap().luck_state.luck = 1.0;
-        spawn_coins(&mut a, &npc);
-        spawn_loot(&mut a, &npc);
+        let zeroed = spawn_loot(&mut a, &npc);
+        spawn_coins(&mut a, &npc, zeroed);
+        spawn_heals(&mut a, &npc);
         assert_ne!(
             *a.rngs.stream(crate::app::RngKey::UpdateNpcs),
             state_0,
@@ -8125,10 +8293,10 @@ mod tests {
     // models — so the engine-level replay below is the flag's observable.
     //
     // The replay runs on `spawn_loot`'s own database with the same
-    // `LootNpc` shape: the executor's feed leaves `damage` at 0 (the C#'s
-    // `info.npc.damage`, not yet wired), and both holiday rows gate on
-    // `n.damage > 0` — so this test pins the FLAG's effect on the rules,
-    // and the executor path gains its end-to-end drop when that feed lands.
+    // `LootNpc` shape. (The f35 final wiring fed the live `damage` —
+    // `damage_override.unwrap_or(contact_damage())` — so the executor
+    // path now drops the holiday rows end to end too; this engine-level
+    // replay stays the flag's direct observable.)
     #[test]
     fn the_endless_holiday_micro_seeds_flip_the_loot_flags() {
         let drops_for = |halloween: bool, xmas: bool| -> Vec<i32> {
@@ -17204,19 +17372,167 @@ mod dw3_tests {
         // pristine stream — the C# order is the death sound FIRST
         // (`NPC.checkDead` `NPC.cs:78193`, one case-4 pitch draw
         // `LegacySoundPlayer.cs:693` — S1-E-21 wave C), then the NPCLoot
-        // order (coins, then the rule engine, then the velocity/prefix
-        // draws); the replay is byte-for-byte.
+        // order (the f35 final fold: the rule engine FIRST — its
+        // resets_money feeds the coins — then DropMoney, then DropHeals;
+        // `NPC.cs:78855`/`:78897`/`:78898`); the replay is byte-for-byte.
         let mut twin = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         twin.world = crate::test_world_helpers::ground();
         twin.world.compute_column_surface();
         twin.player = Some(crate::player::Player::spawn(&twin.world));
         let _death_pitch = twin.rngs.stream(RngKey::UpdateNpcs).next_range(-10, 11);
-        spawn_coins(&mut twin, &slime);
-        spawn_loot(&mut twin, &slime);
+        let zeroed = spawn_loot(&mut twin, &slime);
+        spawn_coins(&mut twin, &slime, zeroed);
+        spawn_heals(&mut twin, &slime);
         assert_eq!(
             *twin.rngs.stream(RngKey::UpdateNpcs),
             after,
             "the kill path consumed exactly the NPCLoot sequence"
+        );
+    }
+
+    /// W4-f35 LOOT FINAL: `spawn_coins`' two g4c false stand-ins are LIVE —
+    /// `this.midas` reads the buff-72 slot (`NPC.cs:92017-92020`'s latch,
+    /// the coin bump `:79631-79634`) and `Main.bloodMoon` the world flag
+    /// (`:79660-79663`). Both bumps draw on the SAME UpdateNPCs stream, so
+    /// the midas/blood-moon kills consume MORE than the plain kill; the
+    /// plain kill's stream is unchanged (the pre-wiring baseline).
+    #[test]
+    fn w4_f35_spawn_coins_midas_and_blood_moon_are_live() {
+        let mut a = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        a.world = crate::test_world_helpers::ground();
+        a.world.compute_column_surface();
+        a.player = Some(crate::player::Player::spawn(&a.world));
+        let mut npc = Npc::spawn_slime_variant(&a.world, 30, SlimeVariant::Blue).unwrap();
+        npc.extra_value = 0;
+
+        // The plain kill: the pristine baseline.
+        spawn_coins(&mut a, &npc, false);
+        let plain = a.rngs.stream(RngKey::UpdateNpcs).clone();
+        let plain_items = a.items.len();
+
+        // Midas: the SAME seed, the buff latched — the extra Next(30,51)
+        // bump shifts the stream (and usually the coin stacks).
+        a.rngs = crate::app::rng::NamedRngs::new(a.world.seed as i32);
+        a.items.clear();
+        npc.buffs.add_buff(72, 600);
+        assert!(npc.buffs.has_buff(72), "the Midas buff latched");
+        spawn_coins(&mut a, &npc, false);
+        assert_ne!(
+            *a.rngs.stream(RngKey::UpdateNpcs),
+            plain,
+            "the midas bump drew Next(30,51) on the stream"
+        );
+
+        // Blood moon: the SAME seed, the world flag up — the extra
+        // Next(101) bump shifts the stream again.
+        a.rngs = crate::app::rng::NamedRngs::new(a.world.seed as i32);
+        a.items.clear();
+        npc.buffs = crate::npc_buffs::NpcBuffs::for_kind(npc.kind);
+        a.world.blood_moon = true;
+        spawn_coins(&mut a, &npc, false);
+        assert_ne!(
+            *a.rngs.stream(RngKey::UpdateNpcs),
+            plain,
+            "the blood-moon bump drew Next(101) on the stream"
+        );
+
+        // The zeroed value (the boss-bag resets_money feed): NO coin mint
+        // and only the luck gate's one float draw — the value rolls never
+        // run on a 0 base (`while ((int)num > 0)` exits at once, the
+        // extraValue 0). The plain kill minted coins; this one mints none.
+        a.rngs = crate::app::rng::NamedRngs::new(a.world.seed as i32);
+        a.items.clear();
+        a.world.blood_moon = false;
+        spawn_coins(&mut a, &npc, true);
+        assert!(a.items.is_empty(), "a zeroed value drops no coins");
+        assert!(plain_items > 0, "the plain kill minted coins");
+    }
+
+    /// W4-f35 LOOT FINAL: the statue loot gate (`NPC.cs:78849-78852`) runs
+    /// BEFORE the rules — a statue-spawned pre-hardmode Hornet (42, in the
+    /// NoEarlymodeLoot set `NPCID.cs:10446`) drops NOTHING and draws
+    /// NOTHING; the same kill in hardmode takes the rarity arm (0.05 —
+    /// the NextFloat gate). A non-statue kill never reads the gate.
+    #[test]
+    fn w4_f35_statue_loot_gate_refuses_the_earlymode_set() {
+        let mut a = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        a.world = crate::test_world_helpers::ground();
+        a.world.compute_column_surface();
+        a.player = Some(crate::player::Player::spawn(&a.world));
+        let mut npc = Npc::new(NpcKind::Hornet, 30.0 * 16.0, 4.0 * 16.0, 1, 0.0);
+        npc.spawned_from_statue = true;
+        npc.player_interaction[a.local_id as usize] = true;
+        let pristine = UnifiedRandom::new(a.world.seed as i32);
+
+        // Pre-hardmode: the early-mode refusal — no draws at all.
+        let refused = spawn_loot(&mut a, &npc);
+        assert!(!refused);
+        assert!(a.items.is_empty(), "the statue Hornet dropped nothing");
+        assert_eq!(
+            *a.rngs.stream(RngKey::UpdateNpcs),
+            pristine,
+            "the early-mode refusal draws nothing"
+        );
+
+        // Hardmode: the rarity arm runs (the 0.05 NextFloat gate draws).
+        a.world.hard_mode = true;
+        a.rngs = crate::app::rng::NamedRngs::new(a.world.seed as i32);
+        spawn_loot(&mut a, &npc);
+        assert_ne!(
+            *a.rngs.stream(RngKey::UpdateNpcs),
+            pristine,
+            "the rarity arm drew its NextFloat"
+        );
+    }
+
+    /// W4-f35 LOOT FINAL: the death order is the C# NPCLoot sequence —
+    /// loot (`:78855`) BEFORE coins (`:78897`) BEFORE heals (`:78898`),
+    /// and the loot pass's `resets_money` zeroes the coin base. An expert
+    /// King Slime death (the bag rule fires at is_expert — the port's
+    /// classic world keeps it off, so this pins the ORDER on the classic
+    /// kill: the gel lands before the coins on the shared stream, and the
+    /// heal feed's two RollLuck draws land last).
+    #[test]
+    fn w4_f35_death_order_is_loot_then_coins_then_heals() {
+        let mut a = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        a.world = crate::test_world_helpers::ground();
+        a.world.compute_column_surface();
+        a.player = Some(crate::player::Player::spawn(&a.world));
+        let mut npc = Npc::spawn_slime_variant(&a.world, 30, SlimeVariant::Blue).unwrap();
+        npc.hp = 0;
+        a.npcs.push(npc);
+        update_npcs(&mut a, 1.0 / 60.0);
+        let after = a.rngs.stream(RngKey::UpdateNpcs).clone();
+
+        // The twin replay in the C# order: loot, coins, heals.
+        let mut twin = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        twin.world = crate::test_world_helpers::ground();
+        twin.world.compute_column_surface();
+        twin.player = Some(crate::player::Player::spawn(&twin.world));
+        let slime = Npc::spawn_slime_variant(&twin.world, 30, SlimeVariant::Blue).unwrap();
+        let _death_pitch = twin.rngs.stream(RngKey::UpdateNpcs).next_range(-10, 11);
+        let zeroed = spawn_loot(&mut twin, &slime);
+        spawn_coins(&mut twin, &slime, zeroed);
+        spawn_heals(&mut twin, &slime);
+        assert_eq!(
+            *twin.rngs.stream(RngKey::UpdateNpcs),
+            after,
+            "the kill path consumed loot -> coins -> heals in order"
+        );
+
+        // The REVERSED order (the pre-final fold) lands elsewhere.
+        let mut rev = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        rev.world = crate::test_world_helpers::ground();
+        rev.world.compute_column_surface();
+        rev.player = Some(crate::player::Player::spawn(&rev.world));
+        let _death_pitch = rev.rngs.stream(RngKey::UpdateNpcs).next_range(-10, 11);
+        spawn_coins(&mut rev, &slime, false);
+        spawn_loot(&mut rev, &slime);
+        spawn_heals(&mut rev, &slime);
+        assert_ne!(
+            *rev.rngs.stream(RngKey::UpdateNpcs),
+            after,
+            "coins-first is a DIFFERENT stream (the fold is observable)"
         );
     }
 

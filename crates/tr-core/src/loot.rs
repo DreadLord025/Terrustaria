@@ -99,9 +99,13 @@ pub struct LootFlags {
     pub tenth_anniversary: bool,
     /// `Main.dontStarveWorld`.
     pub dont_starve: bool,
-    /// `WorldGen.Skyblock.lowTiles`.
+    /// `WorldGen.Skyblock.lowTiles` — the port's Skyblock world identity
+    /// (the gen-time active-tile census has no port; the seed flag is the
+    /// standing stand-in, the `CrateEnv::skyblock_low_tiles` note).
     pub skyblock: bool,
-    /// The player holds the Skyblock sickle (1786).
+    /// The player holds the Skyblock sickle (1786) —
+    /// `HasItemInInventoryOrOpenVoidBag` (`Conditions.cs:1561`), the f35
+    /// wiring scans the 58-slot carry view + the OPEN void bag.
     pub player_has_sickle: bool,
     /// `SpecialSeedFeatures.RemixSeed`.
     pub remix_seed: bool,
@@ -143,9 +147,14 @@ pub struct LootFlags {
     pub zone_hallow: bool,
     pub zone_desert: bool,
     pub zone_snow: bool,
-    /// `Conditions.SoulOfWhateverConditionCanDrop`'s depth band.
+    /// `Conditions.SoulOfWhateverConditionCanDrop`'s depth band
+    /// (`Conditions.cs:1606`): the dying NPC's `position.Y > rockLayer * 16`
+    /// (the NPC's own position, not the player's zone). The remix world
+    /// ignores it (`:1599-1605`).
     pub soul_depth_ok: bool,
-    /// The PirateMap depth/ocean band (`Conditions.PirateMap`).
+    /// The PirateMap band (`Conditions.cs:395-398`): the NPC's
+    /// `position.Y / 16 < worldSurface + 10` AND its `Center.X / 16` outside
+    /// the middle (left of 380 or right of `maxTilesX - 380`).
     pub pirate_map_band: bool,
     /// `HalloweenWeapons`' `info.npc.value` cap (500 × the difficulty mult).
     pub halloween_value_cap: f32,
@@ -540,6 +549,52 @@ pub fn roll_only_bad_luck_extreme(rng: &mut dyn DropRng, luck: f32, range: i32) 
 }
 
 // --- Money (`NPC.NPCLoot_DropMoney`, `NPC.cs:79619-80106`) -------------------
+
+/// `NPCID.Sets.StatueSpawnedDropRarity` (`NPCID.cs:10445`): the custom
+/// float set, default -1f (no rarity gate). `NPCLoot`'s statue arm
+/// (`NPC.cs:78849`) reads it by TYPE.
+pub fn statue_spawned_drop_rarity(kind: i32) -> f32 {
+    match kind {
+        480 | 82 | 86 | 48 | 490 | 489 | 170 | 180 | 171 | 24 | 481 | 42 | 6 | 2 => 0.05,
+        167 => 0.25,
+        73 => 0.01,
+        49 | 3 | 58 | 21 | 65 | 449 | 482 | 103 | 64 | 63 => 0.2,
+        85 => 0.0,
+        _ => -1.0,
+    }
+}
+
+/// `NPCID.Sets.NoEarlymodeLootWhenSpawnedFromStatue` (`NPCID.cs:10446`):
+/// the six statue kinds whose pre-hardmode kills drop NOTHING.
+pub fn no_earlymode_loot_when_spawned_from_statue(kind: i32) -> bool {
+    matches!(kind, 480 | 82 | 86 | 170 | 180 | 171)
+}
+
+/// `NPCLoot`'s statue loot gate (`NPC.cs:78849-78852`): a statue-spawned
+/// kill refuses when (a) its kind is in `NoEarlymodeLootWhenSpawnedFromStatue`
+/// and the world is pre-hardmode, or (b) its rarity row is not -1 and the
+/// `Main.rand.NextFloat()` draw misses the rarity OR nobody interacted.
+/// The float draw happens ONLY inside the rarity arm (the `||` chain
+/// short-circuits: a non-statue kill and the early-mode refusal draw
+/// nothing). `any_interactions` is `NPC.AnyInteractions` (`:78722-78742`).
+pub fn statue_loot_refused(
+    rng: &mut dyn DropRng,
+    spawned_from_statue: bool,
+    kind: i32,
+    hard_mode: bool,
+    any_interactions: bool,
+) -> bool {
+    if spawned_from_statue && no_earlymode_loot_when_spawned_from_statue(kind) && !hard_mode {
+        return true;
+    }
+    if spawned_from_statue {
+        let rarity = statue_spawned_drop_rarity(kind);
+        if rarity != -1.0 && (rng.next_float() >= rarity || !any_interactions) {
+            return true;
+        }
+    }
+    false
+}
 
 /// `NPC.NPCLoot_DropMoney` (`NPC.cs:79619-80106`): the value rolls (midas,
 /// the ±20-75 % spread, the six bonus chains, the blood-moon bump, the luck
@@ -2984,6 +3039,58 @@ mod tests {
                 "the two conditions are exact complements"
             );
         }
+    }
+
+    /// W4-f35 LOOT FINAL: the statue loot gate's two type tables
+    /// (`NPCID.cs:10445-10446`) and the gate's draw shape
+    /// (`NPC.cs:78849-78852`): the early-mode refusal draws NOTHING, the
+    /// rarity arm draws ONE NextFloat (a miss refuses, a hit passes), the
+    /// no-interaction refusal still draws the float first (the `||` order),
+    /// and a non-statue kill draws nothing.
+    #[test]
+    fn w4_f35_statue_gate_tables_and_draw_shape() {
+        // The rarity table's rows (the 0.05 / 0.25 / 0.01 / 0.2 / 0 bands).
+        assert_eq!(statue_spawned_drop_rarity(480), 0.05);
+        assert_eq!(statue_spawned_drop_rarity(42), 0.05);
+        assert_eq!(statue_spawned_drop_rarity(167), 0.25);
+        assert_eq!(statue_spawned_drop_rarity(73), 0.01);
+        assert_eq!(statue_spawned_drop_rarity(3), 0.2);
+        assert_eq!(statue_spawned_drop_rarity(85), 0.0);
+        assert_eq!(statue_spawned_drop_rarity(1), -1.0); // the slime: no row
+        // The early-mode set (the six statue kinds).
+        for k in [480, 82, 86, 170, 180, 171] {
+            assert!(no_earlymode_loot_when_spawned_from_statue(k));
+        }
+        assert!(!no_earlymode_loot_when_spawned_from_statue(42));
+        assert!(!no_earlymode_loot_when_spawned_from_statue(1));
+
+        // The early-mode refusal: no draw (the empty float script).
+        let mut rng = ScriptRng::new(&[], &[]);
+        assert!(statue_loot_refused(&mut rng, true, 170, false, true));
+        assert!(rng.ranges.is_empty());
+
+        // The rarity arm: the float draws; 0.04 < 0.05 passes (with an
+        // interaction), 0.05 >= 0.05 refuses (the C# `>=`).
+        let mut rng = ScriptRng::new(&[0.04], &[]);
+        assert!(!statue_loot_refused(&mut rng, true, 42, true, true));
+        let mut rng = ScriptRng::new(&[0.05], &[]);
+        assert!(statue_loot_refused(&mut rng, true, 42, true, true));
+
+        // The no-interaction refusal: the float STILL draws first (the
+        // `NextFloat() >= rarity || !AnyInteractions()` order), then the
+        // interaction term refuses even on a passing float.
+        let mut rng = ScriptRng::new(&[0.0], &[]);
+        assert!(statue_loot_refused(&mut rng, true, 42, true, false));
+
+        // The 0.0 rarity (the Mimic 85): any float >= 0 refuses.
+        let mut rng = ScriptRng::new(&[0.0], &[]);
+        assert!(statue_loot_refused(&mut rng, true, 85, true, true));
+
+        // A non-statue kill and a no-row statue kill draw nothing.
+        let mut rng = ScriptRng::new(&[], &[]);
+        assert!(!statue_loot_refused(&mut rng, false, 170, false, false));
+        let mut rng = ScriptRng::new(&[], &[]);
+        assert!(!statue_loot_refused(&mut rng, true, 1, true, true));
     }
 
     #[test]
