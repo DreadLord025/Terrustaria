@@ -1336,6 +1336,105 @@ fn demon_eye_variant_death(
     }
 }
 
+/// The 157 Arapaima death (`NPC.cs:86504-86520`, sites 175-176): the 50x
+/// dust-5 burst, then 186 at position + 187 at +14 X — scale defaults to
+/// 1f (no this.scale argument here).
+fn arapaima_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86514-86517` — the 50x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        50,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 186, 1.0); // :86518
+    gore.new_gore(rng, world, Vec2::new(pos.x + 14.0, pos.y), vel, 187, 1.0); // :86519
+}
+
+/// The 133 Wandering Eye death (`NPC.cs:86521-86544`, sites 177-178):
+/// the death half's 50x dust-5 burst, then 155 at position + 155 at
+/// +14 Y, scale 1f. The HIT half's `life < lifeMax*0.5 && localAI[0] == 0`
+/// one-shot gore 1 (`:86529-86533`) is a hit-half seam — g62's lane, not
+/// ported here (the dispatcher's hp gate skips it).
+fn wandering_eye_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86537-86540` — the 50x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        50,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 155, 1.0); // :86541
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 14.0), vel, 155, 1.0); // :86542
+}
+
+/// The 61 Vulture death (`NPC.cs:86607-86624`, sites 179-181): the 50x
+/// dust-5 burst, then 86 at position + 87/88 at +14 X, scale 1f.
+fn vulture_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86617-86620` — the 50x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        50,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let pos14 = Vec2::new(npc.x + 14.0, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 86, 1.0); // :86621
+    gore.new_gore(rng, world, pos14, vel, 87, 1.0); // :86622
+    gore.new_gore(rng, world, pos14, vel, 88, 1.0); // :86623
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -1509,6 +1608,21 @@ pub fn hit_effect_d(
     // 159-174).
     else if matches!(npc_type, 2 | 190 | 191 | 192 | 193 | 194 | 317 | 318) {
         demon_eye_variant_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86504-86520` — the 157 Arapaima arm (sites 175-176).
+    else if npc_type == 157 {
+        arapaima_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86521-86544` — the 133 Wandering Eye arm (sites 177-178; the hit
+    // half's half-life one-shot gore is g62's seam).
+    else if npc_type == 133 {
+        wandering_eye_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86545-86606` — the antlion arm (69/580/581/508/509/582): lands
+    // next batch (the dust-250 census, 23 sites).
+    // `:86607-86624` — the 61 Vulture arm (sites 179-181).
+    else if npc_type == 61 {
+        vulture_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -2696,6 +2810,49 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "demon eye {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86518-86519`/`:86541-86542`/`:86621-86623` — the Arapaima
+    /// pair 186/187 (+14 X), the Wandering Eye pair 155/155 (+14 Y), the
+    /// Vulture triple 86/87/88 (+14 X); all scale 1f after the 50x dust-5
+    /// burst.
+    #[test]
+    fn w4_f5d_the_arapaima_wandering_eye_vulture_spawn_the_pairs() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 30.0);
+        for (kind, want) in [
+            (157, vec![186, 187]),
+            (133, vec![155, 155]),
+            (61, vec![86, 87, 88]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(181);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "kind {kind}");
+            match kind {
+                133 => assert_eq!(gore.slot(1).position, Vec2::new(100.0, 114.0)),
+                _ => assert_eq!(gore.slot(1).position, Vec2::new(114.0, 100.0)),
+            }
+            for i in 0..want.len() {
+                assert_eq!(gore.slot(i).scale, 1.0);
+            }
+            let mut twin = UnifiedRandom::new(181);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 30);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
         }
     }
 }
