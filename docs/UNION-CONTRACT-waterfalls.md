@@ -27,8 +27,15 @@ commits on the g75 branch after `e30ad7ba`, they must be folded HERE (or
 re-derived here) before the family merge — the merger still takes only
 this branch. Nothing on g75 after `e30ad7ba` is known to this fold; check
 `git log e30ad7ba..origin/task/W4-g75-honeyfall-draw` at merge time.
-**Closeout re-check (2026-11-21)**: the g75d final sweep was re-fetched —
-the g75 tip is STILL `e30ad7ba`, the range is empty, nothing to fold.
+**Closeout re-check (2026-11-21)**: the first re-fetch found the g75 tip
+still `e30ad7ba`; the pre-push re-fetch found the g75d sweep had landed
+six commits (`d118f7ba`/`f4e3071f`/`2b9ed81f`/`17161648`/`a3093a66f`/
+`d441713d`/`41b64b04`) — ALL folded per-hunk into this branch (the disco
+fix, the 717 witnesses with two C#-verified corrections, the :3858 spout
+wiring, the DELEGATED-STATUS + census docs; see ANALYSIS "The g75d
+final-sweep FOLD"). The g75 branch now ends at `41b64b04` and is fully
+contained; re-check `git log 41b64b04..origin/task/W4-g75-honeyfall-draw`
+at merge time.
 
 ## Why THIS branch is canonical (the final-fold audit)
 
@@ -230,11 +237,14 @@ spout-detection/lava-kind/tile-196/frame-counter/quad-emission tests, etc.).
 
 ### The 9 CLOSEOUT witnesses (W4-g73 closeout, 2026-11-21 — written, NOT run)
 
-Frame tables (`crates/tr-core/src/waterfall/mod.rs`, 4):
-`the_fountain_frame_counters_ride_their_own_rates`,
-`lava_cloud_tile_717_drops_below`,
-`lava_fountain_draws_two_white_sheets_and_lights_every_cell`,
-`rain_fountain_draws_two_lit_sheets_with_the_even_column_lead`.
+Frame tables (`crates/tr-core/src/waterfall/mod.rs`, 4 → 2 after the g75d
+fold's keep-one): `the_fountain_frame_counters_ride_their_own_rates`,
+`rain_fountain_draws_two_lit_sheets_with_the_even_column_lead` survive;
+the closeout's `lava_cloud_tile_717_drops_below` /
+`lava_fountain_draws_two_white_sheets_and_lights_every_cell` were replaced
+by the sweep's `lava_fountain_tile_717_drops_below` /
+`lava_fountain_draws_the_two_sheet_pair_and_lights_every_cell` (counted
+below; the unique tail-fade/quad-count assertions carried over).
 
 Quit stop (`crates/tr-app/src/audio.rs`, 1):
 `the_quit_stop_kills_both_liquid_loop_channels`.
@@ -247,9 +257,29 @@ Retro scan (`crates/tr-core/src/retro_water.rs`, 3):
 Tile chain (`crates/tr-core/src/wiring.rs`, 1):
 `the_water_fountain_trip_flips_the_2x4_body_frame`.
 
-Lane total: 43 + 9 = 52. The closeout's chain-status census (the 338/207
-fountain chains, the g75d re-fetch, the g24 stop claim) is recorded in
-ANALYSIS "W4-g73 FALLS CLOSEOUT".
+### The 8 g75d FINAL-SWEEP witnesses (folded mid-closeout — written, NOT run)
+
+Disco (`crates/tr-core/src/waterfall/mod.rs` 2 + `app/frame/draw.rs` 1):
+`the_disco_fall_reads_the_shared_disco_latch` (the AddLight cell corrected
+to (9, 12) — `:548` runs before the `:663` conversion),
+`update_tick_does_not_cycle_the_disco_rgb`,
+`the_waterfall_block_latches_the_shared_disco_statics`.
+
+Lava fountain (`crates/tr-core/src/waterfall/mod.rs`, 2):
+`lava_fountain_tile_717_drops_below`,
+`lava_fountain_draws_the_two_sheet_pair_and_lights_every_cell` (the
+water-scan assertion corrected to the load reset — the rain arm
+`continue`s at `:525` before the scan block).
+
+Spout clause (`crates/tr-app/src/render/liquids.rs` 2 + `render/tiles.rs`
+1): `w4_g75_a_spouting_half_brick_refuses_its_liquid_behind_draw`,
+`w4_g75_a_bubble_neighbour_does_not_feed_the_spout_clause`,
+`the_liquid_behind_call_feeds_the_waterfall_manager`.
+
+Lane total: 43 + 7 closeout-unique + 8 sweep = 58. The closeout's
+chain-status census (the 338/207 fountain chains — the proj AI rides the
+d8 lane `50dcaa75` —, the g75d fold, the g24 stop claim) is recorded in
+ANALYSIS "W4-g73 FALLS CLOSEOUT" + "The g75d final-sweep FOLD".
 
 ## Verification the merger must run (this lane was code-only)
 

@@ -77,8 +77,20 @@ pub struct Listener {
 /// resolved UPSTREAM by `ambient_sound::liquid_loop_update` (the Manhattan
 /// position pick + the strength sum, the W4-g73 falls-adjacent census) —
 /// this function receives the already-picked position and summed strength.
-/// The retro-only `oldDrawWater` scan that writes `Main.ambientLava*` stays
-/// unported (`App::ambient_lava` rides the `Main.cs:67235-67236` load reset).
+///
+/// **DELEGATED-STATUS (W4-g75 retire-contract `d441713d`, folded):** this
+/// pure fn is the VOLUME TIER of a two-tier split —
+/// `ambient_sound::liquid_loop_update` (the DECISION tier: the Manhattan
+/// position pick + the `ambientLavafallStrength + ambientLavaStrength` sum,
+/// `Main.cs:13488-13497`, the play gate on the channel's OWN strength, the
+/// slot/pitch bookkeeping) delegates its per-channel volume walk to this
+/// fn. The `ambientLava` residual is thereby resolved UPSTREAM by the g73
+/// tier; this fn itself stays blend-free. **The merger keeps BOTH fns,
+/// two-tier** — do not collapse the decision tier into this walk or
+/// re-derive either half. The retro `oldDrawWater` scan that writes
+/// `Main.ambientLava*` is PORTED as of the W4-g73 closeout
+/// (`tr_core::retro_water::ambient_lava_scan`, Retro/Trippy frames);
+/// Color/White keeps the `Main.cs:67235-67236` load reset.
 #[allow(clippy::too_many_arguments)]
 pub fn liquid_ambience(
     strength: f32,

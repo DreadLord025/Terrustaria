@@ -1190,17 +1190,17 @@ five items, each re-verified against the cited C# windows:
      `tile: Some(338)`, the generated `D_338` def — 1x2, bottom anchor);
      wire trip ✓ (`wiring.rs::firework_fountain`, `Wiring.cs:1522-1546` —
      `CheckMech(30)`, the `419 + Next(4)` roll, the `ai0/ai1` anchor, the
-     app-side `fountain_anchored` dedupe); player right-click ✗ (the
-     `Player.cs:32355-32377` tile-interaction arm is unported); proj spawn
-     ✗ DROPPED — `spawn_device_kind` gates on `proj_data(kind)` and the
-     419-422 family has no `SetDefaults` rows (`Projectile.cs:11033-11048`
-     timeLeft 600 + the aiStyle-73 dust fountains `:30480-30560+` are
-     unported, the recorded `world_sim/wiring.rs` roster note); waterfall
+     app-side `fountain_anchored` dedupe); player right-click + proj AI —
+     the **d8 lane** (`task/W4-d8-proj-ai-71-80`, tip `50dcaa75`:
+     `ai_fountain` in `projectile_ai_misc.rs` + the fountain-click witness;
+     not yet in main, not duplicated here). On THIS branch the spawn
+     still drops at `spawn_device_kind`'s `proj_data(kind)` gate (no
+     419-422 `SetDefaults` rows — `Projectile.cs:11033-11048` timeLeft 600
+     + the aiStyle-73 dust fountains `:30480-30560+` ride d8); waterfall
      draw — NOT DOWNSTREAM: aiStyle 73 emits Dust 219/221/222 only, it
      never feeds `WaterfallManager`. End-to-end status: **place → switch
-     work; spawn drops at the documented proj-data gap; no waterfall
-     involvement by design.** The projectile family belongs to the
-     projectile lane, not this one.
+     work here; spawn + AI + click land with the d8 merge; no waterfall
+     involvement by design.**
    * **WaterFountain (tile 207 → SwitchFountain)**: wire trip ✓
      (`wiring.rs::switch_fountain`, `WorldGen.cs:51150-51198` — the 2x4
      frameY ±72 flip; new witness
@@ -1247,6 +1247,59 @@ five items, each re-verified against the cited C# windows:
 Closeout witnesses: 9 new (4 frame-table + 1 quit-stop + 3 retro-scan +
 1 SwitchFountain), all WRITTEN NOT RUN — no cargo/rustc/rustfmt/tests/
 graphify invoked. Lane total 43 + 9 = 52.
+
+### The g75d final-sweep FOLD (mid-closeout re-fetch, 2026-11-21)
+
+The closeout's first re-fetch found g75 still at `e30ad7ba`; a second
+re-fetch before the push found the g75d sweep had landed SIX commits
+(`d118f7ba` disco fix / `f4e3071f` 717 witnesses / `2b9ed81f` sweep docs /
+`17161648` fold-list / `a3093a66f` :3858 spout wiring / `d441713d`
+DELEGATED-STATUS / `41b64b04` fold-list extension). All were folded
+per-hunk into THIS canonical branch (the contract's instruction):
+
+* `d118f7ba` — the disco colour-source FIX (critical): the manager-local
+  `update_disco_rgb` cycle + `disco_style` removed, `set_disco_rgb` latch
+  added and fed from `params.disco` beside `set_show_invisible`, init
+  `[255, 0, 0]` (`Main.cs:66780`). 3 witnesses folded. FOLD CORRECTION:
+  the draft's `AddLight` assertion at the converted cell (9, 11) is wrong
+  — the C# `AddLight` runs at the TOP of the step (`:548`), BEFORE the
+  `:663-677` conversion, so the disco light lands on the NEXT cell
+  (9, 12); corrected in the folded witness.
+* `f4e3071f` — the 717 witnesses replace the closeout's duplicate drafts
+  (keep-one: `lava_fountain_tile_717_drops_below` +
+  `lava_fountain_draws_the_two_sheet_pair_and_lights_every_cell`; the
+  closeout's `lava_cloud_tile_717_drops_below` /
+  `lava_fountain_draws_two_white_sheets_and_lights_every_cell` dropped,
+  their unique tail-fade/quad-count assertions carried into the survivor).
+  FOLD CORRECTION: the draft asserted `water_scan.strength > 0` for the
+  717 fixture — WRONG: the type-26 rain arm `continue`s at `:525` BEFORE
+  the typed-walk scan block (`:685-729`), so 11/22/26 feed NEITHER
+  ambience triple from their own draw arm; the `:708` exclusion list's
+  omission of 26 only matters for falls CONVERTED mid-walk. The folded
+  witness asserts both scans at the load reset.
+* `a3093a66f` — the `TileDrawing.cs:3858` `CheckForWaterfall` spout clause
+  WIRED (`liquid_behind_spout_refused`, the type-379 bubble exclusion,
+  the manager handle through the existing `draw_tiles` seam). 3 witnesses
+  + anchors row folded. The g80 `inActive()` half composes by OR.
+* `d441713d` — the `sound.rs` DELEGATED-STATUS note folded (updated for
+  the closeout's retro-scan port); research/09 row 18 + the :3858 row +
+  the DONE task seed, research/32's two ambience rows re-pointed at the
+  live two-tier consumer.
+* `2b9ed81f`/`17161648`/`41b64b04` — docs/fold-list commits; their content
+  is superseded by THIS record (the fold is done, the lists are moot).
+  The g75 branch's claim of a "51-witness inventory" is superseded: the
+  canonical count is 43 + 7 closeout-unique + 8 sweep = 58 lane witnesses
+  (the closeout's 9 minus the 2 dropped duplicates, plus the sweep's
+  3 disco + 2 lava-fountain + 3 spout).
+
+The d8 lane note (from the sweep's census): the proj 419-422 AI arm
+(`ai_fountain`) + the fountain right-click ride
+`task/W4-d8-proj-ai-71-80` (`50dcaa75`) — not duplicated here.
+
+**Merger note**: `task/W4-g75-honeyfall-draw` now ends at `41b64b04`;
+every semantic it carries is folded above. The merger still takes ONLY
+this branch. Re-check `git log 41b64b04..origin/task/W4-g75-honeyfall-draw`
+at merge time for any further sweep commits.
 
 
 ## Wind sway and tree leaves (TILE-DRAW-3)

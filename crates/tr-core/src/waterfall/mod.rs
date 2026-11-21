@@ -2021,6 +2021,7 @@ mod tests {
             &w, &light, &style, 0.0, &active_alpha(), 255, 0, screen_at(0.0, 0.0), false,
         );
         let out = mgr.take_quads();
+        assert_eq!(out.len(), 50, "num22 = 100/4 = 25 steps x two sheets");
         let fg: Vec<&WaterfallDraw> = out.iter().filter(|d| d.texture == 26).collect();
         let bg: Vec<&WaterfallDraw> = out.iter().filter(|d| d.texture == 27).collect();
         assert!(!fg.is_empty() && fg.len() == bg.len(), "the pair draws together");
