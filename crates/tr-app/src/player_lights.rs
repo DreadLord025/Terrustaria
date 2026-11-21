@@ -754,6 +754,58 @@ mod tests {
         assert_eq!(lights[0].2, tr_core::tile_light::torch_color(13, &params()));
     }
 
+    /// W4-f33 — the RESTORED hold arms: shimmer (`:40297-40300`, the Aether
+    /// torch 5353 → id 23) shadows everything; the underground-desert half
+    /// of `:40337` converts below the surface line without the remix seed.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f33_the_shimmer_and_underground_desert_hold_arms() {
+        let mut p = player();
+        p.x = 160.0;
+        p.y = 176.0;
+        p.unlocked_biome_torches = true;
+        let w = World::new("t".into(), 64, 800);
+        // Shimmer FIRST: it shadows the dungeon + snow arms.
+        let mut z = zones();
+        z.shimmer = true;
+        z.dungeon = true;
+        z.snow = true;
+        let lights = held_item_lights(&p, 8, 20.0, z, &w, &params());
+        assert_eq!(lights[0].2, tr_core::tile_light::torch_color(23, &params()));
+        // Underground desert: below the surface line, no remix, no snow —
+        // the `|| ZoneUndergroundDesert` half fires (`:40337`).
+        let mut z = zones();
+        z.underground_desert = true;
+        p.y = (w.world_surface as f32 + 10.0) * TILE_PX;
+        let lights = held_item_lights(&p, 8, 20.0, z, &w, &params());
+        assert_eq!(lights[0].2, tr_core::tile_light::torch_color(16, &params()));
+        // The jungle arm (`:40333-40336`) → 4388 → id 21.
+        let mut z = zones();
+        z.jungle = true;
+        p.y = 176.0;
+        let lights = held_item_lights(&p, 8, 20.0, z, &w, &params());
+        assert_eq!(lights[0].2, tr_core::tile_light::torch_color(21, &params()));
+        // The temple arm (`:40305-40308`) shares the jungle torch 4388.
+        let mut z = zones();
+        z.temple = true;
+        let lights = held_item_lights(&p, 8, 20.0, z, &w, &params());
+        assert_eq!(lights[0].2, tr_core::tile_light::torch_color(21, &params()));
+        // The glowshroom arm (`:40313-40316`) → 5293 → id 22.
+        let mut z = zones();
+        z.glowshroom = true;
+        let lights = held_item_lights(&p, 8, 20.0, z, &w, &params());
+        assert_eq!(lights[0].2, tr_core::tile_light::torch_color(22, &params()));
+        // The corrupt/crimson pair (`:40321-40328`) → 4385/4386 → 18/19.
+        let mut z = zones();
+        z.corrupt = true;
+        let lights = held_item_lights(&p, 8, 20.0, z, &w, &params());
+        assert_eq!(lights[0].2, tr_core::tile_light::torch_color(18, &params()));
+        let mut z = zones();
+        z.crimson = true;
+        let lights = held_item_lights(&p, 8, 20.0, z, &w, &params());
+        assert_eq!(lights[0].2, tr_core::tile_light::torch_color(19, &params()));
+    }
+
     #[test]
     fn the_biome_torch_needs_the_torch_god_unlock() {
         // `UsingBiomeTorches` (`:3950-3959`) reads `unlockedBiomeTorches`
