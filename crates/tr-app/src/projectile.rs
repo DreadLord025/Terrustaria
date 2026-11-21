@@ -19579,8 +19579,8 @@ impl ProjectilePool {
                         // the fall-through byte-identical. The single-
                         // player port maps `Main.player[0]` to the local
                         // player (R7's machine targets index 0); the npc
-                        // slice maps through `npc_ref` (the 636 snap gate
-                        // stays false until R7's NpcKind row merges).
+                        // slice maps through `npc_ref` (W4-d125: the 636
+                        // kind row landed — the sun-dance snap is live).
                         _ if crate::projectile_ai_empress::handles(self.slots[i].kind) => {
                             let empress_players: Vec<(f32, f32)> = player
                                 .as_ref()
@@ -23415,6 +23415,18 @@ impl ProjectilePool {
         };
         let p = &self.slots[slot];
         if p.damage <= 0 {
+            return;
+        }
+        // W4-d125 — `Damage_CanDealDamage`'s telegraph-invuln terms
+        // (`Projectile.cs:12448`): `(type == 923 && localAI[0] <= 60f) ||
+        // (type == 919 && localAI[0] <= 60f)` — the Sun Dance's charge
+        // and the Lance's 60-tick telegraph deal NO player damage (the
+        // S1-D-4 documented damage-side remainder). The gate runs BEFORE
+        // the hitbox test in the C# (`Damage()`'s head); both are
+        // draw-free, so the order is unobservable — kept head-first here.
+        if (p.kind == FAIRY_QUEEN_LANCE || p.kind == FAIRY_QUEEN_SUN_DANCE)
+            && p.local_ai[0] <= 60.0
+        {
             return;
         }
         let cx = p.pos.x + SIZE * 0.5;

@@ -1730,6 +1730,19 @@ pub struct Npc {
     /// ride the generic flight and the 372/373 sharks spawn only through
     /// that arm's future drain (documented remainder, ANALYSIS).
     pub wants_fishron_bolts: Vec<(f32, f32, f32, f32, f32, f32, f32)>,
+    /// W4-d125 — the Empress adapter's `NPC.empressRageMode` write-back
+    /// mirror (`NPC.cs:45944-45947`): the adapter holds `&World`, so the
+    /// sim's tick-tail pass stamps this onto `world.empress_rage_mode`
+    /// (the WoF statics write-through convention). `None` = the adapter
+    /// did not run this tick (the mirror must not clobber the latch).
+    pub empress_rage_mode_out: Option<bool>,
+    /// W4-d125 — `IsDamageDodgeable`'s 636 arm stamp
+    /// (`NPC.cs:78752-78753`: `!ShouldEmpressBeEnraged()`): the gate
+    /// needs the World's day/remix state the `&self` accessor cannot
+    /// reach, so the adapter stamps the verdict each tick (the contact
+    /// pass runs at the update's tail, after the AI — the C#'s own
+    /// read order). `None` = no stamp yet: dodgeable (the default arm).
+    pub empress_dodgeable: Option<bool>,
     /// `Main.windSpeedCurrent` pre-stamped by the sim before the update
     /// (the `plantera_hook_anchor` pre-pass convention) — the Detonating
     /// Bubble's wind blend reads it (`NPC.cs:34903`). The AI's `&World`
@@ -3108,6 +3121,8 @@ impl Npc {
             wants_fishron_bubbles: Vec::new(),
             wants_fishron_trail: Vec::new(),
             wants_fishron_bolts: Vec::new(),
+            empress_rage_mode_out: None,
+            empress_dodgeable: None,
             wind_speed_current: 0.0,
             twin_time_lefts: Vec::new(),
             slot: 0,
@@ -4352,12 +4367,14 @@ impl Npc {
     /// `NPCID.SkeletronHead`, `case 127` `NPCID.SkeletronPrime`; the Dungeon
     /// Guardian, `case 68`, rides the same arm but has no port kind yet).
     /// Both machines maintain `ai[1]` (`update_prime`/`update_skeletron`);
-    /// everything else defaults true; the Empress of Light's
-    /// `case 636` arm (`!ShouldEmpressBeEnraged()`) is out with its unported
-    /// kind (docs/ANALYSIS.md, "The dodge family").
+    /// everything else defaults true. W4-d125: the Empress's `case 636`
+    /// arm (`!ShouldEmpressBeEnraged()`) rides the adapter's per-tick
+    /// stamp (`ai_120_empress` — the gate needs the World state this
+    /// `&self` accessor cannot reach); no stamp yet = the true default.
     pub fn is_damage_dodgeable(&self) -> bool {
         match self.kind {
             NpcKind::SkeletronHead | NpcKind::SkeletronPrime => self.ai[1] != 2.0,
+            NpcKind::EmpressOfLight => self.empress_dodgeable.unwrap_or(true),
             _ => true,
         }
     }
@@ -4934,6 +4951,32 @@ impl Npc {
             // (`Main.rand.Next(80, 121)`, `NPC.cs:49481`) — the adapter
             // draws it at request time on the caller's stream.
             69 => self.ai_069_fishron(world, player, rng),
+            // `else if (this.aiStyle == 120) { this.AI_120_HallowBoss(); }`
+            // (`NPC.cs:41100-41103`; the machine `:45953-46942`). The
+            // Empress 636 is the style's only user; W4-d125 wires the
+            // faithful pure core (`npc_ai_empress`, ebdf83e3). EVERY
+            // Main.rand draw the boss's tick makes rides the caller's
+            // UpdateNPCs stream in the module's documented order (the
+            // dust trails, the fan/spiral draws, the discarded case-7
+            // NextFloat).
+            120 => self.ai_120_empress(world, player, rng),
+            // `else if (this.aiStyle == 65)` (`NPC.cs:34249-34252`,
+            // `AI_065_Butterflies` `:44896-45110`) — the port claims the
+            // 661 branch ONLY (the Prismatic Lacewing, W4-d125); the
+            // other butterfly kinds have no port rows. The 661 machine
+            // is noGravity but NOT noTileCollide — the UpdateCollision
+            // integration (`:90489`) is the flyer-collision tail.
+            65 if self.kind == NpcKind::PrismaticLacewing => {
+                let out = crate::npc_ai_lacewing::lacewing_step(
+                    self, world, player, &[], rng,
+                );
+                if out.deactivate {
+                    // `:44921` — active = false, NO death events.
+                    self.encourage_despawn(0);
+                } else {
+                    self.integrate_flyer_collision(world);
+                }
+            }
             // `else if (this.aiStyle == 70)` (`NPC.cs:34884-34957`) —
             // the Detonating Bubble 371, the style's only user. The
             // faithful `npc_ai_style70::ai_style70` arm (456a2366).
@@ -5708,6 +5751,172 @@ impl Npc {
             // `:35012` — SoundEngine.PlaySound(4, cx, cy, 19): the roar
             // is the tracked-sound seam; the port's NPC sound table has
             // no style-19 row, so it stays a documented skip (ANALYSIS).
+        }
+    }
+
+    /// W4-d125 empress wiring — the aiStyle-120 adapter: the live `Npc`
+    /// fields ride into the faithful pure core
+    /// (`npc_ai_empress::empress_ai_step`, `AI_120_HallowBoss`,
+    /// `NPC.cs:45953-46942`) and back. The fishron adapter's shape
+    /// (`ai_069_fishron`): RNG on the caller's `UpdateNPCs` stream (the
+    /// module consumes EVERY draw in C# order — the dust trails, the
+    /// bolt fans, the discarded case-7 `NextFloat`); the `TargetClosest`
+    /// requests resolve INLINE on this adapter (the C# re-reads the
+    /// target after each call; the port's single session player makes
+    /// the re-pick idempotent — the pick writes target/facing only, no
+    /// draws), so the request drains to a no-op. The projectile spawns
+    /// ride `wants_hostile_shot_ai` (the C# `Owner: Main.myPlayer` +
+    /// the ai0/ai1 payload); the despawn (`out.active == false`, the
+    /// case-13 alpha-255 tail-skip `:46904-46911`) maps to
+    /// `EncourageDespawn(0)` — the creeper precedent, NO death events.
+    /// The remix `empressRageMode` static rides the World latch; the
+    /// sim's tick-head pass owns the `Main.cs:17922-17924` clear.
+    fn ai_120_empress(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        use crate::npc_ai_empress::{
+            empress_ai_step, EmpressEnv, EmpressExtraPlayer, EmpressRequest, EmpressState,
+            EMPRESS_DEF_DAMAGE, EMPRESS_DEF_DEFENSE,
+        };
+        let cand = crate::npc_target::session_candidate(player);
+        let (pcx, pcy) = player.center();
+        // `NPC.HasValidTarget` (`NPC.cs:6657-6671`): target in 0..254,
+        // the player active + not dead (+ not ghost — the port has none).
+        let target_invalid = !(self.target >= 0 && self.target < 255) || player.dead;
+        // `GetTargetData().Center` — the RAW (0,0) default when invalid
+        // (the module's :6901-6912 note). The single-player fold: any
+        // valid target IS the session player (slot 0).
+        // The mid-tick `TargetClosest` calls (`:46087`/`:46233`/`:46853`
+        // + the materialize end `:46073`) re-read the target INSIDE the
+        // tick; the port resolves them AHEAD of the step (the fishron
+        // adapter's pre-resolution precedent): the pick is RNG-free and
+        // writes target/facing only, so with the one session player the
+        // pre-pass is behaviour-identical (the request drains no-op).
+        if target_invalid {
+            crate::npc_target::target_closest(self, world, &[cand], true, 120, 0);
+        }
+        let target_invalid = !(self.target >= 0 && self.target < 255) || player.dead;
+        let (tcx, tcy) = if target_invalid { (0.0, 0.0) } else { (pcx, pcy) };
+        let env = EmpressEnv {
+            // `this.difficulty` (latched at SetDefaults, `:18150`): the
+            // port is single-difficulty classic; the expert flag rides
+            // the player buff mirror (the fishron convention).
+            difficulty: if player.buffs.expert_mode { 2.0 } else { 1.0 },
+            day_time: world.day_time,
+            time: world.time,
+            remix_world: world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+            empress_rage_mode: world.empress_rage_mode,
+            world_surface: world.world_surface,
+            get_good_world: world
+                .seeds
+                .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+            target_cx: tcx,
+            target_cy: tcy,
+            target_vx: if target_invalid { 0.0 } else { player.vx },
+            target_vy: if target_invalid { 0.0 } else { player.vy },
+            target_invalid,
+        };
+        let mut s = EmpressState {
+            ai0: self.ai[0],
+            ai1: self.ai[1],
+            ai2: self.ai[2],
+            ai3: self.ai[3],
+            local_ai0: self.local_ai[0],
+            x: self.x,
+            y: self.y,
+            vx: self.vx,
+            vy: self.vy,
+            alpha: self.alpha as i32,
+            damage: self.damage_override.unwrap_or(EMPRESS_DEF_DAMAGE),
+            defense: self.defense(),
+            life: self.hp,
+            life_max: self.max_hp,
+            def_damage: EMPRESS_DEF_DAMAGE,
+            def_defense: EMPRESS_DEF_DEFENSE,
+            target: self.target,
+            // `base.whoAmI` — the port's compacting list rides the
+            // sim-stamped slot (the saucer deathray's convention).
+            who_am_i: self.slot as i32,
+        };
+        // The extra-shot scan slice (`Boss_CanShootExtraAt`,
+        // `:46962-46982`): the single session player as slot 0 — the
+        // scan's `index == target` skip refuses it while targeted
+        // (single-player: the extra volleys never fire, exactly the
+        // C#'s one-player result).
+        let extra = [EmpressExtraPlayer {
+            index: 0,
+            cx: pcx,
+            cy: pcy,
+            vx: player.vx,
+            vy: player.vy,
+            active: true,
+            dead: player.dead,
+            interaction: self.player_interaction[0],
+        }];
+        let out = empress_ai_step(&mut s, &env, rng, &extra);
+        // The state writes back (the C#'s field writes).
+        self.ai = [s.ai0, s.ai1, s.ai2, s.ai3];
+        self.local_ai[0] = s.local_ai0;
+        self.vx = s.vx;
+        self.vy = s.vy;
+        self.alpha = s.alpha.clamp(0, 255) as u8;
+        self.damage_override = Some(s.damage);
+        self.defense_override = Some(s.defense);
+        self.dont_take_damage = out.dont_take_damage;
+        if out.net_update {
+            self.net_update = true;
+        }
+        // `NPC.empressRageMode` — the adapter holds &World (immutable);
+        // the updated latch rides the NPC mirror the sim's tick-tail
+        // write-back stamps onto the World (the WoF statics convention).
+        self.empress_rage_mode_out = Some(out.empress_rage_mode);
+        if !out.active {
+            // The case-13 despawn (`:46904-46911`): active = false,
+            // the tail SKIPPED — no damage/defense rewrite this tick
+            // (the module returned early; the writes above landed the
+            // pre-tail values, which the C# also keeps).
+            self.encourage_despawn(0);
+            return;
+        }
+        // `NPC.UpdateNPC`'s noTileCollide integration (`:90490-90498`):
+        // the machine writes velocity; the position add is the tail's.
+        self.x = s.x + s.vx;
+        self.y = s.y + s.vy;
+        // `IsDamageDodgeable`'s 636 arm (`NPC.cs:78752-78753`):
+        // `!ShouldEmpressBeEnraged()` — recomputed on the POST-
+        // integration position (the remix scan reads Center.Y; the
+        // contact pass runs after this update, the C#'s read order).
+        // The recomputation reproduces the step's own gate answer: the
+        // sticky latch early-return reads env's pre-step value, which
+        // the scan only ever raises (the Main-head clear ran pre-AI).
+        s.x = self.x;
+        s.y = self.y;
+        let (dodge_gate, _) = crate::npc_ai_empress::should_empress_be_enraged(&s, &env);
+        self.empress_dodgeable = Some(!dodge_gate);
+        for req in out.requests {
+            match req {
+                EmpressRequest::Projectile { kind, x, y, vx, vy, damage, ai0, ai1 } => {
+                    // The C#'s NewProjectile takes the CENTRE; the
+                    // port's spawn takes the top-left (the fishron-bolt
+                    // precedent). The five kinds' boxes come from
+                    // `proj_data` (30x30 for 872/873/874/923, 8x8 919).
+                    let (pw, ph) = crate::projectile::proj_data(kind as u16)
+                        .map(|d| (d.w, d.h))
+                        .unwrap_or((30.0, 30.0));
+                    self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                        kind: kind as u16,
+                        x: x - pw * 0.5,
+                        y: y - ph * 0.5,
+                        vx,
+                        vy,
+                        damage,
+                        ai0,
+                        ai1,
+                        scale: None,
+                    });
+                }
+                // Resolved AHEAD of the step (the pre-pass above — the
+                // fishron adapter's documented fold).
+                EmpressRequest::TargetClosest => {}
+            }
         }
     }
 
@@ -9761,6 +9970,14 @@ impl Npc {
     pub(crate) fn integrate_no_tile_collide(&mut self) {
         self.x += self.vx;
         self.y += self.vy;
+    }
+
+    /// W4-d125 — the `UpdateCollision` flyer integration for the sim's
+    /// Lacewing pre-pass (`NPC.cs:90489`: 661 is noGravity but NOT
+    /// noTileCollide). The private `integrate_flyer_collision`'s
+    /// pub(crate) shell — the plantera-minion pass's precedent.
+    pub(crate) fn integrate_flyer_collision_pub(&mut self, world: &World) {
+        self.integrate_flyer_collision(world);
     }
 
     /// `AI_005_EaterOfSouls`'s type-5 branch (`NPC.cs:50379-50383` — the

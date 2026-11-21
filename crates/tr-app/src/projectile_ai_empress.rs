@@ -82,10 +82,10 @@
 //!   (`TrailingMode` 2, cache 120/60, `ProjectileID.cs:521-522`), the
 //!   `GetAlpha`/`AI_173_GetColor` tints (`:45442-45449`, `:78999-79002`),
 //!   923's `drawLayer = 2` (`:8769`) and beam draw (`Main.cs:28268`);
-//! * `npc_ref` maps the port's liveness (`hp > 0`) to `NPC.active` and
-//!   `is_empress` is FALSE until R7's `NpcKind::HallowBoss` (636) row lands
-//!   — main has no 636 kind, so the sun-dance centre snap cannot fire
-//!   pre-wiring (the core itself is faithful and witness-tested through
+//! * `npc_ref` maps the port's liveness (`hp > 0`) to `NPC.active`;
+//!   W4-d125 landed `NpcKind::EmpressOfLight` (636), so `is_empress`
+//!   reads the live kind and the sun-dance centre snap fires
+//!   (the core itself is faithful and witness-tested through
 //!   [`EmpressNpcRef`]).
 //!
 //! Witness tests are WRITTEN, NOT RUN (code-only mode — no compiler invoked):
@@ -135,12 +135,13 @@ pub(crate) struct EmpressNpcRef {
     pub center: (f32, f32),
 }
 
-/// The wiring-side mapping from the port's `Npc`. `is_empress` is false
-/// until R7's kind row lands (main has no 636) — the documented remainder.
+/// The wiring-side mapping from the port's `Npc`. W4-d125 landed the
+/// `NpcKind::EmpressOfLight` (636) row — the sun-dance snap gate
+/// (`:45008-45014`) now fires on the live boss.
 pub(crate) fn npc_ref(n: &Npc) -> EmpressNpcRef {
     EmpressNpcRef {
         active: n.hp > 0,
-        is_empress: false, // NpcKind::HallowBoss (636) lands with R7's merge
+        is_empress: n.kind == crate::npc::NpcKind::EmpressOfLight,
         center: n.center(),
     }
 }

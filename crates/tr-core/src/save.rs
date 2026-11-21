@@ -65,7 +65,7 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// file-absent temps (`_tempSandstorm*`/`_tempParty*`/`_tempLanternNight*` —
 /// no writer or loader site in `WorldFile.cs`) reset on load by design, so
 /// the port saves none of them either (S1-J-7).
-pub const VERSION: u32 = 17;
+pub const VERSION: u32 = 18;
 
 /// The v7+ sections' payload — the world chests, the banner kill counts, the
 /// bestiary kill counts and the town NPCs. New sections grow this struct
@@ -428,6 +428,9 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
     // `:79349`) — S1-D-3 W-9 fishron wiring; the v15 queen-slime byte's
     // shape.
     w.write_all(&[u8::from(world.downed_fishron)])?;
+    // v18: `NPC.downedEmpressOfLight` (`NPC.cs:6393`, the case-636 death
+    // flag `:79351-79353`) — W4-d125 empress wiring; the v17 byte's shape.
+    w.write_all(&[u8::from(world.downed_empress_of_light)])?;
     Ok(())
 }
 
@@ -810,6 +813,10 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
     if version >= 17 {
         world.downed_fishron = r.u8()? != 0;
     }
+    // v18: the Empress's downed flag (W4-d125, see the writer's citation).
+    if version >= 18 {
+        world.downed_empress_of_light = r.u8()? != 0;
+    }
     world.revision = 0;
     Ok((world, side))
 }
@@ -1054,8 +1061,8 @@ mod tests {
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
         assert_eq!(
             &buf[8..12],
-            &[17, 0, 0, 0],
-            "the writer emits the current v17"
+            &[18, 0, 0, 0],
+            "the writer emits the current v18"
         );
         let (back, _chests) = parse(&buf).unwrap();
         assert_eq!(back.sundial_cooldown, 5);
@@ -1082,13 +1089,13 @@ mod tests {
     #[test]
     fn dw_1_4_version_above_4_rejected() {
         // DW-1.4 (dirty): the existing loader rejects a version above the
-        // current one (`save.rs` version gate). v17 (the downedFishron
-        // byte, S1-D-3 W-9) is now the current format, so the gate pins 17.
+        // current one (`save.rs` version gate). v18 (the downedEmpress
+        // byte, W4-d125) is now the current format, so the gate pins 18.
         let w = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        buf[8..12].copy_from_slice(&18u32.to_le_bytes());
-        assert!(parse(&buf).is_err(), "version 18 is unsupported");
+        buf[8..12].copy_from_slice(&19u32.to_le_bytes());
+        assert!(parse(&buf).is_err(), "version 19 is unsupported");
     }
 
     #[test]
@@ -1166,8 +1173,9 @@ mod tests {
         // The v7 block of an empty-wire/entity/chest/banner/bestiary world: the
         // fixed flags block + four empty colour counts + one empty entity count +
         // one empty chest count + one empty banner count + one empty bestiary count.
-        // (+1: the v17 downedFishron byte rides the flags block's tail.)
-        buf.truncate(buf.len() - (V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 4 + 4 + 4 + 4 + 1));
+        // (+2: the v17 downedFishron + v18 downedEmpress bytes ride the
+        // flags block's tail.)
+        buf.truncate(buf.len() - (V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 4 + 4 + 4 + 4 + 2));
         buf[8..12].copy_from_slice(&6u32.to_le_bytes());
         let (back, side) = parse(&buf).unwrap();
         let chests = side.chests;
@@ -1277,9 +1285,9 @@ mod tests {
         let cur_len = buf.len();
         let mut v12 = buf.clone();
         // The v13 block is the tail: 4 + (4+len+8) + 4 + 8 bytes, then the
-        // v14 rain block (9 bytes), the v15 flag (1), the v16 styles (5)
-        // and the v17 fishron flag (1).
-        let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1;
+        // v14 rain block (9 bytes), the v15 flag (1), the v16 styles (5),
+        // the v17 fishron flag (1) and the v18 empress flag (1).
+        let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1 + 1;
         v12.truncate(cur_len - tail - 1);
         v12[8..12].copy_from_slice(&12u32.to_le_bytes());
         let (back, _) = parse(&v12).unwrap();
@@ -1306,8 +1314,9 @@ mod tests {
     const EMPTY_V13_TAIL: usize = 8;
     /// The v14 rain block: 1 bool + 4 i32 + 4 f32 (the constants-off defaults
     /// for an empty rain event), the v15 Queen Slime flag byte, the v16
-    /// five style bytes and the v17 downedFishron byte (S1-D-3 W-9).
-    const EMPTY_V16_TAIL: usize = EMPTY_V13_TAIL + 9 + 1 + 5 + 1;
+    /// five style bytes, the v17 downedFishron byte (S1-D-3 W-9) and the
+    /// v18 downedEmpress byte (W4-d125).
+    const EMPTY_V16_TAIL: usize = EMPTY_V13_TAIL + 9 + 1 + 5 + 1 + 1;
 
     fn back_flags(buf: &[u8]) -> u16 {
         let end = buf.len() - EMPTY_V16_TAIL;
@@ -1493,13 +1502,31 @@ mod tests {
         assert!(back.downed_queen_slime, "the flag survives the reload");
         // A pre-v15 file (the tail truncated, the version patched) loads
         // with the flag down — the vanilla's own reset arm (`:2376`).
-        // The v16 style bytes + the v17 fishron byte ride behind the v15
-        // flag (6 bytes).
+        // The v16 style bytes + the v17 fishron byte + the v18 empress
+        // byte ride behind the v15 flag (7 bytes).
         let mut v14 = buf.clone();
-        v14.truncate(v14.len() - 1 - 5 - 1);
+        v14.truncate(v14.len() - 1 - 5 - 1 - 1);
         v14[8..12].copy_from_slice(&14u32.to_le_bytes());
         let (back, _) = parse(&v14).unwrap();
         assert!(!back.downed_queen_slime, "a pre-v15 file resets the flag");
+    }
+
+    #[test]
+    fn w4_d125_the_empress_flag_round_trips_in_v18() {
+        // W4-d125: `NPC.downedEmpressOfLight` (`NPC.cs:6393`, the case-636
+        // death flag `:79351-79353`) rides the v18 tail — the v17 fishron
+        // byte's shape. A pre-v18 file loads with the flag down.
+        let mut w = World::new("Test".into(), 64, 48);
+        w.downed_empress_of_light = true;
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        let (back, _) = parse(&buf).unwrap();
+        assert!(back.downed_empress_of_light, "the flag survives the reload");
+        let mut v17 = buf.clone();
+        v17.truncate(v17.len() - 1);
+        v17[8..12].copy_from_slice(&17u32.to_le_bytes());
+        let (back, _) = parse(&v17).unwrap();
+        assert!(!back.downed_empress_of_light, "a pre-v18 file resets the flag");
     }
 
     #[test]
@@ -1515,8 +1542,8 @@ mod tests {
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
         // The v6 tail of an empty-wire/entity world: the fixed flags block +
         // four empty colour counts + one empty entity count.
-        // (+1: the v17 downedFishron byte rides the flags block's tail.)
-        buf.truncate(buf.len() - (2 + V6_FLAGS_LEN + 1 + 4 * 4 + 4));
+        // (+2: the v17 fishron + v18 empress bytes ride the flags tail.)
+        buf.truncate(buf.len() - (2 + V6_FLAGS_LEN + 2 + 4 * 4 + 4));
         buf[8..12].copy_from_slice(&5u32.to_le_bytes());
         let (back, _chests) = parse(&buf).unwrap();
         assert!(!back.hard_mode);
@@ -1602,8 +1629,8 @@ mod tests {
         write_world(&mut buf, &w, &chest_side(&chests)).unwrap();
         assert_eq!(
             &buf[8..12],
-            &[17, 0, 0, 0],
-            "the writer emits the current v17"
+            &[18, 0, 0, 0],
+            "the writer emits the current v18"
         );
         let (back, side) = parse(&buf).unwrap();
         let back_chests = side.chests;
