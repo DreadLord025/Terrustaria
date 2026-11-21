@@ -3568,6 +3568,20 @@ fn npc_seed(
         }
         // W4-d43: the flyers/bosses/swimmers/spheres seed in the open air
         // (the hover ctor; the net state overwrites the position below).
+        crate::npc::NpcKind::ScarletMacaw
+        | crate::npc::NpcKind::BlueMacaw
+        | crate::npc::NpcKind::Toucan => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d43: the grounded kinds plant their feet on the column surface
+        // (the walker ctor; the family machine takes over on the first tick).
+        crate::npc::NpcKind::Stinkbug
+        | crate::npc::NpcKind::TownSlimeBlue => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // W4-d43: the flyers/bosses/swimmers/spheres seed in the open air
+        // (the hover ctor; the net state overwrites the position below).
         crate::npc::NpcKind::PirateGhost
         | crate::npc::NpcKind::TorchGod
         | crate::npc::NpcKind::ChaosBallTim
