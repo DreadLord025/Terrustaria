@@ -39266,7 +39266,7 @@ arm nor rows.
 | 7 | `AI_007_GrapplingHooks` `:24229` -> `:52567+` | `ai_hook` | PORTED (verify-only) — the dead/CCed kill gate, the MountedCenter pull, the attach-cap recycle, the blacklist rebuild, the Queen Slime teleport. |
 | 8 | inline `:24233-24362` | `ai_ball_of_fire` | PORTED (verify-only) — the gravity timer + the per-type bounce budget; the WaterBolt lava bounce, the 96/258 sound latches. |
 | 9 | `AI_009_MagicMissiles` `:24363` -> `:43195-43425` | `ai_magic_missile` | PORTED (verify-only) — the channel aim, the Flamelash drag-lift, the release homing. |
-| 10 | `AI_010` `:24367` -> `:57826-58100` | kind-gated 109/736-738 (`ai_snowball_hostile` / `ai_dungeon_debris`) + `projectile_ai_falling::step` | PORTED — W4-d1 wave 3 rowed the falling-block family 17/31/39/40/56/67/71/179/241/812/411-414/1081 (`a2dcdb15`/`e001d921`/`e4718179`) and armed the sandgun balls 42/65/68/354 through the same arm — the S1-D-5 "42-row gap" CLOSES (the rows existed but the dispatch no-op'd them; now the 60-tick straight flight + the 0.2 gravity + the death placement run). W4-d1 RETIRE (`dd7b6f32d`, research/246): the natural-fall spawner moved to the data path — the frozen-tail carve-out is RETIRED, every served kind rides the arm; the forced-PlaceTile bypass set + the tile-cut bodies ported. FAMILY COMPLETE. |
+| 10 | `AI_010` `:24367` -> `:57826-58100` | kind-gated 109/736-738 (`ai_snowball_hostile` / `ai_dungeon_debris`) + `projectile_ai_falling::step` | PORTED — W4-d1 wave 3 rowed the falling-block family 17/31/39/40/56/67/71/179/241/812/411-414/1081 (`a2dcdb15`/`e001d921`/`e4718179`) and armed the sandgun balls 42/65/68/354 through the same arm — the S1-D-5 "42-row gap" CLOSES (the rows existed but the dispatch no-op'd them; now the 60-tick straight flight + the 0.2 gravity + the death placement run). W4-d1 RETIRE (`dd7b6f32d`, research/352): the natural-fall spawner moved to the data path — the frozen-tail carve-out is RETIRED, every served kind rides the arm; the forced-PlaceTile bypass set + the tile-cut bodies ported. FAMILY COMPLETE. |
 
 **The missing style 6.** The powder/fertilizer cloud — five kinds, all
 unrowed on main: 10 PurificationPowder (`Projectile.cs:897-912`), 11
@@ -39452,13 +39452,14 @@ ranged (NOT hostile) — no player damage, verbatim.
 cited C# blocks and hand arithmetic (the gravity ladders, the dust-gate
 draw sequences, the landing cells, the side-slide probe).
 
-### The RETIRE round (W4-d1, 2026-11-21, `dd7b6f32d` — research/246)
+### The RETIRE round (W4-d1, 2026-11-21, `dd7b6f32d` — research/352)
 
 The three documented open follow-ups censused WHOLE and ported; the
 frozen-tail carve-out RETIRED; the spray rows composed. The full census +
 the falling-block-family declaration live in
-`docs/research/246-d1-falling-block-final.md` (number per registry-150:
-246 first-free at the pushed tips). The deltas:
+`docs/research/352-d1-falling-block-final.md` (number per registry-150
+§9 UNIFIED FINAL: chain 246→352 — the first-add take of 246 lost to e23's
+published reservation, e23 KEEPS 246; §9 assigns 352). The deltas:
 
 **The natural-fall spawner move (the carve-out retired).** `spawn_falling`
 now delegates to `spawn_with_data_ai` (the rowed `SetDefaults` stats, the
@@ -39487,7 +39488,7 @@ first disjunct of the `:59373` gate (bypasses `Collision.EmptyTile`'s
 occupant + player/NPC overlap scan AND the port's `CanKillTile`-derived
 wall-350 refusal the C# does not carry); the served kinds match NONE of
 the grass/moss rewrites, the drip gate, the liquid refusals, the
-per-kind placement arms (the full census in research/246 §1b). The free
+per-kind placement arms (the full census in research/352 §1b). The free
 cell's `Clear(Tile | TilePaint | Slope)` keeps the wall + liquid; the 53's
 anniversary `color(7)` arm ports over `world.seeds` (the rainbow paint
 folds off — the shimmer-ocean mode the port does not generate). The
@@ -39514,16 +39515,16 @@ layer's other slices keep their own lanes.
 sprays 146-149/1015-1017 rowed VERBATIM — the d18 `78ffe8e11` shape
 (alpha 255 + ignoreWater true) wins over the f25 `5e83d3ecb` copy (the
 145-precedent dropped pair); the merger keeps this branch's rows, drops
-the two duplicates (research/246 §2a). `ai_spray`'s types 1/4 ACTIVATED
+the two duplicates (research/352 §2a). `ai_spray`'s types 1/4 ACTIVATED
 through d1's own `convert_sized` cells (the 147 Corrupt / 149 Red
 solutions); types 2/5/6/7 stay f25's, type 3 stays g42's — the merged
-match composes per research/246 §2b's table. The 145's own dropped
+match composes per research/352 §2b's table. The 145's own dropped
 alpha/ignoreWater stays its M3-ITEM-6 deviation.
 
 **The 502 Meowmere row (the d75 owed gate).** Census verdict: d1's band
 does NOT own it — d75 part 5 (`d328fad8c`) rowed the 502 itself (the only
 carrier across the pushed tips), the part-4 chime gate goes live on d75's
-tip; no d1 action, no duplicate row (research/246 §3).
+tip; no d1 action, no duplicate row (research/352 §3).
 
 **Code-only round.** 12 new witnesses (the forced-place 3, the spray-row
 1, the spray-activation 1, the data-path-spawn 1, the tile-cut 3, the

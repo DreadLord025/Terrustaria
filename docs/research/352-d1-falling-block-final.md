@@ -1,4 +1,11 @@
-# 246 — W4-d1 falling-block FINAL census + the falling-block-family declaration (RETIRE)
+# 352 — W4-d1 falling-block FINAL census + the falling-block-family declaration (RETIRE)
+
+**RENAME CHAIN 246 → 352** (registry-150 §9 UNIFIED FINAL, d54 tip
+`f5c5adf50`, row 352): this doc's first-add take of 246 lost to **e23's
+published 18b-fork reservation — e23 KEEPS 246** (§7.4, publish
+`72226e500` 14:47:50 predates d1's add `47482bdeb`); §9 assigns this doc
+**352**. Renamed per §9.3 (chain-banners cite §9); the original
+numbering paragraph below is kept as the historical first-add record.
 
 Lane: `task/W4-d1-proj-ai-1-10` (worktree TR-W4-d1). Date: **2026-11-21**.
 Code-only mode — witnesses WRITTEN NOT RUN; no cargo/rustc/rustfmt/tests/
@@ -344,7 +351,9 @@ effect layer's census, d75's lane.
   grass/moss/liquid gates; the spray witness's conversion targets are
   the sets' own members.
 - The research-number scan: `git ls-tree docs/research/` per pushed
-  `task/W4-*` tip + the INDEX rows — 246 first-free (§0).
+  `task/W4-*` tip + the INDEX rows — 246 first-free (§0, the historical
+  first-add scan; SUPERSEDED by registry §9 — 246 = e23's published
+  reservation, this doc renumbered 352, see the chain-banner).
 - The 502-row carrier scan: `git grep` per tip — d75 only (§3).
 - No cargo/tests/rustfmt/graphify run (the task's code-only mandate).
   The witnesses are written, not run; every expected value hand-derived
