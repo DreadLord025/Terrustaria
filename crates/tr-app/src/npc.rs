@@ -1143,6 +1143,65 @@ pub enum NpcKind {
     /// fold is dmg 30 / def 12 / 300 HP / value 200. WIRED: the axis' 25
     /// arm rides `npc_ai_style25::ai_style25` (the disguise/hop machine).
     Mimic,
+    // ---- W4-g8 lane 1 batch 2: the styles 18/22/23/40/41/42 members +
+    // the WallCreeper walk pair (the style-40 transform target). Protocol
+    // ids 364-374 (the next-free port-local band).
+    /// `NPCID.GreenJellyfish` (103, `NPCID.cs:10883`) — the hardmode jelly
+    /// (`NPC.cs:10216-10229`): 26x26, aiStyle 18, dmg 80, def 30, 120 HP,
+    /// kb 1 (no row), NPCHit25/NPCDeath28, value 800, alpha 20, noGravity.
+    /// WIRED: the axis' 18 arm rides `npc_ai_style18::ai_018_arm`.
+    GreenJellyfish,
+    /// `NPCID.Gastropod` (122, `NPCID.cs:10921`) — the hallow snail
+    /// (`NPC.cs:10479-10492`): 20x20, aiStyle 22, dmg 60, def 22, 220 HP,
+    /// kb 0.8, NPCHit1/NPCDeath1, value 600, noGravity. WIRED: the axis'
+    /// 22 arm rides `npc_ai_style22::ai_022_arm` (the PinkLaser 84 shot).
+    Gastropod,
+    /// `NPCID.WallCreeper` (164, `NPCID.cs:11005`) — the spider's WALK form
+    /// (`NPC.cs:11059-11072`): 50x20, aiStyle 3, dmg 30, def 10, 80 HP,
+    /// kb 0.25, NPCHit29/NPCDeath32, value 100, npcSlots 0.5. The style-40
+    /// WallCreeperWall's `Transform(164)` target (`NPC.cs:29869-29892`).
+    WallCreeper,
+    /// `NPCID.WallCreeperWall` (165, `NPCID.cs:11007`) — the spider's WALL
+    /// form (`NPC.cs:11073-11087`): 36x36, aiStyle 40, dmg 30, def 10,
+    /// 80 HP, kb 0.25, NPCHit29/NPCDeath32, value 100, npcSlots 0.5,
+    /// noGravity. WIRED: the axis' 40 arm rides `npc_ai_style40::style40_step`
+    /// (the wall-crawl + the walk transform).
+    WallCreeperWall,
+    /// `NPCID.IceElemental` (169, `NPCID.cs:11015`) — the snow ghost
+    /// (`NPC.cs:11113-11127`): 18x40, aiStyle 22, dmg 55, def 20, 200 HP,
+    /// kb 0.6, NPCHit5/NPCDeath7, value 1500, noGravity, coldDamage. WIRED:
+    /// the axis' 22 arm rides `ai_022_arm` (the FrostBlast 128 shot).
+    IceElemental,
+    /// `NPCID.Herpling` (174, `NPCID.cs:11025`) — the crimson hopper
+    /// (`NPC.cs:11194-11207`): 52x26, aiStyle 41, dmg 65, def 26, 220 HP,
+    /// kb 0.3, NPCHit1/NPCDeath1, value 450, npcSlots 1. WIRED: the axis'
+    /// 41 arm rides `npc_ai_style41::style41_step`.
+    Herpling,
+    /// `NPCID.Derpling` (177, `NPCID.cs:11031`) — the jungle hopper
+    /// (`NPC.cs:11238-11251`): 58x44, aiStyle 41, dmg 80, def 26, 300 HP,
+    /// kb 0.5, NPCHit22/NPCDeath25, value 500, npcSlots 1. WIRED: the axis'
+    /// 41 arm rides `npc_ai_style41::style41_step`.
+    Derpling,
+    /// `NPCID.CrimsonAxe` (179, `NPCID.cs:11035`) — the possessed axe
+    /// (`NPC.cs:11266-11278`): the 83 row verbatim (40x40, aiStyle 23,
+    /// dmg 80, def 18, 200 HP, kb 0.4, NPCHit4/NPCDeath6, value 1000).
+    /// WIRED: the axis' 23 arm rides `npc_ai_style23::ai_style23`.
+    CrimsonAxe,
+    /// `NPCID.FloatyGross` (182, `NPCID.cs:11041`) — the crimson ghost
+    /// (`NPC.cs:11316-11331`): 24x62, aiStyle 22, dmg 65, def 18, 240 HP,
+    /// kb 0.7, NPCHit1/NPCDeath2, value 500, alpha 100, noGravity +
+    /// noTileCollide. WIRED: the axis' 22 arm rides `ai_022_arm`.
+    FloatyGross,
+    /// `NPCID.LostGirl` (195, `NPCID.cs:11067`) — the disguised nymph
+    /// (`NPC.cs:11492-11505`): 18x40, aiStyle 42, dmg 10, def 30, 250 HP,
+    /// kb 0.5, NPCHit1/NPCDeath1, value 2 gold, rarity 2. WIRED: the axis'
+    /// 42 arm rides `npc_ai_style42::lost_girl_ai` (the Transform(196)).
+    LostGirl,
+    /// `NPCID.Nymph` (196, `NPCID.cs:11069`) — the revealed nymph
+    /// (`NPC.cs:11506-11519`): 18x40, aiStyle 3, dmg 35, def 16, 300 HP,
+    /// kb 0.4, NPCHit1/NPCDeath2, value 2 gold, rarity 2. The LostGirl's
+    /// transform target; the aiStyle-3 fighter ladder (the cap-2 group).
+    Nymph,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3227,6 +3286,11 @@ impl Npc {
                             // `alpha = 100` (`:9864`).
                             NpcKind::BlueJellyfish | NpcKind::PinkJellyfish => 20,
                             NpcKind::Wraith => 100,
+                            // W4-g8 lane 1 batch 2 — the GreenJellyfish's
+                            // alpha 20 (`NPC.cs:10228`), the FloatyGross's
+                            // alpha 100 (`:11328`).
+                            NpcKind::GreenJellyfish => 20,
+                            NpcKind::FloatyGross => 100,
                             _ => 0,
                         }
                     }),
@@ -3638,6 +3702,21 @@ impl Npc {
             NpcKind::Wraith => 0.7,
             NpcKind::CursedHammer | NpcKind::EnchantedSword => 0.4,
             NpcKind::Mimic => 0.3,
+            // W4-g8 lane 1 batch 2 — the `knockBackResist` rows: 103 1 (no
+            // row, `NPC.cs:8533`), 122 0.8 (`:10489`), 164/165 0.25
+            // (`:11069`/`:11084`), 169 0.6 (`:11123`), 174 0.3 (`:11205`),
+            // 177 0.5 (`:11249`), 179 0.4 (`:11277`), 182 0.7 (`:11330`),
+            // 195 0.5 (`:11502`), 196 0.4 (`:11516`).
+            NpcKind::GreenJellyfish => 1.0,
+            NpcKind::Gastropod => 0.8,
+            NpcKind::WallCreeper | NpcKind::WallCreeperWall => 0.25,
+            NpcKind::IceElemental => 0.6,
+            NpcKind::Herpling => 0.3,
+            NpcKind::Derpling => 0.5,
+            NpcKind::CrimsonAxe => 0.4,
+            NpcKind::FloatyGross => 0.7,
+            NpcKind::LostGirl => 0.5,
+            NpcKind::Nymph => 0.4,
             _ => 0.4,
         }
     }
@@ -4033,6 +4112,20 @@ impl Npc {
             NpcKind::Wraith => 16,
             NpcKind::CursedHammer | NpcKind::EnchantedSword => 18,
             NpcKind::Mimic => 30,
+            // W4-g8 lane 1 batch 2 — the `defense` rows: 103 30
+            // (`NPC.cs:10223`), 122 22 (`:10486`), 164/165 10 (`:11065`/
+            // `:11080`), 169 20 (`:11120`), 174/177 26 (`:11201`/`:11245`),
+            // 179 18 (`:11272`), 182 18 (`:11324`), 195 30 (`:11498`),
+            // 196 16 (`:11512`).
+            NpcKind::GreenJellyfish => 30,
+            NpcKind::Gastropod => 22,
+            NpcKind::WallCreeper | NpcKind::WallCreeperWall => 10,
+            NpcKind::IceElemental => 20,
+            NpcKind::Herpling | NpcKind::Derpling => 26,
+            NpcKind::CrimsonAxe => 18,
+            NpcKind::FloatyGross => 18,
+            NpcKind::LostGirl => 30,
+            NpcKind::Nymph => 16,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4424,6 +4517,20 @@ impl Npc {
             NpcKind::Wraith => 500.0,
             NpcKind::CursedHammer | NpcKind::EnchantedSword => 1000.0,
             NpcKind::Mimic => 100000.0,
+            // W4-g8 lane 1 batch 2 — the `value` rows (copper): 103 800
+            // (`NPC.cs:10227`), 122 600 (`:10491`), 164/165 100 (`:11070`/
+            // `:11085`), 169 1500 (`:11125`), 174 450 (`:11206`), 177 500
+            // (`:11250`), 179 1000 (`:11276`), 182 500 (`:11329`), 195/196
+            // 2 gold = 20000 (`:11504`/`:11517`, `Item.buyPrice(0, 2)`).
+            NpcKind::GreenJellyfish => 800.0,
+            NpcKind::Gastropod => 600.0,
+            NpcKind::WallCreeper | NpcKind::WallCreeperWall => 100.0,
+            NpcKind::IceElemental => 1500.0,
+            NpcKind::Herpling => 450.0,
+            NpcKind::Derpling => 500.0,
+            NpcKind::CrimsonAxe => 1000.0,
+            NpcKind::FloatyGross => 500.0,
+            NpcKind::LostGirl | NpcKind::Nymph => 20000.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4841,11 +4948,11 @@ impl Npc {
                 }
             }
             // `else if (this.aiStyle == 18)` (`NPC.cs:24153-24406`) — the
-            // jellyfish/swimmer family: the Blue 63 / Pink 64 jellies
-            // (`SetDefaults` `:9582-9609`). The machine writes velocity +
-            // the expert zap-shield; the glow rides the draw-side light
-            // feed (`npc_lights`). noGravity — the flyer integration tail.
-            // RNG-free by construction.
+            // jellyfish/swimmer family: the Blue 63 / Pink 64 / Green 103
+            // jellies (`SetDefaults` `:9582-9609` / `:10216-10229`). The
+            // machine writes velocity + the expert zap-shield; the glow
+            // rides the per-tick `ai_light` field. noGravity — the flyer
+            // integration tail. RNG-free by construction.
             18 => {
                 let (w, h) = self.size();
                 self.wet = is_wet(world, self.x, self.y, w, h);
@@ -4942,13 +5049,16 @@ impl Npc {
                 NpcKind::Drippler => {
                     crate::npc_ai_drippler::drippler_ai(self, world, player, rng)
                 }
-                // W4-g8 lane 1 batch 1 — the Pixie 75 / Wraith 82 ghosts ride
-                // the d24 verbatim arm (`npc_ai_style22::ai_022_arm`,
+                // W4-g8 lane 1 batch 1/2 — the Pixie 75 / Wraith 82 /
+                // Gastropod 122 / IceElemental 169 / FloatyGross 182 ghosts
+                // ride the d24 verbatim arm (`npc_ai_style22::ai_022_arm`,
                 // `NPC.cs:24666-25234`). The machine writes velocity + the
                 // dwell/dash state; the shots/sounds/lights/despawn ride the
                 // request seams. noGravity — the movement split mirrors the
-                // noTileCollide flag (the Wraith phases, the Pixie collides).
-                NpcKind::Pixie | NpcKind::Wraith => {
+                // noTileCollide flag (the Wraith/FloatyGross phase, the
+                // Pixie/Gastropod/IceElemental collide).
+                NpcKind::Pixie | NpcKind::Wraith | NpcKind::Gastropod
+                | NpcKind::IceElemental | NpcKind::FloatyGross => {
                     let (w, h) = self.size();
                     self.wet = is_wet(world, self.x, self.y, w, h);
                     let cand = crate::npc_target::session_candidate(player);
@@ -4988,8 +5098,8 @@ impl Npc {
                     if fx.deactivate {
                         self.hp = 0;
                     }
-                    if self.kind == NpcKind::Wraith {
-                        // noTileCollide (`NPC.cs:9855`) — raw integration.
+                    if matches!(self.kind, NpcKind::Wraith | NpcKind::FloatyGross) {
+                        // noTileCollide (`NPC.cs:9855`/`:11319`) — raw integration.
                         self.integrate_no_tile_collide();
                     } else {
                         self.integrate_flyer_collision(world);
@@ -5146,26 +5256,83 @@ impl Npc {
             // claims the axis: the AI body PLUS the generic post-AI
             // gravity/wet/collision integration on every path (the module
             // folds `UpdateNPC`'s tail, the frost-legion shape). The step
-            // is keyed on the C# type id — the wiring passes
-            // `kind.to_u16()` (the module doc). RNG-free by construction
-            // (the dust/gore/audio draws are the module's cited skips).
-            // No `NpcKind` carries ai_style 41 yet — the arm is dormant
-            // until the kind rows land (the S1-D-5 types work).
+            // is keyed on the C# type id — the wiring passes the vanilla
+            // `NPC.type` (`cs_id`; the protocol id is port-local). RNG-free
+            // by construction (the dust/gore/audio draws are the module's
+            // cited skips). W4-g8 lane 1 batch 2: the Herpling 174 /
+            // Derpling 177 rows land — the arm claims them.
             41 => {
-                let npc_type = self.kind.to_u16() as i32;
+                let npc_type = self.kind.cs_id() as i32;
                 crate::npc_ai_style41::style41_step(self, world, player, npc_type);
             }
             // `else if (this.aiStyle == 42)` (`NPC.cs:30160-30189`) — the
             // Lost Girl (195), the style's only user. The faithful
             // `npc_ai_style42::lost_girl_ai` claims the axis; the
             // `Transform(196)` maths (life share, hitbox, ai/target/frame
-            // resets) is applied INSIDE via `transform_to(&NYMPH)`. The
-            // `NpcKind::Nymph` kind swap + the private `frame_counter`
-            // reset ride the kind-table wiring (the module doc — no
-            // LostGirl/Nymph rows exist yet, so the arm is dormant).
+            // resets) is applied INSIDE via `transform_to(&NYMPH)`. W4-g8
+            // lane 1 batch 2: on the transform tick the kind swaps to
+            // Nymph (the aiStyle-3 fighter takes over next tick) and the
+            // private frame_counter resets (the module doc). The LostGirl
+            // is a grounded walker — the gravity + tile-collision tail runs
+            // after the AI (the C#'s UpdateNPC, `NPC.cs:90465-90498`).
             // RNG-free by construction (the module's 600-tick witness).
             42 => {
-                let _ = crate::npc_ai_style42::lost_girl_ai(self, world, player);
+                let transformed = crate::npc_ai_style42::lost_girl_ai(self, world, player);
+                if transformed {
+                    self.kind = NpcKind::Nymph;
+                    self.frame_counter = 0.0;
+                }
+                crate::npc_ai::walker_integrate(
+                    self,
+                    world,
+                    crate::npc_ai::WalkerParams { speed: 0.0, jump: -6.2, aggro_x: 0.0, aggro_y: 0.0 },
+                    GRAVITY,
+                    MAX_FALL,
+                );
+            }
+            // W4-g8 lane 1 batch 2 — `else if (this.aiStyle == 40)`
+            // (`NPC.cs:29666-29898`) — the wall-crawler family: the
+            // WallCreeperWall 165 (`SetDefaults` `:11073-11087`). The
+            // faithful `npc_ai_style40::style40_step` claims the axis: the
+            // 8-px-grid chase, the wander, the collideX/Y bounces, the
+            // expert WebSpit (472) + the walk Transform(164). noGravity +
+            // tile collision — the flyer integration tail stamps
+            // collide_x/y + old_vx/vy for the next tick's bounces. The
+            // transform request swaps the kind to the WallCreeper walk form
+            // (the aiStyle-3 fighter takes over next tick). The expert spit
+            // is constants-off (the port is single-difficulty classic).
+            40 => {
+                let cand = crate::npc_target::session_candidate(player);
+                let ctx = crate::npc_ai_style40::Style40Context {
+                    kind: crate::npc_ai_style40::Style40Type::WallCreeperWall,
+                    expert: player.buffs.expert_mode,
+                    net_mode: 0,
+                    just_hit: self.hurt_cd > 0.0,
+                    ticker: 0,
+                };
+                let out = crate::npc_ai_style40::style40_step(self, world, &[cand], &ctx, rng);
+                if let Some(spit) = out.spit {
+                    self.wants_hostile_shot.push((crate::projectile::WEB_SPIT, spit.x, spit.y, spit.vx, spit.vy, spit.damage));
+                }
+                if let Some(tr) = out.transform {
+                    // The walk Transform(164) (`NPC.cs:29888-29892`): the
+                    // module moved the position + latched local_ai[1]=12;
+                    // the kind swaps to the walk form (the aiStyle-3
+                    // fighter). The walk form's SetDefaults box/life ride
+                    // the kind table (the 164 row); the life share keeps
+                    // the wall form's hp ratio (the Transform maths).
+                    let ratio = self.hp as f32 / self.max_hp as f32;
+                    self.kind = NpcKind::WallCreeper;
+                    self.size_override = None;
+                    self.max_hp = NpcKind::WallCreeper.max_hp();
+                    self.hp = ((self.max_hp as f32) * ratio) as i32;
+                    self.ai = [0.0; 4];
+                    self.local_ai = [0.0; 4];
+                    self.local_ai[1] = 12.0;
+                    self.frame_counter = 0.0;
+                    let _ = tr;
+                }
+                self.integrate_flyer_collision(world);
             }
             // `else if (this.aiStyle == 43)` (`NPC.cs:30190-30860`) —
             // the Queen Bee (222), the style's only user. S1-D-3 W-3:
@@ -6825,6 +6992,31 @@ impl Npc {
             }
             NpcKind::Mimic => {
                 unreachable!("aiStyle 25 rides the style axis (W4-g8)")
+            }
+            // W4-g8 lane 1 batch 2 — the axis-claimed kinds (18/22/23/40/
+            // 41/42) are unreachable through `update_rng`; the WallCreeper
+            // 164 + the Nymph 196 ride the aiStyle-3 fighter ladder (the
+            // cap-2 group, the update_skeleton shape).
+            NpcKind::GreenJellyfish => {
+                unreachable!("aiStyle 18 rides the style axis (W4-g8)")
+            }
+            NpcKind::Gastropod | NpcKind::IceElemental | NpcKind::FloatyGross => {
+                unreachable!("aiStyle 22 rides the style axis (W4-g8)")
+            }
+            NpcKind::WallCreeperWall => {
+                unreachable!("aiStyle 40 rides the style axis (W4-g8)")
+            }
+            NpcKind::Herpling | NpcKind::Derpling => {
+                unreachable!("aiStyle 41 rides the style axis (W4-g8)")
+            }
+            NpcKind::CrimsonAxe => {
+                unreachable!("aiStyle 23 rides the style axis (W4-g8)")
+            }
+            NpcKind::LostGirl => {
+                unreachable!("aiStyle 42 rides the style axis (W4-g8)")
+            }
+            NpcKind::WallCreeper | NpcKind::Nymph => {
+                self.update_skeleton(world, player, dt)
             }
             // W4-d24 axis census: the fish trio (aiStyle 16) rides the
             // style axis above (`16 => update_swimmer`) — this arm is
@@ -9912,6 +10104,200 @@ impl Npc {
                 } else if self.ai[3] == 3.0 {
                     self.frame += 12;
                 }
+            }
+            // W4-g8 lane 1 batch 2 — the d22-d33 kinds' `FindFrame` cases.
+            // `case 103` (`NPC.cs:73916-73960`): the GreenJellyfish's pulse
+            // — the same jelly arm as 63/64 (the shield cycles rows 4..6,
+            // else the 6/12/18/23-band pulse over rows 0..3).
+            NpcKind::GreenJellyfish => {
+                if self.ai[1] == 1.0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 4.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                    }
+                    if self.frame > 6 {
+                        self.frame = 4;
+                    }
+                    if self.frame < 4 {
+                        self.frame = 4;
+                    }
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter < 6.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 12.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 18.0 {
+                        self.frame = 2;
+                    } else {
+                        self.frame = 3;
+                        if self.frame_counter >= 23.0 {
+                            self.frame_counter = 0.0;
+                        }
+                    }
+                }
+            }
+            // `case 122` (`NPC.cs:73607-73627`): the Gastropod's shell —
+            // spriteDirection follows direction, the vx*0.05 tilt; the
+            // ai[3]>0 shot pose selects row (ai[3]/8)+3, else the 8-tick
+            // counter over rows 0..2.
+            NpcKind::Gastropod => {
+                self.sprite_dir = self.facing;
+                self.rotation = self.vx * 0.05;
+                if self.ai[3] > 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.ai[3] / 8.0) as u32 + 3;
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 8.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 3 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // `case 164` (`NPC.cs:73083-73111`): the WallCreeper's walk —
+            // airborne pins row 4 (rising) / 0 (falling); grounded the
+            // |vx|*1.1 accumulator steps rows 0..3 on a 6-band.
+            NpcKind::WallCreeper => {
+                if self.vy != 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.vy < 0.0 { 4 } else { 0 };
+                } else {
+                    self.sprite_dir = self.facing;
+                    self.frame_counter += self.vx.abs() * 1.1;
+                    while self.frame_counter >= 6.0 {
+                        self.frame_counter -= 6.0;
+                        self.frame += 1;
+                        if self.frame > 3 {
+                            self.frame = 0;
+                        }
+                    }
+                }
+            }
+            // `case 165` (`NPC.cs:73112-73145`): the WallCreeperWall's crawl
+            // — the (|vx|+|vy|)*0.5 accumulator over the 6/12/18/24 bands.
+            NpcKind::WallCreeperWall => {
+                self.frame_counter += (self.vx.abs() + self.vy.abs()) * 0.5;
+                if self.frame_counter < 6.0 {
+                    self.frame = 0;
+                } else if self.frame_counter < 12.0 {
+                    self.frame = 1;
+                } else if self.frame_counter < 18.0 {
+                    self.frame = 2;
+                } else if self.frame_counter < 24.0 {
+                    self.frame = 3;
+                } else {
+                    self.frame_counter = 0.0;
+                }
+            }
+            // `case 169` (`NPC.cs:73997-74059`): the IceElemental's flap —
+            // the 8-tick counter over the 4-row strip (the demon-eye group,
+            // no rotation write for 169).
+            NpcKind::IceElemental => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 8.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= 4 {
+                    self.frame = 0;
+                }
+            }
+            // `case 174` (`NPC.cs:73172-73202`): the Herpling's hop pose —
+            // grounded row 0, rising (<-1.5) row 1, falling (>1.5) row 3,
+            // else row 2.
+            NpcKind::Herpling => {
+                if self.vy == 0.0 {
+                    self.frame = 0;
+                } else if (self.vy as f64) < -1.5 {
+                    self.frame = 1;
+                } else if (self.vy as f64) > 1.5 {
+                    self.frame = 3;
+                } else {
+                    self.frame = 2;
+                }
+            }
+            // `case 177` (`NPC.cs:73203-73226`): the Derpling's hop — the
+            // grounded 10-tick idle latch (counter→30, row 0) else row 1;
+            // airborne row 2 (rising resets the counter).
+            NpcKind::Derpling => {
+                if self.vy == 0.0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 10.0 {
+                        self.frame_counter = 30.0;
+                        self.frame = 0;
+                    } else {
+                        self.frame = 1;
+                    }
+                } else if self.vy < 0.0 {
+                    self.frame = 2;
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                }
+            }
+            // `case 179` (`NPC.cs:74622-74641`): the CrimsonAxe's spin —
+            // the same weapon arm as 83/84, but the 5-row strip.
+            NpcKind::CrimsonAxe => {
+                if self.ai[0] == 2.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 4.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame >= 5 {
+                            self.frame = 0;
+                        }
+                    }
+                }
+            }
+            // `case 182` (`NPC.cs:74827-74884`): the FloatyGross's ghost
+            // flap — the same ghost arm as 82 (the vx*0.1 tilt, the 6-tick
+            // counter over the 5-row strip).
+            NpcKind::FloatyGross => {
+                if self.vx > 0.0 {
+                    self.sprite_dir = 1;
+                }
+                if self.vx < 0.0 {
+                    self.sprite_dir = -1;
+                }
+                self.rotation = self.vx * 0.1;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= 5 {
+                    self.frame = 0;
+                }
+            }
+            // `case 195` (`NPC.cs:73146-73171`): the LostGirl's reveal —
+            // the ai[0] count-up selects the 3-band rows 0..5.
+            NpcKind::LostGirl => {
+                self.frame = if self.ai[0] < 3.0 {
+                    0
+                } else if self.ai[0] < 6.0 {
+                    1
+                } else if self.ai[0] < 9.0 {
+                    2
+                } else if self.ai[0] < 12.0 {
+                    3
+                } else if self.ai[0] < 15.0 {
+                    4
+                } else {
+                    5
+                };
+            }
+            // `case 196` (`NPC.cs:68576`, the humanoid-group arm): the
+            // Nymph's walk — the shared town body over the 14-frame strip.
+            NpcKind::Nymph => {
+                self.humanoid_town_frame();
             }
         }
     }
@@ -19486,6 +19872,18 @@ impl Npc {
             NpcKind::CursedHammer => 361,
             NpcKind::EnchantedSword => 362,
             NpcKind::Mimic => 363,
+            // W4-g8 lane 1 batch 2 — the port-local 364-374 band.
+            NpcKind::GreenJellyfish => 364,
+            NpcKind::Gastropod => 365,
+            NpcKind::WallCreeper => 366,
+            NpcKind::WallCreeperWall => 367,
+            NpcKind::IceElemental => 368,
+            NpcKind::Herpling => 369,
+            NpcKind::Derpling => 370,
+            NpcKind::CrimsonAxe => 371,
+            NpcKind::FloatyGross => 372,
+            NpcKind::LostGirl => 373,
+            NpcKind::Nymph => 374,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -24875,6 +25273,18 @@ mod tests {
         NpcKind::CursedHammer,
         NpcKind::EnchantedSword,
         NpcKind::Mimic,
+        // W4-g8 lane 1 batch 2 — the d22-d33 machines' kinds.
+        NpcKind::GreenJellyfish,
+        NpcKind::Gastropod,
+        NpcKind::WallCreeper,
+        NpcKind::WallCreeperWall,
+        NpcKind::IceElemental,
+        NpcKind::Herpling,
+        NpcKind::Derpling,
+        NpcKind::CrimsonAxe,
+        NpcKind::FloatyGross,
+        NpcKind::LostGirl,
+        NpcKind::Nymph,
     ];
 
     #[test]
@@ -35746,5 +36156,107 @@ mod w4_g8_kind_wire_1_tests {
         assert_eq!(crate::projectile::SAND_BALL_FALLING, 31);
         assert_eq!(d.ai_style, 10, "the aiStyle-10 falling ball");
         assert_eq!((d.w, d.h), (10.0, 10.0), "the 10x10 box");
+    }
+
+    /// W4-g8 lane 1 batch 2 — the eleven kinds' `SetDefaults` rows pin
+    /// against the C# through the port's tables.
+    /// (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+    #[test]
+    fn w4_g8_b2_the_defaults_match_the_csharp_rows() {
+        let rows = [
+            // NPC.cs:10216-10229 (GreenJellyfish 103) — kb 1 (no row).
+            (NpcKind::GreenJellyfish, 103u16, 18u8, 26.0, 26.0, 80, 30, 120, 1.0f32, 800.0f32),
+            // NPC.cs:10479-10492 (Gastropod 122).
+            (NpcKind::Gastropod, 122, 22, 20.0, 20.0, 60, 22, 220, 0.8, 600.0),
+            // NPC.cs:11059-11072 (WallCreeper 164, the walk form).
+            (NpcKind::WallCreeper, 164, 3, 50.0, 20.0, 30, 10, 80, 0.25, 100.0),
+            // NPC.cs:11073-11087 (WallCreeperWall 165).
+            (NpcKind::WallCreeperWall, 165, 40, 36.0, 36.0, 30, 10, 80, 0.25, 100.0),
+            // NPC.cs:11113-11127 (IceElemental 169).
+            (NpcKind::IceElemental, 169, 22, 18.0, 40.0, 55, 20, 200, 0.6, 1500.0),
+            // NPC.cs:11194-11207 (Herpling 174).
+            (NpcKind::Herpling, 174, 41, 52.0, 26.0, 65, 26, 220, 0.3, 450.0),
+            // NPC.cs:11238-11251 (Derpling 177).
+            (NpcKind::Derpling, 177, 41, 58.0, 44.0, 80, 26, 300, 0.5, 500.0),
+            // NPC.cs:11266-11278 (CrimsonAxe 179).
+            (NpcKind::CrimsonAxe, 179, 23, 40.0, 40.0, 80, 18, 200, 0.4, 1000.0),
+            // NPC.cs:11316-11331 (FloatyGross 182).
+            (NpcKind::FloatyGross, 182, 22, 24.0, 62.0, 65, 18, 240, 0.7, 500.0),
+            // NPC.cs:11492-11505 (LostGirl 195) — value 2 gold.
+            (NpcKind::LostGirl, 195, 42, 18.0, 40.0, 10, 30, 250, 0.5, 20000.0),
+            // NPC.cs:11506-11519 (Nymph 196).
+            (NpcKind::Nymph, 196, 3, 18.0, 40.0, 35, 16, 300, 0.4, 20000.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The flag rows: the GreenJellyfish's alpha 20 (`NPC.cs:10228`),
+        // the FloatyGross's alpha 100 (`:11328`).
+        assert_eq!(Npc::new(NpcKind::GreenJellyfish, 0.0, 0.0, 1, 0.0).alpha, 20);
+        assert_eq!(Npc::new(NpcKind::FloatyGross, 0.0, 0.0, 1, 0.0).alpha, 100);
+        // The port-local protocol band 364-374.
+        assert_eq!(NpcKind::GreenJellyfish.to_u16(), 364);
+        assert_eq!(NpcKind::Nymph.to_u16(), 374);
+        // The Nymph + WallCreeper ride the cap-2 walk group (2f).
+        assert_eq!(NpcKind::Nymph.ai3_walk_speed(), Some(2.0));
+        assert_eq!(NpcKind::WallCreeper.ai3_walk_speed(), Some(2.0));
+    }
+
+    /// The style axis claims 40/41/42 for the batch-2 kinds; the kind arms
+    /// are the unreachable markers (the WallCreeper/Nymph ride the
+    /// aiStyle-3 fighter).
+    #[test]
+    fn w4_g8_b2_the_axis_claims_the_new_styles() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        for style in ["40", "41", "42"] {
+            let mut count = 0u32;
+            for line in body.lines() {
+                let t = line.trim_start();
+                let Some(head) = t.split("=>").next() else { continue };
+                let head = head.split(" if ").next().unwrap_or(head);
+                if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                    continue;
+                }
+                for tok in head.split('|') {
+                    if tok.trim() == style {
+                        count += 1;
+                    }
+                }
+            }
+            assert_eq!(count, 1, "aiStyle {style} claimed once");
+        }
+        assert!(src.contains("aiStyle 40 rides the style axis (W4-g8)"));
+        assert!(src.contains("aiStyle 42 rides the style axis (W4-g8)"));
+        // The 41 arm passes the vanilla type (cs_id), not the protocol id.
+        assert!(body.contains("let npc_type = self.kind.cs_id() as i32;"));
+    }
+
+    /// The ghost shots' proj_data rows exist (the Gastropod's PinkLaser 84,
+    /// the IceElemental's FrostBlast 128, the wall-crawler's WebSpit 472).
+    #[test]
+    fn w4_g8_b2_the_ghost_shot_proj_data_rows_exist() {
+        let pink = crate::projectile::proj_data(crate::projectile::PINK_LASER)
+            .expect("the PinkLaser 84 row");
+        assert_eq!(pink.ai_style, 1);
+        assert_eq!(pink.time_left, 600);
+        let frost = crate::projectile::proj_data(crate::projectile::FROST_BLAST_HOSTILE)
+            .expect("the FrostBlast 128 row");
+        assert_eq!(frost.ai_style, 28);
+        let web = crate::projectile::proj_data(crate::projectile::WEB_SPIT)
+            .expect("the WebSpit 472 row");
+        assert_eq!(web.time_left, 60);
     }
 }

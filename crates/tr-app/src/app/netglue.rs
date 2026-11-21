@@ -3587,6 +3587,28 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-g8 lane 1 batch 2 — the grounded walkers (the WallCreeper 164,
+        // the Nymph 196, the LostGirl 195) plant their feet on the column
+        // surface; the noGravity flyers (the GreenJellyfish 103, the
+        // Gastropod 122, the WallCreeperWall 165, the IceElemental 169, the
+        // Herpling 174 / Derpling 177 hoppers, the CrimsonAxe 179, the
+        // FloatyGross 182) ride the hover ctor.
+        crate::npc::NpcKind::WallCreeper
+        | crate::npc::NpcKind::Nymph
+        | crate::npc::NpcKind::LostGirl => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        crate::npc::NpcKind::GreenJellyfish
+        | crate::npc::NpcKind::Gastropod
+        | crate::npc::NpcKind::WallCreeperWall
+        | crate::npc::NpcKind::IceElemental
+        | crate::npc::NpcKind::Herpling
+        | crate::npc::NpcKind::Derpling
+        | crate::npc::NpcKind::CrimsonAxe
+        | crate::npc::NpcKind::FloatyGross => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

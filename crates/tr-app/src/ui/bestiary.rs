@@ -1630,6 +1630,52 @@ fn portrait_data(
             let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 18.0).unwrap_or(46.0);
             (sheet_i, h, 32.0, h, white)
         }
+        // W4-g8 lane 1 batch 2 — the d22-d33 kinds' portraits (the sheet's
+        // own row height over `Main.npcFrameCount[type]`).
+        (NpcKind::GreenJellyfish, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 7.0).unwrap_or(46.0);
+            (sheet_i, h, 56.0, h, white)
+        }
+        (NpcKind::Gastropod, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 11.0).unwrap_or(42.0);
+            (sheet_i, h, 48.0, h, white)
+        }
+        (NpcKind::WallCreeper, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 5.0).unwrap_or(30.0);
+            (sheet_i, h, 70.0, h, white)
+        }
+        (NpcKind::WallCreeperWall, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 4.0).unwrap_or(62.0);
+            (sheet_i, h, 62.0, h, white)
+        }
+        (NpcKind::IceElemental, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 4.0).unwrap_or(54.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        (NpcKind::Herpling, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 5.0).unwrap_or(46.0);
+            (sheet_i, h, 70.0, h, white)
+        }
+        (NpcKind::Derpling, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 3.0).unwrap_or(76.0);
+            (sheet_i, h, 76.0, h, white)
+        }
+        (NpcKind::CrimsonAxe, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 5.0).unwrap_or(66.0);
+            (sheet_i, h, 68.0, h, white)
+        }
+        (NpcKind::FloatyGross, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 5.0).unwrap_or(88.0);
+            (sheet_i, h, 34.0, h, white)
+        }
+        (NpcKind::LostGirl, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 7.0).unwrap_or(46.0);
+            (sheet_i, h, 20.0, h, white)
+        }
+        (NpcKind::Nymph, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 14.0).unwrap_or(56.0);
+            (sheet_i, h, 38.0, h, white)
+        }
     }
 }
 

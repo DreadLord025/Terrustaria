@@ -601,6 +601,18 @@ impl NpcKind {
             NpcKind::CursedHammer => 361,
             NpcKind::EnchantedSword => 362,
             NpcKind::Mimic => 363,
+            // W4-g8 lane 1 batch 2 — the next-free port-local band 364-374.
+            NpcKind::GreenJellyfish => 364,
+            NpcKind::Gastropod => 365,
+            NpcKind::WallCreeper => 366,
+            NpcKind::WallCreeperWall => 367,
+            NpcKind::IceElemental => 368,
+            NpcKind::Herpling => 369,
+            NpcKind::Derpling => 370,
+            NpcKind::CrimsonAxe => 371,
+            NpcKind::FloatyGross => 372,
+            NpcKind::LostGirl => 373,
+            NpcKind::Nymph => 374,
         }
     }
 
@@ -943,6 +955,18 @@ impl NpcKind {
             361 => NpcKind::CursedHammer,
             362 => NpcKind::EnchantedSword,
             363 => NpcKind::Mimic,
+            // W4-g8 lane 1 batch 2 — the port-local 364-374 band.
+            364 => NpcKind::GreenJellyfish,
+            365 => NpcKind::Gastropod,
+            366 => NpcKind::WallCreeper,
+            367 => NpcKind::WallCreeperWall,
+            368 => NpcKind::IceElemental,
+            369 => NpcKind::Herpling,
+            370 => NpcKind::Derpling,
+            371 => NpcKind::CrimsonAxe,
+            372 => NpcKind::FloatyGross,
+            373 => NpcKind::LostGirl,
+            374 => NpcKind::Nymph,
             _ => return None,
         })
     }
@@ -1834,6 +1858,18 @@ impl NpcKind {
             NpcKind::Pixie => "NPC_Hit_5",
             NpcKind::Wraith => "NPC_Hit_54",
             NpcKind::CursedHammer | NpcKind::EnchantedSword | NpcKind::Mimic => "NPC_Hit_4",
+            // W4-g8 lane 1 batch 2 — the `HitSound` rows: 103 NPCHit25
+            // (`NPC.cs:10225`), 122/174/182/195/196 NPCHit1 (`:10488`/
+            // `:11203`/`:11326`/`:11500`/`:11514`), 164/165 NPCHit29
+            // (`:11067`/`:11082`), 169 NPCHit5 (`:11122`), 177 NPCHit22
+            // (`:11247`), 179 NPCHit4 (`:11274`).
+            NpcKind::GreenJellyfish => "NPC_Hit_25",
+            NpcKind::Gastropod | NpcKind::Herpling | NpcKind::FloatyGross
+            | NpcKind::LostGirl | NpcKind::Nymph => "NPC_Hit_1",
+            NpcKind::WallCreeper | NpcKind::WallCreeperWall => "NPC_Hit_29",
+            NpcKind::IceElemental => "NPC_Hit_5",
+            NpcKind::Derpling => "NPC_Hit_22",
+            NpcKind::CrimsonAxe => "NPC_Hit_4",
             _ => return None,
         })
     }
@@ -2150,6 +2186,18 @@ impl NpcKind {
             NpcKind::Pixie => "NPC_Killed_7",
             NpcKind::Wraith => "NPC_Killed_52",
             NpcKind::CursedHammer | NpcKind::EnchantedSword | NpcKind::Mimic => "NPC_Killed_6",
+            // W4-g8 lane 1 batch 2 — the `DeathSound` rows: 103 NPCDeath28
+            // (`NPC.cs:10226`), 122/174/195 NPCDeath1 (`:10490`/`:11204`/
+            // `:11501`), 164/165 NPCDeath32 (`:11068`/`:11083`), 169
+            // NPCDeath7 (`:11124`), 177 NPCDeath25 (`:11248`), 179
+            // NPCDeath6 (`:11275`), 182/196 NPCDeath2 (`:11327`/`:11515`).
+            NpcKind::GreenJellyfish => "NPC_Killed_28",
+            NpcKind::Gastropod | NpcKind::Herpling | NpcKind::LostGirl => "NPC_Killed_1",
+            NpcKind::WallCreeper | NpcKind::WallCreeperWall => "NPC_Killed_32",
+            NpcKind::IceElemental => "NPC_Killed_7",
+            NpcKind::Derpling => "NPC_Killed_25",
+            NpcKind::CrimsonAxe => "NPC_Killed_6",
+            NpcKind::FloatyGross | NpcKind::Nymph => "NPC_Killed_2",
             _ => return None,
         })
     }
@@ -2513,6 +2561,19 @@ impl NpcKind {
             NpcKind::Pixie | NpcKind::Wraith => 22,
             NpcKind::CursedHammer | NpcKind::EnchantedSword => 23,
             NpcKind::Mimic => 25,
+            // W4-g8 lane 1 batch 2 — the `SetDefaults` aiStyle rows: 103 18
+            // (`NPC.cs:10221`), 122/169/182 22 (`:10484`/`:11118`/`:11322`),
+            // 164 3 (`:11063`), 165 40 (`:11078`), 174/177 41 (`:11199`/
+            // `:11243`), 179 23 (`:11270`), 195 42 (`:11496`), 196 3
+            // (`:11510`).
+            NpcKind::GreenJellyfish => 18,
+            NpcKind::Gastropod | NpcKind::IceElemental | NpcKind::FloatyGross => 22,
+            NpcKind::WallCreeper => 3,
+            NpcKind::WallCreeperWall => 40,
+            NpcKind::Herpling | NpcKind::Derpling => 41,
+            NpcKind::CrimsonAxe => 23,
+            NpcKind::LostGirl => 42,
+            NpcKind::Nymph => 3,
         }
     }
 
@@ -2621,6 +2682,9 @@ impl NpcKind {
             NpcKind::Nutcracker | NpcKind::Krampus => 2.0,
             NpcKind::NutcrackerSpinning => 6.0,
             NpcKind::ElfArcher => 1.0,
+            // W4-g8 lane 1 batch 2 — the Nymph 196 + the WallCreeper 164
+            // ride the cap-2 group (`NPC.cs:57554-57578`, ±2f, accel 0.07).
+            NpcKind::Nymph | NpcKind::WallCreeper => 2.0,
             _ => return None,
         })
     }
@@ -3056,6 +3120,22 @@ impl NpcKind {
             NpcKind::Wraith => (24.0, 44.0),
             NpcKind::CursedHammer | NpcKind::EnchantedSword => (40.0, 40.0),
             NpcKind::Mimic => (24.0, 24.0),
+            // W4-g8 lane 1 batch 2 — the `SetDefaults` boxes: 103 26x26
+            // (`NPC.cs:10219-10220`), 122 20x20 (`:10482-10483`), 164 50x20
+            // (`:11061-11062`), 165 36x36 (`:11076-11077`), 169 18x40
+            // (`:11116-11117`), 174 52x26 (`:11197-11198`), 177 58x44
+            // (`:11241-11242`), 179 40x40 (`:11268-11269`), 182 24x62
+            // (`:11320-11321`), 195/196 18x40 (`:11494-11495`/`:11508-11509`).
+            NpcKind::GreenJellyfish => (26.0, 26.0),
+            NpcKind::Gastropod => (20.0, 20.0),
+            NpcKind::WallCreeper => (50.0, 20.0),
+            NpcKind::WallCreeperWall => (36.0, 36.0),
+            NpcKind::IceElemental => (18.0, 40.0),
+            NpcKind::Herpling => (52.0, 26.0),
+            NpcKind::Derpling => (58.0, 44.0),
+            NpcKind::CrimsonAxe => (40.0, 40.0),
+            NpcKind::FloatyGross => (24.0, 62.0),
+            NpcKind::LostGirl | NpcKind::Nymph => (18.0, 40.0),
         }
     }
 
@@ -3172,6 +3252,20 @@ impl NpcKind {
             NpcKind::CursedHammer => 83,
             NpcKind::EnchantedSword => 84,
             NpcKind::Mimic => 85,
+            // W4-g8 lane 1 batch 2 — the vanilla `NPC.type` ids
+            // (`NPCID.cs:10883`/`:10921`/`:11005`/`:11007`/`:11015`/
+            // `:11025`/`:11031`/`:11035`/`:11041`/`:11067`/`:11069`).
+            NpcKind::GreenJellyfish => 103,
+            NpcKind::Gastropod => 122,
+            NpcKind::WallCreeper => 164,
+            NpcKind::WallCreeperWall => 165,
+            NpcKind::IceElemental => 169,
+            NpcKind::Herpling => 174,
+            NpcKind::Derpling => 177,
+            NpcKind::CrimsonAxe => 179,
+            NpcKind::FloatyGross => 182,
+            NpcKind::LostGirl => 195,
+            NpcKind::Nymph => 196,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -3224,6 +3318,10 @@ impl NpcKind {
             // case list carries 338-340 (`NPC.cs:68603-68605`) on their
             // 15-frame strips (`Main.npcFrameCount[338..340]`, `Main.cs`).
             NpcKind::ZombieElf | NpcKind::ZombieElfBeard | NpcKind::ZombieElfGirl => 15,
+            // W4-g8 lane 1 batch 2 — the Nymph 196 rides the humanoid-group
+            // case list (`NPC.cs:68576`) on its 14-frame strip
+            // (`Main.npcFrameCount[196]` = 14).
+            NpcKind::Nymph => 14,
             _ => 1,
         }
     }
@@ -3729,6 +3827,21 @@ impl NpcKind {
             NpcKind::Wraith => 160,
             NpcKind::CursedHammer | NpcKind::EnchantedSword => 200,
             NpcKind::Mimic => 500,
+            // W4-g8 lane 1 batch 2 — the `lifeMax` rows: 103 120
+            // (`NPC.cs:10224`), 122 220 (`:10487`), 164/165 80 (`:11066`/
+            // `:11081`), 169 200 (`:11121`), 174 220 (`:11202`), 177 300
+            // (`:11246`), 179 200 (`:11273`), 182 240 (`:11325`), 195 250
+            // (`:11499`), 196 300 (`:11513`).
+            NpcKind::GreenJellyfish => 120,
+            NpcKind::Gastropod => 220,
+            NpcKind::WallCreeper | NpcKind::WallCreeperWall => 80,
+            NpcKind::IceElemental => 200,
+            NpcKind::Herpling => 220,
+            NpcKind::Derpling => 300,
+            NpcKind::CrimsonAxe => 200,
+            NpcKind::FloatyGross => 240,
+            NpcKind::LostGirl => 250,
+            NpcKind::Nymph => 300,
         }
     }
 
@@ -4108,6 +4221,21 @@ impl NpcKind {
             NpcKind::Wraith => 65,
             NpcKind::CursedHammer | NpcKind::EnchantedSword => 80,
             NpcKind::Mimic => 80,
+            // W4-g8 lane 1 batch 2 — the `damage` rows: 103 80
+            // (`NPC.cs:10222`), 122 60 (`:10485`), 164/165 30 (`:11064`/
+            // `:11079`), 169 55 (`:11119`), 174 65 (`:11200`), 177 80
+            // (`:11244`), 179 80 (`:11271`), 182 65 (`:11323`), 195 10
+            // (`:11497`), 196 35 (`:11511`).
+            NpcKind::GreenJellyfish => 80,
+            NpcKind::Gastropod => 60,
+            NpcKind::WallCreeper | NpcKind::WallCreeperWall => 30,
+            NpcKind::IceElemental => 55,
+            NpcKind::Herpling => 65,
+            NpcKind::Derpling => 80,
+            NpcKind::CrimsonAxe => 80,
+            NpcKind::FloatyGross => 65,
+            NpcKind::LostGirl => 10,
+            NpcKind::Nymph => 35,
         }
     }
 }

@@ -866,6 +866,18 @@ pub const FLAMELASH: u16 = 34;
 /// ai[0]==2 override steers (`Projectile.cs:1131-1140`: 10x10, hostile,
 /// penetrate −1, knockBack 6). W4-g8 lane 1 batch 1.
 pub const SAND_BALL_FALLING: u16 = 31;
+/// `ProjectileID.PinkLaser` (84) — the Gastropod's hostile laser
+/// (`NPC.cs:24818`), the aiStyle-1 bullet (`Projectile.cs:1646-1659`:
+/// 4x4, hostile, penetrate 3, extraUpdates 2, timeLeft 600). W4-g8 lane 1.
+pub const PINK_LASER: u16 = 84;
+/// `ProjectileID.FrostBlastHostile` (128) — the IceElemental's hostile
+/// frost blast (`NPC.cs:24894`), the aiStyle-28 bolt (`Projectile.cs:2169-2179`:
+/// 14x14, hostile, penetrate −1, coldDamage). W4-g8 lane 1.
+pub const FROST_BLAST_HOSTILE: u16 = 128;
+/// `ProjectileID.WebSpit` (472) — the wall-crawler's expert web spit
+/// (`NPC.cs:29863`), the aiStyle-1 bullet (`Projectile.cs:5463-5473`:
+/// 8x8, hostile, penetrate −1, tileCollide, timeLeft 60). W4-g8 lane 1.
+pub const WEB_SPIT: u16 = 472;
 /// `ProjectileID.DemonSickle` (44) — the Demon/VoodooDemon's hostile sickle
 /// (`NPC.cs:23449`), the aiStyle-18 twin of the friendly DemonScythe 45
 /// (`Projectile.cs:1271-1282`: hostile, penetrate −1).
@@ -3195,6 +3207,17 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // the stock tileCollide; the `ai[0] = 2` + `timeLeft = 300`
             // overrides ride the NPC shot drain (`NPC.cs:24463-24464`).
             SAND_BALL_FALLING => (10.0, 10.0, 10, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // W4-g8 lane 1 batch 2 — the Gastropod's PinkLaser (84,
+            // `Projectile.cs:1646-1659`): 4x4, aiStyle 1, penetrate 3,
+            // extraUpdates 2, timeLeft 600; the IceElemental's FrostBlast
+            // (128, `:2169-2179`): 14x14, aiStyle 28, penetrate −1, the
+            // stock tileCollide + 3600 life.
+            PINK_LASER => (4.0, 4.0, 1, 3, 600, 2, true, false, false, RESET_STATE),
+            FROST_BLAST_HOSTILE => (14.0, 14.0, 28, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // W4-g8 lane 1 batch 2 — the wall-crawler's WebSpit (472,
+            // `Projectile.cs:5463-5473`): 8x8, aiStyle 1, penetrate −1,
+            // tileCollide, timeLeft 60 (the expert spit, constants-off).
+            WEB_SPIT => (8.0, 8.0, 1, -1, 60, 0, true, false, false, RESET_STATE),
             // S1-P-i17 — the special-arrow rows (the ammo items' own `shoot`
             // ids, `itemdata.rs`). Every row is the C# `SetDefaults` arm
             // verbatim; the stock `timeLeft = 3600` (`:787`) stands wherever

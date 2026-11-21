@@ -516,6 +516,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(FISHRON_SHEETS)
             .chain(SMALL_KIND_SHEETS)
             .chain(KIND_WIRE_1_SHEETS)
+            .chain(KIND_WIRE_2_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1262,6 +1263,23 @@ pub(crate) const KIND_WIRE_1_SHEETS: &[u32] = &[
     83, // the Cursed Hammer
     84, // the Enchanted Sword
     85, // the Mimic
+];
+
+/// W4-g8 lane 1 batch 2 — the d22-d33 machines' kinds' own sheets
+/// (`TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `KIND_WIRE_1_SHEETS`.
+pub(crate) const KIND_WIRE_2_SHEETS: &[u32] = &[
+    103, // the Green Jellyfish
+    122, // the Gastropod
+    164, // the Wall Creeper (walk form)
+    165, // the Wall Creeper (wall form)
+    169, // the Ice Elemental
+    174, // the Herpling
+    177, // the Derpling
+    179, // the Crimson Axe
+    182, // the Floaty Gross
+    195, // the Lost Girl
+    196, // the Nymph
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -3208,6 +3226,23 @@ pub(crate) fn draw_npcs(
             NpcKind::SpikeBall => {
                 scaled_anchor(assets.npc_sheet(70), npc_rows(70), n, w, h)
             }
+            // W4-g8 lane 1 batch 2 — the d22-d33 machines' kinds draw their
+            // OWN sheets (`KIND_WIRE_2_SHEETS`) at the generic centred
+            // anchor — the batch-1 shape.
+            NpcKind::GreenJellyfish
+            | NpcKind::Gastropod
+            | NpcKind::WallCreeper
+            | NpcKind::WallCreeperWall
+            | NpcKind::IceElemental
+            | NpcKind::Herpling
+            | NpcKind::Derpling
+            | NpcKind::CrimsonAxe
+            | NpcKind::FloatyGross
+            | NpcKind::LostGirl
+            | NpcKind::Nymph => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3368,6 +3403,16 @@ pub(crate) fn draw_npcs(
                     | NpcKind::Antlion
                     | NpcKind::CursedHammer
                     | NpcKind::EnchantedSword
+                    // W4-g8 lane 1 batch 2 — the Gastropod's vx*0.05 tilt
+                    // (`NPC.cs:73609`), the IceElemental's aim (`:24881`),
+                    // the FloatyGross's vx*0.1 tilt (`:74858`), the
+                    // WallCreeperWall's aim (`:29810`), the CrimsonAxe's
+                    // spin (`:25304`).
+                    | NpcKind::Gastropod
+                    | NpcKind::IceElemental
+                    | NpcKind::FloatyGross
+                    | NpcKind::WallCreeperWall
+                    | NpcKind::CrimsonAxe
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

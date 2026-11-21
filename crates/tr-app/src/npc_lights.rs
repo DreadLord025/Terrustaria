@@ -61,6 +61,8 @@ pub(crate) fn npc_light(
     let weapon_rgb = match kind {
         NpcKind::CursedHammer => [0.2, 0.05, 0.3],
         NpcKind::EnchantedSword => [0.05, 0.2, 0.3],
+        // W4-g8 lane 1 batch 2 — the CrimsonAxe 179 (`NPC.cs:25245`).
+        NpcKind::CrimsonAxe => [0.3, 0.15, 0.05],
         _ => {
             return npc_light_anchor(kind, pos, width, height);
         }

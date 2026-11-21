@@ -2257,6 +2257,98 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Mimic",
     },
+    // W4-g8 lane 1 batch 2 — the d22-d33 machines' kinds. The WallCreeper
+    // 164 is `Hide = true` (`NPCID.cs`'s draw modifiers) so it folds onto
+    // the WallCreeperWall's credit in `entry_for_npc`, but it still needs a
+    // row to resolve (the Spike Ball precedent).
+    BestiaryEntryDef {
+        credit_id: "GreenJellyfish",
+        net_id: 103,
+        kind: NpcKind::GreenJellyfish,
+        variant: None,
+        quick_unlock: false,
+        name: "Green Jellyfish",
+    },
+    BestiaryEntryDef {
+        credit_id: "Gastropod",
+        net_id: 122,
+        kind: NpcKind::Gastropod,
+        variant: None,
+        quick_unlock: false,
+        name: "Gastropod",
+    },
+    BestiaryEntryDef {
+        credit_id: "WallCreeper",
+        net_id: 164,
+        kind: NpcKind::WallCreeper,
+        variant: None,
+        quick_unlock: false,
+        name: "Wall Creeper",
+    },
+    BestiaryEntryDef {
+        credit_id: "WallCreeperWall",
+        net_id: 165,
+        kind: NpcKind::WallCreeperWall,
+        variant: None,
+        quick_unlock: false,
+        name: "Wall Creeper",
+    },
+    BestiaryEntryDef {
+        credit_id: "IceElemental",
+        net_id: 169,
+        kind: NpcKind::IceElemental,
+        variant: None,
+        quick_unlock: false,
+        name: "Ice Elemental",
+    },
+    BestiaryEntryDef {
+        credit_id: "Herpling",
+        net_id: 174,
+        kind: NpcKind::Herpling,
+        variant: None,
+        quick_unlock: false,
+        name: "Herpling",
+    },
+    BestiaryEntryDef {
+        credit_id: "Derpling",
+        net_id: 177,
+        kind: NpcKind::Derpling,
+        variant: None,
+        quick_unlock: false,
+        name: "Derpling",
+    },
+    BestiaryEntryDef {
+        credit_id: "CrimsonAxe",
+        net_id: 179,
+        kind: NpcKind::CrimsonAxe,
+        variant: None,
+        quick_unlock: false,
+        name: "Crimson Axe",
+    },
+    BestiaryEntryDef {
+        credit_id: "FloatyGross",
+        net_id: 182,
+        kind: NpcKind::FloatyGross,
+        variant: None,
+        quick_unlock: false,
+        name: "Floaty Gross",
+    },
+    BestiaryEntryDef {
+        credit_id: "LostGirl",
+        net_id: 195,
+        kind: NpcKind::LostGirl,
+        variant: None,
+        quick_unlock: false,
+        name: "Lost Girl",
+    },
+    BestiaryEntryDef {
+        credit_id: "Nymph",
+        net_id: 196,
+        kind: NpcKind::Nymph,
+        variant: None,
+        quick_unlock: false,
+        name: "Nymph",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

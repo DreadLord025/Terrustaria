@@ -149,6 +149,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Hit_28", 3),
     ("NPC_Hit_31", 3),
     ("NPC_Hit_54", 3),
+    // W4-g8 lane 1 batch 2 — the WallCreeper's NPCHit29 (`NPC.cs:11067`/
+    // `:11082`) and the Derpling's NPCHit22 (`:11247`).
+    ("NPC_Hit_29", 3),
+    ("NPC_Hit_22", 3),
     ("NPC_Killed_1", 4),
     ("NPC_Killed_2", 4),
     ("NPC_Killed_3", 4),
@@ -202,6 +206,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_31", 4),
     ("NPC_Killed_34", 4),
     ("NPC_Killed_52", 4),
+    // W4-g8 lane 1 batch 2 — the WallCreeper's NPCDeath32 (`NPC.cs:11068`/
+    // `:11083`) and the Derpling's NPCDeath25 (`:11248`).
+    ("NPC_Killed_32", 4),
+    ("NPC_Killed_25", 4),
     // The NPC death family (the sound id 4, `LegacySoundPlayer.cs:676`): the
     // per-kind death cues (`NPC.DeathSound`, `NPC.cs:6477`).
     ("Double_Jump", 16),

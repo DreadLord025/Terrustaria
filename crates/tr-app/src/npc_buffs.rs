@@ -495,6 +495,16 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::CursedHammer | NpcKind::EnchantedSword => &[20, 24, 31, 323],
         NpcKind::Pixie | NpcKind::Mimic => &[20, 31],
         NpcKind::Wraith => &[],
+        // W4-g8 lane 1 batch 2 — the `Sets.DebuffImmunitySets` rows: 103/
+        // 174/177/195 `[31]`, 122/182 `[20, 31]`, 164/165 `[20]`, 169
+        // `[20, 31, 44, 324]`, 179 `[20, 24, 31, 323]`; 196 has no row
+        // (the null-row else-branch, no immunity).
+        NpcKind::GreenJellyfish | NpcKind::Herpling | NpcKind::Derpling | NpcKind::LostGirl => &[31],
+        NpcKind::Gastropod | NpcKind::FloatyGross => &[20, 31],
+        NpcKind::WallCreeper | NpcKind::WallCreeperWall => &[20],
+        NpcKind::IceElemental => &[20, 31, 44, 324],
+        NpcKind::CrimsonAxe => &[20, 24, 31, 323],
+        NpcKind::Nymph => &[],
     }
 }
 

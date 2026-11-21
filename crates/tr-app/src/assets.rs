@@ -1288,6 +1288,19 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_83",
         "NPC_84",
         "NPC_85",
+        // W4-g8 lane 1 batch 2 — the d22-d33 machines' kinds' own sheets
+        // (`render/entities.rs`'s KIND_WIRE_2_SHEETS).
+        "NPC_103",
+        "NPC_122",
+        "NPC_164",
+        "NPC_165",
+        "NPC_169",
+        "NPC_174",
+        "NPC_177",
+        "NPC_179",
+        "NPC_182",
+        "NPC_195",
+        "NPC_196",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -1873,7 +1886,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 191] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 202] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1911,6 +1924,8 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 191] = [
         // W4-g8 lane 1 batch 1 — the d22-d33 machines' kinds, appended last
         // so the earlier slots keep their indexes.
         61, 63, 64, 69, 70, 75, 82, 83, 84, 85,
+        // W4-g8 lane 1 batch 2 — appended last (same reason).
+        103, 122, 164, 165, 169, 174, 177, 179, 182, 195, 196,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -2685,6 +2700,19 @@ impl Lookups {
                 atlas.sheet("NPC_83").copied(),
                 atlas.sheet("NPC_84").copied(),
                 atlas.sheet("NPC_85").copied(),
+                // W4-g8 lane 1 batch 2 — the d22-d33 machines' kinds' strips
+                // (the BESTIARY_NPC_SHEET_IDS tail, same order).
+                atlas.sheet("NPC_103").copied(),
+                atlas.sheet("NPC_122").copied(),
+                atlas.sheet("NPC_164").copied(),
+                atlas.sheet("NPC_165").copied(),
+                atlas.sheet("NPC_169").copied(),
+                atlas.sheet("NPC_174").copied(),
+                atlas.sheet("NPC_177").copied(),
+                atlas.sheet("NPC_179").copied(),
+                atlas.sheet("NPC_182").copied(),
+                atlas.sheet("NPC_195").copied(),
+                atlas.sheet("NPC_196").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),
