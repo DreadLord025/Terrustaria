@@ -39388,10 +39388,35 @@ then overwrites position/velocity — zero velocity survives.
   `source_rect` math was verified 1:1 and now shares
   `SpriteFrame::source_size`), `aabb_rectangle` truncates the scaled
   product; absent ids keep the C# unloaded fallbacks. The falling-leaf
-  liquid probe (`:1180`) centres on the sheet half-size. STILL DROPPED:
+  liquid probe (`:1180`) centres on the sheet half-size. ~~STILL DROPPED:
   the spawn-time position-adjust arms (`:1384-1388`, `:1407-1420`,
-  `:1433-1440`) — they shift spawn geometry AND roll extra randoms, so
-  their wiring is a separate A/B'd step (the module doc records it).
+  `:1433-1440`)~~ — **WIRED (W4-g68 wiring-2, 2026-11-21).** All three
+  arms now ride the same loaded-texture gate (`texture_sizes.get(&type)`
+  IS the C# `TextureAssets.Gore[Type].IsLoaded` test — the App injects
+  the real packed sizes, so the gate is open in-game):
+  * 1225 (`:1384-1388`): X −= `(Width()/2) * Scale` (the INTEGER halving
+    precedes the float cast — `Utils.cs:1301-1316` reads the RAW asset,
+    not the framed cell), Y −= `Height() * Scale / 2f`. No extra draws
+    (the `Next(6)` was already unconditional).
+  * 411-430 (`:1407-1420`): the unloaded-extra-RNG arm — FOUR draws when
+    loaded (`Next(90,150)` vy-scale, `Next(40,90)` vx-scale, `Next(4)*5`
+    type bump, `Next(goreTime/2, goreTime*2)` life) plus a FIFTH
+    (`Next(150,600)`) only when `goreTime == 0`; Y shifts by the FULL
+    height; `sticky = true` overwrites the zero-time chain's false; the
+    type bump can push past 430 (the C#'s own shape — the later
+    `refresh_texture_size` reads the FINAL type). The velocity scales
+    multiply the POST-KICK velocity (the kick draws fired first).
+  * SpecialAI-2 / 825-827 (`:1433-1440`): ONE draw
+    (`Next(goreTime/2, goreTime+1)`), alpha 150, velocity reset to the
+    ARGUMENT (kick discarded), raw-half position adjust; `sticky=false`
+    stays unconditional.
+  The A/B witnesses pin BOTH branches per arm: the loaded spawn's
+  position/velocity/type/life AND the exact stream delta (0 / 4(+1) / 1
+  extra draws vs the unloaded spawn), so a regression that opens the
+  gate without the draws (or vice versa) fails the census. The
+  `goreTime==0` census uses a real `UnifiedRandom` twin — the empty-range
+  `Next(0,0)` life roll STILL consumes a sample (`UnifiedRandom.cs:126-
+  130`), which the VecRng bounds-assert stand-in cannot express.
 * **The remaining tile-draw emission arms (W4-g68 deferred-4 census).**
   The `:7779-7891` region is exactly `EmitTreeLeaves` — no flower-petal
   or vine-drip arm hides there. The full `TileDrawing` emission census:

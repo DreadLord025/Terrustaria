@@ -22,18 +22,27 @@
 //! `Next(10, 31)` (the velocity.Y kick, `Gore.cs:1327`), `Next(-20, 21)`
 //! (the velocity.X kick, `:1328`), and only when the ChildSafety gate is
 //! armed *and* the type is dangerous: `Next(11, 14)` (the safe re-type,
-//! `:1336`) then `NextFloat()` (the re-scaled size, `:1338`). Nothing else
-//! rolls: the remaining arms (`:1355-1429`) draw no random numbers.
+//! `:1336`) then `NextFloat()` (the re-scaled size, `:1338`). Then the
+//! per-type arms in order: 1225's `Next(6)` (`:1382`, unconditional),
+//! SpecialAI-3's four draws (`:1393-1401`), SpecialAI-1's two
+//! (`:1405`), the LOADED-GATED 411-430 arm's four (+1 when `goreTime==0`,
+//! `:1411-1419`), 907-909's two (`:1426-1427`), the LOADED-GATED
+//! SpecialAI-2 arm's one (`:1439`). W4-g68 wiring-2 opened the two
+//! loaded-texture gates: an id in [`GorePool::set_texture_sizes`]' map
+//! rolls the arm's extra randoms AND shifts the spawn position (the
+//! A/B witness pins both branches); an absent id keeps the unloaded
+//! behaviour — no draws, no shift.
 //!
 //! Documented drops (each at its site below): the `Main.rand == null` re-seed
 //! (`Gore.cs:1300-1303`; streams are caller-owned and never null), the
-//! `Main.netMode == 2` server guard (`:1288-1291`; single-player port), and
-//! the texture-dependent arms — W4-g68 wired the `Width`/`Height` asset seam
-//! ([`GorePool::set_texture_sizes`]: an id in the map is the C#'s
-//! `IsLoaded == true` branch, an absent id keeps the `1f` fallback), but the
-//! spawn-time position-adjust arms (`:1384-1388`, `:1407-1420`, `:1433-1440`)
-//! still read the unloaded branch — they shift spawn geometry AND roll extra
-//! randoms, so their wiring is a separate A/B'd step. The `GoreID.Sets`
+//! `Main.netMode == 2` server guard (`:1288-1291`; single-player port).
+//! The texture-dependent arms are WIRED (W4-g68): the `Width`/`Height`
+//! asset seam ([`GorePool::set_texture_sizes`]: an id in the map is the C#'s
+//! `IsLoaded == true` branch, an absent id keeps the `1f` fallback) and the
+//! spawn-time position-adjust arms (`:1384-1388`, `:1407-1420`,
+//! `:1433-1440`) behind the same gate — the position terms read the RAW
+//! asset size (`Utils.cs:1301-1316`), not the framed cell, with the C#'s
+//! integer `Width()/2` division kept. The `GoreID.Sets`
 //! tables (`GoreID.cs:20-23`) are ported in [`crate::gore_id`], so the arms
 //! gated on them (`:1355-1360`, `:1390-1456`) run.
 
@@ -546,15 +555,24 @@ impl GorePool {
             // `Gore.cs:1375-1378`.
             self.slot_mut(num).frame = SpriteFrame::new(1, 3);
         }
-        // `Gore.cs:1379-1389` (type 1225): every field write is inside
-        // `TextureAssets.Gore[Type].IsLoaded` except the `timeLeft` roll
-        // (`:1382`) and the two flags — ported exactly, position adjustment
-        // waits for the asset seam (module drops).
+        // `Gore.cs:1379-1389` (type 1225): the frame/timeLeft/sticky writes
+        // are unconditional; the position adjust rides the loaded-texture
+        // gate (W4-g68 wiring-2: `texture_sizes` IS the `IsLoaded` test).
+        // The C# reads the RAW asset `Width()/Height()` (`Utils.cs:1301-
+        // 1316`), NOT the framed cell — and `Width()/2` is INTEGER division
+        // before the float cast, while the Y term is `Height()*Scale/2f`.
+        // Both terms use the `Position`/`Scale` ARGUMENTS (a ChildSafety
+        // re-scale wrote `gore.scale`, not `Scale`).
         if gore_type == 1225 {
             let gore = self.slot_mut(num);
             gore.frame = SpriteFrame::new(1, 3);
             gore.time_left = 10 + rng.next_max(6);
             gore.sticky = false;
+            if let Some(&(w, h)) = self.texture_sizes.get(&gore_type) {
+                let gore = self.slot_mut(num);
+                gore.position.x = position.x - (w / 2) as f32 * scale;
+                gore.position.y = position.y - h as f32 * scale / 2.0;
+            }
         }
         // `GoreID.Sets.SpecialAI` arms (`Gore.cs:1390-1406`), the 411-430
         // (`:1407-1421`), 907-909 (`:1422-1429`) and SpecialAI == 2
@@ -592,9 +610,39 @@ impl GorePool {
             let vel_y = rng.next_float() * (std::f32::consts::PI * 2.0);
             self.slot_mut(num).velocity = Vec2::new(vel_x, vel_y);
         }
-        // The 411-430 arm (`Gore.cs:1407-1421`) is gated on
-        // `TextureAssets.Gore[Type].IsLoaded` — the port has no texture
-        // tracking, so it draws no random numbers (module drops).
+        // The 411-430 arm (`Gore.cs:1407-1421`), behind the loaded-texture
+        // gate (W4-g68 wiring-2). The C# order: the X/Y position adjusts
+        // (Y is the FULL height, not half), the velocity.Y then velocity.X
+        // scale rolls, the `Next(4)*5` type bump, the timeLeft roll — and
+        // ONLY when `goreTime == 0` a FIFTH draw (`Next(150, 600)`)
+        // overwrites timeLeft. The gate reads the ORIGINAL `Type` (a
+        // ChildSafety re-type to 11-13 never lands in 411-430 anyway); the
+        // type bump can push past 430 (428+15=443) — the later
+        // `refresh_texture_size` re-reads the FINAL type's sheet, exactly
+        // the C#'s lazy `TextureAssets.Gore[type]` reads at draw time.
+        if (411..=430).contains(&gore_type) {
+            if let Some(&(w, h)) = self.texture_sizes.get(&gore_type) {
+                let vy_scale = rng.next_range(90, 150) as f32 * 0.01;
+                let vx_scale = rng.next_range(40, 90) as f32 * 0.01;
+                let bump = rng.next_max(4) * 5;
+                let gore_time = self.gore_time;
+                let life = rng.next_range(gore_time / 2, gore_time * 2);
+                let gore = self.slot_mut(num);
+                gore.position.x = position.x - (w / 2) as f32 * scale;
+                gore.position.y = position.y - h as f32 * scale;
+                gore.velocity.y *= vy_scale;
+                gore.velocity.x *= vx_scale;
+                gore.gore_type += bump;
+                gore.time_left = life;
+                gore.sticky = true;
+                if gore_time == 0 {
+                    // `:1417-1420`: the fifth draw, only in the zero-time
+                    // branch (the roll above still fired).
+                    let life = rng.next_range(150, 600);
+                    self.slot_mut(num).time_left = life;
+                }
+            }
+        }
         if (907..=909).contains(&gore_type) {
             // `Gore.cs:1422-1429`: the sheet row, then the frame counter.
             let row = rng.next_max(3);
@@ -607,10 +655,24 @@ impl GorePool {
             gore.rotation = 0.0;
         }
         if special_ai == 2 {
-            // `Gore.cs:1430-1441`: only the sticky flag is unconditional — the
-            // alpha/velocity/position/timeLeft writes sit behind
-            // `TextureAssets.Gore[Type].IsLoaded` (module drops).
+            // `Gore.cs:1430-1441`: the sticky flag is unconditional; the
+            // alpha/velocity/position/timeLeft writes + the ONE timeLeft
+            // roll sit behind `TextureAssets.Gore[Type].IsLoaded`
+            // (W4-g68 wiring-2). The velocity resets to the ARGUMENT
+            // (the default-block kick is discarded), the position adjusts
+            // read the raw asset halves (X integer-divided first), and
+            // `Next(goreTime/2, goreTime+1)` is the arm's only draw.
             self.slot_mut(num).sticky = false;
+            if let Some(&(w, h)) = self.texture_sizes.get(&gore_type) {
+                let gore_time = self.gore_time;
+                let life = rng.next_range(gore_time / 2, gore_time + 1);
+                let gore = self.slot_mut(num);
+                gore.alpha = 150;
+                gore.velocity = velocity;
+                gore.position.x = position.x - (w / 2) as f32 * scale;
+                gore.position.y = position.y - h as f32 * scale / 2.0;
+                gore.time_left = life;
+            }
         }
         match special_ai {
             // `Gore.cs:1442-1456`: the 4/5/6 rows.
@@ -2249,6 +2311,143 @@ mod tests {
         assert_eq!(pool.slot(n).width(), 1.0);
         assert_eq!(pool.slot(n).height(), 1.0);
         assert_eq!(pool.slot(n).aabb_rectangle(), (0, 0, 1, 1));
+    }
+
+    /// W4-g68 wiring-2 A/B: the 1225 position-adjust arm
+    /// (`Gore.cs:1384-1388`). LOADED (id in `set_texture_sizes`): X shifts
+    /// by the INTEGER-halved raw width × scale, Y by the raw height ×
+    /// scale / 2 — the frame/timeLeft/sticky writes are unconditional and
+    /// the `Next(6)` rolls on BOTH branches. UNLOADED: no shift, same
+    /// draws (the A/B stream equality is the witness).
+    #[test]
+    fn w4_g68_the_1225_position_adjust_rides_the_loaded_gate() {
+        let world = world();
+        // Sheet 21x30 (odd width pins the integer halving: 21/2 = 10).
+        let mut loaded = GorePool::new();
+        loaded.set_texture_sizes(std::collections::HashMap::from([(1225, (21, 30))]));
+        let mut rng = VecRng::new(vec![10, 20, 3]);
+        let n = loaded.new_gore(
+            &mut rng, &world, Vec2::new(100.0, 100.0), Vec2::ZERO, 1225, 2.0,
+        );
+        assert_eq!(rng.idx, 3, "kick x2 + Next(6)");
+        let g = loaded.slot(n);
+        assert_eq!(g.position, Vec2::new(100.0 - 10.0 * 2.0, 100.0 - 30.0 * 2.0 / 2.0));
+        assert_eq!(g.time_left, 13);
+        assert!(!g.sticky);
+        assert_eq!(g.frame.row_count, 3);
+        // UNLOADED: identical stream consumption, no position shift.
+        let mut bare = GorePool::new();
+        let mut rng_b = VecRng::new(vec![10, 20, 3]);
+        let n = bare.new_gore(
+            &mut rng_b, &world, Vec2::new(100.0, 100.0), Vec2::ZERO, 1225, 2.0,
+        );
+        assert_eq!(rng_b.idx, 3, "the Next(6) is unconditional");
+        assert_eq!(bare.slot(n).position, Vec2::new(100.0, 100.0));
+        assert_eq!(bare.slot(n).time_left, 13);
+    }
+
+    /// W4-g68 wiring-2 A/B: the 411-430 arm (`Gore.cs:1407-1421`) — the
+    /// unloaded-extra-RNG census. LOADED: FOUR extra draws
+    /// (`Next(90,150)`, `Next(40,90)`, `Next(4)`, `Next(goreTime/2,
+    /// goreTime*2)`), the position adjusts (Y is the FULL height), the
+    /// velocity scales, the `+Next(4)*5` type bump and sticky=true.
+    /// UNLOADED: only the two kick draws — the A/B delta is exactly 4.
+    /// `goreTime == 0` adds a FIFTH draw (`Next(150,600)`).
+    #[test]
+    fn w4_g68_the_pages_arm_rolls_four_extra_draws_when_loaded() {
+        let world = world();
+        let mut loaded = GorePool::new();
+        loaded.set_texture_sizes(std::collections::HashMap::from([(411, (16, 20))]));
+        // kick(10,20), vy Next(90,150)=120 → 1.2, vx Next(40,90)=50 → 0.5,
+        // bump Next(4)=2 → +10 (type 421), life Next(300,1200)=777.
+        let mut rng = VecRng::new(vec![10, 20, 120, 50, 2, 777]);
+        let n = loaded.new_gore(
+            &mut rng, &world, Vec2::new(100.0, 100.0), Vec2::new(4.0, 6.0), 411, 1.0,
+        );
+        assert_eq!(rng.idx, 6, "2 kicks + the arm's 4 draws");
+        let g = loaded.slot(n);
+        assert_eq!(g.gore_type, 421, "the +10 bump");
+        assert_eq!(g.position, Vec2::new(100.0 - 8.0, 100.0 - 20.0), "Y is the FULL height");
+        // The kick wrote velocity (4+2, 6-1) = (6, 5); the arm scales it.
+        // The expected product re-derives the C# float shape (120f * 0.01f
+        // is NOT the 1.2 literal — one ulp apart).
+        assert_eq!(g.velocity, Vec2::new(6.0 * (50.0_f32 * 0.01), 5.0 * (120.0_f32 * 0.01)));
+        assert_eq!(g.time_left, 777);
+        assert!(g.sticky);
+        // The bump's final type picks the texture size (421 absent here —
+        // the C#'s lazy read at draw time; the ARM gate read 411).
+        assert_eq!(g.texture_size, None);
+        // UNLOADED: two draws only, no shift, no bump, generic sticky chain.
+        let mut bare = GorePool::new();
+        let mut rng_b = VecRng::new(vec![10, 20]);
+        let n = bare.new_gore(
+            &mut rng_b, &world, Vec2::new(100.0, 100.0), Vec2::new(4.0, 6.0), 411, 1.0,
+        );
+        assert_eq!(rng_b.idx, 2, "the unloaded branch draws NOTHING extra");
+        let g = bare.slot(n);
+        assert_eq!(g.gore_type, 411);
+        assert_eq!(g.position, Vec2::new(100.0, 100.0));
+        assert_eq!(g.velocity, Vec2::new(6.0, 5.0));
+        assert_eq!(g.time_left, GORE_TIME_DEFAULT);
+        // goreTime == 0: the fifth draw fires (Next(150,600)) and the
+        // sticky chain's first arm (goreTime==0 → sticky=false) is
+        // overwritten by the loaded arm's sticky=true. The life roll is
+        // Next(0, 0) — the C# STILL draws a sample for an empty range
+        // (`UnifiedRandom.cs:126-130`), so the census uses a real stream
+        // twin (VecRng's bounds assert cannot express the empty range).
+        let mut zero = GorePool::new();
+        zero.gore_time = 0;
+        zero.set_texture_sizes(std::collections::HashMap::from([(411, (16, 20))]));
+        let mut rng_z = UnifiedRandom::new(9);
+        let n = zero.new_gore(
+            &mut rng_z, &world, Vec2::new(100.0, 100.0), Vec2::ZERO, 411, 1.0,
+        );
+        let mut twin = UnifiedRandom::new(9);
+        twin.next_range(10, 31);
+        twin.next_range(-20, 21);
+        twin.next_range(90, 150);
+        twin.next_range(40, 90);
+        twin.next_max(4);
+        twin.next_range(0, 0); // the empty-range life roll still draws
+        let life2 = twin.next_range(150, 600);
+        assert_eq!(rng_z, twin, "the zero-time branch adds the fifth draw");
+        assert_eq!(zero.slot(n).time_left, life2);
+        assert!(zero.slot(n).sticky);
+    }
+
+    /// W4-g68 wiring-2 A/B: the SpecialAI-2 arm (`Gore.cs:1430-1441`,
+    /// types 825-827). LOADED: ONE extra draw (`Next(goreTime/2,
+    /// goreTime+1)`), alpha 150, velocity reset to the ARGUMENT (the kick
+    /// discarded), the raw-half position adjust, sticky false. UNLOADED:
+    /// sticky false only — the A/B delta is exactly 1 draw.
+    #[test]
+    fn w4_g68_the_smoke_arm_rolls_one_extra_draw_when_loaded() {
+        let world = world();
+        let mut loaded = GorePool::new();
+        loaded.set_texture_sizes(std::collections::HashMap::from([(825, (24, 24))]));
+        let mut rng = VecRng::new(vec![10, 20, 450]);
+        let n = loaded.new_gore(
+            &mut rng, &world, Vec2::new(100.0, 100.0), Vec2::new(1.5, -0.5), 825, 1.0,
+        );
+        assert_eq!(rng.idx, 3, "2 kicks + the arm's 1 draw");
+        let g = loaded.slot(n);
+        assert_eq!(g.alpha, 150);
+        assert_eq!(g.velocity, Vec2::new(1.5, -0.5), "the argument velocity survives");
+        assert_eq!(g.position, Vec2::new(100.0 - 12.0, 100.0 - 12.0));
+        assert_eq!(g.time_left, 450);
+        assert!(!g.sticky);
+        // UNLOADED: the kick velocity stays, alpha 0, no shift.
+        let mut bare = GorePool::new();
+        let mut rng_b = VecRng::new(vec![10, 20]);
+        let n = bare.new_gore(
+            &mut rng_b, &world, Vec2::new(100.0, 100.0), Vec2::new(1.5, -0.5), 825, 1.0,
+        );
+        assert_eq!(rng_b.idx, 2, "the unloaded branch draws NOTHING extra");
+        let g = bare.slot(n);
+        assert_eq!(g.alpha, 0);
+        assert_eq!(g.velocity, Vec2::new(3.5, -1.5));
+        assert_eq!(g.position, Vec2::new(100.0, 100.0));
+        assert!(!g.sticky, "the sticky flag is unconditional");
     }
 
     /// The falling-leaf liquid probe (`Gore.cs:1180`) centres on
