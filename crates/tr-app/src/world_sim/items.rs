@@ -847,9 +847,113 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
     if let Some((pos, stack)) = voodoo {
         crate::world_sim::npcs::voodoo_doll_lava_death(app, pos, stack);
     }
+    // W4-g15 lane 5 — the Heroicis-set grant (`TryGrantingMakeAWishSet`): the
+    // gate + the five spawns take `app` wholesale, so they resolve here. The
+    // C# runs the grant per-drop inside UpdateItem (`:414-417`); the port
+    // scans the live list post-tick (the same observable outcome — a wet
+    // desert platinum coin grants once; the grant is draw-free so the scan
+    // order does not move any RNG stream). The voodoo → wish → shimmer order
+    // keeps the wish coin clear of the shimmer transforms (a coin is never a
+    // shimmer-ramp drop).
+    try_granting_make_a_wish_set(app);
     // The shimmer transforms apply in the list order (the C#'s single-item
     // `GetShimmered` per tick; a step fires at most one per drop).
     crate::shimmer::apply_due_transforms(app, &shimmer_due);
+}
+
+/// `WorldItem.TryGrantingMakeAWishSet` (`WorldItem.cs:590-610`, W4-g15
+/// lane 5): a platinum coin (74) that is WET (water), a single stack, NOT
+/// shimmer-wet, still grab-delayed for a NAMED player (`grabDelayTime > 0 &&
+/// grabDelayPlayer != 255` — a player drop, not a tile drop), and whose
+/// closest player stands in the DESERT, is consumed and spawns the five
+/// Heroicis pieces (5655/5656/5657/5658/5661) as shimmered items, plus the
+/// RainbowBoulder cue.
+///
+/// The gate `playerIndexTheItemIsReservedFor == Main.myPlayer` (`:592`) is
+/// the port's `net_reserved` answer (a foreign reservation refuses). The
+/// `Player.FindClosest` (`Player.cs:4942-4967`) is the single-session-player
+/// scan — the port's one player is slot 0, so the closest is always it; the
+/// C#'s `b != byte.MaxValue` guard is vacuous (an all-inactive roster returns
+/// 0, never 255), and the port's `app.player.is_none()` is the no-player
+/// case. The `ZoneDesert` read is the port's last-scan `scene_metrics`
+/// (the standing convention — `update_scene` runs after the items pass).
+///
+/// `SpawnShimmeredItem` (`WorldItem.cs:623-637`): `Item.RequestNewItem` with
+/// the explicit velocity `(itemNumber * (itemNumber % 2 * 2 - 1), 0)` — the
+/// alternating ±itemNumber X spread (0, -1, +2, -3, +4 for the five) — and
+/// the modifier sets `shimmerTime = 1; shimmered = true; shimmerWet = true;
+/// wet = true`. The explicit-velocity arm draws NO scatter (`Item.cs:49738-
+/// 49741`), and `prefix: 0` draws nothing (`Item.cs:511-514`) — the spawn is
+/// DRAW-FREE, so the port's pinned triplet is skipped entirely.
+///
+/// The port scans the live list post-tick (the C# runs the grant per-drop
+/// inside `UpdateItem`); a granted coin is consumed and its five pieces are
+/// appended, so the scan walks the ORIGINAL length only (the pieces are
+/// kind != 74 and never re-grant). The grant is draw-free, so the scan order
+/// moves no RNG stream.
+fn try_granting_make_a_wish_set(app: &mut App) {
+    // The desert zone + a live player are the shared gates (`:594-595`);
+    // capture them once (they cannot change during the scan).
+    if !app.scene_metrics.zone_desert || app.player.is_none() {
+        return;
+    }
+    let n = app.items.len();
+    let mut i = 0;
+    while i < n {
+        let Some(drop) = app.items.get(i) else {
+            break;
+        };
+        if drop.kind != 74 {
+            i += 1;
+            continue;
+        }
+        // `:592` — the gate row. `wet` is the water flag (the C# `base.wet`),
+        // `shimmerWet` the shimmer-liquid flag; a coin in shimmer is refused.
+        let reserved_elsewhere = app
+            .net_reserved
+            .get(&(i as i16))
+            .is_some_and(|(who, _)| *who != app.local_id as u8 && *who != 255);
+        if reserved_elsewhere
+            || !drop.wet
+            || drop.count != 1
+            || drop.shimmer_wet
+            || drop.grab_delay_time <= 0
+            || drop.grab_delay_player == 255
+        {
+            i += 1;
+            continue;
+        }
+        let center = drop.center();
+        // `:597` — `TurnToAirAndSync`.
+        app.items.swap_remove(i);
+        // `:598-603` — the five pieces, `SpawnShimmeredItem(num++, type)`.
+        for (num, kind) in [5655u16, 5656, 5657, 5658, 5661].into_iter().enumerate() {
+            let vx = num as f32 * ((num % 2 * 2) as f32 - 1.0);
+            let mut piece = ItemDrop::new(
+                kind,
+                1,
+                0,
+                center.x - crate::item::SIZE * 0.5,
+                center.y - crate::item::SIZE * 0.5,
+                vx,
+                0.0,
+                0.0,
+            );
+            // The `SpawnShimmeredItem` modifier (`:631-635`).
+            piece.shimmer_time = 1.0;
+            piece.shimmered = true;
+            piece.shimmer_wet = true;
+            piece.wet = true;
+            app.items.push(piece);
+        }
+        // `:604-607` — the `HeroicisSetSpawnSound` particle broadcast is the
+        // RainbowBoulder cue at the coin's centre (`ParticleOrchestrator.cs:
+        // 897-900`); the port has no particle-orchestrator pass, the sound is
+        // the whole observable effect.
+        app.audio.play_rainbow_boulder(center.x, center.y);
+        // The swap brought a new drop into slot i — re-check it (do not
+        // advance). The appended pieces sit beyond the original length n.
+    }
 }
 
 /// Spawns the drop left by a broken tile, with a small random pop like
@@ -1927,6 +2031,127 @@ mod lava_burn_tests {
         app.net_reserved.remove(&0);
         update_items(&mut app, 1.0 / 60.0);
         assert!(app.items.is_empty(), "the unreserved drops burned");
+    }
+}
+
+#[cfg(test)]
+mod make_a_wish_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::item::ItemDrop;
+    use crate::player::Player;
+
+    /// A desert world with a water pool at rows 18-19, columns 18-22; the
+    /// player stands in the desert (the scene flag is set directly — the
+    /// grant reads `scene_metrics.zone_desert`, the last-scan convention).
+    fn desert_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = tr_core::world::World::new("desert".into(), 40, 40);
+        for x in 18..22 {
+            for y in 18..20 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+                w.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Water);
+            }
+        }
+        w.compute_column_surface();
+        app.world = w;
+        let mut player = Player::spawn(&app.world);
+        // Far from the coin (outside the grab rectangle) so the grab pass
+        // never touches it — the grant is the only consumer.
+        player.x = 2.0 * TILE_PX;
+        player.y = 10.0 * TILE_PX;
+        app.player = Some(player);
+        app.scene_metrics.zone_desert = true;
+        // The listener at the coin so the positioned RainbowBoulder cue is
+        // audible (the attenuation gate, `sound.rs:105`'s 2500 px).
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (20.0 * TILE_PX, 18.0 * TILE_PX),
+            sound_volume: 1.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        app
+    }
+
+    /// A wet, single-stack, grab-delayed platinum coin in the desert grants
+    /// the five Heroicis pieces as shimmered items with the alternating
+    /// ±itemNumber X spread, and plays the RainbowBoulder cue.
+    #[test]
+    fn w4_g15_a_wet_desert_platinum_coin_grants_the_heroicis_set() {
+        let mut app = desert_app();
+        let mut coin = ItemDrop::new(74, 1, 0, 20.0 * TILE_PX, 18.0 * TILE_PX, 0.0, 0.0, 0.0);
+        coin.wet = true;
+        coin.apply_grab_delay(0); // a player drop, named-player delay
+        app.items.push(coin);
+        let before = app.audio.played_count();
+        try_granting_make_a_wish_set(&mut app);
+        assert!(!app.items.iter().any(|it| it.kind == 74), "the coin consumed");
+        let pieces: Vec<&ItemDrop> = app
+            .items
+            .iter()
+            .filter(|it| matches!(it.kind, 5655 | 5656 | 5657 | 5658 | 5661))
+            .collect();
+        assert_eq!(pieces.len(), 5, "the five pieces spawned");
+        for (num, p) in pieces.iter().enumerate() {
+            assert!(p.shimmered && p.shimmer_wet && p.wet, "the modifier flags");
+            assert_eq!(p.shimmer_time, 1.0);
+            let vx = num as f32 * ((num % 2 * 2) as f32 - 1.0);
+            assert_eq!(p.vel.x, vx, "the ±itemNumber spread (0,-1,2,-3,4)");
+            assert_eq!(p.vel.y, 0.0);
+        }
+        assert!(app.audio.played_count() > before, "the RainbowBoulder cue");
+    }
+
+    /// The gate row (`WorldItem.cs:592`): a dry coin, a multi-stack, a
+    /// shimmer-wet coin, an undelayed coin, an all-players-delayed coin, or
+    /// a non-desert player all refuse the grant.
+    #[test]
+    fn w4_g15_the_wish_gate_refuses_the_wrong_states() {
+        // Dry coin.
+        let mut app = desert_app();
+        let mut coin = ItemDrop::new(74, 1, 0, 20.0 * TILE_PX, 18.0 * TILE_PX, 0.0, 0.0, 0.0);
+        coin.apply_grab_delay(0);
+        app.items.push(coin);
+        try_granting_make_a_wish_set(&mut app);
+        assert!(app.items.iter().any(|it| it.kind == 74), "dry refuses");
+        // Multi-stack.
+        let mut app = desert_app();
+        let mut coin = ItemDrop::new(74, 2, 0, 20.0 * TILE_PX, 18.0 * TILE_PX, 0.0, 0.0, 0.0);
+        coin.wet = true;
+        coin.apply_grab_delay(0);
+        app.items.push(coin);
+        try_granting_make_a_wish_set(&mut app);
+        assert!(app.items.iter().any(|it| it.kind == 74), "stack != 1 refuses");
+        // Shimmer-wet.
+        let mut app = desert_app();
+        let mut coin = ItemDrop::new(74, 1, 0, 20.0 * TILE_PX, 18.0 * TILE_PX, 0.0, 0.0, 0.0);
+        coin.wet = true;
+        coin.shimmer_wet = true;
+        coin.apply_grab_delay(0);
+        app.items.push(coin);
+        try_granting_make_a_wish_set(&mut app);
+        assert!(app.items.iter().any(|it| it.kind == 74), "shimmerWet refuses");
+        // All-players delay (255).
+        let mut app = desert_app();
+        let mut coin = ItemDrop::new(74, 1, 0, 20.0 * TILE_PX, 18.0 * TILE_PX, 0.0, 0.0, 0.0);
+        coin.wet = true;
+        coin.apply_grab_delay(255);
+        app.items.push(coin);
+        try_granting_make_a_wish_set(&mut app);
+        assert!(app.items.iter().any(|it| it.kind == 74), "255 delay refuses");
+        // Non-desert.
+        let mut app = desert_app();
+        app.scene_metrics.zone_desert = false;
+        let mut coin = ItemDrop::new(74, 1, 0, 20.0 * TILE_PX, 18.0 * TILE_PX, 0.0, 0.0, 0.0);
+        coin.wet = true;
+        coin.apply_grab_delay(0);
+        app.items.push(coin);
+        try_granting_make_a_wish_set(&mut app);
+        assert!(app.items.iter().any(|it| it.kind == 74), "non-desert refuses");
     }
 }
 
