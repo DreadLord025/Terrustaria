@@ -398,6 +398,11 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         );
     });
     app.projectile_step.cap_backlog();
+    // W4-d21 — the digtoise dig drain: the aiStyle-204 arm queued the dig
+    // cells (the hit-tile book + the best-pickaxe read live on the App);
+    // resolve them on the same `UpdateProjectiles` stream the C#'s PickTile
+    // runs under (`Main.cs:17775-17777`).
+    crate::world_sim::editing::drain_digtoise_digs(app);
     // S1-P-i55 — the golf context writeback: the arms mutated the clone
     // (RecordSwing / the cup scoring); the resolved state is authoritative
     // for the tick. The `golfer_score` accumulator rides the player.

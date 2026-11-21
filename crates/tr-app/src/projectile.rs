@@ -13078,6 +13078,21 @@ fn shadow_hand_variation(age: f32) -> (i32, f32, f32) {
     (0, age, 180.0)
 }
 
+/// W4-d21 — `StormLightningCollisionCheck`'s explosion-rect test
+/// (`Projectile.cs:16114-16122` + `GetStormLightningExplosionRect`
+/// `:16139-16142`): at `localAI[0] == 1` the 64-px rect centred on the
+/// bolt's centre intersects the target. The liquid-line check
+/// (`localAI[0] == 3`, `:16123-16126`) + the MultiPointHitbox fold to this
+/// rect (the bolt-path fold, ANALYSIS).
+fn storm_explosion_hit(p: &Projectile, target: tr_core::whip::Rect) -> bool {
+    if p.local_ai[0] != 1.0 {
+        return false;
+    }
+    let c = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+    let r = tr_core::whip::Rect::new((c.x - 32.0) as i32, (c.y - 32.0) as i32, 64, 64);
+    r.intersects(target)
+}
+
 /// `Projectile.RandomizeInsanityShadowFor` (`Projectile.cs:42408-42493`) —
 /// the Insanity Shadow's spawn pick: the spawn position, the spawn velocity
 /// and the two `ai` slots the shadow hand's arm reads (the variation's
@@ -14136,7 +14151,7 @@ pub(crate) fn get_lerp_value(from: f32, to: f32, t: f32) -> f32 {
 /// — `MathHelper.Lerp(toMin, toMax, GetLerpValue(fromMin, fromMax, fromValue,
 /// clamped: true))`, XNA's `a + (b - a) * amount`. The gem bolt's steering
 /// uses it for the turn rate and the close-range pull.
-fn remap(from_value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
+pub(crate) fn remap(from_value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
     to_min + (to_max - to_min) * get_lerp_value(from_min, from_max, from_value)
 }
 
@@ -14401,7 +14416,7 @@ fn laser_ray_len(world: &World, from: Vec2, dir: Vec2, max: f32) -> f32 {
 
 /// `Vector2.MoveTowards(this Vector2, Vector2, float)` (`Utils.cs:1772-1786`):
 /// `from` walks toward `target` by at most `max`, snapping on arrival.
-fn move_towards(from: Vec2, target: Vec2, max: f32) -> Vec2 {
+pub(crate) fn move_towards(from: Vec2, target: Vec2, max: f32) -> Vec2 {
     let delta = target - from;
     if delta.length() < max {
         return target;
@@ -14532,6 +14547,10 @@ pub struct ProjectilePool {
     /// pass (the tee placement, the strikes, the cup scoring, the pad
     /// probes, the player-side writes).
     golf_effects: Vec<crate::projectile_ai_golf::GolfEffect>,
+    /// W4-d21 — the digtoise dig intents `(slot, tx, ty)` the aiStyle-204
+    /// arm queues this tick; the App drain resolves `PickTile` (the hit-tile
+    /// book + the best-pickaxe read the pool cannot borrow).
+    digtoise_digs: Vec<(usize, i32, i32)>,
 }
 
 impl Default for ProjectilePool {
@@ -14921,6 +14940,7 @@ impl ProjectilePool {
             pending_catches: Vec::new(),
             golf_ctx: None,
             golf_effects: Vec::new(),
+            digtoise_digs: Vec::new(),
         }
     }
 
@@ -19775,6 +19795,106 @@ impl ProjectilePool {
                                 );
                             }
                         }
+                        // W4-d21 — `AI()`'s aiStyle-201..209 arms
+                        // (`Projectile.cs:36767-36802`), the missing machines
+                        // (census 26d). 206 landed a9 (`forbidden_minion_step`,
+                        // verify-only); 207 is the empty `AI_207_SnappingStone`
+                        // with no rowed kinds; 210 is `ai_yoyo_shot` above.
+                        // The thrown melee weapons (1082/1083): the spin +
+                        // flight, the HandleMovement-201 bounce-back fade.
+                        201 => {
+                            crate::projectile_ai_201_210::ai_thrown_melee(
+                                &mut self.slots[i],
+                                rng,
+                            );
+                            crate::projectile_ai_201_210::thrown_melee_collision(
+                                &mut self.slots[i],
+                                world,
+                            );
+                        }
+                        // The Torch God helper (1084): the torch-tile seek +
+                        // reframe (the tile write reborrows world mutably).
+                        202 => {
+                            crate::projectile_ai_201_210::ai_torch_god_helper(
+                                &mut self.slots[i],
+                                world,
+                                rng,
+                            );
+                            // tileCollide false — the free integrate.
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
+                        }
+                        // The storm lightning (1091/1117/1122): the target
+                        // lock + the MoveTowards. The 1117/1122 keep
+                        // tileCollide false (the free integrate); the 1091
+                        // trap keeps the stock true — the blocked-move
+                        // default kills it on a solid tile (`:19849-19853`).
+                        203 => {
+                            crate::projectile_ai_201_210::ai_storm_lightning(
+                                &mut self.slots[i],
+                                world,
+                                &npcs[..],
+                                player.as_deref(),
+                                rng,
+                            );
+                            self.slots[i].kill_step(world);
+                        }
+                        // The digtoises (1098/1123): the mining turtle. The
+                        // dig cells ride the App drain (the hit-tile book);
+                        // the correctSlopeCollision row rides the slope pass.
+                        204 => {
+                            let digs = crate::projectile_ai_201_210::ai_digtoise(
+                                &mut self.slots[i],
+                                world,
+                                player.as_deref(),
+                                rng,
+                            );
+                            for (tx, ty) in digs {
+                                self.digtoise_digs.push((i, tx, ty));
+                            }
+                            // The TileCollision slide + the UpdatePosition
+                            // slope pass (correctSlopeCollision, fall=true
+                            // for the 1098, `:20461`).
+                            self.digtoise_move(i, world);
+                        }
+                        // The RC car (1105): the input-bit drive/fly machine.
+                        // The AI moves the position itself (WalkDownSlope);
+                        // the correctSlopeCollision row rides the slope pass.
+                        205 => {
+                            crate::projectile_ai_201_210::ai_remote_control_car(
+                                &mut self.slots[i],
+                                world,
+                                player.as_deref(),
+                                rng,
+                            );
+                            self.rc_car_move(i, world);
+                        }
+                        // The Glacier Fang shot (1115): the held-channel
+                        // charge + release. The owner writes ride the mutable
+                        // player channel; the release Damage() rides the
+                        // post-AI walk.
+                        208 => {
+                            crate::projectile_ai_201_210::ai_glacier_fang_shot(
+                                &mut self.slots[i],
+                                i,
+                                world,
+                                owner,
+                                player.as_deref_mut(),
+                                rng,
+                            );
+                            // The flight: tileCollide true in release, false
+                            // in charge — the kill_step default integrates.
+                            self.slots[i].kill_step(world);
+                        }
+                        // The Chlorophyte Claymore blade slam (1129): the box
+                        // resize + the 20-tick age. tileCollide false.
+                        209 => {
+                            crate::projectile_ai_201_210::ai_claymore_blade_slam(
+                                &mut self.slots[i],
+                            );
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
+                        }
                         _ => {}
                     }
                     }
@@ -20064,6 +20184,18 @@ impl ProjectilePool {
                     {
                         self.pending_catches.push((self.slots[i].owner, item, stack));
                     }
+                }
+                // W4-d21 — `Kill()`'s aiStyles 201-210 arms. The storm
+                // lightning's bolt damage (`:70771-70854`) folds to the
+                // 64-px explosion rect (the boxed Damage seam); the greek-
+                // fire spawns ride the pool. The digtoise dust + the RC-car
+                // explosion draws stay on the stream.
+                self.storm_lightning_death(i, world, npcs, doll_flags(player.as_deref()), rng, luck);
+                if matches!(self.slots[i].kind, DIGTOISE | TRUSTY_DIGTOISE) {
+                    crate::projectile_ai_201_210::digtoise_kill_draws(&self.slots[i], rng);
+                }
+                if self.slots[i].kind == REMOTE_CONTROL_CAR {
+                    crate::projectile_ai_201_210::remote_control_car_kill_draws(&self.slots[i], rng);
                 }
             }
             // S1-P-i16 — the dart split / cluster ring spawn requests the
@@ -21726,6 +21858,52 @@ impl ProjectilePool {
         }
     }
 
+    /// W4-d21 — `Kill()`'s storm-lightning bolt arms (`Projectile.cs:70771-
+    /// 70854`): the 1122 Arc Surge + the 1091/1117 bolt damage. The C#'s
+    /// `LightningGenerator`/`MultiPointHitbox` folds to the 64-px explosion
+    /// rect at the centre (the `localAI[0] = 1`/`2`/`3` state the arm sets);
+    /// the boxed `Damage()` rides `damage_pve_boxed`. The 1091/1117's leafy-
+    /// tree-top greek-fire spawn (`:70846-70853`) rides the pool spawn with
+    /// `timeLeft /= 3`. Kind-gated; a dead slot never returns to active.
+    fn storm_lightning_death(
+        &mut self,
+        slot: usize,
+        world: &World,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        rng: &mut dyn DropRng,
+        luck: f32,
+    ) {
+        let kind = self.slots[slot].kind;
+        if !matches!(kind, STORM_LIGHTNING | LIGHTNING_STRIKE_SHOT | ARC_SURGE) {
+            return;
+        }
+        let spawns = crate::projectile_ai_201_210::storm_lightning_kill(
+            &mut self.slots[slot],
+            world,
+            rng,
+        );
+        // The bolt-path Damage() through the 64-px explosion rect (the
+        // MultiPointHitbox fold). The centre is preserved across the resize.
+        let center = {
+            let p = &self.slots[slot];
+            Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+        };
+        let p = &mut self.slots[slot];
+        p.w = 64.0;
+        p.h = 64.0;
+        p.pos = center - Vec2::splat(32.0);
+        self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+        // The greek-fire spawns (the 1091's leafy-tree-top arm): each rides
+        // the owner + `timeLeft /= 3` (`:70851`).
+        let owner = self.slots[slot].owner;
+        for (k, x, y, vx, vy) in spawns {
+            if let Some(s) = self.spawn_with_data_owned(k, owner, x, y, vx, vy, 10, 0.0, 0.0, 0.0) {
+                self.slots[s].time_left /= 3;
+            }
+        }
+    }
+
     /// `Kill()`'s type-295 arm (`Projectile.cs:74341-74350`): the Inferno
     /// Fork bolt's death spawns its blast 296 at the bolt's centre with
     /// `damage * 0.75` (the C#'s `(int)` truncation) and the same
@@ -21761,6 +21939,96 @@ impl ProjectilePool {
             damage,
             knock_back,
         );
+    }
+
+    /// W4-d21 — `HandleMovement` + `UpdatePosition` for the aiStyle-204
+    /// digtoise (`Projectile.cs:17476`'s tileCollide gate, the
+    /// `correctSlopeCollision` skip of the HandleMovement slope pass
+    /// `:17850`, then `UpdatePosition`'s `position += velocity` `:20445` +
+    /// the slope pass `:20447-20474` with `fall = true` for the 1098
+    /// `:20461`). The TileCollision slide zeroes a blocked axis; the slope
+    /// pass then rides the ground ramps. `GetCollisionParams` keeps the
+    /// full box (the 204 is not in the per-type narrowing list).
+    fn digtoise_move(&mut self, slot: usize, world: &World) {
+        let p = &mut self.slots[slot];
+        if p.tile_collide {
+            let tc = crate::collision::tile_collision(
+                world,
+                [p.pos.x, p.pos.y],
+                [p.vel.x, p.vel.y],
+                p.w,
+                p.h,
+                true,
+                true,
+            );
+            p.vel = Vec2::new(tc.vel[0], tc.vel[1]);
+        }
+        // `UpdatePosition` (`:20445`) — the free integrate.
+        p.pos += p.vel;
+        // `:20447-20474` — the correctSlopeCollision slope pass (fall=true
+        // for the 1098; the 1123 keeps fall=false, `:20454-20464` lists only
+        // 1098). The resize anchor is the centre (0.5, 0.5), so the offset
+        // vector is zero — the pass runs on the position directly.
+        if p.tile_collide {
+            let fall = p.kind == DIGTOISE;
+            let sc = crate::collision::slope_collision(
+                world,
+                [p.pos.x, p.pos.y],
+                [p.vel.x, p.vel.y],
+                p.w,
+                p.h,
+                fall,
+            );
+            p.pos = Vec2::new(sc.pos[0], sc.pos[1]);
+            p.vel = Vec2::new(sc.vel[0], sc.vel[1]);
+        }
+        // `AutomaticallyChangesDirection` (`:17281-17288`): the 204 is not
+        // excluded, so the direction follows velocity.X's sign after the move.
+        p.direction = if p.vel.x < 0.0 { -1 } else { 1 };
+    }
+
+    /// W4-d21 — `HandleMovement` + `UpdatePosition` for the aiStyle-205 RC
+    /// car (`Projectile.cs:17476`'s tileCollide gate with `flag6 = false`
+    /// `:17570`, the `correctSlopeCollision` skip of the HandleMovement
+    /// slope pass, then `UpdatePosition`'s `position += velocity` + the
+    /// slope pass `fall = false`). The AI's `WalkDownSlope` already moved
+    /// the position; the TileCollision slide + the integrate + the slope
+    /// pass run on top, exactly as the C# orders them.
+    fn rc_car_move(&mut self, slot: usize, world: &World) {
+        let p = &mut self.slots[slot];
+        if p.tile_collide {
+            let tc = crate::collision::tile_collision(
+                world,
+                [p.pos.x, p.pos.y],
+                [p.vel.x, p.vel.y],
+                p.w,
+                p.h,
+                false,
+                false,
+            );
+            p.vel = Vec2::new(tc.vel[0], tc.vel[1]);
+        }
+        p.pos += p.vel;
+        if p.tile_collide {
+            let sc = crate::collision::slope_collision(
+                world,
+                [p.pos.x, p.pos.y],
+                [p.vel.x, p.vel.y],
+                p.w,
+                p.h,
+                false,
+            );
+            p.pos = Vec2::new(sc.pos[0], sc.pos[1]);
+            p.vel = Vec2::new(sc.vel[0], sc.vel[1]);
+        }
+        p.direction = if p.vel.x < 0.0 { -1 } else { 1 };
+    }
+
+    /// W4-d21 — the digtoise dig intents drain (`AI_204_Digtoise`'s
+    /// `PickTile` calls, `Projectile.cs:38769-38791`): the App resolves the
+    /// best pickaxe + the hit-tile book (the pool cannot borrow them).
+    pub fn drain_digtoise_digs(&mut self) -> Vec<(usize, i32, i32)> {
+        std::mem::take(&mut self.digtoise_digs)
     }
 
     /// S1-P-i21 — `AI()`'s aiStyle-45 Nimbus chain (`Projectile.cs:27950-
@@ -22750,6 +23018,41 @@ impl ProjectilePool {
                         [end.x, end.y],
                         30.0 * p.scale,
                     )
+                }
+            } else if p.kind == GLACIER_FANG_SHOT {
+                // `Colliding`'s type-1115 arm (`Projectile.cs:15397-15405`):
+                // the box inflates by `Remap(ai[0], 0, 60, 0, 22)` and the
+                // shot only hits in the release state (`ai[1] == 1`).
+                if p.ai[1] != 1.0 {
+                    false
+                } else {
+                    let num4 = remap(p.ai[0], 0.0, 60.0, 0.0, 22.0) as i32;
+                    let mut r = proj_rect;
+                    r.inflate(num4, num4);
+                    let (nw, nh) = n.size();
+                    r.intersects(tr_core::whip::Rect::new(
+                        n.x as i32, n.y as i32, nw as i32, nh as i32,
+                    ))
+                }
+            } else if proj_data(p.kind).is_some_and(|d| d.ai_style == 203) {
+                // `Colliding`'s aiStyle-203 arm (`Projectile.cs:15863-15877`
+                // → `StormLightningCollisionCheck` `:16112-16137`): the
+                // 1117's `localAI[0] == 1` explosion rect (the box inflated
+                // 60) OR the 64-px centred explosion rect at `localAI[0] ==
+                // 1`. The liquid-line check (`localAI[0] == 3`) + the
+                // MultiPointHitbox fold to the explosion rect (ANALYSIS).
+                let (nw, nh) = n.size();
+                let target = tr_core::whip::Rect::new(n.x as i32, n.y as i32, nw as i32, nh as i32);
+                if p.kind == LIGHTNING_STRIKE_SHOT && p.local_ai[0] == 1.0 {
+                    let mut r = proj_rect;
+                    r.inflate(60, 60);
+                    if r.intersects(target) {
+                        true
+                    } else {
+                        storm_explosion_hit(p, target)
+                    }
+                } else {
+                    storm_explosion_hit(p, target)
                 }
             } else {
                 // `Damage_PVE_Inner`'s `Colliding(projRectangle, npc.getRect())`

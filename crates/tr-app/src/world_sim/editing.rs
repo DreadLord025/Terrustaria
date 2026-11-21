@@ -875,6 +875,110 @@ fn pick_tile_hit(app: &mut App, tx: i32, ty: i32, pick_power: i32) -> bool {
     false
 }
 
+/// W4-d21 — the digtoise dig drain (`AI_204_Digtoise`'s `PickTile` calls,
+/// `Projectile.cs:38748-38800`). The pool queues the dig cells (the hit-tile
+/// book + the best-pickaxe read live on the App); this resolves them in the
+/// C#'s scan order. The 1123 reads `GetBestPickaxe` (`Player.cs:40095-
+/// 40106`) for the pick power and uses `dealDamageAsIfBaseNumberIs = 36`;
+/// the 1098 uses 26/26. Each cell: `PickTile_DetermineDamage`
+/// (`respectTransformingTiles: false`) gates the `PickTile` call, and the
+/// `dealDamageAsIfBaseNumberIs` clamp (`Player.cs:53765-53768`) caps the
+/// damage. A partially-blocked dig (not every solid cell breakable) returns
+/// the digtoise to the walk state (`ai[1] = 0`, `ai[0] = 4`, `:38795-38800`).
+pub(crate) fn drain_digtoise_digs(app: &mut App) {
+    let digs = app.projectiles.drain_digtoise_digs();
+    if digs.is_empty() {
+        return;
+    }
+    // Group by slot (the C# runs one digtoise's cells together).
+    let mut by_slot: std::collections::BTreeMap<usize, Vec<(i32, i32)>> =
+        std::collections::BTreeMap::new();
+    for (slot, tx, ty) in digs {
+        by_slot.entry(slot).or_default().push((tx, ty));
+    }
+    for (slot, cells) in by_slot {
+        let kind = app.projectiles.slots()[slot].kind;
+        let trusty = kind == crate::projectile::TRUSTY_DIGTOISE;
+        // `:38748-38758` — the pick power + the damage base.
+        let mut pick = 26;
+        let base = if trusty {
+            // GetBestPickaxe: the strongest pick across inventory 0..50.
+            let best = app.inventory[..50]
+                .iter()
+                .filter(|s| s.count > 0)
+                .filter_map(|s| crate::registry::item(s.kind))
+                .filter(|d| d.pick > 0)
+                .map(|d| d.pick)
+                .max()
+                .unwrap_or(0);
+            pick = pick.max(best);
+            36
+        } else {
+            26
+        };
+        let mut solid_count = 0;
+        let mut breakable_count = 0;
+        for (tx, ty) in cells {
+            let Some(tile) = app.world.tile(tx, ty).copied() else { continue };
+            if !tile.active() {
+                continue;
+            }
+            solid_count += 1;
+            // PickTile_DetermineDamage (respectTransformingTiles: false).
+            let buffer_index = app.hit_tile.hit_object(tx, ty, tr_core::hit_tile::TILE);
+            let mut damage = tr_core::tool::pickaxe_damage(
+                tx,
+                ty,
+                pick,
+                tile.kind,
+                i32::from(tile.frame_x),
+                i32::from(tile.frame_y),
+                &pick_world(app),
+                |x, y| app.world.tile(x, y).copied(),
+            );
+            let (redir_x, redir_y) = pick_redirect_target(&app.world, tx, ty, tile);
+            if (redir_x, redir_y) != (tx, ty) {
+                app.hit_tile.update_position(buffer_index, redir_x, redir_y);
+            }
+            if !edit::can_kill_tile(&app.world, tx, ty, chest_holds_items(app)) {
+                damage = 0;
+            }
+            if pick_world(app).get_good {
+                damage *= 2;
+            }
+            // `:38770-38774` — only a positive-damage cell takes the PickTile.
+            if damage > 0 {
+                breakable_count += 1;
+                // The dealDamageAsIfBaseNumberIs clamp (`:53765-53768`).
+                let clamped = damage.min((base as f32 * (damage as f32 / pick as f32)) as i32);
+                let total = app.hit_tile.add_damage(buffer_index, clamped, true);
+                if total >= 100 {
+                    app.hit_tile.try_clearing_and_pruning(
+                        tx,
+                        ty,
+                        tr_core::hit_tile::TILE,
+                        |x, y| app.world.tile(x, y).is_some_and(|t| t.active()),
+                        |x, y| app.world.tile(x, y).map_or(0, |t| t.wall),
+                    );
+                    break_tile(app, tx, ty);
+                } else if clamped != 0 {
+                    app.hit_tile.prune(
+                        |x, y| app.world.tile(x, y).is_some_and(|t| t.active()),
+                        |x, y| app.world.tile(x, y).map_or(0, |t| t.wall),
+                    );
+                }
+            }
+        }
+        // `:38795-38800` — a partially-blocked dig returns to walk.
+        if solid_count > 0 && breakable_count < solid_count {
+            let p = &mut app.projectiles.slots_mut()[slot];
+            p.ai[1] = 0.0;
+            p.ai[0] = 4.0;
+            p.net_update = true;
+        }
+    }
+}
+
 /// The mannequin/weapon-rack redirect target `GetPickaxeDamage`'s
 /// `UpdatePosition` calls land on (`Player.cs:53984-54043`) — the cell the
 /// hit buffer should track. Plain tiles keep their own cell.
