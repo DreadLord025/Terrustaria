@@ -814,6 +814,24 @@ pub const FAIRY_QUEEN_MAGIC_ITEM_SHOT: u16 = 931;
 /// variant (`Projectile.cs:9807-9820`). W4-d18 tail: same friendly arm.
 pub const CONSTELLATION_STAR: u16 = 1039;
 
+// ===== W4-d18 tail: the residual armed-but-unrowed kinds (181-210 census) =====
+// These kinds' aiStyles already have dispatch arms on main (187/189/193),
+// but the kinds themselves had no `proj_data` row and no W4 branch claimed
+// them (the all-branch claim scan). The arms serve them once rowed.
+/// `ProjectileID.InsanityShadowFriendly` (964, `ProjectileID.cs:2482`) —
+/// the friendly Insanity shadow, aiStyle 187 (`Projectile.cs:9127-9142`,
+/// `AI_187_ShadowHand` `:42502-42591` — `ai_insanity_shadow`).
+pub const INSANITY_SHADOW_FRIENDLY: u16 = 964;
+/// `ProjectileID.Volcano` (978, `ProjectileID.cs:2510`) — the Volcano
+/// sword's explosion, aiStyle 189 (`Projectile.cs:9253-9269`,
+/// `AI_189_Volcano` `:42264-42371` — `ai_volcano`).
+pub const VOLCANO: u16 = 978;
+/// `ProjectileID.PalworldMinionFoxsparksFlames` (1106,
+/// `ProjectileID.cs:2766`) — the Foxsparks flamethrower, aiStyle 193
+/// (`Projectile.cs:10303-10315`, `AI_193_Flamethrower` `:41337-41401` —
+/// `ai_flamethrower`'s 1106 constants arm).
+pub const FOXSPARKS_FLAMES: u16 = 1106;
+
 // ===== W4-d18: the aiStyle-174 multisegment pets =====
 // `AI_174_MultisegmentPet` (`Projectile.cs:45345-45427`) — the three
 // worm-segment pets share one arm; the per-type keep-alive flags ride the
@@ -3916,6 +3934,36 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 30.0, 30.0, 171, 1, 240, 1, true, false, false,
                 (true, -1, false, -1, 255, 1.0),
             ),
+            // ===== W4-d18 tail: the residual armed-but-unrowed kinds =====
+            // `Projectile.cs:9127-9142` — the friendly Insanity shadow (964):
+            // 40x40, aiStyle 187, `alpha = 255`, `penetrate = 3`, friendly,
+            // local-immunity (true, -1), `ignoreWater = true`,
+            // `tileCollide = false`, `extraUpdates = 1`, `scale = 0.7`.
+            // `armorPenetration = 20` is damage-side (no port field). The
+            // stock 3600 life (the AI's variation machine kills it).
+            INSANITY_SHADOW_FRIENDLY => (
+                40.0, 40.0, 187, 3, TIME_LEFT_DEFAULT, 1, false, false, false,
+                (true, -1, false, -1, 255, 0.7),
+            ),
+            // `Projectile.cs:9253-9269` — the Volcano explosion (978):
+            // 160x160, aiStyle 189, friendly, `alpha = 255`,
+            // `ignoreWater = true`, `tileCollide = false`, `penetrate = 3`,
+            // local-immunity (true, -1), melee. `timeLeft = 60` then
+            // `timeLeft = 30` (`:9261`/`:9268`) — the LAST write wins (30).
+            // `ownerHitCheck` is damage-side (no port field).
+            VOLCANO => (
+                160.0, 160.0, 189, 3, 30, 0, false, false, false,
+                (true, -1, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:10303-10315` — the Foxsparks flames (1106):
+            // 6x6, aiStyle 193, friendly, `alpha = 255`, `penetrate = 4`,
+            // `extraUpdates = 2`, the ID-static pair (true, 15).
+            // `drawLayer = 4` is render-side (no port field). The stock
+            // tileCollide true / ignoreWater false (`:775`/`:752`).
+            FOXSPARKS_FLAMES => (
+                6.0, 6.0, 193, 4, TIME_LEFT_DEFAULT, 2, true, false, false,
+                (false, -2, true, 15, 255, 1.0),
+            ),
             // The Frost Moon family (S1-D-4, `ProjectileID.cs:1244-1258`):
             // the 345/346/348/349/350/351/352 rows are the S1-F-13c wiring
             // rows ABOVE (value-identical in both branches — deduped at
@@ -4341,6 +4389,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d18 tail: the two aiStyle-171 weapon variants'
             // `ignoreWater = true` (`Projectile.cs:8837`/`:9816`).
             || matches!(kind, FAIRY_QUEEN_MAGIC_ITEM_SHOT | CONSTELLATION_STAR)
+            // W4-d18 tail: the friendly Insanity shadow (`:9137`) and the
+            // Volcano explosion (`:9260`) set `ignoreWater = true`; the
+            // Foxsparks flames (1106) do NOT (`:10303-10315` has no line).
+            || matches!(kind, INSANITY_SHADOW_FRIENDLY | VOLCANO)
             // W4-d18: the multisegment pets' `ignoreWater = true`
             // (`Projectile.cs:8482`/`:8504`/`:8539`).
             || matches!(kind, EATER_OF_WORLDS_PET | DESTROYER_PET | LUNATIC_CULTIST_PET)
@@ -4405,6 +4457,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | LIGHTS_BANE | TERRARIAN_BEAM
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
+                    // W4-d18 tail: the Volcano explosion's `melee = true`
+                    // (`Projectile.cs:9267`).
+                    | VOLCANO
             ),
         ranged: matches!(
             kind,

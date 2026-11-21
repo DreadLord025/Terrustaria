@@ -40396,6 +40396,40 @@ mod s1_d_4b_1_tests {
         assert!(blast.uses_local_immunity);
         assert_eq!(blast.local_hit_cooldown, -1);
     }
+
+    /// W4-d18 tail — the three residual armed-but-unrowed kinds' rows
+    /// (`SetDefaults` `:9127-9142` / `:9253-9269` / `:10303-10315`): the
+    /// friendly Insanity shadow 964 (187), the Volcano explosion 978 (189)
+    /// and the Foxsparks flames 1106 (193). Their arms already exist on
+    /// main (`ai_insanity_shadow` / `ai_volcano` / `ai_flamethrower`); these
+    /// rows let `spawn_with_data` accept them.
+    #[test]
+    fn w4_d18_the_residual_rows_carry_the_csharp_set_defaults() {
+        let d = proj_data(INSANITY_SHADOW_FRIENDLY).expect("964 row");
+        assert_eq!((d.w, d.h, d.ai_style), (40.0, 40.0, 187));
+        assert_eq!(d.penetrate, 3);
+        assert_eq!(d.alpha, 255);
+        assert!(!d.tile_collide && d.ignore_water);
+        assert_eq!(d.extra_updates, 1);
+        assert_eq!(d.scale, 0.7);
+        assert!(d.uses_local_immunity && d.local_hit_cooldown == -1);
+        let d = proj_data(VOLCANO).expect("978 row");
+        assert_eq!((d.w, d.h, d.ai_style), (160.0, 160.0, 189));
+        assert_eq!(d.penetrate, 3);
+        assert_eq!(d.time_left, 30, "the last timeLeft write wins (`:9268`)");
+        assert_eq!(d.alpha, 255);
+        assert!(!d.tile_collide && d.ignore_water);
+        assert!(d.uses_local_immunity && d.local_hit_cooldown == -1);
+        assert!(d.melee, "`melee = true` (`:9267`)");
+        let d = proj_data(FOXSPARKS_FLAMES).expect("1106 row");
+        assert_eq!((d.w, d.h, d.ai_style), (6.0, 6.0, 193));
+        assert_eq!(d.penetrate, 4);
+        assert_eq!(d.alpha, 255);
+        assert_eq!(d.extra_updates, 2);
+        assert!(d.tile_collide && !d.ignore_water, "the stock flags");
+        assert!(d.uses_id_static_immunity && d.id_static_hit_cooldown == 15);
+        assert!(!d.uses_local_immunity);
+    }
 }
 
 #[cfg(test)]
