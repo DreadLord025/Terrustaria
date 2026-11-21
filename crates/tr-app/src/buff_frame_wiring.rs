@@ -67,10 +67,10 @@ pub struct BuffFrameInputs<'a> {
 /// The ids the inline wave-A match already owns (the wiring skips them so no
 /// effect is applied twice). Verbatim from the `player.rs` effect match.
 const INLINE_OWNED: &[i32] = &[
-    1, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 17, 18, 21, 22, 23, 26, 29, 31,
-    32, 33, 35, 46, 47, 59, 69, 94, 104, 105, 107, 114, 120, 121, 122, 123, 131,
-    146, 149, 158, 159, 160, 165, 168, 205, 206, 207, 215, 257, 265, 279, 305,
-    308, 311, 312, 314, 343, 365, 383,
+    1, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 17, 18, 21, 22, 23, 25, 26, 29,
+    31, 32, 33, 35, 46, 47, 59, 69, 94, 104, 105, 107, 114, 120, 121, 122, 123,
+    131, 146, 149, 158, 159, 160, 165, 168, 205, 206, 207, 215, 257, 265, 279,
+    305, 308, 311, 312, 314, 343, 365, 383,
 ];
 
 /// The ids the live accessory pass owns (`buff_effects_accessory.rs`).
