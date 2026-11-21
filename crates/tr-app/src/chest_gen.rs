@@ -844,8 +844,25 @@ fn stock_chest(
     } else if ctx.sky && ev.main_item != 0 {
         // `IslandHouse`'s main (`:79344-79363`): the sky-island house count
         // cycle — drawn at the island-house site since S1-A-4 (the counter
-        // advances there, `:79394`).
-        rows.insert(0, Row::plain(ev.main_item));
+        // advances there, `:79394`). The vanilla slot-0 arm's
+        // `chest.item[0].Prefix(-1)` (`:36232` surface / `:36513` mid) rolls
+        // here — the sky mains are accessories (159/158/2219) or the
+        // Starfury sword (65), all prefixable (W4-g44 re-census: the plain
+        // insert dropped the roll the jungle arm already takes).
+        let mut row = Row::plain(ev.main_item);
+        roll_prefix_on(rng, &mut row);
+        rows.insert(0, row);
+        // `:36526-36531` — the flag12 CreativeWings 4978 at 1/40 with its
+        // own Prefix(-1), slot 1 right after the main (the C# mid-band
+        // `num10 > 0` block the sky chest rides — `:36503`'s
+        // `num7 < rockLayer` is true above the surface; the port's band
+        // model files the anchor under Surface, the family row rides the
+        // main arm instead — the recorded band-granularity stand-in).
+        if next(rng, 40) == 0 {
+            let mut wings = Row::plain(4978);
+            roll_prefix_on(rng, &mut wings);
+            rows.insert(1, wings);
+        }
     } else if ev.hell {
         // `flag8`'s main arm (`:36115-36118`): the world-shuffled
         // `GenVars.hellChestItem` table, the `GenVars.hellChest` counter
@@ -2073,6 +2090,86 @@ mod tests {
             let slots = stock_anchor(&mut stock2, &w, x, 199, 13, 21, main);
             assert_eq!(slots[0].kind, main, "the main rides slot 0 ({x})");
         }
+    }
+
+    /// W4-g44 islands final 3/5: the skyware loot-table census — the
+    /// flag12 tail rows verified landed against the re-read C#: the Sky
+    /// Mill 2197 at 1/3 (`:37402`/`:37489`), the six-piece pottery roll
+    /// (`:37418-37445`/`:37493-37521`: 5258/5226/5254/5238/5255/5388),
+    /// the Cloud 751 stack 50-101 (`:37447`/`:37522`), and the main's
+    /// Prefix(-1) (`:36232`/`:36513`) + the CreativeWings 4978 1/40 rider
+    /// (`:36526-36531`).
+    #[test]
+    fn the_skyware_tail_rows_and_the_wings_rider() {
+        let mut w = rig();
+        for dx in -2i32..=0 {
+            for dy in -2i32..=0 {
+                let i = w.index(40 + dx, 197 + dy);
+                w.tiles[i].wall = 73; // the cloud-wall sky probe
+            }
+        }
+        put_chest(&mut w, 40, 199);
+        // Sweep drivers: the tail rows are odds-gated, so collect across
+        // streams. The pottery set + the Cloud stack + the Sky Mill all
+        // appear; the wings rider lands at ~1/40.
+        let mut saw_mill = false;
+        let mut saw_cloud = false;
+        let mut pottery = std::collections::BTreeSet::new();
+        let mut wings = 0;
+        let mut main_prefix = 0;
+        for seed in 1u64..400 {
+            let mut stock = ChestStock::new(seed, false);
+            let slots = stock_anchor(&mut stock, &w, 40, 199, 13, 21, 159);
+            assert_eq!(slots[0].kind, 159, "the balloon rides slot 0");
+            main_prefix += (slots[0].prefix != 0) as u32;
+            for s in &slots[1..] {
+                match s.kind {
+                    2197 => saw_mill = true,
+                    751 => {
+                        saw_cloud = true;
+                        assert!((50..=100).contains(&s.stack), "the Cloud stack 50-100");
+                    }
+                    5258 | 5226 | 5254 | 5238 | 5255 | 5388 => {
+                        pottery.insert(s.kind);
+                    }
+                    4978 => wings += 1,
+                    _ => {}
+                }
+            }
+        }
+        assert!(saw_mill, "the Sky Mill 1/3 row fires");
+        assert!(saw_cloud, "the Cloud stack row fires");
+        assert_eq!(pottery.len(), 6, "all six pottery pieces appear: {pottery:?}");
+        assert!(wings > 0, "the CreativeWings 1/40 rider fires ({wings})");
+        assert!(wings < 60, "and it is rare — the 1/40 gate is real ({wings})");
+        assert!(main_prefix > 0, "the balloon's Prefix(-1) rolls on some stream");
+        // The mahogany twin (the remix corrupt retype's 467/style-3 chest)
+        // takes the same flag12 tail: the Cloud stack rides BOTH blocks
+        // (the :37522 row) — the census fix this lane landed.
+        let mut w2 = rig();
+        for dx in -2i32..=0 {
+            for dy in -2i32..=0 {
+                let i = w2.index(40 + dx, 197 + dy);
+                w2.tiles[i].wall = 82; // the disc-wall sky probe
+            }
+        }
+        put_chest(&mut w2, 40, 199);
+        for dy in 0..2 {
+            for dx in 0..2 {
+                let i = w2.index(40 + dx, 199 + dy);
+                w2.tiles[i].kind = 467;
+            }
+        }
+        let mut mahog_cloud = false;
+        for seed in 1u64..200 {
+            let mut stock = ChestStock::new(seed, false);
+            let slots = stock_anchor(&mut stock, &w2, 40, 199, 3, 467, 159);
+            if slots.iter().any(|s| s.kind == 751) {
+                mahog_cloud = true;
+                break;
+            }
+        }
+        assert!(mahog_cloud, "the 467 block's Cloud row fires (:37522)");
     }
 
     /// `WorldGen.Reset`'s hell-chest shuffle (`:11246-11258`): the five items
