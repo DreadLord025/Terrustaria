@@ -15,7 +15,18 @@ full scan found 32 colliding number keys** (26 bare numbers 08, 61–71, 90–95
 copies) across 64 lanes**. Free renumber block assigned: **151–236, sequential**
 (150 = this registry; max number seen at any tip then was 144).
 
-> ## 🔄🔄🔄🔄 §8 (round 4, APPEND-ONLY) — READ THIS FIRST — §8 IS AUTHORITY for 244–248/281–284
+> ## ⛔ SUPERSEDED DRAFT — round-4 dispatch table (commit `a15cb634b`, written against tip `0426245f2`) — DO NOT EXECUTE
+>
+> This block was dispatched before the Lead's own **§8 ROUND-4 FINAL +
+> §8.5/§8.6/§8.7 FROZEN** table (commits `0a658c7b3`→`9dddb32b4`) landed on
+> this branch; its numbers CONFLICT (e.g. d30→308 vs FROZEN g13-KEEPS-308/
+> d30→338; g65→323 vs FROZEN 346; e26-248→333 vs FROZEN e26-KEEPS-248;
+> f39→311 vs FROZEN 316). **The Lead's FROZEN §8 table at the END of this
+> file IS THE AUTHORITY — execute it, NOT this draft.** Kept for provenance
+> only (append-only rule). The INDEX note was re-pointed to the FROZEN
+> table in the follow-up commit.
+
+> ## 🔄🔄🔄🔄 §8-DRAFT (round 4, APPEND-ONLY) — SUPERSEDED by the Lead's FROZEN §8 (end of file)
 >
 > Round 4 adjudicates the **post-§7.4 SELF-PICK wave on the assigned keys**
 > (§8, lean claimant-tip re-check, NO full sweep — §7.2/§7.4 assignments are
@@ -54,8 +65,10 @@ copies) across 64 lanes**. Free renumber block assigned: **151–236, sequential
 > 134→146→247→267). Executed self-renames are honored ONLY if uncontested —
 > both of these were contested. **4 NEW assignments 304–307; live total 148 =
 > 151–236 + 246–280 + 281–303 + 304–307 (§5 machine check). Numbers 308+ are
-> FREE.** ⚠ **§8 consumed 308–333; 334+ FREE. §7.4 supersedes §7.1–§7.3
-> wherever they disagree; §8 supersedes §7.4 on keys 244–248/281–284.**
+> FREE.** ⚠ **SUPERSEDED: the Lead's FROZEN §8/§8.5/§8.6/§8.7 (END of this
+> file) consumed 308–351; live set 191; free floor 352+ (new docs ≥360 after
+> round-5 re-scan). §7.4 supersedes §7.1–§7.3 wherever they disagree; the
+> FROZEN §8 supersedes everything on keys 244–249/281–286/304/308.**
 >
 > ## 🔄🔄 §4-REFRESH (round 3, commit `51a28d09e`) — extended by §7.4 where noted
 >
@@ -91,7 +104,7 @@ copies) across 64 lanes**. Free renumber block assigned: **151–236, sequential
 > - **Live assignment total: 144 = 151–236 (86) + 246–280 (35) + 281–303 (23),
 >   machine-checked unique, no gaps within each block (§5 round 3).**
 >   Winner-consumed: **237–245** (e23/d42×2/g58×4/g48×2). ~~Numbers 304+ are
->   FREE.~~ **⚠ §7.4 consumed 304–307; §8 consumed 308–333; 334+ FREE.** Do NOT pick max-on-origin+1; check this registry AND a fresh
+>   FREE.~~ **⚠ §7.4 consumed 304–307; the FROZEN §8 (end of file) consumed 308–351; free floor 352+ (new docs ≥360).** Do NOT pick max-on-origin+1; check this registry AND a fresh
 >   all-tip sweep first.
 > - **Claim-time convention (pinned §7):** a directly-added doc contests its
 >   number at first-add `%cI`; a SELF-RENAMED doc contests the NEW number at
@@ -597,7 +610,7 @@ replace the named §6.3 row (do not execute both).
 | e19-liquid-quicksell-shimmer | `146-aether-biome-census.md` → `296-aether-biome-census.md` | 146 — The AETHER biome census (W4-e19 final, SHIMMER item 3) | `docs/research/INDEX.md` — e19's 144/145 WINS stand; 147→268 unchanged |
 | e19-liquid-quicksell-shimmer | `148-e19-research-final.md` → `297-e19-research-final.md` | 148 — W4-e19 research FINAL (the liquid/quicksell/shimmer lane closes) | `docs/research/INDEX.md` |
 | g63-proj-trail-dust-1 | `240-proj-trail-dust-family-final.md` → `298-proj-trail-dust-family-final.md` | 240 — W4-g63 projectile TRAIL dust (kinds ≤400): FINAL + family declaration (SEALED) | `docs/research/INDEX.md` — 240 belongs to g58's earlier rename (12:16:37); g63's 66 win + 199 EXECUTED stand |
-| f39-weather-slimerain | `244-f39-v18-claim-input.md` → `299-f39-v18-claim-input.md` **⚠ SUPERSEDED §8: f39 executed 244→281 (`fec65992f` 15:53:15, contested — 281=f26) → renumber `281-f39-v18-claim-input.md` → 311; 299 FREE again; chain 244→281→311** | 244 — W4-f39 v18-claim INPUT for g71c (the closeout receipt, code-only) | `docs/ANALYSIS.md`, `docs/ROADMAP.md`, `docs/research/INDEX.md` — g48's 244 (14:30:16) predates this doc (14:32:01) |
+| f39-weather-slimerain | `244-f39-v18-claim-input.md` → `299-f39-v18-claim-input.md` **⚠ SUPERSEDED by the Lead's FROZEN §8.1: f39 executed 244→281 (`fec65992f`, contested — 281=f26) → `281-f39-v18-claim-input.md` → 316; chain 244→281→316** | 244 — W4-f39 v18-claim INPUT for g71c (the closeout receipt, code-only) | `docs/ANALYSIS.md`, `docs/ROADMAP.md`, `docs/research/INDEX.md` — g48's 244 (14:30:16) predates this doc (14:32:01) |
 | c31-hive-rewrite | `12k-c31-jungle-residuals.md` → `300-c31-jungle-residuals.md` | 12k — W4-c31 jungle residuals census + gap-fill | `docs/ANALYSIS.md` — **RE-ISSUE of §6.3's c31→244 row** (244 taken by g48's pre-publish push) |
 | d81-ui-elements-1 | `18b-element-census.md` (d81 fork copy) → `301-element-census-d81.md` | 18b — UIElement class census + the d81/d82/d83 range split | (none) — **RE-ISSUE of §6.3's d81→245 row** (245 taken by g48's pre-publish push) |
 | g53-ui-achievement-screen | `18b-element-census.md` — IDENTICAL blob to d81's copy | (same header) | rename to the SAME `301-element-census-d81.md` (or drop the copy); merger keep-one with d81. No separate number. **RE-ISSUE of the §6.3 g53 ride row.** |
@@ -613,7 +626,7 @@ LIVE assignment total: 144 = 151–236 (86) + 246–280 (35, round 2 minus the
 g48-consumed 244/245) + 281–303 (23), machine-checked unique, no gaps within
 each block (§5 round 3). Winner-consumed numbers: 237–245 (e23 / d42×2 /
 g58×4 / g48×2). Numbers 304+ are FREE.** ⚠ **EXTENDED by §7.4: 304–307
-consumed (d50/f4/g86/g43); §8: 308–333 consumed, 299 freed, 334+ FREE.** New lanes must NOT pick
+consumed (d50/f4/g86/g43); FROZEN §8 (end of file): 308–351 consumed, free floor 352+ (new docs ≥360).** New lanes must NOT pick
 max-on-origin+1 or first-free-at-my-last-fetch — check this registry AND a
 fresh all-tip sweep first.
 
@@ -622,8 +635,8 @@ sweep (360 tips, 21 172 rows). Later pushes self-adjudicate per the rules
 (first-add wins; renamed docs contest at rename-commit time; losers take
 ≥304 after a fresh sweep) or request a round-4 refresh. **⚠ EXTENDED by §7.4:
 the post-cutoff claimants on keys 240/243/244/246/247 are adjudicated there;
-304–307 consumed. ⚠ EXTENDED by §8: the self-pick wave on 244–248/281–284
-adjudicated there; 308–333 consumed, 334+ FREE.**
+304–307 consumed. ⚠ The Lead's FROZEN §8 (end of file) adjudicates the
+self-pick wave; 308–351 consumed, free floor 352+ (new docs ≥360).**
 
 ### 7.4 EXTENSION (round 3, post-cutoff claimants) — keys 240/243/244/246/247, block 304–307
 
@@ -689,18 +702,18 @@ new numbers. LIVE assignment total: 148 = 151–236 (86) + 246–280 (35) +
 308+ are FREE.** Same warning: no max-on-origin+1, no
 first-free-at-my-last-fetch — d50's 243, f4's 240, g86's 244, g43's 246 and
 g67's 247 all came from racing scans that missed a landed push or a published
-reservation. **⚠ EXTENDED by §8: 308–333 consumed by the round-4 self-pick
-wave, 334+ FREE.**
+reservation. **⚠ The Lead's FROZEN §8 (end of file) consumed 308–351; free
+floor 352+ (new docs ≥360).**
 
 **Cutoff note (extension):** adjudicates the claimant tips listed in the §7.4
 header at this fetch. Pushes after it self-adjudicate per the same rules
 (losers take ≥308 after a fresh sweep) or request a round-4 refresh.
-**⚠ §8 (round 4) landed: the post-§7.4 self-pick wave is adjudicated there;
-308–333 consumed (299 freed), 334+ FREE.**
+**⚠ Round 4 landed as the Lead's FROZEN §8/§8.5/§8.6/§8.7 (end of file):
+308–351 consumed, free floor 352+ (new docs ≥360 after round-5 re-scan).**
 **⚠ EXTENDED by §8 (round 4): the post-§7.4 self-pick wave on keys
 244–248/281–284 is adjudicated there; 308–333 consumed, 334+ FREE.**
 
-## 8. REFRESH (round 4, APPEND-ONLY) — post-§7.4 self-pick wave, block 308–333
+## 8-DRAFT. ~~REFRESH (round 4, APPEND-ONLY) — post-§7.4 self-pick wave, block 308–333~~ **SUPERSEDED — see the Lead's FROZEN §8/§8.5/§8.6/§8.7 at the end of this file (authority)**
 
 Lean claimant-tip re-check only (NO full tip sweep — the §7.2/§7.3/§7.4
 assignments are the AUTHORITY). **The 281–303 block was ASSIGNED by §7.2/§7.3
@@ -958,7 +971,11 @@ this fetch. Later pushes self-adjudicate per the same rules (losers take
 - No cargo/tests/rustfmt/graphify run (docs-only extension, per mandate). No
   other branch touched; publication on `task/W4-d54-dust-sites-world` only.
 
-### Round 4 (§8, this commit)
+### Round 4 (§8-DRAFT, commit `a15cb634b` — SUPERSEDED by the Lead's FROZEN §8)
+
+> Written against tip `0426245f2`; the Lead's direct-append §8 FINAL +
+> amendments (`0a658c7b3`…`9dddb32b4`) landed mid-flight and are the
+> authority. This verification record describes the superseded draft only.
 
 - APPEND-ONLY per dispatch: NO full tip sweep; §7.2/§7.3/§7.4 assignments
   treated as authority. `git fetch origin --prune` (one connection-reset
