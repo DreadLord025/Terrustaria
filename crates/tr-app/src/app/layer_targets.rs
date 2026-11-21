@@ -142,59 +142,20 @@ pub(crate) fn render_layer_targets(
         frame.camera.x - frame.screen.x * 0.5 / frame.zoom,
         frame.camera.y - frame.screen.y * 0.5 / frame.zoom,
     ];
-    // Copy the composite scalars out so the closure does not borrow `frame`
-    // (the direct-screen blocks below need `&mut frame`).
-    let cave_parallax = frame.cave_parallax;
-    let cam_arr = frame.camera.to_array();
-    let world_zoom = frame.zoom;
-    let sky_zoom = frame.sky_zoom;
-    let screen_arr = frame.screen.to_array();
-    let mut composite = |layer: SceneLayer| {
-        let target = family.layer(layer);
-        let position = tr_render::layer_composite_position(
-            layer,
-            target.position(),
-            target.size(),
-            screen_position,
-            camera_center,
-            cave_parallax,
-        );
-        // The background halves draw under `BackgroundViewMatrix` (zoom =
-        // `ForcedMinimumZoom`, `Main.cs:62102`/`:62213`); the world layers
-        // draw under `Main.Transform` (the world zoom).
-        let zoom = if matches!(layer, SceneLayer::Background | SceneLayer::BackWater) {
-            sky_zoom
-        } else {
-            world_zoom
-        };
-        renderer.draw_target_with(
-            compositor,
-            gpu,
-            dst,
-            target.view(),
-            target.size(),
-            position,
-            cam_arr,
-            zoom,
-            screen_arr,
-            now_secs,
-            wgpu::LoadOp::Load,
-        );
-    };
     // `Main.cs:62196` / `:62213` — the background halves under the world.
-    composite(SceneLayer::BackWater);
-    composite(SceneLayer::Background);
+    composite_one(gpu, renderer, family, compositor, SceneLayer::BackWater, frame, screen_position, camera_center, dst, now_secs);
+    composite_one(gpu, renderer, family, compositor, SceneLayer::Background, frame, screen_position, camera_center, dst, now_secs);
     // `DoDraw_WallsAndBlacks` (`Main.cs:63447`).
-    composite(SceneLayer::Wall);
+    composite_one(gpu, renderer, family, compositor, SceneLayer::Wall, frame, screen_position, camera_center, dst, now_secs);
     // `DoDraw_Tiles_NonSolid` (`Main.cs:63367`).
-    composite(SceneLayer::Tile2);
+    composite_one(gpu, renderer, family, compositor, SceneLayer::Tile2, frame, screen_position, camera_center, dst, now_secs);
     // The extras block between the tile2 and tile composites:
     // `DoDraw_Waterfalls` (`:63306`) + `DoDraw_DrawNPCsBehindTiles`
     // (`:63293`) + `PostDrawTiles(false)`'s foliage/vines
     // (`TileDrawing.cs:414-432`).
     draw_direct_screen(gpu, renderer, frame, TileFilter::ScreenExtras, dst, now_secs, &mut stats);
     // `DoDraw_Tiles_Solid` (`Main.cs:63333`).
-    composite(SceneLayer::Tile);
+    composite_one(gpu, renderer, family, compositor, SceneLayer::Tile, frame, screen_position, camera_center, dst, now_secs);
     // The frame's parked world range — the over-tile world passes the draw
     // region pushed (the tile-crack overlay `Main.DrawTileCracks`, the wire
     // overlay `Main.DrawWires`, `Main.cs:63343`/`:62309`) — renders over the
@@ -242,6 +203,56 @@ pub(crate) fn composite_water(
         position,
         frame.camera.to_array(),
         frame.zoom,
+        frame.screen.to_array(),
+        now_secs,
+        wgpu::LoadOp::Load,
+    );
+}
+
+/// One `DoDraw` layer composite — `spriteBatch.Draw(target.Texture, Position
+/// - screenPosition [+ parallax], Color.White)` through the shared
+/// [`tr_render::TargetCompositor`]. A free function (not a closure) so the
+/// `&mut renderer` borrow ends at each call, letting the direct-screen
+/// blocks interleave.
+#[allow(clippy::too_many_arguments)]
+fn composite_one(
+    gpu: &tr_render::Gpu,
+    renderer: &mut SpriteRenderer,
+    family: &RenderTargetFamily,
+    compositor: &mut tr_render::TargetCompositor,
+    layer: SceneLayer,
+    frame: &LayerFrame<'_>,
+    screen_position: [f32; 2],
+    camera_center: [f32; 2],
+    dst: &wgpu::TextureView,
+    now_secs: f32,
+) {
+    let target = family.layer(layer);
+    let position = tr_render::layer_composite_position(
+        layer,
+        target.position(),
+        target.size(),
+        screen_position,
+        camera_center,
+        frame.cave_parallax,
+    );
+    // The background halves draw under `BackgroundViewMatrix` (zoom =
+    // `ForcedMinimumZoom`, `Main.cs:62102`/`:62213`); the world layers draw
+    // under `Main.Transform` (the world zoom).
+    let zoom = if matches!(layer, SceneLayer::Background | SceneLayer::BackWater) {
+        frame.sky_zoom
+    } else {
+        frame.zoom
+    };
+    renderer.draw_target_with(
+        compositor,
+        gpu,
+        dst,
+        target.view(),
+        target.size(),
+        position,
+        frame.camera.to_array(),
+        zoom,
         frame.screen.to_array(),
         now_secs,
         wgpu::LoadOp::Load,
