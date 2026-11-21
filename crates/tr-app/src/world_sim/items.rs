@@ -2600,6 +2600,73 @@ mod pickup_tests {
         );
     }
 
+    /// W4-f49 residuals — the star pickup's mana-restock CUE census
+    /// (`Player.PickupItem` `Player.cs:35067`): `PlaySound(7)` — the Grab
+    /// chime, legacy id 7 (`SoundID.Grab`, `SoundID.cs`), UNPOSITIONED
+    /// (no attenuation), ONE `Next(-10, 11) * 0.01` pitch draw
+    /// (`LegacySoundPlayer.cs:725`) on the `UpdatePlayers` stream (the
+    /// `GrabItems` swap, `Main.cs:17754`). NOT legacy Item style 23/25 —
+    /// those are `sound_id 2` use cues; the pickup is the id-7 family.
+    /// `ManaEffect` (`:4531-4538`) is TEXT-ONLY (no second cue). The heart
+    /// (`:35061`) and the Mana Cloak star 4143 (`:35082`) ride the same
+    /// unpositioned play; only the nebula trio is POSITIONED (`:35047`).
+    /// The i52 arms call `audio.play_pickup_sound(false, UpdatePlayers)`
+    /// verbatim — this witness pins the play fires (count +1) and the
+    /// silent listener refuses it with NO draw spent. WRITTEN NOT RUN.
+    #[test]
+    fn w4_f49_the_star_pickup_plays_the_unpositioned_grab_chime() {
+        let mut app = pickup_world();
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana_max = 200;
+            p.mana = 0;
+        }
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(184, 1, pc.0 - 4.0, pc.1 - 4.0));
+        let before = app.audio.played_count();
+        let stream_before = app.rngs.stream(crate::app::RngKey::UpdatePlayers).peek();
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items.is_empty(), "the star was consumed");
+        assert_eq!(
+            app.audio.played_count(),
+            before + 1,
+            "ONE cue: the id-7 Grab play (ManaEffect adds no sound)"
+        );
+        assert_ne!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).peek(),
+            stream_before,
+            "the case-7 pitch draw spent on UpdatePlayers"
+        );
+        // The silent listener (`soundVolume == 0`, the case-7 refusal at
+        // `LegacySoundPlayer.cs:381`): the star still restores, but NO cue
+        // and NO draw (the gate precedes the pitch roll).
+        let mut app = pickup_world();
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (0.0, 0.0),
+            sound_volume: 0.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana_max = 200;
+            p.mana = 0;
+        }
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(184, 1, pc.0 - 4.0, pc.1 - 4.0));
+        let before = app.audio.played_count();
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items.is_empty(), "the restore is not sound-gated");
+        assert_eq!(app.player.as_ref().unwrap().mana, 100);
+        assert_eq!(app.audio.played_count(), before, "the silent gate refused");
+        // (The ManaEffect TEXT jitter still draws — CombatText.NewText's
+        // two Next rolls, `CombatText.cs:88-89`, are not sound-gated; the
+        // refused play spends NO pitch draw of its own.)
+    }
+
     /// `Item.NewItem`'s seasonal remap (`Item.cs:49668-49714`): the branch
     /// order and the draw counts. Classic flags: no draw, no remap.
     /// Halloween alone: 58→1734, 184→1735, draw-free. Christmas alone:
