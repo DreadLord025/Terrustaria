@@ -2934,9 +2934,11 @@ mod tests {
         assert_eq!(hsl_slider_cues(&mut s, [false, false, false], false), 0);
         assert_eq!(hsl_slider_cues(&mut s, [true, false, false], false), 1);
         // A hover enter and a drag start on DIFFERENT bars in one frame
-        // play both (the C# runs each bar's DrawSelf independently).
+        // play both (the C# runs each bar's DrawSelf independently). Bar 1
+        // was already hovered (its hover latch is set); the drag starts now.
         let mut s = CreationState::new();
         s.category = 3;
+        s.hsl_hovered[1] = true;
         s.hsl_grab = 2;
         assert_eq!(hsl_slider_cues(&mut s, [true, true, false], true), 2);
     }

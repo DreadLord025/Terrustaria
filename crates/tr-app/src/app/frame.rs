@@ -413,7 +413,7 @@ impl App {
                     };
                     self.front = None;
                     self.park_menu();
-                    self.menu = Some(menu::Menu::open_load_failed(
+                    self.menu = Some(crate::menu::Menu::open_load_failed(
                         self.settings.clone(),
                         path.clone(),
                         has_backup,
