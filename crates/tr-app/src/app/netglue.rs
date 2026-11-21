@@ -819,10 +819,14 @@ impl App {
             // codecs (`net.rs`); the host apply/relay arms
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
             // `:4282-4297`, `:4328-4343`) land with the send-path pass (S1-I-4).
+            // W4-f11 seam 8.2: the client's `19` wiring echo — the host's
+            // apply/relay dispatch (`MessageBuffer.cs:1299-1334`) is g48's
+            // `net_apply.rs::host_door_toggle` (union merge wires it).
             C2s::TogglePvp(_)
             | C2s::PlayerMana(_)
             | C2s::TeamChange(_)
             | C2s::ProjectileTrackers(_)
+            | C2s::DoorToggle(_)
             | C2s::SyncLoadout(_) => {}
         }
     }
@@ -1869,6 +1873,10 @@ impl App {
             | S2c::DeadPlayer { .. }
             | S2c::MiscEventValue(_)
             | S2c::ProjectileTrackers(_)
+            // W4-f11 seam 8.2: the relayed `19` wiring echo — the client's
+            // apply dispatch (`MessageBuffer.cs:1307-1327`) is g48's
+            // `net_apply.rs::client_door_toggle` (union merge wires it).
+            | S2c::DoorToggle(_)
             | S2c::SyncLoadout(_) => {}
         }
     }
@@ -2961,6 +2969,31 @@ impl App {
     pub(crate) fn send_switch_outcome(&self, outcome: &crate::collision::SwitchOutcome) {
         for (x, y) in &outcome.switches {
             self.send_hit_switch(*x, *y);
+        }
+    }
+
+    /// One `NetMessage.SendData(19, -1, -1, null, action, x, y, direction)`
+    /// (research/95 §8.2 CLOSED send-half — the W4-f11 wiring arms' echoes,
+    /// `Wiring.cs:1450`/`:1458`/`:1465`/`:1480`/`:1485`): the host broadcasts
+    /// to every client, the client sends to the server; `SendData`'s own
+    /// `netMode == 0` return (`NetMessage.cs:83-86`) is the `Off` arm — the
+    /// SP fold. The wire direction byte is `number4 == 1f` → 1 else 0
+    /// (`NetMessage.cs:541`). The APPLY side (the 0/1 door + 2/3 trapdoor +
+    /// 4/5 gate dispatch and the normalised-direction relay,
+    /// `MessageBuffer.cs:1299-1334`) is g48's `net_apply.rs` — the union
+    /// merge re-points this send at its `DoorToggle` codec (byte-identical
+    /// bodies, keep-one).
+    pub(crate) fn send_door_toggle(&self, t: tr_core::wiring::DoorToggle) {
+        let msg = net::DoorToggle {
+            action: t.action,
+            x: t.x as i16,
+            y: t.y as i16,
+            direction: u8::from(t.direction == 1),
+        };
+        match &self.net {
+            NetRole::Host(server) => server.broadcast(&S2c::DoorToggle(msg)),
+            NetRole::Client(client) => client.send(&C2s::DoorToggle(msg)),
+            NetRole::Off => {}
         }
     }
 

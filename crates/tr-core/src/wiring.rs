@@ -331,6 +331,28 @@ pub struct Wiring {
     /// arms; door 11 is unaffected (`CloseDoor(forced: true)` skips the gate
     /// entirely) and `OpenDoor` has no occupancy gate in C#.
     cell_blocked: Option<CellBlocked>,
+    /// The `NetMessage.SendData(19)` door/gate/trapdoor echoes of the W4-f11
+    /// arms (`Wiring.cs:1450`/`:1458`/`:1465`/`:1480`/`:1485` — research/95
+    /// §8.2 CLOSED engine-half): the action byte + the direction the C#
+    /// computes at each site (`num66` the trapdoor's ±1, `4 + flag4` the
+    /// gate subtype, `±num67` the door lean). The app drains these into its
+    /// per-tick send buffer; `SendData`'s own `netMode == 0` return
+    /// (`NetMessage.cs:83-86`) is the SP fold — the codec/relay is g48's
+    /// `DoorToggle` (union merge re-points the drain).
+    door_toggles: Vec<DoorToggle>,
+}
+
+/// One `SendData(19, -1, -1, null, action, x, y, direction)` request
+/// (`NetMessage.cs:537-542`): `action` 0/1 door open/close, 2/3 trapdoor
+/// open/close, 4/5 tall gate open/close (`MessageBuffer.cs:1307-1327`);
+/// `direction` is the C# `number4` — the wire byte is `1` iff it equals 1,
+/// else `0` (the reader normalises `!= 0` → 1 else −1, `:1306`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DoorToggle {
+    pub action: u8,
+    pub x: i32,
+    pub y: i32,
+    pub direction: i32,
 }
 
 /// The [`Wiring::cell_blocked`] closure holder — a `Debug`-transparent box
@@ -874,6 +896,16 @@ impl Wiring {
     /// `Main.rand`, never the wiring stand-in).
     pub fn take_door_sounds(&mut self) -> Vec<(bool, i32, i32)> {
         std::mem::take(&mut self.door_sounds)
+    }
+
+    /// Drains the `SendData(19)` echoes queued by the W4-f11 arms (research/
+    /// 95 §8.2 CLOSED engine-half): the action/direction payloads computed
+    /// at the C# sites (`num66`/`4+flag4`/`±num67`). The app forwards them
+    /// through its net seam; the SP fold is `SendData`'s `netMode == 0`
+    /// return (`NetMessage.cs:83-86`) — the queue drains regardless (the
+    /// `net_proj_sync.rs` bookkeeping precedent).
+    pub fn take_door_toggles(&mut self) -> Vec<DoorToggle> {
+        std::mem::take(&mut self.door_toggles)
     }
 
     /// Drains the hopper activation requests (the cases 21/467): the 2×2
@@ -2793,6 +2825,9 @@ impl Wiring {
                 self.actuation_drops.extend(drops);
                 self.skip.extend(skips);
                 if closed {
+                    // `Wiring.cs:1465` — the success-only 19 echo: action 1,
+                    // no direction (default 0).
+                    self.door_toggles.push(DoorToggle { action: 1, x: i, y: j, direction: 0 });
                     self.door_sounds.push((false, i * 16, j * 16));
                 }
             }
@@ -2809,34 +2844,46 @@ impl Wiring {
                 }
                 let mut drops = Vec::new();
                 let mut skips = Vec::new();
-                let opened = crate::edit::open_door(
+                // The two attempts stay separate so the 19 echo carries the
+                // direction that SUCCEEDED (`Wiring.cs:1476-1487`: the
+                // first-try success sends `num67`, the retry sends
+                // `-num67`; a full refusal sends nothing).
+                let mut opened = crate::edit::open_door(
                     world,
                     i,
                     j,
                     num67,
                     &mut drops,
                     if self.running { Some(&mut skips) } else { None },
-                ) || crate::edit::open_door(
-                    world,
-                    i,
-                    j,
-                    -num67,
-                    &mut drops,
-                    if self.running { Some(&mut skips) } else { None },
                 );
+                let mut dir = num67;
+                if !opened {
+                    opened = crate::edit::open_door(
+                        world,
+                        i,
+                        j,
+                        -num67,
+                        &mut drops,
+                        if self.running { Some(&mut skips) } else { None },
+                    );
+                    dir = -num67;
+                }
                 self.actuation_drops.extend(drops);
                 self.skip.extend(skips);
                 if opened {
+                    // `:1480`/`:1485` — action 0 with the succeeded lean.
+                    self.door_toggles.push(DoorToggle { action: 0, x: i, y: j, direction: dir });
                     self.door_sounds.push((true, i * 16, j * 16));
                 }
             }
             // The trapdoor pair (386/387, `Wiring.cs:1440-1453`):
             // `ShiftTrapdoor(playerAbove: true)` first; on refusal the negated
             // `playerAbove: false` attempt. The `num66` direction feeds the
-            // MP `SendData(19)` only (not ported); the shift itself is the
-            // world change. The case-8/9 cues queue inside the shift.
+            // MP `SendData(19)` echo (research/95 §8.2 CLOSED — queued into
+            // `door_toggles`); the shift itself is the world change. The
+            // case-8/9 cues queue inside the shift.
             386 | 387 => {
-                self.wire_trapdoor(world, i, j);
+                self.wire_trapdoor(world, i, j, kind);
             }
             // The tall gate pair (388/389, `Wiring.cs:1454-1460`):
             // `ShiftTallGate(closing: type == 389)` — the open gate (389)
@@ -2867,6 +2914,15 @@ impl Wiring {
                 );
                 self.actuation_drops.extend(drops);
                 self.skip.extend(skips);
+                // `Wiring.cs:1458` — the 19 echo is UNCONDITIONAL (the C#
+                // sends it whether or not the shift ran): `4 + flag4`, no
+                // direction (the `number4` default 0 → wire byte 0).
+                self.door_toggles.push(DoorToggle {
+                    action: 4 + u8::from(kind == 389),
+                    x: i,
+                    y: j,
+                    direction: 0,
+                });
                 if shifted {
                     self.door_sounds.push((true, i * 16 + 16, j * 16 + 16));
                 }
@@ -3109,7 +3165,8 @@ impl Wiring {
 
     /// The trapdoor wire arm (`Wiring.cs:1440-1453`): `ShiftTrapdoor
     /// (playerAbove: true)` first, the negated attempt on refusal. The C#
-    /// `num66` direction feeds only the MP `SendData(19)` (not ported); the
+    /// `num66` direction feeds the MP `SendData(19)` echo (research/95 §8.2
+    /// CLOSED — the `door_toggles` queue); the
     /// shift's own case-8/9 cues (`WorldGen.cs:51470`/`:51512`/`:51563` open,
     /// `:51594` the final refusal) queue here. The port folds the shift's
     /// sound sites into one cue per attempt outcome: a successful shift plays
@@ -3121,14 +3178,17 @@ impl Wiring {
     /// c42's in-body cues at the C# sites win, this fold drops with the f11
     /// `edit::shift_trapdoor` body. The true-then-false call order itself is
     /// a tie (identical in c42). Research/133 §4c.
-    fn wire_trapdoor(&mut self, world: &mut World, i: i32, j: i32) {
+    fn wire_trapdoor(&mut self, world: &mut World, i: i32, j: i32, kind: u16) {
         // Research/95 §8.1 CLOSED: the shift's per-row `Collision.EmptyTile
         // (ignoreTiles: true)` gates (`WorldGen.cs:51499`/`:51533`) read the
         // app-installed entity snapshot (the tall-gate arm's convention).
         let blocked = |x: i32, y: i32| self.entity_blocks(x, y);
         let mut drops = Vec::new();
         let mut skips = Vec::new();
-        let shifted = crate::edit::shift_trapdoor(
+        // `Wiring.cs:1442-1445` — `num66`: +1 when the `playerAbove: true`
+        // attempt shifts, else the NEGATED second attempt's result (−1 on
+        // its success, 0 on the full refusal).
+        let mut num66 = i32::from(crate::edit::shift_trapdoor(
             world,
             i,
             j,
@@ -3137,18 +3197,32 @@ impl Wiring {
             &blocked,
             &mut drops,
             if self.running { Some(&mut skips) } else { None },
-        ) || crate::edit::shift_trapdoor(
-            world,
-            i,
-            j,
-            false,
-            -1,
-            &blocked,
-            &mut drops,
-            if self.running { Some(&mut skips) } else { None },
-        );
+        ));
+        if num66 == 0 {
+            num66 = -i32::from(crate::edit::shift_trapdoor(
+                world,
+                i,
+                j,
+                false,
+                -1,
+                &blocked,
+                &mut drops,
+                if self.running { Some(&mut skips) } else { None },
+            ));
+        }
+        let shifted = num66 != 0;
         self.actuation_drops.extend(drops);
         self.skip.extend(skips);
+        // `:1448-1451` — the success-only 19 echo: `3 - value` (386 → 3
+        // open, 387 → 2 close) with the `num66` direction.
+        if shifted {
+            self.door_toggles.push(DoorToggle {
+                action: 3 - u8::from(kind == 387),
+                x: i,
+                y: j,
+                direction: num66,
+            });
+        }
         if shifted {
             self.door_sounds.push((true, i * 16 + 16, j * 16 + 16));
         } else {
@@ -7063,6 +7137,75 @@ mod w4_f11_door_gate_tests {
         assert!(
             w.tile(10, 17).is_some_and(|t| t.active() && t.kind == 10),
             "the forced close ran despite the blocker"
+        );
+    }
+
+    /// Research/95 §8.2 CLOSED — the `SendData(19)` echo payloads
+    /// (`Wiring.cs:1450`/`:1458`/`:1465`/`:1480`/`:1485`): the tall gate
+    /// queues UNCONDITIONALLY (`4 + flag4`, direction 0); the door 11 close
+    /// queues action 1 on success; the trapdoor queues `3 - value` with the
+    /// `num66` direction only on a shift; the door 10 open carries the
+    /// SUCCEEDED lean. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f11_the_door_arms_queue_the_19_echo_payloads() {
+        // The tall gate: open (388 → action 4) then close (389 → action 5),
+        // both unconditional, direction 0 (the C# `number4` default).
+        let mut w = world();
+        let steps = [20, 18, 18, 18, 20];
+        let mut fy = 0i16;
+        for dy in 0..5i32 {
+            put(&mut w, 10, 17 + dy, 388, 0, fy);
+            fy += steps[dy as usize] as i16;
+        }
+        let mut wiring = Wiring::new();
+        wiring.hit_wire_single(&mut w, 10, 17);
+        let t = wiring.take_door_toggles();
+        assert_eq!(t, vec![DoorToggle { action: 4, x: 10, y: 17, direction: 0 }]);
+        wiring.hit_wire_single(&mut w, 10, 17);
+        let t = wiring.take_door_toggles();
+        assert_eq!(t, vec![DoorToggle { action: 5, x: 10, y: 17, direction: 0 }]);
+        // The trapdoor: the styleX-0 open shifts (+1 num66), action 3.
+        let mut w2 = world();
+        for dx in 0..2i32 {
+            for dy in 0..2i32 {
+                put(&mut w2, 10 + dx, 18 + dy, 386, (dx * 18) as i16, (dy * 18) as i16);
+            }
+        }
+        let mut wiring2 = Wiring::new();
+        wiring2.hit_wire_single(&mut w2, 10, 18);
+        let t = wiring2.take_door_toggles();
+        assert_eq!(t, vec![DoorToggle { action: 3, x: 10, y: 18, direction: 1 }]);
+        // A refused shift (the entity gate blocks both rows) queues NOTHING.
+        let mut w3 = world();
+        for dx in 0..2i32 {
+            for dy in 0..2i32 {
+                put(&mut w3, 10 + dx, 18 + dy, 386, (dx * 18) as i16, (dy * 18) as i16);
+            }
+        }
+        let mut wiring3 = Wiring::new();
+        wiring3.install_entity_gate(|x, y| (10..=11).contains(&x) && (18..=19).contains(&y));
+        wiring3.hit_wire_single(&mut w3, 10, 18);
+        assert!(wiring3.take_door_toggles().is_empty(), "no echo on refusal");
+        // The door close (11 → 10): action 1, success-only.
+        let mut w4 = world();
+        closed_door(&mut w4);
+        let mut wiring4 = Wiring::new();
+        wiring4.seed_rand(7);
+        wiring4.hit_wire_single(&mut w4, 10, 18); // open first (action 0 + lean)
+        let t = wiring4.take_door_toggles();
+        assert_eq!(t.len(), 1, "the open queues one echo");
+        assert_eq!(t[0].action, 0);
+        assert!(t[0].direction == 1 || t[0].direction == -1, "the succeeded lean");
+        let open_cell = (17..20)
+            .flat_map(|y| [(10, y), (11, y), (9, y)])
+            .find(|&(x, y)| w4.tile(x, y).is_some_and(|t| t.active() && t.kind == 11))
+            .expect("an open cell");
+        wiring4.hit_wire_single(&mut w4, open_cell.0, open_cell.1);
+        let t = wiring4.take_door_toggles();
+        assert_eq!(
+            t,
+            vec![DoorToggle { action: 1, x: open_cell.0, y: open_cell.1, direction: 0 }],
+            "the close echo"
         );
     }
 }

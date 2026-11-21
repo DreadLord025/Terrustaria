@@ -436,6 +436,14 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                 app.rngs.stream(crate::app::RngKey::UpdateWorldGen),
             );
         }
+        // W4-f11 seam 8.2 (research/95 §8.2 CLOSED) — the `SendData(19)`
+        // echoes the arms queued (the trapdoor `num66`, the gate `4+flag4`,
+        // the door `±num67`): forward through the net seam; the SP fold is
+        // `send_door_toggle`'s `Off` arm (`SendData`'s netMode-0 return).
+        // The apply/relay dispatch is g48's `net_apply.rs` (union merge).
+        for t in app.wiring.take_door_toggles() {
+            app.send_door_toggle(t);
+        }
         // W4-f11 — the hopper (21/467) and extractinator (219/642) arms: the
         // engine resolved the anchor + CheckMech(60); the chest-store lookup,
         // the locked/in-use gates and the item walk run app-side
