@@ -76,6 +76,8 @@ per `docs/superpowers` agreements).
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 
+| 244 | The cursorItemIcon system census + task-seed + owner contract (W4-g86: 357 writes / 169 ID-writes in Player.cs; g81 owns the held-kind draw + cache + enabled latch; the altar hover + ItemCheck-head batches ported-unwired; the g34/g43 altar keep-one = disjoint layers) | `244-cursor-item-icon-seed.md` | seeded |
+
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
   counts question is ticketed.

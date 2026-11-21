@@ -39564,7 +39564,11 @@ and there is no tile-26 use gate to wire:
   system, out of this lane's scope. The outline (the smart-cursor
   highlight) IS ported and is the altar's selection feedback; the cursor
   icon is a distinct, deferred overlay. NO gap to wire in the summon-use
-  chain itself.
+  chain itself. (W4-g86 cursor-item-icon follow-up: the "170" is exactly
+  169 `cursorItemIconID` writes; the system is now censused + seeded at
+  research/244, the two altar arms ported-unwired at
+  `world_sim/cursor_item_icon.rs::altar_hover_icon` — see "The
+  cursorItemIcon system — census + seed" below.)
 * **f35 co-lane read** (`task/W4-f35-expert-drop-trees`, tip `06ac4b480`):
   the expert/master boss-BAG open trees (`boss_bags::open_boss_bag` +
   `clicks::open_boss_bag_click`, the 19 bag grant tables) — ZERO
@@ -39595,3 +39599,47 @@ input), documented at its site:
 * `Main.SmartInteractShowingFake` has no port consumer (the fake-highlight
   draw is gamepad-only). The field is carried on `SmartInteractState` for
   layout fidelity, always false.
+
+### The cursorItemIcon system — census + seed (W4-g86 cursor-item-icon lane)
+
+The owed-pool `cursorItemIcon-170-sites` row (the dead g86d session). Full
+census + the exact 101-arm site-list + the owner contract:
+`docs/research/244-cursor-item-icon-seed.md`. The headline facts:
+
+* **g86d landed NOTHING** — zero `cursor_item_icon` hits in the tree, no
+  g86d commits. The "~170 sites" is exactly **169 `cursorItemIconID` writes
+  in Player.cs** (326 cursor writes there; 357 writes / 386 lines across 7
+  files: Player/Main/Mount/TileDrawing/PotionOfReturnGateInteractionChecker/
+  WiresUI/CommonResourceBarMethods).
+* **The only code claim is g81** (`task/W4-g81-wire-draw-overlay`, tip
+  `ebb5308a0`): the layer-40 held-kind draw + the 10-frame cache + the
+  `cursorItemIconEnabled` latch + the wiring/mining tool latches. Its own
+  comment declares the `cursorItemIconID != 0` override arm UNPORTED. The
+  ID/Text/Push/Reversed fields, the MouseOversClear ID/Text/Push clears, the
+  ~150 tile-hover arms and the override draw are UNCLAIMED — a large
+  render/sim system, SEEDED (research/244 §4) rather than ported onto g81's
+  in-flight fields.
+* **This lane's self-contained batches** (PORTED-UNWIRED, the
+  `IsHopperInRangeOf` precedent — pure decode fns, the wiring contract
+  documented per fn, zero RNG):
+  * Batch 1 (`835e89a65`): `world_sim/cursor_item_icon.rs::altar_hover_icon`
+    — the tile-26 arm (`Player.cs:34524-34536`, the `frameX/18` column +
+    the verbatim subtract-3 group loop: group 0 → Demon Altar 6135, later →
+    Crimson 6136) + the tile-237 arm (`:34309-34314`, always Power Cell
+    1293). 4 write sites, 3 witnesses WRITTEN NOT RUN.
+  * Batch 2 (`90efad638`): `fishing_get_bait` (`:42254-42280`, ammo 54-57
+    first then grid 0-49) + `item_check_head_icon` (`:42615-42650`, the
+    `!cursorItemIconEnabled` gate, the pole's bait icon push 6, the
+    Clentaminator 779/Terraformer 5134 solution icon push 10 — the solution
+    scan's `j < 54` INCLUDES the coin rows, unlike the bait scan's
+    `j < 50`; the port's grid/coins/ammo split documented). 9 write sites,
+    3 witnesses WRITTEN NOT RUN. NO `ItemIconCacheUpdate` on these arms.
+* **The altar-draw keep-one (g86 vs g34-cage vs g43-temple): DISJOINT.**
+  g86 = the selection OUTLINE (draw layer), g34 = the altar-26 break-drop
+  (Check3x2 sweeps, NO drop — the SmashAltar ore-seeding is app-wired) +
+  the cage animator, g43 = the 237 summon-USE fidelity (`doors.rs`
+  `377e0604` superseding the base `610ea0bf` g86 cited — g43's doors.rs is
+  the keep-one survivor; g86 never touched it). The only merge work: the
+  `frame/draw.rs` :1183-1220 interleave (g34's cage-key WorldFrameKey
+  contribution + g86's post-pass outline hook — both survive) and taking
+  g43's doors.rs wholesale. No duplicated body across the three lanes.
