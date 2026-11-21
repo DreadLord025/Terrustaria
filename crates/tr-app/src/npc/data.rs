@@ -589,7 +589,7 @@ impl NpcKind {
             // W4-g5 — the two unclaimed aiStyle-8 casters. The RuneWizard's
             // vanilla 172 collides with DD2DarkMageT3's port-local 172, so
             // it takes a port-local id; the RETIRE round moved it 354 → 827
-            // (research/244: 354 squats d37's CochinealBeetle corridor
+            // (research/322: 354 squats d37's CochinealBeetle corridor
             // 354-399, the research/108 E2 kinds-lane rule; 827 is above
             // d39's pushed 817-823 band + the R7 817-826 pin). The
             // LibrarianSkeleton's 693 is free (vanilla).

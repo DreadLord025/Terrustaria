@@ -39525,9 +39525,9 @@ in ≤100-line reads: `NPC.cs:11154-11167`/`:17723-17735`/`:20817-21376`
 `tools/atlas_sim.js` (the LZX-decoded real sheet dims, the skyline
 packer mirror).
 
-### W4-g5 RETIRE: the lane close (research/244, code-only)
+### W4-g5 RETIRE: the lane close (research/322, code-only)
 
-The retire round publishes **research/244 — the caster-family
+The retire round publishes **research/322 — the caster-family
 declaration + the d37d-E8 keep-one contract**. Summary (the doc carries
 the full drop-lists + citations):
 
@@ -39585,4 +39585,24 @@ the full drop-lists + citations):
 
 **Verification**: no cargo/rustc/rustfmt/tests/graphify invoked
 (code-only). The C# re-reads + the branch probes + the 827-free scan
-are recorded in 244 §8. Witnesses written, NOT run.
+are recorded in 322 §8. Witnesses written, NOT run.
+
+**Seal verification + the renumber (322 §9)**: a second executor
+re-derived the R4 surface (the stat rows, the `:21519` shared arm, the
+Hide/trash-entry fold, the banner split), SHA256-proved the retail
+NPC_665/NPC_30 texture fold, re-probed the d43/d38 drop sites and the
+827-free scan on a FRESH 361-tip fetch — all verdicts stand. The
+research number **244 COLLIDED** (g48 `2b61530b4` 14:30:16 pre-publish
+WIN per registry-150 §7.1/§7.4; d53/g86/d43/g5 later): the registry's
+round-4 §8 (d54 tip `a15cb634b`, the AUTHORITY banner) ASSIGNS this
+doc **322** (§8.1 row 15; chain 244 → 322; the interim 251 self-pick
+was invalid under §8's NO-SELF-PICKS rule and is corrected), refs
+updated here + PORT_MAP + ROADMAP + INDEX + anchors + the six Rust
+citations. d43's own retire doc agrees on 693 (keep g5) but its "665
+keeps its own bestiary entry" paragraph is refuted by the trash-entry
+fold — the R4 fold stands. The census addendum records TWO unwired
+surfaces the §6 table missed: the `StrikeNPC_Inner` aiStyle-8
+strike-restart block (`NPC.cs:81311-81346` — the ai[0] 450/400/390/181
+resets + the 693 localAI[1]/[2] seeds + the two strike-tick rand
+draws) and the 172/693 natural-spawn rolls (`NPC.cs:5009-5013`/
+`:2745-2763`) — both follow-up-lane items, not new kinds (322 §9).

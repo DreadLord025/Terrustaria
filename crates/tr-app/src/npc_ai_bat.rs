@@ -846,7 +846,7 @@ pub fn ai_style_8_step(
                 }
                 NpcKind::Tim => {
                     // `:21242` — type 665, the ChaosBallTim clone; the port
-                    // folds it into ChaosBall (R4 FINAL, research/244:
+                    // folds it into ChaosBall (R4 FINAL, research/322:
                     // stat-identical SetDefaults `:15699-15713` vs
                     // `:17403-17417`, the same aiStyle-9 arm `:21519`, the
                     // same {31} immunity `NPCID.cs:6251-6264`, the same

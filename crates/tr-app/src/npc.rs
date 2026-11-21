@@ -455,7 +455,7 @@ pub enum NpcKind {
     /// it out over 255 ticks; a strike resets alpha to 0. Fires the 129
     /// RuneBlast (`NPC.cs:21264-21274`). The protocol id is port-local 827
     /// (the vanilla 172 collides with DD2DarkMageT3's port-local slot; the
-    /// RETIRE round moved it off 354 — d37's corridor, research/244).
+    /// RETIRE round moved it off 354 — d37's corridor, research/322).
     RuneWizard,
     /// `NPCID.LibrarianSkeleton` (693) — the dungeon book caster (`aiStyle
     /// 8`, `NPC.cs:17723-17735`: 18x40, 70 HP, damage 18, defense 2, kb 0.6,
@@ -466,7 +466,7 @@ pub enum NpcKind {
     LibrarianSkeleton,
     /// `NPCID.ChaosBall` (30) — the caster's sphere (`aiStyle 9`, 16x16,
     /// 1 HP, `noGravity`/`noTileCollide`). Tim's `ChaosBallTim` clone 665
-    /// folds here (R4 FINAL, research/244: stat-identical rows
+    /// folds here (R4 FINAL, research/322: stat-identical rows
     /// `NPC.cs:15699-15713`/`:17403-17417`, one aiStyle-9 arm `:21519`,
     /// one {31} immunity row, one "Chaos Ball" name; the banner split
     /// 665→177/30→39 is unreachable — both are Hide=true bestiary
@@ -18654,7 +18654,7 @@ impl Npc {
             NpcKind::WyvernTail => 228,
             // W4-g5 — the two casters: the RuneWizard's render key rides
             // its port-local protocol id 827 (the RETIRE renumber,
-            // research/244 — was 354, d37's CochinealBeetle corridor; the
+            // research/322 — was 354, d37's CochinealBeetle corridor; the
             // vanilla 172 is DD2DarkMageT3's key above); the
             // LibrarianSkeleton's 693 is free (vanilla).
             NpcKind::RuneWizard => 827,

@@ -1,11 +1,12 @@
-# 244 — CASTER-FAMILY declaration: aiStyle-8 ALL CLAIMED + the 693/665 keep-one (W4-g5 lane close)
+# 322 — CASTER-FAMILY declaration: aiStyle-8 ALL CLAIMED + the 693/665 keep-one (W4-g5 lane close)
 
 Status: LANE-CLOSE DECLARATION + merger contract (d37d-E8 input). Author
 lane: W4-g5 (`task/W4-g5-npc-style7-caster-doc`, base `a725acb04`).
 Companion contracts: research/108 EXTEND/SEAL (the d37c-E plan, tip
 `a341daa12` — E2 kinds-lane rule, E7 merge order, E8 per-lane tables),
-research/150 (the number registry — 244 taken here per its "237+ FREE"
-rule; max seen at the 244-claim scan was 243, g58's seal docs). The
+research/150 (the number registry — **322** per its §8.1 row 15
+ASSIGNMENT, d54 tip `a15cb634b`; chain **244 → 322**: the round's first
+claim 244 lost to g48's pre-publish win — see §9). The
 phases-1-6 record lives in ANALYSIS "The caster aiStyle-8 draw-parity
 (W4-g5, code-only)" + its phases-4-6 section; this doc is the RETIRE
 round: the dedupe verdicts, the R4 finalization, the machine census and
@@ -315,5 +316,128 @@ them). At g5's merge:
   d39 tip `907234441` (the 767-816/817-823 bands).
 - The 827-free scan: every `origin/task/W4-*` tip's `npc/data.rs`
   grepped for `=> 824..830` protocol arms — zero hits.
-- The research-number claim: every tip's `docs/research/` enumerated;
-  max = 243 (g58); 244 taken per registry-150's 237+ rule.
+- The research-number claim: the first scan (pre-commit) enumerated
+  every tip's `docs/research/` and saw max = 243 (g58); 244 was taken
+  on that stale snapshot. The seal-verification re-scan (§9) finds 244
+  adjudicated to g48 by registry-150 §8 — this doc is RENAMED
+  **244 → 322** per the §8.1 row-15 assignment.
+
+## 9. Seal verification + the 244 → 322 renumber (the second agent's audit)
+
+A second W4-g5 executor re-verified this round against the C# and the
+pushed tips (code-only, ≤100-line windows, direct paths). Verdicts:
+
+**The retire content VERIFIES.** Re-derived independently:
+* The R4 stat proof (`NPC.cs:15699-15713` vs `:17403-17417` —
+  byte-identical rows), the shared aiStyle-9 arm (`:21519`
+  `type == 30 || type == 665`), the {31} immunity pair (`NPCID.cs:6251-
+  6264`), the Hide=true exclusions (`NPCID.cs:1443-1456`) and the
+  trash-entry fold (`BestiaryDatabase.cs:52-60` — `FindEntryByNPCID(665)`
+  at populator `:951` hits `_trashEntry`, the Underground tag goes
+  nowhere), the banner split (`BannerSystem.cs:505-507` 29/30→39 vs
+  `:864-866` 45/665→177; the port's `npc_to_banner` already carries
+  `665 => 177`, `tr-core/src/bestiary.rs:668`).
+* **The retail texture fold is SHA256-proven**: `NPC_665.xnb` and
+  `NPC_30.xnb` both hash
+  `63A36662A4CC88805AEE94BF08DEAD55BD35941FCE1C6765134C5FEDAE6A3480`
+  (288 bytes each — `Get-FileHash` on the worktree's junctioned content).
+* The 693 gate fix matches `NPC.cs:18960` (`type == 32 || (type >= 281
+  && type <= 286) || type == 693`); the immunity census rows match
+  `NPCID.cs:6227-6233` (24), `:6244-6250` (29), `:6272-6278` (32),
+  `:6364-6368` (45), `:9085-9095` (533's 14), `:7119-7125` (172),
+  `:10060-10066` (693), `:6234-6240`/`:6251-6257`/`:6279-6285` (the
+  spheres).
+* The 827 renumber: d37's pushed tip carries `NpcKind::CochinealBeetle
+  => 354` (`npc/data.rs:597`) — the squat is real; a fresh all-tip grep
+  for `=> 827,` in `npc/data.rs` returns ZERO claims; d39's pushed band
+  is 817-823 (`npc/data.rs:595-601`).
+* The d43 drop-lists re-probed at tip `0253bde90` + its retire commit:
+  every §2/§3 site confirmed (the 693 identity arms, the solo FindFrame
+  `:10899-10918`, the cave-walker netglue seed `:3588`, the 665
+  alpha-100 ctor row `:3390`, the style9 `|| ChaosBallTim` extension
+  `:284`, the Tim-shot rewire `npc_ai_bat.rs:461-463`).
+* **d43's own retire doc (`244-d43-kinds-631-697-retire.md`, pushed
+  15:55:04) AGREES on 693** (its §1 table: "KEEP g5 — the wired
+  caster"; its §2a drop-list matches §2 here). Its §1 "NOT a dup — d43
+  keeps 665" paragraph is WRONG on the bestiary claim: the populator's
+  `FindEntryByNPCID(665).Info.AddRange` (`:951`) writes to the TRASH
+  entry (665 is Hide-excluded, `GetExclusions` `:870-886`), NOT an own
+  card — the R4 fold verdict here stands; the merger adjudicates the
+  two docs' 665 paragraphs with this receipt (the C# reads above).
+
+**The number 244 COLLIDED — renamed 322 per the registry's ASSIGNMENT
+(not a self-pick).** The first claim scan ran on a stale fetch (max
+243). The seal re-scan (fresh `git fetch --prune`, 361 `task/W4-*`
+tips, 21 285 `ls-tree` rows) finds key 244 claimed by FIVE docs;
+first-add committer dates (`git log --diff-filter=A`):
+
+| Lane | Doc | First add (%cI) | Commit |
+|---|---|---|---|
+| g48 | `244-c28-18-send-switch.md` | 2026-11-21T14:30:16 | `2b61530b4` |
+| d53 | `244-proj-dust-retire.md` (chain 240→244) | 14:56:57 | `a106d13e8` |
+| g86 | `244-cursor-item-icon-seed.md` | 15:05:34 | `a5f6650d3` |
+| d43 | `244-d43-kinds-631-697-retire.md` | 15:55:04 | `6fbe06250` |
+| g5 (this doc) | `244-caster-family-declaration.md` | 16:17:57 | `f044bd315` |
+
+**The registry is the authority, NOT a tips-only sweep**: research/150
+at the d54 tip `a15cb634b` (round-4 §8 APPEND-ONLY, 17:11:40 — the
+"READ THIS FIRST §8 IS AUTHORITY" banner) adjudicates **244 = g48
+WINS** (its pre-publish executed push `2b61530b4` 14:30:16 beats the
+registry's own 14:47:50 publication — the §7.1/§7.4 convention; d53's
+executed 240→244 rename is CONTESTED, re-issued 275). §8.1 row 15
+ASSIGNS this doc **322** (`244-caster-family-declaration.md` → 322,
+add `f044bd315` 16:17:57); d43's sibling retire doc takes 321 (row 14).
+The §8 block 308-333 is RESERVED — **NO SELF-PICKS**; the second
+agent's interim 251 self-pick (a tips-only first-free sweep) was
+INVALID under §8 and is corrected here to the assigned 322. (The
+older `9dddb32b4` §8.2 draft table said g5→323; the LATEST tip's §8.1
+row 15 + §8.2 key-verdict row both say **322** — g65 rides 323, row 16.
+The latest append wins.) This doc is renamed 244 → 322; the refs
+updated on this branch: ANALYSIS (the retire section), PORT_MAP +
+ROADMAP row tails, INDEX, anchors.txt (both rows), and the six Rust
+comment citations (`npc.rs` ×3, `npc/data.rs`, `npc_ai_bat.rs`,
+`bestiary.rs`). The d43/g86/d53 renames belong to those lanes: d43
+already EXECUTED its chain 244→304 (`31310b652`) →343 (`715cf5f91`,
+per the §8.7 FROZEN table — its 343 stands, the §8.1 row-14 321 draft
+is superseded by the executed §8.7 assignment); d53's 275 re-issue
+and g86's 306 are owed on their branches.
+
+**Census addendum — two residuals the §6 table missed** (both
+g5-owned, both UNWIRED, recorded not fixed — the parity commit's scope
+was the UpdateNPCs arm; these are the strike/spawn surfaces):
+
+1. **The `StrikeNPC_Inner` aiStyle-8 strike-restart block**
+   (`NPC.cs:81311-81346`): on a strike, netMode != 1 resets `ai[0]` —
+   172 → 450 (the last 75-trigger), 283/284 → `Next(2)==0` → 390,
+   533 → `Next(3)!=0` → 181, else → 400 — then `TargetClosest()`;
+   the 693 arms `localAI[1] = localAI[0] + 250` and `localAI[2] = 10`
+   (the book-circle overlay's wind-down window + the hit-stun seed).
+   The port's three strike paths (`npc.rs::hurt`/`hurt_from_projectile`/
+   `strike_pooled`) arm `just_hit` but carry NO aiStyle-8 block — the
+   172's alpha-reset (`:20851-20853`, the justHit read inside the arm)
+   IS ported, but the counter restart + the 693 localAI seeds are not.
+   Consequence: a struck caster keeps its pre-strike cycle position
+   (the C# re-arms the next cast at 450/400), and the 693's
+   `localAI[2]` hit-stun stays 0 (the `:20997-20999` countdown never
+   runs; the Extra[289] overlay's `num32` term reads 0). The two rand
+   draws (283/284's `Next(2)`, 533's `Next(3)`) are strike-tick draws
+   the port's UpdateNPCs census does not cover — they ride
+   `StrikeNPC`'s stream position, a separate seam. **Owner: the merge
+   wave / a follow-up strike-hook lane; the 533/283/284 draws must be
+   consumed at the strike site, NOT in the AI arm.**
+2. **The 172/693 natural-spawn rolls**: the RuneWizard's hardmode
+   deep-cavern `Next(200)` (`NPC.cs:5009-5013`, ABOVE the Tim roll at
+   `:5014-5018` — the port's `spawner.rs:1379-1384` carries the Tim
+   roll but not the 172's ahead of it) and the LibrarianSkeleton's
+   dungeon book-spawn `Next(8)`-else-`Next(10)` + the
+   `AI_FindNearbyBook(closestBook: true, checkPlayerScreenRanges:
+   true)` feed (`NPC.cs:2745-2763` — the 694 WaterBoltMimic shares the
+   window, d43/c3's kind). Both are spawner-lane residuals (the
+   `spawner.rs` header's biome-tables-out-of-scope note); the kinds
+   are debug/net-spawnable today. **Owner: the spawner wave; the 172
+   roll's insertion shifts the SpawnNPC stream — a coordinated
+   draw-parity commit like phases 1-2, not a silent add.**
+
+Neither residual changes the §1 declaration (no unwired caster KIND;
+these are unwired SURFACES of wired kinds). The §6 table's "COMPLETE"
+verdicts stand for the UpdateNPCs arm itself.
