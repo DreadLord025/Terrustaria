@@ -6,6 +6,11 @@
 //! light map and the per-frame caches.
 
 pub(crate) mod bg;
+// W4-g72 lane 3: the background-target CAPTURE/CONSUME seams for the cavern +
+// underworld styles (the style-specific half d69's S1-G-13 family does not
+// own), UNWIRED - the frame-path composition is d69's in-flight consumers lane
+// and the sheet sources still overflow the 8192 atlas (module docs).
+pub(crate) mod bg_target;
 // W4-g72 lane 3: the cavern background STYLE machine (pick + sheet tables +
 // cross-fade), UNWIRED — the sheet variety overflows the 8192 atlas bound and
 // the style rolls would shift the worldgen tail stream (module docs).
