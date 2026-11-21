@@ -39334,3 +39334,22 @@ death abort; `projectile_ai_torch_god.rs` 10: the row, the dust table,
 the budget drain, the Item8 latch, the 32/28 + 160/140 census stream
 pins, the SelfHurt hit + i-frames, the unlock immunity, the
 dead/owner/overlap gates, the aim forms).
+
+### The 949 duplicate — keep-one recommendation (W4-f33 vs W4-d19)
+
+`origin/task/W4-d19-proj-ai-181-190` (`a4185f89`) ports the SAME aiStyle-184
+arm into `projectile_ai_sword_styles.rs` (its census slice 182-186/190).
+The arm-by-arm comparison lives in `docs/research/93-torch-god-949-keep-one.md`;
+the verdict: **KEEP the f33 module, DROP d19's 184 section + dispatch arm +
+duplicate row** (d19b is active — the note is the coordination hand-off,
+the merge keeper executes the dedupe). The deciding gaps: d19's trail
+census keeps only the four explicit `Next(3)` gates (4 draws/tick vs the
+C#'s 32 — the `NewDust` six + the torch-family seventh are real
+`Main.rand` draws on the shared `UpdateProjectiles` stream, the
+`npc_ai_empress` precedent); d19 has NO `Kill()` census (the Item10 cue +
+the 160-draw death burst, `:70976-70995`); its hitbox reads the constant
+`WIDTH` instead of the live mount hitbox; its drain uses glam's f32
+`length()` instead of XNA's f64-intermediate form; and its shipped witness
+asserts `tileCollide` on the drain tick itself, contradicting the C#
+if/else (`333479e0` fixed the f33 witness for exactly this). The row
+tuples are identical — one row survives with both comment halves.
